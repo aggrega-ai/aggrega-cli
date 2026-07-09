@@ -149,13 +149,18 @@ type PluginExport struct {
 	Selector string `json:"selector,omitempty"`
 }
 
-// PluginDescriptorMeta is optional authorship metadata a plugin
-// declares in describe(). It is informational; the host does not
-// validate or act on it.
+// PluginDescriptorMeta is optional authorship and build-provenance
+// metadata a plugin declares in describe(). It is informational; the host
+// does not validate or act on it. Version and Commit are optional
+// build-provenance fields — the compiler version and short commit a guest
+// was built from — stamped into the guest at build time; an unstamped
+// build omits them.
 type PluginDescriptorMeta struct {
 	Author     string `json:"author,omitempty"`
 	Repository string `json:"repository,omitempty"`
 	License    string `json:"license,omitempty"`
+	Version    string `json:"version,omitempty"`
+	Commit     string `json:"commit,omitempty"`
 }
 
 // Capabilities is a plugin's self-declaration of the compile-time render

@@ -26,6 +26,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderctx"
@@ -37,8 +38,8 @@ import (
 	"helm.sh/helm/v3/pkg/chart/loader"
 )
 
-// pluginDescriptor is the static describe() self-report: a v1alpha1
-// provider plugin declaring the render_node export, compatibility with
+// pluginDescriptorHead is the fixed prefix of the describe() self-report: a
+// v1alpha1 provider plugin declaring the render_node export, compatibility with
 // the helm provider engine, and its plugin-level capability self-report
 // (the input kinds it renders and how it treats a dispatch group's output).
 // render_node declares two host functions it imports: aggrega_pack_source, which
@@ -48,11 +49,36 @@ import (
 // cross-checks these declarations against the functions the guest actually
 // imports. The host reads this once at load and validates it before invoking
 // render_node.
-const pluginDescriptor = `{"abi_version":"v1alpha1","plugin_type":"provider","compatible_providers":["helm"],"exports":[{"name":"render_node","input_pattern":"b","host_functions":["aggrega_fetch_external_input","aggrega_pack_source"],"stability":"experimental","description":"renders a Helm chart source into flat Kubernetes manifests, or synthesizes a workload into flat Kubernetes manifests"}],"capabilities":{"input_kinds":{"sourced":true,"synthesized":true,"artifacts_standalone":true},"boundary_assembly":"none","reusable_instance":true},"metadata":{"author":"aggrega","license":"Apache-2.0"}}`
+const pluginDescriptorHead = `{"abi_version":"v1alpha1","plugin_type":"provider","compatible_providers":["helm"],"exports":[{"name":"render_node","input_pattern":"b","host_functions":["aggrega_fetch_external_input","aggrega_pack_source"],"stability":"experimental","description":"renders a Helm chart source into flat Kubernetes manifests, or synthesizes a workload into flat Kubernetes manifests"}],"capabilities":{"input_kinds":{"sourced":true,"synthesized":true,"artifacts_standalone":true},"boundary_assembly":"none","reusable_instance":true},"metadata":{"author":"aggrega","license":"Apache-2.0"`
+
+// version and commit are the build-provenance stamp injected via
+// -ldflags -X at embedded-build time. A plain go build leaves them empty,
+// and describe() then omits the corresponding metadata fields, so an
+// unstamped build's descriptor is byte-identical to a stamped build's
+// minus the provenance.
+var (
+	version string
+	commit  string
+)
+
+// pluginDescriptor composes the describe() self-report, appending the
+// optional version and commit build-provenance metadata to the fixed
+// prefix when those fields are stamped, then closing the metadata object
+// and the descriptor.
+func pluginDescriptor() string {
+	meta := ""
+	if version != "" {
+		meta += `,"version":` + strconv.Quote(version)
+	}
+	if commit != "" {
+		meta += `,"commit":` + strconv.Quote(commit)
+	}
+	return pluginDescriptorHead + meta + `}}`
+}
 
 //go:wasmexport describe
 func describe() int32 {
-	pdk.Output([]byte(pluginDescriptor))
+	pdk.Output([]byte(pluginDescriptor()))
 	return 0
 }
 

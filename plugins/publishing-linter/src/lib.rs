@@ -21,19 +21,40 @@ pub mod raw;
 pub mod rubric;
 pub mod rules;
 
-/// `PLUGIN_DESCRIPTOR` is the static `describe()` self-report the host
-/// reads once at load: a v1alpha1 linter plugin whose minimum export,
-/// `lint_rules`, is present. The host validates this descriptor against
-/// its contract (ABI version, plugin type, minimum export) before
-/// invoking any export.
-const PLUGIN_DESCRIPTOR: &str = r#"{"abi_version":"v1alpha1","plugin_type":"linter","exports":[{"name":"lint_rules"}],"metadata":{"author":"aggrega","license":"Apache-2.0"}}"#;
+/// `PLUGIN_DESCRIPTOR_HEAD` is the fixed prefix of the `describe()`
+/// self-report the host reads once at load: a v1alpha1 linter plugin whose
+/// minimum export, `lint_rules`, is present. The host validates this
+/// descriptor against its contract (ABI version, plugin type, minimum
+/// export) before invoking any export. [`plugin_descriptor`] appends the
+/// optional version/commit build-provenance metadata and the closing
+/// braces at build time.
+const PLUGIN_DESCRIPTOR_HEAD: &str = r#"{"abi_version":"v1alpha1","plugin_type":"linter","exports":[{"name":"lint_rules"}],"metadata":{"author":"aggrega","license":"Apache-2.0""#;
+
+/// `plugin_descriptor` composes the `describe()` self-report, appending the
+/// optional version and commit build-provenance metadata to the fixed
+/// prefix when the `AGGREGA_VERSION` / `AGGREGA_COMMIT` environment
+/// variables are set at compile time, then closing the metadata object and
+/// the descriptor. An unstamped build (neither variable set) omits both
+/// fields, so its descriptor is byte-identical to a stamped build's minus
+/// the provenance.
+fn plugin_descriptor() -> String {
+    let mut s = String::from(PLUGIN_DESCRIPTOR_HEAD);
+    if let Some(v) = option_env!("AGGREGA_VERSION") {
+        s.push_str(&format!(r#","version":"{v}""#));
+    }
+    if let Some(c) = option_env!("AGGREGA_COMMIT") {
+        s.push_str(&format!(r#","commit":"{c}""#));
+    }
+    s.push_str("}}");
+    s
+}
 
 /// `describe` is the export every plugin implements to self-describe.
-/// It returns the static descriptor the host validates at load before
-/// dispatching the `lint_rules` export.
+/// It returns the descriptor the host validates at load before dispatching
+/// the `lint_rules` export.
 #[plugin_fn]
 pub fn describe() -> FnResult<String> {
-    Ok(PLUGIN_DESCRIPTOR.to_string())
+    Ok(plugin_descriptor())
 }
 
 /// `lint_rules` is the plugin's rule-evaluation entry point. Dispatches

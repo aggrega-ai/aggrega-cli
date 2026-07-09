@@ -40,6 +40,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"strconv"
 	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderctx"
@@ -59,8 +60,8 @@ import (
 // to the vendored module with no wrapper wiring.
 const tfvarsOverlayName = "aggrega.auto.tfvars.json"
 
-// pluginDescriptor is the static describe() self-report: a v1alpha1 provider
-// plugin declaring the render_node export, compatibility with the terraform
+// pluginDescriptorHead is the fixed prefix of the describe() self-report: a
+// v1alpha1 provider plugin declaring the render_node export, compatibility with the terraform
 // provider, and its plugin-level capability self-report (sourced and
 // artifacts-standalone input, no boundary assembly). The host reads this once
 // at load and validates it before invoking render_node. terraform resolves its
@@ -68,11 +69,36 @@ const tfvarsOverlayName = "aggrega.auto.tfvars.json"
 // selection, so render_node declares the aggrega_pack_source host function it
 // imports; the host cross-checks this declaration against the functions the
 // guest actually imports. No assemble_boundary export is offered.
-const pluginDescriptor = `{"abi_version":"v1alpha1","plugin_type":"provider","compatible_providers":["terraform"],"exports":[{"name":"render_node","input_pattern":"b","host_functions":["aggrega_pack_source"],"stability":"experimental","description":"vendors a sourced Terraform module verbatim and writes the node's values as an auto-loaded tfvars overlay"},{"name":"validate_node_input","input_pattern":"b","host_functions":["aggrega_pack_source"],"stability":"experimental","description":"structurally parses the sourced Terraform module's HCL and .tf.json files and reports parse errors before render"}],"capabilities":{"input_kinds":{"sourced":true,"synthesized":false,"artifacts_standalone":true},"boundary_assembly":"none","reusable_instance":true},"metadata":{"author":"aggrega","license":"Apache-2.0"}}`
+const pluginDescriptorHead = `{"abi_version":"v1alpha1","plugin_type":"provider","compatible_providers":["terraform"],"exports":[{"name":"render_node","input_pattern":"b","host_functions":["aggrega_pack_source"],"stability":"experimental","description":"vendors a sourced Terraform module verbatim and writes the node's values as an auto-loaded tfvars overlay"},{"name":"validate_node_input","input_pattern":"b","host_functions":["aggrega_pack_source"],"stability":"experimental","description":"structurally parses the sourced Terraform module's HCL and .tf.json files and reports parse errors before render"}],"capabilities":{"input_kinds":{"sourced":true,"synthesized":false,"artifacts_standalone":true},"boundary_assembly":"none","reusable_instance":true},"metadata":{"author":"aggrega","license":"Apache-2.0"`
+
+// version and commit are the build-provenance stamp injected via
+// -ldflags -X at embedded-build time. A plain go build leaves them empty,
+// and describe() then omits the corresponding metadata fields, so an
+// unstamped build's descriptor is byte-identical to a stamped build's
+// minus the provenance.
+var (
+	version string
+	commit  string
+)
+
+// pluginDescriptor composes the describe() self-report, appending the
+// optional version and commit build-provenance metadata to the fixed
+// prefix when those fields are stamped, then closing the metadata object
+// and the descriptor.
+func pluginDescriptor() string {
+	meta := ""
+	if version != "" {
+		meta += `,"version":` + strconv.Quote(version)
+	}
+	if commit != "" {
+		meta += `,"commit":` + strconv.Quote(commit)
+	}
+	return pluginDescriptorHead + meta + `}}`
+}
 
 //go:wasmexport describe
 func describe() int32 {
-	pdk.Output([]byte(pluginDescriptor))
+	pdk.Output([]byte(pluginDescriptor()))
 	return 0
 }
 

@@ -7,8 +7,11 @@
 # built with cargo to the wasm32-wasip1 target. The recipe strips the analogous
 # non-reproducible stamps: --remap-path-prefix removes absolute build paths,
 # -C strip=symbols drops symbol/debug tables, CARGO_INCREMENTAL=0 disables the
-# incremental cache, and gzip -n omits the archive timestamp, so the uncompressed
-# guest digest is stable across rebuilds from a clean checkout.
+# incremental cache, and gzip -n omits the archive timestamp, while the compiler
+# version and short commit are injected explicitly through the AGGREGA_VERSION and
+# AGGREGA_COMMIT compile-time environment variables the crate reads via option_env!,
+# so the uncompressed guest digest is deterministic for a given commit from a clean
+# checkout.
 #
 # The embedded linter registers under a digest-free repository reference (see
 # PublishingLinterURI in internal/wasm/embedded/embedded.go), so the printed
@@ -22,7 +25,10 @@ EMBED="internal/wasm/embedded/plugins/publishing-linter.wasm.gz"
 BUILT="$CRATE/target/wasm32-wasip1/release/publishing_linter.wasm"
 
 echo "=== build guest (cargo --target wasm32-wasip1) ==="
+_ver="$(git describe --tags --always --dirty 2>/dev/null || echo dev)"; _ver="${_ver#v}"
+_sha="$(git rev-parse --short HEAD 2>/dev/null || echo unknown)"
 CARGO_INCREMENTAL=0 \
+AGGREGA_VERSION="$_ver" AGGREGA_COMMIT="$_sha" \
 RUSTFLAGS="--remap-path-prefix=$PWD=. -C strip=symbols" \
 	cargo build --release --manifest-path "$CRATE/Cargo.toml" --target wasm32-wasip1
 

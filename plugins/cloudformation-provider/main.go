@@ -61,6 +61,7 @@ package main
 
 import (
 	"errors"
+	"strconv"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
 	"github.com/aggrega-ai/aggrega-cli/plugins/cloudformation-provider/cfncore"
@@ -68,8 +69,8 @@ import (
 	pdk "github.com/extism/go-pdk"
 )
 
-// pluginDescriptor is the static describe() self-report: a v1alpha1 provider
-// plugin compatible with the cloudformation provider, declaring the render_node,
+// pluginDescriptorHead is the fixed prefix of the describe() self-report: a
+// v1alpha1 provider plugin compatible with the cloudformation provider, declaring the render_node,
 // validate_node_input, assemble_boundary, link_publish, and link_resolve exports
 // and its plugin-level capability self-report (sourced and artifacts-standalone
 // input, boundary-merge assembly, and cross-boundary linking). The host reads this
@@ -80,11 +81,36 @@ import (
 // functions the guest actually imports. The cross-boundary-linking capability is
 // declared with both link exports as the paired contract the load gate's coherence
 // check requires.
-const pluginDescriptor = `{"abi_version":"v1alpha1","plugin_type":"provider","compatible_providers":["cloudformation"],"exports":[{"name":"render_node","input_pattern":"b","host_functions":["aggrega_pack_source"],"stability":"experimental","description":"normalizes a CloudFormation fragment or a sourced CloudFormation template to pure-JSON long-form intrinsics"},{"name":"validate_node_input","input_pattern":"b","host_functions":["aggrega_pack_source"],"stability":"experimental","description":"structurally parses the sourced CloudFormation template and reports parse errors before render"},{"name":"assemble_boundary","input_pattern":"b","stability":"experimental","description":"merges the per-node CloudFormation fragments at one dispatch group into a single stack template"},{"name":"link_publish","input_pattern":"b","stability":"experimental","description":"publishes a consumed endpoint's cross-boundary reference identity and producer-side wiring"},{"name":"link_resolve","input_pattern":"b","stability":"experimental","description":"resolves a consuming endpoint's cross-boundary reference against a published identity"}],"capabilities":{"input_kinds":{"sourced":true,"synthesized":false,"artifacts_standalone":true},"boundary_assembly":"merge","cross_boundary_linking":true,"reusable_instance":true},"metadata":{"author":"aggrega","license":"Apache-2.0"}}`
+const pluginDescriptorHead = `{"abi_version":"v1alpha1","plugin_type":"provider","compatible_providers":["cloudformation"],"exports":[{"name":"render_node","input_pattern":"b","host_functions":["aggrega_pack_source"],"stability":"experimental","description":"normalizes a CloudFormation fragment or a sourced CloudFormation template to pure-JSON long-form intrinsics"},{"name":"validate_node_input","input_pattern":"b","host_functions":["aggrega_pack_source"],"stability":"experimental","description":"structurally parses the sourced CloudFormation template and reports parse errors before render"},{"name":"assemble_boundary","input_pattern":"b","stability":"experimental","description":"merges the per-node CloudFormation fragments at one dispatch group into a single stack template"},{"name":"link_publish","input_pattern":"b","stability":"experimental","description":"publishes a consumed endpoint's cross-boundary reference identity and producer-side wiring"},{"name":"link_resolve","input_pattern":"b","stability":"experimental","description":"resolves a consuming endpoint's cross-boundary reference against a published identity"}],"capabilities":{"input_kinds":{"sourced":true,"synthesized":false,"artifacts_standalone":true},"boundary_assembly":"merge","cross_boundary_linking":true,"reusable_instance":true},"metadata":{"author":"aggrega","license":"Apache-2.0"`
+
+// version and commit are the build-provenance stamp injected via
+// -ldflags -X at embedded-build time. A plain go build leaves them empty,
+// and describe() then omits the corresponding metadata fields, so an
+// unstamped build's descriptor is byte-identical to a stamped build's
+// minus the provenance.
+var (
+	version string
+	commit  string
+)
+
+// pluginDescriptor composes the describe() self-report, appending the
+// optional version and commit build-provenance metadata to the fixed
+// prefix when those fields are stamped, then closing the metadata object
+// and the descriptor.
+func pluginDescriptor() string {
+	meta := ""
+	if version != "" {
+		meta += `,"version":` + strconv.Quote(version)
+	}
+	if commit != "" {
+		meta += `,"commit":` + strconv.Quote(commit)
+	}
+	return pluginDescriptorHead + meta + `}}`
+}
 
 //go:wasmexport describe
 func describe() int32 {
-	pdk.Output([]byte(pluginDescriptor))
+	pdk.Output([]byte(pluginDescriptor()))
 	return 0
 }
 
