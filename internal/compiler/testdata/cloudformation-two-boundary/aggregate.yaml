@@ -1,0 +1,43 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: cloudformation-two-boundary
+  version: "1.0.0"
+  description: >
+    A MariaDB database and two applications that read it. A Release splits the
+    three components across two CloudFormation stacks: app-a assembles into the
+    same stack as the database (an intra-stack reference), app-b assembles into
+    a second stack (a cross-stack reference).
+spec:
+  components:
+    db:
+      type: core/datastore/mariadb
+      values:
+        database: appdb
+        user: appuser
+        charset: utf8mb4
+        collation: utf8mb4_general_ci
+    app-a:
+      type: example/compute/db-reader
+      values:
+        parameter_name: /app-a/db-host
+      uses:
+        database:
+          primary:
+            target: db
+            inject:
+              env:
+                - in: DB_HOST
+                  from: host
+    app-b:
+      type: example/compute/db-reader
+      values:
+        parameter_name: /app-b/db-host
+      uses:
+        database:
+          primary:
+            target: db
+            inject:
+              env:
+                - in: DB_HOST
+                  from: host

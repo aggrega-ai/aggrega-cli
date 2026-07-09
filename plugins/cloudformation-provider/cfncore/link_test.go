@@ -5,23 +5,30 @@ package cfncore
 
 import (
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
+// testDeployment is the deployment identity both endpoints of the test edge
+// carry, so the published export and stack names lead with a release-bearing
+// scope segment rather than the empty-segment placeholder.
+const testDeployment = "prod-release"
+
 // testLinkEdge builds a cross-boundary link edge from consumer "api" to producer
 // "orders-db" on the "database" socket, injecting the target's "host" output. The
-// annotations carry the consumed endpoint's placement.
+// annotations carry the consumed endpoint's placement, and both endpoints carry
+// the deployment identity the published names are scoped within.
 func testLinkEdge(ann map[string]string) rendercore.LinkEdge {
 	var env types.OrderedMap[string]
 	env.Set("DB_HOST", "host")
 	var inject types.OrderedMap[types.OrderedMap[string]]
 	inject.Set("env", env)
 	return rendercore.LinkEdge{
-		Source:            rendercore.LinkEndpoint{Node: "api", Boundary: "prod/app", Provider: "cloudformation"},
-		Target:            rendercore.LinkEndpoint{Node: "orders-db", Boundary: "prod/data", Provider: "cloudformation"},
+		Source:            rendercore.LinkEndpoint{Node: "api", Boundary: "prod/app", Provider: "cloudformation", Deployment: testDeployment},
+		Target:            rendercore.LinkEndpoint{Node: "orders-db", Boundary: "prod/data", Provider: "cloudformation", Deployment: testDeployment},
 		TargetAnnotations: ann,
 		Socket:            "database",
 		Inject:            inject,
@@ -33,13 +40,21 @@ func TestLinkPublishAddsExport(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LinkPublish: %v", err)
 	}
-	wantExport := ExportName("", "prod/data", "orders-db", "host")
+	wantExport := ExportName(testDeployment, "prod/data", "orders-db", "host")
 
-	if got := out.Handle[handleStackNameKey]; got != StackName("", "prod/data") {
-		t.Errorf("handle stackName = %q, want %q", got, StackName("", "prod/data"))
+	if got := out.Handle[handleStackNameKey]; got != StackName(testDeployment, "prod/data") {
+		t.Errorf("handle stackName = %q, want %q", got, StackName(testDeployment, "prod/data"))
 	}
 	if got := out.Handle[handleExportNamePrefix+"host"]; got != wantExport {
 		t.Errorf("handle export name = %q, want %q", got, wantExport)
+	}
+	// The published names lead with the deployment identity from the payload, so
+	// distinct deployments produce distinct names within one account and region.
+	if !strings.Contains(wantExport, testDeployment) {
+		t.Errorf("export name %q does not carry the deployment segment %q", wantExport, testDeployment)
+	}
+	if got := out.Handle[handleStackNameKey]; !strings.Contains(got, testDeployment) {
+		t.Errorf("stack name %q does not carry the deployment segment %q", got, testDeployment)
 	}
 
 	if len(out.Patches) != 1 || len(out.Patches[0].Ops) != 1 {
@@ -89,7 +104,7 @@ func TestLinkResolveSameAccountImportValue(t *testing.T) {
 	if !ok {
 		t.Fatalf("op value not a map: %+v", op.Value)
 	}
-	wantExport := ExportName("", "prod/data", "orders-db", "host")
+	wantExport := ExportName(testDeployment, "prod/data", "orders-db", "host")
 	if val["Fn::ImportValue"] != wantExport {
 		t.Errorf("Fn::ImportValue = %v, want %q", val["Fn::ImportValue"], wantExport)
 	}
@@ -122,8 +137,8 @@ func TestLinkResolveCrossAccountGetStackOutput(t *testing.T) {
 	if !ok {
 		t.Fatalf("value missing Fn::GetStackOutput: %+v", val)
 	}
-	if gso["StackName"] != StackName("", "prod/data") {
-		t.Errorf("StackName = %v, want %q", gso["StackName"], StackName("", "prod/data"))
+	if gso["StackName"] != StackName(testDeployment, "prod/data") {
+		t.Errorf("StackName = %v, want %q", gso["StackName"], StackName(testDeployment, "prod/data"))
 	}
 	if gso["OutputName"] != "host" {
 		t.Errorf("OutputName = %v, want %q", gso["OutputName"], "host")

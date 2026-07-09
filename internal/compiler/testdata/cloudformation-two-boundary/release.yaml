@@ -1,0 +1,37 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: cloudformation-two-boundary
+  environment: production
+  version: "1.0.0"
+spec:
+  aggregate: ./aggregate.yaml
+  manifest: ./manifest.yaml
+  boundaries:
+    # Stack A: the database and an application that reads it assemble into one
+    # stack, so the application's reference to the database host is intra-stack.
+    stack-a:
+      directory: ./dist/stack-a
+      components:
+        db:
+          infra:
+            engine_version: "11.4"
+            storage:
+              size: 100Gi
+              type: gp3
+            ha:
+              enabled: false
+              read_replicas: 0
+            backup:
+              enabled: true
+              retention_days: 14
+        app-a: {}
+    # Stack B: a second application that reads the same database assembles into
+    # its own stack, so its reference to the database host crosses the boundary.
+    # No aws-account / aws-region annotations, so stack B shares stack A's
+    # account and region and the reference resolves through a stack-export
+    # import.
+    stack-b:
+      directory: ./dist/stack-b
+      components:
+        app-b: {}

@@ -65,7 +65,7 @@ func RunCrossBoundaryLinkPassForTest(
 
 	warnings, err = wireCrossBoundaryLinks(
 		ctx, graph, allProvides, nodeDispatch, nodeEngine, nodeAnnotations,
-		assembledByDispatch, engineFactory, yamlIndent,
+		assembledByDispatch, engineFactory, yamlIndent, "",
 	)
 
 	filesByPath = map[string]map[string][]byte{}

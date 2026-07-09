@@ -1,0 +1,11 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Manifest
+metadata:
+  name: cloudformation-two-boundary-manifest
+  version: "1.0.0"
+spec:
+  mappings:
+    components:
+      type:
+        core/datastore/mariadb:1.0.0: cloudformation/mariadb-rds:1.0.0
+        example/compute/db-reader:1.0.0: cloudformation/db-reader:1.0.0

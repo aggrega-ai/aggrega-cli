@@ -48,10 +48,12 @@ type assembledGroup struct {
 //     warning.
 //
 // The host assembles the domain-blind per-edge payload from the edge, the
-// endpoints' dispatch identity, and the consumed end's resolved annotations; it
-// interprets no annotation value (Invariants 1/3) and resolves no runtime state
-// (Invariant 2) — the deterministic pointer strings a guest returns are piped,
-// not resolved.
+// endpoints' dispatch identity, the build's deployment identity, and the
+// consumed end's resolved annotations; it interprets no annotation value
+// (Invariants 1/3) and resolves no runtime state (Invariant 2) — the
+// deterministic pointer strings a guest returns are piped, not resolved. The
+// deployment identity is copied onto both endpoints as an opaque scalar; the
+// host infers no meaning from it.
 func wireCrossBoundaryLinks(
 	ctx context.Context,
 	graph *types.IRGraph,
@@ -62,6 +64,7 @@ func wireCrossBoundaryLinks(
 	assembledByDispatch map[dispatchKey]*assembledGroup,
 	engineFactory EngineFactory,
 	yamlIndent int,
+	deploymentID string,
 ) ([]string, error) {
 	var warnings []string
 	for _, edge := range graph.Spec.Edges {
@@ -97,7 +100,7 @@ func wireCrossBoundaryLinks(
 			continue
 		}
 
-		linkEdge := buildLinkEdge(edge, srcKey, tgtKey, allProvides, nodeAnnotations[edge.Target])
+		linkEdge := buildLinkEdge(edge, srcKey, tgtKey, allProvides, nodeAnnotations[edge.Target], deploymentID)
 
 		// Producer-side: publish on the consumed (target) end's guest, then apply
 		// its wiring to the target group's assembled files.
@@ -247,11 +250,11 @@ func scanOrphanCrossBoundaryLinkSentinels(assembledByDispatch map[dispatchKey]*a
 // end's inject mapping. Edge enrichment is single-sourced through
 // [EnrichedEdgeViewFromIREdge]; the host reads the projected view, it does not
 // build a second edge-enrichment path.
-func buildLinkEdge(edge types.IREdge, srcKey, tgtKey dispatchKey, allProvides NodeProvides, targetAnnotations map[string]string) LinkEdge {
+func buildLinkEdge(edge types.IREdge, srcKey, tgtKey dispatchKey, allProvides NodeProvides, targetAnnotations map[string]string, deploymentID string) LinkEdge {
 	view := EnrichedEdgeViewFromIREdge(edge, allProvides)
 	return LinkEdge{
-		Source:            LinkEndpoint{Node: edge.Source, Boundary: srcKey.Path, Provider: srcKey.Provider},
-		Target:            LinkEndpoint{Node: edge.Target, Boundary: tgtKey.Path, Provider: tgtKey.Provider},
+		Source:            LinkEndpoint{Node: edge.Source, Boundary: srcKey.Path, Provider: srcKey.Provider, Deployment: deploymentID},
+		Target:            LinkEndpoint{Node: edge.Target, Boundary: tgtKey.Path, Provider: tgtKey.Provider, Deployment: deploymentID},
 		TargetAnnotations: targetAnnotations,
 		Socket:            view.Socket,
 		Provides:          view.Provides,

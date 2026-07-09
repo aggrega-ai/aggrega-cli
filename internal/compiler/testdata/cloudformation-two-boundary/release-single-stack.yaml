@@ -1,0 +1,33 @@
+# Single-stack variant of the two-boundary example: the database and both
+# consuming applications assemble into one CloudFormation stack. Every uses edge
+# is intra-stack, so each consumer receives the database host through the value
+# pipe and stores it as an intra-stack Fn::GetAtt. This variant needs no
+# cross-boundary reference wiring, so it exercises the fragment conversion, the
+# provides-to-Outputs projection, and the intra-stack reference end-to-end.
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: cloudformation-single-stack
+  environment: production
+  version: "1.0.0"
+spec:
+  aggregate: ./aggregate.yaml
+  manifest: ./manifest.yaml
+  boundaries:
+    stack-a:
+      directory: ./dist/stack-a
+      components:
+        db:
+          infra:
+            engine_version: "11.4"
+            storage:
+              size: 100Gi
+              type: gp3
+            ha:
+              enabled: false
+              read_replicas: 0
+            backup:
+              enabled: true
+              retention_days: 14
+        app-a: {}
+        app-b: {}

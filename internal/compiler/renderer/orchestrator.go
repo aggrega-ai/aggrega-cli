@@ -1097,7 +1097,11 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 	// in different dispatch groups — through the providers' link exports, editing
 	// the retained assembled artifacts in place. Inert on inputs whose providers
 	// advertise no linking (no file change, no warning).
-	linkWarnings, err := wireCrossBoundaryLinks(ctx, graph, allProvides, nodeDispatch, nodeEngine, nodeAnnotations, assembledByDispatch, engineFactory, input.YAMLIndent)
+	deploymentID := ""
+	if input.ResolveResult != nil && input.ResolveResult.Release != nil {
+		deploymentID = input.ResolveResult.Release.Metadata.Name
+	}
+	linkWarnings, err := wireCrossBoundaryLinks(ctx, graph, allProvides, nodeDispatch, nodeEngine, nodeAnnotations, assembledByDispatch, engineFactory, input.YAMLIndent, deploymentID)
 	if err != nil {
 		return nil, err
 	}

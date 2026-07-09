@@ -322,6 +322,8 @@ type LinkEndpoint struct {
 	Boundary string `json:"boundary" yaml:"boundary"`
 	// Provider The render target that rendered the endpoint (the provider engine name). Both endpoints of a wired link name the same render target; the host does not route a link whose endpoints name different targets.
 	Provider string `json:"provider" yaml:"provider"`
+	// Deployment The deployment identity the endpoint's rendered output belongs to — the scope its assembled artifacts are named within. The host assembles it from the build's deployment identity and passes it verbatim; it infers no meaning from the value. A render target reads it to scope a cross-reference name to the deployment. An absent value is the empty string, which a render target treats as an unscoped name.
+	Deployment string `json:"deployment,omitempty" yaml:"deployment,omitempty"`
 }
 
 // LinkEdge The generalized, domain-blind per-edge payload the host assembles for a uses edge whose consuming and consumed ends assemble into different dispatch groups. It carries both endpoints, the consumed endpoint's placement annotations as an opaque scalar map the host does not interpret, the consumed endpoint's provides output, and the socket and inject mapping the edge wires. A render target reads it to produce the provider-native cross-reference wiring the two ends need; the host assembles it and passes the annotation map as opaque scalars, inferring no meaning from any value.
@@ -3338,6 +3340,14 @@ func (t LinkEndpoint) MarshalJSON() ([]byte, error) {
 	first = false
 	buf.WriteString("\"provider\":")
 	writeJSONString(&buf, t.Provider)
+	if t.Deployment != "" {
+		if !first {
+			buf.WriteByte(',')
+		}
+		first = false
+		buf.WriteString("\"deployment\":")
+		writeJSONString(&buf, t.Deployment)
+	}
 	buf.WriteByte('}')
 	return buf.Bytes(), nil
 }
@@ -3373,6 +3383,12 @@ func (t *LinkEndpoint) UnmarshalJSON(data []byte) error {
 				return err
 			} else {
 				t.Provider = s
+			}
+		case "deployment":
+			if s, err := readString(dec); err != nil {
+				return err
+			} else {
+				t.Deployment = s
 			}
 		default:
 			if _, err := readRaw(dec, data); err != nil {

@@ -47,21 +47,19 @@ var ErrLinkSentinelInterpolated = errors.New("cloudformation-provider: cross-bou
 // projection at assembly; the publish adds only the Export block that makes the
 // Output importable across stacks.
 //
-// The link payload carries no deployment/environment identity, so the export and
-// stack names are scoped by the target boundary and component alone. Names are
-// unique within a single deployment, but a deployment-identity segment is not
-// part of the name: two distinct deployments sharing an account and region, each
-// with the same boundary path and component, produce identical export and stack
-// names. Every name is a deterministic pointer string the compiler pipes and
-// never resolves.
+// The export and stack names carry the consumed endpoint's deployment identity
+// as their leading scope segment, so two distinct deployments sharing an account
+// and region — each with the same boundary path and component — produce distinct
+// export and stack names. Every name is a deterministic pointer string the
+// compiler pipes and never resolves against AWS state.
 func LinkPublish(edge rendercore.LinkEdge) (rendercore.LinkPublishOutput, error) {
 	keys := injectedOutputKeys(edge)
 	handle := map[string]string{
-		handleStackNameKey: StackName("", edge.Target.Boundary),
+		handleStackNameKey: StackName(edge.Target.Deployment, edge.Target.Boundary),
 	}
 	ops := make([]frp.JSONPatchOp, 0, len(keys))
 	for _, outputKey := range keys {
-		exportName := ExportName("", edge.Target.Boundary, edge.Target.Node, outputKey)
+		exportName := ExportName(edge.Target.Deployment, edge.Target.Boundary, edge.Target.Node, outputKey)
 		handle[handleExportNamePrefix+outputKey] = exportName
 		ops = append(ops, frp.JSONPatchOp{
 			Scope: frp.DocumentScopeOwn,
