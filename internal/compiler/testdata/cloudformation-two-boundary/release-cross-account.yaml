@@ -1,0 +1,52 @@
+# Cross-account variant of the two-boundary example: the producer stack carries
+# AWS placement annotations (account, region, assume-role) and the consuming
+# stack sits in a different account. Because the producer's placement selects
+# the cross-stack reference shape, the consumer's reference to the database host
+# resolves through a cross-account stack-output read (Fn::GetStackOutput) rather
+# than a same-account stack-export import (Fn::ImportValue). The topology is the
+# sibling aggregate/manifest unchanged — only the boundary placement annotations
+# differ from release.yaml.
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: cloudformation-cross-account
+  environment: production
+  version: "1.0.0"
+spec:
+  aggregate: ./aggregate.yaml
+  manifest: ./manifest.yaml
+  boundaries:
+    # Stack A: the database and an intra-stack consumer assemble into one stack.
+    # Its AWS placement annotations mark the account and region the stack lands
+    # in, plus the role a cross-account reader assumes; these annotations select
+    # the cross-stack reference shape the consuming stack resolves against.
+    stack-a:
+      directory: ./dist/stack-a
+      annotations:
+        aggrega.ai/aws-account: "111111111111"
+        aggrega.ai/aws-region: "eu-west-1"
+        aggrega.ai/aws-assume-role-arn: "arn:aws:iam::111111111111:role/cross-stack-reader"
+      components:
+        db:
+          infra:
+            engine_version: "11.4"
+            storage:
+              size: 100Gi
+              type: gp3
+            ha:
+              enabled: false
+              read_replicas: 0
+            backup:
+              enabled: true
+              retention_days: 14
+        app-a: {}
+    # Stack B: a second application that reads the same database assembles into
+    # its own stack in a different account. The reference shape keys on the
+    # producer's placement, so this account annotation is truthful scene-setting
+    # for the cross-account scenario rather than the selector itself.
+    stack-b:
+      directory: ./dist/stack-b
+      annotations:
+        aggrega.ai/aws-account: "222222222222"
+      components:
+        app-b: {}

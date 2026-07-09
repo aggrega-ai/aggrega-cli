@@ -76,6 +76,15 @@ func cfnTwoBoundaryInput(t *testing.T) pipelinetest.Input {
 	}
 }
 
+func cfnCrossAccountInput(t *testing.T) pipelinetest.Input {
+	t.Helper()
+	skipIfNoSiblingCatalog(t)
+	return pipelinetest.Input{
+		ReleasePath:  "testdata/cloudformation-two-boundary/release-cross-account.yaml",
+		CatalogPaths: cfnCatalogPaths(),
+	}
+}
+
 // TestCloudFormationFragment_IntraStackAndProjection builds the single-stack
 // workspace end-to-end through the real cloudformation guest and asserts, from
 // the emitted bytes, that the fragment-form Recipe assembled into a well-formed
@@ -257,6 +266,122 @@ func TestCloudFormationTwoBoundary_CrossStackWiring(t *testing.T) {
 // runs (the Deterministic Output invariant).
 func TestCloudFormationTwoBoundary_Deterministic(t *testing.T) {
 	in := cfnTwoBoundaryInput(t)
+	pipelinetest.AssertDeterministic(t, in)
+}
+
+// TestCloudFormationTwoBoundary_CrossAccountGetStackOutput builds the
+// cross-account variant of the two-boundary workspace — the producer stack
+// carries AWS placement annotations (account, region, assume-role) and the
+// consuming stack sits in another account — end-to-end through the real
+// cloudformation guest, and proves the cross-account wiring from the emitted
+// bytes. Because the producer's placement marks a different account, the
+// consumer's reference resolves through a cross-account stack-output read
+// (Fn::GetStackOutput carrying the producer stack name, output name, region,
+// and assume-role) rather than the same-account stack-export import
+// (Fn::ImportValue) the sibling same-account build produces. The producer stack
+// still projects the database host into an Output carrying an Export.Name — the
+// publish adds the Export unconditionally — even though the cross-account
+// consumer reads it by stack-output rather than by import. The stack name the
+// consumer reads is checked for round-trip identity against the producer's
+// export name structurally, so the proof survives later additions to the name's
+// composition.
+func TestCloudFormationTwoBoundary_CrossAccountGetStackOutput(t *testing.T) {
+	in := cfnCrossAccountInput(t)
+
+	result := pipelinetest.Build(t, in)
+
+	producer, producerRaw := findCfnStack(t, result.Artifacts, "stack-a")
+	consumer, consumerRaw := findCfnStack(t, result.Artifacts, "stack-b")
+	t.Logf("producer stack template (stack-a):\n%s", producerRaw)
+	t.Logf("consumer stack template (stack-b):\n%s", consumerRaw)
+
+	// No cross-boundary link placeholder survives in any emitted artifact — every
+	// stamped placeholder must have been resolved into a real cross-stack read.
+	for k, v := range result.Artifacts {
+		if strings.Contains(string(v), rendercore.CrossBoundaryLinkSentinelPrefix) {
+			t.Fatalf("artifact %q retains a cross-boundary link placeholder:\n%s", k, v)
+		}
+	}
+
+	// Consumer: AppDbHostParameter's Value is an Fn::GetStackOutput object — the
+	// cross-account read shape — and NOT an Fn::ImportValue import.
+	consumerResources := mustCfnMap(t, consumer, "Resources")
+	appDbHost := mustCfnMap(t, consumerResources, "AppDbHostParameter")
+	appProps := mustCfnMap(t, appDbHost, "Properties")
+	value, ok := appProps["Value"].(map[string]any)
+	if !ok {
+		t.Fatalf("consumer AppDbHostParameter.Properties.Value is not an object; got %#v", appProps["Value"])
+	}
+	if _, present := value["Fn::ImportValue"]; present {
+		t.Fatalf("cross-account consumer value carries an Fn::ImportValue import; want Fn::GetStackOutput. got %#v", value)
+	}
+	getStackOutput, ok := value["Fn::GetStackOutput"].(map[string]any)
+	if !ok {
+		t.Fatalf("consumer AppDbHostParameter.Properties.Value is not an Fn::GetStackOutput intrinsic; got %#v", appProps["Value"])
+	}
+
+	// The read targets the injected provides key, in the producer's region, under
+	// the producer's assume-role — all carried from the producer's placement
+	// annotations, all deterministic pointer strings the runtime resolves.
+	if getStackOutput["OutputName"] != "host" {
+		t.Fatalf("Fn::GetStackOutput.OutputName = %#v, want \"host\"", getStackOutput["OutputName"])
+	}
+	if getStackOutput["Region"] != "eu-west-1" {
+		t.Fatalf("Fn::GetStackOutput.Region = %#v, want \"eu-west-1\"", getStackOutput["Region"])
+	}
+	if getStackOutput["RoleArn"] != "arn:aws:iam::111111111111:role/cross-stack-reader" {
+		t.Fatalf("Fn::GetStackOutput.RoleArn = %#v, want the producer assume-role arn", getStackOutput["RoleArn"])
+	}
+	stackName, ok := getStackOutput["StackName"].(string)
+	if !ok || stackName == "" {
+		t.Fatalf("Fn::GetStackOutput.StackName is not a non-empty string; got %#v", getStackOutput["StackName"])
+	}
+	t.Logf("cross-account read: Fn::GetStackOutput %#v", getStackOutput)
+
+	// Producer: Outputs.host STILL carries an Export.Name even on the
+	// cross-account path — the publish adds the Export unconditionally.
+	producerOutputs := mustCfnMap(t, producer, "Outputs")
+	hostOut := mustCfnMap(t, producerOutputs, "host")
+	exportBlock := mustCfnMap(t, hostOut, "Export")
+	exportName, ok := exportBlock["Name"].(string)
+	if !ok || exportName == "" {
+		t.Fatalf("producer Outputs.host.Export.Name is not a non-empty string; got %#v", exportBlock["Name"])
+	}
+	t.Logf("producer export name (present even on the cross-account path): %s", exportName)
+
+	// StackName round-trip identity: the export name the producer publishes and
+	// the stack name the consumer reads share the producer stack's scope — the
+	// export name is the stack name plus the component and provides-key segments.
+	// The stack name is a well-formed aggrega- name carrying the deployment
+	// identity and the producer boundary segment.
+	if !strings.HasPrefix(exportName, stackName+"-") {
+		t.Fatalf("producer export name %q is not the consumer stack name %q plus the component and key segments", exportName, stackName)
+	}
+	if !strings.HasPrefix(stackName, "aggrega-") {
+		t.Fatalf("consumer stack name %q does not start with the aggrega- prefix", stackName)
+	}
+	for _, seg := range []string{"cloudformation-cross-account", "stack-a"} {
+		if !strings.Contains(stackName, seg) {
+			t.Fatalf("consumer stack name %q is missing the expected segment %q", stackName, seg)
+		}
+	}
+	t.Logf("cross-account round-trip identity holds: consumer reads stack %q; producer exports %q", stackName, exportName)
+
+	// Long-form intrinsics only — no short-form YAML tag survives in either stack.
+	for _, raw := range [][]byte{producerRaw, consumerRaw} {
+		for _, tag := range []string{"!GetAtt", "!Ref", "!Sub", "!ImportValue"} {
+			if strings.Contains(string(raw), tag) {
+				t.Fatalf("a short-form intrinsic tag %q survived in the emitted output", tag)
+			}
+		}
+	}
+}
+
+// TestCloudFormationTwoBoundary_CrossAccountDeterministic asserts the
+// cross-account build — including the cross-account stack-output read wiring —
+// is byte-identical across repeated runs (the Deterministic Output invariant).
+func TestCloudFormationTwoBoundary_CrossAccountDeterministic(t *testing.T) {
+	in := cfnCrossAccountInput(t)
 	pipelinetest.AssertDeterministic(t, in)
 }
 
