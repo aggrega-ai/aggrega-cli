@@ -9,11 +9,12 @@
 # explicitly via -ldflags -X, so the uncompressed guest digest is deterministic
 # for a given commit — identical source at the same commit yields identical
 # bytes, and the digest advances only when the source or the commit does.
-# When the guest source changes, run this and update the new digest at its three
-# coupled sites: the registration URI in internal/wasm/embedded/embedded.go, the
-# artifact reference (spec.plugin) in the helm-renderer Plugin entity, and the
-# capstone resolution test's expected pin. The script does not rewrite those
-# sites — a maintainer confirms the new digest deliberately.
+# The embedded provider registers under a digest-free repository reference (see
+# helmProviderURI in internal/wasm/embedded/embedded.go, mirrored by the
+# spec.plugin reference in the helm-renderer Plugin entity), and the resolution
+# test derives its expected digest from the embedded bytes at test time, so the
+# printed digest does not need to be transcribed into any URI or pin — it is
+# reported for reproducibility confirmation only.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
