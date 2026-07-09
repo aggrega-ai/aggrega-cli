@@ -70,6 +70,7 @@ build.`,
 // version-check.test.ts.
 type versionInfo struct {
 	Version   string `json:"version"`
+	Committed string `json:"committed,omitempty"`
 	Commit    string `json:"commit"`
 	GoVersion string `json:"goVersion"`
 	Platform  string `json:"platform"`
@@ -87,6 +88,17 @@ func runVersion(w io.Writer, asJSON bool) error {
 		enc := json.NewEncoder(w)
 		return enc.Encode(info)
 	}
+	_, err := io.WriteString(w, formatVersionLine(info))
+	return err
+}
+
+// formatVersionLine renders the human-readable version line. When a
+// commit timestamp is present it appears before the commit hash and is
+// labelled "committed" (it is the commit time from vcs.time, not the
+// build time). When the timestamp is absent the segment is omitted
+// rather than filled with a placeholder. The commit hash is shortened
+// to eight characters and falls back to "unknown" when absent.
+func formatVersionLine(info versionInfo) string {
 	commit := info.Commit
 	if len(commit) > 8 {
 		commit = commit[:8]
@@ -94,14 +106,19 @@ func runVersion(w io.Writer, asJSON bool) error {
 	if commit == "" {
 		commit = "unknown"
 	}
-	_, err := fmt.Fprintf(w, "aggrega %s (commit %s, %s)\n", info.Version, commit, info.GoVersion)
-	return err
+	if info.Committed != "" {
+		return fmt.Sprintf("aggrega %s (committed %s, commit %s, %s)\n", info.Version, info.Committed, commit, info.GoVersion)
+	}
+	return fmt.Sprintf("aggrega %s (commit %s, %s)\n", info.Version, commit, info.GoVersion)
 }
 
 // collectVersionInfo reads runtime/debug.ReadBuildInfo and walks
-// info.Settings for vcs.revision. When ReadBuildInfo returns
-// ok == false the function returns the unknown sentinel; callers
-// (the extension specifically) treat it the same as "(devel)".
+// info.Settings for vcs.revision and vcs.time. When ReadBuildInfo
+// returns ok == false the function returns the unknown sentinel;
+// callers (the extension specifically) treat it the same as
+// "(devel)". The commit timestamp comes only from vcs.time — there
+// is no ldflags source for it — and is used verbatim (already UTC
+// RFC3339); it is left empty when the setting is absent.
 func collectVersionInfo() versionInfo {
 	out := versionInfo{
 		Version:   "(unknown)",
@@ -128,6 +145,12 @@ func collectVersionInfo() versionInfo {
 				out.Commit = s.Value
 				break
 			}
+		}
+	}
+	for _, s := range info.Settings {
+		if s.Key == "vcs.time" {
+			out.Committed = s.Value
+			break
 		}
 	}
 	out.Version = normalizeVersion(out.Version)

@@ -34,8 +34,8 @@ func TestVersionHumanFormat(t *testing.T) {
 }
 
 // TestVersionJSONShape pins the wire contract the extension's
-// version-check helper consumes. Asserts the four camelCase fields
-// are present and non-empty.
+// version-check helper consumes. Asserts the four always-present
+// camelCase fields are present and non-empty.
 func TestVersionJSONShape(t *testing.T) {
 	var buf bytes.Buffer
 	if err := runVersion(&buf, true); err != nil {
@@ -43,6 +43,7 @@ func TestVersionJSONShape(t *testing.T) {
 	}
 	var info struct {
 		Version   string `json:"version"`
+		Committed string `json:"committed"`
 		Commit    string `json:"commit"`
 		GoVersion string `json:"goVersion"`
 		Platform  string `json:"platform"`
@@ -61,6 +62,76 @@ func TestVersionJSONShape(t *testing.T) {
 	}
 	if !strings.Contains(info.Platform, "/") {
 		t.Errorf("platform should contain '/'; got %q", info.Platform)
+	}
+}
+
+// TestVersionHumanLineWithTimestamp pins the human line's shape when a
+// commit timestamp is present: the "committed <ts>" segment appears
+// before the commit hash, and the hash is truncated to eight chars.
+func TestVersionHumanLineWithTimestamp(t *testing.T) {
+	got := formatVersionLine(versionInfo{
+		Version:   "1.2.3",
+		Committed: "2026-07-09T18:07:57Z",
+		Commit:    "62c43d5babcdef",
+		GoVersion: "go1.26.0",
+	})
+	want := "aggrega 1.2.3 (committed 2026-07-09T18:07:57Z, commit 62c43d5b, go1.26.0)\n"
+	if got != want {
+		t.Errorf("formatVersionLine with timestamp:\n got %q\nwant %q", got, want)
+	}
+}
+
+// TestVersionHumanLineOmitsTimestamp pins that an absent commit
+// timestamp drops the "committed" segment entirely rather than
+// printing a placeholder.
+func TestVersionHumanLineOmitsTimestamp(t *testing.T) {
+	got := formatVersionLine(versionInfo{
+		Version:   "1.2.3",
+		Commit:    "62c43d5babcdef",
+		GoVersion: "go1.26.0",
+	})
+	want := "aggrega 1.2.3 (commit 62c43d5b, go1.26.0)\n"
+	if got != want {
+		t.Errorf("formatVersionLine without timestamp:\n got %q\nwant %q", got, want)
+	}
+	if strings.Contains(got, "committed") {
+		t.Errorf("expected no 'committed' segment when timestamp absent; got %q", got)
+	}
+}
+
+// TestVersionJSONCommittedOmittedWhenEmpty pins that the committed
+// field is omitted from the wire shape when empty (omitempty), so a
+// build without vcs.time does not emit an empty committed field.
+func TestVersionJSONCommittedOmittedWhenEmpty(t *testing.T) {
+	b, err := json.Marshal(versionInfo{
+		Version:   "1.2.3",
+		Commit:    "62c43d5b",
+		GoVersion: "go1.26.0",
+		Platform:  "linux/amd64",
+	})
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if strings.Contains(string(b), "committed") {
+		t.Errorf("committed should be omitted when empty; got %s", b)
+	}
+}
+
+// TestVersionJSONCommittedPresentWhenSet pins that a populated commit
+// timestamp emits under the camelCase "committed" key.
+func TestVersionJSONCommittedPresentWhenSet(t *testing.T) {
+	b, err := json.Marshal(versionInfo{
+		Version:   "1.2.3",
+		Committed: "2026-07-09T18:07:57Z",
+		Commit:    "62c43d5b",
+		GoVersion: "go1.26.0",
+		Platform:  "linux/amd64",
+	})
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if !strings.Contains(string(b), `"committed":"2026-07-09T18:07:57Z"`) {
+		t.Errorf("expected committed field in wire shape; got %s", b)
 	}
 }
 
@@ -123,13 +194,16 @@ func TestVersionJSONIsValidJSON(t *testing.T) {
 	if err := json.Unmarshal(buf.Bytes(), &generic); err != nil {
 		t.Fatalf("unmarshal generic: %v", err)
 	}
-	expected := map[string]bool{"version": true, "commit": true, "goVersion": true, "platform": true}
+	// committed is optional (omitempty): allowed when present, not
+	// required, since a build without vcs.time omits it.
+	allowed := map[string]bool{"version": true, "committed": true, "commit": true, "goVersion": true, "platform": true}
 	for k := range generic {
-		if !expected[k] {
+		if !allowed[k] {
 			t.Errorf("unexpected top-level key %q in version JSON", k)
 		}
 	}
-	for k := range expected {
+	required := map[string]bool{"version": true, "commit": true, "goVersion": true, "platform": true}
+	for k := range required {
 		if _, present := generic[k]; !present {
 			t.Errorf("missing expected key %q in version JSON", k)
 		}
