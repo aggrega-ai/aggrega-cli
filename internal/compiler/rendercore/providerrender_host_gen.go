@@ -362,12 +362,14 @@ type LinkPublishOutput struct {
 	Patches []LinkPatch `json:"patches,omitempty" yaml:"patches,omitempty"`
 }
 
-// LinkResolveInput The payload a render target receives on its link_resolve export: one cross-boundary link and the published identity handle its consumed endpoint exposed. The export returns the consumer-side artifact wiring that injects the reference into the consuming endpoint's assembled output.
+// LinkResolveInput The payload a render target receives on its link_resolve export: one cross-boundary link, the published identity handle its consumed endpoint exposed, and the consuming endpoint's assembled files. The export returns the consumer-side artifact wiring that injects the reference into the consuming endpoint's assembled output.
 type LinkResolveInput struct {
 	// Edge The cross-boundary link being resolved, read from the consuming (source) endpoint's side.
 	Edge LinkEdge `json:"edge" yaml:"edge"`
 	// Handle The published identity handle the consumed endpoint's link_publish returned, which the consumer resolves its reference against. Opaque deterministic-pointer strings keyed by field name; the compiler pipes them and never resolves them. Keys serialize in sorted order so the payload is byte-identical across runs of identical input.
 	Handle map[string]string `json:"handle" yaml:"handle"`
+	// ConsumerFiles The consuming endpoint's assembled files, so the render target can locate the placeholder the host stamped into the consuming output and author its replacement at the placeholder's real path. Each names its on-disk path and carries the assembled bytes. Absent when the host has no assembled consumer output to hand the resolve; a render target that needs no document to author its wiring ignores it.
+	ConsumerFiles []RenderedFile `json:"consumer_files,omitempty" yaml:"consumer_files,omitempty"`
 }
 
 // LinkResolveOutput The payload a render target returns from its link_resolve export: the consumer-side artifact wiring to apply to the consuming endpoint's assembled output, injecting the reference to the consumed endpoint's published identity.
@@ -3853,6 +3855,26 @@ func (t LinkResolveInput) MarshalJSON() ([]byte, error) {
 		}
 		buf.WriteByte('}')
 	}
+	if len(t.ConsumerFiles) != 0 {
+		if !first {
+			buf.WriteByte(',')
+		}
+		first = false
+		buf.WriteString("\"consumer_files\":")
+		buf.WriteByte('[')
+		for i := range t.ConsumerFiles {
+			if i > 0 {
+				buf.WriteByte(',')
+			}
+			ev := t.ConsumerFiles[i]
+			if enc, err := ev.MarshalJSON(); err != nil {
+				return nil, err
+			} else {
+				buf.Write(enc)
+			}
+		}
+		buf.WriteByte(']')
+	}
 	buf.WriteByte('}')
 	return buf.Bytes(), nil
 }
@@ -3898,6 +3920,25 @@ func (t *LinkResolveInput) UnmarshalJSON(data []byte) error {
 				t.Handle[mk] = mv
 			}
 			if err := expectDelim(dec, '}'); err != nil {
+				return err
+			}
+		case "consumer_files":
+			t.ConsumerFiles = nil
+			if err := expectDelim(dec, '['); err != nil {
+				return err
+			}
+			for dec.More() {
+				var elem RenderedFile
+				if raw, err := readRaw(dec, data); err != nil {
+					return err
+				} else {
+					if err := elem.UnmarshalJSON(raw); err != nil {
+						return err
+					}
+				}
+				t.ConsumerFiles = append(t.ConsumerFiles, elem)
+			}
+			if err := expectDelim(dec, ']'); err != nil {
 				return err
 			}
 		default:

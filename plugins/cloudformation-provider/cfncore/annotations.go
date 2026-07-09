@@ -46,6 +46,20 @@ func ReadCloudTargetAnnotations(ctx renderctx.RenderContext) CloudTargetAnnotati
 	}
 }
 
+// ReadCloudTargetAnnotationsFromMap extracts the three cloud-target annotations
+// from an opaque scalar map — the placement annotations a cross-boundary link
+// payload carries for the consumed (peer) endpoint. A key absent from the map
+// yields the empty string. The values stay opaque: this function does not
+// inspect or validate their content; it reads the three keys the cross-stack
+// reference shape needs and passes them through unresolved.
+func ReadCloudTargetAnnotationsFromMap(m map[string]string) CloudTargetAnnotations {
+	return CloudTargetAnnotations{
+		AWSAccount:       m[annotationAWSAccount],
+		AWSRegion:        m[annotationAWSRegion],
+		AWSAssumeRoleARN: m[annotationAWSAssumeRoleARN],
+	}
+}
+
 // resolveCloudTargetAnnotation returns the value for one annotation key under
 // component-over-boundary precedence: the node-scoped Release bucket wins over
 // the boundary bucket, and a key present in neither yields the empty string.

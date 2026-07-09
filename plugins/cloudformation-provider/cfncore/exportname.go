@@ -40,6 +40,24 @@ func ExportName(release, boundary, component, providesKey string) string {
 	}, "-")
 }
 
+// StackName builds the deterministic CloudFormation stack name for one
+// boundary: aggrega-<release>-<boundary>. A boundary assembles into one stack,
+// so the boundary path scopes the name; the deployment/environment identity
+// leads it. Each segment is sanitised to the ASCII letters, digits, and hyphen a
+// stack name admits, with an empty segment rendered as a fixed placeholder, so
+// the name is well-formed and byte-stable across runs of identical input. The
+// name is a deterministic pointer string: it is assembled ahead of time from the
+// build's own identity and never resolved against any AWS state — a cross-stack
+// read names the producer stack by this pointer, and the runtime environment
+// resolves it at deploy time.
+func StackName(release, boundary string) string {
+	return strings.Join([]string{
+		exportNamePrefix,
+		sanitizeExportSegment(release),
+		sanitizeExportSegment(boundary),
+	}, "-")
+}
+
 // sanitizeExportSegment maps one export-name segment to the CloudFormation
 // export-name character set: ASCII letters, digits, and the hyphen survive, and
 // every other rune becomes a hyphen. An empty input yields the fixed empty

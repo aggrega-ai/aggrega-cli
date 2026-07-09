@@ -43,11 +43,16 @@
 // no provenance comment; provenance for CloudFormation output is carried out of
 // band rather than spliced into the template.
 //
-// The link_publish and link_resolve exports are declared so the guest advertises
-// the cross-boundary-linking capability the ABI's coherence gate requires as a
-// pair. Their cross-reference wiring is not yet implemented: each halts loudly
-// rather than returning empty wiring, so a cross-boundary link routed to this
-// guest is a visible unfinished path rather than a silent no-op.
+// The link_publish and link_resolve exports wire a cross-boundary uses edge
+// between two CloudFormation stacks. link_publish, on the consumed stack's side,
+// adds an Export to each referenced Output and returns the export and producer
+// stack names as the published identity. link_resolve, on the consuming stack's
+// side, replaces the placeholder the host stamped into the consuming template
+// with a CloudFormation cross-stack reference: Fn::ImportValue for a peer in the
+// same account and region, Fn::GetStackOutput for a peer in another account or
+// region, shaped by the peer's placement annotations. All the reference shaping
+// lives in the cfncore package; every name, region, and role is a deterministic
+// pointer string the guest pipes and never resolves.
 //
 // Build: GOOS=wasip1 GOARCH=wasm go build -buildmode=c-shared -o cloudformation-provider.wasm ./plugins/cloudformation-provider
 // (c-shared produces a WASI reactor whose _initialize the host runs before
@@ -227,8 +232,18 @@ func linkPublish() int32 {
 		pdk.SetError(err)
 		return 1
 	}
-	pdk.SetError(errors.New("cloudformation-provider: cross-boundary link wiring not yet implemented"))
-	return 1
+	out, err := cfncore.LinkPublish(in.Edge)
+	if err != nil {
+		pdk.SetError(err)
+		return 1
+	}
+	encoded, err := out.MarshalJSON()
+	if err != nil {
+		pdk.SetError(err)
+		return 1
+	}
+	pdk.Output(encoded)
+	return 0
 }
 
 //go:wasmexport link_resolve
@@ -238,8 +253,18 @@ func linkResolve() int32 {
 		pdk.SetError(err)
 		return 1
 	}
-	pdk.SetError(errors.New("cloudformation-provider: cross-boundary link wiring not yet implemented"))
-	return 1
+	out, err := cfncore.LinkResolve(in.Edge, in.Handle, in.ConsumerFiles)
+	if err != nil {
+		pdk.SetError(err)
+		return 1
+	}
+	encoded, err := out.MarshalJSON()
+	if err != nil {
+		pdk.SetError(err)
+		return 1
+	}
+	pdk.Output(encoded)
+	return 0
 }
 
 // packSource resolves the acquired CloudFormation template source from the host's

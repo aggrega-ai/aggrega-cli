@@ -4,10 +4,13 @@
 package renderer
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"sort"
 
 	frp "github.com/aggrega-ai/aggrega-cli/internal/compiler/featurerecipe_pipeline"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
@@ -68,20 +71,16 @@ func wireCrossBoundaryLinks(
 			// An endpoint that did not render has no assembled artifact to wire.
 			continue
 		}
-		if srcKey == tgtKey {
-			// Intra-boundary: both ends in one dispatch group, no crossing.
-			continue
-		}
 
 		srcLinks := linksCrossBoundary(nodeEngine[edge.Source])
 		tgtLinks := linksCrossBoundary(nodeEngine[edge.Target])
-		if !srcLinks && !tgtLinks {
-			// Neither provider advertises linking: inert. No file change, no
-			// warning — the edge's scalar value-pipe stands unchanged.
-			continue
-		}
 
-		if srcKey.Provider != tgtKey.Provider {
+		switch classifyCrossBoundaryLink(srcKey, tgtKey, srcLinks, tgtLinks) {
+		case crossBoundaryLinkInert:
+			// Intra-boundary, neither provider links, or the same-provider guard:
+			// no file change, no warning — the edge's scalar value-pipe stands.
+			continue
+		case crossBoundaryLinkCrossProvider:
 			// Cross-provider crossing with at least one linking provider: native
 			// wiring between two providers' artifacts is unsupported. Leave the
 			// scalar value-pipe in place and warn loudly. Switching this to a
@@ -90,13 +89,7 @@ func wireCrossBoundaryLinks(
 			warnings = append(warnings, crossProviderLinkUnsupported(edge, srcKey.Provider, tgtKey.Provider).Error())
 			continue
 		}
-
-		if !srcLinks || !tgtLinks {
-			// Same provider, so both ends advertise linking together (one
-			// describe()); this cannot arise, but guard so a partial claim never
-			// produces half-wired output.
-			continue
-		}
+		// crossBoundaryLinkFires: same provider, both ends link.
 
 		srcGrp := assembledByDispatch[srcKey]
 		tgtGrp := assembledByDispatch[tgtKey]
@@ -115,8 +108,15 @@ func wireCrossBoundaryLinks(
 		}
 
 		// Consumer-side: resolve on the consuming (source) end's guest against the
-		// peer's published handle, then apply its wiring to the source group.
-		resOut, err := nodeEngine[edge.Source].(CrossBoundaryLinker).LinkResolve(ctx, LinkResolveInput{Edge: linkEdge, Handle: pubOut.Handle})
+		// peer's published handle plus the consuming group's assembled files, then
+		// apply its wiring to the source group. The consumer files let the guest
+		// locate the host-stamped placeholder and author its replacement at the
+		// placeholder's real path.
+		resOut, err := nodeEngine[edge.Source].(CrossBoundaryLinker).LinkResolve(ctx, LinkResolveInput{
+			Edge:          linkEdge,
+			Handle:        pubOut.Handle,
+			ConsumerFiles: assembledFilesToRendered(srcGrp),
+		})
 		if err != nil {
 			return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: srcKey.Path},
 				fmt.Sprintf("cross-boundary link resolve for uses edge %q -> %q", edge.Source, edge.Target))
@@ -130,6 +130,114 @@ func wireCrossBoundaryLinks(
 		}
 	}
 	return warnings, nil
+}
+
+// crossBoundaryLinkClass is the single classification of a uses edge for
+// cross-boundary linking, shared by the post-assembly link pass and the
+// per-node placeholder stamp so both stages read one decision. Splitting the
+// decision across two call sites would let the stamp and the wiring disagree
+// about which edges cross a boundary — the placeholder would be planted where
+// no resolution follows, or resolution would run where nothing was planted.
+type crossBoundaryLinkClass int
+
+const (
+	// crossBoundaryLinkInert is an edge that engages no link wiring: its ends
+	// share a dispatch group (intra-boundary), neither end's provider advertises
+	// linking, or only one end of a same-provider crossing claims linking (a
+	// half-claim a shared provider cannot actually produce). The edge keeps its
+	// scalar value-pipe unchanged.
+	crossBoundaryLinkInert crossBoundaryLinkClass = iota
+	// crossBoundaryLinkFires is a cross-boundary edge whose ends are rendered by
+	// the same linking provider: the producer publishes and the consumer resolves
+	// native cross-reference wiring.
+	crossBoundaryLinkFires
+	// crossBoundaryLinkCrossProvider is a cross-boundary edge whose ends are
+	// rendered by different providers where at least one advertises linking:
+	// native wiring between two providers' artifacts is unsupported, so the edge
+	// keeps its scalar value-pipe and the pass warns loudly.
+	crossBoundaryLinkCrossProvider
+)
+
+// classifyCrossBoundaryLink decides how a uses edge participates in
+// cross-boundary linking from its two ends' dispatch keys and their providers'
+// linking claims. srcLinks and tgtLinks report whether each end's provider
+// advertises the cross-boundary-linking capability. Because a shared provider
+// reports one capability self-report for both ends, a same-provider crossing
+// has srcLinks == tgtLinks; the caller that knows only one end's claim may pass
+// it for both, since the cross-provider branch is decided before the guard reads
+// the second claim.
+func classifyCrossBoundaryLink(srcKey, tgtKey dispatchKey, srcLinks, tgtLinks bool) crossBoundaryLinkClass {
+	if srcKey == tgtKey {
+		return crossBoundaryLinkInert
+	}
+	if !srcLinks && !tgtLinks {
+		return crossBoundaryLinkInert
+	}
+	if srcKey.Provider != tgtKey.Provider {
+		return crossBoundaryLinkCrossProvider
+	}
+	if !srcLinks || !tgtLinks {
+		return crossBoundaryLinkInert
+	}
+	return crossBoundaryLinkFires
+}
+
+// assembledFilesToRendered projects a dispatch group's assembled files into the
+// wire file shape, sorted by path so the projection is byte-identical across
+// runs of identical input.
+func assembledFilesToRendered(grp *assembledGroup) []RenderedFile {
+	names := make([]string, 0, len(grp.files))
+	for name := range grp.files {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	out := make([]RenderedFile, 0, len(names))
+	for _, name := range names {
+		out = append(out, RenderedFile{Path: name, Content: grp.files[name]})
+	}
+	return out
+}
+
+// scanOrphanCrossBoundaryLinkSentinels scans every assembled file for a
+// surviving cross-boundary link placeholder. A placeholder is a build-internal
+// marker the host stamps into a consuming node's injected input and a render
+// target replaces during link resolution; one that reaches assembled output
+// means resolution did not reach it — the injected value was consumed at a
+// position the resolver could not address, or the edge was stamped without a
+// matching resolve. Shipping a literal placeholder would be a silent defect, so
+// the build halts loudly, naming the file. Groups and files are walked in sorted
+// order so the halt names the same file across runs of identical input.
+func scanOrphanCrossBoundaryLinkSentinels(assembledByDispatch map[dispatchKey]*assembledGroup) error {
+	keys := make([]dispatchKey, 0, len(assembledByDispatch))
+	for k := range assembledByDispatch {
+		keys = append(keys, k)
+	}
+	sort.Slice(keys, func(i, j int) bool {
+		if keys[i].Path != keys[j].Path {
+			return keys[i].Path < keys[j].Path
+		}
+		return keys[i].Provider < keys[j].Provider
+	})
+	prefix := []byte(rendercore.CrossBoundaryLinkSentinelPrefix)
+	for _, k := range keys {
+		grp := assembledByDispatch[k]
+		if grp == nil {
+			continue
+		}
+		names := make([]string, 0, len(grp.files))
+		for name := range grp.files {
+			names = append(names, name)
+		}
+		sort.Strings(names)
+		for _, name := range names {
+			if bytes.Contains(grp.files[name], prefix) {
+				return cerrors.New(cerrors.TranslationError, cerrors.SourceLocation{File: name},
+					fmt.Sprintf("assembled file %q at dispatch path %q retains an unresolved cross-boundary link placeholder",
+						name, k.Path), nil, ErrOrphanCrossBoundaryLinkSentinel)
+			}
+		}
+	}
+	return nil
 }
 
 // buildLinkEdge assembles the domain-blind per-edge payload for one

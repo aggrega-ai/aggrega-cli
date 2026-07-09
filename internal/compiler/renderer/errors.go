@@ -245,4 +245,19 @@ var (
 	// provider-side non-determinism in synthesised output). Match with
 	// errors.Is(err, ErrRenderNondeterministic).
 	ErrRenderNondeterministic = errors.New("provider render is not deterministic")
+
+	// ErrOrphanCrossBoundaryLinkSentinel is the Loud Guardrail halt raised when
+	// an assembled file retains a cross-boundary link placeholder after the link
+	// pass. The host stamps a deterministic placeholder into a consuming node's
+	// injected input for a cross-boundary edge, and the consuming provider's link
+	// resolution replaces it in the assembled output with the provider-native
+	// cross-reference. A placeholder that survives means resolution never reached
+	// it — the injected value landed at a position the resolver could not address
+	// (for example spliced into a larger string rather than a whole scalar), or
+	// an edge was stamped with no matching resolve. A build-internal placeholder
+	// is never valid shipped output, so the build halts here rather than emitting
+	// it. The wrapping chain names the offending file and its dispatch path.
+	// Category: TRANSLATION_ERROR. Match with
+	// errors.Is(err, ErrOrphanCrossBoundaryLinkSentinel).
+	ErrOrphanCrossBoundaryLinkSentinel = errors.New("assembled output retains an unresolved cross-boundary link placeholder")
 )

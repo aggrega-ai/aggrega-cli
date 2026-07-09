@@ -376,6 +376,21 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 			return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("Step 5 node %q engine factory", nodeID))
 		}
 
+		// Cross-boundary link placeholder stamp. For a consumer whose provider
+		// links across boundaries, overwrite each cross-boundary edge's injected
+		// value with a deterministic placeholder now — before the artifacts render
+		// consumes the inject pipe below — so the placeholder is what renders into
+		// the consuming output. The post-assembly link pass replaces it there with
+		// the provider-native cross-reference. Inert (no mutation) for every
+		// non-linking provider and every edge that does not cross a boundary.
+		stampRecipeName := ""
+		if recipe != nil {
+			stampRecipeName = recipe.Metadata.Name
+		}
+		if err := stampCrossBoundaryLinkSentinels(tmplCtx, nodeID, providerName, stampRecipeName, engine, node, graph, nodeRecipes, input, boundaryDirEvals, perBoundaryAnnotations); err != nil {
+			return nil, cerrors.Wrap(err, cerrors.OpsError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("Step 5 cross-boundary link stamp node %q", nodeID))
+		}
+
 		// Per-node engine render — the source-based render. Output files
 		// are tagged EmitOriginSource and accumulated on the state for
 		// B.5's collision detector. A node with no source: emits no
@@ -1087,6 +1102,15 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		return nil, err
 	}
 	result.Warnings = append(result.Warnings, linkWarnings...)
+
+	// Orphan-placeholder guard. After the link pass, no cross-boundary link
+	// placeholder may survive in assembled output — a resolved link replaces its
+	// placeholder, and a placeholder left behind is an unresolved defect the build
+	// must never ship. Runs after the link pass so it observes the post-resolution
+	// files.
+	if err := scanOrphanCrossBoundaryLinkSentinels(assembledByDispatch); err != nil {
+		return nil, err
+	}
 
 	// Flush the retained (and possibly link-patched) assembled output into the
 	// result, reattaching each group's disk-write prefix. Groups iterate in
