@@ -30,8 +30,10 @@ import (
 //     variables overlay land in), where a scalar's terminator is a flow delimiter
 //     rather than the end of the line. A replace of a comma-adjacent scalar and a
 //     replace of a last (brace-adjacent) member both edit only the addressed
-//     value's span; add and remove against a flow object halt; a patch against an
-//     opaque (non-JSON) body halts.
+//     value's span; an add into a non-empty flow mapping splices a new member
+//     after the last existing value; a replace of a scalar with a structured
+//     value splices inline compact JSON over the scalar's span; a remove against
+//     a flow object halts; a patch against an opaque (non-JSON) body halts.
 //   - the absent-token guardrail (CheckAbsentTokenHalts): a Reassemble naming a
 //     token the segmentation never produced must be rejected.
 func TestStockYAMLCodecConformance(t *testing.T) {
@@ -99,13 +101,16 @@ func firstStructured(units []frp.Unit) (int, bool) {
 // — compact single-line and 2-space pretty — plus a native-HCL body that is
 // opaque to the codec.
 //
-// Each replace case asserts byte-fidelity exactly (WantBytes is the input with
-// only the addressed value literal substituted), so an over-reaching span that
-// swallowed a trailing comma or ran to the end of the line would fail here.
-// Both flow terminators are exercised: a comma-adjacent value (a member with a
-// sibling after it) and a brace-adjacent value (the last member). The add and
-// remove cases assert the flow-collection member-mutation halt, and the
-// native-HCL case asserts an opaque body is not a patch target.
+// Each mutation case asserts byte-fidelity exactly (WantBytes is the input with
+// only the addressed span changed), so an over-reaching span that swallowed a
+// trailing comma or ran to the end of the line would fail here. Both flow
+// terminators are exercised: a comma-adjacent value (a member with a sibling
+// after it) and a brace-adjacent value (the last member). The add cases splice
+// a new JSON-quoted member into a non-empty flow mapping — on its own indented
+// line for a pretty body, inline after `, ` for a compact body — leaving the
+// existing members verbatim. The scalar-to-object cases replace a scalar with
+// inline compact JSON. The remove case asserts the flow-member-removal halt,
+// and the native-HCL case asserts an opaque body is not a patch target.
 func jsonFlowCorpus() []codecconformance.Case {
 	const tfName = "main.tf.json"
 	const varsName = "aggrega.auto.tfvars.json"
@@ -155,11 +160,49 @@ func jsonFlowCorpus() []codecconformance.Case {
 			WantBytes: sub(tfvars, `"appdb"`, `"appdb2"`),
 		},
 		{
-			Name:     "tfjson-flow-add-halts",
-			Filename: tfName,
-			Input:    pretty,
-			Ops:      []frp.JSONPatchOp{{Op: "add", Path: "/resource/aws_db_instance/main/multi_az", Value: true}},
-			WantHalt: true,
+			Name:      "tfjson-pretty-flow-add-into-non-empty",
+			Filename:  tfName,
+			Input:     pretty,
+			Ops:       []frp.JSONPatchOp{{Op: "add", Path: "/resource/aws_db_instance/main/multi_az", Value: true}},
+			WantBytes: sub(pretty, `"allocated_storage": 20`, "\"allocated_storage\": 20,\n        \"multi_az\": true"),
+		},
+		{
+			Name:      "tfjson-compact-flow-add-into-non-empty",
+			Filename:  tfName,
+			Input:     compact,
+			Ops:       []frp.JSONPatchOp{{Op: "add", Path: "/resource/aws_db_instance/main/multi_az", Value: true}},
+			WantBytes: sub(compact, `"allocated_storage":20`, `"allocated_storage":20, "multi_az": true`),
+		},
+		{
+			Name:      "tfjson-pretty-scalar-to-object-replace",
+			Filename:  tfName,
+			Input:     pretty,
+			Ops:       []frp.JSONPatchOp{{Op: "replace", Path: "/resource/aws_db_instance/main/instance_class", Value: map[string]any{"Ref": "InstanceClass"}}},
+			WantBytes: sub(pretty, `"db.t3.micro"`, `{"Ref":"InstanceClass"}`),
+		},
+		{
+			Name:      "tfjson-compact-scalar-to-object-replace",
+			Filename:  tfName,
+			Input:     compact,
+			Ops:       []frp.JSONPatchOp{{Op: "replace", Path: "/resource/aws_db_instance/main/instance_class", Value: map[string]any{"Ref": "InstanceClass"}}},
+			WantBytes: sub(compact, `"db.t3.micro"`, `{"Ref":"InstanceClass"}`),
+		},
+		{
+			// A structured replace whose comma-adjacent sibling (the
+			// interpolation pointer db_endpoint) must survive verbatim — the
+			// patch-isolation proof for an inline structured splice.
+			Name:      "tfvars-scalar-to-object-replace-isolates-sibling",
+			Filename:  varsName,
+			Input:     tfvars,
+			Ops:       []frp.JSONPatchOp{{Op: "replace", Path: "/db_name", Value: map[string]any{"Fn::ImportValue": "db-name-export"}}},
+			WantBytes: sub(tfvars, `"appdb"`, `{"Fn::ImportValue":"db-name-export"}`),
+		},
+		{
+			Name:      "tfvars-flow-add-into-non-empty",
+			Filename:  varsName,
+			Input:     tfvars,
+			Ops:       []frp.JSONPatchOp{{Op: "add", Path: "/multi_az", Value: true}},
+			WantBytes: sub(tfvars, `"allocated_storage": 20`, "\"allocated_storage\": 20,\n  \"multi_az\": true"),
 		},
 		{
 			Name:     "tfjson-flow-remove-halts",

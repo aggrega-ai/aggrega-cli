@@ -4,6 +4,8 @@
 package rendercore
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
@@ -238,9 +240,13 @@ func (e *nonSurgicalOpError) Error() string {
 	return fmt.Sprintf("stock codec: %s (op %q)", e.reason, e.op)
 }
 
-// planReplace edits the byte-span of the scalar value the path addresses,
-// substituting a freshly-encoded value node that preserves the original
-// scalar's style when the new value is a scalar of the same style family.
+// planReplace edits the byte-span of the scalar value the path addresses. The
+// target must be a scalar (replacing a mapping or sequence value is not
+// surgically supported). A scalar replacement preserves the original scalar's
+// style when the new value is a scalar of the same style family; a structured
+// replacement (a map or slice) is encoded as compact JSON and spliced inline
+// over the scalar's span — the correct shape for a structured value that
+// occupies an inline (flow) value position, and a valid-YAML superset.
 func planReplace(body []byte, doc *yaml.Node, tokens []string, value any, offs []int, bo func(int, int) int, indent int) (byteEdit, error) {
 	_, valNode, parent, err := navigate(doc, tokens)
 	if err != nil {
@@ -255,6 +261,16 @@ func planReplace(body []byte, doc *yaml.Node, tokens []string, value any, offs [
 	// it stops at the delimiter instead of over-reaching into the siblings.
 	flow := parent != nil && parent.Style&yaml.FlowStyle != 0
 	start, end := scalarSpan(body, valNode, offs, bo, flow)
+	if !isScalarValue(value) {
+		// The replacement is structured (a map or slice). An inline compact-JSON
+		// object/array is the correct shape for a value in an inline position;
+		// splice it over the scalar's span without breaking across lines.
+		repl, jerr := encodeCompactJSON(value)
+		if jerr != nil {
+			return byteEdit{}, jerr
+		}
+		return byteEdit{Start: start, End: end, Replacement: repl}, nil
+	}
 	repl, err := encodeScalarLike(valNode, value, indent)
 	if err != nil {
 		return byteEdit{}, err
@@ -265,10 +281,12 @@ func planReplace(body []byte, doc *yaml.Node, tokens []string, value any, offs [
 // planAdd inserts a new mapping member. The parent (all but the last token)
 // must be a mapping. For a block mapping the new member is inserted at the
 // parent's established child indent, just before the parent region's end, so
-// existing members, comments, anchors, and styles are untouched. For an empty
-// flow mapping (`{}`) the braces are rewritten to `{key: value}` in place.
-// Adding into a non-empty flow mapping or into a sequence is not surgically
-// supported.
+// existing members, comments, anchors, and styles are untouched. For a flow
+// mapping the new member is spliced in as a JSON-quoted flow member: an empty
+// `{}` becomes `{"key": value}`; a non-empty flow mapping gains the member
+// after its last existing value, matching the body's layout (a new indented
+// line for a multi-line/pretty body, an inline `, ` separator for a single-line
+// body). Adding into a sequence is not surgically supported.
 func planAdd(body []byte, doc *yaml.Node, tokens []string, value any, offs []int, bo func(int, int) int, indent int) (byteEdit, error) {
 	if len(tokens) == 0 {
 		return byteEdit{}, &nonSurgicalOpError{op: "add", reason: "whole-document add not surgically supported"}
@@ -296,6 +314,7 @@ func planAdd(body []byte, doc *yaml.Node, tokens []string, value any, offs []int
 	}
 
 	if parent.Style&yaml.FlowStyle != 0 {
+		indentStep := strings.Repeat(" ", ClampYAMLIndent(indent))
 		if len(parent.Content) == 0 {
 			// Empty flow mapping `{}`: rewrite the braces in place to carry
 			// the new member, preserving the flow style. The `{` is at the
@@ -308,13 +327,13 @@ func planAdd(body []byte, doc *yaml.Node, tokens []string, value any, offs []int
 			if end < len(body) && body[end] == '}' {
 				end++ // include the closing brace
 			}
-			member, merr := encodeFlowMember(key, value)
+			member, merr := encodeFlowMember(key, value, indentStep)
 			if merr != nil {
 				return byteEdit{}, merr
 			}
 			return byteEdit{Start: start, End: end, Replacement: member}, nil
 		}
-		return byteEdit{}, &nonSurgicalOpError{op: "add", reason: "adding into a non-empty flow mapping is not surgically supported"}
+		return planFlowMappingAdd(body, parent, key, value, offs, bo, indentStep)
 	}
 
 	childIndent, insertAt, err := mappingInsertPoint(body, parent, offs, bo)
@@ -519,10 +538,13 @@ func deepestLastLine(n *yaml.Node) int {
 	return line
 }
 
-// encodeScalarLike encodes a replacement value, preserving the original
+// encodeScalarLike encodes a scalar replacement value, preserving the original
 // scalar node's style when the new value is a string and the original was a
 // quoted scalar, so a `'single'` stays single-quoted and a `"double"` stays
-// double-quoted. Non-string values encode in their natural YAML form.
+// double-quoted. Non-string scalars encode in their natural YAML form. A
+// structured replacement (a map or slice) never reaches here — planReplace
+// encodes it as inline JSON before calling — so the non-scalar branch is a
+// defensive guard, not a reachable path for map/slice values.
 func encodeScalarLike(orig *yaml.Node, value any, indent int) ([]byte, error) {
 	repl := &yaml.Node{Kind: yaml.ScalarNode}
 	if s, ok := value.(string); ok {
@@ -593,30 +615,191 @@ func encodeMappingMember(key string, value any, childIndent string, indent int) 
 	}
 }
 
-// encodeFlowMember encodes a single-member flow mapping "{key: value}" for an
-// empty-flow-mapping add. A scalar value lands inline; a structured value in
-// a flow mapping is not surgically supported (it would change the flow shape
-// in ways the stock codec does not attempt).
-func encodeFlowMember(key string, value any) ([]byte, error) {
+// encodeFlowMember encodes a single-member flow mapping of the form
+// `{"key": value}` for an empty-flow-mapping add. The member is a JSON-quoted
+// key and a JSON-encoded
+// value, so the result is valid JSON as well as valid YAML — a flow mapping
+// carved from a JSON body stays JSON after the add. The value is compact
+// (single-line), which is the right shape for a one-member inline mapping.
+func encodeFlowMember(key string, value any, indentStep string) ([]byte, error) {
+	member, err := encodeJSONFlowMember(key, value, "", indentStep)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]byte, 0, len(member)+2)
+	out = append(out, '{')
+	out = append(out, member...)
+	out = append(out, '}')
+	return out, nil
+}
+
+// planFlowMappingAdd inserts a new member into a non-empty flow (inline)
+// mapping. It locates the mapping's opening `{` from the reported node
+// position, brace-matches forward to the matching `}` (tracking quote state and
+// nested-collection depth so a delimiter inside a string or nested collection
+// is not mistaken for the close), and splices the new member after the last
+// existing member's value. The insertion is pure (Start == End): every existing
+// byte — sibling members, the closing brace, surrounding whitespace — survives
+// verbatim. Layout is preserved: a multi-line (pretty) body gets the member on
+// its own line at the members' child indent; a single-line body gets it inline
+// after a `, ` separator. The result stays valid JSON and a valid YAML flow
+// mapping.
+func planFlowMappingAdd(body []byte, parent *yaml.Node, key string, value any, offs []int, bo func(int, int) int, indentStep string) (byteEdit, error) {
+	open := bo(parent.Line, parent.Column)
+	// The reported position is the `{`; tolerate leading whitespace before it.
+	for open < len(body) && body[open] != '{' && isFlowSpace(body[open]) {
+		open++
+	}
+	if open >= len(body) || body[open] != '{' {
+		return byteEdit{}, &nonSurgicalOpError{op: "add", reason: "flow mapping opening brace not found at the reported node position"}
+	}
+	closeAt, err := matchFlowClose(body, open)
+	if err != nil {
+		return byteEdit{}, err
+	}
+	firstKey := parent.Content[0]
+	firstKeyOff := bo(firstKey.Line, firstKey.Column)
+	// Multi-line layout: a newline sits between the `{` and the first key.
+	multiline := firstKeyOff > open+1 && bytes.IndexByte(body[open+1:firstKeyOff], '\n') >= 0
+	// End of the last existing member's value: scan back from `}` over trailing
+	// whitespace and newlines to the last non-whitespace byte.
+	lastValueEnd := closeAt
+	for lastValueEnd > open+1 && isFlowSpace(body[lastValueEnd-1]) {
+		lastValueEnd--
+	}
+	var repl []byte
+	if multiline {
+		childIndent := strings.Repeat(" ", firstKey.Column-1)
+		frag, ferr := encodeJSONFlowMember(key, value, childIndent, indentStep)
+		if ferr != nil {
+			return byteEdit{}, ferr
+		}
+		repl = append(repl, ",\n"...)
+		repl = append(repl, childIndent...)
+		repl = append(repl, frag...)
+	} else {
+		frag, ferr := encodeJSONFlowMember(key, value, "", indentStep)
+		if ferr != nil {
+			return byteEdit{}, ferr
+		}
+		repl = append(repl, ", "...)
+		repl = append(repl, frag...)
+	}
+	return byteEdit{Start: lastValueEnd, End: lastValueEnd, Replacement: repl}, nil
+}
+
+// isFlowSpace reports whether b is whitespace that may pad a flow collection's
+// braces, separators, or members.
+func isFlowSpace(b byte) bool {
+	return b == ' ' || b == '\t' || b == '\n' || b == '\r'
+}
+
+// matchFlowClose returns the byte offset of the flow-collection close delimiter
+// matching the open delimiter at body[open]. It tracks single- and double-quote
+// state (so a delimiter inside a string is ignored, honoring backslash escapes
+// inside double quotes) and nested `{`/`[` depth (so only the delimiter that
+// balances the opener is returned). An unterminated collection is a hard error.
+func matchFlowClose(body []byte, open int) (int, error) {
+	depth := 0
+	inSingle, inDouble := false, false
+	for i := open; i < len(body); i++ {
+		ch := body[i]
+		if inSingle {
+			if ch == '\'' {
+				inSingle = false
+			}
+			continue
+		}
+		if inDouble {
+			if ch == '\\' {
+				i++ // skip the escaped byte
+				continue
+			}
+			if ch == '"' {
+				inDouble = false
+			}
+			continue
+		}
+		switch ch {
+		case '\'':
+			inSingle = true
+		case '"':
+			inDouble = true
+		case '{', '[':
+			depth++
+		case '}', ']':
+			depth--
+			if depth == 0 {
+				return i, nil
+			}
+		}
+	}
+	return 0, &nonSurgicalOpError{op: "add", reason: "unterminated flow collection; matching close delimiter not found"}
+}
+
+// encodeJSONFlowMember encodes a `"key": value` member for a flow (inline,
+// JSON-shaped) mapping. The key is a JSON-quoted string and the value is
+// JSON-encoded with HTML escaping disabled. A non-empty childIndent
+// pretty-prints a structured value using childIndent as each nested line's
+// leading indent (the value nests beneath the member's own line in a multi-line
+// body); an empty childIndent yields a compact, single-line value. The result
+// is valid JSON and a valid YAML flow member; Go sorts map keys, so it is
+// byte-identical across runs of identical input.
+func encodeJSONFlowMember(key string, value any, childIndent, indentStep string) ([]byte, error) {
+	keyText, err := encodeCompactJSON(key)
+	if err != nil {
+		return nil, err
+	}
+	var valText []byte
+	if childIndent != "" {
+		valText, err = jsonEncodeFragment(value, childIndent, indentStep)
+	} else {
+		valText, err = encodeCompactJSON(value)
+	}
+	if err != nil {
+		return nil, err
+	}
+	out := make([]byte, 0, len(keyText)+2+len(valText))
+	out = append(out, keyText...)
+	out = append(out, ':', ' ')
+	out = append(out, valText...)
+	return out, nil
+}
+
+// encodeCompactJSON encodes v as compact (single-line) JSON with HTML escaping
+// disabled.
+func encodeCompactJSON(v any) ([]byte, error) {
+	return jsonEncodeFragment(v, "", "")
+}
+
+// jsonEncodeFragment encodes v as JSON with HTML escaping disabled — so `<`,
+// `>`, and `&` reach their literal form rather than a `\u` escape — and trims
+// the trailing newline the encoder appends. A non-empty prefix or indent
+// pretty-prints with prefix as each line's leading indent; otherwise the output
+// is compact. Go sorts map keys, so the encoding is deterministic for identical
+// input.
+func jsonEncodeFragment(v any, prefix, indent string) ([]byte, error) {
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	if prefix != "" || indent != "" {
+		enc.SetIndent(prefix, indent)
+	}
+	if err := enc.Encode(v); err != nil {
+		return nil, err
+	}
+	return bytes.TrimRight(buf.Bytes(), "\n"), nil
+}
+
+// isScalarValue reports whether an op value encodes as a single YAML/JSON
+// scalar rather than a structured mapping or sequence. It draws the same line
+// the member encoders use, so scalar-vs-structured is decided once.
+func isScalarValue(value any) bool {
 	switch value.(type) {
 	case string, bool, int, int64, float64, nil:
-		valNode := &yaml.Node{Kind: yaml.ScalarNode}
-		b, err := yaml.Marshal(value)
-		if err != nil {
-			return nil, err
-		}
-		var tmp yaml.Node
-		if err := yaml.Unmarshal(b, &tmp); err == nil && len(tmp.Content) > 0 {
-			valNode = tmp.Content[0]
-		}
-		vb, err := yaml.Marshal(valNode)
-		if err != nil {
-			return nil, err
-		}
-		valText := strings.TrimRight(string(vb), "\n")
-		return []byte("{" + yamlScalar(key) + ": " + valText + "}"), nil
+		return true
 	default:
-		return nil, &nonSurgicalOpError{op: "add", reason: "adding a structured value into a flow mapping is not surgically supported"}
+		return false
 	}
 }
 
