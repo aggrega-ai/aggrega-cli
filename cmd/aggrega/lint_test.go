@@ -15,6 +15,7 @@ import (
 	"github.com/spf13/cobra"
 	"oras.land/oras-go/v2/content/memory"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/wasm/embedded"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
@@ -296,16 +297,24 @@ func TestResolvePluginBytesEntityNotFound(t *testing.T) {
 	}
 }
 
-// TestResolvePluginBytesDiagnosticOnUnset: loud-error behavior when neither
-// --plugin nor workspace config provides a URI.
-func TestResolvePluginBytesDiagnosticOnUnset(t *testing.T) {
+// TestResolveLinterPluginDefaultsToEmbedded: with neither --plugin nor a
+// workspace-config URI, the linter socket resolves the built-in
+// publishing-linter from the binary's embed tier — zero-config lint works out
+// of the box rather than halting on an unconfigured path.
+func TestResolveLinterPluginDefaultsToEmbedded(t *testing.T) {
 	wsCfg := workspaceconfig.Default()
-	_, err := resolveLinterPlugin("", wsCfg, nil)
-	if err == nil {
-		t.Fatal("expected error for unset plugin path; got nil")
+	resolved, err := resolveLinterPlugin("", wsCfg, nil)
+	if err != nil {
+		t.Fatalf("unset linter path should resolve the built-in; got error: %v", err)
 	}
-	if !strings.Contains(err.Error(), "no plugin path configured") {
-		t.Errorf("error should describe unset state; got: %v", err)
+	if resolved.Tier != pluginpath.TierEmbed {
+		t.Errorf("built-in linter should resolve from the embed tier; got tier %q", resolved.Tier)
+	}
+	if resolved.URI != embedded.PublishingLinterURI {
+		t.Errorf("resolved URI should be the built-in linter reference; got %q", resolved.URI)
+	}
+	if len(resolved.Bytes) == 0 {
+		t.Error("built-in linter resolved with empty bytes")
 	}
 }
 

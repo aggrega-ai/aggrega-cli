@@ -39,6 +39,7 @@ import (
 //go:generate bash ../../../scripts/build-embedded-helm-chart-provider.sh
 //go:generate bash ../../../scripts/build-embedded-terraform-provider.sh
 //go:generate bash ../../../scripts/build-embedded-cloudformation-provider.sh
+//go:generate bash ../../../scripts/build-embedded-publishing-linter.sh
 
 // pluginFS holds the embedded plugin artifacts. The `all:` prefix matches
 // every file under plugins/ including the dot-prefixed .gitkeep placeholder
@@ -81,6 +82,16 @@ const terraformProviderURI = "oci://hub.aggrega.ai/plugins/core/terraform-provid
 // bytes on demand, so a guest rebuild does not perturb the lookup key.
 const cloudformationProviderURI = "oci://hub.aggrega.ai/plugins/core/cloudformation-provider"
 
+// PublishingLinterURI is the digest-free repository reference the embedded
+// publishing-linter plugin's decompressed bytes register under — the built-in
+// linter a lint invocation resolves by default when no linter plugin is
+// configured. It is exported so the lint command can single-source the
+// default-linter reference from the embedded package rather than restate the
+// string. Like the provider references, the reference digest is derived from the
+// bytes on demand rather than stored in the key, so a guest rebuild does not
+// perturb the lookup.
+const PublishingLinterURI = "oci://hub.aggrega.ai/plugins/core/publishing-linter"
+
 // registry maps a plugin's digest-free repository reference to the embedded
 // artifact's decompressed bytes. It is the lookup the cascade's embed tier
 // consults, populated from pluginFS at init by register.
@@ -103,6 +114,7 @@ func register() map[string][]byte {
 		helmChartProviderURI:      mustDecompress("plugins/helmchart-provider.wasm.gz"),
 		terraformProviderURI:      mustDecompress("plugins/terraform-provider.wasm.gz"),
 		cloudformationProviderURI: mustDecompress("plugins/cloudformation-provider.wasm.gz"),
+		PublishingLinterURI:       mustDecompress("plugins/publishing-linter.wasm.gz"),
 	}
 }
 

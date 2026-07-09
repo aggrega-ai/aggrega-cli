@@ -21,6 +21,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer/enginefactory"
+	"github.com/aggrega-ai/aggrega-cli/internal/wasm/embedded"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
@@ -709,11 +710,12 @@ func resolveLinterPlugin(cliFlag string, wsCfg workspaceconfig.Config, pluginByU
 		uri = wsCfg.Plugins.Linter[0].URI
 	}
 	if uri == "" {
-		// No --plugin override and no configured linter URI: surface the cascade's
-		// canonical no-path diagnostic rather than the entity-not-found halt, which
-		// would mis-read an unconfigured socket as a bad entity reference.
-		_, err := cascade.Resolve("")
-		return pluginpath.ResolvedPlugin{}, err
+		// No --plugin override and no configured linter URI: fall back to the
+		// built-in publishing-linter embedded in the binary, resolved through the
+		// cascade so its embed tier serves it. Like the --plugin escape hatch, the
+		// built-in path carries a nil capability claim and the platform default
+		// caps.
+		return cascade.Resolve(embedded.PublishingLinterURI)
 	}
 	front := pluginpath.EntityLookup(func(entityURI string) (string, *pluginpath.PluginCapabilityClaim, *pluginpath.PluginRuntimeLimits, bool) {
 		if pluginByURI == nil {
