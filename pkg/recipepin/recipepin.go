@@ -22,6 +22,7 @@ import (
 	"os"
 	"reflect"
 	"sort"
+	"strings"
 
 	"go.yaml.in/yaml/v3"
 
@@ -85,10 +86,40 @@ func WritePins(path string, srcPins []types.SourceDigest, artPins []types.Artifa
 	if merr != nil {
 		return false, fmt.Errorf("recipepin: marshal %s: %w", path, merr)
 	}
+	out = ensureBlankLineBeforeKey(out, "sourceDigests")
 	if werr := os.WriteFile(path, out, 0o644); werr != nil {
 		return false, fmt.Errorf("recipepin: write %s: %w", path, werr)
 	}
 	return true, nil
+}
+
+// ensureBlankLineBeforeKey guarantees a single blank line immediately before the
+// first line whose left-trimmed content begins with key + ":" (the frozen pin
+// block key, indented under spec), giving that block a readable visual gap from
+// the preceding content. It is idempotent: when the preceding line is already
+// blank it leaves the bytes untouched, so re-freezing never accumulates blank
+// lines. When the key is absent (an empty pin list removed it) the input is
+// returned unchanged, and the input's trailing-newline shape is preserved.
+func ensureBlankLineBeforeKey(out []byte, key string) []byte {
+	lines := strings.Split(string(out), "\n")
+	prefix := key + ":"
+	for i, line := range lines {
+		if !strings.HasPrefix(strings.TrimLeft(line, " \t"), prefix) {
+			continue
+		}
+		if i == 0 {
+			return out
+		}
+		if strings.TrimSpace(lines[i-1]) == "" {
+			return out
+		}
+		expanded := make([]string, 0, len(lines)+1)
+		expanded = append(expanded, lines[:i]...)
+		expanded = append(expanded, "")
+		expanded = append(expanded, lines[i:]...)
+		return []byte(strings.Join(expanded, "\n"))
+	}
+	return out
 }
 
 // ArtifactPinsForRecipe computes the artifactDigests for a recipe's artifacts

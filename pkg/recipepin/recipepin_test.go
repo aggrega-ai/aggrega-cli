@@ -105,6 +105,52 @@ func TestWritePinsIdempotentWhenUnchanged(t *testing.T) {
 	}
 }
 
+// blankLinesBeforeSourceDigests returns the count of consecutive blank
+// (empty or whitespace-only) lines immediately preceding the first line whose
+// left-trimmed content begins with "sourceDigests:". It returns -1 when no such
+// line is present.
+func blankLinesBeforeSourceDigests(t *testing.T, body []byte) int {
+	t.Helper()
+	lines := strings.Split(string(body), "\n")
+	for i, line := range lines {
+		if !strings.HasPrefix(strings.TrimLeft(line, " \t"), "sourceDigests:") {
+			continue
+		}
+		n := 0
+		for j := i - 1; j >= 0 && strings.TrimSpace(lines[j]) == ""; j-- {
+			n++
+		}
+		return n
+	}
+	return -1
+}
+
+func TestWritePinsBlankLineBeforeSourceDigestsIdempotent(t *testing.T) {
+	p := writeRecipe(t, bareRecipe)
+	src := []types.SourceDigest{{Kind: "helm-https-chart", URL: "https://x/c.tgz", Version: "1.0.0", Digest: "sha256:aaa"}}
+
+	if _, err := recipepin.WritePins(p, src, nil); err != nil {
+		t.Fatalf("first WritePins: %v", err)
+	}
+	if n := blankLinesBeforeSourceDigests(t, mustRead(t, p)); n != 1 {
+		t.Fatalf("first freeze: want exactly 1 blank line before sourceDigests, got %d:\n%s", n, mustRead(t, p))
+	}
+
+	// Re-emit (a changed digest forces a re-marshal): the guard must not
+	// accumulate a second blank line before the block.
+	src2 := []types.SourceDigest{{Kind: "helm-https-chart", URL: "https://x/c.tgz", Version: "1.0.0", Digest: "sha256:bbb"}}
+	changed, err := recipepin.WritePins(p, src2, nil)
+	if err != nil {
+		t.Fatalf("re-freeze WritePins: %v", err)
+	}
+	if !changed {
+		t.Fatalf("expected changed=true when the digest changed")
+	}
+	if n := blankLinesBeforeSourceDigests(t, mustRead(t, p)); n != 1 {
+		t.Fatalf("re-freeze: want exactly 1 blank line before sourceDigests, got %d:\n%s", n, mustRead(t, p))
+	}
+}
+
 func TestWritePinsReFreezesWhenPinsChange(t *testing.T) {
 	p := writeRecipe(t, bareRecipe)
 	src := []types.SourceDigest{{Kind: "helm-https-chart", URL: "https://x/c.tgz", Version: "1.0.0", Digest: "sha256:aaa"}}
