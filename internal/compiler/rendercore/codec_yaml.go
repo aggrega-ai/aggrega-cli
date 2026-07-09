@@ -242,14 +242,19 @@ func (e *nonSurgicalOpError) Error() string {
 // substituting a freshly-encoded value node that preserves the original
 // scalar's style when the new value is a scalar of the same style family.
 func planReplace(body []byte, doc *yaml.Node, tokens []string, value any, offs []int, bo func(int, int) int, indent int) (byteEdit, error) {
-	_, valNode, _, err := navigate(doc, tokens)
+	_, valNode, parent, err := navigate(doc, tokens)
 	if err != nil {
 		return byteEdit{}, err
 	}
 	if valNode.Kind != yaml.ScalarNode {
 		return byteEdit{}, &nonSurgicalOpError{op: "replace", reason: "stock codec replaces scalar values only; replacing a " + NodeKindName(valNode.Kind) + " is not surgically supported"}
 	}
-	start, end := scalarSpan(body, valNode, offs, bo)
+	// A value whose parent collection is flow-style (a JSON object or array, or
+	// any inline `{...}`/`[...]`) sits on a line where the scalar's terminator
+	// is a delimiter, not the end of the line. The span scan must know this so
+	// it stops at the delimiter instead of over-reaching into the siblings.
+	flow := parent != nil && parent.Style&yaml.FlowStyle != 0
+	start, end := scalarSpan(body, valNode, offs, bo, flow)
 	repl, err := encodeScalarLike(valNode, value, indent)
 	if err != nil {
 		return byteEdit{}, err
@@ -408,10 +413,16 @@ func navigate(doc *yaml.Node, tokens []string) (key *yaml.Node, val *yaml.Node, 
 
 // scalarSpan returns the [start,end) byte range of a scalar node's source
 // text. The start is the node's reported position; the end is derived by
-// scanning forward from the start to the end of the value token, stopping at
-// the line's trailing comment or end-of-line so an inline `# comment` after
-// the value is preserved.
-func scalarSpan(body []byte, n *yaml.Node, offs []int, bo func(int, int) int) (int, int) {
+// scanning forward from the start to the end of the value token.
+//
+// In block context the value runs to the line's trailing comment or the end
+// of the line, so an inline `# comment` after the value is preserved and a
+// plain scalar may legitimately contain a comma. In flow context — a value
+// inside an inline `{...}`/`[...]` collection, which is how JSON-shaped bodies
+// parse — the value's real terminator is the first unquoted `,`, `}`, or `]`
+// on the line, so the scan stops there rather than running to end-of-line.
+// Delimiters inside a quoted string are ignored in both contexts.
+func scalarSpan(body []byte, n *yaml.Node, offs []int, bo func(int, int) int, flow bool) (int, int) {
 	start := bo(n.Line, n.Column)
 	// Determine the end of the value on its line. For a plain/quoted scalar
 	// the value occupies from start to either a trailing comment (" #") or
@@ -436,6 +447,13 @@ func scalarSpan(body []byte, n *yaml.Node, offs []int, bo func(int, int) int) (i
 		case '#':
 			// An unquoted '#' preceded by whitespace starts a line comment.
 			if !inSingle && !inDouble && lineEnd > start && (body[lineEnd-1] == ' ' || body[lineEnd-1] == '\t') {
+				goto trim
+			}
+		case ',', '}', ']':
+			// A flow collection's members are delimited by these; the first one
+			// seen outside a quoted string ends the value. In block context the
+			// characters are ordinary scalar content and the scan continues.
+			if flow && !inSingle && !inDouble {
 				goto trim
 			}
 		}
