@@ -62,6 +62,47 @@ type CodecProvider interface {
 	PipelineCodec(yamlIndent int) (frp.Codec, bool)
 }
 
+// CrossBoundaryLinker is the optional capability a provider engine implements
+// to wire a cross-boundary uses edge — an edge whose consuming and consumed
+// ends assemble into different dispatch groups — into provider-native
+// cross-reference wiring. It has two invoke halves that produce different
+// artifacts applied to the two ends' assembled output, plus a capability query
+// the host reads before it routes any link crossing to the engine.
+//
+//   - LinkPublish, given the consumed (target) end of a link, returns the
+//     published identity the consumer resolves against and any producer-side
+//     wiring to apply to the consumed end's assembled output.
+//   - LinkResolve, given the consuming (source) end and the peer's published
+//     identity handle, returns the consumer-side wiring to apply to the
+//     consuming end's assembled output.
+//
+// Both invoke halves are advertised-only: an engine whose guest does not
+// declare the matching export returns a zero result and no error, so the host
+// applies no wiring. LinksCrossBoundary reports the guest's plugin-level claim
+// (both link exports present) so the host engages a link crossing only when at
+// least one end's provider advertises linking; an engine that does not
+// implement this interface, or reports false, wires no cross-boundary edge and
+// the existing per-node scalar value-pipe stands. The wiring itself lives in
+// the provider guest; the host assembles the domain-blind per-edge payload,
+// routes it, and applies the returned structural patches.
+type CrossBoundaryLinker interface {
+	LinksCrossBoundary() bool
+	LinkPublish(ctx context.Context, in LinkPublishInput) (LinkPublishOutput, error)
+	LinkResolve(ctx context.Context, in LinkResolveInput) (LinkResolveOutput, error)
+}
+
+// linksCrossBoundary reports whether engine advertises cross-boundary linking:
+// it implements [CrossBoundaryLinker] and its guest declares the link export
+// pair. It is the single seam the link pass reads, so an engine's linking
+// capability resolves independently of its concrete type. A nil engine, or one
+// that does not implement the interface, reports false.
+func linksCrossBoundary(engine Engine) bool {
+	if l, ok := engine.(CrossBoundaryLinker); ok {
+		return l.LinksCrossBoundary()
+	}
+	return false
+}
+
 // ProviderCapabilities declares which of the three Recipe input kinds a
 // provider engine can render. This is the INPUT-KIND axis only — it is
 // orthogonal to the output-assembly axis (BoundaryAssembler /

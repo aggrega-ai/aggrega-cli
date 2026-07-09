@@ -208,6 +208,16 @@ type Capabilities struct {
 	// loaded. Absent (false) is the safe default: the host loads a fresh instance
 	// per crossing, so a plugin that carries state is isolated by construction.
 	ReusableInstance bool `json:"reusable_instance,omitempty"`
+
+	// CrossBoundaryLinking reports whether the plugin wires cross-boundary uses
+	// edges — edges whose consuming and consumed ends assemble into different
+	// dispatch groups — by producing provider-native cross-reference wiring
+	// through its link_publish and link_resolve exports. A plugin declares it
+	// true only when it exports both; the load gate rejects a declaration that
+	// does not match the export pair (see [PluginDescriptor.Validate]). Absent
+	// (false) is the safe default: the plugin wires no cross-boundary edges, and
+	// the host does not route link crossings to it.
+	CrossBoundaryLinking bool `json:"cross_boundary_linking,omitempty"`
 }
 
 // InputKinds reports which Recipe input kinds a plugin renders. Each field is
@@ -329,6 +339,21 @@ const (
 	ValidateExport = "validate"
 )
 
+// LinkPublishExport and LinkResolveExport are the two cross-boundary
+// edge-linking exports a provider plugin declares as a pair. link_publish
+// produces the wiring a consumed endpoint's output needs and the published
+// identity a consumer resolves against; link_resolve produces the wiring that
+// injects the reference into the consuming endpoint's output. They are a paired
+// contract — a provider that wires cross-boundary edges declares both, and the
+// load gate cross-checks the pair against the plugin's cross-boundary-linking
+// capability (see [PluginDescriptor.Validate]). They are the single source for
+// both the coherence rule this gate enforces and the export names the host
+// dispatches to.
+const (
+	LinkPublishExport = "link_publish"
+	LinkResolveExport = "link_resolve"
+)
+
 // providerRenderExportName is the required export name for a provider
 // plugin.
 const providerRenderExportName = "render_node"
@@ -406,6 +431,10 @@ const (
 //     host does not require the block, cross-check it against the plugin
 //     type, or act on its values here; the load gate cross-checks it against
 //     the entity's authored claim, and other input fields are piped through.
+//   - the cross-boundary-linking capability is coherent with the export pair:
+//     the cross_boundary_linking flag is set if and only if the descriptor
+//     declares both the link_publish and link_resolve exports. A flag without
+//     both exports, or both exports without the flag, is refused at load.
 //
 // pluginIdentity names the plugin in the rejection message. The caller
 // passes whatever stable identity it holds; the field is plumbed so the
@@ -437,7 +466,33 @@ func (d PluginDescriptor) Validate(pluginIdentity string) error {
 		return err
 	}
 
-	return d.validateCapabilities(pluginIdentity)
+	if err := d.validateCapabilities(pluginIdentity); err != nil {
+		return err
+	}
+
+	return d.validateLinkCapability(pluginIdentity)
+}
+
+// validateLinkCapability enforces the cross-boundary-linking coherence rule:
+// the [Capabilities.CrossBoundaryLinking] flag is set if and only if the
+// descriptor declares both the link_publish and link_resolve exports. The two
+// exports are a paired contract, and the flag is the plugin-level claim that
+// the pair is present; a declaration that sets the flag without both exports,
+// or declares both exports without the flag, is incoherent and refused at load
+// rather than mis-routed at dispatch. A returned error wraps
+// [ErrWasmManifestRejected] and names pluginIdentity and the specific
+// inconsistency.
+func (d PluginDescriptor) validateLinkCapability(pluginIdentity string) error {
+	bothExports := d.hasExport(LinkPublishExport) && d.hasExport(LinkResolveExport)
+	switch {
+	case d.Capabilities.CrossBoundaryLinking && !bothExports:
+		return fmt.Errorf("plugin %q declares the cross-boundary linking capability but does not export both %q and %q: %w",
+			pluginIdentity, LinkPublishExport, LinkResolveExport, ErrWasmManifestRejected)
+	case !d.Capabilities.CrossBoundaryLinking && bothExports:
+		return fmt.Errorf("plugin %q exports both %q and %q but does not declare the cross-boundary linking capability: %w",
+			pluginIdentity, LinkPublishExport, LinkResolveExport, ErrWasmManifestRejected)
+	}
+	return nil
 }
 
 // validateCapabilities shape-checks the plugin-level capabilities block:

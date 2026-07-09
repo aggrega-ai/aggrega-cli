@@ -130,6 +130,16 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 	dispatch := map[dispatchKey]*pendingDispatch{}
 	orderedDispatch := []dispatchKey{}
 
+	// Per-node dispatch identity and engine, recorded during the per-node loop so
+	// the post-assembly cross-boundary link pass can classify each uses edge by
+	// its endpoints' dispatch groups and reach each endpoint's provider engine.
+	// A uses edge whose endpoints resolve to different dispatch keys crosses a
+	// boundary; the pass reads these maps to route the crossing and to project the
+	// consumed end's resolved annotations into the per-edge payload.
+	nodeDispatch := map[string]dispatchKey{}
+	nodeEngine := map[string]Engine{}
+	nodeAnnotations := map[string]map[string]string{}
+
 	// Deferred-PATCH accumulator, keyed by the dispatch group of the assembler
 	// node. A pipeline against an assembler node cannot PATCH per-node — the
 	// merged documents are not discrete until assembly. This covers both scopes:
@@ -590,6 +600,9 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		}
 
 		key := dispatchKey{Path: finalPath, Provider: providerName}
+		nodeDispatch[nodeID] = key
+		nodeEngine[nodeID] = engine
+		nodeAnnotations[nodeID] = nodeCtx.Annotations
 		// Stash a deferred own-scope Recipe pipeline under this node's dispatch
 		// group now that the key exists. The merged documents the /own PATCH
 		// targets are the ones this dispatch group's assembler produces, the same
@@ -955,6 +968,14 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		}
 	}
 
+	// Retain each dispatch group's assembled output — provider identity, disk-
+	// write prefix, and group-relative files — across the loop rather than
+	// flushing and discarding it per group. The post-assembly cross-boundary
+	// link pass runs after every group assembles and needs a producer group's and
+	// a consumer group's assembled artifacts at once; the patched files are what
+	// finally land in result.Files.
+	assembledByDispatch := map[dispatchKey]*assembledGroup{}
+
 	for _, key := range orderedDispatch {
 		pd := dispatch[key]
 		// Disk-write prefix is the evaluated final_path verbatim. Default
@@ -965,6 +986,10 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		if key.Path != "" {
 			dispatchPrefix = key.Path + "/"
 		}
+		// Group-relative files (keyed without the dispatch prefix) so the link
+		// pass addresses an assembled artifact by the name the render target
+		// emitted it. The prefix is reattached at the final flush.
+		groupFiles := map[string][]byte{}
 
 		// If engine is a BoundaryAssembler (helm-chart, compose) AND the dispatch path is non-empty:
 		// nest per-node under charts/<nodeID>/ and emit assembled files at the dispatch path.
@@ -1024,25 +1049,52 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 				result.Warnings = append(result.Warnings, warnings...)
 			}
 			for p, c := range boundaryFiles {
-				result.Files[dispatchPrefix+p] = c
+				groupFiles[p] = c
 			}
 			// Node files go under charts/<nodeID>/ (or flat if assembler says no nesting)
 			for nodeID, nodeFiles := range pd.files {
-				nodePrefix := dispatchPrefix
+				nodeRel := ""
 				if nestPerNode {
-					nodePrefix += "charts/" + nodeID + "/"
+					nodeRel = "charts/" + nodeID + "/"
 				}
 				for p, c := range nodeFiles {
-					result.Files[nodePrefix+p] = c
+					groupFiles[nodeRel+p] = c
 				}
 			}
 		} else {
 			// Flat: per-node files directly under the dispatch path
 			for _, nodeFiles := range pd.files {
 				for p, c := range nodeFiles {
-					result.Files[dispatchPrefix+p] = c
+					groupFiles[p] = c
 				}
 			}
+		}
+
+		assembledByDispatch[key] = &assembledGroup{
+			provider: key.Provider,
+			prefix:   dispatchPrefix,
+			files:    groupFiles,
+		}
+	}
+
+	// Post-assembly cross-boundary link pass. Now that every dispatch group has
+	// assembled, wire the cross-boundary uses edges — those whose endpoints land
+	// in different dispatch groups — through the providers' link exports, editing
+	// the retained assembled artifacts in place. Inert on inputs whose providers
+	// advertise no linking (no file change, no warning).
+	linkWarnings, err := wireCrossBoundaryLinks(ctx, graph, allProvides, nodeDispatch, nodeEngine, nodeAnnotations, assembledByDispatch, engineFactory, input.YAMLIndent)
+	if err != nil {
+		return nil, err
+	}
+	result.Warnings = append(result.Warnings, linkWarnings...)
+
+	// Flush the retained (and possibly link-patched) assembled output into the
+	// result, reattaching each group's disk-write prefix. Groups iterate in
+	// orderedDispatch order for a deterministic walk.
+	for _, key := range orderedDispatch {
+		grp := assembledByDispatch[key]
+		for p, c := range grp.files {
+			result.Files[grp.prefix+p] = c
 		}
 	}
 

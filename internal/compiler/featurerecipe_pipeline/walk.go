@@ -216,7 +216,7 @@ func runStep(
 		}
 	}
 
-	if err := applyPatches(docs, out.Patches); err != nil {
+	if err := ApplyPatches(docs, out.Patches); err != nil {
 		return nil, out.Diagnostics, nil, fmt.Errorf("step %q (index %d): %w", step.ID, index, err)
 	}
 
@@ -248,7 +248,7 @@ func evalWith(step types.PipelineStep, withCtx *types.TemplateContext, eval Temp
 	return stepInput, nil
 }
 
-// applyPatches applies each returned patch to the unit it addresses by scope
+// ApplyPatches applies each returned patch to the unit it addresses by scope
 // and key. RFC-6902 application runs through the stock [Applier] over the
 // unit's tree-view; the applier is the single home of the ABI→engine
 // operation mapping (a [JSONPatchOp] becomes a jsonpatch.Op there and only
@@ -260,7 +260,11 @@ func evalWith(step types.PipelineStep, withCtx *types.TemplateContext, eval Temp
 // it no tree-view) returns [ErrPipelineTargetOpaque]; any engine rejection
 // propagates wrapped. On error docs may be partially mutated; the caller's
 // snapshot restore makes rollback whole-step.
-func applyPatches(docs *DocumentSet, ops []JSONPatchOp) error {
+//
+// It is the single home of the (scope, key)-addressed apply and its
+// opaque/absent target checks, shared by the step walk and by any caller that
+// applies a set of pre-resolved ops to an addressable document set.
+func ApplyPatches(docs *DocumentSet, ops []JSONPatchOp) error {
 	var applier StockApplier
 	for _, op := range ops {
 		root, err := scopeRoot(docs, op.Scope)

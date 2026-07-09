@@ -365,6 +365,93 @@ func TestDefaultInputPattern(t *testing.T) {
 	}
 }
 
+// TestPluginDescriptorValidateLinkCapability exercises the cross-boundary
+// linking coherence rule: the cross_boundary_linking capability flag is set if
+// and only if the descriptor declares both the link_publish and link_resolve
+// exports. A flag without both exports, or both exports without the flag, is
+// refused at load; a coherent pair (both present, or neither) is accepted. The
+// provider render_node minimum export is present in every case so only the
+// link-coherence check is under test.
+func TestPluginDescriptorValidateLinkCapability(t *testing.T) {
+	t.Parallel()
+
+	cases := map[string]struct {
+		exports    []PluginExport
+		linking    bool
+		wantReject bool
+	}{
+		"both-exports-and-flag-accept": {
+			exports: []PluginExport{
+				{Name: "render_node"},
+				{Name: LinkPublishExport},
+				{Name: LinkResolveExport},
+			},
+			linking: true,
+		},
+		"neither-export-nor-flag-accept": {
+			exports: []PluginExport{
+				{Name: "render_node"},
+			},
+			linking: false,
+		},
+		"flag-without-either-export-reject": {
+			exports: []PluginExport{
+				{Name: "render_node"},
+			},
+			linking:    true,
+			wantReject: true,
+		},
+		"flag-with-only-publish-reject": {
+			exports: []PluginExport{
+				{Name: "render_node"},
+				{Name: LinkPublishExport},
+			},
+			linking:    true,
+			wantReject: true,
+		},
+		"flag-with-only-resolve-reject": {
+			exports: []PluginExport{
+				{Name: "render_node"},
+				{Name: LinkResolveExport},
+			},
+			linking:    true,
+			wantReject: true,
+		},
+		"both-exports-without-flag-reject": {
+			exports: []PluginExport{
+				{Name: "render_node"},
+				{Name: LinkPublishExport},
+				{Name: LinkResolveExport},
+			},
+			linking:    false,
+			wantReject: true,
+		},
+	}
+
+	for name, tc := range cases {
+		tc := tc
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			d := PluginDescriptor{
+				ABIVersion:   ABIVersionV1Alpha1,
+				PluginType:   PluginTypeProvider,
+				Exports:      tc.exports,
+				Capabilities: Capabilities{CrossBoundaryLinking: tc.linking},
+			}
+			err := d.Validate("acme/link-provider")
+			if tc.wantReject {
+				if !errors.Is(err, ErrWasmManifestRejected) {
+					t.Fatalf("want ErrWasmManifestRejected, got %v", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("want accept, got %v", err)
+			}
+		})
+	}
+}
+
 // TestHostFunctionAllowlistUnchanged pins the v1alpha1 host-function
 // surface to exactly the curated set: the two baseline diagnostic
 // functions, the external-input fetch channel, and the two source

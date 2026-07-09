@@ -23,6 +23,13 @@ type (
 	CarveOutput                = rendercore.CarveOutput
 	CatalogProjection          = rendercore.CatalogProjection
 	IRNodeProjection           = rendercore.IRNodeProjection
+	LinkEndpoint               = rendercore.LinkEndpoint
+	LinkEdge                   = rendercore.LinkEdge
+	LinkPatch                  = rendercore.LinkPatch
+	LinkPublishInput           = rendercore.LinkPublishInput
+	LinkPublishOutput          = rendercore.LinkPublishOutput
+	LinkResolveInput           = rendercore.LinkResolveInput
+	LinkResolveOutput          = rendercore.LinkResolveOutput
 	NodeProvenance             = rendercore.NodeProvenance
 	ReassembleInput            = rendercore.ReassembleInput
 	ReassembleOutput           = rendercore.ReassembleOutput

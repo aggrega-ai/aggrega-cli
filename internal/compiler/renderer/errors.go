@@ -217,6 +217,21 @@ var (
 	// errors.Is(err, ErrArtifactContentMismatch).
 	ErrArtifactContentMismatch = errors.New("imported artifact content does not match the recipe's recorded digest")
 
+	// ErrCrossProviderLinkUnsupported marks a cross-boundary uses edge whose two
+	// ends assemble into dispatch groups rendered by different providers, where at
+	// least one of those providers advertises cross-boundary linking. Native
+	// cross-reference wiring between two different providers' assembled artifacts
+	// is not supported: a provider's link exports produce wiring in that
+	// provider's own artifact vocabulary, and one provider cannot resolve a
+	// reference published in another's. Rather than emit a wrong reference, the
+	// link pass leaves the existing per-node scalar value-pipe in place and
+	// surfaces this as a warning that names both ends (source and target node
+	// ids), both provider names, and the socket. It is a warning today, not a
+	// build halt — the edge still carries its scalar value across the boundary —
+	// so the build completes with the value-pipe fallback rather than failing.
+	// Match with errors.Is(err, ErrCrossProviderLinkUnsupported).
+	ErrCrossProviderLinkUnsupported = errors.New("cross-boundary link between endpoints rendered by different providers is not supported")
+
 	// ErrRenderNondeterministic is the Loud Guardrail halt the verify-determinism
 	// build mode raises when a provider guest renders a node twice from identical
 	// input and produces different output — a guest that carries state across

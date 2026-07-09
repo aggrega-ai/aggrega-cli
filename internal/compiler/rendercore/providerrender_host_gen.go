@@ -314,6 +314,68 @@ type BoundaryEnvOverridesOutput struct {
 	Overrides map[string]map[string]string `json:"overrides,omitempty" yaml:"overrides,omitempty"`
 }
 
+// LinkEndpoint One endpoint of a cross-boundary link: the node, the boundary path its rendered output assembles into, and the render target that rendered it. The two endpoints of a link name the consuming and consumed ends of a uses edge whose ends assemble into different dispatch groups.
+type LinkEndpoint struct {
+	// Node The endpoint node's absolute id within the topology graph.
+	Node string `json:"node" yaml:"node"`
+	// Boundary The endpoint's boundary path — the dispatch group its rendered output assembles into.
+	Boundary string `json:"boundary" yaml:"boundary"`
+	// Provider The render target that rendered the endpoint (the provider engine name). Both endpoints of a wired link name the same render target; the host does not route a link whose endpoints name different targets.
+	Provider string `json:"provider" yaml:"provider"`
+}
+
+// LinkEdge The generalized, domain-blind per-edge payload the host assembles for a uses edge whose consuming and consumed ends assemble into different dispatch groups. It carries both endpoints, the consumed endpoint's placement annotations as an opaque scalar map the host does not interpret, the consumed endpoint's provides output, and the socket and inject mapping the edge wires. A render target reads it to produce the provider-native cross-reference wiring the two ends need; the host assembles it and passes the annotation map as opaque scalars, inferring no meaning from any value.
+type LinkEdge struct {
+	// Source The consuming endpoint — the source end of the directed uses edge, whose assembled output the consumer-side wiring is injected into.
+	Source LinkEndpoint `json:"source" yaml:"source"`
+	// Target The consumed endpoint — the target end the uses edge points at, whose assembled output the producer-side wiring publishes.
+	Target LinkEndpoint `json:"target" yaml:"target"`
+	// TargetAnnotations The consumed (target) endpoint's placement annotations as an opaque scalar map, keyed by annotation name. The host assembles them from the target's resolved annotations and passes them verbatim; it infers no meaning from any value. A render target reads them to decide how to shape a cross-reference (for example whether the two ends share a placement or need a cross-placement reference). Keys serialize in sorted order so the payload is byte-identical across runs of identical input.
+	TargetAnnotations map[string]string `json:"target_annotations,omitempty" yaml:"target_annotations,omitempty"`
+	// Socket The socket alias the uses edge is bound under.
+	Socket string `json:"socket" yaml:"socket"`
+	// Provides The consumed endpoint's provides output, an author-ordered key set exposing the target's declared outputs. Preserves author order so the payload is byte-identical across runs of identical input.
+	Provides types.OrderedMap[string] `json:"provides" yaml:"provides"`
+	// Inject The consuming endpoint's inject mapping, keyed by delivery mechanism to an author-ordered key set, describing how the consuming end receives the consumed endpoint's output. Preserves author order so the payload is byte-identical across runs of identical input.
+	Inject types.OrderedMap[types.OrderedMap[string]] `json:"inject" yaml:"inject"`
+}
+
+// LinkPatch One per-file structural patch a render target returns as artifact wiring: the output file and the ordered structural operations to apply to it. A later host pass carves the named file, applies the operations, and reassembles it byte-faithfully. The operation shape is the shared pipeline patch-operation vocabulary; it is opaque at this schema layer, so a guest carries each operation verbatim while the host realizes the typed operation its pipeline applies.
+type LinkPatch struct {
+	// File The output file the operations apply to, named as the render target emitted it.
+	File string `json:"file" yaml:"file"`
+	// Ops The ordered structural operations to apply to the file, in application order.
+	Ops []frp.JSONPatchOp `json:"ops" yaml:"ops"`
+}
+
+// LinkPublishInput The payload a render target receives on its link_publish export: one cross-boundary link whose consumed endpoint's output is referenced across a boundary. The export returns the published identity the consumer resolves against and any producer-side artifact wiring the consumed endpoint's output needs.
+type LinkPublishInput struct {
+	// Edge The cross-boundary link being published, read from the consumed (target) endpoint's side.
+	Edge LinkEdge `json:"edge" yaml:"edge"`
+}
+
+// LinkPublishOutput The payload a render target returns from its link_publish export: the published identity handle the consumer resolves against, and the producer-side artifact wiring to apply to the consumed endpoint's assembled output.
+type LinkPublishOutput struct {
+	// Handle The published identity the consumed endpoint exposes for the consumer to resolve against, an opaque deterministic-pointer string map keyed by field name (for example an export name, a stack name, a region, a role reference). The values are deterministic pointer strings the compiler pipes and never resolves; the runtime environment resolves them at deploy time. Keys serialize in sorted order so the payload is byte-identical across runs of identical input.
+	Handle map[string]string `json:"handle" yaml:"handle"`
+	// Patches The producer-side artifact wiring, one structural patch per consumed-endpoint output file the publish must edit. Empty when the consumed endpoint's output needs no change for the link.
+	Patches []LinkPatch `json:"patches,omitempty" yaml:"patches,omitempty"`
+}
+
+// LinkResolveInput The payload a render target receives on its link_resolve export: one cross-boundary link and the published identity handle its consumed endpoint exposed. The export returns the consumer-side artifact wiring that injects the reference into the consuming endpoint's assembled output.
+type LinkResolveInput struct {
+	// Edge The cross-boundary link being resolved, read from the consuming (source) endpoint's side.
+	Edge LinkEdge `json:"edge" yaml:"edge"`
+	// Handle The published identity handle the consumed endpoint's link_publish returned, which the consumer resolves its reference against. Opaque deterministic-pointer strings keyed by field name; the compiler pipes them and never resolves them. Keys serialize in sorted order so the payload is byte-identical across runs of identical input.
+	Handle map[string]string `json:"handle" yaml:"handle"`
+}
+
+// LinkResolveOutput The payload a render target returns from its link_resolve export: the consumer-side artifact wiring to apply to the consuming endpoint's assembled output, injecting the reference to the consumed endpoint's published identity.
+type LinkResolveOutput struct {
+	// Patches The consumer-side artifact wiring, one structural patch per consuming-endpoint output file the resolve must edit.
+	Patches []LinkPatch `json:"patches" yaml:"patches"`
+}
+
 // MarshalJSON encodes RenderNodeInput in field-declaration order, omitting
 // empty non-required fields, dispatch-free.
 func (t RenderNodeInput) MarshalJSON() ([]byte, error) {
@@ -3236,6 +3298,679 @@ func (t *BoundaryEnvOverridesOutput) UnmarshalJSON(data []byte) error {
 				t.Overrides[mk] = mv
 			}
 			if err := expectDelim(dec, '}'); err != nil {
+				return err
+			}
+		default:
+			if _, err := readRaw(dec, data); err != nil {
+				return err
+			}
+		}
+	}
+	if err := expectDelim(dec, '}'); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON encodes LinkEndpoint in field-declaration order, omitting
+// empty non-required fields, dispatch-free.
+func (t LinkEndpoint) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	buf.WriteByte('{')
+	first := true
+	if !first {
+		buf.WriteByte(',')
+	}
+	first = false
+	buf.WriteString("\"node\":")
+	writeJSONString(&buf, t.Node)
+	if !first {
+		buf.WriteByte(',')
+	}
+	first = false
+	buf.WriteString("\"boundary\":")
+	writeJSONString(&buf, t.Boundary)
+	if !first {
+		buf.WriteByte(',')
+	}
+	first = false
+	buf.WriteString("\"provider\":")
+	writeJSONString(&buf, t.Provider)
+	buf.WriteByte('}')
+	return buf.Bytes(), nil
+}
+
+// UnmarshalJSON decodes LinkEndpoint with a streaming token walk, descending
+// into composite fields by direct call to each nested type's generated
+// UnmarshalJSON, dispatch-free. Unknown keys are skipped.
+func (t *LinkEndpoint) UnmarshalJSON(data []byte) error {
+	dec := json.NewDecoder(bytes.NewReader(data))
+	if err := expectDelim(dec, '{'); err != nil {
+		return err
+	}
+	for dec.More() {
+		key, err := readKey(dec)
+		if err != nil {
+			return err
+		}
+		switch key {
+		case "node":
+			if s, err := readString(dec); err != nil {
+				return err
+			} else {
+				t.Node = s
+			}
+		case "boundary":
+			if s, err := readString(dec); err != nil {
+				return err
+			} else {
+				t.Boundary = s
+			}
+		case "provider":
+			if s, err := readString(dec); err != nil {
+				return err
+			} else {
+				t.Provider = s
+			}
+		default:
+			if _, err := readRaw(dec, data); err != nil {
+				return err
+			}
+		}
+	}
+	if err := expectDelim(dec, '}'); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON encodes LinkEdge in field-declaration order, omitting
+// empty non-required fields, dispatch-free.
+func (t LinkEdge) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	buf.WriteByte('{')
+	first := true
+	if !first {
+		buf.WriteByte(',')
+	}
+	first = false
+	buf.WriteString("\"source\":")
+	if enc, err := t.Source.MarshalJSON(); err != nil {
+		return nil, err
+	} else {
+		buf.Write(enc)
+	}
+	if !first {
+		buf.WriteByte(',')
+	}
+	first = false
+	buf.WriteString("\"target\":")
+	if enc, err := t.Target.MarshalJSON(); err != nil {
+		return nil, err
+	} else {
+		buf.Write(enc)
+	}
+	if len(t.TargetAnnotations) != 0 {
+		if !first {
+			buf.WriteByte(',')
+		}
+		first = false
+		buf.WriteString("\"target_annotations\":")
+		{
+			keys := make([]string, 0, len(t.TargetAnnotations))
+			for k := range t.TargetAnnotations {
+				keys = append(keys, k)
+			}
+			sort.Strings(keys)
+			buf.WriteByte('{')
+			for i, k := range keys {
+				if i > 0 {
+					buf.WriteByte(',')
+				}
+				writeJSONString(&buf, k)
+				buf.WriteByte(':')
+				mv := t.TargetAnnotations[k]
+				writeJSONString(&buf, mv)
+			}
+			buf.WriteByte('}')
+		}
+	}
+	if !first {
+		buf.WriteByte(',')
+	}
+	first = false
+	buf.WriteString("\"socket\":")
+	writeJSONString(&buf, t.Socket)
+	if !first {
+		buf.WriteByte(',')
+	}
+	first = false
+	buf.WriteString("\"provides\":")
+	if enc, err := json.Marshal(t.Provides); err != nil {
+		return nil, err
+	} else {
+		buf.Write(enc)
+	}
+	if !first {
+		buf.WriteByte(',')
+	}
+	first = false
+	buf.WriteString("\"inject\":")
+	if enc, err := json.Marshal(t.Inject); err != nil {
+		return nil, err
+	} else {
+		buf.Write(enc)
+	}
+	buf.WriteByte('}')
+	return buf.Bytes(), nil
+}
+
+// UnmarshalJSON decodes LinkEdge with a streaming token walk, descending
+// into composite fields by direct call to each nested type's generated
+// UnmarshalJSON, dispatch-free. Unknown keys are skipped.
+func (t *LinkEdge) UnmarshalJSON(data []byte) error {
+	dec := json.NewDecoder(bytes.NewReader(data))
+	if err := expectDelim(dec, '{'); err != nil {
+		return err
+	}
+	for dec.More() {
+		key, err := readKey(dec)
+		if err != nil {
+			return err
+		}
+		switch key {
+		case "source":
+			if raw, err := readRaw(dec, data); err != nil {
+				return err
+			} else {
+				if err := t.Source.UnmarshalJSON(raw); err != nil {
+					return err
+				}
+			}
+		case "target":
+			if raw, err := readRaw(dec, data); err != nil {
+				return err
+			} else {
+				if err := t.Target.UnmarshalJSON(raw); err != nil {
+					return err
+				}
+			}
+		case "target_annotations":
+			t.TargetAnnotations = make(map[string]string)
+			if err := expectDelim(dec, '{'); err != nil {
+				return err
+			}
+			for dec.More() {
+				mk, err := readKey(dec)
+				if err != nil {
+					return err
+				}
+				var mv string
+				if s, err := readString(dec); err != nil {
+					return err
+				} else {
+					mv = s
+				}
+				t.TargetAnnotations[mk] = mv
+			}
+			if err := expectDelim(dec, '}'); err != nil {
+				return err
+			}
+		case "socket":
+			if s, err := readString(dec); err != nil {
+				return err
+			} else {
+				t.Socket = s
+			}
+		case "provides":
+			if raw, err := readRaw(dec, data); err != nil {
+				return err
+			} else {
+				dec2 := json.NewDecoder(bytes.NewReader(raw))
+				dec2.UseNumber()
+				if err := dec2.Decode(&t.Provides); err != nil {
+					return err
+				}
+			}
+		case "inject":
+			if raw, err := readRaw(dec, data); err != nil {
+				return err
+			} else {
+				dec2 := json.NewDecoder(bytes.NewReader(raw))
+				dec2.UseNumber()
+				if err := dec2.Decode(&t.Inject); err != nil {
+					return err
+				}
+			}
+		default:
+			if _, err := readRaw(dec, data); err != nil {
+				return err
+			}
+		}
+	}
+	if err := expectDelim(dec, '}'); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON encodes LinkPatch in field-declaration order, omitting
+// empty non-required fields, dispatch-free.
+func (t LinkPatch) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	buf.WriteByte('{')
+	first := true
+	if !first {
+		buf.WriteByte(',')
+	}
+	first = false
+	buf.WriteString("\"file\":")
+	writeJSONString(&buf, t.File)
+	if !first {
+		buf.WriteByte(',')
+	}
+	first = false
+	buf.WriteString("\"ops\":")
+	buf.WriteByte('[')
+	for i := range t.Ops {
+		if i > 0 {
+			buf.WriteByte(',')
+		}
+		ev := t.Ops[i]
+		if enc, err := json.Marshal(ev); err != nil {
+			return nil, err
+		} else {
+			buf.Write(enc)
+		}
+	}
+	buf.WriteByte(']')
+	buf.WriteByte('}')
+	return buf.Bytes(), nil
+}
+
+// UnmarshalJSON decodes LinkPatch with a streaming token walk, descending
+// into composite fields by direct call to each nested type's generated
+// UnmarshalJSON, dispatch-free. Unknown keys are skipped.
+func (t *LinkPatch) UnmarshalJSON(data []byte) error {
+	dec := json.NewDecoder(bytes.NewReader(data))
+	if err := expectDelim(dec, '{'); err != nil {
+		return err
+	}
+	for dec.More() {
+		key, err := readKey(dec)
+		if err != nil {
+			return err
+		}
+		switch key {
+		case "file":
+			if s, err := readString(dec); err != nil {
+				return err
+			} else {
+				t.File = s
+			}
+		case "ops":
+			t.Ops = nil
+			if err := expectDelim(dec, '['); err != nil {
+				return err
+			}
+			for dec.More() {
+				var elem frp.JSONPatchOp
+				if raw, err := readRaw(dec, data); err != nil {
+					return err
+				} else {
+					dec2 := json.NewDecoder(bytes.NewReader(raw))
+					dec2.UseNumber()
+					if err := dec2.Decode(&elem); err != nil {
+						return err
+					}
+				}
+				t.Ops = append(t.Ops, elem)
+			}
+			if err := expectDelim(dec, ']'); err != nil {
+				return err
+			}
+		default:
+			if _, err := readRaw(dec, data); err != nil {
+				return err
+			}
+		}
+	}
+	if err := expectDelim(dec, '}'); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON encodes LinkPublishInput in field-declaration order, omitting
+// empty non-required fields, dispatch-free.
+func (t LinkPublishInput) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	buf.WriteByte('{')
+	first := true
+	if !first {
+		buf.WriteByte(',')
+	}
+	first = false
+	buf.WriteString("\"edge\":")
+	if enc, err := t.Edge.MarshalJSON(); err != nil {
+		return nil, err
+	} else {
+		buf.Write(enc)
+	}
+	buf.WriteByte('}')
+	return buf.Bytes(), nil
+}
+
+// UnmarshalJSON decodes LinkPublishInput with a streaming token walk, descending
+// into composite fields by direct call to each nested type's generated
+// UnmarshalJSON, dispatch-free. Unknown keys are skipped.
+func (t *LinkPublishInput) UnmarshalJSON(data []byte) error {
+	dec := json.NewDecoder(bytes.NewReader(data))
+	if err := expectDelim(dec, '{'); err != nil {
+		return err
+	}
+	for dec.More() {
+		key, err := readKey(dec)
+		if err != nil {
+			return err
+		}
+		switch key {
+		case "edge":
+			if raw, err := readRaw(dec, data); err != nil {
+				return err
+			} else {
+				if err := t.Edge.UnmarshalJSON(raw); err != nil {
+					return err
+				}
+			}
+		default:
+			if _, err := readRaw(dec, data); err != nil {
+				return err
+			}
+		}
+	}
+	if err := expectDelim(dec, '}'); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON encodes LinkPublishOutput in field-declaration order, omitting
+// empty non-required fields, dispatch-free.
+func (t LinkPublishOutput) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	buf.WriteByte('{')
+	first := true
+	if !first {
+		buf.WriteByte(',')
+	}
+	first = false
+	buf.WriteString("\"handle\":")
+	{
+		keys := make([]string, 0, len(t.Handle))
+		for k := range t.Handle {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		buf.WriteByte('{')
+		for i, k := range keys {
+			if i > 0 {
+				buf.WriteByte(',')
+			}
+			writeJSONString(&buf, k)
+			buf.WriteByte(':')
+			mv := t.Handle[k]
+			writeJSONString(&buf, mv)
+		}
+		buf.WriteByte('}')
+	}
+	if len(t.Patches) != 0 {
+		if !first {
+			buf.WriteByte(',')
+		}
+		first = false
+		buf.WriteString("\"patches\":")
+		buf.WriteByte('[')
+		for i := range t.Patches {
+			if i > 0 {
+				buf.WriteByte(',')
+			}
+			ev := t.Patches[i]
+			if enc, err := ev.MarshalJSON(); err != nil {
+				return nil, err
+			} else {
+				buf.Write(enc)
+			}
+		}
+		buf.WriteByte(']')
+	}
+	buf.WriteByte('}')
+	return buf.Bytes(), nil
+}
+
+// UnmarshalJSON decodes LinkPublishOutput with a streaming token walk, descending
+// into composite fields by direct call to each nested type's generated
+// UnmarshalJSON, dispatch-free. Unknown keys are skipped.
+func (t *LinkPublishOutput) UnmarshalJSON(data []byte) error {
+	dec := json.NewDecoder(bytes.NewReader(data))
+	if err := expectDelim(dec, '{'); err != nil {
+		return err
+	}
+	for dec.More() {
+		key, err := readKey(dec)
+		if err != nil {
+			return err
+		}
+		switch key {
+		case "handle":
+			t.Handle = make(map[string]string)
+			if err := expectDelim(dec, '{'); err != nil {
+				return err
+			}
+			for dec.More() {
+				mk, err := readKey(dec)
+				if err != nil {
+					return err
+				}
+				var mv string
+				if s, err := readString(dec); err != nil {
+					return err
+				} else {
+					mv = s
+				}
+				t.Handle[mk] = mv
+			}
+			if err := expectDelim(dec, '}'); err != nil {
+				return err
+			}
+		case "patches":
+			t.Patches = nil
+			if err := expectDelim(dec, '['); err != nil {
+				return err
+			}
+			for dec.More() {
+				var elem LinkPatch
+				if raw, err := readRaw(dec, data); err != nil {
+					return err
+				} else {
+					if err := elem.UnmarshalJSON(raw); err != nil {
+						return err
+					}
+				}
+				t.Patches = append(t.Patches, elem)
+			}
+			if err := expectDelim(dec, ']'); err != nil {
+				return err
+			}
+		default:
+			if _, err := readRaw(dec, data); err != nil {
+				return err
+			}
+		}
+	}
+	if err := expectDelim(dec, '}'); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON encodes LinkResolveInput in field-declaration order, omitting
+// empty non-required fields, dispatch-free.
+func (t LinkResolveInput) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	buf.WriteByte('{')
+	first := true
+	if !first {
+		buf.WriteByte(',')
+	}
+	first = false
+	buf.WriteString("\"edge\":")
+	if enc, err := t.Edge.MarshalJSON(); err != nil {
+		return nil, err
+	} else {
+		buf.Write(enc)
+	}
+	if !first {
+		buf.WriteByte(',')
+	}
+	first = false
+	buf.WriteString("\"handle\":")
+	{
+		keys := make([]string, 0, len(t.Handle))
+		for k := range t.Handle {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		buf.WriteByte('{')
+		for i, k := range keys {
+			if i > 0 {
+				buf.WriteByte(',')
+			}
+			writeJSONString(&buf, k)
+			buf.WriteByte(':')
+			mv := t.Handle[k]
+			writeJSONString(&buf, mv)
+		}
+		buf.WriteByte('}')
+	}
+	buf.WriteByte('}')
+	return buf.Bytes(), nil
+}
+
+// UnmarshalJSON decodes LinkResolveInput with a streaming token walk, descending
+// into composite fields by direct call to each nested type's generated
+// UnmarshalJSON, dispatch-free. Unknown keys are skipped.
+func (t *LinkResolveInput) UnmarshalJSON(data []byte) error {
+	dec := json.NewDecoder(bytes.NewReader(data))
+	if err := expectDelim(dec, '{'); err != nil {
+		return err
+	}
+	for dec.More() {
+		key, err := readKey(dec)
+		if err != nil {
+			return err
+		}
+		switch key {
+		case "edge":
+			if raw, err := readRaw(dec, data); err != nil {
+				return err
+			} else {
+				if err := t.Edge.UnmarshalJSON(raw); err != nil {
+					return err
+				}
+			}
+		case "handle":
+			t.Handle = make(map[string]string)
+			if err := expectDelim(dec, '{'); err != nil {
+				return err
+			}
+			for dec.More() {
+				mk, err := readKey(dec)
+				if err != nil {
+					return err
+				}
+				var mv string
+				if s, err := readString(dec); err != nil {
+					return err
+				} else {
+					mv = s
+				}
+				t.Handle[mk] = mv
+			}
+			if err := expectDelim(dec, '}'); err != nil {
+				return err
+			}
+		default:
+			if _, err := readRaw(dec, data); err != nil {
+				return err
+			}
+		}
+	}
+	if err := expectDelim(dec, '}'); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON encodes LinkResolveOutput in field-declaration order, omitting
+// empty non-required fields, dispatch-free.
+func (t LinkResolveOutput) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	buf.WriteByte('{')
+	first := true
+	if !first {
+		buf.WriteByte(',')
+	}
+	first = false
+	buf.WriteString("\"patches\":")
+	buf.WriteByte('[')
+	for i := range t.Patches {
+		if i > 0 {
+			buf.WriteByte(',')
+		}
+		ev := t.Patches[i]
+		if enc, err := ev.MarshalJSON(); err != nil {
+			return nil, err
+		} else {
+			buf.Write(enc)
+		}
+	}
+	buf.WriteByte(']')
+	buf.WriteByte('}')
+	return buf.Bytes(), nil
+}
+
+// UnmarshalJSON decodes LinkResolveOutput with a streaming token walk, descending
+// into composite fields by direct call to each nested type's generated
+// UnmarshalJSON, dispatch-free. Unknown keys are skipped.
+func (t *LinkResolveOutput) UnmarshalJSON(data []byte) error {
+	dec := json.NewDecoder(bytes.NewReader(data))
+	if err := expectDelim(dec, '{'); err != nil {
+		return err
+	}
+	for dec.More() {
+		key, err := readKey(dec)
+		if err != nil {
+			return err
+		}
+		switch key {
+		case "patches":
+			t.Patches = nil
+			if err := expectDelim(dec, '['); err != nil {
+				return err
+			}
+			for dec.More() {
+				var elem LinkPatch
+				if raw, err := readRaw(dec, data); err != nil {
+					return err
+				} else {
+					if err := elem.UnmarshalJSON(raw); err != nil {
+						return err
+					}
+				}
+				t.Patches = append(t.Patches, elem)
+			}
+			if err := expectDelim(dec, ']'); err != nil {
 				return err
 			}
 		default:

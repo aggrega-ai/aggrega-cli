@@ -687,6 +687,99 @@ func (e *Engine) BoundaryEnvOverrides(ctx context.Context, internalUsesEdges []t
 	return out.Overrides, nil
 }
 
+// LinksCrossBoundary reports whether the guest advertises the cross-boundary
+// linking capability: its describe() self-report declares both the link_publish
+// and link_resolve exports. The host reads it before routing any link crossing
+// to the engine, so a guest that declares neither (or only one) export wires no
+// cross-boundary edge. AssemblerEngine embeds *Engine and inherits this method.
+func (e *Engine) LinksCrossBoundary() bool {
+	desc, err := e.describe()
+	if err != nil {
+		return false
+	}
+	return advertisesExport(desc, wasm.LinkPublishExport) && advertisesExport(desc, wasm.LinkResolveExport)
+}
+
+// LinkPublish drives the guest's optional link_publish export to produce the
+// producer-side wiring for a cross-boundary link — the published identity the
+// consumer resolves against and any structural patches to apply to the consumed
+// endpoint's assembled output. It is advertised-only: a guest that does not
+// declare the export in describe() is never invoked, and this returns a zero
+// output and no error, so the host applies no wiring for that provider. The
+// wiring lives entirely in the guest; the host projects the per-edge payload in
+// and applies the returned patches. AssemblerEngine embeds *Engine and inherits
+// this method.
+func (e *Engine) LinkPublish(ctx context.Context, in renderer.LinkPublishInput) (renderer.LinkPublishOutput, error) {
+	desc, err := e.describe()
+	if err != nil {
+		return renderer.LinkPublishOutput{}, err
+	}
+	if !advertisesExport(desc, wasm.LinkPublishExport) {
+		return renderer.LinkPublishOutput{}, nil
+	}
+
+	plugin, release, err := e.acquireInstance(ctx)
+	if err != nil {
+		return renderer.LinkPublishOutput{}, err
+	}
+	defer release()
+
+	payload, err := in.MarshalJSON()
+	if err != nil {
+		return renderer.LinkPublishOutput{}, fmt.Errorf("wasmengine: marshal link_publish input: %w", err)
+	}
+	raw, err := wasm.InvokeExport(ctx, plugin, *desc, wasm.LinkPublishExport, payload)
+	if err != nil {
+		return renderer.LinkPublishOutput{}, err
+	}
+
+	var out renderer.LinkPublishOutput
+	if err := out.UnmarshalJSON(raw); err != nil {
+		return renderer.LinkPublishOutput{}, fmt.Errorf("wasmengine: decode link_publish output: %w", err)
+	}
+	return out, nil
+}
+
+// LinkResolve drives the guest's optional link_resolve export to produce the
+// consumer-side wiring for a cross-boundary link — the structural patches that
+// inject the reference to the peer's published identity into the consuming
+// endpoint's assembled output. It is advertised-only: a guest that does not
+// declare the export in describe() is never invoked, and this returns a zero
+// output and no error, so the host applies no wiring for that provider. The
+// wiring lives entirely in the guest; the host projects the per-edge payload
+// plus the peer's published handle in and applies the returned patches.
+// AssemblerEngine embeds *Engine and inherits this method.
+func (e *Engine) LinkResolve(ctx context.Context, in renderer.LinkResolveInput) (renderer.LinkResolveOutput, error) {
+	desc, err := e.describe()
+	if err != nil {
+		return renderer.LinkResolveOutput{}, err
+	}
+	if !advertisesExport(desc, wasm.LinkResolveExport) {
+		return renderer.LinkResolveOutput{}, nil
+	}
+
+	plugin, release, err := e.acquireInstance(ctx)
+	if err != nil {
+		return renderer.LinkResolveOutput{}, err
+	}
+	defer release()
+
+	payload, err := in.MarshalJSON()
+	if err != nil {
+		return renderer.LinkResolveOutput{}, fmt.Errorf("wasmengine: marshal link_resolve input: %w", err)
+	}
+	raw, err := wasm.InvokeExport(ctx, plugin, *desc, wasm.LinkResolveExport, payload)
+	if err != nil {
+		return renderer.LinkResolveOutput{}, err
+	}
+
+	var out renderer.LinkResolveOutput
+	if err := out.UnmarshalJSON(raw); err != nil {
+		return renderer.LinkResolveOutput{}, fmt.Errorf("wasmengine: decode link_resolve output: %w", err)
+	}
+	return out, nil
+}
+
 // nodeProjection builds the wire node projection from the host node context —
 // the inverse of the guest's own context reconstruction. It carries the identity
 // and provenance the render core stamps onto every emitted manifest; type,
