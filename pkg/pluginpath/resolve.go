@@ -148,6 +148,11 @@ type PluginCapabilitiesClaim struct {
 	// instance may serve every crossing of a build rather than a fresh instance
 	// per crossing. False when the plugin holds state across crossings.
 	ReusableInstance bool
+	// CrossBoundaryLinking is the authored cross-boundary-linking claim: whether
+	// the plugin wires a uses edge whose ends assemble into different dispatch
+	// groups through its paired link_publish and link_resolve exports. False when
+	// the plugin wires no cross-boundary edges.
+	CrossBoundaryLinking bool
 }
 
 // PluginAssemblyNameAnnotationClaim is an entity's authored assembly-name

@@ -62,9 +62,10 @@ type EntityExportClaim struct {
 // When the entity authors a plugin-level capabilities claim, it is compared
 // field-by-field against the descriptor's self-reported capabilities: the input
 // kinds, the boundary-assembly mode, the artifact-template delimiter pair, the
-// assembly-name annotation, the source filter, and the reusable-instance claim
-// must each agree. A nil claim skips the plugin-level comparison — an entity is
-// not required to author a plugin-level claim.
+// assembly-name annotation, the source filter, the reusable-instance claim, and
+// the cross-boundary-linking claim must each agree. A nil claim skips the
+// plugin-level comparison — an entity is not required to author a plugin-level
+// claim.
 //
 // entityIdentity names the entity in the rejection message so the author sees
 // which entity's claim disagreed with which plugin.
@@ -203,6 +204,11 @@ func crossCheckPluginCapabilities(entityIdentity string, want, got Capabilities)
 		return fmt.Errorf(
 			"entity %q declares reusable_instance %t but the plugin's describe() reports %t: %w",
 			entityIdentity, want.ReusableInstance, got.ReusableInstance, ErrWasmCapabilityMismatch)
+	}
+	if want.CrossBoundaryLinking != got.CrossBoundaryLinking {
+		return fmt.Errorf(
+			"entity %q declares cross_boundary_linking %t but the plugin's describe() reports %t: %w",
+			entityIdentity, want.CrossBoundaryLinking, got.CrossBoundaryLinking, ErrWasmCapabilityMismatch)
 	}
 	return nil
 }

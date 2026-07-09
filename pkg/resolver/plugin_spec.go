@@ -65,9 +65,10 @@ func wasmCapabilities(c *pluginpath.PluginCapabilitiesClaim) *wasm.Capabilities 
 			Synthesized:         c.InputKinds.Synthesized,
 			ArtifactsStandalone: c.InputKinds.ArtifactsStandalone,
 		},
-		BoundaryAssembly: c.BoundaryAssembly,
-		SourceFilter:     c.SourceFilter,
-		ReusableInstance: c.ReusableInstance,
+		BoundaryAssembly:     c.BoundaryAssembly,
+		SourceFilter:         c.SourceFilter,
+		ReusableInstance:     c.ReusableInstance,
+		CrossBoundaryLinking: c.CrossBoundaryLinking,
 	}
 	if c.ArtifactDelimiters != nil {
 		caps.ArtifactDelimiters = &wasm.ArtifactDelimiters{

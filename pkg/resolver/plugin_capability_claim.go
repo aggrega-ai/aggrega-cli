@@ -54,9 +54,10 @@ func pluginCapabilitiesClaim(c *types.PluginCapabilities) *pluginpath.PluginCapa
 			Synthesized:         c.InputKinds.Synthesized,
 			ArtifactsStandalone: c.InputKinds.ArtifactsStandalone,
 		},
-		BoundaryAssembly: c.BoundaryAssembly,
-		SourceFilter:     c.SourceFilter,
-		ReusableInstance: c.ReusableInstance,
+		BoundaryAssembly:     c.BoundaryAssembly,
+		SourceFilter:         c.SourceFilter,
+		ReusableInstance:     c.ReusableInstance,
+		CrossBoundaryLinking: c.CrossBoundaryLinking,
 	}
 	if c.ArtifactDelimiters != nil {
 		claim.ArtifactDelimiters = &pluginpath.PluginArtifactDelimitersClaim{

@@ -207,6 +207,106 @@ func TestCrossCheckCapabilities_PluginLevel(t *testing.T) {
 	}
 }
 
+// TestCrossCheckCapabilities_CrossBoundaryLinking exercises the cross-boundary
+// linking arm of the plugin-level comparison: the entity's authored
+// crossBoundaryLinking claim is checked against the descriptor's self-reported
+// cross_boundary_linking flag, and a disagreement in either direction halts.
+func TestCrossCheckCapabilities_CrossBoundaryLinking(t *testing.T) {
+	t.Parallel()
+
+	// A descriptor that advertises cross-boundary linking exports both link
+	// exports and reports the flag; the crosscheck compares the flag directly.
+	linkingDesc := PluginDescriptor{
+		ABIVersion: ABIVersionV1Alpha1,
+		PluginType: PluginTypeProvider,
+		Exports: []PluginExport{
+			{Name: "render_node"},
+			{Name: LinkPublishExport},
+			{Name: LinkResolveExport},
+		},
+		Capabilities: Capabilities{
+			InputKinds:           InputKinds{Sourced: true},
+			BoundaryAssembly:     BoundaryAssemblyMerge,
+			CrossBoundaryLinking: true,
+		},
+	}
+	// A descriptor that wires no cross-boundary edges reports the flag false.
+	nonLinkingDesc := PluginDescriptor{
+		ABIVersion: ABIVersionV1Alpha1,
+		PluginType: PluginTypeProvider,
+		Exports:    []PluginExport{{Name: "render_node"}},
+		Capabilities: Capabilities{
+			InputKinds:       InputKinds{Sourced: true},
+			BoundaryAssembly: BoundaryAssemblyMerge,
+		},
+	}
+
+	cases := []struct {
+		name      string
+		desc      PluginDescriptor
+		caps      *Capabilities
+		wantErr   bool
+		wantField string
+	}{
+		{
+			name: "entity claims linking, descriptor advertises it: match",
+			desc: linkingDesc,
+			caps: &Capabilities{
+				InputKinds:           InputKinds{Sourced: true},
+				BoundaryAssembly:     BoundaryAssemblyMerge,
+				CrossBoundaryLinking: true,
+			},
+		},
+		{
+			name: "entity claims linking, descriptor does not advertise it: halt",
+			desc: nonLinkingDesc,
+			caps: &Capabilities{
+				InputKinds:           InputKinds{Sourced: true},
+				BoundaryAssembly:     BoundaryAssemblyMerge,
+				CrossBoundaryLinking: true,
+			},
+			wantErr:   true,
+			wantField: "cross_boundary_linking",
+		},
+		{
+			name: "descriptor advertises linking, entity does not claim it: halt",
+			desc: linkingDesc,
+			caps: &Capabilities{
+				InputKinds:       InputKinds{Sourced: true},
+				BoundaryAssembly: BoundaryAssemblyMerge,
+			},
+			wantErr:   true,
+			wantField: "cross_boundary_linking",
+		},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			err := CrossCheckCapabilities("provider/cfn-renderer:1.0.0", EntityCapabilityClaim{Capabilities: tc.caps}, tc.desc)
+			if !tc.wantErr {
+				if err != nil {
+					t.Fatalf("expected nil, got %v", err)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatal("expected an error, got nil")
+			}
+			if !errors.Is(err, ErrWasmCapabilityMismatch) {
+				t.Fatalf("error does not wrap ErrWasmCapabilityMismatch: %v", err)
+			}
+			if !strings.Contains(err.Error(), "provider/cfn-renderer:1.0.0") {
+				t.Errorf("error should name the entity identity; got: %v", err)
+			}
+			if !strings.Contains(err.Error(), tc.wantField) {
+				t.Errorf("error should mention %q; got: %v", tc.wantField, err)
+			}
+		})
+	}
+}
+
 // TestCrossCheckCapabilities_EmptyClaim proves an entity with no authored
 // exports declares no claim and never halts, regardless of what the plugin
 // reports.

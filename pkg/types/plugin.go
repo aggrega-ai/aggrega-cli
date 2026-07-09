@@ -126,6 +126,14 @@ type PluginCapabilities struct {
 	// instance produces byte-identical output whether reused or freshly loaded.
 	// Absent (false) loads a fresh instance per crossing.
 	ReusableInstance bool `json:"reusableInstance,omitempty" yaml:"reusableInstance,omitempty"`
+	// CrossBoundaryLinking is whether the plugin wires a cross-boundary uses
+	// edge — a uses edge whose consuming and consumed ends assemble into
+	// different dispatch groups — by emitting provider-native cross-reference
+	// wiring through its paired link_publish and link_resolve exports. Authored
+	// true only when the plugin exports both; the load gate rejects a claim that
+	// does not match the export pair. Absent (false) declares no cross-boundary
+	// linking, so the host routes no link crossing to the plugin.
+	CrossBoundaryLinking bool `json:"crossBoundaryLinking,omitempty" yaml:"crossBoundaryLinking,omitempty"`
 }
 
 // PluginInputKinds is a plugin's authored input-kind claim: which of the three
