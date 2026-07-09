@@ -31,7 +31,7 @@ func reassembleOne(t *testing.T, codec StockYAMLCodec, name string, body []byte,
 	if err != nil {
 		t.Fatalf("apply: %v", err)
 	}
-	out, err := codec.Reassemble(name, body, units, []frp.PatchedUnit{{Token: u.Token, Tree: newTree, Ops: ops}})
+	out, _, err := codec.Reassemble(name, body, units, []frp.PatchedUnit{{Token: u.Token, Tree: newTree, Ops: ops}})
 	if err != nil {
 		t.Fatalf("Reassemble: %v", err)
 	}
@@ -174,7 +174,7 @@ func TestStockCodec_RoundTripNoPatch(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Segment: %v", err)
 			}
-			out, err := codec.Reassemble("f.yaml", body, units, nil)
+			out, _, err := codec.Reassemble("f.yaml", body, units, nil)
 			if err != nil {
 				t.Fatalf("Reassemble: %v", err)
 			}
@@ -223,7 +223,7 @@ func TestStockCodec_NonSurgicalOpSurfaces(t *testing.T) {
 	if err != nil {
 		t.Fatalf("apply: %v", err)
 	}
-	_, rerr := codec.Reassemble("v.yaml", []byte(body), units, []frp.PatchedUnit{
+	_, _, rerr := codec.Reassemble("v.yaml", []byte(body), units, []frp.PatchedUnit{
 		{Token: "v.yaml", Tree: newTree, Ops: []frp.JSONPatchOp{{Key: "v.yaml", Op: "replace", Path: "/a", Value: map[string]any{"b": 2}}}},
 	})
 	if rerr == nil {

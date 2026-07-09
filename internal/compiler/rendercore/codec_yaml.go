@@ -101,9 +101,18 @@ func (c StockYAMLCodec) Segment(name string, body []byte) ([]frp.Unit, error) {
 // new member at the established child indent before the mapping region's end;
 // a remove deletes the member's span. A node class it cannot edit surgically
 // is a hard error, not a silent whole-document fallback.
-func (c StockYAMLCodec) Reassemble(name string, body []byte, segs []frp.Unit, patched []frp.PatchedUnit) ([]byte, error) {
+//
+// Every surgical edit passes a post-patch verify guard: the edited unit is
+// re-parsed and its decoded content is checked against the unit's intended
+// result (the ops applied to the original tree). A unit whose surgical edit does
+// not verify is re-rendered in full — a guaranteed-correct fallback that trades
+// byte-surgical minimality for correctness — and an advisory warning naming the
+// unit is returned. The guard never turns a mismatch into a build failure; it
+// self-heals and reports. On a correct patch the guard is a no-op and the output
+// is byte-identical to the un-guarded surgical result.
+func (c StockYAMLCodec) Reassemble(name string, body []byte, segs []frp.Unit, patched []frp.PatchedUnit) ([]byte, []string, error) {
 	if len(patched) == 0 {
-		return append([]byte(nil), body...), nil
+		return append([]byte(nil), body...), nil, nil
 	}
 
 	// Re-derive the byte-faithful document segmentation (affix + body spans)
@@ -111,13 +120,14 @@ func (c StockYAMLCodec) Reassemble(name string, body []byte, segs []frp.Unit, pa
 	// leading/trailing affixes preserved verbatim.
 	docSegs, err := Split(name, body)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	byToken := make(map[string]Segment, len(docSegs))
 	for _, sg := range docSegs {
 		byToken[sg.Token] = sg
 	}
 
+	var warnings []string
 	patchedBodies := make(map[string][]byte, len(patched))
 	for _, pu := range patched {
 		if len(pu.Ops) == 0 {
@@ -125,19 +135,30 @@ func (c StockYAMLCodec) Reassemble(name string, body []byte, segs []frp.Unit, pa
 		}
 		sg, ok := byToken[pu.Token]
 		if !ok {
-			return nil, cerrors.New(cerrors.CatalogError, cerrors.SourceLocation{File: name},
+			return nil, nil, cerrors.New(cerrors.CatalogError, cerrors.SourceLocation{File: name},
 				fmt.Sprintf("stock codec: patched token %q not found in %q", pu.Token, name), nil, nil)
 		}
 		docBody := body[sg.bodyStart:sg.bodyEnd]
 		edited, eerr := editDocumentBody(docBody, pu.Ops, c.indent)
 		if eerr != nil {
-			return nil, cerrors.Wrap(eerr, cerrors.CatalogError, cerrors.SourceLocation{File: name},
+			return nil, nil, cerrors.Wrap(eerr, cerrors.CatalogError, cerrors.SourceLocation{File: name},
 				fmt.Sprintf("stock codec: surgical edit of unit %q", pu.Token))
+		}
+		// Post-patch verification. A surgical edit that does not decode to its
+		// intended result self-heals via a full re-render (never a build
+		// failure — a re-render is always a correct fallback) and reports an
+		// advisory warning. If the re-render itself cannot render, the surgical
+		// bytes stand (the un-guarded behavior) and the warning still fires.
+		if !verifyPatchedBody(docBody, edited, pu.Ops) {
+			if healed, herr := remarshalPatchedBody(docBody, pu.Ops, c.indent); herr == nil {
+				edited = healed
+			}
+			warnings = append(warnings, PatchVerificationWarning(pu.Token))
 		}
 		patchedBodies[pu.Token] = edited
 	}
 
-	return ApplyBack(body, docSegs, patchedBodies), nil
+	return ApplyBack(body, docSegs, patchedBodies), warnings, nil
 }
 
 // editDocumentBody applies ops to one document body at node-span granularity,

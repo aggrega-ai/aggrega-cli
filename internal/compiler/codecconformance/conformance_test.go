@@ -32,18 +32,18 @@ func (mapIteratingCodec) Segment(name string, body []byte) ([]frp.Unit, error) {
 	}}, nil
 }
 
-func (mapIteratingCodec) Reassemble(name string, body []byte, segs []frp.Unit, patched []frp.PatchedUnit) ([]byte, error) {
+func (mapIteratingCodec) Reassemble(name string, body []byte, segs []frp.Unit, patched []frp.PatchedUnit) ([]byte, []string, error) {
 	// Decode into a plain map and re-encode by ranging it — Go map iteration
 	// order is randomized, so two calls produce different byte sequences.
 	m := map[string]int{}
 	if err := json.Unmarshal([]byte(`{"a":1,"b":2,"c":3,"d":4,"e":5,"f":6}`), &m); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	var sb strings.Builder
 	for k, v := range m {
 		fmt.Fprintf(&sb, "%s: %d\n", k, v)
 	}
-	return []byte(sb.String()), nil
+	return []byte(sb.String()), nil, nil
 }
 
 // TestRun_CatchesNondeterministicCodec proves the determinism family fails a
@@ -70,8 +70,8 @@ func (identityCodec) Segment(name string, body []byte) ([]frp.Unit, error) {
 	return []frp.Unit{{Token: name, Bytes: append([]byte(nil), body...), MediaType: "application/yaml", Tree: json.RawMessage(`{}`)}}, nil
 }
 
-func (identityCodec) Reassemble(name string, body []byte, segs []frp.Unit, patched []frp.PatchedUnit) ([]byte, error) {
-	return append([]byte(nil), body...), nil
+func (identityCodec) Reassemble(name string, body []byte, segs []frp.Unit, patched []frp.PatchedUnit) ([]byte, []string, error) {
+	return append([]byte(nil), body...), nil, nil
 }
 
 // TestCheckDeterminism_PassesDeterministicCodec is the false-positive guard.

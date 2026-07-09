@@ -72,7 +72,7 @@ func TestHelmCodec_RoundTripIdentity(t *testing.T) {
 				t.Fatalf("Segment(%q): %v", sh.name, err)
 			}
 			// No patches → identity.
-			out, err := codec.Reassemble(sh.name, body, units, nil)
+			out, _, err := codec.Reassemble(sh.name, body, units, nil)
 			if err != nil {
 				t.Fatalf("Reassemble(%q): %v", sh.name, err)
 			}
@@ -132,7 +132,7 @@ func TestHelmCodec_ValueHolePatch_EditsOnlyTargetScalar(t *testing.T) {
 	if err != nil {
 		t.Fatalf("apply: %v", err)
 	}
-	out, err := codec.Reassemble(name, []byte(body), units, []frp.PatchedUnit{{Token: u.Token, Tree: newTree, Ops: ops}})
+	out, _, err := codec.Reassemble(name, []byte(body), units, []frp.PatchedUnit{{Token: u.Token, Tree: newTree, Ops: ops}})
 	if err != nil {
 		t.Fatalf("Reassemble: %v", err)
 	}
@@ -166,7 +166,7 @@ func TestHelmCodec_ValueHoleReplacedByLiteral(t *testing.T) {
 	if err != nil {
 		t.Fatalf("apply: %v", err)
 	}
-	out, err := codec.Reassemble(name, []byte(body), units, []frp.PatchedUnit{{Token: u.Token, Tree: newTree, Ops: ops}})
+	out, _, err := codec.Reassemble(name, []byte(body), units, []frp.PatchedUnit{{Token: u.Token, Tree: newTree, Ops: ops}})
 	if err != nil {
 		t.Fatalf("Reassemble: %v", err)
 	}
@@ -239,7 +239,7 @@ replicaCount: 1
 	if err != nil {
 		t.Fatalf("apply: %v", err)
 	}
-	out, err := codec.Reassemble(name, []byte(body), units, []frp.PatchedUnit{{Token: u.Token, Tree: newTree, Ops: ops}})
+	out, _, err := codec.Reassemble(name, []byte(body), units, []frp.PatchedUnit{{Token: u.Token, Tree: newTree, Ops: ops}})
 	if err != nil {
 		t.Fatalf("Reassemble: %v", err)
 	}
@@ -286,7 +286,7 @@ func TestHelmCodec_MultidocAllValueHolesIsPerDocument(t *testing.T) {
 	if err != nil {
 		t.Fatalf("apply: %v", err)
 	}
-	out, err := codec.Reassemble(name, []byte(body), units, []frp.PatchedUnit{{Token: u.Token, Tree: newTree, Ops: ops}})
+	out, _, err := codec.Reassemble(name, []byte(body), units, []frp.PatchedUnit{{Token: u.Token, Tree: newTree, Ops: ops}})
 	if err != nil {
 		t.Fatalf("Reassemble: %v", err)
 	}
@@ -328,7 +328,7 @@ func TestHelmCodec_MultidocWithControlFlowIsWholeFileOpaque(t *testing.T) {
 	}
 
 	// Round-trip identity holds for the whole file.
-	out, err := codec.Reassemble(name, []byte(body), units, nil)
+	out, _, err := codec.Reassemble(name, []byte(body), units, nil)
 	if err != nil {
 		t.Fatalf("Reassemble: %v", err)
 	}
@@ -355,7 +355,7 @@ func reassembleHelm(t *testing.T, codec frp.Codec, name string, body []byte, pat
 	if err != nil {
 		t.Fatalf("apply: %v", err)
 	}
-	out, err := codec.Reassemble(name, body, units, []frp.PatchedUnit{{Token: u.Token, Tree: newTree, Ops: ops}})
+	out, _, err := codec.Reassemble(name, body, units, []frp.PatchedUnit{{Token: u.Token, Tree: newTree, Ops: ops}})
 	if err != nil {
 		t.Fatalf("Reassemble: %v", err)
 	}

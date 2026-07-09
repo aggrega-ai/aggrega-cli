@@ -269,7 +269,7 @@ func reassemble() int32 {
 		return 1
 	}
 
-	body, err := helmchart.NewHelmChartCodec(in.YamlIndent).Reassemble(in.Name, in.Body, in.Segs, in.Patched)
+	body, _, err := helmchart.NewHelmChartCodec(in.YamlIndent).Reassemble(in.Name, in.Body, in.Segs, in.Patched)
 	if err != nil {
 		pdk.SetError(errors.New(errorChainMessage(err)))
 		return 1

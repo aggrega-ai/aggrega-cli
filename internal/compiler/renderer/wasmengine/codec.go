@@ -71,14 +71,17 @@ func (c *guestCodec) Segment(name string, body []byte) ([]frp.Unit, error) {
 }
 
 // Reassemble rebuilds one named file from its carved units and the patched units
-// a pipeline step produced, through the guest's reassemble export.
-func (c *guestCodec) Reassemble(name string, body []byte, segs []frp.Unit, patched []frp.PatchedUnit) ([]byte, error) {
+// a pipeline step produced, through the guest's reassemble export. A guest owns
+// its own reassembly correctness (and any self-heal), so this host-side adapter
+// raises no advisory warnings across the ABI: the reassemble crossing carries a
+// body and an error, not diagnostics.
+func (c *guestCodec) Reassemble(name string, body []byte, segs []frp.Unit, patched []frp.PatchedUnit) ([]byte, []string, error) {
 	in := renderer.ReassembleInput{Name: name, Body: body, Segs: segs, Patched: patched, YamlIndent: c.yamlIndent}
 	out, err := invokeReassemble(context.Background(), c.engine, in)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return out.Body, nil
+	return out.Body, nil, nil
 }
 
 // invokeCarve loads a fresh guest instance through the shared loader, calls the

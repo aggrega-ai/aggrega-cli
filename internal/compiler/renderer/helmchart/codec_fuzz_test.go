@@ -53,7 +53,7 @@ func FuzzHelmCodecRoundTrip(f *testing.F) {
 		if err != nil {
 			return // tokenizer error / collision: a valid loud-halt outcome
 		}
-		out, err := codec.Reassemble("fuzz/templates/x.yaml", b, units, nil)
+		out, _, err := codec.Reassemble("fuzz/templates/x.yaml", b, units, nil)
 		if err != nil {
 			t.Fatalf("Reassemble(Segment(x), {}) errored: %v; input %q", err, body)
 		}

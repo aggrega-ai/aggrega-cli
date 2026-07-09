@@ -76,7 +76,7 @@ func CheckAbsentTokenHalts(codec frp.Codec) error {
 		Tree:  []byte(`{"a":2}`),
 		Ops:   []frp.JSONPatchOp{{Op: "replace", Path: "/a", Value: float64(2)}},
 	}}
-	if _, err := codec.Reassemble(filename, body, units, bogus); err == nil {
+	if _, _, err := codec.Reassemble(filename, body, units, bogus); err == nil {
 		return errors.New("expected Reassemble to reject a PatchedUnit naming an absent token; got success")
 	}
 	return nil

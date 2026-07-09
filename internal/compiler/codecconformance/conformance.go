@@ -123,7 +123,7 @@ func CheckRoundTripIsolation(codec frp.Codec, c Case) error {
 	}
 
 	// Round-trip: no patches → byte-identical body.
-	rt, err := codec.Reassemble(c.Filename, c.Input, units, nil)
+	rt, _, err := codec.Reassemble(c.Filename, c.Input, units, nil)
 	if err != nil {
 		return fmt.Errorf("reassemble (no patches): %w", err)
 	}
@@ -145,7 +145,7 @@ func CheckRoundTripIsolation(codec frp.Codec, c Case) error {
 	if err != nil {
 		return fmt.Errorf("apply ops: %w", err)
 	}
-	out, err := codec.Reassemble(c.Filename, c.Input, units, patched)
+	out, _, err := codec.Reassemble(c.Filename, c.Input, units, patched)
 	if err != nil {
 		return fmt.Errorf("reassemble (patched): %w", err)
 	}
@@ -197,7 +197,8 @@ func segmentApplyReassemble(codec frp.Codec, c Case) ([]byte, error) {
 		return nil, fmt.Errorf("segment: %w", err)
 	}
 	if len(c.Ops) == 0 {
-		return codec.Reassemble(c.Filename, c.Input, units, nil)
+		out, _, err := codec.Reassemble(c.Filename, c.Input, units, nil)
+		return out, err
 	}
 	idx, ok := selectTarget(units, c.TargetSel)
 	if !ok {
@@ -207,7 +208,8 @@ func segmentApplyReassemble(codec frp.Codec, c Case) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	return codec.Reassemble(c.Filename, c.Input, units, patched)
+	out, _, err := codec.Reassemble(c.Filename, c.Input, units, patched)
+	return out, err
 }
 
 // applyOps applies a case's ops to the unit at idx via the stock applier and

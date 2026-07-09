@@ -278,19 +278,21 @@ func runNodePipelineWithInvoker(
 	}
 
 	// 5b. Apply PATCHes back into own files byte-faithfully via the own codec.
-	ownOut, err := foldPatchesBack(ownCodec, ownFiles, walkRes.AppliedOps.Own, nodeID)
+	ownOut, ownWarns, err := foldPatchesBack(ownCodec, ownFiles, walkRes.AppliedOps.Own, nodeID)
 	if err != nil {
 		return pipelineResult{}, err
 	}
+	res.Warnings = append(res.Warnings, ownWarns...)
 
 	// 5c. Apply PATCHes back into host files via the host codec; surface them
 	//     keyed by path.
 	hostPatched := map[string][]byte{}
 	if len(host) > 0 {
-		hostOut, err := foldPatchesBack(hostCodec, hostFiles, walkRes.AppliedOps.Host, nodeID)
+		hostOut, hostWarns, err := foldPatchesBack(hostCodec, hostFiles, walkRes.AppliedOps.Host, nodeID)
 		if err != nil {
 			return pipelineResult{}, err
 		}
+		res.Warnings = append(res.Warnings, hostWarns...)
 		for _, f := range hostOut {
 			if before, ok := lookupFile(hostFiles, f.Name); ok && !bytes.Equal(before.file.Body, f.Body) {
 				hostPatched[f.Name] = f.Body
@@ -592,8 +594,9 @@ func foldPatchesBack(
 	pfs []pipelineFile,
 	appliedByToken map[string][]frp.JSONPatchOp,
 	nodeID string,
-) ([]EmittedFile, error) {
+) ([]EmittedFile, []string, error) {
 	out := make([]EmittedFile, 0, len(pfs))
+	var warnings []string
 	for _, pf := range pfs {
 		var patched []frp.PatchedUnit
 		for _, u := range pf.units {
@@ -602,22 +605,25 @@ func foldPatchesBack(
 				continue
 			}
 			if !u.Structured() {
-				return nil, pipelineNotStructuredErr(nodeID, u.Token)
+				return nil, nil, pipelineNotStructuredErr(nodeID, u.Token)
 			}
 			patched = append(patched, frp.PatchedUnit{Token: u.Token, Tree: u.Tree, Ops: ops})
 		}
 		body := pf.file.Body
 		if len(patched) > 0 {
-			b, err := codec.Reassemble(pf.file.Name, pf.file.Body, pf.units, patched)
+			b, warns, err := codec.Reassemble(pf.file.Name, pf.file.Body, pf.units, patched)
 			if err != nil {
-				return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID},
+				return nil, nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID},
 					fmt.Sprintf("node %q: pipeline: reassemble patched file %q", nodeID, pf.file.Name))
 			}
 			body = b
+			for _, w := range warns {
+				warnings = append(warnings, fmt.Sprintf("node %q: pipeline: %s", nodeID, w))
+			}
 		}
 		out = append(out, EmittedFile{Name: pf.file.Name, Origin: pf.file.Origin, Body: body, Intermediate: pf.file.Intermediate})
 	}
-	return out, nil
+	return out, warnings, nil
 }
 
 // changedFragmentOwn reports the first own-scope token a step patched that

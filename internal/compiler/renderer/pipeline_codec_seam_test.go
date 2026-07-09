@@ -27,7 +27,7 @@ func (m markerCodec) Segment(name string, body []byte) ([]frp.Unit, error) {
 	return m.inner.Segment(name, body)
 }
 
-func (m markerCodec) Reassemble(name string, body []byte, segs []frp.Unit, patched []frp.PatchedUnit) ([]byte, error) {
+func (m markerCodec) Reassemble(name string, body []byte, segs []frp.Unit, patched []frp.PatchedUnit) ([]byte, []string, error) {
 	return m.inner.Reassemble(name, body, segs, patched)
 }
 

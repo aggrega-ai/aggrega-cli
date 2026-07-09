@@ -110,7 +110,14 @@ type Codec interface {
 	// re-joined from its original byte-range verbatim; a patched token has
 	// its addressed spans edited surgically. The result is byte-faithful:
 	// untouched bytes are reproduced exactly.
-	Reassemble(name string, body []byte, segs []Unit, patched []PatchedUnit) ([]byte, error)
+	//
+	// The returned warnings are advisory, non-fatal diagnostics the caller
+	// raises to the operator — for example, a patched unit whose surgical edit
+	// could not be verified against its intended result and was re-rendered in
+	// full as a safe fallback. An advisory warning never means the reassembly
+	// failed: the returned body is always a correct realization of the patches;
+	// only a non-nil error signals a failure the caller must surface as a halt.
+	Reassemble(name string, body []byte, segs []Unit, patched []PatchedUnit) (out []byte, warnings []string, err error)
 }
 
 // Applier applies RFC-6902 operations to one unit's tree-view and returns

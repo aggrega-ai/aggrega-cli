@@ -146,14 +146,14 @@ func (c HelmChartCodec) Segment(name string, body []byte) ([]frp.Unit, error) {
 // guest left untouched comes back verbatim; a hole the guest overwrote with a
 // literal stays overwritten (its placeholder no longer appears in the patched
 // scaffold).
-func (c HelmChartCodec) Reassemble(name string, body []byte, segs []frp.Unit, patched []frp.PatchedUnit) ([]byte, error) {
+func (c HelmChartCodec) Reassemble(name string, body []byte, segs []frp.Unit, patched []frp.PatchedUnit) ([]byte, []string, error) {
 	if len(patched) == 0 {
-		return append([]byte(nil), body...), nil
+		return append([]byte(nil), body...), nil, nil
 	}
 
 	acts, err := findActions(body)
 	if err != nil {
-		return nil, fmt.Errorf("helm-chart codec: tokenize %q: %w", name, err)
+		return nil, nil, fmt.Errorf("helm-chart codec: tokenize %q: %w", name, err)
 	}
 	if len(acts) == 0 {
 		return c.stock.Reassemble(name, body, segs, patched)
@@ -161,21 +161,21 @@ func (c HelmChartCodec) Reassemble(name string, body []byte, segs []frp.Unit, pa
 
 	scaffold, holes, err := blank(body, acts)
 	if err != nil {
-		return nil, fmt.Errorf("helm-chart codec: blank %q: %w", name, err)
+		return nil, nil, fmt.Errorf("helm-chart codec: blank %q: %w", name, err)
 	}
 
 	// Re-segment the scaffold so the stock codec edits the scaffold bytes (its
 	// byte spans are the scaffold's, not the original's).
 	scaffoldUnits, err := c.stock.Segment(name, []byte(scaffold))
 	if err != nil {
-		return nil, fmt.Errorf("helm-chart codec: re-segment scaffold %q: %w", name, err)
+		return nil, nil, fmt.Errorf("helm-chart codec: re-segment scaffold %q: %w", name, err)
 	}
-	editedScaffold, err := c.stock.Reassemble(name, []byte(scaffold), scaffoldUnits, patched)
+	editedScaffold, warnings, err := c.stock.Reassemble(name, []byte(scaffold), scaffoldUnits, patched)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	return []byte(restore(string(editedScaffold), holes)), nil
+	return []byte(restore(string(editedScaffold), holes)), warnings, nil
 }
 
 // action is one Go-template action span in a chart file's bytes: the half-open

@@ -125,12 +125,16 @@ func wireCrossBoundaryLinks(
 				fmt.Sprintf("cross-boundary link resolve for uses edge %q -> %q", edge.Source, edge.Target))
 		}
 
-		if err := applyLinkPatches(tgtGrp, pubOut.Patches, tgtKey.Provider, engineFactory, yamlIndent, edge.Target); err != nil {
+		tgtWarns, err := applyLinkPatches(tgtGrp, pubOut.Patches, tgtKey.Provider, engineFactory, yamlIndent, edge.Target)
+		if err != nil {
 			return nil, err
 		}
-		if err := applyLinkPatches(srcGrp, resOut.Patches, srcKey.Provider, engineFactory, yamlIndent, edge.Source); err != nil {
+		warnings = append(warnings, tgtWarns...)
+		srcWarns, err := applyLinkPatches(srcGrp, resOut.Patches, srcKey.Provider, engineFactory, yamlIndent, edge.Source)
+		if err != nil {
 			return nil, err
 		}
+		warnings = append(warnings, srcWarns...)
 	}
 	return warnings, nil
 }
@@ -266,24 +270,26 @@ func buildLinkEdge(edge types.IREdge, srcKey, tgtKey dispatchKey, allProvides No
 // applyLinkPatches applies each returned link patch to the named assembled file
 // in grp, through the endpoint provider's codec. A patch naming a file the
 // dispatch group did not emit halts loudly rather than silently dropping.
-func applyLinkPatches(grp *assembledGroup, patches []LinkPatch, provider string, engineFactory EngineFactory, yamlIndent int, nodeID string) error {
+func applyLinkPatches(grp *assembledGroup, patches []LinkPatch, provider string, engineFactory EngineFactory, yamlIndent int, nodeID string) ([]string, error) {
 	if len(patches) == 0 {
-		return nil
+		return nil, nil
 	}
 	codec := selectCodec(engineFactory, provider, yamlIndent)
+	var warnings []string
 	for _, patch := range patches {
 		body, ok := grp.files[patch.File]
 		if !ok {
-			return cerrors.New(cerrors.TranslationError, cerrors.SourceLocation{File: patch.File},
+			return nil, cerrors.New(cerrors.TranslationError, cerrors.SourceLocation{File: patch.File},
 				fmt.Sprintf("cross-boundary link patch targets file %q the dispatch group did not emit", patch.File), nil, nil)
 		}
-		patched, err := applyLinkPatch(codec, patch.File, body, patch.Ops, nodeID)
+		patched, warns, err := applyLinkPatch(codec, patch.File, body, patch.Ops, nodeID)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		grp.files[patch.File] = patched
+		warnings = append(warnings, warns...)
 	}
-	return nil
+	return warnings, nil
 }
 
 // applyLinkPatch applies a link patch's pre-resolved RFC-6902 ops to one
@@ -296,33 +302,33 @@ func applyLinkPatches(grp *assembledGroup, patches []LinkPatch, provider string,
 // step-pipeline wrapper: a link patch is a set of pre-resolved ops, not a
 // pipeline step. The ops address the file's own root (scope own) by the file's
 // segmentation token.
-func applyLinkPatch(codec frp.Codec, name string, body []byte, ops []frp.JSONPatchOp, nodeID string) ([]byte, error) {
+func applyLinkPatch(codec frp.Codec, name string, body []byte, ops []frp.JSONPatchOp, nodeID string) ([]byte, []string, error) {
 	pfs, docs, err := buildScopeDocs(codec, []EmittedFile{{Name: name, Body: body}})
 	if err != nil {
-		return nil, wrapPipelineErr(err, nodeID)
+		return nil, nil, wrapPipelineErr(err, nodeID)
 	}
 	ds := frp.DocumentSet{Own: docs}
 	if err := frp.ApplyPatches(&ds, ops); err != nil {
 		// A patch against an opaque unit surfaces frp.ErrPipelineTargetOpaque; an
 		// absent target surfaces frp.ErrPipelineTargetAbsent. Both stay matchable
 		// via errors.Is through the wrap.
-		return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID},
+		return nil, nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID},
 			fmt.Sprintf("cross-boundary link patch of %q", name))
 	}
 	appliedByToken := map[string][]frp.JSONPatchOp{}
 	for _, op := range ops {
 		appliedByToken[op.Key] = append(appliedByToken[op.Key], op)
 	}
-	out, err := foldPatchesBack(codec, pfs, appliedByToken, nodeID)
+	out, warnings, err := foldPatchesBack(codec, pfs, appliedByToken, nodeID)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	for _, f := range out {
 		if f.Name == name {
-			return f.Body, nil
+			return f.Body, warnings, nil
 		}
 	}
-	return body, nil
+	return body, warnings, nil
 }
 
 // crossProviderLinkUnsupported builds the loud, specific diagnostic for a
