@@ -102,6 +102,7 @@ func Split(name string, body []byte) ([]Segment, error) {
 	}
 
 	offsets := lineStartOffsets(s)
+	bo := byteOffsetFor(body, offsets)
 	raw := strings.Split(s, "\n")
 	// lineByteOffset maps a 1-based line number to its byte offset, clamping to
 	// the file length for a line past the last newline (e.g. a document whose
@@ -182,12 +183,30 @@ func Split(name string, body []byte) ([]Segment, error) {
 			bodyStart = end
 		}
 
-		// bodyEnd is derived by scanning backwards from the segment end over
-		// the trailing run of blank, comment-only, and `...` end-marker lines.
-		// This is independent of node-line reporting, which does not record a
-		// block scalar's span, so an indented `...` inside a `|`/`>` scalar
-		// stays in the body rather than being mistaken for an end-marker.
-		bodyEnd := start + bodyEndWithinSegment(s[start:end])
+		// bodyEnd is where the document body ends and the trailing affix — the
+		// run of blank, comment-only, and `...` end-marker lines before the next
+		// document — begins. It is derived from the shared span primitive applied
+		// to the document's root content node, so a multi-line block scalar body
+		// or a flow value closing on its own line is kept in the body rather than
+		// mistaken for affix; the codec and the segmenter share one boundary
+		// computation and cannot disagree.
+		bodyEnd := bodyStart
+		if dc := docs[i].Content; len(dc) > 0 {
+			e := spanOfNode(body, dc[0], 0, false, offsets, bo).End
+			// Advance past the newline terminating the last content line so the
+			// terminator stays with the body and the trailing affix begins on the
+			// next line.
+			nl := indexNewline(body, e)
+			if nl < 0 {
+				e = len(s)
+			} else {
+				e = nl + 1
+			}
+			bodyEnd = e
+		}
+		if bodyEnd > end {
+			bodyEnd = end
+		}
 		if bodyEnd < bodyStart {
 			bodyEnd = bodyStart
 		}
@@ -265,61 +284,6 @@ func isDocumentSeparatorLine(line string) bool {
 	t := strings.TrimSuffix(line, "\r")
 	return t == "---" || strings.HasPrefix(t, "--- ") || strings.HasPrefix(t, "---\t") ||
 		t == "..." || strings.HasPrefix(t, "... ") || strings.HasPrefix(t, "...\t")
-}
-
-// bodyEndWithinSegment returns the offset, relative to the start of seg, at
-// which the document body ends and the trailing affix begins. It scans the
-// segment's lines from the end, treating a blank line, a comment-only line (a
-// `#` after optional whitespace), and a `...` document-end marker at column 0
-// as trailing affix; the first line from the end that is none of these is the
-// body's last line. A segment that is entirely affix (an empty/null document
-// whose region is just its separator) yields 0.
-func bodyEndWithinSegment(seg string) int {
-	lines := splitKeepingTerminators(seg)
-	last := -1
-	for i := len(lines) - 1; i >= 0; i-- {
-		if !isTrailingAffixLine(lines[i]) {
-			last = i
-			break
-		}
-	}
-	if last < 0 {
-		return 0
-	}
-	off := 0
-	for i := 0; i <= last; i++ {
-		off += len(lines[i])
-	}
-	return off
-}
-
-// isTrailingAffixLine reports whether a line (terminator retained) belongs to a
-// document's trailing affix: a blank line, a comment-only line at any indent, or
-// a `...` document-end marker at column 0. A line whose `...` is indented (an
-// end-marker-looking line inside a block scalar) is not column 0 and is treated
-// as body.
-func isTrailingAffixLine(line string) bool {
-	core := strings.TrimSuffix(strings.TrimSuffix(line, "\n"), "\r")
-	trimmed := strings.TrimSpace(core)
-	if trimmed == "" {
-		return true
-	}
-	if strings.HasPrefix(trimmed, "#") {
-		return true
-	}
-	return core == "..." || strings.HasPrefix(core, "... ") || strings.HasPrefix(core, "...\t")
-}
-
-// splitKeepingTerminators splits s into lines, retaining each line's '\n'
-// terminator, and drops the empty trailing element strings.SplitAfter yields
-// when s ends with '\n'. The retained terminators make summed line lengths an
-// exact byte offset into the original segment.
-func splitKeepingTerminators(s string) []string {
-	lines := strings.SplitAfter(s, "\n")
-	if n := len(lines); n > 0 && lines[n-1] == "" {
-		lines = lines[:n-1]
-	}
-	return lines
 }
 
 // segmentDebugString renders a segment's three sub-regions for test

@@ -44,10 +44,13 @@ func spliceProvenanceMultiDoc(rendered string, labels, annotations map[string]st
 	}
 
 	lines := strings.Split(rendered, "\n")
+	body := []byte(rendered)
+	offs := lineStartOffsets(rendered)
+	bo := byteOffsetFor(body, offs)
 	var inserts []lineInsertion
 	stampedAny := false
 	for _, doc := range docs {
-		di, ok := planDocProvenanceSplice(doc, lines, labels, annotations)
+		di, ok := planDocProvenanceSplice(doc, lines, body, offs, bo, labels, annotations)
 		if !ok {
 			return "", false
 		}
@@ -82,7 +85,7 @@ type lineInsertion struct {
 // spliceable. A document with no metadata mapping is a silent no-op (ok=true, no
 // insertions) — matching the existing injector's "manifests without metadata skip
 // silently" contract.
-func planDocProvenanceSplice(root *yaml.Node, lines []string, labels, annotations map[string]string) ([]lineInsertion, bool) {
+func planDocProvenanceSplice(root *yaml.Node, lines []string, body []byte, offs []int, bo func(int, int) int, labels, annotations map[string]string) ([]lineInsertion, bool) {
 	mapping := DocumentMapping(root)
 	if mapping == nil {
 		return nil, true // no-op: not a mapping document (e.g. a list / scalar fragment)
@@ -97,12 +100,12 @@ func planDocProvenanceSplice(root *yaml.Node, lines []string, labels, annotation
 	}
 
 	var ins []lineInsertion
-	li, ok := planMappingChildSplice(metaKey, metaVal, lines, "labels", labels, 0)
+	li, ok := planMappingChildSplice(metaKey, metaVal, lines, body, offs, bo, "labels", labels, 0)
 	if !ok {
 		return nil, false
 	}
 	ins = append(ins, li...)
-	ai, ok := planMappingChildSplice(metaKey, metaVal, lines, "annotations", annotations, 1)
+	ai, ok := planMappingChildSplice(metaKey, metaVal, lines, body, offs, bo, "annotations", annotations, 1)
 	if !ok {
 		return nil, false
 	}
@@ -116,7 +119,7 @@ func planDocProvenanceSplice(root *yaml.Node, lines []string, labels, annotation
 // non-spliceable shape (flow-style child, or a provenance-key collision that would
 // need an in-place overwrite — routed to the round-trip fallback rather than
 // handled by the append-only splice). Empty entries is a no-op.
-func planMappingChildSplice(metaKey, metaVal *yaml.Node, lines []string, key string, entries map[string]string, seq int) ([]lineInsertion, bool) {
+func planMappingChildSplice(metaKey, metaVal *yaml.Node, lines []string, body []byte, offs []int, bo func(int, int) int, key string, entries map[string]string, seq int) ([]lineInsertion, bool) {
 	if len(entries) == 0 {
 		return nil, true
 	}
@@ -138,13 +141,19 @@ func planMappingChildSplice(metaKey, metaVal *yaml.Node, lines []string, key str
 		if len(childVal.Content) == 0 {
 			return nil, false // `labels: {}` empty mapping has no child line to anchor to
 		}
-		lastChild := childVal.Content[len(childVal.Content)-2] // last key node
-		indent := leadingIndent(lineAt(lines, lastChild.Line))
+		lastChildKey := childVal.Content[len(childVal.Content)-2] // last key node
+		lastChildVal := childVal.Content[len(childVal.Content)-1] // its value node
+		indent := leadingIndent(lineAt(lines, lastChildKey.Line))
+		// The new entries land after the last child's true last source line,
+		// which — when that child's value is a multi-line block scalar — is past
+		// the key line. The shared span primitive resolves it, so the splice
+		// never lands inside a block scalar's continuation.
+		afterLine := lineOfOffset(offs, spanOfNode(body, lastChildVal, lastChildKey.Column-1, false, offs, bo).End-1)
 		var newLines []string
 		for _, k := range keys {
 			newLines = append(newLines, indent+k+": "+yamlScalar(entries[k]))
 		}
-		return []lineInsertion{{afterIdx: lastChild.Line - 1, seq: seq, lines: newLines}}, true
+		return []lineInsertion{{afterIdx: afterLine - 1, seq: seq, lines: newLines}}, true
 	}
 
 	// Create the block under metadata: insert after the `metadata:` key line, at

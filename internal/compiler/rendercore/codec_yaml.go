@@ -193,23 +193,7 @@ func planEdit(body []byte, op frp.JSONPatchOp, indent int) (byteEdit, error) {
 	}
 	doc := root.Content[0]
 	offs := lineStartOffsets(string(body))
-	bo := func(line, col int) int {
-		idx := line - 1
-		if idx < 0 {
-			return 0
-		}
-		if idx >= len(offs) {
-			return len(body)
-		}
-		off := offs[idx] + (col - 1)
-		if off < 0 {
-			off = 0
-		}
-		if off > len(body) {
-			off = len(body)
-		}
-		return off
-	}
+	bo := byteOffsetFor(body, offs)
 
 	tokens, err := parseJSONPointer(op.Path)
 	if err != nil {
@@ -248,7 +232,7 @@ func (e *nonSurgicalOpError) Error() string {
 // over the scalar's span — the correct shape for a structured value that
 // occupies an inline (flow) value position, and a valid-YAML superset.
 func planReplace(body []byte, doc *yaml.Node, tokens []string, value any, offs []int, bo func(int, int) int, indent int) (byteEdit, error) {
-	_, valNode, parent, err := navigate(doc, tokens)
+	keyNode, valNode, parent, err := navigate(doc, tokens)
 	if err != nil {
 		return byteEdit{}, err
 	}
@@ -257,10 +241,11 @@ func planReplace(body []byte, doc *yaml.Node, tokens []string, value any, offs [
 	}
 	// A value whose parent collection is flow-style (a JSON object or array, or
 	// any inline `{...}`/`[...]`) sits on a line where the scalar's terminator
-	// is a delimiter, not the end of the line. The span scan must know this so
-	// it stops at the delimiter instead of over-reaching into the siblings.
+	// is a delimiter, not the end of the line. The span primitive must know this
+	// so it stops at the delimiter instead of over-reaching into the siblings.
 	flow := parent != nil && parent.Style&yaml.FlowStyle != 0
-	start, end := scalarSpan(body, valNode, offs, bo, flow)
+	span := spanOfNode(body, valNode, containerIndent(keyNode, parent), flow, offs, bo)
+	start, end := span.Start, span.End
 	if !isScalarValue(value) {
 		// The replacement is structured (a map or slice). An inline compact-JSON
 		// object/array is the correct shape for a value in an inline position;
@@ -430,64 +415,6 @@ func navigate(doc *yaml.Node, tokens []string) (key *yaml.Node, val *yaml.Node, 
 	return key, cur, parent, nil
 }
 
-// scalarSpan returns the [start,end) byte range of a scalar node's source
-// text. The start is the node's reported position; the end is derived by
-// scanning forward from the start to the end of the value token.
-//
-// In block context the value runs to the line's trailing comment or the end
-// of the line, so an inline `# comment` after the value is preserved and a
-// plain scalar may legitimately contain a comma. In flow context — a value
-// inside an inline `{...}`/`[...]` collection, which is how JSON-shaped bodies
-// parse — the value's real terminator is the first unquoted `,`, `}`, or `]`
-// on the line, so the scan stops there rather than running to end-of-line.
-// Delimiters inside a quoted string are ignored in both contexts.
-func scalarSpan(body []byte, n *yaml.Node, offs []int, bo func(int, int) int, flow bool) (int, int) {
-	start := bo(n.Line, n.Column)
-	// Determine the end of the value on its line. For a plain/quoted scalar
-	// the value occupies from start to either a trailing comment (" #") or
-	// the end of the line. For a quoted scalar the closing quote is included
-	// because the scan stops at the line terminator or an unquoted comment.
-	lineEnd := start
-	inSingle, inDouble := false, false
-	for lineEnd < len(body) {
-		ch := body[lineEnd]
-		if ch == '\n' {
-			break
-		}
-		switch ch {
-		case '\'':
-			if !inDouble {
-				inSingle = !inSingle
-			}
-		case '"':
-			if !inSingle {
-				inDouble = !inDouble
-			}
-		case '#':
-			// An unquoted '#' preceded by whitespace starts a line comment.
-			if !inSingle && !inDouble && lineEnd > start && (body[lineEnd-1] == ' ' || body[lineEnd-1] == '\t') {
-				goto trim
-			}
-		case ',', '}', ']':
-			// A flow collection's members are delimited by these; the first one
-			// seen outside a quoted string ends the value. In block context the
-			// characters are ordinary scalar content and the scan continues.
-			if flow && !inSingle && !inDouble {
-				goto trim
-			}
-		}
-		lineEnd++
-	}
-trim:
-	// Trim trailing whitespace between the value and a comment / EOL so the
-	// comment's leading spaces are preserved as part of the untouched suffix.
-	end := lineEnd
-	for end > start && (body[end-1] == ' ' || body[end-1] == '\t') {
-		end--
-	}
-	return start, end
-}
-
 // mappingInsertPoint returns the child indent (column-1 spaces) of a block
 // mapping's members and the byte offset at which a new member line should be
 // inserted (just before the mapping region's end). An empty block mapping
@@ -505,52 +432,40 @@ func mappingInsertPoint(body []byte, m *yaml.Node, offs []int, bo func(int, int)
 
 // parentRegionEnd returns the byte offset at which a block mapping's region
 // ends: the start of the line following its last member's full span. The last
-// member's value may itself be a nested mapping/sequence/scalar, so the scan
-// walks to the deepest last descendant's line and advances past it and any
-// trailing lines that belong to that member's block.
+// member's true source extent — including a multi-line block scalar body or a
+// flow value closing on its own line — comes from the shared span primitive, so
+// an insert lands after the member and a remove deletes the member in full.
 func parentRegionEnd(body []byte, m *yaml.Node, offs []int, bo func(int, int) int) int {
 	if len(m.Content) == 0 {
 		return bo(m.Line, m.Column)
 	}
-	lastVal := m.Content[len(m.Content)-1]
-	deepestLine := deepestLastLine(lastVal)
-	// Advance to the start of the line after deepestLine.
-	off := bo(deepestLine+1, 1)
-	// If deepestLine is the final line with no newline, off clamps to len.
-	if off > len(body) {
-		off = len(body)
+	end := spanOfNode(body, m, 0, false, offs, bo).End
+	// Advance to the start of the line following the last content line.
+	nl := indexNewline(body, end)
+	if nl < 0 {
+		return len(body)
 	}
-	return off
-}
-
-// deepestLastLine returns the largest source line number reachable from n by
-// always descending into the last child. yaml.v3 reports a node's start line
-// only, so the deepest last descendant's line bounds the node's block.
-func deepestLastLine(n *yaml.Node) int {
-	line := n.Line
-	cur := n
-	for len(cur.Content) > 0 {
-		cur = cur.Content[len(cur.Content)-1]
-		if cur.Line > line {
-			line = cur.Line
-		}
-	}
-	return line
+	return nl + 1
 }
 
 // encodeScalarLike encodes a scalar replacement value, preserving the original
-// scalar node's style when the new value is a string and the original was a
-// quoted scalar, so a `'single'` stays single-quoted and a `"double"` stays
-// double-quoted. Non-string scalars encode in their natural YAML form. A
-// structured replacement (a map or slice) never reaches here — planReplace
-// encodes it as inline JSON before calling — so the non-scalar branch is a
-// defensive guard, not a reachable path for map/slice values.
+// scalar node's quote style when the new value is a string, so a `'single'`
+// stays single-quoted and a `"double"` stays double-quoted. A block-style
+// original (literal `|` or folded `>`) is not preserved: the replacement is a
+// single inline scalar spliced over the original's span, and re-emitting it as a
+// block would mis-indent under a nested key. Non-string scalars encode in their
+// natural YAML form. A structured replacement (a map or slice) never reaches
+// here — planReplace encodes it as inline JSON before calling — so the
+// non-scalar branch is a defensive guard, not a reachable path for map/slice
+// values.
 func encodeScalarLike(orig *yaml.Node, value any, indent int) ([]byte, error) {
 	repl := &yaml.Node{Kind: yaml.ScalarNode}
 	if s, ok := value.(string); ok {
 		repl.Value = s
 		repl.Tag = "!!str"
-		repl.Style = orig.Style // preserve plain/single/double/literal/folded
+		if orig.Style == yaml.SingleQuotedStyle || orig.Style == yaml.DoubleQuotedStyle {
+			repl.Style = orig.Style
+		}
 	} else {
 		// Encode the value through a round-trip node so numbers/bools/null
 		// reach their canonical YAML form.
