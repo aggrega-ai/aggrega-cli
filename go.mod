@@ -8,6 +8,7 @@ require (
 	github.com/aggrega-ai/aggrega-abi-go v0.0.0
 	github.com/aggrega-ai/aggrega-pdk-go v0.0.0
 	github.com/aggrega-ai/aggrega-schemas v0.5.2
+	github.com/awslabs/goformation/v7 v7.14.9
 	github.com/evanphx/json-patch v5.9.11+incompatible
 	github.com/extism/go-pdk v1.1.3
 	github.com/go-git/go-git/v5 v5.19.1
@@ -132,6 +133,7 @@ require (
 	google.golang.org/grpc v1.81.1 // indirect
 	gopkg.in/evanphx/json-patch.v4 v4.13.0 // indirect
 	gopkg.in/warnings.v0 v0.1.2 // indirect
+	gopkg.in/yaml.v3 v3.0.1 // indirect
 	k8s.io/cli-runtime v0.35.1 // indirect
 	k8s.io/component-base v0.35.1 // indirect
 	k8s.io/kubectl v0.35.1 // indirect

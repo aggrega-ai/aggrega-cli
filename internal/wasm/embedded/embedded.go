@@ -38,6 +38,7 @@ import (
 //go:generate bash ../../../scripts/build-embedded-compose-provider.sh
 //go:generate bash ../../../scripts/build-embedded-helm-chart-provider.sh
 //go:generate bash ../../../scripts/build-embedded-terraform-provider.sh
+//go:generate bash ../../../scripts/build-embedded-cloudformation-provider.sh
 
 // pluginFS holds the embedded plugin artifacts. The `all:` prefix matches
 // every file under plugins/ including the dot-prefixed .gitkeep placeholder
@@ -74,6 +75,12 @@ const helmChartProviderURI = "oci://hub.aggrega.ai/plugins/core/helmchart-provid
 // so a guest rebuild does not perturb the lookup key.
 const terraformProviderURI = "oci://hub.aggrega.ai/plugins/core/terraform-provider"
 
+// cloudformationProviderURI is the digest-free repository reference the
+// cloudformation provider rendering plugin's decompressed bytes register under.
+// Like the other provider references, the reference digest is derived from the
+// bytes on demand, so a guest rebuild does not perturb the lookup key.
+const cloudformationProviderURI = "oci://hub.aggrega.ai/plugins/core/cloudformation-provider"
+
 // registry maps a plugin's digest-free repository reference to the embedded
 // artifact's decompressed bytes. It is the lookup the cascade's embed tier
 // consults, populated from pluginFS at init by register.
@@ -91,10 +98,11 @@ var registry = map[string][]byte{}
 // runtime branch for a missing or corrupt embedded file.
 func register() map[string][]byte {
 	return map[string][]byte{
-		helmProviderURI:      mustDecompress("plugins/helm-provider.wasm.gz"),
-		composeProviderURI:   mustDecompress("plugins/compose-provider.wasm.gz"),
-		helmChartProviderURI: mustDecompress("plugins/helmchart-provider.wasm.gz"),
-		terraformProviderURI: mustDecompress("plugins/terraform-provider.wasm.gz"),
+		helmProviderURI:           mustDecompress("plugins/helm-provider.wasm.gz"),
+		composeProviderURI:        mustDecompress("plugins/compose-provider.wasm.gz"),
+		helmChartProviderURI:      mustDecompress("plugins/helmchart-provider.wasm.gz"),
+		terraformProviderURI:      mustDecompress("plugins/terraform-provider.wasm.gz"),
+		cloudformationProviderURI: mustDecompress("plugins/cloudformation-provider.wasm.gz"),
 	}
 }
 
