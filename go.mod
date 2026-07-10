@@ -7,7 +7,7 @@ require (
 	github.com/Masterminds/sprig/v3 v3.3.0
 	github.com/aggrega-ai/aggrega-abi-go v0.0.0
 	github.com/aggrega-ai/aggrega-pdk-go v0.0.0
-	github.com/aggrega-ai/aggrega-schemas v0.6.0
+	github.com/aggrega-ai/aggrega-schemas v0.6.1
 	github.com/awslabs/goformation/v7 v7.14.9
 	github.com/evanphx/json-patch v5.9.11+incompatible
 	github.com/extism/go-pdk v1.1.3
