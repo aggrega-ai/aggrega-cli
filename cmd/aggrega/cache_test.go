@@ -314,6 +314,239 @@ func TestCacheEntitySlotEncoding(t *testing.T) {
 	}
 }
 
+// writeCompileLeaf writes a synthetic compiled-module cache leaf of the given
+// byte size and modification time, creating dir if needed, and returns its path.
+func writeCompileLeaf(t *testing.T, dir, name string, size int, mtime time.Time) string {
+	t.Helper()
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("mkdir compile dir: %v", err)
+	}
+	p := filepath.Join(dir, name)
+	if err := os.WriteFile(p, bytes.Repeat([]byte("x"), size), 0o644); err != nil {
+		t.Fatalf("write compile leaf: %v", err)
+	}
+	if err := os.Chtimes(p, mtime, mtime); err != nil {
+		t.Fatalf("chtimes: %v", err)
+	}
+	return p
+}
+
+// TestCacheEvictOverCap evicts oldest-compiled leaves first until the cache
+// fits a cap below its total, retaining the newest leaves and reporting the
+// reclaimed/retained accounting.
+func TestCacheEvictOverCap(t *testing.T) {
+	compileDir := t.TempDir()
+	modDir := filepath.Join(compileDir, "wazero-1.0-amd64-linux")
+	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+
+	old1 := writeCompileLeaf(t, modDir, "leaf-old-1", 100, base)
+	old2 := writeCompileLeaf(t, modDir, "leaf-old-2", 100, base.Add(time.Hour))
+	newest := writeCompileLeaf(t, modDir, "leaf-new", 100, base.Add(2*time.Hour))
+
+	loc := cacheLocations{compileDir: compileDir}
+	var out bytes.Buffer
+	// Total is 300 B; cap 150 B forces eviction of the two oldest leaves.
+	if err := runCacheEvict(&out, loc, 150); err != nil {
+		t.Fatalf("evict: %v", err)
+	}
+	s := out.String()
+	t.Logf("evict output:\n%s", s)
+
+	if exists(old1) || exists(old2) {
+		t.Errorf("evict retained an oldest leaf that should be gone:\n%s", s)
+	}
+	if !exists(newest) {
+		t.Errorf("evict removed the newest leaf that should survive: %s", newest)
+	}
+	if !bytes.Contains(out.Bytes(), []byte("evicted 2 leaf(s), 200 B reclaimed; 100 B retained (cap 150 B)")) {
+		t.Errorf("evict summary line wrong:\n%s", s)
+	}
+}
+
+// TestCacheEvictIdempotent asserts a second eviction at the same cap, after the
+// first brought the cache under cap, removes nothing.
+func TestCacheEvictIdempotent(t *testing.T) {
+	compileDir := t.TempDir()
+	modDir := filepath.Join(compileDir, "wazero-1.0-amd64-linux")
+	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	writeCompileLeaf(t, modDir, "leaf-old", 100, base)
+	newest := writeCompileLeaf(t, modDir, "leaf-new", 100, base.Add(time.Hour))
+
+	loc := cacheLocations{compileDir: compileDir}
+	if err := runCacheEvict(&bytes.Buffer{}, loc, 150); err != nil {
+		t.Fatalf("first evict: %v", err)
+	}
+	var out bytes.Buffer
+	if err := runCacheEvict(&out, loc, 150); err != nil {
+		t.Fatalf("second evict: %v", err)
+	}
+	s := out.String()
+	t.Logf("second evict output:\n%s", s)
+
+	if !exists(newest) {
+		t.Errorf("second evict removed the surviving leaf: %s", newest)
+	}
+	if !bytes.Contains(out.Bytes(), []byte("nothing evicted")) {
+		t.Errorf("second evict was not a no-op:\n%s", s)
+	}
+}
+
+// TestCacheEvictUnderCap asserts a cap at or above the total removes nothing.
+func TestCacheEvictUnderCap(t *testing.T) {
+	compileDir := t.TempDir()
+	modDir := filepath.Join(compileDir, "wazero-1.0-amd64-linux")
+	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	a := writeCompileLeaf(t, modDir, "leaf-a", 100, base)
+	b := writeCompileLeaf(t, modDir, "leaf-b", 100, base.Add(time.Hour))
+
+	loc := cacheLocations{compileDir: compileDir}
+	var out bytes.Buffer
+	// Total is 200 B; cap 200 B is exactly at the total, so nothing is evicted.
+	if err := runCacheEvict(&out, loc, 200); err != nil {
+		t.Fatalf("evict: %v", err)
+	}
+	s := out.String()
+	t.Logf("evict output:\n%s", s)
+
+	if !exists(a) || !exists(b) {
+		t.Errorf("under-cap evict removed a leaf:\n%s", s)
+	}
+	if !bytes.Contains(out.Bytes(), []byte("compiled-module cache is 200 B, within cap 200 B; nothing evicted")) {
+		t.Errorf("under-cap no-op line wrong:\n%s", s)
+	}
+}
+
+// TestCacheEvictTieBreak asserts that for two leaves with EQUAL modification
+// time the deterministic (mtime asc, name asc) order evicts the leaf with the
+// lexicographically smaller name first.
+func TestCacheEvictTieBreak(t *testing.T) {
+	compileDir := t.TempDir()
+	modDir := filepath.Join(compileDir, "wazero-1.0-amd64-linux")
+	equal := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	a := writeCompileLeaf(t, modDir, "leaf-a", 100, equal)
+	b := writeCompileLeaf(t, modDir, "leaf-b", 100, equal)
+
+	loc := cacheLocations{compileDir: compileDir}
+	var out bytes.Buffer
+	// Total is 200 B; cap 100 B forces exactly one eviction. Equal mtimes break
+	// on name ascending, so "leaf-a" is evicted first and "leaf-b" survives.
+	if err := runCacheEvict(&out, loc, 100); err != nil {
+		t.Fatalf("evict: %v", err)
+	}
+	s := out.String()
+	t.Logf("evict output:\n%s", s)
+
+	if exists(a) {
+		t.Errorf("tie-break evicted the wrong leaf: leaf-a should be gone:\n%s", s)
+	}
+	if !exists(b) {
+		t.Errorf("tie-break removed leaf-b that should survive: %s", b)
+	}
+	if !bytes.Contains(out.Bytes(), []byte("evicted 1 leaf(s), 100 B reclaimed; 100 B retained (cap 100 B)")) {
+		t.Errorf("tie-break summary line wrong:\n%s", s)
+	}
+}
+
+// TestCacheEvictSkipsSidecarsAndTmp asserts the compile-lock sidecars and *.tmp
+// transients are neither counted toward the total nor ever evicted, even while a
+// real leaf is being evicted.
+func TestCacheEvictSkipsSidecarsAndTmp(t *testing.T) {
+	compileDir := t.TempDir()
+	modDir := filepath.Join(compileDir, "wazero-1.0-amd64-linux")
+	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+
+	old := writeCompileLeaf(t, modDir, "leaf-old", 100, base)
+	newest := writeCompileLeaf(t, modDir, "leaf-new", 100, base.Add(time.Hour))
+	// A large lock sidecar and a large *.tmp transient: if either were counted,
+	// the total would far exceed the cap; if either were evictable it could be
+	// removed. Both must be ignored on both axes.
+	lock := writeCompileLeaf(t, compileDir, ".compile-deadbeef.lock", 500, base)
+	tmp := writeCompileLeaf(t, modDir, "half-written.tmp", 500, base)
+
+	loc := cacheLocations{compileDir: compileDir}
+	var out bytes.Buffer
+	// Only the two real leaves (200 B) are counted; cap 150 B evicts one.
+	if err := runCacheEvict(&out, loc, 150); err != nil {
+		t.Fatalf("evict: %v", err)
+	}
+	s := out.String()
+	t.Logf("evict output:\n%s", s)
+
+	if exists(old) {
+		t.Errorf("evict retained the oldest real leaf:\n%s", s)
+	}
+	if !exists(newest) {
+		t.Errorf("evict removed the newest real leaf: %s", newest)
+	}
+	if !exists(lock) {
+		t.Errorf("evict removed a compile-lock sidecar: %s", lock)
+	}
+	if !exists(tmp) {
+		t.Errorf("evict removed a *.tmp transient: %s", tmp)
+	}
+	// Retained 100 B proves the 500 B lock and 500 B tmp were never counted.
+	if !bytes.Contains(out.Bytes(), []byte("evicted 1 leaf(s), 100 B reclaimed; 100 B retained (cap 150 B)")) {
+		t.Errorf("evict counted a sidecar or tmp transient:\n%s", s)
+	}
+}
+
+// TestCacheEvictNoCompileDir asserts a loud error when no compiled-module cache
+// directory resolves.
+func TestCacheEvictNoCompileDir(t *testing.T) {
+	if err := runCacheEvict(&bytes.Buffer{}, cacheLocations{}, 100); err == nil {
+		t.Fatalf("expected a loud error with no compiled-module cache directory")
+	}
+}
+
+// TestParseHumanSize covers the shared binary-unit vocabulary parseHumanSize and
+// humanSize agree on, plus the malformed-input error paths.
+func TestParseHumanSize(t *testing.T) {
+	ok := []struct {
+		in   string
+		want int64
+	}{
+		{"1024", 1024},
+		{"0", 0},
+		{"512 B", 512},
+		{"1KiB", 1 << 10},
+		{"1 kib", 1 << 10},
+		{"512MiB", 512 << 20},
+		{"5GiB", 5 << 30},
+		{"4.5 GiB", int64(4.5 * float64(int64(1)<<30))},
+		{"1TiB", 1 << 40},
+	}
+	for _, c := range ok {
+		got, err := parseHumanSize(c.in)
+		if err != nil {
+			t.Errorf("parseHumanSize(%q) unexpected error: %v", c.in, err)
+			continue
+		}
+		if got != c.want {
+			t.Errorf("parseHumanSize(%q) = %d, want %d", c.in, got, c.want)
+		}
+	}
+
+	bad := []string{"", "   ", "GiB", "abc", "5 ZiB", "1.5", "MiB"}
+	for _, in := range bad {
+		if _, err := parseHumanSize(in); err == nil {
+			t.Errorf("parseHumanSize(%q) expected an error, got nil", in)
+		}
+	}
+
+	// Round-trip: an exact unit multiple humanSize prints parses back to itself,
+	// proving the display and parse sides share one unit scheme.
+	for _, n := range []int64{512, 1 << 10, 512 << 20, 5 << 30, 1 << 40} {
+		rt, err := parseHumanSize(humanSize(n))
+		if err != nil {
+			t.Errorf("round-trip parseHumanSize(humanSize(%d)) error: %v", n, err)
+			continue
+		}
+		if rt != n {
+			t.Errorf("round-trip %d -> %q -> %d", n, humanSize(n), rt)
+		}
+	}
+}
+
 // TestCacheStatusProvenanceSharedBy builds a provenance index in which two
 // distinct URIs resolve to one content digest, then asserts status surfaces both
 // identities on a single line marked "shared by 2", and that a solitary identity

@@ -12,7 +12,9 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -44,9 +46,10 @@ func newCacheCmd() *cobra.Command {
 
 status  lists cache contents, one element per line, then a summary line.
 prune   reclaims artifact-cache entries no workspace lockfile references.
+evict   trims the compiled-module cache to a size cap, oldest first.
 clear   wipes every cache, including the compiled-module store.`,
 	}
-	c.AddCommand(newCacheStatusCmd(), newCachePruneCmd(), newCacheClearCmd())
+	c.AddCommand(newCacheStatusCmd(), newCachePruneCmd(), newCacheEvictCmd(), newCacheClearCmd())
 	return c
 }
 
@@ -493,6 +496,224 @@ func runCachePrune(w io.Writer, loc cacheLocations) error {
 		fmt.Fprintf(w, "%d %s element(s) not prune-eligible (~%s); reclaim with 'aggrega cache clear'\n", n, cl.name, humanSize(size))
 	}
 	return nil
+}
+
+func newCacheEvictCmd() *cobra.Command {
+	var maxSize string
+	c := &cobra.Command{
+		Use:   "evict --max-size <size>",
+		Short: "Trim the compiled-module cache to a size cap, oldest first",
+		Long: `Trim the compiled-module cache to a size cap by removing the
+least-recently-compiled modules first, until the cache total is at or below
+--max-size. The compiled-module cache is the one machine-global store that grows
+without bound: every provider guest is compiled once and reused across every
+project on the machine, so over time it can dominate on-disk cache use.
+
+Unlike prune (which reclaims artifact-cache entries no lockfile references) and
+clear (which wipes every cache), evict is size-bounded and touches only the
+compiled-module cache. Evicted modules recompile on demand on the next build, so
+eviction loses no irrecoverable state.
+
+--max-size is required and accepts a binary-unit size in the same vocabulary the
+status summary prints — for example 5GiB, "4.5 GiB", or 512MiB — or a bare
+integer byte count. The unit suffix is case-insensitive and an optional space
+may separate the number from the unit.
+
+Eviction is explicit: no build evicts on its own. When the cache already fits
+the cap, evict reports a no-op and removes nothing.`,
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if strings.TrimSpace(maxSize) == "" {
+				return fmt.Errorf("cache evict: --max-size is required")
+			}
+			capBytes, err := parseHumanSize(maxSize)
+			if err != nil {
+				return fmt.Errorf("cache evict: invalid --max-size: %w", err)
+			}
+			if capBytes <= 0 {
+				return fmt.Errorf("cache evict: --max-size must be greater than zero, got %q", maxSize)
+			}
+			return runCacheEvict(cmd.OutOrStdout(), resolveCacheLocations(cmd.Context()), capBytes)
+		},
+	}
+	c.Flags().StringVar(&maxSize, "max-size", "", "size cap for the compiled-module cache (e.g. 5GiB, 512MiB, or a byte count); required")
+	return c
+}
+
+// evictLeaf is one compiled-module cache leaf considered for size-bounded
+// eviction: its display label, filesystem path, byte size, and last
+// modification time. modTime orders eviction (oldest-compiled first) but is
+// never printed, so eviction output carries no raw timestamps and the selection
+// stays a pure function of the on-disk leaf set.
+type evictLeaf struct {
+	label   string
+	path    string
+	size    int64
+	modTime time.Time
+}
+
+// collectCompileLeaves enumerates the compiled-module cache leaves eligible for
+// eviction beneath root. It applies the content filter the status enumeration
+// uses — directories and the transient per-guest compile-lock sidecars
+// (.compile-<digest>.lock) are not cache content — and additionally skips
+// half-written *.tmp transients so an in-flight compile is never evicted or
+// counted. A root that does not exist is an empty leaf set, not an error. Each
+// leaf carries its size and modification time for the oldest-first order.
+func collectCompileLeaves(root string) ([]evictLeaf, error) {
+	if _, err := os.Stat(root); err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	var out []evictLeaf
+	err := filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			return nil
+		}
+		name := d.Name()
+		if strings.HasPrefix(name, ".compile-") && strings.HasSuffix(name, ".lock") {
+			return nil
+		}
+		if strings.HasSuffix(name, ".tmp") {
+			return nil
+		}
+		info, ierr := d.Info()
+		if ierr != nil {
+			return ierr
+		}
+		rel, relErr := filepath.Rel(root, p)
+		if relErr != nil {
+			rel = p
+		}
+		out = append(out, evictLeaf{
+			label:   filepath.ToSlash(rel),
+			path:    p,
+			size:    info.Size(),
+			modTime: info.ModTime(),
+		})
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// runCacheEvict trims the compiled-module cache to capBytes. It enumerates the
+// eligible leaves, and when their total already fits the cap prints a single
+// no-op line and removes nothing. Otherwise it removes leaves oldest-compiled
+// first — modification time ascending, leaf label ascending as the deterministic
+// tie-break — until the remaining total fits the cap, reporting each removal and
+// a closing summary. Eviction is best-effort with respect to a concurrent
+// compile: the cache is re-derivable, so a race only forces a recompile. A
+// per-leaf removal failure is returned loudly rather than swallowed.
+func runCacheEvict(w io.Writer, loc cacheLocations, capBytes int64) error {
+	if loc.compileDir == "" {
+		return fmt.Errorf("cache evict: no compiled-module cache directory could be resolved")
+	}
+	leaves, err := collectCompileLeaves(loc.compileDir)
+	if err != nil {
+		return fmt.Errorf("cache evict: enumerate compiled-module cache: %w", err)
+	}
+	var total int64
+	for _, l := range leaves {
+		total += l.size
+	}
+	if total <= capBytes {
+		fmt.Fprintf(w, "compiled-module cache is %s, within cap %s; nothing evicted\n", humanSize(total), humanSize(capBytes))
+		return nil
+	}
+	sort.Slice(leaves, func(i, j int) bool {
+		if !leaves[i].modTime.Equal(leaves[j].modTime) {
+			return leaves[i].modTime.Before(leaves[j].modTime)
+		}
+		return leaves[i].label < leaves[j].label
+	})
+	remaining := total
+	var removed int
+	var reclaimed int64
+	for _, l := range leaves {
+		if remaining <= capBytes {
+			break
+		}
+		if rmErr := os.Remove(l.path); rmErr != nil {
+			return fmt.Errorf("cache evict: remove %s: %w", l.path, rmErr)
+		}
+		fmt.Fprintf(w, "evicted %s (%s)\n", l.label, humanSize(l.size))
+		removed++
+		reclaimed += l.size
+		remaining -= l.size
+	}
+	fmt.Fprintf(w, "evicted %d leaf(s), %s reclaimed; %s retained (cap %s)\n", removed, humanSize(reclaimed), humanSize(remaining), humanSize(capBytes))
+	return nil
+}
+
+// parseHumanSize parses a byte quantity written in the same binary-unit
+// vocabulary humanSize renders — B, KiB, MiB, GiB, TiB, PiB, EiB — so a size the
+// tool prints round-trips back through this parser; the display and parse sides
+// share one unit scheme. A bare integer (or a plain "B" suffix) is an exact byte
+// count; a unit-suffixed value may be fractional and is scaled then truncated to
+// whole bytes. The unit suffix is case-insensitive and an optional space may
+// separate the number from the unit. An empty, malformed, or unrecognized-unit
+// quantity returns an error.
+func parseHumanSize(s string) (int64, error) {
+	str := strings.TrimSpace(s)
+	if str == "" {
+		return 0, fmt.Errorf("empty size value")
+	}
+	// Split the leading numeric run from the trailing unit letters.
+	upper := strings.ToUpper(str)
+	idx := len(upper)
+	for idx > 0 {
+		c := upper[idx-1]
+		if c >= 'A' && c <= 'Z' {
+			idx--
+			continue
+		}
+		break
+	}
+	numStr := strings.TrimSpace(str[:idx])
+	unit := strings.TrimSpace(upper[idx:])
+	if numStr == "" {
+		return 0, fmt.Errorf("size %q has no numeric value", s)
+	}
+
+	var mult int64
+	switch unit {
+	case "", "B":
+		mult = 1
+	case "KIB":
+		mult = 1 << 10
+	case "MIB":
+		mult = 1 << 20
+	case "GIB":
+		mult = 1 << 30
+	case "TIB":
+		mult = 1 << 40
+	case "PIB":
+		mult = 1 << 50
+	case "EIB":
+		mult = 1 << 60
+	default:
+		return 0, fmt.Errorf("size %q has an unrecognized unit %q; use B, KiB, MiB, GiB, TiB, PiB, or EiB", s, unit)
+	}
+
+	if mult == 1 {
+		n, err := strconv.ParseInt(numStr, 10, 64)
+		if err != nil {
+			return 0, fmt.Errorf("size %q is not a byte integer: %w", s, err)
+		}
+		return n, nil
+	}
+	f, err := strconv.ParseFloat(numStr, 64)
+	if err != nil {
+		return 0, fmt.Errorf("size %q has a malformed number: %w", s, err)
+	}
+	return int64(f * float64(mult)), nil
 }
 
 func newCacheClearCmd() *cobra.Command {
