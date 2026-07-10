@@ -63,10 +63,15 @@ type cacheElement struct {
 	digestHex string
 }
 
-// cacheClass is one named cache subtree with its enumerated elements.
+// cacheClass is one named cache subtree with its enumerated elements. prunable
+// records whether prune may reclaim the class: true for the digest-addressable
+// classes whose elements map to a lockfile reference, false for a class keyed by
+// content the compiler cannot map to a lockfile (the compiled-module store,
+// keyed by the runtime's own internal hashing), which only clear reclaims.
 type cacheClass struct {
 	name     string
 	root     string
+	prunable bool
 	elements []cacheElement
 }
 
@@ -290,24 +295,26 @@ func enumDescribe(root string) []cacheElement {
 // collectClasses enumerates every applicable cache class in a fixed order:
 // the three workspace subtrees (present only when a workspace resolved) then
 // the two global caches. The fixed order and per-class element sort make the
-// whole enumeration deterministic across runs of identical cache state.
+// whole enumeration deterministic across runs of identical cache state. This is
+// the single assembly of the class set: status lists every class, prune filters
+// on the prunable flag, and clear acts on all of them.
 func collectClasses(loc cacheLocations) []cacheClass {
 	var classes []cacheClass
 	if loc.wsRoot != "" {
 		classes = append(classes,
-			cacheClass{name: "workspace entity cache", root: loc.entitiesRoot(), elements: enumEntities(loc.entitiesRoot())},
-			cacheClass{name: "workspace source-artifact cache", root: loc.sourceArtifactsRoot(), elements: enumSourceArtifacts(loc.sourceArtifactsRoot())},
-			cacheClass{name: "workspace external-input store", root: loc.inputsRoot(), elements: enumInputs(loc.inputsRoot())},
+			cacheClass{name: "workspace entity cache", root: loc.entitiesRoot(), prunable: true, elements: enumEntities(loc.entitiesRoot())},
+			cacheClass{name: "workspace source-artifact cache", root: loc.sourceArtifactsRoot(), prunable: true, elements: enumSourceArtifacts(loc.sourceArtifactsRoot())},
+			cacheClass{name: "workspace external-input store", root: loc.inputsRoot(), prunable: true, elements: enumInputs(loc.inputsRoot())},
 		)
 	}
 	if loc.compileDir != "" {
 		classes = append(classes,
-			cacheClass{name: "compiled-module cache", root: loc.compileDir, elements: enumCompileModules(loc.compileDir)},
+			cacheClass{name: "compiled-module cache", root: loc.compileDir, prunable: false, elements: enumCompileModules(loc.compileDir)},
 		)
 	}
 	if loc.describeDir != "" {
 		classes = append(classes,
-			cacheClass{name: "plugin-describe cache", root: loc.describeDir, elements: enumDescribe(loc.describeDir)},
+			cacheClass{name: "plugin-describe cache", root: loc.describeDir, prunable: true, elements: enumDescribe(loc.describeDir)},
 		)
 	}
 	return classes
@@ -395,20 +402,20 @@ func runCachePrune(w io.Writer, loc cacheLocations) error {
 		return fmt.Errorf("cache prune found %d lockfile candidate(s) under %s but none parsed as a lockfile; run `aggrega pull <release>` first", len(lockPaths), wsRoot)
 	}
 
-	// Prune the digest-mappable classes only. The describe cache is included
-	// because a describe entry's filename stem is the guest's content digest,
-	// which equals the pin a lockfile plugin entry records — so it maps to the
-	// same reference set. The compiled-module cache is deliberately excluded.
-	prunable := []cacheClass{
-		{name: "workspace entity cache", elements: enumEntities(loc.entitiesRoot())},
-		{name: "workspace source-artifact cache", elements: enumSourceArtifacts(loc.sourceArtifactsRoot())},
-		{name: "workspace external-input store", elements: enumInputs(loc.inputsRoot())},
-		{name: "plugin-describe cache", elements: enumDescribe(loc.describeDir)},
-	}
+	// Prune the digest-mappable classes only, drawn from the single class-set
+	// assembly. The describe cache is included because a describe entry's
+	// filename stem is the guest's content digest, which equals the pin a
+	// lockfile plugin entry records — so it maps to the same reference set. The
+	// compiled-module cache is not prunable (its flag is false) and is reported
+	// as out-of-scope below rather than acted on.
+	classes := collectClasses(loc)
 
 	var removed, retained int
 	var reclaimed int64
-	for _, cl := range prunable {
+	for _, cl := range classes {
+		if !cl.prunable {
+			continue
+		}
 		for _, el := range cl.elements {
 			if el.digestHex == "" || refset[el.digestHex] {
 				retained++
@@ -417,30 +424,30 @@ func runCachePrune(w io.Writer, loc cacheLocations) error {
 			if rmErr := os.RemoveAll(el.path); rmErr != nil {
 				return fmt.Errorf("cache prune: remove %s: %w", el.path, rmErr)
 			}
-			removeEmptyParents(el.path, cl.rootFor(loc))
+			removeEmptyParents(el.path, cl.root)
 			fmt.Fprintf(w, "removed %s: %s\n", cl.name, el.label)
 			removed++
 			reclaimed += el.size
 		}
 	}
 	fmt.Fprintf(w, "\npruned %d element(s), %s reclaimed; %d retained\n", removed, humanSize(reclaimed), retained)
-	return nil
-}
 
-// rootFor returns the class's on-disk root for a prunable class, so
-// removeEmptyParents stops climbing at the correct boundary.
-func (c cacheClass) rootFor(loc cacheLocations) string {
-	switch c.name {
-	case "workspace entity cache":
-		return loc.entitiesRoot()
-	case "workspace source-artifact cache":
-		return loc.sourceArtifactsRoot()
-	case "workspace external-input store":
-		return loc.inputsRoot()
-	case "plugin-describe cache":
-		return loc.describeDir
+	// Report the classes prune cannot reclaim so the retained count above is not
+	// read against the full set. Their size is aggregated from the same
+	// class-set assembly, and clear is named as the verb that reclaims them.
+	for _, cl := range classes {
+		if cl.prunable || len(cl.elements) == 0 {
+			continue
+		}
+		var n int
+		var size int64
+		for _, el := range cl.elements {
+			n++
+			size += el.size
+		}
+		fmt.Fprintf(w, "%d %s element(s) not prune-eligible (~%s); reclaim with 'aggrega cache clear'\n", n, cl.name, humanSize(size))
 	}
-	return ""
+	return nil
 }
 
 func newCacheClearCmd() *cobra.Command {
@@ -461,30 +468,20 @@ compiled-module cache as well. Cleared caches repopulate on the next build.`,
 // runCacheClear removes every cache subtree. Each subtree is sized before
 // removal so the report states what was reclaimed. Absent subtrees are no-ops.
 func runCacheClear(w io.Writer, loc cacheLocations) error {
-	targets := []struct {
-		name string
-		path string
-	}{
-		{"workspace entity cache", loc.entitiesRoot()},
-		{"workspace source-artifact cache", loc.sourceArtifactsRoot()},
-		{"workspace external-input store", loc.inputsRoot()},
-		{"compiled-module cache", loc.compileDir},
-		{"plugin-describe cache", loc.describeDir},
-	}
 	var reclaimed int64
 	var wiped int
-	for _, t := range targets {
-		if t.path == "" {
+	for _, cl := range collectClasses(loc) {
+		if cl.root == "" {
 			continue
 		}
-		if _, err := os.Stat(t.path); err != nil {
+		if _, err := os.Stat(cl.root); err != nil {
 			continue
 		}
-		size := dirSize(t.path)
-		if rmErr := os.RemoveAll(t.path); rmErr != nil {
-			return fmt.Errorf("cache clear: remove %s: %w", t.path, rmErr)
+		size := dirSize(cl.root)
+		if rmErr := os.RemoveAll(cl.root); rmErr != nil {
+			return fmt.Errorf("cache clear: remove %s: %w", cl.root, rmErr)
 		}
-		fmt.Fprintf(w, "cleared %s (%s)\n", t.name, humanSize(size))
+		fmt.Fprintf(w, "cleared %s (%s)\n", cl.name, humanSize(size))
 		reclaimed += size
 		wiped++
 	}

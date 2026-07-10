@@ -232,6 +232,32 @@ func TestCachePruneSelective(t *testing.T) {
 	}
 }
 
+// TestCachePruneReportsOutOfScope asserts prune reports the compiled-module
+// cache as out-of-scope — named, counted, and sized — so the retained count is
+// not read against the full cache set, and clear is named as the reclaiming
+// verb. The fixture holds one compiled module the prune must not touch.
+func TestCachePruneReportsOutOfScope(t *testing.T) {
+	fx := newCacheFixture(t)
+	var out bytes.Buffer
+	if err := runCachePrune(&out, fx.loc); err != nil {
+		t.Fatalf("prune: %v", err)
+	}
+	s := out.String()
+	t.Logf("prune output:\n%s", s)
+
+	if !bytes.Contains(out.Bytes(), []byte("compiled-module cache element(s) not prune-eligible")) {
+		t.Errorf("prune did not name the compiled-module cache as out-of-scope:\n%s", s)
+	}
+	// One compiled module is present in the fixture; the line reports its count.
+	if !bytes.Contains(out.Bytes(), []byte("1 compiled-module cache element(s) not prune-eligible")) {
+		t.Errorf("prune did not count the out-of-scope compiled module:\n%s", s)
+	}
+	// The aggregate size and the reclaiming verb are both present on the line.
+	if !bytes.Contains(out.Bytes(), []byte("~")) || !bytes.Contains(out.Bytes(), []byte("reclaim with 'aggrega cache clear'")) {
+		t.Errorf("prune out-of-scope line missing size or clear guidance:\n%s", s)
+	}
+}
+
 func TestCachePruneNoWorkspace(t *testing.T) {
 	loc := cacheLocations{compileDir: t.TempDir(), describeDir: t.TempDir()}
 	err := runCachePrune(&bytes.Buffer{}, loc)
