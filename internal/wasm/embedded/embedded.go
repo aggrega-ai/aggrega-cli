@@ -8,15 +8,18 @@
 // resolves with no filesystem, cache, or network access — the first tier the
 // plugin-resolution cascade consults.
 //
-// The helm and compose provider rendering plugins are embedded here. Each
-// artifact is committed gzip-compressed under plugins/ (the uncompressed Wasm is
-// large) and decompressed once at init into the registry, keyed by the
+// The provider rendering guests are embedded here. Each artifact is a
+// reproducible build output — gzip-compressed under plugins/ (the uncompressed
+// Wasm is large), regenerated from guest source by `go generate` rather than
+// tracked in git, so a fresh checkout has none until a build runs — decompressed
+// once at init into the registry, keyed by the
 // plugin's digest-free repository reference — the same reference a Plugin
 // entity's spec.plugin names. Keying on the repository, not a content digest,
 // means a rebuild of the embedded bytes does not perturb the lookup key: the
 // reference digest is derived from the bytes on demand where a caller needs it.
-// Adding another embedded plugin is a drop-in: place its gzip-compressed .wasm
-// under plugins/ and register its repository reference in register.
+// Adding another embedded plugin is a drop-in: add a row to the embeddedArtifacts
+// table and its build-embedded generate step so its gzip-compressed .wasm lands
+// under plugins/.
 package embedded
 
 import (
@@ -124,7 +127,7 @@ var descriptorRegistry = map[string][]byte{}
 // register binds embedded plugin repository references to their bytes read from
 // pluginFS. It is the single place an embedded plugin's guest is wired: read its
 // artifact from pluginFS and assign it under its repository reference. The
-// committed artifacts are gzip-compressed, so register decompresses each once
+// generated artifacts are gzip-compressed, so register decompresses each once
 // here.
 //
 // A read or decompression failure for a registered artifact is a
@@ -237,7 +240,7 @@ func mustRead(name string) []byte {
 
 // mustDecompress reads a gzip-compressed embedded artifact and returns its
 // decompressed bytes, panicking on any read or decompression failure. A failure
-// means the embed directive and the registered path disagree, or the committed
+// means the embed directive and the registered path disagree, or the generated
 // artifact is not valid gzip — both are compile-of-the-binary defects with no
 // recoverable runtime branch, mirroring mustRead's contract.
 func mustDecompress(name string) []byte {
