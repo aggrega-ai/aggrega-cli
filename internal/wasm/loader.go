@@ -295,6 +295,16 @@ func aggregaCacheRoot() (string, bool) {
 	return filepath.Join(base, "aggrega"), true
 }
 
+// AggregaCacheRoot returns the user-level cache root the CLI's persistent caches
+// live under and whether one could be resolved. It is the exported accessor over
+// the single internal root spelling, so a sibling cache that lives alongside the
+// compile cache and the plugin-describe cache — such as the plugin provenance
+// index — locates the same parent without re-spelling the root itself. A false
+// return means no user cache directory could be resolved.
+func AggregaCacheRoot() (string, bool) {
+	return aggregaCacheRoot()
+}
+
 // wasmCompileCacheDir returns the directory for the persistent wazero
 // compilation cache and whether one could be resolved. The provider guests are
 // identical bytes across every project, so the cache is rooted at the

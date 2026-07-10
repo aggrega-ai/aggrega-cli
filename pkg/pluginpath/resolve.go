@@ -66,6 +66,14 @@ type ResolvedPlugin struct {
 	Tier  Tier
 	URI   string
 
+	// Version is the lockfile-resolved version the URI was pinned to at
+	// resolution (the same value that addresses the versioned cache slot), or
+	// empty when no pin supplied one — the publish-time linter path, the bare
+	// cascade. It rides alongside URI as the resolved plugin's identity so a
+	// caller can record which artifact a set of guest bytes came from. It is a
+	// plain scalar, so this package stays free of any internal/wasm dependency.
+	Version string
+
 	// Capability is the entity's authored capability claim, attached by the
 	// entity-fronted Lookup (EntityLookup) from the in-hand Plugin entity.
 	// It is neutral — a pluginpath-owned shape, not the loader's — so this
@@ -376,7 +384,7 @@ func (r Resolver) verified(uri string, b []byte, tier Tier) (ResolvedPlugin, err
 				uri, tier, got, pin, oci.ErrFetchIntegrity)
 		}
 	}
-	return ResolvedPlugin{Bytes: b, Tier: tier, URI: uri}, nil
+	return ResolvedPlugin{Bytes: b, Tier: tier, URI: uri, Version: r.PinVersions[uri]}, nil
 }
 
 // readSidecar reads the sidecar artifact for uri, returning (bytes, true, nil)

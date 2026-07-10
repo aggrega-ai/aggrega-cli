@@ -17,6 +17,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
+	"github.com/aggrega-ai/aggrega-cli/internal/wasm/provindex"
 	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/externalinputs"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
@@ -84,6 +85,8 @@ type cacheLocations struct {
 
 	compileDir  string
 	describeDir string
+
+	provIndexPath string
 }
 
 // resolveCacheLocations resolves the workspace (best-effort) and the two
@@ -102,6 +105,9 @@ func resolveCacheLocations(ctx context.Context) cacheLocations {
 	}
 	if dir, ok := wasm.PluginDescribeCacheDir(); ok {
 		loc.describeDir = dir
+	}
+	if p, ok := provindex.DefaultIndexPath(); ok {
+		loc.provIndexPath = p
 	}
 	return loc
 }
@@ -356,8 +362,47 @@ func runCacheStatus(w io.Writer, loc cacheLocations) error {
 			totalSize += el.size
 		}
 	}
+	printProvenance(w, loc.provIndexPath)
 	fmt.Fprintf(w, "\n%d elements, %s\n", totalCount, humanSize(totalSize))
 	return nil
+}
+
+// printProvenance lists the resolved-plugin identities the provenance index
+// holds — one line per recorded content digest, naming every {URI@version} the
+// resolver loaded those exact guest bytes for. When a digest carries more than
+// one identity (distinct URIs or versions that resolve to byte-identical bytes),
+// the line is marked "shared by N". The listing is deterministic — digests and
+// identities are enumerated in sorted order and no timestamps are printed — so
+// identical index state produces byte-identical output. The identities are
+// metadata about compiled modules, not reclaimable cache elements, so they are
+// listed separately and excluded from the element count and size summary.
+func printProvenance(w io.Writer, indexPath string) {
+	fmt.Fprintf(w, "plugin provenance:\n")
+	if indexPath == "" {
+		fmt.Fprintln(w, "  (empty)")
+		return
+	}
+	ix, err := provindex.Load(indexPath)
+	if err != nil {
+		fmt.Fprintln(w, "  (empty)")
+		return
+	}
+	entries := ix.Entries()
+	if len(entries) == 0 {
+		fmt.Fprintln(w, "  (empty)")
+		return
+	}
+	for _, e := range entries {
+		names := make([]string, 0, len(e.Identities))
+		for _, id := range e.Identities {
+			names = append(names, id.URI+"@"+id.Version)
+		}
+		line := strings.Join(names, ", ")
+		if len(e.Identities) > 1 {
+			line += fmt.Sprintf("  shared by %d", len(e.Identities))
+		}
+		fmt.Fprintf(w, "  %s\n", line)
+	}
 }
 
 func newCachePruneCmd() *cobra.Command {
@@ -562,9 +607,11 @@ func addDigest(set map[string]bool, d string) {
 // hex, with any "sha256:" algorithm prefix stripped. The lockfile records
 // digests in both spellings (prefixed for entities and libraries, bare hex for
 // external inputs), and the cache element digests are computed in the prefixed
-// spelling, so both sides normalize here before comparison.
+// spelling, so both sides normalize here before comparison. It delegates to the
+// single home of the prefix-free spelling so cache enumeration and the
+// provenance index key digests identically.
 func normalizeDigestHex(d string) string {
-	return strings.ToLower(strings.TrimPrefix(d, "sha256:"))
+	return provindex.Normalize(d)
 }
 
 // removeEmptyParents removes now-empty parent directories of a removed slot,

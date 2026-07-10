@@ -9,7 +9,9 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/wasm/provindex"
 	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/externalinputs"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
@@ -309,5 +311,55 @@ func TestCacheEntitySlotEncoding(t *testing.T) {
 		if _, err := url.PathUnescape(el.label); err != nil {
 			t.Errorf("entity label not decodable: %q", el.label)
 		}
+	}
+}
+
+// TestCacheStatusProvenanceSharedBy builds a provenance index in which two
+// distinct URIs resolve to one content digest, then asserts status surfaces both
+// identities on a single line marked "shared by 2", and that a solitary identity
+// is listed without the marker. The section is deterministic and carries no
+// timestamps.
+func TestCacheStatusProvenanceSharedBy(t *testing.T) {
+	now := time.Date(2026, 7, 10, 12, 0, 0, 0, time.UTC)
+	idxPath := filepath.Join(t.TempDir(), "provenance-index.json")
+
+	shared := "sha256:beef"
+	if err := provindex.Upsert(idxPath, shared, provindex.Identity{URI: "oci://hub.aggrega.ai/plugins/core/helm", Version: "1.0.0"}, 100, now); err != nil {
+		t.Fatalf("upsert shared A: %v", err)
+	}
+	if err := provindex.Upsert(idxPath, shared, provindex.Identity{URI: "oci://hub.aggrega.ai/plugins/team/helm-fork", Version: "2.0.0"}, 100, now); err != nil {
+		t.Fatalf("upsert shared B: %v", err)
+	}
+	if err := provindex.Upsert(idxPath, "sha256:aaaa", provindex.Identity{URI: "oci://hub.aggrega.ai/plugins/core/kustomize", Version: "3.1.0"}, 50, now); err != nil {
+		t.Fatalf("upsert solo: %v", err)
+	}
+
+	loc := cacheLocations{provIndexPath: idxPath}
+	var a, b bytes.Buffer
+	if err := runCacheStatus(&a, loc); err != nil {
+		t.Fatalf("status a: %v", err)
+	}
+	if err := runCacheStatus(&b, loc); err != nil {
+		t.Fatalf("status b: %v", err)
+	}
+	if a.String() != b.String() {
+		t.Fatalf("provenance status not byte-identical:\n--- a ---\n%s\n--- b ---\n%s", a.String(), b.String())
+	}
+	s := a.String()
+	t.Logf("status output:\n%s", s)
+
+	if !bytes.Contains(a.Bytes(), []byte("plugin provenance:")) {
+		t.Errorf("status missing plugin provenance section:\n%s", s)
+	}
+	if !bytes.Contains(a.Bytes(), []byte("shared by 2")) {
+		t.Errorf("status did not mark the shared digest:\n%s", s)
+	}
+	if !bytes.Contains(a.Bytes(), []byte("oci://hub.aggrega.ai/plugins/core/helm@1.0.0")) ||
+		!bytes.Contains(a.Bytes(), []byte("oci://hub.aggrega.ai/plugins/team/helm-fork@2.0.0")) {
+		t.Errorf("status did not surface both shared identities:\n%s", s)
+	}
+	// The solitary identity is listed without a shared marker on its own line.
+	if !bytes.Contains(a.Bytes(), []byte("oci://hub.aggrega.ai/plugins/core/kustomize@3.1.0\n")) {
+		t.Errorf("status did not list the solitary identity plainly:\n%s", s)
 	}
 }
