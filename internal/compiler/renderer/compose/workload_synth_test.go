@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
@@ -109,7 +110,8 @@ func TestSynthesizeWorkload_MultiContainerMainAndSidecar(t *testing.T) {
 // per the package godoc.
 func TestSynthesizeWorkload_AllVolumeVariants(t *testing.T) {
 	t.Parallel()
-	w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload"}
+	// persistentTemplate is a companion of form: stateful.
+	w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload", Form: "stateful"}
 
 	c := types.ContainerSpec{Image: "store:1.0"}
 	c.Ports.Set("api", 9000)
@@ -277,6 +279,65 @@ func TestSynthesizeWorkload_ServiceTypeNodePort_PublishesPorts(t *testing.T) {
 		t.Fatalf("SynthesizeWorkload: %v", err)
 	}
 	goldenCheck(t, "service-type-nodeport-publishes-ports", files[0].Body)
+}
+
+// TestSynthesizeWorkload_FormStatefulRendersService — form: stateful renders a
+// service plus the named volume, byte-identical to the pre-form stateful path.
+func TestSynthesizeWorkload_FormStatefulRendersService(t *testing.T) {
+	t.Parallel()
+	w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload", Form: "stateful"}
+	c := types.ContainerSpec{Image: "db:1.0"}
+	c.Ports.Set("db", 5432)
+	c.VolumeMounts = []types.VolumeMount{{Name: "data", Path: "/var/lib/db"}}
+	w.Containers.Set("main", c)
+	w.Volumes.Set("data", types.VolumeSpec{PersistentTemplate: &types.PersistentTemplateVolume{Size: "10Gi"}})
+
+	svc := types.ServiceSpec{Type: "ClusterIP"}
+	svc.Ports.Set("db", 5432)
+	w.Services.Set("db", svc)
+
+	files, err := SynthesizeWorkloadCore(w, nodeCtxFor("db-server"))
+	if err != nil {
+		t.Fatalf("SynthesizeWorkload: %v", err)
+	}
+	goldenCheck(t, "form-stateful", files[0].Body)
+}
+
+// TestSynthesizeWorkload_UnsupportedFormsHalt — daemon, scheduled, and task have
+// no clean compose mapping and halt loudly.
+func TestSynthesizeWorkload_UnsupportedFormsHalt(t *testing.T) {
+	t.Parallel()
+	for _, form := range []string{"daemon", "scheduled", "task"} {
+		w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload", Form: form}
+		// form: scheduled requires a schedule to clear the shared companion
+		// validation that runs before the compose form switch; give it a valid
+		// one so this case reaches compose's own unsupported-form halt.
+		if form == "scheduled" {
+			w.Schedule = "@daily"
+		}
+		c := types.ContainerSpec{Image: "app:1.0"}
+		w.Containers.Set("main", c)
+
+		_, err := SynthesizeWorkloadCore(w, nodeCtxFor("x"))
+		if !errors.Is(err, ErrUnsupportedComposeForm) {
+			t.Errorf("form %q: expected ErrUnsupportedComposeForm; got %v", form, err)
+		}
+	}
+}
+
+// TestSynthesizeWorkload_PersistentTemplateRequiresStateful — a persistentTemplate
+// volume on a non-stateful form halts on the shared companion validation.
+func TestSynthesizeWorkload_PersistentTemplateRequiresStateful(t *testing.T) {
+	t.Parallel()
+	w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload"} // empty form → stateless
+	c := types.ContainerSpec{Image: "db:1.0"}
+	w.Containers.Set("main", c)
+	w.Volumes.Set("data", types.VolumeSpec{PersistentTemplate: &types.PersistentTemplateVolume{Size: "10Gi"}})
+
+	_, err := SynthesizeWorkloadCore(w, nodeCtxFor("db"))
+	if !errors.Is(err, rendercore.ErrPersistentTemplateRequiresStatefulForm) {
+		t.Fatalf("expected ErrPersistentTemplateRequiresStatefulForm; got %v", err)
+	}
 }
 
 // TestSynthesizeWorkload_ByteIdenticalAcrossRuns — determinism check.

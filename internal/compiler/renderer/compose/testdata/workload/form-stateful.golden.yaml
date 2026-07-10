@@ -1,0 +1,15 @@
+services:
+  db-server:
+    image: db:1.0
+    labels:
+      aggrega.ai/aggregate-name: test-agg
+      aggrega.ai/boundary-path: default
+      aggrega.ai/compiler-version: test
+      aggrega.ai/component-id: db-server
+      aggrega.ai/environment: test-env
+    volumes:
+      - type: volume
+        source: db-server-data
+        target: /var/lib/db
+volumes:
+  db-server-data: {}

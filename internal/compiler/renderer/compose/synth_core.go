@@ -51,6 +51,25 @@ func SynthesizeWorkloadCore(
 	w *types.Workload,
 	nodeCtx rendercore.NodeRenderContext,
 ) ([]rendercore.EmittedFile, error) {
+	// Companion validation (provider-agnostic): a persistentTemplate volume
+	// requires form: stateful. Single-sourced in rendercore and called at the
+	// entry of every provider synth core.
+	if err := rendercore.ValidateWorkloadForm(w, nodeCtx.NodeID); err != nil {
+		return nil, err
+	}
+
+	// compose renders stateless and stateful workloads as services (stateful
+	// adds the named volume). daemon, scheduled, and task have no clean
+	// single-host compose mapping and halt loudly.
+	switch rendercore.NormalizeWorkloadForm(w.Form) {
+	case rendercore.WorkloadFormStateless, rendercore.WorkloadFormStateful:
+		// supported
+	default:
+		return nil, cerrors.New(cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID},
+			fmt.Sprintf("compose: workload form %q has no compose mapping; compose supports stateless and stateful only", rendercore.NormalizeWorkloadForm(w.Form)),
+			nil, ErrUnsupportedComposeForm)
+	}
+
 	frag := ComposeFile{
 		Services: map[string]Service{},
 		Volumes:  map[string]Volume{},

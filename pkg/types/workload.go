@@ -21,9 +21,21 @@ package types
 
 // Workload is the platform-owned synthesisable deployment unit.
 type Workload struct {
-	APIVersion         string                    `json:"apiVersion" yaml:"apiVersion"`
-	Kind               string                    `json:"kind" yaml:"kind"`
-	Metadata           WorkloadMetadata          `json:"metadata" yaml:"metadata"`
+	APIVersion string           `json:"apiVersion" yaml:"apiVersion"`
+	Kind       string           `json:"kind" yaml:"kind"`
+	Metadata   WorkloadMetadata `json:"metadata" yaml:"metadata"`
+	// Form is the abstract controller-shape intent — one of stateless,
+	// stateful, daemon, scheduled, task. Empty is treated as stateless. Each
+	// provider Engine maps the form to a provider-native shape (Deployment,
+	// StatefulSet, DaemonSet, CronJob, Job for Kubernetes; a service or a
+	// one-shot container for compose); the form itself carries no
+	// provider-native vocabulary.
+	Form string `json:"form,omitempty" yaml:"form,omitempty"`
+	// Schedule is the cron schedule for form: scheduled — a standard 5-field
+	// crontab expression (e.g. "0 0 * * *") or one of the @hourly / @daily /
+	// @weekly / @monthly / @yearly macros. It is the companion of that form and
+	// is only meaningful when Form is scheduled.
+	Schedule           string                    `json:"schedule,omitempty" yaml:"schedule,omitempty"`
 	Replicas           *int                      `json:"replicas,omitempty" yaml:"replicas,omitempty"`
 	InitContainers     []ContainerSpec           `json:"initContainers,omitempty" yaml:"initContainers,omitempty"`
 	Containers         OrderedMap[ContainerSpec] `json:"containers,omitempty,omitzero" yaml:"containers,omitempty"`
@@ -121,9 +133,10 @@ type PersistentVolume struct {
 	Class string `json:"class,omitempty" yaml:"class,omitempty"`
 }
 
-// PersistentTemplateVolume — StatefulSet-compatible volumeClaimTemplate.
-// Triggers StatefulSet selection when any volume in the Workload uses this
-// variant.
+// PersistentTemplateVolume — per-replica claim template (a StatefulSet
+// volumeClaimTemplate on the Kubernetes shape). It is a companion of
+// form: stateful; declaring it on a workload of any other form is a
+// loud error.
 type PersistentTemplateVolume struct {
 	Size  string `json:"size" yaml:"size"`
 	Class string `json:"class,omitempty" yaml:"class,omitempty"`

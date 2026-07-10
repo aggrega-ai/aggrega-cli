@@ -1,0 +1,31 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: db-migrate
+  labels:
+    aggrega.ai/aggregate-name: test-agg
+    aggrega.ai/compiler-version: test
+    aggrega.ai/component-id: db-migrate
+    aggrega.ai/environment: test-env
+    app: db-migrate
+    app.kubernetes.io/name: db-migrate
+  annotations:
+    aggrega.ai/boundary-path: default
+spec:
+  template:
+    metadata:
+      name: ""
+      labels:
+        aggrega.ai/aggregate-name: test-agg
+        aggrega.ai/compiler-version: test
+        aggrega.ai/component-id: db-migrate
+        aggrega.ai/environment: test-env
+        app: db-migrate
+        app.kubernetes.io/name: db-migrate
+    spec:
+      containers:
+        - name: main
+          image: migrator:1.0
+          command:
+            - /migrate
+      restartPolicy: Never

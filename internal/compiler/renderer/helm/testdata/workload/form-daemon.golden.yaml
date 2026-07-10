@@ -1,0 +1,55 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: node-agent
+  labels:
+    aggrega.ai/aggregate-name: test-agg
+    aggrega.ai/compiler-version: test
+    aggrega.ai/component-id: node-agent
+    aggrega.ai/environment: test-env
+    app: node-agent
+    app.kubernetes.io/name: node-agent
+  annotations:
+    aggrega.ai/boundary-path: default
+spec:
+  selector:
+    matchLabels:
+      app: node-agent
+  template:
+    metadata:
+      name: ""
+      labels:
+        aggrega.ai/aggregate-name: test-agg
+        aggrega.ai/compiler-version: test
+        aggrega.ai/component-id: node-agent
+        aggrega.ai/environment: test-env
+        app: node-agent
+        app.kubernetes.io/name: node-agent
+    spec:
+      containers:
+        - name: main
+          image: agent:1.0
+          ports:
+            - name: metrics
+              containerPort: 9100
+apiVersion: v1
+kind: Service
+metadata:
+  name: node-agent-metrics
+  labels:
+    aggrega.ai/aggregate-name: test-agg
+    aggrega.ai/compiler-version: test
+    aggrega.ai/component-id: node-agent
+    aggrega.ai/environment: test-env
+    app: node-agent
+    app.kubernetes.io/name: node-agent
+  annotations:
+    aggrega.ai/boundary-path: default
+spec:
+  type: ClusterIP
+  selector:
+    app: node-agent
+  ports:
+    - name: metrics
+      port: 9100
+      targetPort: metrics

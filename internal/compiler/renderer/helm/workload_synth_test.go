@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
@@ -166,7 +167,7 @@ func TestSynthesizeWorkload_AllVolumeVariants(t *testing.T) {
 
 func TestSynthesizeWorkload_PersistentTemplateTriggersStatefulSet(t *testing.T) {
 	t.Parallel()
-	w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload"}
+	w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload", Form: "stateful"}
 	c := types.ContainerSpec{Image: "db:1.0"}
 	c.Ports.Set("db", 5432)
 	w.Containers.Set("main", c)
@@ -200,7 +201,7 @@ func TestSynthesizeWorkload_PersistentTemplateTriggersStatefulSet(t *testing.T) 
 // Workload with no headless Service can't name a governing Service → halt.
 func TestSynthesizeWorkload_StatefulSetNoHeadless_Halts(t *testing.T) {
 	t.Parallel()
-	w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload"}
+	w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload", Form: "stateful"}
 	c := types.ContainerSpec{Image: "db:1.0"}
 	c.Ports.Set("db", 5432)
 	w.Containers.Set("main", c)
@@ -220,7 +221,7 @@ func TestSynthesizeWorkload_StatefulSetNoHeadless_Halts(t *testing.T) {
 // Workload with two headless Services has an ambiguous governing Service → halt.
 func TestSynthesizeWorkload_StatefulSetMultipleHeadless_Halts(t *testing.T) {
 	t.Parallel()
-	w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload"}
+	w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload", Form: "stateful"}
 	c := types.ContainerSpec{Image: "db:1.0"}
 	c.Ports.Set("db", 5432)
 	w.Containers.Set("main", c)
@@ -382,6 +383,173 @@ func TestSynthesizeWorkload_LoadBalancerService(t *testing.T) {
 		t.Fatalf("SynthesizeWorkload: %v", err)
 	}
 	goldenCheck(t, "loadbalancer-service", concatBodies(files))
+}
+
+// ----- Category 10 — controller-shape form -----
+
+// TestSynthesizeWorkload_FormDaemon verifies form: daemon → DaemonSet (apps/v1,
+// no replicas).
+func TestSynthesizeWorkload_FormDaemon(t *testing.T) {
+	t.Parallel()
+	w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload", Form: "daemon"}
+	c := types.ContainerSpec{Image: "agent:1.0"}
+	c.Ports.Set("metrics", 9100)
+	w.Containers.Set("main", c)
+
+	svc := types.ServiceSpec{Type: "ClusterIP"}
+	svc.Ports.Set("metrics", 9100)
+	w.Services.Set("metrics", svc)
+
+	files, err := SynthesizeWorkloadCore(w, renderer.SecretProvidesFromContext(nil), nodeCtxFor("node-agent"))
+	if err != nil {
+		t.Fatalf("SynthesizeWorkload: %v", err)
+	}
+	if files[0].Name != "node-agent-daemonset.yaml" {
+		t.Errorf("expected daemonset.yaml; got %q", files[0].Name)
+	}
+	goldenCheck(t, "form-daemon", concatBodies(files))
+}
+
+// TestSynthesizeWorkload_FormTask verifies form: task → Job (batch/v1) with a
+// Job-valid pod restartPolicy.
+func TestSynthesizeWorkload_FormTask(t *testing.T) {
+	t.Parallel()
+	w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload", Form: "task"}
+	c := types.ContainerSpec{Image: "migrator:1.0", Command: []string{"/migrate"}}
+	w.Containers.Set("main", c)
+
+	files, err := SynthesizeWorkloadCore(w, renderer.SecretProvidesFromContext(nil), nodeCtxFor("db-migrate"))
+	if err != nil {
+		t.Fatalf("SynthesizeWorkload: %v", err)
+	}
+	if files[0].Name != "db-migrate-job.yaml" {
+		t.Errorf("expected job.yaml; got %q", files[0].Name)
+	}
+	if !strings.Contains(string(files[0].Body), "restartPolicy: Never") {
+		t.Errorf("Job pod template must pin a Job-valid restartPolicy; got:\n%s", files[0].Body)
+	}
+	goldenCheck(t, "form-task", concatBodies(files))
+}
+
+// TestSynthesizeWorkload_FormTaskOnFailurePreserved verifies an author-set
+// OnFailure restartPolicy survives into the Job pod template.
+func TestSynthesizeWorkload_FormTaskOnFailurePreserved(t *testing.T) {
+	t.Parallel()
+	w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload", Form: "task"}
+	c := types.ContainerSpec{Image: "worker:1.0", RestartPolicy: "OnFailure"}
+	w.Containers.Set("main", c)
+
+	files, err := SynthesizeWorkloadCore(w, renderer.SecretProvidesFromContext(nil), nodeCtxFor("worker"))
+	if err != nil {
+		t.Fatalf("SynthesizeWorkload: %v", err)
+	}
+	if !strings.Contains(string(files[0].Body), "restartPolicy: OnFailure") {
+		t.Errorf("author-set OnFailure must be preserved; got:\n%s", files[0].Body)
+	}
+}
+
+// TestSynthesizeWorkload_FormScheduledHalts verifies form: scheduled with no
+// schedule halts on the shared companion validation — a scheduled workload
+// needs a schedule to emit a CronJob.
+func TestSynthesizeWorkload_FormScheduledHalts(t *testing.T) {
+	t.Parallel()
+	w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload", Form: "scheduled"}
+	c := types.ContainerSpec{Image: "reporter:1.0"}
+	w.Containers.Set("main", c)
+
+	_, err := SynthesizeWorkloadCore(w, renderer.SecretProvidesFromContext(nil), nodeCtxFor("nightly"))
+	if !errors.Is(err, rendercore.ErrScheduledFormRequiresSchedule) {
+		t.Fatalf("expected ErrScheduledFormRequiresSchedule; got %v", err)
+	}
+}
+
+// TestSynthesizeWorkload_FormScheduled verifies form: scheduled with an @-macro
+// schedule → CronJob (batch/v1) whose spec.schedule carries the schedule
+// verbatim.
+func TestSynthesizeWorkload_FormScheduled(t *testing.T) {
+	t.Parallel()
+	w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload", Form: "scheduled", Schedule: "@daily"}
+	c := types.ContainerSpec{Image: "reporter:1.0", Command: []string{"/report"}}
+	w.Containers.Set("main", c)
+
+	files, err := SynthesizeWorkloadCore(w, renderer.SecretProvidesFromContext(nil), nodeCtxFor("nightly"))
+	if err != nil {
+		t.Fatalf("SynthesizeWorkload: %v", err)
+	}
+	if files[0].Name != "nightly-cronjob.yaml" {
+		t.Errorf("expected cronjob.yaml; got %q", files[0].Name)
+	}
+	if !strings.Contains(string(files[0].Body), "kind: CronJob") {
+		t.Errorf("CronJob resource expected; got:\n%s", files[0].Body)
+	}
+	if !strings.Contains(string(files[0].Body), "schedule: '@daily'") {
+		t.Errorf("spec.schedule must carry the workload schedule verbatim; got:\n%s", files[0].Body)
+	}
+	goldenCheck(t, "form-scheduled", concatBodies(files))
+}
+
+// TestSynthesizeWorkload_FormScheduledFiveField verifies the 5-field crontab
+// path renders into spec.schedule.
+func TestSynthesizeWorkload_FormScheduledFiveField(t *testing.T) {
+	t.Parallel()
+	w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload", Form: "scheduled", Schedule: "0 0 * * *"}
+	c := types.ContainerSpec{Image: "reporter:1.0"}
+	w.Containers.Set("main", c)
+
+	files, err := SynthesizeWorkloadCore(w, renderer.SecretProvidesFromContext(nil), nodeCtxFor("nightly"))
+	if err != nil {
+		t.Fatalf("SynthesizeWorkload: %v", err)
+	}
+	if !strings.Contains(string(files[0].Body), "schedule: 0 0 * * *") {
+		t.Errorf("spec.schedule must carry the 5-field cron expression; got:\n%s", files[0].Body)
+	}
+	goldenCheck(t, "form-scheduled-fivefield", concatBodies(files))
+}
+
+// TestSynthesizeWorkload_FormScheduledMalformedHalts verifies a malformed
+// schedule on form: scheduled halts on the shared cron structural check.
+func TestSynthesizeWorkload_FormScheduledMalformedHalts(t *testing.T) {
+	t.Parallel()
+	w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload", Form: "scheduled", Schedule: "0 0 * * * *"}
+	c := types.ContainerSpec{Image: "reporter:1.0"}
+	w.Containers.Set("main", c)
+
+	_, err := SynthesizeWorkloadCore(w, renderer.SecretProvidesFromContext(nil), nodeCtxFor("nightly"))
+	if !errors.Is(err, rendercore.ErrInvalidCronSchedule) {
+		t.Fatalf("expected ErrInvalidCronSchedule; got %v", err)
+	}
+}
+
+// TestSynthesizeWorkload_ScheduleOnNonScheduledFormHalts verifies a schedule on
+// a non-scheduled form halts on the reverse companion rule.
+func TestSynthesizeWorkload_ScheduleOnNonScheduledFormHalts(t *testing.T) {
+	t.Parallel()
+	w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload", Form: "stateless", Schedule: "@daily"}
+	c := types.ContainerSpec{Image: "app:1.0"}
+	w.Containers.Set("main", c)
+
+	_, err := SynthesizeWorkloadCore(w, renderer.SecretProvidesFromContext(nil), nodeCtxFor("api"))
+	if !errors.Is(err, rendercore.ErrScheduleRequiresScheduledForm) {
+		t.Fatalf("expected ErrScheduleRequiresScheduledForm; got %v", err)
+	}
+}
+
+// TestSynthesizeWorkload_PersistentTemplateRequiresStateful verifies the
+// companion constraint fires when a persistentTemplate volume rides a
+// non-stateful (here empty and daemon) form.
+func TestSynthesizeWorkload_PersistentTemplateRequiresStateful(t *testing.T) {
+	t.Parallel()
+	for _, form := range []string{"", "daemon"} {
+		w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload", Form: form}
+		c := types.ContainerSpec{Image: "db:1.0"}
+		w.Containers.Set("main", c)
+		w.Volumes.Set("data", types.VolumeSpec{PersistentTemplate: &types.PersistentTemplateVolume{Size: "10Gi"}})
+
+		_, err := SynthesizeWorkloadCore(w, renderer.SecretProvidesFromContext(nil), nodeCtxFor("db"))
+		if !errors.Is(err, rendercore.ErrPersistentTemplateRequiresStatefulForm) {
+			t.Errorf("form %q with persistentTemplate: expected ErrPersistentTemplateRequiresStatefulForm; got %v", form, err)
+		}
+	}
 }
 
 // TestSynthesizeWorkload_ByteIdenticalAcrossRuns verifies the

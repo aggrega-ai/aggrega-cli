@@ -31,3 +31,11 @@ var ErrTranslationProbeShape = errors.New("TRANSLATION_ERROR: probe declares no 
 // wire it once artifacts-input awareness lands. See the configmap-volume
 // comment in workload_synth.go.
 var ErrTranslationConfigMapMissingArtifact = errors.New("TRANSLATION_ERROR: configmap volume requires a file emitted via the Recipe's artifacts: input; none found")
+
+// ErrUnsupportedComposeForm is emitted when a Workload declares a controller
+// form compose cannot express. compose renders stateless and stateful
+// workloads as long-running services; daemon (one pod per node), scheduled
+// (cron-driven), and task (run-to-completion) have no clean single-host
+// compose mapping, so they halt loudly rather than degrade into a plain
+// service that misrepresents the intent.
+var ErrUnsupportedComposeForm = errors.New("TRANSLATION_ERROR: compose cannot express this workload form")

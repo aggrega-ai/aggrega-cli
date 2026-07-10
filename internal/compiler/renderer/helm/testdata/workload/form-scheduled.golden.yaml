@@ -1,0 +1,34 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: nightly
+  labels:
+    aggrega.ai/aggregate-name: test-agg
+    aggrega.ai/compiler-version: test
+    aggrega.ai/component-id: nightly
+    aggrega.ai/environment: test-env
+    app: nightly
+    app.kubernetes.io/name: nightly
+  annotations:
+    aggrega.ai/boundary-path: default
+spec:
+  schedule: '@daily'
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          name: ""
+          labels:
+            aggrega.ai/aggregate-name: test-agg
+            aggrega.ai/compiler-version: test
+            aggrega.ai/component-id: nightly
+            aggrega.ai/environment: test-env
+            app: nightly
+            app.kubernetes.io/name: nightly
+        spec:
+          containers:
+            - name: main
+              image: reporter:1.0
+              command:
+                - /report
+          restartPolicy: Never

@@ -27,6 +27,62 @@ type StatefulSet struct {
 	Spec       StatefulSetSpec `yaml:"spec"`
 }
 
+// DaemonSet is a minimal apps/v1 DaemonSet for YAML marshaling. Emitted for a
+// Workload of form: daemon — one pod per eligible node, so it carries no
+// replica count.
+type DaemonSet struct {
+	APIVersion string        `yaml:"apiVersion"`
+	Kind       string        `yaml:"kind"`
+	Metadata   ObjectMeta    `yaml:"metadata"`
+	Spec       DaemonSetSpec `yaml:"spec"`
+}
+
+// DaemonSetSpec is a reduced DaemonSet spec. A DaemonSet has no replica count;
+// the scheduler places one pod per eligible node.
+type DaemonSetSpec struct {
+	Selector *LabelSelector  `yaml:"selector"`
+	Template PodTemplateSpec `yaml:"template"`
+}
+
+// Job is a minimal batch/v1 Job for YAML marshaling. Emitted for a Workload of
+// form: task — a run-to-completion workload with no replica count and no
+// governing Service.
+type Job struct {
+	APIVersion string     `yaml:"apiVersion"`
+	Kind       string     `yaml:"kind"`
+	Metadata   ObjectMeta `yaml:"metadata"`
+	Spec       JobSpec    `yaml:"spec"`
+}
+
+// JobSpec is a reduced Job spec. The pod template's restartPolicy must be
+// Never or OnFailure (Always is invalid for a Job pod).
+type JobSpec struct {
+	Template PodTemplateSpec `yaml:"template"`
+}
+
+// CronJob is a minimal batch/v1 CronJob for YAML marshaling. Emitted for a
+// Workload of form: scheduled — a recurring, time-triggered workload whose
+// spec.schedule carries the Workload's cron schedule verbatim.
+type CronJob struct {
+	APIVersion string      `yaml:"apiVersion"`
+	Kind       string      `yaml:"kind"`
+	Metadata   ObjectMeta  `yaml:"metadata"`
+	Spec       CronJobSpec `yaml:"spec"`
+}
+
+// CronJobSpec is a reduced CronJob spec. Schedule is the cron expression the
+// scheduler fires on; JobTemplate wraps the per-run Job.
+type CronJobSpec struct {
+	Schedule    string          `yaml:"schedule"`
+	JobTemplate JobTemplateSpec `yaml:"jobTemplate"`
+}
+
+// JobTemplateSpec is the CronJob's per-run Job template. It reuses JobSpec so a
+// scheduled run has the same run-to-completion pod shape as a form: task Job.
+type JobTemplateSpec struct {
+	Spec JobSpec `yaml:"spec"`
+}
+
 // PersistentVolumeClaim is a minimal v1 PVC for YAML marshaling. Emitted as
 // a separate resource for each `persistent` volume in a Workload.
 type PersistentVolumeClaim struct {

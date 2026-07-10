@@ -15,8 +15,14 @@
 //
 // Translation contract (chapter 16 §3):
 //
-//   - Workload.Volumes contains any persistentTemplate → emit StatefulSet;
-//     otherwise → Deployment.
+//   - Workload.Form selects the controller shape: stateless (and empty) →
+//     Deployment, stateful → StatefulSet, daemon → DaemonSet, task → Job,
+//     scheduled → CronJob with spec.schedule set from the workload's schedule
+//     (a 5-field cron expression or an @-macro; a missing or malformed schedule
+//     halts loudly via the shared companion validation).
+//   - A persistentTemplate volume requires form: stateful (companion
+//     validation, single-sourced in rendercore); those volumes become the
+//     StatefulSet's volumeClaimTemplates.
 //   - One K8s Service per Workload.Services entry.
 //   - One PVC per persistent volume (NOT persistentTemplate; those become
 //     volumeClaimTemplates inside the StatefulSet spec).
@@ -56,6 +62,9 @@ import (
 
 const (
 	k8sStatefulSetAPIVersion = "apps/v1"
+	k8sDaemonSetAPIVersion   = "apps/v1"
+	k8sJobAPIVersion         = "batch/v1"
+	k8sCronJobAPIVersion     = "batch/v1"
 	k8sPVCAPIVersion         = "v1"
 )
 
@@ -74,9 +83,16 @@ func SynthesizeWorkloadCore(
 	secretProvides map[string]types.OrderedMap[string],
 	nodeCtx rendercore.NodeRenderContext,
 ) ([]rendercore.EmittedFile, error) {
-	// Decide top-level resource: StatefulSet if any volume is
-	// persistentTemplate; else Deployment.
-	useStatefulSet := workloadHasPersistentTemplate(w)
+	// Companion validation (provider-agnostic): a persistentTemplate volume
+	// requires form: stateful. Single-sourced in rendercore and called at the
+	// entry of every provider synth core.
+	if err := rendercore.ValidateWorkloadForm(w, nodeCtx.NodeID); err != nil {
+		return nil, err
+	}
+
+	// The controller shape is chosen by the workload's form; empty is
+	// stateless.
+	form := rendercore.NormalizeWorkloadForm(w.Form)
 
 	labels := buildAggregaLabels(nodeCtx)
 	annotations := buildAggregaAnnotations(nodeCtx)
@@ -140,7 +156,12 @@ func SynthesizeWorkloadCore(
 		return nil, err
 	}
 
-	if useStatefulSet {
+	// Controller object: one per form. stateless → Deployment, stateful →
+	// StatefulSet, daemon → DaemonSet, task → Job, scheduled → CronJob whose
+	// spec.schedule is the workload's schedule (validated by the shared
+	// companion check above).
+	switch form {
+	case rendercore.WorkloadFormStateful:
 		governingService, gerr := statefulSetGoverningService(services, nodeCtx.NodeID)
 		if gerr != nil {
 			return nil, gerr
@@ -165,7 +186,58 @@ func SynthesizeWorkloadCore(
 			Name: componentID + "-statefulset.yaml",
 			Body: body,
 		})
-	} else {
+	case rendercore.WorkloadFormDaemon:
+		ds := DaemonSet{
+			APIVersion: k8sDaemonSetAPIVersion,
+			Kind:       "DaemonSet",
+			Metadata:   ObjectMeta{Name: componentID, Namespace: namespace, Labels: resourceLabels, Annotations: resourceAnnotations},
+			Spec: DaemonSetSpec{
+				Selector: &LabelSelector{MatchLabels: selectorLabels},
+				Template: template,
+			},
+		}
+		body, err := marshalDeterministic(&ds, nodeCtx.YAMLIndent)
+		if err != nil {
+			return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("helm: node %q daemonset marshal", nodeCtx.NodeID))
+		}
+		out = append(out, rendercore.EmittedFile{
+			Name: componentID + "-daemonset.yaml",
+			Body: body,
+		})
+	case rendercore.WorkloadFormTask:
+		job := Job{
+			APIVersion: k8sJobAPIVersion,
+			Kind:       "Job",
+			Metadata:   ObjectMeta{Name: componentID, Namespace: namespace, Labels: resourceLabels, Annotations: resourceAnnotations},
+			Spec:       JobSpec{Template: jobValidTemplate(template)},
+		}
+		body, err := marshalDeterministic(&job, nodeCtx.YAMLIndent)
+		if err != nil {
+			return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("helm: node %q job marshal", nodeCtx.NodeID))
+		}
+		out = append(out, rendercore.EmittedFile{
+			Name: componentID + "-job.yaml",
+			Body: body,
+		})
+	case rendercore.WorkloadFormScheduled:
+		cron := CronJob{
+			APIVersion: k8sCronJobAPIVersion,
+			Kind:       "CronJob",
+			Metadata:   ObjectMeta{Name: componentID, Namespace: namespace, Labels: resourceLabels, Annotations: resourceAnnotations},
+			Spec: CronJobSpec{
+				Schedule:    w.Schedule,
+				JobTemplate: JobTemplateSpec{Spec: JobSpec{Template: jobValidTemplate(template)}},
+			},
+		}
+		body, err := marshalDeterministic(&cron, nodeCtx.YAMLIndent)
+		if err != nil {
+			return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("helm: node %q cronjob marshal", nodeCtx.NodeID))
+		}
+		out = append(out, rendercore.EmittedFile{
+			Name: componentID + "-cronjob.yaml",
+			Body: body,
+		})
+	default:
 		dep := Deployment{
 			APIVersion: k8sDeploymentAPIVersion,
 			Kind:       "Deployment",
@@ -215,15 +287,17 @@ func SynthesizeWorkloadCore(
 	return out, nil
 }
 
-// workloadHasPersistentTemplate reports whether any volume on the Workload
-// uses the persistentTemplate variant. Triggers StatefulSet selection.
-func workloadHasPersistentTemplate(w *types.Workload) bool {
-	for _, v := range w.Volumes.All() {
-		if v.PersistentTemplate != nil {
-			return true
-		}
+// jobValidTemplate returns a copy of the pod template with a Job-valid
+// restartPolicy. A Job (and a CronJob's per-run Job) pod template restartPolicy
+// must be Never or OnFailure; Always (the pod default) is invalid. An author-set
+// OnFailure is preserved; every other value is pinned to Never. Shared by the
+// task (Job) and scheduled (CronJob) arms so the restartPolicy rule lives in one
+// place.
+func jobValidTemplate(template PodTemplateSpec) PodTemplateSpec {
+	if template.Spec.RestartPolicy != "OnFailure" {
+		template.Spec.RestartPolicy = "Never"
 	}
-	return false
+	return template
 }
 
 // statefulSetGoverningService returns the rendered name of the single headless
