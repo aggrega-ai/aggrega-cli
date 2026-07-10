@@ -24,7 +24,7 @@ func isLocalPathRef(uri string) bool {
 // SidecarLeaf maps a plugin URI to its flat on-disk sidecar filename:
 // <uri-leaf>.wasm. The leaf is the URI's final path segment with any version
 // pin (":tag") and ".wasm" suffix stripped, so both a bare catalog URI
-// (core/helm-renderer:0.4.0) and a local path (./plugins/foo.wasm) map to a
+// (core/helm-renderer:0.4.1) and a local path (./plugins/foo.wasm) map to a
 // stable "<name>.wasm" the operator drops into the sidecar directory. It is the
 // single source of the sidecar leaf mapping: the resolver computes a sidecar
 // path with it, and a caller staging an artifact into a sidecar directory keys
