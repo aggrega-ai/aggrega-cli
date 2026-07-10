@@ -1,0 +1,635 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Cognitio S.r.l.
+
+package main
+
+import (
+	"context"
+	"fmt"
+	"io"
+	"io/fs"
+	"net/url"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+
+	"github.com/spf13/cobra"
+
+	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
+	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
+	"github.com/aggrega-ai/aggrega-cli/pkg/externalinputs"
+	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
+	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
+	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/cacheslot"
+	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/metadata"
+)
+
+// newCacheCmd builds the `aggrega cache` command family: inspect, reclaim, and
+// wipe the on-disk caches the compiler populates. Three caches exist:
+//
+//   - the workspace artifact cache under the configured cache directory
+//     (default `.aggrega/cache`), holding pulled catalog entities, resolved
+//     source artifacts, and pinned external inputs;
+//   - the compiled-module cache, holding provider guests compiled once and
+//     reused across every project on the machine;
+//   - the plugin-describe cache, holding each guest's static self-report keyed
+//     by the guest's content digest.
+func newCacheCmd() *cobra.Command {
+	c := &cobra.Command{
+		Use:   "cache",
+		Short: "Inspect and maintain the on-disk caches",
+		Long: `Inspect and maintain the caches the compiler populates.
+
+status  lists cache contents, one element per line, then a summary line.
+prune   reclaims artifact-cache entries no workspace lockfile references.
+clear   wipes every cache, including the compiled-module store.`,
+	}
+	c.AddCommand(newCacheStatusCmd(), newCachePruneCmd(), newCacheClearCmd())
+	return c
+}
+
+// cacheElement is one enumerable unit of a cache class: a slot directory, a
+// stored blob, or a compiled module. label is the deterministic display path
+// within its class; path is the filesystem entry a prune/clear removes; size
+// is the element's total byte size; digestHex is the lowercase, prefix-free
+// content digest that maps the element to a lockfile reference, or "" when the
+// element carries no reproducible content digest (a compiled module keyed by
+// the runtime's own internal hashing).
+type cacheElement struct {
+	label     string
+	path      string
+	size      int64
+	digestHex string
+}
+
+// cacheClass is one named cache subtree with its enumerated elements.
+type cacheClass struct {
+	name     string
+	root     string
+	elements []cacheElement
+}
+
+// cacheLocations resolves every cache root for the running command. wsRoot and
+// cacheDir are empty when no workspace resolved, in which case only the two
+// global caches are addressable.
+type cacheLocations struct {
+	wsRoot   string
+	cacheDir string
+
+	compileDir  string
+	describeDir string
+}
+
+// resolveCacheLocations resolves the workspace (best-effort) and the two
+// global cache directories. A workspace-resolution failure is not fatal: the
+// caller still operates on the global caches. The two global directories may
+// be absent (no resolvable user cache directory), reported by their empty
+// return.
+func resolveCacheLocations(ctx context.Context) cacheLocations {
+	var loc cacheLocations
+	if ws, err := workspaceFromContext(ctx); err == nil {
+		loc.wsRoot = ws.Root()
+		loc.cacheDir = ws.Config().ResolvedArtifactCacheDir()
+	}
+	if dir, ok := wasm.CompileCacheDir(); ok {
+		loc.compileDir = dir
+	}
+	if dir, ok := wasm.PluginDescribeCacheDir(); ok {
+		loc.describeDir = dir
+	}
+	return loc
+}
+
+// entitiesRoot returns the workspace entity-cache subtree root, or "" when no
+// workspace resolved.
+func (l cacheLocations) entitiesRoot() string {
+	if l.wsRoot == "" {
+		return ""
+	}
+	return oci.EntitiesRoot(l.wsRoot, l.cacheDir)
+}
+
+// sourceArtifactsRoot returns the workspace source-artifact-cache subtree
+// root, or "" when no workspace resolved.
+func (l cacheLocations) sourceArtifactsRoot() string {
+	if l.wsRoot == "" {
+		return ""
+	}
+	return cacheslot.SourceArtifactsRoot(l.wsRoot, l.cacheDir)
+}
+
+// inputsRoot returns the workspace external-input store root, or "" when no
+// workspace resolved.
+func (l cacheLocations) inputsRoot() string {
+	if l.wsRoot == "" {
+		return ""
+	}
+	return externalinputs.StoreRoot(filepath.Join(l.wsRoot, l.cacheDir))
+}
+
+// enumEntities enumerates the entity-cache slots. Each slot is an
+// <encoded-uri>/<version> directory holding a content blob; the slot's
+// content digest is the blob's content digest, which equals the pinned digest
+// a lockfile records for that entity, schema library, mapping library, or
+// plugin artifact. A slot whose blob cannot be read carries an empty digest
+// and is retained by prune rather than removed on a guess.
+func enumEntities(root string) []cacheElement {
+	var out []cacheElement
+	uriDirs, err := os.ReadDir(root)
+	if err != nil {
+		return out
+	}
+	for _, ud := range uriDirs {
+		if !ud.IsDir() {
+			continue
+		}
+		encoded := ud.Name()
+		display := encoded
+		if dec, derr := url.PathUnescape(encoded); derr == nil {
+			display = dec
+		}
+		versDirs, verr := os.ReadDir(filepath.Join(root, encoded))
+		if verr != nil {
+			continue
+		}
+		for _, vd := range versDirs {
+			if !vd.IsDir() {
+				continue
+			}
+			slot := filepath.Join(root, encoded, vd.Name())
+			el := cacheElement{
+				label: display + "@" + vd.Name(),
+				path:  slot,
+				size:  dirSize(slot),
+			}
+			if blob, berr := os.ReadFile(filepath.Join(slot, "blob")); berr == nil {
+				el.digestHex = normalizeDigestHex(digest.ContentDigest(blob))
+			}
+			out = append(out, el)
+		}
+	}
+	sortElements(out)
+	return out
+}
+
+// enumSourceArtifacts enumerates the source-artifact-cache slots. A slot is any
+// directory that directly holds a metadata.yaml; the recorded digest there is
+// the authoritative content digest a lockfile source-artifact entry pins (the
+// leaf directory name is only a 12-character prefix). A slot whose metadata
+// cannot be read carries an empty digest and is retained by prune.
+func enumSourceArtifacts(root string) []cacheElement {
+	var out []cacheElement
+	_ = filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+		if err != nil || !d.IsDir() {
+			return nil
+		}
+		metaPath := filepath.Join(p, "metadata.yaml")
+		if _, statErr := os.Stat(metaPath); statErr != nil {
+			return nil
+		}
+		rel, relErr := filepath.Rel(root, p)
+		if relErr != nil {
+			rel = p
+		}
+		el := cacheElement{
+			label: filepath.ToSlash(rel),
+			path:  p,
+			size:  dirSize(p),
+		}
+		if meta, merr := metadata.Read(metaPath); merr == nil {
+			el.digestHex = normalizeDigestHex(meta.Digest)
+		}
+		out = append(out, el)
+		return nil
+	})
+	sortElements(out)
+	return out
+}
+
+// enumInputs enumerates the external-input store blobs. Each blob file is named
+// by its lowercase-hex content digest, which is exactly the pin a lockfile
+// external-input entry records.
+func enumInputs(root string) []cacheElement {
+	var out []cacheElement
+	_ = filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return nil
+		}
+		rel, relErr := filepath.Rel(root, p)
+		if relErr != nil {
+			rel = p
+		}
+		out = append(out, cacheElement{
+			label:     filepath.ToSlash(rel),
+			path:      p,
+			size:      fileSize(p),
+			digestHex: normalizeDigestHex(d.Name()),
+		})
+		return nil
+	})
+	sortElements(out)
+	return out
+}
+
+// enumCompileModules enumerates the compiled-module cache. The runtime keys its
+// entries by its own internal hashing beneath a version/arch/os-marked
+// directory, so a module carries no digest the compiler can reproduce; every
+// element's digest is empty and the class is never prunable. The transient
+// per-guest compile-lock sidecars are skipped — they are not cache content.
+func enumCompileModules(root string) []cacheElement {
+	var out []cacheElement
+	_ = filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return nil
+		}
+		if strings.HasPrefix(d.Name(), ".compile-") && strings.HasSuffix(d.Name(), ".lock") {
+			return nil
+		}
+		rel, relErr := filepath.Rel(root, p)
+		if relErr != nil {
+			rel = p
+		}
+		out = append(out, cacheElement{
+			label: filepath.ToSlash(rel),
+			path:  p,
+			size:  fileSize(p),
+		})
+		return nil
+	})
+	sortElements(out)
+	return out
+}
+
+// enumDescribe enumerates the plugin-describe cache. Each entry is a
+// `<guest-digest-hex>.json` file; the filename stem is the guest's content
+// digest, which equals the pinned digest a lockfile plugin entry records, so a
+// describe entry maps to a lockfile reference by that digest.
+func enumDescribe(root string) []cacheElement {
+	var out []cacheElement
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		return out
+	}
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".json") {
+			continue
+		}
+		p := filepath.Join(root, e.Name())
+		out = append(out, cacheElement{
+			label:     e.Name(),
+			path:      p,
+			size:      fileSize(p),
+			digestHex: normalizeDigestHex(strings.TrimSuffix(e.Name(), ".json")),
+		})
+	}
+	sortElements(out)
+	return out
+}
+
+// collectClasses enumerates every applicable cache class in a fixed order:
+// the three workspace subtrees (present only when a workspace resolved) then
+// the two global caches. The fixed order and per-class element sort make the
+// whole enumeration deterministic across runs of identical cache state.
+func collectClasses(loc cacheLocations) []cacheClass {
+	var classes []cacheClass
+	if loc.wsRoot != "" {
+		classes = append(classes,
+			cacheClass{name: "workspace entity cache", root: loc.entitiesRoot(), elements: enumEntities(loc.entitiesRoot())},
+			cacheClass{name: "workspace source-artifact cache", root: loc.sourceArtifactsRoot(), elements: enumSourceArtifacts(loc.sourceArtifactsRoot())},
+			cacheClass{name: "workspace external-input store", root: loc.inputsRoot(), elements: enumInputs(loc.inputsRoot())},
+		)
+	}
+	if loc.compileDir != "" {
+		classes = append(classes,
+			cacheClass{name: "compiled-module cache", root: loc.compileDir, elements: enumCompileModules(loc.compileDir)},
+		)
+	}
+	if loc.describeDir != "" {
+		classes = append(classes,
+			cacheClass{name: "plugin-describe cache", root: loc.describeDir, elements: enumDescribe(loc.describeDir)},
+		)
+	}
+	return classes
+}
+
+func newCacheStatusCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "status",
+		Short: "List cache contents and a total summary",
+		Long: `List the contents of every cache, one element per line, followed by a
+summary line of the form "N elements, <human size>". The listing is
+deterministic: identical cache state produces byte-identical output.`,
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runCacheStatus(cmd.OutOrStdout(), resolveCacheLocations(cmd.Context()))
+		},
+	}
+}
+
+// pruneNeedsWorkspaceErr is returned when prune runs with no resolvable
+// workspace to draw a reference set from.
+var pruneNeedsWorkspaceErr = fmt.Errorf("cache prune needs a workspace, but none could be resolved")
+
+// runCacheStatus prints every class's elements one per line and a global
+// summary. Output is a pure function of on-disk cache state.
+func runCacheStatus(w io.Writer, loc cacheLocations) error {
+	classes := collectClasses(loc)
+	var totalCount int
+	var totalSize int64
+	for _, cl := range classes {
+		fmt.Fprintf(w, "%s:\n", cl.name)
+		if len(cl.elements) == 0 {
+			fmt.Fprintln(w, "  (empty)")
+			continue
+		}
+		for _, el := range cl.elements {
+			fmt.Fprintf(w, "  %s  %s\n", el.label, humanSize(el.size))
+			totalCount++
+			totalSize += el.size
+		}
+	}
+	fmt.Fprintf(w, "\n%d elements, %s\n", totalCount, humanSize(totalSize))
+	return nil
+}
+
+func newCachePruneCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "prune",
+		Short: "Remove artifact-cache entries no lockfile references",
+		Long: `Remove cache entries whose content digest no workspace lockfile references,
+retaining every referenced entry. The reference set is the union of the
+digests pinned across every lockfile (*.lock) in the workspace.
+
+Prune acts on the digest-mappable caches only: the workspace artifact cache
+(entities, source artifacts, external inputs) and the plugin-describe cache.
+The compiled-module cache is keyed by the runtime's own internal hashing,
+which prune cannot map to a lockfile reference, so prune never touches it; the
+compiled-module cache is reclaimed by "aggrega cache clear".
+
+Prune needs a pulled workspace: it fails when no lockfile is present.`,
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runCachePrune(cmd.OutOrStdout(), resolveCacheLocations(cmd.Context()))
+		},
+	}
+}
+
+// runCachePrune builds the lockfile reference set and removes every prunable
+// element whose content digest is absent from it. It halts loudly when no
+// workspace or no lockfile is present, rather than silently pruning against an
+// empty reference set (which would evict every entry).
+func runCachePrune(w io.Writer, loc cacheLocations) error {
+	if loc.wsRoot == "" {
+		return pruneNeedsWorkspaceErr
+	}
+	wsRoot := loc.wsRoot
+	cacheDir := loc.cacheDir
+
+	lockPaths := findLockfiles(wsRoot, cacheDir)
+	if len(lockPaths) == 0 {
+		return fmt.Errorf("cache prune needs a pulled workspace: no lockfiles (*.lock) found under %s; run `aggrega pull <release>` first", wsRoot)
+	}
+	refset, loaded := buildReferenceSet(lockPaths)
+	if loaded == 0 {
+		return fmt.Errorf("cache prune found %d lockfile candidate(s) under %s but none parsed as a lockfile; run `aggrega pull <release>` first", len(lockPaths), wsRoot)
+	}
+
+	// Prune the digest-mappable classes only. The describe cache is included
+	// because a describe entry's filename stem is the guest's content digest,
+	// which equals the pin a lockfile plugin entry records — so it maps to the
+	// same reference set. The compiled-module cache is deliberately excluded.
+	prunable := []cacheClass{
+		{name: "workspace entity cache", elements: enumEntities(loc.entitiesRoot())},
+		{name: "workspace source-artifact cache", elements: enumSourceArtifacts(loc.sourceArtifactsRoot())},
+		{name: "workspace external-input store", elements: enumInputs(loc.inputsRoot())},
+		{name: "plugin-describe cache", elements: enumDescribe(loc.describeDir)},
+	}
+
+	var removed, retained int
+	var reclaimed int64
+	for _, cl := range prunable {
+		for _, el := range cl.elements {
+			if el.digestHex == "" || refset[el.digestHex] {
+				retained++
+				continue
+			}
+			if rmErr := os.RemoveAll(el.path); rmErr != nil {
+				return fmt.Errorf("cache prune: remove %s: %w", el.path, rmErr)
+			}
+			removeEmptyParents(el.path, cl.rootFor(loc))
+			fmt.Fprintf(w, "removed %s: %s\n", cl.name, el.label)
+			removed++
+			reclaimed += el.size
+		}
+	}
+	fmt.Fprintf(w, "\npruned %d element(s), %s reclaimed; %d retained\n", removed, humanSize(reclaimed), retained)
+	return nil
+}
+
+// rootFor returns the class's on-disk root for a prunable class, so
+// removeEmptyParents stops climbing at the correct boundary.
+func (c cacheClass) rootFor(loc cacheLocations) string {
+	switch c.name {
+	case "workspace entity cache":
+		return loc.entitiesRoot()
+	case "workspace source-artifact cache":
+		return loc.sourceArtifactsRoot()
+	case "workspace external-input store":
+		return loc.inputsRoot()
+	case "plugin-describe cache":
+		return loc.describeDir
+	}
+	return ""
+}
+
+func newCacheClearCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "clear",
+		Short: "Wipe every cache, including compiled modules",
+		Long: `Wipe every cache: the workspace artifact cache (entities, source artifacts,
+external inputs) and the two global caches (compiled modules and plugin
+descriptors). This is the total-wipe verb; unlike prune it reclaims the
+compiled-module cache as well. Cleared caches repopulate on the next build.`,
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runCacheClear(cmd.OutOrStdout(), resolveCacheLocations(cmd.Context()))
+		},
+	}
+}
+
+// runCacheClear removes every cache subtree. Each subtree is sized before
+// removal so the report states what was reclaimed. Absent subtrees are no-ops.
+func runCacheClear(w io.Writer, loc cacheLocations) error {
+	targets := []struct {
+		name string
+		path string
+	}{
+		{"workspace entity cache", loc.entitiesRoot()},
+		{"workspace source-artifact cache", loc.sourceArtifactsRoot()},
+		{"workspace external-input store", loc.inputsRoot()},
+		{"compiled-module cache", loc.compileDir},
+		{"plugin-describe cache", loc.describeDir},
+	}
+	var reclaimed int64
+	var wiped int
+	for _, t := range targets {
+		if t.path == "" {
+			continue
+		}
+		if _, err := os.Stat(t.path); err != nil {
+			continue
+		}
+		size := dirSize(t.path)
+		if rmErr := os.RemoveAll(t.path); rmErr != nil {
+			return fmt.Errorf("cache clear: remove %s: %w", t.path, rmErr)
+		}
+		fmt.Fprintf(w, "cleared %s (%s)\n", t.name, humanSize(size))
+		reclaimed += size
+		wiped++
+	}
+	fmt.Fprintf(w, "\ncleared %d cache(s), %s reclaimed\n", wiped, humanSize(reclaimed))
+	return nil
+}
+
+// findLockfiles returns the sorted absolute paths of every `*.lock` file under
+// wsRoot, skipping the artifact cache directory and version-control metadata so
+// the walk does not mistake a git lock file for a Release lockfile.
+func findLockfiles(wsRoot, cacheDir string) []string {
+	cacheAbs := filepath.Join(wsRoot, cacheDir)
+	var paths []string
+	_ = filepath.WalkDir(wsRoot, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		if d.IsDir() {
+			if d.Name() == ".git" || p == cacheAbs {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if strings.HasSuffix(d.Name(), ".lock") {
+			paths = append(paths, p)
+		}
+		return nil
+	})
+	sort.Strings(paths)
+	return paths
+}
+
+// buildReferenceSet unions the pinned content digests across the given
+// lockfiles into a lowercase, prefix-free hex set — the retain set prune keeps.
+// The digests are read from the raw lockfile sections directly (entities,
+// external inputs, schema libraries, mapping libraries, plugins, source
+// artifacts) so every cached class has its reference, including source
+// artifacts. The second return is the count of candidates that parsed as a
+// lockfile.
+func buildReferenceSet(lockPaths []string) (map[string]bool, int) {
+	refset := map[string]bool{}
+	var loaded int
+	for _, p := range lockPaths {
+		lf, _, err := lockfile.LoadLockfile(p)
+		if err != nil || lf == nil {
+			continue
+		}
+		loaded++
+		for _, e := range lf.Entities {
+			addDigest(refset, e.Digest)
+		}
+		for _, e := range lf.ExternalInputs {
+			addDigest(refset, e.Sha256)
+		}
+		for _, e := range lf.SchemaLibraries {
+			addDigest(refset, e.Digest)
+		}
+		for _, e := range lf.MappingLibraries {
+			addDigest(refset, e.Digest)
+		}
+		for _, e := range lf.Plugins {
+			addDigest(refset, e.Digest)
+		}
+		for _, e := range lf.SourceArtifacts {
+			addDigest(refset, e.Digest)
+		}
+	}
+	return refset, loaded
+}
+
+func addDigest(set map[string]bool, d string) {
+	if h := normalizeDigestHex(d); h != "" {
+		set[h] = true
+	}
+}
+
+// normalizeDigestHex reduces a digest to its comparable form: the lowercase
+// hex, with any "sha256:" algorithm prefix stripped. The lockfile records
+// digests in both spellings (prefixed for entities and libraries, bare hex for
+// external inputs), and the cache element digests are computed in the prefixed
+// spelling, so both sides normalize here before comparison.
+func normalizeDigestHex(d string) string {
+	return strings.ToLower(strings.TrimPrefix(d, "sha256:"))
+}
+
+// removeEmptyParents removes now-empty parent directories of a removed slot,
+// climbing until a non-empty directory or the stop boundary is reached, so a
+// prune does not leave empty scaffolding behind. Any error (a non-empty
+// directory, or the boundary) ends the climb.
+func removeEmptyParents(removed, stopAt string) {
+	if stopAt == "" {
+		return
+	}
+	dir := filepath.Dir(removed)
+	for dir != stopAt && strings.HasPrefix(dir, stopAt) {
+		if err := os.Remove(dir); err != nil {
+			return
+		}
+		dir = filepath.Dir(dir)
+	}
+}
+
+// sortElements orders elements by their display label, the single sort key
+// that makes every enumeration deterministic.
+func sortElements(els []cacheElement) {
+	sort.Slice(els, func(i, j int) bool { return els[i].label < els[j].label })
+}
+
+// dirSize returns the total byte size of every regular file beneath path, or
+// the file's own size when path is a file. A path that cannot be walked
+// contributes zero.
+func dirSize(path string) int64 {
+	var total int64
+	_ = filepath.WalkDir(path, func(p string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return nil
+		}
+		if info, ierr := d.Info(); ierr == nil {
+			total += info.Size()
+		}
+		return nil
+	})
+	return total
+}
+
+// fileSize returns the byte size of a single file, or zero when it cannot be
+// stat'd.
+func fileSize(path string) int64 {
+	if info, err := os.Stat(path); err == nil {
+		return info.Size()
+	}
+	return 0
+}
+
+// humanSize renders a byte count in binary units (B, KiB, MiB, …) with one
+// decimal place above bytes, so the summary line is compact and stable.
+func humanSize(n int64) string {
+	const unit = 1024
+	if n < unit {
+		return fmt.Sprintf("%d B", n)
+	}
+	div, exp := int64(unit), 0
+	for m := n / unit; m >= unit; m /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f %ciB", float64(n)/float64(div), "KMGTPE"[exp])
+}

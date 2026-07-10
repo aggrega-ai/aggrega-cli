@@ -465,7 +465,7 @@ func formatTotalBuildTimeLine(value string) string {
 // (--no-acquire-inputs); the nil client selects the store's default HTTP
 // client.
 func newExternalInputsService(cacheDir string, lf *lockfile.Lockfile, noAcquire bool) *externalinputs.Service {
-	return externalinputs.NewService(filepath.Join(cacheDir, "inputs"), !noAcquire, nil, lf.ExternalInputs)
+	return externalinputs.NewService(externalinputs.StoreRoot(cacheDir), !noAcquire, nil, lf.ExternalInputs)
 }
 
 // acquireLockfile ensures the per-Release lockfile exists before the build wires

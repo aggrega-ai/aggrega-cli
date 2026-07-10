@@ -32,7 +32,19 @@ import (
 // byte-identical paths.
 func CachePath(workspaceRoot, cacheDir, uri, version string) string {
 	encoded := encodeURI(uri)
-	return filepath.Join(workspaceRoot, cacheDir, "entities", encoded, version)
+	return filepath.Join(EntitiesRoot(workspaceRoot, cacheDir), encoded, version)
+}
+
+// EntitiesRoot returns the root of the catalog-entity subtree of the
+// workspace's artifact cache:
+//
+//	<workspaceRoot>/<cacheDir>/entities/
+//
+// It is the single site that names the `entities/` segment; CachePath
+// composes each per-slot path beneath it, and cache-inspection tools
+// enumerate the subtree from it, so the segment is spelled once.
+func EntitiesRoot(workspaceRoot, cacheDir string) string {
+	return filepath.Join(workspaceRoot, cacheDir, "entities")
 }
 
 // ReadCached returns the bytes previously stored at the cache slot

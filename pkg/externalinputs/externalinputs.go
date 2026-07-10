@@ -69,6 +69,19 @@ type Service struct {
 	acquired map[string]bool
 }
 
+// StoreRoot returns the external-input store root beneath a workspace's
+// artifact cache directory:
+//
+//	<cacheDir>/inputs/
+//
+// It is the single site that names the `inputs/` segment; the build wires the
+// service over it and cache-inspection tools enumerate the store from it, so
+// the segment is spelled once. The `sha256/<digest>` layout beneath it is
+// owned privately by the service.
+func StoreRoot(cacheDir string) string {
+	return filepath.Join(cacheDir, "inputs")
+}
+
 // NewService constructs the external-inputs service over the store rooted at
 // root; the caller passes its artifact cache's inputs directory, and the
 // service owns the `sha256/<digest>` layout beneath it. acquire enables

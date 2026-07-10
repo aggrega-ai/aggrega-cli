@@ -312,6 +312,16 @@ func wasmCompileCacheDir() (string, bool) {
 	return filepath.Join(root, "wasm-compile"), true
 }
 
+// CompileCacheDir returns the directory of the persistent wazero
+// compiled-module cache and whether one could be resolved. It exposes the
+// internally-resolved location so cache-inspection and cache-maintenance
+// commands enumerate and reclaim the same directory the loader compiles into,
+// without re-deriving the path. A false return means no user cache directory
+// could be resolved, so no persistent compile cache exists to act on.
+func CompileCacheDir() (string, bool) {
+	return wasmCompileCacheDir()
+}
+
 // PluginDescribeCacheDir returns the directory for the persistent
 // plugin-describe cache and whether one could be resolved. A guest's describe()
 // output is a static, content-addressed self-report, so the cache keys each

@@ -68,9 +68,21 @@ func Slot(workspaceRoot, cacheDir, kind, sourceURL, version, digest string) (str
 	host, urlPath := splitURL(sourceURL)
 	prefix := digestPrefix(digest)
 	return filepath.Join(
-		workspaceRoot, cacheDir, "source-artifacts",
+		SourceArtifactsRoot(workspaceRoot, cacheDir),
 		kind, host, urlPath, version, prefix,
 	), nil
+}
+
+// SourceArtifactsRoot returns the root of the source-artifact subtree of
+// the workspace's artifact cache:
+//
+//	<workspaceRoot>/<cacheDir>/source-artifacts/
+//
+// It is the single site that names the `source-artifacts/` segment; Slot
+// composes each per-slot path beneath it, and cache-inspection tools
+// enumerate the subtree from it, so the segment is spelled once.
+func SourceArtifactsRoot(workspaceRoot, cacheDir string) string {
+	return filepath.Join(workspaceRoot, cacheDir, "source-artifacts")
 }
 
 // ManifestFile is the slot filename for the persisted OCI manifest — the
