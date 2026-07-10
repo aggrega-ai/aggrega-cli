@@ -5,6 +5,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -157,19 +158,45 @@ func collectConfiguredRefs(cfg workspaceconfig.Config) []configuredRef {
 	return refs
 }
 
-// describePluginURI resolves uri to its .wasm bytes, loads the guest, invokes
-// describe(), and returns the entry. Any resolve or describe failure is captured
-// on the entry rather than propagated, so one unresolvable plugin does not halt
-// the listing. The describe load raises the memory cap when the resolved plugin
-// carries no explicit limit, since the largest built-in guests do not instantiate
-// under the platform default cap.
+// describePluginURI returns uri's describe() descriptor as a listing entry
+// without instantiating the guest wherever a static descriptor is available.
+//
+// An embedded built-in reads the descriptor extracted from its guest at build
+// time, so listing the built-ins never compiles a guest. A configured plugin is
+// resolved to its bytes and served from the digest-keyed describe cache; only a
+// cache miss loads and describes the guest, and the result is cached for later
+// runs. Either path falls back to loading and describing the guest — loudly, not
+// with stale data — when no static descriptor is present, for example a tree
+// built before the descriptor assets were generated. Any resolve or describe
+// failure is captured on the entry rather than propagated, so one unresolvable
+// plugin does not halt the listing.
 func describePluginURI(ctx context.Context, source, uri, origin, sidecarDir string, pluginByURI func(string) (types.Plugin, bool)) pluginListEntry {
 	entry := pluginListEntry{source: source, uri: uri, origin: origin}
+
+	if source == "embedded" {
+		if raw, ok := embedded.LookupDescriptor(uri); ok {
+			var desc wasm.PluginDescriptor
+			if err := json.Unmarshal(raw, &desc); err == nil {
+				entry.desc = desc
+				return entry
+			}
+			// A malformed embedded descriptor falls through to load-and-describe
+			// rather than reporting a corrupt static self-report.
+		}
+	}
+
 	resolved, err := resolvePluginURI(uri, sidecarDir, pluginByURI)
 	if err != nil {
 		entry.err = err
 		return entry
 	}
+
+	digest := describeCacheDigest(resolved.Bytes)
+	if desc, ok := readDescribeCache(digest); ok {
+		entry.desc = desc
+		return entry
+	}
+
 	spec := resolver.PluginSpec(pluginDiagName(uri), resolved)
 	if spec.MaxMemoryPages == 0 {
 		spec.MaxMemoryPages = describeMaxMemoryPages
@@ -181,6 +208,7 @@ func describePluginURI(ctx context.Context, source, uri, origin, sidecarDir stri
 		return entry
 	}
 	_ = plugin.Close(ctx)
+	writeDescribeCache(digest, desc)
 	entry.desc = desc
 	return entry
 }

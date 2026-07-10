@@ -281,6 +281,20 @@ func selectCompilationCacheWithDir(disablePersistent bool) (wazero.CompilationCa
 	return wazero.NewCompilationCache(), ""
 }
 
+// aggregaCacheRoot returns the user-level cache root the CLI's persistent caches
+// live under and whether one could be resolved. It is the single site that names
+// the root directory, so the compile cache and the plugin-describe cache share
+// one parent rather than each re-spelling it. A false return (no resolvable user
+// cache directory) signals the caller to fall back to a non-persistent path
+// rather than fail.
+func aggregaCacheRoot() (string, bool) {
+	base, err := os.UserCacheDir()
+	if err != nil {
+		return "", false
+	}
+	return filepath.Join(base, "aggrega"), true
+}
+
 // wasmCompileCacheDir returns the directory for the persistent wazero
 // compilation cache and whether one could be resolved. The provider guests are
 // identical bytes across every project, so the cache is rooted at the
@@ -291,11 +305,32 @@ func selectCompilationCacheWithDir(disablePersistent bool) (wazero.CompilationCa
 // false return (no resolvable user cache directory) signals the caller to fall
 // back to an in-memory cache rather than fail the build.
 func wasmCompileCacheDir() (string, bool) {
-	base, err := os.UserCacheDir()
-	if err != nil {
+	root, ok := aggregaCacheRoot()
+	if !ok {
 		return "", false
 	}
-	return filepath.Join(base, "aggrega", "wasm-compile"), true
+	return filepath.Join(root, "wasm-compile"), true
+}
+
+// PluginDescribeCacheDir returns the directory for the persistent
+// plugin-describe cache and whether one could be resolved. A guest's describe()
+// output is a static, content-addressed self-report, so the cache keys each
+// descriptor on the resolved guest's content digest and lives alongside the
+// compile cache under the shared user-level aggrega root: a configured plugin is
+// described once and re-read from cache on later runs, and a change to the
+// resolved artifact yields a new digest and so a fresh entry. Under a test
+// binary the directory is a fixed path under the system temp directory rather
+// than the developer's real cache, so the suite never touches it. A false return
+// signals the caller to skip the cache and describe the guest directly.
+func PluginDescribeCacheDir() (string, bool) {
+	if testing.Testing() {
+		return filepath.Join(os.TempDir(), "aggrega-plugin-describe-test"), true
+	}
+	root, ok := aggregaCacheRoot()
+	if !ok {
+		return "", false
+	}
+	return filepath.Join(root, "plugin-describe"), true
 }
 
 // PluginCompileCacheCold reports a coarse, up-front guess of whether a build

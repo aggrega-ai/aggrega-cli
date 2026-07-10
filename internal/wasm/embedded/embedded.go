@@ -92,13 +92,44 @@ const cloudformationProviderURI = "oci://hub.aggrega.ai/plugins/core/cloudformat
 // perturb the lookup.
 const PublishingLinterURI = "oci://hub.aggrega.ai/plugins/core/publishing-linter"
 
+// embeddedArtifact binds one embedded plugin's digest-free repository reference
+// to its gzip-compressed guest bytes and its build-extracted describe()
+// descriptor, both stored under plugins/. It is the single table the byte
+// registry and the descriptor registry are built from, so a plugin's URI and
+// its two asset paths are declared exactly once and cannot drift apart.
+type embeddedArtifact struct {
+	uri        string
+	wasmGz     string
+	descriptor string
+}
+
+// embeddedArtifacts is the one table of embedded plugins. Adding a plugin is a
+// single row here plus its gzip-compressed guest (and, once the build has run,
+// its describe() descriptor) under plugins/.
+func embeddedArtifacts() []embeddedArtifact {
+	return []embeddedArtifact{
+		{helmProviderURI, "plugins/helm-provider.wasm.gz", "plugins/helm-provider.describe.json"},
+		{composeProviderURI, "plugins/compose-provider.wasm.gz", "plugins/compose-provider.describe.json"},
+		{helmChartProviderURI, "plugins/helmchart-provider.wasm.gz", "plugins/helmchart-provider.describe.json"},
+		{terraformProviderURI, "plugins/terraform-provider.wasm.gz", "plugins/terraform-provider.describe.json"},
+		{cloudformationProviderURI, "plugins/cloudformation-provider.wasm.gz", "plugins/cloudformation-provider.describe.json"},
+		{PublishingLinterURI, "plugins/publishing-linter.wasm.gz", "plugins/publishing-linter.describe.json"},
+	}
+}
+
 // registry maps a plugin's digest-free repository reference to the embedded
 // artifact's decompressed bytes. It is the lookup the cascade's embed tier
 // consults, populated from pluginFS at init by register.
 var registry = map[string][]byte{}
 
+// descriptorRegistry maps a plugin's digest-free repository reference to its
+// build-extracted describe() descriptor JSON. It is the lookup the plugin
+// listing consults to report a guest's static metadata without instantiating
+// it, populated from pluginFS at init by registerDescriptors.
+var descriptorRegistry = map[string][]byte{}
+
 // register binds embedded plugin repository references to their bytes read from
-// pluginFS. It is the single place an embedded plugin is wired: read its
+// pluginFS. It is the single place an embedded plugin's guest is wired: read its
 // artifact from pluginFS and assign it under its repository reference. The
 // committed artifacts are gzip-compressed, so register decompresses each once
 // here.
@@ -108,18 +139,37 @@ var registry = map[string][]byte{}
 // register panics rather than returning an error — there is no recoverable
 // runtime branch for a missing or corrupt embedded file.
 func register() map[string][]byte {
-	return map[string][]byte{
-		helmProviderURI:           mustDecompress("plugins/helm-provider.wasm.gz"),
-		composeProviderURI:        mustDecompress("plugins/compose-provider.wasm.gz"),
-		helmChartProviderURI:      mustDecompress("plugins/helmchart-provider.wasm.gz"),
-		terraformProviderURI:      mustDecompress("plugins/terraform-provider.wasm.gz"),
-		cloudformationProviderURI: mustDecompress("plugins/cloudformation-provider.wasm.gz"),
-		PublishingLinterURI:       mustDecompress("plugins/publishing-linter.wasm.gz"),
+	out := make(map[string][]byte, len(embeddedArtifacts()))
+	for _, a := range embeddedArtifacts() {
+		out[a.uri] = mustDecompress(a.wasmGz)
 	}
+	return out
+}
+
+// registerDescriptors binds each embedded plugin's repository reference to the
+// describe() descriptor JSON extracted from its guest at build time and stored
+// alongside the .wasm.gz. A descriptor asset that is absent — a tree built
+// before the descriptors were generated — is skipped rather than fatal: the
+// describe read path falls back to loading and describing the guest when no
+// static descriptor is registered, so a missing descriptor degrades to the
+// load-and-describe path rather than to stale or empty output. This is the one
+// place an absent embedded asset is tolerated; the guest bytes themselves remain
+// mandatory (see register).
+func registerDescriptors() map[string][]byte {
+	out := map[string][]byte{}
+	for _, a := range embeddedArtifacts() {
+		b, err := pluginFS.ReadFile(a.descriptor)
+		if err != nil {
+			continue
+		}
+		out[a.uri] = b
+	}
+	return out
 }
 
 func init() {
 	registry = register()
+	descriptorRegistry = registerDescriptors()
 }
 
 // Lookup returns the embedded bytes for uri and whether the URI is embedded.
@@ -127,6 +177,22 @@ func init() {
 // backing every future resolution of the same URI.
 func Lookup(uri string) ([]byte, bool) {
 	b, ok := registry[uri]
+	if !ok {
+		return nil, false
+	}
+	out := make([]byte, len(b))
+	copy(out, b)
+	return out, true
+}
+
+// LookupDescriptor returns the build-extracted describe() descriptor JSON for
+// uri and whether one is registered. A hit yields a defensive copy so a caller
+// cannot mutate the embedded bytes backing every future lookup of the same URI.
+// A miss — an unregistered URI, or a tree built before the descriptor assets
+// were generated — returns false, and the caller falls back to loading and
+// describing the guest rather than reporting stale or empty metadata.
+func LookupDescriptor(uri string) ([]byte, bool) {
+	b, ok := descriptorRegistry[uri]
 	if !ok {
 		return nil, false
 	}

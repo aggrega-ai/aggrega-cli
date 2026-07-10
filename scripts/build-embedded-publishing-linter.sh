@@ -35,6 +35,15 @@ RUSTFLAGS="--remap-path-prefix=$PWD=. -C strip=symbols" \
 echo "=== compress to $EMBED ==="
 gzip -n -9 -c "$BUILT" > "$EMBED"
 
+echo "=== extract describe() descriptor ==="
+# Extract the guest's describe() descriptor once, here, so the plugin listing can
+# report its static metadata without instantiating the guest. Written alongside
+# the .wasm.gz and captured by the embed directive at CLI compile time; run on the
+# host toolchain, unlike the wasm32-wasip1 guest build above.
+DESC="${EMBED%.wasm.gz}.describe.json"
+GOWORK=off go run ./internal/buildtools/plugindescribe -wasm "$BUILT" -name "$(basename "${EMBED%.wasm.gz}")" -out "$DESC"
+echo "wrote $DESC"
+
 DIGEST="sha256:$(sha256sum "$BUILT" | cut -d' ' -f1)"
 echo "=== raw $(stat -c%s "$BUILT") bytes / gz $(stat -c%s "$EMBED") bytes ==="
 echo "uncompressed content digest: $DIGEST"
