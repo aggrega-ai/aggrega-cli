@@ -160,9 +160,14 @@ type FRPStepOutput struct {
 // value ever needs to be deterministic, that is the emitting guest's
 // concern, not the host wire type's.
 //
-// This is the type only. The engine that applies a patch to the named
-// document and restores the set by snapshot on a failed step is later
-// work, not this package.
+// The apply engine's jsonpatch.Op is a deliberate, structurally
+// identical twin of this type, kept separate so the engine stays free
+// of the ABI import and remains a provider-agnostic leaf. A wire
+// JSONPatchOp is mapped onto jsonpatch.Op at exactly one site
+// (StockApplier.Apply), and every patch producer — the
+// feature-recipe-pipeline step output and the mutator socket — applies
+// through that one engine. Do not "unify" the two types: doing so drags
+// the ABI import into the leaf engine.
 type JSONPatchOp struct {
 	Scope DocumentScope `json:"scope"`
 	Key   string        `json:"key"`
