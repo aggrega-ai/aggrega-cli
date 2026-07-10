@@ -39,6 +39,7 @@ func newPluginCmd() *cobra.Command {
 		Short: "Inspect the Wasm plugins the CLI can resolve",
 	}
 	c.AddCommand(newPluginListCmd())
+	c.AddCommand(newPluginGenCatalogCmd())
 	return c
 }
 
