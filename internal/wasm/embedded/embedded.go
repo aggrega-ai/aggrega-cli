@@ -82,15 +82,8 @@ const terraformProviderURI = "oci://hub.aggrega.ai/plugins/core/terraform-provid
 // bytes on demand, so a guest rebuild does not perturb the lookup key.
 const cloudformationProviderURI = "oci://hub.aggrega.ai/plugins/core/cloudformation-provider"
 
-// PublishingLinterURI is the digest-free repository reference the embedded
-// publishing-linter plugin's decompressed bytes register under — the built-in
-// linter a lint invocation resolves by default when no linter plugin is
-// configured. It is exported so the lint command can single-source the
-// default-linter reference from the embedded package rather than restate the
-// string. Like the provider references, the reference digest is derived from the
-// bytes on demand rather than stored in the key, so a guest rebuild does not
-// perturb the lookup.
-const PublishingLinterURI = "oci://hub.aggrega.ai/plugins/core/publishing-linter"
+// PublishingLinterURI (exported) is defined in embedded_uris.go so both the
+// default and light host builds share the same linter identity.
 
 // embeddedArtifact binds one embedded plugin's digest-free repository reference
 // to its gzip-compressed guest bytes and its build-extracted describe()

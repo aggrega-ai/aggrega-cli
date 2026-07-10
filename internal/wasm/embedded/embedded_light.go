@@ -50,3 +50,13 @@ func SeedForTest(uri string, b []byte) (restore func()) {
 		delete(registry, uri)
 	}
 }
+
+// URIs mirrors the default-host signature so plugin enumeration compiles for a
+// light build. A light binary embeds no plugins, so it returns no built-in
+// references — `plugin list` sees only configured plugins.
+func URIs() []string { return nil }
+
+// LookupDescriptor mirrors the default-host signature so it compiles for a light
+// build. A light binary embeds no descriptors, so it always misses — no embedded
+// entry is ever enumerated to look one up for.
+func LookupDescriptor(uri string) ([]byte, bool) { return nil, false }
