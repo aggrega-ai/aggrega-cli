@@ -36,18 +36,21 @@ import (
 
 const cfnHubCatalog = "../../../aggrega-hub/aggrega-catalog"
 
-// cfnCatalogPaths are the shipped hub entities the example consumes — the
-// fragment-form mariadb-rds Recipe, the db-reader consumer Component and Recipe,
-// the mariadb Component, and the cloudformation rendering Plugin whose guest is
-// resolved from the binary's embed tier — so the example uses the catalog rather
-// than duplicating any recipe body.
+// cfnCatalogPaths are the entities the example consumes — the fragment-form
+// mariadb-rds Recipe, the db-reader consumer Component and Recipe, and the
+// mariadb Component all come from the sibling hub, so the example uses the
+// catalog rather than duplicating any recipe body. The cloudformation rendering
+// Plugin entity comes from a version-independent test fixture whose guest is
+// still resolved from the binary's embed tier, so the example is decoupled from
+// the hub's versioned Plugin directory and needs no edit when a release tag
+// changes.
 func cfnCatalogPaths() []string {
 	return []string{
 		cfnHubCatalog + "/component/core/datastore/mariadb/1.0.0/component.yaml",
 		cfnHubCatalog + "/component/example/compute/db-reader/1.0.0/component.yaml",
 		cfnHubCatalog + "/recipe/cloudformation/mariadb-rds/1.0.0/recipe.yaml",
 		cfnHubCatalog + "/recipe/cloudformation/db-reader/1.0.0/recipe.yaml",
-		cfnHubCatalog + "/plugin/cloudformation-renderer/0.4.1/plugin.yaml",
+		"testdata/cloudformation-two-boundary/catalog/cloudformation-renderer.plugin.yaml",
 	}
 }
 

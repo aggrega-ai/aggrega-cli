@@ -26,7 +26,7 @@ import (
 // resolution assertion is a self-consistency check against the shipped bytes.
 const (
 	terraformArtifactURI    = "oci://hub.aggrega.ai/plugins/core/terraform-provider"
-	terraformPluginEntity   = "terraform-renderer:0.4.1"
+	terraformPluginEntity   = "terraform-renderer:" + testCorePluginVersion
 	terraformProviderMemPag = 4096
 )
 
@@ -39,10 +39,10 @@ const (
 func terraformChainCatalog() *catalog.Catalog {
 	return &catalog.Catalog{
 		Plugins: map[string]types.Plugin{
-			"terraform-renderer:0.4.1": {
+			terraformPluginEntity: {
 				APIVersion: "aggrega.ai/v1alpha1",
 				Kind:       "Plugin",
-				Metadata:   types.PluginMetadata{Name: "terraform-renderer", Version: "0.4.1"},
+				Metadata:   types.PluginMetadata{Name: "terraform-renderer", Version: testCorePluginVersion},
 				Spec: types.PluginSpec{
 					Plugin:     terraformArtifactURI,
 					PluginType: "provider",

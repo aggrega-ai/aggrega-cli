@@ -19,6 +19,13 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
+// testCorePluginVersion is a single synthetic, release-independent version used
+// by ALL embedded provider resolution tests. The Plugin entity's version is an
+// incidental mirror of the shipped hub entity version and is load-bearing to no
+// resolution assertion, so a single synthetic value lets a release tag bump
+// leave these tests untouched.
+const testCorePluginVersion = "0.0.0-test"
+
 // helmArtifactURI is the digest-free repository reference that is the helm
 // provider plugin's identity — the value the helm-renderer Plugin entity's
 // spec.plugin carries and the key the embed tier registers its bytes under. No
@@ -28,7 +35,7 @@ import (
 // ships, not against a hand-maintained constant.
 const (
 	helmArtifactURI    = "oci://hub.aggrega.ai/plugins/core/helm-provider"
-	helmPluginEntity   = "helm-renderer:0.4.1"
+	helmPluginEntity   = "helm-renderer:" + testCorePluginVersion
 	helmProviderMemPag = 4096
 )
 
@@ -55,10 +62,10 @@ func embeddedReferenceDigest(t *testing.T, uri string) string {
 func helmChainCatalog() *catalog.Catalog {
 	return &catalog.Catalog{
 		Plugins: map[string]types.Plugin{
-			"helm-renderer:0.4.1": {
+			helmPluginEntity: {
 				APIVersion: "aggrega.ai/v1alpha1",
 				Kind:       "Plugin",
-				Metadata:   types.PluginMetadata{Name: "helm-renderer", Version: "0.4.1"},
+				Metadata:   types.PluginMetadata{Name: "helm-renderer", Version: testCorePluginVersion},
 				Spec: types.PluginSpec{
 					Plugin:     helmArtifactURI,
 					PluginType: "provider",

@@ -26,7 +26,7 @@ import (
 // assertion is a self-consistency check against the shipped bytes.
 const (
 	composeArtifactURI    = "oci://hub.aggrega.ai/plugins/core/compose-provider"
-	composePluginEntity   = "compose-renderer:0.4.1"
+	composePluginEntity   = "compose-renderer:" + testCorePluginVersion
 	composeProviderMemPag = 4096
 )
 
@@ -40,10 +40,10 @@ const (
 func composeChainCatalog() *catalog.Catalog {
 	return &catalog.Catalog{
 		Plugins: map[string]types.Plugin{
-			"compose-renderer:0.4.1": {
+			composePluginEntity: {
 				APIVersion: "aggrega.ai/v1alpha1",
 				Kind:       "Plugin",
-				Metadata:   types.PluginMetadata{Name: "compose-renderer", Version: "0.4.1"},
+				Metadata:   types.PluginMetadata{Name: "compose-renderer", Version: testCorePluginVersion},
 				Spec: types.PluginSpec{
 					Plugin:     composeArtifactURI,
 					PluginType: "provider",

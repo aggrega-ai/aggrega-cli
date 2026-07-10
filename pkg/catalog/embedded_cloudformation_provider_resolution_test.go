@@ -26,7 +26,7 @@ import (
 // resolution assertion is a self-consistency check against the shipped bytes.
 const (
 	cloudformationArtifactURI    = "oci://hub.aggrega.ai/plugins/core/cloudformation-provider"
-	cloudformationPluginEntity   = "cloudformation-renderer:0.4.1"
+	cloudformationPluginEntity   = "cloudformation-renderer:" + testCorePluginVersion
 	cloudformationProviderMemPag = 4096
 )
 
@@ -41,10 +41,10 @@ const (
 func cloudformationChainCatalog() *catalog.Catalog {
 	return &catalog.Catalog{
 		Plugins: map[string]types.Plugin{
-			"cloudformation-renderer:0.4.1": {
+			cloudformationPluginEntity: {
 				APIVersion: "aggrega.ai/v1alpha1",
 				Kind:       "Plugin",
-				Metadata:   types.PluginMetadata{Name: "cloudformation-renderer", Version: "0.4.1"},
+				Metadata:   types.PluginMetadata{Name: "cloudformation-renderer", Version: testCorePluginVersion},
 				Spec: types.PluginSpec{
 					Plugin:     cloudformationArtifactURI,
 					PluginType: "provider",

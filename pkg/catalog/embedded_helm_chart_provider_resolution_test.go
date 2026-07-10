@@ -26,7 +26,7 @@ import (
 // resolution assertion is a self-consistency check against the shipped bytes.
 const (
 	helmChartArtifactURI    = "oci://hub.aggrega.ai/plugins/core/helmchart-provider"
-	helmChartPluginEntity   = "helm-chart-renderer:0.4.1"
+	helmChartPluginEntity   = "helm-chart-renderer:" + testCorePluginVersion
 	helmChartProviderMemPag = 4096
 )
 
@@ -40,10 +40,10 @@ const (
 func helmChartChainCatalog() *catalog.Catalog {
 	return &catalog.Catalog{
 		Plugins: map[string]types.Plugin{
-			"helm-chart-renderer:0.4.1": {
+			helmChartPluginEntity: {
 				APIVersion: "aggrega.ai/v1alpha1",
 				Kind:       "Plugin",
-				Metadata:   types.PluginMetadata{Name: "helm-chart-renderer", Version: "0.4.1"},
+				Metadata:   types.PluginMetadata{Name: "helm-chart-renderer", Version: testCorePluginVersion},
 				Spec: types.PluginSpec{
 					Plugin:     helmChartArtifactURI,
 					PluginType: "provider",
