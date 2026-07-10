@@ -112,6 +112,7 @@ the --allow-*/--no-allow-* and --enforce-*/--no-enforce-* flag pairs.`,
 				PluginPath:     lintPluginPath,
 				PolicyResolver: makeResolverFromCobra(cmd),
 				ws:             rw,
+				Out:            cmd.OutOrStdout(),
 			})
 		},
 	}
@@ -477,6 +478,12 @@ type lintConfig struct {
 	// (production); tests pass a buffer to capture diagnostics without mutating a
 	// process global.
 	DiagOut io.Writer
+
+	// Out is the sink for lint's success confirmation (stdout in production),
+	// kept separate from DiagOut so the positive signal lands on stdout while
+	// diagnostics stay on stderr. Nil defaults to os.Stdout at the top of
+	// lintRun; tests pass a buffer to capture the confirmation.
+	Out io.Writer
 }
 
 // makeResolverFromCobra returns a closure that decides effective
@@ -538,6 +545,9 @@ func defaultRuleIDs(prePublish bool) []string {
 func lintRun(cfg lintConfig) error {
 	if cfg.DiagOut == nil {
 		cfg.DiagOut = os.Stderr
+	}
+	if cfg.Out == nil {
+		cfg.Out = os.Stdout
 	}
 	if cfg.EntityPath == "" {
 		return fmt.Errorf("aggrega lint: entity path required (pass as positional arg or via --entity)")
@@ -644,6 +654,7 @@ func lintRun(cfg lintConfig) error {
 	if halted {
 		return fmt.Errorf("aggrega lint: %d error finding(s)", countErrors(aggregated))
 	}
+	fmt.Fprintf(cfg.Out, "lint passed: %s\n", header.Metadata.Name)
 	return nil
 }
 
