@@ -43,6 +43,13 @@ const (
 	// resolved through MediaTypeForKind (the .wasm is an artifact, not a
 	// catalog entity kind).
 	MediaTypeWasm = "application/vnd.aggrega.wasm.v1alpha1+wasm"
+	// MediaTypeDocs is the mediatype of a documentation bundle — a gzipped
+	// tar of rendered documentation, published as a standalone data artifact
+	// rather than a catalog entity. Like MediaTypeWasm it is a non-kind
+	// artifact passed directly to Push, never resolved through
+	// MediaTypeForKind: no entity kind lowercases to "docs", so the bundle
+	// carries no entity envelope and rides the kind-agnostic transport.
+	MediaTypeDocs = "application/vnd.aggrega.docs.v1alpha1+tar+gz"
 )
 
 // kindMediaTypes maps the catalog entity kind string (matching the

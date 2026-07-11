@@ -70,6 +70,9 @@ var runtimeErrorCommands = []struct {
 	{"serve", []string{"serve", "--workspace-root", "/nonexistent-aggrega-xyz/ws"}},
 	{"lint", []string{"lint", "/nonexistent-aggrega-xyz/entity.yaml"}},
 	{"push", []string{"push", "/nonexistent-aggrega-xyz/entity.yaml"}},
+	// push-artifact reaches RunE with valid flags, then fails reading the
+	// non-existent bundle file locally, before any network call.
+	{"push-artifact", []string{"push-artifact", "/nonexistent-aggrega-xyz/bundle.tar.gz", "--name", "aggrega-docs", "--tag", "1.0.0", "--registry", "example.com"}},
 	// sign fails parsing an invalid reference, locally, before any network call.
 	{"sign", []string{"sign", "not a valid ref!!!"}},
 	// deprecate reaches RunE with valid flags, then fails parsing an invalid
