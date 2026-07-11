@@ -259,9 +259,10 @@ func TestProgress_RenderNode_TTY_Counter(t *testing.T) {
 		}
 	}
 	// The global progress line carries the caption, the bar, and the profile-
-	// weighted whole-build percent for each step. Warm profile: the pre-render
-	// phases credit 0.54 once render begins, then render (share 0.40) carries the
-	// bar to 67% / 80% / 94% across the three nodes, and finish snaps it to 100%.
+	// weighted whole-build percent for each step. Warm profile: pre-render (0.24)
+	// plus the compile share (0.30) credited when render begins = 0.54, then
+	// render (share 0.40) carries the bar to 67% / 80% / 94% across the three
+	// nodes, and finish snaps it to 100%.
 	for _, want := range []string{"Progress ", "67%", "80%", "94%", "100%"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("expected progress-line detail %q; got %q", want, got)
@@ -336,8 +337,9 @@ func TestProgress_LayoutA_RenderRowAndProgressLine(t *testing.T) {
 	if !strings.ContainsRune(progRow, '█') || !strings.ContainsRune(progRow, '░') {
 		t.Errorf("global progress line must contain the filled/empty bar; got %q", progRow)
 	}
-	// Warm profile: pre-render credits 0.54 once render begins, plus render share
-	// 0.40 × 23/37 → 0.789 → floored to 78%.
+	// Warm profile: pre-render (0.24) plus the compile share (0.30) credited when
+	// render begins = 0.54, plus render share 0.40 × 23/37 → 0.789 → floored to
+	// 78%.
 	if !strings.Contains(progRow, "78%") {
 		t.Errorf("global progress line must contain the percentage; got %q", progRow)
 	}
@@ -911,9 +913,11 @@ func approxEq(a, b float64) bool {
 }
 
 // TestProgress_GlobalBar_WarmCheckpoints pins the warm-profile weighted bar: the
-// pre-render phases credit on completion (lockfile brings the bar to ~52% before
-// render), render carries it the rest of the way, and finish snaps it to 100%.
-// The bar is monotonic non-decreasing across the sequence.
+// pre-render phases credit on completion (lockfile brings the bar to ~22% before
+// render), the compile share is credited at the first rendered node (bringing the
+// bar to ~54% when no guest recompiled), render carries it the rest of the way,
+// and finish snaps it to 100%. The bar is monotonic non-decreasing across the
+// sequence.
 func TestProgress_GlobalBar_WarmCheckpoints(t *testing.T) {
 	withTTY(t, true)
 	orig := spinnerTickInterval
@@ -930,13 +934,13 @@ func TestProgress_GlobalBar_WarmCheckpoints(t *testing.T) {
 	p.phase(phaseLockfile)
 	p.phase(phaseClosure) // lockfile now completed
 	fLock := p.globalFraction()
-	if !approxEq(fLock, 0.52) {
-		t.Errorf("warm: fraction after lockfile = %v, want 0.52", fLock)
+	if !approxEq(fLock, 0.22) {
+		t.Errorf("warm: fraction after lockfile = %v, want 0.22", fLock)
 	}
 	p.phase(phaseRender)
 	fRenderStart := p.globalFraction()
-	if !approxEq(fRenderStart, 0.54) {
-		t.Errorf("warm: fraction entering render = %v, want 0.54", fRenderStart)
+	if !approxEq(fRenderStart, 0.24) {
+		t.Errorf("warm: fraction entering render = %v, want 0.24", fRenderStart)
 	}
 	p.renderNode(1, 2, "a")
 	fHalf := p.globalFraction()
@@ -1042,6 +1046,65 @@ func TestProgress_EagerCompile_BarAdvancesDuringCompile(t *testing.T) {
 	p.pluginCompileGuestDone(1)
 	if done := p.globalFraction(); !approxEq(done, 0.90) {
 		t.Errorf("fraction after guest-done = %v, want 0.90", done)
+	}
+}
+
+// TestProgress_GlobalBar_WarmProfileCompile_Advances is the warm-profile freeze
+// gate: on a stale cache the up-front guess is warm, but the specific guest this
+// build needs is not cached, so a real recompile is observed. The warm profile
+// now carries its own compile share, so the bar must ADVANCE with elapsed time
+// during that recompile rather than freeze — successive reads climb — and stay
+// below the share the step credits only on real completion.
+func TestProgress_GlobalBar_WarmProfileCompile_Advances(t *testing.T) {
+	withTTY(t, true)
+	orig := spinnerTickInterval
+	spinnerTickInterval = time.Hour
+	t.Cleanup(func() { spinnerTickInterval = orig })
+
+	p := newProgressReporter(&bytes.Buffer{}, buildDiagOptions{}, buildProgressSpine(false))
+	p.phase(phaseRender)
+	p.pluginCompileBegin(1)
+	p.pluginCompileRunning() // a guest is observed compiling despite the warm guess
+
+	// Simulate elapsed compile time by rewinding the ramp anchor, mimicking what
+	// the async redraw ticker observes as the real recompile runs.
+	preCompile := p.globalFraction()
+	p.compileStart = time.Now().Add(-2 * time.Second)
+	early := p.globalFraction()
+	p.compileStart = time.Now().Add(-10 * time.Second)
+	late := p.globalFraction()
+
+	if !(preCompile < early && early < late) {
+		t.Errorf("warm bar did not advance during recompile: pre=%v early=%v late=%v", preCompile, early, late)
+	}
+	// The time ramp is capped below the completed-phase share, so it never claims
+	// the guest finished before the completion callback: warm pre-render 0.24 plus
+	// compile share 0.30 = 0.54 at real completion; the ramp must stay under that.
+	if late >= 0.54 {
+		t.Errorf("time ramp overtook real completion: late=%v must stay below 0.54", late)
+	}
+	p.pluginCompileGuestDone(1)
+	afterGuest := p.globalFraction()
+	if !approxEq(afterGuest, 0.54) {
+		t.Errorf("warm: fraction after guest-done = %v, want 0.54", afterGuest)
+	}
+	p.renderNode(1, 1, "a")
+	afterRender := p.globalFraction()
+	if !approxEq(afterRender, 0.94) {
+		t.Errorf("warm: fraction after render = %v, want 0.94", afterRender)
+	}
+	p.finish()
+	fin := p.globalFraction()
+	if !approxEq(fin, 1) {
+		t.Errorf("warm: fraction at finish = %v, want 1", fin)
+	}
+
+	// Monotonic non-decreasing across the full captured sequence.
+	seq := []float64{preCompile, early, late, afterGuest, afterRender, fin}
+	for i := 1; i < len(seq); i++ {
+		if seq[i] < seq[i-1] {
+			t.Errorf("warm: bar went backwards at step %d: %v < %v", i, seq[i], seq[i-1])
+		}
 	}
 }
 

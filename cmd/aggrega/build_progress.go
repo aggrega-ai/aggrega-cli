@@ -118,9 +118,12 @@ const compilePhaseLabel = "Plugin compilation"
 // bar approximates progress from a typical build's phase-time profile rather
 // than from measured work. Two profiles apply:
 //
-//   - Warm (compile cache already populated): the plugin-compilation step is
-//     absent and its share folds into the lockfile and render phases. Lockfile
-//     dominates the pre-render span and render dominates the rest.
+//   - Warm (compile cache already populated): the warm profile now carries its
+//     own compile share for the stale-cache recompile case — a build whose cache
+//     directory existed but lacked the exact guest this build needs. When no
+//     guest actually recompiles, that share is credited as settled work once
+//     rendering begins. Lockfile dominates the pre-render span and render
+//     dominates the rest.
 //   - Cold (a one-time provider-guest compilation is due): the plugin-
 //     compilation step dominates, since compiling a large guest is the single
 //     longest phase of a first build; every other phase is a thin sliver.
@@ -139,8 +142,9 @@ type buildBarWeights struct {
 	closure     float64
 	validate    float64
 	inheritance float64
-	// compile is the plugin-compilation step's share; zero in the warm profile,
-	// where the step never appears.
+	// compile is the plugin-compilation step's share. In the warm profile it
+	// covers a stale-cache recompile and, when no guest actually compiles, is
+	// credited as settled work once rendering begins.
 	compile float64
 	render  float64
 }
@@ -148,8 +152,9 @@ type buildBarWeights struct {
 // buildBarWeightsFor returns the phase-share table for the cold or warm profile.
 // Cold: after the lockfile the bar sits near 4%, the compilation step fills it to
 // roughly 90%, render carries it to about 93%, and finish completes it to 100%.
-// Warm: after the lockfile the bar sits near 52%, render carries it to about 94%,
-// and finish completes it to 100%.
+// Warm: after the lockfile the bar sits near 22%; render entry credits the
+// compile share to ~54% when no guest recompiled; render carries it to ~94%; and
+// finish completes it to 100%.
 func buildBarWeightsFor(cold bool) buildBarWeights {
 	if cold {
 		return buildBarWeights{
@@ -164,10 +169,11 @@ func buildBarWeightsFor(cold bool) buildBarWeights {
 	}
 	return buildBarWeights{
 		loadCatalog: 0.02,
-		lockfile:    0.50,
+		lockfile:    0.20,
 		closure:     0.01,
 		validate:    0.005,
 		inheritance: 0.005,
+		compile:     0.30,
 		render:      0.40,
 	}
 }
@@ -594,6 +600,13 @@ func (p *progressReporter) globalFraction() float64 {
 		case p.compileActive:
 			frac += p.weights.compile * p.compileFraction()
 		}
+	} else if p.renderTotal > 0 {
+		// Render began without any guest observed compiling: the compile step's
+		// share is settled work (nothing needed compiling this build), so credit it
+		// in full. Gated on render actually starting, not on entering the render
+		// stage, so a build that is about to observe a compile (the compile pass
+		// runs after the render phase opens) is not credited prematurely.
+		frac += p.weights.compile
 	}
 	if p.renderTotal > 0 {
 		frac += p.weights.render * float64(p.renderDone) / float64(p.renderTotal)
