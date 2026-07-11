@@ -235,7 +235,7 @@ func entityKindForHint(hint string) string {
 // location branch. Other kinds pass the whole identity as the name.
 //
 // A Plugin identity must be bare (<socket>/<name>): the binder prefixes the
-// registry and the wasm path segment itself, so an identity that already leads
+// registry and the plugin path segment itself, so an identity that already leads
 // with a registry-host-shaped segment (the part before the first "/" carrying a
 // "." or ":") would be double-prefixed into an unfetchable location. Such a
 // reference is refused with ErrQualifiedPluginReference rather than bound. The
@@ -267,7 +267,7 @@ func entityReference(registry, kind, identity string) (string, error) {
 // registry-host-shaped segment — the substring before the first "/" containing a
 // "." (a DNS name) or a ":" (a host:port). A bare plugin identity's leading
 // segment is a socket name, which carries neither, so this distinguishes a
-// qualified reference from a bare one without false-positiving on the "/wasm/"
+// qualified reference from a bare one without false-positiving on the "/plugin/"
 // path segment a bound location contains.
 func hasRegistryHostSegment(identity string) bool {
 	head := identity

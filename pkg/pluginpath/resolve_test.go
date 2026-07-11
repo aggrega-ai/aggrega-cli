@@ -280,7 +280,7 @@ func TestNoPinSkipsVerification(t *testing.T) {
 // TestOCIUnresolvableNoPuller: an OCI URI with no puller and nothing cached
 // halts loudly with a not-resolvable message wrapping oci.ErrFetchNotFound.
 func TestOCIUnresolvableNoPuller(t *testing.T) {
-	_, err := Resolver{}.Resolve("oci://hub.aggrega.ai/wasm/linter/aggrega-publishing:1.0.0")
+	_, err := Resolver{}.Resolve("oci://hub.aggrega.ai/plugin/linter/aggrega-publishing:1.0.0")
 	if err == nil {
 		t.Fatal("expected not-resolvable error; got nil")
 	}

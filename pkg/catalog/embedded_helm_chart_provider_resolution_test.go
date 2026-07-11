@@ -25,7 +25,7 @@ import (
 // from the embed tier's own bytes at test time (embeddedReferenceDigest), so the
 // resolution assertion is a self-consistency check against the shipped bytes.
 const (
-	helmChartArtifactURI    = "oci://hub.aggrega.ai/plugins/core/helmchart-provider"
+	helmChartArtifactURI    = "oci://hub.aggrega.ai/plugin/provider/helm-chart"
 	helmChartPluginEntity   = "helm-chart-renderer:" + testCorePluginVersion
 	helmChartProviderMemPag = 4096
 )

@@ -76,7 +76,7 @@ func TestVerifyClosurePluginSignatureRecordsFact(t *testing.T) {
 	if dg == contentDg {
 		t.Fatal("manifest and content digests coincide; the test cannot distinguish the verify subject")
 	}
-	const uri = "keyed.example.com/wasm/linter/publishing-linter"
+	const uri = "keyed.example.com/plugin/linter/publishing-linter"
 	cl := closure.Closure{
 		Plugins: []closure.ResolvedRef{
 			{URI: uri, Digest: contentDg, ManifestDigest: dg, ResolutionPath: "tier-3"},
@@ -114,7 +114,7 @@ func TestVerifyClosurePluginWrongKeyHalts(t *testing.T) {
 	store, dg, contentDg, _ := signedPluginStore(t)
 	_, _, _, otherPub := signedPluginStore(t)
 
-	const uri = "keyed.example.com/wasm/linter/p"
+	const uri = "keyed.example.com/plugin/linter/p"
 	cl := closure.Closure{
 		Plugins: []closure.ResolvedRef{{URI: uri, Digest: contentDg, ManifestDigest: dg, ResolutionPath: "tier-3"}},
 	}
@@ -143,7 +143,7 @@ func TestVerifyClosurePluginMissingSignatureHalts(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Push: %v", err)
 	}
-	const uri = "req.example.com/wasm/linter/unsigned"
+	const uri = "req.example.com/plugin/linter/unsigned"
 	cl := closure.Closure{
 		Plugins: []closure.ResolvedRef{{URI: uri, Digest: contentDg, ManifestDigest: dg, ResolutionPath: "tier-3"}},
 	}

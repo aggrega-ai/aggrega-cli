@@ -22,7 +22,7 @@ import (
 func pipelineRenderFixtureInput(t *testing.T) pipelinetest.Input {
 	t.Helper()
 	sidecarDir := stagePluginSidecar(t, map[string]string{
-		"oci://hub.aggrega.ai/wasm/frp/patch": "frp-step-patch-rust.wasm",
+		"oci://hub.aggrega.ai/plugin/frp/patch": "frp-step-patch-rust.wasm",
 	})
 	return pipelinetest.Input{
 		ReleasePath: "testdata/pipeline-render/release.yaml",

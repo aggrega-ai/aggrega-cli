@@ -21,7 +21,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 CRATE="plugins/publishing-linter"
-EMBED="internal/wasm/embedded/plugins/publishing-linter.wasm.gz"
+EMBED="internal/wasm/embedded/plugins/publishing.wasm.gz"
 BUILT="$CRATE/target/wasm32-wasip1/release/publishing_linter.wasm"
 
 echo "=== build guest (cargo --target wasm32-wasip1) ==="

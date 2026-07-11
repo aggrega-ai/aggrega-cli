@@ -34,7 +34,7 @@ const testCorePluginVersion = "0.0.0-test"
 // assertion is a self-consistency check against the bytes the binary actually
 // ships, not against a hand-maintained constant.
 const (
-	helmArtifactURI    = "oci://hub.aggrega.ai/plugins/core/helm-provider"
+	helmArtifactURI    = "oci://hub.aggrega.ai/plugin/provider/helm"
 	helmPluginEntity   = "helm-renderer:" + testCorePluginVersion
 	helmProviderMemPag = 4096
 )

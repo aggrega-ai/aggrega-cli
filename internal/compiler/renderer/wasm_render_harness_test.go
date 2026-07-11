@@ -37,22 +37,22 @@ func embeddedProviderURI(t *testing.T, provider string) string {
 	t.Helper()
 	// The empty provider name defaults to helm, so the harness routes a
 	// provider-less binding exactly as the render route does.
-	basename := map[string]string{
-		"":           "helm-provider",
-		"helm":       "helm-provider",
-		"compose":    "compose-provider",
-		"helm-chart": "helmchart-provider",
-		"terraform":  "terraform-provider",
+	leaf := map[string]string{
+		"":           "helm",
+		"helm":       "helm",
+		"compose":    "compose",
+		"helm-chart": "helm-chart",
+		"terraform":  "terraform",
 	}[provider]
-	if basename == "" {
+	if leaf == "" {
 		t.Fatalf("no embedded rendering guest known for provider %q", provider)
 	}
 	for _, uri := range embedded.URIs() {
-		if strings.Contains(uri, basename) {
+		if strings.HasSuffix(uri, "/"+leaf) {
 			return uri
 		}
 	}
-	t.Fatalf("no embedded guest URI carries %q; embedded URIs: %v", basename, embedded.URIs())
+	t.Fatalf("no embedded guest URI ends with %q; embedded URIs: %v", "/"+leaf, embedded.URIs())
 	return ""
 }
 

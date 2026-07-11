@@ -34,12 +34,12 @@ func OCILocation(kind, provider, name string) string {
 
 // KindPathSegment maps an entity kind to its OCI repository path segment.
 // Default behavior is `strings.ToLower(kind)`; the Plugin kind aliases to
-// the canonical `wasm` path prefix per the plugin URI convention
-// (`<registry>/wasm/<socket>/<name>`).
+// the canonical `plugin` path prefix per the plugin URI convention
+// (`<registry>/plugin/<socket>/<name>`).
 func KindPathSegment(kind string) string {
 	switch kind {
 	case "Plugin", "Wasm":
-		return "wasm"
+		return "plugin"
 	default:
 		return strings.ToLower(kind)
 	}

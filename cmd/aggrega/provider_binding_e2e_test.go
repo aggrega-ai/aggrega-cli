@@ -91,7 +91,7 @@ metadata:
   name: helm-renderer-alt
   version: "1.0.0"
 spec:
-  plugin: oci://hub.aggrega.ai/plugins/core/compose-provider
+  plugin: oci://hub.aggrega.ai/plugin/provider/compose
   pluginType: provider
   abiVersion: v1alpha1
   targets:
@@ -208,7 +208,7 @@ func TestProviderBinding_BuildIsInvariantToConfigAfterPull(t *testing.T) {
 	rwHelm := resolveWorkspaceWithConfig(t, root, `workspace: {}
 offline: true
 provider_bindings:
-  helm: oci://hub.aggrega.ai/plugins/core/helm-provider
+  helm: oci://hub.aggrega.ai/plugin/provider/helm
 `)
 	if err := pullRun(pullConfig{ReleasePath: releasePath, CatalogDirs: catDirs, ws: rwHelm, DiagOut: io.Discard, Out: io.Discard, diag: buildDiagOptions{quiet: true}}); err != nil {
 		t.Fatalf("pull (helm binding): %v", err)
@@ -230,7 +230,7 @@ provider_bindings:
 	rwCompose := resolveWorkspaceWithConfig(t, root, `workspace: {}
 offline: true
 provider_bindings:
-  helm: oci://hub.aggrega.ai/plugins/core/compose-provider
+  helm: oci://hub.aggrega.ai/plugin/provider/compose
 `)
 	out2 := filepath.Join(root, "out2")
 	if err := dispatchBuildWithDiag(rwCompose, releasePath, catDirs, false, buildDiagOptions{quiet: true}, buildRunOptions{outDir: out2}, io.Discard, io.Discard); err != nil {
@@ -255,7 +255,7 @@ provider_bindings:
 			got = b.Plugin
 		}
 	}
-	if got != "oci://hub.aggrega.ai/plugins/core/compose-provider" {
+	if got != "oci://hub.aggrega.ai/plugin/provider/compose" {
 		t.Fatalf("re-pull did not adopt the new binding; lockfile provider_bindings[helm]=%q, want the compose-provider identity", got)
 	}
 }
@@ -303,7 +303,7 @@ func TestProviderBinding_UnambiguousTargetNeedsNoBinding(t *testing.T) {
 	for _, b := range lf.ProviderBindings {
 		if b.Target == "helm" {
 			found = true
-			if b.Plugin != "oci://hub.aggrega.ai/plugins/core/helm-provider" {
+			if b.Plugin != "oci://hub.aggrega.ai/plugin/provider/helm" {
 				t.Errorf("recorded binding plugin=%q, want the helm-provider identity", b.Plugin)
 			}
 		}

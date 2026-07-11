@@ -63,7 +63,7 @@ func TestSelectPullVersion(t *testing.T) {
 }
 
 // TestEntityReference_PluginGuard pins the Plugin reference guard: a bare
-// plugin entity identity binds to <registry>/wasm/<socket>/<name>, while an
+// plugin entity identity binds to <registry>/plugin/<socket>/<name>, while an
 // already-qualified reference (a leading registry-host-shaped segment — a DNS
 // host or a host:port) is refused with ErrQualifiedPluginReference rather than
 // double-prefixed into an unfetchable location.
@@ -76,7 +76,7 @@ func TestEntityReference_PluginGuard(t *testing.T) {
 		if err != nil {
 			t.Fatalf("bare plugin identity should bind cleanly; got error %v", err)
 		}
-		const want = registry + "/wasm/pipeline/patch-credential"
+		const want = registry + "/plugin/pipeline/patch-credential"
 		if got != want {
 			t.Errorf("entityReference = %q; want %q", got, want)
 		}
@@ -86,8 +86,8 @@ func TestEntityReference_PluginGuard(t *testing.T) {
 		name     string
 		identity string
 	}{
-		{"DNS-host-qualified", "host.tld/wasm/pipeline/patch-credential"},
-		{"host:port-qualified", "127.0.0.1:5000/wasm/pipeline/patch-credential"},
+		{"DNS-host-qualified", "host.tld/plugin/pipeline/patch-credential"},
+		{"host:port-qualified", "127.0.0.1:5000/plugin/pipeline/patch-credential"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			_, err := entityReference(registry, "Plugin", tc.identity)

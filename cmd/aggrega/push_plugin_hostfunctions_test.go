@@ -21,7 +21,7 @@ metadata:
   name: frp/patch
   version: "1.0.0"
 spec:
-  plugin: "oci://hub.aggrega.ai/wasm/frp/patch"
+  plugin: "oci://hub.aggrega.ai/plugin/frp/patch"
   pluginType: frp_step
   abiVersion: v1alpha1
   runtime:
@@ -66,7 +66,7 @@ metadata:
   name: frp/patch
   version: "1.0.0"
 spec:
-  plugin: "oci://hub.aggrega.ai/wasm/frp/patch"
+  plugin: "oci://hub.aggrega.ai/plugin/frp/patch"
   pluginType: frp_step
   abiVersion: v1alpha1
 `
@@ -99,7 +99,7 @@ metadata:
   name: frp/patch
   version: "1.0.0"
 spec:
-  plugin: "oci://hub.aggrega.ai/wasm/frp/patch"
+  plugin: "oci://hub.aggrega.ai/plugin/frp/patch"
   pluginType: frp_step
   abiVersion: v1alpha1
   runtime:

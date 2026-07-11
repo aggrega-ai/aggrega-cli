@@ -36,7 +36,7 @@ type registryRepoLister interface {
 type searchScope func(repoPath string) bool
 
 // pluginSearchScope admits the repository paths Wasm plugins publish under — the
-// wasm/ path prefix the plugin URI convention uses (KindPathSegment("Plugin")).
+// plugin/ path prefix the plugin URI convention uses (KindPathSegment("Plugin")).
 // It scopes plugin search to installable plugins rather than the whole catalog.
 func pluginSearchScope(repoPath string) bool {
 	return strings.HasPrefix(repoPath, catalog.KindPathSegment("Plugin")+"/")

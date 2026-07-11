@@ -45,7 +45,7 @@ func cachePluginArtifact(t *testing.T) (workspaceRoot, cacheDir, artifactURI str
 		t.Fatalf("read fixture: %v", err)
 	}
 	contentDigest := digest.ContentDigest(wasmBytes)
-	artifactURI = "oci://hub.aggrega.ai/wasm/frp/patch@" + contentDigest
+	artifactURI = "oci://hub.aggrega.ai/plugin/frp/patch@" + contentDigest
 
 	workspaceRoot = t.TempDir()
 	cacheDir = "cache"
@@ -85,7 +85,7 @@ func pluginArtifactClosure(artifactURI, entityURI string) *closure.Closure {
 func TestVerifyPluginHostFunctions_StampMatchesBinary(t *testing.T) {
 	t.Parallel()
 	workspaceRoot, cacheDir, artifactURI, derived := cachePluginArtifact(t)
-	const entityURI = "oci://hub.aggrega.ai/wasm/frp/patch:1.0.0"
+	const entityURI = "oci://hub.aggrega.ai/plugin/frp/patch:1.0.0"
 	loader := &stubPluginLoader{byURI: map[string]*types.Plugin{
 		entityURI: pluginEntity(artifactURI, derived),
 	}}
@@ -103,7 +103,7 @@ func TestVerifyPluginHostFunctions_StampMatchesBinary(t *testing.T) {
 func TestVerifyPluginHostFunctions_StampDivergesHalts(t *testing.T) {
 	t.Parallel()
 	workspaceRoot, cacheDir, artifactURI, _ := cachePluginArtifact(t)
-	const entityURI = "oci://hub.aggrega.ai/wasm/frp/patch:1.0.0"
+	const entityURI = "oci://hub.aggrega.ai/plugin/frp/patch:1.0.0"
 	// Stamp a host function the binary does not import: the frp-step-go fixture
 	// imports none, so a stamped [aggrega_log] is a divergence.
 	loader := &stubPluginLoader{byURI: map[string]*types.Plugin{
@@ -122,8 +122,8 @@ func TestVerifyPluginHostFunctions_StampDivergesHalts(t *testing.T) {
 // failing — there is nothing to re-derive against.
 func TestVerifyPluginHostFunctions_NoCachedArtifactSkips(t *testing.T) {
 	t.Parallel()
-	const entityURI = "oci://hub.aggrega.ai/wasm/frp/patch:1.0.0"
-	const artifactURI = "oci://hub.aggrega.ai/wasm/frp/patch@sha256:" +
+	const entityURI = "oci://hub.aggrega.ai/plugin/frp/patch:1.0.0"
+	const artifactURI = "oci://hub.aggrega.ai/plugin/frp/patch@sha256:" +
 		"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 	loader := &stubPluginLoader{byURI: map[string]*types.Plugin{
 		entityURI: pluginEntity(artifactURI, []string{"aggrega_log"}),

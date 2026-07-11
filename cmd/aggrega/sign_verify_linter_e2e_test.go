@@ -93,7 +93,7 @@ func writeTempWasm(t *testing.T, artifact []byte) string {
 func TestSignVerifyRunRealLinter(t *testing.T) {
 	store, dg, contentDg, pubPEM, artifact := signedRealLinterStore(t)
 
-	const uri = "keyed.example.com/wasm/linter/publishing-linter"
+	const uri = "keyed.example.com/plugin/linter/publishing-linter"
 	cl := closure.Closure{
 		Plugins: []closure.ResolvedRef{
 			{URI: uri, Digest: contentDg, ManifestDigest: dg, ResolutionPath: "tier-3"},
@@ -159,7 +159,7 @@ func TestSignVerifyRealLinterWrongKeyHalts(t *testing.T) {
 	store, dg, contentDg, _, _ := signedRealLinterStore(t)
 	_, _, _, otherPub, _ := signedRealLinterStore(t)
 
-	const uri = "keyed.example.com/wasm/linter/publishing-linter"
+	const uri = "keyed.example.com/plugin/linter/publishing-linter"
 	cl := closure.Closure{
 		Plugins: []closure.ResolvedRef{{URI: uri, Digest: contentDg, ManifestDigest: dg, ResolutionPath: "tier-3"}},
 	}

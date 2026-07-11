@@ -81,7 +81,7 @@ func EntityYAMLFromBundle(blob []byte) ([]byte, error) {
 // ErrEntityVersionPathMismatch wrapped with both values. Plugin is
 // the exception: it has no per-version subdirectory — its version comes
 // from metadata.version and its repository location is the socket-path
-// (wasm/<socket>/<name>) — so the per-version guard does not apply to it.
+// (plugin/<socket>/<name>) — so the per-version guard does not apply to it.
 func Bundle(kind, entityPath string) ([]byte, string, error) {
 	mediaType, err := MediaTypeForKind(kind)
 	if err != nil {

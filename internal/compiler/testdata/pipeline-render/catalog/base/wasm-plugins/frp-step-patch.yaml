@@ -4,7 +4,7 @@ metadata:
   name: core/frp/patch
   version: "1.0.0"
 spec:
-  plugin: "oci://hub.aggrega.ai/wasm/frp/patch"
+  plugin: "oci://hub.aggrega.ai/plugin/frp/patch"
   pluginType: frp_step
   abiVersion: v1alpha1
   targets:

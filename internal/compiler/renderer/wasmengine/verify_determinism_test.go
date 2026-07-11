@@ -68,7 +68,7 @@ func TestVerifyDeterminismHaltsOnNonDeterministicGuest(t *testing.T) {
 // matches the first and the crossing completes. This pins that the mode's
 // render-twice comparison is a true equality check, not an unconditional halt.
 func TestVerifyDeterminismPassesForDeterministicGuest(t *testing.T) {
-	helmURI := embeddedGuestURI(t, "helm-provider")
+	helmURI := embeddedGuestURI(t, "helm")
 	loader := wasm.NewCachingLoader(nil)
 	e := wasmengine.New(embeddedGuestLookup, helmURI, loader)
 

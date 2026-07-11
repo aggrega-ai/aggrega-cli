@@ -488,9 +488,9 @@ func TestPushReferenceRoundTripsThroughSplitURIForOCI(t *testing.T) {
 		{"Provider", "", "helm", "3.0.0"},
 		{"SchemaLibrary", "", "Probes", "1.0.0"},
 		{"MappingLibrary", "", "BaseMappings", "2.1.0"},
-		// Plugin kind: path segment is the canonical "wasm" (not
-		// "plugin"); plugin's metadata.name path-encodes the
-		// socket. Reference shape: <registry>/wasm/<socket>/<name>.
+		// Plugin kind: path segment is "plugin"; the plugin's
+		// metadata.name path-encodes the socket. Reference shape:
+		// <registry>/plugin/<socket>/<name>.
 		{"Plugin", "", "linter/aggrega-publishing", "1.0.0"},
 	}
 	registry := "hub.aggrega.ai"

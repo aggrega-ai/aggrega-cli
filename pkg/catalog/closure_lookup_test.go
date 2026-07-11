@@ -320,31 +320,31 @@ func TestSplitPluginArtifactURI(t *testing.T) {
 	}{
 		{
 			name:       "content-pin form",
-			uri:        "oci://hub.aggrega.ai/wasm/frp/patch@sha256:abc123",
-			wantRef:    "hub.aggrega.ai/wasm/frp/patch",
+			uri:        "oci://hub.aggrega.ai/plugin/frp/patch@sha256:abc123",
+			wantRef:    "hub.aggrega.ai/plugin/frp/patch",
 			wantDigest: "sha256:abc123",
 			wantOK:     true,
 		},
 		{
 			name:       "content-pin form without scheme",
-			uri:        "hub.aggrega.ai/wasm/frp/patch@sha256:abc123",
-			wantRef:    "hub.aggrega.ai/wasm/frp/patch",
+			uri:        "hub.aggrega.ai/plugin/frp/patch@sha256:abc123",
+			wantRef:    "hub.aggrega.ai/plugin/frp/patch",
 			wantDigest: "sha256:abc123",
 			wantOK:     true,
 		},
 		{
 			name:   "version-tag form is not a content pin",
-			uri:    "oci://hub.aggrega.ai/wasm/frp/patch:1.0.0",
+			uri:    "oci://hub.aggrega.ai/plugin/frp/patch:1.0.0",
 			wantOK: false,
 		},
 		{
 			name:   "bare path is not a content pin",
-			uri:    "hub.aggrega.ai/wasm/frp/patch",
+			uri:    "hub.aggrega.ai/plugin/frp/patch",
 			wantOK: false,
 		},
 		{
 			name:   "non-sha256 digest after @ is rejected",
-			uri:    "oci://hub.aggrega.ai/wasm/frp/patch@md5:abc",
+			uri:    "oci://hub.aggrega.ai/plugin/frp/patch@md5:abc",
 			wantOK: false,
 		},
 	}
@@ -385,7 +385,7 @@ func TestResolvePluginContentPinRoundTrip(t *testing.T) {
 
 	wasmBytes := []byte("\x00asm\x01\x00\x00\x00 content-pin round-trip fixture")
 	contentDigest := digest.ContentDigest(wasmBytes)
-	const repo = "hub.aggrega.ai/wasm/frp/patch"
+	const repo = "hub.aggrega.ai/plugin/frp/patch"
 	artifactURI := "oci://" + repo + "@" + contentDigest
 
 	store := memory.New()
@@ -469,7 +469,7 @@ func TestResolvePluginManifestSelfVerify(t *testing.T) {
 
 	wasmBytes := []byte("\x00asm\x01\x00\x00\x00 manifest self-verify fixture")
 	contentDigest := digest.ContentDigest(wasmBytes)
-	const repo = "hub.aggrega.ai/wasm/frp/patch"
+	const repo = "hub.aggrega.ai/plugin/frp/patch"
 	artifactURI := "oci://" + repo + "@" + contentDigest
 
 	store := memory.New()
@@ -563,7 +563,7 @@ func TestResolvePluginManifestAuthorityBeatsForgedContentPin(t *testing.T) {
 
 	wasmBytes := []byte("\x00asm\x01\x00\x00\x00 authority fixture")
 	origDigest := digest.ContentDigest(wasmBytes)
-	const repo = "hub.aggrega.ai/wasm/frp/authority"
+	const repo = "hub.aggrega.ai/plugin/frp/authority"
 	origURI := "oci://" + repo + "@" + origDigest
 
 	store := memory.New()

@@ -65,7 +65,7 @@ func TestPolicyVerdictErrors_AllPassIsEmpty(t *testing.T) {
 // segment across the reference shapes a plugin attachment may carry.
 func TestPluginRefName(t *testing.T) {
 	cases := map[string]string{
-		"oci://registry.example/wasm/policy/house-rules": "house-rules",
+		"oci://registry.example/plugin/policy/house-rules": "house-rules",
 		"proof://mutator":              "mutator",
 		"./plugins/local-mutator.wasm": "local-mutator.wasm",
 		"bare-name":                    "bare-name",

@@ -43,7 +43,7 @@ metadata:
   name: helm-chart-renderer
   version: "1.0.0"
 spec:
-  plugin: oci://hub.aggrega.ai/plugins/core/helmchart-provider
+  plugin: oci://hub.aggrega.ai/plugin/provider/helm-chart
   pluginType: provider
   abiVersion: v1alpha1
   targets:
@@ -88,7 +88,7 @@ metadata:
   name: compose-renderer
   version: "1.0.0"
 spec:
-  plugin: oci://hub.aggrega.ai/plugins/core/compose-provider
+  plugin: oci://hub.aggrega.ai/plugin/provider/compose
   pluginType: provider
   abiVersion: v1alpha1
   targets:

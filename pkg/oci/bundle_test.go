@@ -181,7 +181,7 @@ func TestBundleBareKindsPerVersionSubdir(t *testing.T) {
 // metadata.version; the repository location is the socket-path.
 func TestBundlePluginNoVersionSubdir(t *testing.T) {
 	t.Parallel()
-	body := []byte("apiVersion: aggrega.ai/v1alpha1\nkind: Plugin\nmetadata:\n  name: frp/patch\n  version: 1.0.0\nspec:\n  plugin: \"oci://hub.aggrega.ai/wasm/frp/patch:1.0.0\"\n")
+	body := []byte("apiVersion: aggrega.ai/v1alpha1\nkind: Plugin\nmetadata:\n  name: frp/patch\n  version: 1.0.0\nspec:\n  plugin: \"oci://hub.aggrega.ai/plugin/frp/patch:1.0.0\"\n")
 	// Authored at a path whose parent dir is NOT the version (here the kind name)
 	// — a Component here would fail the version-subdir guard.
 	dir := filepath.Join(t.TempDir(), "wasm-plugins")

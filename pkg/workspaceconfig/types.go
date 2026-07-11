@@ -85,7 +85,7 @@ type Config struct {
 	// engine name a Recipe binds through spec.target (e.g. "helm");
 	// each value is the digest-free OCI identity of the serving plugin
 	// (matching a Plugin entity's spec.plugin, e.g.
-	// "oci://hub.aggrega.ai/plugins/core/helm"), with an optional
+	// "oci://hub.aggrega.ai/plugin/provider/helm"), with an optional
 	// trailing ":version" in the same three forms as a version pin.
 	//
 	// This map is a pull-time input only: pull records the resolved

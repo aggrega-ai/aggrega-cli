@@ -30,8 +30,8 @@ import (
 func mixedScopeComposeFixtureInput(t *testing.T) pipelinetest.Input {
 	t.Helper()
 	sidecarDir := stagePluginSidecar(t, map[string]string{
-		"oci://hub.aggrega.ai/wasm/frp/own-patch-compose":  "frp-step-own-patch-compose-rust.wasm",
-		"oci://hub.aggrega.ai/wasm/frp/host-patch-compose": "frp-step-host-patch-compose-rust.wasm",
+		"oci://hub.aggrega.ai/plugin/frp/own-patch-compose":  "frp-step-own-patch-compose-rust.wasm",
+		"oci://hub.aggrega.ai/plugin/frp/host-patch-compose": "frp-step-host-patch-compose-rust.wasm",
 	})
 	return pipelinetest.Input{
 		ReleasePath: "testdata/mixed-scope-compose/release.yaml",

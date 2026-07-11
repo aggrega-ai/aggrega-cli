@@ -59,31 +59,31 @@ var pluginFS embed.FS
 // Plugin entity's spec.plugin names. The reference digest is derived from these
 // bytes on demand (never stored here), so a rebuild of the guest does not change
 // the lookup key.
-const helmProviderURI = "oci://hub.aggrega.ai/plugins/core/helm-provider"
+const helmProviderURI = "oci://hub.aggrega.ai/plugin/provider/helm"
 
 // composeProviderURI is the digest-free repository reference the compose provider
 // rendering plugin's decompressed bytes register under. Like helmProviderURI, the
 // reference digest is derived from the bytes on demand rather than stored in the
 // key, so a guest rebuild does not perturb the lookup.
-const composeProviderURI = "oci://hub.aggrega.ai/plugins/core/compose-provider"
+const composeProviderURI = "oci://hub.aggrega.ai/plugin/provider/compose"
 
 // helmChartProviderURI is the digest-free repository reference the helm-chart
 // provider rendering plugin's decompressed bytes register under. Like the other
 // provider references, the reference digest is derived from the bytes on demand,
 // so a guest rebuild does not perturb the lookup key.
-const helmChartProviderURI = "oci://hub.aggrega.ai/plugins/core/helmchart-provider"
+const helmChartProviderURI = "oci://hub.aggrega.ai/plugin/provider/helm-chart"
 
 // terraformProviderURI is the digest-free repository reference the terraform
 // provider rendering plugin's decompressed bytes register under. Like the other
 // provider references, the reference digest is derived from the bytes on demand,
 // so a guest rebuild does not perturb the lookup key.
-const terraformProviderURI = "oci://hub.aggrega.ai/plugins/core/terraform-provider"
+const terraformProviderURI = "oci://hub.aggrega.ai/plugin/provider/terraform"
 
 // cloudformationProviderURI is the digest-free repository reference the
 // cloudformation provider rendering plugin's decompressed bytes register under.
 // Like the other provider references, the reference digest is derived from the
 // bytes on demand, so a guest rebuild does not perturb the lookup key.
-const cloudformationProviderURI = "oci://hub.aggrega.ai/plugins/core/cloudformation-provider"
+const cloudformationProviderURI = "oci://hub.aggrega.ai/plugin/provider/cloudformation"
 
 // PublishingLinterURI (exported) is defined in embedded_uris.go so both the
 // default and light host builds share the same linter identity.
@@ -104,12 +104,12 @@ type embeddedArtifact struct {
 // its describe() descriptor) under plugins/.
 func embeddedArtifacts() []embeddedArtifact {
 	return []embeddedArtifact{
-		{helmProviderURI, "plugins/helm-provider.wasm.gz", "plugins/helm-provider.describe.json"},
-		{composeProviderURI, "plugins/compose-provider.wasm.gz", "plugins/compose-provider.describe.json"},
-		{helmChartProviderURI, "plugins/helmchart-provider.wasm.gz", "plugins/helmchart-provider.describe.json"},
-		{terraformProviderURI, "plugins/terraform-provider.wasm.gz", "plugins/terraform-provider.describe.json"},
-		{cloudformationProviderURI, "plugins/cloudformation-provider.wasm.gz", "plugins/cloudformation-provider.describe.json"},
-		{PublishingLinterURI, "plugins/publishing-linter.wasm.gz", "plugins/publishing-linter.describe.json"},
+		{helmProviderURI, "plugins/helm.wasm.gz", "plugins/helm.describe.json"},
+		{composeProviderURI, "plugins/compose.wasm.gz", "plugins/compose.describe.json"},
+		{helmChartProviderURI, "plugins/helm-chart.wasm.gz", "plugins/helm-chart.describe.json"},
+		{terraformProviderURI, "plugins/terraform.wasm.gz", "plugins/terraform.describe.json"},
+		{cloudformationProviderURI, "plugins/cloudformation.wasm.gz", "plugins/cloudformation.describe.json"},
+		{PublishingLinterURI, "plugins/publishing.wasm.gz", "plugins/publishing.describe.json"},
 	}
 }
 
@@ -233,7 +233,7 @@ func URIs() []string {
 func mustRead(name string) []byte {
 	b, err := pluginFS.ReadFile(name)
 	if err != nil {
-		panic("wasm/embedded: read embedded plugin " + name + ": " + err.Error())
+		panic("plugin/embedded: read embedded plugin " + name + ": " + err.Error())
 	}
 	return b
 }
@@ -246,12 +246,12 @@ func mustRead(name string) []byte {
 func mustDecompress(name string) []byte {
 	gz, err := gzip.NewReader(bytes.NewReader(mustRead(name)))
 	if err != nil {
-		panic("wasm/embedded: open gzip for embedded plugin " + name + ": " + err.Error())
+		panic("plugin/embedded: open gzip for embedded plugin " + name + ": " + err.Error())
 	}
 	defer func() { _ = gz.Close() }()
 	b, err := io.ReadAll(gz)
 	if err != nil {
-		panic("wasm/embedded: decompress embedded plugin " + name + ": " + err.Error())
+		panic("plugin/embedded: decompress embedded plugin " + name + ": " + err.Error())
 	}
 	return b
 }

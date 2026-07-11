@@ -32,10 +32,10 @@ func (f fakeRepoLister) Repositories(_ context.Context, _ string, fn func(repos 
 // paths, the catalog scope keeps them all.
 var searchFixtureRepos = []string{
 	"recipe/helm/api-server",
-	"wasm/cli/moo",
+	"plugin/cli/moo",
 	"component/core/api-server",
 	"feature/core/tls",
-	"wasm/provider/helm",
+	"plugin/provider/helm",
 }
 
 // withSearchTarget points the registry-search target seam at a fake lister for
@@ -63,7 +63,7 @@ func TestSearchRegistry_ScopesAndQuery(t *testing.T) {
 	if err != nil {
 		t.Fatalf("plugin scope search: %v", err)
 	}
-	wantPlugin := []string{"wasm/cli/moo", "wasm/provider/helm"}
+	wantPlugin := []string{"plugin/cli/moo", "plugin/provider/helm"}
 	if strings.Join(pluginAll, ",") != strings.Join(wantPlugin, ",") {
 		t.Fatalf("plugin scope = %v; want %v", pluginAll, wantPlugin)
 	}
@@ -85,7 +85,7 @@ func TestSearchRegistry_ScopesAndQuery(t *testing.T) {
 	if err != nil {
 		t.Fatalf("query search: %v", err)
 	}
-	if len(moo) != 1 || moo[0] != "wasm/cli/moo" {
+	if len(moo) != 1 || moo[0] != "plugin/cli/moo" {
 		t.Fatalf("case-insensitive query = %v; want [wasm/cli/moo]", moo)
 	}
 
@@ -112,7 +112,7 @@ func TestRunRegistrySearch_SharedPrimitiveTwoScopes(t *testing.T) {
 	if err := runRegistrySearch(ctx, cfg, "", pluginSearchScope, &pluginOut); err != nil {
 		t.Fatalf("plugin search: %v", err)
 	}
-	if !strings.Contains(pluginOut.String(), "wasm/cli/moo") ||
+	if !strings.Contains(pluginOut.String(), "plugin/cli/moo") ||
 		strings.Contains(pluginOut.String(), "component/core/api-server") {
 		t.Fatalf("plugin search scope leaked non-plugin repos:\n%s", pluginOut.String())
 	}
@@ -122,7 +122,7 @@ func TestRunRegistrySearch_SharedPrimitiveTwoScopes(t *testing.T) {
 		t.Fatalf("catalog search: %v", err)
 	}
 	if !strings.Contains(catalogOut.String(), "component/core/api-server") ||
-		!strings.Contains(catalogOut.String(), "wasm/cli/moo") {
+		!strings.Contains(catalogOut.String(), "plugin/cli/moo") {
 		t.Fatalf("catalog search scope missing catalog repos:\n%s", catalogOut.String())
 	}
 }

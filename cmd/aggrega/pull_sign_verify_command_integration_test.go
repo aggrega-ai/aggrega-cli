@@ -40,7 +40,7 @@ metadata:
   name: `+socketName+`
   version: "`+version+`"
 spec:
-  plugin: "oci://`+host+`/wasm/`+socketName+`:`+version+`"
+  plugin: "oci://`+host+`/plugin/`+socketName+`:`+version+`"
   pluginType: frp_step
   abiVersion: v1alpha1
   exports:
@@ -190,7 +190,7 @@ func signedPluginWorkspaceConfigBody(host string, pinnedPubPEM []byte) string {
 // signature referrer). A consumer workspace whose trust policy REQUIRES
 // signatures and pins the publisher's key runs the real pullRun. The pull walks
 // the closure — the two-pass plugin descent records the host-carrying .wasm
-// artifact URI (oci://host/wasm/...@sha256:...) — and its verify pass verifies
+// artifact URI (oci://host/plugin/...@sha256:...) — and its verify pass verifies
 // that artifact's signature against the pinned key, folding the verified fact
 // onto the lockfile. This exercises the whole spine (resolution → closure
 // descent → buildLockfile → verifyClosureSignatures → pullverify.Verify) through
@@ -230,7 +230,7 @@ func TestIntegration_PullCommandVerifiesSignedPlugin_Keyed(t *testing.T) {
 	t.Run("positive_signed_plugin_verifies_through_pull_command", func(t *testing.T) {
 		host := startRegistry(t, nil)
 		wasmContentDg := publishSignedPluginEntity(t, host, pluginSocket+"/"+pluginName, version, pluginPath, signer)
-		artifactURI := "oci://" + host + "/wasm/" + pluginSocket + "/" + pluginName + "@" + wasmContentDg
+		artifactURI := "oci://" + host + "/plugin/" + pluginSocket + "/" + pluginName + "@" + wasmContentDg
 		// The whole Tier-3-resolved closure is under the require-signatures policy,
 		// so the catalog entities are signed by the same publisher too.
 		ws := writePipelinePluginConsumerWorkspace(t, host, pluginURI, pubPEM, signer)

@@ -109,7 +109,7 @@ func TestRenderPathDescribesOncePerProvider(t *testing.T) {
 	loader.OnLoad = func(string) { atomic.AddInt64(&loads, 1) }
 	loader.OnDescribe = func(string) { atomic.AddInt64(&describes, 1) }
 
-	helmURI := embeddedGuestURI(t, "helm-provider")
+	helmURI := embeddedGuestURI(t, "helm")
 	e := wasmengine.New(embeddedGuestLookup, helmURI, loader)
 
 	const nodes = 5
@@ -144,7 +144,7 @@ func TestRenderPathReusesInstanceForReusableGuest(t *testing.T) {
 	loader.OnLoad = func(string) { atomic.AddInt64(&loads, 1) }
 	loader.OnDescribe = func(string) { atomic.AddInt64(&describes, 1) }
 
-	helmURI := embeddedGuestURI(t, "helm-provider")
+	helmURI := embeddedGuestURI(t, "helm")
 	e := wasmengine.New(embeddedGuestLookup, helmURI, loader)
 
 	// Warm the descriptor memo through the same path the input-kind gate uses,
@@ -229,7 +229,7 @@ func benchSynthEngine(b *testing.B) (*wasmengine.Engine, wasm.PluginSpec, *wasm.
 	loader := wasm.NewCachingLoader(nil)
 	helmURI := ""
 	for _, uri := range embedded.URIs() {
-		if strings.Contains(uri, "helm-provider") {
+		if strings.HasSuffix(uri, "/helm") {
 			helmURI = uri
 			break
 		}

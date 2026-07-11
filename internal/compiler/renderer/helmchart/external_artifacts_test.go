@@ -34,7 +34,7 @@ func helmChartWasmFactory(t *testing.T) renderer.EngineFactory {
 	loader := wasm.NewCachingLoader(nil)
 	var uri string
 	for _, u := range embedded.URIs() {
-		if strings.Contains(u, "helmchart-provider") {
+		if strings.HasSuffix(u, "/helm-chart") {
 			uri = u
 			break
 		}

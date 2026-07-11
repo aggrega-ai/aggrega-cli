@@ -13,4 +13,4 @@ package embedded
 // string. It lives here — shared by both the default and light host builds —
 // so a light binary (which embeds no bytes) still compiles against the same
 // identity while resolving the linter through the later cascade tiers.
-const PublishingLinterURI = "oci://hub.aggrega.ai/plugins/core/publishing-linter"
+const PublishingLinterURI = "oci://hub.aggrega.ai/plugin/linter/publishing"

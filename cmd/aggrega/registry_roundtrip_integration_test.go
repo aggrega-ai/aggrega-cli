@@ -444,7 +444,7 @@ func TestIntegration_Capstone_LintAndExample(t *testing.T) {
 // publishPluginEntity publishes a REAL kind:Plugin entity to the in-process
 // registry through the production entity-publish path (pushRun with --plugin): the
 // .wasm fixture lands first (addressed by its content-digest tag), then the entity
-// lands at <host>/wasm/<socket>/<name>:<version> with spec.plugin stamped to the
+// lands at <host>/plugin/<socket>/<name>:<version> with spec.plugin stamped to the
 // .wasm content-digest pin. The entity's authored exports agree with the committed
 // frp-step-go fixture's describe() (export "step", operates=patch, scope=own), so
 // the publish-time cross-check passes. socketName is the socket-encoded
@@ -478,7 +478,7 @@ metadata:
   name: `+socketName+`
   version: "`+version+`"
 spec:
-  plugin: "oci://`+host+`/wasm/`+socketName+`:`+version+`"
+  plugin: "oci://`+host+`/plugin/`+socketName+`:`+version+`"
   pluginType: frp_step
   abiVersion: v1alpha1
   exports:
@@ -517,7 +517,7 @@ func TestIntegration_PipelinePluginPinning_RoundTrip(t *testing.T) {
 		pluginSocket     = "pipeline"
 	)
 	// BARE Plugin entity identities — the canonical reference shape. The pull
-	// binds <socket>/<name> to <registry>/wasm/<socket>/<name> itself; a
+	// binds <socket>/<name> to <registry>/plugin/<socket>/<name> itself; a
 	// registry-qualified reference would be refused with ErrQualifiedPluginReference.
 	recipePluginURI := pluginSocket + "/" + recipePluginName + ":1.0.0"
 	frPluginURI := pluginSocket + "/" + frPluginName + ":1.0.0"
@@ -609,8 +609,8 @@ spec:
 	frPluginDigest := publishPluginEntity(t, host, pluginSocket+"/"+frPluginName, "1.0.0", pluginPath)
 	// The .wasm ARTIFACT URIs the entities' stamped spec.plugin names — what the
 	// plugins rows pin (the content-digest pin push stamps).
-	recipeArtifactURI := "oci://" + host + "/wasm/" + pluginSocket + "/" + recipePluginName + "@" + recipePluginDigest
-	frArtifactURI := "oci://" + host + "/wasm/" + pluginSocket + "/" + frPluginName + "@" + frPluginDigest
+	recipeArtifactURI := "oci://" + host + "/plugin/" + pluginSocket + "/" + recipePluginName + "@" + recipePluginDigest
+	frArtifactURI := "oci://" + host + "/plugin/" + pluginSocket + "/" + frPluginName + "@" + frPluginDigest
 
 	// A consumer workspace wiring the Component (with a secret attachment that pulls
 	// the Feature) through the Manifest mappings, resolved purely over the registry.

@@ -46,7 +46,7 @@ metadata:
   name: frp/patch
   version: "1.0.0"
 spec:
-  plugin: "oci://hub.aggrega.ai/wasm/frp/patch"
+  plugin: "oci://hub.aggrega.ai/plugin/frp/patch"
   pluginType: frp_step
   abiVersion: v1alpha1
   targets:
@@ -105,7 +105,7 @@ func TestPushPluginOrderedPublish(t *testing.T) {
 	if entityPull.MediaType != oci.MediaTypePlugin {
 		t.Errorf("entity mediatype: got %q want %q", entityPull.MediaType, oci.MediaTypePlugin)
 	}
-	wantIdentity := "oci://hub.aggrega.ai/wasm/frp/patch"
+	wantIdentity := "oci://hub.aggrega.ai/plugin/frp/patch"
 	if !strings.Contains(string(entityPull.Bytes), wantIdentity) {
 		t.Errorf("published entity spec.plugin not the digest-free identity %q; got:\n%s", wantIdentity, entityPull.Bytes)
 	}
@@ -202,7 +202,7 @@ metadata:
   name: frp/patch
   version: "1.0.0"
 spec:
-  plugin: "oci://hub.aggrega.ai/wasm/frp/patch:1.0.0"
+  plugin: "oci://hub.aggrega.ai/plugin/frp/patch:1.0.0"
   pluginType: frp_step
   abiVersion: v1alpha1
   exports:
@@ -402,7 +402,7 @@ func TestContentDigestTagPushPullParity(t *testing.T) {
 func largeGuestBytes(t *testing.T) []byte {
 	t.Helper()
 	for _, uri := range embedded.URIs() {
-		if strings.Contains(uri, "helm-provider") {
+		if strings.HasSuffix(uri, "/helm") {
 			if b, ok := embedded.Lookup(uri); ok {
 				return b
 			}
@@ -433,7 +433,7 @@ metadata:
   name: helm-renderer
   version: "0.4.1"
 spec:
-  plugin: "oci://hub.aggrega.ai/plugins/core/helm-provider"
+  plugin: "oci://hub.aggrega.ai/plugin/provider/helm"
   pluginType: provider
   abiVersion: v1alpha1
   targets:
@@ -531,7 +531,7 @@ metadata:
   name: helm-renderer
   version: "0.4.1"
 spec:
-  plugin: "oci://hub.aggrega.ai/plugins/core/helm-provider"
+  plugin: "oci://hub.aggrega.ai/plugin/provider/helm"
   pluginType: provider
   abiVersion: v1alpha1
   targets:
@@ -638,14 +638,14 @@ func TestPublishPullRoundTripPlugin(t *testing.T) {
 	if err != nil {
 		t.Fatalf("pull entity: %v", err)
 	}
-	wantIdentity := "oci://hub.aggrega.ai/wasm/frp/patch"
+	wantIdentity := "oci://hub.aggrega.ai/plugin/frp/patch"
 	if !strings.Contains(string(entityPull.Bytes), wantIdentity) {
 		t.Fatalf("published entity spec.plugin not the digest-free identity %q:\n%s", wantIdentity, entityPull.Bytes)
 	}
 	if strings.Contains(string(entityPull.Bytes), "@sha256:") {
 		t.Fatalf("published entity must carry no @sha256: digest in spec.plugin:\n%s", entityPull.Bytes)
 	}
-	artifactURI := "oci://hub.aggrega.ai/wasm/frp/patch@" + contentDigest
+	artifactURI := "oci://hub.aggrega.ai/plugin/frp/patch@" + contentDigest
 
 	root := t.TempDir()
 	cat, err := catalog.LoadAll("", root)

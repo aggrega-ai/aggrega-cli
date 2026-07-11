@@ -35,7 +35,7 @@ func composeWasmFactory(t *testing.T) renderer.EngineFactory {
 	loader := wasm.NewCachingLoader(nil)
 	var uri string
 	for _, u := range embedded.URIs() {
-		if strings.Contains(u, "compose-provider") {
+		if strings.HasSuffix(u, "/compose") {
 			uri = u
 			break
 		}

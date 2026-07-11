@@ -22,7 +22,7 @@ metadata:
   name: core/linter/baseline
   version: 1.0.0
 spec:
-  plugin: "oci://hub.aggrega.ai/wasm/linter/baseline"
+  plugin: "oci://hub.aggrega.ai/plugin/linter/baseline"
   pluginType: linter
   abiVersion: v1alpha1
 `

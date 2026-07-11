@@ -25,7 +25,7 @@ import (
 func hostPatchHelmchartFixtureInput(t *testing.T) pipelinetest.Input {
 	t.Helper()
 	sidecarDir := stagePluginSidecar(t, map[string]string{
-		"oci://hub.aggrega.ai/wasm/frp/host-patch": "frp-step-host-patch-rust.wasm",
+		"oci://hub.aggrega.ai/plugin/frp/host-patch": "frp-step-host-patch-rust.wasm",
 	})
 	return pipelinetest.Input{
 		ReleasePath: "testdata/host-patch-helmchart/release.yaml",

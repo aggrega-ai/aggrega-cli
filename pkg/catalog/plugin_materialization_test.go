@@ -22,7 +22,7 @@ metadata:
   name: core/linter/naming
   version: 1.0.0
 spec:
-  plugin: "oci://registry.example.com/wasm/linter/naming"
+  plugin: "oci://registry.example.com/plugin/linter/naming"
   pluginType: linter
   abiVersion: v1alpha1
 `

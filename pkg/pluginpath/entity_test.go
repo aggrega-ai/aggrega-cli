@@ -14,7 +14,7 @@ import (
 // on the ARTIFACT, not the entity URI — the entity → spec.plugin → cascade two-step.
 func TestEntityLookup_TranslatesEntityToArtifact(t *testing.T) {
 	const entityURI = "core/frp/patch:1.0.0"
-	const artifactURI = "oci://hub.aggrega.ai/wasm/frp/patch@sha256:0000000000000000000000000000000000000000000000000000000000000000"
+	const artifactURI = "oci://hub.aggrega.ai/plugin/frp/patch@sha256:0000000000000000000000000000000000000000000000000000000000000000"
 
 	var sawArtifact string
 	cascade := func(uri string) (ResolvedPlugin, error) {

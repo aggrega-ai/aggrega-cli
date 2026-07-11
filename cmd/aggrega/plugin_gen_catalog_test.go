@@ -240,7 +240,7 @@ kind: Plugin
 metadata:
   name: linter/publishing-linter
 spec:
-  plugin: oci://`+registry+`/wasm/linter/publishing-linter
+  plugin: oci://`+registry+`/plugin/linter/publishing-linter
   runtime:
     maxMemoryPages: 4096
     timeoutMs: 300000

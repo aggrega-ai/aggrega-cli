@@ -25,7 +25,7 @@ import (
 // from the embed tier's own bytes at test time (embeddedReferenceDigest), so the
 // resolution assertion is a self-consistency check against the shipped bytes.
 const (
-	cloudformationArtifactURI    = "oci://hub.aggrega.ai/plugins/core/cloudformation-provider"
+	cloudformationArtifactURI    = "oci://hub.aggrega.ai/plugin/provider/cloudformation"
 	cloudformationPluginEntity   = "cloudformation-renderer:" + testCorePluginVersion
 	cloudformationProviderMemPag = 4096
 )

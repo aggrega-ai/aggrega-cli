@@ -25,7 +25,7 @@ import (
 // tier's own bytes at test time (embeddedReferenceDigest), so the resolution
 // assertion is a self-consistency check against the shipped bytes.
 const (
-	composeArtifactURI    = "oci://hub.aggrega.ai/plugins/core/compose-provider"
+	composeArtifactURI    = "oci://hub.aggrega.ai/plugin/provider/compose"
 	composePluginEntity   = "compose-renderer:" + testCorePluginVersion
 	composeProviderMemPag = 4096
 )

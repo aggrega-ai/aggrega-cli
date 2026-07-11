@@ -18,10 +18,10 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-EMBED="internal/wasm/embedded/plugins/cloudformation-provider.wasm.gz"
+EMBED="internal/wasm/embedded/plugins/cloudformation.wasm.gz"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
-WASM="$TMP/cloudformation-provider.wasm"
+WASM="$TMP/cloudformation.wasm"
 
 echo "=== build guest (GOOS=wasip1 GOARCH=wasm) ==="
 _ver="$(git describe --tags --always --dirty 2>/dev/null || echo dev)"; _ver="${_ver#v}"

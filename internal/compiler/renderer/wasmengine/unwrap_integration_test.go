@@ -27,14 +27,14 @@ func failingLookup(string) (pluginpath.ResolvedPlugin, error) {
 // embeddedGuestLookup resolves that URI to the guest's bytes — mirroring the embed
 // tier of the production plugin-resolution cascade so the render classification
 // reads a real guest's describe() self-report.
-func embeddedGuestURI(t *testing.T, basename string) string {
+func embeddedGuestURI(t *testing.T, leaf string) string {
 	t.Helper()
 	for _, uri := range embedded.URIs() {
-		if strings.Contains(uri, basename) {
+		if strings.HasSuffix(uri, "/"+leaf) {
 			return uri
 		}
 	}
-	t.Fatalf("no embedded guest URI carries %q; embedded URIs: %v", basename, embedded.URIs())
+	t.Fatalf("no embedded guest URI ends with %q; embedded URIs: %v", "/"+leaf, embedded.URIs())
 	return ""
 }
 
@@ -87,8 +87,8 @@ func TestWasmEngineExposesCodecAndArtifactsSeams(t *testing.T) {
 // declares no alternate pair and falls back to the default.
 func TestArtifactTemplateDelimitersFromDescribe(t *testing.T) {
 	loader := wasm.NewCachingLoader(nil)
-	helmchartURI := embeddedGuestURI(t, "helmchart-provider")
-	helmURI := embeddedGuestURI(t, "helm-provider")
+	helmchartURI := embeddedGuestURI(t, "helm-chart")
+	helmURI := embeddedGuestURI(t, "helm")
 
 	hc := wasmengine.New(embeddedGuestLookup, helmchartURI, loader)
 	if l, r := hc.ArtifactTemplateDelimiters(); l != "[[" || r != "]]" {
@@ -107,8 +107,8 @@ func TestArtifactTemplateDelimitersFromDescribe(t *testing.T) {
 // true), while compose merges fragments and remains intermediate.
 func TestRenderIsIntermediateThroughWasmWrapper(t *testing.T) {
 	loader := wasm.NewCachingLoader(nil)
-	helmchartURI := embeddedGuestURI(t, "helmchart-provider")
-	composeURI := embeddedGuestURI(t, "compose-provider")
+	helmchartURI := embeddedGuestURI(t, "helm-chart")
+	composeURI := embeddedGuestURI(t, "compose")
 
 	if got := renderer.RenderIsIntermediate(wasmengine.New(embeddedGuestLookup, helmchartURI, loader)); got {
 		t.Error("RenderIsIntermediate(New helm-chart) = true, want false")

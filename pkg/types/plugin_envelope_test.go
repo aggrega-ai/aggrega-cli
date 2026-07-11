@@ -19,7 +19,7 @@ metadata:
   name: publishing-linter
   version: 1.0.0
 spec:
-  plugin: oci://hub.aggrega.ai/wasm/linter/publishing-linter
+  plugin: oci://hub.aggrega.ai/plugin/linter/publishing-linter
   pluginType: linter
   abiVersion: v1alpha1
   signature:
@@ -133,7 +133,7 @@ spec:
 kind: Plugin
 metadata: {name: p, version: 1.0.0}
 spec:
-  plugin: oci://hub.aggrega.ai/wasm/linter/p@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+  plugin: oci://hub.aggrega.ai/plugin/linter/p@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
   pluginType: linter
   abiVersion: v1alpha1
 `,
@@ -184,7 +184,7 @@ metadata:
   name: publishing-linter
   version: 1.0.0
 spec:
-  plugin: oci://hub.aggrega.ai/wasm/linter/publishing-linter
+  plugin: oci://hub.aggrega.ai/plugin/linter/publishing-linter
   pluginType: linter
   abiVersion: v1alpha1
   exports:
@@ -218,7 +218,7 @@ metadata:
   name: publishing-linter
   version: 1.0.0
 spec:
-  plugin: oci://hub.aggrega.ai/wasm/linter/publishing-linter
+  plugin: oci://hub.aggrega.ai/plugin/linter/publishing-linter
   pluginType: linter
   abiVersion: v1alpha1
 `

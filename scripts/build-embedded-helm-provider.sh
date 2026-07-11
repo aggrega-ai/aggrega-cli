@@ -18,10 +18,10 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-EMBED="internal/wasm/embedded/plugins/helm-provider.wasm.gz"
+EMBED="internal/wasm/embedded/plugins/helm.wasm.gz"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
-WASM="$TMP/helm-provider.wasm"
+WASM="$TMP/helm.wasm"
 
 echo "=== build guest (GOOS=wasip1 GOARCH=wasm) ==="
 _ver="$(git describe --tags --always --dirty 2>/dev/null || echo dev)"; _ver="${_ver#v}"

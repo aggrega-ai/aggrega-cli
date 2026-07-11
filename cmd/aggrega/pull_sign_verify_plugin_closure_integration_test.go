@@ -64,7 +64,7 @@ metadata:
   name: `+socketName+`
   version: "`+version+`"
 spec:
-  plugin: "oci://`+host+`/wasm/`+socketName+`:`+version+`"
+  plugin: "oci://`+host+`/plugin/`+socketName+`:`+version+`"
   pluginType: frp_step
   abiVersion: v1alpha1
   exports:
@@ -86,7 +86,7 @@ spec:
 
 	// Recover the real manifest digests the production resolution records, by
 	// pulling each artifact back from the registry.
-	entityRepo, err := oci.NewRemoteRepository(host + "/wasm/" + socketName)
+	entityRepo, err := oci.NewRemoteRepository(host + "/plugin/" + socketName)
 	if err != nil {
 		t.Fatalf("entity repo: %v", err)
 	}
@@ -101,8 +101,8 @@ spec:
 
 	return signedPluginPublication{
 		host:             host,
-		entityURI:        host + "/wasm/" + socketName,
-		wasmURI:          "oci://" + host + "/wasm/" + socketName + "@" + wasmContentDg,
+		entityURI:        host + "/plugin/" + socketName,
+		wasmURI:          "oci://" + host + "/plugin/" + socketName + "@" + wasmContentDg,
 		entityContentDg:  digest.ContentDigest(entityPull.Bytes),
 		entityManifestDg: entityPull.Digest,
 		wasmContentDg:    wasmContentDg,
@@ -215,7 +215,7 @@ metadata:
   name: `+socketName+`
   version: "`+version+`"
 spec:
-  plugin: "oci://`+host+`/wasm/`+socketName+`:`+version+`"
+  plugin: "oci://`+host+`/plugin/`+socketName+`:`+version+`"
   pluginType: frp_step
   abiVersion: v1alpha1
   exports:
@@ -227,7 +227,7 @@ spec:
 		t.Fatalf("publish unsigned plugin: %v", perr)
 	}
 
-	repo, err := oci.NewRemoteRepository(host + "/wasm/" + socketName)
+	repo, err := oci.NewRemoteRepository(host + "/plugin/" + socketName)
 	if err != nil {
 		t.Fatalf("entity repo: %v", err)
 	}
@@ -262,8 +262,8 @@ spec:
 
 	return signedPluginPublication{
 		host:             host,
-		entityURI:        host + "/wasm/" + socketName,
-		wasmURI:          "oci://" + host + "/wasm/" + socketName + "@" + wasmContentDg,
+		entityURI:        host + "/plugin/" + socketName,
+		wasmURI:          "oci://" + host + "/plugin/" + socketName + "@" + wasmContentDg,
 		entityContentDg:  digest.ContentDigest(entityPull.Bytes),
 		entityManifestDg: entityPull.Digest,
 		wasmContentDg:    wasmContentDg,
@@ -376,7 +376,7 @@ metadata:
   name: `+socketName+`
   version: "`+version+`"
 spec:
-  plugin: "oci://`+host+`/wasm/`+socketName+`:`+version+`"
+  plugin: "oci://`+host+`/plugin/`+socketName+`:`+version+`"
   pluginType: frp_step
   abiVersion: v1alpha1
   exports:
@@ -389,7 +389,7 @@ spec:
 		t.Fatalf("publish unsigned plugin: %v", perr)
 	}
 
-	entityRepo, err := oci.NewRemoteRepository(host + "/wasm/" + socketName)
+	entityRepo, err := oci.NewRemoteRepository(host + "/plugin/" + socketName)
 	if err != nil {
 		t.Fatalf("entity repo: %v", err)
 	}
@@ -402,8 +402,8 @@ spec:
 		t.Fatalf("pull .wasm: %v", err)
 	}
 
-	entityURI := host + "/wasm/" + socketName
-	wasmURI := "oci://" + host + "/wasm/" + socketName + "@" + wasmContentDg
+	entityURI := host + "/plugin/" + socketName
+	wasmURI := "oci://" + host + "/plugin/" + socketName + "@" + wasmContentDg
 	cl := closure.Closure{
 		Entities: []closure.ResolvedRef{
 			{URI: entityURI, Digest: digest.ContentDigest(entityPull.Bytes), ManifestDigest: entityPull.Digest, ResolutionPath: "tier-3-pull"},

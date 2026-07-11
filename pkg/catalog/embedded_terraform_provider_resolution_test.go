@@ -25,7 +25,7 @@ import (
 // the embed tier's own bytes at test time (embeddedReferenceDigest), so the
 // resolution assertion is a self-consistency check against the shipped bytes.
 const (
-	terraformArtifactURI    = "oci://hub.aggrega.ai/plugins/core/terraform-provider"
+	terraformArtifactURI    = "oci://hub.aggrega.ai/plugin/provider/terraform"
 	terraformPluginEntity   = "terraform-renderer:" + testCorePluginVersion
 	terraformProviderMemPag = 4096
 )

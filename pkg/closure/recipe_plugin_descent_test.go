@@ -66,7 +66,7 @@ const (
 	// references; registryPluginArtifact is the .wasm artifact the entity's
 	// spec.plugin names.
 	registryPluginEntity   = "core/frp/patch-workloads:1.0.0"
-	registryPluginArtifact = "oci://hub.aggrega.ai/wasm/frp/patch-workloads@sha256:1111111111111111111111111111111111111111111111111111111111111111"
+	registryPluginArtifact = "oci://hub.aggrega.ai/plugin/frp/patch-workloads@sha256:1111111111111111111111111111111111111111111111111111111111111111"
 	localPluginEntity      = "local/frp/patch-local:1.0.0"
 	localPluginArtifact    = "plugins/patch-local.wasm"
 )
@@ -310,7 +310,7 @@ func TestPluginDescent_NilLoaderNoop(t *testing.T) {
 const (
 	frRecipeURI      = "hub.aggrega.ai/featurerecipe/example/cred:1.0.0"
 	frPluginEntity   = "core/frp/patch-credential:1.0.0"
-	frPluginArtifact = "oci://hub.aggrega.ai/wasm/frp/patch-credential@sha256:2222222222222222222222222222222222222222222222222222222222222222"
+	frPluginArtifact = "oci://hub.aggrega.ai/plugin/frp/patch-credential@sha256:2222222222222222222222222222222222222222222222222222222222222222"
 )
 
 // featureRecipeDescentManifest maps a Feature type to a FeatureRecipe URI so the
@@ -401,7 +401,7 @@ func TestPluginDescent_FeatureRecipePinned(t *testing.T) {
 // to its spec.plugin .wasm artifact at pull time even though no Recipe references it.
 func TestPluginDescent_WorkspaceSocketEntityArtifactPinned(t *testing.T) {
 	const socketEntity = "core/policy-validator/baseline:1.0.0"
-	const socketArtifact = "oci://hub.aggrega.ai/wasm/policy-validator/baseline@sha256:3333333333333333333333333333333333333333333333333333333333333333"
+	const socketArtifact = "oci://hub.aggrega.ai/plugin/policy-validator/baseline@sha256:3333333333333333333333333333333333333333333333333333333333333333"
 
 	lookup := pluginDescentLookup()
 	lookup.entities[socketEntity] = resolutionOK("1.0.0", "sha256:socket-entity", "tier-3-pull")
@@ -455,7 +455,7 @@ const (
 	// declares ("compose:1.0.0").
 	providerPluginName     = "compose-renderer"
 	providerPluginEntity   = providerPluginName + ":1.0.0"
-	providerPluginArtifact = "oci://hub.aggrega.ai/wasm/provider/compose-renderer@sha256:4444444444444444444444444444444444444444444444444444444444444444"
+	providerPluginArtifact = "oci://hub.aggrega.ai/plugin/provider/compose-renderer@sha256:4444444444444444444444444444444444444444444444444444444444444444"
 	providerBinding        = registryProvider + ":1.0.0"
 )
 

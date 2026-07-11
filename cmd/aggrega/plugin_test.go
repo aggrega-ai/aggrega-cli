@@ -44,7 +44,7 @@ func TestRenderPluginEntryProvenanceDisplay(t *testing.T) {
 
 	stamped := pluginListEntry{
 		source: "embedded",
-		uri:    "oci://hub.aggrega.ai/plugins/core/helm-provider",
+		uri:    "oci://hub.aggrega.ai/plugin/provider/helm",
 		desc: wasm.PluginDescriptor{
 			PluginType: wasm.PluginTypeProvider,
 			Targets:    []string{"helm"},
@@ -60,7 +60,7 @@ func TestRenderPluginEntryProvenanceDisplay(t *testing.T) {
 	renderPluginEntry(&stampedBuf, stamped, map[string]bool{})
 	got := stampedBuf.String()
 	for _, want := range []string{
-		"oci://hub.aggrega.ai/plugins/core/helm-provider",
+		"oci://hub.aggrega.ai/plugin/provider/helm",
 		"type:         provider",
 		"version:      0.4.0 (commit abc1234)",
 		"targets:      helm",
@@ -75,7 +75,7 @@ func TestRenderPluginEntryProvenanceDisplay(t *testing.T) {
 
 	unstamped := pluginListEntry{
 		source: "embedded",
-		uri:    "oci://hub.aggrega.ai/plugins/core/compose-provider",
+		uri:    "oci://hub.aggrega.ai/plugin/provider/compose",
 		desc: wasm.PluginDescriptor{
 			PluginType: wasm.PluginTypeProvider,
 			Exports:    []wasm.PluginExport{{Name: "render_node"}},
@@ -118,7 +118,7 @@ func TestFormatPluginListDeterministic(t *testing.T) {
 	t.Parallel()
 
 	embeddedEntries := []pluginListEntry{
-		{source: "embedded", uri: "oci://hub.aggrega.ai/plugins/core/helm-provider",
+		{source: "embedded", uri: "oci://hub.aggrega.ai/plugin/provider/helm",
 			desc: wasm.PluginDescriptor{PluginType: wasm.PluginTypeProvider}},
 	}
 	// Deliberately out of URI order to prove the caller sorts before rendering.
@@ -136,7 +136,7 @@ func TestFormatPluginListDeterministic(t *testing.T) {
 		})
 	}
 
-	embeddedSet := map[string]bool{"oci://hub.aggrega.ai/plugins/core/helm-provider": true}
+	embeddedSet := map[string]bool{"oci://hub.aggrega.ai/plugin/provider/helm": true}
 
 	var first, second bytes.Buffer
 	formatPluginList(&first, embeddedEntries, configuredEntries, embeddedSet)

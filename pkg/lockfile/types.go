@@ -275,7 +275,7 @@ type Plugin struct {
 type ProviderBinding struct {
 	// Plugin is the digest-free OCI identity of the resolved
 	// provider-rendering plugin (matching a Plugin entity's spec.plugin,
-	// e.g. "oci://hub.aggrega.ai/plugins/core/helm").
+	// e.g. "oci://hub.aggrega.ai/plugin/provider/helm").
 	Plugin string `yaml:"plugin"`
 	// Target is the render target kind this binding selects an engine for
 	// — the bare engine name a Recipe binds through spec.target.

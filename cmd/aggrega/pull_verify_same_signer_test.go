@@ -21,8 +21,8 @@ import (
 // trusted identity is exactly the case "both verified" would wrongly admit, so
 // the comparison is fed two distinct matched identities here.
 func TestEnforcePluginSameSigner_HaltsOnMismatch(t *testing.T) {
-	const entityURI = "host.example.com/wasm/pipeline/patch-server"
-	const wasmURI = "oci://host.example.com/wasm/pipeline/patch-server@sha256:abc"
+	const entityURI = "host.example.com/plugin/pipeline/patch-server"
+	const wasmURI = "oci://host.example.com/plugin/pipeline/patch-server@sha256:abc"
 
 	lf := &lockfile.Lockfile{
 		Entities: []lockfile.Entity{
@@ -49,8 +49,8 @@ func TestEnforcePluginSameSigner_HaltsOnMismatch(t *testing.T) {
 // TestEnforcePluginSameSigner_PassesOnMatch proves the comparison admits a
 // plugin whose entity and .wasm carry signatures from the SAME matched signer.
 func TestEnforcePluginSameSigner_PassesOnMatch(t *testing.T) {
-	const entityURI = "host.example.com/wasm/pipeline/patch-server"
-	const wasmURI = "oci://host.example.com/wasm/pipeline/patch-server@sha256:abc"
+	const entityURI = "host.example.com/plugin/pipeline/patch-server"
+	const wasmURI = "oci://host.example.com/plugin/pipeline/patch-server@sha256:abc"
 
 	sig := func() *lockfile.VerifiedSignature {
 		return &lockfile.VerifiedSignature{Mode: "keyless", Identity: "alice@example.com", Issuer: "https://accounts.google.com"}
@@ -69,8 +69,8 @@ func TestEnforcePluginSameSigner_PassesOnMatch(t *testing.T) {
 // signatures whose pinned-key fingerprints differ are a signer mismatch, even
 // though keyed signatures carry no certificate identity.
 func TestEnforcePluginSameSigner_KeyedMismatch(t *testing.T) {
-	const entityURI = "host.example.com/wasm/pipeline/patch-server"
-	const wasmURI = "oci://host.example.com/wasm/pipeline/patch-server@sha256:abc"
+	const entityURI = "host.example.com/plugin/pipeline/patch-server"
+	const wasmURI = "oci://host.example.com/plugin/pipeline/patch-server@sha256:abc"
 
 	lf := &lockfile.Lockfile{
 		Entities: []lockfile.Entity{
@@ -93,8 +93,8 @@ func TestEnforcePluginSameSigner_KeyedMismatch(t *testing.T) {
 // (RequiresSignatures) — not this comparison — is what demands a signature be
 // present.
 func TestEnforcePluginSameSigner_NoHaltWhenOneSideUnsigned(t *testing.T) {
-	const entityURI = "host.example.com/wasm/pipeline/patch-server"
-	const wasmURI = "oci://host.example.com/wasm/pipeline/patch-server@sha256:abc"
+	const entityURI = "host.example.com/plugin/pipeline/patch-server"
+	const wasmURI = "oci://host.example.com/plugin/pipeline/patch-server@sha256:abc"
 
 	// Entity signed, .wasm unsigned.
 	lf := &lockfile.Lockfile{

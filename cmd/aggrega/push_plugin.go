@@ -100,7 +100,7 @@ func pushPlugin(out io.Writer, cfg pushConfig, registry string, wantSign bool, n
 	contentDigest := digest.ContentDigest(wasmBytes)
 
 	// The entity and the .wasm share the same repository location
-	// (<registry>/wasm/<socket>/<name>); the entity is addressed by its version
+	// (<registry>/plugin/<socket>/<name>); the entity is addressed by its version
 	// tag, the .wasm by its content digest, so the two never collide on a tag.
 	reference := buildPushReference(registry, "Plugin", "", name)
 
