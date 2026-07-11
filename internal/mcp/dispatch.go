@@ -25,7 +25,7 @@ func (s *server) dispatch(req *rpcRequest) (any, *rpcError) {
 	case "resources/list":
 		return listResourcesResult{Resources: []resource{}}, nil
 	case "resources/templates/list":
-		return listResourceTemplatesResult{ResourceTemplates: []resourceTemplate{}}, nil
+		return listResourceTemplatesResult{ResourceTemplates: docsResourceTemplates()}, nil
 	case "prompts/list":
 		return listPromptsResult{Prompts: []prompt{}}, nil
 	case "tools/call":
@@ -93,10 +93,12 @@ func negotiateProtocolVersion(requested string) string {
 	return protocolVersion
 }
 
-// handleResourcesRead dispatches a resources/read request. It validates
-// the params and reports an unknown resource URI as a well-formed
-// resource-not-found error while the resource bodies are wired in. A
-// missing URI is an invalid-params error.
+// handleResourcesRead dispatches a resources/read request. It validates the
+// params and serves the documentation resources — langref:// language-reference
+// pages and authoring:// authoring-guide topics — as inline content read from
+// the local documentation-bundle cache. A missing URI is an invalid-params
+// error; an unrecognised scheme or an absent page is a well-formed
+// resource-not-found error.
 func (s *server) handleResourcesRead(params json.RawMessage) (any, *rpcError) {
 	var p readResourceParams
 	if err := json.Unmarshal(params, &p); err != nil {
@@ -105,5 +107,5 @@ func (s *server) handleResourcesRead(params json.RawMessage) (any, *rpcError) {
 	if p.URI == "" {
 		return nil, &rpcError{Code: codeInvalidParams, Message: "resources/read requires a resource uri"}
 	}
-	return nil, &rpcError{Code: codeResourceNotFound, Message: "resource not found: " + p.URI}
+	return s.readDocsResource(p.URI)
 }

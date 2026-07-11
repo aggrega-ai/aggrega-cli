@@ -132,8 +132,27 @@ func TestListMethodsReturnWellFormedResults(t *testing.T) {
 	if !bytes.Contains(resps[1].Result, []byte(`"resources":[]`)) {
 		t.Errorf("resources/list result = %s, want empty array", resps[1].Result)
 	}
-	if !bytes.Contains(resps[2].Result, []byte(`"resourceTemplates":[]`)) {
-		t.Errorf("resources/templates/list result = %s, want empty array", resps[2].Result)
+	// resources/templates/list advertises the documentation resource families —
+	// the langref:// and authoring:// URI templates — while resources/list stays
+	// empty (those resources are templated, not fixed concrete entries).
+	var rt listResourceTemplatesResult
+	if err := json.Unmarshal(resps[2].Result, &rt); err != nil {
+		t.Fatalf("unmarshal resources/templates/list: %v", err)
+	}
+	if len(rt.ResourceTemplates) != 2 {
+		t.Fatalf("resources/templates/list returned %d templates, want 2: %s", len(rt.ResourceTemplates), resps[2].Result)
+	}
+	gotTemplates := map[string]bool{}
+	for _, tmpl := range rt.ResourceTemplates {
+		gotTemplates[tmpl.URITemplate] = true
+		if tmpl.Name == "" || tmpl.Description == "" {
+			t.Errorf("resource template %q missing name or description", tmpl.URITemplate)
+		}
+	}
+	for _, want := range []string{"langref://{path}", "authoring://{topic}"} {
+		if !gotTemplates[want] {
+			t.Errorf("resources/templates/list missing template %q: %s", want, resps[2].Result)
+		}
 	}
 	if !bytes.Contains(resps[3].Result, []byte(`"prompts":[]`)) {
 		t.Errorf("prompts/list result = %s, want empty array", resps[3].Result)

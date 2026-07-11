@@ -191,3 +191,18 @@ type callToolParams struct {
 type readResourceParams struct {
 	URI string `json:"uri"`
 }
+
+// resourceContents is one item of a resources/read result — the content of a
+// read resource. Text carries a textual resource's body inline; MimeType names
+// its media type so the client renders it correctly.
+type resourceContents struct {
+	URI      string `json:"uri"`
+	MimeType string `json:"mimeType,omitempty"`
+	Text     string `json:"text,omitempty"`
+}
+
+// readResourceResult is the resources/read result envelope: the contents of
+// the requested resource, served inline.
+type readResourceResult struct {
+	Contents []resourceContents `json:"contents"`
+}

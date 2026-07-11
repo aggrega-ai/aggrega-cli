@@ -1,0 +1,258 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Cognitio S.r.l.
+
+package docscache_test
+
+import (
+	"archive/tar"
+	"bytes"
+	"compress/gzip"
+	"context"
+	"errors"
+	"os"
+	"path/filepath"
+	"testing"
+
+	"oras.land/oras-go/v2"
+	"oras.land/oras-go/v2/content/memory"
+
+	"github.com/aggrega-ai/aggrega-cli/pkg/docscache"
+	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
+	"github.com/aggrega-ai/aggrega-cli/pkg/pullverify"
+	"github.com/aggrega-ai/aggrega-cli/pkg/signing"
+	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
+)
+
+const (
+	testRef       = "reg.example.com/docs/aggrega-docs"
+	testVersion   = "1.0.0"
+	componentPage = "language-reference/entities/component.md"
+	componentBody = "# Component\n\nA Component is a unit of compute.\n"
+	authoringPage = "authoring/getting-started.md"
+	authoringBody = "# Getting started\n\nDeclare an Aggregate.\n"
+)
+
+// buildBundle packs a deterministic gzipped tar of the given page->body entries.
+func buildBundle(t *testing.T, pages map[string]string) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	gz := gzip.NewWriter(&buf)
+	tw := tar.NewWriter(gz)
+	// Sorted iteration for byte-stable archives.
+	for _, name := range sortedKeys(pages) {
+		body := []byte(pages[name])
+		if err := tw.WriteHeader(&tar.Header{Name: name, Mode: 0o644, Size: int64(len(body)), Typeflag: tar.TypeReg}); err != nil {
+			t.Fatalf("tar header %q: %v", name, err)
+		}
+		if _, err := tw.Write(body); err != nil {
+			t.Fatalf("tar write %q: %v", name, err)
+		}
+	}
+	if err := tw.Close(); err != nil {
+		t.Fatalf("tar close: %v", err)
+	}
+	if err := gz.Close(); err != nil {
+		t.Fatalf("gzip close: %v", err)
+	}
+	return buf.Bytes()
+}
+
+func sortedKeys(m map[string]string) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	// insertion sort — small maps, no import needed
+	for i := 1; i < len(keys); i++ {
+		for j := i; j > 0 && keys[j-1] > keys[j]; j-- {
+			keys[j-1], keys[j] = keys[j], keys[j-1]
+		}
+	}
+	return keys
+}
+
+// signedBundleStore pushes a documentation bundle to an in-memory store, signs
+// its manifest digest with a fresh held key, attaches the bundle as a signature
+// referrer, and returns the store plus the pinned public-key PEM. It mirrors the
+// pull-time signing pattern the catalog-entity and plugin paths use, so a
+// documentation bundle verifies through the identical path.
+func signedBundleStore(t *testing.T, bundle []byte) (*memory.Store, []byte) {
+	t.Helper()
+	ctx := context.Background()
+	store := memory.New()
+	dg, err := oci.Push(ctx, store, testVersion, oci.MediaTypeDocs, bundle)
+	if err != nil {
+		t.Fatalf("Push: %v", err)
+	}
+	privPEM, _, err := signing.GenerateKeyedPEM()
+	if err != nil {
+		t.Fatalf("GenerateKeyedPEM: %v", err)
+	}
+	signer, err := signing.LoadKeyedSigner(privPEM, nil)
+	if err != nil {
+		t.Fatalf("LoadKeyedSigner: %v", err)
+	}
+	sig, artifactType, err := signer.Sign(ctx, dg)
+	if err != nil {
+		t.Fatalf("Sign: %v", err)
+	}
+	if _, err := oci.AttachReferrer(ctx, store, testVersion, artifactType, sig); err != nil {
+		t.Fatalf("AttachReferrer: %v", err)
+	}
+	return store, signer.PublicKeyPEM()
+}
+
+// keyedVerifier returns a VerifyAtPull that runs the SAME pull-time signature
+// verification a catalog entity or plugin uses (pullverify.Verify), against a
+// registry policy that requires signatures and pins the bundle's key.
+func keyedVerifier(store oras.ReadOnlyTarget, pubPEM []byte) docscache.VerifyAtPull {
+	cfg := workspaceconfig.Config{
+		Registries: []workspaceconfig.RegistryConfig{
+			{Host: "reg.example.com", RequiresSignatures: true, PublicKey: string(pubPEM)},
+		},
+	}
+	return func(ctx context.Context, manifestDigest string) error {
+		_, err := pullverify.Verify(ctx, []pullverify.Entity{
+			{URI: testRef, ManifestDigest: manifestDigest, Host: "reg.example.com"},
+		}, pullverify.Options{
+			Config: cfg,
+			Target: func(pullverify.Entity) (oras.ReadOnlyTarget, string, error) {
+				return store, testVersion, nil
+			},
+		})
+		return err
+	}
+}
+
+// TestResolveCacheAndServeOffline proves a signed documentation bundle resolves
+// and caches locally on first use, and serves pages offline thereafter — the
+// warm read takes no target and can never network.
+func TestResolveCacheAndServeOffline(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ws := t.TempDir()
+	cacheDir := ".aggrega/cache"
+
+	bundle := buildBundle(t, map[string]string{
+		componentPage: componentBody,
+		authoringPage: authoringBody,
+	})
+	store, pubPEM := signedBundleStore(t, bundle)
+
+	// First use: resolve through the OCI transport, verify-at-pull, cache locally.
+	slot, err := docscache.ResolveAndCache(ctx, store, testRef, testVersion, ws, cacheDir, keyedVerifier(store, pubPEM))
+	if err != nil {
+		t.Fatalf("ResolveAndCache: %v", err)
+	}
+	for _, name := range []string{"blob", "manifest"} {
+		if _, statErr := os.Stat(filepath.Join(slot, name)); statErr != nil {
+			t.Fatalf("cache slot missing %s: %v", name, statErr)
+		}
+	}
+
+	// Offline thereafter: ReadPage takes no puller/target — structurally cannot
+	// reach the network — yet serves the page from the warm cache.
+	data, mimeType, err := docscache.ReadPage(ws, cacheDir, testRef, testVersion, componentPage)
+	if err != nil {
+		t.Fatalf("ReadPage: %v", err)
+	}
+	if string(data) != componentBody {
+		t.Errorf("page body = %q, want %q", data, componentBody)
+	}
+	if mimeType != "text/markdown" {
+		t.Errorf("mimeType = %q, want text/markdown", mimeType)
+	}
+
+	// A second page also serves from the same warm slot.
+	authData, _, err := docscache.ReadPage(ws, cacheDir, testRef, testVersion, authoringPage)
+	if err != nil {
+		t.Fatalf("ReadPage authoring: %v", err)
+	}
+	if string(authData) != authoringBody {
+		t.Errorf("authoring body = %q, want %q", authData, authoringBody)
+	}
+}
+
+// TestReadPageCacheMissIsLoud proves an unresolved bundle reads as a loud cache
+// miss (ErrFetchNotFound), never a fetch — the read path is offline-only.
+func TestReadPageCacheMissIsLoud(t *testing.T) {
+	t.Parallel()
+	_, _, err := docscache.ReadPage(t.TempDir(), ".aggrega/cache", testRef, testVersion, componentPage)
+	if !errors.Is(err, docscache.ErrFetchNotFound) {
+		t.Fatalf("want ErrFetchNotFound, got %v", err)
+	}
+}
+
+// TestReadMissingPage proves a page absent from a present bundle reports the
+// distinct ErrPageNotFound rather than a cache miss.
+func TestReadMissingPage(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ws := t.TempDir()
+	cacheDir := ".aggrega/cache"
+	store, _ := signedBundleStore(t, buildBundle(t, map[string]string{componentPage: componentBody}))
+	if _, err := docscache.ResolveAndCache(ctx, store, testRef, testVersion, ws, cacheDir, nil); err != nil {
+		t.Fatalf("ResolveAndCache: %v", err)
+	}
+	_, _, err := docscache.ReadPage(ws, cacheDir, testRef, testVersion, "language-reference/entities/missing.md")
+	if !errors.Is(err, docscache.ErrPageNotFound) {
+		t.Fatalf("want ErrPageNotFound, got %v", err)
+	}
+}
+
+// TestVerifyAtPullRejectsWrongKey proves a bundle whose signature fails the
+// pinned-key policy is rejected at pull and never populates the cache.
+func TestVerifyAtPullRejectsWrongKey(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ws := t.TempDir()
+	cacheDir := ".aggrega/cache"
+
+	store, _ := signedBundleStore(t, buildBundle(t, map[string]string{componentPage: componentBody}))
+	_, otherPub := signedBundleStore(t, buildBundle(t, map[string]string{componentPage: componentBody}))
+
+	_, err := docscache.ResolveAndCache(ctx, store, testRef, testVersion, ws, cacheDir, keyedVerifier(store, otherPub))
+	if !errors.Is(err, signing.ErrSignatureVerificationFailed) {
+		t.Fatalf("want ErrSignatureVerificationFailed, got %v", err)
+	}
+	// The cache slot must not have been populated by a failed verify.
+	if _, _, rerr := docscache.ReadPage(ws, cacheDir, testRef, testVersion, componentPage); !errors.Is(rerr, docscache.ErrFetchNotFound) {
+		t.Fatalf("failed verify should leave the cache empty, got %v", rerr)
+	}
+}
+
+// TestResolveRejectsNonDocsMediaType proves a reference resolving to a non-docs
+// artifact is rejected rather than cached as a documentation bundle.
+func TestResolveRejectsNonDocsMediaType(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	store := memory.New()
+	if _, err := oci.Push(ctx, store, testVersion, oci.MediaTypeComponent, []byte("kind: Component\n")); err != nil {
+		t.Fatalf("Push: %v", err)
+	}
+	_, err := docscache.ResolveAndCache(ctx, store, testRef, testVersion, t.TempDir(), ".aggrega/cache", nil)
+	if !errors.Is(err, docscache.ErrNotDocsBundle) {
+		t.Fatalf("want ErrNotDocsBundle, got %v", err)
+	}
+}
+
+// TestReadPageDetectsTamper proves a bundle blob mutated on disk fails the
+// on-read integrity self-verify rather than serving forged bytes.
+func TestReadPageDetectsTamper(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ws := t.TempDir()
+	cacheDir := ".aggrega/cache"
+	store, _ := signedBundleStore(t, buildBundle(t, map[string]string{componentPage: componentBody}))
+	slot, err := docscache.ResolveAndCache(ctx, store, testRef, testVersion, ws, cacheDir, nil)
+	if err != nil {
+		t.Fatalf("ResolveAndCache: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(slot, "blob"), []byte("forged"), 0o644); err != nil {
+		t.Fatalf("tamper blob: %v", err)
+	}
+	_, _, rerr := docscache.ReadPage(ws, cacheDir, testRef, testVersion, componentPage)
+	if !errors.Is(rerr, oci.ErrFetchIntegrity) {
+		t.Fatalf("want ErrFetchIntegrity, got %v", rerr)
+	}
+}

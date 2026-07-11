@@ -14,6 +14,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm/provindex"
 	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
+	"github.com/aggrega-ai/aggrega-cli/pkg/docscache"
 	"github.com/aggrega-ai/aggrega-cli/pkg/externalinputs"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
@@ -182,6 +183,79 @@ func newCacheFixture(t *testing.T) cacheFixture {
 func exists(p string) bool {
 	_, err := os.Stat(p)
 	return err == nil
+}
+
+// writeDocsBundleSlot writes a documentation-bundle cache slot (a blob +
+// manifest under docs-bundles/<encoded-ref>/<version>/) and returns the slot
+// dir. The enumeration only walks the slot directory tree, so the file
+// contents are placeholders.
+func writeDocsBundleSlot(t *testing.T, wsRoot, ref, version string) string {
+	t.Helper()
+	slot := filepath.Join(docscache.DocsBundlesRoot(wsRoot, cacheTestCacheDir), url.PathEscape(ref), version)
+	if err := os.MkdirAll(slot, 0o755); err != nil {
+		t.Fatalf("mkdir docs slot: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(slot, "blob"), []byte("docs-bundle-bytes"), 0o644); err != nil {
+		t.Fatalf("write docs blob: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(slot, "manifest"), []byte("{}"), 0o644); err != nil {
+		t.Fatalf("write docs manifest: %v", err)
+	}
+	return slot
+}
+
+// TestCacheStatusListsDocsBundleClass proves the documentation-bundle cache is
+// enumerated as its own class in status, with the slot's decoded reference and
+// version as a deterministic label.
+func TestCacheStatusListsDocsBundleClass(t *testing.T) {
+	fx := newCacheFixture(t)
+	slot := writeDocsBundleSlot(t, fx.loc.wsRoot, "reg.example.com/docs/aggrega-docs", "1.0.0")
+
+	var a, b bytes.Buffer
+	if err := runCacheStatus(&a, fx.loc); err != nil {
+		t.Fatalf("status a: %v", err)
+	}
+	if err := runCacheStatus(&b, fx.loc); err != nil {
+		t.Fatalf("status b: %v", err)
+	}
+	if a.String() != b.String() {
+		t.Fatalf("status not byte-identical:\n--- a ---\n%s\n--- b ---\n%s", a.String(), b.String())
+	}
+	if !bytes.Contains(a.Bytes(), []byte("workspace docs-bundle cache:")) {
+		t.Fatalf("status missing docs-bundle class header:\n%s", a.String())
+	}
+	if !bytes.Contains(a.Bytes(), []byte("reg.example.com/docs/aggrega-docs@1.0.0")) {
+		t.Fatalf("status missing docs-bundle element label:\n%s", a.String())
+	}
+	if !exists(slot) {
+		t.Fatalf("docs-bundle slot vanished")
+	}
+	t.Logf("status output:\n%s", a.String())
+}
+
+// TestCachePruneRetainsDocsBundle proves prune leaves the documentation-bundle
+// cache untouched — it is not lockfile-referenced, so it is reported as
+// not-prune-eligible rather than reclaimed — while clear removes it.
+func TestCachePruneRetainsDocsBundle(t *testing.T) {
+	fx := newCacheFixture(t)
+	slot := writeDocsBundleSlot(t, fx.loc.wsRoot, "reg.example.com/docs/aggrega-docs", "1.0.0")
+
+	var out bytes.Buffer
+	if err := runCachePrune(&out, fx.loc); err != nil {
+		t.Fatalf("prune: %v", err)
+	}
+	if !exists(slot) {
+		t.Fatalf("prune removed a docs-bundle slot it cannot map to a lockfile:\n%s", out.String())
+	}
+	if !bytes.Contains(out.Bytes(), []byte("workspace docs-bundle cache element(s) not prune-eligible")) {
+		t.Fatalf("prune did not report the docs-bundle class as out-of-scope:\n%s", out.String())
+	}
+	if err := runCacheClear(&bytes.Buffer{}, fx.loc); err != nil {
+		t.Fatalf("clear: %v", err)
+	}
+	if exists(slot) {
+		t.Fatalf("clear did not reclaim the docs-bundle slot")
+	}
 }
 
 func TestCacheStatusDeterministic(t *testing.T) {

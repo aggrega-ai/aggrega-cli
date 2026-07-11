@@ -23,6 +23,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm/provindex"
 	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
+	"github.com/aggrega-ai/aggrega-cli/pkg/docscache"
 	"github.com/aggrega-ai/aggrega-cli/pkg/externalinputs"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
@@ -144,6 +145,15 @@ func (l cacheLocations) inputsRoot() string {
 	return externalinputs.StoreRoot(filepath.Join(l.wsRoot, l.cacheDir))
 }
 
+// docsBundlesRoot returns the workspace documentation-bundle-cache subtree
+// root, or "" when no workspace resolved.
+func (l cacheLocations) docsBundlesRoot() string {
+	if l.wsRoot == "" {
+		return ""
+	}
+	return docscache.DocsBundlesRoot(l.wsRoot, l.cacheDir)
+}
+
 // enumEntities enumerates the entity-cache slots. Each slot is an
 // <encoded-uri>/<version> directory holding a content blob; the slot's
 // content digest is the blob's content digest, which equals the pinned digest
@@ -248,6 +258,47 @@ func enumInputs(root string) []cacheElement {
 	return out
 }
 
+// enumDocsBundles enumerates the documentation-bundle-cache slots. A slot is an
+// <encoded-ref>/<version> directory holding a content blob and its manifest. A
+// documentation bundle is a standalone data artifact, not a catalog entity, so
+// no lockfile references it; the class carries no element digest and is never
+// prune-eligible (only clear reclaims it). Enumeration reports each slot's
+// decoded reference and version for a stable, deterministic listing.
+func enumDocsBundles(root string) []cacheElement {
+	var out []cacheElement
+	refDirs, err := os.ReadDir(root)
+	if err != nil {
+		return out
+	}
+	for _, rd := range refDirs {
+		if !rd.IsDir() {
+			continue
+		}
+		encoded := rd.Name()
+		display := encoded
+		if dec, derr := url.PathUnescape(encoded); derr == nil {
+			display = dec
+		}
+		versDirs, verr := os.ReadDir(filepath.Join(root, encoded))
+		if verr != nil {
+			continue
+		}
+		for _, vd := range versDirs {
+			if !vd.IsDir() {
+				continue
+			}
+			slot := filepath.Join(root, encoded, vd.Name())
+			out = append(out, cacheElement{
+				label: display + "@" + vd.Name(),
+				path:  slot,
+				size:  dirSize(slot),
+			})
+		}
+	}
+	sortElements(out)
+	return out
+}
+
 // enumCompileModules enumerates the compiled-module cache. The runtime keys its
 // entries by its own internal hashing beneath a version/arch/os-marked
 // directory, so a module carries no digest the compiler can reproduce; every
@@ -316,6 +367,7 @@ func collectClasses(loc cacheLocations) []cacheClass {
 			cacheClass{name: "workspace entity cache", root: loc.entitiesRoot(), prunable: true, elements: enumEntities(loc.entitiesRoot())},
 			cacheClass{name: "workspace source-artifact cache", root: loc.sourceArtifactsRoot(), prunable: true, elements: enumSourceArtifacts(loc.sourceArtifactsRoot())},
 			cacheClass{name: "workspace external-input store", root: loc.inputsRoot(), prunable: true, elements: enumInputs(loc.inputsRoot())},
+			cacheClass{name: "workspace docs-bundle cache", root: loc.docsBundlesRoot(), prunable: false, elements: enumDocsBundles(loc.docsBundlesRoot())},
 		)
 	}
 	if loc.compileDir != "" {

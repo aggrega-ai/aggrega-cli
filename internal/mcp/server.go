@@ -51,6 +51,13 @@ type server struct {
 	// working directory. A test points it at a fixture workspace.
 	startDir string
 
+	// docsBundleRef and docsBundleVersion pin the documentation bundle the
+	// resource surface reads pages from. Empty values derive the reference from
+	// the workspace registry under the reserved docs namespace and the version
+	// from the server's build identity. A test sets them to a fixture bundle.
+	docsBundleRef     string
+	docsBundleVersion string
+
 	// searchResolve turns a search-plugin URI into its resolved bytes for the
 	// search tool. Nil builds a workspace plugin-path resolver cascade per
 	// call, which resolves offline (no registry puller). A test injects a
