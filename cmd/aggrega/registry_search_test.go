@@ -6,8 +6,15 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
+
+	"oras.land/oras-go/v2/registry/remote"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
@@ -134,6 +141,123 @@ func TestFormatSearchResults_Empty(t *testing.T) {
 	formatSearchResults(&out, "hub.aggrega.ai", "nope", nil)
 	if !strings.Contains(out.String(), "(none)") {
 		t.Fatalf("empty search should report (none):\n%s", out.String())
+	}
+}
+
+// newCatalogRegistry builds a real oras remote registry pointed at a local
+// httptest server, mirroring the plain-HTTP catalog wiring oras's own registry
+// tests use. It proves the search primitive against the real enumeration path,
+// not just a fake lister.
+func newCatalogRegistry(t *testing.T, ts *httptest.Server) *remote.Registry {
+	t.Helper()
+	uri, err := url.Parse(ts.URL)
+	if err != nil {
+		t.Fatalf("invalid test http server: %v", err)
+	}
+	reg, err := remote.NewRegistry(uri.Host)
+	if err != nil {
+		t.Fatalf("NewRegistry() error = %v", err)
+	}
+	reg.PlainHTTP = true
+	return reg
+}
+
+// TestSearchRegistry_MalformedLinkHeaderReturnsFirstPage proves that when the
+// registry serves a bracket-less (non-compliant) pagination header, search
+// returns the first page's repositories it already collected rather than
+// hard-failing with nothing. It exercises the real oras enumeration path.
+func TestSearchRegistry_MalformedLinkHeaderReturnsFirstPage(t *testing.T) {
+	firstPage := []string{"component/core/api-server", "plugin/cli/moo"}
+	var ts *httptest.Server
+	ts = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/v2/_catalog" {
+			t.Errorf("unexpected access: %s %s", r.Method, r.URL)
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		// A bracket-less Link header: RFC-8288 requires the URI-Reference be
+		// wrapped in angle brackets, so oras rejects this after delivering the
+		// page. This reproduces the non-compliant real-world registry header.
+		w.Header().Set("Link", fmt.Sprintf("%s/v2/_catalog?n=100&last=plugin%%2Fcli%%2Fmoo; rel=next", ts.URL))
+		if err := json.NewEncoder(w).Encode(struct {
+			Repositories []string `json:"repositories"`
+		}{Repositories: firstPage}); err != nil {
+			t.Errorf("failed to write response: %v", err)
+		}
+	}))
+	defer ts.Close()
+
+	reg := newCatalogRegistry(t, ts)
+	got, err := searchRegistry(context.Background(), reg, "", catalogSearchScope)
+	if err != nil {
+		t.Fatalf("malformed Link header should degrade to first page, got error: %v", err)
+	}
+	want := []string{"component/core/api-server", "plugin/cli/moo"}
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("first-page fallback = %v; want %v", got, want)
+	}
+}
+
+// TestSearchRegistry_CompliantMultiPagePagesFully proves the tolerance does not
+// short-circuit compliant pagination: a well-formed multi-page Link chain still
+// pages through every page and returns the union, in sorted order.
+func TestSearchRegistry_CompliantMultiPagePagesFully(t *testing.T) {
+	var ts *httptest.Server
+	ts = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/v2/_catalog" {
+			t.Errorf("unexpected access: %s %s", r.Method, r.URL)
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		var repos []string
+		switch r.URL.Query().Get("page") {
+		case "two":
+			repos = []string{"plugin/cli/moo", "recipe/helm/api-server"}
+		default:
+			repos = []string{"component/core/api-server", "feature/core/tls"}
+			w.Header().Set("Link", fmt.Sprintf(`<%s/v2/_catalog?page=two>; rel="next"`, ts.URL))
+		}
+		if err := json.NewEncoder(w).Encode(struct {
+			Repositories []string `json:"repositories"`
+		}{Repositories: repos}); err != nil {
+			t.Errorf("failed to write response: %v", err)
+		}
+	}))
+	defer ts.Close()
+
+	reg := newCatalogRegistry(t, ts)
+	got, err := searchRegistry(context.Background(), reg, "", catalogSearchScope)
+	if err != nil {
+		t.Fatalf("compliant multi-page search: %v", err)
+	}
+	want := []string{
+		"component/core/api-server",
+		"feature/core/tls",
+		"plugin/cli/moo",
+		"recipe/helm/api-server",
+	}
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("multi-page union = %v; want %v", got, want)
+	}
+}
+
+// TestSearchRegistry_FirstRequestFailurePropagates proves a failure before any
+// page is delivered (here, a connection failure — the callback is never
+// invoked) still surfaces as an error rather than a silent empty result — the
+// fallback covers only post-first-page failures.
+func TestSearchRegistry_FirstRequestFailurePropagates(t *testing.T) {
+	// Stand a server up only to reserve a reachable URL, then close it so the
+	// first catalog request fails to connect before any page is delivered.
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	reg := newCatalogRegistry(t, ts)
+	ts.Close()
+
+	got, err := searchRegistry(context.Background(), reg, "", catalogSearchScope)
+	if err == nil {
+		t.Fatalf("a first-request failure should propagate; got matches %v, nil error", got)
+	}
+	if got != nil {
+		t.Fatalf("a first-request failure should return no matches; got %v", got)
 	}
 }
 

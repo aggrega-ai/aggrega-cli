@@ -53,10 +53,20 @@ func catalogSearchScope(string) bool { return true }
 // repository), and returns the matches in ascending order. The two commands
 // differ only in the scope they pass; the enumeration, filtering, and ordering
 // live here once so the two never drift into two searches.
+//
+// Enumeration is progress-aware. The registry delivers each catalog page to the
+// callback before it parses that page's pagination header, so a registry that
+// serves a malformed pagination header fails only after the first page's
+// repositories were already collected. In that case the matches gathered so far
+// are returned rather than discarded — a partial result beats no result. An
+// error raised before any page was delivered (a connection or first-request
+// failure) still propagates, since there is nothing to fall back to.
 func searchRegistry(ctx context.Context, reg registryRepoLister, query string, scope searchScope) ([]string, error) {
 	q := strings.ToLower(query)
 	var matches []string
+	pageDelivered := false
 	err := reg.Repositories(ctx, "", func(repos []string) error {
+		pageDelivered = true
 		for _, repo := range repos {
 			if !scope(repo) {
 				continue
@@ -68,7 +78,7 @@ func searchRegistry(ctx context.Context, reg registryRepoLister, query string, s
 		}
 		return nil
 	})
-	if err != nil {
+	if err != nil && !pageDelivered {
 		return nil, fmt.Errorf("search registry: %w", err)
 	}
 	sort.Strings(matches)
