@@ -67,6 +67,9 @@ var runtimeErrorCommands = []struct {
 	{"acquire", []string{"acquire", "--release", "/nonexistent-aggrega-xyz/release.yaml", "--catalog", "/nonexistent-aggrega-xyz/catalog"}},
 	{"pull", []string{"pull", "--release", "/nonexistent-aggrega-xyz/release.yaml", "--catalog", "/nonexistent-aggrega-xyz/catalog"}},
 	{"inspect", []string{"inspect", "/nonexistent-aggrega-xyz/release.yaml"}},
+	// get-schema reaches its RunE with a well-formed single argument, then
+	// fails in its own work: no schema matches the unknown kind.
+	{"get-schema", []string{"get-schema", "bogus"}},
 	{"serve", []string{"serve", "--workspace-root", "/nonexistent-aggrega-xyz/ws"}},
 	{"lint", []string{"lint", "/nonexistent-aggrega-xyz/entity.yaml"}},
 	{"push", []string{"push", "/nonexistent-aggrega-xyz/entity.yaml"}},

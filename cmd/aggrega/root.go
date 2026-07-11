@@ -82,6 +82,7 @@ func newRootCmd() *cobra.Command {
 		newAcquireCmd(),
 		newPullCmd(),
 		newInspectCmd(),
+		newGetSchemaCmd(),
 		newServeCmd(),
 		newLintCmd(),
 		newPushCmd(),
