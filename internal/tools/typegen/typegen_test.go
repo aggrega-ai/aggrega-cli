@@ -70,6 +70,9 @@ func TestRegenClean_Enums(t *testing.T) {
 // not a Go import, so the cross-module read needs no go.work membership.
 var codecTargetPaths = map[string][]string{
 	"frp_gen.go":      {"..", "..", "..", "..", "aggrega-abi", "go", "pkg", "abi"},
+	"cli_gen.go":      {"..", "..", "..", "..", "aggrega-abi", "go", "pkg", "abi"},
+	"cli_gen.rs":      {"..", "..", "..", "..", "aggrega-abi", "rust", "src"},
+	"cli_gen.ts":      {"..", "..", "..", "..", "aggrega-abi", "typescript", "src"},
 	"mutator_gen.go":  {"..", "..", "..", "..", "aggrega-abi", "go", "pkg", "abi"},
 	"mutator_gen.rs":  {"..", "..", "..", "..", "aggrega-abi", "rust", "src"},
 	"mutator_gen.ts":  {"..", "..", "..", "..", "aggrega-abi", "typescript", "src"},

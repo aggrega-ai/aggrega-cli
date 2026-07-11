@@ -303,6 +303,13 @@ var providerHostVocabulary = map[string]string{
 	"OrderedMap[types.MappingLibrary]": "types.OrderedMap[types.MappingLibrary]",
 }
 
+// cliGuestVocabulary is empty: the CLI run input carries only an argument
+// vector (a plain string slice) and declares no host container or opaque
+// cross-package type, so every annotation passes through verbatim. It exists as
+// the codec target's vocabulary slot for symmetry with the other socket targets
+// and as the seam a future granted-input field would hook into.
+var cliGuestVocabulary = map[string]string{}
+
 var codecTargets = map[string]codecTarget{
 	"frp_gen.go": {
 		schema:     schemas.WasmFrpStepV1alpha1,
@@ -310,6 +317,32 @@ var codecTargets = map[string]codecTarget{
 		pkg:        "abi",
 		vocabulary: frpGuestNeutralVocabulary,
 		helpers:    true, // FRP owns the shared streaming-decode helpers in package abi
+	},
+
+	// CLI socket — guest codecs into aggrega-abi (Go/Rust/TS). A CLI plugin
+	// receives the invocation's argument vector; the exit code is the guest
+	// export's integer return and stdout/stderr flow through host functions, so
+	// the socket carries an input shape only. The abi Go codec references the
+	// helpers FRP owns in package abi (helpers: false, the default).
+	"cli_gen.go": {
+		schema:     schemas.WasmCliV1alpha1,
+		schemaFile: "wasm-cli-v1alpha1.schema.json",
+		pkg:        "abi",
+		vocabulary: cliGuestVocabulary,
+	},
+	"cli_gen.rs": {
+		schema:     schemas.WasmCliV1alpha1,
+		schemaFile: "wasm-cli-v1alpha1.schema.json",
+		pkg:        "abi",
+		vocabulary: cliGuestVocabulary,
+		lang:       "rust",
+	},
+	"cli_gen.ts": {
+		schema:     schemas.WasmCliV1alpha1,
+		schemaFile: "wasm-cli-v1alpha1.schema.json",
+		pkg:        "abi",
+		vocabulary: cliGuestVocabulary,
+		lang:       "ts",
 	},
 
 	// Mutator socket — guest codecs into aggrega-abi (Go/Rust/TS) and the host
