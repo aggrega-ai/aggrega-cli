@@ -8,6 +8,8 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+
+	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 )
 
 // TestVersionHumanFormat pins the human-readable line's structural
@@ -42,17 +44,21 @@ func TestVersionJSONShape(t *testing.T) {
 		t.Fatalf("runVersion: %v", err)
 	}
 	var info struct {
-		Version   string `json:"version"`
-		Committed string `json:"committed"`
-		Commit    string `json:"commit"`
-		GoVersion string `json:"goVersion"`
-		Platform  string `json:"platform"`
+		Version    string `json:"version"`
+		Committed  string `json:"committed"`
+		Commit     string `json:"commit"`
+		ABIVersion string `json:"abiVersion"`
+		GoVersion  string `json:"goVersion"`
+		Platform   string `json:"platform"`
 	}
 	if err := json.Unmarshal(buf.Bytes(), &info); err != nil {
 		t.Fatalf("unmarshal: %v (raw: %s)", err, buf.String())
 	}
 	if info.Version == "" {
 		t.Errorf("version field empty")
+	}
+	if info.ABIVersion != wasm.ABIVersionV1Alpha1 {
+		t.Errorf("abiVersion = %q; want %q", info.ABIVersion, wasm.ABIVersionV1Alpha1)
 	}
 	if info.GoVersion == "" {
 		t.Errorf("goVersion field empty")
@@ -181,6 +187,52 @@ func TestVersionStampedVLess(t *testing.T) {
 	}
 }
 
+// TestVersionABIVersionReported pins that both output forms carry the
+// plugin ABI version the host speaks: the JSON wire shape exposes it
+// under "abiVersion" and the human line shows an "abi" segment. The
+// value is the build-time constant, so it is asserted against the
+// single source rather than a literal.
+func TestVersionABIVersionReported(t *testing.T) {
+	var jsonBuf bytes.Buffer
+	if err := runVersion(&jsonBuf, true); err != nil {
+		t.Fatalf("runVersion json: %v", err)
+	}
+	var info struct {
+		ABIVersion string `json:"abiVersion"`
+	}
+	if err := json.Unmarshal(jsonBuf.Bytes(), &info); err != nil {
+		t.Fatalf("unmarshal: %v (raw: %s)", err, jsonBuf.String())
+	}
+	if info.ABIVersion != wasm.ABIVersionV1Alpha1 {
+		t.Errorf("json abiVersion = %q; want %q", info.ABIVersion, wasm.ABIVersionV1Alpha1)
+	}
+
+	var humanBuf bytes.Buffer
+	if err := runVersion(&humanBuf, false); err != nil {
+		t.Fatalf("runVersion human: %v", err)
+	}
+	if want := "abi " + wasm.ABIVersionV1Alpha1; !strings.Contains(humanBuf.String(), want) {
+		t.Errorf("expected human line to contain %q; got %q", want, humanBuf.String())
+	}
+}
+
+// TestVersionHumanLineIncludesABISegment pins the placement of the abi
+// segment in the human line: after the commit hash, before the Go
+// version.
+func TestVersionHumanLineIncludesABISegment(t *testing.T) {
+	got := formatVersionLine(versionInfo{
+		Version:    "1.2.3",
+		Committed:  "2026-07-09T18:07:57Z",
+		Commit:     "62c43d5babcdef",
+		ABIVersion: "v1alpha1",
+		GoVersion:  "go1.26.0",
+	})
+	want := "aggrega 1.2.3 (committed 2026-07-09T18:07:57Z, commit 62c43d5b, abi v1alpha1, go1.26.0)\n"
+	if got != want {
+		t.Errorf("formatVersionLine with abi:\n got %q\nwant %q", got, want)
+	}
+}
+
 // TestVersionJSONIsValidJSON guards against accidental shape drift
 // that would still be syntactically valid Go (e.g., a struct field
 // rename) but break the extension's parse. Decodes into a permissive
@@ -196,13 +248,13 @@ func TestVersionJSONIsValidJSON(t *testing.T) {
 	}
 	// committed is optional (omitempty): allowed when present, not
 	// required, since a build without vcs.time omits it.
-	allowed := map[string]bool{"version": true, "committed": true, "commit": true, "goVersion": true, "platform": true}
+	allowed := map[string]bool{"version": true, "committed": true, "commit": true, "abiVersion": true, "goVersion": true, "platform": true}
 	for k := range generic {
 		if !allowed[k] {
 			t.Errorf("unexpected top-level key %q in version JSON", k)
 		}
 	}
-	required := map[string]bool{"version": true, "commit": true, "goVersion": true, "platform": true}
+	required := map[string]bool{"version": true, "commit": true, "abiVersion": true, "goVersion": true, "platform": true}
 	for k := range required {
 		if _, present := generic[k]; !present {
 			t.Errorf("missing expected key %q in version JSON", k)

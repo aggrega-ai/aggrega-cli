@@ -9,8 +9,11 @@ import (
 	"io"
 	"runtime"
 	"runtime/debug"
+	"strings"
 
 	"github.com/spf13/cobra"
+
+	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 )
 
 var versionJSON bool
@@ -68,12 +71,20 @@ build.`,
 // json.Marshal default convention; the wire shape is pinned by
 // version_test.go and re-pinned on the extension side by
 // version-check.test.ts.
+//
+// abiVersion reports the plugin ABI version this binary speaks — the
+// single version its host and its embedded guests agree on. It is a
+// build-time constant (it does not vary with the git-describe stamp),
+// exposed here so a consumer can read a binary's plugin-ABI contract
+// without loading a guest. It is the machine-readable source a
+// consumer pipeline reads to gate on ABI compatibility.
 type versionInfo struct {
-	Version   string `json:"version"`
-	Committed string `json:"committed,omitempty"`
-	Commit    string `json:"commit"`
-	GoVersion string `json:"goVersion"`
-	Platform  string `json:"platform"`
+	Version    string `json:"version"`
+	Committed  string `json:"committed,omitempty"`
+	Commit     string `json:"commit"`
+	ABIVersion string `json:"abiVersion"`
+	GoVersion  string `json:"goVersion"`
+	Platform   string `json:"platform"`
 }
 
 // runVersion reads runtime/debug.ReadBuildInfo and emits the result
@@ -97,7 +108,9 @@ func runVersion(w io.Writer, asJSON bool) error {
 // labelled "committed" (it is the commit time from vcs.time, not the
 // build time). When the timestamp is absent the segment is omitted
 // rather than filled with a placeholder. The commit hash is shortened
-// to eight characters and falls back to "unknown" when absent.
+// to eight characters and falls back to "unknown" when absent. The
+// plugin ABI version is shown as an "abi" segment when present; it is
+// omitted only for a synthetic info value that carries none.
 func formatVersionLine(info versionInfo) string {
 	commit := info.Commit
 	if len(commit) > 8 {
@@ -106,10 +119,16 @@ func formatVersionLine(info versionInfo) string {
 	if commit == "" {
 		commit = "unknown"
 	}
+	segs := make([]string, 0, 4)
 	if info.Committed != "" {
-		return fmt.Sprintf("aggrega %s (committed %s, commit %s, %s)\n", info.Version, info.Committed, commit, info.GoVersion)
+		segs = append(segs, "committed "+info.Committed)
 	}
-	return fmt.Sprintf("aggrega %s (commit %s, %s)\n", info.Version, commit, info.GoVersion)
+	segs = append(segs, "commit "+commit)
+	if info.ABIVersion != "" {
+		segs = append(segs, "abi "+info.ABIVersion)
+	}
+	segs = append(segs, info.GoVersion)
+	return fmt.Sprintf("aggrega %s (%s)\n", info.Version, strings.Join(segs, ", "))
 }
 
 // collectVersionInfo reads runtime/debug.ReadBuildInfo and walks
@@ -121,9 +140,10 @@ func formatVersionLine(info versionInfo) string {
 // RFC3339); it is left empty when the setting is absent.
 func collectVersionInfo() versionInfo {
 	out := versionInfo{
-		Version:   "(unknown)",
-		GoVersion: runtime.Version(),
-		Platform:  runtime.GOOS + "/" + runtime.GOARCH,
+		Version:    "(unknown)",
+		ABIVersion: wasm.ABIVersionV1Alpha1,
+		GoVersion:  runtime.Version(),
+		Platform:   runtime.GOOS + "/" + runtime.GOARCH,
 	}
 	if version != "" {
 		out.Version = version
