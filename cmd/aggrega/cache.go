@@ -4,7 +4,9 @@
 package main
 
 import (
+	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -717,17 +719,50 @@ func parseHumanSize(s string) (int64, error) {
 }
 
 func newCacheClearCmd() *cobra.Command {
-	return &cobra.Command{
+	var assumeYes bool
+	c := &cobra.Command{
 		Use:   "clear",
 		Short: "Wipe every cache, including compiled modules",
 		Long: `Wipe every cache: the workspace artifact cache (entities, source artifacts,
 external inputs) and the two global caches (compiled modules and plugin
 descriptors). This is the total-wipe verb; unlike prune it reclaims the
-compiled-module cache as well. Cleared caches repopulate on the next build.`,
+compiled-module cache as well. Cleared caches repopulate on the next build.
+
+Because the wipe is irreversible, clear asks for confirmation before removing
+anything. Pass --yes to skip the prompt for non-interactive use; without --yes
+on a non-interactive stdin it refuses rather than blocking on a prompt no one
+can answer.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := confirmCacheClear(cmd.OutOrStdout(), cmd.InOrStdin(), assumeYes); err != nil {
+				return err
+			}
 			return runCacheClear(cmd.OutOrStdout(), resolveCacheLocations(cmd.Context()))
 		},
+	}
+	c.Flags().BoolVar(&assumeYes, "yes", false, "skip the confirmation prompt (for non-interactive/CI use)")
+	return c
+}
+
+// confirmCacheClear gates the total cache wipe behind an interactive
+// confirmation. With assumeYes it consents immediately. On a non-interactive
+// stdin without assumeYes it refuses — returning an error rather than blocking
+// on a prompt no one can answer. Otherwise it prompts [y/N] on w, reads a line
+// from r, and consents only on an explicit yes.
+func confirmCacheClear(w io.Writer, r io.Reader, assumeYes bool) error {
+	if assumeYes {
+		return nil
+	}
+	if !isTerminal() {
+		return errors.New("cache clear: refusing to wipe every cache on a non-interactive stdin without --yes")
+	}
+	fmt.Fprint(w, "This wipes every cache, including the compiled-module store. Proceed? [y/N] ")
+	line, _ := bufio.NewReader(r).ReadString('\n')
+	switch strings.TrimSpace(line) {
+	case "y", "Y", "yes", "Yes", "YES":
+		return nil
+	default:
+		return errors.New("cache clear: aborted")
 	}
 }
 

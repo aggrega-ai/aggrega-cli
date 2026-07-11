@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -296,6 +297,50 @@ func TestCacheClearWipesAll(t *testing.T) {
 	// Everything is gone, including the compiled-module store clear reclaims.
 	if exists(fx.compileModule) {
 		t.Errorf("clear left a compiled module: %s", fx.compileModule)
+	}
+}
+
+// TestCacheClearConfirm exercises the confirmation gate that fronts the
+// irreversible cache wipe: --yes bypasses it, a non-interactive stdin without
+// --yes refuses (rather than blocking), and an interactive [y/N] answer decides.
+func TestCacheClearConfirm(t *testing.T) {
+	orig := isTerminal
+	t.Cleanup(func() { isTerminal = orig })
+
+	// --yes bypasses regardless of terminal state, without reading stdin.
+	isTerminal = func() bool { return false }
+	var out bytes.Buffer
+	if err := confirmCacheClear(&out, strings.NewReader(""), true); err != nil {
+		t.Fatalf("--yes should bypass the prompt, got: %v", err)
+	}
+	if out.Len() != 0 {
+		t.Errorf("--yes should print no prompt, got: %q", out.String())
+	}
+
+	// Non-interactive stdin without --yes refuses rather than hanging.
+	out.Reset()
+	if err := confirmCacheClear(&out, strings.NewReader(""), false); err == nil {
+		t.Fatal("non-interactive stdin without --yes should refuse, got nil error")
+	}
+
+	// Interactive terminal: an explicit yes consents.
+	isTerminal = func() bool { return true }
+	out.Reset()
+	if err := confirmCacheClear(&out, strings.NewReader("y\n"), false); err != nil {
+		t.Fatalf("interactive 'y' should consent, got: %v", err)
+	}
+	if !strings.Contains(out.String(), "[y/N]") {
+		t.Errorf("interactive path should print a [y/N] prompt, got: %q", out.String())
+	}
+
+	// Interactive terminal: anything else aborts.
+	out.Reset()
+	if err := confirmCacheClear(&out, strings.NewReader("n\n"), false); err == nil {
+		t.Fatal("interactive 'n' should abort, got nil error")
+	}
+	out.Reset()
+	if err := confirmCacheClear(&out, strings.NewReader("\n"), false); err == nil {
+		t.Fatal("interactive empty reply should abort (default No), got nil error")
 	}
 }
 
