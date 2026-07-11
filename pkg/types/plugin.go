@@ -12,7 +12,7 @@ package types
 // godoc is the schema's descriptions. This hand-written companion holds
 // the optional nested blocks the generator names but does not
 // descend into (PluginSignature, PluginRuntime, PluginProvider,
-// PluginCapabilities and its nested PluginInputKinds and
+// PluginSearch, PluginCapabilities and its nested PluginInputKinds and
 // PluginArtifactDelimiters), plus any future Plugin methods or
 // marshalers. The shared Maintainer and WellKnownAnnotation types the
 // generated fields reference live in common.go.
@@ -56,6 +56,31 @@ type PluginProvider struct {
 	// compiler does not consume it to gate or branch a build. Entries
 	// preserve author order.
 	WellKnownAnnotations []WellKnownAnnotation `json:"wellKnownAnnotations,omitempty" yaml:"wellKnownAnnotations,omitempty"`
+}
+
+// PluginSearch is the optional search-socket metadata block on a
+// pluginType: search Plugin. It records the index format and format version
+// the guest's describe() self-report stamps, and the ranked-query
+// capabilities the guest advertises. It carries no meaning on any other
+// plugin type. The block is hand-written because the generator names it via
+// x-aggrega-go-type on the schema's object node and does not descend into it,
+// and it is referenced by pointer (PluginSpec.Search) so a plugin that omits
+// it round-trips without emitting an empty block.
+type PluginSearch struct {
+	// IndexFormat is the index format the guest reports it reads, a free-form
+	// identifier the host records and does not interpret. It documents which
+	// index shape the guest is built against; the compiler routes the query and
+	// does not parse the index itself.
+	IndexFormat string `json:"indexFormat,omitempty" yaml:"indexFormat,omitempty"`
+	// IndexVersion is the index format version the guest reports, paired with
+	// IndexFormat to pin the exact index contract the guest reads. Empty carries
+	// no version claim.
+	IndexVersion string `json:"indexVersion,omitempty" yaml:"indexVersion,omitempty"`
+	// Capabilities is the ranked-query capabilities the guest advertises through
+	// its self-report (for example phrase matching, fuzzy matching, or field
+	// filtering), as free-form capability identifiers the host records for
+	// catalog readers and the inspect surface. Entries preserve author order.
+	Capabilities []string `json:"capabilities,omitempty" yaml:"capabilities,omitempty"`
 }
 
 // PluginExport is one export the plugin offers, with its declared

@@ -314,6 +314,11 @@ const (
 	// subcommand, invoked by an operator at the command line rather than by
 	// the build pipeline. Its minimum export is cli_run.
 	PluginTypeCLI PluginType = "cli"
+
+	// PluginTypeSearch is a search plugin: it answers a ranked full-text query
+	// over an indexed content set, a cross-cutting runtime socket that declares
+	// no targets. Its minimum export is search.
+	PluginTypeSearch PluginType = "search"
 )
 
 // InputPattern selects how the host delivers an export's input payload.
@@ -392,6 +397,13 @@ const providerRenderExportName = "render_node"
 // invokes cannot drift from the export the descriptor validator requires.
 const CLIRunExportName = "cli_run"
 
+// SearchExportName is the required export name for a search plugin — the
+// entry point the host dispatches a ranked-query request to. It is the single
+// home of the name; the runtime search runner references it so the guest
+// export the runner invokes cannot drift from the export the descriptor
+// validator requires.
+const SearchExportName = "search"
+
 // BoundaryAssemblyNone, BoundaryAssemblyMerge, and BoundaryAssemblyNest are
 // the three boundary-assembly modes a plugin reports via
 // [Capabilities.BoundaryAssembly]: none writes each node's output directly at
@@ -447,7 +459,7 @@ const (
 //     render_node; a linter declares at least one lint_* export; a
 //     feature-recipe-pipeline step declares step; a mutator declares
 //     mutate; a policy-validator declares validate; a CLI plugin declares
-//     cli_run.
+//     cli_run; a search plugin declares search.
 //   - every export's declared host functions are a subset of the
 //     host-function allowlist. This routes through the same
 //     validateHostFunctionsSubset gate the loader applies to the set
@@ -482,7 +494,7 @@ func (d PluginDescriptor) Validate(pluginIdentity string) error {
 	}
 
 	switch d.PluginType {
-	case PluginTypeProvider, PluginTypeLinter, PluginTypeFRPStep, PluginTypeMutator, PluginTypePolicyValidator, PluginTypeCLI:
+	case PluginTypeProvider, PluginTypeLinter, PluginTypeFRPStep, PluginTypeMutator, PluginTypePolicyValidator, PluginTypeCLI, PluginTypeSearch:
 		// recognized
 	default:
 		return fmt.Errorf("plugin %q declares unknown plugin_type %q: %w",
@@ -615,6 +627,11 @@ func (d PluginDescriptor) validateMinimumExports(pluginIdentity string) error {
 		if !d.hasExport(CLIRunExportName) {
 			return fmt.Errorf("cli plugin %q declares no %q export: %w",
 				pluginIdentity, CLIRunExportName, ErrWasmManifestRejected)
+		}
+	case PluginTypeSearch:
+		if !d.hasExport(SearchExportName) {
+			return fmt.Errorf("search plugin %q declares no %q export: %w",
+				pluginIdentity, SearchExportName, ErrWasmManifestRejected)
 		}
 	}
 	return nil
