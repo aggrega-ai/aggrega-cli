@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/fs"
 	"log"
 	"os"
@@ -61,6 +62,42 @@ func allowlistedHostFunctionNames() []string {
 	return names
 }
 
+// cliHostFunctionAllowlist is the additional set of host function names
+// granted only under the runtime CLI instantiation profile (Loader.LoadCLI),
+// never under the compile-time build profile (Loader.Load).
+//
+// These are the streaming output emitters a CLI plugin uses to write bytes to
+// the terminal's stdout and stderr as it runs. They are held in a SEPARATE map
+// from hostFunctionAllowlist — not merged into it — precisely so the
+// compile-time subset gate (validateHostFunctionsSubset, which consults only
+// hostFunctionAllowlist) rejects any build-profile guest that imports them. A
+// build runs ahead of time with no terminal to stream to and must stay
+// deterministic and capability-denied, so streaming is denied there by
+// construction; the runtime CLI profile runs at the terminal, outside any
+// build, so it may grant these.
+var cliHostFunctionAllowlist = map[string]bool{
+	"aggrega_cli_write_stdout": true,
+	"aggrega_cli_write_stderr": true,
+}
+
+// cliAllowlistedHostFunctionNames returns the union of the shared allowlist and
+// the CLI-only allowlist as a sorted slice, for the runtime CLI subset gate's
+// rejection message. The union is what a CLI-profile guest is validated
+// against: a CLI guest may import the shared diagnostic emitters and the
+// streaming emitters, but nothing else. Sorted for identical message text
+// across runs.
+func cliAllowlistedHostFunctionNames() []string {
+	names := make([]string, 0, len(hostFunctionAllowlist)+len(cliHostFunctionAllowlist))
+	for name := range hostFunctionAllowlist {
+		names = append(names, name)
+	}
+	for name := range cliHostFunctionAllowlist {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}
+
 // hostFunctionsForDeclared returns the per-Plugin HostFunction
 // closures the caller's derived host-function slice asks for. Each
 // returned closure captures *Plugin so the host-side body can
@@ -96,6 +133,40 @@ func (p *Plugin) hostFunctionsForDeclared(declared []string) []extism.HostFuncti
 			// the gap surfaces at the first call site rather than
 			// at debug time inside a plugin invocation.
 			panic("wasm: hostFunctionsForDeclared called with name not in allowlist-builder set: " + name)
+		}
+	}
+	return out
+}
+
+// hostFunctionsForDeclaredCLI is the runtime CLI profile's builder: it returns
+// the per-Plugin HostFunction closures for a guest loaded through
+// Loader.LoadCLI. It handles the two streaming emitters directly and delegates
+// every other name to hostFunctionsForDeclared, so the shared diagnostic
+// emitters are built by the single shared builder and never re-implemented
+// here.
+//
+// This is a distinct builder entry point from the compile-time
+// hostFunctionsForDeclared, which has no streaming case: a build-profile load
+// can never reach a streaming closure, both because the compile-time subset
+// gate rejects the streaming names before any builder runs and because the
+// compile-time builder cannot construct one. The delegation's default path
+// preserves the panic-on-unknown safety net: a name admitted by the CLI subset
+// gate but handled by no builder surfaces loudly at the first call site rather
+// than as a silently-unbound guest import.
+//
+// The caller (LoadCLI) is responsible for validating that every name in
+// `declared` is in the union allowlist first; this method assumes that check
+// has already passed.
+func (p *Plugin) hostFunctionsForDeclaredCLI(declared []string) []extism.HostFunction {
+	out := make([]extism.HostFunction, 0, len(declared))
+	for _, name := range declared {
+		switch name {
+		case "aggrega_cli_write_stdout":
+			out = append(out, p.hostFunctionCLIWriteStdout())
+		case "aggrega_cli_write_stderr":
+			out = append(out, p.hostFunctionCLIWriteStderr())
+		default:
+			out = append(out, p.hostFunctionsForDeclared([]string{name})...)
 		}
 	}
 	return out
@@ -151,6 +222,90 @@ func (p *Plugin) handleAggregaLog(reader pluginMemoryReader, stack []uint64) {
 		return
 	}
 	log.Printf("plugin %q [%s] %s", p.name, levelLabel(level), message)
+}
+
+// pluginRawMemoryReader is the length-explicit read seam the streaming CLI
+// host-function bodies use: it reads byteCount RAW bytes from guest linear
+// memory starting at offset, returning the bytes and whether the range was in
+// bounds. The wazero api.Memory the Extism SDK exposes through
+// CurrentPlugin.Memory satisfies this interface structurally; tests substitute
+// a fake over a byte slice to exercise the body without a running guest.
+//
+// This is deliberately not pluginMemoryReader.ReadString: the streaming
+// contract passes an explicit (pointer, length) pair, so the host copies
+// exactly the bytes the guest names — including a pointer into a static region
+// with no Extism length-table entry — rather than deriving the length from the
+// Extism allocation table.
+type pluginRawMemoryReader interface {
+	Read(offset, byteCount uint32) ([]byte, bool)
+}
+
+// hostFunctionCLIWriteStdout returns the host-side closure binding
+// aggrega_cli_write_stdout(ptr i64, len i64), a streaming emitter granted only
+// under the runtime CLI instantiation profile. The guest passes a pointer to a
+// byte range in its linear memory and the range's length; the host copies those
+// bytes out and writes them, incrementally, to the stdout writer injected when
+// the plugin was loaded through Loader.LoadCLI.
+//
+// This runs at the terminal, as the CLI plugin executes — not inside a build.
+// A compile-time build load (Loader.Load) can never bind this closure: the
+// streaming name is absent from the shared allowlist, so the build-profile
+// subset gate rejects a guest importing it before any closure is constructed.
+// Streaming to real terminal streams is therefore available in the runtime
+// profile and denied in the deterministic, capability-denied compile-time
+// profile.
+//
+// Body extracted into handleCLIWrite so the test suite can exercise the
+// read-and-write path against a fake memory reader and an in-memory writer
+// without fabricating an *extism.CurrentPlugin.
+func (p *Plugin) hostFunctionCLIWriteStdout() extism.HostFunction {
+	return extism.NewHostFunctionWithStack(
+		"aggrega_cli_write_stdout",
+		func(ctx context.Context, cp *extism.CurrentPlugin, stack []uint64) {
+			p.handleCLIWrite(cp.Memory(), p.stdout, "aggrega_cli_write_stdout", stack)
+		},
+		[]extism.ValueType{extism.ValueTypeI64, extism.ValueTypeI64},
+		[]extism.ValueType{},
+	)
+}
+
+// hostFunctionCLIWriteStderr is the stderr sibling of hostFunctionCLIWriteStdout,
+// binding aggrega_cli_write_stderr(ptr i64, len i64) to the stderr writer
+// injected at LoadCLI. It carries the same runtime-only grant: the compile-time
+// build profile never binds it.
+func (p *Plugin) hostFunctionCLIWriteStderr() extism.HostFunction {
+	return extism.NewHostFunctionWithStack(
+		"aggrega_cli_write_stderr",
+		func(ctx context.Context, cp *extism.CurrentPlugin, stack []uint64) {
+			p.handleCLIWrite(cp.Memory(), p.stderr, "aggrega_cli_write_stderr", stack)
+		},
+		[]extism.ValueType{extism.ValueTypeI64, extism.ValueTypeI64},
+		[]extism.ValueType{},
+	)
+}
+
+// handleCLIWrite is the testable inner logic shared by the stdout and stderr
+// streaming host functions. It reads stack[1] bytes from guest memory at
+// stack[0] via the raw-read seam and writes them to w. A nil writer (the
+// compile-time profile never injects one) drops the write silently — a
+// defensive guard, since a compile-time load can never reach this body. A
+// memory read outside the guest's bounds or a writer error logs a host-side
+// diagnostic naming the function and returns without trapping, so a bad guest
+// pointer is observable in host logs without crashing the call.
+func (p *Plugin) handleCLIWrite(mem pluginRawMemoryReader, w io.Writer, funcName string, stack []uint64) {
+	ptr := stack[0]
+	length := stack[1]
+	if w == nil {
+		return
+	}
+	data, ok := mem.Read(uint32(ptr), uint32(length))
+	if !ok {
+		log.Printf("plugin %q: %s: memory read of %d bytes at offset %d out of bounds", p.name, funcName, length, ptr)
+		return
+	}
+	if _, err := w.Write(data); err != nil {
+		log.Printf("plugin %q: %s: writing %d bytes to the stream failed: %v", p.name, funcName, length, err)
+	}
 }
 
 // hostFunctionAggregaEmitWarning returns the host-side closure

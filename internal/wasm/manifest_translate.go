@@ -91,3 +91,21 @@ func validateHostFunctionsSubset(name string, names []string) error {
 	}
 	return nil
 }
+
+// validateHostFunctionsSubsetCLI is the runtime CLI profile's subset gate: it
+// admits every name the shared gate admits PLUS the CLI-only streaming
+// emitters, so a CLI guest may import the streaming host functions the terminal
+// profile grants. It is the gate Loader.LoadCLI applies to the set derived from
+// a CLI guest's .wasm binary; Loader.Load keeps the shared gate above, which
+// admits neither streaming name. A name in neither allowlist returns an error
+// wrapping ErrWasmManifestRejected naming the violating function.
+func validateHostFunctionsSubsetCLI(name string, names []string) error {
+	for _, fn := range names {
+		if hostFunctionAllowlist[fn] || cliHostFunctionAllowlist[fn] {
+			continue
+		}
+		return fmt.Errorf("plugin %q declares host function %q outside the CLI allowlist %v: %w",
+			name, fn, cliAllowlistedHostFunctionNames(), ErrWasmManifestRejected)
+	}
+	return nil
+}

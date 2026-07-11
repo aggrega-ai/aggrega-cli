@@ -487,6 +487,14 @@ type Plugin struct {
 	// load. The host-function closures read it at call time, so a stale value
 	// from a prior node never leaks into a later one.
 	sourceRoot string
+	// stdout and stderr are the streams the CLI streaming host functions
+	// (aggrega_cli_write_stdout / aggrega_cli_write_stderr) write guest output
+	// to. They are set only on the runtime CLI profile, by Loader.LoadCLI; the
+	// compile-time build profile (Loader.Load) leaves them nil and never binds
+	// a streaming closure, so a build never streams. A nil writer is a safe
+	// no-op the streaming body guards against.
+	stdout io.Writer
+	stderr io.Writer
 }
 
 // SetSourceRoot sets the acquired source location the pack-source and
@@ -590,6 +598,64 @@ func (p *Plugin) appendWarning(formatted string) {
 // rejects the manifest or any import or a derived host function is
 // outside the allowlist; the Extism SDK's error otherwise.
 func (l *Loader) Load(ctx context.Context, spec PluginSpec) (*Plugin, error) {
+	return l.loadCore(ctx, spec, validateHostFunctionsSubset, (*Plugin).hostFunctionsForDeclared, nil, nil)
+}
+
+// LoadCLI constructs a Plugin under the runtime CLI instantiation profile,
+// binding the streaming host functions aggrega_cli_write_stdout and
+// aggrega_cli_write_stderr to stdout and stderr. It is the terminal-facing
+// sibling of Load: LoadCLI is for a CLI plugin run at the terminal, as a
+// command executes — not inside a build.
+//
+// The two profiles are deliberately disjoint, so the streaming grant can never
+// leak into a build (which must stay ahead-of-time deterministic and
+// capability-denied, with no terminal to stream to):
+//
+//   - Separate allowlist. LoadCLI validates the guest's derived imports against
+//     the UNION of the shared allowlist and the CLI-only allowlist, so a CLI
+//     guest may import the streaming emitters. Load validates against the shared
+//     allowlist ALONE, so a build-profile guest importing a streaming emitter is
+//     rejected with an error wrapping ErrWasmManifestRejected before any host
+//     function is bound.
+//   - Separate builder. LoadCLI builds host-function closures through
+//     hostFunctionsForDeclaredCLI, the only builder that constructs a streaming
+//     closure; Load's builder has no streaming case.
+//   - Separate entry point. The compiler's build pipeline calls Load /
+//     LoadAndDescribe and never LoadCLI, so no build path reaches this profile.
+//
+// Everything else is shared with Load through loadCore, including the unchanged
+// AOT-purity firewall (a CLI guest still may not declare AllowedHosts or
+// AllowedPaths) and the deterministic, capability-denied ModuleConfig — WASI
+// stdout/stderr stay discarded, because a CLI guest streams through the host
+// functions, not through WASI stdio.
+func (l *Loader) LoadCLI(ctx context.Context, spec PluginSpec, stdout, stderr io.Writer) (*Plugin, error) {
+	return l.loadCore(ctx, spec, validateHostFunctionsSubsetCLI, (*Plugin).hostFunctionsForDeclaredCLI, stdout, stderr)
+}
+
+// loadCore is the single shared body Load and LoadCLI both run, so the two
+// entry points single-source the firewall, byte read, import-module firewall,
+// host-function derivation, Extism instantiation, and compile serialization
+// rather than keeping parallel copies. The two profiles differ only in the
+// arguments: validateSubset is the subset gate the derived host-function set is
+// checked against (the shared allowlist for the build profile, the union for
+// the CLI profile); buildFunctions is the builder that constructs the bound
+// closures; stdout and stderr are the streams the CLI streaming closures write
+// to (nil on the build profile, which binds no streaming closure).
+//
+// The flow mirrors Load's documented sequence: translate + firewall, read the
+// bytes once, apply the import-module firewall, derive the host functions from
+// the bytes and check the derived set against validateSubset, then instantiate
+// the Extism plugin from the same in-memory bytes under the deterministic,
+// capability-denied ModuleConfig. Reading the bytes once and threading the same
+// slice through firewall inspection, derivation, and instantiation eliminates
+// the TOCTOU window between validation and execution.
+func (l *Loader) loadCore(
+	ctx context.Context,
+	spec PluginSpec,
+	validateSubset func(name string, names []string) error,
+	buildFunctions func(p *Plugin, declared []string) []extism.HostFunction,
+	stdout, stderr io.Writer,
+) (*Plugin, error) {
 	manifest, err := translateToManifest(spec)
 	if err != nil {
 		return nil, err
@@ -597,9 +663,6 @@ func (l *Loader) Load(ctx context.Context, spec PluginSpec) (*Plugin, error) {
 
 	// Bytes supplied directly (embedded / verified-cache content with no
 	// stable filesystem location) win over Path; otherwise read Path once.
-	// Reading once and threading the same slice through firewall inspection,
-	// derivation, and Extism instantiation eliminates the TOCTOU window
-	// between validation and execution.
 	wasmBytes := spec.Bytes
 	if wasmBytes == nil {
 		var err error
@@ -614,15 +677,15 @@ func (l *Loader) Load(ctx context.Context, spec PluginSpec) (*Plugin, error) {
 	}
 
 	// Derive the host functions the guest actually imports from the bytes,
-	// then verify the derived set against the curated allowlist by reusing
-	// the loader's single subset gate. The derived set is authoritative —
-	// the .wasm import section is ground truth for which host functions the
-	// guest calls — and is what the loader registers.
+	// then verify the derived set against the profile's subset gate. The
+	// derived set is authoritative — the .wasm import section is ground truth
+	// for which host functions the guest calls — and is what the loader
+	// registers.
 	hostFunctions, err := DeriveHostFunctions(spec.Name, wasmBytes)
 	if err != nil {
 		return nil, err
 	}
-	if err := validateHostFunctionsSubset(spec.Name, hostFunctions); err != nil {
+	if err := validateSubset(spec.Name, hostFunctions); err != nil {
 		return nil, err
 	}
 
@@ -639,10 +702,11 @@ func (l *Loader) Load(ctx context.Context, spec PluginSpec) (*Plugin, error) {
 	// thread guest-emitted warnings into the warnings slice. The
 	// Extism plugin handle is attached to p after NewPlugin returns.
 	// The loader's external-input service rides along so the
-	// aggrega_fetch_external_input closure can serve guest fetches.
-	p := &Plugin{name: spec.Name, externalInputs: l.ExternalInputs, hostFunctions: hostFunctions}
+	// aggrega_fetch_external_input closure can serve guest fetches; the
+	// CLI streams ride along so the streaming closures can emit to them.
+	p := &Plugin{name: spec.Name, externalInputs: l.ExternalInputs, hostFunctions: hostFunctions, stdout: stdout, stderr: stderr}
 
-	functions := p.hostFunctionsForDeclared(hostFunctions)
+	functions := buildFunctions(p, hostFunctions)
 
 	config := extism.PluginConfig{
 		EnableWasi:   true,
