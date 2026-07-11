@@ -310,10 +310,12 @@ func TestCachePruneSelective(t *testing.T) {
 	}
 }
 
-// TestCachePruneReportsOutOfScope asserts prune reports the compiled-module
-// cache as out-of-scope — named, counted, and sized — so the retained count is
-// not read against the full cache set, and clear is named as the reclaiming
-// verb. The fixture holds one compiled module the prune must not touch.
+// TestCachePruneReportsOutOfScope asserts prune reports the unattributed
+// compiled leaves it retained-for-lack-of-attribution — named, counted, and
+// sized — so the retained count is not read against the full cache set, and
+// evict/clear are named as the reclaiming verbs. The fixture carries no
+// attribution index, so its one compiled module is unattributed and the prune
+// must not touch it.
 func TestCachePruneReportsOutOfScope(t *testing.T) {
 	fx := newCacheFixture(t)
 	var out bytes.Buffer
@@ -323,16 +325,205 @@ func TestCachePruneReportsOutOfScope(t *testing.T) {
 	s := out.String()
 	t.Logf("prune output:\n%s", s)
 
-	if !bytes.Contains(out.Bytes(), []byte("compiled-module cache element(s) not prune-eligible")) {
-		t.Errorf("prune did not name the compiled-module cache as out-of-scope:\n%s", s)
+	if !bytes.Contains(out.Bytes(), []byte("compiled-module cache element(s) unattributed and not prune-eligible")) {
+		t.Errorf("prune did not name the unattributed compiled leaves as out-of-scope:\n%s", s)
 	}
-	// One compiled module is present in the fixture; the line reports its count.
-	if !bytes.Contains(out.Bytes(), []byte("1 compiled-module cache element(s) not prune-eligible")) {
-		t.Errorf("prune did not count the out-of-scope compiled module:\n%s", s)
+	// One unattributed compiled module is present in the fixture; the line counts it.
+	if !bytes.Contains(out.Bytes(), []byte("1 compiled-module cache element(s) unattributed and not prune-eligible")) {
+		t.Errorf("prune did not count the unattributed compiled module:\n%s", s)
 	}
-	// The aggregate size and the reclaiming verb are both present on the line.
-	if !bytes.Contains(out.Bytes(), []byte("~")) || !bytes.Contains(out.Bytes(), []byte("reclaim with 'aggrega cache clear'")) {
-		t.Errorf("prune out-of-scope line missing size or clear guidance:\n%s", s)
+	// The aggregate size and the reclaiming verbs are present on the line.
+	if !bytes.Contains(out.Bytes(), []byte("~")) || !bytes.Contains(out.Bytes(), []byte("reclaim with 'aggrega cache evict' or 'aggrega cache clear'")) {
+		t.Errorf("prune out-of-scope line missing size or evict/clear guidance:\n%s", s)
+	}
+	// The unattributed module survives the prune.
+	if !exists(fx.compileModule) {
+		t.Errorf("prune removed an unattributed compiled module:\n%s", s)
+	}
+}
+
+// writeRefLockfile writes a minimal workspace lockfile pinning the given
+// content digests as plugin references, so buildReferenceSet unions them into
+// the prune reference set. The lockfile round-trips through the loader prune
+// uses.
+func writeRefLockfile(t *testing.T, wsRoot string, digests ...string) {
+	t.Helper()
+	lf := &lockfile.Lockfile{
+		Version: 1, Release: "release.yaml", GeneratedAt: "2026-01-01T00:00:00Z",
+	}
+	for _, dg := range digests {
+		lf.Plugins = append(lf.Plugins, lockfile.Plugin{
+			URI: "oci://hub.aggrega.ai/plugins/" + dg, ResolvedVersion: dg,
+			Digest: dg, ReferencedFrom: []string{"release.yaml"},
+		})
+	}
+	lockPath := lockfile.PathFor(filepath.Join(wsRoot, "release.yaml"))
+	if err := lockfile.WriteLockfile(lockPath, lf); err != nil {
+		t.Fatalf("WriteLockfile: %v", err)
+	}
+	if _, _, err := lockfile.LoadLockfile(lockPath); err != nil {
+		t.Fatalf("fixture lockfile does not load: %v", err)
+	}
+}
+
+// TestCachePruneCompiledModulesByReference drives prune over a controlled
+// compiled-module cache, attribution index, and lockfile reference set. It
+// asserts the uniform retention rule: an orphan attributed guest leaf is
+// removed; a referenced attributed guest leaf is retained; the shared kernel is
+// retained while any referrer is still referenced; an unattributed leaf (absent
+// from the index) is retained; the reconciled index drops the removed guest's
+// entry and its digest from the kernel's referrer set; and the out-of-scope line
+// reports only the unattributed remainder.
+func TestCachePruneCompiledModulesByReference(t *testing.T) {
+	wsRoot := t.TempDir()
+	compileDir := t.TempDir()
+	modDir := filepath.Join(compileDir, "wazero-1.0-amd64-linux")
+	attribPath := filepath.Join(t.TempDir(), "compile-attribution-index.json")
+	now := time.Date(2026, 7, 11, 12, 0, 0, 0, time.UTC)
+
+	refDigest := digest.ContentDigest([]byte("referenced-guest"))
+	orphanDigest := digest.ContentDigest([]byte("orphan-guest"))
+	refHex := normalizeDigestHex(refDigest)
+
+	guestRef := writeCompileLeaf(t, modDir, "guestref00", 800000, now)
+	guestOrphan := writeCompileLeaf(t, modDir, "guestorphan0", 900000, now)
+	kernel := writeCompileLeaf(t, modDir, "kernel00", 20000, now)
+	orphanLeaf := writeCompileLeaf(t, modDir, "orphanleaf0", 100, now)
+
+	refKey := "wazero-1.0-amd64-linux/guestref00"
+	orphanKey := "wazero-1.0-amd64-linux/guestorphan0"
+	kernelKey := "wazero-1.0-amd64-linux/kernel00"
+
+	// Attribution index: two guests plus a kernel shared by both. orphanLeaf is
+	// deliberately absent (unattributed).
+	if err := attribindex.RecordGuestLeaf(attribPath, refKey, 800000, refDigest); err != nil {
+		t.Fatalf("record guest ref: %v", err)
+	}
+	if err := attribindex.RecordGuestLeaf(attribPath, orphanKey, 900000, orphanDigest); err != nil {
+		t.Fatalf("record guest orphan: %v", err)
+	}
+	if err := attribindex.RecordKernelLeaf(attribPath, kernelKey, 20000, refDigest); err != nil {
+		t.Fatalf("record kernel: %v", err)
+	}
+	if err := attribindex.AddKernelReferrer(attribPath, orphanDigest); err != nil {
+		t.Fatalf("add kernel referrer: %v", err)
+	}
+
+	// Lockfile pins only the referenced guest.
+	writeRefLockfile(t, wsRoot, refDigest)
+
+	loc := cacheLocations{
+		wsRoot: wsRoot, cacheDir: cacheTestCacheDir,
+		compileDir: compileDir, attribIndexPath: attribPath,
+	}
+	var out bytes.Buffer
+	if err := runCachePrune(&out, loc); err != nil {
+		t.Fatalf("prune: %v", err)
+	}
+	s := out.String()
+	t.Logf("prune output:\n%s", s)
+
+	// (i) orphan attributed guest leaf removed.
+	if exists(guestOrphan) {
+		t.Errorf("prune retained an orphan attributed guest leaf:\n%s", s)
+	}
+	// (ii) referenced attributed guest leaf retained.
+	if !exists(guestRef) {
+		t.Errorf("prune removed a referenced guest leaf:\n%s", s)
+	}
+	// (iii) kernel retained while ANY referrer is referenced.
+	if !exists(kernel) {
+		t.Errorf("prune removed the shared kernel while a referrer is still referenced:\n%s", s)
+	}
+	// (iv) unattributed leaf retained.
+	if !exists(orphanLeaf) {
+		t.Errorf("prune removed an unattributed leaf:\n%s", s)
+	}
+	// (v) index reconciled: orphan guest entry gone; kernel referrer set drops it.
+	ix, err := attribindex.Load(attribPath)
+	if err != nil {
+		t.Fatalf("load reconciled index: %v", err)
+	}
+	if _, ok := ix.Entry(orphanKey); ok {
+		t.Errorf("reconciled index still holds the removed orphan guest leaf")
+	}
+	kEntry, ok := ix.Entry(kernelKey)
+	if !ok {
+		t.Fatalf("reconciled index lost the surviving kernel")
+	}
+	if len(kEntry.Referrers) != 1 || kEntry.Referrers[0] != refHex {
+		t.Errorf("kernel referrer set = %+v, want [%s] (orphan dropped)", kEntry.Referrers, refHex)
+	}
+	if _, ok := ix.Entry(refKey); !ok {
+		t.Errorf("reconciled index lost the retained referenced guest leaf")
+	}
+	// (vi) out-of-scope line reports only the single unattributed remainder.
+	if !strings.Contains(s, "1 compiled-module cache element(s) unattributed and not prune-eligible") {
+		t.Errorf("prune did not report the single unattributed remainder:\n%s", s)
+	}
+	// The normal accounting folds attributed leaves: 1 removed, 2 retained.
+	if !strings.Contains(s, "pruned 1 element(s),") || !strings.Contains(s, "2 retained") {
+		t.Errorf("prune summary did not fold attributed compiled leaves (want pruned 1 / 2 retained):\n%s", s)
+	}
+	if !strings.Contains(s, "removed compiled-module cache: "+orphanKey) {
+		t.Errorf("prune did not name the removed orphan guest leaf:\n%s", s)
+	}
+}
+
+// TestCachePruneCompiledKernelReclaimedWhenAllReferrersOrphaned proves the
+// shared kernel is itself prunable once none of its referrers is referenced: the
+// lockfile pins an unrelated digest, so both the lone guest and the kernel are
+// removed, and the reconciled index empties.
+func TestCachePruneCompiledKernelReclaimedWhenAllReferrersOrphaned(t *testing.T) {
+	wsRoot := t.TempDir()
+	compileDir := t.TempDir()
+	modDir := filepath.Join(compileDir, "wazero-1.0-amd64-linux")
+	attribPath := filepath.Join(t.TempDir(), "compile-attribution-index.json")
+	now := time.Date(2026, 7, 11, 12, 0, 0, 0, time.UTC)
+
+	guestDigest := digest.ContentDigest([]byte("lone-guest"))
+	unrelated := digest.ContentDigest([]byte("something-else"))
+
+	guest := writeCompileLeaf(t, modDir, "guest00", 500000, now)
+	kernel := writeCompileLeaf(t, modDir, "kernel00", 20000, now)
+	guestKey := "wazero-1.0-amd64-linux/guest00"
+	kernelKey := "wazero-1.0-amd64-linux/kernel00"
+
+	if err := attribindex.RecordGuestLeaf(attribPath, guestKey, 500000, guestDigest); err != nil {
+		t.Fatalf("record guest: %v", err)
+	}
+	if err := attribindex.RecordKernelLeaf(attribPath, kernelKey, 20000, guestDigest); err != nil {
+		t.Fatalf("record kernel: %v", err)
+	}
+
+	writeRefLockfile(t, wsRoot, unrelated)
+
+	loc := cacheLocations{
+		wsRoot: wsRoot, cacheDir: cacheTestCacheDir,
+		compileDir: compileDir, attribIndexPath: attribPath,
+	}
+	var out bytes.Buffer
+	if err := runCachePrune(&out, loc); err != nil {
+		t.Fatalf("prune: %v", err)
+	}
+	s := out.String()
+	t.Logf("prune output:\n%s", s)
+
+	if exists(guest) {
+		t.Errorf("prune retained an orphaned guest leaf:\n%s", s)
+	}
+	if exists(kernel) {
+		t.Errorf("prune retained the kernel when none of its referrers is referenced:\n%s", s)
+	}
+	ix, err := attribindex.Load(attribPath)
+	if err != nil {
+		t.Fatalf("load reconciled index: %v", err)
+	}
+	if len(ix.Entries()) != 0 {
+		t.Errorf("reconciled index not empty after removing both leaves: %+v", ix.Entries())
+	}
+	if !strings.Contains(s, "pruned 2 element(s),") {
+		t.Errorf("prune summary did not report both compiled leaves removed:\n%s", s)
 	}
 }
 

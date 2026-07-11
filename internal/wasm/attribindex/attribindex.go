@@ -222,6 +222,52 @@ func AddKernelReferrer(path, guestDigest string) error {
 	})
 }
 
+// RemoveLeaves reconciles the index after a reference-based reclamation removed
+// compiled leaves from disk. It (1) deletes the entry for every key in
+// removedLeafKeys and (2) drops every digest in droppedReferrers from the
+// referrer set of every surviving entry, so a shared kernel's referrer count no
+// longer counts a guest that was pruned. droppedReferrers are matched in
+// normalized (prefix-free lowercase hex) form; a caller that pruned guest leaves
+// passes those leaves' referrer digests so the surviving kernel's "shared by N"
+// stays accurate. Removed keys and dropped referrers absent from the index are
+// ignored. The whole operation runs under the cross-process file lock and
+// finishes with an atomic write-temp-rename.
+func RemoveLeaves(path string, removedLeafKeys, droppedReferrers []string) error {
+	return rmw(path, func(ix *Index) {
+		for _, k := range removedLeafKeys {
+			delete(ix.byLeaf, k)
+		}
+		if len(droppedReferrers) == 0 {
+			return
+		}
+		drop := map[string]bool{}
+		for _, d := range droppedReferrers {
+			drop[normalize(d)] = true
+		}
+		for key := range ix.byLeaf {
+			e := ix.byLeaf[key]
+			e.Referrers = withoutReferrers(e.Referrers, drop)
+			ix.byLeaf[key] = e
+		}
+	})
+}
+
+// withoutReferrers returns vs with every member of drop removed, sorted and
+// deduplicated. The input referrers are already normalized, as are the drop
+// keys, so membership is a direct comparison.
+func withoutReferrers(vs []string, drop map[string]bool) []string {
+	if len(vs) == 0 {
+		return vs
+	}
+	out := make([]string, 0, len(vs))
+	for _, v := range vs {
+		if !drop[v] {
+			out = append(out, v)
+		}
+	}
+	return sortedUnique(out)
+}
+
 // KernelRecorded reports whether a Kernel-flagged entry exists in the index at
 // path. A cold compile that sees two new leaves consults this to distinguish a
 // genuine first-ever compile (no kernel yet) from a confounded concurrent

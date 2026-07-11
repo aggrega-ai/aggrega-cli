@@ -440,6 +440,11 @@ func enumDescribe(root string) []cacheElement {
 	return out
 }
 
+// compiledModuleClassName is the display name of the compiled-module cache
+// class. It is the single spelling both the class assembly and the prune arm
+// that special-cases the class share, so the two never drift.
+const compiledModuleClassName = "compiled-module cache"
+
 // collectClasses enumerates every applicable cache class in a fixed order:
 // the three workspace subtrees (present only when a workspace resolved) then
 // the two global caches. The fixed order and per-class element sort make the
@@ -458,7 +463,7 @@ func collectClasses(loc cacheLocations) []cacheClass {
 	}
 	if loc.compileDir != "" {
 		classes = append(classes,
-			cacheClass{name: "compiled-module cache", root: loc.compileDir, prunable: false, elements: enumCompileModules(loc.compileDir, loc.attribIndexPath, loc.provIndexPath)},
+			cacheClass{name: compiledModuleClassName, root: loc.compileDir, prunable: true, elements: enumCompileModules(loc.compileDir, loc.attribIndexPath, loc.provIndexPath)},
 		)
 	}
 	if loc.describeDir != "" {
@@ -560,11 +565,14 @@ func newCachePruneCmd() *cobra.Command {
 retaining every referenced entry. The reference set is the union of the
 digests pinned across every lockfile (*.lock) in the workspace.
 
-Prune acts on the digest-mappable caches only: the workspace artifact cache
-(entities, source artifacts, external inputs) and the plugin-describe cache.
-The compiled-module cache is keyed by the runtime's own internal hashing,
-which prune cannot map to a lockfile reference, so prune never touches it; the
-compiled-module cache is reclaimed by "aggrega cache clear".
+Prune acts on the digest-mappable caches — the workspace artifact cache
+(entities, source artifacts, external inputs) and the plugin-describe cache —
+and on the compiled-module cache by reference: a compiled leaf attributed to a
+guest is reclaimed when no lockfile still references that guest, and the shared
+runtime kernel is reclaimed once its last referring guest is pruned. A compiled
+leaf whose attribution cannot be determined is retained rather than removed on a
+guess; that remainder is reclaimed by "aggrega cache evict" or "aggrega cache
+clear".
 
 Prune needs a pulled workspace: it fails when no lockfile is present.`,
 		Args: cobra.NoArgs,
@@ -594,18 +602,54 @@ func runCachePrune(w io.Writer, loc cacheLocations) error {
 		return fmt.Errorf("cache prune found %d lockfile candidate(s) under %s but none parsed as a lockfile; run `aggrega pull <release>` first", len(lockPaths), wsRoot)
 	}
 
-	// Prune the digest-mappable classes only, drawn from the single class-set
-	// assembly. The describe cache is included because a describe entry's
-	// filename stem is the guest's content digest, which equals the pin a
-	// lockfile plugin entry records — so it maps to the same reference set. The
-	// compiled-module cache is not prunable (its flag is false) and is reported
-	// as out-of-scope below rather than acted on.
+	// Prune every prunable class, drawn from the single class-set assembly. The
+	// describe cache is included because a describe entry's filename stem is the
+	// guest's content digest, which equals the pin a lockfile plugin entry
+	// records — so it maps to the same reference set. The compiled-module cache is
+	// prunable too, but by attribution rather than by an element digest, so it is
+	// handled by a dedicated arm that consults the attribution index directly.
 	classes := collectClasses(loc)
+	ax, _ := attribindex.Load(loc.attribIndexPath)
 
 	var removed, retained int
 	var reclaimed int64
+	// Compiled leaves whose attribution cannot be determined are retained on
+	// purpose (never removed on a guess); they are reclaimable only by evict or
+	// clear, and are reported separately so the retained count is read correctly.
+	var unattributedN int
+	var unattributedSize int64
+	// Reconciliation inputs: the leaf keys removed, and the guest referrer digests
+	// those removals drop, so a surviving kernel's referrer set no longer counts a
+	// pruned guest.
+	var removedLeafKeys, droppedReferrers []string
 	for _, cl := range classes {
 		if !cl.prunable {
+			continue
+		}
+		if cl.name == compiledModuleClassName {
+			for _, el := range cl.elements {
+				entry, attributed := ax.Entry(el.label)
+				if !attributed {
+					unattributedN++
+					unattributedSize += el.size
+					continue
+				}
+				if anyReferrerInSet(entry.Referrers, refset) {
+					retained++
+					continue
+				}
+				if rmErr := os.Remove(el.path); rmErr != nil {
+					return fmt.Errorf("cache prune: remove %s: %w", el.path, rmErr)
+				}
+				removeEmptyParents(el.path, cl.root)
+				fmt.Fprintf(w, "removed %s: %s\n", cl.name, el.label)
+				removed++
+				reclaimed += el.size
+				removedLeafKeys = append(removedLeafKeys, el.label)
+				if !entry.Kernel {
+					droppedReferrers = append(droppedReferrers, entry.Referrers...)
+				}
+			}
 			continue
 		}
 		for _, el := range cl.elements {
@@ -622,10 +666,28 @@ func runCachePrune(w io.Writer, loc cacheLocations) error {
 			reclaimed += el.size
 		}
 	}
+
+	// Reconcile the attribution index so it no longer references removed leaves
+	// and a surviving kernel's referrer set no longer counts a pruned guest. This
+	// is index hygiene, not prune correctness — but it keeps the "shared by N"
+	// accounting honest for the next inspection.
+	if len(removedLeafKeys) > 0 && loc.attribIndexPath != "" {
+		if err := attribindex.RemoveLeaves(loc.attribIndexPath, removedLeafKeys, droppedReferrers); err != nil {
+			return fmt.Errorf("cache prune: reconcile attribution index: %w", err)
+		}
+	}
+
 	fmt.Fprintf(w, "\npruned %d element(s), %s reclaimed; %d retained\n", removed, humanSize(reclaimed), retained)
 
-	// Report the classes prune cannot reclaim so the retained count above is not
-	// read against the full set. Their size is aggregated from the same
+	// Report the compiled leaves retained for lack of attribution: prune cannot
+	// map them to a lockfile, so they are reclaimable only by the size-bounded
+	// evict or the total clear.
+	if unattributedN > 0 {
+		fmt.Fprintf(w, "%d %s element(s) unattributed and not prune-eligible (~%s); reclaim with 'aggrega cache evict' or 'aggrega cache clear'\n", unattributedN, compiledModuleClassName, humanSize(unattributedSize))
+	}
+
+	// Report the classes prune cannot reclaim at all so the retained count above
+	// is not read against the full set. Their size is aggregated from the same
 	// class-set assembly, and clear is named as the verb that reclaims them.
 	for _, cl := range classes {
 		if cl.prunable || len(cl.elements) == 0 {
@@ -640,6 +702,18 @@ func runCachePrune(w io.Writer, loc cacheLocations) error {
 		fmt.Fprintf(w, "%d %s element(s) not prune-eligible (~%s); reclaim with 'aggrega cache clear'\n", n, cl.name, humanSize(size))
 	}
 	return nil
+}
+
+// anyReferrerInSet reports whether any of a compiled leaf's referrer digests is
+// present in the lockfile reference set. Both sides are normalized (prefix-free
+// lowercase hex), so membership is a direct lookup.
+func anyReferrerInSet(referrers []string, refset map[string]bool) bool {
+	for _, r := range referrers {
+		if refset[r] {
+			return true
+		}
+	}
+	return false
 }
 
 func newCacheEvictCmd() *cobra.Command {

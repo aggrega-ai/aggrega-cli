@@ -175,6 +175,85 @@ func TestKernelReferrerAccumulation(t *testing.T) {
 	}
 }
 
+// TestRemoveLeaves proves the reconcile primitive: removing a guest leaf drops
+// its entry AND removes its digest from the shared kernel's referrer set; a
+// kernel whose referrers all drop stays present until the caller removes it by
+// key; and removed keys or dropped referrers absent from the index are no-ops.
+func TestRemoveLeaves(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), indexFileName)
+
+	// A kernel shared by two guests, plus the two guest leaves.
+	if err := RecordKernelLeaf(path, "wazero/kernel", 20000, "sha256:AAAA"); err != nil {
+		t.Fatalf("kernel: %v", err)
+	}
+	if err := AddKernelReferrer(path, "sha256:BBBB"); err != nil {
+		t.Fatalf("kernel referrer b: %v", err)
+	}
+	if err := RecordGuestLeaf(path, "wazero/guest-a", 800000, "sha256:AAAA"); err != nil {
+		t.Fatalf("guest-a: %v", err)
+	}
+	if err := RecordGuestLeaf(path, "wazero/guest-b", 900000, "sha256:BBBB"); err != nil {
+		t.Fatalf("guest-b: %v", err)
+	}
+
+	// Remove guest-a; drop its referrer from every survivor (the kernel).
+	if err := RemoveLeaves(path, []string{"wazero/guest-a"}, []string{"sha256:AAAA"}); err != nil {
+		t.Fatalf("remove guest-a: %v", err)
+	}
+	ix, err := Load(path)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if _, ok := ix.Entry("wazero/guest-a"); ok {
+		t.Errorf("guest-a entry not dropped")
+	}
+	if _, ok := ix.Entry("wazero/guest-b"); !ok {
+		t.Errorf("guest-b entry wrongly dropped")
+	}
+	k, ok := ix.Entry("wazero/kernel")
+	if !ok {
+		t.Fatalf("kernel dropped prematurely")
+	}
+	if len(k.Referrers) != 1 || k.Referrers[0] != "bbbb" {
+		t.Errorf("kernel referrers = %+v, want [bbbb] (aaaa dropped)", k.Referrers)
+	}
+
+	// Removing an absent leaf and dropping an absent referrer are no-ops.
+	if err := RemoveLeaves(path, []string{"wazero/never"}, []string{"sha256:CCCC"}); err != nil {
+		t.Fatalf("no-op remove: %v", err)
+	}
+	ix, _ = Load(path)
+	if k, _ := ix.Entry("wazero/kernel"); len(k.Referrers) != 1 || k.Referrers[0] != "bbbb" {
+		t.Errorf("no-op remove perturbed the kernel: %+v", k.Referrers)
+	}
+	if g, ok := ix.Entry("wazero/guest-b"); !ok || len(g.Referrers) != 1 || g.Referrers[0] != "bbbb" {
+		t.Errorf("no-op remove perturbed guest-b: %+v (ok=%v)", g.Referrers, ok)
+	}
+
+	// Remove guest-b; the kernel's referrer set empties, leaving it caller-removable.
+	if err := RemoveLeaves(path, []string{"wazero/guest-b"}, []string{"sha256:BBBB"}); err != nil {
+		t.Fatalf("remove guest-b: %v", err)
+	}
+	ix, _ = Load(path)
+	k, ok = ix.Entry("wazero/kernel")
+	if !ok {
+		t.Fatalf("kernel dropped by referrer removal (only the caller removes it)")
+	}
+	if len(k.Referrers) != 0 {
+		t.Errorf("kernel referrers = %+v, want empty", k.Referrers)
+	}
+
+	// The caller removes the now-unreferenced kernel by key.
+	if err := RemoveLeaves(path, []string{"wazero/kernel"}, nil); err != nil {
+		t.Fatalf("remove kernel: %v", err)
+	}
+	ix, _ = Load(path)
+	if len(ix.Entries()) != 0 {
+		t.Errorf("index not empty after removing every leaf: %+v", ix.Entries())
+	}
+}
+
 // TestLoadMissingIsEmpty confirms a first-ever run (no file) and an empty path
 // both load clean rather than erroring.
 func TestLoadMissingIsEmpty(t *testing.T) {
