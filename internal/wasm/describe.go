@@ -94,8 +94,18 @@ type PluginDescriptor struct {
 	// a plugin-level self-report of what the plugin does, distinct from the
 	// per-export [PluginExport.Description] and from the entity's
 	// metadata.description. It is informational; the host neither validates
-	// nor acts on it.
+	// nor acts on it. For a CLI plugin it is the command's short help line.
 	Description string `json:"description,omitempty"`
+
+	// Command is the command name a CLI plugin contributes — the aggrega
+	// <command> token the host registers the plugin under. It is read at
+	// install time to name the top-level command the plugin is installed as;
+	// a non-CLI plugin leaves it empty, and a CLI plugin that declares no
+	// command name cannot be installed as a command. The plugin-level
+	// Description is the command's short help string; this names the command
+	// itself. It is documentation the install path consumes, not a value the
+	// load gate validates or acts on.
+	Command string `json:"command,omitempty"`
 
 	// Metadata is optional authorship information. It carries no
 	// behavioral contract — the host neither validates nor acts on it.

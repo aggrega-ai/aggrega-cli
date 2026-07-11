@@ -40,6 +40,36 @@ func newPluginCmd() *cobra.Command {
 	}
 	c.AddCommand(newPluginListCmd())
 	c.AddCommand(newPluginGenCatalogCmd())
+	c.AddCommand(newPluginInstallCmd())
+	c.AddCommand(newPluginSearchCmd())
+	return c
+}
+
+// newPluginSearchCmd builds the `plugin search` command: it searches the
+// configured registry for installable CLI plugins through the shared
+// registry-search primitive, scoped to the plugin repositories.
+func newPluginSearchCmd() *cobra.Command {
+	c := &cobra.Command{
+		Use:   "search [query]",
+		Short: "Search the registry for installable CLI plugins",
+		Long: `Search the configured registry for installable plugins.
+
+The optional query is a case-insensitive substring match on the repository
+path; an empty query lists every plugin repository. The scope is the plugin
+repositories only — use 'aggrega catalog search' to search the whole catalog.`,
+		Args: cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			rw, err := workspaceFromContext(cmd.Context())
+			if err != nil {
+				return err
+			}
+			query := ""
+			if len(args) == 1 {
+				query = args[0]
+			}
+			return runRegistrySearch(cmd.Context(), rw.Config(), query, pluginSearchScope, cmd.OutOrStdout())
+		},
+	}
 	return c
 }
 

@@ -89,3 +89,31 @@ func readInstalledPluginIndex() (installedPluginIndex, error) {
 	}
 	return idx, nil
 }
+
+// writeInstalledPluginIndex persists idx to the installed-CLI-plugin index file
+// under the shared aggrega cache root, creating the root as needed. An
+// unresolvable cache root is an error: an install cannot record a plugin it has
+// nowhere to persist. The write is deterministic — the index marshals with the
+// object keys sorted by encoding/json and the entry fields in declared order —
+// so re-installing a plugin whose entry is unchanged rewrites byte-identical
+// content. It is the write counterpart of readInstalledPluginIndex and targets
+// the same path helper, so the read and write sides cannot address different
+// files.
+func writeInstalledPluginIndex(idx installedPluginIndex) error {
+	path, ok := installedPluginIndexPath()
+	if !ok {
+		return errors.New("no user cache directory is available to record the installed CLI plugin index")
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return fmt.Errorf("create cache directory for installed CLI plugin index: %w", err)
+	}
+	data, err := json.MarshalIndent(idx, "", "  ")
+	if err != nil {
+		return fmt.Errorf("encode installed CLI plugin index: %w", err)
+	}
+	data = append(data, '\n')
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		return fmt.Errorf("write installed CLI plugin index at %s: %w", path, err)
+	}
+	return nil
+}

@@ -6,5 +6,8 @@
 package main
 
 func main() {
+	// Wire the unknown-command install hint to the live registry only in the
+	// process entry point, so the test binary keeps the non-network stub.
+	pluginDiscoverable = productionPluginDiscoverable
 	Execute()
 }
