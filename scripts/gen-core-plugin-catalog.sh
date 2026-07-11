@@ -37,7 +37,7 @@ GOWORK=off go build -ldflags "-X main.version=$_ver -X main.commit=$_sha" -o "$B
 echo "built $BIN (version $_ver)"
 
 # Remove only the generated socket directories so stale version-dirs do not
-# accumulate. plugin-overlays/ (the authored input) and plugin/example-search/
+# accumulate. plugin-overlays/ (the authored input) and plugin/search/example/
 # (an out-of-scope entity) are never touched.
 echo "=== clear generated socket dirs ==="
 rm -rf "$OUTPUT_DIR/provider" "$OUTPUT_DIR/linter"
