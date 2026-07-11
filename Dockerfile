@@ -35,11 +35,37 @@ ARG VERSION=unknown
 # CI can gate on ABI compatibility from the manifest alone.
 ARG ABI_VERSION=unknown
 
-# A minimal, shell-less base that carries CA certificates (needed for TLS to
-# the registry) and runs as an unprivileged user. The aggrega binary is a
-# static, cgo-free Go binary (its Wasm runtime is pure Go), so no libc or
-# dynamic loader is required in the final image.
-FROM gcr.io/distroless/static-debian12:nonroot
+# A minimal Debian base carrying the tools the consumer publisher CIs run
+# INSIDE this image. This image's documented job is to be the environment those
+# CIs execute in (`container: <registry>/tools/aggrega`), and they run publish
+# shell scripts plus a repository-checkout step, which need: a POSIX shell and
+# bash (the publish scripts use `#!/usr/bin/env bash`), git (both the publish
+# scripts and the checkout step shell out to git), awk (the publish scripts
+# parse with it), and CA certificates for TLS to the registry. bash is present
+# in the base by default; git, awk (gawk), and ca-certificates are installed
+# below.
+#
+# The aggrega binary itself is a static, cgo-free Go binary (its Wasm runtime is
+# pure Go) and needs none of these tools — it would run on any base. The base is
+# sized for the CI tooling that runs alongside the binary, not for the binary's
+# own linkage.
+#
+# The image runs as root. Where the CI runner mounts and owns the checked-out
+# workspace as root, running git and the checkout step as a non-root user
+# triggers git "dubious ownership" and workspace-permission friction; root is a
+# CI-ergonomics choice for this tooling context, not a requirement of the
+# binary, which needs no elevated privileges.
+FROM debian:bookworm-slim
+
+# git + awk (gawk) + CA certificates for the consumer CIs described above.
+# --no-install-recommends and cleaning the apt lists in the same layer keep the
+# image minimal.
+RUN apt-get update \
+ && apt-get install --no-install-recommends -y \
+      ca-certificates \
+      gawk \
+      git \
+ && rm -rf /var/lib/apt/lists/*
 
 ARG VERSION
 ARG ABI_VERSION
