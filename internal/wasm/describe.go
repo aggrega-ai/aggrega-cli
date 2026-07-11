@@ -20,7 +20,7 @@ import (
 // surface each export needs before invoking it.
 //
 // describe() is cross-plugin-type: one shape covers provider, linter,
-// feature-recipe-pipeline, mutator, and policy-validator plugins. It is consumed by the host
+// feature-recipe-pipeline, mutator, policy-validator, and CLI plugins. It is consumed by the host
 // loader for dispatch decisions, not emitted into rendered output, so
 // its slices carry author/declared order without an OrderedMap; a
 // future consumer that marshals a descriptor into a deterministic
@@ -53,7 +53,7 @@ type PluginDescriptor struct {
 	ABIVersion string `json:"abi_version"`
 
 	// PluginType is the plugin's kind — provider, linter,
-	// feature-recipe-pipeline step, mutator, or policy-validator. It
+	// feature-recipe-pipeline step, mutator, policy-validator, or CLI. It
 	// selects the minimum-export rule the host validates and, with the
 	// export name, the default input pattern.
 	PluginType PluginType `json:"plugin_type"`
@@ -89,6 +89,13 @@ type PluginDescriptor struct {
 	// against the entity's authored claim; an all-zero value carries no
 	// plugin-level capability claim.
 	Capabilities Capabilities `json:"capabilities,omitempty,omitzero"`
+
+	// Description is the plugin's own one-line human-readable description —
+	// a plugin-level self-report of what the plugin does, distinct from the
+	// per-export [PluginExport.Description] and from the entity's
+	// metadata.description. It is informational; the host neither validates
+	// nor acts on it.
+	Description string `json:"description,omitempty"`
 
 	// Metadata is optional authorship information. It carries no
 	// behavioral contract — the host neither validates nor acts on it.
@@ -292,6 +299,11 @@ const (
 	// full IR graph at Step 4 and returns one pass/fail verdict per rule; a
 	// failed rule halts the build. Its minimum export is validate.
 	PluginTypePolicyValidator PluginType = "policy-validator"
+
+	// PluginTypeCLI is a CLI plugin: it contributes a runtime aggrega <cmd>
+	// subcommand, invoked by an operator at the command line rather than by
+	// the build pipeline. Its minimum export is cli_run.
+	PluginTypeCLI PluginType = "cli"
 )
 
 // InputPattern selects how the host delivers an export's input payload.
@@ -363,6 +375,11 @@ const (
 // plugin.
 const providerRenderExportName = "render_node"
 
+// cliRunExportName is the required export name for a CLI plugin — the
+// entry point the host dispatches to when an operator invokes the
+// plugin's aggrega <cmd> subcommand.
+const cliRunExportName = "cli_run"
+
 // BoundaryAssemblyNone, BoundaryAssemblyMerge, and BoundaryAssemblyNest are
 // the three boundary-assembly modes a plugin reports via
 // [Capabilities.BoundaryAssembly]: none writes each node's output directly at
@@ -417,7 +434,8 @@ const (
 //   - the per-type minimum export is present: a provider declares
 //     render_node; a linter declares at least one lint_* export; a
 //     feature-recipe-pipeline step declares step; a mutator declares
-//     mutate; a policy-validator declares validate.
+//     mutate; a policy-validator declares validate; a CLI plugin declares
+//     cli_run.
 //   - every export's declared host functions are a subset of the
 //     host-function allowlist. This routes through the same
 //     validateHostFunctionsSubset gate the loader applies to the set
@@ -452,7 +470,7 @@ func (d PluginDescriptor) Validate(pluginIdentity string) error {
 	}
 
 	switch d.PluginType {
-	case PluginTypeProvider, PluginTypeLinter, PluginTypeFRPStep, PluginTypeMutator, PluginTypePolicyValidator:
+	case PluginTypeProvider, PluginTypeLinter, PluginTypeFRPStep, PluginTypeMutator, PluginTypePolicyValidator, PluginTypeCLI:
 		// recognized
 	default:
 		return fmt.Errorf("plugin %q declares unknown plugin_type %q: %w",
@@ -580,6 +598,11 @@ func (d PluginDescriptor) validateMinimumExports(pluginIdentity string) error {
 		if !d.hasExport(ValidateExport) {
 			return fmt.Errorf("policy-validator plugin %q declares no %q export: %w",
 				pluginIdentity, ValidateExport, ErrWasmManifestRejected)
+		}
+	case PluginTypeCLI:
+		if !d.hasExport(cliRunExportName) {
+			return fmt.Errorf("cli plugin %q declares no %q export: %w",
+				pluginIdentity, cliRunExportName, ErrWasmManifestRejected)
 		}
 	}
 	return nil

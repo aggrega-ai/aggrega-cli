@@ -4,6 +4,7 @@
 package wasm
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"reflect"
@@ -216,6 +217,21 @@ func TestPluginDescriptorValidateMinimumExports(t *testing.T) {
 				Exports:    []PluginExport{{Name: "step"}},
 			},
 		},
+		"cli-without-cli_run": {
+			descriptor: PluginDescriptor{
+				ABIVersion: ABIVersionV1Alpha1,
+				PluginType: PluginTypeCLI,
+				Exports:    []PluginExport{{Name: "run"}},
+			},
+			wantReject: true,
+		},
+		"cli-with-cli_run": {
+			descriptor: PluginDescriptor{
+				ABIVersion: ABIVersionV1Alpha1,
+				PluginType: PluginTypeCLI,
+				Exports:    []PluginExport{{Name: "cli_run"}},
+			},
+		},
 	}
 
 	for name, tc := range cases {
@@ -233,6 +249,70 @@ func TestPluginDescriptorValidateMinimumExports(t *testing.T) {
 				t.Fatalf("want accept, got %v", err)
 			}
 		})
+	}
+}
+
+func TestPluginDescriptorValidateCLI(t *testing.T) {
+	t.Parallel()
+
+	// A scratch cli descriptor with the cli_run export passes Validate.
+	withRun := PluginDescriptor{
+		ABIVersion: ABIVersionV1Alpha1,
+		PluginType: PluginTypeCLI,
+		Exports:    []PluginExport{{Name: cliRunExportName}},
+	}
+	if err := withRun.Validate("acme/cli"); err != nil {
+		t.Fatalf("cli with %q: want accept, got %v", cliRunExportName, err)
+	}
+
+	// The same descriptor without cli_run fails, wrapping ErrWasmManifestRejected.
+	withoutRun := PluginDescriptor{
+		ABIVersion: ABIVersionV1Alpha1,
+		PluginType: PluginTypeCLI,
+		Exports:    []PluginExport{{Name: "run"}},
+	}
+	if err := withoutRun.Validate("acme/cli"); !errors.Is(err, ErrWasmManifestRejected) {
+		t.Fatalf("cli without %q: want ErrWasmManifestRejected, got %v", cliRunExportName, err)
+	}
+}
+
+func TestPluginDescriptorPluginLevelDescriptionRoundTrip(t *testing.T) {
+	t.Parallel()
+
+	want := PluginDescriptor{
+		ABIVersion:  ABIVersionV1Alpha1,
+		PluginType:  PluginTypeCLI,
+		Description: "seeds a new Aggregate scaffold under the current directory",
+		Exports:     []PluginExport{{Name: cliRunExportName}},
+	}
+	data, err := json.Marshal(want)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var got PluginDescriptor
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if got.Description != want.Description {
+		t.Fatalf("plugin-level description not preserved: want %q, got %q", want.Description, got.Description)
+	}
+	if !reflect.DeepEqual(want, got) {
+		t.Fatalf("round-trip mismatch:\n want %#v\n got  %#v", want, got)
+	}
+
+	// An omitted plugin-level description marshals no "description" key, so
+	// existing guests and cached descriptors that omit it stay byte-stable.
+	none := PluginDescriptor{
+		ABIVersion: ABIVersionV1Alpha1,
+		PluginType: PluginTypeCLI,
+		Exports:    []PluginExport{{Name: cliRunExportName}},
+	}
+	noneData, err := json.Marshal(none)
+	if err != nil {
+		t.Fatalf("marshal (no description): %v", err)
+	}
+	if bytes.Contains(noneData, []byte("description")) {
+		t.Fatalf("omitted plugin-level description leaked a key: %s", noneData)
 	}
 }
 
