@@ -4,6 +4,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -95,6 +96,11 @@ func newRootCmd() *cobra.Command {
 		newLogoutCmd(),
 		newVersionCmd(),
 	)
+	// Register a command per installed CLI plugin AFTER the static commands, so
+	// the live tree is the authoritative built-in set that always wins a name
+	// collision. This runs before silenceUsageOnRun so the dynamic commands
+	// inherit the same usage-suppression wrap as the built-ins.
+	registerInstalledCLIPlugins(root)
 	silenceUsageOnRun(root)
 	return root
 }
@@ -123,18 +129,36 @@ func silenceUsageOnRun(c *cobra.Command) {
 	}
 }
 
-// Execute runs the root command. On cobra dispatch error — unknown
-// subcommand, flag-parse failure, RunE error from any subcommand —
-// the error is printed to stderr and the process exits with status 1.
-// Successful dispatch returns normally; the caller (main) then
-// terminates with exit status 0. The function intentionally handles
-// the error+exit boundary itself rather than returning the error to
-// the caller, so main remains a thin shim. Cobra's own error and usage
-// printing is suppressed (see newRootCmd), so this is the single point
-// at which a failure reaches the user.
+// Execute runs the root command. Successful dispatch returns normally; the
+// caller (main) then terminates with exit status 0. A non-zero outcome exits the
+// process with the code executeRoot computes. The function intentionally handles
+// the error+exit boundary itself rather than returning the error to the caller,
+// so main remains a thin shim. Cobra's own error and usage printing is suppressed
+// (see newRootCmd), so this is the single point at which a failure reaches the
+// user.
 func Execute() {
-	if err := rootCmd.Execute(); err != nil {
-		fmt.Fprintln(os.Stderr, formatCompilerError(err))
-		os.Exit(1)
+	if code := executeRoot(rootCmd); code != 0 {
+		os.Exit(code)
 	}
+}
+
+// executeRoot runs root and maps its outcome to a process exit code without
+// exiting itself, so the exit boundary is testable. A nil error is exit 0. An
+// installed plugin that ran and exited non-zero surfaces as an exitCodeError,
+// whose code is propagated verbatim with no formatted diagnostic — a non-zero
+// command result is the plugin's status, not a host error. Any other error is the
+// single formatted diagnostic to stderr and exit 1; when it is cobra's
+// unknown-command error for a discoverable plugin name, an install hint is
+// appended.
+func executeRoot(root *cobra.Command) int {
+	err := root.Execute()
+	if err == nil {
+		return 0
+	}
+	var ece exitCodeError
+	if errors.As(err, &ece) {
+		return ece.code
+	}
+	fmt.Fprintln(os.Stderr, unknownCommandSuggestion(formatCompilerError(err), err))
+	return 1
 }

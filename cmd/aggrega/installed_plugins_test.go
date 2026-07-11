@@ -1,0 +1,240 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Cognitio S.r.l.
+
+package main
+
+import (
+	"bytes"
+	"context"
+	"strings"
+	"testing"
+
+	"github.com/spf13/cobra"
+)
+
+// fakeDispatcher records the URI and argv of each Run call and returns a
+// preconfigured exit code and error, so a test can assert argument forwarding and
+// exit-code propagation without a real guest.
+type fakeDispatcher struct {
+	gotURI  string
+	gotArgv []string
+	code    int
+	err     error
+	calls   int
+}
+
+func (f *fakeDispatcher) Run(_ context.Context, uri string, argv []string) (int, error) {
+	f.calls++
+	f.gotURI = uri
+	f.gotArgv = argv
+	return f.code, f.err
+}
+
+// withInstalledIndex points the index source at a fixture for the duration of the
+// test and restores it afterward, so no test touches the real cache root.
+func withInstalledIndex(t *testing.T, idx installedPluginIndex) {
+	t.Helper()
+	prev := installedPluginIndexSource
+	installedPluginIndexSource = func() (installedPluginIndex, error) { return idx, nil }
+	t.Cleanup(func() { installedPluginIndexSource = prev })
+}
+
+// withDispatcher swaps in a fake plugin dispatcher for the test.
+func withDispatcher(t *testing.T, d cliPluginDispatcher) {
+	t.Helper()
+	prev := installedPluginRunner
+	installedPluginRunner = d
+	t.Cleanup(func() { installedPluginRunner = prev })
+}
+
+// withRegistrationWarnings captures registration diagnostics for the test.
+func withRegistrationWarnings(t *testing.T) *bytes.Buffer {
+	t.Helper()
+	var buf bytes.Buffer
+	prev := pluginRegistrationWarnWriter
+	pluginRegistrationWarnWriter = &buf
+	t.Cleanup(func() { pluginRegistrationWarnWriter = prev })
+	return &buf
+}
+
+// withDiscoverable swaps the discoverability seam for the test.
+func withDiscoverable(t *testing.T, fn func(string) bool) {
+	t.Helper()
+	prev := pluginDiscoverable
+	pluginDiscoverable = fn
+	t.Cleanup(func() { pluginDiscoverable = prev })
+}
+
+// TestInstalledPlugin_ListedAndDispatched proves an installed plugin appears in
+// the command tree with its cached usage and, when invoked, forwards its argv to
+// the runner and returns exit 0 (no error).
+func TestInstalledPlugin_ListedAndDispatched(t *testing.T) {
+	withRegistrationWarnings(t)
+	withInstalledIndex(t, installedPluginIndex{Plugins: map[string]installedPluginEntry{
+		"moo": {URI: "oci://example/moo:v1", Usage: "make the cow moo"},
+	}})
+	d := &fakeDispatcher{code: 0}
+	withDispatcher(t, d)
+
+	root := newRootCmd()
+
+	// The command is present in the tree with its cached usage as the short help.
+	found := &bytes.Buffer{}
+	root.SetOut(found)
+	root.SetErr(found)
+	root.SetArgs([]string{"--help"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("--help returned error: %v", err)
+	}
+	if !strings.Contains(found.String(), "moo") || !strings.Contains(found.String(), "make the cow moo") {
+		t.Fatalf("--help output does not list the installed plugin:\n%s", found.String())
+	}
+
+	// Dispatching the command forwards argv to the runner and returns exit 0.
+	root2 := newRootCmd()
+	root2.SetOut(&bytes.Buffer{})
+	root2.SetErr(&bytes.Buffer{})
+	root2.SetArgs([]string{"moo", "--loud", "twice"})
+	code := executeRoot(root2)
+	if code != 0 {
+		t.Fatalf("exit code = %d; want 0", code)
+	}
+	if d.calls != 1 {
+		t.Fatalf("runner called %d time(s); want 1", d.calls)
+	}
+	if d.gotURI != "oci://example/moo:v1" {
+		t.Fatalf("runner URI = %q; want the index URI", d.gotURI)
+	}
+	if got, want := strings.Join(d.gotArgv, " "), "--loud twice"; got != want {
+		t.Fatalf("forwarded argv = %q; want %q", got, want)
+	}
+}
+
+// TestInstalledPlugin_BuiltinAndReservedRefused proves a plugin named after a
+// built-in and one on the reserved denylist are both refused registration with an
+// observable diagnostic, and the built-in keeps its own command.
+func TestInstalledPlugin_BuiltinAndReservedRefused(t *testing.T) {
+	warn := withRegistrationWarnings(t)
+	const sentinel = "SHADOW ATTEMPT — should never win"
+	withInstalledIndex(t, installedPluginIndex{Plugins: map[string]installedPluginEntry{
+		"build": {URI: "oci://example/evil-build:v1", Usage: sentinel},
+		"mcp":   {URI: "oci://example/evil-mcp:v1", Usage: sentinel},
+	}})
+	withDispatcher(t, &fakeDispatcher{})
+
+	root := newRootCmd()
+
+	// The built-in "build" survives: its command is present and is NOT the plugin
+	// (its short help is not the fixture sentinel).
+	var build *cobra.Command
+	for _, c := range root.Commands() {
+		if c.Name() == "build" {
+			build = c
+		}
+	}
+	if build == nil {
+		t.Fatalf("built-in build command missing from tree")
+	}
+	if build.Short == sentinel {
+		t.Fatalf("installed plugin shadowed the built-in build command")
+	}
+
+	// The reserved "mcp" name registered nothing.
+	for _, c := range root.Commands() {
+		if c.Name() == "mcp" {
+			t.Fatalf("reserved name mcp was registered as a command")
+		}
+	}
+
+	out := warn.String()
+	if !strings.Contains(out, "build") || !strings.Contains(out, "built-in") {
+		t.Fatalf("no observable diagnostic for the built-in collision:\n%s", out)
+	}
+	if !strings.Contains(out, "mcp") || !strings.Contains(out, "reserved") {
+		t.Fatalf("no observable diagnostic for the reserved-name collision:\n%s", out)
+	}
+}
+
+// TestInstalledPlugin_ExitCodePropagation proves a plugin exit code threads
+// through executeRoot: a non-zero code becomes the process exit code, and zero
+// exits zero.
+func TestInstalledPlugin_ExitCodePropagation(t *testing.T) {
+	withRegistrationWarnings(t)
+	withInstalledIndex(t, installedPluginIndex{Plugins: map[string]installedPluginEntry{
+		"moo": {URI: "oci://example/moo:v1", Usage: "moo"},
+	}})
+
+	for _, tc := range []struct {
+		name string
+		code int
+	}{
+		{"nonzero", 3},
+		{"zero", 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			withDispatcher(t, &fakeDispatcher{code: tc.code})
+			root := newRootCmd()
+			root.SetOut(&bytes.Buffer{})
+			root.SetErr(&bytes.Buffer{})
+			root.SetArgs([]string{"moo"})
+			if got := executeRoot(root); got != tc.code {
+				t.Fatalf("executeRoot exit = %d; want %d", got, tc.code)
+			}
+		})
+	}
+}
+
+// TestUnknownCommand_InstallSuggestion proves the unknown-command boundary appends
+// the install hint only when the name is discoverable, and otherwise leaves
+// cobra's normal error unchanged.
+func TestUnknownCommand_InstallSuggestion(t *testing.T) {
+	withRegistrationWarnings(t)
+	withInstalledIndex(t, installedPluginIndex{})
+	withDispatcher(t, &fakeDispatcher{})
+
+	run := func() string {
+		root := newRootCmd()
+		root.SetOut(&bytes.Buffer{})
+		root.SetErr(&bytes.Buffer{})
+		root.SetArgs([]string{"definitely-not-a-command"})
+		err := root.Execute()
+		if err == nil {
+			t.Fatalf("unknown command returned no error")
+		}
+		return unknownCommandSuggestion(formatCompilerError(err), err)
+	}
+
+	withDiscoverable(t, func(string) bool { return true })
+	withHint := run()
+	if !strings.Contains(withHint, "aggrega plugin install definitely-not-a-command") {
+		t.Fatalf("discoverable unknown command lacks the install hint:\n%s", withHint)
+	}
+
+	withDiscoverable(t, func(string) bool { return false })
+	noHint := run()
+	if strings.Contains(noHint, "plugin install") {
+		t.Fatalf("non-discoverable unknown command should keep cobra's normal error:\n%s", noHint)
+	}
+	if !strings.Contains(noHint, "unknown command") {
+		t.Fatalf("non-discoverable unknown command lost cobra's normal error:\n%s", noHint)
+	}
+}
+
+// TestUnknownCommandName_ParsesOnlyCobraForm proves the extractor matches cobra's
+// unknown-command error precisely and ignores unrelated errors.
+func TestUnknownCommandName_ParsesOnlyCobraForm(t *testing.T) {
+	name, ok := unknownCommandName(errString(`unknown command "moo" for "aggrega"`))
+	if !ok || name != "moo" {
+		t.Fatalf("unknownCommandName = (%q,%v); want (moo,true)", name, ok)
+	}
+	if _, ok := unknownCommandName(errString("some other failure")); ok {
+		t.Fatalf("unknownCommandName matched an unrelated error")
+	}
+	if _, ok := unknownCommandName(nil); ok {
+		t.Fatalf("unknownCommandName matched nil")
+	}
+}
+
+type errString string
+
+func (e errString) Error() string { return string(e) }
