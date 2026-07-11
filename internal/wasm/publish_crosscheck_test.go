@@ -33,7 +33,9 @@ func TestCrossCheckPublishedPlugin_Agrees(t *testing.T) {
 	claim := EntityCapabilityClaim{Exports: []EntityExportClaim{
 		{Name: "step", Operates: operatesPatch, Scope: ScopeOwn},
 	}}
-	if err := CrossCheckPublishedPlugin(context.Background(), "frp/patch:1.0.0", claim, wasmBytes); err != nil {
+	// The frp-step-go guest fits the platform default cap; a zero pages value
+	// applies that default.
+	if err := CrossCheckPublishedPlugin(context.Background(), "frp/patch:1.0.0", claim, wasmBytes, 0); err != nil {
 		t.Fatalf("agreeing claim should pass the publish cross-check; got %v", err)
 	}
 }
@@ -46,7 +48,7 @@ func TestCrossCheckPublishedPlugin_CapabilityMismatch(t *testing.T) {
 	claim := EntityCapabilityClaim{Exports: []EntityExportClaim{
 		{Name: "step", Operates: operatesPatch, Scope: ScopeHost},
 	}}
-	err := CrossCheckPublishedPlugin(context.Background(), "frp/patch:1.0.0", claim, wasmBytes)
+	err := CrossCheckPublishedPlugin(context.Background(), "frp/patch:1.0.0", claim, wasmBytes, 0)
 	if !errors.Is(err, ErrWasmCapabilityMismatch) {
 		t.Fatalf("a disagreeing claim should halt with ErrWasmCapabilityMismatch; got %v", err)
 	}

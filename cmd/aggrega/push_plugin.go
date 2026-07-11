@@ -15,6 +15,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
+	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
@@ -58,10 +59,30 @@ func pushPlugin(out io.Writer, cfg pushConfig, registry string, wantSign bool, n
 	}
 
 	// Publish-time describe()-cross-check: refuse before any bytes land if the
-	// .wasm disagrees with the entity's authored capability claims.
+	// .wasm disagrees with the entity's authored capability claims. The
+	// cross-check loads the guest to invoke describe(); load it under the entity's
+	// declared memory cap so a large guest whose working set exceeds the platform
+	// default still instantiates, falling back to the describe headroom when the
+	// entity declares none.
 	ctx := context.Background()
 	entityIdentity := name + ":" + version
-	if err := wasm.CrossCheckPublishedPlugin(ctx, entityIdentity, entityCapabilityClaim(entity), wasmBytes); err != nil {
+	crossCheckMaxPages := describeMaxMemoryPages
+	if entity.Spec.Runtime != nil && entity.Spec.Runtime.MaxMemoryPages != 0 {
+		crossCheckMaxPages = entity.Spec.Runtime.MaxMemoryPages
+	}
+	// Build the authored capability claim through the resolver's single
+	// entity → neutral → wasm mapping — the exact mapping the load gate
+	// cross-checks against — so the publish and load surfaces can never disagree
+	// on which authored fields (input kinds, boundary assembly, delimiters,
+	// source filter, reusable-instance, cross-boundary-linking) reach the
+	// describe() cross-check. An entity authoring neither exports nor a
+	// capabilities block yields a nil claim, mapped to an empty claim that
+	// cross-checks as a no-op.
+	var capClaim wasm.EntityCapabilityClaim
+	if c := resolver.WasmCapabilityClaim(resolver.PluginCapabilityClaim(entity)); c != nil {
+		capClaim = *c
+	}
+	if err := wasm.CrossCheckPublishedPlugin(ctx, entityIdentity, capClaim, wasmBytes, crossCheckMaxPages); err != nil {
 		return fmt.Errorf("aggrega push: Plugin %s: %w", entityIdentity, err)
 	}
 
@@ -197,58 +218,6 @@ func pushPlugin(out io.Writer, cfg pushConfig, registry string, wantSign bool, n
 		fmt.Fprintf(out, "Signature attached: %s:%s\n", reference, version)
 	}
 	return nil
-}
-
-// entityCapabilityClaim maps a Plugin entity's authored exports into the
-// neutral capability-claim shape internal/wasm cross-checks against the
-// plugin's describe() self-report. The mapping mirrors the load-side claim
-// construction so the publish and load surfaces agree on what an authored
-// export claim is.
-func entityCapabilityClaim(entity types.Plugin) wasm.EntityCapabilityClaim {
-	exports := make([]wasm.EntityExportClaim, 0, len(entity.Spec.Exports))
-	for _, e := range entity.Spec.Exports {
-		exports = append(exports, wasm.EntityExportClaim{
-			Name:     e.Name,
-			Operates: e.Operates,
-			Scope:    e.Scope,
-		})
-	}
-	return wasm.EntityCapabilityClaim{
-		Exports:      exports,
-		Capabilities: entityWasmCapabilities(entity.Spec.Capabilities),
-	}
-}
-
-// entityWasmCapabilities maps a Plugin entity's authored plugin-level
-// capabilities block onto the load gate's cross-check shape, or nil when the
-// entity authors none. It mirrors the load-side capabilities mapping so the
-// publish and load surfaces agree on what an authored capability claim is.
-func entityWasmCapabilities(c *types.PluginCapabilities) *wasm.Capabilities {
-	if c == nil {
-		return nil
-	}
-	caps := &wasm.Capabilities{
-		InputKinds: wasm.InputKinds{
-			Sourced:             c.InputKinds.Sourced,
-			Synthesized:         c.InputKinds.Synthesized,
-			ArtifactsStandalone: c.InputKinds.ArtifactsStandalone,
-		},
-		BoundaryAssembly: c.BoundaryAssembly,
-		SourceFilter:     c.SourceFilter,
-	}
-	if c.ArtifactDelimiters != nil {
-		caps.ArtifactDelimiters = &wasm.ArtifactDelimiters{
-			Left:  c.ArtifactDelimiters.Left,
-			Right: c.ArtifactDelimiters.Right,
-		}
-	}
-	if c.AssemblyNameAnnotation != nil {
-		caps.AssemblyNameAnnotation = &wasm.AssemblyNameAnnotation{
-			Annotation:    c.AssemblyNameAnnotation.Annotation,
-			RequireUnique: c.AssemblyNameAnnotation.RequireUnique,
-		}
-	}
-	return caps
 }
 
 // stampHostFunctions returns the entity YAML with spec.runtime.hostFunctions set

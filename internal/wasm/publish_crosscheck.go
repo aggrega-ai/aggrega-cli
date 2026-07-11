@@ -23,17 +23,25 @@ import "context"
 // descriptor via CrossCheckCapabilities — the same primitive the load gate uses,
 // so the publish and load surfaces share one comparison.
 //
+// maxMemoryPages caps the guest's linear memory for the describe() load. A large
+// guest whose working set exceeds the platform default cap would fail to
+// instantiate under the default; the caller supplies the entity's declared
+// runtime cap (or a describe-time floor when the entity declares none) so the
+// load matches the guest's authored footprint. The cap governs only the load;
+// the capability comparison is independent of it.
+//
 // A disagreement halts with ErrWasmCapabilityMismatch. The plugin is Closed
 // before returning so a rejected publish leaks no instance. entityIdentity names
 // the entity in any rejection message.
-func CrossCheckPublishedPlugin(ctx context.Context, entityIdentity string, claim EntityCapabilityClaim, wasmBytes []byte) error {
+func CrossCheckPublishedPlugin(ctx context.Context, entityIdentity string, claim EntityCapabilityClaim, wasmBytes []byte, maxMemoryPages uint32) error {
 	// Build through the shared constructor so this loader carries the same
 	// process-wide compilation cache every other loader uses, rather than a
 	// bare cache-less loader that would recompile the guest in isolation.
 	loader := NewCachingLoader(nil)
 	plugin, desc, err := loader.LoadAndDescribe(ctx, PluginSpec{
-		Name:  entityIdentity,
-		Bytes: wasmBytes,
+		Name:           entityIdentity,
+		Bytes:          wasmBytes,
+		MaxMemoryPages: maxMemoryPages,
 		// Capability nil: this function owns the cross-check, rather than
 		// running it inside the load gate.
 	})

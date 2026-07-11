@@ -4,6 +4,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"os"
@@ -16,6 +17,7 @@ import (
 	"oras.land/oras-go/v2/content/memory"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
+	"github.com/aggrega-ai/aggrega-cli/internal/wasm/embedded"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
@@ -389,6 +391,222 @@ func TestContentDigestTagPushPullParity(t *testing.T) {
 	tag := oci.ContentDigestTag(contentDigest)
 	if _, err := oci.Pull(ctx, store, tag); err != nil {
 		t.Fatalf("the .wasm is not resolvable under oci.ContentDigestTag(%q)=%q: %v", contentDigest, tag, err)
+	}
+}
+
+// largeGuestBytes returns the decompressed bytes of the largest embedded
+// standard-Go provider guest (the helm provider). Its linear-memory working set
+// exceeds the platform default cap, so it only instantiates for the publish
+// describe()-cross-check when the load honors a raised memory cap. Skips cleanly
+// when the embedded guests are not built into the test binary.
+func largeGuestBytes(t *testing.T) []byte {
+	t.Helper()
+	for _, uri := range embedded.URIs() {
+		if strings.Contains(uri, "helm-provider") {
+			if b, ok := embedded.Lookup(uri); ok {
+				return b
+			}
+		}
+	}
+	t.Skip("embedded helm provider guest not built into the test binary")
+	return nil
+}
+
+// writeLargeGuestPlugin writes the large guest .wasm and a Plugin entity (with
+// the given runtime block) into a fresh tempdir, chdirs into it, and returns the
+// entity path and the .wasm path. The entity's authored claim agrees with the
+// guest's describe() (export render_node, no plugin-level capabilities claim) so
+// the cross-check turns only on whether the guest loads under the resolved cap.
+func writeLargeGuestPlugin(t *testing.T, runtimeBlock string) (entityPath, pluginPath string) {
+	t.Helper()
+	wasmBytes := largeGuestBytes(t)
+	root := t.TempDir()
+	t.Chdir(root)
+	pluginPath = filepath.Join(root, "helm-provider.wasm")
+	if err := os.WriteFile(pluginPath, wasmBytes, 0o644); err != nil {
+		t.Fatalf("write large guest .wasm: %v", err)
+	}
+	entityPath = filepath.Join(root, "helm-plugin.yaml")
+	writeEntityFixture(t, entityPath, `apiVersion: aggrega.ai/v1alpha1
+kind: Plugin
+metadata:
+  name: helm-renderer
+  version: "0.4.1"
+spec:
+  plugin: "oci://hub.aggrega.ai/plugins/core/helm-provider"
+  pluginType: provider
+  abiVersion: v1alpha1
+  targets:
+    - helm
+  exports:
+    - name: render_node
+`+runtimeBlock)
+	return entityPath, pluginPath
+}
+
+// TestPushPluginLargeGuestDryRunUnderDeclaredCap proves the publish
+// describe()-cross-check loads a large standard-Go guest under the entity's
+// declared memory cap, so a dry-run of a guest whose working set exceeds the
+// platform default succeeds instead of failing to instantiate.
+func TestPushPluginLargeGuestDryRunUnderDeclaredCap(t *testing.T) {
+	entityPath, pluginPath := writeLargeGuestPlugin(t, "  runtime:\n    maxMemoryPages: 4096\n")
+
+	var out bytes.Buffer
+	if err := pushRun(pushConfig{
+		EntityPath: entityPath,
+		PluginPath: pluginPath,
+		Registry:   "hub.aggrega.ai",
+		DryRun:     true,
+		Out:        &out,
+	}); err != nil {
+		t.Fatalf("dry-run of a large guest under its declared cap should succeed; got %v", err)
+	}
+	if !strings.Contains(out.String(), "dry-run") {
+		t.Errorf("dry-run output should report the proposed reference; got:\n%s", out.String())
+	}
+}
+
+// TestPushPluginLargeGuestDryRunFallsBackToDescribeFloor proves that when the
+// entity declares no runtime memory cap, the cross-check load falls back to the
+// describe-time headroom rather than the platform default, so a large guest with
+// no authored cap still instantiates for the dry-run.
+func TestPushPluginLargeGuestDryRunFallsBackToDescribeFloor(t *testing.T) {
+	entityPath, pluginPath := writeLargeGuestPlugin(t, "")
+
+	var out bytes.Buffer
+	if err := pushRun(pushConfig{
+		EntityPath: entityPath,
+		PluginPath: pluginPath,
+		Registry:   "hub.aggrega.ai",
+		DryRun:     true,
+		Out:        &out,
+	}); err != nil {
+		t.Fatalf("dry-run of a large guest with no declared cap should fall back to the describe floor and succeed; got %v", err)
+	}
+}
+
+// TestPushPluginLargeGuestDefaultCapInsufficient pins the load-bearing half of
+// the cap threading: a large guest loaded under the platform default cap (the
+// pre-fix behavior) fails to instantiate for the cross-check, and the failure is
+// a load error, not a capability mismatch — proving the guest genuinely needs a
+// raised cap and that the declared cap is honored.
+func TestPushPluginLargeGuestDefaultCapInsufficient(t *testing.T) {
+	entityPath, pluginPath := writeLargeGuestPlugin(t, "  runtime:\n    maxMemoryPages: 1024\n")
+
+	err := pushRun(pushConfig{
+		EntityPath: entityPath,
+		PluginPath: pluginPath,
+		Registry:   "hub.aggrega.ai",
+		DryRun:     true,
+		Out:        &bytes.Buffer{},
+	})
+	if err == nil {
+		t.Fatal("a large guest loaded under the platform default cap should fail to instantiate; got nil")
+	}
+	if errors.Is(err, wasm.ErrWasmCapabilityMismatch) {
+		t.Fatalf("failure should be a load error, not a capability mismatch; got %v", err)
+	}
+}
+
+// writeProviderPluginWithCapabilities writes the embedded helm provider guest and
+// a Plugin entity carrying the given trailing spec block (a plugin-level
+// capabilities block plus a runtime cap) into a fresh tempdir, chdirs into it,
+// and returns the entity and .wasm paths. Unlike writeLargeGuestPlugin, the
+// entity authors a plugin-level capability claim, so a publish exercises the full
+// capabilities cross-check — not only the per-export claim. Skips cleanly when
+// the embedded guests are not built into the test binary.
+func writeProviderPluginWithCapabilities(t *testing.T, specTail string) (entityPath, pluginPath string) {
+	t.Helper()
+	wasmBytes := largeGuestBytes(t)
+	root := t.TempDir()
+	t.Chdir(root)
+	pluginPath = filepath.Join(root, "helm-provider.wasm")
+	if err := os.WriteFile(pluginPath, wasmBytes, 0o644); err != nil {
+		t.Fatalf("write provider guest .wasm: %v", err)
+	}
+	entityPath = filepath.Join(root, "helm-plugin.yaml")
+	writeEntityFixture(t, entityPath, `apiVersion: aggrega.ai/v1alpha1
+kind: Plugin
+metadata:
+  name: helm-renderer
+  version: "0.4.1"
+spec:
+  plugin: "oci://hub.aggrega.ai/plugins/core/helm-provider"
+  pluginType: provider
+  abiVersion: v1alpha1
+  targets:
+    - helm
+  exports:
+    - name: render_node
+`+specTail)
+	return entityPath, pluginPath
+}
+
+// TestPushPluginProviderReusableInstanceCrossCheck proves the publish
+// describe()-cross-check carries the full authored plugin-level capability claim —
+// including reusable_instance — into the comparison. The embedded helm provider
+// self-reports reusable_instance true; a provider entity authoring
+// reusableInstance: true (exactly as the standard helm-renderer entity does) must
+// therefore cross-check clean at publish. A mapping that dropped the field would
+// compare the authored true as false against the guest's true and halt with
+// ErrWasmCapabilityMismatch, blocking publication of every reusable provider.
+func TestPushPluginProviderReusableInstanceCrossCheck(t *testing.T) {
+	entityPath, pluginPath := writeProviderPluginWithCapabilities(t, `  capabilities:
+    inputKinds:
+      sourced: true
+      synthesized: true
+      artifactsStandalone: true
+    boundaryAssembly: none
+    reusableInstance: true
+  runtime:
+    maxMemoryPages: 4096
+`)
+
+	var out bytes.Buffer
+	if err := pushRun(pushConfig{
+		EntityPath: entityPath,
+		PluginPath: pluginPath,
+		Registry:   "hub.aggrega.ai",
+		DryRun:     true,
+		Out:        &out,
+	}); err != nil {
+		t.Fatalf("a provider authoring reusableInstance: true (matching the guest's describe()) should cross-check clean at publish; got %v", err)
+	}
+	if !strings.Contains(out.String(), "dry-run") {
+		t.Errorf("dry-run output should report the proposed reference; got:\n%s", out.String())
+	}
+}
+
+// TestPushPluginProviderReusableInstanceMismatchHalts is the negative control:
+// an entity authoring reusableInstance: false while the guest self-reports true
+// halts with ErrWasmCapabilityMismatch, and the message names the field. It
+// proves the publish cross-check genuinely compares the reusable-instance claim
+// (and so that the mapping carries it), rather than silently ignoring it — the
+// two tests together bracket the field's round-trip through the publish path.
+func TestPushPluginProviderReusableInstanceMismatchHalts(t *testing.T) {
+	entityPath, pluginPath := writeProviderPluginWithCapabilities(t, `  capabilities:
+    inputKinds:
+      sourced: true
+      synthesized: true
+      artifactsStandalone: true
+    boundaryAssembly: none
+    reusableInstance: false
+  runtime:
+    maxMemoryPages: 4096
+`)
+
+	err := pushRun(pushConfig{
+		EntityPath: entityPath,
+		PluginPath: pluginPath,
+		Registry:   "hub.aggrega.ai",
+		DryRun:     true,
+		Out:        &bytes.Buffer{},
+	})
+	if !errors.Is(err, wasm.ErrWasmCapabilityMismatch) {
+		t.Fatalf("want ErrWasmCapabilityMismatch for a reusable-instance disagreement; got %v", err)
+	}
+	if !strings.Contains(err.Error(), "reusable_instance") {
+		t.Errorf("the rejection should name the reusable_instance field; got %v", err)
 	}
 }
 

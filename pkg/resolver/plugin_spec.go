@@ -61,25 +61,40 @@ var provenanceRecorded = &sync.Map{}
 func PluginSpec(name string, resolved pluginpath.ResolvedPlugin) wasm.PluginSpec {
 	recordProvenance(resolved)
 	spec := wasm.PluginSpec{Name: name, Bytes: resolved.Bytes}
-	if resolved.Capability != nil {
-		exports := make([]wasm.EntityExportClaim, 0, len(resolved.Capability.Exports))
-		for _, e := range resolved.Capability.Exports {
-			exports = append(exports, wasm.EntityExportClaim{
-				Name:     e.Name,
-				Operates: e.Operates,
-				Scope:    e.Scope,
-			})
-		}
-		spec.Capability = &wasm.EntityCapabilityClaim{
-			Exports:      exports,
-			Capabilities: wasmCapabilities(resolved.Capability.Capabilities),
-		}
-	}
+	spec.Capability = WasmCapabilityClaim(resolved.Capability)
 	if resolved.Limits != nil {
 		spec.MaxMemoryPages = resolved.Limits.MaxMemoryPages
 		spec.TimeoutMs = resolved.Limits.TimeoutMs
 	}
 	return spec
+}
+
+// WasmCapabilityClaim maps a resolved plugin's neutral capability claim onto the
+// load gate's cross-check shape — the per-export name/operates/scope triples and
+// the plugin-level capabilities block — or nil when the resolution carries none.
+//
+// It is the single home of the neutral-claim → wasm.EntityCapabilityClaim
+// mapping. The load path reaches it through PluginSpec; the publish path calls it
+// directly (fronting it with PluginCapabilityClaim to translate the authored
+// entity). Both surfaces therefore cross-check against a claim built by exactly
+// one mapping, so the set of authored fields carried into the describe()
+// comparison cannot drift between load and publish.
+func WasmCapabilityClaim(claim *pluginpath.PluginCapabilityClaim) *wasm.EntityCapabilityClaim {
+	if claim == nil {
+		return nil
+	}
+	exports := make([]wasm.EntityExportClaim, 0, len(claim.Exports))
+	for _, e := range claim.Exports {
+		exports = append(exports, wasm.EntityExportClaim{
+			Name:     e.Name,
+			Operates: e.Operates,
+			Scope:    e.Scope,
+		})
+	}
+	return &wasm.EntityCapabilityClaim{
+		Exports:      exports,
+		Capabilities: wasmCapabilities(claim.Capabilities),
+	}
 }
 
 // recordProvenance records the resolved guest's content digest against its

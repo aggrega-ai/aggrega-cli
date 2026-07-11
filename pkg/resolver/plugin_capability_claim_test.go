@@ -7,6 +7,7 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
@@ -56,4 +57,48 @@ func TestPluginCapabilityClaim(t *testing.T) {
 			t.Errorf("an entity with no authored exports should yield nil; got %+v", got)
 		}
 	})
+}
+
+// TestWasmCapabilityClaimCarriesEveryCapabilityField pins the single-source
+// entity → neutral → wasm capability mapping the load gate and the publish
+// cross-check both run (PluginCapabilityClaim then WasmCapabilityClaim). Every
+// authored plugin-level capability field must survive both hops; a field dropped
+// on either hop would let an authored claim reach the describe() cross-check
+// understated — the divergence that once compared an authored reusableInstance:
+// true as false and blocked publishing every reusable provider.
+func TestWasmCapabilityClaimCarriesEveryCapabilityField(t *testing.T) {
+	t.Parallel()
+
+	entity := types.Plugin{}
+	entity.Spec.Exports = []types.PluginExport{{Name: "render_node", Operates: "emit", Scope: "own"}}
+	entity.Spec.Capabilities = &types.PluginCapabilities{
+		InputKinds: types.PluginInputKinds{
+			Sourced:             true,
+			Synthesized:         true,
+			ArtifactsStandalone: true,
+		},
+		BoundaryAssembly:       "merge",
+		ArtifactDelimiters:     &types.PluginArtifactDelimiters{Left: "[[", Right: "]]"},
+		SourceFilter:           []string{"values.yaml"},
+		AssemblyNameAnnotation: &types.PluginAssemblyNameAnnotation{Annotation: "aggrega.ai/assembly", RequireUnique: true},
+		ReusableInstance:       true,
+		CrossBoundaryLinking:   true,
+	}
+
+	got := WasmCapabilityClaim(PluginCapabilityClaim(entity))
+	if got == nil || got.Capabilities == nil {
+		t.Fatal("expected a non-nil claim carrying a non-nil capabilities block")
+	}
+	want := &wasm.Capabilities{
+		InputKinds:             wasm.InputKinds{Sourced: true, Synthesized: true, ArtifactsStandalone: true},
+		BoundaryAssembly:       "merge",
+		ArtifactDelimiters:     &wasm.ArtifactDelimiters{Left: "[[", Right: "]]"},
+		SourceFilter:           []string{"values.yaml"},
+		AssemblyNameAnnotation: &wasm.AssemblyNameAnnotation{Annotation: "aggrega.ai/assembly", RequireUnique: true},
+		ReusableInstance:       true,
+		CrossBoundaryLinking:   true,
+	}
+	if !reflect.DeepEqual(got.Capabilities, want) {
+		t.Errorf("mapped capabilities = %+v; want %+v", got.Capabilities, want)
+	}
 }
