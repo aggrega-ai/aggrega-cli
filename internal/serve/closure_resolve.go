@@ -5,34 +5,18 @@ package serve
 
 import (
 	"fmt"
-	"path/filepath"
 	"sort"
 	"strings"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/compilerops"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
-	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
-	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
-	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
-	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
-// resolvedRelease bundles the entities the daemon's pipeline + drift
-// flows need together. Returned by resolveReleaseClosure to keep
-// that function's signature ergonomic (six discrete return values
-// would crowd call sites).
-type resolvedRelease struct {
-	Release       *types.Release
-	Manifest      *types.Manifest
-	Aggregate     *types.Aggregate
-	AggBytes      []byte
-	AggregatePath string
-	Closure       closure.Closure
-}
-
 // resolveReleaseClosure loads the Manifest + Aggregate siblings to
-// the active Release and computes the catalog closure. Used by
-// handleIrGraph (existing pipeline path) AND by the at-startup +
-// per-irGraph drift checks.
+// the active Release and computes the catalog closure via the shared
+// compiler-operations layer, adapting its stage-tagged failure into the
+// daemon's wire envelope. Used by handleIrGraph (existing pipeline path)
+// AND by the at-startup + per-irGraph drift checks.
 //
 // view is the request-scoped catalog lookup the closure walk resolves
 // against — seeded with this request's pins, so a cache-resident entity
@@ -42,86 +26,38 @@ type resolvedRelease struct {
 // consistent pin snapshot. skipContext reads the view's skip record for
 // the same reason.
 //
-// The closure compute uses a hermetic lookup (nil OCIPuller),
-// matching the CLI's verifyLockfileAgainstClosure. Tier-3 (OCI
-// pull) never fires during verification; missing cache entries
-// surface as closure-walk failures rather than out-of-band network
-// fetches.
-//
 // On error returns a populated *jsonRPCError envelope (1004
 // errEntityNotResolvable) so handleIrGraph can forward it via
 // writeErrorEnvelope. The drift-check caller treats a non-nil
 // envelope as a stderr-logged warning and skips drift verification;
 // the next handleIrGraph retries.
 //
-// The four error sites mirror the original handleIrGraph layout:
-// Release/Manifest/Aggregate load failures populate Data.File with
-// the path being loaded; the recipe-catalog resolution failure
-// stays Data-less because the catalog spans multiple source dirs.
-func (s *Server) resolveReleaseClosure(view *catalog.LazyLookup, releasePath string) (*resolvedRelease, *jsonRPCError) {
-	rel, err := resolver.LoadRelease(releasePath)
-	if err != nil {
+// The load-stage failures populate Data.File with the Release path being
+// resolved; the closure-compute failure stays Data-less (the catalog spans
+// multiple source dirs) and is annotated with skipContext so an in-closure
+// entity skipped at the tolerant lazy enumeration is explained rather than a
+// bare "not found".
+func (s *Server) resolveReleaseClosure(view *catalog.LazyLookup, releasePath string) (*compilerops.ResolvedClosure, *jsonRPCError) {
+	resolved, cerr := compilerops.ResolveClosure(compilerops.ClosureInputs{
+		View:            view,
+		ReleasePath:     releasePath,
+		WorkspaceRoot:   s.workspaceRoot,
+		WorkspaceConfig: s.wsConfig,
+	})
+	if cerr != nil {
+		if cerr.Stage == compilerops.ClosureStageComputeClosure {
+			return nil, &jsonRPCError{
+				Code:    errEntityNotResolvable,
+				Message: s.skipContext(view, cerr.Error()),
+			}
+		}
 		return nil, &jsonRPCError{
 			Code:    errEntityNotResolvable,
-			Message: fmt.Sprintf("load release %s: %v", releasePath, err),
+			Message: cerr.Error(),
 			Data:    newErrorData(releasePath, 0, 0),
 		}
 	}
-	releaseDir := filepath.Dir(releasePath)
-	manRes, err := resolver.ResolveManifest(releaseDir, rel.Spec.Manifest)
-	if err != nil {
-		return nil, &jsonRPCError{
-			Code:    errEntityNotResolvable,
-			Message: fmt.Sprintf("load manifest %q: %v", rel.Spec.Manifest, err),
-			Data:    newErrorData(releasePath, 0, 0),
-		}
-	}
-	manifest, err := resolver.ResolveManifestExtends(releaseDir, manRes.Manifest)
-	if err != nil {
-		return nil, &jsonRPCError{
-			Code:    errEntityNotResolvable,
-			Message: fmt.Sprintf("compose manifest %q extends chain: %v", rel.Spec.Manifest, err),
-			Data:    newErrorData(releasePath, 0, 0),
-		}
-	}
-	// The daemon resolves the top-level Aggregate by same-directory scan or
-	// `./`/`../` file (nil catalog tier): an LSP workspace's Release sits beside
-	// its Aggregate, and a catalog-resident top-level Aggregate is not part of
-	// this co-located resolution.
-	aggRes, err := resolver.ResolveAggregate(releaseDir, rel.Spec.Aggregate, nil, nil)
-	if err != nil {
-		return nil, &jsonRPCError{
-			Code:    errEntityNotResolvable,
-			Message: fmt.Sprintf("load aggregate %q: %v", rel.Spec.Aggregate, err),
-			Data:    newErrorData(releasePath, 0, 0),
-		}
-	}
-	aggregate := aggRes.Aggregate
-	aggBytes := aggRes.Bytes
-	externals := lockfile.ExternalEntitiesFromBytes(rel, aggRes.Bytes, manRes.Bytes)
-	cacheDir := s.wsConfig.ResolvedArtifactCacheDir()
-	// Lazy closure walk — no eager whole-catalog load (0090 point-7). The daemon
-	// passes a nil puller (hermetic, Tier-3 disabled), matching the eager path it
-	// replaces; a broken out-of-closure entity is never enumerated-fatal.
-	lookup := view.ClosureLookup(nil, s.workspaceRoot, cacheDir, externals)
-	cl, err := closure.ComputeClosure(rel, manifest, aggregate, s.wsConfig, lookup)
-	if err != nil {
-		// An in-closure entity that was skipped at the tolerant lazy enumeration
-		// surfaces here as an unresolvable URI; skipContext replays WHY it went
-		// missing so the diagnostic is never a bare "not found".
-		return nil, &jsonRPCError{
-			Code:    errEntityNotResolvable,
-			Message: s.skipContext(view, fmt.Sprintf("closure compute: %v", err)),
-		}
-	}
-	return &resolvedRelease{
-		Release:       rel,
-		Manifest:      manifest,
-		Aggregate:     aggregate,
-		AggBytes:      aggBytes,
-		AggregatePath: aggRes.Path,
-		Closure:       cl,
-	}, nil
+	return resolved, nil
 }
 
 // skipContext annotates a closure-level message with the catalog files the lazy

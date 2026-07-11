@@ -12,7 +12,7 @@ import (
 	"go.yaml.in/yaml/v3"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/analyzer"
-	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline"
+	"github.com/aggrega-ai/aggrega-cli/internal/compilerops"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
@@ -107,56 +107,53 @@ func (s *Server) runTier4Validation(ctx context.Context, file string, content []
 	relAggPath := catalog.RelativeToWorkspace(s.workspaceRoot, aggPath)
 	relFile := catalog.RelativeToWorkspace(s.workspaceRoot, file)
 
-	// Closure-scoped extends — the daemon's early-warning extends gate, mirroring
-	// the CLI build's closure-scoped extends resolution. A dangling parent (or a
-	// cycle / malformed chain) on an in-closure Component/Feature surfaces as a
+	// Run the semantic-validation core through the shared compiler-operations
+	// layer (closure-scoped extends gate, closure-scoped schema-pillar gate,
+	// Steps 1-4 pipeline, resolution-completeness findings). The gates read
+	// through the pinned request view so every resolution verifies-on-read
+	// against this Release's pins. The daemon owns the diagnostic MAPPING below;
+	// the shared layer returns the raw outcome in gate order.
+	vr := compilerops.Validate(ctx, compilerops.ValidateInputs{
+		View:            view,
+		Closure:         resolved.Closure,
+		Release:         resolved.Release,
+		Manifest:        resolved.Manifest,
+		AggBytes:        resolved.AggBytes,
+		AggregatePath:   relAggPath,
+		WorkspaceConfig: s.wsConfig,
+		CompilerVersion: s.compilerVersion,
+	})
+
+	// Closure-scoped extends — early-warning extends gate. A dangling parent (or
+	// a cycle / malformed chain) on an in-closure Component/Feature surfaces as a
 	// Tier-D closure-level diagnostic; an out-of-closure broken extends is never
-	// resolved. Reads through the pinned request view so it verifies-on-read.
-	if extErrs := view.ResolveClosureExtends(resolved.Closure); len(extErrs) > 0 {
+	// resolved.
+	if len(vr.ClosureExtendsErrors) > 0 {
 		return []Diagnostic{{
 			Line:     1,
 			Column:   1,
 			Severity: "error",
-			Message:  fmt.Sprintf("Dependencies: catalog extends: %v", extErrs[0]),
+			Message:  fmt.Sprintf("Dependencies: catalog extends: %v", vr.ClosureExtendsErrors[0]),
 		}}
 	}
 
-	// Closure-scoped Pass-2 — the daemon's early-warning schema-pillar gate,
-	// replacing the whole-catalog Pass-2 the eager load used to provide. Reads
-	// through the pinned request view so its resolution verifies-on-read against
-	// this Release's pins (a drifted cache slot is skipped, never self-healed via
-	// Tier-3). Validates ONLY the entities the Release reaches; an in-closure
+	// Closure-scoped Pass-2 — early-warning schema-pillar gate. An in-closure
 	// schema-invalid Component/Feature (or a $ref to a skipped/missing library)
 	// surfaces as a Tier-D closure-level diagnostic, with the skip context
-	// explaining a missing library. A broken out-of-closure entity is never
-	// validated. build remains the authoritative validator.
-	if err := view.ValidateClosureScopedPillars(resolved.Closure); err != nil {
+	// explaining a missing library. build remains the authoritative validator.
+	if vr.PillarError != nil {
 		return []Diagnostic{{
 			Line:     1,
 			Column:   1,
 			Severity: "error",
-			Message:  "Dependencies: " + s.skipContext(view, err.Error()),
+			Message:  "Dependencies: " + s.skipContext(view, vr.PillarError.Error()),
 		}}
 	}
-
-	tier4, runErr := pipeline.RunTier4Pipeline(
-		ctx,
-		pipeline.Inputs{
-			Release:           resolved.Release,
-			Manifest:          resolved.Manifest,
-			AggregateRawBytes: resolved.AggBytes,
-			AggregatePath:     relAggPath,
-			WorkspaceConfig:   s.wsConfig,
-			CompilerVersion:   s.compilerVersion,
-		},
-		view.AsCatalogLookup(),
-		view.SubAggregateLoader(),
-	)
 
 	// Cancellation (shutdown drain) surfaces as a context error from the
 	// pipeline. Return no diagnostics rather than a spurious closure-level
 	// entry; the caller drops the response.
-	if errors.Is(runErr, context.Canceled) || errors.Is(runErr, context.DeadlineExceeded) {
+	if errors.Is(vr.RunErr, context.Canceled) || errors.Is(vr.RunErr, context.DeadlineExceeded) {
 		return nil
 	}
 
@@ -165,6 +162,7 @@ func (s *Server) runTier4Validation(ctx context.Context, file string, content []
 	idx := yamlpos.BuildLineIndexWithEncoding(content, s.positionEncoding())
 
 	var diags []Diagnostic
+	tier4 := vr.Tier4
 
 	// Resolver-class violations (Step 1) — Tier-A position recovery
 	// from the structured ResolveDiagnostics slice. The slice is
@@ -173,14 +171,14 @@ func (s *Server) runTier4Validation(ctx context.Context, file string, content []
 		for _, ve := range tier4.ResolveDiagnostics {
 			diags = append(diags, resolverViolationToDiagnostic(ve, doc, idx))
 		}
-	} else if runErr != nil {
+	} else if vr.RunErr != nil {
 		// Non-resolver pre-analyzer phase error (topology / IR / guards
 		// without per-violation structure). Tier-D fall-back at file:1:1.
 		diags = append(diags, Diagnostic{
 			Line:     1,
 			Column:   1,
 			Severity: "error",
-			Message:  tier4PhaseErrorMessage(runErr),
+			Message:  tier4PhaseErrorMessage(vr.RunErr),
 		})
 	}
 
@@ -193,18 +191,16 @@ func (s *Server) runTier4Validation(ctx context.Context, file string, content []
 	// resolves by spec.implements. serve keeps its resilient no-halt posture
 	// but surfaces each unmapped instance as a diagnostic carrying the
 	// implementing-recipe pin candidates, rather than a silent miss. This runs
-	// the SAME shared producer the CLI build joins into a halt
-	// (catalog.VerifyRecipeResolution), over the complete enumerated recipe set,
-	// so the editor's candidate suggestions match the build's exactly.
-	if tier4 != nil && tier4.IRGraph != nil {
-		for _, ferr := range view.ResolutionFindings(resolved.Manifest, tier4.IRGraph) {
-			diags = append(diags, Diagnostic{
-				Line:     1,
-				Column:   1,
-				Severity: "error",
-				Message:  "Dependencies: " + ferr.Error(),
-			})
-		}
+	// the SAME shared producer the CLI build joins into a halt, over the
+	// complete enumerated recipe set, so the editor's candidate suggestions
+	// match the build's exactly.
+	for _, ferr := range vr.ResolutionFindings {
+		diags = append(diags, Diagnostic{
+			Line:     1,
+			Column:   1,
+			Severity: "error",
+			Message:  "Dependencies: " + ferr.Error(),
+		})
 	}
 
 	return diags

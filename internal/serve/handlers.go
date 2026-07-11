@@ -15,6 +15,7 @@ import (
 	"go.yaml.in/yaml/v3"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline"
+	"github.com/aggrega-ai/aggrega-cli/internal/compilerops"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/yamlpos"
@@ -520,36 +521,27 @@ func (s *Server) handleIrGraph(ctx context.Context, params irGraphParams) (irGra
 	//    Problems-panel signal, not a halt.
 	lf := s.verifyDriftAndPublish(ctx, lockfilePath, resolved.Closure)
 
-	// 5. Recipe + sub-aggregate + mapping-library resolution all come from the
-	//    request view (no eager whole-catalog load): the tolerantly-enumerated
-	//    recipe shell, on par with the Component/Feature cascade already feeding
-	//    AsCatalogLookup. A broken out-of-closure entity never fails this build.
-	aggPath := resolved.AggregatePath
-	result, err := pipeline.RunPipeline(
+	// 5. Build the IR graph through the shared compiler-operations layer. Recipe
+	//    + sub-aggregate + mapping-library resolution all come from the request
+	//    view (no eager whole-catalog load). Resilient inspection: a resolved
+	//    catalog reference momentarily absent from the lazy view (a drifted cache
+	//    slot skipped on read) is a drift signal, not an authoring fault — the
+	//    graph builds with the entity skipped rather than halting, and drift
+	//    surfaces as a Problems-panel diagnostic via the verify step above. The
+	//    render-skip options mean irGraph returns the IR graph even when
+	//    resolution is incomplete; it does not run the render-time
+	//    resolution-completeness halt (that gate is the CLI build's).
+	result, err := compilerops.BuildToBuffer(
 		ctx,
-		pipeline.Inputs{
-			Release:           resolved.Release,
-			Manifest:          resolved.Manifest,
-			AggregateRawBytes: resolved.AggBytes,
-			AggregatePath:     aggPath,
-			WorkspaceConfig:   s.wsConfig,
-			Lockfile:          lf,
-			WorkspaceRoot:     s.workspaceRoot,
-			MappingLibraries:  view.MappingLibraries(),
-			CompilerVersion:   s.compilerVersion,
-			// Resilient inspection: a resolved catalog reference momentarily
-			// absent from the lazy view (a drifted cache slot skipped on read)
-			// is a drift signal, not an authoring fault. Build the graph with
-			// the entity skipped rather than halting; drift already surfaces as
-			// a Problems-panel diagnostic via the verify step above.
+		compilerops.BuildInputs{
+			View:                             view,
+			Resolved:                         resolved,
+			WorkspaceConfig:                  s.wsConfig,
+			WorkspaceRoot:                    s.workspaceRoot,
+			Lockfile:                         lf,
+			CompilerVersion:                  s.compilerVersion,
 			TolerateCatalogViewInconsistency: true,
 		},
-		view.AsCatalogLookup(),
-		view.RecipeLookupWithManifest(resolved.Manifest),
-		view.SubAggregateLoader(),
-		// irGraph is resilient inspection — it returns the IR graph even when
-		// resolution is incomplete, so it does not run the render-time
-		// resolution-completeness halt (that gate is the CLI build's).
 		s.irGraphPipelineOptions(),
 	)
 	if err != nil {
