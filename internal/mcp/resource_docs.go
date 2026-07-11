@@ -65,7 +65,7 @@ func docsResourceTemplates() []resourceTemplate {
 func (s *server) readDocsResource(uri string) (any, *rpcError) {
 	page, ok := bundlePageForURI(uri)
 	if !ok {
-		return nil, &rpcError{Code: codeResourceNotFound, Message: "resource not found: " + uri}
+		return nil, resourceNotFound(uri)
 	}
 	tw, err := s.resolveToolWorkspace("", nil)
 	if err != nil {
@@ -75,7 +75,7 @@ func (s *server) readDocsResource(uri string) (any, *rpcError) {
 	data, mimeType, rerr := docscache.ReadPage(tw.root, tw.cacheDir, ref, version, page)
 	if rerr != nil {
 		if errors.Is(rerr, docscache.ErrFetchNotFound) || errors.Is(rerr, docscache.ErrPageNotFound) {
-			return nil, &rpcError{Code: codeResourceNotFound, Message: "resource not found: " + uri}
+			return nil, resourceNotFound(uri)
 		}
 		return nil, &rpcError{Code: codeInternalError, Message: "read documentation resource: " + rerr.Error()}
 	}

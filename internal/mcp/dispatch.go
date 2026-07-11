@@ -10,10 +10,11 @@ import "encoding/json"
 // load-bearing surface for the server's wire protocol: adding a method
 // means adding a case here.
 //
-// tools/list returns the curated tool set and tools/call runs a named
-// tool; the resource list and read surfaces return well-formed,
-// presently-empty results while their bodies are wired in. An
-// unrecognized method returns the standard method-not-found envelope.
+// tools/list returns the curated tool set and tools/call runs a named tool.
+// The resource surfaces enumerate the fixed schema family and the CLI entry
+// point, advertise the full set of URI templates, and read a resource by URI;
+// the prompt surfaces list and render the authoring personas. An unrecognized
+// method returns the standard method-not-found envelope.
 func (s *server) dispatch(req *rpcRequest) (any, *rpcError) {
 	switch req.Method {
 	case "initialize":
@@ -23,11 +24,13 @@ func (s *server) dispatch(req *rpcRequest) (any, *rpcError) {
 	case "tools/list":
 		return s.handleToolsList()
 	case "resources/list":
-		return listResourcesResult{Resources: []resource{}}, nil
+		return s.handleResourcesList()
 	case "resources/templates/list":
-		return listResourceTemplatesResult{ResourceTemplates: docsResourceTemplates()}, nil
+		return listResourceTemplatesResult{ResourceTemplates: allResourceTemplates()}, nil
 	case "prompts/list":
-		return listPromptsResult{Prompts: []prompt{}}, nil
+		return handlePromptsList()
+	case "prompts/get":
+		return handlePromptsGet(req.Params)
 	case "tools/call":
 		return s.handleToolsCall(req.Params)
 	case "resources/read":
@@ -35,6 +38,35 @@ func (s *server) dispatch(req *rpcRequest) (any, *rpcError) {
 	default:
 		return nil, &rpcError{Code: codeMethodNotFound, Message: "method not found: " + req.Method}
 	}
+}
+
+// allResourceTemplates advertises every URI-template family the read surface
+// resolves: the documentation families (language-reference and authoring
+// guide), the entity-schema family, the catalog-entity family, and the CLI-help
+// family. The order is fixed so the advertised list is byte-stable across runs.
+func allResourceTemplates() []resourceTemplate {
+	out := docsResourceTemplates()
+	out = append(out, schemaResourceTemplate(), catalogResourceTemplate(), cliResourceTemplate())
+	return out
+}
+
+// handleResourcesList enumerates the concrete resources the server serves
+// without a parameter: one entry per addressable entity-schema kind, plus the
+// CLI-help entry point. The documentation and catalog families are templated
+// rather than enumerated — their instance sets are parameterized by page path
+// or resolved workspace — so they appear only in resources/templates/list. The
+// order is deterministic: the schema entries in the schema set's own sorted
+// order, then the CLI entry point.
+func (s *server) handleResourcesList() (any, *rpcError) {
+	out := schemaResourceList()
+	out = append(out, cliRootResource())
+	return listResourcesResult{Resources: out}, nil
+}
+
+// resourceNotFound builds the protocol's resource-not-found envelope for a URI
+// whose scheme is unrecognized or whose target is absent.
+func resourceNotFound(uri string) *rpcError {
+	return &rpcError{Code: codeResourceNotFound, Message: "resource not found: " + uri}
 }
 
 // handleNotification handles a notification for its side effect. A
@@ -94,11 +126,12 @@ func negotiateProtocolVersion(requested string) string {
 }
 
 // handleResourcesRead dispatches a resources/read request. It validates the
-// params and serves the documentation resources — langref:// language-reference
-// pages and authoring:// authoring-guide topics — as inline content read from
-// the local documentation-bundle cache. A missing URI is an invalid-params
-// error; an unrecognised scheme or an absent page is a well-formed
-// resource-not-found error.
+// params and routes by URI scheme: langref:// and authoring:// serve
+// documentation pages from the local bundle cache; schema:// serves an entity's
+// canonical JSON Schema; catalog:// serves a catalog entity's authored YAML from
+// the resolved workspace; cli:// serves a command's help. A missing URI is an
+// invalid-params error; an unrecognised scheme or an absent target is a
+// well-formed resource-not-found error.
 func (s *server) handleResourcesRead(params json.RawMessage) (any, *rpcError) {
 	var p readResourceParams
 	if err := json.Unmarshal(params, &p); err != nil {
@@ -107,5 +140,20 @@ func (s *server) handleResourcesRead(params json.RawMessage) (any, *rpcError) {
 	if p.URI == "" {
 		return nil, &rpcError{Code: codeInvalidParams, Message: "resources/read requires a resource uri"}
 	}
-	return s.readDocsResource(p.URI)
+	scheme, _, ok := splitScheme(p.URI)
+	if !ok {
+		return nil, resourceNotFound(p.URI)
+	}
+	switch scheme {
+	case schemeLangref, schemeAuthoring:
+		return s.readDocsResource(p.URI)
+	case schemeSchema:
+		return readSchemaResource(p.URI)
+	case schemeCatalog:
+		return s.readCatalogResource(p.URI)
+	case schemeCli:
+		return s.readCliResource(p.URI)
+	default:
+		return nil, resourceNotFound(p.URI)
+	}
 }

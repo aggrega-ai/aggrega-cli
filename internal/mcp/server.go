@@ -74,6 +74,12 @@ type server struct {
 	// the running binary's lint subcommand. A test injects a fake that records
 	// the arguments and returns canned output.
 	runLint lintRunner
+
+	// runHelp runs a command's help output for the cli:// resource. Nil
+	// self-execs the running binary with the requested command path and
+	// --help, so the help text has a single home in the command layer. A test
+	// injects a fake that records the arguments and returns canned output.
+	runHelp helpRunner
 }
 
 // Run reads newline-delimited JSON-RPC 2.0 messages from cfg.Stdin,

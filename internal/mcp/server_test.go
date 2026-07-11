@@ -129,18 +129,31 @@ func TestListMethodsReturnWellFormedResults(t *testing.T) {
 			t.Errorf("tool %q input schema type = %v, want object", tool.Name, schema["type"])
 		}
 	}
-	if !bytes.Contains(resps[1].Result, []byte(`"resources":[]`)) {
-		t.Errorf("resources/list result = %s, want empty array", resps[1].Result)
+	// resources/list enumerates the fixed schema family — one concrete resource
+	// per addressable schema kind — plus the CLI-help entry point. It contains at
+	// least the component schema and the CLI root; the documentation and catalog
+	// families are templated rather than enumerated here.
+	var rl listResourcesResult
+	if err := json.Unmarshal(resps[1].Result, &rl); err != nil {
+		t.Fatalf("unmarshal resources/list: %v", err)
 	}
-	// resources/templates/list advertises the documentation resource families —
-	// the langref:// and authoring:// URI templates — while resources/list stays
-	// empty (those resources are templated, not fixed concrete entries).
+	gotResources := map[string]bool{}
+	for _, r := range rl.Resources {
+		gotResources[r.URI] = true
+		if r.Name == "" || r.MimeType == "" {
+			t.Errorf("resource %q missing name or mimeType", r.URI)
+		}
+	}
+	for _, want := range []string{"schema://component", "cli://"} {
+		if !gotResources[want] {
+			t.Errorf("resources/list missing resource %q: %s", want, resps[1].Result)
+		}
+	}
+	// resources/templates/list advertises every URI-template family: the two
+	// documentation families plus the schema, catalog, and CLI families.
 	var rt listResourceTemplatesResult
 	if err := json.Unmarshal(resps[2].Result, &rt); err != nil {
 		t.Fatalf("unmarshal resources/templates/list: %v", err)
-	}
-	if len(rt.ResourceTemplates) != 2 {
-		t.Fatalf("resources/templates/list returned %d templates, want 2: %s", len(rt.ResourceTemplates), resps[2].Result)
 	}
 	gotTemplates := map[string]bool{}
 	for _, tmpl := range rt.ResourceTemplates {
@@ -149,13 +162,27 @@ func TestListMethodsReturnWellFormedResults(t *testing.T) {
 			t.Errorf("resource template %q missing name or description", tmpl.URITemplate)
 		}
 	}
-	for _, want := range []string{"langref://{path}", "authoring://{topic}"} {
+	for _, want := range []string{"langref://{path}", "authoring://{topic}", "schema://{kind}", "catalog://{kind}/{name}", "cli://{command}"} {
 		if !gotTemplates[want] {
 			t.Errorf("resources/templates/list missing template %q: %s", want, resps[2].Result)
 		}
 	}
-	if !bytes.Contains(resps[3].Result, []byte(`"prompts":[]`)) {
-		t.Errorf("prompts/list result = %s, want empty array", resps[3].Result)
+	// prompts/list carries the fixed persona and per-kind authoring set: every
+	// registered prompt, with a name, a non-empty description, and arguments.
+	var pl listPromptsResult
+	if err := json.Unmarshal(resps[3].Result, &pl); err != nil {
+		t.Fatalf("unmarshal prompts/list: %v", err)
+	}
+	if len(pl.Prompts) != len(promptRegistry) {
+		t.Fatalf("prompts/list returned %d prompts, want the registered %d", len(pl.Prompts), len(promptRegistry))
+	}
+	for i, p := range pl.Prompts {
+		if p.Name != promptRegistry[i].name {
+			t.Errorf("prompt[%d] name = %q, want %q (registry order)", i, p.Name, promptRegistry[i].name)
+		}
+		if p.Description == "" {
+			t.Errorf("prompt %q has an empty description", p.Name)
+		}
 	}
 }
 

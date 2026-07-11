@@ -179,6 +179,35 @@ type listPromptsResult struct {
 	Prompts []prompt `json:"prompts"`
 }
 
+// getPromptParams is the prompts/get request params: the prompt to render and
+// the argument values that parameterize it.
+type getPromptParams struct {
+	Name      string            `json:"name"`
+	Arguments map[string]string `json:"arguments,omitempty"`
+}
+
+// promptContent is one content block in a rendered prompt message. Every prompt
+// here emits text blocks whose bodies are pointers into the resource and
+// tool surfaces, so no schema or documentation prose is restated inline.
+type promptContent struct {
+	Type string `json:"type"`
+	Text string `json:"text"`
+}
+
+// promptMessage is one message in a rendered prompt: the role it is spoken in
+// and its content block.
+type promptMessage struct {
+	Role    string        `json:"role"`
+	Content promptContent `json:"content"`
+}
+
+// getPromptResult is the prompts/get result envelope: a short description of the
+// rendered prompt and the ordered messages that seed the authoring conversation.
+type getPromptResult struct {
+	Description string          `json:"description,omitempty"`
+	Messages    []promptMessage `json:"messages"`
+}
+
 // callToolParams is the tools/call request params: the tool to invoke and
 // its arguments.
 type callToolParams struct {
