@@ -375,10 +375,12 @@ const (
 // plugin.
 const providerRenderExportName = "render_node"
 
-// cliRunExportName is the required export name for a CLI plugin — the
+// CLIRunExportName is the required export name for a CLI plugin — the
 // entry point the host dispatches to when an operator invokes the
-// plugin's aggrega <cmd> subcommand.
-const cliRunExportName = "cli_run"
+// plugin's aggrega <cmd> subcommand. It is the single home of the name;
+// the runtime CLI runner references it so the guest export the runner
+// invokes cannot drift from the export the descriptor validator requires.
+const CLIRunExportName = "cli_run"
 
 // BoundaryAssemblyNone, BoundaryAssemblyMerge, and BoundaryAssemblyNest are
 // the three boundary-assembly modes a plugin reports via
@@ -600,26 +602,37 @@ func (d PluginDescriptor) validateMinimumExports(pluginIdentity string) error {
 				pluginIdentity, ValidateExport, ErrWasmManifestRejected)
 		}
 	case PluginTypeCLI:
-		if !d.hasExport(cliRunExportName) {
+		if !d.hasExport(CLIRunExportName) {
 			return fmt.Errorf("cli plugin %q declares no %q export: %w",
-				pluginIdentity, cliRunExportName, ErrWasmManifestRejected)
+				pluginIdentity, CLIRunExportName, ErrWasmManifestRejected)
 		}
 	}
 	return nil
 }
 
 // validateExportHostFunctions checks that every export's declared host
-// functions are a subset of the host-function allowlist, reusing the
-// loader's validateHostFunctionsSubset gate so the describe()-declared
-// host functions are checked against the single allowlist the loader
-// already enforces. The check runs per export so the rejection message
-// names the offending export.
+// functions are a subset of the host-function allowlist for the plugin's
+// profile, reusing the loader's subset gates so the describe()-declared host
+// functions are checked against the same allowlist the loader enforces at load.
+// The check runs per export so the rejection message names the offending export.
+//
+// The allowlist depends on the plugin type: a CLI plugin runs under the runtime
+// terminal profile, so its exports may declare the streaming emitters and are
+// checked against the CLI union gate; every other plugin type runs under the
+// build profile and is checked against the shared gate, which admits neither
+// streaming name. This mirrors the load-time split between Loader.LoadCLI and
+// Loader.Load, so a describe()-declared host function cannot pass the descriptor
+// gate and then fail the derived-import gate (or vice versa).
 func (d PluginDescriptor) validateExportHostFunctions(pluginIdentity string) error {
+	subset := validateHostFunctionsSubset
+	if d.PluginType == PluginTypeCLI {
+		subset = validateHostFunctionsSubsetCLI
+	}
 	for _, export := range d.Exports {
 		if len(export.HostFunctions) == 0 {
 			continue
 		}
-		if err := validateHostFunctionsSubset(fmt.Sprintf("%s/%s", pluginIdentity, export.Name), export.HostFunctions); err != nil {
+		if err := subset(fmt.Sprintf("%s/%s", pluginIdentity, export.Name), export.HostFunctions); err != nil {
 			return err
 		}
 	}

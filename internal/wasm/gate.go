@@ -34,17 +34,41 @@ func (l *Loader) LoadAndDescribe(ctx context.Context, spec PluginSpec) (*Plugin,
 	if err != nil {
 		return nil, PluginDescriptor{}, err
 	}
+	desc, err := l.DescribeAndValidate(ctx, plugin, spec)
+	if err != nil {
+		return nil, PluginDescriptor{}, err
+	}
+	return plugin, desc, nil
+}
 
+// DescribeAndValidate runs the post-load half of the plugin-load gate over an
+// already-loaded plugin: it invokes describe(), validates the returned
+// descriptor, cross-checks the descriptor's declared host functions against the
+// binary's imports, and — when the spec carries an authored capability claim —
+// cross-checks that too. It is the single post-load sequence shared by both load
+// profiles: LoadAndDescribe pairs it with the build-profile Load, and the
+// runtime CLI runner pairs it with the terminal-profile LoadCLI, so
+// describe/validate/cross-check lives in one place rather than being duplicated
+// per profile.
+//
+// The caller supplies a plugin already loaded from spec. On any rejection —
+// describe() call failure, an unparseable descriptor, a descriptor the host
+// refuses, or a host-function/capability cross-check mismatch — the plugin is
+// Closed before the error propagates, so a rejected load leaks no Wazero
+// instance; descriptor-rejection errors wrap [ErrWasmManifestRejected]. On
+// success the live plugin remains open for the caller to invoke through
+// InvokeExport / InvokeExportStatus and Close when done.
+func (l *Loader) DescribeAndValidate(ctx context.Context, plugin *Plugin, spec PluginSpec) (PluginDescriptor, error) {
 	raw, err := plugin.Call(ctx, describeExportName, nil)
 	if err != nil {
 		_ = plugin.Close(ctx)
-		return nil, PluginDescriptor{}, fmt.Errorf("wasm: plugin %q describe(): %w", spec.Name, err)
+		return PluginDescriptor{}, fmt.Errorf("wasm: plugin %q describe(): %w", spec.Name, err)
 	}
 
 	desc, err := parseAndValidateDescriptor(raw, spec.Name)
 	if err != nil {
 		_ = plugin.Close(ctx)
-		return nil, PluginDescriptor{}, err
+		return PluginDescriptor{}, err
 	}
 
 	// The descriptor's declared host_functions is a claim; the .wasm import
@@ -55,7 +79,7 @@ func (l *Loader) LoadAndDescribe(ctx context.Context, spec PluginSpec) (*Plugin,
 	// leaks no instance, matching the descriptor-rejection discipline above.
 	if err := crossCheckHostFunctions(spec.Name, desc, plugin.HostFunctions()); err != nil {
 		_ = plugin.Close(ctx)
-		return nil, PluginDescriptor{}, err
+		return PluginDescriptor{}, err
 	}
 
 	// When the spec carries an authored capability claim (the entity-fronted
@@ -66,14 +90,14 @@ func (l *Loader) LoadAndDescribe(ctx context.Context, spec PluginSpec) (*Plugin,
 	if spec.Capability != nil {
 		if err := CrossCheckCapabilities(spec.Name, *spec.Capability, desc); err != nil {
 			_ = plugin.Close(ctx)
-			return nil, PluginDescriptor{}, err
+			return PluginDescriptor{}, err
 		}
 	}
 
 	if l.OnDescribe != nil {
 		l.OnDescribe(spec.Name)
 	}
-	return plugin, desc, nil
+	return desc, nil
 }
 
 // parseAndValidateDescriptor unmarshals a describe() payload into a
@@ -100,10 +124,46 @@ func parseAndValidateDescriptor(raw []byte, identity string) (PluginDescriptor, 
 // advertised in describe(). A call to an undeclared export is refused
 // before the guest runs, with an error wrapping [ErrWasmManifestRejected]
 // that names the plugin and the missing export.
+//
+// It applies the compile-time exit-code policy through [Plugin.Call]: a
+// non-zero guest exit is a failure wrapping [ErrWasmPluginExited]. The
+// runtime CLI counterpart [InvokeExportStatus] applies the opposite policy.
 func InvokeExport(ctx context.Context, plugin *Plugin, desc PluginDescriptor, export string, payload []byte) ([]byte, error) {
-	if !desc.hasExport(export) {
-		return nil, fmt.Errorf("wasm: plugin %q does not declare export %q in describe(): %w",
-			plugin.Name(), export, ErrWasmManifestRejected)
+	if err := ensureDeclared(plugin, desc, export); err != nil {
+		return nil, err
 	}
 	return plugin.Call(ctx, export, payload)
+}
+
+// InvokeExportStatus calls the named export like [InvokeExport] — same
+// declared-export guard — but returns the guest's exit code as a status value
+// rather than folding a non-zero exit into an error. It is the runtime-CLI
+// counterpart: for a CLI command a non-zero exit code is an ordinary command
+// status (the shell's $?), so the caller reads it as the command's result. Only
+// a real Wasm trap or a recovered guest panic is an error here; a clean exit
+// with any code, including non-zero, is a status.
+//
+// This deliberately DIVERGES from the compile-time policy [Plugin.Call] applies,
+// where any non-zero exit is a build failure wrapping [ErrWasmPluginExited]. The
+// two exit-code policies are a deliberate near-duplicate — a build must treat a
+// plugin's non-zero exit as a halt, a terminal command must surface it as an
+// ordinary status — and must not be unified.
+func InvokeExportStatus(ctx context.Context, plugin *Plugin, desc PluginDescriptor, export string, payload []byte) (uint32, []byte, error) {
+	if err := ensureDeclared(plugin, desc, export); err != nil {
+		return 0, nil, err
+	}
+	return plugin.callRaw(ctx, export, payload)
+}
+
+// ensureDeclared is the shared declared-export guard both InvokeExport and
+// InvokeExportStatus apply before dispatching, so the host only ever invokes a
+// function the guest advertised in describe(). A call to an undeclared export
+// returns an error wrapping [ErrWasmManifestRejected] naming the plugin and the
+// missing export.
+func ensureDeclared(plugin *Plugin, desc PluginDescriptor, export string) error {
+	if !desc.hasExport(export) {
+		return fmt.Errorf("wasm: plugin %q does not declare export %q in describe(): %w",
+			plugin.Name(), export, ErrWasmManifestRejected)
+	}
+	return nil
 }

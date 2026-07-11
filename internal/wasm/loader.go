@@ -859,17 +859,47 @@ func (p *Plugin) Name() string {
 // AOT-purity discipline exit code zero is the only "ran successfully"
 // signal, so any non-zero code is an error the caller surfaces.
 func (p *Plugin) Call(ctx context.Context, funcName string, input []byte) ([]byte, error) {
-	return callWithPanicRecovery(p.name, funcName, func() ([]byte, error) {
-		exitCode, output, err := p.plugin.CallWithContext(ctx, funcName, input)
-		if err != nil {
-			return nil, fmt.Errorf("wasm: plugin %q call to %s: %w", p.name, funcName, err)
+	exitCode, output, err := p.callRaw(ctx, funcName, input)
+	if err != nil {
+		return nil, err
+	}
+	if exitCode != 0 {
+		// Compile-time exit-code policy: exit code zero is the only "ran
+		// successfully" signal, so any non-zero code is a failure the caller
+		// surfaces. The runtime CLI runner deliberately applies the OPPOSITE
+		// policy through InvokeExportStatus — a terminal command's non-zero
+		// exit is an ordinary status, not an error. The two policies are a
+		// deliberate near-duplicate; keep them distinct, do not unify them.
+		return nil, fmt.Errorf("wasm: plugin %q call to %s invoked proc_exit(%d): %w",
+			p.name, funcName, exitCode, ErrWasmPluginExited)
+	}
+	return output, nil
+}
+
+// callRaw invokes funcName on the guest and returns the raw exit code alongside
+// the output, applying NO exit-code policy: a clean non-zero exit is reported
+// through exitCode as a status, never folded into err. err is set only by a real
+// Wasm trap (wrapped, naming the plugin and function) or a recovered guest panic
+// (wrapping [ErrWasmGuestPanic]); on either, exitCode is zero and output nil.
+//
+// It is the shared call core behind both [Plugin.Call] — which layers the
+// compile-time non-zero→error policy on top — and the runtime CLI runner's
+// [InvokeExportStatus] — which reads the exit code as the command's status. One
+// core keeps the trap wrap and the panic-recovery net single-sourced; the two
+// callers differ only in how they treat a clean non-zero exit.
+func (p *Plugin) callRaw(ctx context.Context, funcName string, input []byte) (exitCode uint32, output []byte, err error) {
+	output, err = callWithPanicRecovery(p.name, funcName, func() ([]byte, error) {
+		code, out, e := p.plugin.CallWithContext(ctx, funcName, input)
+		if e != nil {
+			return nil, fmt.Errorf("wasm: plugin %q call to %s: %w", p.name, funcName, e)
 		}
-		if exitCode != 0 {
-			return nil, fmt.Errorf("wasm: plugin %q call to %s invoked proc_exit(%d): %w",
-				p.name, funcName, exitCode, ErrWasmPluginExited)
-		}
-		return output, nil
+		exitCode = code
+		return out, nil
 	})
+	if err != nil {
+		return 0, nil, err
+	}
+	return exitCode, output, nil
 }
 
 // callWithPanicRecovery invokes f and converts any panic into an error

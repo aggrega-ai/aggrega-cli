@@ -259,10 +259,10 @@ func TestPluginDescriptorValidateCLI(t *testing.T) {
 	withRun := PluginDescriptor{
 		ABIVersion: ABIVersionV1Alpha1,
 		PluginType: PluginTypeCLI,
-		Exports:    []PluginExport{{Name: cliRunExportName}},
+		Exports:    []PluginExport{{Name: CLIRunExportName}},
 	}
 	if err := withRun.Validate("acme/cli"); err != nil {
-		t.Fatalf("cli with %q: want accept, got %v", cliRunExportName, err)
+		t.Fatalf("cli with %q: want accept, got %v", CLIRunExportName, err)
 	}
 
 	// The same descriptor without cli_run fails, wrapping ErrWasmManifestRejected.
@@ -272,7 +272,7 @@ func TestPluginDescriptorValidateCLI(t *testing.T) {
 		Exports:    []PluginExport{{Name: "run"}},
 	}
 	if err := withoutRun.Validate("acme/cli"); !errors.Is(err, ErrWasmManifestRejected) {
-		t.Fatalf("cli without %q: want ErrWasmManifestRejected, got %v", cliRunExportName, err)
+		t.Fatalf("cli without %q: want ErrWasmManifestRejected, got %v", CLIRunExportName, err)
 	}
 }
 
@@ -283,7 +283,7 @@ func TestPluginDescriptorPluginLevelDescriptionRoundTrip(t *testing.T) {
 		ABIVersion:  ABIVersionV1Alpha1,
 		PluginType:  PluginTypeCLI,
 		Description: "seeds a new Aggregate scaffold under the current directory",
-		Exports:     []PluginExport{{Name: cliRunExportName}},
+		Exports:     []PluginExport{{Name: CLIRunExportName}},
 	}
 	data, err := json.Marshal(want)
 	if err != nil {
@@ -305,7 +305,7 @@ func TestPluginDescriptorPluginLevelDescriptionRoundTrip(t *testing.T) {
 	none := PluginDescriptor{
 		ABIVersion: ABIVersionV1Alpha1,
 		PluginType: PluginTypeCLI,
-		Exports:    []PluginExport{{Name: cliRunExportName}},
+		Exports:    []PluginExport{{Name: CLIRunExportName}},
 	}
 	noneData, err := json.Marshal(none)
 	if err != nil {
@@ -529,6 +529,49 @@ func TestPluginDescriptorValidateLinkCapability(t *testing.T) {
 				t.Fatalf("want accept, got %v", err)
 			}
 		})
+	}
+}
+
+// TestValidate_StreamingHostFuncs_DescriptorLevelDisjointness locks the
+// plugin-type-aware split in the descriptor host-function gate: the CLI
+// streaming emitters (aggrega_cli_write_stdout / _stderr) are admissible only
+// for the cli plugin type. Every compile-time plugin type runs under the build
+// profile and must reject a descriptor that declares a streaming emitter, exactly
+// as the import-level gate rejects a build-profile guest that imports one; only
+// the cli type, running under the runtime terminal profile, admits it. Both cases
+// go through the real gate, PluginDescriptor.Validate, so the disjointness is
+// proven at the descriptor boundary rather than through a private helper.
+func TestValidate_StreamingHostFuncs_DescriptorLevelDisjointness(t *testing.T) {
+	t.Parallel()
+
+	// A build-profile plugin type (provider) that declares the streaming
+	// emitter is refused: render_node satisfies the minimum-export rule, and a
+	// second export declaring aggrega_cli_write_stdout is checked against the
+	// shared gate, which does not admit the streaming name.
+	nonCLI := PluginDescriptor{
+		ABIVersion: ABIVersionV1Alpha1,
+		PluginType: PluginTypeProvider,
+		Exports: []PluginExport{
+			{Name: "render_node"},
+			{Name: "emit_progress", HostFunctions: []string{"aggrega_cli_write_stdout"}},
+		},
+	}
+	if err := nonCLI.Validate("acme/provider"); !errors.Is(err, ErrWasmManifestRejected) {
+		t.Fatalf("non-cli type declaring a streaming host function: want ErrWasmManifestRejected, got %v", err)
+	}
+
+	// A cli plugin type declaring the same streaming emitter on its cli_run
+	// export is accepted: the cli type routes through the CLI union gate, which
+	// admits the streaming name.
+	cli := PluginDescriptor{
+		ABIVersion: ABIVersionV1Alpha1,
+		PluginType: PluginTypeCLI,
+		Exports: []PluginExport{
+			{Name: CLIRunExportName, HostFunctions: []string{"aggrega_cli_write_stdout"}},
+		},
+	}
+	if err := cli.Validate("acme/cli"); err != nil {
+		t.Fatalf("cli type declaring a streaming host function: want accept, got %v", err)
 	}
 }
 
