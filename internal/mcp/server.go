@@ -35,10 +35,33 @@ type Config struct {
 // every response is framed through, the stderr sink every log line goes
 // to, and the reported build identity. It is constructed once in Run and
 // drives the message loop to stdin EOF.
+//
+// The tool-execution seams carry no session state — each tool call
+// resolves its own workspace and builds its own request-scoped inputs — so
+// they hold only the substitution points a test injects: where workspace
+// resolution starts, how a search-plugin URI resolves to bytes, and how the
+// catalog-generation helper runs. A nil seam selects the production default.
 type server struct {
 	out           io.Writer
 	logw          io.Writer
 	serverVersion string
+
+	// startDir is where workspace resolution begins for a tool call that
+	// supplies no explicit workspace_root. Empty resolves from the process
+	// working directory. A test points it at a fixture workspace.
+	startDir string
+
+	// searchResolve turns a search-plugin URI into its resolved bytes for the
+	// search tool. Nil builds a workspace plugin-path resolver cascade per
+	// call, which resolves offline (no registry puller). A test injects a
+	// fixture seam that hands the guest bytes directly.
+	searchResolve searchResolver
+
+	// runGenCatalog runs the catalog-generation helper for the gen-catalog
+	// tool. Nil self-execs the running binary's catalog-generation subcommand.
+	// A test injects a fake that records the arguments and returns canned
+	// output.
+	runGenCatalog genCatalogRunner
 }
 
 // Run reads newline-delimited JSON-RPC 2.0 messages from cfg.Stdin,

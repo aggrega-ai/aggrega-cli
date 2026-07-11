@@ -1,0 +1,9 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Manifest
+metadata:
+  name: bad-manifest
+  version: "1.0.0"
+spec:
+  mappings:
+    components:
+      type: {}

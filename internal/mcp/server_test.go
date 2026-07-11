@@ -105,16 +105,29 @@ func TestListMethodsReturnWellFormedResults(t *testing.T) {
 			t.Fatalf("list method returned error: %+v", r.Error)
 		}
 	}
-	// Each list result carries a present (possibly-empty) array, not null.
+	// tools/list carries the curated set: every registered tool, with a name,
+	// a non-empty description, and a well-formed JSON Schema for its arguments.
 	var tl listToolsResult
 	if err := json.Unmarshal(resps[0].Result, &tl); err != nil {
 		t.Fatalf("unmarshal tools/list: %v", err)
 	}
-	if tl.Tools == nil {
-		t.Error("tools/list result carries a null tools array, want []")
+	if len(tl.Tools) != len(toolRegistry) {
+		t.Fatalf("tools/list returned %d tools, want the curated %d", len(tl.Tools), len(toolRegistry))
 	}
-	if !bytes.Contains(resps[0].Result, []byte(`"tools":[]`)) {
-		t.Errorf("tools/list result = %s, want empty array", resps[0].Result)
+	for i, tool := range tl.Tools {
+		if tool.Name != toolRegistry[i].name {
+			t.Errorf("tool[%d] name = %q, want %q (registry order)", i, tool.Name, toolRegistry[i].name)
+		}
+		if tool.Description == "" {
+			t.Errorf("tool %q has an empty description", tool.Name)
+		}
+		var schema map[string]any
+		if err := json.Unmarshal(tool.InputSchema, &schema); err != nil {
+			t.Errorf("tool %q input schema is not valid JSON: %v", tool.Name, err)
+		}
+		if schema["type"] != "object" {
+			t.Errorf("tool %q input schema type = %v, want object", tool.Name, schema["type"])
+		}
 	}
 	if !bytes.Contains(resps[1].Result, []byte(`"resources":[]`)) {
 		t.Errorf("resources/list result = %s, want empty array", resps[1].Result)

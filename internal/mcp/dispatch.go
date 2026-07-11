@@ -10,11 +10,10 @@ import "encoding/json"
 // load-bearing surface for the server's wire protocol: adding a method
 // means adding a case here.
 //
-// The list methods return well-formed, presently-empty results; the
-// tools/call and resources/read dispatch surfaces validate their params
-// and return a well-formed error for an unknown target while their bodies
-// are wired in. An unrecognized method returns the standard
-// method-not-found envelope.
+// tools/list returns the curated tool set and tools/call runs a named
+// tool; the resource list and read surfaces return well-formed,
+// presently-empty results while their bodies are wired in. An
+// unrecognized method returns the standard method-not-found envelope.
 func (s *server) dispatch(req *rpcRequest) (any, *rpcError) {
 	switch req.Method {
 	case "initialize":
@@ -22,7 +21,7 @@ func (s *server) dispatch(req *rpcRequest) (any, *rpcError) {
 	case "ping":
 		return struct{}{}, nil
 	case "tools/list":
-		return listToolsResult{Tools: []tool{}}, nil
+		return s.handleToolsList()
 	case "resources/list":
 		return listResourcesResult{Resources: []resource{}}, nil
 	case "resources/templates/list":
@@ -92,21 +91,6 @@ func negotiateProtocolVersion(requested string) string {
 		return requested
 	}
 	return protocolVersion
-}
-
-// handleToolsCall dispatches a tools/call request. It validates the
-// params and reports an unknown tool as a well-formed error while the
-// tool bodies are wired in. A missing tool name is an invalid-params
-// error.
-func (s *server) handleToolsCall(params json.RawMessage) (any, *rpcError) {
-	var p callToolParams
-	if err := json.Unmarshal(params, &p); err != nil {
-		return nil, &rpcError{Code: codeInvalidParams, Message: "invalid tools/call params: " + err.Error()}
-	}
-	if p.Name == "" {
-		return nil, &rpcError{Code: codeInvalidParams, Message: "tools/call requires a tool name"}
-	}
-	return nil, &rpcError{Code: codeInvalidParams, Message: "unknown tool: " + p.Name}
 }
 
 // handleResourcesRead dispatches a resources/read request. It validates

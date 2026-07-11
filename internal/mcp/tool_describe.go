@@ -1,0 +1,210 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Cognitio S.r.l.
+
+package mcp
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"strings"
+
+	"github.com/aggrega-ai/aggrega-cli/internal/compilerops"
+)
+
+// describeArgs is the describe tool's argument shape. Exactly one of name or
+// release selects the subject.
+type describeArgs struct {
+	Name           string   `json:"name"`
+	Release        string   `json:"release"`
+	WorkspaceRoot  string   `json:"workspace_root"`
+	CatalogDirs    []string `json:"catalog_dirs"`
+	ResponseFormat string   `json:"response_format"`
+}
+
+// describeComponentPayload is the structured payload for a catalog entity
+// subject: its kind, its identity, and its resolved definition.
+type describeComponentPayload struct {
+	Kind       string          `json:"kind"`
+	Name       string          `json:"name"`
+	Version    string          `json:"version"`
+	Definition json.RawMessage `json:"definition"`
+}
+
+// describeEntity is one entity in a Release closure summary.
+type describeEntity struct {
+	URI     string `json:"uri"`
+	Version string `json:"version,omitempty"`
+	Kind    string `json:"kind,omitempty"`
+}
+
+// describeReleasePayload is the structured payload for a Release subject: the
+// resolved Release/Manifest/Aggregate identities and the entities its catalog
+// closure reaches.
+type describeReleasePayload struct {
+	Release     string           `json:"release"`
+	Aggregate   string           `json:"aggregate"`
+	Manifest    string           `json:"manifest"`
+	Environment string           `json:"environment"`
+	EntityCount int              `json:"entity_count"`
+	Entities    []describeEntity `json:"entities"`
+}
+
+var describeToolSpec = toolSpec{
+	name: "describe",
+	description: "Describe an Aggrega subject in structured form without rendering. Two modes: pass `name` to resolve a " +
+		"catalog Component or Feature by its type URI and get its fully-resolved definition (schema, uses-schema, provides, " +
+		"labels) with inheritance applied; or pass `release` (a Release path) to get a closure summary — the resolved " +
+		"Aggregate and Manifest identities plus every catalog entity the Release reaches, with resolved versions. Use the " +
+		"name mode to understand a catalog building block before wiring it into an Aggregate, and the release mode to see " +
+		"what a deployment depends on before building it. Optional `workspace_root` and `catalog_dirs` override discovery; " +
+		"`response_format` chooses detailed (full definition / every entity) or concise (identity and counts).",
+	inputSchema: `{
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "A catalog Component or Feature type URI to resolve and describe, e.g. core/compute/api-server. Mutually exclusive with release."
+    },
+    "release": {
+      "type": "string",
+      "description": "A Release path whose catalog closure to summarize. Mutually exclusive with name."
+    },
+    "workspace_root": {
+      "type": "string",
+      "description": "Optional workspace root override. Defaults to discovery from the server's working directory."
+    },
+    "catalog_dirs": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Optional catalog directories, prepended (first-match-wins) to the workspace catalog search stack."
+    },
+    "response_format": {
+      "type": "string",
+      "enum": ["detailed", "concise"],
+      "description": "detailed returns the full definition or every closure entity; concise returns identity and counts. Defaults to detailed."
+    }
+  }
+}`,
+	invoke: describeInvoke,
+}
+
+func describeInvoke(s *server, _ context.Context, args json.RawMessage) (*callToolResult, *rpcError) {
+	var a describeArgs
+	if len(args) > 0 {
+		if err := json.Unmarshal(args, &a); err != nil {
+			return nil, &rpcError{Code: codeInvalidParams, Message: "invalid describe arguments: " + err.Error()}
+		}
+	}
+	name := strings.TrimSpace(a.Name)
+	release := strings.TrimSpace(a.Release)
+	switch {
+	case name != "" && release != "":
+		return nil, &rpcError{Code: codeInvalidParams, Message: "describe takes exactly one of 'name' or 'release', not both"}
+	case name == "" && release == "":
+		return nil, &rpcError{Code: codeInvalidParams, Message: "describe requires either a 'name' (catalog entity) or a 'release' (path)"}
+	case name != "":
+		return s.describeCatalogEntity(a, name)
+	default:
+		return s.describeRelease(a, release)
+	}
+}
+
+// describeCatalogEntity resolves a Component or Feature by its type URI through
+// the request-scoped view — with extends inheritance applied — and returns its
+// fully-resolved definition.
+func (s *server) describeCatalogEntity(a describeArgs, name string) (*callToolResult, *rpcError) {
+	tw, err := s.resolveToolWorkspace(a.WorkspaceRoot, a.CatalogDirs)
+	if err != nil {
+		return errorResult(explainToolError("Could not resolve the workspace for the catalog lookup.", err, "component"))
+	}
+	view := tw.newView(nil)
+
+	if comp, ok := view.Component(name); ok {
+		def, mErr := json.Marshal(comp)
+		if mErr != nil {
+			return nil, &rpcError{Code: codeInternalError, Message: "marshal component: " + mErr.Error()}
+		}
+		payload := describeComponentPayload{Kind: "Component", Name: comp.Metadata.Name, Version: comp.Metadata.Version, Definition: def}
+		return textResult(renderDescribeEntityText(payload, comp.Metadata.Description), payload)
+	}
+	if feat, ok := view.Feature(name); ok {
+		def, mErr := json.Marshal(feat)
+		if mErr != nil {
+			return nil, &rpcError{Code: codeInternalError, Message: "marshal feature: " + mErr.Error()}
+		}
+		payload := describeComponentPayload{Kind: "Feature", Name: feat.Metadata.Name, Version: feat.Metadata.Version, Definition: def}
+		return textResult(renderDescribeEntityText(payload, feat.Metadata.Description), payload)
+	}
+	return errorResult(fmt.Sprintf(
+		"No Component or Feature named %q resolved in the catalog. Check the type URI and that the catalog directories cover it.\n\nSee: %s",
+		name, docPointerFor("component")))
+}
+
+// describeRelease resolves a Release's catalog closure and returns a summary of
+// the entities it reaches.
+func (s *server) describeRelease(a describeArgs, release string) (*callToolResult, *rpcError) {
+	tw, err := s.resolveToolWorkspace(a.WorkspaceRoot, a.CatalogDirs)
+	if err != nil {
+		return errorResult(explainToolError("Could not resolve the workspace for the Release.", err, "release"))
+	}
+	releasePath := tw.absReleasePath(release)
+	lf := loadReleaseLockfile(releasePath)
+	view := tw.newView(lf)
+
+	resolved, cerr := compilerops.ResolveClosure(compilerops.ClosureInputs{
+		View:            view,
+		ReleasePath:     releasePath,
+		WorkspaceRoot:   tw.root,
+		WorkspaceConfig: tw.cfg,
+	})
+	if cerr != nil {
+		return errorResult(explainToolError(
+			"Could not resolve the Release closure to describe it.", cerr, closureStageKind(cerr.Stage)))
+	}
+
+	detail := parseResponseFormat(a.ResponseFormat) == responseFormatDetailed
+	payload := describeReleasePayload{
+		Release:     releasePath,
+		Aggregate:   resolved.Aggregate.Metadata.Name,
+		Manifest:    resolved.Manifest.Metadata.Name,
+		Environment: resolved.Release.Metadata.Environment,
+		EntityCount: len(resolved.Closure.Entities),
+	}
+	if detail {
+		for _, e := range resolved.Closure.Entities {
+			payload.Entities = append(payload.Entities, describeEntity{URI: e.URI, Version: e.ResolvedVersion, Kind: e.KindHint})
+		}
+	}
+	return textResult(renderDescribeReleaseText(payload), payload)
+}
+
+// renderDescribeEntityText renders the human-readable one-line summary of a
+// catalog entity, with its description when it carries one.
+func renderDescribeEntityText(p describeComponentPayload, description string) string {
+	line := fmt.Sprintf("%s %s (version %s)", p.Kind, p.Name, p.Version)
+	if strings.TrimSpace(description) != "" {
+		line += ": " + description
+	}
+	return line
+}
+
+// renderDescribeReleaseText renders the human-readable Release closure summary.
+func renderDescribeReleaseText(p describeReleasePayload) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "Release %s\n", p.Release)
+	fmt.Fprintf(&b, "  aggregate: %s\n", p.Aggregate)
+	fmt.Fprintf(&b, "  manifest: %s\n", p.Manifest)
+	if p.Environment != "" {
+		fmt.Fprintf(&b, "  environment: %s\n", p.Environment)
+	}
+	fmt.Fprintf(&b, "  closure entities: %d\n", p.EntityCount)
+	for _, e := range p.Entities {
+		if e.Version != "" {
+			fmt.Fprintf(&b, "    - %s (%s)\n", e.URI, e.Version)
+		} else {
+			fmt.Fprintf(&b, "    - %s\n", e.URI)
+		}
+	}
+	return strings.TrimRight(b.String(), "\n")
+}
