@@ -38,7 +38,8 @@ type buildResultPayload struct {
 }
 
 var buildToolSpec = toolSpec{
-	name: "build",
+	name:  "build",
+	kinds: []string{"release"},
 	description: "Compile a Release into its rendered deployment artifacts entirely in memory and return them — a " +
 		"preview render that writes nothing to disk. Pass the Release path as `release` (absolute, or relative to the " +
 		"workspace). The tool runs the full compiler pipeline through the provider render step and returns the produced " +

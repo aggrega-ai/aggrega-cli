@@ -1,0 +1,154 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Cognitio S.r.l.
+
+package mcp
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"os"
+	"os/exec"
+	"strings"
+)
+
+// lintRunner runs the lint operation with the supplied argument vector, writing
+// its output to stdout and stderr. It is the seam the lint tool drives: the
+// production value re-invokes the running binary's lint subcommand so the
+// publishing-discipline rule set has a single home, and a test injects a fake
+// that records the arguments.
+type lintRunner func(ctx context.Context, args []string, stdout, stderr io.Writer) error
+
+// lintArgs is the lint tool's argument shape. Exactly one of entity or release
+// selects the subject.
+type lintArgs struct {
+	Entity        string `json:"entity"`
+	Release       string `json:"release"`
+	PrePublish    bool   `json:"pre_publish"`
+	Plugin        string `json:"plugin"`
+	WorkspaceRoot string `json:"workspace_root"`
+}
+
+// lintResultPayload is the lint tool's structured payload: the operation's
+// combined output — the success summary plus any advisory findings.
+type lintResultPayload struct {
+	Output string `json:"output"`
+}
+
+var lintToolSpec = toolSpec{
+	name:  "lint",
+	kinds: []string{"aggregate", "component", "feature", "featurerecipe", "manifest", "mappinglibrary", "plugin", "recipe", "release", "schemalibrary"},
+	description: "Run the publishing-discipline linter over a catalog entity, or validate a Release's resolved " +
+		"dependency closure, driving the compiler's own lint operation. Two modes: pass `entity` (a catalog entity YAML " +
+		"path) to run the publishing rules — naming shape, category-matches-directory, monotonic narrowing on extend, " +
+		"annotation-prefix discipline, and the like — which report at warning severity over local content without " +
+		"consulting any registry; or pass `release` (a Release YAML path) to validate every catalog entity the Release " +
+		"reaches against its composed schemas. With `pre_publish` (entity mode only) the previous published version is " +
+		"fetched and the proposed version bump is verified against the schema-evolution classification, halting on a " +
+		"mismatch. `plugin` overrides the workspace-configured linter artifact with a filesystem path. The operation is " +
+		"offline-first: a missing artifact fails loudly rather than reaching for a network. Use it before publishing an " +
+		"entity, or to check a whole Release's dependencies in one pass.",
+	inputSchema: `{
+  "type": "object",
+  "properties": {
+    "entity": {
+      "type": "string",
+      "description": "Path to a catalog entity YAML to lint against the publishing-discipline rules. Mutually exclusive with release."
+    },
+    "release": {
+      "type": "string",
+      "description": "Path to a Release YAML to validate over its resolved dependency closure. Mutually exclusive with entity."
+    },
+    "pre_publish": {
+      "type": "boolean",
+      "description": "Fetch the previous published version and verify the proposed version bump against the schema-evolution classification. Only meaningful in entity mode."
+    },
+    "plugin": {
+      "type": "string",
+      "description": "Filesystem path to the publishing-linter .wasm artifact, overriding the workspace-configured linter plugin. Only meaningful in entity mode."
+    },
+    "workspace_root": {
+      "type": "string",
+      "description": "Optional workspace root override. Defaults to discovery from the server's working directory."
+    }
+  }
+}`,
+	invoke: lintInvoke,
+}
+
+func lintInvoke(s *server, ctx context.Context, args json.RawMessage) (*callToolResult, *rpcError) {
+	var a lintArgs
+	if len(args) > 0 {
+		if err := json.Unmarshal(args, &a); err != nil {
+			return nil, &rpcError{Code: codeInvalidParams, Message: "invalid lint arguments: " + err.Error()}
+		}
+	}
+	entity := strings.TrimSpace(a.Entity)
+	release := strings.TrimSpace(a.Release)
+	switch {
+	case entity != "" && release != "":
+		return nil, &rpcError{Code: codeInvalidParams, Message: "lint takes exactly one of 'entity' or 'release', not both"}
+	case entity == "" && release == "":
+		return nil, &rpcError{Code: codeInvalidParams, Message: "lint requires either an 'entity' (catalog entity path) or a 'release' (Release path)"}
+	}
+
+	argv := []string{"lint"}
+	if root := strings.TrimSpace(a.WorkspaceRoot); root != "" {
+		argv = append(argv, "--workspace-root", root)
+	}
+	kind := ""
+	if release != "" {
+		argv = append(argv, "--release", release)
+		kind = "release"
+	} else {
+		argv = append(argv, entity)
+		if a.PrePublish {
+			argv = append(argv, "--pre-publish")
+		}
+		if p := strings.TrimSpace(a.Plugin); p != "" {
+			argv = append(argv, "--plugin", p)
+		}
+	}
+
+	run := s.runLint
+	if run == nil {
+		run = selfExecLint
+	}
+	var stdout, stderr bytes.Buffer
+	if err := run(ctx, argv, &stdout, &stderr); err != nil {
+		detail := strings.TrimSpace(stderr.String())
+		if detail == "" {
+			detail = err.Error()
+		}
+		return errorResult(explainToolError("Lint reported findings that halt publication.", fmt.Errorf("%s", detail), kind))
+	}
+
+	// The success summary lands on stdout; advisory findings (warnings) land on
+	// stderr even on a clean pass, so both are surfaced.
+	out := strings.TrimRight(stdout.String(), "\n")
+	if advisories := strings.TrimSpace(stderr.String()); advisories != "" {
+		if out != "" {
+			out += "\n\n"
+		}
+		out += "Advisories:\n" + advisories
+	}
+	return textResult(out, lintResultPayload{Output: stdout.String() + stderr.String()})
+}
+
+// selfExecLint runs the lint operation by re-invoking the running binary's lint
+// subcommand as a subprocess, so the publishing-discipline rule set keeps its
+// single home in the command layer rather than being duplicated here. The
+// subprocess inherits the current working directory, which grounds workspace
+// discovery when no workspace_root override is supplied.
+func selfExecLint(ctx context.Context, args []string, stdout, stderr io.Writer) error {
+	self, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("locate running binary for lint: %w", err)
+	}
+	cmd := exec.CommandContext(ctx, self, args...)
+	cmd.Stdout = stdout
+	cmd.Stderr = stderr
+	return cmd.Run()
+}

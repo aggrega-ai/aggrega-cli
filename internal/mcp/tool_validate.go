@@ -31,7 +31,8 @@ type validateResultPayload struct {
 }
 
 var validateToolSpec = toolSpec{
-	name: "validate",
+	name:  "validate",
+	kinds: []string{"release"},
 	description: "Run the compiler's semantic-validation pipeline over a Release and report its diagnostics without " +
 		"rendering or writing anything. Pass the Release path as `release` (absolute, or relative to the workspace). " +
 		"The tool resolves the Release's Manifest and Aggregate, computes the catalog closure, and runs the closure-scoped " +

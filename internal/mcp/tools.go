@@ -9,31 +9,54 @@ import (
 	"strings"
 )
 
-// toolSpec is one curated tool the server always advertises: its name, the
-// rich natural-language description the client shows an assistant, the JSON
-// Schema for its arguments, and the handler that runs it. The registry order is
-// the advertised order, so tools/list is byte-stable across runs.
+// toolSpec is one tool the server can run: its name, the rich natural-language
+// description the client shows an assistant, the JSON Schema for its arguments,
+// and the handler that runs it. A spec lives in one of two registries — the
+// curated set advertised in every tools/list, or the deferred set surfaced only
+// on demand through the capability tool — but both are invocable by name through
+// the same dispatch. The registry order is the advertised order, so tools/list
+// is byte-stable across runs.
+//
+// kinds records the entity kinds a tool serves, so the capability tool can
+// narrow the long tail to the kind an author is working on. An empty kinds is
+// kind-agnostic: the tool serves every entity kind (schema, scaffold, and
+// diagnostic helpers are the natural agnostic tools). The field is exposure
+// metadata only; it never changes what a tool does or returns.
 type toolSpec struct {
 	name        string
 	description string
 	inputSchema string
+	kinds       []string
 	invoke      func(s *server, ctx context.Context, args json.RawMessage) (*callToolResult, *rpcError)
 }
 
 // toolRegistry is the curated, always-loaded tool set the authoring loop lives
 // in. Every tool wraps an existing single-sourced surface — the shared
 // compiler-operations layer, the embedded schema set, the catalog resolver, or
-// the search socket — and none reimplements it. The order is fixed so the
-// advertised list and its wire bytes are deterministic.
-var toolRegistry = []toolSpec{
-	validateToolSpec,
-	buildToolSpec,
-	describeToolSpec,
-	getSchemaToolSpec,
-	searchToolSpec,
-	explainErrorToolSpec,
-	scaffoldToolSpec,
-	genCatalogToolSpec,
+// the search socket — and none reimplements it. The capability tool is the one
+// meta entry: it surfaces the deferred long tail on demand so the default set
+// stays small. The order is fixed so the advertised list and its wire bytes are
+// deterministic.
+//
+// It is assembled in init rather than a package-level literal because the
+// capability tool's handler reads this very registry to surface the working set
+// for a kind; a literal would close a self-reference the initializer analysis
+// rejects, so the assignment is deferred to init where that reference is a
+// runtime read.
+var toolRegistry []toolSpec
+
+func init() {
+	toolRegistry = []toolSpec{
+		validateToolSpec,
+		buildToolSpec,
+		describeToolSpec,
+		getSchemaToolSpec,
+		searchToolSpec,
+		explainErrorToolSpec,
+		scaffoldToolSpec,
+		genCatalogToolSpec,
+		describeCapabilitiesToolSpec,
+	}
 }
 
 // toolTextContent is one text block in a tool result's content array. The
@@ -130,12 +153,29 @@ func (s *server) handleToolsCall(params json.RawMessage) (any, *rpcError) {
 	if p.Name == "" {
 		return nil, &rpcError{Code: codeInvalidParams, Message: "tools/call requires a tool name; available tools: " + toolNames()}
 	}
+	if spec, ok := lookupTool(p.Name); ok {
+		return spec.invoke(s, context.Background(), p.Arguments)
+	}
+	return nil, &rpcError{Code: codeInvalidParams, Message: "unknown tool: " + p.Name +
+		"; available tools: " + toolNames() +
+		"; call " + describeCapabilitiesName + " to discover additional capabilities"}
+}
+
+// lookupTool resolves a tool by name across the curated set and the deferred
+// set, so a deferred tool a client discovered through the capability tool is
+// invocable by the same tools/call path as a curated one.
+func lookupTool(name string) (*toolSpec, bool) {
 	for i := range toolRegistry {
-		if toolRegistry[i].name == p.Name {
-			return toolRegistry[i].invoke(s, context.Background(), p.Arguments)
+		if toolRegistry[i].name == name {
+			return &toolRegistry[i], true
 		}
 	}
-	return nil, &rpcError{Code: codeInvalidParams, Message: "unknown tool: " + p.Name + "; available tools: " + toolNames()}
+	for i := range deferredToolRegistry {
+		if deferredToolRegistry[i].name == name {
+			return &deferredToolRegistry[i], true
+		}
+	}
+	return nil, false
 }
 
 // toolNames renders the curated tool names as a comma-separated list for an

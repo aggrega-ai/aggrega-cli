@@ -62,6 +62,11 @@ type server struct {
 	// A test injects a fake that records the arguments and returns canned
 	// output.
 	runGenCatalog genCatalogRunner
+
+	// runLint runs the lint helper for the deferred lint tool. Nil self-execs
+	// the running binary's lint subcommand. A test injects a fake that records
+	// the arguments and returns canned output.
+	runLint lintRunner
 }
 
 // Run reads newline-delimited JSON-RPC 2.0 messages from cfg.Stdin,
