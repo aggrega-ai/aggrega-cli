@@ -94,6 +94,25 @@ func generateDefsRust(t codecTarget) ([]byte, error) {
 		body.WriteString("    *v == T::default()\n")
 		body.WriteString("}\n\n")
 	}
+	// serialize_f64 renders an integer-valued finite f64 within i64 range as a
+	// bare integer (serialize_i64), so the wire matches the Go and TS codecs
+	// byte-for-byte; every other value (fractional, or out of i64 range) falls
+	// through to the default f64 serialization, which already matches. Emitted
+	// only when a field references it.
+	if strings.Contains(structSrc, "serialize_f64") {
+		body.WriteString(`fn serialize_f64<S>(v: &f64, s: S) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    if v.is_finite() && v.fract() == 0.0 && *v >= i64::MIN as f64 && *v <= i64::MAX as f64 {
+        s.serialize_i64(*v as i64)
+    } else {
+        s.serialize_f64(*v)
+    }
+}
+
+`)
+	}
 	body.WriteString(structSrc)
 
 	return []byte(body.String()), nil
@@ -210,6 +229,15 @@ func rustSerdeAttrs(f codecField, rustTy string, renamed bool, defaultableTypes 
 		} else if defaultableTypes[rustTy] {
 			inner = append(inner, "default")
 		}
+	}
+	// An f64 field carries a canonical serializer so an integer-valued finite
+	// f64 emits as a bare integer (e.g. 1, not 1.0), matching the Go and TS
+	// codecs byte-for-byte. Applied to both required and non-required f64 fields
+	// (hence before the empty-inner early return), so a required f64 gains the
+	// attribute on its own and a non-required f64 gains it alongside its
+	// default/skip pair.
+	if rustTy == "f64" {
+		inner = append(inner, `serialize_with = "serialize_f64"`)
 	}
 	if len(inner) == 0 {
 		return nil
