@@ -15,13 +15,11 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
-	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pullverify"
 	"github.com/aggrega-ai/aggrega-cli/pkg/registryhost"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
-	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
@@ -236,16 +234,10 @@ func recordInstalledPlugin(cmdName string, src resolvedInstallable, desc wasm.Pl
 // verified against the registry's trust policy.
 func productionInstallPluginFetch(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, ref string) (resolvedInstallable, error) {
 	var wsCfg workspaceconfig.Config
-	sidecarDir := ""
-	var pluginByURI func(string) (types.Plugin, bool)
 	if rw != nil {
 		wsCfg = rw.Config()
-		sidecarDir = wsCfg.PluginSidecarDir
-		dirs := resolveCatalogDirs(nil, wsCfg, rw.Root())
-		lazyView := catalog.NewLazyLookup(rw.Root(), wsCfg.ResolvedArtifactCacheDir(), dirs, nil)
-		pluginByURI = lazyView.PluginByURI
 	}
-	resolved, err := resolvePluginURI(ref, sidecarDir, pluginByURI)
+	resolved, err := workspacePluginResolver(rw)(ref)
 	if err != nil {
 		return resolvedInstallable{}, err
 	}

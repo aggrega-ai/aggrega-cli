@@ -13,7 +13,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/cliplugin"
-	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
+	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
 // cliPluginDispatcher runs an installed CLI plugin identified by its artifact
@@ -25,12 +25,15 @@ type cliPluginDispatcher interface {
 	Run(ctx context.Context, uri string, argv []string) (int, error)
 }
 
-// installedPluginRunner dispatches an installed CLI plugin command to its guest.
-// The production value resolves the plugin URI through the standard plugin
-// cascade and runs it under the runtime CLI profile. It is a package-level seam
-// so a test can substitute a fake dispatcher.
-var installedPluginRunner cliPluginDispatcher = cliplugin.Runner{
-	Resolve: pluginpath.Resolver{}.Resolve,
+// installedPluginRunnerFor builds the dispatcher that runs an installed CLI
+// plugin command for a resolved workspace. The production value resolves the
+// plugin URI through the same workspace-derived cascade the install path uses —
+// the sidecar directory, the catalog entity view, and the shared compilation
+// cache — so any URI an install accepts is resolvable at run time. It is a
+// package-level seam so a test can substitute a fake dispatcher that records the
+// argument vector without a real guest or workspace.
+var installedPluginRunnerFor = func(rw *workspaceconfig.ResolvedWorkspace) cliPluginDispatcher {
+	return cliplugin.Runner{Resolve: workspacePluginResolver(rw)}
 }
 
 // installedPluginIndexSource yields the installed-CLI-plugin index used to
@@ -119,7 +122,11 @@ func newInstalledPluginCmd(name string, entry installedPluginEntry) *cobra.Comma
 		Short:              entry.Usage,
 		DisableFlagParsing: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			code, err := installedPluginRunner.Run(cmd.Context(), entry.URI, args)
+			rw, err := workspaceFromContext(cmd.Context())
+			if err != nil {
+				return err
+			}
+			code, err := installedPluginRunnerFor(rw).Run(cmd.Context(), entry.URI, args)
 			if err != nil {
 				return err
 			}

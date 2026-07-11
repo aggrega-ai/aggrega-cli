@@ -118,15 +118,10 @@ type pluginListEntry struct {
 // configured group is simply empty and the embedded built-ins still list.
 func pluginListRun(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, w io.Writer) error {
 	var wsCfg workspaceconfig.Config
-	var pluginByURI func(uri string) (types.Plugin, bool)
-	sidecarDir := ""
 	if rw != nil {
 		wsCfg = rw.Config()
-		sidecarDir = wsCfg.PluginSidecarDir
-		dirs := resolveCatalogDirs(nil, wsCfg, rw.Root())
-		lazyView := catalog.NewLazyLookup(rw.Root(), wsCfg.ResolvedArtifactCacheDir(), dirs, nil)
-		pluginByURI = lazyView.PluginByURI
 	}
+	sidecarDir, pluginByURI := workspacePluginResolutionInputs(rw)
 
 	embeddedSet := map[string]bool{}
 	var embeddedEntries []pluginListEntry
@@ -269,6 +264,35 @@ func resolvePluginURI(uri, sidecarDir string, pluginByURI func(string) (types.Pl
 		}
 	}
 	return cascade.Resolve(uri)
+}
+
+// workspacePluginResolutionInputs derives the plugin-resolution inputs from a
+// resolved workspace: the sidecar plugin directory and the catalog Plugin-by-URI
+// entity view. A nil workspace yields empty inputs — the bare cascade that serves
+// only embedded built-ins and direct local or absolute artifact paths. The
+// install path, the listing, and the runtime plugin runner all build their
+// resolver from these same inputs, so a URI one path accepts every other path
+// resolves identically.
+func workspacePluginResolutionInputs(rw *workspaceconfig.ResolvedWorkspace) (sidecarDir string, pluginByURI func(string) (types.Plugin, bool)) {
+	if rw == nil {
+		return "", nil
+	}
+	wsCfg := rw.Config()
+	dirs := resolveCatalogDirs(nil, wsCfg, rw.Root())
+	lazyView := catalog.NewLazyLookup(rw.Root(), wsCfg.ResolvedArtifactCacheDir(), dirs, nil)
+	return wsCfg.PluginSidecarDir, lazyView.PluginByURI
+}
+
+// workspacePluginResolver binds a resolved workspace's plugin-resolution inputs
+// into a single Lookup, so the runtime runner and the install path turn a plugin
+// URI into bytes through the identical cascade. A URI that install accepts is
+// therefore resolvable at run time; the two never diverge because they share this
+// one construction.
+func workspacePluginResolver(rw *workspaceconfig.ResolvedWorkspace) pluginpath.Lookup {
+	sidecarDir, pluginByURI := workspacePluginResolutionInputs(rw)
+	return func(uri string) (pluginpath.ResolvedPlugin, error) {
+		return resolvePluginURI(uri, sidecarDir, pluginByURI)
+	}
 }
 
 // pluginDiagName derives a short diagnostic name for a plugin URI — the final

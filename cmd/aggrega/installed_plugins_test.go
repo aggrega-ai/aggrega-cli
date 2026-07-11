@@ -10,6 +10,8 @@ import (
 	"testing"
 
 	"github.com/spf13/cobra"
+
+	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
 // fakeDispatcher records the URI and argv of each Run call and returns a
@@ -39,12 +41,13 @@ func withInstalledIndex(t *testing.T, idx installedPluginIndex) {
 	t.Cleanup(func() { installedPluginIndexSource = prev })
 }
 
-// withDispatcher swaps in a fake plugin dispatcher for the test.
+// withDispatcher swaps in a fake plugin dispatcher for the test, regardless of
+// the workspace the runtime path would otherwise derive its resolver from.
 func withDispatcher(t *testing.T, d cliPluginDispatcher) {
 	t.Helper()
-	prev := installedPluginRunner
-	installedPluginRunner = d
-	t.Cleanup(func() { installedPluginRunner = prev })
+	prev := installedPluginRunnerFor
+	installedPluginRunnerFor = func(*workspaceconfig.ResolvedWorkspace) cliPluginDispatcher { return d }
+	t.Cleanup(func() { installedPluginRunnerFor = prev })
 }
 
 // withRegistrationWarnings captures registration diagnostics for the test.
