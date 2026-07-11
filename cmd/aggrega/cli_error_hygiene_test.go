@@ -163,6 +163,10 @@ func TestCLIErrorHygiene_AllRunECommandsCovered(t *testing.T) {
 	// has no hermetic runtime-error invocation to drive here; the centralized
 	// wrap it carries is the same one proven against the login error path above.
 	covered["logout"] = true
+	// mcp reads its stdin to EOF and returns on a clean close — a no-error
+	// success path (like version) with no Usage to leak, so it carries the
+	// centralized wrap harmlessly and is exempt from the runtime-error table.
+	covered["mcp"] = true
 
 	for _, c := range newRootCmd().Commands() {
 		if c.RunE == nil {

@@ -171,7 +171,7 @@ func TestPluginInstall_CollisionAndTypeGuards(t *testing.T) {
 		{"not a CLI plugin", wasm.PluginDescriptor{ABIVersion: wasm.ABIVersionV1Alpha1, PluginType: wasm.PluginTypeProvider}, "not a CLI plugin"},
 		{"no command name", cliDesc("", "help"), "declares no command name"},
 		{"built-in collision", cliDesc("build", "help"), "built-in command"},
-		{"reserved collision", cliDesc("mcp", "help"), "reserved command name"},
+		{"reserved collision", cliDesc("deploy", "help"), "reserved command name"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

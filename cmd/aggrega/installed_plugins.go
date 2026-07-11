@@ -67,7 +67,6 @@ var reservedCommandNames = map[string]bool{
 	"validate": true,
 	"plugin":   true,
 	"cache":    true,
-	"mcp":      true,
 }
 
 // registerInstalledCLIPlugins adds one top-level command per installed CLI plugin

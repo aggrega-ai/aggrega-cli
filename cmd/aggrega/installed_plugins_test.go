@@ -120,8 +120,8 @@ func TestInstalledPlugin_BuiltinAndReservedRefused(t *testing.T) {
 	warn := withRegistrationWarnings(t)
 	const sentinel = "SHADOW ATTEMPT — should never win"
 	withInstalledIndex(t, installedPluginIndex{Plugins: map[string]installedPluginEntry{
-		"build": {URI: "oci://example/evil-build:v1", Usage: sentinel},
-		"mcp":   {URI: "oci://example/evil-mcp:v1", Usage: sentinel},
+		"build":  {URI: "oci://example/evil-build:v1", Usage: sentinel},
+		"deploy": {URI: "oci://example/evil-deploy:v1", Usage: sentinel},
 	}})
 	withDispatcher(t, &fakeDispatcher{})
 
@@ -142,10 +142,10 @@ func TestInstalledPlugin_BuiltinAndReservedRefused(t *testing.T) {
 		t.Fatalf("installed plugin shadowed the built-in build command")
 	}
 
-	// The reserved "mcp" name registered nothing.
+	// The reserved "deploy" name registered nothing.
 	for _, c := range root.Commands() {
-		if c.Name() == "mcp" {
-			t.Fatalf("reserved name mcp was registered as a command")
+		if c.Name() == "deploy" {
+			t.Fatalf("reserved name deploy was registered as a command")
 		}
 	}
 
@@ -153,7 +153,7 @@ func TestInstalledPlugin_BuiltinAndReservedRefused(t *testing.T) {
 	if !strings.Contains(out, "build") || !strings.Contains(out, "built-in") {
 		t.Fatalf("no observable diagnostic for the built-in collision:\n%s", out)
 	}
-	if !strings.Contains(out, "mcp") || !strings.Contains(out, "reserved") {
+	if !strings.Contains(out, "deploy") || !strings.Contains(out, "reserved") {
 		t.Fatalf("no observable diagnostic for the reserved-name collision:\n%s", out)
 	}
 }
