@@ -54,11 +54,15 @@ import (
 	"crypto/rand"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/wasm/attribindex"
 	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
 	extism "github.com/extism/go-sdk"
 	"github.com/tetratelabs/wazero"
@@ -111,6 +115,14 @@ type Loader struct {
 	// call.
 	OnLoad func(pluginName string)
 
+	// compileDir, when non-empty, is the on-disk directory the shared compilation
+	// cache writes compiled leaves under. It is set only when this Loader is
+	// backed by a disk-shared cache; it lets a cold compile observe which leaves
+	// it emits so a later reference-based reclamation can attribute them to the
+	// guest that produced them. Empty — an in-memory cache or a bare Loader —
+	// disables that observation entirely, keeping the load a pure compile.
+	compileDir string
+
 	// OnDescribe, when non-nil, is invoked with the plugin's name each time this
 	// Loader successfully describes a guest through LoadAndDescribe — that is, each
 	// time the guest's describe() export is called and its descriptor validated. Like
@@ -142,7 +154,8 @@ type Loader struct {
 // process-lifetime singleton reclaimed at process exit, not owned by any
 // individual caller.
 func NewCachingLoader(fetch FetchService) *Loader {
-	return &Loader{ExternalInputs: fetch, Cache: sharedCompilationCache(false)}
+	cache := sharedCompilationCache(false)
+	return &Loader{ExternalInputs: fetch, Cache: cache, compileDir: sharedCompilationCacheDir}
 }
 
 // NewCachingLoaderFromContext is NewCachingLoader with the persistent-cache dial
@@ -153,7 +166,8 @@ func NewCachingLoader(fetch FetchService) *Loader {
 // of that dial, so first-construction-wins matches real usage. Every later
 // construction returns a Loader over that same shared cache regardless of ctx.
 func NewCachingLoaderFromContext(ctx context.Context, fetch FetchService) *Loader {
-	return &Loader{ExternalInputs: fetch, Cache: sharedCompilationCache(DisablePluginCacheFromContext(ctx))}
+	cache := sharedCompilationCache(DisablePluginCacheFromContext(ctx))
+	return &Loader{ExternalInputs: fetch, Cache: cache, compileDir: sharedCompilationCacheDir}
 }
 
 // sharedCompilationCache returns the one process-wide wazero compilation cache
@@ -728,9 +742,10 @@ func (l *Loader) loadCore(
 	// compile in parallel; only same-guest loads take turns (first compiles and
 	// warms the cache, the rest hit the warm cache). This changes only when
 	// compilation happens, never the compiled code or rendered bytes.
-	releaseCompile := l.lockGuestCompile(digest.ContentDigest(wasmBytes))
-	extismPlugin, err := extism.NewPlugin(ctx, manifest, config, functions)
-	releaseCompile()
+	guestDigest := digest.ContentDigest(wasmBytes)
+	extismPlugin, err := l.compileGuest(ctx, guestDigest, func() (*extism.Plugin, error) {
+		return extism.NewPlugin(ctx, manifest, config, functions)
+	})
 	if err != nil {
 		return nil, fmt.Errorf("wasm: load plugin %q: %w", spec.Name, err)
 	}
@@ -747,6 +762,169 @@ func (l *Loader) loadCore(
 // they compile in parallel; concurrent loads of one guest contend on its single
 // mutex.
 var compileLocks sync.Map
+
+var (
+	// attribObserveMu serializes in-process cold compile observations so two
+	// concurrent cold compiles in THIS process cannot interleave their
+	// snapshot-before / snapshot-after windows and cross-attribute each other's
+	// leaves. It is taken OUTERMOST — strictly outside the per-guest compile lock,
+	// never inside it — so the lock order (attribution ⊃ per-guest) is consistent
+	// and deadlock-free. Cross-PROCESS concurrent cold compiles are not serialized
+	// by this mutex; their confounded diffs degrade to unattributed (recorded as
+	// nothing), never to a wrong attribution.
+	attribObserveMu sync.Mutex
+
+	// attribObserved memoizes the guest content digests already observed once in
+	// this process. A digest in the memo is warm forever: the render hot path
+	// (repeated warm loads) never snapshots and never takes attribObserveMu, so
+	// attribution stays entirely off warm and hot loads.
+	attribObserved sync.Map
+
+	// attribSnapshotCount counts how many times the cold-observation path ran its
+	// snapshot. It exists for tests to assert a warm reload does not re-observe.
+	attribSnapshotCount int64
+)
+
+// compileGuest runs the guest's compile-and-instantiate under the per-guest
+// compile lock, and on a cold, not-yet-observed first compile additionally
+// records which compiled-module cache leaves that compile emitted, so a later
+// reference-based reclamation can attribute each leaf to the guests that depend
+// on it.
+//
+// Every attribution outcome is SAFE because compiled leaves are re-derivable:
+// the worst case of any misattribution is an unnecessary recompile, never a
+// broken build. The attribution mutex serializes only in-process cold
+// observations; cross-process cold-compile races confound the leaf diff and
+// degrade to unattributed (recorded as nothing, so the leaf is retained). The
+// per-process memo keeps snapshotting and the attribution lock entirely off warm
+// and hot loads — the steady state of a render is a warm reload that takes only
+// the cheap per-guest lock and compiles nothing.
+func (l *Loader) compileGuest(ctx context.Context, guestDigest string, compile func() (*extism.Plugin, error)) (*extism.Plugin, error) {
+	_ = ctx
+	// Zero-steady-state fast path: nothing to observe (no cache or no observable
+	// compile dir), or this guest was already observed once in this process.
+	if l.Cache == nil || l.compileDir == "" {
+		return lockedCompile(l, guestDigest, compile)
+	}
+	if _, seen := attribObserved.Load(guestDigest); seen {
+		return lockedCompile(l, guestDigest, compile)
+	}
+
+	attribObserveMu.Lock()
+	before := listCompileLeaves(l.compileDir)
+	plugin, err := lockedCompile(l, guestDigest, compile)
+	after := listCompileLeaves(l.compileDir)
+	// Warm forever regardless of outcome — a failed compile is not retried into
+	// observation, and a successful one is observed exactly once.
+	attribObserved.Store(guestDigest, struct{}{})
+	atomic.AddInt64(&attribSnapshotCount, 1)
+	attribObserveMu.Unlock()
+
+	l.attributeCompileLeaves(guestDigest, before, after)
+	return plugin, err
+}
+
+// lockedCompile takes the per-guest compile lock, runs compile, and releases the
+// lock. It is the sole path that invokes the compile so the lock discipline is
+// identical on the observed and unobserved branches.
+func lockedCompile(l *Loader, guestDigest string, compile func() (*extism.Plugin, error)) (*extism.Plugin, error) {
+	release := l.lockGuestCompile(guestDigest)
+	defer release()
+	return compile()
+}
+
+// attributeCompileLeaves records the leaves a cold compile emitted (the set
+// present in after but not before) against guestDigest, using the single-leaf
+// and two-leaf cold-compile emission shapes. It records NOTHING on any ambiguous
+// diff, so a confounded concurrent cold compile leaves its leaves unattributed
+// (and therefore retained) rather than misattributed. All index writes are
+// best-effort — a write failure never breaks the load.
+func (l *Loader) attributeCompileLeaves(guestDigest string, before, after map[string]int64) {
+	var added []string
+	for k := range after {
+		if _, ok := before[k]; !ok {
+			added = append(added, k)
+		}
+	}
+
+	idxPath := attribindex.PathForCompileDir(l.compileDir)
+	switch len(added) {
+	case 0:
+		// Warm on-disk hit: the guest's leaves were already compiled. Nothing to
+		// attribute here — the guest was attributed on its own cold compile.
+		return
+	case 1:
+		// A later distinct guest: its own single leaf (the shared kernel is
+		// reused, not re-emitted). Attribute the leaf to this guest and add this
+		// guest to the kernel's referrer set (a no-op until a kernel is recorded).
+		leaf := added[0]
+		_ = attribindex.RecordGuestLeaf(idxPath, leaf, after[leaf], guestDigest)
+		_ = attribindex.AddKernelReferrer(idxPath, guestDigest)
+	case 2:
+		// A fresh cache's first cold compile emits two leaves: the guest plus the
+		// one-time shared runtime kernel. Attribute only when a size guard proves
+		// one is the tiny kernel and one is the guest, and only when no kernel is
+		// recorded yet — a two-leaf diff with a kernel already known is a
+		// confounded concurrent compile, not a first compile.
+		if recorded, _ := attribindex.KernelRecorded(idxPath); recorded {
+			return
+		}
+		a, b := added[0], added[1]
+		sa, sb := after[a], after[b]
+		small, large := a, b
+		smallSize, largeSize := sa, sb
+		if sb < sa {
+			small, large = b, a
+			smallSize, largeSize = sb, sa
+		}
+		// The kernel is orders of magnitude smaller than any guest. Require a wide
+		// margin (>=4x) AND an absolute kernel ceiling, so an unexpected pair is
+		// treated as ambiguous rather than guessed.
+		if smallSize*4 <= largeSize && smallSize <= 512*1024 {
+			_ = attribindex.RecordKernelLeaf(idxPath, small, smallSize, guestDigest)
+			_ = attribindex.RecordGuestLeaf(idxPath, large, largeSize, guestDigest)
+		}
+	default:
+		// More than two new leaves: a concurrent cross-process cold compile
+		// confounded the diff. Record nothing; the leaves stay unattributed and so
+		// are retained. Never guess.
+	}
+}
+
+// listCompileLeaves lists the compiled-module cache leaves beneath dir as a map
+// from leaf key (path relative to dir, forward-slashed) to on-disk byte size. It
+// excludes the transient per-guest compile-lock sidecars and the half-written
+// *.tmp staging files an in-flight compile leaves behind, so the snapshot diff
+// captures only finished compiled modules.
+//
+// This exclusion mirrors the compiled-leaf membership test the cache-inspection
+// command applies (cmd/aggrega isCompileLeaf); the two are kept as separate
+// small predicates on either side of the package boundary. Keep them in step: a
+// change to which files count as compiled leaves must land on both.
+func listCompileLeaves(dir string) map[string]int64 {
+	out := map[string]int64{}
+	_ = filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return nil
+		}
+		name := d.Name()
+		if strings.HasPrefix(name, ".compile-") && strings.HasSuffix(name, ".lock") {
+			return nil
+		}
+		if strings.HasSuffix(name, ".tmp") {
+			return nil
+		}
+		rel, relErr := filepath.Rel(dir, p)
+		if relErr != nil {
+			return nil
+		}
+		if info, ierr := d.Info(); ierr == nil {
+			out[filepath.ToSlash(rel)] = info.Size()
+		}
+		return nil
+	})
+	return out
+}
 
 // compileMutex returns the process-wide mutex for key, creating it on first use.
 func compileMutex(key string) *sync.Mutex {

@@ -21,6 +21,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
+	"github.com/aggrega-ai/aggrega-cli/internal/wasm/attribindex"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm/provindex"
 	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/docscache"
@@ -62,12 +63,16 @@ clear   wipes every cache, including the compiled-module store.`,
 // is the element's total byte size; digestHex is the lowercase, prefix-free
 // content digest that maps the element to a lockfile reference, or "" when the
 // element carries no reproducible content digest (a compiled module keyed by
-// the runtime's own internal hashing).
+// the runtime's own internal hashing); note is an optional trailing annotation
+// shown in the status listing (used by compiled modules to report their
+// attributed identity, the shared runtime kernel, or an unattributed leaf) and
+// is empty for classes that carry no annotation.
 type cacheElement struct {
 	label     string
 	path      string
 	size      int64
 	digestHex string
+	note      string
 }
 
 // cacheClass is one named cache subtree with its enumerated elements. prunable
@@ -92,7 +97,8 @@ type cacheLocations struct {
 	compileDir  string
 	describeDir string
 
-	provIndexPath string
+	provIndexPath   string
+	attribIndexPath string
 }
 
 // resolveCacheLocations resolves the workspace (best-effort) and the two
@@ -114,6 +120,9 @@ func resolveCacheLocations(ctx context.Context) cacheLocations {
 	}
 	if p, ok := provindex.DefaultIndexPath(); ok {
 		loc.provIndexPath = p
+	}
+	if root, ok := wasm.AggregaCacheRoot(); ok {
+		loc.attribIndexPath = attribindex.DefaultIndexPath(root)
 	}
 	return loc
 }
@@ -321,11 +330,26 @@ func isCompileLeaf(name string) bool {
 
 // enumCompileModules enumerates the compiled-module cache. The runtime keys its
 // entries by its own internal hashing beneath a version/arch/os-marked
-// directory, so a module carries no digest the compiler can reproduce; every
-// element's digest is empty and the class is never prunable. Non-leaf files —
-// the transient compile-lock sidecars and half-written .tmp transients — are
-// skipped per isCompileLeaf; they are not cache content.
-func enumCompileModules(root string) []cacheElement {
+// directory, so a module carries no digest the compiler can reproduce from the
+// leaf alone. The compile-attribution index (attribIndexPath), populated by
+// observing cold compiles, maps each leaf to the guest content digests that
+// depend on it; enumeration consults it to annotate each leaf:
+//
+//   - an attributed guest leaf carries its sole referrer digest (so a later
+//     reference-based reclamation can map it to a lockfile) and, for display,
+//     resolves that digest to a URI@version through the provenance index when
+//     known, else shows the bare digest;
+//   - the shared runtime kernel leaf is labelled as such and reports how many
+//     distinct guests share it;
+//   - a leaf absent from the index is shown as unattributed.
+//
+// Non-leaf files — the transient compile-lock sidecars and half-written .tmp
+// transients — are skipped per isCompileLeaf; they are not cache content. The
+// class remains non-prunable here: attributing leaves is a reporting concern,
+// not a prune-scope change.
+func enumCompileModules(root, attribIndexPath, provIndexPath string) []cacheElement {
+	ax, _ := attribindex.Load(attribIndexPath)
+	identities := provenanceIdentities(provIndexPath)
 	var out []cacheElement
 	_ = filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() {
@@ -338,15 +362,56 @@ func enumCompileModules(root string) []cacheElement {
 		if relErr != nil {
 			rel = p
 		}
-		out = append(out, cacheElement{
-			label: filepath.ToSlash(rel),
-			path:  p,
-			size:  fileSize(p),
-		})
+		leafKey := filepath.ToSlash(rel)
+		el := cacheElement{label: leafKey, path: p, size: fileSize(p)}
+		if e, ok := ax.Entry(leafKey); ok {
+			switch {
+			case e.Kernel:
+				el.note = fmt.Sprintf("shared runtime kernel, shared by %d", len(e.Referrers))
+			case len(e.Referrers) > 0:
+				dg := e.Referrers[0]
+				el.digestHex = dg
+				if name, known := identities[dg]; known && name != "" {
+					el.note = name
+				} else {
+					el.note = dg
+				}
+			default:
+				el.note = "unattributed"
+			}
+		} else {
+			el.note = "unattributed"
+		}
+		out = append(out, el)
 		return nil
 	})
 	sortElements(out)
 	return out
+}
+
+// provenanceIdentities builds a lookup from a normalized guest content digest to
+// its display identity — the comma-joined URI@version sources the provenance
+// index recorded for those guest bytes. An empty path or an unreadable index
+// yields an empty map, so a compiled leaf with no known identity falls back to
+// its bare digest. The digest keys are already normalized on both sides, so they
+// join directly.
+func provenanceIdentities(provIndexPath string) map[string]string {
+	m := map[string]string{}
+	if provIndexPath == "" {
+		return m
+	}
+	ix, err := provindex.Load(provIndexPath)
+	if err != nil {
+		return m
+	}
+	for _, e := range ix.Entries() {
+		names := make([]string, 0, len(e.Identities))
+		for _, id := range e.Identities {
+			names = append(names, id.URI+"@"+id.Version)
+		}
+		m[e.Digest] = strings.Join(names, ", ")
+	}
+	return m
 }
 
 // enumDescribe enumerates the plugin-describe cache. Each entry is a
@@ -393,7 +458,7 @@ func collectClasses(loc cacheLocations) []cacheClass {
 	}
 	if loc.compileDir != "" {
 		classes = append(classes,
-			cacheClass{name: "compiled-module cache", root: loc.compileDir, prunable: false, elements: enumCompileModules(loc.compileDir)},
+			cacheClass{name: "compiled-module cache", root: loc.compileDir, prunable: false, elements: enumCompileModules(loc.compileDir, loc.attribIndexPath, loc.provIndexPath)},
 		)
 	}
 	if loc.describeDir != "" {
@@ -435,7 +500,11 @@ func runCacheStatus(w io.Writer, loc cacheLocations) error {
 			continue
 		}
 		for _, el := range cl.elements {
-			fmt.Fprintf(w, "  %s  %s\n", el.label, humanSize(el.size))
+			if el.note != "" {
+				fmt.Fprintf(w, "  %s  %s  %s\n", el.label, humanSize(el.size), el.note)
+			} else {
+				fmt.Fprintf(w, "  %s  %s\n", el.label, humanSize(el.size))
+			}
 			totalCount++
 			totalSize += el.size
 		}

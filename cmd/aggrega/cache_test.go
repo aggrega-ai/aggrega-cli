@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/wasm/attribindex"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm/provindex"
 	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/docscache"
@@ -624,7 +625,7 @@ func TestCompileLeafMembershipUnified(t *testing.T) {
 	lock := writeCompileLeaf(t, compileDir, ".compile-deadbeef.lock", 100, base)
 
 	// Status enumeration: only the finished module is a listed element.
-	els := enumCompileModules(compileDir)
+	els := enumCompileModules(compileDir, "", "")
 	if len(els) != 1 {
 		t.Fatalf("status enumeration returned %d element(s), want 1:\n%+v", len(els), els)
 	}
@@ -725,6 +726,70 @@ func TestParseHumanSize(t *testing.T) {
 		if rt != n {
 			t.Errorf("round-trip %d -> %q -> %d", n, humanSize(n), rt)
 		}
+	}
+}
+
+// TestCacheStatusCompileAttribution builds a compiled-module cache holding a
+// guest leaf, the shared runtime kernel leaf, and an unattributed leaf, plus a
+// controlled attribution index and provenance index, then asserts status
+// annotates each leaf: the attributed guest leaf shows its resolved URI@version,
+// the kernel leaf shows "shared runtime kernel, shared by N", and the leaf
+// absent from the index shows "unattributed". The listing stays deterministic
+// and carries no timestamps.
+func TestCacheStatusCompileAttribution(t *testing.T) {
+	now := time.Date(2026, 7, 10, 12, 0, 0, 0, time.UTC)
+	compileDir := t.TempDir()
+	modDir := filepath.Join(compileDir, "wazero-1.0-amd64-linux")
+
+	guestLeaf := "wazero-1.0-amd64-linux/guest0000"
+	kernelLeaf := "wazero-1.0-amd64-linux/kernel00"
+	writeCompileLeaf(t, modDir, "guest0000", 900000, now)
+	writeCompileLeaf(t, modDir, "kernel00", 20000, now)
+	writeCompileLeaf(t, modDir, "orphan00", 100, now)
+
+	// Attribution index: the guest leaf attributed to one guest digest; the
+	// kernel shared by two guests; the orphan leaf deliberately absent.
+	attribPath := filepath.Join(t.TempDir(), "compile-attribution-index.json")
+	guestDigest := "sha256:aaaa"
+	otherDigest := "sha256:bbbb"
+	if err := attribindex.RecordKernelLeaf(attribPath, kernelLeaf, 20000, guestDigest); err != nil {
+		t.Fatalf("record kernel: %v", err)
+	}
+	if err := attribindex.AddKernelReferrer(attribPath, otherDigest); err != nil {
+		t.Fatalf("add kernel referrer: %v", err)
+	}
+	if err := attribindex.RecordGuestLeaf(attribPath, guestLeaf, 900000, guestDigest); err != nil {
+		t.Fatalf("record guest leaf: %v", err)
+	}
+
+	// Provenance index resolves the guest digest to a readable identity.
+	provPath := filepath.Join(t.TempDir(), "provenance-index.json")
+	if err := provindex.Upsert(provPath, guestDigest, provindex.Identity{URI: "oci://hub.aggrega.ai/plugins/core/helm", Version: "1.0.0"}, 900000, now); err != nil {
+		t.Fatalf("provenance upsert: %v", err)
+	}
+
+	loc := cacheLocations{compileDir: compileDir, attribIndexPath: attribPath, provIndexPath: provPath}
+	var a, b bytes.Buffer
+	if err := runCacheStatus(&a, loc); err != nil {
+		t.Fatalf("status a: %v", err)
+	}
+	if err := runCacheStatus(&b, loc); err != nil {
+		t.Fatalf("status b: %v", err)
+	}
+	if a.String() != b.String() {
+		t.Fatalf("compile-attribution status not byte-identical:\n--- a ---\n%s\n--- b ---\n%s", a.String(), b.String())
+	}
+	s := a.String()
+	t.Logf("status output:\n%s", s)
+
+	if !strings.Contains(s, "guest0000  878.9 KiB  oci://hub.aggrega.ai/plugins/core/helm@1.0.0") {
+		t.Errorf("attributed guest leaf did not show its resolved identity:\n%s", s)
+	}
+	if !strings.Contains(s, "kernel00  19.5 KiB  shared runtime kernel, shared by 2") {
+		t.Errorf("kernel leaf not labelled as the shared runtime kernel with its referrer count:\n%s", s)
+	}
+	if !strings.Contains(s, "orphan00  100 B  unattributed") {
+		t.Errorf("leaf absent from the index did not show as unattributed:\n%s", s)
 	}
 }
 
