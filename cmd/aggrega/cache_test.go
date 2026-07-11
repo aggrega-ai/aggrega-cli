@@ -609,6 +609,68 @@ func TestCacheEvictSkipsSidecarsAndTmp(t *testing.T) {
 	}
 }
 
+// TestCompileLeafMembershipUnified asserts the single membership predicate both
+// the status and evict enumerations consult excludes a half-written *.tmp
+// transient from BOTH — so the status listing and the eviction leaf set agree on
+// which files are cache content. The *.tmp exclusion is the point: an in-flight
+// compile's staging file must never be listed or evicted on either path.
+func TestCompileLeafMembershipUnified(t *testing.T) {
+	compileDir := t.TempDir()
+	modDir := filepath.Join(compileDir, "wazero-1.0-amd64-linux")
+	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+
+	module := writeCompileLeaf(t, modDir, "abcdef0123", 100, base)
+	tmp := writeCompileLeaf(t, modDir, "abcdef0123.tmp", 100, base)
+	lock := writeCompileLeaf(t, compileDir, ".compile-deadbeef.lock", 100, base)
+
+	// Status enumeration: only the finished module is a listed element.
+	els := enumCompileModules(compileDir)
+	if len(els) != 1 {
+		t.Fatalf("status enumeration returned %d element(s), want 1:\n%+v", len(els), els)
+	}
+	if !strings.HasSuffix(filepath.ToSlash(els[0].path), "abcdef0123") {
+		t.Fatalf("status enumeration listed a non-module leaf: %s", els[0].path)
+	}
+	for _, el := range els {
+		if strings.HasSuffix(el.label, ".tmp") {
+			t.Errorf("status enumeration listed a *.tmp transient: %s", el.label)
+		}
+		if strings.HasPrefix(filepath.Base(el.path), ".compile-") {
+			t.Errorf("status enumeration listed a compile-lock sidecar: %s", el.path)
+		}
+	}
+
+	// Evict enumeration: the same single leaf, agreeing with status.
+	leaves, err := collectCompileLeaves(compileDir)
+	if err != nil {
+		t.Fatalf("collectCompileLeaves: %v", err)
+	}
+	if len(leaves) != 1 {
+		t.Fatalf("evict enumeration returned %d leaf(s), want 1:\n%+v", len(leaves), leaves)
+	}
+	if leaves[0].path != module {
+		t.Fatalf("evict enumeration leaf %q, want the module %q", leaves[0].path, module)
+	}
+
+	// The predicate itself, exercised directly on each name.
+	if !isCompileLeaf("abcdef0123") {
+		t.Errorf("isCompileLeaf rejected a finished module name")
+	}
+	if isCompileLeaf("abcdef0123.tmp") {
+		t.Errorf("isCompileLeaf admitted a *.tmp transient")
+	}
+	if isCompileLeaf(".compile-deadbeef.lock") {
+		t.Errorf("isCompileLeaf admitted a compile-lock sidecar")
+	}
+
+	// The fixtures exist; nothing was mutated by enumeration.
+	for _, p := range []string{module, tmp, lock} {
+		if !exists(p) {
+			t.Errorf("enumeration mutated the tree; missing %s", p)
+		}
+	}
+}
+
 // TestCacheEvictNoCompileDir asserts a loud error when no compiled-module cache
 // directory resolves.
 func TestCacheEvictNoCompileDir(t *testing.T) {

@@ -299,18 +299,39 @@ func enumDocsBundles(root string) []cacheElement {
 	return out
 }
 
+// isCompileLeaf reports whether a non-directory filename beneath the
+// compiled-module cache is a cache leaf — a compiled module worth listing,
+// counting, and evicting. It is the single membership test both the status
+// enumeration and the eviction enumeration consult, so the two agree on exactly
+// which files count as cache content. Two kinds of file are excluded because
+// they are not compiled modules: the transient per-guest compile-lock sidecars
+// (`.compile-<digest>.lock`) that serialize concurrent compiles, and the
+// half-written `*.tmp` transients an in-flight compile stages before its atomic
+// rename. Both come and go with a compile in progress and never represent
+// finished cache content.
+func isCompileLeaf(name string) bool {
+	if strings.HasPrefix(name, ".compile-") && strings.HasSuffix(name, ".lock") {
+		return false
+	}
+	if strings.HasSuffix(name, ".tmp") {
+		return false
+	}
+	return true
+}
+
 // enumCompileModules enumerates the compiled-module cache. The runtime keys its
 // entries by its own internal hashing beneath a version/arch/os-marked
 // directory, so a module carries no digest the compiler can reproduce; every
-// element's digest is empty and the class is never prunable. The transient
-// per-guest compile-lock sidecars are skipped — they are not cache content.
+// element's digest is empty and the class is never prunable. Non-leaf files —
+// the transient compile-lock sidecars and half-written .tmp transients — are
+// skipped per isCompileLeaf; they are not cache content.
 func enumCompileModules(root string) []cacheElement {
 	var out []cacheElement
 	_ = filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() {
 			return nil
 		}
-		if strings.HasPrefix(d.Name(), ".compile-") && strings.HasSuffix(d.Name(), ".lock") {
+		if !isCompileLeaf(d.Name()) {
 			return nil
 		}
 		rel, relErr := filepath.Rel(root, p)
@@ -607,12 +628,12 @@ type evictLeaf struct {
 }
 
 // collectCompileLeaves enumerates the compiled-module cache leaves eligible for
-// eviction beneath root. It applies the content filter the status enumeration
-// uses — directories and the transient per-guest compile-lock sidecars
-// (.compile-<digest>.lock) are not cache content — and additionally skips
-// half-written *.tmp transients so an in-flight compile is never evicted or
-// counted. A root that does not exist is an empty leaf set, not an error. Each
-// leaf carries its size and modification time for the oldest-first order.
+// eviction beneath root. It applies the same membership test the status
+// enumeration uses — isCompileLeaf — so the transient per-guest compile-lock
+// sidecars and half-written *.tmp transients are never evicted or counted, and
+// an in-flight compile is left alone. A root that does not exist is an empty
+// leaf set, not an error. Each leaf carries its size and modification time for
+// the oldest-first order.
 func collectCompileLeaves(root string) ([]evictLeaf, error) {
 	if _, err := os.Stat(root); err != nil {
 		if os.IsNotExist(err) {
@@ -628,11 +649,7 @@ func collectCompileLeaves(root string) ([]evictLeaf, error) {
 		if d.IsDir() {
 			return nil
 		}
-		name := d.Name()
-		if strings.HasPrefix(name, ".compile-") && strings.HasSuffix(name, ".lock") {
-			return nil
-		}
-		if strings.HasSuffix(name, ".tmp") {
+		if !isCompileLeaf(d.Name()) {
 			return nil
 		}
 		info, ierr := d.Info()
