@@ -325,6 +325,20 @@ var codecTargets = map[string]codecTarget{
 		vocabulary: frpGuestNeutralVocabulary,
 		helpers:    true, // FRP owns the shared streaming-decode helpers in package abi
 	},
+	"frp_gen.rs": {
+		schema:     schemas.WasmFrpStepV1alpha1,
+		schemaFile: "wasm-frp-step-v1alpha1.schema.json",
+		pkg:        "abi",
+		vocabulary: frpGuestNeutralVocabulary,
+		lang:       "rust",
+	},
+	"frp_gen.ts": {
+		schema:     schemas.WasmFrpStepV1alpha1,
+		schemaFile: "wasm-frp-step-v1alpha1.schema.json",
+		pkg:        "abi",
+		vocabulary: frpGuestNeutralVocabulary,
+		lang:       "ts",
+	},
 
 	// CLI socket — guest codecs into aggrega-abi (Go/Rust/TS). A CLI plugin
 	// receives the invocation's argument vector; the exit code is the guest
