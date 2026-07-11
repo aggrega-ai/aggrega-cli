@@ -1,0 +1,273 @@
+name: Publish and sign core plugins
+
+# Tag-driven publisher for the core provider/linter plugins that are embedded in
+# the aggrega binary. On a release tag it builds the binary and its embedded
+# guests, builds and pushes the tooling image, then generates the core Plugin
+# catalog entities and publishes each with its guest to the registry, signed with
+# an offline key.
+#
+# The build order is load-bearing. The Wasm guests are reproducible build
+# outputs, not tracked files, so they are absent from a fresh checkout: the build
+# MUST run before catalog generation (which reads each guest's self-reported
+# descriptor) and before the publish (which needs the guest's compiled module).
+#
+# This workflow NEVER creates or pushes a git tag and never writes git at all.
+# Deciding the version and cutting the tag is a human action; this workflow only
+# publishes OCI artifacts.
+#
+# NOT YET LIVE. The destination registry, its pull/push credentials, the offline
+# signing key, the self-hosted runner, and the authored per-plugin overlays that
+# catalog generation consumes are all operator-configured and are not wired here.
+# Until they exist this workflow is authored but unexercised — it has never run
+# against a real registry. The manual-dispatch entry defaults to a dry run, so an
+# unconfigured or accidental invocation prints what it would do without building
+# an image push, publishing, or signing.
+
+on:
+  # A release tag is the trigger and the human gate: a person decides the version
+  # and pushes the tag. The pattern matches a plain vMAJOR.MINOR.PATCH tag; a
+  # pre-release suffix is intentionally excluded from automatic publishing.
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Build, generate the entities, and print the publish plan without pushing the image, publishing, or signing."
+        required: false
+        default: true
+        type: boolean
+
+# Keyed (offline-key) signing only. No id-token / keyless path: a public
+# transparency log would leak the existence and metadata of private artifacts.
+# The workflow reads only from the repositories it checks out and writes nothing
+# back to git, so read access is all it needs.
+permissions:
+  contents: read
+
+jobs:
+  publish-sign:
+    # Configurable runner label. Building the embedded guests is heavy; point the
+    # CLI_PUBLISH_RUNNER repository variable at a self-hosted label to run the
+    # build off metered hosted minutes. The default hosted runner is unlikely to
+    # complete the guest build within the free-tier budget — if the build proves
+    # infeasible on a hosted runner, provision a self-hosted one rather than
+    # splitting the build across jobs (the guests, the image, and the publish all
+    # need the one build's outputs on the same workspace).
+    runs-on: ${{ vars.CLI_PUBLISH_RUNNER || 'ubuntu-latest' }}
+
+    env:
+      # Destination registry host:port. A repository variable the operator sets
+      # once; the placeholder default cannot publish anywhere real.
+      REGISTRY: ${{ vars.CLI_PUBLISH_REGISTRY || 'registry.invalid:0' }}
+      # Registry credentials — needed on EVERY job because the registry is
+      # authenticated on push AND pull. Read via the environment (not
+      # interpolated into a run script) to avoid expression injection. The
+      # username feeds `aggrega login` and `docker login`; the password is read
+      # by login from AGGREGA_REGISTRY_PASSWORD.
+      REGISTRY_USERNAME: ${{ secrets.REGISTRY_USERNAME }}
+      AGGREGA_REGISTRY_PASSWORD: ${{ secrets.REGISTRY_PASSWORD }}
+      # Offline signing key material, supplied as a secret and written to a
+      # private file for the --key path. Empty until configured, which makes a
+      # real signing run fail safely rather than publish unsigned.
+      SIGNING_KEY: ${{ secrets.PLUGIN_SIGNING_KEY }}
+      # Authored per-plugin overlay directory that catalog generation merges with
+      # each guest's machine-derived contract fields. This is a REQUIRED input and
+      # is currently pending: the overlays supply the OCI identity, runtime limits,
+      # and provider block that the guests deliberately do not carry. The path is
+      # referenced here, not invented — until the overlays exist the generate step
+      # halts loudly. Each overlay's plugin identity must name a guest present in
+      # the decompressed guest set below (the publish pairs them by that identity).
+      OVERLAY_DIR: ${{ vars.CLI_PUBLISH_OVERLAY_DIR || 'plugin-overlays' }}
+      # Dispatch inputs surfaced as env so run scripts read them from the
+      # environment rather than interpolating expressions into shell.
+      EVENT_NAME: ${{ github.event_name }}
+      DISPATCH_DRY_RUN: ${{ inputs.dry_run }}
+      # The pushed ref name (the tag on a push event). Surfaced as env for the
+      # tag-equals-version assertion; never interpolated into a script body.
+      REF_NAME: ${{ github.ref_name }}
+
+    steps:
+      - name: Check out the umbrella workspace with submodules and tags
+        # The CLI cannot build from a standalone checkout of its own repository:
+        # its module resolves sibling modules through parent-relative replace
+        # directives, and the build driver lives at the umbrella root. So the
+        # build needs the umbrella layout with the sibling repositories present.
+        #
+        # CHECKOUT SEAM: point AGGREGA_UMBRELLA_REPO at the umbrella repository and
+        # supply a token with read access to it and its submodules. On a
+        # self-hosted runner already provisioned with the umbrella workspace these
+        # may be unnecessary. Full history and tags are fetched so the build stamps
+        # the release version from the tag.
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ vars.AGGREGA_UMBRELLA_REPO }}
+          token: ${{ secrets.UMBRELLA_CHECKOUT_TOKEN }}
+          submodules: recursive
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Pin the CLI tree to the pushed tag
+        # On a tag push the umbrella's submodule pointer may lag the tag, so move
+        # the CLI tree onto the pushed tag before building. This makes the build's
+        # `git describe` stamp the released version. On a manual dispatch there is
+        # no release tag, so the umbrella's pinned pointer is built as-is.
+        if: ${{ github.event_name == 'push' }}
+        run: |
+          set -euo pipefail
+          git -C aggrega-cli fetch --force --tags origin
+          git -C aggrega-cli checkout --force "refs/tags/${REF_NAME}"
+
+      - name: Build the binary and embedded guests
+        # The default (embed) build: it regenerates the Wasm guests and their
+        # descriptors and produces the version-stamped binary with the guests
+        # embedded. NOT the light build — the light binary embeds no guests and
+        # could neither generate the core entities nor supply the guests to
+        # publish.
+        run: |
+          set -euo pipefail
+          scripts/build.sh
+
+      - name: Authenticate to the registry
+        # Only a real publish contacts the registry. A dry run does no network, so
+        # it skips login and stays runnable without live credentials. Both the
+        # tooling-image push (docker) and the plugin publish (aggrega) authenticate
+        # with the same registry credentials; the password is read from the
+        # environment, never placed on a command line or interpolated.
+        if: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.dry_run == false) }}
+        run: |
+          set -euo pipefail
+          aggrega-cli/aggrega login "$REGISTRY" --username "$REGISTRY_USERNAME"
+          printf '%s' "$AGGREGA_REGISTRY_PASSWORD" | docker login "$REGISTRY" --username "$REGISTRY_USERNAME" --password-stdin
+
+      - name: Build and push the tooling image
+        # Packages the freshly-built embedded binary as the tooling image at the
+        # reserved tools/ namespace so consumer CI can run the CLI without a Go
+        # toolchain. A dry run prints the planned commands and pushes nothing; a
+        # real run pushes and then signs the image by reference with the offline
+        # key. The image tag is derived from the same version the binary reports,
+        # so the pushed reference and the binary stay in lockstep.
+        run: |
+          set -euo pipefail
+
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            DRY="$DISPATCH_DRY_RUN"
+          else
+            DRY="false"
+          fi
+
+          if [ "$DRY" = "true" ]; then
+            aggrega-cli/scripts/build-tooling-image.sh --registry "$REGISTRY" --dry-run
+            exit 0
+          fi
+
+          aggrega-cli/scripts/build-tooling-image.sh --registry "$REGISTRY" --push
+
+          # Write the offline signing key to a private file for --key, then sign
+          # the pushed image by its resolved reference. The image tag equals the
+          # binary's reported version (v-less), matching the tag the build script
+          # pushed.
+          KEY_PATH="$RUNNER_TEMP/plugin-signing.key"
+          umask 077
+          printf '%s' "$SIGNING_KEY" > "$KEY_PATH"
+
+          BIN_VERSION="$(aggrega-cli/aggrega version --json | grep -o '"version":"[^"]*"' | head -1 | cut -d'"' -f4)"
+          [ -n "$BIN_VERSION" ] || { echo "binary reported no version" >&2; exit 1; }
+          aggrega-cli/aggrega sign "$REGISTRY/tools/aggrega:$BIN_VERSION" --key "$KEY_PATH"
+
+      - name: Assert ABI self-consistency
+        # A real gate, not a comment: the binary reports the single ABI version its
+        # host speaks, and every embedded guest self-reports the ABI it binds
+        # against in its build descriptor. If any guest disagrees with the host, or
+        # any value is empty, the generated catalog entities would advertise an ABI
+        # the binary cannot honor — so the run fails here, before generating or
+        # publishing anything. On a tag push the binary's stamped version must also
+        # equal the pushed tag; a mismatch means the build did not stamp the
+        # release and the run fails.
+        run: |
+          set -euo pipefail
+
+          VERSION_JSON="$(aggrega-cli/aggrega version --json)"
+          HOST_ABI="$(printf '%s' "$VERSION_JSON" | grep -o '"abiVersion":"[^"]*"' | head -1 | cut -d'"' -f4)"
+          BIN_VERSION="$(printf '%s' "$VERSION_JSON" | grep -o '"version":"[^"]*"' | head -1 | cut -d'"' -f4)"
+          [ -n "$HOST_ABI" ] || { echo "ABI gate: binary reported no abiVersion" >&2; exit 1; }
+
+          DESC_DIR="aggrega-cli/internal/wasm/embedded/plugins"
+          shopt -s nullglob
+          descriptors=("$DESC_DIR"/*.describe.json)
+          [ "${#descriptors[@]}" -gt 0 ] || { echo "ABI gate: no guest descriptors found in $DESC_DIR — the embedded build did not run" >&2; exit 1; }
+
+          mismatch=0
+          for d in "${descriptors[@]}"; do
+            guest_abi="$(grep -oE '"abi_version"[[:space:]]*:[[:space:]]*"[^"]+"' "$d" | head -1 | grep -oE '"[^"]+"$' | tr -d '"')"
+            if [ -z "$guest_abi" ]; then
+              echo "ABI gate: $d reports no abi_version" >&2
+              mismatch=1
+            elif [ "$guest_abi" != "$HOST_ABI" ]; then
+              echo "ABI gate: $d reports abi_version '$guest_abi' but the binary speaks '$HOST_ABI'" >&2
+              mismatch=1
+            fi
+          done
+          [ "$mismatch" -eq 0 ] || { echo "ABI gate: host/guest ABI mismatch — refusing to generate or publish" >&2; exit 1; }
+
+          if [ "$EVENT_NAME" = "push" ]; then
+            EXPECTED="${REF_NAME#v}"
+            if [ "$BIN_VERSION" != "$EXPECTED" ]; then
+              echo "ABI gate: binary version '$BIN_VERSION' does not equal the pushed tag '$EXPECTED'" >&2
+              exit 1
+            fi
+          fi
+
+          echo "ABI gate: host and ${#descriptors[@]} guest(s) all agree on '$HOST_ABI'"
+
+      - name: Generate the core plugin catalog entities
+        # Emits one Plugin entity per embedded guest by merging each guest's
+        # machine-derived contract fields with its authored overlay; the entity
+        # version is the binary's own build version. The overlay directory is the
+        # REQUIRED authored input surfaced above and is currently pending — until
+        # it exists this step halts loudly rather than inventing entity content.
+        run: |
+          set -euo pipefail
+          export AGGREGA_BIN="$PWD/aggrega-cli/aggrega"
+          mkdir -p "$RUNNER_TEMP/entities"
+          "$AGGREGA_BIN" plugin gen-catalog --from-embedded --overlay "$OVERLAY_DIR" -o "$RUNNER_TEMP/entities"
+
+      - name: Publish and sign the core plugins
+        # Publishes exactly the set of guests built into this binary: each
+        # generated entity paired with its decompressed guest, pushed and signed
+        # with the offline key. The guests are embedded compressed, so decompress
+        # them into a working directory the publish reads; the publish pairs each
+        # entity to its guest by the entity's plugin identity. A dry run prints the
+        # reference set and the sign plan without any network call or signing.
+        run: |
+          set -euo pipefail
+          export AGGREGA_BIN="$PWD/aggrega-cli/aggrega"
+
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            DRY="$DISPATCH_DRY_RUN"
+          else
+            DRY="false"
+          fi
+
+          WASM_DIR="$RUNNER_TEMP/wasm"
+          mkdir -p "$WASM_DIR"
+          for gz in aggrega-cli/internal/wasm/embedded/plugins/*.wasm.gz; do
+            base="$(basename "$gz" .wasm.gz)"
+            gunzip -c "$gz" > "$WASM_DIR/$base.wasm"
+          done
+
+          args=(enumerate-embedded --entities-dir "$RUNNER_TEMP/entities" --wasm-dir "$WASM_DIR" --registry "$REGISTRY")
+          if [ "$DRY" = "true" ]; then
+            args+=(--dry-run)
+          else
+            # Keyed signing while private. Reuse the key file if the image step
+            # wrote it; otherwise write it here from the secret.
+            KEY_PATH="$RUNNER_TEMP/plugin-signing.key"
+            if [ ! -s "$KEY_PATH" ]; then
+              umask 077
+              printf '%s' "$SIGNING_KEY" > "$KEY_PATH"
+            fi
+            args+=(--sign --key "$KEY_PATH")
+          fi
+
+          aggrega-cli/scripts/publish-plugins.sh "${args[@]}"
