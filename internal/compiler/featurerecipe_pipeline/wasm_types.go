@@ -105,15 +105,23 @@ type PrecedingStep struct {
 // root.
 type DocumentScope string
 
+// The scope values are single-sourced from types.Scope* (untyped-const
+// conversion), so the FRP wire scope vocabulary cannot drift from the Plugin
+// entity's scope vocabulary — they are equal by construction. The
+// schema-level enums (plugin-v1alpha1 and wasm-frp-step-v1alpha1) remain
+// intentionally separate surfaces; unifying those is a wire change and is out
+// of scope for the Go-side single-sourcing. The DocumentSet json struct tags
+// below ("own"/"host") are string literals the compiler cannot const-fold
+// against these values; a parity test holds them equivalent instead.
 const (
 	// DocumentScopeOwn targets the node's own rendered documents.
-	DocumentScopeOwn DocumentScope = "own"
+	DocumentScopeOwn DocumentScope = types.ScopeOwn
 
 	// DocumentScopeHost targets the documents of the component a
 	// component-scope FeatureRecipe is attached to. A host-scoped
 	// operation from a boundary-scope step has no host documents to act
 	// on; the runtime halts such an operation.
-	DocumentScopeHost DocumentScope = "host"
+	DocumentScopeHost DocumentScope = types.ScopeHost
 )
 
 // FRPStepOutput is the JSON payload a FeatureRecipe-pipeline Wasm guest

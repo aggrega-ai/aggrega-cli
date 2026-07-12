@@ -459,6 +459,18 @@ func loadOverlaysByPlugin(dir string) (map[string]types.Plugin, error) {
 }
 
 // loadOverlayFile reads and parses one overlay file into a Plugin value.
+//
+// This overlay walk is deliberately independent of the catalog loaders and the
+// validate/lint entity readers — do NOT "unify" it into them. It is a
+// generator: it unmarshals the full typed Plugin an overlay author wrote, then
+// merges it with the describe() contract to emit a catalog entity. The
+// validate reader peeks only a document's kind to dispatch validation tiers,
+// and the lint reader parses a metadata envelope and re-encodes the whole
+// document to JSON for the linter plugin — different projections of the YAML
+// for different jobs, not a shared kind-peek. The one correctness primitive
+// these paths do share — the provider workloadSchema check — is already
+// single-sourced through validator.ValidatePluginProviderSchemas in
+// generateAndWrite, so nothing here re-implements a validator.
 func loadOverlayFile(path string) (types.Plugin, error) {
 	raw, err := os.ReadFile(path)
 	if err != nil {

@@ -7,6 +7,7 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"io/fs"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -87,5 +88,65 @@ func TestWorkspaceResolutionChokepointGuard(t *testing.T) {
 				return true
 			})
 		}
+	}
+}
+
+// TestOCIRemoteConstructionChokepointGuard enforces the single registry /
+// repository construction path structurally. Raw remote.NewRegistry and
+// remote.NewRepository re-roll the loopback plain-HTTP decision and the
+// Docker-credential auth wiring that oci.NewRemoteRegistry / oci.NewRemoteRepository
+// single-source; a production call site bypassing those homes reintroduces the
+// exact transport-wiring divergence this consolidation removed. The one place
+// raw construction is allowed is the home itself (pkg/oci).
+//
+// Test files are exempt: test helpers build deliberately-independent registries
+// (plain-HTTP against an httptest server, no credential store) to exercise the
+// real enumeration path, and that independence is intentional.
+func TestOCIRemoteConstructionChokepointGuard(t *testing.T) {
+	root := filepath.Join("..", "..")
+	ociDir := filepath.Join(root, "pkg", "oci")
+
+	err := filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			base := d.Name()
+			if p == ociDir || base == "vendor" || base == "testdata" ||
+				(p != root && strings.HasPrefix(base, ".")) {
+				return fs.SkipDir
+			}
+			return nil
+		}
+		if !strings.HasSuffix(p, ".go") || strings.HasSuffix(p, "_test.go") {
+			return nil
+		}
+		fset := token.NewFileSet()
+		node, perr := parser.ParseFile(fset, p, nil, 0)
+		if perr != nil {
+			t.Fatalf("parse %s: %v", p, perr)
+		}
+		ast.Inspect(node, func(n ast.Node) bool {
+			call, ok := n.(*ast.CallExpr)
+			if !ok {
+				return true
+			}
+			sel, ok := call.Fun.(*ast.SelectorExpr)
+			if !ok {
+				return true
+			}
+			pkgID, ok := sel.X.(*ast.Ident)
+			if !ok || pkgID.Name != "remote" {
+				return true
+			}
+			if sel.Sel.Name == "NewRegistry" || sel.Sel.Name == "NewRepository" {
+				t.Errorf("%s: raw remote.%s outside pkg/oci — route registry/repository construction through oci.NewRemoteRegistry / oci.NewRemoteRepository", fset.Position(call.Pos()), sel.Sel.Name)
+			}
+			return true
+		})
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walk %s: %v", root, err)
 	}
 }

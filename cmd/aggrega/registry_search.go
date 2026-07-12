@@ -12,12 +12,8 @@ import (
 	"sort"
 	"strings"
 
-	"oras.land/oras-go/v2/registry/remote"
-	"oras.land/oras-go/v2/registry/remote/auth"
-	"oras.land/oras-go/v2/registry/remote/credentials"
-
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
-	"github.com/aggrega-ai/aggrega-cli/pkg/registryhost"
+	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
@@ -96,20 +92,13 @@ var registrySearchTarget = func(cfg workspaceconfig.Config) (registryRepoLister,
 	if host == "" {
 		return nil, "", errors.New("no default registry is configured to search")
 	}
-	reg, err := remote.NewRegistry(host)
+	// Construction routes through the one registry home so the loopback
+	// plain-HTTP handling and the Docker-credential authentication match the
+	// repository client exactly.
+	reg, err := oci.NewRemoteRegistry(host)
 	if err != nil {
-		return nil, host, fmt.Errorf("parse registry %q: %w", host, err)
+		return nil, host, err
 	}
-	// A registry host that addresses the local machine is contacted over plain
-	// HTTP, mirroring the repository-client convention so a local development
-	// registry works without TLS. Authentication delegates to the shared
-	// Docker-credential store, the same source the repository client reads.
-	reg.PlainHTTP = registryhost.IsLoopback(reg.Reference.Registry)
-	store, err := credentials.NewStoreFromDocker(credentials.StoreOptions{})
-	if err != nil {
-		return nil, host, fmt.Errorf("credential store: %w", err)
-	}
-	reg.Client = &auth.Client{Credential: credentials.Credential(store)}
 	return reg, host, nil
 }
 

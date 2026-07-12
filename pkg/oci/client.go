@@ -226,17 +226,56 @@ func NewRemoteRepository(reference string) (*remote.Repository, error) {
 	if err != nil {
 		return nil, fmt.Errorf("oci: parse reference %q: %w", reference, err)
 	}
-	repo.PlainHTTP = registryhost.IsLoopback(repo.Reference.Registry)
+	plainHTTP, client, err := remoteClient(repo.Reference.Registry)
+	if err != nil {
+		return nil, err
+	}
+	repo.PlainHTTP = plainHTTP
+	repo.Client = client
+	return repo, nil
+}
 
+// NewRemoteRegistry constructs an authenticated remote.Registry for the given
+// registry host (e.g. "hub.aggrega.ai"). It is the registry sibling of
+// NewRemoteRepository: a registry enumerates the repositories it serves and
+// answers the /v2/ base ping, where a repository targets one reference path
+// within it. Both apply the same loopback plain-HTTP handling and the same
+// Docker-credential-backed authentication, so the two never wire the transport
+// differently.
+//
+// A registry host that is loopback (localhost, 127.0.0.0/8, ::1 — with or
+// without a port) is contacted over plain HTTP so a local development registry
+// works without TLS; every non-loopback host keeps HTTPS. There is no
+// configuration surface for this.
+func NewRemoteRegistry(host string) (*remote.Registry, error) {
+	reg, err := remote.NewRegistry(host)
+	if err != nil {
+		return nil, fmt.Errorf("oci: parse registry %q: %w", host, err)
+	}
+	plainHTTP, client, err := remoteClient(reg.Reference.Registry)
+	if err != nil {
+		return nil, err
+	}
+	reg.PlainHTTP = plainHTTP
+	reg.Client = client
+	return reg, nil
+}
+
+// remoteClient builds the loopback plain-HTTP decision and the
+// Docker-credential-backed auth client that both NewRemoteRepository and
+// NewRemoteRegistry apply to their remote target. The registry host drives the
+// loopback decision; authentication delegates to oras-go/v2's standard
+// credential mechanisms (Docker, containers-storage, and Helm registry configs
+// in priority order, with credential-helper delegation honoured). The wiring
+// lives here once so the repository and registry clients cannot diverge.
+func remoteClient(registryHost string) (plainHTTP bool, client *auth.Client, err error) {
 	store, err := credentials.NewStoreFromDocker(credentials.StoreOptions{})
 	if err != nil {
-		return nil, fmt.Errorf("oci: credential store: %w", err)
+		return false, nil, fmt.Errorf("oci: credential store: %w", err)
 	}
-
-	repo.Client = &auth.Client{
+	return registryhost.IsLoopback(registryHost), &auth.Client{
 		Credential: credentials.Credential(store),
-	}
-	return repo, nil
+	}, nil
 }
 
 // VerifyCredential checks a username/password against a registry by pinging
@@ -250,11 +289,15 @@ func NewRemoteRepository(reference string) (*remote.Repository, error) {
 // A 401/403 maps to ErrFetchUnauthorized (wrong credential); other failures
 // (DNS, TCP, TLS) pass through wrapped with the registry host for diagnosis.
 func VerifyCredential(ctx context.Context, registryHost string, cred auth.Credential) error {
-	reg, err := remote.NewRegistry(registryHost)
+	reg, err := NewRemoteRegistry(registryHost)
 	if err != nil {
-		return fmt.Errorf("oci: parse registry %q: %w", registryHost, err)
+		return err
 	}
-	reg.PlainHTTP = registryhost.IsLoopback(reg.Reference.Registry)
+	// Override the store-backed client the home wires with a static credential
+	// for the resolved registry host: verify authenticates with the credential
+	// passed in rather than whatever the store holds, so a typo fails loudly at
+	// login time rather than silently at the first push. The home's loopback
+	// plain-HTTP decision is kept.
 	reg.Client = &auth.Client{
 		Credential: auth.StaticCredential(reg.Reference.Registry, cred),
 	}
