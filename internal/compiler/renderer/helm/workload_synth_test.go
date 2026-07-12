@@ -365,6 +365,41 @@ func TestSynthesizeWorkload_SecretsEnvAndFile(t *testing.T) {
 	goldenCheck(t, "secrets-env-and-file", concatBodies(files))
 }
 
+// TestSynthesizeWorkload_SecretsMultiKeyOneSlot verifies that two env secret
+// entries referencing the same slot with different explicit `key` values each
+// render one secretKeyRef — same secret name (the slot's single published
+// locator), one data key per entry, author order preserved. This is the
+// multi-key consumption shape: a slot filled by a referenceable-secret whose
+// provides publishes only `name` (no `key`), with each entry supplying the
+// data key it reads.
+func TestSynthesizeWorkload_SecretsMultiKeyOneSlot(t *testing.T) {
+	t.Parallel()
+	w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload"}
+	c := types.ContainerSpec{Image: "app:1.0"}
+	c.Ports.Set("web", 8080)
+	c.Secrets.Set("APP_DB_USER", types.SecretRef{From: "app-credentials", As: "env", Key: "db_username"})
+	c.Secrets.Set("APP_DB_PASSWORD", types.SecretRef{From: "app-credentials", As: "env", Key: "db_password"})
+	w.Containers.Set("main", c)
+
+	svc := types.ServiceSpec{Type: "ClusterIP"}
+	svc.Ports.Set("web", 8080)
+	w.Services.Set("api", svc)
+
+	// The slot's provides publishes only the locator (name) — a multi-key
+	// referenceable secret carries several data keys the consumer already
+	// knows, so it exposes no single `key`. Each entry supplies its own key.
+	provides := types.OrderedMap[string]{}
+	provides.Set("name", "app-creds")
+	tmplCtx := &types.TemplateContext{}
+	tmplCtx.Secrets.Set("app-credentials", types.TemplateSecret{Provides: provides})
+
+	files, err := SynthesizeWorkloadCore(w, renderer.SecretProvidesFromContext(tmplCtx), nodeCtxFor("api"))
+	if err != nil {
+		t.Fatalf("SynthesizeWorkload: %v", err)
+	}
+	goldenCheck(t, "secrets-multikey-one-slot", concatBodies(files))
+}
+
 // ----- Category 9 — LoadBalancer service -----
 
 func TestSynthesizeWorkload_LoadBalancerService(t *testing.T) {

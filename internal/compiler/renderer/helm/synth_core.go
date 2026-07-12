@@ -392,14 +392,20 @@ func translateContainer(name string, c types.ContainerSpec, nodeID string, secre
 	// Secrets — for each entry, use env.valueFrom.secretKeyRef (env mode)
 	// or volume+volumeMount (file mode; the volume is added to the pod
 	// spec elsewhere). Author order preserved. `ref.From` is the slot; the
-	// referenced Secret's name and data key come from the slot's resolved
-	// provides (name, key) — the env-var name stays the entry's map key.
+	// referenced Secret's name comes from the slot's resolved provides
+	// (name). The data key is the entry's explicit `ref.Key` when set —
+	// which lets two entries read different keys of one multi-key secret —
+	// otherwise the slot's single published `key`. The env-var name stays
+	// the entry's map key.
 	for secretKey, ref := range c.Secrets.All() {
 		provides := secretProvides[ref.From]
 		switch ref.As {
 		case "env":
 			secretName, _ := provides.Get("name")
-			dataKey, _ := provides.Get("key")
+			dataKey := ref.Key
+			if dataKey == "" {
+				dataKey, _ = provides.Get("key")
+			}
 			out.Env = append(out.Env, EnvVar{
 				Name: secretKey,
 				ValueFrom: &EnvVarSource{

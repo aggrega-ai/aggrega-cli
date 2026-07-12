@@ -87,12 +87,19 @@ type ContainerSpec struct {
 // SecretRef references a Component secretsSchema slot. As is "env" or "file";
 // when As == "file", Path is required (the in-container mount path).
 //
+// Key, meaningful only when As == "env", names the specific data key of the
+// referenced slot's secret this entry reads. When set, the entry reads that
+// key; two entries may reference the same slot with different Key values to
+// consume several keys from one multi-key secret. When empty, the entry reads
+// the slot's single published data key.
+//
 // Mutual exclusion of env vs file is a schema-validation rule, not a Go-type
 // constraint — both fields can be set simultaneously by programmatic
 // construction. Validate via validator.ValidateWorkload.
 type SecretRef struct {
 	From string `json:"from,omitempty" yaml:"from,omitempty"`
 	As   string `json:"as,omitempty" yaml:"as,omitempty"`
+	Key  string `json:"key,omitempty" yaml:"key,omitempty"`
 	Path string `json:"path,omitempty" yaml:"path,omitempty"`
 }
 

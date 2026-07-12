@@ -166,9 +166,19 @@ func ValidateWorkloadSecretReferenceability(
 
 // checkContainerReferenceability walks a ContainerSpec's secrets entries and
 // produces a finding per entry whose slot's resolved provides is missing a key
-// a workload reference reads. The contract keys are fixed (name, key) — a
-// referenceable-secret Feature declares both, so a fill lacking either is not
-// referenceable regardless of the entry's delivery mechanism.
+// a workload reference reads. Which provides keys are required depends on the
+// entry:
+//
+//   - When the entry names an explicit data key (its `key` field is set), only
+//     the slot's resource locator (provides `name`) must be published — the
+//     entry supplies the data key itself, so it may reference a multi-key
+//     secret whose provides publishes only the locator.
+//   - When the entry names no explicit key, it reads the slot's single
+//     published data key, so both provides `name` and `key` must be present.
+//
+// A referenceable-secret Feature declares the keys its consumers read; a fill
+// lacking a required key is not referenceable regardless of the entry's
+// delivery mechanism.
 func checkContainerReferenceability(
 	c types.ContainerSpec,
 	secretProvides map[string]types.OrderedMap[string],
@@ -179,12 +189,20 @@ func checkContainerReferenceability(
 	for key, ref := range c.Secrets.All() {
 		fieldPath := fmt.Sprintf("%s.secrets.%s", containerPath, key)
 		provides := secretProvides[ref.From]
-		for _, want := range []string{"name", "key"} {
-			if _, ok := provides.Get(want); !ok {
+
+		want := []string{"name", "key"}
+		reads := "name and key"
+		if ref.Key != "" {
+			want = []string{"name"}
+			reads = "name"
+		}
+
+		for _, need := range want {
+			if _, ok := provides.Get(need); !ok {
 				findings = append(findings, WorkloadValidationFinding{
 					FieldPath:  fieldPath + ".from",
-					Constraint: fmt.Sprintf("slot %q is not a referenceable secret: its resolved provides does not expose %q (a workload secret reference reads the provides keys name and key)", ref.From, want),
-					Suggestion: "reference a slot filled by a referenceable-secret feature (one whose schema.provides declares name and key), or deliver this secret through the slot's inject pipe rather than a workload reference",
+					Constraint: fmt.Sprintf("slot %q is not a referenceable secret: its resolved provides does not expose %q (a workload secret reference reads the provides keys %s)", ref.From, need, reads),
+					Suggestion: "reference a slot filled by a referenceable-secret feature (one whose schema.provides declares the keys this reference reads), or deliver this secret through the slot's inject pipe rather than a workload reference",
 				})
 			}
 		}
