@@ -11,22 +11,20 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/analyzer"
 )
 
-// TestPolicyVerdictErrors_OnlyFailuresBecomeErrors proves the results→errors
-// conversion: passing verdicts add nothing, each failing verdict becomes one
-// AnalysisError carrying the policy kind, the ErrPolicyViolation sentinel, and a
-// message naming the plugin plus the plugin-supplied text — and that message
-// renders verbatim through Error()/ToCompilerError() rather than through the
-// edge-shaped composition.
-func TestPolicyVerdictErrors_OnlyFailuresBecomeErrors(t *testing.T) {
+// TestPolicyVerdictErrors_FiredVerdictsBecomeErrors proves the results→errors
+// conversion: each fired verdict becomes one AnalysisError carrying the policy
+// kind, the ErrPolicyViolation sentinel, and a message naming the plugin plus
+// the plugin-supplied text — and that message renders verbatim through
+// Error()/ToCompilerError() rather than through the edge-shaped composition.
+func TestPolicyVerdictErrors_FiredVerdictsBecomeErrors(t *testing.T) {
 	out := analyzer.PolicyValidatorOutput{Results: []analyzer.PolicyResult{
-		{Pass: true, Message: "rule A: ok"},
-		{Pass: false, Message: "rule B: prod boundary requires an owner label"},
-		{Pass: false, Message: "rule C: image must be digest-pinned"},
+		{Severity: analyzer.SeverityDeny, Message: "rule B: prod boundary requires an owner label"},
+		{Severity: analyzer.SeverityDeny, Message: "rule C: image must be digest-pinned"},
 	}}
 
 	errs := policyVerdictErrors("oci://registry.example/policy/house-rules", out)
 	if len(errs) != 2 {
-		t.Fatalf("expected 2 errors (only the failing verdicts), got %d", len(errs))
+		t.Fatalf("expected one error per fired verdict, got %d", len(errs))
 	}
 	for _, e := range errs {
 		if e.Kind != analyzer.AnalysisErrorPolicy {
@@ -49,15 +47,12 @@ func TestPolicyVerdictErrors_OnlyFailuresBecomeErrors(t *testing.T) {
 	}
 }
 
-// TestPolicyVerdictErrors_AllPassIsEmpty proves an all-pass output produces no
-// errors, so the build proceeds.
-func TestPolicyVerdictErrors_AllPassIsEmpty(t *testing.T) {
-	out := analyzer.PolicyValidatorOutput{Results: []analyzer.PolicyResult{
-		{Pass: true, Message: "rule A: ok"},
-		{Pass: true, Message: "rule B: ok"},
-	}}
+// TestPolicyVerdictErrors_EmptyResultsIsEmpty proves an output with no fired
+// verdicts produces no errors, so the build proceeds.
+func TestPolicyVerdictErrors_EmptyResultsIsEmpty(t *testing.T) {
+	out := analyzer.PolicyValidatorOutput{Results: nil}
 	if errs := policyVerdictErrors("proof://policy", out); len(errs) != 0 {
-		t.Fatalf("all-pass output produced %d errors, want 0", len(errs))
+		t.Fatalf("empty output produced %d errors, want 0", len(errs))
 	}
 }
 

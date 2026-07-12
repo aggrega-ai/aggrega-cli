@@ -107,6 +107,15 @@ type PluginDescriptor struct {
 	// load gate validates or acts on.
 	Command string `json:"command,omitempty"`
 
+	// Stage is the compilation stage a policy-validator plugin evaluates at:
+	// StageIR (the default when absent) evaluates the target-agnostic IR graph;
+	// StageRender evaluates the rendered provider-native artifacts. It is
+	// meaningful for the policy-validator plugin type only — like Command is
+	// CLI-only — and other plugin types leave it empty. The shape validator
+	// accepts StageIR, StageRender, or empty and refuses any other value; it
+	// does not cross-check the value against the plugin type.
+	Stage string `json:"stage,omitempty"`
+
 	// Metadata is optional authorship information. It carries no
 	// behavioral contract — the host neither validates nor acts on it.
 	Metadata PluginDescriptorMeta `json:"metadata,omitempty,omitzero"`
@@ -444,6 +453,17 @@ const (
 	ScopeHost = types.ScopeHost
 )
 
+// StageIR and StageRender are the two compilation stages a policy-validator
+// plugin may declare it evaluates at via [PluginDescriptor.Stage]: ir evaluates
+// the target-agnostic IR graph, render evaluates the rendered provider-native
+// artifacts. The shape validator accepts these two values or the empty string;
+// an absent stage defaults to ir. The value is meaningful for the
+// policy-validator plugin type only.
+const (
+	StageIR     = "ir"
+	StageRender = "render"
+)
+
 // Validate checks a parsed descriptor against the host's contract and
 // returns nil if the plugin is admissible, or an error wrapping
 // [ErrWasmManifestRejected] naming pluginIdentity and the specific
@@ -482,6 +502,8 @@ const (
 //     the cross_boundary_linking flag is set if and only if the descriptor
 //     declares both the link_publish and link_resolve exports. A flag without
 //     both exports, or both exports without the flag, is refused at load.
+//   - stage is ir, render, or empty. This is shape validation only — the host
+//     does not cross-check the value against the plugin type or act on it here.
 //
 // pluginIdentity names the plugin in the rejection message. The caller
 // passes whatever stable identity it holds; the field is plumbed so the
@@ -517,7 +539,25 @@ func (d PluginDescriptor) Validate(pluginIdentity string) error {
 		return err
 	}
 
+	if err := d.validateStage(pluginIdentity); err != nil {
+		return err
+	}
+
 	return d.validateLinkCapability(pluginIdentity)
+}
+
+// validateStage shape-checks the descriptor's stage: it must be ir, render, or
+// empty. This is shape validation only — it does not cross-check the value
+// against the plugin type or act on it. A returned error wraps
+// [ErrWasmManifestRejected] and names pluginIdentity and the offending value.
+func (d PluginDescriptor) validateStage(pluginIdentity string) error {
+	switch d.Stage {
+	case "", StageIR, StageRender:
+		return nil
+	default:
+		return fmt.Errorf("plugin %q declares unknown stage %q (want %q, %q, or empty): %w",
+			pluginIdentity, d.Stage, StageIR, StageRender, ErrWasmManifestRejected)
+	}
 }
 
 // validateLinkCapability enforces the cross-boundary-linking coherence rule:

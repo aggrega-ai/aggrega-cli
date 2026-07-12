@@ -85,8 +85,8 @@ func TestPolicyValidatorOutput_RoundTrip(t *testing.T) {
 
 	fixture := analyzer.PolicyValidatorOutput{
 		Results: []analyzer.PolicyResult{
-			{Pass: true, Message: "soc2-required-labels: payments tier carries soc2 annotation"},
-			{Pass: false, Message: "version-floor: payments-db must run resolved_version >= 15.0.0; got 14.9.0"},
+			{Severity: analyzer.SeverityDeny, Message: "version-floor: payments-db must run resolved_version >= 15.0.0; got 14.9.0"},
+			{Severity: analyzer.SeverityAudit, Message: "soc2-required-labels: payments tier carries soc2 annotation"},
 		},
 	}
 
@@ -159,4 +159,6 @@ func TestPolicyValidatorTypes_JSONSchemaFieldCoverage(t *testing.T) {
 	assertGoStructPropertiesIn(t, reflect.TypeOf(analyzer.PolicyValidatorOutput{}), "PolicyValidatorOutput")
 	assertGoStructPropertiesIn(t, reflect.TypeOf(analyzer.PrecalculatedPath{}), "PrecalculatedPath")
 	assertGoStructPropertiesIn(t, reflect.TypeOf(analyzer.PolicyResult{}), "PolicyResult")
+	assertGoStructPropertiesIn(t, reflect.TypeOf(analyzer.RenderPolicyValidatorInput{}), "RenderPolicyValidatorInput")
+	assertGoStructPropertiesIn(t, reflect.TypeOf(analyzer.RenderedArtifact{}), "RenderedArtifact")
 }

@@ -391,9 +391,23 @@ type PluginsConfig struct {
 // importer → import); when omitted, the socket's documented default
 // applies. The empty-string value of Function is the "use default"
 // sentinel; consumers apply the per-socket default when Function == "".
+// With carries optional attachment-time inputs the plugin reads; nil
+// when the attachment declares none.
 type PluginRef struct {
-	URI      string `yaml:"uri"`
-	Function string `yaml:"function,omitempty"`
+	URI      string         `yaml:"uri"`
+	Function string         `yaml:"function,omitempty"`
+	With     *PluginRefWith `yaml:"with,omitempty"`
+}
+
+// PluginRefWith carries optional attachment-time inputs a plugin reads.
+// Sources names definition file paths the host reads at compile time and
+// hands to the plugin; Settings is a free-form settings object handed to the
+// plugin verbatim. Both are optional and socket-agnostic — the surface is
+// general so any socket may reuse it. Path resolution and reading of Sources
+// is performed by the host wiring; this type only carries the authored values.
+type PluginRefWith struct {
+	Sources  []string       `yaml:"sources,omitempty"`
+	Settings map[string]any `yaml:"settings,omitempty"`
 }
 
 // LintConfig groups per-rule strictness dials. Future lint

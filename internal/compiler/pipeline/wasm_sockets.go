@@ -161,17 +161,19 @@ func runPolicySocket(ctx context.Context, inputs Inputs, catalogLookup resolver.
 }
 
 // policyVerdictErrors converts a policy plugin's output into one AnalysisError
-// per failed verdict, in plugin-emitted order. A passing verdict adds nothing.
-// Each error carries the AnalysisErrorPolicy kind (so its message renders
-// verbatim) and the ErrPolicyViolation sentinel (so the build error is
+// per fired verdict, in plugin-emitted order. Only fired verdicts appear in the
+// output, so an empty result set adds nothing and the build proceeds. Each
+// error carries the AnalysisErrorPolicy kind (so its message renders verbatim)
+// and the ErrPolicyViolation sentinel (so the build error is
 // errors.Is-recoverable), and its message names the rejecting plugin and the
-// plugin-supplied rule message.
+// plugin-supplied verdict message.
+//
+// Severity-differentiated handling — letting a warn or audit verdict be
+// recorded without halting — is not yet wired, so every fired verdict currently
+// halts the build.
 func policyVerdictErrors(pluginURI string, po analyzer.PolicyValidatorOutput) []analyzer.AnalysisError {
 	var errs []analyzer.AnalysisError
 	for _, r := range po.Results {
-		if r.Pass {
-			continue
-		}
 		errs = append(errs, analyzer.AnalysisError{
 			Kind:     analyzer.AnalysisErrorPolicy,
 			Message:  fmt.Sprintf("policy plugin %q rejected the build: %s", pluginRefName(pluginURI), r.Message),

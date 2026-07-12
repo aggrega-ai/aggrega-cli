@@ -88,15 +88,15 @@ func assertMutatorOutput(t *testing.T, outputBytes []byte, langSuffix string) {
 }
 
 // assertPolicyValidatorOutput parses the policy-validator plugin's
-// output bytes, asserts there are exactly two results, and that the
-// verdict pattern is one-pass-one-fail in that order. The fixture's
+// output bytes, asserts there are exactly two fired verdicts, and that
+// the severity pattern is deny-then-audit in that order. The fixture's
 // contract is constant across languages; the assertion is shared.
 func assertPolicyValidatorOutput(t *testing.T, outputBytes []byte) {
 	t.Helper()
 	var out struct {
 		Results []struct {
-			Pass    bool   `json:"pass"`
-			Message string `json:"message"`
+			Severity string `json:"severity"`
+			Message  string `json:"message"`
 		} `json:"results"`
 	}
 	if err := json.Unmarshal(outputBytes, &out); err != nil {
@@ -105,11 +105,11 @@ func assertPolicyValidatorOutput(t *testing.T, outputBytes []byte) {
 	if len(out.Results) != 2 {
 		t.Fatalf("expected exactly two results from the fixture; got %d (output: %q)", len(out.Results), string(outputBytes))
 	}
-	if !out.Results[0].Pass {
-		t.Errorf("expected results[0].pass=true; got false (message: %s)", out.Results[0].Message)
+	if out.Results[0].Severity != "deny" {
+		t.Errorf("expected results[0].severity=deny; got %q (message: %s)", out.Results[0].Severity, out.Results[0].Message)
 	}
-	if out.Results[1].Pass {
-		t.Errorf("expected results[1].pass=false; got true (message: %s)", out.Results[1].Message)
+	if out.Results[1].Severity != "audit" {
+		t.Errorf("expected results[1].severity=audit; got %q (message: %s)", out.Results[1].Severity, out.Results[1].Message)
 	}
 }
 
@@ -224,8 +224,8 @@ var crossLanguageFixtureLangs = []string{"go", "rust", "typescript"}
 // pressure bounded to one plugin at a time.
 func TestCrossLanguageFixtureParity_PolicyValidator(t *testing.T) {
 	type result struct {
-		Pass    bool   `json:"pass"`
-		Message string `json:"message"`
+		Severity string `json:"severity"`
+		Message  string `json:"message"`
 	}
 	type output struct {
 		Results []result `json:"results"`
