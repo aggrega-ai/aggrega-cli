@@ -46,7 +46,10 @@ type ValuesValidator func(ch *chart.Chart, vals chartutil.Values) error
 // longer collapse onto one output slot. A document that carries no resource
 // identity — a generateName resource, a List wrapper — is keyed instead by a
 // deterministic kebab of its rendered template path, so it still emits a stable,
-// distinct file. It is the
+// distinct file. A chart's Helm-native crds/ directory is emitted alongside the
+// templated resources: Helm installs those CRD files verbatim rather than through
+// the template engine, so they are split, labeled, and keyed by resource identity
+// exactly like templated documents, in a deterministic order. It is the
 // filesystem-free render core: it receives the chart in memory and never reads
 // from disk, so both the in-tree host engine (which loads the chart from a path)
 // and the provider Wasm guest (which reconstructs the chart from the payload's
@@ -135,6 +138,61 @@ func RenderLoadedChart(
 	}
 	sort.Strings(keys)
 
+	// emitDocuments labels, annotates, keys, and stores each split document from
+	// one source (a rendered template or a chart CRD file). sourcePath names the
+	// origin: it seeds the deterministic fallback filename for identity-less
+	// documents and names the source in a collision halt. Templates and CRD files
+	// share this one emission path so both surfaces derive filenames, inject
+	// provenance, and detect collisions identically.
+	emitDocuments := func(docs []renderedDocument, sourcePath string) error {
+		// A single source may render the same identity more than once (e.g. a
+		// range emitting duplicate names). Count identities within this source so
+		// those occurrences take a stable document-index tiebreaker; unique
+		// identities stay tiebreaker-free.
+		idCount := make(map[string]int, len(docs))
+		ids := make([]string, len(docs))
+		for i := range docs {
+			id := deriveResourceIdentity(docs[i])
+			if id == "" {
+				// A rendered document without a kind or a metadata.name — a
+				// generateName resource, a List wrapper — has no resource
+				// identity to name a file by. Fall back to a deterministic id
+				// derived from the source path so the filename stays stable
+				// run-to-run; the idCount tiebreaker below disambiguates multiple
+				// such documents rendered from one source.
+				id = pathFallbackIdentity(sourcePath)
+			}
+			ids[i] = id
+			idCount[id]++
+		}
+
+		for i := range docs {
+			id := ids[i]
+			if idCount[id] > 1 {
+				id = id + "-" + strconv.Itoa(i)
+			}
+			labeled, err := injectAggregaLabels(docs[i].content, aggregaLabels, nodeCtx.YAMLIndent)
+			if err != nil {
+				return cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("helm: node %q: inject labels into %q", nodeCtx.NodeID, sourcePath))
+			}
+			annotated, err := injectAggregaAnnotations(labeled, aggregaAnnotations, hookWeight, nodeCtx.YAMLIndent)
+			if err != nil {
+				return cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("helm: node %q: inject annotations into %q", nodeCtx.NodeID, sourcePath))
+			}
+			outKey := prefix + "-" + id + ".yaml"
+			if prior, exists := out[outKey]; exists {
+				if bytes.Equal(prior, annotated) {
+					// Byte-identical duplicate: keeping one loses nothing.
+					continue
+				}
+				return cerrors.Wrap(ErrRenderedFileCollision, cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("helm: node %q: rendered resources %q and %q both derive output %q with differing content", nodeCtx.NodeID, keyOrigin[outKey], sourcePath, outKey))
+			}
+			out[outKey] = annotated
+			keyOrigin[outKey] = sourcePath
+		}
+		return nil
+	}
+
 	for _, path := range keys {
 		content := strings.TrimSpace(rendered[path])
 		if content == "" {
@@ -158,51 +216,35 @@ func RenderLoadedChart(
 		if err != nil {
 			return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("helm: node %q: template %q: %s", nodeCtx.NodeID, path, err.Error()))
 		}
-
-		// A single template may render the same identity more than once (e.g. a
-		// range emitting duplicate names). Count identities within this template
-		// so those occurrences take a stable document-index tiebreaker; unique
-		// identities stay tiebreaker-free.
-		idCount := make(map[string]int, len(docs))
-		ids := make([]string, len(docs))
-		for i := range docs {
-			id := deriveResourceIdentity(docs[i])
-			if id == "" {
-				// A rendered document without a kind or a metadata.name — a
-				// generateName resource, a List wrapper — has no resource
-				// identity to name a file by. Fall back to a deterministic id
-				// derived from the rendered template path so the filename stays
-				// stable run-to-run; the idCount tiebreaker below disambiguates
-				// multiple such documents rendered from one template.
-				id = pathFallbackIdentity(path)
-			}
-			ids[i] = id
-			idCount[id]++
+		if err := emitDocuments(docs, path); err != nil {
+			return nil, err
 		}
+	}
 
-		for i := range docs {
-			id := ids[i]
-			if idCount[id] > 1 {
-				id = id + "-" + strconv.Itoa(i)
-			}
-			labeled, err := injectAggregaLabels(docs[i].content, aggregaLabels, nodeCtx.YAMLIndent)
-			if err != nil {
-				return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("helm: node %q: inject labels into %q", nodeCtx.NodeID, base))
-			}
-			annotated, err := injectAggregaAnnotations(labeled, aggregaAnnotations, hookWeight, nodeCtx.YAMLIndent)
-			if err != nil {
-				return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("helm: node %q: inject annotations into %q", nodeCtx.NodeID, base))
-			}
-			outKey := prefix + "-" + id + ".yaml"
-			if prior, exists := out[outKey]; exists {
-				if bytes.Equal(prior, annotated) {
-					// Byte-identical duplicate: keeping one loses nothing.
-					continue
-				}
-				return nil, cerrors.Wrap(ErrRenderedFileCollision, cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("helm: node %q: rendered templates %q and %q both derive output %q with differing content", nodeCtx.NodeID, keyOrigin[outKey], path, outKey))
-			}
-			out[outKey] = annotated
-			keyOrigin[outKey] = path
+	// Emit the chart's Helm-native crds/ directory. CRDs shipped there — rather
+	// than under templates/ — are not rendered through the template engine; Helm
+	// installs them verbatim. They are split, labeled, and keyed by resource
+	// identity exactly like templated resources. CRDs are processed in Filename
+	// order so the output is deterministic run-to-run.
+	crds := ch.CRDObjects()
+	crdOrder := make([]int, len(crds))
+	for i := range crds {
+		crdOrder[i] = i
+	}
+	sort.Slice(crdOrder, func(a, b int) bool {
+		return crds[crdOrder[a]].Filename < crds[crdOrder[b]].Filename
+	})
+	for _, idx := range crdOrder {
+		crd := crds[idx]
+		if crd.File == nil || len(crd.File.Data) == 0 {
+			continue
+		}
+		docs, err := splitRenderedDocuments(crd.File.Data, nodeCtx.YAMLIndent)
+		if err != nil {
+			return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("helm: node %q: crd %q: %s", nodeCtx.NodeID, crd.Filename, err.Error()))
+		}
+		if err := emitDocuments(docs, crd.Filename); err != nil {
+			return nil, err
 		}
 	}
 
@@ -221,13 +263,16 @@ type renderedDocument struct {
 
 // splitRenderedDocuments decodes a rendered template's YAML stream into its
 // individual documents, re-encoding each at the render indent and extracting the
-// resource identity fields. Empty documents (whitespace or comments between
-// "---" separators) are dropped — they carry no resource to lose. A mapping-root
-// document that lacks a kind or a metadata.name (a generateName resource, a List
-// wrapper) is returned with empty identity fields; the caller derives a
-// deterministic path-based filename for it. A document whose root is not a
-// mapping is not a labelable resource and halts, since no resource-shaped output
-// can be produced from it.
+// resource identity fields. Empty and null documents are dropped — a whitespace-
+// or comment-only body between "---" separators, and a document whose root
+// deserializes to null (a bare "---" left by a false conditional, an explicit
+// "null", or "~"), carry no resource, so they are skipped rather than named,
+// matching the behavior of rendering the same chart with the Helm CLI. A
+// mapping-root document that lacks a kind or a metadata.name (a generateName
+// resource, a List wrapper) is returned with empty identity fields; the caller
+// derives a deterministic path-based filename for it. A document whose root is a
+// non-null, non-mapping value (a bare scalar or a sequence) is not a labelable
+// resource and halts, since no resource-shaped output can be produced from it.
 func splitRenderedDocuments(streamBytes []byte, indent int) ([]renderedDocument, error) {
 	dec := yaml.NewDecoder(bytes.NewReader(streamBytes))
 	var out []renderedDocument
@@ -243,7 +288,10 @@ func splitRenderedDocuments(streamBytes []byte, indent int) ([]renderedDocument,
 			continue
 		}
 		root := doc.Content[0]
-		if root == nil || root.Kind != yaml.MappingNode {
+		if root == nil || root.Tag == "!!null" {
+			continue
+		}
+		if root.Kind != yaml.MappingNode {
 			return nil, fmt.Errorf("rendered document is not a resource mapping; cannot derive an output filename")
 		}
 		kind := scalarChildValue(root, "kind")

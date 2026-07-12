@@ -1,0 +1,4 @@
+apiVersion: v2
+name: null-doc
+version: 0.1.0
+description: Fixture whose optional template renders to a bare "---" left by a false conditional, proving the resulting null document is dropped while an unguarded resource in another template still emits.

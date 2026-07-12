@@ -1,0 +1,4 @@
+apiVersion: v2
+name: crd-chart
+version: 0.1.0
+description: Fixture shipping a CustomResourceDefinition under the Helm-native crds/ directory alongside a templated resource, proving crds/ files are emitted with per-resource-identity filenames.

@@ -1,0 +1,17 @@
+{{- if .Values.optional.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: optional-config
+data:
+  key: value
+{{- end }}
+---
+{{- if .Values.optional.enabled }}
+apiVersion: v1
+kind: Secret
+metadata:
+  name: optional-secret
+stringData:
+  token: value
+{{- end }}

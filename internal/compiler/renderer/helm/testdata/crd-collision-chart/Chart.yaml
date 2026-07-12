@@ -1,0 +1,4 @@
+apiVersion: v2
+name: crd-collision
+version: 0.1.0
+description: Fixture where a crds/ CustomResourceDefinition and a templates/ CustomResourceDefinition share one resource identity with differing content, provoking the rendered-file collision halt across the crds/ and templates/ surfaces.
