@@ -184,8 +184,15 @@ func translateContainer(
 		Labels: buildAggregaLabels(nodeCtx),
 	}
 
+	// K8s command/args map to compose entrypoint/command, not one-to-one:
+	// K8s `command` overrides the image ENTRYPOINT, which is compose
+	// `entrypoint`; K8s `args` supplies arguments to the entrypoint, which is
+	// compose `command` (overriding the image CMD).
 	if len(c.Command) > 0 {
-		svc.Command = c.Command
+		svc.Entrypoint = c.Command
+	}
+	if len(c.Args) > 0 {
+		svc.Command = c.Args
 	}
 
 	// Environment variables. Compose `environment:` accepts both list and map

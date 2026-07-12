@@ -7,7 +7,10 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
+
+	"go.yaml.in/yaml/v3"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
@@ -253,6 +256,50 @@ func TestSynthesizeWorkload_EnvAuthorOrder(t *testing.T) {
 		t.Fatalf("SynthesizeWorkload: %v", err)
 	}
 	goldenCheck(t, "env-author-order", files[0].Body)
+}
+
+// TestSynthesizeWorkload_CommandAndArgs — a container's command and args map to
+// compose entrypoint and command respectively. K8s command (entrypoint
+// override) → compose entrypoint; K8s args (entrypoint arguments) → compose
+// command. Each renders as a YAML list.
+func TestSynthesizeWorkload_CommandAndArgs(t *testing.T) {
+	t.Parallel()
+	w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload"}
+
+	c := types.ContainerSpec{Image: "app:1.0"}
+	c.Command = []string{"/bin/server", "--config"}
+	c.Args = []string{"/etc/app/config.yaml", "--verbose"}
+	c.Ports.Set("web", 8080)
+	w.Containers.Set("main", c)
+
+	svc := types.ServiceSpec{Type: "ClusterIP"}
+	svc.Ports.Set("web", 8080)
+	w.Services.Set("api", svc)
+
+	files, err := SynthesizeWorkloadCore(w, nodeCtxFor("api"))
+	if err != nil {
+		t.Fatalf("SynthesizeWorkload: %v", err)
+	}
+	goldenCheck(t, "command-and-args", files[0].Body)
+
+	// Round-trip the rendered fragment and assert the list forms survive: the
+	// k8s command lands on compose entrypoint, the k8s args on compose command.
+	var rt ComposeFile
+	if err := yaml.Unmarshal(files[0].Body, &rt); err != nil {
+		t.Fatalf("round-trip unmarshal: %v", err)
+	}
+	got, ok := rt.Services["api"]
+	if !ok {
+		t.Fatalf("service %q missing from rendered fragment", "api")
+	}
+	wantEntrypoint := []string{"/bin/server", "--config"}
+	wantCommand := []string{"/etc/app/config.yaml", "--verbose"}
+	if !reflect.DeepEqual(got.Entrypoint, wantEntrypoint) {
+		t.Errorf("entrypoint: got %#v, want %#v", got.Entrypoint, wantEntrypoint)
+	}
+	if !reflect.DeepEqual(got.Command, wantCommand) {
+		t.Errorf("command: got %#v, want %#v", got.Command, wantCommand)
+	}
 }
 
 // TestSynthesizeWorkload_ServiceTypeNodePort_PublishesPorts — NodePort triggers
