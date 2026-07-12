@@ -43,7 +43,10 @@ type ValuesValidator func(ch *chart.Chart, vals chartutil.Values) error
 // "<component-id>-<kind>[-<namespace>]-<name>.yaml" (kebab-normalized). Keying by
 // resource identity rather than template basename keeps every rendered resource
 // distinct: two templates in different subdirectories that share a basename no
-// longer collapse onto one output slot. It is the
+// longer collapse onto one output slot. A document that carries no resource
+// identity — a generateName resource, a List wrapper — is keyed instead by a
+// deterministic kebab of its rendered template path, so it still emits a stable,
+// distinct file. It is the
 // filesystem-free render core: it receives the chart in memory and never reads
 // from disk, so both the in-tree host engine (which loads the chart from a path)
 // and the provider Wasm guest (which reconstructs the chart from the payload's
@@ -164,6 +167,15 @@ func RenderLoadedChart(
 		ids := make([]string, len(docs))
 		for i := range docs {
 			id := deriveResourceIdentity(docs[i])
+			if id == "" {
+				// A rendered document without a kind or a metadata.name — a
+				// generateName resource, a List wrapper — has no resource
+				// identity to name a file by. Fall back to a deterministic id
+				// derived from the rendered template path so the filename stays
+				// stable run-to-run; the idCount tiebreaker below disambiguates
+				// multiple such documents rendered from one template.
+				id = pathFallbackIdentity(path)
+			}
 			ids[i] = id
 			idCount[id]++
 		}
@@ -210,10 +222,12 @@ type renderedDocument struct {
 // splitRenderedDocuments decodes a rendered template's YAML stream into its
 // individual documents, re-encoding each at the render indent and extracting the
 // resource identity fields. Empty documents (whitespace or comments between
-// "---" separators) are dropped — they carry no resource to lose. A document
-// that is not a mapping, or that lacks a kind or a metadata.name, has no stable
-// identity to name an output file by; rather than fall back to a lossy scheme it
-// halts, since a determinism-preserving filename cannot be derived.
+// "---" separators) are dropped — they carry no resource to lose. A mapping-root
+// document that lacks a kind or a metadata.name (a generateName resource, a List
+// wrapper) is returned with empty identity fields; the caller derives a
+// deterministic path-based filename for it. A document whose root is not a
+// mapping is not a labelable resource and halts, since no resource-shaped output
+// can be produced from it.
 func splitRenderedDocuments(streamBytes []byte, indent int) ([]renderedDocument, error) {
 	dec := yaml.NewDecoder(bytes.NewReader(streamBytes))
 	var out []renderedDocument
@@ -235,9 +249,6 @@ func splitRenderedDocuments(streamBytes []byte, indent int) ([]renderedDocument,
 		kind := scalarChildValue(root, "kind")
 		metadata := findMapChild(root, "metadata")
 		name := scalarChildValue(metadata, "name")
-		if kind == "" || name == "" {
-			return nil, fmt.Errorf("rendered document has no derivable resource identity (missing kind or metadata.name); cannot derive an output filename")
-		}
 		namespace := scalarChildValue(metadata, "namespace")
 
 		var buf bytes.Buffer
@@ -266,8 +277,13 @@ func scalarChildValue(m *yaml.Node, key string) string {
 // deriveResourceIdentity builds the identity portion of an output filename from a
 // resource's kind, namespace, and name, kebab-normalized and joined with "-".
 // The namespace segment is omitted for cluster-scoped resources (empty
-// namespace). kind and name are guaranteed non-empty by splitRenderedDocuments.
+// namespace). A document that lacks a kind or a metadata.name has no derivable
+// resource identity; deriveResourceIdentity returns "" for it and the caller
+// substitutes a deterministic path-derived fallback.
 func deriveResourceIdentity(d renderedDocument) string {
+	if d.kind == "" || d.name == "" {
+		return ""
+	}
 	parts := make([]string, 0, 3)
 	parts = append(parts, kebabIdentityPart(d.kind))
 	if ns := kebabIdentityPart(d.namespace); ns != "" {
@@ -275,6 +291,14 @@ func deriveResourceIdentity(d renderedDocument) string {
 	}
 	parts = append(parts, kebabIdentityPart(d.name))
 	return strings.Join(parts, "-")
+}
+
+// pathFallbackIdentity derives a deterministic identity part from a rendered
+// template path with its file extension stripped, kebab-normalized. It names the
+// output file for a document that carries no derivable resource identity, keeping
+// the emitted filename stable run-to-run.
+func pathFallbackIdentity(path string) string {
+	return kebabIdentityPart(strings.TrimSuffix(path, filepath.Ext(path)))
 }
 
 // kebabIdentityPart lowercases s and collapses every run of characters outside

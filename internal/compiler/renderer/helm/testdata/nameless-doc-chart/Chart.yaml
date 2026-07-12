@@ -1,0 +1,4 @@
+apiVersion: v2
+name: nameless-doc
+version: 0.1.0
+description: Fixture emitting documents that carry no resource identity — a generateName resource and a List wrapper — proving each still emits a stable path-keyed output file.
