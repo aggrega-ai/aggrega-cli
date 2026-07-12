@@ -532,9 +532,10 @@ func assertByteIdenticalAcrossIterations(t *testing.T, results []*fullstackAppRe
 // testFilenameCollision exercises Phase B.5's cross-origin filename
 // collision detection. The helm-sourced-with-artifacts-collision variant
 // pairs the same chart as helm-sourced-with-artifacts (charts/api/templates/
-// deployment.yaml renders to api-deployment.yaml under the boundary's
-// helm/ directory) with an artifacts entry whose final filename also
-// resolves to api-deployment.yaml.
+// deployment.yaml renders to the identity-derived name
+// api-deployment-feature-matrix-api.yaml under the boundary's helm/
+// directory) with an artifacts entry whose final filename also resolves to
+// api-deployment-feature-matrix-api.yaml.
 func testFilenameCollision(t *testing.T) {
 	t.Parallel()
 	res, err := tryRunFeatureMatrixVariant(t, featureMatrixVariant{

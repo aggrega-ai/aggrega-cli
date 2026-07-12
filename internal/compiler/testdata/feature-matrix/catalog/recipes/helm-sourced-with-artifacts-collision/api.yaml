@@ -17,7 +17,7 @@ spec:
       "ports": ["{{ optional .infra `port` 8080 }}:{{ optional .infra `port` 8080 }}"]
     }
   artifacts:
-    api-deployment.yaml: |
+    api-deployment-feature-matrix-api.yaml: |
       apiVersion: v1
       kind: ConfigMap
       metadata:

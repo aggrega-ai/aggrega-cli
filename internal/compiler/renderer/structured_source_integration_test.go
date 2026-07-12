@@ -61,12 +61,12 @@ func TestRenderAll_BuildsStructuredHelmSource(t *testing.T) {
 	}
 	found := false
 	for path := range result.Files {
-		if strings.Contains(path, "deployment.yaml") {
+		if strings.Contains(path, "deployment") {
 			found = true
 		}
 	}
 	if !found {
-		t.Errorf("structured helm source did not render deployment.yaml; keys: %v", integrationKeys(result.Files))
+		t.Errorf("structured helm source did not render a deployment; keys: %v", integrationKeys(result.Files))
 	}
 }
 

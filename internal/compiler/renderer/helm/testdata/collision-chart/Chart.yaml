@@ -1,0 +1,4 @@
+apiVersion: v2
+name: collision
+version: 0.1.0
+description: Fixture emitting two resources that share one identity (kind, namespace, name) with differing content, provoking the rendered-file collision halt.

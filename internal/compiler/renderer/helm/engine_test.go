@@ -73,7 +73,7 @@ func TestHelmEngine_Sourced_RendersChart(t *testing.T) {
 	}
 	found := false
 	for k, v := range files {
-		if strings.Contains(k, "deployment.yaml") {
+		if strings.Contains(k, "deployment") {
 			found = true
 			if !strings.Contains(string(v), "api:2.0.0") {
 				t.Errorf("values not flowing into sourced chart: %s", v)
@@ -100,7 +100,7 @@ func TestHelmEngine_Sourced_CarriesAggregaLabels(t *testing.T) {
 	}
 	var dep string
 	for k, v := range files {
-		if strings.Contains(k, "deployment.yaml") {
+		if strings.Contains(k, "deployment") {
 			dep = string(v)
 		}
 	}

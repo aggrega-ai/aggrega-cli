@@ -1,0 +1,4 @@
+apiVersion: v2
+name: nested-samekind
+version: 0.1.0
+description: Fixture emitting two same-kind resources under distinct template subdirectories, proving both survive as distinct output files.

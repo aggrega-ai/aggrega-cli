@@ -4,11 +4,16 @@
 package helm
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
+
+	"go.yaml.in/yaml/v3"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
@@ -33,7 +38,12 @@ type ValuesValidator func(ch *chart.Chart, vals chartutil.Values) error
 
 // RenderLoadedChart renders an already-loaded Helm chart against the Phase B
 // values dictionary using the Helm Go SDK's template engine, returning flat
-// rendered YAML files keyed by "<component-id>-<basename>.yaml". It is the
+// rendered YAML files. Each rendered template is split into its individual YAML
+// documents and every document is emitted as its own file keyed by
+// "<component-id>-<kind>[-<namespace>]-<name>.yaml" (kebab-normalized). Keying by
+// resource identity rather than template basename keeps every rendered resource
+// distinct: two templates in different subdirectories that share a basename no
+// longer collapse onto one output slot. It is the
 // filesystem-free render core: it receives the chart in memory and never reads
 // from disk, so both the in-tree host engine (which loads the chart from a path)
 // and the provider Wasm guest (which reconstructs the chart from the payload's
@@ -96,13 +106,26 @@ func RenderLoadedChart(
 	}
 
 	// rendered is map[path]string. Path format: "<chart>/templates/<file>.yaml".
-	// Flatten with nodeID prefix for output determinism. Each rendered document
-	// is post-processed to merge aggrega.ai/* provenance labels into
-	// metadata.labels so sourced mode matches sourceless-mode's labeling.
+	// Each rendered template is split into its individual YAML documents and each
+	// document is emitted as its own file, keyed by resource identity rather than
+	// template basename so same-basename resources in different subdirectories
+	// stay distinct. Each rendered document is post-processed to merge
+	// aggrega.ai/* provenance labels into metadata.labels so sourced mode matches
+	// sourceless-mode's labeling.
 	aggregaLabels := buildAggregaLabels(nodeCtx)
 	aggregaAnnotations := buildAggregaAnnotations(nodeCtx)
 	hookWeight := helmHookWeight(nodeCtx)
 	out := make(map[string][]byte, len(rendered))
+	// keyOrigin maps each emitted output key back to the rendered template that
+	// produced it, so a distinct-content collision can name both source templates.
+	keyOrigin := make(map[string]string, len(rendered))
+	// The file-key prefix uses the sanitised component id, not the raw NodeID: a
+	// boundary-scope FR's synthetic NodeID carries marker syntax
+	// (`<boundary-fr>:<inst>@<boundary>`) whose `<>:@` are illegal in filenames on
+	// some platforms. ProvenanceComponentID is the raw NodeID for ordinary
+	// components (byte-identical key) and the sanitised LabelComponentID for
+	// FR-emitted nodes.
+	prefix := rendercore.ProvenanceComponentID(nodeCtx)
 	keys := make([]string, 0, len(rendered))
 	for k := range rendered {
 		keys = append(keys, k)
@@ -110,8 +133,7 @@ func RenderLoadedChart(
 	sort.Strings(keys)
 
 	for _, path := range keys {
-		content := rendered[path]
-		content = strings.TrimSpace(content)
+		content := strings.TrimSpace(rendered[path])
 		if content == "" {
 			continue
 		}
@@ -128,23 +150,150 @@ func RenderLoadedChart(
 		default:
 			continue
 		}
-		labeled, err := injectAggregaLabels([]byte(content+"\n"), aggregaLabels, nodeCtx.YAMLIndent)
+
+		docs, err := splitRenderedDocuments([]byte(content), nodeCtx.YAMLIndent)
 		if err != nil {
-			return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("helm: node %q: inject labels into %q", nodeCtx.NodeID, base))
+			return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("helm: node %q: template %q: %s", nodeCtx.NodeID, path, err.Error()))
 		}
-		annotated, err := injectAggregaAnnotations(labeled, aggregaAnnotations, hookWeight, nodeCtx.YAMLIndent)
-		if err != nil {
-			return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("helm: node %q: inject annotations into %q", nodeCtx.NodeID, base))
+
+		// A single template may render the same identity more than once (e.g. a
+		// range emitting duplicate names). Count identities within this template
+		// so those occurrences take a stable document-index tiebreaker; unique
+		// identities stay tiebreaker-free.
+		idCount := make(map[string]int, len(docs))
+		ids := make([]string, len(docs))
+		for i := range docs {
+			id := deriveResourceIdentity(docs[i])
+			ids[i] = id
+			idCount[id]++
 		}
-		// The file-key prefix uses the sanitised component id, not the raw
-		// NodeID: a boundary-scope FR's synthetic NodeID carries marker syntax
-		// (`<boundary-fr>:<inst>@<boundary>`) whose `<>:@` are illegal in
-		// filenames on some platforms. ProvenanceComponentID is the raw NodeID
-		// for ordinary components (byte-identical key) and the sanitised
-		// LabelComponentID for FR-emitted nodes.
-		outKey := rendercore.ProvenanceComponentID(nodeCtx) + "-" + base
-		out[outKey] = annotated
+
+		for i := range docs {
+			id := ids[i]
+			if idCount[id] > 1 {
+				id = id + "-" + strconv.Itoa(i)
+			}
+			labeled, err := injectAggregaLabels(docs[i].content, aggregaLabels, nodeCtx.YAMLIndent)
+			if err != nil {
+				return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("helm: node %q: inject labels into %q", nodeCtx.NodeID, base))
+			}
+			annotated, err := injectAggregaAnnotations(labeled, aggregaAnnotations, hookWeight, nodeCtx.YAMLIndent)
+			if err != nil {
+				return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("helm: node %q: inject annotations into %q", nodeCtx.NodeID, base))
+			}
+			outKey := prefix + "-" + id + ".yaml"
+			if prior, exists := out[outKey]; exists {
+				if bytes.Equal(prior, annotated) {
+					// Byte-identical duplicate: keeping one loses nothing.
+					continue
+				}
+				return nil, cerrors.Wrap(ErrRenderedFileCollision, cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("helm: node %q: rendered templates %q and %q both derive output %q with differing content", nodeCtx.NodeID, keyOrigin[outKey], path, outKey))
+			}
+			out[outKey] = annotated
+			keyOrigin[outKey] = path
+		}
 	}
 
 	return out, nil
+}
+
+// renderedDocument is one YAML document split out of a rendered template: its
+// re-encoded bytes plus the resource identity (kind, namespace, name) used to
+// derive a stable output filename.
+type renderedDocument struct {
+	content   []byte
+	kind      string
+	namespace string
+	name      string
+}
+
+// splitRenderedDocuments decodes a rendered template's YAML stream into its
+// individual documents, re-encoding each at the render indent and extracting the
+// resource identity fields. Empty documents (whitespace or comments between
+// "---" separators) are dropped — they carry no resource to lose. A document
+// that is not a mapping, or that lacks a kind or a metadata.name, has no stable
+// identity to name an output file by; rather than fall back to a lossy scheme it
+// halts, since a determinism-preserving filename cannot be derived.
+func splitRenderedDocuments(streamBytes []byte, indent int) ([]renderedDocument, error) {
+	dec := yaml.NewDecoder(bytes.NewReader(streamBytes))
+	var out []renderedDocument
+	for {
+		var doc yaml.Node
+		if err := dec.Decode(&doc); err != nil {
+			if err == io.EOF {
+				break
+			}
+			return nil, fmt.Errorf("parse rendered YAML: %w", err)
+		}
+		if doc.Kind != yaml.DocumentNode || len(doc.Content) == 0 {
+			continue
+		}
+		root := doc.Content[0]
+		if root == nil || root.Kind != yaml.MappingNode {
+			return nil, fmt.Errorf("rendered document is not a resource mapping; cannot derive an output filename")
+		}
+		kind := scalarChildValue(root, "kind")
+		metadata := findMapChild(root, "metadata")
+		name := scalarChildValue(metadata, "name")
+		if kind == "" || name == "" {
+			return nil, fmt.Errorf("rendered document has no derivable resource identity (missing kind or metadata.name); cannot derive an output filename")
+		}
+		namespace := scalarChildValue(metadata, "namespace")
+
+		var buf bytes.Buffer
+		enc := yaml.NewEncoder(&buf)
+		enc.SetIndent(rendercore.ClampYAMLIndent(indent))
+		if err := enc.Encode(&doc); err != nil {
+			return nil, fmt.Errorf("encode rendered YAML: %w", err)
+		}
+		_ = enc.Close()
+
+		out = append(out, renderedDocument{content: buf.Bytes(), kind: kind, namespace: namespace, name: name})
+	}
+	return out, nil
+}
+
+// scalarChildValue returns the scalar value mapped from key in a MappingNode, or
+// "" when absent or non-scalar. A nil node yields "".
+func scalarChildValue(m *yaml.Node, key string) string {
+	v := findMapChild(m, key)
+	if v != nil && v.Kind == yaml.ScalarNode {
+		return v.Value
+	}
+	return ""
+}
+
+// deriveResourceIdentity builds the identity portion of an output filename from a
+// resource's kind, namespace, and name, kebab-normalized and joined with "-".
+// The namespace segment is omitted for cluster-scoped resources (empty
+// namespace). kind and name are guaranteed non-empty by splitRenderedDocuments.
+func deriveResourceIdentity(d renderedDocument) string {
+	parts := make([]string, 0, 3)
+	parts = append(parts, kebabIdentityPart(d.kind))
+	if ns := kebabIdentityPart(d.namespace); ns != "" {
+		parts = append(parts, ns)
+	}
+	parts = append(parts, kebabIdentityPart(d.name))
+	return strings.Join(parts, "-")
+}
+
+// kebabIdentityPart lowercases s and collapses every run of characters outside
+// [a-z0-9] to a single "-", trimming leading and trailing dashes. The mapping is
+// deterministic so the derived filename is stable run-to-run.
+func kebabIdentityPart(s string) string {
+	var b strings.Builder
+	b.Grow(len(s))
+	pendingDash := false
+	for _, r := range strings.ToLower(s) {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			if pendingDash && b.Len() > 0 {
+				b.WriteByte('-')
+			}
+			pendingDash = false
+			b.WriteRune(r)
+		} else {
+			pendingDash = true
+		}
+	}
+	return b.String()
 }
