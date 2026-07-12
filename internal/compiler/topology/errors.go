@@ -82,6 +82,31 @@ var (
 	// silently flattening a half-normalized graph.
 	ErrUnnormalizedAggregate = errors.New("aggregate reached topology un-normalized (non-empty root components alongside a synthesized default subsystem)")
 
+	// ErrInvalidActive fires from flattenAggregate when a component's or a
+	// sub-aggregate module's resolved `active` toggle is neither empty nor a
+	// boolean literal. The toggle reaches flatten as an already-resolved string
+	// (a boolean authored directly, or a parameter template the resolver
+	// rendered to a literal); flatten interprets it strictly, so a value that is
+	// not empty and does not parse as a boolean — including the "<no value>"
+	// literal a template over a missing key produces — is a Loud Guardrail
+	// (Invariant 4) rather than a silent default. The wrapped error names the
+	// node whose toggle failed and the offending resolved value so the author
+	// can correct the toggle or the parameter driving it.
+	ErrInvalidActive = errors.New("active toggle did not resolve to a boolean")
+
+	// ErrUsesPrunedComponent fires from the origin-agnostic dangling-target
+	// sweep when a surviving component's `uses` edge targets a component that
+	// was pruned from the topology because its `active` toggle resolved to
+	// false. It is the pruned-target sibling of ErrDanglingUsesTarget: the
+	// target is not merely absent, it was deliberately removed, so the
+	// diagnostic distinguishes the two rather than reporting a generic dangling
+	// reference. Pruning a component that a survivor still depends on would
+	// otherwise leave the consumer's inject silently empty, so the build halts
+	// (Invariant 4). The wrapped error names the surviving consumer, the pruned
+	// target, and that the target was pruned because its `active` resolved to
+	// false so the author can either keep the target present or drop the edge.
+	ErrUsesPrunedComponent = errors.New("uses edge target was pruned because its active toggle resolved to false")
+
 	// ErrMutatorPatchRejected fires when a mutator plugin returns a JSON Patch
 	// the host refuses to apply to the labels-only graph projection: a patch
 	// that fails to decode, a patch whose operation does not apply cleanly, or

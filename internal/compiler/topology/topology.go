@@ -570,14 +570,31 @@ func BuildContext(ctx context.Context, cfg BuildConfig) (*TopologyResult, error)
 		}
 	}
 
+	// Drop exported-component aliases whose resolved target was pruned. A pruned
+	// component must not be published as part of the module's public interface;
+	// dropping the alias before the dangling sweep keeps a stale export from
+	// pointing at a component that no longer exists.
+	for alias, target := range flat.ExportedComponents {
+		if flat.Pruned[target] {
+			delete(flat.ExportedComponents, alias)
+		}
+	}
+
 	// Origin-agnostic dangling-target guardrail. Every edge — developer-authored
 	// (Aggregate), Feature-projected, or Release-wired — must point at a node
 	// that exists in the resolved topology. A dangling target is a Loud Guardrail
 	// (Invariant 4), not a silent drop: an unresolved target would otherwise
 	// leave the consumer's inject silently empty. Walks in author order and halts
-	// on the first dangling edge for deterministic output.
+	// on the first offending edge for deterministic output. A target that was
+	// pruned by a false `active` toggle is classified apart from one that never
+	// existed, so the author sees why the target is missing.
 	for _, e := range edges {
 		if _, exists := flat.Nodes.Get(e.Target); !exists {
+			if flat.Pruned[e.Target] {
+				return nil, fmt.Errorf(
+					"uses edge %s/%s/%s targets %q, which was pruned from the topology because its active toggle resolved to false: %w",
+					e.Source, e.Socket, e.Alias, e.Target, ErrUsesPrunedComponent)
+			}
 			return nil, fmt.Errorf(
 				"uses edge %s/%s/%s targets %q, which is not a component in the topology: %w",
 				e.Source, e.Socket, e.Alias, e.Target, ErrDanglingUsesTarget)

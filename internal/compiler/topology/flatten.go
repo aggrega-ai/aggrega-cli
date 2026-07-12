@@ -5,6 +5,8 @@ package topology
 
 import (
 	"fmt"
+	"strconv"
+	"strings"
 
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
@@ -24,6 +26,31 @@ type flattenResult struct {
 	FeatureAttachments map[string][]FeatureAttachment
 	SecretAttachments  map[string][]SecretAttachment
 	ExportedComponents map[string]string
+	// Pruned is the set of flattened node IDs a false `active` toggle removed
+	// from the topology. Pruned nodes are absent from Nodes (so their own edges
+	// and attachments never materialize); the set is retained so the
+	// dangling-target sweep can tell a survivor's edge into a deliberately
+	// pruned target apart from an edge into a target that never existed.
+	Pruned map[string]bool
+}
+
+// evalActive interprets a component's or module's resolved `active` toggle.
+// The toggle reaches flatten already resolved to a literal — a boolean the
+// author wrote directly, or a parameter template the resolver rendered before
+// unmarshal. An empty literal means the toggle was omitted and the entity is
+// present; otherwise the literal must parse as a boolean. A non-empty,
+// non-boolean literal (including the "<no value>" a template over a missing key
+// produces) is a Loud Guardrail naming the node and the offending value.
+func evalActive(active types.ActiveFlag, nodeID string) (bool, error) {
+	s := strings.TrimSpace(string(active))
+	if s == "" {
+		return true, nil
+	}
+	b, err := strconv.ParseBool(s)
+	if err != nil {
+		return false, cerrors.Wrap(ErrInvalidActive, cerrors.DeveloperError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("node %q active resolved to %q, which is not a boolean", nodeID, string(active)))
+	}
+	return b, nil
 }
 
 // flattenAggregate recursively walks an Aggregate tree, flattening all
@@ -102,11 +129,22 @@ func flattenAggregate(
 		FeatureAttachments: make(map[string][]FeatureAttachment),
 		SecretAttachments:  make(map[string][]SecretAttachment),
 		ExportedComponents: make(map[string]string),
+		Pruned:             make(map[string]bool),
 	}
 
 	// Walk top-level components in author order
 	for name, comp := range agg.Spec.Components.All() {
 		nodeID := qualifiedID(prefix, name)
+		keep, err := evalActive(comp.Active, nodeID)
+		if err != nil {
+			return nil, err
+		}
+		if !keep {
+			// Pruned: skip node creation and attachments; record the ID so the
+			// dangling sweep can classify a survivor's edge into it.
+			result.Pruned[nodeID] = true
+			continue
+		}
 		if existing, exists := result.Nodes.Get(nodeID); exists {
 			return nil, cerrors.Wrap(ErrSubAggregateNameCollision, cerrors.DeveloperError, cerrors.SourceLocation{File: prefix}, fmt.Sprintf("id %q (path %q) collides with existing entry from %q", nodeID, prefix, existing.SourceAggregate))
 		}
@@ -137,6 +175,17 @@ func flattenAggregate(
 		for aggName, subAgg := range agg.Spec.Aggregates.All() {
 			childPrefix := qualifiedID(prefix, aggName)
 
+			keep, err := evalActive(subAgg.Active, childPrefix)
+			if err != nil {
+				return nil, err
+			}
+			if !keep {
+				// Pruned module: skip loading and recursing the whole module, so
+				// none of its components, edges, attachments, or exports
+				// materialize.
+				continue
+			}
+
 			if visited[subAgg.Type] {
 				return nil, cerrors.Wrap(ErrSubAggregateLoad, cerrors.DeveloperError, cerrors.SourceLocation{File: childPrefix}, fmt.Sprintf("circular sub-aggregate reference %q at %q", subAgg.Type, childPrefix))
 			}
@@ -166,6 +215,9 @@ func flattenAggregate(
 			}
 			for id, secs := range childResult.SecretAttachments {
 				result.SecretAttachments[id] = append(result.SecretAttachments[id], secs...)
+			}
+			for id := range childResult.Pruned {
+				result.Pruned[id] = true
 			}
 
 			// Rewire exported_components: alias scoped to sub-aggregate prefix
@@ -223,6 +275,14 @@ func flattenSubsystem(result *flattenResult, prefix, subsystemPath, sourceFile s
 
 	for name, comp := range sub.Components.All() {
 		nodeID := qualifiedID(prefix, name)
+		keep, err := evalActive(comp.Active, nodeID)
+		if err != nil {
+			return err
+		}
+		if !keep {
+			result.Pruned[nodeID] = true
+			continue
+		}
 		if existing, exists := result.Nodes.Get(nodeID); exists {
 			return cerrors.Wrap(ErrSubAggregateNameCollision, cerrors.DeveloperError, cerrors.SourceLocation{File: prefix}, fmt.Sprintf("id %q (path %q) collides with existing entry from %q", nodeID, prefix, existing.SourceAggregate))
 		}

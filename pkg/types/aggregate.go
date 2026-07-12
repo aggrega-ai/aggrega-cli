@@ -3,7 +3,68 @@
 
 package types
 
+import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"strconv"
+
+	"go.yaml.in/yaml/v3"
+)
+
 //go:generate go run ../../internal/tools/typegen aggregate_gen.go
+
+// ActiveFlag is a presence toggle authored on an Aggregate component
+// instance or a sub-aggregate module. It accepts a YAML/JSON boolean or a
+// string and carries the value verbatim as its canonical literal —
+// "true"/"false" for a boolean, or the raw string otherwise. A string is a
+// parameter template the resolver renders to a literal before the topology
+// reads it; the topology then interprets the literal strictly as a boolean.
+// The empty value means the toggle was omitted and the entity is present by
+// default. ActiveFlag is a compile-time authoring input only; it never
+// appears in compiled output.
+type ActiveFlag string
+
+// UnmarshalYAML accepts a scalar boolean or string and stores the node's
+// literal value ("true"/"false" for a boolean, the raw text for a string).
+// Non-scalar nodes are rejected naming the two accepted forms.
+func (a *ActiveFlag) UnmarshalYAML(node *yaml.Node) error {
+	if node == nil {
+		return nil
+	}
+	if node.Kind != yaml.ScalarNode {
+		return fmt.Errorf("active must be a boolean or a string template (line %d)", node.Line)
+	}
+	*a = ActiveFlag(node.Value)
+	return nil
+}
+
+// UnmarshalJSON accepts a JSON boolean or string, normalizing a boolean to
+// its "true"/"false" literal and storing a string verbatim.
+func (a *ActiveFlag) UnmarshalJSON(data []byte) error {
+	trimmed := bytes.TrimSpace(data)
+	if len(trimmed) == 0 || string(trimmed) == "null" {
+		return nil
+	}
+	switch trimmed[0] {
+	case '"':
+		var s string
+		if err := json.Unmarshal(trimmed, &s); err != nil {
+			return err
+		}
+		*a = ActiveFlag(s)
+		return nil
+	case 't', 'f':
+		var b bool
+		if err := json.Unmarshal(trimmed, &b); err != nil {
+			return err
+		}
+		*a = ActiveFlag(strconv.FormatBool(b))
+		return nil
+	default:
+		return fmt.Errorf("active must be a boolean or a string, got %s", trimmed)
+	}
+}
 
 // Aggregate's struct declarations (Aggregate, AggregateMetadata, AggregateSpec)
 // are generated into aggregate_gen.go from the published aggregate-v1alpha1
@@ -17,7 +78,9 @@ package types
 // SubAggregate is a nested aggregate acting as an imported module.
 // Schema: aggregate-v1alpha1.schema.json#/properties/spec/properties/aggregates
 type SubAggregate struct {
-	Type       string          `json:"type" yaml:"type"`
+	Type string `json:"type" yaml:"type"`
+	// Active is the module's presence toggle; empty means present. See [ActiveFlag].
+	Active     ActiveFlag      `json:"active,omitempty" yaml:"active,omitempty"`
 	Parameters OrderedMap[any] `json:"parameters,omitempty,omitzero" yaml:"parameters,omitempty"`
 }
 
@@ -71,7 +134,9 @@ type Subsystem struct {
 // ComponentInstance is one logical node in the aggregate topology (Developer-authored).
 // Schema: aggregate-v1alpha1.schema.json#/$defs/component_instance
 type ComponentInstance struct {
-	Type        string                      `json:"type" yaml:"type"`
+	Type string `json:"type" yaml:"type"`
+	// Active is the component's presence toggle; empty means present. See [ActiveFlag].
+	Active      ActiveFlag                  `json:"active,omitempty" yaml:"active,omitempty"`
 	Description string                      `json:"description,omitempty" yaml:"description,omitempty"`
 	Values      OrderedMap[any]             `json:"values,omitempty,omitzero" yaml:"values,omitempty"`
 	Inject      *InjectBlock                `json:"inject,omitempty" yaml:"inject,omitempty"`      // Component-level self-inject
