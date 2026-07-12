@@ -12,6 +12,22 @@ The module root is this directory. Build the CLI with the Go toolchain:
 go build ./cmd/aggrega
 ```
 
+The CLI embeds the provider rendering guests. These are reproducible build
+outputs generated from guest source, not tracked files, so a plain `go build`
+embeds whatever guest artifacts already sit on disk from an earlier build. After
+changing a guest or the shared render core it reuses, regenerate before
+building:
+
+```bash
+go generate ./internal/wasm/embedded/... && go build ./cmd/aggrega
+```
+
+In the umbrella workspace, the build script at `scripts/build.sh` (at the
+workspace root) always regenerates the guests before the compile that embeds
+them, so it needs no separate generate step. The
+`scripts/check-embedded-guests.sh` helper reports any embedded guest that is
+older than its source.
+
 ## Testing
 
 The fast unit suite needs nothing beyond this repository:

@@ -20,6 +20,15 @@
 // Adding another embedded plugin is a drop-in: add a row to the embeddedArtifacts
 // table and its build-embedded generate step so its gzip-compressed .wasm lands
 // under plugins/.
+//
+// Freshness caveat: a plain go build does not regenerate these artifacts — it
+// embeds whatever .wasm.gz already sit under plugins/ from an earlier build,
+// which can predate a later change to a guest or to the shared render core a
+// guest reuses, silently shipping stale provider behavior. Regenerate before
+// building with `go generate ./internal/wasm/embedded/... && go build`, or use
+// the repository build script (scripts/build.sh at the workspace root), which
+// always regenerates the guests before the embedding compile. The sibling
+// check-embedded-guests.sh script flags any artifact older than its source.
 package embedded
 
 import (
