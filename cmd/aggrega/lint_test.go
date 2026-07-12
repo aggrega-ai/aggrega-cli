@@ -517,3 +517,52 @@ func TestLintMissingEntityPath(t *testing.T) {
 		t.Errorf("error should describe missing entity path; got: %v", err)
 	}
 }
+
+// TestLintReleasePrePublishMutuallyExclusive asserts that combining --release
+// with --pre-publish halts with a clear different-scope OPS_ERROR — rather than
+// silently taking the release-closure branch and ignoring --pre-publish — and
+// that neither scope-flag on its own trips that guard (the three symmetric lint
+// scopes stay intact).
+func TestLintReleasePrePublishMutuallyExclusive(t *testing.T) {
+	const guardMsg = "OPS_ERROR: --pre-publish is mutually exclusive with --release"
+
+	runLint := func(t *testing.T, args ...string) error {
+		t.Helper()
+		cmd := newLintCmd()
+		var out bytes.Buffer
+		cmd.SetOut(&out)
+		cmd.SetErr(&out)
+		cmd.SetContext(withWorkspaceResolver(context.Background(), t.TempDir()))
+		cmd.SetArgs(args)
+		return cmd.Execute()
+	}
+
+	t.Run("release plus pre-publish halts", func(t *testing.T) {
+		err := runLint(t, "--release", filepath.Join(t.TempDir(), "release.yaml"), "--pre-publish")
+		if err == nil {
+			t.Fatal("--release with --pre-publish must halt")
+		}
+		if !strings.Contains(err.Error(), guardMsg) {
+			t.Fatalf("expected the different-scope OPS_ERROR; got: %v", err)
+		}
+	})
+
+	t.Run("release alone does not trip the guard", func(t *testing.T) {
+		// --release alone is a valid scope. It may fail downstream (the Release
+		// file does not exist), but it must never surface the pre-publish conflict.
+		err := runLint(t, "--release", filepath.Join(t.TempDir(), "release.yaml"))
+		if err != nil && strings.Contains(err.Error(), guardMsg) {
+			t.Fatalf("--release alone must not trip the pre-publish guard: %v", err)
+		}
+	})
+
+	t.Run("entity plus pre-publish does not trip the guard", func(t *testing.T) {
+		// The single-entity + --pre-publish shape is exactly what --pre-publish is
+		// for. It may fail downstream (the entity file does not exist), but it must
+		// never surface the pre-publish/release conflict.
+		err := runLint(t, filepath.Join(t.TempDir(), "component.yaml"), "--pre-publish")
+		if err != nil && strings.Contains(err.Error(), guardMsg) {
+			t.Fatalf("entity + --pre-publish must not trip the pre-publish guard: %v", err)
+		}
+	})
+}

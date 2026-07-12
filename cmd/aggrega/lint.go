@@ -103,6 +103,12 @@ can be overridden per invocation via the --allow-*/--no-allow-* and
 				if path != "" {
 					return fmt.Errorf("OPS_ERROR: --release is mutually exclusive with an entity argument; pass one or the other")
 				}
+				// --pre-publish drives the single-entity registry-bump check; the
+				// release-closure pass never consults it. Halt loudly rather than
+				// silently ignore the flag.
+				if lintPrePublish {
+					return fmt.Errorf("OPS_ERROR: --pre-publish is mutually exclusive with --release; --pre-publish applies to a single entity, --release checks a Release closure")
+				}
 				return lintConventionsRelease(rw, lintReleasePath, lintCatalogDirs, cmd.OutOrStdout(), os.Stderr)
 			}
 			if path == "" {
