@@ -22,6 +22,25 @@ import "github.com/aggrega-ai/aggrega-cli/pkg/types"
 type PolicyValidatorInput struct {
 	Graph              types.IRGraph       `json:"graph"`
 	PrecalculatedPaths []PrecalculatedPath `json:"precalculated_paths"`
+	// Sources carries the definition files the attachment named, read by the
+	// host at compile time and handed to the plugin verbatim, in an order sorted
+	// by path. Each entry's path is the file's base name — never an absolute host
+	// path — and its content is opaque bytes the host does not parse. Absent when
+	// the attachment declares no sources.
+	Sources []PolicySource `json:"sources,omitempty"`
+	// Settings carries the free-form settings object the attachment declared,
+	// handed to the plugin verbatim. The host does not parse or act on it. Nil
+	// when the attachment declares no settings.
+	Settings map[string]any `json:"settings,omitempty"`
+}
+
+// PolicySource is one definition file the host hands to a policy-validator
+// plugin: its base-name Path and the file's Content. The host reads the file at
+// compile time and carries its bytes verbatim; it never parses the content and
+// never exposes an absolute host path in Path.
+type PolicySource struct {
+	Path    string `json:"path"`
+	Content string `json:"content"`
 }
 
 // PolicyValidatorOutput is the JSON response shape the
@@ -62,11 +81,19 @@ const (
 // carries the rendered artifacts rather than the IR graph; a render-stage
 // policy reasons over emitted output, not topology.
 //
-// The wire shape and this Go mirror are declared so the socket contract is
-// single-sourced; the host does not yet assemble this payload — building it is
-// deferred to the render-stage host wiring.
+// The render-stage socket runner assembles this payload after render: it sorts
+// the rendered files into Artifacts by path and populates Sources and Settings
+// from the attachment. The wire shape and this Go mirror are single-sourced from
+// the socket schema; the generated guest codec in aggrega-abi mirrors it.
 type RenderPolicyValidatorInput struct {
 	Artifacts []RenderedArtifact `json:"artifacts"`
+	// Sources and Settings carry the same attachment-declared inputs as on the
+	// IR-stage [PolicyValidatorInput]: the definition files read verbatim (paths
+	// as base names, content opaque, sorted by path) and the free-form settings
+	// object handed through untouched. Both are absent when the attachment
+	// declares none.
+	Sources  []PolicySource `json:"sources,omitempty"`
+	Settings map[string]any `json:"settings,omitempty"`
 }
 
 // RenderedArtifact is one rendered output file in a render-stage policy input:

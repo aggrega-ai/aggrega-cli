@@ -6,10 +6,14 @@
 package pipeline_test
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -70,21 +74,36 @@ func loadFullstackForSockets(t *testing.T) (pipeline.Inputs, resolver.CatalogLoo
 }
 
 // fixtureSocketLookup returns a plugin lookup that resolves each configured URI
-// to its built fixture's bytes and delegates every other URI to the bare
-// cascade (embed + local tiers) — a harmless fallback since the fullstack build
-// renders through Go engines and asks the lookup for nothing else.
-func fixtureSocketLookup(t *testing.T, uriToArtifact map[string]string) pluginpath.Lookup {
+// to its built fixture's bytes and delegates every other URI to the
+// entity-fronted embedded cascade — the same Plugin-entity translation
+// (entity URI → spec.plugin artifact reference + capability claim) the build's
+// own lookup applies, so a provider entity URI the render resolves reaches its
+// embedded guest bytes and its authored capability claim. A bare resolver would
+// consult the embedded tier but skip the entity translation, so a provider
+// guest would resolve without its capability claim and the render-stage
+// compatibility check would reject it; the socket tests render through the Wasm
+// providers, so they need the same entity front the build uses.
+func fixtureSocketLookup(t *testing.T, catalogLookup resolver.CatalogLookup, uriToArtifact map[string]string) pluginpath.Lookup {
 	t.Helper()
 	bytesByURI := make(map[string][]byte, len(uriToArtifact))
 	for uri, artifact := range uriToArtifact {
 		bytesByURI[uri] = wasmtest.EnsureFixtureBytes(t, artifact)
 	}
-	bare := (pluginpath.Resolver{}).Resolve
+	entityCascade := pluginpath.EntityLookup(func(uri string) (string, *pluginpath.PluginCapabilityClaim, *pluginpath.PluginRuntimeLimits, bool) {
+		if catalogLookup.Plugin == nil {
+			return "", nil, nil, false
+		}
+		entity, ok := catalogLookup.Plugin(uri)
+		if !ok {
+			return "", nil, nil, false
+		}
+		return entity.Spec.Plugin, resolver.PluginCapabilityClaim(entity), resolver.PluginRuntimeLimits(entity), true
+	}, (pluginpath.Resolver{}).Resolve)
 	return func(uri string) (pluginpath.ResolvedPlugin, error) {
 		if b, ok := bytesByURI[uri]; ok {
 			return pluginpath.ResolvedPlugin{Bytes: b, URI: uri}, nil
 		}
-		return bare(uri)
+		return entityCascade(uri)
 	}
 }
 
@@ -94,12 +113,11 @@ func fixtureSocketLookup(t *testing.T, uriToArtifact map[string]string) pluginpa
 // artifacts (determinism holds with the socket in the pipeline).
 func TestMutatorSocketInjectsLabelE2E(t *testing.T) {
 	ctx := context.Background()
-	lookup := fixtureSocketLookup(t, map[string]string{"proof://mutator": "mutator-proof-go.wasm"})
 
 	build := func() *pipeline.Result {
 		inputs, buildLookup, recipeLookup, subAgg := loadFullstackForSockets(t)
 		inputs.WorkspaceConfig.Plugins.Mutator = []workspaceconfig.PluginRef{{URI: "proof://mutator"}}
-		inputs.PluginPathLookup = lookup
+		inputs.PluginPathLookup = fixtureSocketLookup(t, buildLookup, map[string]string{"proof://mutator": "mutator-proof-go.wasm"})
 		res, err := pipeline.RunPipeline(ctx, inputs, buildLookup, recipeLookup, subAgg,
 			pipeline.Options{})
 		if err != nil {
@@ -140,7 +158,7 @@ func TestPolicySocketAllowE2E(t *testing.T) {
 	ctx := context.Background()
 	inputs, buildLookup, recipeLookup, subAgg := loadFullstackForSockets(t)
 	inputs.WorkspaceConfig.Plugins.Policy = []workspaceconfig.PluginRef{{URI: "proof://policy-allow"}}
-	inputs.PluginPathLookup = fixtureSocketLookup(t, map[string]string{"proof://policy-allow": "policy-validator-allow-go.wasm"})
+	inputs.PluginPathLookup = fixtureSocketLookup(t, buildLookup, map[string]string{"proof://policy-allow": "policy-validator-allow-go.wasm"})
 
 	res, err := pipeline.RunPipeline(ctx, inputs, buildLookup, recipeLookup, subAgg,
 		pipeline.Options{})
@@ -159,7 +177,7 @@ func TestPolicySocketHaltE2E(t *testing.T) {
 	ctx := context.Background()
 	inputs, buildLookup, recipeLookup, subAgg := loadFullstackForSockets(t)
 	inputs.WorkspaceConfig.Plugins.Policy = []workspaceconfig.PluginRef{{URI: "proof://policy"}}
-	inputs.PluginPathLookup = fixtureSocketLookup(t, map[string]string{"proof://policy": "policy-validator-go.wasm"})
+	inputs.PluginPathLookup = fixtureSocketLookup(t, buildLookup, map[string]string{"proof://policy": "policy-validator-go.wasm"})
 
 	_, err := pipeline.RunPipeline(ctx, inputs, buildLookup, recipeLookup, subAgg,
 		pipeline.Options{})
@@ -192,7 +210,7 @@ func TestPolicySocketWrongPluginTypeE2E(t *testing.T) {
 	ctx := context.Background()
 	inputs, buildLookup, recipeLookup, subAgg := loadFullstackForSockets(t)
 	inputs.WorkspaceConfig.Plugins.Policy = []workspaceconfig.PluginRef{{URI: "proof://mutator-at-policy"}}
-	inputs.PluginPathLookup = fixtureSocketLookup(t, map[string]string{"proof://mutator-at-policy": "mutator-proof-go.wasm"})
+	inputs.PluginPathLookup = fixtureSocketLookup(t, buildLookup, map[string]string{"proof://mutator-at-policy": "mutator-proof-go.wasm"})
 
 	_, err := pipeline.RunPipeline(ctx, inputs, buildLookup, recipeLookup, subAgg,
 		pipeline.Options{})
@@ -213,10 +231,17 @@ func TestPolicySocketWrongPluginTypeE2E(t *testing.T) {
 func TestSocketsEmptyConfigNoOp(t *testing.T) {
 	ctx := context.Background()
 	inputs, buildLookup, recipeLookup, subAgg := loadFullstackForSockets(t)
-	// A lookup that errors on every URI: proves neither socket resolves a
-	// plugin when unconfigured (any call would fail the build).
+	// The render resolves the provider guests through the lookup, so the lookup
+	// resolves provider entity URIs via the entity-fronted embedded cascade — but
+	// any proof:// socket URI is a hard failure, since no socket is attached and
+	// so neither socket should ever ask the lookup to resolve one. A proof:// call
+	// halts the build and fails the test, proving the sockets stayed no-ops.
+	provLookup := fixtureSocketLookup(t, buildLookup, nil)
 	inputs.PluginPathLookup = func(uri string) (pluginpath.ResolvedPlugin, error) {
-		return pluginpath.ResolvedPlugin{}, fmt.Errorf("no socket should resolve %q under empty config", uri)
+		if strings.HasPrefix(uri, "proof://") {
+			return pluginpath.ResolvedPlugin{}, fmt.Errorf("no socket should resolve %q under empty config", uri)
+		}
+		return provLookup(uri)
 	}
 
 	res, err := pipeline.RunPipeline(ctx, inputs, buildLookup, recipeLookup, subAgg,
@@ -229,6 +254,214 @@ func TestSocketsEmptyConfigNoOp(t *testing.T) {
 			t.Errorf("node %q carries the mutator proof label under empty config (socket ran when it should not have)", nodeID)
 		}
 	}
+}
+
+// captureStderr redirects os.Stderr for the duration of fn and returns
+// everything written to it. The socket runners emit warn / audit diagnostics to
+// os.Stderr, so a proof that a warn "flags" or an audit "records" reads the
+// captured text. It mutates a process global, so its callers do not run in
+// parallel.
+func captureStderr(t *testing.T, fn func()) string {
+	t.Helper()
+	orig := os.Stderr
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("pipe: %v", err)
+	}
+	os.Stderr = w
+	done := make(chan string, 1)
+	go func() {
+		var buf bytes.Buffer
+		_, _ = io.Copy(&buf, r)
+		done <- buf.String()
+	}()
+	fn()
+	_ = w.Close()
+	os.Stderr = orig
+	return <-done
+}
+
+// observePolicyInputs clones the fullstack inputs and attaches the observing
+// policy fixture at the policy socket with the given settings severity and a
+// single on-disk source file. It returns the inputs and lookups RunPipeline
+// consumes, the source file's absolute path, and its content so a caller can
+// assert the guest echoed the right base name and content length.
+func observePolicyInputs(t *testing.T, severity string) (pipeline.Inputs, resolver.CatalogLookup, renderer.RecipeLookup, topology.SubAggregateLoader, string, string) {
+	t.Helper()
+	inputs, buildLookup, recipeLookup, subAgg := loadFullstackForSockets(t)
+	srcDir := t.TempDir()
+	srcPath := filepath.Join(srcDir, "policy.def")
+	srcContent := "definition body for severity " + severity + "\n"
+	if err := os.WriteFile(srcPath, []byte(srcContent), 0o644); err != nil {
+		t.Fatalf("write source: %v", err)
+	}
+	inputs.WorkspaceConfig.Plugins.Policy = []workspaceconfig.PluginRef{{
+		URI: "proof://policy-observe",
+		With: &workspaceconfig.PluginRefWith{
+			Sources:  []string{srcPath},
+			Settings: map[string]any{"severity": severity},
+		},
+	}}
+	inputs.PluginPathLookup = fixtureSocketLookup(t, buildLookup, map[string]string{
+		"proof://policy-observe": "policy-validator-observe-go.wasm",
+	})
+	return inputs, buildLookup, recipeLookup, subAgg, srcPath, srcContent
+}
+
+// TestPolicySocketSeverityDenyE2E proves a deny verdict halts the build loudly
+// (carrying ErrPolicyViolation) AND that the attachment's sources reached the
+// guest as base names: the halt message carries the base-name path and the
+// content length the guest observed, and never the absolute host path.
+func TestPolicySocketSeverityDenyE2E(t *testing.T) {
+	ctx := context.Background()
+	inputs, buildLookup, recipeLookup, subAgg, srcPath, srcContent := observePolicyInputs(t, analyzer.SeverityDeny)
+
+	_, err := pipeline.RunPipeline(ctx, inputs, buildLookup, recipeLookup, subAgg, pipeline.Options{})
+	if err == nil {
+		t.Fatalf("deny verdict: expected a halt, got nil")
+	}
+	if !errors.Is(err, analyzer.ErrPolicyViolation) {
+		t.Fatalf("deny halt not errors.Is ErrPolicyViolation: %v", err)
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, `path="policy.def"`) {
+		t.Errorf("deny halt does not carry the base-name source path:\n%v", msg)
+	}
+	if want := "content-length=" + strconv.Itoa(len(srcContent)); !strings.Contains(msg, want) {
+		t.Errorf("deny halt does not carry the observed content length %q:\n%v", want, msg)
+	}
+	if strings.Contains(msg, srcPath) {
+		t.Errorf("deny halt leaked the absolute host source path %q (paths must be base names):\n%v", srcPath, msg)
+	}
+}
+
+// TestPolicySocketSeverityWarnE2E proves a warn verdict flags on stderr and lets
+// the build proceed to produce artifacts, and that two builds are byte-identical
+// (a warn does not perturb output).
+func TestPolicySocketSeverityWarnE2E(t *testing.T) {
+	ctx := context.Background()
+
+	var res *pipeline.Result
+	stderr := captureStderr(t, func() {
+		inputs, buildLookup, recipeLookup, subAgg, _, _ := observePolicyInputs(t, analyzer.SeverityWarn)
+		r, err := pipeline.RunPipeline(ctx, inputs, buildLookup, recipeLookup, subAgg, pipeline.Options{})
+		if err != nil {
+			t.Fatalf("warn verdict: unexpected halt: %v", err)
+		}
+		res = r
+	})
+	if res == nil || len(res.Artifacts) == 0 {
+		t.Fatalf("warn build produced no artifacts")
+	}
+	if !strings.Contains(stderr, "warning:") || !strings.Contains(stderr, "policy plugin") {
+		t.Errorf("warn verdict did not flag on stderr:\n%s", stderr)
+	}
+
+	// Determinism: a second build of identical input yields byte-identical output.
+	inputs2, buildLookup2, recipeLookup2, subAgg2, _, _ := observePolicyInputs(t, analyzer.SeverityWarn)
+	res2, err := pipeline.RunPipeline(ctx, inputs2, buildLookup2, recipeLookup2, subAgg2, pipeline.Options{})
+	if err != nil {
+		t.Fatalf("warn verdict (second build): %v", err)
+	}
+	assertArtifactsByteIdentical(t, res.Artifacts, res2.Artifacts)
+}
+
+// TestPolicySocketSeverityAuditE2E proves an audit verdict records under a
+// distinct "audit:" label, lets the build proceed, and does not perturb output.
+func TestPolicySocketSeverityAuditE2E(t *testing.T) {
+	ctx := context.Background()
+
+	var res *pipeline.Result
+	stderr := captureStderr(t, func() {
+		inputs, buildLookup, recipeLookup, subAgg, _, _ := observePolicyInputs(t, analyzer.SeverityAudit)
+		r, err := pipeline.RunPipeline(ctx, inputs, buildLookup, recipeLookup, subAgg, pipeline.Options{})
+		if err != nil {
+			t.Fatalf("audit verdict: unexpected halt: %v", err)
+		}
+		res = r
+	})
+	if res == nil || len(res.Artifacts) == 0 {
+		t.Fatalf("audit build produced no artifacts")
+	}
+	if !strings.Contains(stderr, "audit:") {
+		t.Errorf("audit verdict did not record under the distinct audit label:\n%s", stderr)
+	}
+
+	inputs2, buildLookup2, recipeLookup2, subAgg2, _, _ := observePolicyInputs(t, analyzer.SeverityAudit)
+	res2, err := pipeline.RunPipeline(ctx, inputs2, buildLookup2, recipeLookup2, subAgg2, pipeline.Options{})
+	if err != nil {
+		t.Fatalf("audit verdict (second build): %v", err)
+	}
+	assertArtifactsByteIdentical(t, res.Artifacts, res2.Artifacts)
+}
+
+// renderPolicyInputs clones the fullstack inputs and attaches the render-stage
+// policy fixture with the given settings severity, returning the inputs and the
+// lookups RunPipeline consumes.
+func renderPolicyInputs(t *testing.T, severity string) (pipeline.Inputs, resolver.CatalogLookup, renderer.RecipeLookup, topology.SubAggregateLoader) {
+	t.Helper()
+	inputs, buildLookup, recipeLookup, subAgg := loadFullstackForSockets(t)
+	inputs.WorkspaceConfig.Plugins.Policy = []workspaceconfig.PluginRef{{
+		URI:  "proof://policy-render",
+		With: &workspaceconfig.PluginRefWith{Settings: map[string]any{"severity": severity}},
+	}}
+	inputs.PluginPathLookup = fixtureSocketLookup(t, buildLookup, map[string]string{
+		"proof://policy-render": "policy-validator-render-go.wasm",
+	})
+	return inputs, buildLookup, recipeLookup, subAgg
+}
+
+// TestRenderStagePolicySocketDenyE2E proves a render-stage policy plugin runs
+// AFTER render over the artifacts payload and can halt the build: its deny
+// verdict halts loudly with ErrPolicyViolation, and the message proves the guest
+// saw the rendered artifacts (a non-zero artifact count).
+func TestRenderStagePolicySocketDenyE2E(t *testing.T) {
+	ctx := context.Background()
+	inputs, buildLookup, recipeLookup, subAgg := renderPolicyInputs(t, analyzer.SeverityDeny)
+
+	_, err := pipeline.RunPipeline(ctx, inputs, buildLookup, recipeLookup, subAgg, pipeline.Options{})
+	if err == nil {
+		t.Fatalf("render-stage deny: expected a halt, got nil")
+	}
+	if !errors.Is(err, analyzer.ErrPolicyViolation) {
+		t.Fatalf("render-stage deny not errors.Is ErrPolicyViolation: %v", err)
+	}
+	if !strings.Contains(err.Error(), "render stage saw") {
+		t.Errorf("render-stage deny message does not prove the guest saw artifacts:\n%v", err)
+	}
+	// The guest must have seen at least one artifact.
+	if strings.Contains(err.Error(), "render stage saw 0 artifact(s)") {
+		t.Errorf("render-stage guest saw no artifacts; render payload was empty:\n%v", err)
+	}
+}
+
+// TestRenderStagePolicySocketAuditE2E proves a render-stage audit verdict records
+// and the build proceeds to produce artifacts, with byte-identical output.
+func TestRenderStagePolicySocketAuditE2E(t *testing.T) {
+	ctx := context.Background()
+
+	var res *pipeline.Result
+	stderr := captureStderr(t, func() {
+		inputs, buildLookup, recipeLookup, subAgg := renderPolicyInputs(t, analyzer.SeverityAudit)
+		r, err := pipeline.RunPipeline(ctx, inputs, buildLookup, recipeLookup, subAgg, pipeline.Options{})
+		if err != nil {
+			t.Fatalf("render-stage audit: unexpected halt: %v", err)
+		}
+		res = r
+	})
+	if res == nil || len(res.Artifacts) == 0 {
+		t.Fatalf("render-stage audit build produced no artifacts")
+	}
+	if !strings.Contains(stderr, "audit:") || !strings.Contains(stderr, "render stage saw") {
+		t.Errorf("render-stage audit did not record on stderr:\n%s", stderr)
+	}
+
+	inputs2, buildLookup2, recipeLookup2, subAgg2 := renderPolicyInputs(t, analyzer.SeverityAudit)
+	res2, err := pipeline.RunPipeline(ctx, inputs2, buildLookup2, recipeLookup2, subAgg2, pipeline.Options{})
+	if err != nil {
+		t.Fatalf("render-stage audit (second build): %v", err)
+	}
+	assertArtifactsByteIdentical(t, res.Artifacts, res2.Artifacts)
 }
 
 // assertArtifactsByteIdentical fails unless a and b carry the same path set and

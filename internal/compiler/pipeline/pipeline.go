@@ -845,6 +845,16 @@ func RunPipeline(
 			fmt.Fprintf(os.Stderr, "  warning: %s\n", w)
 		}
 
+		// Render-stage policy-validator socket. Config-driven off
+		// WorkspaceConfig.Plugins.Policy — a no-op when unconfigured, and it runs
+		// only the plugins that declare the render stage over the rendered
+		// artifacts (path-sorted). A deny verdict returns a build-halting error
+		// carrying ErrPolicyViolation; warn / audit verdicts are non-halting
+		// diagnostics. Policy never mutates the rendered artifacts.
+		if err := runRenderPolicySocket(ctx, inputs, catalogLookup, renderResult.Files); err != nil {
+			return err
+		}
+
 		result = &Result{
 			Artifacts: renderResult.Files,
 			IRGraph:   graph,

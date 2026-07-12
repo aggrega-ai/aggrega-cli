@@ -318,6 +318,53 @@ func TestResolveDeclaringFilePaths(t *testing.T) {
 	}
 }
 
+// TestResolvePluginSourcePaths pins that a plugin attachment's with.sources
+// entries resolve declaring-file-relative exactly as the plugin URI does: a
+// relative source anchors to the dir of the file that wrote it, an absolute
+// source passes through untouched, and an append layer's sources anchor to their
+// own declaring file rather than the merge's.
+func TestResolvePluginSourcePaths(t *testing.T) {
+	root := t.TempDir()
+	gdir := t.TempDir()
+	gpath := filepath.Join(gdir, "global.yaml")
+	// Global declares a policy plugin via append whose source is relative to the
+	// global file's dir.
+	write(t, gpath, "plugins:\n  policy_append:\n    - uri: oci://h/p:1\n      with:\n        sources:\n          - ./g-src.def\n")
+	t.Setenv("AGGREGA_CONFIG", gpath)
+	// Root: the workspace marker plus a base policy plugin with one relative and
+	// one absolute source.
+	absSrc := filepath.Join(root, "abs", "policy.def")
+	write(t, filepath.Join(root, ".aggrega-config.yaml"),
+		"workspace: {}\nplugins:\n  policy:\n    - uri: oci://h/base:1\n      with:\n        sources:\n          - ./rel.def\n          - "+absSrc+"\n")
+
+	rw, err := workspaceconfig.Resolve(root, "")
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	cfg := rw.Config()
+	if len(cfg.Plugins.Policy) != 2 {
+		t.Fatalf("policy plugins: got %d, want 2 (base + global append): %+v", len(cfg.Plugins.Policy), cfg.Plugins.Policy)
+	}
+	base := cfg.Plugins.Policy[0]
+	if base.With == nil || len(base.With.Sources) != 2 {
+		t.Fatalf("base plugin sources: got %+v, want 2", base.With)
+	}
+	if got, want := base.With.Sources[0], filepath.Join(root, "rel.def"); got != want {
+		t.Errorf("base source[0]: got %q; want %q (relative anchored to declaring root)", got, want)
+	}
+	if got := base.With.Sources[1]; got != absSrc {
+		t.Errorf("base source[1]: got %q; want %q (absolute unchanged)", got, absSrc)
+	}
+	// The appended plugin's source anchors to the global file's dir, not root.
+	appended := cfg.Plugins.Policy[1]
+	if appended.With == nil || len(appended.With.Sources) != 1 {
+		t.Fatalf("appended plugin sources: got %+v, want 1", appended.With)
+	}
+	if got, want := appended.With.Sources[0], filepath.Join(gdir, "g-src.def"); got != want {
+		t.Errorf("appended source[0]: got %q; want %q (declaring file is the global)", got, want)
+	}
+}
+
 // appendLens reports the length of each of the six `_append`-target fields, so
 // a per-field test can assert an append landed in exactly the right field.
 func appendLens(c workspaceconfig.Config) map[string]int {

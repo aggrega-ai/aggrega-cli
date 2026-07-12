@@ -428,17 +428,25 @@ func resolveAppendPaths(a *appendSlices, dir string) {
 	resolvePluginURIs(a.Importer, dir)
 }
 
-// resolvePluginURIs resolves each ref's relative filesystem URI against dir.
-// Registry references (LooksLikeOCIURI) and already-absolute paths are left
-// untouched — only a local, declaring-file-relative plugin path is anchored.
+// resolvePluginURIs resolves each ref's relative filesystem URI against dir,
+// and likewise each of the ref's declared With.Sources entries. Registry
+// references (LooksLikeOCIURI) and already-absolute paths are left untouched —
+// only a local, declaring-file-relative path is anchored. Source entries are
+// always local files (never a registry reference), so they are anchored on the
+// absolute/relative test alone. Anchoring against dir here means an append
+// layer's sources anchor to their own declaring file, exactly as its URI does.
 func resolvePluginURIs(refs []PluginRef, dir string) {
 	for i := range refs {
 		u := refs[i].URI
-		if u == "" || filepath.IsAbs(u) || LooksLikeOCIURI(u) {
-			continue
+		if u != "" && !filepath.IsAbs(u) && !LooksLikeOCIURI(u) {
+			if abs, err := filepath.Abs(filepath.Join(dir, u)); err == nil {
+				refs[i].URI = abs
+			}
 		}
-		if abs, err := filepath.Abs(filepath.Join(dir, u)); err == nil {
-			refs[i].URI = abs
+		if refs[i].With != nil {
+			for j, src := range refs[i].With.Sources {
+				refs[i].With.Sources[j] = resolveFilesystemPath(dir, src)
+			}
 		}
 	}
 }
