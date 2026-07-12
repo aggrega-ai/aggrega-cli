@@ -40,6 +40,20 @@
 // base list followed by the append list. The `_append` fields are
 // merge-time-only: LoadWithGlobal zeroes them on the returned Config
 // so downstream consumers cannot accidentally read them.
+//
+// CI-owned additive overlay: beside the hand-authored
+// `.aggrega-config.yaml` at any cascade directory, a separate
+// `.aggrega-config-append-ci.yaml` gives an automated pipeline a file
+// it owns and may overwrite wholesale without touching the developer's
+// base config. It validates against the same schema and folds
+// additively: for each of the six list-valued fields, both its base
+// list and its `_append` companion concatenate onto the resolved list
+// in cascade order. The overlay is additive-only — it cannot remove or
+// scalar-override anything the base declares, so a scalar or map field
+// it carries has no additive meaning and is ignored (and named in a
+// resolution warning) rather than applied. It never anchors a workspace
+// root: only `.aggrega-config.yaml` with a top-level `workspace:` block
+// does that.
 package workspaceconfig
 
 // Config carries the workspace's full configuration. Fields map to

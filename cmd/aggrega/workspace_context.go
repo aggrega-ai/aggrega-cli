@@ -35,6 +35,9 @@ func (l *lazyWorkspace) get() (*workspaceconfig.ResolvedWorkspace, error) {
 			if files := l.ws.ContributingFiles(); len(files) > 0 {
 				fmt.Fprintf(os.Stderr, "loaded config from: %s\n", strings.Join(files, ", "))
 			}
+			for _, w := range l.ws.Warnings() {
+				fmt.Fprintf(os.Stderr, "warning: %s\n", w)
+			}
 		}
 	})
 	return l.ws, l.err

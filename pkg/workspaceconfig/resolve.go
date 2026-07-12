@@ -19,6 +19,24 @@ import (
 // filename has exactly one definition across the product.
 const ConfigFilename = ".aggrega-config.yaml"
 
+// AppendCIConfigFilename is the basename of the CI-owned additive overlay that
+// sits beside the hand-authored ConfigFilename at any cascade directory. It is
+// a separate file so an automated pipeline owns and may overwrite it wholesale
+// without ever touching the developer's hand-authored base config.
+//
+// The overlay is additive-only and validates against the same
+// aggrega-config-v1alpha1 schema as the base file. For each of the six
+// list-valued fields (catalog_dirs, narrowing_exemptions, and the four plugin
+// sockets mutator/policy/linter/importer) its entries — both the base list and
+// any `_append` companion — are concatenated onto the resolved list in cascade
+// order. It cannot remove or scalar-override anything the base declares: a
+// scalar or map field carried in the overlay has no additive meaning, so it is
+// ignored and named in a resolution warning rather than applied. The overlay
+// never anchors a workspace root — only ConfigFilename with a top-level
+// `workspace:` block does that — so dropping this file into a directory adds
+// attachments without changing where the workspace begins.
+const AppendCIConfigFilename = ".aggrega-config-append-ci.yaml"
+
 // Marker identifies what anchored a workspace root, for the daemon's
 // aggrega/initialize "workspaceMarker" wire token. The zero value
 // MarkerNone reports an explicit --workspace-root (no marker consulted).
@@ -73,11 +91,12 @@ func (m Marker) String() string {
 // fabricate or mutate a resolved workspace; the only way to obtain one is to
 // run the single resolution path.
 type ResolvedWorkspace struct {
-	root   string
-	config Config
-	source Source
-	marker Marker
-	files  []string
+	root     string
+	config   Config
+	source   Source
+	marker   Marker
+	files    []string
+	warnings []string
 }
 
 // Root returns the absolute workspace root directory.
@@ -103,6 +122,17 @@ func (r *ResolvedWorkspace) ContributingFiles() []string {
 	return out
 }
 
+// Warnings returns non-fatal advisories accumulated during resolution, in a
+// stable order. The CI-owned additive overlay contributes one entry per
+// non-additive key it declared — such a key is ignored (the overlay is
+// additive-only) and named here so the CI author learns the file cannot
+// scalar-override the base. Empty when nothing warned.
+func (r *ResolvedWorkspace) Warnings() []string {
+	out := make([]string, len(r.warnings))
+	copy(out, r.warnings)
+	return out
+}
+
 // Resolve performs the whole workspace-resolution job from a starting
 // directory: discover the root, cascade-collect the `.aggrega-config.yaml`
 // files from the root down to start, merge them (with the global
@@ -121,7 +151,10 @@ func (r *ResolvedWorkspace) ContributingFiles() []string {
 // contributes; nearer-to-start overrides farther via the existing
 // whole-replace + `_append` semantics, generalized from three fixed layers to
 // N. The `workspace:`-bearing root config caps the cascade — files above the
-// root are not collected.
+// root are not collected. At each cascade directory a CI-owned overlay
+// (AppendCIConfigFilename), when present, folds additively into the same
+// `_append` pool in cascade order — it never whole-replaces a base scalar and
+// never anchors the root.
 //
 // Environment overlay: a top layer above the merged config and below any CLI
 // flag the command applies, so the effective ladder is flag > environment >
@@ -157,14 +190,11 @@ func Resolve(start, flagRoot string, look ...func(string) string) (*ResolvedWork
 		absStart = root
 	}
 
-	// Tree config files from root down to start, lowest precedence
-	// (root, farthest from start) first.
-	treeFiles := cascadeFiles(root, absStart)
-
 	merged := Default()
 	source := SourceDefaults
 	var contributing []string
 	var appendLayers []appendSlices
+	var warnings []string
 
 	// Global layer ($AGGREGA_CONFIG), beneath all tree files.
 	globalCfg, globalLoaded, globalPath, err := loadGlobalLayer()
@@ -186,28 +216,49 @@ func Resolve(start, flagRoot string, look ...func(string) string) (*ResolvedWork
 	// Tree layers, farthest-from-start first (lowest precedence) to
 	// nearest-to-start last (highest precedence). Relative path fields resolve
 	// against the directory of the file that declared them (per layer), so the
-	// merged Config carries absolute paths.
-	for _, path := range treeFiles {
-		dir := filepath.Dir(path)
-		raw, lerr := load(path)
-		if lerr != nil {
-			return nil, lerr
-		}
-		la := captureAppends(raw)
-		resolveAppendPaths(&la, dir)
-		appendLayers = append(appendLayers, la)
+	// merged Config carries absolute paths. Each directory contributes its base
+	// `.aggrega-config.yaml` (whole-replace + `_append`) first, then its CI-owned
+	// overlay (additive-only), so a CI attachment always lands after the base
+	// entries it sits beside.
+	for _, dir := range cascadeDirs(root, absStart) {
+		basePath := filepath.Join(dir, ConfigFilename)
+		if _, serr := os.Stat(basePath); serr == nil {
+			raw, lerr := load(basePath)
+			if lerr != nil {
+				return nil, lerr
+			}
+			la := captureAppends(raw)
+			resolveAppendPaths(&la, dir)
+			appendLayers = append(appendLayers, la)
 
-		overlaid, oerr := loadOverlayInto(path, merged)
-		if oerr != nil {
-			return nil, oerr
+			overlaid, oerr := loadOverlayInto(basePath, merged)
+			if oerr != nil {
+				return nil, oerr
+			}
+			stripAppends(&overlaid)
+			// Absolute values carried from prior (farther) layers skip; only the
+			// relative fields this layer wrote resolve against this layer's dir.
+			resolveConfigPaths(&overlaid, dir)
+			merged = overlaid
+			source = SourceWorkspace
+			contributing = append(contributing, basePath)
 		}
-		stripAppends(&overlaid)
-		// Absolute values carried from prior (farther) layers skip; only the
-		// relative fields this layer wrote resolve against this layer's dir.
-		resolveConfigPaths(&overlaid, dir)
-		merged = overlaid
-		source = SourceWorkspace
-		contributing = append(contributing, path)
+
+		ciPath := filepath.Join(dir, AppendCIConfigFilename)
+		if _, serr := os.Stat(ciPath); serr == nil {
+			ciCfg, ignored, cerr := loadCIOverlay(ciPath)
+			if cerr != nil {
+				return nil, cerr
+			}
+			ci := foldCIAdditive(ciCfg)
+			resolveAppendPaths(&ci, dir)
+			appendLayers = append(appendLayers, ci)
+			contributing = append(contributing, ciPath)
+			for _, key := range ignored {
+				warnings = append(warnings, fmt.Sprintf(
+					"%s: ignoring non-additive key %q (the CI-owned overlay is additive-only and cannot override the base config)", ciPath, key))
+			}
+		}
 	}
 
 	applyAppends(&merged, appendLayers...)
@@ -224,11 +275,12 @@ func Resolve(start, flagRoot string, look ...func(string) string) (*ResolvedWork
 	}
 
 	return &ResolvedWorkspace{
-		root:   root,
-		config: merged,
-		source: source,
-		marker: marker,
-		files:  contributing,
+		root:     root,
+		config:   merged,
+		source:   source,
+		marker:   marker,
+		files:    contributing,
+		warnings: warnings,
 	}, nil
 }
 
@@ -324,11 +376,14 @@ func globPrefixPresent(dir, prefix string) bool {
 	return false
 }
 
-// cascadeFiles returns the `.aggrega-config.yaml` paths that exist from root
-// down to start (inclusive), ordered farthest-from-start (root) first so the
-// caller applies them lowest-precedence first. start and root must both be
-// absolute, with root an ancestor of (or equal to) start.
-func cascadeFiles(root, start string) []string {
+// cascadeDirs returns the directories from root down to start (inclusive),
+// ordered farthest-from-start (root) first so the caller applies them
+// lowest-precedence first. start and root must both be absolute, with root an
+// ancestor of (or equal to) start. Every such directory is a cascade rung
+// whether or not it holds a config file — the caller stats each candidate file
+// per directory, so a directory carrying only a CI-owned overlay still
+// contributes.
+func cascadeDirs(root, start string) []string {
 	var dirs []string
 	dir := start
 	for {
@@ -344,14 +399,7 @@ func cascadeFiles(root, start string) []string {
 	}
 	// dirs is start..root (nearest first); reverse to root..start.
 	sort.Sort(sort.Reverse(byPathDepth(dirs)))
-	var files []string
-	for _, d := range dirs {
-		p := filepath.Join(d, ConfigFilename)
-		if _, err := os.Stat(p); err == nil {
-			files = append(files, p)
-		}
-	}
-	return files
+	return dirs
 }
 
 // byPathDepth orders paths by descending depth (more separators first), so a
