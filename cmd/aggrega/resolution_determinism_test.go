@@ -103,7 +103,7 @@ func TestLintWholeCatalogRequiresCatalogDirs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
-	err = lintCatalogWideFromWorkspace(rw)
+	err = validateCatalogWideFromWorkspace(rw, nil)
 	if err == nil {
 		t.Fatal("expected an error when no catalog_dirs is configured; got nil (the root-scan footgun)")
 	}

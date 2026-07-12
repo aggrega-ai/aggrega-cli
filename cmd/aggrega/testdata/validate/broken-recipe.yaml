@@ -1,0 +1,17 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Cognitio S.r.l.
+
+# A deliberately malformed Recipe for validate's loud-diagnostic path: the
+# scalar fields carry the wrong types (target is a sequence, implements is a
+# number) so the envelope schema gate rejects the document.
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: broken
+  version: "1.0.0"
+spec:
+  target:
+    - not
+    - a
+    - string
+  implements: 12345

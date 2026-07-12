@@ -72,6 +72,10 @@ var runtimeErrorCommands = []struct {
 	{"get-schema", []string{"get-schema", "bogus"}},
 	{"serve", []string{"serve", "--workspace-root", "/nonexistent-aggrega-xyz/ws"}},
 	{"lint", []string{"lint", "/nonexistent-aggrega-xyz/entity.yaml"}},
+	// validate reaches its RunE with a well-formed single argument, then fails
+	// in its own work reading the non-existent entity file, before any catalog
+	// or render work.
+	{"validate", []string{"validate", "/nonexistent-aggrega-xyz/entity.yaml"}},
 	{"push", []string{"push", "/nonexistent-aggrega-xyz/entity.yaml"}},
 	// push-artifact reaches RunE with valid flags, then fails reading the
 	// non-existent bundle file locally, before any network call.

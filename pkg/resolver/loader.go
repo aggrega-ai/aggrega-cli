@@ -76,6 +76,14 @@ func LoadRelease(path string) (*types.Release, error) {
 			Err:     ErrYAMLLoad,
 		}
 	}
+	return LoadReleaseFromBytes(data, path)
+}
+
+// LoadReleaseFromBytes unmarshals a Release from already-read bytes, running the
+// same envelope gate and boundary normalization as LoadRelease and attributing
+// any error to path. It is the read-free core of LoadRelease, for callers that
+// already hold the bytes (the same read-free split LoadManifestFromBytes has).
+func LoadReleaseFromBytes(data []byte, path string) (*types.Release, error) {
 	if _, eerr := envelope.ValidateBytes(envelope.KindRelease, data, path); errors.Is(eerr, envelope.ErrEntityEnvelope) {
 		return nil, &ResolverError{Entity: "Release", Field: path, Message: eerr.Error(), Err: eerr}
 	}

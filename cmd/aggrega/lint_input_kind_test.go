@@ -21,7 +21,7 @@ import (
 )
 
 // End-to-end: a workload:+helm-chart Recipe in the catalog makes whole-catalog
-// `aggrega lint` fail (the wiring from lintCatalogWide into the detector).
+// `aggrega lint` fail (the wiring from validateCatalogWide into the detector).
 func TestLintCatalogWide_FlagsWorkloadOnHelmChart(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
@@ -56,7 +56,7 @@ spec:
       sourced: true
     boundaryAssembly: nest
 `)
-	err := lintCatalogWide("", "", []string{dir}, os.Stderr, os.Stdout)
+	err := validateCatalogWide("", "", []string{dir}, os.Stderr, os.Stdout)
 	if err == nil {
 		t.Fatal("expected lint to flag workload:+helm-chart; got nil")
 	}
@@ -102,7 +102,7 @@ spec:
       synthesized: true
     boundaryAssembly: merge
 `)
-	if err := lintCatalogWide("", "", []string{dir}, os.Stderr, os.Stdout); err != nil {
+	if err := validateCatalogWide("", "", []string{dir}, os.Stderr, os.Stdout); err != nil {
 		t.Fatalf("workload:+compose (synthesizing) must lint clean; got %v", err)
 	}
 }

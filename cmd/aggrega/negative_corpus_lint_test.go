@@ -5,7 +5,7 @@
 // a base-valid document and a set of single-fault violations (unknown
 // key, retired/typo'd key, wrong shape, missing required). Every
 // violation is driven through the REAL whole-catalog lint path
-// (lintCatalogWide → catalog.LoadAllWithCacheDir → the envelope gate),
+// (validateCatalogWide → catalog.LoadAllWithCacheDir → the envelope gate),
 // never a standalone schema harness, and asserts the envelope sentinel
 // via errors.Is.
 //
@@ -233,7 +233,7 @@ func TestNegativeCorpusLint_BaseValid(t *testing.T) {
 			if err := os.WriteFile(filepath.Join(dir, "entity.yaml"), []byte(doc), 0o644); err != nil {
 				t.Fatalf("write base: %v", err)
 			}
-			if err := lintCatalogWide("", "", []string{dir}, os.Stderr, os.Stdout); err != nil {
+			if err := validateCatalogWide("", "", []string{dir}, os.Stderr, os.Stdout); err != nil {
 				t.Fatalf("base %s should lint clean (positive control); got: %v", kind, err)
 			}
 		})
@@ -253,7 +253,7 @@ func TestNegativeCorpusLint_Violations(t *testing.T) {
 			if err := os.WriteFile(filepath.Join(dir, "entity.yaml"), []byte(r.doc), 0o644); err != nil {
 				t.Fatalf("write violation: %v", err)
 			}
-			err := lintCatalogWide("", "", []string{dir}, os.Stderr, os.Stdout)
+			err := validateCatalogWide("", "", []string{dir}, os.Stderr, os.Stdout)
 			if err == nil {
 				t.Fatalf("%s: expected the lint path to reject; got nil", r.name)
 			}
