@@ -294,6 +294,62 @@ func TestGenCatalogMissingOverlayHalts(t *testing.T) {
 	}
 }
 
+// TestGenCatalogRejectsInvalidWorkloadSchema asserts the emitter refuses to write
+// a Plugin entity whose spec.provider.workloadSchema is not valid YAML — an
+// unquoted colon-space inside a plain scalar — rather than shipping a schema the
+// catalog loader would later reject. The guard reuses the loader's own validator,
+// so the generator can never emit a workloadSchema the load-time gate rejects.
+func TestGenCatalogRejectsInvalidWorkloadSchema(t *testing.T) {
+	uris := embedded.URIs()
+	if len(uris) == 0 {
+		t.Skip("no embedded guests in this build")
+	}
+	overlayDir := t.TempDir()
+	outDir := t.TempDir()
+	writeEmbeddedOverlays(t, overlayDir)
+
+	// Overwrite one guest's overlay with a provider block whose workloadSchema
+	// carries an unquoted "form: stateful" — a colon-space that breaks the plain
+	// scalar when the loader re-parses the extracted body as YAML.
+	uri := uris[0]
+	name := uri
+	if i := strings.LastIndex(name, "/"); i >= 0 {
+		name = name[i+1:]
+	}
+	invalid := `# SPDX-License-Identifier: Apache-2.0
+apiVersion: aggrega.ai/v1alpha1
+kind: Plugin
+metadata:
+  name: ` + name + `
+spec:
+  plugin: ` + uri + `
+  runtime:
+    maxMemoryPages: 4096
+    timeoutMs: 300000
+  provider:
+    workloadSchema: |
+      volumes:
+        type: object
+        description: persistentTemplate requires form: stateful and renders templates.
+`
+	writeFixture(t, filepath.Join(overlayDir, name+".yaml"), invalid)
+
+	opts := genCatalogOptions{fromEmbedded: true, outputDir: outDir, overlayPath: overlayDir}
+	err := genCatalogRun(context.Background(), opts, &bytes.Buffer{})
+	if err == nil {
+		t.Fatal("expected gen-catalog to reject an invalid workloadSchema")
+	}
+	if !strings.Contains(err.Error(), "workloadSchema") {
+		t.Errorf("error = %v, want a workloadSchema-invalid halt", err)
+	}
+	// The invalid entity must not have been written.
+	version := collectVersionInfo().Version
+	path := filepath.Join(outDir, filepath.FromSlash(name), version, genCatalogPluginFilename)
+	if _, statErr := os.Stat(path); statErr == nil {
+		t.Errorf("invalid entity was written to %s despite the guard", path)
+	}
+}
+
 // TestGenCatalogFlagValidation covers the mutually-exclusive and required-flag
 // guards.
 func TestGenCatalogFlagValidation(t *testing.T) {

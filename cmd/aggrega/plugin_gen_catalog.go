@@ -6,6 +6,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -19,6 +20,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm/embedded"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
+	"github.com/aggrega-ai/aggrega-cli/pkg/validator"
 )
 
 // genCatalogHeader is the two-part banner every generated Plugin entity
@@ -166,15 +168,25 @@ func generateAndWrite(outputDir string, desc wasm.PluginDescriptor, description 
 	if err != nil {
 		return err
 	}
+	dir := filepath.Join(outputDir, filepath.FromSlash(entity.Metadata.Name), entity.Metadata.Version)
+	path := filepath.Join(dir, genCatalogPluginFilename)
+	// The assembled entity's spec.provider.workloadSchema must satisfy the same
+	// structural contract the catalog loader enforces at load: a provider block
+	// with a non-empty workloadSchema must parse as YAML and compile to JSON
+	// Schema 2020-12. Reusing the loader's own validator keeps this single-sourced
+	// with the load-time gate, so the generator is structurally incapable of
+	// shipping a workloadSchema the loader would later reject — an authoring
+	// defect in the overlay halts generation loudly instead of riding through.
+	if errs := validator.ValidatePluginProviderSchemas(entity.Metadata.Name, path, &entity.Spec); len(errs) > 0 {
+		return fmt.Errorf("aggrega plugin gen-catalog: %s has an invalid spec.provider.workloadSchema; fix the overlay: %w", entity.Metadata.Name, errors.Join(errs...))
+	}
 	body, err := emitGenCatalogEntity(entity)
 	if err != nil {
 		return fmt.Errorf("aggrega plugin gen-catalog: encode %s: %w", entity.Metadata.Name, err)
 	}
-	dir := filepath.Join(outputDir, filepath.FromSlash(entity.Metadata.Name), entity.Metadata.Version)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return fmt.Errorf("aggrega plugin gen-catalog: create %s: %w", dir, err)
 	}
-	path := filepath.Join(dir, genCatalogPluginFilename)
 	if err := os.WriteFile(path, body, 0o644); err != nil {
 		return fmt.Errorf("aggrega plugin gen-catalog: write %s: %w", path, err)
 	}
