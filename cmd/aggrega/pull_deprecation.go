@@ -8,6 +8,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"time"
+
+	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
+	"oras.land/oras-go/v2"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/deprecation"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
@@ -180,6 +184,62 @@ func carryForwardExternalInputs(lf *lockfile.Lockfile, lockfilePath string) {
 // marker that does not verify".
 var errNoDeprecationMarker = errors.New("no deprecation marker")
 
+// latestDeprecationMarker fetches and decodes each candidate marker referrer
+// and returns the descriptor and decoded marker carrying the newest issuedOn. A
+// blank or unparseable issuedOn sorts oldest; the marker manifest digest is the
+// deterministic tiebreak when two markers share a timestamp, so the selection is
+// independent of the order the registry lists referrers in. Markers that fail to
+// fetch or decode are skipped; the last such error surfaces only when no marker
+// decoded at all.
+func latestDeprecationMarker(ctx context.Context, target oras.ReadOnlyTarget, markers []ocispec.Descriptor) (ocispec.Descriptor, deprecation.Marker, error) {
+	var (
+		bestDesc    ocispec.Descriptor
+		bestMarker  deprecation.Marker
+		bestTime    time.Time
+		bestHasTime bool
+		found       bool
+		lastErr     error
+	)
+	for _, mk := range markers {
+		payload, ferr := oci.FetchReferrerPayload(ctx, target, mk)
+		if ferr != nil {
+			lastErr = fmt.Errorf("fetch deprecation marker payload: %w", ferr)
+			continue
+		}
+		decoded, derr := deprecation.Unmarshal(payload)
+		if derr != nil {
+			lastErr = fmt.Errorf("decode deprecation marker: %w", derr)
+			continue
+		}
+		t, hasTime := decoded.IssuedOnTime()
+		if !found || laterMarker(hasTime, t, mk.Digest.String(), bestHasTime, bestTime, bestDesc.Digest.String()) {
+			bestDesc, bestMarker, bestTime, bestHasTime, found = mk, decoded, t, hasTime, true
+		}
+	}
+	if !found {
+		if lastErr != nil {
+			return ocispec.Descriptor{}, deprecation.Marker{}, lastErr
+		}
+		return ocispec.Descriptor{}, deprecation.Marker{}, errNoDeprecationMarker
+	}
+	return bestDesc, bestMarker, nil
+}
+
+// laterMarker reports whether a candidate marker (aHasTime/aTime/aDigest) ranks
+// after the current best (bHasTime/bTime/bDigest) in the newest-issuedOn order.
+// A marker with a timestamp beats one without; among timestamped markers the
+// newer wins; ties (and two timestamp-less markers) break on the higher digest
+// string, a stable order the registry's referrer listing does not provide.
+func laterMarker(aHasTime bool, aTime time.Time, aDigest string, bHasTime bool, bTime time.Time, bDigest string) bool {
+	if aHasTime != bHasTime {
+		return aHasTime
+	}
+	if aHasTime && !aTime.Equal(bTime) {
+		return aTime.After(bTime)
+	}
+	return aDigest > bDigest
+}
+
 // discoverEntityDeprecation lists one artifact's deprecation referrers and, for
 // a present marker, decodes it and verifies its own signature against the
 // honored signer set (the original artifact signer plus the registry's trusted
@@ -209,17 +269,16 @@ func discoverEntityDeprecation(
 		return nil, errNoDeprecationMarker
 	}
 
-	// The most recent marker wins when more than one is attached; the last
-	// referrer discovered is the one honored, mirroring the signature pass's
-	// any-one-verifies posture but for the single authoritative marker.
-	marker := markers[len(markers)-1]
-	payload, err := oci.FetchReferrerPayload(ctx, target, marker)
+	// The most recent marker wins when more than one is attached: each marker's
+	// payload is decoded and the one carrying the newest issuedOn is the
+	// authoritative one, a blank or unparseable issuedOn sorting oldest. The
+	// marker manifest digest is the deterministic tiebreak when two markers
+	// share the same issuedOn, so the selection does not depend on the order the
+	// registry lists referrers in. A marker that fails to decode is skipped, so
+	// one malformed sibling does not mask a well-formed newer marker.
+	marker, decoded, err := latestDeprecationMarker(ctx, target, markers)
 	if err != nil {
-		return nil, fmt.Errorf("fetch deprecation marker payload: %w", err)
-	}
-	decoded, err := deprecation.Unmarshal(payload)
-	if err != nil {
-		return nil, fmt.Errorf("decode deprecation marker: %w", err)
+		return nil, err
 	}
 
 	// The marker is a signed artifact: its signature is a referrer of the
@@ -244,8 +303,14 @@ func discoverEntityDeprecation(
 		}
 		res, verr := pullverify.VerifyBundle(bundle, markerDigest, markerPolicy)
 		if verr == nil {
+			// The recorded diagnostic falls back to the reason when a marker
+			// carries no separate message, so the build-time notice is never blank.
+			message := decoded.Message
+			if message == "" {
+				message = decoded.Reason
+			}
 			return &lockfile.DeprecationRecord{
-				Message:  decoded.Message,
+				Message:  message,
 				Severity: string(decoded.Severity),
 				Signer: &lockfile.VerifiedSignature{
 					Mode:         res.Mode,

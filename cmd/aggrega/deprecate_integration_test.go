@@ -52,17 +52,21 @@ func TestIntegration_DeprecateAttachesSignedMarker(t *testing.T) {
 
 	const wantSeverity = "retracted"
 	const wantMessage = "withdrawn; use core/api-server:2 instead"
+	const wantReason = "superseded by the v2 API line"
+	const wantReplacement = "core/api-server:2"
 
 	// Run the production deprecate flow. No Target injection: the flow
 	// constructs its own remote repository from the reference, exercising the
 	// real oci.NewRemoteRepository path. The keyed Signer is injected so the
 	// keyless branch is skipped.
 	if err := deprecateRun(deprecateConfig{
-		Reference: host + "/component/core/legacy-api:1.0.0",
-		Severity:  wantSeverity,
-		Message:   wantMessage,
-		Signer:    signer,
-		EnvLookup: func(string) string { return "" },
+		Reference:   host + "/component/core/legacy-api:1.0.0",
+		Severity:    wantSeverity,
+		Reason:      wantReason,
+		Replacement: wantReplacement,
+		Message:     wantMessage,
+		Signer:      signer,
+		EnvLookup:   func(string) string { return "" },
 	}); err != nil {
 		t.Fatalf("deprecateRun: %v", err)
 	}
@@ -98,6 +102,12 @@ func TestIntegration_DeprecateAttachesSignedMarker(t *testing.T) {
 	}
 	if string(marker.Severity) != wantSeverity || marker.Message != wantMessage {
 		t.Errorf("marker = %+v, want severity=%q message=%q", marker, wantSeverity, wantMessage)
+	}
+	if marker.Reason != wantReason || marker.Replacement != wantReplacement {
+		t.Errorf("marker = %+v, want reason=%q replacement=%q", marker, wantReason, wantReplacement)
+	}
+	if marker.IssuedOn == "" {
+		t.Errorf("marker issuedOn should be stamped, got empty: %+v", marker)
 	}
 
 	// (b) A signature referrer of the deprecation marker exists and verifies
@@ -138,7 +148,7 @@ func TestIntegration_DeprecateUnpublishedFails(t *testing.T) {
 	err = deprecateRun(deprecateConfig{
 		Reference: host + "/component/core/missing:9.9.9",
 		Severity:  "warning",
-		Message:   "does not matter",
+		Reason:    "does not matter",
 		Signer:    signer,
 		EnvLookup: func(string) string { return "" },
 	})

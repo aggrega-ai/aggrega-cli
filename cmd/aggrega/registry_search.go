@@ -125,14 +125,17 @@ func runRegistrySearch(ctx context.Context, cfg workspaceconfig.Config, query st
 	if err != nil {
 		return err
 	}
-	formatSearchResults(out, host, query, matches)
+	formatSearchResults(out, host, query, matches, newRepoDeprecationLookup(cfg, host))
 	return nil
 }
 
 // formatSearchResults writes the deterministic search listing. A zero-match
 // search reports the empty result rather than printing a bare blank so the
-// operator can tell a completed empty search from a silent failure.
-func formatSearchResults(out io.Writer, host, query string, matches []string) {
+// operator can tell a completed empty search from a silent failure. When
+// deprecationOf is non-nil, each result is probed live for a deprecation marker
+// and a deprecated result carries an advisory suffix; a nil lookup, or a result
+// with no marker, prints the bare repository path.
+func formatSearchResults(out io.Writer, host, query string, matches []string, deprecationOf repoDeprecationLookup) {
 	if query == "" {
 		fmt.Fprintf(out, "Repositories in %s:\n", host)
 	} else {
@@ -143,6 +146,12 @@ func formatSearchResults(out io.Writer, host, query string, matches []string) {
 		return
 	}
 	for _, m := range matches {
+		if deprecationOf != nil {
+			if v, ok := deprecationOf(m); ok {
+				fmt.Fprintf(out, "  %s  %s\n", m, formatDeprecationSuffix(v))
+				continue
+			}
+		}
 		fmt.Fprintf(out, "  %s\n", m)
 	}
 }

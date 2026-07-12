@@ -288,7 +288,17 @@ func inspectCatalogComponent(rw *workspaceconfig.ResolvedWorkspace, componentTyp
 	if !found {
 		return fmt.Errorf("component %q not found in catalog", componentType)
 	}
-	return renderComponentStructured(comp, componentType, opts)
+	if err := renderComponentStructured(comp, componentType, opts); err != nil {
+		return err
+	}
+	// Best-effort live surfacing: when the workspace has a registry configured,
+	// probe it for a deprecation marker on this component and render an advisory
+	// notice. A probe failure degrades to showing nothing — inspect never fails
+	// on the deprecation probe.
+	if v, ok := lookupComponentDeprecation(wsCfg, componentType); ok {
+		renderDeprecationBlock(opts.out, v)
+	}
+	return nil
 }
 
 // inspectReleaseFile loads a Release plus its referenced Aggregate and

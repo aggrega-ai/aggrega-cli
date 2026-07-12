@@ -56,7 +56,14 @@ func withSearchTarget(t *testing.T, reg registryRepoLister, err error) {
 		}
 		return reg, "hub.aggrega.ai", nil
 	}
-	t.Cleanup(func() { registrySearchTarget = prev })
+	// Disable the live deprecation probe so runRegistrySearch stays network-free:
+	// the fake target's host would otherwise trigger a per-result registry probe.
+	prevLookup := newRepoDeprecationLookup
+	newRepoDeprecationLookup = func(workspaceconfig.Config, string) repoDeprecationLookup { return nil }
+	t.Cleanup(func() {
+		registrySearchTarget = prev
+		newRepoDeprecationLookup = prevLookup
+	})
 }
 
 // TestSearchRegistry_ScopesAndQuery proves the one search primitive filters by
@@ -138,7 +145,7 @@ func TestRunRegistrySearch_SharedPrimitiveTwoScopes(t *testing.T) {
 // result explicitly rather than printing a bare blank.
 func TestFormatSearchResults_Empty(t *testing.T) {
 	var out bytes.Buffer
-	formatSearchResults(&out, "hub.aggrega.ai", "nope", nil)
+	formatSearchResults(&out, "hub.aggrega.ai", "nope", nil, nil)
 	if !strings.Contains(out.String(), "(none)") {
 		t.Fatalf("empty search should report (none):\n%s", out.String())
 	}

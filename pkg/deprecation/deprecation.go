@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"time"
 )
 
 // ArtifactType is the OCI artifactType of a deprecation referrer. A consumer
@@ -76,29 +77,64 @@ func MeetsThreshold(severity, threshold Severity) bool {
 }
 
 // Marker is the payload of a deprecation referrer. It carries the severity of
-// the deprecation and a human-readable message explaining it or pointing at a
-// replacement. The JSON field order is fixed (severity, then message) so
-// Marshal produces byte-identical output for identical inputs.
+// the deprecation, a required human-readable reason, an optional replacement
+// artifact reference, and the timestamp the marker was issued. The message
+// field is retained for audit and for the recorded build-time diagnostic; it
+// defaults to the reason when an author supplies no separate message. The JSON
+// field order is fixed (severity, message, reason, replacement, issuedOn) and
+// the optional fields are omitted when empty, so Marshal produces byte-identical
+// output for identical inputs.
+//
+// issuedOn is the ordering key when more than one marker is attached to the same
+// artifact: the marker with the newest issuedOn is the authoritative one. It is
+// an RFC-3339 UTC timestamp, set by the authoring command at attachment time.
 type Marker struct {
-	Severity Severity `json:"severity"`
-	Message  string   `json:"message"`
+	Severity    Severity `json:"severity"`
+	Message     string   `json:"message,omitempty"`
+	Reason      string   `json:"reason"`
+	Replacement string   `json:"replacement,omitempty"`
+	IssuedOn    string   `json:"issuedOn,omitempty"`
 }
 
-// Validate reports whether the marker is well-formed: its severity is one of
-// the three known values and its message is non-empty. It returns nil when the
-// marker is valid and a descriptive error otherwise. Both the authoring side
-// (before attaching) and the consuming side (after decoding) call it, so the
-// well-formedness rule has one definition.
+// Validate reports whether the marker is well-formed: its severity is one of the
+// three known values, its reason is non-empty, and its issuedOn — when present —
+// is a valid RFC-3339 timestamp. The replacement and message fields are
+// optional. issuedOn is tolerated empty so a marker that predates the ordering
+// key still decodes (it sorts oldest); the authoring command always sets it.
+// Both the authoring side (before attaching) and the consuming side (after
+// decoding) call Validate, so the well-formedness rule has one definition.
 func (m Marker) Validate() error {
 	switch m.Severity {
 	case SeverityWarning, SeverityError, SeverityRetracted:
 	default:
 		return fmt.Errorf("deprecation: unknown severity %q; want one of %q, %q, %q", m.Severity, SeverityWarning, SeverityError, SeverityRetracted)
 	}
-	if m.Message == "" {
-		return fmt.Errorf("deprecation: message must not be empty")
+	if m.Reason == "" {
+		return fmt.Errorf("deprecation: reason must not be empty")
+	}
+	if m.IssuedOn != "" {
+		if _, err := time.Parse(time.RFC3339, m.IssuedOn); err != nil {
+			return fmt.Errorf("deprecation: issuedOn %q is not a valid RFC-3339 timestamp: %w", m.IssuedOn, err)
+		}
 	}
 	return nil
+}
+
+// IssuedOnTime parses the marker's issuedOn as an RFC-3339 timestamp. It reports
+// the parsed time and whether a usable timestamp was present: a blank or
+// unparseable issuedOn yields the zero time and false, so such a marker sorts
+// oldest when the newest-issuedOn marker is selected. It is the single
+// definition of the ordering key both the discovery pass and the query-time
+// surfacing read.
+func (m Marker) IssuedOnTime() (time.Time, bool) {
+	if m.IssuedOn == "" {
+		return time.Time{}, false
+	}
+	t, err := time.Parse(time.RFC3339, m.IssuedOn)
+	if err != nil {
+		return time.Time{}, false
+	}
+	return t, true
 }
 
 // Marshal returns the canonical JSON encoding of the marker after validating
