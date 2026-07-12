@@ -12,10 +12,10 @@ import (
 
 // Sentinel errors for errors.Is matching.
 var (
-	ErrSchemaValidation      = errors.New("schema validation failed")
-	ErrInheritanceMerge      = errors.New("inheritance merge failed")
+	ErrSchemaValidation      = errors.New("schema validation failed: correct the flagged field to satisfy its declared schema")
+	ErrInheritanceMerge      = errors.New("inheritance merge failed: resolve the conflicting field definitions across the extends chain")
 	ErrCyclicExtension       = errors.New("cyclic extends chain")
-	ErrUsesSchemaUnification = errors.New("usesSchema unification failed")
+	ErrUsesSchemaUnification = errors.New("usesSchema unification failed: reconcile the conflicting socket definitions across the extends chain")
 )
 
 // ValidationError is a structured validation failure with entity context, field path,

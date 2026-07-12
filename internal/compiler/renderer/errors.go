@@ -16,7 +16,7 @@ var (
 	ErrSelfInjectForbiddenReference          = errors.New("self-inject value: template references cross-node data")
 	ErrSelfInjectKeyCollision                = errors.New("duplicate delivery key across self-inject and uses-inject")
 	ErrAttachmentInjectKeyCollision          = errors.New("duplicate delivery key across attachment-inject and another inject source")
-	ErrUnmappedCustomMechanism               = errors.New("custom inject mechanism has no matching key in injectMapping output")
+	ErrUnmappedCustomMechanism               = errors.New("custom inject mechanism has no matching key in injectMapping output; add the mechanism's key to the Recipe injectMapping")
 
 	// ErrMappingImportShape fires when a valuesMapping $import: (or a recursive
 	// MappingLibrary entry body's field-root $import:) is neither a host-bearing

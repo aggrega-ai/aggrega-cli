@@ -35,7 +35,7 @@ import (
 // ErrEntityEnvelope is the sentinel for a document failing its
 // kind's envelope schema. errors.Is-recoverable at the pipeline
 // boundary.
-var ErrEntityEnvelope = errors.New("document envelope validation failed")
+var ErrEntityEnvelope = errors.New("document envelope validation failed: correct the document to match its kind's schema")
 
 // Kind names a document family with an embedded envelope schema.
 type Kind string

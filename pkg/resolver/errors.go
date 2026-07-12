@@ -16,7 +16,7 @@ import (
 var (
 	// ErrInvalidParameterRef wraps a Go-template parse or execution error
 	// surfaced during parameter interpolation.
-	ErrInvalidParameterRef = errors.New("invalid parameter reference")
+	ErrInvalidParameterRef = errors.New("invalid parameter reference: check the {{ .parameters.* }} expression names a declared parameter and parses as a Go template")
 
 	// ErrParametersImportLoad wraps a read or unmarshal failure for the
 	// single path supplied at Release.spec.parameters.$import:.
@@ -25,15 +25,15 @@ var (
 	// ErrInvalidInstanceName wraps a user-authored dictionary key (component,
 	// feature, secret, subsystem, aggregate name) that does not match the
 	// instance-name pattern.
-	ErrInvalidInstanceName = errors.New("invalid instance name")
+	ErrInvalidInstanceName = errors.New("invalid instance name: names must match ^[a-zA-Z0-9_-]+$ (letters, digits, hyphen, underscore; no dots)")
 
 	// ErrInvalidTargetRef wraps a target reference (e.g., uses.target) whose
 	// dot-separated segments do not all match the instance-name pattern.
-	ErrInvalidTargetRef = errors.New("invalid target reference")
+	ErrInvalidTargetRef = errors.New("invalid target reference: each dot-separated segment must match ^[a-zA-Z0-9_-]+$")
 
 	// ErrYAMLLoad wraps a file-read or YAML-unmarshal failure for any of the
 	// three source documents (Aggregate, Release, Manifest).
-	ErrYAMLLoad = errors.New("YAML load failed")
+	ErrYAMLLoad = errors.New("YAML load failed: check the file exists, is readable, and contains well-formed YAML")
 
 	// ErrManifestReservedPrefix wraps a Manifest features.annotations
 	// binding key that uses the reserved aggrega.ai/ prefix. The prefix
@@ -56,7 +56,7 @@ var (
 
 	// ErrInvalidInjectKey wraps an inject delivery key that does not match
 	// the expected per-mechanism format.
-	ErrInvalidInjectKey = errors.New("invalid inject key")
+	ErrInvalidInjectKey = errors.New("invalid inject key: the from-key must name a declared provides key of the target component type")
 
 	// ErrSchemaConformance wraps a developer-authored component-instance
 	// values or infra pillar that does not conform to the catalog
@@ -85,15 +85,15 @@ var (
 
 	// ErrMissingRequiredFeature wraps a component whose declared catalog
 	// type lists a requiredFeature that no attached Feature instance satisfies.
-	ErrMissingRequiredFeature = errors.New("missing required feature")
+	ErrMissingRequiredFeature = errors.New("missing required feature: attach a Feature of the required type to the component")
 
 	// ErrFeatureMergeConflict wraps a conflict during Release-side Feature
 	// attachment merging (e.g., divergent values on the same Feature key).
-	ErrFeatureMergeConflict = errors.New("feature merge conflict")
+	ErrFeatureMergeConflict = errors.New("feature merge conflict: reconcile the Aggregate and Release declarations for the feature")
 
 	// ErrUnknownUsesSocket wraps a uses-block socket name that does not
 	// exist in the catalog Component's usesSchema.
-	ErrUnknownUsesSocket = errors.New("unknown uses socket")
+	ErrUnknownUsesSocket = errors.New("unknown uses socket: declare the socket in the component type's usesSchema, or use a socket it already declares")
 
 	// ErrSelfInjectForbidden wraps a self-inject declaration on a component
 	// whose catalog type does not declare a spec.inject allowlist.
@@ -105,7 +105,7 @@ var (
 
 	// ErrSchemaValidation wraps a pillar validation failure (.values
 	// from the Aggregate, .infra from the Release boundary).
-	ErrSchemaValidation = errors.New("schema validation failed")
+	ErrSchemaValidation = errors.New("schema validation failed: correct the flagged field to satisfy its declared schema")
 
 	// ErrMissingRequiredSocket wraps a uses-socket marked required in the
 	// Component's usesSchema that no instance populates.

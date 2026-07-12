@@ -27,7 +27,7 @@ type catalogRecipeLoader struct {
 func (l *catalogRecipeLoader) LoadRecipe(uri string) (*types.Recipe, error) {
 	r, ok := l.catalog.RecipeByURI(uri)
 	if !ok {
-		return nil, fmt.Errorf("catalog: Recipe %q not found", uri)
+		return nil, fmt.Errorf("catalog: Recipe %q not found (check the Manifest recipe mapping, or run `aggrega pull` to fetch it)", uri)
 	}
 	return &r, nil
 }
@@ -35,7 +35,7 @@ func (l *catalogRecipeLoader) LoadRecipe(uri string) (*types.Recipe, error) {
 func (l *catalogRecipeLoader) LoadFeatureRecipe(uri string) (*types.FeatureRecipe, error) {
 	fr, ok := l.catalog.FeatureRecipeByURI(uri)
 	if !ok {
-		return nil, fmt.Errorf("catalog: FeatureRecipe %q not found", uri)
+		return nil, fmt.Errorf("catalog: FeatureRecipe %q not found (check the Manifest recipe mapping, or run `aggrega pull` to fetch it)", uri)
 	}
 	return &fr, nil
 }
@@ -43,7 +43,7 @@ func (l *catalogRecipeLoader) LoadFeatureRecipe(uri string) (*types.FeatureRecip
 func (l *catalogRecipeLoader) LoadPlugin(uri string) (*types.Plugin, error) {
 	wp, ok := l.catalog.PluginByURI(uri)
 	if !ok {
-		return nil, fmt.Errorf("catalog: Plugin %q not found", uri)
+		return nil, fmt.Errorf("catalog: Plugin %q not found (check the Manifest provider mapping, or run `aggrega pull` to fetch it)", uri)
 	}
 	return &wp, nil
 }

@@ -26,7 +26,7 @@ var (
 	// required-socket checks happen at Step 1); the formats this sentinel
 	// catches are structural shape errors the YAML schema accepts but the
 	// builder cannot interpret.
-	ErrInvalidUsesFormat = errors.New("invalid uses format")
+	ErrInvalidUsesFormat = errors.New("invalid uses format: a uses socket value must be a string array of target names or a verbose alias-keyed map")
 
 	// ErrMaxDepth fires from flattenAggregate when sub-aggregate inclusion
 	// recursion exceeds maxSubAggregateDepth (currently 10). The bound
@@ -69,7 +69,7 @@ var (
 	// ID, the dotted prefix path that produced it, and the existing
 	// entry's source aggregate so the diagnostic points the author at the
 	// precise authoring position.
-	ErrSubAggregateNameCollision = errors.New("flattened node ID collision")
+	ErrSubAggregateNameCollision = errors.New("flattened node ID collision: rename one of the colliding instances so their flattened IDs differ")
 
 	// ErrUnnormalizedAggregate fires at the topology entry when an Aggregate
 	// reaches flatten carrying BOTH a non-empty top-level components surface AND

@@ -877,7 +877,7 @@ func runCacheEvict(w io.Writer, loc cacheLocations, capBytes int64) error {
 func parseHumanSize(s string) (int64, error) {
 	str := strings.TrimSpace(s)
 	if str == "" {
-		return 0, fmt.Errorf("empty size value")
+		return 0, fmt.Errorf("empty size value (expected a byte quantity such as 500MiB)")
 	}
 	// Split the leading numeric run from the trailing unit letters.
 	upper := strings.ToUpper(str)

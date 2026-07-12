@@ -693,7 +693,7 @@ func writeArtifacts(outRoot string, files map[string][]byte) error {
 		}
 		relPath = filepath.Clean(relPath)
 		if relPath == ".." || strings.HasPrefix(relPath, ".."+string(filepath.Separator)) {
-			return fmt.Errorf("invalid artifact path %q", relPath)
+			return fmt.Errorf("invalid artifact path %q (path escapes the output root)", relPath)
 		}
 		full := filepath.Clean(filepath.Join(outRoot, relPath))
 		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
