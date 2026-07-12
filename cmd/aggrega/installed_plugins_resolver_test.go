@@ -75,15 +75,20 @@ func TestInstalledPluginRunner_ResolvesSidecarURI(t *testing.T) {
 	// pre-fix empty resolver did.
 	ctx := context.Background()
 
-	_, runErr := installedPluginRunnerFor(rw).Run(ctx, uri, nil)
+	_, sidecarDigest, runErr := installedPluginRunnerFor(rw).Run(ctx, uri, nil)
 	if runErr == nil {
 		t.Fatalf("running non-guest sidecar bytes should fail at load, not succeed")
 	}
 	if errors.Is(runErr, cliplugin.ErrNoResolver) || strings.Contains(runErr.Error(), "not resolvable") {
 		t.Fatalf("workspace runner must resolve the sidecar URI, not fail resolution; got %v", runErr)
 	}
+	// Resolution succeeds before the load fails, so the workspace runner returns
+	// the content digest of the resolved sidecar bytes even on a load failure.
+	if want := describeCacheDigest(sidecarBytes); sidecarDigest != want {
+		t.Fatalf("resolved-bytes digest = %q; want %q", sidecarDigest, want)
+	}
 
-	_, emptyErr := installedPluginRunnerFor(nil).Run(ctx, uri, nil)
+	_, _, emptyErr := installedPluginRunnerFor(nil).Run(ctx, uri, nil)
 	if emptyErr == nil || !strings.Contains(emptyErr.Error(), "not resolvable") {
 		t.Fatalf("no-workspace runner should fail resolution with the pre-fix error; got %v", emptyErr)
 	}

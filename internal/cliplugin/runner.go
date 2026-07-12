@@ -49,6 +49,12 @@ type Runner struct {
 	// value). Required — a nil Resolve makes Run return ErrNoResolver.
 	Resolve pluginpath.Lookup
 
+	// Digest computes the content digest of the resolved guest bytes, which Run
+	// returns so the caller can pin it and detect drift across runs. It is the
+	// caller's single digest primitive, injected so this package holds no second
+	// hashing implementation. A nil Digest makes Run return an empty digest.
+	Digest func([]byte) string
+
 	// Loader loads the resolved bytes under the runtime CLI profile. A nil
 	// Loader defaults to one built through the shared caching constructor, so it
 	// participates in the process-wide compilation cache.
@@ -62,7 +68,8 @@ type Runner struct {
 
 // Run resolves the plugin URI, loads it under the runtime CLI profile, invokes
 // its cli_run export with argv, streams the guest's output to the Runner's
-// stdout/stderr, and returns the guest's exit code.
+// stdout/stderr, and returns the guest's exit code and the content digest of the
+// resolved bytes.
 //
 // The returned exit code is the command's status, exactly as the guest reported
 // it: a non-zero code is an ordinary command result (the shell's $?), NOT a Go
@@ -72,9 +79,15 @@ type Runner struct {
 // every error case the returned exit code is zero and the caller distinguishes
 // "the command ran and exited non-zero" (err == nil, code != 0) from "the
 // command could not be run" (err != nil).
-func (r Runner) Run(ctx context.Context, uri string, argv []string) (int, error) {
+//
+// The returned digest is the content digest of the resolved guest bytes (empty
+// when no Digest hook is set or the URI does not resolve). It is computed once
+// the bytes resolve, so it is present on every path past resolution regardless
+// of a later run outcome; the caller uses it to pin the running bytes and detect
+// drift.
+func (r Runner) Run(ctx context.Context, uri string, argv []string) (int, string, error) {
 	if r.Resolve == nil {
-		return 0, ErrNoResolver
+		return 0, "", ErrNoResolver
 	}
 	stdout := r.Stdout
 	if stdout == nil {
@@ -95,13 +108,17 @@ func (r Runner) Run(ctx context.Context, uri string, argv []string) (int, error)
 
 	resolved, err := r.Resolve(uri)
 	if err != nil {
-		return 0, err
+		return 0, "", err
+	}
+	digest := ""
+	if r.Digest != nil {
+		digest = r.Digest(resolved.Bytes)
 	}
 	spec := resolver.PluginSpec(uri, resolved)
 
 	plugin, err := loader.LoadCLI(ctx, spec, stdout, stderr)
 	if err != nil {
-		return 0, err
+		return 0, digest, err
 	}
 
 	// DescribeAndValidate Closes the plugin itself on any rejection, so the
@@ -110,18 +127,18 @@ func (r Runner) Run(ctx context.Context, uri string, argv []string) (int, error)
 	// exit path below.
 	desc, err := loader.DescribeAndValidate(ctx, plugin, spec)
 	if err != nil {
-		return 0, err
+		return 0, digest, err
 	}
 	defer func() { _ = plugin.Close(ctx) }()
 
 	if desc.PluginType != wasm.PluginTypeCLI {
-		return 0, fmt.Errorf("cliplugin: plugin %q reports type %q, not %q: %w",
+		return 0, digest, fmt.Errorf("cliplugin: plugin %q reports type %q, not %q: %w",
 			uri, desc.PluginType, wasm.PluginTypeCLI, ErrPluginNotCLI)
 	}
 
 	payload, err := json.Marshal(abi.CLIRunInput{Args: argv})
 	if err != nil {
-		return 0, fmt.Errorf("cliplugin: encode cli_run input for plugin %q: %w", uri, err)
+		return 0, digest, fmt.Errorf("cliplugin: encode cli_run input for plugin %q: %w", uri, err)
 	}
 
 	// The guest streams its stdout/stderr through the host functions bound at
@@ -129,7 +146,7 @@ func (r Runner) Run(ctx context.Context, uri string, argv []string) (int, error)
 	// injected writers; the host reads only the exit code here.
 	exitCode, _, err := wasm.InvokeExportStatus(ctx, plugin, desc, wasm.CLIRunExportName, payload)
 	if err != nil {
-		return 0, err
+		return 0, digest, err
 	}
-	return int(exitCode), nil
+	return int(exitCode), digest, nil
 }

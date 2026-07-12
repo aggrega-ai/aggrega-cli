@@ -80,10 +80,13 @@ func newPluginListCmd() *cobra.Command {
 		Long: `List every Wasm plugin the CLI can see and, for each, its self-reported
 describe() metadata.
 
-Two groups are printed. Embedded built-ins are the provider and linter guests
+Three groups are printed. Embedded built-ins are the provider and linter guests
 compiled into the binary; they resolve with no filesystem, cache, or network
 access. Configured plugins are the workspace bindings — provider_bindings and
-the linter socket — resolved through the plugin cascade.
+the linter socket — resolved through the plugin cascade. Installed CLI plugins
+are the commands installed with 'aggrega plugin install', each carrying a
+readiness label: ready, unresolved, describe-failed, or digest-drift when its
+bytes changed since the first run pinned them.
 
 For each plugin the command loads it, invokes its describe() export, and prints
 its identity, plugin type, version and commit, targets, and key capabilities.
@@ -110,6 +113,16 @@ type pluginListEntry struct {
 	origin string
 	desc   wasm.PluginDescriptor
 	err    error
+
+	// resolvedDigest is the content digest of the bytes the URI resolved to,
+	// captured once resolution succeeds and empty when it did not. It lets an
+	// installed-plugin entry compare the freshly resolved bytes against the
+	// digest pinned at first run.
+	resolvedDigest string
+
+	// readiness is the installed CLI plugin's one-word readiness label; empty for
+	// the embedded and configured groups, which carry no readiness signal.
+	readiness string
 }
 
 // pluginListRun enumerates the embedded built-ins and the workspace-configured
@@ -135,7 +148,14 @@ func pluginListRun(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, w
 		configuredEntries = append(configuredEntries, describePluginURI(ctx, "configured", ref.uri, ref.origin, sidecarDir, pluginByURI))
 	}
 
-	formatPluginList(w, embeddedEntries, configuredEntries, embeddedSet)
+	var installedEntries []pluginListEntry
+	if idx, err := installedPluginIndexSource(); err == nil {
+		for _, name := range idx.names() {
+			installedEntries = append(installedEntries, describeInstalledPlugin(ctx, name, idx.Plugins[name], sidecarDir, pluginByURI))
+		}
+	}
+
+	formatPluginList(w, embeddedEntries, configuredEntries, installedEntries, embeddedSet)
 	return nil
 }
 
@@ -218,6 +238,7 @@ func describePluginURI(ctx context.Context, source, uri, origin, sidecarDir stri
 	}
 
 	digest := describeCacheDigest(resolved.Bytes)
+	entry.resolvedDigest = digest
 	if desc, ok := readDescribeCache(digest); ok {
 		entry.desc = desc
 		return entry
@@ -237,6 +258,38 @@ func describePluginURI(ctx context.Context, source, uri, origin, sidecarDir stri
 	writeDescribeCache(digest, desc)
 	entry.desc = desc
 	return entry
+}
+
+// describeInstalledPlugin enumerates one installed CLI plugin for the listing:
+// it resolves and describes the plugin's URI through the same cascade the run
+// path uses, then derives a readiness label from whether the plugin resolves,
+// instantiates, and matches the digest pinned at its first run. Reusing
+// describePluginURI keeps the resolve-describe-digest path single-sourced; only
+// the readiness label is layered on top.
+func describeInstalledPlugin(ctx context.Context, cmdName string, plugin installedPluginEntry, sidecarDir string, pluginByURI func(string) (types.Plugin, bool)) pluginListEntry {
+	entry := describePluginURI(ctx, "installed", plugin.URI, "", sidecarDir, pluginByURI)
+	entry.origin = fmt.Sprintf("command %q", cmdName)
+	entry.readiness = installedReadiness(plugin.Digest, entry.resolvedDigest, entry.err)
+	return entry
+}
+
+// installedReadiness maps an installed CLI plugin's resolve-and-describe outcome
+// and pinned digest to a one-word readiness label. A resolve failure (no fresh
+// digest was computed) reads unresolved; a describe or instantiation failure
+// reads describe-failed; a pinned digest that no longer matches the freshly
+// resolved bytes reads digest-drift; anything else — including a plugin not yet
+// pinned by a first run — reads ready.
+func installedReadiness(pinned, fresh string, err error) string {
+	switch {
+	case err != nil && fresh == "":
+		return "unresolved"
+	case err != nil:
+		return "describe-failed"
+	case pinned != "" && pinned != fresh:
+		return "digest-drift"
+	default:
+		return "ready"
+	}
 }
 
 // resolvePluginURI resolves uri to its .wasm bytes through the plugin cascade.
@@ -308,10 +361,10 @@ func pluginDiagName(uri string) string {
 	return s
 }
 
-// formatPluginList writes the two-group listing to w. Each group's entries are
+// formatPluginList writes the three-group listing to w. Each group's entries are
 // already in a deterministic order; the group headers and empty-group placeholders
 // keep the output readable when a group is empty.
-func formatPluginList(w io.Writer, embeddedEntries, configuredEntries []pluginListEntry, embeddedSet map[string]bool) {
+func formatPluginList(w io.Writer, embeddedEntries, configuredEntries, installedEntries []pluginListEntry, embeddedSet map[string]bool) {
 	fmt.Fprintln(w, "Embedded built-ins:")
 	fmt.Fprintln(w)
 	if len(embeddedEntries) == 0 {
@@ -329,6 +382,15 @@ func formatPluginList(w io.Writer, embeddedEntries, configuredEntries []pluginLi
 	for _, e := range configuredEntries {
 		renderPluginEntry(w, e, embeddedSet)
 	}
+
+	fmt.Fprintln(w, "Installed CLI plugins:")
+	fmt.Fprintln(w)
+	if len(installedEntries) == 0 {
+		fmt.Fprintln(w, "  (none)")
+	}
+	for _, e := range installedEntries {
+		renderPluginEntry(w, e, embeddedSet)
+	}
 }
 
 // renderPluginEntry writes one plugin's block. A describe failure prints the
@@ -338,6 +400,9 @@ func renderPluginEntry(w io.Writer, e pluginListEntry, embeddedSet map[string]bo
 	fmt.Fprintf(w, "  %s\n", e.uri)
 	if e.origin != "" {
 		fmt.Fprintf(w, "    origin:       %s\n", e.origin)
+	}
+	if e.readiness != "" {
+		fmt.Fprintf(w, "    readiness:    %s\n", e.readiness)
 	}
 	if e.err != nil {
 		fmt.Fprintf(w, "    error:        describe failed: %v\n", e.err)

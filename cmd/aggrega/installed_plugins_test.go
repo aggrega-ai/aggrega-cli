@@ -21,15 +21,16 @@ type fakeDispatcher struct {
 	gotURI  string
 	gotArgv []string
 	code    int
+	digest  string
 	err     error
 	calls   int
 }
 
-func (f *fakeDispatcher) Run(_ context.Context, uri string, argv []string) (int, error) {
+func (f *fakeDispatcher) Run(_ context.Context, uri string, argv []string) (int, string, error) {
 	f.calls++
 	f.gotURI = uri
 	f.gotArgv = argv
-	return f.code, f.err
+	return f.code, f.digest, f.err
 }
 
 // withInstalledIndex points the index source at a fixture for the duration of the
@@ -220,6 +221,113 @@ func TestUnknownCommand_InstallSuggestion(t *testing.T) {
 	}
 	if !strings.Contains(noHint, "unknown command") {
 		t.Fatalf("non-discoverable unknown command lost cobra's normal error:\n%s", noHint)
+	}
+}
+
+// TestReconcileInstalledPluginDigest_PinThenDrift proves trust-on-first-use: the
+// first reconciliation pins the resolved digest into the entry, a matching re-run
+// is a clean no-op, and a re-run whose bytes hash differently warns without
+// overwriting the pin.
+func TestReconcileInstalledPluginDigest_PinThenDrift(t *testing.T) {
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	if err := writeInstalledPluginIndex(installedPluginIndex{Plugins: map[string]installedPluginEntry{
+		"moo": {URI: "/abs/moo.wasm", Usage: "greet"},
+	}}); err != nil {
+		t.Fatalf("seed index: %v", err)
+	}
+
+	var warn bytes.Buffer
+	reconcileInstalledPluginDigest("moo", "digest-A", &warn)
+	if warn.Len() != 0 {
+		t.Fatalf("first run must not warn: %q", warn.String())
+	}
+	if idx, _ := readInstalledPluginIndex(); idx.Plugins["moo"].Digest != "digest-A" {
+		t.Fatalf("first run should pin the digest; got %q", idx.Plugins["moo"].Digest)
+	}
+
+	warn.Reset()
+	reconcileInstalledPluginDigest("moo", "digest-A", &warn)
+	if warn.Len() != 0 {
+		t.Fatalf("matching re-run must not warn: %q", warn.String())
+	}
+
+	warn.Reset()
+	reconcileInstalledPluginDigest("moo", "digest-B", &warn)
+	if !strings.Contains(warn.String(), "changed since they were pinned") {
+		t.Fatalf("drift must warn; got %q", warn.String())
+	}
+	if idx, _ := readInstalledPluginIndex(); idx.Plugins["moo"].Digest != "digest-A" {
+		t.Fatalf("drift must not overwrite the pin; got %q", idx.Plugins["moo"].Digest)
+	}
+}
+
+// TestReconcileInstalledPluginDigest_NoOpCases proves reconciliation is inert
+// when there is nothing to pin: an empty digest (no bytes resolved) and a command
+// name absent from the index both leave the index and stderr untouched.
+func TestReconcileInstalledPluginDigest_NoOpCases(t *testing.T) {
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	if err := writeInstalledPluginIndex(installedPluginIndex{Plugins: map[string]installedPluginEntry{
+		"moo": {URI: "/abs/moo.wasm", Usage: "greet", Digest: "kept"},
+	}}); err != nil {
+		t.Fatalf("seed index: %v", err)
+	}
+
+	var warn bytes.Buffer
+	reconcileInstalledPluginDigest("moo", "", &warn)
+	reconcileInstalledPluginDigest("absent", "whatever", &warn)
+	if warn.Len() != 0 {
+		t.Fatalf("no-op cases must not warn: %q", warn.String())
+	}
+	if idx, _ := readInstalledPluginIndex(); idx.Plugins["moo"].Digest != "kept" {
+		t.Fatalf("no-op cases must not alter the pin; got %q", idx.Plugins["moo"].Digest)
+	}
+}
+
+// TestInstalledPlugin_RunPinsAndWarnsOnDrift drives the command through the real
+// dispatch path: the first run pins the digest the dispatcher reports for the
+// resolved bytes, and a later run whose dispatcher reports a different digest
+// emits the drift warning to stderr while leaving the pin in place.
+func TestInstalledPlugin_RunPinsAndWarnsOnDrift(t *testing.T) {
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	withRegistrationWarnings(t)
+	if err := writeInstalledPluginIndex(installedPluginIndex{Plugins: map[string]installedPluginEntry{
+		"moo": {URI: "oci://example/moo:v1", Usage: "greet"},
+	}}); err != nil {
+		t.Fatalf("seed index: %v", err)
+	}
+
+	// First run pins the reported digest; stderr stays clean.
+	withDispatcher(t, &fakeDispatcher{code: 0, digest: "run-digest-1"})
+	root := newRootCmd()
+	var firstErr bytes.Buffer
+	root.SetOut(&bytes.Buffer{})
+	root.SetErr(&firstErr)
+	root.SetArgs([]string{"moo"})
+	if code := executeRoot(root); code != 0 {
+		t.Fatalf("first run exit = %d; want 0", code)
+	}
+	if strings.Contains(firstErr.String(), "changed since") {
+		t.Fatalf("first run must not warn:\n%s", firstErr.String())
+	}
+	if idx, _ := readInstalledPluginIndex(); idx.Plugins["moo"].Digest != "run-digest-1" {
+		t.Fatalf("first run should pin the reported digest; got %q", idx.Plugins["moo"].Digest)
+	}
+
+	// A later run whose resolved bytes hash differently warns and keeps the pin.
+	withDispatcher(t, &fakeDispatcher{code: 0, digest: "run-digest-2"})
+	root2 := newRootCmd()
+	var secondErr bytes.Buffer
+	root2.SetOut(&bytes.Buffer{})
+	root2.SetErr(&secondErr)
+	root2.SetArgs([]string{"moo"})
+	if code := executeRoot(root2); code != 0 {
+		t.Fatalf("second run exit = %d; want 0", code)
+	}
+	if !strings.Contains(secondErr.String(), "changed since they were pinned") {
+		t.Fatalf("drifted run should warn on stderr; got:\n%s", secondErr.String())
+	}
+	if idx, _ := readInstalledPluginIndex(); idx.Plugins["moo"].Digest != "run-digest-1" {
+		t.Fatalf("drift must not overwrite the pin; got %q", idx.Plugins["moo"].Digest)
 	}
 }
 

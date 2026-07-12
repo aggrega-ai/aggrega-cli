@@ -32,6 +32,13 @@ type installedPluginEntry struct {
 	// Capabilities is the plugin's declared capability list, cached at install
 	// time so help can describe the command without loading the guest. Optional.
 	Capabilities []string `json:"capabilities,omitempty"`
+	// Digest is the content digest of the guest bytes the command resolved to,
+	// pinned the first time the command runs (trust on first use) and compared on
+	// every later run. Empty until the first run pins it. A later run whose
+	// resolved bytes hash to a different value has drifted from what was pinned;
+	// the run continues and emits an advisory warning rather than halting. It is
+	// the same digest the describe cache keys on, so the two never diverge.
+	Digest string `json:"digest,omitempty"`
 }
 
 // installedPluginIndex maps a top-level command name to the installed CLI plugin

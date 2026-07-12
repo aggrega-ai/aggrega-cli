@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -81,14 +82,24 @@ func TestRunner_ExitCodeZero(t *testing.T) {
 
 	var stdout recordingWriter
 	var stderr bytes.Buffer
-	r := Runner{Resolve: bytesLookup(guest), Stdout: &stdout, Stderr: &stderr}
+	r := Runner{
+		Resolve: bytesLookup(guest),
+		Digest:  func(b []byte) string { return fmt.Sprintf("len-%d", len(b)) },
+		Stdout:  &stdout,
+		Stderr:  &stderr,
+	}
 
-	code, err := r.Run(ctx, "test://cli-args-exit", []string{"0", "hello"})
+	code, digest, err := r.Run(ctx, "test://cli-args-exit", []string{"0", "hello"})
 	if err != nil {
 		t.Fatalf("Run returned error: %v", err)
 	}
 	if code != 0 {
 		t.Fatalf("exit code = %d; want 0", code)
+	}
+	// The Digest hook is applied to the resolved bytes and returned, so the caller
+	// can pin the running bytes without re-resolving.
+	if want := fmt.Sprintf("len-%d", len(guest)); digest != want {
+		t.Fatalf("returned digest = %q; want %q", digest, want)
 	}
 	if got, want := stdout.String(), "arg:hello\nsecond\n"; got != want {
 		t.Fatalf("streamed stdout = %q; want %q", got, want)
@@ -116,7 +127,7 @@ func TestRunner_ExitCodeNonZero(t *testing.T) {
 	var stderr bytes.Buffer
 	r := Runner{Resolve: bytesLookup(guest), Stdout: &stdout, Stderr: &stderr}
 
-	code, err := r.Run(ctx, "test://cli-args-exit", []string{"3", "boom"})
+	code, _, err := r.Run(ctx, "test://cli-args-exit", []string{"3", "boom"})
 	if err != nil {
 		t.Fatalf("Run returned error for a non-zero command exit (must be a status, not an error): %v", err)
 	}
@@ -139,7 +150,7 @@ func TestRunner_RefusesNonCLIPlugin(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	r := Runner{Resolve: bytesLookup(guest), Stdout: &stdout, Stderr: &stderr}
 
-	code, err := r.Run(ctx, "test://noncli-probe", nil)
+	code, _, err := r.Run(ctx, "test://noncli-probe", nil)
 	if !errors.Is(err, ErrPluginNotCLI) {
 		t.Fatalf("Run error = %v; want an error wrapping ErrPluginNotCLI", err)
 	}
@@ -151,7 +162,7 @@ func TestRunner_RefusesNonCLIPlugin(t *testing.T) {
 // TestRunner_NoResolver proves a Runner with no resolver seam returns
 // ErrNoResolver rather than panicking.
 func TestRunner_NoResolver(t *testing.T) {
-	code, err := Runner{}.Run(context.Background(), "test://whatever", nil)
+	code, _, err := Runner{}.Run(context.Background(), "test://whatever", nil)
 	if !errors.Is(err, ErrNoResolver) {
 		t.Fatalf("Run error = %v; want an error wrapping ErrNoResolver", err)
 	}

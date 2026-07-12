@@ -139,8 +139,8 @@ func TestFormatPluginListDeterministic(t *testing.T) {
 	embeddedSet := map[string]bool{"oci://hub.aggrega.ai/plugin/provider/helm": true}
 
 	var first, second bytes.Buffer
-	formatPluginList(&first, embeddedEntries, configuredEntries, embeddedSet)
-	formatPluginList(&second, embeddedEntries, configuredEntries, embeddedSet)
+	formatPluginList(&first, embeddedEntries, configuredEntries, nil, embeddedSet)
+	formatPluginList(&second, embeddedEntries, configuredEntries, nil, embeddedSet)
 	if first.String() != second.String() {
 		t.Errorf("listing is not deterministic:\n--- first ---\n%s\n--- second ---\n%s", first.String(), second.String())
 	}
@@ -151,6 +151,115 @@ func TestFormatPluginListDeterministic(t *testing.T) {
 	zi := strings.Index(out, "zeta:1.0.0")
 	if ai < 0 || zi < 0 || ai > zi {
 		t.Errorf("configured entries not sorted by URI (alpha before zeta): alpha@%d zeta@%d\n%s", ai, zi, out)
+	}
+}
+
+// TestInstalledReadiness covers the readiness derivation: an unresolvable plugin
+// (no fresh digest), a resolvable-but-undescribable plugin, a digest that drifted
+// from the pin, a matched pin, and a not-yet-pinned plugin.
+func TestInstalledReadiness(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name         string
+		pinned, fresh string
+		err          error
+		want         string
+	}{
+		{"unresolved", "", "", errString("resolve failed"), "unresolved"},
+		{"describe-failed", "", "abc", errString("instantiate failed"), "describe-failed"},
+		{"drift", "abc", "def", nil, "digest-drift"},
+		{"ready matched pin", "abc", "abc", nil, "ready"},
+		{"ready not yet pinned", "", "abc", nil, "ready"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got := installedReadiness(tc.pinned, tc.fresh, tc.err); got != tc.want {
+				t.Errorf("installedReadiness(%q,%q,%v) = %q; want %q", tc.pinned, tc.fresh, tc.err, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestRenderPluginEntry_ReadinessLine proves the readiness line renders for an
+// installed entry — including on a resolve error, where it appears alongside the
+// error line — and is omitted for a group carrying no readiness signal.
+func TestRenderPluginEntry_ReadinessLine(t *testing.T) {
+	t.Parallel()
+
+	drifted := pluginListEntry{
+		source:    "installed",
+		uri:       "oci://example/moo:v1",
+		origin:    `command "moo"`,
+		readiness: "digest-drift",
+		desc:      wasm.PluginDescriptor{PluginType: wasm.PluginTypeCLI},
+	}
+	var driftBuf bytes.Buffer
+	renderPluginEntry(&driftBuf, drifted, map[string]bool{})
+	if !strings.Contains(driftBuf.String(), "readiness:    digest-drift") {
+		t.Errorf("installed entry missing readiness line:\n%s", driftBuf.String())
+	}
+
+	unresolved := pluginListEntry{
+		source:    "installed",
+		uri:       "oci://example/gone:v1",
+		readiness: "unresolved",
+		err:       wasm.ErrWasmManifestRejected,
+	}
+	var unresBuf bytes.Buffer
+	renderPluginEntry(&unresBuf, unresolved, map[string]bool{})
+	got := unresBuf.String()
+	if !strings.Contains(got, "readiness:    unresolved") {
+		t.Errorf("unresolved entry should still show readiness before the error:\n%s", got)
+	}
+	if !strings.Contains(got, "error:") {
+		t.Errorf("unresolved entry should carry the error line:\n%s", got)
+	}
+
+	// An embedded entry carries no readiness label, so no readiness line renders.
+	embeddedEntry := pluginListEntry{
+		source: "embedded",
+		uri:    "oci://hub.aggrega.ai/plugin/provider/helm",
+		desc:   wasm.PluginDescriptor{PluginType: wasm.PluginTypeProvider},
+	}
+	var embBuf bytes.Buffer
+	renderPluginEntry(&embBuf, embeddedEntry, map[string]bool{})
+	if strings.Contains(embBuf.String(), "readiness:") {
+		t.Errorf("embedded entry must not render a readiness line:\n%s", embBuf.String())
+	}
+}
+
+// TestFormatPluginList_InstalledGroup proves the third group renders with its
+// header, its entries, and the empty-group placeholder when absent.
+func TestFormatPluginList_InstalledGroup(t *testing.T) {
+	t.Parallel()
+
+	installed := []pluginListEntry{{
+		source:    "installed",
+		uri:       "oci://example/moo:v1",
+		origin:    `command "moo"`,
+		readiness: "ready",
+		desc:      wasm.PluginDescriptor{PluginType: wasm.PluginTypeCLI},
+	}}
+	var withInstalled bytes.Buffer
+	formatPluginList(&withInstalled, nil, nil, installed, map[string]bool{})
+	got := withInstalled.String()
+	for _, want := range []string{
+		"Installed CLI plugins:",
+		"oci://example/moo:v1",
+		`origin:       command "moo"`,
+		"readiness:    ready",
+		"type:         cli",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("installed-group output missing %q\n---\n%s", want, got)
+		}
+	}
+
+	var empty bytes.Buffer
+	formatPluginList(&empty, nil, nil, nil, map[string]bool{})
+	if !strings.Contains(empty.String(), "Installed CLI plugins:") {
+		t.Errorf("installed group header should render even when empty:\n%s", empty.String())
 	}
 }
 

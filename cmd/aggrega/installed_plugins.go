@@ -17,12 +17,13 @@ import (
 )
 
 // cliPluginDispatcher runs an installed CLI plugin identified by its artifact
-// URI, streaming the guest's output and returning its exit code. It is the seam
-// a plugin command's RunE calls; the production value is a cliplugin.Runner, and
-// a test substitutes a fake that records the argument vector and returns a chosen
-// exit code without a real guest.
+// URI, streaming the guest's output and returning its exit code and the content
+// digest of the bytes it resolved and ran. It is the seam a plugin command's
+// RunE calls; the production value is a cliplugin.Runner, and a test substitutes
+// a fake that records the argument vector and returns a chosen exit code and
+// digest without a real guest.
 type cliPluginDispatcher interface {
-	Run(ctx context.Context, uri string, argv []string) (int, error)
+	Run(ctx context.Context, uri string, argv []string) (int, string, error)
 }
 
 // installedPluginRunnerFor builds the dispatcher that runs an installed CLI
@@ -33,7 +34,7 @@ type cliPluginDispatcher interface {
 // package-level seam so a test can substitute a fake dispatcher that records the
 // argument vector without a real guest or workspace.
 var installedPluginRunnerFor = func(rw *workspaceconfig.ResolvedWorkspace) cliPluginDispatcher {
-	return cliplugin.Runner{Resolve: workspacePluginResolver(rw)}
+	return cliplugin.Runner{Resolve: workspacePluginResolver(rw), Digest: describeCacheDigest}
 }
 
 // installedPluginIndexSource yields the installed-CLI-plugin index used to
@@ -125,16 +126,65 @@ func newInstalledPluginCmd(name string, entry installedPluginEntry) *cobra.Comma
 			if err != nil {
 				return err
 			}
-			code, err := installedPluginRunnerFor(rw).Run(cmd.Context(), entry.URI, args)
+			code, digest, err := installedPluginRunnerFor(rw).Run(cmd.Context(), entry.URI, args)
 			if err != nil {
 				return err
 			}
+			reconcileInstalledPluginDigest(name, digest, cmd.ErrOrStderr())
 			if code != 0 {
 				return exitCodeError{code: code}
 			}
 			return nil
 		},
 	}
+}
+
+// reconcileInstalledPluginDigest pins or drift-checks the digest of the bytes a
+// command just resolved and ran (trust on first use). The first run of a command
+// records the digest into its index entry; a later run compares the freshly
+// resolved digest against the pinned one and, on a mismatch, writes an advisory
+// warning to warn — the resolved bytes changed since they were pinned — without
+// halting, since the command has already run and this is drift detection, not a
+// guardrail. An empty digest (no bytes resolved) or an unreadable index is a
+// silent no-op: a corrupt index is surfaced loudly at command registration, and
+// reconciliation must never turn a successful run into a failure. The read,
+// entry update, and write-back reuse the shared index helpers, so the pinned
+// digest and the describe-cache key are one value.
+func reconcileInstalledPluginDigest(cmdName, digest string, warn io.Writer) {
+	if digest == "" {
+		return
+	}
+	idx, err := readInstalledPluginIndex()
+	if err != nil {
+		return
+	}
+	entry, ok := idx.Plugins[cmdName]
+	if !ok {
+		return
+	}
+	if entry.Digest == "" {
+		entry.Digest = digest
+		idx.Plugins[cmdName] = entry
+		_ = writeInstalledPluginIndex(idx)
+		return
+	}
+	if entry.Digest != digest {
+		fmt.Fprintf(warn,
+			"warning: the %q plugin's resolved bytes changed since they were pinned "+
+				"(pinned %s, now %s); the installed command may have been modified\n",
+			cmdName, shortDigest(entry.Digest), shortDigest(digest))
+	}
+}
+
+// shortDigest renders a content digest in an abbreviated form for a diagnostic,
+// keeping the leading hex that distinguishes it while sparing the full 64-char
+// string. A digest shorter than the abbreviation is returned unchanged.
+func shortDigest(d string) string {
+	const keep = 12
+	if len(d) <= keep {
+		return d
+	}
+	return d[:keep] + "..."
 }
 
 // exitCodeError carries an installed plugin's non-zero exit status up to the
