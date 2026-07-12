@@ -232,6 +232,52 @@ func TestBuildArtifactsProjection_ImportPinVerify(t *testing.T) {
 	}
 }
 
+// ----- host projection: whitespace-only render is skipped; empty-data body kept -----
+
+// A presence-guarded artifact whose body renders to whitespace-only content is
+// dropped from the projection (no zero-length file); an artifact that renders a
+// real, non-empty body — a ConfigMap with an empty `data: {}` but a real kind
+// and metadata — is retained. The skip keys off the rendered bytes after
+// trimming, not off the authored template.
+func TestBuildArtifactsProjection_SkipsEmptyRenderKeepsNonEmpty(t *testing.T) {
+	t.Parallel()
+	tmplCtx, state, nodeCtx := newArtifactsCtx()
+	resetArtifacts(state)
+	// Guarded body that collapses to nothing when the guard is false: the
+	// {{ if }} produces only whitespace after trimming.
+	state.Recipe.Spec.Artifacts.Set("maybe.yaml", types.ArtifactEntry{Inline: `{{- if .values.enabled }}
+kind: ConfigMap
+{{- end }}
+`})
+	// A real manifest whose data map is empty but whose body is non-empty.
+	state.Recipe.Spec.Artifacts.Set("configmap.yaml", types.ArtifactEntry{Inline: `apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .context.instance_id }}-config
+data: {}
+`})
+
+	proj, err := buildArtifactsProjection(tmplCtx, state, nodeCtx, "{{", "}}")
+	if err != nil {
+		t.Fatalf("buildArtifactsProjection: %v", err)
+	}
+	if len(proj.Entries) != 1 {
+		t.Fatalf("expected 1 entry (empty render skipped), got %d: %+v", len(proj.Entries), proj.Entries)
+	}
+	e := proj.Entries[0]
+	if e.Name != "configmap.yaml" {
+		t.Errorf("retained entry Name = %q, want configmap.yaml", e.Name)
+	}
+	if !strings.Contains(string(e.Content), "kind: ConfigMap") || !strings.Contains(string(e.Content), "data: {}") {
+		t.Errorf("empty-data ConfigMap body must be kept intact; content:\n%s", e.Content)
+	}
+	for _, ent := range proj.Entries {
+		if ent.Name == "maybe.yaml" {
+			t.Errorf("whitespace-only render should have been skipped, but maybe.yaml is present")
+		}
+	}
+}
+
 // ----- host projection: mixed inline + imported, author order preserved -----
 
 func TestBuildArtifactsProjection_MixedOrder(t *testing.T) {

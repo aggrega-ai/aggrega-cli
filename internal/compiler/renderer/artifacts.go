@@ -112,6 +112,11 @@ func buildArtifactsProjection(
 		if err != nil {
 			return ArtifactsProjection{}, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: name}, fmt.Sprintf("artifact %q template eval", name))
 		}
+		// A presence-guarded body that renders to nothing must not emit a
+		// zero-length file; skip the entry so it never reaches the guest.
+		if strings.TrimSpace(rendered) == "" {
+			continue
+		}
 		proj.Entries = append(proj.Entries, ArtifactProjectionEntry{
 			Name:        name,
 			Origin:      origin,
