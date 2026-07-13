@@ -19,9 +19,9 @@ import (
 //     "corporate-hr", "inject": {...}}}`. Each entry produces one edge;
 //     the map key becomes Alias and the entry's Target field becomes the
 //     edge's Target. Target defaults to the alias when the entry omits
-//     it (the typed VerboseUsesEntry.UnmarshalYAML hook also handles the
-//     bare-string shorthand `"my-db": "target-name"` and populates Target
-//     directly from the scalar).
+//     it. Each alias must map to an entry object; a bare-string alias
+//     value (`"my-db": "target-name"`) is rejected at unmarshal by the
+//     typed VerboseUsesEntry hooks.
 //
 // Resolver-side guarantees from upstream Step 1 mean every socket name
 // this function sees is already known to the source entity's

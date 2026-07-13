@@ -37,18 +37,12 @@ type UsesSocketValue struct {
 	Verbose OrderedMap[VerboseUsesEntry]
 }
 
-// VerboseUsesEntry is one entry of a verbose-form `uses:` socket. The
-// schema admits two authoring shapes per entry; both populate Target:
-//
-//   - Map form — `{ "target": "name", "inject": {...} }`. Target may be
-//     omitted in the source; downstream callers default Target to the
-//     alias key when the field is empty after unmarshal.
-//
-//   - Bare-string shorthand — `"target-name"`. Equivalent to
-//     `{ "target": "target-name" }` with Inject left nil.
-//
-// MarshalYAML and MarshalJSON always emit the canonical map form; the
-// bare-string shorthand is an authoring affordance only.
+// VerboseUsesEntry is one entry of a verbose-form `uses:` socket. An
+// alias maps to an entry object — the map form `{ "target": "name",
+// "inject": {...} }`. Target may be omitted in the source; downstream
+// callers default Target to the alias key when the field is empty after
+// unmarshal. A bare scalar value for an alias (`"alias": "target-name"`)
+// is rejected at unmarshal, naming the alias and the required form.
 type VerboseUsesEntry struct {
 	// Target is the destination instance name. Empty after unmarshal of
 	// a map-form entry that omits the `target:` field; downstream callers
@@ -56,8 +50,7 @@ type VerboseUsesEntry struct {
 	Target string `yaml:"target,omitempty" json:"target,omitempty"`
 
 	// Inject carries optional inject directives the entry binds to the
-	// resulting edge. Nil when the source omits the `inject:` field or
-	// uses the bare-string shorthand.
+	// resulting edge. Nil when the source omits the `inject:` field.
 	Inject *InjectBlock `yaml:"inject,omitempty" json:"inject,omitempty"`
 
 	// Values carries per-connection developer config for this edge,
@@ -176,8 +169,9 @@ func (v UsesSocketValue) IsZero() bool {
 }
 
 // UnmarshalYAML on VerboseUsesEntry dispatches on the YAML node kind.
-// ScalarNode populates Target with the scalar value (the bare-string
-// shorthand). MappingNode decodes the full {target, inject} struct.
+// MappingNode decodes the full {target, inject, values, infra} struct. A
+// ScalarNode (a bare-string alias value) is rejected, naming the alias
+// and the required entry-object form.
 func (e *VerboseUsesEntry) UnmarshalYAML(node *yaml.Node) error {
 	switch node.Kind {
 	case yaml.ScalarNode:
@@ -205,8 +199,9 @@ func (e *VerboseUsesEntry) UnmarshalYAML(node *yaml.Node) error {
 }
 
 // UnmarshalJSON on VerboseUsesEntry dispatches on the leading
-// non-whitespace byte. `"` decodes the bare-string shorthand into Target;
-// `{` decodes the full {target, inject} struct.
+// non-whitespace byte. `{` decodes the full {target, inject, values,
+// infra} struct; a `"` string scalar (a bare-string alias value) is
+// rejected, naming the required entry-object form.
 func (e *VerboseUsesEntry) UnmarshalJSON(data []byte) error {
 	trimmed := bytes.TrimLeft(data, " \t\n\r")
 	if len(trimmed) == 0 {
@@ -241,9 +236,8 @@ func (e *VerboseUsesEntry) UnmarshalJSON(data []byte) error {
 	}
 }
 
-// MarshalYAML emits the canonical mapping form `{ target?, inject? }`.
-// The bare-string shorthand is an authoring affordance only; round-trip
-// always emits the full form.
+// MarshalYAML emits the entry's mapping form `{ target?, inject?,
+// values?, infra? }`.
 func (e VerboseUsesEntry) MarshalYAML() (any, error) {
 	type plain struct {
 		Target string          `yaml:"target,omitempty"`
@@ -254,9 +248,8 @@ func (e VerboseUsesEntry) MarshalYAML() (any, error) {
 	return plain{Target: e.Target, Inject: e.Inject, Values: e.Values, Infra: e.Infra}, nil
 }
 
-// MarshalJSON emits the canonical mapping form `{ target?, inject? }`.
-// The bare-string shorthand is an authoring affordance only; round-trip
-// always emits the full form.
+// MarshalJSON emits the entry's mapping form `{ target?, inject?,
+// values?, infra? }`.
 func (e VerboseUsesEntry) MarshalJSON() ([]byte, error) {
 	type plain struct {
 		Target string          `json:"target,omitempty"`
