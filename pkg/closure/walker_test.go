@@ -62,7 +62,7 @@ func (f *fakeLookup) ResolveMappingLibrary(uri string) (closure.LibraryResolutio
 	return closure.LibraryResolution{Resolution: closure.Resolution{NotFound: true}}, nil
 }
 
-func (f *fakeLookup) ResolvePlugin(uri string) (closure.Resolution, error) {
+func (f *fakeLookup) ResolvePlugin(uri, _ string) (closure.Resolution, error) {
 	if res, ok := f.plugins[uri]; ok {
 		return res, nil
 	}

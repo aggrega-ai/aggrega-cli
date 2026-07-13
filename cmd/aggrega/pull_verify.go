@@ -23,7 +23,6 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pullverify"
 	"github.com/aggrega-ai/aggrega-cli/pkg/registryhost"
-	"github.com/aggrega-ai/aggrega-cli/pkg/signing"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
@@ -157,68 +156,7 @@ func verifyClosureSignatures(ctx context.Context, lf *lockfile.Lockfile, cl clos
 	if err := discoverClosureDeprecations(ctx, lf, verifiable, factByURI, wsCfg, targetFor, diagOut); err != nil {
 		return err
 	}
-
-	// Same-signer enforcement: a plugin is one publication — its entity
-	// manifest and its .wasm artifact must be signed by the SAME identity. Both
-	// signatures verified individually above; here the verified facts are paired
-	// (the .wasm row references its entity) and their matched signers compared.
-	// A split signer halts the pull even though each signature is individually
-	// trusted.
-	if err := enforcePluginSameSigner(lf); err != nil {
-		return err
-	}
 	return nil
-}
-
-// enforcePluginSameSigner halts when a plugin's entity signature and its
-// .wasm-artifact signature were produced by different identities. It pairs the
-// .wasm (plugins) row with its Plugin entity (the first ReferencedFrom entry,
-// the entity that pins the .wasm) and compares the verified matched signer of
-// each — the certificate identity for keyless, the pinned-key fingerprint for
-// keyed. The comparison runs only when BOTH sides carry a verified signature:
-// if a registry does not require signatures and one side is unsigned, there is
-// no signer to mismatch; the policy gate (RequiresSignatures) is what demands a
-// signature be present in the first place.
-func enforcePluginSameSigner(lf *lockfile.Lockfile) error {
-	entitySigByURI := make(map[string]*lockfile.VerifiedSignature, len(lf.Entities))
-	for i := range lf.Entities {
-		if lf.Entities[i].Signature != nil {
-			entitySigByURI[lf.Entities[i].URI] = lf.Entities[i].Signature
-		}
-	}
-	for i := range lf.Plugins {
-		wasmSig := lf.Plugins[i].Signature
-		if wasmSig == nil || len(lf.Plugins[i].ReferencedFrom) == 0 {
-			continue
-		}
-		entityURI := lf.Plugins[i].ReferencedFrom[0]
-		entitySig, ok := entitySigByURI[entityURI]
-		if !ok {
-			continue
-		}
-		if !sameSigner(entitySig, wasmSig) {
-			return fmt.Errorf("plugin %q: entity signed by %s, .wasm artifact %q signed by %s: %w",
-				entityURI, signerLabel(entitySig), lf.Plugins[i].URI, signerLabel(wasmSig), signing.ErrPluginSignerMismatch)
-		}
-	}
-	return nil
-}
-
-// sameSigner reports whether two verified signatures were produced by the same
-// signer: the same mode and the same matched identity (the certificate subject
-// and issuer for keyless, the pinned-key fingerprint carried in Identity for
-// keyed).
-func sameSigner(a, b *lockfile.VerifiedSignature) bool {
-	return a.Mode == b.Mode && a.Identity == b.Identity && a.Issuer == b.Issuer
-}
-
-// signerLabel renders a verified signature's signer for a mismatch message: the
-// identity (and issuer, when present) of the matched signer.
-func signerLabel(s *lockfile.VerifiedSignature) string {
-	if s.Issuer != "" {
-		return fmt.Sprintf("%q (issuer %q)", s.Identity, s.Issuer)
-	}
-	return fmt.Sprintf("%q", s.Identity)
 }
 
 // verifyPluginHostFunctions re-derives each in-closure plugin's host functions
@@ -251,6 +189,7 @@ func verifyPluginHostFunctions(ctx context.Context, cl *closure.Closure, loader 
 	// independent of closure order.
 	artifactURIs := make([]string, 0, len(cl.Plugins))
 	entityByArtifact := make(map[string]string, len(cl.Plugins))
+	pinByArtifact := make(map[string]string, len(cl.Plugins))
 	for _, art := range cl.Plugins {
 		if len(art.ReferencedFrom) == 0 {
 			continue
@@ -260,15 +199,19 @@ func verifyPluginHostFunctions(ctx context.Context, cl *closure.Closure, loader 
 		// referencing entity carries the stamp to verify against (every entity
 		// pinning the same .wasm content shares its derived imports).
 		entityByArtifact[art.URI] = art.ReferencedFrom[0]
+		// The content pin is the closure ref's Digest — the cache slot key the
+		// artifact descent wrote under. It is read from the recorded pin, not
+		// re-parsed from the (digest-free) artifact URI.
+		pinByArtifact[art.URI] = art.Digest
 	}
 	sort.Strings(artifactURIs)
 
 	for _, artifactURI := range artifactURIs {
 		entityURI := entityByArtifact[artifactURI]
-		_, pinDigest, ok := catalog.SplitPluginArtifactURI(artifactURI)
-		if !ok {
-			// A non-content-pinned artifact reference carries no cache slot keyed
-			// by digest; skip it, mirroring the signature verify's host-less skip.
+		pinDigest := pinByArtifact[artifactURI]
+		if pinDigest == "" {
+			// No content pin recorded (a host-less / local plugin carries no cached
+			// artifact); skip it, mirroring the signature verify's host-less skip.
 			continue
 		}
 

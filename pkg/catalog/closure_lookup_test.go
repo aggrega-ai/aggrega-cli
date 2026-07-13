@@ -368,12 +368,13 @@ func TestSplitPluginArtifactURI(t *testing.T) {
 	}
 }
 
-// TestResolvePluginContentPinRoundTrip drives the content-pin .wasm pull
-// flow directly: a .wasm artifact published under its content-digest-derived tag
-// resolves through ResolvePlugin's content-pin path (tier-3 pull), lands in
-// the cache keyed by the pinned content digest, re-resolves from cache on a
-// second call, and a tampered cache slot halts with ErrFetchIntegrity.
-func TestResolvePluginContentPinRoundTrip(t *testing.T) {
+// TestResolvePluginVersionTagRoundTrip drives the digest-free spec.plugin
+// resolution: a Plugin published as ONE manifest (entity config + inline .wasm
+// layer) tagged by its version resolves through ResolvePlugin's version-tag path,
+// the .wasm layer is selected, the content pin is DERIVED from its bytes, the slot
+// lands keyed by that derived pin, an offline re-resolve honoring the recorded pin
+// hits the cache, and a tampered cache slot halts with ErrFetchIntegrity.
+func TestResolvePluginVersionTagRoundTrip(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	dir := t.TempDir()
@@ -383,22 +384,25 @@ func TestResolvePluginContentPinRoundTrip(t *testing.T) {
 		t.Fatalf("Load: %v", err)
 	}
 
-	wasmBytes := []byte("\x00asm\x01\x00\x00\x00 content-pin round-trip fixture")
+	wasmBytes := []byte("\x00asm\x01\x00\x00\x00 version-tag round-trip fixture")
+	entityYAML := []byte("apiVersion: aggrega.ai/v1alpha1\nkind: Plugin\nmetadata:\n  name: frp/patch\n  version: 1.0.0\n")
 	contentDigest := digest.ContentDigest(wasmBytes)
 	const repo = "hub.aggrega.ai/plugin/frp/patch"
-	artifactURI := "oci://" + repo + "@" + contentDigest
+	const version = "1.0.0"
+	artifactURI := "oci://" + repo
 
 	store := memory.New()
-	// Publish the .wasm under its content-digest-derived tag — the same tag the
-	// push side derives via oci.ContentDigestTag.
-	if _, err := oci.Push(ctx, store, oci.ContentDigestTag(contentDigest), oci.MediaTypeWasm, wasmBytes); err != nil {
-		t.Fatalf("oci.Push .wasm: %v", err)
+	// Publish the ONE plugin manifest — entity config + inline .wasm layer —
+	// tagged by the entity's version.
+	if _, err := oci.PushPluginManifest(ctx, store, version, entityYAML, wasmBytes); err != nil {
+		t.Fatalf("oci.PushPluginManifest: %v", err)
 	}
 
 	lookup := cat.ClosureLookup(&orasPullerAdapter{target: store}, dir, ".aggrega/cache")
 
-	// First resolution: tier-3 pull, content-digest-verified, cached.
-	res, err := lookup.ResolvePlugin(artifactURI)
+	// First resolution: pull the manifest by version, select the .wasm layer,
+	// derive the content pin, cache both blobs.
+	res, err := lookup.ResolvePlugin(artifactURI, version)
 	if err != nil {
 		t.Fatalf("ResolvePlugin (pull): %v", err)
 	}
@@ -409,14 +413,17 @@ func TestResolvePluginContentPinRoundTrip(t *testing.T) {
 		t.Errorf("ResolutionPath = %q; want %q", res.ResolutionPath, "tier-3-pull")
 	}
 	if res.Digest != contentDigest {
-		t.Errorf("Digest = %q; want %q", res.Digest, contentDigest)
+		t.Errorf("Digest = %q; want the derived content pin %q", res.Digest, contentDigest)
 	}
 	if res.ResolvedVersion != contentDigest {
 		t.Errorf("ResolvedVersion = %q; want %q", res.ResolvedVersion, contentDigest)
 	}
+	if res.ManifestDigest == "" {
+		t.Error("ManifestDigest is empty; want the manifest digest the signature commits to")
+	}
 
 	// The cache slot the build re-reads is keyed by (artifactURI, contentDigest)
-	// — the exact (uri, version) pair the build derives from the lockfile pin.
+	// — the (uri, version) pair the build derives from the lockfile pin.
 	cached, err := oci.ReadCached(dir, ".aggrega/cache", artifactURI, contentDigest)
 	if err != nil {
 		t.Fatalf("expected .wasm in cache after pull: %v", err)
@@ -425,10 +432,14 @@ func TestResolvePluginContentPinRoundTrip(t *testing.T) {
 		t.Errorf("cached .wasm bytes differ from published bytes")
 	}
 
-	// Second resolution with no puller: a hit from the cache (tier-2), proving the
-	// lock-write slot is the slot the cache read addresses.
-	cachedLookup := cat.ClosureLookup(nil, dir, ".aggrega/cache")
-	res2, err := cachedLookup.ResolvePlugin(artifactURI)
+	// Second resolution offline, honoring the recorded pin: a cache hit. A
+	// digest-free reference addresses the cache through the lockfile pin (the
+	// content digest is not in the URI), so the reuse carries it.
+	reuse := &catalog.ReuseVerification{PriorPins: map[string]catalog.Pin{
+		artifactURI: {ResolvedVersion: contentDigest, Digest: contentDigest, ManifestDigest: res.ManifestDigest},
+	}}
+	cachedLookup := cat.ClosureLookupWithReuse(nil, dir, ".aggrega/cache", nil, nil, reuse)
+	res2, err := cachedLookup.ResolvePlugin(artifactURI, version)
 	if err != nil {
 		t.Fatalf("ResolvePlugin (cache): %v", err)
 	}
@@ -439,13 +450,13 @@ func TestResolvePluginContentPinRoundTrip(t *testing.T) {
 		t.Errorf("cache-hit resolution = %+v; want digest/version %q", res2, contentDigest)
 	}
 
-	// Tamper: corrupt the cached blob; the content-digest check must halt with
+	// Tamper: corrupt the cached blob; the content check must halt with
 	// ErrFetchIntegrity rather than return drifted bytes.
 	slot := oci.CachePath(dir, ".aggrega/cache", artifactURI, contentDigest)
 	if err := os.WriteFile(filepath.Join(slot, "blob"), []byte("tampered"), 0o644); err != nil {
 		t.Fatalf("tamper write: %v", err)
 	}
-	if _, err := cachedLookup.ResolvePlugin(artifactURI); !errors.Is(err, oci.ErrFetchIntegrity) {
+	if _, err := cachedLookup.ResolvePlugin(artifactURI, version); !errors.Is(err, oci.ErrFetchIntegrity) {
 		t.Errorf("tampered cache: err = %v; want ErrFetchIntegrity", err)
 	}
 }
@@ -468,18 +479,20 @@ func TestResolvePluginManifestSelfVerify(t *testing.T) {
 	}
 
 	wasmBytes := []byte("\x00asm\x01\x00\x00\x00 manifest self-verify fixture")
+	entityYAML := []byte("apiVersion: aggrega.ai/v1alpha1\nkind: Plugin\nmetadata:\n  name: frp/patch\n  version: 1.0.0\n")
 	contentDigest := digest.ContentDigest(wasmBytes)
 	const repo = "hub.aggrega.ai/plugin/frp/patch"
-	artifactURI := "oci://" + repo + "@" + contentDigest
+	const version = "1.0.0"
+	artifactURI := "oci://" + repo
 
 	store := memory.New()
-	if _, err := oci.Push(ctx, store, oci.ContentDigestTag(contentDigest), oci.MediaTypeWasm, wasmBytes); err != nil {
-		t.Fatalf("oci.Push .wasm: %v", err)
+	if _, err := oci.PushPluginManifest(ctx, store, version, entityYAML, wasmBytes); err != nil {
+		t.Fatalf("oci.PushPluginManifest: %v", err)
 	}
 
 	// Tier-3 pull writes both blobs.
 	lookup := cat.ClosureLookup(&orasPullerAdapter{target: store}, dir, ".aggrega/cache")
-	res, err := lookup.ResolvePlugin(artifactURI)
+	res, err := lookup.ResolvePlugin(artifactURI, version)
 	if err != nil {
 		t.Fatalf("ResolvePlugin (pull): %v", err)
 	}
@@ -493,9 +506,13 @@ func TestResolvePluginManifestSelfVerify(t *testing.T) {
 		t.Errorf("cached manifest digest %s != resolution ManifestDigest %s", got, res.ManifestDigest)
 	}
 
-	// Faithful cached manifest verifies on the offline (nil-puller) read.
-	offline := cat.ClosureLookup(nil, dir, ".aggrega/cache")
-	res2, err := offline.ResolvePlugin(artifactURI)
+	// Faithful cached manifest verifies on the offline read that honors the pin.
+	// A digest-free reference addresses the cache through the lockfile pin.
+	reuse := &catalog.ReuseVerification{PriorPins: map[string]catalog.Pin{
+		artifactURI: {ResolvedVersion: contentDigest, Digest: contentDigest, ManifestDigest: res.ManifestDigest},
+	}}
+	offline := cat.ClosureLookupWithReuse(nil, dir, ".aggrega/cache", nil, nil, reuse)
+	res2, err := offline.ResolvePlugin(artifactURI, version)
 	if err != nil {
 		t.Fatalf("ResolvePlugin (offline, faithful): %v", err)
 	}
@@ -514,11 +531,7 @@ func TestResolvePluginManifestSelfVerify(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(slot, "manifest"), []byte("tampered-manifest"), 0o644); err != nil {
 		t.Fatalf("tamper manifest write: %v", err)
 	}
-	reuse := &catalog.ReuseVerification{PriorPins: map[string]catalog.Pin{
-		artifactURI: {ResolvedVersion: contentDigest, Digest: contentDigest, ManifestDigest: res.ManifestDigest},
-	}}
-	reuseOffline := cat.ClosureLookupWithReuse(nil, dir, ".aggrega/cache", nil, nil, reuse)
-	if _, err := reuseOffline.ResolvePlugin(artifactURI); !errors.Is(err, oci.ErrCachedManifestIntegrity) {
+	if _, err := offline.ResolvePlugin(artifactURI, version); !errors.Is(err, oci.ErrCachedManifestIntegrity) {
 		t.Errorf("tampered manifest (reuse pin): err = %v; want ErrCachedManifestIntegrity", err)
 	}
 
@@ -527,7 +540,7 @@ func TestResolvePluginManifestSelfVerify(t *testing.T) {
 	if err := os.Remove(filepath.Join(slot, "manifest")); err != nil {
 		t.Fatalf("remove manifest blob: %v", err)
 	}
-	resMissing, err := offline.ResolvePlugin(artifactURI)
+	resMissing, err := offline.ResolvePlugin(artifactURI, version)
 	if err != nil {
 		t.Fatalf("ResolvePlugin (offline, incomplete slot): %v", err)
 	}
@@ -537,7 +550,7 @@ func TestResolvePluginManifestSelfVerify(t *testing.T) {
 
 	// The same incomplete slot re-pulls online and repopulates the manifest blob.
 	online := cat.ClosureLookup(&orasPullerAdapter{target: store}, dir, ".aggrega/cache")
-	if _, err := online.ResolvePlugin(artifactURI); err != nil {
+	if _, err := online.ResolvePlugin(artifactURI, version); err != nil {
 		t.Fatalf("ResolvePlugin (online repopulate): %v", err)
 	}
 	if _, err := oci.ReadCachedManifest(dir, ".aggrega/cache", artifactURI, contentDigest); err != nil {
@@ -562,40 +575,48 @@ func TestResolvePluginManifestAuthorityBeatsForgedContentPin(t *testing.T) {
 	}
 
 	wasmBytes := []byte("\x00asm\x01\x00\x00\x00 authority fixture")
+	entityYAML := []byte("apiVersion: aggrega.ai/v1alpha1\nkind: Plugin\nmetadata:\n  name: frp/authority\n  version: 1.0.0\n")
 	origDigest := digest.ContentDigest(wasmBytes)
 	const repo = "hub.aggrega.ai/plugin/frp/authority"
-	origURI := "oci://" + repo + "@" + origDigest
+	const version = "1.0.0"
+	artifactURI := "oci://" + repo
 
 	store := memory.New()
-	if _, err := oci.Push(ctx, store, oci.ContentDigestTag(origDigest), oci.MediaTypeWasm, wasmBytes); err != nil {
-		t.Fatalf("oci.Push .wasm: %v", err)
+	if _, err := oci.PushPluginManifest(ctx, store, version, entityYAML, wasmBytes); err != nil {
+		t.Fatalf("oci.PushPluginManifest: %v", err)
 	}
 	// A faithful pull populates the slot and gives us the authoritative manifest.
 	lookup := cat.ClosureLookup(&orasPullerAdapter{target: store}, dir, ".aggrega/cache")
-	if _, err := lookup.ResolvePlugin(origURI); err != nil {
+	res, err := lookup.ResolvePlugin(artifactURI, version)
+	if err != nil {
 		t.Fatalf("ResolvePlugin (pull): %v", err)
 	}
-	origManifest, err := oci.ReadCachedManifest(dir, ".aggrega/cache", origURI, origDigest)
+	origManifest, err := oci.ReadCachedManifest(dir, ".aggrega/cache", artifactURI, origDigest)
 	if err != nil {
 		t.Fatalf("read original manifest: %v", err)
 	}
 
-	// The attacker forges the content and a matching content pin — a NEW URI whose
-	// @sha256 equals the forged bytes, so the slot key and the content-vs-pin check
-	// both agree with the forgery — but reuses the ORIGINAL manifest (the record
-	// they cannot re-forge without the independent lockfile manifest digest).
+	// The attacker forges the content AND a matching content pin — the lockfile
+	// Digest they control equals the forged bytes, so the slot key and the
+	// content-vs-pin defense-in-depth check both agree with the forgery — but
+	// reuses the ORIGINAL manifest (the record they cannot re-forge without the
+	// independent lockfile manifest digest).
 	forged := []byte("\x00asm\x01\x00\x00\x00 FORGED artifact body")
 	forgedDigest := digest.ContentDigest(forged)
-	forgedURI := "oci://" + repo + "@" + forgedDigest
-	if err := oci.WriteCached(dir, ".aggrega/cache", forgedURI, forgedDigest, forged); err != nil {
+	if err := oci.WriteCached(dir, ".aggrega/cache", artifactURI, forgedDigest, forged); err != nil {
 		t.Fatalf("forge content write: %v", err)
 	}
-	if err := oci.WriteCachedManifest(dir, ".aggrega/cache", forgedURI, forgedDigest, origManifest); err != nil {
+	if err := oci.WriteCachedManifest(dir, ".aggrega/cache", artifactURI, forgedDigest, origManifest); err != nil {
 		t.Fatalf("plant original manifest: %v", err)
 	}
 
-	offline := cat.ClosureLookup(nil, dir, ".aggrega/cache")
-	if _, err := offline.ResolvePlugin(forgedURI); !errors.Is(err, oci.ErrFetchIntegrity) {
+	// The lockfile pin the offline read honors: the forged content digest (attacker
+	// controlled), but the GENUINE manifest digest (the independent root of trust).
+	reuse := &catalog.ReuseVerification{PriorPins: map[string]catalog.Pin{
+		artifactURI: {ResolvedVersion: forgedDigest, Digest: forgedDigest, ManifestDigest: res.ManifestDigest},
+	}}
+	offline := cat.ClosureLookupWithReuse(nil, dir, ".aggrega/cache", nil, nil, reuse)
+	if _, err := offline.ResolvePlugin(artifactURI, version); !errors.Is(err, oci.ErrFetchIntegrity) {
 		t.Errorf("forged content + forged content pin: err = %v; want ErrFetchIntegrity from the manifest-authority check", err)
 	}
 }

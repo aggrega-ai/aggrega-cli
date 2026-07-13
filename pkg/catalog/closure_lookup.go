@@ -519,7 +519,7 @@ func (l *catalogLookup) ResolveMappingLibrary(uri string) (closure.LibraryResolu
 	return closure.LibraryResolution{Resolution: res}, err
 }
 
-func (l *catalogLookup) ResolvePlugin(uri string) (closure.Resolution, error) {
+func (l *catalogLookup) ResolvePlugin(uri, version string) (closure.Resolution, error) {
 	// Embed tier: a core plugin embedded in the binary resolves offline. Its
 	// reference digest is derived from the embedded bytes on demand — never
 	// stored — so pull records a lockfile entry for a core plugin with no
@@ -529,26 +529,88 @@ func (l *catalogLookup) ResolvePlugin(uri string) (closure.Resolution, error) {
 	if b, ok := embedded.Lookup(uri); ok {
 		return embeddedPluginResolution(contentDigest(b)), nil
 	}
-	// A Plugin entity's spec.plugin identifies the .wasm artifact by its
-	// digest-free repository reference (oci://<repo>). A digest-bearing form
-	// (oci://<repo>@sha256:<digest>) authored elsewhere still parses here so an
-	// externally-pinned reference fetches by its content-digest tag and verifies
-	// against the pin, keyed in the cache by the pinned digest so the build
-	// re-reads the identical slot.
+	// A digest-bearing form (oci://<repo>@sha256:<digest>) authored elsewhere
+	// still parses here so an externally-pinned reference fetches by its
+	// content-digest tag and verifies against the pin, keyed in the cache by the
+	// pinned digest so the build re-reads the identical slot.
 	if reference, pinDigest, ok := SplitPluginArtifactURI(uri); ok {
 		return l.resolvePinnedPluginArtifact(uri, reference, pinDigest)
 	}
-	// Non-content-pinned form (a bare path or a legacy "<repo>:<version>" tag
-	// reference): the generic catalog-entity tiers handle it unchanged.
-	if _, res, ok := l.tier2(uri); ok {
-		return res, nil
+	// A Plugin entity's spec.plugin identifies the .wasm artifact by its
+	// digest-free repository reference (oci://<repo>). The .wasm is not a
+	// standalone artifact: it rides inline, as a layer, in the single plugin
+	// manifest published under the entity's version tag. Resolve it from that
+	// manifest by version rather than falling through to the entity-resolving
+	// catalog tiers.
+	return l.resolveVersionedPluginArtifact(uri, version)
+}
+
+// resolveVersionedPluginArtifact resolves a digest-free .wasm artifact reference
+// (oci://<repo>) to the executable carried inline in the single plugin manifest
+// published under the version tag. The .wasm is a layer of the manifest at
+// <repo>:<version>, not a standalone content-addressed artifact, so:
+//
+//   - Cache / build-offline: when a prior lockfile pin names the content digest,
+//     read the (uri, contentDigest) slot and self-verify it. A nil puller with no
+//     readable slot resolves to NotFound (the build-loader gate halts).
+//   - Lock-time pull: fetch the manifest by version, take its inline .wasm layer,
+//     DERIVE the content pin from those bytes, and cache both blobs under the
+//     derived pin — the same slot shape the build re-reads.
+//
+// The resolution pins ResolvedVersion = Digest = the derived content digest and
+// ManifestDigest = the manifest digest. A prior pin is HONORED, not laundered: a
+// re-pull whose derived content or served manifest no longer matches the recorded
+// pin halts with oci.ErrFetchIntegrity rather than re-pinning the changed bytes.
+func (l *catalogLookup) resolveVersionedPluginArtifact(uri, version string) (closure.Resolution, error) {
+	// Cache-first: a prior lockfile pin names the content slot to read. Without a
+	// prior pin the slot cannot be addressed (its key is the yet-unknown content
+	// digest), so a fresh resolution must pull to learn the pin.
+	if prior, ok := l.priorPins[uri]; ok && prior.Digest != "" {
+		if res, hit, err := l.readCachedPluginArtifact(uri, prior.Digest); err != nil || hit {
+			return res, err
+		}
 	}
-	_, res, err := l.tier3CatalogEntity(uri, "")
-	return res, err
+
+	if l.ociPuller == nil {
+		return closure.Resolution{NotFound: true}, nil
+	}
+
+	reference := strings.TrimPrefix(uri, "oci://")
+	result, err := l.ociPuller.Pull(context.Background(), reference, version)
+	if err != nil {
+		if errors.Is(err, oci.ErrFetchNotFound) {
+			return closure.Resolution{NotFound: true}, nil
+		}
+		if rem := oci.RemediationFor(err, registryhost.Of(reference)); rem != "" {
+			return closure.Resolution{}, fmt.Errorf("catalog: tier-3 pull plugin artifact %s: %w\n  %s", uri, err, rem)
+		}
+		return closure.Resolution{}, fmt.Errorf("catalog: tier-3 pull plugin artifact %s: %w", uri, err)
+	}
+	contentPin := contentDigest(result.Bytes)
+	// Honor≠launder: a prior pin's content and manifest digests are independent
+	// records the re-pull must still satisfy. A drifted registry serving different
+	// bytes (or a different manifest) under the same version halts rather than
+	// re-pinning silently.
+	if prior, ok := l.priorPins[uri]; ok {
+		if prior.Digest != "" && contentPin != prior.Digest {
+			return closure.Resolution{}, fmt.Errorf("catalog: pulled plugin artifact %s content digest %s does not match pin %s: %w",
+				uri, contentPin, prior.Digest, oci.ErrFetchIntegrity)
+		}
+		if prior.ManifestDigest != "" {
+			if verr := oci.VerifyManifestDigest(result.ManifestBytes, prior.ManifestDigest); verr != nil {
+				return closure.Resolution{}, fmt.Errorf("catalog: pulled manifest for plugin artifact %s: %w", uri, verr)
+			}
+		}
+	}
+	if err := l.cachePluginArtifact(uri, contentPin, result); err != nil {
+		return closure.Resolution{}, err
+	}
+	return pinnedPluginResolution(contentPin, result.Digest), nil
 }
 
 // resolvePinnedPluginArtifact resolves a content-pinned .wasm artifact reference
-// (oci://<repo>@sha256:<digest>) through a dedicated cache/pull flow:
+// (oci://<repo>@sha256:<digest>) — an externally-authored digest-bearing form —
+// through a dedicated cache/pull flow:
 //
 //   - Tier 2 (cache / re-pull): read the cache slot keyed by (uri, contentDigest)
 //     and content-digest-verify the bytes against the pin.
@@ -561,43 +623,8 @@ func (l *catalogLookup) ResolvePlugin(uri string) (closure.Resolution, error) {
 // the lockfile's ResolvedVersion, so lock-write and build-read address the
 // identical slot. A bytes-vs-pin mismatch halts with oci.ErrFetchIntegrity.
 func (l *catalogLookup) resolvePinnedPluginArtifact(uri, reference, pinDigest string) (closure.Resolution, error) {
-	if l.cacheDir != "" {
-		if bytes, err := oci.ReadCached(l.workspaceRoot, l.cacheDir, uri, pinDigest); err == nil {
-			// Read the persisted manifest from the same slot. A slot with a
-			// content blob but no manifest blob is incomplete; treat it as a
-			// cache miss so the Tier-3 re-pull below rewrites both blobs (offline,
-			// the miss surfaces the pull-first remediation rather than trusting a
-			// half-populated slot).
-			manifestBytes, mrerr := oci.ReadCachedManifest(l.workspaceRoot, l.cacheDir, uri, pinDigest)
-			switch {
-			case mrerr == nil:
-				// Manifest authority. When a prior lockfile recorded the manifest
-				// digest, self-verify the stored manifest against that independent
-				// pin — the manifest is anchored to the lockfile, not re-derived
-				// from the cached content. Then trust the content only against the
-				// manifest's layer digest.
-				if prior, ok := l.priorPins[uri]; ok && prior.ManifestDigest != "" {
-					if verr := oci.VerifyManifestDigest(manifestBytes, prior.ManifestDigest); verr != nil {
-						return closure.Resolution{}, fmt.Errorf("catalog: cached manifest for plugin artifact %s: %w", uri, verr)
-					}
-				}
-				if verr := oci.VerifyContentAgainstManifest(manifestBytes, bytes); verr != nil {
-					return closure.Resolution{}, fmt.Errorf("catalog: cached plugin artifact %s: %w", uri, verr)
-				}
-				// Defense in depth: the content still matches the URI content pin.
-				if got := contentDigest(bytes); got != pinDigest {
-					return closure.Resolution{}, fmt.Errorf("catalog: cached plugin artifact %s content digest %s does not match pin %s: %w",
-						uri, got, pinDigest, oci.ErrFetchIntegrity)
-				}
-				return pinnedPluginResolution(pinDigest, contentDigest(manifestBytes)), nil
-			case errors.Is(mrerr, oci.ErrFetchNotFound):
-				// Incomplete slot: fall through to the Tier-3 re-pull.
-			default:
-				return closure.Resolution{}, fmt.Errorf("catalog: read cached manifest for plugin artifact %s: %w", uri, mrerr)
-			}
-		} else if !errors.Is(err, oci.ErrFetchNotFound) {
-			return closure.Resolution{}, fmt.Errorf("catalog: read cached plugin artifact %s: %w", uri, err)
-		}
+	if res, hit, err := l.readCachedPluginArtifact(uri, pinDigest); err != nil || hit {
+		return res, err
 	}
 
 	if l.ociPuller == nil {
@@ -619,20 +646,79 @@ func (l *catalogLookup) resolvePinnedPluginArtifact(uri, reference, pinDigest st
 		return closure.Resolution{}, fmt.Errorf("catalog: pulled plugin artifact %s content digest %s does not match pin %s: %w",
 			uri, got, pinDigest, oci.ErrFetchIntegrity)
 	}
-	if l.cacheDir != "" {
-		if err := oci.WriteCached(l.workspaceRoot, l.cacheDir, uri, pinDigest, result.Bytes); err != nil {
-			return closure.Resolution{}, fmt.Errorf("catalog: cache write plugin artifact %s: %w", uri, err)
-		}
-		// Store the manifest as a second self-verifying blob in the same slot so a
-		// later offline read can re-derive the manifest digest from a stored
-		// artifact rather than trusting the recorded pin alone.
-		if len(result.ManifestBytes) > 0 {
-			if err := oci.WriteCachedManifest(l.workspaceRoot, l.cacheDir, uri, pinDigest, result.ManifestBytes); err != nil {
-				return closure.Resolution{}, fmt.Errorf("catalog: cache write plugin manifest %s: %w", uri, err)
-			}
-		}
+	if err := l.cachePluginArtifact(uri, pinDigest, result); err != nil {
+		return closure.Resolution{}, err
 	}
 	return pinnedPluginResolution(pinDigest, result.Digest), nil
+}
+
+// readCachedPluginArtifact attempts to satisfy a plugin-artifact resolution from
+// the cache slot keyed by (uri, contentPin). It reports (resolution, hit, error):
+// a hit means both blobs were present and self-verified; hit==false with a nil
+// error means the slot is absent or incomplete and the caller should re-pull; a
+// non-nil error is a verification failure that HALTS (a tampered slot is never
+// silently re-pulled around).
+//
+// The manifest is the root of trust: when a prior lockfile recorded the manifest
+// digest, the stored manifest is self-verified against that independent pin — the
+// manifest is anchored to the lockfile, not re-derived from the cached content.
+// The content is then trusted only against the manifest's layer digest, and
+// finally against contentPin as defense in depth.
+func (l *catalogLookup) readCachedPluginArtifact(uri, contentPin string) (closure.Resolution, bool, error) {
+	if l.cacheDir == "" {
+		return closure.Resolution{}, false, nil
+	}
+	bytes, err := oci.ReadCached(l.workspaceRoot, l.cacheDir, uri, contentPin)
+	if err != nil {
+		if errors.Is(err, oci.ErrFetchNotFound) {
+			return closure.Resolution{}, false, nil
+		}
+		return closure.Resolution{}, false, fmt.Errorf("catalog: read cached plugin artifact %s: %w", uri, err)
+	}
+	// A slot with a content blob but no manifest blob is incomplete; treat it as a
+	// cache miss so the re-pull rewrites both blobs (offline, the miss surfaces the
+	// pull-first remediation rather than trusting a half-populated slot).
+	manifestBytes, mrerr := oci.ReadCachedManifest(l.workspaceRoot, l.cacheDir, uri, contentPin)
+	switch {
+	case mrerr == nil:
+		if prior, ok := l.priorPins[uri]; ok && prior.ManifestDigest != "" {
+			if verr := oci.VerifyManifestDigest(manifestBytes, prior.ManifestDigest); verr != nil {
+				return closure.Resolution{}, false, fmt.Errorf("catalog: cached manifest for plugin artifact %s: %w", uri, verr)
+			}
+		}
+		if verr := oci.VerifyContentAgainstManifest(manifestBytes, bytes); verr != nil {
+			return closure.Resolution{}, false, fmt.Errorf("catalog: cached plugin artifact %s: %w", uri, verr)
+		}
+		if got := contentDigest(bytes); got != contentPin {
+			return closure.Resolution{}, false, fmt.Errorf("catalog: cached plugin artifact %s content digest %s does not match pin %s: %w",
+				uri, got, contentPin, oci.ErrFetchIntegrity)
+		}
+		return pinnedPluginResolution(contentPin, contentDigest(manifestBytes)), true, nil
+	case errors.Is(mrerr, oci.ErrFetchNotFound):
+		return closure.Resolution{}, false, nil
+	default:
+		return closure.Resolution{}, false, fmt.Errorf("catalog: read cached manifest for plugin artifact %s: %w", uri, mrerr)
+	}
+}
+
+// cachePluginArtifact writes a pulled plugin artifact's content and manifest as
+// the two self-verifying blobs of the (uri, contentPin) cache slot the build
+// re-reads. The manifest is stored so a later offline read can re-derive the
+// manifest digest from a stored artifact rather than trusting a recorded value
+// with nothing to check it against. A nil cache dir is a no-op.
+func (l *catalogLookup) cachePluginArtifact(uri, contentPin string, result *oci.PullResult) error {
+	if l.cacheDir == "" {
+		return nil
+	}
+	if err := oci.WriteCached(l.workspaceRoot, l.cacheDir, uri, contentPin, result.Bytes); err != nil {
+		return fmt.Errorf("catalog: cache write plugin artifact %s: %w", uri, err)
+	}
+	if len(result.ManifestBytes) > 0 {
+		if err := oci.WriteCachedManifest(l.workspaceRoot, l.cacheDir, uri, contentPin, result.ManifestBytes); err != nil {
+			return fmt.Errorf("catalog: cache write plugin manifest %s: %w", uri, err)
+		}
+	}
+	return nil
 }
 
 // pinnedPluginResolution is the resolution descriptor for a content-pinned .wasm

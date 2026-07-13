@@ -222,7 +222,10 @@ func DescendRecipePluginArtifacts(c *Closure, loader RecipeLoader, lookup Lookup
 		if artifactURI == "" {
 			continue
 		}
-		artRes, err := lookup.ResolvePlugin(artifactURI)
+		// The .wasm rides inline in the entity's single manifest, tagged by the
+		// entity's version; pass that version so a digest-free reference resolves
+		// the layer from the right manifest.
+		artRes, err := lookup.ResolvePlugin(artifactURI, wp.Metadata.Version)
 		if err != nil {
 			return fmt.Errorf("resolve: resolve pipeline plugin artifact %q: %w", artifactURI, err)
 		}

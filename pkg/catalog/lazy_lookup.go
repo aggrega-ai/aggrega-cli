@@ -1690,10 +1690,10 @@ func (x *lazyClosureLookup) ResolveMappingLibrary(uri string) (closure.LibraryRe
 	return x.base.ResolveMappingLibrary(uri)
 }
 
-func (x *lazyClosureLookup) ResolvePlugin(uri string) (closure.Resolution, error) {
+func (x *lazyClosureLookup) ResolvePlugin(uri, version string) (closure.Resolution, error) {
 	x.l.mu.Lock()
 	defer x.l.mu.Unlock()
-	return x.base.ResolvePlugin(uri)
+	return x.base.ResolvePlugin(uri, version)
 }
 
 // resolveComponentForClosure resolves a Component URI for the closure walk —

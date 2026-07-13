@@ -33,19 +33,20 @@ func (l *stubPluginLoader) LoadPlugin(uri string) (*types.Plugin, error) {
 }
 
 // cachePluginArtifact builds the frp-step-go fixture, writes its bytes into the
-// content-pinned cache slot the artifact descent would populate, and returns the
-// workspace root, cache dir, the content-pinned artifact URI, and the derived
-// (canonical) host-function set. The frp-step-go fixture imports no custom host
-// functions, so the derived set is empty — the no-host-function scenario.
-func cachePluginArtifact(t *testing.T) (workspaceRoot, cacheDir, artifactURI string, derived []string) {
+// (uri, contentDigest) cache slot the artifact descent would populate, and returns
+// the workspace root, cache dir, the digest-free artifact URI, the content digest
+// pin, and the derived (canonical) host-function set. The frp-step-go fixture
+// imports no custom host functions, so the derived set is empty — the
+// no-host-function scenario.
+func cachePluginArtifact(t *testing.T) (workspaceRoot, cacheDir, artifactURI, contentDigest string, derived []string) {
 	t.Helper()
 	pluginPath := wasmtest.EnsureFixtureBuilt(t, "frp-step-go.wasm")
 	wasmBytes, err := os.ReadFile(pluginPath)
 	if err != nil {
 		t.Fatalf("read fixture: %v", err)
 	}
-	contentDigest := digest.ContentDigest(wasmBytes)
-	artifactURI = "oci://hub.aggrega.ai/plugin/frp/patch@" + contentDigest
+	contentDigest = digest.ContentDigest(wasmBytes)
+	artifactURI = "oci://hub.aggrega.ai/plugin/frp/patch"
 
 	workspaceRoot = t.TempDir()
 	cacheDir = "cache"
@@ -56,7 +57,7 @@ func cachePluginArtifact(t *testing.T) (workspaceRoot, cacheDir, artifactURI str
 	if err != nil {
 		t.Fatalf("derive: %v", err)
 	}
-	return workspaceRoot, cacheDir, artifactURI, d
+	return workspaceRoot, cacheDir, artifactURI, contentDigest, d
 }
 
 // pluginEntity builds a Plugin entity whose spec.plugin pins the artifact and
@@ -70,11 +71,12 @@ func pluginEntity(artifactURI string, stamped []string) *types.Plugin {
 
 // pluginArtifactClosure builds a closure carrying one plugin artifact pin and
 // the referencing plugin entity URI, mirroring the artifact axis the descent
-// populates.
-func pluginArtifactClosure(artifactURI, entityURI string) *closure.Closure {
+// populates. The content digest is the pin the host-function verify keys the
+// cache read by.
+func pluginArtifactClosure(artifactURI, entityURI, contentDigest string) *closure.Closure {
 	return &closure.Closure{
 		Plugins: []closure.ResolvedRef{
-			{URI: artifactURI, ReferencedFrom: []string{entityURI}},
+			{URI: artifactURI, Digest: contentDigest, ReferencedFrom: []string{entityURI}},
 		},
 	}
 }
@@ -84,12 +86,12 @@ func pluginArtifactClosure(artifactURI, entityURI string) *closure.Closure {
 // the verified .wasm.
 func TestVerifyPluginHostFunctions_StampMatchesBinary(t *testing.T) {
 	t.Parallel()
-	workspaceRoot, cacheDir, artifactURI, derived := cachePluginArtifact(t)
+	workspaceRoot, cacheDir, artifactURI, contentDigest, derived := cachePluginArtifact(t)
 	const entityURI = "oci://hub.aggrega.ai/plugin/frp/patch:1.0.0"
 	loader := &stubPluginLoader{byURI: map[string]*types.Plugin{
 		entityURI: pluginEntity(artifactURI, derived),
 	}}
-	cl := pluginArtifactClosure(artifactURI, entityURI)
+	cl := pluginArtifactClosure(artifactURI, entityURI, contentDigest)
 
 	if err := verifyPluginHostFunctions(context.Background(), cl, loader, workspaceRoot, cacheDir, os.Stderr); err != nil {
 		t.Fatalf("a matching stamp should pass; got %v", err)
@@ -102,14 +104,14 @@ func TestVerifyPluginHostFunctions_StampMatchesBinary(t *testing.T) {
 // stamping-bug case the digest pin alone would not catch.
 func TestVerifyPluginHostFunctions_StampDivergesHalts(t *testing.T) {
 	t.Parallel()
-	workspaceRoot, cacheDir, artifactURI, _ := cachePluginArtifact(t)
+	workspaceRoot, cacheDir, artifactURI, contentDigest, _ := cachePluginArtifact(t)
 	const entityURI = "oci://hub.aggrega.ai/plugin/frp/patch:1.0.0"
 	// Stamp a host function the binary does not import: the frp-step-go fixture
 	// imports none, so a stamped [aggrega_log] is a divergence.
 	loader := &stubPluginLoader{byURI: map[string]*types.Plugin{
 		entityURI: pluginEntity(artifactURI, []string{"aggrega_log"}),
 	}}
-	cl := pluginArtifactClosure(artifactURI, entityURI)
+	cl := pluginArtifactClosure(artifactURI, entityURI, contentDigest)
 
 	err := verifyPluginHostFunctions(context.Background(), cl, loader, workspaceRoot, cacheDir, os.Stderr)
 	if !errors.Is(err, wasm.ErrWasmHostFunctionsStampMismatch) {
@@ -123,12 +125,14 @@ func TestVerifyPluginHostFunctions_StampDivergesHalts(t *testing.T) {
 func TestVerifyPluginHostFunctions_NoCachedArtifactSkips(t *testing.T) {
 	t.Parallel()
 	const entityURI = "oci://hub.aggrega.ai/plugin/frp/patch:1.0.0"
-	const artifactURI = "oci://hub.aggrega.ai/plugin/frp/patch@sha256:" +
+	const artifactURI = "oci://hub.aggrega.ai/plugin/frp/patch"
+	// A recorded content pin whose cache slot does not exist (offline / hermetic).
+	const contentDigest = "sha256:" +
 		"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 	loader := &stubPluginLoader{byURI: map[string]*types.Plugin{
 		entityURI: pluginEntity(artifactURI, []string{"aggrega_log"}),
 	}}
-	cl := pluginArtifactClosure(artifactURI, entityURI)
+	cl := pluginArtifactClosure(artifactURI, entityURI, contentDigest)
 
 	if err := verifyPluginHostFunctions(context.Background(), cl, loader, t.TempDir(), "cache", os.Stderr); err != nil {
 		t.Fatalf("an uncached artifact should be skipped, not fail; got %v", err)

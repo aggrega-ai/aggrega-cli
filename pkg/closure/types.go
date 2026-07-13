@@ -283,7 +283,13 @@ type Lookup interface {
 	ResolveAggregate(uri string) (Resolution, error)
 	ResolveSchemaLibrary(uri string) (LibraryResolution, error)
 	ResolveMappingLibrary(uri string) (LibraryResolution, error)
-	ResolvePlugin(uri string) (Resolution, error)
+	// ResolvePlugin resolves a Plugin entity's spec.plugin .wasm artifact
+	// reference. The reference is digest-free (oci://<repo>); the .wasm rides
+	// inline as a layer of the single plugin manifest published under the
+	// entity's version tag, so version selects the manifest to read the .wasm
+	// from. A digest-bearing form (oci://<repo>@sha256:<digest>) resolves by its
+	// content pin and ignores version.
+	ResolvePlugin(uri, version string) (Resolution, error)
 }
 
 // Resolution is the common output shape for catalog-entity and

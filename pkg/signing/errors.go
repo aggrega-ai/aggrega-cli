@@ -68,12 +68,3 @@ var ErrTrustRootLoad = errors.New("signing: cannot load pinned trust root")
 // (or target a registry that does not require signatures) before the
 // push can proceed.
 var ErrUnsignedPushRefused = errors.New("signing: registry requires signatures; refusing to push unsigned content")
-
-// ErrPluginSignerMismatch is returned when a plugin's entity manifest and
-// its .wasm artifact each carry a valid, individually-trusted signature, but
-// the two were signed by different identities. A plugin is one publication —
-// the executable and the entity that vouches for it must share one signer —
-// so a split signer is refused even though each signature verifies on its
-// own. The operator must re-publish with both artifacts signed by the same
-// identity.
-var ErrPluginSignerMismatch = errors.New("signing: plugin entity and .wasm artifact are signed by different identities; both must be signed by the same trusted signer")
