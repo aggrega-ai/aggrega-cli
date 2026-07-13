@@ -12,15 +12,23 @@ import (
 // VerifyContentAgainstManifest checks fetched or cached content against the
 // layer digest the OCI manifest declares for it. The manifest is the authority:
 // the content is trusted only when its content digest equals the digest the
-// manifest's single artifact layer commits to. A mismatch — or a manifest that
-// carries no layer — is wrapped ErrFetchIntegrity, since a layer digest that
-// does not match the content IS a content-integrity failure.
+// manifest's content layer commits to. A mismatch — or a manifest that
+// carries no matching layer — is wrapped ErrFetchIntegrity, since a layer digest
+// that does not match the content IS a content-integrity failure.
+//
+// An optional expectedMediaType selects the content layer by media type rather
+// than by position, so a manifest that bundles more than one layer (a signed
+// chart's detached provenance layer beside the chart content) verifies the
+// content against the layer that actually commits to it. It must match the
+// expectation the corresponding pull selected the content with; passing a
+// different expectation would verify against a different layer. Callers whose
+// manifests carry a single artifact layer omit the argument.
 //
 // This is the single verify used by every path that trusts content against a
 // manifest: the online pull and each class's offline cache read all route
 // through here, so the manifest-authority check is spelled exactly once.
-func VerifyContentAgainstManifest(manifestBytes, content []byte) error {
-	layer, _, err := descriptorFromManifest(manifestBytes)
+func VerifyContentAgainstManifest(manifestBytes, content []byte, expectedMediaType ...string) error {
+	layer, _, err := descriptorFromManifest(manifestBytes, expectedMediaType...)
 	if err != nil {
 		return fmt.Errorf("oci: parse manifest for content verify: %w: %w", err, ErrFetchIntegrity)
 	}

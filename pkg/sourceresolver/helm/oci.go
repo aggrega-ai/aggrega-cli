@@ -94,7 +94,12 @@ func (a *ociAdapter) Resolve(spec sourceresolver.SourceSpec) (*sourceresolver.Re
 	}
 
 	ctx := context.Background()
-	result, err := ocierr.Pull(ctx, target, spec.Version)
+	// Select the chart content layer by media type: a signed chart's manifest
+	// carries a detached provenance layer beside the content, and an index-based
+	// selection could return the provenance blob. Passing the content media type
+	// keeps the pull (and the content-digest verification inside it) anchored to
+	// the chart content regardless of layer order.
+	result, err := ocierr.Pull(ctx, target, spec.Version, MediatypeHelmChart)
 	if err != nil {
 		return nil, mapOCIError(spec, err)
 	}

@@ -31,6 +31,22 @@ var ErrFetchNetworkUnreachable = errors.New("oci: network unreachable")
 // remediation pointer.
 var ErrFetchIntegrity = errors.New("oci: content digest mismatch")
 
+// ErrNoContentLayer is returned when an OCI manifest carries no layer of
+// the content media type the caller expected. A signed chart, for
+// example, bundles a detached provenance layer beside the chart content;
+// selecting the content by media type rather than by position means a
+// manifest that is missing the expected content layer halts loudly
+// instead of yielding the wrong blob. Call sites wrap this sentinel with
+// the media type that was expected.
+var ErrNoContentLayer = errors.New("oci: manifest has no layer of the expected content media type")
+
+// ErrAmbiguousContentLayer is returned when an OCI manifest carries more
+// than one layer of the expected content media type, so the content
+// layer cannot be selected unambiguously. Selection halts loudly rather
+// than pick one. Call sites wrap this sentinel with the media type and
+// the count.
+var ErrAmbiguousContentLayer = errors.New("oci: manifest has multiple layers of the expected content media type")
+
 // ErrCachedManifestIntegrity is returned when a cached OCI manifest blob no
 // longer hashes to the manifest digest the artifact commits to — the offline
 // manifest self-verify. It is distinct from ErrFetchIntegrity (which covers a

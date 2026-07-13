@@ -14,7 +14,9 @@ import (
 	ocierr "github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/cacheslot"
+	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/internal/archive"
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/metadata"
+	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"oras.land/oras-go/v2"
 	"oras.land/oras-go/v2/content/memory"
 )
@@ -148,6 +150,91 @@ func TestOCIResolveTargetFactoryFailureWrapsNetwork(t *testing.T) {
 	if !errors.Is(err, sourceresolver.ErrFetchNetworkUnreachable) {
 		t.Errorf("error should wrap ErrFetchNetworkUnreachable; got %v", err)
 	}
+}
+
+// provenanceMediaType is the CNCF detached-provenance media type a signed
+// chart carries beside its content layer.
+const provenanceMediaType = "application/vnd.cncf.helm.chart.provenance.v1.prov"
+
+// TestOCIResolveSignedChartSelectsContentLayer drives the adapter end to
+// end against a signed-chart manifest whose provenance layer is listed
+// BEFORE the content layer. An index-based pull would cache the
+// provenance blob (and a later extract would fail `gzip: invalid
+// header`); the adapter must cache the chart content instead.
+func TestOCIResolveSignedChartSelectsContentLayer(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+
+	store, content, prov := buildSignedChartStore(t, "25.0.8")
+	a := &ociAdapter{newTarget: func(string) (oras.ReadOnlyTarget, error) { return store, nil }}
+
+	got, err := a.Resolve(sourceresolver.SourceSpec{
+		Kind:          KindOCI,
+		URL:           "oci://hub.aggrega.ai/charts/mariadb",
+		Version:       "25.0.8",
+		WorkspaceRoot: root,
+		CacheDir:      ".aggrega/cache",
+	})
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	blob, err := os.ReadFile(got.CachePath)
+	if err != nil {
+		t.Fatalf("read cached blob: %v", err)
+	}
+	if string(blob) != string(content) {
+		t.Errorf("cached blob is not the chart content.\n  got:  %q\n  want: %q", blob, content)
+	}
+	if string(blob) == string(prov) {
+		t.Error("cached blob is the provenance layer; expected the chart content")
+	}
+	if got.Digest != archive.Digest(content) {
+		t.Errorf("recorded Digest = %q; want the chart-content digest %q", got.Digest, archive.Digest(content))
+	}
+	// The persisted manifest still authorities the cached content when the
+	// content media type is named — the same selection the pull used.
+	manifestBytes, err := os.ReadFile(filepath.Join(filepath.Dir(got.CachePath), cacheslot.ManifestFile))
+	if err != nil {
+		t.Fatalf("read persisted manifest: %v", err)
+	}
+	if verr := ocierr.VerifyContentAgainstManifest(manifestBytes, blob, MediatypeHelmChart); verr != nil {
+		t.Errorf("persisted manifest does not authority the cached chart content: %v", verr)
+	}
+}
+
+// buildSignedChartStore seeds an in-memory CAS with a manifest that lists
+// the provenance layer first and the chart content second, tags it, and
+// returns the target plus the content and provenance bytes.
+func buildSignedChartStore(t *testing.T, tag string) (oras.ReadOnlyTarget, []byte, []byte) {
+	t.Helper()
+	ctx := context.Background()
+	store := memory.New()
+	content := []byte("fake-helm-chart-tar-gz-bytes\n")
+	prov := []byte("-----BEGIN PGP SIGNED MESSAGE-----\nfake-provenance\n")
+
+	provDesc, err := oras.PushBytes(ctx, store, provenanceMediaType, prov)
+	if err != nil {
+		t.Fatalf("push provenance: %v", err)
+	}
+	contentDesc, err := oras.PushBytes(ctx, store, MediatypeHelmChart, content)
+	if err != nil {
+		t.Fatalf("push content: %v", err)
+	}
+	// A helm chart manifest carries a config blob and leaves artifactType
+	// empty, so the content mediatype resolves from the selected layer.
+	configDesc, err := oras.PushBytes(ctx, store, "application/vnd.cncf.helm.config.v1+json", []byte("{}"))
+	if err != nil {
+		t.Fatalf("push config: %v", err)
+	}
+	manifestDesc, err := oras.PackManifest(ctx, store, oras.PackManifestVersion1_1, "",
+		oras.PackManifestOptions{Layers: []ocispec.Descriptor{provDesc, contentDesc}, ConfigDescriptor: &configDesc})
+	if err != nil {
+		t.Fatalf("pack manifest: %v", err)
+	}
+	if err := store.Tag(ctx, manifestDesc, tag); err != nil {
+		t.Fatalf("tag: %v", err)
+	}
+	return store, content, prov
 }
 
 func buildChartStore(t *testing.T, _ string, tag string) (oras.ReadOnlyTarget, []byte, string) {

@@ -16,13 +16,66 @@ import (
 	"testing"
 	"time"
 
+	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
+	"oras.land/oras-go/v2"
+	"oras.land/oras-go/v2/content/memory"
+
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourcecache"
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/cacheslot"
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/metadata"
-	"oras.land/oras-go/v2/content/memory"
 )
+
+// Helm content and detached-provenance media types. A signed helm chart's
+// OCI manifest lists both layers; the content media type is the one recorded
+// in a cache slot's metadata.yaml and used to select the content layer.
+const (
+	testHelmContentMediaType = "application/vnd.cncf.helm.chart.content.v1.tar+gzip"
+	testHelmProvMediaType    = "application/vnd.cncf.helm.chart.provenance.v1.prov"
+)
+
+// signedChartManifest builds the OCI manifest a signed helm-oci-chart pull
+// persists: a two-layer manifest listing the detached provenance layer FIRST
+// and the chart content layer second — the order that traps an index-based
+// content-layer selection. The content layer commits to content's digest, so
+// a media-type-anchored verify selects it while an index-0 selection would
+// pick the provenance layer instead. Round-trips through Pull to return the
+// exact manifest bytes the adapter writes beside the cached archive.
+func signedChartManifest(t *testing.T, content []byte) []byte {
+	t.Helper()
+	ctx := context.Background()
+	store := memory.New()
+	prov := []byte("-----BEGIN PGP SIGNED MESSAGE-----\nfake-provenance\n")
+	provDesc, err := oras.PushBytes(ctx, store, testHelmProvMediaType, prov)
+	if err != nil {
+		t.Fatalf("push prov layer: %v", err)
+	}
+	contentDesc, err := oras.PushBytes(ctx, store, testHelmContentMediaType, content)
+	if err != nil {
+		t.Fatalf("push content layer: %v", err)
+	}
+	configDesc, err := oras.PushBytes(ctx, store, "application/vnd.cncf.helm.config.v1+json", []byte("{}"))
+	if err != nil {
+		t.Fatalf("push config: %v", err)
+	}
+	manifestDesc, err := oras.PackManifest(ctx, store, oras.PackManifestVersion1_1, "",
+		oras.PackManifestOptions{
+			Layers:           []ocispec.Descriptor{provDesc, contentDesc},
+			ConfigDescriptor: &configDesc,
+		})
+	if err != nil {
+		t.Fatalf("pack manifest: %v", err)
+	}
+	if err := store.Tag(ctx, manifestDesc, "seed"); err != nil {
+		t.Fatalf("tag manifest: %v", err)
+	}
+	res, err := oci.Pull(ctx, store, "seed", testHelmContentMediaType)
+	if err != nil {
+		t.Fatalf("pull signed manifest: %v", err)
+	}
+	return res.ManifestBytes
+}
 
 // ociChartManifest round-trips blob through an in-memory CAS to obtain the OCI
 // manifest bytes a real helm-oci-chart pull persists — the manifest whose single
@@ -410,6 +463,78 @@ func TestLookupAndExtractFaithfulManifestPinPasses(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(extracted, "mariadb", "Chart.yaml")); err != nil {
 		t.Errorf("Chart.yaml missing after faithful extract: %v", err)
+	}
+}
+
+// TestLookupAndExtractSignedChartOfflineExtracts is the signed-chart build
+// proof: a cache slot seeded exactly as a signed-chart pull writes it — the
+// content tgz as blob.tgz, a two-layer OCI manifest listing the detached
+// provenance layer FIRST and the chart content layer second, and metadata
+// recording the content media type — must verify against the CONTENT layer
+// and extract the chart. An index-based content-layer selection would compare
+// the archive digest against the provenance layer and halt with
+// ErrFetchIntegrity; anchoring the verify to the recorded content media type
+// selects the chart content instead, so the offline build renders.
+func TestLookupAndExtractSignedChartOfflineExtracts(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	const chartYAML = "apiVersion: v2\nname: mariadb\nversion: 25.0.8\n"
+	blob := buildTGZ(t, map[string]string{
+		"mariadb/Chart.yaml":         chartYAML,
+		"mariadb/templates/dep.yaml": "kind: Deployment\n",
+	})
+	digest := digestOf(blob)
+	// seedSlot writes blob.tgz + metadata (recording the content media type) and
+	// a single-layer manifest; overwrite the manifest with the signed (prov-first)
+	// two-layer manifest a real signed pull persists.
+	slot := seedSlot(t, root, ".aggrega/cache", "helm-oci-chart", "oci://r/c", "25.0.8", blob, digest)
+	if err := os.WriteFile(filepath.Join(slot, cacheslot.ManifestFile), signedChartManifest(t, blob), 0o644); err != nil {
+		t.Fatalf("plant signed manifest: %v", err)
+	}
+
+	lf := fixtureLockfile("helm-oci-chart", "oci://r/c", "25.0.8", digest)
+	extracted, err := sourcecache.LookupAndExtract(lf, "helm-oci-chart", "oci://r/c", "25.0.8", root, ".aggrega/cache")
+	if err != nil {
+		t.Fatalf("signed-chart offline extract: err = %v; want clean extract (no integrity/gzip failure)", err)
+	}
+	// The extracted content is the chart archive, not the provenance blob: the
+	// prov layer is PGP text and could never yield Chart.yaml.
+	got, err := os.ReadFile(filepath.Join(extracted, "mariadb", "Chart.yaml"))
+	if err != nil {
+		t.Fatalf("Chart.yaml missing under extracted/mariadb/ after signed-chart extract: %v", err)
+	}
+	if string(got) != chartYAML {
+		t.Errorf("extracted Chart.yaml is not the chart content.\n  got:  %q\n  want: %q", string(got), chartYAML)
+	}
+}
+
+// TestLookupAndExtractSingleContentLayerNonRegression is the no-op proof for
+// the media-type-anchored content verify: an ordinary single-content-layer
+// OCI slot (no provenance layer) still verifies and extracts unchanged,
+// because the recorded content media type matches the sole layer's media type
+// and selection returns it. The media-type anchor changes behavior only when a
+// manifest bundles more than one layer.
+func TestLookupAndExtractSingleContentLayerNonRegression(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	const chartYAML = "apiVersion: v2\nname: mariadb\nversion: 1.0.0\n"
+	blob := buildTGZ(t, map[string]string{"mariadb/Chart.yaml": chartYAML})
+	digest := digestOf(blob)
+	// seedSlot writes the single-layer manifest (via oci.Push) and metadata
+	// recording the content media type — exactly a single-layer pull's slot.
+	seedSlot(t, root, ".aggrega/cache", "helm-oci-chart", "oci://r/c", "1.0.0", blob, digest)
+
+	lf := fixtureLockfile("helm-oci-chart", "oci://r/c", "1.0.0", digest)
+	extracted, err := sourcecache.LookupAndExtract(lf, "helm-oci-chart", "oci://r/c", "1.0.0", root, ".aggrega/cache")
+	if err != nil {
+		t.Fatalf("single-content-layer slot: err = %v; want unchanged clean extract", err)
+	}
+	got, err := os.ReadFile(filepath.Join(extracted, "mariadb", "Chart.yaml"))
+	if err != nil {
+		t.Fatalf("Chart.yaml missing after single-layer extract: %v", err)
+	}
+	if string(got) != chartYAML {
+		t.Errorf("extracted Chart.yaml mismatch.\n  got:  %q\n  want: %q", string(got), chartYAML)
 	}
 }
 

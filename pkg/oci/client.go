@@ -44,6 +44,17 @@ type PullResult struct {
 // The target may be a remote.Repository (production) or any in-
 // memory CAS implementing oras.ReadOnlyTarget (tests).
 //
+// An optional expectedMediaType selects the content layer by media type
+// rather than by position. A caller pulling content whose manifest may
+// carry more than one layer — a signed chart, which bundles a detached
+// provenance layer beside the chart content — passes the content media
+// type it expects; the provenance and any other layer are then ignored,
+// and a manifest missing (or ambiguous about) that content halts loudly.
+// Callers whose manifests carry a single artifact layer omit the argument
+// and the sole layer is used. The same expectation drives the content
+// digest verification below, so verification checks the selected content
+// layer, never a positionally-first layer.
+//
 // Error mapping:
 //   - target reports "not found" → wrapped ErrFetchNotFound
 //   - authentication required, rejected, or no stored credential for
@@ -55,7 +66,7 @@ type PullResult struct {
 // unreachable) pass through unmapped; callers can still match the
 // sentinels in errors.go via errors.Is once they wrap their own
 // diagnostic context.
-func Pull(ctx context.Context, target oras.ReadOnlyTarget, tag string) (*PullResult, error) {
+func Pull(ctx context.Context, target oras.ReadOnlyTarget, tag string, expectedMediaType ...string) (*PullResult, error) {
 	manifestDesc, err := target.Resolve(ctx, tag)
 	if err != nil {
 		if errors.Is(err, errdef.ErrNotFound) {
@@ -77,7 +88,7 @@ func Pull(ctx context.Context, target oras.ReadOnlyTarget, tag string) (*PullRes
 		return nil, fmt.Errorf("oci: read manifest %q: %w", tag, err)
 	}
 
-	contentDesc, mediaType, err := descriptorFromManifest(manifestBytes)
+	contentDesc, mediaType, err := descriptorFromManifest(manifestBytes, expectedMediaType...)
 	if err != nil {
 		return nil, fmt.Errorf("oci: parse manifest %q: %w", tag, err)
 	}
@@ -95,7 +106,7 @@ func Pull(ctx context.Context, target oras.ReadOnlyTarget, tag string) (*PullRes
 		return nil, fmt.Errorf("oci: read content %q: %w", tag, err)
 	}
 
-	if err := VerifyContentAgainstManifest(manifestBytes, content); err != nil {
+	if err := VerifyContentAgainstManifest(manifestBytes, content, expectedMediaType...); err != nil {
 		return nil, fmt.Errorf("oci: %q: %w", tag, err)
 	}
 
@@ -326,13 +337,26 @@ func isUnauthorized(err error) bool {
 	return false
 }
 
-// descriptorFromManifest parses an OCI image manifest's JSON bytes
-// and returns the descriptor for the manifest's single artifact
-// layer plus the artifact's mediatype. The expected manifest shape
-// is the one Push produces via oras.PackManifest: one layer entry;
-// mediatype on either the manifest's artifactType field or the
-// layer's mediatype field.
-func descriptorFromManifest(manifestBytes []byte) (ocispec.Descriptor, string, error) {
+// descriptorFromManifest parses an OCI image manifest's JSON bytes and
+// returns the descriptor for the manifest's content layer plus the
+// artifact's mediatype.
+//
+// When a caller supplies an expected content media type, the content
+// layer is chosen by that media type, not by position: exactly the layer
+// whose descriptor media type equals the expectation is selected, and
+// every other layer is ignored. This is what lets a signed chart — whose
+// manifest bundles a detached provenance layer beside the chart content,
+// in either order — resolve to the chart content rather than to whichever
+// layer happens to be listed first. Zero matches or more than one match
+// halts loudly (ErrNoContentLayer / ErrAmbiguousContentLayer) rather than
+// guess.
+//
+// When no expected media type is supplied, the manifest is expected to
+// carry a single artifact layer — the shape every push in this package
+// produces — and that layer is returned. The mediatype is taken from the
+// manifest's artifactType field, falling back to the selected layer's own
+// mediatype.
+func descriptorFromManifest(manifestBytes []byte, expectedMediaType ...string) (ocispec.Descriptor, string, error) {
 	var manifest struct {
 		ArtifactType string               `json:"artifactType"`
 		Config       ocispec.Descriptor   `json:"config"`
@@ -344,12 +368,60 @@ func descriptorFromManifest(manifestBytes []byte) (ocispec.Descriptor, string, e
 	if len(manifest.Layers) == 0 {
 		return ocispec.Descriptor{}, "", errors.New("oci: manifest carries no layers")
 	}
-	desc := manifest.Layers[0]
+	desc, err := selectContentLayer(manifest.Layers, firstNonEmpty(expectedMediaType))
+	if err != nil {
+		return ocispec.Descriptor{}, "", err
+	}
 	mediaType := manifest.ArtifactType
 	if mediaType == "" {
 		mediaType = desc.MediaType
 	}
 	return desc, mediaType, nil
+}
+
+// firstNonEmpty returns the first non-empty string in vals, or "" when
+// none is present. It normalises the variadic expected-media-type
+// argument to a single value.
+func firstNonEmpty(vals []string) string {
+	for _, v := range vals {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
+// selectContentLayer chooses the single artifact layer a pull should
+// treat as the content blob. When expected is non-empty, selection is a
+// deterministic allow-list by media type: exactly the layer whose
+// descriptor media type equals expected is chosen, and every other layer
+// (a chart's detached provenance layer, any future non-content layer) is
+// ignored. Zero matches or more than one match halts loudly rather than
+// pick a layer, so a manifest that does not carry the expected content —
+// or carries it ambiguously — surfaces a clear error instead of the wrong
+// blob.
+//
+// When expected is empty the caller has stated no content media type; the
+// manifest's first layer is returned, matching the single-layer shape
+// every push in this package produces.
+func selectContentLayer(layers []ocispec.Descriptor, expected string) (ocispec.Descriptor, error) {
+	if expected == "" {
+		return layers[0], nil
+	}
+	var matches []ocispec.Descriptor
+	for _, l := range layers {
+		if l.MediaType == expected {
+			matches = append(matches, l)
+		}
+	}
+	switch len(matches) {
+	case 1:
+		return matches[0], nil
+	case 0:
+		return ocispec.Descriptor{}, fmt.Errorf("oci: manifest has no layer of media type %q: %w", expected, ErrNoContentLayer)
+	default:
+		return ocispec.Descriptor{}, fmt.Errorf("oci: manifest has %d layers of media type %q; expected exactly one: %w", len(matches), expected, ErrAmbiguousContentLayer)
+	}
 }
 
 // ListTags returns every tag the registry has for the target, fully

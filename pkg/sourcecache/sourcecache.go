@@ -134,7 +134,7 @@ func LookupAndExtract(lf *lockfile.Lockfile, kind, url, version, workspaceRoot, 
 				return "", fmt.Errorf("sourcecache: cached manifest for %s: %w", blobPath, verr)
 			}
 		}
-		if verr := oci.VerifyContentAgainstManifest(manifestBytes, blobBytes); verr != nil {
+		if verr := oci.VerifyContentAgainstManifest(manifestBytes, blobBytes, meta.Mediatype); verr != nil {
 			return "", fmt.Errorf("sourcecache: %s: %w", blobPath, verr)
 		}
 	case os.IsNotExist(mrerr):
