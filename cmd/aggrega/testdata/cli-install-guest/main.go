@@ -29,6 +29,10 @@ func describe() int32 {
 	return 0
 }
 
+// cli_run is a never-invoked placeholder present only to satisfy the CLI
+// minimum-export rule for the install-path descriptor read; the streaming
+// cli_run ABI is exercised by the other cli fixtures.
+//
 //go:wasmexport cli_run
 func cli_run() int32 {
 	pdk.OutputString("moo\n")

@@ -168,7 +168,7 @@ func copyTree(t *testing.T, src, dst string) {
 	}
 }
 
-func sha256Hex(t *testing.T, path string) string {
+func sha256HexFile(t *testing.T, path string) string {
 	t.Helper()
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -214,7 +214,7 @@ func TestIntegration_RegistryRoundTrip_Positive(t *testing.T) {
 	if err := dispatchBuild(nil, "release.yaml", nil, false, os.Stderr, os.Stdout); err != nil {
 		t.Fatalf("registry build: %v", err)
 	}
-	got := sha256Hex(t, filepath.Join("dist", "compose", "docker-compose.yaml"))
+	got := sha256HexFile(t, filepath.Join("dist", "compose", "docker-compose.yaml"))
 	if got != offlineReferenceSHA {
 		t.Errorf("registry build output sha = %s; want offline reference %s", got, offlineReferenceSHA)
 	}
@@ -227,7 +227,7 @@ func TestIntegration_RegistryRoundTrip_Positive(t *testing.T) {
 	if err := dispatchBuild(nil, "release.yaml", nil, false, os.Stderr, os.Stdout); err != nil {
 		t.Fatalf("rebuild from lock: %v", err)
 	}
-	if rebuilt := sha256Hex(t, filepath.Join("dist", "compose", "docker-compose.yaml")); rebuilt != got {
+	if rebuilt := sha256HexFile(t, filepath.Join("dist", "compose", "docker-compose.yaml")); rebuilt != got {
 		t.Errorf("lock != build: rebuild sha %s != %s", rebuilt, got)
 	}
 }
@@ -436,7 +436,7 @@ func TestIntegration_Capstone_LintAndExample(t *testing.T) {
 	if err := dispatchBuild(nil, "release.yaml", []string{std}, false, os.Stderr, os.Stdout); err != nil {
 		t.Fatalf("catalog-only build against the shared catalog: %v", err)
 	}
-	if got := sha256Hex(t, filepath.Join("dist", "compose", "docker-compose.yaml")); got != offlineReferenceSHA {
+	if got := sha256HexFile(t, filepath.Join("dist", "compose", "docker-compose.yaml")); got != offlineReferenceSHA {
 		t.Errorf("offline example build sha = %s; want reference %s", got, offlineReferenceSHA)
 	}
 }
