@@ -123,7 +123,7 @@ func TestRunRegistrySearch_SharedPrimitiveTwoScopes(t *testing.T) {
 	cfg := workspaceconfig.Config{DefaultRegistry: "hub.aggrega.ai"}
 
 	var pluginOut bytes.Buffer
-	if err := runRegistrySearch(ctx, cfg, "", pluginSearchScope, &pluginOut); err != nil {
+	if err := runRegistrySearch(ctx, cfg, "", pluginSearchScope, true, &pluginOut); err != nil {
 		t.Fatalf("plugin search: %v", err)
 	}
 	if !strings.Contains(pluginOut.String(), "plugin/cli/moo") ||
@@ -132,7 +132,7 @@ func TestRunRegistrySearch_SharedPrimitiveTwoScopes(t *testing.T) {
 	}
 
 	var catalogOut bytes.Buffer
-	if err := runRegistrySearch(ctx, cfg, "", catalogSearchScope, &catalogOut); err != nil {
+	if err := runRegistrySearch(ctx, cfg, "", catalogSearchScope, true, &catalogOut); err != nil {
 		t.Fatalf("catalog search: %v", err)
 	}
 	if !strings.Contains(catalogOut.String(), "component/core/api-server") ||

@@ -105,7 +105,12 @@ var registrySearchTarget = func(cfg workspaceconfig.Config) (registryRepoLister,
 // runRegistrySearch resolves the workspace registry, runs the one search
 // primitive under the given scope, and writes the result. Both search commands
 // route through it so the shared primitive is their only search path.
-func runRegistrySearch(ctx context.Context, cfg workspaceconfig.Config, query string, scope searchScope, out io.Writer) error {
+//
+// When probeDeprecations is true, each result is probed live for a deprecation
+// marker and a deprecated result carries an advisory suffix. When false, the
+// probe is skipped entirely — no per-result registry lookup is built — so the
+// listing prints the bare repository paths and no network probe happens.
+func runRegistrySearch(ctx context.Context, cfg workspaceconfig.Config, query string, scope searchScope, probeDeprecations bool, out io.Writer) error {
 	reg, host, err := registrySearchTarget(cfg)
 	if err != nil {
 		return fmt.Errorf("search: %w", err)
@@ -114,7 +119,11 @@ func runRegistrySearch(ctx context.Context, cfg workspaceconfig.Config, query st
 	if err != nil {
 		return err
 	}
-	formatSearchResults(out, host, query, matches, newRepoDeprecationLookup(cfg, host))
+	var deprecationOf repoDeprecationLookup
+	if probeDeprecations {
+		deprecationOf = newRepoDeprecationLookup(cfg, host)
+	}
+	formatSearchResults(out, host, query, matches, deprecationOf)
 	return nil
 }
 

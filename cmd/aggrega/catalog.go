@@ -25,10 +25,11 @@ func newCatalogCmd() *cobra.Command {
 // content, answered by a search-index plugin, entirely without a network.
 func newCatalogSearchCmd() *cobra.Command {
 	var (
-		content bool
-		plugin  string
-		limit   int
-		filters map[string]string
+		content        bool
+		plugin         string
+		limit          int
+		filters        map[string]string
+		noDeprecations bool
 	)
 	c := &cobra.Command{
 		Use:   "search [query]",
@@ -59,7 +60,7 @@ narrows by the plugin's own field vocabulary.`,
 			if content {
 				return runContentSearch(cmd.Context(), rw, query, plugin, limit, filters, cmd.OutOrStdout())
 			}
-			return runRegistrySearch(cmd.Context(), rw.Config(), query, catalogSearchScope, cmd.OutOrStdout())
+			return runRegistrySearch(cmd.Context(), rw.Config(), query, catalogSearchScope, !noDeprecations, cmd.OutOrStdout())
 		},
 	}
 	c.Flags().BoolVar(&content, "content", false,
@@ -70,5 +71,7 @@ narrows by the plugin's own field vocabulary.`,
 		"Cap on how many ranked content hits to return; 0 asks the plugin for its own default (--content only)")
 	c.Flags().StringToStringVar(&filters, "filter", nil,
 		"Field filter key=value narrowing a content search, repeatable (--content only)")
+	c.Flags().BoolVar(&noDeprecations, "no-deprecations", false,
+		"Skip the per-result deprecation-status probe for faster searches")
 	return c
 }

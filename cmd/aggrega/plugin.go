@@ -67,7 +67,7 @@ repositories only — use 'aggrega catalog search' to search the whole catalog.`
 			if len(args) == 1 {
 				query = args[0]
 			}
-			return runRegistrySearch(cmd.Context(), rw.Config(), query, pluginSearchScope, cmd.OutOrStdout())
+			return runRegistrySearch(cmd.Context(), rw.Config(), query, pluginSearchScope, true, cmd.OutOrStdout())
 		},
 	}
 	return c
