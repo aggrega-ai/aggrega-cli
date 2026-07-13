@@ -345,17 +345,22 @@ func translateContainers(w *types.Workload, nodeID string, secretProvides map[st
 	return out, nil
 }
 
-// translateInitContainers walks Workload.InitContainers (positional list).
-// initContainer naming convention: "init-<index>" when no other identity is
-// available — Workload's InitContainers is a list of ContainerSpec values
-// without explicit names today.
+// translateInitContainers walks Workload.InitContainers (positional list),
+// preserving the authored order the sequential init sequence relies on. An
+// entry's authored name is honored as the emitted container name; an entry
+// without a name falls back to "init-<index>", where the index is the entry's
+// position in the list.
 func translateInitContainers(w *types.Workload, nodeID string, secretProvides map[string]types.OrderedMap[string]) ([]Container, error) {
 	if len(w.InitContainers) == 0 {
 		return nil, nil
 	}
 	var out []Container
 	for i, c := range w.InitContainers {
-		k8sContainer, err := translateContainer(fmt.Sprintf("init-%d", i), c, nodeID, secretProvides)
+		name := c.Name
+		if name == "" {
+			name = fmt.Sprintf("init-%d", i)
+		}
+		k8sContainer, err := translateContainer(name, c, nodeID, secretProvides)
 		if err != nil {
 			return nil, err
 		}

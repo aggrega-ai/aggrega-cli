@@ -1,0 +1,65 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api
+  labels:
+    aggrega.ai/aggregate-name: test-agg
+    aggrega.ai/compiler-version: test
+    aggrega.ai/component-id: api
+    aggrega.ai/environment: test-env
+    app: api
+    app.kubernetes.io/name: api
+  annotations:
+    aggrega.ai/boundary-path: default
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: api
+  template:
+    metadata:
+      name: ""
+      labels:
+        aggrega.ai/aggregate-name: test-agg
+        aggrega.ai/compiler-version: test
+        aggrega.ai/component-id: api
+        aggrega.ai/environment: test-env
+        app: api
+        app.kubernetes.io/name: api
+    spec:
+      containers:
+        - name: main
+          image: app:1.0
+          ports:
+            - name: web
+              containerPort: 8080
+      initContainers:
+        - name: prepare
+          image: prep:1.0
+          command:
+            - /prepare
+        - name: init-1
+          image: migrator:1.0
+          command:
+            - /migrate
+apiVersion: v1
+kind: Service
+metadata:
+  name: api-api
+  labels:
+    aggrega.ai/aggregate-name: test-agg
+    aggrega.ai/compiler-version: test
+    aggrega.ai/component-id: api
+    aggrega.ai/environment: test-env
+    app: api
+    app.kubernetes.io/name: api
+  annotations:
+    aggrega.ai/boundary-path: default
+spec:
+  type: ClusterIP
+  selector:
+    app: api
+  ports:
+    - name: web
+      port: 8080
+      targetPort: web

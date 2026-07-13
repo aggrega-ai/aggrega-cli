@@ -10,9 +10,12 @@ import (
 	"strings"
 	"testing"
 
+	"go.yaml.in/yaml/v3"
+
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
+	"github.com/aggrega-ai/aggrega-cli/pkg/validator"
 )
 
 // goldenCheck compares actual against the golden file at testdata/workload/<name>.golden.yaml.
@@ -334,6 +337,108 @@ func TestSynthesizeWorkload_InitContainers(t *testing.T) {
 		t.Fatalf("SynthesizeWorkload: %v", err)
 	}
 	goldenCheck(t, "init-containers", concatBodies(files))
+}
+
+// TestSynthesizeWorkload_InitContainersNamed verifies that an authored init
+// container name is emitted verbatim, while an unnamed entry falls back to
+// "init-<index>" — where the index is the entry's POSITION in the list, not a
+// count of unnamed entries. The first entry carries an authored name; the
+// second is unnamed and lands at position 1, so it renders as init-1.
+func TestSynthesizeWorkload_InitContainersNamed(t *testing.T) {
+	t.Parallel()
+	w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload"}
+	w.InitContainers = []types.ContainerSpec{
+		{Name: "prepare", Image: "prep:1.0", Command: []string{"/prepare"}},
+		{Image: "migrator:1.0", Command: []string{"/migrate"}},
+	}
+	c := types.ContainerSpec{Image: "app:1.0"}
+	c.Ports.Set("web", 8080)
+	w.Containers.Set("main", c)
+
+	svc := types.ServiceSpec{Type: "ClusterIP"}
+	svc.Ports.Set("web", 8080)
+	w.Services.Set("api", svc)
+
+	files, err := SynthesizeWorkloadCore(w, renderer.SecretProvidesFromContext(nil), nodeCtxFor("api"))
+	if err != nil {
+		t.Fatalf("SynthesizeWorkload: %v", err)
+	}
+	body := string(concatBodies(files))
+
+	// The authored name is emitted verbatim, NOT init-0.
+	if !strings.Contains(body, "name: prepare") {
+		t.Errorf("authored init container name must be emitted; got:\n%s", body)
+	}
+	if strings.Contains(body, "name: init-0") {
+		t.Errorf("named init container must not fall back to init-0; got:\n%s", body)
+	}
+	// The unnamed entry falls back to its positional index (init-1).
+	if !strings.Contains(body, "name: init-1") {
+		t.Errorf("unnamed init container must fall back to positional init-1; got:\n%s", body)
+	}
+
+	// Determinism: a second synthesis of the same input is byte-identical.
+	files2, err := SynthesizeWorkloadCore(w, renderer.SecretProvidesFromContext(nil), nodeCtxFor("api"))
+	if err != nil {
+		t.Fatalf("SynthesizeWorkload (second run): %v", err)
+	}
+	if string(concatBodies(files2)) != body {
+		t.Errorf("synthesis is not byte-identical across runs")
+	}
+
+	goldenCheck(t, "init-containers-named", concatBodies(files))
+}
+
+// TestSynthesizeWorkload_NamedInitContainerParseValidateSynth drives the real
+// parse → validate → synthesize path: a Workload YAML carrying a named init
+// container is unmarshalled into the typed shape, validated against the
+// embedded Workload JSON Schema, then synthesized. It proves the schema
+// accepts the new name field (additionalProperties: false would reject an
+// unknown key) and that the authored name flows through to the emitted output
+// rather than being silently dropped.
+func TestSynthesizeWorkload_NamedInitContainerParseValidateSynth(t *testing.T) {
+	t.Parallel()
+	const src = `apiVersion: aggrega.ai/v1alpha1
+kind: Workload
+initContainers:
+  - name: prepare
+    image: busybox:1.36
+    command: ["/prep"]
+containers:
+  main:
+    image: app:1.0
+    ports:
+      web: 8080
+`
+	var w types.Workload
+	if err := yaml.Unmarshal([]byte(src), &w); err != nil {
+		t.Fatalf("unmarshal Workload: %v", err)
+	}
+
+	// The authored name must survive unmarshalling into the typed shape.
+	if len(w.InitContainers) != 1 || w.InitContainers[0].Name != "prepare" {
+		t.Fatalf("parsed init container name = %q (want %q)", func() string {
+			if len(w.InitContainers) == 0 {
+				return "<none>"
+			}
+			return w.InitContainers[0].Name
+		}(), "prepare")
+	}
+
+	// Real schema validation: accepts the name field (proves the schema edit
+	// propagated through the embedded schema; additionalProperties: false would
+	// otherwise reject it).
+	if err := validator.ValidateWorkload(&w, "", "", ""); err != nil {
+		t.Fatalf("ValidateWorkload rejected a named init container: %v", err)
+	}
+
+	files, err := SynthesizeWorkloadCore(&w, renderer.SecretProvidesFromContext(nil), nodeCtxFor("api"))
+	if err != nil {
+		t.Fatalf("SynthesizeWorkload: %v", err)
+	}
+	if !strings.Contains(string(concatBodies(files)), "name: prepare") {
+		t.Errorf("authored init container name must reach emitted output; got:\n%s", concatBodies(files))
+	}
 }
 
 // ----- Category 8 — Secrets via env and file -----

@@ -67,9 +67,15 @@ type WorkloadMetadata struct {
 
 // ContainerSpec describes one container in a Workload.
 //
+// Name is consumed for the positional init list, where an authored value
+// sets the emitted container name and an empty value falls back to a
+// generated init-<index> name. Map containers derive their name from the
+// map key, so this field is ignored there.
+//
 // Variables / Secrets / Ports preserve author order (OrderedMap); other
 // fields are typed Go values decoded directly by yaml.Unmarshal.
 type ContainerSpec struct {
+	Name            string                    `json:"name,omitempty" yaml:"name,omitempty"`
 	Image           string                    `json:"image,omitempty" yaml:"image,omitempty"`
 	Command         []string                  `json:"command,omitempty" yaml:"command,omitempty"`
 	Args            []string                  `json:"args,omitempty" yaml:"args,omitempty"`
