@@ -10,6 +10,7 @@ import (
 
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"oras.land/oras-go/v2"
+	"oras.land/oras-go/v2/content/memory"
 )
 
 // PushPluginManifest packs a Plugin entity and its .wasm executable into ONE
@@ -31,6 +32,22 @@ func PushPluginManifest(ctx context.Context, target oras.Target, tag string, ent
 	}
 	if err := target.Tag(ctx, manifestDesc, tag); err != nil {
 		return "", fmt.Errorf("oci: tag %q: %w", tag, err)
+	}
+	return manifestDesc.Digest.String(), nil
+}
+
+// PluginManifestDigest computes, without contacting any remote, the manifest
+// digest PushPluginManifest would produce for (entityYAML, wasm). It packs into
+// an in-memory store and returns the descriptor digest. Because the manifest's
+// creation annotation is pinned and both the config and layer blobs are
+// content-addressed, the result is deterministic and equal to the digest a real
+// PushPluginManifest of the same inputs yields — so a caller can preview the
+// digest a push would land, sign it before any bytes reach the registry, and
+// compare it against an existing tag to decide whether the push would overwrite.
+func PluginManifestDigest(ctx context.Context, entityYAML, wasm []byte) (string, error) {
+	manifestDesc, err := packPluginManifest(ctx, memory.New(), entityYAML, wasm)
+	if err != nil {
+		return "", err
 	}
 	return manifestDesc.Digest.String(), nil
 }

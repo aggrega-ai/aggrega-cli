@@ -265,13 +265,14 @@ func pushRun(cfg pushConfig) error {
 		return fmt.Errorf("aggrega push: %s: missing metadata.version", cfg.EntityPath)
 	}
 
-	// A Plugin publishes two artifacts in order — the .wasm first, then the
-	// entity referencing the .wasm by its digest-free identity — with a
+	// A Plugin publishes as ONE manifest — the entity YAML as the config blob,
+	// the .wasm as an inline layer addressed by its content digest — with a
 	// publish-time describe()-cross-check against the .wasm bytes. The entity
 	// body still carries a machine-derived host-function record; that plus the
-	// ordered, two-artifact flow differs enough from the single-artifact
-	// catalog-kind path that it has its own helper; signing, the immutability
-	// guard, and the content-digest spelling are reused, not re-spelled.
+	// entity-and-executable-in-one-manifest packing differs enough from the
+	// single-artifact catalog-kind path that it has its own helper; signing,
+	// the immutability guard, and the content-digest spelling are reused, not
+	// re-spelled.
 	if header.Kind == "Plugin" {
 		return pushPlugin(out, cfg, registry, wantSign, header.Metadata.Name, header.Metadata.Version, data)
 	}

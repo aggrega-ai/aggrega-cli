@@ -19,14 +19,12 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
-// pushPlugin publishes a Plugin entity and its .wasm artifact as two
-// ordered OCI artifacts: the .wasm first (addressed by its content digest),
-// then the entity referencing the .wasm by its digest-free identity in
-// spec.plugin. Partial-push safety rests on the ordering — the .wasm lands
-// first, addressed by its content-digest tag, then the entity lands under its
-// version tag — so a failed entity push leaves only an orphan .wasm (harmless,
-// addressed by digest) and no entity tag, and the consume side fails at pull on
-// the absent entity tag rather than loading a silently-broken plugin. The
+// pushPlugin publishes a Plugin entity and its .wasm executable as ONE OCI
+// manifest tagged by the entity's version: the entity YAML is the manifest's
+// config blob and the .wasm is an inline layer addressed by its content digest.
+// Binding the entity and the executable in a single manifest means the version
+// tag resolves to both at once — there is one artifact to land and one tag to
+// address it, and spec.plugin stays the digest-free artifact identity. The
 // resolved content digest is recorded by the consumer at pull, in the lockfile;
 // it is never embedded in the published entity.
 //
@@ -35,17 +33,15 @@ import (
 // declaration (wasm.CrossCheckPublishedPlugin); a mismatch halts loudly so a
 // published entity can never promise a capability the binary does not provide.
 //
-// Signing reuses the entity-signing flow: the entity manifest's digest is
-// signed and attached as a referrer exactly as every other entity is signed.
-// The .wasm artifact is signed INDEPENDENTLY by the SAME signer — its own
-// manifest digest is signed and attached as a referrer of the .wasm — so the
-// executable can be verified standalone by a signature-requiring registry,
-// and pull enforces that the entity and the .wasm carry the same signer. A
-// single signer is resolved once and used for both digests so the two
-// signatures cannot diverge in identity.
+// Signing signs the single manifest ONCE, reusing the entity-signing flow: the
+// manifest digest is signed and attached as a referrer of the version tag
+// exactly as every other entity is signed. Because that digest commits to the
+// inline .wasm layer digest, the one signature transitively covers the
+// executable and proves the entity↔.wasm pairing — there is no second artifact
+// to sign or to verify independently.
 func pushPlugin(out io.Writer, cfg pushConfig, registry string, wantSign bool, name, version string, entityYAML []byte) error {
 	if cfg.PluginPath == "" {
-		return fmt.Errorf("aggrega push: Plugin %s: --plugin <path-to-.wasm> is required to publish a Plugin (publish pushes the .wasm artifact, then pushes the entity)", name)
+		return fmt.Errorf("aggrega push: Plugin %s: --plugin <path-to-.wasm> is required to publish a Plugin (publish binds the .wasm into the entity's manifest)", name)
 	}
 
 	var entity types.Plugin
@@ -95,13 +91,14 @@ func pushPlugin(out io.Writer, cfg pushConfig, registry string, wantSign bool, n
 		return fmt.Errorf("aggrega push: Plugin %s: %w", entityIdentity, err)
 	}
 
-	// The content digest is the pin the consume side verifies the .wasm bytes
-	// against; it is computed once, through the single content-digest producer.
+	// The content digest of the .wasm bytes equals the digest of the inline
+	// .wasm layer the manifest carries; the consume side verifies the pulled
+	// executable against it. Computed once, through the single content-digest
+	// producer.
 	contentDigest := digest.ContentDigest(wasmBytes)
 
-	// The entity and the .wasm share the same repository location
-	// (<registry>/plugin/<socket>/<name>); the entity is addressed by its version
-	// tag, the .wasm by its content digest, so the two never collide on a tag.
+	// The manifest is published at <registry>/plugin/<socket>/<name>, addressed
+	// by the entity's version tag.
 	reference := buildPushReference(registry, "Plugin", "", name)
 
 	// Stamp the machine-owned host-function record into the published entity.
@@ -128,91 +125,62 @@ func pushPlugin(out io.Writer, cfg pushConfig, registry string, wantSign bool, n
 		target = repo
 	}
 
-	// Immutability guard on the entity tag (mirrors the catalog-kind path): a
-	// re-push of byte-identical content is an idempotent no-op; a tag already
-	// pointing at different content is refused. The .wasm is digest-addressed
-	// and so carries no tag-conflict surface.
+	// Immutability guard on the version tag (mirrors the catalog-kind path): a
+	// re-push of a byte-identical manifest is an idempotent no-op; a tag already
+	// pointing at different content is refused. The proposed digest is derived
+	// from the whole manifest — the config entity plus the inline .wasm layer —
+	// so a changed executable under an unchanged entity is caught as a conflict
+	// too.
 	existingDigest, exists, err := oci.Resolve(ctx, target, version)
 	if err != nil {
 		return fmt.Errorf("aggrega push: resolve %s:%s: %w", reference, version, err)
 	}
-	proposedEntityDigest, err := oci.ManifestDigest(ctx, oci.MediaTypePlugin, stampedEntity)
+	proposedDigest, err := oci.PluginManifestDigest(ctx, stampedEntity, wasmBytes)
 	if err != nil {
 		return fmt.Errorf("aggrega push: %s:%s: %w", reference, version, err)
 	}
 	if exists {
-		if existingDigest == proposedEntityDigest {
+		if existingDigest == proposedDigest {
 			fmt.Fprintf(out, "Already published: %s:%s (%s)\n", reference, version, existingDigest)
 			return nil
 		}
 		return fmt.Errorf("aggrega push: %s:%s is already published as %s; refusing to overwrite with %s — publish a new version (aggrega lint --pre-publish verifies the bump): %w",
-			reference, version, existingDigest, proposedEntityDigest, oci.ErrImmutableTagConflict)
+			reference, version, existingDigest, proposedDigest, oci.ErrImmutableTagConflict)
 	}
 
-	// The .wasm is tagged by its content digest; both the push and the consume
-	// side derive this tag from the one oci.ContentDigestTag function.
-	wasmTag := oci.ContentDigestTag(contentDigest)
-
-	// Sign-before-push: when signing is requested, sign BOTH the entity and the
-	// .wasm manifest digests before any bytes land, so an unsigned artifact never
-	// leaks onto a signature-requiring registry. The .wasm manifest digest is
-	// previewed via oci.ManifestDigest (deterministic and equal to the digest
-	// the push will land) so both signatures are produced ahead of any push,
-	// mirroring the entity's preview at proposedEntityDigest. ONE signer is
-	// resolved and used for both digests so the entity and the .wasm cannot be
-	// signed by different identities — the same-signer guarantee pull enforces.
+	// Sign-before-push: when signing is requested, sign the proposed manifest
+	// digest before any bytes land, so an unsigned artifact never leaks onto a
+	// signature-requiring registry. The digest is previewed via
+	// oci.PluginManifestDigest (deterministic and equal to the digest the push
+	// will land), and because it commits to the inline .wasm layer, the one
+	// signature transitively covers the executable — no separate .wasm signature
+	// is produced.
 	var (
-		entitySignatureBundle []byte
-		entitySignatureType   string
-		wasmSignatureBundle   []byte
-		wasmSignatureType     string
-		wasmManifestDigest    string
+		signatureBundle []byte
+		signatureType   string
 	)
 	if wantSign {
-		wasmManifestDigest, err = oci.ManifestDigest(ctx, oci.MediaTypeWasm, wasmBytes)
-		if err != nil {
-			return fmt.Errorf("aggrega push: %s@%s: %w", reference, contentDigest, err)
-		}
 		signer, serr := resolvePushSigner(cfg, registry)
 		if serr != nil {
 			return serr
 		}
-		entitySignatureBundle, entitySignatureType, err = signPushDigestWith(ctx, signer, reference, version, proposedEntityDigest)
-		if err != nil {
-			return err
-		}
-		wasmSignatureBundle, wasmSignatureType, err = signPushDigestWith(ctx, signer, reference, contentDigest, wasmManifestDigest)
+		signatureBundle, signatureType, err = signPushDigestWith(ctx, signer, reference, version, proposedDigest)
 		if err != nil {
 			return err
 		}
 	}
 
-	// Ordered push: the .wasm artifact FIRST, addressed by its content digest;
-	// then the entity tagged by its version. A failure between the two leaves an
-	// orphan .wasm (harmless, addressed only by digest) and no entity tag, so
-	// the consume side fails at pull rather than loading a broken plugin.
-	if _, err := oci.Push(ctx, target, wasmTag, oci.MediaTypeWasm, wasmBytes); err != nil {
-		return fmt.Errorf("aggrega push: push .wasm %s@%s: %w", reference, contentDigest, err)
-	}
-	fmt.Fprintf(out, "Push complete (.wasm artifact): %s@%s\n", reference, contentDigest)
-
-	entityManifestDigest, err := oci.Push(ctx, target, version, oci.MediaTypePlugin, stampedEntity)
+	// Publish the one manifest — entity config plus inline .wasm layer — tagged
+	// by the entity's version. The returned digest is the manifest the signature
+	// (if any) commits to.
+	manifestDigest, err := oci.PushPluginManifest(ctx, target, version, stampedEntity, wasmBytes)
 	if err != nil {
-		return fmt.Errorf("aggrega push: push entity %s:%s: %w", reference, version, err)
+		return fmt.Errorf("aggrega push: push plugin %s:%s: %w", reference, version, err)
 	}
-	fmt.Fprintf(out, "Push complete: %s:%s (%s)\n", reference, version, entityManifestDigest)
+	fmt.Fprintf(out, "Push complete: %s:%s (%s)\n", reference, version, manifestDigest)
 
 	if wantSign {
-		// Attach the .wasm signature as a referrer of the .wasm artifact (its
-		// content-digest tag resolves the manifest the signature commits to),
-		// and the entity signature as a referrer of the entity version tag —
-		// two artifacts, two signature referrers.
-		if err := attachBundle(ctx, target, wasmTag, wasmSignatureType, wasmSignatureBundle); err != nil {
-			return fmt.Errorf("aggrega push: attach signature to .wasm %s@%s: %w", reference, contentDigest, err)
-		}
-		fmt.Fprintf(out, "Signature attached (.wasm artifact): %s@%s\n", reference, contentDigest)
-
-		if err := attachBundle(ctx, target, version, entitySignatureType, entitySignatureBundle); err != nil {
+		if err := attachBundle(ctx, target, version, signatureType, signatureBundle); err != nil {
 			return fmt.Errorf("aggrega push: attach signature to %s:%s: %w", reference, version, err)
 		}
 		fmt.Fprintf(out, "Signature attached: %s:%s\n", reference, version)
