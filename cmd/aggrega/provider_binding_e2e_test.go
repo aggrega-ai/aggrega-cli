@@ -194,7 +194,7 @@ func nonInteractive(t *testing.T) {
 
 // TestProviderBinding_BuildIsInvariantToConfigAfterPull is the headline
 // determinism proof: after a pull resolves the render engine for a target and
-// records it in the lockfile, changing the workspace-config provider_bindings and
+// records it in the lockfile, changing the workspace-config plugins.providers and
 // rebuilding WITHOUT a re-pull produces byte-identical output — the build reads
 // the lockfile, not the config. A re-pull then adopts the new binding into the
 // lockfile.
@@ -207,8 +207,10 @@ func TestProviderBinding_BuildIsInvariantToConfigAfterPull(t *testing.T) {
 	// Pull with the target bound to the helm provider.
 	rwHelm := resolveWorkspaceWithConfig(t, root, `workspace: {}
 offline: true
-provider_bindings:
-  helm: oci://hub.aggrega.ai/plugin/provider/helm
+plugins:
+  providers:
+    - target: helm
+      uri: oci://hub.aggrega.ai/plugin/provider/helm
 `)
 	if err := pullRun(pullConfig{ReleasePath: releasePath, CatalogDirs: catDirs, ws: rwHelm, DiagOut: io.Discard, Out: io.Discard, diag: buildDiagOptions{quiet: true}}); err != nil {
 		t.Fatalf("pull (helm binding): %v", err)
@@ -229,8 +231,10 @@ provider_bindings:
 	// byte-identical — build never reads the config for engine selection.
 	rwCompose := resolveWorkspaceWithConfig(t, root, `workspace: {}
 offline: true
-provider_bindings:
-  helm: oci://hub.aggrega.ai/plugin/provider/compose
+plugins:
+  providers:
+    - target: helm
+      uri: oci://hub.aggrega.ai/plugin/provider/compose
 `)
 	out2 := filepath.Join(root, "out2")
 	if err := dispatchBuildWithDiag(rwCompose, releasePath, catDirs, false, buildDiagOptions{quiet: true}, buildRunOptions{outDir: out2}, io.Discard, io.Discard); err != nil {
@@ -238,7 +242,7 @@ provider_bindings:
 	}
 	snap2 := snapshotDir(t, out2)
 	if !snapshotEqual(snap1, snap2) {
-		t.Fatalf("build output changed after a provider_bindings config change with no re-pull; build must read the lockfile, not the config")
+		t.Fatalf("build output changed after a plugins.providers config change with no re-pull; build must read the lockfile, not the config")
 	}
 
 	// A re-pull adopts the new binding into the lockfile.
@@ -250,13 +254,13 @@ provider_bindings:
 		t.Fatalf("load lockfile: %v", err)
 	}
 	got := ""
-	for _, b := range lf.ProviderBindings {
+	for _, b := range lf.Providers {
 		if b.Target == "helm" {
 			got = b.Plugin
 		}
 	}
 	if got != "oci://hub.aggrega.ai/plugin/provider/compose" {
-		t.Fatalf("re-pull did not adopt the new binding; lockfile provider_bindings[helm]=%q, want the compose-provider identity", got)
+		t.Fatalf("re-pull did not adopt the new binding; lockfile providers[helm]=%q, want the compose-provider identity", got)
 	}
 }
 
@@ -283,7 +287,7 @@ func TestProviderBinding_AmbiguousTargetHaltsLoudly(t *testing.T) {
 
 // TestProviderBinding_UnambiguousTargetNeedsNoBinding proves the zero-config path:
 // a target served by exactly one provider plugin resolves and builds with no
-// provider_bindings entry, and pull records the resolved binding into the
+// plugins.providers entry, and pull records the resolved binding into the
 // lockfile.
 func TestProviderBinding_UnambiguousTargetNeedsNoBinding(t *testing.T) {
 	nonInteractive(t)
@@ -300,7 +304,7 @@ func TestProviderBinding_UnambiguousTargetNeedsNoBinding(t *testing.T) {
 		t.Fatalf("load lockfile: %v", err)
 	}
 	found := false
-	for _, b := range lf.ProviderBindings {
+	for _, b := range lf.Providers {
 		if b.Target == "helm" {
 			found = true
 			if b.Plugin != "oci://hub.aggrega.ai/plugin/provider/helm" {
@@ -309,7 +313,7 @@ func TestProviderBinding_UnambiguousTargetNeedsNoBinding(t *testing.T) {
 		}
 	}
 	if !found {
-		t.Fatalf("pull did not record a provider_bindings entry for the resolved target; got %+v", lf.ProviderBindings)
+		t.Fatalf("pull did not record a providers entry for the resolved target; got %+v", lf.Providers)
 	}
 
 	out := filepath.Join(root, "out")

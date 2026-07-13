@@ -63,24 +63,24 @@ var ErrDuplicateRecipeIdentity = ErrDuplicateEntityIdentity
 var ErrProviderVersionUnsatisfiable = errors.New("no provider-rendering plugin version satisfies the recipe's provider version pin")
 
 // ErrAmbiguousProviderPlugin fires at resolution when a render target is served
-// by more than one distinct provider-rendering Plugin and no provider_bindings
+// by more than one distinct provider-rendering Plugin and no plugins.providers
 // entry disambiguates which one renders it. The compiler never picks arbitrarily
 // among competing render engines — a federated catalog where two publishers each
 // ship a plugin for the same target is legal (the catalog loads), but a build or
 // pull that reaches the target must be told which engine to use. The wrapped
 // message names every candidate plugin, sorted, and points the operator at the
-// provider_bindings surface that selects one. It is a point-of-use halt: it fires
+// plugins.providers surface that selects one. It is a point-of-use halt: it fires
 // at pull (resolution) and at build (render-engine selection), not at catalog
 // load, so an ambiguity outside a Release's reach never blocks an unrelated build.
-var ErrAmbiguousProviderPlugin = errors.New("render target is served by more than one provider plugin; add a provider_bindings entry to select one")
+var ErrAmbiguousProviderPlugin = errors.New("render target is served by more than one provider plugin; add a plugins.providers entry to select one")
 
-// ErrProviderBindingUnsatisfied fires at resolution when a provider_bindings
+// ErrProviderBindingUnsatisfied fires at resolution when a plugins.providers
 // entry selects a plugin identity that no provider-rendering Plugin serving the
 // target matches — a typo in the binding, or a binding pointing at a plugin that
 // does not (or no longer) serves the target. The explicit selection is a request
 // the catalog cannot honor, so it halts loudly rather than silently falling back
 // to another engine.
-var ErrProviderBindingUnsatisfied = errors.New("provider_bindings entry names a plugin no provider-rendering plugin serving the target matches")
+var ErrProviderBindingUnsatisfied = errors.New("plugins.providers entry names a plugin no provider-rendering plugin serving the target matches")
 
 // ErrNoRecipeResolved fires when a component/feature instance has no explicit
 // Manifest mapping for its type. Resolution is mapping-only — the catalog never
@@ -400,7 +400,7 @@ func (c *Catalog) PluginByURI(uri string) (types.Plugin, bool) {
 
 // ProviderPluginForTarget resolves a render target to the provider-rendering
 // Plugin entity that renders it, plus a found flag and an error, honoring an
-// explicit provider_bindings selection. The target ref is the bare engine name
+// explicit plugins.providers selection. The target ref is the bare engine name
 // ("helm") or a version-pinned form ("helm:1.0.0", "helm:^1.0.0") a Recipe binds
 // through spec.target; the bare name (before any pin) is matched against
 // targets. A pluginType: provider Plugin serves the target names listed in
@@ -408,7 +408,7 @@ func (c *Catalog) PluginByURI(uri string) (types.Plugin, bool) {
 // is excluded — that list carries a different meaning for a non-provider plugin.
 //
 // The bindings map is the workspace-config (at pull) or lockfile-derived (at
-// build) provider_bindings, keyed by bare target name; each value is a
+// build) provider selections, keyed by bare target name; each value is a
 // digest-free plugin OCI identity (matching a Plugin's spec.plugin) with an
 // optional trailing ":version". When an entry is present for the target, the
 // candidate set is filtered to plugins whose spec.plugin matches that identity —
@@ -493,7 +493,7 @@ func (c *Catalog) ProviderPluginForTarget(ref string, bindings map[string]string
 			names = append(names, n)
 		}
 		sort.Strings(names)
-		return types.Plugin{}, false, fmt.Errorf("%w: target %q is served by more than one provider plugin (%s); add a provider_bindings entry for %q selecting one", ErrAmbiguousProviderPlugin, name, strings.Join(names, ", "), name)
+		return types.Plugin{}, false, fmt.Errorf("%w: target %q is served by more than one provider plugin (%s); add a plugins.providers entry for %q selecting one", ErrAmbiguousProviderPlugin, name, strings.Join(names, ", "), name)
 	}
 
 	var base string

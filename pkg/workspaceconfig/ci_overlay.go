@@ -16,7 +16,7 @@ import (
 // typed Config together with the wire paths of any non-additive keys it
 // declared. Those keys carry no additive meaning, so the caller ignores them
 // and surfaces them as resolution warnings rather than applying them — the
-// overlay can only add to the six list-valued fields, never scalar-override
+// overlay can only add to the seven list-valued fields, never scalar-override
 // the base.
 func loadCIOverlay(path string) (cfg Config, ignored []string, err error) {
 	data, rerr := os.ReadFile(path)
@@ -33,7 +33,7 @@ func loadCIOverlay(path string) (cfg Config, ignored []string, err error) {
 	return cfg, ciNonAdditiveKeys(data), nil
 }
 
-// foldCIAdditive collapses a CI overlay's six list-valued fields into one
+// foldCIAdditive collapses a CI overlay's seven list-valued fields into one
 // append layer, folding BOTH each base list and its `_append` companion, so a
 // CI author writing either form adds to the resolved list. Scalar and map
 // fields on cfg are not read here — the overlay is additive-only and those
@@ -47,6 +47,7 @@ func foldCIAdditive(cfg Config) appendSlices {
 		Policy:              concat(cfg.Plugins.Policy, cfg.Plugins.PolicyAppend),
 		Linter:              concat(cfg.Plugins.Linter, cfg.Plugins.LinterAppend),
 		Importer:            concat(cfg.Plugins.Importer, cfg.Plugins.ImporterAppend),
+		Providers:           concat(cfg.Plugins.Providers, cfg.Plugins.ProvidersAppend),
 	}
 }
 
@@ -62,9 +63,9 @@ func concat[T any](a, b []T) []T {
 
 // ciNonAdditiveKeys reports the wire paths of every key in a CI overlay that
 // carries no additive semantic, in a stable (sorted) order for deterministic
-// diagnostics. Only the six list-valued fields are additive: the whole
-// `plugins` block (the four sockets and their `_append` companions),
-// `workspace.catalog_dirs` (+ `_append`), and
+// diagnostics. Only the seven list-valued fields are additive: the whole
+// `plugins` block (the four sockets, the provider bindings, and their `_append`
+// companions), `workspace.catalog_dirs` (+ `_append`), and
 // `lint.publishing_discipline.narrowing_exemptions` (+ `_append`). Every other
 // key — top-level scalars and maps, the workspace catalog-unrelated keys, the
 // lint enforcement gates — is reported so the caller can warn the author that
@@ -79,7 +80,7 @@ func ciNonAdditiveKeys(data []byte) []string {
 		switch k {
 		case "plugins":
 			// Fully additive: every plugins sub-key is one of the four
-			// sockets or an `_append` companion.
+			// sockets, the provider bindings, or an `_append` companion.
 		case "workspace":
 			ignored = append(ignored, ignoredSubKeys("workspace", root[k], "catalog_dirs", "catalog_dirs_append")...)
 		case "lint":

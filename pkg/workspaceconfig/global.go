@@ -58,7 +58,7 @@ func (s Source) String() string {
 // cascade rung like any other tree file.
 const envVarConfigOverride = "AGGREGA_CONFIG"
 
-// appendSlices captures one layer's six `_append` slices. Used by the
+// appendSlices captures one layer's seven `_append` slices. Used by the
 // resolution cascade to defer concatenation until after the base overlay
 // completes, so the `_append` semantic composes correctly across
 // layers (each layer's `_append` extends the final merged base in
@@ -70,9 +70,10 @@ type appendSlices struct {
 	Policy              []PluginRef
 	Linter              []PluginRef
 	Importer            []PluginRef
+	Providers           []ProviderRef
 }
 
-// captureAppends extracts the six `_append` slices from a freshly-
+// captureAppends extracts the seven `_append` slices from a freshly-
 // loaded layer Config. The captured slices share storage with the
 // source Config; callers that subsequently mutate cfg should not also
 // retain the captured value.
@@ -84,10 +85,11 @@ func captureAppends(cfg Config) appendSlices {
 		Policy:              cfg.Plugins.PolicyAppend,
 		Linter:              cfg.Plugins.LinterAppend,
 		Importer:            cfg.Plugins.ImporterAppend,
+		Providers:           cfg.Plugins.ProvidersAppend,
 	}
 }
 
-// stripAppends zeroes the six `_append` fields on cfg. Called on
+// stripAppends zeroes the seven `_append` fields on cfg. Called on
 // every layer's Config before promoting it to merged (so the overlay
 // pass does not carry `_append` slices through), and on the final
 // merged Config (so downstream consumers see only the base fields
@@ -99,6 +101,7 @@ func stripAppends(cfg *Config) {
 	cfg.Plugins.PolicyAppend = nil
 	cfg.Plugins.LinterAppend = nil
 	cfg.Plugins.ImporterAppend = nil
+	cfg.Plugins.ProvidersAppend = nil
 }
 
 // applyAppends concatenates each layer's `_append` slices onto the
@@ -114,6 +117,7 @@ func applyAppends(merged *Config, layers ...appendSlices) {
 		merged.Plugins.Policy = append(merged.Plugins.Policy, layer.Policy...)
 		merged.Plugins.Linter = append(merged.Plugins.Linter, layer.Linter...)
 		merged.Plugins.Importer = append(merged.Plugins.Importer, layer.Importer...)
+		merged.Plugins.Providers = append(merged.Plugins.Providers, layer.Providers...)
 	}
 }
 

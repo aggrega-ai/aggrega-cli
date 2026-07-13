@@ -89,17 +89,19 @@ func UpsertRegistry(path string, reg RegistryConfig) error {
 	return nil
 }
 
-// UpsertProviderBinding adds or updates the `provider_bindings.<target>` entry
-// in the workspace config file at path, preserving every other setting, and
-// writes the result back. A file that does not yet exist is created carrying a
-// `workspace: {}` marker and the one binding. An existing entry for the same
-// target is updated in place; a new target is added.
+// UpsertProviderBinding adds or updates the `plugins.providers` entry for
+// target in the workspace config file at path, preserving every other setting,
+// and writes the result back. A file that does not yet exist is created
+// carrying a `workspace: {}` marker and the one binding. An existing entry for
+// the same target has its plugin URI updated in place (its list position and
+// any other members are preserved); a new target is appended.
 //
 // Like UpsertRegistry it operates on the document's YAML node tree, rewriting
-// only the `provider_bindings` key, and validates the merged document against the
-// config schema before writing, so a malformed result never reaches disk. This is
-// the write path the interactive pull binding-helper routes through, keeping the
-// config-write, schema-gate, and node-surgery discipline in one place.
+// only the `plugins.providers` list (creating the `plugins` block if absent),
+// and validates the merged document against the config schema before writing,
+// so a malformed result never reaches disk. This is the write path the
+// interactive pull binding-helper routes through, keeping the config-write,
+// schema-gate, and node-surgery discipline in one place.
 func UpsertProviderBinding(path, target, plugin string) error {
 	if target == "" || plugin == "" {
 		return fmt.Errorf("workspaceconfig: UpsertProviderBinding: target and plugin are required")
@@ -128,17 +130,14 @@ func UpsertProviderBinding(path, target, plugin string) error {
 		return fmt.Errorf("workspaceconfig: %s: top-level document is not a mapping", path)
 	}
 
-	bindings := readProviderBindings(mapping)
-	if bindings == nil {
-		bindings = map[string]string{}
-	}
-	bindings[target] = plugin
+	pluginsNode := getOrCreateMapping(mapping, "plugins")
+	providers := UpsertProviderRef(readProviderBindings(pluginsNode), target, plugin)
 
-	var bindNode yaml.Node
-	if err := bindNode.Encode(bindings); err != nil {
-		return fmt.Errorf("workspaceconfig: encode provider_bindings: %w", err)
+	var provNode yaml.Node
+	if err := provNode.Encode(providers); err != nil {
+		return fmt.Errorf("workspaceconfig: encode providers: %w", err)
 	}
-	setMappingKey(mapping, "provider_bindings", &bindNode)
+	setMappingKey(pluginsNode, "providers", &provNode)
 
 	out, merr := yaml.Marshal(&root)
 	if merr != nil {
@@ -153,17 +152,52 @@ func UpsertProviderBinding(path, target, plugin string) error {
 	return nil
 }
 
-// readProviderBindings decodes the existing `provider_bindings` map from a
-// mapping node, or returns nil when the key is absent.
-func readProviderBindings(mapping *yaml.Node) map[string]string {
-	for i := 0; i+1 < len(mapping.Content); i += 2 {
-		if mapping.Content[i].Value == "provider_bindings" {
-			var m map[string]string
-			_ = mapping.Content[i+1].Decode(&m)
-			return m
+// UpsertProviderRef sets the plugin URI for target in refs, updating an
+// existing entry in place (preserving its list position and any other members)
+// or appending a new {target, uri} entry when target is absent. It is the
+// single by-target upsert primitive shared by the config-file writer and the
+// interactive pull binding-helper's in-memory update, so both apply the same
+// replace-or-append semantic.
+func UpsertProviderRef(refs []ProviderRef, target, uri string) []ProviderRef {
+	for i := range refs {
+		if refs[i].Target == target {
+			refs[i].URI = uri
+			return refs
+		}
+	}
+	return append(refs, ProviderRef{Target: target, URI: uri})
+}
+
+// readProviderBindings decodes the existing `providers` list from a `plugins`
+// mapping node, or returns nil when the node is absent or carries no providers.
+func readProviderBindings(pluginsNode *yaml.Node) []ProviderRef {
+	if pluginsNode == nil || pluginsNode.Kind != yaml.MappingNode {
+		return nil
+	}
+	for i := 0; i+1 < len(pluginsNode.Content); i += 2 {
+		if pluginsNode.Content[i].Value == "providers" {
+			var refs []ProviderRef
+			_ = pluginsNode.Content[i+1].Decode(&refs)
+			return refs
 		}
 	}
 	return nil
+}
+
+// getOrCreateMapping returns the mapping node bound to key in parent, creating
+// and attaching an empty mapping when the key is absent. The returned node is
+// live in parent's content tree, so mutating it (e.g. via setMappingKey)
+// rewrites parent in place.
+func getOrCreateMapping(parent *yaml.Node, key string) *yaml.Node {
+	for i := 0; i+1 < len(parent.Content); i += 2 {
+		if parent.Content[i].Value == key {
+			return parent.Content[i+1]
+		}
+	}
+	node := &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
+	keyNode := &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: key}
+	parent.Content = append(parent.Content, keyNode, node)
+	return node
 }
 
 // rootMapping returns the mapping node at the root of a parsed document,

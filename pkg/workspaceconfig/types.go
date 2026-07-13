@@ -7,10 +7,10 @@
 // root marker — its presence marks the workspace root and it holds
 // only the root-defining catalog directories. Pure settings live at
 // the top level: default_registry, offline, auto_pull, and
-// artifact_cache_dir, plus the build, plugins, provider_bindings,
-// lint, and parse_cache blocks — covering registry routing, build-time
-// strictness dials, workspace-level Wasm plugin attachments, per-target
-// render-engine selection, per-rule lint gates, and the daemon's
+// artifact_cache_dir, plus the build, plugins, lint, and parse_cache
+// blocks — covering registry routing, build-time strictness dials,
+// workspace-level Wasm plugin attachments (including the per-target
+// provider-rendering bindings), per-rule lint gates, and the daemon's
 // parse-cache eviction caps.
 //
 // The workspace file is flat top-level (no apiVersion/kind/metadata
@@ -29,9 +29,10 @@
 // validates → yaml.Unmarshal into a Default()-initialised value)
 // preserves the documented defaults when the file omits a key.
 //
-// List-append escape hatches: six list-valued fields (catalog_dirs,
-// narrowing_exemptions, and the four plugin sockets mutator/policy/
-// linter/importer) carry a sibling `<field>_append` companion. At
+// List-append escape hatches: seven list-valued fields (catalog_dirs,
+// narrowing_exemptions, the four plugin sockets mutator/policy/linter/
+// importer, and the provider bindings) carry a sibling `<field>_append`
+// companion. At
 // each precedence layer, any entries in the `_append` companion are
 // concatenated onto the resolved base list — letting workspace and
 // global configs compose entries rather than shadow them. Same-layer
@@ -46,7 +47,7 @@
 // `.aggrega-config-append-ci.yaml` gives an automated pipeline a file
 // it owns and may overwrite wholesale without touching the developer's
 // base config. It validates against the same schema and folds
-// additively: for each of the six list-valued fields, both its base
+// additively: for each of the seven list-valued fields, both its base
 // list and its `_append` companion concatenate onto the resolved list
 // in cascade order. The overlay is additive-only — it cannot remove or
 // scalar-override anything the base declares, so a scalar or map field
@@ -91,28 +92,6 @@ type Config struct {
 
 	Build   BuildConfig   `yaml:"build"`
 	Plugins PluginsConfig `yaml:"plugins"`
-
-	// ProviderBindings selects, per render target kind, which
-	// provider-rendering plugin renders it — the disambiguation and
-	// override surface for a federated catalog where more than one
-	// provider plugin serves the same target. Each key is the bare
-	// engine name a Recipe binds through spec.target (e.g. "helm");
-	// each value is the digest-free OCI identity of the serving plugin
-	// (matching a Plugin entity's spec.plugin, e.g.
-	// "oci://hub.aggrega.ai/plugin/provider/helm"), with an optional
-	// trailing ":version" in the same three forms as a version pin.
-	//
-	// This map is a pull-time input only: pull records the resolved
-	// binding into the per-Release lockfile, and build reads the
-	// lockfile — never this map — so build output is invariant to a
-	// change made here after a pull (adopted only on the next pull).
-	// It is consulted strictly by key at resolution; it is never ranged
-	// to produce rendered output, so a plain map is determinism-safe.
-	// Per-key precedence across config layers (workspace over global)
-	// follows from the loader's overlay-onto-seed merge; there is no
-	// _append companion because the map is a workspace-specific keyed
-	// override, not a composed list.
-	ProviderBindings map[string]string `yaml:"provider_bindings,omitempty"`
 
 	Lint        LintConfig        `yaml:"lint"`
 	ParseCache  ParseCacheConfig  `yaml:"parse_cache"`
@@ -380,22 +359,42 @@ type BuildConfig struct {
 // PluginsConfig groups workspace-level Wasm plugin attachments by
 // socket. Each socket invokes its plugins' documented entry function
 // per the socket contract; PluginRef.Function overrides the socket's
-// default when set.
+// default when set. Providers is the peer list that binds render
+// targets to the provider-rendering plugins that serve them.
 //
-// MutatorAppend / PolicyAppend / LinterAppend / ImporterAppend are
-// the merge-time companions for the four base sockets. At each
-// precedence layer the entries here are concatenated onto the
+// MutatorAppend / PolicyAppend / LinterAppend / ImporterAppend /
+// ProvidersAppend are the merge-time companions for the base lists. At
+// each precedence layer the entries here are concatenated onto the
 // resolved base list for that socket. LoadWithGlobal zeroes these
 // fields on the returned Config.
 type PluginsConfig struct {
-	Mutator        []PluginRef `yaml:"mutator"`
-	MutatorAppend  []PluginRef `yaml:"mutator_append"`
-	Policy         []PluginRef `yaml:"policy"`
-	PolicyAppend   []PluginRef `yaml:"policy_append"`
-	Linter         []PluginRef `yaml:"linter"`
-	LinterAppend   []PluginRef `yaml:"linter_append"`
-	Importer       []PluginRef `yaml:"importer"`
-	ImporterAppend []PluginRef `yaml:"importer_append"`
+	Mutator         []PluginRef   `yaml:"mutator"`
+	MutatorAppend   []PluginRef   `yaml:"mutator_append"`
+	Policy          []PluginRef   `yaml:"policy"`
+	PolicyAppend    []PluginRef   `yaml:"policy_append"`
+	Linter          []PluginRef   `yaml:"linter"`
+	LinterAppend    []PluginRef   `yaml:"linter_append"`
+	Importer        []PluginRef   `yaml:"importer"`
+	ImporterAppend  []PluginRef   `yaml:"importer_append"`
+	Providers       []ProviderRef `yaml:"providers"`
+	ProvidersAppend []ProviderRef `yaml:"providers_append"`
+}
+
+// ProviderTargetURIs projects the composed provider list into a
+// target→URI map for the by-key provider-plugin resolution
+// (ProviderPluginForTarget). The composed list carries exactly one
+// entry per target — a duplicate target halts resolution before this
+// projection runs — so the map never collapses two distinct bindings.
+// The map is consulted strictly by key and is never ranged to produce
+// rendered output, so a plain map is determinism-safe. A nil or empty
+// list yields an empty map, which disables the by-target selection
+// filter (every serving provider plugin is a candidate).
+func (p PluginsConfig) ProviderTargetURIs() map[string]string {
+	m := make(map[string]string, len(p.Providers))
+	for _, ref := range p.Providers {
+		m[ref.Target] = ref.URI
+	}
+	return m
 }
 
 // PluginRef references a Wasm plugin attached at a workspace-level
@@ -422,6 +421,28 @@ type PluginRef struct {
 type PluginRefWith struct {
 	Sources  []string       `yaml:"sources,omitempty"`
 	Settings map[string]any `yaml:"settings,omitempty"`
+}
+
+// ProviderRef binds a render target to the provider-rendering plugin that
+// serves it. Target is the bare engine name a Recipe binds through
+// spec.target (e.g. "helm"); URI is the digest-free OCI identity of the
+// serving plugin (matching a Plugin entity's spec.plugin, e.g.
+// "oci://hub.aggrega.ai/plugin/provider/helm"), with an optional trailing
+// ":version" in the same three forms as a version pin. The binding selects
+// which publisher's plugin renders the target in a federated catalog where
+// more than one provider plugin serves it; exactly one entry per target is
+// permitted in the composed list.
+//
+// Function and With mirror the plugin-socket reference shape so the provider
+// list is homogeneous with the other plugin sockets. Provider dispatch
+// resolves a target to a plugin by identity and version; it does not consume
+// a per-binding Function override or With inputs, so those members carry no
+// effect on provider selection today.
+type ProviderRef struct {
+	Target   string         `yaml:"target"`
+	URI      string         `yaml:"uri"`
+	Function string         `yaml:"function,omitempty"`
+	With     *PluginRefWith `yaml:"with,omitempty"`
 }
 
 // LintConfig groups per-rule strictness dials. Future lint

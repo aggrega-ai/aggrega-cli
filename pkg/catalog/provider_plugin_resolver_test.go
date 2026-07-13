@@ -132,7 +132,7 @@ func TestProviderPluginByNameSelectsHighestVersion(t *testing.T) {
 // TestProviderPluginAmbiguityIsPointOfUse proves two DISTINCT provider plugins
 // both serving the same target do NOT halt the catalog load — a federated catalog
 // is legal — and instead halt loudly at resolution (the point of use) when no
-// provider_bindings entry disambiguates, naming both candidates.
+// plugins.providers entry disambiguates, naming both candidates.
 func TestProviderPluginAmbiguityIsPointOfUse(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
@@ -157,7 +157,7 @@ func TestProviderPluginAmbiguityIsPointOfUse(t *testing.T) {
 	}
 }
 
-// TestProviderPluginBindingDisambiguates proves a provider_bindings entry selects
+// TestProviderPluginBindingDisambiguates proves a plugins.providers entry selects
 // which of two competing plugins renders a target: the binding filters the
 // candidate set to the plugin whose spec.plugin matches the bound OCI identity,
 // and the other publisher's plugin is excluded.

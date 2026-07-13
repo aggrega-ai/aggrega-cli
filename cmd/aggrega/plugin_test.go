@@ -123,9 +123,11 @@ func TestFormatPluginListDeterministic(t *testing.T) {
 	}
 	// Deliberately out of URI order to prove the caller sorts before rendering.
 	configured := collectConfiguredRefs(workspaceconfig.Config{
-		ProviderBindings: map[string]string{
-			"helm":    "zeta:1.0.0",
-			"compose": "alpha:1.0.0",
+		Plugins: workspaceconfig.PluginsConfig{
+			Providers: []workspaceconfig.ProviderRef{
+				{Target: "helm", URI: "zeta:1.0.0"},
+				{Target: "compose", URI: "alpha:1.0.0"},
+			},
 		},
 	})
 	var configuredEntries []pluginListEntry
@@ -268,9 +270,9 @@ func TestFormatPluginList_InstalledGroup(t *testing.T) {
 func TestCollectConfiguredRefsDedupesAndMergesOrigins(t *testing.T) {
 	t.Parallel()
 	refs := collectConfiguredRefs(workspaceconfig.Config{
-		ProviderBindings: map[string]string{"helm": "shared:1.0.0"},
 		Plugins: workspaceconfig.PluginsConfig{
-			Linter: []workspaceconfig.PluginRef{{URI: "shared:1.0.0"}},
+			Providers: []workspaceconfig.ProviderRef{{Target: "helm", URI: "shared:1.0.0"}},
+			Linter:    []workspaceconfig.PluginRef{{URI: "shared:1.0.0"}},
 		},
 	})
 	if len(refs) != 1 {
@@ -279,7 +281,7 @@ func TestCollectConfiguredRefsDedupesAndMergesOrigins(t *testing.T) {
 	if refs[0].uri != "shared:1.0.0" {
 		t.Errorf("uri = %q", refs[0].uri)
 	}
-	if !strings.Contains(refs[0].origin, "provider_bindings[helm]") ||
+	if !strings.Contains(refs[0].origin, "plugins.providers[0]") ||
 		!strings.Contains(refs[0].origin, "plugins.linter[0]") {
 		t.Errorf("origins not merged: %q", refs[0].origin)
 	}

@@ -41,7 +41,7 @@ type Lockfile struct {
 	GeneratedAt      string            `yaml:"generated_at"`
 	MappingLibraries []MappingLibrary  `yaml:"mapping_libraries"`
 	Plugins          []Plugin          `yaml:"plugins"`
-	ProviderBindings []ProviderBinding `yaml:"provider_bindings"`
+	Providers        []ProviderBinding `yaml:"providers"`
 	Release          string            `yaml:"release"`
 	SchemaLibraries  []SchemaLibrary   `yaml:"schema_libraries"`
 	SourceArtifacts  []SourceArtifact  `yaml:"source_artifacts"`
@@ -271,11 +271,11 @@ type Plugin struct {
 // ProviderBinding records the resolved render-engine selection for one
 // render target kind: which provider-rendering plugin renders a target
 // (e.g. "helm"). Pull resolves the binding — from the workspace-config
-// provider_bindings map when the target is ambiguously served, or from
+// plugins.providers list when the target is ambiguously served, or from
 // the sole serving plugin when unambiguous — and records it here so the
 // build selects the engine from the lockfile rather than re-reading the
 // workspace config. This keeps build output invariant to a
-// provider_bindings change made after the pull (the change is adopted
+// plugins.providers change made after the pull (the change is adopted
 // only on the next pull).
 //
 // The plugin's content digest is NOT duplicated here — it stays

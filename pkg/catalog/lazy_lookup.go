@@ -1326,7 +1326,7 @@ func (l *LazyLookup) ProviderPluginCandidates(target string) []types.Plugin {
 }
 
 // ProviderPluginForTarget resolves a render target to its provider-rendering
-// Plugin entity honoring an explicit provider_bindings selection, over the
+// Plugin entity honoring an explicit plugins.providers selection, over the
 // lazily-enumerated (Tier-1 + pinned Tier-2) Plugin set. It delegates to the same
 // *Catalog matcher the eager backing uses (via the recipeCatalog() shell), so the
 // two backings resolve identically — no per-backing matcher. Pull passes the

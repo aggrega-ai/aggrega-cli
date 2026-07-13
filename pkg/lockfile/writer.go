@@ -223,10 +223,10 @@ func canonicalise(lf *Lockfile) *Lockfile {
 		return out.Plugins[i].URI < out.Plugins[j].URI
 	})
 
-	out.ProviderBindings = make([]ProviderBinding, len(lf.ProviderBindings))
-	copy(out.ProviderBindings, lf.ProviderBindings)
-	sort.Slice(out.ProviderBindings, func(i, j int) bool {
-		return out.ProviderBindings[i].Target < out.ProviderBindings[j].Target
+	out.Providers = make([]ProviderBinding, len(lf.Providers))
+	copy(out.Providers, lf.Providers)
+	sort.Slice(out.Providers, func(i, j int) bool {
+		return out.Providers[i].Target < out.Providers[j].Target
 	})
 
 	return out

@@ -446,7 +446,7 @@ func pullRun(cfg pullConfig) error {
 	// Tier-1-local plugin is left out (resolved at build through its local path).
 	// Lock-time only — the build path reads plugin pins from the lockfile and never
 	// descends.
-	// Provider resolution honors the workspace-config provider_bindings selection
+	// Provider resolution honors the workspace-config plugins.providers selection
 	// and records the resolved target → plugin binding for the lockfile, so build
 	// selects the engine from the lockfile rather than re-reading the config. On an
 	// ambiguous target with no binding the interactive helper (TTY, not --quiet)
@@ -454,12 +454,12 @@ func pullRun(cfg pullConfig) error {
 	resolvedBindings := map[string]lockfile.ProviderBinding{}
 	providerBindResolver := func(ref string) (types.Plugin, bool, error) {
 		bare, _, _ := strings.Cut(ref, ":")
-		p, ok, err := lazyView.ProviderPluginForTarget(ref, wsCfg.ProviderBindings)
+		p, ok, err := lazyView.ProviderPluginForTarget(ref, wsCfg.Plugins.ProviderTargetURIs())
 		if errors.Is(err, catalog.ErrAmbiguousProviderPlugin) && providerBindingHelperEligible(cfg) {
 			if herr := runProviderBindingHelper(bare, lazyView.ProviderPluginCandidates(bare), rw.Root(), &wsCfg, cfg.DiagOut); herr != nil {
 				return types.Plugin{}, false, herr
 			}
-			p, ok, err = lazyView.ProviderPluginForTarget(ref, wsCfg.ProviderBindings)
+			p, ok, err = lazyView.ProviderPluginForTarget(ref, wsCfg.Plugins.ProviderTargetURIs())
 		}
 		if err != nil {
 			return types.Plugin{}, false, err
@@ -702,9 +702,9 @@ func buildLockfile(releasePath string, cl closure.Closure, wsCfg workspaceconfig
 	}
 
 	for _, b := range bindings {
-		lf.ProviderBindings = append(lf.ProviderBindings, b)
+		lf.Providers = append(lf.Providers, b)
 	}
-	sort.Slice(lf.ProviderBindings, func(i, j int) bool { return lf.ProviderBindings[i].Target < lf.ProviderBindings[j].Target })
+	sort.Slice(lf.Providers, func(i, j int) bool { return lf.Providers[i].Target < lf.Providers[j].Target })
 
 	for _, e := range cl.Entities {
 		// A writable recipe's content digest was captured at resolution, before

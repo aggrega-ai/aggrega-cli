@@ -28,7 +28,7 @@ func providerBindingHelperEligible(cfg pullConfig) bool {
 
 // runProviderBindingHelper prompts the operator to choose which provider plugin
 // renders an ambiguously-served target, writes the choice into the workspace's
-// `.aggrega-config.yaml` `provider_bindings` map, and updates the in-memory
+// `.aggrega-config.yaml` `plugins.providers` list, and updates the in-memory
 // config so the immediately-following re-resolution adopts it. candidates is the
 // sorted candidate set the ambiguity was raised over; root is the workspace root
 // the config file lives at; out is the prompt sink (the pull's diagnostic
@@ -61,10 +61,7 @@ func runProviderBindingHelper(target string, candidates []types.Plugin, root str
 	if err := workspaceconfig.UpsertProviderBinding(configPath, target, chosen.Spec.Plugin); err != nil {
 		return fmt.Errorf("provider binding helper: write %s: %w", configPath, err)
 	}
-	if wsCfg.ProviderBindings == nil {
-		wsCfg.ProviderBindings = map[string]string{}
-	}
-	wsCfg.ProviderBindings[target] = chosen.Spec.Plugin
-	fmt.Fprintf(out, "Recorded provider_bindings.%s = %s in %s\n", target, chosen.Spec.Plugin, configPath)
+	wsCfg.Plugins.Providers = workspaceconfig.UpsertProviderRef(wsCfg.Plugins.Providers, target, chosen.Spec.Plugin)
+	fmt.Fprintf(out, "Recorded plugins.providers entry for %q = %s in %s\n", target, chosen.Spec.Plugin, configPath)
 	return nil
 }

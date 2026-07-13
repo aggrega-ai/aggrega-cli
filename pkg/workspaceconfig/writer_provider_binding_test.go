@@ -10,7 +10,7 @@ import (
 )
 
 // TestUpsertProviderBinding_PreservesExistingContent proves the config writer
-// adds a provider_bindings entry into an existing workspace config without
+// adds a plugins.providers entry into an existing workspace config without
 // disturbing the other keys, updates an existing entry in place, and produces a
 // schema-valid file the resolver accepts.
 func TestUpsertProviderBinding_PreservesExistingContent(t *testing.T) {
@@ -31,8 +31,8 @@ default_registry: hub.aggrega.ai
 		t.Fatalf("resolve after add: %v", err)
 	}
 	cfg := rw.Config()
-	if cfg.ProviderBindings["helm"] != "oci://hub.aggrega.ai/plugin/provider/helm" {
-		t.Fatalf("binding not written; got %+v", cfg.ProviderBindings)
+	if cfg.Plugins.ProviderTargetURIs()["helm"] != "oci://hub.aggrega.ai/plugin/provider/helm" {
+		t.Fatalf("binding not written; got %+v", cfg.Plugins.Providers)
 	}
 	if cfg.DefaultRegistry != "hub.aggrega.ai" || !cfg.Offline {
 		t.Errorf("existing keys not preserved: default_registry=%q offline=%v", cfg.DefaultRegistry, cfg.Offline)
@@ -47,11 +47,11 @@ default_registry: hub.aggrega.ai
 		t.Fatalf("resolve after update: %v", err)
 	}
 	cfg = rw.Config()
-	if cfg.ProviderBindings["helm"] != "oci://hub.aggrega.ai/plugin/provider/compose" {
-		t.Fatalf("binding not updated; got %+v", cfg.ProviderBindings)
+	if cfg.Plugins.ProviderTargetURIs()["helm"] != "oci://hub.aggrega.ai/plugin/provider/compose" {
+		t.Fatalf("binding not updated; got %+v", cfg.Plugins.Providers)
 	}
-	if len(cfg.ProviderBindings) != 1 {
-		t.Errorf("update must not add a second entry; got %+v", cfg.ProviderBindings)
+	if len(cfg.Plugins.Providers) != 1 {
+		t.Errorf("update must not add a second entry; got %+v", cfg.Plugins.Providers)
 	}
 }
 
@@ -67,7 +67,7 @@ func TestUpsertProviderBinding_CreatesMissingFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolve created file: %v", err)
 	}
-	if got := rw.Config().ProviderBindings["compose"]; got != "oci://hub.aggrega.ai/plugin/provider/compose" {
+	if got := rw.Config().Plugins.ProviderTargetURIs()["compose"]; got != "oci://hub.aggrega.ai/plugin/provider/compose" {
 		t.Fatalf("binding not written to fresh file; got %q", got)
 	}
 }

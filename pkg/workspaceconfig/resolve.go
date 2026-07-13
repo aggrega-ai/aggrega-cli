@@ -25,11 +25,11 @@ const ConfigFilename = ".aggrega-config.yaml"
 // without ever touching the developer's hand-authored base config.
 //
 // The overlay is additive-only and validates against the same
-// aggrega-config-v1alpha1 schema as the base file. For each of the six
-// list-valued fields (catalog_dirs, narrowing_exemptions, and the four plugin
-// sockets mutator/policy/linter/importer) its entries — both the base list and
-// any `_append` companion — are concatenated onto the resolved list in cascade
-// order. It cannot remove or scalar-override anything the base declares: a
+// aggrega-config-v1alpha1 schema as the base file. For each of the seven
+// list-valued fields (catalog_dirs, narrowing_exemptions, the four plugin
+// sockets mutator/policy/linter/importer, and the provider bindings) its
+// entries — both the base list and any `_append` companion — are concatenated
+// onto the resolved list in cascade order. It cannot remove or scalar-override anything the base declares: a
 // scalar or map field carried in the overlay has no additive meaning, so it is
 // ignored and named in a resolution warning rather than applied. The overlay
 // never anchors a workspace root — only ConfigFilename with a top-level
@@ -262,6 +262,13 @@ func Resolve(start, flagRoot string, look ...func(string) string) (*ResolvedWork
 	}
 
 	applyAppends(&merged, appendLayers...)
+
+	// A render target may bind exactly one provider plugin. Duplicates can arise
+	// only after compose — within one layer's base list, or across the cascade
+	// and its `_append` companions — so the check runs on the composed list.
+	if err := checkUniqueProviderTargets(merged.Plugins.Providers); err != nil {
+		return nil, err
+	}
 
 	// Environment overlay: the top config layer, above the merged file cascade
 	// and below the CLI flags the command applies. A SET variable wins over the
@@ -519,6 +526,21 @@ func loadGlobalLayer() (cfg Config, loaded bool, path string, err error) {
 		return Config{}, false, "", fmt.Errorf("workspaceconfig: load global %s: %w", v, err)
 	}
 	return cfg, true, v, nil
+}
+
+// checkUniqueProviderTargets returns a wrapped ErrDuplicateProviderTarget when
+// the composed provider list binds one render target more than once. The walk
+// is in list order so the error names the first target seen twice, keeping the
+// diagnostic deterministic for a given composed list.
+func checkUniqueProviderTargets(providers []ProviderRef) error {
+	seen := make(map[string]struct{}, len(providers))
+	for _, ref := range providers {
+		if _, dup := seen[ref.Target]; dup {
+			return fmt.Errorf("workspaceconfig: render target %q is bound to more than one provider plugin; keep exactly one plugins.providers entry per target: %w", ref.Target, ErrDuplicateProviderTarget)
+		}
+		seen[ref.Target] = struct{}{}
+	}
+	return nil
 }
 
 // hasWorkspaceKey reports whether a config document carries a top-level

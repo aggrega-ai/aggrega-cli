@@ -4,8 +4,10 @@
 package workspaceconfig_test
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
@@ -365,7 +367,7 @@ func TestResolvePluginSourcePaths(t *testing.T) {
 	}
 }
 
-// appendLens reports the length of each of the six `_append`-target fields, so
+// appendLens reports the length of each of the seven `_append`-target fields, so
 // a per-field test can assert an append landed in exactly the right field.
 func appendLens(c workspaceconfig.Config) map[string]int {
 	return map[string]int{
@@ -375,11 +377,12 @@ func appendLens(c workspaceconfig.Config) map[string]int {
 		"policy":       len(c.Plugins.Policy),
 		"linter":       len(c.Plugins.Linter),
 		"importer":     len(c.Plugins.Importer),
+		"providers":    len(c.Plugins.Providers),
 	}
 }
 
-// TestResolveAppendPerField exercises each of the six `_append` fields
-// independently. applyAppends is six hand-written append statements, not a
+// TestResolveAppendPerField exercises each of the seven `_append` fields
+// independently. applyAppends is seven hand-written append statements, not a
 // generic loop, so a cross-wired statement (e.g. policy appending the mutator
 // slice) is only caught by a per-field assertion. Each case sets exactly one
 // `_append` field with one entry and asserts that field grew by one while every
@@ -404,6 +407,7 @@ func TestResolveAppendPerField(t *testing.T) {
 		{"policy", "workspace: {}\nplugins:\n  policy_append:\n    - uri: oci://x@v1\n"},
 		{"linter", "workspace: {}\nplugins:\n  linter_append:\n    - uri: oci://x@v1\n"},
 		{"importer", "workspace: {}\nplugins:\n  importer_append:\n    - uri: oci://x@v1\n"},
+		{"providers", "workspace: {}\nplugins:\n  providers_append:\n    - target: t\n      uri: oci://x@v1\n"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.field, func(t *testing.T) {
@@ -425,6 +429,79 @@ func TestResolveAppendPerField(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestResolveProvidersComposeAcrossLayers proves the provider socket list
+// composes homogeneously with the other plugin sockets: a base entry at the
+// root and an appended entry at a child rung concatenate in cascade order, and
+// the target→URI projection carries both.
+func TestResolveProvidersComposeAcrossLayers(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	write(t, filepath.Join(root, ".aggrega-config.yaml"),
+		"workspace: {}\nplugins:\n  providers:\n    - target: helm\n      uri: oci://h/helm:1\n")
+	child := filepath.Join(root, "svc")
+	write(t, filepath.Join(child, ".aggrega-config.yaml"),
+		"plugins:\n  providers_append:\n    - target: compose\n      uri: oci://h/compose:1\n")
+
+	rw, err := workspaceconfig.Resolve(child, "")
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	got := rw.Config().Plugins.Providers
+	if len(got) != 2 {
+		t.Fatalf("composed providers: got %d, want 2 (root base + child append): %+v", len(got), got)
+	}
+	if got[0].Target != "helm" || got[1].Target != "compose" {
+		t.Fatalf("compose order: got %+v; want [helm, compose] (base then append)", got)
+	}
+	uris := rw.Config().Plugins.ProviderTargetURIs()
+	if uris["helm"] != "oci://h/helm:1" || uris["compose"] != "oci://h/compose:1" {
+		t.Errorf("target->URI projection: got %v", uris)
+	}
+}
+
+// TestResolveProvidersDuplicateTargetHalts proves the one-binding-per-target
+// rule: two entries for one target — here a base list entry and an _append
+// entry at the same layer — halt resolution loudly with
+// ErrDuplicateProviderTarget, naming the offending target. Schema validation
+// checks each entry's shape but not cross-list target uniqueness, so this is a
+// resolution-time (post-compose) gate.
+func TestResolveProvidersDuplicateTargetHalts(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	write(t, filepath.Join(dir, ".aggrega-config.yaml"),
+		"workspace: {}\nplugins:\n  providers:\n    - target: helm\n      uri: oci://h/helm:1\n  providers_append:\n    - target: helm\n      uri: oci://h/helm-alt:1\n")
+
+	_, err := workspaceconfig.Resolve(dir, "")
+	if err == nil {
+		t.Fatal("Resolve over a duplicate provider target returned nil; expected a loud halt")
+	}
+	if !errors.Is(err, workspaceconfig.ErrDuplicateProviderTarget) {
+		t.Fatalf("duplicate-target halt must be ErrDuplicateProviderTarget; got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "helm") {
+		t.Errorf("duplicate-target error must name the offending target; got: %v", err)
+	}
+}
+
+// TestResolveRejectsLegacyProviderBindings proves the removed top-level
+// `provider_bindings` key is rejected loudly by schema validation (the config
+// root is additionalProperties:false), so a legacy config carrying it fails
+// rather than being silently ignored.
+func TestResolveRejectsLegacyProviderBindings(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	write(t, filepath.Join(dir, ".aggrega-config.yaml"),
+		"workspace: {}\nprovider_bindings:\n  helm: oci://h/helm:1\n")
+
+	_, err := workspaceconfig.Resolve(dir, "")
+	if err == nil {
+		t.Fatal("Resolve over a legacy top-level provider_bindings key returned nil; expected a loud schema rejection")
+	}
+	if !errors.Is(err, workspaceconfig.ErrConfigInvalid) {
+		t.Fatalf("legacy-key rejection must wrap ErrConfigInvalid; got: %v", err)
 	}
 }
 

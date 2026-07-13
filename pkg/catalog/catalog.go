@@ -559,7 +559,7 @@ func newSkippedEntity(path string, data []byte, err error) SkippedEntity {
 // the Component / Feature surface enjoys. A render target served by more than one
 // provider-rendering Plugin is NOT a load error — a federated catalog is legal;
 // the ambiguity halts at the point of use (pull resolution / build render) when no
-// provider_bindings entry selects one.
+// plugins.providers entry selects one.
 func (c *Catalog) validateSchemaPillarsPass() error {
 	var validationErrors []error
 
@@ -630,7 +630,7 @@ func (c *Catalog) validateSchemaPillarsPass() error {
 	// A render target served by more than one provider-rendering Plugin is NOT a
 	// catalog-load error: a federated catalog where two publishers each ship a
 	// plugin for the same target is legal. Ambiguity is a point-of-use concern the
-	// provider_bindings surface resolves at pull, and it halts loudly there (and at
+	// plugins.providers surface resolves at pull, and it halts loudly there (and at
 	// build render) via ErrAmbiguousProviderPlugin when a reached target is served
 	// by more than one plugin and no binding selects one — so an ambiguity outside a
 	// Release's reach never blocks an unrelated build.

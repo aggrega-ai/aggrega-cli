@@ -82,7 +82,7 @@ describe() metadata.
 
 Three groups are printed. Embedded built-ins are the provider and linter guests
 compiled into the binary; they resolve with no filesystem, cache, or network
-access. Configured plugins are the workspace bindings — provider_bindings and
+access. Configured plugins are the workspace bindings — plugins.providers and
 the linter socket — resolved through the plugin cascade. Installed CLI plugins
 are the commands installed with 'aggrega plugin install', each carrying a
 readiness label: ready, unresolved, describe-failed, or digest-drift when its
@@ -168,9 +168,8 @@ type configuredRef struct {
 
 // collectConfiguredRefs gathers the workspace-configured plugin URIs — the
 // provider bindings and the linter socket (base and append) — deduplicated by
-// URI with their origins merged, sorted by URI. Every collection walk is over a
-// sorted or index-ordered surface so the result is deterministic regardless of
-// the config map's iteration order.
+// URI with their origins merged, sorted by URI. Every collection walk is over
+// an index-ordered list and the result sorts by URI, so it is deterministic.
 func collectConfiguredRefs(cfg workspaceconfig.Config) []configuredRef {
 	origins := map[string][]string{}
 	add := func(uri, origin string) {
@@ -180,13 +179,8 @@ func collectConfiguredRefs(cfg workspaceconfig.Config) []configuredRef {
 		origins[uri] = append(origins[uri], origin)
 	}
 
-	bindingKinds := make([]string, 0, len(cfg.ProviderBindings))
-	for k := range cfg.ProviderBindings {
-		bindingKinds = append(bindingKinds, k)
-	}
-	sort.Strings(bindingKinds)
-	for _, k := range bindingKinds {
-		add(cfg.ProviderBindings[k], "provider_bindings["+k+"]")
+	for i, r := range cfg.Plugins.Providers {
+		add(r.URI, fmt.Sprintf("plugins.providers[%d]", i))
 	}
 	for i, r := range cfg.Plugins.Linter {
 		add(r.URI, fmt.Sprintf("plugins.linter[%d]", i))
