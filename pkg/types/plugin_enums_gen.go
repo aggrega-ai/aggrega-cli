@@ -11,10 +11,11 @@ package types
 // operates and scope vocabularies. The describe() host descriptor re-exports
 // them so the load-time shape gate and the runtime read one set of values.
 //
-// The feature-recipe-pipeline wire scope vocabulary (the runtime document-set
-// scoping and patch-op scope) is a separate surface — a different package and a
-// different schema — and is not generated here. Its own/host values must agree
-// with these by hand for now; unifying the two is a tracked follow-up.
+// The feature-recipe-pipeline package consumes this scope vocabulary by
+// aliasing these consts, so the Go values are single-sourced. A separate
+// schema (the feature-recipe pipeline-step schema) declares the same scope
+// enum independently of the Plugin schema; unifying the two schemas is a
+// tracked follow-up.
 
 const (
 	OperatesPatch = "patch"

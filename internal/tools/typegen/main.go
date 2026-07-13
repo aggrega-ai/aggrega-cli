@@ -118,10 +118,11 @@ var enumSources = map[string]enumSource{
 			"operates and scope vocabularies. The describe() host descriptor re-exports\n" +
 			"them so the load-time shape gate and the runtime read one set of values.\n" +
 			"\n" +
-			"The feature-recipe-pipeline wire scope vocabulary (the runtime document-set\n" +
-			"scoping and patch-op scope) is a separate surface — a different package and a\n" +
-			"different schema — and is not generated here. Its own/host values must agree\n" +
-			"with these by hand for now; unifying the two is a tracked follow-up.",
+			"The feature-recipe-pipeline package consumes this scope vocabulary by\n" +
+			"aliasing these consts, so the Go values are single-sourced. A separate\n" +
+			"schema (the feature-recipe pipeline-step schema) declares the same scope\n" +
+			"enum independently of the Plugin schema; unifying the two schemas is a\n" +
+			"tracked follow-up.",
 	},
 }
 
