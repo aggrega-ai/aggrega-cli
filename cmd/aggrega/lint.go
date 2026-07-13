@@ -203,8 +203,9 @@ func makeResolverFromCobra(cmd *cobra.Command) func(string, bool) bool {
 
 // lintEntityHeader is the minimum YAML envelope lint parses out of
 // the proposed entity file: kind, metadata.name, metadata.version,
-// metadata.labels, and spec.extends. Mirrors pushEntityHeader's
-// shape and extends it for narrowing-rule parent resolution.
+// metadata.labels, spec.extends, spec.target, and spec.plugin. Mirrors
+// pushEntityHeader's shape and extends it for narrowing-rule parent
+// resolution and the core-plugin evolution-gate exemption.
 type lintEntityHeader struct {
 	Kind     string `yaml:"kind"`
 	Metadata struct {
@@ -215,6 +216,7 @@ type lintEntityHeader struct {
 	Spec struct {
 		Extends string `yaml:"extends"`
 		Target  string `yaml:"target"`
+		Plugin  string `yaml:"plugin"`
 	} `yaml:"spec"`
 }
 
@@ -240,6 +242,23 @@ func defaultRuleIDs(prePublish bool) []string {
 		return append([]string{"schema-evolution"}, rules...)
 	}
 	return rules
+}
+
+// pluginIsCore reports whether a Plugin entity's spec.plugin names one of the
+// built-in plugins shipped inside the binary. The embedded set enumerates the
+// digest-free repository references the built-ins register under — the same
+// reference shape a Plugin entity's spec.plugin carries — so membership is an
+// exact-string match against that set.
+func pluginIsCore(pluginRef string) bool {
+	if pluginRef == "" {
+		return false
+	}
+	for _, uri := range embedded.URIs() {
+		if uri == pluginRef {
+			return true
+		}
+	}
+	return false
 }
 
 func lintRun(cfg lintConfig) error {
@@ -289,12 +308,23 @@ func lintRun(cfg lintConfig) error {
 	}
 	policies := effectivePolicies(wsCfg.Lint.PublishingDiscipline, resolver)
 
+	// A core plugin's describe()-surface is version-locked to the binary and
+	// publishes only on the compiler's own release, so the publish-time
+	// evolution gate does not apply to it. Drop the schema-evolution rule and
+	// skip the previous-version fetch a non-core plugin would perform. The
+	// exemption short-circuits before any registry consultation.
+	prePublish := cfg.PrePublish
+	if cfg.PrePublish && header.Kind == "Plugin" && pluginIsCore(header.Spec.Plugin) {
+		fmt.Fprintf(cfg.DiagOut, "core plugin: publish evolution gate not applicable\n")
+		prePublish = false
+	}
+
 	var (
 		previousJSON     json.RawMessage
 		previousVersion  string
 		firstPublication bool
 	)
-	if cfg.PrePublish {
+	if prePublish {
 		previousJSON, previousVersion, err = fetchPreviousRegistryVersion(
 			context.Background(), cfg.FetchTarget, wsCfg, header, cfg.DiagOut,
 		)
@@ -306,14 +336,14 @@ func lintRun(cfg lintConfig) error {
 
 	parentJSON, _ := resolveParent(header, wsCfg, cfg.EntityPath, cfg.DiagOut)
 
-	inputs := buildRuleInputs(header.Kind, proposedJSON, previousJSON, parentJSON, policies, cfg.EntityPath, cfg.PrePublish)
+	inputs := buildRuleInputs(header.Kind, proposedJSON, previousJSON, parentJSON, policies, cfg.EntityPath, prePublish)
 	rawFindings, err := validator.DispatchPublishingLinterBatch(pluginSpec, inputs)
 	if err != nil {
 		return fmt.Errorf("aggrega lint: dispatch: %w", err)
 	}
 
 	aggregated := aggregateFindings(rawFindings)
-	if !cfg.PrePublish {
+	if !prePublish {
 		aggregated = downgradeToWarning(aggregated)
 	}
 
@@ -332,7 +362,7 @@ func lintRun(cfg lintConfig) error {
 	// the proposed bump direction — which only the CLI knows. When
 	// the bump satisfies, the finding is informational; when it
 	// doesn't, the CLI surfaces its own explicit error.
-	if cfg.PrePublish && !firstPublication {
+	if prePublish && !firstPublication {
 		verdict := classificationFromFindings(aggregated)
 		if verdict != "" {
 			proposedBump := bumpDirection(previousVersion, header.Metadata.Version)
