@@ -337,6 +337,27 @@ func isUnauthorized(err error) bool {
 	return false
 }
 
+// ociManifestView is the subset of an OCI image manifest this package reads:
+// the artifact type, the config descriptor, and the layer descriptors. It is
+// the single shape every manifest parse in this package unmarshals into, so
+// the read paths cannot disagree about a manifest's structure.
+type ociManifestView struct {
+	ArtifactType string               `json:"artifactType"`
+	Config       ocispec.Descriptor   `json:"config"`
+	Layers       []ocispec.Descriptor `json:"layers"`
+}
+
+// parseManifest unmarshals an OCI image manifest's JSON bytes into the subset
+// this package reads. It is the one manifest-parse home so no read path
+// re-derives the manifest shape independently.
+func parseManifest(manifestBytes []byte) (ociManifestView, error) {
+	var m ociManifestView
+	if err := json.Unmarshal(manifestBytes, &m); err != nil {
+		return ociManifestView{}, err
+	}
+	return m, nil
+}
+
 // descriptorFromManifest parses an OCI image manifest's JSON bytes and
 // returns the descriptor for the manifest's content layer plus the
 // artifact's mediatype.
@@ -357,12 +378,8 @@ func isUnauthorized(err error) bool {
 // manifest's artifactType field, falling back to the selected layer's own
 // mediatype.
 func descriptorFromManifest(manifestBytes []byte, expectedMediaType ...string) (ocispec.Descriptor, string, error) {
-	var manifest struct {
-		ArtifactType string               `json:"artifactType"`
-		Config       ocispec.Descriptor   `json:"config"`
-		Layers       []ocispec.Descriptor `json:"layers"`
-	}
-	if err := json.Unmarshal(manifestBytes, &manifest); err != nil {
+	manifest, err := parseManifest(manifestBytes)
+	if err != nil {
 		return ocispec.Descriptor{}, "", err
 	}
 	if len(manifest.Layers) == 0 {
