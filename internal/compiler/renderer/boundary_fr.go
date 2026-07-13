@@ -864,37 +864,15 @@ func lookupBoundaryFeatureAttachment(boundaryFeatures types.OrderedMap[types.Ord
 // path back to root; at each level, check state.Provides for
 // (level, frInstance). Return on first hit.
 //
-// Wiring status: this function is declared and ready, but
-// RehydrateInjectFromProvides at inject.go does NOT yet call it. The
-// wiring requires a (Feature-type-URI → FR-instance-name) resolution
-// path that today's IREdge.OriginFeature (carries the catalog Feature
-// TYPE URI, not the per-attachment instance name) doesn't supply
-// directly. The instance-name derivation depends on walking the
-// per-component feature cascade to identify which attachment fired
-// the edge — a substantive change to the topology/IR pipeline that
-// belongs in a follow-up driven by a real consumer-side fixture.
-//
-// Practical consequence today: a per-component consumer that references
-// .context.uses.<feat>.<provided> for a feat whose FR has ExecutionScope
-// == "boundary" will NOT find the provides via the existing per-component
-// allProvides lookup. The provides become silently empty (missingkey=zero
-// renders as empty string in value templates).
-//
-// The compose-bridge proof case does not actively
-// consume boundary-scope FR provides via per-component edges — the
-// bridge service's behavior is driven by Phase A injectMapping (which
-// fans per-consumer regardless of FR scope) plus the assembled compose
-// fragment's own service definitions. The latent gap surfaces only if a
-// future Release authors a per-component `uses:` consuming a boundary-
-// scope FR's `provides:` value via cross-edge resolution.
-//
-// When that fixture surfaces, the wire-up is: extend
-// RehydrateInjectFromProvides to accept a *BoundaryFRState +
-// RecipeLookup; per-edge with OriginFeature set, look up FR scope; when
-// boundary-scope, derive the FR-instance-name via the per-component
-// cascade attachment record (requires threading or recomputing the
-// attachment view); call resolveBoundaryScopeFRProvides; merge results
-// into the targetProvides view feeding resolveInjectKeys.
+// RehydrateInjectFromProvides calls this for a per-component uses edge
+// whose OriginFeature names a boundary-scope FeatureRecipe: the edge
+// carries OriginFeatureInstance (the per-attachment instance name that
+// disambiguates two attachments of the same FR type on one boundary),
+// the FR's boundary scope is confirmed via RecipeLookup, and the
+// resolved provides are merged over the per-component targetProvides
+// feeding resolveInjectKeys. A consumer boundary path with no matching
+// attachment resolves nothing, so the merge is a no-op and the
+// per-component allProvides path is unchanged.
 func resolveBoundaryScopeFRProvides(
 	state *BoundaryFRState,
 	consumerBoundaryPath, frInstance string,
