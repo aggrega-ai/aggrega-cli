@@ -69,6 +69,22 @@ func RenderLoadedChart(
 	nodeCtx rendercore.NodeRenderContext,
 	validate ValuesValidator,
 ) (map[string][]byte, error) {
+	// Prune condition:/tags:-disabled dependency subcharts before rendering,
+	// matching the Helm CLI: a dependency whose condition path resolves to
+	// false in the merged values is removed from the chart tree so its
+	// templates never render, and dependency import-values are merged. The
+	// values object drives condition evaluation and carries the Phase B
+	// injected values, so an injected condition (e.g. an injected
+	// `<subchart>.enabled: false`) prunes its subchart exactly as the Helm CLI
+	// would — not merely the chart's own defaults. This runs before coalescing
+	// and before building the render values, mirroring the CLI's render order.
+	// It mutates ch; the chart is freshly loaded per render (the provider guest
+	// reconstructs it per node, the in-tree host loads it per node), so the
+	// mutation is not an aliasing or determinism hazard across nodes.
+	if err := chartutil.ProcessDependenciesWithMerge(ch, chartutil.Values(values)); err != nil {
+		return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("helm: node %q: process dependencies", nodeCtx.NodeID))
+	}
+
 	// Coalesce the Phase B dict with the chart's default values
 	cvals, err := chartutil.CoalesceValues(ch, chartutil.Values(values))
 	if err != nil {

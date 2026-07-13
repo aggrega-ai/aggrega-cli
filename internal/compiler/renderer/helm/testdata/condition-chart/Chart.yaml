@@ -1,0 +1,8 @@
+apiVersion: v2
+name: condition-chart
+version: 0.1.0
+description: Parent chart fixture whose subchart is gated by a condition value, for helm provider condition-pruning tests.
+dependencies:
+  - name: gated-sub
+    version: 0.1.0
+    condition: gated-sub.enabled

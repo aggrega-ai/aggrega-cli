@@ -1,0 +1,4 @@
+apiVersion: v2
+name: gated-sub
+version: 0.1.0
+description: Condition-gated subchart fixture; renders only when its condition value is true.
