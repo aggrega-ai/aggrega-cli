@@ -276,6 +276,43 @@ func TestPluginDescriptorValidateCLI(t *testing.T) {
 	}
 }
 
+// TestPluginDescriptorValidateCommands proves the commands shape check: a CLI
+// plugin declaring several well-named commands validates, an empty commands list
+// validates (command presence is enforced at install, not here), and a command
+// with an empty name is refused wrapping ErrWasmManifestRejected.
+func TestPluginDescriptorValidateCommands(t *testing.T) {
+	t.Parallel()
+
+	multi := PluginDescriptor{
+		ABIVersion: ABIVersionV1Alpha1,
+		PluginType: PluginTypeCLI,
+		Commands:   []PluginCLICommand{{Name: "greet-a", Description: "A"}, {Name: "greet-b"}},
+		Exports:    []PluginExport{{Name: CLIRunExportName}},
+	}
+	if err := multi.Validate("acme/cli"); err != nil {
+		t.Fatalf("cli with several well-named commands: want accept, got %v", err)
+	}
+
+	none := PluginDescriptor{
+		ABIVersion: ABIVersionV1Alpha1,
+		PluginType: PluginTypeCLI,
+		Exports:    []PluginExport{{Name: CLIRunExportName}},
+	}
+	if err := none.Validate("acme/cli"); err != nil {
+		t.Fatalf("cli with no commands must pass the load gate (presence is an install concern): %v", err)
+	}
+
+	emptyName := PluginDescriptor{
+		ABIVersion: ABIVersionV1Alpha1,
+		PluginType: PluginTypeCLI,
+		Commands:   []PluginCLICommand{{Name: "ok"}, {Name: ""}},
+		Exports:    []PluginExport{{Name: CLIRunExportName}},
+	}
+	if err := emptyName.Validate("acme/cli"); !errors.Is(err, ErrWasmManifestRejected) {
+		t.Fatalf("cli with an empty command name: want ErrWasmManifestRejected, got %v", err)
+	}
+}
+
 func TestPluginDescriptorPluginLevelDescriptionRoundTrip(t *testing.T) {
 	t.Parallel()
 

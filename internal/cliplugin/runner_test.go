@@ -89,7 +89,7 @@ func TestRunner_ExitCodeZero(t *testing.T) {
 		Stderr:  &stderr,
 	}
 
-	code, digest, err := r.Run(ctx, "test://cli-args-exit", []string{"0", "hello"})
+	code, digest, err := r.Run(ctx, "test://cli-args-exit", "cli-args-exit", []string{"0", "hello"})
 	if err != nil {
 		t.Fatalf("Run returned error: %v", err)
 	}
@@ -127,7 +127,7 @@ func TestRunner_ExitCodeNonZero(t *testing.T) {
 	var stderr bytes.Buffer
 	r := Runner{Resolve: bytesLookup(guest), Stdout: &stdout, Stderr: &stderr}
 
-	code, _, err := r.Run(ctx, "test://cli-args-exit", []string{"3", "boom"})
+	code, _, err := r.Run(ctx, "test://cli-args-exit", "cli-args-exit", []string{"3", "boom"})
 	if err != nil {
 		t.Fatalf("Run returned error for a non-zero command exit (must be a status, not an error): %v", err)
 	}
@@ -150,7 +150,7 @@ func TestRunner_RefusesNonCLIPlugin(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	r := Runner{Resolve: bytesLookup(guest), Stdout: &stdout, Stderr: &stderr}
 
-	code, _, err := r.Run(ctx, "test://noncli-probe", nil)
+	code, _, err := r.Run(ctx, "test://noncli-probe", "noncli-probe", nil)
 	if !errors.Is(err, ErrPluginNotCLI) {
 		t.Fatalf("Run error = %v; want an error wrapping ErrPluginNotCLI", err)
 	}
@@ -162,7 +162,7 @@ func TestRunner_RefusesNonCLIPlugin(t *testing.T) {
 // TestRunner_NoResolver proves a Runner with no resolver seam returns
 // ErrNoResolver rather than panicking.
 func TestRunner_NoResolver(t *testing.T) {
-	code, _, err := Runner{}.Run(context.Background(), "test://whatever", nil)
+	code, _, err := Runner{}.Run(context.Background(), "test://whatever", "whatever", nil)
 	if !errors.Is(err, ErrNoResolver) {
 		t.Fatalf("Run error = %v; want an error wrapping ErrNoResolver", err)
 	}

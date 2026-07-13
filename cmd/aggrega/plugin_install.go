@@ -75,10 +75,11 @@ aggrega <command>.
 The reference is resolved through the plugin cascade and, when it names a
 registry artifact, verified against the registry's trust policy — the same
 signature check the dependency resolver applies. The resolved plugin must be a
-CLI plugin and must declare the command name it contributes.
+CLI plugin and must name at least one command it contributes; a single plugin
+may contribute several commands, each installed as its own top-level command.
 
-A plugin whose command name shadows a built-in command or a reserved name is
-refused. Before installing, the command prints the plugin's declared
+A plugin any of whose command names shadows a built-in command or a reserved
+name is refused. Before installing, the command prints the plugin's declared
 capabilities and asks for confirmation; pass --accept-capabilities or --yes to
 skip the prompt for non-interactive use. Without a skip flag on a
 non-interactive stdin it refuses rather than blocking on a prompt no one can
@@ -98,11 +99,12 @@ answer.`,
 }
 
 // pluginInstallRun resolves and verifies ref, requires it to be a CLI plugin
-// that names its command, refuses a command name that collides with a built-in
-// or reserved name, confirms the plugin's capabilities with the operator, and
-// records the installed-plugin index entry plus the cached describe metadata.
-// The collision guard runs before the prompt so a name that can never install is
-// rejected without asking, and the index is written only after confirmation.
+// that names at least one command, refuses when any command name collides with a
+// built-in or reserved name, confirms the plugin's capabilities with the operator
+// once, and records one installed-plugin index entry per command plus the cached
+// describe metadata. The collision guard runs across every command before the
+// prompt so a plugin any of whose commands can never install is rejected without
+// asking, and the index is written only after confirmation.
 func pluginInstallRun(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, ref string, acceptCaps, assumeYes bool, in io.Reader, out io.Writer) error {
 	src, err := installPluginFetch(ctx, rw, ref)
 	if err != nil {
@@ -116,27 +118,54 @@ func pluginInstallRun(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace
 	if desc.PluginType != wasm.PluginTypeCLI {
 		return fmt.Errorf("plugin install: %q is not a CLI plugin (declares type %q); only CLI plugins install as commands", ref, desc.PluginType)
 	}
-	cmdName := desc.Command
-	if cmdName == "" {
-		return fmt.Errorf("plugin install: %q declares no command name; a CLI plugin must name the command it contributes", ref)
+	if len(desc.Commands) == 0 {
+		return fmt.Errorf("plugin install: %q declares no commands; a CLI plugin must name at least one command it contributes", ref)
 	}
 
-	if builtinCommandNames()[cmdName] {
-		return fmt.Errorf("plugin install: %q contributes the command %q, which is a built-in command; refusing to install", ref, cmdName)
-	}
-	if reservedCommandNames[cmdName] {
-		return fmt.Errorf("plugin install: %q contributes the command %q, which is a reserved command name; refusing to install", ref, cmdName)
+	// The collision guard runs per command before the prompt so a plugin any of
+	// whose commands can never install is refused without asking. builtin names
+	// are read once — they do not change across the commands of one install.
+	builtins := builtinCommandNames()
+	for _, command := range desc.Commands {
+		if builtins[command.Name] {
+			return fmt.Errorf("plugin install: %q contributes the command %q, which is a built-in command; refusing to install", ref, command.Name)
+		}
+		if reservedCommandNames[command.Name] {
+			return fmt.Errorf("plugin install: %q contributes the command %q, which is a reserved command name; refusing to install", ref, command.Name)
+		}
 	}
 
-	if err := confirmInstallCapabilities(out, in, cmdName, beyondBaselineCapabilities(desc), acceptCaps, assumeYes); err != nil {
+	// Capabilities are a plugin-level property, so they are confirmed once per
+	// install regardless of how many commands the plugin contributes.
+	if err := confirmInstallCapabilities(out, in, installCommandNames(desc), beyondBaselineCapabilities(desc), acceptCaps, assumeYes); err != nil {
 		return err
 	}
 
-	if err := recordInstalledPlugin(cmdName, src, desc); err != nil {
+	if err := recordInstalledPlugin(src, desc); err != nil {
 		return fmt.Errorf("plugin install: %w", err)
 	}
-	fmt.Fprintf(out, "Installed %q as command %q.\n", ref, cmdName)
+	fmt.Fprintf(out, "Installed %q as command(s) %s.\n", ref, quoteCommandNames(desc))
 	return nil
+}
+
+// installCommandNames joins a CLI plugin's declared command names for the
+// capability-confirmation prompt, which addresses the plugin as a whole.
+func installCommandNames(desc wasm.PluginDescriptor) string {
+	names := make([]string, len(desc.Commands))
+	for i, command := range desc.Commands {
+		names[i] = command.Name
+	}
+	return strings.Join(names, ", ")
+}
+
+// quoteCommandNames renders a CLI plugin's declared command names as a
+// comma-separated list of quoted verbs for the install confirmation line.
+func quoteCommandNames(desc wasm.PluginDescriptor) string {
+	quoted := make([]string, len(desc.Commands))
+	for i, command := range desc.Commands {
+		quoted[i] = fmt.Sprintf("%q", command.Name)
+	}
+	return strings.Join(quoted, ", ")
 }
 
 // beyondBaselineCapabilities returns the plugin's declared capabilities beyond
@@ -156,14 +185,14 @@ func beyondBaselineCapabilities(desc wasm.PluginDescriptor) []string {
 // refuses — returning an error rather than blocking on a prompt no one can
 // answer — mirroring the cache-clear confirmation discipline. Otherwise it
 // prompts [y/N] and consents only on an explicit yes.
-func confirmInstallCapabilities(w io.Writer, r io.Reader, cmdName string, caps []string, acceptCaps, assumeYes bool) error {
+func confirmInstallCapabilities(w io.Writer, r io.Reader, commandLabel string, caps []string, acceptCaps, assumeYes bool) error {
 	if len(caps) > 0 {
-		fmt.Fprintf(w, "The %q plugin requests these capabilities beyond the baseline:\n", cmdName)
+		fmt.Fprintf(w, "The %q plugin requests these capabilities beyond the baseline:\n", commandLabel)
 		for _, capName := range caps {
 			fmt.Fprintf(w, "  - %s\n", capName)
 		}
 	} else {
-		fmt.Fprintf(w, "The %q plugin requests no additional capabilities beyond the baseline (arguments in; streamed stdout/stderr; exit code).\n", cmdName)
+		fmt.Fprintf(w, "The %q plugin requests no additional capabilities beyond the baseline (arguments in; streamed stdout/stderr; exit code).\n", commandLabel)
 	}
 	if acceptCaps || assumeYes {
 		return nil
@@ -200,13 +229,16 @@ func builtinCommandNames() map[string]bool {
 	return names
 }
 
-// recordInstalledPlugin writes the installed-plugin index entry for cmdName and
-// caches the plugin's describe metadata keyed by the content digest, so a
-// freshly built tree registers the command and renders its help without loading
-// the guest. The index is read from disk, the entry is set, and the whole index
-// is written back, so an install adds to — rather than replaces — the installed
-// set.
-func recordInstalledPlugin(cmdName string, src resolvedInstallable, desc wasm.PluginDescriptor) error {
+// recordInstalledPlugin writes one installed-plugin index entry per command the
+// plugin contributes and caches the plugin's describe metadata keyed by the
+// content digest, so a freshly built tree registers each command and renders its
+// help without loading the guest. Every command's entry shares the plugin's
+// resolved URI and describe cache; each carries its own command's short help as
+// the entry usage. The index is read from disk, the entries are set, and the
+// whole index is written back, so an install adds to — rather than replaces —
+// the installed set. The describe cache is written once, keyed by the guest's
+// content digest.
+func recordInstalledPlugin(src resolvedInstallable, desc wasm.PluginDescriptor) error {
 	idx, err := readInstalledPluginIndex()
 	if err != nil {
 		return err
@@ -214,10 +246,13 @@ func recordInstalledPlugin(cmdName string, src resolvedInstallable, desc wasm.Pl
 	if idx.Plugins == nil {
 		idx.Plugins = map[string]installedPluginEntry{}
 	}
-	idx.Plugins[cmdName] = installedPluginEntry{
-		URI:          src.URI,
-		Usage:        desc.Description,
-		Capabilities: beyondBaselineCapabilities(desc),
+	caps := beyondBaselineCapabilities(desc)
+	for _, command := range desc.Commands {
+		idx.Plugins[command.Name] = installedPluginEntry{
+			URI:          src.URI,
+			Usage:        command.Description,
+			Capabilities: caps,
+		}
 	}
 	if err := writeInstalledPluginIndex(idx); err != nil {
 		return err

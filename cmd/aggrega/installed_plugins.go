@@ -18,12 +18,14 @@ import (
 
 // cliPluginDispatcher runs an installed CLI plugin identified by its artifact
 // URI, streaming the guest's output and returning its exit code and the content
-// digest of the bytes it resolved and ran. It is the seam a plugin command's
-// RunE calls; the production value is a cliplugin.Runner, and a test substitutes
-// a fake that records the argument vector and returns a chosen exit code and
-// digest without a real guest.
+// digest of the bytes it resolved and ran. command is the resolved subcommand
+// name the operator invoked, handed to the guest so a single guest backing
+// several commands can route on which command was called. It is the seam a
+// plugin command's RunE calls; the production value is a cliplugin.Runner, and a
+// test substitutes a fake that records the command and argument vector and
+// returns a chosen exit code and digest without a real guest.
 type cliPluginDispatcher interface {
-	Run(ctx context.Context, uri string, argv []string) (int, string, error)
+	Run(ctx context.Context, uri, command string, argv []string) (int, string, error)
 }
 
 // installedPluginRunnerFor builds the dispatcher that runs an installed CLI
@@ -114,8 +116,10 @@ func registerInstalledCLIPlugins(root *cobra.Command) {
 // building the tree never loads a guest. Flag parsing is disabled so every
 // argument after the command name is forwarded verbatim to the guest, which
 // interprets its own flags. Running the command resolves and executes the plugin
-// through the shared runner; a non-zero exit is returned as an exitCodeError so
-// the process mirrors the plugin's status without treating it as a host error.
+// through the shared runner, threading the command's own name to the guest as
+// the invoked-command discriminator so a single guest backing several commands
+// routes on it; a non-zero exit is returned as an exitCodeError so the process
+// mirrors the plugin's status without treating it as a host error.
 func newInstalledPluginCmd(name string, entry installedPluginEntry) *cobra.Command {
 	return &cobra.Command{
 		Use:                name,
@@ -126,7 +130,7 @@ func newInstalledPluginCmd(name string, entry installedPluginEntry) *cobra.Comma
 			if err != nil {
 				return err
 			}
-			code, digest, err := installedPluginRunnerFor(rw).Run(cmd.Context(), entry.URI, args)
+			code, digest, err := installedPluginRunnerFor(rw).Run(cmd.Context(), entry.URI, name, args)
 			if err != nil {
 				return err
 			}

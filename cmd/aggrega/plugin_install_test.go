@@ -58,15 +58,19 @@ func fixedDescribe(desc wasm.PluginDescriptor) func(context.Context, resolvedIns
 	}
 }
 
-// cliDesc builds a CLI descriptor naming a command and a short help line.
+// cliDesc builds a CLI descriptor contributing one command with a short help
+// line. An empty command name builds a descriptor with no commands, so the
+// no-commands install guard can be exercised.
 func cliDesc(command, description string) wasm.PluginDescriptor {
-	return wasm.PluginDescriptor{
-		ABIVersion:  wasm.ABIVersionV1Alpha1,
-		PluginType:  wasm.PluginTypeCLI,
-		Command:     command,
-		Description: description,
-		Exports:     []wasm.PluginExport{{Name: wasm.CLIRunExportName}},
+	d := wasm.PluginDescriptor{
+		ABIVersion: wasm.ABIVersionV1Alpha1,
+		PluginType: wasm.PluginTypeCLI,
+		Exports:    []wasm.PluginExport{{Name: wasm.CLIRunExportName}},
 	}
+	if command != "" {
+		d.Commands = []wasm.PluginCLICommand{{Name: command, Description: description}}
+	}
+	return d
 }
 
 // TestConfirmInstallCapabilities covers the capability-confirmation gate: the
@@ -151,10 +155,11 @@ func TestPluginInstall_Success(t *testing.T) {
 		t.Fatalf("unexpected entry: %+v", entry)
 	}
 	if len(entry.Capabilities) != 0 {
-		t.Fatalf("this arc declares no beyond-baseline capabilities; got %v", entry.Capabilities)
+		t.Fatalf("no beyond-baseline capabilities are declared; got %v", entry.Capabilities)
 	}
 
-	if cached, ok := readDescribeCache(describeCacheDigest([]byte("guest-bytes"))); !ok || cached.Command != "moo" {
+	cached, ok := readDescribeCache(describeCacheDigest([]byte("guest-bytes")))
+	if !ok || len(cached.Commands) != 1 || cached.Commands[0].Name != "moo" {
 		t.Fatalf("describe metadata not cached: ok=%v cached=%+v", ok, cached)
 	}
 }
@@ -169,7 +174,7 @@ func TestPluginInstall_CollisionAndTypeGuards(t *testing.T) {
 		wantErr string
 	}{
 		{"not a CLI plugin", wasm.PluginDescriptor{ABIVersion: wasm.ABIVersionV1Alpha1, PluginType: wasm.PluginTypeProvider}, "not a CLI plugin"},
-		{"no command name", cliDesc("", "help"), "declares no command name"},
+		{"no commands", cliDesc("", "help"), "declares no commands"},
 		{"built-in collision", cliDesc("build", "help"), "built-in command"},
 		{"reserved collision", cliDesc("deploy", "help"), "reserved command name"},
 	}
@@ -233,9 +238,10 @@ func TestPluginInstall_RealGuestDescribe(t *testing.T) {
 		t.Fatalf("index missing 'moo' from a real describe(): %+v", idx)
 	}
 	if entry.Usage != "Print a friendly greeting" {
-		t.Fatalf("usage should come from the guest describe() Description; got %q", entry.Usage)
+		t.Fatalf("usage should come from the guest describe() command description; got %q", entry.Usage)
 	}
-	if cached, ok := readDescribeCache(describeCacheDigest(guest)); !ok || cached.Command != "moo" {
+	cached, ok := readDescribeCache(describeCacheDigest(guest))
+	if !ok || len(cached.Commands) != 1 || cached.Commands[0].Name != "moo" {
 		t.Fatalf("real-guest describe metadata not cached: ok=%v cached=%+v", ok, cached)
 	}
 }

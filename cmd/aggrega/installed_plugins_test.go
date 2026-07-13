@@ -14,21 +14,23 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
-// fakeDispatcher records the URI and argv of each Run call and returns a
-// preconfigured exit code and error, so a test can assert argument forwarding and
-// exit-code propagation without a real guest.
+// fakeDispatcher records the URI, invoked command name, and argv of each Run
+// call and returns a preconfigured exit code and error, so a test can assert
+// command and argument forwarding and exit-code propagation without a real guest.
 type fakeDispatcher struct {
-	gotURI  string
-	gotArgv []string
-	code    int
-	digest  string
-	err     error
-	calls   int
+	gotURI     string
+	gotCommand string
+	gotArgv    []string
+	code       int
+	digest     string
+	err        error
+	calls      int
 }
 
-func (f *fakeDispatcher) Run(_ context.Context, uri string, argv []string) (int, string, error) {
+func (f *fakeDispatcher) Run(_ context.Context, uri, command string, argv []string) (int, string, error) {
 	f.calls++
 	f.gotURI = uri
+	f.gotCommand = command
 	f.gotArgv = argv
 	return f.code, f.digest, f.err
 }
@@ -108,6 +110,9 @@ func TestInstalledPlugin_ListedAndDispatched(t *testing.T) {
 	}
 	if d.gotURI != "oci://example/moo:v1" {
 		t.Fatalf("runner URI = %q; want the index URI", d.gotURI)
+	}
+	if d.gotCommand != "moo" {
+		t.Fatalf("forwarded command = %q; want the invoked command name %q", d.gotCommand, "moo")
 	}
 	if got, want := strings.Join(d.gotArgv, " "), "--loud twice"; got != want {
 		t.Fatalf("forwarded argv = %q; want %q", got, want)

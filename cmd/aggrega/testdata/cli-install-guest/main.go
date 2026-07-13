@@ -7,21 +7,21 @@
 // standard Go toolchain for GOOS=wasip1.
 //
 // It self-describes as a CLI plugin that names the command it contributes
-// (command "moo") and carries a one-line description used as the command's short
-// help. It imports no host functions, so it loads under either instantiation
-// profile; the install path describes it to read the command name it registers.
-// Its cli_run export is present so the descriptor passes the CLI minimum-export
-// rule; the install path never invokes it, reading only the describe() output.
+// (command "moo") with a one-line short-help description. It imports no host
+// functions, so it loads under either instantiation profile; the install path
+// describes it to read the command it registers. Its cli_run export is present
+// so the descriptor passes the CLI minimum-export rule; the install path never
+// invokes it, reading only the describe() output.
 package main
 
 import (
 	pdk "github.com/extism/go-pdk"
 )
 
-// cliDescriptor is the fixed describe() self-report: a CLI plugin that names its
+// cliDescriptor is the fixed describe() self-report: a CLI plugin that names one
 // command and its short help, with the required cli_run export and no
 // host-function imports.
-const cliDescriptor = `{"abi_version":"v1alpha1","plugin_type":"cli","command":"moo","description":"Print a friendly greeting","exports":[{"name":"cli_run"}]}`
+const cliDescriptor = `{"abi_version":"v1alpha1","plugin_type":"cli","commands":[{"name":"moo","description":"Print a friendly greeting"}],"exports":[{"name":"cli_run"}]}`
 
 //go:wasmexport describe
 func describe() int32 {

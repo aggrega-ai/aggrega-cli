@@ -94,26 +94,27 @@ type PluginDescriptor struct {
 	// a plugin-level self-report of what the plugin does, distinct from the
 	// per-export [PluginExport.Description] and from the entity's
 	// metadata.description. It is informational; the host neither validates
-	// nor acts on it. For a CLI plugin it is the command's short help line.
+	// nor acts on it. It is the plugin's self-report consumed by search
+	// plugins and catalog generation.
 	Description string `json:"description,omitempty"`
 
-	// Command is the command name a CLI plugin contributes — the aggrega
-	// <command> token the host registers the plugin under. It is read at
-	// install time to name the top-level command the plugin is installed as;
-	// a non-CLI plugin leaves it empty, and a CLI plugin that declares no
-	// command name cannot be installed as a command. The plugin-level
-	// Description is the command's short help string; this names the command
-	// itself. It is documentation the install path consumes, not a value the
-	// load gate validates or acts on.
-	Command string `json:"command,omitempty"`
+	// Commands are the top-level aggrega <command> verbs a CLI plugin
+	// contributes, each with its own short-help line. One CLI plugin may
+	// contribute several commands; the host registers one top-level command
+	// per entry and, at invocation, routes the resolved command name to the
+	// guest so a single guest backing several commands selects its behavior.
+	// A non-CLI plugin leaves it empty. It is documentation the install path
+	// consumes to name the commands the plugin is installed as; the load gate
+	// checks only that every entry names a command.
+	Commands []PluginCLICommand `json:"commands,omitempty"`
 
 	// Stage is the compilation stage a policy-validator plugin evaluates at:
 	// StageIR (the default when absent) evaluates the target-agnostic IR graph;
 	// StageRender evaluates the rendered provider-native artifacts. It is
-	// meaningful for the policy-validator plugin type only — like Command is
-	// CLI-only — and other plugin types leave it empty. The shape validator
-	// accepts StageIR, StageRender, or empty and refuses any other value; it
-	// does not cross-check the value against the plugin type.
+	// meaningful for the policy-validator plugin type only — as Commands is
+	// meaningful for the CLI type only — and other plugin types leave it empty.
+	// The shape validator accepts StageIR, StageRender, or empty and refuses
+	// any other value; it does not cross-check the value against the plugin type.
 	Stage string `json:"stage,omitempty"`
 
 	// Metadata is optional authorship information. It carries no
@@ -173,6 +174,23 @@ type PluginExport struct {
 	// It is documentation for catalog readers; the host neither validates
 	// its content nor acts on it.
 	Selector string `json:"selector,omitempty"`
+}
+
+// PluginCLICommand is one top-level aggrega <command> verb a CLI plugin
+// contributes, as declared in describe(). The host registers one command per
+// entry and routes the resolved command name back to the guest at invocation,
+// so a single guest may back several commands and select its behavior on the
+// name.
+type PluginCLICommand struct {
+	// Name is the command verb the host registers — the aggrega <name> token an
+	// operator invokes and the discriminator the host hands the guest so it can
+	// route on which command was called. Every declared command must name it.
+	Name string `json:"name"`
+
+	// Description is the command's one-line short-help text, shown in the
+	// command listing and help output. It is optional documentation; the host
+	// neither validates nor acts on it.
+	Description string `json:"description,omitempty"`
 }
 
 // PluginDescriptorMeta is optional authorship and build-provenance
@@ -502,6 +520,10 @@ const (
 //     the cross_boundary_linking flag is set if and only if the descriptor
 //     declares both the link_publish and link_resolve exports. A flag without
 //     both exports, or both exports without the flag, is refused at load.
+//   - every declared CLI command names a command: each entry in commands
+//     carries a non-empty name. This is shape validation only — the gate does
+//     not require any command to be present per plugin type (a CLI plugin's
+//     command presence is enforced at install), and does not act on the value.
 //   - stage is ir, render, or empty. This is shape validation only — the host
 //     does not cross-check the value against the plugin type or act on it here.
 //
@@ -543,7 +565,27 @@ func (d PluginDescriptor) Validate(pluginIdentity string) error {
 		return err
 	}
 
+	if err := d.validateCommands(pluginIdentity); err != nil {
+		return err
+	}
+
 	return d.validateLinkCapability(pluginIdentity)
+}
+
+// validateCommands shape-checks the descriptor's declared CLI commands: every
+// entry in commands must carry a non-empty name. This is shape validation only
+// — it does not require any command to be present (a CLI plugin's command
+// presence is enforced at install) and does not act on the values. A returned
+// error wraps [ErrWasmManifestRejected] and names pluginIdentity and the
+// offending command index.
+func (d PluginDescriptor) validateCommands(pluginIdentity string) error {
+	for i, command := range d.Commands {
+		if command.Name == "" {
+			return fmt.Errorf("plugin %q declares a command at index %d with an empty name: %w",
+				pluginIdentity, i, ErrWasmManifestRejected)
+		}
+	}
+	return nil
 }
 
 // validateStage shape-checks the descriptor's stage: it must be ir, render, or

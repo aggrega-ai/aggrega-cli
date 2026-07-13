@@ -67,9 +67,14 @@ type Runner struct {
 }
 
 // Run resolves the plugin URI, loads it under the runtime CLI profile, invokes
-// its cli_run export with argv, streams the guest's output to the Runner's
-// stdout/stderr, and returns the guest's exit code and the content digest of the
-// resolved bytes.
+// its cli_run export with command and argv, streams the guest's output to the
+// Runner's stdout/stderr, and returns the guest's exit code and the content
+// digest of the resolved bytes.
+//
+// command is the resolved subcommand name the operator invoked. It is handed to
+// the guest in the cli_run input so a single guest backing several commands can
+// route on which command was called; argv is the tokens that follow the command
+// name.
 //
 // The returned exit code is the command's status, exactly as the guest reported
 // it: a non-zero code is an ordinary command result (the shell's $?), NOT a Go
@@ -85,7 +90,7 @@ type Runner struct {
 // the bytes resolve, so it is present on every path past resolution regardless
 // of a later run outcome; the caller uses it to pin the running bytes and detect
 // drift.
-func (r Runner) Run(ctx context.Context, uri string, argv []string) (int, string, error) {
+func (r Runner) Run(ctx context.Context, uri, command string, argv []string) (int, string, error) {
 	if r.Resolve == nil {
 		return 0, "", ErrNoResolver
 	}
@@ -136,7 +141,7 @@ func (r Runner) Run(ctx context.Context, uri string, argv []string) (int, string
 			uri, desc.PluginType, wasm.PluginTypeCLI, ErrPluginNotCLI)
 	}
 
-	payload, err := json.Marshal(abi.CLIRunInput{Args: argv})
+	payload, err := json.Marshal(abi.CLIRunInput{Command: command, Args: argv})
 	if err != nil {
 		return 0, digest, fmt.Errorf("cliplugin: encode cli_run input for plugin %q: %w", uri, err)
 	}

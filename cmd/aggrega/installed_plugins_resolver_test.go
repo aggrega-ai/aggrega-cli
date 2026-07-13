@@ -75,7 +75,7 @@ func TestInstalledPluginRunner_ResolvesSidecarURI(t *testing.T) {
 	// pre-fix empty resolver did.
 	ctx := context.Background()
 
-	_, sidecarDigest, runErr := installedPluginRunnerFor(rw).Run(ctx, uri, nil)
+	_, sidecarDigest, runErr := installedPluginRunnerFor(rw).Run(ctx, uri, uri, nil)
 	if runErr == nil {
 		t.Fatalf("running non-guest sidecar bytes should fail at load, not succeed")
 	}
@@ -88,7 +88,7 @@ func TestInstalledPluginRunner_ResolvesSidecarURI(t *testing.T) {
 		t.Fatalf("resolved-bytes digest = %q; want %q", sidecarDigest, want)
 	}
 
-	_, _, emptyErr := installedPluginRunnerFor(nil).Run(ctx, uri, nil)
+	_, _, emptyErr := installedPluginRunnerFor(nil).Run(ctx, uri, uri, nil)
 	if emptyErr == nil || !strings.Contains(emptyErr.Error(), "not resolvable") {
 		t.Fatalf("no-workspace runner should fail resolution with the pre-fix error; got %v", emptyErr)
 	}
