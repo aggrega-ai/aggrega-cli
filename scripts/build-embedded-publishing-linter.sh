@@ -14,9 +14,8 @@
 # checkout.
 #
 # The embedded linter registers under a digest-free repository reference (see
-# PublishingLinterURI in internal/wasm/embedded/embedded.go), so the printed
-# digest does not need to be transcribed into any URI or pin — it is reported for
-# reproducibility confirmation only.
+# PublishingLinterURI in internal/wasm/embedded/embedded.go); the printed digest
+# is reported for reproducibility confirmation only.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 

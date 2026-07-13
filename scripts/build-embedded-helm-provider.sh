@@ -11,10 +11,9 @@
 # bytes, and the digest advances only when the source or the commit does.
 # The embedded provider registers under a digest-free repository reference (see
 # helmProviderURI in internal/wasm/embedded/embedded.go, mirrored by the
-# spec.plugin reference in the helm-renderer Plugin entity), and the resolution
-# test derives its expected digest from the embedded bytes at test time, so the
-# printed digest does not need to be transcribed into any URI or pin — it is
-# reported for reproducibility confirmation only.
+# spec.plugin reference in the helm-renderer Plugin entity). The resolution
+# test derives its expected digest from the embedded bytes at test time; the
+# printed digest is reported for reproducibility confirmation only.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
