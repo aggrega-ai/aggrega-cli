@@ -15,19 +15,6 @@ var (
 	// the author at the specific import that caused the failure.
 	ErrSubAggregateLoad = errors.New("sub-aggregate load failed")
 
-	// ErrInvalidUsesFormat fires from normalizeUses and parseVerboseEntry
-	// when a `uses` block carries a value that is neither a string array
-	// nor a verbose map, or a string-array element that is not a string,
-	// or a verbose-entry value that is neither a map nor a simple-string
-	// shorthand, or an inject block that is not a map. The wrapped error
-	// names the socket and (when applicable) the alias plus the offending
-	// Go type. Socket-name validity is enforced upstream by the resolver
-	// against each entity's usesSchema (the socket-allowlist and
-	// required-socket checks happen at Step 1); the formats this sentinel
-	// catches are structural shape errors the YAML schema accepts but the
-	// builder cannot interpret.
-	ErrInvalidUsesFormat = errors.New("invalid uses format: a uses socket value must be a string array of target names or a verbose alias-keyed map")
-
 	// ErrMaxDepth fires from flattenAggregate when sub-aggregate inclusion
 	// recursion exceeds maxSubAggregateDepth (currently 10). The bound
 	// caps both pathological-depth authoring mistakes and any sub-aggregate
