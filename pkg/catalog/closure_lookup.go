@@ -982,7 +982,17 @@ func tier2ReadVerified(workspaceRoot, cacheDir, uri, expectedDigest, expectedMan
 				return nil, fmt.Errorf("catalog: cached manifest for %s: %w", uri, err)
 			}
 		}
-		if err := oci.VerifyContentAgainstManifest(manifestBytes, bytes); err != nil {
+		// A plugin entity's content is the manifest's CONFIG blob (the entity YAML),
+		// not a layer — the single plugin manifest carries the .wasm as its layer.
+		// Verify the cached entity against the descriptor that actually commits to
+		// it: the config for a plugin manifest, the content layer for every other
+		// entity kind. The manifest itself declares which, so the routing needs no
+		// kind thread and non-plugin entities keep the layer-based verify unchanged.
+		if oci.IsPluginManifest(manifestBytes) {
+			if err := oci.VerifyConfigAgainstManifest(manifestBytes, bytes); err != nil {
+				return nil, fmt.Errorf("catalog: cached %s: %w", uri, err)
+			}
+		} else if err := oci.VerifyContentAgainstManifest(manifestBytes, bytes); err != nil {
 			return nil, fmt.Errorf("catalog: cached %s: %w", uri, err)
 		}
 	case errors.Is(mrerr, oci.ErrFetchNotFound):

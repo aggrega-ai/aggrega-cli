@@ -8,7 +8,6 @@ package main
 import (
 	"context"
 	"errors"
-	"os"
 	"path/filepath"
 	"testing"
 
@@ -21,57 +20,81 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
-// signedPluginPublication captures the coordinates of a Plugin published
-// SIGNED to a real in-process registry: the entity and .wasm closure URIs, and
-// the real content + manifest digests of each, recovered by pulling them back.
+// signedPluginPublication captures the coordinates of a Plugin published to a
+// real in-process registry under the single-manifest model: the entity and .wasm
+// closure URIs, the real content digest of each blob, and the ONE manifest digest
+// both axes commit to. The entity YAML (config blob) and the .wasm (inline layer)
+// ride one OCI manifest tagged by metadata.version, so there is a single manifest
+// digest — not a per-artifact pair.
 type signedPluginPublication struct {
-	host             string
-	entityURI        string
-	wasmURI          string
-	entityContentDg  string
-	entityManifestDg string
-	wasmContentDg    string
-	wasmManifestDg   string
+	host            string
+	entityURI       string
+	wasmURI         string
+	entityContentDg string
+	wasmContentDg   string
+	manifestDg      string
 }
 
-// publishSignedPluginToRegistry publishes a real Plugin entity + .wasm fixture,
-// signed with the given keyed signer, to a fresh in-process registry, and
-// recovers the real digests the production resolution records. The .wasm and
-// the entity each carry their own signature referrer.
-func publishSignedPluginToRegistry(t *testing.T, signer signing.Signer) signedPluginPublication {
-	t.Helper()
-	ctx := context.Background()
-
-	pluginPath := wasmtest.EnsureFixtureBuilt(t, "frp-step-go.wasm")
-	host := startRegistry(t, nil)
-
-	const socket = "pipeline"
-	const name = "patch-server"
-	const version = "1.0.0"
-	socketName := socket + "/" + name
-
-	wasmBytes, err := os.ReadFile(pluginPath)
-	if err != nil {
-		t.Fatalf("read .wasm: %v", err)
-	}
-	wasmContentDg := digest.ContentDigest(wasmBytes)
-
-	entityDir := t.TempDir()
-	entityPath := filepath.Join(entityDir, "plugin.yaml")
-	writeFixture(t, entityPath, `apiVersion: aggrega.ai/v1alpha1
+// pluginEntityYAML renders a Plugin entity fixture with the canonical BARE
+// spec.plugin identity (no ":version", no "@sha256:"); the version comes from
+// metadata.version and the .wasm rides inline in the single manifest.
+func pluginEntityYAML(host, socketName, version string) string {
+	return `apiVersion: aggrega.ai/v1alpha1
 kind: Plugin
 metadata:
-  name: `+socketName+`
-  version: "`+version+`"
+  name: ` + socketName + `
+  version: "` + version + `"
 spec:
-  plugin: "oci://`+host+`/plugin/`+socketName+`:`+version+`"
+  plugin: "oci://` + host + `/plugin/` + socketName + `"
   pluginType: frp_step
   abiVersion: v1alpha1
   exports:
     - name: step
       operates: patch
       scope: own
-`)
+`
+}
+
+// fetchPublishedPlugin recovers the single-manifest coordinates the production
+// resolution records, by reading the one manifest back from the registry: the
+// entity YAML (config blob) and .wasm (inline layer) content digests, and the
+// manifest digest both axes commit to.
+func fetchPublishedPlugin(t *testing.T, host, socketName, version string) signedPluginPublication {
+	t.Helper()
+	repo, err := oci.NewRemoteRepository(host + "/plugin/" + socketName)
+	if err != nil {
+		t.Fatalf("entity repo: %v", err)
+	}
+	entityYAML, wasm, manifestDg, err := oci.FetchPluginManifest(context.Background(), repo, version)
+	if err != nil {
+		t.Fatalf("fetch single plugin manifest: %v", err)
+	}
+	return signedPluginPublication{
+		host:            host,
+		entityURI:       host + "/plugin/" + socketName,
+		wasmURI:         "oci://" + host + "/plugin/" + socketName,
+		entityContentDg: digest.ContentDigest(entityYAML),
+		wasmContentDg:   digest.ContentDigest(wasm),
+		manifestDg:      manifestDg,
+	}
+}
+
+// publishSignedPluginToRegistry publishes a real Plugin entity + .wasm fixture,
+// signed ONCE with the given keyed signer, to a fresh in-process registry, and
+// recovers the real digests the production resolution records. Under the
+// single-manifest model the entity YAML and the inline .wasm ride one manifest,
+// signed once — the single signature transitively covers the .wasm.
+func publishSignedPluginToRegistry(t *testing.T, signer signing.Signer) signedPluginPublication {
+	t.Helper()
+	pluginPath := wasmtest.EnsureFixtureBuilt(t, "frp-step-go.wasm")
+	host := startRegistry(t, nil)
+
+	const socketName = "pipeline/patch-server"
+	const version = "1.0.0"
+
+	entityDir := t.TempDir()
+	entityPath := filepath.Join(entityDir, "plugin.yaml")
+	writeFixture(t, entityPath, pluginEntityYAML(host, socketName, version))
 
 	wantSign := true
 	if perr := pushRun(pushConfig{
@@ -83,64 +106,67 @@ spec:
 	}); perr != nil {
 		t.Fatalf("publish signed plugin: %v", perr)
 	}
+	return fetchPublishedPlugin(t, host, socketName, version)
+}
 
-	// Recover the real manifest digests the production resolution records, by
-	// pulling each artifact back from the registry.
-	entityRepo, err := oci.NewRemoteRepository(host + "/plugin/" + socketName)
-	if err != nil {
-		t.Fatalf("entity repo: %v", err)
-	}
-	entityPull, err := oci.Pull(ctx, entityRepo, version)
-	if err != nil {
-		t.Fatalf("pull entity: %v", err)
-	}
-	wasmPull, err := oci.Pull(ctx, entityRepo, oci.ContentDigestTag(wasmContentDg))
-	if err != nil {
-		t.Fatalf("pull .wasm: %v", err)
-	}
+// publishUnsignedPluginToRegistry publishes a real Plugin entity + .wasm fixture
+// UNSIGNED to a fresh in-process registry (one manifest, no signature referrer),
+// and recovers the single-manifest coordinates. It is the unsigned counterpart of
+// publishSignedPluginToRegistry.
+func publishUnsignedPluginToRegistry(t *testing.T) signedPluginPublication {
+	t.Helper()
+	pluginPath := wasmtest.EnsureFixtureBuilt(t, "frp-step-go.wasm")
+	host := startRegistry(t, nil)
 
-	return signedPluginPublication{
-		host:             host,
-		entityURI:        host + "/plugin/" + socketName,
-		wasmURI:          "oci://" + host + "/plugin/" + socketName + "@" + wasmContentDg,
-		entityContentDg:  digest.ContentDigest(entityPull.Bytes),
-		entityManifestDg: entityPull.Digest,
-		wasmContentDg:    wasmContentDg,
-		wasmManifestDg:   wasmPull.Digest,
+	const socketName = "pipeline/patch-server"
+	const version = "1.0.0"
+
+	entityDir := t.TempDir()
+	entityPath := filepath.Join(entityDir, "plugin.yaml")
+	writeFixture(t, entityPath, pluginEntityYAML(host, socketName, version))
+
+	if perr := pushRun(pushConfig{EntityPath: entityPath, PluginPath: pluginPath, Registry: host}); perr != nil {
+		t.Fatalf("publish unsigned plugin: %v", perr)
 	}
+	return fetchPublishedPlugin(t, host, socketName, version)
 }
 
 // closureAndLockfileFor builds the two-row closure + lockfile the production
 // verify pass consumes: the Plugin ENTITY row (entities axis) and the .wasm
-// ARTIFACT row (plugins axis, referenced from the entity). Content and manifest
-// digests are kept distinct on each row, matching the production resolution.
+// ARTIFACT row (plugins axis, referenced from the entity). Under the
+// single-manifest model both rows commit to the ONE manifest digest — the
+// pairing is intrinsic — while each row keeps its own blob content digest,
+// distinct from the manifest digest (the anti-conflation guard).
 func closureAndLockfileFor(p signedPluginPublication) (closure.Closure, *lockfile.Lockfile) {
 	cl := closure.Closure{
 		Entities: []closure.ResolvedRef{
-			{URI: p.entityURI, Digest: p.entityContentDg, ManifestDigest: p.entityManifestDg, ResolutionPath: "tier-3-pull"},
+			{URI: p.entityURI, Digest: p.entityContentDg, ManifestDigest: p.manifestDg, ResolutionPath: "tier-3-pull"},
 		},
 		Plugins: []closure.ResolvedRef{
-			{URI: p.wasmURI, Digest: p.wasmContentDg, ManifestDigest: p.wasmManifestDg, ResolutionPath: "tier-3-pull", ReferencedFrom: []string{p.entityURI}},
+			{URI: p.wasmURI, Digest: p.wasmContentDg, ManifestDigest: p.manifestDg, ResolutionPath: "tier-3-pull", ReferencedFrom: []string{p.entityURI}},
 		},
 	}
 	lf := &lockfile.Lockfile{
 		Entities: []lockfile.Entity{
-			{URI: p.entityURI, Digest: p.entityContentDg, ManifestDigest: p.entityManifestDg},
+			{URI: p.entityURI, Digest: p.entityContentDg, ManifestDigest: p.manifestDg},
 		},
 		Plugins: []lockfile.Plugin{
-			{URI: p.wasmURI, Digest: p.wasmContentDg, ManifestDigest: p.wasmManifestDg, ReferencedFrom: []string{p.entityURI}},
+			{URI: p.wasmURI, Digest: p.wasmContentDg, ManifestDigest: p.manifestDg, ReferencedFrom: []string{p.entityURI}},
 		},
 	}
 	return cl, lf
 }
 
-// TestIntegration_PluginSignedClosure_BothVerifyAndSameSigner is proof (a) +
-// the same-signer pass: a real SIGNED publish of a Plugin records BOTH manifest
-// digests and verifies BOTH signatures (entity + .wasm) at pull through the
-// production verify pass, and the same-signer check passes because both were
-// signed by the one signer. Each row's content digest and manifest digest are
-// distinct — the anti-conflation guard.
-func TestIntegration_PluginSignedClosure_BothVerifyAndSameSigner(t *testing.T) {
+// TestIntegration_PluginSignedClosure_ManifestSignatureVerifies is proof (a): a
+// real SIGNED publish of a Plugin records the ONE manifest digest on both the
+// entity and the .wasm-artifact closure rows and verifies the single manifest
+// signature at pull through the production verify pass. Under the single-manifest
+// model the manifest commits to the inline .wasm layer, so the entity↔wasm
+// pairing is intrinsic — one signature transitively covers both axes and there is
+// no second signer to reconcile. Each row's blob content digest is distinct from
+// the manifest digest (the anti-conflation guard), and both rows share the one
+// manifest digest (the pairing witness).
+func TestIntegration_PluginSignedClosure_ManifestSignatureVerifies(t *testing.T) {
 	ctx := context.Background()
 
 	privPEM, _, err := signing.GenerateKeyedPEM()
@@ -155,13 +181,19 @@ func TestIntegration_PluginSignedClosure_BothVerifyAndSameSigner(t *testing.T) {
 	p := publishSignedPluginToRegistry(t, signer)
 	cl, lf := closureAndLockfileFor(p)
 
-	// Anti-conflation: content digest != manifest digest on BOTH rows, so a
-	// verify bound to the content digest could not accidentally succeed.
-	if p.entityContentDg == p.entityManifestDg {
+	// Anti-conflation: each row's blob content digest differs from the manifest
+	// digest, so a verify bound to the content digest could not accidentally succeed.
+	if p.entityContentDg == p.manifestDg {
 		t.Fatalf("entity content digest equals manifest digest; the test cannot distinguish the verify subject")
 	}
-	if p.wasmContentDg == p.wasmManifestDg {
+	if p.wasmContentDg == p.manifestDg {
 		t.Fatalf(".wasm content digest equals manifest digest; the test cannot distinguish the verify subject")
+	}
+	// Pairing witness: one manifest covers both axes, so both rows commit to the
+	// same manifest digest — the intrinsic pairing the single manifest guarantees.
+	if lf.Entities[0].ManifestDigest != lf.Plugins[0].ManifestDigest {
+		t.Fatalf("entity manifest digest %q != .wasm manifest digest %q; the single manifest must cover both axes",
+			lf.Entities[0].ManifestDigest, lf.Plugins[0].ManifestDigest)
 	}
 
 	wsCfg := workspaceconfig.Config{
@@ -171,7 +203,7 @@ func TestIntegration_PluginSignedClosure_BothVerifyAndSameSigner(t *testing.T) {
 	}
 
 	if verr := verifyClosureSignatures(ctx, lf, cl, wsCfg, t.TempDir(), nil, remoteTargetFor); verr != nil {
-		t.Fatalf("a signed plugin should verify BOTH signatures and pass same-signer; got: %v", verr)
+		t.Fatalf("the single manifest signature must verify under the pinned key; got: %v", verr)
 	}
 	if lf.Entities[0].Signature == nil {
 		t.Fatal("entity signature fact not recorded on the entities row")
@@ -179,137 +211,34 @@ func TestIntegration_PluginSignedClosure_BothVerifyAndSameSigner(t *testing.T) {
 	if lf.Plugins[0].Signature == nil {
 		t.Fatal(".wasm signature fact not recorded on the plugins row")
 	}
-	// Both signers match: keyed fingerprints over the one pinned key.
-	if lf.Entities[0].Signature.Identity != lf.Plugins[0].Signature.Identity {
-		t.Errorf("entity signer %q != .wasm signer %q; the same-signer check should have matched them",
-			lf.Entities[0].Signature.Identity, lf.Plugins[0].Signature.Identity)
-	}
 }
 
-// publishPluginWithSelectiveSignatures publishes a Plugin UNSIGNED, then
-// attaches a keyed signature referrer to ONLY the requested artifacts (entity
-// and/or .wasm). It gives a test an asymmetric publish — one artifact signed,
-// the other not — which the production pushPlugin (sign-both-or-neither) never
-// produces, so the per-artifact policy halt can be exercised on each leg.
-func publishPluginWithSelectiveSignatures(t *testing.T, signer signing.Signer, signEntity, signWasm bool) signedPluginPublication {
-	t.Helper()
-	ctx := context.Background()
-
-	pluginPath := wasmtest.EnsureFixtureBuilt(t, "frp-step-go.wasm")
-	host := startRegistry(t, nil)
-
-	const socketName = "pipeline/patch-server"
-	const version = "1.0.0"
-
-	wasmBytes, err := os.ReadFile(pluginPath)
-	if err != nil {
-		t.Fatalf("read .wasm: %v", err)
-	}
-	wasmContentDg := digest.ContentDigest(wasmBytes)
-
-	entityDir := t.TempDir()
-	entityPath := filepath.Join(entityDir, "plugin.yaml")
-	writeFixture(t, entityPath, `apiVersion: aggrega.ai/v1alpha1
-kind: Plugin
-metadata:
-  name: `+socketName+`
-  version: "`+version+`"
-spec:
-  plugin: "oci://`+host+`/plugin/`+socketName+`:`+version+`"
-  pluginType: frp_step
-  abiVersion: v1alpha1
-  exports:
-    - name: step
-      operates: patch
-      scope: own
-`)
-	if perr := pushRun(pushConfig{EntityPath: entityPath, PluginPath: pluginPath, Registry: host}); perr != nil {
-		t.Fatalf("publish unsigned plugin: %v", perr)
-	}
-
-	repo, err := oci.NewRemoteRepository(host + "/plugin/" + socketName)
-	if err != nil {
-		t.Fatalf("entity repo: %v", err)
-	}
-	entityPull, err := oci.Pull(ctx, repo, version)
-	if err != nil {
-		t.Fatalf("pull entity: %v", err)
-	}
-	wasmTag := oci.ContentDigestTag(wasmContentDg)
-	wasmPull, err := oci.Pull(ctx, repo, wasmTag)
-	if err != nil {
-		t.Fatalf("pull .wasm: %v", err)
-	}
-
-	if signEntity {
-		bundle, artifactType, serr := signer.Sign(ctx, entityPull.Digest)
-		if serr != nil {
-			t.Fatalf("sign entity: %v", serr)
-		}
-		if _, aerr := oci.AttachReferrer(ctx, repo, version, artifactType, bundle); aerr != nil {
-			t.Fatalf("attach entity sig: %v", aerr)
-		}
-	}
-	if signWasm {
-		bundle, artifactType, serr := signer.Sign(ctx, wasmPull.Digest)
-		if serr != nil {
-			t.Fatalf("sign .wasm: %v", serr)
-		}
-		if _, aerr := oci.AttachReferrer(ctx, repo, wasmTag, artifactType, bundle); aerr != nil {
-			t.Fatalf("attach .wasm sig: %v", aerr)
-		}
-	}
-
-	return signedPluginPublication{
-		host:             host,
-		entityURI:        host + "/plugin/" + socketName,
-		wasmURI:          "oci://" + host + "/plugin/" + socketName + "@" + wasmContentDg,
-		entityContentDg:  digest.ContentDigest(entityPull.Bytes),
-		entityManifestDg: entityPull.Digest,
-		wasmContentDg:    wasmContentDg,
-		wasmManifestDg:   wasmPull.Digest,
-	}
-}
-
-// TestIntegration_PluginSignedClosure_PolicyHaltsOnMissingSig is proof (b),
-// SYMMETRIC: a signature-requiring policy HALTS when EITHER required signature
-// is missing — the .wasm unsigned (entity signed), and the entity unsigned
-// (.wasm signed). Each leg proves the per-registry RequiresSignatures governs
-// both axes.
+// TestIntegration_PluginSignedClosure_PolicyHaltsOnMissingSig is proof (b): a
+// signature-requiring policy HALTS when the single manifest carries no signature.
+// Under the single-manifest model a plugin has ONE signature covering both the
+// entity and the inline .wasm, so there is one missing-signature case — an
+// unsigned publish — not a per-axis asymmetry.
 func TestIntegration_PluginSignedClosure_PolicyHaltsOnMissingSig(t *testing.T) {
 	ctx := context.Background()
 
-	privPEM, _, err := signing.GenerateKeyedPEM()
+	// A pinned public key makes the require-signatures policy well-formed (keyed
+	// mode); the manifest carries no signature, so the halt is the missing
+	// signature, not a key mismatch.
+	_, pubPEM, err := signing.GenerateKeyedPEM()
 	if err != nil {
 		t.Fatalf("GenerateKeyedPEM: %v", err)
 	}
-	signer, err := signing.LoadKeyedSigner(privPEM, nil)
-	if err != nil {
-		t.Fatalf("LoadKeyedSigner: %v", err)
-	}
 
-	cases := []struct {
-		name       string
-		signEntity bool
-		signWasm   bool
-	}{
-		{"wasm_signature_missing", true, false},
-		{"entity_signature_missing", false, true},
+	p := publishUnsignedPluginToRegistry(t)
+	cl, lf := closureAndLockfileFor(p)
+	wsCfg := workspaceconfig.Config{
+		Registries: []workspaceconfig.RegistryConfig{
+			{Host: p.host, RequiresSignatures: true, PublicKey: string(pubPEM)},
+		},
 	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			p := publishPluginWithSelectiveSignatures(t, signer, tc.signEntity, tc.signWasm)
-			cl, lf := closureAndLockfileFor(p)
-			wsCfg := workspaceconfig.Config{
-				Registries: []workspaceconfig.RegistryConfig{
-					{Host: p.host, RequiresSignatures: true, PublicKey: string(signer.PublicKeyPEM())},
-				},
-			}
-			verr := verifyClosureSignatures(ctx, lf, cl, wsCfg, t.TempDir(), nil, remoteTargetFor)
-			if !errors.Is(verr, signing.ErrNoSignatureFound) {
-				t.Fatalf("a signature-requiring policy must HALT with ErrNoSignatureFound when a required signature is missing; got: %v", verr)
-			}
-		})
+	verr := verifyClosureSignatures(ctx, lf, cl, wsCfg, t.TempDir(), nil, remoteTargetFor)
+	if !errors.Is(verr, signing.ErrNoSignatureFound) {
+		t.Fatalf("a signature-requiring policy must HALT with ErrNoSignatureFound when the single manifest carries no signature; got: %v", verr)
 	}
 }
 
@@ -356,71 +285,13 @@ func TestIntegration_PluginSignedClosure_PolicyHaltsOnWrongKey(t *testing.T) {
 func TestIntegration_PluginUnsignedClosure_NonRequiringNoHalt(t *testing.T) {
 	ctx := context.Background()
 
-	pluginPath := wasmtest.EnsureFixtureBuilt(t, "frp-step-go.wasm")
-	host := startRegistry(t, nil)
-
-	const socketName = "pipeline/patch-server"
-	const version = "1.0.0"
-
-	wasmBytes, err := os.ReadFile(pluginPath)
-	if err != nil {
-		t.Fatalf("read .wasm: %v", err)
-	}
-	wasmContentDg := digest.ContentDigest(wasmBytes)
-
-	entityDir := t.TempDir()
-	entityPath := filepath.Join(entityDir, "plugin.yaml")
-	writeFixture(t, entityPath, `apiVersion: aggrega.ai/v1alpha1
-kind: Plugin
-metadata:
-  name: `+socketName+`
-  version: "`+version+`"
-spec:
-  plugin: "oci://`+host+`/plugin/`+socketName+`:`+version+`"
-  pluginType: frp_step
-  abiVersion: v1alpha1
-  exports:
-    - name: step
-      operates: patch
-      scope: own
-`)
-	// Publish UNSIGNED.
-	if perr := pushRun(pushConfig{EntityPath: entityPath, PluginPath: pluginPath, Registry: host}); perr != nil {
-		t.Fatalf("publish unsigned plugin: %v", perr)
-	}
-
-	entityRepo, err := oci.NewRemoteRepository(host + "/plugin/" + socketName)
-	if err != nil {
-		t.Fatalf("entity repo: %v", err)
-	}
-	entityPull, err := oci.Pull(ctx, entityRepo, version)
-	if err != nil {
-		t.Fatalf("pull entity: %v", err)
-	}
-	wasmPull, err := oci.Pull(ctx, entityRepo, oci.ContentDigestTag(wasmContentDg))
-	if err != nil {
-		t.Fatalf("pull .wasm: %v", err)
-	}
-
-	entityURI := host + "/plugin/" + socketName
-	wasmURI := "oci://" + host + "/plugin/" + socketName + "@" + wasmContentDg
-	cl := closure.Closure{
-		Entities: []closure.ResolvedRef{
-			{URI: entityURI, Digest: digest.ContentDigest(entityPull.Bytes), ManifestDigest: entityPull.Digest, ResolutionPath: "tier-3-pull"},
-		},
-		Plugins: []closure.ResolvedRef{
-			{URI: wasmURI, Digest: wasmContentDg, ManifestDigest: wasmPull.Digest, ResolutionPath: "tier-3-pull", ReferencedFrom: []string{entityURI}},
-		},
-	}
-	lf := &lockfile.Lockfile{
-		Entities: []lockfile.Entity{{URI: entityURI, Digest: digest.ContentDigest(entityPull.Bytes), ManifestDigest: entityPull.Digest}},
-		Plugins:  []lockfile.Plugin{{URI: wasmURI, Digest: wasmContentDg, ManifestDigest: wasmPull.Digest, ReferencedFrom: []string{entityURI}}},
-	}
+	p := publishUnsignedPluginToRegistry(t)
+	cl, lf := closureAndLockfileFor(p)
 
 	// A registry with RequiresSignatures:false (verify-if-present default).
 	wsCfg := workspaceconfig.Config{
 		Registries: []workspaceconfig.RegistryConfig{
-			{Host: host, RequiresSignatures: false, PublicKey: ""},
+			{Host: p.host, RequiresSignatures: false, PublicKey: ""},
 		},
 	}
 	if verr := verifyClosureSignatures(ctx, lf, cl, wsCfg, t.TempDir(), nil, remoteTargetFor); verr != nil {

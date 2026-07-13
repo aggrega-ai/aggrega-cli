@@ -20,10 +20,12 @@ import (
 
 // publishSignedPluginEntity publishes a REAL kind:Plugin entity (the .wasm
 // fixture + the stamped entity) to the in-process registry through the
-// production push path with keyed signing requested. The production push signs
-// both the .wasm artifact and the entity manifest with the one signer, so each
-// lands with a verifiable signature referrer. It returns the .wasm content
-// digest the closure pins. It is the signed counterpart of publishPluginEntity.
+// production push path with keyed signing requested. Under the single-manifest
+// model the entity YAML (config blob) and the .wasm (inline layer) publish as ONE
+// OCI manifest tagged by metadata.version, signed ONCE — the single manifest
+// signature transitively covers the inline .wasm. It returns the .wasm content
+// digest the closure pins. It is the signed counterpart of publishPluginEntity,
+// mirroring its canonical BARE spec.plugin identity.
 func publishSignedPluginEntity(t *testing.T, host, socketName, version, pluginPath string, signer signing.Signer) string {
 	t.Helper()
 	wasmBytes, err := os.ReadFile(pluginPath)
@@ -40,7 +42,7 @@ metadata:
   name: `+socketName+`
   version: "`+version+`"
 spec:
-  plugin: "oci://`+host+`/plugin/`+socketName+`:`+version+`"
+  plugin: "oci://`+host+`/plugin/`+socketName+`"
   pluginType: frp_step
   abiVersion: v1alpha1
   exports:
@@ -186,22 +188,25 @@ func signedPluginWorkspaceConfigBody(host string, pinnedPubPEM []byte) string {
 // TestIntegration_PullCommandVerifiesSignedPlugin_Keyed is the keyed
 // publish→pull→verify capstone driven through the PRODUCTION pull command. A
 // Recipe references a pipeline plugin by its bare identity; the plugin is
-// published SIGNED (the .wasm artifact and its Plugin entity both carry a keyed
-// signature referrer). A consumer workspace whose trust policy REQUIRES
-// signatures and pins the publisher's key runs the real pullRun. The pull walks
-// the closure — the two-pass plugin descent records the host-carrying .wasm
-// artifact URI (oci://host/plugin/...@sha256:...) — and its verify pass verifies
-// that artifact's signature against the pinned key, folding the verified fact
+// published SIGNED under the single-manifest model — the entity YAML and the
+// inline .wasm layer ride ONE OCI manifest tagged by metadata.version, signed
+// ONCE, so the single manifest signature transitively covers the .wasm. A
+// consumer workspace whose trust policy REQUIRES signatures and pins the
+// publisher's key runs the real pullRun. The pull walks the closure — the plugin
+// descent records the .wasm ARTIFACT row at its BARE spec.plugin identity
+// (oci://host/plugin/<socket>/<name>), digest = the .wasm content digest,
+// manifest digest = the single manifest digest — and its verify pass verifies
+// that manifest's signature against the pinned key, folding the verified fact
 // onto the lockfile. This exercises the whole spine (resolution → closure
 // descent → buildLockfile → verifyClosureSignatures → pullverify.Verify) through
 // the exact code path production runs: no hand-built closure, no hand-set
 // digest, no skip flag.
 //
-// This test focuses on the .wasm plugin axis (pinned by a content-addressed
-// oci:// URI that carries the registry host); the catalog-entity axis (host-less
-// bare identities bound to the registry at pull time) is exercised by the sibling
-// catalog-entity capstone. Both axes are under the require-signatures policy, so
-// the fixture catalog entities are published signed by the same publisher.
+// This test focuses on the .wasm plugin axis (pinned by its bare host-carrying
+// oci:// identity); the catalog-entity axis (host-less bare identities bound to
+// the registry at pull time) is exercised by the sibling catalog-entity capstone.
+// Both axes are under the require-signatures policy, so the fixture catalog
+// entities are published signed by the same publisher.
 //
 // The negative arm shares the identical production spine and changes only the
 // pinned key, so the rejection is attributable to the trust policy and nothing
@@ -210,6 +215,14 @@ func TestIntegration_PullCommandVerifiesSignedPlugin_Keyed(t *testing.T) {
 	// Resolve the committed .wasm fixture BEFORE any chdir (fixture discovery
 	// walks up from cwd); a clean skip if the toolchain is absent.
 	pluginPath := wasmtest.EnsureFixtureBuilt(t, "frp-step-go.wasm")
+
+	// The core helm PROVIDER-rendering plugin ships in the standard catalog with
+	// its .wasm embedded in the binary; supply it locally (resolved before any
+	// chdir) so the render provider resolves from the embedded core while the
+	// registry-published pipeline plugin and fixture catalog resolve over the
+	// wire and are signature-verified — the require-signatures policy governs the
+	// Tier-3 closure, not the locally-supplied core provider.
+	std := standardCatalogDir(t)
 
 	privPEM, pubPEM, err := signing.GenerateKeyedPEM()
 	if err != nil {
@@ -230,13 +243,15 @@ func TestIntegration_PullCommandVerifiesSignedPlugin_Keyed(t *testing.T) {
 	t.Run("positive_signed_plugin_verifies_through_pull_command", func(t *testing.T) {
 		host := startRegistry(t, nil)
 		wasmContentDg := publishSignedPluginEntity(t, host, pluginSocket+"/"+pluginName, version, pluginPath, signer)
-		artifactURI := "oci://" + host + "/plugin/" + pluginSocket + "/" + pluginName + "@" + wasmContentDg
+		// The .wasm ARTIFACT row is keyed by the entity's BARE spec.plugin identity
+		// under the single-manifest model — no @sha256: content-digest suffix.
+		artifactURI := "oci://" + host + "/plugin/" + pluginSocket + "/" + pluginName
 		// The whole Tier-3-resolved closure is under the require-signatures policy,
 		// so the catalog entities are signed by the same publisher too.
 		ws := writePipelinePluginConsumerWorkspace(t, host, pluginURI, pubPEM, signer)
 		t.Chdir(ws)
 
-		if perr := pullRun(pullConfig{ReleasePath: "release.yaml"}); perr != nil {
+		if perr := pullRun(pullConfig{ReleasePath: "release.yaml", CatalogDirs: []string{std}}); perr != nil {
 			t.Fatalf("a signed plugin under a matching pinned key must PULL and VERIFY; got: %v", perr)
 		}
 
@@ -256,13 +271,21 @@ func TestIntegration_PullCommandVerifiesSignedPlugin_Keyed(t *testing.T) {
 		if artifactRow == nil {
 			t.Fatalf("the .wasm artifact %q is absent from the written lockfile plugins (have %v)", artifactURI, lf.Plugins)
 		}
+		// Single-manifest row shape: digest = the .wasm content digest; manifest
+		// digest = the single manifest the .wasm rides in.
+		if artifactRow.Digest != wasmContentDg {
+			t.Errorf("artifact row digest = %q; want the .wasm content digest %q", artifactRow.Digest, wasmContentDg)
+		}
+		if artifactRow.ManifestDigest == "" {
+			t.Error("artifact row pinned no manifest digest; the inline-layer .wasm must pin its single manifest's digest")
+		}
 		if artifactRow.Signature == nil {
 			t.Fatal("no verified signature fact recorded on the .wasm artifact row; the verify pass did not fire through the pull")
 		}
 
 		// Build reads the recorded facts and completes: signing changes the
 		// supply-chain trust, not the buildability.
-		if berr := dispatchBuild(nil, "release.yaml", nil, false, os.Stderr, os.Stdout); berr != nil {
+		if berr := dispatchBuild(nil, "release.yaml", []string{std}, false, os.Stderr, os.Stdout); berr != nil {
 			t.Fatalf("build after verified pull: %v", berr)
 		}
 	})

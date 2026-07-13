@@ -443,13 +443,16 @@ func TestIntegration_Capstone_LintAndExample(t *testing.T) {
 
 // publishPluginEntity publishes a REAL kind:Plugin entity to the in-process
 // registry through the production entity-publish path (pushRun with --plugin): the
-// .wasm fixture lands first (addressed by its content-digest tag), then the entity
-// lands at <host>/plugin/<socket>/<name>:<version> with spec.plugin stamped to the
-// .wasm content-digest pin. The entity's authored exports agree with the committed
-// frp-step-go fixture's describe() (export "step", operates=patch, scope=own), so
-// the publish-time cross-check passes. socketName is the socket-encoded
-// metadata.name (e.g. "pipeline/patch-server"). pluginPath is the pre-built fixture
-// (resolved before any chdir). Returns the .wasm content digest the closure pins.
+// entity and its .wasm land as ONE OCI manifest tagged by metadata.version — the
+// entity YAML is the manifest's config blob, the .wasm an inline layer addressed
+// by content digest. spec.plugin is the digest-free artifact identity
+// (oci://<host>/plugin/<socket>/<name>); the version comes from metadata.version,
+// so the version tag resolves to both the entity and the .wasm at once. The
+// entity's authored exports agree with the committed frp-step-go fixture's
+// describe() (export "step", operates=patch, scope=own), so the publish-time
+// cross-check passes. socketName is the socket-encoded metadata.name (e.g.
+// "pipeline/patch-server"). pluginPath is the pre-built fixture (resolved before
+// any chdir). Returns the .wasm content digest the consumer pins at pull.
 func publishPluginEntity(t *testing.T, host, socketName, version, pluginPath string) string {
 	t.Helper()
 	return publishPluginEntityWithRuntime(t, host, socketName, version, pluginPath, "")
@@ -472,13 +475,16 @@ func publishPluginEntityWithRuntime(t *testing.T, host, socketName, version, plu
 
 	entityDir := t.TempDir()
 	entityPath := filepath.Join(entityDir, "plugin.yaml")
+	// spec.plugin is the canonical BARE artifact identity — no ":version" tag; the
+	// version is supplied by metadata.version, and the .wasm rides inline in the
+	// entity's single manifest at <repo>:<version>.
 	writeFixture(t, entityPath, `apiVersion: aggrega.ai/v1alpha1
 kind: Plugin
 metadata:
   name: `+socketName+`
   version: "`+version+`"
 spec:
-  plugin: "oci://`+host+`/plugin/`+socketName+`:`+version+`"
+  plugin: "oci://`+host+`/plugin/`+socketName+`"
   pluginType: frp_step
   abiVersion: v1alpha1
   exports:
@@ -493,21 +499,38 @@ spec:
 }
 
 // TestIntegration_PipelinePluginPinning_RoundTrip proves the full publish → pull →
-// build round-trip for a recipe/FR-referenced Plugin entity. A controlled
-// fixture catalog declares a Component with a pipeline-bearing Recipe and a Feature
-// with a pipeline-bearing FeatureRecipe; both reference their pipeline plugin by the
-// BARE Plugin entity identity (<socket>/<name>:<version>). Both plugins are
-// published as REAL kind:Plugin entities (the .wasm fixture + the stamped
-// entity). After a real pull the written lockfile carries BOTH the plugin ENTITY
-// rows (in entities, referenced_from the recipe / feature-recipe URI) and BOTH the
-// .wasm ARTIFACT rows (in plugins, referenced_from the entity URI, digest =
-// the .wasm content digest) — the two-pass descent's entity-axis + artifact-axis
-// pins. A build then resolves each bare entity reference through the entity-front
-// and reads the cached .wasm, proving the round-trip end-to-end.
+// build round-trip for a recipe/FR-referenced Plugin entity under the
+// single-manifest model. A controlled fixture catalog declares a Component with a
+// pipeline-bearing Recipe and a Feature with a pipeline-bearing FeatureRecipe;
+// both reference their pipeline plugin by the BARE Plugin entity identity
+// (<socket>/<name>:<version>). Both plugins are published as REAL kind:Plugin
+// entities: ONE OCI manifest tagged by metadata.version carries the entity YAML as
+// its config blob and the .wasm as an inline layer.
+//
+// The round-trip asserts, from real invocations against the in-process registry:
+//   - the version tag resolves to ONE manifest carrying BOTH the entity and the
+//     inline .wasm layer;
+//   - after a real pull the lockfile carries BOTH the plugin ENTITY rows (in
+//     entities, referenced_from the recipe / feature-recipe URI, with a pinned
+//     manifest digest since the entity resolves from the manifest config blob) AND
+//     the .wasm ARTIFACT rows (in plugins, referenced_from the entity URI, digest =
+//     resolved_version = the .wasm content digest, with a pinned manifest digest);
+//   - a build resolves each bare entity reference AND reads the cached .wasm,
+//     rendering successfully;
+//   - a second pull + build reproduces the rendered tree byte-for-byte;
+//   - a frozen rebuild against a tampered cached plugin manifest is REJECTED.
 func TestIntegration_PipelinePluginPinning_RoundTrip(t *testing.T) {
 	// Resolve the committed .wasm fixture BEFORE any chdir (umbrella-root discovery
 	// walks up from cwd); a clean skip if the toolchain is absent.
 	pluginPath := wasmtest.EnsureFixtureBuilt(t, "frp-step-go.wasm")
+
+	// The helm PROVIDER-rendering plugin is core infrastructure: its entity ships
+	// in the standard catalog and its .wasm is embedded in the binary. It is
+	// supplied locally (resolved before any chdir), so the entity under test — the
+	// registry-published pipeline plugins — resolves over the wire while the render
+	// provider resolves from the embedded core, exactly as a real workspace mixes a
+	// registry catalog with core providers.
+	std := standardCatalogDir(t)
 
 	host := startRegistry(t, nil)
 
@@ -607,10 +630,18 @@ spec:
 	// distinct OCI locations give distinct artifact URIs (same content digest).
 	recipePluginDigest := publishPluginEntity(t, host, pluginSocket+"/"+recipePluginName, "1.0.0", pluginPath)
 	frPluginDigest := publishPluginEntity(t, host, pluginSocket+"/"+frPluginName, "1.0.0", pluginPath)
-	// The .wasm ARTIFACT URIs the entities' stamped spec.plugin names — what the
-	// plugins rows pin (the content-digest pin push stamps).
-	recipeArtifactURI := "oci://" + host + "/plugin/" + pluginSocket + "/" + recipePluginName + "@" + recipePluginDigest
-	frArtifactURI := "oci://" + host + "/plugin/" + pluginSocket + "/" + frPluginName + "@" + frPluginDigest
+	// The .wasm ARTIFACT URIs are the entities' BARE spec.plugin identities — the
+	// single-manifest model addresses the .wasm by the entity's version tag, not by
+	// a content-digest-pinned reference; the plugins rows pin these bare URIs. Both
+	// reuse the same committed fixture, so the content digests match while the
+	// locations differ.
+	recipeArtifactURI := "oci://" + host + "/plugin/" + pluginSocket + "/" + recipePluginName
+	frArtifactURI := "oci://" + host + "/plugin/" + pluginSocket + "/" + frPluginName
+
+	// Single-manifest witness: the plugin repo's version tag resolves to ONE
+	// manifest whose config blob is the entity YAML and whose inline layer is the
+	// .wasm — proven by a real registry read, not inferred from the lockfile.
+	assertSinglePluginManifest(t, host, pluginSocket+"/"+recipePluginName, "1.0.0", recipePluginDigest)
 
 	// A consumer workspace wiring the Component (with a secret attachment that pulls
 	// the Feature) through the Manifest mappings, resolved purely over the registry.
@@ -667,7 +698,7 @@ spec:
 	writeWorkspaceConfig(t, ws, "default_registry: \""+host+"\"\nauto_pull: true\noffline: false")
 	t.Chdir(ws)
 
-	if err := pullRun(pullConfig{ReleasePath: "release.yaml"}); err != nil {
+	if err := pullRun(pullConfig{ReleasePath: "release.yaml", CatalogDirs: []string{std}}); err != nil {
 		t.Fatalf("registry pull: %v", err)
 	}
 
@@ -686,7 +717,9 @@ spec:
 	}
 
 	// Entity-axis pins: each plugin ENTITY (bare identity) is in lf.Entities,
-	// referenced_from its declaring recipe / feature-recipe URI.
+	// referenced_from its declaring recipe / feature-recipe URI. The entity now
+	// resolves from the single manifest's config blob, so a manifest digest is
+	// pinned alongside the entity-YAML content digest.
 	entityCases := []struct {
 		uri          string
 		wantRefedURI string
@@ -703,13 +736,18 @@ spec:
 		if got.ResolvedVersion != "1.0.0" {
 			t.Errorf("%s resolved_version = %q; want 1.0.0", tc.label, got.ResolvedVersion)
 		}
+		if got.ManifestDigest == "" {
+			t.Errorf("%s pinned no manifest digest; the config-blob entity read must pin the manifest digest", tc.label)
+		}
 		if !containsRef(got.ReferencedFrom, tc.wantRefedURI) {
 			t.Errorf("%s referenced_from = %v; want an entry naming %q", tc.label, got.ReferencedFrom, tc.wantRefedURI)
 		}
 	}
 
-	// Artifact-axis pins: each .wasm ARTIFACT is in lf.plugins, referenced_from
-	// its Plugin entity URI, with the content digest of the .wasm fixture.
+	// Artifact-axis pins: each .wasm ARTIFACT is in lf.plugins under its BARE
+	// spec.plugin URI, referenced_from its Plugin entity URI, with the content
+	// digest of the .wasm fixture and the manifest digest of the single manifest
+	// the .wasm rides in.
 	artifactCases := []struct {
 		uri          string
 		wantDigest   string
@@ -727,20 +765,84 @@ spec:
 		if got.Digest != tc.wantDigest {
 			t.Errorf("%s digest = %q; want %q", tc.label, got.Digest, tc.wantDigest)
 		}
-		// A content-pinned .wasm artifact is addressed by its content digest, so the
-		// resolved_version IS the digest (not a semver tag).
+		// The .wasm rides inline as a layer, addressed by content digest, so the
+		// resolved_version IS the content digest (not a semver tag).
 		if got.ResolvedVersion != tc.wantDigest {
 			t.Errorf("%s resolved_version = %q; want the content digest %q", tc.label, got.ResolvedVersion, tc.wantDigest)
+		}
+		if got.ManifestDigest == "" {
+			t.Errorf("%s pinned no manifest digest; the inline-layer .wasm must pin its single manifest's digest", tc.label)
 		}
 		if !containsRef(got.ReferencedFrom, tc.wantRefedURI) {
 			t.Errorf("%s referenced_from = %v; want an entry naming %q", tc.label, got.ReferencedFrom, tc.wantRefedURI)
 		}
 	}
 
-	// Build: each bare entity reference resolves through the entity-front and the
-	// build reads the cached .wasm. This is the publish → pull → BUILD proof.
-	if err := dispatchBuild(nil, "release.yaml", nil, false, os.Stderr, os.Stdout); err != nil {
+	// Build: each bare entity reference resolves through the entity-front (reading
+	// the entity from the cached manifest config blob) and the build reads the
+	// cached inline .wasm. This is the publish → pull → BUILD proof.
+	if err := dispatchBuild(nil, "release.yaml", []string{std}, false, os.Stderr, os.Stdout); err != nil {
 		t.Fatalf("registry build (resolving the bare plugin entity refs from cache): %v", err)
+	}
+	firstTree := hashDistTree(t, "dist")
+
+	// A second pull + build reproduces the rendered tree byte-for-byte from the pin.
+	_ = os.RemoveAll("dist")
+	if err := pullRun(pullConfig{ReleasePath: "release.yaml", CatalogDirs: []string{std}}); err != nil {
+		t.Fatalf("second registry pull: %v", err)
+	}
+	if err := dispatchBuild(nil, "release.yaml", []string{std}, false, os.Stderr, os.Stdout); err != nil {
+		t.Fatalf("second registry build: %v", err)
+	}
+	if second := hashDistTree(t, "dist"); second != firstTree {
+		t.Errorf("second build not byte-identical: %s != %s", second, firstTree)
+	}
+
+	// Tamper: corrupt the cached plugin entity's persisted manifest blob and freeze
+	// the build (auto_pull off, so it resolves strictly from cache rather than
+	// re-pulling and healing). The cached-manifest verify must REJECT the tampered
+	// slot rather than silently build on it.
+	entitySlot := oci.CachePath(ws, ".aggrega/cache", recipePluginURI, "1.0.0")
+	tamperedManifest := filepath.Join(entitySlot, "manifest")
+	if _, err := os.Stat(tamperedManifest); err != nil {
+		t.Fatalf("expected a persisted plugin-entity manifest at %s (the config-blob read must persist one): %v", tamperedManifest, err)
+	}
+	if err := os.WriteFile(tamperedManifest, []byte("{ not a manifest }"), 0o644); err != nil {
+		t.Fatalf("tamper cached manifest: %v", err)
+	}
+	writeWorkspaceConfig(t, ws, "default_registry: \""+host+"\"\nauto_pull: false\noffline: false")
+	_ = os.RemoveAll("dist")
+	if err := dispatchBuild(nil, "release.yaml", []string{std}, false, os.Stderr, os.Stdout); err == nil {
+		t.Fatal("frozen build SUCCEEDED against a tampered plugin manifest; the cached-manifest verify did not reject it")
+	}
+}
+
+// assertSinglePluginManifest resolves the plugin repo's version tag against the
+// registry and asserts it is ONE manifest carrying BOTH the Plugin entity YAML
+// (config blob) and the inline .wasm (layer) — the single-manifest publish shape.
+// wantWasmDigest is the .wasm content digest the caller published; the fetched
+// layer must hash to it, tying the manifest to the artifact axis.
+func assertSinglePluginManifest(t *testing.T, host, socketName, version, wantWasmDigest string) {
+	t.Helper()
+	repo, err := oci.NewRemoteRepository(host + "/plugin/" + socketName)
+	if err != nil {
+		t.Fatalf("new repo for %s: %v", socketName, err)
+	}
+	entityYAML, wasm, manifestDigest, err := oci.FetchPluginManifest(context.Background(), repo, version)
+	if err != nil {
+		t.Fatalf("fetch single plugin manifest %s:%s: %v", socketName, version, err)
+	}
+	if !strings.Contains(string(entityYAML), "kind: Plugin") {
+		t.Errorf("manifest config blob is not a Plugin entity YAML: %q", string(entityYAML))
+	}
+	if len(wasm) == 0 {
+		t.Error("manifest carries no inline .wasm layer")
+	}
+	if got := digest.ContentDigest(wasm); got != wantWasmDigest {
+		t.Errorf("inline .wasm digest = %q; want %q", got, wantWasmDigest)
+	}
+	if manifestDigest == "" {
+		t.Error("single plugin manifest resolved with an empty manifest digest")
 	}
 }
 
@@ -869,6 +971,13 @@ func TestIntegration_PipelinePlugin_RuntimeTimeoutFlowsToBuild(t *testing.T) {
 	// walks up from cwd); a clean skip if the toolchain is absent.
 	pluginPath := wasmtest.EnsureFixtureBuilt(t, "frp-step-go.wasm")
 
+	// The helm PROVIDER-rendering plugin is core infrastructure: its entity ships
+	// in the standard catalog and its .wasm is embedded in the binary. It is
+	// supplied locally (resolved before any chdir) so the core provider resolves
+	// from the embedded core while the registry-published pipeline plugin under
+	// test resolves over the wire — the same mix a real workspace runs.
+	std := standardCatalogDir(t)
+
 	const (
 		pluginName   = "patch-server"
 		pluginSocket = "pipeline"
@@ -886,11 +995,11 @@ func TestIntegration_PipelinePlugin_RuntimeTimeoutFlowsToBuild(t *testing.T) {
 		ws := writePipelinePluginFixtureCatalog(t, host, pluginURI)
 		t.Chdir(ws)
 
-		if err := pullRun(pullConfig{ReleasePath: "release.yaml"}); err != nil {
+		if err := pullRun(pullConfig{ReleasePath: "release.yaml", CatalogDirs: []string{std}}); err != nil {
 			t.Fatalf("registry pull: %v", err)
 		}
 
-		err := dispatchBuild(nil, "release.yaml", nil, false, os.Stderr, os.Stdout)
+		err := dispatchBuild(nil, "release.yaml", []string{std}, false, os.Stderr, os.Stdout)
 		if err == nil {
 			t.Fatal("build SUCCEEDED with an entity-authored timeoutMs: 1; the tiny per-call cap did not reach the loader")
 		}
@@ -924,10 +1033,10 @@ func TestIntegration_PipelinePlugin_RuntimeTimeoutFlowsToBuild(t *testing.T) {
 		ws := writePipelinePluginFixtureCatalog(t, host, pluginURI)
 		t.Chdir(ws)
 
-		if err := pullRun(pullConfig{ReleasePath: "release.yaml"}); err != nil {
+		if err := pullRun(pullConfig{ReleasePath: "release.yaml", CatalogDirs: []string{std}}); err != nil {
 			t.Fatalf("registry pull: %v", err)
 		}
-		if err := dispatchBuild(nil, "release.yaml", nil, false, os.Stderr, os.Stdout); err != nil {
+		if err := dispatchBuild(nil, "release.yaml", []string{std}, false, os.Stderr, os.Stdout); err != nil {
 			t.Fatalf("build FAILED under a generous entity-authored timeout; the same shape that succeeds with timeoutMs: 60000 must build: %v", err)
 		}
 	})

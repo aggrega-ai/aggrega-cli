@@ -5,12 +5,14 @@ package oci
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"oras.land/oras-go/v2"
 	"oras.land/oras-go/v2/content/memory"
+	"oras.land/oras-go/v2/errdef"
 )
 
 // PushPluginManifest packs a Plugin entity and its .wasm executable into ONE
@@ -116,6 +118,71 @@ func FetchPluginManifest(ctx context.Context, target oras.ReadOnlyTarget, tag st
 		return nil, nil, "", fmt.Errorf("oci: fetch plugin wasm layer %q: %w", tag, err)
 	}
 	return entityYAML, wasm, manifestDesc.Digest.String(), nil
+}
+
+// FetchPluginEntity resolves tag on target and reads back the Plugin entity YAML
+// from the single plugin manifest's CONFIG blob, returning it as a PullResult:
+// Bytes is the entity YAML, Digest is the manifest digest, MediaType is the
+// config media type (MediaTypePlugin), and ManifestBytes is the raw manifest.
+// The config blob is verified against the manifest's config descriptor before
+// return, so a tampered entity halts loudly.
+//
+// It is the entity-read counterpart of Pull for the single-manifest plugin
+// artifact: where Pull reads the content LAYER (the .wasm, when the caller
+// resolves the executable), this reads the CONFIG (the entity, when the caller
+// resolves the catalog entity). The two read different descriptors of the same
+// manifest, so the entity and its executable resolve from one tagged unit.
+//
+// Resolve-error mapping mirrors Pull (ErrFetchNotFound / ErrFetchUnauthorized),
+// so a missing or auth-refused plugin entity surfaces the same sentinels the
+// entity-pull tier and its remediation expect.
+func FetchPluginEntity(ctx context.Context, target oras.ReadOnlyTarget, tag string) (*PullResult, error) {
+	manifestDesc, err := target.Resolve(ctx, tag)
+	if err != nil {
+		if errors.Is(err, errdef.ErrNotFound) {
+			return nil, fmt.Errorf("oci: %q: %w", tag, ErrFetchNotFound)
+		}
+		if isUnauthorized(err) {
+			return nil, fmt.Errorf("oci: resolve %q: %v: %w", tag, err, ErrFetchUnauthorized)
+		}
+		return nil, fmt.Errorf("oci: resolve %q: %w", tag, err)
+	}
+	manifestBytes, err := fetchBlob(ctx, target, manifestDesc)
+	if err != nil {
+		return nil, fmt.Errorf("oci: fetch manifest %q: %w", tag, err)
+	}
+	view, err := parseManifest(manifestBytes)
+	if err != nil {
+		return nil, fmt.Errorf("oci: parse manifest %q: %w", tag, err)
+	}
+	entityYAML, err := fetchBlob(ctx, target, view.Config)
+	if err != nil {
+		return nil, fmt.Errorf("oci: fetch plugin entity config %q: %w", tag, err)
+	}
+	if err := VerifyConfigAgainstManifest(manifestBytes, entityYAML); err != nil {
+		return nil, fmt.Errorf("oci: %q: %w", tag, err)
+	}
+	return &PullResult{
+		Bytes:         entityYAML,
+		Digest:        manifestDesc.Digest.String(),
+		MediaType:     view.Config.MediaType,
+		ManifestBytes: manifestBytes,
+	}, nil
+}
+
+// IsPluginManifest reports whether an OCI manifest is a single-manifest plugin
+// artifact — its config blob carries the Plugin entity YAML (MediaTypePlugin),
+// distinct from every other catalog manifest, whose entity content rides as a
+// layer with no typed config. It lets a manifest-driven cache read verify a
+// cached plugin entity against the config descriptor while every other entity
+// verifies against its content layer, without a caller having to thread the kind.
+// A manifest that does not parse is not a plugin manifest.
+func IsPluginManifest(manifestBytes []byte) bool {
+	view, err := parseManifest(manifestBytes)
+	if err != nil {
+		return false
+	}
+	return view.Config.MediaType == MediaTypePlugin
 }
 
 // fetchBlob fetches a descriptor's bytes from target and closes the reader.

@@ -19,11 +19,24 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm/embedded"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
+	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/signing"
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator/envelope"
 )
+
+// memStorePuller wraps an in-memory oras store so it satisfies catalog.OCIPuller.
+// The reference is ignored — a single store holds every artifact in these
+// single-registry round-trip tests — and the pull is by tag, exactly as the
+// production remote-repository adapter pulls. For a plugin manifest oci.Pull
+// returns the inline .wasm layer as the content bytes and the manifest digest,
+// which is what resolveVersionedPluginArtifact expects.
+type memStorePuller struct{ store *memory.Store }
+
+func (p *memStorePuller) Pull(ctx context.Context, reference, tag string) (*oci.PullResult, error) {
+	return oci.Pull(ctx, p.store, tag)
+}
 
 // agreeingPluginEntity is a Plugin entity whose authored export claim
 // agrees with the frp-step-go fixture's describe() (export "step",
@@ -527,5 +540,138 @@ func TestPushPluginProviderReusableInstanceMismatchHalts(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "reusable_instance") {
 		t.Errorf("the rejection should name the reusable_instance field; got %v", err)
+	}
+}
+
+// TestPublishPullRoundTripPlugin proves the single-manifest consume path end to
+// end: a Plugin published via the real push path (one manifest tagged by
+// metadata.version, the entity YAML in the config blob, the .wasm as an inline
+// layer) resolves through ResolvePlugin using the entity's BARE spec.plugin
+// reference plus its metadata.version. The pull takes the .wasm from the inline
+// layer, content-digest-verifies it, caches it; a second resolve reads it from
+// the cache slot the build re-reads; and a tampered cache slot halts with
+// oci.ErrFetchIntegrity. The .wasm is never a separately-tagged artifact — it is
+// intrinsic to the version-tagged manifest.
+func TestPublishPullRoundTripPlugin(t *testing.T) {
+	entityPath, pluginPath, contentDigest := writeAgreeingPlugin(t)
+	store := memory.New()
+
+	if err := pushRun(pushConfig{
+		EntityPath: entityPath,
+		PluginPath: pluginPath,
+		Registry:   "hub.aggrega.ai",
+		PushTarget: store,
+	}); err != nil {
+		t.Fatalf("pushRun: %v", err)
+	}
+
+	// The resolve inputs are exactly what a consumer holds: the entity's
+	// digest-free spec.plugin identity and its metadata.version.
+	const uri = "oci://hub.aggrega.ai/plugin/frp/patch"
+	const version = "1.0.0"
+
+	root := t.TempDir()
+	cat, err := catalog.LoadAll("", root)
+	if err != nil {
+		t.Fatalf("LoadAll: %v", err)
+	}
+
+	// Pull: resolve the inline .wasm layer from the version-tagged manifest,
+	// content-verify, cache.
+	lookup := cat.ClosureLookup(&memStorePuller{store: store}, root, ".aggrega/cache")
+	res, err := lookup.ResolvePlugin(uri, version)
+	if err != nil {
+		t.Fatalf("ResolvePlugin (pull): %v", err)
+	}
+	if res.ResolutionPath != "tier-3-pull" {
+		t.Errorf("ResolutionPath = %q; want tier-3-pull", res.ResolutionPath)
+	}
+	if res.Digest != contentDigest {
+		t.Errorf("Digest = %q; want the inline .wasm content digest %q", res.Digest, contentDigest)
+	}
+	if res.ManifestDigest == "" {
+		t.Error("ManifestDigest should be set to the plugin manifest digest")
+	}
+
+	// The .wasm bytes are in the cache slot the build re-reads (keyed by the pin).
+	cached, err := oci.ReadCached(root, ".aggrega/cache", uri, contentDigest)
+	if err != nil {
+		t.Fatalf("expected .wasm cached after pull: %v", err)
+	}
+	if got := digest.ContentDigest(cached); got != contentDigest {
+		t.Errorf("cached .wasm digest = %q; want %q", got, contentDigest)
+	}
+
+	// Re-resolve with no puller. The versioned .wasm slot is addressed by the
+	// content digest, which the build learns from the lockfile pin — so the cache
+	// read is reached through a prior pin, exactly as the offline build does.
+	pins := map[string]catalog.Pin{
+		uri: {ResolvedVersion: contentDigest, Digest: contentDigest, ManifestDigest: res.ManifestDigest},
+	}
+	cachedLookup := cat.ClosureLookupWithReuse(nil, root, ".aggrega/cache", nil, nil,
+		&catalog.ReuseVerification{PriorPins: pins})
+	res2, err := cachedLookup.ResolvePlugin(uri, version)
+	if err != nil {
+		t.Fatalf("ResolvePlugin (cache): %v", err)
+	}
+	if res2.NotFound || res2.Digest != contentDigest {
+		t.Errorf("cache-hit resolution = %+v; want digest %q", res2, contentDigest)
+	}
+
+	// Tamper the cached blob: the content check against the manifest halts with
+	// ErrFetchIntegrity rather than serving the corrupted .wasm.
+	slot := oci.CachePath(root, ".aggrega/cache", uri, contentDigest)
+	if err := os.WriteFile(filepath.Join(slot, "blob"), []byte("tampered"), 0o644); err != nil {
+		t.Fatalf("tamper write: %v", err)
+	}
+	if _, err := cachedLookup.ResolvePlugin(uri, version); !errors.Is(err, oci.ErrFetchIntegrity) {
+		t.Errorf("tampered cache: err = %v; want ErrFetchIntegrity", err)
+	}
+}
+
+// TestVersionTagPushPullParity pins the single-source tag contract of the
+// single-manifest model: the tag the push publishes the manifest under and the
+// tag the consume side resolves the .wasm at are one value — the entity's
+// metadata.version. It asserts both ends against that single value: the push
+// landed the manifest at metadata.version, and ResolvePlugin at the identical
+// metadata.version locates the inline .wasm. A divergence would mean a published
+// plugin the consumer silently cannot find. (There is no content-digest-tagged
+// .wasm in this model — the executable rides the version-tagged manifest, so the
+// tag that is single-sourced is the version itself.)
+func TestVersionTagPushPullParity(t *testing.T) {
+	ctx := context.Background()
+	entityPath, pluginPath, contentDigest := writeAgreeingPlugin(t)
+	store := memory.New()
+
+	if err := pushRun(pushConfig{
+		EntityPath: entityPath,
+		PluginPath: pluginPath,
+		Registry:   "hub.aggrega.ai",
+		PushTarget: store,
+	}); err != nil {
+		t.Fatalf("pushRun: %v", err)
+	}
+
+	// metadata.version in agreeingPluginEntity. The push MUST have tagged the
+	// manifest under exactly this value.
+	const version = "1.0.0"
+	if _, exists, rerr := oci.Resolve(ctx, store, version); rerr != nil || !exists {
+		t.Fatalf("push must land the manifest at metadata.version %q (exists=%v err=%v)", version, exists, rerr)
+	}
+
+	// The consume side resolves the .wasm at the identical value.
+	const uri = "oci://hub.aggrega.ai/plugin/frp/patch"
+	root := t.TempDir()
+	cat, err := catalog.LoadAll("", root)
+	if err != nil {
+		t.Fatalf("LoadAll: %v", err)
+	}
+	lookup := cat.ClosureLookup(&memStorePuller{store: store}, root, ".aggrega/cache")
+	res, err := lookup.ResolvePlugin(uri, version)
+	if err != nil {
+		t.Fatalf("the .wasm is not resolvable at the published metadata.version %q: %v", version, err)
+	}
+	if res.Digest != contentDigest {
+		t.Errorf("resolved .wasm content digest = %q; want %q", res.Digest, contentDigest)
 	}
 }

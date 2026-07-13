@@ -163,6 +163,20 @@ func (p DefaultOCIPuller) PullEntity(ctx context.Context, identity, kind, floorV
 			return nil, "", terr
 		}
 	}
+	// A Plugin publishes as ONE OCI manifest whose CONFIG blob is the entity YAML
+	// and whose single layer is the inline .wasm. A generic content-layer pull
+	// would return the .wasm as the entity bytes; read the config blob instead so
+	// the entity content the cache stores and the closure pins is the entity YAML.
+	// result.Digest stays the manifest digest either way (the ManifestDigest pin);
+	// only the content descriptor read differs. Every other kind reads the content
+	// layer through Pull unchanged.
+	if kind == "Plugin" {
+		result, perr := oci.FetchPluginEntity(ctx, repo, version)
+		if perr != nil {
+			return nil, "", perr
+		}
+		return result, version, nil
+	}
 	result, perr := oci.Pull(ctx, repo, version)
 	if perr != nil {
 		return nil, "", perr
