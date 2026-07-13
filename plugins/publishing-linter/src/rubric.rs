@@ -33,6 +33,10 @@
 //! - MappingLibrary: entry-key-level diff (opaque template strings).
 //! - Recipe / FeatureRecipe: load-bearing-field diff.
 //! - Aggregate: catalog-aggregate diff.
+//! - Plugin: describe()-surface diff (exports, capabilities, targets,
+//!   provider/search self-reports, ABI version).
+
+use std::collections::BTreeMap;
 
 use aggrega_pdk_rust::{LinterFinding, LinterInput};
 use serde_json::Value;
@@ -80,6 +84,7 @@ fn classify_one(input: &LinterInput) -> (String, String) {
         "Recipe" => classify_recipe_like(previous, proposed, "Recipe"),
         "FeatureRecipe" => classify_recipe_like(previous, proposed, "FeatureRecipe"),
         "Aggregate" => classify_aggregate(previous, proposed),
+        "Plugin" => classify_plugin(previous, proposed),
         other => (
             "MAJOR".to_string(),
             format!("entity_kind {other:?} unrecognised; conservative MAJOR default"),
@@ -311,6 +316,231 @@ fn classify_aggregate(previous: &Value, proposed: &Value) -> (String, String) {
         "MINOR".to_string(),
         format!("Aggregate: additive changes at: {}", changed.join(", ")),
     )
+}
+
+/// `classify_plugin` scores a re-published Plugin entity from the change
+/// to its describe()-surface, read from the Plugin entity YAML (which the
+/// host cross-checks against the guest's live describe() report). The
+/// surface spans the declared exports, the capability self-report, the
+/// applicability targets, the provider/search self-reports, and the ABI
+/// version. Each surface yields an independent verdict; the highest
+/// magnitude wins (MAJOR > MINOR > PATCH). A change confined to
+/// documentation — `metadata.description`, `spec.description`, or an
+/// export's free-form `selector` — carries no magnitude and leaves the
+/// result at PATCH.
+fn classify_plugin(previous: &Value, proposed: &Value) -> (String, String) {
+    let checks = [
+        classify_plugin_exports(previous, proposed),
+        classify_self_report(previous, proposed, "spec.capabilities"),
+        classify_plugin_targets(previous, proposed),
+        classify_self_report(previous, proposed, "spec.provider"),
+        classify_self_report(previous, proposed, "spec.search"),
+        classify_plugin_abi_version(previous, proposed),
+    ];
+
+    let mut minor: Option<String> = None;
+    for (verdict, msg) in checks {
+        match verdict.as_str() {
+            "MAJOR" => return ("MAJOR".to_string(), format!("Plugin: {msg}")),
+            "MINOR" => {
+                if minor.is_none() {
+                    minor = Some(msg);
+                }
+            }
+            _ => {}
+        }
+    }
+    if let Some(msg) = minor {
+        return ("MINOR".to_string(), format!("Plugin: {msg}"));
+    }
+    (
+        "PATCH".to_string(),
+        "Plugin: only documentation or no describe()-surface changes detected".to_string(),
+    )
+}
+
+/// `classify_plugin_exports` diffs `spec.exports` — an array of export
+/// objects keyed by their `name` field (not a keyed map, so entries are
+/// matched by name rather than by object key). A removed export, or a
+/// changed `operates`/`scope` on an export present in both versions, is a
+/// breaking change (MAJOR). A newly-named export with no removals is
+/// additive (MINOR). The per-export `selector` is free-form
+/// documentation and does not count as a surface change.
+fn classify_plugin_exports(previous: &Value, proposed: &Value) -> (String, String) {
+    let prev = exports_by_name(get_path(previous, "spec.exports"));
+    let prop = exports_by_name(get_path(proposed, "spec.exports"));
+
+    for name in prev.keys() {
+        if !prop.contains_key(name) {
+            return (
+                "MAJOR".to_string(),
+                format!("spec.exports removed export {name:?}"),
+            );
+        }
+    }
+    for (name, prev_export) in &prev {
+        if let Some(prop_export) = prop.get(name) {
+            for field in ["operates", "scope"] {
+                if prev_export.get(field) != prop_export.get(field) {
+                    return (
+                        "MAJOR".to_string(),
+                        format!("spec.exports export {name:?} changed {field} (breaking)"),
+                    );
+                }
+            }
+        }
+    }
+    for name in prop.keys() {
+        if !prev.contains_key(name) {
+            return (
+                "MINOR".to_string(),
+                format!("spec.exports added export {name:?}"),
+            );
+        }
+    }
+    ("PATCH".to_string(), "spec.exports unchanged".to_string())
+}
+
+/// `exports_by_name` indexes an export array by each entry's `name`
+/// field. Entries without a string `name` are skipped. The `BTreeMap`
+/// keeps the diagnostic deterministic when several exports change at
+/// once.
+fn exports_by_name(value: Option<&Value>) -> BTreeMap<&str, &Value> {
+    let mut map = BTreeMap::new();
+    if let Some(Value::Array(entries)) = value {
+        for entry in entries {
+            if let Some(name) = entry.get("name").and_then(Value::as_str) {
+                map.insert(name, entry);
+            }
+        }
+    }
+    map
+}
+
+/// `classify_plugin_targets` diffs `spec.targets` — an array of strings
+/// (the plugin's applicability list, mirrored by describe()'s compatible
+/// providers). Set semantics: a removed entry narrows the surface
+/// (MAJOR); a new entry with no removals widens it (MINOR); reordering
+/// alone carries no magnitude (PATCH).
+fn classify_plugin_targets(previous: &Value, proposed: &Value) -> (String, String) {
+    let prev = string_entries(get_path(previous, "spec.targets"));
+    let prop = string_entries(get_path(proposed, "spec.targets"));
+
+    let removed: Vec<&str> = prev.iter().copied().filter(|t| !prop.contains(t)).collect();
+    if !removed.is_empty() {
+        return (
+            "MAJOR".to_string(),
+            format!("spec.targets removed target(s): {}", removed.join(", ")),
+        );
+    }
+    let added: Vec<&str> = prop.iter().copied().filter(|t| !prev.contains(t)).collect();
+    if !added.is_empty() {
+        return (
+            "MINOR".to_string(),
+            format!("spec.targets added target(s): {}", added.join(", ")),
+        );
+    }
+    ("PATCH".to_string(), "spec.targets unchanged".to_string())
+}
+
+/// `string_entries` collects the string elements of a JSON array,
+/// skipping non-string entries. A missing or non-array value yields an
+/// empty list.
+fn string_entries(value: Option<&Value>) -> Vec<&str> {
+    match value {
+        Some(Value::Array(entries)) => entries.iter().filter_map(Value::as_str).collect(),
+        _ => vec![],
+    }
+}
+
+/// `classify_plugin_abi_version` diffs `spec.abiVersion`. The ABI version
+/// is a hard compatibility boundary: any change is breaking (MAJOR).
+fn classify_plugin_abi_version(previous: &Value, proposed: &Value) -> (String, String) {
+    let prev = get_path(previous, "spec.abiVersion");
+    let prop = get_path(proposed, "spec.abiVersion");
+    if prev != prop {
+        return (
+            "MAJOR".to_string(),
+            "spec.abiVersion changed (ABI compatibility boundary)".to_string(),
+        );
+    }
+    ("PATCH".to_string(), "spec.abiVersion unchanged".to_string())
+}
+
+/// `classify_self_report` diffs a per-socket self-report object
+/// (`spec.capabilities`, `spec.provider`, `spec.search`). Every leaf a
+/// version carries is a claim: dropping a claim, or altering an existing
+/// claim's value — including flipping a boolean capability from `true`
+/// to `false` — narrows the surface (MAJOR). A brand-new claim a
+/// previous version did not carry is purely additive (MINOR).
+///
+/// The narrowing walk (`narrow_report`) is deliberately more complete
+/// than the generic `structural_shrink` helper: `structural_shrink`
+/// treats a same-typed scalar change (a boolean `true` -> `false`, a
+/// delimiter string edit) as unchanged, which would misread a dropped
+/// capability claim as non-narrowing. Do not fold the two together — the
+/// capability rubric requires the leaf-alteration sensitivity that
+/// `structural_shrink` intentionally omits.
+fn classify_self_report(previous: &Value, proposed: &Value, path: &str) -> (String, String) {
+    let prev = get_path(previous, path);
+    let prop = get_path(proposed, path);
+    if prev == prop {
+        return ("PATCH".to_string(), format!("{path} unchanged"));
+    }
+    let (narrowed, added) = narrow_report(prev, prop);
+    if narrowed {
+        return (
+            "MAJOR".to_string(),
+            format!("{path} narrows or alters an existing claim"),
+        );
+    }
+    if added {
+        return (
+            "MINOR".to_string(),
+            format!("{path} adds a new claim"),
+        );
+    }
+    // A non-equal pair always registers as narrowed or added above, so
+    // this branch is unreachable; classify conservatively regardless.
+    (
+        "MAJOR".to_string(),
+        format!("{path} carries a non-additive change"),
+    )
+}
+
+/// `narrow_report` walks a self-report subtree and reports whether the
+/// change set narrows an existing claim and/or introduces a new one.
+/// Returns `(narrowed, added)`. A key present in `previous` and absent in
+/// `proposed`, or an existing leaf whose value changed, counts as
+/// narrowing; a key present only in `proposed` counts as an addition.
+fn narrow_report(previous: Option<&Value>, proposed: Option<&Value>) -> (bool, bool) {
+    match (previous, proposed) {
+        (None, None) => (false, false),
+        (None, Some(_)) => (false, true),
+        (Some(_), None) => (true, false),
+        (Some(Value::Object(prev_map)), Some(Value::Object(prop_map))) => {
+            let mut narrowed = false;
+            let mut added = false;
+            for (key, prev_val) in prev_map {
+                let (n, a) = narrow_report(Some(prev_val), prop_map.get(key));
+                narrowed |= n;
+                added |= a;
+            }
+            for key in prop_map.keys() {
+                if !prev_map.contains_key(key) {
+                    added = true;
+                }
+            }
+            (narrowed, added)
+        }
+        (Some(prev_val), Some(prop_val)) => {
+            if prev_val == prop_val {
+                (false, false)
+            } else {
+                (true, false)
+            }
+        }
+    }
 }
 
 // ----- Helpers -----
