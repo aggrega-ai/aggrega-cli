@@ -38,7 +38,7 @@ import (
 // into each SourceSpec the resolver consumes (see internal/cacheslot for
 // the slot computation that depends on both).
 //
-// Dedupe is by {Kind, URL, PinnedVersion} identity; each bucket
+// Dedupe is by {Kind, URL, Chart, PinnedVersion} identity; each bucket
 // emits one SourceArtifact with all bucket's ReferencedBy records
 // appended (sorted by URI, then Component, then Field for determinism).
 //
@@ -151,16 +151,18 @@ func DescendRecipeSources(
 				ref.RequestedRef = spec.Ref
 			}
 
-			key := identityKey(resolved.Kind, resolved.URL, resolved.PinnedVersion)
+			key := identityKey(resolved.Kind, resolved.URL, resolved.Chart, resolved.PinnedVersion)
 			sa, exists := dedupe[key]
 			if !exists {
 				sa = &SourceArtifact{
 					Kind:           resolved.Kind,
 					URL:            resolved.URL,
+					Chart:          resolved.Chart,
 					PinnedVersion:  resolved.PinnedVersion,
 					Digest:         resolved.Digest,
 					ManifestDigest: resolved.ManifestDigest,
 					Mediatype:      resolved.Mediatype,
+					ResolvedURL:    resolved.ResolvedURL,
 				}
 				dedupe[key] = sa
 				order = append(order, key)
@@ -191,6 +193,9 @@ func DescendRecipeSources(
 		}
 		if a.URL != b.URL {
 			return a.URL < b.URL
+		}
+		if a.Chart != b.Chart {
+			return a.Chart < b.Chart
 		}
 		return a.PinnedVersion < b.PinnedVersion
 	})
@@ -654,9 +659,11 @@ func isLocalURL(s string) bool {
 }
 
 // identityKey returns the dedupe key for a SourceArtifact: the
-// triple {Kind, URL, PinnedVersion}. Two artifacts sharing the
-// triple merge into a single lockfile entry with multiple
+// quad {Kind, URL, Chart, PinnedVersion}. URL is the authored identity
+// URL and Chart names the chart within a repo root, so two charts served
+// from one repo root at the same version key distinctly. Two artifacts
+// sharing the quad merge into a single lockfile entry with multiple
 // ReferencedBy records.
-func identityKey(kind, url, version string) string {
-	return kind + "\x00" + url + "\x00" + version
+func identityKey(kind, url, chart, version string) string {
+	return kind + "\x00" + url + "\x00" + chart + "\x00" + version
 }

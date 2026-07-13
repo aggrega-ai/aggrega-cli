@@ -25,8 +25,8 @@ import (
 	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver"
-	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/internal/archive"
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/cacheslot"
+	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/internal/archive"
 )
 
 // Kind names the compose-https-fragment source kind.
@@ -95,14 +95,14 @@ func (a *adapter) Resolve(spec sourceresolver.SourceSpec) (*sourceresolver.Resol
 	}
 	archiveBytes := buf.Bytes()
 	digest := archive.Digest(archiveBytes)
-	slot, err := cacheslot.Slot(spec.WorkspaceRoot, spec.CacheDir, Kind, spec.URL, spec.Version, digest)
+	slot, err := cacheslot.Slot(spec.WorkspaceRoot, spec.CacheDir, Kind, spec.URL, "", spec.Version, digest)
 	if err != nil {
 		return nil, fmt.Errorf("compose-https-fragment: %w", err)
 	}
 	// An HTTPS-fetched compose fragment has no OCI manifest; the archive is
 	// verified against the recorded content digest alone.
 	if err := cacheslot.WriteBlobAndMetadata(slot, archiveBytes,
-		Kind, spec.URL, spec.Version, digest, MediatypeYAML, nil); err != nil {
+		Kind, spec.URL, spec.Version, digest, MediatypeYAML, "", nil); err != nil {
 		return nil, fmt.Errorf("compose-https-fragment: %w", err)
 	}
 

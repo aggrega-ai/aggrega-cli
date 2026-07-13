@@ -3,7 +3,9 @@
 
 // Package sourcecache owns the build-time read-and-extract pipeline
 // for source artifacts pinned in the lockfile. The package looks up
-// a `source_artifacts:` entry by {kind, url, pinned_version},
+// a `source_artifacts:` entry by {kind, url, chart, pinned_version}
+// (url is the authored identity URL; chart names the chart within a
+// repo-root helm source and is empty for URL-identified kinds),
 // verifies the full SHA-256 of the cached archive against both the
 // lockfile entry's digest and the cache slot's metadata.yaml
 // digest, wipes and regenerates the `extracted/` subdirectory from
@@ -59,7 +61,7 @@ var (
 	ErrFetchIntegrity = oci.ErrFetchIntegrity
 )
 
-// LookupAndExtract looks up the lockfile entry for {kind, url,
+// LookupAndExtract looks up the lockfile entry for {kind, url, chart,
 // pinned_version}, verifies the full SHA-256 of the cached `.tgz`
 // against the entry's digest AND the cache slot's metadata.yaml
 // digest, wipes and regenerates the `extracted/` subdirectory from
@@ -70,23 +72,23 @@ var (
 // resolves its artifact within.
 //
 // Returns ErrFetchNotFound when no lockfile entry matches the
-// {kind, url, pinned_version} triple, or — for an OCI source kind — when the
+// {kind, url, chart, pinned_version} identity, or — for an OCI source kind — when the
 // cache slot carries the archive but no persisted OCI manifest (an incomplete
 // cache entry; the caller re-pulls). Returns ErrFetchIntegrity on digest
 // mismatch (either content pin, or the manifest layer digest for an OCI slot)
 // or on archive corruption. Returns wrapped fs errors on read/write/extract
 // failures. A non-OCI source kind (HTTPS chart, git module) carries no manifest
 // by construction and stays on content-pin authority.
-func LookupAndExtract(lf *lockfile.Lockfile, kind, url, version, workspaceRoot, cacheDir string) (string, error) {
+func LookupAndExtract(lf *lockfile.Lockfile, kind, url, chart, version, workspaceRoot, cacheDir string) (string, error) {
 	if lf == nil {
 		return "", fmt.Errorf("sourcecache: lockfile is nil: %w", ErrFetchNotFound)
 	}
-	entry := findEntry(lf, kind, url, version)
+	entry := findEntry(lf, kind, url, chart, version)
 	if entry == nil {
-		return "", fmt.Errorf("sourcecache: no lockfile entry for kind=%s url=%s version=%s: %w",
-			kind, url, version, ErrFetchNotFound)
+		return "", fmt.Errorf("sourcecache: no lockfile entry for kind=%s url=%s chart=%s version=%s: %w",
+			kind, url, chart, version, ErrFetchNotFound)
 	}
-	slot := SlotPath(workspaceRoot, cacheDir, kind, url, version, entry.Digest)
+	slot := SlotPath(workspaceRoot, cacheDir, kind, url, chart, version, entry.Digest)
 	blobPath := filepath.Join(slot, "blob.tgz")
 	blobBytes, err := os.ReadFile(blobPath)
 	if err != nil {
@@ -163,15 +165,15 @@ func LookupAndExtract(lf *lockfile.Lockfile, kind, url, version, workspaceRoot, 
 // digest from the lockfile entry and computes the slot path directly
 // (no directory walk). Used by tests + diagnostics that need the
 // slot path without going through LookupAndExtract.
-func SlotPath(workspaceRoot, cacheDir, kind, url, version, digest string) string {
-	slot, _ := cacheslot.Slot(workspaceRoot, cacheDir, kind, url, version, digest)
+func SlotPath(workspaceRoot, cacheDir, kind, url, chart, version, digest string) string {
+	slot, _ := cacheslot.Slot(workspaceRoot, cacheDir, kind, url, chart, version, digest)
 	return slot
 }
 
-func findEntry(lf *lockfile.Lockfile, kind, url, version string) *lockfile.SourceArtifact {
+func findEntry(lf *lockfile.Lockfile, kind, url, chart, version string) *lockfile.SourceArtifact {
 	for i := range lf.SourceArtifacts {
 		sa := &lf.SourceArtifacts[i]
-		if sa.Kind == kind && sa.URL == url && sa.PinnedVersion == version {
+		if sa.Kind == kind && sa.URL == url && sa.Chart == chart && sa.PinnedVersion == version {
 			return sa
 		}
 	}

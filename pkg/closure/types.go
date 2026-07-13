@@ -56,17 +56,21 @@ type Closure struct {
 
 // SourceArtifact mirrors lockfile.SourceArtifact field-for-field;
 // the lockfile writer copies the closure value into the lockfile
-// type at orchestrator integration time. Identity is the triple
-// {Kind, URL, PinnedVersion}; multiple Recipes pinning the same
-// artifact dedupe to one SourceArtifact with multiple ReferencedBy
-// records.
+// type at orchestrator integration time. Identity is the quad
+// {Kind, URL, Chart, PinnedVersion} — URL is the authored identity URL
+// and Chart names the chart within a repo root; multiple Recipes
+// pinning the same artifact dedupe to one SourceArtifact with multiple
+// ReferencedBy records. ResolvedURL is provenance only (the concrete
+// .tgz a repo-root helm source resolved to), never part of identity.
 type SourceArtifact struct {
 	Kind           string
 	URL            string
+	Chart          string
 	PinnedVersion  string
 	Digest         string
 	ManifestDigest string
 	Mediatype      string
+	ResolvedURL    string
 	ReferencedBy   []SourceArtifactReference
 }
 
@@ -162,10 +166,12 @@ type SourceSpec struct {
 type ResolvedSource struct {
 	Kind           string
 	URL            string
+	Chart          string
 	PinnedVersion  string
 	Digest         string
 	ManifestDigest string
 	Mediatype      string
+	ResolvedURL    string
 	CachePath      string
 	OriginalSource any
 }
@@ -207,9 +213,9 @@ type ResolvedRef struct {
 	// the portable content digest used for the cache pin and integrity check.
 	// Set only for a registry-resolved (Tier-3) ref; empty for a Tier-1 /
 	// Tier-2 / external ref, none of which carry a registry signature.
-	ManifestDigest  string
-	ResolutionPath  string
-	ReferencedFrom  []string
+	ManifestDigest string
+	ResolutionPath string
+	ReferencedFrom []string
 	// KindHint is the catalog kind known from where the URI was collected —
 	// "recipe" or "feature_recipe" (a Manifest mapping value's position) or
 	// "aggregate" (a sub-aggregate type reference). Empty when the collection
@@ -299,9 +305,9 @@ type Resolution struct {
 	// A registry (Tier-3) resolution captures it from the pull's manifest
 	// descriptor; lower tiers leave it empty (they carry no registry
 	// signature to verify).
-	ManifestDigest  string
-	ResolutionPath  string
-	NotFound        bool
+	ManifestDigest string
+	ResolutionPath string
+	NotFound       bool
 }
 
 // LibraryResolution extends Resolution with the library's entry

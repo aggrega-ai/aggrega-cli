@@ -50,6 +50,14 @@ func TestHTTPSResolveDirectTGZ(t *testing.T) {
 	if got.URL != "https://charts.example.com/mariadb-25.0.8.tgz" {
 		t.Errorf("URL = %q; want direct .tgz preserved", got.URL)
 	}
+	// A direct .tgz resolves to itself: no chart segment and no separate
+	// provenance, so its slot and metadata stay identical to the pre-chart shape.
+	if got.Chart != "" {
+		t.Errorf("Chart should be empty for a direct .tgz; got %q", got.Chart)
+	}
+	if got.ResolvedURL != "" {
+		t.Errorf("ResolvedURL should be empty for a direct .tgz; got %q", got.ResolvedURL)
+	}
 	if _, err := os.Stat(got.CachePath); err != nil {
 		t.Errorf("cache blob missing: %v", err)
 	}
@@ -59,6 +67,9 @@ func TestHTTPSResolveDirectTGZ(t *testing.T) {
 	}
 	if m.Mediatype != MediatypeHelmChart {
 		t.Errorf("metadata mediatype = %q; want %s", m.Mediatype, MediatypeHelmChart)
+	}
+	if m.ResolvedURL != "" {
+		t.Errorf("metadata resolved_url should be omitted for a direct .tgz; got %q", m.ResolvedURL)
 	}
 }
 
@@ -87,8 +98,30 @@ func TestHTTPSResolveRepoRootViaIndex(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
-	if got.URL != "https://charts.bitnami.com/bitnami/charts/mariadb-25.0.8.tgz" {
-		t.Errorf("URL should be resolved direct .tgz; got %q", got.URL)
+	// Identity is the authored repo-root URL plus the chart name — NOT the
+	// resolved .tgz. Build reconstructs this same authored identity offline, so
+	// the cache/lockfile lookup hits.
+	if got.URL != "https://charts.bitnami.com/bitnami" {
+		t.Errorf("URL should be the authored repo-root identity; got %q", got.URL)
+	}
+	if got.Chart != "mariadb" {
+		t.Errorf("Chart should carry the chart name; got %q", got.Chart)
+	}
+	// The resolved .tgz is provenance only.
+	if got.ResolvedURL != "https://charts.bitnami.com/bitnami/charts/mariadb-25.0.8.tgz" {
+		t.Errorf("ResolvedURL should be the resolved direct .tgz provenance; got %q", got.ResolvedURL)
+	}
+	// The cache metadata records the authored URL as identity and the resolved
+	// .tgz as provenance.
+	m, err := metadata.Read(filepath.Join(filepath.Dir(got.CachePath), "metadata.yaml"))
+	if err != nil {
+		t.Fatalf("read metadata: %v", err)
+	}
+	if m.URL != "https://charts.bitnami.com/bitnami" {
+		t.Errorf("metadata URL should be authored identity; got %q", m.URL)
+	}
+	if m.ResolvedURL != "https://charts.bitnami.com/bitnami/charts/mariadb-25.0.8.tgz" {
+		t.Errorf("metadata resolved_url should be the resolved .tgz; got %q", m.ResolvedURL)
 	}
 }
 

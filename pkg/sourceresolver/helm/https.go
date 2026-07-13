@@ -12,8 +12,8 @@ import (
 	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver"
-	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/internal/archive"
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/cacheslot"
+	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/internal/archive"
 	"helm.sh/helm/v3/pkg/cli"
 	"helm.sh/helm/v3/pkg/getter"
 	"helm.sh/helm/v3/pkg/repo"
@@ -74,15 +74,24 @@ func (a *httpsAdapter) Kind() string { return KindHTTPS }
 // shapes are accepted:
 //
 //   - **Direct .tgz URL** (spec.URL ends in `.tgz`): the adapter
-//     fetches the URL directly. The lockfile records spec.URL
-//     verbatim as the canonical URL.
+//     fetches the URL directly. The authored URL is the resolved URL,
+//     so the identity URL is spec.URL and no separate provenance is
+//     recorded.
 //   - **Repo-root URL** (any other shape, with spec.Chart populated):
 //     the adapter fetches `<repo-root>/index.yaml`, looks up
 //     spec.Chart + spec.Version, extracts the direct .tgz URL, and
-//     fetches it. The lockfile records the **resolved direct .tgz
-//     URL** as the canonical URL, NOT the repo-root URL —
-//     build-time digest verification reads from the resolved URL's
-//     cache slot and NEVER re-fetches index.yaml.
+//     fetches it from there.
+//
+// The **authored** URL (spec.URL) plus spec.Chart is the artifact
+// identity in every case — it is what the cache slot, the lockfile
+// entry, and the recipe pin are keyed on, and what build reconstructs
+// offline. The concrete .tgz location a repo-root form resolves to is
+// recorded as provenance only (ResolvedSource.ResolvedURL and the cache
+// metadata's resolved_url), never as identity — so build-time digest
+// verification reads the authored-URL cache slot and NEVER re-fetches
+// index.yaml. Keying identity on the authored URL also keeps two charts
+// served from one repo root at the same version distinct (they share a
+// URL but differ in Chart).
 //
 // The upstream archive is pinned verbatim (no normalisation pass) —
 // archive.Digest computes the SHA-256 over the upstream bytes, which
@@ -91,7 +100,11 @@ func (a *httpsAdapter) Kind() string { return KindHTTPS }
 // pulls of the same version is caught at the next pull via
 // ErrFetchIntegrity.
 func (a *httpsAdapter) Resolve(spec sourceresolver.SourceSpec) (*sourceresolver.ResolvedSource, error) {
-	resolvedURL := spec.URL
+	fetchURL := spec.URL
+	// resolvedURL is provenance: empty unless the authored URL differs from the
+	// concrete .tgz the index resolves to (the repo-root form), keeping the
+	// direct-.tgz form's recorded metadata free of a redundant pointer.
+	var resolvedURL string
 	if !strings.HasSuffix(strings.ToLower(spec.URL), ".tgz") {
 		if spec.Chart == "" {
 			return nil, sourceresolver.Wrap(spec, sourceresolver.ErrFetchNotFound,
@@ -101,31 +114,35 @@ func (a *httpsAdapter) Resolve(spec sourceresolver.SourceSpec) (*sourceresolver.
 		if err != nil {
 			return nil, mapHTTPError(spec, err)
 		}
+		fetchURL = u
 		resolvedURL = u
 	}
 
-	buf, err := a.getter.Get(resolvedURL)
+	buf, err := a.getter.Get(fetchURL)
 	if err != nil {
 		return nil, mapHTTPError(spec, err)
 	}
 	body := buf.Bytes()
 	digest := archive.Digest(body)
-	slot, err := cacheslot.Slot(spec.WorkspaceRoot, spec.CacheDir, KindHTTPS, resolvedURL, spec.Version, digest)
+	slot, err := cacheslot.Slot(spec.WorkspaceRoot, spec.CacheDir, KindHTTPS, spec.URL, spec.Chart, spec.Version, digest)
 	if err != nil {
 		return nil, fmt.Errorf("helm-https-chart: %w", err)
 	}
 	// An HTTPS-distributed chart has no OCI manifest; the archive is verified
-	// against the recorded content digest alone.
+	// against the recorded content digest alone. The slot and metadata are keyed
+	// on the authored URL (spec.URL); the resolved .tgz is recorded as provenance.
 	if err := cacheslot.WriteBlobAndMetadata(slot, body,
-		KindHTTPS, resolvedURL, spec.Version, digest, MediatypeHelmChart, nil); err != nil {
+		KindHTTPS, spec.URL, spec.Version, digest, MediatypeHelmChart, resolvedURL, nil); err != nil {
 		return nil, fmt.Errorf("helm-https-chart: %w", err)
 	}
 
 	return &sourceresolver.ResolvedSource{
 		Kind:           KindHTTPS,
-		URL:            resolvedURL,
+		URL:            spec.URL,
+		Chart:          spec.Chart,
 		PinnedVersion:  spec.Version,
 		Digest:         digest,
+		ResolvedURL:    resolvedURL,
 		Mediatype:      MediatypeHelmChart,
 		CachePath:      slot + "/blob.tgz",
 		OriginalSource: spec.OriginalSource,

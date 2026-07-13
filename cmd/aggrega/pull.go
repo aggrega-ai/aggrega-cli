@@ -770,10 +770,12 @@ func buildLockfile(releasePath string, cl closure.Closure, wsCfg workspaceconfig
 		lf.SourceArtifacts = append(lf.SourceArtifacts, lockfile.SourceArtifact{
 			Kind:           s.Kind,
 			URL:            s.URL,
+			Chart:          s.Chart,
 			PinnedVersion:  s.PinnedVersion,
 			Digest:         s.Digest,
 			ManifestDigest: s.ManifestDigest,
 			Mediatype:      s.Mediatype,
+			ResolvedURL:    s.ResolvedURL,
 			ReferencedBy:   refs,
 		})
 	}

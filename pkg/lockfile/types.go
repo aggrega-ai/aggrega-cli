@@ -183,11 +183,15 @@ type LibraryConsumer struct {
 }
 
 // SourceArtifact carries a source-artifact pin produced from a Recipe
-// or FeatureRecipe `spec.source` resolution. Identity is the triple
-// {Kind, URL, PinnedVersion}; the lockfile dedupes multiple Recipes
-// pinning the same artifact into one entry with multiple ReferencedBy
-// records. Digest verifies the cached archive; Mediatype carries the
-// canonical type the registry advertised.
+// or FeatureRecipe `spec.source` resolution. Identity is the quad
+// {Kind, URL, Chart, PinnedVersion} — URL is the authored identity URL
+// and Chart names the chart within a repo root, so two charts served
+// from one repo root at the same version pin to distinct entries; the
+// lockfile dedupes multiple Recipes pinning the same artifact into one
+// entry with multiple ReferencedBy records. Digest verifies the cached
+// archive; Mediatype carries the canonical type the registry advertised.
+// ResolvedURL is provenance only (the concrete .tgz a repo-root helm
+// source resolved to), never part of identity.
 //
 // PinnedVersion semantics vary by Kind:
 //
@@ -201,10 +205,22 @@ type LibraryConsumer struct {
 //   - terraform-module-oci: reserved for the future terraform
 //     provider; no adapter ships in the current implementation.
 type SourceArtifact struct {
-	Kind          string `yaml:"kind"`
-	URL           string `yaml:"url"`
+	Kind string `yaml:"kind"`
+	// URL is the authored identity URL — spec.source.url as authored (a repo root
+	// or a direct .tgz for helm-https), NOT the resolved artifact location. Build
+	// reconstructs this same URL offline, so it is the stable identity the pin is
+	// keyed on.
+	URL string `yaml:"url"`
+	// Chart names the chart within a repo-root helm source, part of the identity
+	// so two charts served from one repo root at the same version pin distinctly.
+	// Empty (and omitted) for a direct .tgz, OCI, compose, or git source.
+	Chart         string `yaml:"chart,omitempty"`
 	PinnedVersion string `yaml:"pinned_version"`
 	Digest        string `yaml:"digest"`
+	// ResolvedURL is provenance only: the concrete artifact location the authored
+	// URL resolved to at pull time — a repo-root helm source's direct .tgz URL.
+	// Empty (and omitted) when the resolved location equals URL.
+	ResolvedURL string `yaml:"resolved_url,omitempty"`
 	// ManifestDigest is the OCI manifest digest the cached archive is verified
 	// against — the independent root of trust. It differs from Digest, the
 	// portable content digest used for the cache pin and integrity check. Present

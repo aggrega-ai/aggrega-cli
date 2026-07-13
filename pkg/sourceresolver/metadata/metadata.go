@@ -76,12 +76,19 @@ func getValidator() (jsonvalidator.Validator, error) {
 // this struct controls field order in marshalled YAML (yaml.v3
 // preserves struct order), which keeps the file diffable.
 type CacheMetadata struct {
-	Kind      string    `yaml:"kind"`
-	URL       string    `yaml:"url"`
-	Version   string    `yaml:"version"`
-	Digest    string    `yaml:"digest"`
-	Mediatype string    `yaml:"mediatype"`
-	PulledAt  time.Time `yaml:"pulled_at"`
+	Kind string `yaml:"kind"`
+	// URL is the authored identity URL — spec.source.url as authored (a repo root
+	// or a direct .tgz for helm-https), NOT the resolved artifact location.
+	URL       string `yaml:"url"`
+	Version   string `yaml:"version"`
+	Digest    string `yaml:"digest"`
+	Mediatype string `yaml:"mediatype"`
+	// ResolvedURL is provenance only: the concrete artifact location the authored
+	// URL resolved to at pull time (a repo-root helm source's direct .tgz).
+	// Omitted when the resolved location equals URL, keeping metadata for
+	// URL-identified kinds byte-identical.
+	ResolvedURL string    `yaml:"resolved_url,omitempty"`
+	PulledAt    time.Time `yaml:"pulled_at"`
 }
 
 // Write marshals m to YAML and writes it to path. Returns a wrapped

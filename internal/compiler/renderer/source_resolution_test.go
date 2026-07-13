@@ -126,7 +126,7 @@ func TestResolveSourceForNodeResolvesRemoteSourceFromLockfile(t *testing.T) {
 	})
 	digest := digestOfBytes(blob)
 	slot := sourcecache.SlotPath(root, ".aggrega/cache", "helm-oci-chart",
-		"oci://hub.aggrega.ai/charts/mariadb", "25.0.8", digest)
+		"oci://hub.aggrega.ai/charts/mariadb", "", "25.0.8", digest)
 	mustMkdirAll(t, slot)
 	mustWriteFile(t, filepath.Join(slot, "blob.tgz"), blob)
 	mustWriteChartManifest(t, slot, blob)
@@ -200,7 +200,7 @@ func TestResolveEntitySource_FeatureRecipeRemoteResolvesFromLockfile(t *testing.
 	})
 	digest := digestOfBytes(blob)
 	slot := sourcecache.SlotPath(root, ".aggrega/cache", "helm-oci-chart",
-		"oci://hub.aggrega.ai/charts/tls", "1.2.3", digest)
+		"oci://hub.aggrega.ai/charts/tls", "", "1.2.3", digest)
 	mustMkdirAll(t, slot)
 	mustWriteFile(t, filepath.Join(slot, "blob.tgz"), blob)
 	mustWriteChartManifest(t, slot, blob)
@@ -262,7 +262,7 @@ func TestResolveEntitySource_RecipePinDisagreesWithLockfileHalts(t *testing.T) {
 	})
 	digest := digestOfBytes(blob)
 	slot := sourcecache.SlotPath(root, ".aggrega/cache", "helm-oci-chart",
-		"oci://hub.aggrega.ai/charts/tls", "1.2.3", digest)
+		"oci://hub.aggrega.ai/charts/tls", "", "1.2.3", digest)
 	mustMkdirAll(t, slot)
 	mustWriteFile(t, filepath.Join(slot, "blob.tgz"), blob)
 	mustWriteChartManifest(t, slot, blob)

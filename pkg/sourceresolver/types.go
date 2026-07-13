@@ -95,10 +95,25 @@ type SourceSpec struct {
 // lockfile writer copies the field verbatim into the lockfile's
 // `source_artifacts[].mediatype` slot.
 type ResolvedSource struct {
-	Kind          string `yaml:"kind"`
-	URL           string `yaml:"url"`
+	Kind string `yaml:"kind"`
+	// URL is the authored identity URL — spec.URL as authored (a repo root or a
+	// direct .tgz for helm-https), NOT the resolved artifact location. Build
+	// reconstructs this same URL offline, so it is the stable identity the pin is
+	// keyed on. The resolved location a repo-root helm source fetched from is
+	// carried separately on ResolvedURL as provenance.
+	URL string `yaml:"url"`
+	// Chart names the chart within a repo-root helm source (spec.Chart), part of
+	// the resolved-source identity so two charts served from one repo root at the
+	// same version resolve distinctly. Empty for a direct .tgz, OCI, compose, or
+	// git source, where the URL alone identifies the artifact.
+	Chart         string `yaml:"chart,omitempty"`
 	PinnedVersion string `yaml:"pinned_version"`
 	Digest        string `yaml:"digest"`
+	// ResolvedURL is provenance only: the concrete artifact location the authored
+	// URL resolved to at pull time — for a repo-root helm source, the direct .tgz
+	// URL the repository index resolved the chart+version to. It is NOT part of
+	// the artifact identity. Empty when the resolved location equals URL.
+	ResolvedURL string `yaml:"resolved_url,omitempty"`
 	// ManifestDigest is the OCI manifest digest the cached archive is verified
 	// against — the independent root of trust. It differs from Digest, the
 	// portable content digest. Only an OCI-distributed source (helm-oci-chart)

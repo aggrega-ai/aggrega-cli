@@ -19,7 +19,7 @@ import (
 //     field declaration order in types.go).
 //   - Slice fields sorted by their canonical key: Entities,
 //     SchemaLibraries, MappingLibraries, Plugins by URI;
-//     SourceArtifacts by the composite (Kind, URL, PinnedVersion);
+//     SourceArtifacts by the composite (Kind, URL, Chart, PinnedVersion);
 //     ExternalInputs by URL.
 //   - Inside each Entity / Plugin: ReferencedFrom sorted
 //     lexicographically.
@@ -198,6 +198,9 @@ func canonicalise(lf *Lockfile) *Lockfile {
 		}
 		if a.URL != b.URL {
 			return a.URL < b.URL
+		}
+		if a.Chart != b.Chart {
+			return a.Chart < b.Chart
 		}
 		return a.PinnedVersion < b.PinnedVersion
 	})

@@ -20,6 +20,7 @@ func TestSlotShape(t *testing.T) {
 		"/workspace", ".aggrega/cache",
 		"helm-oci-chart",
 		"oci://hub.aggrega.ai/charts/mariadb",
+		"",
 		"25.0.8",
 		"sha256:abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
 	)
@@ -39,12 +40,12 @@ func TestSlotShape(t *testing.T) {
 func TestSlotDeterministic(t *testing.T) {
 	t.Parallel()
 	a, err := cacheslot.Slot("/ws", ".aggrega/cache", "helm-https-chart",
-		"https://charts.example.com/mariadb-25.0.8.tgz", "25.0.8", "sha256:abcdef0123456789")
+		"https://charts.example.com/mariadb-25.0.8.tgz", "", "25.0.8", "sha256:abcdef0123456789")
 	if err != nil {
 		t.Fatalf("Slot a: %v", err)
 	}
 	b, err := cacheslot.Slot("/ws", ".aggrega/cache", "helm-https-chart",
-		"https://charts.example.com/mariadb-25.0.8.tgz", "25.0.8", "sha256:abcdef0123456789")
+		"https://charts.example.com/mariadb-25.0.8.tgz", "", "25.0.8", "sha256:abcdef0123456789")
 	if err != nil {
 		t.Fatalf("Slot b: %v", err)
 	}
@@ -56,7 +57,7 @@ func TestSlotDeterministic(t *testing.T) {
 func TestSlotURLPathPercentEncoded(t *testing.T) {
 	t.Parallel()
 	got, err := cacheslot.Slot("/ws", ".aggrega/cache", "compose-https-fragment",
-		"https://example.com/some path/with spaces.yaml", "1.0.0", "sha256:deadbeef")
+		"https://example.com/some path/with spaces.yaml", "", "1.0.0", "sha256:deadbeef")
 	if err != nil {
 		t.Fatalf("Slot: %v", err)
 	}
@@ -74,12 +75,12 @@ func TestSlotURLPathPercentEncoded(t *testing.T) {
 func TestSlotStripsUserinfoFromHost(t *testing.T) {
 	t.Parallel()
 	clean, err := cacheslot.Slot("/ws", ".aggrega/cache", "helm-oci-chart",
-		"oci://hub.aggrega.ai/charts/mariadb", "25.0.8", "sha256:abcdef0123456789")
+		"oci://hub.aggrega.ai/charts/mariadb", "", "25.0.8", "sha256:abcdef0123456789")
 	if err != nil {
 		t.Fatalf("Slot clean: %v", err)
 	}
 	withCreds, err := cacheslot.Slot("/ws", ".aggrega/cache", "helm-oci-chart",
-		"oci://user:pw@hub.aggrega.ai/charts/mariadb", "25.0.8", "sha256:abcdef0123456789")
+		"oci://user:pw@hub.aggrega.ai/charts/mariadb", "", "25.0.8", "sha256:abcdef0123456789")
 	if err != nil {
 		t.Fatalf("Slot withCreds: %v", err)
 	}
@@ -94,7 +95,7 @@ func TestSlotStripsUserinfoFromHost(t *testing.T) {
 func TestSlotEmptyWorkspaceRootRejected(t *testing.T) {
 	t.Parallel()
 	_, err := cacheslot.Slot("", ".aggrega/cache", "helm-oci-chart",
-		"oci://hub.aggrega.ai/charts/mariadb", "25.0.8", "sha256:abcd")
+		"oci://hub.aggrega.ai/charts/mariadb", "", "25.0.8", "sha256:abcd")
 	if err == nil {
 		t.Fatal("expected error for empty workspaceRoot; got nil")
 	}
@@ -107,7 +108,7 @@ func TestWriteBlobAndMetadataPopulatesSlot(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
 	slot, err := cacheslot.Slot(root, ".aggrega/cache", "compose-https-fragment",
-		"https://example.com/fragment.yaml", "1.0.0", "sha256:deadbeefcafedeadbeefcafedeadbeefcafedeadbeefcafedeadbeefcafedead")
+		"https://example.com/fragment.yaml", "", "1.0.0", "sha256:deadbeefcafedeadbeefcafedeadbeefcafedeadbeefcafedeadbeefcafedead")
 	if err != nil {
 		t.Fatalf("Slot: %v", err)
 	}
@@ -115,7 +116,7 @@ func TestWriteBlobAndMetadataPopulatesSlot(t *testing.T) {
 	body := []byte("archive-bytes-here")
 	if err := cacheslot.WriteBlobAndMetadata(slot, body,
 		"compose-https-fragment", "https://example.com/fragment.yaml",
-		"1.0.0", "sha256:deadbeefcafedeadbeefcafedeadbeefcafedeadbeefcafedeadbeefcafedead", "application/x-yaml", nil); err != nil {
+		"1.0.0", "sha256:deadbeefcafedeadbeefcafedeadbeefcafedeadbeefcafedeadbeefcafedead", "application/x-yaml", "", nil); err != nil {
 		t.Fatalf("WriteBlobAndMetadata: %v", err)
 	}
 

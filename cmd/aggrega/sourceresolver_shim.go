@@ -40,10 +40,12 @@ func (sourceResolverShim) Resolve(spec closure.SourceSpec) (*closure.ResolvedSou
 	return &closure.ResolvedSource{
 		Kind:           rs.Kind,
 		URL:            rs.URL,
+		Chart:          rs.Chart,
 		PinnedVersion:  rs.PinnedVersion,
 		Digest:         rs.Digest,
 		ManifestDigest: rs.ManifestDigest,
 		Mediatype:      rs.Mediatype,
+		ResolvedURL:    rs.ResolvedURL,
 		CachePath:      rs.CachePath,
 		OriginalSource: rs.OriginalSource,
 	}, nil

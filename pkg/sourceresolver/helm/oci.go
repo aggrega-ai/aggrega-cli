@@ -31,8 +31,8 @@ import (
 
 	ocierr "github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver"
-	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/internal/archive"
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/cacheslot"
+	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/internal/archive"
 	"oras.land/oras-go/v2"
 )
 
@@ -105,7 +105,7 @@ func (a *ociAdapter) Resolve(spec sourceresolver.SourceSpec) (*sourceresolver.Re
 	}
 
 	digest := archive.Digest(result.Bytes)
-	slot, err := cacheslot.Slot(spec.WorkspaceRoot, spec.CacheDir, KindOCI, spec.URL, spec.Version, digest)
+	slot, err := cacheslot.Slot(spec.WorkspaceRoot, spec.CacheDir, KindOCI, spec.URL, "", spec.Version, digest)
 	if err != nil {
 		return nil, fmt.Errorf("helm-oci-chart: %w", err)
 	}
@@ -114,7 +114,7 @@ func (a *ociAdapter) Resolve(spec sourceresolver.SourceSpec) (*sourceresolver.Re
 		mediatype = MediatypeHelmChart
 	}
 	if err := cacheslot.WriteBlobAndMetadata(slot, result.Bytes,
-		KindOCI, spec.URL, spec.Version, digest, mediatype, result.ManifestBytes); err != nil {
+		KindOCI, spec.URL, spec.Version, digest, mediatype, "", result.ManifestBytes); err != nil {
 		return nil, fmt.Errorf("helm-oci-chart: %w", err)
 	}
 

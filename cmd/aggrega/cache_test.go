@@ -55,11 +55,11 @@ func writeEntitySlot(t *testing.T, wsRoot, uri, version string, blob []byte) (st
 // and returns the slot dir. The recorded digest is dg.
 func writeSourceSlot(t *testing.T, wsRoot, kind, srcURL, version, dg string, blob []byte) string {
 	t.Helper()
-	slot, err := cacheslot.Slot(wsRoot, cacheTestCacheDir, kind, srcURL, version, dg)
+	slot, err := cacheslot.Slot(wsRoot, cacheTestCacheDir, kind, srcURL, "", version, dg)
 	if err != nil {
 		t.Fatalf("Slot: %v", err)
 	}
-	if err := cacheslot.WriteBlobAndMetadata(slot, blob, kind, srcURL, version, dg, "application/x-yaml", nil); err != nil {
+	if err := cacheslot.WriteBlobAndMetadata(slot, blob, kind, srcURL, version, dg, "application/x-yaml", "", nil); err != nil {
 		t.Fatalf("WriteBlobAndMetadata: %v", err)
 	}
 	return slot

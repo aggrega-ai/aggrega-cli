@@ -18,13 +18,13 @@ import (
 )
 
 // lockfileSourceRecord returns the lockfile source-artifact record for the
-// identity triple {kind, url, version}, and whether one is present.
-func lockfileSourceRecord(lf *lockfile.Lockfile, kind, url, version string) (lockfile.SourceArtifact, bool) {
+// identity {kind, url, chart, version}, and whether one is present.
+func lockfileSourceRecord(lf *lockfile.Lockfile, kind, url, chart, version string) (lockfile.SourceArtifact, bool) {
 	if lf == nil {
 		return lockfile.SourceArtifact{}, false
 	}
 	for _, sa := range lf.SourceArtifacts {
-		if sa.Kind == kind && sa.URL == url && sa.PinnedVersion == version {
+		if sa.Kind == kind && sa.URL == url && sa.Chart == chart && sa.PinnedVersion == version {
 			return sa, true
 		}
 	}
@@ -124,8 +124,8 @@ func resolveEntitySource(input RendererInput, source any, locals types.OrderedMa
 	// lockfile digest, so this recipe-vs-lockfile check completes the chain
 	// (recipe pin == lockfile record == cached bytes). A recipe with no recorded
 	// pin (never frozen) has nothing to cross-check and proceeds on the lockfile.
-	if pin, ok := recipepin.MatchSourcePin(srcPins, spec.Kind, spec.URL, spec.Version); ok {
-		if lfrec, found := lockfileSourceRecord(input.Lockfile, spec.Kind, spec.URL, spec.Version); found {
+	if pin, ok := recipepin.MatchSourcePin(srcPins, spec.Kind, spec.URL, spec.Chart, spec.Version); ok {
+		if lfrec, found := lockfileSourceRecord(input.Lockfile, spec.Kind, spec.URL, spec.Chart, spec.Version); found {
 			if pin.Digest != lfrec.Digest || pin.ManifestDigest != lfrec.ManifestDigest {
 				return nil, fmt.Errorf("source-artifact %s@%s: recipe pin (digest %s) disagrees with lockfile record (digest %s): %w",
 					spec.URL, spec.Version, pin.Digest, lfrec.Digest, oci.ErrFetchIntegrity)
@@ -134,7 +134,7 @@ func resolveEntitySource(input RendererInput, source any, locals types.OrderedMa
 	}
 	extracted, err := sourcecache.LookupAndExtract(
 		input.Lockfile,
-		spec.Kind, spec.URL, spec.Version,
+		spec.Kind, spec.URL, spec.Chart, spec.Version,
 		input.WorkspaceRoot, input.CacheDir,
 	)
 	if err != nil {

@@ -219,10 +219,10 @@ func TestArtifactPinsForRecipeHashesImportsSkipsInline(t *testing.T) {
 
 func TestMatchHelpers(t *testing.T) {
 	src := []types.SourceDigest{{Kind: "helm-https-chart", URL: "u", Version: "1.0.0", Digest: "d"}}
-	if _, ok := recipepin.MatchSourcePin(src, "helm-https-chart", "u", "1.0.0"); !ok {
+	if _, ok := recipepin.MatchSourcePin(src, "helm-https-chart", "u", "", "1.0.0"); !ok {
 		t.Errorf("MatchSourcePin should find the pin")
 	}
-	if _, ok := recipepin.MatchSourcePin(src, "helm-https-chart", "u", "2.0.0"); ok {
+	if _, ok := recipepin.MatchSourcePin(src, "helm-https-chart", "u", "", "2.0.0"); ok {
 		t.Errorf("MatchSourcePin should not match a different version")
 	}
 	art := []types.ArtifactDigest{{Name: "x.yaml", Digest: "d"}}

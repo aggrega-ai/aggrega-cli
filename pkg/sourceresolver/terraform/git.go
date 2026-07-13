@@ -32,8 +32,8 @@ import (
 	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver"
-	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/internal/archive"
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/cacheslot"
+	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/internal/archive"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/transport"
@@ -128,14 +128,14 @@ func (a *adapter) Resolve(spec sourceresolver.SourceSpec) (*sourceresolver.Resol
 	}
 	digest := archive.Digest(archiveBytes)
 	commitSHA := hash.String()
-	slot, err := cacheslot.Slot(spec.WorkspaceRoot, spec.CacheDir, Kind, spec.URL, commitSHA, digest)
+	slot, err := cacheslot.Slot(spec.WorkspaceRoot, spec.CacheDir, Kind, spec.URL, "", commitSHA, digest)
 	if err != nil {
 		return nil, fmt.Errorf("terraform-module-git: %w", err)
 	}
 	// A git-cloned module has no OCI manifest; the archive is verified against
 	// the recorded content digest alone.
 	if err := cacheslot.WriteBlobAndMetadata(slot, archiveBytes,
-		Kind, spec.URL, commitSHA, digest, MediatypeTarGz, nil); err != nil {
+		Kind, spec.URL, commitSHA, digest, MediatypeTarGz, "", nil); err != nil {
 		return nil, fmt.Errorf("terraform-module-git: %w", err)
 	}
 

@@ -9,9 +9,12 @@
 //
 // Slot layout (under the workspace's configured cache directory):
 //
-//	<workspaceRoot>/<cacheDir>/source-artifacts/<kind>/<host>/<path>/<version>/<digest-prefix>/
+//	<workspaceRoot>/<cacheDir>/source-artifacts/<kind>/<host>/<path>/<chart>/<version>/<digest-prefix>/
 //
-// The blob lives at <slot>/blob.tgz and the metadata at
+// The <chart> segment is present only for a repo-root helm source (where the
+// URL path is the repository root and the chart name distinguishes artifacts
+// served from it); it is dropped for kinds that pass an empty chart, keeping
+// their slot layout unchanged. The blob lives at <slot>/blob.tgz and the metadata at
 // <slot>/metadata.yaml. The extracted/ subdirectory is regenerated
 // on every build read by a downstream cache layer (the rebuild
 // discipline lives outside this package).
@@ -57,19 +60,25 @@ var ErrEmptyWorkspaceRoot = errors.New("cacheslot: empty workspaceRoot")
 // by internal/archive.Digest or just the hex. Either way, only the
 // first DigestPrefixLen hex chars are used as the leaf segment.
 //
+// chart is the chart name for a repo-root helm source; it becomes an
+// intermediate path segment so two charts served from one repo root at the same
+// version occupy distinct slots. An empty chart is dropped by filepath.Join, so
+// kinds that identify by URL alone (a direct .tgz, OCI, compose, git) keep the
+// slot layout they had before chart entered the identity.
+//
 // Returns a wrapped ErrEmptyWorkspaceRoot when workspaceRoot is
 // empty; callers that legitimately want a CWD-relative slot must
 // pass "." explicitly.
-func Slot(workspaceRoot, cacheDir, kind, sourceURL, version, digest string) (string, error) {
+func Slot(workspaceRoot, cacheDir, kind, sourceURL, chart, version, digest string) (string, error) {
 	if workspaceRoot == "" {
-		return "", fmt.Errorf("%w (kind=%s url=%s version=%s)",
-			ErrEmptyWorkspaceRoot, kind, sourceURL, version)
+		return "", fmt.Errorf("%w (kind=%s url=%s chart=%s version=%s)",
+			ErrEmptyWorkspaceRoot, kind, sourceURL, chart, version)
 	}
 	host, urlPath := splitURL(sourceURL)
 	prefix := digestPrefix(digest)
 	return filepath.Join(
 		SourceArtifactsRoot(workspaceRoot, cacheDir),
-		kind, host, urlPath, version, prefix,
+		kind, host, urlPath, chart, version, prefix,
 	), nil
 }
 
@@ -110,8 +119,14 @@ const ManifestFile = "manifest"
 // the layer digest the manifest declares. Pass nil for a non-OCI
 // source that has no manifest.
 //
+// sourceURL is the authored identity URL recorded on the metadata; resolvedURL
+// is the concrete artifact location it resolved to (a repo-root helm source's
+// direct .tgz), recorded as provenance. Pass an empty resolvedURL when the
+// resolved location equals the authored URL, so the field is omitted and the
+// metadata stays byte-identical for kinds that identify by URL alone.
+//
 // PulledAt is set to time.Now().UTC() at write time.
-func WriteBlobAndMetadata(slotDir string, archiveBytes []byte, kind, sourceURL, version, digest, mediatype string, manifestBytes []byte) error {
+func WriteBlobAndMetadata(slotDir string, archiveBytes []byte, kind, sourceURL, version, digest, mediatype, resolvedURL string, manifestBytes []byte) error {
 	if err := os.MkdirAll(slotDir, 0o755); err != nil {
 		return fmt.Errorf("cacheslot: mkdir %s: %w", slotDir, err)
 	}
@@ -126,12 +141,13 @@ func WriteBlobAndMetadata(slotDir string, archiveBytes []byte, kind, sourceURL, 
 		}
 	}
 	meta := metadata.CacheMetadata{
-		Kind:      kind,
-		URL:       sourceURL,
-		Version:   version,
-		Digest:    digest,
-		Mediatype: mediatype,
-		PulledAt:  time.Now().UTC(),
+		Kind:        kind,
+		URL:         sourceURL,
+		Version:     version,
+		Digest:      digest,
+		Mediatype:   mediatype,
+		ResolvedURL: resolvedURL,
+		PulledAt:    time.Now().UTC(),
 	}
 	metaPath := filepath.Join(slotDir, "metadata.yaml")
 	if err := metadata.Write(metaPath, meta); err != nil {
