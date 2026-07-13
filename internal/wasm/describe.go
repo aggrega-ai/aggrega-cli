@@ -4,6 +4,7 @@
 package wasm
 
 import (
+	"encoding/json"
 	"fmt"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
@@ -116,6 +117,23 @@ type PluginDescriptor struct {
 	// The shape validator accepts StageIR, StageRender, or empty and refuses
 	// any other value; it does not cross-check the value against the plugin type.
 	Stage string `json:"stage,omitempty"`
+
+	// SettingsSchema is an optional JSON Schema a plugin declares to type the
+	// operator-supplied settings its attachment carries (the attachment's
+	// with.settings object). When present, the host compiles it at load and, at
+	// dispatch, validates the attachment's settings against it before invoking
+	// the plugin; settings that do not conform halt the build loudly, naming the
+	// offending key, rather than reaching the plugin as ill-shaped input. When
+	// absent, the plugin declares no shape and the host hands settings through
+	// verbatim (free-form). The schema is the plugin's own declaration of what
+	// its settings must look like; the host runs generic JSON Schema validation
+	// against it and does not interpret the settings' meaning. It is shape-checked
+	// at load — a malformed schema document fails the load (see
+	// [PluginDescriptor.Validate]) — and applied at dispatch (see
+	// [PluginDescriptor.ValidateSettings]). It is meaningful for a socket that
+	// carries settings (the policy-validator socket today); a plugin type that
+	// reads no settings leaves it empty.
+	SettingsSchema json.RawMessage `json:"settings_schema,omitempty"`
 
 	// Metadata is optional authorship information. It carries no
 	// behavioral contract — the host neither validates nor acts on it.
@@ -526,6 +544,11 @@ const (
 //     command presence is enforced at install), and does not act on the value.
 //   - stage is ir, render, or empty. This is shape validation only — the host
 //     does not cross-check the value against the plugin type or act on it here.
+//   - a declared settings_schema compiles as a JSON Schema. This is shape
+//     validation only — the gate confirms the schema is well-formed; it does
+//     not cross-check the schema against the plugin type or validate any
+//     settings value here. Settings values are validated at dispatch against
+//     the compiled schema (see [PluginDescriptor.ValidateSettings]).
 //
 // pluginIdentity names the plugin in the rejection message. The caller
 // passes whatever stable identity it holds; the field is plumbed so the
@@ -562,6 +585,10 @@ func (d PluginDescriptor) Validate(pluginIdentity string) error {
 	}
 
 	if err := d.validateStage(pluginIdentity); err != nil {
+		return err
+	}
+
+	if err := d.validateSettingsSchema(pluginIdentity); err != nil {
 		return err
 	}
 

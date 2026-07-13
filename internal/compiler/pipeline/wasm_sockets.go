@@ -182,7 +182,7 @@ func runPolicySocket(ctx context.Context, inputs Inputs, catalogLookup resolver.
 		}
 		spec := resolver.PluginSpec(pluginRefName(ref.URI), resolved)
 		spec.PluginType = wasm.PluginTypePolicyValidator
-		out, ran, err := invokeStagedPolicy(ctx, spec, export, payload, wasm.StageIR)
+		out, ran, err := invokeStagedPolicy(ctx, spec, export, payload, wasm.StageIR, in.Settings)
 		if err != nil {
 			return fmt.Errorf("Step 4 (policy): plugin %q: %w", ref.URI, err)
 		}
@@ -239,17 +239,18 @@ func runRenderPolicySocket(ctx context.Context, inputs Inputs, catalogLookup res
 		if err != nil {
 			return fmt.Errorf("Step 5 (render policy): plugin %q: %w", ref.URI, err)
 		}
+		settings := policySettings(ref)
 		payload, err := json.Marshal(analyzer.RenderPolicyValidatorInput{
 			Artifacts: artifacts,
 			Sources:   sources,
-			Settings:  policySettings(ref),
+			Settings:  settings,
 		})
 		if err != nil {
 			return fmt.Errorf("Step 5 (render policy): marshal input for plugin %q: %w", ref.URI, err)
 		}
 		spec := resolver.PluginSpec(pluginRefName(ref.URI), resolved)
 		spec.PluginType = wasm.PluginTypePolicyValidator
-		out, ran, err := invokeStagedPolicy(ctx, spec, export, payload, wasm.StageRender)
+		out, ran, err := invokeStagedPolicy(ctx, spec, export, payload, wasm.StageRender, settings)
 		if err != nil {
 			return fmt.Errorf("Step 5 (render policy): plugin %q: %w", ref.URI, err)
 		}
@@ -283,17 +284,29 @@ func runRenderPolicySocket(ctx context.Context, inputs Inputs, catalogLookup res
 // invokeStagedPolicy loads a policy plugin through the shared describe() gate,
 // reads its declared stage from the same descriptor, and invokes the export only
 // when that stage matches wantStage (an absent stage defaults to the IR stage).
+// When the stage matches, it validates the attachment's settings against the
+// plugin's declared settings schema before dispatch: a plugin that declares a
+// schema has its attachment's with.settings checked, and settings that do not
+// conform halt the build loudly (wrapping ErrPolicySettingsInvalid) before the
+// guest is invoked; a plugin that declares no schema accepts any settings
+// (free-form pass-through). Validating inside the stage-matched branch means the
+// check runs exactly once, at the stage that dispatches the plugin.
+//
 // It returns the guest output, whether the plugin ran (ran is false when the
 // stage did not match, so the caller skips it without treating the skip as an
-// error), and any load or invocation error. Sharing withSocketPlugin means the
-// stage check and the export dispatch read one loaded guest — no double-load
-// within the pass, no duplicated loader machinery.
-func invokeStagedPolicy(ctx context.Context, spec wasm.PluginSpec, export string, payload []byte, wantStage string) (out []byte, ran bool, err error) {
+// error), and any load, settings-validation, or invocation error. Sharing
+// withSocketPlugin means the stage check, the settings check, and the export
+// dispatch read one loaded guest — no double-load within the pass, no duplicated
+// loader machinery.
+func invokeStagedPolicy(ctx context.Context, spec wasm.PluginSpec, export string, payload []byte, wantStage string, settings map[string]any) (out []byte, ran bool, err error) {
 	err = withSocketPlugin(ctx, spec, func(plugin *wasm.Plugin, desc wasm.PluginDescriptor) error {
 		if effectivePolicyStage(desc.Stage) != wantStage {
 			return nil
 		}
 		ran = true
+		if serr := desc.ValidateSettings(settings); serr != nil {
+			return fmt.Errorf("with.settings does not satisfy the plugin's declared settings schema: %v: %w", serr, ErrPolicySettingsInvalid)
+		}
 		o, cerr := wasm.InvokeExport(ctx, plugin, desc, export, payload)
 		if cerr != nil {
 			return fmt.Errorf("call %q: %w", export, cerr)

@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -310,6 +311,76 @@ func TestPluginDescriptorValidateCommands(t *testing.T) {
 	}
 	if err := emptyName.Validate("acme/cli"); !errors.Is(err, ErrWasmManifestRejected) {
 		t.Fatalf("cli with an empty command name: want ErrWasmManifestRejected, got %v", err)
+	}
+}
+
+// TestPluginDescriptorValidateSettingsSchemaShape checks the load-time shape gate
+// on a declared settings_schema: a well-formed schema passes, an absent schema
+// passes, and a malformed schema document fails the load wrapping
+// ErrWasmManifestRejected and naming the plugin.
+func TestPluginDescriptorValidateSettingsSchemaShape(t *testing.T) {
+	t.Parallel()
+
+	base := func(schema string) PluginDescriptor {
+		return PluginDescriptor{
+			ABIVersion:     ABIVersionV1Alpha1,
+			PluginType:     PluginTypePolicyValidator,
+			Exports:        []PluginExport{{Name: ValidateExport}},
+			SettingsSchema: json.RawMessage(schema),
+		}
+	}
+
+	if err := base("").Validate("acme/policy"); err != nil {
+		t.Fatalf("absent settings_schema must pass the load gate: %v", err)
+	}
+
+	wellFormed := base(`{"type":"object","properties":{"max_replicas":{"type":"integer"}},"required":["max_replicas"]}`)
+	if err := wellFormed.Validate("acme/policy"); err != nil {
+		t.Fatalf("well-formed settings_schema must pass the load gate: %v", err)
+	}
+
+	// A schema whose "type" is not a valid JSON Schema type value does not
+	// compile, so the load gate refuses it.
+	malformed := base(`{"type":123}`)
+	err := malformed.Validate("acme/policy")
+	if !errors.Is(err, ErrWasmManifestRejected) {
+		t.Fatalf("malformed settings_schema: want ErrWasmManifestRejected, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "acme/policy") {
+		t.Errorf("malformed settings_schema rejection does not name the plugin: %v", err)
+	}
+}
+
+// TestPluginDescriptorValidateSettings checks the dispatch-time settings
+// validation: a descriptor with no schema accepts any settings (free-form
+// pass-through), and a descriptor with a schema accepts conforming settings and
+// rejects non-conforming ones with a message naming the offending key.
+func TestPluginDescriptorValidateSettings(t *testing.T) {
+	t.Parallel()
+
+	noSchema := PluginDescriptor{ABIVersion: ABIVersionV1Alpha1, PluginType: PluginTypePolicyValidator}
+	if err := noSchema.ValidateSettings(map[string]any{"whatever": 1}); err != nil {
+		t.Fatalf("no schema must accept any settings (free-form): %v", err)
+	}
+	if err := noSchema.ValidateSettings(nil); err != nil {
+		t.Fatalf("no schema must accept nil settings: %v", err)
+	}
+
+	typed := PluginDescriptor{
+		ABIVersion:     ABIVersionV1Alpha1,
+		PluginType:     PluginTypePolicyValidator,
+		SettingsSchema: json.RawMessage(`{"type":"object","properties":{"max_replicas":{"type":"integer"}},"required":["max_replicas"],"additionalProperties":false}`),
+	}
+	if err := typed.ValidateSettings(map[string]any{"max_replicas": 3}); err != nil {
+		t.Fatalf("conforming settings must pass: %v", err)
+	}
+	if err := typed.ValidateSettings(map[string]any{"max_replicas": "three"}); err == nil {
+		t.Errorf("wrong-typed setting must be rejected")
+	} else if !strings.Contains(err.Error(), "max_replicas") {
+		t.Errorf("rejection does not name the offending key: %v", err)
+	}
+	if err := typed.ValidateSettings(nil); err == nil {
+		t.Errorf("absent settings must be rejected when the schema requires a key")
 	}
 }
 
