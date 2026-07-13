@@ -122,7 +122,7 @@ type pipelineFile0 struct {
 // or FeatureRecipe's spec.provider); hostProvider is the provider rendering the
 // host component's documents (empty when the call has no host — a Recipe or a
 // boundary-scope FeatureRecipe). They drive the pre-walk compatibility check:
-// each step's plugin declares an enumerated targets set, and the
+// each step's plugin declares an enumerated set of compatible providers, and the
 // provider of every scope the step's export touches must appear in it, or the
 // build halts with ErrPluginProviderIncompatible before any guest runs.
 //
@@ -227,7 +227,7 @@ func runNodePipelineWithInvoker(
 
 	// 0. Pre-walk provider-compatibility enforcement. For each step, read the
 	//    plugin's describe() descriptor and assert the provider rendering every
-	//    scope the step's export touches is in the plugin's targets.
+	//    scope the step's export touches is in the plugin's compatible providers.
 	//    Fail-fast: a mismatch halts before the walk runs any guest.
 	if err := enforceProviderCompatibility(ctx, steps, ownProvider, hostProvider, describe, nodeID); err != nil {
 		return pipelineResult{}, err
@@ -426,7 +426,7 @@ func newStepInvoker(lookup pluginpath.Lookup) frp.StepInvoker {
 }
 
 // stepDescriber reads one pipeline step's plugin describe() descriptor — the
-// seam through which the executor reaches a plugin's declared targets
+// seam through which the executor reaches a plugin's declared providers
 // and per-export capability declarations before any guest runs. The production
 // path binds it to the shared resolver + describe() gate (newStepDescriber); a
 // test supplies a canned descriptor so the pre-walk enforcement is exercised
@@ -439,7 +439,7 @@ type stepDescriber func(ctx context.Context, step types.PipelineStep) (wasm.Plug
 // URI to its verified .wasm bytes, load them through LoadAndDescribe (which
 // validates the descriptor), and return the validated descriptor, closing the
 // plugin. The pre-walk compatibility check consumes the descriptor's
-// targets. Loading here and again in the invoker is the bounded
+// compatible providers. Loading here and again in the invoker is the bounded
 // double-load the per-step batch amortisation follow-on addresses; loading per
 // step is already accepted.
 func newStepDescriber(lookup pluginpath.Lookup) stepDescriber {
@@ -464,12 +464,12 @@ func newStepDescriber(lookup pluginpath.Lookup) stepDescriber {
 // enforceProviderCompatibility runs the pre-walk provider-compatibility check
 // over every pipeline step. For each step it reads the plugin descriptor, finds
 // the step's export by name, and asserts the provider rendering every scope the
-// export declares is in the plugin's targets (exact-string,
+// export declares is in the plugin's compatible providers (exact-string,
 // enumerated — no family abstraction). An own-scope export checks ownProvider;
 // a host-scope export checks hostProvider, but only when a host is present
 // (hostProvider != ""): a host operation from a hostless step is already caught
 // by ErrPipelineHostScopeUnavailable at the operation level, so the
-// compatibility check does not double-report it. An empty targets
+// compatibility check does not double-report it. An empty compatible-providers
 // set declares no compatibility claim and therefore matches no provider, so any
 // step that uses such a plugin halts. The check is fail-fast: the first
 // mismatch halts the build before the walk runs any guest.
@@ -499,8 +499,8 @@ func enforceProviderCompatibility(
 		case wasm.ScopeHost:
 			// Only enforce host compatibility when a host is present; a hostless
 			// /host op is the hostless guardrail's territory, not this check's.
-			if hostProvider != "" && !providerCompatible(hostProvider, desc.Targets) {
-				return pipelineProviderIncompatibleErr(nodeID, step.Plugin, desc.Targets, "host", hostProvider)
+			if hostProvider != "" && !providerCompatible(hostProvider, desc.CompatibleProviders) {
+				return pipelineProviderIncompatibleErr(nodeID, step.Plugin, desc.CompatibleProviders, "host", hostProvider)
 			}
 		default: // own (empty scope defaults to own per the wire contract)
 			if ownProvider == "" {
@@ -516,8 +516,8 @@ func enforceProviderCompatibility(
 				// wrap names the FeatureRecipe instance and node around this.
 				return pipelineOwnOnAssemblerErr(nodeID, step.ID)
 			}
-			if !providerCompatible(ownProvider, desc.Targets) {
-				return pipelineProviderIncompatibleErr(nodeID, step.Plugin, desc.Targets, "own", ownProvider)
+			if !providerCompatible(ownProvider, desc.CompatibleProviders) {
+				return pipelineProviderIncompatibleErr(nodeID, step.Plugin, desc.CompatibleProviders, "own", ownProvider)
 			}
 		}
 	}
@@ -538,7 +538,7 @@ func exportScope(desc wasm.PluginDescriptor, function string) string {
 }
 
 // providerCompatible reports whether provider is an exact-string member of the
-// plugin's declared targets. An empty set matches nothing, so it
+// plugin's declared providers. An empty set matches nothing, so it
 // returns false for every provider — an empty list declares no compatibility
 // claim and the caller halts.
 func providerCompatible(provider string, compatible []string) bool {
@@ -778,7 +778,7 @@ func pipelineOwnOnAssemblerErr(nodeID, stepID string) error {
 // pipelineProviderIncompatibleErr builds the Loud Guardrail for a step whose
 // plugin is not compatible with the provider rendering the scope it touches. The
 // message names the plugin, the offending provider and its scope, and the
-// plugin's declared targets in declared order (the descriptor slice
+// plugin's declared providers in declared order (the descriptor slice
 // is already author/declared order, so the message is byte-identical across
 // runs); an empty declared set renders as "(none)" so the no-claim case reads
 // clearly.

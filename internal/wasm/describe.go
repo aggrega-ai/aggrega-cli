@@ -58,23 +58,23 @@ type PluginDescriptor struct {
 	// export name, the default input pattern.
 	PluginType PluginType `json:"plugin_type"`
 
-	// Targets is what the plugin applies to, interpreted per plugin type:
-	// for a provider plugin, the render targets (provider engine names such
-	// as "helm" or "compose") whose output shape it renders; for an frp_step
+	// CompatibleProviders is what the plugin applies to, interpreted per plugin
+	// type: for a provider plugin, the render providers (provider engine names
+	// such as "helm" or "compose") whose output shape it renders; for an frp_step
 	// plugin, the provider scopes its step is compatible with; the
 	// cross-cutting sockets leave it empty. Entries are in declared order.
 	// The list is an explicit, tested-compatibility claim rather than an
-	// implicit "any similar target". The runtime enforces it — for each
+	// implicit "any similar provider". The runtime enforces it — for each
 	// scope a pipeline step touches, the provider rendering that scope's
 	// documents must appear here — but this load-time validator does not:
 	// entries are unchecked strings here, since no provider registry exists
 	// at the load boundary to check them against. An empty or absent list
-	// declares no target claim, so it matches nothing and the runtime halts
+	// declares no provider claim, so it matches nothing and the runtime halts
 	// any pipeline step that uses the plugin.
 	//
 	// The wire tag is the frozen ABI name the guest emits in describe(); the
-	// Go field name follows the entity-side target vocabulary.
-	Targets []string `json:"compatible_providers,omitempty"`
+	// Go field name aligns with that wire tag, compatible_providers.
+	CompatibleProviders []string `json:"compatible_providers,omitempty"`
 
 	// Exports lists the plugin's offered exports in declared order. The
 	// host validates that the per-type minimum export is present and
@@ -109,7 +109,7 @@ type PluginDescriptor struct {
 	Commands []PluginCLICommand `json:"commands,omitempty"`
 
 	// Stage is the compilation stage a policy-validator plugin evaluates at:
-	// StageIR (the default when absent) evaluates the target-agnostic IR graph;
+	// StageIR (the default when absent) evaluates the provider-agnostic IR graph;
 	// StageRender evaluates the rendered provider-native artifacts. It is
 	// meaningful for the policy-validator plugin type only — as Commands is
 	// meaningful for the CLI type only — and other plugin types leave it empty.
@@ -344,7 +344,7 @@ const (
 
 	// PluginTypeSearch is a search plugin: it answers a ranked full-text query
 	// over an indexed content set, a cross-cutting runtime socket that declares
-	// no targets. Its minimum export is search.
+	// no compatible providers. Its minimum export is search.
 	PluginTypeSearch PluginType = "search"
 )
 
@@ -473,7 +473,7 @@ const (
 
 // StageIR and StageRender are the two compilation stages a policy-validator
 // plugin may declare it evaluates at via [PluginDescriptor.Stage]: ir evaluates
-// the target-agnostic IR graph, render evaluates the rendered provider-native
+// the provider-agnostic IR graph, render evaluates the rendered provider-native
 // artifacts. The shape validator accepts these two values or the empty string;
 // an absent stage defaults to ir. The value is meaningful for the
 // policy-validator plugin type only.
@@ -507,7 +507,7 @@ const (
 //     patch, emit, or empty; scope is own, host, or empty. This is shape
 //     validation only — the host does not check provider compatibility,
 //     require a capability per plugin type, or act on the values. The
-//     runtime enforces targets and acts on operates/scope
+//     runtime enforces compatible providers and acts on operates/scope
 //     when it dispatches a step; here the values are checked for shape
 //     and otherwise piped through.
 //   - the plugin-level capabilities block is well-shaped: boundary_assembly
@@ -628,7 +628,7 @@ func (d PluginDescriptor) validateLinkCapability(pluginIdentity string) error {
 // boundary_assembly must be none, merge, nest, or empty, and a declared
 // assembly_name_annotation must name a non-empty annotation key. This is shape
 // validation only — it does not require the block, cross-check it against the
-// plugin type or its targets, or act on its values. The load gate
+// plugin type or its compatible providers, or act on its values. The load gate
 // cross-checks the block against the entity's authored claim; the other input
 // fields are piped through unchecked here.
 func (d PluginDescriptor) validateCapabilities(pluginIdentity string) error {
@@ -652,7 +652,7 @@ func (d PluginDescriptor) validateCapabilities(pluginIdentity string) error {
 // host, or empty. selector is free-form and unchecked. This is shape
 // validation only — it does not require a capability per plugin type,
 // does not cross-check operates/scope against the plugin type or its
-// targets, and does not consult a provider registry. The
+// compatible providers, and does not consult a provider registry. The
 // runtime enforces compatibility and acts on these values when it
 // dispatches a step; this load-time gate only rejects a malformed value.
 func (d PluginDescriptor) validateExportCapabilities(pluginIdentity string) error {

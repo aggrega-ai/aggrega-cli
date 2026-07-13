@@ -316,7 +316,7 @@ func AnalyzeContext(ctx context.Context, graph *types.IRGraph, catalogLookup res
 }
 
 // assemblePolicyInput assembles the [PolicyValidatorInput] ABI payload from the
-// IR graph. The policy-validator socket sees the full target-agnostic IR graph
+// IR graph. The policy-validator socket sees the full provider-agnostic IR graph
 // (single-sourced from ir-v1alpha1.schema.json) rather than a narrow
 // projection, so the graph is forwarded whole — the plugin reasons over the same
 // node, edge, and attachment detail the compiler holds. The graph carries its

@@ -235,7 +235,7 @@ func mergeGenCatalogEntity(desc wasm.PluginDescriptor, description string, overl
 	// Contract fields are machine-derived from describe().
 	entity.Spec.PluginType = string(desc.PluginType)
 	entity.Spec.AbiVersion = desc.ABIVersion
-	entity.Spec.Targets = desc.Targets
+	entity.Spec.Targets = desc.CompatibleProviders
 	entity.Spec.Exports = descriptorExports(desc.Exports)
 	entity.Spec.Capabilities = descriptorCapabilities(desc.Capabilities)
 

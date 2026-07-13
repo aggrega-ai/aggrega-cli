@@ -34,7 +34,7 @@ const (
 	OriginMixed AttachmentOrigin = "mixed"
 )
 
-// IRGraph is the in-memory, target-agnostic intermediate representation emitted by the
+// IRGraph is the in-memory, provider-agnostic intermediate representation emitted by the
 // topology builder. It strictly mirrors ir-v1alpha1.schema.json.
 type IRGraph struct {
 	APIVersion string     `json:"apiVersion"`

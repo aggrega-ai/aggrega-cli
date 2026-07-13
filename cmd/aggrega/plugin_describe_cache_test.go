@@ -35,10 +35,10 @@ func TestDescribeCacheRoundTrip(t *testing.T) {
 	}
 
 	want := wasm.PluginDescriptor{
-		ABIVersion: wasm.ABIVersionV1Alpha1,
-		PluginType: wasm.PluginTypeProvider,
-		Targets:    []string{"terraform"},
-		Exports:    []wasm.PluginExport{{Name: "render_node"}},
+		ABIVersion:          wasm.ABIVersionV1Alpha1,
+		PluginType:          wasm.PluginTypeProvider,
+		CompatibleProviders: []string{"terraform"},
+		Exports:             []wasm.PluginExport{{Name: "render_node"}},
 	}
 	writeDescribeCache(digest, want)
 
@@ -47,7 +47,7 @@ func TestDescribeCacheRoundTrip(t *testing.T) {
 		t.Fatal("cache miss after write")
 	}
 	if got.ABIVersion != want.ABIVersion || got.PluginType != want.PluginType ||
-		len(got.Targets) != 1 || got.Targets[0] != "terraform" ||
+		len(got.CompatibleProviders) != 1 || got.CompatibleProviders[0] != "terraform" ||
 		len(got.Exports) != 1 || got.Exports[0].Name != "render_node" {
 		t.Errorf("cached descriptor mismatch: got %+v want %+v", got, want)
 	}

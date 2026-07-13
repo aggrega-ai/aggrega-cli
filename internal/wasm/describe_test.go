@@ -48,9 +48,9 @@ func TestPluginDescriptorRoundTrip(t *testing.T) {
 			},
 		},
 		"frp-step-with-capabilities": {
-			ABIVersion: ABIVersionV1Alpha1,
-			PluginType: PluginTypeFRPStep,
-			Targets:    []string{"helm", "helm-chart"},
+			ABIVersion:          ABIVersionV1Alpha1,
+			PluginType:          PluginTypeFRPStep,
+			CompatibleProviders: []string{"helm", "helm-chart"},
 			Exports: []PluginExport{
 				{
 					Name:         "step",
@@ -451,10 +451,10 @@ func TestPluginDescriptorValidateCapabilityShape(t *testing.T) {
 func TestPluginDescriptorTargetsUnchecked(t *testing.T) {
 	t.Parallel()
 	d := PluginDescriptor{
-		ABIVersion: ABIVersionV1Alpha1,
-		PluginType: PluginTypeFRPStep,
-		Targets:    []string{"a-provider-that-does-not-exist", "another"},
-		Exports:    []PluginExport{{Name: "step"}},
+		ABIVersion:          ABIVersionV1Alpha1,
+		PluginType:          PluginTypeFRPStep,
+		CompatibleProviders: []string{"a-provider-that-does-not-exist", "another"},
+		Exports:             []PluginExport{{Name: "step"}},
 	}
 	if err := d.Validate("acme/frp-step"); err != nil {
 		t.Fatalf("compatible_providers must be unchecked at load, got %v", err)

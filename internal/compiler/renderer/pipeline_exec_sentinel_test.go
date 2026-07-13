@@ -23,10 +23,10 @@ import (
 func compatibleDescriber() stepDescriber {
 	return func(_ context.Context, _ types.PipelineStep) (wasm.PluginDescriptor, error) {
 		return wasm.PluginDescriptor{
-			ABIVersion: wasm.ABIVersionV1Alpha1,
-			PluginType: wasm.PluginTypeFRPStep,
-			Targets:    []string{"helm"},
-			Exports:    []wasm.PluginExport{{Name: "step", Operates: "patch", Scope: wasm.ScopeOwn}},
+			ABIVersion:          wasm.ABIVersionV1Alpha1,
+			PluginType:          wasm.PluginTypeFRPStep,
+			CompatibleProviders: []string{"helm"},
+			Exports:             []wasm.PluginExport{{Name: "step", Operates: "patch", Scope: wasm.ScopeOwn}},
 		}, nil
 	}
 }

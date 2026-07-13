@@ -416,8 +416,8 @@ func renderPluginEntry(w io.Writer, e pluginListEntry, embeddedSet map[string]bo
 	if prov := formatProvenance(e.desc.Metadata); prov != "" {
 		fmt.Fprintf(w, "    version:      %s\n", prov)
 	}
-	if len(e.desc.Targets) > 0 {
-		fmt.Fprintf(w, "    targets:      %s\n", strings.Join(e.desc.Targets, ", "))
+	if len(e.desc.CompatibleProviders) > 0 {
+		fmt.Fprintf(w, "    targets:      %s\n", strings.Join(e.desc.CompatibleProviders, ", "))
 	}
 	if kinds := formatInputKinds(e.desc.Capabilities.InputKinds); kinds != "" {
 		fmt.Fprintf(w, "    input kinds:  %s\n", kinds)

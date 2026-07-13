@@ -6,7 +6,7 @@ package analyzer
 import "github.com/aggrega-ai/aggrega-cli/pkg/types"
 
 // PolicyValidatorInput is the JSON payload Step 4 hands to the
-// policy-validator.wasm socket. Graph carries the full target-agnostic IR
+// policy-validator.wasm socket. Graph carries the full provider-agnostic IR
 // graph — the same [types.IRGraph] the Topology Builder emits — so the policy
 // plugin reasons over the complete node, edge, and attachment detail the
 // compiler holds rather than a narrow projection. PrecalculatedPaths carries

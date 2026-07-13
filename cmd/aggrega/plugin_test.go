@@ -46,9 +46,9 @@ func TestRenderPluginEntryProvenanceDisplay(t *testing.T) {
 		source: "embedded",
 		uri:    "oci://hub.aggrega.ai/plugin/provider/helm",
 		desc: wasm.PluginDescriptor{
-			PluginType: wasm.PluginTypeProvider,
-			Targets:    []string{"helm"},
-			Exports:    []wasm.PluginExport{{Name: "render_node"}, {Name: "assemble_boundary"}},
+			PluginType:          wasm.PluginTypeProvider,
+			CompatibleProviders: []string{"helm"},
+			Exports:             []wasm.PluginExport{{Name: "render_node"}, {Name: "assemble_boundary"}},
 			Capabilities: wasm.Capabilities{
 				InputKinds:       wasm.InputKinds{Sourced: true, Synthesized: true},
 				BoundaryAssembly: "merge",
