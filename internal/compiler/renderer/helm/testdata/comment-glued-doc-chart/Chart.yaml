@@ -1,0 +1,4 @@
+apiVersion: v2
+name: comment-glued-doc
+version: 0.1.0
+description: Fixture whose template chomps whitespace with {{- -}} so a comment is glued directly onto the "---" document separator ("---# a comment"), proving the resulting documents still split, label, and key by resource identity.

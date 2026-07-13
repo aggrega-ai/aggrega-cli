@@ -20,6 +20,7 @@ import (
 	"helm.sh/helm/v3/pkg/chart"
 	"helm.sh/helm/v3/pkg/chartutil"
 	"helm.sh/helm/v3/pkg/engine"
+	"helm.sh/helm/v3/pkg/releaseutil"
 )
 
 // ValuesValidator is a values-schema validation strategy for
@@ -277,10 +278,16 @@ type renderedDocument struct {
 	name      string
 }
 
-// splitRenderedDocuments decodes a rendered template's YAML stream into its
+// splitRenderedDocuments splits a rendered template's YAML stream into its
 // individual documents, re-encoding each at the render indent and extracting the
-// resource identity fields. Empty and null documents are dropped — a whitespace-
-// or comment-only body between "---" separators, and a document whose root
+// resource identity fields. The stream is first normalized into per-document
+// substrings on the "---" directives-end marker, tolerating a comment or other
+// non-whitespace glued directly onto the marker with no separating whitespace
+// (for example "---# a comment", which whitespace-chomping template control can
+// produce): the marker splits and the glued text opens the next document. The
+// split preserves document order so the emitted output is byte-identical
+// run-to-run. Empty and null documents are dropped — a whitespace- or
+// comment-only body between "---" separators, and a document whose root
 // deserializes to null (a bare "---" left by a false conditional, an explicit
 // "null", or "~"), carry no resource, so they are skipped rather than named,
 // matching the behavior of rendering the same chart with the Helm CLI. A
@@ -290,13 +297,23 @@ type renderedDocument struct {
 // non-null, non-mapping value (a bare scalar or a sequence) is not a labelable
 // resource and halts, since no resource-shaped output can be produced from it.
 func splitRenderedDocuments(streamBytes []byte, indent int) ([]renderedDocument, error) {
-	dec := yaml.NewDecoder(bytes.NewReader(streamBytes))
+	manifests := releaseutil.SplitManifests(string(streamBytes))
+	keys := make([]string, 0, len(manifests))
+	for k := range manifests {
+		keys = append(keys, k)
+	}
+	// SplitManifests returns an unordered map keyed "manifest-N"; sort by the
+	// integer suffix to restore document order and keep the output byte-identical
+	// run-to-run.
+	sort.Sort(releaseutil.BySplitManifestsOrder(keys))
+
 	var out []renderedDocument
-	for {
+	for _, k := range keys {
+		dec := yaml.NewDecoder(strings.NewReader(manifests[k]))
 		var doc yaml.Node
 		if err := dec.Decode(&doc); err != nil {
 			if err == io.EOF {
-				break
+				continue
 			}
 			return nil, fmt.Errorf("parse rendered YAML: %w", err)
 		}
