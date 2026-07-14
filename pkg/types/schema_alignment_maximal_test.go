@@ -146,7 +146,6 @@ func maximalPlugin() types.Plugin {
 			Deprecated:  false,
 		},
 		Spec: types.PluginSpec{
-			Plugin:     "oci://hub.aggrega.ai/plugin/linter/publishing-linter",
 			PluginType: "linter",
 			AbiVersion: "v1alpha1",
 			Targets:    []string{"helm", "compose"},

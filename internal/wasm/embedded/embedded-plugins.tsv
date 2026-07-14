@@ -13,7 +13,7 @@
 #   extraRoots  comma-separated extra source roots for the freshness check
 #               (e.g. a local SDK crate); empty for go guests
 #
-# The registry key is oci://hub.aggrega.ai/plugin/{socket}/{name}; the embedded
+# The registry key is the plugin's bare identity {socket}/{name}; the embedded
 # assets are plugins/{name}.wasm.gz and plugins/{name}.describe.json.
 provider	helm	./plugins/helm-provider	go
 provider	compose	./plugins/compose-provider	go

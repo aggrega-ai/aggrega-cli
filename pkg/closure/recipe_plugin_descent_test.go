@@ -63,20 +63,20 @@ func entityByURI(cl closure.Closure, uri string) (closure.ResolvedRef, bool) {
 
 const (
 	// registryPluginEntity is the Plugin ENTITY URI a recipe pipeline step
-	// references; registryPluginArtifact is the .wasm artifact the entity's
-	// spec.plugin names.
+	// references; registryPluginArtifact is the .wasm artifact reference the
+	// entity resolves to — its bare identity (metadata.name).
 	registryPluginEntity   = "core/frp/patch-workloads:1.0.0"
-	registryPluginArtifact = "oci://hub.aggrega.ai/plugin/frp/patch-workloads@sha256:1111111111111111111111111111111111111111111111111111111111111111"
+	registryPluginArtifact = "core/frp/patch-workloads"
 	localPluginEntity      = "local/frp/patch-local:1.0.0"
-	localPluginArtifact    = "plugins/patch-local.wasm"
+	localPluginArtifact    = "local/frp/patch-local"
 )
 
-// pluginEntity builds a Plugin entity body whose spec.plugin is the given
-// artifact reference, for the descent's RecipeLoader.LoadPlugin.
-func pluginEntity(t *testing.T, name, artifactURI string) *types.Plugin {
+// pluginEntity builds a Plugin entity body whose bare identity (metadata.name) is
+// its .wasm artifact reference, for the descent's RecipeLoader.LoadPlugin.
+func pluginEntity(t *testing.T, identity string) *types.Plugin {
 	t.Helper()
-	src := "apiVersion: aggrega.ai/v1alpha1\nkind: Plugin\nmetadata:\n  name: " + name +
-		"\n  version: 1.0.0\nspec:\n  plugin: \"" + artifactURI + "\"\n  pluginType: frp_step\n  abiVersion: v1alpha1\n"
+	src := "apiVersion: aggrega.ai/v1alpha1\nkind: Plugin\nmetadata:\n  name: " + identity +
+		"\n  version: 1.0.0\nspec:\n  pluginType: frp_step\n  abiVersion: v1alpha1\n"
 	var wp types.Plugin
 	if err := yaml.Unmarshal([]byte(src), &wp); err != nil {
 		t.Fatalf("unmarshal plugin: %v", err)
@@ -184,7 +184,7 @@ func TestPluginDescent_RegistryResolvedPinned(t *testing.T) {
 			recipeURI: recipeWithPipelinePlugin(t, "svc", registryProvider, registryPluginEntity),
 		},
 		plugins: map[string]*types.Plugin{
-			registryPluginEntity: pluginEntity(t, "patch-workloads", registryPluginArtifact),
+			registryPluginEntity: pluginEntity(t, registryPluginArtifact),
 		},
 	}
 	cl, err := runPluginDescent(t, pluginDescentLookup(), loader)
@@ -232,7 +232,7 @@ func TestPluginDescent_Tier1LocalNotPinned(t *testing.T) {
 			recipeURI: recipeWithPipelinePlugin(t, "svc", registryProvider, localPluginEntity),
 		},
 		plugins: map[string]*types.Plugin{
-			localPluginEntity: pluginEntity(t, "patch-local", localPluginArtifact),
+			localPluginEntity: pluginEntity(t, localPluginArtifact),
 		},
 	}
 	cl, err := runPluginDescent(t, pluginDescentLookup(), loader)
@@ -277,7 +277,7 @@ func TestPluginDescent_Deterministic(t *testing.T) {
 				recipeURI: recipeWithPipelinePlugin(t, "svc", registryProvider, registryPluginEntity),
 			},
 			plugins: map[string]*types.Plugin{
-				registryPluginEntity: pluginEntity(t, "patch-workloads", registryPluginArtifact),
+				registryPluginEntity: pluginEntity(t, registryPluginArtifact),
 			},
 		}
 		cl, err := runPluginDescent(t, pluginDescentLookup(), loader)
@@ -310,7 +310,7 @@ func TestPluginDescent_NilLoaderNoop(t *testing.T) {
 const (
 	frRecipeURI      = "hub.aggrega.ai/featurerecipe/example/cred:1.0.0"
 	frPluginEntity   = "core/frp/patch-credential:1.0.0"
-	frPluginArtifact = "oci://hub.aggrega.ai/plugin/frp/patch-credential@sha256:2222222222222222222222222222222222222222222222222222222222222222"
+	frPluginArtifact = "core/frp/patch-credential"
 )
 
 // featureRecipeDescentManifest maps a Feature type to a FeatureRecipe URI so the
@@ -356,7 +356,7 @@ func TestPluginDescent_FeatureRecipePinned(t *testing.T) {
 			frRecipeURI: featureRecipeWithPipelinePlugin(t, "cred", registryProvider, frPluginEntity),
 		},
 		plugins: map[string]*types.Plugin{
-			frPluginEntity: pluginEntity(t, "patch-credential", frPluginArtifact),
+			frPluginEntity: pluginEntity(t, frPluginArtifact),
 		},
 	}
 	rel := loadRelease(t, providerDescentRelease)
@@ -401,7 +401,7 @@ func TestPluginDescent_FeatureRecipePinned(t *testing.T) {
 // to its spec.plugin .wasm artifact at pull time even though no Recipe references it.
 func TestPluginDescent_WorkspaceSocketEntityArtifactPinned(t *testing.T) {
 	const socketEntity = "core/policy-validator/baseline:1.0.0"
-	const socketArtifact = "oci://hub.aggrega.ai/plugin/policy-validator/baseline@sha256:3333333333333333333333333333333333333333333333333333333333333333"
+	const socketArtifact = "core/policy-validator/baseline"
 
 	lookup := pluginDescentLookup()
 	lookup.entities[socketEntity] = resolutionOK("1.0.0", "sha256:socket-entity", "tier-3-pull")
@@ -414,7 +414,7 @@ func TestPluginDescent_WorkspaceSocketEntityArtifactPinned(t *testing.T) {
 			recipeURI: recipeWithPipelinePlugin(t, "svc", registryProvider, ""),
 		},
 		plugins: map[string]*types.Plugin{
-			socketEntity: pluginEntity(t, "baseline", socketArtifact),
+			socketEntity: pluginEntity(t, socketArtifact),
 		},
 	}
 
@@ -455,7 +455,7 @@ const (
 	// declares ("compose:1.0.0").
 	providerPluginName     = "compose-renderer"
 	providerPluginEntity   = providerPluginName + ":1.0.0"
-	providerPluginArtifact = "oci://hub.aggrega.ai/plugin/provider/compose-renderer@sha256:4444444444444444444444444444444444444444444444444444444444444444"
+	providerPluginArtifact = providerPluginName
 	providerBinding        = registryProvider + ":1.0.0"
 )
 
@@ -495,7 +495,7 @@ func providerRecipeLoader(t *testing.T) *fakeRecipeLoader {
 			recipeURI: recipeWithPipelinePlugin(t, "svc", providerBinding, ""),
 		},
 		plugins: map[string]*types.Plugin{
-			providerPluginEntity: pluginEntity(t, providerPluginName, providerPluginArtifact),
+			providerPluginEntity: pluginEntity(t, providerPluginArtifact),
 		},
 	}
 }
@@ -593,7 +593,7 @@ func TestProviderPluginDescent_FeatureRecipe(t *testing.T) {
 			frRecipeURI: featureRecipeWithPipelinePlugin(t, "cred", providerBinding, ""),
 		},
 		plugins: map[string]*types.Plugin{
-			providerPluginEntity: pluginEntity(t, providerPluginName, providerPluginArtifact),
+			providerPluginEntity: pluginEntity(t, providerPluginArtifact),
 		},
 	}
 	rel := loadRelease(t, providerDescentRelease)
@@ -699,7 +699,7 @@ func TestProviderPluginDescent_DedupWithPipelinePlugin(t *testing.T) {
 			recipeURI: recipeWithPipelinePlugin(t, "svc", providerBinding, providerPluginEntity),
 		},
 		plugins: map[string]*types.Plugin{
-			providerPluginEntity: pluginEntity(t, providerPluginName, providerPluginArtifact),
+			providerPluginEntity: pluginEntity(t, providerPluginArtifact),
 		},
 	}
 	cl, err := runProviderDescent(t, providerDescentLookup(), loader, composeProviderResolver())

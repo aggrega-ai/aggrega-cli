@@ -70,10 +70,9 @@ spec:
 	writeFixtureFile(t, filepath.Join(catalogDir, "plugins", "helm-renderer.yaml"), `apiVersion: aggrega.ai/v1alpha1
 kind: Plugin
 metadata:
-  name: helm-renderer
+  name: provider/helm
   version: "1.0.0"
 spec:
-  plugin: oci://hub.aggrega.ai/plugin/provider/helm
   pluginType: provider
   abiVersion: v1alpha1
   targets:

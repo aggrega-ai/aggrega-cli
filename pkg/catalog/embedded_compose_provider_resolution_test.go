@@ -18,15 +18,15 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
-// composeArtifactURI is the digest-free repository reference that is the compose
+// composeArtifactURI is the bare identity (<socket>/<name>) that is the compose
 // provider plugin's identity — the value the compose-renderer Plugin entity's
-// spec.plugin carries and the key the embed tier registers its bytes under. No
+// metadata.name carries and the key the embed tier registers its bytes under. No
 // digest literal is frozen here: the reference digest is derived from the embed
 // tier's own bytes at test time (embeddedReferenceDigest), so the resolution
 // assertion is a self-consistency check against the shipped bytes.
 const (
-	composeArtifactURI    = "oci://hub.aggrega.ai/plugin/provider/compose"
-	composePluginEntity   = "compose-renderer:" + testCorePluginVersion
+	composeArtifactURI    = "provider/compose"
+	composePluginEntity   = composeArtifactURI + ":" + testCorePluginVersion
 	composeProviderMemPag = 4096
 )
 
@@ -43,9 +43,8 @@ func composeChainCatalog() *catalog.Catalog {
 			composePluginEntity: {
 				APIVersion: "aggrega.ai/v1alpha1",
 				Kind:       "Plugin",
-				Metadata:   types.PluginMetadata{Name: "compose-renderer", Version: testCorePluginVersion},
+				Metadata:   types.PluginMetadata{Name: composeArtifactURI, Version: testCorePluginVersion},
 				Spec: types.PluginSpec{
-					Plugin:     composeArtifactURI,
 					PluginType: "provider",
 					AbiVersion: "v1alpha1",
 					Targets:    []string{"compose"},
@@ -81,8 +80,8 @@ func TestComposeProviderEmbeddedResolutionChain(t *testing.T) {
 	if !ok {
 		t.Fatal("ProviderPlugin(\"compose\") not found")
 	}
-	if pplug.Spec.Plugin != composeArtifactURI {
-		t.Fatalf("provider-plugin spec.plugin = %q, want %q", pplug.Spec.Plugin, composeArtifactURI)
+	if got := pplug.ArtifactReference(); got != composeArtifactURI {
+		t.Fatalf("provider-plugin artifact reference = %q, want %q", got, composeArtifactURI)
 	}
 
 	// Level 2: Plugin-entity URI → Plugin entity → artifact URI. The entity-fronted
@@ -94,8 +93,8 @@ func TestComposeProviderEmbeddedResolutionChain(t *testing.T) {
 	if !ok {
 		t.Fatalf("Plugin(%q) not found", composePluginEntity)
 	}
-	if plugin.Spec.Plugin != composeArtifactURI {
-		t.Fatalf("plugin spec.plugin = %q, want %q", plugin.Spec.Plugin, composeArtifactURI)
+	if got := plugin.ArtifactReference(); got != composeArtifactURI {
+		t.Fatalf("plugin artifact reference = %q, want %q", got, composeArtifactURI)
 	}
 
 	t.Run("CleanResolveThroughEmbedTier", func(t *testing.T) {

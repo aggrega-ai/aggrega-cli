@@ -12,15 +12,17 @@
 // reproducible build output — gzip-compressed under plugins/ (the uncompressed
 // Wasm is large), regenerated from guest source by `go generate` rather than
 // tracked in git, so a fresh checkout has none until a build runs — decompressed
-// once at init into the registry, keyed by the
-// plugin's digest-free repository reference — the same reference a Plugin
-// entity's spec.plugin names. Keying on the repository, not a content digest,
-// means a rebuild of the embedded bytes does not perturb the lookup key: the
-// reference digest is derived from the bytes on demand where a caller needs it.
-// Adding another embedded plugin is a drop-in: add a row to the embedded-plugin
-// manifest (embedded-plugins.tsv) — the single declarative source the registry
-// table, the build script, and the freshness and drift guards all read — so its
-// gzip-compressed .wasm lands under plugins/ and registers automatically.
+// once at init into the registry, keyed by the plugin's bare identity
+// (`<socket>/<name>`) — the same identity a Plugin entity's metadata.name
+// carries. Keying on the bare identity, not a content digest and not a
+// host-qualified location, means the embed tier resolves the built-ins offline
+// and independently of the configured registry, and a rebuild of the embedded
+// bytes does not perturb the lookup key: the reference digest is derived from the
+// bytes on demand where a caller needs it. Adding another embedded plugin is a
+// drop-in: add a row to the embedded-plugin manifest (embedded-plugins.tsv) — the
+// single declarative source the registry table, the build script, and the
+// freshness and drift guards all read — so its gzip-compressed .wasm lands under
+// plugins/ and registers automatically.
 //
 // Freshness caveat: a plain go build does not regenerate these artifacts — it
 // embeds whatever .wasm.gz already sit under plugins/ from an earlier build,
@@ -62,15 +64,15 @@ import (
 //go:embed all:plugins
 var pluginFS embed.FS
 
-// The digest-free repository reference every embedded plugin registers under is
-// derived from its manifest row (oci://hub.aggrega.ai/plugin/{socket}/{name}) —
-// the same reference a Plugin entity's spec.plugin names. The reference digest is
-// derived from the decompressed bytes on demand where a caller needs it, never
-// stored in the key, so a rebuild of a guest does not perturb the lookup.
+// The bare identity every embedded plugin registers under is derived from its
+// manifest row (`{socket}/{name}`) — the same identity a Plugin entity's
+// metadata.name carries. The reference digest is derived from the decompressed
+// bytes on demand where a caller needs it, never stored in the key, so a rebuild
+// of a guest does not perturb the lookup.
 //
 // PublishingLinterURI (exported) is defined in embedded_uris.go so both the
 // default and light host builds share the same linter identity; it equals the
-// manifest-derived reference for the linter/publishing row.
+// manifest-derived bare identity for the linter/publishing row.
 
 //go:embed embedded-plugins.tsv
 var manifestTSV []byte
@@ -124,7 +126,7 @@ func parseManifest(b []byte) []embeddedArtifact {
 			panic("plugin/embedded: embedded-plugin manifest row missing socket or name: " + line)
 		}
 		out = append(out, embeddedArtifact{
-			uri:        "oci://hub.aggrega.ai/plugin/" + socket + "/" + name,
+			uri:        socket + "/" + name,
 			wasmGz:     "plugins/" + name + ".wasm.gz",
 			descriptor: "plugins/" + name + ".describe.json",
 		})
@@ -135,22 +137,21 @@ func parseManifest(b []byte) []embeddedArtifact {
 	return out
 }
 
-// registry maps a plugin's digest-free repository reference to the embedded
+// registry maps a plugin's bare identity (`<socket>/<name>`) to the embedded
 // artifact's decompressed bytes. It is the lookup the cascade's embed tier
 // consults, populated from pluginFS at init by register.
 var registry = map[string][]byte{}
 
-// descriptorRegistry maps a plugin's digest-free repository reference to its
+// descriptorRegistry maps a plugin's bare identity (`<socket>/<name>`) to its
 // build-extracted describe() descriptor JSON. It is the lookup the plugin
 // listing consults to report a guest's static metadata without instantiating
 // it, populated from pluginFS at init by registerDescriptors.
 var descriptorRegistry = map[string][]byte{}
 
-// register binds embedded plugin repository references to their bytes read from
+// register binds embedded plugin bare identities to their bytes read from
 // pluginFS. It is the single place an embedded plugin's guest is wired: read its
-// artifact from pluginFS and assign it under its repository reference. The
-// generated artifacts are gzip-compressed, so register decompresses each once
-// here.
+// artifact from pluginFS and assign it under its bare identity. The generated
+// artifacts are gzip-compressed, so register decompresses each once here.
 //
 // A read or decompression failure for a registered artifact is a
 // build-of-the-binary defect (the file is embedded at compile time), so
@@ -164,7 +165,7 @@ func register() map[string][]byte {
 	return out
 }
 
-// registerDescriptors binds each embedded plugin's repository reference to the
+// registerDescriptors binds each embedded plugin's bare identity to the
 // describe() descriptor JSON extracted from its guest at build time and stored
 // alongside the .wasm.gz. A descriptor asset that is absent — a tree built
 // before the descriptors were generated — is skipped rather than fatal: the

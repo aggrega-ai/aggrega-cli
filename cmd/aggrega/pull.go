@@ -441,8 +441,8 @@ func pullRun(cfg pullConfig) error {
 	// lockfile pin like any other catalog entity. The freshly-pinned plugin entities
 	// are then folded into the lazy index by re-applying the closure's pins, so Phase
 	// B's entity-body load resolves them; the Phase-B loader is RE-DERIVED after the
-	// re-fold (SetPins drops the cached recipe view). Phase B reads each entity's
-	// spec.plugin (.wasm reference) and pins the ARTIFACT (plugin axis). A
+	// re-fold (SetPins drops the cached recipe view). Phase B derives each entity's
+	// .wasm reference from its identity and pins the ARTIFACT (plugin axis). A
 	// Tier-1-local plugin is left out (resolved at build through its local path).
 	// Lock-time only — the build path reads plugin pins from the lockfile and never
 	// descends.
@@ -465,7 +465,7 @@ func pullRun(cfg pullConfig) error {
 			return types.Plugin{}, false, err
 		}
 		if ok {
-			resolvedBindings[bare] = lockfile.ProviderBinding{Target: bare, Plugin: p.Spec.Plugin}
+			resolvedBindings[bare] = lockfile.ProviderBinding{Target: bare, Plugin: p.Metadata.Name}
 		}
 		return p, ok, err
 	}

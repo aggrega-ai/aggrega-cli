@@ -1,11 +1,10 @@
 apiVersion: aggrega.ai/v1alpha1
 kind: Plugin
 metadata:
-  name: core/helm-provider
+  name: provider/helm
   version: 1.0.0
   description: The built-in helm provider rendering plugin.
 spec:
-  plugin: oci://hub.aggrega.ai/plugin/provider/helm
   pluginType: provider
   abiVersion: v1alpha1
   targets:

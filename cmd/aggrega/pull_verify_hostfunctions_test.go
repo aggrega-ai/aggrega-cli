@@ -46,7 +46,7 @@ func cachePluginArtifact(t *testing.T) (workspaceRoot, cacheDir, artifactURI, co
 		t.Fatalf("read fixture: %v", err)
 	}
 	contentDigest = digest.ContentDigest(wasmBytes)
-	artifactURI = "oci://hub.aggrega.ai/plugin/frp/patch"
+	artifactURI = "frp/patch"
 
 	workspaceRoot = t.TempDir()
 	cacheDir = "cache"
@@ -60,11 +60,11 @@ func cachePluginArtifact(t *testing.T) (workspaceRoot, cacheDir, artifactURI, co
 	return workspaceRoot, cacheDir, artifactURI, contentDigest, d
 }
 
-// pluginEntity builds a Plugin entity whose spec.plugin pins the artifact and
-// whose stamped runtime.hostFunctions is the given set.
+// pluginEntity builds a Plugin entity whose bare identity (metadata.name) is the
+// artifact reference and whose stamped runtime.hostFunctions is the given set.
 func pluginEntity(artifactURI string, stamped []string) *types.Plugin {
 	var wp types.Plugin
-	wp.Spec.Plugin = artifactURI
+	wp.Metadata.Name = artifactURI
 	wp.Spec.Runtime = &types.PluginRuntime{HostFunctions: stamped}
 	return &wp
 }
@@ -87,7 +87,7 @@ func pluginArtifactClosure(artifactURI, entityURI, contentDigest string) *closur
 func TestVerifyPluginHostFunctions_StampMatchesBinary(t *testing.T) {
 	t.Parallel()
 	workspaceRoot, cacheDir, artifactURI, contentDigest, derived := cachePluginArtifact(t)
-	const entityURI = "oci://hub.aggrega.ai/plugin/frp/patch:1.0.0"
+	const entityURI = "frp/patch:1.0.0"
 	loader := &stubPluginLoader{byURI: map[string]*types.Plugin{
 		entityURI: pluginEntity(artifactURI, derived),
 	}}
@@ -105,7 +105,7 @@ func TestVerifyPluginHostFunctions_StampMatchesBinary(t *testing.T) {
 func TestVerifyPluginHostFunctions_StampDivergesHalts(t *testing.T) {
 	t.Parallel()
 	workspaceRoot, cacheDir, artifactURI, contentDigest, _ := cachePluginArtifact(t)
-	const entityURI = "oci://hub.aggrega.ai/plugin/frp/patch:1.0.0"
+	const entityURI = "frp/patch:1.0.0"
 	// Stamp a host function the binary does not import: the frp-step-go fixture
 	// imports none, so a stamped [aggrega_log] is a divergence.
 	loader := &stubPluginLoader{byURI: map[string]*types.Plugin{
@@ -124,8 +124,8 @@ func TestVerifyPluginHostFunctions_StampDivergesHalts(t *testing.T) {
 // failing — there is nothing to re-derive against.
 func TestVerifyPluginHostFunctions_NoCachedArtifactSkips(t *testing.T) {
 	t.Parallel()
-	const entityURI = "oci://hub.aggrega.ai/plugin/frp/patch:1.0.0"
-	const artifactURI = "oci://hub.aggrega.ai/plugin/frp/patch"
+	const entityURI = "frp/patch:1.0.0"
+	const artifactURI = "frp/patch"
 	// A recorded content pin whose cache slot does not exist (offline / hermetic).
 	const contentDigest = "sha256:" +
 		"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"

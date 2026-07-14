@@ -18,15 +18,15 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
-// terraformArtifactURI is the digest-free repository reference that is the
+// terraformArtifactURI is the bare identity (<socket>/<name>) that is the
 // terraform provider plugin's identity — the value the terraform-renderer Plugin
-// entity's spec.plugin carries and the key the embed tier registers its bytes
+// entity's metadata.name carries and the key the embed tier registers its bytes
 // under. No digest literal is frozen here: the reference digest is derived from
 // the embed tier's own bytes at test time (embeddedReferenceDigest), so the
 // resolution assertion is a self-consistency check against the shipped bytes.
 const (
-	terraformArtifactURI    = "oci://hub.aggrega.ai/plugin/provider/terraform"
-	terraformPluginEntity   = "terraform-renderer:" + testCorePluginVersion
+	terraformArtifactURI    = "provider/terraform"
+	terraformPluginEntity   = terraformArtifactURI + ":" + testCorePluginVersion
 	terraformProviderMemPag = 4096
 )
 
@@ -42,9 +42,8 @@ func terraformChainCatalog() *catalog.Catalog {
 			terraformPluginEntity: {
 				APIVersion: "aggrega.ai/v1alpha1",
 				Kind:       "Plugin",
-				Metadata:   types.PluginMetadata{Name: "terraform-renderer", Version: testCorePluginVersion},
+				Metadata:   types.PluginMetadata{Name: terraformArtifactURI, Version: testCorePluginVersion},
 				Spec: types.PluginSpec{
-					Plugin:     terraformArtifactURI,
 					PluginType: "provider",
 					AbiVersion: "v1alpha1",
 					Targets:    []string{"terraform"},
@@ -80,8 +79,8 @@ func TestTerraformProviderEmbeddedResolutionChain(t *testing.T) {
 	if !ok {
 		t.Fatal("ProviderPlugin(\"terraform\") not found")
 	}
-	if pplug.Spec.Plugin != terraformArtifactURI {
-		t.Fatalf("provider-plugin spec.plugin = %q, want %q", pplug.Spec.Plugin, terraformArtifactURI)
+	if got := pplug.ArtifactReference(); got != terraformArtifactURI {
+		t.Fatalf("provider-plugin artifact reference = %q, want %q", got, terraformArtifactURI)
 	}
 
 	// Level 2: Plugin-entity URI → Plugin entity → artifact URI. The entity-fronted
@@ -93,8 +92,8 @@ func TestTerraformProviderEmbeddedResolutionChain(t *testing.T) {
 	if !ok {
 		t.Fatalf("Plugin(%q) not found", terraformPluginEntity)
 	}
-	if plugin.Spec.Plugin != terraformArtifactURI {
-		t.Fatalf("plugin spec.plugin = %q, want %q", plugin.Spec.Plugin, terraformArtifactURI)
+	if got := plugin.ArtifactReference(); got != terraformArtifactURI {
+		t.Fatalf("plugin artifact reference = %q, want %q", got, terraformArtifactURI)
 	}
 
 	t.Run("CleanResolveThroughEmbedTier", func(t *testing.T) {

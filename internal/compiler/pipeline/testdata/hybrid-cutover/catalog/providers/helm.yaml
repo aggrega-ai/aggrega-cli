@@ -7,7 +7,7 @@ spec:
   # Bind the helm provider to its Wasm rendering engine so the hybrid dispatch
   # routes this provider through the wasmengine adapter. plugin names the Plugin
   # entity below as a bare catalog identity.
-  plugin: helm-renderer:1.0.0
+  plugin: provider/helm:1.0.0
   workloadSchema: |
     type: object
     additionalProperties: true

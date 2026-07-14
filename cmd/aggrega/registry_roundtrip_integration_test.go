@@ -484,7 +484,6 @@ metadata:
   name: `+socketName+`
   version: "`+version+`"
 spec:
-  plugin: "oci://`+host+`/plugin/`+socketName+`"
   pluginType: frp_step
   abiVersion: v1alpha1
   exports:
@@ -635,8 +634,8 @@ spec:
 	// a content-digest-pinned reference; the plugins rows pin these bare URIs. Both
 	// reuse the same committed fixture, so the content digests match while the
 	// locations differ.
-	recipeArtifactURI := "oci://" + host + "/plugin/" + pluginSocket + "/" + recipePluginName
-	frArtifactURI := "oci://" + host + "/plugin/" + pluginSocket + "/" + frPluginName
+	recipeArtifactURI := pluginSocket + "/" + recipePluginName
+	frArtifactURI := pluginSocket + "/" + frPluginName
 
 	// Single-manifest witness: the plugin repo's version tag resolves to ONE
 	// manifest whose config blob is the entity YAML and whose inline layer is the

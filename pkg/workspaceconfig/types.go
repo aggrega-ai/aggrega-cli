@@ -475,9 +475,9 @@ type PluginRefWith struct {
 
 // ProviderRef binds a render target to the provider-rendering plugin that
 // serves it. Target is the bare engine name a Recipe binds through
-// spec.target (e.g. "helm"); URI is the digest-free OCI identity of the
-// serving plugin (matching a Plugin entity's spec.plugin, e.g.
-// "oci://hub.aggrega.ai/plugin/provider/helm"), with an optional trailing
+// spec.target (e.g. "helm"); URI is the bare identity of the serving plugin
+// (a Plugin entity's metadata.name, the <socket>/<name> path, e.g.
+// "provider/helm"), with an optional trailing
 // ":version" in the same three forms as a version pin. The binding selects
 // which publisher's plugin renders the target in a federated catalog where
 // more than one provider plugin serves it; exactly one entry per target is

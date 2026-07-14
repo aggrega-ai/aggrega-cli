@@ -22,7 +22,6 @@ metadata:
   name: core/linter/naming
   version: 1.0.0
 spec:
-  plugin: "oci://registry.example.com/plugin/linter/naming"
   pluginType: linter
   abiVersion: v1alpha1
 `
@@ -50,7 +49,7 @@ func TestPluginMaterialization(t *testing.T) {
 	if !ok {
 		t.Fatalf("eager PluginByURI(bare): not found")
 	}
-	if eagerBare.Spec.Plugin == "" || eagerBare.Spec.PluginType != "linter" {
+	if eagerBare.Spec.AbiVersion == "" || eagerBare.Spec.PluginType != "linter" {
 		t.Fatalf("eager PluginByURI(bare): entity body not materialized as authored: %+v", eagerBare.Spec)
 	}
 

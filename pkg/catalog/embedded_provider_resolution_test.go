@@ -26,30 +26,30 @@ import (
 // leave these tests untouched.
 const testCorePluginVersion = "0.0.0-test"
 
-// helmArtifactURI is the digest-free repository reference that is the helm
-// provider plugin's identity — the value the helm-renderer Plugin entity's
-// spec.plugin carries and the key the embed tier registers its bytes under. No
-// digest literal is frozen here: the reference digest is derived from the embed
-// tier's own bytes at test time (see embeddedReferenceDigest), so the resolution
+// helmArtifactURI is the bare identity (<socket>/<name>) that is the helm
+// provider plugin's identity — the value the helm provider Plugin entity's
+// metadata.name carries, the artifact reference resolver.EntityToArtifact
+// derives, and the key the embed tier registers its bytes under. No digest
+// literal is frozen here: the reference digest is derived from the embed tier's
+// own bytes at test time (see embeddedReferenceDigest), so the resolution
 // assertion is a self-consistency check against the bytes the binary actually
 // ships, not against a hand-maintained constant.
 const (
-	helmArtifactURI    = "oci://hub.aggrega.ai/plugin/provider/helm"
-	helmPluginEntity   = "helm-renderer:" + testCorePluginVersion
+	helmArtifactURI    = "provider/helm"
+	helmPluginEntity   = helmArtifactURI + ":" + testCorePluginVersion
 	helmProviderMemPag = 4096
 )
 
 // embeddedReferenceDigest returns the content digest derived from the embed
-// tier's own bytes for a plugin's digest-free repository reference — the same
-// derivation the pull path uses to record a core plugin in the lockfile. A
-// resolution test asserts the resolved bytes hash to this value, so the check
-// tracks the shipped bytes with no frozen literal to re-pin when a guest is
-// rebuilt.
+// tier's own bytes for a plugin's bare identity — the same derivation the pull
+// path uses to record a core plugin in the lockfile. A resolution test asserts
+// the resolved bytes hash to this value, so the check tracks the shipped bytes
+// with no frozen literal to re-pin when a guest is rebuilt.
 func embeddedReferenceDigest(t *testing.T, uri string) string {
 	t.Helper()
 	b, ok := embedded.Lookup(uri)
 	if !ok {
-		t.Fatalf("embed tier has no bytes for %q; the registry key must match the plugin's spec.plugin identity", uri)
+		t.Fatalf("embed tier has no bytes for %q; the registry key must match the plugin's bare identity", uri)
 	}
 	return digest.ContentDigest(b)
 }
@@ -65,9 +65,8 @@ func helmChainCatalog() *catalog.Catalog {
 			helmPluginEntity: {
 				APIVersion: "aggrega.ai/v1alpha1",
 				Kind:       "Plugin",
-				Metadata:   types.PluginMetadata{Name: "helm-renderer", Version: testCorePluginVersion},
+				Metadata:   types.PluginMetadata{Name: helmArtifactURI, Version: testCorePluginVersion},
 				Spec: types.PluginSpec{
-					Plugin:     helmArtifactURI,
 					PluginType: "provider",
 					AbiVersion: "v1alpha1",
 					Targets:    []string{"helm"},
@@ -80,16 +79,16 @@ func helmChainCatalog() *catalog.Catalog {
 }
 
 // entityFront builds the entity-fronted plugin Lookup over lookup's Plugin
-// accessor and cascade — the same two-step (Plugin entity URI → spec.plugin →
-// cascade) the build-load pipeline binds, so the test exercises the production
-// resolution seam rather than a bypass.
+// accessor and cascade — the same two-step (Plugin entity URI → bare-identity
+// artifact reference → cascade) the build-load pipeline binds, so the test
+// exercises the production resolution seam rather than a bypass.
 func entityFront(lookup resolver.CatalogLookup, cascade pluginpath.Lookup) pluginpath.Lookup {
 	return pluginpath.EntityLookup(func(uri string) (string, *pluginpath.PluginCapabilityClaim, *pluginpath.PluginRuntimeLimits, bool) {
 		p, ok := lookup.Plugin(uri)
 		if !ok {
 			return "", nil, nil, false
 		}
-		return p.Spec.Plugin, resolver.PluginCapabilityClaim(p), resolver.PluginRuntimeLimits(p), true
+		return p.ArtifactReference(), resolver.PluginCapabilityClaim(p), resolver.PluginRuntimeLimits(p), true
 	}, cascade)
 }
 
@@ -118,8 +117,8 @@ func TestHelmProviderEmbeddedResolutionChain(t *testing.T) {
 	if !ok {
 		t.Fatal("ProviderPlugin(\"helm\") not found")
 	}
-	if pplug.Spec.Plugin != helmArtifactURI {
-		t.Fatalf("provider-plugin spec.plugin = %q, want %q", pplug.Spec.Plugin, helmArtifactURI)
+	if got := pplug.ArtifactReference(); got != helmArtifactURI {
+		t.Fatalf("provider-plugin artifact reference = %q, want %q", got, helmArtifactURI)
 	}
 
 	// Level 2: Plugin-entity URI → Plugin entity → artifact URI. The entity-fronted
@@ -131,8 +130,8 @@ func TestHelmProviderEmbeddedResolutionChain(t *testing.T) {
 	if !ok {
 		t.Fatalf("Plugin(%q) not found", helmPluginEntity)
 	}
-	if plugin.Spec.Plugin != helmArtifactURI {
-		t.Fatalf("plugin spec.plugin = %q, want %q", plugin.Spec.Plugin, helmArtifactURI)
+	if got := plugin.ArtifactReference(); got != helmArtifactURI {
+		t.Fatalf("plugin artifact reference = %q, want %q", got, helmArtifactURI)
 	}
 
 	t.Run("CleanResolveThroughEmbedTier", func(t *testing.T) {

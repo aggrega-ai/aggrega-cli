@@ -18,15 +18,15 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
-// helmChartArtifactURI is the digest-free repository reference that is the
+// helmChartArtifactURI is the bare identity (<socket>/<name>) that is the
 // helm-chart provider plugin's identity — the value the helm-chart-renderer
-// Plugin entity's spec.plugin carries and the key the embed tier registers its
+// Plugin entity's metadata.name carries and the key the embed tier registers its
 // bytes under. No digest literal is frozen here: the reference digest is derived
 // from the embed tier's own bytes at test time (embeddedReferenceDigest), so the
 // resolution assertion is a self-consistency check against the shipped bytes.
 const (
-	helmChartArtifactURI    = "oci://hub.aggrega.ai/plugin/provider/helm-chart"
-	helmChartPluginEntity   = "helm-chart-renderer:" + testCorePluginVersion
+	helmChartArtifactURI    = "provider/helm-chart"
+	helmChartPluginEntity   = helmChartArtifactURI + ":" + testCorePluginVersion
 	helmChartProviderMemPag = 4096
 )
 
@@ -43,9 +43,8 @@ func helmChartChainCatalog() *catalog.Catalog {
 			helmChartPluginEntity: {
 				APIVersion: "aggrega.ai/v1alpha1",
 				Kind:       "Plugin",
-				Metadata:   types.PluginMetadata{Name: "helm-chart-renderer", Version: testCorePluginVersion},
+				Metadata:   types.PluginMetadata{Name: helmChartArtifactURI, Version: testCorePluginVersion},
 				Spec: types.PluginSpec{
-					Plugin:     helmChartArtifactURI,
 					PluginType: "provider",
 					AbiVersion: "v1alpha1",
 					Targets:    []string{"helm-chart"},
@@ -81,8 +80,8 @@ func TestHelmChartProviderEmbeddedResolutionChain(t *testing.T) {
 	if !ok {
 		t.Fatal("ProviderPlugin(\"helm-chart\") not found")
 	}
-	if pplug.Spec.Plugin != helmChartArtifactURI {
-		t.Fatalf("provider-plugin spec.plugin = %q, want %q", pplug.Spec.Plugin, helmChartArtifactURI)
+	if got := pplug.ArtifactReference(); got != helmChartArtifactURI {
+		t.Fatalf("provider-plugin artifact reference = %q, want %q", got, helmChartArtifactURI)
 	}
 
 	// Level 2: Plugin-entity URI → Plugin entity → artifact URI. The entity-fronted
@@ -94,8 +93,8 @@ func TestHelmChartProviderEmbeddedResolutionChain(t *testing.T) {
 	if !ok {
 		t.Fatalf("Plugin(%q) not found", helmChartPluginEntity)
 	}
-	if plugin.Spec.Plugin != helmChartArtifactURI {
-		t.Fatalf("plugin spec.plugin = %q, want %q", plugin.Spec.Plugin, helmChartArtifactURI)
+	if got := plugin.ArtifactReference(); got != helmChartArtifactURI {
+		t.Fatalf("plugin artifact reference = %q, want %q", got, helmChartArtifactURI)
 	}
 
 	t.Run("CleanResolveThroughEmbedTier", func(t *testing.T) {

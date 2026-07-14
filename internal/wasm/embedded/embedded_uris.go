@@ -5,7 +5,7 @@
 
 package embedded
 
-// PublishingLinterURI is the digest-free repository reference the embedded
+// PublishingLinterURI is the bare identity (`<socket>/<name>`) the embedded
 // publishing-linter plugin's decompressed bytes register under — the built-in
 // linter a lint invocation resolves by default when no linter plugin is
 // configured. It is exported so the lint command can single-source the
@@ -13,4 +13,4 @@ package embedded
 // string. It lives here — shared by both the default and light host builds —
 // so a light binary (which embeds no bytes) still compiles against the same
 // identity while resolving the linter through the later cascade tiers.
-const PublishingLinterURI = "oci://hub.aggrega.ai/plugin/linter/publishing"
+const PublishingLinterURI = "linter/publishing"

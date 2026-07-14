@@ -161,7 +161,7 @@ func (l *LazyLookup) AsCatalogLookup() resolver.CatalogLookup {
 		EffectiveSchema: l.effectiveSchema,
 		// Plugin serves the Plugin entity by URI over the lazily-walked
 		// set, so the build-load pipeline socket fronts the artifact cascade with
-		// the entity → spec.plugin two-step from the lazy backing too.
+		// the entity → artifact-reference two-step from the lazy backing too.
 		Plugin: l.PluginByURI,
 		// ProviderPlugin resolves a provider name to the provider-rendering Plugin
 		// serving it (via targets) over the lazily-walked set, so

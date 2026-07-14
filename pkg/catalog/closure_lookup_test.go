@@ -27,6 +27,12 @@ func (a *orasPullerAdapter) Pull(ctx context.Context, reference, tag string) (*o
 	return oci.Pull(ctx, a.target, tag)
 }
 
+// RegistryHost lets the adapter satisfy the puller's registry-reporting seam so a
+// bare plugin identity binds to a physical location during resolution. The
+// in-memory store ignores the reference (it keys on the tag alone), so the exact
+// host is immaterial to the fetch — it only needs to be a well-formed registry.
+func (a *orasPullerAdapter) RegistryHost() string { return "hub.aggrega.ai" }
+
 func writeYAMLToCatalog(t *testing.T, dir, relpath, content string) {
 	t.Helper()
 	full := filepath.Join(dir, relpath)
@@ -309,66 +315,7 @@ spec:
 	}
 }
 
-func TestSplitPluginArtifactURI(t *testing.T) {
-	t.Parallel()
-	cases := []struct {
-		name       string
-		uri        string
-		wantRef    string
-		wantDigest string
-		wantOK     bool
-	}{
-		{
-			name:       "content-pin form",
-			uri:        "oci://hub.aggrega.ai/plugin/frp/patch@sha256:abc123",
-			wantRef:    "hub.aggrega.ai/plugin/frp/patch",
-			wantDigest: "sha256:abc123",
-			wantOK:     true,
-		},
-		{
-			name:       "content-pin form without scheme",
-			uri:        "hub.aggrega.ai/plugin/frp/patch@sha256:abc123",
-			wantRef:    "hub.aggrega.ai/plugin/frp/patch",
-			wantDigest: "sha256:abc123",
-			wantOK:     true,
-		},
-		{
-			name:   "version-tag form is not a content pin",
-			uri:    "oci://hub.aggrega.ai/plugin/frp/patch:1.0.0",
-			wantOK: false,
-		},
-		{
-			name:   "bare path is not a content pin",
-			uri:    "hub.aggrega.ai/plugin/frp/patch",
-			wantOK: false,
-		},
-		{
-			name:   "non-sha256 digest after @ is rejected",
-			uri:    "oci://hub.aggrega.ai/plugin/frp/patch@md5:abc",
-			wantOK: false,
-		},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			ref, dgst, ok := catalog.SplitPluginArtifactURI(tc.uri)
-			if ok != tc.wantOK {
-				t.Fatalf("ok = %v; want %v", ok, tc.wantOK)
-			}
-			if !tc.wantOK {
-				return
-			}
-			if ref != tc.wantRef {
-				t.Errorf("reference = %q; want %q", ref, tc.wantRef)
-			}
-			if dgst != tc.wantDigest {
-				t.Errorf("contentDigest = %q; want %q", dgst, tc.wantDigest)
-			}
-		})
-	}
-}
-
-// TestResolvePluginVersionTagRoundTrip drives the digest-free spec.plugin
+// TestResolvePluginVersionTagRoundTrip drives the bare-identity plugin-artifact
 // resolution: a Plugin published as ONE manifest (entity config + inline .wasm
 // layer) tagged by its version resolves through ResolvePlugin's version-tag path,
 // the .wasm layer is selected, the content pin is DERIVED from its bytes, the slot
@@ -387,9 +334,9 @@ func TestResolvePluginVersionTagRoundTrip(t *testing.T) {
 	wasmBytes := []byte("\x00asm\x01\x00\x00\x00 version-tag round-trip fixture")
 	entityYAML := []byte("apiVersion: aggrega.ai/v1alpha1\nkind: Plugin\nmetadata:\n  name: frp/patch\n  version: 1.0.0\n")
 	contentDigest := digest.ContentDigest(wasmBytes)
-	const repo = "hub.aggrega.ai/plugin/frp/patch"
+	const identity = "frp/patch"
 	const version = "1.0.0"
-	artifactURI := "oci://" + repo
+	artifactURI := identity
 
 	store := memory.New()
 	// Publish the ONE plugin manifest — entity config + inline .wasm layer —
@@ -481,9 +428,9 @@ func TestResolvePluginManifestSelfVerify(t *testing.T) {
 	wasmBytes := []byte("\x00asm\x01\x00\x00\x00 manifest self-verify fixture")
 	entityYAML := []byte("apiVersion: aggrega.ai/v1alpha1\nkind: Plugin\nmetadata:\n  name: frp/patch\n  version: 1.0.0\n")
 	contentDigest := digest.ContentDigest(wasmBytes)
-	const repo = "hub.aggrega.ai/plugin/frp/patch"
+	const identity = "frp/patch"
 	const version = "1.0.0"
-	artifactURI := "oci://" + repo
+	artifactURI := identity
 
 	store := memory.New()
 	if _, err := oci.PushPluginManifest(ctx, store, version, entityYAML, wasmBytes); err != nil {
@@ -577,9 +524,9 @@ func TestResolvePluginManifestAuthorityBeatsForgedContentPin(t *testing.T) {
 	wasmBytes := []byte("\x00asm\x01\x00\x00\x00 authority fixture")
 	entityYAML := []byte("apiVersion: aggrega.ai/v1alpha1\nkind: Plugin\nmetadata:\n  name: frp/authority\n  version: 1.0.0\n")
 	origDigest := digest.ContentDigest(wasmBytes)
-	const repo = "hub.aggrega.ai/plugin/frp/authority"
+	const identity = "frp/authority"
 	const version = "1.0.0"
-	artifactURI := "oci://" + repo
+	artifactURI := identity
 
 	store := memory.New()
 	if _, err := oci.PushPluginManifest(ctx, store, version, entityYAML, wasmBytes); err != nil {

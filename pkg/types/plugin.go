@@ -32,6 +32,24 @@ package types
 // entity that omits them round-trips without emitting an empty block — a
 // value-typed nested struct would re-marshal as `{}`.
 
+// ArtifactReference returns the .wasm artifact reference a Plugin entity resolves
+// to: its bare identity, metadata.name (the <socket>/<name> path). The .wasm
+// rides inline in the entity's single OCI manifest, so the artifact and the
+// entity share one identity; the entity carries no separate artifact field. A
+// physical fetch location is derived from this identity at the fetch boundary —
+// the embed tier keys on the bare identity directly (offline, registry-
+// independent), and the network tier binds it to <registry>/<location> through
+// the configured registry — never stored in the entity.
+//
+// It is the single home of the entity to artifact-reference derivation: every
+// read-site that resolves a Plugin entity to its .wasm funnels through here, so
+// the rule lives in exactly one place and cannot drift across the load, lock,
+// verify, and display surfaces. It lives on the type (not a higher package) so
+// the closure descent can share the one derivation without an import cycle.
+func (p Plugin) ArtifactReference() string {
+	return p.Metadata.Name
+}
+
 // PluginProvider is the optional provider-socket metadata block on a
 // pluginType: provider Plugin. It documents how the plugin's rendering
 // engine translates the Workload kind into provider-native manifests and

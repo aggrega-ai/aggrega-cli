@@ -280,18 +280,18 @@ type Plugin struct {
 //
 // The plugin's content digest is NOT duplicated here — it stays
 // single-sourced in the Plugins and Entities sections, which this record
-// points into by identity (Plugin is the digest-free spec.plugin OCI
-// ref). Version coexistence is preserved: this record selects the plugin
-// repository per target; the concrete versions live in Entities (one
-// entry per resolved plugin version), and each Recipe's spec.target
-// version pin selects among them at render.
+// points into by identity (Plugin is the plugin's bare identity). Version
+// coexistence is preserved: this record selects the plugin repository per
+// target; the concrete versions live in Entities (one entry per resolved
+// plugin version), and each Recipe's spec.target version pin selects among
+// them at render.
 //
 // Field declaration order is alphabetical to drive yaml.v3's canonical
 // key emission, matching the Lockfile-wide discipline.
 type ProviderBinding struct {
-	// Plugin is the digest-free OCI identity of the resolved
-	// provider-rendering plugin (matching a Plugin entity's spec.plugin,
-	// e.g. "oci://hub.aggrega.ai/plugin/provider/helm").
+	// Plugin is the bare identity of the resolved provider-rendering plugin
+	// (a Plugin entity's metadata.name, the <socket>/<name> path,
+	// e.g. "provider/helm").
 	Plugin string `yaml:"plugin"`
 	// Target is the render target kind this binding selects an engine for
 	// — the bare engine name a Recipe binds through spec.target.

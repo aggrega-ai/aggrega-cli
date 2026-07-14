@@ -113,9 +113,10 @@ func genCatalogRun(ctx context.Context, opts genCatalogOptions, out io.Writer) e
 }
 
 // genCatalogFromEmbedded generates an entity for every embedded guest, matching
-// each guest to its overlay by the overlay's spec.plugin identity. A guest with
-// no matching overlay halts loudly: the overlay set is the authored input the
-// generator merges, so a missing one is an authoring gap, not a value to invent.
+// each guest to its overlay by the overlay's metadata.name identity — the same
+// bare identity (<socket>/<name>) the embed tier keys the guest under. A guest
+// with no matching overlay halts loudly: the overlay set is the authored input
+// the generator merges, so a missing one is an authoring gap, not a value to invent.
 func genCatalogFromEmbedded(ctx context.Context, opts genCatalogOptions, version string, out io.Writer) error {
 	overlays, err := loadOverlaysByPlugin(opts.overlayPath)
 	if err != nil {
@@ -128,7 +129,7 @@ func genCatalogFromEmbedded(ctx context.Context, opts genCatalogOptions, version
 		}
 		overlay, ok := overlays[uri]
 		if !ok {
-			return fmt.Errorf("aggrega plugin gen-catalog: no overlay in %q has spec.plugin %q for embedded guest; author the overlay before generating", opts.overlayPath, uri)
+			return fmt.Errorf("aggrega plugin gen-catalog: no overlay in %q has metadata.name %q for embedded guest; author the overlay before generating", opts.overlayPath, uri)
 		}
 		if err := generateAndWrite(opts.outputDir, desc, description, overlay, version, uri, out); err != nil {
 			return err
@@ -207,10 +208,7 @@ func mergeGenCatalogEntity(desc wasm.PluginDescriptor, description string, overl
 		return types.Plugin{}, fmt.Errorf("aggrega plugin gen-catalog: %w", err)
 	}
 	if strings.TrimSpace(overlay.Metadata.Name) == "" {
-		return types.Plugin{}, fmt.Errorf("aggrega plugin gen-catalog: overlay for %q has no metadata.name", identity)
-	}
-	if strings.TrimSpace(overlay.Spec.Plugin) == "" {
-		return types.Plugin{}, fmt.Errorf("aggrega plugin gen-catalog: overlay %q has no spec.plugin identity", overlay.Metadata.Name)
+		return types.Plugin{}, fmt.Errorf("aggrega plugin gen-catalog: overlay for %q has no metadata.name identity", identity)
 	}
 
 	entity := types.Plugin{
@@ -224,11 +222,11 @@ func mergeGenCatalogEntity(desc wasm.PluginDescriptor, description string, overl
 	entity.Metadata.Version = version
 	entity.Metadata.Description = description
 
-	// Identity, runtime limits, and the provider block are authored; the
-	// machine-owned host-function set and the signature pointer are not the
-	// generator's to write — publish derives and stamps the host functions from
-	// the .wasm, and signing attaches the signature at push.
-	entity.Spec.Plugin = overlay.Spec.Plugin
+	// Identity is metadata.name (copied from the overlay above); runtime limits
+	// and the provider block are authored. The machine-owned host-function set and
+	// the signature pointer are not the generator's to write — publish derives and
+	// stamps the host functions from the .wasm, and signing attaches the signature
+	// at push.
 	entity.Spec.Runtime = sanitizeOverlayRuntime(overlay.Spec.Runtime)
 	entity.Spec.Provider = overlay.Spec.Provider
 
@@ -446,12 +444,12 @@ func loadOverlaysByPlugin(dir string) (map[string]types.Plugin, error) {
 		if err != nil {
 			return nil, err
 		}
-		key := strings.TrimSpace(overlay.Spec.Plugin)
+		key := strings.TrimSpace(overlay.Metadata.Name)
 		if key == "" {
-			return nil, fmt.Errorf("aggrega plugin gen-catalog: overlay %s has no spec.plugin identity", path)
+			return nil, fmt.Errorf("aggrega plugin gen-catalog: overlay %s has no metadata.name identity", path)
 		}
 		if _, dup := out[key]; dup {
-			return nil, fmt.Errorf("aggrega plugin gen-catalog: two overlays declare spec.plugin %q; identity must be unique", key)
+			return nil, fmt.Errorf("aggrega plugin gen-catalog: two overlays declare metadata.name %q; identity must be unique", key)
 		}
 		out[key] = overlay
 	}

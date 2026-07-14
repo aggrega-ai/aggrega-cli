@@ -42,7 +42,6 @@ metadata:
   name: `+socketName+`
   version: "`+version+`"
 spec:
-  plugin: "oci://`+host+`/plugin/`+socketName+`"
   pluginType: frp_step
   abiVersion: v1alpha1
   exports:
@@ -245,7 +244,7 @@ func TestIntegration_PullCommandVerifiesSignedPlugin_Keyed(t *testing.T) {
 		wasmContentDg := publishSignedPluginEntity(t, host, pluginSocket+"/"+pluginName, version, pluginPath, signer)
 		// The .wasm ARTIFACT row is keyed by the entity's BARE spec.plugin identity
 		// under the single-manifest model — no @sha256: content-digest suffix.
-		artifactURI := "oci://" + host + "/plugin/" + pluginSocket + "/" + pluginName
+		artifactURI := pluginSocket + "/" + pluginName
 		// The whole Tier-3-resolved closure is under the require-signatures policy,
 		// so the catalog entities are signed by the same publisher too.
 		ws := writePipelinePluginConsumerWorkspace(t, host, pluginURI, pubPEM, signer)

@@ -127,7 +127,7 @@ type RecipeLoader interface {
 	LoadRecipe(uri string) (*types.Recipe, error)
 	LoadFeatureRecipe(uri string) (*types.FeatureRecipe, error)
 	// LoadPlugin loads a Plugin entity body by URI. The pipeline-plugin
-	// descent reads spec.plugin (the .wasm artifact reference) from it to pin the
+	// descent derives the .wasm artifact reference from its identity to pin the
 	// artifact alongside the entity. Not-found surfaces as a wrapped error so the
 	// descent can distinguish a missing-entity failure from other parse errors.
 	LoadPlugin(uri string) (*types.Plugin, error)
@@ -283,12 +283,11 @@ type Lookup interface {
 	ResolveAggregate(uri string) (Resolution, error)
 	ResolveSchemaLibrary(uri string) (LibraryResolution, error)
 	ResolveMappingLibrary(uri string) (LibraryResolution, error)
-	// ResolvePlugin resolves a Plugin entity's spec.plugin .wasm artifact
-	// reference. The reference is digest-free (oci://<repo>); the .wasm rides
-	// inline as a layer of the single plugin manifest published under the
-	// entity's version tag, so version selects the manifest to read the .wasm
-	// from. A digest-bearing form (oci://<repo>@sha256:<digest>) resolves by its
-	// content pin and ignores version.
+	// ResolvePlugin resolves a Plugin entity's .wasm artifact reference — the
+	// entity's bare identity (<socket>/<name>). The .wasm rides inline as a layer
+	// of the single plugin manifest published under the entity's version tag, so
+	// version selects the manifest to read the .wasm from. A core plugin embedded
+	// in the binary resolves offline by its bare identity through the embed tier.
 	ResolvePlugin(uri, version string) (Resolution, error)
 }
 

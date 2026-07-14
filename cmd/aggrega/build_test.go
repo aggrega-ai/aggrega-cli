@@ -259,13 +259,12 @@ spec:
 
 // writeHelmRendererPlugin writes the helm provider Plugin entity into
 // providersDir, binding the helm provider to the embedded helm rendering guest.
-// Its identity mirrors the shipped core plugin (metadata.name provider/helm,
-// spec.plugin the embedded helm guest reference), so a catalog that also carries
-// the shipped entity resolves both to one plugin rather than two competing ones.
-// The digest-free spec.plugin identity resolves through the plugin-resolution
-// cascade's embed tier keyed on the repository reference (the exact bytes
-// compiled into the binary), so the build's render step routes the helm provider
-// to the shipped guest with no sidecar, cache, or lockfile.
+// Its identity mirrors the shipped core plugin (metadata.name provider/helm), so
+// a catalog that also carries the shipped entity resolves both to one plugin
+// rather than two competing ones. The .wasm artifact reference is derived from
+// that bare identity and resolves through the plugin-resolution cascade's embed
+// tier (the exact bytes compiled into the binary), so the build's render step
+// routes the helm provider to the shipped guest with no sidecar, cache, or lockfile.
 func writeHelmRendererPlugin(t *testing.T, providersDir string) {
 	t.Helper()
 	writeFixture(t, filepath.Join(providersDir, "helm-renderer.yaml"), `apiVersion: aggrega.ai/v1alpha1
@@ -274,7 +273,6 @@ metadata:
   name: provider/helm
   version: "1.0.0"
 spec:
-  plugin: oci://hub.aggrega.ai/plugin/provider/helm
   pluginType: provider
   abiVersion: v1alpha1
   targets:

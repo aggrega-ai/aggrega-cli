@@ -1,14 +1,10 @@
 apiVersion: aggrega.ai/v1alpha1
 kind: Plugin
 metadata:
-  name: compose-renderer
+  name: provider/compose
   version: 1.0.0
   description: Wasm rendering engine for the compose provider.
 spec:
-  # Content-addressed reference to the embedded compose provider artifact; the
-  # plugin-resolution cascade's embed tier serves these exact bytes, so the
-  # build resolves the guest with no sidecar, cache, or lockfile.
-  plugin: oci://hub.aggrega.ai/plugin/provider/compose
   pluginType: provider
   abiVersion: v1alpha1
   targets:

@@ -267,11 +267,11 @@ func (s *walkState) walkBoundary(b types.Boundary, path string) {
 
 // walkWorkspacePlugins collects URIs from the four workspace-level
 // plugin sockets (mutator, policy, linter, importer). Each socket URI is a
-// Plugin ENTITY URI; the entity carries the .wasm artifact reference in
-// spec.plugin. The walk records the entity on the catalog-entity axis (so
+// Plugin ENTITY URI; the entity's .wasm artifact reference is derived from its
+// bare identity. The walk records the entity on the catalog-entity axis (so
 // ComputeClosure resolves and pins the entity, halting loudly on a missing one);
 // the entity's .wasm artifact is pinned at pull time by the pipeline-plugin
-// descent, which descends every plugin-kinded entity to its spec.plugin.
+// descent, which descends every plugin-kinded entity to its .wasm artifact.
 func (s *walkState) walkWorkspacePlugins(cfg workspaceconfig.Config) {
 	record := func(uri, refPath string) {
 		if uri == "" {
@@ -685,7 +685,7 @@ func (s *walkState) materialise() Closure {
 	// c.Plugins is populated at pull time by the pipeline-plugin descent, which
 	// descends every plugin-kinded entity (workspace-socket plugins recorded
 	// here on the entity axis, plus Recipe / FeatureRecipe pipeline-step plugins) to
-	// its spec.plugin .wasm artifact. ComputeClosure pins only the entities.
+	// its .wasm artifact. ComputeClosure pins only the entities.
 	c.SchemaLibraries = s.materialiseSchemaLibs()
 	c.MappingLibraries = s.materialiseMappingLibs()
 	return c

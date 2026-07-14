@@ -18,15 +18,15 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
-// cloudformationArtifactURI is the digest-free repository reference that is the
+// cloudformationArtifactURI is the bare identity (<socket>/<name>) that is the
 // cloudformation provider plugin's identity — the value the cloudformation-renderer
-// Plugin entity's spec.plugin carries and the key the embed tier registers its
+// Plugin entity's metadata.name carries and the key the embed tier registers its
 // bytes under. No digest literal is frozen here: the reference digest is derived
 // from the embed tier's own bytes at test time (embeddedReferenceDigest), so the
 // resolution assertion is a self-consistency check against the shipped bytes.
 const (
-	cloudformationArtifactURI    = "oci://hub.aggrega.ai/plugin/provider/cloudformation"
-	cloudformationPluginEntity   = "cloudformation-renderer:" + testCorePluginVersion
+	cloudformationArtifactURI    = "provider/cloudformation"
+	cloudformationPluginEntity   = cloudformationArtifactURI + ":" + testCorePluginVersion
 	cloudformationProviderMemPag = 4096
 )
 
@@ -44,9 +44,8 @@ func cloudformationChainCatalog() *catalog.Catalog {
 			cloudformationPluginEntity: {
 				APIVersion: "aggrega.ai/v1alpha1",
 				Kind:       "Plugin",
-				Metadata:   types.PluginMetadata{Name: "cloudformation-renderer", Version: testCorePluginVersion},
+				Metadata:   types.PluginMetadata{Name: cloudformationArtifactURI, Version: testCorePluginVersion},
 				Spec: types.PluginSpec{
-					Plugin:     cloudformationArtifactURI,
 					PluginType: "provider",
 					AbiVersion: "v1alpha1",
 					Targets:    []string{"cloudformation"},
@@ -88,8 +87,8 @@ func TestCloudFormationProviderEmbeddedResolutionChain(t *testing.T) {
 	if !ok {
 		t.Fatal("ProviderPlugin(\"cloudformation\") not found")
 	}
-	if pplug.Spec.Plugin != cloudformationArtifactURI {
-		t.Fatalf("provider-plugin spec.plugin = %q, want %q", pplug.Spec.Plugin, cloudformationArtifactURI)
+	if got := pplug.ArtifactReference(); got != cloudformationArtifactURI {
+		t.Fatalf("provider-plugin artifact reference = %q, want %q", got, cloudformationArtifactURI)
 	}
 
 	// Level 2: Plugin-entity URI → Plugin entity → artifact URI. The entity-fronted
@@ -101,8 +100,8 @@ func TestCloudFormationProviderEmbeddedResolutionChain(t *testing.T) {
 	if !ok {
 		t.Fatalf("Plugin(%q) not found", cloudformationPluginEntity)
 	}
-	if plugin.Spec.Plugin != cloudformationArtifactURI {
-		t.Fatalf("plugin spec.plugin = %q, want %q", plugin.Spec.Plugin, cloudformationArtifactURI)
+	if got := plugin.ArtifactReference(); got != cloudformationArtifactURI {
+		t.Fatalf("plugin artifact reference = %q, want %q", got, cloudformationArtifactURI)
 	}
 
 	t.Run("CleanResolveThroughEmbedTier", func(t *testing.T) {

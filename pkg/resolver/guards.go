@@ -24,9 +24,9 @@ type CatalogLookup struct {
 	// Feature returns the catalog Feature for a type URI. Returns false if not found.
 	Feature func(typeURI string) (types.Feature, bool)
 	// Plugin returns the catalog Plugin entity for an entity URI, plus a
-	// found flag. The entity carries spec.plugin — the .wasm artifact reference —
-	// so a plugin socket fronts the artifact-resolving cascade with this lookup:
-	// entity URI → spec.plugin → cascade. May be nil in catalog-less paths; a
+	// found flag. A plugin socket fronts the artifact-resolving cascade with this
+	// lookup: entity URI → entity → its bare-identity artifact reference → cascade.
+	// May be nil in catalog-less paths; a
 	// socket that needs it then resolves nothing and halts as not-an-entity.
 	Plugin func(uri string) (types.Plugin, bool)
 	// ProviderPlugin resolves a provider binding to the provider-rendering Plugin

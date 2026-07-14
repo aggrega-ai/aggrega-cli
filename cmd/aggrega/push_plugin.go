@@ -24,9 +24,9 @@ import (
 // config blob and the .wasm is an inline layer addressed by its content digest.
 // Binding the entity and the executable in a single manifest means the version
 // tag resolves to both at once — there is one artifact to land and one tag to
-// address it, and spec.plugin stays the digest-free artifact identity. The
-// resolved content digest is recorded by the consumer at pull, in the lockfile;
-// it is never embedded in the published entity.
+// address it, and the entity's bare identity is its digest-free artifact
+// identity. The resolved content digest is recorded by the consumer at pull, in
+// the lockfile; it is never embedded in the published entity.
 //
 // Before any bytes land, the .wasm is loaded and its describe() self-report is
 // cross-checked against the entity's authored exports and host-function
@@ -103,8 +103,8 @@ func pushPlugin(out io.Writer, cfg pushConfig, registry string, wantSign bool, n
 
 	// Stamp the machine-owned host-function record into the published entity.
 	// The set is fully derived from the .wasm, so a divergent on-disk value is
-	// overwritten with a warning, never a halt. spec.plugin is left as the
-	// authored digest-free identity.
+	// overwritten with a warning, never a halt. The entity's identity
+	// (metadata.name) is left untouched.
 	stampedEntity, err := stampHostFunctions(out, entityIdentity, entityYAML, derivedHostFunctions)
 	if err != nil {
 		return fmt.Errorf("aggrega push: Plugin %s: %w", entityIdentity, err)

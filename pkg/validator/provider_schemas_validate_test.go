@@ -19,7 +19,7 @@ func TestValidatePluginProviderSchemas_NilCasesPass(t *testing.T) {
 	if errs := validator.ValidatePluginProviderSchemas("helm-renderer:1.0.0", "test.yaml", nil); errs != nil {
 		t.Errorf("nil spec should return nil; got %v", errs)
 	}
-	spec := &types.PluginSpec{Plugin: "oci://x", PluginType: "provider", AbiVersion: "v1alpha1"}
+	spec := &types.PluginSpec{PluginType: "provider", AbiVersion: "v1alpha1"}
 	if errs := validator.ValidatePluginProviderSchemas("helm-renderer:1.0.0", "test.yaml", spec); len(errs) != 0 {
 		t.Errorf("absent spec.provider should pass; got %v", errs)
 	}

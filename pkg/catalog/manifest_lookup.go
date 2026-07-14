@@ -382,9 +382,10 @@ func matchOneFeatureRecipe(frs map[string]types.FeatureRecipe, provider, name, v
 // like Component), not a provider-qualified one, so resolution goes
 // through the shared three-form version select (exact / caret / unversioned ->
 // highest-satisfying) rather than the provider-scan ladder RecipeByURI uses. The
-// returned entity carries spec.plugin (the OCI artifact reference); resolving that
-// reference to a pinned artifact is a separate concern (the closure's artifact
-// resolution), not this accessor's job — this serves the entity struct only.
+// returned entity's .wasm artifact reference is derived from its bare identity;
+// resolving that reference to a pinned artifact is a separate concern (the
+// closure's artifact resolution), not this accessor's job — this serves the
+// entity struct only.
 //
 // Served by both catalog backings: the lazy backing exposes its enumerated
 // Plugin set through the recipeCatalog() *Catalog shell, so its
@@ -408,11 +409,11 @@ func (c *Catalog) PluginByURI(uri string) (types.Plugin, bool) {
 // is excluded — that list carries a different meaning for a non-provider plugin.
 //
 // The bindings map is the workspace-config (at pull) or lockfile-derived (at
-// build) provider selections, keyed by bare target name; each value is a
-// digest-free plugin OCI identity (matching a Plugin's spec.plugin) with an
-// optional trailing ":version". When an entry is present for the target, the
-// candidate set is filtered to plugins whose spec.plugin matches that identity —
-// so the binding SELECTS the plugin repository among competing publishers. A nil
+// build) provider selections, keyed by bare target name; each value is a plugin's
+// bare identity (a Plugin's metadata.name) with an optional trailing ":version".
+// When an entry is present for the target, the candidate set is filtered to
+// plugins whose identity matches that value — so the binding SELECTS the plugin
+// repository among competing publishers. A nil
 // or empty bindings map disables that filter (every provider plugin serving the
 // target is a candidate). Version coexistence is orthogonal to the binding: the
 // binding selects the repository, and the version is chosen by the recipe's pin,
@@ -457,9 +458,10 @@ func (c *Catalog) ProviderPluginForTarget(ref string, bindings map[string]string
 		if !slices.Contains(p.Spec.Targets, name) {
 			continue
 		}
-		// A binding selects the plugin repository (spec.plugin identity), filtering
-		// out every competing publisher's plugin for this target.
-		if bound && p.Spec.Plugin != bindBase {
+		// A binding selects the plugin repository by its bare identity
+		// (metadata.name), filtering out every competing publisher's plugin for
+		// this target.
+		if bound && p.Metadata.Name != bindBase {
 			continue
 		}
 		matches[key] = p

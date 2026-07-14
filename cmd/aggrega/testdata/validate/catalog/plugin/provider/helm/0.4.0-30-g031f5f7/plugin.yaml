@@ -7,7 +7,6 @@ metadata:
   name: provider/helm
   version: 0.4.0-30-g031f5f7
 spec:
-  plugin: oci://hub.aggrega.ai/plugin/provider/helm
   pluginType: provider
   abiVersion: v1alpha1
   targets:

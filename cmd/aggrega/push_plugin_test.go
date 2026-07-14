@@ -38,17 +38,22 @@ func (p *memStorePuller) Pull(ctx context.Context, reference, tag string) (*oci.
 	return oci.Pull(ctx, p.store, tag)
 }
 
+// RegistryHost lets the puller bind a bare plugin identity to a location during
+// resolution. The single in-memory store keys on the tag alone, so the fetch
+// ignores the reference — the host only needs to be a well-formed registry.
+func (p *memStorePuller) RegistryHost() string { return "hub.aggrega.ai" }
+
 // agreeingPluginEntity is a Plugin entity whose authored export claim
 // agrees with the frp-step-go fixture's describe() (export "step",
-// operates=patch, scope=own, no custom host functions). spec.plugin is the
-// digest-free artifact identity; publish leaves it unchanged.
+// operates=patch, scope=own, no custom host functions). Its bare identity
+// (metadata.name) is its artifact reference; the entity carries no separate
+// artifact field.
 const agreeingPluginEntity = `apiVersion: aggrega.ai/v1alpha1
 kind: Plugin
 metadata:
   name: frp/patch
   version: "1.0.0"
 spec:
-  plugin: "oci://hub.aggrega.ai/plugin/frp/patch"
   pluginType: frp_step
   abiVersion: v1alpha1
   targets:
@@ -81,9 +86,9 @@ func writeAgreeingPlugin(t *testing.T) (entityPath, pluginPath, contentDigest st
 
 // TestPushPluginSingleManifestPublish proves the single-manifest publish: the
 // entity and its .wasm land as ONE manifest tagged by metadata.version — the
-// entity YAML in the config blob (spec.plugin left as the authored digest-free
-// identity), the .wasm as an inline layer. FetchPluginManifest reads both back
-// from the one version tag, and the inline layer content-verifies to the pin.
+// entity YAML in the config blob (its identity is metadata.name; no separate
+// artifact field), the .wasm as an inline layer. FetchPluginManifest reads both
+// back from the one version tag, and the inline layer content-verifies to the pin.
 func TestPushPluginSingleManifestPublish(t *testing.T) {
 	ctx := context.Background()
 	entityPath, pluginPath, contentDigest := writeAgreeingPlugin(t)
@@ -110,14 +115,13 @@ func TestPushPluginSingleManifestPublish(t *testing.T) {
 		t.Error("manifest digest should be non-empty")
 	}
 
-	// The config blob is the entity, with spec.plugin left as the digest-free
-	// identity.
-	wantIdentity := "oci://hub.aggrega.ai/plugin/frp/patch"
-	if !strings.Contains(string(entityYAML), wantIdentity) {
-		t.Errorf("published entity spec.plugin not the digest-free identity %q; got:\n%s", wantIdentity, entityYAML)
+	// The config blob is the entity; its identity is metadata.name and it carries
+	// no separate plugin-artifact field.
+	if !strings.Contains(string(entityYAML), "name: frp/patch") {
+		t.Errorf("published entity should carry its bare identity metadata.name; got:\n%s", entityYAML)
 	}
 	if strings.Contains(string(entityYAML), "@sha256:") {
-		t.Errorf("published entity must carry no @sha256: digest in spec.plugin; got:\n%s", entityYAML)
+		t.Errorf("published entity must carry no @sha256: digest; got:\n%s", entityYAML)
 	}
 
 	// The inline .wasm layer is the pushed bytes; its content digest is the pin.
@@ -131,8 +135,7 @@ func TestPushPluginSingleManifestPublish(t *testing.T) {
 
 // TestPushPluginPublishedEntityReloadsClean proves the published Plugin entity
 // is schema-valid on reload: the entity config blob the manifest carries passes
-// envelope validation with no error (the digest-free spec.plugin the schema
-// requires), and carries no @sha256: digest.
+// envelope validation with no error, and carries no @sha256: digest.
 func TestPushPluginPublishedEntityReloadsClean(t *testing.T) {
 	ctx := context.Background()
 	entityPath, pluginPath, _ := writeAgreeingPlugin(t)
@@ -198,7 +201,6 @@ metadata:
   name: frp/patch
   version: "1.0.0"
 spec:
-  plugin: "oci://hub.aggrega.ai/plugin/frp/patch:1.0.0"
   pluginType: frp_step
   abiVersion: v1alpha1
   exports:
@@ -546,8 +548,8 @@ func TestPushPluginProviderReusableInstanceMismatchHalts(t *testing.T) {
 // TestPublishPullRoundTripPlugin proves the single-manifest consume path end to
 // end: a Plugin published via the real push path (one manifest tagged by
 // metadata.version, the entity YAML in the config blob, the .wasm as an inline
-// layer) resolves through ResolvePlugin using the entity's BARE spec.plugin
-// reference plus its metadata.version. The pull takes the .wasm from the inline
+// layer) resolves through ResolvePlugin using the entity's BARE identity
+// (metadata.name) plus its metadata.version. The pull takes the .wasm from the inline
 // layer, content-digest-verifies it, caches it; a second resolve reads it from
 // the cache slot the build re-reads; and a tampered cache slot halts with
 // oci.ErrFetchIntegrity. The .wasm is never a separately-tagged artifact — it is
@@ -566,8 +568,8 @@ func TestPublishPullRoundTripPlugin(t *testing.T) {
 	}
 
 	// The resolve inputs are exactly what a consumer holds: the entity's
-	// digest-free spec.plugin identity and its metadata.version.
-	const uri = "oci://hub.aggrega.ai/plugin/frp/patch"
+	// bare identity (metadata.name) and its metadata.version.
+	const uri = "frp/patch"
 	const version = "1.0.0"
 
 	root := t.TempDir()
@@ -660,7 +662,7 @@ func TestVersionTagPushPullParity(t *testing.T) {
 	}
 
 	// The consume side resolves the .wasm at the identical value.
-	const uri = "oci://hub.aggrega.ai/plugin/frp/patch"
+	const uri = "frp/patch"
 	root := t.TempDir()
 	cat, err := catalog.LoadAll("", root)
 	if err != nil {

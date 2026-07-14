@@ -4,11 +4,10 @@
 apiVersion: aggrega.ai/v1alpha1
 kind: Plugin
 metadata:
-  name: cloudformation-renderer
+  name: provider/cloudformation
   version: 0.0.0-test
   description: Wasm rendering engine for the cloudformation provider — normalizes CloudFormation fragments to pure-JSON long-form intrinsics and merges a dispatch group's fragments into a single CloudFormation stack template.
 spec:
-  plugin: oci://hub.aggrega.ai/plugin/provider/cloudformation
   pluginType: provider
   abiVersion: v1alpha1
   targets:

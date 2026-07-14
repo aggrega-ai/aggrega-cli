@@ -590,9 +590,9 @@ func buildPluginResolver(inputs Inputs) pluginpath.Resolver {
 
 // buildEntityPluginLookup fronts the build-time artifact cascade with the
 // Plugin entity translation: a pipeline step references a Plugin entity
-// URI, and the front reads the entity's spec.plugin (the .wasm artifact
-// reference) before the cascade resolves the bytes. The catalog's Plugin
-// accessor supplies the entity → spec.plugin translation; the cascade keys its
+// URI, and the front derives the entity's .wasm artifact reference (its bare
+// identity, via resolver.EntityToArtifact) before the cascade resolves the
+// bytes. The catalog's Plugin accessor supplies the entity; the cascade keys its
 // pins by the artifact reference, so the front leaves the pin model unchanged.
 // A reference that matches no Plugin entity halts with
 // ErrPluginEntityNotFound. This is the same entity-front the linter's
@@ -607,7 +607,7 @@ func buildEntityPluginLookup(inputs Inputs, catalogLookup resolver.CatalogLookup
 		if !ok {
 			return "", nil, nil, false
 		}
-		return entity.Spec.Plugin, resolver.PluginCapabilityClaim(entity), resolver.PluginRuntimeLimits(entity), true
+		return entity.ArtifactReference(), resolver.PluginCapabilityClaim(entity), resolver.PluginRuntimeLimits(entity), true
 	}, cascade)
 }
 

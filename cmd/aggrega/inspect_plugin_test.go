@@ -37,10 +37,10 @@ func TestInspectRawPlugin_DerivesFromBinary(t *testing.T) {
 	}
 }
 
-// pluginFixture declares a Plugin with a content-addressed artifact,
-// two exports carrying full capability claims (operates / scope / selector),
-// and an explicit runtime block (both limits set, a stamped host-function
-// record). It drives the golden harness across all four render levels.
+// pluginFixture declares a Plugin whose bare identity (metadata.name) is its
+// artifact reference, two exports carrying full capability claims (operates /
+// scope / selector), and an explicit runtime block (both limits set, a stamped
+// host-function record). It drives the golden harness across all four render levels.
 const pluginFixture = `apiVersion: aggrega.ai/v1alpha1
 kind: Plugin
 metadata:
@@ -48,7 +48,6 @@ metadata:
   version: "1.0.0"
   description: Renders IR nodes into Helm chart artifacts.
 spec:
-  plugin: oci://hub.aggrega.ai/plugins/core/helm-renderer
   pluginType: provider
   abiVersion: v1alpha1
   targets:
@@ -115,7 +114,6 @@ metadata:
   name: core/linter
   version: "1.0.0"
 spec:
-  plugin: oci://hub.aggrega.ai/plugins/core/linter
   pluginType: linter
   abiVersion: v1alpha1
   exports:
@@ -152,7 +150,6 @@ metadata:
   name: core/step
   version: "1.0.0"
 spec:
-  plugin: oci://hub.aggrega.ai/plugins/core/step
   pluginType: frp_step
   abiVersion: v1alpha1
   runtime:

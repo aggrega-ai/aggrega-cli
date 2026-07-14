@@ -520,35 +520,48 @@ func (l *catalogLookup) ResolveMappingLibrary(uri string) (closure.LibraryResolu
 }
 
 func (l *catalogLookup) ResolvePlugin(uri, version string) (closure.Resolution, error) {
-	// Embed tier: a core plugin embedded in the binary resolves offline. Its
-	// reference digest is derived from the embedded bytes on demand — never
-	// stored — so pull records a lockfile entry for a core plugin with no
-	// registry round-trip, and the closure walker no longer drops it as a
-	// NotFound miss. The lockfile carries the derived digest in the existing
-	// digest field; identity stays the digest-free spec.plugin reference.
+	// Embed tier: a core plugin embedded in the binary resolves offline by its
+	// bare identity (<socket>/<name>). Its reference digest is derived from the
+	// embedded bytes on demand — never stored — so pull records a lockfile entry
+	// for a core plugin with no registry round-trip, and the closure walker no
+	// longer drops it as a NotFound miss. The lockfile carries the derived digest
+	// in the existing digest field; identity stays the bare plugin identity.
 	if b, ok := embedded.Lookup(uri); ok {
 		return embeddedPluginResolution(contentDigest(b)), nil
 	}
-	// A digest-bearing form (oci://<repo>@sha256:<digest>) authored elsewhere
-	// still parses here so an externally-pinned reference fetches by its
-	// content-digest tag and verifies against the pin, keyed in the cache by the
-	// pinned digest so the build re-reads the identical slot.
-	if reference, pinDigest, ok := SplitPluginArtifactURI(uri); ok {
-		return l.resolvePinnedPluginArtifact(uri, reference, pinDigest)
-	}
-	// A Plugin entity's spec.plugin identifies the .wasm artifact by its
-	// digest-free repository reference (oci://<repo>). The .wasm is not a
-	// standalone artifact: it rides inline, as a layer, in the single plugin
-	// manifest published under the entity's version tag. Resolve it from that
-	// manifest by version rather than falling through to the entity-resolving
-	// catalog tiers.
+	// A Plugin entity's .wasm artifact is identified by the entity's bare identity
+	// (<socket>/<name>). The .wasm is not a standalone artifact: it rides inline,
+	// as a layer, in the single plugin manifest published under the entity's
+	// version tag. Resolve it from that manifest by version rather than falling
+	// through to the entity-resolving catalog tiers.
 	return l.resolveVersionedPluginArtifact(uri, version)
 }
 
-// resolveVersionedPluginArtifact resolves a digest-free .wasm artifact reference
-// (oci://<repo>) to the executable carried inline in the single plugin manifest
-// published under the version tag. The .wasm is a layer of the manifest at
-// <repo>:<version>, not a standalone content-addressed artifact, so:
+// pluginArtifactReference binds a plugin's bare identity (<socket>/<name>) to the
+// physical OCI repository reference its .wasm is fetched from —
+// `<registry>/plugin/<socket>/<name>` — through the single location rule
+// (entityReference → OCILocation), so the plugin artifact fetch location is
+// derived exactly where the entity's own location is, never carried in the entity.
+// The configured registry comes from the puller (the same registry the entity
+// pull binds against); a puller that cannot report one, or an identity that is
+// already registry-qualified, is refused loudly rather than fetched from a
+// double-prefixed location.
+func (l *catalogLookup) pluginArtifactReference(identity string) (string, error) {
+	registry := ""
+	if rh, ok := l.ociPuller.(interface{ RegistryHost() string }); ok {
+		registry = rh.RegistryHost()
+	}
+	if registry == "" {
+		return "", fmt.Errorf("catalog: cannot resolve plugin artifact %q: no configured registry to bind its bare identity to a location", identity)
+	}
+	return entityReference(registry, "Plugin", identity)
+}
+
+// resolveVersionedPluginArtifact resolves a plugin's bare-identity .wasm artifact
+// reference (<socket>/<name>) to the executable carried inline in the single
+// plugin manifest published under the version tag. The .wasm is a layer of the
+// manifest at <registry>/plugin/<socket>/<name>:<version>, not a standalone
+// content-addressed artifact, so:
 //
 //   - Cache / build-offline: when a prior lockfile pin names the content digest,
 //     read the (uri, contentDigest) slot and self-verify it. A nil puller with no
@@ -575,7 +588,10 @@ func (l *catalogLookup) resolveVersionedPluginArtifact(uri, version string) (clo
 		return closure.Resolution{NotFound: true}, nil
 	}
 
-	reference := strings.TrimPrefix(uri, "oci://")
+	reference, err := l.pluginArtifactReference(uri)
+	if err != nil {
+		return closure.Resolution{}, err
+	}
 	result, err := l.ociPuller.Pull(context.Background(), reference, version)
 	if err != nil {
 		if errors.Is(err, oci.ErrFetchNotFound) {
@@ -606,50 +622,6 @@ func (l *catalogLookup) resolveVersionedPluginArtifact(uri, version string) (clo
 		return closure.Resolution{}, err
 	}
 	return pinnedPluginResolution(contentPin, result.Digest), nil
-}
-
-// resolvePinnedPluginArtifact resolves a content-pinned .wasm artifact reference
-// (oci://<repo>@sha256:<digest>) — an externally-authored digest-bearing form —
-// through a dedicated cache/pull flow:
-//
-//   - Tier 2 (cache / re-pull): read the cache slot keyed by (uri, contentDigest)
-//     and content-digest-verify the bytes against the pin.
-//   - Tier 3 (lock-time pull): fetch the .wasm by its content-digest-derived tag
-//     (oci.ContentDigestTag), content-digest-verify, and write it to the same
-//     (uri, contentDigest) cache slot the build re-reads.
-//
-// The cache slot is keyed by the pinned content digest, and the resolution pins
-// ResolvedVersion = contentDigest. The build derives its cache-read version from
-// the lockfile's ResolvedVersion, so lock-write and build-read address the
-// identical slot. A bytes-vs-pin mismatch halts with oci.ErrFetchIntegrity.
-func (l *catalogLookup) resolvePinnedPluginArtifact(uri, reference, pinDigest string) (closure.Resolution, error) {
-	if res, hit, err := l.readCachedPluginArtifact(uri, pinDigest); err != nil || hit {
-		return res, err
-	}
-
-	if l.ociPuller == nil {
-		return closure.Resolution{NotFound: true}, nil
-	}
-
-	tag := oci.ContentDigestTag(pinDigest)
-	result, err := l.ociPuller.Pull(context.Background(), reference, tag)
-	if err != nil {
-		if errors.Is(err, oci.ErrFetchNotFound) {
-			return closure.Resolution{NotFound: true}, nil
-		}
-		if rem := oci.RemediationFor(err, registryhost.Of(reference)); rem != "" {
-			return closure.Resolution{}, fmt.Errorf("catalog: tier-3 pull plugin artifact %s: %w\n  %s", uri, err, rem)
-		}
-		return closure.Resolution{}, fmt.Errorf("catalog: tier-3 pull plugin artifact %s: %w", uri, err)
-	}
-	if got := contentDigest(result.Bytes); got != pinDigest {
-		return closure.Resolution{}, fmt.Errorf("catalog: pulled plugin artifact %s content digest %s does not match pin %s: %w",
-			uri, got, pinDigest, oci.ErrFetchIntegrity)
-	}
-	if err := l.cachePluginArtifact(uri, pinDigest, result); err != nil {
-		return closure.Resolution{}, err
-	}
-	return pinnedPluginResolution(pinDigest, result.Digest), nil
 }
 
 // readCachedPluginArtifact attempts to satisfy a plugin-artifact resolution from
@@ -1325,35 +1297,6 @@ func SplitURIForOCI(uri string) (reference, tag string, ok bool) {
 		return "", "", false
 	}
 	return base, version, true
-}
-
-// SplitPluginArtifactURI splits a content-pinned plugin-artifact reference
-// (oci://<repo>@sha256:<hex>) into its repository reference and content digest.
-// The leading "oci://" scheme is stripped; the split is on the LAST "@" so a
-// repository path that itself contains "@" still parses, with reference=<repo>
-// and contentDigest="sha256:<hex>". Returns ok=false when the URI carries no
-// "@sha256:" segment, so a digest-free reference (the plugin's authored identity
-// oci://<repo>, a bare path, or a "<repo>:<version>" tag form) falls through
-// cleanly to the version-tag path.
-//
-// A plugin's authored spec.plugin identity is digest-free, so this split parses
-// only an externally-supplied content-pinned reference
-// (oci://<repo>@sha256:<hex>) back into its repository reference and digest, to
-// fetch the .wasm by its content-digest tag. The split is deliberately NOT
-// routed through SplitURIForOCI, whose last-colon rule mis-parses the
-// "@sha256:<hex>" form (the hex tail past the colon would read as a version).
-func SplitPluginArtifactURI(uri string) (reference, contentDigest string, ok bool) {
-	trimmed := strings.TrimPrefix(uri, "oci://")
-	at := strings.LastIndex(trimmed, "@")
-	if at < 0 {
-		return "", "", false
-	}
-	reference = trimmed[:at]
-	contentDigest = trimmed[at+1:]
-	if reference == "" || !strings.HasPrefix(contentDigest, "sha256:") {
-		return "", "", false
-	}
-	return reference, contentDigest, true
 }
 
 // EntityNameFromURI returns the catalog index name for an entity URI — the URI

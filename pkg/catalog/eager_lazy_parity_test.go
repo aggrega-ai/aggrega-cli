@@ -105,7 +105,6 @@ metadata:
   name: helm-renderer
   version: 1.0.0
 spec:
-  plugin: "oci://hub.aggrega.ai/plugins/core/helm-renderer"
   pluginType: provider
   abiVersion: v1alpha1
   targets:

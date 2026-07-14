@@ -59,7 +59,6 @@ metadata:
   name: `+socketName+`
   version: "`+version+`"
 spec:
-  plugin: "oci://`+host+`/plugin/`+socketName+`"
   pluginType: `+pluginType+`
   abiVersion: v1alpha1
   exports:
@@ -212,7 +211,7 @@ func TestIntegration_BuildBundleDigestGate(t *testing.T) {
 	const mutatorSocket = "mutator/tag-injector"
 	const proofMutatorLabel = "mutator-proof"
 	pluginsBlock := "plugins:\n  mutator:\n    - uri: " + mutatorSocket + ":1.0.0\n"
-	artifactURIFor := func(host string) string { return "oci://" + host + "/plugin/" + mutatorSocket }
+	artifactURIFor := func(string) string { return mutatorSocket }
 
 	// pullSigned publishes the SIGNED mutator, writes a verify-if-present
 	// workspace, chdir's into it, and runs the real pull so the guest's bundle is

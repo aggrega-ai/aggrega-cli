@@ -8,12 +8,12 @@
 
 package types
 
-// Plugin A Wasm plugin: a WebAssembly module published to an OCI registry and identified by its repository reference, declaring the socket type it implements, the ABI version it targets, an optional signature pointer, and an optional runtime block. The entity and its `.wasm` publish as one OCI manifest tagged by metadata.version — the entity YAML as the manifest's config blob, the `.wasm` as an inline layer, signed once. Identity is the repository reference plus the entity's metadata.version — the same shape every other entity carries; the resolved content digest lives in the lockfile, not in the entity. The closure records the digest and the per-registry trust policy verifies the artifact's signature at pull. The compiler is blind to the plugin's behavior — it routes the reference; the WebAssembly runtime executes the bytes.
+// Plugin A Wasm plugin: a WebAssembly module published to an OCI registry and identified by its `metadata.name` — the `<socket>/<name>` path — declaring the socket type it implements, the ABI version it targets, an optional signature pointer, and an optional runtime block. The entity and its `.wasm` publish as one OCI manifest tagged by metadata.version — the entity YAML as the manifest's config blob, the `.wasm` as an inline layer, signed once. Identity is `metadata.name` plus the entity's metadata.version — the same shape every other entity carries; the `.wasm` location is derived from that identity plus the configured registry, and the resolved content digest lives in the lockfile, not in the entity. The closure records the digest and the per-registry trust policy verifies the artifact's signature at pull. The compiler is blind to the plugin's behavior — it routes the reference; the WebAssembly runtime executes the bytes.
 type Plugin struct {
 	APIVersion string         `json:"apiVersion" yaml:"apiVersion"`
 	Kind       string         `json:"kind" yaml:"kind"`
 	Metadata   PluginMetadata `json:"metadata" yaml:"metadata"`
-	// Spec The plugin's OCI repository reference, the socket type it implements, the ABI version it targets, an optional signature pointer, and an optional runtime block.
+	// Spec The socket type the plugin implements, the ABI version it targets, an optional signature pointer, and an optional runtime block. The plugin's `.wasm` location is derived from its identity — `metadata.name` (the `<socket>/<name>` path) plus the configured registry — not carried in the spec.
 	Spec PluginSpec `json:"spec" yaml:"spec"`
 }
 
@@ -37,10 +37,8 @@ type PluginMetadata struct {
 	Deprecated bool `json:"deprecated,omitempty" yaml:"deprecated,omitempty"`
 }
 
-// PluginSpec The plugin's OCI repository reference, the socket type it implements, the ABI version it targets, an optional signature pointer, and an optional runtime block.
+// PluginSpec The socket type the plugin implements, the ABI version it targets, an optional signature pointer, and an optional runtime block. The plugin's `.wasm` location is derived from its identity — `metadata.name` (the `<socket>/<name>` path) plus the configured registry — not carried in the spec.
 type PluginSpec struct {
-	// Plugin The digest-free OCI repository reference to the plugin, in the form `oci://<repository>` — first-party artifacts follow `oci://<registry>/plugin/<socket>/<name>` (for example `oci://hub.aggrega.ai/plugin/provider/helm`). The reference plus the entity's metadata.version is the plugin's identity — the same identity shape every other entity carries. A digest is never embedded here: a `@sha256:<digest>` suffix is rejected. The plugin publishes as one OCI manifest tagged by that version: the entity YAML rides as the manifest's config blob and the `.wasm` rides as an inline layer, so the executable is intrinsic to the manifest rather than a separate artifact. The resolved content digest lives in the lockfile, where pull records it and the build verifies the resolved bytes against it.
-	Plugin string `json:"plugin" yaml:"plugin"`
 	// PluginType The socket type this plugin implements. A plugin implements exactly one socket type, drawn from the plugin-type taxonomy the runtime recognises: `provider` (renders IR nodes into provider-native artifacts), `linter` (inspects authored content and raises diagnostics), `frp_step` (a feature-recipe-pipeline step that transforms IR within a pipeline), `mutator` (auto-tags topology-graph node labels at Step 2 via JSON Patch), `policy-validator` (evaluates the full IR graph at Step 4 and halts the build on a failed rule), `cli` (contributes a runtime `aggrega <cmd>` subcommand an operator invokes at the command line — a runtime socket, distinct from the compile-time render and pipeline sockets), `search` (answers a ranked full-text query over an indexed content set — a cross-cutting runtime socket that leaves `targets` empty).
 	PluginType string `json:"pluginType" yaml:"pluginType"`
 	// AbiVersion The host/guest ABI version the plugin targets. `v1alpha1` is the only accepted value in this iteration; a future ABI revision adds an accepted value.

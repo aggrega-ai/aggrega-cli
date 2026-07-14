@@ -256,9 +256,9 @@ func TestResolvePluginBytesOverride(t *testing.T) {
 }
 
 // TestResolvePluginBytesOCIUnresolvable: the configured linter URI is a
-// Plugin entity URI whose spec.plugin is an uncached OCI artifact; the linter
-// wires no puller, so the entity-front resolves the artifact through the cascade
-// and halts loudly when nothing is cached.
+// Plugin entity URI whose bare identity is neither embedded nor cached; the
+// linter wires no puller, so the entity-front resolves the artifact through the
+// cascade and halts loudly when nothing is cached.
 func TestResolvePluginBytesOCIUnresolvable(t *testing.T) {
 	wsCfg := workspaceconfig.Default()
 	wsCfg.Plugins.Linter = []workspaceconfig.PluginRef{
@@ -266,7 +266,7 @@ func TestResolvePluginBytesOCIUnresolvable(t *testing.T) {
 	}
 	pluginByURI := func(uri string) (types.Plugin, bool) {
 		wp := types.Plugin{}
-		wp.Spec.Plugin = "oci://hub.aggrega.ai/plugin/linter/aggrega-publishing"
+		wp.Metadata.Name = "linter/aggrega-publishing"
 		return wp, true
 	}
 	_, err := resolveLinterPlugin("", wsCfg, pluginByURI)
@@ -336,8 +336,9 @@ func TestResolveLinterPluginCarriesEntityRuntimeCap(t *testing.T) {
 	wsCfg.Plugins.Linter = []workspaceconfig.PluginRef{{URI: "core/linter/x:1.0.0"}}
 	pluginByURI := func(uri string) (types.Plugin, bool) {
 		var wp types.Plugin
-		// An absolute filesystem path resolves through the cascade's local tier.
-		wp.Spec.Plugin = artifact
+		// A local-dev plugin identifies its artifact by an absolute filesystem
+		// path, which resolves through the cascade's local tier.
+		wp.Metadata.Name = artifact
 		wp.Spec.Exports = []types.PluginExport{{Name: "lint_rules"}}
 		wp.Spec.Runtime = &types.PluginRuntime{MaxMemoryPages: 32, TimeoutMs: 250}
 		return wp, true

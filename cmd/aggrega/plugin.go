@@ -301,7 +301,7 @@ func resolvePluginURI(uri, sidecarDir string, pluginByURI func(string) (types.Pl
 			if !ok {
 				return "", nil, nil, false
 			}
-			return entity.Spec.Plugin, resolver.PluginCapabilityClaim(entity), resolver.PluginRuntimeLimits(entity), true
+			return entity.ArtifactReference(), resolver.PluginCapabilityClaim(entity), resolver.PluginRuntimeLimits(entity), true
 		}, cascade.Resolve)
 		resolved, err := front(uri)
 		if err == nil {

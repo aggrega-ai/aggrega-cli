@@ -4,7 +4,6 @@ metadata:
   name: core/frp/host-patch-compose
   version: "1.0.0"
 spec:
-  plugin: "oci://hub.aggrega.ai/plugin/frp/host-patch-compose"
   pluginType: frp_step
   abiVersion: v1alpha1
   targets:

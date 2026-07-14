@@ -7,20 +7,20 @@ package embedded
 
 import "testing"
 
-// TestManifestDerivedURIsAreStable pins the exact repository references the
-// embedded set registers under. The registry keys are load-bearing: the
-// plugin-resolution cascade's embed tier and every Plugin entity's spec.plugin
+// TestManifestDerivedURIsAreStable pins the exact bare identities the embedded
+// set registers under. The registry keys are load-bearing: the plugin-resolution
+// cascade's embed tier and every Plugin entity's bare identity (metadata.name)
 // resolve against these exact strings, so a change here is a resolution-behavior
 // change, not a refactor. The list is asserted verbatim rather than derived so a
 // manifest edit that alters a key fails loudly here.
 func TestManifestDerivedURIsAreStable(t *testing.T) {
 	want := []string{
-		"oci://hub.aggrega.ai/plugin/provider/helm",
-		"oci://hub.aggrega.ai/plugin/provider/compose",
-		"oci://hub.aggrega.ai/plugin/provider/helm-chart",
-		"oci://hub.aggrega.ai/plugin/provider/terraform",
-		"oci://hub.aggrega.ai/plugin/provider/cloudformation",
-		"oci://hub.aggrega.ai/plugin/linter/publishing",
+		"provider/helm",
+		"provider/compose",
+		"provider/helm-chart",
+		"provider/terraform",
+		"provider/cloudformation",
+		"linter/publishing",
 	}
 	got := embeddedArtifacts()
 	if len(got) != len(want) {

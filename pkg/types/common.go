@@ -408,10 +408,9 @@ type SecretInstance struct {
 type PipelineStep struct {
 	ID string `json:"id" yaml:"id"`
 	// Plugin is the URI of the Plugin entity this step runs (e.g.
-	// `name:version` or `provider/name:version`). The entity's spec.plugin is the
-	// content-addressed .wasm artifact; the build resolves the entity to its
-	// artifact and loads the bytes. A bare .wasm or artifact reference is not
-	// accepted.
+	// `name:version` or `provider/name:version`). The build resolves the entity to
+	// its .wasm artifact (derived from the entity's bare identity) and loads the
+	// bytes. A bare .wasm or artifact reference is not accepted.
 	Plugin   string `json:"plugin" yaml:"plugin"`
 	Function string `json:"function" yaml:"function"`
 	With     string `json:"with,omitempty" yaml:"with,omitempty"`

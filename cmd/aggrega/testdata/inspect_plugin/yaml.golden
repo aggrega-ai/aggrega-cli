@@ -5,7 +5,6 @@ metadata:
     version: "1.0.0"
     description: Renders IR nodes into Helm chart artifacts.
 spec:
-    plugin: oci://hub.aggrega.ai/plugins/core/helm-renderer
     pluginType: provider
     abiVersion: v1alpha1
     targets:

@@ -66,7 +66,6 @@ metadata:
   name: `+socketName+`
   version: "`+version+`"
 spec:
-  plugin: "oci://`+host+`/plugin/`+socketName+`"
   pluginType: `+pluginType+`
   abiVersion: v1alpha1
   exports:
@@ -214,7 +213,7 @@ func distTreeContains(t *testing.T, dir, needle string) (bool, string) {
 func assertSocketPinnedInLock(t *testing.T, lf *lockfile.Lockfile, host, socketName, wantWasmDigest string) {
 	t.Helper()
 	entityURI := socketName + ":1.0.0"
-	artifactURI := "oci://" + host + "/plugin/" + socketName
+	artifactURI := socketName
 
 	var ent *lockfile.Entity
 	for i := range lf.Entities {

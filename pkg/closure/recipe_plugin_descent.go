@@ -39,7 +39,7 @@ func providerPluginEntityURI(p types.Plugin) string {
 }
 
 // pluginKindHint marks a closure entry emitted for a pipeline plugin artifact
-// (the .wasm reference a Plugin entity's spec.plugin names). The plugin
+// (the .wasm reference derived from a Plugin entity's bare identity). The plugin
 // descent sets it so the pinned plugin artifact carries the same provenance hint
 // the workspace-config plugin axis records, distinguishing a pipeline-plugin pin
 // from a catalog-entity pin during closure assembly. Like the other
@@ -170,8 +170,8 @@ func DescendRecipePluginEntities(c *Closure, loader RecipeLoader, lookup Lookup,
 
 // DescendRecipePluginArtifacts is Phase B of the two-pass pipeline-plugin descent:
 // it rediscovers the Plugin entities Phase A pinned (by walking c.Entities for
-// KindHint==pluginKindHint), loads each entity body to read spec.plugin (the .wasm
-// artifact reference), resolves that reference through ResolvePlugin, and pins
+// KindHint==pluginKindHint), loads each entity body to derive its .wasm artifact
+// reference from its identity, resolves that reference through ResolvePlugin, and pins
 // the artifact onto the plugin axis (c.Plugins). It runs AFTER the caller has
 // re-folded the lazy index from the Phase-A-augmented closure, so LoadPlugin
 // resolves a just-pinned plugin entity that Phase A discovered.
@@ -209,16 +209,17 @@ func DescendRecipePluginArtifacts(c *Closure, loader RecipeLoader, lookup Lookup
 	sort.Strings(entityURIs)
 
 	for _, entityURI := range entityURIs {
-		// Load the entity body to read spec.plugin (the .wasm artifact reference),
-		// then resolve and pin the ARTIFACT onto the plugin axis. The entity →
-		// spec.plugin step here is a plain field read; it is deliberately NOT factored
-		// into a shared func with the load-time entity-front (a different catalog-access
-		// path serving the same trivial field), so leave the two independent.
+		// Load the entity body to derive its .wasm artifact reference, then resolve
+		// and pin the ARTIFACT onto the plugin axis. The derivation runs through the
+		// single entity → artifact-reference helper (Plugin.ArtifactReference) so
+		// the lock-time reference and the load-time entity-front derive the same
+		// bare identity; only the closure shape here stays independent of the load
+		// path, per the two-pass descent's deliberate structural separation.
 		wp, err := loader.LoadPlugin(entityURI)
 		if err != nil {
 			return fmt.Errorf("resolve: load wasm plugin entity %q for artifact descent: %w", entityURI, err)
 		}
-		artifactURI := wp.Spec.Plugin
+		artifactURI := wp.ArtifactReference()
 		if artifactURI == "" {
 			continue
 		}

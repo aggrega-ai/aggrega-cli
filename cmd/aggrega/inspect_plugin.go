@@ -78,7 +78,7 @@ func renderPluginFile(_ *workspaceconfig.ResolvedWorkspace, path string, data []
 
 	renderHeader(opts, "Plugin", identifier)
 
-	plugin := wp.Spec.Plugin
+	plugin := wp.ArtifactReference()
 	if plugin == "" {
 		plugin = "(none declared)"
 	}

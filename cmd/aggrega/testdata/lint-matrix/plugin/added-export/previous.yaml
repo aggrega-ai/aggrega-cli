@@ -5,7 +5,6 @@ metadata:
   version: 1.0.0
   description: A partner-authored rendering plugin.
 spec:
-  plugin: oci://hub.aggrega.ai/plugin/provider/custom-renderer
   pluginType: provider
   abiVersion: v1alpha1
   targets:

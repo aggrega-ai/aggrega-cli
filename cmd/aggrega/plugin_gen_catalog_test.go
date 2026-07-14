@@ -25,22 +25,21 @@ import (
 func writeEmbeddedOverlays(t *testing.T, dir string) {
 	t.Helper()
 	for _, uri := range embedded.URIs() {
-		name := uri
-		if i := strings.LastIndex(name, "/"); i >= 0 {
-			name = name[i+1:]
+		leaf := uri
+		if i := strings.LastIndex(leaf, "/"); i >= 0 {
+			leaf = leaf[i+1:]
 		}
 		overlay := `# SPDX-License-Identifier: Apache-2.0
 apiVersion: aggrega.ai/v1alpha1
 kind: Plugin
 metadata:
-  name: ` + name + `
+  name: ` + uri + `
 spec:
-  plugin: ` + uri + `
   runtime:
     maxMemoryPages: 4096
     timeoutMs: 300000
 `
-		writeFixture(t, filepath.Join(dir, name+".yaml"), overlay)
+		writeFixture(t, filepath.Join(dir, leaf+".yaml"), overlay)
 	}
 }
 
@@ -82,9 +81,6 @@ func TestGenCatalogFromEmbeddedContractFieldsMatchDescribe(t *testing.T) {
 	wantVersion := collectVersionInfo().Version
 	for _, uri := range embedded.URIs() {
 		name := uri
-		if i := strings.LastIndex(name, "/"); i >= 0 {
-			name = name[i+1:]
-		}
 		raw, ok := embedded.LookupDescriptor(uri)
 		if !ok {
 			t.Fatalf("no embedded descriptor for %s (build the guests first)", uri)
@@ -99,8 +95,8 @@ func TestGenCatalogFromEmbeddedContractFieldsMatchDescribe(t *testing.T) {
 		if entity.Metadata.Version != wantVersion {
 			t.Errorf("%s: metadata.version = %q, want binary version %q", name, entity.Metadata.Version, wantVersion)
 		}
-		if entity.Spec.Plugin != uri {
-			t.Errorf("%s: spec.plugin = %q, want overlay value %q", name, entity.Spec.Plugin, uri)
+		if entity.Metadata.Name != uri {
+			t.Errorf("%s: metadata.name = %q, want bare identity %q", name, entity.Metadata.Name, uri)
 		}
 		if entity.Spec.PluginType != string(desc.PluginType) {
 			t.Errorf("%s: pluginType = %q, want %q", name, entity.Spec.PluginType, desc.PluginType)
@@ -164,11 +160,7 @@ func TestGenCatalogIdempotent(t *testing.T) {
 
 	version := collectVersionInfo().Version
 	for _, uri := range embedded.URIs() {
-		name := uri
-		if i := strings.LastIndex(name, "/"); i >= 0 {
-			name = name[i+1:]
-		}
-		rel := filepath.Join(name, version, genCatalogPluginFilename)
+		rel := filepath.Join(filepath.FromSlash(uri), version, genCatalogPluginFilename)
 		a, err := os.ReadFile(filepath.Join(outA, rel))
 		if err != nil {
 			t.Fatalf("read A %s: %v", rel, err)
@@ -198,21 +190,17 @@ func TestGenCatalogDescriptionOmittedWhenAbsent(t *testing.T) {
 	}
 	version := collectVersionInfo().Version
 	for _, uri := range embedded.URIs() {
-		name := uri
-		if i := strings.LastIndex(name, "/"); i >= 0 {
-			name = name[i+1:]
-		}
 		raw, _ := embedded.LookupDescriptor(uri)
 		_, description, err := parseDescriptorJSON(raw)
 		if err != nil {
 			t.Fatalf("parse descriptor %s: %v", uri, err)
 		}
-		entity := readGeneratedEntity(t, outDir, name, version)
+		entity := readGeneratedEntity(t, outDir, uri, version)
 		if description == "" && entity.Metadata.Description != "" {
-			t.Errorf("%s: description emitted %q though guest reports none", name, entity.Metadata.Description)
+			t.Errorf("%s: description emitted %q though guest reports none", uri, entity.Metadata.Description)
 		}
 		if description != "" && entity.Metadata.Description != description {
-			t.Errorf("%s: description = %q, want guest value %q", name, entity.Metadata.Description, description)
+			t.Errorf("%s: description = %q, want guest value %q", uri, entity.Metadata.Description, description)
 		}
 	}
 }
@@ -240,7 +228,6 @@ kind: Plugin
 metadata:
   name: linter/publishing-linter
 spec:
-  plugin: oci://`+registry+`/plugin/linter/publishing-linter
   runtime:
     maxMemoryPages: 4096
     timeoutMs: 300000
@@ -262,12 +249,9 @@ spec:
 		t.Fatalf("parse generated entity: %v", err)
 	}
 
-	// spec.plugin resolves to the .wasm push location built from metadata.name.
+	// The .wasm push location is derived from the entity's bare identity
+	// (metadata.name); the entity carries no spec.plugin field.
 	wantLocation := buildPushReference(registry, "Plugin", "", entity.Metadata.Name)
-	gotLocation := strings.TrimPrefix(entity.Spec.Plugin, "oci://")
-	if gotLocation != wantLocation {
-		t.Errorf("spec.plugin location = %q, want push location %q", gotLocation, wantLocation)
-	}
 
 	cfg := pushConfig{PluginPath: wasmPath, DryRun: true}
 	var out bytes.Buffer
@@ -320,9 +304,8 @@ func TestGenCatalogRejectsInvalidWorkloadSchema(t *testing.T) {
 apiVersion: aggrega.ai/v1alpha1
 kind: Plugin
 metadata:
-  name: ` + name + `
+  name: ` + uri + `
 spec:
-  plugin: ` + uri + `
   runtime:
     maxMemoryPages: 4096
     timeoutMs: 300000

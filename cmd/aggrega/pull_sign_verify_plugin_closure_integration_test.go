@@ -45,7 +45,6 @@ metadata:
   name: ` + socketName + `
   version: "` + version + `"
 spec:
-  plugin: "oci://` + host + `/plugin/` + socketName + `"
   pluginType: frp_step
   abiVersion: v1alpha1
   exports:

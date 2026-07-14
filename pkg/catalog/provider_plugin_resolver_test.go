@@ -20,7 +20,6 @@ metadata:
   name: ` + name + `
   version: ` + version + `
 spec:
-  plugin: "oci://hub.aggrega.ai/plugins/core/` + name + `"
   pluginType: provider
   abiVersion: v1alpha1
   targets:
@@ -51,7 +50,6 @@ metadata:
   name: helm-pipeline-step
   version: 1.0.0
 spec:
-  plugin: "oci://hub.aggrega.ai/plugins/core/helm-pipeline-step"
   pluginType: frp_step
   abiVersion: v1alpha1
   targets:
@@ -172,7 +170,7 @@ func TestProviderPluginBindingDisambiguates(t *testing.T) {
 		t.Fatalf("LoadAll: %v", err)
 	}
 
-	bindings := map[string]string{"helm": "oci://hub.aggrega.ai/plugins/core/helm-renderer-alt"}
+	bindings := map[string]string{"helm": "helm-renderer-alt"}
 	got, ok, rerr := cat.ProviderPluginForTarget("helm", bindings)
 	if rerr != nil || !ok {
 		t.Fatalf("ProviderPluginForTarget with a binding: got (ok=%v, err=%v); want the bound plugin", ok, rerr)
@@ -182,7 +180,7 @@ func TestProviderPluginBindingDisambiguates(t *testing.T) {
 	}
 
 	// A binding naming a plugin no candidate matches is a loud, unfulfillable halt.
-	_, ok, rerr = cat.ProviderPluginForTarget("helm", map[string]string{"helm": "oci://hub.aggrega.ai/plugins/core/nonexistent"})
+	_, ok, rerr = cat.ProviderPluginForTarget("helm", map[string]string{"helm": "nonexistent"})
 	if ok || !errors.Is(rerr, catalog.ErrProviderBindingUnsatisfied) {
 		t.Errorf("an unsatisfiable binding must return ErrProviderBindingUnsatisfied; got (ok=%v, err=%v)", ok, rerr)
 	}
@@ -204,7 +202,7 @@ func TestProviderPluginBindingPreservesVersionCoexistence(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadAll: %v", err)
 	}
-	bindings := map[string]string{"helm": "oci://hub.aggrega.ai/plugins/core/helm-renderer"}
+	bindings := map[string]string{"helm": "helm-renderer"}
 
 	v1, ok, rerr := cat.ProviderPluginForTarget("helm:1.0.0", bindings)
 	if rerr != nil || !ok || v1.Metadata.Version != "1.0.0" {

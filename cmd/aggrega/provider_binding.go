@@ -42,7 +42,7 @@ func runProviderBindingHelper(target string, candidates []types.Plugin, root str
 	}
 	fmt.Fprintf(out, "Render target %q is served by more than one provider plugin. Choose which renders it:\n", target)
 	for i, p := range candidates {
-		fmt.Fprintf(out, "  [%d] %s  (%s)\n", i+1, p.Metadata.Name, p.Spec.Plugin)
+		fmt.Fprintf(out, "  [%d] %s  (%s)\n", i+1, p.Metadata.Name, p.Metadata.Version)
 	}
 	fmt.Fprintf(out, "Enter a number [1-%d]: ", len(candidates))
 
@@ -58,10 +58,10 @@ func runProviderBindingHelper(target string, candidates []types.Plugin, root str
 	chosen := candidates[choice-1]
 
 	configPath := filepath.Join(root, workspaceconfig.ConfigFilename)
-	if err := workspaceconfig.UpsertProviderBinding(configPath, target, chosen.Spec.Plugin); err != nil {
+	if err := workspaceconfig.UpsertProviderBinding(configPath, target, chosen.Metadata.Name); err != nil {
 		return fmt.Errorf("provider binding helper: write %s: %w", configPath, err)
 	}
-	wsCfg.Plugins.Providers = workspaceconfig.UpsertProviderRef(wsCfg.Plugins.Providers, target, chosen.Spec.Plugin)
-	fmt.Fprintf(out, "Recorded plugins.providers entry for %q = %s in %s\n", target, chosen.Spec.Plugin, configPath)
+	wsCfg.Plugins.Providers = workspaceconfig.UpsertProviderRef(wsCfg.Plugins.Providers, target, chosen.Metadata.Name)
+	fmt.Fprintf(out, "Recorded plugins.providers entry for %q = %s in %s\n", target, chosen.Metadata.Name, configPath)
 	return nil
 }

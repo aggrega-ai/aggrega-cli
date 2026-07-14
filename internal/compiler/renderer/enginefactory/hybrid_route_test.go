@@ -29,9 +29,8 @@ func terraformRouteCatalog() resolver.CatalogLookup {
 			return types.Plugin{
 				APIVersion: "aggrega.ai/v1alpha1",
 				Kind:       "Plugin",
-				Metadata:   types.PluginMetadata{Name: "terraform-renderer", Version: "1.0.0"},
+				Metadata:   types.PluginMetadata{Name: "provider/terraform", Version: "1.0.0"},
 				Spec: types.PluginSpec{
-					Plugin:     "oci://hub.aggrega.ai/plugin/provider/terraform",
 					PluginType: "provider",
 					AbiVersion: "v1alpha1",
 					Targets:    []string{"terraform"},

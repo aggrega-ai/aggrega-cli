@@ -203,7 +203,7 @@ func makeResolverFromCobra(cmd *cobra.Command) func(string, bool) bool {
 
 // lintEntityHeader is the minimum YAML envelope lint parses out of
 // the proposed entity file: kind, metadata.name, metadata.version,
-// metadata.labels, spec.extends, spec.target, and spec.plugin. Mirrors
+// metadata.labels, spec.extends, and spec.target. Mirrors
 // pushEntityHeader's shape and extends it for narrowing-rule parent
 // resolution and the core-plugin evolution-gate exemption.
 type lintEntityHeader struct {
@@ -216,7 +216,6 @@ type lintEntityHeader struct {
 	Spec struct {
 		Extends string `yaml:"extends"`
 		Target  string `yaml:"target"`
-		Plugin  string `yaml:"plugin"`
 	} `yaml:"spec"`
 }
 
@@ -244,17 +243,17 @@ func defaultRuleIDs(prePublish bool) []string {
 	return rules
 }
 
-// pluginIsCore reports whether a Plugin entity's spec.plugin names one of the
+// pluginIsCore reports whether a Plugin entity's identity names one of the
 // built-in plugins shipped inside the binary. The embedded set enumerates the
-// digest-free repository references the built-ins register under — the same
-// reference shape a Plugin entity's spec.plugin carries — so membership is an
+// bare identities (<socket>/<name>) the built-ins register under — the same
+// identity shape a Plugin entity's metadata.name carries — so membership is an
 // exact-string match against that set.
-func pluginIsCore(pluginRef string) bool {
-	if pluginRef == "" {
+func pluginIsCore(identity string) bool {
+	if identity == "" {
 		return false
 	}
 	for _, uri := range embedded.URIs() {
-		if uri == pluginRef {
+		if uri == identity {
 			return true
 		}
 	}
@@ -278,9 +277,10 @@ func lintRun(cfg lintConfig) error {
 	wsCfg := rw.Config()
 
 	// The workspace-config linter URI is a Plugin entity URI; the entity-front
-	// reads spec.plugin from the catalog. A lazy lookup over the workspace catalog
-	// dirs serves the entity by URI. The --plugin override path is artifact-direct
-	// and never consults this, so the catalog is built only for the URI path.
+	// derives the entity's artifact reference from its identity. A lazy lookup over
+	// the workspace catalog dirs serves the entity by URI. The --plugin override
+	// path is artifact-direct and never consults this, so the catalog is built only
+	// for the URI path.
 	var pluginByURI func(uri string) (types.Plugin, bool)
 	if cfg.PluginPath == "" {
 		dirs := resolveCatalogDirs(nil, wsCfg, rw.Root())
@@ -314,7 +314,7 @@ func lintRun(cfg lintConfig) error {
 	// skip the previous-version fetch a non-core plugin would perform. The
 	// exemption short-circuits before any registry consultation.
 	prePublish := cfg.PrePublish
-	if cfg.PrePublish && header.Kind == "Plugin" && pluginIsCore(header.Spec.Plugin) {
+	if cfg.PrePublish && header.Kind == "Plugin" && pluginIsCore(header.Metadata.Name) {
 		fmt.Fprintf(cfg.DiagOut, "core plugin: publish evolution gate not applicable\n")
 		prePublish = false
 	}
@@ -412,9 +412,9 @@ func downgradeRuleToWarning(findings []validator.LinterFinding, ruleID string) [
 // override: a direct artifact path read verbatim through the cascade's override,
 // bypassing the entity model. The workspace config's plugins.linter[0].uri is a
 // Plugin entity URI, resolved through the shared entity-front: entity URI →
-// spec.plugin → the cascade (embed → sidecar → local → cache), so the linter
-// sees the same entity model and the same tier model every plugin socket does,
-// including the embedded built-ins and the operator's sidecar directory.
+// artifact reference → the cascade (embed → sidecar → local → cache), so the
+// linter sees the same entity model and the same tier model every plugin socket
+// does, including the embedded built-ins and the operator's sidecar directory.
 //
 // Only the entity-URI path carries a capability claim and runtime limits: the
 // entity-front attaches them from the in-hand Plugin entity, so the linter load
@@ -423,10 +423,11 @@ func downgradeRuleToWarning(findings []validator.LinterFinding, ruleID string) [
 // and nil limits — the cross-check is skipped and the loader applies the
 // platform default caps.
 //
-// pluginByURI translates a Plugin entity URI to its spec.plugin artifact
-// reference, supplied by the caller from the catalog (nil in a catalog-less path,
-// where a configured entity URI then halts as not-an-entity). The --plugin
-// override path does not consult it — the escape hatch is artifact-direct.
+// pluginByURI serves a Plugin entity by URI from the catalog, supplied by the
+// caller (nil in a catalog-less path, where a configured entity URI then halts as
+// not-an-entity); the entity-front derives the artifact reference from the
+// entity's identity. The --plugin override path does not consult it — the escape
+// hatch is artifact-direct.
 //
 // The linter passes NO digest pins: it lints a not-yet-pinned proposed entity
 // at publish time, so there is no lockfile to verify the plugin against. It
@@ -466,7 +467,7 @@ func resolveLinterPlugin(cliFlag string, wsCfg workspaceconfig.Config, pluginByU
 		if !ok {
 			return "", nil, nil, false
 		}
-		return entity.Spec.Plugin, resolver.PluginCapabilityClaim(entity), resolver.PluginRuntimeLimits(entity), true
+		return entity.ArtifactReference(), resolver.PluginCapabilityClaim(entity), resolver.PluginRuntimeLimits(entity), true
 	}, cascade.Resolve)
 	return front(uri)
 }
