@@ -215,7 +215,7 @@ func BindEntityLocation(registry, kindHint, uri string) (location string, ok boo
 	if registry == "" {
 		return "", false
 	}
-	kind := entityKindForHint(kindHint)
+	kind := EntityKindForHint(kindHint)
 	if kind == "" {
 		return "", false
 	}
@@ -227,14 +227,19 @@ func BindEntityLocation(registry, kindHint, uri string) (location string, ok boo
 	return ref, true
 }
 
-// entityKindForHint maps a closure KindHint to the catalog kind the OCI location
+// EntityKindForHint maps a closure KindHint to the catalog kind the OCI location
 // rule expects for a registry-resolved entity, covering both the core-catalog
 // tier (ociKindForHint) and the sub-aggregate tier, whose bare-name pull binds
 // through the same location rule under the "Aggregate" kind. It is the
 // location-binding counterpart of the pull-tier dispatch, so an entity that
 // resolves from a registry maps to a location for verify exactly as it did for
 // the pull.
-func entityKindForHint(hint string) string {
+//
+// It is the single home for the KindHint-to-catalog-kind normalization: the
+// pull-time verify pass derives an entity's canonical kind through it (to
+// consult the org signing policy), so the kind vocabulary is not re-spelled at
+// the call site.
+func EntityKindForHint(hint string) string {
 	if hint == "aggregate" {
 		return "Aggregate"
 	}

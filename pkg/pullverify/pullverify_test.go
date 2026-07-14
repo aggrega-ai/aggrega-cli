@@ -179,6 +179,76 @@ func TestVerifyMissingSignatureToleratedWhenUnknown(t *testing.T) {
 	}
 }
 
+// TestVerifyOrgPolicyRequiresSignatureForKind proves the org layer: a registry
+// with NO per-registry requires_signatures still rejects an unsigned artifact
+// of a kind the workspace signing policy scopes in — the org policy, not the
+// registry, forces the requirement.
+func TestVerifyOrgPolicyRequiresSignatureForKind(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	store := memory.New()
+	dg, err := oci.Push(ctx, store, "1.0.0", oci.MediaTypeComponent, []byte("kind: Component\n"))
+	if err != nil {
+		t.Fatalf("Push: %v", err)
+	}
+	cfg := workspaceconfig.Config{
+		Signing: workspaceconfig.SigningConfig{Required: true, Kinds: []string{"Component"}},
+	}
+	ent := pullverify.Entity{URI: "org.example.com/component/x", ManifestDigest: dg, Host: "org.example.com", Kind: "Component"}
+	_, verr := pullverify.Verify(ctx, []pullverify.Entity{ent}, pullverify.Options{
+		Config: cfg,
+		Target: targetForStore(store, "1.0.0"),
+	})
+	if !errors.Is(verr, signing.ErrNoSignatureFound) {
+		t.Fatalf("an unsigned in-scope kind under the org policy must halt with ErrNoSignatureFound, got %v", verr)
+	}
+}
+
+// TestVerifyOrgPolicyOutOfScopeToleratesMissing proves the org policy is
+// kind-scoped: an artifact whose kind is not in signing.kinds is tolerated when
+// unsigned even with the policy on.
+func TestVerifyOrgPolicyOutOfScopeToleratesMissing(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	store := memory.New()
+	dg, _ := oci.Push(ctx, store, "1.0.0", oci.MediaTypeComponent, []byte("kind: Component\n"))
+	cfg := workspaceconfig.Config{
+		Signing: workspaceconfig.SigningConfig{Required: true, Kinds: []string{"Plugin"}},
+	}
+	ent := pullverify.Entity{URI: "org.example.com/component/x", ManifestDigest: dg, Host: "org.example.com", Kind: "Component"}
+	results, verr := pullverify.Verify(ctx, []pullverify.Entity{ent}, pullverify.Options{
+		Config: cfg,
+		Target: targetForStore(store, "1.0.0"),
+	})
+	if verr != nil {
+		t.Fatalf("an out-of-scope kind must not halt, got %v", verr)
+	}
+	if len(results) != 0 {
+		t.Errorf("out-of-scope unsigned kind should record no fact, got %d", len(results))
+	}
+}
+
+// TestVerifyOrgPolicyFailSafeEmptyKind proves the fail-safe: when the org policy
+// is active but an artifact's kind cannot be classified, the pass does not
+// silently exempt it — it requires a signature and halts on a missing one.
+func TestVerifyOrgPolicyFailSafeEmptyKind(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	store := memory.New()
+	dg, _ := oci.Push(ctx, store, "1.0.0", oci.MediaTypeComponent, []byte("kind: Component\n"))
+	cfg := workspaceconfig.Config{
+		Signing: workspaceconfig.SigningConfig{Required: true},
+	}
+	ent := pullverify.Entity{URI: "org.example.com/x", ManifestDigest: dg, Host: "org.example.com", Kind: ""}
+	_, verr := pullverify.Verify(ctx, []pullverify.Entity{ent}, pullverify.Options{
+		Config: cfg,
+		Target: targetForStore(store, "1.0.0"),
+	})
+	if !errors.Is(verr, signing.ErrNoSignatureFound) {
+		t.Fatalf("an unclassifiable artifact under an active org policy must halt with ErrNoSignatureFound, got %v", verr)
+	}
+}
+
 // TestVerifyAdvisoryDowngradesFailure proves an advisory registry
 // downgrades a verification failure to a warning and continues.
 func TestVerifyAdvisoryDowngradesFailure(t *testing.T) {

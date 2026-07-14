@@ -232,21 +232,6 @@ func pushRun(cfg pushConfig) error {
 		return fmt.Errorf("aggrega push: no destination registry; set --registry or workspace.default_registry")
 	}
 
-	// Signing policy. The destination registry may require signatures; if
-	// so, signing is on by default and an unsigned push is refused
-	// outright. An explicit --sign value overrides the default for whether
-	// to sign, but never relaxes the refusal: there is no flag to push
-	// unsigned content to a signature-requiring registry.
-	requiresSignatures := wsCfg.RegistryRequiresSignatures(registryhost.Of(registry))
-	wantSign := requiresSignatures
-	if cfg.Sign != nil {
-		wantSign = *cfg.Sign
-	}
-	if requiresSignatures && !wantSign {
-		return fmt.Errorf("aggrega push: registry %q requires signatures; re-run signing the artifact (there is no flag to push unsigned content here): %w",
-			registry, signing.ErrUnsignedPushRefused)
-	}
-
 	data, err := os.ReadFile(cfg.EntityPath)
 	if err != nil {
 		return fmt.Errorf("aggrega push: read %s: %w", cfg.EntityPath, err)
@@ -263,6 +248,36 @@ func pushRun(cfg pushConfig) error {
 	}
 	if header.Metadata.Version == "" {
 		return fmt.Errorf("aggrega push: %s: missing metadata.version", cfg.EntityPath)
+	}
+
+	// Signing policy. A push is refused unsigned when EITHER the destination
+	// registry requires signatures OR the workspace signing policy requires a
+	// signature for this artifact kind. Signing is on by default whenever
+	// either condition holds. An explicit --sign value overrides the default
+	// for whether to sign, but never relaxes the refusal: there is no flag to
+	// push unsigned content when a signature is required. The kind is read from
+	// the entity header (parsed above) so the org policy's kind scope can be
+	// evaluated before any bytes reach the registry — the refusal, like the
+	// per-registry one, halts before the push network call so an unsigned
+	// artifact never leaks.
+	requiresSignatures := wsCfg.RegistryRequiresSignatures(registryhost.Of(registry))
+	orgRequired := wsCfg.SigningRequiredForKind(header.Kind)
+	wantSign := requiresSignatures || orgRequired
+	if cfg.Sign != nil {
+		wantSign = *cfg.Sign
+	}
+	if (requiresSignatures || orgRequired) && !wantSign {
+		// Distinguish the cause: the org-policy refusal names the kind and
+		// wraps its own sentinel; the per-registry refusal keeps the
+		// registry-specific message and sentinel. When both conditions hold the
+		// registry requirement is reported (it is the more specific
+		// destination-scoped cause).
+		if requiresSignatures {
+			return fmt.Errorf("aggrega push: registry %q requires signatures; re-run signing the artifact (there is no flag to push unsigned content here): %w",
+				registry, signing.ErrUnsignedPushRefused)
+		}
+		return fmt.Errorf("aggrega push: the signing policy requires a signature for kind %q; re-run signing the artifact (there is no flag to push unsigned content here): %w",
+			header.Kind, signing.ErrSigningPolicyRequiresSignature)
 	}
 
 	// A Plugin publishes as ONE manifest — the entity YAML as the config blob,

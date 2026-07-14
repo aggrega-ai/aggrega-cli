@@ -58,6 +58,14 @@ type Entity struct {
 	// whose URI already carries the reference; the target factory then falls
 	// back to the URI.
 	Location string
+	// Kind is the entity's canonical catalog kind (PascalCase, e.g. "Component"
+	// or "Plugin"), used to consult the workspace signing policy's kind scope.
+	// The collection site derives it from the closure kind hint through the
+	// single kind-normalization primitive. Empty when the kind could not be
+	// classified, in which case an active org signing policy still requires a
+	// signature (the fail-safe below refuses to silently exempt an
+	// unclassifiable artifact).
+	Kind string
 }
 
 // Result is the verified-signature fact for one entity, plus the cached
@@ -118,10 +126,22 @@ func Verify(ctx context.Context, entities []Entity, opts Options) ([]Result, err
 		}
 		policy, configured := opts.Config.RegistryTrustPolicy(host)
 
-		// Default-for-unknown: a host with no explicit policy and no
-		// baseline verifies only if a signature is present, and never
+		// A signature is required when EITHER the registry's own trust policy
+		// requires it OR the workspace signing policy requires it for this
+		// entity's kind. The org layer forces a signature on an in-scope kind
+		// even from a registry that carries no per-registry requires_signatures.
+		orgRequired := opts.Config.SigningRequiredForKind(e.Kind)
+		// Fail-safe: an active org signing policy must not silently exempt an
+		// unclassifiable artifact. When the policy is on but the kind could not
+		// be determined, require a signature rather than tolerate a missing one.
+		if opts.Config.Signing.Required && e.Kind == "" {
+			orgRequired = true
+		}
+
+		// Default-for-unknown: a host with no explicit policy, no baseline, and
+		// no org requirement verifies only if a signature is present, and never
 		// halts on a missing one.
-		requireSignature := configured && policy.RequiresSignatures
+		requireSignature := (configured && policy.RequiresSignatures) || orgRequired
 
 		if policy.SkipVerification {
 			warn(fmt.Sprintf("signature verification skipped for registry %q (skip_verification: true)", host))

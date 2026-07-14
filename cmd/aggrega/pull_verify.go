@@ -98,6 +98,11 @@ func verifyClosureSignatures(ctx context.Context, lf *lockfile.Lockfile, cl clos
 				ManifestDigest: e.ManifestDigest,
 				Host:           host,
 				Location:       location,
+				// Derive the canonical PascalCase kind from the closure kind
+				// hint through the single normalization primitive so the verify
+				// pass can consult the org signing policy's kind scope without
+				// re-spelling the kind vocabulary.
+				Kind: catalog.EntityKindForHint(e.KindHint),
 			})
 		}
 		return nil

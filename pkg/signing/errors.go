@@ -68,3 +68,14 @@ var ErrTrustRootLoad = errors.New("signing: cannot load pinned trust root")
 // (or target a registry that does not require signatures) before the
 // push can proceed.
 var ErrUnsignedPushRefused = errors.New("signing: registry requires signatures; refusing to push unsigned content")
+
+// ErrSigningPolicyRequiresSignature is returned when the workspace signing
+// policy requires a signature for the artifact kind being published and the
+// push is unsigned. It is the org-policy counterpart of
+// ErrUnsignedPushRefused: the requirement comes from the workspace policy
+// (which applies to a scoped set of artifact kinds regardless of the
+// destination registry), not from the destination registry's own
+// signature requirement. Publishing an in-scope kind unsigned is refused
+// outright — there is no flag to override it — and the operator must sign
+// the artifact before the push can proceed.
+var ErrSigningPolicyRequiresSignature = errors.New("signing: signing policy requires a signature for this artifact kind; refusing to push unsigned content")
