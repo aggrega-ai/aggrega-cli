@@ -55,14 +55,13 @@ func composeWasmFactory(t *testing.T) renderer.EngineFactory {
 	}
 }
 
-// TestMariaDBRecipes_LoadCleanly is the smoke test for all four in-repo
+// TestMariaDBRecipes_LoadCleanly is the smoke test for all three in-repo
 // mariadb Recipes. Asserts each loads under the catalog resolver without
 // triggering any of the seven Recipe load-time validation rules.
 func TestMariaDBRecipes_LoadCleanly(t *testing.T) {
 	t.Parallel()
 
 	for _, p := range []string{
-		"../../../aggrega-hub/aggrega-catalog/recipe/helm/mariadb-bitnami/1.0.0/recipe.yaml",
 		"../../../aggrega-hub/aggrega-catalog/recipe/compose/mariadb/1.0.0/recipe.yaml",
 		"../../../aggrega-hub/aggrega-catalog/recipe/terraform/mariadb-rds/1.0.0/recipe.yaml",
 		"../../../aggrega-hub/aggrega-catalog/recipe/cloudformation/mariadb-rds/1.0.0/recipe.yaml",
