@@ -31,7 +31,38 @@ func UpsertRegistry(path string, reg RegistryConfig) error {
 	if reg.Host == "" {
 		return fmt.Errorf("workspaceconfig: UpsertRegistry: registry host is required")
 	}
+	return mutateConfigDocument(path, func(mapping *yaml.Node) error {
+		registries := readRegistries(mapping)
+		replaced := false
+		for i := range registries {
+			if registries[i].Host == reg.Host {
+				registries[i] = reg
+				replaced = true
+				break
+			}
+		}
+		if !replaced {
+			registries = append(registries, reg)
+		}
 
+		var regNode yaml.Node
+		if err := regNode.Encode(registries); err != nil {
+			return fmt.Errorf("workspaceconfig: encode registries: %w", err)
+		}
+		setMappingKey(mapping, "registries", &regNode)
+		return nil
+	})
+}
+
+// mutateConfigDocument is the single config-file write scaffold every by-key
+// writer routes through. It reads the workspace config at path (schema-validating
+// the existing content before it parses, or seeding a fresh `workspace: {}`
+// document when no file exists yet), hands the root mapping node to mutate for
+// the caller's targeted node surgery, then validates the merged document against
+// the config schema before writing it back — so a malformed result never reaches
+// disk and the read-guard, seed, schema-gate, and ordered-write discipline live
+// in one place rather than being re-derived per writer.
+func mutateConfigDocument(path string, mutate func(mapping *yaml.Node) error) error {
 	var root yaml.Node
 	data, rerr := os.ReadFile(path)
 	switch {
@@ -57,24 +88,9 @@ func UpsertRegistry(path string, reg RegistryConfig) error {
 		return fmt.Errorf("workspaceconfig: %s: top-level document is not a mapping", path)
 	}
 
-	registries := readRegistries(mapping)
-	replaced := false
-	for i := range registries {
-		if registries[i].Host == reg.Host {
-			registries[i] = reg
-			replaced = true
-			break
-		}
+	if err := mutate(mapping); err != nil {
+		return err
 	}
-	if !replaced {
-		registries = append(registries, reg)
-	}
-
-	var regNode yaml.Node
-	if err := regNode.Encode(registries); err != nil {
-		return fmt.Errorf("workspaceconfig: encode registries: %w", err)
-	}
-	setMappingKey(mapping, "registries", &regNode)
 
 	out, merr := yaml.Marshal(&root)
 	if merr != nil {
@@ -106,48 +122,78 @@ func UpsertProviderBinding(path, target, plugin string) error {
 	if target == "" || plugin == "" {
 		return fmt.Errorf("workspaceconfig: UpsertProviderBinding: target and plugin are required")
 	}
+	return mutateConfigDocument(path, func(mapping *yaml.Node) error {
+		pluginsNode := getOrCreateMapping(mapping, "plugins")
+		providers := UpsertProviderRef(readProviderBindings(pluginsNode), target, plugin)
 
-	var root yaml.Node
-	data, rerr := os.ReadFile(path)
-	switch {
-	case rerr == nil:
-		if verr := validateBytes(data, path); verr != nil {
-			return verr
+		var provNode yaml.Node
+		if err := provNode.Encode(providers); err != nil {
+			return fmt.Errorf("workspaceconfig: encode providers: %w", err)
 		}
-		if uerr := yaml.Unmarshal(data, &root); uerr != nil {
-			return fmt.Errorf("workspaceconfig: parse existing %s: %w", path, uerr)
+		setMappingKey(pluginsNode, "providers", &provNode)
+		return nil
+	})
+}
+
+// UpsertPluginSocketRef adds the config-socket plugin attachment uri to the
+// `plugins.<socket>` list in the workspace config file at path, preserving every
+// other setting, and writes the result back. socket is the config-socket key
+// (mutator, policy, linter, importer); uri is the bare plugin entity identity
+// (`<socket>/<name>:<version>`). An entry whose URI already matches is left in
+// place — the add is idempotent and never clobbers an existing attachment's
+// other members; a new URI is appended. A file that does not yet exist is
+// created carrying a `workspace: {}` marker and the one attachment.
+//
+// Like UpsertProviderBinding it routes through mutateConfigDocument, rewriting
+// only the `plugins.<socket>` list (creating the `plugins` block if absent) and
+// validating the merged document against the config schema before writing. It is
+// the single config-socket attachment write path, so the node-surgery and
+// schema-gate discipline stay unified with the provider-binding writer. A socket
+// key the schema does not admit is rejected by that merged-document validation
+// rather than silently written.
+func UpsertPluginSocketRef(path, socket, uri string) error {
+	if socket == "" || uri == "" {
+		return fmt.Errorf("workspaceconfig: UpsertPluginSocketRef: socket and uri are required")
+	}
+	return mutateConfigDocument(path, func(mapping *yaml.Node) error {
+		pluginsNode := getOrCreateMapping(mapping, "plugins")
+		refs := upsertPluginRefURI(readPluginRefs(pluginsNode, socket), uri)
+
+		var refsNode yaml.Node
+		if err := refsNode.Encode(refs); err != nil {
+			return fmt.Errorf("workspaceconfig: encode %s refs: %w", socket, err)
 		}
-	case os.IsNotExist(rerr):
-		if err := root.Encode(map[string]any{"workspace": map[string]any{}}); err != nil {
-			return fmt.Errorf("workspaceconfig: seed fresh config: %w", err)
+		setMappingKey(pluginsNode, socket, &refsNode)
+		return nil
+	})
+}
+
+// upsertPluginRefURI appends a bare-URI PluginRef for uri when no existing entry
+// in refs carries it, or returns refs unchanged when one already does. The
+// idempotent no-clobber semantic mirrors UpsertProviderRef: re-adding the same
+// attachment neither duplicates it nor disturbs an entry's other members.
+func upsertPluginRefURI(refs []PluginRef, uri string) []PluginRef {
+	for i := range refs {
+		if refs[i].URI == uri {
+			return refs
 		}
-	default:
-		return fmt.Errorf("workspaceconfig: read %s: %w", path, rerr)
 	}
+	return append(refs, PluginRef{URI: uri})
+}
 
-	mapping := rootMapping(&root)
-	if mapping == nil {
-		return fmt.Errorf("workspaceconfig: %s: top-level document is not a mapping", path)
+// readPluginRefs decodes the existing `<socket>` list from a `plugins` mapping
+// node, or returns nil when the node is absent or carries no entries for socket.
+// It is the PluginRef peer of readProviderBindings.
+func readPluginRefs(pluginsNode *yaml.Node, socket string) []PluginRef {
+	if pluginsNode == nil || pluginsNode.Kind != yaml.MappingNode {
+		return nil
 	}
-
-	pluginsNode := getOrCreateMapping(mapping, "plugins")
-	providers := UpsertProviderRef(readProviderBindings(pluginsNode), target, plugin)
-
-	var provNode yaml.Node
-	if err := provNode.Encode(providers); err != nil {
-		return fmt.Errorf("workspaceconfig: encode providers: %w", err)
-	}
-	setMappingKey(pluginsNode, "providers", &provNode)
-
-	out, merr := yaml.Marshal(&root)
-	if merr != nil {
-		return fmt.Errorf("workspaceconfig: marshal %s: %w", path, merr)
-	}
-	if verr := validateBytes(out, path); verr != nil {
-		return fmt.Errorf("workspaceconfig: merged config failed validation: %w", verr)
-	}
-	if werr := os.WriteFile(path, out, 0o644); werr != nil {
-		return fmt.Errorf("workspaceconfig: write %s: %w", path, werr)
+	for i := 0; i+1 < len(pluginsNode.Content); i += 2 {
+		if pluginsNode.Content[i].Value == socket {
+			var refs []PluginRef
+			_ = pluginsNode.Content[i+1].Decode(&refs)
+			return refs
+		}
 	}
 	return nil
 }
