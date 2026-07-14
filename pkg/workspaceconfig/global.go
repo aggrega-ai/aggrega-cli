@@ -70,7 +70,7 @@ type appendSlices struct {
 	Policy              []PluginRef
 	Linter              []PluginRef
 	Importer            []PluginRef
-	Providers           []ProviderRef
+	Providers           []PluginRef
 }
 
 // captureAppends extracts the seven `_append` slices from a freshly-

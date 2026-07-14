@@ -399,23 +399,24 @@ func (c *Catalog) PluginByURI(uri string) (types.Plugin, bool) {
 	return c.Plugins[key], true
 }
 
-// ProviderPluginForTarget resolves a render target to the provider-rendering
-// Plugin entity that renders it, plus a found flag and an error, honoring an
-// explicit plugins.providers selection. The target ref is the bare engine name
-// ("helm") or a version-pinned form ("helm:1.0.0", "helm:^1.0.0") a Recipe binds
-// through spec.target; the bare name (before any pin) is matched against
-// targets. A pluginType: provider Plugin serves the target names listed in
-// its targets; a linter or frp_step plugin whose targets happens to list the name
-// is excluded — that list carries a different meaning for a non-provider plugin.
+// ProviderPluginForTarget resolves a render-engine capability to the
+// provider-rendering Plugin entity that serves it, plus a found flag and an
+// error, honoring an explicit plugins.providers selection. The ref is the bare
+// capability name ("helm") or a version-pinned form ("helm:1.0.0",
+// "helm:^1.0.0") a Recipe binds through spec.capability; the bare name (before
+// any pin) is matched against each plugin's served capabilities. A pluginType:
+// provider Plugin serves the capabilities listed in its spec.capabilities; a
+// linter or frp_step plugin whose capabilities happen to list the name is
+// excluded — that list carries a different meaning for a non-provider plugin.
 //
 // The bindings map is the workspace-config (at pull) or lockfile-derived (at
-// build) provider selections, keyed by bare target name; each value is a plugin's
-// bare identity (a Plugin's metadata.name) with an optional trailing ":version".
-// When an entry is present for the target, the candidate set is filtered to
-// plugins whose identity matches that value — so the binding SELECTS the plugin
-// repository among competing publishers. A nil
+// build) provider selections, keyed by bare capability name; each value is a
+// plugin's bare identity (a Plugin's metadata.name) with an optional trailing
+// ":version". When an entry is present for the capability, the candidate set is
+// filtered to plugins whose identity matches that value — so the binding SELECTS
+// the plugin repository among competing publishers. A nil
 // or empty bindings map disables that filter (every provider plugin serving the
-// target is a candidate). Version coexistence is orthogonal to the binding: the
+// capability is a candidate). Version coexistence is orthogonal to the binding: the
 // binding selects the repository, and the version is chosen by the recipe's pin,
 // else the binding's optional version, else the highest — via the same three-form
 // version select the other by-name lookups use.
@@ -440,6 +441,29 @@ func (c *Catalog) PluginByURI(uri string) (types.Plugin, bool) {
 // set through the recipeCatalog() *Catalog shell, so its ProviderPluginForTarget
 // delegates here against the same matcher (no per-backing reimplementation).
 func (c *Catalog) ProviderPluginForTarget(ref string, bindings map[string]string) (types.Plugin, bool, error) {
+	return c.pluginForCapability("provider", ref, bindings)
+}
+
+// pluginForCapability is the single generalized capability-resolution core the
+// per-socket resolvers share. Given the plugin type a socket expects and a
+// capability reference (the bare capability name, optionally version-pinned),
+// it filters the catalog to plugins of that type serving the capability,
+// disambiguates the survivors by an optional binding (bare plugin identity),
+// halts loudly on an unresolved ambiguity or an unsatisfiable version pin, and
+// otherwise selects the version via the shared three-form version select.
+//
+// It is the one home for the filter → disambiguate → ambiguity-halt →
+// version-pin sequence: ProviderPluginForTarget is a thin pluginType="provider"
+// specialization delegating here, so the provider socket's behavior is defined
+// by this core rather than a parallel copy. A plugin type whose plugins declare
+// no served capabilities matches nothing here — those sockets attach by URI
+// (direct attach) instead, so routing them through capability resolution is a
+// clean structural miss, not an error.
+//
+// The diagnostics and sentinels are provider-scoped (ErrAmbiguousProviderPlugin
+// and its siblings) because the provider socket is the sole caller today; a
+// second capability-resolving socket would thread its own diagnostic phrasing.
+func (c *Catalog) pluginForCapability(pluginType, ref string, bindings map[string]string) (types.Plugin, bool, error) {
 	name, verSeg, hasVer := splitVersionedURI(ref)
 
 	var bindBase, bindVer string
@@ -452,7 +476,7 @@ func (c *Catalog) ProviderPluginForTarget(ref string, bindings map[string]string
 	matches := map[string]types.Plugin{}
 	distinctNames := map[string]struct{}{}
 	for key, p := range c.Plugins {
-		if p.Spec.PluginType != "provider" {
+		if p.Spec.PluginType != pluginType {
 			continue
 		}
 		if !slices.Contains(p.Spec.Capabilities, name) {

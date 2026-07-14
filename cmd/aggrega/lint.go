@@ -452,11 +452,16 @@ func resolveLinterPlugin(cliFlag string, wsCfg workspaceconfig.Config, pluginByU
 		uri = wsCfg.Plugins.Linter[0].URI
 	}
 	if uri == "" {
-		// No --plugin override and no configured linter URI: fall back to the
-		// built-in publishing-linter embedded in the binary, resolved through the
-		// cascade so its embed tier serves it. Like the --plugin escape hatch, the
-		// built-in path carries a nil capability claim and the platform default
-		// caps.
+		// Unconfigured socket. The per-socket capability-default policy decides
+		// whether an unconfigured socket prefers a capable embedded plugin: the
+		// linter opts in, so it falls back to the built-in publishing-linter
+		// embedded in the binary, resolved through the cascade so its embed tier
+		// serves it. Like the --plugin escape hatch, the built-in path carries a
+		// nil capability claim and the platform default caps. A socket that opted
+		// out would resolve no default here.
+		if !workspaceconfig.SocketPrefersCapabilityDefault(workspaceconfig.SocketLinter) {
+			return pluginpath.ResolvedPlugin{}, fmt.Errorf("no linter plugin configured and the linter socket does not fall back to an embedded default")
+		}
 		return cascade.Resolve(embedded.PublishingLinterURI)
 	}
 	front := pluginpath.EntityLookup(func(entityURI string) (string, *pluginpath.PluginContractClaim, *pluginpath.PluginRuntimeLimits, bool) {

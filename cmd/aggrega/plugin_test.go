@@ -124,7 +124,7 @@ func TestFormatPluginListDeterministic(t *testing.T) {
 	// Deliberately out of URI order to prove the caller sorts before rendering.
 	configured := collectConfiguredRefs(workspaceconfig.Config{
 		Plugins: workspaceconfig.PluginsConfig{
-			Providers: []workspaceconfig.ProviderRef{
+			Providers: []workspaceconfig.PluginRef{
 				{Capability: "helm", URI: "zeta:1.0.0"},
 				{Capability: "compose", URI: "alpha:1.0.0"},
 			},
@@ -271,7 +271,7 @@ func TestCollectConfiguredRefsDedupesAndMergesOrigins(t *testing.T) {
 	t.Parallel()
 	refs := collectConfiguredRefs(workspaceconfig.Config{
 		Plugins: workspaceconfig.PluginsConfig{
-			Providers: []workspaceconfig.ProviderRef{{Capability: "helm", URI: "shared:1.0.0"}},
+			Providers: []workspaceconfig.PluginRef{{Capability: "helm", URI: "shared:1.0.0"}},
 			Linter:    []workspaceconfig.PluginRef{{URI: "shared:1.0.0"}},
 		},
 	})

@@ -430,8 +430,11 @@ type BuildConfig struct {
 // PluginsConfig groups workspace-level Wasm plugin attachments by
 // socket. Each socket invokes its plugins' documented entry function
 // per the socket contract; PluginRef.Function overrides the socket's
-// default when set. Providers is the peer list that binds render
-// targets to the provider-rendering plugins that serve them.
+// default when set. Providers is the peer list that binds render-engine
+// capabilities to the provider-rendering plugins that serve them. Every
+// socket list — the four cross-cutting sockets and the provider bindings
+// — is the one unified PluginRef shape, so a single attachment reference
+// serves every socket.
 //
 // MutatorAppend / PolicyAppend / LinterAppend / ImporterAppend /
 // ProvidersAppend are the merge-time companions for the base lists. At
@@ -439,16 +442,16 @@ type BuildConfig struct {
 // resolved base list for that socket. LoadWithGlobal zeroes these
 // fields on the returned Config.
 type PluginsConfig struct {
-	Mutator         []PluginRef   `yaml:"mutator"`
-	MutatorAppend   []PluginRef   `yaml:"mutator_append"`
-	Policy          []PluginRef   `yaml:"policy"`
-	PolicyAppend    []PluginRef   `yaml:"policy_append"`
-	Linter          []PluginRef   `yaml:"linter"`
-	LinterAppend    []PluginRef   `yaml:"linter_append"`
-	Importer        []PluginRef   `yaml:"importer"`
-	ImporterAppend  []PluginRef   `yaml:"importer_append"`
-	Providers       []ProviderRef `yaml:"providers"`
-	ProvidersAppend []ProviderRef `yaml:"providers_append"`
+	Mutator         []PluginRef `yaml:"mutator"`
+	MutatorAppend   []PluginRef `yaml:"mutator_append"`
+	Policy          []PluginRef `yaml:"policy"`
+	PolicyAppend    []PluginRef `yaml:"policy_append"`
+	Linter          []PluginRef `yaml:"linter"`
+	LinterAppend    []PluginRef `yaml:"linter_append"`
+	Importer        []PluginRef `yaml:"importer"`
+	ImporterAppend  []PluginRef `yaml:"importer_append"`
+	Providers       []PluginRef `yaml:"providers"`
+	ProvidersAppend []PluginRef `yaml:"providers_append"`
 }
 
 // ProviderTargetURIs projects the composed provider list into a
@@ -468,19 +471,38 @@ func (p PluginsConfig) ProviderTargetURIs() map[string]string {
 	return m
 }
 
-// PluginRef references a Wasm plugin attached at a workspace-level
-// socket. URI identifies the plugin (OCI reference, local path, or
-// registry alias). Function overrides the socket's default entry
-// function (mutator → mutate, policy → validate, linter → lint,
-// importer → import); when omitted, the socket's documented default
-// applies. The empty-string value of Function is the "use default"
-// sentinel; consumers apply the per-socket default when Function == "".
-// With carries optional attachment-time inputs the plugin reads; nil
-// when the attachment declares none.
+// PluginRef references a Wasm plugin attached at a workspace-level socket.
+// It is the one unified attachment shape every socket uses — the four
+// cross-cutting sockets (mutator, policy, linter, importer) and the
+// provider-rendering bindings alike — so a single reference type serves all
+// of them.
+//
+// URI and Capability together select the plugin, and their combination reads
+// as the attachment intent:
+//
+//   - URI only — direct attach: the plugin at URI (a Plugin entity's bare
+//     identity, a local path, or a registry alias) is attached verbatim. This
+//     is the cross-cutting sockets' path: their plugins declare no served
+//     capabilities, so a capability lookup would match nothing.
+//   - Capability only — resolve-by-capability: the socket resolves the
+//     plugin serving Capability (the bare engine name a Recipe binds through
+//     spec.capability, e.g. "helm") among the catalog's serving plugins.
+//   - Both — disambiguate/override: Capability names what to resolve and URI
+//     selects which publisher's plugin serves it, by that plugin's bare
+//     identity, in a federated catalog where more than one plugin serves the
+//     capability.
+//
+// Function overrides the socket's default entry function (mutator → mutate,
+// policy → validate, linter → lint, importer → import); when omitted, the
+// socket's documented default applies. The empty-string value of Function is
+// the "use default" sentinel; consumers apply the per-socket default when
+// Function == "". With carries optional attachment-time inputs the plugin
+// reads; nil when the attachment declares none.
 type PluginRef struct {
-	URI      string         `yaml:"uri"`
-	Function string         `yaml:"function,omitempty"`
-	With     *PluginRefWith `yaml:"with,omitempty"`
+	URI        string         `yaml:"uri,omitempty"`
+	Capability string         `yaml:"capability,omitempty"`
+	Function   string         `yaml:"function,omitempty"`
+	With       *PluginRefWith `yaml:"with,omitempty"`
 }
 
 // PluginRefWith carries optional attachment-time inputs a plugin reads.
@@ -492,28 +514,6 @@ type PluginRef struct {
 type PluginRefWith struct {
 	Sources  []string       `yaml:"sources,omitempty"`
 	Settings map[string]any `yaml:"settings,omitempty"`
-}
-
-// ProviderRef binds a render-engine capability to the provider-rendering
-// plugin that serves it. Capability is the bare engine name a Recipe binds
-// through spec.capability (e.g. "helm"); URI is the bare identity of the
-// serving plugin (a Plugin entity's metadata.name, the <socket>/<name> path,
-// e.g. "provider/helm"), with an optional trailing
-// ":version" in the same three forms as a version pin. The binding selects
-// which publisher's plugin renders the capability in a federated catalog where
-// more than one provider plugin serves it; exactly one entry per capability is
-// permitted in the composed list.
-//
-// Function and With mirror the plugin-socket reference shape so the provider
-// list is homogeneous with the other plugin sockets. Provider dispatch
-// resolves a capability to a plugin by identity and version; it does not
-// consume a per-binding Function override or With inputs, so those members
-// carry no effect on provider selection today.
-type ProviderRef struct {
-	Capability string         `yaml:"capability"`
-	URI        string         `yaml:"uri"`
-	Function   string         `yaml:"function,omitempty"`
-	With       *PluginRefWith `yaml:"with,omitempty"`
 }
 
 // LintConfig groups per-rule strictness dials. Future lint

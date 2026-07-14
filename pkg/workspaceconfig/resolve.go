@@ -543,7 +543,7 @@ func loadGlobalLayer() (cfg Config, loaded bool, path string, err error) {
 // the composed provider list binds one render target more than once. The walk
 // is in list order so the error names the first target seen twice, keeping the
 // diagnostic deterministic for a given composed list.
-func checkUniqueProviderTargets(providers []ProviderRef) error {
+func checkUniqueProviderTargets(providers []PluginRef) error {
 	seen := make(map[string]struct{}, len(providers))
 	for _, ref := range providers {
 		if _, dup := seen[ref.Capability]; dup {

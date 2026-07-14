@@ -204,25 +204,25 @@ func readPluginRefs(pluginsNode *yaml.Node, socket string) []PluginRef {
 // single by-target upsert primitive shared by the config-file writer and the
 // interactive pull binding-helper's in-memory update, so both apply the same
 // replace-or-append semantic.
-func UpsertProviderRef(refs []ProviderRef, target, uri string) []ProviderRef {
+func UpsertProviderRef(refs []PluginRef, target, uri string) []PluginRef {
 	for i := range refs {
 		if refs[i].Capability == target {
 			refs[i].URI = uri
 			return refs
 		}
 	}
-	return append(refs, ProviderRef{Capability: target, URI: uri})
+	return append(refs, PluginRef{Capability: target, URI: uri})
 }
 
 // readProviderBindings decodes the existing `providers` list from a `plugins`
 // mapping node, or returns nil when the node is absent or carries no providers.
-func readProviderBindings(pluginsNode *yaml.Node) []ProviderRef {
+func readProviderBindings(pluginsNode *yaml.Node) []PluginRef {
 	if pluginsNode == nil || pluginsNode.Kind != yaml.MappingNode {
 		return nil
 	}
 	for i := 0; i+1 < len(pluginsNode.Content); i += 2 {
 		if pluginsNode.Content[i].Value == "providers" {
-			var refs []ProviderRef
+			var refs []PluginRef
 			_ = pluginsNode.Content[i+1].Decode(&refs)
 			return refs
 		}
