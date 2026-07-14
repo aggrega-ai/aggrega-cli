@@ -5,6 +5,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -37,78 +38,99 @@ func TestFormatProvenance(t *testing.T) {
 	}
 }
 
-// TestRenderPluginEntryProvenanceDisplay proves the version line renders when the
-// descriptor carries provenance and is omitted when it does not.
-func TestRenderPluginEntryProvenanceDisplay(t *testing.T) {
+// TestPluginRowCells covers the four-column table's cell derivation: type and
+// capabilities are blank for a describe failure, capabilities are blank for a
+// cross-cutting linter, and the version cell prefers an abnormal-state label
+// (digest drift, or the readiness label / bare marker on a failure) over the
+// provenance string.
+func TestPluginRowCells(t *testing.T) {
 	t.Parallel()
 
-	stamped := pluginListEntry{
-		source: "embedded",
-		uri:    "oci://hub.aggrega.ai/plugin/provider/helm",
+	provider := pluginListEntry{
 		desc: wasm.PluginDescriptor{
 			PluginType:   wasm.PluginTypeProvider,
 			Capabilities: []string{"helm"},
-			Exports:      []wasm.PluginExport{{Name: "render_node"}, {Name: "assemble_boundary"}},
-			Contract: wasm.ProviderContract{
-				InputKinds:       wasm.InputKinds{Sourced: true, Synthesized: true},
-				BoundaryAssembly: "merge",
-			},
-			Metadata: wasm.PluginDescriptorMeta{Version: "0.4.0", Commit: "abc1234"},
+			Metadata:     wasm.PluginDescriptorMeta{Version: "0.4.0", Commit: "abc1234"},
 		},
 	}
-	var stampedBuf bytes.Buffer
-	renderPluginEntry(&stampedBuf, stamped, map[string]bool{})
-	got := stampedBuf.String()
-	for _, want := range []string{
-		"oci://hub.aggrega.ai/plugin/provider/helm",
-		"type:         provider",
-		"version:      0.4.0 (commit abc1234)",
-		"capabilities: helm",
-		"input kinds:  sourced, synthesized",
-		"boundary:     merge",
-		"exports:      render_node, assemble_boundary",
-	} {
-		if !strings.Contains(got, want) {
-			t.Errorf("stamped entry output missing %q\n---\n%s", want, got)
-		}
+	if got := pluginRowType(provider); got != "provider" {
+		t.Errorf("provider type cell = %q, want provider", got)
+	}
+	if got := pluginRowCapabilities(provider); got != "helm" {
+		t.Errorf("provider capabilities cell = %q, want helm", got)
+	}
+	if got := pluginRowVersion(provider); got != "0.4.0 (commit abc1234)" {
+		t.Errorf("provider version cell = %q", got)
 	}
 
-	unstamped := pluginListEntry{
-		source: "embedded",
-		uri:    "oci://hub.aggrega.ai/plugin/provider/compose",
-		desc: wasm.PluginDescriptor{
-			PluginType: wasm.PluginTypeProvider,
-			Exports:    []wasm.PluginExport{{Name: "render_node"}},
-		},
+	linter := pluginListEntry{desc: wasm.PluginDescriptor{PluginType: wasm.PluginTypeLinter}}
+	if got := pluginRowCapabilities(linter); got != "" {
+		t.Errorf("cross-cutting linter capabilities cell should be empty, got %q", got)
 	}
-	var unstampedBuf bytes.Buffer
-	renderPluginEntry(&unstampedBuf, unstamped, map[string]bool{})
-	if strings.Contains(unstampedBuf.String(), "version:") {
-		t.Errorf("unstamped entry should omit the version line, got:\n%s", unstampedBuf.String())
+
+	versionCases := []struct {
+		name  string
+		entry pluginListEntry
+		want  string
+	}{
+		{"digest drift", pluginListEntry{readiness: "digest-drift", desc: wasm.PluginDescriptor{Metadata: wasm.PluginDescriptorMeta{Version: "1.0.0"}}}, "digest-drift"},
+		{"failure with readiness", pluginListEntry{readiness: "unresolved", err: wasm.ErrWasmManifestRejected}, "unresolved"},
+		{"failure without readiness", pluginListEntry{err: wasm.ErrWasmManifestRejected}, "describe failed"},
+		{"unstamped healthy", pluginListEntry{desc: wasm.PluginDescriptor{PluginType: wasm.PluginTypeProvider}}, ""},
+	}
+	for _, tc := range versionCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got := pluginRowVersion(tc.entry); got != tc.want {
+				t.Errorf("pluginRowVersion(%s) = %q, want %q", tc.name, got, tc.want)
+			}
+			if tc.entry.err != nil && pluginRowType(tc.entry) != "" {
+				t.Errorf("describe-failure type cell should be empty")
+			}
+		})
 	}
 }
 
-// TestRenderPluginEntryDescribeError proves a describe failure is surfaced per
-// entry rather than dropping the plugin from the listing.
-func TestRenderPluginEntryDescribeError(t *testing.T) {
+// TestFormatPluginListTable proves the human table renders each group with its
+// header, a four-column header row, and one row per plugin, and that an errored
+// entry still names its URI rather than dropping from the listing.
+func TestFormatPluginListTable(t *testing.T) {
 	t.Parallel()
-	entry := pluginListEntry{
-		source: "configured",
-		uri:    "oci://example.com/plugins/broken",
-		origin: "plugins.linter[0]",
-		err:    wasm.ErrWasmManifestRejected,
+
+	embeddedEntries := []pluginListEntry{
+		{source: "embedded", uri: "provider/helm",
+			desc: wasm.PluginDescriptor{
+				PluginType:   wasm.PluginTypeProvider,
+				Capabilities: []string{"helm"},
+				Metadata:     wasm.PluginDescriptorMeta{Version: "0.4.0", Commit: "abc1234"},
+			}},
+		{source: "embedded", uri: "linter/publishing",
+			desc: wasm.PluginDescriptor{
+				PluginType: wasm.PluginTypeLinter,
+				Metadata:   wasm.PluginDescriptorMeta{Version: "0.4.0", Commit: "abc1234"},
+			}},
 	}
+	configuredEntries := []pluginListEntry{
+		{source: "configured", uri: "oci://example.com/plugins/broken", origin: "plugins.linter[0]",
+			err: wasm.ErrWasmManifestRejected},
+	}
+
 	var buf bytes.Buffer
-	renderPluginEntry(&buf, entry, map[string]bool{})
+	formatPluginList(&buf, embeddedEntries, configuredEntries, nil)
 	got := buf.String()
-	if !strings.Contains(got, "oci://example.com/plugins/broken") {
-		t.Errorf("error entry should still name the URI, got:\n%s", got)
-	}
-	if !strings.Contains(got, "error:") {
-		t.Errorf("error entry should carry an error line, got:\n%s", got)
-	}
-	if strings.Contains(got, "type:") {
-		t.Errorf("error entry should not render metadata, got:\n%s", got)
+	for _, want := range []string{
+		"Embedded built-ins:",
+		"TYPE", "NAME", "CAPABILITIES", "VERSION",
+		"provider", "provider/helm", "helm", "0.4.0 (commit abc1234)",
+		"linter", "linter/publishing",
+		"Configured plugins:",
+		"oci://example.com/plugins/broken", "describe failed",
+		"Installed CLI plugins:",
+		"(none)",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("table output missing %q\n---\n%s", want, got)
+		}
 	}
 }
 
@@ -117,10 +139,6 @@ func TestRenderPluginEntryDescribeError(t *testing.T) {
 func TestFormatPluginListDeterministic(t *testing.T) {
 	t.Parallel()
 
-	embeddedEntries := []pluginListEntry{
-		{source: "embedded", uri: "oci://hub.aggrega.ai/plugin/provider/helm",
-			desc: wasm.PluginDescriptor{PluginType: wasm.PluginTypeProvider}},
-	}
 	// Deliberately out of URI order to prove the caller sorts before rendering.
 	configured := collectConfiguredRefs(workspaceconfig.Config{
 		Plugins: workspaceconfig.PluginsConfig{
@@ -138,11 +156,9 @@ func TestFormatPluginListDeterministic(t *testing.T) {
 		})
 	}
 
-	embeddedSet := map[string]bool{"oci://hub.aggrega.ai/plugin/provider/helm": true}
-
 	var first, second bytes.Buffer
-	formatPluginList(&first, embeddedEntries, configuredEntries, nil, embeddedSet)
-	formatPluginList(&second, embeddedEntries, configuredEntries, nil, embeddedSet)
+	formatPluginList(&first, nil, configuredEntries, nil)
+	formatPluginList(&second, nil, configuredEntries, nil)
 	if first.String() != second.String() {
 		t.Errorf("listing is not deterministic:\n--- first ---\n%s\n--- second ---\n%s", first.String(), second.String())
 	}
@@ -153,6 +169,89 @@ func TestFormatPluginListDeterministic(t *testing.T) {
 	zi := strings.Index(out, "zeta:1.0.0")
 	if ai < 0 || zi < 0 || ai > zi {
 		t.Errorf("configured entries not sorted by URI (alpha before zeta): alpha@%d zeta@%d\n%s", ai, zi, out)
+	}
+}
+
+// TestWritePluginListJSON proves the --json surface carries the full per-plugin
+// detail, groups it deterministically, emits an empty array (not null) for an
+// empty group, and reports a describe failure's error rather than dropping the
+// plugin.
+func TestWritePluginListJSON(t *testing.T) {
+	t.Parallel()
+
+	embeddedEntries := []pluginListEntry{
+		{source: "embedded", uri: "provider/helm",
+			desc: wasm.PluginDescriptor{
+				PluginType:   wasm.PluginTypeProvider,
+				Capabilities: []string{"helm"},
+				Exports:      []wasm.PluginExport{{Name: "render_node"}, {Name: "assemble_boundary"}},
+				Contract: wasm.ProviderContract{
+					InputKinds:       wasm.InputKinds{Sourced: true, Synthesized: true},
+					BoundaryAssembly: "none",
+				},
+				Metadata: wasm.PluginDescriptorMeta{Version: "0.4.0", Commit: "abc1234"},
+			}},
+	}
+	configuredEntries := []pluginListEntry{
+		{source: "configured", uri: "oci://example.com/plugins/broken", origin: "plugins.linter[0]",
+			err: wasm.ErrWasmManifestRejected},
+	}
+
+	var first, second bytes.Buffer
+	if err := writePluginListJSON(&first, embeddedEntries, configuredEntries, nil); err != nil {
+		t.Fatalf("writePluginListJSON: %v", err)
+	}
+	if err := writePluginListJSON(&second, embeddedEntries, configuredEntries, nil); err != nil {
+		t.Fatalf("writePluginListJSON (second): %v", err)
+	}
+	if first.String() != second.String() {
+		t.Errorf("json listing is not deterministic:\n--- first ---\n%s\n--- second ---\n%s", first.String(), second.String())
+	}
+
+	var doc struct {
+		Embedded []struct {
+			URI          string   `json:"uri"`
+			Type         string   `json:"type"`
+			Version      string   `json:"version"`
+			Commit       string   `json:"commit"`
+			Capabilities []string `json:"capabilities"`
+			InputKinds   []string `json:"inputKinds"`
+			Boundary     string   `json:"boundary"`
+			Exports      []string `json:"exports"`
+		} `json:"embedded"`
+		Configured []struct {
+			URI    string `json:"uri"`
+			Origin string `json:"origin"`
+			Error  string `json:"error"`
+		} `json:"configured"`
+		Installed []json.RawMessage `json:"installed"`
+	}
+	if err := json.Unmarshal(first.Bytes(), &doc); err != nil {
+		t.Fatalf("unmarshal: %v\n%s", err, first.String())
+	}
+
+	if len(doc.Embedded) != 1 {
+		t.Fatalf("embedded group len = %d, want 1", len(doc.Embedded))
+	}
+	e := doc.Embedded[0]
+	if e.URI != "provider/helm" || e.Type != "provider" || e.Version != "0.4.0" || e.Commit != "abc1234" || e.Boundary != "none" {
+		t.Errorf("embedded entry detail: %+v", e)
+	}
+	if len(e.Capabilities) != 1 || e.Capabilities[0] != "helm" {
+		t.Errorf("capabilities = %v", e.Capabilities)
+	}
+	if len(e.InputKinds) != 2 || e.InputKinds[0] != "sourced" || e.InputKinds[1] != "synthesized" {
+		t.Errorf("inputKinds = %v", e.InputKinds)
+	}
+	if len(e.Exports) != 2 || e.Exports[0] != "render_node" {
+		t.Errorf("exports = %v", e.Exports)
+	}
+	if len(doc.Configured) != 1 || doc.Configured[0].Error == "" {
+		t.Errorf("configured error not surfaced: %+v", doc.Configured)
+	}
+	// An empty group must serialize as [] (non-nil after unmarshal), not null.
+	if doc.Installed == nil {
+		t.Errorf("empty installed group should serialize as [] not null")
 	}
 }
 
@@ -183,75 +282,45 @@ func TestInstalledReadiness(t *testing.T) {
 	}
 }
 
-// TestRenderPluginEntry_ReadinessLine proves the readiness line renders for an
-// installed entry — including on a resolve error, where it appears alongside the
-// error line — and is omitted for a group carrying no readiness signal.
-func TestRenderPluginEntry_ReadinessLine(t *testing.T) {
-	t.Parallel()
-
-	drifted := pluginListEntry{
-		source:    "installed",
-		uri:       "oci://example/moo:v1",
-		origin:    `command "moo"`,
-		readiness: "digest-drift",
-		desc:      wasm.PluginDescriptor{PluginType: wasm.PluginTypeCLI},
-	}
-	var driftBuf bytes.Buffer
-	renderPluginEntry(&driftBuf, drifted, map[string]bool{})
-	if !strings.Contains(driftBuf.String(), "readiness:    digest-drift") {
-		t.Errorf("installed entry missing readiness line:\n%s", driftBuf.String())
-	}
-
-	unresolved := pluginListEntry{
-		source:    "installed",
-		uri:       "oci://example/gone:v1",
-		readiness: "unresolved",
-		err:       wasm.ErrWasmManifestRejected,
-	}
-	var unresBuf bytes.Buffer
-	renderPluginEntry(&unresBuf, unresolved, map[string]bool{})
-	got := unresBuf.String()
-	if !strings.Contains(got, "readiness:    unresolved") {
-		t.Errorf("unresolved entry should still show readiness before the error:\n%s", got)
-	}
-	if !strings.Contains(got, "error:") {
-		t.Errorf("unresolved entry should carry the error line:\n%s", got)
-	}
-
-	// An embedded entry carries no readiness label, so no readiness line renders.
-	embeddedEntry := pluginListEntry{
-		source: "embedded",
-		uri:    "oci://hub.aggrega.ai/plugin/provider/helm",
-		desc:   wasm.PluginDescriptor{PluginType: wasm.PluginTypeProvider},
-	}
-	var embBuf bytes.Buffer
-	renderPluginEntry(&embBuf, embeddedEntry, map[string]bool{})
-	if strings.Contains(embBuf.String(), "readiness:") {
-		t.Errorf("embedded entry must not render a readiness line:\n%s", embBuf.String())
-	}
-}
-
 // TestFormatPluginList_InstalledGroup proves the third group renders with its
-// header, its entries, and the empty-group placeholder when absent.
+// header and its entries, that an abnormal readiness state surfaces in the
+// version cell, and that the header still renders with the empty-group
+// placeholder when the group is absent.
 func TestFormatPluginList_InstalledGroup(t *testing.T) {
 	t.Parallel()
 
-	installed := []pluginListEntry{{
-		source:    "installed",
-		uri:       "oci://example/moo:v1",
-		origin:    `command "moo"`,
-		readiness: "ready",
-		desc:      wasm.PluginDescriptor{PluginType: wasm.PluginTypeCLI},
-	}}
+	installed := []pluginListEntry{
+		{
+			source:    "installed",
+			uri:       "oci://example/moo:v1",
+			origin:    `command "moo"`,
+			readiness: "ready",
+			desc: wasm.PluginDescriptor{
+				PluginType: wasm.PluginTypeCLI,
+				Metadata:   wasm.PluginDescriptorMeta{Version: "1.0.0"},
+			},
+		},
+		{
+			source:    "installed",
+			uri:       "oci://example/drift:v1",
+			origin:    `command "drift"`,
+			readiness: "digest-drift",
+			desc: wasm.PluginDescriptor{
+				PluginType: wasm.PluginTypeCLI,
+				Metadata:   wasm.PluginDescriptorMeta{Version: "1.0.0"},
+			},
+		},
+	}
 	var withInstalled bytes.Buffer
-	formatPluginList(&withInstalled, nil, nil, installed, map[string]bool{})
+	formatPluginList(&withInstalled, nil, nil, installed)
 	got := withInstalled.String()
 	for _, want := range []string{
 		"Installed CLI plugins:",
 		"oci://example/moo:v1",
-		`origin:       command "moo"`,
-		"readiness:    ready",
-		"type:         cli",
+		"cli",
+		"1.0.0",
+		"oci://example/drift:v1",
+		"digest-drift",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("installed-group output missing %q\n---\n%s", want, got)
@@ -259,9 +328,13 @@ func TestFormatPluginList_InstalledGroup(t *testing.T) {
 	}
 
 	var empty bytes.Buffer
-	formatPluginList(&empty, nil, nil, nil, map[string]bool{})
-	if !strings.Contains(empty.String(), "Installed CLI plugins:") {
-		t.Errorf("installed group header should render even when empty:\n%s", empty.String())
+	formatPluginList(&empty, nil, nil, nil)
+	emptyOut := empty.String()
+	if !strings.Contains(emptyOut, "Installed CLI plugins:") {
+		t.Errorf("installed group header should render even when empty:\n%s", emptyOut)
+	}
+	if !strings.Contains(emptyOut, "(none)") {
+		t.Errorf("empty group should render the (none) placeholder:\n%s", emptyOut)
 	}
 }
 

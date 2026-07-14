@@ -20,7 +20,7 @@ import (
 // source-tree go-test runs.
 func TestVersionHumanFormat(t *testing.T) {
 	var buf bytes.Buffer
-	if err := runVersion(&buf, false); err != nil {
+	if err := runVersion(&buf, false, false); err != nil {
 		t.Fatalf("runVersion: %v", err)
 	}
 	out := buf.String()
@@ -40,7 +40,7 @@ func TestVersionHumanFormat(t *testing.T) {
 // camelCase fields are present and non-empty.
 func TestVersionJSONShape(t *testing.T) {
 	var buf bytes.Buffer
-	if err := runVersion(&buf, true); err != nil {
+	if err := runVersion(&buf, true, false); err != nil {
 		t.Fatalf("runVersion: %v", err)
 	}
 	var info struct {
@@ -173,7 +173,7 @@ func TestVersionStampedVLess(t *testing.T) {
 	defer func() { version = orig }()
 
 	var buf bytes.Buffer
-	if err := runVersion(&buf, true); err != nil {
+	if err := runVersion(&buf, true, false); err != nil {
 		t.Fatalf("runVersion: %v", err)
 	}
 	var info struct {
@@ -194,7 +194,7 @@ func TestVersionStampedVLess(t *testing.T) {
 // single source rather than a literal.
 func TestVersionABIVersionReported(t *testing.T) {
 	var jsonBuf bytes.Buffer
-	if err := runVersion(&jsonBuf, true); err != nil {
+	if err := runVersion(&jsonBuf, true, false); err != nil {
 		t.Fatalf("runVersion json: %v", err)
 	}
 	var info struct {
@@ -208,7 +208,7 @@ func TestVersionABIVersionReported(t *testing.T) {
 	}
 
 	var humanBuf bytes.Buffer
-	if err := runVersion(&humanBuf, false); err != nil {
+	if err := runVersion(&humanBuf, false, false); err != nil {
 		t.Fatalf("runVersion human: %v", err)
 	}
 	if want := "abi " + wasm.ABIVersionV1Alpha1; !strings.Contains(humanBuf.String(), want) {
@@ -233,13 +233,130 @@ func TestVersionHumanLineIncludesABISegment(t *testing.T) {
 	}
 }
 
+// TestVersionEmbeddedPointer proves the plain human output carries the one-line
+// embedded-plugin pointer after the version line: the count, a version, and the
+// literal command reference. The embedded set is compiled in, so the count is
+// positive in a normal build.
+func TestVersionEmbeddedPointer(t *testing.T) {
+	var buf bytes.Buffer
+	if err := runVersion(&buf, false, false); err != nil {
+		t.Fatalf("runVersion: %v", err)
+	}
+	out := buf.String()
+	summaries := collectEmbeddedSummaries()
+	if len(summaries) == 0 {
+		t.Skip("no embedded plugins in this build; pointer line is intentionally omitted")
+	}
+	for _, want := range []string{
+		"embedded",
+		"plugins version",
+		"`aggrega plugin list` for details",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("plain output missing embedded pointer fragment %q; got:\n%s", want, out)
+		}
+	}
+}
+
+// TestVersionVerboseTable proves --verbose replaces the pointer with the
+// embedded-plugin table: the count/version header and the four-column header row.
+func TestVersionVerboseTable(t *testing.T) {
+	var buf bytes.Buffer
+	if err := runVersion(&buf, false, true); err != nil {
+		t.Fatalf("runVersion verbose: %v", err)
+	}
+	out := buf.String()
+	summaries := collectEmbeddedSummaries()
+	if len(summaries) == 0 {
+		if !strings.Contains(out, "No embedded plugins.") {
+			t.Errorf("empty embedded set should say so; got:\n%s", out)
+		}
+		return
+	}
+	for _, want := range []string{
+		"Embedded plugins (",
+		"TYPE", "NAME", "CAPABILITIES", "COMMIT",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("verbose output missing %q; got:\n%s", want, out)
+		}
+	}
+	// The verbose form replaces the pointer line rather than duplicating it.
+	if strings.Contains(out, "`aggrega plugin list` for details") {
+		t.Errorf("verbose output should not also print the pointer line; got:\n%s", out)
+	}
+}
+
+// TestVersionVerboseJSON proves --verbose --json adds the embeddedPlugins array
+// while the plain --json wire shape omits it.
+func TestVersionVerboseJSON(t *testing.T) {
+	summaries := collectEmbeddedSummaries()
+
+	var plain bytes.Buffer
+	if err := runVersion(&plain, true, false); err != nil {
+		t.Fatalf("runVersion json: %v", err)
+	}
+	var plainGeneric map[string]any
+	if err := json.Unmarshal(plain.Bytes(), &plainGeneric); err != nil {
+		t.Fatalf("unmarshal plain: %v", err)
+	}
+	if _, present := plainGeneric["embeddedPlugins"]; present {
+		t.Errorf("plain --json should omit embeddedPlugins; got:\n%s", plain.String())
+	}
+
+	var verbose bytes.Buffer
+	if err := runVersion(&verbose, true, true); err != nil {
+		t.Fatalf("runVersion verbose json: %v", err)
+	}
+	var doc struct {
+		EmbeddedPlugins []struct {
+			URI          string   `json:"uri"`
+			Type         string   `json:"type"`
+			Capabilities []string `json:"capabilities"`
+			Version      string   `json:"version"`
+			Commit       string   `json:"commit"`
+		} `json:"embeddedPlugins"`
+	}
+	if err := json.Unmarshal(verbose.Bytes(), &doc); err != nil {
+		t.Fatalf("unmarshal verbose: %v\n%s", err, verbose.String())
+	}
+	if len(doc.EmbeddedPlugins) != len(summaries) {
+		t.Errorf("embeddedPlugins len = %d, want %d", len(doc.EmbeddedPlugins), len(summaries))
+	}
+}
+
+// TestSharedEmbeddedVersion covers the shared-version derivation: a single
+// stamp is returned as-is, an empty stamp reads "(unknown)", and divergent
+// stamps read "(mixed)".
+func TestSharedEmbeddedVersion(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name string
+		in   []embeddedPluginSummary
+		want string
+	}{
+		{"uniform", []embeddedPluginSummary{{version: "0.4.0"}, {version: "0.4.0"}}, "0.4.0"},
+		{"empty stamp", []embeddedPluginSummary{{version: ""}, {version: ""}}, "(unknown)"},
+		{"divergent", []embeddedPluginSummary{{version: "0.4.0"}, {version: "0.5.0"}}, "(mixed)"},
+		{"none", nil, "(mixed)"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got := sharedEmbeddedVersion(tc.in); got != tc.want {
+				t.Errorf("sharedEmbeddedVersion(%s) = %q, want %q", tc.name, got, tc.want)
+			}
+		})
+	}
+}
+
 // TestVersionJSONIsValidJSON guards against accidental shape drift
 // that would still be syntactically valid Go (e.g., a struct field
 // rename) but break the extension's parse. Decodes into a permissive
 // map and asserts no unexpected top-level keys appear.
 func TestVersionJSONIsValidJSON(t *testing.T) {
 	var buf bytes.Buffer
-	if err := runVersion(&buf, true); err != nil {
+	if err := runVersion(&buf, true, false); err != nil {
 		t.Fatalf("runVersion: %v", err)
 	}
 	var generic map[string]any

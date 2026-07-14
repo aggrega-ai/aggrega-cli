@@ -10,13 +10,18 @@ import (
 	"runtime"
 	"runtime/debug"
 	"strings"
+	"text/tabwriter"
 
 	"github.com/spf13/cobra"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
+	"github.com/aggrega-ai/aggrega-cli/internal/wasm/embedded"
 )
 
-var versionJSON bool
+var (
+	versionJSON    bool
+	versionVerbose bool
+)
 
 // version is the release version stamped at build time via
 // -ldflags "-X main.version=<v>" (the build scripts set it from
@@ -48,10 +53,17 @@ func newVersionCmd() *cobra.Command {
 		Short: "Print the aggrega CLI version",
 		Long: `Print the aggrega CLI's build identity.
 
-By default the output is a single human-readable line. With --json,
+By default the output is a single human-readable line followed by a
+one-line pointer to the plugins compiled into the binary. With --json,
 the output is a structured JSON object suitable for programmatic
 consumption (the VS Code extension uses this form to read the
 binary's version at activation time).
+
+With --verbose, the output replaces the pointer line with a table of
+the embedded plugins — type, name, served capabilities, and commit —
+under a header naming the count and their shared version. With
+--verbose --json, the JSON object gains an embeddedPlugins array
+carrying the same detail.
 
 Version strings are v-less (1.0.0, not v1.0.0), homogeneous with the
 version form catalog entities use. Tagged release builds report the
@@ -59,10 +71,11 @@ release version; source builds report the literal "(devel)".
 Operators who see "(devel)" know they are running an unreleased
 build.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runVersion(cmd.OutOrStdout(), versionJSON)
+			return runVersion(cmd.OutOrStdout(), versionJSON, versionVerbose)
 		},
 	}
 	c.Flags().BoolVar(&versionJSON, "json", false, "emit a structured JSON object instead of the human-readable line")
+	c.Flags().BoolVar(&versionVerbose, "verbose", false, "include the embedded-plugin set in the output")
 	return c
 }
 
@@ -85,6 +98,22 @@ type versionInfo struct {
 	ABIVersion string `json:"abiVersion"`
 	GoVersion  string `json:"goVersion"`
 	Platform   string `json:"platform"`
+
+	// EmbeddedPlugins carries the build-embedded plugin set and is populated
+	// only under --verbose; it is absent from the default wire shape so a
+	// consumer reading the plain version object sees an unchanged contract.
+	EmbeddedPlugins []embeddedPluginJSON `json:"embeddedPlugins,omitempty"`
+}
+
+// embeddedPluginJSON is one embedded plugin's detail on the --verbose --json
+// surface: its identity, self-reported type, served capabilities, and build
+// provenance.
+type embeddedPluginJSON struct {
+	URI          string   `json:"uri"`
+	Type         string   `json:"type"`
+	Capabilities []string `json:"capabilities,omitempty"`
+	Version      string   `json:"version,omitempty"`
+	Commit       string   `json:"commit,omitempty"`
 }
 
 // runVersion reads runtime/debug.ReadBuildInfo and emits the result
@@ -93,14 +122,128 @@ type versionInfo struct {
 // build), the unknown sentinel surfaces in both forms so the
 // extension can treat it identically to "(devel)" — skip the compat
 // check and log.
-func runVersion(w io.Writer, asJSON bool) error {
+func runVersion(w io.Writer, asJSON, verbose bool) error {
 	info := collectVersionInfo()
+	summaries := collectEmbeddedSummaries()
 	if asJSON {
+		if verbose {
+			info.EmbeddedPlugins = embeddedSummariesToJSON(summaries)
+		}
 		enc := json.NewEncoder(w)
 		return enc.Encode(info)
 	}
-	_, err := io.WriteString(w, formatVersionLine(info))
+	if _, err := io.WriteString(w, formatVersionLine(info)); err != nil {
+		return err
+	}
+	if verbose {
+		return writeEmbeddedTable(w, summaries)
+	}
+	return writeEmbeddedPointer(w, summaries)
+}
+
+// embeddedPluginSummary is one embedded plugin's identity and provenance as
+// read from its build-extracted describe() descriptor, without instantiating the
+// guest.
+type embeddedPluginSummary struct {
+	uri          string
+	pluginType   string
+	capabilities []string
+	version      string
+	commit       string
+}
+
+// collectEmbeddedSummaries reads the build-extracted describe() descriptor for
+// each embedded plugin, in the deterministic URI order the embedded set reports.
+// It instantiates nothing: the static descriptors are enough to name the set and
+// its provenance. A build with no embedded plugins yields an empty slice.
+func collectEmbeddedSummaries() []embeddedPluginSummary {
+	uris := embedded.URIs()
+	out := make([]embeddedPluginSummary, 0, len(uris))
+	for _, uri := range uris {
+		s := embeddedPluginSummary{uri: uri}
+		if raw, ok := embedded.LookupDescriptor(uri); ok {
+			var desc wasm.PluginDescriptor
+			if err := json.Unmarshal(raw, &desc); err == nil {
+				s.pluginType = string(desc.PluginType)
+				s.capabilities = desc.Capabilities
+				s.version = desc.Metadata.Version
+				s.commit = desc.Metadata.Commit
+			}
+		}
+		out = append(out, s)
+	}
+	return out
+}
+
+// embeddedSummariesToJSON maps the embedded summaries to their JSON detail form,
+// preserving order.
+func embeddedSummariesToJSON(summaries []embeddedPluginSummary) []embeddedPluginJSON {
+	out := make([]embeddedPluginJSON, 0, len(summaries))
+	for _, s := range summaries {
+		out = append(out, embeddedPluginJSON{
+			URI:          s.uri,
+			Type:         s.pluginType,
+			Capabilities: s.capabilities,
+			Version:      s.version,
+			Commit:       s.commit,
+		})
+	}
+	return out
+}
+
+// sharedEmbeddedVersion returns the single version stamped across the embedded
+// set. The embedded plugins are built and stamped together, so they share one
+// version; the function returns "(unknown)" when the set carries no stamp and
+// "(mixed)" in the unexpected case that the stamps diverge.
+func sharedEmbeddedVersion(summaries []embeddedPluginSummary) string {
+	seen := map[string]struct{}{}
+	last := ""
+	for _, s := range summaries {
+		seen[s.version] = struct{}{}
+		last = s.version
+	}
+	if len(seen) != 1 {
+		return "(mixed)"
+	}
+	if last == "" {
+		return "(unknown)"
+	}
+	return last
+}
+
+// writeEmbeddedPointer writes the one-line pointer to the embedded plugin set
+// that follows the plain version line. It writes nothing when no plugins are
+// embedded (a build without the built-in guests).
+func writeEmbeddedPointer(w io.Writer, summaries []embeddedPluginSummary) error {
+	if len(summaries) == 0 {
+		return nil
+	}
+	_, err := fmt.Fprintf(w, "embedded  %d plugins version %s — `aggrega plugin list` for details\n",
+		len(summaries), sharedEmbeddedVersion(summaries))
 	return err
+}
+
+// writeEmbeddedTable writes the verbose embedded-plugin table — a header naming
+// the count and shared version, then a four-column table keyed to each plugin's
+// commit provenance. It writes a short notice when no plugins are embedded.
+func writeEmbeddedTable(w io.Writer, summaries []embeddedPluginSummary) error {
+	if len(summaries) == 0 {
+		_, err := fmt.Fprintln(w, "\nNo embedded plugins.")
+		return err
+	}
+	shared := sharedEmbeddedVersion(summaries)
+	header := fmt.Sprintf("Embedded plugins (%d, all version %s):", len(summaries), shared)
+	if shared == "(mixed)" {
+		header = fmt.Sprintf("Embedded plugins (%d, versions vary — see COMMIT):", len(summaries))
+	}
+	fmt.Fprintf(w, "\n%s\n\n", header)
+	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
+	fmt.Fprintln(tw, "  TYPE\tNAME\tCAPABILITIES\tCOMMIT")
+	for _, s := range summaries {
+		fmt.Fprintf(tw, "  %s\t%s\t%s\t%s\n",
+			s.pluginType, s.uri, strings.Join(s.capabilities, ", "), s.commit)
+	}
+	return tw.Flush()
 }
 
 // formatVersionLine renders the human-readable version line. When a
