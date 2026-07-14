@@ -232,6 +232,7 @@ type ResourceRequirements struct {
 type VolumeMount struct {
 	Name      string `yaml:"name"`
 	MountPath string `yaml:"mountPath"`
+	SubPath   string `yaml:"subPath,omitempty"`
 	ReadOnly  bool   `yaml:"readOnly,omitempty"`
 }
 

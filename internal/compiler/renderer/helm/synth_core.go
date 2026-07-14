@@ -439,6 +439,7 @@ func translateContainer(name string, c types.ContainerSpec, nodeID string, secre
 		out.VolumeMounts = append(out.VolumeMounts, VolumeMount{
 			Name:      vm.Name,
 			MountPath: vm.Path,
+			SubPath:   vm.SubPath,
 			ReadOnly:  vm.ReadOnly,
 		})
 	}

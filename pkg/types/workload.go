@@ -197,8 +197,13 @@ type ProbeSpec struct {
 
 // VolumeMount references a Workload Volume by name and mounts it at Path.
 type VolumeMount struct {
-	Name     string `json:"name" yaml:"name"`
-	Path     string `json:"path" yaml:"path"`
+	Name string `json:"name" yaml:"name"`
+	Path string `json:"path" yaml:"path"`
+	// SubPath mounts a single file or subdirectory from the volume at Path,
+	// leaving the other files already present in the target directory visible.
+	// Without it, mounting the whole volume masks any sibling files the image
+	// placed in that directory.
+	SubPath  string `json:"subPath,omitempty" yaml:"subPath,omitempty"`
 	ReadOnly bool   `json:"readonly,omitempty" yaml:"readonly,omitempty"`
 }
 

@@ -441,6 +441,104 @@ containers:
 	}
 }
 
+// ----- Category 7b — VolumeMount subPath -----
+
+// TestSynthesizeWorkload_VolumeMountSubPathParseValidateSynth drives the real
+// parse → validate → synthesize path for a container volumeMount carrying a
+// subPath: a Workload YAML mounting a single file from a configmap volume is
+// unmarshalled into the typed shape, validated against the embedded Workload
+// JSON Schema, then synthesized. It proves the schema accepts the subPath field
+// (additionalProperties: false would reject an unknown key) and that the value
+// flows through to the emitted container volumeMounts[] entry rather than being
+// silently dropped.
+func TestSynthesizeWorkload_VolumeMountSubPathParseValidateSynth(t *testing.T) {
+	t.Parallel()
+	const src = `apiVersion: aggrega.ai/v1alpha1
+kind: Workload
+volumes:
+  config:
+    configmap:
+      source: app-config
+containers:
+  main:
+    image: app:1.0
+    ports:
+      web: 8080
+    volumeMounts:
+      - name: config
+        path: /usr/local/apisix/conf/config.yaml
+        subPath: config.yaml
+services:
+  api:
+    type: ClusterIP
+    ports:
+      web: 8080
+`
+	var w types.Workload
+	if err := yaml.Unmarshal([]byte(src), &w); err != nil {
+		t.Fatalf("unmarshal Workload: %v", err)
+	}
+
+	// The authored subPath must survive unmarshalling into the typed shape.
+	main, ok := w.Containers.Get("main")
+	if !ok || len(main.VolumeMounts) != 1 {
+		t.Fatalf("expected one volumeMount on container main; got %+v", main.VolumeMounts)
+	}
+	if main.VolumeMounts[0].SubPath != "config.yaml" {
+		t.Fatalf("parsed volumeMount subPath = %q (want %q)", main.VolumeMounts[0].SubPath, "config.yaml")
+	}
+
+	// Real schema validation: accepts the subPath field (proves the schema edit
+	// propagated through the embedded schema; additionalProperties: false would
+	// otherwise reject it).
+	if err := validator.ValidateWorkload(&w, "", "", ""); err != nil {
+		t.Fatalf("ValidateWorkload rejected a subPath volumeMount: %v", err)
+	}
+
+	files, err := SynthesizeWorkloadCore(&w, renderer.SecretProvidesFromContext(nil), nodeCtxFor("api"))
+	if err != nil {
+		t.Fatalf("SynthesizeWorkload: %v", err)
+	}
+	body := string(concatBodies(files))
+	if !strings.Contains(body, "subPath: config.yaml") {
+		t.Errorf("authored subPath must reach the emitted container volumeMounts entry; got:\n%s", body)
+	}
+
+	// Determinism: a second synthesis of the same input is byte-identical.
+	files2, err := SynthesizeWorkloadCore(&w, renderer.SecretProvidesFromContext(nil), nodeCtxFor("api"))
+	if err != nil {
+		t.Fatalf("SynthesizeWorkload (second run): %v", err)
+	}
+	if string(concatBodies(files2)) != body {
+		t.Errorf("synthesis is not byte-identical across runs")
+	}
+}
+
+// TestSynthesizeWorkload_VolumeMountNoSubPathOmitted verifies that a volumeMount
+// with no subPath emits no subPath: key — the omitempty tag keeps output for
+// existing Workloads byte-identical to a build without the field.
+func TestSynthesizeWorkload_VolumeMountNoSubPathOmitted(t *testing.T) {
+	t.Parallel()
+	w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload"}
+	c := types.ContainerSpec{Image: "app:1.0"}
+	c.Ports.Set("web", 8080)
+	c.VolumeMounts = []types.VolumeMount{{Name: "config", Path: "/etc/app"}}
+	w.Containers.Set("main", c)
+	w.Volumes.Set("config", types.VolumeSpec{ConfigMap: &types.ConfigMapVolume{Source: "app-config"}})
+
+	svc := types.ServiceSpec{Type: "ClusterIP"}
+	svc.Ports.Set("web", 8080)
+	w.Services.Set("api", svc)
+
+	files, err := SynthesizeWorkloadCore(w, renderer.SecretProvidesFromContext(nil), nodeCtxFor("api"))
+	if err != nil {
+		t.Fatalf("SynthesizeWorkload: %v", err)
+	}
+	if strings.Contains(string(concatBodies(files)), "subPath") {
+		t.Errorf("no subPath was authored; emitted output must carry no subPath key; got:\n%s", concatBodies(files))
+	}
+}
+
 // ----- Category 8 — Secrets via env and file -----
 
 func TestSynthesizeWorkload_SecretsEnvAndFile(t *testing.T) {
