@@ -8,21 +8,21 @@ import (
 	"sort"
 )
 
-// EntityCapabilityClaim is the authored capability declaration carried by a
+// EntityContractClaim is the authored contract declaration carried by a
 // catalog Plugin entity, in the neutral shape this package compares against
 // a plugin's self-reported [PluginDescriptor]. The caller maps the entity's
 // exports into this shape so this package stays ignorant of pkg/types; the claim
 // is the authored promise of what each export does, checked at load against the
 // plugin's own describe() report.
-type EntityCapabilityClaim struct {
+type EntityContractClaim struct {
 	// Exports is the authored per-export capability claim, in author order.
 	Exports []EntityExportClaim
 
-	// Capabilities is the authored plugin-level capability claim, in the same
+	// Contract is the authored provider render-behavior contract, in the same
 	// neutral shape the plugin self-reports in describe(). Nil when the entity
-	// authors no plugin-level claim, in which case the cross-check compares only
-	// the per-export claims.
-	Capabilities *Capabilities
+	// authors no render-behavior contract, in which case the cross-check compares
+	// only the per-export claims.
+	Contract *ProviderContract
 }
 
 // EntityExportClaim is one export's authored capability: the export name the
@@ -39,9 +39,9 @@ type EntityExportClaim struct {
 	Scope string
 }
 
-// CrossCheckCapabilities verifies that an entity's authored capability claim
+// CrossCheckContract verifies that an entity's authored capability claim
 // agrees with the plugin's self-reported describe() descriptor, returning a
-// Loud Guardrail error wrapping [ErrWasmCapabilityMismatch] on the first
+// Loud Guardrail error wrapping [ErrWasmContractMismatch] on the first
 // disagreement and nil when the claim is consistent.
 //
 // This is the single contract check comparing an authored claim against
@@ -59,37 +59,37 @@ type EntityExportClaim struct {
 // not required to enumerate every export the plugin offers — but every export
 // the entity does claim must match the plugin's self-report exactly.
 //
-// When the entity authors a plugin-level capabilities claim, it is compared
-// field-by-field against the descriptor's self-reported capabilities: the input
+// When the entity authors a provider render-behavior contract, it is compared
+// field-by-field against the descriptor's self-reported contract: the input
 // kinds, the boundary-assembly mode, the artifact-template delimiter pair, the
 // assembly-name annotation, the source filter, the reusable-instance claim, and
-// the cross-boundary-linking claim must each agree. A nil claim skips the
-// plugin-level comparison — an entity is not required to author a plugin-level
-// claim.
+// the cross-boundary-linking claim must each agree. A nil contract skips the
+// provider-level comparison — an entity is not required to author a
+// render-behavior contract.
 //
 // entityIdentity names the entity in the rejection message so the author sees
 // which entity's claim disagreed with which plugin.
-func CrossCheckCapabilities(entityIdentity string, claim EntityCapabilityClaim, desc PluginDescriptor) error {
+func CrossCheckContract(entityIdentity string, claim EntityContractClaim, desc PluginDescriptor) error {
 	for _, want := range claim.Exports {
 		got, ok := findDescriptorExport(desc, want.Name)
 		if !ok {
 			return fmt.Errorf(
 				"entity %q claims export %q, which the plugin's describe() does not declare: %w",
-				entityIdentity, want.Name, ErrWasmCapabilityMismatch)
+				entityIdentity, want.Name, ErrWasmContractMismatch)
 		}
 		if want.Operates != got.Operates {
 			return fmt.Errorf(
 				"entity %q export %q declares operates %q but the plugin's describe() reports %q: %w",
-				entityIdentity, want.Name, want.Operates, got.Operates, ErrWasmCapabilityMismatch)
+				entityIdentity, want.Name, want.Operates, got.Operates, ErrWasmContractMismatch)
 		}
 		if want.Scope != got.Scope {
 			return fmt.Errorf(
 				"entity %q export %q declares scope %q but the plugin's describe() reports %q: %w",
-				entityIdentity, want.Name, want.Scope, got.Scope, ErrWasmCapabilityMismatch)
+				entityIdentity, want.Name, want.Scope, got.Scope, ErrWasmContractMismatch)
 		}
 	}
-	if claim.Capabilities != nil {
-		if err := crossCheckPluginCapabilities(entityIdentity, *claim.Capabilities, desc.Capabilities); err != nil {
+	if claim.Contract != nil {
+		if err := crossCheckProviderContract(entityIdentity, *claim.Contract, desc.Contract); err != nil {
 			return err
 		}
 	}
@@ -164,30 +164,30 @@ func descriptorHostFunctionUnion(desc PluginDescriptor) []string {
 	return union
 }
 
-// crossCheckPluginCapabilities compares an entity's authored plugin-level
-// capability claim against the descriptor's self-report field-by-field,
-// returning a Loud Guardrail error wrapping [ErrWasmCapabilityMismatch] that
+// crossCheckProviderContract compares an entity's authored provider
+// render-behavior contract against the descriptor's self-report field-by-field,
+// returning a Loud Guardrail error wrapping [ErrWasmContractMismatch] that
 // names the first field to disagree, or nil when every field agrees.
-func crossCheckPluginCapabilities(entityIdentity string, want, got Capabilities) error {
+func crossCheckProviderContract(entityIdentity string, want, got ProviderContract) error {
 	if want.InputKinds.Sourced != got.InputKinds.Sourced {
 		return fmt.Errorf(
 			"entity %q declares input_kinds.sourced %t but the plugin's describe() reports %t: %w",
-			entityIdentity, want.InputKinds.Sourced, got.InputKinds.Sourced, ErrWasmCapabilityMismatch)
+			entityIdentity, want.InputKinds.Sourced, got.InputKinds.Sourced, ErrWasmContractMismatch)
 	}
 	if want.InputKinds.Synthesized != got.InputKinds.Synthesized {
 		return fmt.Errorf(
 			"entity %q declares input_kinds.synthesized %t but the plugin's describe() reports %t: %w",
-			entityIdentity, want.InputKinds.Synthesized, got.InputKinds.Synthesized, ErrWasmCapabilityMismatch)
+			entityIdentity, want.InputKinds.Synthesized, got.InputKinds.Synthesized, ErrWasmContractMismatch)
 	}
 	if want.InputKinds.ArtifactsStandalone != got.InputKinds.ArtifactsStandalone {
 		return fmt.Errorf(
 			"entity %q declares input_kinds.artifacts_standalone %t but the plugin's describe() reports %t: %w",
-			entityIdentity, want.InputKinds.ArtifactsStandalone, got.InputKinds.ArtifactsStandalone, ErrWasmCapabilityMismatch)
+			entityIdentity, want.InputKinds.ArtifactsStandalone, got.InputKinds.ArtifactsStandalone, ErrWasmContractMismatch)
 	}
 	if want.BoundaryAssembly != got.BoundaryAssembly {
 		return fmt.Errorf(
 			"entity %q declares boundary_assembly %q but the plugin's describe() reports %q: %w",
-			entityIdentity, want.BoundaryAssembly, got.BoundaryAssembly, ErrWasmCapabilityMismatch)
+			entityIdentity, want.BoundaryAssembly, got.BoundaryAssembly, ErrWasmContractMismatch)
 	}
 	if err := crossCheckDelimiters(entityIdentity, want.ArtifactDelimiters, got.ArtifactDelimiters); err != nil {
 		return err
@@ -198,17 +198,17 @@ func crossCheckPluginCapabilities(entityIdentity string, want, got Capabilities)
 	if !equalStringSlices(want.SourceFilter, got.SourceFilter) {
 		return fmt.Errorf(
 			"entity %q declares source_filter %v but the plugin's describe() reports %v: %w",
-			entityIdentity, want.SourceFilter, got.SourceFilter, ErrWasmCapabilityMismatch)
+			entityIdentity, want.SourceFilter, got.SourceFilter, ErrWasmContractMismatch)
 	}
 	if want.ReusableInstance != got.ReusableInstance {
 		return fmt.Errorf(
 			"entity %q declares reusable_instance %t but the plugin's describe() reports %t: %w",
-			entityIdentity, want.ReusableInstance, got.ReusableInstance, ErrWasmCapabilityMismatch)
+			entityIdentity, want.ReusableInstance, got.ReusableInstance, ErrWasmContractMismatch)
 	}
 	if want.CrossBoundaryLinking != got.CrossBoundaryLinking {
 		return fmt.Errorf(
 			"entity %q declares cross_boundary_linking %t but the plugin's describe() reports %t: %w",
-			entityIdentity, want.CrossBoundaryLinking, got.CrossBoundaryLinking, ErrWasmCapabilityMismatch)
+			entityIdentity, want.CrossBoundaryLinking, got.CrossBoundaryLinking, ErrWasmContractMismatch)
 	}
 	return nil
 }
@@ -220,12 +220,12 @@ func crossCheckDelimiters(entityIdentity string, want, got *ArtifactDelimiters) 
 	if (want == nil) != (got == nil) {
 		return fmt.Errorf(
 			"entity %q and the plugin's describe() disagree on whether artifact_delimiters is declared (entity declares=%t, plugin declares=%t): %w",
-			entityIdentity, want != nil, got != nil, ErrWasmCapabilityMismatch)
+			entityIdentity, want != nil, got != nil, ErrWasmContractMismatch)
 	}
 	if want != nil && *want != *got {
 		return fmt.Errorf(
 			"entity %q declares artifact_delimiters %q/%q but the plugin's describe() reports %q/%q: %w",
-			entityIdentity, want.Left, want.Right, got.Left, got.Right, ErrWasmCapabilityMismatch)
+			entityIdentity, want.Left, want.Right, got.Left, got.Right, ErrWasmContractMismatch)
 	}
 	return nil
 }
@@ -238,12 +238,12 @@ func crossCheckAssemblyNameAnnotation(entityIdentity string, want, got *Assembly
 	if (want == nil) != (got == nil) {
 		return fmt.Errorf(
 			"entity %q and the plugin's describe() disagree on whether assembly_name_annotation is declared (entity declares=%t, plugin declares=%t): %w",
-			entityIdentity, want != nil, got != nil, ErrWasmCapabilityMismatch)
+			entityIdentity, want != nil, got != nil, ErrWasmContractMismatch)
 	}
 	if want != nil && *want != *got {
 		return fmt.Errorf(
 			"entity %q declares assembly_name_annotation %q (require_unique=%t) but the plugin's describe() reports %q (require_unique=%t): %w",
-			entityIdentity, want.Annotation, want.RequireUnique, got.Annotation, got.RequireUnique, ErrWasmCapabilityMismatch)
+			entityIdentity, want.Annotation, want.RequireUnique, got.Annotation, got.RequireUnique, ErrWasmContractMismatch)
 	}
 	return nil
 }

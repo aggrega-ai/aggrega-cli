@@ -219,7 +219,7 @@ func validateRelease(rw *workspaceconfig.ResolvedWorkspace, releasePath string, 
 // — the same provider→Plugin resolution the render route follows — and reuses the
 // gate's own message clause (renderer.UnsupportedInputKindMessage) so the early and
 // late diagnostics read identically. A provider whose serving Plugin does not
-// resolve in scope, or whose Plugin carries no capabilities claim (CapabilitiesFor
+// resolve in scope, or whose Plugin carries no capabilities claim (ContractFor
 // ok=false), is skipped: there is no capability claim to contradict and
 // forward-looking catalog scaffolding must not be flagged. The workload predicate
 // is the gate's own (!Spec.Workload.IsEmpty()), so presence is classified
@@ -230,7 +230,7 @@ func inputKindCapabilityErrors(providerPlugin func(ref string) (types.Plugin, bo
 		if workload.IsEmpty() {
 			return
 		}
-		caps, ok := enginefactory.CapabilitiesFor(providerPlugin, provider)
+		caps, ok := enginefactory.ContractFor(providerPlugin, provider)
 		if !ok || caps.Synthesized {
 			return
 		}

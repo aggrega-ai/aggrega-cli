@@ -123,16 +123,21 @@ func TestGenCatalogFromEmbeddedContractFieldsMatchDescribe(t *testing.T) {
 		if entity.Spec.Runtime != nil && len(entity.Spec.Runtime.HostFunctions) != 0 {
 			t.Errorf("%s: generator must not author runtime.hostFunctions: %v", name, entity.Spec.Runtime.HostFunctions)
 		}
-		// Capabilities presence follows the guest self-report: providers carry a
-		// plugin-level capability block; the cross-cutting linter carries none.
-		if !isZeroCapabilities(desc.Capabilities) {
-			if entity.Spec.Capabilities == nil {
-				t.Errorf("%s: capabilities missing though describe() reports them", name)
-			} else if entity.Spec.Capabilities.BoundaryAssembly != desc.Capabilities.BoundaryAssembly {
-				t.Errorf("%s: boundaryAssembly = %q, want %q", name, entity.Spec.Capabilities.BoundaryAssembly, desc.Capabilities.BoundaryAssembly)
+		// Contract presence follows the guest self-report: providers carry a
+		// render-behavior contract block on the provider block; the cross-cutting
+		// linter carries none.
+		var contract *types.ProviderContract
+		if entity.Spec.Provider != nil {
+			contract = entity.Spec.Provider.Contract
+		}
+		if !isZeroContract(desc.Contract) {
+			if contract == nil {
+				t.Errorf("%s: contract missing though describe() reports it", name)
+			} else if contract.BoundaryAssembly != desc.Contract.BoundaryAssembly {
+				t.Errorf("%s: boundaryAssembly = %q, want %q", name, contract.BoundaryAssembly, desc.Contract.BoundaryAssembly)
 			}
-		} else if entity.Spec.Capabilities != nil {
-			t.Errorf("%s: capabilities emitted though describe() reports none", name)
+		} else if contract != nil {
+			t.Errorf("%s: contract emitted though describe() reports none", name)
 		}
 	}
 }

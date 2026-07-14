@@ -26,8 +26,8 @@ func (e sourceCaptureEngine) Render(_ context.Context, _ map[string]any, nodeCtx
 	return map[string][]byte{}, nil
 }
 
-func (e sourceCaptureEngine) Capabilities() ProviderCapabilities {
-	return ProviderCapabilities{Sourced: true, Synthesized: true, ArtifactsStandalone: true}
+func (e sourceCaptureEngine) Contract() ProviderContract {
+	return ProviderContract{Sourced: true, Synthesized: true, ArtifactsStandalone: true}
 }
 
 // TestDispatchBoundaryScopeFR_RemoteSourceCacheExtractsFromProjection is the

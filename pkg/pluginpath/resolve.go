@@ -78,20 +78,20 @@ type ResolvedPlugin struct {
 	// plain scalar, so this package stays free of any internal/wasm dependency.
 	Version string
 
-	// Capability is the entity's authored capability claim, attached by the
+	// Contract is the entity's authored capability claim, attached by the
 	// entity-fronted Lookup (EntityLookup) from the in-hand Plugin entity.
 	// It is neutral — a pluginpath-owned shape, not the loader's — so this
 	// package stays free of any internal/wasm dependency; the loader's caller
 	// maps it onto the load spec. nil when the resolution is not entity-fronted
 	// (the bare cascade, the linter's --plugin override) so the cross-check is
 	// skipped.
-	Capability *PluginCapabilityClaim
+	Contract *PluginContractClaim
 
 	// Limits is the entity's authored runtime resource limits (memory and
 	// per-call wall time), attached by the entity-fronted Lookup (EntityLookup)
-	// from the in-hand Plugin entity. Like Capability it is neutral — a
+	// from the in-hand Plugin entity. Like Contract it is neutral — a
 	// pluginpath-owned shape carrying no internal/wasm dependency; the loader's
-	// caller maps it onto the load spec. Unlike Capability the limits are not
+	// caller maps it onto the load spec. Unlike Contract the limits are not
 	// cross-checked against the plugin (a plugin does not self-report limits),
 	// so they ride a sibling field rather than the capability claim. nil when
 	// the resolution is not entity-fronted; the loader then applies the
@@ -115,8 +115,8 @@ type PluginRuntimeLimits struct {
 	TimeoutMs uint64
 }
 
-// PluginCapabilityClaim is the neutral, pluginpath-owned shape of an entity's
-// authored capability declaration: the per-export name/operates/scope triples
+// PluginContractClaim is the neutral, pluginpath-owned shape of an entity's
+// authored contract declaration: the per-export name/operates/scope triples
 // the load gate cross-checks against the plugin's self-report. It carries no
 // dependency on internal/wasm; the loader's caller maps it onto the wasm-side
 // claim shape.
@@ -125,23 +125,23 @@ type PluginRuntimeLimits struct {
 // machine-owned, derived from the .wasm import section at publish and stamped
 // into the entity, so there is no authored list to cross-check at load. The
 // loader registers exactly the derived set.
-type PluginCapabilityClaim struct {
+type PluginContractClaim struct {
 	// Exports is the authored per-export capability claim, in author order.
 	Exports []PluginExportClaim
 
-	// Capabilities is the authored plugin-level capability claim in the neutral
+	// Contract is the authored provider render-behavior contract in the neutral
 	// shape, or nil when the entity authors none. The loader's caller maps it
 	// onto the wasm-side claim shape; the load gate cross-checks it against the
 	// plugin's describe() self-report.
-	Capabilities *PluginCapabilitiesClaim
+	Contract *ProviderContractClaim
 }
 
-// PluginCapabilitiesClaim is the neutral, pluginpath-owned shape of an entity's
-// authored plugin-level capability claim: the input kinds the plugin renders,
+// ProviderContractClaim is the neutral, pluginpath-owned shape of an entity's
+// authored provider render-behavior contract: the input kinds the plugin renders,
 // how it assembles a dispatch group's per-node output, the artifact-template
 // delimiter pair, and any source-file restriction. It carries no dependency on
 // internal/wasm; the loader's caller maps it onto the wasm-side claim shape.
-type PluginCapabilitiesClaim struct {
+type ProviderContractClaim struct {
 	// InputKinds is the authored input-kind claim.
 	InputKinds PluginInputKindsClaim
 	// BoundaryAssembly is the authored boundary-assembly mode ("none", "merge",

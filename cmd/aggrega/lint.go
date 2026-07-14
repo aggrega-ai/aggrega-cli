@@ -442,7 +442,7 @@ func resolveLinterPlugin(cliFlag string, wsCfg workspaceconfig.Config, pluginByU
 	}
 	// The --plugin override is the artifact-direct escape hatch: resolve it
 	// verbatim through the cascade override, never the entity model. The cascade
-	// override path sets no Capability/Limits, so the load gets a nil claim and
+	// override path sets no Contract/Limits, so the load gets a nil claim and
 	// default caps — today's override behaviour.
 	if cliFlag != "" {
 		return cascade.Resolve("")
@@ -459,7 +459,7 @@ func resolveLinterPlugin(cliFlag string, wsCfg workspaceconfig.Config, pluginByU
 		// caps.
 		return cascade.Resolve(embedded.PublishingLinterURI)
 	}
-	front := pluginpath.EntityLookup(func(entityURI string) (string, *pluginpath.PluginCapabilityClaim, *pluginpath.PluginRuntimeLimits, bool) {
+	front := pluginpath.EntityLookup(func(entityURI string) (string, *pluginpath.PluginContractClaim, *pluginpath.PluginRuntimeLimits, bool) {
 		if pluginByURI == nil {
 			return "", nil, nil, false
 		}
@@ -467,7 +467,7 @@ func resolveLinterPlugin(cliFlag string, wsCfg workspaceconfig.Config, pluginByU
 		if !ok {
 			return "", nil, nil, false
 		}
-		return entity.ArtifactReference(), resolver.PluginCapabilityClaim(entity), resolver.PluginRuntimeLimits(entity), true
+		return entity.ArtifactReference(), resolver.PluginContractClaim(entity), resolver.PluginRuntimeLimits(entity), true
 	}, cascade.Resolve)
 	return front(uri)
 }

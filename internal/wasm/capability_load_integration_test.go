@@ -28,7 +28,7 @@ func TestLoadAndDescribe_CapabilityClaimAgrees(t *testing.T) {
 	plugin, desc, err := loader.LoadAndDescribe(ctx, PluginSpec{
 		Name: "frp-step-go",
 		Path: pluginPath,
-		Capability: &EntityCapabilityClaim{Exports: []EntityExportClaim{
+		Contract: &EntityContractClaim{Exports: []EntityExportClaim{
 			{Name: "step", Operates: operatesPatch, Scope: ScopeOwn},
 		}},
 	})
@@ -45,7 +45,7 @@ func TestLoadAndDescribe_CapabilityClaimAgrees(t *testing.T) {
 // TestLoadAndDescribe_CapabilityClaimDisagrees exercises the full load path with
 // a constructed claim that DISAGREES with the fixture's describe() (the claim
 // says scope=host where the plugin reports scope=own): the load halts loudly
-// with ErrWasmCapabilityMismatch. Skips cleanly when the toolchain is absent.
+// with ErrWasmContractMismatch. Skips cleanly when the toolchain is absent.
 func TestLoadAndDescribe_CapabilityClaimDisagrees(t *testing.T) {
 	pluginPath := wasmtest.EnsureFixtureBuilt(t, "frp-step-go.wasm")
 
@@ -55,12 +55,12 @@ func TestLoadAndDescribe_CapabilityClaimDisagrees(t *testing.T) {
 	_, _, err := loader.LoadAndDescribe(ctx, PluginSpec{
 		Name: "frp-step-go",
 		Path: pluginPath,
-		Capability: &EntityCapabilityClaim{Exports: []EntityExportClaim{
+		Contract: &EntityContractClaim{Exports: []EntityExportClaim{
 			{Name: "step", Operates: operatesPatch, Scope: ScopeHost},
 		}},
 	})
-	if !errors.Is(err, ErrWasmCapabilityMismatch) {
-		t.Fatalf("a disagreeing claim should halt with ErrWasmCapabilityMismatch; got %v", err)
+	if !errors.Is(err, ErrWasmContractMismatch) {
+		t.Fatalf("a disagreeing claim should halt with ErrWasmContractMismatch; got %v", err)
 	}
 	if !strings.Contains(err.Error(), "frp-step-go") {
 		t.Errorf("halt diagnostic should name the entity identity; got %v", err)
@@ -82,7 +82,7 @@ func TestLoadAndDescribe_NilClaimSkipsCrossCheck(t *testing.T) {
 	plugin, _, err := loader.LoadAndDescribe(ctx, PluginSpec{
 		Name: "frp-step-go",
 		Path: pluginPath,
-		// Capability nil: no cross-check.
+		// Contract nil: no cross-check.
 	})
 	if err != nil {
 		t.Fatalf("a nil claim should skip the cross-check and load; got %v", err)

@@ -48,8 +48,8 @@ func (a *versionedAssembler) Render(_ context.Context, _ map[string]any, nodeCtx
 	return map[string][]byte{"manifest.yaml": []byte(b.String())}, nil
 }
 
-func (a *versionedAssembler) Capabilities() renderer.ProviderCapabilities {
-	return renderer.ProviderCapabilities{Sourced: true, Synthesized: true, ArtifactsStandalone: true}
+func (a *versionedAssembler) Contract() renderer.ProviderContract {
+	return renderer.ProviderContract{Sourced: true, Synthesized: true, ArtifactsStandalone: true}
 }
 
 // BoundaryAssembly marks this synthetic provider as a fragment-merging

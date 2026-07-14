@@ -235,7 +235,12 @@ func mergeGenCatalogEntity(desc wasm.PluginDescriptor, description string, overl
 	entity.Spec.AbiVersion = desc.ABIVersion
 	entity.Spec.Targets = desc.CompatibleProviders
 	entity.Spec.Exports = descriptorExports(desc.Exports)
-	entity.Spec.Capabilities = descriptorCapabilities(desc.Capabilities)
+	if contract := descriptorContract(desc.Contract); contract != nil {
+		if entity.Spec.Provider == nil {
+			entity.Spec.Provider = &types.PluginProvider{}
+		}
+		entity.Spec.Provider.Contract = contract
+	}
 
 	return entity, nil
 }
@@ -271,11 +276,11 @@ func descriptorExports(exports []wasm.PluginExport) []types.PluginExport {
 	return out
 }
 
-// isZeroCapabilities reports whether a describe() capability self-report carries
-// no plugin-level claim — every field at its zero value — so the generator emits
-// no capabilities block rather than an all-empty one. The cross-cutting sockets
-// (linter, mutator, policy-validator) report no plugin-level capabilities.
-func isZeroCapabilities(c wasm.Capabilities) bool {
+// isZeroContract reports whether a describe() render-behavior contract carries
+// no claim — every field at its zero value — so the generator emits no contract
+// block rather than an all-empty one. The cross-cutting sockets (linter, mutator,
+// policy-validator) report no render-behavior contract.
+func isZeroContract(c wasm.ProviderContract) bool {
 	return c.InputKinds == (wasm.InputKinds{}) &&
 		c.BoundaryAssembly == "" &&
 		c.ArtifactDelimiters == nil &&
@@ -285,14 +290,14 @@ func isZeroCapabilities(c wasm.Capabilities) bool {
 		!c.CrossBoundaryLinking
 }
 
-// descriptorCapabilities maps the describe() plugin-level capability self-report
-// onto the entity's authored-capability shape, or returns nil when the guest
+// descriptorContract maps the describe() provider render-behavior self-report
+// onto the entity's authored-contract shape, or returns nil when the guest
 // reports none.
-func descriptorCapabilities(c wasm.Capabilities) *types.PluginCapabilities {
-	if isZeroCapabilities(c) {
+func descriptorContract(c wasm.ProviderContract) *types.ProviderContract {
+	if isZeroContract(c) {
 		return nil
 	}
-	out := &types.PluginCapabilities{
+	out := &types.ProviderContract{
 		InputKinds: types.PluginInputKinds{
 			Sourced:             c.InputKinds.Sourced,
 			Synthesized:         c.InputKinds.Synthesized,

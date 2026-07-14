@@ -89,7 +89,7 @@ func fixtureSocketLookup(t *testing.T, catalogLookup resolver.CatalogLookup, uri
 	for uri, artifact := range uriToArtifact {
 		bytesByURI[uri] = wasmtest.EnsureFixtureBytes(t, artifact)
 	}
-	entityCascade := pluginpath.EntityLookup(func(uri string) (string, *pluginpath.PluginCapabilityClaim, *pluginpath.PluginRuntimeLimits, bool) {
+	entityCascade := pluginpath.EntityLookup(func(uri string) (string, *pluginpath.PluginContractClaim, *pluginpath.PluginRuntimeLimits, bool) {
 		if catalogLookup.Plugin == nil {
 			return "", nil, nil, false
 		}
@@ -97,7 +97,7 @@ func fixtureSocketLookup(t *testing.T, catalogLookup resolver.CatalogLookup, uri
 		if !ok {
 			return "", nil, nil, false
 		}
-		return entity.ArtifactReference(), resolver.PluginCapabilityClaim(entity), resolver.PluginRuntimeLimits(entity), true
+		return entity.ArtifactReference(), resolver.PluginContractClaim(entity), resolver.PluginRuntimeLimits(entity), true
 	}, (pluginpath.Resolver{}).Resolve)
 	return func(uri string) (pluginpath.ResolvedPlugin, error) {
 		if b, ok := bytesByURI[uri]; ok {

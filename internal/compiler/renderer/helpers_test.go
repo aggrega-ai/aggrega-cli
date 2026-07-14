@@ -531,6 +531,6 @@ func (noopEngine) Render(ctx context.Context, _ map[string]any, _ NodeRenderCont
 	return nil, nil
 }
 
-func (noopEngine) Capabilities() ProviderCapabilities {
-	return ProviderCapabilities{Sourced: true, Synthesized: true, ArtifactsStandalone: true}
+func (noopEngine) Contract() ProviderContract {
+	return ProviderContract{Sourced: true, Synthesized: true, ArtifactsStandalone: true}
 }

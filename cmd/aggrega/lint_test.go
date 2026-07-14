@@ -243,12 +243,12 @@ func TestResolvePluginBytesOverride(t *testing.T) {
 	if !bytes.Equal(got.Bytes, content) {
 		t.Errorf("got %q; want %q", got.Bytes, content)
 	}
-	if got.Capability != nil || got.Limits != nil {
-		t.Errorf("override path should carry no claim/limits; got capability=%v limits=%v", got.Capability, got.Limits)
+	if got.Contract != nil || got.Limits != nil {
+		t.Errorf("override path should carry no claim/limits; got capability=%v limits=%v", got.Contract, got.Limits)
 	}
 	spec := resolver.PluginSpec("publishing-linter", got)
-	if spec.Capability != nil {
-		t.Errorf("override-path spec should skip the cross-check (nil Capability); got %+v", spec.Capability)
+	if spec.Contract != nil {
+		t.Errorf("override-path spec should skip the cross-check (nil Contract); got %+v", spec.Contract)
 	}
 	if spec.MaxMemoryPages != 0 || spec.TimeoutMs != 0 {
 		t.Errorf("override-path spec should leave caps zero (loader applies default); got pages=%d ms=%d", spec.MaxMemoryPages, spec.TimeoutMs)
@@ -351,8 +351,8 @@ func TestResolveLinterPluginCarriesEntityRuntimeCap(t *testing.T) {
 	if spec.MaxMemoryPages != 32 || spec.TimeoutMs != 250 {
 		t.Fatalf("entity runtime caps not threaded; got pages=%d ms=%d (want 32 / 250)", spec.MaxMemoryPages, spec.TimeoutMs)
 	}
-	if spec.Capability == nil || len(spec.Capability.Exports) != 1 || spec.Capability.Exports[0].Name != "lint_rules" {
-		t.Fatalf("entity export claim not threaded; got %+v", spec.Capability)
+	if spec.Contract == nil || len(spec.Contract.Exports) != 1 || spec.Contract.Exports[0].Name != "lint_rules" {
+		t.Fatalf("entity export claim not threaded; got %+v", spec.Contract)
 	}
 }
 

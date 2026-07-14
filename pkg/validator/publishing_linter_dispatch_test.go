@@ -521,7 +521,7 @@ func TestDispatchPublishingLinterBatch(t *testing.T) {
 // load gate's describe()-vs-entity cross-check when the spec carries a capability
 // claim. The real publishing-linter's describe() declares the lint_rules export
 // with empty operates/scope; a spec that claims lint_rules with a non-empty scope
-// disagrees, so the LINTER LOAD must halt loudly with ErrWasmCapabilityMismatch
+// disagrees, so the LINTER LOAD must halt loudly with ErrWasmContractMismatch
 // rather than run the rule. Exercises the real embedded linter so the proof is
 // linter-specific; skips cleanly when the toolchain is absent.
 func TestDispatchPublishingLinterCrossCheckHalts(t *testing.T) {
@@ -529,7 +529,7 @@ func TestDispatchPublishingLinterCrossCheckHalts(t *testing.T) {
 	spec := wasm.PluginSpec{
 		Name:  "publishing-linter",
 		Bytes: pluginBytes,
-		Capability: &wasm.EntityCapabilityClaim{Exports: []wasm.EntityExportClaim{
+		Contract: &wasm.EntityContractClaim{Exports: []wasm.EntityExportClaim{
 			// describe() declares lint_rules with empty operates/scope; claim a
 			// scope it does not report -> scope-mismatch on the cross-check.
 			{Name: "lint_rules", Scope: "own"},
@@ -540,8 +540,8 @@ func TestDispatchPublishingLinterCrossCheckHalts(t *testing.T) {
 		EntityKind: "Component",
 		Proposed:   json.RawMessage(`{"kind":"Component","metadata":{"name":"core/compute/api-server"}}`),
 	})
-	if !errors.Is(err, wasm.ErrWasmCapabilityMismatch) {
-		t.Fatalf("a disagreeing claim should halt the linter load with ErrWasmCapabilityMismatch; got %v", err)
+	if !errors.Is(err, wasm.ErrWasmContractMismatch) {
+		t.Fatalf("a disagreeing claim should halt the linter load with ErrWasmContractMismatch; got %v", err)
 	}
 	if !strings.Contains(err.Error(), "scope") {
 		t.Errorf("halt diagnostic should name the disagreeing field; got %v", err)

@@ -38,12 +38,12 @@ import (
 // exercised with and without a running guest.
 //
 // This is the cross-boundary wire analog of the in-tree
-// renderer.ProviderCapabilities self-report: a provider engine reports
+// renderer.ProviderContract self-report: a provider engine reports
 // its supported input kinds to the central gate through
-// ProviderCapabilities, exactly as a provider Wasm guest reports its
+// ProviderContract, exactly as a provider Wasm guest reports its
 // exports and ABI version through describe(). The two are independent
 // surfaces over the same idea (a renderer self-declaring what it can
-// do); describe() is the wire shape, ProviderCapabilities the in-tree
+// do); describe() is the wire shape, renderer.ProviderContract the in-tree
 // Go shape, and neither is derived from the other.
 type PluginDescriptor struct {
 	// ABIVersion is the plugin ABI the guest binds against. The host
@@ -82,14 +82,14 @@ type PluginDescriptor struct {
 	// binds the per-export host surface before invoking each.
 	Exports []PluginExport `json:"exports"`
 
-	// Capabilities is the plugin's plugin-level capability self-report —
+	// Contract is the provider's render-behavior self-report —
 	// the input kinds it renders, how it assembles a dispatch group's
 	// per-node output, the artifact-template delimiter pair it applies,
 	// and any source-file restriction. Unlike the per-export declarations,
-	// it describes the plugin as a whole. The load gate cross-checks it
+	// it describes the provider as a whole. The load gate cross-checks it
 	// against the entity's authored claim; an all-zero value carries no
-	// plugin-level capability claim.
-	Capabilities Capabilities `json:"capabilities,omitempty,omitzero"`
+	// render-behavior contract.
+	Contract ProviderContract `json:"contract,omitempty,omitzero"`
 
 	// Description is the plugin's own one-line human-readable description —
 	// a plugin-level self-report of what the plugin does, distinct from the
@@ -225,15 +225,15 @@ type PluginDescriptorMeta struct {
 	Commit     string `json:"commit,omitempty"`
 }
 
-// Capabilities is a plugin's self-declaration of the compile-time render
+// ProviderContract is a provider's self-declaration of the compile-time render
 // behaviors it performs across the nodes it renders — the input kinds it
 // accepts, whether and how it assembles a dispatch group's per-node output
 // into a single artifact, the Go-template delimiter pair it applies to
 // imported artifact files, and any restriction on which source files it
-// consumes. It is a plugin-level self-report: it describes the plugin as a
+// consumes. It is a provider-level self-report: it describes the provider as a
 // whole, not any one export. The host reads it from describe() and the load
 // gate cross-checks it against the entity's authored claim.
-type Capabilities struct {
+type ProviderContract struct {
 	// InputKinds reports which of the three Recipe input kinds the plugin
 	// renders: a sourced file set, a synthesized workload, and a standalone
 	// artifacts-only node.
@@ -528,7 +528,7 @@ const (
 //     runtime enforces compatible providers and acts on operates/scope
 //     when it dispatches a step; here the values are checked for shape
 //     and otherwise piped through.
-//   - the plugin-level capabilities block is well-shaped: boundary_assembly
+//   - the provider render-behavior contract block is well-shaped: boundary_assembly
 //     is none, merge, nest, or empty, and a declared assembly_name_annotation
 //     names a non-empty annotation key. This is shape validation only — the
 //     host does not require the block, cross-check it against the plugin
@@ -580,7 +580,7 @@ func (d PluginDescriptor) Validate(pluginIdentity string) error {
 		return err
 	}
 
-	if err := d.validateCapabilities(pluginIdentity); err != nil {
+	if err := d.validateContract(pluginIdentity); err != nil {
 		return err
 	}
 
@@ -641,33 +641,33 @@ func (d PluginDescriptor) validateStage(pluginIdentity string) error {
 func (d PluginDescriptor) validateLinkCapability(pluginIdentity string) error {
 	bothExports := d.hasExport(LinkPublishExport) && d.hasExport(LinkResolveExport)
 	switch {
-	case d.Capabilities.CrossBoundaryLinking && !bothExports:
+	case d.Contract.CrossBoundaryLinking && !bothExports:
 		return fmt.Errorf("plugin %q declares the cross-boundary linking capability but does not export both %q and %q: %w",
 			pluginIdentity, LinkPublishExport, LinkResolveExport, ErrWasmManifestRejected)
-	case !d.Capabilities.CrossBoundaryLinking && bothExports:
+	case !d.Contract.CrossBoundaryLinking && bothExports:
 		return fmt.Errorf("plugin %q exports both %q and %q but does not declare the cross-boundary linking capability: %w",
 			pluginIdentity, LinkPublishExport, LinkResolveExport, ErrWasmManifestRejected)
 	}
 	return nil
 }
 
-// validateCapabilities shape-checks the plugin-level capabilities block:
+// validateContract shape-checks the provider render-behavior contract block:
 // boundary_assembly must be none, merge, nest, or empty, and a declared
 // assembly_name_annotation must name a non-empty annotation key. This is shape
 // validation only — it does not require the block, cross-check it against the
 // plugin type or its compatible providers, or act on its values. The load gate
 // cross-checks the block against the entity's authored claim; the other input
 // fields are piped through unchecked here.
-func (d PluginDescriptor) validateCapabilities(pluginIdentity string) error {
-	switch d.Capabilities.BoundaryAssembly {
+func (d PluginDescriptor) validateContract(pluginIdentity string) error {
+	switch d.Contract.BoundaryAssembly {
 	case "", BoundaryAssemblyNone, BoundaryAssemblyMerge, BoundaryAssemblyNest:
 		// well-shaped
 	default:
 		return fmt.Errorf("plugin %q declares unknown boundary_assembly %q (want %q, %q, %q, or empty): %w",
-			pluginIdentity, d.Capabilities.BoundaryAssembly,
+			pluginIdentity, d.Contract.BoundaryAssembly,
 			BoundaryAssemblyNone, BoundaryAssemblyMerge, BoundaryAssemblyNest, ErrWasmManifestRejected)
 	}
-	if a := d.Capabilities.AssemblyNameAnnotation; a != nil && a.Annotation == "" {
+	if a := d.Contract.AssemblyNameAnnotation; a != nil && a.Annotation == "" {
 		return fmt.Errorf("plugin %q declares an assembly_name_annotation with an empty annotation key: %w",
 			pluginIdentity, ErrWasmManifestRejected)
 	}

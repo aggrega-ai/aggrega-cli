@@ -1210,7 +1210,7 @@ func resolveSecretRecipes(nodeID string, graph *types.IRGraph, recipeLookup Reci
 // sites call this, so a Recipe and a FeatureRecipe bound to the same provider
 // gate identically — there is one gate, not a parallel FR track.
 func gateInputKind(nodeID, providerName string, engine Engine, hasSource, hasWorkload, hasArtifacts bool) error {
-	caps := engine.Capabilities()
+	caps := engine.Contract()
 	switch {
 	case hasSource:
 		if !caps.Sourced {
@@ -1256,7 +1256,7 @@ func routeNodeInputDiagnostics(nodeID, providerName string, diags []Diagnostic, 
 // mode. It names the provider, the unsupported mode, the kinds the provider
 // does support, and the remedy — framed as a provider capability, not a
 // "compute mandatory" semantic opinion (Invariant 1).
-func unsupportedInputKindError(nodeID, providerName, mode string, caps ProviderCapabilities) error {
+func unsupportedInputKindError(nodeID, providerName, mode string, caps ProviderContract) error {
 	return cerrors.New(cerrors.CatalogError, cerrors.SourceLocation{File: nodeID},
 		fmt.Sprintf("node %q: %s", nodeID, UnsupportedInputKindMessage(providerName, mode, caps)),
 		nil, nil)
@@ -1270,7 +1270,7 @@ func unsupportedInputKindError(nodeID, providerName, mode string, caps ProviderC
 // mandatory" semantic opinion (Invariant 1). Callers prefix it with the
 // offending entity: the gate with the flattened node id, the lint detector with
 // the Recipe/FeatureRecipe identity.
-func UnsupportedInputKindMessage(providerName, mode string, caps ProviderCapabilities) string {
+func UnsupportedInputKindMessage(providerName, mode string, caps ProviderContract) string {
 	return fmt.Sprintf(
 		"provider %q does not support %s recipes (this provider supports: %s); "+
 			"declare one of the supported input kinds, or target a provider that supports %s",
@@ -1281,7 +1281,7 @@ func UnsupportedInputKindMessage(providerName, mode string, caps ProviderCapabil
 // diagnostic, in source → synthesised → artifacts-only order. Returns "none"
 // when the provider supports no input kind (not expected for a rendering
 // provider).
-func supportedKindsList(caps ProviderCapabilities) string {
+func supportedKindsList(caps ProviderContract) string {
 	var kinds []string
 	if caps.Sourced {
 		kinds = append(kinds, "sourced")

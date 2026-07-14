@@ -37,15 +37,15 @@ var provenanceRecorded = &sync.Map{}
 // (the render pipeline's per-step load and the publishing-linter dispatch) calls
 // it rather than re-spelling the field copy.
 //
-// A resolution that is not entity-fronted carries a nil Capability and nil
+// A resolution that is not entity-fronted carries a nil Contract and nil
 // Limits — the bare cascade, the linter's --plugin override, the publish path.
-// A nil claim maps to a nil spec.Capability (the load gate skips the
+// A nil claim maps to a nil spec.Contract (the load gate skips the
 // cross-check); nil limits map to zero caps (the loader applies the platform
 // default cap, so a load is never unbounded). This preserves the non-entity load
 // behaviour while the entity-fronted path gains both the cross-check and the
 // entity's explicit caps.
 //
-// It is the sibling of PluginCapabilityClaim / PluginRuntimeLimits (the
+// It is the sibling of PluginContractClaim / PluginRuntimeLimits (the
 // entity → neutral mapping): those translate an authored Plugin entity into the
 // neutral shapes the resolution layer attaches to a resolved plugin; this
 // translates those neutral shapes into the loader's spec. Keeping both mappings
@@ -61,7 +61,7 @@ var provenanceRecorded = &sync.Map{}
 func PluginSpec(name string, resolved pluginpath.ResolvedPlugin) wasm.PluginSpec {
 	recordProvenance(resolved)
 	spec := wasm.PluginSpec{Name: name, Bytes: resolved.Bytes}
-	spec.Capability = WasmCapabilityClaim(resolved.Capability)
+	spec.Contract = WasmContractClaim(resolved.Contract)
 	if resolved.Limits != nil {
 		spec.MaxMemoryPages = resolved.Limits.MaxMemoryPages
 		spec.TimeoutMs = resolved.Limits.TimeoutMs
@@ -69,17 +69,17 @@ func PluginSpec(name string, resolved pluginpath.ResolvedPlugin) wasm.PluginSpec
 	return spec
 }
 
-// WasmCapabilityClaim maps a resolved plugin's neutral capability claim onto the
+// WasmContractClaim maps a resolved plugin's neutral capability claim onto the
 // load gate's cross-check shape — the per-export name/operates/scope triples and
 // the plugin-level capabilities block — or nil when the resolution carries none.
 //
-// It is the single home of the neutral-claim → wasm.EntityCapabilityClaim
+// It is the single home of the neutral-claim → wasm.EntityContractClaim
 // mapping. The load path reaches it through PluginSpec; the publish path calls it
-// directly (fronting it with PluginCapabilityClaim to translate the authored
+// directly (fronting it with PluginContractClaim to translate the authored
 // entity). Both surfaces therefore cross-check against a claim built by exactly
 // one mapping, so the set of authored fields carried into the describe()
 // comparison cannot drift between load and publish.
-func WasmCapabilityClaim(claim *pluginpath.PluginCapabilityClaim) *wasm.EntityCapabilityClaim {
+func WasmContractClaim(claim *pluginpath.PluginContractClaim) *wasm.EntityContractClaim {
 	if claim == nil {
 		return nil
 	}
@@ -91,9 +91,9 @@ func WasmCapabilityClaim(claim *pluginpath.PluginCapabilityClaim) *wasm.EntityCa
 			Scope:    e.Scope,
 		})
 	}
-	return &wasm.EntityCapabilityClaim{
-		Exports:      exports,
-		Capabilities: wasmCapabilities(claim.Capabilities),
+	return &wasm.EntityContractClaim{
+		Exports:  exports,
+		Contract: wasmContract(claim.Contract),
 	}
 }
 
@@ -135,13 +135,13 @@ func recordProvenance(resolved pluginpath.ResolvedPlugin) {
 	)
 }
 
-// wasmCapabilities maps the neutral plugin-level capability claim onto the
+// wasmContract maps the neutral plugin-level capability claim onto the
 // load gate's cross-check shape, or nil when the resolution carries none.
-func wasmCapabilities(c *pluginpath.PluginCapabilitiesClaim) *wasm.Capabilities {
+func wasmContract(c *pluginpath.ProviderContractClaim) *wasm.ProviderContract {
 	if c == nil {
 		return nil
 	}
-	caps := &wasm.Capabilities{
+	caps := &wasm.ProviderContract{
 		InputKinds: wasm.InputKinds{
 			Sourced:             c.InputKinds.Sourced,
 			Synthesized:         c.InputKinds.Synthesized,

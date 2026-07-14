@@ -49,7 +49,7 @@ func TestRenderPluginEntryProvenanceDisplay(t *testing.T) {
 			PluginType:          wasm.PluginTypeProvider,
 			CompatibleProviders: []string{"helm"},
 			Exports:             []wasm.PluginExport{{Name: "render_node"}, {Name: "assemble_boundary"}},
-			Capabilities: wasm.Capabilities{
+			Contract: wasm.ProviderContract{
 				InputKinds:       wasm.InputKinds{Sourced: true, Synthesized: true},
 				BoundaryAssembly: "merge",
 			},

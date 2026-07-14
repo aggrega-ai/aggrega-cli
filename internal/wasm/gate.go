@@ -87,8 +87,8 @@ func (l *Loader) DescribeAndValidate(ctx context.Context, plugin *Plugin, spec P
 	// — every non-entity caller and the publish path — skips the cross-check.
 	// On mismatch, Close before returning so a rejected load leaks no instance,
 	// matching the descriptor-rejection discipline above.
-	if spec.Capability != nil {
-		if err := CrossCheckCapabilities(spec.Name, *spec.Capability, desc); err != nil {
+	if spec.Contract != nil {
+		if err := CrossCheckContract(spec.Name, *spec.Contract, desc); err != nil {
 			_ = plugin.Close(ctx)
 			return PluginDescriptor{}, err
 		}

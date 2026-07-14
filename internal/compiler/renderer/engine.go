@@ -18,11 +18,11 @@ import (
 // sub-chart prefix).
 type Engine interface {
 	Render(ctx context.Context, values map[string]any, nodeCtx NodeRenderContext) (map[string][]byte, error)
-	// Capabilities reports which Recipe input kinds this engine renders. It is
+	// Contract reports which Recipe input kinds this engine renders. It is
 	// the Go analog of the Wasm provider plugin's describe() ABI — each engine
 	// self-reports, so the central input-kind gate (orchestrator) reads a
 	// provider's support from the engine itself rather than a hardcoded table.
-	Capabilities() ProviderCapabilities
+	Contract() ProviderContract
 }
 
 // NodeInputValidator is the optional capability a provider engine implements to
@@ -103,7 +103,7 @@ func linksCrossBoundary(engine Engine) bool {
 	return false
 }
 
-// ProviderCapabilities declares which of the three Recipe input kinds a
+// ProviderContract declares which of the three Recipe input kinds a
 // provider engine can render. This is the INPUT-KIND axis only — it is
 // orthogonal to the output-assembly axis (BoundaryAssembler /
 // ExternalArtifactsHandler, which describe how a node's output is assembled,
@@ -117,7 +117,7 @@ func linksCrossBoundary(engine Engine) bool {
 //
 // The central gate consumes these to accept or reject a (node-mode, provider)
 // combination once per node, with a single uniform diagnostic.
-type ProviderCapabilities struct {
+type ProviderContract struct {
 	Sourced             bool
 	Synthesized         bool
 	ArtifactsStandalone bool

@@ -6,7 +6,7 @@
 // to a provider whose plugin cannot synthesize is a guaranteed render halt,
 // surfaced at lint. The detector reads the provider's input-kind support from the
 // authoring-time capabilities claim on its serving Plugin entity (via
-// enginefactory.CapabilitiesFor) and reuses the gate's message clause, so the
+// enginefactory.ContractFor) and reuses the gate's message clause, so the
 // early and late diagnostics agree.
 
 package main
@@ -50,10 +50,11 @@ spec:
   exports:
     - name: render_node
     - name: assemble_boundary
-  capabilities:
-    inputKinds:
-      sourced: true
-    boundaryAssembly: nest
+  provider:
+    contract:
+      inputKinds:
+        sourced: true
+      boundaryAssembly: nest
 `)
 	err := validateCatalogWide("", "", []string{dir}, os.Stderr, os.Stdout)
 	if err == nil {
@@ -94,11 +95,12 @@ spec:
   exports:
     - name: render_node
     - name: assemble_boundary
-  capabilities:
-    inputKinds:
-      sourced: true
-      synthesized: true
-    boundaryAssembly: merge
+  provider:
+    contract:
+      inputKinds:
+        sourced: true
+        synthesized: true
+      boundaryAssembly: merge
 `)
 	if err := validateCatalogWide("", "", []string{dir}, os.Stderr, os.Stdout); err != nil {
 		t.Fatalf("workload:+compose (synthesizing) must lint clean; got %v", err)
@@ -111,7 +113,7 @@ spec:
 // entity-claim path without a catalog. An unknown provider resolves nothing.
 func fakeProviderPlugins(ref string) (types.Plugin, bool, error) {
 	claim := func(ik types.PluginInputKinds) (types.Plugin, bool, error) {
-		return types.Plugin{Spec: types.PluginSpec{Capabilities: &types.PluginCapabilities{InputKinds: ik}}}, true, nil
+		return types.Plugin{Spec: types.PluginSpec{Provider: &types.PluginProvider{Contract: &types.ProviderContract{InputKinds: ik}}}}, true, nil
 	}
 	switch ref {
 	case "helm":
@@ -187,7 +189,7 @@ func TestInputKindCapabilityErrors_IgnoresNonWorkload(t *testing.T) {
 }
 
 // Unknown / unimplemented / eval providers bind to no shipped engine
-// (CapabilitiesFor ok=false) → skipped, no false positive against forward-looking
+// (ContractFor ok=false) → skipped, no false positive against forward-looking
 // catalog scaffolding.
 func TestInputKindCapabilityErrors_SkipsUnknownProviders(t *testing.T) {
 	errs := inputKindCapabilityErrors(fakeProviderPlugins, []types.Recipe{

@@ -38,7 +38,7 @@ const lintExportName = "lint_rules"
 // describe(), validates the descriptor (ABI version, plugin type,
 // minimum lint_* export) against its contract, then invokes the
 // lint_rules export. A plugin lacking describe() or carrying a bad
-// descriptor halts here with a loud guardrail. A non-nil spec.Capability arms
+// descriptor halts here with a loud guardrail. A non-nil spec.Contract arms
 // the load gate's describe()-vs-entity cross-check, and spec's caps bound the
 // plugin's memory and per-call wall time. Returns a wrapped error on
 // loader/gate failure, plugin call failure, or output unmarshal failure.
@@ -83,7 +83,7 @@ func DispatchPublishingLinter(spec wasm.PluginSpec, input LinterInput) ([]Linter
 // the shared plugin-resolution cascade, pkg/pluginpath, plus the optional entity
 // capability claim and runtime caps); the caller resolves the tier and verifies
 // any pin before dispatch. The plugin loads once at batch open: a non-nil
-// spec.Capability arms the load gate's describe()-vs-entity cross-check (fired
+// spec.Contract arms the load gate's describe()-vs-entity cross-check (fired
 // once in LoadAndDescribe), and spec's caps bound each per-input Call's memory
 // and wall time.
 func DispatchPublishingLinterBatch(spec wasm.PluginSpec, inputs []LinterInput) ([][]LinterFinding, error) {

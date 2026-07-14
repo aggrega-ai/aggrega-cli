@@ -11,9 +11,9 @@ package types
 // plugin_gen.go from the published plugin-v1alpha1 schema; their
 // godoc is the schema's descriptions. This hand-written companion holds
 // the optional nested blocks the generator names but does not
-// descend into (PluginSignature, PluginRuntime, PluginProvider,
-// PluginSearch, PluginCapabilities and its nested PluginInputKinds and
-// PluginArtifactDelimiters), plus any future Plugin methods or
+// descend into (PluginSignature, PluginRuntime, PluginProvider and its
+// nested ProviderContract, PluginSearch, and ProviderContract's nested
+// PluginInputKinds and PluginArtifactDelimiters), plus any future Plugin methods or
 // marshalers. The shared Maintainer and WellKnownAnnotation types the
 // generated fields reference live in common.go.
 //
@@ -74,6 +74,18 @@ type PluginProvider struct {
 	// compiler does not consume it to gate or branch a build. Entries
 	// preserve author order.
 	WellKnownAnnotations []WellKnownAnnotation `json:"wellKnownAnnotations,omitempty" yaml:"wellKnownAnnotations,omitempty"`
+	// Contract is the provider's self-declared render-behavior contract: the
+	// input kinds it renders, how it assembles a dispatch group's per-node
+	// output, the Go-template delimiter pair it applies to imported artifact
+	// files, any restriction on which source files it consumes, whether one
+	// loaded instance may serve every crossing, and whether it wires
+	// cross-boundary edges. It is the publish-time record of the provider
+	// guest's describe() self-report, which the host cross-checks against
+	// describe() at publish and at load. Absent declares no render-behavior
+	// contract, and the cross-check compares only the per-export claims. The
+	// block is hand-written because the generator names the provider block via
+	// x-aggrega-go-type on the schema's object node and does not descend into it.
+	Contract *ProviderContract `json:"contract,omitempty" yaml:"contract,omitempty"`
 }
 
 // PluginSearch is the optional search-socket metadata block on a
@@ -126,16 +138,16 @@ type PluginExport struct {
 	Selector string `json:"selector,omitempty" yaml:"selector,omitempty"`
 }
 
-// PluginCapabilities is a plugin's self-declared compile-time render
-// behaviors, authored on the entity as the claim the host cross-checks against
-// the plugin's own describe() self-report at publish and at load: the input
-// kinds it renders, how it assembles a dispatch group's per-node output, the
-// Go-template delimiter pair it applies to imported artifact files, and any
-// restriction on which source files it consumes. It describes the plugin as a
-// whole, not any one export. The block is hand-written because the generator
-// names it via x-aggrega-go-type on the schema's object node and does not
-// descend into it.
-type PluginCapabilities struct {
+// ProviderContract is a provider's self-declared compile-time render
+// behaviors, authored on the entity's provider block as the contract the host
+// cross-checks against the plugin's own describe() self-report at publish and at
+// load: the input kinds it renders, how it assembles a dispatch group's per-node
+// output, the Go-template delimiter pair it applies to imported artifact files,
+// and any restriction on which source files it consumes. It describes the
+// provider as a whole, not any one export. The block is hand-written because the
+// generator names the provider block via x-aggrega-go-type on the schema's object
+// node and does not descend into it.
+type ProviderContract struct {
 	// InputKinds is which of the three Recipe input kinds this plugin renders:
 	// a sourced file set, a synthesized workload, and a standalone
 	// artifacts-only node.

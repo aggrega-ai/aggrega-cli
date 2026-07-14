@@ -55,6 +55,4 @@ type PluginSpec struct {
 	Provider *PluginProvider `json:"provider,omitempty" yaml:"provider,omitempty"`
 	// Search The search-socket metadata for a `pluginType: search` plugin: the index format and format version the guest's `describe()` self-report stamps, and the ranked-query capabilities it advertises. The block is the publish-time record of the guest's self-report, the same way the provider block records a provider guest's self-report; the host cross-checks it against `describe()` at publish and at load. Present only on search plugins; absent on every other plugin type.
 	Search *PluginSearch `json:"search,omitempty" yaml:"search,omitempty"`
-	// Capabilities The plugin's self-declared compile-time render behaviors, authored as the claim the host cross-checks against the plugin's own self-report at publish and at load: the input kinds it renders, how it assembles a dispatch group's per-node output, the template-delimiter pair it applies to imported artifact files, and any restriction on which source files it consumes. Absent declares no plugin-level capability claim, and the cross-check compares only the per-export claims.
-	Capabilities *PluginCapabilities `json:"capabilities,omitempty" yaml:"capabilities,omitempty"`
 }

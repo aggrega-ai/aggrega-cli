@@ -58,8 +58,8 @@ var ErrWasmGuestPanic = errors.New("wasm: guest plugin panicked during call")
 // proc_exit so callers see the failure code in the message.
 var ErrWasmPluginExited = errors.New("wasm: plugin invoked proc_exit")
 
-// ErrWasmCapabilityMismatch indicates that a catalog Plugin entity's
-// authored capability claim disagrees with the plugin's self-reported describe()
+// ErrWasmContractMismatch indicates that a catalog Plugin entity's
+// authored contract claim disagrees with the plugin's self-reported describe()
 // descriptor at load. The cross-check is per-export, keyed by export name:
 // either the entity claims an export the plugin's describe() does not declare, or
 // a claimed export's operates or scope field does not match the plugin's
@@ -70,7 +70,7 @@ var ErrWasmPluginExited = errors.New("wasm: plugin invoked proc_exit")
 // field, and both values so the author sees exactly which claim diverged from
 // the plugin's self-report. The same cross-check runs at publish time, so a
 // mismatch surfaces before the entity is published rather than at load.
-var ErrWasmCapabilityMismatch = errors.New("wasm: entity capability claim does not match plugin describe()")
+var ErrWasmContractMismatch = errors.New("wasm: entity contract claim does not match plugin describe()")
 
 // ErrWasmHostFunctionsStampMismatch indicates that a Plugin entity's stamped
 // runtime host-function record disagrees with the host functions the verified
@@ -88,7 +88,7 @@ var ErrWasmCapabilityMismatch = errors.New("wasm: entity capability claim does n
 //
 // The wrapping error names the plugin, the stamped set, and the derived set so
 // the divergence is visible. This sentinel is distinct from
-// ErrWasmCapabilityMismatch: that covers the export operates/scope claim against
+// ErrWasmContractMismatch: that covers the export operates/scope claim against
 // describe(); this covers the stamped host-function record against the verified
 // binary's imports.
 var ErrWasmHostFunctionsStampMismatch = errors.New("wasm: stamped host-function record does not match .wasm imports")

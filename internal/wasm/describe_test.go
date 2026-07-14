@@ -623,8 +623,8 @@ func TestPluginDescriptorValidateLinkCapability(t *testing.T) {
 			d := PluginDescriptor{
 				ABIVersion:   ABIVersionV1Alpha1,
 				PluginType:   PluginTypeProvider,
-				Exports:      tc.exports,
-				Capabilities: Capabilities{CrossBoundaryLinking: tc.linking},
+				Exports:  tc.exports,
+				Contract: ProviderContract{CrossBoundaryLinking: tc.linking},
 			}
 			err := d.Validate("acme/link-provider")
 			if tc.wantReject {

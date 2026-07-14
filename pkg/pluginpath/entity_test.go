@@ -21,9 +21,9 @@ func TestEntityLookup_TranslatesEntityToArtifact(t *testing.T) {
 		sawArtifact = uri
 		return ResolvedPlugin{Bytes: []byte("\x00asm-bytes"), Tier: TierSidecar, URI: uri}, nil
 	}
-	claim := &PluginCapabilityClaim{Exports: []PluginExportClaim{{Name: "step", Operates: "patch", Scope: "own"}}}
+	claim := &PluginContractClaim{Exports: []PluginExportClaim{{Name: "step", Operates: "patch", Scope: "own"}}}
 	limits := &PluginRuntimeLimits{MaxMemoryPages: 64, TimeoutMs: 1500}
-	front := EntityLookup(func(uri string) (string, *PluginCapabilityClaim, *PluginRuntimeLimits, bool) {
+	front := EntityLookup(func(uri string) (string, *PluginContractClaim, *PluginRuntimeLimits, bool) {
 		if uri == entityURI {
 			return artifactURI, claim, limits, true
 		}
@@ -42,8 +42,8 @@ func TestEntityLookup_TranslatesEntityToArtifact(t *testing.T) {
 	}
 	// The entity-front attaches the entity's authored capability claim to the
 	// cascade's ResolvedPlugin so the load gate can cross-check it.
-	if res.Capability != claim {
-		t.Errorf("resolved Capability = %v; want the entity's claim attached", res.Capability)
+	if res.Contract != claim {
+		t.Errorf("resolved Contract = %v; want the entity's claim attached", res.Contract)
 	}
 	// The entity-front attaches the entity's authored runtime limits as a
 	// sibling field so the loader caps the plugin's memory and wall time.
@@ -63,7 +63,7 @@ func TestEntityLookup_BareWasmHaltsLoudly(t *testing.T) {
 		return ResolvedPlugin{}, nil
 	}
 	// An entity lookup that finds nothing — every reference is a miss.
-	front := EntityLookup(func(uri string) (string, *PluginCapabilityClaim, *PluginRuntimeLimits, bool) {
+	front := EntityLookup(func(uri string) (string, *PluginContractClaim, *PluginRuntimeLimits, bool) {
 		return "", nil, nil, false
 	}, cascade)
 

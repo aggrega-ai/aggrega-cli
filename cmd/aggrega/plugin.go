@@ -296,12 +296,12 @@ func installedReadiness(pinned, fresh string, err error) string {
 func resolvePluginURI(uri, sidecarDir string, pluginByURI func(string) (types.Plugin, bool)) (pluginpath.ResolvedPlugin, error) {
 	cascade := pluginpath.Resolver{SidecarDir: sidecarDir}
 	if pluginByURI != nil {
-		front := pluginpath.EntityLookup(func(entityURI string) (string, *pluginpath.PluginCapabilityClaim, *pluginpath.PluginRuntimeLimits, bool) {
+		front := pluginpath.EntityLookup(func(entityURI string) (string, *pluginpath.PluginContractClaim, *pluginpath.PluginRuntimeLimits, bool) {
 			entity, ok := pluginByURI(entityURI)
 			if !ok {
 				return "", nil, nil, false
 			}
-			return entity.ArtifactReference(), resolver.PluginCapabilityClaim(entity), resolver.PluginRuntimeLimits(entity), true
+			return entity.ArtifactReference(), resolver.PluginContractClaim(entity), resolver.PluginRuntimeLimits(entity), true
 		}, cascade.Resolve)
 		resolved, err := front(uri)
 		if err == nil {
@@ -414,11 +414,11 @@ func renderPluginEntry(w io.Writer, e pluginListEntry, embeddedSet map[string]bo
 	if len(e.desc.CompatibleProviders) > 0 {
 		fmt.Fprintf(w, "    targets:      %s\n", strings.Join(e.desc.CompatibleProviders, ", "))
 	}
-	if kinds := formatInputKinds(e.desc.Capabilities.InputKinds); kinds != "" {
+	if kinds := formatInputKinds(e.desc.Contract.InputKinds); kinds != "" {
 		fmt.Fprintf(w, "    input kinds:  %s\n", kinds)
 	}
-	if e.desc.Capabilities.BoundaryAssembly != "" {
-		fmt.Fprintf(w, "    boundary:     %s\n", e.desc.Capabilities.BoundaryAssembly)
+	if e.desc.Contract.BoundaryAssembly != "" {
+		fmt.Fprintf(w, "    boundary:     %s\n", e.desc.Contract.BoundaryAssembly)
 	}
 	if names := exportNames(e.desc.Exports); len(names) > 0 {
 		fmt.Fprintf(w, "    exports:      %s\n", strings.Join(names, ", "))

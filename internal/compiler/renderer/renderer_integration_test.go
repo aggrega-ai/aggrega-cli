@@ -322,8 +322,8 @@ func (c *captureComposerEngine) Render(_ context.Context, _ map[string]any, _ re
 // BoundaryAssembler, not the input-kind gate). Real compose declining
 // artifacts-only is asserted in the provider-capability-matrix test against
 // the production engines.
-func (c *captureComposerEngine) Capabilities() renderer.ProviderCapabilities {
-	return renderer.ProviderCapabilities{Sourced: true, Synthesized: true, ArtifactsStandalone: true}
+func (c *captureComposerEngine) Contract() renderer.ProviderContract {
+	return renderer.ProviderContract{Sourced: true, Synthesized: true, ArtifactsStandalone: true}
 }
 
 func (c *captureComposerEngine) AssembleBoundary(_ context.Context, info renderer.BoundaryInfo) (map[string][]byte, bool, error) {

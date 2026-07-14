@@ -89,10 +89,10 @@ spec:
       - key: aggrega.ai/pod-security-standard
         purpose: Pod Security Standards level applied to the workload.
         defaultBehavior: No pod-security-standard level is applied.
-  capabilities:
-    inputKinds:
-      sourced: true
-      synthesized: true
-      artifactsStandalone: true
-    boundaryAssembly: none
-    reusableInstance: true
+    contract:
+      inputKinds:
+        sourced: true
+        synthesized: true
+        artifactsStandalone: true
+      boundaryAssembly: none
+      reusableInstance: true

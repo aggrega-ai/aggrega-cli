@@ -169,16 +169,16 @@ func maximalPlugin() types.Plugin {
 				WellKnownAnnotations: []types.WellKnownAnnotation{
 					{Key: "aggrega.ai/namespace", Purpose: "target namespace", DefaultBehavior: "default namespace"},
 				},
-			},
-			Capabilities: &types.PluginCapabilities{
-				InputKinds: types.PluginInputKinds{
-					Sourced:             true,
-					Synthesized:         true,
-					ArtifactsStandalone: true,
+				Contract: &types.ProviderContract{
+					InputKinds: types.PluginInputKinds{
+						Sourced:             true,
+						Synthesized:         true,
+						ArtifactsStandalone: true,
+					},
+					BoundaryAssembly:   "merge",
+					ArtifactDelimiters: &types.PluginArtifactDelimiters{Left: "[[", Right: "]]"},
+					SourceFilter:       []string{"templates/"},
 				},
-				BoundaryAssembly:   "merge",
-				ArtifactDelimiters: &types.PluginArtifactDelimiters{Left: "[[", Right: "]]"},
-				SourceFilter:       []string{"templates/"},
 			},
 		},
 	}

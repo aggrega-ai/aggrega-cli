@@ -74,8 +74,8 @@ func pushPlugin(out io.Writer, cfg pushConfig, registry string, wantSign bool, n
 	// describe() cross-check. An entity authoring neither exports nor a
 	// capabilities block yields a nil claim, mapped to an empty claim that
 	// cross-checks as a no-op.
-	var capClaim wasm.EntityCapabilityClaim
-	if c := resolver.WasmCapabilityClaim(resolver.PluginCapabilityClaim(entity)); c != nil {
+	var capClaim wasm.EntityContractClaim
+	if c := resolver.WasmContractClaim(resolver.PluginContractClaim(entity)); c != nil {
 		capClaim = *c
 	}
 	if err := wasm.CrossCheckPublishedPlugin(ctx, entityIdentity, capClaim, wasmBytes, crossCheckMaxPages); err != nil {

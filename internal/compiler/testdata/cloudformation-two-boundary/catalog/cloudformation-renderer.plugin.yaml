@@ -23,28 +23,6 @@ spec:
     - name: assemble_boundary
     - name: link_publish
     - name: link_resolve
-  # capabilities is this engine's plugin-level self-report, matched against the
-  # plugin's own describe() output at publish and at load. The cloudformation
-  # engine renders sourced templates and standalone artifact fragments; it does
-  # not synthesize workloads, and it merges a dispatch group's per-node fragments
-  # into a single stack template (boundary-merge assembly).
-  capabilities:
-    inputKinds:
-      sourced: true
-      synthesized: false
-      artifactsStandalone: true
-    boundaryAssembly: merge
-    # reusableInstance declares that one loaded instance of this engine serves
-    # every render, assemble, and validate crossing of a build rather than a
-    # fresh instance per crossing. The engine holds no state across crossings —
-    # its output is a pure function of each crossing's input — so a reused
-    # instance produces byte-identical artifacts.
-    reusableInstance: true
-    # crossBoundaryLinking declares that this engine wires a cross-boundary uses
-    # edge — a uses edge whose ends assemble into different stacks (dispatch
-    # groups) — by emitting a cross-stack reference through its paired
-    # link_publish and link_resolve exports, both declared above.
-    crossBoundaryLinking: true
   runtime:
     maxMemoryPages: 4096
     # Generous per-call cap. The standard-Go SDK guest's runtime initialization
@@ -71,3 +49,25 @@ spec:
       - key: aggrega.ai/aws-assume-role-arn
         purpose: The IAM role ARN a cross-account stack read assumes to reach a peer stack's exported values.
         defaultBehavior: No role is supplied, and a cross-account reference carries no assume-role.
+    # contract is this engine's render-behavior self-report, matched against the
+    # plugin's own describe() output at publish and at load. The cloudformation
+    # engine renders sourced templates and standalone artifact fragments; it does
+    # not synthesize workloads, and it merges a dispatch group's per-node fragments
+    # into a single stack template (boundary-merge assembly).
+    contract:
+      inputKinds:
+        sourced: true
+        synthesized: false
+        artifactsStandalone: true
+      boundaryAssembly: merge
+      # reusableInstance declares that one loaded instance of this engine serves
+      # every render, assemble, and validate crossing of a build rather than a
+      # fresh instance per crossing. The engine holds no state across crossings —
+      # its output is a pure function of each crossing's input — so a reused
+      # instance produces byte-identical artifacts.
+      reusableInstance: true
+      # crossBoundaryLinking declares that this engine wires a cross-boundary uses
+      # edge — a uses edge whose ends assemble into different stacks (dispatch
+      # groups) — by emitting a cross-stack reference through its paired
+      # link_publish and link_resolve exports, both declared above.
+      crossBoundaryLinking: true

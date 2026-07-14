@@ -186,7 +186,7 @@ func TestPushPluginRequiresPluginFlag(t *testing.T) {
 
 // TestPushPluginDescribeMismatchHaltsNoBytes proves the publish-time
 // describe()-cross-check: an entity whose authored exports disagree with the
-// .wasm's describe() halts with ErrWasmCapabilityMismatch and pushes NO bytes.
+// .wasm's describe() halts with ErrWasmContractMismatch and pushes NO bytes.
 func TestPushPluginDescribeMismatchHaltsNoBytes(t *testing.T) {
 	ctx := context.Background()
 	pluginPath := wasmtest.EnsureFixtureBuilt(t, "frp-step-go.wasm")
@@ -216,8 +216,8 @@ spec:
 		Registry:   "hub.aggrega.ai",
 		PushTarget: store,
 	})
-	if !errors.Is(err, wasm.ErrWasmCapabilityMismatch) {
-		t.Fatalf("want ErrWasmCapabilityMismatch, got %v", err)
+	if !errors.Is(err, wasm.ErrWasmContractMismatch) {
+		t.Fatalf("want ErrWasmContractMismatch, got %v", err)
 	}
 
 	// No bytes landed: the version tag does not exist in the store.
@@ -438,19 +438,19 @@ func TestPushPluginLargeGuestDefaultCapInsufficient(t *testing.T) {
 	if err == nil {
 		t.Fatal("a large guest loaded under the platform default cap should fail to instantiate; got nil")
 	}
-	if errors.Is(err, wasm.ErrWasmCapabilityMismatch) {
+	if errors.Is(err, wasm.ErrWasmContractMismatch) {
 		t.Fatalf("failure should be a load error, not a capability mismatch; got %v", err)
 	}
 }
 
-// writeProviderPluginWithCapabilities writes the embedded helm provider guest and
+// writeProviderPluginWithContract writes the embedded helm provider guest and
 // a Plugin entity carrying the given trailing spec block (a plugin-level
 // capabilities block plus a runtime cap) into a fresh tempdir, chdirs into it,
 // and returns the entity and .wasm paths. Unlike writeLargeGuestPlugin, the
 // entity authors a plugin-level capability claim, so a publish exercises the full
 // capabilities cross-check — not only the per-export claim. Skips cleanly when
 // the embedded guests are not built into the test binary.
-func writeProviderPluginWithCapabilities(t *testing.T, specTail string) (entityPath, pluginPath string) {
+func writeProviderPluginWithContract(t *testing.T, specTail string) (entityPath, pluginPath string) {
 	t.Helper()
 	wasmBytes := largeGuestBytes(t)
 	root := t.TempDir()
@@ -484,15 +484,16 @@ spec:
 // reusableInstance: true (exactly as the standard helm-renderer entity does) must
 // therefore cross-check clean at publish. A mapping that dropped the field would
 // compare the authored true as false against the guest's true and halt with
-// ErrWasmCapabilityMismatch, blocking publication of every reusable provider.
+// ErrWasmContractMismatch, blocking publication of every reusable provider.
 func TestPushPluginProviderReusableInstanceCrossCheck(t *testing.T) {
-	entityPath, pluginPath := writeProviderPluginWithCapabilities(t, `  capabilities:
-    inputKinds:
-      sourced: true
-      synthesized: true
-      artifactsStandalone: true
-    boundaryAssembly: none
-    reusableInstance: true
+	entityPath, pluginPath := writeProviderPluginWithContract(t, `  provider:
+    contract:
+      inputKinds:
+        sourced: true
+        synthesized: true
+        artifactsStandalone: true
+      boundaryAssembly: none
+      reusableInstance: true
   runtime:
     maxMemoryPages: 4096
 `)
@@ -514,18 +515,19 @@ func TestPushPluginProviderReusableInstanceCrossCheck(t *testing.T) {
 
 // TestPushPluginProviderReusableInstanceMismatchHalts is the negative control:
 // an entity authoring reusableInstance: false while the guest self-reports true
-// halts with ErrWasmCapabilityMismatch, and the message names the field. It
+// halts with ErrWasmContractMismatch, and the message names the field. It
 // proves the publish cross-check genuinely compares the reusable-instance claim
 // (and so that the mapping carries it), rather than silently ignoring it — the
 // two tests together bracket the field's round-trip through the publish path.
 func TestPushPluginProviderReusableInstanceMismatchHalts(t *testing.T) {
-	entityPath, pluginPath := writeProviderPluginWithCapabilities(t, `  capabilities:
-    inputKinds:
-      sourced: true
-      synthesized: true
-      artifactsStandalone: true
-    boundaryAssembly: none
-    reusableInstance: false
+	entityPath, pluginPath := writeProviderPluginWithContract(t, `  provider:
+    contract:
+      inputKinds:
+        sourced: true
+        synthesized: true
+        artifactsStandalone: true
+      boundaryAssembly: none
+      reusableInstance: false
   runtime:
     maxMemoryPages: 4096
 `)
@@ -537,8 +539,8 @@ func TestPushPluginProviderReusableInstanceMismatchHalts(t *testing.T) {
 		DryRun:     true,
 		Out:        &bytes.Buffer{},
 	})
-	if !errors.Is(err, wasm.ErrWasmCapabilityMismatch) {
-		t.Fatalf("want ErrWasmCapabilityMismatch for a reusable-instance disagreement; got %v", err)
+	if !errors.Is(err, wasm.ErrWasmContractMismatch) {
+		t.Fatalf("want ErrWasmContractMismatch for a reusable-instance disagreement; got %v", err)
 	}
 	if !strings.Contains(err.Error(), "reusable_instance") {
 		t.Errorf("the rejection should name the reusable_instance field; got %v", err)

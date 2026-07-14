@@ -48,7 +48,7 @@ import (
 // pluginDescriptorHead is the fixed prefix of the describe() self-report: a
 // v1alpha1 provider plugin declaring the render_node and assemble_boundary exports,
 // compatibility with the helm-chart provider engine, and its plugin-level
-// capability self-report (sourced-only input, nest-per-node umbrella assembly,
+// render-behavior contract (sourced-only input, nest-per-node umbrella assembly,
 // the "[["/"]]" artifact-template delimiter pair, and the boundary annotation
 // whose value names the assembled umbrella chart). The host reads this
 // once at load and validates it before invoking either export. helm-chart
@@ -57,7 +57,7 @@ import (
 // imports; the host cross-checks this declaration against the functions the
 // guest actually imports. The assemble_boundary export assembles sub-charts
 // already in the payload and imports no host function.
-const pluginDescriptorHead = `{"abi_version":"v1alpha1","plugin_type":"provider","compatible_providers":["helm-chart"],"exports":[{"name":"render_node","input_pattern":"b","host_functions":["aggrega_pack_source"],"stability":"experimental","description":"copies a sourced Helm chart into a sub-chart file set"},{"name":"assemble_boundary","input_pattern":"b","stability":"experimental","description":"assembles the per-node sub-charts at one dispatch group into an umbrella Chart.yaml + values.yaml"},{"name":"carve","input_pattern":"b","stability":"experimental","description":"carves a chart file into addressable units for a pipeline PATCH"},{"name":"reassemble","input_pattern":"b","stability":"experimental","description":"reassembles a chart file from patched units, byte-faithfully"}],"capabilities":{"input_kinds":{"sourced":true,"synthesized":false,"artifacts_standalone":false},"boundary_assembly":"nest","artifact_delimiters":{"left":"[[","right":"]]"},"assembly_name_annotation":{"annotation":"aggrega.ai/chart-name","require_unique":true},"reusable_instance":true},"metadata":{"author":"aggrega","license":"Apache-2.0"`
+const pluginDescriptorHead = `{"abi_version":"v1alpha1","plugin_type":"provider","compatible_providers":["helm-chart"],"exports":[{"name":"render_node","input_pattern":"b","host_functions":["aggrega_pack_source"],"stability":"experimental","description":"copies a sourced Helm chart into a sub-chart file set"},{"name":"assemble_boundary","input_pattern":"b","stability":"experimental","description":"assembles the per-node sub-charts at one dispatch group into an umbrella Chart.yaml + values.yaml"},{"name":"carve","input_pattern":"b","stability":"experimental","description":"carves a chart file into addressable units for a pipeline PATCH"},{"name":"reassemble","input_pattern":"b","stability":"experimental","description":"reassembles a chart file from patched units, byte-faithfully"}],"contract":{"input_kinds":{"sourced":true,"synthesized":false,"artifacts_standalone":false},"boundary_assembly":"nest","artifact_delimiters":{"left":"[[","right":"]]"},"assembly_name_annotation":{"annotation":"aggrega.ai/chart-name","require_unique":true},"reusable_instance":true},"metadata":{"author":"aggrega","license":"Apache-2.0"`
 
 // version and commit are the build-provenance stamp injected via
 // -ldflags -X at embedded-build time. A plain go build leaves them empty,

@@ -190,11 +190,11 @@ func TestCloudFormationProviderEmbeddedResolutionChain(t *testing.T) {
 		}
 		// The cross-boundary-linking capability is the plugin-level claim the load
 		// gate's coherence check binds to the link_publish/link_resolve pair.
-		if !desc.Capabilities.CrossBoundaryLinking {
+		if !desc.Contract.CrossBoundaryLinking {
 			t.Fatal("describe() does not declare the cross_boundary_linking capability")
 		}
-		if desc.Capabilities.BoundaryAssembly != wasm.BoundaryAssemblyMerge {
-			t.Fatalf("describe() boundary_assembly = %q, want %q", desc.Capabilities.BoundaryAssembly, wasm.BoundaryAssemblyMerge)
+		if desc.Contract.BoundaryAssembly != wasm.BoundaryAssemblyMerge {
+			t.Fatalf("describe() boundary_assembly = %q, want %q", desc.Contract.BoundaryAssembly, wasm.BoundaryAssemblyMerge)
 		}
 	})
 }

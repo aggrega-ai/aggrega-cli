@@ -12,11 +12,11 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
-// TestPluginCapabilityClaim proves the single-source entity → neutral-claim
+// TestPluginContractClaim proves the single-source entity → neutral-claim
 // mapping: authored exports map to the per-export operates/scope claim (selector
 // dropped). The host-function surface is machine-derived and stamped, not
 // authored, so it never enters the load-time claim.
-func TestPluginCapabilityClaim(t *testing.T) {
+func TestPluginContractClaim(t *testing.T) {
 	t.Parallel()
 
 	t.Run("maps exports", func(t *testing.T) {
@@ -27,7 +27,7 @@ func TestPluginCapabilityClaim(t *testing.T) {
 			{Name: "render_node", Operates: "emit", Scope: "host"},
 		}
 
-		got := PluginCapabilityClaim(entity)
+		got := PluginContractClaim(entity)
 		if got == nil {
 			t.Fatal("expected a non-nil claim")
 		}
@@ -46,50 +46,52 @@ func TestPluginCapabilityClaim(t *testing.T) {
 		entity.Spec.Runtime = &types.PluginRuntime{
 			HostFunctions: []string{"aggrega_log"},
 		}
-		if got := PluginCapabilityClaim(entity); got != nil {
+		if got := PluginContractClaim(entity); got != nil {
 			t.Errorf("the machine-derived host-function record is not an authored claim; an entity with no exports should yield nil, got %+v", got)
 		}
 	})
 
 	t.Run("no authored exports yields nil", func(t *testing.T) {
 		t.Parallel()
-		if got := PluginCapabilityClaim(types.Plugin{}); got != nil {
+		if got := PluginContractClaim(types.Plugin{}); got != nil {
 			t.Errorf("an entity with no authored exports should yield nil; got %+v", got)
 		}
 	})
 }
 
-// TestWasmCapabilityClaimCarriesEveryCapabilityField pins the single-source
+// TestWasmContractClaimCarriesEveryCapabilityField pins the single-source
 // entity → neutral → wasm capability mapping the load gate and the publish
-// cross-check both run (PluginCapabilityClaim then WasmCapabilityClaim). Every
+// cross-check both run (PluginContractClaim then WasmContractClaim). Every
 // authored plugin-level capability field must survive both hops; a field dropped
 // on either hop would let an authored claim reach the describe() cross-check
 // understated — the divergence that once compared an authored reusableInstance:
 // true as false and blocked publishing every reusable provider.
-func TestWasmCapabilityClaimCarriesEveryCapabilityField(t *testing.T) {
+func TestWasmContractClaimCarriesEveryCapabilityField(t *testing.T) {
 	t.Parallel()
 
 	entity := types.Plugin{}
 	entity.Spec.Exports = []types.PluginExport{{Name: "render_node", Operates: "emit", Scope: "own"}}
-	entity.Spec.Capabilities = &types.PluginCapabilities{
-		InputKinds: types.PluginInputKinds{
-			Sourced:             true,
-			Synthesized:         true,
-			ArtifactsStandalone: true,
+	entity.Spec.Provider = &types.PluginProvider{
+		Contract: &types.ProviderContract{
+			InputKinds: types.PluginInputKinds{
+				Sourced:             true,
+				Synthesized:         true,
+				ArtifactsStandalone: true,
+			},
+			BoundaryAssembly:       "merge",
+			ArtifactDelimiters:     &types.PluginArtifactDelimiters{Left: "[[", Right: "]]"},
+			SourceFilter:           []string{"values.yaml"},
+			AssemblyNameAnnotation: &types.PluginAssemblyNameAnnotation{Annotation: "aggrega.ai/assembly", RequireUnique: true},
+			ReusableInstance:       true,
+			CrossBoundaryLinking:   true,
 		},
-		BoundaryAssembly:       "merge",
-		ArtifactDelimiters:     &types.PluginArtifactDelimiters{Left: "[[", Right: "]]"},
-		SourceFilter:           []string{"values.yaml"},
-		AssemblyNameAnnotation: &types.PluginAssemblyNameAnnotation{Annotation: "aggrega.ai/assembly", RequireUnique: true},
-		ReusableInstance:       true,
-		CrossBoundaryLinking:   true,
 	}
 
-	got := WasmCapabilityClaim(PluginCapabilityClaim(entity))
-	if got == nil || got.Capabilities == nil {
-		t.Fatal("expected a non-nil claim carrying a non-nil capabilities block")
+	got := WasmContractClaim(PluginContractClaim(entity))
+	if got == nil || got.Contract == nil {
+		t.Fatal("expected a non-nil claim carrying a non-nil contract block")
 	}
-	want := &wasm.Capabilities{
+	want := &wasm.ProviderContract{
 		InputKinds:             wasm.InputKinds{Sourced: true, Synthesized: true, ArtifactsStandalone: true},
 		BoundaryAssembly:       "merge",
 		ArtifactDelimiters:     &wasm.ArtifactDelimiters{Left: "[[", Right: "]]"},
@@ -98,7 +100,7 @@ func TestWasmCapabilityClaimCarriesEveryCapabilityField(t *testing.T) {
 		ReusableInstance:       true,
 		CrossBoundaryLinking:   true,
 	}
-	if !reflect.DeepEqual(got.Capabilities, want) {
-		t.Errorf("mapped capabilities = %+v; want %+v", got.Capabilities, want)
+	if !reflect.DeepEqual(got.Contract, want) {
+		t.Errorf("mapped contract = %+v; want %+v", got.Contract, want)
 	}
 }

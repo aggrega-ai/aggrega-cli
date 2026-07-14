@@ -8,7 +8,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
-// PluginCapabilityClaim maps a catalog Plugin entity's authored
+// PluginContractClaim maps a catalog Plugin entity's authored
 // capability declaration into the neutral claim the plugin entity-front attaches
 // to a resolved plugin, so the load gate can cross-check it against the plugin's
 // self-report. It is the single home of the entity → neutral-claim mapping; both
@@ -23,8 +23,12 @@ import (
 // in a load-time claim. An entity that authors neither exports nor a
 // capabilities block yields nil — no claim, so the cross-check is skipped for
 // that plugin.
-func PluginCapabilityClaim(entity types.Plugin) *pluginpath.PluginCapabilityClaim {
-	if len(entity.Spec.Exports) == 0 && entity.Spec.Capabilities == nil {
+func PluginContractClaim(entity types.Plugin) *pluginpath.PluginContractClaim {
+	var contract *types.ProviderContract
+	if entity.Spec.Provider != nil {
+		contract = entity.Spec.Provider.Contract
+	}
+	if len(entity.Spec.Exports) == 0 && contract == nil {
 		return nil
 	}
 	exports := make([]pluginpath.PluginExportClaim, 0, len(entity.Spec.Exports))
@@ -35,20 +39,20 @@ func PluginCapabilityClaim(entity types.Plugin) *pluginpath.PluginCapabilityClai
 			Scope:    e.Scope,
 		})
 	}
-	return &pluginpath.PluginCapabilityClaim{
-		Exports:      exports,
-		Capabilities: pluginCapabilitiesClaim(entity.Spec.Capabilities),
+	return &pluginpath.PluginContractClaim{
+		Exports:  exports,
+		Contract: pluginContractClaim(contract),
 	}
 }
 
-// pluginCapabilitiesClaim maps a Plugin entity's authored plugin-level
+// pluginContractClaim maps a Plugin entity's authored plugin-level
 // capabilities block into the neutral claim shape, or nil when the entity
 // authors none.
-func pluginCapabilitiesClaim(c *types.PluginCapabilities) *pluginpath.PluginCapabilitiesClaim {
+func pluginContractClaim(c *types.ProviderContract) *pluginpath.ProviderContractClaim {
 	if c == nil {
 		return nil
 	}
-	claim := &pluginpath.PluginCapabilitiesClaim{
+	claim := &pluginpath.ProviderContractClaim{
 		InputKinds: pluginpath.PluginInputKindsClaim{
 			Sourced:             c.InputKinds.Sourced,
 			Synthesized:         c.InputKinds.Synthesized,

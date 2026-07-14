@@ -29,8 +29,8 @@ func (renderOnlyAssemblerWrapper) Render(_ context.Context, _ map[string]any, _ 
 	return nil, nil
 }
 
-func (renderOnlyAssemblerWrapper) Capabilities() renderer.ProviderCapabilities {
-	return renderer.ProviderCapabilities{Sourced: true, Synthesized: true, ArtifactsStandalone: true}
+func (renderOnlyAssemblerWrapper) Contract() renderer.ProviderContract {
+	return renderer.ProviderContract{Sourced: true, Synthesized: true, ArtifactsStandalone: true}
 }
 
 func (w renderOnlyAssemblerWrapper) BoundaryAssembly() string {

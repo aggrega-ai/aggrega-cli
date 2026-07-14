@@ -119,13 +119,13 @@ func New(lookup pluginpath.Lookup, pluginURI string, loader *wasm.Loader) *Engin
 // reports no supported input kind, so the central input-kind gate halts the node
 // loudly rather than dispatching to an unloadable guest; the underlying load
 // failure surfaces in full on the render path.
-func (e *Engine) Capabilities() renderer.ProviderCapabilities {
+func (e *Engine) Contract() renderer.ProviderContract {
 	desc, err := e.describe()
 	if err != nil {
-		return renderer.ProviderCapabilities{}
+		return renderer.ProviderContract{}
 	}
-	ik := desc.Capabilities.InputKinds
-	return renderer.ProviderCapabilities{
+	ik := desc.Contract.InputKinds
+	return renderer.ProviderContract{
 		Sourced:             ik.Sourced,
 		Synthesized:         ik.Synthesized,
 		ArtifactsStandalone: ik.ArtifactsStandalone,
@@ -143,7 +143,7 @@ func (e *Engine) BoundaryAssembly() string {
 	if err != nil {
 		return ""
 	}
-	return desc.Capabilities.BoundaryAssembly
+	return desc.Contract.BoundaryAssembly
 }
 
 // AssemblyNameAnnotation reports the boundary annotation whose resolved value
@@ -156,10 +156,10 @@ func (e *Engine) BoundaryAssembly() string {
 // read the guest's own claim.
 func (e *Engine) AssemblyNameAnnotation() (annotation string, requireUnique bool) {
 	desc, err := e.describe()
-	if err != nil || desc.Capabilities.AssemblyNameAnnotation == nil {
+	if err != nil || desc.Contract.AssemblyNameAnnotation == nil {
 		return "", false
 	}
-	a := desc.Capabilities.AssemblyNameAnnotation
+	a := desc.Contract.AssemblyNameAnnotation
 	return a.Annotation, a.RequireUnique
 }
 
@@ -203,7 +203,7 @@ func (e *Engine) acquireInstance(ctx context.Context) (*wasm.Plugin, func(), err
 	if err != nil {
 		return nil, nil, err
 	}
-	if !desc.Capabilities.ReusableInstance {
+	if !desc.Contract.ReusableInstance {
 		p, err := e.loadInstance(ctx)
 		if err != nil {
 			return nil, nil, err
@@ -409,10 +409,10 @@ func (e *Engine) EmitArtifacts(
 // untouched by the host's pre-templating pass.
 func (e *Engine) ArtifactTemplateDelimiters() (left, right string) {
 	desc, err := e.describe()
-	if err != nil || desc.Capabilities.ArtifactDelimiters == nil {
+	if err != nil || desc.Contract.ArtifactDelimiters == nil {
 		return "{{", "}}"
 	}
-	return desc.Capabilities.ArtifactDelimiters.Left, desc.Capabilities.ArtifactDelimiters.Right
+	return desc.Contract.ArtifactDelimiters.Left, desc.Contract.ArtifactDelimiters.Right
 }
 
 // Warm compiles the provider guest into the shared loader's compilation cache

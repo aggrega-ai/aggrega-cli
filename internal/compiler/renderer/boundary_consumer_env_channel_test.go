@@ -23,8 +23,8 @@ func (e envOverrideStubEngine) Render(context.Context, map[string]any, NodeRende
 	return nil, nil
 }
 
-func (e envOverrideStubEngine) Capabilities() ProviderCapabilities {
-	return ProviderCapabilities{Sourced: true, Synthesized: true, ArtifactsStandalone: true}
+func (e envOverrideStubEngine) Contract() ProviderContract {
+	return ProviderContract{Sourced: true, Synthesized: true, ArtifactsStandalone: true}
 }
 
 func (e envOverrideStubEngine) BoundaryEnvOverrides(context.Context, []types.EnrichedEdge, types.OrderedMap[any]) (map[string]map[string]string, error) {

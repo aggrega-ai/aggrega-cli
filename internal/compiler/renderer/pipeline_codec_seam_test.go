@@ -41,7 +41,7 @@ type codecProviderEngine struct {
 func (e codecProviderEngine) Render(context.Context, map[string]any, NodeRenderContext) (map[string][]byte, error) {
 	return nil, nil
 }
-func (e codecProviderEngine) Capabilities() ProviderCapabilities { return ProviderCapabilities{} }
+func (e codecProviderEngine) Contract() ProviderContract { return ProviderContract{} }
 
 // PipelineCodec satisfies CodecProvider: it reports a marker codec, standing in
 // for any provider whose guest advertises the carve/reassemble exports.
@@ -56,7 +56,7 @@ type plainEngine struct{}
 func (plainEngine) Render(context.Context, map[string]any, NodeRenderContext) (map[string][]byte, error) {
 	return nil, nil
 }
-func (plainEngine) Capabilities() ProviderCapabilities { return ProviderCapabilities{} }
+func (plainEngine) Contract() ProviderContract { return ProviderContract{} }
 
 // TestSelectCodec_PicksProviderCodec asserts selectCodec returns a provider's
 // own codec when its engine implements CodecProvider, and the stock codec

@@ -49,7 +49,7 @@ func nonReusableGuestLookup(t *testing.T) (pluginpath.Lookup, string) {
 		t.Fatalf("describe render fixture: %v", err)
 	}
 	_ = p.Close(context.Background())
-	if desc.Capabilities.ReusableInstance {
+	if desc.Contract.ReusableInstance {
 		t.Fatalf("render-node-rust fixture unexpectedly declares reusable_instance; the fresh-per-node guard needs a guest that does not")
 	}
 	return lookup, uri
@@ -149,7 +149,7 @@ func TestRenderPathReusesInstanceForReusableGuest(t *testing.T) {
 
 	// Warm the descriptor memo through the same path the input-kind gate uses,
 	// so the one-time describe gate is not counted against the per-node loads.
-	if caps := e.Capabilities(); !caps.Synthesized {
+	if caps := e.Contract(); !caps.Synthesized {
 		t.Fatalf("helm-provider guest does not report the synthesized input kind: %+v", caps)
 	}
 	if got := atomic.LoadInt64(&describes); got != 1 {
@@ -199,7 +199,7 @@ func TestRenderPathLoadsFreshInstancePerNodeForNonReusableGuest(t *testing.T) {
 	// the per-node loads. The fixture declares no capabilities block (the helper
 	// asserts it declares no reuse claim), so the render path takes the
 	// fresh-instance-per-crossing default.
-	_ = e.Capabilities()
+	_ = e.Contract()
 	if got := atomic.LoadInt64(&describes); got != 1 {
 		t.Fatalf("descriptor warm ran the describe gate %d times; want 1", got)
 	}

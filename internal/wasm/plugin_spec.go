@@ -51,12 +51,12 @@ type PluginSpec struct {
 	// Call is never uncancellable.
 	TimeoutMs uint64
 
-	// Capability is the optional authored capability claim the load gate
+	// Contract is the optional authored capability claim the load gate
 	// cross-checks against the plugin's self-reported describe() descriptor (see
-	// CrossCheckCapabilities). nil disables the cross-check — the path every
+	// CrossCheckContract). nil disables the cross-check — the path every
 	// non-entity caller and the publish path take. The entity-fronted load path
 	// populates it from the catalog Plugin entity's exports.
-	Capability *EntityCapabilityClaim
+	Contract *EntityContractClaim
 
 	// ConfigKV carries plugin-specific configuration that the Extism
 	// runtime hands to the plugin at start. Nil leaves the runtime's

@@ -44,10 +44,10 @@ var ErrPluginEntityNotFound = errors.New("plugin reference is not a Plugin entit
 // Plugin entity URI is required. A nil entityToArtifact disables the entity
 // translation entirely (every reference halts as not-an-entity); a nil cascade
 // is a programming error and panics through the returned Lookup's nil call.
-func EntityLookup(entityToArtifact func(uri string) (artifactURI string, claim *PluginCapabilityClaim, limits *PluginRuntimeLimits, ok bool), cascade Lookup) Lookup {
+func EntityLookup(entityToArtifact func(uri string) (artifactURI string, claim *PluginContractClaim, limits *PluginRuntimeLimits, ok bool), cascade Lookup) Lookup {
 	return func(entityURI string) (ResolvedPlugin, error) {
 		var artifactURI string
-		var claim *PluginCapabilityClaim
+		var claim *PluginContractClaim
 		var limits *PluginRuntimeLimits
 		var ok bool
 		if entityToArtifact != nil {
@@ -63,7 +63,7 @@ func EntityLookup(entityToArtifact func(uri string) (artifactURI string, claim *
 		if err != nil {
 			return ResolvedPlugin{}, err
 		}
-		resolved.Capability = claim
+		resolved.Contract = claim
 		resolved.Limits = limits
 		return resolved, nil
 	}

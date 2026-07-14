@@ -30,7 +30,7 @@ func loadFrpStepGoBytes(t *testing.T) []byte {
 // when the entity's authored export claim agrees with the .wasm's describe().
 func TestCrossCheckPublishedPlugin_Agrees(t *testing.T) {
 	wasmBytes := loadFrpStepGoBytes(t)
-	claim := EntityCapabilityClaim{Exports: []EntityExportClaim{
+	claim := EntityContractClaim{Exports: []EntityExportClaim{
 		{Name: "step", Operates: operatesPatch, Scope: ScopeOwn},
 	}}
 	// The frp-step-go guest fits the platform default cap; a zero pages value
@@ -42,15 +42,15 @@ func TestCrossCheckPublishedPlugin_Agrees(t *testing.T) {
 
 // TestCrossCheckPublishedPlugin_CapabilityMismatch proves a disagreeing export
 // claim (scope=host where the plugin reports scope=own) halts with
-// ErrWasmCapabilityMismatch through the publish entrypoint.
+// ErrWasmContractMismatch through the publish entrypoint.
 func TestCrossCheckPublishedPlugin_CapabilityMismatch(t *testing.T) {
 	wasmBytes := loadFrpStepGoBytes(t)
-	claim := EntityCapabilityClaim{Exports: []EntityExportClaim{
+	claim := EntityContractClaim{Exports: []EntityExportClaim{
 		{Name: "step", Operates: operatesPatch, Scope: ScopeHost},
 	}}
 	err := CrossCheckPublishedPlugin(context.Background(), "frp/patch:1.0.0", claim, wasmBytes, 0)
-	if !errors.Is(err, ErrWasmCapabilityMismatch) {
-		t.Fatalf("a disagreeing claim should halt with ErrWasmCapabilityMismatch; got %v", err)
+	if !errors.Is(err, ErrWasmContractMismatch) {
+		t.Fatalf("a disagreeing claim should halt with ErrWasmContractMismatch; got %v", err)
 	}
 	if !strings.Contains(err.Error(), "frp/patch") {
 		t.Errorf("halt should name the entity identity; got %v", err)

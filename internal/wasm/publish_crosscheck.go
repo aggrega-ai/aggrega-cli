@@ -20,7 +20,7 @@ import "context"
 // The check loads the bytes and invokes describe() (LoadAndDescribe with a nil
 // capability, so the load gate's own cross-check is skipped and this function
 // owns the comparison), then compares the authored export claim against the
-// descriptor via CrossCheckCapabilities — the same primitive the load gate uses,
+// descriptor via CrossCheckContract — the same primitive the load gate uses,
 // so the publish and load surfaces share one comparison.
 //
 // maxMemoryPages caps the guest's linear memory for the describe() load. A large
@@ -30,10 +30,10 @@ import "context"
 // load matches the guest's authored footprint. The cap governs only the load;
 // the capability comparison is independent of it.
 //
-// A disagreement halts with ErrWasmCapabilityMismatch. The plugin is Closed
+// A disagreement halts with ErrWasmContractMismatch. The plugin is Closed
 // before returning so a rejected publish leaks no instance. entityIdentity names
 // the entity in any rejection message.
-func CrossCheckPublishedPlugin(ctx context.Context, entityIdentity string, claim EntityCapabilityClaim, wasmBytes []byte, maxMemoryPages uint32) error {
+func CrossCheckPublishedPlugin(ctx context.Context, entityIdentity string, claim EntityContractClaim, wasmBytes []byte, maxMemoryPages uint32) error {
 	// Build through the shared constructor so this loader carries the same
 	// process-wide compilation cache every other loader uses, rather than a
 	// bare cache-less loader that would recompile the guest in isolation.
@@ -42,7 +42,7 @@ func CrossCheckPublishedPlugin(ctx context.Context, entityIdentity string, claim
 		Name:           entityIdentity,
 		Bytes:          wasmBytes,
 		MaxMemoryPages: maxMemoryPages,
-		// Capability nil: this function owns the cross-check, rather than
+		// Contract nil: this function owns the cross-check, rather than
 		// running it inside the load gate.
 	})
 	if err != nil {
@@ -50,5 +50,5 @@ func CrossCheckPublishedPlugin(ctx context.Context, entityIdentity string, claim
 	}
 	defer func() { _ = plugin.Close(ctx) }()
 
-	return CrossCheckCapabilities(entityIdentity, claim, desc)
+	return CrossCheckContract(entityIdentity, claim, desc)
 }

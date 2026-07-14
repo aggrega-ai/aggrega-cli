@@ -28,8 +28,8 @@ func (stubEngine) Render(_ context.Context, _ map[string]any, _ NodeRenderContex
 // Capabilities satisfies the Engine interface for the test stub. Permissive (all
 // input kinds) so the central gate never declines it. Embedded by
 // stubArtifactsEmitter and the host-capabilities test wrappers, which inherit it.
-func (stubEngine) Capabilities() ProviderCapabilities {
-	return ProviderCapabilities{Sourced: true, Synthesized: true, ArtifactsStandalone: true}
+func (stubEngine) Contract() ProviderContract {
+	return ProviderContract{Sourced: true, Synthesized: true, ArtifactsStandalone: true}
 }
 
 // stubArtifactsEmitter stands in for a provider's Wasm adapter on the
