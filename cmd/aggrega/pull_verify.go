@@ -125,13 +125,12 @@ func verifyClosureSignatures(ctx context.Context, lf *lockfile.Lockfile, cl clos
 	for _, r := range results {
 		factByURI[r.URI] = r
 	}
-	sigDir := filepath.Join(cacheDir, "signatures")
 	for i := range lf.Entities {
 		r, ok := factByURI[lf.Entities[i].URI]
 		if !ok {
 			continue
 		}
-		if err := cacheBundleBlob(sigDir, r.BundleDigest, r.Bundle); err != nil {
+		if err := cacheBundleBlob(cacheDir, r.BundleDigest, r.Bundle); err != nil {
 			return fmt.Errorf("cache signature bundle for %s: %w", r.URI, err)
 		}
 		lf.Entities[i].Signature = signatureFact(r)
@@ -141,7 +140,7 @@ func verifyClosureSignatures(ctx context.Context, lf *lockfile.Lockfile, cl clos
 		if !ok {
 			continue
 		}
-		if err := cacheBundleBlob(sigDir, r.BundleDigest, r.Bundle); err != nil {
+		if err := cacheBundleBlob(cacheDir, r.BundleDigest, r.Bundle); err != nil {
 			return fmt.Errorf("cache signature bundle for %s: %w", r.URI, err)
 		}
 		lf.Plugins[i].Signature = signatureFact(r)
@@ -310,19 +309,20 @@ func remoteTargetFor(e pullverify.Entity) (oras.ReadOnlyTarget, string, error) {
 	return repo, e.ManifestDigest, nil
 }
 
-// cacheBundleBlob writes bundle to a content-addressed blob named by its
-// digest under dir, creating dir as needed. The write is idempotent: a
-// blob already present (a re-pull of the same signature) is left untouched
-// so the cache stays byte-stable.
-func cacheBundleBlob(dir, bundleDigest string, bundle []byte) error {
+// cacheBundleBlob writes bundle to the content-addressed signature-bundle blob
+// named by its digest under cacheDir, creating the `signatures/` subtree as
+// needed. The blob location is spelled once in oci.SignatureBundlePath so the
+// build path re-hashes the same slot this write populated. The write is
+// idempotent: a blob already present (a re-pull of the same signature) is left
+// untouched so the cache stays byte-stable.
+func cacheBundleBlob(cacheDir, bundleDigest string, bundle []byte) error {
 	if bundleDigest == "" || len(bundle) == 0 {
 		return nil
 	}
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	path := oci.SignatureBundlePath(cacheDir, bundleDigest)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	name := strings.ReplaceAll(bundleDigest, ":", "-") + ".bundle"
-	path := filepath.Join(dir, name)
 	if _, statErr := os.Stat(path); statErr == nil {
 		return nil
 	}

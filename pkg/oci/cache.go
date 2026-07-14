@@ -47,6 +47,21 @@ func EntitiesRoot(workspaceRoot, cacheDir string) string {
 	return filepath.Join(workspaceRoot, cacheDir, "entities")
 }
 
+// SignatureBundlePath returns the content-addressed filesystem path of the
+// cached signature-bundle blob named by bundleDigest under the cache's
+// `signatures/` subtree:
+//
+//	<cacheDir>/signatures/<digest>.bundle
+//
+// The digest's ":" separator is replaced with "-" so the blob name is a single
+// stable filesystem segment. It is the one site that spells the bundle-blob
+// location, shared by the pull path that writes each verified signature bundle
+// and the build path that re-hashes the cached blob against its recorded digest.
+func SignatureBundlePath(cacheDir, bundleDigest string) string {
+	name := strings.ReplaceAll(bundleDigest, ":", "-") + ".bundle"
+	return filepath.Join(cacheDir, "signatures", name)
+}
+
 // ReadCached returns the bytes previously stored at the cache slot
 // for uri@version. Returns a wrapped ErrFetchNotFound when the slot
 // is empty (cache miss); other errors surface as wrapped read

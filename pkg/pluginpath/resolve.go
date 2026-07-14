@@ -25,9 +25,13 @@
 // overrides, and a mismatch halts. When no pin is supplied (the publish-time
 // linter, which lints a not-yet-pinned proposed entity) verification is skipped.
 //
-// Trust at build is the digest pin alone: signature verification is a
-// pull/lock-time, network-touching operation recorded as a lockfile fact, never
-// re-run at build. This package performs no signature check.
+// Trust at build is offline and free of any cryptographic re-verification: the
+// .wasm content-digest pin governs the bytes, and for a guest that carried a
+// verified signature fact when it was pulled, the cached signature bundle is
+// re-hashed against its recorded digest — a byte/hash integrity check over the
+// cached blob. Signature verification itself — the network-touching, trust-root
+// operation — is a pull/lock-time step recorded as a lockfile fact and is never
+// re-run at build; this package performs no signature verification.
 package pluginpath
 
 import (
@@ -197,6 +201,16 @@ type PluginExportClaim struct {
 	Scope    string
 }
 
+// ErrPluginBundleDigestMismatch reports that a signed guest's cached signature
+// bundle is missing, unreadable, or its bytes hash to a value other than the
+// digest the lockfile recorded for it. Before a guest that carried a verified
+// signature fact loads, the build re-hashes its cached signature-bundle blob and
+// compares the hash to the recorded digest; a drifted or absent blob halts the
+// load with this sentinel. The check is a byte/hash comparison — never a
+// cryptographic signature re-verification, and never a network or trust-root
+// touch — so it holds under the hermetic, air-gapped build.
+var ErrPluginBundleDigestMismatch = errors.New("cached signature bundle does not match its recorded digest")
+
 // Lookup resolves a plugin URI to its resolved bytes. It is the seam each
 // socket binds: the render pipeline binds a build-configured Resolver's Resolve
 // method; the linter binds a no-pins Resolver carrying its --plugin override.
@@ -230,6 +244,17 @@ type Resolver struct {
 	// address the versioned cache slot (Tier 2). Absent leaves the version
 	// empty, addressing the unversioned slot.
 	PinVersions map[string]string
+
+	// BundleDigests maps a plugin URI to the recorded digest of its cached
+	// signature-bundle blob (a "sha256:..." string), present only for a guest
+	// that carried a verified signature fact when it was pulled. When a URI has
+	// an entry, the cached bundle blob under CacheDir is re-hashed and compared
+	// to it before the resolved bytes are returned — an offline byte/hash
+	// integrity check over the cached blob, never a signature re-verification and
+	// never a network touch. nil or a URI absent from the map disables the check
+	// for that URI: an unsigned guest (no signature fact was recorded), or the
+	// publish-time linter path where nothing is pinned yet.
+	BundleDigests map[string]string
 
 	// Puller performs the Tier-3 OCI pull. nil disables Tier 3 — the hermetic
 	// build path, where a cache miss is a loud halt rather than a network
@@ -372,10 +397,13 @@ func (r Resolver) Resolve(uri string) (ResolvedPlugin, error) {
 	return ResolvedPlugin{}, fmt.Errorf("plugin %q not resolvable through any tier (embed, sidecar, local, cache, registry): %w", uri, oci.ErrFetchNotFound)
 }
 
-// verified checks bytes against the URI's digest pin when one is present and
-// returns the ResolvedPlugin. A pin mismatch halts with a wrapped
-// oci.ErrFetchIntegrity naming the URI, the tier, the computed digest, and the
-// pin. With no pin (the linter path) the bytes pass through unverified.
+// verified checks bytes against the URI's digest pin when one is present, then
+// applies the offline signature-bundle integrity gate when the URI carries a
+// recorded bundle digest, and returns the ResolvedPlugin. A content-pin mismatch
+// halts with a wrapped oci.ErrFetchIntegrity naming the URI, the tier, the
+// computed digest, and the pin. A cached-bundle mismatch halts with a wrapped
+// ErrPluginBundleDigestMismatch. With no pin and no bundle digest (the linter
+// path) the bytes pass through unchecked.
 func (r Resolver) verified(uri string, b []byte, tier Tier) (ResolvedPlugin, error) {
 	if pin, ok := r.Pins[uri]; ok && pin != "" {
 		if got := digest.ContentDigest(b); got != pin {
@@ -384,7 +412,37 @@ func (r Resolver) verified(uri string, b []byte, tier Tier) (ResolvedPlugin, err
 				uri, tier, got, pin, oci.ErrFetchIntegrity)
 		}
 	}
+	if bundleDigest, ok := r.BundleDigests[uri]; ok && bundleDigest != "" {
+		if err := r.verifyCachedBundle(uri, tier, bundleDigest); err != nil {
+			return ResolvedPlugin{}, err
+		}
+	}
 	return ResolvedPlugin{Bytes: b, Tier: tier, URI: uri, Version: r.PinVersions[uri]}, nil
+}
+
+// verifyCachedBundle re-hashes the cached signature-bundle blob recorded for a
+// signed guest and compares it to the recorded digest, before the guest loads.
+// It is an offline byte/hash integrity gate over the cached blob — no signature
+// re-verification, no network, no trust-root — so it holds under the hermetic
+// build. A missing or unreadable blob, or a hash that differs from the recorded
+// digest, halts with a wrapped ErrPluginBundleDigestMismatch naming the plugin.
+// The blob location is spelled once in oci.SignatureBundlePath, so the slot
+// checked here is the slot the pull path wrote; the re-hash uses the single
+// content-address spelling in digest.ContentDigest, so an intact bundle matches.
+func (r Resolver) verifyCachedBundle(uri string, tier Tier, bundleDigest string) error {
+	path := oci.SignatureBundlePath(r.CacheDir, bundleDigest)
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf(
+			"plugin %q resolved from %s tier: cached signature bundle %s is unreadable: %w",
+			uri, tier, path, ErrPluginBundleDigestMismatch)
+	}
+	if got := digest.ContentDigest(b); got != bundleDigest {
+		return fmt.Errorf(
+			"plugin %q resolved from %s tier: cached signature bundle %s has digest %s, recorded digest is %s: %w",
+			uri, tier, path, got, bundleDigest, ErrPluginBundleDigestMismatch)
+	}
+	return nil
 }
 
 // readSidecar reads the sidecar artifact for uri, returning (bytes, true, nil)

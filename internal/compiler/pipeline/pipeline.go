@@ -555,8 +555,12 @@ func RunTier4Pipeline(
 // a cache miss is a loud halt rather than a network round-trip. Pins make every
 // tier's resolved bytes verify against the lockfile digest, so a drifted or
 // substituted artifact halts on the pin regardless of which tier produced it.
-// The sidecar-overrides-embed notice is surfaced to stderr alongside the
-// pipeline's other mid-build diagnostics.
+// For a plugin row that carries a verified signature fact, the recorded
+// signature-bundle digest is threaded through too, so the resolver re-hashes the
+// cached bundle blob against it before the guest loads — an offline integrity
+// gate that re-runs no signature verification. The sidecar-overrides-embed
+// notice is surfaced to stderr alongside the pipeline's other mid-build
+// diagnostics.
 func buildPluginResolver(inputs Inputs) pluginpath.Resolver {
 	r := pluginpath.Resolver{
 		SidecarDir:    inputs.WorkspaceConfig.PluginSidecarDir,
@@ -567,12 +571,19 @@ func buildPluginResolver(inputs Inputs) pluginpath.Resolver {
 	if inputs.Lockfile != nil && len(inputs.Lockfile.Plugins) > 0 {
 		pins := make(map[string]string, len(inputs.Lockfile.Plugins))
 		versions := make(map[string]string, len(inputs.Lockfile.Plugins))
+		bundleDigests := make(map[string]string, len(inputs.Lockfile.Plugins))
 		for _, wp := range inputs.Lockfile.Plugins {
 			pins[wp.URI] = wp.Digest
 			versions[wp.URI] = wp.ResolvedVersion
+			if wp.Signature != nil && wp.Signature.BundleDigest != "" {
+				bundleDigests[wp.URI] = wp.Signature.BundleDigest
+			}
 		}
 		r.Pins = pins
 		r.PinVersions = versions
+		if len(bundleDigests) > 0 {
+			r.BundleDigests = bundleDigests
+		}
 	}
 	return r
 }
