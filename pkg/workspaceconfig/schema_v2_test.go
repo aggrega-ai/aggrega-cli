@@ -157,3 +157,30 @@ parse_cache:
 		t.Errorf("round-trip lists: catalogDirs=%+v linter=%+v", got.Workspace.CatalogDirs, got.Plugins.Linter)
 	}
 }
+
+// TestSigningPolicyFieldsRoundTrip pins Go<->schema parity for the org signing
+// policy: a config carrying signing.required and signing.kinds passes schema
+// validation (the SigningConfig $def declares both, so additionalProperties does
+// not reject them) and unmarshals into the Go fields. A drift on either side —
+// a field added to only one — surfaces here.
+func TestSigningPolicyFieldsRoundTrip(t *testing.T) {
+	t.Parallel()
+	content := `
+workspace: {}
+signing:
+  required: true
+  kinds:
+    - Component
+    - Plugin
+`
+	got, err := load(writeFixture(t, content))
+	if err != nil {
+		t.Fatalf("Load signing-policy config: %v", err)
+	}
+	if !got.Signing.Required {
+		t.Errorf("Signing.Required: got false; want true")
+	}
+	if len(got.Signing.Kinds) != 2 || got.Signing.Kinds[0] != "Component" || got.Signing.Kinds[1] != "Plugin" {
+		t.Errorf("Signing.Kinds: got %+v; want [Component Plugin]", got.Signing.Kinds)
+	}
+}

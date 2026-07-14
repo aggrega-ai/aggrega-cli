@@ -195,6 +195,7 @@ func Resolve(start, flagRoot string, look ...func(string) string) (*ResolvedWork
 	var contributing []string
 	var appendLayers []appendSlices
 	var warnings []string
+	var signingPolicy signingPolicyAccumulator
 
 	// Global layer ($AGGREGA_CONFIG), beneath all tree files.
 	globalCfg, globalLoaded, globalPath, err := loadGlobalLayer()
@@ -206,6 +207,7 @@ func Resolve(start, flagRoot string, look ...func(string) string) (*ResolvedWork
 		ga := captureAppends(globalCfg)
 		resolveAppendPaths(&ga, gdir)
 		appendLayers = append(appendLayers, ga)
+		signingPolicy.add(globalCfg.Signing)
 		stripAppends(&globalCfg)
 		resolveConfigPaths(&globalCfg, gdir)
 		merged = globalCfg
@@ -230,6 +232,7 @@ func Resolve(start, flagRoot string, look ...func(string) string) (*ResolvedWork
 			la := captureAppends(raw)
 			resolveAppendPaths(&la, dir)
 			appendLayers = append(appendLayers, la)
+			signingPolicy.add(raw.Signing)
 
 			overlaid, oerr := loadOverlayInto(basePath, merged)
 			if oerr != nil {
@@ -253,6 +256,7 @@ func Resolve(start, flagRoot string, look ...func(string) string) (*ResolvedWork
 			ci := foldCIAdditive(ciCfg)
 			resolveAppendPaths(&ci, dir)
 			appendLayers = append(appendLayers, ci)
+			signingPolicy.add(ciCfg.Signing)
 			contributing = append(contributing, ciPath)
 			for _, key := range ignored {
 				warnings = append(warnings, fmt.Sprintf(
@@ -280,6 +284,13 @@ func Resolve(start, flagRoot string, look ...func(string) string) (*ResolvedWork
 	for _, name := range envContributing {
 		contributing = append(contributing, "$"+name)
 	}
+
+	// Compose the org signing policy across every layer plus the environment
+	// overlay. This is a scoped exception to the whole-replace-per-layer rule:
+	// `required` OR-folds and `kinds` unions, so a lower-precedence layer cannot
+	// shadow a higher one and the policy cannot be removed by an ordinary config
+	// edit. Kept separate from applyAppends, which owns the seven list fields.
+	signingPolicy.composeInto(&merged)
 
 	return &ResolvedWorkspace{
 		root:     root,

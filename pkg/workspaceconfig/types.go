@@ -169,10 +169,14 @@ type RegistryConfig struct {
 	Signing SigningConfig `yaml:"signing,omitempty"`
 }
 
-// SigningConfig carries the signing-side endpoint defaults: the keyless
-// service URLs and an optional pointer to a keyed-key file. It is the sign
-// counterpart of the verify-side trust policy and lives at both the global
-// (top-level) and per-registry levels.
+// SigningConfig carries the signing-side endpoint defaults — the keyless
+// service URLs and an optional pointer to a keyed-key file — and, on the
+// top-level signing block only, the org-wide signing policy (Required and
+// Kinds). It is the sign counterpart of the verify-side trust policy and
+// lives at both the global (top-level) and per-registry levels; the endpoint
+// fields apply at both levels, while Required and Kinds are read only from the
+// top-level block. The per-registry lever for demanding a signature is
+// RegistryConfig.RequiresSignatures, not these two fields.
 //
 // SECURITY: this struct holds NO secret material. The OIDC identity token
 // is a short-lived secret and is never a config field — it is supplied at
@@ -194,6 +198,52 @@ type SigningConfig struct {
 	// offline keyed signing. It is a POINTER to a file, never inline key
 	// material. Empty selects the keyless path.
 	KeyPath string `yaml:"key_path,omitempty"`
+	// Required, on the top-level signing block, turns on the org-wide signing
+	// policy: publishing an in-scope artifact kind requires a signature. It
+	// composes monotonically across the config cascade — any layer that sets
+	// it true makes it effective true, and no layer can turn it back off — so
+	// the policy cannot be removed by an ordinary lower-precedence config edit.
+	// Read only from the top-level block; ignored on a per-registry signing
+	// block. Defaults to false.
+	Required bool `yaml:"required,omitempty"`
+	// Kinds scopes the org signing policy to specific artifact kinds. Empty,
+	// or a single "all" entry, means every pushable kind; otherwise the policy
+	// applies to exactly the listed kinds, matching the entity kind value
+	// (e.g. "Component", "Plugin"). It composes as a union across the cascade —
+	// a layer can widen the scope but never shrink it. Read only from the
+	// top-level block; ignored on a per-registry signing block.
+	Kinds []string `yaml:"kinds,omitempty"`
+}
+
+// signingKindsAll is the wildcard entry in Signing.Kinds that selects every
+// pushable artifact kind. An empty Kinds list means the same thing. It is the
+// single spelling of the wildcard, shared by the scope accessor and the
+// kinds-validation path.
+const signingKindsAll = "all"
+
+// SigningRequiredForKind reports whether the org signing policy requires a
+// signature when publishing an artifact of the given kind. It is the single
+// home for the org decision: enforcement sites consult it rather than
+// re-deriving the scope, so the scope rule lives in exactly one place.
+//
+// The decision is Signing.Required AND kind-in-scope. Scope is every pushable
+// kind when Signing.Kinds is empty or contains the "all" wildcard; otherwise
+// it is exact membership in Signing.Kinds. kind matches the entity kind value
+// (e.g. "Component", "Plugin"). The org policy is read from the top-level
+// signing block only; a per-registry signing block never carries it.
+func (c Config) SigningRequiredForKind(kind string) bool {
+	if !c.Signing.Required {
+		return false
+	}
+	if len(c.Signing.Kinds) == 0 {
+		return true
+	}
+	for _, k := range c.Signing.Kinds {
+		if k == signingKindsAll || k == kind {
+			return true
+		}
+	}
+	return false
 }
 
 // ResolveSigning resolves the signing config for host by overlaying the

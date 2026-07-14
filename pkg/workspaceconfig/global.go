@@ -121,6 +121,56 @@ func applyAppends(merged *Config, layers ...appendSlices) {
 	}
 }
 
+// signingPolicyAccumulator composes the org-wide signing policy across the
+// config cascade. It is the deliberate, scoped exception to the whole-replace-
+// per-layer rule for the two org-policy fields: `required` OR-folds (any layer
+// true wins, and no layer can turn it off) and `kinds` unions (a layer can
+// widen the scope, never shrink it). It is intentionally separate from
+// applyAppends, which owns the list-only contract of the seven `_append`
+// fields — the signing policy is not an `_append` field and does not share that
+// path.
+//
+// Because OR and union are idempotent, folding a layer in more than once is
+// harmless. Callers add every contributing layer (global, each tree file, each
+// CI overlay) and finally the post-environment merged block, then read the
+// composed result back onto the merged Config.
+type signingPolicyAccumulator struct {
+	required bool
+	kinds    []string
+	seen     map[string]struct{}
+}
+
+// add folds one layer's signing policy into the accumulator: OR for required,
+// order-preserving deduplicated union for kinds. The kinds order is the order
+// of first appearance across the layers added, so the composed list is
+// deterministic for a given cascade.
+func (a *signingPolicyAccumulator) add(s SigningConfig) {
+	if s.Required {
+		a.required = true
+	}
+	for _, k := range s.Kinds {
+		if a.seen == nil {
+			a.seen = make(map[string]struct{})
+		}
+		if _, dup := a.seen[k]; dup {
+			continue
+		}
+		a.seen[k] = struct{}{}
+		a.kinds = append(a.kinds, k)
+	}
+}
+
+// composeInto folds cfg's current signing block into the accumulator — so an
+// environment overlay applied on top of the cascade participates in the same
+// monotonic compose — and then writes the composed policy back onto cfg,
+// replacing only the two policy fields. The endpoint fields (FulcioURL and the
+// rest) are left as the layer cascade resolved them.
+func (a *signingPolicyAccumulator) composeInto(cfg *Config) {
+	a.add(cfg.Signing)
+	cfg.Signing.Required = a.required
+	cfg.Signing.Kinds = a.kinds
+}
+
 // loadOverlayInto loads a YAML config file at path, overlaying its
 // fields onto the seed target. Reads the file once, validates the
 // bytes once via validateBytes, and unmarshals once into a copy of

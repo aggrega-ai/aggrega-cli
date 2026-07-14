@@ -119,6 +119,31 @@ var envBindings = []envBinding{
 		kind:       envKindString,
 		apply:      func(cfg *Config, raw string) error { cfg.Signing.KeyPath = raw; return nil },
 	},
+	{
+		// The org signing policy is monotonic across layers, so the environment
+		// value is folded (not whole-replaced) into the composed policy: it can
+		// turn the requirement on but cannot turn a config-set requirement off.
+		envVar:     "AGGREGA_SIGNING_REQUIRED",
+		configPath: "signing.required",
+		kind:       envKindBool,
+		apply:      func(cfg *Config, raw string) error { return applyBool(raw, &cfg.Signing.Required) },
+	},
+	{
+		// Folded into the composed kinds union; the environment can widen the
+		// scope but never shrink it. Validated here so an unknown kind fails
+		// loudly, naming the variable, exactly as a config file does.
+		envVar:     "AGGREGA_SIGNING_KINDS",
+		configPath: "signing.kinds",
+		kind:       envKindPathList,
+		apply: func(cfg *Config, raw string) error {
+			kinds := splitPathList(raw)
+			if err := validateSigningKinds(kinds, "$AGGREGA_SIGNING_KINDS"); err != nil {
+				return err
+			}
+			cfg.Signing.Kinds = kinds
+			return nil
+		},
+	},
 }
 
 // applyEnvOverlay overlays the SET (non-empty) environment variables from the

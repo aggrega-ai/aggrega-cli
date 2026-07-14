@@ -30,6 +30,9 @@ func loadCIOverlay(path string) (cfg Config, ignored []string, err error) {
 	if uerr := yaml.Unmarshal(data, &cfg); uerr != nil {
 		return Config{}, nil, fmt.Errorf("workspaceconfig: typed unmarshal %s: %w", path, uerr)
 	}
+	if verr := validateSigningKinds(cfg.Signing.Kinds, path); verr != nil {
+		return Config{}, nil, verr
+	}
 	return cfg, ciNonAdditiveKeys(data), nil
 }
 
@@ -63,13 +66,15 @@ func concat[T any](a, b []T) []T {
 
 // ciNonAdditiveKeys reports the wire paths of every key in a CI overlay that
 // carries no additive semantic, in a stable (sorted) order for deterministic
-// diagnostics. Only the seven list-valued fields are additive: the whole
+// diagnostics. Additive keys are the seven list-valued fields — the whole
 // `plugins` block (the four sockets, the provider bindings, and their `_append`
 // companions), `workspace.catalog_dirs` (+ `_append`), and
-// `lint.publishing_discipline.narrowing_exemptions` (+ `_append`). Every other
-// key — top-level scalars and maps, the workspace catalog-unrelated keys, the
-// lint enforcement gates — is reported so the caller can warn the author that
-// the overlay ignored it.
+// `lint.publishing_discipline.narrowing_exemptions` (+ `_append`) — plus the
+// org signing policy `signing.required` and `signing.kinds`, which compose
+// monotonically across the cascade. Every other key — top-level scalars and
+// maps, the workspace catalog-unrelated keys, the lint enforcement gates, and
+// the signing endpoint defaults — is reported so the caller can warn the author
+// that the overlay ignored it.
 func ciNonAdditiveKeys(data []byte) []string {
 	var root map[string]any
 	if err := yaml.Unmarshal(data, &root); err != nil || root == nil {
@@ -83,6 +88,12 @@ func ciNonAdditiveKeys(data []byte) []string {
 			// sockets, the provider bindings, or an `_append` companion.
 		case "workspace":
 			ignored = append(ignored, ignoredSubKeys("workspace", root[k], "catalog_dirs", "catalog_dirs_append")...)
+		case "signing":
+			// Partially additive: the org policy (required/kinds) composes
+			// monotonically across layers, so a CI overlay may carry it; the
+			// endpoint defaults (fulcio/rekor/timestamp/key_path) have no
+			// additive meaning and are reported ignored like any scalar.
+			ignored = append(ignored, ignoredSubKeys("signing", root[k], "required", "kinds")...)
 		case "lint":
 			ignored = append(ignored, ignoredLintKeys(root[k])...)
 		default:
