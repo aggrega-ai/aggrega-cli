@@ -67,7 +67,7 @@ func TestRegistryAddFetchesAndPinsTrust(t *testing.T) {
 	if !found {
 		t.Fatal("registry should be found after add")
 	}
-	if !pol.RequiresSignatures {
+	if !pol.Signing.Required {
 		t.Error("requires_signatures should be pinned from the advertised document")
 	}
 	if len(pol.TrustedIdentities) != 2 {
@@ -126,7 +126,7 @@ func TestRegistryAddManualIdentityOverridesFetch(t *testing.T) {
 	}
 	// The fetched requires_signatures must NOT have been pinned, since the
 	// fetch was skipped in favor of the manual policy.
-	if pol.RequiresSignatures {
+	if pol.Signing.Required {
 		t.Error("requires_signatures should be false: the manual override skipped the fetch")
 	}
 	if strings.Contains(out.String(), "Pinned advertised trust policy") {
@@ -163,7 +163,7 @@ func TestRegistryAddNoTrustAdvertisedFallsBack(t *testing.T) {
 	if !found {
 		t.Fatal("registry should still be registered after a fallback add")
 	}
-	if len(pol.TrustedIdentities) != 0 || pol.RequiresSignatures {
+	if len(pol.TrustedIdentities) != 0 || pol.Signing.Required {
 		t.Errorf("fallback should write an empty policy; got %+v", pol)
 	}
 	if !strings.Contains(out.String(), "advertises no trust config") {

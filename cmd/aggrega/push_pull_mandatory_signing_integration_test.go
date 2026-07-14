@@ -32,7 +32,7 @@ metadata:
 // writeOrgSigningPushWorkspace writes a workspace config carrying the given body
 // into a fresh tempdir and chdirs into it, returning the workspace root. The
 // body sets default_registry and the org signing block; it deliberately carries
-// NO per-registry requires_signatures, so any refusal is attributable to the
+// NO per-registry signing.required, so any refusal is attributable to the
 // org policy alone.
 func writeOrgSigningPushWorkspace(t *testing.T, configBody string) string {
 	t.Helper()
@@ -47,7 +47,7 @@ func writeOrgSigningPushWorkspace(t *testing.T, configBody string) string {
 // kind (plugin, component) is refused with the org-policy sentinel, a signed
 // push succeeds, an out-of-scope kind is allowed unsigned, and with the policy
 // off nothing changes. The org policy carries no per-registry
-// requires_signatures, so each refusal is the org layer, not the registry.
+// signing.required, so each refusal is the org layer, not the registry.
 func TestIntegration_PushRefusesUnsignedUnderOrgPolicy(t *testing.T) {
 	// Arm 1: an unsigned Plugin under an org policy that requires every kind is
 	// refused with the org-policy sentinel (not the per-registry one).
@@ -156,7 +156,7 @@ func TestIntegration_PushOrgPolicyUnremovableViaCIOverlay(t *testing.T) {
 // addressed by its bare identity plus a Recipe that implements it), pushes each
 // entity UNSIGNED to the registry at host, and writes a consumer workspace whose
 // config carries the given org signing block (configBody appended under the
-// signing key) but NO per-registry requires_signatures. It chdirs into the
+// signing key) but NO per-registry signing.required. It chdirs into the
 // consumer workspace and returns the Component's bare closure URI. The consumer
 // carries no local catalog directory, so every entity resolves through a Tier-3
 // registry pull — the axis the org policy governs at the consumer.
@@ -251,14 +251,14 @@ spec:
 
 // TestIntegration_PullRejectsUnsignedUnderOrgPolicy proves the consumer-side
 // enforcement driven through the PRODUCTION pull command. A Component resolved
-// by its bare identity from a registry with NO per-registry requires_signatures
+// by its bare identity from a registry with NO per-registry signing.required
 // is still rejected at pull when the org policy requires its kind — the org
 // layer. An out-of-scope kind, and the policy-off default, pull unsigned as
 // before.
 func TestIntegration_PullRejectsUnsignedUnderOrgPolicy(t *testing.T) {
 	// Arm 4: org policy scoped to Component; the unsigned Component is rejected
 	// at pull with ErrNoSignatureFound, proving the org layer (the registry
-	// carries no per-registry requires_signatures).
+	// carries no per-registry signing.required).
 	t.Run("in_scope_unsigned_rejected", func(t *testing.T) {
 		host := startRegistry(t, nil)
 		writeOrgSigningPullWorkspace(t, host, "signing:\n  required: true\n  kinds: [Component]\n")

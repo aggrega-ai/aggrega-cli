@@ -5,18 +5,20 @@ package workspaceconfig
 
 import "testing"
 
-// TestRegistriesLoadFromConfig proves the per-registry requires-signatures
-// field round-trips from the workspace file through schema validation and
-// is readable via RegistryRequiresSignatures.
+// TestRegistriesLoadFromConfig proves the per-registry signing.required field
+// round-trips from the workspace file through schema validation and is readable
+// via RegistrySigningRequiredForKind.
 func TestRegistriesLoadFromConfig(t *testing.T) {
 	t.Parallel()
 	content := `
 workspace: {}
 registries:
   - host: hub.aggrega.ai
-    requires_signatures: true
+    signing:
+      required: true
   - host: dev.local:5000
-    requires_signatures: false
+    signing:
+      required: false
 `
 	path := writeFixture(t, content)
 	cfg, err := load(path)
@@ -24,14 +26,14 @@ registries:
 		t.Fatalf("load: %v", err)
 	}
 
-	if !cfg.RegistryRequiresSignatures("hub.aggrega.ai") {
+	if !cfg.RegistrySigningRequiredForKind("hub.aggrega.ai", "Component") {
 		t.Error("hub.aggrega.ai should require signatures")
 	}
-	if cfg.RegistryRequiresSignatures("dev.local:5000") {
+	if cfg.RegistrySigningRequiredForKind("dev.local:5000", "Component") {
 		t.Error("dev.local:5000 should not require signatures")
 	}
 	// A registry absent from the config does not require signatures.
-	if cfg.RegistryRequiresSignatures("other.example.com") {
+	if cfg.RegistrySigningRequiredForKind("other.example.com", "Component") {
 		t.Error("unconfigured registry should not require signatures")
 	}
 }
@@ -42,7 +44,7 @@ registries:
 func TestRegistriesDefaultEmpty(t *testing.T) {
 	t.Parallel()
 	cfg := Default()
-	if cfg.RegistryRequiresSignatures("hub.aggrega.ai") {
+	if cfg.RegistrySigningRequiredForKind("hub.aggrega.ai", "Component") {
 		t.Error("default config should not require signatures for any registry")
 	}
 	if len(cfg.Registries) != 0 {

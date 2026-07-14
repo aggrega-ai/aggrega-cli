@@ -104,7 +104,7 @@ func TestIntegration_EntitySignatureVerifiesAgainstManifestDigest(t *testing.T) 
 
 	wsCfg := workspaceconfig.Config{
 		Registries: []workspaceconfig.RegistryConfig{
-			{Host: host, RequiresSignatures: true, PublicKey: string(signer.PublicKeyPEM())},
+			{Host: host, Signing: workspaceconfig.SigningConfig{Required: true}, PublicKey: string(signer.PublicKeyPEM())},
 		},
 	}
 

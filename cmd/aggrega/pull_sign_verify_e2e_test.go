@@ -154,9 +154,9 @@ func TestPinnedRootAnchorSelectedByOrchestrator(t *testing.T) {
 	cfg := workspaceconfig.Config{
 		Registries: []workspaceconfig.RegistryConfig{
 			{
-				Host:               "keyless.example.com",
-				RequiresSignatures: true,
-				TrustedRoot:        filepath.Join(t.TempDir(), "missing-root.json"),
+				Host:        "keyless.example.com",
+				Signing:     workspaceconfig.SigningConfig{Required: true},
+				TrustedRoot: filepath.Join(t.TempDir(), "missing-root.json"),
 				TrustedIdentities: []workspaceconfig.TrustedIdentity{
 					{Identity: "maintainer@example.com", Issuer: "https://accounts.google.com"},
 				},

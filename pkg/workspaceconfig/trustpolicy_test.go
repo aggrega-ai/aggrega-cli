@@ -14,7 +14,8 @@ func TestTrustPolicyLoadsFromConfig(t *testing.T) {
 workspace: {}
 registries:
   - host: keyed.example.com
-    requires_signatures: true
+    signing:
+      required: true
     public_key: |
       -----BEGIN PUBLIC KEY-----
       MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE
@@ -73,7 +74,7 @@ func TestHubBaselineMandatoryByDefault(t *testing.T) {
 	if !found {
 		t.Fatal("hub baseline should always be found")
 	}
-	if !hub.RequiresSignatures {
+	if !hub.SigningRequiredForKind("Component") {
 		t.Error("hub baseline must require signatures")
 	}
 	if len(hub.TrustedIdentities) < 2 {
@@ -102,7 +103,8 @@ func TestHubBaselineOverridable(t *testing.T) {
 workspace: {}
 registries:
   - host: hub.aggrega.ai
-    requires_signatures: false
+    signing:
+      required: false
     trusted_identities:
       - identity: enterprise@acme.example
         issuer: https://acme.example/oidc
@@ -116,8 +118,8 @@ registries:
 	if !found {
 		t.Fatal("hub should be found via the operator entry")
 	}
-	if hub.RequiresSignatures {
-		t.Error("operator entry should override the baseline RequiresSignatures")
+	if hub.SigningRequiredForKind("Component") {
+		t.Error("operator entry should override the baseline required stance")
 	}
 	if len(hub.TrustedIdentities) != 1 || hub.TrustedIdentities[0].Identity != "enterprise@acme.example" {
 		t.Errorf("operator entry should replace baseline identities, got %v", hub.TrustedIdentities)

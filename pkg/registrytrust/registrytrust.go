@@ -60,8 +60,12 @@ const mediaType = "application/json"
 // and PublicKey pins a keyed-mode registry's cosign-compatible public key.
 type AdvertisedTrust struct {
 	// RequiresSignatures, when true, tells the client this registry expects
-	// every artifact to be signed. Pinned onto the per-registry policy so a
-	// pull of an unsigned artifact from this registry halts.
+	// every artifact to be signed. Pinned onto the per-registry policy's signing
+	// stance so a pull of an unsigned artifact from this registry halts. This is
+	// the registry-advertised wire — a separate network contract a registry
+	// serves about itself — not the workspace-local config lever; the pin copies
+	// it onto the per-registry signing block, so the two are related but distinct
+	// surfaces and are named independently.
 	RequiresSignatures bool `json:"requires_signatures"`
 	// TrustedIdentities is the OR-set of keyless signing identities the
 	// registry advertises as acceptable for its artifacts. A pulled artifact's

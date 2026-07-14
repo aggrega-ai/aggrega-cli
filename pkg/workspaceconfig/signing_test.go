@@ -211,42 +211,45 @@ func TestSigningKindsUnknownFailsLoudly(t *testing.T) {
 	}
 }
 
-// TestPerRegistrySigningPolicyRejected proves the org signing-policy fields
-// (required / kinds) are rejected on a per-registry signing block. The schema
-// shares one signing definition across the top-level and per-registry levels, so
-// these fields pass validation there yet would be silently ignored — the load
-// must fail loudly, wrapping ErrConfigInvalid and naming the offending registry
-// host, rather than drop them.
-func TestPerRegistrySigningPolicyRejected(t *testing.T) {
+// TestPerRegistrySigningPolicyActivates proves the signing-block stance fields
+// (required / kinds) are honored on a per-registry signing block: they are the
+// one required/kinds concept the top-level policy carries, scoped by placement to
+// that host. A per-host required with a kinds scope demands a signature for the
+// listed kinds on that host and not for others.
+func TestPerRegistrySigningPolicyActivates(t *testing.T) {
 	t.Parallel()
-	cases := []struct {
-		name    string
-		content string
-	}{
-		{
-			name:    "required",
-			content: "workspace: {}\nregistries:\n  - host: reg.example\n    signing:\n      required: true\n",
-		},
-		{
-			name:    "kinds",
-			content: "workspace: {}\nregistries:\n  - host: reg.example\n    signing:\n      kinds:\n        - Component\n",
-		},
+	content := "workspace: {}\nregistries:\n  - host: reg.example\n    signing:\n      required: true\n      kinds:\n        - Component\n"
+	cfg, err := load(writeFixture(t, content))
+	if err != nil {
+		t.Fatalf("load: %v", err)
 	}
-	for _, tc := range cases {
-		tc := tc
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			_, err := load(writeFixture(t, tc.content))
-			if err == nil {
-				t.Fatalf("expected a per-registry signing.%s to be rejected; got nil", tc.name)
-			}
-			if !errors.Is(err, ErrConfigInvalid) {
-				t.Errorf("error should wrap ErrConfigInvalid; got %v", err)
-			}
-			if !strings.Contains(err.Error(), "reg.example") {
-				t.Errorf("error should name the offending registry host %q; got %v", "reg.example", err)
-			}
-		})
+	if !cfg.RegistrySigningRequiredForKind("reg.example", "Component") {
+		t.Error("per-registry signing.required must demand a signature for the in-scope kind")
+	}
+	if cfg.RegistrySigningRequiredForKind("reg.example", "Feature") {
+		t.Error("per-registry kinds scope must exclude an out-of-scope kind")
+	}
+	if cfg.RegistrySigningRequiredForKind("other.example", "Component") {
+		t.Error("an unlisted host must not inherit another host's required stance")
+	}
+}
+
+// TestPerRegistrySigningKindsValidated proves a per-registry signing.kinds entry
+// that is not a signable artifact kind is rejected at load, wrapping
+// ErrConfigInvalid and naming the offending kind — the same validation the
+// top-level kinds list receives.
+func TestPerRegistrySigningKindsValidated(t *testing.T) {
+	t.Parallel()
+	content := "workspace: {}\nregistries:\n  - host: reg.example\n    signing:\n      kinds:\n        - Bogus\n"
+	_, err := load(writeFixture(t, content))
+	if err == nil {
+		t.Fatal("expected an unknown per-registry signing.kinds entry to be rejected; got nil")
+	}
+	if !errors.Is(err, ErrConfigInvalid) {
+		t.Errorf("error should wrap ErrConfigInvalid; got %v", err)
+	}
+	if !strings.Contains(err.Error(), "Bogus") {
+		t.Errorf("error should name the offending kind %q; got %v", "Bogus", err)
 	}
 }
 
@@ -262,6 +265,28 @@ func TestPerRegistrySigningEndpointsAccepted(t *testing.T) {
 	}
 	if len(cfg.Registries) != 1 || cfg.Registries[0].Signing.FulcioURL != "https://fulcio.reg.example" {
 		t.Errorf("per-registry signing endpoint did not load: %+v", cfg.Registries)
+	}
+}
+
+// TestRetiredRegistryKeysRejected proves the clean break: the retired
+// per-registry keys are no longer accepted. The schema's additionalProperties:
+// false rejects requires_signatures (folded into signing.required) and
+// skip_verification (renamed skip_signature_verification) loudly at load.
+func TestRetiredRegistryKeysRejected(t *testing.T) {
+	t.Parallel()
+	for _, key := range []string{"requires_signatures: true", "skip_verification: true"} {
+		key := key
+		t.Run(key, func(t *testing.T) {
+			t.Parallel()
+			content := "workspace: {}\nregistries:\n  - host: reg.example\n    " + key + "\n"
+			_, err := load(writeFixture(t, content))
+			if err == nil {
+				t.Fatalf("retired key %q must be rejected; got nil", key)
+			}
+			if !errors.Is(err, ErrConfigInvalid) {
+				t.Errorf("rejection of %q should wrap ErrConfigInvalid; got %v", key, err)
+			}
+		})
 	}
 }
 

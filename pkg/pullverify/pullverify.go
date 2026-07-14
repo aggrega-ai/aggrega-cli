@@ -126,25 +126,37 @@ func Verify(ctx context.Context, entities []Entity, opts Options) ([]Result, err
 		}
 		policy, configured := opts.Config.RegistryTrustPolicy(host)
 
-		// A signature is required when EITHER the registry's own trust policy
-		// requires it OR the workspace signing policy requires it for this
-		// entity's kind. The org layer forces a signature on an in-scope kind
-		// even from a registry that carries no per-registry requires_signatures.
+		// A signature is required when EITHER the top-level (all-registries)
+		// policy requires it for this entity's kind OR this host's own signing
+		// block requires it. The two are the one trust stance read at two scopes;
+		// the top-level layer forces a signature on an in-scope kind even from a
+		// host whose own block requires none.
 		orgRequired := opts.Config.SigningRequiredForKind(e.Kind)
-		// Fail-safe: an active org signing policy must not silently exempt an
+		// Fail-safe: an active top-level policy must not silently exempt an
 		// unclassifiable artifact. When the policy is on but the kind could not
 		// be determined, require a signature rather than tolerate a missing one.
 		if opts.Config.Signing.Required && e.Kind == "" {
 			orgRequired = true
 		}
+		registryRequired := configured && policy.SigningRequiredForKind(e.Kind)
+		if configured && policy.Signing.Required && e.Kind == "" {
+			registryRequired = true
+		}
 
 		// Default-for-unknown: a host with no explicit policy, no baseline, and
-		// no org requirement verifies only if a signature is present, and never
+		// no required stance verifies only if a signature is present, and never
 		// halts on a missing one.
-		requireSignature := (configured && policy.RequiresSignatures) || orgRequired
+		requireSignature := registryRequired || orgRequired
 
-		if policy.SkipVerification {
-			warn(fmt.Sprintf("signature verification skipped for registry %q (skip_verification: true)", host))
+		// A per-host break-glass skip disables verification for this host — but
+		// it does NOT defeat the top-level required policy. An org-required
+		// in-scope artifact is still verified here; only the global
+		// skip_signature_verification switch (handled above) can disable that.
+		// A per-host required stance is not immune to the per-host skip: setting
+		// both on one host is the allowed-but-perverse push-required + pull-skip
+		// combination, and the skip wins on the verify side.
+		if policy.SkipSignatureVerification && !orgRequired {
+			warn(fmt.Sprintf("signature verification skipped for registry %q (skip_signature_verification: true)", host))
 			continue
 		}
 

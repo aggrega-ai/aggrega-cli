@@ -37,7 +37,7 @@ func writeSigningWorkspace(t *testing.T, registry string, requiresSignatures boo
 	t.Chdir(root)
 	cfg := "workspace: {}\ndefault_registry: " + registry + "\n"
 	if requiresSignatures {
-		cfg += "registries:\n  - host: " + registry + "\n    requires_signatures: true\n"
+		cfg += "registries:\n  - host: " + registry + "\n    signing:\n      required: true\n"
 	}
 	if err := os.WriteFile(filepath.Join(root, ".aggrega-config.yaml"), []byte(cfg), 0o644); err != nil {
 		t.Fatalf("write config: %v", err)

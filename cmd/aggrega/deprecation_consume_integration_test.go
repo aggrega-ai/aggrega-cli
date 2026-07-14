@@ -39,7 +39,7 @@ func deprecationConsumerConfigBody(host string, pinnedPubPEM []byte, requiresSig
 	b.WriteString("registries:\n")
 	b.WriteString("  - host: \"" + host + "\"\n")
 	if requiresSignatures {
-		b.WriteString("    requires_signatures: true\n")
+		b.WriteString("    signing:\n      required: true\n")
 	}
 	b.WriteString("    public_key: |\n")
 	for _, line := range strings.Split(strings.TrimRight(string(pinnedPubPEM), "\n"), "\n") {
@@ -281,7 +281,7 @@ func TestIntegration_ConsumeRetroactiveDeprecation(t *testing.T) {
 
 	t.Run("untrusted_marker_not_honored", func(t *testing.T) {
 		host := startRegistry(t, nil)
-		// A verify-if-present registry (no requires_signatures): the artifact
+		// A verify-if-present registry (no signing.required): the artifact
 		// signatures still verify against the pinned key, but a marker signed by a
 		// DIFFERENT key does not match the pinned key and is not honored — so it is
 		// dropped, the row carries no deprecation record, and the build succeeds

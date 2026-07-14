@@ -95,8 +95,10 @@ func load(path string) (Config, error) {
 	if err := validateSigningKinds(p.Signing.Kinds, path); err != nil {
 		return Config{}, err
 	}
-	if err := validateRegistrySigningPolicy(p.Registries, path); err != nil {
-		return Config{}, err
+	for _, r := range p.Registries {
+		if err := validateSigningKinds(r.Signing.Kinds, path); err != nil {
+			return Config{}, err
+		}
 	}
 	return p, nil
 }
@@ -115,26 +117,6 @@ func validateSigningKinds(kinds []string, path string) error {
 		}
 		if _, err := oci.MediaTypeForKind(k); err != nil {
 			return fmt.Errorf("workspaceconfig: %s: signing.kinds entry %q is not a signable artifact kind; use a catalog entity or plugin kind, or %q for every kind: %w", path, k, signingKindsAll, ErrConfigInvalid)
-		}
-	}
-	return nil
-}
-
-// validateRegistrySigningPolicy rejects a per-registry signing block that
-// carries the org-wide signing-policy fields (required / kinds). Those two
-// fields are the organisation-wide publishing policy and are honored only on
-// the top-level signing block; a per-registry signing block honors only the
-// endpoint fields. The schema shares one signing definition across both levels,
-// so the policy fields pass validation on a per-registry block yet would be
-// silently ignored — so they are rejected loudly here instead, wrapping
-// ErrConfigInvalid for category-consistency with every other config-load
-// rejection. The path argument names the offending file (or environment
-// variable) and host names the offending registry entry. The per-registry lever
-// for demanding a signature is requires_signatures, not these two fields.
-func validateRegistrySigningPolicy(registries []RegistryConfig, path string) error {
-	for _, r := range registries {
-		if r.Signing.Required || len(r.Signing.Kinds) > 0 {
-			return fmt.Errorf("workspaceconfig: %s: registry %q sets a per-registry signing.required or signing.kinds, but those are the org-wide signing policy: set them on the top-level signing block, not per registry, and set requires_signatures on this registry to demand a signature for it: %w", path, r.Host, ErrConfigInvalid)
 		}
 	}
 	return nil

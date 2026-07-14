@@ -260,7 +260,7 @@ func pushRun(cfg pushConfig) error {
 	// evaluated before any bytes reach the registry — the refusal, like the
 	// per-registry one, halts before the push network call so an unsigned
 	// artifact never leaks.
-	requiresSignatures := wsCfg.RegistryRequiresSignatures(registryhost.Of(registry))
+	requiresSignatures := wsCfg.RegistrySigningRequiredForKind(registryhost.Of(registry), header.Kind)
 	orgRequired := wsCfg.SigningRequiredForKind(header.Kind)
 	wantSign := requiresSignatures || orgRequired
 	if cfg.Sign != nil {

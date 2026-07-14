@@ -104,7 +104,7 @@ func TestSignVerifyRunRealLinter(t *testing.T) {
 	}
 	wsCfg := workspaceconfig.Config{
 		Registries: []workspaceconfig.RegistryConfig{
-			{Host: "keyed.example.com", RequiresSignatures: true, PublicKey: string(pubPEM)},
+			{Host: "keyed.example.com", Signing: workspaceconfig.SigningConfig{Required: true}, PublicKey: string(pubPEM)},
 		},
 	}
 
@@ -166,7 +166,7 @@ func TestSignVerifyRealLinterWrongKeyHalts(t *testing.T) {
 	lf := &lockfile.Lockfile{Plugins: []lockfile.Plugin{{URI: uri, Digest: contentDg, ManifestDigest: dg}}}
 	wsCfg := workspaceconfig.Config{
 		Registries: []workspaceconfig.RegistryConfig{
-			{Host: "keyed.example.com", RequiresSignatures: true, PublicKey: string(otherPub)},
+			{Host: "keyed.example.com", Signing: workspaceconfig.SigningConfig{Required: true}, PublicKey: string(otherPub)},
 		},
 	}
 

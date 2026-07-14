@@ -40,8 +40,8 @@ func TestRegistryAddKeyless(t *testing.T) {
 	if !found {
 		t.Fatal("registry should be found after add")
 	}
-	if !pol.RequiresSignatures {
-		t.Error("requires_signatures should be set")
+	if !pol.Signing.Required {
+		t.Error("signing.required should be set")
 	}
 	if len(pol.TrustedIdentities) != 1 || pol.TrustedIdentities[0].Identity != "dev@example.com" {
 		t.Errorf("trusted identities = %v", pol.TrustedIdentities)
@@ -95,7 +95,7 @@ func TestRegistryAddHubBaseline(t *testing.T) {
 	if !found {
 		t.Fatal("hub should be found")
 	}
-	if !pol.RequiresSignatures || len(pol.TrustedIdentities) < 2 {
+	if !pol.Signing.Required || len(pol.TrustedIdentities) < 2 {
 		t.Errorf("hub baseline not pinned: %+v", pol)
 	}
 }

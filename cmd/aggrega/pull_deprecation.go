@@ -63,7 +63,7 @@ func discoverClosureDeprecations(
 			host = registryhost.Of(e.URI)
 		}
 		policy, configured := wsCfg.RegistryTrustPolicy(host)
-		if policy.SkipVerification {
+		if policy.SkipSignatureVerification {
 			continue
 		}
 
@@ -81,7 +81,7 @@ func discoverClosureDeprecations(
 			if errors.Is(verr, errNoDeprecationMarker) {
 				continue
 			}
-			requireSignature := configured && policy.RequiresSignatures
+			requireSignature := configured && policy.SigningRequiredForKind(e.Kind)
 			if requireSignature && !policy.Advisory {
 				return fmt.Errorf("pullverify: %s: %w", e.URI, verr)
 			}

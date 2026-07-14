@@ -130,7 +130,7 @@ spec:
 	b.WriteString("offline: false\n")
 	b.WriteString("registries:\n")
 	b.WriteString("  - host: \"" + host + "\"\n")
-	b.WriteString("    requires_signatures: false\n")
+	b.WriteString("    signing:\n      required: false\n")
 	b.WriteString("    public_key: |\n")
 	for _, line := range strings.Split(strings.TrimRight(string(pinnedPubPEM), "\n"), "\n") {
 		b.WriteString("      " + line + "\n")

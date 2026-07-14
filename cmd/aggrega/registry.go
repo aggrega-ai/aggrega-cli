@@ -185,7 +185,7 @@ func registryAddRun(cfg registryAddConfig) error {
 		reg.TrustedRoot = cfg.TrustedRoot
 	}
 	if cfg.RequireSignatures {
-		reg.RequiresSignatures = cfg.RequireValue
+		reg.Signing.Required = cfg.RequireValue
 	}
 	if cfg.Advisory {
 		reg.Advisory = true
@@ -222,7 +222,7 @@ func pinAdvertisedTrust(reg *workspaceconfig.RegistryConfig, host string, client
 		return nil
 	}
 
-	reg.RequiresSignatures = adv.RequiresSignatures
+	reg.Signing.Required = adv.RequiresSignatures
 	reg.TrustedIdentities = advertisedIdentities(adv.TrustedIdentities)
 	reg.TrustedDeprecationIdentities = advertisedIdentities(adv.TrustedDeprecationIdentities)
 	if adv.PublicKey != "" {

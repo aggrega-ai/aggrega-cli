@@ -176,7 +176,7 @@ func signedPluginWorkspaceConfigBody(host string, pinnedPubPEM []byte) string {
 	b.WriteString("offline: false\n")
 	b.WriteString("registries:\n")
 	b.WriteString("  - host: \"" + host + "\"\n")
-	b.WriteString("    requires_signatures: true\n")
+	b.WriteString("    signing:\n      required: true\n")
 	b.WriteString("    public_key: |\n")
 	for _, line := range strings.Split(strings.TrimRight(string(pinnedPubPEM), "\n"), "\n") {
 		b.WriteString("      " + line + "\n")

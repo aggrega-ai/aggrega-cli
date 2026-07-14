@@ -65,7 +65,7 @@ func TestVerifyKeyedRecordsFact(t *testing.T) {
 
 	cfg := workspaceconfig.Config{
 		Registries: []workspaceconfig.RegistryConfig{
-			{Host: "keyed.example.com", RequiresSignatures: true, PublicKey: string(pubPEM)},
+			{Host: "keyed.example.com", Signing: workspaceconfig.SigningConfig{Required: true}, PublicKey: string(pubPEM)},
 		},
 	}
 	ent := pullverify.Entity{URI: "keyed.example.com/component/core/api-server", ManifestDigest: dg, Host: "keyed.example.com"}
@@ -119,7 +119,7 @@ func TestVerifyKeyedRejectsWrongKey(t *testing.T) {
 
 	cfg := workspaceconfig.Config{
 		Registries: []workspaceconfig.RegistryConfig{
-			{Host: "keyed.example.com", RequiresSignatures: true, PublicKey: string(otherPub)},
+			{Host: "keyed.example.com", Signing: workspaceconfig.SigningConfig{Required: true}, PublicKey: string(otherPub)},
 		},
 	}
 	ent := pullverify.Entity{URI: "keyed.example.com/x", ManifestDigest: dg, Host: "keyed.example.com"}
@@ -145,7 +145,7 @@ func TestVerifyMissingSignatureHaltsWhenRequired(t *testing.T) {
 	}
 	cfg := workspaceconfig.Config{
 		Registries: []workspaceconfig.RegistryConfig{
-			{Host: "req.example.com", RequiresSignatures: true, PublicKey: "irrelevant"},
+			{Host: "req.example.com", Signing: workspaceconfig.SigningConfig{Required: true}, PublicKey: "irrelevant"},
 		},
 	}
 	ent := pullverify.Entity{URI: "req.example.com/x", ManifestDigest: dg, Host: "req.example.com"}
@@ -180,7 +180,7 @@ func TestVerifyMissingSignatureToleratedWhenUnknown(t *testing.T) {
 }
 
 // TestVerifyOrgPolicyRequiresSignatureForKind proves the org layer: a registry
-// with NO per-registry requires_signatures still rejects an unsigned artifact
+// with NO per-registry signing.required still rejects an unsigned artifact
 // of a kind the workspace signing policy scopes in — the org policy, not the
 // registry, forces the requirement.
 func TestVerifyOrgPolicyRequiresSignatureForKind(t *testing.T) {
@@ -258,7 +258,7 @@ func TestVerifyAdvisoryDowngradesFailure(t *testing.T) {
 	var warned bool
 	cfg := workspaceconfig.Config{
 		Registries: []workspaceconfig.RegistryConfig{
-			{Host: "adv.example.com", RequiresSignatures: true, Advisory: true, PublicKey: string(otherPub)},
+			{Host: "adv.example.com", Signing: workspaceconfig.SigningConfig{Required: true}, Advisory: true, PublicKey: string(otherPub)},
 		},
 	}
 	ent := pullverify.Entity{URI: "adv.example.com/x", ManifestDigest: dg, Host: "adv.example.com"}
@@ -287,7 +287,7 @@ func TestVerifyGlobalSkipIsLoud(t *testing.T) {
 	cfg := workspaceconfig.Config{
 		SkipSignatureVerification: true,
 		Registries: []workspaceconfig.RegistryConfig{
-			{Host: "keyed.example.com", RequiresSignatures: true, PublicKey: string(pubPEM)},
+			{Host: "keyed.example.com", Signing: workspaceconfig.SigningConfig{Required: true}, PublicKey: string(pubPEM)},
 		},
 	}
 	ent := pullverify.Entity{URI: "keyed.example.com/x", ManifestDigest: dg, Host: "keyed.example.com"}
@@ -315,7 +315,7 @@ func TestVerifyPerRegistrySkip(t *testing.T) {
 	var warned bool
 	cfg := workspaceconfig.Config{
 		Registries: []workspaceconfig.RegistryConfig{
-			{Host: "keyed.example.com", RequiresSignatures: true, SkipVerification: true, PublicKey: string(pubPEM)},
+			{Host: "keyed.example.com", Signing: workspaceconfig.SigningConfig{Required: true}, SkipSignatureVerification: true, PublicKey: string(pubPEM)},
 		},
 	}
 	ent := pullverify.Entity{URI: "keyed.example.com/x", ManifestDigest: dg, Host: "keyed.example.com"}
@@ -329,5 +329,119 @@ func TestVerifyPerRegistrySkip(t *testing.T) {
 	}
 	if !warned || len(results) != 0 {
 		t.Errorf("per-registry skip should warn and record nothing (warned=%v results=%d)", warned, len(results))
+	}
+}
+
+// TestVerifyPerRegistryRequiredRefusesUnsigned proves the per-host half of the
+// one trust stance on the verify side: a host whose own signing block sets
+// required refuses an unsigned in-scope artifact, exactly as the top-level
+// policy does — one name, one job, scope from placement.
+func TestVerifyPerRegistryRequiredRefusesUnsigned(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	store := memory.New()
+	dg, _ := oci.Push(ctx, store, "1.0.0", oci.MediaTypeComponent, []byte("kind: Component\n"))
+	cfg := workspaceconfig.Config{
+		Registries: []workspaceconfig.RegistryConfig{
+			{Host: "reg.example.com", Signing: workspaceconfig.SigningConfig{Required: true, Kinds: []string{"Component"}}},
+		},
+	}
+	ent := pullverify.Entity{URI: "reg.example.com/component/x", ManifestDigest: dg, Host: "reg.example.com", Kind: "Component"}
+	_, verr := pullverify.Verify(ctx, []pullverify.Entity{ent}, pullverify.Options{
+		Config: cfg,
+		Target: targetForStore(store, "1.0.0"),
+	})
+	if !errors.Is(verr, signing.ErrNoSignatureFound) {
+		t.Fatalf("per-registry required must halt an unsigned in-scope artifact with ErrNoSignatureFound, got %v", verr)
+	}
+}
+
+// TestVerifyOrgRequiredImmuneToPerHostSkip proves the top-level required policy
+// is immune to a per-host break-glass skip: a host that sets
+// skip_signature_verification still has its in-scope artifact verified when the
+// org policy requires a signature for that kind. The host pins the CORRECT key,
+// so verification runs and records the fact rather than being skipped silently.
+func TestVerifyOrgRequiredImmuneToPerHostSkip(t *testing.T) {
+	t.Parallel()
+	store, dg, pubPEM := signedStore(t)
+	var warned bool
+	cfg := workspaceconfig.Config{
+		Signing: workspaceconfig.SigningConfig{Required: true},
+		Registries: []workspaceconfig.RegistryConfig{
+			{Host: "keyed.example.com", SkipSignatureVerification: true, PublicKey: string(pubPEM)},
+		},
+	}
+	ent := pullverify.Entity{URI: "keyed.example.com/x", ManifestDigest: dg, Host: "keyed.example.com", Kind: "Component"}
+	results, err := pullverify.Verify(context.Background(), []pullverify.Entity{ent}, pullverify.Options{
+		Config: cfg,
+		Target: targetForStore(store, "1.0.0"),
+		Warn:   func(string) { warned = true },
+	})
+	if err != nil {
+		t.Fatalf("org-required verification of a correctly-signed artifact must succeed despite per-host skip: %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("org-required host must be verified (not skipped) despite per-host skip; got %d results", len(results))
+	}
+	if warned {
+		t.Error("a successful org-required verification should not emit the per-host skip warning")
+	}
+}
+
+// TestVerifyOrgRequiredEnforcedDespitePerHostSkip proves the immunity actually
+// ENFORCES: with the org policy on, a host that sets skip_signature_verification
+// but pins the WRONG key still HALTS the pull, because verification runs rather
+// than being skipped. Were the per-host skip able to defeat the org policy, this
+// would return no error.
+func TestVerifyOrgRequiredEnforcedDespitePerHostSkip(t *testing.T) {
+	t.Parallel()
+	store, dg, _ := signedStore(t)
+	_, _, wrongPub := signedStore(t)
+	cfg := workspaceconfig.Config{
+		Signing: workspaceconfig.SigningConfig{Required: true},
+		Registries: []workspaceconfig.RegistryConfig{
+			{Host: "keyed.example.com", SkipSignatureVerification: true, PublicKey: string(wrongPub)},
+		},
+	}
+	ent := pullverify.Entity{URI: "keyed.example.com/x", ManifestDigest: dg, Host: "keyed.example.com", Kind: "Component"}
+	_, err := pullverify.Verify(context.Background(), []pullverify.Entity{ent}, pullverify.Options{
+		Config: cfg,
+		Target: targetForStore(store, "1.0.0"),
+	})
+	if err == nil {
+		t.Fatal("org-required verification must halt on a wrong-key host despite per-host skip; got nil error")
+	}
+}
+
+// TestVerifyGlobalSkipDefeatsOrgRequired proves the ONLY switch that can disable
+// an org-required verification is the global skip_signature_verification: with it
+// set, even an org-required in-scope artifact from a wrong-key host is not
+// verified, and the disablement is loud.
+func TestVerifyGlobalSkipDefeatsOrgRequired(t *testing.T) {
+	t.Parallel()
+	store, dg, _ := signedStore(t)
+	_, _, wrongPub := signedStore(t)
+	var warning string
+	cfg := workspaceconfig.Config{
+		SkipSignatureVerification: true,
+		Signing:                   workspaceconfig.SigningConfig{Required: true},
+		Registries: []workspaceconfig.RegistryConfig{
+			{Host: "keyed.example.com", PublicKey: string(wrongPub)},
+		},
+	}
+	ent := pullverify.Entity{URI: "keyed.example.com/x", ManifestDigest: dg, Host: "keyed.example.com", Kind: "Component"}
+	results, err := pullverify.Verify(context.Background(), []pullverify.Entity{ent}, pullverify.Options{
+		Config: cfg,
+		Target: targetForStore(store, "1.0.0"),
+		Warn:   func(s string) { warning = s },
+	})
+	if err != nil {
+		t.Fatalf("global skip must short-circuit even org-required verification: %v", err)
+	}
+	if len(results) != 0 {
+		t.Errorf("global skip should record nothing, got %d", len(results))
+	}
+	if warning == "" {
+		t.Error("global skip must be loud")
 	}
 }

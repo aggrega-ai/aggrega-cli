@@ -197,7 +197,7 @@ func TestIntegration_PluginSignedClosure_ManifestSignatureVerifies(t *testing.T)
 
 	wsCfg := workspaceconfig.Config{
 		Registries: []workspaceconfig.RegistryConfig{
-			{Host: p.host, RequiresSignatures: true, PublicKey: string(signer.PublicKeyPEM())},
+			{Host: p.host, Signing: workspaceconfig.SigningConfig{Required: true}, PublicKey: string(signer.PublicKeyPEM())},
 		},
 	}
 
@@ -232,7 +232,7 @@ func TestIntegration_PluginSignedClosure_PolicyHaltsOnMissingSig(t *testing.T) {
 	cl, lf := closureAndLockfileFor(p)
 	wsCfg := workspaceconfig.Config{
 		Registries: []workspaceconfig.RegistryConfig{
-			{Host: p.host, RequiresSignatures: true, PublicKey: string(pubPEM)},
+			{Host: p.host, Signing: workspaceconfig.SigningConfig{Required: true}, PublicKey: string(pubPEM)},
 		},
 	}
 	verr := verifyClosureSignatures(ctx, lf, cl, wsCfg, t.TempDir(), nil, remoteTargetFor)
@@ -267,7 +267,7 @@ func TestIntegration_PluginSignedClosure_PolicyHaltsOnWrongKey(t *testing.T) {
 	}
 	wsCfg := workspaceconfig.Config{
 		Registries: []workspaceconfig.RegistryConfig{
-			{Host: p.host, RequiresSignatures: true, PublicKey: string(wrongPub)},
+			{Host: p.host, Signing: workspaceconfig.SigningConfig{Required: true}, PublicKey: string(wrongPub)},
 		},
 	}
 
@@ -287,10 +287,10 @@ func TestIntegration_PluginUnsignedClosure_NonRequiringNoHalt(t *testing.T) {
 	p := publishUnsignedPluginToRegistry(t)
 	cl, lf := closureAndLockfileFor(p)
 
-	// A registry with RequiresSignatures:false (verify-if-present default).
+	// A registry with signing.required:false (verify-if-present default).
 	wsCfg := workspaceconfig.Config{
 		Registries: []workspaceconfig.RegistryConfig{
-			{Host: p.host, RequiresSignatures: false, PublicKey: ""},
+			{Host: p.host, Signing: workspaceconfig.SigningConfig{Required: false}, PublicKey: ""},
 		},
 	}
 	if verr := verifyClosureSignatures(ctx, lf, cl, wsCfg, t.TempDir(), nil, remoteTargetFor); verr != nil {

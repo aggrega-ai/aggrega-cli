@@ -108,7 +108,7 @@ func signedBundleStore(t *testing.T, bundle []byte) (*memory.Store, []byte) {
 func keyedVerifier(store oras.ReadOnlyTarget, pubPEM []byte) docscache.VerifyAtPull {
 	cfg := workspaceconfig.Config{
 		Registries: []workspaceconfig.RegistryConfig{
-			{Host: "reg.example.com", RequiresSignatures: true, PublicKey: string(pubPEM)},
+			{Host: "reg.example.com", Signing: workspaceconfig.SigningConfig{Required: true}, PublicKey: string(pubPEM)},
 		},
 	}
 	return func(ctx context.Context, manifestDigest string) error {

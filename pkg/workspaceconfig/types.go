@@ -124,11 +124,6 @@ type RegistryConfig struct {
 	// Host is the registry these settings apply to (e.g.
 	// "hub.aggrega.ai"), matched against the host of a push/pull target.
 	Host string `yaml:"host"`
-	// RequiresSignatures, when true, refuses an unsigned push to this
-	// registry outright and signs a push to it by default. There is no
-	// override: an unsigned push to a signature-requiring registry always
-	// halts. Defaults to false.
-	RequiresSignatures bool `yaml:"requires_signatures,omitempty"`
 	// TrustedIdentities is the OR-set of keyless signing identities
 	// accepted for artifacts pulled from this registry. A signature
 	// verifies when its certificate matches ANY one entry. Used by the
@@ -158,25 +153,32 @@ type RegistryConfig struct {
 	// verification still runs and the failure is reported; the pull
 	// proceeds. Defaults to false (failures halt).
 	Advisory bool `yaml:"advisory,omitempty"`
-	// SkipVerification, when true, skips signature verification for this
-	// registry entirely. Unlike the global opt-out, this is scoped to one
-	// host. Defaults to false.
-	SkipVerification bool `yaml:"skip_verification,omitempty"`
-	// Signing carries the signing defaults scoped to this registry: the
-	// keyless service URLs and an optional keyed-key path. It overrides the
-	// global signing block for pushes to this host; a CLI flag overrides
-	// both.
+	// SkipSignatureVerification, when true, skips signature verification for
+	// this registry entirely. It is the same break-glass switch as the global
+	// skip_signature_verification opt-out, scoped by placement to this one host.
+	// It does NOT defeat the top-level (all-registries) required policy: an
+	// org-required signature is still verified on this host regardless of this
+	// switch — only the global switch can disable that. Defaults to false.
+	SkipSignatureVerification bool `yaml:"skip_signature_verification,omitempty"`
+	// Signing carries this registry's signing block: the keyless service URLs,
+	// an optional keyed-key path, and the per-host trust stance (required and
+	// kinds). The endpoint fields override the global signing block for pushes to
+	// this host; a CLI flag overrides both. Required and Kinds read from
+	// placement — under a registry entry they scope the one trust stance to this
+	// host (publishing an in-scope unsigned artifact is refused, and consuming an
+	// unsigned one is refused), the same concept the top-level signing block
+	// carries for all registries.
 	Signing SigningConfig `yaml:"signing,omitempty"`
 }
 
-// SigningConfig carries the signing-side endpoint defaults — the keyless
-// service URLs and an optional pointer to a keyed-key file — and, on the
-// top-level signing block only, the org-wide signing policy (Required and
-// Kinds). It is the sign counterpart of the verify-side trust policy and
-// lives at both the global (top-level) and per-registry levels; the endpoint
-// fields apply at both levels, while Required and Kinds are read only from the
-// top-level block. The per-registry lever for demanding a signature is
-// RegistryConfig.RequiresSignatures, not these two fields.
+// SigningConfig carries the signing block — the keyless service URLs, an
+// optional pointer to a keyed-key file, and the trust stance (Required and
+// Kinds). It lives at both the top level and under each registry entry, and
+// every field reads its scope from placement: the top-level block applies to
+// all registries, a per-registry block applies to that one host. Required and
+// Kinds are one concept, one name, at both scopes — no separate per-registry
+// lever. The endpoint fields likewise apply at both levels (a per-registry
+// value overrides the top-level default for pushes to that host).
 //
 // SECURITY: this struct holds NO secret material. The OIDC identity token
 // is a short-lived secret and is never a config field — it is supplied at
@@ -198,20 +200,21 @@ type SigningConfig struct {
 	// offline keyed signing. It is a POINTER to a file, never inline key
 	// material. Empty selects the keyless path.
 	KeyPath string `yaml:"key_path,omitempty"`
-	// Required, on the top-level signing block, turns on the org-wide signing
-	// policy: publishing an in-scope artifact kind requires a signature. It
-	// composes monotonically across the config cascade — any layer that sets
-	// it true makes it effective true, and no layer can turn it back off — so
-	// the policy cannot be removed by an ordinary lower-precedence config edit.
-	// Read only from the top-level block; ignored on a per-registry signing
-	// block. Defaults to false.
+	// Required turns on the one trust stance for this block's scope: publishing
+	// an in-scope artifact kind requires a signature (the push/sign side refuses
+	// an unsigned in-scope artifact) AND consuming one requires a signature (the
+	// pull/verify side refuses an unsigned in-scope artifact). Scope is read from
+	// placement — on the top-level block it covers every registry; under a
+	// registry entry it covers that one host. The top-level policy composes
+	// monotonically across the config cascade — any layer that sets it true makes
+	// it effective true, and no layer can turn it back off — so it cannot be
+	// removed by an ordinary lower-precedence config edit. Defaults to false.
 	Required bool `yaml:"required,omitempty"`
-	// Kinds scopes the org signing policy to specific artifact kinds. Empty,
-	// or a single "all" entry, means every pushable kind; otherwise the policy
-	// applies to exactly the listed kinds, matching the entity kind value
-	// (e.g. "Component", "Plugin"). It composes as a union across the cascade —
-	// a layer can widen the scope but never shrink it. Read only from the
-	// top-level block; ignored on a per-registry signing block.
+	// Kinds scopes Required to specific artifact kinds. Empty, or a single "all"
+	// entry, means every signable kind; otherwise the stance applies to exactly
+	// the listed kinds, matching the entity kind value (e.g. "Component",
+	// "Plugin"). On the top-level block it composes as a union across the cascade
+	// — a layer can widen the scope but never shrink it.
 	Kinds []string `yaml:"kinds,omitempty"`
 }
 
@@ -221,29 +224,46 @@ type SigningConfig struct {
 // kinds-validation path.
 const signingKindsAll = "all"
 
-// SigningRequiredForKind reports whether the org signing policy requires a
-// signature when publishing an artifact of the given kind. It is the single
-// home for the org decision: enforcement sites consult it rather than
-// re-deriving the scope, so the scope rule lives in exactly one place.
+// signingRequiredForKind reports whether a signing block requires a signature
+// for the given kind. It is the single home for the required-and-in-scope
+// decision, shared by the top-level (all-registries) policy and the per-registry
+// policy so the scope rule lives in exactly one place regardless of where the
+// block is placed.
 //
-// The decision is Signing.Required AND kind-in-scope. Scope is every pushable
-// kind when Signing.Kinds is empty or contains the "all" wildcard; otherwise
-// it is exact membership in Signing.Kinds. kind matches the entity kind value
-// (e.g. "Component", "Plugin"). The org policy is read from the top-level
-// signing block only; a per-registry signing block never carries it.
-func (c Config) SigningRequiredForKind(kind string) bool {
-	if !c.Signing.Required {
+// The decision is s.Required AND kind-in-scope. Scope is every signable kind
+// when s.Kinds is empty or contains the "all" wildcard; otherwise it is exact
+// membership in s.Kinds. kind matches the entity kind value (e.g. "Component",
+// "Plugin").
+func signingRequiredForKind(s SigningConfig, kind string) bool {
+	if !s.Required {
 		return false
 	}
-	if len(c.Signing.Kinds) == 0 {
+	if len(s.Kinds) == 0 {
 		return true
 	}
-	for _, k := range c.Signing.Kinds {
+	for _, k := range s.Kinds {
 		if k == signingKindsAll || k == kind {
 			return true
 		}
 	}
 	return false
+}
+
+// SigningRequiredForKind reports whether the top-level (all-registries) signing
+// policy requires a signature for an artifact of the given kind. The top-level
+// block applies to every registry; a registry's own scope is read from its
+// signing block via RegistryConfig.SigningRequiredForKind. Enforcement sites
+// consult these accessors rather than re-deriving the scope.
+func (c Config) SigningRequiredForKind(kind string) bool {
+	return signingRequiredForKind(c.Signing, kind)
+}
+
+// SigningRequiredForKind reports whether this registry's own signing block
+// requires a signature for the given kind — the per-host half of the one trust
+// stance, scoped to this host by placement. It is the same required/kinds
+// concept the top-level policy carries for all registries.
+func (r RegistryConfig) SigningRequiredForKind(kind string) bool {
+	return signingRequiredForKind(r.Signing, kind)
 }
 
 // ResolveSigning resolves the signing config for host by overlaying the
@@ -300,15 +320,16 @@ type TrustedIdentity struct {
 	Issuer string `yaml:"issuer"`
 }
 
-// RegistryRequiresSignatures reports whether the registry at host is
-// configured to require signatures. An unconfigured registry (absent
-// from Registries) does not require signatures. Host matching is exact;
-// callers normalise the host (strip any port or path) before the lookup
-// if needed.
-func (c Config) RegistryRequiresSignatures(host string) bool {
+// RegistrySigningRequiredForKind reports whether the registry at host demands a
+// signature for the given kind through its own signing block — the per-host half
+// of the one trust stance, the same required/kinds concept the top-level policy
+// carries for all registries. An unconfigured registry (absent from Registries)
+// demands none. Host matching is exact; callers normalise the host (strip any
+// port or path) before the lookup if needed.
+func (c Config) RegistrySigningRequiredForKind(host, kind string) bool {
 	for _, r := range c.Registries {
 		if r.Host == host {
-			return r.RequiresSignatures
+			return r.SigningRequiredForKind(kind)
 		}
 	}
 	return false
@@ -351,8 +372,8 @@ const HubBaselineHost = "hub.aggrega.ai"
 // copy the caller may mutate.
 func DefaultBaseline() RegistryConfig {
 	return RegistryConfig{
-		Host:               HubBaselineHost,
-		RequiresSignatures: true,
+		Host:    HubBaselineHost,
+		Signing: SigningConfig{Required: true},
 		TrustedIdentities: []TrustedIdentity{
 			{Identity: "m.ferrero@cognitio.it", Issuer: "https://accounts.google.com"},
 			{IdentityRegexp: `^https://github\.com/aggrega-ai/`, Issuer: "https://token.actions.githubusercontent.com"},
