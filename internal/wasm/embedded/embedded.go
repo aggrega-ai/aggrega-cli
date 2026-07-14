@@ -17,9 +17,10 @@
 // entity's spec.plugin names. Keying on the repository, not a content digest,
 // means a rebuild of the embedded bytes does not perturb the lookup key: the
 // reference digest is derived from the bytes on demand where a caller needs it.
-// Adding another embedded plugin is a drop-in: add a row to the embeddedArtifacts
-// table and its build-embedded generate step so its gzip-compressed .wasm lands
-// under plugins/.
+// Adding another embedded plugin is a drop-in: add a row to the embedded-plugin
+// manifest (embedded-plugins.tsv) — the single declarative source the registry
+// table, the build script, and the freshness and drift guards all read — so its
+// gzip-compressed .wasm lands under plugins/ and registers automatically.
 //
 // Freshness caveat: a plain go build does not regenerate these artifacts — it
 // embeds whatever .wasm.gz already sit under plugins/ from an earlier build,
@@ -37,21 +38,19 @@ import (
 	"embed"
 	"io"
 	"sort"
+	"strings"
 )
 
-// The embedded provider guests are reproducible build artifacts, not tracked
-// files: `go generate` rebuilds each gzip-compressed .wasm.gz under plugins/
-// from its guest source via the build-embedded scripts. The scripts pin a
-// reproducible recipe (GOWORK=off, -trimpath, -ldflags=-buildid=,
-// -buildvcs=false, gzip -n) so the uncompressed digest is stable across
-// rebuilds and matches the content-addressed URIs registered below.
+// The embedded guests are reproducible build artifacts, not tracked files:
+// `go generate` rebuilds each gzip-compressed .wasm.gz under plugins/ from its
+// guest source. One script drives every entry in the embedded-plugin manifest,
+// branching on each row's toolchain. It pins a reproducible recipe (GOWORK=off,
+// -trimpath, -ldflags=-buildid=, -buildvcs=false, gzip -n for go guests; the
+// analogous path-remap, symbol-strip, and non-incremental recipe for rust) so
+// the uncompressed digest is stable across rebuilds and matches the repository
+// references registered below.
 //
-//go:generate bash ../../../scripts/build-embedded-helm-provider.sh
-//go:generate bash ../../../scripts/build-embedded-compose-provider.sh
-//go:generate bash ../../../scripts/build-embedded-helm-chart-provider.sh
-//go:generate bash ../../../scripts/build-embedded-terraform-provider.sh
-//go:generate bash ../../../scripts/build-embedded-cloudformation-provider.sh
-//go:generate bash ../../../scripts/build-embedded-publishing-linter.sh
+//go:generate bash ../../../scripts/build-embedded-plugins.sh
 
 // pluginFS holds the embedded plugin artifacts. The `all:` prefix matches
 // every file under plugins/ including the dot-prefixed .gitkeep placeholder
@@ -63,39 +62,18 @@ import (
 //go:embed all:plugins
 var pluginFS embed.FS
 
-// helmProviderURI is the digest-free repository reference the helm provider
-// rendering plugin's decompressed bytes register under — the same reference a
-// Plugin entity's spec.plugin names. The reference digest is derived from these
-// bytes on demand (never stored here), so a rebuild of the guest does not change
-// the lookup key.
-const helmProviderURI = "oci://hub.aggrega.ai/plugin/provider/helm"
-
-// composeProviderURI is the digest-free repository reference the compose provider
-// rendering plugin's decompressed bytes register under. Like helmProviderURI, the
-// reference digest is derived from the bytes on demand rather than stored in the
-// key, so a guest rebuild does not perturb the lookup.
-const composeProviderURI = "oci://hub.aggrega.ai/plugin/provider/compose"
-
-// helmChartProviderURI is the digest-free repository reference the helm-chart
-// provider rendering plugin's decompressed bytes register under. Like the other
-// provider references, the reference digest is derived from the bytes on demand,
-// so a guest rebuild does not perturb the lookup key.
-const helmChartProviderURI = "oci://hub.aggrega.ai/plugin/provider/helm-chart"
-
-// terraformProviderURI is the digest-free repository reference the terraform
-// provider rendering plugin's decompressed bytes register under. Like the other
-// provider references, the reference digest is derived from the bytes on demand,
-// so a guest rebuild does not perturb the lookup key.
-const terraformProviderURI = "oci://hub.aggrega.ai/plugin/provider/terraform"
-
-// cloudformationProviderURI is the digest-free repository reference the
-// cloudformation provider rendering plugin's decompressed bytes register under.
-// Like the other provider references, the reference digest is derived from the
-// bytes on demand, so a guest rebuild does not perturb the lookup key.
-const cloudformationProviderURI = "oci://hub.aggrega.ai/plugin/provider/cloudformation"
-
+// The digest-free repository reference every embedded plugin registers under is
+// derived from its manifest row (oci://hub.aggrega.ai/plugin/{socket}/{name}) —
+// the same reference a Plugin entity's spec.plugin names. The reference digest is
+// derived from the decompressed bytes on demand where a caller needs it, never
+// stored in the key, so a rebuild of a guest does not perturb the lookup.
+//
 // PublishingLinterURI (exported) is defined in embedded_uris.go so both the
-// default and light host builds share the same linter identity.
+// default and light host builds share the same linter identity; it equals the
+// manifest-derived reference for the linter/publishing row.
+
+//go:embed embedded-plugins.tsv
+var manifestTSV []byte
 
 // embeddedArtifact binds one embedded plugin's digest-free repository reference
 // to its gzip-compressed guest bytes and its build-extracted describe()
@@ -108,18 +86,53 @@ type embeddedArtifact struct {
 	descriptor string
 }
 
-// embeddedArtifacts is the one table of embedded plugins. Adding a plugin is a
-// single row here plus its gzip-compressed guest (and, once the build has run,
-// its describe() descriptor) under plugins/.
+// embeddedArtifacts is the table of embedded plugins, derived from the
+// embedded-plugin manifest embedded at compile time. Each row's repository
+// reference and its two asset paths (gzip-compressed guest, describe()
+// descriptor) are computed from the row's socket and name, so a plugin's
+// identity and asset locations are authored exactly once — in the manifest,
+// alongside the build/check scripts that read the same file. Adding a plugin is
+// a single manifest row plus its gzip-compressed guest under plugins/.
 func embeddedArtifacts() []embeddedArtifact {
-	return []embeddedArtifact{
-		{helmProviderURI, "plugins/helm.wasm.gz", "plugins/helm.describe.json"},
-		{composeProviderURI, "plugins/compose.wasm.gz", "plugins/compose.describe.json"},
-		{helmChartProviderURI, "plugins/helm-chart.wasm.gz", "plugins/helm-chart.describe.json"},
-		{terraformProviderURI, "plugins/terraform.wasm.gz", "plugins/terraform.describe.json"},
-		{cloudformationProviderURI, "plugins/cloudformation.wasm.gz", "plugins/cloudformation.describe.json"},
-		{PublishingLinterURI, "plugins/publishing.wasm.gz", "plugins/publishing.describe.json"},
+	return parseManifest(manifestTSV)
+}
+
+// parseManifest derives the embedded-artifact table from the tab-separated
+// embedded-plugin manifest. It ignores blank lines and #-prefixed comments and
+// reads the socket (field 1) and name (field 2) from each remaining row, from
+// which the repository reference and asset paths are computed. The later fields
+// (source path, toolchain, extra roots) drive the build and freshness scripts,
+// not the registry, so they are ignored here.
+//
+// A malformed or empty manifest is a build-of-the-binary defect — the file is
+// embedded at compile time and drives the scripts that produce the assets — so
+// this panics rather than returning an error, mirroring the mustRead and
+// mustDecompress contracts for the embedded bytes themselves.
+func parseManifest(b []byte) []embeddedArtifact {
+	var out []embeddedArtifact
+	for _, raw := range strings.Split(string(b), "\n") {
+		line := strings.TrimRight(raw, "\r")
+		if t := strings.TrimSpace(line); t == "" || strings.HasPrefix(t, "#") {
+			continue
+		}
+		fields := strings.Split(line, "\t")
+		if len(fields) < 2 {
+			panic("plugin/embedded: malformed embedded-plugin manifest row: " + line)
+		}
+		socket, name := strings.TrimSpace(fields[0]), strings.TrimSpace(fields[1])
+		if socket == "" || name == "" {
+			panic("plugin/embedded: embedded-plugin manifest row missing socket or name: " + line)
+		}
+		out = append(out, embeddedArtifact{
+			uri:        "oci://hub.aggrega.ai/plugin/" + socket + "/" + name,
+			wasmGz:     "plugins/" + name + ".wasm.gz",
+			descriptor: "plugins/" + name + ".describe.json",
+		})
 	}
+	if len(out) == 0 {
+		panic("plugin/embedded: embedded-plugin manifest declares no plugins")
+	}
+	return out
 }
 
 // registry maps a plugin's digest-free repository reference to the embedded

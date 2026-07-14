@@ -34,7 +34,9 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
+MANIFEST="internal/wasm/embedded/embedded-plugins.tsv"
 EMBED_DIR="internal/wasm/embedded/plugins"
+[ -f "$MANIFEST" ] || { echo "check-embedded-guests: manifest not found: $MANIFEST" >&2; exit 1; }
 REBUILD_HINT="rebuild with: go generate ./internal/wasm/embedded/... && go build   (or ./scripts/build.sh from the umbrella root, which always regenerates)"
 
 MODCACHE="$(go env GOMODCACHE)"
@@ -103,15 +105,32 @@ check_rust_guest() {
   fi
 }
 
-# Artifact basename -> guest source. The Go package paths mirror the targets the
-# build-embedded-*.sh scripts compile; the Rust roots mirror the crate the
-# publishing-linter script builds plus its local SDK path dependency.
-check_go_guest   helm            ./plugins/helm-provider
-check_go_guest   compose         ./plugins/compose-provider
-check_go_guest   helm-chart      ./plugins/helmchart-provider
-check_go_guest   terraform       ./plugins/terraform-provider
-check_go_guest   cloudformation  ./plugins/cloudformation-provider
-check_rust_guest publishing      plugins/publishing-linter ../aggrega-pdk/rust
+# Walk the embedded-plugin manifest — the one declarative source of which plugins
+# ship inside the binary and where each guest's source lives — and check every
+# entry against its artifact. A go guest is checked against its compiled Go
+# sources; a rust guest against its crate directory plus any extra source roots
+# (its local SDK crate). Reading the manifest here keeps this guard in lockstep
+# with the build script and the registry table.
+while IFS=$'\t' read -r socket name sourcePath toolchain extraRoots; do
+  case "$socket" in ''|'#'*) continue;; esac
+  case "$toolchain" in
+    go)
+      check_go_guest "$name" "$sourcePath"
+      ;;
+    rust)
+      roots=("$sourcePath")
+      if [ -n "${extraRoots:-}" ]; then
+        IFS=',' read -ra extra <<< "$extraRoots"
+        roots+=("${extra[@]}")
+      fi
+      check_rust_guest "$name" "${roots[@]}"
+      ;;
+    *)
+      echo "check-embedded-guests: unknown toolchain '$toolchain' for $name" >&2
+      exit 1
+      ;;
+  esac
+done < "$MANIFEST"
 
 if [ "${#stale[@]}" -gt 0 ]; then
   echo

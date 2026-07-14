@@ -1,0 +1,23 @@
+# Embedded-plugin manifest — the single declarative source naming which Wasm
+# plugins ship inside the CLI binary. This file is read by the embedded package
+# (to build its registry table) and by the embedded build, freshness-check, and
+# drift-guard scripts, so the embedded set is authored exactly once and the
+# parallel lists cannot drift apart.
+#
+# One row per embedded plugin. Fields are tab-separated; blank lines and lines
+# beginning with # are ignored. Fields:
+#   socket      plugin socket (provider, linter, ...) — first URI path segment
+#   name        plugin name — second URI path segment and artifact basename
+#   sourcePath  guest source directory, relative to the aggrega-cli module root
+#   toolchain   guest toolchain: go or rust
+#   extraRoots  comma-separated extra source roots for the freshness check
+#               (e.g. a local SDK crate); empty for go guests
+#
+# The registry key is oci://hub.aggrega.ai/plugin/{socket}/{name}; the embedded
+# assets are plugins/{name}.wasm.gz and plugins/{name}.describe.json.
+provider	helm	./plugins/helm-provider	go
+provider	compose	./plugins/compose-provider	go
+provider	helm-chart	./plugins/helmchart-provider	go
+provider	terraform	./plugins/terraform-provider	go
+provider	cloudformation	./plugins/cloudformation-provider	go
+linter	publishing	plugins/publishing-linter	rust	../aggrega-pdk/rust
