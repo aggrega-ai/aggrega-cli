@@ -7,7 +7,7 @@ metadata:
 spec:
   pluginType: provider
   abiVersion: v1alpha1
-  targets:
+  capabilities:
     - compose
   # BOTH exports: render_node drives per-node render/synthesis; assemble_boundary
   # drives the per-dispatch-group merge into a single docker-compose.yaml. The

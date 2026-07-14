@@ -4,5 +4,5 @@ metadata:
   name: monitoring-patcher
   version: "1.0.0"
 spec:
-  target: helm
+  capability: helm
   implements: "core/monitoring"

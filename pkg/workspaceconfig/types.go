@@ -463,7 +463,7 @@ type PluginsConfig struct {
 func (p PluginsConfig) ProviderTargetURIs() map[string]string {
 	m := make(map[string]string, len(p.Providers))
 	for _, ref := range p.Providers {
-		m[ref.Target] = ref.URI
+		m[ref.Capability] = ref.URI
 	}
 	return m
 }
@@ -494,26 +494,26 @@ type PluginRefWith struct {
 	Settings map[string]any `yaml:"settings,omitempty"`
 }
 
-// ProviderRef binds a render target to the provider-rendering plugin that
-// serves it. Target is the bare engine name a Recipe binds through
-// spec.target (e.g. "helm"); URI is the bare identity of the serving plugin
-// (a Plugin entity's metadata.name, the <socket>/<name> path, e.g.
-// "provider/helm"), with an optional trailing
+// ProviderRef binds a render-engine capability to the provider-rendering
+// plugin that serves it. Capability is the bare engine name a Recipe binds
+// through spec.capability (e.g. "helm"); URI is the bare identity of the
+// serving plugin (a Plugin entity's metadata.name, the <socket>/<name> path,
+// e.g. "provider/helm"), with an optional trailing
 // ":version" in the same three forms as a version pin. The binding selects
-// which publisher's plugin renders the target in a federated catalog where
-// more than one provider plugin serves it; exactly one entry per target is
+// which publisher's plugin renders the capability in a federated catalog where
+// more than one provider plugin serves it; exactly one entry per capability is
 // permitted in the composed list.
 //
 // Function and With mirror the plugin-socket reference shape so the provider
 // list is homogeneous with the other plugin sockets. Provider dispatch
-// resolves a target to a plugin by identity and version; it does not consume
-// a per-binding Function override or With inputs, so those members carry no
-// effect on provider selection today.
+// resolves a capability to a plugin by identity and version; it does not
+// consume a per-binding Function override or With inputs, so those members
+// carry no effect on provider selection today.
 type ProviderRef struct {
-	Target   string         `yaml:"target"`
-	URI      string         `yaml:"uri"`
-	Function string         `yaml:"function,omitempty"`
-	With     *PluginRefWith `yaml:"with,omitempty"`
+	Capability string         `yaml:"capability"`
+	URI        string         `yaml:"uri"`
+	Function   string         `yaml:"function,omitempty"`
+	With       *PluginRefWith `yaml:"with,omitempty"`
 }
 
 // LintConfig groups per-rule strictness dials. Future lint

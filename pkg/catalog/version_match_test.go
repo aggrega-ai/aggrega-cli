@@ -80,9 +80,9 @@ func TestImplementsSatisfies(t *testing.T) {
 	t.Parallel()
 
 	cases := []struct {
-		name              string
+		name                string
 		impl, componentType string
-		want              bool
+		want                bool
 	}{
 		{"exact match", "core/api-server:1.0.0", "core/api-server:1.0.0", true},
 		{"caret in range", "core/api-server:^1.0.0", "core/api-server:1.5.3", true},

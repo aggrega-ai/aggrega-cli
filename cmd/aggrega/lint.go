@@ -203,7 +203,7 @@ func makeResolverFromCobra(cmd *cobra.Command) func(string, bool) bool {
 
 // lintEntityHeader is the minimum YAML envelope lint parses out of
 // the proposed entity file: kind, metadata.name, metadata.version,
-// metadata.labels, spec.extends, and spec.target. Mirrors
+// metadata.labels, spec.extends, and spec.capability. Mirrors
 // pushEntityHeader's shape and extends it for narrowing-rule parent
 // resolution and the core-plugin evolution-gate exemption.
 type lintEntityHeader struct {
@@ -214,8 +214,8 @@ type lintEntityHeader struct {
 		Labels  map[string]string `yaml:"labels"`
 	} `yaml:"metadata"`
 	Spec struct {
-		Extends string `yaml:"extends"`
-		Target  string `yaml:"target"`
+		Extends    string `yaml:"extends"`
+		Capability string `yaml:"capability"`
 	} `yaml:"spec"`
 }
 
@@ -561,7 +561,7 @@ func fetchPreviousRegistryVersion(
 ) (json.RawMessage, string, error) {
 	target := overrideTarget
 	if target == nil {
-		reference := buildPushReference(wsCfg.DefaultRegistry, header.Kind, header.Spec.Target, header.Metadata.Name)
+		reference := buildPushReference(wsCfg.DefaultRegistry, header.Kind, header.Spec.Capability, header.Metadata.Name)
 		repo, err := oci.NewRemoteRepository(reference)
 		if err != nil {
 			return nil, "", fmt.Errorf("construct repo: %w", err)

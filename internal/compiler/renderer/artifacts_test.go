@@ -76,7 +76,7 @@ func newArtifactsCtx() (*types.TemplateContext, *PhaseBState, NodeRenderContext)
 		APIVersion: "aggrega.ai/v1alpha1",
 		Kind:       "Recipe",
 		Metadata:   types.RecipeMetadata{Name: "api-server-helm", Version: "1.0.0"},
-		Spec:       types.RecipeSpec{Target: "helm", Implements: "core/api-server:1.0.0"},
+		Spec:       types.RecipeSpec{Capability: "helm", Implements: "core/api-server:1.0.0"},
 	}
 	state := NewPhaseBState(r, "api", "production", "recipe.yaml")
 	nodeCtx := NodeRenderContext{
@@ -794,7 +794,7 @@ func TestBuildArtifactsProjection_ShippedMariadbRdsBodyResolves(t *testing.T) {
 
 	r := &types.Recipe{
 		Metadata: types.RecipeMetadata{Name: "mariadb-rds", Version: "1.0.0"},
-		Spec:     types.RecipeSpec{Target: "terraform"},
+		Spec:     types.RecipeSpec{Capability: "terraform"},
 	}
 	state := NewPhaseBState(r, "prod-mariadb", "production", "recipe.yaml")
 	state.Recipe.Spec.Artifacts.Set("main.tf", types.ArtifactEntry{Inline: shippedMariadbRdsBody})

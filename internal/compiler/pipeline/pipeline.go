@@ -658,14 +658,14 @@ func collectProviderGuestWarmers(graph *types.IRGraph, recipeLookup renderer.Rec
 			continue
 		}
 		r, found := recipeLookup.Recipe(nodeID, node.Component)
-		if !found || r == nil || r.Spec.Target == "" {
+		if !found || r == nil || r.Spec.Capability == "" {
 			continue
 		}
-		if _, dup := seenRef[r.Spec.Target]; dup {
+		if _, dup := seenRef[r.Spec.Capability]; dup {
 			continue
 		}
-		seenRef[r.Spec.Target] = struct{}{}
-		refs = append(refs, r.Spec.Target)
+		seenRef[r.Spec.Capability] = struct{}{}
+		refs = append(refs, r.Spec.Capability)
 	}
 	sort.Strings(refs)
 

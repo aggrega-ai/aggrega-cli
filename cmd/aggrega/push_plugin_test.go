@@ -56,7 +56,7 @@ metadata:
 spec:
   pluginType: frp_step
   abiVersion: v1alpha1
-  targets:
+  capabilities:
     - helm
   exports:
     - name: step
@@ -371,7 +371,7 @@ spec:
   plugin: "oci://hub.aggrega.ai/plugin/provider/helm"
   pluginType: provider
   abiVersion: v1alpha1
-  targets:
+  capabilities:
     - helm
   exports:
     - name: render_node
@@ -469,7 +469,7 @@ spec:
   plugin: "oci://hub.aggrega.ai/plugin/provider/helm"
   pluginType: provider
   abiVersion: v1alpha1
-  targets:
+  capabilities:
     - helm
   exports:
     - name: render_node

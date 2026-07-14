@@ -206,12 +206,12 @@ func readPluginRefs(pluginsNode *yaml.Node, socket string) []PluginRef {
 // replace-or-append semantic.
 func UpsertProviderRef(refs []ProviderRef, target, uri string) []ProviderRef {
 	for i := range refs {
-		if refs[i].Target == target {
+		if refs[i].Capability == target {
 			refs[i].URI = uri
 			return refs
 		}
 	}
-	return append(refs, ProviderRef{Target: target, URI: uri})
+	return append(refs, ProviderRef{Capability: target, URI: uri})
 }
 
 // readProviderBindings decodes the existing `providers` list from a `plugins`

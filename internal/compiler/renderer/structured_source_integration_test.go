@@ -275,7 +275,7 @@ func structuredSourceRecipeLookup(provider, kind, url, version string) renderer.
 			return &types.Recipe{
 				Metadata: types.RecipeMetadata{Name: "api-recipe", Version: "1.0.0"},
 				Spec: types.RecipeSpec{
-					Target:     provider,
+					Capability: provider,
 					Implements: "core/compute/api-server",
 					Source: map[string]any{
 						"kind":    kind,

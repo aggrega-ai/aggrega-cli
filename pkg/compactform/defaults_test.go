@@ -57,7 +57,7 @@ func TestMergeSchemaDefaults_NestedThreeCases(t *testing.T) {
 	)
 	author := om(
 		"compute", om("cpu", "1000m"), // partial: cpu set, memory omitted
-		"storage", om(),               // explicit empty: suppress defaults
+		"storage", om(), // explicit empty: suppress defaults
 	)
 
 	got := compactform.MergeSchemaDefaults(author, defaults)

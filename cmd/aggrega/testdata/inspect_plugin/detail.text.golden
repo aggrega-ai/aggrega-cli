@@ -2,7 +2,7 @@ Plugin: core/helm-renderer:1.0.0
 Plugin: core/helm-renderer
 Plugin type: provider
 ABI version: v1alpha1
-Targets: helm, compose
+Capabilities: helm, compose
 Exports:
   render_node
     operates: emit

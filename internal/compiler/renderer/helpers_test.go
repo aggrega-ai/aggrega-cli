@@ -280,9 +280,9 @@ func TestCollectTopLevelFields_AllNodeKinds(t *testing.T) {
 // ErrPathTemplateInvalidField.
 func TestValidatePathTemplateFields_KnownAndUnknown(t *testing.T) {
 	t.Parallel()
-	allow := map[string]bool{"provider": true, "boundary_name": true}
+	allow := map[string]bool{"capability": true, "boundary_name": true}
 	// Known fields only.
-	if err := validatePathTemplateFields("b", `{{ .provider }}-{{ .boundary_name }}`, allow); err != nil {
+	if err := validatePathTemplateFields("b", `{{ .capability }}-{{ .boundary_name }}`, allow); err != nil {
 		t.Errorf("known fields should pass; got %v", err)
 	}
 	// Unknown field.
@@ -302,8 +302,8 @@ func TestValidatePathTemplateFields_KnownAndUnknown(t *testing.T) {
 // error returns an OpsError; execute-error also surfaces.
 func TestEvalPathTemplate_HappyAndParseError(t *testing.T) {
 	t.Parallel()
-	data := map[string]any{"provider": "helm", "boundary_name": "web"}
-	got, err := EvalPathTemplate("t", "directory", "b", `{{ .provider }}-{{ .boundary_name }}`, data)
+	data := map[string]any{"capability": "helm", "boundary_name": "web"}
+	got, err := EvalPathTemplate("t", "directory", "b", `{{ .capability }}-{{ .boundary_name }}`, data)
 	if err != nil {
 		t.Fatalf("happy: %v", err)
 	}

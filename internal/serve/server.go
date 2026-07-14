@@ -133,10 +133,13 @@ type Diagnostic struct {
 //     multi-step resolution. The session catalog holds only the
 //     pin-independent, session-stable Tier-1 indexes, snapshotted into
 //     each view; it is reset only on workspace invalidation.
+//
 //   - The per-file diagnostics map is guarded by diagMu. Publication
 //     copies the file's slice under the lock and marshals outside it.
+//
 //   - positionEncoding is held in an atomic value: the initialize
 //     handler stores it, every position-mapping site loads it.
+//
 //   - shuttingDown is an atomic bool: the dispatch loop's acceptance
 //     gate and the shutdown handler store it, the acceptance gate loads
 //     it.

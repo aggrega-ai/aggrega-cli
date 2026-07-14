@@ -4,7 +4,7 @@ metadata:
   name: db-synth
   version: "1.0.0"
 spec:
-  target: compose
+  capability: compose
   implements: core/db
   provides:
     host: "{{ .context.instance_id }}.db"

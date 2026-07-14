@@ -10,7 +10,7 @@ metadata:
   name: broken
   version: "1.0.0"
 spec:
-  target:
+  capability:
     - not
     - a
     - string

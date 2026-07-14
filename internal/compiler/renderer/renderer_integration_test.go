@@ -388,7 +388,7 @@ func TestPhaseB3_ArtifactsIntermediate_RoutesViaBoundaryAssembler(t *testing.T) 
 			buildSpec: func(*testing.T) types.RecipeSpec {
 				artifacts := types.OrderedMap[types.ArtifactEntry]{}
 				artifacts.Set("extra-services.yaml", types.ArtifactEntry{Inline: fragmentBody})
-				return types.RecipeSpec{Target: "compose", Artifacts: artifacts}
+				return types.RecipeSpec{Capability: "compose", Artifacts: artifacts}
 			},
 			wantOrigin: renderer.EmitOriginArtifactsInline,
 		},
@@ -403,7 +403,7 @@ func TestPhaseB3_ArtifactsIntermediate_RoutesViaBoundaryAssembler(t *testing.T) 
 				}
 				artifacts := types.OrderedMap[types.ArtifactEntry]{}
 				artifacts.Set("from-file-services.yaml", types.ArtifactEntry{Import: p})
-				return types.RecipeSpec{Target: "compose", Artifacts: artifacts}
+				return types.RecipeSpec{Capability: "compose", Artifacts: artifacts}
 			},
 			wantOrigin: renderer.EmitOriginArtifactsImport,
 		},

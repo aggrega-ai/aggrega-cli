@@ -4,7 +4,7 @@ metadata:
   name: helm-web-ui-chart-with-artifacts
   version: "1.0.0"
 spec:
-  target: helm-chart
+  capability: helm-chart
   implements: core/compute/web-ui
   source: ./charts/web-ui
   artifacts:

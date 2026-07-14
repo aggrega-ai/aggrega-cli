@@ -22,7 +22,7 @@
 //!   proposed AND proposed introduces ≥1 new path.
 //! - **MAJOR**: any subtractive or narrowing change — field removed,
 //!   type narrowed, required-field added without default, library
-//!   entry removed, Recipe `target` changed (different rendering
+//!   entry removed, Recipe `capability` changed (different rendering
 //!   engine), pipeline reordering.
 //!
 //! Per-kind dispatch:
@@ -33,7 +33,7 @@
 //! - MappingLibrary: entry-key-level diff (opaque template strings).
 //! - Recipe / FeatureRecipe: load-bearing-field diff.
 //! - Aggregate: catalog-aggregate diff.
-//! - Plugin: describe()-surface diff (exports, capabilities, targets,
+//! - Plugin: describe()-surface diff (exports, served capabilities,
 //!   provider/search self-reports, ABI version).
 
 use std::collections::BTreeMap;
@@ -243,7 +243,7 @@ fn classify_mapping_library(previous: &Value, proposed: &Value) -> (String, Stri
 
 fn classify_recipe_like(previous: &Value, proposed: &Value, kind: &str) -> (String, String) {
     let load_bearing = &[
-        "spec.target",
+        "spec.capability",
         "spec.implements",
         "spec.outputs",
         "spec.provides",
@@ -265,11 +265,11 @@ fn classify_recipe_like(previous: &Value, proposed: &Value, kind: &str) -> (Stri
             format!("{kind}: no diff across load-bearing fields"),
         );
     }
-    // target or pipeline changes are always MAJOR.
-    if changed.iter().any(|p| p == "spec.target") {
+    // capability or pipeline changes are always MAJOR.
+    if changed.iter().any(|p| p == "spec.capability") {
         return (
             "MAJOR".to_string(),
-            format!("{kind}: spec.target changed (different rendering engine)"),
+            format!("{kind}: spec.capability changed (different rendering engine)"),
         );
     }
     if changed.iter().any(|p| p == "spec.pipeline") {
@@ -321,8 +321,8 @@ fn classify_aggregate(previous: &Value, proposed: &Value) -> (String, String) {
 /// `classify_plugin` scores a re-published Plugin entity from the change
 /// to its describe()-surface, read from the Plugin entity YAML (which the
 /// host cross-checks against the guest's live describe() report). The
-/// surface spans the declared exports, the capability self-report, the
-/// applicability targets, the provider/search self-reports, and the ABI
+/// surface spans the declared exports, the served capabilities, the
+/// provider/search self-reports, and the ABI
 /// version. Each surface yields an independent verdict; the highest
 /// magnitude wins (MAJOR > MINOR > PATCH). A change confined to
 /// documentation — `metadata.description`, `spec.description`, or an
@@ -331,7 +331,6 @@ fn classify_aggregate(previous: &Value, proposed: &Value) -> (String, String) {
 fn classify_plugin(previous: &Value, proposed: &Value) -> (String, String) {
     let checks = [
         classify_plugin_exports(previous, proposed),
-        classify_self_report(previous, proposed, "spec.capabilities"),
         classify_plugin_targets(previous, proposed),
         classify_self_report(previous, proposed, "spec.provider"),
         classify_self_report(previous, proposed, "spec.search"),
@@ -417,30 +416,30 @@ fn exports_by_name(value: Option<&Value>) -> BTreeMap<&str, &Value> {
     map
 }
 
-/// `classify_plugin_targets` diffs `spec.targets` — an array of strings
-/// (the plugin's applicability list, mirrored by describe()'s compatible
-/// providers). Set semantics: a removed entry narrows the surface
+/// `classify_plugin_targets` diffs `spec.capabilities` — an array of strings
+/// (the plugin's served-capability list, mirrored by describe()'s
+/// capabilities). Set semantics: a removed entry narrows the surface
 /// (MAJOR); a new entry with no removals widens it (MINOR); reordering
 /// alone carries no magnitude (PATCH).
 fn classify_plugin_targets(previous: &Value, proposed: &Value) -> (String, String) {
-    let prev = string_entries(get_path(previous, "spec.targets"));
-    let prop = string_entries(get_path(proposed, "spec.targets"));
+    let prev = string_entries(get_path(previous, "spec.capabilities"));
+    let prop = string_entries(get_path(proposed, "spec.capabilities"));
 
     let removed: Vec<&str> = prev.iter().copied().filter(|t| !prop.contains(t)).collect();
     if !removed.is_empty() {
         return (
             "MAJOR".to_string(),
-            format!("spec.targets removed target(s): {}", removed.join(", ")),
+            format!("spec.capabilities removed capability(ies): {}", removed.join(", ")),
         );
     }
     let added: Vec<&str> = prop.iter().copied().filter(|t| !prev.contains(t)).collect();
     if !added.is_empty() {
         return (
             "MINOR".to_string(),
-            format!("spec.targets added target(s): {}", added.join(", ")),
+            format!("spec.capabilities added capability(ies): {}", added.join(", ")),
         );
     }
-    ("PATCH".to_string(), "spec.targets unchanged".to_string())
+    ("PATCH".to_string(), "spec.capabilities unchanged".to_string())
 }
 
 /// `string_entries` collects the string elements of a JSON array,

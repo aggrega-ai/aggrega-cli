@@ -9,7 +9,7 @@ metadata:
 spec:
   pluginType: provider
   abiVersion: v1alpha1
-  targets:
+  capabilities:
     - helm
   runtime:
     maxMemoryPages: 4096

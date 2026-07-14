@@ -4,7 +4,7 @@ metadata:
   name: helm-app-files-get
   version: "1.0.0"
 spec:
-  target: helm-chart
+  capability: helm-chart
   implements: core/compute/api-server
   source: ./charts/app
   # A standalone inline artifact: a loose chart file placed at the chart root

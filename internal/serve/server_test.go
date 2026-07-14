@@ -35,12 +35,12 @@ func newTestServer(t *testing.T, workspaceRoot string, stdin io.Reader, stdout i
 		// pointer. Tests that exercise lazy-lookup behavior populate
 		// their own configured instance; this default suffices for
 		// every test that doesn't touch the lookup directly.
-		lazyCatalog:      catalog.NewLazyLookup(workspaceRoot, "", nil, nil),
-		parseCache:       newCache(0, 0),
-		diagnostics:      map[string][]Diagnostic{},
-		in:               bufio.NewReader(stdin),
-		out:              stdout,
-		stderr:           io.Discard,
+		lazyCatalog: catalog.NewLazyLookup(workspaceRoot, "", nil, nil),
+		parseCache:  newCache(0, 0),
+		diagnostics: map[string][]Diagnostic{},
+		in:          bufio.NewReader(stdin),
+		out:         stdout,
+		stderr:      io.Discard,
 	}
 	// Production initializes serverCtx in dispatchLoop before spawning the
 	// reader goroutine. Tests that drive handle() directly bypass that

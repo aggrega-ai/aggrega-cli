@@ -46,9 +46,9 @@ func cloudformationChainCatalog() *catalog.Catalog {
 				Kind:       "Plugin",
 				Metadata:   types.PluginMetadata{Name: cloudformationArtifactURI, Version: testCorePluginVersion},
 				Spec: types.PluginSpec{
-					PluginType: "provider",
-					AbiVersion: "v1alpha1",
-					Targets:    []string{"cloudformation"},
+					PluginType:   "provider",
+					AbiVersion:   "v1alpha1",
+					Capabilities: []string{"cloudformation"},
 					Exports: []types.PluginExport{
 						{Name: "render_node"},
 						{Name: "validate_node_input"},

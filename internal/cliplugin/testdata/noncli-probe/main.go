@@ -20,7 +20,7 @@ import (
 
 // providerDescriptor is the fixed describe() self-report: a provider plugin with
 // the required render_node export and no host-function imports.
-const providerDescriptor = `{"abi_version":"v1alpha1","plugin_type":"provider","compatible_providers":["compose"],"exports":[{"name":"render_node"}]}`
+const providerDescriptor = `{"abi_version":"v1alpha1","plugin_type":"provider","capabilities":["compose"],"exports":[{"name":"render_node"}]}`
 
 //go:wasmexport describe
 func describe() int32 {

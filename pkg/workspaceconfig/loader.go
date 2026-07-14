@@ -21,14 +21,14 @@ import (
 var ErrConfigInvalid = errors.New("workspaceconfig: file failed schema validation")
 
 // ErrDuplicateProviderTarget reports that the composed provider list binds
-// one render target more than once. Errors satisfying
-// errors.Is(err, ErrDuplicateProviderTarget) carry the offending target
-// name. A render target may have exactly one provider-rendering plugin
-// binding in the resolved configuration, so two entries for the same target
+// one capability more than once. Errors satisfying
+// errors.Is(err, ErrDuplicateProviderTarget) carry the offending capability
+// name. A capability may have exactly one provider-rendering plugin
+// binding in the resolved configuration, so two entries for the same capability
 // — whether within one layer or contributed across the cascade and its
 // `_append` companions — halt resolution loudly rather than silently letting
 // one win.
-var ErrDuplicateProviderTarget = errors.New("workspaceconfig: render target is bound to more than one provider plugin")
+var ErrDuplicateProviderTarget = errors.New("workspaceconfig: capability is bound to more than one provider plugin")
 
 // Load reads the workspace's .aggrega-config.yaml file at path,
 // validates it against the aggrega-config-v1alpha1 JSON Schema, and

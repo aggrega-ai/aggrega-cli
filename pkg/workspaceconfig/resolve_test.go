@@ -407,7 +407,7 @@ func TestResolveAppendPerField(t *testing.T) {
 		{"policy", "workspace: {}\nplugins:\n  policy_append:\n    - uri: oci://x@v1\n"},
 		{"linter", "workspace: {}\nplugins:\n  linter_append:\n    - uri: oci://x@v1\n"},
 		{"importer", "workspace: {}\nplugins:\n  importer_append:\n    - uri: oci://x@v1\n"},
-		{"providers", "workspace: {}\nplugins:\n  providers_append:\n    - target: t\n      uri: oci://x@v1\n"},
+		{"providers", "workspace: {}\nplugins:\n  providers_append:\n    - capability: t\n      uri: oci://x@v1\n"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.field, func(t *testing.T) {
@@ -440,10 +440,10 @@ func TestResolveProvidersComposeAcrossLayers(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
 	write(t, filepath.Join(root, ".aggrega-config.yaml"),
-		"workspace: {}\nplugins:\n  providers:\n    - target: helm\n      uri: oci://h/helm:1\n")
+		"workspace: {}\nplugins:\n  providers:\n    - capability: helm\n      uri: oci://h/helm:1\n")
 	child := filepath.Join(root, "svc")
 	write(t, filepath.Join(child, ".aggrega-config.yaml"),
-		"plugins:\n  providers_append:\n    - target: compose\n      uri: oci://h/compose:1\n")
+		"plugins:\n  providers_append:\n    - capability: compose\n      uri: oci://h/compose:1\n")
 
 	rw, err := workspaceconfig.Resolve(child, "")
 	if err != nil {
@@ -453,7 +453,7 @@ func TestResolveProvidersComposeAcrossLayers(t *testing.T) {
 	if len(got) != 2 {
 		t.Fatalf("composed providers: got %d, want 2 (root base + child append): %+v", len(got), got)
 	}
-	if got[0].Target != "helm" || got[1].Target != "compose" {
+	if got[0].Capability != "helm" || got[1].Capability != "compose" {
 		t.Fatalf("compose order: got %+v; want [helm, compose] (base then append)", got)
 	}
 	uris := rw.Config().Plugins.ProviderTargetURIs()
@@ -472,7 +472,7 @@ func TestResolveProvidersDuplicateTargetHalts(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	write(t, filepath.Join(dir, ".aggrega-config.yaml"),
-		"workspace: {}\nplugins:\n  providers:\n    - target: helm\n      uri: oci://h/helm:1\n  providers_append:\n    - target: helm\n      uri: oci://h/helm-alt:1\n")
+		"workspace: {}\nplugins:\n  providers:\n    - capability: helm\n      uri: oci://h/helm:1\n  providers_append:\n    - capability: helm\n      uri: oci://h/helm-alt:1\n")
 
 	_, err := workspaceconfig.Resolve(dir, "")
 	if err == nil {

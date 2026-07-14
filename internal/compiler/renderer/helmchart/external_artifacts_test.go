@@ -134,7 +134,7 @@ spec:
 			return &types.Recipe{
 				Metadata: types.RecipeMetadata{Name: "api-recipe", Version: "1.0.0"},
 				Spec: types.RecipeSpec{
-					Target:        "helm-chart",
+					Capability:    "helm-chart",
 					Source:        chartDir,
 					ValuesMapping: types.ValuesMapping{Inline: `{}`},
 					Artifacts:     artifacts,
@@ -279,7 +279,7 @@ metadata:
 			return &types.Recipe{
 				Metadata: types.RecipeMetadata{Name: "api-recipe", Version: "1.0.0"},
 				Spec: types.RecipeSpec{
-					Target:        "helm-chart",
+					Capability:    "helm-chart",
 					Source:        chartDir,
 					ValuesMapping: types.ValuesMapping{Inline: `{}`},
 					Artifacts:     artifacts,

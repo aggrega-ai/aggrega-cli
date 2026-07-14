@@ -32,7 +32,7 @@ func providesFR(implements, provideKey, provideTmpl string) *types.FeatureRecipe
 	pv.Set(provideKey, provideTmpl)
 	return &types.FeatureRecipe{
 		Metadata: types.FeatureRecipeMetadata{Name: "provides-fr"},
-		Spec:     types.FeatureRecipeSpec{Target: "compose", Implements: implements, Provides: pv},
+		Spec:     types.FeatureRecipeSpec{Capability: "compose", Implements: implements, Provides: pv},
 	}
 }
 

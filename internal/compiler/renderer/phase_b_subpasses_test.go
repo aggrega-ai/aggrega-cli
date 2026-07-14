@@ -28,7 +28,7 @@ func minimalRecipe(name string) *types.Recipe {
 		APIVersion: "aggrega.ai/v1alpha1",
 		Kind:       "Recipe",
 		Metadata:   types.RecipeMetadata{Name: name, Version: "1.0.0"},
-		Spec:       types.RecipeSpec{Target: "helm", Implements: "core/test:1.0.0"},
+		Spec:       types.RecipeSpec{Capability: "helm", Implements: "core/test:1.0.0"},
 	}
 }
 

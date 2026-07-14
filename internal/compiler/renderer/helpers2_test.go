@@ -419,7 +419,7 @@ func TestEvalPathTemplate_MissingKeyExecuteError(t *testing.T) {
 	// .provider is in the allowlist — validation passes. The template
 	// then drills into a sub-key that doesn't exist; missingkey=error
 	// turns that into an execute-time failure.
-	_, err := EvalPathTemplate("t", "directory", "b", `{{ .provider.unknown }}`, map[string]any{"provider": "helm"})
+	_, err := EvalPathTemplate("t", "directory", "b", `{{ .capability.unknown }}`, map[string]any{"capability": "helm"})
 	if err == nil {
 		t.Errorf("missingkey=error should fail on deep miss")
 	}

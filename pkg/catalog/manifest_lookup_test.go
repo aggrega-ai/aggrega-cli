@@ -17,7 +17,7 @@ import (
 func fakeRecipe(uri, implements string) types.Recipe {
 	return types.Recipe{
 		Metadata: types.RecipeMetadata{Name: uri, Version: "1.0.0"},
-		Spec:     types.RecipeSpec{Target: "helm", Implements: implements},
+		Spec:     types.RecipeSpec{Capability: "helm", Implements: implements},
 	}
 }
 
@@ -33,7 +33,7 @@ func fakeCatalog(recipes ...types.Recipe) *Catalog {
 		Aggregates:     map[string]types.Aggregate{},
 	}
 	for _, r := range recipes {
-		c.Recipes[recipeIdentityKey(r.Spec.Target, r.Metadata.Name, r.Metadata.Version)] = r
+		c.Recipes[recipeIdentityKey(r.Spec.Capability, r.Metadata.Name, r.Metadata.Version)] = r
 	}
 	return c
 }
@@ -538,12 +538,12 @@ func writeCatalogEntity(t *testing.T, dir, rel, body string) {
 // load validation — enough for a resolution-only test.
 func recipeYAML(name, implements string) string {
 	return "apiVersion: aggrega.ai/v1alpha1\nkind: Recipe\nmetadata:\n  name: " + name +
-		"\n  version: 1.0.0\nspec:\n  target: eval\n  implements: " + implements + "\n"
+		"\n  version: 1.0.0\nspec:\n  capability: eval\n  implements: " + implements + "\n"
 }
 
 func featureRecipeYAML(name, implements string) string {
 	return "apiVersion: aggrega.ai/v1alpha1\nkind: FeatureRecipe\nmetadata:\n  name: " + name +
-		"\n  version: 1.0.0\nspec:\n  target: eval\n  implements: " + implements + "\n"
+		"\n  version: 1.0.0\nspec:\n  capability: eval\n  implements: " + implements + "\n"
 }
 
 // TestNameTierOverride_FiresAtBothJoins is the per-instance recipe-override

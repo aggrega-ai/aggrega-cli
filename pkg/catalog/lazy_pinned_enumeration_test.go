@@ -41,7 +41,7 @@ metadata:
   name: mariadb
   version: "1.0.0"
 spec:
-  target: compose
+  capability: compose
   implements: "core/datastore/mariadb"
   workload: |
     apiVersion: aggrega.ai/v1alpha1
@@ -56,7 +56,7 @@ metadata:
   name: dotenv-secret
   version: "1.0.0"
 spec:
-  target: compose
+  capability: compose
   implements: "core/secret-value"
 `
 	dbSizingLibYAML = `apiVersion: aggrega.ai/v1alpha1

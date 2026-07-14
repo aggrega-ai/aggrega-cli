@@ -1,6 +1,6 @@
 FeatureRecipe: core/metrics-recipe:1.0.0
 Implements: core/metrics:1.0.0
-Target: helm
+Capability: helm
 Artifacts (1):
   servicemonitor.yaml: inline
 valuesMapping: (none)

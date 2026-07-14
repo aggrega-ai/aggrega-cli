@@ -141,7 +141,7 @@ func TestResolveAggregate_TolerantScan_StrayBrokenFileSkipped(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	writeTriadFile(t, dir, "good.yaml", "apiVersion: aggrega.ai/v1alpha1\nkind: Aggregate\nmetadata:\n  version: \"1.0.0\"\n  name: good-app\nspec:\n  components: {}\n")
-	writeTriadFile(t, dir, "broken.yaml", "this: is: not: valid: yaml: : :\n")                                           // envelope fails
+	writeTriadFile(t, dir, "broken.yaml", "this: is: not: valid: yaml: : :\n")                                                                                                               // envelope fails
 	writeTriadFile(t, dir, "unrelated.yaml", "apiVersion: aggrega.ai/v1alpha1\nkind: Component\nmetadata:\n  name: c\n  version: 1.0.0\n  labels:\n    component.aggrega.ai/type: server\n") // valid non-triad
 	r, err := ResolveAggregate(dir, "good-app", nil, nil)
 	if err != nil {

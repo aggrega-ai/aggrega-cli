@@ -218,7 +218,7 @@ func TestStep5b_MultiInstanceEvaluatesEachInstance(t *testing.T) {
 }
 
 // TestStep5b_RecipeMetadataProviderAvailable pins symmetry with FeatureRecipe:
-// Recipe assertions can reference .Recipe.Metadata.provider just like
+// Recipe assertions can reference .Recipe.Metadata.capability just like
 // FeatureRecipe assertions.
 func TestStep5b_RecipeMetadataProviderAvailable(t *testing.T) {
 	t.Parallel()
@@ -226,10 +226,10 @@ func TestStep5b_RecipeMetadataProviderAvailable(t *testing.T) {
 	recipe := &types.Recipe{
 		Metadata: types.RecipeMetadata{Name: "helm-server", Version: "1.0.0"},
 		Spec: types.RecipeSpec{
-			Target: "helm",
+			Capability: "helm",
 			Assertions: omString(t,
 				"provider-must-be-helm",
-				`{{ if ne .Recipe.Metadata.provider "helm" }}{{ fail "provider must be helm" }}{{ end }}`,
+				`{{ if ne .Recipe.Metadata.capability "helm" }}{{ fail "provider must be helm" }}{{ end }}`,
 			),
 		},
 	}
@@ -246,7 +246,7 @@ func TestStep5b_RecipeMetadataProviderAvailable(t *testing.T) {
 // TestStep5b_FeatureRecipeMetadataProviderAvailable pins the
 // FeatureRecipe-side sibling of the Recipe-side
 // TestStep5b_RecipeMetadataProviderAvailable test above. Verifies the
-// FeatureRecipe assertion evaluation surfaces `.Recipe.Metadata.provider`
+// FeatureRecipe assertion evaluation surfaces `.Recipe.Metadata.capability`
 // from the FeatureRecipe's Spec.Provider — exercising the FR code-path
 // at assertions_step5b.go:109-127 specifically. Pins the FR-side
 // symmetry that was previously implicit: code-side symmetry was
@@ -266,10 +266,10 @@ func TestStep5b_FeatureRecipeMetadataProviderAvailable(t *testing.T) {
 	fr := types.FeatureRecipe{
 		Metadata: types.FeatureRecipeMetadata{Name: "audit-fr", Version: "1.0.0"},
 		Spec: types.FeatureRecipeSpec{
-			Target: "helm",
+			Capability: "helm",
 			Assertions: omString(t,
 				"provider-must-be-helm",
-				`{{ if ne .Recipe.Metadata.provider "helm" }}{{ fail "provider must be helm" }}{{ end }}`,
+				`{{ if ne .Recipe.Metadata.capability "helm" }}{{ fail "provider must be helm" }}{{ end }}`,
 			),
 		},
 	}

@@ -127,7 +127,7 @@ metadata:
   name: core/api-server-recipe
   version: "1.0.0"
 spec:
-  target: helm
+  capability: helm
   implements: core/api-server:1.0.0
   workload: |
     apiVersion: aggrega.ai/v1alpha1
@@ -142,7 +142,7 @@ metadata:
   name: core/redis-recipe
   version: "1.0.0"
 spec:
-  target: helm
+  capability: helm
   implements: core/redis:1.0.0
   source: oci://charts.example.com/redis:17.0.0
   valuesMapping: |
@@ -177,7 +177,7 @@ metadata:
   name: core/metrics-recipe
   version: "1.0.0"
 spec:
-  target: helm
+  capability: helm
   implements: core/metrics:1.0.0
   artifacts:
     servicemonitor.yaml: |
@@ -441,7 +441,7 @@ metadata:
   name: core/db-credential-recipe
   version: "1.0.0"
 spec:
-  target: helm
+  capability: helm
   implements: core/db-credential:1.0.0
   injectMapping: |
     {}

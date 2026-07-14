@@ -50,7 +50,7 @@ metadata:
 spec:
   pluginType: provider
   abiVersion: v1alpha1
-  targets:
+  capabilities:
     - helm
     - compose
   signature:

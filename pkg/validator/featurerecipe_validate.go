@@ -89,7 +89,7 @@ func ValidateFeatureRecipe(fr *types.FeatureRecipe, sourcePath string) error {
 	if fr == nil {
 		return nil
 	}
-	if fr.Spec.Target == "eval" {
+	if fr.Spec.Capability == "eval" {
 		return validateFeatureRecipeEvalProvider(fr, sourcePath)
 	}
 	if err := validateFeatureRecipeRule1(fr, sourcePath); err != nil {

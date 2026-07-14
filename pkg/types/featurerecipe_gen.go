@@ -13,7 +13,7 @@ type FeatureRecipe struct {
 	APIVersion string                `json:"apiVersion" yaml:"apiVersion"`
 	Kind       string                `json:"kind" yaml:"kind"`
 	Metadata   FeatureRecipeMetadata `json:"metadata" yaml:"metadata"`
-	// Spec The render-engine target binding, mapping, pipeline, and inject mapping for a FeatureRecipe. Carries the same three input kinds as a Recipe (sourced, synthesized, artifacts) plus the FeatureRecipe-only injectMapping; a pure-wiring FeatureRecipe declaring only target and implements is valid and renders nothing.
+	// Spec The render-engine capability binding, mapping, pipeline, and inject mapping for a FeatureRecipe. Carries the same three input kinds as a Recipe (sourced, synthesized, artifacts) plus the FeatureRecipe-only injectMapping; a pure-wiring FeatureRecipe declaring only capability and implements is valid and renders nothing.
 	Spec FeatureRecipeSpec `json:"spec" yaml:"spec"`
 }
 
@@ -37,10 +37,10 @@ type FeatureRecipeMetadata struct {
 	Deprecated bool `json:"deprecated,omitempty" yaml:"deprecated,omitempty"`
 }
 
-// FeatureRecipeSpec The render-engine target binding, mapping, pipeline, and inject mapping for a FeatureRecipe. Carries the same three input kinds as a Recipe (sourced, synthesized, artifacts) plus the FeatureRecipe-only injectMapping; a pure-wiring FeatureRecipe declaring only target and implements is valid and renders nothing.
+// FeatureRecipeSpec The render-engine capability binding, mapping, pipeline, and inject mapping for a FeatureRecipe. Carries the same three input kinds as a Recipe (sourced, synthesized, artifacts) plus the FeatureRecipe-only injectMapping; a pure-wiring FeatureRecipe declaring only capability and implements is valid and renders nothing.
 type FeatureRecipeSpec struct {
-	// Target The explicit render-engine target this recipe binds to (e.g., 'helm', 'terraform', 'compose') — the provider engine kind that renders it.
-	Target string `json:"target" yaml:"target"`
+	// Capability The explicit render-engine capability this recipe binds to (e.g., 'helm', 'terraform', 'compose') — the provider engine kind that renders it.
+	Capability string `json:"capability" yaml:"capability"`
 	// Implements Declares which catalog Feature type this recipe is able to implement (including credential Features labeled feature.aggrega.ai/kind: secret; exact version, major-compatible range '^', or unversioned). The compiler uses it to verify Manifest mappings and to suggest candidates in diagnostics and editor completion; it never resolves a build. The Manifest mapping is the user's explicit deployment choice, pinned in the lockfile.
 	Implements string `json:"implements" yaml:"implements"`
 	// Locals The Private Ops State. Internal computation results available only within this FeatureRecipe's templates. Used to export physical realities (e.g., target containers, JSON paths) for downstream Wasm plugins. Never exposed to callers — use provides for the public API.

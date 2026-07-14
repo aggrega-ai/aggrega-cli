@@ -55,11 +55,11 @@ func buildWasmWithImports(imports []wasmImport) []byte {
 	for _, imp := range imports {
 		body = append(body, encodeName(imp.module)...)
 		body = append(body, encodeName(imp.name)...)
-		body = append(body, 0x00)       // import kind: function
-		body = append(body, 0x00)       // type index 0 (uleb128)
+		body = append(body, 0x00) // import kind: function
+		body = append(body, 0x00) // type index 0 (uleb128)
 	}
 
-	out = append(out, wasmSectionImport)                 // section ID 2
+	out = append(out, wasmSectionImport)                   // section ID 2
 	out = append(out, encodeULEB128(uint32(len(body)))...) // section size
 	out = append(out, body...)
 	return out

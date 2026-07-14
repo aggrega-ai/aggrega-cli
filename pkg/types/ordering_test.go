@@ -161,7 +161,7 @@ metadata:
   name: helm-server
   version: "1.0.0"
 spec:
-  target: helm
+  capability: helm
   implements: core/server:1.0.0
   locals:
     zhostname: z
@@ -200,7 +200,7 @@ metadata:
   name: mon-prometheus
   version: "1.0.0"
 spec:
-  target: helm-chart
+  capability: helm-chart
   implements: core/monitoring
   locals:
     zlocal: z

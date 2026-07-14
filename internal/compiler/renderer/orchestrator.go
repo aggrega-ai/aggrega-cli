@@ -34,7 +34,7 @@ type RenderResult struct {
 // provider boundaries.
 type dispatchKey struct {
 	Path     string // evaluated final_path (post-template-evaluation)
-	Provider string // resolved per-component recipe.Spec.Target
+	Provider string // resolved per-component recipe.Spec.Capability
 }
 
 // pendingDispatch holds per-(path, provider) state across the per-node loop
@@ -359,8 +359,8 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		providerRef := ""
 		providerName := ""
 		if recipe != nil {
-			providerRef = recipe.Spec.Target
-			providerName = ProviderEngineKind(recipe.Spec.Target)
+			providerRef = recipe.Spec.Capability
+			providerName = ProviderEngineKind(recipe.Spec.Capability)
 		}
 		// Resolved provider-rendering plugin version behind this binding, shared
 		// with the engine the factory returns for it. Empty for a binding that
@@ -795,7 +795,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 	//
 	//   - Intermediate=true: route to the per-(path, provider) dispatch
 	//     group at the FR's evaluated path, using the FR's spec.provider
-	//     for the {{ .provider }} substitution. The compose-bridge case
+	//     for the {{ .capability }} substitution. The compose-bridge case
 	//     drives this — the bridge service fragment lands alongside per-
 	//     component compose contributors at the same dispatch path so the
 	//     compose engine's AssembleBoundary merges them.
@@ -818,10 +818,10 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		if !ok {
 			continue
 		}
-		// Bare engine kind for the {{ .provider }} path segment and the dispatch
+		// Bare engine kind for the {{ .capability }} path segment and the dispatch
 		// grouping; the FR's files were already rendered through its version-pinned
 		// engine upstream, so no engine resolution happens here.
-		frProvider := ProviderEngineKind(fr.Spec.Target)
+		frProvider := ProviderEngineKind(fr.Spec.Capability)
 		// Compute the dispatch path for this boundary-scope FR. The FR is
 		// attached at the boundary level (no per-component BoundaryInfra
 		// entry), so look up the boundary's authored directory/subDirectory
@@ -845,7 +845,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 				}
 			}
 		}
-		// Use the FR's provider for the {{ .provider }} substitution
+		// Use the FR's provider for the {{ .capability }} substitution
 		// instead of any per-component provider.
 		finalPath, err := computeFinalPath("<boundary-fr>:"+key.FRInstance, key.BoundaryPath, frProvider, fr.Metadata.Name, bi, parameters, boundaryDirEvals, perBoundaryAnnotations)
 		if err != nil {
@@ -905,7 +905,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 	// PATH_COLLISION check: scan dispatch keys for the same Path across
 	// distinct Provider values. This case arises only when the operator
 	// overrode subDirectory: in a way that defeats the per-provider
-	// segregation default ({{ .provider }}); under default rules each
+	// segregation default ({{ .capability }}); under default rules each
 	// provider gets its own sub-path so paths never collide across
 	// providers naturally. Per CLAUDE.md Loud Guardrails: surface the
 	// collision rather than silently overwriting one provider's output
@@ -1410,10 +1410,10 @@ func tmplCtxInfra(graph *types.IRGraph, nodeID string) types.OrderedMap[any] {
 //
 // Defaults:
 //   - bi nil OR bi.Directory empty → "boundaries/<bp>" (today's per-boundary segregation).
-//   - bi nil OR bi.SubDirectory empty → render `{{ .provider }}` against the per-component
+//   - bi nil OR bi.SubDirectory empty → render `{{ .capability }}` against the per-component
 //     provider name.
 //
-// Available template variables: .provider, .boundary_name, .parameters.<key>,
+// Available template variables: .capability, .boundary_name, .parameters.<key>,
 // .component_id (subDirectory: only), .manifest.recipe_name, .parent_boundary.*.
 //
 // boundaryDirEvals is the precomputed per-boundary evaluated `directory:`
@@ -1432,7 +1432,7 @@ func computeFinalPath(
 	perBoundaryAnnotations map[string]types.OrderedMap[string],
 ) (string, error) {
 	data := map[string]any{
-		"provider":        providerName,
+		"capability":      providerName,
 		"boundary_name":   bp,
 		"parameters":      parameters,
 		"component_id":    nodeID,
@@ -1465,7 +1465,7 @@ func computeFinalPath(
 		subTmpl = bi.SubDirectory
 	}
 	if subTmpl == "" {
-		subTmpl = "{{ .provider }}"
+		subTmpl = "{{ .capability }}"
 	}
 	evalSub, err := EvalPathTemplate("subDirectory:"+bp+":"+nodeID, "subDirectory", bp, subTmpl, data)
 	if err != nil {
@@ -1545,7 +1545,7 @@ func splitParentPath(bp string) (parentPath, parentName string, ok bool) {
 // `.parent_boundary.directory` (cascade). `.provider` is set to empty during
 // the walk because boundary-level `directory:` cannot meaningfully reference
 // per-component provider — per-provider segregation is the `subDirectory:`
-// concern (default `{{ .provider }}`). Boundaries without an explicit
+// concern (default `{{ .capability }}`). Boundaries without an explicit
 // `directory:` declaration are skipped (consumers fall back to the default
 // "boundaries/<bp>" string in parentBoundaryData).
 //
@@ -1569,7 +1569,7 @@ func evaluateAllBoundaryDirectories(
 		}
 		if b.Directory != "" {
 			data := map[string]any{
-				"provider":        "",
+				"capability":      "",
 				"boundary_name":   currentPath,
 				"parameters":      parameters,
 				"manifest":        map[string]any{"recipe_name": ""},

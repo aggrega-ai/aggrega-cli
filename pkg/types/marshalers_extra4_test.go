@@ -4,8 +4,8 @@
 package types
 
 import (
-	"strings"
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"go.yaml.in/yaml/v3"

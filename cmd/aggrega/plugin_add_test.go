@@ -70,7 +70,7 @@ func TestPluginAddRun_Provider(t *testing.T) {
 	if len(got) != 1 {
 		t.Fatalf("want exactly one provider binding; got %+v", got)
 	}
-	if got[0].Target != "helm" || got[0].URI != "oci://hub.aggrega.ai/plugin/provider/helm" {
+	if got[0].Capability != "helm" || got[0].URI != "oci://hub.aggrega.ai/plugin/provider/helm" {
 		t.Errorf("provider binding = %+v; want {helm, oci://hub.aggrega.ai/plugin/provider/helm}", got[0])
 	}
 	if body, rerr := os.ReadFile(filepath.Join(rw.Root(), workspaceconfig.ConfigFilename)); rerr == nil {

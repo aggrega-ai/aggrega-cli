@@ -71,9 +71,9 @@ func EvaluateRecipeAndFeatureRecipeAssertions(
 
 		recipeCtx := &AssertionRecipeContext{
 			Metadata: map[string]any{
-				"name":     recipe.Metadata.Name,
-				"version":  recipe.Metadata.Version,
-				"provider": recipe.Spec.Target,
+				"name":       recipe.Metadata.Name,
+				"version":    recipe.Metadata.Version,
+				"capability": recipe.Spec.Capability,
 			},
 			Source: recipe.Spec.Source,
 		}
@@ -108,9 +108,9 @@ func EvaluateRecipeAndFeatureRecipeAssertions(
 			}
 			frRecipeCtx := &AssertionRecipeContext{
 				Metadata: map[string]any{
-					"name":     fr.Metadata.Name,
-					"version":  fr.Metadata.Version,
-					"provider": fr.Spec.Target,
+					"name":       fr.Metadata.Name,
+					"version":    fr.Metadata.Version,
+					"capability": fr.Spec.Capability,
 				},
 				Source: fr.Spec.Source,
 			}

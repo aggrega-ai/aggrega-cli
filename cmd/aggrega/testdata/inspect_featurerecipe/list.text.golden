@@ -1,4 +1,4 @@
 core/metrics-recipe:1.0.0
 implements: core/metrics:1.0.0
-target: helm
+capability: helm
 artifacts: 1

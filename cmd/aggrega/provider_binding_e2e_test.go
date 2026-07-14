@@ -93,7 +93,7 @@ metadata:
 spec:
   pluginType: provider
   abiVersion: v1alpha1
-  targets:
+  capabilities:
     - helm
   exports:
     - name: render_node
@@ -108,7 +108,7 @@ metadata:
   name: server-recipe
   version: "1.0.0"
 spec:
-  target: helm
+  capability: helm
   implements: core/server
   workload: |
     apiVersion: aggrega.ai/v1alpha1
@@ -208,7 +208,7 @@ func TestProviderBinding_BuildIsInvariantToConfigAfterPull(t *testing.T) {
 offline: true
 plugins:
   providers:
-    - target: helm
+    - capability: helm
       uri: provider/helm
 `)
 	if err := pullRun(pullConfig{ReleasePath: releasePath, CatalogDirs: catDirs, ws: rwHelm, DiagOut: io.Discard, Out: io.Discard, diag: buildDiagOptions{quiet: true}}); err != nil {
@@ -232,7 +232,7 @@ plugins:
 offline: true
 plugins:
   providers:
-    - target: helm
+    - capability: helm
       uri: helm-renderer-alt
 `)
 	out2 := filepath.Join(root, "out2")

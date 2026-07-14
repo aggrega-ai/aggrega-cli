@@ -97,7 +97,7 @@ containers:
 			if ft == "core/referenced-secret" {
 				return &types.FeatureRecipe{
 					Metadata: types.FeatureRecipeMetadata{Name: "k8s-secret-from-parameter"},
-					Spec:     types.FeatureRecipeSpec{Target: "helm", Implements: "core/referenced-secret:1.0.0", Provides: fullContractProvides()},
+					Spec:     types.FeatureRecipeSpec{Capability: "helm", Implements: "core/referenced-secret:1.0.0", Provides: fullContractProvides()},
 				}, true
 			}
 			return nil, false
@@ -204,7 +204,7 @@ func renderFRWithSlot(t *testing.T, featSlots types.OrderedMap[types.SecretSlot]
 				return &types.FeatureRecipe{
 					Metadata: types.FeatureRecipeMetadata{Name: "frprobe-helm"},
 					Spec: types.FeatureRecipeSpec{
-						Target:     "helm",
+						Capability: "helm",
 						Implements: "core/frprobe:1.0.0",
 						Workload: types.WorkloadTemplate{Inline: `apiVersion: aggrega.ai/v1alpha1
 kind: Workload
@@ -222,7 +222,7 @@ containers:
 			if ft == "core/referenced-secret" {
 				return &types.FeatureRecipe{
 					Metadata: types.FeatureRecipeMetadata{Name: "k8s-secret-from-parameter"},
-					Spec:     types.FeatureRecipeSpec{Target: "helm", Implements: "core/referenced-secret:1.0.0", Provides: fullContractProvides()},
+					Spec:     types.FeatureRecipeSpec{Capability: "helm", Implements: "core/referenced-secret:1.0.0", Provides: fullContractProvides()},
 				}, true
 			}
 			return nil, false

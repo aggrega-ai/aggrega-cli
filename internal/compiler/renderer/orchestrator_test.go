@@ -69,7 +69,7 @@ func testRecipeLookup() renderer.RecipeLookup {
 				return &types.Recipe{
 					Metadata: types.RecipeMetadata{Name: "api-recipe"},
 					Spec: types.RecipeSpec{
-						Target:     "helm",
+						Capability: "helm",
 						Implements: "core/compute/api-server",
 						Provides:   provides,
 						Locals:     locals,
@@ -140,7 +140,7 @@ spec:
 				return &types.Recipe{
 					Metadata: types.RecipeMetadata{Name: "netpol-recipe"},
 					Spec: types.RecipeSpec{
-						Target:     "helm",
+						Capability: "helm",
 						Implements: "core/compute/api-server",
 						Artifacts:  art,
 					},
@@ -198,7 +198,7 @@ func TestRenderAll_ArtifactsOnlyDeclinedByIncapableProvider(t *testing.T) {
 						return &types.Recipe{
 							Metadata: types.RecipeMetadata{Name: "art-recipe"},
 							Spec: types.RecipeSpec{
-								Target:     provider,
+								Capability: provider,
 								Implements: "core/compute/api-server",
 								Artifacts:  art,
 							},
@@ -390,7 +390,7 @@ func TestRenderAll_FeatureRecipeResourceGeneration(t *testing.T) {
 				return &types.Recipe{
 					Metadata: types.RecipeMetadata{Name: "api-recipe"},
 					Spec: types.RecipeSpec{
-						Target:     "helm",
+						Capability: "helm",
 						Implements: "core/compute/api-server",
 						Workload: types.WorkloadTemplate{Inline: `apiVersion: aggrega.ai/v1alpha1
 kind: Workload
@@ -413,7 +413,7 @@ containers:
 				return &types.FeatureRecipe{
 					Metadata: types.FeatureRecipeMetadata{Name: "mon"},
 					Spec: types.FeatureRecipeSpec{
-						Target:     "helm",
+						Capability: "helm",
 						Implements: "core/monitoring",
 						Workload: types.WorkloadTemplate{Inline: `apiVersion: aggrega.ai/v1alpha1
 kind: Workload
@@ -489,7 +489,7 @@ func TestRenderAll_InjectOnlyFRProducesNoExtraFiles(t *testing.T) {
 				return &types.FeatureRecipe{
 					Metadata: types.FeatureRecipeMetadata{Name: "dns"},
 					Spec: types.FeatureRecipeSpec{
-						Target:        "helm-chart",
+						Capability:    "helm-chart",
 						InjectMapping: `{"env": {"RESOLVER": "corefile"}}`,
 					},
 				}, true
@@ -538,7 +538,7 @@ func TestRenderAll_CredentialFeatureRecipeRendering(t *testing.T) {
 				return &types.Recipe{
 					Metadata: types.RecipeMetadata{Name: "api-recipe"},
 					Spec: types.RecipeSpec{
-						Target:        "helm-chart",
+						Capability:    "helm-chart",
 						Implements:    "core/compute/api-server",
 						ValuesMapping: types.ValuesMapping{Inline: `{"image": "myapp:latest", "ports": ["8080:8080"]}`},
 					},
@@ -562,7 +562,7 @@ stringData:
 				return &types.FeatureRecipe{
 					Metadata: types.FeatureRecipeMetadata{Name: "db-password"},
 					Spec: types.FeatureRecipeSpec{
-						Target:     "helm",
+						Capability: "helm",
 						Implements: "core/db-password",
 						Artifacts:  art,
 					},
@@ -628,7 +628,7 @@ func hostWorkloadRecipeLookup(fr *types.FeatureRecipe) renderer.RecipeLookup {
 				return &types.Recipe{
 					Metadata: types.RecipeMetadata{Name: "api-recipe"},
 					Spec: types.RecipeSpec{
-						Target:     "helm",
+						Capability: "helm",
 						Implements: "core/compute/api-server",
 						Workload: types.WorkloadTemplate{Inline: `apiVersion: aggrega.ai/v1alpha1
 kind: Workload
@@ -668,7 +668,7 @@ data:
 	fr := &types.FeatureRecipe{
 		Metadata: types.FeatureRecipeMetadata{Name: "mon"},
 		Spec: types.FeatureRecipeSpec{
-			Target:     "helm",
+			Capability: "helm",
 			Implements: "core/monitoring",
 			Workload: types.WorkloadTemplate{Inline: `apiVersion: aggrega.ai/v1alpha1
 kind: Workload
@@ -714,7 +714,7 @@ func TestRenderAll_FeatureRecipeUnsupportedInputKindGated(t *testing.T) {
 	fr := &types.FeatureRecipe{
 		Metadata: types.FeatureRecipeMetadata{Name: "mon"},
 		Spec: types.FeatureRecipeSpec{
-			Target:     "helm-chart",
+			Capability: "helm-chart",
 			Implements: "core/monitoring",
 			Workload: types.WorkloadTemplate{Inline: `apiVersion: aggrega.ai/v1alpha1
 kind: Workload
@@ -781,7 +781,7 @@ func TestRenderAll_AttachmentInjectReachesConsumerRenderedOutput(t *testing.T) {
 				return &types.Recipe{
 					Metadata: types.RecipeMetadata{Name: "api-recipe"},
 					Spec: types.RecipeSpec{
-						Target:     "helm",
+						Capability: "helm",
 						Implements: "core/compute/api-server",
 						Workload: types.WorkloadTemplate{Inline: `apiVersion: aggrega.ai/v1alpha1
 kind: Workload
@@ -802,11 +802,11 @@ containers:
 			case "core/cache":
 				p := types.OrderedMap[string]{}
 				p.Set("url", `{{ .values.host }}`)
-				return &types.FeatureRecipe{Metadata: types.FeatureRecipeMetadata{Name: "cache"}, Spec: types.FeatureRecipeSpec{Target: "helm", Implements: "core/cache", Provides: p}}, true
+				return &types.FeatureRecipe{Metadata: types.FeatureRecipeMetadata{Name: "cache"}, Spec: types.FeatureRecipeSpec{Capability: "helm", Implements: "core/cache", Provides: p}}, true
 			case "core/db-password":
 				p := types.OrderedMap[string]{}
 				p.Set("root_password", `{{ .values.generated }}`)
-				return &types.FeatureRecipe{Metadata: types.FeatureRecipeMetadata{Name: "db-password"}, Spec: types.FeatureRecipeSpec{Target: "helm", Implements: "core/db-password", Provides: p}}, true
+				return &types.FeatureRecipe{Metadata: types.FeatureRecipeMetadata{Name: "db-password"}, Spec: types.FeatureRecipeSpec{Capability: "helm", Implements: "core/db-password", Provides: p}}, true
 			}
 			return nil, false
 		},
@@ -953,7 +953,7 @@ func TestRenderAll_Step5bAssertionFailureHaltsPipeline(t *testing.T) {
 				return &types.Recipe{
 					Metadata: types.RecipeMetadata{Name: "api-recipe-failing"},
 					Spec: types.RecipeSpec{
-						Target:        "helm",
+						Capability:    "helm",
 						Implements:    "core/compute/api-server",
 						ValuesMapping: types.ValuesMapping{Inline: `{"image": "myapp:latest"}`},
 						Assertions: buildOrderedMap(map[string]string{

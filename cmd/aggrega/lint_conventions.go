@@ -228,7 +228,7 @@ func walkCatalogEntityFiles(dirs []string) ([]catalogEntityFile, error) {
 				Kind:    header.Kind,
 				Name:    header.Metadata.Name,
 				Version: header.Metadata.Version,
-				Target:  header.Spec.Target,
+				Target:  header.Spec.Capability,
 			})
 			return nil
 		})
@@ -260,13 +260,13 @@ func closureEntityFiles(lazyView *catalog.LazyLookup, cl closure.Closure, index 
 		switch e.KindHint {
 		case "recipe":
 			if r, ok := lazyView.RecipeByURI(e.URI); ok {
-				if p, ok := lazyView.LocalRecipePath(r.Spec.Target, r.Metadata.Name, r.Metadata.Version); ok {
+				if p, ok := lazyView.LocalRecipePath(r.Spec.Capability, r.Metadata.Name, r.Metadata.Version); ok {
 					add(p)
 				}
 			}
 		case "feature_recipe":
 			if fr, ok := lazyView.FeatureRecipeByURI(e.URI); ok {
-				if p, ok := lazyView.LocalFeatureRecipePath(fr.Spec.Target, fr.Metadata.Name, fr.Metadata.Version); ok {
+				if p, ok := lazyView.LocalFeatureRecipePath(fr.Spec.Capability, fr.Metadata.Name, fr.Metadata.Version); ok {
 					add(p)
 				}
 			}

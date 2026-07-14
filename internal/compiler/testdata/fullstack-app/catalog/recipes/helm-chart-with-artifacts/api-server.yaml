@@ -4,7 +4,7 @@ metadata:
   name: helm-api-server-chart-with-artifacts
   version: "1.0.0"
 spec:
-  target: helm-chart
+  capability: helm-chart
   implements: core/compute/api-server
   source: ./charts/api-server
   artifacts:

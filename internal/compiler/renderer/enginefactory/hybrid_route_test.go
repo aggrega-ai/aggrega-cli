@@ -31,10 +31,10 @@ func terraformRouteCatalog() resolver.CatalogLookup {
 				Kind:       "Plugin",
 				Metadata:   types.PluginMetadata{Name: "provider/terraform", Version: "1.0.0"},
 				Spec: types.PluginSpec{
-					PluginType: "provider",
-					AbiVersion: "v1alpha1",
-					Targets:    []string{"terraform"},
-					Exports:    []types.PluginExport{{Name: "render_node"}},
+					PluginType:   "provider",
+					AbiVersion:   "v1alpha1",
+					Capabilities: []string{"terraform"},
+					Exports:      []types.PluginExport{{Name: "render_node"}},
 				},
 			}, true, nil
 		},

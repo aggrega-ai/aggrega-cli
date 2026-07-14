@@ -4,5 +4,5 @@ metadata:
   name: ingress-nginx
   version: 1.0.0
 spec:
-  target: compose
+  capability: compose
   implements: core/ingress

@@ -4,7 +4,7 @@ metadata:
   name: rewrite-host-patcher
   version: "1.0.0"
 spec:
-  target: helm
+  capability: helm
   implements: "feature.myco/rewrite-host"
   injectMapping: |
     {"env": {"UPSTREAM_HOST": "{{ .infra.upstream }}"}}

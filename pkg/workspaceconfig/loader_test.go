@@ -10,7 +10,6 @@ import (
 	"reflect"
 	"strings"
 	"testing"
-
 )
 
 // writeFixture writes content to a fresh path under t.TempDir and

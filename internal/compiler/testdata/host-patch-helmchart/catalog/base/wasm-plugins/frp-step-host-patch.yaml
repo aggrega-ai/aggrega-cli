@@ -6,5 +6,5 @@ metadata:
 spec:
   pluginType: frp_step
   abiVersion: v1alpha1
-  targets:
+  capabilities:
     - helm-chart

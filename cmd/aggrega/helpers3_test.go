@@ -92,7 +92,7 @@ metadata:
   name: server-recipe
   version: "1.0.0"
 spec:
-  target: helm
+  capability: helm
   implements: core/server
   workload: |
     apiVersion: aggrega.ai/v1alpha1
@@ -332,7 +332,7 @@ metadata:
   name: server-recipe
   version: "1.0.0"
 spec:
-  target: helm
+  capability: helm
   implements: core/server
   workload: |
     apiVersion: aggrega.ai/v1alpha1

@@ -61,7 +61,7 @@ func freezeRecipePins(lazyView *catalog.LazyLookup, entities []closure.ResolvedR
 		seen[ent.URI] = true
 
 		if r, err := loader.LoadRecipe(ent.URI); err == nil {
-			path, ok := lazyView.LocalRecipePath(r.Spec.Target, r.Metadata.Name, r.Metadata.Version)
+			path, ok := lazyView.LocalRecipePath(r.Spec.Capability, r.Metadata.Name, r.Metadata.Version)
 			if !ok {
 				continue
 			}
@@ -82,7 +82,7 @@ func freezeRecipePins(lazyView *catalog.LazyLookup, entities []closure.ResolvedR
 			continue
 		}
 		if fr, err := loader.LoadFeatureRecipe(ent.URI); err == nil {
-			path, ok := lazyView.LocalFeatureRecipePath(fr.Spec.Target, fr.Metadata.Name, fr.Metadata.Version)
+			path, ok := lazyView.LocalFeatureRecipePath(fr.Spec.Capability, fr.Metadata.Name, fr.Metadata.Version)
 			if !ok {
 				continue
 			}

@@ -205,7 +205,6 @@ func TestCallWithPanicRecoveryPassesNormalErrors(t *testing.T) {
 	}
 }
 
-
 // --- Host-function-body tests ----------------------------------------
 
 // fakeMemoryReader is a pluginMemoryReader test double the host-

@@ -108,7 +108,7 @@ metadata:
   name: svc
   version: "1.0.0"
 spec:
-  target: compose
+  capability: compose
   implements: test/svc
   workload: |
     apiVersion: aggrega.ai/v1alpha1

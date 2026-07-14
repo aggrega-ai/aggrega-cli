@@ -14,7 +14,7 @@ import (
 // version pin — "helm:1.0.0" (exact), "helm:^1.0.0" (major-compatible range),
 // or "helm" (unversioned) — where the pin selects a specific provider-rendering
 // plugin version. Everything downstream of engine selection keys on the engine
-// kind alone: the dispatch grouping, the {{ .provider }} path segment, the
+// kind alone: the dispatch grouping, the {{ .capability }} path segment, the
 // pipeline compatibility check, and codec selection all operate on "helm", not
 // on the pinned version. Only engine resolution reads the version.
 //

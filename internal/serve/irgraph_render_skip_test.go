@@ -42,7 +42,7 @@ metadata:
   name: demo-server-synthesized
   version: "1.0.0"
 spec:
-  target: helm
+  capability: helm
   implements: demo/svc
   provides:
     host: "{{ .context.instance_id }}"
@@ -75,7 +75,7 @@ metadata:
 spec:
   pluginType: provider
   abiVersion: v1alpha1
-  targets:
+  capabilities:
     - helm
   exports:
     - name: render_node

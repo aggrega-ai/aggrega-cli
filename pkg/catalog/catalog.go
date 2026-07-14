@@ -786,7 +786,7 @@ func (c *Catalog) indexFile(data []byte, path string) error {
 		if err != nil {
 			return err
 		}
-		rKey := recipeIdentityKey(e.Spec.Target, e.Metadata.Name, e.Metadata.Version)
+		rKey := recipeIdentityKey(e.Spec.Capability, e.Metadata.Name, e.Metadata.Version)
 		if err := c.claimIdentity("Recipe:"+rKey, fmt.Sprintf("recipe identity %q", rKey), path); err != nil {
 			return err
 		}
@@ -797,7 +797,7 @@ func (c *Catalog) indexFile(data []byte, path string) error {
 		if err != nil {
 			return err
 		}
-		frKey := recipeIdentityKey(e.Spec.Target, e.Metadata.Name, e.Metadata.Version)
+		frKey := recipeIdentityKey(e.Spec.Capability, e.Metadata.Name, e.Metadata.Version)
 		if err := c.claimIdentity("FeatureRecipe:"+frKey, fmt.Sprintf("feature recipe identity %q", frKey), path); err != nil {
 			return err
 		}

@@ -96,7 +96,7 @@ metadata:
   name: server
   version: "1.0.0"
 spec:
-  target: helm
+  capability: helm
   implements: server
   source:
     kind: helm-https-chart
@@ -327,7 +327,7 @@ metadata:
   name: server
   version: "1.0.0"
 spec:
-  target: helm
+  capability: helm
   implements: server
   source:
     kind: helm-https-chart
@@ -341,7 +341,7 @@ metadata:
   name: worker
   version: "1.0.0"
 spec:
-  target: helm
+  capability: helm
   implements: worker
   source:
     kind: helm-https-chart

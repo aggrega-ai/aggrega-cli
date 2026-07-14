@@ -82,7 +82,7 @@ metadata:
   name: server-recipe
   version: "1.0.0"
 spec:
-  target: bogus-provider
+  capability: bogus-provider
   implements: core/server
   workload: |
     apiVersion: aggrega.ai/v1alpha1

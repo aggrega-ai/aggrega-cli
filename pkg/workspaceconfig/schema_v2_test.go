@@ -7,7 +7,6 @@ import (
 	"errors"
 	"strings"
 	"testing"
-
 )
 
 // TestV2FieldLocations pins that the promoted top-level settings and the

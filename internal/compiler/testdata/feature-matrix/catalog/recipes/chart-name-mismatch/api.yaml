@@ -4,7 +4,7 @@ metadata:
   name: feature-matrix-api-chart-name-mismatch
   version: "1.0.0"
 spec:
-  target: helm-chart
+  capability: helm-chart
   implements: core/server
   source: ./charts/api
   provides:

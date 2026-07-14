@@ -4,7 +4,7 @@ metadata:
   name: feature-matrix-db-compose-synth
   version: "1.0.0"
 spec:
-  target: compose
+  capability: compose
   implements: core/datastore/mariadb
   provides:
     host: "{{ .context.instance_id }}"

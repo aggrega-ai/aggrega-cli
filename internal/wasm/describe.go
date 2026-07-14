@@ -59,23 +59,23 @@ type PluginDescriptor struct {
 	// export name, the default input pattern.
 	PluginType PluginType `json:"plugin_type"`
 
-	// CompatibleProviders is what the plugin applies to, interpreted per plugin
-	// type: for a provider plugin, the render providers (provider engine names
-	// such as "helm" or "compose") whose output shape it renders; for an frp_step
-	// plugin, the provider scopes its step is compatible with; the
-	// cross-cutting sockets leave it empty. Entries are in declared order.
-	// The list is an explicit, tested-compatibility claim rather than an
+	// Capabilities is what the plugin serves, interpreted per plugin
+	// type: for a provider plugin, the render-engine capabilities (provider
+	// engine names such as "helm" or "compose") whose output shape it renders;
+	// for an frp_step plugin, the provider capabilities its step is compatible
+	// with; the cross-cutting sockets leave it empty. Entries are in declared
+	// order. The list is an explicit, tested-compatibility claim rather than an
 	// implicit "any similar provider". The runtime enforces it — for each
 	// scope a pipeline step touches, the provider rendering that scope's
 	// documents must appear here — but this load-time validator does not:
 	// entries are unchecked strings here, since no provider registry exists
 	// at the load boundary to check them against. An empty or absent list
-	// declares no provider claim, so it matches nothing and the runtime halts
+	// declares no capability claim, so it matches nothing and the runtime halts
 	// any pipeline step that uses the plugin.
 	//
 	// The wire tag is the frozen ABI name the guest emits in describe(); the
-	// Go field name aligns with that wire tag, compatible_providers.
-	CompatibleProviders []string `json:"compatible_providers,omitempty"`
+	// Go field name aligns with that wire tag, capabilities.
+	Capabilities []string `json:"capabilities,omitempty"`
 
 	// Exports lists the plugin's offered exports in declared order. The
 	// host validates that the per-type minimum export is present and

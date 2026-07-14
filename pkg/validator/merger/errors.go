@@ -29,10 +29,10 @@ var ErrMergeInvalid = errors.New("merger: invalid merge input")
 // that contributed to the failure (empty when the cause is structural
 // rather than schema-specific); Detail is a human-readable message.
 type MergeError struct {
-	Path    string
-	Source  string
-	Detail  string
-	Err     error
+	Path   string
+	Source string
+	Detail string
+	Err    error
 }
 
 func (e *MergeError) Error() string {

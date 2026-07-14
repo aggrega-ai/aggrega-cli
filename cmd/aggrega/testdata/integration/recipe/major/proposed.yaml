@@ -4,6 +4,6 @@ metadata:
   name: api-server-helm
   version: 1.0.0
 spec:
-  target: compose
+  capability: compose
   implements: core/server
   workload: 'kind: Workload'

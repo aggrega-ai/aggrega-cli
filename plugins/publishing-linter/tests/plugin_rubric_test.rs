@@ -3,7 +3,7 @@
 
 //! Plugin-kind schema-evolution rubric coverage. The classifier scores a
 //! re-published Plugin entity from the change to its describe()-surface —
-//! exports, capabilities, targets, provider/search self-reports, and ABI
+//! exports, capabilities, provider/search self-reports, and ABI
 //! version. Fixtures are inline serde_json::json! literals exercising the
 //! structured-value pathway directly (the host parses YAML to JSON before
 //! invoking the plugin; these tests bypass the Extism boundary and call
@@ -114,46 +114,46 @@ fn plugin_patch_selector_only_change() {
     assert_eq!(classify_once(&fixture(prev, prop)), "PATCH");
 }
 
-// ----- targets -----
+// ----- served capabilities -----
 
 #[test]
-fn plugin_major_targets_narrowed() {
-    let prev = json!({"kind": "Plugin", "spec": {"targets": ["helm", "compose"]}});
-    let prop = json!({"kind": "Plugin", "spec": {"targets": ["helm"]}});
+fn plugin_major_capabilities_narrowed() {
+    let prev = json!({"kind": "Plugin", "spec": {"capabilities": ["helm", "compose"]}});
+    let prop = json!({"kind": "Plugin", "spec": {"capabilities": ["helm"]}});
     assert_eq!(classify_once(&fixture(prev, prop)), "MAJOR");
 }
 
 #[test]
-fn plugin_minor_targets_widened() {
-    let prev = json!({"kind": "Plugin", "spec": {"targets": ["helm"]}});
-    let prop = json!({"kind": "Plugin", "spec": {"targets": ["helm", "compose"]}});
+fn plugin_minor_capabilities_widened() {
+    let prev = json!({"kind": "Plugin", "spec": {"capabilities": ["helm"]}});
+    let prop = json!({"kind": "Plugin", "spec": {"capabilities": ["helm", "compose"]}});
     assert_eq!(classify_once(&fixture(prev, prop)), "MINOR");
 }
 
-// ----- capabilities -----
+// ----- provider contract -----
 
 #[test]
-fn plugin_major_capabilities_narrowed_bool_flip() {
+fn plugin_major_provider_contract_narrowed_bool_flip() {
     let prev = json!({
         "kind": "Plugin",
-        "spec": {"capabilities": {"inputKinds": {"sourced": true, "synthesized": true}}},
+        "spec": {"provider": {"contract": {"inputKinds": {"sourced": true, "synthesized": true}}}},
     });
     let prop = json!({
         "kind": "Plugin",
-        "spec": {"capabilities": {"inputKinds": {"sourced": true, "synthesized": false}}},
+        "spec": {"provider": {"contract": {"inputKinds": {"sourced": true, "synthesized": false}}}},
     });
     assert_eq!(classify_once(&fixture(prev, prop)), "MAJOR");
 }
 
 #[test]
-fn plugin_minor_capabilities_new_claim() {
+fn plugin_minor_provider_contract_new_claim() {
     let prev = json!({
         "kind": "Plugin",
-        "spec": {"capabilities": {"inputKinds": {"sourced": true}}},
+        "spec": {"provider": {"contract": {"inputKinds": {"sourced": true}}}},
     });
     let prop = json!({
         "kind": "Plugin",
-        "spec": {"capabilities": {"inputKinds": {"sourced": true}, "boundaryAssembly": true}},
+        "spec": {"provider": {"contract": {"inputKinds": {"sourced": true}, "boundaryAssembly": true}}},
     });
     assert_eq!(classify_once(&fixture(prev, prop)), "MINOR");
 }

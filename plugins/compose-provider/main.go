@@ -38,8 +38,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderctx"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderctx"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer/compose"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-pdk-go/pkg/aggrega"
@@ -57,7 +57,7 @@ import (
 // declaration against the functions the guest actually imports. The
 // assemble_boundary export merges fragments already in the payload and imports
 // no host function.
-const pluginDescriptorHead = `{"abi_version":"v1alpha1","plugin_type":"provider","compatible_providers":["compose"],"exports":[{"name":"render_node","input_pattern":"b","host_functions":["aggrega_pack_source"],"stability":"experimental","description":"renders a compose file source into a merged compose fragment, or synthesizes a workload into a compose service fragment"},{"name":"assemble_boundary","input_pattern":"b","stability":"experimental","description":"merges the per-node compose fragments at one dispatch group into a single docker-compose.yaml"},{"name":"boundary_env_overrides","input_pattern":"b","stability":"experimental","description":"computes per-consumer environment overrides that route a boundary's cross-network consumer endpoints through the compose gateway"}],"contract":{"input_kinds":{"sourced":true,"synthesized":true,"artifacts_standalone":false},"boundary_assembly":"merge","reusable_instance":true},"metadata":{"author":"aggrega","license":"Apache-2.0"`
+const pluginDescriptorHead = `{"abi_version":"v1alpha1","plugin_type":"provider","capabilities":["compose"],"exports":[{"name":"render_node","input_pattern":"b","host_functions":["aggrega_pack_source"],"stability":"experimental","description":"renders a compose file source into a merged compose fragment, or synthesizes a workload into a compose service fragment"},{"name":"assemble_boundary","input_pattern":"b","stability":"experimental","description":"merges the per-node compose fragments at one dispatch group into a single docker-compose.yaml"},{"name":"boundary_env_overrides","input_pattern":"b","stability":"experimental","description":"computes per-consumer environment overrides that route a boundary's cross-network consumer endpoints through the compose gateway"}],"contract":{"input_kinds":{"sourced":true,"synthesized":true,"artifacts_standalone":false},"boundary_assembly":"merge","reusable_instance":true},"metadata":{"author":"aggrega","license":"Apache-2.0"`
 
 // version and commit are the build-provenance stamp injected via
 // -ldflags -X at embedded-build time. A plain go build leaves them empty,

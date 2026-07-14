@@ -28,8 +28,8 @@ func TestEnrichReport_DecoratesEveryFinding(t *testing.T) {
 	schema := map[string]any{
 		"properties": map[string]any{
 			"port": map[string]any{
-				"type":               "integer",
-				"x-aggrega-source":   "BaseComponents#/schemas/Port",
+				"type":             "integer",
+				"x-aggrega-source": "BaseComponents#/schemas/Port",
 			},
 		},
 	}

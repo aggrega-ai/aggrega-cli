@@ -67,10 +67,10 @@ func TestOrderedMap_TemplateAlphabeticalMapDeep_NestedShapes(t *testing.T) {
 	inner.Set("k", "v")
 
 	var m OrderedMap[any]
-	m.Set("a", nested)              // *OrderedMap[any]
-	m.Set("b", inner)               // OrderedMap[any] value
-	m.Set("c", []any{nested, "x"})  // []any with mixed elements
-	m.Set("d", "plain")             // scalar
+	m.Set("a", nested)                  // *OrderedMap[any]
+	m.Set("b", inner)                   // OrderedMap[any] value
+	m.Set("c", []any{nested, "x"})      // []any with mixed elements
+	m.Set("d", "plain")                 // scalar
 	m.Set("e", (*OrderedMap[any])(nil)) // nil pointer
 
 	out := m.TemplateAlphabeticalMapDeep()

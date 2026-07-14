@@ -22,7 +22,7 @@ metadata:
 spec:
   pluginType: provider
   abiVersion: v1alpha1
-  targets:
+  capabilities:
     - ` + provider + `
   exports:
     - name: render_node
@@ -52,7 +52,7 @@ metadata:
 spec:
   pluginType: frp_step
   abiVersion: v1alpha1
-  targets:
+  capabilities:
     - helm
 `)
 

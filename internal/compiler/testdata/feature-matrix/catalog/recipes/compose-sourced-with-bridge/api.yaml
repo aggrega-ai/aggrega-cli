@@ -4,7 +4,7 @@ metadata:
   name: feature-matrix-api-compose-bridge
   version: "1.0.0"
 spec:
-  target: compose
+  capability: compose
   implements: core/server
   source: ./sources/api.yaml
   provides:

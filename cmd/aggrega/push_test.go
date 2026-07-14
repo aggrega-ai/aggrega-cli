@@ -199,7 +199,7 @@ metadata:
   name: server
   version: 1.0.0
 spec:
-  target: helm
+  capability: helm
   implements: core/server
   artifacts:
     header:
@@ -250,7 +250,7 @@ metadata:
   name: mariadb
   version: 1.0.0
 spec:
-  target: helm-chart
+  capability: helm-chart
   implements: stateful/mariadb
   source: oci://registry-1.docker.io/bitnamicharts/mariadb:25.0.8
   workload: |

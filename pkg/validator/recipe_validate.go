@@ -33,7 +33,7 @@ func ValidateRecipe(r *types.Recipe, sourcePath string) error {
 		return nil
 	}
 
-	if r.Spec.Target == "eval" {
+	if r.Spec.Capability == "eval" {
 		return validateRecipeEvalProvider(r, sourcePath)
 	}
 

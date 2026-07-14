@@ -4,7 +4,7 @@ metadata:
   name: db-pool-patcher
   version: "1.0.0"
 spec:
-  target: helm
+  capability: helm
   implements: "feature.myco/db-pool"
   injectMapping: |
     {"env": {

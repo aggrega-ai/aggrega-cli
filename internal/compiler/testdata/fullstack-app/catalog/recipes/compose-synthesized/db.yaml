@@ -4,7 +4,7 @@ metadata:
   name: compose-db-synthesized
   version: "1.0.0"
 spec:
-  target: compose
+  capability: compose
   implements: core/datastore/postgres
   provides:
     host: "{{ .context.instance_id }}"

@@ -499,8 +499,8 @@ func enforceProviderCompatibility(
 		case wasm.ScopeHost:
 			// Only enforce host compatibility when a host is present; a hostless
 			// /host op is the hostless guardrail's territory, not this check's.
-			if hostProvider != "" && !providerCompatible(hostProvider, desc.CompatibleProviders) {
-				return pipelineProviderIncompatibleErr(nodeID, step.Plugin, desc.CompatibleProviders, "host", hostProvider)
+			if hostProvider != "" && !providerCompatible(hostProvider, desc.Capabilities) {
+				return pipelineProviderIncompatibleErr(nodeID, step.Plugin, desc.Capabilities, "host", hostProvider)
 			}
 		default: // own (empty scope defaults to own per the wire contract)
 			if ownProvider == "" {
@@ -516,8 +516,8 @@ func enforceProviderCompatibility(
 				// wrap names the FeatureRecipe instance and node around this.
 				return pipelineOwnOnAssemblerErr(nodeID, step.ID)
 			}
-			if !providerCompatible(ownProvider, desc.CompatibleProviders) {
-				return pipelineProviderIncompatibleErr(nodeID, step.Plugin, desc.CompatibleProviders, "own", ownProvider)
+			if !providerCompatible(ownProvider, desc.Capabilities) {
+				return pipelineProviderIncompatibleErr(nodeID, step.Plugin, desc.Capabilities, "own", ownProvider)
 			}
 		}
 	}

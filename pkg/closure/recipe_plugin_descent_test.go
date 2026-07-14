@@ -90,7 +90,7 @@ func pluginEntity(t *testing.T, identity string) *types.Plugin {
 func recipeWithPipelinePlugin(t *testing.T, name, provider, pluginEntityURI string) *types.Recipe {
 	t.Helper()
 	src := "apiVersion: aggrega.ai/v1alpha1\nkind: Recipe\nmetadata:\n  name: " + name +
-		"\n  version: 1.0.0\nspec:\n  target: " + provider + "\n  implements: core/svc\n" +
+		"\n  version: 1.0.0\nspec:\n  capability: " + provider + "\n  implements: core/svc\n" +
 		"  pipeline:\n    - id: patch\n      plugin: " + pluginEntityURI + "\n      function: step\n"
 	var r types.Recipe
 	if err := yaml.Unmarshal([]byte(src), &r); err != nil {
@@ -106,7 +106,7 @@ func recipeWithPipelinePlugin(t *testing.T, name, provider, pluginEntityURI stri
 func featureRecipeWithPipelinePlugin(t *testing.T, name, provider, pluginEntityURI string) *types.FeatureRecipe {
 	t.Helper()
 	src := "apiVersion: aggrega.ai/v1alpha1\nkind: FeatureRecipe\nmetadata:\n  name: " + name +
-		"\n  version: 1.0.0\nspec:\n  target: " + provider + "\n  implements: core/cred\n" +
+		"\n  version: 1.0.0\nspec:\n  capability: " + provider + "\n  implements: core/cred\n" +
 		"  pipeline:\n    - id: patch\n      plugin: " + pluginEntityURI + "\n      function: step\n"
 	var fr types.FeatureRecipe
 	if err := yaml.Unmarshal([]byte(src), &fr); err != nil {

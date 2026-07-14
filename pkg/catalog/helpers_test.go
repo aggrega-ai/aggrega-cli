@@ -469,7 +469,7 @@ metadata:
   version: 1.0.0
 spec:
   implements: feature/example
-  target: helm-chart
+  capability: helm-chart
   source: ./src
 `
 	if err := os.WriteFile(filepath.Join(tmp, "fr.yaml"), []byte(frYAML), 0o644); err != nil {

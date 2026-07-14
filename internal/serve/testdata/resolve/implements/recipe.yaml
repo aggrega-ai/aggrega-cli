@@ -5,7 +5,7 @@ metadata:
   version: 1.0.0
 spec:
   implements: core/cache
-  target: helm
+  capability: helm
   workload: |
     apiVersion: aggrega.ai/v1alpha1
     kind: Workload

@@ -1,6 +1,6 @@
 Recipe: core/redis-recipe:1.0.0
 Implements: core/redis:1.0.0
-Target: helm
+Capability: helm
 ## Sourced
   source: oci://charts.example.com/redis:17.0.0
 valuesMapping: inline template

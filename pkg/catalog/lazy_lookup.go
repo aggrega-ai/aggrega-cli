@@ -1028,7 +1028,7 @@ func (l *LazyLookup) foldRecipeShellEntity(kind string, parseData, rawBytes []by
 			l.recordRecipeSkip(src, perr)
 			return
 		}
-		key := recipeIdentityKey(e.Spec.Target, e.Metadata.Name, e.Metadata.Version)
+		key := recipeIdentityKey(e.Spec.Capability, e.Metadata.Name, e.Metadata.Version)
 		foldFirstWin(l.recipes, key, e,
 			func() {
 				l.entityBytes[entityBytesKey("Recipe", key)] = rawBytes
@@ -1045,7 +1045,7 @@ func (l *LazyLookup) foldRecipeShellEntity(kind string, parseData, rawBytes []by
 			l.recordRecipeSkip(src, perr)
 			return
 		}
-		key := recipeIdentityKey(e.Spec.Target, e.Metadata.Name, e.Metadata.Version)
+		key := recipeIdentityKey(e.Spec.Capability, e.Metadata.Name, e.Metadata.Version)
 		foldFirstWin(l.featureRecipes, key, e,
 			func() {
 				l.entityBytes[entityBytesKey("FeatureRecipe", key)] = rawBytes

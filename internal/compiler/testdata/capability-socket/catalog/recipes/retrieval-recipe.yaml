@@ -4,7 +4,7 @@ metadata:
   name: retrieval-recipe
   version: "1.0.0"
 spec:
-  target: compose
+  capability: compose
   implements: core/ai-tool/retrieval
   workload: |
     apiVersion: aggrega.ai/v1alpha1

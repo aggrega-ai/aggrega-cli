@@ -23,7 +23,7 @@ metadata:
   name: server
   version: "1.0.0"
 spec:
-  target: helm
+  capability: helm
   implements: server
   # a preserved comment
   valuesMapping: |
@@ -255,7 +255,7 @@ metadata:
     A folded description that spans several
     words and must survive the freeze verbatim.
 spec:
-  target: helm
+  capability: helm
   implements: "core/datastore/thing"
   # a preserved comment
   provides:

@@ -73,4 +73,3 @@ func Wrap(spec SourceSpec, sentinel error, cause error) error {
 	}
 	return base
 }
-

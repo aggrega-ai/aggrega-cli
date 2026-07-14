@@ -29,8 +29,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderctx"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderctx"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer/helm"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-pdk-go/pkg/aggrega"
@@ -49,7 +49,7 @@ import (
 // cross-checks these declarations against the functions the guest actually
 // imports. The host reads this once at load and validates it before invoking
 // render_node.
-const pluginDescriptorHead = `{"abi_version":"v1alpha1","plugin_type":"provider","compatible_providers":["helm"],"exports":[{"name":"render_node","input_pattern":"b","host_functions":["aggrega_fetch_external_input","aggrega_pack_source"],"stability":"experimental","description":"renders a Helm chart source into flat Kubernetes manifests, or synthesizes a workload into flat Kubernetes manifests"}],"contract":{"input_kinds":{"sourced":true,"synthesized":true,"artifacts_standalone":true},"boundary_assembly":"none","reusable_instance":true},"metadata":{"author":"aggrega","license":"Apache-2.0"`
+const pluginDescriptorHead = `{"abi_version":"v1alpha1","plugin_type":"provider","capabilities":["helm"],"exports":[{"name":"render_node","input_pattern":"b","host_functions":["aggrega_fetch_external_input","aggrega_pack_source"],"stability":"experimental","description":"renders a Helm chart source into flat Kubernetes manifests, or synthesizes a workload into flat Kubernetes manifests"}],"contract":{"input_kinds":{"sourced":true,"synthesized":true,"artifacts_standalone":true},"boundary_assembly":"none","reusable_instance":true},"metadata":{"author":"aggrega","license":"Apache-2.0"`
 
 // version and commit are the build-provenance stamp injected via
 // -ldflags -X at embedded-build time. A plain go build leaves them empty,

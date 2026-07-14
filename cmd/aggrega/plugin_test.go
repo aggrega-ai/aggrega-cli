@@ -46,9 +46,9 @@ func TestRenderPluginEntryProvenanceDisplay(t *testing.T) {
 		source: "embedded",
 		uri:    "oci://hub.aggrega.ai/plugin/provider/helm",
 		desc: wasm.PluginDescriptor{
-			PluginType:          wasm.PluginTypeProvider,
-			CompatibleProviders: []string{"helm"},
-			Exports:             []wasm.PluginExport{{Name: "render_node"}, {Name: "assemble_boundary"}},
+			PluginType:   wasm.PluginTypeProvider,
+			Capabilities: []string{"helm"},
+			Exports:      []wasm.PluginExport{{Name: "render_node"}, {Name: "assemble_boundary"}},
 			Contract: wasm.ProviderContract{
 				InputKinds:       wasm.InputKinds{Sourced: true, Synthesized: true},
 				BoundaryAssembly: "merge",
@@ -63,7 +63,7 @@ func TestRenderPluginEntryProvenanceDisplay(t *testing.T) {
 		"oci://hub.aggrega.ai/plugin/provider/helm",
 		"type:         provider",
 		"version:      0.4.0 (commit abc1234)",
-		"targets:      helm",
+		"capabilities: helm",
 		"input kinds:  sourced, synthesized",
 		"boundary:     merge",
 		"exports:      render_node, assemble_boundary",
@@ -125,8 +125,8 @@ func TestFormatPluginListDeterministic(t *testing.T) {
 	configured := collectConfiguredRefs(workspaceconfig.Config{
 		Plugins: workspaceconfig.PluginsConfig{
 			Providers: []workspaceconfig.ProviderRef{
-				{Target: "helm", URI: "zeta:1.0.0"},
-				{Target: "compose", URI: "alpha:1.0.0"},
+				{Capability: "helm", URI: "zeta:1.0.0"},
+				{Capability: "compose", URI: "alpha:1.0.0"},
 			},
 		},
 	})
@@ -162,10 +162,10 @@ func TestFormatPluginListDeterministic(t *testing.T) {
 func TestInstalledReadiness(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
-		name         string
+		name          string
 		pinned, fresh string
-		err          error
-		want         string
+		err           error
+		want          string
 	}{
 		{"unresolved", "", "", errString("resolve failed"), "unresolved"},
 		{"describe-failed", "", "abc", errString("instantiate failed"), "describe-failed"},
@@ -271,7 +271,7 @@ func TestCollectConfiguredRefsDedupesAndMergesOrigins(t *testing.T) {
 	t.Parallel()
 	refs := collectConfiguredRefs(workspaceconfig.Config{
 		Plugins: workspaceconfig.PluginsConfig{
-			Providers: []workspaceconfig.ProviderRef{{Target: "helm", URI: "shared:1.0.0"}},
+			Providers: []workspaceconfig.ProviderRef{{Capability: "helm", URI: "shared:1.0.0"}},
 			Linter:    []workspaceconfig.PluginRef{{URI: "shared:1.0.0"}},
 		},
 	})

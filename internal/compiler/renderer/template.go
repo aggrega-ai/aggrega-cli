@@ -70,7 +70,7 @@ func EvalTemplateWithDelims(name, tmplText string, data any, leftDelim, rightDel
 // only in subDirectory: templates because component identity is meaningless
 // at the boundary level.
 var pathTemplateAllowlistDirectory = map[string]bool{
-	"provider":        true,
+	"capability":      true,
 	"boundary_name":   true,
 	"parameters":      true,
 	"parent_boundary": true,
@@ -81,7 +81,7 @@ var pathTemplateAllowlistDirectory = map[string]bool{
 // `subDirectory:` path-template may reference. Identical to the directory:
 // allowlist plus `.component_id`.
 var pathTemplateAllowlistSubDirectory = map[string]bool{
-	"provider":        true,
+	"capability":      true,
 	"boundary_name":   true,
 	"parameters":      true,
 	"component_id":    true,

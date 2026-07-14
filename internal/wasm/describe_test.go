@@ -49,9 +49,9 @@ func TestPluginDescriptorRoundTrip(t *testing.T) {
 			},
 		},
 		"frp-step-with-capabilities": {
-			ABIVersion:          ABIVersionV1Alpha1,
-			PluginType:          PluginTypeFRPStep,
-			CompatibleProviders: []string{"helm", "helm-chart"},
+			ABIVersion:   ABIVersionV1Alpha1,
+			PluginType:   PluginTypeFRPStep,
+			Capabilities: []string{"helm", "helm-chart"},
 			Exports: []PluginExport{
 				{
 					Name:         "step",
@@ -515,20 +515,20 @@ func TestPluginDescriptorValidateCapabilityShape(t *testing.T) {
 	}
 }
 
-// TestPluginDescriptorTargetsUnchecked proves compatible_providers
+// TestPluginDescriptorTargetsUnchecked proves capabilities
 // is piped through at load without a registry check: an arbitrary,
 // never-heard-of provider name is accepted here. The runtime — not this
 // load-time validator — enforces compatibility.
 func TestPluginDescriptorTargetsUnchecked(t *testing.T) {
 	t.Parallel()
 	d := PluginDescriptor{
-		ABIVersion:          ABIVersionV1Alpha1,
-		PluginType:          PluginTypeFRPStep,
-		CompatibleProviders: []string{"a-provider-that-does-not-exist", "another"},
-		Exports:             []PluginExport{{Name: "step"}},
+		ABIVersion:   ABIVersionV1Alpha1,
+		PluginType:   PluginTypeFRPStep,
+		Capabilities: []string{"a-provider-that-does-not-exist", "another"},
+		Exports:      []PluginExport{{Name: "step"}},
 	}
 	if err := d.Validate("acme/frp-step"); err != nil {
-		t.Fatalf("compatible_providers must be unchecked at load, got %v", err)
+		t.Fatalf("capabilities must be unchecked at load, got %v", err)
 	}
 }
 
@@ -621,10 +621,10 @@ func TestPluginDescriptorValidateLinkCapability(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			d := PluginDescriptor{
-				ABIVersion:   ABIVersionV1Alpha1,
-				PluginType:   PluginTypeProvider,
-				Exports:  tc.exports,
-				Contract: ProviderContract{CrossBoundaryLinking: tc.linking},
+				ABIVersion: ABIVersionV1Alpha1,
+				PluginType: PluginTypeProvider,
+				Exports:    tc.exports,
+				Contract:   ProviderContract{CrossBoundaryLinking: tc.linking},
 			}
 			err := d.Validate("acme/link-provider")
 			if tc.wantReject {

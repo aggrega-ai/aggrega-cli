@@ -573,7 +573,7 @@ metadata:
   name: svc
   version: "1.0.0"
 spec:
-  target: helm
+  capability: helm
   implements: test/svc
   workload: |
     apiVersion: aggrega.ai/v1alpha1
@@ -606,7 +606,7 @@ metadata:
   name: cred
   version: "1.0.0"
 spec:
-  target: helm
+  capability: helm
   implements: test/cred
   artifacts:
     cred-config.yaml: |
@@ -880,7 +880,7 @@ metadata:
   name: svc
   version: "1.0.0"
 spec:
-  target: helm
+  capability: helm
   implements: test/svc
   workload: |
     apiVersion: aggrega.ai/v1alpha1
@@ -1107,7 +1107,7 @@ metadata:
   name: needs-socket
   version: "1.0.0"
 spec:
-  target: compose
+  capability: compose
   implements: test/needs-socket
   workload: |
     apiVersion: aggrega.ai/v1alpha1

@@ -15,7 +15,7 @@ import (
 // sanitisation of characters a CloudFormation export name does not admit.
 func TestExportName(t *testing.T) {
 	cases := []struct {
-		name                                     string
+		name                                      string
 		release, boundary, component, providesKey string
 		want                                      string
 	}{

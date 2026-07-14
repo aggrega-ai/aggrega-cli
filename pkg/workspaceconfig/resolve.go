@@ -546,10 +546,10 @@ func loadGlobalLayer() (cfg Config, loaded bool, path string, err error) {
 func checkUniqueProviderTargets(providers []ProviderRef) error {
 	seen := make(map[string]struct{}, len(providers))
 	for _, ref := range providers {
-		if _, dup := seen[ref.Target]; dup {
-			return fmt.Errorf("workspaceconfig: render target %q is bound to more than one provider plugin; keep exactly one plugins.providers entry per target: %w", ref.Target, ErrDuplicateProviderTarget)
+		if _, dup := seen[ref.Capability]; dup {
+			return fmt.Errorf("workspaceconfig: capability %q is bound to more than one provider plugin; keep exactly one plugins.providers entry per capability: %w", ref.Capability, ErrDuplicateProviderTarget)
 		}
-		seen[ref.Target] = struct{}{}
+		seen[ref.Capability] = struct{}{}
 	}
 	return nil
 }

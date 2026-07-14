@@ -130,7 +130,7 @@ metadata:
   name: server
   version: "1.0.0"
 spec:
-  target: helm
+  capability: helm
   implements: server
   source:
     kind: helm-https-chart

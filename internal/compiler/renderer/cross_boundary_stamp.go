@@ -74,7 +74,7 @@ func stampCrossBoundaryLinkSentinels(
 		if tgtRecipe == nil {
 			continue
 		}
-		tgtProvider := ProviderEngineKind(tgtRecipe.Spec.Target)
+		tgtProvider := ProviderEngineKind(tgtRecipe.Spec.Capability)
 		tgtKey, err := onDemandDispatchKey(edge.Target, tgtProvider, tgtRecipe.Metadata.Name, tgtNode.BoundaryPath,
 			boundaryInfraFor(input, edge.Target), parameters, boundaryDirEvals, perBoundaryAnnotations)
 		if err != nil {

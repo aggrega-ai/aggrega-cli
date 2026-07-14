@@ -10,7 +10,7 @@ metadata:
 spec:
   pluginType: provider
   abiVersion: v1alpha1
-  targets:
+  capabilities:
     - cloudformation
   # The engine renders standalone artifact fragments and normalizes sourced
   # templates to pure-JSON long-form intrinsics, structurally validating a sourced

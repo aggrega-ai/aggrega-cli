@@ -4,7 +4,7 @@ metadata:
   name: feature-matrix-api-helm-sourced-art
   version: "1.0.0"
 spec:
-  target: helm
+  capability: helm
   implements: core/server
   source: ./charts/api
   provides:

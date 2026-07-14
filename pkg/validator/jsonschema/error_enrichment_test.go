@@ -24,8 +24,8 @@ func TestEnrichFinding_AnnotationPresent(t *testing.T) {
 		"type": "object",
 		"properties": map[string]any{
 			"displayName": map[string]any{
-				"type":              "string",
-				xAggregaSourceKey:   "BaseComponents#/schemas/BaseComponentParameter",
+				"type":            "string",
+				xAggregaSourceKey: "BaseComponents#/schemas/BaseComponentParameter",
 			},
 		},
 	}
@@ -80,12 +80,12 @@ func TestEnrichFinding_NestedPropertyAnnotation(t *testing.T) {
 		"type": "object",
 		"properties": map[string]any{
 			"outer": map[string]any{
-				"type":              "object",
-				xAggregaSourceKey:   "Lib#/schemas/Outer",
+				"type":            "object",
+				xAggregaSourceKey: "Lib#/schemas/Outer",
 				"properties": map[string]any{
 					"inner": map[string]any{
-						"type":              "string",
-						xAggregaSourceKey:   "Lib#/schemas/Outer",
+						"type":            "string",
+						xAggregaSourceKey: "Lib#/schemas/Outer",
 					},
 				},
 			},
@@ -137,8 +137,8 @@ func TestEnrichFinding_EmptyFieldPath(t *testing.T) {
 	// A root-level finding (FieldPath="") reads the annotation from the
 	// schema root. Useful for whole-instance validation failures.
 	schema := map[string]any{
-		"type":              "object",
-		xAggregaSourceKey:   "Lib#/schemas/Root",
+		"type":            "object",
+		xAggregaSourceKey: "Lib#/schemas/Root",
 	}
 	f := &Finding{FieldPath: "", Message: "msg"}
 	EnrichFinding(f, schema, "")
@@ -155,8 +155,8 @@ func TestEnrichReport_DecoratesAllFindings(t *testing.T) {
 		"type": "object",
 		"properties": map[string]any{
 			"a": map[string]any{
-				"type":              "string",
-				xAggregaSourceKey:   "Lib#/schemas/Entry",
+				"type":            "string",
+				xAggregaSourceKey: "Lib#/schemas/Entry",
 			},
 			"b": map[string]any{
 				"type": "string",
@@ -299,7 +299,7 @@ func TestSplitArrayIndex(t *testing.T) {
 		{"name", "name", false},
 		{"name[0]", "name", true},
 		{"name[42]", "name", true},
-		{"name[", "name[", false},  // unclosed — treat as opaque
+		{"name[", "name[", false}, // unclosed — treat as opaque
 		{"[0]", "", true},
 		{"", "", false},
 	}

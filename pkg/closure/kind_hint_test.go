@@ -69,7 +69,7 @@ func TestDescend_ShortFormFeatureRecipeViaKindHint(t *testing.T) {
 				APIVersion: "aggrega.ai/v1alpha1",
 				Kind:       "FeatureRecipe",
 				Metadata:   types.FeatureRecipeMetadata{Name: uri, Version: "1.0.0"},
-				Spec:       types.FeatureRecipeSpec{Target: "helm", Source: "oci://hub.aggrega.ai/charts/k8s-secret"},
+				Spec:       types.FeatureRecipeSpec{Capability: "helm", Source: "oci://hub.aggrega.ai/charts/k8s-secret"},
 			},
 		},
 	}

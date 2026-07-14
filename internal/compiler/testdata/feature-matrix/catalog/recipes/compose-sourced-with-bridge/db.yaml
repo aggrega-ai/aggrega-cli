@@ -4,7 +4,7 @@ metadata:
   name: feature-matrix-db-compose-bridge
   version: "1.0.0"
 spec:
-  target: compose
+  capability: compose
   implements: core/datastore/mariadb
   source: ./sources/db.yaml
   provides:

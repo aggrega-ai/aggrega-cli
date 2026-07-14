@@ -90,7 +90,7 @@ func renderPluginFile(_ *workspaceconfig.ResolvedWorkspace, path string, data []
 		abiVersion = "(none declared)"
 	}
 	fmt.Fprintf(opts.out, "ABI version: %s\n", abiVersion)
-	fmt.Fprintf(opts.out, "Targets: %s\n", joinedOrNone(wp.Spec.Targets))
+	fmt.Fprintf(opts.out, "Capabilities: %s\n", joinedOrNone(wp.Spec.Capabilities))
 
 	renderPluginExports(opts, wp.Spec.Exports)
 	renderPluginRuntime(opts, wp.Spec.Runtime)

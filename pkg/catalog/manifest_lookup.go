@@ -72,7 +72,7 @@ var ErrProviderVersionUnsatisfiable = errors.New("no provider-rendering plugin v
 // plugins.providers surface that selects one. It is a point-of-use halt: it fires
 // at pull (resolution) and at build (render-engine selection), not at catalog
 // load, so an ambiguity outside a Release's reach never blocks an unrelated build.
-var ErrAmbiguousProviderPlugin = errors.New("render target is served by more than one provider plugin; add a plugins.providers entry to select one")
+var ErrAmbiguousProviderPlugin = errors.New("capability is served by more than one provider plugin; add a plugins.providers entry to select one")
 
 // ErrProviderBindingUnsatisfied fires at resolution when a plugins.providers
 // entry selects a plugin identity that no provider-rendering Plugin serving the
@@ -80,7 +80,7 @@ var ErrAmbiguousProviderPlugin = errors.New("render target is served by more tha
 // does not (or no longer) serves the target. The explicit selection is a request
 // the catalog cannot honor, so it halts loudly rather than silently falling back
 // to another engine.
-var ErrProviderBindingUnsatisfied = errors.New("plugins.providers entry names a plugin no provider-rendering plugin serving the target matches")
+var ErrProviderBindingUnsatisfied = errors.New("plugins.providers entry names a plugin no provider-rendering plugin serving the capability matches")
 
 // ErrNoRecipeResolved fires when a component/feature instance has no explicit
 // Manifest mapping for its type. Resolution is mapping-only — the catalog never
@@ -313,7 +313,7 @@ func matchOneRecipe(rs map[string]types.Recipe, provider, name, version string) 
 	var match types.Recipe
 	n := 0
 	for _, r := range rs {
-		if provider != "" && r.Spec.Target != provider {
+		if provider != "" && r.Spec.Capability != provider {
 			continue
 		}
 		if r.Metadata.Name != name {
@@ -362,7 +362,7 @@ func matchOneFeatureRecipe(frs map[string]types.FeatureRecipe, provider, name, v
 	var match types.FeatureRecipe
 	n := 0
 	for _, fr := range frs {
-		if provider != "" && fr.Spec.Target != provider {
+		if provider != "" && fr.Spec.Capability != provider {
 			continue
 		}
 		if fr.Metadata.Name != name {
@@ -455,7 +455,7 @@ func (c *Catalog) ProviderPluginForTarget(ref string, bindings map[string]string
 		if p.Spec.PluginType != "provider" {
 			continue
 		}
-		if !slices.Contains(p.Spec.Targets, name) {
+		if !slices.Contains(p.Spec.Capabilities, name) {
 			continue
 		}
 		// A binding selects the plugin repository by its bare identity
@@ -480,10 +480,10 @@ func (c *Catalog) ProviderPluginForTarget(ref string, bindings map[string]string
 	switch len(distinctNames) {
 	case 0:
 		if bound {
-			return types.Plugin{}, false, fmt.Errorf("%w: target %q is bound to plugin %q, but no provider-rendering plugin serving %q matches that identity", ErrProviderBindingUnsatisfied, name, bindBase, name)
+			return types.Plugin{}, false, fmt.Errorf("%w: capability %q is bound to plugin %q, but no provider-rendering plugin serving %q matches that identity", ErrProviderBindingUnsatisfied, name, bindBase, name)
 		}
 		if hasVer {
-			return types.Plugin{}, false, fmt.Errorf("%w: provider %q pins %q but no provider-rendering plugin serves it", ErrProviderVersionUnsatisfiable, name, verSeg)
+			return types.Plugin{}, false, fmt.Errorf("%w: capability %q pins %q but no provider-rendering plugin serves it", ErrProviderVersionUnsatisfiable, name, verSeg)
 		}
 		// No serving plugin, no binding, no pin — a bare miss the caller resolves.
 		return types.Plugin{}, false, nil
@@ -495,7 +495,7 @@ func (c *Catalog) ProviderPluginForTarget(ref string, bindings map[string]string
 			names = append(names, n)
 		}
 		sort.Strings(names)
-		return types.Plugin{}, false, fmt.Errorf("%w: target %q is served by more than one provider plugin (%s); add a plugins.providers entry for %q selecting one", ErrAmbiguousProviderPlugin, name, strings.Join(names, ", "), name)
+		return types.Plugin{}, false, fmt.Errorf("%w: capability %q is served by more than one provider plugin (%s); add a plugins.providers entry for %q selecting one", ErrAmbiguousProviderPlugin, name, strings.Join(names, ", "), name)
 	}
 
 	var base string
@@ -515,7 +515,7 @@ func (c *Catalog) ProviderPluginForTarget(ref string, bindings map[string]string
 	if err != nil {
 		// selectEntityVersion signals an unsatisfiable exact/caret constraint;
 		// translate it to the provider-specific halt naming the pin.
-		return types.Plugin{}, false, fmt.Errorf("%w: provider %q pins %q but no serving plugin version satisfies it", ErrProviderVersionUnsatisfiable, name, pin)
+		return types.Plugin{}, false, fmt.Errorf("%w: capability %q pins %q but no serving plugin version satisfies it", ErrProviderVersionUnsatisfiable, name, pin)
 	}
 	if !ok {
 		return types.Plugin{}, false, nil
@@ -534,7 +534,7 @@ func (c *Catalog) ProviderPluginCandidates(target string) []types.Plugin {
 		if p.Spec.PluginType != "provider" {
 			continue
 		}
-		if !slices.Contains(p.Spec.Targets, target) {
+		if !slices.Contains(p.Spec.Capabilities, target) {
 			continue
 		}
 		out = append(out, p)
@@ -618,7 +618,7 @@ func recipesImplementing(recipes map[string]types.Recipe, componentType string) 
 	var ids []string
 	for _, r := range recipes {
 		if implementsSatisfies(r.Spec.Implements, componentType) {
-			ids = append(ids, recipeIdentityKey(r.Spec.Target, r.Metadata.Name, r.Metadata.Version))
+			ids = append(ids, recipeIdentityKey(r.Spec.Capability, r.Metadata.Name, r.Metadata.Version))
 		}
 	}
 	sort.Strings(ids)
@@ -630,7 +630,7 @@ func featureRecipesImplementing(frs map[string]types.FeatureRecipe, featureType 
 	var ids []string
 	for _, fr := range frs {
 		if implementsSatisfies(fr.Spec.Implements, featureType) {
-			ids = append(ids, recipeIdentityKey(fr.Spec.Target, fr.Metadata.Name, fr.Metadata.Version))
+			ids = append(ids, recipeIdentityKey(fr.Spec.Capability, fr.Metadata.Name, fr.Metadata.Version))
 		}
 	}
 	sort.Strings(ids)

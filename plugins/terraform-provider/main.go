@@ -43,8 +43,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderctx"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderctx"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer/terraform"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-pdk-go/pkg/aggrega"
@@ -69,7 +69,7 @@ const tfvarsOverlayName = "aggrega.auto.tfvars.json"
 // selection, so render_node declares the aggrega_pack_source host function it
 // imports; the host cross-checks this declaration against the functions the
 // guest actually imports. No assemble_boundary export is offered.
-const pluginDescriptorHead = `{"abi_version":"v1alpha1","plugin_type":"provider","compatible_providers":["terraform"],"exports":[{"name":"render_node","input_pattern":"b","host_functions":["aggrega_pack_source"],"stability":"experimental","description":"vendors a sourced Terraform module verbatim and writes the node's values as an auto-loaded tfvars overlay"},{"name":"validate_node_input","input_pattern":"b","host_functions":["aggrega_pack_source"],"stability":"experimental","description":"structurally parses the sourced Terraform module's HCL and .tf.json files and reports parse errors before render"}],"contract":{"input_kinds":{"sourced":true,"synthesized":false,"artifacts_standalone":true},"boundary_assembly":"none","reusable_instance":true},"metadata":{"author":"aggrega","license":"Apache-2.0"`
+const pluginDescriptorHead = `{"abi_version":"v1alpha1","plugin_type":"provider","capabilities":["terraform"],"exports":[{"name":"render_node","input_pattern":"b","host_functions":["aggrega_pack_source"],"stability":"experimental","description":"vendors a sourced Terraform module verbatim and writes the node's values as an auto-loaded tfvars overlay"},{"name":"validate_node_input","input_pattern":"b","host_functions":["aggrega_pack_source"],"stability":"experimental","description":"structurally parses the sourced Terraform module's HCL and .tf.json files and reports parse errors before render"}],"contract":{"input_kinds":{"sourced":true,"synthesized":false,"artifacts_standalone":true},"boundary_assembly":"none","reusable_instance":true},"metadata":{"author":"aggrega","license":"Apache-2.0"`
 
 // version and commit are the build-provenance stamp injected via
 // -ldflags -X at embedded-build time. A plain go build leaves them empty,

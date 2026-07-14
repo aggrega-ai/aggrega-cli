@@ -73,7 +73,7 @@ func TestDispatchBoundaryScopeFR_RemoteSourceCacheExtractsFromProjection(t *test
 	fr := &types.FeatureRecipe{
 		Metadata: types.FeatureRecipeMetadata{Name: "compose-bridge-fr", Version: "1.0.0"},
 		Spec: types.FeatureRecipeSpec{
-			Target:         "stub",
+			Capability:     "stub",
 			Implements:     "core/compose-bridge:1.0.0",
 			ExecutionScope: "boundary",
 			Source:         map[string]any{"kind": kind, "url": url, "version": ver},
@@ -170,7 +170,7 @@ func TestDispatchBoundaryScopeFR_InfraTemplatedSourceResolvesFromProjectionInfra
 	fr := &types.FeatureRecipe{
 		Metadata: types.FeatureRecipeMetadata{Name: "compose-bridge-fr", Version: "1.0.0"},
 		Spec: types.FeatureRecipeSpec{
-			Target:         "stub",
+			Capability:     "stub",
 			Implements:     "core/compose-bridge:1.0.0",
 			ExecutionScope: "boundary",
 			Source:         map[string]any{"kind": kind, "url": url, "version": "{{ .infra.chart_version }}"},
@@ -242,7 +242,7 @@ func TestDispatchBoundaryScopeFR_LocalSourceForwardsVerbatim(t *testing.T) {
 	fr := &types.FeatureRecipe{
 		Metadata: types.FeatureRecipeMetadata{Name: "compose-bridge-fr", Version: "1.0.0"},
 		Spec: types.FeatureRecipeSpec{
-			Target:         "stub",
+			Capability:     "stub",
 			Implements:     "core/compose-bridge:1.0.0",
 			ExecutionScope: "boundary",
 			Source:         "./charts/local-bridge",

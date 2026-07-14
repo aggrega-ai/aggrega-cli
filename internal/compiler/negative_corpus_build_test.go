@@ -96,7 +96,7 @@ metadata:
   name: server-recipe
   version: "1.0.0"
 spec:
-  target: compose
+  capability: compose
   implements: core/server
   workload: |
     apiVersion: aggrega.ai/v1alpha1
@@ -120,7 +120,7 @@ metadata:
 spec:
   pluginType: provider
   abiVersion: v1alpha1
-  targets:
+  capabilities:
     - compose
   exports:
     - name: render_node

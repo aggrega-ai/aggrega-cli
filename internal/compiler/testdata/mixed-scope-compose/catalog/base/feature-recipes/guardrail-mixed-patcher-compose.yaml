@@ -4,7 +4,7 @@ metadata:
   name: guardrail-mixed-patcher-compose
   version: "1.0.0"
 spec:
-  target: compose
+  capability: compose
   implements: "feature.myco/guardrail"
   # A workload makes this FeatureRecipe resource-generating, so its pipeline
   # runs. Its own provider is compose (an assembler), so its own output is a

@@ -406,7 +406,7 @@ metadata:
   name: recipe-a
   version: 1.0.0
 spec:
-  target: helm
+  capability: helm
   implements: core/x
   source: ./fake-chart
   valuesMapping: '{}'
@@ -419,7 +419,7 @@ metadata:
   name: recipe-b
   version: 1.0.0
 spec:
-  target: helm-chart
+  capability: helm-chart
   implements: core/y
   source: ./fake-chart
   valuesMapping: '{}'
@@ -526,7 +526,7 @@ metadata:
   name: rel
   version: 1.0.0
 spec:
-  target: helm
+  capability: helm
   implements: core/rel
   source: ./charts/my-chart
   valuesMapping: '{}'

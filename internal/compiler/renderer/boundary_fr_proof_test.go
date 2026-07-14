@@ -44,7 +44,7 @@ services:
 `
 	return &types.Recipe{
 		Metadata: types.RecipeMetadata{Name: name + "-recipe", Version: "1.0.0"},
-		Spec:     types.RecipeSpec{Target: "compose", Workload: types.WorkloadTemplate{Inline: body}},
+		Spec:     types.RecipeSpec{Capability: "compose", Workload: types.WorkloadTemplate{Inline: body}},
 	}
 }
 
@@ -102,7 +102,7 @@ func boundaryScopeBridgeFR(t *testing.T) *types.FeatureRecipe {
 	return &types.FeatureRecipe{
 		Metadata: types.FeatureRecipeMetadata{Name: "compose-bridge-fr", Version: "1.0.0"},
 		Spec: types.FeatureRecipeSpec{
-			Target:         "compose",
+			Capability:     "compose",
 			Implements:     "core/compose-bridge:1.0.0",
 			ExecutionScope: "boundary",
 			Source:         fragPath,
@@ -378,7 +378,7 @@ func TestComposeBridge_MergedPath_Proof(t *testing.T) {
 
 	// Both child boundaries' contributors AND the parent's boundary-scope
 	// FR contribution merge at the parent's evaluated path
-	// "dist/cluster/compose/" (default subDirectory: "{{ .provider }}").
+	// "dist/cluster/compose/" (default subDirectory: "{{ .capability }}").
 	wantPath := "dist/cluster/compose/docker-compose.yaml"
 	composeBody, ok := result.Files[wantPath]
 	if !ok {
@@ -418,7 +418,7 @@ func bridgeFRViaValuesMapping(t *testing.T) *types.FeatureRecipe {
 	return &types.FeatureRecipe{
 		Metadata: types.FeatureRecipeMetadata{Name: "compose-bridge-fr", Version: "1.0.0"},
 		Spec: types.FeatureRecipeSpec{
-			Target:         "compose",
+			Capability:     "compose",
 			Implements:     "core/compose-bridge:1.0.0",
 			ExecutionScope: "boundary",
 			Source:         fragPath,
@@ -575,7 +575,7 @@ func TestDispatchBoundaryScopeFR_SynthesizesWorkload(t *testing.T) {
 	bridgeFR := &types.FeatureRecipe{
 		Metadata: types.FeatureRecipeMetadata{Name: "compose-bridge-fr", Version: "1.0.0"},
 		Spec: types.FeatureRecipeSpec{
-			Target:         "compose",
+			Capability:     "compose",
 			Implements:     "core/compose-bridge:1.0.0",
 			ExecutionScope: "boundary",
 			Workload: types.WorkloadTemplate{Inline: `apiVersion: aggrega.ai/v1alpha1

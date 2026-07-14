@@ -4,7 +4,7 @@ metadata:
   name: compose-api-sourced
   version: "1.0.0"
 spec:
-  target: compose
+  capability: compose
   implements: core/compute/api-server
   source: ./sources/api.yaml
   provides:

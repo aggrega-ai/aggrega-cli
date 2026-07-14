@@ -334,7 +334,6 @@ func SplitDiagnostics(diags []Diagnostic) (errs []string, advisories []string) {
 	return errs, advisories
 }
 
-
 // SourceForDiagnostic returns a human-readable string identifying
 // nodeCtx's source for use in engine error messages. Prefers
 // OriginalSource (the verbatim Recipe spec.source — what the

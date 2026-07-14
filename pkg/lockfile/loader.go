@@ -206,4 +206,3 @@ func libraryConsumerDiagnostics(root map[string]any, section string) []Diagnosti
 	}
 	return out
 }
-

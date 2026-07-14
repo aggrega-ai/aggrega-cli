@@ -21,7 +21,7 @@ metadata:
   name: ops/audit-bitnami
   version: "1.0.0"
 spec:
-  target: helm
+  capability: helm
   implements: ops/audit:^1.0.0
   assertions:
     chart-version-supported: |
@@ -46,7 +46,7 @@ metadata:
   name: ops/audit-bitnami
   version: "1.0.0"
 spec:
-  target: helm
+  capability: helm
   implements: ops/audit:^1.0.0
   assertions:
     bad-rule:

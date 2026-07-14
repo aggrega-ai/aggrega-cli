@@ -4,7 +4,7 @@ metadata:
   name: invalid-boundary-fr
   version: "1.0.0"
 spec:
-  target: compose
+  capability: compose
   implements: core/invalid-boundary-fr:1.0.0
   executionScope: boundary
   # source paired with valuesMapping so the FeatureRecipe passes the

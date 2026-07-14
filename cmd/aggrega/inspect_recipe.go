@@ -33,13 +33,13 @@ func renderRecipeFile(rw *workspaceconfig.ResolvedWorkspace, path string, data [
 	if opts.level == levelList {
 		fmt.Fprintln(opts.out, opts.colorize.uri(identifier))
 		fmt.Fprintf(opts.out, "implements: %s\n", rec.Spec.Implements)
-		fmt.Fprintf(opts.out, "target: %s\n", rec.Spec.Target)
+		fmt.Fprintf(opts.out, "capability: %s\n", rec.Spec.Capability)
 		return nil
 	}
 
 	renderHeader(opts, "Recipe", identifier)
 	fmt.Fprintf(opts.out, "Implements: %s\n", opts.colorize.uri(rec.Spec.Implements))
-	fmt.Fprintf(opts.out, "Target: %s\n", rec.Spec.Target)
+	fmt.Fprintf(opts.out, "Capability: %s\n", rec.Spec.Capability)
 
 	renderRecipeMode(opts, rec.Spec.Workload, rec.Spec.Source)
 	fmt.Fprintf(opts.out, "valuesMapping: %s\n", valuesMappingSummary(rec.Spec.ValuesMapping))

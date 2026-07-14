@@ -2,7 +2,7 @@ apiVersion: aggrega.ai/v1alpha1
 kind: Recipe
 metadata: { name: gated-recipe, version: "1.0.0" }
 spec:
-  target: compose
+  capability: compose
   implements: core/gated
   provides:
     host: "{{ .context.instance_id }}"

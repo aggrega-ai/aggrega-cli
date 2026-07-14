@@ -4,7 +4,7 @@ metadata:
   name: db-sourced
   version: "1.0.0"
 spec:
-  target: helm-chart
+  capability: helm-chart
   implements: core/db
   source: ./sources/db
   provides:

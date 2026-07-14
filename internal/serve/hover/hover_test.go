@@ -63,21 +63,21 @@ func TestHoverFeatureRendersSelfMetadataName(t *testing.T) {
 
 func TestHoverRecipeRendersSelfMetadataName(t *testing.T) {
 	t.Parallel()
-	src := "apiVersion: aggrega.ai/v1alpha1\nkind: Recipe\nmetadata:\n  name: helm-server\n  version: 1.0.0\nspec:\n  implements: core/server\n  target: helm\n  pipeline:\n    - id: step1\n      plugin: p1\n      function: f1\n    - id: step2\n      plugin: p2\n      function: f2\n"
+	src := "apiVersion: aggrega.ai/v1alpha1\nkind: Recipe\nmetadata:\n  name: helm-server\n  version: 1.0.0\nspec:\n  implements: core/server\n  capability: helm\n  pipeline:\n    - id: step1\n      plugin: p1\n      function: f1\n    - id: step2\n      plugin: p2\n      function: f2\n"
 	out := Recipe(parseEntity(t, src))
 	assertContains(t, out, "**Recipe** `helm-server` `v1.0.0`")
 	assertContains(t, out, "**Implements**: `core/server`")
-	assertContains(t, out, "**Target**: `helm`")
+	assertContains(t, out, "**Capability**: `helm`")
 	assertContains(t, out, "**Pipeline**: 2 steps")
 }
 
 func TestHoverFeatureRecipeRendersSelfMetadataName(t *testing.T) {
 	t.Parallel()
-	src := "apiVersion: aggrega.ai/v1alpha1\nkind: FeatureRecipe\nmetadata:\n  name: autoscaler-fr\n  version: 1.0.0\nspec:\n  implements: feature/autoscaler\n  target: helm\n  pipeline: []\n"
+	src := "apiVersion: aggrega.ai/v1alpha1\nkind: FeatureRecipe\nmetadata:\n  name: autoscaler-fr\n  version: 1.0.0\nspec:\n  implements: feature/autoscaler\n  capability: helm\n  pipeline: []\n"
 	out := FeatureRecipe(parseEntity(t, src))
 	assertContains(t, out, "**FeatureRecipe** `autoscaler-fr` `v1.0.0`")
 	assertContains(t, out, "**Implements**: `feature/autoscaler`")
-	assertContains(t, out, "**Target**: `helm`")
+	assertContains(t, out, "**Capability**: `helm`")
 }
 
 func TestHoverSchemaLibraryRendersSelfMetadataName(t *testing.T) {

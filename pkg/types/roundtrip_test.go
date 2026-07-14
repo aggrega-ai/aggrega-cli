@@ -168,7 +168,7 @@ metadata:
   name: helm/test-recipe
   version: "1.0.0"
 spec:
-  target: helm
+  capability: helm
   implements: core/server:1.0.0
   locals:
     z-local: z-value
@@ -190,7 +190,7 @@ metadata:
   name: helm/test-fr
   version: "1.0.0"
 spec:
-  target: helm
+  capability: helm
   implements: core/test-feature:1.0.0
   provides:
     z-output: "{{ .values.z }}"

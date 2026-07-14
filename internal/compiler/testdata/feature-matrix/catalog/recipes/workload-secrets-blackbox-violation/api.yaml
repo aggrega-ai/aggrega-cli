@@ -4,7 +4,7 @@ metadata:
   name: feature-matrix-api-blackbox-violation
   version: "1.0.0"
 spec:
-  target: helm
+  capability: helm
   implements: core/server
   provides:
     host: "{{ .context.instance_id }}.svc.cluster.local"

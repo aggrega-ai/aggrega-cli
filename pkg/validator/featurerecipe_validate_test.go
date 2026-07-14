@@ -14,7 +14,7 @@ import (
 func newFeatureRecipe(provider string) *types.FeatureRecipe {
 	return &types.FeatureRecipe{
 		Metadata: types.FeatureRecipeMetadata{Name: tName, Version: tVer},
-		Spec:     types.FeatureRecipeSpec{Target: provider, Implements: "core/x"},
+		Spec:     types.FeatureRecipeSpec{Capability: provider, Implements: "core/x"},
 	}
 }
 

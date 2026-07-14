@@ -31,12 +31,12 @@ func TestIsAggregaExtensionKey(t *testing.T) {
 		{"x-aggrega-anything-at-all", true},
 
 		// Adjacent / non-matching
-		{"x-aggrega", false},  // no trailing hyphen + suffix
-		{"x-aggrega-", true},  // technically empty suffix, but prefix matches
-		{"x-agrega-source", false}, // typo: single 'g'
-		{"x-other-source", false},  // arbitrary third-party x-* extension
+		{"x-aggrega", false},        // no trailing hyphen + suffix
+		{"x-aggrega-", true},        // technically empty suffix, but prefix matches
+		{"x-agrega-source", false},  // typo: single 'g'
+		{"x-other-source", false},   // arbitrary third-party x-* extension
 		{"X-Aggrega-Source", false}, // case-sensitive
-		{"aggrega-source", false},  // missing x- prefix
+		{"aggrega-source", false},   // missing x- prefix
 		{"type", false},
 		{"properties", false},
 		{"", false},
@@ -76,7 +76,7 @@ func TestIsKnownKeyword_AggregaExtensions(t *testing.T) {
 	}
 
 	for _, key := range []string{
-		"x-agrega-source",  // typo
+		"x-agrega-source",     // typo
 		"x-foreign-extension", // third-party
 		"unknownkeyword",
 	} {

@@ -4,7 +4,7 @@ metadata:
   name: helm-web-ui-synthesized-with-artifacts
   version: "1.0.0"
 spec:
-  target: helm
+  capability: helm
   implements: core/compute/web-ui
   workload: |
     apiVersion: aggrega.ai/v1alpha1
