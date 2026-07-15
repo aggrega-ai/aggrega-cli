@@ -18,6 +18,10 @@ const (
 	validateCompPath   = "testdata/validate/catalog/component/example/compute/service/1.0.0/component.yaml"
 	validateFRPath     = "testdata/validate/featurerecipe.yaml"
 	validateBrokenPath = "testdata/validate/broken-recipe.yaml"
+
+	validatePluginPath           = "testdata/validate/plugin.yaml"
+	validatePluginBadTypePath    = "testdata/validate/plugin-bad-type.yaml"
+	validatePluginMissingABIPath = "testdata/validate/plugin-missing-abi.yaml"
 )
 
 // TestValidateRecipeRendersInIsolation drives the full tiered path for a Recipe
@@ -90,6 +94,60 @@ func TestValidateFeatureRecipeShape(t *testing.T) {
 		if !strings.Contains(got, want) {
 			t.Errorf("output missing %q\nfull output:\n%s", want, got)
 		}
+	}
+}
+
+// TestValidatePluginSchemaOnly checks that a Plugin is a recognized single-entity
+// target and is schema-checked only: it reaches the envelope gate, reports a valid
+// schema, and runs no pillar or render tier. It also proves the old refusal for
+// an unrecognized single-entity kind no longer applies to a Plugin.
+func TestValidatePluginSchemaOnly(t *testing.T) {
+	var buf bytes.Buffer
+	if err := dispatchValidate(resolveTempWorkspace(t), validatePluginPath, []string{validateCatalogDir}, &buf); err != nil {
+		t.Fatalf("dispatchValidate: %v", err)
+	}
+	got := buf.String()
+	for _, want := range []string{"Kind:   Plugin", "Schema: valid"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("output missing %q\nfull output:\n%s", want, got)
+		}
+	}
+	for _, absent := range []string{"Pillars:", "Shape:", "Resolution:", "Render:"} {
+		if strings.Contains(got, absent) {
+			t.Errorf("output unexpectedly contains %q (a Plugin has no such tier)\nfull output:\n%s", absent, got)
+		}
+	}
+	if strings.Contains(got, "not a single-entity validation target") {
+		t.Errorf("Plugin is still refused as a validation target\nfull output:\n%s", got)
+	}
+}
+
+// TestValidatePluginBadTypeHaltsLoudly confirms an invalid pluginType enum value
+// halts at the envelope gate with the recoverable sentinel.
+func TestValidatePluginBadTypeHaltsLoudly(t *testing.T) {
+	var buf bytes.Buffer
+	err := dispatchValidate(resolveTempWorkspace(t), validatePluginBadTypePath, []string{validateCatalogDir}, &buf)
+	if err == nil {
+		t.Fatalf("expected a schema error, got nil; output:\n%s", buf.String())
+	}
+	if !errors.Is(err, envelope.ErrEntityEnvelope) {
+		t.Errorf("error does not wrap ErrEntityEnvelope: %v", err)
+	}
+	if !strings.Contains(err.Error(), "envelope schema") {
+		t.Errorf("diagnostic does not name the envelope schema: %v", err)
+	}
+}
+
+// TestValidatePluginMissingRequiredHaltsLoudly confirms a Plugin missing a
+// required spec field halts at the envelope gate with the recoverable sentinel.
+func TestValidatePluginMissingRequiredHaltsLoudly(t *testing.T) {
+	var buf bytes.Buffer
+	err := dispatchValidate(resolveTempWorkspace(t), validatePluginMissingABIPath, []string{validateCatalogDir}, &buf)
+	if err == nil {
+		t.Fatalf("expected a schema error, got nil; output:\n%s", buf.String())
+	}
+	if !errors.Is(err, envelope.ErrEntityEnvelope) {
+		t.Errorf("error does not wrap ErrEntityEnvelope: %v", err)
 	}
 }
 

@@ -40,7 +40,9 @@ import (
 //     and shape-checked; a Component or Feature additionally has its pillar
 //     structure checked, and a Recipe is driven through the real compilation
 //     pipeline around a synthesized minimal deployment so an author sees the
-//     isolated rendered output before wiring the entity into any Aggregate.
+//     isolated rendered output before wiring the entity into any Aggregate. A
+//     Plugin is schema-checked only — it carries no values or pillar surface
+//     and no render tier applies.
 //
 // Output is deterministic and the command writes nothing to disk.
 func newValidateCmd() *cobra.Command {
@@ -60,7 +62,8 @@ func newValidateCmd() *cobra.Command {
 			"and shape-checked; a Component or Feature has its pillar structure checked;\n" +
 			"a Recipe is additionally driven through the real compilation pipeline around\n" +
 			"a synthesized minimal deployment (resolution and guards, then a real isolated\n" +
-			"render of its output). The command writes nothing to disk.",
+			"render of its output); a Plugin is schema-checked only, as it has no pillar\n" +
+			"or render surface. The command writes nothing to disk.",
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			path := ""
@@ -99,7 +102,7 @@ func newValidateCmd() *cobra.Command {
 func knownEntityKind(kind string) (envelope.Kind, bool) {
 	switch envelope.Kind(kind) {
 	case envelope.KindComponent, envelope.KindFeature, envelope.KindRecipe,
-		envelope.KindFeatureRecipe, envelope.KindWorkload:
+		envelope.KindFeatureRecipe, envelope.KindWorkload, envelope.KindPlugin:
 		return envelope.Kind(kind), true
 	default:
 		return "", false
@@ -154,6 +157,11 @@ func dispatchValidate(rw *workspaceconfig.ResolvedWorkspace, path string, catalo
 		return validateRecipeEntity(rw, path, data, catalogFlagDirs, out)
 	case envelope.KindFeatureRecipe:
 		return validateFeatureRecipeEntity(rw, path, data, catalogFlagDirs, out)
+	case envelope.KindPlugin:
+		// A Plugin is schema-only: it declares a Wasm module reference and has no
+		// values or pillar surface and no render tier, so the envelope gate above
+		// is the complete check.
+		return nil
 	}
 	return nil
 }
