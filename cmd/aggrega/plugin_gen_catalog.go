@@ -57,10 +57,10 @@ func newPluginGenCatalogCmd() *cobra.Command {
 		Short: "Generate Plugin catalog entities from guest describe() plus an authored overlay",
 		Long: `Generate one Plugin entity per selected Wasm guest.
 
-Each entity's contract fields — pluginType, abiVersion, targets, exports, and
-capabilities — are derived from the guest's describe() self-report, so the
+Each entity's contract fields — pluginType, abiVersion, capabilities, exports,
+and contract — are derived from the guest's describe() self-report, so the
 entity can never promise a capability the binary does not provide. The entity's
-identity (spec.plugin), runtime limits, and provider block come from an authored
+identity (metadata.name), runtime limits, and provider block come from an authored
 per-plugin overlay; the entity version is the binary's own build version. The
 plugin-level description, when the guest reports one, is emitted as
 metadata.description and omitted cleanly when it does not.
@@ -69,7 +69,7 @@ Two selection modes:
 
   --from-embedded   generate an entity for every guest embedded in this binary.
                     The overlay path is a directory; each overlay is matched to
-                    a guest by its spec.plugin identity.
+                    a guest by its metadata.name identity.
   --plugin <f.wasm> generate a single entity for one non-embedded guest. The
                     overlay path is a single overlay file.
 
@@ -413,7 +413,7 @@ func genCatalogDiagName(ref string) string {
 }
 
 // loadOverlaysByPlugin reads every *.yaml overlay under dir and indexes them by
-// their spec.plugin identity — the join key the embedded path matches a guest
+// their metadata.name identity — the join key the embedded path matches a guest
 // against. Two overlays declaring the same identity halt loudly: the identity
 // must be unique, and silently keeping one would drop the other.
 func loadOverlaysByPlugin(dir string) (map[string]types.Plugin, error) {

@@ -9,8 +9,8 @@
 # up. The tag-driven publish CI performs the same generation before signing and
 # publishing the core plugins.
 #
-# The generated entity's contract fields (pluginType, abiVersion, targets,
-# exports, capabilities) come from each guest's describe() self-report; its
+# The generated entity's contract fields (pluginType, abiVersion, capabilities,
+# exports, contract) come from each guest's describe() self-report; its
 # identity, runtime limits, and provider block come from the matching overlay;
 # its version is the compiler's own build version. Regenerating over unchanged
 # inputs yields byte-identical files (idempotent).
