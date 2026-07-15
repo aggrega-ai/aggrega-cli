@@ -83,12 +83,12 @@ func helmChainCatalog() *catalog.Catalog {
 // artifact reference → cascade) the build-load pipeline binds, so the test
 // exercises the production resolution seam rather than a bypass.
 func entityFront(lookup resolver.CatalogLookup, cascade pluginpath.Lookup) pluginpath.Lookup {
-	return pluginpath.EntityLookup(func(uri string) (string, *pluginpath.PluginContractClaim, *pluginpath.PluginRuntimeLimits, bool) {
+	return pluginpath.EntityLookup(func(uri string) (string, *pluginpath.PluginContractClaim, *pluginpath.PluginRuntimeLimits, *[]pluginpath.PluginCommandMirror, bool) {
 		p, ok := lookup.Plugin(uri)
 		if !ok {
-			return "", nil, nil, false
+			return "", nil, nil, nil, false
 		}
-		return p.ArtifactReference(), resolver.PluginContractClaim(p), resolver.PluginRuntimeLimits(p), true
+		return p.ArtifactReference(), resolver.PluginContractClaim(p), resolver.PluginRuntimeLimits(p), resolver.PluginCommandsMirror(p), true
 	}, cascade)
 }
 

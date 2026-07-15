@@ -40,21 +40,52 @@ import (
 // load matches the guest's authored footprint. The cap governs only the load;
 // the capability comparison is independent of it.
 //
-// A disagreement halts with ErrWasmContractMismatch. The plugin is Closed
-// before returning so a rejected publish leaks no instance. entityIdentity names
-// the entity in any rejection message.
-func CrossCheckPublishedPlugin(ctx context.Context, entityIdentity string, claim EntityContractClaim, wasmBytes []byte, maxMemoryPages uint32, pluginType string) error {
+// A disagreement halts with ErrWasmContractMismatch. On success it returns the
+// plugin's validated describe() descriptor so the caller can reuse the one load's
+// self-report — the command mirror and the under-declaration advisory read it
+// rather than loading the guest a second time. The plugin is Closed before
+// returning either way so a rejected or completed publish check leaks no
+// instance. entityIdentity names the entity in any rejection message.
+func CrossCheckPublishedPlugin(ctx context.Context, entityIdentity string, claim EntityContractClaim, wasmBytes []byte, maxMemoryPages uint32, pluginType string) (PluginDescriptor, error) {
+	desc, err := DescribePluginBytes(ctx, entityIdentity, wasmBytes, maxMemoryPages, pluginType)
+	if err != nil {
+		return PluginDescriptor{}, err
+	}
+	if err := CrossCheckContract(entityIdentity, claim, desc); err != nil {
+		return PluginDescriptor{}, err
+	}
+	return desc, nil
+}
+
+// DescribePluginBytes loads the given .wasm bytes, invokes and validates their
+// describe() self-report, closes the plugin, and returns the validated
+// descriptor. It is the single home of the load-describe-close sequence over
+// standalone bytes with no entity front — the publish path's cross-check, the
+// command mirror, and the under-declaration advisory all read one load's
+// descriptor through it, so the guest is instantiated once per publish.
+//
+// The load profile is selected by pluginType, exactly as the entity-fronted load
+// gate selects it: a CLI plugin imports the terminal streaming emitters, which
+// the build profile's shared allowlist rejects at load before describe() can run,
+// so a CLI plugin loads under the runtime CLI profile whose union allowlist
+// admits the streaming imports (its terminal output is discarded because only
+// describe() is needed). Every other plugin type loads under the build profile.
+//
+// The Contract on the spec is left nil, so the load gate runs no entity
+// cross-check here — this primitive owns only the load and the descriptor; the
+// caller runs whatever comparison it needs against the returned descriptor.
+// maxMemoryPages caps the guest's linear memory for the load; the plugin is
+// Closed before returning so no instance leaks.
+func DescribePluginBytes(ctx context.Context, identity string, wasmBytes []byte, maxMemoryPages uint32, pluginType string) (PluginDescriptor, error) {
 	// Build through the shared constructor so this loader carries the same
 	// process-wide compilation cache every other loader uses, rather than a
 	// bare cache-less loader that would recompile the guest in isolation.
 	loader := NewCachingLoader(nil)
 	spec := PluginSpec{
-		Name:           entityIdentity,
+		Name:           identity,
 		PluginType:     PluginType(pluginType),
 		Bytes:          wasmBytes,
 		MaxMemoryPages: maxMemoryPages,
-		// Contract nil: this function owns the cross-check, rather than
-		// running it inside the load gate.
 	}
 
 	var (
@@ -71,9 +102,8 @@ func CrossCheckPublishedPlugin(ctx context.Context, entityIdentity string, claim
 		plugin, desc, err = loader.LoadAndDescribe(ctx, spec)
 	}
 	if err != nil {
-		return err
+		return PluginDescriptor{}, err
 	}
-	defer func() { _ = plugin.Close(ctx) }()
-
-	return CrossCheckContract(entityIdentity, claim, desc)
+	_ = plugin.Close(ctx)
+	return desc, nil
 }

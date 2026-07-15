@@ -125,6 +125,22 @@ func (l *Loader) DescribeAndValidate(ctx context.Context, plugin *Plugin, spec P
 		}
 	}
 
+	// When the entity supplied its machine-owned command mirror (the
+	// entity-fronted load path), verify it matches the plugin's describe()
+	// commands exactly. This is keyed on the explicit CommandsMirrored signal, not
+	// on Contract: a CLI plugin carries a nil Contract but a real command mirror,
+	// and a bare .wasm load supplies no mirror and is not checked. The mirror is a
+	// machine record that must reflect the binary exactly, so the comparison is
+	// full equality rather than the authored-claim subset CrossCheckContract runs.
+	if spec.CommandsMirrored {
+		if !CommandMirrorsEqual(spec.Commands, desc.Commands) {
+			_ = plugin.Close(ctx)
+			return PluginDescriptor{}, fmt.Errorf(
+				"wasm: plugin %q: recorded command mirror %s does not match the plugin describe() commands %s; re-run `aggrega plugin stamp` and commit the result: %w",
+				spec.Name, FormatCommandMirror(spec.Commands), FormatCommandMirror(desc.Commands), ErrWasmCommandsMirrorMismatch)
+		}
+	}
+
 	if l.OnDescribe != nil {
 		l.OnDescribe(spec.Name)
 	}

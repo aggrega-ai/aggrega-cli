@@ -23,11 +23,11 @@ func TestEntityLookup_TranslatesEntityToArtifact(t *testing.T) {
 	}
 	claim := &PluginContractClaim{Exports: []PluginExportClaim{{Name: "step", Operates: "patch", Scope: "own"}}}
 	limits := &PluginRuntimeLimits{MaxMemoryPages: 64, TimeoutMs: 1500}
-	front := EntityLookup(func(uri string) (string, *PluginContractClaim, *PluginRuntimeLimits, bool) {
+	front := EntityLookup(func(uri string) (string, *PluginContractClaim, *PluginRuntimeLimits, *[]PluginCommandMirror, bool) {
 		if uri == entityURI {
-			return artifactURI, claim, limits, true
+			return artifactURI, claim, limits, nil, true
 		}
-		return "", nil, nil, false
+		return "", nil, nil, nil, false
 	}, cascade)
 
 	res, err := front(entityURI)
@@ -63,8 +63,8 @@ func TestEntityLookup_BareWasmHaltsLoudly(t *testing.T) {
 		return ResolvedPlugin{}, nil
 	}
 	// An entity lookup that finds nothing — every reference is a miss.
-	front := EntityLookup(func(uri string) (string, *PluginContractClaim, *PluginRuntimeLimits, bool) {
-		return "", nil, nil, false
+	front := EntityLookup(func(uri string) (string, *PluginContractClaim, *PluginRuntimeLimits, *[]PluginCommandMirror, bool) {
+		return "", nil, nil, nil, false
 	}, cascade)
 
 	const bareWasm = "frp-step-patch-rust.wasm"

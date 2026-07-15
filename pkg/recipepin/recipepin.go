@@ -20,7 +20,6 @@
 package recipepin
 
 import (
-	"bytes"
 	"fmt"
 	"os"
 	"reflect"
@@ -29,6 +28,7 @@ import (
 
 	"go.yaml.in/yaml/v3"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/yamlsplice"
 	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
@@ -119,14 +119,14 @@ func splicePins(data []byte, specKey, spec *yaml.Node, src []types.SourceDigest,
 	// indented to sit under spec at the file's own indent step.
 	var section []string
 	if len(src) > 0 {
-		block, rerr := renderPinBlock("sourceDigests", src, childIndent, step)
+		block, rerr := yamlsplice.RenderBlock("sourceDigests", src, childIndent, step)
 		if rerr != nil {
 			return nil, fmt.Errorf("encode sourceDigests: %w", rerr)
 		}
 		section = append(section, block...)
 	}
 	if len(art) > 0 {
-		block, rerr := renderPinBlock("artifactDigests", art, childIndent, step)
+		block, rerr := yamlsplice.RenderBlock("artifactDigests", art, childIndent, step)
 		if rerr != nil {
 			return nil, fmt.Errorf("encode artifactDigests: %w", rerr)
 		}
@@ -147,7 +147,7 @@ func splicePins(data []byte, specKey, spec *yaml.Node, src []types.SourceDigest,
 	case !present:
 		// Add: insert at the end of the spec mapping's content, preceded by
 		// exactly one blank line.
-		insertAt := endOfSpecContent(lines, specKey, spec, childIndent)
+		insertAt := yamlsplice.EndOfMappingContent(lines, specKey.Line, spec, childIndent, isPinKey)
 		insert := section
 		if !(insertAt > 0 && strings.TrimSpace(lines[insertAt-1]) == "") {
 			insert = append([]string{""}, section...)
@@ -181,43 +181,11 @@ func splicePins(data []byte, specKey, spec *yaml.Node, src []types.SourceDigest,
 	return []byte(strings.Join(result, "\n")), nil
 }
 
-// renderPinBlock serializes a single pin key and its value as YAML lines
-// indented to sit under spec: the key at keyIndent spaces and its sequence at
-// the file's indent step. The rendering is deterministic — a yaml.Encoder emits
-// the {key: value} subtree, and each line is shifted right by keyIndent spaces.
-func renderPinBlock(key string, value any, keyIndent, step int) ([]string, error) {
-	var valNode yaml.Node
-	if err := valNode.Encode(value); err != nil {
-		return nil, err
-	}
-	m := &yaml.Node{
-		Kind: yaml.MappingNode,
-		Content: []*yaml.Node{
-			{Kind: yaml.ScalarNode, Tag: "!!str", Value: key},
-			&valNode,
-		},
-	}
-	var buf bytes.Buffer
-	enc := yaml.NewEncoder(&buf)
-	enc.SetIndent(step)
-	if err := enc.Encode(m); err != nil {
-		return nil, err
-	}
-	if err := enc.Close(); err != nil {
-		return nil, err
-	}
-
-	prefix := strings.Repeat(" ", keyIndent)
-	raw := strings.Split(strings.TrimRight(buf.String(), "\n"), "\n")
-	out := make([]string, len(raw))
-	for i, line := range raw {
-		if line == "" {
-			out[i] = ""
-			continue
-		}
-		out[i] = prefix + line
-	}
-	return out, nil
+// isPinKey reports whether a spec child key is one of the two pin blocks this
+// package owns, so the end-of-spec insertion point is computed over the non-pin
+// children only.
+func isPinKey(key string) bool {
+	return key == "sourceDigests" || key == "artifactDigests"
 }
 
 // currentPinRegion returns the line range [start, end) 0-indexed spanning the
@@ -232,7 +200,7 @@ func currentPinRegion(lines []string, spec *yaml.Node, childIndent int) (int, in
 		if !ok {
 			continue
 		}
-		s, e := blockRange(lines, keyLine, childIndent)
+		s, e := yamlsplice.BlockRange(lines, keyLine, childIndent)
 		if start == -1 || s < start {
 			start = s
 		}
@@ -244,56 +212,6 @@ func currentPinRegion(lines []string, spec *yaml.Node, childIndent int) (int, in
 		return 0, 0, false
 	}
 	return start, end, true
-}
-
-// endOfSpecContent returns the line index (0-indexed, exclusive) immediately
-// after the last content line of the spec mapping's non-pin children — the
-// insertion point for a newly added pin section. When spec has no non-pin
-// children it falls back to the line just after the spec key line.
-func endOfSpecContent(lines []string, specKey, spec *yaml.Node, childIndent int) int {
-	end := 0
-	for i := 0; i+1 < len(spec.Content); i += 2 {
-		key := spec.Content[i].Value
-		if key == "sourceDigests" || key == "artifactDigests" {
-			continue
-		}
-		_, e := blockRange(lines, spec.Content[i].Line, childIndent)
-		if e > end {
-			end = e
-		}
-	}
-	if end == 0 {
-		end = specKey.Line
-	}
-	return end
-}
-
-// blockRange returns the line range [start, end) 0-indexed for the block whose
-// key sits on 1-indexed line keyLine at keyIndent spaces of indentation. The
-// block runs from the key line through the last following line indented deeper
-// than keyIndent; interleaved blank lines (as occur inside a literal or folded
-// scalar) are spanned, but blank lines trailing the last deeper-indented line
-// are excluded so a following separator is not swallowed.
-func blockRange(lines []string, keyLine, keyIndent int) (int, int) {
-	start := keyLine - 1
-	lastContent := start
-	for i := start + 1; i < len(lines); i++ {
-		if strings.TrimSpace(lines[i]) == "" {
-			continue
-		}
-		if indentOf(lines[i]) > keyIndent {
-			lastContent = i
-			continue
-		}
-		break
-	}
-	return start, lastContent + 1
-}
-
-// indentOf counts the leading spaces of a line. YAML forbids tabs for
-// indentation, so a space count is the block's indent depth.
-func indentOf(line string) int {
-	return len(line) - len(strings.TrimLeft(line, " "))
 }
 
 // ArtifactPinsForRecipe computes the artifactDigests for a recipe's artifacts

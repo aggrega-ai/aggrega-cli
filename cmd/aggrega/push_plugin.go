@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"strings"
 
 	"go.yaml.in/yaml/v3"
 
@@ -39,7 +38,15 @@ import (
 // inline .wasm layer digest, the one signature transitively covers the
 // executable and proves the entity↔.wasm pairing — there is no second artifact
 // to sign or to verify independently.
-func pushPlugin(out io.Writer, cfg pushConfig, registry string, wantSign bool, name, version string, entityYAML []byte) error {
+//
+// Publish is read-only over the entity file: the machine-owned
+// spec.runtime.hostFunctions record is derived from the .wasm and compared to
+// the record already committed on disk. When the two agree the on-disk bytes are
+// published verbatim; when they diverge the publish HALTS and directs the author
+// to re-record the set with `aggrega plugin stamp`, so a published entity always
+// carries the record its binary actually implies and publish never silently
+// rewrites the committed file.
+func pushPlugin(out io.Writer, cfg pushConfig, registry string, wantSign bool, name, version, entityPath string, entityYAML []byte) error {
 	if cfg.PluginPath == "" {
 		return fmt.Errorf("aggrega push: Plugin %s: --plugin <path-to-.wasm> is required to publish a Plugin (publish binds the .wasm into the entity's manifest)", name)
 	}
@@ -78,17 +85,49 @@ func pushPlugin(out io.Writer, cfg pushConfig, registry string, wantSign bool, n
 	if c := resolver.WasmContractClaim(resolver.PluginContractClaim(entity)); c != nil {
 		capClaim = *c
 	}
-	if err := wasm.CrossCheckPublishedPlugin(ctx, entityIdentity, capClaim, wasmBytes, crossCheckMaxPages, entity.Spec.PluginType); err != nil {
+	desc, err := wasm.CrossCheckPublishedPlugin(ctx, entityIdentity, capClaim, wasmBytes, crossCheckMaxPages, entity.Spec.PluginType)
+	if err != nil {
 		return fmt.Errorf("aggrega push: Plugin %s: %w", entityIdentity, err)
 	}
 
-	// Derive the host functions the .wasm actually imports, in canonical form.
-	// The set is machine-owned: it is stamped into the published entity below,
-	// not authored. The same primitive runs at load and at pull, so the stamp,
-	// the registered surface, and the pull-time verification can never diverge.
+	// Verify the machine-owned command mirror against the .wasm describe()
+	// self-report, read-only exactly as the host-function record is: the author
+	// records it with `aggrega plugin stamp`, and publish only checks it here — it
+	// never rewrites the file. A divergence in name, short-help text, or order
+	// HALTS before any bytes land, directing the author to re-record the set. The
+	// describe() self-report is the one already loaded for the cross-check above,
+	// so the guest is not instantiated a second time.
+	committedCommands := entityCommandMirror(entity)
+	if !wasm.CommandMirrorsEqual(committedCommands, desc.Commands) {
+		return fmt.Errorf("aggrega push: Plugin %s: spec.commands in %s is out of sync with the .wasm at %s — the file records %s but the binary describes %s; re-run `aggrega plugin stamp %s --plugin %s` and commit the result before publishing: %w",
+			entityIdentity, entityPath, cfg.PluginPath, wasm.FormatCommandMirror(committedCommands), wasm.FormatCommandMirror(desc.Commands), entityPath, cfg.PluginPath, wasm.ErrWasmCommandsMirrorMismatch)
+	}
+
+	// Advisory only: report where the binary's describe() offers more than the
+	// entity curates (binary ⊇ entity). Under-declaration of exports, capabilities,
+	// or the render-behavior contract is legitimate, so these are notices — they
+	// never halt the publish and never change its exit status.
+	for _, notice := range wasm.UnderDeclaredNotices(entityCuratedSurface(entity), desc) {
+		fmt.Fprintf(out, "  notice: %s: %s\n", entityIdentity, notice)
+	}
+
+	// Derive the host functions the .wasm actually imports, in canonical form,
+	// and verify the entity's committed record matches. The set is machine-owned:
+	// the author records it into the file with `aggrega plugin stamp`, and publish
+	// only checks it here — it never rewrites the file. The same derivation
+	// primitive runs at load and at pull, so the committed record, the registered
+	// surface, and the pull-time verification can never diverge.
 	derivedHostFunctions, err := wasm.DeriveHostFunctions(entityIdentity, wasmBytes)
 	if err != nil {
 		return fmt.Errorf("aggrega push: Plugin %s: %w", entityIdentity, err)
+	}
+	var committedHostFunctions []string
+	if entity.Spec.Runtime != nil {
+		committedHostFunctions = entity.Spec.Runtime.HostFunctions
+	}
+	if !canonicalHostFunctionsEqual(committedHostFunctions, derivedHostFunctions) {
+		return fmt.Errorf("aggrega push: Plugin %s: spec.runtime.hostFunctions in %s is out of sync with the .wasm at %s — the file records %v but the binary imports %v; re-run `aggrega plugin stamp %s --plugin %s` and commit the result before publishing: %w",
+			entityIdentity, entityPath, cfg.PluginPath, committedHostFunctions, derivedHostFunctions, entityPath, cfg.PluginPath, wasm.ErrWasmHostFunctionsStampMismatch)
 	}
 
 	// The content digest of the .wasm bytes equals the digest of the inline
@@ -98,21 +137,13 @@ func pushPlugin(out io.Writer, cfg pushConfig, registry string, wantSign bool, n
 	contentDigest := digest.ContentDigest(wasmBytes)
 
 	// The manifest is published at <registry>/plugin/<socket>/<name>, addressed
-	// by the entity's version tag.
+	// by the entity's version tag. The published entity bytes are the verified
+	// on-disk bytes — publish records nothing into them.
 	reference := buildPushReference(registry, "Plugin", "", name)
-
-	// Stamp the machine-owned host-function record into the published entity.
-	// The set is fully derived from the .wasm, so a divergent on-disk value is
-	// overwritten with a warning, never a halt. The entity's identity
-	// (metadata.name) is left untouched.
-	stampedEntity, err := stampHostFunctions(out, entityIdentity, entityYAML, derivedHostFunctions)
-	if err != nil {
-		return fmt.Errorf("aggrega push: Plugin %s: %w", entityIdentity, err)
-	}
 
 	if cfg.DryRun {
 		fmt.Fprintf(out, "aggrega push (dry-run): %s:%s\n  kind: Plugin\n  entity mediatype: %s\n  wasm mediatype: %s\n  wasm content digest: %s\n  entity size: %d bytes\n  wasm size: %d bytes\n",
-			reference, version, oci.MediaTypePlugin, oci.MediaTypeWasm, contentDigest, len(stampedEntity), len(wasmBytes))
+			reference, version, oci.MediaTypePlugin, oci.MediaTypeWasm, contentDigest, len(entityYAML), len(wasmBytes))
 		return nil
 	}
 
@@ -135,7 +166,7 @@ func pushPlugin(out io.Writer, cfg pushConfig, registry string, wantSign bool, n
 	if err != nil {
 		return fmt.Errorf("aggrega push: resolve %s:%s: %w", reference, version, err)
 	}
-	proposedDigest, err := oci.PluginManifestDigest(ctx, stampedEntity, wasmBytes)
+	proposedDigest, err := oci.PluginManifestDigest(ctx, entityYAML, wasmBytes)
 	if err != nil {
 		return fmt.Errorf("aggrega push: %s:%s: %w", reference, version, err)
 	}
@@ -173,7 +204,7 @@ func pushPlugin(out io.Writer, cfg pushConfig, registry string, wantSign bool, n
 	// Publish the one manifest — entity config plus inline .wasm layer — tagged
 	// by the entity's version. The returned digest is the manifest the signature
 	// (if any) commits to.
-	manifestDigest, err := oci.PushPluginManifest(ctx, target, version, stampedEntity, wasmBytes)
+	manifestDigest, err := oci.PushPluginManifest(ctx, target, version, entityYAML, wasmBytes)
 	if err != nil {
 		return fmt.Errorf("aggrega push: push plugin %s:%s: %w", reference, version, err)
 	}
@@ -188,80 +219,39 @@ func pushPlugin(out io.Writer, cfg pushConfig, registry string, wantSign bool, n
 	return nil
 }
 
-// stampHostFunctions returns the entity YAML with spec.runtime.hostFunctions set
-// to the canonical (sorted, de-duplicated) host-function set derived from the
-// .wasm. The field is machine-owned: unlike the content-digest stamp, a
-// divergent on-disk value does NOT halt — it is overwritten, with a warning that
-// shows the on-disk-vs-derived sets, because the binary is the sole source of
-// truth for the field. A spec.runtime block absent on disk is created so the
-// stamp always lands. The edit is a targeted YAML-node replacement so the rest
-// of the entity bytes are preserved, and the canonical ordering makes a
-// re-publish of the same .wasm byte-identical.
-func stampHostFunctions(out io.Writer, entityIdentity string, entityYAML []byte, derived []string) ([]byte, error) {
-	var doc yaml.Node
-	if err := yaml.Unmarshal(entityYAML, &doc); err != nil {
-		return nil, fmt.Errorf("parse entity for host-function stamping: %w", err)
+// entityCommandMirror maps a Plugin entity's machine-owned command record into
+// the neutral command shape the mirror comparison reads. An entity that records
+// no commands field yields an empty slice, which the comparison treats as equal
+// to a plugin that describes no commands.
+func entityCommandMirror(entity types.Plugin) []wasm.PluginCLICommand {
+	mirror := make([]wasm.PluginCLICommand, len(entity.Spec.Commands))
+	for i, c := range entity.Spec.Commands {
+		mirror[i] = wasm.PluginCLICommand{Name: c.Name, Description: c.Description}
 	}
-	spec := specNode(&doc)
-	if spec == nil {
-		return nil, fmt.Errorf("Plugin entity has no spec block to stamp with the derived host functions")
-	}
-
-	runtime := findMappingValue(spec, "runtime")
-	if runtime == nil || runtime.Kind != yaml.MappingNode {
-		runtime = &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
-		spec.Content = append(spec.Content,
-			&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: "runtime"},
-			runtime)
-	}
-
-	if existing := findMappingValue(runtime, "hostFunctions"); existing != nil {
-		if onDisk := sequenceValues(existing); !canonicalHostFunctionsEqual(onDisk, derived) {
-			fmt.Fprintf(out, "  warning: Plugin %s spec.runtime.hostFunctions is machine-derived; overwriting on-disk %v with %v derived from the .wasm\n",
-				entityIdentity, onDisk, derived)
-		}
-		*existing = *hostFunctionsSequenceNode(derived)
-	} else {
-		runtime.Content = append(runtime.Content,
-			&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: "hostFunctions"},
-			hostFunctionsSequenceNode(derived))
-	}
-
-	return marshalNode(&doc)
+	return mirror
 }
 
-// hostFunctionsSequenceNode builds the YAML sequence node for a derived
-// host-function set. An empty set yields an explicit empty flow sequence ([]),
-// so the machine-owned record is present and visible rather than absent.
-func hostFunctionsSequenceNode(names []string) *yaml.Node {
-	seq := &yaml.Node{Kind: yaml.SequenceNode, Tag: "!!seq"}
-	if len(names) == 0 {
-		seq.Style = yaml.FlowStyle
-		return seq
+// entityCuratedSurface projects a Plugin entity's authored, curated surface — its
+// export names, plugin-level capabilities, and whether it authors a
+// render-behavior contract — into the shape the under-declaration advisory reads.
+func entityCuratedSurface(entity types.Plugin) wasm.EntityCuratedSurface {
+	exportNames := make([]string, len(entity.Spec.Exports))
+	for i, e := range entity.Spec.Exports {
+		exportNames[i] = e.Name
 	}
-	for _, n := range names {
-		seq.Content = append(seq.Content, &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: n})
+	hasContract := entity.Spec.Provider != nil && entity.Spec.Provider.Contract != nil
+	return wasm.EntityCuratedSurface{
+		ExportNames:  exportNames,
+		Capabilities: entity.Spec.Capabilities,
+		HasContract:  hasContract,
 	}
-	return seq
-}
-
-// sequenceValues returns the scalar values of a YAML sequence node, or nil when
-// the node is not a sequence.
-func sequenceValues(node *yaml.Node) []string {
-	if node == nil || node.Kind != yaml.SequenceNode {
-		return nil
-	}
-	out := make([]string, 0, len(node.Content))
-	for _, c := range node.Content {
-		out = append(out, c.Value)
-	}
-	return out
 }
 
 // canonicalHostFunctionsEqual reports whether two host-function sets are equal
-// as sets (order and duplicates ignored), so a re-published-identical .wasm whose
-// on-disk stamp is already canonical is recognised as a no-change overwrite and
-// emits no warning.
+// as sets (order and duplicates ignored). It treats an absent record (nil) and
+// an explicit empty set as equal, matching the pull-side verify, so a plugin
+// whose binary imports nothing verifies clean whether its file omits the record
+// or carries an explicit empty one.
 func canonicalHostFunctionsEqual(a, b []string) bool {
 	seen := make(map[string]bool, len(a))
 	for _, x := range a {
@@ -280,42 +270,4 @@ func canonicalHostFunctionsEqual(a, b []string) bool {
 		}
 	}
 	return true
-}
-
-// specNode returns the "spec" mapping node of a parsed document, or nil.
-func specNode(doc *yaml.Node) *yaml.Node {
-	if doc == nil || len(doc.Content) == 0 {
-		return nil
-	}
-	return findMappingValue(doc.Content[0], "spec")
-}
-
-// findMappingValue returns the value node for key in a YAML mapping node, or
-// nil when the node is not a mapping or has no such key.
-func findMappingValue(mapping *yaml.Node, key string) *yaml.Node {
-	if mapping == nil || mapping.Kind != yaml.MappingNode {
-		return nil
-	}
-	for i := 0; i+1 < len(mapping.Content); i += 2 {
-		if mapping.Content[i].Value == key {
-			return mapping.Content[i+1]
-		}
-	}
-	return nil
-}
-
-// marshalNode re-encodes a YAML node with the package's fixed two-space indent,
-// so the stamped entity bytes are deterministic across runs of the same input.
-func marshalNode(doc *yaml.Node) ([]byte, error) {
-	var b strings.Builder
-	enc := yaml.NewEncoder(&b)
-	enc.SetIndent(2)
-	if err := enc.Encode(doc); err != nil {
-		_ = enc.Close()
-		return nil, fmt.Errorf("re-encode stamped entity: %w", err)
-	}
-	if err := enc.Close(); err != nil {
-		return nil, fmt.Errorf("re-encode stamped entity: %w", err)
-	}
-	return []byte(b.String()), nil
 }

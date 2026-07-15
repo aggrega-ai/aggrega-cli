@@ -78,6 +78,32 @@ func pluginContractClaim(c *types.ProviderContract) *pluginpath.ProviderContract
 	return claim
 }
 
+// PluginCommandsMirror maps a catalog Plugin entity's machine-owned CLI-command
+// record into the neutral command mirror the plugin entity-front attaches to a
+// resolved plugin, so the load gate verifies it against the plugin's describe()
+// commands. It is the single home of the entity → neutral-mirror mapping; the
+// plugin sockets that front the cascade with the entity translation call it
+// rather than each re-spelling the field copy.
+//
+// An entity that carries no commands field authors no mirror and yields nil — the
+// load gate then skips the command check. An entity that records the field, even
+// an explicit empty list, yields a non-nil pointer so the load gate runs the
+// full-equality check (an empty recorded mirror matches a plugin that describes
+// no commands and diverges from one that describes some).
+func PluginCommandsMirror(entity types.Plugin) *[]pluginpath.PluginCommandMirror {
+	if entity.Spec.Commands == nil {
+		return nil
+	}
+	mirror := make([]pluginpath.PluginCommandMirror, 0, len(entity.Spec.Commands))
+	for _, c := range entity.Spec.Commands {
+		mirror = append(mirror, pluginpath.PluginCommandMirror{
+			Name:        c.Name,
+			Description: c.Description,
+		})
+	}
+	return &mirror
+}
+
 // PluginRuntimeLimits maps a catalog Plugin entity's authored runtime
 // resource limits into the neutral limits the plugin entity-front attaches to a
 // resolved plugin, so the loader caps the plugin's memory and per-call wall time.

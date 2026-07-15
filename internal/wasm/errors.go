@@ -92,3 +92,26 @@ var ErrWasmContractMismatch = errors.New("wasm: entity contract claim does not m
 // describe(); this covers the stamped host-function record against the verified
 // binary's imports.
 var ErrWasmHostFunctionsStampMismatch = errors.New("wasm: stamped host-function record does not match .wasm imports")
+
+// ErrWasmCommandsMirrorMismatch indicates that a Plugin entity's recorded
+// command mirror disagrees with the commands the plugin's describe() self-report
+// declares. The command mirror is machine-owned: the stamp step reads the CLI
+// commands a plugin contributes from its describe() self-report and records the
+// canonical (describe()-declared order) set into the entity. Publish verifies the
+// committed mirror against the binary before any bytes land, and the load gate
+// verifies it again when an entity supplies the mirror; a divergence in name,
+// short-help text, or order is a Loud Guardrail that halts and directs the author
+// to re-record the set.
+//
+// The full-equality comparison is by design: unlike the authored export and
+// capability claims — which are curated subsets an author may legitimately
+// under-declare — the command mirror is a machine record that must reflect the
+// binary exactly. The check runs only when an entity supplies the mirror; a bare
+// .wasm load carries no mirror and is not checked.
+//
+// The wrapping error names the plugin, the recorded set, and the described set so
+// the divergence is visible. This sentinel is distinct from
+// ErrWasmHostFunctionsStampMismatch: that covers the stamped host-function record
+// against the verified binary's imports; this covers the recorded command mirror
+// against the plugin's describe() self-report.
+var ErrWasmCommandsMirrorMismatch = errors.New("wasm: recorded command mirror does not match plugin describe()")

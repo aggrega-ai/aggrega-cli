@@ -260,7 +260,7 @@ spec:
 
 	cfg := pushConfig{PluginPath: wasmPath, DryRun: true}
 	var out bytes.Buffer
-	if err := pushPlugin(&out, cfg, registry, false, entity.Metadata.Name, entity.Metadata.Version, entityYAML); err != nil {
+	if err := pushPlugin(&out, cfg, registry, false, entity.Metadata.Name, entity.Metadata.Version, entPath, entityYAML); err != nil {
 		t.Fatalf("push --plugin --dry-run cross-check failed: %v", err)
 	}
 	if !strings.Contains(out.String(), wantLocation) {

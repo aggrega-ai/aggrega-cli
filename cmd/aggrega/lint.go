@@ -17,6 +17,7 @@ import (
 	"go.yaml.in/yaml/v3"
 	"oras.land/oras-go/v2"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm/embedded"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
@@ -302,6 +303,14 @@ func lintRun(cfg lintConfig) error {
 		return fmt.Errorf("aggrega lint: parse %s: %w", cfg.EntityPath, err)
 	}
 
+	// Advisory: when the linted target is a Plugin entity whose .wasm is
+	// resolvable, report where the binary offers more than the entity curates
+	// (binary ⊇ entity). It never halts and never changes the exit status; when the
+	// .wasm is not resolvable it skips with a one-line note.
+	if header.Kind == "Plugin" {
+		pluginUnderDeclarationAdvisory(proposedBytes, wsCfg, cfg.DiagOut)
+	}
+
 	resolver := cfg.PolicyResolver
 	if resolver == nil {
 		resolver = func(_ string, ws bool) bool { return ws }
@@ -464,17 +473,49 @@ func resolveLinterPlugin(cliFlag string, wsCfg workspaceconfig.Config, pluginByU
 		}
 		return cascade.Resolve(embedded.PublishingLinterURI)
 	}
-	front := pluginpath.EntityLookup(func(entityURI string) (string, *pluginpath.PluginContractClaim, *pluginpath.PluginRuntimeLimits, bool) {
+	front := pluginpath.EntityLookup(func(entityURI string) (string, *pluginpath.PluginContractClaim, *pluginpath.PluginRuntimeLimits, *[]pluginpath.PluginCommandMirror, bool) {
 		if pluginByURI == nil {
-			return "", nil, nil, false
+			return "", nil, nil, nil, false
 		}
 		entity, ok := pluginByURI(entityURI)
 		if !ok {
-			return "", nil, nil, false
+			return "", nil, nil, nil, false
 		}
-		return entity.ArtifactReference(), resolver.PluginContractClaim(entity), resolver.PluginRuntimeLimits(entity), true
+		return entity.ArtifactReference(), resolver.PluginContractClaim(entity), resolver.PluginRuntimeLimits(entity), resolver.PluginCommandsMirror(entity), true
 	}, cascade.Resolve)
 	return front(uri)
+}
+
+// pluginUnderDeclarationAdvisory reports, as advisory notices, where a Plugin
+// entity's .wasm describe() self-report offers more than the entity curates
+// (binary ⊇ entity — the inverse of the load-gate cross-check). It resolves the
+// entity's .wasm through the plugin cascade by the entity's identity (embed,
+// sidecar, cache, or a local path); a .wasm that does not resolve is skipped with
+// a one-line note rather than treated as an error. It never halts and never
+// changes the exit status — under-declaration of a curated surface is legitimate.
+// The derivation is single-sourced with the publish advisory (wasm.UnderDeclaredNotices).
+func pluginUnderDeclarationAdvisory(entityBytes []byte, wsCfg workspaceconfig.Config, diagOut io.Writer) {
+	var entity types.Plugin
+	if err := yaml.Unmarshal(entityBytes, &entity); err != nil {
+		fmt.Fprintf(diagOut, "under-declaration advisory: skipped (entity does not parse as a Plugin)\n")
+		return
+	}
+	cascade := pluginpath.Resolver{SidecarDir: wsCfg.PluginSidecarDir}
+	resolved, err := cascade.Resolve(entity.ArtifactReference())
+	if err != nil {
+		fmt.Fprintf(diagOut, "under-declaration advisory: skipped for %q (its .wasm is not resolvable locally: %v)\n",
+			entity.Metadata.Name, err)
+		return
+	}
+	desc, err := wasm.DescribePluginBytes(context.Background(), entity.Metadata.Name, resolved.Bytes, describeMaxMemoryPages, entity.Spec.PluginType)
+	if err != nil {
+		fmt.Fprintf(diagOut, "under-declaration advisory: skipped for %q (its .wasm did not describe: %v)\n",
+			entity.Metadata.Name, err)
+		return
+	}
+	for _, notice := range wasm.UnderDeclaredNotices(entityCuratedSurface(entity), desc) {
+		fmt.Fprintf(diagOut, "  notice: %s: %s\n", entity.Metadata.Name, notice)
+	}
 }
 
 // looksLikeOCIURI returns true when the URI looks like an OCI

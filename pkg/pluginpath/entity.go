@@ -27,31 +27,36 @@ var ErrPluginEntityNotFound = errors.New("plugin reference is not a Plugin entit
 //
 // entityToArtifact translates a Plugin entity URI to its .wasm artifact
 // reference (the entity's bare identity), the entity's authored capability claim,
-// and the entity's authored runtime limits, returning false when no Plugin entity
-// matches the URI. The caller supplies it as a closure over the catalog's Plugin
-// accessor, so this package stays ignorant of pkg/types; resolving the entity
-// once here yields the artifact reference, the claim, and the limits together, so
-// the load path never re-resolves the entity. cascade is the artifact-resolving
-// Lookup (a
+// the entity's authored runtime limits, and the entity's machine-owned command
+// mirror, returning false when no Plugin entity matches the URI. The caller
+// supplies it as a closure over the catalog's Plugin accessor, so this package
+// stays ignorant of pkg/types; resolving the entity once here yields the artifact
+// reference, the claim, the limits, and the command mirror together, so the load
+// path never re-resolves the entity. cascade is the artifact-resolving Lookup (a
 // build-configured Resolver's Resolve method); it keys its pins and verification
 // by the ARTIFACT reference, so translating before the cascade leaves the pin
 // model unchanged. The claim is attached to the cascade's ResolvedPlugin so the
 // load gate can cross-check it against the plugin's describe(); the limits are
-// attached so the loader caps the plugin's memory and per-call wall time.
+// attached so the loader caps the plugin's memory and per-call wall time; the
+// command mirror is attached so the load gate verifies it against the plugin's
+// describe() commands. A nil command mirror (an entity carrying no commands
+// field) leaves the mirror unattached, so the load gate's command check is
+// skipped.
 //
 // A reference that does not match a Plugin entity halts with
 // ErrPluginEntityNotFound, naming the offending reference and stating that a
 // Plugin entity URI is required. A nil entityToArtifact disables the entity
 // translation entirely (every reference halts as not-an-entity); a nil cascade
 // is a programming error and panics through the returned Lookup's nil call.
-func EntityLookup(entityToArtifact func(uri string) (artifactURI string, claim *PluginContractClaim, limits *PluginRuntimeLimits, ok bool), cascade Lookup) Lookup {
+func EntityLookup(entityToArtifact func(uri string) (artifactURI string, claim *PluginContractClaim, limits *PluginRuntimeLimits, commands *[]PluginCommandMirror, ok bool), cascade Lookup) Lookup {
 	return func(entityURI string) (ResolvedPlugin, error) {
 		var artifactURI string
 		var claim *PluginContractClaim
 		var limits *PluginRuntimeLimits
+		var commands *[]PluginCommandMirror
 		var ok bool
 		if entityToArtifact != nil {
-			artifactURI, claim, limits, ok = entityToArtifact(entityURI)
+			artifactURI, claim, limits, commands, ok = entityToArtifact(entityURI)
 		}
 		if !ok {
 			return ResolvedPlugin{}, fmt.Errorf(
@@ -65,6 +70,7 @@ func EntityLookup(entityToArtifact func(uri string) (artifactURI string, claim *
 		}
 		resolved.Contract = claim
 		resolved.Limits = limits
+		resolved.Commands = commands
 		return resolved, nil
 	}
 }

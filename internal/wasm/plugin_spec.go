@@ -58,6 +58,22 @@ type PluginSpec struct {
 	// populates it from the catalog Plugin entity's exports.
 	Contract *EntityContractClaim
 
+	// Commands is the entity's machine-owned CLI-command mirror, carried only on
+	// the entity-fronted load path. When CommandsMirrored is true the load gate
+	// verifies it equals the plugin's describe() commands exactly (see
+	// DescribeAndValidate); a divergence halts with ErrWasmCommandsMirrorMismatch.
+	// It is populated from the resolved entity's spec.commands.
+	Commands []PluginCLICommand
+
+	// CommandsMirrored reports whether the entity supplied its command mirror,
+	// gating the load gate's full-equality command check. It is the explicit
+	// entity-fronted signal — set only when a resolved entity carries a
+	// spec.commands field — kept separate from Contract so the check runs on a CLI
+	// plugin (whose Contract is nil) and is skipped on a bare .wasm load (which
+	// supplies no mirror), independent of whether an authored contract claim is
+	// present.
+	CommandsMirrored bool
+
 	// ConfigKV carries plugin-specific configuration that the Extism
 	// runtime hands to the plugin at start. Nil leaves the runtime's
 	// default empty configuration in effect.

@@ -113,6 +113,23 @@ type PluginExport struct {
 	Selector string `json:"selector,omitempty" yaml:"selector,omitempty"`
 }
 
+// PluginCommand is one top-level aggrega <command> verb a CLI plugin
+// contributes, in the machine-owned command record. The record is derived from
+// the plugin's describe() self-report and written by the stamp step; an author
+// never writes it. The element type is hand-written because the generator names
+// it via x-aggrega-go-type on the schema's items node and does not descend into
+// it.
+type PluginCommand struct {
+	// Name is the command verb the host registers — the aggrega <name> token an
+	// operator invokes, and the discriminator the host hands the plugin at
+	// invocation so a single plugin backing several commands routes on which
+	// command was called.
+	Name string `json:"name" yaml:"name"`
+	// Description is the command's one-line short-help text, shown in the command
+	// listing and help output. Documentation only; the host does not act on it.
+	Description string `json:"description,omitempty" yaml:"description,omitempty"`
+}
+
 // ProviderContract is a provider's self-declared compile-time render
 // behaviors, authored on the entity's provider block as the contract the host
 // cross-checks against the plugin's own describe() self-report at publish and at

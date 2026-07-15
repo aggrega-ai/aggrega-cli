@@ -97,6 +97,27 @@ type ResolvedPlugin struct {
 	// the resolution is not entity-fronted; the loader then applies the
 	// platform default cap, so a load is never unbounded.
 	Limits *PluginRuntimeLimits
+
+	// Commands is the entity's machine-owned CLI-command mirror, attached by the
+	// entity-fronted Lookup (EntityLookup) from the in-hand Plugin entity. It is
+	// neutral — a pluginpath-owned shape carrying no internal/wasm dependency; the
+	// loader's caller maps it onto the load spec, where a non-nil value drives the
+	// load gate's full-equality command check. It is a pointer so a resolution can
+	// distinguish an entity that supplied its mirror — even an explicit empty one —
+	// from one that carries no command record: nil means the resolution is not
+	// entity-fronted or the entity records no commands field, and the check is
+	// skipped; a non-nil value (possibly empty) means the entity supplied the
+	// mirror and the check runs.
+	Commands *[]PluginCommandMirror
+}
+
+// PluginCommandMirror is one entry of an entity's machine-owned CLI-command
+// mirror in the neutral, pluginpath-owned shape: the command name and its
+// one-line short help. It carries no dependency on internal/wasm; the loader's
+// caller maps it onto the wasm-side command shape.
+type PluginCommandMirror struct {
+	Name        string
+	Description string
 }
 
 // PluginRuntimeLimits is the neutral, pluginpath-owned shape of an entity's

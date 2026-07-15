@@ -599,15 +599,15 @@ func buildPluginResolver(inputs Inputs) pluginpath.Resolver {
 // workspace-config path binds, so the entity → artifact linkage is single-sourced.
 func buildEntityPluginLookup(inputs Inputs, catalogLookup resolver.CatalogLookup) pluginpath.Lookup {
 	cascade := buildPluginResolver(inputs).Resolve
-	return pluginpath.EntityLookup(func(uri string) (string, *pluginpath.PluginContractClaim, *pluginpath.PluginRuntimeLimits, bool) {
+	return pluginpath.EntityLookup(func(uri string) (string, *pluginpath.PluginContractClaim, *pluginpath.PluginRuntimeLimits, *[]pluginpath.PluginCommandMirror, bool) {
 		if catalogLookup.Plugin == nil {
-			return "", nil, nil, false
+			return "", nil, nil, nil, false
 		}
 		entity, ok := catalogLookup.Plugin(uri)
 		if !ok {
-			return "", nil, nil, false
+			return "", nil, nil, nil, false
 		}
-		return entity.ArtifactReference(), resolver.PluginContractClaim(entity), resolver.PluginRuntimeLimits(entity), true
+		return entity.ArtifactReference(), resolver.PluginContractClaim(entity), resolver.PluginRuntimeLimits(entity), resolver.PluginCommandsMirror(entity), true
 	}, cascade)
 }
 

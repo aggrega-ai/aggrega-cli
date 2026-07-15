@@ -289,7 +289,7 @@ func pushRun(cfg pushConfig) error {
 	// the immutability guard, and the content-digest spelling are reused, not
 	// re-spelled.
 	if header.Kind == "Plugin" {
-		return pushPlugin(out, cfg, registry, wantSign, header.Metadata.Name, header.Metadata.Version, data)
+		return pushPlugin(out, cfg, registry, wantSign, header.Metadata.Name, header.Metadata.Version, cfg.EntityPath, data)
 	}
 
 	bundleBytes, mediaType, err := oci.Bundle(header.Kind, cfg.EntityPath)

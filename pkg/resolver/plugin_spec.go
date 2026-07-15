@@ -66,6 +66,17 @@ func PluginSpec(name string, resolved pluginpath.ResolvedPlugin) wasm.PluginSpec
 		spec.MaxMemoryPages = resolved.Limits.MaxMemoryPages
 		spec.TimeoutMs = resolved.Limits.TimeoutMs
 	}
+	// The command mirror is carried only on the entity path (resolved.Commands is
+	// non-nil), so CommandsMirrored is the explicit "entity supplied its mirror"
+	// signal the load gate keys its full-equality command check on; a bare
+	// resolution leaves it false and the check is skipped.
+	if resolved.Commands != nil {
+		spec.CommandsMirrored = true
+		spec.Commands = make([]wasm.PluginCLICommand, len(*resolved.Commands))
+		for i, c := range *resolved.Commands {
+			spec.Commands[i] = wasm.PluginCLICommand{Name: c.Name, Description: c.Description}
+		}
+	}
 	return spec
 }
 

@@ -37,7 +37,7 @@ func TestCrossCheckPublishedPlugin_Agrees(t *testing.T) {
 	}}
 	// The frp-step-go guest fits the platform default cap; a zero pages value
 	// applies that default.
-	if err := CrossCheckPublishedPlugin(context.Background(), "frp/patch:1.0.0", claim, wasmBytes, 0, string(PluginTypeFRPStep)); err != nil {
+	if _, err := CrossCheckPublishedPlugin(context.Background(), "frp/patch:1.0.0", claim, wasmBytes, 0, string(PluginTypeFRPStep)); err != nil {
 		t.Fatalf("agreeing claim should pass the publish cross-check; got %v", err)
 	}
 }
@@ -50,7 +50,7 @@ func TestCrossCheckPublishedPlugin_CapabilityMismatch(t *testing.T) {
 	claim := EntityContractClaim{Exports: []EntityExportClaim{
 		{Name: "step", Operates: operatesPatch, Scope: ScopeHost},
 	}}
-	err := CrossCheckPublishedPlugin(context.Background(), "frp/patch:1.0.0", claim, wasmBytes, 0, string(PluginTypeFRPStep))
+	_, err := CrossCheckPublishedPlugin(context.Background(), "frp/patch:1.0.0", claim, wasmBytes, 0, string(PluginTypeFRPStep))
 	if !errors.Is(err, ErrWasmContractMismatch) {
 		t.Fatalf("a disagreeing claim should halt with ErrWasmContractMismatch; got %v", err)
 	}
@@ -97,7 +97,7 @@ func TestCrossCheckPublishedPlugin_StreamingCLIType(t *testing.T) {
 	wasmBytes := buildCLIArgsExitGuest(t)
 	// The guest authors no capability claim; an empty claim cross-checks as a
 	// no-op, so the test isolates the load-profile selection.
-	if err := CrossCheckPublishedPlugin(context.Background(), "cli/args-exit:1.0.0", EntityContractClaim{}, wasmBytes, 0, string(PluginTypeCLI)); err != nil {
+	if _, err := CrossCheckPublishedPlugin(context.Background(), "cli/args-exit:1.0.0", EntityContractClaim{}, wasmBytes, 0, string(PluginTypeCLI)); err != nil {
 		t.Fatalf("streaming CLI plugin should pass the publish cross-check under the CLI load profile; got %v", err)
 	}
 }
@@ -110,7 +110,7 @@ func TestCrossCheckPublishedPlugin_StreamingCLIType(t *testing.T) {
 // selection avoids.
 func TestCrossCheckPublishedPlugin_StreamingUnderBuildProfileRejected(t *testing.T) {
 	wasmBytes := buildCLIArgsExitGuest(t)
-	err := CrossCheckPublishedPlugin(context.Background(), "cli/args-exit:1.0.0", EntityContractClaim{}, wasmBytes, 0, string(PluginTypeFRPStep))
+	_, err := CrossCheckPublishedPlugin(context.Background(), "cli/args-exit:1.0.0", EntityContractClaim{}, wasmBytes, 0, string(PluginTypeFRPStep))
 	if !errors.Is(err, ErrWasmManifestRejected) {
 		t.Fatalf("a streaming guest under the build profile should be rejected at load with ErrWasmManifestRejected; got %v", err)
 	}

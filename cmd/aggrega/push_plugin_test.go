@@ -376,6 +376,12 @@ spec:
   exports:
     - name: render_node
 `+runtimeBlock)
+	// Record the machine-owned host-function set before publishing, mirroring the
+	// author workflow: publish is verify-read-only and halts on an out-of-sync
+	// record.
+	if err := stampPluginFile(&bytes.Buffer{}, entityPath, pluginPath); err != nil {
+		t.Fatalf("record host functions: %v", err)
+	}
 	return entityPath, pluginPath
 }
 
@@ -474,6 +480,12 @@ spec:
   exports:
     - name: render_node
 `+specTail)
+	// Record the machine-owned host-function set before publishing, mirroring the
+	// author workflow: publish is verify-read-only and halts on an out-of-sync
+	// record.
+	if err := stampPluginFile(&bytes.Buffer{}, entityPath, pluginPath); err != nil {
+		t.Fatalf("record host functions: %v", err)
+	}
 	return entityPath, pluginPath
 }
 
