@@ -25,10 +25,10 @@
 #       --marker <tag>, a git tag is advanced to HEAD on a fully successful,
 #       non-dry-run publish so the next run diffs from where this one finished.
 #
-# A guest's .wasm is paired to its entity by the entity's spec.plugin identity:
-# the final path segment of spec.plugin names the `<segment>.wasm` file looked up
-# in --wasm-dir (or beside the entity). A discovered YAML whose kind is not Plugin
-# is skipped with a notice — non-plugin catalog entities belong to the
+# A guest's .wasm is paired to its entity by the entity's metadata.name identity:
+# the final path segment of metadata.name names the `<segment>.wasm` file looked
+# up in --wasm-dir (or beside the entity). A discovered YAML whose kind is not
+# Plugin is skipped with a notice — non-plugin catalog entities belong to the
 # catalog-entity publisher, not here — never guessed at.
 #
 # Signing (--sign) is per item through `aggrega push --plugin --sign`, which signs
@@ -106,13 +106,16 @@ peek_kind() {
   awk -F':[[:space:]]*' '/^kind:[[:space:]]/{print $2; exit}' "$1" | tr -d '\r'
 }
 
-# peek_spec_plugin prints the entity's spec.plugin identity (its full value,
-# colons and all), or nothing. The key line is matched exactly so pluginType is
-# not mistaken for it, and surrounding quotes are stripped.
-peek_spec_plugin() {
+# peek_metadata_name prints the entity's metadata.name identity (its full value,
+# slashes and all), or nothing. Only the `name:` nested directly under the
+# top-level `metadata:` block is read — a `name:` anywhere else (under spec, under
+# a nested block) is ignored — and surrounding quotes are stripped.
+peek_metadata_name() {
   awk '
-    /^[[:space:]]*plugin:[[:space:]]/ {
-      sub(/^[[:space:]]*plugin:[[:space:]]*/, "")
+    /^metadata:[[:space:]]*$/ { inmeta = 1; next }
+    /^[^[:space:]#]/          { inmeta = 0 }
+    inmeta && /^[[:space:]]+name:[[:space:]]/ {
+      sub(/^[[:space:]]*name:[[:space:]]*/, "")
       gsub(/^"|"$/, "")
       gsub(/^'\''|'\''$/, "")
       print; exit
@@ -120,17 +123,17 @@ peek_spec_plugin() {
 }
 
 # resolve_wasm prints the .wasm path paired with an entity: the file named by the
-# final path segment of spec.plugin, looked up in --wasm-dir when given, else
+# final path segment of metadata.name, looked up in --wasm-dir when given, else
 # beside the entity. Returns non-zero (with a diagnostic) when the identity or the
 # guest file is missing — a gap is surfaced, never guessed around.
 resolve_wasm() {
-  local entity="$1" sp leaf wasm
-  sp="$(peek_spec_plugin "$entity")"
-  if [ -z "$sp" ]; then
-    echo "publish-plugins: no spec.plugin identity in $entity" >&2
+  local entity="$1" name leaf wasm
+  name="$(peek_metadata_name "$entity")"
+  if [ -z "$name" ]; then
+    echo "publish-plugins: no metadata.name identity in $entity" >&2
     return 1
   fi
-  leaf="${sp##*/}"
+  leaf="${name##*/}"
   if [ -n "$WASM_DIR" ]; then
     wasm="$WASM_DIR/$leaf.wasm"
   else
