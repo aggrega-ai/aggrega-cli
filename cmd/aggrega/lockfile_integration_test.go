@@ -52,6 +52,100 @@ func TestBuildHaltsWhenLockfileMissingAndAutoPullFalse(t *testing.T) {
 	}
 }
 
+// TestBuildDefaultReadonlyHaltsAndWritesNothing is the core read-only-default
+// proof: with no auto_pull configured (the default) and no lockfile present, a
+// plain build halts with the pull-first remediation and mutates nothing — it
+// writes no lockfile and leaves the recipe source byte-identical. Build is a
+// reader of pins, never a writer.
+func TestBuildDefaultReadonlyHaltsAndWritesNothing(t *testing.T) {
+	root := t.TempDir()
+	t.Chdir(root)
+	releasePath := authoringFixture(t, root)
+	// Empty config: the default posture applies (auto_pull off).
+	writeWorkspaceConfig(t, root, "")
+
+	recipePath := filepath.Join(root, "catalog", "recipes", "server.yaml")
+	lockfilePath := filepath.Join(root, "release.lock")
+	recipeBefore, err := os.ReadFile(recipePath)
+	if err != nil {
+		t.Fatalf("read recipe source: %v", err)
+	}
+
+	err = dispatchBuild(nil, releasePath, []string{filepath.Join(root, "catalog")}, false, os.Stderr, os.Stdout)
+	if err == nil {
+		t.Fatal("expected read-only halt on missing lockfile under the default posture; got nil")
+	}
+	if !strings.Contains(err.Error(), "aggrega pull") {
+		t.Errorf("halt should name the `aggrega pull` remediation; got %v", err)
+	}
+
+	// The build must have written NOTHING: no lockfile, and the recipe source
+	// is untouched (no frozen pins). Pull is the sole writer of source pins.
+	if _, statErr := os.Stat(lockfilePath); !errors.Is(statErr, os.ErrNotExist) {
+		t.Errorf("default build must not create a lockfile; stat err = %v", statErr)
+	}
+	recipeAfter, err := os.ReadFile(recipePath)
+	if err != nil {
+		t.Fatalf("re-read recipe source: %v", err)
+	}
+	if string(recipeAfter) != string(recipeBefore) {
+		t.Errorf("default build mutated the recipe source; it must be byte-identical")
+	}
+}
+
+// TestBuildDefaultReadonlyWithLockfileWritesNoSource proves the read-only
+// default builds against a pre-existing complete lockfile without falling into
+// the missing-lockfile halt and without mutating source: the lockfile and the
+// recipe source are byte-identical across the build.
+func TestBuildDefaultReadonlyWithLockfileWritesNoSource(t *testing.T) {
+	root := t.TempDir()
+	t.Chdir(root)
+	releasePath := authoringFixture(t, root)
+	// Empty config: the default posture applies (auto_pull off).
+	writeWorkspaceConfig(t, root, "")
+
+	// Create the lockfile out-of-band via an explicit pull (the sole writer).
+	if err := pullRun(pullConfig{ReleasePath: releasePath, CatalogDirs: []string{filepath.Join(root, "catalog")}}); err != nil {
+		t.Fatalf("initial pullRun: %v", err)
+	}
+
+	recipePath := filepath.Join(root, "catalog", "recipes", "server.yaml")
+	lockfilePath := filepath.Join(root, "release.lock")
+	recipeBefore, err := os.ReadFile(recipePath)
+	if err != nil {
+		t.Fatalf("read recipe source: %v", err)
+	}
+	lockBefore, err := os.ReadFile(lockfilePath)
+	if err != nil {
+		t.Fatalf("read lockfile: %v", err)
+	}
+
+	// The default build must use the existing lockfile read-only. It must not
+	// hit the missing-lockfile halt and must not report drift.
+	err = dispatchBuild(nil, releasePath, []string{filepath.Join(root, "catalog")}, false, os.Stderr, os.Stdout)
+	if err != nil && strings.Contains(err.Error(), "lockfile") && strings.Contains(err.Error(), "missing") {
+		t.Fatalf("default build with a present lockfile must not halt as missing; got %v", err)
+	}
+	if err != nil && errors.Is(err, lockfile.ErrLockfileDrift) {
+		t.Errorf("unexpected drift on unchanged fixture: %v", err)
+	}
+
+	recipeAfter, err := os.ReadFile(recipePath)
+	if err != nil {
+		t.Fatalf("re-read recipe source: %v", err)
+	}
+	lockAfter, err := os.ReadFile(lockfilePath)
+	if err != nil {
+		t.Fatalf("re-read lockfile: %v", err)
+	}
+	if string(recipeAfter) != string(recipeBefore) {
+		t.Errorf("default build mutated the recipe source; it must be byte-identical")
+	}
+	if string(lockAfter) != string(lockBefore) {
+		t.Errorf("default build mutated the lockfile; it must be byte-identical")
+	}
+}
+
 func TestBuildOfflineWithMissingLockfileHaltsWithFetchNotFound(t *testing.T) {
 	root := t.TempDir()
 	t.Chdir(root)

@@ -160,6 +160,11 @@ func TestBuild_HelmNamelessDocsRenderThroughGuest(t *testing.T) {
 	releasePath := namelessDocChartFixture(t, root)
 	catalogDir := filepath.Join(root, "catalog")
 
+	// Build is read-only: prime the lockfile with an explicit pull, then build reads it.
+	if err := pullRun(pullConfig{ReleasePath: releasePath, CatalogDirs: []string{catalogDir}}); err != nil {
+		t.Fatalf("prime lockfile via pull: %v", err)
+	}
+
 	if err := dispatchBuild(nil, releasePath, []string{catalogDir}, false, os.Stderr, os.Stdout); err != nil {
 		t.Fatalf("nameless-doc build should succeed through the guest: %v", err)
 	}

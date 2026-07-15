@@ -116,6 +116,11 @@ spec:
 		t.Fatalf("clean .trace: %v", err)
 	}
 
+	// Build is read-only: prime the lockfile with an explicit pull, then build reads it.
+	if err := pullRun(pullConfig{ReleasePath: releasePath, CatalogDirs: catalogDirs}); err != nil {
+		t.Fatalf("prime lockfile via pull: %v", err)
+	}
+
 	if err := dispatchBuild(nil, releasePath, catalogDirs, traceEnabled, os.Stderr, os.Stdout); err != nil {
 		t.Fatalf("runBuild: %v", err)
 	}

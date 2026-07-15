@@ -43,6 +43,8 @@ var (
 	noAcquireInputs    bool
 	disablePluginCache bool
 	verifyDeterminism  bool
+	buildAutoPull      bool
+	buildRegenerate    bool
 )
 
 func newBuildCmd() *cobra.Command {
@@ -54,13 +56,15 @@ func newBuildCmd() *cobra.Command {
 	c.Flags().StringVar(&releasePath, "release", "", "Path to Release YAML file (required)")
 	c.Flags().StringArrayVar(&catalogDirs, "catalog", nil, "Catalog directory; repeatable. Each --catalog is prepended to the workspace catalog_dirs search stack (first match wins). Defaults to the current directory.")
 	c.Flags().BoolVar(&traceEnabled, "trace", false, "write per-node intermediate files to .trace/ (sibling to dist/) for post-mortem inspection")
-	c.Flags().BoolVar(&buildDetail, "detail", false, "When build performs the implicit auto-pull (no lockfile present, auto_pull enabled), print per resolved entity what that pull did — fetched fresh from a registry, reused a cache slot, found in a local catalog, or external. Stdout only; not persisted. No-op when a lockfile already exists (no pull this build)")
+	c.Flags().BoolVar(&buildDetail, "detail", false, "Build is read-only by default and prints no resolution detail. When workspace auto_pull is enabled and no lockfile is present, build fills the lockfile in-process; this flag then prints per resolved entity what that fill did — fetched fresh from a registry, reused a cache slot, found in a local catalog, or external. Stdout only; not persisted. No-op when a lockfile already exists (no fill this build)")
 	c.Flags().BoolVar(&buildQuiet, "quiet", false, "Silence the build-progress surface on stderr. Does not affect stdout. Takes precedence over --progress")
 	c.Flags().BoolVar(&buildProgress, "progress", false, "Force the build-progress surface on even when stderr is not a terminal, printing plain static phase lines. The default is auto: the interactive phase checklist is shown only when stderr is a terminal. --quiet and --debug both override --progress")
 	c.Flags().BoolVar(&buildDebug, "debug", false, "Emit human-readable verbose diagnostics on stderr — per-phase wall-clock timing and entity/dependency counts. Wins over --quiet: verbose output always emits. Distinct from --trace, which writes machine-readable per-node intermediate files to .trace/")
 	c.Flags().BoolVar(&noAcquireInputs, "no-acquire-inputs", false, "Freeze the external-input set: a render that requests an unpinned external URL halts with a diagnostic instead of fetching and pinning it. Pinned inputs are still served from the content-addressed store (and refilled by digest when the blob is missing)")
 	c.Flags().BoolVar(&disablePluginCache, "disable-plugin-cache", false, "Skip the persistent on-disk plugin compile cache for this build and compile plugin guests fresh in an in-memory cache that is discarded when the build ends. Off by default, which reuses the shared on-disk cache across builds. Does not change rendered output")
 	c.Flags().BoolVar(&verifyDeterminism, "verify-determinism", false, "Render every node twice and compare the emitted bytes, halting the build if any node's two renders differ. Off by default. Use it to confirm a provider renders deterministically — identical input yields byte-identical output — which the GitOps-diff and byte-identical-output guarantees rely on")
+	c.Flags().BoolVar(&buildAutoPull, "auto-pull", false, "Run the pull step before building: resolve the Release's dependencies into the lockfile and cache in-process, then build against them. This is the same in-process fill the workspace auto_pull setting performs, turned on for a single build without editing workspace config. On its own it is an incremental fill — existing pins are honored, and references with no pin are resolved and added")
+	c.Flags().BoolVar(&buildRegenerate, "regenerate", false, "Make the --auto-pull step a full refresh: discard the existing lockfile and re-resolve every dependency from current registry state, floating each to the highest available version instead of honoring existing pins. Requires --auto-pull or workspace auto_pull; on its own it is a usage error")
 	if err := c.MarkFlagRequired("release"); err != nil {
 		panic(err)
 	}
@@ -86,7 +90,7 @@ func runBuild(cmd *cobra.Command, args []string) error {
 	}
 	return dispatchBuildWithDiag(rw, releasePath, catalogDirs, traceEnabled,
 		buildDiagOptions{quiet: buildQuiet, debug: buildDebug, progress: buildProgress, noColor: globalDisplay.colorOff, plain: globalDisplay.plain},
-		buildRunOptions{noAcquireInputs: noAcquireInputs, disablePluginCache: disablePluginCache, verifyDeterminism: verifyDeterminism}, os.Stderr, os.Stdout)
+		buildRunOptions{noAcquireInputs: noAcquireInputs, disablePluginCache: disablePluginCache, verifyDeterminism: verifyDeterminism, autoPull: buildAutoPull, regenerate: buildRegenerate}, os.Stderr, os.Stdout)
 }
 
 // buildRunOptions carries the build-dispatch knobs that are not stderr
@@ -106,6 +110,15 @@ type buildRunOptions struct {
 	// bytes, halting the build on any divergence. It changes only whether the
 	// determinism check runs, not the rendered output of a deterministic build.
 	verifyDeterminism bool
+	// autoPull runs the pull step before the build (the same in-process fill the
+	// workspace auto_pull setting performs), turning it on for a single build.
+	// Effective when this flag OR workspace auto_pull is set.
+	autoPull bool
+	// regenerate makes the auto-pull step a full refresh: the pull discards the
+	// existing lockfile and re-resolves every dependency, floating each to the
+	// highest available version rather than honoring existing pins. It modifies
+	// an active pull step; on its own (no auto-pull) it is a usage error.
+	regenerate bool
 	// outDir overrides the rendered-artifact output directory; empty
 	// renders to dist/. The acquire command points it at a discard
 	// directory so an acquisition pass never touches dist/.
@@ -174,6 +187,14 @@ func dispatchBuildWithDiag(rw *workspaceconfig.ResolvedWorkspace, releasePath st
 	// a resolution artifact, not authored catalog) and is reused by the pipeline
 	// call below.
 	wsCfg := rw.Config()
+
+	// --regenerate modifies the pull step; without an active pull step (neither
+	// --auto-pull nor workspace auto_pull) there is nothing for it to refresh, so
+	// it is a loud usage error rather than a surprise write on a read-only build.
+	if run.regenerate && !run.autoPull && !wsCfg.AutoPull {
+		return fmt.Errorf("--regenerate requires --auto-pull or auto_pull: true")
+	}
+
 	cacheDir := wsCfg.ResolvedArtifactCacheDir()
 
 	// Effective first-win catalog search stack: --catalog dirs prepended to the
@@ -210,7 +231,7 @@ func dispatchBuildWithDiag(rw *workspaceconfig.ResolvedWorkspace, releasePath st
 	// flag dirs (not the resolved list) are forwarded so the pull path re-derives
 	// the identical stack with the same config.
 	progress.phase(phaseLockfile)
-	lockfilePreexisted, err := acquireLockfile(rw, releasePath, catalogFlagDirs, wsCfg, buildDetail, diagOut)
+	lockfilePreexisted, err := acquireLockfile(rw, releasePath, catalogFlagDirs, wsCfg, run.autoPull, run.regenerate, buildDetail, diagOut)
 	if err != nil {
 		return err
 	}
@@ -471,10 +492,14 @@ func newExternalInputsService(cacheDir string, lf *lockfile.Lockfile, noAcquire 
 // acquireLockfile ensures the per-Release lockfile exists before the build wires
 // its lazy lookup + runs closure-scoped Pass-2, returning whether it PRE-EXISTED.
 // A present lockfile is left as-is — drift against it is verified later, against
-// the resolved closure. A missing lockfile auto-pulls when workspace.auto_pull is
-// true (the default), populating the lockfile + cache in-process; under offline,
-// or with auto_pull false, it halts with the pull-first remediation (offline
-// ignores auto_pull because the pull itself needs network access).
+// the resolved closure. Build is read-only by default: a missing lockfile halts
+// with the pull-first remediation and no lockfile or source pins are written.
+// When the pull step is requested — the --auto-pull flag (autoPull) or workspace
+// auto_pull — a missing lockfile is instead filled in-process (populating the
+// lockfile + cache) before the build proceeds; regenerate makes that fill a full
+// refresh (float every dependency to the highest satisfying version rather than
+// honoring existing pins). Under offline a missing lockfile always halts,
+// regardless of the pull step, because the fill itself needs network access.
 //
 // The lockfile must exist before the lazy lookup is pinned: its pins drive the
 // verify-on-read Tier-2 reads through which every closure entity (and the
@@ -500,7 +525,7 @@ func lockfileHasRegistryPin(lf *lockfile.Lockfile, uri string) bool {
 // acquireLockfile writes any diagnostics (the no-pull --detail note, and the
 // auto-pull's reuse/verify notices forwarded through pullConfig.DiagOut) to
 // diagOut (os.Stderr in production).
-func acquireLockfile(rw *workspaceconfig.ResolvedWorkspace, releasePath string, catalogFlagDirs []string, wsCfg workspaceconfig.Config, detail bool, diagOut io.Writer) (bool, error) {
+func acquireLockfile(rw *workspaceconfig.ResolvedWorkspace, releasePath string, catalogFlagDirs []string, wsCfg workspaceconfig.Config, autoPull, regenerate, detail bool, diagOut io.Writer) (bool, error) {
 	lockfilePath := lockfile.PathFor(releasePath)
 
 	_, statErr := os.Stat(lockfilePath)
@@ -519,32 +544,36 @@ func acquireLockfile(rw *workspaceconfig.ResolvedWorkspace, releasePath string, 
 			lockfilePath, releasePath, oci.ErrFetchNotFound)
 	}
 
-	// build's auto-pull IS the default (lockfile-honoring) pull — no separate build
-	// flag, no float. It honors every existing pin (resolving to the pinned version,
-	// verifying the pinned digest, halting on a drifted pin), resolves + adds
-	// un-pinned references, refills an empty cache by pin, and prunes stale pins. On
-	// a complete, cache-populated lockfile it is a no-op with NO network (every pin a
-	// Tier-2 hit) — so the build stays hermetic given a complete lockfile, with
-	// auto_pull the fill escape hatch; only `pull --regenerate` floats. There is no
-	// absent-vs-partial special case: any incomplete/empty state runs the same
-	// honoring pull, and lockfile.Verify (in dispatchBuild) is the post-condition.
-	// The build's own resolution runs through the nil-puller pinned lazy lookup,
-	// untouched — so build output is unchanged by this fill.
-	if wsCfg.AutoPull {
-		if err := pullRun(pullConfig{ReleasePath: releasePath, CatalogDirs: catalogFlagDirs, Detail: detail, ws: rw, DiagOut: diagOut, diag: buildDiagOptions{quiet: true}}); err != nil {
+	// build's auto-pull is the opt-in fill: it runs when the --auto-pull flag or
+	// workspace.auto_pull is set. By default (regenerate off) it is lockfile-honoring
+	// — it honors every existing pin (resolving to the pinned version, verifying the
+	// pinned digest, halting on a drifted pin), resolves + adds un-pinned references,
+	// refills an empty cache by pin, and prunes stale pins; on a complete,
+	// cache-populated lockfile it is a no-op with NO network (every pin a Tier-2 hit),
+	// so the build stays hermetic given a complete lockfile. With regenerate the fill
+	// is a full refresh: it discards the existing lockfile and re-resolves every
+	// dependency, floating each to the highest satisfying version. There is no
+	// absent-vs-partial special case: any incomplete/empty state runs the same fill,
+	// and lockfile.Verify (in dispatchBuild) is the post-condition. The build's own
+	// resolution runs through the nil-puller pinned lazy lookup, untouched — so build
+	// output is unchanged by this fill.
+	if autoPull || wsCfg.AutoPull {
+		if err := pullRun(pullConfig{ReleasePath: releasePath, CatalogDirs: catalogFlagDirs, Regenerate: regenerate, Detail: detail, ws: rw, DiagOut: diagOut, diag: buildDiagOptions{quiet: true}}); err != nil {
 			return false, fmt.Errorf("auto-pull: %w", err)
 		}
 		return false, nil
 	}
 
-	// auto_pull is false: build is frozen against the lockfile as it stands.
+	// Read-only default: the build is frozen against the lockfile as it stands and
+	// never writes source pins. A present lockfile is used as-is; a missing one halts
+	// with the pull-first remediation.
 	if preexisted {
 		if detail {
-			fmt.Fprintf(diagOut, "aggrega build --detail: resolution detail is a pull-time surface; lockfile %s already present and auto_pull is off, so no pull ran this build\n", lockfilePath)
+			fmt.Fprintf(diagOut, "aggrega build --detail: resolution detail is a pull-time surface; lockfile %s already present, so no pull ran this build\n", lockfilePath)
 		}
 		return true, nil
 	}
-	return false, fmt.Errorf("aggrega build: lockfile %s missing and auto_pull is false; run `aggrega pull %s` first",
+	return false, fmt.Errorf("aggrega build: lockfile %s missing; run `aggrega pull %s` first to create it, or pass --auto-pull (or enable auto_pull) to fill it during the build",
 		lockfilePath, releasePath)
 }
 

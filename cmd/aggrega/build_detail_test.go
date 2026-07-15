@@ -27,7 +27,7 @@ func TestBuildDetail_LockfilePresent_NoPullNote(t *testing.T) {
 	writeFixture(t, lockfile.PathFor(rel), "{}\n")
 
 	var noteBuf bytes.Buffer
-	pre, acqErr := acquireLockfile(nil, rel, []string{root}, workspaceconfig.Config{}, true, &noteBuf)
+	pre, acqErr := acquireLockfile(nil, rel, []string{root}, workspaceconfig.Config{}, false, false, true, &noteBuf)
 	if acqErr != nil {
 		t.Fatalf("acquireLockfile (detail=true): %v", acqErr)
 	}
@@ -39,7 +39,7 @@ func TestBuildDetail_LockfilePresent_NoPullNote(t *testing.T) {
 	}
 
 	var silentBuf bytes.Buffer
-	if _, silentErr := acquireLockfile(nil, rel, []string{root}, workspaceconfig.Config{}, false, &silentBuf); silentErr != nil {
+	if _, silentErr := acquireLockfile(nil, rel, []string{root}, workspaceconfig.Config{}, false, false, false, &silentBuf); silentErr != nil {
 		t.Fatalf("acquireLockfile (detail=false): %v", silentErr)
 	}
 	if strings.TrimSpace(silentBuf.String()) != "" {

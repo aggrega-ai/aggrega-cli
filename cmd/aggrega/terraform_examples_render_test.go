@@ -183,6 +183,13 @@ func buildExampleToDist(t *testing.T, src, catalogRoot string) map[string][]byte
 	catalogDirs = []string{catalogRoot}
 	traceEnabled = false
 
+	// Build is read-only: prime the lockfile with an explicit pull (output discarded),
+	// then build reads it. Each call runs in its own fresh workspace, so the two
+	// determinism runs pull independently and stay byte-identical.
+	if err := pullRun(pullConfig{ReleasePath: releasePath, CatalogDirs: catalogDirs, DiagOut: io.Discard, Out: io.Discard, diag: buildDiagOptions{quiet: true}}); err != nil {
+		t.Fatalf("prime lockfile via pull for example %q: %v", src, err)
+	}
+
 	if err := dispatchBuild(nil, releasePath, catalogDirs, traceEnabled, io.Discard, io.Discard); err != nil {
 		t.Fatalf("build example %q: %v", src, err)
 	}

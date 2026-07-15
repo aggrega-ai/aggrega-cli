@@ -138,9 +138,9 @@ func TestLoadOverlaysDefaultsForOmittedFields(t *testing.T) {
 	t.Parallel()
 	// Fixture sets workspace.offline only; every other field omitted.
 	// The overlay-on-Default pattern preserves the documented defaults
-	// for absent keys: DefaultRegistry, CacheDir, AutoPull,
+	// for absent keys: DefaultRegistry, CacheDir,
 	// HaltOnDeprecatedSeverity, EnforceMonotonicNarrowing, and
-	// EnforceImmutability.
+	// EnforceImmutability. AutoPull is the Go zero-value (false).
 	content := `
 offline: true
 `
@@ -161,8 +161,8 @@ offline: true
 		t.Errorf("Workspace.CacheDir: want %q (Default); got %q",
 			".aggrega/cache", got.ArtifactCacheDir)
 	}
-	if !got.AutoPull {
-		t.Errorf("Workspace.AutoPull: want true (Default); got false")
+	if got.AutoPull {
+		t.Errorf("Workspace.AutoPull: want false (Default); got true")
 	}
 	if got.Build.HaltOnDeprecatedSeverity != "error" {
 		t.Errorf("Build.HaltOnDeprecatedSeverity: want %q (Default); got %q",
@@ -291,6 +291,9 @@ func TestDefaultReturnsDocumentedDefaults(t *testing.T) {
 	}
 	if d.Offline {
 		t.Errorf("Default().Offline should be false")
+	}
+	if d.AutoPull {
+		t.Errorf("Default().AutoPull should be false: build is read-only by default")
 	}
 	if d.Build.HaltOnDeprecated {
 		t.Errorf("Default().Build.HaltOnDeprecated should be false")

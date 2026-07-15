@@ -126,7 +126,13 @@ spec:
 	catalogDirs = []string{catalogRoot}
 	traceEnabled = false
 
-	err := dispatchBuild(resolveTempWorkspace(t), releasePath, catalogDirs, traceEnabled, os.Stderr, os.Stdout)
+	ws := resolveTempWorkspace(t)
+	// Build is read-only: prime the lockfile with an explicit pull. The assertion
+	// failure surfaces later, at the render step, which the pull does not run.
+	if err := pullRun(pullConfig{ReleasePath: releasePath, CatalogDirs: catalogDirs, ws: ws}); err != nil {
+		t.Fatalf("prime lockfile via pull: %v", err)
+	}
+	err := dispatchBuild(ws, releasePath, catalogDirs, traceEnabled, os.Stderr, os.Stdout)
 	if err == nil {
 		t.Fatal("build returned nil; expected assertion failure")
 	}
@@ -240,8 +246,13 @@ spec:
           web: {{ .values.port }}
 `)
 
+	ws := resolveTempWorkspace(t)
+	// Build is read-only: prime the lockfile with an explicit pull, then build reads it.
+	if err := pullRun(pullConfig{ReleasePath: filepath.Join(root, "release.yaml"), CatalogDirs: []string{catalogRoot}, ws: ws}); err != nil {
+		t.Fatalf("prime lockfile via pull: %v", err)
+	}
 	err := dispatchBuildWithDiag(
-		resolveTempWorkspace(t),
+		ws,
 		filepath.Join(root, "release.yaml"),
 		[]string{catalogRoot},
 		false,

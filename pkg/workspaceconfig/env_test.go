@@ -111,10 +111,10 @@ func TestEnvOverlaySigningURLWinsOverConfig(t *testing.T) {
 func TestEnvOverlayBoolSemantics(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
-	// AutoPull defaults to true; offline defaults to false.
+	// AutoPull defaults to false; offline defaults to false.
 	writeFile(t, filepath.Join(root, ".aggrega-config.yaml"), "workspace: {}\noffline: true\n")
 
-	// Unset: config value (offline:true) holds; AutoPull default (true) holds.
+	// Unset: config value (offline:true) holds; AutoPull default (false) holds.
 	rwUnset, err := Resolve(root, "", fakeEnv(nil))
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
@@ -122,8 +122,8 @@ func TestEnvOverlayBoolSemantics(t *testing.T) {
 	if !rwUnset.Config().Offline {
 		t.Errorf("unset AGGREGA_OFFLINE must leave config offline:true untouched")
 	}
-	if !rwUnset.Config().AutoPull {
-		t.Errorf("unset AGGREGA_AUTO_PULL must leave default auto_pull:true untouched")
+	if rwUnset.Config().AutoPull {
+		t.Errorf("unset AGGREGA_AUTO_PULL must leave default auto_pull:false untouched")
 	}
 
 	// "false" overrides config true.

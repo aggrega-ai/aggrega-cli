@@ -612,16 +612,16 @@ type ServeConfig struct {
 }
 
 // Default returns a Config populated with the documented defaults.
-// Nine documented defaults are NOT the Go zero-value and are seeded
+// Eight documented defaults are NOT the Go zero-value and are seeded
 // explicitly: DefaultRegistry = "hub.aggrega.ai",
-// ArtifactCacheDir = ".aggrega/cache", AutoPull = true,
+// ArtifactCacheDir = ".aggrega/cache",
 // Build.HaltOnDeprecatedSeverity = "error",
 // Lint.PublishingDiscipline.EnforceMonotonicNarrowing = true,
 // Lint.PublishingDiscipline.EnforceImmutability = true,
 // ParseCache.MaxEntries = 1000, ParseCache.MaxBytes = 100_000_000,
 // and Concurrency.PoolSize = 4. Remaining fields stay at Go's
-// zero-value (every Allow* flag false, every list nil, every other
-// string empty).
+// zero-value (AutoPull false, every Allow* flag false, every list nil,
+// every other string empty).
 //
 // Callers that want a true zero-value Config use Config{} directly;
 // callers that want the documented baseline use Default(). The
@@ -631,7 +631,6 @@ func Default() Config {
 	return Config{
 		DefaultRegistry:  "hub.aggrega.ai",
 		ArtifactCacheDir: ".aggrega/cache",
-		AutoPull:         true,
 		Build: BuildConfig{
 			HaltOnDeprecatedSeverity: "error",
 			YAMLIndent:               2,

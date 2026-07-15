@@ -39,6 +39,13 @@ func TestBuild_StdoutAndDistByteIdenticalAcrossProgressModes(t *testing.T) {
 	catalogRoot := filepath.Join(root, "catalog")
 	releaseYAML := filepath.Join(root, "release.yaml")
 
+	// Build is read-only: prime the lockfile once so every mode below builds against
+	// the same pre-existing lockfile. Pull output is discarded so it cannot perturb
+	// the per-mode stdout/dist comparison.
+	if err := pullRun(pullConfig{ReleasePath: releaseYAML, CatalogDirs: []string{catalogRoot}, DiagOut: io.Discard, Out: io.Discard, diag: buildDiagOptions{quiet: true}}); err != nil {
+		t.Fatalf("prime lockfile via pull: %v", err)
+	}
+
 	type mode struct {
 		name string
 		tty  bool

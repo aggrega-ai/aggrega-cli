@@ -128,6 +128,13 @@ spec:
 	ws := resolveTempWorkspace(t)
 	t.Chdir(root)
 
+	// Build is read-only: prime the lockfile with an explicit pull, its output routed
+	// to a throwaway buffer so only the build's own shadow report lands in diag.
+	var pullOut bytes.Buffer
+	if err := pullRun(pullConfig{ReleasePath: releasePath, CatalogDirs: catalogDirs, ws: ws, DiagOut: &pullOut, Out: &pullOut, diag: buildDiagOptions{quiet: true}}); err != nil {
+		t.Fatalf("prime lockfile via pull: %v", err)
+	}
+
 	var diag bytes.Buffer
 	if err := dispatchBuild(ws, releasePath, catalogDirs, traceEnabled, &diag, os.Stdout); err != nil {
 		t.Fatalf("build failed: %v\n--- diag ---\n%s", err, diag.String())

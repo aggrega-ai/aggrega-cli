@@ -186,6 +186,14 @@ func TestBuild_BrokenOutOfClosureIsolation(t *testing.T) {
 	t.Chdir(root)
 	releasePath, catalogRoot := writeValidWorkspace(t, root)
 
+	// Build is read-only: prime the lockfile with an explicit pull (the sole writer
+	// of pins), then both builds below read it. The closure is unchanged by the
+	// broken out-of-closure entities added later, so the pre-existing lockfile
+	// still verifies.
+	if err := pullRun(pullConfig{ReleasePath: releasePath, CatalogDirs: []string{catalogRoot}}); err != nil {
+		t.Fatalf("prime lockfile via pull: %v", err)
+	}
+
 	if err := dispatchBuild(nil, releasePath, []string{catalogRoot}, false, os.Stderr, os.Stdout); err != nil {
 		t.Fatalf("clean build should succeed: %v", err)
 	}
@@ -247,6 +255,10 @@ func TestBuild_InClosureUnparseableReplaysSkip(t *testing.T) {
 	root := t.TempDir()
 	t.Chdir(root)
 	releasePath, catalogRoot := writeValidWorkspace(t, root)
+	// The in-closure recipe is deliberately broken, so it cannot be pinned by a
+	// clean pull first. Enable auto_pull so the build's in-process fill resolves
+	// the closure and replays the skip context (WHY the entity went missing).
+	writeFixture(t, filepath.Join(root, ".aggrega-config.yaml"), "auto_pull: true\n")
 
 	// Replace the in-closure recipe with one that fails load-time shape validation
 	// (helm provider, no implements, no input kind) — skipped at tolerant Pass-1.

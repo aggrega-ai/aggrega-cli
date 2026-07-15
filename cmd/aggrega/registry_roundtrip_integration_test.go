@@ -431,8 +431,12 @@ func TestIntegration_Capstone_LintAndExample(t *testing.T) {
 	_ = os.RemoveAll(filepath.Join(ws, ".aggrega"))
 	_ = os.RemoveAll(filepath.Join(ws, "dist"))
 	t.Chdir(ws)
-	// No workspace config: defaults (auto_pull on). --catalog supplies every
-	// entity locally, so the auto-pull resolves from the catalog with no network.
+	// Build is read-only by default: prime the lockfile with an explicit pull (the
+	// sole writer of pins), then build reads it. --catalog supplies every entity
+	// locally, so the pull resolves from the catalog with no network.
+	if err := pullRun(pullConfig{ReleasePath: "release.yaml", CatalogDirs: []string{std}}); err != nil {
+		t.Fatalf("prime lockfile via pull: %v", err)
+	}
 	if err := dispatchBuild(nil, "release.yaml", []string{std}, false, os.Stderr, os.Stdout); err != nil {
 		t.Fatalf("catalog-only build against the shared catalog: %v", err)
 	}
