@@ -34,7 +34,7 @@
 //! - Recipe / FeatureRecipe: load-bearing-field diff.
 //! - Aggregate: catalog-aggregate diff.
 //! - Plugin: describe()-surface diff (exports, served capabilities,
-//!   provider/search self-reports, ABI version).
+//!   provider self-report, ABI version).
 
 use std::collections::BTreeMap;
 
@@ -322,7 +322,7 @@ fn classify_aggregate(previous: &Value, proposed: &Value) -> (String, String) {
 /// to its describe()-surface, read from the Plugin entity YAML (which the
 /// host cross-checks against the guest's live describe() report). The
 /// surface spans the declared exports, the served capabilities, the
-/// provider/search self-reports, and the ABI
+/// provider self-report, and the ABI
 /// version. Each surface yields an independent verdict; the highest
 /// magnitude wins (MAJOR > MINOR > PATCH). A change confined to
 /// documentation — `metadata.description`, `spec.description`, or an
@@ -333,7 +333,6 @@ fn classify_plugin(previous: &Value, proposed: &Value) -> (String, String) {
         classify_plugin_exports(previous, proposed),
         classify_plugin_targets(previous, proposed),
         classify_self_report(previous, proposed, "spec.provider"),
-        classify_self_report(previous, proposed, "spec.search"),
         classify_plugin_abi_version(previous, proposed),
     ];
 
@@ -467,7 +466,7 @@ fn classify_plugin_abi_version(previous: &Value, proposed: &Value) -> (String, S
 }
 
 /// `classify_self_report` diffs a per-socket self-report object
-/// (`spec.capabilities`, `spec.provider`, `spec.search`). Every leaf a
+/// (`spec.capabilities`, `spec.provider`). Every leaf a
 /// version carries is a claim: dropping a claim, or altering an existing
 /// claim's value — including flipping a boolean capability from `true`
 /// to `false` — narrows the surface (MAJOR). A brand-new claim a

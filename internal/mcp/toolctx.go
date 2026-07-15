@@ -9,14 +9,8 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
-	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
-
-// searchResolver turns a search-plugin URI into its resolved bytes. It is the
-// plugin-path resolution seam the search tool drives; the production value is a
-// workspace resolver cascade, and a test injects a fixture seam.
-type searchResolver = pluginpath.Lookup
 
 // toolWorkspace is the per-call resolved workspace context the closure-driven
 // tools build their compiler-operations inputs from. Every field is derived

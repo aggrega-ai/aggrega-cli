@@ -3,7 +3,7 @@
 
 //! Plugin-kind schema-evolution rubric coverage. The classifier scores a
 //! re-published Plugin entity from the change to its describe()-surface —
-//! exports, capabilities, provider/search self-reports, and ABI
+//! exports, capabilities, provider self-report, and ABI
 //! version. Fixtures are inline serde_json::json! literals exercising the
 //! structured-value pathway directly (the host parses YAML to JSON before
 //! invoking the plugin; these tests bypass the Extism boundary and call

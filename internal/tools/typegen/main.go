@@ -311,13 +311,6 @@ var providerHostVocabulary = map[string]string{
 // and as the seam a future granted-input field would hook into.
 var cliGuestVocabulary = map[string]string{}
 
-// searchGuestVocabulary is empty: the search input's filters map and the
-// result's score already carry neutral, cycle-free spellings (map[string]string
-// and float64) that reference no host container or cross-package type, so every
-// annotation passes through verbatim. It exists as the codec target's
-// vocabulary slot for symmetry with the other socket targets.
-var searchGuestVocabulary = map[string]string{}
-
 var codecTargets = map[string]codecTarget{
 	"frp_gen.go": {
 		schema:     schemas.WasmFrpStepV1alpha1,
@@ -364,32 +357,6 @@ var codecTargets = map[string]codecTarget{
 		schemaFile: "wasm-cli-v1alpha1.schema.json",
 		pkg:        "abi",
 		vocabulary: cliGuestVocabulary,
-		lang:       "ts",
-	},
-
-	// Search socket — guest codecs into aggrega-abi (Go/Rust/TS). A search
-	// plugin receives a query and returns ranked results; the socket carries an
-	// input shape (SearchInput) and an output shape (SearchOutput). The abi Go
-	// codec references the helpers FRP owns in package abi (helpers: false, the
-	// default).
-	"search_gen.go": {
-		schema:     schemas.WasmSearchV1alpha1,
-		schemaFile: "wasm-search-v1alpha1.schema.json",
-		pkg:        "abi",
-		vocabulary: searchGuestVocabulary,
-	},
-	"search_gen.rs": {
-		schema:     schemas.WasmSearchV1alpha1,
-		schemaFile: "wasm-search-v1alpha1.schema.json",
-		pkg:        "abi",
-		vocabulary: searchGuestVocabulary,
-		lang:       "rust",
-	},
-	"search_gen.ts": {
-		schema:     schemas.WasmSearchV1alpha1,
-		schemaFile: "wasm-search-v1alpha1.schema.json",
-		pkg:        "abi",
-		vocabulary: searchGuestVocabulary,
 		lang:       "ts",
 	},
 

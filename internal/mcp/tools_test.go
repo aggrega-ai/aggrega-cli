@@ -17,9 +17,7 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compilerops"
-	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
-	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
@@ -307,51 +305,6 @@ func TestDescribeToolComponentAndRelease(t *testing.T) {
 	}
 }
 
-// TestSearchToolOffline drives the search tool against the fixture search guest
-// through an injected offline resolver, asserting ranked hits with no network.
-func TestSearchToolOffline(t *testing.T) {
-	guest := wasmtest.EnsureFixtureBytes(t, "search-go.wasm")
-	s := newTestServer()
-	s.searchResolve = func(string) (pluginpath.ResolvedPlugin, error) {
-		return pluginpath.ResolvedPlugin{Bytes: guest}, nil
-	}
-
-	res := callTool(t, s, "search", searchArgs{Query: "compiler render", Plugin: "test://search-fixture"})
-	if res.IsError {
-		t.Fatalf("search reported error: %s", res.Content[0].Text)
-	}
-	var payload searchResultPayload
-	if err := json.Unmarshal(res.StructuredContent, &payload); err != nil {
-		t.Fatalf("unmarshal search payload: %v", err)
-	}
-	// The fixture guest ranks the pipeline doc first (both terms match), then
-	// the two single-term matches by ascending id — the guest's own order,
-	// preserved by the host.
-	wantDocs := []string{"architecture/pipeline", "architecture/invariants", "language-reference/recipe"}
-	if got := hitDocIDs(payload); !equalStrings(got, wantDocs) {
-		t.Fatalf("search ranked doc ids = %v, want %v", got, wantDocs)
-	}
-	if payload.Hits[0].Score != 2 {
-		t.Fatalf("top hit score = %v, want 2", payload.Hits[0].Score)
-	}
-}
-
-// TestSearchToolMissingPluginFailsLoud asserts an unresolvable search plugin
-// fails loudly with guidance rather than reaching for a network.
-func TestSearchToolMissingPluginFailsLoud(t *testing.T) {
-	s := newTestServer()
-	s.searchResolve = func(uri string) (pluginpath.ResolvedPlugin, error) {
-		return pluginpath.ResolvedPlugin{}, fmt.Errorf("no such plugin %q", uri)
-	}
-	res := callTool(t, s, "search", searchArgs{Query: "compiler", Plugin: "test://absent"})
-	if !res.IsError {
-		t.Fatal("search with an unresolvable plugin did not report an error")
-	}
-	if !strings.Contains(res.Content[0].Text, "never fetches over the network") {
-		t.Errorf("search failure guidance missing offline-first note: %q", res.Content[0].Text)
-	}
-}
-
 func TestExplainErrorTool(t *testing.T) {
 	s := newTestServer()
 	res := callTool(t, s, "explain-error", explainErrorArgs{Message: "load release foo: not found", Kind: "release"})
@@ -487,14 +440,6 @@ func hashTree(t *testing.T, dir string) string {
 		h.Write(b)
 	}
 	return hex.EncodeToString(h.Sum(nil))
-}
-
-func hitDocIDs(p searchResultPayload) []string {
-	ids := make([]string, 0, len(p.Hits))
-	for _, h := range p.Hits {
-		ids = append(ids, h.DocID)
-	}
-	return ids
 }
 
 func equalStrings(a, b []string) bool {

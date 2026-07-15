@@ -32,8 +32,8 @@ type toolSpec struct {
 
 // toolRegistry is the curated, always-loaded tool set the authoring loop lives
 // in. Every tool wraps an existing single-sourced surface — the shared
-// compiler-operations layer, the embedded schema set, the catalog resolver, or
-// the search socket — and none reimplements it. The capability tool is the one
+// compiler-operations layer, the embedded schema set, or the catalog resolver —
+// and none reimplements it. The capability tool is the one
 // meta entry: it surfaces the deferred long tail on demand so the default set
 // stays small. The order is fixed so the advertised list and its wire bytes are
 // deterministic.
@@ -51,7 +51,6 @@ func init() {
 		buildToolSpec,
 		describeToolSpec,
 		getSchemaToolSpec,
-		searchToolSpec,
 		explainErrorToolSpec,
 		scaffoldToolSpec,
 		genCatalogToolSpec,
