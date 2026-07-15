@@ -89,15 +89,15 @@ func TestCLIAllowlist_DisjointFromSharedAllowlist(t *testing.T) {
 // the union grows the set by exactly the streaming names, nothing more.
 func TestValidateHostFunctionsSubsetCLI_RejectsUnknown(t *testing.T) {
 	// A streaming name passes.
-	if err := validateHostFunctionsSubsetCLI("probe", []string{"aggrega_cli_write_stdout"}); err != nil {
+	if err := validateHostFunctionsSubsetCLI("probe", "cli", []string{"aggrega_cli_write_stdout"}); err != nil {
 		t.Fatalf("CLI gate rejected a streaming name: %v", err)
 	}
 	// A shared name still passes.
-	if err := validateHostFunctionsSubsetCLI("probe", []string{"aggrega_log"}); err != nil {
+	if err := validateHostFunctionsSubsetCLI("probe", "cli", []string{"aggrega_log"}); err != nil {
 		t.Fatalf("CLI gate rejected a shared allowlist name: %v", err)
 	}
 	// An unknown name is rejected.
-	err := validateHostFunctionsSubsetCLI("probe", []string{"aggrega_cli_write_stdout", "aggrega_exfiltrate"})
+	err := validateHostFunctionsSubsetCLI("probe", "cli", []string{"aggrega_cli_write_stdout", "aggrega_exfiltrate"})
 	if !errors.Is(err, ErrWasmManifestRejected) {
 		t.Fatalf("CLI gate error = %v; want wrapping ErrWasmManifestRejected", err)
 	}

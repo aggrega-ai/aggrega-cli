@@ -666,7 +666,7 @@ func (l *Loader) LoadCLI(ctx context.Context, spec PluginSpec, stdout, stderr io
 func (l *Loader) loadCore(
 	ctx context.Context,
 	spec PluginSpec,
-	validateSubset func(name string, names []string) error,
+	validateSubset func(name, typeLabel string, names []string) error,
 	buildFunctions func(p *Plugin, declared []string) []extism.HostFunction,
 	stdout, stderr io.Writer,
 ) (*Plugin, error) {
@@ -699,7 +699,7 @@ func (l *Loader) loadCore(
 	if err != nil {
 		return nil, err
 	}
-	if err := validateSubset(spec.Name, hostFunctions); err != nil {
+	if err := validateSubset(spec.Name, string(spec.PluginType), hostFunctions); err != nil {
 		return nil, err
 	}
 

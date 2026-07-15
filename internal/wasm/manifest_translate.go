@@ -81,12 +81,12 @@ func enforceAOTPurityFirewall(manifest extism.Manifest, pluginName string) error
 // host-function set. Returns nil if names is a subset of the allowlist;
 // otherwise returns an error wrapping ErrWasmManifestRejected naming the
 // violating function. name identifies the plugin (or plugin/export) in that
-// message.
-func validateHostFunctionsSubset(name string, names []string) error {
+// message; typeLabel names the plugin type in the message when non-empty and is
+// omitted from the message when empty.
+func validateHostFunctionsSubset(name, typeLabel string, names []string) error {
 	for _, fn := range names {
 		if _, ok := hostFunctionAllowlist[fn]; !ok {
-			return fmt.Errorf("plugin %q declares host function %q outside the allowlist %v: %w",
-				name, fn, allowlistedHostFunctionNames(), ErrWasmManifestRejected)
+			return hostFunctionRejection(name, typeLabel, fn, allowlistedHostFunctionNames())
 		}
 	}
 	return nil
@@ -98,14 +98,31 @@ func validateHostFunctionsSubset(name string, names []string) error {
 // profile grants. It is the gate Loader.LoadCLI applies to the set derived from
 // a CLI guest's .wasm binary; Loader.Load keeps the shared gate above, which
 // admits neither streaming name. A name in neither allowlist returns an error
-// wrapping ErrWasmManifestRejected naming the violating function.
-func validateHostFunctionsSubsetCLI(name string, names []string) error {
+// wrapping ErrWasmManifestRejected naming the violating function. name and
+// typeLabel carry the same meaning as in validateHostFunctionsSubset.
+func validateHostFunctionsSubsetCLI(name, typeLabel string, names []string) error {
 	for _, fn := range names {
 		if hostFunctionAllowlist[fn] || cliHostFunctionAllowlist[fn] {
 			continue
 		}
-		return fmt.Errorf("plugin %q declares host function %q outside the CLI allowlist %v: %w",
-			name, fn, cliAllowlistedHostFunctionNames(), ErrWasmManifestRejected)
+		return hostFunctionRejection(name, typeLabel, fn, cliAllowlistedHostFunctionNames())
 	}
 	return nil
+}
+
+// hostFunctionRejection builds the error a subset gate returns when a plugin
+// imports a host function outside the permitted set. Both gates route through
+// this single builder so the message shape stays identical across profiles.
+// permitted is the sorted set the gate admits, named in the message. When
+// typeLabel is non-empty the message names the plugin type; when empty the
+// message omits the type clause rather than render a blank one. name identifies
+// the plugin (or plugin/export). The returned error wraps
+// ErrWasmManifestRejected.
+func hostFunctionRejection(name, typeLabel, fn string, permitted []string) error {
+	if typeLabel == "" {
+		return fmt.Errorf("plugin %q imports host function %q, which is not permitted; permitted host functions: %v: %w",
+			name, fn, permitted, ErrWasmManifestRejected)
+	}
+	return fmt.Errorf("plugin %q imports host function %q, which is not permitted for a %s plugin; permitted host functions: %v: %w",
+		name, fn, typeLabel, permitted, ErrWasmManifestRejected)
 }

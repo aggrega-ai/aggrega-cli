@@ -78,7 +78,7 @@ func pushPlugin(out io.Writer, cfg pushConfig, registry string, wantSign bool, n
 	if c := resolver.WasmContractClaim(resolver.PluginContractClaim(entity)); c != nil {
 		capClaim = *c
 	}
-	if err := wasm.CrossCheckPublishedPlugin(ctx, entityIdentity, capClaim, wasmBytes, crossCheckMaxPages); err != nil {
+	if err := wasm.CrossCheckPublishedPlugin(ctx, entityIdentity, capClaim, wasmBytes, crossCheckMaxPages, entity.Spec.PluginType); err != nil {
 		return fmt.Errorf("aggrega push: Plugin %s: %w", entityIdentity, err)
 	}
 

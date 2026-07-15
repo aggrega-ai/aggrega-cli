@@ -51,7 +51,7 @@ func TestTranslateRejectsAllowedPaths(t *testing.T) {
 }
 
 func TestHostFunctionsSubsetRejectsOutsideAllowlist(t *testing.T) {
-	err := validateHostFunctionsSubset("test-plugin", []string{"aggrega_log", "rogue_function"})
+	err := validateHostFunctionsSubset("test-plugin", "provider", []string{"aggrega_log", "rogue_function"})
 	if !errors.Is(err, ErrWasmManifestRejected) {
 		t.Fatalf("expected ErrWasmManifestRejected, got %v", err)
 	}
@@ -63,8 +63,41 @@ func TestHostFunctionsSubsetRejectsOutsideAllowlist(t *testing.T) {
 	}
 }
 
+// TestHostFunctionsSubsetRejectionMessage pins the rejection wording for a
+// forbidden host function. The typed variant names the plugin type and the
+// permitted set; the omitted variant drops the type clause entirely rather than
+// render a blank "a  plugin".
+func TestHostFunctionsSubsetRejectionMessage(t *testing.T) {
+	typed := validateHostFunctionsSubset("test-plugin", "provider", []string{"rogue_function"})
+	if !errors.Is(typed, ErrWasmManifestRejected) {
+		t.Fatalf("typed: expected ErrWasmManifestRejected, got %v", typed)
+	}
+	for _, want := range []string{
+		"imports host function",
+		`"rogue_function"`,
+		"not permitted for a provider plugin",
+		"permitted host functions:",
+	} {
+		if !strings.Contains(typed.Error(), want) {
+			t.Errorf("typed message %q missing %q", typed.Error(), want)
+		}
+	}
+
+	omitted := validateHostFunctionsSubset("test-plugin", "", []string{"rogue_function"})
+	if !errors.Is(omitted, ErrWasmManifestRejected) {
+		t.Fatalf("omitted: expected ErrWasmManifestRejected, got %v", omitted)
+	}
+	if !strings.Contains(omitted.Error(), "imports host function") ||
+		!strings.Contains(omitted.Error(), "permitted host functions:") {
+		t.Errorf("omitted message %q missing required substrings", omitted.Error())
+	}
+	if strings.Contains(omitted.Error(), "for a  plugin") || strings.Contains(omitted.Error(), "for a plugin") {
+		t.Errorf("omitted message must drop the type clause, got %q", omitted.Error())
+	}
+}
+
 func TestHostFunctionsSubsetAcceptsAllowlisted(t *testing.T) {
-	if err := validateHostFunctionsSubset("test-plugin", []string{"aggrega_log", "aggrega_emit_warning"}); err != nil {
+	if err := validateHostFunctionsSubset("test-plugin", "provider", []string{"aggrega_log", "aggrega_emit_warning"}); err != nil {
 		t.Fatalf("expected success, got error: %v", err)
 	}
 }

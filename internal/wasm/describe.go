@@ -751,7 +751,7 @@ func (d PluginDescriptor) validateExportHostFunctions(pluginIdentity string) err
 		if len(export.HostFunctions) == 0 {
 			continue
 		}
-		if err := subset(fmt.Sprintf("%s/%s", pluginIdentity, export.Name), export.HostFunctions); err != nil {
+		if err := subset(fmt.Sprintf("%s/%s", pluginIdentity, export.Name), string(d.PluginType), export.HostFunctions); err != nil {
 			return err
 		}
 	}
