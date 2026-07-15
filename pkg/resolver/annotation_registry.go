@@ -13,7 +13,7 @@ import (
 // Release-level annotations into synthetic Feature attachments. The
 // post-migration Manifest carries annotation bindings under the flat
 // features tier; provider determination at the component level flows
-// from each component's resolved Recipe `spec.provider` at orchestrator
+// from each component's resolved Recipe `spec.capability` at orchestrator
 // time, so the binding-declaration registry itself is provider-agnostic.
 type AnnotationRegistry struct {
 	bindings types.OrderedMap[types.AnnotationBinding]

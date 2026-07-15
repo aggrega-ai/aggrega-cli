@@ -52,7 +52,7 @@ type pipelineResult struct {
 // scope would break the ordering a later step depends on). WithCtx and RenderCtx
 // are the exact contexts the per-node pass evaluated against, captured so the
 // replayed `with` renders identically. OwnProvider is the provider rendering the
-// node's own documents (the FeatureRecipe's or Recipe's spec.provider — the
+// node's own documents (the FeatureRecipe's or Recipe's spec.capability — the
 // assembler for an own-on-assembler defer); HostProvider is the host component's
 // recipe provider (the assembler for a host-on-assembler defer). Both drive
 // per-scope codec selection and the per-scope compatibility check on replay; a
@@ -119,7 +119,7 @@ type pipelineFile0 struct {
 // EMIT is additive and runs per-node for every provider.
 //
 // ownProvider is the provider rendering this node's own documents (the recipe's
-// or FeatureRecipe's spec.provider); hostProvider is the provider rendering the
+// or FeatureRecipe's spec.capability); hostProvider is the provider rendering the
 // host component's documents (empty when the call has no host — a Recipe or a
 // boundary-scope FeatureRecipe). They drive the pre-walk compatibility check:
 // each step's plugin declares an enumerated set of compatible providers, and the
@@ -510,7 +510,7 @@ func enforceProviderCompatibility(
 				// assembled, so a deferred own-scope step has no merged own
 				// document to replay against. The empty ownProvider is the
 				// signature of that case here (a per-node own pipeline always
-				// carries its spec.provider). Halt with a cause-naming message
+				// carries its spec.capability). Halt with a cause-naming message
 				// rather than the bare provider-incompatibility report, whose
 				// empty provider name reads as a malformed claim. The replay
 				// wrap names the FeatureRecipe instance and node around this.

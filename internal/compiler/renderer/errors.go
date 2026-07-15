@@ -102,7 +102,7 @@ var (
 	// ErrPathTemplateInvalidField fires at parse time when a path-template
 	// (Release.spec.boundaries[].directory or subDirectory) references a
 	// field outside the documented allowlist. Available fields in
-	// directory: templates are .provider, .boundary_name,
+	// directory: templates are .capability, .boundary_name,
 	// .parameters.<typed_keys>, .parent_boundary.*, .manifest.recipe_name;
 	// subDirectory: additionally permits .component_id. Path templates use
 	// stricter missing-key handling than value templates because silent

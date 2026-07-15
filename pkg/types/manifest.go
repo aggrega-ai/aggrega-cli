@@ -142,7 +142,7 @@ func (m AnnotationBindingMaps) Lookup(path string) (string, bool) {
 //   - Flat shape: reserved top-level keys `components` and `features`
 //     under `mappings:` carry component-type / feature-type URIs mapped
 //     directly to Recipe / FeatureRecipe URIs. Provider determination
-//     flows from each resolved Recipe's spec.provider at orchestrator-
+//     flows from each resolved Recipe's spec.capability at orchestrator-
 //     time; the mapping is provider-agnostic at the Manifest layer.
 //
 //   - Legacy v2 shape: top-level keys under `mappings:` are provider

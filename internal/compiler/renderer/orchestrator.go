@@ -794,7 +794,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 	// boundaryFRState.Files. Classify each by Intermediate flag:
 	//
 	//   - Intermediate=true: route to the per-(path, provider) dispatch
-	//     group at the FR's evaluated path, using the FR's spec.provider
+	//     group at the FR's evaluated path, using the FR's spec.capability
 	//     for the {{ .capability }} substitution. The compose-bridge case
 	//     drives this — the bridge service fragment lands alongside per-
 	//     component compose contributors at the same dispatch path so the

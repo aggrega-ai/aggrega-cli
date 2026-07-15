@@ -283,7 +283,7 @@ type Plugin struct {
 // points into by identity (Plugin is the plugin's bare identity). Version
 // coexistence is preserved: this record selects the plugin repository per
 // target; the concrete versions live in Entities (one entry per resolved
-// plugin version), and each Recipe's spec.target version pin selects among
+// plugin version), and each Recipe's spec.capability version pin selects among
 // them at render.
 //
 // Field declaration order is alphabetical to drive yaml.v3's canonical
@@ -294,6 +294,6 @@ type ProviderBinding struct {
 	// e.g. "provider/helm").
 	Plugin string `yaml:"plugin"`
 	// Target is the render target kind this binding selects an engine for
-	// — the bare engine name a Recipe binds through spec.target.
+	// — the bare engine name a Recipe binds through spec.capability.
 	Target string `yaml:"target"`
 }

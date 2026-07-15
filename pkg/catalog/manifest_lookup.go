@@ -104,7 +104,7 @@ func recipeURIKey(name, version string) string {
 
 // recipeIdentityKey is the catalog's identity key for a recipe or feature
 // recipe: "provider/name:version". The provider segment is the entity's
-// spec.provider. Identity is provider-scoped because the catalog tree
+// spec.capability. Identity is provider-scoped because the catalog tree
 // (recipe/{provider}/{name}/) and the registry identity
 // (recipe/{provider}/{name}:{version}) both are: two providers may each
 // ship a recipe of the same name and version, and the naming convention

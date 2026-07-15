@@ -10,7 +10,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
-// ProviderPluginResolver resolves a Recipe / FeatureRecipe spec.provider binding
+// ProviderPluginResolver resolves a Recipe / FeatureRecipe spec.capability binding
 // — a bare engine name or a version-pinned form ("helm", "helm:1.0.0",
 // "helm:^1.0.0") — to the provider-rendering Plugin entity serving it, plus a
 // found flag and an error. It backs the lock-time provider pin: the descent
@@ -64,8 +64,8 @@ const tier1CatalogPath = "tier-1-catalog"
 // (DescendRecipePluginArtifacts).
 //
 // It also discovers the provider-rendering Plugin ENTITY each Recipe /
-// FeatureRecipe binds through spec.provider. When a providerResolver is supplied,
-// each non-empty spec.provider binding resolves to its serving Plugin identity,
+// FeatureRecipe binds through spec.capability. When a providerResolver is supplied,
+// each non-empty spec.capability binding resolves to its serving Plugin identity,
 // and that Plugin entity is pinned on the same catalog-entity axis and descended
 // to its .wasm artifact in Phase B exactly like a pipeline plugin — so the
 // provider a build renders through is pinned to a resolved version and content
@@ -264,14 +264,14 @@ func DescendRecipePluginArtifacts(c *Closure, loader RecipeLoader, lookup Lookup
 }
 
 // discoverPluginEntities walks the closure's Recipe / FeatureRecipe entities,
-// reading each spec.pipeline[].plugin URI and each spec.provider binding, and
+// reading each spec.pipeline[].plugin URI and each spec.capability binding, and
 // returns the deduped set of plugin entity URIs to descend plus, per entity, the
 // set of Recipe / FeatureRecipe URIs that reference it. A Plugin entity already on
 // the entity axis (a workspace plugin socket ComputeClosure pinned) is added as
 // its own descent target with no recipe-ref. The returned entity-URI slice is
 // sorted, so the descent is order-independent and each entity is descended once.
 //
-// A non-empty spec.provider is resolved through providerResolver to its serving
+// A non-empty spec.capability is resolved through providerResolver to its serving
 // provider-rendering Plugin identity and recorded as a descent target, keyed by
 // the resolved Plugin's version-exact URI. A provider Plugin that is also a
 // pipeline plugin dedupes to a single descent target. A nil providerResolver
@@ -296,7 +296,7 @@ func discoverPluginEntities(c *Closure, loader RecipeLoader, providerResolver Pr
 		}
 		recipeRefs[entityURI][recipeURI] = struct{}{}
 	}
-	// recordProvider resolves a Recipe / FeatureRecipe spec.provider binding to
+	// recordProvider resolves a Recipe / FeatureRecipe spec.capability binding to
 	// its serving provider-rendering Plugin entity and records it as a descent
 	// target referenced from the recipe. A binding no plugin serves is left to
 	// build-time engine resolution; a version pin no serving plugin version

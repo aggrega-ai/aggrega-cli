@@ -124,13 +124,13 @@ type ProviderContract struct {
 }
 
 // EngineFactory returns the Engine implementation for a given provider name
-// (from `recipe.spec.provider`). Returning an error halts the build.
+// (from `recipe.spec.capability`). Returning an error halts the build.
 // Engines may be cached/singleton'd by the factory; the orchestrator makes no
 // assumption about instance identity.
 type EngineFactory func(providerName string) (Engine, error)
 
 // ProviderVersionResolver reports the resolved provider-rendering plugin version
-// behind a provider binding (recipe.spec.provider, version pin included), or the
+// behind a provider binding (recipe.spec.capability, version pin included), or the
 // empty string when the binding renders through the in-tree engine with no
 // resolved plugin version. It shares the provider→plugin resolution the engine
 // factory performs, so the version reported here is the one behind the engine the

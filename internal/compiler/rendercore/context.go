@@ -38,7 +38,7 @@ type NodeRenderContext struct {
 	RecipeName     string // recipe metadata.name; empty when no Recipe selected for this node
 	RecipeVersion  string // recipe metadata.version; pairs with RecipeName to form the aggrega.ai/recipe-uri label
 	// ProviderName is the bare provider engine kind rendering this node
-	// (recipe.spec.provider with any version pin stripped). When set it is the
+	// (recipe.spec.capability with any version pin stripped). When set it is the
 	// value of the aggrega.ai/provider label.
 	ProviderName string
 	// ProviderVersion is the resolved provider-rendering plugin version behind
