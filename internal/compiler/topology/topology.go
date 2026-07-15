@@ -580,6 +580,27 @@ func BuildContext(ctx context.Context, cfg BuildConfig) (*TopologyResult, error)
 		}
 	}
 
+	// Resolve export-alias edge targets to their internal node IDs. A sub-aggregate
+	// publishes a public interface through exported components; a consuming edge may
+	// target that public alias (the dotted path into the module) rather than the
+	// module's internal component ID. Each exported alias maps to an already-resolved
+	// internal node ID. An edge that names a real node directly keeps that target —
+	// a direct reference wins over the alias table — so this pass only rewrites a
+	// target that is not itself a node but is a known alias. Applies uniformly to
+	// every edge origin (the edges slice already aggregates developer, Feature, and
+	// Release-wired edges) and walks in author order so the rewrite is deterministic.
+	// Runs after pruned aliases are dropped and before the dangling sweep, so a
+	// target that resolves to neither a node nor a live alias still halts loudly
+	// below rather than being silently swallowed here.
+	for i := range edges {
+		if _, isNode := flat.Nodes.Get(edges[i].Target); isNode {
+			continue
+		}
+		if resolved, isAlias := flat.ExportedComponents[edges[i].Target]; isAlias {
+			edges[i].Target = resolved
+		}
+	}
+
 	// Origin-agnostic dangling-target guardrail. Every edge — developer-authored
 	// (Aggregate), Feature-projected, or Release-wired — must point at a node
 	// that exists in the resolved topology. A dangling target is a Loud Guardrail

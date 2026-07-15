@@ -508,3 +508,106 @@ func TestBuild_DeterministicEdgeOrder(t *testing.T) {
 		t.Errorf("edges not in author order: %v (want [z-svc a-svc m-svc])", firstSources)
 	}
 }
+
+// exportModuleLoader returns a SubAggregateLoader that serves a single database
+// module exposing its internal main-db component under the public alias
+// public_db. It backs the export-alias edge-target tests below.
+func exportModuleLoader() SubAggregateLoader {
+	return func(typeName string, _ map[string]any) (*types.Aggregate, string, map[string]any, error) {
+		if typeName != "modules/db" {
+			return nil, "", nil, fmt.Errorf("unknown sub-aggregate: %s", typeName)
+		}
+		comps := types.OrderedMap[types.ComponentInstance]{}
+		comps.Set("main-db", types.ComponentInstance{Type: "core/datastore/postgres"})
+		exports := types.OrderedMap[string]{}
+		exports.Set("public_db", "main-db")
+		return &types.Aggregate{
+			Metadata: types.AggregateMetadata{Name: "db-module"},
+			Spec: types.AggregateSpec{
+				Components:         comps,
+				ExportedComponents: exports,
+			},
+		}, "", nil, nil
+	}
+}
+
+// TestBuild_ExportAliasEdgeTargetResolves — a root component whose `uses` edge
+// targets a sub-aggregate's exported alias (data.public_db) resolves to the
+// module's internal node ID (data.main-db). The public alias is the module's
+// interface; the resolved edge points at the real node so injection flows from
+// the target's provides into the consuming node.
+func TestBuild_ExportAliasEdgeTargetResolves(t *testing.T) {
+	t.Parallel()
+	uses := types.OrderedMap[types.UsesSocketValue]{}
+	uses.Set("databases", types.UsesSocketValue{Compact: []string{"data.public_db"}})
+	components := types.OrderedMap[types.ComponentInstance]{}
+	components.Set("api", types.ComponentInstance{Type: "core/compute/api-server", Uses: uses})
+	subs := types.OrderedMap[types.SubAggregate]{}
+	subs.Set("data", types.SubAggregate{Type: "modules/db"})
+	agg := &types.Aggregate{
+		Metadata: types.AggregateMetadata{Name: "root"},
+		Spec: types.AggregateSpec{
+			Components: components,
+			Aggregates: subs,
+		},
+	}
+
+	result, err := Build(BuildConfig{
+		ResolveResult: &resolver.ResolveResult{
+			Aggregate:     agg,
+			BoundaryInfra: map[string]*resolver.BoundaryInfra{},
+		},
+		LoadSubAggregate: exportModuleLoader(),
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(result.Edges) != 1 {
+		t.Fatalf("expected 1 edge, got %d", len(result.Edges))
+	}
+	e := result.Edges[0]
+	if e.Source != "api" || e.Socket != "databases" {
+		t.Fatalf("unexpected edge shape: %+v", e)
+	}
+	if e.Target != "data.main-db" {
+		t.Errorf("export alias not resolved: got target %q, want %q", e.Target, "data.main-db")
+	}
+	if _, ok := result.Nodes.Get(e.Target); !ok {
+		t.Errorf("resolved target %q is not a node in the topology", e.Target)
+	}
+}
+
+// TestBuild_UnknownEdgeTargetHalts — a `uses` edge whose target is neither a
+// node nor a known export alias still halts the build with ErrDanglingUsesTarget.
+// Export-alias resolution must not soften the Loud Guardrail for genuinely
+// dangling targets.
+func TestBuild_UnknownEdgeTargetHalts(t *testing.T) {
+	t.Parallel()
+	uses := types.OrderedMap[types.UsesSocketValue]{}
+	uses.Set("databases", types.UsesSocketValue{Compact: []string{"data.nonexistent"}})
+	components := types.OrderedMap[types.ComponentInstance]{}
+	components.Set("api", types.ComponentInstance{Type: "core/compute/api-server", Uses: uses})
+	subs := types.OrderedMap[types.SubAggregate]{}
+	subs.Set("data", types.SubAggregate{Type: "modules/db"})
+	agg := &types.Aggregate{
+		Metadata: types.AggregateMetadata{Name: "root"},
+		Spec: types.AggregateSpec{
+			Components: components,
+			Aggregates: subs,
+		},
+	}
+
+	_, err := Build(BuildConfig{
+		ResolveResult: &resolver.ResolveResult{
+			Aggregate:     agg,
+			BoundaryInfra: map[string]*resolver.BoundaryInfra{},
+		},
+		LoadSubAggregate: exportModuleLoader(),
+	})
+	if err == nil {
+		t.Fatal("expected ErrDanglingUsesTarget for unknown edge target, got nil")
+	}
+	if !errors.Is(err, ErrDanglingUsesTarget) {
+		t.Errorf("expected ErrDanglingUsesTarget, got %v", err)
+	}
+}
