@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/cliplugin"
+	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
@@ -84,7 +85,7 @@ func TestInstalledPluginRunner_ResolvesSidecarURI(t *testing.T) {
 	}
 	// Resolution succeeds before the load fails, so the workspace runner returns
 	// the content digest of the resolved sidecar bytes even on a load failure.
-	if want := describeCacheDigest(sidecarBytes); sidecarDigest != want {
+	if want := digest.ContentDigest(sidecarBytes); sidecarDigest != want {
 		t.Fatalf("resolved-bytes digest = %q; want %q", sidecarDigest, want)
 	}
 

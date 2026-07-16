@@ -18,6 +18,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm/embedded"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
+	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
@@ -126,19 +127,21 @@ func pluginListRun(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, w
 	if rw != nil {
 		wsCfg = rw.Config()
 	}
-	sidecarDir, pluginByURI := workspacePluginResolutionInputs(rw)
+	in := workspacePluginResolutionInputs(rw)
 
 	var embeddedEntries []pluginListEntry
 	for _, uri := range embedded.URIs() {
-		embeddedEntries = append(embeddedEntries, describePluginURI(ctx, "embedded", uri, "", sidecarDir, nil))
+		// An embedded built-in resolves at the embed tier with no entity view; pass
+		// only the sidecar directory so the listing matches its runtime resolution.
+		embeddedEntries = append(embeddedEntries, describePluginURI(ctx, "embedded", uri, "", pluginResolutionInputs{sidecarDir: in.sidecarDir}))
 	}
 
 	var configuredEntries []pluginListEntry
 	for _, ref := range collectConfiguredRefs(wsCfg) {
-		configuredEntries = append(configuredEntries, describePluginURI(ctx, "configured", ref.uri, ref.origin, sidecarDir, pluginByURI))
+		configuredEntries = append(configuredEntries, describePluginURI(ctx, "configured", ref.uri, ref.origin, in))
 	}
 	for _, ref := range wsCfg.Plugins.CLI {
-		configuredEntries = append(configuredEntries, describeInstalledPlugin(ctx, ref, sidecarDir, pluginByURI))
+		configuredEntries = append(configuredEntries, describeInstalledPlugin(ctx, ref, in))
 	}
 
 	if asJSON {
@@ -199,7 +202,7 @@ func collectConfiguredRefs(cfg workspaceconfig.Config) []configuredRef {
 // built before the descriptor assets were generated. Any resolve or describe
 // failure is captured on the entry rather than propagated, so one unresolvable
 // plugin does not halt the listing.
-func describePluginURI(ctx context.Context, source, uri, origin, sidecarDir string, pluginByURI func(string) (types.Plugin, bool)) pluginListEntry {
+func describePluginURI(ctx context.Context, source, uri, origin string, in pluginResolutionInputs) pluginListEntry {
 	entry := pluginListEntry{source: source, uri: uri, origin: origin}
 
 	if source == "embedded" {
@@ -214,15 +217,15 @@ func describePluginURI(ctx context.Context, source, uri, origin, sidecarDir stri
 		}
 	}
 
-	resolved, err := resolvePluginURI(uri, sidecarDir, pluginByURI)
+	resolved, err := resolvePluginURI(uri, in)
 	if err != nil {
 		entry.err = err
 		return entry
 	}
 
-	digest := describeCacheDigest(resolved.Bytes)
-	entry.resolvedDigest = digest
-	if desc, ok := readDescribeCache(digest); ok {
+	pin := digest.ContentDigest(resolved.Bytes)
+	entry.resolvedDigest = pin
+	if desc, ok := readDescribeCache(pin); ok {
 		entry.desc = desc
 		return entry
 	}
@@ -238,7 +241,7 @@ func describePluginURI(ctx context.Context, source, uri, origin, sidecarDir stri
 		return entry
 	}
 	_ = plugin.Close(ctx)
-	writeDescribeCache(digest, desc)
+	writeDescribeCache(pin, desc)
 	entry.desc = desc
 	return entry
 }
@@ -250,8 +253,8 @@ func describePluginURI(ctx context.Context, source, uri, origin, sidecarDir stri
 // describePluginURI keeps the resolve-describe-digest path single-sourced; only
 // the readiness label is layered on top. The resulting entry joins the configured
 // group — a CLI command is a configured plugin, distinguished by its cli type.
-func describeInstalledPlugin(ctx context.Context, ref workspaceconfig.CLIPluginRef, sidecarDir string, pluginByURI func(string) (types.Plugin, bool)) pluginListEntry {
-	entry := describePluginURI(ctx, "installed", ref.URI, "", sidecarDir, pluginByURI)
+func describeInstalledPlugin(ctx context.Context, ref workspaceconfig.CLIPluginRef, in pluginResolutionInputs) pluginListEntry {
+	entry := describePluginURI(ctx, "installed", ref.URI, "", in)
 	entry.origin = fmt.Sprintf("pinned %s", shortDigest(ref.Digest))
 	entry.readiness = installedReadiness(ref.Digest, entry.resolvedDigest, entry.err)
 	return entry
@@ -275,17 +278,43 @@ func installedReadiness(pinned, fresh string, err error) string {
 	}
 }
 
+// pluginResolutionInputs is the workspace-derived context the plugin cascade
+// consults: the sidecar directory and catalog Plugin-by-URI entity view every
+// plugin type shares, plus the content-cache location and the per-URI content
+// pins the installed CLI plugins carry so their pinned bytes resolve from the
+// workspace cache offline. Only plugins.cli entries populate the pin map; a
+// plugin type with no pin probes the cache tier with an empty version (a miss
+// that falls through to the existing tiers), so enriching the shared resolver
+// does not change how the socket plugin types resolve.
+type pluginResolutionInputs struct {
+	sidecarDir    string
+	pluginByURI   func(string) (types.Plugin, bool)
+	workspaceRoot string
+	cacheDir      string
+	pins          map[string]string
+}
+
 // resolvePluginURI resolves uri to its .wasm bytes through the plugin cascade.
 // When a catalog Plugin accessor is supplied, an entity-fronted resolution is
 // tried first so a Plugin entity URI carries the entity's authored capability
 // claim and runtime limits. A URI that is not a Plugin entity — a direct
 // artifact or an embedded built-in reference — falls back to the bare cascade,
-// whose embed tier serves the built-ins.
-func resolvePluginURI(uri, sidecarDir string, pluginByURI func(string) (types.Plugin, bool)) (pluginpath.ResolvedPlugin, error) {
-	cascade := pluginpath.Resolver{SidecarDir: sidecarDir}
-	if pluginByURI != nil {
+// whose embed tier serves the built-ins. When the inputs carry a content-cache
+// location and a pin for the URI, the cache tier reads the pinned bytes and
+// verifies them against the pin, so an installed CLI plugin resolves offline from
+// the bytes cached at install; the runtime supplies no puller, so a cache miss is
+// a loud offline halt rather than a network fetch.
+func resolvePluginURI(uri string, in pluginResolutionInputs) (pluginpath.ResolvedPlugin, error) {
+	cascade := pluginpath.Resolver{
+		SidecarDir:    in.sidecarDir,
+		WorkspaceRoot: in.workspaceRoot,
+		CacheDir:      in.cacheDir,
+		Pins:          in.pins,
+		PinVersions:   in.pins,
+	}
+	if in.pluginByURI != nil {
 		front := pluginpath.EntityLookup(func(entityURI string) (string, *pluginpath.PluginContractClaim, *pluginpath.PluginRuntimeLimits, *[]pluginpath.PluginCommandMirror, bool) {
-			entity, ok := pluginByURI(entityURI)
+			entity, ok := in.pluginByURI(entityURI)
 			if !ok {
 				return "", nil, nil, nil, false
 			}
@@ -303,20 +332,40 @@ func resolvePluginURI(uri, sidecarDir string, pluginByURI func(string) (types.Pl
 }
 
 // workspacePluginResolutionInputs derives the plugin-resolution inputs from a
-// resolved workspace: the sidecar plugin directory and the catalog Plugin-by-URI
-// entity view. A nil workspace yields empty inputs — the bare cascade that serves
+// resolved workspace: the sidecar plugin directory, the catalog Plugin-by-URI
+// entity view, the content-cache location, and the per-URI content pins the
+// installed CLI plugins carry (their plugins.cli {uri, digest} entries). Only the
+// CLI plugins populate the pin map — the same prefixed content digest keys both
+// the pin check and the cache-slot version — so the socket plugin types are
+// unaffected. A nil workspace yields empty inputs — the bare cascade that serves
 // only embedded built-ins and direct local or absolute artifact paths. The
 // install path, the listing, and the runtime plugin runner all build their
 // resolver from these same inputs, so a URI one path accepts every other path
 // resolves identically.
-func workspacePluginResolutionInputs(rw *workspaceconfig.ResolvedWorkspace) (sidecarDir string, pluginByURI func(string) (types.Plugin, bool)) {
+func workspacePluginResolutionInputs(rw *workspaceconfig.ResolvedWorkspace) pluginResolutionInputs {
 	if rw == nil {
-		return "", nil
+		return pluginResolutionInputs{}
 	}
 	wsCfg := rw.Config()
 	dirs := resolveCatalogDirs(nil, wsCfg, rw.Root())
 	lazyView := catalog.NewLazyLookup(rw.Root(), wsCfg.ResolvedArtifactCacheDir(), dirs, nil)
-	return wsCfg.PluginSidecarDir, lazyView.PluginByURI
+	var pins map[string]string
+	for _, ref := range wsCfg.Plugins.CLI {
+		if ref.URI == "" || ref.Digest == "" {
+			continue
+		}
+		if pins == nil {
+			pins = map[string]string{}
+		}
+		pins[ref.URI] = ref.Digest
+	}
+	return pluginResolutionInputs{
+		sidecarDir:    wsCfg.PluginSidecarDir,
+		pluginByURI:   lazyView.PluginByURI,
+		workspaceRoot: rw.Root(),
+		cacheDir:      wsCfg.ResolvedArtifactCacheDir(),
+		pins:          pins,
+	}
 }
 
 // workspacePluginResolver binds a resolved workspace's plugin-resolution inputs
@@ -325,9 +374,9 @@ func workspacePluginResolutionInputs(rw *workspaceconfig.ResolvedWorkspace) (sid
 // therefore resolvable at run time; the two never diverge because they share this
 // one construction.
 func workspacePluginResolver(rw *workspaceconfig.ResolvedWorkspace) pluginpath.Lookup {
-	sidecarDir, pluginByURI := workspacePluginResolutionInputs(rw)
+	in := workspacePluginResolutionInputs(rw)
 	return func(uri string) (pluginpath.ResolvedPlugin, error) {
-		return resolvePluginURI(uri, sidecarDir, pluginByURI)
+		return resolvePluginURI(uri, in)
 	}
 }
 

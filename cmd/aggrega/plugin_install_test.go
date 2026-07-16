@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
+	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
@@ -157,7 +158,7 @@ func TestPluginInstall_Success(t *testing.T) {
 		t.Fatalf("capability prompt not shown:\n%s", out.String())
 	}
 
-	wantDigest := describeCacheDigest([]byte("guest-bytes"))
+	wantDigest := digest.ContentDigest([]byte("guest-bytes"))
 	refs := reResolveCLI(t, rw)
 	if len(refs) != 1 {
 		t.Fatalf("plugins.cli should carry exactly one pin; got %+v", refs)
@@ -241,7 +242,7 @@ func TestPluginInstall_RealGuestDescribe(t *testing.T) {
 	if err := pluginInstallRun(context.Background(), rw, "oci://local/moo", false, true, false, true, nil, strings.NewReader(""), &out); err != nil {
 		t.Fatalf("install real guest: %v", err)
 	}
-	wantDigest := describeCacheDigest(guest)
+	wantDigest := digest.ContentDigest(guest)
 	refs := reResolveCLI(t, rw)
 	if len(refs) != 1 || refs[0].URI != "oci://local/moo" || refs[0].Digest != wantDigest {
 		t.Fatalf("plugins.cli missing the real-guest pin: %+v", refs)

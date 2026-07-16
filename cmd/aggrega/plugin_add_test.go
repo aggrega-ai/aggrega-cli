@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
@@ -202,7 +203,7 @@ func TestPluginAddRun_CLIInstallsViaSearchResolve(t *testing.T) {
 	if len(refs) != 1 || refs[0].URI != "oci://hub.aggrega.ai/plugin/cli/moo:1.2.0" {
 		t.Fatalf("plugins.cli missing the pinned ref after 'add cli': %+v", refs)
 	}
-	if refs[0].Digest != describeCacheDigest(guest) {
+	if refs[0].Digest != digest.ContentDigest(guest) {
 		t.Fatalf("cli pin digest = %q; want the verified-bytes digest", refs[0].Digest)
 	}
 	if !strings.Contains(out.String(), "no additional capabilities") {

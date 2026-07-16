@@ -4,37 +4,32 @@
 package main
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"os"
 	"path/filepath"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
+	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 )
 
-// describeCacheDigest is the cache key for a resolved plugin's describe()
-// descriptor: the hex SHA-256 of the resolved guest bytes. The descriptor is a
-// static function of the guest, so keying on the content digest makes a
-// re-describe unnecessary while the bytes are unchanged and invalidates the
-// entry the moment they change — a new digest is a new key, and the stale entry
-// is simply never read again.
-func describeCacheDigest(guest []byte) string {
-	sum := sha256.Sum256(guest)
-	return hex.EncodeToString(sum[:])
-}
-
-// readDescribeCache returns the cached describe() descriptor for digest and
-// whether a usable entry was found. A missing directory, absent file, or
+// readDescribeCache returns the cached describe() descriptor for the plugin
+// pinned at contentPin and whether a usable entry was found. contentPin is the
+// canonical content digest ("sha256:<hex>"); the on-disk entry is keyed by the
+// colon-free tag form of that pin (oci.ContentDigestTag), applied here so a
+// reader and a writer cannot disagree on the slot the caller addresses. The
+// descriptor is a static function of the guest, so keying on the content digest
+// makes a re-describe unnecessary while the bytes are unchanged and invalidates
+// the entry the moment they change — a new digest is a new key, and the stale
+// entry is simply never read again. A missing directory, absent file, or
 // unreadable or malformed entry returns false so the caller falls back to
 // loading and describing the guest — the cache is an optimization, never a
 // source of stale or partial output.
-func readDescribeCache(digest string) (wasm.PluginDescriptor, bool) {
+func readDescribeCache(contentPin string) (wasm.PluginDescriptor, bool) {
 	dir, ok := wasm.PluginDescribeCacheDir()
 	if !ok {
 		return wasm.PluginDescriptor{}, false
 	}
-	raw, err := os.ReadFile(filepath.Join(dir, digest+".json"))
+	raw, err := os.ReadFile(filepath.Join(dir, oci.ContentDigestTag(contentPin)+".json"))
 	if err != nil {
 		return wasm.PluginDescriptor{}, false
 	}
@@ -45,11 +40,15 @@ func readDescribeCache(digest string) (wasm.PluginDescriptor, bool) {
 	return desc, true
 }
 
-// writeDescribeCache stores desc under digest for later runs to re-read. It is
-// best-effort: a cache directory that cannot be resolved or created, a marshal
-// failure, or a write failure is silently ignored, since a failed cache write
-// only forgoes the optimization and never affects the current listing.
-func writeDescribeCache(digest string, desc wasm.PluginDescriptor) {
+// writeDescribeCache stores desc for the plugin pinned at contentPin for later
+// runs to re-read. contentPin is the canonical content digest ("sha256:<hex>");
+// the entry is keyed by the colon-free tag form of that pin
+// (oci.ContentDigestTag), the same transform readDescribeCache applies, so the
+// write and read address one slot. It is best-effort: a cache directory that
+// cannot be resolved or created, a marshal failure, or a write failure is
+// silently ignored, since a failed cache write only forgoes the optimization and
+// never affects the current listing.
+func writeDescribeCache(contentPin string, desc wasm.PluginDescriptor) {
 	dir, ok := wasm.PluginDescribeCacheDir()
 	if !ok {
 		return
@@ -61,5 +60,5 @@ func writeDescribeCache(digest string, desc wasm.PluginDescriptor) {
 	if err != nil {
 		return
 	}
-	_ = os.WriteFile(filepath.Join(dir, digest+".json"), data, 0o644)
+	_ = os.WriteFile(filepath.Join(dir, oci.ContentDigestTag(contentPin)+".json"), data, 0o644)
 }

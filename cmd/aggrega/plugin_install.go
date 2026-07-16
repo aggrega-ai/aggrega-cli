@@ -13,6 +13,8 @@ import (
 	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
+	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
+	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pullverify"
@@ -202,41 +204,101 @@ func builtinCommandNames() map[string]bool {
 
 // recordInstalledCLIPlugin pins the resolved plugin into the plugins.cli list at
 // configPath — one {uri, digest} entry — and warms the describe cache under that
-// digest, so a freshly built tree registers each of the plugin's commands and
-// renders their help without loading the guest. The pin is the content digest of
-// the signature-verified bytes computed at install, which closes the
+// pin, so a freshly built tree registers each of the plugin's commands and
+// renders their help without loading the guest. The pin is the canonical content
+// digest of the signature-verified bytes computed at install, which closes the
 // pull-to-first-run window: the running bytes are fixed the moment they are
 // fetched, not trusted on first use. The write is idempotent — re-adding the same
 // plugin re-pins the one entry rather than duplicating it. The describe cache is
-// written once, keyed by that same content digest.
+// written once under that same content pin (keyed by its colon-free tag form),
+// so a later run reads the descriptor by the digest the config records.
 func recordInstalledCLIPlugin(configPath string, src resolvedInstallable, desc wasm.PluginDescriptor) error {
-	digest := describeCacheDigest(src.Bytes)
-	if err := workspaceconfig.UpsertCLIPluginRef(configPath, src.URI, digest); err != nil {
+	pin := digest.ContentDigest(src.Bytes)
+	if err := workspaceconfig.UpsertCLIPluginRef(configPath, src.URI, pin); err != nil {
 		return err
 	}
-	writeDescribeCache(digest, desc)
+	writeDescribeCache(pin, desc)
 	return nil
 }
 
-// productionInstallPluginFetch resolves ref to its .wasm bytes through the shared
-// plugin cascade and verifies any registry-originated signature through the same
-// pull-time primitive the closure walk uses. A local, sidecar, or catalog
-// reference resolves with no network and carries no registry signature to verify;
-// a registry reference resolves through the cascade's registry tier and is
-// verified against the registry's trust policy.
+// productionInstallPluginFetch resolves ref to its verified .wasm bytes. A
+// registry oci:// reference is fetched over the wire through the same OCI puller
+// the closure walk uses, its signature verified against the registry's trust
+// policy, pinned by content digest, and cached under the workspace artifact cache
+// as two self-verifying blobs (content + manifest) so a later offline run
+// resolves the pinned bytes from cache with no network. A local, sidecar, or
+// embedded reference resolves through the shared plugin cascade with no network
+// and no cache write, since it carries no registry signature and needs none —
+// its bytes are already on disk or in the binary.
 func productionInstallPluginFetch(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, ref string) (resolvedInstallable, error) {
-	var wsCfg workspaceconfig.Config
+	var (
+		wsCfg workspaceconfig.Config
+		root  string
+	)
 	if rw != nil {
 		wsCfg = rw.Config()
+		root = rw.Root()
 	}
-	resolved, err := workspacePluginResolver(rw)(ref)
+
+	bare := strings.TrimPrefix(ref, "oci://")
+	if !isRegistryHost(registryhost.Of(bare)) {
+		// Local / sidecar / embedded reference: resolve through the shared cascade
+		// with no network and no cache write, mirroring the closure verify pass's
+		// skip of non-registry items.
+		resolved, err := workspacePluginResolver(rw)(ref)
+		if err != nil {
+			return resolvedInstallable{}, err
+		}
+		return resolvedInstallable{URI: ref, Bytes: resolved.Bytes}, nil
+	}
+
+	// Registry reference: fetch the .wasm bytes, verify the signature, pin by
+	// content digest, and cache both blobs under the same (URI, pin) slot the
+	// runtime resolver's cache tier re-reads. The URI written here is ref verbatim,
+	// so it is byte-identical to the plugins.cli entry the config records and the
+	// runtime cache read addresses.
+	repoRef, tag, err := splitPluginRefTag(ref)
 	if err != nil {
 		return resolvedInstallable{}, err
+	}
+	puller := catalog.NewDefaultOCIPuller(wsCfg)
+	if puller == nil {
+		return resolvedInstallable{}, fmt.Errorf("cannot fetch %q while the workspace is offline; installing a registry plugin requires network access", ref)
+	}
+	result, err := puller.Pull(ctx, repoRef, tag)
+	if err != nil {
+		return resolvedInstallable{}, fmt.Errorf("fetch %q: %w", ref, err)
 	}
 	if err := verifyInstallSignature(ctx, ref, wsCfg); err != nil {
 		return resolvedInstallable{}, err
 	}
-	return resolvedInstallable{URI: ref, Bytes: resolved.Bytes}, nil
+	pin := digest.ContentDigest(result.Bytes)
+	cacheDir := wsCfg.ResolvedArtifactCacheDir()
+	if err := oci.WriteCached(root, cacheDir, ref, pin, result.Bytes); err != nil {
+		return resolvedInstallable{}, err
+	}
+	if len(result.ManifestBytes) > 0 {
+		if err := oci.WriteCachedManifest(root, cacheDir, ref, pin, result.ManifestBytes); err != nil {
+			return resolvedInstallable{}, err
+		}
+	}
+	return resolvedInstallable{URI: ref, Bytes: result.Bytes}, nil
+}
+
+// splitPluginRefTag splits a registry plugin reference "oci://host/path:tag" into
+// its bare "host/path" repository reference (the OCI puller's fetch coordinate)
+// and its version "tag". The version tag is the final ":"-delimited segment; a
+// registry host:port colon is earlier and is always followed by the "/path"
+// segment, so the tag is the substring after the last colon precisely when that
+// substring carries no "/". A reference with no such tag is refused loudly rather
+// than pulled against a repository with no version to select.
+func splitPluginRefTag(ref string) (repoRef, tag string, err error) {
+	bare := strings.TrimPrefix(ref, "oci://")
+	i := strings.LastIndexByte(bare, ':')
+	if i < 0 || strings.ContainsRune(bare[i+1:], '/') {
+		return "", "", fmt.Errorf("aggrega plugin add: reference %q carries no version tag to fetch", ref)
+	}
+	return bare[:i], bare[i+1:], nil
 }
 
 // verifyInstallSignature verifies the signature of a registry-resolved plugin

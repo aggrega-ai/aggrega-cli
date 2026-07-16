@@ -49,28 +49,34 @@ func newPluginAddCmd() *cobra.Command {
 	c := &cobra.Command{
 		Use:   "add <type> <query>",
 		Short: "Search the registry and add a plugin of the named type",
-		Long: `Search the configured registry for a plugin of the named type and write the
-attachment into a config file.
+		Long: `Search the configured registry for a plugin of the named type, resolve the
+query to one plugin, and add it to your configuration.
 
-The type is one of provider, mutator, policy, linter, importer, or cli. The query
-is a case-insensitive substring match on the plugin repository path, scoped to the
-chosen type; it must resolve to exactly one plugin (an exact plugin-name match
-wins when several share a substring), else the command halts and lists the
-candidates so you can narrow it.
+Arguments:
+  <type>   The plugin socket to add for. One of: provider, mutator, policy,
+           linter, importer, or cli.
+  <query>  A case-insensitive substring matched against the plugin names of the
+           chosen type. It must resolve to exactly one plugin — an exact
+           plugin-name match wins when several share the substring; otherwise the
+           command lists the candidates so you can narrow it.
 
-For a config type the latest published version is pinned and the bare plugin
-entity identity (<type>/<name>:<version>) is added to the plugins.<type> list. For
-the provider type, --capability names the capability the binding serves and the
-plugin's oci:// identity is written as a plugins.providers entry, preserving
-existing settings.
+What add writes depends on the type:
 
-For the cli type the resolved plugin is pinned into the plugins.cli list as a
-top-level aggrega command: its resolved reference and the content digest of its
-verified bytes are recorded so the command runs those exact bytes. A cli plugin
-defaults to the global config, so its command is available in every workspace;
---workspace pins it to this project instead. Its declared capabilities are
-confirmed before installing, and --accept-capabilities or --yes skips that prompt
-for non-interactive use.`,
+  - A config type (mutator, policy, linter, importer) pins the latest published
+    version and adds the bare plugin identity (<type>/<name>:<version>) to the
+    plugins.<type> list.
+  - The provider type writes the plugin's oci:// identity as a plugins.providers
+    entry; --capability names the capability the binding serves, preserving
+    existing settings.
+  - The cli type fetches the plugin from the registry, verifies it, and caches
+    its bytes, then pins it into the plugins.cli list as a top-level aggrega
+    command — no separate pull step. Its resolved reference and the content
+    digest of the verified bytes are recorded so the command runs those exact
+    bytes, resolving from the local cache on later runs with no further network
+    access. A cli plugin defaults to the global config, so its command is
+    available in every workspace; --workspace pins it to this project instead.
+    Its declared capabilities are confirmed before installing, and
+    --accept-capabilities or --yes skips that prompt for non-interactive use.`,
 		Args: cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			rw, err := workspaceFromContext(cmd.Context())

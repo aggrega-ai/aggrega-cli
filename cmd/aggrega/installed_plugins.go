@@ -14,6 +14,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/cliplugin"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
+	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
@@ -39,7 +40,7 @@ type cliPluginDispatcher interface {
 // package-level seam so a test can substitute a fake dispatcher that records the
 // argument vector without a real guest or workspace.
 var installedPluginRunnerFor = func(rw *workspaceconfig.ResolvedWorkspace) cliPluginDispatcher {
-	return cliplugin.Runner{Resolve: workspacePluginResolver(rw), Digest: describeCacheDigest}
+	return cliplugin.Runner{Resolve: workspacePluginResolver(rw), Digest: digest.ContentDigest}
 }
 
 // resolveCLIPluginDigest resolves the bytes uri names through the workspace
@@ -51,7 +52,7 @@ var resolveCLIPluginDigest = func(rw *workspaceconfig.ResolvedWorkspace, uri str
 	if err != nil {
 		return "", err
 	}
-	return describeCacheDigest(resolved.Bytes), nil
+	return digest.ContentDigest(resolved.Bytes), nil
 }
 
 // cliPluginRegistrations yields the CLI-extension commands to register for this
@@ -160,7 +161,7 @@ func describeConfiguredCLI(ctx context.Context, ref workspaceconfig.CLIPluginRef
 		return wasm.PluginDescriptor{}, err
 	}
 	_ = plugin.Close(ctx)
-	writeDescribeCache(describeCacheDigest(resolved.Bytes), desc)
+	writeDescribeCache(digest.ContentDigest(resolved.Bytes), desc)
 	return desc, nil
 }
 

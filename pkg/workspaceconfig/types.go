@@ -482,9 +482,10 @@ type CLIPluginRef struct {
 	// resolves and runs (for example oci://hub.aggrega.ai/plugin/cli/greet:1.2.0),
 	// pinned at install.
 	URI string `yaml:"uri"`
-	// Digest is the hex SHA-256 content digest of the guest .wasm bytes URI
-	// resolved to at install. It pins the exact bytes the command runs — a later
-	// resolution whose bytes hash differently halts the command — and keys the
+	// Digest is the canonical content digest ("sha256:<hex>") of the guest .wasm
+	// bytes URI resolved to at install. It pins the exact bytes the command runs —
+	// a later resolution whose bytes hash differently halts the command — and keys
+	// both the workspace cache slot the bytes are read from offline and the
 	// describe cache that renders the command's help without loading the guest.
 	Digest string `yaml:"digest"`
 }
