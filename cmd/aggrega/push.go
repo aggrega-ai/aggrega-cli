@@ -161,16 +161,26 @@ type pushConfig struct {
 	Out io.Writer
 }
 
+// componentCategoryLabel is the metadata.labels key whose value the standard
+// catalog convention sets to an entity's category. Its value is stamped as the
+// searchable category annotation at publish so a registry index can filter by
+// category without fetching the entity body.
+const componentCategoryLabel = "component.aggrega.ai/category"
+
 // pushEntityHeader is the minimal YAML envelope pushRun parses out
-// of the entity file: kind, metadata.name, metadata.version. The
-// shape mirrors the per-kind envelope pkg/oci/bundle.go uses for
+// of the entity file: kind, metadata.name, metadata.version,
+// metadata.description, and metadata.labels. The shape mirrors the
+// per-kind envelope pkg/oci/bundle.go uses for
 // validateEntityVersionPathSubdir; duplicated here because the push
-// verb needs the same fields for every kind.
+// verb needs the same fields for every kind. Description and labels feed
+// the searchable annotations stamped onto the published manifest.
 type pushEntityHeader struct {
 	Kind     string `yaml:"kind"`
 	Metadata struct {
-		Name    string `yaml:"name"`
-		Version string `yaml:"version"`
+		Name        string            `yaml:"name"`
+		Version     string            `yaml:"version"`
+		Description string            `yaml:"description"`
+		Labels      map[string]string `yaml:"labels"`
 	} `yaml:"metadata"`
 	Spec struct {
 		// Capability is the render-engine capability for Recipe / FeatureRecipe.
@@ -224,12 +234,16 @@ func pushRun(cfg pushConfig) error {
 	}
 	wsCfg := rw.Config()
 
-	registry := cfg.Registry
-	if registry == "" {
-		registry = wsCfg.DefaultRegistry
+	token := cfg.Registry
+	if token == "" {
+		token = wsCfg.DefaultRegistry
 	}
-	if registry == "" {
+	if token == "" {
 		return fmt.Errorf("aggrega push: no destination registry; set --registry or workspace.default_registry")
+	}
+	registry, err := wsCfg.ResolveRegistry(token)
+	if err != nil {
+		return fmt.Errorf("aggrega push: %w", err)
 	}
 
 	data, err := os.ReadFile(cfg.EntityPath)
@@ -300,6 +314,16 @@ func pushRun(cfg pushConfig) error {
 	reference := buildPushReference(registry, header.Kind, header.Spec.Capability, header.Metadata.Name)
 	tag := header.Metadata.Version
 
+	// Searchable catalog annotations, built once and stamped identically onto
+	// the digest preview and the real push. Building them once is load-bearing:
+	// the previewed digest is signed and compared by the immutability guard, so
+	// the preview must stamp exactly the annotations the push will.
+	annotations := oci.SearchableMetadata{
+		Description: header.Metadata.Description,
+		Category:    header.Metadata.Labels[componentCategoryLabel],
+		Kind:        header.Kind,
+	}.Annotations()
+
 	if cfg.DryRun {
 		fmt.Fprintf(out, "aggrega push (dry-run): %s:%s\n  kind: %s\n  mediatype: %s\n  size: %d bytes\n",
 			reference, tag, header.Kind, mediaType, len(bundleBytes))
@@ -329,7 +353,7 @@ func pushRun(cfg pushConfig) error {
 	if err != nil {
 		return fmt.Errorf("aggrega push: resolve %s:%s: %w", reference, tag, err)
 	}
-	proposedDigest, err := oci.ManifestDigest(ctx, mediaType, bundleBytes)
+	proposedDigest, err := oci.ManifestDigest(ctx, mediaType, bundleBytes, annotations)
 	if err != nil {
 		return fmt.Errorf("aggrega push: %s:%s: %w", reference, tag, err)
 	}
@@ -360,7 +384,7 @@ func pushRun(cfg pushConfig) error {
 		}
 	}
 
-	digest, err := oci.Push(ctx, target, tag, mediaType, bundleBytes)
+	digest, err := oci.Push(ctx, target, tag, mediaType, bundleBytes, annotations)
 	if err != nil {
 		return fmt.Errorf("aggrega push: push %s:%s: %w", reference, tag, err)
 	}

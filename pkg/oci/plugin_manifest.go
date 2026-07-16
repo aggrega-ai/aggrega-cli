@@ -27,8 +27,14 @@ import (
 // the property a re-push idempotency guard and diff-based review rely on. Push
 // adds no content canonicalisation; callers supply entity bytes and .wasm bytes
 // as they intend them published.
-func PushPluginManifest(ctx context.Context, target oras.Target, tag string, entityYAML, wasm []byte) (string, error) {
-	manifestDesc, err := packPluginManifest(ctx, target, entityYAML, wasm)
+//
+// `annotations` carries the searchable catalog annotations to stamp onto the
+// manifest (see SearchableMetadata); pass nil to stamp none. A caller that
+// previews the digest with PluginManifestDigest before pushing MUST pass the
+// same annotations map to both, or the previewed digest will not equal the
+// pushed digest.
+func PushPluginManifest(ctx context.Context, target oras.Target, tag string, entityYAML, wasm []byte, annotations map[string]string) (string, error) {
+	manifestDesc, err := packPluginManifest(ctx, target, entityYAML, wasm, annotations)
 	if err != nil {
 		return "", err
 	}
@@ -46,8 +52,13 @@ func PushPluginManifest(ctx context.Context, target oras.Target, tag string, ent
 // PushPluginManifest of the same inputs yields — so a caller can preview the
 // digest a push would land, sign it before any bytes reach the registry, and
 // compare it against an existing tag to decide whether the push would overwrite.
-func PluginManifestDigest(ctx context.Context, entityYAML, wasm []byte) (string, error) {
-	manifestDesc, err := packPluginManifest(ctx, memory.New(), entityYAML, wasm)
+//
+// `annotations` must equal the map the corresponding PushPluginManifest will
+// stamp (see SearchableMetadata); the searchable annotations are part of the
+// manifest and therefore part of the digest, so a preview computed with a
+// different set will not match the pushed digest.
+func PluginManifestDigest(ctx context.Context, entityYAML, wasm []byte, annotations map[string]string) (string, error) {
+	manifestDesc, err := packPluginManifest(ctx, memory.New(), entityYAML, wasm, annotations)
 	if err != nil {
 		return "", err
 	}
@@ -57,8 +68,12 @@ func PluginManifestDigest(ctx context.Context, entityYAML, wasm []byte) (string,
 // packPluginManifest uploads the entity YAML as the config blob and the .wasm
 // as the single layer, then packs a deterministic OCI manifest referencing
 // both. It does NOT tag. The creation annotation is pinned so the manifest
-// digest is a pure function of the two inputs.
-func packPluginManifest(ctx context.Context, target oras.Target, entityYAML, wasm []byte) (ocispec.Descriptor, error) {
+// digest is a pure function of the two inputs and the stamped annotations.
+//
+// `annotations` carries the searchable catalog annotations (see
+// SearchableMetadata); it is merged with the pinned creation annotation into
+// one manifest-annotation map. A nil or empty map stamps only the creation pin.
+func packPluginManifest(ctx context.Context, target oras.Target, entityYAML, wasm []byte, annotations map[string]string) (ocispec.Descriptor, error) {
 	configDesc, err := oras.PushBytes(ctx, target, MediaTypePlugin, entityYAML)
 	if err != nil {
 		return ocispec.Descriptor{}, fmt.Errorf("oci: push plugin entity config: %w", err)
@@ -75,7 +90,7 @@ func packPluginManifest(ctx context.Context, target oras.Target, entityYAML, was
 		oras.PackManifestOptions{
 			ConfigDescriptor:    &configDesc,
 			Layers:              []ocispec.Descriptor{wasmDesc},
-			ManifestAnnotations: map[string]string{ocispec.AnnotationCreated: epochCreated},
+			ManifestAnnotations: mergeCreatedAnnotations(annotations),
 		},
 	)
 	if err != nil {

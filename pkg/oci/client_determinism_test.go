@@ -32,7 +32,7 @@ func TestPushPinsManifestCreated(t *testing.T) {
 	content := []byte("apiVersion: aggrega.ai/v1alpha1\nkind: Component\nmetadata:\n  name: core/compute/api-server\n  version: 1.0.0\n")
 
 	store := memory.New()
-	if _, err := oci.Push(ctx, store, "1.0.0", oci.MediaTypeComponent, content); err != nil {
+	if _, err := oci.Push(ctx, store, "1.0.0", oci.MediaTypeComponent, content, nil); err != nil {
 		t.Fatalf("Push: %v", err)
 	}
 
@@ -52,11 +52,11 @@ func TestPushManifestDigestDeterministic(t *testing.T) {
 	ctx := context.Background()
 	content := []byte("apiVersion: aggrega.ai/v1alpha1\nkind: Component\nmetadata:\n  name: core/compute/api-server\n  version: 1.0.0\n")
 
-	first, err := oci.Push(ctx, memory.New(), "1.0.0", oci.MediaTypeComponent, content)
+	first, err := oci.Push(ctx, memory.New(), "1.0.0", oci.MediaTypeComponent, content, nil)
 	if err != nil {
 		t.Fatalf("first Push: %v", err)
 	}
-	second, err := oci.Push(ctx, memory.New(), "1.0.0", oci.MediaTypeComponent, content)
+	second, err := oci.Push(ctx, memory.New(), "1.0.0", oci.MediaTypeComponent, content, nil)
 	if err != nil {
 		t.Fatalf("second Push: %v", err)
 	}
@@ -74,11 +74,11 @@ func TestManifestDigestMatchesPush(t *testing.T) {
 	ctx := context.Background()
 	content := []byte("apiVersion: aggrega.ai/v1alpha1\nkind: Feature\nmetadata:\n  name: core/observability/logging\n  version: 2.3.1\n")
 
-	preview, err := oci.ManifestDigest(ctx, oci.MediaTypeFeature, content)
+	preview, err := oci.ManifestDigest(ctx, oci.MediaTypeFeature, content, nil)
 	if err != nil {
 		t.Fatalf("ManifestDigest: %v", err)
 	}
-	pushed, err := oci.Push(ctx, memory.New(), "2.3.1", oci.MediaTypeFeature, content)
+	pushed, err := oci.Push(ctx, memory.New(), "2.3.1", oci.MediaTypeFeature, content, nil)
 	if err != nil {
 		t.Fatalf("Push: %v", err)
 	}
@@ -98,7 +98,7 @@ func TestPullSurfacesManifestBytesMatchingDigest(t *testing.T) {
 	content := []byte("apiVersion: aggrega.ai/v1alpha1\nkind: Component\nmetadata:\n  name: core/compute/api-server\n  version: 1.0.0\n")
 
 	store := memory.New()
-	if _, err := oci.Push(ctx, store, "1.0.0", oci.MediaTypeComponent, content); err != nil {
+	if _, err := oci.Push(ctx, store, "1.0.0", oci.MediaTypeComponent, content, nil); err != nil {
 		t.Fatalf("Push: %v", err)
 	}
 	res, err := oci.Pull(ctx, store, "1.0.0")

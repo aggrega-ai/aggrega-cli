@@ -22,7 +22,7 @@ import (
 // requires. Push/Pull against memory never fail for valid inputs.
 func faithfulManifest(ctx context.Context, mt string, body []byte) (manifestBytes []byte, manifestDigest string) {
 	store := memory.New()
-	if _, err := oci.Push(ctx, store, "seed", mt, body); err != nil {
+	if _, err := oci.Push(ctx, store, "seed", mt, body, nil); err != nil {
 		panic(err)
 	}
 	res, err := oci.Pull(ctx, store, "seed")

@@ -43,6 +43,18 @@ func UpsertRegistry(path string, reg RegistryConfig) error {
 	}
 	return mutateConfigDocument(path, func(mapping *yaml.Node) error {
 		registries := readRegistries(mapping)
+		// A non-empty alias is unique across entries: registering one already
+		// bound to a different host halts loudly rather than shadowing it.
+		// Re-adding the SAME host updates that host's alias in place (upsert),
+		// so it is not a conflict.
+		if reg.Name != "" {
+			for i := range registries {
+				if registries[i].Host != reg.Host && registries[i].Name == reg.Name {
+					return fmt.Errorf("workspaceconfig: registry alias %q is already used by host %q; choose a different alias or address that host directly: %w",
+						reg.Name, registries[i].Host, ErrDuplicateRegistryAlias)
+				}
+			}
+		}
 		replaced := false
 		for i := range registries {
 			if registries[i].Host == reg.Host {
@@ -346,6 +358,59 @@ func RemoveProviderBinding(path, query string) (bool, error) {
 		}
 		removed = true
 		return writeOrDeleteRefs(pluginsNode, "providers", kept)
+	})
+	if err != nil {
+		return false, err
+	}
+	return removed, nil
+}
+
+// RemoveRegistry removes the `registries` entry addressed by token from the
+// workspace config file at path, preserving every other setting, and writes the
+// result back. It reports whether an entry matched: false leaves the file
+// untouched (a query that matches nothing, or no config file yet) so the calling
+// command can fail loudly. When the removal empties the list its `registries` key
+// is dropped rather than left as an empty list.
+//
+// token is resolved through Config.ResolveRegistry — the single alias-or-host
+// primitive every registry consumer routes through — against this file's own
+// registries: a token matching an entry's Name alias resolves to that entry's
+// host, and any other token is treated as a host. The entry whose Host equals the
+// resolved host is dropped, so a registry added by its friendly alias is removed
+// by that same alias, symmetric with add. An ambiguous alias (two entries) surfaces
+// its resolver error rather than removing one arbitrarily.
+//
+// The default_registry pointer is a separate setting and is deliberately left
+// untouched: an absent entry simply reverts that host to default trust, and the
+// resolver's host passthrough keeps it a valid target. Like the other by-key
+// removers it routes through mutateConfigDocument, keeping the config-write,
+// schema-gate, and node-surgery discipline in one place.
+func RemoveRegistry(path, token string) (bool, error) {
+	if token == "" {
+		return false, fmt.Errorf("workspaceconfig: RemoveRegistry: token is required")
+	}
+	removed := false
+	err := mutateConfigDocument(path, func(mapping *yaml.Node) error {
+		registries := readRegistries(mapping)
+		if len(registries) == 0 {
+			return errNoConfigChange
+		}
+		host, rerr := Config{Registries: registries}.ResolveRegistry(token)
+		if rerr != nil {
+			return rerr
+		}
+		kept := make([]RegistryConfig, 0, len(registries))
+		for _, r := range registries {
+			if r.Host == host {
+				removed = true
+				continue
+			}
+			kept = append(kept, r)
+		}
+		if !removed {
+			return errNoConfigChange
+		}
+		return writeOrDeleteRefs(mapping, "registries", kept)
 	})
 	if err != nil {
 		return false, err

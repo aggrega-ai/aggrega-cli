@@ -106,7 +106,7 @@ func TestLiveE2E_KeylessPublishVerifyRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open hub repository: %v", err)
 	}
-	manifestDigest, err := oci.Push(ctx, target, tag, oci.MediaTypeComponent, artifact)
+	manifestDigest, err := oci.Push(ctx, target, tag, oci.MediaTypeComponent, artifact, nil)
 	if err != nil {
 		t.Fatalf("push to deployed hub: %v", err)
 	}

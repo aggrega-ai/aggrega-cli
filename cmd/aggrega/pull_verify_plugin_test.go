@@ -32,7 +32,7 @@ func signedPluginStore(t *testing.T) (store *memory.Store, manifestDigest, conte
 
 	artifact := []byte("\x00asm\x01\x00\x00\x00") // a minimal Wasm header stand-in
 	contentDigest = digest.ContentDigest(artifact)
-	dg, err := oci.Push(ctx, store, "1.0.0", oci.MediaTypeComponent, artifact)
+	dg, err := oci.Push(ctx, store, "1.0.0", oci.MediaTypeComponent, artifact, nil)
 	if err != nil {
 		t.Fatalf("Push: %v", err)
 	}
@@ -139,7 +139,7 @@ func TestVerifyClosurePluginMissingSignatureHalts(t *testing.T) {
 	store := memory.New()
 	artifact := []byte("\x00asm\x01\x00\x00\x00")
 	contentDg := digest.ContentDigest(artifact)
-	dg, err := oci.Push(ctx, store, "1.0.0", oci.MediaTypeComponent, artifact)
+	dg, err := oci.Push(ctx, store, "1.0.0", oci.MediaTypeComponent, artifact, nil)
 	if err != nil {
 		t.Fatalf("Push: %v", err)
 	}

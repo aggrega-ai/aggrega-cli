@@ -29,11 +29,11 @@ func TestPushPluginManifestDeterministic(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 
-	first, err := PushPluginManifest(ctx, memory.New(), "1.0.0", testPluginEntity, testPluginWasm)
+	first, err := PushPluginManifest(ctx, memory.New(), "1.0.0", testPluginEntity, testPluginWasm, nil)
 	if err != nil {
 		t.Fatalf("first PushPluginManifest: %v", err)
 	}
-	second, err := PushPluginManifest(ctx, memory.New(), "1.0.0", testPluginEntity, testPluginWasm)
+	second, err := PushPluginManifest(ctx, memory.New(), "1.0.0", testPluginEntity, testPluginWasm, nil)
 	if err != nil {
 		t.Fatalf("second PushPluginManifest: %v", err)
 	}
@@ -51,7 +51,7 @@ func TestPushPluginManifestInlinePairing(t *testing.T) {
 	ctx := context.Background()
 	store := memory.New()
 
-	if _, err := PushPluginManifest(ctx, store, "1.0.0", testPluginEntity, testPluginWasm); err != nil {
+	if _, err := PushPluginManifest(ctx, store, "1.0.0", testPluginEntity, testPluginWasm, nil); err != nil {
 		t.Fatalf("PushPluginManifest: %v", err)
 	}
 
@@ -88,7 +88,7 @@ func TestPushPluginManifestConfigRoundTrip(t *testing.T) {
 	ctx := context.Background()
 	store := memory.New()
 
-	pushedDigest, err := PushPluginManifest(ctx, store, "1.0.0", testPluginEntity, testPluginWasm)
+	pushedDigest, err := PushPluginManifest(ctx, store, "1.0.0", testPluginEntity, testPluginWasm, nil)
 	if err != nil {
 		t.Fatalf("PushPluginManifest: %v", err)
 	}

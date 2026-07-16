@@ -45,7 +45,7 @@ func TestIntegration_DeprecateAttachesSignedMarker(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewRemoteRepository: %v", err)
 	}
-	subjectDigest, err := oci.Push(ctx, repo, "1.0.0", oci.MediaTypeComponent, []byte("legacy component bytes"))
+	subjectDigest, err := oci.Push(ctx, repo, "1.0.0", oci.MediaTypeComponent, []byte("legacy component bytes"), nil)
 	if err != nil {
 		t.Fatalf("Push subject: %v", err)
 	}

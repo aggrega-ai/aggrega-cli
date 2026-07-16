@@ -130,12 +130,35 @@ func Pull(ctx context.Context, target oras.ReadOnlyTarget, tag string, expectedM
 // content blob (which callers pre-canonicalise) to the manifest.
 const epochCreated = "1970-01-01T00:00:00Z"
 
+// mergeCreatedAnnotations folds a caller's searchable annotations together with
+// the pinned creation annotation into the one map a packed manifest carries.
+// The pinned created value always wins, so a caller can never displace the
+// determinism pin. The copy's iteration order is irrelevant: the result is a
+// map oras serialises with sorted keys, so byte-identical inputs still produce a
+// byte-identical manifest digest regardless of which searchable keys are
+// present.
+func mergeCreatedAnnotations(annotations map[string]string) map[string]string {
+	merged := make(map[string]string, len(annotations)+1)
+	for k, v := range annotations {
+		merged[k] = v
+	}
+	merged[ocispec.AnnotationCreated] = epochCreated
+	return merged
+}
+
 // packArtifact uploads `content` and packs a deterministic OCI manifest
 // referencing it into `target`, returning the manifest descriptor. It
 // does NOT tag. Push and ManifestDigest share it so the digest a guard
 // previews against an in-memory store is byte-identical to the digest a
 // real push produces.
-func packArtifact(ctx context.Context, target oras.Target, mediaType string, content []byte) (ocispec.Descriptor, error) {
+//
+// `annotations` carries the searchable catalog annotations to stamp onto the
+// manifest (see SearchableMetadata); it is merged with the pinned creation
+// annotation into one manifest-annotation map. A nil or empty map stamps only
+// the creation pin. Because the digest preview and the real push route through
+// this one helper, both stamp identical annotations and produce an identical
+// digest.
+func packArtifact(ctx context.Context, target oras.Target, mediaType string, content []byte, annotations map[string]string) (ocispec.Descriptor, error) {
 	contentDesc, err := oras.PushBytes(ctx, target, mediaType, content)
 	if err != nil {
 		return ocispec.Descriptor{}, fmt.Errorf("oci: push content: %w", err)
@@ -147,7 +170,7 @@ func packArtifact(ctx context.Context, target oras.Target, mediaType string, con
 		mediaType,
 		oras.PackManifestOptions{
 			Layers:              []ocispec.Descriptor{contentDesc},
-			ManifestAnnotations: map[string]string{ocispec.AnnotationCreated: epochCreated},
+			ManifestAnnotations: mergeCreatedAnnotations(annotations),
 		},
 	)
 	if err != nil {
@@ -168,8 +191,14 @@ func packArtifact(ctx context.Context, target oras.Target, mediaType string, con
 // adds no content canonicalisation; it trusts its input. It does pin
 // the manifest's creation annotation, so byte-identical content always
 // produces a byte-identical manifest digest.
-func Push(ctx context.Context, target oras.Target, tag string, mediaType string, content []byte) (string, error) {
-	manifestDesc, err := packArtifact(ctx, target, mediaType, content)
+//
+// `annotations` carries the searchable catalog annotations to stamp onto the
+// manifest (see SearchableMetadata); pass nil to stamp none. A caller that
+// previews the digest with ManifestDigest before pushing MUST pass the same
+// annotations map to both, or the previewed digest will not equal the pushed
+// digest.
+func Push(ctx context.Context, target oras.Target, tag string, mediaType string, content []byte, annotations map[string]string) (string, error) {
+	manifestDesc, err := packArtifact(ctx, target, mediaType, content, annotations)
 	if err != nil {
 		return "", err
 	}
@@ -186,8 +215,13 @@ func Push(ctx context.Context, target oras.Target, tag string, mediaType string,
 // and equal to the digest a real Push of the same content yields — so a
 // caller can preview the digest a push would land before deciding
 // whether that push would overwrite an existing tag.
-func ManifestDigest(ctx context.Context, mediaType string, content []byte) (string, error) {
-	manifestDesc, err := packArtifact(ctx, memory.New(), mediaType, content)
+//
+// `annotations` must equal the map the corresponding Push will stamp (see
+// SearchableMetadata); the searchable annotations are part of the manifest and
+// therefore part of the digest, so a preview computed with a different set will
+// not match the pushed digest.
+func ManifestDigest(ctx context.Context, mediaType string, content []byte, annotations map[string]string) (string, error) {
+	manifestDesc, err := packArtifact(ctx, memory.New(), mediaType, content, annotations)
 	if err != nil {
 		return "", err
 	}
@@ -338,13 +372,15 @@ func isUnauthorized(err error) bool {
 }
 
 // ociManifestView is the subset of an OCI image manifest this package reads:
-// the artifact type, the config descriptor, and the layer descriptors. It is
-// the single shape every manifest parse in this package unmarshals into, so
-// the read paths cannot disagree about a manifest's structure.
+// the artifact type, the config descriptor, the layer descriptors, and the
+// manifest-level annotations. It is the single shape every manifest parse in
+// this package unmarshals into, so the read paths cannot disagree about a
+// manifest's structure.
 type ociManifestView struct {
 	ArtifactType string               `json:"artifactType"`
 	Config       ocispec.Descriptor   `json:"config"`
 	Layers       []ocispec.Descriptor `json:"layers"`
+	Annotations  map[string]string    `json:"annotations"`
 }
 
 // parseManifest unmarshals an OCI image manifest's JSON bytes into the subset
@@ -356,6 +392,29 @@ func parseManifest(manifestBytes []byte) (ociManifestView, error) {
 		return ociManifestView{}, err
 	}
 	return m, nil
+}
+
+// FetchManifestAnnotations resolves tag on target and returns the annotation
+// map stamped on its OCI manifest (the searchable catalog facets a publish
+// records; see SearchableMetadata for the aggrega-scoped keys). It reads the
+// raw manifest through the one manifest-parse home and returns without fetching
+// any content blob, so an index build reads a manifest's facets cheaply without
+// re-deriving the manifest shape. A manifest carrying no annotations returns a
+// nil map and a nil error.
+func FetchManifestAnnotations(ctx context.Context, target oras.ReadOnlyTarget, tag string) (map[string]string, error) {
+	manifestDesc, err := target.Resolve(ctx, tag)
+	if err != nil {
+		return nil, fmt.Errorf("oci: resolve %q: %w", tag, err)
+	}
+	manifestBytes, err := fetchBlob(ctx, target, manifestDesc)
+	if err != nil {
+		return nil, fmt.Errorf("oci: fetch manifest %q: %w", tag, err)
+	}
+	view, err := parseManifest(manifestBytes)
+	if err != nil {
+		return nil, fmt.Errorf("oci: parse manifest %q: %w", tag, err)
+	}
+	return view.Annotations, nil
 }
 
 // descriptorFromManifest parses an OCI image manifest's JSON bytes and

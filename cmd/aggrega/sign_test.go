@@ -25,7 +25,7 @@ func TestSignAttachesReferrerWithoutMutatingArtifact(t *testing.T) {
 	ctx := context.Background()
 	store := memory.New()
 
-	published, err := oci.Push(ctx, store, "1.0.0", oci.MediaTypeComponent, []byte("published content"))
+	published, err := oci.Push(ctx, store, "1.0.0", oci.MediaTypeComponent, []byte("published content"), nil)
 	if err != nil {
 		t.Fatalf("Push: %v", err)
 	}
@@ -99,7 +99,7 @@ func TestSignWithRealKeyedSignerRoundTrips(t *testing.T) {
 	ctx := context.Background()
 	store := memory.New()
 
-	if _, err := oci.Push(ctx, store, "2.0.0", oci.MediaTypeComponent, []byte("keyed content")); err != nil {
+	if _, err := oci.Push(ctx, store, "2.0.0", oci.MediaTypeComponent, []byte("keyed content"), nil); err != nil {
 		t.Fatalf("Push: %v", err)
 	}
 
@@ -161,7 +161,7 @@ func publishN(t *testing.T, store *memory.Store, n int) ([]string, map[string]st
 	subjects := make(map[string]string, n)
 	for i := 1; i <= n; i++ {
 		tag := itoaVer(i)
-		if _, err := oci.Push(ctx, store, tag, oci.MediaTypeComponent, []byte("content "+tag)); err != nil {
+		if _, err := oci.Push(ctx, store, tag, oci.MediaTypeComponent, []byte("content "+tag), nil); err != nil {
 			t.Fatalf("Push %s: %v", tag, err)
 		}
 		ref := "hub.aggrega.ai/component/core/c" + itoaVer(i) + ":" + tag

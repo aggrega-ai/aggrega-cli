@@ -242,7 +242,7 @@ func buildChartStore(t *testing.T, _ string, tag string) (oras.ReadOnlyTarget, [
 	store := memory.New()
 	body := []byte("fake-helm-chart-tar-gz-bytes\n")
 	ctx := context.Background()
-	manifestDigest, err := ocierr.Push(ctx, store, tag, MediatypeHelmChart, body)
+	manifestDigest, err := ocierr.Push(ctx, store, tag, MediatypeHelmChart, body, nil)
 	if err != nil {
 		t.Fatalf("seed chart store: %v", err)
 	}

@@ -86,7 +86,7 @@ func ociChartManifest(t *testing.T, blob []byte) []byte {
 	t.Helper()
 	ctx := context.Background()
 	store := memory.New()
-	if _, err := oci.Push(ctx, store, "seed", "application/vnd.cncf.helm.chart.content.v1.tar+gzip", blob); err != nil {
+	if _, err := oci.Push(ctx, store, "seed", "application/vnd.cncf.helm.chart.content.v1.tar+gzip", blob, nil); err != nil {
 		t.Fatalf("seed push: %v", err)
 	}
 	res, err := oci.Pull(ctx, store, "seed")

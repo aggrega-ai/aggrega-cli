@@ -29,7 +29,7 @@ import (
 func ociManifestArtifact(mediaType string, body []byte) (manifestBytes []byte, manifestDigest string, err error) {
 	ctx := context.Background()
 	store := memory.New()
-	if _, err := oci.Push(ctx, store, "seed", mediaType, body); err != nil {
+	if _, err := oci.Push(ctx, store, "seed", mediaType, body, nil); err != nil {
 		return nil, "", err
 	}
 	res, err := oci.Pull(ctx, store, "seed")

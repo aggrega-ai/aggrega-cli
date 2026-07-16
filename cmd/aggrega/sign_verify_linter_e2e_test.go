@@ -39,7 +39,7 @@ func signedRealLinterStore(t *testing.T) (store *memory.Store, manifestDigest, c
 	contentDigest = digest.ContentDigest(artifact)
 
 	store = memory.New()
-	dg, err := oci.Push(ctx, store, "1.0.0", oci.MediaTypeComponent, artifact)
+	dg, err := oci.Push(ctx, store, "1.0.0", oci.MediaTypeComponent, artifact, nil)
 	if err != nil {
 		t.Fatalf("Push: %v", err)
 	}

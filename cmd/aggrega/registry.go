@@ -7,9 +7,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
+	"sort"
 	"strings"
+	"text/tabwriter"
 
 	"github.com/spf13/cobra"
 
@@ -26,11 +29,185 @@ func newRegistryCmd() *cobra.Command {
 		Short: "Manage registries and their signature trust policy",
 	}
 	c.AddCommand(newRegistryAddCmd())
+	c.AddCommand(newRegistryListCmd())
+	c.AddCommand(newRegistryRemoveCmd())
+	c.AddCommand(newRegistryUpdateCmd())
 	return c
+}
+
+// newRegistryListCmd builds `registry list`, which prints the effective merged
+// set of configured registries with each entry's alias and trust posture.
+func newRegistryListCmd() *cobra.Command {
+	c := &cobra.Command{
+		Use:   "list",
+		Short: "List configured registries and their trust posture",
+		Long: `List every registry configured in the effective merged config, one per line,
+with its friendly alias (if any), a short trust-posture summary, and a marker on
+the default registry.
+
+This reads the resolved configuration and contacts no network. Registries are
+listed in ascending host order.`,
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			rw, err := workspaceFromContext(cmd.Context())
+			if err != nil {
+				return err
+			}
+			return registryListRun(rw, cmd.OutOrStdout())
+		},
+	}
+	return c
+}
+
+// registryListRun prints the effective registries in ascending host order. It
+// reads the merged effective config — the same set resolution and push consult —
+// sorts a copy by host for deterministic output, and marks the default registry.
+func registryListRun(rw *workspaceconfig.ResolvedWorkspace, out io.Writer) error {
+	cfg := rw.Config()
+	regs := make([]workspaceconfig.RegistryConfig, len(cfg.Registries))
+	copy(regs, cfg.Registries)
+	sort.Slice(regs, func(i, j int) bool { return regs[i].Host < regs[j].Host })
+
+	if len(regs) == 0 {
+		fmt.Fprintln(out, "No registries configured.")
+		return nil
+	}
+
+	w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
+	fmt.Fprintln(w, "HOST\tALIAS\tTRUST\tDEFAULT")
+	for _, r := range regs {
+		marker := ""
+		if r.Host == cfg.DefaultRegistry {
+			marker = "*"
+		}
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", r.Host, r.Name, registryTrustSummary(r), marker)
+	}
+	return w.Flush()
+}
+
+// registryTrustSummary renders a short, plain-language description of a
+// registry's trust posture: whether signatures are required, whether the trust
+// anchor is a pinned key or a keyless identity set, and whether verification
+// failures are advisory or skipped.
+func registryTrustSummary(r workspaceconfig.RegistryConfig) string {
+	var parts []string
+	switch {
+	case r.SkipSignatureVerification:
+		parts = append(parts, "verification skipped")
+	case r.Signing.Required:
+		parts = append(parts, "signatures required")
+	default:
+		parts = append(parts, "signatures optional")
+	}
+	switch {
+	case r.PublicKey != "":
+		parts = append(parts, "keyed")
+	case len(r.TrustedIdentities) == 1:
+		parts = append(parts, "keyless (1 identity)")
+	case len(r.TrustedIdentities) > 1:
+		parts = append(parts, fmt.Sprintf("keyless (%d identities)", len(r.TrustedIdentities)))
+	}
+	if r.Advisory {
+		parts = append(parts, "advisory")
+	}
+	return strings.Join(parts, ", ")
+}
+
+// newRegistryRemoveCmd builds `registry remove <name|host>`, which drops a
+// registry's trust-policy entry addressed by its host or friendly alias.
+func newRegistryRemoveCmd() *cobra.Command {
+	var global bool
+	var workspace bool
+
+	c := &cobra.Command{
+		Use:   "remove <name|host>",
+		Short: "Remove a registry and its trust policy from a config file",
+		Long: `Remove a registry's trust-policy entry from a config file, addressed by its host
+or its friendly alias.
+
+By default the entry is removed from the global config shared across every
+workspace; pass --workspace to remove it from this project's workspace config
+instead. Setting both --global and --workspace is a usage error.
+
+The default_registry pointer is left untouched — removing a registry's trust
+policy reverts that host to default trust; it does not change which registry is
+the default.`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			rw, err := workspaceFromContext(cmd.Context())
+			if err != nil {
+				return err
+			}
+			return registryRemoveRun(registryRemoveConfig{
+				Token:     args[0],
+				Global:    global,
+				Workspace: workspace,
+				ws:        rw,
+				Out:       cmd.OutOrStdout(),
+			})
+		},
+	}
+	c.Flags().BoolVar(&global, "global", false, "Remove the entry from the global config shared across every workspace.")
+	c.Flags().BoolVar(&workspace, "workspace", false, "Remove the entry from this project's workspace config instead of the global config.")
+	return c
+}
+
+// registryRemoveConfig is the input contract for `aggrega registry remove`,
+// populated by the cobra command from its argument and flags.
+type registryRemoveConfig struct {
+	// Token is the registry to remove, addressed by its host or friendly alias.
+	Token string
+	// Global and Workspace are the operator's write-target overrides, mirroring
+	// `registry add`. A registry is tool-scoped, so removal defaults to the global
+	// config; --global forces the global file and --workspace forces this
+	// project's workspace file. Setting both is a usage error.
+	Global    bool
+	Workspace bool
+
+	ws  *workspaceconfig.ResolvedWorkspace
+	Out io.Writer
+	// lookup reads the environment for global-write-path resolution. Nil selects
+	// the live process environment; tests inject a frozen lookup so resolution is
+	// deterministic and parallel-safe.
+	lookup func(string) string
+}
+
+// registryRemoveRun resolves the target config file and drops the registry entry
+// addressed by cfg.Token. A token that matches nothing in that file fails loudly
+// rather than silently rewriting an unchanged config.
+func registryRemoveRun(cfg registryRemoveConfig) error {
+	rw, err := workspaceOrResolve(cfg.ws)
+	if err != nil {
+		return fmt.Errorf("workspaceconfig: %w", err)
+	}
+	cfgPath, err := workspaceconfig.WriteDestination(workspaceconfig.OpRegistry, cfg.Global, cfg.Workspace, rw.Root(), cfg.lookup)
+	if err != nil {
+		return err
+	}
+	removed, err := workspaceconfig.RemoveRegistry(cfgPath, cfg.Token)
+	if err != nil {
+		return err
+	}
+	if !removed {
+		return fmt.Errorf("aggrega registry remove: registry %q is not configured in %s", cfg.Token, cfgPath)
+	}
+	if cfg.Out != nil {
+		// Resolve the token to its host for the confirmation line, through the same
+		// primitive the removal matched on. On the success path the entry existed,
+		// so this resolves to the host that was dropped; an ambiguity or other
+		// resolver error falls back to echoing the token verbatim.
+		host := cfg.Token
+		if h, rerr := rw.Config().ResolveRegistry(cfg.Token); rerr == nil {
+			host = h
+		}
+		fmt.Fprintf(cfg.Out, "Removed registry %s from %s\n", host, cfgPath)
+	}
+	return nil
 }
 
 func newRegistryAddCmd() *cobra.Command {
 	var identities []string
+	var name string
 	var keyPath string
 	var trustedRoot string
 	var requireSignatures bool
@@ -71,6 +248,7 @@ The entry is written to the workspace config file, preserving existing settings.
 			}
 			return registryAddRun(registryAddConfig{
 				Host:              args[0],
+				Name:              name,
 				Identities:        identities,
 				KeyPath:           keyPath,
 				TrustedRoot:       trustedRoot,
@@ -86,6 +264,7 @@ The entry is written to the workspace config file, preserving existing settings.
 		},
 	}
 	c.Flags().StringArrayVar(&identities, "identity", nil, "Trusted keyless identity as `identity=issuer` (repeatable; OR-set). E.g. dev@example.com=https://accounts.google.com. Overrides the fetched trust policy.")
+	c.Flags().StringVar(&name, "name", "", "Optional friendly alias for this registry. The host stays the identity; the alias resolves to it wherever a registry is named (e.g. --registry). Must be unique across registries.")
 	c.Flags().StringVar(&keyPath, "key", "", "Path to a pinned cosign-compatible public-key PEM for keyed verification. Overrides the fetched trust policy.")
 	c.Flags().StringVar(&trustedRoot, "trusted-root", "", "Path to a pinned Sigstore trust-root bundle for air-gapped keyless verification")
 	c.Flags().BoolVar(&requireSignatures, "require-signatures", false, "Require a signature on every artifact pulled from (and pushed to) this registry")
@@ -99,7 +278,10 @@ The entry is written to the workspace config file, preserving existing settings.
 // registryAddConfig is the input contract for `aggrega registry add`,
 // populated by the cobra command from its flags.
 type registryAddConfig struct {
-	Host        string
+	Host string
+	// Name is the optional friendly alias threaded onto RegistryConfig.Name.
+	// Empty leaves the entry host-only, as before.
+	Name        string
 	Identities  []string
 	KeyPath     string
 	TrustedRoot string
@@ -178,6 +360,10 @@ func registryAddRun(cfg registryAddConfig) error {
 	if host == workspaceconfig.HubBaselineHost && !manualPolicy {
 		reg = workspaceconfig.DefaultBaseline()
 	}
+
+	// The friendly alias rides on the same host-keyed entry regardless of how the
+	// trust policy is assembled below. Empty leaves the entry host-only.
+	reg.Name = cfg.Name
 
 	// Trust-on-first-use: fetch and pin the advertised policy unless a manual
 	// policy overrides it. A manual --identity/--key skips the fetch entirely.

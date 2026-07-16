@@ -57,7 +57,7 @@ func seedDocsWorkspace(t *testing.T) *server {
 	}
 
 	store := memory.New()
-	if _, err := oci.Push(context.Background(), store, docsTestVersion, oci.MediaTypeDocs, buf.Bytes()); err != nil {
+	if _, err := oci.Push(context.Background(), store, docsTestVersion, oci.MediaTypeDocs, buf.Bytes(), nil); err != nil {
 		t.Fatalf("Push: %v", err)
 	}
 	if _, err := docscache.ResolveAndCache(context.Background(), store, docsTestRef, docsTestVersion, ws, cacheDir, nil); err != nil {

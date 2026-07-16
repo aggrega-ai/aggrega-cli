@@ -34,7 +34,7 @@ func mustWriteChartManifest(t *testing.T, slot string, blob []byte) {
 	t.Helper()
 	ctx := context.Background()
 	store := memory.New()
-	if _, err := oci.Push(ctx, store, "seed", chartMediatype, blob); err != nil {
+	if _, err := oci.Push(ctx, store, "seed", chartMediatype, blob, nil); err != nil {
 		t.Fatalf("seed push: %v", err)
 	}
 	res, err := oci.Pull(ctx, store, "seed")

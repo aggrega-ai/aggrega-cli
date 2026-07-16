@@ -144,12 +144,17 @@ func pushArtifactRun(cfg pushArtifactConfig) error {
 		return fmt.Errorf("workspaceconfig: %w", err)
 	}
 
-	registry := cfg.Registry
-	if registry == "" {
-		registry = rw.Config().DefaultRegistry
+	wsCfg := rw.Config()
+	token := cfg.Registry
+	if token == "" {
+		token = wsCfg.DefaultRegistry
 	}
-	if registry == "" {
+	if token == "" {
 		return fmt.Errorf("aggrega push-artifact: no destination registry; set --registry or workspace.default_registry")
+	}
+	registry, err := wsCfg.ResolveRegistry(token)
+	if err != nil {
+		return fmt.Errorf("aggrega push-artifact: %w", err)
 	}
 
 	reference := registry + "/" + dataArtifactNamespace + "/" + cfg.Name
@@ -174,7 +179,7 @@ func pushArtifactRun(cfg pushArtifactConfig) error {
 		target = repo
 	}
 
-	digest, err := oci.Push(context.Background(), target, cfg.Tag, mediaType, content)
+	digest, err := oci.Push(context.Background(), target, cfg.Tag, mediaType, content, nil)
 	if err != nil {
 		return fmt.Errorf("aggrega push-artifact: push %s:%s: %w", reference, cfg.Tag, err)
 	}

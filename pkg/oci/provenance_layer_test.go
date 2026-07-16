@@ -154,7 +154,7 @@ func TestPullSingleLayerWithExpectedMediaType(t *testing.T) {
 	store := memory.New()
 
 	content := []byte("apiVersion: aggrega.ai/v1alpha1\nkind: Component\n")
-	if _, err := oci.Push(ctx, store, "1.0.0", oci.MediaTypeComponent, content); err != nil {
+	if _, err := oci.Push(ctx, store, "1.0.0", oci.MediaTypeComponent, content, nil); err != nil {
 		t.Fatalf("Push: %v", err)
 	}
 

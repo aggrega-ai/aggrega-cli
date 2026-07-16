@@ -30,6 +30,21 @@ var ErrConfigInvalid = errors.New("workspaceconfig: file failed schema validatio
 // one win.
 var ErrDuplicateProviderTarget = errors.New("workspaceconfig: capability is bound to more than one provider plugin")
 
+// ErrDuplicateRegistryAlias reports that a registry alias is already used by a
+// different host entry. Errors satisfying errors.Is(err, ErrDuplicateRegistryAlias)
+// carry the offending alias and the host that already holds it. A registry alias
+// is a unique convenience selector across entries, so registering one already
+// bound to another host halts loudly rather than shadowing the existing binding.
+var ErrDuplicateRegistryAlias = errors.New("workspaceconfig: registry alias is already used by another host")
+
+// ErrAmbiguousRegistryAlias reports that a registry token matched the alias of
+// more than one entry during resolution. Errors satisfying
+// errors.Is(err, ErrAmbiguousRegistryAlias) carry the offending alias. An alias
+// selects exactly one host; a hand-edited config that binds the same alias to two
+// hosts makes the selection ambiguous, so resolution halts loudly rather than
+// silently choosing one host over the other.
+var ErrAmbiguousRegistryAlias = errors.New("workspaceconfig: registry alias matches more than one host")
+
 // Load reads the workspace's .aggrega-config.yaml file at path,
 // validates it against the aggrega-config-v1alpha1 JSON Schema, and
 // returns the typed Config value.

@@ -124,6 +124,12 @@ type RegistryConfig struct {
 	// Host is the registry these settings apply to (e.g.
 	// "hub.aggrega.ai"), matched against the host of a push/pull target.
 	Host string `yaml:"host"`
+	// Name is an optional friendly alias for this registry. The host is the
+	// identity; Name is a convenience selector that resolves to this entry's
+	// Host wherever a registry is named (for example the push --registry flag).
+	// Empty means the entry is addressed by host only. An alias is unique across
+	// entries — two entries carrying the same alias make it ambiguous.
+	Name string `yaml:"name,omitempty"`
 	// TrustedIdentities is the OR-set of keyless signing identities
 	// accepted for artifacts pulled from this registry. A signature
 	// verifies when its certificate matches ANY one entry. Used by the

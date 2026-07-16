@@ -38,7 +38,7 @@ func TestResolvePresentTag(t *testing.T) {
 	content := []byte("apiVersion: aggrega.ai/v1alpha1\nkind: Component\nmetadata:\n  name: core/api-server\n  version: 1.0.0\n")
 
 	store := memory.New()
-	pushed, err := oci.Push(ctx, store, "1.0.0", oci.MediaTypeComponent, content)
+	pushed, err := oci.Push(ctx, store, "1.0.0", oci.MediaTypeComponent, content, nil)
 	if err != nil {
 		t.Fatalf("Push: %v", err)
 	}

@@ -65,7 +65,7 @@ func fetchLoneMarker(t *testing.T, store *memory.Store, tag string) deprecation.
 func TestDeprecateSingle_FlagsEnrichAndStamp(t *testing.T) {
 	ctx := context.Background()
 	store := memory.New()
-	if _, err := oci.Push(ctx, store, "1.0.0", oci.MediaTypeComponent, []byte("subject")); err != nil {
+	if _, err := oci.Push(ctx, store, "1.0.0", oci.MediaTypeComponent, []byte("subject"), nil); err != nil {
 		t.Fatalf("Push subject: %v", err)
 	}
 	frozen := time.Date(2026, 5, 6, 7, 8, 9, 0, time.UTC)
@@ -105,7 +105,7 @@ func TestDeprecateSingle_FlagsEnrichAndStamp(t *testing.T) {
 func TestDeprecateSingle_Interactive(t *testing.T) {
 	ctx := context.Background()
 	store := memory.New()
-	if _, err := oci.Push(ctx, store, "1.0.0", oci.MediaTypeComponent, []byte("subject")); err != nil {
+	if _, err := oci.Push(ctx, store, "1.0.0", oci.MediaTypeComponent, []byte("subject"), nil); err != nil {
 		t.Fatalf("Push subject: %v", err)
 	}
 
@@ -162,7 +162,7 @@ func TestDeprecateBatch_AttachesPerEntry(t *testing.T) {
 	ctx := context.Background()
 	store := memory.New()
 	for _, tag := range []string{"1.0.0", "2.0.0"} {
-		if _, err := oci.Push(ctx, store, tag, oci.MediaTypeComponent, []byte("subject "+tag)); err != nil {
+		if _, err := oci.Push(ctx, store, tag, oci.MediaTypeComponent, []byte("subject "+tag), nil); err != nil {
 			t.Fatalf("Push %s: %v", tag, err)
 		}
 	}
@@ -226,7 +226,7 @@ func TestProbeLatestDeprecation_NewestWins(t *testing.T) {
 	store := &tagListingStore{Store: memory.New(), tags: []string{"1.0.0", "2.0.0"}}
 	signer := keyedTestSigner(t)
 	for _, tag := range store.tags {
-		if _, err := oci.Push(ctx, store, tag, oci.MediaTypeComponent, []byte("subject "+tag)); err != nil {
+		if _, err := oci.Push(ctx, store, tag, oci.MediaTypeComponent, []byte("subject "+tag), nil); err != nil {
 			t.Fatalf("Push %s: %v", tag, err)
 		}
 	}

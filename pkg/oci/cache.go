@@ -47,6 +47,34 @@ func EntitiesRoot(workspaceRoot, cacheDir string) string {
 	return filepath.Join(workspaceRoot, cacheDir, "entities")
 }
 
+// IndexRoot returns the root of the local searchable-index subtree of the
+// workspace's artifact cache:
+//
+//	<workspaceRoot>/<cacheDir>/index/
+//
+// It is the single site that names the `index/` segment; IndexBasePath composes
+// each per-host file path beneath it, so the segment is spelled once. It is the
+// index sibling of EntitiesRoot: where the entities subtree caches pulled
+// artifact bytes, the index subtree caches the per-host searchable records a
+// registry update builds.
+func IndexRoot(workspaceRoot, cacheDir string) string {
+	return filepath.Join(workspaceRoot, cacheDir, "index")
+}
+
+// IndexBasePath returns the per-host base path (without file extension) under
+// IndexRoot for a registry host:
+//
+//	<workspaceRoot>/<cacheDir>/index/<host-encoded>
+//
+// The host is encoded through the same single-segment URI encoder the entity
+// cache uses, so a host maps to one stable filesystem segment and both the
+// records file (base + ".json") and the freshness-timestamp sibling
+// (base + ".updated") share it. The encoder is spelled once here, so an index
+// writer and an index reader cannot disagree about a host's on-disk segment.
+func IndexBasePath(workspaceRoot, cacheDir, host string) string {
+	return filepath.Join(IndexRoot(workspaceRoot, cacheDir), encodeURI(host))
+}
+
 // SignatureBundlePath returns the content-addressed filesystem path of the
 // cached signature-bundle blob named by bundleDigest under the cache's
 // `signatures/` subtree:

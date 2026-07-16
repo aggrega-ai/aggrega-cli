@@ -25,7 +25,7 @@ func TestAttachReferrerAttachesToSubject(t *testing.T) {
 	store := memory.New()
 
 	artifact := []byte("apiVersion: aggrega.ai/v1alpha1\nkind: Component\nmetadata:\n  name: core/api-server\n  version: 1.0.0\n")
-	if _, err := oci.Push(ctx, store, "1.0.0", oci.MediaTypeComponent, artifact); err != nil {
+	if _, err := oci.Push(ctx, store, "1.0.0", oci.MediaTypeComponent, artifact, nil); err != nil {
 		t.Fatalf("Push: %v", err)
 	}
 
@@ -63,7 +63,7 @@ func TestListReferrersFiltersByArtifactType(t *testing.T) {
 	ctx := context.Background()
 	store := memory.New()
 
-	if _, err := oci.Push(ctx, store, "2.0.0", oci.MediaTypeComponent, []byte("content")); err != nil {
+	if _, err := oci.Push(ctx, store, "2.0.0", oci.MediaTypeComponent, []byte("content"), nil); err != nil {
 		t.Fatalf("Push: %v", err)
 	}
 
@@ -90,7 +90,7 @@ func TestListReferrersEmpty(t *testing.T) {
 	ctx := context.Background()
 	store := memory.New()
 
-	if _, err := oci.Push(ctx, store, "3.0.0", oci.MediaTypeComponent, []byte("unsigned")); err != nil {
+	if _, err := oci.Push(ctx, store, "3.0.0", oci.MediaTypeComponent, []byte("unsigned"), nil); err != nil {
 		t.Fatalf("Push: %v", err)
 	}
 	refs, err := oci.ListReferrers(ctx, store, "3.0.0", sigArtifactType)
@@ -114,7 +114,7 @@ func TestAttachReferrerDoesNotMutateSubjectTag(t *testing.T) {
 	ctx := context.Background()
 	store := memory.New()
 
-	subjectDigest, err := oci.Push(ctx, store, "1.2.3", oci.MediaTypeComponent, []byte("frozen bytes"))
+	subjectDigest, err := oci.Push(ctx, store, "1.2.3", oci.MediaTypeComponent, []byte("frozen bytes"), nil)
 	if err != nil {
 		t.Fatalf("Push: %v", err)
 	}

@@ -27,7 +27,7 @@ func signedStore(t *testing.T) (store *memory.Store, manifestDigest string, pubP
 	store = memory.New()
 
 	artifact := []byte("apiVersion: aggrega.ai/v1alpha1\nkind: Component\nmetadata:\n  name: core/api-server\n  version: 1.0.0\n")
-	dg, err := oci.Push(ctx, store, "1.0.0", oci.MediaTypeComponent, artifact)
+	dg, err := oci.Push(ctx, store, "1.0.0", oci.MediaTypeComponent, artifact, nil)
 	if err != nil {
 		t.Fatalf("Push: %v", err)
 	}
@@ -139,7 +139,7 @@ func TestVerifyMissingSignatureHaltsWhenRequired(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	store := memory.New()
-	dg, err := oci.Push(ctx, store, "1.0.0", oci.MediaTypeComponent, []byte("kind: Component\n"))
+	dg, err := oci.Push(ctx, store, "1.0.0", oci.MediaTypeComponent, []byte("kind: Component\n"), nil)
 	if err != nil {
 		t.Fatalf("Push: %v", err)
 	}
@@ -165,7 +165,7 @@ func TestVerifyMissingSignatureToleratedWhenUnknown(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	store := memory.New()
-	dg, _ := oci.Push(ctx, store, "1.0.0", oci.MediaTypeComponent, []byte("kind: Component\n"))
+	dg, _ := oci.Push(ctx, store, "1.0.0", oci.MediaTypeComponent, []byte("kind: Component\n"), nil)
 	ent := pullverify.Entity{URI: "unknown.example.com/x", ManifestDigest: dg, Host: "unknown.example.com"}
 	results, verr := pullverify.Verify(ctx, []pullverify.Entity{ent}, pullverify.Options{
 		Config: workspaceconfig.Config{},
@@ -187,7 +187,7 @@ func TestVerifyOrgPolicyRequiresSignatureForKind(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	store := memory.New()
-	dg, err := oci.Push(ctx, store, "1.0.0", oci.MediaTypeComponent, []byte("kind: Component\n"))
+	dg, err := oci.Push(ctx, store, "1.0.0", oci.MediaTypeComponent, []byte("kind: Component\n"), nil)
 	if err != nil {
 		t.Fatalf("Push: %v", err)
 	}
@@ -211,7 +211,7 @@ func TestVerifyOrgPolicyOutOfScopeToleratesMissing(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	store := memory.New()
-	dg, _ := oci.Push(ctx, store, "1.0.0", oci.MediaTypeComponent, []byte("kind: Component\n"))
+	dg, _ := oci.Push(ctx, store, "1.0.0", oci.MediaTypeComponent, []byte("kind: Component\n"), nil)
 	cfg := workspaceconfig.Config{
 		Signing: workspaceconfig.SigningConfig{Required: true, Kinds: []string{"Plugin"}},
 	}
@@ -235,7 +235,7 @@ func TestVerifyOrgPolicyFailSafeEmptyKind(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	store := memory.New()
-	dg, _ := oci.Push(ctx, store, "1.0.0", oci.MediaTypeComponent, []byte("kind: Component\n"))
+	dg, _ := oci.Push(ctx, store, "1.0.0", oci.MediaTypeComponent, []byte("kind: Component\n"), nil)
 	cfg := workspaceconfig.Config{
 		Signing: workspaceconfig.SigningConfig{Required: true},
 	}
@@ -340,7 +340,7 @@ func TestVerifyPerRegistryRequiredRefusesUnsigned(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	store := memory.New()
-	dg, _ := oci.Push(ctx, store, "1.0.0", oci.MediaTypeComponent, []byte("kind: Component\n"))
+	dg, _ := oci.Push(ctx, store, "1.0.0", oci.MediaTypeComponent, []byte("kind: Component\n"), nil)
 	cfg := workspaceconfig.Config{
 		Registries: []workspaceconfig.RegistryConfig{
 			{Host: "reg.example.com", Signing: workspaceconfig.SigningConfig{Required: true, Kinds: []string{"Component"}}},

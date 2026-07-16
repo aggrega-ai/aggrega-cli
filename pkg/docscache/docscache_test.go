@@ -80,7 +80,7 @@ func signedBundleStore(t *testing.T, bundle []byte) (*memory.Store, []byte) {
 	t.Helper()
 	ctx := context.Background()
 	store := memory.New()
-	dg, err := oci.Push(ctx, store, testVersion, oci.MediaTypeDocs, bundle)
+	dg, err := oci.Push(ctx, store, testVersion, oci.MediaTypeDocs, bundle, nil)
 	if err != nil {
 		t.Fatalf("Push: %v", err)
 	}
@@ -227,7 +227,7 @@ func TestResolveRejectsNonDocsMediaType(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	store := memory.New()
-	if _, err := oci.Push(ctx, store, testVersion, oci.MediaTypeComponent, []byte("kind: Component\n")); err != nil {
+	if _, err := oci.Push(ctx, store, testVersion, oci.MediaTypeComponent, []byte("kind: Component\n"), nil); err != nil {
 		t.Fatalf("Push: %v", err)
 	}
 	_, err := docscache.ResolveAndCache(ctx, store, testRef, testVersion, t.TempDir(), ".aggrega/cache", nil)

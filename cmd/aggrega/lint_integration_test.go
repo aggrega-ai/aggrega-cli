@@ -54,7 +54,7 @@ func readFixture(t *testing.T, parts ...string) []byte {
 func pushIntegrationFixture(t *testing.T, target *memoryRegistryTarget, kindLower string, yamlBytes []byte) {
 	t.Helper()
 	mediaType := "application/vnd.aggrega." + kindLower + ".v1alpha1+yaml"
-	if _, err := oci.Push(context.Background(), target.Store, "1.0.0", mediaType, yamlBytes); err != nil {
+	if _, err := oci.Push(context.Background(), target.Store, "1.0.0", mediaType, yamlBytes, nil); err != nil {
 		t.Fatalf("push fixture: %v", err)
 	}
 	target.tags = append(target.tags, "1.0.0")

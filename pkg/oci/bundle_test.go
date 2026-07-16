@@ -43,7 +43,7 @@ func TestPullPushTarGzRecipeRoundTrip(t *testing.T) {
 	}
 
 	store := memory.New()
-	if _, err := oci.Push(ctx, store, "1.0.0", mediaType, bundleBytes); err != nil {
+	if _, err := oci.Push(ctx, store, "1.0.0", mediaType, bundleBytes, nil); err != nil {
 		t.Fatalf("Push: %v", err)
 	}
 	got, err := oci.Pull(ctx, store, "1.0.0")

@@ -116,7 +116,7 @@ func TestClosureLookupWithReuseVerifiesCacheReuse(t *testing.T) {
 			t.Fatalf("Load: %v", err)
 		}
 		store := memory.New()
-		if _, err := oci.Push(ctx, store, "1.0.0", oci.MediaTypeSchemaLibrary, good); err != nil {
+		if _, err := oci.Push(ctx, store, "1.0.0", oci.MediaTypeSchemaLibrary, good, nil); err != nil {
 			t.Fatalf("oci.Push: %v", err)
 		}
 		var notices []string
@@ -161,7 +161,7 @@ func TestClosureLookupWithReuseVerifiesCacheReuse(t *testing.T) {
 		// laundered into a new lockfile.
 		retagged := reuseLibBody("20Gi")
 		store := memory.New()
-		if _, err := oci.Push(ctx, store, "1.0.0", oci.MediaTypeSchemaLibrary, retagged); err != nil {
+		if _, err := oci.Push(ctx, store, "1.0.0", oci.MediaTypeSchemaLibrary, retagged, nil); err != nil {
 			t.Fatalf("oci.Push: %v", err)
 		}
 		reuse := &catalog.ReuseVerification{

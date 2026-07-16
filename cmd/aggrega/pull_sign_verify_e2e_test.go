@@ -74,7 +74,7 @@ func TestKeylessAirGappedFromPinnedRoot(t *testing.T) {
 	ctx := context.Background()
 	store := memory.New()
 
-	dg, err := oci.Push(ctx, store, "1.0.0", oci.MediaTypeComponent, []byte(e2eComponentBody))
+	dg, err := oci.Push(ctx, store, "1.0.0", oci.MediaTypeComponent, []byte(e2eComponentBody), nil)
 	if err != nil {
 		t.Fatalf("Push: %v", err)
 	}
@@ -142,7 +142,7 @@ func TestPinnedRootAnchorSelectedByOrchestrator(t *testing.T) {
 	ctx := context.Background()
 	store := memory.New()
 
-	dg, err := oci.Push(ctx, store, "1.0.0", oci.MediaTypeComponent, []byte(e2eComponentBody))
+	dg, err := oci.Push(ctx, store, "1.0.0", oci.MediaTypeComponent, []byte(e2eComponentBody), nil)
 	if err != nil {
 		t.Fatalf("Push: %v", err)
 	}

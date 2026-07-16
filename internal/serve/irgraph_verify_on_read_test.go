@@ -30,7 +30,7 @@ func componentManifestFor(t *testing.T, body []byte) []byte {
 	t.Helper()
 	ctx := context.Background()
 	store := memory.New()
-	if _, err := oci.Push(ctx, store, "seed", oci.MediaTypeComponent, body); err != nil {
+	if _, err := oci.Push(ctx, store, "seed", oci.MediaTypeComponent, body, nil); err != nil {
 		t.Fatalf("seed push: %v", err)
 	}
 	res, err := oci.Pull(ctx, store, "seed")

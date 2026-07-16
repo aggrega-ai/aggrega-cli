@@ -176,7 +176,7 @@ func TestClosureLookupFallsBackToOCIPullerOnCacheMiss(t *testing.T) {
 	compBody := []byte("apiVersion: aggrega.ai/v1alpha1\nkind: Component\nmetadata:\n  name: api-server\n  version: 2.0.0\n")
 
 	store := memory.New()
-	if _, err := oci.Push(ctx, store, "2.0.0", oci.MediaTypeComponent, compBody); err != nil {
+	if _, err := oci.Push(ctx, store, "2.0.0", oci.MediaTypeComponent, compBody, nil); err != nil {
 		t.Fatalf("oci.Push: %v", err)
 	}
 
@@ -248,7 +248,7 @@ spec:
       type: object
 `)
 	store := memory.New()
-	if _, err := oci.Push(ctx, store, "1.0.0", oci.MediaTypeSchemaLibrary, libBody); err != nil {
+	if _, err := oci.Push(ctx, store, "1.0.0", oci.MediaTypeSchemaLibrary, libBody, nil); err != nil {
 		t.Fatalf("oci.Push: %v", err)
 	}
 
@@ -296,7 +296,7 @@ spec:
     SimpleValues: 'image: {{ .Values.image }}'
 `)
 	store := memory.New()
-	if _, err := oci.Push(ctx, store, "1.0.0", oci.MediaTypeMappingLibrary, libBody); err != nil {
+	if _, err := oci.Push(ctx, store, "1.0.0", oci.MediaTypeMappingLibrary, libBody, nil); err != nil {
 		t.Fatalf("oci.Push: %v", err)
 	}
 
@@ -341,7 +341,7 @@ func TestResolvePluginVersionTagRoundTrip(t *testing.T) {
 	store := memory.New()
 	// Publish the ONE plugin manifest — entity config + inline .wasm layer —
 	// tagged by the entity's version.
-	if _, err := oci.PushPluginManifest(ctx, store, version, entityYAML, wasmBytes); err != nil {
+	if _, err := oci.PushPluginManifest(ctx, store, version, entityYAML, wasmBytes, nil); err != nil {
 		t.Fatalf("oci.PushPluginManifest: %v", err)
 	}
 
@@ -433,7 +433,7 @@ func TestResolvePluginManifestSelfVerify(t *testing.T) {
 	artifactURI := identity
 
 	store := memory.New()
-	if _, err := oci.PushPluginManifest(ctx, store, version, entityYAML, wasmBytes); err != nil {
+	if _, err := oci.PushPluginManifest(ctx, store, version, entityYAML, wasmBytes, nil); err != nil {
 		t.Fatalf("oci.PushPluginManifest: %v", err)
 	}
 
@@ -529,7 +529,7 @@ func TestResolvePluginManifestAuthorityBeatsForgedContentPin(t *testing.T) {
 	artifactURI := identity
 
 	store := memory.New()
-	if _, err := oci.PushPluginManifest(ctx, store, version, entityYAML, wasmBytes); err != nil {
+	if _, err := oci.PushPluginManifest(ctx, store, version, entityYAML, wasmBytes, nil); err != nil {
 		t.Fatalf("oci.PushPluginManifest: %v", err)
 	}
 	// A faithful pull populates the slot and gives us the authoritative manifest.

@@ -61,7 +61,7 @@ func componentFixtureBytes(t *testing.T, classification, file string) []byte {
 func pushFixtureToTarget(t *testing.T, target *memoryRegistryTarget, kindLower, name, tag string, yaml []byte) {
 	t.Helper()
 	mediaType := "application/vnd.aggrega." + kindLower + ".v1alpha1+yaml"
-	_, err := oci.Push(context.Background(), target.Store, tag, mediaType, yaml)
+	_, err := oci.Push(context.Background(), target.Store, tag, mediaType, yaml, nil)
 	if err != nil {
 		t.Fatalf("Push(%s:%s): %v", name, tag, err)
 	}

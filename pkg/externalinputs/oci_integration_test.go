@@ -59,7 +59,7 @@ func TestOCIAcquirePinsByManifestDigest(t *testing.T) {
 	if err != nil {
 		t.Fatalf("remote repository: %v", err)
 	}
-	manifestDigest, err := oci.Push(ctx, repo, "1.0.0", "application/octet-stream", payload)
+	manifestDigest, err := oci.Push(ctx, repo, "1.0.0", "application/octet-stream", payload, nil)
 	if err != nil {
 		t.Fatalf("push fixture artifact: %v", err)
 	}
@@ -126,14 +126,14 @@ func TestOCIRefillPullsByPinnedDigest(t *testing.T) {
 	if err != nil {
 		t.Fatalf("remote repository: %v", err)
 	}
-	manifestDigest, err := oci.Push(ctx, repo, "1.0.0", "application/octet-stream", payload)
+	manifestDigest, err := oci.Push(ctx, repo, "1.0.0", "application/octet-stream", payload, nil)
 	if err != nil {
 		t.Fatalf("push original: %v", err)
 	}
 	wantHex := strings.TrimPrefix(manifestDigest, "sha256:")
 
 	// Move the tag to different content; the pinned digest must be immune.
-	if _, err := oci.Push(ctx, repo, "1.0.0", "application/octet-stream", []byte("drifted content")); err != nil {
+	if _, err := oci.Push(ctx, repo, "1.0.0", "application/octet-stream", []byte("drifted content"), nil); err != nil {
 		t.Fatalf("re-push tag: %v", err)
 	}
 

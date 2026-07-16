@@ -141,6 +141,19 @@ func pushPlugin(out io.Writer, cfg pushConfig, registry string, wantSign bool, n
 	// on-disk bytes — publish records nothing into them.
 	reference := buildPushReference(registry, "Plugin", "", name)
 
+	// Searchable catalog annotations, sourced from the entity as pushed (never a
+	// re-invoked describe()), built once and stamped identically onto the digest
+	// preview and the real push. A plugin carries no category label, so Category
+	// is left empty. Building them once is load-bearing: the previewed digest is
+	// signed and compared by the immutability guard, so the preview must stamp
+	// exactly the annotations the push will.
+	annotations := oci.SearchableMetadata{
+		Description:  entity.Metadata.Description,
+		Kind:         "Plugin",
+		PluginType:   entity.Spec.PluginType,
+		Capabilities: entity.Spec.Capabilities,
+	}.Annotations()
+
 	if cfg.DryRun {
 		fmt.Fprintf(out, "aggrega push (dry-run): %s:%s\n  kind: Plugin\n  entity mediatype: %s\n  wasm mediatype: %s\n  wasm content digest: %s\n  entity size: %d bytes\n  wasm size: %d bytes\n",
 			reference, version, oci.MediaTypePlugin, oci.MediaTypeWasm, contentDigest, len(entityYAML), len(wasmBytes))
@@ -166,7 +179,7 @@ func pushPlugin(out io.Writer, cfg pushConfig, registry string, wantSign bool, n
 	if err != nil {
 		return fmt.Errorf("aggrega push: resolve %s:%s: %w", reference, version, err)
 	}
-	proposedDigest, err := oci.PluginManifestDigest(ctx, entityYAML, wasmBytes)
+	proposedDigest, err := oci.PluginManifestDigest(ctx, entityYAML, wasmBytes, annotations)
 	if err != nil {
 		return fmt.Errorf("aggrega push: %s:%s: %w", reference, version, err)
 	}
@@ -204,7 +217,7 @@ func pushPlugin(out io.Writer, cfg pushConfig, registry string, wantSign bool, n
 	// Publish the one manifest — entity config plus inline .wasm layer — tagged
 	// by the entity's version. The returned digest is the manifest the signature
 	// (if any) commits to.
-	manifestDigest, err := oci.PushPluginManifest(ctx, target, version, entityYAML, wasmBytes)
+	manifestDigest, err := oci.PushPluginManifest(ctx, target, version, entityYAML, wasmBytes, annotations)
 	if err != nil {
 		return fmt.Errorf("aggrega push: push plugin %s:%s: %w", reference, version, err)
 	}
