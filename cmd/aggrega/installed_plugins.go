@@ -13,10 +13,13 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/cliplugin"
+	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
+	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
+	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
-// cliPluginDispatcher runs an installed CLI plugin identified by its artifact
+// cliPluginDispatcher runs a configured CLI plugin identified by its artifact
 // URI, streaming the guest's output and returning its exit code and the content
 // digest of the bytes it resolved and ran. command is the resolved subcommand
 // name the operator invoked, handed to the guest so a single guest backing
@@ -28,7 +31,7 @@ type cliPluginDispatcher interface {
 	Run(ctx context.Context, uri, command string, argv []string) (int, string, error)
 }
 
-// installedPluginRunnerFor builds the dispatcher that runs an installed CLI
+// installedPluginRunnerFor builds the dispatcher that runs a configured CLI
 // plugin command for a resolved workspace. The production value resolves the
 // plugin URI through the same workspace-derived cascade the install path uses —
 // the sidecar directory, the catalog entity view, and the shared compilation
@@ -39,12 +42,25 @@ var installedPluginRunnerFor = func(rw *workspaceconfig.ResolvedWorkspace) cliPl
 	return cliplugin.Runner{Resolve: workspacePluginResolver(rw), Digest: describeCacheDigest}
 }
 
-// installedPluginIndexSource yields the installed-CLI-plugin index used to
-// register plugin commands. Production reads the on-disk index; a test
-// substitutes a fixture without touching the real cache root.
-var installedPluginIndexSource = readInstalledPluginIndex
+// resolveCLIPluginDigest resolves the bytes uri names through the workspace
+// cascade and returns their content digest, so the run gate can compare them to
+// the pinned digest before executing the guest. It is a package-level seam so a
+// test can force a drift outcome without a real guest.
+var resolveCLIPluginDigest = func(rw *workspaceconfig.ResolvedWorkspace, uri string) (string, error) {
+	resolved, err := workspacePluginResolver(rw)(uri)
+	if err != nil {
+		return "", err
+	}
+	return describeCacheDigest(resolved.Bytes), nil
+}
 
-// pluginRegistrationWarnWriter receives the diagnostics emitted when an installed
+// cliPluginRegistrations yields the CLI-extension commands to register for this
+// invocation, derived from the resolved config cascade and the describe cache.
+// Production resolves the workspace and projects its plugins.cli list; a test
+// substitutes a fixture so tree construction touches neither disk nor a guest.
+var cliPluginRegistrations = productionCLIPluginRegistrations
+
+// pluginRegistrationWarnWriter receives the diagnostics emitted when a configured
 // plugin cannot be registered as a command. It defaults to standard error and is
 // redirected by tests to observe the diagnostics.
 var pluginRegistrationWarnWriter io.Writer = os.Stderr
@@ -56,12 +72,12 @@ var pluginRegistrationWarnWriter io.Writer = os.Stderr
 var pluginDiscoverable = func(name string) bool { return false }
 
 // reservedCommandNames are command names the CLI reserves for anticipated
-// built-ins, so an installed plugin can never squat a name the CLI intends to
-// claim later. The names present in a freshly built tree are the authoritative
-// gate and are checked separately against root.Commands() — built-ins always
-// win — so this set deliberately lists reserved-but-not-yet-built-in names
-// rather than re-enumerating the live built-ins (which would be a second copy
-// that could drift from the tree).
+// built-ins, so a configured CLI plugin can never squat a name the CLI intends
+// to claim later. The names present in a freshly built tree are the
+// authoritative gate and are checked separately against root.Commands() —
+// built-ins always win — so this set deliberately lists reserved-but-not-yet-
+// built-in names rather than re-enumerating the live built-ins (which would be a
+// second copy that could drift from the tree).
 var reservedCommandNames = map[string]bool{
 	"build":    true,
 	"deploy":   true,
@@ -72,22 +88,94 @@ var reservedCommandNames = map[string]bool{
 	"cache":    true,
 }
 
-// registerInstalledCLIPlugins adds one top-level command per installed CLI plugin
-// from the on-disk index to root, so a freshly built tree exposes the installed
-// plugins as commands. It runs after the static commands are added, so the live
-// tree is the authoritative built-in set. A name that collides with a built-in
-// already in the tree, or that is on the reserved denylist, is skipped with a
-// diagnostic — built-ins always win, and reserved names stay reserved. Each
-// registered command's help comes from the index's cached describe metadata; no
-// guest is loaded to list or help. A malformed index is reported and treated as
-// no installed plugins rather than failing the tree.
-func registerInstalledCLIPlugins(root *cobra.Command) {
-	idx, err := installedPluginIndexSource()
+// cliCommandReg is one top-level command a configured CLI plugin contributes:
+// the command verb and its short-help line (from the plugin's describe
+// metadata), the plugin artifact URI the runner resolves and runs, and the
+// digest the config pinned that URI to. Registration builds one per command; the
+// run gate compares the freshly resolved bytes' digest to that pin before running.
+type cliCommandReg struct {
+	name   string
+	short  string
+	uri    string
+	digest string
+}
+
+// productionCLIPluginRegistrations resolves the workspace and projects its
+// plugins.cli list into the commands to register. A resolution failure is
+// reported as a diagnostic and treated as no configured CLI plugins rather than
+// failing the tree, mirroring how a malformed config surfaces elsewhere.
+func productionCLIPluginRegistrations() []cliCommandReg {
+	rw, err := workspaceconfig.Resolve("", "")
 	if err != nil {
-		fmt.Fprintf(pluginRegistrationWarnWriter, "warning: ignoring installed CLI plugins: %v\n", err)
-		return
+		fmt.Fprintf(pluginRegistrationWarnWriter, "warning: ignoring configured CLI plugins: %v\n", err)
+		return nil
 	}
-	if len(idx.Plugins) == 0 {
+	return cliRegistrationsFromWorkspace(context.Background(), rw)
+}
+
+// cliRegistrationsFromWorkspace projects a resolved workspace's plugins.cli list
+// into the commands to register, in the list's author order (the deterministic
+// registration order). Each entry's command names and help come from the
+// describe cache keyed by the pinned digest; a cold cache falls back to resolving
+// and describing the guest and warms the cache, so the cache is an optimization
+// and never a requirement. An entry whose bytes cannot be resolved or described
+// on a cold cache is skipped with a diagnostic rather than failing the tree.
+func cliRegistrationsFromWorkspace(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace) []cliCommandReg {
+	resolve := workspacePluginResolver(rw)
+	var regs []cliCommandReg
+	for _, ref := range rw.Config().Plugins.CLI {
+		desc, ok := readDescribeCache(ref.Digest)
+		if !ok {
+			d, derr := describeConfiguredCLI(ctx, ref, resolve)
+			if derr != nil {
+				fmt.Fprintf(pluginRegistrationWarnWriter,
+					"warning: configured CLI plugin %q is not registered: %v\n", ref.URI, derr)
+				continue
+			}
+			desc = d
+		}
+		for _, command := range desc.Commands {
+			regs = append(regs, cliCommandReg{name: command.Name, short: command.Description, uri: ref.URI, digest: ref.Digest})
+		}
+	}
+	return regs
+}
+
+// describeConfiguredCLI is the cold-cache fallback for cliRegistrationsFromWorkspace:
+// it resolves ref's bytes and describes the guest under the describe-only inert
+// profile, caching the descriptor under the resolved bytes' content digest so a
+// later run reads it without loading the guest again.
+func describeConfiguredCLI(ctx context.Context, ref workspaceconfig.CLIPluginRef, resolve pluginpath.Lookup) (wasm.PluginDescriptor, error) {
+	resolved, err := resolve(ref.URI)
+	if err != nil {
+		return wasm.PluginDescriptor{}, err
+	}
+	spec := resolver.PluginSpec(pluginDiagName(ref.URI), resolved)
+	if spec.MaxMemoryPages == 0 {
+		spec.MaxMemoryPages = describeMaxMemoryPages
+	}
+	loader := wasm.NewCachingLoaderFromContext(ctx, nil)
+	plugin, desc, err := loader.LoadForDescribe(ctx, spec)
+	if err != nil {
+		return wasm.PluginDescriptor{}, err
+	}
+	_ = plugin.Close(ctx)
+	writeDescribeCache(describeCacheDigest(resolved.Bytes), desc)
+	return desc, nil
+}
+
+// registerInstalledCLIPlugins adds one top-level command per configured CLI
+// plugin command to root, so a freshly built tree exposes the configured plugins
+// as commands. It runs after the static commands are added, so the live tree is
+// the authoritative built-in set. A name that collides with a built-in already
+// in the tree, that is on the reserved denylist, or that another CLI plugin
+// already contributed this invocation is skipped with a diagnostic — built-ins
+// always win, reserved names stay reserved, and one command name registers once.
+// Each registered command's help comes from the describe cache; no guest is
+// loaded to list or help while that cache is warm.
+func registerInstalledCLIPlugins(root *cobra.Command) {
+	regs := cliPluginRegistrations()
+	if len(regs) == 0 {
 		return
 	}
 
@@ -96,87 +184,68 @@ func registerInstalledCLIPlugins(root *cobra.Command) {
 		builtin[c.Name()] = true
 	}
 
-	for _, name := range idx.names() {
+	added := map[string]bool{}
+	for _, reg := range regs {
 		switch {
-		case builtin[name]:
+		case builtin[reg.name]:
 			fmt.Fprintf(pluginRegistrationWarnWriter,
-				"warning: installed CLI plugin %q is not registered: a built-in command with that name already exists\n", name)
+				"warning: configured CLI plugin %q is not registered: a built-in command with that name already exists\n", reg.name)
 			continue
-		case reservedCommandNames[name]:
+		case reservedCommandNames[reg.name]:
 			fmt.Fprintf(pluginRegistrationWarnWriter,
-				"warning: installed CLI plugin %q is not registered: %q is a reserved command name\n", name, name)
+				"warning: configured CLI plugin %q is not registered: %q is a reserved command name\n", reg.name, reg.name)
+			continue
+		case added[reg.name]:
+			fmt.Fprintf(pluginRegistrationWarnWriter,
+				"warning: configured CLI plugin %q is not registered: the command %q is already contributed by another CLI plugin\n", reg.name, reg.name)
 			continue
 		}
-		root.AddCommand(newInstalledPluginCmd(name, idx.Plugins[name]))
+		added[reg.name] = true
+		root.AddCommand(newCLIPluginCmd(reg))
 	}
 }
 
-// newInstalledPluginCmd builds the cobra command that dispatches an installed CLI
-// plugin. Its help comes entirely from the index's cached describe metadata, so
-// building the tree never loads a guest. Flag parsing is disabled so every
+// newCLIPluginCmd builds the cobra command that dispatches a configured CLI
+// plugin. Its help comes from the describe cache, so building the tree never
+// loads a guest while that cache is warm. Flag parsing is disabled so every
 // argument after the command name is forwarded verbatim to the guest, which
-// interprets its own flags. Running the command resolves and executes the plugin
-// through the shared runner, threading the command's own name to the guest as
-// the invoked-command discriminator so a single guest backing several commands
-// routes on it; a non-zero exit is returned as an exitCodeError so the process
-// mirrors the plugin's status without treating it as a host error.
-func newInstalledPluginCmd(name string, entry installedPluginEntry) *cobra.Command {
+// interprets its own flags. Before running, the command re-resolves the plugin's
+// bytes and compares their content digest to the digest pinned in the config: a
+// mismatch halts the command loudly with a re-pin instruction, so bytes that
+// drifted from the pin never execute. On a match it resolves and executes the
+// plugin through the shared runner, threading the command's own name to the guest
+// as the invoked-command discriminator; a non-zero exit is returned as an
+// exitCodeError so the process mirrors the plugin's status without treating it as
+// a host error.
+func newCLIPluginCmd(reg cliCommandReg) *cobra.Command {
 	return &cobra.Command{
-		Use:                name,
-		Short:              entry.Usage,
+		Use:                reg.name,
+		Short:              reg.short,
 		DisableFlagParsing: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			rw, err := workspaceFromContext(cmd.Context())
 			if err != nil {
 				return err
 			}
-			code, digest, err := installedPluginRunnerFor(rw).Run(cmd.Context(), entry.URI, name, args)
+			current, err := resolveCLIPluginDigest(rw, reg.uri)
 			if err != nil {
 				return err
 			}
-			reconcileInstalledPluginDigest(name, digest, cmd.ErrOrStderr())
+			if current != reg.digest {
+				return fmt.Errorf(
+					"the %q plugin's resolved bytes no longer match the pinned digest "+
+						"(pinned %s, resolved %s); re-pin it with 'aggrega plugin add cli %s' before running it",
+					reg.name, shortDigest(reg.digest), shortDigest(current), reg.name)
+			}
+			code, _, err := installedPluginRunnerFor(rw).Run(cmd.Context(), reg.uri, reg.name, args)
+			if err != nil {
+				return err
+			}
 			if code != 0 {
 				return exitCodeError{code: code}
 			}
 			return nil
 		},
-	}
-}
-
-// reconcileInstalledPluginDigest pins or drift-checks the digest of the bytes a
-// command just resolved and ran (trust on first use). The first run of a command
-// records the digest into its index entry; a later run compares the freshly
-// resolved digest against the pinned one and, on a mismatch, writes an advisory
-// warning to warn — the resolved bytes changed since they were pinned — without
-// halting, since the command has already run and this is drift detection, not a
-// guardrail. An empty digest (no bytes resolved) or an unreadable index is a
-// silent no-op: a corrupt index is surfaced loudly at command registration, and
-// reconciliation must never turn a successful run into a failure. The read,
-// entry update, and write-back reuse the shared index helpers, so the pinned
-// digest and the describe-cache key are one value.
-func reconcileInstalledPluginDigest(cmdName, digest string, warn io.Writer) {
-	if digest == "" {
-		return
-	}
-	idx, err := readInstalledPluginIndex()
-	if err != nil {
-		return
-	}
-	entry, ok := idx.Plugins[cmdName]
-	if !ok {
-		return
-	}
-	if entry.Digest == "" {
-		entry.Digest = digest
-		idx.Plugins[cmdName] = entry
-		_ = writeInstalledPluginIndex(idx)
-		return
-	}
-	if entry.Digest != digest {
-		fmt.Fprintf(warn,
-			"warning: the %q plugin's resolved bytes changed since they were pinned "+
-				"(pinned %s, now %s); the installed command may have been modified\n",
-			cmdName, shortDigest(entry.Digest), shortDigest(digest))
 	}
 }
 
@@ -191,7 +260,7 @@ func shortDigest(d string) string {
 	return d[:keep] + "..."
 }
 
-// exitCodeError carries an installed plugin's non-zero exit status up to the
+// exitCodeError carries a configured CLI plugin's non-zero exit status up to the
 // single process-exit boundary. It lets a plugin command's RunE report an
 // arbitrary exit code without calling os.Exit itself, so Execute stays the one
 // place the process exits and the plugin's status still reaches the shell
@@ -208,7 +277,7 @@ func (e exitCodeError) Error() string {
 // installing a plugin for a name the CLI does not recognize as a command, so the
 // unknown-command hint and the plugin-install command stay in lockstep.
 func installSuggestion(name string) string {
-	return fmt.Sprintf("%q is not a command — install the %q plugin with 'aggrega plugin install %s'", name, name, name)
+	return fmt.Sprintf("%q is not a command — install the %q plugin with 'aggrega plugin add cli %s'", name, name, name)
 }
 
 // unknownCommandSuggestion returns formatted with an install hint appended when

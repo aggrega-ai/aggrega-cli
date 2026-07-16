@@ -129,37 +129,45 @@ func TestConfirmInstallCapabilities(t *testing.T) {
 	})
 }
 
+// reResolveCLI re-resolves the workspace rooted at rw and returns its composed
+// plugins.cli list, so a test reads back exactly what an install wrote.
+func reResolveCLI(t *testing.T, rw *workspaceconfig.ResolvedWorkspace) []workspaceconfig.CLIPluginRef {
+	t.Helper()
+	rw2, err := workspaceconfig.Resolve(rw.Root(), "")
+	if err != nil {
+		t.Fatalf("re-resolve workspace: %v", err)
+	}
+	return rw2.Config().Plugins.CLI
+}
+
 // TestPluginInstall_Success proves a CLI plugin naming its command installs: the
-// index gains the entry, and the describe metadata is cached.
+// plugins.cli list gains the {uri, digest} pin, and the describe metadata is
+// cached under that digest.
 func TestPluginInstall_Success(t *testing.T) {
 	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	withCLIRegistrations(t, nil)
 	withInstallSeams(t, fixedFetch("oci://local/moo", []byte("guest-bytes")), fixedDescribe(cliDesc("moo", "Print a greeting")))
+	rw := resolvedTestWorkspace(t)
 
 	var out bytes.Buffer
-	if err := pluginInstallRun(context.Background(), nil, "oci://local/moo", false, true, strings.NewReader(""), &out); err != nil {
+	if err := pluginInstallRun(context.Background(), rw, "oci://local/moo", false, true, false, true, nil, strings.NewReader(""), &out); err != nil {
 		t.Fatalf("install: %v", err)
 	}
 	if !strings.Contains(out.String(), "no additional capabilities") {
 		t.Fatalf("capability prompt not shown:\n%s", out.String())
 	}
 
-	idx, err := readInstalledPluginIndex()
-	if err != nil {
-		t.Fatalf("read index: %v", err)
+	wantDigest := describeCacheDigest([]byte("guest-bytes"))
+	refs := reResolveCLI(t, rw)
+	if len(refs) != 1 {
+		t.Fatalf("plugins.cli should carry exactly one pin; got %+v", refs)
 	}
-	entry, ok := idx.Plugins["moo"]
-	if !ok {
-		t.Fatalf("index missing 'moo' entry: %+v", idx)
-	}
-	if entry.URI != "oci://local/moo" || entry.Usage != "Print a greeting" {
-		t.Fatalf("unexpected entry: %+v", entry)
-	}
-	if len(entry.Capabilities) != 0 {
-		t.Fatalf("no beyond-baseline capabilities are declared; got %v", entry.Capabilities)
+	if refs[0].URI != "oci://local/moo" || refs[0].Digest != wantDigest {
+		t.Fatalf("unexpected cli pin: %+v (want digest %s)", refs[0], wantDigest)
 	}
 
-	cached, ok := readDescribeCache(describeCacheDigest([]byte("guest-bytes")))
-	if !ok || len(cached.Commands) != 1 || cached.Commands[0].Name != "moo" {
+	cached, ok := readDescribeCache(wantDigest)
+	if !ok || len(cached.Commands) != 1 || cached.Commands[0].Name != "moo" || cached.Commands[0].Description != "Print a greeting" {
 		t.Fatalf("describe metadata not cached: ok=%v cached=%+v", ok, cached)
 	}
 }
@@ -181,16 +189,17 @@ func TestPluginInstall_CollisionAndTypeGuards(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Setenv("XDG_CACHE_HOME", t.TempDir())
+			withCLIRegistrations(t, nil)
 			withInstallSeams(t, fixedFetch("oci://local/x", []byte("b")), fixedDescribe(tc.desc))
+			rw := resolvedTestWorkspace(t)
 
 			var out bytes.Buffer
-			err := pluginInstallRun(context.Background(), nil, "oci://local/x", true, true, strings.NewReader(""), &out)
+			err := pluginInstallRun(context.Background(), rw, "oci://local/x", false, true, true, true, nil, strings.NewReader(""), &out)
 			if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
 				t.Fatalf("want error containing %q; got %v", tc.wantErr, err)
 			}
-			idx, _ := readInstalledPluginIndex()
-			if len(idx.Plugins) != 0 {
-				t.Fatalf("index must not be written on a refused install: %+v", idx)
+			if refs := reResolveCLI(t, rw); len(refs) != 0 {
+				t.Fatalf("plugins.cli must not be written on a refused install: %+v", refs)
 			}
 		})
 	}
@@ -200,17 +209,18 @@ func TestPluginInstall_CollisionAndTypeGuards(t *testing.T) {
 // stdin without a skip flag refuses rather than hanging, and writes nothing.
 func TestPluginInstall_NonInteractiveRefuse(t *testing.T) {
 	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	withCLIRegistrations(t, nil)
 	withTerminal(t, false)
 	withInstallSeams(t, fixedFetch("oci://local/moo", []byte("b")), fixedDescribe(cliDesc("moo", "help")))
+	rw := resolvedTestWorkspace(t)
 
 	var out bytes.Buffer
-	err := pluginInstallRun(context.Background(), nil, "oci://local/moo", false, false, strings.NewReader(""), &out)
+	err := pluginInstallRun(context.Background(), rw, "oci://local/moo", false, true, false, false, nil, strings.NewReader(""), &out)
 	if err == nil || !strings.Contains(err.Error(), "non-interactive") {
 		t.Fatalf("non-tty install without a flag should refuse; got %v", err)
 	}
-	idx, _ := readInstalledPluginIndex()
-	if len(idx.Plugins) != 0 {
-		t.Fatalf("index must not be written on a refused install: %+v", idx)
+	if refs := reResolveCLI(t, rw); len(refs) != 0 {
+		t.Fatalf("plugins.cli must not be written on a refused install: %+v", refs)
 	}
 }
 
@@ -221,28 +231,27 @@ func TestPluginInstall_NonInteractiveRefuse(t *testing.T) {
 // command and help.
 func TestPluginInstall_RealGuestDescribe(t *testing.T) {
 	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	withCLIRegistrations(t, nil)
 	guest := buildInstallGuest(t, "cli-install-guest")
 	// Only the fetch is faked (no registry); the describe gate is the real one.
 	withInstallSeams(t, fixedFetch("oci://local/moo", guest), nil)
+	rw := resolvedTestWorkspace(t)
 
 	var out bytes.Buffer
-	if err := pluginInstallRun(context.Background(), nil, "oci://local/moo", false, true, strings.NewReader(""), &out); err != nil {
+	if err := pluginInstallRun(context.Background(), rw, "oci://local/moo", false, true, false, true, nil, strings.NewReader(""), &out); err != nil {
 		t.Fatalf("install real guest: %v", err)
 	}
-	idx, err := readInstalledPluginIndex()
-	if err != nil {
-		t.Fatalf("read index: %v", err)
+	wantDigest := describeCacheDigest(guest)
+	refs := reResolveCLI(t, rw)
+	if len(refs) != 1 || refs[0].URI != "oci://local/moo" || refs[0].Digest != wantDigest {
+		t.Fatalf("plugins.cli missing the real-guest pin: %+v", refs)
 	}
-	entry, ok := idx.Plugins["moo"]
-	if !ok {
-		t.Fatalf("index missing 'moo' from a real describe(): %+v", idx)
-	}
-	if entry.Usage != "Print a friendly greeting" {
-		t.Fatalf("usage should come from the guest describe() command description; got %q", entry.Usage)
-	}
-	cached, ok := readDescribeCache(describeCacheDigest(guest))
+	cached, ok := readDescribeCache(wantDigest)
 	if !ok || len(cached.Commands) != 1 || cached.Commands[0].Name != "moo" {
 		t.Fatalf("real-guest describe metadata not cached: ok=%v cached=%+v", ok, cached)
+	}
+	if cached.Commands[0].Description != "Print a friendly greeting" {
+		t.Fatalf("help should come from the guest describe() command description; got %q", cached.Commands[0].Description)
 	}
 }
 

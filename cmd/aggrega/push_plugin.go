@@ -43,7 +43,7 @@ import (
 // spec.runtime.hostFunctions record is derived from the .wasm and compared to
 // the record already committed on disk. When the two agree the on-disk bytes are
 // published verbatim; when they diverge the publish HALTS and directs the author
-// to re-record the set with `aggrega plugin stamp`, so a published entity always
+// to re-record the set with `aggrega plugin sync`, so a published entity always
 // carries the record its binary actually implies and publish never silently
 // rewrites the committed file.
 func pushPlugin(out io.Writer, cfg pushConfig, registry string, wantSign bool, name, version, entityPath string, entityYAML []byte) error {
@@ -92,14 +92,14 @@ func pushPlugin(out io.Writer, cfg pushConfig, registry string, wantSign bool, n
 
 	// Verify the machine-owned command mirror against the .wasm describe()
 	// self-report, read-only exactly as the host-function record is: the author
-	// records it with `aggrega plugin stamp`, and publish only checks it here — it
+	// records it with `aggrega plugin sync`, and publish only checks it here — it
 	// never rewrites the file. A divergence in name, short-help text, or order
 	// HALTS before any bytes land, directing the author to re-record the set. The
 	// describe() self-report is the one already loaded for the cross-check above,
 	// so the guest is not instantiated a second time.
 	committedCommands := entityCommandMirror(entity)
 	if !wasm.CommandMirrorsEqual(committedCommands, desc.Commands) {
-		return fmt.Errorf("aggrega push: Plugin %s: spec.commands in %s is out of sync with the .wasm at %s — the file records %s but the binary describes %s; re-run `aggrega plugin stamp %s --plugin %s` and commit the result before publishing: %w",
+		return fmt.Errorf("aggrega push: Plugin %s: spec.commands in %s is out of sync with the .wasm at %s — the file records %s but the binary describes %s; re-run `aggrega plugin sync %s --plugin %s` and commit the result before publishing: %w",
 			entityIdentity, entityPath, cfg.PluginPath, wasm.FormatCommandMirror(committedCommands), wasm.FormatCommandMirror(desc.Commands), entityPath, cfg.PluginPath, wasm.ErrWasmCommandsMirrorMismatch)
 	}
 
@@ -113,7 +113,7 @@ func pushPlugin(out io.Writer, cfg pushConfig, registry string, wantSign bool, n
 
 	// Derive the host functions the .wasm actually imports, in canonical form,
 	// and verify the entity's committed record matches. The set is machine-owned:
-	// the author records it into the file with `aggrega plugin stamp`, and publish
+	// the author records it into the file with `aggrega plugin sync`, and publish
 	// only checks it here — it never rewrites the file. The same derivation
 	// primitive runs at load and at pull, so the committed record, the registered
 	// surface, and the pull-time verification can never diverge.
@@ -126,7 +126,7 @@ func pushPlugin(out io.Writer, cfg pushConfig, registry string, wantSign bool, n
 		committedHostFunctions = entity.Spec.Runtime.HostFunctions
 	}
 	if !canonicalHostFunctionsEqual(committedHostFunctions, derivedHostFunctions) {
-		return fmt.Errorf("aggrega push: Plugin %s: spec.runtime.hostFunctions in %s is out of sync with the .wasm at %s — the file records %v but the binary imports %v; re-run `aggrega plugin stamp %s --plugin %s` and commit the result before publishing: %w",
+		return fmt.Errorf("aggrega push: Plugin %s: spec.runtime.hostFunctions in %s is out of sync with the .wasm at %s — the file records %v but the binary imports %v; re-run `aggrega plugin sync %s --plugin %s` and commit the result before publishing: %w",
 			entityIdentity, entityPath, cfg.PluginPath, committedHostFunctions, derivedHostFunctions, entityPath, cfg.PluginPath, wasm.ErrWasmHostFunctionsStampMismatch)
 	}
 

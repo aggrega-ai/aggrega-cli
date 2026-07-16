@@ -9,12 +9,12 @@
 // linter sockets — receives a *Plugin constructed by Loader.Load and
 // invokes it through Plugin.Call.
 //
-// The package's AOT-purity firewall has two layers. The manifest
-// firewall (see manifest_translate.go) rejects any plugin
+// The package's AOT-purity load gate has two layers. The manifest
+// gate (see manifest_translate.go) rejects any plugin
 // configuration that would let guest code reach beyond its in-memory
 // inputs at run time: outbound network access via AllowedHosts,
 // filesystem access via AllowedPaths, or host functions outside the
-// curated allowlist (see hostfuncs.go). The import-module firewall
+// curated allowlist (see hostfuncs.go). The import-module allowlist
 // (see wasi_imports.go) walks the plugin's Wasm import section and
 // rejects any import whose declaring module is outside a curated set of
 // namespaces (the WASI preview-1 runtime, the Extism runtime ABI, and
@@ -145,7 +145,7 @@ type Loader struct {
 // never isolation or output, since compiled code is a pure function of the
 // identical guest bytes. The store holds only compiled code keyed by the guest
 // bytes and a wazero version/arch marker, so it can neither alter rendered
-// output nor cross the render-hermeticity firewall — it is a local
+// output nor cross the render-hermeticity boundary — it is a local
 // compiled-artifact cache, not an external runtime input.
 //
 // fetch serves the aggrega_fetch_external_input host function for every Plugin
@@ -584,10 +584,10 @@ func (p *Plugin) appendWarning(formatted string) {
 // Load constructs a Plugin from a PluginSpec. The flow:
 //
 //  1. Translate the spec into an Extism manifest and run the
-//     AOT-purity firewall against the manifest fields.
+//     AOT-purity load gate against the manifest fields.
 //  2. Read the plugin Wasm bytes from spec.Path once into memory.
 //  3. Walk the bytes' import section and apply the import-module
-//     firewall: imports under a curated set of module namespaces pass;
+//     allowlist: imports under a curated set of module namespaces pass;
 //     an import under any other module is rejected with
 //     ErrWasmManifestRejected.
 //  4. Derive the host functions the guest actually imports from the
@@ -605,10 +605,10 @@ func (p *Plugin) appendWarning(formatted string) {
 //     the Extism-bundled wazero WASI runtime, whose observable
 //     behaviour the ModuleConfig pins to deterministic values.
 //
-// Reading the bytes once and threading the same slice through firewall
+// Reading the bytes once and threading the same slice through load-gate
 // inspection, host-function derivation, and Extism instantiation
 // eliminates the TOCTOU window between validation and execution.
-// Returns an error wrapping ErrWasmManifestRejected if the firewall
+// Returns an error wrapping ErrWasmManifestRejected if the load gate
 // rejects the manifest or any import or a derived host function is
 // outside the allowlist; the Extism SDK's error otherwise.
 func (l *Loader) Load(ctx context.Context, spec PluginSpec) (*Plugin, error) {
@@ -638,7 +638,7 @@ func (l *Loader) Load(ctx context.Context, spec PluginSpec) (*Plugin, error) {
 //     LoadAndDescribe and never LoadCLI, so no build path reaches this profile.
 //
 // Everything else is shared with Load through loadCore, including the unchanged
-// AOT-purity firewall (a CLI guest still may not declare AllowedHosts or
+// AOT-purity load gate (a CLI guest still may not declare AllowedHosts or
 // AllowedPaths) and the deterministic, capability-denied ModuleConfig — WASI
 // stdout/stderr stay discarded, because a CLI guest streams through the host
 // functions, not through WASI stdio.
@@ -646,8 +646,34 @@ func (l *Loader) LoadCLI(ctx context.Context, spec PluginSpec, stdout, stderr io
 	return l.loadCore(ctx, spec, validateHostFunctionsSubsetCLI, (*Plugin).hostFunctionsForDeclaredCLI, stdout, stderr)
 }
 
+// loadForDescribe constructs a Plugin under the describe-only introspection
+// profile: it binds inert host-function stubs in place of the real host
+// functions and validates the guest's imports against the union allowlist, so a
+// guest of any type — including a streaming CLI guest the build profile would
+// reject before describe() could run — instantiates purely to be introspected.
+//
+// It is the third profile alongside Load (build) and LoadCLI (runtime CLI),
+// sharing loadCore with them so the manifest check, byte read, import-module
+// allowlist, host-function derivation, Extism instantiation, and compile
+// serialization stay single-sourced. Only the two profile arguments differ:
+//
+//   - validateSubset is the union gate (validateHostFunctionsSubsetCLI), so any
+//     plugin type's imports pass and any type is describable — the build
+//     profile's strict shared gate, which rejects the streaming emitters, does
+//     not apply to a surface that only needs the self-report.
+//   - buildFunctions is the inert-stub builder (describeOnlyHostFunctions), so a
+//     guest's describe() reaches only no-op stubs and gains no real host
+//     capability during introspection.
+//
+// The streaming closures' writers are nil: the inert stubs stream nothing, so
+// there is no terminal to write to. The deterministic, capability-denied
+// ModuleConfig is unchanged.
+func (l *Loader) loadForDescribe(ctx context.Context, spec PluginSpec) (*Plugin, error) {
+	return l.loadCore(ctx, spec, validateHostFunctionsSubsetCLI, (*Plugin).describeOnlyHostFunctions, nil, nil)
+}
+
 // loadCore is the single shared body Load and LoadCLI both run, so the two
-// entry points single-source the firewall, byte read, import-module firewall,
+// entry points single-source the manifest gate, byte read, import-module allowlist,
 // host-function derivation, Extism instantiation, and compile serialization
 // rather than keeping parallel copies. The two profiles differ only in the
 // arguments: validateSubset is the subset gate the derived host-function set is
@@ -656,12 +682,12 @@ func (l *Loader) LoadCLI(ctx context.Context, spec PluginSpec, stdout, stderr io
 // closures; stdout and stderr are the streams the CLI streaming closures write
 // to (nil on the build profile, which binds no streaming closure).
 //
-// The flow mirrors Load's documented sequence: translate + firewall, read the
-// bytes once, apply the import-module firewall, derive the host functions from
+// The flow mirrors Load's documented sequence: translate + manifest gate, read the
+// bytes once, apply the import-module allowlist, derive the host functions from
 // the bytes and check the derived set against validateSubset, then instantiate
 // the Extism plugin from the same in-memory bytes under the deterministic,
 // capability-denied ModuleConfig. Reading the bytes once and threading the same
-// slice through firewall inspection, derivation, and instantiation eliminates
+// slice through load-gate inspection, derivation, and instantiation eliminates
 // the TOCTOU window between validation and execution.
 func (l *Loader) loadCore(
 	ctx context.Context,
@@ -705,7 +731,7 @@ func (l *Loader) loadCore(
 
 	// Replace the manifest's WasmFile entry (which would have Extism
 	// re-read from disk) with WasmData carrying the already-read
-	// bytes. The firewall validated these specific bytes; Extism
+	// bytes. The load gate validated these specific bytes; Extism
 	// will compile and instantiate the same bytes.
 	manifest.Wasm = []extism.Wasm{
 		extism.WasmData{Data: wasmBytes, Name: spec.Name},
@@ -730,7 +756,7 @@ func (l *Loader) loadCore(
 	// repeated loads of the same bytes skip recompilation. It carries no
 	// runtime authority and no observable behaviour of its own — it changes
 	// only compilation cost — so it leaves the deterministic ModuleConfig and
-	// the AOT-purity firewall untouched.
+	// the AOT-purity load gate untouched.
 	if l.Cache != nil {
 		config.RuntimeConfig = wazero.NewRuntimeConfig().WithCompilationCache(l.Cache)
 	}
@@ -1005,7 +1031,7 @@ func (l *Loader) lockGuestCompile(key string) func() {
 //     name as the guest's argv. A transitive dependency's package init may
 //     read os.Args[0] and panic on an empty argv; supplying a constant
 //     avoids that panic. WASI argv is data, not a host-function import,
-//     so the firewall is untouched and the value is a build-invariant
+//     so the load gate is untouched and the value is a build-invariant
 //     constant.
 func deterministicModuleConfig(programName string) wazero.ModuleConfig {
 	return wazero.NewModuleConfig().

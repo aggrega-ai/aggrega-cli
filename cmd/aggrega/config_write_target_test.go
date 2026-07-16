@@ -135,11 +135,11 @@ func TestPluginAddProviderDefaultsToWorkspace(t *testing.T) {
 	var out bytes.Buffer
 
 	if err := pluginAddRun(context.Background(), pluginAddConfig{
-		Socket: "provider",
-		Query:  "helm",
-		Target: "helm",
-		ws:     rw,
-		Out:    &out,
+		Socket:     "provider",
+		Query:      "helm",
+		Capability: "helm",
+		ws:         rw,
+		Out:        &out,
 	}); err != nil {
 		t.Fatalf("pluginAddRun (provider): %v", err)
 	}
@@ -163,13 +163,13 @@ func TestPluginAddProviderGlobalOverride(t *testing.T) {
 	var out bytes.Buffer
 
 	if err := pluginAddRun(context.Background(), pluginAddConfig{
-		Socket: "provider",
-		Query:  "helm",
-		Target: "helm",
-		Global: true,
-		lookup: lookup,
-		ws:     rw,
-		Out:    &out,
+		Socket:     "provider",
+		Query:      "helm",
+		Capability: "helm",
+		Global:     true,
+		lookup:     lookup,
+		ws:         rw,
+		Out:        &out,
 	}); err != nil {
 		t.Fatalf("pluginAddRun (provider --global): %v", err)
 	}
@@ -218,13 +218,13 @@ func TestPluginAddBothFlagsUsageError(t *testing.T) {
 	withSearchTarget(t, fakeRepoLister{repos: searchFixtureRepos}, nil)
 	rw := resolvedTestWorkspace(t)
 	err := pluginAddRun(context.Background(), pluginAddConfig{
-		Socket:    "provider",
-		Query:     "helm",
-		Target:    "helm",
-		Global:    true,
-		Workspace: true,
-		ws:        rw,
-		Out:       &bytes.Buffer{},
+		Socket:     "provider",
+		Query:      "helm",
+		Capability: "helm",
+		Global:     true,
+		Workspace:  true,
+		ws:         rw,
+		Out:        &bytes.Buffer{},
 	})
 	if err == nil {
 		t.Fatal("both --global and --workspace should be a usage error")

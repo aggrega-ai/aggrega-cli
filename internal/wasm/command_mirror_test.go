@@ -112,7 +112,7 @@ func TestDescribeAndValidate_CommandMirrorDriftHalts(t *testing.T) {
 	if !errors.Is(err, ErrWasmCommandsMirrorMismatch) {
 		t.Fatalf("a drifted command mirror should halt with ErrWasmCommandsMirrorMismatch; got %v", err)
 	}
-	for _, want := range []string{"cli/greet:1.0.0", "aggrega plugin stamp"} {
+	for _, want := range []string{"cli/greet:1.0.0", "aggrega plugin sync"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("halt should mention %q; got %v", want, err)
 		}

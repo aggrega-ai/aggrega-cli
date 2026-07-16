@@ -12,8 +12,6 @@ import (
 	"os"
 	"strings"
 
-	"github.com/spf13/cobra"
-
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
@@ -61,65 +59,40 @@ var describeInstallable = func(ctx context.Context, src resolvedInstallable) (wa
 	return desc, nil
 }
 
-// newPluginInstallCmd builds the `plugin install` command: it resolves and
-// verifies a CLI plugin reference, confirms the plugin's capabilities with the
-// operator, and registers the plugin as a top-level aggrega command.
-func newPluginInstallCmd() *cobra.Command {
-	var acceptCaps, assumeYes bool
-	c := &cobra.Command{
-		Use:   "install <plugin-ref>",
-		Short: "Install a CLI plugin as a top-level aggrega command",
-		Long: `Resolve, verify, and install a CLI plugin so it runs as a top-level
-aggrega <command>.
-
-The reference is resolved through the plugin cascade and, when it names a
-registry artifact, verified against the registry's trust policy — the same
-signature check the dependency resolver applies. The resolved plugin must be a
-CLI plugin and must name at least one command it contributes; a single plugin
-may contribute several commands, each installed as its own top-level command.
-
-A plugin any of whose command names shadows a built-in command or a reserved
-name is refused. Before installing, the command prints the plugin's declared
-capabilities and asks for confirmation; pass --accept-capabilities or --yes to
-skip the prompt for non-interactive use. Without a skip flag on a
-non-interactive stdin it refuses rather than blocking on a prompt no one can
-answer.`,
-		Args: cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			rw, err := workspaceFromContext(cmd.Context())
-			if err != nil {
-				return err
-			}
-			return pluginInstallRun(cmd.Context(), rw, args[0], acceptCaps, assumeYes, cmd.InOrStdin(), cmd.OutOrStdout())
-		},
-	}
-	c.Flags().BoolVar(&acceptCaps, "accept-capabilities", false, "Accept the plugin's declared capabilities without the interactive prompt")
-	c.Flags().BoolVar(&assumeYes, "yes", false, "Skip the capability-confirmation prompt (for non-interactive/CI use)")
-	return c
-}
-
 // pluginInstallRun resolves and verifies ref, requires it to be a CLI plugin
 // that names at least one command, refuses when any command name collides with a
 // built-in or reserved name, confirms the plugin's capabilities with the operator
-// once, and records one installed-plugin index entry per command plus the cached
-// describe metadata. The collision guard runs across every command before the
-// prompt so a plugin any of whose commands can never install is rejected without
-// asking, and the index is written only after confirmation.
-func pluginInstallRun(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, ref string, acceptCaps, assumeYes bool, in io.Reader, out io.Writer) error {
+// once, and pins the plugin into the plugins.cli config list plus warms the
+// describe cache. The write destination follows the CLI operation's nature (a
+// machine-wide tool defaults to the global config) with the --global / --workspace
+// overrides; global and workspace are resolved up front so a write-target flag
+// misuse fails before any fetch. The collision guard runs across every command
+// before the prompt so a plugin any of whose commands can never install is
+// rejected without asking, and the config is written only after confirmation.
+func pluginInstallRun(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, ref string, global, workspace, acceptCaps, assumeYes bool, lookup func(string) string, in io.Reader, out io.Writer) error {
+	var root string
+	if rw != nil {
+		root = rw.Root()
+	}
+	configPath, err := workspaceconfig.WriteDestination(workspaceconfig.OpCLI, global, workspace, root, lookup)
+	if err != nil {
+		return err
+	}
+
 	src, err := installPluginFetch(ctx, rw, ref)
 	if err != nil {
-		return fmt.Errorf("plugin install: %w", err)
+		return fmt.Errorf("aggrega plugin add: %w", err)
 	}
 
 	desc, err := describeInstallable(ctx, src)
 	if err != nil {
-		return fmt.Errorf("plugin install: describe %q: %w", ref, err)
+		return fmt.Errorf("aggrega plugin add: describe %q: %w", ref, err)
 	}
 	if desc.PluginType != wasm.PluginTypeCLI {
-		return fmt.Errorf("plugin install: %q is not a CLI plugin (declares type %q); only CLI plugins install as commands", ref, desc.PluginType)
+		return fmt.Errorf("aggrega plugin add: %q is not a CLI plugin (declares type %q); only CLI plugins install as commands", ref, desc.PluginType)
 	}
 	if len(desc.Commands) == 0 {
-		return fmt.Errorf("plugin install: %q declares no commands; a CLI plugin must name at least one command it contributes", ref)
+		return fmt.Errorf("aggrega plugin add: %q declares no commands; a CLI plugin must name at least one command it contributes", ref)
 	}
 
 	// The collision guard runs per command before the prompt so a plugin any of
@@ -128,10 +101,10 @@ func pluginInstallRun(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace
 	builtins := builtinCommandNames()
 	for _, command := range desc.Commands {
 		if builtins[command.Name] {
-			return fmt.Errorf("plugin install: %q contributes the command %q, which is a built-in command; refusing to install", ref, command.Name)
+			return fmt.Errorf("aggrega plugin add: %q contributes the command %q, which is a built-in command; refusing to install", ref, command.Name)
 		}
 		if reservedCommandNames[command.Name] {
-			return fmt.Errorf("plugin install: %q contributes the command %q, which is a reserved command name; refusing to install", ref, command.Name)
+			return fmt.Errorf("aggrega plugin add: %q contributes the command %q, which is a reserved command name; refusing to install", ref, command.Name)
 		}
 	}
 
@@ -141,10 +114,10 @@ func pluginInstallRun(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace
 		return err
 	}
 
-	if err := recordInstalledPlugin(src, desc); err != nil {
-		return fmt.Errorf("plugin install: %w", err)
+	if err := recordInstalledCLIPlugin(configPath, src, desc); err != nil {
+		return fmt.Errorf("aggrega plugin add: %w", err)
 	}
-	fmt.Fprintf(out, "Installed %q as command(s) %s.\n", ref, quoteCommandNames(desc))
+	fmt.Fprintf(out, "Added %q as command(s) %s in %s.\n", ref, quoteCommandNames(desc), configPath)
 	return nil
 }
 
@@ -198,7 +171,7 @@ func confirmInstallCapabilities(w io.Writer, r io.Reader, commandLabel string, c
 		return nil
 	}
 	if !isTerminal() {
-		return errors.New("plugin install: refusing to install without capability confirmation on a non-interactive stdin; pass --accept-capabilities or --yes")
+		return errors.New("aggrega plugin add: refusing to install without capability confirmation on a non-interactive stdin; pass --accept-capabilities or --yes")
 	}
 	fmt.Fprint(w, "Install this plugin? [y/N] ")
 	line, _ := bufio.NewReader(r).ReadString('\n')
@@ -206,58 +179,42 @@ func confirmInstallCapabilities(w io.Writer, r io.Reader, commandLabel string, c
 	case "y", "Y", "yes", "Yes", "YES":
 		return nil
 	default:
-		return errors.New("plugin install: aborted")
+		return errors.New("aggrega plugin add: aborted")
 	}
 }
 
 // builtinCommandNames returns the static built-in command names a newly-built
-// tree exposes, so an installed plugin can never shadow one. It reads the live
-// command tree — the same authoritative built-in surface the registration guard
-// uses — and removes the dynamically-registered installed-plugin commands, since
-// an already-installed plugin's own name is not a built-in a new install must
+// tree exposes, so a configured CLI plugin can never shadow one. It reads the
+// live command tree — the same authoritative built-in surface the registration
+// guard uses — and removes the dynamically-registered CLI-plugin commands, since
+// an already-configured plugin's own name is not a built-in a new install must
 // avoid.
 func builtinCommandNames() map[string]bool {
 	names := map[string]bool{}
 	for _, c := range newRootCmd().Commands() {
 		names[c.Name()] = true
 	}
-	if idx, err := installedPluginIndexSource(); err == nil {
-		for name := range idx.Plugins {
-			delete(names, name)
-		}
+	for _, reg := range cliPluginRegistrations() {
+		delete(names, reg.name)
 	}
 	return names
 }
 
-// recordInstalledPlugin writes one installed-plugin index entry per command the
-// plugin contributes and caches the plugin's describe metadata keyed by the
-// content digest, so a freshly built tree registers each command and renders its
-// help without loading the guest. Every command's entry shares the plugin's
-// resolved URI and describe cache; each carries its own command's short help as
-// the entry usage. The index is read from disk, the entries are set, and the
-// whole index is written back, so an install adds to — rather than replaces —
-// the installed set. The describe cache is written once, keyed by the guest's
-// content digest.
-func recordInstalledPlugin(src resolvedInstallable, desc wasm.PluginDescriptor) error {
-	idx, err := readInstalledPluginIndex()
-	if err != nil {
+// recordInstalledCLIPlugin pins the resolved plugin into the plugins.cli list at
+// configPath — one {uri, digest} entry — and warms the describe cache under that
+// digest, so a freshly built tree registers each of the plugin's commands and
+// renders their help without loading the guest. The pin is the content digest of
+// the signature-verified bytes computed at install, which closes the
+// pull-to-first-run window: the running bytes are fixed the moment they are
+// fetched, not trusted on first use. The write is idempotent — re-adding the same
+// plugin re-pins the one entry rather than duplicating it. The describe cache is
+// written once, keyed by that same content digest.
+func recordInstalledCLIPlugin(configPath string, src resolvedInstallable, desc wasm.PluginDescriptor) error {
+	digest := describeCacheDigest(src.Bytes)
+	if err := workspaceconfig.UpsertCLIPluginRef(configPath, src.URI, digest); err != nil {
 		return err
 	}
-	if idx.Plugins == nil {
-		idx.Plugins = map[string]installedPluginEntry{}
-	}
-	caps := beyondBaselineCapabilities(desc)
-	for _, command := range desc.Commands {
-		idx.Plugins[command.Name] = installedPluginEntry{
-			URI:          src.URI,
-			Usage:        command.Description,
-			Capabilities: caps,
-		}
-	}
-	if err := writeInstalledPluginIndex(idx); err != nil {
-		return err
-	}
-	writeDescribeCache(describeCacheDigest(src.Bytes), desc)
+	writeDescribeCache(digest, desc)
 	return nil
 }
 

@@ -16,7 +16,7 @@ package wasm
 // a field-for-field map, no field reinvention.
 type PluginSpec struct {
 	// Name is the plugin's identifier for diagnostics. The Loader
-	// surfaces this in error messages from the AOT-purity firewall and
+	// surfaces this in error messages from the AOT-purity load gate and
 	// from Plugin.Call's panic-recovery wrap. Typically the plugin's
 	// catalog URI leaf (for example "publishing-linter").
 	Name string
@@ -80,7 +80,7 @@ type PluginSpec struct {
 	ConfigKV map[string]string
 
 	// AllowedHosts is accepted only to give callers an explicit,
-	// caller-visible firewall-rejection path. Any non-empty AllowedHosts
+	// caller-visible load-gate-rejection path. Any non-empty AllowedHosts
 	// triggers ErrWasmManifestRejected — outbound network access from a
 	// plugin would break AOT purity (no runtime network access at build
 	// time) and is rejected categorically.

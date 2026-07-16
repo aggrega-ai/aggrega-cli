@@ -19,27 +19,27 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
-// newPluginStampCmd builds the `plugin stamp` command: it records a plugin's
-// machine-owned records into its entity file — the host-function set derived from
-// the .wasm import section, and the CLI command mirror read from the plugin's
-// describe() self-report.
-func newPluginStampCmd() *cobra.Command {
+// newPluginSyncCmd builds the `plugin sync` command: it aligns a plugin's
+// machine-owned records in its entity file with the binary — the host-function
+// set derived from the .wasm import section, and the CLI command mirror read from
+// the plugin's describe() self-report.
+func newPluginSyncCmd() *cobra.Command {
 	var pluginPath string
 	c := &cobra.Command{
-		Use:   "stamp <entity-path>",
-		Short: "Record a plugin's machine-owned records (host functions, CLI commands) into its entity file",
-		Long: `Record a plugin's machine-owned records into a Plugin entity file.
+		Use:   "sync <entity-path>",
+		Short: "Sync a plugin's machine-owned records (host functions, CLI commands) in its entity file with its .wasm",
+		Long: `Sync a plugin's machine-owned records in a Plugin entity file with its .wasm.
 
 Two records are not authored by hand: the set of host functions a plugin may
 call, derived from the plugin's .wasm import section, and the top-level commands a
 CLI plugin contributes, read from the plugin's describe() self-report. Both are
 ground truth in the binary. This command reads the .wasm, derives the
 host-function set in canonical form and the command mirror in describe()-declared
-order, and writes them into the entity's spec.runtime.hostFunctions and
-spec.commands — creating the runtime block when the file has none. Only those
-blocks change; every comment, blank line, and other field is preserved
-byte-for-byte. A plugin that imports no host functions or contributes no commands
-records an explicit empty list, so each field is always present and reviewable.
+order, and aligns the entity's spec.runtime.hostFunctions and spec.commands with
+them — creating the runtime block when the file has none. Only those blocks
+change; every comment, blank line, and other field is preserved byte-for-byte. A
+plugin that imports no host functions or contributes no commands records an
+explicit empty list, so each field is always present and reviewable.
 
 The write is idempotent: re-running when the records already match the .wasm
 leaves the file untouched. Commit the result; publish (aggrega push) then only
@@ -48,7 +48,7 @@ whose records are out of sync with its binary.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if pluginPath == "" {
-				return fmt.Errorf("aggrega plugin stamp: --plugin <path-to-.wasm> is required (the recorded host functions and commands are derived from the .wasm)")
+				return fmt.Errorf("aggrega plugin sync: --plugin <path-to-.wasm> is required (the recorded host functions and commands are derived from the .wasm)")
 			}
 			return stampPluginFile(cmd.OutOrStdout(), args[0], pluginPath)
 		},
@@ -68,21 +68,21 @@ whose records are out of sync with its binary.`,
 func stampPluginFile(out io.Writer, entityPath, pluginPath string) error {
 	data, err := os.ReadFile(entityPath)
 	if err != nil {
-		return fmt.Errorf("aggrega plugin stamp: read entity %s: %w", entityPath, err)
+		return fmt.Errorf("aggrega plugin sync: read entity %s: %w", entityPath, err)
 	}
 	wasmBytes, err := os.ReadFile(pluginPath)
 	if err != nil {
-		return fmt.Errorf("aggrega plugin stamp: read .wasm %s: %w", pluginPath, err)
+		return fmt.Errorf("aggrega plugin sync: read .wasm %s: %w", pluginPath, err)
 	}
 
 	var entity types.Plugin
 	if err := yaml.Unmarshal(data, &entity); err != nil {
-		return fmt.Errorf("aggrega plugin stamp: parse entity %s: %w", entityPath, err)
+		return fmt.Errorf("aggrega plugin sync: parse entity %s: %w", entityPath, err)
 	}
 
 	derived, err := wasm.DeriveHostFunctions(entityPath, wasmBytes)
 	if err != nil {
-		return fmt.Errorf("aggrega plugin stamp: %w", err)
+		return fmt.Errorf("aggrega plugin sync: %w", err)
 	}
 
 	// The command mirror is read from the plugin's describe() self-report, which
@@ -97,16 +97,16 @@ func stampPluginFile(out io.Writer, entityPath, pluginPath string) error {
 	}
 	desc, err := wasm.DescribePluginBytes(context.Background(), entityPath, wasmBytes, maxPages, entity.Spec.PluginType)
 	if err != nil {
-		return fmt.Errorf("aggrega plugin stamp: %s: %w", entityPath, err)
+		return fmt.Errorf("aggrega plugin sync: %s: %w", entityPath, err)
 	}
 
 	updated, changedHF, err := spliceHostFunctions(data, derived)
 	if err != nil {
-		return fmt.Errorf("aggrega plugin stamp: %s: %w", entityPath, err)
+		return fmt.Errorf("aggrega plugin sync: %s: %w", entityPath, err)
 	}
 	updated, changedCmd, err := spliceCommands(updated, desc.Commands)
 	if err != nil {
-		return fmt.Errorf("aggrega plugin stamp: %s: %w", entityPath, err)
+		return fmt.Errorf("aggrega plugin sync: %s: %w", entityPath, err)
 	}
 
 	if !changedHF && !changedCmd {
@@ -115,7 +115,7 @@ func stampPluginFile(out io.Writer, entityPath, pluginPath string) error {
 		return nil
 	}
 	if err := writeFileAtomic(entityPath, updated, 0o644); err != nil {
-		return fmt.Errorf("aggrega plugin stamp: write %s: %w", entityPath, err)
+		return fmt.Errorf("aggrega plugin sync: write %s: %w", entityPath, err)
 	}
 	fmt.Fprintf(out, "Recorded host functions %v and commands %s into %s\n",
 		derived, wasm.FormatCommandMirror(desc.Commands), entityPath)

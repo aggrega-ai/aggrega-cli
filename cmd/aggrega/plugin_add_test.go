@@ -44,7 +44,7 @@ func withTagLister(t *testing.T, tags []string) {
 
 // TestPluginAddRun_Provider proves the provider path searches, resolves the
 // plugin repository, and writes a well-formed, schema-valid plugins.providers
-// {target, uri} binding. It asserts only the write — a subsequent provider
+// {capability, uri} binding. It asserts only the write — a subsequent provider
 // resolve is not exercised here.
 func TestPluginAddRun_Provider(t *testing.T) {
 	withSearchTarget(t, fakeRepoLister{repos: searchFixtureRepos}, nil)
@@ -52,11 +52,11 @@ func TestPluginAddRun_Provider(t *testing.T) {
 	var out bytes.Buffer
 
 	if err := pluginAddRun(context.Background(), pluginAddConfig{
-		Socket: "provider",
-		Query:  "helm",
-		Target: "helm",
-		ws:     rw,
-		Out:    &out,
+		Socket:     "provider",
+		Query:      "helm",
+		Capability: "helm",
+		ws:         rw,
+		Out:        &out,
 	}); err != nil {
 		t.Fatalf("pluginAddRun (provider): %v", err)
 	}
@@ -78,14 +78,14 @@ func TestPluginAddRun_Provider(t *testing.T) {
 	}
 }
 
-// TestPluginAddRun_ProviderRequiresTarget proves the provider socket halts when
-// --target is absent rather than writing a target-less binding.
-func TestPluginAddRun_ProviderRequiresTarget(t *testing.T) {
+// TestPluginAddRun_ProviderRequiresCapability proves the provider socket halts
+// when --capability is absent rather than writing a capability-less binding.
+func TestPluginAddRun_ProviderRequiresCapability(t *testing.T) {
 	withSearchTarget(t, fakeRepoLister{repos: searchFixtureRepos}, nil)
 	rw := resolvedTestWorkspace(t)
 	err := pluginAddRun(context.Background(), pluginAddConfig{Socket: "provider", Query: "helm", ws: rw, Out: &bytes.Buffer{}})
-	if err == nil || !strings.Contains(err.Error(), "requires --target") {
-		t.Fatalf("want a --target-required error; got %v", err)
+	if err == nil || !strings.Contains(err.Error(), "requires --capability") {
+		t.Fatalf("want a --capability-required error; got %v", err)
 	}
 }
 
@@ -134,13 +134,13 @@ func TestPluginAddRun_ConfigSocketNoVersion(t *testing.T) {
 	}
 }
 
-// TestPluginAddRun_UnknownSocket proves an unrecognized socket argument halts
-// with the list of accepted sockets.
-func TestPluginAddRun_UnknownSocket(t *testing.T) {
+// TestPluginAddRun_UnknownType proves an unrecognized type argument halts
+// with the list of accepted types.
+func TestPluginAddRun_UnknownType(t *testing.T) {
 	rw := resolvedTestWorkspace(t)
 	err := pluginAddRun(context.Background(), pluginAddConfig{Socket: "webhook", Query: "x", ws: rw, Out: &bytes.Buffer{}})
-	if err == nil || !strings.Contains(err.Error(), "unknown socket") {
-		t.Fatalf("want an unknown-socket error; got %v", err)
+	if err == nil || !strings.Contains(err.Error(), "unknown type") {
+		t.Fatalf("want an unknown-type error; got %v", err)
 	}
 }
 
@@ -156,6 +156,74 @@ func TestPluginAddRun_AmbiguousQuery(t *testing.T) {
 	err := pluginAddRun(context.Background(), pluginAddConfig{Socket: "mutator", Query: "tag", ws: rw, Out: &bytes.Buffer{}})
 	if err == nil || !strings.Contains(err.Error(), "narrow the query") {
 		t.Fatalf("want an ambiguity error; got %v", err)
+	}
+}
+
+// TestPluginAddRun_CLIInstallsViaSearchResolve proves the cli type drives the
+// cli-scoped registry search, pins the latest published version into an oci://
+// reference, and installs the resolved plugin as a command end-to-end through the
+// shared install path — the describe gate is the real one, the capability prompt
+// is skipped with --yes, and the index gains the guest's declared command.
+func TestPluginAddRun_CLIInstallsViaSearchResolve(t *testing.T) {
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	withCLIRegistrations(t, nil)
+	withSearchTarget(t, fakeRepoLister{repos: []string{"plugin/cli/moo"}}, nil)
+	withTagLister(t, []string{"1.0.0", "1.2.0", "2.0.0-rc1"})
+	guest := buildInstallGuest(t, "cli-install-guest")
+
+	// Record the reference the install fetch receives so the search-resolve path's
+	// ref construction is asserted; the describe gate stays the real one.
+	var gotRef string
+	recordingFetch := func(_ context.Context, _ *workspaceconfig.ResolvedWorkspace, ref string) (resolvedInstallable, error) {
+		gotRef = ref
+		return resolvedInstallable{URI: ref, Bytes: guest}, nil
+	}
+	withInstallSeams(t, recordingFetch, nil)
+
+	rw := resolvedTestWorkspace(t)
+	var out bytes.Buffer
+	if err := pluginAddRun(context.Background(), pluginAddConfig{
+		Socket:    "cli",
+		Query:     "moo",
+		Workspace: true,
+		AssumeYes: true,
+		ws:        rw,
+		In:        strings.NewReader(""),
+		Out:       &out,
+	}); err != nil {
+		t.Fatalf("pluginAddRun (cli): %v", err)
+	}
+
+	// 2.0.0-rc1 is pre-release and excluded; 1.2.0 is the highest stable tag.
+	if gotRef != "oci://hub.aggrega.ai/plugin/cli/moo:1.2.0" {
+		t.Fatalf("cli add built ref %q; want oci://hub.aggrega.ai/plugin/cli/moo:1.2.0", gotRef)
+	}
+	refs := reResolveCLI(t, rw)
+	if len(refs) != 1 || refs[0].URI != "oci://hub.aggrega.ai/plugin/cli/moo:1.2.0" {
+		t.Fatalf("plugins.cli missing the pinned ref after 'add cli': %+v", refs)
+	}
+	if refs[0].Digest != describeCacheDigest(guest) {
+		t.Fatalf("cli pin digest = %q; want the verified-bytes digest", refs[0].Digest)
+	}
+	if !strings.Contains(out.String(), "no additional capabilities") {
+		t.Fatalf("capability prompt not shown:\n%s", out.String())
+	}
+}
+
+// TestPluginAddRun_CapabilityFlagsRejectedOffCLI proves the cli-only capability
+// flags halt with a usage error on a non-cli type rather than being silently
+// ignored, mirroring the provider-only --capability guard.
+func TestPluginAddRun_CapabilityFlagsRejectedOffCLI(t *testing.T) {
+	rw := resolvedTestWorkspace(t)
+	err := pluginAddRun(context.Background(), pluginAddConfig{
+		Socket:    "mutator",
+		Query:     "x",
+		AssumeYes: true,
+		ws:        rw,
+		Out:       &bytes.Buffer{},
+	})
+	if err == nil || !strings.Contains(err.Error(), "apply only to the cli type") {
+		t.Fatalf("want a cli-only flag error; got %v", err)
 	}
 }
 

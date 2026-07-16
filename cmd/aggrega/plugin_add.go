@@ -6,11 +6,13 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"path"
 	"strings"
 
 	"github.com/spf13/cobra"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
@@ -33,32 +35,42 @@ var configSocketKinds = map[string]bool{
 }
 
 // newPluginAddCmd builds the `plugin add` command: it searches the configured
-// registry for a plugin serving the named socket, resolves the match to one
-// plugin identity, and writes the attachment into the workspace config file —
-// either a `plugins.<socket>` list entry (mutator / policy / linter / importer)
-// or a `plugins.providers` capability binding (provider).
+// registry for a plugin of the named type, resolves the match to one plugin
+// identity, and either writes the attachment into the workspace config file — a
+// `plugins.<type>` list entry (mutator / policy / linter / importer) or a
+// `plugins.providers` capability binding (provider) — or, for the cli type,
+// installs the plugin as a top-level aggrega command.
 func newPluginAddCmd() *cobra.Command {
-	var target string
+	var capability string
 	var global bool
 	var workspace bool
+	var acceptCaps bool
+	var assumeYes bool
 	c := &cobra.Command{
-		Use:   "add <socket> <query>",
-		Short: "Search the registry and attach a plugin to a workspace socket",
-		Long: `Search the configured registry for a plugin serving the named socket and write
-the attachment into the workspace config file.
+		Use:   "add <type> <query>",
+		Short: "Search the registry and add a plugin of the named type",
+		Long: `Search the configured registry for a plugin of the named type and write the
+attachment into a config file.
 
-The socket is one of the config sockets — mutator, policy, linter, importer — or
-provider. The query is a case-insensitive substring match on the plugin
-repository path, scoped to the chosen socket; it must resolve to exactly one
-plugin (an exact plugin-name match wins when several share a substring), else the
-command halts and lists the candidates so you can narrow it.
+The type is one of provider, mutator, policy, linter, importer, or cli. The query
+is a case-insensitive substring match on the plugin repository path, scoped to the
+chosen type; it must resolve to exactly one plugin (an exact plugin-name match
+wins when several share a substring), else the command halts and lists the
+candidates so you can narrow it.
 
-For a config socket the latest published version is pinned and the bare plugin
-entity identity (<socket>/<name>:<version>) is added to the plugins.<socket> list.
-For the provider socket, --target names the capability the binding serves and
-the plugin's oci:// identity is written as a plugins.providers entry.
+For a config type the latest published version is pinned and the bare plugin
+entity identity (<type>/<name>:<version>) is added to the plugins.<type> list. For
+the provider type, --capability names the capability the binding serves and the
+plugin's oci:// identity is written as a plugins.providers entry, preserving
+existing settings.
 
-The entry is written to the workspace config file, preserving existing settings.`,
+For the cli type the resolved plugin is pinned into the plugins.cli list as a
+top-level aggrega command: its resolved reference and the content digest of its
+verified bytes are recorded so the command runs those exact bytes. A cli plugin
+defaults to the global config, so its command is available in every workspace;
+--workspace pins it to this project instead. Its declared capabilities are
+confirmed before installing, and --accept-capabilities or --yes skips that prompt
+for non-interactive use.`,
 		Args: cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			rw, err := workspaceFromContext(cmd.Context())
@@ -66,28 +78,33 @@ The entry is written to the workspace config file, preserving existing settings.
 				return err
 			}
 			return pluginAddRun(cmd.Context(), pluginAddConfig{
-				Socket:    args[0],
-				Query:     args[1],
-				Target:    target,
-				Global:    global,
-				Workspace: workspace,
-				ws:        rw,
-				Out:       cmd.OutOrStdout(),
+				Socket:     args[0],
+				Query:      args[1],
+				Capability: capability,
+				Global:     global,
+				Workspace:  workspace,
+				AcceptCaps: acceptCaps,
+				AssumeYes:  assumeYes,
+				ws:         rw,
+				In:         cmd.InOrStdin(),
+				Out:        cmd.OutOrStdout(),
 			})
 		},
 	}
-	c.Flags().StringVar(&target, "target", "", "Capability the provider binding serves (required for, and only valid with, the provider socket)")
+	c.Flags().StringVar(&capability, "capability", "", "Capability the provider binding serves (required for, and only valid with, the provider type)")
 	c.Flags().BoolVar(&global, "global", false, "Write the attachment to the global config shared across every workspace.")
-	c.Flags().BoolVar(&workspace, "workspace", false, "Write the attachment to this project's workspace config. A plugin attachment defaults here.")
+	c.Flags().BoolVar(&workspace, "workspace", false, "Write the attachment to this project's workspace config. A provider or socket attachment defaults here; a cli plugin defaults to the global config.")
+	c.Flags().BoolVar(&acceptCaps, "accept-capabilities", false, "Accept a cli plugin's declared capabilities without the interactive prompt (cli type only)")
+	c.Flags().BoolVar(&assumeYes, "yes", false, "Skip the cli capability-confirmation prompt for non-interactive use (cli type only)")
 	return c
 }
 
 // pluginAddConfig is the input contract for `aggrega plugin add`, populated by
 // the cobra command from its arguments and flags.
 type pluginAddConfig struct {
-	Socket string
-	Query  string
-	Target string
+	Socket     string
+	Query      string
+	Capability string
 
 	// Global and Workspace are the operator's write-target overrides. A plugin
 	// attachment is build-scoped, so it defaults to this project's workspace
@@ -96,7 +113,14 @@ type pluginAddConfig struct {
 	Global    bool
 	Workspace bool
 
+	// AcceptCaps and AssumeYes gate the cli type's capability-confirmation
+	// prompt. They are consulted only when the type is cli; on any other type a
+	// set flag is a usage error, mirroring the provider-only --capability guard.
+	AcceptCaps bool
+	AssumeYes  bool
+
 	ws  *workspaceconfig.ResolvedWorkspace
+	In  io.Reader
 	Out interface{ Write([]byte) (int, error) }
 	// lookup reads the environment for global-write-path resolution. Nil selects
 	// the live process environment; tests inject a frozen lookup so resolution
@@ -108,7 +132,7 @@ type pluginAddConfig struct {
 // resolves the query to a single plugin repository, and writes the attachment
 // into the workspace config file. A config socket attaches the bare plugin
 // entity identity at its latest published version; the provider socket binds
-// cfg.Target to the plugin's oci:// identity.
+// cfg.Capability to the plugin's oci:// identity.
 func pluginAddRun(ctx context.Context, cfg pluginAddConfig) error {
 	rw, err := workspaceOrResolve(cfg.ws)
 	if err != nil {
@@ -117,14 +141,25 @@ func pluginAddRun(ctx context.Context, cfg pluginAddConfig) error {
 
 	socket := cfg.Socket
 	isProvider := socket == providerSocketKind
-	if !isProvider && !configSocketKinds[socket] {
-		return fmt.Errorf("aggrega plugin add: unknown socket %q; expected one of mutator, policy, linter, importer, provider", socket)
+	isCLI := socket == string(wasm.PluginTypeCLI)
+	if !isProvider && !isCLI && !configSocketKinds[socket] {
+		return fmt.Errorf("aggrega plugin add: unknown type %q; expected one of provider, mutator, policy, linter, importer, cli", socket)
 	}
-	if isProvider && cfg.Target == "" {
-		return fmt.Errorf("aggrega plugin add: the provider socket requires --target naming the capability the binding serves")
+	if isProvider && cfg.Capability == "" {
+		return fmt.Errorf("aggrega plugin add: the provider type requires --capability naming the capability the binding serves")
 	}
-	if !isProvider && cfg.Target != "" {
-		return fmt.Errorf("aggrega plugin add: --target applies only to the provider socket")
+	if !isProvider && cfg.Capability != "" {
+		return fmt.Errorf("aggrega plugin add: --capability applies only to the provider type")
+	}
+	if !isCLI && (cfg.AcceptCaps || cfg.AssumeYes) {
+		return fmt.Errorf("aggrega plugin add: --accept-capabilities and --yes apply only to the cli type")
+	}
+
+	// The cli type installs a top-level command rather than writing a config
+	// attachment, so it dispatches to the install path before the config
+	// write-destination resolution the socket and provider types share.
+	if isCLI {
+		return pluginAddCLIRun(ctx, rw, cfg)
 	}
 
 	// Resolve the write destination up front — it does not depend on the search,
@@ -157,10 +192,10 @@ func pluginAddRun(ctx context.Context, cfg pluginAddConfig) error {
 		// repository path; a config-socket attachment instead carries the bare
 		// entity identity, which an oci:// reference is refused for.
 		uri := "oci://" + host + "/" + repoPath
-		if err := workspaceconfig.UpsertProviderBinding(configPath, cfg.Target, uri); err != nil {
+		if err := workspaceconfig.UpsertProviderBinding(configPath, cfg.Capability, uri); err != nil {
 			return fmt.Errorf("aggrega plugin add: write %s: %w", configPath, err)
 		}
-		fmt.Fprintf(cfg.Out, "Bound capability %q to %s in %s\n", cfg.Target, uri, configPath)
+		fmt.Fprintf(cfg.Out, "Bound capability %q to %s in %s\n", cfg.Capability, uri, configPath)
 		return nil
 	}
 
@@ -178,8 +213,38 @@ func pluginAddRun(ctx context.Context, cfg pluginAddConfig) error {
 	if err := workspaceconfig.UpsertPluginSocketRef(configPath, socket, identity); err != nil {
 		return fmt.Errorf("aggrega plugin add: write %s: %w", configPath, err)
 	}
-	fmt.Fprintf(cfg.Out, "Attached %s to the %s socket in %s\n", identity, socket, configPath)
+	fmt.Fprintf(cfg.Out, "Added %s as a %s plugin in %s\n", identity, socket, configPath)
 	return nil
+}
+
+// pluginAddCLIRun resolves the cli-scoped query to a single plugin repository,
+// pins its latest published version into an oci:// reference, and installs it as
+// a top-level aggrega command through the shared install path. It reuses the same
+// registry-search and version-resolution primitives the config-socket path uses,
+// so a cli plugin is resolved exactly as any other type; only the terminal action
+// differs — a command is installed rather than a config attachment written.
+func pluginAddCLIRun(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, cfg pluginAddConfig) error {
+	reg, host, err := registrySearchTarget(rw.Config())
+	if err != nil {
+		return fmt.Errorf("aggrega plugin add: %w", err)
+	}
+	matches, err := searchRegistry(ctx, reg, cfg.Query, socketSearchScope(string(wasm.PluginTypeCLI)))
+	if err != nil {
+		return err
+	}
+	repoPath, err := resolveSinglePluginRepo(matches, cfg.Query, string(wasm.PluginTypeCLI))
+	if err != nil {
+		return err
+	}
+	version, err := resolveLatestPluginVersion(ctx, host, repoPath)
+	if err != nil {
+		return fmt.Errorf("aggrega plugin add: %w", err)
+	}
+	if version == "" {
+		return fmt.Errorf("aggrega plugin add: %s has no published version tag to install; publish a version first", repoPath)
+	}
+	ref := "oci://" + host + "/" + repoPath + ":" + version
+	return pluginInstallRun(ctx, rw, ref, cfg.Global, cfg.Workspace, cfg.AcceptCaps, cfg.AssumeYes, cfg.lookup, cfg.In, cfg.Out)
 }
 
 // socketSearchScope admits only the repository paths a plugin serving socket

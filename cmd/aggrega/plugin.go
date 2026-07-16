@@ -41,21 +41,21 @@ func newPluginCmd() *cobra.Command {
 	}
 	c.AddCommand(newPluginListCmd())
 	c.AddCommand(newPluginGenCatalogCmd())
-	c.AddCommand(newPluginStampCmd())
-	c.AddCommand(newPluginInstallCmd())
+	c.AddCommand(newPluginSyncCmd())
 	c.AddCommand(newPluginSearchCmd())
 	c.AddCommand(newPluginAddCmd())
+	c.AddCommand(newPluginRemoveCmd())
 	return c
 }
 
 // newPluginSearchCmd builds the `plugin search` command: it searches the
-// configured registry for installable CLI plugins through the shared
-// registry-search primitive, scoped to the plugin repositories.
+// configured registry for plugins through the shared registry-search
+// primitive, scoped to the plugin repositories.
 func newPluginSearchCmd() *cobra.Command {
 	c := &cobra.Command{
 		Use:   "search [query]",
-		Short: "Search the registry for installable CLI plugins",
-		Long: `Search the configured registry for installable plugins.
+		Short: "Search the registry for plugins",
+		Long: `Search the configured registry for plugins.
 
 The optional query is a case-insensitive substring match on the repository
 path; an empty query lists every plugin repository. The scope is the plugin
@@ -80,17 +80,18 @@ func newPluginListCmd() *cobra.Command {
 	var asJSON bool
 	c := &cobra.Command{
 		Use:   "list",
-		Short: "List the embedded built-in and workspace-configured plugins with their describe() metadata",
+		Short: "List the plugins the CLI can resolve with their describe() metadata",
 		Long: `List every Wasm plugin the CLI can see and, for each, its self-reported
 describe() metadata.
 
-Three groups are printed. Embedded built-ins are the provider and linter guests
+Two groups are printed. Embedded built-ins are the provider and linter guests
 compiled into the binary; they resolve with no filesystem, cache, or network
-access. Configured plugins are the workspace bindings — plugins.providers and
-the linter socket — resolved through the plugin cascade. Installed CLI plugins
-are the commands installed with 'aggrega plugin install', each carrying a
-readiness label: ready, unresolved, describe-failed, or digest-drift when its
-bytes changed since the first run pinned them.
+access. Configured plugins are the workspace bindings — the provider and linter
+bindings and the CLI-extension commands — resolved through the plugin cascade.
+Each plugin's type appears in the TYPE column, so a CLI-extension command
+(type cli) is legible alongside the socket plugins; a CLI plugin also carries a
+readiness label — ready, unresolved, describe-failed, or digest-drift when its
+bytes changed since it was pinned at install.
 
 The default output is a scannable table with one row per plugin, showing its
 type, name, served capabilities, and version. The output is read-only and
@@ -100,7 +101,7 @@ abnormal-state label rather than halting the whole listing.
 With --json, the output is a structured object carrying the full per-plugin
 detail — type, name, version, commit, capabilities, input kinds, boundary
 assembly, exports, origin, readiness, and any resolve or describe error —
-grouped as embedded, configured, and installed. It is suitable for programmatic
+grouped as embedded and configured. It is suitable for programmatic
 consumption and documentation generation.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -142,6 +143,13 @@ type pluginListEntry struct {
 // configured group is simply empty and the embedded built-ins still list. When
 // asJSON is true it writes the full-detail structured form; otherwise it writes
 // the human-readable table.
+//
+// The configured group carries both the socket bindings (provider and linter,
+// gathered and sorted by URI) and the CLI-extension commands (plugins.cli, in
+// author order), rendered as one section: the socket bindings first, then the
+// CLI commands. Each subsequence is deterministic, so the concatenation is too.
+// A CLI command is a configured plugin — its type shows as cli in the table —
+// and it keeps the digest-pin readiness label its installed pin defines.
 func pluginListRun(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, w io.Writer, asJSON bool) error {
 	var wsCfg workspaceconfig.Config
 	if rw != nil {
@@ -158,18 +166,14 @@ func pluginListRun(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, w
 	for _, ref := range collectConfiguredRefs(wsCfg) {
 		configuredEntries = append(configuredEntries, describePluginURI(ctx, "configured", ref.uri, ref.origin, sidecarDir, pluginByURI))
 	}
-
-	var installedEntries []pluginListEntry
-	if idx, err := installedPluginIndexSource(); err == nil {
-		for _, name := range idx.names() {
-			installedEntries = append(installedEntries, describeInstalledPlugin(ctx, name, idx.Plugins[name], sidecarDir, pluginByURI))
-		}
+	for _, ref := range wsCfg.Plugins.CLI {
+		configuredEntries = append(configuredEntries, describeInstalledPlugin(ctx, ref, sidecarDir, pluginByURI))
 	}
 
 	if asJSON {
-		return writePluginListJSON(w, embeddedEntries, configuredEntries, installedEntries)
+		return writePluginListJSON(w, embeddedEntries, configuredEntries)
 	}
-	formatPluginList(w, embeddedEntries, configuredEntries, installedEntries)
+	formatPluginList(w, embeddedEntries, configuredEntries)
 	return nil
 }
 
@@ -257,7 +261,7 @@ func describePluginURI(ctx context.Context, source, uri, origin, sidecarDir stri
 		spec.MaxMemoryPages = describeMaxMemoryPages
 	}
 	loader := wasm.NewCachingLoaderFromContext(ctx, nil)
-	plugin, desc, err := loader.LoadAndDescribe(ctx, spec)
+	plugin, desc, err := loader.LoadForDescribe(ctx, spec)
 	if err != nil {
 		entry.err = err
 		return entry
@@ -268,25 +272,25 @@ func describePluginURI(ctx context.Context, source, uri, origin, sidecarDir stri
 	return entry
 }
 
-// describeInstalledPlugin enumerates one installed CLI plugin for the listing:
-// it resolves and describes the plugin's URI through the same cascade the run
-// path uses, then derives a readiness label from whether the plugin resolves,
-// instantiates, and matches the digest pinned at its first run. Reusing
+// describeInstalledPlugin enumerates one configured CLI-extension plugin for the
+// listing: it resolves and describes the plugin's URI through the same cascade
+// the run path uses, then derives a readiness label from whether the plugin
+// resolves, instantiates, and matches the digest pinned in the config. Reusing
 // describePluginURI keeps the resolve-describe-digest path single-sourced; only
-// the readiness label is layered on top.
-func describeInstalledPlugin(ctx context.Context, cmdName string, plugin installedPluginEntry, sidecarDir string, pluginByURI func(string) (types.Plugin, bool)) pluginListEntry {
-	entry := describePluginURI(ctx, "installed", plugin.URI, "", sidecarDir, pluginByURI)
-	entry.origin = fmt.Sprintf("command %q", cmdName)
-	entry.readiness = installedReadiness(plugin.Digest, entry.resolvedDigest, entry.err)
+// the readiness label is layered on top. The resulting entry joins the configured
+// group — a CLI command is a configured plugin, distinguished by its cli type.
+func describeInstalledPlugin(ctx context.Context, ref workspaceconfig.CLIPluginRef, sidecarDir string, pluginByURI func(string) (types.Plugin, bool)) pluginListEntry {
+	entry := describePluginURI(ctx, "installed", ref.URI, "", sidecarDir, pluginByURI)
+	entry.origin = fmt.Sprintf("pinned %s", shortDigest(ref.Digest))
+	entry.readiness = installedReadiness(ref.Digest, entry.resolvedDigest, entry.err)
 	return entry
 }
 
-// installedReadiness maps an installed CLI plugin's resolve-and-describe outcome
+// installedReadiness maps a configured CLI plugin's resolve-and-describe outcome
 // and pinned digest to a one-word readiness label. A resolve failure (no fresh
 // digest was computed) reads unresolved; a describe or instantiation failure
 // reads describe-failed; a pinned digest that no longer matches the freshly
-// resolved bytes reads digest-drift; anything else — including a plugin not yet
-// pinned by a first run — reads ready.
+// resolved bytes reads digest-drift; anything else reads ready.
 func installedReadiness(pinned, fresh string, err error) string {
 	switch {
 	case err != nil && fresh == "":
@@ -369,16 +373,16 @@ func pluginDiagName(uri string) string {
 	return s
 }
 
-// formatPluginList writes the three-group table listing to w. Each group's
-// entries are already in a deterministic order; the group headers and
-// empty-group placeholders keep the output readable when a group is empty. Each
-// group renders as a four-column table — type, name, capabilities, version — so
-// the whole set is scannable at a glance; the full per-plugin detail is
-// available through the --json form.
-func formatPluginList(w io.Writer, embeddedEntries, configuredEntries, installedEntries []pluginListEntry) {
+// formatPluginList writes the two-group table listing to w. Each group's entries
+// are already in a deterministic order; the group headers and empty-group
+// placeholders keep the output readable when a group is empty. Each group renders
+// as a four-column table — type, name, capabilities, version — so the whole set
+// is scannable at a glance; the full per-plugin detail is available through the
+// --json form. The CLI-extension commands are part of the configured group,
+// legible there by their cli type.
+func formatPluginList(w io.Writer, embeddedEntries, configuredEntries []pluginListEntry) {
 	renderPluginGroup(w, "Embedded built-ins:", embeddedEntries)
 	renderPluginGroup(w, "Configured plugins:", configuredEntries)
-	renderPluginGroup(w, "Installed CLI plugins:", installedEntries)
 }
 
 // renderPluginGroup writes one titled group as a four-column table, or an
@@ -440,14 +444,14 @@ func pluginRowVersion(e pluginListEntry) string {
 	}
 }
 
-// pluginListDoc is the structured --json listing: the three plugin groups, each
-// a list of full per-plugin detail entries. The group order and the entries
-// within each group are deterministic, so the emitted JSON is byte-identical
-// across runs of the same input.
+// pluginListDoc is the structured --json listing: the two plugin groups, each a
+// list of full per-plugin detail entries. The group order and the entries within
+// each group are deterministic, so the emitted JSON is byte-identical across runs
+// of the same input. The configured group carries the CLI-extension commands
+// alongside the socket bindings; each command's cli type distinguishes it.
 type pluginListDoc struct {
 	Embedded   []pluginEntryDoc `json:"embedded"`
 	Configured []pluginEntryDoc `json:"configured"`
-	Installed  []pluginEntryDoc `json:"installed"`
 }
 
 // pluginEntryDoc is one plugin's full detail on the --json surface: its identity
@@ -469,13 +473,12 @@ type pluginEntryDoc struct {
 	Error        string   `json:"error,omitempty"`
 }
 
-// writePluginListJSON writes the three groups as an indented JSON object
-// carrying the full per-plugin detail.
-func writePluginListJSON(w io.Writer, embeddedEntries, configuredEntries, installedEntries []pluginListEntry) error {
+// writePluginListJSON writes the two groups as an indented JSON object carrying
+// the full per-plugin detail.
+func writePluginListJSON(w io.Writer, embeddedEntries, configuredEntries []pluginListEntry) error {
 	doc := pluginListDoc{
 		Embedded:   pluginEntriesToDocs(embeddedEntries),
 		Configured: pluginEntriesToDocs(configuredEntries),
-		Installed:  pluginEntriesToDocs(installedEntries),
 	}
 	b, err := json.MarshalIndent(doc, "", "  ")
 	if err != nil {

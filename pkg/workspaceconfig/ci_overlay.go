@@ -51,6 +51,7 @@ func foldCIAdditive(cfg Config) appendSlices {
 		Linter:              concat(cfg.Plugins.Linter, cfg.Plugins.LinterAppend),
 		Importer:            concat(cfg.Plugins.Importer, cfg.Plugins.ImporterAppend),
 		Providers:           concat(cfg.Plugins.Providers, cfg.Plugins.ProvidersAppend),
+		CLI:                 concat(cfg.Plugins.CLI, nil),
 	}
 }
 

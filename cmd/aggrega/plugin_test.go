@@ -116,7 +116,7 @@ func TestFormatPluginListTable(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	formatPluginList(&buf, embeddedEntries, configuredEntries, nil)
+	formatPluginList(&buf, embeddedEntries, configuredEntries)
 	got := buf.String()
 	for _, want := range []string{
 		"Embedded built-ins:",
@@ -125,12 +125,13 @@ func TestFormatPluginListTable(t *testing.T) {
 		"linter", "linter/publishing",
 		"Configured plugins:",
 		"oci://example.com/plugins/broken", "describe failed",
-		"Installed CLI plugins:",
-		"(none)",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("table output missing %q\n---\n%s", want, got)
 		}
+	}
+	if strings.Contains(got, "Installed CLI plugins:") {
+		t.Errorf("the separate installed group must not render; got\n---\n%s", got)
 	}
 }
 
@@ -157,8 +158,8 @@ func TestFormatPluginListDeterministic(t *testing.T) {
 	}
 
 	var first, second bytes.Buffer
-	formatPluginList(&first, nil, configuredEntries, nil)
-	formatPluginList(&second, nil, configuredEntries, nil)
+	formatPluginList(&first, nil, configuredEntries)
+	formatPluginList(&second, nil, configuredEntries)
 	if first.String() != second.String() {
 		t.Errorf("listing is not deterministic:\n--- first ---\n%s\n--- second ---\n%s", first.String(), second.String())
 	}
@@ -192,20 +193,34 @@ func TestWritePluginListJSON(t *testing.T) {
 				Metadata: wasm.PluginDescriptorMeta{Version: "0.4.0", Commit: "abc1234"},
 			}},
 	}
+	// The configured group carries a socket binding that failed to describe and
+	// a CLI-extension command that described cleanly; both must appear in the one
+	// configured array, and the command must carry its cli type and readiness.
 	configuredEntries := []pluginListEntry{
 		{source: "configured", uri: "oci://example.com/plugins/broken", origin: "plugins.linter[0]",
 			err: wasm.ErrWasmManifestRejected},
+		{source: "installed", uri: "oci://example.com/plugins/cli/greet:1.0.0",
+			origin: "pinned abc1234", readiness: "ready",
+			desc: wasm.PluginDescriptor{
+				PluginType: wasm.PluginTypeCLI,
+				Metadata:   wasm.PluginDescriptorMeta{Version: "1.0.0"},
+			}},
 	}
 
 	var first, second bytes.Buffer
-	if err := writePluginListJSON(&first, embeddedEntries, configuredEntries, nil); err != nil {
+	if err := writePluginListJSON(&first, embeddedEntries, configuredEntries); err != nil {
 		t.Fatalf("writePluginListJSON: %v", err)
 	}
-	if err := writePluginListJSON(&second, embeddedEntries, configuredEntries, nil); err != nil {
+	if err := writePluginListJSON(&second, embeddedEntries, configuredEntries); err != nil {
 		t.Fatalf("writePluginListJSON (second): %v", err)
 	}
 	if first.String() != second.String() {
 		t.Errorf("json listing is not deterministic:\n--- first ---\n%s\n--- second ---\n%s", first.String(), second.String())
+	}
+
+	// The dropped installed key must not reappear on the surface.
+	if strings.Contains(first.String(), `"installed"`) {
+		t.Errorf("the separate installed json key must be dropped; got\n%s", first.String())
 	}
 
 	var doc struct {
@@ -220,11 +235,12 @@ func TestWritePluginListJSON(t *testing.T) {
 			Exports      []string `json:"exports"`
 		} `json:"embedded"`
 		Configured []struct {
-			URI    string `json:"uri"`
-			Origin string `json:"origin"`
-			Error  string `json:"error"`
+			URI       string `json:"uri"`
+			Type      string `json:"type"`
+			Origin    string `json:"origin"`
+			Readiness string `json:"readiness"`
+			Error     string `json:"error"`
 		} `json:"configured"`
-		Installed []json.RawMessage `json:"installed"`
 	}
 	if err := json.Unmarshal(first.Bytes(), &doc); err != nil {
 		t.Fatalf("unmarshal: %v\n%s", err, first.String())
@@ -246,12 +262,24 @@ func TestWritePluginListJSON(t *testing.T) {
 	if len(e.Exports) != 2 || e.Exports[0] != "render_node" {
 		t.Errorf("exports = %v", e.Exports)
 	}
-	if len(doc.Configured) != 1 || doc.Configured[0].Error == "" {
-		t.Errorf("configured error not surfaced: %+v", doc.Configured)
+	if len(doc.Configured) != 2 {
+		t.Fatalf("configured group len = %d, want 2 (socket binding + cli command)", len(doc.Configured))
 	}
+	if doc.Configured[0].Error == "" {
+		t.Errorf("configured socket-binding error not surfaced: %+v", doc.Configured[0])
+	}
+	cli := doc.Configured[1]
+	if cli.URI != "oci://example.com/plugins/cli/greet:1.0.0" || cli.Type != "cli" || cli.Readiness != "ready" {
+		t.Errorf("cli command not folded into configured with its type/readiness: %+v", cli)
+	}
+
 	// An empty group must serialize as [] (non-nil after unmarshal), not null.
-	if doc.Installed == nil {
-		t.Errorf("empty installed group should serialize as [] not null")
+	var empty bytes.Buffer
+	if err := writePluginListJSON(&empty, nil, nil); err != nil {
+		t.Fatalf("writePluginListJSON (empty): %v", err)
+	}
+	if !strings.Contains(empty.String(), `"embedded": []`) || !strings.Contains(empty.String(), `"configured": []`) {
+		t.Errorf("empty groups should serialize as [] not null:\n%s", empty.String())
 	}
 }
 
@@ -282,14 +310,15 @@ func TestInstalledReadiness(t *testing.T) {
 	}
 }
 
-// TestFormatPluginList_InstalledGroup proves the third group renders with its
-// header and its entries, that an abnormal readiness state surfaces in the
-// version cell, and that the header still renders with the empty-group
-// placeholder when the group is absent.
-func TestFormatPluginList_InstalledGroup(t *testing.T) {
+// TestFormatPluginList_CLIInConfiguredGroup proves the CLI-extension commands
+// render inside the one configured group — with their cli type and their
+// digest-pin readiness label (a drift label surfacing in the version cell) — and
+// that no separate installed group renders. It also proves the configured header
+// still renders with the empty-group placeholder when the group is absent.
+func TestFormatPluginList_CLIInConfiguredGroup(t *testing.T) {
 	t.Parallel()
 
-	installed := []pluginListEntry{
+	configured := []pluginListEntry{
 		{
 			source:    "installed",
 			uri:       "oci://example/moo:v1",
@@ -311,11 +340,11 @@ func TestFormatPluginList_InstalledGroup(t *testing.T) {
 			},
 		},
 	}
-	var withInstalled bytes.Buffer
-	formatPluginList(&withInstalled, nil, nil, installed)
-	got := withInstalled.String()
+	var withCLI bytes.Buffer
+	formatPluginList(&withCLI, nil, configured)
+	got := withCLI.String()
 	for _, want := range []string{
-		"Installed CLI plugins:",
+		"Configured plugins:",
 		"oci://example/moo:v1",
 		"cli",
 		"1.0.0",
@@ -323,15 +352,18 @@ func TestFormatPluginList_InstalledGroup(t *testing.T) {
 		"digest-drift",
 	} {
 		if !strings.Contains(got, want) {
-			t.Errorf("installed-group output missing %q\n---\n%s", want, got)
+			t.Errorf("configured-group output missing %q\n---\n%s", want, got)
 		}
+	}
+	if strings.Contains(got, "Installed CLI plugins:") {
+		t.Errorf("the separate installed group must not render; got\n---\n%s", got)
 	}
 
 	var empty bytes.Buffer
-	formatPluginList(&empty, nil, nil, nil)
+	formatPluginList(&empty, nil, nil)
 	emptyOut := empty.String()
-	if !strings.Contains(emptyOut, "Installed CLI plugins:") {
-		t.Errorf("installed group header should render even when empty:\n%s", emptyOut)
+	if !strings.Contains(emptyOut, "Configured plugins:") {
+		t.Errorf("configured group header should render even when empty:\n%s", emptyOut)
 	}
 	if !strings.Contains(emptyOut, "(none)") {
 		t.Errorf("empty group should render the (none) placeholder:\n%s", emptyOut)

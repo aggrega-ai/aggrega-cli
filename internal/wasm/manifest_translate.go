@@ -11,14 +11,14 @@ import (
 )
 
 // translateToManifest builds an extism.Manifest from a PluginSpec and
-// runs the AOT-purity firewall against the produced manifest. Returns
+// runs the AOT-purity load gate against the produced manifest. Returns
 // the manifest plus nil error on success; returns the zero manifest
-// plus an error wrapping ErrWasmManifestRejected on firewall failure.
+// plus an error wrapping ErrWasmManifestRejected when the gate rejects it.
 //
-// The firewall validates against the constructed manifest (not against
+// The gate validates against the constructed manifest (not against
 // the spec) because the manifest is what actually drives the runtime
 // — a spec value that fails to round-trip would be caught here, and
-// the firewall's rejection messages reference manifest fields the
+// the gate's rejection messages reference manifest fields the
 // runtime would otherwise act on.
 func translateToManifest(spec PluginSpec) (extism.Manifest, error) {
 	// Apply the platform default cap when the spec leaves a limit zero, at this
@@ -51,7 +51,7 @@ func translateToManifest(spec PluginSpec) (extism.Manifest, error) {
 // Two additional capability surfaces — WASI stdio passthrough and
 // wall-time access — live on PluginConfig and ModuleConfig respectively,
 // not on the manifest. The Loader never sets those fields, so they
-// cannot be requested through the PluginSpec API; the firewall has
+// cannot be requested through the PluginSpec API; the load gate has
 // nothing to check at the manifest level.
 //
 // Host-function-allowlist enforcement is not at the manifest level: the

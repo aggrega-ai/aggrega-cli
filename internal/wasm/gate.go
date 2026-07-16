@@ -72,6 +72,45 @@ func (l *Loader) LoadCLIAndDescribe(ctx context.Context, spec PluginSpec, stdout
 	return plugin, desc, nil
 }
 
+// LoadForDescribe is the describe-only load gate for the introspection surfaces
+// that must read a guest's describe() self-report without granting it any real
+// host capability — listing configured plugins and generating a catalog. It
+// loads the plugin under the describe-only profile (inert host-function stubs,
+// the union import allowlist so any plugin type instantiates), invokes
+// describe(), validates the descriptor, and cross-checks it — the same post-load
+// half LoadAndDescribe runs.
+//
+// It differs from LoadAndDescribe only in the load half. LoadAndDescribe loads
+// under the build profile: real host functions bound and the shared import
+// allowlist, so a streaming CLI guest is rejected before describe() can run and
+// describe() runs against the real host surface. LoadForDescribe binds inert
+// stubs and admits the union allowlist, so a guest of any type — including a
+// streaming CLI guest — is describable, and a guest's describe() reaches only
+// no-op stubs. That is the right posture for a surface that needs the
+// self-report and never the guest's real behavior: a malicious describe() gains
+// no capability. The post-load half is the shared DescribeAndValidate
+// primitive, so describe/validate/cross-check lives in one place across every
+// profile — including the unchanged cross-check of the descriptor's declared
+// host functions against the binary's imports.
+//
+// The same rejection discipline as LoadAndDescribe applies: a load failure, a
+// describe() call failure, an unparseable descriptor, or a descriptor the host
+// refuses returns an error and no live plugin, with the plugin Closed before the
+// error propagates so a rejected load leaks no Wazero instance. Descriptor-
+// rejection errors wrap [ErrWasmManifestRejected]. On success the caller invokes
+// the plugin's exports through InvokeExport and Closes it when done.
+func (l *Loader) LoadForDescribe(ctx context.Context, spec PluginSpec) (*Plugin, PluginDescriptor, error) {
+	plugin, err := l.loadForDescribe(ctx, spec)
+	if err != nil {
+		return nil, PluginDescriptor{}, err
+	}
+	desc, err := l.DescribeAndValidate(ctx, plugin, spec)
+	if err != nil {
+		return nil, PluginDescriptor{}, err
+	}
+	return plugin, desc, nil
+}
+
 // DescribeAndValidate runs the post-load half of the plugin-load gate over an
 // already-loaded plugin: it invokes describe(), validates the returned
 // descriptor, cross-checks the descriptor's declared host functions against the
@@ -136,7 +175,7 @@ func (l *Loader) DescribeAndValidate(ctx context.Context, plugin *Plugin, spec P
 		if !CommandMirrorsEqual(spec.Commands, desc.Commands) {
 			_ = plugin.Close(ctx)
 			return PluginDescriptor{}, fmt.Errorf(
-				"wasm: plugin %q: recorded command mirror %s does not match the plugin describe() commands %s; re-run `aggrega plugin stamp` and commit the result: %w",
+				"wasm: plugin %q: recorded command mirror %s does not match the plugin describe() commands %s; re-run `aggrega plugin sync` and commit the result: %w",
 				spec.Name, FormatCommandMirror(spec.Commands), FormatCommandMirror(desc.Commands), ErrWasmCommandsMirrorMismatch)
 		}
 	}

@@ -35,13 +35,23 @@ func (f *fakeDispatcher) Run(_ context.Context, uri, command string, argv []stri
 	return f.code, f.digest, f.err
 }
 
-// withInstalledIndex points the index source at a fixture for the duration of the
-// test and restores it afterward, so no test touches the real cache root.
-func withInstalledIndex(t *testing.T, idx installedPluginIndex) {
+// withCLIRegistrations points the registration source at a fixture set of
+// commands for the duration of the test and restores it afterward, so no test
+// touches the real config cascade or describe cache to build the tree.
+func withCLIRegistrations(t *testing.T, regs []cliCommandReg) {
 	t.Helper()
-	prev := installedPluginIndexSource
-	installedPluginIndexSource = func() (installedPluginIndex, error) { return idx, nil }
-	t.Cleanup(func() { installedPluginIndexSource = prev })
+	prev := cliPluginRegistrations
+	cliPluginRegistrations = func() []cliCommandReg { return regs }
+	t.Cleanup(func() { cliPluginRegistrations = prev })
+}
+
+// withCLIDigest swaps the run-gate digest seam for the test so the drift check
+// runs against a chosen digest without resolving a real guest.
+func withCLIDigest(t *testing.T, digest string, err error) {
+	t.Helper()
+	prev := resolveCLIPluginDigest
+	resolveCLIPluginDigest = func(*workspaceconfig.ResolvedWorkspace, string) (string, error) { return digest, err }
+	t.Cleanup(func() { resolveCLIPluginDigest = prev })
 }
 
 // withDispatcher swaps in a fake plugin dispatcher for the test, regardless of
@@ -71,20 +81,21 @@ func withDiscoverable(t *testing.T, fn func(string) bool) {
 	t.Cleanup(func() { pluginDiscoverable = prev })
 }
 
-// TestInstalledPlugin_ListedAndDispatched proves an installed plugin appears in
-// the command tree with its cached usage and, when invoked, forwards its argv to
-// the runner and returns exit 0 (no error).
-func TestInstalledPlugin_ListedAndDispatched(t *testing.T) {
+// TestConfiguredCLIPlugin_ListedAndDispatched proves a configured CLI plugin
+// appears in the command tree with its cached help and, when invoked with a
+// matching pin, forwards its argv to the runner and returns exit 0 (no error).
+func TestConfiguredCLIPlugin_ListedAndDispatched(t *testing.T) {
 	withRegistrationWarnings(t)
-	withInstalledIndex(t, installedPluginIndex{Plugins: map[string]installedPluginEntry{
-		"moo": {URI: "oci://example/moo:v1", Usage: "make the cow moo"},
-	}})
+	withCLIRegistrations(t, []cliCommandReg{
+		{name: "moo", short: "make the cow moo", uri: "oci://example/moo:v1", digest: "pinned-digest"},
+	})
+	withCLIDigest(t, "pinned-digest", nil)
 	d := &fakeDispatcher{code: 0}
 	withDispatcher(t, d)
 
 	root := newRootCmd()
 
-	// The command is present in the tree with its cached usage as the short help.
+	// The command is present in the tree with its cached help as the short help.
 	found := &bytes.Buffer{}
 	root.SetOut(found)
 	root.SetErr(found)
@@ -93,7 +104,7 @@ func TestInstalledPlugin_ListedAndDispatched(t *testing.T) {
 		t.Fatalf("--help returned error: %v", err)
 	}
 	if !strings.Contains(found.String(), "moo") || !strings.Contains(found.String(), "make the cow moo") {
-		t.Fatalf("--help output does not list the installed plugin:\n%s", found.String())
+		t.Fatalf("--help output does not list the configured plugin:\n%s", found.String())
 	}
 
 	// Dispatching the command forwards argv to the runner and returns exit 0.
@@ -109,7 +120,7 @@ func TestInstalledPlugin_ListedAndDispatched(t *testing.T) {
 		t.Fatalf("runner called %d time(s); want 1", d.calls)
 	}
 	if d.gotURI != "oci://example/moo:v1" {
-		t.Fatalf("runner URI = %q; want the index URI", d.gotURI)
+		t.Fatalf("runner URI = %q; want the config URI", d.gotURI)
 	}
 	if d.gotCommand != "moo" {
 		t.Fatalf("forwarded command = %q; want the invoked command name %q", d.gotCommand, "moo")
@@ -119,16 +130,19 @@ func TestInstalledPlugin_ListedAndDispatched(t *testing.T) {
 	}
 }
 
-// TestInstalledPlugin_BuiltinAndReservedRefused proves a plugin named after a
-// built-in and one on the reserved denylist are both refused registration with an
+// TestConfiguredCLIPlugin_BuiltinReservedAndDuplicateRefused proves a command
+// named after a built-in, one on the reserved denylist, and a second plugin
+// contributing an already-registered name are all refused registration with an
 // observable diagnostic, and the built-in keeps its own command.
-func TestInstalledPlugin_BuiltinAndReservedRefused(t *testing.T) {
+func TestConfiguredCLIPlugin_BuiltinReservedAndDuplicateRefused(t *testing.T) {
 	warn := withRegistrationWarnings(t)
 	const sentinel = "SHADOW ATTEMPT — should never win"
-	withInstalledIndex(t, installedPluginIndex{Plugins: map[string]installedPluginEntry{
-		"build":  {URI: "oci://example/evil-build:v1", Usage: sentinel},
-		"deploy": {URI: "oci://example/evil-deploy:v1", Usage: sentinel},
-	}})
+	withCLIRegistrations(t, []cliCommandReg{
+		{name: "build", short: sentinel, uri: "oci://example/evil-build:v1", digest: "d"},
+		{name: "deploy", short: sentinel, uri: "oci://example/evil-deploy:v1", digest: "d"},
+		{name: "moo", short: "first moo", uri: "oci://example/moo-a:v1", digest: "d"},
+		{name: "moo", short: "second moo", uri: "oci://example/moo-b:v1", digest: "d"},
+	})
 	withDispatcher(t, &fakeDispatcher{})
 
 	root := newRootCmd()
@@ -145,7 +159,7 @@ func TestInstalledPlugin_BuiltinAndReservedRefused(t *testing.T) {
 		t.Fatalf("built-in build command missing from tree")
 	}
 	if build.Short == sentinel {
-		t.Fatalf("installed plugin shadowed the built-in build command")
+		t.Fatalf("configured plugin shadowed the built-in build command")
 	}
 
 	// The reserved "deploy" name registered nothing.
@@ -155,6 +169,22 @@ func TestInstalledPlugin_BuiltinAndReservedRefused(t *testing.T) {
 		}
 	}
 
+	// The first "moo" registered once; the second is refused as a duplicate.
+	var mooCount int
+	var moo *cobra.Command
+	for _, c := range root.Commands() {
+		if c.Name() == "moo" {
+			mooCount++
+			moo = c
+		}
+	}
+	if mooCount != 1 {
+		t.Fatalf("moo registered %d times; want exactly 1", mooCount)
+	}
+	if moo.Short != "first moo" {
+		t.Fatalf("first contributor should win the name; got short %q", moo.Short)
+	}
+
 	out := warn.String()
 	if !strings.Contains(out, "build") || !strings.Contains(out, "built-in") {
 		t.Fatalf("no observable diagnostic for the built-in collision:\n%s", out)
@@ -162,16 +192,20 @@ func TestInstalledPlugin_BuiltinAndReservedRefused(t *testing.T) {
 	if !strings.Contains(out, "deploy") || !strings.Contains(out, "reserved") {
 		t.Fatalf("no observable diagnostic for the reserved-name collision:\n%s", out)
 	}
+	if !strings.Contains(out, "already contributed") {
+		t.Fatalf("no observable diagnostic for the duplicate-name collision:\n%s", out)
+	}
 }
 
-// TestInstalledPlugin_ExitCodePropagation proves a plugin exit code threads
+// TestConfiguredCLIPlugin_ExitCodePropagation proves a plugin exit code threads
 // through executeRoot: a non-zero code becomes the process exit code, and zero
 // exits zero.
-func TestInstalledPlugin_ExitCodePropagation(t *testing.T) {
+func TestConfiguredCLIPlugin_ExitCodePropagation(t *testing.T) {
 	withRegistrationWarnings(t)
-	withInstalledIndex(t, installedPluginIndex{Plugins: map[string]installedPluginEntry{
-		"moo": {URI: "oci://example/moo:v1", Usage: "moo"},
-	}})
+	withCLIRegistrations(t, []cliCommandReg{
+		{name: "moo", short: "moo", uri: "oci://example/moo:v1", digest: "pinned"},
+	})
+	withCLIDigest(t, "pinned", nil)
 
 	for _, tc := range []struct {
 		name string
@@ -198,7 +232,7 @@ func TestInstalledPlugin_ExitCodePropagation(t *testing.T) {
 // cobra's normal error unchanged.
 func TestUnknownCommand_InstallSuggestion(t *testing.T) {
 	withRegistrationWarnings(t)
-	withInstalledIndex(t, installedPluginIndex{})
+	withCLIRegistrations(t, nil)
 	withDispatcher(t, &fakeDispatcher{})
 
 	run := func() string {
@@ -215,13 +249,13 @@ func TestUnknownCommand_InstallSuggestion(t *testing.T) {
 
 	withDiscoverable(t, func(string) bool { return true })
 	withHint := run()
-	if !strings.Contains(withHint, "aggrega plugin install definitely-not-a-command") {
+	if !strings.Contains(withHint, "aggrega plugin add cli definitely-not-a-command") {
 		t.Fatalf("discoverable unknown command lacks the install hint:\n%s", withHint)
 	}
 
 	withDiscoverable(t, func(string) bool { return false })
 	noHint := run()
-	if strings.Contains(noHint, "plugin install") {
+	if strings.Contains(noHint, "plugin add cli") {
 		t.Fatalf("non-discoverable unknown command should keep cobra's normal error:\n%s", noHint)
 	}
 	if !strings.Contains(noHint, "unknown command") {
@@ -229,110 +263,62 @@ func TestUnknownCommand_InstallSuggestion(t *testing.T) {
 	}
 }
 
-// TestReconcileInstalledPluginDigest_PinThenDrift proves trust-on-first-use: the
-// first reconciliation pins the resolved digest into the entry, a matching re-run
-// is a clean no-op, and a re-run whose bytes hash differently warns without
-// overwriting the pin.
-func TestReconcileInstalledPluginDigest_PinThenDrift(t *testing.T) {
-	t.Setenv("XDG_CACHE_HOME", t.TempDir())
-	if err := writeInstalledPluginIndex(installedPluginIndex{Plugins: map[string]installedPluginEntry{
-		"moo": {URI: "/abs/moo.wasm", Usage: "greet"},
-	}}); err != nil {
-		t.Fatalf("seed index: %v", err)
-	}
-
-	var warn bytes.Buffer
-	reconcileInstalledPluginDigest("moo", "digest-A", &warn)
-	if warn.Len() != 0 {
-		t.Fatalf("first run must not warn: %q", warn.String())
-	}
-	if idx, _ := readInstalledPluginIndex(); idx.Plugins["moo"].Digest != "digest-A" {
-		t.Fatalf("first run should pin the digest; got %q", idx.Plugins["moo"].Digest)
-	}
-
-	warn.Reset()
-	reconcileInstalledPluginDigest("moo", "digest-A", &warn)
-	if warn.Len() != 0 {
-		t.Fatalf("matching re-run must not warn: %q", warn.String())
-	}
-
-	warn.Reset()
-	reconcileInstalledPluginDigest("moo", "digest-B", &warn)
-	if !strings.Contains(warn.String(), "changed since they were pinned") {
-		t.Fatalf("drift must warn; got %q", warn.String())
-	}
-	if idx, _ := readInstalledPluginIndex(); idx.Plugins["moo"].Digest != "digest-A" {
-		t.Fatalf("drift must not overwrite the pin; got %q", idx.Plugins["moo"].Digest)
-	}
-}
-
-// TestReconcileInstalledPluginDigest_NoOpCases proves reconciliation is inert
-// when there is nothing to pin: an empty digest (no bytes resolved) and a command
-// name absent from the index both leave the index and stderr untouched.
-func TestReconcileInstalledPluginDigest_NoOpCases(t *testing.T) {
-	t.Setenv("XDG_CACHE_HOME", t.TempDir())
-	if err := writeInstalledPluginIndex(installedPluginIndex{Plugins: map[string]installedPluginEntry{
-		"moo": {URI: "/abs/moo.wasm", Usage: "greet", Digest: "kept"},
-	}}); err != nil {
-		t.Fatalf("seed index: %v", err)
-	}
-
-	var warn bytes.Buffer
-	reconcileInstalledPluginDigest("moo", "", &warn)
-	reconcileInstalledPluginDigest("absent", "whatever", &warn)
-	if warn.Len() != 0 {
-		t.Fatalf("no-op cases must not warn: %q", warn.String())
-	}
-	if idx, _ := readInstalledPluginIndex(); idx.Plugins["moo"].Digest != "kept" {
-		t.Fatalf("no-op cases must not alter the pin; got %q", idx.Plugins["moo"].Digest)
-	}
-}
-
-// TestInstalledPlugin_RunPinsAndWarnsOnDrift drives the command through the real
-// dispatch path: the first run pins the digest the dispatcher reports for the
-// resolved bytes, and a later run whose dispatcher reports a different digest
-// emits the drift warning to stderr while leaving the pin in place.
-func TestInstalledPlugin_RunPinsAndWarnsOnDrift(t *testing.T) {
-	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+// TestConfiguredCLIPlugin_DriftHaltsBeforeRun proves the drift guard is a loud
+// halt, not an advisory: when the freshly resolved bytes hash differently from
+// the pinned digest, the command refuses to run — the dispatcher is never called
+// — and the error names the drift and instructs a re-pin. Re-pinning (the config
+// digest now matches the resolved bytes) re-enables the command.
+func TestConfiguredCLIPlugin_DriftHaltsBeforeRun(t *testing.T) {
 	withRegistrationWarnings(t)
-	if err := writeInstalledPluginIndex(installedPluginIndex{Plugins: map[string]installedPluginEntry{
-		"moo": {URI: "oci://example/moo:v1", Usage: "greet"},
-	}}); err != nil {
-		t.Fatalf("seed index: %v", err)
-	}
+	withCLIRegistrations(t, []cliCommandReg{
+		{name: "moo", short: "moo", uri: "oci://example/moo:v1", digest: "pinned-digest"},
+	})
 
-	// First run pins the reported digest; stderr stays clean.
-	withDispatcher(t, &fakeDispatcher{code: 0, digest: "run-digest-1"})
+	// Drift: the resolved bytes hash to something other than the pin.
+	withCLIDigest(t, "drifted-digest", nil)
+	d := &fakeDispatcher{code: 0}
+	withDispatcher(t, d)
+
 	root := newRootCmd()
-	var firstErr bytes.Buffer
 	root.SetOut(&bytes.Buffer{})
-	root.SetErr(&firstErr)
+	root.SetErr(&bytes.Buffer{})
 	root.SetArgs([]string{"moo"})
-	if code := executeRoot(root); code != 0 {
-		t.Fatalf("first run exit = %d; want 0", code)
+	err := root.Execute()
+	if err == nil {
+		t.Fatalf("drift run should return a host error, not succeed")
 	}
-	if strings.Contains(firstErr.String(), "changed since") {
-		t.Fatalf("first run must not warn:\n%s", firstErr.String())
+	if d.calls != 0 {
+		t.Fatalf("dispatcher must not run on drift; got %d call(s)", d.calls)
 	}
-	if idx, _ := readInstalledPluginIndex(); idx.Plugins["moo"].Digest != "run-digest-1" {
-		t.Fatalf("first run should pin the reported digest; got %q", idx.Plugins["moo"].Digest)
+	// A drift halt is a host error, not a plugin exit status.
+	if _, ok := err.(exitCodeError); ok {
+		t.Fatalf("drift should be a host error, not an exit-code status; got %v", err)
+	}
+	got := err.Error()
+	if !strings.Contains(got, "no longer match the pinned digest") {
+		t.Fatalf("drift error should name the digest mismatch; got:\n%s", got)
+	}
+	if !strings.Contains(got, "aggrega plugin add cli moo") {
+		t.Fatalf("drift error should instruct a re-pin; got:\n%s", got)
 	}
 
-	// A later run whose resolved bytes hash differently warns and keeps the pin.
-	withDispatcher(t, &fakeDispatcher{code: 0, digest: "run-digest-2"})
+	// Re-pin: the resolved bytes now match the (new) pinned digest, so the command
+	// runs again.
+	withCLIRegistrations(t, []cliCommandReg{
+		{name: "moo", short: "moo", uri: "oci://example/moo:v1", digest: "drifted-digest"},
+	})
+	withCLIDigest(t, "drifted-digest", nil)
+	d2 := &fakeDispatcher{code: 0}
+	withDispatcher(t, d2)
 	root2 := newRootCmd()
-	var secondErr bytes.Buffer
 	root2.SetOut(&bytes.Buffer{})
-	root2.SetErr(&secondErr)
+	root2.SetErr(&bytes.Buffer{})
 	root2.SetArgs([]string{"moo"})
 	if code := executeRoot(root2); code != 0 {
-		t.Fatalf("second run exit = %d; want 0", code)
+		t.Fatalf("re-pinned run exit = %d; want 0", code)
 	}
-	if !strings.Contains(secondErr.String(), "changed since they were pinned") {
-		t.Fatalf("drifted run should warn on stderr; got:\n%s", secondErr.String())
-	}
-	if idx, _ := readInstalledPluginIndex(); idx.Plugins["moo"].Digest != "run-digest-1" {
-		t.Fatalf("drift must not overwrite the pin; got %q", idx.Plugins["moo"].Digest)
+	if d2.calls != 1 {
+		t.Fatalf("re-pinned command should run; got %d call(s)", d2.calls)
 	}
 }
 

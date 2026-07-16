@@ -22,7 +22,7 @@ import (
 // a plain equality. Registration is order-independent, so sorting does not
 // affect the bound host surface.
 //
-// It reuses the firewall's import-section parser and keeps only imports under
+// It reuses the load gate's import-section parser and keeps only imports under
 // the Extism custom-host namespace (extism:host/user). Imports under the Extism
 // runtime ABI namespace (extism:host/env) and WASI (wasi_snapshot_preview1) are
 // excluded: the former is the runtime's own memory/IO machinery, the latter the

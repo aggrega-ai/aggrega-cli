@@ -140,7 +140,7 @@ spec:
 	if err == nil {
 		t.Fatal("an out-of-sync command mirror should halt the publish; got nil")
 	}
-	for _, want := range []string{"out of sync", entityPath, "aggrega plugin stamp"} {
+	for _, want := range []string{"out of sync", entityPath, "aggrega plugin sync"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("halt error should mention %q; got %v", want, err)
 		}

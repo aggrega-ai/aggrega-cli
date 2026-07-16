@@ -24,30 +24,34 @@ import (
 // invoked command name flows into CLIRunInput.Command and the guest routes on it.
 func TestPluginMultiCommand_InstallAndRoute(t *testing.T) {
 	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	withCLIRegistrations(t, nil)
 	guest := buildInstallGuest(t, "cli-multi-guest")
 
 	// Only the fetch is faked (no registry); the describe gate is the real one.
 	withInstallSeams(t, fixedFetch("oci://local/greet", guest), nil)
+	rw := resolvedTestWorkspace(t)
 
 	var out bytes.Buffer
-	if err := pluginInstallRun(context.Background(), nil, "oci://local/greet", false, true, strings.NewReader(""), &out); err != nil {
+	if err := pluginInstallRun(context.Background(), rw, "oci://local/greet", false, true, false, true, nil, strings.NewReader(""), &out); err != nil {
 		t.Fatalf("install multi-command guest: %v", err)
 	}
 
-	idx, err := readInstalledPluginIndex()
-	if err != nil {
-		t.Fatalf("read index: %v", err)
+	// One CLI plugin backing two commands is pinned as a single {uri, digest}
+	// entry; both command names come from the one cached descriptor.
+	refs := reResolveCLI(t, rw)
+	if len(refs) != 1 || refs[0].URI != "oci://local/greet" {
+		t.Fatalf("one plugin should be pinned as one entry sharing the URI; got %+v", refs)
 	}
-	a, okA := idx.Plugins["greet-a"]
-	b, okB := idx.Plugins["greet-b"]
-	if !okA || !okB {
-		t.Fatalf("both commands must register from one install; got index %+v", idx.Plugins)
+	cached, ok := readDescribeCache(refs[0].Digest)
+	if !ok || len(cached.Commands) != 2 {
+		t.Fatalf("both commands must come from one cached descriptor; ok=%v cached=%+v", ok, cached)
 	}
-	if a.Usage != "Greet in style A" || b.Usage != "Greet in style B" {
-		t.Fatalf("each command keeps its own short help: greet-a=%q greet-b=%q", a.Usage, b.Usage)
+	byName := map[string]string{}
+	for _, c := range cached.Commands {
+		byName[c.Name] = c.Description
 	}
-	if a.URI != "oci://local/greet" || b.URI != "oci://local/greet" {
-		t.Fatalf("both commands share the one resolved URI: greet-a=%q greet-b=%q", a.URI, b.URI)
+	if byName["greet-a"] != "Greet in style A" || byName["greet-b"] != "Greet in style B" {
+		t.Fatalf("each command keeps its own short help: %+v", byName)
 	}
 
 	// Run each command against the real guest and assert it routed on the invoked

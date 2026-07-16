@@ -441,17 +441,46 @@ type BuildConfig struct {
 // each precedence layer the entries here are concatenated onto the
 // resolved base list for that socket. LoadWithGlobal zeroes these
 // fields on the returned Config.
+//
+// CLI is the exception to the whole-replace-per-layer base semantic the
+// four cross-cutting sockets follow: it pins the CLI-extension plugins
+// installed as top-level aggrega commands, and its entries COMPOSE across
+// the config cascade rather than shadow. A CLI plugin pinned in the global
+// config registers its command(s) everywhere; one pinned in a workspace
+// config registers only in that project; both register together. Because
+// the base already composes, CLI needs no `_append` companion — it is
+// single-named (one `cli` key at every scope), and where the entry sits
+// decides its reach.
 type PluginsConfig struct {
-	Mutator         []PluginRef `yaml:"mutator"`
-	MutatorAppend   []PluginRef `yaml:"mutator_append"`
-	Policy          []PluginRef `yaml:"policy"`
-	PolicyAppend    []PluginRef `yaml:"policy_append"`
-	Linter          []PluginRef `yaml:"linter"`
-	LinterAppend    []PluginRef `yaml:"linter_append"`
-	Importer        []PluginRef `yaml:"importer"`
-	ImporterAppend  []PluginRef `yaml:"importer_append"`
-	Providers       []PluginRef `yaml:"providers"`
-	ProvidersAppend []PluginRef `yaml:"providers_append"`
+	Mutator         []PluginRef    `yaml:"mutator"`
+	MutatorAppend   []PluginRef    `yaml:"mutator_append"`
+	Policy          []PluginRef    `yaml:"policy"`
+	PolicyAppend    []PluginRef    `yaml:"policy_append"`
+	Linter          []PluginRef    `yaml:"linter"`
+	LinterAppend    []PluginRef    `yaml:"linter_append"`
+	Importer        []PluginRef    `yaml:"importer"`
+	ImporterAppend  []PluginRef    `yaml:"importer_append"`
+	Providers       []PluginRef    `yaml:"providers"`
+	ProvidersAppend []PluginRef    `yaml:"providers_append"`
+	CLI             []CLIPluginRef `yaml:"cli"`
+}
+
+// CLIPluginRef pins one CLI-extension plugin installed as a top-level aggrega
+// command: the resolved, version-pinned artifact reference the command resolves
+// and runs, and the content digest of the guest bytes that reference resolved to
+// at install time. Together they pin exactly which bytes the command executes;
+// the digest is also the key into the on-disk describe cache that supplies the
+// command's names and help without loading the guest.
+type CLIPluginRef struct {
+	// URI is the resolved, version-pinned artifact reference the command
+	// resolves and runs (for example oci://hub.aggrega.ai/plugin/cli/greet:1.2.0),
+	// pinned at install.
+	URI string `yaml:"uri"`
+	// Digest is the hex SHA-256 content digest of the guest .wasm bytes URI
+	// resolved to at install. It pins the exact bytes the command runs — a later
+	// resolution whose bytes hash differently halts the command — and keys the
+	// describe cache that renders the command's help without loading the guest.
+	Digest string `yaml:"digest"`
 }
 
 // ProviderTargetURIs projects the composed provider list into a

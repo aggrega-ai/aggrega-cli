@@ -5,16 +5,21 @@ package wasm
 
 import "errors"
 
-// ErrWasmManifestRejected indicates that the Extism manifest produced
-// from a PluginSpec, or the plugin Wasm binary itself, declares a
-// capability the AOT-purity firewall refuses. Capabilities the
-// firewall rejects today:
+// ErrWasmManifestRejected indicates that the sandbox rejected a plugin
+// because it declares or requires a capability, or reports a
+// descriptor, the sandbox does not grant or accept. It is the shared
+// sentinel for descriptor-rejection failures across the plugin-loading
+// surface. Reasons include:
 //
 //   - non-empty AllowedHosts (outbound network access)
 //   - non-empty AllowedPaths (filesystem access)
 //   - declared host functions outside the curated allowlist
 //   - imports declaring a module namespace outside the allowed set
 //     (wasi_snapshot_preview1, extism:host/env, extism:host/user)
+//   - an ABI version the host does not support
+//   - a missing, undeclared, or malformed self-reported export
+//   - an invalid stage, scope, or other describe() field value
+//   - a describe() self-report that is not valid JSON
 //
 // WASI stdio passthrough and wall-time access remain denied by
 // construction: the Loader enables WASI but hands the Extism runtime a
@@ -23,13 +28,13 @@ import "errors"
 // environment, a single synthetic program name as argv). The guest
 // bootstraps against real WASI behaviour with zero ambient authority,
 // so any I/O call fails at the call boundary; see wasi_imports.go for
-// the import-module firewall and loader.go for the sandbox
+// the import-module allowlist and loader.go for the sandbox
 // configuration.
 //
-// Errors wrapping this sentinel name the violated capability and the
+// Errors wrapping this sentinel name the violated surface and the
 // plugin identifier so callers see exactly which surface caused the
 // rejection.
-var ErrWasmManifestRejected = errors.New("wasm: plugin manifest rejected by AOT-purity firewall")
+var ErrWasmManifestRejected = errors.New("wasm: plugin rejected by the sandbox")
 
 // ErrWasmGuestPanic indicates that guest plugin code panicked during a
 // Plugin.Call invocation. The Loader's Call method wraps the Extism

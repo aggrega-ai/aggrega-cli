@@ -4,12 +4,21 @@
 package workspaceconfig
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"go.yaml.in/yaml/v3"
 )
+
+// errNoConfigChange is returned by a mutate closure to signal that the document
+// is unchanged and must not be rewritten. mutateConfigDocument treats it as a
+// successful no-op: the file is left byte-for-byte as it was. Removal writers use
+// it so a query that matches nothing never rewrites — and never reformats — the
+// config, letting the calling command fail loudly on a no-match instead.
+var errNoConfigChange = errors.New("workspaceconfig: no config change")
 
 // UpsertRegistry adds or replaces the per-registry trust policy for
 // reg.Host in the workspace config file at path, preserving every other
@@ -93,6 +102,9 @@ func mutateConfigDocument(path string, mutate func(mapping *yaml.Node) error) er
 	}
 
 	if err := mutate(mapping); err != nil {
+		if errors.Is(err, errNoConfigChange) {
+			return nil
+		}
 		return err
 	}
 
@@ -173,6 +185,244 @@ func UpsertPluginSocketRef(path, socket, uri string) error {
 		setMappingKey(pluginsNode, socket, &refsNode)
 		return nil
 	})
+}
+
+// UpsertCLIPluginRef adds or re-pins the CLI-extension plugin identified by uri
+// in the `plugins.cli` list in the workspace config file at path, preserving
+// every other setting, and writes the result back. An existing entry for the
+// same uri has its digest updated in place — its list position is preserved — so
+// re-adding a plugin re-pins the same command to the freshly resolved bytes; a
+// new uri is appended. A file that does not yet exist is created carrying a
+// `workspace: {}` marker and the one entry.
+//
+// Like UpsertPluginSocketRef it routes through mutateConfigDocument, rewriting
+// only the `plugins.cli` list (creating the `plugins` block if absent) and
+// validating the merged document against the config schema before writing, so
+// the node-surgery and schema-gate discipline stay unified with the other
+// by-key config writers.
+func UpsertCLIPluginRef(path, uri, digest string) error {
+	if uri == "" || digest == "" {
+		return fmt.Errorf("workspaceconfig: UpsertCLIPluginRef: uri and digest are required")
+	}
+	return mutateConfigDocument(path, func(mapping *yaml.Node) error {
+		pluginsNode := getOrCreateMapping(mapping, "plugins")
+		refs := upsertCLIRef(readCLIRefs(pluginsNode), uri, digest)
+
+		var refsNode yaml.Node
+		if err := refsNode.Encode(refs); err != nil {
+			return fmt.Errorf("workspaceconfig: encode cli refs: %w", err)
+		}
+		setMappingKey(pluginsNode, "cli", &refsNode)
+		return nil
+	})
+}
+
+// upsertCLIRef sets the digest for uri in refs, updating an existing entry in
+// place (preserving its list position) or appending a new {uri, digest} entry
+// when uri is absent. Re-pinning to a new digest is exactly the re-add case: the
+// pin follows the freshly resolved bytes without duplicating the entry.
+func upsertCLIRef(refs []CLIPluginRef, uri, digest string) []CLIPluginRef {
+	for i := range refs {
+		if refs[i].URI == uri {
+			refs[i].Digest = digest
+			return refs
+		}
+	}
+	return append(refs, CLIPluginRef{URI: uri, Digest: digest})
+}
+
+// readCLIRefs decodes the existing `cli` list from a `plugins` mapping node, or
+// returns nil when the node is absent or carries no entries. It is the
+// CLIPluginRef peer of readPluginRefs.
+func readCLIRefs(pluginsNode *yaml.Node) []CLIPluginRef {
+	if pluginsNode == nil || pluginsNode.Kind != yaml.MappingNode {
+		return nil
+	}
+	for i := 0; i+1 < len(pluginsNode.Content); i += 2 {
+		if pluginsNode.Content[i].Value == "cli" {
+			var refs []CLIPluginRef
+			_ = pluginsNode.Content[i+1].Decode(&refs)
+			return refs
+		}
+	}
+	return nil
+}
+
+// RemoveCLIPluginRef removes the `plugins.cli` entry matching query from the
+// workspace config file at path, preserving every other setting, and writes the
+// result back. It reports whether an entry matched: false means the query hit
+// nothing (or no config file exists yet) and the file is left untouched, so the
+// calling command can fail loudly instead of rewriting an unchanged config. When
+// the removal empties the list its `cli` key is dropped rather than left as an
+// empty list.
+//
+// An entry matches query by an exact URI match or by the plugin name derived
+// from its URI (the final path segment with any :version suffix removed), so a
+// plugin added by its short name is removed by that same name. Like the Upsert
+// writers it routes through mutateConfigDocument, so the node-surgery and
+// schema-gate discipline stay unified across the by-key writers.
+func RemoveCLIPluginRef(path, query string) (bool, error) {
+	if query == "" {
+		return false, fmt.Errorf("workspaceconfig: RemoveCLIPluginRef: query is required")
+	}
+	removed := false
+	err := mutateConfigDocument(path, func(mapping *yaml.Node) error {
+		pluginsNode := findMapping(mapping, "plugins")
+		if pluginsNode == nil {
+			return errNoConfigChange
+		}
+		kept, dropped := removeCLIRef(readCLIRefs(pluginsNode), query)
+		if !dropped {
+			return errNoConfigChange
+		}
+		removed = true
+		return writeOrDeleteRefs(pluginsNode, "cli", kept)
+	})
+	if err != nil {
+		return false, err
+	}
+	return removed, nil
+}
+
+// RemovePluginSocketRef removes the `plugins.<socket>` entry matching query from
+// the workspace config file at path, preserving every other setting, and writes
+// the result back. socket is the config-socket key (mutator, policy, linter,
+// importer). It reports whether an entry matched: false leaves the file
+// untouched so the calling command can fail loudly. When the removal empties the
+// list its `<socket>` key is dropped rather than left as an empty list.
+//
+// An entry matches query by an exact URI match, by the plugin name derived from
+// its URI, or by its bound capability, so a socket attachment added by its short
+// name is removed by that same name. Like UpsertPluginSocketRef it routes through
+// mutateConfigDocument, keeping the node-surgery and schema-gate discipline
+// unified with the other by-key config writers.
+func RemovePluginSocketRef(path, socket, query string) (bool, error) {
+	if socket == "" || query == "" {
+		return false, fmt.Errorf("workspaceconfig: RemovePluginSocketRef: socket and query are required")
+	}
+	removed := false
+	err := mutateConfigDocument(path, func(mapping *yaml.Node) error {
+		pluginsNode := findMapping(mapping, "plugins")
+		if pluginsNode == nil {
+			return errNoConfigChange
+		}
+		kept, dropped := removePluginRef(readPluginRefs(pluginsNode, socket), query)
+		if !dropped {
+			return errNoConfigChange
+		}
+		removed = true
+		return writeOrDeleteRefs(pluginsNode, socket, kept)
+	})
+	if err != nil {
+		return false, err
+	}
+	return removed, nil
+}
+
+// RemoveProviderBinding removes the `plugins.providers` entry matching query from
+// the workspace config file at path, preserving every other setting, and writes
+// the result back. It reports whether an entry matched: false leaves the file
+// untouched so the calling command can fail loudly. When the removal empties the
+// list its `providers` key is dropped rather than left as an empty list.
+//
+// A provider binding is keyed by the capability it serves, so query matches by
+// that capability first; an exact URI match or the plugin name derived from the
+// URI also matches. Like UpsertProviderBinding it routes through
+// mutateConfigDocument, keeping the config-write, schema-gate, and node-surgery
+// discipline in one place.
+func RemoveProviderBinding(path, query string) (bool, error) {
+	if query == "" {
+		return false, fmt.Errorf("workspaceconfig: RemoveProviderBinding: query is required")
+	}
+	removed := false
+	err := mutateConfigDocument(path, func(mapping *yaml.Node) error {
+		pluginsNode := findMapping(mapping, "plugins")
+		if pluginsNode == nil {
+			return errNoConfigChange
+		}
+		kept, dropped := removePluginRef(readProviderBindings(pluginsNode), query)
+		if !dropped {
+			return errNoConfigChange
+		}
+		removed = true
+		return writeOrDeleteRefs(pluginsNode, "providers", kept)
+	})
+	if err != nil {
+		return false, err
+	}
+	return removed, nil
+}
+
+// removeCLIRef returns refs without every entry matching query — an exact URI
+// match or a match on the plugin name derived from the URI — and reports whether
+// any entry was dropped. Surviving entries keep their position and members.
+func removeCLIRef(refs []CLIPluginRef, query string) ([]CLIPluginRef, bool) {
+	kept := make([]CLIPluginRef, 0, len(refs))
+	dropped := false
+	for _, r := range refs {
+		if uriMatchesQuery(r.URI, query) {
+			dropped = true
+			continue
+		}
+		kept = append(kept, r)
+	}
+	return kept, dropped
+}
+
+// removePluginRef returns refs without every entry matching query and reports
+// whether any entry was dropped. A socket attachment or provider binding matches
+// by its bound capability, an exact URI match, or the plugin name derived from
+// its URI. Surviving entries keep their position and members.
+func removePluginRef(refs []PluginRef, query string) ([]PluginRef, bool) {
+	kept := make([]PluginRef, 0, len(refs))
+	dropped := false
+	for _, r := range refs {
+		if r.Capability == query || uriMatchesQuery(r.URI, query) {
+			dropped = true
+			continue
+		}
+		kept = append(kept, r)
+	}
+	return kept, dropped
+}
+
+// uriMatchesQuery reports whether a plugin reference carrying uri matches query:
+// an exact URI match, or a match on the plugin name derived from the URI. It is
+// the single identity-match rule the removal writers share, so a plugin added by
+// its short name and one addressed by its full pinned URI are both removable.
+func uriMatchesQuery(uri, query string) bool {
+	if uri == "" {
+		return false
+	}
+	return uri == query || pluginNameFromURI(uri) == query
+}
+
+// pluginNameFromURI derives a plugin's short name from a reference URI: the final
+// path segment with any :version suffix removed. For
+// oci://hub.aggrega.ai/plugin/cli/greet:1.2.0 it is "greet"; for the bare entity
+// identity mutator/tag-injector:1.2.0 it is "tag-injector". This is the same
+// short name `plugin add <type> <query>` resolves against, so remove is symmetric
+// with add.
+func pluginNameFromURI(uri string) string {
+	s := uri
+	if i := strings.LastIndex(s, "/"); i >= 0 {
+		s = s[i+1:]
+	}
+	if i := strings.IndexByte(s, ':'); i >= 0 {
+		s = s[:i]
+	}
+	return s
+}
+
+// writeOrDeleteRefs sets key in pluginsNode to the encoded refs, or removes key
+// entirely when refs is empty so a fully-drained socket list leaves no empty-list
+// residue behind. It is the shared terminal step of the removal writers.
+func writeOrDeleteRefs[T any](pluginsNode *yaml.Node, key string, refs []T) error {
+	if len(refs) == 0 {
+		deleteMappingKey(pluginsNode, key)
+		return nil
+	}
+	return setEncodedKey(pluginsNode, key, refs)
 }
 
 // CaptureBuildCritical writes the effective build-critical configuration subset
@@ -322,6 +572,33 @@ func getOrCreateMapping(parent *yaml.Node, key string) *yaml.Node {
 	keyNode := &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: key}
 	parent.Content = append(parent.Content, keyNode, node)
 	return node
+}
+
+// findMapping returns the mapping node bound to key in parent, or nil when the
+// key is absent or its value is not a mapping. It is the read-only peer of
+// getOrCreateMapping: a removal must not materialize an empty block for a key
+// that was not present.
+func findMapping(parent *yaml.Node, key string) *yaml.Node {
+	for i := 0; i+1 < len(parent.Content); i += 2 {
+		if parent.Content[i].Value == key {
+			if parent.Content[i+1].Kind == yaml.MappingNode {
+				return parent.Content[i+1]
+			}
+			return nil
+		}
+	}
+	return nil
+}
+
+// deleteMappingKey removes the key/value pair for key from mapping, or leaves
+// mapping unchanged when key is absent.
+func deleteMappingKey(mapping *yaml.Node, key string) {
+	for i := 0; i+1 < len(mapping.Content); i += 2 {
+		if mapping.Content[i].Value == key {
+			mapping.Content = append(mapping.Content[:i], mapping.Content[i+2:]...)
+			return
+		}
+	}
 }
 
 // rootMapping returns the mapping node at the root of a parsed document,

@@ -33,14 +33,14 @@ const extismHostEnvNamespace = "extism:host/env"
 
 // allowedImportModules is the exact set of Wasm import-module
 // namespaces a plugin may declare. A guest may import any function
-// name under one of these modules; the firewall inspects only the
+// name under one of these modules; the load gate inspects only the
 // declaring module, never the individual function name.
 //
 // The set is exactly:
 //
 //   - wasi_snapshot_preview1 — the WASI preview-1 runtime a language
 //     runtime links against. A guest may name any WASI function here;
-//     the firewall does not censor individual WASI imports, because a
+//     the load gate does not censor individual WASI imports, because a
 //     statically-linked language runtime imports filesystem and socket
 //     functions its live code paths never call (pulled in transitively
 //     by dependencies), and naming an import is not exercising a
@@ -51,7 +51,7 @@ const extismHostEnvNamespace = "extism:host/env"
 //   - extism:host/user — Aggrega's curated custom host functions.
 //
 // A guest importing a function under any other module names a surface
-// the host does not provide; the firewall rejects the plugin.
+// the host does not provide; the load gate rejects the plugin.
 var allowedImportModules = map[string]bool{
 	wasiSnapshotPreview1Namespace: true,
 	extismHostEnvNamespace:        true,
@@ -60,7 +60,7 @@ var allowedImportModules = map[string]bool{
 
 // validateImportModules walks the plugin Wasm binary's import section
 // and rejects any function import whose declaring module is not in
-// allowedImportModules. This is the firewall's structural pass: it
+// allowedImportModules. This is the load gate's structural pass: it
 // guards which import MODULES a guest may name, not which individual
 // functions it names within an allowed module.
 //
@@ -98,7 +98,7 @@ func validateImportModules(pluginName string, wasmBytes []byte) error {
 // with ("\0asm" in ASCII; 0x00 0x61 0x73 0x6d in network order).
 var wasmMagicBytes = [4]byte{0x00, 0x61, 0x73, 0x6d}
 
-// wasmVersionV1 is the Wasm 1.0 module version. The firewall reads
+// wasmVersionV1 is the Wasm 1.0 module version. The load gate reads
 // only version-1 modules; later spec revisions (e.g. WASI preview 2's
 // component-model binary format) need explicit support added.
 var wasmVersionV1 = [4]byte{0x01, 0x00, 0x00, 0x00}
@@ -114,8 +114,8 @@ const wasmImportKindFunction byte = 0x00
 // parseFunctionImports walks the Wasm binary's import section and
 // returns every function import as a (module, name) pair. Other
 // import kinds (memory, table, global) are skipped — the AOT-purity
-// firewall only cares about function imports because every WASI
-// capability the firewall guards (filesystem, network, time, entropy)
+// load gate only cares about function imports because every WASI
+// capability the load gate guards (filesystem, network, time, entropy)
 // is exposed as a function import.
 //
 // Returns nil + empty slice when the binary's import section is
@@ -126,9 +126,9 @@ const wasmImportKindFunction byte = 0x00
 // The parser is intentionally minimal: it walks sections by their
 // length prefix, decodes only the import section's entries, and
 // stops at section ID 2 since every later section is irrelevant to
-// the firewall's check. Wasm 1.0's binary format is small and
+// the load gate's check. Wasm 1.0's binary format is small and
 // stable; the parser does not depend on Wazero or any other Wasm
-// runtime so the firewall stays isolated from runtime internals.
+// runtime so the load gate stays isolated from runtime internals.
 func parseFunctionImports(wasmBytes []byte) ([]functionImport, error) {
 	if len(wasmBytes) < 8 {
 		return nil, fmt.Errorf("wasm binary too short (%d bytes; need at least 8 for header)", len(wasmBytes))
@@ -172,7 +172,7 @@ func parseFunctionImports(wasmBytes []byte) ([]functionImport, error) {
 			// Edge case: a malformed module with sections in non-
 			// conforming order (e.g. imports after function-signature
 			// or after exports) is treated as "no imports" by this
-			// parser. The firewall accepts it; Wazero / Extism reject
+			// parser. The load gate accepts it; Wazero / Extism reject
 			// it at their own compile step a few microseconds later.
 			// The double-validation is acceptable — malformed binaries
 			// fail the build either way, and the parser stays simple.
@@ -184,7 +184,7 @@ func parseFunctionImports(wasmBytes []byte) ([]functionImport, error) {
 }
 
 // functionImport names a single function imported under (Module,
-// Name). The firewall's WASI per-import check looks at functions with
+// Name). The load gate's WASI per-import check looks at functions with
 // Module == wasi_snapshot_preview1.
 type functionImport struct {
 	Module string
@@ -224,7 +224,7 @@ func parseImportSection(body []byte) ([]functionImport, error) {
 		switch kind {
 		case wasmImportKindFunction:
 			// Function imports carry a uleb128 type-index. Decode and
-			// discard; the firewall only needs the (module, name)
+			// discard; the load gate only needs the (module, name)
 			// pair.
 			_, n, err := readUleb128(body[cursor:])
 			if err != nil {

@@ -21,7 +21,7 @@ import (
 )
 
 // hostFunctionAllowlist is the curated set of host function names the
-// AOT-purity firewall permits a plugin to import. The set derived from a
+// AOT-purity load gate permits a plugin to import. The set derived from a
 // plugin's .wasm imports MUST be a subset of this set; a derived function
 // outside the set triggers ErrWasmManifestRejected.
 //
@@ -36,7 +36,7 @@ import (
 // warning emitter — plus the external-input fetch channel. The fetch
 // channel is host-mediated, not guest network access: the guest names
 // a URL and the host serves bytes through the content-addressed
-// external-input store's pin discipline, so the AOT-purity firewall
+// external-input store's pin discipline, so the AOT-purity load gate
 // (no AllowedHosts, no sockets) is unchanged.
 var hostFunctionAllowlist = map[string]bool{
 	"aggrega_log":                  true,
@@ -49,7 +49,7 @@ var hostFunctionAllowlist = map[string]bool{
 // allowlistedHostFunctionNames returns the curated names as a slice,
 // useful for inclusion-checks against the set derived from a .wasm.
 // The slice is sorted alphabetically so error messages embedding it
-// (for example the firewall's "outside the allowlist X" diagnostic)
+// (for example the load gate's "outside the allowlist X" diagnostic)
 // produce identical text across runs of the same input — Go map
 // iteration order is non-deterministic and would otherwise reorder
 // the names per build.
@@ -96,6 +96,104 @@ func cliAllowlistedHostFunctionNames() []string {
 	}
 	sort.Strings(names)
 	return names
+}
+
+// hostFunctionSignature is the Wasm import signature — the param and result
+// value types — a bound host function must present so a guest importing it
+// instantiates. It is the single source of each host function's shape: the real
+// per-function constructors and the inert describe-only stubs both read it, so
+// the two builders can never drift from each other or from the shape a guest
+// declares in its .wasm import section.
+type hostFunctionSignature struct {
+	params  []extism.ValueType
+	results []extism.ValueType
+}
+
+// hostFunctionSignatures is the single per-name registry of every curated host
+// function's Wasm import signature. Both the real per-function constructors and
+// the describe-only inert stubs read a function's param/result shape from here,
+// so a signature has exactly one home and no builder re-spells the value-type
+// lists. Every name in the union allowlist (the shared host functions plus the
+// two CLI streaming emitters) has an entry, so any plugin type instantiates
+// under the describe-only profile.
+var hostFunctionSignatures = map[string]hostFunctionSignature{
+	"aggrega_log":                  {params: []extism.ValueType{extism.ValueTypeI64, extism.ValueTypeI64}},
+	"aggrega_emit_warning":         {params: []extism.ValueType{extism.ValueTypeI64, extism.ValueTypeI64, extism.ValueTypeI64}},
+	"aggrega_fetch_external_input": {params: []extism.ValueType{extism.ValueTypeI64}, results: []extism.ValueType{extism.ValueTypeI64}},
+	"aggrega_pack_source":          {params: []extism.ValueType{extism.ValueTypeI64}, results: []extism.ValueType{extism.ValueTypeI64}},
+	"aggrega_read_source_file":     {params: []extism.ValueType{extism.ValueTypeI64}, results: []extism.ValueType{extism.ValueTypeI64}},
+	"aggrega_cli_write_stdout":     {params: []extism.ValueType{extism.ValueTypeI64, extism.ValueTypeI64}},
+	"aggrega_cli_write_stderr":     {params: []extism.ValueType{extism.ValueTypeI64, extism.ValueTypeI64}},
+}
+
+// hostFunctionSignatureFor returns the registered Wasm import signature for the
+// named host function and whether one is registered. It is the single read path
+// over hostFunctionSignatures; every builder consults it rather than re-spelling
+// a function's param/result shape.
+func hostFunctionSignatureFor(name string) (hostFunctionSignature, bool) {
+	sig, ok := hostFunctionSignatures[name]
+	return sig, ok
+}
+
+// newBoundHostFunction constructs a host function named name bound to body,
+// reading its Wasm import signature from the single per-name signature registry
+// so the bound shape matches what a guest imports without the constructor
+// re-spelling the value-type lists. It panics if name has no registered
+// signature — a maintenance guard catching a host function added to the
+// allowlist without a matching signature entry.
+func newBoundHostFunction(name string, body extism.HostFunctionStackCallback) extism.HostFunction {
+	sig, ok := hostFunctionSignatureFor(name)
+	if !ok {
+		panic("wasm: no registered signature for host function " + name)
+	}
+	return extism.NewHostFunctionWithStack(name, body, sig.params, sig.results)
+}
+
+// describeOnlyHostFunctions is the describe-only introspection profile's builder:
+// it returns an inert stub for every name in declared, bound in place of the
+// real host-function closures. Each stub presents the same Wasm import signature
+// the guest imports — read from the single per-name signature registry, so it can
+// never drift from the real builders — but its body performs no real work: it
+// does no external fetch, reads no source, appends no warning, and writes no
+// stream. Binding inert stubs lets a guest of any type instantiate purely to be
+// introspected through describe() without granting it any real host capability,
+// so a describe() that calls a host function reaches only a no-op.
+//
+// The receiver is unused — an inert stub captures no plugin state — but the
+// method shape matches the real builders so loadCore dispatches to it through the
+// same buildFunctions seam.
+func (p *Plugin) describeOnlyHostFunctions(declared []string) []extism.HostFunction {
+	out := make([]extism.HostFunction, 0, len(declared))
+	for _, name := range declared {
+		out = append(out, inertHostFunction(name))
+	}
+	return out
+}
+
+// inertHostFunction constructs one inert stub for the named host function,
+// reading its signature from the single registry. The body zeroes each result
+// slot, so a value-returning import returns a benign zero — which the guest-side
+// wrappers read as "the host returned no envelope" — and a void import's body
+// does nothing. It panics if name has no registered signature — the same
+// maintenance guard newBoundHostFunction applies — so a name admitted by the
+// union subset gate but absent from the registry surfaces loudly rather than as
+// a silently-unbound guest import.
+func inertHostFunction(name string) extism.HostFunction {
+	sig, ok := hostFunctionSignatureFor(name)
+	if !ok {
+		panic("wasm: describe-only stub requested for host function with no registered signature: " + name)
+	}
+	resultCount := len(sig.results)
+	return extism.NewHostFunctionWithStack(
+		name,
+		func(ctx context.Context, cp *extism.CurrentPlugin, stack []uint64) {
+			for i := 0; i < resultCount; i++ {
+				stack[i] = 0
+			}
+		},
+		sig.params,
+		sig.results,
+	)
 }
 
 // hostFunctionsForDeclared returns the per-Plugin HostFunction
@@ -193,13 +291,11 @@ type pluginMemoryReader interface {
 // exercise the read-and-format path against a fake
 // pluginMemoryReader without fabricating an *extism.CurrentPlugin.
 func (p *Plugin) hostFunctionAggregaLog() extism.HostFunction {
-	return extism.NewHostFunctionWithStack(
+	return newBoundHostFunction(
 		"aggrega_log",
 		func(ctx context.Context, cp *extism.CurrentPlugin, stack []uint64) {
 			p.handleAggregaLog(cp, stack)
 		},
-		[]extism.ValueType{extism.ValueTypeI64, extism.ValueTypeI64},
-		[]extism.ValueType{},
 	)
 }
 
@@ -259,13 +355,11 @@ type pluginRawMemoryReader interface {
 // read-and-write path against a fake memory reader and an in-memory writer
 // without fabricating an *extism.CurrentPlugin.
 func (p *Plugin) hostFunctionCLIWriteStdout() extism.HostFunction {
-	return extism.NewHostFunctionWithStack(
+	return newBoundHostFunction(
 		"aggrega_cli_write_stdout",
 		func(ctx context.Context, cp *extism.CurrentPlugin, stack []uint64) {
 			p.handleCLIWrite(cp.Memory(), p.stdout, "aggrega_cli_write_stdout", stack)
 		},
-		[]extism.ValueType{extism.ValueTypeI64, extism.ValueTypeI64},
-		[]extism.ValueType{},
 	)
 }
 
@@ -274,13 +368,11 @@ func (p *Plugin) hostFunctionCLIWriteStdout() extism.HostFunction {
 // injected at LoadCLI. It carries the same runtime-only grant: the compile-time
 // build profile never binds it.
 func (p *Plugin) hostFunctionCLIWriteStderr() extism.HostFunction {
-	return extism.NewHostFunctionWithStack(
+	return newBoundHostFunction(
 		"aggrega_cli_write_stderr",
 		func(ctx context.Context, cp *extism.CurrentPlugin, stack []uint64) {
 			p.handleCLIWrite(cp.Memory(), p.stderr, "aggrega_cli_write_stderr", stack)
 		},
-		[]extism.ValueType{extism.ValueTypeI64, extism.ValueTypeI64},
-		[]extism.ValueType{},
 	)
 }
 
@@ -317,13 +409,11 @@ func (p *Plugin) handleCLIWrite(mem pluginRawMemoryReader, w io.Writer, funcName
 // Body extracted into handleAggregaEmitWarning so the test suite
 // can exercise the read-format-append path against a fake reader.
 func (p *Plugin) hostFunctionAggregaEmitWarning() extism.HostFunction {
-	return extism.NewHostFunctionWithStack(
+	return newBoundHostFunction(
 		"aggrega_emit_warning",
 		func(ctx context.Context, cp *extism.CurrentPlugin, stack []uint64) {
 			p.handleAggregaEmitWarning(cp, stack)
 		},
-		[]extism.ValueType{extism.ValueTypeI64, extism.ValueTypeI64, extism.ValueTypeI64},
-		[]extism.ValueType{},
 	)
 }
 
@@ -404,13 +494,11 @@ type fetchEnvelope struct {
 // suite can exercise the read-fetch-write path against fake memory
 // interfaces without fabricating an *extism.CurrentPlugin.
 func (p *Plugin) hostFunctionAggregaFetchExternalInput() extism.HostFunction {
-	return extism.NewHostFunctionWithStack(
+	return newBoundHostFunction(
 		"aggrega_fetch_external_input",
 		func(ctx context.Context, cp *extism.CurrentPlugin, stack []uint64) {
 			p.handleAggregaFetchExternalInput(ctx, cp, cp, stack)
 		},
-		[]extism.ValueType{extism.ValueTypeI64},
-		[]extism.ValueType{extism.ValueTypeI64},
 	)
 }
 
@@ -497,13 +585,11 @@ func (p *Plugin) writeFetchEnvelope(writer pluginMemoryWriter, env fetchEnvelope
 // read-pack-write path against fake memory interfaces without fabricating an
 // *extism.CurrentPlugin.
 func (p *Plugin) hostFunctionAggregaPackSource() extism.HostFunction {
-	return extism.NewHostFunctionWithStack(
+	return newBoundHostFunction(
 		"aggrega_pack_source",
 		func(ctx context.Context, cp *extism.CurrentPlugin, stack []uint64) {
 			p.handleAggregaPackSource(cp, cp, stack)
 		},
-		[]extism.ValueType{extism.ValueTypeI64},
-		[]extism.ValueType{extism.ValueTypeI64},
 	)
 }
 
@@ -559,13 +645,11 @@ func (p *Plugin) handleAggregaPackSource(reader pluginMemoryReader, writer plugi
 // Body extracted into handleAggregaReadSourceFile so the test suite can exercise
 // the read-read-write path against fake memory interfaces.
 func (p *Plugin) hostFunctionAggregaReadSourceFile() extism.HostFunction {
-	return extism.NewHostFunctionWithStack(
+	return newBoundHostFunction(
 		"aggrega_read_source_file",
 		func(ctx context.Context, cp *extism.CurrentPlugin, stack []uint64) {
 			p.handleAggregaReadSourceFile(cp, cp, stack)
 		},
-		[]extism.ValueType{extism.ValueTypeI64},
-		[]extism.ValueType{extism.ValueTypeI64},
 	)
 }
 

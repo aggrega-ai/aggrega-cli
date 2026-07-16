@@ -391,7 +391,7 @@ func parseDescriptorJSON(raw []byte) (wasm.PluginDescriptor, string, error) {
 func describeWasmBytes(ctx context.Context, name string, wasmBytes []byte) (wasm.PluginDescriptor, error) {
 	spec := wasm.PluginSpec{Name: genCatalogDiagName(name), Bytes: wasmBytes, MaxMemoryPages: describeMaxMemoryPages}
 	loader := wasm.NewCachingLoaderFromContext(ctx, nil)
-	plugin, desc, err := loader.LoadAndDescribe(ctx, spec)
+	plugin, desc, err := loader.LoadForDescribe(ctx, spec)
 	if err != nil {
 		return wasm.PluginDescriptor{}, fmt.Errorf("aggrega plugin gen-catalog: describe %s: %w", name, err)
 	}
