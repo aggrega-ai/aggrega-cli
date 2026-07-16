@@ -88,6 +88,10 @@ var runtimeErrorCommands = []struct {
 	// login fails in its own work before any stdin read or network call:
 	// --password-stdin requires --username.
 	{"login", []string{"login", "registry.invalid.example", "--password-stdin"}},
+	// search validates its output format inside its own work, so an unknown
+	// --output value reaches RunE and fails locally, before any registry read
+	// or network call.
+	{"search", []string{"search", "--output", "bogus"}},
 }
 
 // TestCLIErrorHygiene_RuntimeErrorSuppressesUsageAndError drives each

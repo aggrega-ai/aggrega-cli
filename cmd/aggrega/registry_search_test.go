@@ -4,7 +4,6 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -46,7 +45,7 @@ var searchFixtureRepos = []string{
 }
 
 // withSearchTarget points the registry-search target seam at a fake lister for
-// the duration of the test, so runRegistrySearch runs without a network.
+// the duration of the test, so a search runs without a network.
 func withSearchTarget(t *testing.T, reg registryRepoLister, err error) {
 	t.Helper()
 	prev := registrySearchTarget
@@ -56,8 +55,8 @@ func withSearchTarget(t *testing.T, reg registryRepoLister, err error) {
 		}
 		return reg, "hub.aggrega.ai", nil
 	}
-	// Disable the live deprecation probe so runRegistrySearch stays network-free:
-	// the fake target's host would otherwise trigger a per-result registry probe.
+	// Disable the live deprecation probe so a search stays network-free: the fake
+	// target's host would otherwise trigger a per-result registry probe.
 	prevLookup := newRepoDeprecationLookup
 	newRepoDeprecationLookup = func(workspaceconfig.Config, string) repoDeprecationLookup { return nil }
 	t.Cleanup(func() {
@@ -110,44 +109,6 @@ func TestSearchRegistry_ScopesAndQuery(t *testing.T) {
 	wantCore := []string{"component/core/api-server", "feature/core/tls"}
 	if strings.Join(core, ",") != strings.Join(wantCore, ",") {
 		t.Fatalf("catalog query = %v; want %v", core, wantCore)
-	}
-}
-
-// TestRunRegistrySearch_SharedPrimitiveTwoScopes proves both search commands'
-// shared entry point routes through the one primitive with distinct scopes: the
-// same fake registry yields the plugin subset under the plugin scope and the
-// full set under the catalog scope.
-func TestRunRegistrySearch_SharedPrimitiveTwoScopes(t *testing.T) {
-	withSearchTarget(t, fakeRepoLister{repos: searchFixtureRepos}, nil)
-	ctx := context.Background()
-	cfg := workspaceconfig.Config{DefaultRegistry: "hub.aggrega.ai"}
-
-	var pluginOut bytes.Buffer
-	if err := runRegistrySearch(ctx, cfg, "", pluginSearchScope, true, &pluginOut); err != nil {
-		t.Fatalf("plugin search: %v", err)
-	}
-	if !strings.Contains(pluginOut.String(), "plugin/cli/moo") ||
-		strings.Contains(pluginOut.String(), "component/core/api-server") {
-		t.Fatalf("plugin search scope leaked non-plugin repos:\n%s", pluginOut.String())
-	}
-
-	var catalogOut bytes.Buffer
-	if err := runRegistrySearch(ctx, cfg, "", catalogSearchScope, true, &catalogOut); err != nil {
-		t.Fatalf("catalog search: %v", err)
-	}
-	if !strings.Contains(catalogOut.String(), "component/core/api-server") ||
-		!strings.Contains(catalogOut.String(), "plugin/cli/moo") {
-		t.Fatalf("catalog search scope missing catalog repos:\n%s", catalogOut.String())
-	}
-}
-
-// TestFormatSearchResults_Empty proves a zero-match search reports the empty
-// result explicitly rather than printing a bare blank.
-func TestFormatSearchResults_Empty(t *testing.T) {
-	var out bytes.Buffer
-	formatSearchResults(&out, "hub.aggrega.ai", "nope", nil, nil)
-	if !strings.Contains(out.String(), "(none)") {
-		t.Fatalf("empty search should report (none):\n%s", out.String())
 	}
 }
 

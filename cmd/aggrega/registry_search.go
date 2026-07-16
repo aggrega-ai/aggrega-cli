@@ -7,7 +7,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"path"
 	"sort"
 	"strings"
@@ -100,58 +99,6 @@ var registrySearchTarget = func(cfg workspaceconfig.Config) (registryRepoLister,
 		return nil, host, err
 	}
 	return reg, host, nil
-}
-
-// runRegistrySearch resolves the workspace registry, runs the one search
-// primitive under the given scope, and writes the result. Both search commands
-// route through it so the shared primitive is their only search path.
-//
-// When probeDeprecations is true, each result is probed live for a deprecation
-// marker and a deprecated result carries an advisory suffix. When false, the
-// probe is skipped entirely — no per-result registry lookup is built — so the
-// listing prints the bare repository paths and no network probe happens.
-func runRegistrySearch(ctx context.Context, cfg workspaceconfig.Config, query string, scope searchScope, probeDeprecations bool, out io.Writer) error {
-	reg, host, err := registrySearchTarget(cfg)
-	if err != nil {
-		return fmt.Errorf("search: %w", err)
-	}
-	matches, err := searchRegistry(ctx, reg, query, scope)
-	if err != nil {
-		return err
-	}
-	var deprecationOf repoDeprecationLookup
-	if probeDeprecations {
-		deprecationOf = newRepoDeprecationLookup(cfg, host)
-	}
-	formatSearchResults(out, host, query, matches, deprecationOf)
-	return nil
-}
-
-// formatSearchResults writes the deterministic search listing. A zero-match
-// search reports the empty result rather than printing a bare blank so the
-// operator can tell a completed empty search from a silent failure. When
-// deprecationOf is non-nil, each result is probed live for a deprecation marker
-// and a deprecated result carries an advisory suffix; a nil lookup, or a result
-// with no marker, prints the bare repository path.
-func formatSearchResults(out io.Writer, host, query string, matches []string, deprecationOf repoDeprecationLookup) {
-	if query == "" {
-		fmt.Fprintf(out, "Repositories in %s:\n", host)
-	} else {
-		fmt.Fprintf(out, "Repositories in %s matching %q:\n", host, query)
-	}
-	if len(matches) == 0 {
-		fmt.Fprintln(out, "  (none)")
-		return
-	}
-	for _, m := range matches {
-		if deprecationOf != nil {
-			if v, ok := deprecationOf(m); ok {
-				fmt.Fprintf(out, "  %s  %s\n", m, formatDeprecationSuffix(v))
-				continue
-			}
-		}
-		fmt.Fprintf(out, "  %s\n", m)
-	}
 }
 
 // productionPluginDiscoverable is the live-registry backing for the

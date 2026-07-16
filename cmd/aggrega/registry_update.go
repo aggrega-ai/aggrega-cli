@@ -258,13 +258,27 @@ func buildHostIndex(ctx context.Context, host string, src registryIndexSource, o
 		}
 		idx.Records = append(idx.Records, rec)
 	}
-	sort.Slice(idx.Records, func(i, j int) bool {
-		if idx.Records[i].URI != idx.Records[j].URI {
-			return idx.Records[i].URI < idx.Records[j].URI
-		}
-		return idx.Records[i].Version < idx.Records[j].Version
-	})
+	sortIndexRecords(idx.Records)
 	return idx, nil
+}
+
+// lessIndexRecordURIVersion is the deterministic order for index records: by URI,
+// then by version within a URI. It is the single ordering both the local index
+// writer and any consumer that aggregates records across hosts sort by, so a
+// reader cannot drift from the order the writer stamped.
+func lessIndexRecordURIVersion(a, b IndexRecord) bool {
+	if a.URI != b.URI {
+		return a.URI < b.URI
+	}
+	return a.Version < b.Version
+}
+
+// sortIndexRecords sorts records in place into the deterministic
+// URI-then-version order shared by the index writer and its consumers.
+func sortIndexRecords(records []IndexRecord) {
+	sort.Slice(records, func(i, j int) bool {
+		return lessIndexRecordURIVersion(records[i], records[j])
+	})
 }
 
 // indexRepo builds the record for one repository's latest published version. A

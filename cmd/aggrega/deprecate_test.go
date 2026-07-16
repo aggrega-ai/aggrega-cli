@@ -277,26 +277,3 @@ func TestInspect_CatalogComponent_SurfacesDeprecation(t *testing.T) {
 		t.Errorf("output missing deprecation block:\n%s", out)
 	}
 }
-
-// TestFormatSearchResults_SurfacesDeprecation proves a result carrying a marker
-// renders the advisory suffix, while an undeprecated result stays bare.
-func TestFormatSearchResults_SurfacesDeprecation(t *testing.T) {
-	lookup := func(repo string) (deprecationView, bool) {
-		if repo == "component/core/legacy" {
-			return deprecationView{Severity: "retracted", Reason: "withdrawn", Replacement: "core/api-server:2", IssuedOn: "2026-01-02T03:04:05Z", Tag: "1.0.0"}, true
-		}
-		return deprecationView{}, false
-	}
-	var out bytes.Buffer
-	formatSearchResults(&out, "reg.test", "", []string{"component/core/legacy", "component/core/fresh"}, lookup)
-	got := out.String()
-	if !strings.Contains(got, "component/core/legacy  [deprecated: retracted @ 1.0.0] withdrawn (use core/api-server:2) (since 2026-01-02T03:04:05Z)") {
-		t.Errorf("deprecated row missing its advisory suffix:\n%s", got)
-	}
-	// The undeprecated row stays bare (no suffix on its line).
-	for _, line := range strings.Split(got, "\n") {
-		if strings.Contains(line, "component/core/fresh") && strings.Contains(line, "deprecated") {
-			t.Errorf("undeprecated row should stay bare, got %q", line)
-		}
-	}
-}

@@ -7,7 +7,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"strings"
 	"time"
 
 	"oras.land/oras-go/v2"
@@ -137,33 +136,4 @@ func renderDeprecationBlock(out io.Writer, v deprecationView) {
 	if v.IssuedOn != "" {
 		fmt.Fprintf(out, "  Issued: %s\n", v.IssuedOn)
 	}
-}
-
-// formatDeprecationSuffix renders a one-line deprecation summary appended to a
-// search result row: the severity (and the tag it was found on), the reason,
-// the replacement when one is named, and the issue date.
-func formatDeprecationSuffix(v deprecationView) string {
-	var b strings.Builder
-	b.WriteString("[deprecated: ")
-	b.WriteString(v.Severity)
-	if v.Tag != "" {
-		b.WriteString(" @ ")
-		b.WriteString(v.Tag)
-	}
-	b.WriteString("]")
-	if v.Reason != "" {
-		b.WriteString(" ")
-		b.WriteString(v.Reason)
-	}
-	if v.Replacement != "" {
-		b.WriteString(" (use ")
-		b.WriteString(v.Replacement)
-		b.WriteString(")")
-	}
-	if v.IssuedOn != "" {
-		b.WriteString(" (since ")
-		b.WriteString(v.IssuedOn)
-		b.WriteString(")")
-	}
-	return b.String()
 }
