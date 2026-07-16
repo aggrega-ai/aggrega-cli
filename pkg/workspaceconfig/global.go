@@ -26,9 +26,10 @@ const (
 	// from Default().
 	SourceDefaults Source = iota
 
-	// SourceGlobal reports that a global config file at
-	// $AGGREGA_CONFIG or the XDG path was loaded and no workspace
-	// config file was loaded.
+	// SourceGlobal reports that a global config file was loaded and no
+	// workspace config file was loaded. The global file is the explicit
+	// $AGGREGA_CONFIG path when that variable is set, otherwise the
+	// auto-loaded XDG default (~/.config/aggrega/config.yaml).
 	SourceGlobal
 
 	// SourceWorkspace reports that a workspace config file was
@@ -51,11 +52,11 @@ func (s Source) String() string {
 	}
 }
 
-// envVarConfigOverride names the environment variable an operator
-// sets to point at the explicit global config path. It is the only
-// global-config source; there is no XDG (`~/.config/aggrega`) path —
-// the home-level `~/.aggrega-config.yaml` participates as the top
-// cascade rung like any other tree file.
+// envVarConfigOverride names the environment variable an operator sets
+// to point at an explicit global config path. When set, it overrides the
+// default location; when unset, the global layer is auto-loaded from the
+// XDG default path (`$XDG_CONFIG_HOME/aggrega/config.yaml`, falling back
+// to `~/.config/aggrega/config.yaml`) if that file exists.
 const envVarConfigOverride = "AGGREGA_CONFIG"
 
 // appendSlices captures one layer's seven `_append` slices. Used by the

@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -37,6 +36,8 @@ func newRegistryAddCmd() *cobra.Command {
 	var requireSignatures bool
 	var advisory bool
 	var fetchTrust bool
+	var global bool
+	var workspace bool
 
 	c := &cobra.Command{
 		Use:   "add <host>",
@@ -77,6 +78,8 @@ The entry is written to the workspace config file, preserving existing settings.
 				RequireValue:      requireSignatures,
 				Advisory:          advisory,
 				FetchTrust:        fetchTrust,
+				Global:            global,
+				Workspace:         workspace,
 				ws:                rw,
 				Out:               cmd.OutOrStdout(),
 			})
@@ -88,6 +91,8 @@ The entry is written to the workspace config file, preserving existing settings.
 	c.Flags().BoolVar(&requireSignatures, "require-signatures", false, "Require a signature on every artifact pulled from (and pushed to) this registry")
 	c.Flags().BoolVar(&advisory, "advisory", false, "Downgrade verification failures for this registry to warnings instead of halting")
 	c.Flags().BoolVar(&fetchTrust, "fetch-trust", true, "Fetch and pin the registry's advertised trust policy on first use. Use --no-fetch-trust to skip; manual --identity/--key also skip the fetch.")
+	c.Flags().BoolVar(&global, "global", false, "Write the entry to the global config shared across every workspace. A registry defaults here.")
+	c.Flags().BoolVar(&workspace, "workspace", false, "Write the entry to this project's workspace config instead of the global config.")
 	return c
 }
 
@@ -110,12 +115,23 @@ type registryAddConfig struct {
 	// fetched set, so a manual policy skips the fetch regardless of this value.
 	FetchTrust bool
 
+	// Global and Workspace are the operator's write-target overrides. A registry
+	// is tool-scoped, so it defaults to the global config; --global forces the
+	// global file and --workspace forces this project's workspace file. Setting
+	// both is a usage error.
+	Global    bool
+	Workspace bool
+
 	ws  *workspaceconfig.ResolvedWorkspace
 	Out interface{ Write([]byte) (int, error) }
 	// trustClient transports the well-known trust fetch. Nil selects a default
 	// client in the fetch path; tests inject an httptest client so no live
 	// network is contacted.
 	trustClient *http.Client
+	// lookup reads the environment for global-write-path resolution. Nil selects
+	// the live process environment; tests inject a frozen lookup so resolution
+	// is deterministic and parallel-safe.
+	lookup func(string) string
 }
 
 // registryAddRun assembles a RegistryConfig for the host and upserts it into
@@ -143,6 +159,14 @@ func registryAddRun(cfg registryAddConfig) error {
 	host := registryhost.Of(cfg.Host)
 	if host == "" {
 		return fmt.Errorf("aggrega registry add: a registry host is required")
+	}
+
+	// Resolve the write destination up front — it does not depend on the trust
+	// fetch, so a write-target flag misuse (both --global and --workspace) or an
+	// unresolvable global path fails fast, before any network fetch.
+	cfgPath, err := workspaceconfig.WriteDestination(workspaceconfig.OpRegistry, cfg.Global, cfg.Workspace, rw.Root(), cfg.lookup)
+	if err != nil {
+		return err
 	}
 
 	manualPolicy := len(cfg.Identities) > 0 || cfg.KeyPath != ""
@@ -191,7 +215,6 @@ func registryAddRun(cfg registryAddConfig) error {
 		reg.Advisory = true
 	}
 
-	cfgPath := filepath.Join(rw.Root(), workspaceconfig.ConfigFilename)
 	if err := workspaceconfig.UpsertRegistry(cfgPath, reg); err != nil {
 		return err
 	}

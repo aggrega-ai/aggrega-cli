@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -57,7 +56,12 @@ func runProviderBindingHelper(target string, candidates []types.Plugin, root str
 	}
 	chosen := candidates[choice-1]
 
-	configPath := filepath.Join(root, workspaceconfig.ConfigFilename)
+	// The interactive helper writes a build-scoped provider binding; it surfaces
+	// no write-target flags, so it always resolves to the workspace default.
+	configPath, err := workspaceconfig.WriteDestination(workspaceconfig.OpProviderBinding, false, false, root, nil)
+	if err != nil {
+		return err
+	}
 	if err := workspaceconfig.UpsertProviderBinding(configPath, target, chosen.Metadata.Name); err != nil {
 		return fmt.Errorf("provider binding helper: write %s: %w", configPath, err)
 	}

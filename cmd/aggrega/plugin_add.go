@@ -7,7 +7,6 @@ import (
 	"context"
 	"fmt"
 	"path"
-	"path/filepath"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -40,6 +39,8 @@ var configSocketKinds = map[string]bool{
 // or a `plugins.providers` capability binding (provider).
 func newPluginAddCmd() *cobra.Command {
 	var target string
+	var global bool
+	var workspace bool
 	c := &cobra.Command{
 		Use:   "add <socket> <query>",
 		Short: "Search the registry and attach a plugin to a workspace socket",
@@ -65,15 +66,19 @@ The entry is written to the workspace config file, preserving existing settings.
 				return err
 			}
 			return pluginAddRun(cmd.Context(), pluginAddConfig{
-				Socket: args[0],
-				Query:  args[1],
-				Target: target,
-				ws:     rw,
-				Out:    cmd.OutOrStdout(),
+				Socket:    args[0],
+				Query:     args[1],
+				Target:    target,
+				Global:    global,
+				Workspace: workspace,
+				ws:        rw,
+				Out:       cmd.OutOrStdout(),
 			})
 		},
 	}
 	c.Flags().StringVar(&target, "target", "", "Capability the provider binding serves (required for, and only valid with, the provider socket)")
+	c.Flags().BoolVar(&global, "global", false, "Write the attachment to the global config shared across every workspace.")
+	c.Flags().BoolVar(&workspace, "workspace", false, "Write the attachment to this project's workspace config. A plugin attachment defaults here.")
 	return c
 }
 
@@ -84,8 +89,19 @@ type pluginAddConfig struct {
 	Query  string
 	Target string
 
+	// Global and Workspace are the operator's write-target overrides. A plugin
+	// attachment is build-scoped, so it defaults to this project's workspace
+	// config; --global forces the global file and --workspace forces the
+	// workspace file. Setting both is a usage error.
+	Global    bool
+	Workspace bool
+
 	ws  *workspaceconfig.ResolvedWorkspace
 	Out interface{ Write([]byte) (int, error) }
+	// lookup reads the environment for global-write-path resolution. Nil selects
+	// the live process environment; tests inject a frozen lookup so resolution
+	// is deterministic and parallel-safe.
+	lookup func(string) string
 }
 
 // pluginAddRun searches the workspace registry for a plugin serving cfg.Socket,
@@ -111,6 +127,18 @@ func pluginAddRun(ctx context.Context, cfg pluginAddConfig) error {
 		return fmt.Errorf("aggrega plugin add: --target applies only to the provider socket")
 	}
 
+	// Resolve the write destination up front — it does not depend on the search,
+	// so a write-target flag misuse (both --global and --workspace) or an
+	// unresolvable global path fails fast, before any registry search.
+	op := workspaceconfig.OpConfigSocket
+	if isProvider {
+		op = workspaceconfig.OpProviderBinding
+	}
+	configPath, err := workspaceconfig.WriteDestination(op, cfg.Global, cfg.Workspace, rw.Root(), cfg.lookup)
+	if err != nil {
+		return err
+	}
+
 	reg, host, err := registrySearchTarget(rw.Config())
 	if err != nil {
 		return fmt.Errorf("aggrega plugin add: %w", err)
@@ -123,8 +151,6 @@ func pluginAddRun(ctx context.Context, cfg pluginAddConfig) error {
 	if err != nil {
 		return err
 	}
-
-	configPath := filepath.Join(rw.Root(), workspaceconfig.ConfigFilename)
 
 	if isProvider {
 		// The provider binding carries the oci:// artifact identity built from the

@@ -188,6 +188,23 @@ func dispatchBuildWithDiag(rw *workspaceconfig.ResolvedWorkspace, releasePath st
 	// call below.
 	wsCfg := rw.Config()
 
+	// Reproducibility guardrail: a build-critical binding supplied only by the
+	// machine's global config (and absent from this workspace's tree) makes the
+	// build non-reproducible for anyone who lacks that global file. Warn — never
+	// halt, never change the exit code — naming each global-only binding and the
+	// command that pins them into the workspace. The provenance resolve failing
+	// must not affect the build, so any error here is swallowed advisory-side.
+	if bindings, gerr := rw.GlobalOnlyBuildCritical(); gerr == nil && len(bindings) > 0 {
+		var b strings.Builder
+		for i, bind := range bindings {
+			if i > 0 {
+				b.WriteString(", ")
+			}
+			fmt.Fprintf(&b, "%s %s", bind.Field, bind.Identity)
+		}
+		fmt.Fprintf(diagOut, "warning: this build depends on configuration present only in your global config and absent from this workspace (%s); run `aggrega config capture` to pin it into the workspace for a reproducible build\n", b.String())
+	}
+
 	// --regenerate modifies the pull step; without an active pull step (neither
 	// --auto-pull nor workspace auto_pull) there is nothing for it to refresh, so
 	// it is a loud usage error rather than a surprise write on a read-only build.

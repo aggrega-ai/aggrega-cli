@@ -94,6 +94,7 @@ func newRootCmd() *cobra.Command {
 		newAuthCmd(),
 		newRegistryCmd(),
 		newPluginCmd(),
+		newConfigCmd(),
 		newCatalogCmd(),
 		newCacheCmd(),
 		newLoginCmd(),

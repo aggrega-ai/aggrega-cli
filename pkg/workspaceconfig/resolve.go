@@ -97,6 +97,15 @@ type ResolvedWorkspace struct {
 	marker   Marker
 	files    []string
 	warnings []string
+
+	// start, flagRoot, and lookup capture the exact inputs of the resolution
+	// that produced this value, so a second pass can re-run the single merge
+	// path with only the global file layer suppressed (the reproducibility
+	// provenance in GlobalOnlyBuildCritical). They are not part of the resolved
+	// result an ordinary consumer reads.
+	start    string
+	flagRoot string
+	lookup   func(string) string
 }
 
 // Root returns the absolute workspace root directory.
@@ -166,6 +175,25 @@ func Resolve(start, flagRoot string, look ...func(string) string) (*ResolvedWork
 	if len(look) > 0 && look[0] != nil {
 		lookup = look[0]
 	}
+	rw, err := resolve(start, flagRoot, lookup, false)
+	if err != nil {
+		return nil, err
+	}
+	rw.start = start
+	rw.flagRoot = flagRoot
+	rw.lookup = lookup
+	return rw, nil
+}
+
+// resolve is the single workspace-resolution merge path Resolve wraps. It runs
+// the whole job — root discovery, the tree cascade, the global layer, the
+// `_append` composition, and the environment overlay — against an already-
+// resolved lookup. When skipGlobal is true it omits the global file layer
+// (leaving the tree cascade, defaults, and environment overlay untouched), so a
+// second pass can attribute which build-critical bindings originated only in the
+// global file. There is no re-implemented merge: both the full and the tree-only
+// resolution run this one function.
+func resolve(start, flagRoot string, lookup func(string) string, skipGlobal bool) (*ResolvedWorkspace, error) {
 	if start == "" {
 		cwd, err := os.Getwd()
 		if err != nil {
@@ -197,22 +225,27 @@ func Resolve(start, flagRoot string, look ...func(string) string) (*ResolvedWork
 	var warnings []string
 	var signingPolicy signingPolicyAccumulator
 
-	// Global layer ($AGGREGA_CONFIG), beneath all tree files.
-	globalCfg, globalLoaded, globalPath, err := loadGlobalLayer()
-	if err != nil {
-		return nil, err
-	}
-	if globalLoaded {
-		gdir := filepath.Dir(globalPath)
-		ga := captureAppends(globalCfg)
-		resolveAppendPaths(&ga, gdir)
-		appendLayers = append(appendLayers, ga)
-		signingPolicy.add(globalCfg.Signing)
-		stripAppends(&globalCfg)
-		resolveConfigPaths(&globalCfg, gdir)
-		merged = globalCfg
-		source = SourceGlobal
-		contributing = append(contributing, globalPath)
+	// Global layer (explicit $AGGREGA_CONFIG or the XDG default), beneath all
+	// tree files. Suppressed for the tree-only provenance pass so the same merge
+	// path yields the workspace-tree-only view against which the full resolution
+	// is diffed.
+	if !skipGlobal {
+		globalCfg, globalLoaded, globalPath, err := loadGlobalLayer(lookup)
+		if err != nil {
+			return nil, err
+		}
+		if globalLoaded {
+			gdir := filepath.Dir(globalPath)
+			ga := captureAppends(globalCfg)
+			resolveAppendPaths(&ga, gdir)
+			appendLayers = append(appendLayers, ga)
+			signingPolicy.add(globalCfg.Signing)
+			stripAppends(&globalCfg)
+			resolveConfigPaths(&globalCfg, gdir)
+			merged = globalCfg
+			source = SourceGlobal
+			contributing = append(contributing, globalPath)
+		}
 	}
 
 	// Tree layers, farthest-from-start first (lowest precedence) to
@@ -517,26 +550,58 @@ func resolvePluginURIs(refs []PluginRef, dir string) {
 	}
 }
 
-// loadGlobalLayer reads the explicit global config layer. Only the
-// $AGGREGA_CONFIG override is honored — an unset variable means no global
-// layer (the cascade's top tree file and Default() suffice). When set, the
-// path is explicit, so a missing file is an error rather than a silent
-// fallback. There is no XDG (`~/.config/aggrega/config.yaml`) path: the
-// home-level `~/.aggrega-config.yaml` participates as the top cascade rung
-// like any other tree file.
-func loadGlobalLayer() (cfg Config, loaded bool, path string, err error) {
-	v := os.Getenv(envVarConfigOverride)
-	if v == "" {
+// loadGlobalLayer reads the global config layer that sits beneath every
+// tree file. When $AGGREGA_CONFIG is set it names an explicit path: the
+// path overrides the default location, so a missing file is an error
+// rather than a silent fallback. When $AGGREGA_CONFIG is unset the XDG
+// default path is auto-loaded — $XDG_CONFIG_HOME/aggrega/config.yaml,
+// falling back to ~/.config/aggrega/config.yaml when $XDG_CONFIG_HOME is
+// empty — if that file exists; if it does not, there is no global layer
+// (the cascade's tree files and Default() suffice). Every environment
+// read goes through lookup so resolution is deterministic and
+// parallel-safe.
+func loadGlobalLayer(lookup func(string) string) (cfg Config, loaded bool, path string, err error) {
+	if v := lookup(envVarConfigOverride); v != "" {
+		if _, statErr := os.Stat(v); statErr != nil {
+			return Config{}, false, "", fmt.Errorf("workspaceconfig: $%s config not found at %s: %w", envVarConfigOverride, v, statErr)
+		}
+		cfg, err = load(v)
+		if err != nil {
+			return Config{}, false, "", fmt.Errorf("workspaceconfig: load global %s: %w", v, err)
+		}
+		return cfg, true, v, nil
+	}
+
+	xdgPath, ok := xdgConfigPath(lookup)
+	if !ok {
 		return Default(), false, "", nil
 	}
-	if _, statErr := os.Stat(v); statErr != nil {
-		return Config{}, false, "", fmt.Errorf("workspaceconfig: $%s config not found at %s: %w", envVarConfigOverride, v, statErr)
+	if _, statErr := os.Stat(xdgPath); statErr != nil {
+		return Default(), false, "", nil
 	}
-	cfg, err = load(v)
+	cfg, err = load(xdgPath)
 	if err != nil {
-		return Config{}, false, "", fmt.Errorf("workspaceconfig: load global %s: %w", v, err)
+		return Config{}, false, "", fmt.Errorf("workspaceconfig: load global %s: %w", xdgPath, err)
 	}
-	return cfg, true, v, nil
+	return cfg, true, xdgPath, nil
+}
+
+// xdgConfigPath resolves the XDG default global config path from the
+// environment via lookup: $XDG_CONFIG_HOME/aggrega/config.yaml, or
+// $HOME/.config/aggrega/config.yaml when $XDG_CONFIG_HOME is empty. It
+// reports false when neither variable yields a base directory, so the
+// caller treats an unresolvable home as no global layer rather than
+// stat'ing a bogus relative path.
+func xdgConfigPath(lookup func(string) string) (string, bool) {
+	base := lookup("XDG_CONFIG_HOME")
+	if base == "" {
+		home := lookup("HOME")
+		if home == "" {
+			return "", false
+		}
+		base = filepath.Join(home, ".config")
+	}
+	return filepath.Join(base, "aggrega", "config.yaml"), true
 }
 
 // checkUniqueProviderTargets returns a wrapped ErrDuplicateProviderTarget when

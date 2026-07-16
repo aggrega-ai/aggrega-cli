@@ -52,6 +52,7 @@ func TestRegistryAddFetchesAndPinsTrust(t *testing.T) {
 	if err := registryAddRun(registryAddConfig{
 		Host:        host,
 		FetchTrust:  true,
+		Workspace:   true,
 		ws:          rw,
 		Out:         &out,
 		trustClient: client,
@@ -106,6 +107,7 @@ func TestRegistryAddManualIdentityOverridesFetch(t *testing.T) {
 		Host:        host,
 		Identities:  []string{"manual@acme.example=https://accounts.google.com"},
 		FetchTrust:  true, // on, but a manual policy must override it
+		Workspace:   true,
 		ws:          rw,
 		Out:         &out,
 		trustClient: client,
@@ -151,6 +153,7 @@ func TestRegistryAddNoTrustAdvertisedFallsBack(t *testing.T) {
 	if err := registryAddRun(registryAddConfig{
 		Host:        host,
 		FetchTrust:  true,
+		Workspace:   true,
 		ws:          rw,
 		Out:         &out,
 		trustClient: srv.Client(),
@@ -188,6 +191,7 @@ func TestRegistryAddUnreachableEndpointFallsBack(t *testing.T) {
 	if err := registryAddRun(registryAddConfig{
 		Host:        host,
 		FetchTrust:  true,
+		Workspace:   true,
 		ws:          rw,
 		Out:         &out,
 		trustClient: client,
@@ -214,6 +218,7 @@ func TestRegistryAddNoFetchTrustSkipsFetch(t *testing.T) {
 	if err := registryAddRun(registryAddConfig{
 		Host:       "no-fetch.example.com",
 		FetchTrust: false,
+		Workspace:  true,
 		// trustClient deliberately nil: if the fetch path were entered it would
 		// build a default client and attempt a live GET, which this test forbids.
 		ws:  rw,

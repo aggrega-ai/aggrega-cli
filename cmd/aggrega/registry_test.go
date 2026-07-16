@@ -25,6 +25,7 @@ func TestRegistryAddKeyless(t *testing.T) {
 		},
 		RequireSignatures: true,
 		RequireValue:      true,
+		Workspace:         true,
 		ws:                rw,
 		Out:               &out,
 	})
@@ -60,10 +61,11 @@ func TestRegistryAddKeyed(t *testing.T) {
 	}
 	var out bytes.Buffer
 	if err := registryAddRun(registryAddConfig{
-		Host:    "keyed.example.com",
-		KeyPath: keyPath,
-		ws:      rw,
-		Out:     &out,
+		Host:      "keyed.example.com",
+		KeyPath:   keyPath,
+		Workspace: true,
+		ws:        rw,
+		Out:       &out,
 	}); err != nil {
 		t.Fatalf("registryAddRun: %v", err)
 	}
@@ -84,9 +86,10 @@ func TestRegistryAddHubBaseline(t *testing.T) {
 	rw := resolveTempWorkspace(t)
 	var out bytes.Buffer
 	if err := registryAddRun(registryAddConfig{
-		Host: workspaceconfig.HubBaselineHost,
-		ws:   rw,
-		Out:  &out,
+		Host:      workspaceconfig.HubBaselineHost,
+		Workspace: true,
+		ws:        rw,
+		Out:       &out,
 	}); err != nil {
 		t.Fatalf("registryAddRun: %v", err)
 	}
@@ -110,6 +113,7 @@ func TestRegistryAddPreservesExisting(t *testing.T) {
 		if err := registryAddRun(registryAddConfig{
 			Host:       host,
 			Identities: []string{identity + "=https://accounts.google.com"},
+			Workspace:  true,
 			ws:         rw,
 			Out:        &out,
 		}); err != nil {

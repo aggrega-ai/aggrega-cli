@@ -6,6 +6,7 @@ package workspaceconfig
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"go.yaml.in/yaml/v3"
 )
@@ -61,7 +62,10 @@ func UpsertRegistry(path string, reg RegistryConfig) error {
 // the caller's targeted node surgery, then validates the merged document against
 // the config schema before writing it back — so a malformed result never reaches
 // disk and the read-guard, seed, schema-gate, and ordered-write discipline live
-// in one place rather than being re-derived per writer.
+// in one place rather than being re-derived per writer. A missing parent
+// directory is created before the write, so seeding a fresh config at a path
+// whose directory does not yet exist (the global config under a not-yet-created
+// home config dir) succeeds.
 func mutateConfigDocument(path string, mutate func(mapping *yaml.Node) error) error {
 	var root yaml.Node
 	data, rerr := os.ReadFile(path)
@@ -98,6 +102,9 @@ func mutateConfigDocument(path string, mutate func(mapping *yaml.Node) error) er
 	}
 	if verr := validateBytes(out, path); verr != nil {
 		return fmt.Errorf("workspaceconfig: merged config failed validation: %w", verr)
+	}
+	if derr := os.MkdirAll(filepath.Dir(path), 0o755); derr != nil {
+		return fmt.Errorf("workspaceconfig: create config dir for %s: %w", path, derr)
 	}
 	if werr := os.WriteFile(path, out, 0o644); werr != nil {
 		return fmt.Errorf("workspaceconfig: write %s: %w", path, werr)
@@ -166,6 +173,77 @@ func UpsertPluginSocketRef(path, socket, uri string) error {
 		setMappingKey(pluginsNode, socket, &refsNode)
 		return nil
 	})
+}
+
+// CaptureBuildCritical writes the effective build-critical configuration subset
+// of cfg into the workspace config file at path, preserving every other setting,
+// and writes the result back. The build-critical subset is the configuration a
+// build participates in: the provider bindings (plugins.providers), the four
+// cross-cutting plugin socket lists (plugins.mutator/policy/linter/importer),
+// the plugin sidecar directory (plugin_sidecar_dir), and the catalog
+// directories (workspace.catalog_dirs). Machine-wide tooling settings — the
+// registries trust policy above all — are deliberately excluded: they stay in
+// the global config by their nature and are not part of a project's build.
+//
+// This is the write path that freezes a workspace's build-participating
+// configuration so the tree is self-contained: after capture, resolving the
+// tree alone (no global layer beneath it) yields the same build-critical
+// bindings that resolved with the global layer present. Each field is written to
+// its effective value verbatim — the value is already the cascade-merged,
+// path-resolved result — so a plugin socket attachment's function override and
+// attachment-time inputs (its `with` block) are preserved, not flattened to a
+// bare reference. Only a non-empty field is written; an empty one contributes
+// nothing and is left absent rather than emitted as an empty list.
+//
+// Re-running capture on an unchanged effective configuration rewrites the file
+// byte-for-byte: the output is a pure function of the effective values, in a
+// fixed field order, encoded through the same ordered node-surgery every other
+// writer uses. Like every config writer it routes through mutateConfigDocument,
+// so the schema gate, seed-fresh, and merged-document validation are shared
+// rather than re-derived here.
+func CaptureBuildCritical(path string, cfg Config) error {
+	return mutateConfigDocument(path, func(mapping *yaml.Node) error {
+		var pluginsNode *yaml.Node
+		for _, s := range buildCriticalSocketFields(cfg) {
+			if len(s.Refs) == 0 {
+				continue
+			}
+			if pluginsNode == nil {
+				pluginsNode = getOrCreateMapping(mapping, "plugins")
+			}
+			if err := setEncodedKey(pluginsNode, s.Key, s.Refs); err != nil {
+				return err
+			}
+		}
+
+		if cfg.PluginSidecarDir != "" {
+			if err := setEncodedKey(mapping, "plugin_sidecar_dir", cfg.PluginSidecarDir); err != nil {
+				return err
+			}
+		}
+
+		if len(cfg.Workspace.CatalogDirs) > 0 {
+			wsNode := getOrCreateMapping(mapping, "workspace")
+			if err := setEncodedKey(wsNode, "catalog_dirs", cfg.Workspace.CatalogDirs); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
+// setEncodedKey encodes v into a fresh YAML node and sets it under key in
+// parent, replacing an existing value node in place or appending the key/value
+// pair when key is absent. It is the shared encode-then-set primitive the
+// whole-field writers use, so the encode-error wrapping and node placement live
+// in one spot rather than being repeated per field.
+func setEncodedKey(parent *yaml.Node, key string, v any) error {
+	var node yaml.Node
+	if err := node.Encode(v); err != nil {
+		return fmt.Errorf("workspaceconfig: encode %s: %w", key, err)
+	}
+	setMappingKey(parent, key, &node)
+	return nil
 }
 
 // upsertPluginRefURI appends a bare-URI PluginRef for uri when no existing entry
