@@ -138,7 +138,7 @@ func runMutatorSocket(ctx context.Context, inputs Inputs, catalogLookup resolver
 	return nil
 }
 
-// runPolicySocket runs the Step-4 policy-validator socket: it marshals the
+// runPolicySocket runs the Step-4 policy socket: it marshals the
 // analyzer's assembled PolicyInput (the full IR graph plus precalculated paths)
 // once, dispatches each configured policy plugin's validate export (or a
 // per-attachment override), and appends one AnalysisError per failed verdict to
@@ -181,7 +181,7 @@ func runPolicySocket(ctx context.Context, inputs Inputs, catalogLookup resolver.
 			return fmt.Errorf("Step 4 (policy): marshal input for plugin %q: %w", ref.URI, err)
 		}
 		spec := resolver.PluginSpec(pluginRefName(ref.URI), resolved)
-		spec.PluginType = wasm.PluginTypePolicyValidator
+		spec.PluginType = wasm.PluginTypePolicy
 		out, ran, err := invokeStagedPolicy(ctx, spec, export, payload, wasm.StageIR, in.Settings)
 		if err != nil {
 			return fmt.Errorf("Step 4 (policy): plugin %q: %w", ref.URI, err)
@@ -191,7 +191,7 @@ func runPolicySocket(ctx context.Context, inputs Inputs, catalogLookup resolver.
 			// pass runs it after render.
 			continue
 		}
-		var po analyzer.PolicyValidatorOutput
+		var po analyzer.PolicyOutput
 		if err := json.Unmarshal(out, &po); err != nil {
 			return fmt.Errorf("Step 4 (policy): plugin %q output: %w", ref.URI, err)
 		}
@@ -208,7 +208,7 @@ func runPolicySocket(ctx context.Context, inputs Inputs, catalogLookup resolver.
 	return nil
 }
 
-// runRenderPolicySocket runs the render-stage policy-validator socket after
+// runRenderPolicySocket runs the render-stage policy socket after
 // RenderAll: for each configured policy plugin that declares the render stage,
 // it hands the plugin the rendered artifacts (path-sorted into a canonical
 // order) plus the attachment's own sources and settings, and routes the returned
@@ -240,7 +240,7 @@ func runRenderPolicySocket(ctx context.Context, inputs Inputs, catalogLookup res
 			return fmt.Errorf("Step 5 (render policy): plugin %q: %w", ref.URI, err)
 		}
 		settings := policySettings(ref)
-		payload, err := json.Marshal(analyzer.RenderPolicyValidatorInput{
+		payload, err := json.Marshal(analyzer.RenderPolicyInput{
 			Artifacts: artifacts,
 			Sources:   sources,
 			Settings:  settings,
@@ -249,7 +249,7 @@ func runRenderPolicySocket(ctx context.Context, inputs Inputs, catalogLookup res
 			return fmt.Errorf("Step 5 (render policy): marshal input for plugin %q: %w", ref.URI, err)
 		}
 		spec := resolver.PluginSpec(pluginRefName(ref.URI), resolved)
-		spec.PluginType = wasm.PluginTypePolicyValidator
+		spec.PluginType = wasm.PluginTypePolicy
 		out, ran, err := invokeStagedPolicy(ctx, spec, export, payload, wasm.StageRender, settings)
 		if err != nil {
 			return fmt.Errorf("Step 5 (render policy): plugin %q: %w", ref.URI, err)
@@ -257,7 +257,7 @@ func runRenderPolicySocket(ctx context.Context, inputs Inputs, catalogLookup res
 		if !ran {
 			continue
 		}
-		var po analyzer.PolicyValidatorOutput
+		var po analyzer.PolicyOutput
 		if err := json.Unmarshal(out, &po); err != nil {
 			return fmt.Errorf("Step 5 (render policy): plugin %q output: %w", ref.URI, err)
 		}
@@ -399,7 +399,7 @@ func sortedRenderedArtifacts(files map[string][]byte) []analyzer.RenderedArtifac
 // It is the single conversion both stages use: the IR-stage gate appends its
 // result to analysis.Errors, and the render-stage runner turns its result into a
 // joined ToCompilerError halt.
-func policyVerdictErrors(pluginURI string, po analyzer.PolicyValidatorOutput) []analyzer.AnalysisError {
+func policyVerdictErrors(pluginURI string, po analyzer.PolicyOutput) []analyzer.AnalysisError {
 	var errs []analyzer.AnalysisError
 	for _, r := range po.Results {
 		if r.Severity != analyzer.SeverityDeny {

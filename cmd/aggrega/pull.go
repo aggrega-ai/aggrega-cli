@@ -465,7 +465,7 @@ func pullRun(cfg pullConfig) error {
 			return types.Plugin{}, false, err
 		}
 		if ok {
-			resolvedBindings[bare] = lockfile.ProviderBinding{Target: bare, Plugin: p.Metadata.Name}
+			resolvedBindings[bare] = lockfile.ProviderBinding{Target: bare, Plugin: p.Coordinate()}
 		}
 		return p, ok, err
 	}

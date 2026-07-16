@@ -1,2 +1,2 @@
-core/helm-renderer:1.0.0
+helm-renderer:1.0.0
 type: provider, exports: 2

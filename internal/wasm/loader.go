@@ -5,7 +5,7 @@
 // Per the project's loader-containment discipline, only this package
 // imports github.com/extism/go-sdk and constructs *extism.Plugin
 // values. Every consumer in the compiler — the publishing-linter, the
-// future mutator / policy-validator / helm-renderer / pipeline /
+// future mutator / policy / helm-renderer / pipeline /
 // linter sockets — receives a *Plugin constructed by Loader.Load and
 // invokes it through Plugin.Call.
 //

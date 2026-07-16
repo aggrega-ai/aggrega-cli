@@ -175,7 +175,7 @@ func TestComputeClosureEnumeratesEveryReferenceSite(t *testing.T) {
 	// rides the catalog-entity axis (resolved via ResolveCatalogEntity), and its
 	// .wasm artifact is pinned later at pull time by the pipeline-plugin descent. So
 	// ComputeClosure records the entity in c.Entities, not c.Plugins.
-	const policyPluginEntity = "core/policy-validator/aggrega-security-baseline:1.0.0"
+	const policyPluginEntity = "core/policy/aggrega-security-baseline:1.0.0"
 	cfg.Plugins.Policy = []workspaceconfig.PluginRef{
 		{URI: policyPluginEntity},
 	}

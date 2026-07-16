@@ -33,10 +33,10 @@ import (
 func TestSharedCompilationCacheConcurrentLoads(t *testing.T) {
 	// Build the fixture once, before any goroutine loads it, so the on-demand
 	// build never races. Skips cleanly when the toolchain/PDK is absent.
-	artifactPath := ensureFixtureBuilt(t, "policy-validator-go.wasm")
+	artifactPath := ensureFixtureBuilt(t, "policy-go.wasm")
 
 	const workers = 8
-	spec := wasm.PluginSpec{Name: "policy-validator-go", Path: artifactPath}
+	spec := wasm.PluginSpec{Name: "policy-go", Path: artifactPath}
 	input := []byte(`{}`)
 
 	// runOnce performs one request-shaped load+call against the shared cache and

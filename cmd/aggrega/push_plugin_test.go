@@ -51,10 +51,10 @@ func (p *memStorePuller) RegistryHost() string { return "hub.aggrega.ai" }
 const agreeingPluginEntity = `apiVersion: aggrega.ai/v1alpha1
 kind: Plugin
 metadata:
-  name: frp/patch
+  name: patch
+  pluginType: frp_step
   version: "1.0.0"
 spec:
-  pluginType: frp_step
   abiVersion: v1alpha1
   capabilities:
     - helm
@@ -117,7 +117,7 @@ func TestPushPluginSingleManifestPublish(t *testing.T) {
 
 	// The config blob is the entity; its identity is metadata.name and it carries
 	// no separate plugin-artifact field.
-	if !strings.Contains(string(entityYAML), "name: frp/patch") {
+	if !strings.Contains(string(entityYAML), "name: patch") {
 		t.Errorf("published entity should carry its bare identity metadata.name; got:\n%s", entityYAML)
 	}
 	if strings.Contains(string(entityYAML), "@sha256:") {
@@ -198,10 +198,10 @@ func TestPushPluginDescribeMismatchHaltsNoBytes(t *testing.T) {
 	writeEntityFixture(t, entityPath, `apiVersion: aggrega.ai/v1alpha1
 kind: Plugin
 metadata:
-  name: frp/patch
+  name: patch
+  pluginType: frp_step
   version: "1.0.0"
 spec:
-  pluginType: frp_step
   abiVersion: v1alpha1
   exports:
     - name: step
@@ -366,10 +366,10 @@ func writeLargeGuestPlugin(t *testing.T, runtimeBlock string) (entityPath, plugi
 kind: Plugin
 metadata:
   name: helm-renderer
+  pluginType: provider
   version: "0.4.1"
 spec:
   plugin: "oci://hub.aggrega.ai/plugin/provider/helm"
-  pluginType: provider
   abiVersion: v1alpha1
   capabilities:
     - helm
@@ -470,10 +470,10 @@ func writeProviderPluginWithContract(t *testing.T, specTail string) (entityPath,
 kind: Plugin
 metadata:
   name: helm-renderer
+  pluginType: provider
   version: "0.4.1"
 spec:
   plugin: "oci://hub.aggrega.ai/plugin/provider/helm"
-  pluginType: provider
   abiVersion: v1alpha1
   capabilities:
     - helm

@@ -40,9 +40,9 @@ func publishSignedPluginEntity(t *testing.T, host, socketName, version, pluginPa
 kind: Plugin
 metadata:
   name: `+socketName+`
+  pluginType: frp_step
   version: "`+version+`"
 spec:
-  pluginType: frp_step
   abiVersion: v1alpha1
   exports:
     - name: step

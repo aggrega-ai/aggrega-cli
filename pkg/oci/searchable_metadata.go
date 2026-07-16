@@ -27,7 +27,7 @@ const (
 	// FeatureRecipe, Plugin, and the other publishable kinds).
 	AnnotationKind = "ai.aggrega.kind"
 	// AnnotationPluginType carries a plugin's socket type (provider, linter,
-	// frp_step, mutator, policy-validator, cli). Absent on non-plugin entities.
+	// frp_step, mutator, policy, cli). Absent on non-plugin entities.
 	AnnotationPluginType = "ai.aggrega.plugin-type"
 	// AnnotationCapabilities carries a plugin's declared capabilities as a
 	// single comma-joined value in author order. Absent on non-plugin entities

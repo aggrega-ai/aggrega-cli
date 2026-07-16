@@ -1,11 +1,11 @@
 apiVersion: aggrega.ai/v1alpha1
 kind: Plugin
 metadata:
-  name: provider/helm-chart
+  name: helm-chart
   version: 1.0.0
+  pluginType: provider
   description: Wasm rendering engine for the helm-chart provider.
 spec:
-  pluginType: provider
   abiVersion: v1alpha1
   capabilities:
     - helm-chart

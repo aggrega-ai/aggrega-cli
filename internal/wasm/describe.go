@@ -21,7 +21,7 @@ import (
 // surface each export needs before invoking it.
 //
 // describe() is cross-plugin-type: one shape covers provider, linter,
-// feature-recipe-pipeline, mutator, policy-validator, and CLI plugins. It is consumed by the host
+// feature-recipe-pipeline, mutator, policy, and CLI plugins. It is consumed by the host
 // loader for dispatch decisions, not emitted into rendered output, so
 // its slices carry author/declared order without an OrderedMap; a
 // future consumer that marshals a descriptor into a deterministic
@@ -54,7 +54,7 @@ type PluginDescriptor struct {
 	ABIVersion string `json:"abi_version"`
 
 	// PluginType is the plugin's kind — provider, linter,
-	// feature-recipe-pipeline step, mutator, policy-validator, or CLI. It
+	// feature-recipe-pipeline step, mutator, policy, or CLI. It
 	// selects the minimum-export rule the host validates and, with the
 	// export name, the default input pattern.
 	PluginType PluginType `json:"plugin_type"`
@@ -109,10 +109,10 @@ type PluginDescriptor struct {
 	// checks only that every entry names a command.
 	Commands []PluginCLICommand `json:"commands,omitempty"`
 
-	// Stage is the compilation stage a policy-validator plugin evaluates at:
+	// Stage is the compilation stage a policy plugin evaluates at:
 	// StageIR (the default when absent) evaluates the provider-agnostic IR graph;
 	// StageRender evaluates the rendered provider-native artifacts. It is
-	// meaningful for the policy-validator plugin type only — as Commands is
+	// meaningful for the policy plugin type only — as Commands is
 	// meaningful for the CLI type only — and other plugin types leave it empty.
 	// The shape validator accepts StageIR, StageRender, or empty and refuses
 	// any other value; it does not cross-check the value against the plugin type.
@@ -131,7 +131,7 @@ type PluginDescriptor struct {
 	// at load — a malformed schema document fails the load (see
 	// [PluginDescriptor.Validate]) — and applied at dispatch (see
 	// [PluginDescriptor.ValidateSettings]). It is meaningful for a socket that
-	// carries settings (the policy-validator socket today); a plugin type that
+	// carries settings (the policy socket today); a plugin type that
 	// reads no settings leaves it empty.
 	SettingsSchema json.RawMessage `json:"settings_schema,omitempty"`
 
@@ -350,10 +350,10 @@ const (
 	// to a labels-only projection of the graph. Its minimum export is mutate.
 	PluginTypeMutator PluginType = "mutator"
 
-	// PluginTypePolicyValidator is a policy-validator plugin: it evaluates the
+	// PluginTypePolicy is a policy plugin: it evaluates the
 	// full IR graph at Step 4 and returns one pass/fail verdict per rule; a
 	// failed rule halts the build. Its minimum export is validate.
-	PluginTypePolicyValidator PluginType = "policy-validator"
+	PluginTypePolicy PluginType = "policy"
 
 	// PluginTypeCLI is a CLI plugin: it contributes a runtime aggrega <cmd>
 	// subcommand, invoked by an operator at the command line rather than by
@@ -402,7 +402,7 @@ const lintExportPrefix = "lint_"
 const frpStepExportName = "step"
 
 // MutateExport and ValidateExport are the default entry-function names for
-// the mutator and policy-validator sockets. They are the single source for
+// the mutator and policy sockets. They are the single source for
 // both the minimum-export rule this gate enforces and the default a socket
 // applies when a plugin attachment leaves its entry function unset, so the
 // two sides read one name rather than each re-spelling the literal.
@@ -477,12 +477,12 @@ const (
 	ScopeHost = types.ScopeHost
 )
 
-// StageIR and StageRender are the two compilation stages a policy-validator
+// StageIR and StageRender are the two compilation stages a policy
 // plugin may declare it evaluates at via [PluginDescriptor.Stage]: ir evaluates
 // the provider-agnostic IR graph, render evaluates the rendered provider-native
 // artifacts. The shape validator accepts these two values or the empty string;
 // an absent stage defaults to ir. The value is meaningful for the
-// policy-validator plugin type only.
+// policy plugin type only.
 const (
 	StageIR     = "ir"
 	StageRender = "render"
@@ -502,7 +502,7 @@ const (
 //   - the per-type minimum export is present: a provider declares
 //     render_node; a linter declares at least one lint_* export; a
 //     feature-recipe-pipeline step declares step; a mutator declares
-//     mutate; a policy-validator declares validate; a CLI plugin declares
+//     mutate; a policy declares validate; a CLI plugin declares
 //     cli_run.
 //   - every export's declared host functions are a subset of the
 //     host-function allowlist. This routes through the same
@@ -549,7 +549,7 @@ func (d PluginDescriptor) Validate(pluginIdentity string) error {
 	}
 
 	switch d.PluginType {
-	case PluginTypeProvider, PluginTypeLinter, PluginTypeFRPStep, PluginTypeMutator, PluginTypePolicyValidator, PluginTypeCLI:
+	case PluginTypeProvider, PluginTypeLinter, PluginTypeFRPStep, PluginTypeMutator, PluginTypePolicy, PluginTypeCLI:
 		// recognized
 	default:
 		return fmt.Errorf("plugin %q declares unknown plugin_type %q: %w",
@@ -715,9 +715,9 @@ func (d PluginDescriptor) validateMinimumExports(pluginIdentity string) error {
 			return fmt.Errorf("mutator plugin %q declares no %q export: %w",
 				pluginIdentity, MutateExport, ErrWasmManifestRejected)
 		}
-	case PluginTypePolicyValidator:
+	case PluginTypePolicy:
 		if !d.hasExport(ValidateExport) {
-			return fmt.Errorf("policy-validator plugin %q declares no %q export: %w",
+			return fmt.Errorf("policy plugin %q declares no %q export: %w",
 				pluginIdentity, ValidateExport, ErrWasmManifestRejected)
 		}
 	case PluginTypeCLI:

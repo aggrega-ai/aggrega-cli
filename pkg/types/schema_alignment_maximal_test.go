@@ -137,6 +137,7 @@ func maximalPlugin() types.Plugin {
 		Metadata: types.PluginMetadata{
 			Name:        "publishing-linter",
 			Version:     "1.0.0",
+			PluginType:  "linter",
 			Description: "maximal wasm plugin",
 			Maintainers: []types.Maintainer{{Name: "M", Email: "m@example.com", URL: "https://example.com"}},
 			License:     "Apache-2.0",
@@ -146,7 +147,6 @@ func maximalPlugin() types.Plugin {
 			Deprecated:  false,
 		},
 		Spec: types.PluginSpec{
-			PluginType:   "linter",
 			AbiVersion:   "v1alpha1",
 			Capabilities: []string{"helm", "compose"},
 			Signature: &types.PluginSignature{

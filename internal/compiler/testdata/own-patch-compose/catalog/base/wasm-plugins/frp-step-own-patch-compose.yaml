@@ -1,10 +1,10 @@
 apiVersion: aggrega.ai/v1alpha1
 kind: Plugin
 metadata:
-  name: core/frp/own-patch-compose
+  name: own-patch-compose
   version: "1.0.0"
-spec:
   pluginType: frp_step
+spec:
   abiVersion: v1alpha1
   capabilities:
     - compose

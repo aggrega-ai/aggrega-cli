@@ -210,9 +210,10 @@ func makeResolverFromCobra(cmd *cobra.Command) func(string, bool) bool {
 type lintEntityHeader struct {
 	Kind     string `yaml:"kind"`
 	Metadata struct {
-		Name    string            `yaml:"name"`
-		Version string            `yaml:"version"`
-		Labels  map[string]string `yaml:"labels"`
+		Name       string            `yaml:"name"`
+		PluginType string            `yaml:"pluginType"`
+		Version    string            `yaml:"version"`
+		Labels     map[string]string `yaml:"labels"`
 	} `yaml:"metadata"`
 	Spec struct {
 		Extends    string `yaml:"extends"`
@@ -244,17 +245,17 @@ func defaultRuleIDs(prePublish bool) []string {
 	return rules
 }
 
-// pluginIsCore reports whether a Plugin entity's identity names one of the
-// built-in plugins shipped inside the binary. The embedded set enumerates the
-// bare identities (<socket>/<name>) the built-ins register under — the same
-// identity shape a Plugin entity's metadata.name carries — so membership is an
-// exact-string match against that set.
-func pluginIsCore(identity string) bool {
-	if identity == "" {
+// pluginIsCore reports whether a Plugin's derived identity coordinate
+// (<pluginType>/<name>) names one of the built-in plugins shipped inside the
+// binary. The embedded set enumerates those coordinates the built-ins register
+// under — derived from a Plugin's metadata.pluginType and bare metadata.name —
+// so membership is an exact-string match against that set.
+func pluginIsCore(coordinate string) bool {
+	if coordinate == "" {
 		return false
 	}
 	for _, uri := range embedded.URIs() {
-		if uri == identity {
+		if uri == coordinate {
 			return true
 		}
 	}
@@ -323,7 +324,7 @@ func lintRun(cfg lintConfig) error {
 	// skip the previous-version fetch a non-core plugin would perform. The
 	// exemption short-circuits before any registry consultation.
 	prePublish := cfg.PrePublish
-	if cfg.PrePublish && header.Kind == "Plugin" && pluginIsCore(header.Metadata.Name) {
+	if cfg.PrePublish && header.Kind == "Plugin" && pluginIsCore(types.PluginCoordinate(header.Metadata.PluginType, header.Metadata.Name)) {
 		fmt.Fprintf(cfg.DiagOut, "core plugin: publish evolution gate not applicable\n")
 		prePublish = false
 	}
@@ -507,7 +508,7 @@ func pluginUnderDeclarationAdvisory(entityBytes []byte, wsCfg workspaceconfig.Co
 			entity.Metadata.Name, err)
 		return
 	}
-	desc, err := wasm.DescribePluginBytes(context.Background(), entity.Metadata.Name, resolved.Bytes, describeMaxMemoryPages, entity.Spec.PluginType)
+	desc, err := wasm.DescribePluginBytes(context.Background(), entity.Metadata.Name, resolved.Bytes, describeMaxMemoryPages, entity.Metadata.PluginType)
 	if err != nil {
 		fmt.Fprintf(diagOut, "under-declaration advisory: skipped for %q (its .wasm did not describe: %v)\n",
 			entity.Metadata.Name, err)

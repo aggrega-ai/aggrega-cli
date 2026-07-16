@@ -32,5 +32,5 @@ spec:
   # it against the merged document, where the service is a discrete unit.
   pipeline:
     - id: inject_into_own
-      plugin: core/frp/own-patch-compose:1.0.0
+      plugin: frp_step/own-patch-compose:1.0.0
       function: step

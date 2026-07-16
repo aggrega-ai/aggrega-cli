@@ -108,7 +108,7 @@ func TestAnalysisError_ToCompilerError_AppliesToRoutesToDeveloper(t *testing.T) 
 
 // TestAnalysisError_ToCompilerError_PolicyRoutesToPolicyError verifies a
 // policy-verdict violation (Kind AnalysisErrorPolicy) routes to PolicyError —
-// a governance rejection from an operator-attached policy-validator plugin, not
+// a governance rejection from an operator-attached policy plugin, not
 // a developer authoring mistake — while keeping its plugin-supplied message and
 // its ErrPolicyViolation sentinel recoverable via errors.Is.
 func TestAnalysisError_ToCompilerError_PolicyRoutesToPolicyError(t *testing.T) {

@@ -309,7 +309,7 @@ func runStepsOneToFour(
 		}
 		out.Analysis = analysis
 
-		// Step 4b: policy-validator socket. Config-driven off
+		// Step 4b: policy socket. Config-driven off
 		// WorkspaceConfig.Plugins.Policy — a no-op when unconfigured. When
 		// configured, each plugin evaluates the full IR graph and its failed
 		// verdicts append to analysis.Errors, so a policy rejection halts the build
@@ -856,7 +856,7 @@ func RunPipeline(
 			fmt.Fprintf(os.Stderr, "  warning: %s\n", w)
 		}
 
-		// Render-stage policy-validator socket. Config-driven off
+		// Render-stage policy socket. Config-driven off
 		// WorkspaceConfig.Plugins.Policy — a no-op when unconfigured, and it runs
 		// only the plugins that declare the render stage over the rendered
 		// artifacts (path-sorted). A deny verdict returns a build-halting error

@@ -79,7 +79,7 @@ source_artifacts:
         field: spec.source
 
 plugins:
-  - uri: hub.aggrega.ai/plugin/policy-validator/aggrega-security-baseline
+  - uri: hub.aggrega.ai/plugin/policy/aggrega-security-baseline
     resolved_version: 1.2.5
     digest: sha256:s9t0u1
     referenced_from:

@@ -378,14 +378,14 @@ func matchOneFeatureRecipe(frs map[string]types.FeatureRecipe, provider, name, v
 }
 
 // PluginByURI returns the Plugin entity whose identity matches uri, plus
-// a found flag. A Plugin is a by-name entity (keyed metadata.name:version,
-// like Component), not a provider-qualified one, so resolution goes
-// through the shared three-form version select (exact / caret / unversioned ->
+// a found flag. A Plugin is keyed by its coordinate — the `<pluginType>/<name>`
+// pair — not by a provider-qualified name, so resolution goes through the
+// shared three-form version select (exact / caret / unversioned ->
 // highest-satisfying) rather than the provider-scan ladder RecipeByURI uses. The
-// returned entity's .wasm artifact reference is derived from its bare identity;
-// resolving that reference to a pinned artifact is a separate concern (the
-// closure's artifact resolution), not this accessor's job — this serves the
-// entity struct only.
+// returned entity's .wasm artifact reference is that same coordinate; resolving
+// that reference to a pinned artifact is a separate concern (the closure's
+// artifact resolution), not this accessor's job — this serves the entity struct
+// only.
 //
 // Served by both catalog backings: the lazy backing exposes its enumerated
 // Plugin set through the recipeCatalog() *Catalog shell, so its
@@ -476,16 +476,16 @@ func (c *Catalog) pluginForCapability(pluginType, ref string, bindings map[strin
 	matches := map[string]types.Plugin{}
 	distinctNames := map[string]struct{}{}
 	for key, p := range c.Plugins {
-		if p.Spec.PluginType != pluginType {
+		if p.Metadata.PluginType != pluginType {
 			continue
 		}
 		if !slices.Contains(p.Spec.Capabilities, name) {
 			continue
 		}
-		// A binding selects the plugin repository by its bare identity
-		// (metadata.name), filtering out every competing publisher's plugin for
-		// this target.
-		if bound && p.Metadata.Name != bindBase {
+		// A binding selects the plugin repository by its coordinate identity
+		// (<pluginType>/<name>) — the same coordinate the lockfile pins — filtering
+		// out every competing publisher's plugin for this target.
+		if bound && p.Coordinate() != bindBase {
 			continue
 		}
 		matches[key] = p
@@ -555,7 +555,7 @@ func (c *Catalog) pluginForCapability(pluginType, ref string, bindings map[strin
 func (c *Catalog) ProviderPluginCandidates(target string) []types.Plugin {
 	var out []types.Plugin
 	for _, p := range c.Plugins {
-		if p.Spec.PluginType != "provider" {
+		if p.Metadata.PluginType != "provider" {
 			continue
 		}
 		if !slices.Contains(p.Spec.Capabilities, target) {

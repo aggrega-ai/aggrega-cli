@@ -95,7 +95,7 @@ func stampPluginFile(out io.Writer, entityPath, pluginPath string) error {
 	if entity.Spec.Runtime != nil && entity.Spec.Runtime.MaxMemoryPages > maxPages {
 		maxPages = entity.Spec.Runtime.MaxMemoryPages
 	}
-	desc, err := wasm.DescribePluginBytes(context.Background(), entityPath, wasmBytes, maxPages, entity.Spec.PluginType)
+	desc, err := wasm.DescribePluginBytes(context.Background(), entityPath, wasmBytes, maxPages, entity.Metadata.PluginType)
 	if err != nil {
 		return fmt.Errorf("aggrega plugin sync: %s: %w", entityPath, err)
 	}

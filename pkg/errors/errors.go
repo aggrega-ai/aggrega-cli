@@ -12,7 +12,7 @@ import "fmt"
 // / Manifest), provider engine (translation cannot express the requested
 // output), the remote registry / network layer (a fetch of a pinned
 // artifact failed at lock or build time), or an operator-attached
-// policy-validator plugin (a governance verdict rejected the build — the
+// policy plugin (a governance verdict rejected the build — the
 // fix is to satisfy the enforced policy or reconsider its attachment,
 // not to edit an authoring file).
 type Category string
@@ -32,7 +32,7 @@ const (
 	// connectivity, lockfile regeneration) rather than authoring.
 	FetchError Category = "FETCH_ERROR"
 	// PolicyError surfaces a governance verdict from an operator-attached
-	// policy-validator plugin: the plugin evaluated the assembled IR graph
+	// policy plugin: the plugin evaluated the assembled IR graph
 	// and rejected the build against a rule it enforces. Distinct from
 	// DeveloperError and CatalogError because the rejection is neither a
 	// developer authoring mistake on the Aggregate nor a catalog/ops

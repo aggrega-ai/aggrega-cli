@@ -43,9 +43,8 @@ func helmChartChainCatalog() *catalog.Catalog {
 			helmChartPluginEntity: {
 				APIVersion: "aggrega.ai/v1alpha1",
 				Kind:       "Plugin",
-				Metadata:   types.PluginMetadata{Name: helmChartArtifactURI, Version: testCorePluginVersion},
+				Metadata:   types.PluginMetadata{Name: "helm-chart", Version: testCorePluginVersion, PluginType: "provider"},
 				Spec: types.PluginSpec{
-					PluginType:   "provider",
 					AbiVersion:   "v1alpha1",
 					Capabilities: []string{"helm-chart"},
 					Exports:      []types.PluginExport{{Name: "render_node"}, {Name: "assemble_boundary"}},

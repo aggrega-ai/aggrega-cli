@@ -158,7 +158,7 @@ func TestPolicySocketAllowE2E(t *testing.T) {
 	ctx := context.Background()
 	inputs, buildLookup, recipeLookup, subAgg := loadFullstackForSockets(t)
 	inputs.WorkspaceConfig.Plugins.Policy = []workspaceconfig.PluginRef{{URI: "proof://policy-allow"}}
-	inputs.PluginPathLookup = fixtureSocketLookup(t, buildLookup, map[string]string{"proof://policy-allow": "policy-validator-allow-go.wasm"})
+	inputs.PluginPathLookup = fixtureSocketLookup(t, buildLookup, map[string]string{"proof://policy-allow": "policy-allow-go.wasm"})
 
 	res, err := pipeline.RunPipeline(ctx, inputs, buildLookup, recipeLookup, subAgg,
 		pipeline.Options{})
@@ -177,7 +177,7 @@ func TestPolicySocketHaltE2E(t *testing.T) {
 	ctx := context.Background()
 	inputs, buildLookup, recipeLookup, subAgg := loadFullstackForSockets(t)
 	inputs.WorkspaceConfig.Plugins.Policy = []workspaceconfig.PluginRef{{URI: "proof://policy"}}
-	inputs.PluginPathLookup = fixtureSocketLookup(t, buildLookup, map[string]string{"proof://policy": "policy-validator-go.wasm"})
+	inputs.PluginPathLookup = fixtureSocketLookup(t, buildLookup, map[string]string{"proof://policy": "policy-go.wasm"})
 
 	_, err := pipeline.RunPipeline(ctx, inputs, buildLookup, recipeLookup, subAgg,
 		pipeline.Options{})
@@ -217,7 +217,7 @@ func TestPolicySocketWrongPluginTypeE2E(t *testing.T) {
 	if err == nil {
 		t.Fatalf("RunPipeline with a mutator plugin at the policy socket: expected a halt, got nil")
 	}
-	for _, want := range []string{"plugin_type", "mutator", "policy-validator"} {
+	for _, want := range []string{"plugin_type", "mutator", "policy"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("wrong-socket halt error missing %q:\n%v", want, err)
 		}
@@ -303,7 +303,7 @@ func observePolicyInputs(t *testing.T, severity string) (pipeline.Inputs, resolv
 		},
 	}}
 	inputs.PluginPathLookup = fixtureSocketLookup(t, buildLookup, map[string]string{
-		"proof://policy-observe": "policy-validator-observe-go.wasm",
+		"proof://policy-observe": "policy-observe-go.wasm",
 	})
 	return inputs, buildLookup, recipeLookup, subAgg, srcPath, srcContent
 }
@@ -406,7 +406,7 @@ func renderPolicyInputs(t *testing.T, severity string) (pipeline.Inputs, resolve
 		With: &workspaceconfig.PluginRefWith{Settings: map[string]any{"severity": severity}},
 	}}
 	inputs.PluginPathLookup = fixtureSocketLookup(t, buildLookup, map[string]string{
-		"proof://policy-render": "policy-validator-render-go.wasm",
+		"proof://policy-render": "policy-render-go.wasm",
 	})
 	return inputs, buildLookup, recipeLookup, subAgg
 }

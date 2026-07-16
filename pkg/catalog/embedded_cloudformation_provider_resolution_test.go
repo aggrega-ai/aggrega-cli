@@ -44,9 +44,8 @@ func cloudformationChainCatalog() *catalog.Catalog {
 			cloudformationPluginEntity: {
 				APIVersion: "aggrega.ai/v1alpha1",
 				Kind:       "Plugin",
-				Metadata:   types.PluginMetadata{Name: cloudformationArtifactURI, Version: testCorePluginVersion},
+				Metadata:   types.PluginMetadata{Name: "cloudformation", Version: testCorePluginVersion, PluginType: "provider"},
 				Spec: types.PluginSpec{
-					PluginType:   "provider",
 					AbiVersion:   "v1alpha1",
 					Capabilities: []string{"cloudformation"},
 					Exports: []types.PluginExport{

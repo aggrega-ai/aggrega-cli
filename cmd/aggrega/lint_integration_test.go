@@ -423,10 +423,10 @@ func TestPluginDefaultLimits(t *testing.T) {
 	withCap := []byte(`apiVersion: aggrega.ai/v1alpha1
 kind: Plugin
 metadata:
-  name: core/capped-renderer
+  name: capped-renderer
+  pluginType: provider
   version: 1.0.0
 spec:
-  pluginType: provider
   abiVersion: v1alpha1
   runtime:
     maxMemoryPages: 256

@@ -85,7 +85,7 @@ func pushPlugin(out io.Writer, cfg pushConfig, registry string, wantSign bool, n
 	if c := resolver.WasmContractClaim(resolver.PluginContractClaim(entity)); c != nil {
 		capClaim = *c
 	}
-	desc, err := wasm.CrossCheckPublishedPlugin(ctx, entityIdentity, capClaim, wasmBytes, crossCheckMaxPages, entity.Spec.PluginType)
+	desc, err := wasm.CrossCheckPublishedPlugin(ctx, entityIdentity, capClaim, wasmBytes, crossCheckMaxPages, entity.Metadata.PluginType)
 	if err != nil {
 		return fmt.Errorf("aggrega push: Plugin %s: %w", entityIdentity, err)
 	}
@@ -136,10 +136,12 @@ func pushPlugin(out io.Writer, cfg pushConfig, registry string, wantSign bool, n
 	// producer.
 	contentDigest := digest.ContentDigest(wasmBytes)
 
-	// The manifest is published at <registry>/plugin/<socket>/<name>, addressed
-	// by the entity's version tag. The published entity bytes are the verified
-	// on-disk bytes — publish records nothing into them.
-	reference := buildPushReference(registry, "Plugin", "", name)
+	// The manifest is published at <registry>/plugin/<pluginType>/<name>,
+	// addressed by the entity's version tag. The location derives from the
+	// plugin's pluginType scope plus its bare name through the single OCILocation
+	// rule, so push-location == pull-location. The published entity bytes are the
+	// verified on-disk bytes — publish records nothing into them.
+	reference := buildPushReference(registry, "Plugin", entity.Metadata.PluginType, name)
 
 	// Searchable catalog annotations, sourced from the entity as pushed (never a
 	// re-invoked describe()), built once and stamped identically onto the digest
@@ -150,7 +152,7 @@ func pushPlugin(out io.Writer, cfg pushConfig, registry string, wantSign bool, n
 	annotations := oci.SearchableMetadata{
 		Description:  entity.Metadata.Description,
 		Kind:         "Plugin",
-		PluginType:   entity.Spec.PluginType,
+		PluginType:   entity.Metadata.PluginType,
 		Capabilities: entity.Spec.Capabilities,
 	}.Annotations()
 

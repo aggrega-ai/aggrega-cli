@@ -17,7 +17,7 @@ import (
 // the plugin-supplied text — and that message renders verbatim through
 // Error()/ToCompilerError() rather than through the edge-shaped composition.
 func TestPolicyVerdictErrors_FiredVerdictsBecomeErrors(t *testing.T) {
-	out := analyzer.PolicyValidatorOutput{Results: []analyzer.PolicyResult{
+	out := analyzer.PolicyOutput{Results: []analyzer.PolicyResult{
 		{Severity: analyzer.SeverityDeny, Message: "rule B: prod boundary requires an owner label"},
 		{Severity: analyzer.SeverityDeny, Message: "rule C: image must be digest-pinned"},
 	}}
@@ -50,7 +50,7 @@ func TestPolicyVerdictErrors_FiredVerdictsBecomeErrors(t *testing.T) {
 // TestPolicyVerdictErrors_EmptyResultsIsEmpty proves an output with no fired
 // verdicts produces no errors, so the build proceeds.
 func TestPolicyVerdictErrors_EmptyResultsIsEmpty(t *testing.T) {
-	out := analyzer.PolicyValidatorOutput{Results: nil}
+	out := analyzer.PolicyOutput{Results: nil}
 	if errs := policyVerdictErrors("proof://policy", out); len(errs) != 0 {
 		t.Fatalf("empty output produced %d errors, want 0", len(errs))
 	}

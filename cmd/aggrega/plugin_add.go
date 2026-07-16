@@ -205,8 +205,9 @@ func pluginAddRun(ctx context.Context, cfg pluginAddConfig) error {
 		return nil
 	}
 
-	// Config socket: strip the plugin/ path prefix to the bare entity identity and
-	// pin the latest published version so the attachment is version-pinned.
+	// Config socket: strip the plugin/ path prefix to the plugin coordinate
+	// identity (<pluginType>/<name>) and pin the latest published version so the
+	// attachment is version-pinned.
 	entity := strings.TrimPrefix(repoPath, catalog.KindPathSegment("Plugin")+"/")
 	version, err := resolveLatestPluginVersion(ctx, host, repoPath)
 	if err != nil {

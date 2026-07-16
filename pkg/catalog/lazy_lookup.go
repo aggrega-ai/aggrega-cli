@@ -1091,9 +1091,11 @@ func (l *LazyLookup) foldRecipeShellEntity(kind string, parseData, rawBytes []by
 			l.recordRecipeSkip(src, uerr)
 			return
 		}
-		key := entityIndexKey(e.Metadata.Name, e.Metadata.Version)
+		key := entityIndexKey(e.Coordinate(), e.Metadata.Version)
 		foldFirstWin(l.plugins, key, e,
-			func() { l.entityBytes[entityBytesKey("Plugin", e.Metadata.Name)] = rawBytes },
+			func() {
+				l.entityBytes[entityBytesKey("Plugin", e.Coordinate())] = rawBytes
+			},
 			func() {
 				l.recordRecipeSkip(src, fmt.Errorf("duplicate wasm plugin identity %q; this file is shadowed", key))
 			})

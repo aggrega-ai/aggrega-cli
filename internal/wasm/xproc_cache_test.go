@@ -53,7 +53,7 @@ func TestCrossProcessDiskCacheWorker(t *testing.T) {
 	defer disk.Close(context.Background())
 
 	loader := &wasm.Loader{Cache: disk}
-	plugin, err := loader.Load(context.Background(), wasm.PluginSpec{Name: "policy-validator-go", Path: guest})
+	plugin, err := loader.Load(context.Background(), wasm.PluginSpec{Name: "policy-go", Path: guest})
 	if err != nil {
 		t.Fatalf("worker: load: %v", err)
 	}
@@ -148,7 +148,7 @@ func TestCrossProcessDiskCacheConcurrency(t *testing.T) {
 	if testing.Short() {
 		t.Skip("cross-process cache stress skipped in -short")
 	}
-	guest := ensureFixtureBuilt(t, "policy-validator-go.wasm")
+	guest := ensureFixtureBuilt(t, "policy-go.wasm")
 	cacheDir := t.TempDir()
 
 	const workers = 6
@@ -245,7 +245,7 @@ func TestCrossProcessDiskCacheReuse(t *testing.T) {
 	if testing.Short() {
 		t.Skip("cross-process cache reuse timing skipped in -short")
 	}
-	guest := ensureFixtureBuilt(t, "policy-validator-go.wasm")
+	guest := ensureFixtureBuilt(t, "policy-go.wasm")
 	cacheDir := t.TempDir()
 
 	start := time.Now()

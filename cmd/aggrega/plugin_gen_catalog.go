@@ -113,10 +113,14 @@ func genCatalogRun(ctx context.Context, opts genCatalogOptions, out io.Writer) e
 }
 
 // genCatalogFromEmbedded generates an entity for every embedded guest, matching
-// each guest to its overlay by the overlay's metadata.name identity — the same
-// bare identity (<socket>/<name>) the embed tier keys the guest under. A guest
-// with no matching overlay halts loudly: the overlay set is the authored input
-// the generator merges, so a missing one is an authoring gap, not a value to invent.
+// each guest to its overlay by the guest's bare name — the final segment of the
+// embed-tier identity coordinate <pluginType>/<name>, which is the identity an
+// overlay authors as metadata.name. The coordinate the guest's own pluginType
+// derives is verified against the embed-tier identity, so an overlay filed under
+// the wrong socket halts rather than generating under a mismatched identity. A
+// guest with no matching overlay halts loudly: the overlay set is the authored
+// input the generator merges, so a missing one is an authoring gap, not a value
+// to invent.
 func genCatalogFromEmbedded(ctx context.Context, opts genCatalogOptions, version string, out io.Writer) error {
 	overlays, err := loadOverlaysByPlugin(opts.overlayPath)
 	if err != nil {
@@ -127,15 +131,30 @@ func genCatalogFromEmbedded(ctx context.Context, opts genCatalogOptions, version
 		if err != nil {
 			return err
 		}
-		overlay, ok := overlays[uri]
+		bareName := coordinateLeaf(uri)
+		overlay, ok := overlays[bareName]
 		if !ok {
-			return fmt.Errorf("aggrega plugin gen-catalog: no overlay in %q has metadata.name %q for embedded guest; author the overlay before generating", opts.overlayPath, uri)
+			return fmt.Errorf("aggrega plugin gen-catalog: no overlay in %q has metadata.name %q for embedded guest %q; author the overlay before generating", opts.overlayPath, bareName, uri)
+		}
+		if got := types.PluginCoordinate(string(desc.PluginType), overlay.Metadata.Name); got != uri {
+			return fmt.Errorf("aggrega plugin gen-catalog: overlay for %q derives identity coordinate %q, which does not match embedded guest %q; fix the overlay's metadata.name or socket", bareName, got, uri)
 		}
 		if err := generateAndWrite(opts.outputDir, desc, description, overlay, version, uri, out); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// coordinateLeaf returns the bare name segment of an identity coordinate — the
+// text after the final "/". The embed tier keys guests under the derived
+// coordinate <pluginType>/<name>; an overlay authors the bare <name>, so the leaf
+// is the join key between them.
+func coordinateLeaf(coordinate string) string {
+	if i := strings.LastIndex(coordinate, "/"); i >= 0 {
+		return coordinate[i+1:]
+	}
+	return coordinate
 }
 
 // genCatalogFromPlugin generates a single entity for one non-embedded guest read
@@ -163,13 +182,15 @@ func genCatalogFromPlugin(ctx context.Context, opts genCatalogOptions, version s
 }
 
 // generateAndWrite merges one descriptor with its overlay and writes the entity
-// to <outputDir>/<name>/<version>/plugin.yaml.
+// to <outputDir>/<pluginType>/<name>/<version>/plugin.yaml — the plugin
+// coordinate path that mirrors the catalog filesystem layout.
 func generateAndWrite(outputDir string, desc wasm.PluginDescriptor, description string, overlay types.Plugin, version, identity string, out io.Writer) error {
 	entity, err := mergeGenCatalogEntity(desc, description, overlay, version, identity)
 	if err != nil {
 		return err
 	}
-	dir := filepath.Join(outputDir, filepath.FromSlash(entity.Metadata.Name), entity.Metadata.Version)
+	coordinate := entity.Coordinate()
+	dir := filepath.Join(outputDir, filepath.FromSlash(coordinate), entity.Metadata.Version)
 	path := filepath.Join(dir, genCatalogPluginFilename)
 	// The assembled entity's spec.provider.workloadSchema must satisfy the same
 	// structural contract the catalog loader enforces at load: a provider block
@@ -230,8 +251,10 @@ func mergeGenCatalogEntity(desc wasm.PluginDescriptor, description string, overl
 	entity.Spec.Runtime = sanitizeOverlayRuntime(overlay.Spec.Runtime)
 	entity.Spec.Provider = overlay.Spec.Provider
 
-	// Contract fields are machine-derived from describe().
-	entity.Spec.PluginType = string(desc.PluginType)
+	// Contract fields are machine-derived from describe(). pluginType is the
+	// plugin's socket identity and lives in metadata; the location and catalog
+	// coordinate derive from it plus the bare metadata.name.
+	entity.Metadata.PluginType = string(desc.PluginType)
 	entity.Spec.AbiVersion = desc.ABIVersion
 	entity.Spec.Capabilities = desc.Capabilities
 	entity.Spec.Exports = descriptorExports(desc.Exports)
@@ -279,7 +302,7 @@ func descriptorExports(exports []wasm.PluginExport) []types.PluginExport {
 // isZeroContract reports whether a describe() render-behavior contract carries
 // no claim — every field at its zero value — so the generator emits no contract
 // block rather than an all-empty one. The cross-cutting sockets (linter, mutator,
-// policy-validator) report no render-behavior contract.
+// policy) report no render-behavior contract.
 func isZeroContract(c wasm.ProviderContract) bool {
 	return c.InputKinds == (wasm.InputKinds{}) &&
 		c.BoundaryAssembly == "" &&

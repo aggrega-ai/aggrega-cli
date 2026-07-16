@@ -25,10 +25,10 @@ const cliCommentedEntity = `# SPDX-License-Identifier: Apache-2.0
 apiVersion: aggrega.ai/v1alpha1
 kind: Plugin
 metadata:
-  name: cli/greet # the plugin's bare identity
+  name: greet # the plugin's bare identity
+  pluginType: cli
   version: "1.0.0"
 spec:
-  pluginType: cli
   abiVersion: v1alpha1
 `
 
@@ -51,7 +51,7 @@ func TestSpliceCommands_PreservesCommentsAndBlanks(t *testing.T) {
 	got := string(out)
 	for _, line := range []string{
 		"# SPDX-License-Identifier: Apache-2.0",
-		"  name: cli/greet # the plugin's bare identity",
+		"  name: greet # the plugin's bare identity",
 	} {
 		if !strings.Contains(got, line) {
 			t.Errorf("splice dropped or mangled %q; result:\n%s", line, got)
@@ -115,10 +115,10 @@ func TestPushPluginCommandsOutOfSyncHalts(t *testing.T) {
 	writeEntityFixture(t, entityPath, `apiVersion: aggrega.ai/v1alpha1
 kind: Plugin
 metadata:
-  name: cli/greet
+  name: greet
+  pluginType: cli
   version: "1.0.0"
 spec:
-  pluginType: cli
   abiVersion: v1alpha1
   exports:
     - name: cli_run
@@ -168,10 +168,10 @@ func TestPushPluginUnderDeclarationAdvisoryExitUnchanged(t *testing.T) {
 	writeEntityFixture(t, entityPath, `apiVersion: aggrega.ai/v1alpha1
 kind: Plugin
 metadata:
-  name: cli/greet
+  name: greet
+  pluginType: cli
   version: "1.0.0"
 spec:
-  pluginType: cli
   abiVersion: v1alpha1
 `)
 	// Stamp so the machine-owned records are in sync, leaving only the (legitimate)

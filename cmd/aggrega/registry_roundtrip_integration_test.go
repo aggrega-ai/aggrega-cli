@@ -486,9 +486,9 @@ func publishPluginEntityWithRuntime(t *testing.T, host, socketName, version, plu
 kind: Plugin
 metadata:
   name: `+socketName+`
+  pluginType: frp_step
   version: "`+version+`"
 spec:
-  pluginType: frp_step
   abiVersion: v1alpha1
   exports:
     - name: step

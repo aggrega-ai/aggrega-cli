@@ -289,9 +289,11 @@ type Plugin struct {
 // Field declaration order is alphabetical to drive yaml.v3's canonical
 // key emission, matching the Lockfile-wide discipline.
 type ProviderBinding struct {
-	// Plugin is the bare identity of the resolved provider-rendering plugin
-	// (a Plugin entity's metadata.name, the <socket>/<name> path,
-	// e.g. "provider/helm").
+	// Plugin is the derived coordinate identity of the resolved
+	// provider-rendering plugin — its metadata.pluginType and bare metadata.name
+	// joined as <pluginType>/<name> (e.g. "provider/helm"). The coordinate is the
+	// same identity the catalog indexes under and the registry location derives
+	// from; it is derived from the (pluginType, name) pair, not authored.
 	Plugin string `yaml:"plugin"`
 	// Target is the capability this binding selects an engine for
 	// — the bare engine name a Recipe binds through spec.capability.

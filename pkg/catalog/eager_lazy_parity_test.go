@@ -103,9 +103,9 @@ spec:
 kind: Plugin
 metadata:
   name: helm-renderer
+  pluginType: provider
   version: 1.0.0
 spec:
-  pluginType: provider
   abiVersion: v1alpha1
   capabilities:
     - helm
@@ -150,10 +150,10 @@ spec:
 	// resolve the same Plugin entity for a URI and the same provider→Plugin binding
 	// for a provider name, or the daemon's render dispatch silently diverges from
 	// the CLI's.
-	ep, eok := eager.Plugin("helm-renderer:1.0.0")
-	lp, lok := primed.Plugin("helm-renderer:1.0.0")
+	ep, eok := eager.Plugin("provider/helm-renderer:1.0.0")
+	lp, lok := primed.Plugin("provider/helm-renderer:1.0.0")
 	if eok != lok || !reflect.DeepEqual(ep, lp) {
-		t.Errorf("Plugin helm-renderer:1.0.0 diverges (eager ok=%v, lazy ok=%v)", eok, lok)
+		t.Errorf("Plugin provider/helm-renderer:1.0.0 diverges (eager ok=%v, lazy ok=%v)", eok, lok)
 	}
 	if !eok {
 		t.Fatal("fixture invalid: eager view is missing the helm-renderer Plugin (Plugin/ProviderPlugin parity is vacuous otherwise)")

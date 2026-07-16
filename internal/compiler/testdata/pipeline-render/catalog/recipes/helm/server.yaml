@@ -22,7 +22,7 @@ spec:
           web: {{ optional .infra `port` 8080 }}
   pipeline:
     - id: annotate_and_emit
-      plugin: core/frp/patch:1.0.0
+      plugin: frp_step/patch:1.0.0
       function: step
       with: |
         marker: pipeline-render-test

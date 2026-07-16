@@ -1,5 +1,5 @@
-Plugin: core/helm-renderer:1.0.0
-Plugin: core/helm-renderer
+Plugin: helm-renderer:1.0.0
+Plugin: provider/helm-renderer
 Plugin type: provider
 ABI version: v1alpha1
 Capabilities: helm, compose

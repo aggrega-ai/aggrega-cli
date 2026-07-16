@@ -266,7 +266,8 @@ func TestResolvePluginBytesOCIUnresolvable(t *testing.T) {
 	}
 	pluginByURI := func(uri string) (types.Plugin, bool) {
 		wp := types.Plugin{}
-		wp.Metadata.Name = "linter/aggrega-publishing"
+		wp.Metadata.Name = "aggrega-publishing"
+		wp.Metadata.PluginType = "linter"
 		return wp, true
 	}
 	_, err := resolveLinterPlugin("", wsCfg, pluginByURI)

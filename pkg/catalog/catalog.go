@@ -454,15 +454,15 @@ func (acc *Catalog) mergeFrom(perDir *Catalog, perDirRoot string, winnerDir map[
 		bk := entityBytesKey("MappingLibrary", k)
 		acc.entityBytes[bk] = perDir.entityBytes[bk]
 	})
-	// Plugin's bytes side-table keys on metadata.name (the closure walker
+	// Plugin's bytes side-table keys on the plugin coordinate (the closure walker
 	// hashes them for the lockfile pin) while the typed map and the source
-	// side-table key on identity (name:version) — same split the Recipe /
-	// Library kinds use for their typed maps. The source side-table feeds the
-	// Pass-2 spec.provider.workloadSchema compile gate so its error messages
-	// name the offending file.
+	// side-table key on the coordinate identity (coordinate:version) — the same
+	// split the Recipe / Library kinds use for their typed maps. The source
+	// side-table feeds the Pass-2 spec.provider.workloadSchema compile gate so its
+	// error messages name the offending file.
 	mergeKind(acc, "Plugin", acc.Plugins, perDir.Plugins, perDir, perDirRoot, winnerDir, func(k string) {
 		acc.pluginSources[k] = perDir.pluginSources[k]
-		bk := entityBytesKey("Plugin", perDir.Plugins[k].Metadata.Name)
+		bk := entityBytesKey("Plugin", perDir.Plugins[k].Coordinate())
 		acc.entityBytes[bk] = perDir.entityBytes[bk]
 	})
 }
@@ -859,13 +859,13 @@ func (c *Catalog) indexFile(data []byte, path string) error {
 		if err := yaml.Unmarshal(data, &e); err != nil {
 			return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, "unmarshal Plugin")
 		}
-		wkey := entityIndexKey(e.Metadata.Name, e.Metadata.Version)
+		wkey := entityIndexKey(e.Coordinate(), e.Metadata.Version)
 		if err := c.claimIdentity("Plugin:"+wkey, fmt.Sprintf("Plugin identity %q", wkey), path); err != nil {
 			return err
 		}
 		c.Plugins[wkey] = e
 		c.pluginSources[wkey] = path
-		c.entityBytes[entityBytesKey("Plugin", e.Metadata.Name)] = data
+		c.entityBytes[entityBytesKey("Plugin", e.Coordinate())] = data
 	}
 	// Unknown kinds silently skipped (Manifest, Release handled separately)
 	return nil
@@ -1351,7 +1351,7 @@ func (c *Catalog) resolveAggregateKey(name string) (string, bool, error) {
 
 func (c *Catalog) resolvePluginKey(uri string) (string, bool, error) {
 	return selectEntityVersion(c.Plugins, uri, func(v types.Plugin) (string, string) {
-		return v.Metadata.Name, v.Metadata.Version
+		return v.Coordinate(), v.Metadata.Version
 	})
 }
 

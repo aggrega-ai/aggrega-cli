@@ -32,22 +32,44 @@ package types
 // entity that omits them round-trips without emitting an empty block — a
 // value-typed nested struct would re-marshal as `{}`.
 
+// PluginCoordinate is the single rule deriving a plugin's identity COORDINATE
+// from its pluginType and bare name: `<pluginType>/<name>`. It preserves case —
+// it is the cased identity the catalog indexes under, the lockfile pins, and a
+// consuming URI addresses. A plugin's bare name is unique only within its socket,
+// so the pluginType segment is what distinguishes two same-named plugins in
+// different sockets; the coordinate is always derived from the (pluginType, name)
+// pair, never re-parsed from a pre-joined string. The physical OCI location a
+// fetch derives from this coordinate lowercases every segment; the coordinate
+// itself is the identity and stays cased.
+//
+// It lives here (not a higher package) so every layer — the catalog index, the
+// closure descent, the artifact-reference derivation — shares the one rule
+// without an import cycle.
+func PluginCoordinate(pluginType, name string) string {
+	return pluginType + "/" + name
+}
+
+// Coordinate returns the Plugin entity's identity coordinate, `<pluginType>/<name>`,
+// derived through the single PluginCoordinate rule.
+func (p Plugin) Coordinate() string {
+	return PluginCoordinate(p.Metadata.PluginType, p.Metadata.Name)
+}
+
 // ArtifactReference returns the .wasm artifact reference a Plugin entity resolves
-// to: its bare identity, metadata.name (the <socket>/<name> path). The .wasm
-// rides inline in the entity's single OCI manifest, so the artifact and the
-// entity share one identity; the entity carries no separate artifact field. A
-// physical fetch location is derived from this identity at the fetch boundary —
-// the embed tier keys on the bare identity directly (offline, registry-
-// independent), and the network tier binds it to <registry>/<location> through
-// the configured registry — never stored in the entity.
+// to: its identity coordinate, the derived `<pluginType>/<name>` path (via
+// Coordinate). The .wasm rides inline in the entity's single OCI manifest, so the
+// artifact and the entity share one identity; the entity carries no separate
+// artifact field. A physical fetch location is derived from this identity at the
+// fetch boundary — the embed tier keys on the coordinate directly (offline,
+// registry-independent), and the network tier binds it to <registry>/<location>
+// through the configured registry — never stored in the entity.
 //
 // It is the single home of the entity to artifact-reference derivation: every
 // read-site that resolves a Plugin entity to its .wasm funnels through here, so
 // the rule lives in exactly one place and cannot drift across the load, lock,
-// verify, and display surfaces. It lives on the type (not a higher package) so
-// the closure descent can share the one derivation without an import cycle.
+// verify, and display surfaces.
 func (p Plugin) ArtifactReference() string {
-	return p.Metadata.Name
+	return p.Coordinate()
 }
 
 // PluginProvider is the optional provider-socket metadata block on a

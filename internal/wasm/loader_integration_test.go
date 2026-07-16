@@ -87,7 +87,7 @@ func assertMutatorOutput(t *testing.T, outputBytes []byte, langSuffix string) {
 	}
 }
 
-// assertPolicyValidatorOutput parses the policy-validator plugin's
+// assertPolicyValidatorOutput parses the policy plugin's
 // output bytes, asserts there are exactly two fired verdicts, and that
 // the severity pattern is deny-then-audit in that order. The fixture's
 // contract is constant across languages; the assertion is shared.
@@ -143,9 +143,9 @@ func TestPluginRoundTrip_MutatorRust(t *testing.T) {
 }
 
 // TestPluginRoundTrip_PolicyValidatorGo loads the Go fixture
-// policy-validator plugin and asserts the constant two-result output.
+// policy plugin and asserts the constant two-result output.
 func TestPluginRoundTrip_PolicyValidatorGo(t *testing.T) {
-	plugin, cleanup := loadFixturePlugin(t, "policy-validator-go.wasm")
+	plugin, cleanup := loadFixturePlugin(t, "policy-go.wasm")
 	defer cleanup()
 
 	outputBytes, err := plugin.Call(context.Background(), "validate", []byte(`{}`))
@@ -156,11 +156,11 @@ func TestPluginRoundTrip_PolicyValidatorGo(t *testing.T) {
 }
 
 // TestPluginRoundTrip_PolicyValidatorRust loads the Rust fixture
-// policy-validator plugin and asserts the same constant two-result
+// policy plugin and asserts the same constant two-result
 // output. Cross-language fixture parity: identical input must produce
 // the identical verdict pattern.
 func TestPluginRoundTrip_PolicyValidatorRust(t *testing.T) {
-	plugin, cleanup := loadFixturePlugin(t, "policy-validator-rust.wasm")
+	plugin, cleanup := loadFixturePlugin(t, "policy-rust.wasm")
 	defer cleanup()
 
 	outputBytes, err := plugin.Call(context.Background(), "validate", []byte(`{}`))
@@ -187,11 +187,11 @@ func TestPluginRoundTrip_MutatorTypescript(t *testing.T) {
 }
 
 // TestPluginRoundTrip_PolicyValidatorTypescript loads the TypeScript
-// fixture policy-validator plugin and asserts the constant
+// fixture policy plugin and asserts the constant
 // two-result output, completing the three-language matrix for both
 // sockets.
 func TestPluginRoundTrip_PolicyValidatorTypescript(t *testing.T) {
-	plugin, cleanup := loadFixturePlugin(t, "policy-validator-typescript.wasm")
+	plugin, cleanup := loadFixturePlugin(t, "policy-typescript.wasm")
 	defer cleanup()
 
 	outputBytes, err := plugin.Call(context.Background(), "validate", []byte(`{}`))
@@ -211,9 +211,9 @@ func TestPluginRoundTrip_PolicyValidatorTypescript(t *testing.T) {
 var crossLanguageFixtureLangs = []string{"go", "rust", "typescript"}
 
 // TestCrossLanguageFixtureParity_PolicyValidator loads all three
-// policy-validator fixtures, calls each with the same input, and
+// policy fixtures, calls each with the same input, and
 // asserts the decoded outputs are structurally equivalent across
-// languages. The policy-validator fixture's contract is constant
+// languages. The policy fixture's contract is constant
 // across languages so the output shapes should match exactly.
 //
 // Each language's plugin is loaded, called, and closed inside an
@@ -234,7 +234,7 @@ func TestCrossLanguageFixtureParity_PolicyValidator(t *testing.T) {
 	var decoded []output
 	for _, lang := range crossLanguageFixtureLangs {
 		func() {
-			plugin, cleanup := loadFixturePlugin(t, "policy-validator-"+lang+".wasm")
+			plugin, cleanup := loadFixturePlugin(t, "policy-"+lang+".wasm")
 			defer cleanup()
 
 			outputBytes, err := plugin.Call(context.Background(), "validate", []byte(`{}`))
@@ -283,7 +283,7 @@ func TestCrossLanguageFixtureParity_Mutator(t *testing.T) {
 	}
 
 	// Per-iteration IIFE scopes the deferred cleanup so each plugin
-	// closes before the next one loads. See the policy-validator
+	// closes before the next one loads. See the policy
 	// parity test for the memory-pressure rationale.
 	decodedByLang := map[string]output{}
 	for _, lang := range crossLanguageFixtureLangs {

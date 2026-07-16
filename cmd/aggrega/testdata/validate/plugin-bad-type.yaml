@@ -1,10 +1,10 @@
 apiVersion: aggrega.ai/v1alpha1
 kind: Plugin
 metadata:
-  name: linter/example
+  name: example
   version: 1.0.0
-spec:
   pluginType: search
+spec:
   abiVersion: v1alpha1
   exports:
     - name: lint_rules

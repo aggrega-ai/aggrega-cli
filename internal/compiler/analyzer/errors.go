@@ -32,7 +32,7 @@ var (
 	ErrSecretSlotSelectorNotSecretKind = errors.New("secret slot selector does not constrain to secret-kind Features")
 
 	// ErrPolicyViolation is the ABI-stable sentinel for a Step-4
-	// policy-validator socket verdict that fails: a plugin result whose
+	// policy socket verdict that fails: a plugin result whose
 	// pass flag is false. Each failed rule is recorded as an
 	// [AnalysisError] entry (Kind [AnalysisErrorPolicy]) on
 	// [AnalysisResult].Errors with this sentinel in its Sentinel field;

@@ -31,7 +31,7 @@ import (
 
 // ErrPluginNotCLI is returned when a resolved plugin is loaded to be run as a
 // command but its describe() reports a non-CLI plugin type — for example a
-// provider or policy-validator plugin, which the build pipeline dispatches but
+// provider or policy plugin, which the build pipeline dispatches but
 // which has no terminal command form. The error names the plugin and its actual
 // type.
 var ErrPluginNotCLI = errors.New("cliplugin: plugin is not a CLI plugin")

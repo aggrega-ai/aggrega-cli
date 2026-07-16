@@ -30,7 +30,7 @@ const RenderNodeExport = "render_node"
 
 // ValidateNodeInputExport is the optional guest export this adapter drives to
 // structurally validate a node's resolved input before render dispatch. It is
-// deliberately distinct from the whole-graph policy-validator socket's validate
+// deliberately distinct from the whole-graph policy socket's validate
 // export: this one is per-node, provider-scoped, and consumes the same
 // RenderNodeInput projection render_node receives. A provider whose guest does
 // not advertise it in describe() is never invoked here, so the input-validation

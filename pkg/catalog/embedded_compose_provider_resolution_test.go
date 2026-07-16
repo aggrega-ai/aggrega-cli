@@ -43,9 +43,8 @@ func composeChainCatalog() *catalog.Catalog {
 			composePluginEntity: {
 				APIVersion: "aggrega.ai/v1alpha1",
 				Kind:       "Plugin",
-				Metadata:   types.PluginMetadata{Name: composeArtifactURI, Version: testCorePluginVersion},
+				Metadata:   types.PluginMetadata{Name: "compose", Version: testCorePluginVersion, PluginType: "provider"},
 				Spec: types.PluginSpec{
-					PluginType:   "provider",
 					AbiVersion:   "v1alpha1",
 					Capabilities: []string{"compose"},
 					Exports:      []types.PluginExport{{Name: "render_node"}, {Name: "assemble_boundary"}},

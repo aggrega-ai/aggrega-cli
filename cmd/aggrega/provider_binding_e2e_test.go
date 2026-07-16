@@ -89,9 +89,9 @@ spec:
 kind: Plugin
 metadata:
   name: helm-renderer-alt
+  pluginType: provider
   version: "1.0.0"
 spec:
-  pluginType: provider
   abiVersion: v1alpha1
   capabilities:
     - helm
@@ -233,7 +233,7 @@ offline: true
 plugins:
   providers:
     - capability: helm
-      uri: helm-renderer-alt
+      uri: provider/helm-renderer-alt
 `)
 	out2 := filepath.Join(root, "out2")
 	if err := dispatchBuildWithDiag(rwCompose, releasePath, catDirs, false, buildDiagOptions{quiet: true}, buildRunOptions{outDir: out2}, io.Discard, io.Discard); err != nil {
@@ -258,7 +258,7 @@ plugins:
 			got = b.Plugin
 		}
 	}
-	if got != "helm-renderer-alt" {
+	if got != "provider/helm-renderer-alt" {
 		t.Fatalf("re-pull did not adopt the new binding; lockfile providers[helm]=%q, want the alt-provider identity", got)
 	}
 }
@@ -279,7 +279,7 @@ func TestProviderBinding_AmbiguousTargetHaltsLoudly(t *testing.T) {
 	if !errors.Is(err, catalog.ErrAmbiguousProviderPlugin) {
 		t.Fatalf("ambiguity halt must be ErrAmbiguousProviderPlugin; got: %v", err)
 	}
-	if !chainContains(err, "provider/helm") || !chainContains(err, "helm-renderer-alt") {
+	if !chainContains(err, "(helm, helm-renderer-alt)") {
 		t.Fatalf("ambiguity halt must name both candidate plugins; got: %v", err)
 	}
 }

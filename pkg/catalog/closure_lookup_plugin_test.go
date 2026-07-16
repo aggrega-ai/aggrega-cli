@@ -19,10 +19,10 @@ import (
 const localPluginEntity = `apiVersion: aggrega.ai/v1alpha1
 kind: Plugin
 metadata:
-  name: core/linter/baseline
+  name: baseline
+  pluginType: linter
   version: 1.0.0
 spec:
-  pluginType: linter
   abiVersion: v1alpha1
 `
 
@@ -35,7 +35,7 @@ func TestClosureLookupResolvesLocalPluginEntityAtTier1(t *testing.T) {
 	dir := t.TempDir()
 	writeYAMLToCatalog(t, dir, "wasm-plugins/baseline.yaml", localPluginEntity)
 
-	const entityURI = "core/linter/baseline:1.0.0"
+	const entityURI = "linter/baseline:1.0.0"
 
 	check := func(t *testing.T, lookup closure.Lookup, backing string) {
 		res, err := lookup.ResolveCatalogEntity(entityURI, "plugin")
@@ -105,7 +105,7 @@ func TestComputeClosureLocalPluginSocketDoesNotHalt(t *testing.T) {
 
 	cfg := workspaceconfig.Config{}
 	cfg.Plugins.Policy = []workspaceconfig.PluginRef{
-		{URI: "core/linter/baseline:1.0.0"},
+		{URI: "linter/baseline:1.0.0"},
 	}
 
 	cl, err := closure.ComputeClosure(rel, nil, nil, cfg, lookup)
@@ -119,7 +119,7 @@ func TestComputeClosureLocalPluginSocketDoesNotHalt(t *testing.T) {
 	// The socket entity is pinned on the catalog-entity axis.
 	var found bool
 	for _, e := range cl.Entities {
-		if e.URI == "core/linter/baseline:1.0.0" {
+		if e.URI == "linter/baseline:1.0.0" {
 			found = true
 			if e.KindHint != "plugin" {
 				t.Errorf("entity KindHint: got %q; want plugin", e.KindHint)

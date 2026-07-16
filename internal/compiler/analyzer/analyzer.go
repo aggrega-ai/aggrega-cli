@@ -24,14 +24,14 @@ import (
 //     subsection for the gating semantics.
 //   - Paths — the cycle-safe DFS enumeration of acyclic paths through
 //     the IR graph; see [calculatePaths] for the contract.
-//   - PolicyInput — the policy-validator.wasm payload (always
-//     non-nil); see [PolicyValidatorInput] for the ABI shape. The
+//   - PolicyInput — the policy socket payload (always
+//     non-nil); see [PolicyInput] for the ABI shape. The
 //     pipeline marshals it to a configured policy plugin at Step 4.
 type AnalysisResult struct {
 	Errors      []AnalysisError
 	Warnings    []string
 	Paths       []PrecalculatedPath
-	PolicyInput *PolicyValidatorInput
+	PolicyInput *PolicyInput
 }
 
 // AnalysisErrorKind classifies an [AnalysisError] so [AnalysisError.Error]
@@ -48,7 +48,7 @@ const (
 	// the Source/Target/Socket fields.
 	AnalysisErrorEdge AnalysisErrorKind = ""
 
-	// AnalysisErrorPolicy marks a Step-4 policy-validator verdict whose
+	// AnalysisErrorPolicy marks a Step-4 policy verdict whose
 	// Message is already a complete, plugin-supplied diagnostic.
 	// [AnalysisError.Error] returns that Message verbatim rather than
 	// composing it from the edge fields, which a policy verdict does not
@@ -73,7 +73,7 @@ const (
 //     summary of the constraint set, Message is a human-readable
 //     diagnostic.
 //   - Policy verdicts (Kind [AnalysisErrorPolicy]): Message is the
-//     complete diagnostic the policy-validator plugin supplied (a rule
+//     complete diagnostic the policy plugin supplied (a rule
 //     failure), and the edge fields (Source/Target/Socket/Selector) are
 //     empty.
 //
@@ -179,7 +179,7 @@ func (e AnalysisError) Error() string {
 // developer's Aggregate — the developer authored the uses-edge or Feature
 // attachment that fails the selector or appliesTo constraint — so they route
 // to cerrors.DeveloperError. A policy verdict (Kind [AnalysisErrorPolicy]) is a
-// governance rejection from an operator-attached policy-validator plugin, not a
+// governance rejection from an operator-attached policy plugin, not a
 // developer authoring mistake, so it routes to cerrors.PolicyError; the
 // remediation is to satisfy the enforced policy or reconsider its attachment,
 // not to edit the Aggregate.
@@ -257,7 +257,7 @@ type PrecalculatedPath struct {
 //  2. AppliesTo-violation errors from validateAppliesTo (appended
 //     to the same Errors slice).
 //  3. Precalculated paths from calculatePaths.
-//  4. The PolicyValidatorInput payload from assemblePolicyInput.
+//  4. The PolicyInput payload from assemblePolicyInput.
 //
 // Build flow gates on len(result.Errors) > 0 before invoking Step 5.
 // AnalysisResult.Paths and AnalysisResult.PolicyInput are computed
@@ -315,16 +315,16 @@ func AnalyzeContext(ctx context.Context, graph *types.IRGraph, catalogLookup res
 	}, nil
 }
 
-// assemblePolicyInput assembles the [PolicyValidatorInput] ABI payload from the
-// IR graph. The policy-validator socket sees the full provider-agnostic IR graph
+// assemblePolicyInput assembles the [PolicyInput] ABI payload from the
+// IR graph. The policy socket sees the full provider-agnostic IR graph
 // (single-sourced from ir-v1alpha1.schema.json) rather than a narrow
 // projection, so the graph is forwarded whole — the plugin reasons over the same
 // node, edge, and attachment detail the compiler holds. The graph carries its
 // own author-order determinism through the OrderedMap types it is built from;
 // no per-field narrowing or re-keying happens here. PrecalculatedPaths carries
 // the analyzer's enumerated routing paths alongside.
-func assemblePolicyInput(graph *types.IRGraph, paths []PrecalculatedPath) *PolicyValidatorInput {
-	return &PolicyValidatorInput{
+func assemblePolicyInput(graph *types.IRGraph, paths []PrecalculatedPath) *PolicyInput {
+	return &PolicyInput{
 		Graph:              *graph,
 		PrecalculatedPaths: paths,
 	}

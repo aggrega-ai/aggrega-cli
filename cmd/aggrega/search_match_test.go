@@ -44,7 +44,7 @@ func sampleRecords() []IndexRecord {
 			Name:         "policy-guard",
 			Kind:         "Plugin",
 			Description:  "Policy validator",
-			PluginType:   "policy-validator",
+			PluginType:   "policy",
 			Capabilities: []string{"net.none"},
 		},
 	}

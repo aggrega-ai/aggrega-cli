@@ -29,8 +29,8 @@
 //     signal: a non-empty slice halts the pipeline before Step 5.
 //   - Paths — the precalculated_paths array produced by cycle-safe
 //     DFS through the IR graph (see [PrecalculatedPath]).
-//   - PolicyInput — the [PolicyValidatorInput] payload destined for
-//     the policy-validator.wasm socket described in
+//   - PolicyInput — the [PolicyInput] payload destined for
+//     the policy socket described in
 //     aggrega-docs/architecture/14-extensibility.md.
 //
 // # Pipeline integration

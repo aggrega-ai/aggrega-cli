@@ -53,13 +53,14 @@ func publishSocketPluginEntitySigned(t *testing.T, host, socketName, version, pl
 
 	entityDir := t.TempDir()
 	entityPath := filepath.Join(entityDir, "plugin.yaml")
+	bareName := filepath.Base(socketName)
 	writeFixture(t, entityPath, `apiVersion: aggrega.ai/v1alpha1
 kind: Plugin
 metadata:
-  name: `+socketName+`
+  name: `+bareName+`
   version: "`+version+`"
-spec:
   pluginType: `+pluginType+`
+spec:
   abiVersion: v1alpha1
   exports:
     - name: `+export+`

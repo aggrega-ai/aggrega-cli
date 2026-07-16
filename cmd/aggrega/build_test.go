@@ -281,10 +281,10 @@ func writeHelmRendererPlugin(t *testing.T, providersDir string) {
 	writeFixture(t, filepath.Join(providersDir, "helm-renderer.yaml"), `apiVersion: aggrega.ai/v1alpha1
 kind: Plugin
 metadata:
-  name: provider/helm
+  name: helm
+  pluginType: provider
   version: "1.0.0"
 spec:
-  pluginType: provider
   abiVersion: v1alpha1
   capabilities:
     - helm

@@ -113,7 +113,7 @@ func TestPolicySocketNoSettingsSchemaFreeFormE2E(t *testing.T) {
 		}},
 	}}
 	inputs.PluginPathLookup = fixtureSocketLookup(t, buildLookup, map[string]string{
-		"proof://policy-allow": "policy-validator-allow-go.wasm",
+		"proof://policy-allow": "policy-allow-go.wasm",
 	})
 
 	res, err := pipeline.RunPipeline(ctx, inputs, buildLookup, recipeLookup, subAgg, pipeline.Options{})

@@ -19,10 +19,10 @@ import (
 const validPlugin = `apiVersion: aggrega.ai/v1alpha1
 kind: Plugin
 metadata:
-  name: core/linter/naming
+  name: naming
+  pluginType: linter
   version: 1.0.0
 spec:
-  pluginType: linter
   abiVersion: v1alpha1
 `
 
@@ -45,15 +45,15 @@ func TestPluginMaterialization(t *testing.T) {
 		t.Fatalf("eager Plugins: want 1 entry, got %d", got)
 	}
 
-	eagerBare, ok := cat.PluginByURI("core/linter/naming")
+	eagerBare, ok := cat.PluginByURI("linter/naming")
 	if !ok {
 		t.Fatalf("eager PluginByURI(bare): not found")
 	}
-	if eagerBare.Spec.AbiVersion == "" || eagerBare.Spec.PluginType != "linter" {
+	if eagerBare.Spec.AbiVersion == "" || eagerBare.Metadata.PluginType != "linter" {
 		t.Fatalf("eager PluginByURI(bare): entity body not materialized as authored: %+v", eagerBare.Spec)
 	}
 
-	eagerVersioned, ok := cat.PluginByURI("core/linter/naming:1.0.0")
+	eagerVersioned, ok := cat.PluginByURI("linter/naming:1.0.0")
 	if !ok {
 		t.Fatalf("eager PluginByURI(versioned): not found")
 	}
@@ -62,13 +62,13 @@ func TestPluginMaterialization(t *testing.T) {
 	}
 
 	// A non-existent URI misses cleanly.
-	if _, ok := cat.PluginByURI("core/linter/absent"); ok {
+	if _, ok := cat.PluginByURI("linter/absent"); ok {
 		t.Fatalf("eager PluginByURI(absent): unexpectedly found")
 	}
 
 	// --- Lazy: same workspace, same entity, by-URI parity with eager. ---
 	lazy := NewLazyLookup("", "", []string{dir}, nil)
-	lazyBare, ok := lazy.PluginByURI("core/linter/naming")
+	lazyBare, ok := lazy.PluginByURI("linter/naming")
 	if !ok {
 		t.Fatalf("lazy PluginByURI(bare): not found")
 	}
@@ -76,7 +76,7 @@ func TestPluginMaterialization(t *testing.T) {
 		t.Errorf("Plugin diverges between eager and lazy backings:\n eager=%+v\n lazy=%+v", eagerBare, lazyBare)
 	}
 
-	lazyVersioned, ok := lazy.PluginByURI("core/linter/naming:1.0.0")
+	lazyVersioned, ok := lazy.PluginByURI("linter/naming:1.0.0")
 	if !ok {
 		t.Fatalf("lazy PluginByURI(versioned): not found")
 	}
@@ -97,10 +97,10 @@ func TestPluginRejectParity(t *testing.T) {
 	const malformed = `apiVersion: aggrega.ai/v1alpha1
 kind: Plugin
 metadata:
-  name: core/linter/broken
+  name: broken
+  pluginType: linter
   version: 1.0.0
 spec:
-  pluginType: linter
   abiVersion: v0
 `
 
@@ -125,7 +125,7 @@ spec:
 	// Lazy: the tolerant enumeration skips the malformed entity — it is absent
 	// from the by-URI surface rather than aborting the walk.
 	lazy := NewLazyLookup("", "", []string{dir}, nil)
-	if _, ok := lazy.PluginByURI("core/linter/broken"); ok {
+	if _, ok := lazy.PluginByURI("linter/broken"); ok {
 		t.Errorf("lazy PluginByURI must miss a malformed (skipped) Plugin")
 	}
 }

@@ -38,11 +38,12 @@ import (
 // .wasm land as ONE OCI manifest tagged by metadata.version — the entity YAML the
 // config blob, the .wasm an inline layer addressed by content digest.
 //
-// pluginType is the entity's spec.pluginType (the value the socket runner guards
-// the loaded descriptor against, e.g. "mutator" or "policy-validator"); export is
+// pluginType is the entity's metadata.pluginType (the value the socket runner
+// guards the loaded descriptor against, e.g. "mutator" or "policy"); export is
 // the single entry function the entity authors (the guest's own describe() must
-// declare it, so the publish-time cross-check passes). socketName is the
-// socket-encoded metadata.name (e.g. "mutator/tag-injector"). pluginPath is the
+// declare it, so the publish-time cross-check passes). socketName is the plugin
+// coordinate <pluginType>/<name> (e.g. "mutator/tag-injector"); the entity's bare
+// metadata.name is its leaf. pluginPath is the
 // pre-built fixture (resolved before any chdir). Returns the .wasm content digest
 // the consumer pins at pull.
 func publishSocketPluginEntity(t *testing.T, host, socketName, version, pluginPath, pluginType, export string) string {
@@ -55,18 +56,21 @@ func publishSocketPluginEntity(t *testing.T, host, socketName, version, pluginPa
 
 	entityDir := t.TempDir()
 	entityPath := filepath.Join(entityDir, "plugin.yaml")
-	// spec.plugin is the canonical BARE artifact identity — no ":version" tag; the
-	// version is supplied by metadata.version, and the .wasm rides inline in the
-	// entity's single manifest at <repo>:<version>. The authored export claim is a
-	// subset of the guest's describe() (operates/scope omitted for a mutator /
-	// policy guest, which self-reports neither), so the publish cross-check passes.
+	// The catalog coordinate and the .wasm location derive from (pluginType, name):
+	// metadata.name is the bare leaf, metadata.pluginType the socket, so the
+	// coordinate the consumer references is <pluginType>/<name>. The version is
+	// supplied by metadata.version, and the .wasm rides inline in the entity's
+	// single manifest at <repo>:<version>. The authored export claim is a subset of
+	// the guest's describe() (operates/scope omitted for a mutator / policy guest,
+	// which self-reports neither), so the publish cross-check passes.
+	bareName := filepath.Base(socketName)
 	writeFixture(t, entityPath, `apiVersion: aggrega.ai/v1alpha1
 kind: Plugin
 metadata:
-  name: `+socketName+`
+  name: `+bareName+`
   version: "`+version+`"
-spec:
   pluginType: `+pluginType+`
+spec:
   abiVersion: v1alpha1
   exports:
     - name: `+export+`
@@ -272,8 +276,8 @@ func TestIntegration_ConfigSocketPluginPinning_RoundTrip(t *testing.T) {
 	// Resolve the committed .wasm fixtures BEFORE any chdir (umbrella-root
 	// discovery walks up from cwd); a clean skip only if the toolchain is absent.
 	mutatorPath := wasmtest.EnsureFixtureBuilt(t, "mutator-proof-go.wasm")
-	denyPolicyPath := wasmtest.EnsureFixtureBuilt(t, "policy-validator-go.wasm")
-	allowPolicyPath := wasmtest.EnsureFixtureBuilt(t, "policy-validator-allow-go.wasm")
+	denyPolicyPath := wasmtest.EnsureFixtureBuilt(t, "policy-go.wasm")
+	allowPolicyPath := wasmtest.EnsureFixtureBuilt(t, "policy-allow-go.wasm")
 
 	// The compose PROVIDER-rendering plugin is core infrastructure: its entity
 	// ships in the standard catalog and its .wasm is embedded in the binary.
@@ -291,8 +295,8 @@ func TestIntegration_ConfigSocketPluginPinning_RoundTrip(t *testing.T) {
 		allowPolicySocket = "policy/admit-gate"
 	)
 	mutatorDigest := publishSocketPluginEntity(t, host, mutatorSocket, "1.0.0", mutatorPath, "mutator", "mutate")
-	denyPolicyDigest := publishSocketPluginEntity(t, host, denyPolicySocket, "1.0.0", denyPolicyPath, "policy-validator", "validate")
-	allowPolicyDigest := publishSocketPluginEntity(t, host, allowPolicySocket, "1.0.0", allowPolicyPath, "policy-validator", "validate")
+	denyPolicyDigest := publishSocketPluginEntity(t, host, denyPolicySocket, "1.0.0", denyPolicyPath, "policy", "validate")
+	allowPolicyDigest := publishSocketPluginEntity(t, host, allowPolicySocket, "1.0.0", allowPolicyPath, "policy", "validate")
 
 	// proofMutatorLabel is the value the mutator-proof fixture injects as a node
 	// label; the fixture recipe emits every node-label value into a compose

@@ -22,7 +22,7 @@ type PluginSpec struct {
 	Name string
 
 	// PluginType is the plugin's kind — provider, linter, frp_step, mutator,
-	// or policy-validator. The Loader uses it only to compose a human-readable
+	// or policy. The Loader uses it only to compose a human-readable
 	// program-name label for the guest's WASI argv (see programName); it is a
 	// diagnostic label, not a dispatch key.
 	PluginType PluginType

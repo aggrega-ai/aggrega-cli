@@ -17,9 +17,9 @@ const validPlugin = `apiVersion: aggrega.ai/v1alpha1
 kind: Plugin
 metadata:
   name: publishing-linter
+  pluginType: linter
   version: 1.0.0
 spec:
-  pluginType: linter
   abiVersion: v1alpha1
   signature:
     type: sigstore-cosign
@@ -90,9 +90,9 @@ func TestPlugin_OmittedOptionalBlocksRoundTripClean(t *testing.T) {
 kind: Plugin
 metadata:
   name: p
+  pluginType: provider
   version: 1.0.0
 spec:
-  pluginType: provider
   abiVersion: v1alpha1
 `
 	var wp types.Plugin
@@ -121,23 +121,20 @@ func TestPlugin_EnvelopeRejectsMalformed(t *testing.T) {
 	cases := map[string]string{
 		"unknown pluginType": `apiVersion: aggrega.ai/v1alpha1
 kind: Plugin
-metadata: {name: p, version: 1.0.0}
+metadata: {name: p, version: 1.0.0, pluginType: importer}
 spec:
-  pluginType: importer
   abiVersion: v1alpha1
 `,
 		"unknown abiVersion": `apiVersion: aggrega.ai/v1alpha1
 kind: Plugin
-metadata: {name: p, version: 1.0.0}
+metadata: {name: p, version: 1.0.0, pluginType: linter}
 spec:
-  pluginType: linter
   abiVersion: v2
 `,
 		"unknown spec sibling": `apiVersion: aggrega.ai/v1alpha1
 kind: Plugin
-metadata: {name: p, version: 1.0.0}
+metadata: {name: p, version: 1.0.0, pluginType: linter}
 spec:
-  pluginType: linter
   abiVersion: v1alpha1
   allowedHosts: [example.com]
 `,
@@ -161,9 +158,9 @@ const pluginWithExports = `apiVersion: aggrega.ai/v1alpha1
 kind: Plugin
 metadata:
   name: publishing-linter
+  pluginType: linter
   version: 1.0.0
 spec:
-  pluginType: linter
   abiVersion: v1alpha1
   exports:
     - name: lint_naming
@@ -194,9 +191,9 @@ func TestPlugin_ExportsAreAdditive(t *testing.T) {
 kind: Plugin
 metadata:
   name: publishing-linter
+  pluginType: linter
   version: 1.0.0
 spec:
-  pluginType: linter
   abiVersion: v1alpha1
 `
 	if _, err := envelope.ValidateBytes(envelope.KindPlugin, []byte(withoutExports), "no-exports.yaml"); err != nil {
@@ -245,9 +242,8 @@ func TestPlugin_EnvelopeRejectsBadExportEnum(t *testing.T) {
 	cases := map[string]string{
 		"bad operates": `apiVersion: aggrega.ai/v1alpha1
 kind: Plugin
-metadata: {name: p, version: 1.0.0}
+metadata: {name: p, version: 1.0.0, pluginType: linter}
 spec:
-  pluginType: linter
   abiVersion: v1alpha1
   exports:
     - name: lint_naming
@@ -255,9 +251,8 @@ spec:
 `,
 		"bad scope": `apiVersion: aggrega.ai/v1alpha1
 kind: Plugin
-metadata: {name: p, version: 1.0.0}
+metadata: {name: p, version: 1.0.0, pluginType: linter}
 spec:
-  pluginType: linter
   abiVersion: v1alpha1
   exports:
     - name: lint_naming
@@ -265,18 +260,16 @@ spec:
 `,
 		"export missing name": `apiVersion: aggrega.ai/v1alpha1
 kind: Plugin
-metadata: {name: p, version: 1.0.0}
+metadata: {name: p, version: 1.0.0, pluginType: linter}
 spec:
-  pluginType: linter
   abiVersion: v1alpha1
   exports:
     - operates: patch
 `,
 		"unknown export sibling": `apiVersion: aggrega.ai/v1alpha1
 kind: Plugin
-metadata: {name: p, version: 1.0.0}
+metadata: {name: p, version: 1.0.0, pluginType: linter}
 spec:
-  pluginType: linter
   abiVersion: v1alpha1
   exports:
     - name: lint_naming

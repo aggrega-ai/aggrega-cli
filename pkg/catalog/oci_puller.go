@@ -14,14 +14,23 @@ import (
 )
 
 // ErrQualifiedPluginReference is returned when a Plugin reference carries a
-// leading registry-host segment (or an artifact path) instead of the bare plugin
-// entity identity. A plugin entity is addressed by its bare identity
-// (<socket>/<name>:<version>); the pull binds that identity to its physical
+// leading registry-host segment (or an artifact path) instead of the plugin's
+// coordinate identity. A plugin entity is addressed by its coordinate
+// (<pluginType>/<name>:<version>); the pull binds that identity to its physical
 // location by prefixing the configured registry and the plugin path segment
 // itself. A reference that already includes a host or path segment would be
 // double-prefixed into an unfetchable location, so it is refused loudly here
 // rather than surfacing later as a cryptic tag error.
-var ErrQualifiedPluginReference = errors.New("wasm plugin reference must be the bare plugin entity identity (<socket>/<name>:<version>), not a registry-qualified or artifact path")
+var ErrQualifiedPluginReference = errors.New("wasm plugin reference must be the plugin coordinate identity (<pluginType>/<name>:<version>), not a registry-qualified or artifact path")
+
+// ErrUnscopedPluginReference is returned when a Plugin reference carries no
+// pluginType scope — either no "/" at all or an empty leading segment
+// ("/name"). Plugin identity is the coordinate <pluginType>/<name>, and the OCI
+// location encodes the pluginType segment because two sockets may hold a plugin
+// of the same name; an empty scope would bind to a location with an empty scope
+// segment (a double slash) that cannot resolve. The reference is refused loudly
+// here rather than surfacing later as a cryptic fetch failure.
+var ErrUnscopedPluginReference = errors.New("wasm plugin reference must carry a pluginType scope (<pluginType>/<name>); an empty scope cannot bind to an OCI location")
 
 // ErrUnscopedRecipeReference is returned when a Recipe / FeatureRecipe reference
 // carries no provider scope — either no "/" at all or an empty leading provider
@@ -253,12 +262,15 @@ func EntityKindForHint(hint string) string {
 // provider/name; it is split on the first "/" to feed the provider-scoped
 // location branch. Other kinds pass the whole identity as the name.
 //
-// A Plugin identity must be bare (<socket>/<name>): the binder prefixes the
-// registry and the plugin path segment itself, so an identity that already leads
-// with a registry-host-shaped segment (the part before the first "/" carrying a
-// "." or ":") would be double-prefixed into an unfetchable location. Such a
-// reference is refused with ErrQualifiedPluginReference rather than bound. The
-// guard is Plugin-scoped; the Component / Feature binders are unchanged.
+// A Plugin identity is the coordinate <pluginType>/<name>: the binder prefixes
+// the registry and the plugin path segment itself, so an identity that already
+// leads with a registry-host-shaped segment (the part before the first "/"
+// carrying a "." or ":") would be double-prefixed into an unfetchable location.
+// Such a reference is refused with ErrQualifiedPluginReference. An identity with
+// no pluginType scope (no "/", or an empty leading segment) would bind to a
+// location with an empty scope segment (a double slash) that cannot resolve, so
+// it is refused with ErrUnscopedPluginReference. The Component / Feature binders
+// are unchanged.
 //
 // A Recipe / FeatureRecipe identity must be provider-scoped (provider/name): an
 // unscoped identity (no "/") or one with an empty leading provider ("/name")
@@ -276,6 +288,13 @@ func entityReference(registry, kind, identity string) (string, error) {
 		if i <= 0 {
 			// i < 0: no "/" (unscoped). i == 0: empty leading provider ("/name").
 			return "", fmt.Errorf("%w: %q", ErrUnscopedRecipeReference, identity)
+		}
+		provider, name = identity[:i], identity[i+1:]
+	case "Plugin", "Wasm":
+		i := strings.IndexByte(identity, '/')
+		if i <= 0 {
+			// i < 0: no "/" (unscoped). i == 0: empty leading pluginType ("/name").
+			return "", fmt.Errorf("%w: %q", ErrUnscopedPluginReference, identity)
 		}
 		provider, name = identity[:i], identity[i+1:]
 	}

@@ -94,7 +94,7 @@ spec:
 
 // TestPushStampsPluginSearchableAnnotations proves the plugin write site derives
 // the searchable annotations from the entity as pushed: the description, the
-// kind, the socket type (spec.pluginType), and the capabilities (in author
+// kind, the socket type (metadata.pluginType), and the capabilities (in author
 // order) land on the published manifest, and a plugin carries no category.
 func TestPushStampsPluginSearchableAnnotations(t *testing.T) {
 	pluginPath := wasmtest.EnsureFixtureBuilt(t, "frp-step-go.wasm")
@@ -105,11 +105,11 @@ func TestPushStampsPluginSearchableAnnotations(t *testing.T) {
 	writeEntityFixture(t, entityPath, `apiVersion: aggrega.ai/v1alpha1
 kind: Plugin
 metadata:
-  name: frp/patch
+  name: patch
+  pluginType: frp_step
   version: "1.0.0"
   description: A patch-applying feature-recipe step.
 spec:
-  pluginType: frp_step
   abiVersion: v1alpha1
   capabilities:
     - helm

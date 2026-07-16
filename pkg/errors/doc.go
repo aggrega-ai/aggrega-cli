@@ -21,7 +21,7 @@
 //     must change input shape).
 //   - FetchError: a remote-acquisition fault (registry or source-artifact
 //     fetch); the remediation is operational, not authoring.
-//   - PolicyError: an operator-attached policy-validator plugin rejected the
+//   - PolicyError: an operator-attached policy plugin rejected the
 //     build; the fix is to satisfy the enforced policy or reconsider its
 //     attachment, not to edit an authoring artifact.
 //

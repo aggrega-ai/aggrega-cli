@@ -1,11 +1,11 @@
 apiVersion: aggrega.ai/v1alpha1
 kind: Plugin
 metadata:
-  name: provider/compose
+  name: compose
   version: 1.0.0
+  pluginType: provider
   description: Wasm rendering engine for the compose provider.
 spec:
-  pluginType: provider
   abiVersion: v1alpha1
   capabilities:
     - compose

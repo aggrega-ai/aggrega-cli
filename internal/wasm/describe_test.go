@@ -324,7 +324,7 @@ func TestPluginDescriptorValidateSettingsSchemaShape(t *testing.T) {
 	base := func(schema string) PluginDescriptor {
 		return PluginDescriptor{
 			ABIVersion:     ABIVersionV1Alpha1,
-			PluginType:     PluginTypePolicyValidator,
+			PluginType:     PluginTypePolicy,
 			Exports:        []PluginExport{{Name: ValidateExport}},
 			SettingsSchema: json.RawMessage(schema),
 		}
@@ -358,7 +358,7 @@ func TestPluginDescriptorValidateSettingsSchemaShape(t *testing.T) {
 func TestPluginDescriptorValidateSettings(t *testing.T) {
 	t.Parallel()
 
-	noSchema := PluginDescriptor{ABIVersion: ABIVersionV1Alpha1, PluginType: PluginTypePolicyValidator}
+	noSchema := PluginDescriptor{ABIVersion: ABIVersionV1Alpha1, PluginType: PluginTypePolicy}
 	if err := noSchema.ValidateSettings(map[string]any{"whatever": 1}); err != nil {
 		t.Fatalf("no schema must accept any settings (free-form): %v", err)
 	}
@@ -368,7 +368,7 @@ func TestPluginDescriptorValidateSettings(t *testing.T) {
 
 	typed := PluginDescriptor{
 		ABIVersion:     ABIVersionV1Alpha1,
-		PluginType:     PluginTypePolicyValidator,
+		PluginType:     PluginTypePolicy,
 		SettingsSchema: json.RawMessage(`{"type":"object","properties":{"max_replicas":{"type":"integer"}},"required":["max_replicas"],"additionalProperties":false}`),
 	}
 	if err := typed.ValidateSettings(map[string]any{"max_replicas": 3}); err != nil {

@@ -749,14 +749,14 @@ func (l *catalogLookup) tier1CatalogEntity(uri string) (closure.Resolution, bool
 	if fr, ok := l.catalog.FeatureRecipeByURI(uri); ok {
 		return l.tier1Resolution("FeatureRecipe", recipeIdentityKey(fr.Spec.Capability, fr.Metadata.Name, fr.Metadata.Version), fr.Metadata.Version, version), true
 	}
-	// A Plugin is a by-name entity (keyed metadata.name:version). A workspace
-	// plugin socket or a recipe pipeline step references a
+	// A Plugin is keyed by its coordinate identity (<pluginType>/<name>:version).
+	// A workspace plugin socket or a recipe pipeline step references a
 	// Plugin ENTITY URI, which the closure walk resolves here; a local
 	// (Tier-1) entity must resolve at Tier-1 like every other local entity rather
 	// than falling through to a fatal Tier-3 NotFound.
 	if key, ok, _ := l.catalog.resolvePluginKey(uri); ok {
 		wp := l.catalog.Plugins[key]
-		return l.tier1Resolution("Plugin", wp.Metadata.Name, wp.Metadata.Version, version), true
+		return l.tier1Resolution("Plugin", wp.Coordinate(), wp.Metadata.Version, version), true
 	}
 	if key, ok, _ := l.catalog.resolveAggregateKey(uri); ok {
 		a := l.catalog.Aggregates[key]

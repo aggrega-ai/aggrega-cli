@@ -41,9 +41,9 @@ spec:
 kind: Plugin
 metadata:
   name: helm-chart-renderer
+  pluginType: provider
   version: "1.0.0"
 spec:
-  pluginType: provider
   abiVersion: v1alpha1
   capabilities:
     - helm-chart
@@ -86,9 +86,9 @@ spec:
 kind: Plugin
 metadata:
   name: compose-renderer
+  pluginType: provider
   version: "1.0.0"
 spec:
-  pluginType: provider
   abiVersion: v1alpha1
   capabilities:
     - compose

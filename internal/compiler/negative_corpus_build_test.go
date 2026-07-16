@@ -115,10 +115,10 @@ spec:
 	baseComposeRendererPlugin = `apiVersion: aggrega.ai/v1alpha1
 kind: Plugin
 metadata:
-  name: provider/compose
+  name: compose
+  pluginType: provider
   version: "1.0.0"
 spec:
-  pluginType: provider
   abiVersion: v1alpha1
   capabilities:
     - compose

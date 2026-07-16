@@ -37,18 +37,19 @@ func TestInspectRawPlugin_DerivesFromBinary(t *testing.T) {
 	}
 }
 
-// pluginFixture declares a Plugin whose bare identity (metadata.name) is its
-// artifact reference, two exports carrying full capability claims (operates /
+// pluginFixture declares a Plugin whose bare identity (metadata.name) plus its
+// pluginType derive its artifact-reference coordinate, two exports carrying full
+// capability claims (operates /
 // scope / selector), and an explicit runtime block (both limits set, a stamped
 // host-function record). It drives the golden harness across all four render levels.
 const pluginFixture = `apiVersion: aggrega.ai/v1alpha1
 kind: Plugin
 metadata:
-  name: core/helm-renderer
+  name: helm-renderer
+  pluginType: provider
   version: "1.0.0"
   description: Renders IR nodes into Helm chart artifacts.
 spec:
-  pluginType: provider
   abiVersion: v1alpha1
   capabilities:
     - helm
@@ -111,10 +112,10 @@ func TestInspectPlugin_SurfacesExportsAndRuntime(t *testing.T) {
 const pluginNoRuntimeFixture = `apiVersion: aggrega.ai/v1alpha1
 kind: Plugin
 metadata:
-  name: core/linter
+  name: linter
+  pluginType: linter
   version: "1.0.0"
 spec:
-  pluginType: linter
   abiVersion: v1alpha1
   exports:
     - name: lint_naming
@@ -147,10 +148,10 @@ func TestInspectPlugin_NoRuntime_DefaultApplies(t *testing.T) {
 const pluginPartialRuntimeFixture = `apiVersion: aggrega.ai/v1alpha1
 kind: Plugin
 metadata:
-  name: core/step
+  name: step
+  pluginType: frp_step
   version: "1.0.0"
 spec:
-  pluginType: frp_step
   abiVersion: v1alpha1
   runtime:
     timeoutMs: 7000

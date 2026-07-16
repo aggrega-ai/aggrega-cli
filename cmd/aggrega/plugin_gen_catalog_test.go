@@ -33,7 +33,7 @@ func writeEmbeddedOverlays(t *testing.T, dir string) {
 apiVersion: aggrega.ai/v1alpha1
 kind: Plugin
 metadata:
-  name: ` + uri + `
+  name: ` + leaf + `
 spec:
   runtime:
     maxMemoryPages: 4096
@@ -92,14 +92,18 @@ func TestGenCatalogFromEmbeddedContractFieldsMatchDescribe(t *testing.T) {
 
 		entity := readGeneratedEntity(t, outDir, name, wantVersion)
 
+		bareName := uri
+		if i := strings.LastIndex(bareName, "/"); i >= 0 {
+			bareName = bareName[i+1:]
+		}
 		if entity.Metadata.Version != wantVersion {
 			t.Errorf("%s: metadata.version = %q, want binary version %q", name, entity.Metadata.Version, wantVersion)
 		}
-		if entity.Metadata.Name != uri {
-			t.Errorf("%s: metadata.name = %q, want bare identity %q", name, entity.Metadata.Name, uri)
+		if entity.Metadata.Name != bareName {
+			t.Errorf("%s: metadata.name = %q, want bare identity %q", name, entity.Metadata.Name, bareName)
 		}
-		if entity.Spec.PluginType != string(desc.PluginType) {
-			t.Errorf("%s: pluginType = %q, want %q", name, entity.Spec.PluginType, desc.PluginType)
+		if entity.Metadata.PluginType != string(desc.PluginType) {
+			t.Errorf("%s: pluginType = %q, want %q", name, entity.Metadata.PluginType, desc.PluginType)
 		}
 		if entity.Spec.AbiVersion != desc.ABIVersion {
 			t.Errorf("%s: abiVersion = %q, want %q", name, entity.Spec.AbiVersion, desc.ABIVersion)
@@ -211,10 +215,9 @@ func TestGenCatalogDescriptionOmittedWhenAbsent(t *testing.T) {
 }
 
 // TestGenCatalogRoundTripsThroughPushDryRun proves a generated entity survives
-// the publish path's describe()-cross-check and that, when the overlay authors an
-// identity consistent with the socket-encoded name, spec.plugin equals the .wasm
-// push location. The small linter guest is used so the publish-time load stays
-// within the default memory cap.
+// the publish path's describe()-cross-check and that the .wasm push location is
+// derived from the entity's bare identity (metadata.name). The small linter guest
+// is used so the publish-time load stays within the default memory cap.
 func TestGenCatalogRoundTripsThroughPushDryRun(t *testing.T) {
 	wasmBytes, ok := embedded.Lookup(embedded.PublishingLinterURI)
 	if !ok {
@@ -231,7 +234,7 @@ func TestGenCatalogRoundTripsThroughPushDryRun(t *testing.T) {
 apiVersion: aggrega.ai/v1alpha1
 kind: Plugin
 metadata:
-  name: linter/publishing-linter
+  name: publishing-linter
 spec:
   runtime:
     maxMemoryPages: 4096
@@ -254,9 +257,10 @@ spec:
 		t.Fatalf("parse generated entity: %v", err)
 	}
 
-	// The .wasm push location is derived from the entity's bare identity
-	// (metadata.name); the entity carries no spec.plugin field.
-	wantLocation := buildPushReference(registry, "Plugin", "", entity.Metadata.Name)
+	// The .wasm push location is derived from the entity's identity coordinate —
+	// the pluginType scope plus the bare metadata.name; the entity carries no
+	// spec.plugin field.
+	wantLocation := buildPushReference(registry, "Plugin", entity.Metadata.PluginType, entity.Metadata.Name)
 
 	cfg := pushConfig{PluginPath: wasmPath, DryRun: true}
 	var out bytes.Buffer
@@ -309,7 +313,7 @@ func TestGenCatalogRejectsInvalidWorkloadSchema(t *testing.T) {
 apiVersion: aggrega.ai/v1alpha1
 kind: Plugin
 metadata:
-  name: ` + uri + `
+  name: ` + name + `
 spec:
   runtime:
     maxMemoryPages: 4096

@@ -149,11 +149,11 @@ func routeEngine(
 		// Rendering is Wasm-only, so this halts loudly rather than falling back.
 		return nil, "", fmt.Errorf("%w: %q", renderer.ErrUnknownProvider, bare)
 	}
-	// The adapter's lookup key is the resolved Plugin's entity identity
-	// (metadata.name:version); the entity-fronted pluginLookup resolves that
+	// The adapter's lookup key is the resolved Plugin's entity identity coordinate
+	// (<pluginType>/<name>:version); the entity-fronted pluginLookup resolves that
 	// entity → artifact → cascade. It is also the memo key, so version-distinct
 	// resolutions memoize distinctly.
-	pluginKey := plugin.Metadata.Name + ":" + plugin.Metadata.Version
+	pluginKey := plugin.Coordinate() + ":" + plugin.Metadata.Version
 	// Two-tier adapter selection. Every routed provider renders per-node through
 	// the render adapter; a provider whose Plugin ALSO advertises the
 	// assemble_boundary export renders AND assembles through the assembler adapter

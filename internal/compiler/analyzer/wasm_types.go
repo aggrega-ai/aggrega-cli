@@ -5,21 +5,20 @@ package analyzer
 
 import "github.com/aggrega-ai/aggrega-cli/pkg/types"
 
-// PolicyValidatorInput is the JSON payload Step 4 hands to the
-// policy-validator.wasm socket. Graph carries the full provider-agnostic IR
-// graph — the same [types.IRGraph] the Topology Builder emits — so the policy
-// plugin reasons over the complete node, edge, and attachment detail the
-// compiler holds rather than a narrow projection. PrecalculatedPaths carries
-// the routing paths the analyzer enumerates alongside so policies can reason
-// about reachability without re-walking the graph. The wire shape is
-// single-sourced from ir-v1alpha1.schema.json (referenced by
-// wasm-policy-validator-v1alpha1.schema.json); the generated guest codec in
-// aggrega-abi mirrors it.
+// PolicyInput is the JSON payload Step 4 hands to the policy socket. Graph
+// carries the full provider-agnostic IR graph — the same [types.IRGraph] the
+// Topology Builder emits — so the policy plugin reasons over the complete node,
+// edge, and attachment detail the compiler holds rather than a narrow
+// projection. PrecalculatedPaths carries the routing paths the analyzer
+// enumerates alongside so policies can reason about reachability without
+// re-walking the graph. The wire shape is single-sourced from
+// ir-v1alpha1.schema.json (referenced by wasm-policy-v1alpha1.schema.json); the
+// generated guest codec in aggrega-abi mirrors it.
 //
 // assemblePolicyInput populates the structure on every build; the Step-4
-// policy-validator socket marshals it to a configured policy plugin and reads
+// policy socket marshals it to a configured policy plugin and reads
 // the plugin's verdicts back.
-type PolicyValidatorInput struct {
+type PolicyInput struct {
 	Graph              types.IRGraph       `json:"graph"`
 	PrecalculatedPaths []PrecalculatedPath `json:"precalculated_paths"`
 	// Sources carries the definition files the attachment named, read by the
@@ -34,7 +33,7 @@ type PolicyValidatorInput struct {
 	Settings map[string]any `json:"settings,omitempty"`
 }
 
-// PolicySource is one definition file the host hands to a policy-validator
+// PolicySource is one definition file the host hands to a policy
 // plugin: its base-name Path and the file's Content. The host reads the file at
 // compile time and carries its bytes verbatim; it never parses the content and
 // never exposes an absolute host path in Path.
@@ -43,13 +42,13 @@ type PolicySource struct {
 	Content string `json:"content"`
 }
 
-// PolicyValidatorOutput is the JSON response shape the
-// policy-validator.wasm guest emits. Results carries the verdicts that fired
+// PolicyOutput is the JSON response shape the policy plugin's guest emits.
+// Results carries the verdicts that fired
 // during evaluation, one [PolicyResult] each; an allowing rule emits nothing,
 // so an empty Results slice means no verdict fired. The policy socket
 // unmarshals this shape from the policy plugin and turns each fired verdict
 // into a build diagnostic.
-type PolicyValidatorOutput struct {
+type PolicyOutput struct {
 	Results []PolicyResult `json:"results"`
 }
 
@@ -73,8 +72,8 @@ const (
 	SeverityAudit = "audit"
 )
 
-// RenderPolicyValidatorInput is the JSON payload the render stage hands to a
-// policy-validator.wasm socket that declares the render stage. Artifacts
+// RenderPolicyInput is the JSON payload the render stage hands to a
+// policy socket that declares the render stage. Artifacts
 // carries the rendered output files the policy reasons over — each entry a
 // path and its rendered content — as an ordered list sorted by path so the
 // wire is byte-identical across runs of identical input. The render stage
@@ -85,10 +84,10 @@ const (
 // the rendered files into Artifacts by path and populates Sources and Settings
 // from the attachment. The wire shape and this Go mirror are single-sourced from
 // the socket schema; the generated guest codec in aggrega-abi mirrors it.
-type RenderPolicyValidatorInput struct {
+type RenderPolicyInput struct {
 	Artifacts []RenderedArtifact `json:"artifacts"`
 	// Sources and Settings carry the same attachment-declared inputs as on the
-	// IR-stage [PolicyValidatorInput]: the definition files read verbatim (paths
+	// IR-stage [PolicyInput]: the definition files read verbatim (paths
 	// as base names, content opaque, sorted by path) and the free-form settings
 	// object handed through untouched. Both are absent when the attachment
 	// declares none.

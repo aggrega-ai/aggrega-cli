@@ -1,11 +1,11 @@
 apiVersion: aggrega.ai/v1alpha1
 kind: Plugin
 metadata:
-  name: partner/custom-renderer
+  name: custom-renderer
   version: 1.0.0
+  pluginType: provider
   description: A partner-authored rendering plugin.
 spec:
-  pluginType: provider
   abiVersion: v1alpha1
   capabilities:
     - helm

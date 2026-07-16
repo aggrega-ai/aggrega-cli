@@ -26,16 +26,16 @@ import (
 type ProviderPluginResolver func(providerRef string) (types.Plugin, bool, error)
 
 // providerPluginEntityURI builds the catalog URI identifying a resolved
-// provider-rendering Plugin entity — its metadata name pinned to the resolved
-// version. The lock-time provider pin keys on this URI so a build resolves the
-// same provider-plugin version the pin recorded. A version-less resolution
-// (empty metadata.version) yields the bare name, which resolves through the
-// three-form unversioned rule.
+// provider-rendering Plugin entity — its identity coordinate (<pluginType>/<name>)
+// pinned to the resolved version. The lock-time provider pin keys on this URI so a
+// build resolves the same provider-plugin version the pin recorded. A version-less
+// resolution (empty metadata.version) yields the bare coordinate, which resolves
+// through the three-form unversioned rule.
 func providerPluginEntityURI(p types.Plugin) string {
 	if p.Metadata.Version == "" {
-		return p.Metadata.Name
+		return p.Coordinate()
 	}
-	return p.Metadata.Name + ":" + p.Metadata.Version
+	return p.Coordinate() + ":" + p.Metadata.Version
 }
 
 // pluginKindHint marks a closure entry emitted for a pipeline plugin artifact

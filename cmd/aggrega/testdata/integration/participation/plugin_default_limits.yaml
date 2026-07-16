@@ -1,8 +1,8 @@
 apiVersion: aggrega.ai/v1alpha1
 kind: Plugin
 metadata:
-  name: core/example-renderer
+  name: example-renderer
   version: 1.0.0
-spec:
   pluginType: provider
+spec:
   abiVersion: v1alpha1

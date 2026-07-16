@@ -1,11 +1,11 @@
 apiVersion: aggrega.ai/v1alpha1
 kind: Plugin
 metadata:
-    name: core/helm-renderer
+    name: helm-renderer
+    pluginType: provider
     version: "1.0.0"
     description: Renders IR nodes into Helm chart artifacts.
 spec:
-    pluginType: provider
     abiVersion: v1alpha1
     capabilities:
         - helm

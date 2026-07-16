@@ -407,14 +407,15 @@ func pushRun(cfg pushConfig) error {
 // metadata.name may itself contain "/" separators (e.g.,
 // "core/server", "core/compute/api-server") and is preserved verbatim.
 //
-// Plugin kinds carry a socket in their identity: the path segment
-// is `plugin`, and the plugin's metadata.name path-encodes the
-// socket — e.g., metadata.name="linter/aggrega-publishing"
-// produces <registry>/plugin/linter/aggrega-publishing. The
-// socket segment is part of the plugin's identity (same name in
-// different sockets is a different plugin); embedding it in the
-// metadata.name keeps the URI symmetric with the catalog filesystem
-// layout `aggrega-hub/aggrega-catalog/plugin/<socket>/<name>`.
+// Plugin kinds carry a pluginType scope in their identity: the path
+// segment is `plugin`, and the caller passes the plugin's
+// metadata.pluginType as the scope — e.g., pluginType="linter" with a
+// bare metadata.name="aggrega-publishing" produces
+// <registry>/plugin/linter/aggrega-publishing. The pluginType segment
+// is part of the plugin's identity (same name in different sockets is a
+// different plugin); deriving the location from pluginType plus the bare
+// name keeps the URI symmetric with the catalog filesystem layout
+// `aggrega-hub/aggrega-catalog/plugin/<pluginType>/<name>`.
 //
 // The push-side construction here MUST agree with the consume-side
 // catalog.SplitURIForOCI which parses URIs back into their

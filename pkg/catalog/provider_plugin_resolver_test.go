@@ -18,9 +18,9 @@ func providerPlugin(name, version, provider string) string {
 kind: Plugin
 metadata:
   name: ` + name + `
+  pluginType: provider
   version: ` + version + `
 spec:
-  pluginType: provider
   abiVersion: v1alpha1
   capabilities:
     - ` + provider + `
@@ -48,9 +48,9 @@ func TestProviderPluginByNameResolvesShippedProviders(t *testing.T) {
 kind: Plugin
 metadata:
   name: helm-pipeline-step
+  pluginType: frp_step
   version: 1.0.0
 spec:
-  pluginType: frp_step
   abiVersion: v1alpha1
   capabilities:
     - helm
@@ -170,7 +170,7 @@ func TestProviderPluginBindingDisambiguates(t *testing.T) {
 		t.Fatalf("LoadAll: %v", err)
 	}
 
-	bindings := map[string]string{"helm": "helm-renderer-alt"}
+	bindings := map[string]string{"helm": "provider/helm-renderer-alt"}
 	got, ok, rerr := cat.ProviderPluginForTarget("helm", bindings)
 	if rerr != nil || !ok {
 		t.Fatalf("ProviderPluginForTarget with a binding: got (ok=%v, err=%v); want the bound plugin", ok, rerr)
@@ -202,7 +202,7 @@ func TestProviderPluginBindingPreservesVersionCoexistence(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadAll: %v", err)
 	}
-	bindings := map[string]string{"helm": "helm-renderer"}
+	bindings := map[string]string{"helm": "provider/helm-renderer"}
 
 	v1, ok, rerr := cat.ProviderPluginForTarget("helm:1.0.0", bindings)
 	if rerr != nil || !ok || v1.Metadata.Version != "1.0.0" {

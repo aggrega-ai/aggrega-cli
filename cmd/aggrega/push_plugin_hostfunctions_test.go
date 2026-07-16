@@ -26,11 +26,11 @@ const stampCommentedEntity = `# SPDX-License-Identifier: Apache-2.0
 apiVersion: aggrega.ai/v1alpha1
 kind: Plugin
 metadata:
-  name: frp/patch # the plugin's bare identity
+  name: patch # the plugin's bare identity
+  pluginType: frp_step
   version: "1.0.0"
 spec:
   plugin: "oci://hub.aggrega.ai/plugin/frp/patch"
-  pluginType: frp_step
   abiVersion: v1alpha1
 
   # runtime carries the execution limits an operator tunes.
@@ -56,7 +56,7 @@ func TestSpliceHostFunctions_PreservesCommentsAndBlanks(t *testing.T) {
 	// Every comment and blank-line-bearing line of the original survives verbatim.
 	for _, line := range []string{
 		"# SPDX-License-Identifier: Apache-2.0",
-		"  name: frp/patch # the plugin's bare identity",
+		"  name: patch # the plugin's bare identity",
 		"  # runtime carries the execution limits an operator tunes.",
 		"    maxMemoryPages: 16 # a generous cap for this guest",
 	} {
@@ -94,11 +94,11 @@ func TestSpliceHostFunctions_CreatesRuntimeWhenAbsent(t *testing.T) {
 	const noRuntime = `apiVersion: aggrega.ai/v1alpha1
 kind: Plugin
 metadata:
-  name: frp/patch
+  name: patch
+  pluginType: frp_step
   version: "1.0.0"
 spec:
   plugin: "oci://hub.aggrega.ai/plugin/frp/patch" # bare identity
-  pluginType: frp_step
   abiVersion: v1alpha1
 `
 	out, changed, err := spliceHostFunctions([]byte(noRuntime), []string{"aggrega_log"})
@@ -181,10 +181,10 @@ func TestSpliceHostFunctions_Idempotent(t *testing.T) {
 const cliStampEntity = `apiVersion: aggrega.ai/v1alpha1
 kind: Plugin
 metadata:
-  name: cli/greet
+  name: greet
+  pluginType: cli
   version: "1.0.0"
 spec:
-  pluginType: cli
   abiVersion: v1alpha1
 `
 
@@ -256,10 +256,10 @@ func TestStampPluginFile_WritesHostFunctionsAndCommands(t *testing.T) {
 const pushVerifyEntity = `apiVersion: aggrega.ai/v1alpha1
 kind: Plugin
 metadata:
-  name: frp/patch
+  name: patch
+  pluginType: frp_step
   version: "1.0.0"
 spec:
-  pluginType: frp_step
   abiVersion: v1alpha1
   capabilities:
     - helm

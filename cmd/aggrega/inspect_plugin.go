@@ -72,7 +72,7 @@ func renderPluginFile(_ *workspaceconfig.ResolvedWorkspace, path string, data []
 	if opts.level == levelList {
 		fmt.Fprintln(opts.out, opts.colorize.uri(identifier))
 		fmt.Fprintf(opts.out, "type: %s, exports: %d\n",
-			typeOrNone(wp.Spec.PluginType), len(wp.Spec.Exports))
+			typeOrNone(wp.Metadata.PluginType), len(wp.Spec.Exports))
 		return nil
 	}
 
@@ -83,7 +83,7 @@ func renderPluginFile(_ *workspaceconfig.ResolvedWorkspace, path string, data []
 		plugin = "(none declared)"
 	}
 	fmt.Fprintf(opts.out, "Plugin: %s\n", plugin)
-	fmt.Fprintf(opts.out, "Plugin type: %s\n", typeOrNone(wp.Spec.PluginType))
+	fmt.Fprintf(opts.out, "Plugin type: %s\n", typeOrNone(wp.Metadata.PluginType))
 
 	abiVersion := wp.Spec.AbiVersion
 	if abiVersion == "" {

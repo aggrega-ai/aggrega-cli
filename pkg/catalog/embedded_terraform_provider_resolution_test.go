@@ -42,9 +42,8 @@ func terraformChainCatalog() *catalog.Catalog {
 			terraformPluginEntity: {
 				APIVersion: "aggrega.ai/v1alpha1",
 				Kind:       "Plugin",
-				Metadata:   types.PluginMetadata{Name: terraformArtifactURI, Version: testCorePluginVersion},
+				Metadata:   types.PluginMetadata{Name: "terraform", Version: testCorePluginVersion, PluginType: "provider"},
 				Spec: types.PluginSpec{
-					PluginType:   "provider",
 					AbiVersion:   "v1alpha1",
 					Capabilities: []string{"terraform"},
 					Exports:      []types.PluginExport{{Name: "render_node"}},

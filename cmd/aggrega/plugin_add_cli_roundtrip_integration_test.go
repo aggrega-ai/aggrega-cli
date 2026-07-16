@@ -41,10 +41,10 @@ import (
 const cliPluginEntityYAML = `apiVersion: aggrega.ai/v1alpha1
 kind: Plugin
 metadata:
-  name: cli/greet
+  name: greet
+  pluginType: cli
   version: "1.0.0"
 spec:
-  pluginType: cli
   abiVersion: v1alpha1
 `
 

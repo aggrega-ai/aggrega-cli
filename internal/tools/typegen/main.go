@@ -451,28 +451,28 @@ var codecTargets = map[string]codecTarget{
 		lang:       "ts",
 	},
 
-	// Policy-validator socket — guest codec into aggrega-abi (Go/Rust/TS). The
+	// Policy socket — guest codec into aggrega-abi (Go/Rust/TS). The
 	// graph field references the IRGraph emitted by the IR codec into the same abi
 	// package; externalDefTypes makes the Go codec dispatch directly to IRGraph's
 	// generated codec rather than through a reflective json.Marshal.
 	"policy_gen.go": {
-		schema:           schemas.WasmPolicyValidatorV1alpha1,
-		schemaFile:       "wasm-policy-validator-v1alpha1.schema.json",
+		schema:           schemas.WasmPolicyV1alpha1,
+		schemaFile:       "wasm-policy-v1alpha1.schema.json",
 		pkg:              "abi",
 		vocabulary:       policyGuestVocabulary,
 		externalDefTypes: []string{"IRGraph"},
 	},
 	"policy_gen.rs": {
-		schema:           schemas.WasmPolicyValidatorV1alpha1,
-		schemaFile:       "wasm-policy-validator-v1alpha1.schema.json",
+		schema:           schemas.WasmPolicyV1alpha1,
+		schemaFile:       "wasm-policy-v1alpha1.schema.json",
 		pkg:              "abi",
 		vocabulary:       policyGuestVocabulary,
 		lang:             "rust",
 		externalDefTypes: []string{"IRGraph"},
 	},
 	"policy_gen.ts": {
-		schema:           schemas.WasmPolicyValidatorV1alpha1,
-		schemaFile:       "wasm-policy-validator-v1alpha1.schema.json",
+		schema:           schemas.WasmPolicyV1alpha1,
+		schemaFile:       "wasm-policy-v1alpha1.schema.json",
 		pkg:              "abi",
 		vocabulary:       policyGuestVocabulary,
 		lang:             "ts",

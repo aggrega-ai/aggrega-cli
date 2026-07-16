@@ -15,14 +15,14 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
-// TestPolicyValidatorInput_RoundTrip exercises the b-full policy input: the
+// TestPolicyInput_RoundTrip exercises the b-full policy input: the
 // graph is the full types.IRGraph (single-sourced from ir-v1alpha1), so the
 // fixture is a real IR graph rather than a narrow projection. The input's wire
 // shape is schema-validated cross-language in aggrega-abi (the policy schema
 // references ir-v1alpha1 — a cross-file $ref the host validator does not resolve
 // here); this test pins the Go round-trip: the full IR graph survives marshal /
 // unmarshal with its OrderedMap author-order intact.
-func TestPolicyValidatorInput_RoundTrip(t *testing.T) {
+func TestPolicyInput_RoundTrip(t *testing.T) {
 	t.Parallel()
 
 	labelsAPI := types.NewOrderedMap[string]()
@@ -35,7 +35,7 @@ func TestPolicyValidatorInput_RoundTrip(t *testing.T) {
 		Labels:          *labelsAPI,
 	})
 
-	fixture := analyzer.PolicyValidatorInput{
+	fixture := analyzer.PolicyInput{
 		Graph: types.IRGraph{
 			APIVersion: types.IRAPIVersion,
 			Kind:       "IR",
@@ -57,7 +57,7 @@ func TestPolicyValidatorInput_RoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("json.Marshal: %v", err)
 	}
-	var round analyzer.PolicyValidatorInput
+	var round analyzer.PolicyInput
 	if err := json.Unmarshal(raw, &round); err != nil {
 		t.Fatalf("json.Unmarshal: %v", err)
 	}
@@ -75,15 +75,15 @@ func TestPolicyValidatorInput_RoundTrip(t *testing.T) {
 	}
 }
 
-// TestPolicyValidatorOutput_RoundTrip pins the Go round-trip of the
-// PolicyValidatorOutput envelope. The wire shape is schema-validated
+// TestPolicyOutput_RoundTrip pins the Go round-trip of the
+// PolicyOutput envelope. The wire shape is schema-validated
 // cross-language in aggrega-abi (the policy schema references ir-v1alpha1 — a
 // cross-file $ref the host validator does not resolve without a loader), so the
 // host test exercises marshal / unmarshal equality.
-func TestPolicyValidatorOutput_RoundTrip(t *testing.T) {
+func TestPolicyOutput_RoundTrip(t *testing.T) {
 	t.Parallel()
 
-	fixture := analyzer.PolicyValidatorOutput{
+	fixture := analyzer.PolicyOutput{
 		Results: []analyzer.PolicyResult{
 			{Severity: analyzer.SeverityDeny, Message: "version-floor: payments-db must run resolved_version >= 15.0.0; got 14.9.0"},
 			{Severity: analyzer.SeverityAudit, Message: "soc2-required-labels: payments tier carries soc2 annotation"},
@@ -94,7 +94,7 @@ func TestPolicyValidatorOutput_RoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("json.Marshal: %v", err)
 	}
-	var round analyzer.PolicyValidatorOutput
+	var round analyzer.PolicyOutput
 	if err := json.Unmarshal(raw, &round); err != nil {
 		t.Fatalf("json.Unmarshal: %v", err)
 	}
@@ -103,20 +103,20 @@ func TestPolicyValidatorOutput_RoundTrip(t *testing.T) {
 	}
 }
 
-// TestPolicyValidatorTypes_JSONSchemaFieldCoverage asserts every
-// exported Go field of the policy-validator socket types appears as a
+// TestPolicyTypes_JSONSchemaFieldCoverage asserts every
+// exported Go field of the policy socket types appears as a
 // property in the corresponding $defs block of the JSON Schema. Catches
 // "Go struct grew a field, schema didn't" drift directly.
-func TestPolicyValidatorTypes_JSONSchemaFieldCoverage(t *testing.T) {
+func TestPolicyTypes_JSONSchemaFieldCoverage(t *testing.T) {
 	t.Parallel()
-	schemaPath := filepath.Join("..", "..", "..", "..", "aggrega-schemas", "json", "wasm-policy-validator-v1alpha1.schema.json")
+	schemaPath := filepath.Join("..", "..", "..", "..", "aggrega-schemas", "json", "wasm-policy-v1alpha1.schema.json")
 	schemaBytes, err := os.ReadFile(schemaPath)
 	if err != nil {
-		t.Skipf("wasm-policy-validator schema not reachable at %s: %v", schemaPath, err)
+		t.Skipf("wasm-policy schema not reachable at %s: %v", schemaPath, err)
 	}
 	var raw map[string]any
 	if err := json.Unmarshal(schemaBytes, &raw); err != nil {
-		t.Fatalf("unmarshal policy-validator schema: %v", err)
+		t.Fatalf("unmarshal policy schema: %v", err)
 	}
 	defs, ok := raw["$defs"].(map[string]any)
 	if !ok {
@@ -155,10 +155,10 @@ func TestPolicyValidatorTypes_JSONSchemaFieldCoverage(t *testing.T) {
 	// The envelope types carry local $defs. The graph field is a $ref to
 	// ir-v1alpha1's IRGraph (not a local projection), so it has no local $def to
 	// field-cover here — the IR graph's field coverage is the IR schema's concern.
-	assertGoStructPropertiesIn(t, reflect.TypeOf(analyzer.PolicyValidatorInput{}), "PolicyValidatorInput")
-	assertGoStructPropertiesIn(t, reflect.TypeOf(analyzer.PolicyValidatorOutput{}), "PolicyValidatorOutput")
+	assertGoStructPropertiesIn(t, reflect.TypeOf(analyzer.PolicyInput{}), "PolicyInput")
+	assertGoStructPropertiesIn(t, reflect.TypeOf(analyzer.PolicyOutput{}), "PolicyOutput")
 	assertGoStructPropertiesIn(t, reflect.TypeOf(analyzer.PrecalculatedPath{}), "PrecalculatedPath")
 	assertGoStructPropertiesIn(t, reflect.TypeOf(analyzer.PolicyResult{}), "PolicyResult")
-	assertGoStructPropertiesIn(t, reflect.TypeOf(analyzer.RenderPolicyValidatorInput{}), "RenderPolicyValidatorInput")
+	assertGoStructPropertiesIn(t, reflect.TypeOf(analyzer.RenderPolicyInput{}), "RenderPolicyInput")
 	assertGoStructPropertiesIn(t, reflect.TypeOf(analyzer.RenderedArtifact{}), "RenderedArtifact")
 }
