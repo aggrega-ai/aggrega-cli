@@ -267,7 +267,7 @@ func Resolve(start, flagRoot string, look ...func(string) string) (*ResolvedWork
 
 	applyAppends(&merged, appendLayers...)
 
-	// A render target may bind exactly one provider plugin. Duplicates can arise
+	// A capability may bind exactly one provider plugin. Duplicates can arise
 	// only after compose — within one layer's base list, or across the cascade
 	// and its `_append` companions — so the check runs on the composed list.
 	if err := checkUniqueProviderTargets(merged.Plugins.Providers); err != nil {
@@ -540,7 +540,7 @@ func loadGlobalLayer() (cfg Config, loaded bool, path string, err error) {
 }
 
 // checkUniqueProviderTargets returns a wrapped ErrDuplicateProviderTarget when
-// the composed provider list binds one render target more than once. The walk
+// the composed provider list binds one capability more than once. The walk
 // is in list order so the error names the first target seen twice, keeping the
 // diagnostic deterministic for a given composed list.
 func checkUniqueProviderTargets(providers []PluginRef) error {

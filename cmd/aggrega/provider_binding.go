@@ -17,7 +17,7 @@ import (
 )
 
 // providerBindingHelperEligible reports whether pull may prompt the operator to
-// disambiguate an ambiguously-served render target interactively. The helper is
+// disambiguate an ambiguously-served capability interactively. The helper is
 // opt-out and auto-on: it runs only when stderr is a terminal AND stdin is
 // interactive AND the pull-progress surface is not silenced (--quiet). A
 // non-interactive pull (CI, a pipe) or a --quiet pull never prompts — the
@@ -40,7 +40,7 @@ func runProviderBindingHelper(target string, candidates []types.Plugin, root str
 		// programming error, surfaced rather than silently guessed.
 		return fmt.Errorf("provider binding helper: target %q has %d candidates; expected more than one", target, len(candidates))
 	}
-	fmt.Fprintf(out, "Render target %q is served by more than one provider plugin. Choose which renders it:\n", target)
+	fmt.Fprintf(out, "Capability %q is served by more than one provider plugin. Choose which renders it:\n", target)
 	for i, p := range candidates {
 		fmt.Fprintf(out, "  [%d] %s  (%s)\n", i+1, p.Metadata.Name, p.Metadata.Version)
 	}

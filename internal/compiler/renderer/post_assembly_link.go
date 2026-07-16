@@ -17,7 +17,7 @@ import (
 
 // assembledGroup is one dispatch group's retained assembled output: the provider
 // that rendered it, the disk-write prefix reattached at the final flush, and the
-// group-relative files (keyed without the prefix, by the name each render target
+// group-relative files (keyed without the prefix, by the name each provider
 // emitted). The post-assembly link pass edits files in place before the flush.
 type assembledGroup struct {
 	provider string
@@ -249,7 +249,7 @@ func scanOrphanCrossBoundaryLinkSentinels(assembledByDispatch map[dispatchKey]*a
 
 // buildLinkEdge assembles the domain-blind per-edge payload for one
 // cross-boundary uses edge: both endpoints' identity (node, boundary dispatch
-// path, render target), each end's resolved annotations as an opaque scalar map
+// path, provider), each end's resolved annotations as an opaque scalar map
 // (the consumed end's and the consuming end's), the socket, and the consumed
 // end's provides plus the consuming end's inject mapping. Edge enrichment is
 // single-sourced through [EnrichedEdgeViewFromIREdge]; the host reads the

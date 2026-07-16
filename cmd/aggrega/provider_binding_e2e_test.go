@@ -16,7 +16,7 @@ import (
 )
 
 // providerBindingFixture lays a workload-synthesis Release down at root with a
-// catalog that serves the "helm" render target through the two named provider
+// catalog that serves the "helm" capability through the two named provider
 // plugins. Each plugin routes to a distinct embedded provider .wasm identity, so
 // which one renders a node is observable in the emitted bytes. Returns the
 // release path and the catalog root.

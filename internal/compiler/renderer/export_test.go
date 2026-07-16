@@ -18,7 +18,7 @@ type LinkPassNode struct {
 	// Path is the endpoint's dispatch-group path. Two endpoints sharing a Path
 	// are intra-boundary; distinct Paths are cross-boundary.
 	Path string
-	// Provider is the endpoint's resolved render target.
+	// Provider is the endpoint's resolved provider engine.
 	Provider string
 	// Engine is the endpoint's provider engine (a real wasmengine engine).
 	Engine Engine

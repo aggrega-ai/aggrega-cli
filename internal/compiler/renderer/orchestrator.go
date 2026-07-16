@@ -1002,7 +1002,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 			dispatchPrefix = key.Path + "/"
 		}
 		// Group-relative files (keyed without the dispatch prefix) so the link
-		// pass addresses an assembled artifact by the name the render target
+		// pass addresses an assembled artifact by the name the provider
 		// emitted it. The prefix is reattached at the final flush.
 		groupFiles := map[string][]byte{}
 

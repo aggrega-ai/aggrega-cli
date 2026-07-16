@@ -62,7 +62,7 @@ var ErrDuplicateRecipeIdentity = ErrDuplicateEntityIdentity
 // version references, not provider-engine selection.
 var ErrProviderVersionUnsatisfiable = errors.New("no provider-rendering plugin version satisfies the recipe's provider version pin")
 
-// ErrAmbiguousProviderPlugin fires at resolution when a render target is served
+// ErrAmbiguousProviderPlugin fires at resolution when a capability is served
 // by more than one distinct provider-rendering Plugin and no plugins.providers
 // entry disambiguates which one renders it. The compiler never picks arbitrarily
 // among competing render engines — a federated catalog where two publishers each
@@ -548,7 +548,7 @@ func (c *Catalog) pluginForCapability(pluginType, ref string, bindings map[strin
 }
 
 // ProviderPluginCandidates returns every provider-rendering Plugin serving the
-// bare render target, sorted by metadata name then version, for a diagnostic or
+// bare capability, sorted by metadata name then version, for a diagnostic or
 // an interactive disambiguation prompt. It applies no binding filter and no
 // version select — it is the raw candidate set the ambiguity halt reports over.
 // The sort makes the returned order byte-identical across runs.
@@ -572,7 +572,7 @@ func (c *Catalog) ProviderPluginCandidates(target string) []types.Plugin {
 	return out
 }
 
-// ProviderPluginByName resolves a render target to its provider-rendering Plugin
+// ProviderPluginByName resolves a capability to its provider-rendering Plugin
 // entity with no explicit binding — the zero-config path where a target served by
 // exactly one provider plugin resolves to it, and an ambiguously-served target
 // halts with ErrAmbiguousProviderPlugin. It is ProviderPluginForTarget with a nil

@@ -1315,7 +1315,7 @@ func (l *LazyLookup) ProviderPluginByName(ref string) (types.Plugin, bool, error
 }
 
 // ProviderPluginCandidates returns every provider-rendering Plugin serving the
-// bare render target over the lazily-enumerated (Tier-1 + pinned Tier-2) Plugin
+// bare capability over the lazily-enumerated (Tier-1 + pinned Tier-2) Plugin
 // set, sorted deterministically, for the ambiguity diagnostic and the interactive
 // pull binding-helper. Delegates to the same *Catalog matcher the eager backing
 // uses.
@@ -1325,7 +1325,7 @@ func (l *LazyLookup) ProviderPluginCandidates(target string) []types.Plugin {
 	return l.recipeCatalog().ProviderPluginCandidates(target)
 }
 
-// ProviderPluginForTarget resolves a render target to its provider-rendering
+// ProviderPluginForTarget resolves a capability to its provider-rendering
 // Plugin entity honoring an explicit plugins.providers selection, over the
 // lazily-enumerated (Tier-1 + pinned Tier-2) Plugin set. It delegates to the same
 // *Catalog matcher the eager backing uses (via the recipeCatalog() shell), so the

@@ -331,7 +331,7 @@ fn classify_aggregate(previous: &Value, proposed: &Value) -> (String, String) {
 fn classify_plugin(previous: &Value, proposed: &Value) -> (String, String) {
     let checks = [
         classify_plugin_exports(previous, proposed),
-        classify_plugin_targets(previous, proposed),
+        classify_plugin_capabilities(previous, proposed),
         classify_self_report(previous, proposed, "spec.provider"),
         classify_plugin_abi_version(previous, proposed),
     ];
@@ -415,12 +415,12 @@ fn exports_by_name(value: Option<&Value>) -> BTreeMap<&str, &Value> {
     map
 }
 
-/// `classify_plugin_targets` diffs `spec.capabilities` — an array of strings
+/// `classify_plugin_capabilities` diffs `spec.capabilities` — an array of strings
 /// (the plugin's served-capability list, mirrored by describe()'s
 /// capabilities). Set semantics: a removed entry narrows the surface
 /// (MAJOR); a new entry with no removals widens it (MINOR); reordering
 /// alone carries no magnitude (PATCH).
-fn classify_plugin_targets(previous: &Value, proposed: &Value) -> (String, String) {
+fn classify_plugin_capabilities(previous: &Value, proposed: &Value) -> (String, String) {
     let prev = string_entries(get_path(previous, "spec.capabilities"));
     let prop = string_entries(get_path(proposed, "spec.capabilities"));
 

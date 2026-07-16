@@ -269,7 +269,7 @@ type Plugin struct {
 }
 
 // ProviderBinding records the resolved render-engine selection for one
-// render target kind: which provider-rendering plugin renders a target
+// capability: which provider-rendering plugin renders a target
 // (e.g. "helm"). Pull resolves the binding — from the workspace-config
 // plugins.providers list when the target is ambiguously served, or from
 // the sole serving plugin when unambiguous — and records it here so the
@@ -293,7 +293,7 @@ type ProviderBinding struct {
 	// (a Plugin entity's metadata.name, the <socket>/<name> path,
 	// e.g. "provider/helm").
 	Plugin string `yaml:"plugin"`
-	// Target is the render target kind this binding selects an engine for
+	// Target is the capability this binding selects an engine for
 	// — the bare engine name a Recipe binds through spec.capability.
 	Target string `yaml:"target"`
 }

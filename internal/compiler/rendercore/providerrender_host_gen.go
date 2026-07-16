@@ -314,27 +314,27 @@ type BoundaryEnvOverridesOutput struct {
 	Overrides map[string]map[string]string `json:"overrides,omitempty" yaml:"overrides,omitempty"`
 }
 
-// LinkEndpoint One endpoint of a cross-boundary link: the node, the boundary path its rendered output assembles into, and the render target that rendered it. The two endpoints of a link name the consuming and consumed ends of a uses edge whose ends assemble into different dispatch groups.
+// LinkEndpoint One endpoint of a cross-boundary link: the node, the boundary path its rendered output assembles into, and the provider that rendered it. The two endpoints of a link name the consuming and consumed ends of a uses edge whose ends assemble into different dispatch groups.
 type LinkEndpoint struct {
 	// Node The endpoint node's absolute id within the topology graph.
 	Node string `json:"node" yaml:"node"`
 	// Boundary The endpoint's boundary path — the dispatch group its rendered output assembles into.
 	Boundary string `json:"boundary" yaml:"boundary"`
-	// Provider The render target that rendered the endpoint (the provider engine name). Both endpoints of a wired link name the same render target; the host does not route a link whose endpoints name different targets.
+	// Provider The provider that rendered the endpoint (the provider engine name). Both endpoints of a wired link name the same provider; the host does not route a link whose endpoints name different providers.
 	Provider string `json:"provider" yaml:"provider"`
-	// Deployment The deployment identity the endpoint's rendered output belongs to — the scope its assembled artifacts are named within. The host assembles it from the build's deployment identity and passes it verbatim; it infers no meaning from the value. A render target reads it to scope a cross-reference name to the deployment. An absent value is the empty string, which a render target treats as an unscoped name.
+	// Deployment The deployment identity the endpoint's rendered output belongs to — the scope its assembled artifacts are named within. The host assembles it from the build's deployment identity and passes it verbatim; it infers no meaning from the value. A provider reads it to scope a cross-reference name to the deployment. An absent value is the empty string, which a provider treats as an unscoped name.
 	Deployment string `json:"deployment,omitempty" yaml:"deployment,omitempty"`
 }
 
-// LinkEdge The generalized, domain-blind per-edge payload the host assembles for a uses edge whose consuming and consumed ends assemble into different dispatch groups. It carries both endpoints, both endpoints' placement annotations as opaque scalar maps the host does not interpret, the consumed endpoint's provides output, and the socket and inject mapping the edge wires. A render target reads it to produce the provider-native cross-reference wiring the two ends need; the host assembles it and passes the annotation map as opaque scalars, inferring no meaning from any value.
+// LinkEdge The generalized, domain-blind per-edge payload the host assembles for a uses edge whose consuming and consumed ends assemble into different dispatch groups. It carries both endpoints, both endpoints' placement annotations as opaque scalar maps the host does not interpret, the consumed endpoint's provides output, and the socket and inject mapping the edge wires. A provider reads it to produce the provider-native cross-reference wiring the two ends need; the host assembles it and passes the annotation map as opaque scalars, inferring no meaning from any value.
 type LinkEdge struct {
 	// Source The consuming endpoint — the source end of the directed uses edge, whose assembled output the consumer-side wiring is injected into.
 	Source LinkEndpoint `json:"source" yaml:"source"`
 	// Target The consumed endpoint — the target end the uses edge points at, whose assembled output the producer-side wiring publishes.
 	Target LinkEndpoint `json:"target" yaml:"target"`
-	// TargetAnnotations The consumed (target) endpoint's placement annotations as an opaque scalar map, keyed by annotation name. The host assembles them from the target's resolved annotations and passes them verbatim; it infers no meaning from any value. A render target reads them to decide how to shape a cross-reference (for example whether the two ends share a placement or need a cross-placement reference). Keys serialize in sorted order so the payload is byte-identical across runs of identical input.
+	// TargetAnnotations The consumed (target) endpoint's placement annotations as an opaque scalar map, keyed by annotation name. The host assembles them from the target's resolved annotations and passes them verbatim; it infers no meaning from any value. A provider reads them to decide how to shape a cross-reference (for example whether the two ends share a placement or need a cross-placement reference). Keys serialize in sorted order so the payload is byte-identical across runs of identical input.
 	TargetAnnotations map[string]string `json:"target_annotations,omitempty" yaml:"target_annotations,omitempty"`
-	// SourceAnnotations The consuming (source) endpoint's placement annotations as an opaque scalar map, keyed by annotation name. The host assembles them from the source's resolved annotations and passes them verbatim; it infers no meaning from any value. A render target reads them to compare the two ends' placement — for example whether the source and target share a placement or sit in different ones. Keys serialize in sorted order so the payload is byte-identical across runs of identical input.
+	// SourceAnnotations The consuming (source) endpoint's placement annotations as an opaque scalar map, keyed by annotation name. The host assembles them from the source's resolved annotations and passes them verbatim; it infers no meaning from any value. A provider reads them to compare the two ends' placement — for example whether the source and target share a placement or sit in different ones. Keys serialize in sorted order so the payload is byte-identical across runs of identical input.
 	SourceAnnotations map[string]string `json:"source_annotations,omitempty" yaml:"source_annotations,omitempty"`
 	// Socket The socket alias the uses edge is bound under.
 	Socket string `json:"socket" yaml:"socket"`
@@ -344,21 +344,21 @@ type LinkEdge struct {
 	Inject types.OrderedMap[types.OrderedMap[string]] `json:"inject" yaml:"inject"`
 }
 
-// LinkPatch One per-file structural patch a render target returns as artifact wiring: the output file and the ordered structural operations to apply to it. A later host pass carves the named file, applies the operations, and reassembles it byte-faithfully. The operation shape is the shared pipeline patch-operation vocabulary; it is opaque at this schema layer, so a guest carries each operation verbatim while the host realizes the typed operation its pipeline applies.
+// LinkPatch One per-file structural patch a provider returns as artifact wiring: the output file and the ordered structural operations to apply to it. A later host pass carves the named file, applies the operations, and reassembles it byte-faithfully. The operation shape is the shared pipeline patch-operation vocabulary; it is opaque at this schema layer, so a guest carries each operation verbatim while the host realizes the typed operation its pipeline applies.
 type LinkPatch struct {
-	// File The output file the operations apply to, named as the render target emitted it.
+	// File The output file the operations apply to, named as the provider emitted it.
 	File string `json:"file" yaml:"file"`
 	// Ops The ordered structural operations to apply to the file, in application order.
 	Ops []frp.JSONPatchOp `json:"ops" yaml:"ops"`
 }
 
-// LinkPublishInput The payload a render target receives on its link_publish export: one cross-boundary link whose consumed endpoint's output is referenced across a boundary. The export returns the published identity the consumer resolves against and any producer-side artifact wiring the consumed endpoint's output needs.
+// LinkPublishInput The payload a provider receives on its link_publish export: one cross-boundary link whose consumed endpoint's output is referenced across a boundary. The export returns the published identity the consumer resolves against and any producer-side artifact wiring the consumed endpoint's output needs.
 type LinkPublishInput struct {
 	// Edge The cross-boundary link being published, read from the consumed (target) endpoint's side.
 	Edge LinkEdge `json:"edge" yaml:"edge"`
 }
 
-// LinkPublishOutput The payload a render target returns from its link_publish export: the published identity handle the consumer resolves against, and the producer-side artifact wiring to apply to the consumed endpoint's assembled output.
+// LinkPublishOutput The payload a provider returns from its link_publish export: the published identity handle the consumer resolves against, and the producer-side artifact wiring to apply to the consumed endpoint's assembled output.
 type LinkPublishOutput struct {
 	// Handle The published identity the consumed endpoint exposes for the consumer to resolve against, an opaque deterministic-pointer string map keyed by field name (for example an export name, a stack name, a region, a role reference). The values are deterministic pointer strings the compiler pipes and never resolves; the runtime environment resolves them at deploy time. Keys serialize in sorted order so the payload is byte-identical across runs of identical input.
 	Handle map[string]string `json:"handle" yaml:"handle"`
@@ -366,17 +366,17 @@ type LinkPublishOutput struct {
 	Patches []LinkPatch `json:"patches,omitempty" yaml:"patches,omitempty"`
 }
 
-// LinkResolveInput The payload a render target receives on its link_resolve export: one cross-boundary link, the published identity handle its consumed endpoint exposed, and the consuming endpoint's assembled files. The export returns the consumer-side artifact wiring that injects the reference into the consuming endpoint's assembled output.
+// LinkResolveInput The payload a provider receives on its link_resolve export: one cross-boundary link, the published identity handle its consumed endpoint exposed, and the consuming endpoint's assembled files. The export returns the consumer-side artifact wiring that injects the reference into the consuming endpoint's assembled output.
 type LinkResolveInput struct {
 	// Edge The cross-boundary link being resolved, read from the consuming (source) endpoint's side.
 	Edge LinkEdge `json:"edge" yaml:"edge"`
 	// Handle The published identity handle the consumed endpoint's link_publish returned, which the consumer resolves its reference against. Opaque deterministic-pointer strings keyed by field name; the compiler pipes them and never resolves them. Keys serialize in sorted order so the payload is byte-identical across runs of identical input.
 	Handle map[string]string `json:"handle" yaml:"handle"`
-	// ConsumerFiles The consuming endpoint's assembled files, so the render target can locate the placeholder the host stamped into the consuming output and author its replacement at the placeholder's real path. Each names its on-disk path and carries the assembled bytes. Absent when the host has no assembled consumer output to hand the resolve; a render target that needs no document to author its wiring ignores it.
+	// ConsumerFiles The consuming endpoint's assembled files, so the provider can locate the placeholder the host stamped into the consuming output and author its replacement at the placeholder's real path. Each names its on-disk path and carries the assembled bytes. Absent when the host has no assembled consumer output to hand the resolve; a provider that needs no document to author its wiring ignores it.
 	ConsumerFiles []RenderedFile `json:"consumer_files,omitempty" yaml:"consumer_files,omitempty"`
 }
 
-// LinkResolveOutput The payload a render target returns from its link_resolve export: the consumer-side artifact wiring to apply to the consuming endpoint's assembled output, injecting the reference to the consumed endpoint's published identity.
+// LinkResolveOutput The payload a provider returns from its link_resolve export: the consumer-side artifact wiring to apply to the consuming endpoint's assembled output, injecting the reference to the consumed endpoint's published identity.
 type LinkResolveOutput struct {
 	// Patches The consumer-side artifact wiring, one structural patch per consuming-endpoint output file the resolve must edit.
 	Patches []LinkPatch `json:"patches" yaml:"patches"`

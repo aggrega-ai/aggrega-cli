@@ -17,14 +17,14 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
-// providerSocketKind is the socket argument that binds a render target to a
+// providerSocketKind is the socket argument that binds a capability to a
 // provider-rendering plugin (the `plugins.providers` list), as opposed to the
 // config sockets that take a bare plugin attachment.
 const providerSocketKind = "provider"
 
 // configSocketKinds is the set of workspace-level config sockets a plugin
 // attaches to by its bare entity identity. The provider socket is handled
-// separately because it binds a render target rather than attaching a plugin to
+// separately because it binds a capability rather than attaching a plugin to
 // a socket list.
 var configSocketKinds = map[string]bool{
 	"mutator":  true,
@@ -37,7 +37,7 @@ var configSocketKinds = map[string]bool{
 // registry for a plugin serving the named socket, resolves the match to one
 // plugin identity, and writes the attachment into the workspace config file —
 // either a `plugins.<socket>` list entry (mutator / policy / linter / importer)
-// or a `plugins.providers` render-target binding (provider).
+// or a `plugins.providers` capability binding (provider).
 func newPluginAddCmd() *cobra.Command {
 	var target string
 	c := &cobra.Command{
@@ -54,7 +54,7 @@ command halts and lists the candidates so you can narrow it.
 
 For a config socket the latest published version is pinned and the bare plugin
 entity identity (<socket>/<name>:<version>) is added to the plugins.<socket> list.
-For the provider socket, --target names the render target the binding serves and
+For the provider socket, --target names the capability the binding serves and
 the plugin's oci:// identity is written as a plugins.providers entry.
 
 The entry is written to the workspace config file, preserving existing settings.`,
@@ -73,7 +73,7 @@ The entry is written to the workspace config file, preserving existing settings.
 			})
 		},
 	}
-	c.Flags().StringVar(&target, "target", "", "Render target the provider binding serves (required for, and only valid with, the provider socket)")
+	c.Flags().StringVar(&target, "target", "", "Capability the provider binding serves (required for, and only valid with, the provider socket)")
 	return c
 }
 
@@ -105,7 +105,7 @@ func pluginAddRun(ctx context.Context, cfg pluginAddConfig) error {
 		return fmt.Errorf("aggrega plugin add: unknown socket %q; expected one of mutator, policy, linter, importer, provider", socket)
 	}
 	if isProvider && cfg.Target == "" {
-		return fmt.Errorf("aggrega plugin add: the provider socket requires --target naming the render target the binding serves")
+		return fmt.Errorf("aggrega plugin add: the provider socket requires --target naming the capability the binding serves")
 	}
 	if !isProvider && cfg.Target != "" {
 		return fmt.Errorf("aggrega plugin add: --target applies only to the provider socket")
@@ -134,7 +134,7 @@ func pluginAddRun(ctx context.Context, cfg pluginAddConfig) error {
 		if err := workspaceconfig.UpsertProviderBinding(configPath, cfg.Target, uri); err != nil {
 			return fmt.Errorf("aggrega plugin add: write %s: %w", configPath, err)
 		}
-		fmt.Fprintf(cfg.Out, "Bound render target %q to %s in %s\n", cfg.Target, uri, configPath)
+		fmt.Fprintf(cfg.Out, "Bound capability %q to %s in %s\n", cfg.Target, uri, configPath)
 		return nil
 	}
 

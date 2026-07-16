@@ -556,7 +556,7 @@ func newSkippedEntity(path string, data []byte, err error) SkippedEntity {
 // (different contract from the pillar-wrapped Component / Feature schemas —
 // no SchemaLibrary $ref expansion is expected at the Plugin provider field
 // surface today). Wired so today's catalogs reach the same load-time guardrail
-// the Component / Feature surface enjoys. A render target served by more than one
+// the Component / Feature surface enjoys. A capability served by more than one
 // provider-rendering Plugin is NOT a load error — a federated catalog is legal;
 // the ambiguity halts at the point of use (pull resolution / build render) when no
 // plugins.providers entry selects one.
@@ -627,7 +627,7 @@ func (c *Catalog) validateSchemaPillarsPass() error {
 		}
 	}
 
-	// A render target served by more than one provider-rendering Plugin is NOT a
+	// A capability served by more than one provider-rendering Plugin is NOT a
 	// catalog-load error: a federated catalog where two publishers each ship a
 	// plugin for the same target is legal. Ambiguity is a point-of-use concern the
 	// plugins.providers surface resolves at pull, and it halts loudly there (and at
