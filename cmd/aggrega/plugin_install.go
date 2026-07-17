@@ -91,7 +91,7 @@ func pluginInstallRun(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace
 	if err != nil {
 		return fmt.Errorf("aggrega plugin add: describe %q: %w", ref, err)
 	}
-	if desc.PluginType != wasm.PluginTypeCLI {
+	if desc.PluginType != string(wasm.PluginTypeCLI) {
 		return fmt.Errorf("aggrega plugin add: %q is not a CLI plugin (declares type %q); only CLI plugins install as commands", ref, desc.PluginType)
 	}
 	if len(desc.Commands) == 0 {

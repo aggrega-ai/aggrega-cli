@@ -60,7 +60,7 @@ func UnderDeclaredNotices(surface EntityCuratedSurface, desc PluginDescriptor) [
 		}
 	}
 
-	if !surface.HasContract && !desc.Contract.isZero() {
+	if !surface.HasContract && desc.Contract != nil && !desc.Contract.isZero() {
 		notices = append(notices,
 			"plugin describe() reports a render-behavior contract the entity does not declare")
 	}

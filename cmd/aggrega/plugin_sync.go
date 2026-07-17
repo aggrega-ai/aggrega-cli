@@ -211,8 +211,40 @@ func spliceHostFunctions(data []byte, derived []string) ([]byte, bool, error) {
 // the rendered block carries name first and omits an empty description, matching
 // the machine-owned record's canonical shape.
 type stampCommand struct {
+	Name        string             `yaml:"name"`
+	Description string             `yaml:"description,omitempty"`
+	Flags       []stampCommandFlag `yaml:"flags,omitempty"`
+}
+
+// stampCommandFlag is the byte-splice render shape of one command flag in the
+// machine-owned command mirror: the flag's long name and the optional fields
+// that carry a value, in field-declaration order.
+type stampCommandFlag struct {
 	Name        string `yaml:"name"`
+	Shorthand   string `yaml:"shorthand,omitempty"`
 	Description string `yaml:"description,omitempty"`
+	Type        string `yaml:"type,omitempty"`
+	Default     string `yaml:"default,omitempty"`
+}
+
+// stampCommandFlags projects a described command's flags into the byte-splice
+// render shape, preserving describe()-declared order. A command with no flags
+// yields a nil slice, which renders no flags block.
+func stampCommandFlags(flags []wasm.PluginCommandFlag) []stampCommandFlag {
+	if len(flags) == 0 {
+		return nil
+	}
+	out := make([]stampCommandFlag, len(flags))
+	for i, f := range flags {
+		out[i] = stampCommandFlag{
+			Name:        f.Name,
+			Shorthand:   f.Shorthand,
+			Description: f.Description,
+			Type:        f.Type,
+			Default:     f.Default,
+		}
+	}
+	return out
 }
 
 // spliceCommands records commands into the entity bytes' spec.commands and
@@ -263,7 +295,11 @@ func spliceCommands(data []byte, commands []wasm.PluginCLICommand) ([]byte, bool
 
 	value := make([]stampCommand, len(commands))
 	for i, c := range commands {
-		value[i] = stampCommand{Name: c.Name, Description: c.Description}
+		value[i] = stampCommand{
+			Name:        c.Name,
+			Description: c.Description,
+			Flags:       stampCommandFlags(c.Flags),
+		}
 	}
 
 	block, err := yamlsplice.RenderBlock("commands", value, childIndent, step)

@@ -150,6 +150,36 @@ type PluginCommand struct {
 	// Description is the command's one-line short-help text, shown in the command
 	// listing and help output. Documentation only; the host does not act on it.
 	Description string `json:"description,omitempty" yaml:"description,omitempty"`
+	// Flags is the command's flags, in declared order. Each entry contributes one
+	// flag the host registers on the command so aggrega help <command> renders it
+	// like a core command's flag. A command with no flags leaves it empty. It is
+	// part of the same machine-owned record the stamp step derives from the
+	// plugin's describe() self-report; an author never writes it.
+	Flags []PluginCommandFlag `json:"flags,omitempty" yaml:"flags,omitempty"`
+}
+
+// PluginCommandFlag is one flag a CLI plugin declares on a command, in the
+// machine-owned command record. Each flag is derived from the plugin's
+// describe() self-report and written by the stamp step; an author never writes
+// it. The type is hand-written because the generator names it via
+// x-aggrega-go-type on the schema's items node and does not descend into it.
+type PluginCommandFlag struct {
+	// Name is the flag's long name — the --name token an operator passes on the
+	// command line. Every declared flag names it.
+	Name string `json:"name" yaml:"name"`
+	// Shorthand is the flag's optional single-character short alias — the -x form
+	// an operator may pass instead of the long name. Empty means the flag has no
+	// short alias.
+	Shorthand string `json:"shorthand,omitempty" yaml:"shorthand,omitempty"`
+	// Description is the flag's one-line help text, shown in the command's help
+	// output. Documentation only; the host does not act on it.
+	Description string `json:"description,omitempty" yaml:"description,omitempty"`
+	// Type is the flag's value type — for example string, bool, or int. Empty
+	// carries no type claim.
+	Type string `json:"type,omitempty" yaml:"type,omitempty"`
+	// Default is the flag's default value when the operator does not pass it,
+	// expressed as a string. Empty means the flag declares no default.
+	Default string `json:"default,omitempty" yaml:"default,omitempty"`
 }
 
 // ProviderContract is a provider's self-declared compile-time render

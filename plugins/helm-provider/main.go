@@ -26,7 +26,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strconv"
 	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
@@ -38,47 +37,52 @@ import (
 	"helm.sh/helm/v3/pkg/chart/loader"
 )
 
-// pluginDescriptorHead is the fixed prefix of the describe() self-report: a
-// v1alpha1 provider plugin declaring the render_node export, compatibility with
-// the helm provider engine, and its render-behavior contract
-// (the input kinds it renders and how it treats a dispatch group's output).
-// render_node declares two host functions it imports: aggrega_pack_source, which
-// packs the chart source the guest resolves from the host's name-only listing,
-// and aggrega_fetch_external_input, which resolves a chart's remote values-schema
-// references through the host's pinned external-input channel. The host
-// cross-checks these declarations against the functions the guest actually
-// imports. The host reads this once at load and validates it before invoking
-// render_node.
-const pluginDescriptorHead = `{"abi_version":"v1alpha1","plugin_type":"provider","capabilities":["helm"],"exports":[{"name":"render_node","input_pattern":"b","host_functions":["aggrega_fetch_external_input","aggrega_pack_source"],"stability":"experimental","description":"renders a Helm chart source into flat Kubernetes manifests, or synthesizes a workload into flat Kubernetes manifests"}],"contract":{"input_kinds":{"sourced":true,"synthesized":true,"artifacts_standalone":true},"boundary_assembly":"none","reusable_instance":true},"metadata":{"author":"aggrega","license":"Apache-2.0"`
-
-// version and commit are the build-provenance stamp injected via
-// -ldflags -X at embedded-build time. A plain go build leaves them empty,
-// and describe() then omits the corresponding metadata fields, so an
-// unstamped build's descriptor is byte-identical to a stamped build's
-// minus the provenance.
-var (
-	version string
-	commit  string
-)
-
-// pluginDescriptor composes the describe() self-report, appending the
-// optional version and commit build-provenance metadata to the fixed
-// prefix when those fields are stamped, then closing the metadata object
-// and the descriptor.
-func pluginDescriptor() string {
-	meta := ""
-	if version != "" {
-		meta += `,"version":` + strconv.Quote(version)
+// descriptor is the describe() self-report: a v1alpha1 provider plugin declaring
+// the render_node export, compatibility with the helm provider engine, and its
+// render-behavior contract (the input kinds it renders and how it treats a
+// dispatch group's output). render_node declares two host functions it imports:
+// aggrega_pack_source, which packs the chart source the guest resolves from the
+// host's name-only listing, and aggrega_fetch_external_input, which resolves a
+// chart's remote values-schema references through the host's pinned
+// external-input channel. The host cross-checks these declarations against the
+// functions the guest actually imports. The host reads it once at load and
+// validates it before invoking render_node.
+//
+// aggrega.MarshalDescriptor folds the build-provenance version and commit into
+// the metadata when the Go linker stamps them at build time; a plain build
+// leaves them unset, so an unstamped build's descriptor is byte-identical to a
+// stamped build's minus the provenance.
+func descriptor() aggrega.PluginDescriptor {
+	return aggrega.PluginDescriptor{
+		AbiVersion:   aggrega.APIVersion,
+		PluginType:   "provider",
+		Capabilities: []string{"helm"},
+		Exports: []aggrega.PluginExport{
+			{
+				Name:          "render_node",
+				InputPattern:  "b",
+				HostFunctions: []string{"aggrega_fetch_external_input", "aggrega_pack_source"},
+				Stability:     "experimental",
+				Description:   "renders a Helm chart source into flat Kubernetes manifests, or synthesizes a workload into flat Kubernetes manifests",
+			},
+		},
+		Contract: &aggrega.ProviderContract{
+			InputKinds:       aggrega.InputKinds{Sourced: true, Synthesized: true, ArtifactsStandalone: true},
+			BoundaryAssembly: "none",
+			ReusableInstance: true,
+		},
+		Metadata: &aggrega.PluginDescriptorMeta{Author: "aggrega", License: "Apache-2.0"},
 	}
-	if commit != "" {
-		meta += `,"commit":` + strconv.Quote(commit)
-	}
-	return pluginDescriptorHead + meta + `}}`
 }
 
 //go:wasmexport describe
 func describe() int32 {
-	pdk.Output([]byte(pluginDescriptor()))
+	out, err := aggrega.MarshalDescriptor(descriptor())
+	if err != nil {
+		pdk.SetError(err)
+		return 1
+	}
+	pdk.Output(out)
 	return 0
 }
 

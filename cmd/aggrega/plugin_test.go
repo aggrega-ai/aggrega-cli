@@ -48,9 +48,9 @@ func TestPluginRowCells(t *testing.T) {
 
 	provider := pluginListEntry{
 		desc: wasm.PluginDescriptor{
-			PluginType:   wasm.PluginTypeProvider,
+			PluginType:   string(wasm.PluginTypeProvider),
 			Capabilities: []string{"helm"},
-			Metadata:     wasm.PluginDescriptorMeta{Version: "0.4.0", Commit: "abc1234"},
+			Metadata:     &wasm.PluginDescriptorMeta{Version: "0.4.0", Commit: "abc1234"},
 		},
 	}
 	if got := pluginRowType(provider); got != "provider" {
@@ -63,7 +63,7 @@ func TestPluginRowCells(t *testing.T) {
 		t.Errorf("provider version cell = %q", got)
 	}
 
-	linter := pluginListEntry{desc: wasm.PluginDescriptor{PluginType: wasm.PluginTypeLinter}}
+	linter := pluginListEntry{desc: wasm.PluginDescriptor{PluginType: string(wasm.PluginTypeLinter)}}
 	if got := pluginRowCapabilities(linter); got != "" {
 		t.Errorf("cross-cutting linter capabilities cell should be empty, got %q", got)
 	}
@@ -73,10 +73,10 @@ func TestPluginRowCells(t *testing.T) {
 		entry pluginListEntry
 		want  string
 	}{
-		{"digest drift", pluginListEntry{readiness: "digest-drift", desc: wasm.PluginDescriptor{Metadata: wasm.PluginDescriptorMeta{Version: "1.0.0"}}}, "digest-drift"},
+		{"digest drift", pluginListEntry{readiness: "digest-drift", desc: wasm.PluginDescriptor{Metadata: &wasm.PluginDescriptorMeta{Version: "1.0.0"}}}, "digest-drift"},
 		{"failure with readiness", pluginListEntry{readiness: "unresolved", err: wasm.ErrWasmManifestRejected}, "unresolved"},
 		{"failure without readiness", pluginListEntry{err: wasm.ErrWasmManifestRejected}, "describe failed"},
-		{"unstamped healthy", pluginListEntry{desc: wasm.PluginDescriptor{PluginType: wasm.PluginTypeProvider}}, ""},
+		{"unstamped healthy", pluginListEntry{desc: wasm.PluginDescriptor{PluginType: string(wasm.PluginTypeProvider)}}, ""},
 	}
 	for _, tc := range versionCases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -100,14 +100,14 @@ func TestFormatPluginListTable(t *testing.T) {
 	embeddedEntries := []pluginListEntry{
 		{source: "embedded", uri: "provider/helm",
 			desc: wasm.PluginDescriptor{
-				PluginType:   wasm.PluginTypeProvider,
+				PluginType:   string(wasm.PluginTypeProvider),
 				Capabilities: []string{"helm"},
-				Metadata:     wasm.PluginDescriptorMeta{Version: "0.4.0", Commit: "abc1234"},
+				Metadata:     &wasm.PluginDescriptorMeta{Version: "0.4.0", Commit: "abc1234"},
 			}},
 		{source: "embedded", uri: "linter/publishing",
 			desc: wasm.PluginDescriptor{
-				PluginType: wasm.PluginTypeLinter,
-				Metadata:   wasm.PluginDescriptorMeta{Version: "0.4.0", Commit: "abc1234"},
+				PluginType: string(wasm.PluginTypeLinter),
+				Metadata:   &wasm.PluginDescriptorMeta{Version: "0.4.0", Commit: "abc1234"},
 			}},
 	}
 	configuredEntries := []pluginListEntry{
@@ -153,7 +153,7 @@ func TestFormatPluginListDeterministic(t *testing.T) {
 	for _, ref := range configured {
 		configuredEntries = append(configuredEntries, pluginListEntry{
 			source: "configured", uri: ref.uri, origin: ref.origin,
-			desc: wasm.PluginDescriptor{PluginType: wasm.PluginTypeProvider},
+			desc: wasm.PluginDescriptor{PluginType: string(wasm.PluginTypeProvider)},
 		})
 	}
 
@@ -183,14 +183,14 @@ func TestWritePluginListJSON(t *testing.T) {
 	embeddedEntries := []pluginListEntry{
 		{source: "embedded", uri: "provider/helm",
 			desc: wasm.PluginDescriptor{
-				PluginType:   wasm.PluginTypeProvider,
+				PluginType:   string(wasm.PluginTypeProvider),
 				Capabilities: []string{"helm"},
 				Exports:      []wasm.PluginExport{{Name: "render_node"}, {Name: "assemble_boundary"}},
-				Contract: wasm.ProviderContract{
+				Contract: &wasm.ProviderContract{
 					InputKinds:       wasm.InputKinds{Sourced: true, Synthesized: true},
 					BoundaryAssembly: "none",
 				},
-				Metadata: wasm.PluginDescriptorMeta{Version: "0.4.0", Commit: "abc1234"},
+				Metadata: &wasm.PluginDescriptorMeta{Version: "0.4.0", Commit: "abc1234"},
 			}},
 	}
 	// The configured group carries a socket binding that failed to describe and
@@ -202,8 +202,8 @@ func TestWritePluginListJSON(t *testing.T) {
 		{source: "installed", uri: "oci://example.com/plugins/cli/greet:1.0.0",
 			origin: "pinned abc1234", readiness: "ready",
 			desc: wasm.PluginDescriptor{
-				PluginType: wasm.PluginTypeCLI,
-				Metadata:   wasm.PluginDescriptorMeta{Version: "1.0.0"},
+				PluginType: string(wasm.PluginTypeCLI),
+				Metadata:   &wasm.PluginDescriptorMeta{Version: "1.0.0"},
 			}},
 	}
 
@@ -325,8 +325,8 @@ func TestFormatPluginList_CLIInConfiguredGroup(t *testing.T) {
 			origin:    `command "moo"`,
 			readiness: "ready",
 			desc: wasm.PluginDescriptor{
-				PluginType: wasm.PluginTypeCLI,
-				Metadata:   wasm.PluginDescriptorMeta{Version: "1.0.0"},
+				PluginType: string(wasm.PluginTypeCLI),
+				Metadata:   &wasm.PluginDescriptorMeta{Version: "1.0.0"},
 			},
 		},
 		{
@@ -335,8 +335,8 @@ func TestFormatPluginList_CLIInConfiguredGroup(t *testing.T) {
 			origin:    `command "drift"`,
 			readiness: "digest-drift",
 			desc: wasm.PluginDescriptor{
-				PluginType: wasm.PluginTypeCLI,
-				Metadata:   wasm.PluginDescriptorMeta{Version: "1.0.0"},
+				PluginType: string(wasm.PluginTypeCLI),
+				Metadata:   &wasm.PluginDescriptorMeta{Version: "1.0.0"},
 			},
 		},
 	}

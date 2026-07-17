@@ -55,7 +55,7 @@ func TestParseAndValidateDescriptor(t *testing.T) {
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
-			if desc.PluginType != PluginTypeFRPStep {
+			if desc.PluginType != string(PluginTypeFRPStep) {
 				t.Fatalf("plugin type: got %q want %q", desc.PluginType, PluginTypeFRPStep)
 			}
 		})
@@ -68,8 +68,8 @@ func TestInvokeExportUndeclared(t *testing.T) {
 	t.Parallel()
 
 	desc := PluginDescriptor{
-		ABIVersion: ABIVersionV1Alpha1,
-		PluginType: PluginTypeFRPStep,
+		AbiVersion: ABIVersionV1Alpha1,
+		PluginType: string(PluginTypeFRPStep),
 		Exports:    []PluginExport{{Name: "step"}},
 	}
 	plugin := &Plugin{name: "fixture"}
@@ -101,7 +101,7 @@ func TestLoadAndDescribeFixture(t *testing.T) {
 	}
 	defer plugin.Close(ctx)
 
-	if desc.PluginType != PluginTypeFRPStep {
+	if desc.PluginType != string(PluginTypeFRPStep) {
 		t.Fatalf("plugin type: got %q want %q", desc.PluginType, PluginTypeFRPStep)
 	}
 	if !desc.hasExport(frpStepExportName) {

@@ -107,8 +107,8 @@ func TestGenCatalogFromEmbeddedContractFieldsMatchDescribe(t *testing.T) {
 		if entity.Metadata.PluginType != string(desc.PluginType) {
 			t.Errorf("%s: pluginType = %q, want %q", name, entity.Metadata.PluginType, desc.PluginType)
 		}
-		if entity.Spec.AbiVersion != desc.ABIVersion {
-			t.Errorf("%s: abiVersion = %q, want %q", name, entity.Spec.AbiVersion, desc.ABIVersion)
+		if entity.Spec.AbiVersion != desc.AbiVersion {
+			t.Errorf("%s: abiVersion = %q, want %q", name, entity.Spec.AbiVersion, desc.AbiVersion)
 		}
 		if strings.Join(entity.Spec.Capabilities, ",") != strings.Join(desc.Capabilities, ",") {
 			t.Errorf("%s: targets = %v, want %v", name, entity.Spec.Capabilities, desc.Capabilities)
@@ -154,7 +154,7 @@ func TestGenCatalogFromEmbeddedContractFieldsMatchDescribe(t *testing.T) {
 		if entity.Spec.Provider != nil {
 			contract = entity.Spec.Provider.Contract
 		}
-		if !isZeroContract(desc.Contract) {
+		if desc.Contract != nil && !isZeroContract(*desc.Contract) {
 			if contract == nil {
 				t.Errorf("%s: contract missing though describe() reports it", name)
 			} else if contract.BoundaryAssembly != desc.Contract.BoundaryAssembly {
@@ -412,8 +412,8 @@ func TestGenCatalogCommandMirrorRoundTrips(t *testing.T) {
 // guest yields a publish-ready record without a separate recording step.
 func TestGenCatalogMergeStampsCommandMirror(t *testing.T) {
 	desc := wasm.PluginDescriptor{
-		PluginType: wasm.PluginTypeCLI,
-		ABIVersion: wasm.ABIVersionV1Alpha1,
+		PluginType: string(wasm.PluginTypeCLI),
+		AbiVersion: wasm.ABIVersionV1Alpha1,
 		Exports:    []wasm.PluginExport{{Name: wasm.CLIRunExportName}},
 		Commands: []wasm.PluginCLICommand{
 			{Name: "greet", Description: "greet a target"},

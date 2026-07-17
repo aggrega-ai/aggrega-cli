@@ -75,6 +75,9 @@ var codecTargetPaths = map[string][]string{
 	"cli_gen.go":            {"..", "..", "..", "..", "aggrega-abi", "go", "pkg", "abi"},
 	"cli_gen.rs":            {"..", "..", "..", "..", "aggrega-abi", "rust", "src"},
 	"cli_gen.ts":            {"..", "..", "..", "..", "aggrega-abi", "typescript", "src"},
+	"describe_gen.go":       {"..", "..", "..", "..", "aggrega-abi", "go", "pkg", "abi"},
+	"describe_gen.rs":       {"..", "..", "..", "..", "aggrega-abi", "rust", "src"},
+	"describe_gen.ts":       {"..", "..", "..", "..", "aggrega-abi", "typescript", "src"},
 	"mutator_gen.go":        {"..", "..", "..", "..", "aggrega-abi", "go", "pkg", "abi"},
 	"mutator_gen.rs":        {"..", "..", "..", "..", "aggrega-abi", "rust", "src"},
 	"mutator_gen.ts":        {"..", "..", "..", "..", "aggrega-abi", "typescript", "src"},
@@ -90,6 +93,8 @@ var codecTargetPaths = map[string][]string{
 	"providerrender_gen.go": {"..", "..", "..", "..", "aggrega-abi", "go", "pkg", "abi"},
 	"providerrender_gen.rs": {"..", "..", "..", "..", "aggrega-abi", "rust", "src"},
 	"providerrender_gen.ts": {"..", "..", "..", "..", "aggrega-abi", "typescript", "src"},
+	// The host describe codec is committed inside aggrega-cli's wasm package.
+	"describe_host_gen.go": {"..", "..", "wasm"},
 	// The host mutator codec is committed inside aggrega-cli's topology package.
 	"wasm_types_gen.go": {"..", "..", "compiler", "topology"},
 	// The host linter codec is committed inside aggrega-cli's validator package.

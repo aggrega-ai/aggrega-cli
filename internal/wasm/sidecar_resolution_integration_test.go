@@ -59,7 +59,7 @@ func TestSidecarResolvedPluginLoadsThroughGate(t *testing.T) {
 		t.Fatalf("LoadAndDescribe from sidecar-resolved bytes: %v", err)
 	}
 	defer plugin.Close(context.Background())
-	if desc.ABIVersion == "" {
+	if desc.AbiVersion == "" {
 		t.Errorf("loaded plugin reported empty ABI version through describe()")
 	}
 }

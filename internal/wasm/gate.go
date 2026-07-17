@@ -5,7 +5,6 @@ package wasm
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 )
@@ -195,7 +194,7 @@ func (l *Loader) DescribeAndValidate(ctx context.Context, plugin *Plugin, spec P
 // in the message.
 func parseAndValidateDescriptor(raw []byte, identity string) (PluginDescriptor, error) {
 	var desc PluginDescriptor
-	if err := json.Unmarshal(raw, &desc); err != nil {
+	if err := desc.UnmarshalJSON(raw); err != nil {
 		return PluginDescriptor{}, fmt.Errorf("wasm: plugin %q describe() output is not valid JSON: %v: %w",
 			identity, err, ErrWasmManifestRejected)
 	}

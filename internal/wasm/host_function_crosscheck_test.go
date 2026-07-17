@@ -19,8 +19,8 @@ func TestCrossCheckHostFunctions(t *testing.T) {
 
 	descWith := func(perExport ...[]string) PluginDescriptor {
 		d := PluginDescriptor{
-			ABIVersion: ABIVersionV1Alpha1,
-			PluginType: PluginTypeProvider,
+			AbiVersion: ABIVersionV1Alpha1,
+			PluginType: string(PluginTypeProvider),
 		}
 		for i, hf := range perExport {
 			name := providerRenderExportName
@@ -114,8 +114,8 @@ func TestCrossCheckHostFunctionsDeterministicOffender(t *testing.T) {
 	t.Parallel()
 
 	desc := PluginDescriptor{
-		ABIVersion: ABIVersionV1Alpha1,
-		PluginType: PluginTypeProvider,
+		AbiVersion: ABIVersionV1Alpha1,
+		PluginType: string(PluginTypeProvider),
 		Exports: []PluginExport{
 			{Name: providerRenderExportName, HostFunctions: []string{"aggrega_log", "aggrega_emit_warning"}},
 		},

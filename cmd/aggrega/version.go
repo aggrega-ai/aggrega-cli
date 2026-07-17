@@ -164,10 +164,12 @@ func collectEmbeddedSummaries() []embeddedPluginSummary {
 		if raw, ok := embedded.LookupDescriptor(uri); ok {
 			var desc wasm.PluginDescriptor
 			if err := json.Unmarshal(raw, &desc); err == nil {
-				s.pluginType = string(desc.PluginType)
+				s.pluginType = desc.PluginType
 				s.capabilities = desc.Capabilities
-				s.version = desc.Metadata.Version
-				s.commit = desc.Metadata.Commit
+				if desc.Metadata != nil {
+					s.version = desc.Metadata.Version
+					s.commit = desc.Metadata.Commit
+				}
 			}
 		}
 		out = append(out, s)

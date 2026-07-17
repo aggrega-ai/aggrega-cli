@@ -460,7 +460,10 @@ func pluginRowVersion(e pluginListEntry) string {
 	case e.readiness != "" && e.readiness != "ready":
 		return e.readiness
 	default:
-		return formatProvenance(e.desc.Metadata)
+		if e.desc.Metadata == nil {
+			return ""
+		}
+		return formatProvenance(*e.desc.Metadata)
 	}
 }
 
@@ -531,12 +534,16 @@ func pluginEntryToDoc(e pluginListEntry) pluginEntryDoc {
 		d.Error = e.err.Error()
 		return d
 	}
-	d.Type = string(e.desc.PluginType)
-	d.Version = e.desc.Metadata.Version
-	d.Commit = e.desc.Metadata.Commit
+	d.Type = e.desc.PluginType
+	if e.desc.Metadata != nil {
+		d.Version = e.desc.Metadata.Version
+		d.Commit = e.desc.Metadata.Commit
+	}
 	d.Capabilities = e.desc.Capabilities
-	d.InputKinds = inputKindsList(e.desc.Contract.InputKinds)
-	d.Boundary = e.desc.Contract.BoundaryAssembly
+	if e.desc.Contract != nil {
+		d.InputKinds = inputKindsList(e.desc.Contract.InputKinds)
+		d.Boundary = e.desc.Contract.BoundaryAssembly
+	}
 	d.Exports = exportNames(e.desc.Exports)
 	return d
 }

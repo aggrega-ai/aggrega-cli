@@ -24,8 +24,8 @@ import (
 func describerFor(scope string, compatible []string) stepDescriber {
 	return func(_ context.Context, _ types.PipelineStep) (wasm.PluginDescriptor, error) {
 		return wasm.PluginDescriptor{
-			ABIVersion:   wasm.ABIVersionV1Alpha1,
-			PluginType:   wasm.PluginTypeFRPStep,
+			AbiVersion:   wasm.ABIVersionV1Alpha1,
+			PluginType:   string(wasm.PluginTypeFRPStep),
 			Capabilities: compatible,
 			Exports:      []wasm.PluginExport{{Name: "step", Operates: "patch", Scope: scope}},
 		}, nil

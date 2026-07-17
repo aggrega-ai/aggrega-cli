@@ -17,24 +17,24 @@ func TestPluginDescriptorRoundTrip(t *testing.T) {
 
 	cases := map[string]PluginDescriptor{
 		"provider-helm-chart": {
-			ABIVersion: ABIVersionV1Alpha1,
-			PluginType: PluginTypeProvider,
+			AbiVersion: ABIVersionV1Alpha1,
+			PluginType: string(PluginTypeProvider),
 			Exports: []PluginExport{
-				{Name: "render_node", InputPattern: InputPatternFull, Stability: StabilityStable},
-				{Name: "assemble_boundary", InputPattern: InputPatternFull, Stability: StabilityStable},
+				{Name: "render_node", InputPattern: string(InputPatternFull), Stability: string(StabilityStable)},
+				{Name: "assemble_boundary", InputPattern: string(InputPatternFull), Stability: string(StabilityStable)},
 			},
-			Metadata: PluginDescriptorMeta{Author: "aggrega", License: "Apache-2.0"},
+			Metadata: &PluginDescriptorMeta{Author: "aggrega", License: "Apache-2.0"},
 		},
 		"provider-helm": {
-			ABIVersion: ABIVersionV1Alpha1,
-			PluginType: PluginTypeProvider,
+			AbiVersion: ABIVersionV1Alpha1,
+			PluginType: string(PluginTypeProvider),
 			Exports: []PluginExport{
-				{Name: "render_node", InputPattern: InputPatternFull},
+				{Name: "render_node", InputPattern: string(InputPatternFull)},
 			},
 		},
 		"linter-multi-rule": {
-			ABIVersion: ABIVersionV1Alpha1,
-			PluginType: PluginTypeLinter,
+			AbiVersion: ABIVersionV1Alpha1,
+			PluginType: string(PluginTypeLinter),
 			Exports: []PluginExport{
 				{Name: "lint_naming", HostFunctions: []string{"aggrega_emit_warning"}},
 				{Name: "lint_dependencies"},
@@ -42,20 +42,20 @@ func TestPluginDescriptorRoundTrip(t *testing.T) {
 			},
 		},
 		"frp-step": {
-			ABIVersion: ABIVersionV1Alpha1,
-			PluginType: PluginTypeFRPStep,
+			AbiVersion: ABIVersionV1Alpha1,
+			PluginType: string(PluginTypeFRPStep),
 			Exports: []PluginExport{
-				{Name: "step", InputPattern: InputPatternMinimal},
+				{Name: "step", InputPattern: string(InputPatternMinimal)},
 			},
 		},
 		"frp-step-with-capabilities": {
-			ABIVersion:   ABIVersionV1Alpha1,
-			PluginType:   PluginTypeFRPStep,
+			AbiVersion:   ABIVersionV1Alpha1,
+			PluginType:   string(PluginTypeFRPStep),
 			Capabilities: []string{"helm", "helm-chart"},
 			Exports: []PluginExport{
 				{
 					Name:         "step",
-					InputPattern: InputPatternMinimal,
+					InputPattern: string(InputPatternMinimal),
 					Operates:     "patch",
 					Scope:        "host",
 					Selector:     "workloads carrying a pod template",
@@ -91,8 +91,8 @@ func TestPluginDescriptorMarshalDeterministic(t *testing.T) {
 	t.Parallel()
 
 	d := PluginDescriptor{
-		ABIVersion: ABIVersionV1Alpha1,
-		PluginType: PluginTypeLinter,
+		AbiVersion: ABIVersionV1Alpha1,
+		PluginType: string(PluginTypeLinter),
 		Exports: []PluginExport{
 			{Name: "lint_zeta", HostFunctions: []string{"aggrega_log", "aggrega_emit_warning"}},
 			{Name: "lint_alpha"},
@@ -131,14 +131,14 @@ func TestPluginDescriptorValidateABIHandshake(t *testing.T) {
 
 	base := func() PluginDescriptor {
 		return PluginDescriptor{
-			PluginType: PluginTypeProvider,
+			PluginType: string(PluginTypeProvider),
 			Exports:    []PluginExport{{Name: "render_node"}},
 		}
 	}
 
 	for _, bad := range []string{"", "v1", "v1beta1", "v2alpha1"} {
 		d := base()
-		d.ABIVersion = bad
+		d.AbiVersion = bad
 		err := d.Validate("acme/provider")
 		if !errors.Is(err, ErrWasmManifestRejected) {
 			t.Fatalf("abi_version %q: want ErrWasmManifestRejected, got %v", bad, err)
@@ -146,7 +146,7 @@ func TestPluginDescriptorValidateABIHandshake(t *testing.T) {
 	}
 
 	d := base()
-	d.ABIVersion = ABIVersionV1Alpha1
+	d.AbiVersion = ABIVersionV1Alpha1
 	if err := d.Validate("acme/provider"); err != nil {
 		t.Fatalf("abi_version %q: want accept, got %v", ABIVersionV1Alpha1, err)
 	}
@@ -156,8 +156,8 @@ func TestPluginDescriptorValidateUnknownPluginType(t *testing.T) {
 	t.Parallel()
 
 	d := PluginDescriptor{
-		ABIVersion: ABIVersionV1Alpha1,
-		PluginType: PluginType("transmogrifier"),
+		AbiVersion: ABIVersionV1Alpha1,
+		PluginType: string(PluginType("transmogrifier")),
 		Exports:    []PluginExport{{Name: "render_node"}},
 	}
 	err := d.Validate("acme/mystery")
@@ -175,61 +175,61 @@ func TestPluginDescriptorValidateMinimumExports(t *testing.T) {
 	}{
 		"provider-without-render_node": {
 			descriptor: PluginDescriptor{
-				ABIVersion: ABIVersionV1Alpha1,
-				PluginType: PluginTypeProvider,
+				AbiVersion: ABIVersionV1Alpha1,
+				PluginType: string(PluginTypeProvider),
 				Exports:    []PluginExport{{Name: "assemble_boundary"}},
 			},
 			wantReject: true,
 		},
 		"provider-with-render_node": {
 			descriptor: PluginDescriptor{
-				ABIVersion: ABIVersionV1Alpha1,
-				PluginType: PluginTypeProvider,
+				AbiVersion: ABIVersionV1Alpha1,
+				PluginType: string(PluginTypeProvider),
 				Exports:    []PluginExport{{Name: "render_node"}},
 			},
 		},
 		"linter-without-lint": {
 			descriptor: PluginDescriptor{
-				ABIVersion: ABIVersionV1Alpha1,
-				PluginType: PluginTypeLinter,
+				AbiVersion: ABIVersionV1Alpha1,
+				PluginType: string(PluginTypeLinter),
 				Exports:    []PluginExport{{Name: "describe_rules"}},
 			},
 			wantReject: true,
 		},
 		"linter-with-lint": {
 			descriptor: PluginDescriptor{
-				ABIVersion: ABIVersionV1Alpha1,
-				PluginType: PluginTypeLinter,
+				AbiVersion: ABIVersionV1Alpha1,
+				PluginType: string(PluginTypeLinter),
 				Exports:    []PluginExport{{Name: "lint_naming"}},
 			},
 		},
 		"frp_step-without-step": {
 			descriptor: PluginDescriptor{
-				ABIVersion: ABIVersionV1Alpha1,
-				PluginType: PluginTypeFRPStep,
+				AbiVersion: ABIVersionV1Alpha1,
+				PluginType: string(PluginTypeFRPStep),
 				Exports:    []PluginExport{{Name: "transform"}},
 			},
 			wantReject: true,
 		},
 		"frp_step-with-step": {
 			descriptor: PluginDescriptor{
-				ABIVersion: ABIVersionV1Alpha1,
-				PluginType: PluginTypeFRPStep,
+				AbiVersion: ABIVersionV1Alpha1,
+				PluginType: string(PluginTypeFRPStep),
 				Exports:    []PluginExport{{Name: "step"}},
 			},
 		},
 		"cli-without-cli_run": {
 			descriptor: PluginDescriptor{
-				ABIVersion: ABIVersionV1Alpha1,
-				PluginType: PluginTypeCLI,
+				AbiVersion: ABIVersionV1Alpha1,
+				PluginType: string(PluginTypeCLI),
 				Exports:    []PluginExport{{Name: "run"}},
 			},
 			wantReject: true,
 		},
 		"cli-with-cli_run": {
 			descriptor: PluginDescriptor{
-				ABIVersion: ABIVersionV1Alpha1,
-				PluginType: PluginTypeCLI,
+				AbiVersion: ABIVersionV1Alpha1,
+				PluginType: string(PluginTypeCLI),
 				Exports:    []PluginExport{{Name: "cli_run"}},
 			},
 		},
@@ -258,8 +258,8 @@ func TestPluginDescriptorValidateCLI(t *testing.T) {
 
 	// A scratch cli descriptor with the cli_run export passes Validate.
 	withRun := PluginDescriptor{
-		ABIVersion: ABIVersionV1Alpha1,
-		PluginType: PluginTypeCLI,
+		AbiVersion: ABIVersionV1Alpha1,
+		PluginType: string(PluginTypeCLI),
 		Exports:    []PluginExport{{Name: CLIRunExportName}},
 	}
 	if err := withRun.Validate("acme/cli"); err != nil {
@@ -268,8 +268,8 @@ func TestPluginDescriptorValidateCLI(t *testing.T) {
 
 	// The same descriptor without cli_run fails, wrapping ErrWasmManifestRejected.
 	withoutRun := PluginDescriptor{
-		ABIVersion: ABIVersionV1Alpha1,
-		PluginType: PluginTypeCLI,
+		AbiVersion: ABIVersionV1Alpha1,
+		PluginType: string(PluginTypeCLI),
 		Exports:    []PluginExport{{Name: "run"}},
 	}
 	if err := withoutRun.Validate("acme/cli"); !errors.Is(err, ErrWasmManifestRejected) {
@@ -285,8 +285,8 @@ func TestPluginDescriptorValidateCommands(t *testing.T) {
 	t.Parallel()
 
 	multi := PluginDescriptor{
-		ABIVersion: ABIVersionV1Alpha1,
-		PluginType: PluginTypeCLI,
+		AbiVersion: ABIVersionV1Alpha1,
+		PluginType: string(PluginTypeCLI),
 		Commands:   []PluginCLICommand{{Name: "greet-a", Description: "A"}, {Name: "greet-b"}},
 		Exports:    []PluginExport{{Name: CLIRunExportName}},
 	}
@@ -295,8 +295,8 @@ func TestPluginDescriptorValidateCommands(t *testing.T) {
 	}
 
 	none := PluginDescriptor{
-		ABIVersion: ABIVersionV1Alpha1,
-		PluginType: PluginTypeCLI,
+		AbiVersion: ABIVersionV1Alpha1,
+		PluginType: string(PluginTypeCLI),
 		Exports:    []PluginExport{{Name: CLIRunExportName}},
 	}
 	if err := none.Validate("acme/cli"); err != nil {
@@ -304,8 +304,8 @@ func TestPluginDescriptorValidateCommands(t *testing.T) {
 	}
 
 	emptyName := PluginDescriptor{
-		ABIVersion: ABIVersionV1Alpha1,
-		PluginType: PluginTypeCLI,
+		AbiVersion: ABIVersionV1Alpha1,
+		PluginType: string(PluginTypeCLI),
 		Commands:   []PluginCLICommand{{Name: "ok"}, {Name: ""}},
 		Exports:    []PluginExport{{Name: CLIRunExportName}},
 	}
@@ -323,8 +323,8 @@ func TestPluginDescriptorValidateSettingsSchemaShape(t *testing.T) {
 
 	base := func(schema string) PluginDescriptor {
 		return PluginDescriptor{
-			ABIVersion:     ABIVersionV1Alpha1,
-			PluginType:     PluginTypePolicy,
+			AbiVersion:     ABIVersionV1Alpha1,
+			PluginType:     string(PluginTypePolicy),
 			Exports:        []PluginExport{{Name: ValidateExport}},
 			SettingsSchema: json.RawMessage(schema),
 		}
@@ -358,7 +358,7 @@ func TestPluginDescriptorValidateSettingsSchemaShape(t *testing.T) {
 func TestPluginDescriptorValidateSettings(t *testing.T) {
 	t.Parallel()
 
-	noSchema := PluginDescriptor{ABIVersion: ABIVersionV1Alpha1, PluginType: PluginTypePolicy}
+	noSchema := PluginDescriptor{AbiVersion: ABIVersionV1Alpha1, PluginType: string(PluginTypePolicy)}
 	if err := noSchema.ValidateSettings(map[string]any{"whatever": 1}); err != nil {
 		t.Fatalf("no schema must accept any settings (free-form): %v", err)
 	}
@@ -367,8 +367,8 @@ func TestPluginDescriptorValidateSettings(t *testing.T) {
 	}
 
 	typed := PluginDescriptor{
-		ABIVersion:     ABIVersionV1Alpha1,
-		PluginType:     PluginTypePolicy,
+		AbiVersion:     ABIVersionV1Alpha1,
+		PluginType:     string(PluginTypePolicy),
 		SettingsSchema: json.RawMessage(`{"type":"object","properties":{"max_replicas":{"type":"integer"}},"required":["max_replicas"],"additionalProperties":false}`),
 	}
 	if err := typed.ValidateSettings(map[string]any{"max_replicas": 3}); err != nil {
@@ -388,8 +388,8 @@ func TestPluginDescriptorPluginLevelDescriptionRoundTrip(t *testing.T) {
 	t.Parallel()
 
 	want := PluginDescriptor{
-		ABIVersion:  ABIVersionV1Alpha1,
-		PluginType:  PluginTypeCLI,
+		AbiVersion:  ABIVersionV1Alpha1,
+		PluginType:  string(PluginTypeCLI),
 		Description: "seeds a new Aggregate scaffold under the current directory",
 		Exports:     []PluginExport{{Name: CLIRunExportName}},
 	}
@@ -411,8 +411,8 @@ func TestPluginDescriptorPluginLevelDescriptionRoundTrip(t *testing.T) {
 	// An omitted plugin-level description marshals no "description" key, so
 	// existing guests and cached descriptors that omit it stay byte-stable.
 	none := PluginDescriptor{
-		ABIVersion: ABIVersionV1Alpha1,
-		PluginType: PluginTypeCLI,
+		AbiVersion: ABIVersionV1Alpha1,
+		PluginType: string(PluginTypeCLI),
 		Exports:    []PluginExport{{Name: CLIRunExportName}},
 	}
 	noneData, err := json.Marshal(none)
@@ -432,8 +432,8 @@ func TestPluginDescriptorValidateHostFunctionsSubsetOfAllowlist(t *testing.T) {
 	// not a stub: the only bindable host functions in v1alpha1 are the two
 	// baseline diagnostics, so a catalog_lookup declaration is refused.
 	reject := PluginDescriptor{
-		ABIVersion: ABIVersionV1Alpha1,
-		PluginType: PluginTypeProvider,
+		AbiVersion: ABIVersionV1Alpha1,
+		PluginType: string(PluginTypeProvider),
 		Exports: []PluginExport{
 			{Name: "render_node", HostFunctions: []string{"aggrega_log", "catalog_lookup"}},
 		},
@@ -444,8 +444,8 @@ func TestPluginDescriptorValidateHostFunctionsSubsetOfAllowlist(t *testing.T) {
 
 	// A descriptor declaring only baseline host functions passes.
 	accept := PluginDescriptor{
-		ABIVersion: ABIVersionV1Alpha1,
-		PluginType: PluginTypeProvider,
+		AbiVersion: ABIVersionV1Alpha1,
+		PluginType: string(PluginTypeProvider),
 		Exports: []PluginExport{
 			{Name: "render_node", HostFunctions: []string{"aggrega_log", "aggrega_emit_warning"}},
 		},
@@ -495,8 +495,8 @@ func TestPluginDescriptorValidateCapabilityShape(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			d := PluginDescriptor{
-				ABIVersion: ABIVersionV1Alpha1,
-				PluginType: PluginTypeFRPStep,
+				AbiVersion: ABIVersionV1Alpha1,
+				PluginType: string(PluginTypeFRPStep),
 				Exports:    []PluginExport{tc.export},
 			}
 			// The frp_step minimum export is "step"; every case names it so
@@ -522,8 +522,8 @@ func TestPluginDescriptorValidateCapabilityShape(t *testing.T) {
 func TestPluginDescriptorTargetsUnchecked(t *testing.T) {
 	t.Parallel()
 	d := PluginDescriptor{
-		ABIVersion:   ABIVersionV1Alpha1,
-		PluginType:   PluginTypeFRPStep,
+		AbiVersion:   ABIVersionV1Alpha1,
+		PluginType:   string(PluginTypeFRPStep),
 		Capabilities: []string{"a-provider-that-does-not-exist", "another"},
 		Exports:      []PluginExport{{Name: "step"}},
 	}
@@ -621,10 +621,10 @@ func TestPluginDescriptorValidateLinkCapability(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			d := PluginDescriptor{
-				ABIVersion: ABIVersionV1Alpha1,
-				PluginType: PluginTypeProvider,
+				AbiVersion: ABIVersionV1Alpha1,
+				PluginType: string(PluginTypeProvider),
 				Exports:    tc.exports,
-				Contract:   ProviderContract{CrossBoundaryLinking: tc.linking},
+				Contract:   &ProviderContract{CrossBoundaryLinking: tc.linking},
 			}
 			err := d.Validate("acme/link-provider")
 			if tc.wantReject {
@@ -657,8 +657,8 @@ func TestValidate_StreamingHostFuncs_DescriptorLevelDisjointness(t *testing.T) {
 	// second export declaring aggrega_cli_write_stdout is checked against the
 	// shared gate, which does not admit the streaming name.
 	nonCLI := PluginDescriptor{
-		ABIVersion: ABIVersionV1Alpha1,
-		PluginType: PluginTypeProvider,
+		AbiVersion: ABIVersionV1Alpha1,
+		PluginType: string(PluginTypeProvider),
 		Exports: []PluginExport{
 			{Name: "render_node"},
 			{Name: "emit_progress", HostFunctions: []string{"aggrega_cli_write_stdout"}},
@@ -672,8 +672,8 @@ func TestValidate_StreamingHostFuncs_DescriptorLevelDisjointness(t *testing.T) {
 	// export is accepted: the cli type routes through the CLI union gate, which
 	// admits the streaming name.
 	cli := PluginDescriptor{
-		ABIVersion: ABIVersionV1Alpha1,
-		PluginType: PluginTypeCLI,
+		AbiVersion: ABIVersionV1Alpha1,
+		PluginType: string(PluginTypeCLI),
 		Exports: []PluginExport{
 			{Name: CLIRunExportName, HostFunctions: []string{"aggrega_cli_write_stdout"}},
 		},

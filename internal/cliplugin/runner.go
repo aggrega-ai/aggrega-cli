@@ -136,7 +136,7 @@ func (r Runner) Run(ctx context.Context, uri, command string, argv []string) (in
 	}
 	defer func() { _ = plugin.Close(ctx) }()
 
-	if desc.PluginType != wasm.PluginTypeCLI {
+	if desc.PluginType != string(wasm.PluginTypeCLI) {
 		return 0, digest, fmt.Errorf("cliplugin: plugin %q reports type %q, not %q: %w",
 			uri, desc.PluginType, wasm.PluginTypeCLI, ErrPluginNotCLI)
 	}

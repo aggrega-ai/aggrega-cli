@@ -4,326 +4,27 @@
 package wasm
 
 import (
-	"encoding/json"
 	"fmt"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
-// PluginDescriptor is the output a Wasm plugin returns from its
-// describe() export — the plugin's self-declaration of the ABI version
-// it binds against, its plugin type, the provider engines it is
-// compatible with, the exports it offers (each with its capability
-// declaration), a plugin-level capability self-report, and optional
-// authorship metadata. The host reads describe() once when it loads a
-// plugin, validates the declaration (see [PluginDescriptor.Validate]),
-// and uses the per-export declarations to bind the least-privilege host
-// surface each export needs before invoking it.
+// The descriptor wire types — PluginDescriptor and its nested PluginExport,
+// PluginCLICommand (with its per-command PluginCommandFlag list), ProviderContract
+// and that contract's nested InputKinds, ArtifactDelimiters, and
+// AssemblyNameAnnotation, plus PluginDescriptorMeta — are generated with their
+// streaming JSON codec from the descriptor schema into the companion generated
+// file. The host decodes a guest's describe() output through that codec, so the
+// boundary shape check is the typed decode itself. An optional nested object the
+// guest omits decodes to a nil pointer, so an absent contract, delimiter pair,
+// assembly-name annotation, or metadata block is distinguishable from a present
+// empty one.
 //
-// describe() is cross-plugin-type: one shape covers provider, linter,
-// feature-recipe-pipeline, mutator, policy, and CLI plugins. It is consumed by the host
-// loader for dispatch decisions, not emitted into rendered output, so
-// its slices carry author/declared order without an OrderedMap; a
-// future consumer that marshals a descriptor into a deterministic
-// on-disk artifact relies on encoding/json's sorted object keys plus
-// these declared-order slices.
-//
-// describe() is on the live plugin-load path: for every guest it loads,
-// the host calls the guest's describe() export, unmarshals the returned
-// bytes into this shape, and validates them (see
-// [PluginDescriptor.Validate]) before dispatching any other export. A
-// descriptor the host refuses fails the load rather than being
-// mis-invoked at dispatch. The same shape and validator run in the test
-// suite over crafted bytes, so the parse-and-validate behaviour is
-// exercised with and without a running guest.
-//
-// This is the cross-boundary wire analog of the in-tree
-// renderer.ProviderContract self-report: a provider engine reports
-// its supported input kinds to the central gate through
-// ProviderContract, exactly as a provider Wasm guest reports its
-// exports and ABI version through describe(). The two are independent
-// surfaces over the same idea (a renderer self-declaring what it can
-// do); describe() is the wire shape, renderer.ProviderContract the in-tree
-// Go shape, and neither is derived from the other.
-type PluginDescriptor struct {
-	// ABIVersion is the plugin ABI the guest binds against. The host
-	// accepts exactly one version (ABIVersionV1Alpha1); any other value
-	// fails the load. This is the ABI-compatibility handshake: a guest
-	// built against an ABI the host does not speak is refused loudly at
-	// load rather than mis-invoked at dispatch.
-	ABIVersion string `json:"abi_version"`
-
-	// PluginType is the plugin's kind — provider, linter,
-	// feature-recipe-pipeline step, mutator, policy, or CLI. It
-	// selects the minimum-export rule the host validates and, with the
-	// export name, the default input pattern.
-	PluginType PluginType `json:"plugin_type"`
-
-	// Capabilities is what the plugin serves, interpreted per plugin
-	// type: for a provider plugin, the render-engine capabilities (provider
-	// engine names such as "helm" or "compose") whose output shape it renders;
-	// for an frp_step plugin, the provider capabilities its step is compatible
-	// with; the cross-cutting sockets leave it empty. Entries are in declared
-	// order. The list is an explicit, tested-compatibility claim rather than an
-	// implicit "any similar provider". The runtime enforces it — for each
-	// scope a pipeline step touches, the provider rendering that scope's
-	// documents must appear here — but this load-time validator does not:
-	// entries are unchecked strings here, since no provider registry exists
-	// at the load boundary to check them against. An empty or absent list
-	// declares no capability claim, so it matches nothing and the runtime halts
-	// any pipeline step that uses the plugin.
-	//
-	// The wire tag is the frozen ABI name the guest emits in describe(); the
-	// Go field name aligns with that wire tag, capabilities.
-	Capabilities []string `json:"capabilities,omitempty"`
-
-	// Exports lists the plugin's offered exports in declared order. The
-	// host validates that the per-type minimum export is present and
-	// binds the per-export host surface before invoking each.
-	Exports []PluginExport `json:"exports"`
-
-	// Contract is the provider's render-behavior self-report —
-	// the input kinds it renders, how it assembles a dispatch group's
-	// per-node output, the artifact-template delimiter pair it applies,
-	// and any source-file restriction. Unlike the per-export declarations,
-	// it describes the provider as a whole. The load gate cross-checks it
-	// against the entity's authored claim; an all-zero value carries no
-	// render-behavior contract.
-	Contract ProviderContract `json:"contract,omitempty,omitzero"`
-
-	// Description is the plugin's own one-line human-readable description —
-	// a plugin-level self-report of what the plugin does, distinct from the
-	// per-export [PluginExport.Description] and from the entity's
-	// metadata.description. It is informational; the host neither validates
-	// nor acts on it. It is the plugin's self-report consumed by catalog
-	// generation.
-	Description string `json:"description,omitempty"`
-
-	// Commands are the top-level aggrega <command> verbs a CLI plugin
-	// contributes, each with its own short-help line. One CLI plugin may
-	// contribute several commands; the host registers one top-level command
-	// per entry and, at invocation, routes the resolved command name to the
-	// guest so a single guest backing several commands selects its behavior.
-	// A non-CLI plugin leaves it empty. It is documentation the install path
-	// consumes to name the commands the plugin is installed as; the load gate
-	// checks only that every entry names a command.
-	Commands []PluginCLICommand `json:"commands,omitempty"`
-
-	// Stage is the compilation stage a policy plugin evaluates at:
-	// StageIR (the default when absent) evaluates the provider-agnostic IR graph;
-	// StageRender evaluates the rendered provider-native artifacts. It is
-	// meaningful for the policy plugin type only — as Commands is
-	// meaningful for the CLI type only — and other plugin types leave it empty.
-	// The shape validator accepts StageIR, StageRender, or empty and refuses
-	// any other value; it does not cross-check the value against the plugin type.
-	Stage string `json:"stage,omitempty"`
-
-	// SettingsSchema is an optional JSON Schema a plugin declares to type the
-	// operator-supplied settings its attachment carries (the attachment's
-	// with.settings object). When present, the host compiles it at load and, at
-	// dispatch, validates the attachment's settings against it before invoking
-	// the plugin; settings that do not conform halt the build loudly, naming the
-	// offending key, rather than reaching the plugin as ill-shaped input. When
-	// absent, the plugin declares no shape and the host hands settings through
-	// verbatim (free-form). The schema is the plugin's own declaration of what
-	// its settings must look like; the host runs generic JSON Schema validation
-	// against it and does not interpret the settings' meaning. It is shape-checked
-	// at load — a malformed schema document fails the load (see
-	// [PluginDescriptor.Validate]) — and applied at dispatch (see
-	// [PluginDescriptor.ValidateSettings]). It is meaningful for a socket that
-	// carries settings (the policy socket today); a plugin type that
-	// reads no settings leaves it empty.
-	SettingsSchema json.RawMessage `json:"settings_schema,omitempty"`
-
-	// Metadata is optional authorship information. It carries no
-	// behavioral contract — the host neither validates nor acts on it.
-	Metadata PluginDescriptorMeta `json:"metadata,omitempty,omitzero"`
-}
-
-// PluginExport is one export a plugin offers, as declared in describe().
-type PluginExport struct {
-	// Name is the export's ABI name — for example "render_node",
-	// "assemble_boundary", "lint_naming", "step". The host dispatches
-	// to the export by this name.
-	Name string `json:"name"`
-
-	// InputPattern selects how the host delivers the export's input:
-	// the full payload inline (InputPatternFull) or a small payload the
-	// guest enriches via host functions (InputPatternMinimal). An export
-	// that omits this field takes its plugin-type/name default (see
-	// [defaultInputPattern]).
-	InputPattern InputPattern `json:"input_pattern,omitempty"`
-
-	// HostFunctions lists the host function names this export imports.
-	// Every name MUST be in the host-function allowlist (see hostfuncs.go).
-	// The declaration is authoritative and checked against the binary: the
-	// load gate cross-checks the union of host functions declared across the
-	// plugin's exports against the set the guest actually imports from its
-	// .wasm, halting on any name declared but not imported or imported but
-	// not declared, so this list cannot drift from the functions the guest
-	// really calls. The host binds each imported allowlisted function,
-	// giving the guest the least-privilege host surface its imports declare.
-	HostFunctions []string `json:"host_functions,omitempty"`
-
-	// Description is optional human-readable text describing the export.
-	Description string `json:"description,omitempty"`
-
-	// Stability is the export's stability level — stable, experimental,
-	// or deprecated. An omitted value carries no stability claim.
-	Stability Stability `json:"stability,omitempty"`
-
-	// Operates declares the pipeline operation this export performs:
-	// "patch" (modify an existing rendered document) or "emit" (add a new
-	// document). The value is shape-validated here — it must be patch,
-	// emit, or empty — but the host does not act on it at load; the
-	// runtime reads it when dispatching the step.
-	Operates string `json:"operates,omitempty"`
-
-	// Scope declares the document root this export operates on: "own" (the
-	// node's own rendered documents) or "host" (the documents of the
-	// component a component-scope FeatureRecipe is attached to). The value
-	// is shape-validated here — it must be own, host, or empty — but the
-	// host does not act on it at load; the runtime reads it when
-	// dispatching the step and resolves the scope's documents.
-	Scope string `json:"scope,omitempty"`
-
-	// Selector is a free-form, human-readable description of what the
-	// export acts on (for example "workloads carrying a pod template").
-	// It is documentation for catalog readers; the host neither validates
-	// its content nor acts on it.
-	Selector string `json:"selector,omitempty"`
-}
-
-// PluginCLICommand is one top-level aggrega <command> verb a CLI plugin
-// contributes, as declared in describe(). The host registers one command per
-// entry and routes the resolved command name back to the guest at invocation,
-// so a single guest may back several commands and select its behavior on the
-// name.
-type PluginCLICommand struct {
-	// Name is the command verb the host registers — the aggrega <name> token an
-	// operator invokes and the discriminator the host hands the guest so it can
-	// route on which command was called. Every declared command must name it.
-	Name string `json:"name"`
-
-	// Description is the command's one-line short-help text, shown in the
-	// command listing and help output. It is optional documentation; the host
-	// neither validates nor acts on it.
-	Description string `json:"description,omitempty"`
-}
-
-// PluginDescriptorMeta is optional authorship and build-provenance
-// metadata a plugin declares in describe(). It is informational; the host
-// does not validate or act on it. Version and Commit are optional
-// build-provenance fields — the compiler version and short commit a guest
-// was built from — stamped into the guest at build time; an unstamped
-// build omits them.
-type PluginDescriptorMeta struct {
-	Author     string `json:"author,omitempty"`
-	Repository string `json:"repository,omitempty"`
-	License    string `json:"license,omitempty"`
-	Version    string `json:"version,omitempty"`
-	Commit     string `json:"commit,omitempty"`
-}
-
-// ProviderContract is a provider's self-declaration of the compile-time render
-// behaviors it performs across the nodes it renders — the input kinds it
-// accepts, whether and how it assembles a dispatch group's per-node output
-// into a single artifact, the Go-template delimiter pair it applies to
-// imported artifact files, and any restriction on which source files it
-// consumes. It is a provider-level self-report: it describes the provider as a
-// whole, not any one export. The host reads it from describe() and the load
-// gate cross-checks it against the entity's authored claim.
-type ProviderContract struct {
-	// InputKinds reports which of the three Recipe input kinds the plugin
-	// renders: a sourced file set, a synthesized workload, and a standalone
-	// artifacts-only node.
-	InputKinds InputKinds `json:"input_kinds"`
-
-	// BoundaryAssembly reports how the plugin combines a dispatch group's
-	// per-node render output: "none" writes each node's output directly at the
-	// dispatch path, "merge" folds the per-node fragments into one document,
-	// and "nest" places each node's output under its own position in an
-	// umbrella structure. An empty value carries no assembly claim.
-	BoundaryAssembly string `json:"boundary_assembly"`
-
-	// ArtifactDelimiters reports the Go-template delimiter pair the plugin
-	// applies to imported artifact files. Absent means the default "{{"/"}}"
-	// pair; a plugin whose target syntax collides with that pair reports an
-	// alternate pair here.
-	ArtifactDelimiters *ArtifactDelimiters `json:"artifact_delimiters,omitempty"`
-
-	// SourceFilter reports the source-file paths the plugin consumes when a
-	// node supplies a file set. Absent means the plugin consumes every file in
-	// the set.
-	SourceFilter []string `json:"source_filter,omitempty"`
-
-	// AssemblyNameAnnotation reports a boundary annotation whose resolved value
-	// names the artifact the plugin assembles from a dispatch group. A plugin
-	// that folds a group's contributing boundaries into one named assembly
-	// declares the annotation key it reads and whether every contributing
-	// boundary must agree on that annotation's resolved value; absent means the
-	// plugin names its assembly from the dispatch path alone. The host reads it
-	// from describe() and the load gate cross-checks it against the entity's
-	// authored claim.
-	AssemblyNameAnnotation *AssemblyNameAnnotation `json:"assembly_name_annotation,omitempty"`
-
-	// ReusableInstance reports whether one loaded plugin instance may serve
-	// every render, assemble, and validate crossing of the build rather than a
-	// fresh instance per crossing. A plugin declares it true only when it holds
-	// no state across crossings — a pure function of its per-crossing input — so
-	// a single instance produces byte-identical output whether reused or freshly
-	// loaded. Absent (false) is the safe default: the host loads a fresh instance
-	// per crossing, so a plugin that carries state is isolated by construction.
-	ReusableInstance bool `json:"reusable_instance,omitempty"`
-
-	// CrossBoundaryLinking reports whether the plugin wires cross-boundary uses
-	// edges — edges whose consuming and consumed ends assemble into different
-	// dispatch groups — by producing provider-native cross-reference wiring
-	// through its link_publish and link_resolve exports. A plugin declares it
-	// true only when it exports both; the load gate rejects a declaration that
-	// does not match the export pair (see [PluginDescriptor.Validate]). Absent
-	// (false) is the safe default: the plugin wires no cross-boundary edges, and
-	// the host does not route link crossings to it.
-	CrossBoundaryLinking bool `json:"cross_boundary_linking,omitempty"`
-}
-
-// InputKinds reports which Recipe input kinds a plugin renders. Each field is
-// an independent claim; a plugin may report any combination.
-type InputKinds struct {
-	// Sourced reports that the plugin renders a sourced file set (a chart, a
-	// module, a compose file).
-	Sourced bool `json:"sourced"`
-	// Synthesized reports that the plugin renders a synthesized workload.
-	Synthesized bool `json:"synthesized"`
-	// ArtifactsStandalone reports that the plugin renders a standalone
-	// artifacts-only node — one carrying imported artifact documents and no
-	// source or workload.
-	ArtifactsStandalone bool `json:"artifacts_standalone"`
-}
-
-// ArtifactDelimiters is the Go-template delimiter pair a plugin applies to
-// imported artifact files, reported when it differs from the default
-// "{{"/"}}" pair.
-type ArtifactDelimiters struct {
-	// Left is the opening delimiter.
-	Left string `json:"left"`
-	// Right is the closing delimiter.
-	Right string `json:"right"`
-}
-
-// AssemblyNameAnnotation is the boundary annotation whose resolved value names a
-// plugin's assembled artifact, reported when the plugin folds a dispatch group's
-// contributing boundaries into one named assembly.
-type AssemblyNameAnnotation struct {
-	// Annotation is the boundary annotation key the plugin reads the assembled
-	// artifact's name from.
-	Annotation string `json:"annotation"`
-	// RequireUnique reports whether every boundary contributing to one dispatch
-	// group must agree on the annotation's resolved value. When true, a group
-	// whose contributing boundaries resolve the annotation to different values
-	// halts the build; when false, the plugin accepts the first resolved value.
-	RequireUnique bool `json:"require_unique,omitempty"`
-}
+// This file holds the host contract over that generated shape: the Validate
+// entry point and its per-check helpers, the settings-schema validation, and the
+// typed enum vocabularies (plugin type, input pattern, stability) plus the export
+// and boundary-assembly name constants the checks compare the decoded string
+// fields against.
 
 // PluginType is the kind of a Wasm plugin. It selects the
 // minimum-export rule the host enforces and the default input pattern
@@ -543,12 +244,12 @@ const (
 // message contract is met without this surface inventing an identity
 // scheme of its own.
 func (d PluginDescriptor) Validate(pluginIdentity string) error {
-	if d.ABIVersion != ABIVersionV1Alpha1 {
+	if d.AbiVersion != ABIVersionV1Alpha1 {
 		return fmt.Errorf("plugin %q declares abi_version %q; host speaks %q: %w",
-			pluginIdentity, d.ABIVersion, ABIVersionV1Alpha1, ErrWasmManifestRejected)
+			pluginIdentity, d.AbiVersion, ABIVersionV1Alpha1, ErrWasmManifestRejected)
 	}
 
-	switch d.PluginType {
+	switch PluginType(d.PluginType) {
 	case PluginTypeProvider, PluginTypeLinter, PluginTypeFRPStep, PluginTypeMutator, PluginTypePolicy, PluginTypeCLI:
 		// recognized
 	default:
@@ -628,11 +329,12 @@ func (d PluginDescriptor) validateStage(pluginIdentity string) error {
 // inconsistency.
 func (d PluginDescriptor) validateLinkCapability(pluginIdentity string) error {
 	bothExports := d.hasExport(LinkPublishExport) && d.hasExport(LinkResolveExport)
+	crossBoundaryLinking := d.Contract != nil && d.Contract.CrossBoundaryLinking
 	switch {
-	case d.Contract.CrossBoundaryLinking && !bothExports:
+	case crossBoundaryLinking && !bothExports:
 		return fmt.Errorf("plugin %q declares the cross-boundary linking capability but does not export both %q and %q: %w",
 			pluginIdentity, LinkPublishExport, LinkResolveExport, ErrWasmManifestRejected)
-	case !d.Contract.CrossBoundaryLinking && bothExports:
+	case !crossBoundaryLinking && bothExports:
 		return fmt.Errorf("plugin %q exports both %q and %q but does not declare the cross-boundary linking capability: %w",
 			pluginIdentity, LinkPublishExport, LinkResolveExport, ErrWasmManifestRejected)
 	}
@@ -647,6 +349,9 @@ func (d PluginDescriptor) validateLinkCapability(pluginIdentity string) error {
 // cross-checks the block against the entity's authored claim; the other input
 // fields are piped through unchecked here.
 func (d PluginDescriptor) validateContract(pluginIdentity string) error {
+	if d.Contract == nil {
+		return nil
+	}
 	switch d.Contract.BoundaryAssembly {
 	case "", BoundaryAssemblyNone, BoundaryAssemblyMerge, BoundaryAssemblyNest:
 		// well-shaped
@@ -694,7 +399,7 @@ func (d PluginDescriptor) validateExportCapabilities(pluginIdentity string) erro
 // rule, returning an ErrWasmManifestRejected-wrapped error naming the
 // missing export when the rule is unmet.
 func (d PluginDescriptor) validateMinimumExports(pluginIdentity string) error {
-	switch d.PluginType {
+	switch PluginType(d.PluginType) {
 	case PluginTypeProvider:
 		if !d.hasExport(providerRenderExportName) {
 			return fmt.Errorf("provider plugin %q declares no %q export: %w",
@@ -744,14 +449,14 @@ func (d PluginDescriptor) validateMinimumExports(pluginIdentity string) error {
 // gate and then fail the derived-import gate (or vice versa).
 func (d PluginDescriptor) validateExportHostFunctions(pluginIdentity string) error {
 	subset := validateHostFunctionsSubset
-	if d.PluginType == PluginTypeCLI {
+	if PluginType(d.PluginType) == PluginTypeCLI {
 		subset = validateHostFunctionsSubsetCLI
 	}
 	for _, export := range d.Exports {
 		if len(export.HostFunctions) == 0 {
 			continue
 		}
-		if err := subset(fmt.Sprintf("%s/%s", pluginIdentity, export.Name), string(d.PluginType), export.HostFunctions); err != nil {
+		if err := subset(fmt.Sprintf("%s/%s", pluginIdentity, export.Name), d.PluginType, export.HostFunctions); err != nil {
 			return err
 		}
 	}

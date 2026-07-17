@@ -241,9 +241,34 @@ func pushPlugin(out io.Writer, cfg pushConfig, registry string, wantSign bool, n
 func entityCommandMirror(entity types.Plugin) []wasm.PluginCLICommand {
 	mirror := make([]wasm.PluginCLICommand, len(entity.Spec.Commands))
 	for i, c := range entity.Spec.Commands {
-		mirror[i] = wasm.PluginCLICommand{Name: c.Name, Description: c.Description}
+		mirror[i] = wasm.PluginCLICommand{
+			Name:        c.Name,
+			Description: c.Description,
+			Flags:       entityCommandFlags(c.Flags),
+		}
 	}
 	return mirror
+}
+
+// entityCommandFlags projects an entity command's authored flag mirror into the
+// neutral flag shape the command-mirror comparison reads, preserving declared
+// order. A command that records no flags yields a nil slice, which the
+// comparison treats as equal to a described command that declares no flags.
+func entityCommandFlags(flags []types.PluginCommandFlag) []wasm.PluginCommandFlag {
+	if len(flags) == 0 {
+		return nil
+	}
+	out := make([]wasm.PluginCommandFlag, len(flags))
+	for i, f := range flags {
+		out[i] = wasm.PluginCommandFlag{
+			Name:        f.Name,
+			Shorthand:   f.Shorthand,
+			Description: f.Description,
+			Type:        f.Type,
+			Default:     f.Default,
+		}
+	}
+	return out
 }
 
 // entityCuratedSurface projects a Plugin entity's authored, curated surface — its

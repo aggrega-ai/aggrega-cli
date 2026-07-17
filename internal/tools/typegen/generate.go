@@ -10,3 +10,4 @@ package main
 // Run from the umbrella checkout: `go generate ./internal/tools/typegen`.
 //
 //go:generate go run . ../../../../aggrega-abi/go/pkg/abi/frp_gen.go
+//go:generate go run . ../../../../aggrega-abi/go/pkg/abi/describe_gen.go

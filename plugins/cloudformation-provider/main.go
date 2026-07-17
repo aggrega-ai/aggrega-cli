@@ -61,7 +61,6 @@ package main
 
 import (
 	"errors"
-	"strconv"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
 	"github.com/aggrega-ai/aggrega-cli/plugins/cloudformation-provider/cfncore"
@@ -69,48 +68,80 @@ import (
 	pdk "github.com/extism/go-pdk"
 )
 
-// pluginDescriptorHead is the fixed prefix of the describe() self-report: a
-// v1alpha1 provider plugin compatible with the cloudformation provider, declaring the render_node,
+// descriptor is the describe() self-report: a v1alpha1 provider plugin compatible
+// with the cloudformation provider, declaring the render_node,
 // validate_node_input, assemble_boundary, link_publish, and link_resolve exports
-// and its render-behavior contract (sourced and artifacts-standalone
-// input, boundary-merge assembly, and cross-boundary linking). The host reads this
-// once at load and validates it before invoking any export. CloudFormation resolves
-// a sourced template from the host's name-only listing and asks the host to pack the
+// and its render-behavior contract (sourced and artifacts-standalone input,
+// boundary-merge assembly, and cross-boundary linking). The host reads it once at
+// load and validates it before invoking any export. CloudFormation resolves a
+// sourced template from the host's name-only listing and asks the host to pack the
 // selection, so render_node and validate_node_input declare the aggrega_pack_source
 // host function they import; the host cross-checks this declaration against the
 // functions the guest actually imports. The cross-boundary-linking capability is
 // declared with both link exports as the paired contract the load gate's coherence
 // check requires.
-const pluginDescriptorHead = `{"abi_version":"v1alpha1","plugin_type":"provider","capabilities":["cloudformation"],"exports":[{"name":"render_node","input_pattern":"b","host_functions":["aggrega_pack_source"],"stability":"experimental","description":"normalizes a CloudFormation fragment or a sourced CloudFormation template to pure-JSON long-form intrinsics"},{"name":"validate_node_input","input_pattern":"b","host_functions":["aggrega_pack_source"],"stability":"experimental","description":"structurally parses the sourced CloudFormation template and reports parse errors before render"},{"name":"assemble_boundary","input_pattern":"b","stability":"experimental","description":"merges the per-node CloudFormation fragments at one dispatch group into a single stack template"},{"name":"link_publish","input_pattern":"b","stability":"experimental","description":"publishes a consumed endpoint's cross-boundary reference identity and producer-side wiring"},{"name":"link_resolve","input_pattern":"b","stability":"experimental","description":"resolves a consuming endpoint's cross-boundary reference against a published identity"}],"contract":{"input_kinds":{"sourced":true,"synthesized":false,"artifacts_standalone":true},"boundary_assembly":"merge","cross_boundary_linking":true,"reusable_instance":true},"metadata":{"author":"aggrega","license":"Apache-2.0"`
-
-// version and commit are the build-provenance stamp injected via
-// -ldflags -X at embedded-build time. A plain go build leaves them empty,
-// and describe() then omits the corresponding metadata fields, so an
-// unstamped build's descriptor is byte-identical to a stamped build's
-// minus the provenance.
-var (
-	version string
-	commit  string
-)
-
-// pluginDescriptor composes the describe() self-report, appending the
-// optional version and commit build-provenance metadata to the fixed
-// prefix when those fields are stamped, then closing the metadata object
-// and the descriptor.
-func pluginDescriptor() string {
-	meta := ""
-	if version != "" {
-		meta += `,"version":` + strconv.Quote(version)
+//
+// aggrega.MarshalDescriptor folds the build-provenance version and commit into
+// the metadata when the Go linker stamps them at build time; a plain build
+// leaves them unset, so an unstamped build's descriptor is byte-identical to a
+// stamped build's minus the provenance.
+func descriptor() aggrega.PluginDescriptor {
+	return aggrega.PluginDescriptor{
+		AbiVersion:   aggrega.APIVersion,
+		PluginType:   "provider",
+		Capabilities: []string{"cloudformation"},
+		Exports: []aggrega.PluginExport{
+			{
+				Name:          "render_node",
+				InputPattern:  "b",
+				HostFunctions: []string{"aggrega_pack_source"},
+				Stability:     "experimental",
+				Description:   "normalizes a CloudFormation fragment or a sourced CloudFormation template to pure-JSON long-form intrinsics",
+			},
+			{
+				Name:          "validate_node_input",
+				InputPattern:  "b",
+				HostFunctions: []string{"aggrega_pack_source"},
+				Stability:     "experimental",
+				Description:   "structurally parses the sourced CloudFormation template and reports parse errors before render",
+			},
+			{
+				Name:         "assemble_boundary",
+				InputPattern: "b",
+				Stability:    "experimental",
+				Description:  "merges the per-node CloudFormation fragments at one dispatch group into a single stack template",
+			},
+			{
+				Name:         "link_publish",
+				InputPattern: "b",
+				Stability:    "experimental",
+				Description:  "publishes a consumed endpoint's cross-boundary reference identity and producer-side wiring",
+			},
+			{
+				Name:         "link_resolve",
+				InputPattern: "b",
+				Stability:    "experimental",
+				Description:  "resolves a consuming endpoint's cross-boundary reference against a published identity",
+			},
+		},
+		Contract: &aggrega.ProviderContract{
+			InputKinds:           aggrega.InputKinds{Sourced: true, Synthesized: false, ArtifactsStandalone: true},
+			BoundaryAssembly:     "merge",
+			ReusableInstance:     true,
+			CrossBoundaryLinking: true,
+		},
+		Metadata: &aggrega.PluginDescriptorMeta{Author: "aggrega", License: "Apache-2.0"},
 	}
-	if commit != "" {
-		meta += `,"commit":` + strconv.Quote(commit)
-	}
-	return pluginDescriptorHead + meta + `}}`
 }
 
 //go:wasmexport describe
 func describe() int32 {
-	pdk.Output([]byte(pluginDescriptor()))
+	out, err := aggrega.MarshalDescriptor(descriptor())
+	if err != nil {
+		pdk.SetError(err)
+		return 1
+	}
+	pdk.Output(out)
 	return 0
 }
 

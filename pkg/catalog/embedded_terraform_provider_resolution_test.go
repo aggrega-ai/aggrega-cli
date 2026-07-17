@@ -167,7 +167,7 @@ func TestTerraformProviderEmbeddedResolutionChain(t *testing.T) {
 		}
 		t.Cleanup(func() { _ = plugin.Close(ctx) })
 
-		if desc.PluginType != wasm.PluginTypeProvider {
+		if desc.PluginType != string(wasm.PluginTypeProvider) {
 			t.Fatalf("describe() plugin_type = %q, want %q", desc.PluginType, wasm.PluginTypeProvider)
 		}
 		if _, ok := findExport(desc, "render_node"); !ok {

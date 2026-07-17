@@ -16,7 +16,7 @@ func TestUnderDeclaredNotices(t *testing.T) {
 	desc := PluginDescriptor{
 		Exports:      []PluginExport{{Name: "render_node"}, {Name: "link_publish"}, {Name: "link_resolve"}},
 		Capabilities: []string{"helm", "compose"},
-		Contract:     ProviderContract{InputKinds: InputKinds{Sourced: true}},
+		Contract:     &ProviderContract{InputKinds: InputKinds{Sourced: true}},
 	}
 
 	// A surface that curates a strict subset yields one notice per omitted entry.

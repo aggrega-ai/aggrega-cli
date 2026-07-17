@@ -74,10 +74,34 @@ func PluginSpec(name string, resolved pluginpath.ResolvedPlugin) wasm.PluginSpec
 		spec.CommandsMirrored = true
 		spec.Commands = make([]wasm.PluginCLICommand, len(*resolved.Commands))
 		for i, c := range *resolved.Commands {
-			spec.Commands[i] = wasm.PluginCLICommand{Name: c.Name, Description: c.Description}
+			spec.Commands[i] = wasm.PluginCLICommand{
+				Name:        c.Name,
+				Description: c.Description,
+				Flags:       wasmCommandFlags(c.Flags),
+			}
 		}
 	}
 	return spec
+}
+
+// wasmCommandFlags maps a resolved command's neutral flag mirror onto the load
+// gate's flag shape, preserving declared order. A command with no flags yields a
+// nil slice.
+func wasmCommandFlags(flags []pluginpath.PluginCommandFlagMirror) []wasm.PluginCommandFlag {
+	if len(flags) == 0 {
+		return nil
+	}
+	out := make([]wasm.PluginCommandFlag, len(flags))
+	for i, f := range flags {
+		out[i] = wasm.PluginCommandFlag{
+			Name:        f.Name,
+			Shorthand:   f.Shorthand,
+			Description: f.Description,
+			Type:        f.Type,
+			Default:     f.Default,
+		}
+	}
+	return out
 }
 
 // WasmContractClaim maps a resolved plugin's neutral capability claim onto the

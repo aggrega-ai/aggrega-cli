@@ -121,7 +121,7 @@ func New(lookup pluginpath.Lookup, pluginURI string, loader *wasm.Loader) *Engin
 // failure surfaces in full on the render path.
 func (e *Engine) Contract() renderer.ProviderContract {
 	desc, err := e.describe()
-	if err != nil {
+	if err != nil || desc.Contract == nil {
 		return renderer.ProviderContract{}
 	}
 	ik := desc.Contract.InputKinds
@@ -140,7 +140,7 @@ func (e *Engine) Contract() renderer.ProviderContract {
 // classification reads the guest's own claim.
 func (e *Engine) BoundaryAssembly() string {
 	desc, err := e.describe()
-	if err != nil {
+	if err != nil || desc.Contract == nil {
 		return ""
 	}
 	return desc.Contract.BoundaryAssembly
@@ -156,7 +156,7 @@ func (e *Engine) BoundaryAssembly() string {
 // read the guest's own claim.
 func (e *Engine) AssemblyNameAnnotation() (annotation string, requireUnique bool) {
 	desc, err := e.describe()
-	if err != nil || desc.Contract.AssemblyNameAnnotation == nil {
+	if err != nil || desc.Contract == nil || desc.Contract.AssemblyNameAnnotation == nil {
 		return "", false
 	}
 	a := desc.Contract.AssemblyNameAnnotation
@@ -203,7 +203,7 @@ func (e *Engine) acquireInstance(ctx context.Context) (*wasm.Plugin, func(), err
 	if err != nil {
 		return nil, nil, err
 	}
-	if !desc.Contract.ReusableInstance {
+	if desc.Contract == nil || !desc.Contract.ReusableInstance {
 		p, err := e.loadInstance(ctx)
 		if err != nil {
 			return nil, nil, err
@@ -409,7 +409,7 @@ func (e *Engine) EmitArtifacts(
 // untouched by the host's pre-templating pass.
 func (e *Engine) ArtifactTemplateDelimiters() (left, right string) {
 	desc, err := e.describe()
-	if err != nil || desc.Contract.ArtifactDelimiters == nil {
+	if err != nil || desc.Contract == nil || desc.Contract.ArtifactDelimiters == nil {
 		return "{{", "}}"
 	}
 	return desc.Contract.ArtifactDelimiters.Left, desc.Contract.ArtifactDelimiters.Right

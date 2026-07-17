@@ -89,7 +89,11 @@ func CrossCheckContract(entityIdentity string, claim EntityContractClaim, desc P
 		}
 	}
 	if claim.Contract != nil {
-		if err := crossCheckProviderContract(entityIdentity, *claim.Contract, desc.Contract); err != nil {
+		var got ProviderContract
+		if desc.Contract != nil {
+			got = *desc.Contract
+		}
+		if err := crossCheckProviderContract(entityIdentity, *claim.Contract, got); err != nil {
 			return err
 		}
 	}

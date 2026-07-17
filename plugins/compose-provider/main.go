@@ -35,7 +35,6 @@ package main
 import (
 	"errors"
 	"fmt"
-	"strconv"
 	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
@@ -46,47 +45,65 @@ import (
 	pdk "github.com/extism/go-pdk"
 )
 
-// pluginDescriptorHead is the fixed prefix of the describe() self-report: a
-// v1alpha1 provider plugin declaring the render_node and assemble_boundary exports,
+// descriptor is the describe() self-report: a v1alpha1 provider plugin declaring
+// the render_node, assemble_boundary, and boundary_env_overrides exports,
 // compatibility with the compose provider engine, and its plugin-level
 // render-behavior contract (the input kinds it renders and its boundary-merge
-// assembly). The host reads this once at load and validates it before invoking
-// either export. Compose resolves its base compose document from the host's
-// name-only listing and asks the host to pack it, so render_node declares the
+// assembly). The host reads it once at load and validates it before invoking any
+// export. Compose resolves its base compose document from the host's name-only
+// listing and asks the host to pack it, so render_node declares the
 // aggrega_pack_source host function it imports; the host cross-checks this
 // declaration against the functions the guest actually imports. The
-// assemble_boundary export merges fragments already in the payload and imports
-// no host function.
-const pluginDescriptorHead = `{"abi_version":"v1alpha1","plugin_type":"provider","capabilities":["compose"],"exports":[{"name":"render_node","input_pattern":"b","host_functions":["aggrega_pack_source"],"stability":"experimental","description":"renders a compose file source into a merged compose fragment, or synthesizes a workload into a compose service fragment"},{"name":"assemble_boundary","input_pattern":"b","stability":"experimental","description":"merges the per-node compose fragments at one dispatch group into a single docker-compose.yaml"},{"name":"boundary_env_overrides","input_pattern":"b","stability":"experimental","description":"computes per-consumer environment overrides that route a boundary's cross-network consumer endpoints through the compose gateway"}],"contract":{"input_kinds":{"sourced":true,"synthesized":true,"artifacts_standalone":false},"boundary_assembly":"merge","reusable_instance":true},"metadata":{"author":"aggrega","license":"Apache-2.0"`
-
-// version and commit are the build-provenance stamp injected via
-// -ldflags -X at embedded-build time. A plain go build leaves them empty,
-// and describe() then omits the corresponding metadata fields, so an
-// unstamped build's descriptor is byte-identical to a stamped build's
-// minus the provenance.
-var (
-	version string
-	commit  string
-)
-
-// pluginDescriptor composes the describe() self-report, appending the
-// optional version and commit build-provenance metadata to the fixed
-// prefix when those fields are stamped, then closing the metadata object
-// and the descriptor.
-func pluginDescriptor() string {
-	meta := ""
-	if version != "" {
-		meta += `,"version":` + strconv.Quote(version)
+// assemble_boundary and boundary_env_overrides exports work from payloads and
+// import no host function.
+//
+// aggrega.MarshalDescriptor folds the build-provenance version and commit into
+// the metadata when the Go linker stamps them at build time; a plain build
+// leaves them unset, so an unstamped build's descriptor is byte-identical to a
+// stamped build's minus the provenance.
+func descriptor() aggrega.PluginDescriptor {
+	return aggrega.PluginDescriptor{
+		AbiVersion:   aggrega.APIVersion,
+		PluginType:   "provider",
+		Capabilities: []string{"compose"},
+		Exports: []aggrega.PluginExport{
+			{
+				Name:          "render_node",
+				InputPattern:  "b",
+				HostFunctions: []string{"aggrega_pack_source"},
+				Stability:     "experimental",
+				Description:   "renders a compose file source into a merged compose fragment, or synthesizes a workload into a compose service fragment",
+			},
+			{
+				Name:         "assemble_boundary",
+				InputPattern: "b",
+				Stability:    "experimental",
+				Description:  "merges the per-node compose fragments at one dispatch group into a single docker-compose.yaml",
+			},
+			{
+				Name:         "boundary_env_overrides",
+				InputPattern: "b",
+				Stability:    "experimental",
+				Description:  "computes per-consumer environment overrides that route a boundary's cross-network consumer endpoints through the compose gateway",
+			},
+		},
+		Contract: &aggrega.ProviderContract{
+			InputKinds:       aggrega.InputKinds{Sourced: true, Synthesized: true, ArtifactsStandalone: false},
+			BoundaryAssembly: "merge",
+			ReusableInstance: true,
+		},
+		Metadata: &aggrega.PluginDescriptorMeta{Author: "aggrega", License: "Apache-2.0"},
 	}
-	if commit != "" {
-		meta += `,"commit":` + strconv.Quote(commit)
-	}
-	return pluginDescriptorHead + meta + `}}`
 }
 
 //go:wasmexport describe
 func describe() int32 {
-	pdk.Output([]byte(pluginDescriptor()))
+	out, err := aggrega.MarshalDescriptor(descriptor())
+	if err != nil {
+		pdk.SetError(err)
+		return 1
+	}
+	pdk.Output(out)
 	return 0
 }
 

@@ -11,6 +11,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
@@ -127,6 +128,104 @@ func TestConfiguredCLIPlugin_ListedAndDispatched(t *testing.T) {
 	}
 	if got, want := strings.Join(d.gotArgv, " "), "--loud twice"; got != want {
 		t.Fatalf("forwarded argv = %q; want %q", got, want)
+	}
+}
+
+// TestConfiguredCLIPlugin_DeclaredFlagsRenderInHelp proves a configured CLI
+// plugin's declared flags render in the command's Flags section like a core
+// command's flags — long name, shorthand, and usage all shown — driven through
+// 'aggrega help <command>'. The declaration is help-only: flag parsing stays
+// disabled, so the command still exposes the flags for help without cobra ever
+// parsing them.
+func TestConfiguredCLIPlugin_DeclaredFlagsRenderInHelp(t *testing.T) {
+	withRegistrationWarnings(t)
+	withCLIRegistrations(t, []cliCommandReg{
+		{
+			name:  "moo",
+			short: "make the cow moo",
+			flags: []wasm.PluginCommandFlag{
+				{Name: "alien", Shorthand: "a", Description: "moo like an alien", Type: "bool"},
+				{Name: "accent", Description: "regional accent to moo in", Type: "string", Default: "midwest"},
+			},
+			uri:    "oci://example/moo:v1",
+			digest: "pinned-digest",
+		},
+	})
+	withDispatcher(t, &fakeDispatcher{})
+
+	root := newRootCmd()
+	out := &bytes.Buffer{}
+	root.SetOut(out)
+	root.SetErr(out)
+	root.SetArgs([]string{"help", "moo"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("help moo returned error: %v", err)
+	}
+	help := out.String()
+
+	if !strings.Contains(help, "Flags:") {
+		t.Fatalf("help output has no Flags section:\n%s", help)
+	}
+	// The bool flag renders its long name, shorthand, and usage.
+	for _, want := range []string{"--alien", "-a,", "moo like an alien"} {
+		if !strings.Contains(help, want) {
+			t.Fatalf("help output missing %q for the declared bool flag:\n%s", want, help)
+		}
+	}
+	// The string flag renders its long name, kind, usage, and default.
+	for _, want := range []string{"--accent", "string", "regional accent to moo in", `"midwest"`} {
+		if !strings.Contains(help, want) {
+			t.Fatalf("help output missing %q for the declared string flag:\n%s", want, help)
+		}
+	}
+	// The command that owns these flags kept parsing disabled — the declaration is
+	// help-only and does not turn cobra into the parser.
+	var moo *cobra.Command
+	for _, c := range root.Commands() {
+		if c.Name() == "moo" {
+			moo = c
+		}
+	}
+	if moo == nil {
+		t.Fatalf("moo command missing from tree")
+	}
+	if !moo.DisableFlagParsing {
+		t.Fatalf("declaring flags must not enable cobra flag parsing; DisableFlagParsing is false")
+	}
+}
+
+// TestConfiguredCLIPlugin_DeclaredFlagsForwardRawArgv proves declaring flags on
+// the command does not turn cobra into the parser: the raw argument vector,
+// declared flag tokens included, still reaches the guest verbatim.
+func TestConfiguredCLIPlugin_DeclaredFlagsForwardRawArgv(t *testing.T) {
+	withRegistrationWarnings(t)
+	withCLIRegistrations(t, []cliCommandReg{
+		{
+			name:  "moo",
+			short: "make the cow moo",
+			flags: []wasm.PluginCommandFlag{
+				{Name: "alien", Shorthand: "a", Description: "moo like an alien", Type: "bool"},
+			},
+			uri:    "oci://example/moo:v1",
+			digest: "pinned-digest",
+		},
+	})
+	withCLIDigest(t, "pinned-digest", nil)
+	d := &fakeDispatcher{code: 0}
+	withDispatcher(t, d)
+
+	root := newRootCmd()
+	root.SetOut(&bytes.Buffer{})
+	root.SetErr(&bytes.Buffer{})
+	root.SetArgs([]string{"moo", "--alien", "extra", "--unknown-to-cobra"})
+	if code := executeRoot(root); code != 0 {
+		t.Fatalf("exit code = %d; want 0", code)
+	}
+	if d.calls != 1 {
+		t.Fatalf("runner called %d time(s); want 1", d.calls)
+	}
+	if got, want := strings.Join(d.gotArgv, " "), "--alien extra --unknown-to-cobra"; got != want {
+		t.Fatalf("forwarded argv = %q; want the raw vector %q", got, want)
 	}
 }
 

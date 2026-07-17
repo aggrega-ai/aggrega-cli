@@ -85,7 +85,7 @@ func withSocketPlugin(ctx context.Context, spec wasm.PluginSpec, fn func(*wasm.P
 		return fmt.Errorf("load: %w", err)
 	}
 	defer plugin.Close(ctx)
-	if spec.PluginType != "" && desc.PluginType != spec.PluginType {
+	if spec.PluginType != "" && desc.PluginType != string(spec.PluginType) {
 		return fmt.Errorf("plugin declares plugin_type %q but is attached at the %q socket", desc.PluginType, spec.PluginType)
 	}
 	return fn(plugin, desc)

@@ -15,11 +15,17 @@ import (
 )
 
 // TestCommandMirrorsEqual covers the mirror-equality rule the publish verify and
-// the load gate share: full equality by name, short help, and order, with a nil
-// slice and an empty slice equal.
+// the load gate share: full equality by name, short help, declared flag list, and
+// order, with a nil slice and an empty slice equal. The flag cases prove a
+// divergence in a flag alone — the command name and short help unchanged — is a
+// mirror mismatch, so the machine record must reflect the binary's flags exactly.
 func TestCommandMirrorsEqual(t *testing.T) {
 	t.Parallel()
 	base := []PluginCLICommand{{Name: "a", Description: "A"}, {Name: "b", Description: "B"}}
+	withFlag := []PluginCLICommand{
+		{Name: "a", Description: "A", Flags: []PluginCommandFlag{{Name: "verbose", Shorthand: "v", Type: "bool"}}},
+		{Name: "b", Description: "B"},
+	}
 	cases := []struct {
 		name string
 		x, y []PluginCLICommand
@@ -31,6 +37,28 @@ func TestCommandMirrorsEqual(t *testing.T) {
 		{"name drift", base, []PluginCLICommand{{Name: "a", Description: "A"}, {Name: "c", Description: "B"}}, false},
 		{"order drift", base, []PluginCLICommand{{Name: "b", Description: "B"}, {Name: "a", Description: "A"}}, false},
 		{"length drift", base, []PluginCLICommand{{Name: "a", Description: "A"}}, false},
+		{"flags identical", withFlag, []PluginCLICommand{
+			{Name: "a", Description: "A", Flags: []PluginCommandFlag{{Name: "verbose", Shorthand: "v", Type: "bool"}}},
+			{Name: "b", Description: "B"},
+		}, true},
+		// A command whose name and short help match but whose flag list differs
+		// only in one flag is a mismatch — the flag is part of the machine record.
+		{"flag presence drift", withFlag, base, false},
+		{"flag shorthand drift", withFlag, []PluginCLICommand{
+			{Name: "a", Description: "A", Flags: []PluginCommandFlag{{Name: "verbose", Shorthand: "w", Type: "bool"}}},
+			{Name: "b", Description: "B"},
+		}, false},
+		{"flag default drift", withFlag, []PluginCLICommand{
+			{Name: "a", Description: "A", Flags: []PluginCommandFlag{{Name: "verbose", Shorthand: "v", Type: "bool", Default: "true"}}},
+			{Name: "b", Description: "B"},
+		}, false},
+		{"flag order drift", []PluginCLICommand{
+			{Name: "a", Description: "A", Flags: []PluginCommandFlag{{Name: "one"}, {Name: "two"}}},
+		}, []PluginCLICommand{
+			{Name: "a", Description: "A", Flags: []PluginCommandFlag{{Name: "two"}, {Name: "one"}}},
+		}, false},
+		{"flag nil vs empty", []PluginCLICommand{{Name: "a", Description: "A", Flags: nil}},
+			[]PluginCLICommand{{Name: "a", Description: "A", Flags: []PluginCommandFlag{}}}, true},
 	}
 	for _, tc := range cases {
 		if got := CommandMirrorsEqual(tc.x, tc.y); got != tc.want {
@@ -113,6 +141,39 @@ func TestDescribeAndValidate_CommandMirrorDriftHalts(t *testing.T) {
 		t.Fatalf("a drifted command mirror should halt with ErrWasmCommandsMirrorMismatch; got %v", err)
 	}
 	for _, want := range []string{"cli/greet:1.0.0", "aggrega plugin sync"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("halt should mention %q; got %v", want, err)
+		}
+	}
+}
+
+// TestDescribeAndValidate_CommandMirrorFlagDriftHalts proves the load gate reads
+// a command's flags into its full-equality check: a supplied mirror whose command
+// names and short help match the plugin's describe() exactly but that records a
+// flag the binary does not describe is a divergence, so the load halts with
+// ErrWasmCommandsMirrorMismatch and the diagnostic surfaces the drifted flag.
+func TestDescribeAndValidate_CommandMirrorFlagDriftHalts(t *testing.T) {
+	guest := buildCLIMultiGuest(t)
+	ctx := context.Background()
+	loader := NewCachingLoader(nil)
+	// The mirror matches the guest's described commands in every field except a
+	// single extra flag on the first command — a flag-only divergence.
+	mirror := []PluginCLICommand{
+		{Name: "greet-a", Description: "Greet in style A", Flags: []PluginCommandFlag{{Name: "loud", Shorthand: "l", Type: "bool"}}},
+		{Name: "greet-b", Description: "Greet in style B"},
+	}
+	spec := PluginSpec{
+		Name:             "cli/greet:1.0.0",
+		PluginType:       PluginTypeCLI,
+		Bytes:            guest,
+		Commands:         mirror,
+		CommandsMirrored: true,
+	}
+	_, _, err := loader.LoadCLIAndDescribe(ctx, spec, io.Discard, io.Discard)
+	if !errors.Is(err, ErrWasmCommandsMirrorMismatch) {
+		t.Fatalf("a flag-only mirror divergence should halt with ErrWasmCommandsMirrorMismatch; got %v", err)
+	}
+	for _, want := range []string{"cli/greet:1.0.0", "loud", "aggrega plugin sync"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("halt should mention %q; got %v", want, err)
 		}

@@ -59,10 +59,10 @@ func TestLoadAndDescribePublishingLinter(t *testing.T) {
 	}
 	defer plugin.Close(ctx)
 
-	if desc.ABIVersion != ABIVersionV1Alpha1 {
-		t.Errorf("abi_version: got %q want %q", desc.ABIVersion, ABIVersionV1Alpha1)
+	if desc.AbiVersion != ABIVersionV1Alpha1 {
+		t.Errorf("abi_version: got %q want %q", desc.AbiVersion, ABIVersionV1Alpha1)
 	}
-	if desc.PluginType != PluginTypeLinter {
+	if desc.PluginType != string(PluginTypeLinter) {
 		t.Errorf("plugin_type: got %q want %q", desc.PluginType, PluginTypeLinter)
 	}
 	if !desc.hasExportWithPrefix(lintExportPrefix) {

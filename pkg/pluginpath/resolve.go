@@ -112,12 +112,25 @@ type ResolvedPlugin struct {
 }
 
 // PluginCommandMirror is one entry of an entity's machine-owned CLI-command
-// mirror in the neutral, pluginpath-owned shape: the command name and its
-// one-line short help. It carries no dependency on internal/wasm; the loader's
-// caller maps it onto the wasm-side command shape.
+// mirror in the neutral, pluginpath-owned shape: the command name, its one-line
+// short help, and its declared flags in order. It carries no dependency on
+// internal/wasm; the loader's caller maps it onto the wasm-side command shape.
 type PluginCommandMirror struct {
 	Name        string
 	Description string
+	Flags       []PluginCommandFlagMirror
+}
+
+// PluginCommandFlagMirror is one flag of a command's machine-owned flag mirror
+// in the neutral, pluginpath-owned shape: the flag's long name and its optional
+// short alias, help text, value type, and default. It carries no dependency on
+// internal/wasm; the loader's caller maps it onto the wasm-side flag shape.
+type PluginCommandFlagMirror struct {
+	Name        string
+	Shorthand   string
+	Description string
+	Type        string
+	Default     string
 }
 
 // PluginRuntimeLimits is the neutral, pluginpath-owned shape of an entity's

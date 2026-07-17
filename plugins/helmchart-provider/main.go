@@ -35,7 +35,6 @@ package main
 
 import (
 	"errors"
-	"strconv"
 	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
@@ -45,48 +44,74 @@ import (
 	pdk "github.com/extism/go-pdk"
 )
 
-// pluginDescriptorHead is the fixed prefix of the describe() self-report: a
-// v1alpha1 provider plugin declaring the render_node and assemble_boundary exports,
+// descriptor is the describe() self-report: a v1alpha1 provider plugin declaring
+// the render_node, assemble_boundary, carve, and reassemble exports,
 // compatibility with the helm-chart provider engine, and its plugin-level
 // render-behavior contract (sourced-only input, nest-per-node umbrella assembly,
 // the "[["/"]]" artifact-template delimiter pair, and the boundary annotation
-// whose value names the assembled umbrella chart). The host reads this
-// once at load and validates it before invoking either export. helm-chart
-// resolves its chart source from the host's name-only listing and asks the host
-// to pack it, so render_node declares the aggrega_pack_source host function it
-// imports; the host cross-checks this declaration against the functions the
-// guest actually imports. The assemble_boundary export assembles sub-charts
-// already in the payload and imports no host function.
-const pluginDescriptorHead = `{"abi_version":"v1alpha1","plugin_type":"provider","capabilities":["helm-chart"],"exports":[{"name":"render_node","input_pattern":"b","host_functions":["aggrega_pack_source"],"stability":"experimental","description":"copies a sourced Helm chart into a sub-chart file set"},{"name":"assemble_boundary","input_pattern":"b","stability":"experimental","description":"assembles the per-node sub-charts at one dispatch group into an umbrella Chart.yaml + values.yaml"},{"name":"carve","input_pattern":"b","stability":"experimental","description":"carves a chart file into addressable units for a pipeline PATCH"},{"name":"reassemble","input_pattern":"b","stability":"experimental","description":"reassembles a chart file from patched units, byte-faithfully"}],"contract":{"input_kinds":{"sourced":true,"synthesized":false,"artifacts_standalone":false},"boundary_assembly":"nest","artifact_delimiters":{"left":"[[","right":"]]"},"assembly_name_annotation":{"annotation":"aggrega.ai/chart-name","require_unique":true},"reusable_instance":true},"metadata":{"author":"aggrega","license":"Apache-2.0"`
-
-// version and commit are the build-provenance stamp injected via
-// -ldflags -X at embedded-build time. A plain go build leaves them empty,
-// and describe() then omits the corresponding metadata fields, so an
-// unstamped build's descriptor is byte-identical to a stamped build's
-// minus the provenance.
-var (
-	version string
-	commit  string
-)
-
-// pluginDescriptor composes the describe() self-report, appending the
-// optional version and commit build-provenance metadata to the fixed
-// prefix when those fields are stamped, then closing the metadata object
-// and the descriptor.
-func pluginDescriptor() string {
-	meta := ""
-	if version != "" {
-		meta += `,"version":` + strconv.Quote(version)
+// whose value names the assembled umbrella chart). The host reads it once at
+// load and validates it before invoking any export. helm-chart resolves its
+// chart source from the host's name-only listing and asks the host to pack it,
+// so render_node declares the aggrega_pack_source host function it imports; the
+// host cross-checks this declaration against the functions the guest actually
+// imports. The assemble_boundary, carve, and reassemble exports work from
+// payloads and import no host function.
+//
+// aggrega.MarshalDescriptor folds the build-provenance version and commit into
+// the metadata when the Go linker stamps them at build time; a plain build
+// leaves them unset, so an unstamped build's descriptor is byte-identical to a
+// stamped build's minus the provenance.
+func descriptor() aggrega.PluginDescriptor {
+	return aggrega.PluginDescriptor{
+		AbiVersion:   aggrega.APIVersion,
+		PluginType:   "provider",
+		Capabilities: []string{"helm-chart"},
+		Exports: []aggrega.PluginExport{
+			{
+				Name:          "render_node",
+				InputPattern:  "b",
+				HostFunctions: []string{"aggrega_pack_source"},
+				Stability:     "experimental",
+				Description:   "copies a sourced Helm chart into a sub-chart file set",
+			},
+			{
+				Name:         "assemble_boundary",
+				InputPattern: "b",
+				Stability:    "experimental",
+				Description:  "assembles the per-node sub-charts at one dispatch group into an umbrella Chart.yaml + values.yaml",
+			},
+			{
+				Name:         "carve",
+				InputPattern: "b",
+				Stability:    "experimental",
+				Description:  "carves a chart file into addressable units for a pipeline PATCH",
+			},
+			{
+				Name:         "reassemble",
+				InputPattern: "b",
+				Stability:    "experimental",
+				Description:  "reassembles a chart file from patched units, byte-faithfully",
+			},
+		},
+		Contract: &aggrega.ProviderContract{
+			InputKinds:             aggrega.InputKinds{Sourced: true, Synthesized: false, ArtifactsStandalone: false},
+			BoundaryAssembly:       "nest",
+			ArtifactDelimiters:     &aggrega.ArtifactDelimiters{Left: "[[", Right: "]]"},
+			AssemblyNameAnnotation: &aggrega.AssemblyNameAnnotation{Annotation: "aggrega.ai/chart-name", RequireUnique: true},
+			ReusableInstance:       true,
+		},
+		Metadata: &aggrega.PluginDescriptorMeta{Author: "aggrega", License: "Apache-2.0"},
 	}
-	if commit != "" {
-		meta += `,"commit":` + strconv.Quote(commit)
-	}
-	return pluginDescriptorHead + meta + `}}`
 }
 
 //go:wasmexport describe
 func describe() int32 {
-	pdk.Output([]byte(pluginDescriptor()))
+	out, err := aggrega.MarshalDescriptor(descriptor())
+	if err != nil {
+		pdk.SetError(err)
+		return 1
+	}
+	pdk.Output(out)
 	return 0
 }
 

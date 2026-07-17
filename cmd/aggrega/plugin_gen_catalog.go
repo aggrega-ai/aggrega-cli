@@ -279,8 +279,8 @@ func mergeGenCatalogEntity(desc wasm.PluginDescriptor, description string, hostF
 	// Contract fields are machine-derived from describe(). pluginType is the
 	// plugin's socket identity and lives in metadata; the location and catalog
 	// coordinate derive from it plus the bare metadata.name.
-	entity.Metadata.PluginType = string(desc.PluginType)
-	entity.Spec.AbiVersion = desc.ABIVersion
+	entity.Metadata.PluginType = desc.PluginType
+	entity.Spec.AbiVersion = desc.AbiVersion
 	entity.Spec.Capabilities = desc.Capabilities
 	entity.Spec.Exports = descriptorExports(desc.Exports)
 	entity.Spec.Commands = descriptorCommands(desc.Commands)
@@ -354,6 +354,28 @@ func descriptorCommands(commands []wasm.PluginCLICommand) []types.PluginCommand 
 		out = append(out, types.PluginCommand{
 			Name:        c.Name,
 			Description: c.Description,
+			Flags:       descriptorCommandFlags(c.Flags),
+		})
+	}
+	return out
+}
+
+// descriptorCommandFlags maps a describe() command's flag declarations onto the
+// entity's machine-owned flag mirror, preserving describe()-declared order and
+// carrying every flag field. Empty input yields nil, so a command that declares
+// no flags leaves the omitempty field absent.
+func descriptorCommandFlags(flags []wasm.PluginCommandFlag) []types.PluginCommandFlag {
+	if len(flags) == 0 {
+		return nil
+	}
+	out := make([]types.PluginCommandFlag, 0, len(flags))
+	for _, f := range flags {
+		out = append(out, types.PluginCommandFlag{
+			Name:        f.Name,
+			Shorthand:   f.Shorthand,
+			Description: f.Description,
+			Type:        f.Type,
+			Default:     f.Default,
 		})
 	}
 	return out
@@ -376,8 +398,8 @@ func isZeroContract(c wasm.ProviderContract) bool {
 // descriptorContract maps the describe() provider render-behavior self-report
 // onto the entity's authored-contract shape, or returns nil when the guest
 // reports none.
-func descriptorContract(c wasm.ProviderContract) *types.ProviderContract {
-	if isZeroContract(c) {
+func descriptorContract(c *wasm.ProviderContract) *types.ProviderContract {
+	if c == nil || isZeroContract(*c) {
 		return nil
 	}
 	out := &types.ProviderContract{

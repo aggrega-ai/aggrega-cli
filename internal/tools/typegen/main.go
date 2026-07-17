@@ -240,6 +240,22 @@ var irGuestVocabulary = map[string]string{
 // through verbatim.
 var policyGuestVocabulary = map[string]string{}
 
+// describeGuestVocabulary is empty: the descriptor's only non-scalar field is
+// settings_schema, whose x-aggrega-go-type: json.RawMessage annotation already
+// carries the neutral opaque spelling (verbatim passthrough preserves the
+// declared JSON Schema document's bytes). Every other field is a scalar, a
+// string slice, a boolean, or a def-local nested object referenced by $ref, so
+// each annotation passes through verbatim with no vocabulary entry.
+var describeGuestVocabulary = map[string]string{}
+
+// describeHostVocabulary maps the descriptor schema's opaque field spelling to
+// the host realization. The only non-scalar carry is settings_schema, whose
+// x-aggrega-go-type: json.RawMessage annotation already spells the neutral
+// opaque type the host reads (verbatim passthrough preserves the declared JSON
+// Schema document's bytes), so the map is empty and every annotation passes
+// through verbatim — mirroring the guest describe vocabulary.
+var describeHostVocabulary = map[string]string{}
+
 // providerGuestVocabulary maps the provider render schema's host type spellings
 // to the neutral, cycle-free guest vocabulary: an opaque cross-package host type
 // (the render-time context, the per-render boundary context, the shared
@@ -358,6 +374,41 @@ var codecTargets = map[string]codecTarget{
 		pkg:        "abi",
 		vocabulary: cliGuestVocabulary,
 		lang:       "ts",
+	},
+
+	// Describe socket — guest codecs into aggrega-abi (Go/Rust/TS). Every plugin
+	// returns the PluginDescriptor shape from its describe() export; the codec
+	// realizes that self-declaration (the exports, the optional provider render
+	// contract, the optional CLI commands and flags, the settings schema, the
+	// authorship metadata). The abi Go codec references the helpers FRP owns in
+	// package abi (helpers: false, the default). The only non-scalar carry is the
+	// opaque settings_schema (json.RawMessage passthrough).
+	"describe_gen.go": {
+		schema:     schemas.WasmDescribeV1alpha1,
+		schemaFile: "wasm-describe-v1alpha1.schema.json",
+		pkg:        "abi",
+		vocabulary: describeGuestVocabulary,
+	},
+	"describe_gen.rs": {
+		schema:     schemas.WasmDescribeV1alpha1,
+		schemaFile: "wasm-describe-v1alpha1.schema.json",
+		pkg:        "abi",
+		vocabulary: describeGuestVocabulary,
+		lang:       "rust",
+	},
+	"describe_gen.ts": {
+		schema:     schemas.WasmDescribeV1alpha1,
+		schemaFile: "wasm-describe-v1alpha1.schema.json",
+		pkg:        "abi",
+		vocabulary: describeGuestVocabulary,
+		lang:       "ts",
+	},
+	"describe_host_gen.go": {
+		schema:     schemas.WasmDescribeV1alpha1,
+		schemaFile: "wasm-describe-v1alpha1.schema.json",
+		pkg:        "wasm",
+		vocabulary: describeHostVocabulary,
+		helpers:    true, // the host describe codec is alone in package wasm
 	},
 
 	// Mutator socket — guest codecs into aggrega-abi (Go/Rust/TS) and the host

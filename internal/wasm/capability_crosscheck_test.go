@@ -16,8 +16,8 @@ func TestCrossCheckContract(t *testing.T) {
 	t.Parallel()
 
 	desc := PluginDescriptor{
-		ABIVersion: ABIVersionV1Alpha1,
-		PluginType: PluginTypeFRPStep,
+		AbiVersion: ABIVersionV1Alpha1,
+		PluginType: string(PluginTypeFRPStep),
 		Exports: []PluginExport{
 			{Name: "step", Operates: operatesPatch, Scope: ScopeOwn, Selector: "the plugin's own description"},
 			{Name: "extra", Operates: operatesEmit, Scope: ScopeHost},
@@ -111,10 +111,10 @@ func TestCrossCheckContract_PluginLevel(t *testing.T) {
 	t.Parallel()
 
 	desc := PluginDescriptor{
-		ABIVersion: ABIVersionV1Alpha1,
-		PluginType: PluginTypeProvider,
+		AbiVersion: ABIVersionV1Alpha1,
+		PluginType: string(PluginTypeProvider),
 		Exports:    []PluginExport{{Name: "render_node"}},
-		Contract: ProviderContract{
+		Contract: &ProviderContract{
 			InputKinds:         InputKinds{Sourced: true, Synthesized: false, ArtifactsStandalone: false},
 			BoundaryAssembly:   BoundaryAssemblyNest,
 			ArtifactDelimiters: &ArtifactDelimiters{Left: "[[", Right: "]]"},
@@ -217,14 +217,14 @@ func TestCrossCheckContract_CrossBoundaryLinking(t *testing.T) {
 	// A descriptor that advertises cross-boundary linking exports both link
 	// exports and reports the flag; the crosscheck compares the flag directly.
 	linkingDesc := PluginDescriptor{
-		ABIVersion: ABIVersionV1Alpha1,
-		PluginType: PluginTypeProvider,
+		AbiVersion: ABIVersionV1Alpha1,
+		PluginType: string(PluginTypeProvider),
 		Exports: []PluginExport{
 			{Name: "render_node"},
 			{Name: LinkPublishExport},
 			{Name: LinkResolveExport},
 		},
-		Contract: ProviderContract{
+		Contract: &ProviderContract{
 			InputKinds:           InputKinds{Sourced: true},
 			BoundaryAssembly:     BoundaryAssemblyMerge,
 			CrossBoundaryLinking: true,
@@ -232,10 +232,10 @@ func TestCrossCheckContract_CrossBoundaryLinking(t *testing.T) {
 	}
 	// A descriptor that wires no cross-boundary edges reports the flag false.
 	nonLinkingDesc := PluginDescriptor{
-		ABIVersion: ABIVersionV1Alpha1,
-		PluginType: PluginTypeProvider,
+		AbiVersion: ABIVersionV1Alpha1,
+		PluginType: string(PluginTypeProvider),
 		Exports:    []PluginExport{{Name: "render_node"}},
-		Contract: ProviderContract{
+		Contract: &ProviderContract{
 			InputKinds:       InputKinds{Sourced: true},
 			BoundaryAssembly: BoundaryAssemblyMerge,
 		},
@@ -313,8 +313,8 @@ func TestCrossCheckContract_CrossBoundaryLinking(t *testing.T) {
 func TestCrossCheckContract_EmptyClaim(t *testing.T) {
 	t.Parallel()
 	desc := PluginDescriptor{
-		ABIVersion: ABIVersionV1Alpha1,
-		PluginType: PluginTypeFRPStep,
+		AbiVersion: ABIVersionV1Alpha1,
+		PluginType: string(PluginTypeFRPStep),
 		Exports:    []PluginExport{{Name: "step", Operates: operatesPatch, Scope: ScopeOwn}},
 	}
 	if err := CrossCheckContract("frp/patch:1.0.0", EntityContractClaim{}, desc); err != nil {

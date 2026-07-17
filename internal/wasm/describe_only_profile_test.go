@@ -60,7 +60,7 @@ func TestLoadForDescribe_DescribesStreamingCLIGuest(t *testing.T) {
 		t.Fatalf("LoadForDescribe rejected a streaming cli guest it must describe: %v", err)
 	}
 	t.Cleanup(func() { _ = plugin.Close(ctx) })
-	if desc.PluginType != PluginTypeCLI {
+	if desc.PluginType != string(PluginTypeCLI) {
 		t.Fatalf("describe-only descriptor plugin_type = %q; want %q", desc.PluginType, PluginTypeCLI)
 	}
 }

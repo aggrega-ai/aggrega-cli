@@ -49,7 +49,7 @@ func nonReusableGuestLookup(t *testing.T) (pluginpath.Lookup, string) {
 		t.Fatalf("describe render fixture: %v", err)
 	}
 	_ = p.Close(context.Background())
-	if desc.Contract.ReusableInstance {
+	if desc.Contract != nil && desc.Contract.ReusableInstance {
 		t.Fatalf("render-node-rust fixture unexpectedly declares reusable_instance; the fresh-per-node guard needs a guest that does not")
 	}
 	return lookup, uri

@@ -70,6 +70,59 @@ func TestSpliceCommands_PreservesCommentsAndBlanks(t *testing.T) {
 	}
 }
 
+// TestSpliceCommands_CarriesFlags proves the command splice records each command's
+// flags in describe()-declared order, that the recorded entity round-trips back to
+// the same mirror the load gate compares (stamp write and entity read agree on the
+// flag record), and that re-recording the same flag mirror is a byte-identical
+// no-op.
+func TestSpliceCommands_CarriesFlags(t *testing.T) {
+	t.Parallel()
+	described := []wasm.PluginCLICommand{
+		{
+			Name:        "greet-a",
+			Description: "Greet in style A",
+			Flags: []wasm.PluginCommandFlag{
+				{Name: "loud", Shorthand: "l", Description: "shout the greeting", Type: "bool", Default: "false"},
+				{Name: "name", Description: "who to greet", Type: "string"},
+			},
+		},
+		{Name: "greet-b", Description: "Greet in style B"},
+	}
+	out, changed, err := spliceCommands([]byte(cliCommentedEntity), described)
+	if err != nil {
+		t.Fatalf("spliceCommands: %v", err)
+	}
+	if !changed {
+		t.Fatal("recording a new mirror should report a change")
+	}
+	got := string(out)
+	if !strings.Contains(got, "      flags:\n        - name: loud\n          shorthand: l\n          description: shout the greeting\n          type: bool\n          default: \"false\"") {
+		t.Errorf("flags block not recorded in field-declaration order; result:\n%s", got)
+	}
+
+	// The recorded entity must read back to the exact mirror the load gate compares,
+	// so stamp write and entity read agree on the flag record.
+	var wp types.Plugin
+	if err := yaml.Unmarshal(out, &wp); err != nil {
+		t.Fatalf("re-parse: %v", err)
+	}
+	if !wasm.CommandMirrorsEqual(entityCommandMirror(wp), described) {
+		t.Errorf("round-tripped mirror diverges from the described commands;\n got %s\nwant %s",
+			wasm.FormatCommandMirror(entityCommandMirror(wp)), wasm.FormatCommandMirror(described))
+	}
+
+	second, changed, err := spliceCommands(out, described)
+	if err != nil {
+		t.Fatalf("second spliceCommands: %v", err)
+	}
+	if changed {
+		t.Error("re-recording the same flag mirror should report no change")
+	}
+	if !bytes.Equal(out, second) {
+		t.Error("a no-op command splice must leave the file byte-identical")
+	}
+}
+
 // TestSpliceCommands_EmptyExplicitAndIdempotent proves a plugin describing no
 // commands records an explicit empty list, and re-recording the same mirror is a
 // byte-identical no-op.

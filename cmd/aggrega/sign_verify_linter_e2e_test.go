@@ -129,7 +129,7 @@ func TestSignVerifyRunRealLinter(t *testing.T) {
 	}
 	defer plugin.Close(ctx)
 
-	if desc.PluginType != wasm.PluginTypeLinter {
+	if desc.PluginType != string(wasm.PluginTypeLinter) {
 		t.Errorf("plugin_type: got %q want %q", desc.PluginType, wasm.PluginTypeLinter)
 	}
 

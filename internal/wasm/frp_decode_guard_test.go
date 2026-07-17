@@ -90,11 +90,11 @@ func TestFRPDecodeGuard(t *testing.T) {
 	// Descriptor parity with the Rust reference plugin: an frp_step plugin
 	// whose step export operates=patch / scope=own and declares the helm
 	// and helm-chart compatible providers.
-	if desc.PluginType != wasm.PluginTypeFRPStep {
+	if desc.PluginType != string(wasm.PluginTypeFRPStep) {
 		t.Fatalf("plugin type: got %q want %q", desc.PluginType, wasm.PluginTypeFRPStep)
 	}
-	if desc.ABIVersion != wasm.ABIVersionV1Alpha1 {
-		t.Fatalf("abi version: got %q want %q", desc.ABIVersion, wasm.ABIVersionV1Alpha1)
+	if desc.AbiVersion != wasm.ABIVersionV1Alpha1 {
+		t.Fatalf("abi version: got %q want %q", desc.AbiVersion, wasm.ABIVersionV1Alpha1)
 	}
 	if want := []string{"helm", "helm-chart"}; !equalStrings(desc.Capabilities, want) {
 		t.Fatalf("compatible providers: got %v want %v", desc.Capabilities, want)

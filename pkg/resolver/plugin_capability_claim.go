@@ -99,9 +99,30 @@ func PluginCommandsMirror(entity types.Plugin) *[]pluginpath.PluginCommandMirror
 		mirror = append(mirror, pluginpath.PluginCommandMirror{
 			Name:        c.Name,
 			Description: c.Description,
+			Flags:       pluginCommandFlagsMirror(c.Flags),
 		})
 	}
 	return &mirror
+}
+
+// pluginCommandFlagsMirror maps a catalog command's machine-owned flags into the
+// neutral flag-mirror shape, preserving declared order. A command with no flags
+// yields a nil slice.
+func pluginCommandFlagsMirror(flags []types.PluginCommandFlag) []pluginpath.PluginCommandFlagMirror {
+	if len(flags) == 0 {
+		return nil
+	}
+	out := make([]pluginpath.PluginCommandFlagMirror, len(flags))
+	for i, f := range flags {
+		out[i] = pluginpath.PluginCommandFlagMirror{
+			Name:        f.Name,
+			Shorthand:   f.Shorthand,
+			Description: f.Description,
+			Type:        f.Type,
+			Default:     f.Default,
+		}
+	}
+	return out
 }
 
 // PluginRuntimeLimits maps a catalog Plugin entity's authored runtime

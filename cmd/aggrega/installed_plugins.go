@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -91,12 +92,16 @@ var reservedCommandNames = map[string]bool{
 
 // cliCommandReg is one top-level command a configured CLI plugin contributes:
 // the command verb and its short-help line (from the plugin's describe
-// metadata), the plugin artifact URI the runner resolves and runs, and the
-// digest the config pinned that URI to. Registration builds one per command; the
-// run gate compares the freshly resolved bytes' digest to that pin before running.
+// metadata), the flags the command declares (also from describe, in declared
+// order), the plugin artifact URI the runner resolves and runs, and the digest
+// the config pinned that URI to. Registration builds one per command; the flags
+// are declared on the cobra command so help renders them like a core command's,
+// while the guest remains the parser; the run gate compares the freshly resolved
+// bytes' digest to that pin before running.
 type cliCommandReg struct {
 	name   string
 	short  string
+	flags  []wasm.PluginCommandFlag
 	uri    string
 	digest string
 }
@@ -136,7 +141,7 @@ func cliRegistrationsFromWorkspace(ctx context.Context, rw *workspaceconfig.Reso
 			desc = d
 		}
 		for _, command := range desc.Commands {
-			regs = append(regs, cliCommandReg{name: command.Name, short: command.Description, uri: ref.URI, digest: ref.Digest})
+			regs = append(regs, cliCommandReg{name: command.Name, short: command.Description, flags: command.Flags, uri: ref.URI, digest: ref.Digest})
 		}
 	}
 	return regs
@@ -208,18 +213,21 @@ func registerInstalledCLIPlugins(root *cobra.Command) {
 
 // newCLIPluginCmd builds the cobra command that dispatches a configured CLI
 // plugin. Its help comes from the describe cache, so building the tree never
-// loads a guest while that cache is warm. Flag parsing is disabled so every
-// argument after the command name is forwarded verbatim to the guest, which
-// interprets its own flags. Before running, the command re-resolves the plugin's
-// bytes and compares their content digest to the digest pinned in the config: a
-// mismatch halts the command loudly with a re-pin instruction, so bytes that
-// drifted from the pin never execute. On a match it resolves and executes the
-// plugin through the shared runner, threading the command's own name to the guest
-// as the invoked-command discriminator; a non-zero exit is returned as an
+// loads a guest while that cache is warm. The command's declared flags are
+// registered on it so that 'aggrega help <command>' renders them in a Flags
+// section like a core command's flags; this is a help-rendering surface only.
+// Flag parsing stays disabled so the whole argument vector after the command
+// name — flag tokens included — is forwarded verbatim to the guest, which is the
+// sole parser of its own flags. Before running, the command re-resolves the
+// plugin's bytes and compares their content digest to the digest pinned in the
+// config: a mismatch halts the command loudly with a re-pin instruction, so bytes
+// that drifted from the pin never execute. On a match it resolves and executes
+// the plugin through the shared runner, threading the command's own name to the
+// guest as the invoked-command discriminator; a non-zero exit is returned as an
 // exitCodeError so the process mirrors the plugin's status without treating it as
 // a host error.
 func newCLIPluginCmd(reg cliCommandReg) *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:                reg.name,
 		Short:              reg.short,
 		DisableFlagParsing: true,
@@ -247,6 +255,28 @@ func newCLIPluginCmd(reg cliCommandReg) *cobra.Command {
 			}
 			return nil
 		},
+	}
+	declarePluginCommandFlags(cmd, reg.flags)
+	return cmd
+}
+
+// declarePluginCommandFlags registers a configured CLI plugin command's declared
+// flags on cmd so help renders them like a core command's flags. The declaration
+// is a help-rendering surface only: because the command keeps flag parsing
+// disabled, cobra never parses these flags and the guest remains the sole parser
+// of the forwarded argument vector. A flag whose type is bool declares a bool
+// flag (its default parsed from the declared default string, defaulting to
+// false); every other type declares a string flag carrying the declared default
+// verbatim, so the flag kind and default shown in help follow the guest's own
+// declaration while the host performs no flag interpretation.
+func declarePluginCommandFlags(cmd *cobra.Command, flags []wasm.PluginCommandFlag) {
+	for _, f := range flags {
+		if f.Type == "bool" {
+			def, _ := strconv.ParseBool(f.Default)
+			cmd.Flags().BoolP(f.Name, f.Shorthand, def, f.Description)
+			continue
+		}
+		cmd.Flags().StringP(f.Name, f.Shorthand, f.Default, f.Description)
 	}
 }
 
