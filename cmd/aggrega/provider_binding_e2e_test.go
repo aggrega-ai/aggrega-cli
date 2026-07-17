@@ -254,7 +254,7 @@ plugins:
 	}
 	got := ""
 	for _, b := range lf.Providers {
-		if b.Target == "helm" {
+		if b.Capability == "helm" {
 			got = b.Plugin
 		}
 	}
@@ -304,7 +304,7 @@ func TestProviderBinding_UnambiguousTargetNeedsNoBinding(t *testing.T) {
 	}
 	found := false
 	for _, b := range lf.Providers {
-		if b.Target == "helm" {
+		if b.Capability == "helm" {
 			found = true
 			if b.Plugin != "provider/helm" {
 				t.Errorf("recorded binding plugin=%q, want the helm-provider identity", b.Plugin)

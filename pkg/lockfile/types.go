@@ -269,9 +269,9 @@ type Plugin struct {
 }
 
 // ProviderBinding records the resolved render-engine selection for one
-// capability: which provider-rendering plugin renders a target
+// capability: which provider-rendering plugin serves a capability
 // (e.g. "helm"). Pull resolves the binding — from the workspace-config
-// plugins.providers list when the target is ambiguously served, or from
+// plugins.providers list when the capability is ambiguously served, or from
 // the sole serving plugin when unambiguous — and records it here so the
 // build selects the engine from the lockfile rather than re-reading the
 // workspace config. This keeps build output invariant to a
@@ -282,20 +282,20 @@ type Plugin struct {
 // single-sourced in the Plugins and Entities sections, which this record
 // points into by identity (Plugin is the plugin's bare identity). Version
 // coexistence is preserved: this record selects the plugin repository per
-// target; the concrete versions live in Entities (one entry per resolved
+// capability; the concrete versions live in Entities (one entry per resolved
 // plugin version), and each Recipe's spec.capability version pin selects among
 // them at render.
 //
 // Field declaration order is alphabetical to drive yaml.v3's canonical
 // key emission, matching the Lockfile-wide discipline.
 type ProviderBinding struct {
+	// Capability is the capability this binding selects an engine for
+	// — the bare engine name a Recipe binds through spec.capability.
+	Capability string `yaml:"capability"`
 	// Plugin is the derived coordinate identity of the resolved
 	// provider-rendering plugin — its metadata.pluginType and bare metadata.name
 	// joined as <pluginType>/<name> (e.g. "provider/helm"). The coordinate is the
 	// same identity the catalog indexes under and the registry location derives
 	// from; it is derived from the (pluginType, name) pair, not authored.
 	Plugin string `yaml:"plugin"`
-	// Target is the capability this binding selects an engine for
-	// — the bare engine name a Recipe binds through spec.capability.
-	Target string `yaml:"target"`
 }

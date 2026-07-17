@@ -375,7 +375,7 @@ func dispatchBuildWithDiag(rw *workspaceconfig.ResolvedWorkspace, releasePath st
 	// pinned binding; without a binding an ambiguous target halts loudly at render.
 	lockfileBindings := map[string]string{}
 	for _, b := range lf.Providers {
-		lockfileBindings[b.Target] = b.Plugin
+		lockfileBindings[b.Capability] = b.Plugin
 	}
 	buildLookup.ProviderPlugin = func(ref string) (types.Plugin, bool, error) {
 		return lazyView.ProviderPluginForTarget(ref, lockfileBindings)

@@ -465,7 +465,7 @@ func pullRun(cfg pullConfig) error {
 			return types.Plugin{}, false, err
 		}
 		if ok {
-			resolvedBindings[bare] = lockfile.ProviderBinding{Target: bare, Plugin: p.Coordinate()}
+			resolvedBindings[bare] = lockfile.ProviderBinding{Capability: bare, Plugin: p.Coordinate()}
 		}
 		return p, ok, err
 	}
@@ -704,7 +704,7 @@ func buildLockfile(releasePath string, cl closure.Closure, wsCfg workspaceconfig
 	for _, b := range bindings {
 		lf.Providers = append(lf.Providers, b)
 	}
-	sort.Slice(lf.Providers, func(i, j int) bool { return lf.Providers[i].Target < lf.Providers[j].Target })
+	sort.Slice(lf.Providers, func(i, j int) bool { return lf.Providers[i].Capability < lf.Providers[j].Capability })
 
 	for _, e := range cl.Entities {
 		// A writable recipe's content digest was captured at resolution, before

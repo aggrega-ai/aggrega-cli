@@ -226,7 +226,7 @@ func canonicalise(lf *Lockfile) *Lockfile {
 	out.Providers = make([]ProviderBinding, len(lf.Providers))
 	copy(out.Providers, lf.Providers)
 	sort.Slice(out.Providers, func(i, j int) bool {
-		return out.Providers[i].Target < out.Providers[j].Target
+		return out.Providers[i].Capability < out.Providers[j].Capability
 	})
 
 	return out
