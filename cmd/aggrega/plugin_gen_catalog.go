@@ -131,6 +131,19 @@ func genCatalogFromEmbedded(ctx context.Context, opts genCatalogOptions, version
 		if err != nil {
 			return err
 		}
+		// The host-function set is derived from the guest's own .wasm import
+		// section — the same primitive publish and pull verify against — so the
+		// generated entity carries the record its binary implies and needs no
+		// separate recording step before it is publish-ready. The bytes are
+		// available instantiation-free from the embedded set.
+		wasmBytes, ok := embedded.Lookup(uri)
+		if !ok {
+			return fmt.Errorf("aggrega plugin gen-catalog: embedded guest %q has no artifact", uri)
+		}
+		hostFunctions, err := wasm.DeriveHostFunctions(uri, wasmBytes)
+		if err != nil {
+			return fmt.Errorf("aggrega plugin gen-catalog: %w", err)
+		}
 		bareName := coordinateLeaf(uri)
 		overlay, ok := overlays[bareName]
 		if !ok {
@@ -139,7 +152,7 @@ func genCatalogFromEmbedded(ctx context.Context, opts genCatalogOptions, version
 		if got := types.PluginCoordinate(string(desc.PluginType), overlay.Metadata.Name); got != uri {
 			return fmt.Errorf("aggrega plugin gen-catalog: overlay for %q derives identity coordinate %q, which does not match embedded guest %q; fix the overlay's metadata.name or socket", bareName, got, uri)
 		}
-		if err := generateAndWrite(opts.outputDir, desc, description, overlay, version, uri, out); err != nil {
+		if err := generateAndWrite(opts.outputDir, desc, description, hostFunctions, overlay, version, uri, out); err != nil {
 			return err
 		}
 	}
@@ -173,19 +186,26 @@ func genCatalogFromPlugin(ctx context.Context, opts genCatalogOptions, version s
 	if err != nil {
 		return err
 	}
+	// The host-function set is derived from the guest's own .wasm import section
+	// — the same primitive publish and pull verify against — so the generated
+	// entity is publish-ready with no separate recording step.
+	hostFunctions, err := wasm.DeriveHostFunctions(opts.pluginPath, wasmBytes)
+	if err != nil {
+		return fmt.Errorf("aggrega plugin gen-catalog: %w", err)
+	}
 	// A single .wasm has no repository identity of its own; the loader-returned
 	// descriptor carries no plugin-level description field until the ABI grows
 	// one, so the single-guest path emits a description only once that field
 	// lands. The embedded path reads the description from the build-extracted
 	// descriptor JSON.
-	return generateAndWrite(opts.outputDir, desc, "", overlay, version, opts.pluginPath, out)
+	return generateAndWrite(opts.outputDir, desc, "", hostFunctions, overlay, version, opts.pluginPath, out)
 }
 
 // generateAndWrite merges one descriptor with its overlay and writes the entity
 // to <outputDir>/<pluginType>/<name>/<version>/plugin.yaml — the plugin
 // coordinate path that mirrors the catalog filesystem layout.
-func generateAndWrite(outputDir string, desc wasm.PluginDescriptor, description string, overlay types.Plugin, version, identity string, out io.Writer) error {
-	entity, err := mergeGenCatalogEntity(desc, description, overlay, version, identity)
+func generateAndWrite(outputDir string, desc wasm.PluginDescriptor, description string, hostFunctions []string, overlay types.Plugin, version, identity string, out io.Writer) error {
+	entity, err := mergeGenCatalogEntity(desc, description, hostFunctions, overlay, version, identity)
 	if err != nil {
 		return err
 	}
@@ -216,15 +236,19 @@ func generateAndWrite(outputDir string, desc wasm.PluginDescriptor, description 
 	return nil
 }
 
-// mergeGenCatalogEntity assembles a Plugin entity from three sources: the
-// describe() contract fields (machine-derived — the compiler-checked truth of
-// what the guest does), the authored overlay (identity, runtime limits, provider
-// block, and any authored metadata), and the binary's own build version. The
-// plugin-level description, when present, becomes metadata.description. The
-// contract fields always come from describe(), overriding any the overlay
-// carries, so describe() is the single source for the guest's declared behavior;
-// the overlay supplies only what describe() does not report.
-func mergeGenCatalogEntity(desc wasm.PluginDescriptor, description string, overlay types.Plugin, version, identity string) (types.Plugin, error) {
+// mergeGenCatalogEntity assembles a Plugin entity from the describe() contract
+// fields (machine-derived — the compiler-checked truth of what the guest does),
+// the host-function set derived from the guest's own .wasm import section (also
+// machine-derived), the command mirror read from the guest's describe()
+// self-report (machine-derived — the top-level command verbs a CLI guest
+// contributes, in describe()-declared order), the authored overlay (identity,
+// runtime limits, provider block, and any authored metadata), and the binary's
+// own build version. The plugin-level description, when present, becomes
+// metadata.description. The contract fields, the host-function set, and the
+// command mirror always come from the binary, overriding any the overlay
+// carries, so the binary is the single source for the guest's declared behavior;
+// the overlay supplies only what the binary does not report.
+func mergeGenCatalogEntity(desc wasm.PluginDescriptor, description string, hostFunctions []string, overlay types.Plugin, version, identity string) (types.Plugin, error) {
 	if err := desc.Validate(identity); err != nil {
 		return types.Plugin{}, fmt.Errorf("aggrega plugin gen-catalog: %w", err)
 	}
@@ -244,11 +268,12 @@ func mergeGenCatalogEntity(desc wasm.PluginDescriptor, description string, overl
 	entity.Metadata.Description = description
 
 	// Identity is metadata.name (copied from the overlay above); runtime limits
-	// and the provider block are authored. The machine-owned host-function set and
-	// the signature pointer are not the generator's to write — publish derives and
-	// stamps the host functions from the .wasm, and signing attaches the signature
-	// at push.
-	entity.Spec.Runtime = sanitizeOverlayRuntime(overlay.Spec.Runtime)
+	// and the provider block are authored. The machine-owned host-function set is
+	// derived from the guest's .wasm import section and stamped into the runtime
+	// block here, so the generated entity is publish-ready without a separate
+	// recording step. The signature pointer is not the generator's to write —
+	// signing attaches the signature at push.
+	entity.Spec.Runtime = stampRuntimeHostFunctions(overlay.Spec.Runtime, hostFunctions)
 	entity.Spec.Provider = overlay.Spec.Provider
 
 	// Contract fields are machine-derived from describe(). pluginType is the
@@ -258,6 +283,7 @@ func mergeGenCatalogEntity(desc wasm.PluginDescriptor, description string, overl
 	entity.Spec.AbiVersion = desc.ABIVersion
 	entity.Spec.Capabilities = desc.Capabilities
 	entity.Spec.Exports = descriptorExports(desc.Exports)
+	entity.Spec.Commands = descriptorCommands(desc.Commands)
 	if contract := descriptorContract(desc.Contract); contract != nil {
 		if entity.Spec.Provider == nil {
 			entity.Spec.Provider = &types.PluginProvider{}
@@ -268,15 +294,28 @@ func mergeGenCatalogEntity(desc wasm.PluginDescriptor, description string, overl
 	return entity, nil
 }
 
-// sanitizeOverlayRuntime returns the overlay's runtime block with the
-// machine-owned host-function set cleared: publish derives it from the .wasm and
-// stamps it into the published entity, so the generator never authors it.
-func sanitizeOverlayRuntime(rt *types.PluginRuntime) *types.PluginRuntime {
+// stampRuntimeHostFunctions returns the entity's runtime block carrying the
+// machine-owned host-function set derived from the guest's .wasm. The set is
+// canonical (sorted, de-duplicated), so re-generating over unchanged bytes
+// yields byte-identical output.
+//
+// When the overlay authors a runtime block, its authored limits are preserved
+// and the derived set replaces whatever host functions it carried. When the
+// overlay authors no runtime block but the guest imports host functions, a
+// runtime block is created to hold the record — a validated machine-owned value
+// is never silently dropped. When the guest imports nothing and the overlay
+// authors no runtime block, the block stays absent; the field is omitempty and
+// the publish check treats an absent record as an empty set, so this is
+// publish-safe.
+func stampRuntimeHostFunctions(rt *types.PluginRuntime, hostFunctions []string) *types.PluginRuntime {
 	if rt == nil {
-		return nil
+		if len(hostFunctions) == 0 {
+			return nil
+		}
+		return &types.PluginRuntime{HostFunctions: hostFunctions}
 	}
 	out := *rt
-	out.HostFunctions = nil
+	out.HostFunctions = hostFunctions
 	return &out
 }
 
@@ -294,6 +333,27 @@ func descriptorExports(exports []wasm.PluginExport) []types.PluginExport {
 			Operates: e.Operates,
 			Scope:    e.Scope,
 			Selector: e.Selector,
+		})
+	}
+	return out
+}
+
+// descriptorCommands maps the describe() command declarations onto the entity's
+// machine-owned command mirror, preserving describe()-declared order and carrying
+// the command verb and its short-help text. It is the exact reverse of the
+// mirror projection the publish verify re-derives from the entity, so a generated
+// entity's recorded set matches what the binary describes without a separate
+// recording step. Empty input yields nil, so a non-CLI guest that describes no
+// commands leaves the omitempty field absent.
+func descriptorCommands(commands []wasm.PluginCLICommand) []types.PluginCommand {
+	if len(commands) == 0 {
+		return nil
+	}
+	out := make([]types.PluginCommand, 0, len(commands))
+	for _, c := range commands {
+		out = append(out, types.PluginCommand{
+			Name:        c.Name,
+			Description: c.Description,
 		})
 	}
 	return out
