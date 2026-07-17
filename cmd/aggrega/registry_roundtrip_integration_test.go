@@ -41,7 +41,7 @@ import (
 
 // offlineReferenceSHA is the catalog-only compose output built offline against
 // the standard catalog; the registry-tier build must reproduce it byte-for-byte.
-const offlineReferenceSHA = "b5da40a04c323c927e9c4ec3b81456668eea07472b4da54ea10d40ebdd0def09"
+const offlineReferenceSHA = "9916a26d726a34546e64f77b5c1a92129ef6bca54c44d15a580d26a3f194ef65"
 
 func standardCatalogDir(t *testing.T) string {
 	t.Helper()
@@ -1329,9 +1329,9 @@ func TestIntegration_LocalPathPinInvariance(t *testing.T) {
 		localCatalog []string
 		needStd      bool
 	}{
-		{"annotation-driven-monitoring", "annotation-driven-monitoring", "release.yaml", []string{"catalog"}, true},
-		{"mariadb-adminer-helm-chart", "mariadb-adminer", "release-helm-chart.yaml", []string{"catalog-helm-chart"}, false},
-		{"mariadb-adminer-helm-synth", "mariadb-adminer", "release-helm-synth.yaml", []string{"catalog-helm-synth"}, false},
+		{"annotation-driven-monitoring", "annotation-driven-monitoring", "release.yaml", nil, true},
+		{"mariadb-adminer-helm-chart", "mariadb-adminer", "release-helm-chart.yaml", []string{"catalog-helm-chart"}, true},
+		{"mariadb-adminer-helm-synth", "mariadb-adminer", "release-helm-synth.yaml", []string{"catalog-helm-synth"}, true},
 		{"cross-boundary-networking-compose", "cross-boundary-networking", "release-compose.yaml", []string{"catalog-compose"}, true},
 	}
 

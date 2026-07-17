@@ -180,6 +180,7 @@ func TestIntegration_ConsumeRetroactiveDeprecation(t *testing.T) {
 		if derr := deprecateRun(deprecateConfig{
 			Reference: componentDeprecateRef(host),
 			Severity:  severity,
+			Reason:    message,
 			Message:   message,
 			Signer:    markerSigner,
 			EnvLookup: func(string) string { return "" },

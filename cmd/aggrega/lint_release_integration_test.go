@@ -12,8 +12,9 @@ import (
 )
 
 // TestIntegration_LintRelease_ClosureScoped exercises `aggrega lint --release`
-// over a real example's Release (mariadb-adminer's self-contained compose
-// catalog): a clean closure exits 0, and the mode is genuinely closure-scoped —
+// over a real example's Release (mariadb-adminer's compose catalog, resolved
+// against the standard catalog for its hub-provided dependencies): a clean
+// closure exits 0, and the mode is genuinely closure-scoped —
 // a schema-broken entity OUTSIDE the Release's closure does not fail
 // `lint --release` (it is never reached) while whole-catalog lint does catch it.
 func TestIntegration_LintRelease_ClosureScoped(t *testing.T) {
@@ -27,9 +28,12 @@ func TestIntegration_LintRelease_ClosureScoped(t *testing.T) {
 	copyTree(t, filepath.Join(examplesRoot, "mariadb-adminer"), ws)
 	_ = os.RemoveAll(filepath.Join(ws, ".aggrega"))
 	composeCatalog := filepath.Join(ws, "catalog-compose")
-	// Point the workspace config at the self-contained compose catalog (absolute),
-	// so lint --release resolves the closure from Tier-1 with no network/lockfile.
-	writeWorkspaceConfig(t, ws, "workspace:\n  catalog_dirs:\n    - "+composeCatalog+"\n")
+	std := standardCatalogDir(t)
+	// Point the workspace config at the local compose catalog plus the standard
+	// catalog (both absolute), so lint --release resolves the closure from Tier-1
+	// with no network/lockfile — the local catalog supplies the example's own
+	// entities, the standard catalog supplies its hub-provided dependencies.
+	writeWorkspaceConfig(t, ws, "workspace:\n  catalog_dirs:\n    - "+composeCatalog+"\n    - "+std+"\n")
 	t.Chdir(ws)
 
 	// Clean closure → exit 0.

@@ -468,7 +468,7 @@ func TestWritePinsByteFaithfulOnRealRecipe(t *testing.T) {
 		"    Aggregate into source resolution.\n",
 		"  valuesMapping: |\n",
 		"    ## ── Image overrides",
-		"  target: helm\n",
+		"  capability: helm\n",
 		"    - ReadWriteOnce\n",
 	} {
 		if !bytes.Contains(result, []byte(frag)) {
