@@ -105,6 +105,32 @@ func TestGlobalLayerExplicitMissingErrors(t *testing.T) {
 	}
 }
 
+// TestResolveWithoutGlobalSkipsMissingExplicit: a set $AGGREGA_CONFIG pointing at
+// a missing file is an error for the full resolve, but ResolveWithoutGlobal skips
+// the global layer entirely and resolves cleanly — the seam a command about to
+// write that config uses so it need not pre-exist.
+func TestResolveWithoutGlobalSkipsMissingExplicit(t *testing.T) {
+	t.Parallel()
+	missing := filepath.Join(t.TempDir(), "does-not-exist.yaml")
+	root := t.TempDir()
+	lookup := frozenLookup(map[string]string{"AGGREGA_CONFIG": missing})
+
+	if _, err := workspaceconfig.Resolve(root, "", lookup); err == nil {
+		t.Fatal("Resolve: want error for missing $AGGREGA_CONFIG file, got nil")
+	}
+
+	rw, err := workspaceconfig.ResolveWithoutGlobal(root, "", lookup)
+	if err != nil {
+		t.Fatalf("ResolveWithoutGlobal: unexpected error for missing $AGGREGA_CONFIG file: %v", err)
+	}
+	if got := rw.Config().DefaultRegistry; got != "hub.aggrega.ai" {
+		t.Errorf("DefaultRegistry: got %q; want hub.aggrega.ai (Default(), no global layer read)", got)
+	}
+	if rw.Source() != workspaceconfig.SourceDefaults {
+		t.Errorf("Source: got %q; want defaults (the global layer was skipped)", rw.Source())
+	}
+}
+
 // TestGlobalLayerNoneWhenAbsent: with $AGGREGA_CONFIG unset and no XDG default
 // file present, no global layer loads — the effective config is Default() and
 // the Source reports defaults.

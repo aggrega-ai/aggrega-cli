@@ -1,0 +1,27 @@
+{
+  "requires_signatures": true,
+  "trusted_identities": [
+    {
+      "identity": "m.ferrero@cognitio.it",
+      "issuer": "https://accounts.google.com"
+    },
+    {
+      "identity": "m.ferrero@cognitio.it",
+      "issuer": "https://github.com/login/oauth"
+    },
+    {
+      "identity_regexp": "^https://github\\.com/aggrega-ai/",
+      "issuer": "https://token.actions.githubusercontent.com"
+    }
+  ],
+  "trusted_deprecation_identities": [
+    {
+      "identity": "m.ferrero@cognitio.it",
+      "issuer": "https://accounts.google.com"
+    },
+    {
+      "identity": "m.ferrero@cognitio.it",
+      "issuer": "https://github.com/login/oauth"
+    }
+  ]
+}

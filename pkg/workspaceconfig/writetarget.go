@@ -78,7 +78,7 @@ func GlobalConfigPath(lookup func(string) string) (string, bool) {
 	if lookup == nil {
 		lookup = os.Getenv
 	}
-	if v := lookup(envVarConfigOverride); v != "" {
+	if v := lookup(EnvConfigOverride); v != "" {
 		return v, true
 	}
 	return xdgConfigPath(lookup)

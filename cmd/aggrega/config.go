@@ -6,9 +6,14 @@ package main
 import (
 	"fmt"
 	"io"
+	"net/http"
+	"os"
 	"path/filepath"
+	"strings"
+	"text/tabwriter"
 
 	"github.com/spf13/cobra"
+	"go.yaml.in/yaml/v3"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
@@ -20,8 +25,293 @@ func newConfigCmd() *cobra.Command {
 		Use:   "config",
 		Short: "Inspect and manage the workspace configuration",
 	}
+	c.AddCommand(newConfigInitCmd())
 	c.AddCommand(newConfigCaptureCmd())
+	c.AddCommand(newConfigShowCmd())
 	return c
+}
+
+// newConfigShowCmd builds the `config show` command: it reports the
+// configuration that applies right now — which files and environment overrides
+// contributed and the effective merged result — with modes to dump a single
+// layer's file verbatim or to annotate each setting with its origin.
+func newConfigShowCmd() *cobra.Command {
+	var global, workspace, origin bool
+
+	c := &cobra.Command{
+		Use:   "show",
+		Short: "Show the effective configuration and where each setting came from",
+		Long: `Show the configuration that applies right now.
+
+By default it leads with the cascade of config files and environment overrides
+that contributed, lowest precedence first, then prints the effective merged
+configuration — the global config, the workspace-tree cascade, and any
+environment overlay combined into what applies right now.
+
+Pass --global or --workspace to print a single layer's own file bytes verbatim,
+preserving its comments and formatting; when that layer's file does not exist it
+says so rather than failing. The two are mutually exclusive.
+
+Pass --origin to annotate each effective setting with the layer it came from —
+a config file, an environment variable, or the built-in defaults — in the shape
+of a settings-with-source listing. Scalar settings are attributed per value;
+list and map settings are attributed as a whole to the layer that last changed
+them.`,
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			rw, err := workspaceFromContext(cmd.Context())
+			if err != nil {
+				return err
+			}
+			return configShowRun(configShowConfig{
+				ws:        rw,
+				lookup:    configLookupFromContext(cmd.Context()),
+				Global:    global,
+				Workspace: workspace,
+				Origin:    origin,
+				Out:       cmd.OutOrStdout(),
+			})
+		},
+	}
+	c.Flags().BoolVar(&global, "global", false, "Print the global config file's own bytes verbatim, preserving its comments and formatting.")
+	c.Flags().BoolVar(&workspace, "workspace", false, "Print this project's workspace config file's own bytes verbatim, preserving its comments and formatting.")
+	c.Flags().BoolVar(&origin, "origin", false, "Annotate each effective setting with the layer it came from (a config file, an environment variable, or the built-in defaults).")
+	return c
+}
+
+// configShowConfig is the input contract for `aggrega config show`.
+type configShowConfig struct {
+	ws *workspaceconfig.ResolvedWorkspace
+	// lookup carries the --config flag as the flag form of the global-config-path
+	// override, so --global and the resolution seam resolve the same path the
+	// workspace resolution used. Nil selects the live process environment.
+	lookup func(string) string
+	// Global and Workspace select a single-layer verbatim dump; Origin selects
+	// the per-value provenance view. Global and Workspace are mutually exclusive,
+	// and neither combines with Origin. With none set, the default effective view
+	// applies.
+	Global    bool
+	Workspace bool
+	Origin    bool
+	Out       io.Writer
+}
+
+// configShowRun dispatches the show mode: a single-layer verbatim dump
+// (--global / --workspace), the per-value provenance view (--origin), or the
+// default cascade-plus-effective view.
+func configShowRun(cfg configShowConfig) error {
+	rw, err := workspaceOrResolve(cfg.ws)
+	if err != nil {
+		return fmt.Errorf("workspaceconfig: %w", err)
+	}
+
+	switch {
+	case cfg.Global && cfg.Workspace:
+		return fmt.Errorf("aggrega config show: --global and --workspace cannot be combined; choose at most one")
+	case cfg.Origin && (cfg.Global || cfg.Workspace):
+		return fmt.Errorf("aggrega config show: --origin cannot be combined with --global or --workspace")
+	case cfg.Global:
+		path, ok := workspaceconfig.GlobalConfigPath(cfg.lookup)
+		if !ok {
+			fmt.Fprintln(cfg.Out, "No global config path can be resolved; set $AGGREGA_CONFIG or a home directory ($HOME / $XDG_CONFIG_HOME).")
+			return nil
+		}
+		return configShowVerbatim(cfg.Out, path, "global")
+	case cfg.Workspace:
+		return configShowVerbatim(cfg.Out, filepath.Join(rw.Root(), workspaceconfig.ConfigFilename), "workspace")
+	case cfg.Origin:
+		return configShowOrigin(cfg.Out, rw)
+	default:
+		return configShowEffective(cfg.Out, rw)
+	}
+}
+
+// configShowVerbatim writes a single layer's config file bytes unchanged, so its
+// comments and formatting are preserved rather than lost to a re-marshal. A
+// missing file is reported as an informative line, not an error.
+func configShowVerbatim(out io.Writer, path, label string) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			fmt.Fprintf(out, "No %s config file exists at %s.\n", label, path)
+			return nil
+		}
+		return fmt.Errorf("aggrega config show: read %s config %s: %w", label, path, err)
+	}
+	_, err = out.Write(data)
+	return err
+}
+
+// configShowEffective leads with the ordered cascade of contributing config
+// files and environment overrides, then prints the effective merged config as
+// deterministic YAML.
+func configShowEffective(out io.Writer, rw *workspaceconfig.ResolvedWorkspace) error {
+	files := rw.ContributingFiles()
+	if len(files) == 0 {
+		fmt.Fprintln(out, "Configuration loaded from: built-in defaults only (no config files or environment overrides).")
+	} else {
+		fmt.Fprintln(out, "Configuration loaded from (lowest precedence first):")
+		for i, f := range files {
+			fmt.Fprintf(out, "  %d. %s\n", i+1, contributingLabel(f))
+		}
+	}
+
+	fmt.Fprintln(out)
+	fmt.Fprintln(out, "Effective configuration:")
+	data, err := yaml.Marshal(rw.Config())
+	if err != nil {
+		return fmt.Errorf("aggrega config show: marshal effective config: %w", err)
+	}
+	_, err = out.Write(data)
+	return err
+}
+
+// contributingLabel renders one contributing-layer entry for the loaded-from
+// list: an environment-variable pseudo-entry (a leading "$") reads as such; a
+// file path is shown as-is.
+func contributingLabel(entry string) string {
+	if strings.HasPrefix(entry, "$") {
+		return "environment variable " + entry[1:]
+	}
+	return entry
+}
+
+// configShowOrigin prints each effective setting with its value and the layer it
+// came from, aligned in columns and in a fixed setting order for deterministic
+// output.
+func configShowOrigin(out io.Writer, rw *workspaceconfig.ResolvedWorkspace) error {
+	origins, err := rw.ValueOrigins()
+	if err != nil {
+		return fmt.Errorf("aggrega config show: %w", err)
+	}
+	w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
+	fmt.Fprintln(w, "SETTING\tVALUE\tSOURCE")
+	for _, o := range origins {
+		fmt.Fprintf(w, "%s\t%s\t%s\n", o.Field, o.Value, o.Source)
+	}
+	return w.Flush()
+}
+
+// newConfigInitCmd builds the `config init` command: it seeds a working config
+// by registering the official hub (or another registry) with its signature
+// trust policy, so a fresh machine can pull and verify signed artifacts without
+// hand-editing YAML.
+func newConfigInitCmd() *cobra.Command {
+	var registry string
+	var force bool
+	var global bool
+	var workspace bool
+
+	c := &cobra.Command{
+		Use:   "init",
+		Short: "Seed a working configuration with a registry and its trust policy",
+		Long: `Seed a working configuration by registering a registry and its signature trust
+policy, so a fresh machine can pull and verify signed artifacts without editing
+YAML by hand.
+
+By default it registers the official hub (hub.aggrega.ai) with signatures
+required and the official trusted identities. The registry's advertised trust
+policy is fetched once from its own origin and pinned locally — trust-on-first-
+use; when the registry is unreachable or advertises nothing, the built-in
+official baseline is written instead, so init still produces a usable config
+offline. Pass --registry to seed a different registry (for an air-gapped or
+private hub).
+
+The entry is written to the global config shared across every workspace by
+default; pass --workspace to write it to this project's workspace config
+instead. If the target config file already exists, init refuses rather than
+overwrite it — pass --force to write anyway (the registry entry is merged into
+the existing file, other settings preserved).`,
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			// init writes the global config, so it resolves the workspace WITHOUT
+			// the global layer: the explicit --config path it is about to create
+			// need not pre-exist. It needs only the workspace root (for the
+			// --workspace target); the --global default target derives from the
+			// config-path lookup, not the root.
+			lookup := configLookupFromContext(cmd.Context())
+			rw, err := workspaceconfig.ResolveWithoutGlobal("", workspaceRootFromContext(cmd.Context()), lookup)
+			if err != nil {
+				return err
+			}
+			return configInitRun(configInitConfig{
+				Registry:  registry,
+				Force:     force,
+				Global:    global,
+				Workspace: workspace,
+				ws:        rw,
+				Out:       cmd.OutOrStdout(),
+				lookup:    lookup,
+			})
+		},
+	}
+	c.Flags().StringVar(&registry, "registry", workspaceconfig.HubBaselineHost, "Registry host to seed with its trust policy. Defaults to the official hub.")
+	c.Flags().BoolVar(&force, "force", false, "Overwrite an existing config file. Without it, init refuses when the target file already exists.")
+	c.Flags().BoolVar(&global, "global", false, "Write the entry to the global config shared across every workspace. This is the default.")
+	c.Flags().BoolVar(&workspace, "workspace", false, "Write the entry to this project's workspace config instead of the global config.")
+	return c
+}
+
+// configInitConfig is the input contract for `aggrega config init`.
+type configInitConfig struct {
+	// Registry is the host to seed with its trust policy. Empty is treated as
+	// the official hub by the underlying add path's host resolution.
+	Registry string
+	// Force permits writing when the target config file already exists. Without
+	// it, init refuses rather than touch an existing file.
+	Force bool
+	// Global and Workspace are the write-target overrides, mirroring
+	// `registry add`. A registry is tool-scoped, so init defaults to the global
+	// config; --workspace forces this project's workspace file. Setting both is a
+	// usage error.
+	Global    bool
+	Workspace bool
+
+	ws  *workspaceconfig.ResolvedWorkspace
+	Out io.Writer
+	// lookup reads the environment for global-write-path resolution, carrying the
+	// --config flag override. Nil selects the live process environment.
+	lookup func(string) string
+	// trustClient transports the advertised-trust fetch. Nil selects a default
+	// client; tests inject one so no live network is contacted.
+	trustClient *http.Client
+}
+
+// configInitRun seeds the config by registering cfg.Registry and its trust
+// policy through the same add path `aggrega registry add` uses, so the fetch,
+// offline-baseline fallback, schema gate, and write-target policy live in one
+// place. It resolves the write destination first and refuses to overwrite an
+// existing file unless Force is set — the refuse-if-exists guard is local to
+// init; the shared writer merges by design.
+func configInitRun(cfg configInitConfig) error {
+	rw, err := workspaceOrResolve(cfg.ws)
+	if err != nil {
+		return fmt.Errorf("workspaceconfig: %w", err)
+	}
+
+	dest, err := workspaceconfig.WriteDestination(workspaceconfig.OpRegistry, cfg.Global, cfg.Workspace, rw.Root(), cfg.lookup)
+	if err != nil {
+		return err
+	}
+	if !cfg.Force {
+		switch _, statErr := os.Stat(dest); {
+		case statErr == nil:
+			return fmt.Errorf("aggrega config init: %s already exists; pass --force to overwrite it", dest)
+		case !os.IsNotExist(statErr):
+			return fmt.Errorf("aggrega config init: stat %s: %w", dest, statErr)
+		}
+	}
+
+	return registryAddRun(registryAddConfig{
+		Host:        cfg.Registry,
+		FetchTrust:  true,
+		Global:      cfg.Global,
+		Workspace:   cfg.Workspace,
+		ws:          rw,
+		Out:         cfg.Out,
+		lookup:      cfg.lookup,
+		trustClient: cfg.trustClient,
+	})
 }
 
 // newConfigCaptureCmd builds the `config capture` command: it freezes the

@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/sigstore/sigstore-go/pkg/fulcio/certificate"
 	"github.com/sigstore/sigstore-go/pkg/root"
 	"github.com/sigstore/sigstore-go/pkg/verify"
 	"github.com/sigstore/sigstore/pkg/cryptoutils"
@@ -187,6 +188,14 @@ func verifyKeylessEntity(entity verify.SignedEntity, trustedMaterial root.Truste
 		// failures; map it to the identity sentinel so callers can tell
 		// "wrong signer" from "broken signature".
 		if isIdentityMismatch(err) {
+			// The library detail names the certificate SAN it saw but not the
+			// OIDC issuer, so a signer who presented the right identity under
+			// an untrusted issuer cannot tell why the trusted-identity OR-set
+			// rejected it. Name both when they can be read from the leaf
+			// certificate; fall back to the library detail alone otherwise.
+			if issuer, san, ok := mismatchCertIdentity(entity); ok {
+				return KeylessIdentity{}, fmt.Errorf("signing: %w: %v; signer presented issuer %q with identity %q, but no trusted identity permits that issuer", ErrUntrustedIdentity, err, issuer, san)
+			}
 			return KeylessIdentity{}, fmt.Errorf("signing: %w: %v", ErrUntrustedIdentity, err)
 		}
 		return KeylessIdentity{}, fmt.Errorf("signing: %w: %v", ErrSignatureVerificationFailed, err)
@@ -217,6 +226,31 @@ func matchedKeylessIdentity(result *verify.VerificationResult) KeylessIdentity {
 		}
 	}
 	return KeylessIdentity{}
+}
+
+// mismatchCertIdentity reads the leaf certificate's OIDC issuer and subject
+// alternative name from a signed entity for an identity-mismatch diagnostic.
+// It surfaces only those two fields — the SAN and the OIDC issuer bound into
+// the certificate — and nothing else the certificate carries.
+//
+// It is best-effort: a missing verification content, a nil leaf certificate,
+// or a certificate that cannot be summarized yields ok=false, so the caller
+// falls back to the library detail alone. A verification failure must never
+// become an extraction panic.
+func mismatchCertIdentity(entity verify.SignedEntity) (issuer, san string, ok bool) {
+	vc, verr := entity.VerificationContent()
+	if verr != nil {
+		return "", "", false
+	}
+	leaf := vc.Certificate()
+	if leaf == nil {
+		return "", "", false
+	}
+	summary, serr := certificate.SummarizeCertificate(leaf)
+	if serr != nil {
+		return "", "", false
+	}
+	return summary.Extensions.Issuer, summary.SubjectAlternativeName, true
 }
 
 // timeUnconstrainedVerifier wraps a signature.Verifier as a

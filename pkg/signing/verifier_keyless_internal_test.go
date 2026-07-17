@@ -4,8 +4,15 @@
 package signing
 
 import (
+	"crypto/x509"
 	"errors"
+	"strings"
 	"testing"
+	"time"
+
+	"github.com/sigstore/sigstore-go/pkg/root"
+	"github.com/sigstore/sigstore-go/pkg/tlog"
+	"github.com/sigstore/sigstore-go/pkg/verify"
 
 	"github.com/sigstore/sigstore-go/pkg/testing/ca"
 )
@@ -110,14 +117,19 @@ func TestVerifyKeylessRejectsWrongIdentity(t *testing.T) {
 }
 
 // TestVerifyKeylessRejectsWrongIssuer proves issuer matching: the right
-// identity under the wrong issuer is not trusted.
+// identity under the wrong issuer is not trusted. The diagnostic names BOTH
+// the certificate SAN and the OIDC issuer, so a signer who presented the
+// expected identity under an untrusted issuer can see that the issuer — not
+// the identity — was the reason the trusted-identity OR-set rejected the
+// bundle.
 func TestVerifyKeylessRejectsWrongIssuer(t *testing.T) {
 	t.Parallel()
 	vs, err := ca.NewVirtualSigstore()
 	if err != nil {
 		t.Fatalf("NewVirtualSigstore: %v", err)
 	}
-	entity, err := vs.Sign(maintainerIdentity, "https://evil-issuer.example", []byte(keylessDigest))
+	const untrustedIssuer = "https://evil-issuer.example"
+	entity, err := vs.Sign(maintainerIdentity, untrustedIssuer, []byte(keylessDigest))
 	if err != nil {
 		t.Fatalf("Sign: %v", err)
 	}
@@ -126,6 +138,67 @@ func TestVerifyKeylessRejectsWrongIssuer(t *testing.T) {
 	if !errors.Is(err, ErrUntrustedIdentity) {
 		t.Fatalf("want ErrUntrustedIdentity, got %v", err)
 	}
+	msg := err.Error()
+	if !strings.Contains(msg, untrustedIssuer) {
+		t.Errorf("diagnostic must name the certificate OIDC issuer %q; got: %s", untrustedIssuer, msg)
+	}
+	if !strings.Contains(msg, maintainerIdentity) {
+		t.Errorf("diagnostic must name the certificate SAN %q; got: %s", maintainerIdentity, msg)
+	}
+}
+
+// TestMismatchCertIdentityBestEffort proves the identity-mismatch diagnostic
+// extraction is best-effort: an entity whose verification content is
+// unavailable, or whose leaf certificate is nil, yields ok=false without a
+// panic, so a verify failure never becomes an extraction crash and the
+// caller falls back to the SAN-only library detail.
+func TestMismatchCertIdentityBestEffort(t *testing.T) {
+	t.Parallel()
+	cases := map[string]verify.SignedEntity{
+		"verification-content-error": stubSignedEntity{vcErr: errors.New("no verification content")},
+		"nil-leaf-certificate":       stubSignedEntity{vc: stubVerificationContent{}},
+	}
+	for name, entity := range cases {
+		entity := entity
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			issuer, san, ok := mismatchCertIdentity(entity)
+			if ok || issuer != "" || san != "" {
+				t.Fatalf("want best-effort miss (\"\",\"\",false); got (%q,%q,%v)", issuer, san, ok)
+			}
+		})
+	}
+}
+
+// stubSignedEntity is a minimal verify.SignedEntity whose only meaningful
+// behavior is its VerificationContent result; the remaining methods satisfy
+// the interface and are unused by mismatchCertIdentity.
+type stubSignedEntity struct {
+	vc    verify.VerificationContent
+	vcErr error
+}
+
+func (s stubSignedEntity) VerificationContent() (verify.VerificationContent, error) {
+	return s.vc, s.vcErr
+}
+func (stubSignedEntity) HasInclusionPromise() bool                          { return false }
+func (stubSignedEntity) HasInclusionProof() bool                            { return false }
+func (stubSignedEntity) SignatureContent() (verify.SignatureContent, error) { return nil, nil }
+func (stubSignedEntity) Timestamps() ([][]byte, error)                      { return nil, nil }
+func (stubSignedEntity) TlogEntries() ([]*tlog.Entry, error)                { return nil, nil }
+func (stubSignedEntity) Version() (string, error)                           { return "", nil }
+
+// stubVerificationContent is a verify.VerificationContent whose leaf
+// certificate is nil, exercising the nil-certificate guard.
+type stubVerificationContent struct{}
+
+func (stubVerificationContent) Certificate() *x509.Certificate      { return nil }
+func (stubVerificationContent) PublicKey() verify.PublicKeyProvider { return nil }
+func (stubVerificationContent) CompareKey(any, root.TrustedMaterial) bool {
+	return false
+}
+func (stubVerificationContent) ValidAtTime(time.Time, root.TrustedMaterial) bool {
+	return false
 }
 
 // TestVerifyKeylessRejectsWrongArtifactDigest proves the artifact binding:

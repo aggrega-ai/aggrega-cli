@@ -85,8 +85,8 @@ func (m Marker) String() string {
 // ResolvedWorkspace is the opaque result of Resolve: the absolute workspace
 // root, the cascade-merged Config, the highest-precedence Source that
 // contributed, the marker that anchored the root, and the ordered list of
-// config files that contributed (lowest precedence first), for the
-// "loaded config from" breadcrumb. It is constructed only by Resolve — it has
+// config files that contributed (lowest precedence first), which a command may
+// present to show the resolution provenance. It is constructed only by Resolve — it has
 // no exported fields and no exported constructor — so a caller cannot
 // fabricate or mutate a resolved workspace; the only way to obtain one is to
 // run the single resolution path.
@@ -122,9 +122,9 @@ func (r *ResolvedWorkspace) Marker() Marker { return r.marker }
 
 // ContributingFiles returns the absolute paths of the config files that
 // contributed to the merge, lowest precedence first (global, then tree files
-// farthest-from-root last). Empty when only Default() applied. Used to emit
-// the "loaded config from: <files>" breadcrumb so an operator can always see
-// which settings applied.
+// farthest-from-root last). Empty when only Default() applied. This ordered
+// list is the resolution-provenance data surface a command may present so an
+// operator can see which files' settings applied.
 func (r *ResolvedWorkspace) ContributingFiles() []string {
 	out := make([]string, len(r.files))
 	copy(out, r.files)
@@ -176,6 +176,28 @@ func Resolve(start, flagRoot string, look ...func(string) string) (*ResolvedWork
 		lookup = look[0]
 	}
 	rw, err := resolve(start, flagRoot, lookup, false)
+	if err != nil {
+		return nil, err
+	}
+	rw.start = start
+	rw.flagRoot = flagRoot
+	rw.lookup = lookup
+	return rw, nil
+}
+
+// ResolveWithoutGlobal resolves the workspace root and tree cascade without
+// reading the global config layer, for a command that is about to write the
+// global config and therefore must not fail when that file does not yet exist.
+// It otherwise mirrors Resolve — the same root discovery, tree cascade,
+// defaults, and environment overlay — and shares its variadic-lookup default of
+// the process environment. Only the global-layer read is skipped; a command
+// that needs the merged global config must use Resolve instead.
+func ResolveWithoutGlobal(start, flagRoot string, look ...func(string) string) (*ResolvedWorkspace, error) {
+	lookup := os.Getenv
+	if len(look) > 0 && look[0] != nil {
+		lookup = look[0]
+	}
+	rw, err := resolve(start, flagRoot, lookup, true)
 	if err != nil {
 		return nil, err
 	}
@@ -561,9 +583,9 @@ func resolvePluginURIs(refs []PluginRef, dir string) {
 // read goes through lookup so resolution is deterministic and
 // parallel-safe.
 func loadGlobalLayer(lookup func(string) string) (cfg Config, loaded bool, path string, err error) {
-	if v := lookup(envVarConfigOverride); v != "" {
+	if v := lookup(EnvConfigOverride); v != "" {
 		if _, statErr := os.Stat(v); statErr != nil {
-			return Config{}, false, "", fmt.Errorf("workspaceconfig: $%s config not found at %s: %w", envVarConfigOverride, v, statErr)
+			return Config{}, false, "", fmt.Errorf("workspaceconfig: $%s config not found at %s: %w", EnvConfigOverride, v, statErr)
 		}
 		cfg, err = load(v)
 		if err != nil {

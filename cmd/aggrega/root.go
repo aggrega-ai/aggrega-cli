@@ -51,6 +51,7 @@ var rootCmd = newRootCmd()
 // Usage block, because that is genuinely a misuse of the command.
 func newRootCmd() *cobra.Command {
 	var workspaceRootFlag string
+	var configPathFlag string
 	var noColorFlag, plainFlag bool
 	root := &cobra.Command{
 		Use:           "aggrega",
@@ -67,12 +68,14 @@ func newRootCmd() *cobra.Command {
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 			globalDisplay = resolveGlobalDisplay(noColorFlag, plainFlag, os.LookupEnv)
 			root := workspaceRootFromFlagOrEnv(cmd, workspaceRootFlag, nil)
-			cmd.SetContext(withWorkspaceResolver(cmd.Context(), root))
+			cmd.SetContext(withWorkspaceResolver(cmd.Context(), root, globalConfigLookup(configPathFlag, nil)))
 			return nil
 		},
 	}
 	root.PersistentFlags().StringVar(&workspaceRootFlag, "workspace-root", "",
 		"absolute path to use as the workspace root (skips discovery)")
+	root.PersistentFlags().StringVar(&configPathFlag, "config", "",
+		"path to the global config file, overriding $AGGREGA_CONFIG and the default location. Workspace-tree config files still layer on top")
 	root.PersistentFlags().BoolVar(&noColorFlag, "no-color", false,
 		"Disable ANSI color in all output. Also honored via the NO_COLOR environment variable")
 	root.PersistentFlags().BoolVar(&plainFlag, "plain", false,

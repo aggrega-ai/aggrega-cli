@@ -24,6 +24,28 @@ func workspaceRootFromFlagOrEnv(cmd *cobra.Command, flagValue string, look func(
 	return envLookupOrGetenv(look)(envWorkspaceRoot)
 }
 
+// globalConfigLookup builds the environment lookup that resolves the global
+// config path from the --config flag first, then the process environment. When
+// configPath is set it wins: a request for the config-override variable returns
+// configPath, and every other variable falls through to base. When configPath is
+// empty the flag is unset and the returned lookup IS base, so $AGGREGA_CONFIG
+// (else the XDG default) governs — the flag overrides the environment only when
+// the operator sets it. This is the single construction site for the flag-aware
+// lookup; command bodies read the result from the context rather than rebuilding
+// it. base is the underlying reader; pass nil for the live process environment.
+func globalConfigLookup(configPath string, base func(string) string) func(string) string {
+	base = envLookupOrGetenv(base)
+	if configPath == "" {
+		return base
+	}
+	return func(name string) string {
+		if name == workspaceconfig.EnvConfigOverride {
+			return configPath
+		}
+		return base(name)
+	}
+}
+
 // envLookupOrGetenv returns look when non-nil, else os.Getenv. The single
 // nil-to-production seam every command-layer environment read goes through, so
 // the production lookup is named in exactly one place.

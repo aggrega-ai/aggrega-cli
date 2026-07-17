@@ -57,6 +57,12 @@
 // does that.
 package workspaceconfig
 
+import (
+	_ "embed"
+	"encoding/json"
+	"fmt"
+)
+
 // Config carries the workspace's full configuration. Fields map to
 // the JSON Schema property names via yaml tags (snake_case wire
 // format to PascalCase Go identifiers).
@@ -369,22 +375,83 @@ func (c Config) RegistryTrustPolicy(host string) (RegistryConfig, bool) {
 // Registries.
 const HubBaselineHost = "hub.aggrega.ai"
 
-// DefaultBaseline returns the embedded official trust baseline for the
-// aggrega hub: the OR-set of the maintainer identity and the CI
-// (GitHub-Actions-OIDC) identity, signatures required. It ships with
-// aggrega-cli as a distributable policy fragment rather than a hardcoded
-// rule — operator config layers over it via `aggrega registry add`, and
-// enterprises distribute their own baseline. The returned value is a fresh
-// copy the caller may mutate.
+// baselineJSON is the embedded official trust baseline for the aggrega hub. It
+// is the single source of the trusted identities: the same document is served
+// byte-for-byte as the hub's advertised trust doc (the umbrella derivation
+// script copies it into the served .well-known location), so the offline
+// baseline and the online advertised policy can never drift.
+//
+//go:embed baseline.json
+var baselineJSON []byte
+
+// baselineDoc is the small private decode target for the embedded baseline. It
+// deliberately mirrors the advertised-trust wire shape (requires_signatures, the
+// trusted-identity OR-set, and the deprecation-identity OR-set) rather than
+// importing the registrytrust wire type, keeping this package free of that
+// dependency. Do not "unify" it away against the served-document type — the
+// mirror is intentional: the JSON is the single identity source, and this struct
+// is only its local reader.
+type baselineDoc struct {
+	RequiresSignatures           bool               `json:"requires_signatures"`
+	TrustedIdentities            []baselineIdentity `json:"trusted_identities"`
+	TrustedDeprecationIdentities []baselineIdentity `json:"trusted_deprecation_identities"`
+}
+
+// baselineIdentity mirrors one advertised-trust identity entry: an exact subject
+// or a subject regexp, paired with the OIDC issuer that vouches for it.
+type baselineIdentity struct {
+	Identity       string `json:"identity,omitempty"`
+	IdentityRegexp string `json:"identity_regexp,omitempty"`
+	Issuer         string `json:"issuer"`
+}
+
+// parsedBaseline is the decoded embedded baseline. Parsing happens once at
+// package initialization; malformed embedded data is a build-time-constant
+// programming error, so it panics rather than being carried as a runtime error.
+var parsedBaseline = mustParseBaseline()
+
+func mustParseBaseline() baselineDoc {
+	var d baselineDoc
+	if err := json.Unmarshal(baselineJSON, &d); err != nil {
+		panic(fmt.Sprintf("workspaceconfig: parse embedded baseline.json: %v", err))
+	}
+	return d
+}
+
+// DefaultBaseline returns the embedded official trust baseline for the aggrega
+// hub: the OR-set of the maintainer identities and the CI (GitHub-Actions-OIDC)
+// identity, with signatures required, plus the OR-set of identities accepted to
+// sign a retroactive deprecation marker. It is parsed from the official baseline
+// shipped alongside aggrega-cli — a distributable policy fragment rather than a
+// hardcoded rule — so operator config layers over it via `aggrega registry add`
+// and enterprises distribute their own baseline. The returned value is a fresh
+// copy, with fresh identity slices, that the caller may mutate.
 func DefaultBaseline() RegistryConfig {
 	return RegistryConfig{
-		Host:    HubBaselineHost,
-		Signing: SigningConfig{Required: true},
-		TrustedIdentities: []TrustedIdentity{
-			{Identity: "m.ferrero@cognitio.it", Issuer: "https://accounts.google.com"},
-			{IdentityRegexp: `^https://github\.com/aggrega-ai/`, Issuer: "https://token.actions.githubusercontent.com"},
-		},
+		Host:                         HubBaselineHost,
+		Signing:                      SigningConfig{Required: parsedBaseline.RequiresSignatures},
+		TrustedIdentities:            baselineIdentities(parsedBaseline.TrustedIdentities),
+		TrustedDeprecationIdentities: baselineIdentities(parsedBaseline.TrustedDeprecationIdentities),
 	}
+}
+
+// baselineIdentities copies the decoded baseline identities into the config
+// package's identity type, allocating a fresh slice so each DefaultBaseline call
+// hands back an independently mutable copy. It returns nil for an empty input so
+// an absent OR-set stays nil rather than an empty slice.
+func baselineIdentities(ids []baselineIdentity) []TrustedIdentity {
+	if len(ids) == 0 {
+		return nil
+	}
+	out := make([]TrustedIdentity, 0, len(ids))
+	for _, id := range ids {
+		out = append(out, TrustedIdentity{
+			Identity:       id.Identity,
+			IdentityRegexp: id.IdentityRegexp,
+			Issuer:         id.Issuer,
+		})
+	}
+	return out
 }
 
 // WorkspaceConfig is the workspace root marker. Its PRESENCE marks the

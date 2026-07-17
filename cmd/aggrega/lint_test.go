@@ -534,7 +534,7 @@ func TestLintReleasePrePublishMutuallyExclusive(t *testing.T) {
 		var out bytes.Buffer
 		cmd.SetOut(&out)
 		cmd.SetErr(&out)
-		cmd.SetContext(withWorkspaceResolver(context.Background(), t.TempDir()))
+		cmd.SetContext(withWorkspaceResolver(context.Background(), t.TempDir(), nil))
 		cmd.SetArgs(args)
 		return cmd.Execute()
 	}

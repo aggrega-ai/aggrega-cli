@@ -52,12 +52,14 @@ func (s Source) String() string {
 	}
 }
 
-// envVarConfigOverride names the environment variable an operator sets
-// to point at an explicit global config path. When set, it overrides the
-// default location; when unset, the global layer is auto-loaded from the
-// XDG default path (`$XDG_CONFIG_HOME/aggrega/config.yaml`, falling back
-// to `~/.config/aggrega/config.yaml`) if that file exists.
-const envVarConfigOverride = "AGGREGA_CONFIG"
+// EnvConfigOverride names the environment variable an operator sets to point at
+// an explicit global config path. When set, it overrides the default location;
+// when unset, the global layer is auto-loaded from the XDG default path
+// (`$XDG_CONFIG_HOME/aggrega/config.yaml`, falling back to
+// `~/.config/aggrega/config.yaml`) if that file exists. The `--config` flag is
+// the flag form of this override; the flag wins over the variable when both are
+// set. Either way the workspace-tree config files still layer on top.
+const EnvConfigOverride = "AGGREGA_CONFIG"
 
 // appendSlices captures the per-layer slices deferred to the post-overlay
 // concatenation pass: the seven `_append` companions, plus the CLI base list.
