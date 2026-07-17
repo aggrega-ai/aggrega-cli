@@ -498,7 +498,10 @@ func (s *Server) handleIrGraph(ctx context.Context, params irGraphParams) (irGra
 	//    halts on). Guarded end-to-end by
 	//    TestServeIrGraphVerifiesCacheAgainstPinBeforePreview.
 	var pins map[string]catalog.Pin
-	if lf, _, err := lockfile.LoadLockfile(lockfilePath); err == nil && lf != nil {
+	lf, _, lfErr := lockfile.LoadLockfile(lockfilePath)
+	if lfErr != nil || lf == nil {
+		lf = nil
+	} else {
 		pins = catalog.PinsFromLockfile(lf)
 	}
 	view := s.lazyCatalog.ForRequest(pins)
@@ -507,7 +510,7 @@ func (s *Server) handleIrGraph(ctx context.Context, params irGraphParams) (irGra
 	//    AND by the drift check at startup). Bundles Release + Manifest +
 	//    Aggregate + raw aggregate bytes + computed closure into a single result
 	//    struct; step 4 verifies and step 5 feeds the pipeline.
-	resolved, envelope := s.resolveReleaseClosure(view, releasePath)
+	resolved, envelope := s.resolveReleaseClosure(view, releasePath, lf)
 	if envelope != nil {
 		return irGraphResult{}, envelope
 	}
@@ -519,7 +522,7 @@ func (s *Server) handleIrGraph(ctx context.Context, params irGraphParams) (irGra
 	//    aggrega/publishDiagnostics notification. Non-blocking —
 	//    irGraph still produces the IR graph; drift is a
 	//    Problems-panel signal, not a halt.
-	lf := s.verifyDriftAndPublish(ctx, lockfilePath, resolved.Closure)
+	lf = s.verifyDriftAndPublish(ctx, lockfilePath, resolved.Closure)
 
 	// 5. Build the IR graph through the shared compiler-operations layer. Recipe
 	//    + sub-aggregate + mapping-library resolution all come from the request

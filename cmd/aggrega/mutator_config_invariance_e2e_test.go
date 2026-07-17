@@ -1,0 +1,219 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Cognitio S.r.l.
+
+//go:build integration
+
+// Package main's config-invariance coverage for the mutator socket. The mutator
+// rewrites the IR and therefore shapes the rendered output bytes, so the arc law
+// requires its output-determining inputs — the ordered attachment set and, per
+// attachment, the plugin coordinate and export function — to be pinned at pull
+// and reconstructed from the lockfile at build, driven only by the lockfile and
+// never by live workspace config ("re-pull to change").
+//
+// Dropping an attachment from config changes the closure entity set and so trips
+// the lockfile-drift halt (a loud halt, not a silent output move). The SILENT
+// gap this test guards is a change that leaves the entity set identical — so it
+// never trips drift — yet would move output if the runtime attachment were read
+// live: a change to the attachment's export function. This test proves the build
+// reconstructs the function from the lockfile, so such a change made after the
+// pull does not move build output.
+//
+// The mutator here is a local (workspace-catalog + sidecar) plugin, so its .wasm
+// is resolved through the sidecar tier and carries no registry artifact pin —
+// which keeps the test focused on the runtime attachment reconstruction under
+// test rather than on the separate registry-artifact reconstruction path.
+package main
+
+import (
+	"os"
+	"path/filepath"
+	"testing"
+
+	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
+	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
+	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
+	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
+)
+
+// localMutatorWorkspace lays a workspace whose local catalog serves a compose
+// component and its Recipe, plus a mutator Plugin entity whose .wasm is dropped
+// into the workspace sidecar directory. The Recipe emits every node-label value
+// into a compose container variable, so a label the mutator injects surfaces
+// deterministically in the rendered artifact. Returns the workspace root and the
+// catalog dir; the caller writes the .aggrega-config.yaml (so it can vary the
+// plugins block between pull and the post-pull rebuild).
+func localMutatorWorkspace(t *testing.T, mutatorBytes []byte) (root, catalogDir string) {
+	t.Helper()
+	root = t.TempDir()
+
+	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: aggregate
+  version: "1.0.0"
+spec:
+  components:
+    app:
+      type: test/svc
+`)
+	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1alpha1
+kind: Manifest
+metadata:
+  name: manifest
+  version: "1.0.0"
+spec:
+  mappings:
+    components:
+      type:
+        test/svc:1.0.0: compose/svc:1.0.0
+`)
+	writeFixture(t, filepath.Join(root, "release.yaml"), `apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: rel
+  environment: testing
+  version: "1.0.0"
+spec:
+  aggregate: ./aggregate.yaml
+  manifest: ./manifest.yaml
+  boundaries:
+    main:
+      directory: ./dist/main
+      components:
+        app: {}
+`)
+
+	catalogDir = filepath.Join(root, "catalog")
+	writeFixtureEntity(t, catalogDir, "component/test/svc/1.0.0/component.yaml", `apiVersion: aggrega.ai/v1alpha1
+kind: Component
+metadata:
+  name: test/svc
+  version: "1.0.0"
+  labels:
+    component.aggrega.ai/type: server
+spec:
+  schema:
+    values: {}
+`)
+	writeFixtureEntity(t, catalogDir, "recipe/compose/svc/1.0.0/recipe.yaml", `apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: svc
+  version: "1.0.0"
+spec:
+  capability: compose
+  implements: test/svc
+  workload: |
+    apiVersion: aggrega.ai/v1alpha1
+    kind: Workload
+    containers:
+      main:
+        image: busybox:1
+        variables:
+          NODE_LABELS: "{{ range $k, $v := .context.labels }}{{ $v }};{{ end }}"
+`)
+	writeFixtureEntity(t, catalogDir, "plugin/mutator/tag-injector/1.0.0/plugin.yaml", `apiVersion: aggrega.ai/v1alpha1
+kind: Plugin
+metadata:
+  name: tag-injector
+  version: "1.0.0"
+  pluginType: mutator
+spec:
+  abiVersion: v1alpha1
+  exports:
+    - name: mutate
+`)
+
+	// The mutator .wasm resolves through the sidecar tier: <sidecar>/<leaf>.wasm,
+	// where the leaf is the plugin coordinate's version-stripped final segment.
+	sidecar := filepath.Join(root, "sidecar")
+	if err := os.MkdirAll(sidecar, 0o755); err != nil {
+		t.Fatalf("mkdir sidecar: %v", err)
+	}
+	leaf := pluginpath.SidecarLeaf("mutator/tag-injector")
+	if err := os.WriteFile(filepath.Join(sidecar, leaf), mutatorBytes, 0o644); err != nil {
+		t.Fatalf("write sidecar mutator: %v", err)
+	}
+	return root, catalogDir
+}
+
+// resolveLocalWorkspace writes the .aggrega-config.yaml at root with the supplied
+// plugins block and resolves the workspace. offline keeps the build hermetic; the
+// sidecar directory binds the local mutator .wasm.
+func resolveLocalWorkspace(t *testing.T, root, pluginsBlock string) *workspaceconfig.ResolvedWorkspace {
+	t.Helper()
+	cfg := "workspace: {}\noffline: true\nplugin_sidecar_dir: sidecar\n" + pluginsBlock
+	writeFixture(t, filepath.Join(root, workspaceconfig.ConfigFilename), cfg)
+	rw, err := workspaceconfig.Resolve(root, "")
+	if err != nil {
+		t.Fatalf("Resolve workspace: %v", err)
+	}
+	return rw
+}
+
+// TestMutatorSocket_BuildIsInvariantToConfigAfterPull is the mutator determinism
+// proof: after a pull pins the mutator attachment (coordinate + export function)
+// into the lockfile, changing the workspace-config mutator export function and
+// rebuilding WITHOUT a re-pull produces byte-identical output — the build reads
+// the pinned attachment from the lockfile, not the config. Were the runtime
+// attachment read live, the flipped function (a non-existent export) would move
+// the build (in fact halt it); byte-identical output proves the lockfile drove
+// the mutator run.
+func TestMutatorSocket_BuildIsInvariantToConfigAfterPull(t *testing.T) {
+	mutatorBytes := wasmtest.EnsureFixtureBytes(t, "mutator-proof-go.wasm")
+	root, catalogDir := localMutatorWorkspace(t, mutatorBytes)
+	// The compose PROVIDER entity ships in the standard catalog (its .wasm is
+	// embedded); the fixture catalog supplies the component, recipe, and mutator.
+	catDirs := []string{catalogDir, standardCatalogDir(t)}
+
+	const (
+		mutatorSocket     = "mutator/tag-injector"
+		proofMutatorLabel = "mutator-proof"
+	)
+
+	// Pull with the mutator attached (default mutate export). The pull pins the
+	// attachment coordinate + function into the lockfile's mutators section.
+	rwPull := resolveLocalWorkspace(t, root, "plugins:\n  mutator:\n    - uri: "+mutatorSocket+":1.0.0\n")
+	releasePath := filepath.Join(root, "release.yaml")
+	if err := pullRun(pullConfig{ReleasePath: releasePath, CatalogDirs: catDirs, ws: rwPull, DiagOut: os.Stderr, Out: os.Stderr, diag: buildDiagOptions{quiet: true}}); err != nil {
+		t.Fatalf("pull (mutator attached): %v", err)
+	}
+
+	lf, _, err := lockfile.LoadLockfile(lockfile.PathFor(releasePath))
+	if err != nil {
+		t.Fatalf("load lockfile: %v", err)
+	}
+	if len(lf.Mutators) != 1 || lf.Mutators[0].Plugin != mutatorSocket {
+		t.Fatalf("lockfile mutators = %+v; want one attachment pinned at coordinate %q", lf.Mutators, mutatorSocket)
+	}
+
+	// First build under the pinned attachment: the mutator runs and its injected
+	// label reaches the rendered artifact.
+	out1 := filepath.Join(root, "out1")
+	if err := dispatchBuildWithDiag(rwPull, releasePath, catDirs, false, buildDiagOptions{quiet: true}, buildRunOptions{outDir: out1}, os.Stderr, os.Stderr); err != nil {
+		t.Fatalf("build 1 (pinned mutator): %v", err)
+	}
+	if found, tree := distTreeContains(t, out1, proofMutatorLabel); !found {
+		t.Fatalf("build 1: mutator-injected label %q absent; the assertion would be vacuous:\n%s", proofMutatorLabel, tree)
+	}
+	snap1 := snapshotDir(t, out1)
+	if len(snap1) == 0 {
+		t.Fatal("build 1 produced no artifacts")
+	}
+
+	// Flip the workspace-config mutator export function to a NON-EXISTENT export,
+	// leaving the attachment's URI (and therefore the closure entity set)
+	// unchanged so no drift halt fires. Rebuild WITHOUT a re-pull. Were the
+	// runtime function read live, the build would call the bogus export and halt;
+	// because it is read from the lockfile, the build runs the pinned mutate
+	// export and produces byte-identical output.
+	rwFlipped := resolveLocalWorkspace(t, root, "plugins:\n  mutator:\n    - uri: "+mutatorSocket+":1.0.0\n      function: does-not-exist\n")
+	out2 := filepath.Join(root, "out2")
+	if err := dispatchBuildWithDiag(rwFlipped, releasePath, catDirs, false, buildDiagOptions{quiet: true}, buildRunOptions{outDir: out2}, os.Stderr, os.Stderr); err != nil {
+		t.Fatalf("build 2 (config function flipped, no re-pull): %v; build must read the pinned attachment, not the config", err)
+	}
+	snap2 := snapshotDir(t, out2)
+	if !snapshotEqual(snap1, snap2) {
+		t.Fatalf("build output changed after a plugins.mutator function change with no re-pull; build must reconstruct the mutator attachment from the lockfile, not the config")
+	}
+}

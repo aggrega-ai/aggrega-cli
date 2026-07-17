@@ -265,13 +265,20 @@ func (s *walkState) walkBoundary(b types.Boundary, path string) {
 	}
 }
 
-// walkWorkspacePlugins collects URIs from the four workspace-level
-// plugin sockets (mutator, policy, linter, importer). Each socket URI is a
-// Plugin ENTITY URI; the entity's .wasm artifact reference is derived from its
-// bare identity. The walk records the entity on the catalog-entity axis (so
-// ComputeClosure resolves and pins the entity, halting loudly on a missing one);
-// the entity's .wasm artifact is pinned at pull time by the pipeline-plugin
-// descent, which descends every plugin-kinded entity to its .wasm artifact.
+// walkWorkspacePlugins collects the URI from the single output-shaping workspace
+// socket — the mutator, whose plugin rewrites the IR and therefore influences the
+// rendered output bytes. That socket URI is a Plugin ENTITY URI; the entity's .wasm
+// artifact reference is derived from its bare identity. The walk records the entity
+// on the catalog-entity axis (so ComputeClosure resolves and pins the entity,
+// halting loudly on a missing one); the entity's .wasm artifact is pinned at pull
+// time by the pipeline-plugin descent, which descends every plugin-kinded entity to
+// its .wasm artifact.
+//
+// The other workspace sockets are resolved at their point of use rather than pinned
+// in the closure: the policy socket renders an accept/reject verdict without
+// altering the output, and the linter and importer sockets act on authoring input.
+// None of them shape the rendered bytes the closure exists to make reproducible, so
+// none belongs on the pinned axis.
 func (s *walkState) walkWorkspacePlugins(cfg workspaceconfig.Config) {
 	record := func(uri, refPath string) {
 		if uri == "" {
@@ -281,15 +288,6 @@ func (s *walkState) walkWorkspacePlugins(cfg workspaceconfig.Config) {
 	}
 	for _, p := range cfg.Plugins.Mutator {
 		record(p.URI, ".aggrega-config.yaml.plugins.mutator")
-	}
-	for _, p := range cfg.Plugins.Policy {
-		record(p.URI, ".aggrega-config.yaml.plugins.policy")
-	}
-	for _, p := range cfg.Plugins.Linter {
-		record(p.URI, ".aggrega-config.yaml.plugins.linter")
-	}
-	for _, p := range cfg.Plugins.Importer {
-		record(p.URI, ".aggrega-config.yaml.plugins.importer")
 	}
 }
 

@@ -1094,6 +1094,21 @@ func parseMappingLibraryEntity(data []byte, path string) (types.MappingLibrary, 
 	return e, nil
 }
 
+// parsePluginEntity validates a Plugin entity's YAML against the plugin envelope
+// and unmarshals it. It is the single Plugin-parse home the recipe-shell index
+// fold and the cache-by-URI verdict-socket resolution both call, so a plugin
+// entity is validated and decoded identically wherever it is read from the cache.
+func parsePluginEntity(data []byte, path string) (types.Plugin, error) {
+	if _, err := envelope.ValidateBytes(envelope.KindPlugin, data, path); err != nil {
+		return types.Plugin{}, err
+	}
+	var e types.Plugin
+	if err := yaml.Unmarshal(data, &e); err != nil {
+		return types.Plugin{}, err
+	}
+	return e, nil
+}
+
 // DeprecationWarnings returns non-fatal notices about deprecated catalog
 // shapes — formatted as a string slice the caller is free to print, log,
 // or escalate to errors as fits its UX. The build command currently prints

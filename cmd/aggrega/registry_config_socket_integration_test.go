@@ -254,6 +254,27 @@ func assertSocketPinnedInLock(t *testing.T, lf *lockfile.Lockfile, host, socketN
 	}
 }
 
+// assertPluginAbsentFromLock asserts a verdict-socket (cache-not-pin) gate plugin
+// published at socketName is recorded on NEITHER pinned lockfile axis — no Plugin
+// ENTITY row (lf.Entities) and no .wasm ARTIFACT row (lf.Plugins). A verdict
+// socket renders an accept/reject verdict without shaping output bytes, so its
+// plugin is cached at pull for the hermetic build to run but carries no
+// reproducibility pin and therefore no drift baseline.
+func assertPluginAbsentFromLock(t *testing.T, lf *lockfile.Lockfile, socketName string) {
+	t.Helper()
+	entityURI := socketName + ":1.0.0"
+	for i := range lf.Entities {
+		if lf.Entities[i].URI == entityURI {
+			t.Fatalf("verdict-socket plugin ENTITY %q is pinned in the lockfile; a verdict socket is cache-not-pin and must record no entity row", entityURI)
+		}
+	}
+	for i := range lf.Plugins {
+		if lf.Plugins[i].URI == socketName {
+			t.Fatalf("verdict-socket plugin ARTIFACT %q is pinned in the lockfile; a verdict socket is cache-not-pin and must record no artifact row", socketName)
+		}
+	}
+}
+
 // TestIntegration_ConfigSocketPluginPinning_RoundTrip proves the publish → pull →
 // pin → hermetic-build-load round-trip for a plugin attached at a workspace-level
 // CONFIG socket. Three arms exercise the mutator socket, the policy socket
@@ -295,8 +316,11 @@ func TestIntegration_ConfigSocketPluginPinning_RoundTrip(t *testing.T) {
 		allowPolicySocket = "policy/admit-gate"
 	)
 	mutatorDigest := publishSocketPluginEntity(t, host, mutatorSocket, "1.0.0", mutatorPath, "mutator", "mutate")
-	denyPolicyDigest := publishSocketPluginEntity(t, host, denyPolicySocket, "1.0.0", denyPolicyPath, "policy", "validate")
-	allowPolicyDigest := publishSocketPluginEntity(t, host, allowPolicySocket, "1.0.0", allowPolicyPath, "policy", "validate")
+	// The policy entities are published to the registry so the build can resolve
+	// them at their point of use, but their content digests are not asserted: a
+	// verdict-only policy socket is not recorded on the pinned lockfile axis.
+	publishSocketPluginEntity(t, host, denyPolicySocket, "1.0.0", denyPolicyPath, "policy", "validate")
+	publishSocketPluginEntity(t, host, allowPolicySocket, "1.0.0", allowPolicyPath, "policy", "validate")
 
 	// proofMutatorLabel is the value the mutator-proof fixture injects as a node
 	// label; the fixture recipe emits every node-label value into a compose
@@ -343,8 +367,16 @@ func TestIntegration_ConfigSocketPluginPinning_RoundTrip(t *testing.T) {
 	t.Run("policy_deny", func(t *testing.T) {
 		pluginsBlock := "plugins:\n  policy:\n    - uri: " + denyPolicySocket + ":1.0.0\n"
 		ws := writeConfigSocketWorkspace(t, host, pluginsBlock, true)
+		// The policy socket is a verdict-only environment gate: it renders an
+		// accept/reject decision without altering the rendered bytes, so it is NOT
+		// recorded on the pinned closure axis and NOT expected in the lockfile. The
+		// pull still runs (populating the mutator/provider pins the workspace needs);
+		// the policy attachment is cached at pull and resolved at its point of use
+		// during the build.
 		lf := pullAndLoadLock(t, ws)
-		assertSocketPinnedInLock(t, lf, host, denyPolicySocket, denyPolicyDigest)
+		// Cache-not-pin: the pulled policy gate is on neither pinned lockfile axis,
+		// so it carries no drift baseline.
+		assertPluginAbsentFromLock(t, lf, denyPolicySocket)
 
 		err := dispatchBuild(nil, "release.yaml", []string{std}, false, os.Stderr, os.Stdout)
 		if err == nil {
@@ -367,10 +399,12 @@ func TestIntegration_ConfigSocketPluginPinning_RoundTrip(t *testing.T) {
 			"  policy:\n    - uri: " + allowPolicySocket + ":1.0.0\n"
 		ws := writeConfigSocketWorkspace(t, host, pluginsBlock, true)
 		lf := pullAndLoadLock(t, ws)
-		// One pull pinned BOTH distinct config sockets on both axes — the all-socket
-		// coverage headline: the generic descent is not mutator- or policy-specific.
+		// The mutator shapes the rendered bytes, so it is pinned on both axes by the
+		// pull. The policy socket is a verdict-only environment gate that does not
+		// shape output, so it is NOT recorded on the pinned axis — only the mutator
+		// pin is asserted here; the admitting policy is resolved at its point of use
+		// during the build.
 		assertSocketPinnedInLock(t, lf, host, mutatorSocket, mutatorDigest)
-		assertSocketPinnedInLock(t, lf, host, allowPolicySocket, allowPolicyDigest)
 
 		if err := dispatchBuild(nil, "release.yaml", []string{std}, false, os.Stderr, os.Stdout); err != nil {
 			t.Fatalf("build with a mutator AND an admitting policy socket: %v (both pulled guests must load from their pins and run)", err)
@@ -380,6 +414,28 @@ func TestIntegration_ConfigSocketPluginPinning_RoundTrip(t *testing.T) {
 		found, tree := distTreeContains(t, "dist", proofMutatorLabel)
 		if !found {
 			t.Errorf("both-sockets build: rendered output does not carry the mutator-injected label %q in dist tree:\n%s", proofMutatorLabel, tree)
+		}
+	})
+
+	t.Run("verdict_socket_not_pinned_no_drift", func(t *testing.T) {
+		pluginsBlock := "plugins:\n  policy:\n    - uri: " + denyPolicySocket + ":1.0.0\n"
+		ws := writeConfigSocketWorkspace(t, host, pluginsBlock, true)
+		lf := pullAndLoadLock(t, ws)
+		// The pulled verdict gate is on neither pinned lockfile axis.
+		assertPluginAbsentFromLock(t, lf, denyPolicySocket)
+
+		// A baseline verify passes against the lockfile the pull just wrote.
+		if err := pullRun(pullConfig{ReleasePath: "release.yaml", CatalogDirs: []string{std}, Verify: true}); err != nil {
+			t.Fatalf("baseline verify after pull: %v", err)
+		}
+
+		// Swapping the attached policy gate is a verdict-socket config change. Because
+		// a verdict socket is cache-not-pin — not drift-gated — the change is adopted
+		// at the next build without a re-pull and verify does NOT halt on drift.
+		changed := "plugins:\n  policy:\n    - uri: " + allowPolicySocket + ":1.0.0\n"
+		writeWorkspaceConfig(t, ws, "default_registry: \""+host+"\"\nauto_pull: true\noffline: false\n"+changed)
+		if err := pullRun(pullConfig{ReleasePath: "release.yaml", CatalogDirs: []string{std}, Verify: true}); err != nil {
+			t.Fatalf("verify halted after a policy config change; a verdict socket must not drift-gate: %v", err)
 		}
 	})
 }

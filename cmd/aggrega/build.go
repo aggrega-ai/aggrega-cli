@@ -323,6 +323,46 @@ func dispatchBuildWithDiag(rw *workspaceconfig.ResolvedWorkspace, releasePath st
 		return withSkipContext(err, skipped)
 	}
 
+	// Reconstruct the sub-aggregate and pipeline-plugin axes hermetically (the
+	// closure Lookup carries a nil OCIPuller, so no registry fetch) so the drift
+	// check below compares the lockfile against a closure carrying the same
+	// sub-aggregate and plugin entries the pull pinned — ComputeClosure leaves the
+	// plugin axis and the transitive sub-aggregate axis empty. Provider bindings
+	// resolve from the LOCKFILE, never the workspace config, so a plugins.providers
+	// change after the pull does not move the reconstructed closure. Phase B's
+	// re-fold shifts the lazy view's pin set to the augmented closure to make the
+	// just-pinned plugin entities visible; the pins are restored to the lockfile
+	// view afterward so the render path below resolves exactly as before.
+	closureLookup := rc.Lookup
+	reconAggLoader, _ := closureLookup.(closure.AggregateLoader)
+	reconBindings := lockfile.ProviderBindings(lf)
+	reconResolver := func(ref string) (types.Plugin, bool, error) {
+		return lazyView.ProviderPluginForTarget(ref, reconBindings)
+	}
+	reconRefold := func() (closure.RecipeLoader, error) {
+		lazyView.SetPins(catalog.PinsFromClosure(cl))
+		return lazyView.ClosureRecipeLoader(), nil
+	}
+	if err := closure.ReconstructClosureAxes(&cl, reconAggLoader, lazyView.ClosureRecipeLoader(), closureLookup, reconResolver, reconRefold); err != nil {
+		return withSkipContext(err, skipped)
+	}
+	lazyView.SetPins(catalog.PinsFromLockfile(lf))
+
+	// Reconstruct the output-shaping workspace-socket plugin entities and their
+	// .wasm from the LOCKFILE (provider bindings + mutator attachments), config-
+	// invariant: these sockets are pull-time choices recorded only in the lockfile,
+	// so ComputeClosure cannot re-derive them hermetically without re-reading config.
+	// The socket lookup honors the lockfile pins so a pinned socket .wasm resolves
+	// from the content-addressed cache offline; the entity + artifact are re-read
+	// (re-hashed) so a drifted or tampered pin still surfaces as drift.
+	socketEntityURIs := lockfile.WorkspaceSocketEntityURIs(lf)
+	if len(socketEntityURIs) > 0 {
+		socketLookup := lazyView.ClosureLookupWithPins(nil, wsRoot, cacheDir, nil, catalog.PinsFromLockfile(lf))
+		if err := closure.ReconstructWorkspaceSocketEntities(&cl, socketEntityURIs, lazyView.ClosureRecipeLoader(), socketLookup); err != nil {
+			return withSkipContext(err, skipped)
+		}
+	}
+
 	// Lockfile-drift verification against the freshly-computed closure. Only a
 	// pre-existing lockfile is verified; an auto-pulled one matches by construction.
 	if lockfilePreexisted {
@@ -375,13 +415,20 @@ func dispatchBuildWithDiag(rw *workspaceconfig.ResolvedWorkspace, releasePath st
 	// made after the pull (a change is adopted only on the next pull). A federated
 	// catalog with more than one plugin serving a target is disambiguated by the
 	// pinned binding; without a binding an ambiguous target halts loudly at render.
-	lockfileBindings := map[string]string{}
-	for _, b := range lf.Providers {
-		lockfileBindings[b.Capability] = b.Plugin
-	}
+	lockfileBindings := lockfile.ProviderBindings(lf)
 	buildLookup.ProviderPlugin = func(ref string) (types.Plugin, bool, error) {
 		return lazyView.ProviderPluginForTarget(ref, lockfileBindings)
 	}
+	// Reconstruct the mutator-socket attachment set from the LOCKFILE, never the
+	// workspace config, so build output is invariant to a plugins.mutator change
+	// made after the pull (adopted only on the next pull). The mutator rewrites
+	// the IR and shapes output bytes, so its attachment set / order / export
+	// function is pinned; the pinned .wasm bytes are drift-verified separately on
+	// the entity / plugin axes. The override is unconditional — an empty pinned
+	// set runs no mutator regardless of live config. wsCfg is a per-build value
+	// copy, so this rewrites only the in-memory pipeline input, never the config
+	// on disk.
+	wsCfg.Plugins.Mutator = lockfile.MutatorAttachments(lf)
 	// The pipeline context carries the external-input service to the
 	// renderer's plugin-load sites, where each loader picks it up as its
 	// fetch seam.
@@ -605,6 +652,10 @@ type releaseClosureResult struct {
 	Manifest  *types.Manifest
 	Aggregate resolver.ResolvedAggregate
 	Closure   closure.Closure
+	// Lookup is the hermetic Lookup the closure was walked through (nil
+	// OCIPuller). The build reuses it to reconstruct the sub-aggregate and plugin
+	// axes for drift verification; lint ignores it.
+	Lookup closure.Lookup
 }
 
 // releaseClosure runs the Release→closure orchestration shared by the build and
@@ -666,11 +717,11 @@ func releaseClosure(
 	}
 	externals := lockfile.ExternalEntitiesFromBytes(rel, aggExternal, manRes.Bytes)
 
-	cl, err := computeBuildClosure(rel, manifest, aggRes.Aggregate, externals, wsCfg, lazyView, wsRoot, cacheDir)
+	cl, lookup, err := computeBuildClosure(rel, manifest, aggRes.Aggregate, externals, wsCfg, lazyView, wsRoot, cacheDir)
 	if err != nil {
 		return releaseClosureResult{}, err
 	}
-	return releaseClosureResult{Release: rel, Manifest: manifest, Aggregate: aggRes, Closure: cl}, nil
+	return releaseClosureResult{Release: rel, Manifest: manifest, Aggregate: aggRes, Closure: cl, Lookup: lookup}, nil
 }
 
 // computeBuildClosure walks the Release's closure ONCE, hermetically (the lazy
@@ -681,19 +732,20 @@ func releaseClosure(
 // walked once, not once per concern. Discovery runs through the lazy lookup (the
 // same producer pull uses), so a remote pinned library resolves from the pinned
 // cache and the drift compare is like-for-like with pull.
-func computeBuildClosure(rel *types.Release, manifest *types.Manifest, aggregate *types.Aggregate, externals map[string][]byte, wsCfg workspaceconfig.Config, lazyView *catalog.LazyLookup, wsRoot, cacheDir string) (closure.Closure, error) {
+// The computed closure is returned alongside the hermetic Lookup it was walked
+// through (nil OCIPuller). The caller reuses that same Lookup to reconstruct the
+// sub-aggregate and plugin axes for drift verification, so the reconstruction
+// resolves against the identical pinned view — no second lookup is built.
+func computeBuildClosure(rel *types.Release, manifest *types.Manifest, aggregate *types.Aggregate, externals map[string][]byte, wsCfg workspaceconfig.Config, lazyView *catalog.LazyLookup, wsRoot, cacheDir string) (closure.Closure, closure.Lookup, error) {
 	lookup := lazyView.ClosureLookup(nil, wsRoot, cacheDir, externals)
 	cl, err := closure.ComputeClosure(rel, manifest, aggregate, wsCfg, lookup)
 	if err != nil {
-		return closure.Closure{}, err
+		return closure.Closure{}, nil, err
 	}
-	if err := discoverClosureLibraries(&cl, lazyView, lookup); err != nil {
-		return closure.Closure{}, fmt.Errorf("schema-library discovery: %w", err)
+	if err := closure.AugmentClosure(&cl, lazyView, lookup); err != nil {
+		return closure.Closure{}, nil, err
 	}
-	if err := discoverClosureMappingLibraries(&cl, lazyView, lookup); err != nil {
-		return closure.Closure{}, fmt.Errorf("mapping-library discovery: %w", err)
-	}
-	return cl, nil
+	return cl, lookup, nil
 }
 
 // withSkipContext annotates an in-closure resolution / validation failure with

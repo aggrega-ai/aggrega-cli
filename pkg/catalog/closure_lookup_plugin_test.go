@@ -97,14 +97,15 @@ func TestComputeClosureLocalPluginSocketDoesNotHalt(t *testing.T) {
 	lookup := cat.ClosureLookup(nil, dir, ".aggrega/cache")
 
 	// A minimal Release (non-nil so the walk reaches the workspace-plugin axis;
-	// nil aggregate/manifest leave those axes empty). The workspace config wires a
-	// policy plugin socket at the local Plugin entity URI.
+	// nil aggregate/manifest leave those axes empty). The workspace config wires the
+	// output-shaping mutator plugin socket — the socket the closure pins — at the
+	// local Plugin entity URI.
 	rel := &types.Release{}
 	rel.Metadata.Name = "prod"
 	rel.Metadata.Version = "1.0.0"
 
 	cfg := workspaceconfig.Config{}
-	cfg.Plugins.Policy = []workspaceconfig.PluginRef{
+	cfg.Plugins.Mutator = []workspaceconfig.PluginRef{
 		{URI: "linter/baseline:1.0.0"},
 	}
 

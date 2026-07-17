@@ -16,23 +16,90 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/analyzer"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/topology"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
+	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
-// resolveSocketLookup returns the plugin-resolution lookup the Step-2 and
-// Step-4 Wasm sockets use: the caller-supplied override when present, else the
-// build-time entity-fronted cascade (embed → sidecar → local → cache →
-// registry) — the same fallback the renderer's per-node pipeline uses. It is
-// resolved only after a socket confirms it has at least one plugin to run, so
-// an unconfigured socket builds no lookup and stays a clean no-op.
-func resolveSocketLookup(inputs Inputs, catalogLookup resolver.CatalogLookup) pluginpath.Lookup {
+// resolveSocketLookup returns the plugin-resolution lookup a Wasm socket uses:
+// the caller-supplied override when present, else the build-time entity-fronted
+// cascade (embed → sidecar → local → cache → registry) — the same fallback the
+// renderer's per-node pipeline uses. It is resolved only after a socket confirms
+// it has at least one plugin to run, so an unconfigured socket builds no lookup
+// and stays a clean no-op.
+//
+// The socket type selects how an unpinned gate plugin resolves. A mutating socket
+// (mutator) resolves strictly through the pinned entity-fronted cascade — its
+// plugin shapes output bytes and is pinned in the lockfile. A verdict socket
+// (policy / linter) renders an accept/reject verdict without shaping output, so
+// its plugin is cached at pull but not pinned (cache-not-pin): the entity-fronted
+// cascade is tried first (honoring a pin / Tier-1 / embed source), and an unpinned
+// gate plugin that misses there resolves from the pull-populated cache by URI.
+func resolveSocketLookup(inputs Inputs, catalogLookup resolver.CatalogLookup, socket workspaceconfig.Socket) pluginpath.Lookup {
 	if inputs.PluginPathLookup != nil {
 		return inputs.PluginPathLookup
 	}
-	return buildEntityPluginLookup(inputs, catalogLookup)
+	base := buildEntityPluginLookup(inputs, catalogLookup)
+	if socket.Tier() != workspaceconfig.SocketTierVerdict {
+		return base
+	}
+	return func(entityURI string) (pluginpath.ResolvedPlugin, error) {
+		resolved, err := base(entityURI)
+		if err == nil {
+			return resolved, nil
+		}
+		// Only a not-found miss on the pinned / Tier-1 path falls through to the
+		// cache-not-pin read; any other error (a drifted pin, a load fault) is real
+		// and halts.
+		if !stderrors.Is(err, pluginpath.ErrPluginEntityNotFound) && !stderrors.Is(err, oci.ErrFetchNotFound) {
+			return pluginpath.ResolvedPlugin{}, err
+		}
+		return resolveVerdictSocketPluginFromCache(inputs, catalogLookup, entityURI)
+	}
+}
+
+// resolveVerdictSocketPluginFromCache resolves a verdict-socket (policy / linter)
+// plugin from the pull-populated cache by its entity URI, with no lockfile pin.
+// It reads the Plugin entity from the cache (manifest root of trust) to obtain the
+// entity's authored contract and runtime limits and the .wasm layer content
+// digest, then resolves the executable through the shared artifact cascade keyed
+// by that manifest-derived digest — the same verified Tier-2 cache read the pinned
+// path uses, so the .wasm is digest-checked exactly as a pinned plugin's is. The
+// entity axis is never pinned or drift-gated; only its bytes are integrity-checked.
+func resolveVerdictSocketPluginFromCache(inputs Inputs, catalogLookup resolver.CatalogLookup, entityURI string) (pluginpath.ResolvedPlugin, error) {
+	if catalogLookup.PluginFromCache == nil {
+		return pluginpath.ResolvedPlugin{}, fmt.Errorf("resolve verdict-socket plugin %q: no cache-backed catalog lookup: %w", entityURI, oci.ErrFetchNotFound)
+	}
+	entity, wasmDigest, ok, err := catalogLookup.PluginFromCache(entityURI)
+	if err != nil {
+		return pluginpath.ResolvedPlugin{}, err
+	}
+	if !ok {
+		return pluginpath.ResolvedPlugin{}, fmt.Errorf("resolve verdict-socket plugin %q: %s: %w",
+			entityURI, "not present in the content cache; run `aggrega pull` first", oci.ErrFetchNotFound)
+	}
+	artifactRef := entity.ArtifactReference()
+	// A fresh resolver keyed only by the manifest-derived .wasm digest: the pin
+	// governs the bytes (verify-on-read) but is synthesized from the cached
+	// manifest, not read from the lockfile, so the gate plugin's .wasm resolves and
+	// is integrity-checked without a lockfile row.
+	r := pluginpath.Resolver{
+		SidecarDir:    inputs.WorkspaceConfig.PluginSidecarDir,
+		WorkspaceRoot: inputs.WorkspaceRoot,
+		CacheDir:      inputs.WorkspaceConfig.ResolvedArtifactCacheDir(),
+		Pins:          map[string]string{artifactRef: wasmDigest},
+		PinVersions:   map[string]string{artifactRef: wasmDigest},
+	}
+	resolved, err := r.Resolve(artifactRef)
+	if err != nil {
+		return pluginpath.ResolvedPlugin{}, err
+	}
+	resolved.Version = entity.Metadata.Version
+	resolved.Contract = resolver.PluginContractClaim(entity)
+	resolved.Limits = resolver.PluginRuntimeLimits(entity)
+	return resolved, nil
 }
 
 // invokeSocketPlugin loads a plugin through the shared describe() gate, invokes
@@ -105,7 +172,7 @@ func runMutatorSocket(ctx context.Context, inputs Inputs, catalogLookup resolver
 	if len(refs) == 0 {
 		return nil
 	}
-	lookup := resolveSocketLookup(inputs, catalogLookup)
+	lookup := resolveSocketLookup(inputs, catalogLookup, workspaceconfig.SocketMutator)
 	cc := mutatorCompilationContext(inputs.Release)
 
 	for _, ref := range refs {
@@ -158,7 +225,7 @@ func runPolicySocket(ctx context.Context, inputs Inputs, catalogLookup resolver.
 	if analysis == nil || analysis.PolicyInput == nil {
 		return nil
 	}
-	lookup := resolveSocketLookup(inputs, catalogLookup)
+	lookup := resolveSocketLookup(inputs, catalogLookup, workspaceconfig.SocketPolicy)
 
 	for _, ref := range refs {
 		export := policyExport(ref)
@@ -225,7 +292,7 @@ func runRenderPolicySocket(ctx context.Context, inputs Inputs, catalogLookup res
 	if len(refs) == 0 {
 		return nil
 	}
-	lookup := resolveSocketLookup(inputs, catalogLookup)
+	lookup := resolveSocketLookup(inputs, catalogLookup, workspaceconfig.SocketPolicy)
 	artifacts := sortedRenderedArtifacts(files)
 
 	var denyErrs []analyzer.AnalysisError

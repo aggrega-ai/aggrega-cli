@@ -36,16 +36,17 @@ package lockfile
 // Field declaration order is alphabetical to drive yaml.v3's
 // canonical key emission.
 type Lockfile struct {
-	Entities         []Entity          `yaml:"entities"`
-	ExternalInputs   []ExternalInput   `yaml:"external_inputs"`
-	GeneratedAt      string            `yaml:"generated_at"`
-	MappingLibraries []MappingLibrary  `yaml:"mapping_libraries"`
-	Plugins          []Plugin          `yaml:"plugins"`
-	Providers        []ProviderBinding `yaml:"providers"`
-	Release          string            `yaml:"release"`
-	SchemaLibraries  []SchemaLibrary   `yaml:"schema_libraries"`
-	SourceArtifacts  []SourceArtifact  `yaml:"source_artifacts"`
-	Version          int               `yaml:"version"`
+	Entities         []Entity            `yaml:"entities"`
+	ExternalInputs   []ExternalInput     `yaml:"external_inputs"`
+	GeneratedAt      string              `yaml:"generated_at"`
+	MappingLibraries []MappingLibrary    `yaml:"mapping_libraries"`
+	Mutators         []MutatorAttachment `yaml:"mutators"`
+	Plugins          []Plugin            `yaml:"plugins"`
+	Providers        []ProviderBinding   `yaml:"providers"`
+	Release          string              `yaml:"release"`
+	SchemaLibraries  []SchemaLibrary     `yaml:"schema_libraries"`
+	SourceArtifacts  []SourceArtifact    `yaml:"source_artifacts"`
+	Version          int                 `yaml:"version"`
 }
 
 // Entity carries a catalog-entity pin: Component, Feature, Recipe,
@@ -266,6 +267,36 @@ type Plugin struct {
 	// fact and never touches a registry (the ahead-of-time boundary).
 	Deprecation *DeprecationRecord `yaml:"deprecation,omitempty"`
 	Signature   *VerifiedSignature `yaml:"signature,omitempty"`
+}
+
+// MutatorAttachment records one mutator-socket attachment the pull resolved,
+// keeping its position in the authored attachment order. The mutator rewrites
+// the IR and therefore shapes the rendered output bytes, so its attachment set
+// — the ordered list, plus per attachment the plugin coordinate and export
+// function — is a byte-determining input the lockfile pins. Build and serve
+// reconstruct the attachment list from this section rather than from live
+// workspace config, so a plugins.mutator change made after the pull does not
+// move build output (the change is adopted only on the next pull).
+//
+// The plugin's content digest is NOT duplicated here — it stays single-sourced
+// in the Entities and Plugins sections, which this record points into by
+// identity. This section pins the attachment set, order, and export function;
+// the .wasm bytes are pinned and drift-checked on the entity / plugin axes.
+//
+// Order is SEMANTIC: the mutator runner applies each attachment in list order,
+// so WriteLockfile preserves this slice's order — it does NOT sort it, unlike
+// the URI-sorted Plugins / Providers sections.
+//
+// Field declaration order is alphabetical to drive yaml.v3's canonical key
+// emission, matching the Lockfile-wide discipline.
+type MutatorAttachment struct {
+	// Function is the export override the attachment names; empty (and omitted)
+	// selects the mutator socket's default mutate export.
+	Function string `yaml:"function,omitempty"`
+	// Plugin is the resolved plugin coordinate — the mutator Plugin entity's
+	// <pluginType>/<name> identity, the same coordinate form ProviderBinding.Plugin
+	// uses and the identity the Entities / Plugins sections pin under.
+	Plugin string `yaml:"plugin"`
 }
 
 // ProviderBinding records the resolved render-engine selection for one

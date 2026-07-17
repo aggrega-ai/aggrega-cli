@@ -445,6 +445,13 @@ func pullRun(cfg pullConfig) error {
 	if err != nil {
 		return withSkipContext(fmt.Errorf("resolve: %w", err), skipped)
 	}
+	// Resolve the workspace provider-socket bindings to their Plugin entities at
+	// pull time only. ComputeClosure is config-blind to the provider socket, so
+	// build / serve reconstruct these entities from the lockfile rather than from
+	// live config — the entity axis stays invariant to a config edit after pull.
+	if err := closure.ResolveProviderSocketEntities(&cl, wsCfg.Plugins.Providers, lookup); err != nil {
+		return fmt.Errorf("resolve: %w", err)
+	}
 	// pull's determinism-wired lazy lookup: the post-fetch consumers — closure-
 	// library discovery, closure-scoped validation, and the source-descent
 	// SubAggregateLoader below — resolve the resolved closure directly, with no
@@ -459,11 +466,8 @@ func pullRun(cfg pullConfig) error {
 	// resolved closure through lazyView — the same producer build runs, so a pull
 	// and a build of the same Release compute the identical library closure.
 	progress.phase(pullPhaseLibraries)
-	if err := discoverClosureLibraries(&cl, lazyView, lookup); err != nil {
-		return fmt.Errorf("resolve: schema-library discovery: %w", err)
-	}
-	if err := discoverClosureMappingLibraries(&cl, lazyView, lookup); err != nil {
-		return fmt.Errorf("resolve: mapping-library discovery: %w", err)
+	if err := closure.AugmentClosure(&cl, lazyView, lookup); err != nil {
+		return fmt.Errorf("resolve: %w", err)
 	}
 	// Pull-side transitive sub-aggregate descent: pin the closure of every
 	// Aggregate reachable through a chain of sub-aggregate references, loading
@@ -515,6 +519,23 @@ func pullRun(cfg pullConfig) error {
 	lazyView.SetPins(catalog.PinsFromClosure(cl))
 	if err := closure.DescendRecipePluginArtifacts(&cl, lazyView.ClosureRecipeLoader(), lookup); err != nil {
 		return fmt.Errorf("resolve: pipeline-plugin artifact descent: %w", err)
+	}
+	// Resolve the mutator-socket attachments to their pinned lockfile records, in
+	// authored order. The mutator rewrites the IR and shapes output bytes, so its
+	// attachment set / order / export function is recorded for the lockfile and
+	// build reconstructs it from there rather than from live config — keeping
+	// build output invariant to a plugins.mutator change made after the pull.
+	mutatorAttachments, err := resolveMutatorAttachments(wsCfg.Plugins.Mutator, lazyView)
+	if err != nil {
+		return err
+	}
+	// Cache the verdict-socket (policy / linter) gate plugins so a hermetic build
+	// can run them, WITHOUT pinning them in the lockfile. A verdict socket renders
+	// an accept/reject verdict without shaping the output bytes, so its plugin is
+	// not part of the reproducibility closure (cache-not-pin): the pull fetches and
+	// caches its entity + .wasm, and the build resolves it from the cache by URI.
+	if err := cacheVerdictSocketPlugins(wsCfg, lookup); err != nil {
+		return err
 	}
 	// Re-derive each plugin's host functions from the freshly-cached, digest-
 	// verified .wasm and verify they match the machine-owned stamp the publish
@@ -687,7 +708,7 @@ func pullRun(cfg pullConfig) error {
 				return fmt.Errorf("freeze recipe pins: %w", err)
 			}
 
-			lf := buildLockfile(cfg.ReleasePath, cl, wsCfg, resolvedBindings, postFreezeRecipeDigests)
+			lf := buildLockfile(cfg.ReleasePath, cl, wsCfg, resolvedBindings, mutatorAttachments, postFreezeRecipeDigests)
 			// Carry forward each unchanged pin's recorded deprecation fact from the
 			// prior lockfile before verification runs. A warm-cache (Tier-2) re-pull
 			// does not re-touch the registry, so it does not re-discover markers; the
@@ -734,7 +755,7 @@ func pullRun(cfg pullConfig) error {
 // buildLockfile materialises a *lockfile.Lockfile from the closure
 // result. Field-for-field copy across the closure / lockfile package
 // boundary; both types intentionally mirror the same shape.
-func buildLockfile(releasePath string, cl closure.Closure, wsCfg workspaceconfig.Config, bindings map[string]lockfile.ProviderBinding, postFreezeRecipeDigests map[string]string) *lockfile.Lockfile {
+func buildLockfile(releasePath string, cl closure.Closure, wsCfg workspaceconfig.Config, bindings map[string]lockfile.ProviderBinding, mutators []lockfile.MutatorAttachment, postFreezeRecipeDigests map[string]string) *lockfile.Lockfile {
 	lf := &lockfile.Lockfile{
 		Version:     1,
 		Release:     filepath.Base(releasePath),
@@ -745,6 +766,11 @@ func buildLockfile(releasePath string, cl closure.Closure, wsCfg workspaceconfig
 		lf.Providers = append(lf.Providers, b)
 	}
 	sort.Slice(lf.Providers, func(i, j int) bool { return lf.Providers[i].Capability < lf.Providers[j].Capability })
+
+	// Author order is semantic for the mutator runner, so the attachments are
+	// carried through unsorted (WriteLockfile likewise preserves the order). The
+	// copy avoids aliasing the caller's slice.
+	lf.Mutators = append([]lockfile.MutatorAttachment(nil), mutators...)
 
 	for _, e := range cl.Entities {
 		// A writable recipe's content digest was captured at resolution, before
@@ -821,6 +847,97 @@ func buildLockfile(releasePath string, cl closure.Closure, wsCfg workspaceconfig
 	}
 
 	return lf
+}
+
+// resolveMutatorAttachments resolves each configured mutator-socket attachment
+// to the pinned record the lockfile carries: the plugin's resolved coordinate
+// identity and the export override, in authored order. Build and serve
+// reconstruct the mutator attachment list from these records rather than from
+// live workspace config, so the mutator set / order / export function that
+// shapes the rendered output is config-invariant after the pull.
+//
+// Each attachment's Plugin entity resolves through the same pinned lazy view the
+// rest of the pull uses; the coordinate is derived through the single
+// Plugin.Coordinate rule, the same identity ProviderBinding.Plugin records. A
+// ref that does not resolve is a build fault (the closure walk already pinned
+// the mutator entity, halting loudly on a missing one), so it halts here rather
+// than writing an unresolvable coordinate.
+func resolveMutatorAttachments(refs []workspaceconfig.PluginRef, lazyView *catalog.LazyLookup) ([]lockfile.MutatorAttachment, error) {
+	if len(refs) == 0 {
+		return nil, nil
+	}
+	out := make([]lockfile.MutatorAttachment, 0, len(refs))
+	for _, ref := range refs {
+		if ref.URI == "" {
+			continue
+		}
+		p, ok := lazyView.PluginByURI(ref.URI)
+		if !ok {
+			return nil, fmt.Errorf("resolve: mutator socket plugin %q not resolvable for lockfile pin", ref.URI)
+		}
+		out = append(out, lockfile.MutatorAttachment{
+			Plugin:   p.Coordinate(),
+			Function: ref.Function,
+		})
+	}
+	return out, nil
+}
+
+// cacheVerdictSocketPlugins fetches and caches every verdict-socket (policy /
+// linter) gate plugin the effective config attaches, WITHOUT recording any of
+// them in the lockfile. A verdict socket renders an accept/reject verdict without
+// shaping the output bytes, so its plugin is cached-not-pinned: the pull populates
+// the cache slot (entity config blob + OCI manifest, and the .wasm artifact) so a
+// hermetic build can resolve and run the gate by URI, but the plugin never enters
+// the reproducibility closure and is never drift-gated.
+//
+// It resolves each gate plugin through the same catalog cascade the pinned
+// mutator entity + artifact descent uses (ResolveCatalogEntity for the entity,
+// ResolvePlugin for the .wasm), inheriting that path's digest verification. It
+// does not append to the closure, so nothing it caches reaches the lockfile.
+//
+// Trust posture: the cache primitives verify the fetched entity against its OCI
+// manifest and the .wasm against its content digest. The stronger checks a pinned
+// plugin also gets at pull — host-function re-derivation and registry signature
+// verification — are not extended to gate plugins here; doing so is a socket-spec
+// decision beyond this pass, so it is deferred rather than silently skipped.
+//
+// A capability-only / empty-URI attachment carries nothing to fetch and is
+// skipped; a plugin that does not resolve from the registry (a local / embedded /
+// absent gate the build resolves in place) is skipped rather than treated as a
+// closure gap — a verdict gate is not on the pinned axis a missing closure entity
+// would halt.
+func cacheVerdictSocketPlugins(cfg workspaceconfig.Config, lookup closure.Lookup) error {
+	for _, socket := range cfg.PluginSockets() {
+		if socket.Socket.Tier() != workspaceconfig.SocketTierVerdict {
+			continue
+		}
+		for _, ref := range socket.Refs {
+			if ref.URI == "" {
+				continue
+			}
+			entRes, err := lookup.ResolveCatalogEntity(ref.URI, "plugin")
+			if err != nil {
+				return fmt.Errorf("cache %s socket plugin %q: %w", socket.Socket, ref.URI, err)
+			}
+			if entRes.NotFound {
+				continue
+			}
+			bare, version, _ := strings.Cut(ref.URI, ":")
+			if version == "" {
+				version = entRes.ResolvedVersion
+			}
+			artRes, err := lookup.ResolvePlugin(bare, version)
+			if err != nil {
+				return fmt.Errorf("cache %s socket plugin artifact %q: %w", socket.Socket, ref.URI, err)
+			}
+			if artRes.NotFound {
+				return fmt.Errorf("cache %s socket plugin artifact %q: entity resolved but its .wasm did not: %w",
+					socket.Socket, ref.URI, closure.ErrUnresolvableURI)
+			}
+		}
+	}
+	return nil
 }
 
 func copyConsumers(in []closure.LibraryConsumer) []lockfile.LibraryConsumer {

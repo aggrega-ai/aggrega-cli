@@ -9,6 +9,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
@@ -49,6 +50,27 @@ type BuildInputs struct {
 func BuildToBuffer(ctx context.Context, in BuildInputs, opts pipeline.Options) (*pipeline.Result, error) {
 	view := in.View
 	r := in.Resolved
+	wsCfg := in.WorkspaceConfig
+	catLookup := view.AsCatalogLookup()
+
+	// Reconstruct the byte-determining plugin selections from the LOCKFILE, never
+	// the workspace config, so rendered output is invariant to a plugins.providers
+	// or plugins.mutator change made after the pull (adopted only on the next
+	// pull). Provider resolution reads the pinned bindings — a federated catalog
+	// with more than one plugin serving a capability is disambiguated by the
+	// binding, so an ambiguous target resolves rather than halting. The mutator
+	// override is unconditional under a lockfile — an empty pinned set runs no
+	// mutator regardless of live config. wsCfg is a per-call value copy and
+	// catLookup is a value struct, so both rewrites touch only this call's
+	// pipeline inputs, never the caller's config or the shared view.
+	if in.Lockfile != nil {
+		bindings := lockfile.ProviderBindings(in.Lockfile)
+		catLookup.ProviderPlugin = func(ref string) (types.Plugin, bool, error) {
+			return view.ProviderPluginForTarget(ref, bindings)
+		}
+		wsCfg.Plugins.Mutator = lockfile.MutatorAttachments(in.Lockfile)
+	}
+
 	return pipeline.RunPipeline(
 		ctx,
 		pipeline.Inputs{
@@ -56,14 +78,14 @@ func BuildToBuffer(ctx context.Context, in BuildInputs, opts pipeline.Options) (
 			Manifest:                         r.Manifest,
 			AggregateRawBytes:                r.AggBytes,
 			AggregatePath:                    r.AggregatePath,
-			WorkspaceConfig:                  in.WorkspaceConfig,
+			WorkspaceConfig:                  wsCfg,
 			Lockfile:                         in.Lockfile,
 			WorkspaceRoot:                    in.WorkspaceRoot,
 			MappingLibraries:                 view.MappingLibraries(),
 			CompilerVersion:                  in.CompilerVersion,
 			TolerateCatalogViewInconsistency: in.TolerateCatalogViewInconsistency,
 		},
-		view.AsCatalogLookup(),
+		catLookup,
 		view.RecipeLookupWithManifest(r.Manifest),
 		view.SubAggregateLoader(),
 		opts,

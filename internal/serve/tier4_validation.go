@@ -77,7 +77,10 @@ func (s *Server) runTier4Validation(ctx context.Context, file string, content []
 	}
 	view := s.lazyCatalog.ForRequest(pins)
 
-	resolved, envelope := s.resolveReleaseClosure(view, s.activeReleasePath)
+	// Quiet load — pins only, no drift verify — so the closure axes are not
+	// reconstructed here (nil lockfile). Drift is surfaced by the at-startup check
+	// and the irGraph handler, which reconstruct and verify.
+	resolved, envelope := s.resolveReleaseClosure(view, s.activeReleasePath, nil)
 	if envelope != nil {
 		// Closure-level failure (catalog load, Release/Manifest load,
 		// Aggregate read) — Tier-D fall-back at file:1:1.

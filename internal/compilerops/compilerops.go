@@ -53,6 +53,12 @@ type ResolvedClosure struct {
 	AggBytes      []byte
 	AggregatePath string
 	Closure       closure.Closure
+	// Lookup is the hermetic Lookup (nil OCIPuller) the closure was walked
+	// through. A caller that verifies drift against a lockfile reuses it to
+	// reconstruct the sub-aggregate and plugin axes ComputeClosure leaves empty,
+	// so the reconstruction resolves against the identical pinned view — no second
+	// lookup is built. Callers that only render may ignore it.
+	Lookup closure.Lookup
 }
 
 // ClosureStage names the point in ResolveClosure at which resolution failed, so
@@ -158,5 +164,6 @@ func ResolveClosure(in ClosureInputs) (*ResolvedClosure, *ClosureError) {
 		AggBytes:      aggBytes,
 		AggregatePath: aggRes.Path,
 		Closure:       cl,
+		Lookup:        lookup,
 	}, nil
 }

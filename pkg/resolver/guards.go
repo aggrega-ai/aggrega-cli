@@ -29,6 +29,13 @@ type CatalogLookup struct {
 	// May be nil in catalog-less paths; a
 	// socket that needs it then resolves nothing and halts as not-an-entity.
 	Plugin func(uri string) (types.Plugin, bool)
+	// PluginFromCache resolves a Plugin entity from the pull-populated cache by its
+	// entity URI WITHOUT a lockfile pin — the cache-not-pin read a verdict socket
+	// (policy / linter) falls back to when the pinned / Tier-1 path does not
+	// surface the gate plugin. It returns the parsed entity, the .wasm layer
+	// content digest the artifact cache slot is keyed by, and a found flag; ok is
+	// false on a clean cache miss. May be nil in catalog-less paths.
+	PluginFromCache func(uri string) (types.Plugin, string, bool, error)
 	// ProviderPlugin resolves a provider binding to the provider-rendering Plugin
 	// entity serving it, plus a found flag and an error. The binding is the bare
 	// provider name ("helm") or a version-pinned form ("helm:1.0.0", "helm:^1.0.0")

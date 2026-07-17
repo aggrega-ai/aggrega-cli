@@ -42,6 +42,7 @@ entities:
 external_inputs: []
 generated_at: ""
 mapping_libraries: []
+mutators: []
 plugins: []
 providers:
     - capability: helm

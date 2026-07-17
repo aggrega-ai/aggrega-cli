@@ -57,7 +57,7 @@ func (s *Server) loadAndCheckLockfileAtStartup() {
 	// failure here is logged to stderr and skipped; per-handleIrGraph drift is
 	// the reliable path.
 	view := s.lazyCatalog.ForRequest(catalog.PinsFromLockfile(lf))
-	resolved, envelope := s.resolveReleaseClosure(view, s.activeReleasePath)
+	resolved, envelope := s.resolveReleaseClosure(view, s.activeReleasePath, lf)
 	if envelope != nil {
 		fmt.Fprintf(s.stderr, "  startup drift check: closure compute failed: %s\n", envelope.Message)
 		return

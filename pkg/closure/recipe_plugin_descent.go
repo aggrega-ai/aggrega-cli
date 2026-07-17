@@ -209,57 +209,68 @@ func DescendRecipePluginArtifacts(c *Closure, loader RecipeLoader, lookup Lookup
 	sort.Strings(entityURIs)
 
 	for _, entityURI := range entityURIs {
-		// Load the entity body to derive its .wasm artifact reference, then resolve
-		// and pin the ARTIFACT onto the plugin axis. The derivation runs through the
-		// single entity → artifact-reference helper (Plugin.ArtifactReference) so
-		// the lock-time reference and the load-time entity-front derive the same
-		// bare identity; only the closure shape here stays independent of the load
-		// path, per the two-pass descent's deliberate structural separation.
-		wp, err := loader.LoadPlugin(entityURI)
-		if err != nil {
-			return fmt.Errorf("resolve: load wasm plugin entity %q for artifact descent: %w", entityURI, err)
-		}
-		artifactURI := wp.ArtifactReference()
-		if artifactURI == "" {
-			continue
-		}
-		// The .wasm rides inline in the entity's single manifest, tagged by the
-		// entity's version; pass that version so a digest-free reference resolves
-		// the layer from the right manifest.
-		artRes, err := lookup.ResolvePlugin(artifactURI, wp.Metadata.Version)
-		if err != nil {
-			return fmt.Errorf("resolve: resolve pipeline plugin artifact %q: %w", artifactURI, err)
-		}
-		// A core plugin embedded in the binary resolves through the embed tier
-		// with a reference digest derived on demand, so it is recorded here (not
-		// NotFound). A genuinely-absent registry reference still resolves to
-		// NotFound and is skipped: it may resolve at build through a local path
-		// the lock-time lookup does not see, and the build-time loader gate halts
-		// on a truly-missing artifact.
-		if artRes.NotFound {
-			continue
-		}
-		if artRes.ResolutionPath == tier1CatalogPath {
-			continue
-		}
-		artRef := ResolvedRef{
-			URI:             artifactURI,
-			ResolvedVersion: artRes.ResolvedVersion,
-			Digest:          artRes.Digest,
-			ManifestDigest:  artRes.ManifestDigest,
-			ResolutionPath:  artRes.ResolutionPath,
-			ReferencedFrom:  []string{entityURI},
-			KindHint:        pluginKindHint,
-		}
-		if idx, dup := pluginIndex[artifactURI]; dup {
-			c.Plugins[idx].ReferencedFrom = mergeReferencedFrom(c.Plugins[idx].ReferencedFrom, artRef.ReferencedFrom)
-		} else {
-			c.Plugins = append(c.Plugins, artRef)
-			pluginIndex[artifactURI] = len(c.Plugins) - 1
+		skipTier1 := true
+		if err := pinPluginArtifact(c, loader, lookup, entityURI, pluginIndex, skipTier1); err != nil {
+			return err
 		}
 	}
 
 	canonicaliseClosure(c)
+	return nil
+}
+
+// pinPluginArtifact loads a Plugin entity body, derives its .wasm artifact
+// reference from its identity, resolves that reference through ResolvePlugin, and
+// pins the artifact onto the plugin axis (c.Plugins), deduping by URI against
+// pluginIndex and accumulating referenced-from sites. The derivation runs through
+// the single entity → artifact-reference helper (Plugin.ArtifactReference) so the
+// lock-time reference and the load-time entity-front derive the same bare identity.
+//
+// A NotFound artifact is skipped (it may resolve at build through a local path the
+// lock-time lookup does not see, and the build-time loader gate halts on a
+// truly-missing artifact). skipTier1 controls the registry-only rule: the pull-side
+// pipeline descent passes true (a Tier-1-local artifact is not lockfile-pinned),
+// while the workspace-socket reconstruction passes false — a socket artifact the
+// lockfile already pins can surface as Tier-1 when the pinned Tier-2 cache slot is
+// folded into the hermetic view's local enumeration, and dropping it is exactly the
+// reconstruction gap that surfaces as spurious drift.
+func pinPluginArtifact(c *Closure, loader RecipeLoader, lookup Lookup, entityURI string, pluginIndex map[string]int, skipTier1 bool) error {
+	wp, err := loader.LoadPlugin(entityURI)
+	if err != nil {
+		return fmt.Errorf("resolve: load wasm plugin entity %q for artifact descent: %w", entityURI, err)
+	}
+	artifactURI := wp.ArtifactReference()
+	if artifactURI == "" {
+		return nil
+	}
+	// The .wasm rides inline in the entity's single manifest, tagged by the
+	// entity's version; pass that version so a digest-free reference resolves
+	// the layer from the right manifest.
+	artRes, err := lookup.ResolvePlugin(artifactURI, wp.Metadata.Version)
+	if err != nil {
+		return fmt.Errorf("resolve: resolve pipeline plugin artifact %q: %w", artifactURI, err)
+	}
+	if artRes.NotFound {
+		return nil
+	}
+	if skipTier1 && artRes.ResolutionPath == tier1CatalogPath {
+		return nil
+	}
+	artRef := ResolvedRef{
+		URI:             artifactURI,
+		ResolvedVersion: artRes.ResolvedVersion,
+		Digest:          artRes.Digest,
+		ManifestDigest:  artRes.ManifestDigest,
+		ResolutionPath:  artRes.ResolutionPath,
+		ReferencedFrom:  []string{entityURI},
+		KindHint:        pluginKindHint,
+	}
+	if idx, dup := pluginIndex[artifactURI]; dup {
+		c.Plugins[idx].ReferencedFrom = mergeReferencedFrom(c.Plugins[idx].ReferencedFrom, artRef.ReferencedFrom)
+	} else {
+		c.Plugins = append(c.Plugins, artRef)
+		pluginIndex[artifactURI] = len(c.Plugins) - 1
+	}
 	return nil
 }
 

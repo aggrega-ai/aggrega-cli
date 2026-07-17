@@ -185,6 +185,20 @@ func FetchPluginEntity(ctx context.Context, target oras.ReadOnlyTarget, tag stri
 	}, nil
 }
 
+// PluginWasmLayerDigest returns the content digest of the .wasm layer a single
+// plugin manifest commits to — the layer selected by MediaTypeWasm. That digest
+// is the content-address key the .wasm artifact cache slot is written under, so a
+// manifest-driven resolution can locate the executable blob from the manifest
+// alone, without a separate recorded pin. A manifest missing (or ambiguous about)
+// the .wasm layer halts loudly with ErrNoContentLayer / ErrAmbiguousContentLayer.
+func PluginWasmLayerDigest(manifestBytes []byte) (string, error) {
+	desc, _, err := descriptorFromManifest(manifestBytes, MediaTypeWasm)
+	if err != nil {
+		return "", err
+	}
+	return desc.Digest.String(), nil
+}
+
 // IsPluginManifest reports whether an OCI manifest is a single-manifest plugin
 // artifact — its config blob carries the Plugin entity YAML (MediaTypePlugin),
 // distinct from every other catalog manifest, whose entity content rides as a

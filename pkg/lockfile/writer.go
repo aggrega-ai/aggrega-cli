@@ -20,7 +20,9 @@ import (
 //   - Slice fields sorted by their canonical key: Entities,
 //     SchemaLibraries, MappingLibraries, Plugins by URI;
 //     SourceArtifacts by the composite (Kind, URL, Chart, PinnedVersion);
-//     ExternalInputs by URL.
+//     ExternalInputs by URL. Mutators is the exception: its order is
+//     semantic (the mutator runner applies attachments in list order),
+//     so it is copied in author order and never sorted.
 //   - Inside each Entity / Plugin: ReferencedFrom sorted
 //     lexicographically.
 //   - Inside each ExternalInput: RequiredBy sorted lexicographically
@@ -228,6 +230,16 @@ func canonicalise(lf *Lockfile) *Lockfile {
 	sort.Slice(out.Providers, func(i, j int) bool {
 		return out.Providers[i].Capability < out.Providers[j].Capability
 	})
+
+	// Mutators carries a semantic order (the mutator runner applies attachments
+	// in list order), so it is copied in author order and deliberately NOT
+	// sorted — unlike every URI-sorted section above. Two independent
+	// canonicalise calls over the same input still produce byte-identical output
+	// because the copy preserves the same order each time. MutatorAttachment
+	// holds only scalar fields, so a shallow copy fully detaches it from the
+	// caller's slice.
+	out.Mutators = make([]MutatorAttachment, len(lf.Mutators))
+	copy(out.Mutators, lf.Mutators)
 
 	return out
 }

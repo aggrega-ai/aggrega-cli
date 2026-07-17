@@ -23,7 +23,6 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator"
-	"github.com/aggrega-ai/aggrega-cli/pkg/validator/envelope"
 )
 
 // NewLazyLookup returns a *LazyLookup whose AsCatalogLookup method
@@ -163,6 +162,11 @@ func (l *LazyLookup) AsCatalogLookup() resolver.CatalogLookup {
 		// set, so the build-load pipeline socket fronts the artifact cascade with
 		// the entity → artifact-reference two-step from the lazy backing too.
 		Plugin: l.PluginByURI,
+		// PluginFromCache resolves a Plugin entity from the pull-populated cache by
+		// URI with no lockfile pin — the cache-not-pin read a verdict socket
+		// (policy / linter) falls back to when the pinned / Tier-1 path does not
+		// surface the gate plugin.
+		PluginFromCache: l.PluginFromCacheByURI,
 		// ProviderPlugin resolves a provider name to the provider-rendering Plugin
 		// serving it (via targets) over the lazily-walked set, so
 		// render dispatch resolves the same provider→Plugin binding from the lazy
@@ -1082,13 +1086,9 @@ func (l *LazyLookup) foldRecipeShellEntity(kind string, parseData, rawBytes []by
 				l.recordRecipeSkip(src, fmt.Errorf("duplicate mapping library name %q; this file is shadowed", e.Metadata.Name))
 			})
 	case "Plugin":
-		if _, eerr := envelope.ValidateBytes(envelope.KindPlugin, parseData, src); eerr != nil {
-			l.recordRecipeSkip(src, eerr)
-			return
-		}
-		var e types.Plugin
-		if uerr := yaml.Unmarshal(parseData, &e); uerr != nil {
-			l.recordRecipeSkip(src, uerr)
+		e, perr := parsePluginEntity(parseData, src)
+		if perr != nil {
+			l.recordRecipeSkip(src, perr)
 			return
 		}
 		key := entityIndexKey(e.Coordinate(), e.Metadata.Version)
@@ -1302,6 +1302,62 @@ func (l *LazyLookup) PluginByURI(uri string) (types.Plugin, bool) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	return l.recipeCatalog().PluginByURI(uri)
+}
+
+// PluginFromCacheByURI resolves a Plugin entity from the Tier-2 content cache by
+// its entity URI WITHOUT a lockfile pin — the cache-not-pin read a verdict socket
+// (policy / linter) uses. A verdict-socket plugin is cached at pull but never
+// pinned or drift-gated, so it is absent from the lockfile pin set and the
+// pin-driven Tier-2 fold does not surface it; this reads its cache slot directly.
+//
+// The chain is: entity slot (uri, version) → cached OCI manifest (the root of
+// trust) → verify the config blob against the manifest → parse the entity → the
+// .wasm layer's content digest from the manifest (the key the artifact cache slot
+// is addressed by). It returns the parsed entity and that .wasm content digest.
+// ok is false on a clean cache miss (an unset cache dir, an unversioned URI, or an
+// absent slot / manifest); a non-nil error is a manifest-verification or parse
+// failure that must halt rather than fall through.
+func (l *LazyLookup) PluginFromCacheByURI(uri string) (types.Plugin, string, bool, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.cacheDir == "" {
+		return types.Plugin{}, "", false, nil
+	}
+	_, version, hasV := splitVersionedURI(uri)
+	if !hasV || version == "" {
+		return types.Plugin{}, "", false, nil
+	}
+	entityBytes, err := oci.ReadCached(l.workspaceRoot, l.cacheDir, uri, version)
+	if err != nil {
+		if errors.Is(err, oci.ErrFetchNotFound) {
+			return types.Plugin{}, "", false, nil
+		}
+		return types.Plugin{}, "", false, fmt.Errorf("catalog: read cached plugin entity %s: %w", uri, err)
+	}
+	manifestBytes, merr := oci.ReadCachedManifest(l.workspaceRoot, l.cacheDir, uri, version)
+	if merr != nil {
+		// A content blob with no persisted manifest is an incomplete slot; treat it
+		// as a miss so the caller surfaces the pull-first remediation rather than
+		// trusting a half-populated slot.
+		if errors.Is(merr, oci.ErrFetchNotFound) {
+			return types.Plugin{}, "", false, nil
+		}
+		return types.Plugin{}, "", false, fmt.Errorf("catalog: read cached plugin manifest %s: %w", uri, merr)
+	}
+	// Manifest root of trust: the cached entity (the manifest's CONFIG blob) is
+	// trusted only against the descriptor the manifest commits to.
+	if err := oci.VerifyConfigAgainstManifest(manifestBytes, entityBytes); err != nil {
+		return types.Plugin{}, "", false, fmt.Errorf("catalog: cached plugin entity %s: %w", uri, err)
+	}
+	entity, perr := parsePluginEntity(entityBytes, "cache:"+uri)
+	if perr != nil {
+		return types.Plugin{}, "", false, fmt.Errorf("catalog: parse cached plugin entity %s: %w", uri, perr)
+	}
+	wasmDigest, werr := oci.PluginWasmLayerDigest(manifestBytes)
+	if werr != nil {
+		return types.Plugin{}, "", false, fmt.Errorf("catalog: cached plugin manifest %s: %w", uri, werr)
+	}
+	return entity, wasmDigest, true, nil
 }
 
 // ProviderPluginByName resolves a provider binding (bare name or version-pinned
@@ -1636,6 +1692,25 @@ func (l *LazyLookup) ClosureLookup(puller OCIPuller, workspaceRoot, cacheDir str
 		l:      l,
 		puller: puller,
 		base:   l.recipeCatalog().ClosureLookupWithExternals(puller, workspaceRoot, cacheDir, externals),
+	}
+}
+
+// ClosureLookupWithPins returns a closure.Lookup like ClosureLookup whose
+// plugin-artifact resolution HONORS the supplied pins: a .wasm artifact is read
+// from the content-addressed cache slot its pin names and self-verified before it
+// is returned, so a hermetic (nil-puller) consumer resolves a pinned artifact
+// offline. The default ClosureLookup leaves the artifact-resolution pins nil (the
+// build and serve paths reuse cache slots unconditionally against the closure-level
+// drift gate), which cannot address a plugin .wasm slot — that slot is keyed by the
+// content digest a pin supplies. The workspace-socket reconstruction uses this so
+// the socket .wasm the lockfile pins resolves from the cache without a fetch.
+func (l *LazyLookup) ClosureLookupWithPins(puller OCIPuller, workspaceRoot, cacheDir string, externals map[string][]byte, pins map[string]Pin) closure.Lookup {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return &lazyClosureLookup{
+		l:      l,
+		puller: puller,
+		base:   l.recipeCatalog().ClosureLookupWithReuse(puller, workspaceRoot, cacheDir, externals, nil, &ReuseVerification{PriorPins: pins}),
 	}
 }
 

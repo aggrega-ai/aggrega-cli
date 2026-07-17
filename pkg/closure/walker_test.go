@@ -171,10 +171,19 @@ func TestComputeClosureEnumeratesEveryReferenceSite(t *testing.T) {
 	agg := loadAggregate(t, fullFixtureAggregate)
 
 	cfg := workspaceconfig.Default()
-	// A workspace plugin socket references a Plugin ENTITY URI; the entity
-	// rides the catalog-entity axis (resolved via ResolveCatalogEntity), and its
-	// .wasm artifact is pinned later at pull time by the pipeline-plugin descent. So
-	// ComputeClosure records the entity in c.Entities, not c.Plugins.
+	// The mutator workspace socket references a Plugin ENTITY URI. Because the
+	// mutator rewrites the IR and shapes the rendered output bytes, its entity
+	// rides the catalog-entity axis (resolved via ResolveCatalogEntity) and is
+	// pinned in the closure; its .wasm artifact is pinned later at pull time by the
+	// pipeline-plugin descent. So ComputeClosure records the entity in c.Entities,
+	// not c.Plugins.
+	const mutatorPluginEntity = "core/mutator/aggrega-inject-baseline:1.0.0"
+	cfg.Plugins.Mutator = []workspaceconfig.PluginRef{
+		{URI: mutatorPluginEntity},
+	}
+	// The policy socket renders an accept/reject verdict without shaping output
+	// bytes, so its entity is resolved at its point of use and is NOT pinned in the
+	// closure. Configuring it here proves ComputeClosure does not enumerate it.
 	const policyPluginEntity = "core/policy/aggrega-security-baseline:1.0.0"
 	cfg.Plugins.Policy = []workspaceconfig.PluginRef{
 		{URI: policyPluginEntity},
@@ -191,7 +200,10 @@ func TestComputeClosureEnumeratesEveryReferenceSite(t *testing.T) {
 			"hub.aggrega.ai/recipe/core/helm/api-server:1.2.0":            resolutionOK("1.2.0", "sha256:fff", "tier3-registry"),
 			"hub.aggrega.ai/recipe/core/helm/postgres:1.0.0":              resolutionOK("1.0.0", "sha256:ggg", "tier3-registry"),
 			"hub.aggrega.ai/feature-recipe/core/helm/ingress-nginx:1.0.0": resolutionOK("1.0.0", "sha256:hhh", "tier3-registry"),
-			policyPluginEntity: resolutionOK("1.0.0", "sha256:wasm", "tier3-registry"),
+			mutatorPluginEntity: resolutionOK("1.0.0", "sha256:wasm", "tier3-registry"),
+			// A resolution for the policy socket is provided too; the closure must
+			// still not enumerate it, proving non-pinning is not merely a lookup miss.
+			policyPluginEntity: resolutionOK("1.0.0", "sha256:policy-wasm", "tier3-registry"),
 		},
 	}
 
@@ -204,10 +216,11 @@ func TestComputeClosureEnumeratesEveryReferenceSite(t *testing.T) {
 	// release-attached ingress on the api component plus the manifest-side
 	// hub.aggrega.ai/feature/core/ingress mapping key — currently dedup'd
 	// to one entry because both reference the same URI). Plus 2 Recipes
-	// and 1 FeatureRecipe from the manifest, plus the workspace-socket
-	// Plugin entity.
+	// and 1 FeatureRecipe from the manifest, plus the output-shaping
+	// workspace-socket (mutator) Plugin entity. The policy socket is NOT
+	// enumerated.
 	wantEntities := []string{
-		policyPluginEntity,
+		mutatorPluginEntity,
 		"hub.aggrega.ai/aggregate/example/app:1.0.0",
 		"hub.aggrega.ai/component/core/api-server",
 		"hub.aggrega.ai/component/core/datastore",
@@ -224,6 +237,13 @@ func TestComputeClosureEnumeratesEveryReferenceSite(t *testing.T) {
 	}
 	if !reflect.DeepEqual(got, wantEntities) {
 		t.Errorf("entities mismatch.\n  got:  %v\n  want: %v", got, wantEntities)
+	}
+
+	// The verdict-only policy socket must not ride the pinned axis.
+	for _, e := range c.Entities {
+		if e.URI == policyPluginEntity {
+			t.Errorf("policy socket entity %q was pinned; verdict-only sockets are resolved at point of use, not pinned", policyPluginEntity)
+		}
 	}
 
 	// ComputeClosure pins only the entities; the .wasm artifact axis is populated
