@@ -31,7 +31,7 @@ import (
 var (
 	pullReleasePath       string
 	pullCatalogDirs       []string
-	pullRegenerate        bool
+	pullUpgrade           bool
 	pullVerify            bool
 	pullIncludePrerelease bool
 	pullDetail            bool
@@ -41,7 +41,7 @@ var (
 
 func newPullCmd() *cobra.Command {
 	c := &cobra.Command{
-		Use:   "pull",
+		Use:   "pull [<uri>...]",
 		Short: "Resolve catalog and source dependencies into the cache and write the per-Release lockfile",
 		Long: `Resolve the Release's catalog and source dependencies into the cache and write the per-Release lockfile.
 
@@ -52,11 +52,17 @@ pull halts rather than silently re-pinning. A reference with no pin — newly ad
 removed from the lockfile by hand — is resolved fresh and added. Entities no longer among
 the resolved dependencies are pruned. Re-running pull on an unchanged dependency set is a no-op.
 
-Use --regenerate to discard the existing lockfile and re-resolve every entity from
-current registry state, floating each dependency to the highest available version.`,
+Use --upgrade with no positional arguments to discard the existing lockfile and re-resolve
+every entity from current registry state, floating each dependency to the highest available
+version. Pass one or more entity URIs after --upgrade to upgrade only those: each named pin
+is dropped and re-resolved fresh while every other pin — and the recorded external inputs —
+is held unchanged. A URI given without --upgrade is a usage error.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if pullVerify && pullRegenerate {
-				return fmt.Errorf("--verify and --regenerate are mutually exclusive")
+			if pullVerify && pullUpgrade {
+				return fmt.Errorf("--verify and --upgrade are mutually exclusive")
+			}
+			if len(args) > 0 && !pullUpgrade {
+				return fmt.Errorf("positional arguments name upgrade targets and require --upgrade")
 			}
 			rw, err := workspaceFromContext(cmd.Context())
 			if err != nil {
@@ -65,7 +71,8 @@ current registry state, floating each dependency to the highest available versio
 			return pullRun(pullConfig{
 				ReleasePath:       pullReleasePath,
 				CatalogDirs:       pullCatalogDirs,
-				Regenerate:        pullRegenerate,
+				Upgrade:           pullUpgrade,
+				UpgradeTargets:    args,
 				Verify:            pullVerify,
 				IncludePrerelease: pullIncludePrerelease,
 				Detail:            pullDetail,
@@ -76,7 +83,7 @@ current registry state, floating each dependency to the highest available versio
 	}
 	c.Flags().StringVar(&pullReleasePath, "release", "", "Path to Release YAML file (required)")
 	c.Flags().StringArrayVar(&pullCatalogDirs, "catalog", nil, "Catalog directory; repeatable. Each --catalog is prepended to the workspace catalog_dirs search stack (first match wins). Defaults to the current directory.")
-	c.Flags().BoolVar(&pullRegenerate, "regenerate", false, "Discard any existing lockfile and re-resolve every entity from current registry state, floating each dependency to the highest available version (ignores existing pins)")
+	c.Flags().BoolVar(&pullUpgrade, "upgrade", false, "Re-resolve dependencies from current registry state, floating each to the highest available version. Bare (no positional URIs) discards the lockfile and re-resolves every entity; with one or more entity URIs, re-resolves only those, holding all other pins and the recorded external inputs unchanged")
 	c.Flags().BoolVar(&pullVerify, "verify", false, "Verify the existing lockfile against the current dependency resolution without writing; exits non-zero on drift or missing lockfile")
 	c.Flags().BoolVar(&pullIncludePrerelease, "include-prerelease", false, "Reserved for future version-selection logic; currently a no-op")
 	c.Flags().BoolVar(&pullDetail, "detail", false, "Print, per resolved entity, what this pull did — fetched fresh from a registry, reused a cache slot, found in a local catalog, or external. Stdout only; not written to the lockfile")
@@ -97,8 +104,15 @@ type pullConfig struct {
 	// pullRun prepends them to the workspace catalog_dirs via resolveCatalogDirs.
 	// build's auto-pull integration forwards its own flag dirs so the pull path
 	// re-derives the identical stack under the same config.
-	CatalogDirs       []string
-	Regenerate        bool
+	CatalogDirs []string
+	Upgrade     bool
+	// UpgradeTargets names the entity URIs to upgrade when Upgrade is set. Empty
+	// with Upgrade set is a full refresh (float every dependency); non-empty is a
+	// targeted upgrade — only the named pins are dropped and re-resolved, every
+	// other pin and the recorded external inputs are held. Each URI is matched by
+	// exact string against a lockfile pin key (the authored bare form, e.g.
+	// core/database, not a versioned form); a URI that matches no pin halts.
+	UpgradeTargets    []string
 	Verify            bool
 	IncludePrerelease bool
 	Detail            bool
@@ -262,7 +276,7 @@ func pullRun(cfg pullConfig) error {
 		out = os.Stdout
 	}
 	// Verify is a quick read-only check with an early return, so it carries no
-	// progress surface; the default and --regenerate paths walk the full spine.
+	// progress surface; the default and --upgrade paths walk the full spine.
 	diag := cfg.diag
 	if cfg.Verify {
 		diag.quiet = true
@@ -354,9 +368,13 @@ func pullRun(cfg pullConfig) error {
 	aggregate := aggRes.Aggregate
 
 	lockfilePath := lockfile.PathFor(cfg.ReleasePath)
-	if cfg.Regenerate {
+	// A targeted upgrade names specific entities and holds the rest, so it must
+	// keep the prior lockfile (that is what preserves the other pins and the
+	// recorded external inputs); only the bare full-refresh upgrade discards it.
+	targeted := cfg.Upgrade && len(cfg.UpgradeTargets) > 0
+	if cfg.Upgrade && !targeted {
 		if err := os.Remove(lockfilePath); err != nil && !errors.Is(err, os.ErrNotExist) {
-			return fmt.Errorf("regenerate: remove existing lockfile: %w", err)
+			return fmt.Errorf("upgrade: remove existing lockfile: %w", err)
 		}
 	}
 	if cfg.Verify {
@@ -387,12 +405,34 @@ func pullRun(cfg pullConfig) error {
 	// pin is re-fetched and re-pinned from authoritative registry bytes
 	// rather than laundered into the new lockfile. Skipped under
 	// --verify (read-only — lockfile.Verify covers drift below) and when
-	// no prior lockfile is present (first pull, or --regenerate removed
+	// no prior lockfile is present (first pull, or --upgrade removed
 	// it above): there both establish pins from scratch, with nothing to
 	// verify against.
 	var reuse *catalog.ReuseVerification
 	if !cfg.Verify {
-		if prior, _, lerr := lockfile.LoadLockfile(lockfilePath); lerr == nil && prior != nil {
+		prior, _, lerr := lockfile.LoadLockfile(lockfilePath)
+		if targeted {
+			// Targeted upgrade holds every non-named pin, so a prior lockfile is
+			// required — there must be a pin set to hold. Reducing that set (dropping
+			// the named pins) is the whole mechanism: a URI absent from PriorPins
+			// floats to its highest-satisfying version, every URI still present is
+			// honored, and the untouched lockfile file carries the external inputs
+			// forward.
+			if lerr != nil || prior == nil {
+				return fmt.Errorf("no lockfile to upgrade at %s; run `aggrega pull` first to create one", lockfilePath)
+			}
+			pins := catalog.PinsFromLockfile(prior)
+			for _, target := range cfg.UpgradeTargets {
+				if _, ok := pins[target]; !ok {
+					return fmt.Errorf("entity %q is not pinned in the lockfile; nothing to upgrade", target)
+				}
+				delete(pins, target)
+			}
+			reuse = &catalog.ReuseVerification{
+				PriorPins: pins,
+				Warn:      func(notice string) { fmt.Fprintf(cfg.DiagOut, "  reuse: %s\n", notice) },
+			}
+		} else if lerr == nil && prior != nil {
 			reuse = &catalog.ReuseVerification{
 				PriorPins: catalog.PinsFromLockfile(prior),
 				Warn:      func(notice string) { fmt.Fprintf(cfg.DiagOut, "  reuse: %s\n", notice) },
@@ -660,7 +700,7 @@ func pullRun(cfg pullConfig) error {
 			// render-time remote-input pins recorded by build and acquire, not
 			// part of the catalog closure buildLockfile materialises, so a pull
 			// would otherwise rewrite the lockfile with an empty list and force
-			// the next build to re-acquire from the network. A --regenerate pull
+			// the next build to re-acquire from the network. A --upgrade pull
 			// removes the prior lockfile up front, so this refreshes the pins.
 			carryForwardExternalInputs(lf, lockfilePath)
 			// Lock-time signature verification: verify each registry-resolved

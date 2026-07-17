@@ -381,7 +381,7 @@ func (l *catalogLookup) ResolveCatalogEntity(uri, kindHint string) (closure.Reso
 // rather than listing tags and floating to the highest. A reference that already
 // carries a version, or one with no prior pin (un-pinned: resolve fresh + add),
 // is returned unchanged. This is the float→honor flip; floating happens only for
-// an un-pinned reference (or under `pull --regenerate`, which supplies no pins).
+// an un-pinned reference (or under `pull --upgrade`, which supplies no pins).
 func (l *catalogLookup) pinnedFetchURI(uri string) string {
 	if l.priorPins == nil {
 		return uri
@@ -411,7 +411,7 @@ func (l *catalogLookup) honorPinDigest(uri string, res closure.Resolution) (clos
 		return res, nil
 	}
 	return closure.Resolution{}, fmt.Errorf(
-		"%w: pinned entity %q: registry now serves digest %s for the pinned version, not the pinned digest %s; run `aggrega pull --regenerate` to update the pin",
+		"%w: pinned entity %q: registry now serves digest %s for the pinned version, not the pinned digest %s; run `aggrega pull --upgrade` to update the pin",
 		oci.ErrFetchIntegrity, uri, res.Digest, pin.Digest)
 }
 

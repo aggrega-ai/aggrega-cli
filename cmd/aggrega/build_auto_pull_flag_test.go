@@ -79,49 +79,36 @@ func TestBuildAutoPullFlagFillsLockfileWhenConfigOff(t *testing.T) {
 	}
 }
 
-// TestBuildRegenerateWithoutActivePullIsUsageError proves --regenerate with no
-// active pull step (neither --auto-pull nor workspace auto_pull) is a loud usage
-// error that names the requirement and writes nothing — it never triggers a
-// surprise pull on a read-only build.
-func TestBuildRegenerateWithoutActivePullIsUsageError(t *testing.T) {
+// TestBuildUpgradeWithoutActivePullImpliesAutoPull proves --upgrade with no
+// active pull step (neither --auto-pull nor workspace auto_pull) no longer
+// errors: requesting --upgrade turns the pull step on and runs a full-refresh
+// pull before the build, filling the lockfile in-process.
+func TestBuildUpgradeWithoutActivePullImpliesAutoPull(t *testing.T) {
 	root := t.TempDir()
 	t.Chdir(root)
 	releasePath := authoringFixture(t, root)
-	// Default posture: workspace auto_pull is off, so --regenerate has no pull
-	// step to modify.
+	// Default posture: workspace auto_pull is off. --upgrade alone must enable
+	// the pull step rather than erroring.
 	writeWorkspaceConfig(t, root, "")
 	catalogDir := filepath.Join(root, "catalog")
-	recipePath := filepath.Join(catalogDir, "recipes", "server.yaml")
 	lockfilePath := filepath.Join(root, "release.lock")
 
-	recipeBefore, err := os.ReadFile(recipePath)
-	if err != nil {
-		t.Fatalf("read recipe: %v", err)
+	if _, err := os.Stat(lockfilePath); !os.IsNotExist(err) {
+		t.Fatalf("precondition: expected no lockfile before build, stat err = %v", err)
 	}
 
 	var diagBuf, outBuf bytes.Buffer
-	err = dispatchBuildWithDiag(nil, releasePath, []string{catalogDir}, false,
-		buildDiagOptions{}, buildRunOptions{regenerate: true}, &diagBuf, &outBuf)
-	if err == nil {
-		t.Fatal("expected a usage error for --regenerate without --auto-pull; got nil")
-	}
-	if !strings.Contains(err.Error(), "--regenerate requires --auto-pull") {
-		t.Errorf("usage error should name the requirement; got %v", err)
+	if err := dispatchBuildWithDiag(nil, releasePath, []string{catalogDir}, false,
+		buildDiagOptions{}, buildRunOptions{upgrade: true}, &diagBuf, &outBuf); err != nil {
+		t.Fatalf("build --upgrade (no --auto-pull) should imply auto-pull, not error: %v", err)
 	}
 
-	// Nothing written: no lockfile, no dist, and the recipe source is untouched.
-	if _, statErr := os.Stat(lockfilePath); !os.IsNotExist(statErr) {
-		t.Errorf("usage error must not create a lockfile; stat err = %v", statErr)
+	// The implied full-refresh pull filled the lockfile with catalog entity pins.
+	if _, err := os.Stat(lockfilePath); err != nil {
+		t.Fatalf("--upgrade must imply auto-pull and fill the lockfile; stat err = %v", err)
 	}
-	if _, statErr := os.Stat(filepath.Join(root, "dist")); !os.IsNotExist(statErr) {
-		t.Errorf("usage error must not write dist output; stat err = %v", statErr)
-	}
-	recipeAfter, err := os.ReadFile(recipePath)
-	if err != nil {
-		t.Fatalf("re-read recipe: %v", err)
-	}
-	if string(recipeAfter) != string(recipeBefore) {
-		t.Errorf("usage error must leave the recipe source byte-identical")
+	if len(entityURIs(t, lockfilePath)) == 0 {
+		t.Errorf("implied full-refresh pull must add catalog entity pins; got none")
 	}
 }
 
@@ -164,7 +151,7 @@ func lockfileHasExternalInput(t *testing.T, lockfilePath, url string) bool {
 }
 
 // TestBuildAutoPullIncrementalPreservesExternalInputs proves that --auto-pull
-// without --regenerate is an incremental fill: it honors the existing lockfile
+// without --upgrade is an incremental fill: it honors the existing lockfile
 // and carries forward the render-time external-input pins recorded there.
 func TestBuildAutoPullIncrementalPreservesExternalInputs(t *testing.T) {
 	root := t.TempDir()
@@ -191,12 +178,12 @@ func TestBuildAutoPullIncrementalPreservesExternalInputs(t *testing.T) {
 	}
 }
 
-// TestBuildAutoPullRegenerateDiscardsExternalInputs proves that --auto-pull
-// --regenerate is a full refresh: the pull step discards the existing lockfile
+// TestBuildAutoPullUpgradeDiscardsExternalInputs proves that --auto-pull
+// --upgrade is a full refresh: the pull step discards the existing lockfile
 // before rebuilding, so a prior render-time external-input pin is dropped rather
 // than carried forward. Contrasts with the incremental case above and confirms
-// --regenerate is threaded through to the pull step's full-refresh path.
-func TestBuildAutoPullRegenerateDiscardsExternalInputs(t *testing.T) {
+// --upgrade is threaded through to the pull step's full-refresh path.
+func TestBuildAutoPullUpgradeDiscardsExternalInputs(t *testing.T) {
 	root := t.TempDir()
 	t.Chdir(root)
 	releasePath := authoringFixture(t, root)
@@ -211,14 +198,14 @@ func TestBuildAutoPullRegenerateDiscardsExternalInputs(t *testing.T) {
 
 	var diagBuf, outBuf bytes.Buffer
 	if err := dispatchBuildWithDiag(nil, releasePath, []string{catalogDir}, false,
-		buildDiagOptions{}, buildRunOptions{autoPull: true, regenerate: true}, &diagBuf, &outBuf); err != nil {
-		t.Fatalf("build --auto-pull --regenerate: %v", err)
+		buildDiagOptions{}, buildRunOptions{autoPull: true, upgrade: true}, &diagBuf, &outBuf); err != nil {
+		t.Fatalf("build --auto-pull --upgrade: %v", err)
 	}
 	if lockfileHasExternalInput(t, lockfilePath, url) {
-		t.Errorf("--regenerate must discard the prior lockfile; external-input pin %q should not survive", url)
+		t.Errorf("--upgrade must discard the prior lockfile; external-input pin %q should not survive", url)
 	}
 	// The refresh still produces a valid lockfile with catalog entity pins.
 	if len(entityURIs(t, lockfilePath)) == 0 {
-		t.Errorf("--regenerate must rebuild the lockfile with catalog entity pins")
+		t.Errorf("--upgrade must rebuild the lockfile with catalog entity pins")
 	}
 }

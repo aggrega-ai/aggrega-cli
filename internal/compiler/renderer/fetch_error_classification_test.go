@@ -21,7 +21,7 @@ import (
 // missing OR whose cached archive is tampered MUST surface as a
 // *cerrors.CompilerError with Category == FetchError, and the
 // resulting error message MUST include the operator-actionable
-// remediation pointer (`aggrega pull --regenerate` for integrity
+// remediation pointer (`aggrega pull --upgrade` for integrity
 // failures; verify URL/version for missing entries).
 
 func TestRenderAll_FetchErrorCategoryOnMissingLockfileEntry(t *testing.T) {
@@ -100,7 +100,7 @@ func TestRenderAll_FetchErrorIncludesRemediationOnTamperedArchive(t *testing.T) 
 	if compilerErr.Category != cerrors.FetchError {
 		t.Errorf("Category = %q; want FETCH_ERROR for tampered archive", compilerErr.Category)
 	}
-	if !strings.Contains(compilerErr.Error(), "aggrega pull --regenerate") {
-		t.Errorf("error should include 'aggrega pull --regenerate' remediation; got %q", compilerErr.Error())
+	if !strings.Contains(compilerErr.Error(), "aggrega pull --upgrade") {
+		t.Errorf("error should include 'aggrega pull --upgrade' remediation; got %q", compilerErr.Error())
 	}
 }

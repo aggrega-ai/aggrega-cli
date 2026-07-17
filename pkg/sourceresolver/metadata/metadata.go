@@ -39,7 +39,7 @@ import (
 //
 // The sentinel wraps oci.ErrFetchIntegrity so cache-metadata
 // corruption surfaces as a fetch-class error at the orchestrator
-// boundary, with the same `aggrega pull --regenerate` remediation
+// boundary, with the same `aggrega pull --upgrade` remediation
 // that catches archive-bytes corruption. Both signals mean the same
 // thing operationally: the cache slot is bad, re-pull. Callers can
 // errors.Is the returned error against ErrCacheMetadataInvalid for

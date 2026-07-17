@@ -44,7 +44,7 @@ var (
 	disablePluginCache bool
 	verifyDeterminism  bool
 	buildAutoPull      bool
-	buildRegenerate    bool
+	buildUpgrade       bool
 )
 
 func newBuildCmd() *cobra.Command {
@@ -64,7 +64,7 @@ func newBuildCmd() *cobra.Command {
 	c.Flags().BoolVar(&disablePluginCache, "disable-plugin-cache", false, "Skip the persistent on-disk plugin compile cache for this build and compile plugin guests fresh in an in-memory cache that is discarded when the build ends. Off by default, which reuses the shared on-disk cache across builds. Does not change rendered output")
 	c.Flags().BoolVar(&verifyDeterminism, "verify-determinism", false, "Render every node twice and compare the emitted bytes, halting the build if any node's two renders differ. Off by default. Use it to confirm a provider renders deterministically — identical input yields byte-identical output — which the GitOps-diff and byte-identical-output guarantees rely on")
 	c.Flags().BoolVar(&buildAutoPull, "auto-pull", false, "Run the pull step before building: resolve the Release's dependencies into the lockfile and cache in-process, then build against them. This is the same in-process fill the workspace auto_pull setting performs, turned on for a single build without editing workspace config. On its own it is an incremental fill — existing pins are honored, and references with no pin are resolved and added")
-	c.Flags().BoolVar(&buildRegenerate, "regenerate", false, "Make the --auto-pull step a full refresh: discard the existing lockfile and re-resolve every dependency from current registry state, floating each to the highest available version instead of honoring existing pins. Requires --auto-pull or workspace auto_pull; on its own it is a usage error")
+	c.Flags().BoolVar(&buildUpgrade, "upgrade", false, "Make the auto-pull step a full refresh: discard the existing lockfile and re-resolve every dependency from current registry state, floating each to the highest available version instead of honoring existing pins. Implies --auto-pull — on its own it runs a full-refresh pull before the build")
 	if err := c.MarkFlagRequired("release"); err != nil {
 		panic(err)
 	}
@@ -90,7 +90,7 @@ func runBuild(cmd *cobra.Command, args []string) error {
 	}
 	return dispatchBuildWithDiag(rw, releasePath, catalogDirs, traceEnabled,
 		buildDiagOptions{quiet: buildQuiet, debug: buildDebug, progress: buildProgress, noColor: globalDisplay.colorOff, plain: globalDisplay.plain},
-		buildRunOptions{noAcquireInputs: noAcquireInputs, disablePluginCache: disablePluginCache, verifyDeterminism: verifyDeterminism, autoPull: buildAutoPull, regenerate: buildRegenerate}, os.Stderr, os.Stdout)
+		buildRunOptions{noAcquireInputs: noAcquireInputs, disablePluginCache: disablePluginCache, verifyDeterminism: verifyDeterminism, autoPull: buildAutoPull, upgrade: buildUpgrade}, os.Stderr, os.Stdout)
 }
 
 // buildRunOptions carries the build-dispatch knobs that are not stderr
@@ -114,11 +114,12 @@ type buildRunOptions struct {
 	// workspace auto_pull setting performs), turning it on for a single build.
 	// Effective when this flag OR workspace auto_pull is set.
 	autoPull bool
-	// regenerate makes the auto-pull step a full refresh: the pull discards the
+	// upgrade makes the auto-pull step a full refresh: the pull discards the
 	// existing lockfile and re-resolves every dependency, floating each to the
-	// highest available version rather than honoring existing pins. It modifies
-	// an active pull step; on its own (no auto-pull) it is a usage error.
-	regenerate bool
+	// highest available version rather than honoring existing pins. It implies the
+	// auto-pull step — requesting it turns the pull step on when neither the flag
+	// nor workspace auto_pull is set.
+	upgrade bool
 	// outDir overrides the rendered-artifact output directory; empty
 	// renders to dist/. The acquire command points it at a discard
 	// directory so an acquisition pass never touches dist/.
@@ -205,11 +206,12 @@ func dispatchBuildWithDiag(rw *workspaceconfig.ResolvedWorkspace, releasePath st
 		fmt.Fprintf(diagOut, "warning: this build depends on configuration present only in your global config and absent from this workspace (%s); run `aggrega config capture` to pin it into the workspace for a reproducible build\n", b.String())
 	}
 
-	// --regenerate modifies the pull step; without an active pull step (neither
-	// --auto-pull nor workspace auto_pull) there is nothing for it to refresh, so
-	// it is a loud usage error rather than a surprise write on a read-only build.
-	if run.regenerate && !run.autoPull && !wsCfg.AutoPull {
-		return fmt.Errorf("--regenerate requires --auto-pull or auto_pull: true")
+	// --upgrade drives a full-refresh pull, so requesting it turns the pull step
+	// on: when neither --auto-pull nor workspace auto_pull is set, --upgrade
+	// implies the auto-pull step (a full refresh runs before the build) rather
+	// than erroring.
+	if run.upgrade {
+		run.autoPull = true
 	}
 
 	cacheDir := wsCfg.ResolvedArtifactCacheDir()
@@ -248,7 +250,7 @@ func dispatchBuildWithDiag(rw *workspaceconfig.ResolvedWorkspace, releasePath st
 	// flag dirs (not the resolved list) are forwarded so the pull path re-derives
 	// the identical stack with the same config.
 	progress.phase(phaseLockfile)
-	lockfilePreexisted, err := acquireLockfile(rw, releasePath, catalogFlagDirs, wsCfg, run.autoPull, run.regenerate, buildDetail, diagOut)
+	lockfilePreexisted, err := acquireLockfile(rw, releasePath, catalogFlagDirs, wsCfg, run.autoPull, run.upgrade, buildDetail, diagOut)
 	if err != nil {
 		return err
 	}
@@ -325,7 +327,7 @@ func dispatchBuildWithDiag(rw *workspaceconfig.ResolvedWorkspace, releasePath st
 	// pre-existing lockfile is verified; an auto-pulled one matches by construction.
 	if lockfilePreexisted {
 		if err := lockfile.Verify(lf, cl); err != nil {
-			return fmt.Errorf("%w; run `aggrega pull --regenerate %s` to refresh the lockfile against current catalog state",
+			return fmt.Errorf("%w; run `aggrega pull --upgrade %s` to refresh the lockfile against current catalog state",
 				err, releasePath)
 		}
 	}
@@ -513,7 +515,7 @@ func newExternalInputsService(cacheDir string, lf *lockfile.Lockfile, noAcquire 
 // with the pull-first remediation and no lockfile or source pins are written.
 // When the pull step is requested — the --auto-pull flag (autoPull) or workspace
 // auto_pull — a missing lockfile is instead filled in-process (populating the
-// lockfile + cache) before the build proceeds; regenerate makes that fill a full
+// lockfile + cache) before the build proceeds; upgrade makes that fill a full
 // refresh (float every dependency to the highest satisfying version rather than
 // honoring existing pins). Under offline a missing lockfile always halts,
 // regardless of the pull step, because the fill itself needs network access.
@@ -542,7 +544,7 @@ func lockfileHasRegistryPin(lf *lockfile.Lockfile, uri string) bool {
 // acquireLockfile writes any diagnostics (the no-pull --detail note, and the
 // auto-pull's reuse/verify notices forwarded through pullConfig.DiagOut) to
 // diagOut (os.Stderr in production).
-func acquireLockfile(rw *workspaceconfig.ResolvedWorkspace, releasePath string, catalogFlagDirs []string, wsCfg workspaceconfig.Config, autoPull, regenerate, detail bool, diagOut io.Writer) (bool, error) {
+func acquireLockfile(rw *workspaceconfig.ResolvedWorkspace, releasePath string, catalogFlagDirs []string, wsCfg workspaceconfig.Config, autoPull, upgrade, detail bool, diagOut io.Writer) (bool, error) {
 	lockfilePath := lockfile.PathFor(releasePath)
 
 	_, statErr := os.Stat(lockfilePath)
@@ -562,12 +564,12 @@ func acquireLockfile(rw *workspaceconfig.ResolvedWorkspace, releasePath string, 
 	}
 
 	// build's auto-pull is the opt-in fill: it runs when the --auto-pull flag or
-	// workspace.auto_pull is set. By default (regenerate off) it is lockfile-honoring
+	// workspace.auto_pull is set. By default (upgrade off) it is lockfile-honoring
 	// — it honors every existing pin (resolving to the pinned version, verifying the
 	// pinned digest, halting on a drifted pin), resolves + adds un-pinned references,
 	// refills an empty cache by pin, and prunes stale pins; on a complete,
 	// cache-populated lockfile it is a no-op with NO network (every pin a Tier-2 hit),
-	// so the build stays hermetic given a complete lockfile. With regenerate the fill
+	// so the build stays hermetic given a complete lockfile. With upgrade the fill
 	// is a full refresh: it discards the existing lockfile and re-resolves every
 	// dependency, floating each to the highest satisfying version. There is no
 	// absent-vs-partial special case: any incomplete/empty state runs the same fill,
@@ -575,7 +577,7 @@ func acquireLockfile(rw *workspaceconfig.ResolvedWorkspace, releasePath string, 
 	// resolution runs through the nil-puller pinned lazy lookup, untouched — so build
 	// output is unchanged by this fill.
 	if autoPull || wsCfg.AutoPull {
-		if err := pullRun(pullConfig{ReleasePath: releasePath, CatalogDirs: catalogFlagDirs, Regenerate: regenerate, Detail: detail, ws: rw, DiagOut: diagOut, diag: buildDiagOptions{quiet: true}}); err != nil {
+		if err := pullRun(pullConfig{ReleasePath: releasePath, CatalogDirs: catalogFlagDirs, Upgrade: upgrade, Detail: detail, ws: rw, DiagOut: diagOut, diag: buildDiagOptions{quiet: true}}); err != nil {
 			return false, fmt.Errorf("auto-pull: %w", err)
 		}
 		return false, nil

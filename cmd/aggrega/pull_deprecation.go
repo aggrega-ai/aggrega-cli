@@ -160,7 +160,7 @@ func carryForwardDeprecation(lf *lockfile.Lockfile, lockfilePath string) {
 // leaves it empty) with each entry's RequiredBy slice deep-copied so lf never
 // aliases the prior lockfile's backing arrays. A missing or unreadable prior
 // lockfile is a no-op: the first pull has nothing to carry forward, and a
-// --regenerate pull (which removes the prior lockfile up front) naturally
+// --upgrade pull (which removes the prior lockfile up front) naturally
 // carries nothing, refreshing the pins on the next build.
 func carryForwardExternalInputs(lf *lockfile.Lockfile, lockfilePath string) {
 	prior, _, err := lockfile.LoadLockfile(lockfilePath)

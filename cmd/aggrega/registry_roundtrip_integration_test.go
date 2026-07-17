@@ -1356,7 +1356,7 @@ func TestIntegration_LocalPathPinInvariance(t *testing.T) {
 
 			t.Chdir(ws)
 			_ = os.Remove(lockfile.PathFor(tc.release)) // discard any copied stale lock
-			if err := pullRun(pullConfig{ReleasePath: tc.release, CatalogDirs: dirs, Regenerate: true}); err != nil {
+			if err := pullRun(pullConfig{ReleasePath: tc.release, CatalogDirs: dirs, Upgrade: true}); err != nil {
 				t.Fatalf("regenerate lock: %v", err)
 			}
 			got := canonicalPins(t, lockfile.PathFor(tc.release))

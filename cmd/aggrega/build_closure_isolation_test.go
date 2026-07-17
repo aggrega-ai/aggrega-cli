@@ -320,7 +320,7 @@ func TestPull_BrokenOutOfClosureIsolation(t *testing.T) {
 	}
 
 	writeBrokenOutOfClosureEntities(t, catalogRoot)
-	if err := pullRun(pullConfig{ReleasePath: releasePath, CatalogDirs: []string{catalogRoot}, Regenerate: true}); err != nil {
+	if err := pullRun(pullConfig{ReleasePath: releasePath, CatalogDirs: []string{catalogRoot}, Upgrade: true}); err != nil {
 		t.Fatalf("pull must succeed despite broken out-of-closure entities: %v", err)
 	}
 	dirty := lockfileEntityURIs(t, releasePath)

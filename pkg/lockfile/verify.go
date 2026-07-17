@@ -18,7 +18,7 @@ import (
 // plugins). Each axis collects all of its drift entries before
 // returning, so an operator with multiple drifts sees the full list
 // in one diagnostic rather than one URI per iteration. The
-// documented remediation is `aggrega pull --regenerate <release>`.
+// documented remediation is `aggrega pull --upgrade <release>`.
 //
 // Cross-tier digest semantics: ClosureLookup standardises on the
 // content digest at every tier — Tier-3 (OCI pull) computes

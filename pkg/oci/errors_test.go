@@ -92,7 +92,7 @@ func TestRemediationForMapsEachSentinel(t *testing.T) {
 		{"NotFound", oci.ErrFetchNotFound, "hub.aggrega.ai", "remediation: verify the URL and version"},
 		{"Unauthorized", oci.ErrFetchUnauthorized, "hub.aggrega.ai", "docker login hub.aggrega.ai"},
 		{"NetworkUnreachable", oci.ErrFetchNetworkUnreachable, "hub.aggrega.ai", "check network connectivity to hub.aggrega.ai"},
-		{"Integrity", oci.ErrFetchIntegrity, "hub.aggrega.ai", "aggrega pull --regenerate"},
+		{"Integrity", oci.ErrFetchIntegrity, "hub.aggrega.ai", "aggrega pull --upgrade"},
 	}
 	for _, tc := range cases {
 		got := oci.RemediationFor(tc.sentinel, tc.host)
@@ -127,7 +127,7 @@ func TestRemediationForTraversesWrappedChain(t *testing.T) {
 	// either the bare sentinel or any error that wraps it.
 	wrapped := fmt.Errorf("outer wrap: %w", oci.ErrFetchIntegrity)
 	got := oci.RemediationFor(wrapped, "host")
-	if !strings.Contains(got, "aggrega pull --regenerate") {
+	if !strings.Contains(got, "aggrega pull --upgrade") {
 		t.Errorf("RemediationFor should traverse wrapped chain; got %q", got)
 	}
 }

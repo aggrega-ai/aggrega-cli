@@ -15,7 +15,7 @@
 // immutable; tags and branches may be re-pushed at the registry.
 // The adapter resolves at lock time so the lockfile always pins a
 // commit SHA. A re-pushed ref produces drift at the next pull;
-// "aggrega pull --regenerate" is the remediation.
+// "aggrega pull --upgrade" is the remediation.
 //
 // Auth: go-git's default transports honour SSH keys, ~/.netrc, and
 // gitconfig credential helpers. The adapter passes spec.URL through

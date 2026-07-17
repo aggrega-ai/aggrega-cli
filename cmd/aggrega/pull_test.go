@@ -316,7 +316,7 @@ func TestPullProducesByteIdenticalLockfileAcrossRuns(t *testing.T) {
 	if err := pullRun(pullConfig{
 		ReleasePath: releasePath,
 		CatalogDirs: []string{filepath.Join(root, "catalog")},
-		Regenerate:  true,
+		Upgrade:     true,
 	}); err != nil {
 		t.Fatalf("second pull: %v", err)
 	}
@@ -335,7 +335,7 @@ func TestPullProducesByteIdenticalLockfileAcrossRuns(t *testing.T) {
 }
 
 // TestPullDefaultRerunIsByteIdentical proves the honoring default is idempotent:
-// a second plain pull (no --regenerate) over an unchanged closure honors the pins
+// a second plain pull (no --upgrade) over an unchanged closure honors the pins
 // the first pull recorded and rewrites a byte-identical lockfile (modulo the
 // generated_at provenance line). This is the GitOps-determinism guarantee of the
 // honoring reconcile — re-running pull does not churn the committed lockfile.
@@ -352,7 +352,7 @@ func TestPullDefaultRerunIsByteIdentical(t *testing.T) {
 		t.Fatalf("read first lockfile: %v", err)
 	}
 
-	// Second pull WITHOUT --regenerate: the honoring reconcile path.
+	// Second pull WITHOUT --upgrade: the honoring reconcile path.
 	if err := pullRun(pullConfig{ReleasePath: releasePath, CatalogDirs: []string{filepath.Join(root, "catalog")}}); err != nil {
 		t.Fatalf("second pull (honoring rerun): %v", err)
 	}
@@ -396,7 +396,7 @@ func TestPullByteIdenticalIncludingGeneratedAt(t *testing.T) {
 	}
 }
 
-func TestPullRegenerateDiscardsExistingLockfile(t *testing.T) {
+func TestPullUpgradeDiscardsExistingLockfile(t *testing.T) {
 	root := t.TempDir()
 	t.Chdir(root)
 	releasePath := authoringFixture(t, root)
@@ -409,17 +409,17 @@ func TestPullRegenerateDiscardsExistingLockfile(t *testing.T) {
 	if err := pullRun(pullConfig{
 		ReleasePath: releasePath,
 		CatalogDirs: []string{filepath.Join(root, "catalog")},
-		Regenerate:  true,
+		Upgrade:     true,
 	}); err != nil {
-		t.Fatalf("pullRun --regenerate: %v", err)
+		t.Fatalf("pullRun --upgrade: %v", err)
 	}
 
 	got, err := os.ReadFile(stalePath)
 	if err != nil {
-		t.Fatalf("read lockfile after regenerate: %v", err)
+		t.Fatalf("read lockfile after upgrade: %v", err)
 	}
 	if strings.Contains(string(got), "stale") {
-		t.Errorf("--regenerate did not discard the stale lockfile content")
+		t.Errorf("--upgrade did not discard the stale lockfile content")
 	}
 }
 
@@ -446,7 +446,7 @@ func seedExternalInput(t *testing.T, path string) lockfile.ExternalInput {
 	return pin
 }
 
-// TestPullPreservesExternalInputsWarm proves a warm pull (no --regenerate)
+// TestPullPreservesExternalInputsWarm proves a warm pull (no --upgrade)
 // carries forward the external-input pins a prior build or acquire recorded.
 // The pull path materialises the lockfile from the catalog closure alone, which
 // contains no external inputs; without the carry-forward it would rewrite the
@@ -463,7 +463,7 @@ func TestPullPreservesExternalInputsWarm(t *testing.T) {
 	}
 	want := seedExternalInput(t, lockfilePath)
 
-	// Warm re-pull (no --regenerate): the honoring reconcile path.
+	// Warm re-pull (no --upgrade): the honoring reconcile path.
 	if err := pullRun(pullConfig{ReleasePath: releasePath, CatalogDirs: []string{filepath.Join(root, "catalog")}}); err != nil {
 		t.Fatalf("warm re-pull: %v", err)
 	}
@@ -484,11 +484,11 @@ func TestPullPreservesExternalInputsWarm(t *testing.T) {
 	}
 }
 
-// TestPullRegenerateDropsExternalInputs proves --regenerate refreshes the pins:
+// TestPullUpgradeDropsExternalInputs proves --upgrade refreshes the pins:
 // it removes the prior lockfile up front, so the carry-forward finds nothing and
 // the rewritten lockfile carries an empty external_inputs list. This is the
 // intended "re-acquire from scratch" behavior.
-func TestPullRegenerateDropsExternalInputs(t *testing.T) {
+func TestPullUpgradeDropsExternalInputs(t *testing.T) {
 	root := t.TempDir()
 	t.Chdir(root)
 	releasePath := authoringFixture(t, root)
@@ -499,16 +499,16 @@ func TestPullRegenerateDropsExternalInputs(t *testing.T) {
 	}
 	seedExternalInput(t, lockfilePath)
 
-	if err := pullRun(pullConfig{ReleasePath: releasePath, CatalogDirs: []string{filepath.Join(root, "catalog")}, Regenerate: true}); err != nil {
-		t.Fatalf("regenerate pull: %v", err)
+	if err := pullRun(pullConfig{ReleasePath: releasePath, CatalogDirs: []string{filepath.Join(root, "catalog")}, Upgrade: true}); err != nil {
+		t.Fatalf("upgrade pull: %v", err)
 	}
 
 	lf, _, err := lockfile.LoadLockfile(lockfilePath)
 	if err != nil {
-		t.Fatalf("load lockfile after regenerate: %v", err)
+		t.Fatalf("load lockfile after upgrade: %v", err)
 	}
 	if len(lf.ExternalInputs) != 0 {
-		t.Errorf("--regenerate did not drop external_inputs: got %d: %+v", len(lf.ExternalInputs), lf.ExternalInputs)
+		t.Errorf("--upgrade did not drop external_inputs: got %d: %+v", len(lf.ExternalInputs), lf.ExternalInputs)
 	}
 }
 
@@ -621,10 +621,10 @@ func TestPullVerifyMissingLockfileReturnsErr(t *testing.T) {
 	}
 }
 
-// TestPullVerifyAndRegenerateMutuallyExclusive covers the flag-
-// combination guard. Setting both --verify and --regenerate is a
+// TestPullVerifyAndUpgradeMutuallyExclusive covers the flag-
+// combination guard. Setting both --verify and --upgrade is a
 // configuration error.
-func TestPullVerifyAndRegenerateMutuallyExclusive(t *testing.T) {
+func TestPullVerifyAndUpgradeMutuallyExclusive(t *testing.T) {
 	root := t.TempDir()
 	t.Chdir(root)
 	releasePath := authoringFixture(t, root)
@@ -638,17 +638,17 @@ func TestPullVerifyAndRegenerateMutuallyExclusive(t *testing.T) {
 	pullReleasePath = releasePath
 	pullCatalogDirs = []string{filepath.Join(root, "catalog")}
 	pullVerify = true
-	pullRegenerate = true
+	pullUpgrade = true
 	defer func() {
 		pullReleasePath = ""
 		pullCatalogDirs = []string{"."}
 		pullVerify = false
-		pullRegenerate = false
+		pullUpgrade = false
 	}()
 
 	err := cmd.RunE(cmd, nil)
 	if err == nil {
-		t.Fatal("expected error for --verify + --regenerate combination, got nil")
+		t.Fatal("expected error for --verify + --upgrade combination, got nil")
 	}
 	if !strings.Contains(err.Error(), "mutually exclusive") {
 		t.Errorf("expected error to name the mutual-exclusion; got: %v", err)

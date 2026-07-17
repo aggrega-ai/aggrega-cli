@@ -44,7 +44,7 @@ var tier3Flags = []string{
 	"dry-run",
 	"trace",
 	"detail",
-	"regenerate",
+	"upgrade",
 	"verify",
 	"include-prerelease",
 	"json",

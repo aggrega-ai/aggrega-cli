@@ -193,7 +193,7 @@ pulled_at: "not-a-timestamp"
 // errors.Is against oci.ErrFetchIntegrity so the orchestrator's
 // matchFetchSentinel helper routes cache-metadata corruption through
 // the FetchError category with the standard `aggrega pull
-// --regenerate` remediation. Without this chain, metadata corruption
+// --upgrade` remediation. Without this chain, metadata corruption
 // would silently route through TranslationError despite being a
 // fetch-class operational concern (the cache slot is bad,
 // regenerate).

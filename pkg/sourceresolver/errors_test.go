@@ -141,7 +141,7 @@ func TestWrapAppendsRemediationPerSentinel(t *testing.T) {
 		{"NotFound", sourceresolver.ErrFetchNotFound, "remediation: verify the URL and version"},
 		{"Unauthorized", sourceresolver.ErrFetchUnauthorized, "docker login hub.aggrega.ai"},
 		{"NetworkUnreachable", sourceresolver.ErrFetchNetworkUnreachable, "check network connectivity to hub.aggrega.ai"},
-		{"Integrity", sourceresolver.ErrFetchIntegrity, "aggrega pull --regenerate"},
+		{"Integrity", sourceresolver.ErrFetchIntegrity, "aggrega pull --upgrade"},
 	}
 	for _, tc := range cases {
 		err := sourceresolver.Wrap(spec, tc.sentinel, fmt.Errorf("underlying"))
