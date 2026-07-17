@@ -16,6 +16,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
+	"github.com/aggrega-ai/aggrega-cli/pkg/ociref"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pullverify"
 	"github.com/aggrega-ai/aggrega-cli/pkg/registryhost"
@@ -294,11 +295,11 @@ func productionInstallPluginFetch(ctx context.Context, rw *workspaceconfig.Resol
 // than pulled against a repository with no version to select.
 func splitPluginRefTag(ref string) (repoRef, tag string, err error) {
 	bare := strings.TrimPrefix(ref, "oci://")
-	i := strings.LastIndexByte(bare, ':')
-	if i < 0 || strings.ContainsRune(bare[i+1:], '/') {
+	repoRef, tag, hasVersion := ociref.SplitVersionTag(bare)
+	if !hasVersion {
 		return "", "", fmt.Errorf("aggrega plugin add: reference %q carries no version tag to fetch", ref)
 	}
-	return bare[:i], bare[i+1:], nil
+	return repoRef, tag, nil
 }
 
 // verifyInstallSignature verifies the signature of a registry-resolved plugin

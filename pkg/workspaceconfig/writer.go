@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/aggrega-ai/aggrega-cli/pkg/ociref"
 	"go.yaml.in/yaml/v3"
 )
 
@@ -201,11 +202,14 @@ func UpsertPluginSocketRef(path, socket, uri string) error {
 
 // UpsertCLIPluginRef adds or re-pins the CLI-extension plugin identified by uri
 // in the `plugins.cli` list in the workspace config file at path, preserving
-// every other setting, and writes the result back. An existing entry for the
-// same uri has its digest updated in place — its list position is preserved — so
-// re-adding a plugin re-pins the same command to the freshly resolved bytes; a
-// new uri is appended. A file that does not yet exist is created carrying a
-// `workspace: {}` marker and the one entry.
+// every other setting, and writes the result back. A plugin holds one entry:
+// an existing entry naming the same plugin — matched by version-less identity,
+// so a different version of the same plugin is the same entry — has its
+// {uri, digest} replaced in place, its list position preserved, so re-adding a
+// plugin at any version re-pins its single entry to the newly resolved
+// reference and bytes; a reference for a plugin not yet listed is appended. A
+// file that does not yet exist is created carrying a `workspace: {}` marker and
+// the one entry.
 //
 // Like UpsertPluginSocketRef it routes through mutateConfigDocument, rewriting
 // only the `plugins.cli` list (creating the `plugins` block if absent) and
@@ -229,13 +233,19 @@ func UpsertCLIPluginRef(path, uri, digest string) error {
 	})
 }
 
-// upsertCLIRef sets the digest for uri in refs, updating an existing entry in
-// place (preserving its list position) or appending a new {uri, digest} entry
-// when uri is absent. Re-pinning to a new digest is exactly the re-add case: the
-// pin follows the freshly resolved bytes without duplicating the entry.
+// upsertCLIRef pins uri and digest in refs, matching an existing entry by the
+// plugin's version-less identity: two references naming the same plugin at
+// different versions share one entry. On a match it replaces that entry's
+// {uri, digest} in place (preserving its list position), so re-adding any
+// version of the same plugin re-pins the single entry to the newly resolved
+// reference and bytes. When no entry shares the version-less identity a new
+// {uri, digest} entry is appended. A version-less or local reference has a
+// base equal to the whole string, so it matches only itself.
 func upsertCLIRef(refs []CLIPluginRef, uri, digest string) []CLIPluginRef {
+	incomingBase := ociref.VersionlessBase(uri)
 	for i := range refs {
-		if refs[i].URI == uri {
+		if ociref.VersionlessBase(refs[i].URI) == incomingBase {
+			refs[i].URI = uri
 			refs[i].Digest = digest
 			return refs
 		}

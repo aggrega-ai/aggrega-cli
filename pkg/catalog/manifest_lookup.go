@@ -14,6 +14,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
+	"github.com/aggrega-ai/aggrega-cli/pkg/ociref"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
@@ -470,7 +471,7 @@ func (c *Catalog) pluginForCapability(pluginType, ref string, bindings map[strin
 	var bindHasVer, bound bool
 	if bv, ok := bindings[name]; ok && bv != "" {
 		bound = true
-		bindBase, bindVer, bindHasVer = splitPluginRefVersion(bv)
+		bindBase, bindVer, bindHasVer = ociref.SplitVersionTag(bv)
 	}
 
 	matches := map[string]types.Plugin{}

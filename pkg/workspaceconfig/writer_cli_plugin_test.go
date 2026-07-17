@@ -61,6 +61,109 @@ func TestUpsertCLIPluginRef_PinReAndCompose(t *testing.T) {
 	}
 }
 
+// TestUpsertCLIPluginRef_UpgradesInPlace proves that adding a newer version of
+// an already-added CLI plugin upgrades its one entry in place — replacing both
+// the uri and the digest at the preserved list position — rather than appending
+// a second entry for the same plugin. It also proves same-version re-add is
+// idempotent, a distinct plugin still appends, and a registry reference carrying
+// a host:port collapses correctly (the port colon is not mistaken for a version
+// tag).
+func TestUpsertCLIPluginRef_UpgradesInPlace(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, ConfigFilename)
+	if err := os.WriteFile(path, []byte("workspace: {}\n"), 0o644); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	load := func(what string) []CLIPluginRef {
+		t.Helper()
+		rw, err := Resolve(dir, "")
+		if err != nil {
+			t.Fatalf("resolve after %s: %v", what, err)
+		}
+		return rw.Config().Plugins.CLI
+	}
+
+	// Upgrade collapses to one entry: a newer version of the same plugin
+	// replaces both fields of the single entry, keeping its list position.
+	if err := UpsertCLIPluginRef(path, "oci://hub.aggrega.ai/plugin/cli/moo:0.2.1", "digest-v1"); err != nil {
+		t.Fatalf("UpsertCLIPluginRef (add v0.2.1): %v", err)
+	}
+	if err := UpsertCLIPluginRef(path, "oci://hub.aggrega.ai/plugin/cli/moo:0.2.2", "digest-v2"); err != nil {
+		t.Fatalf("UpsertCLIPluginRef (upgrade to v0.2.2): %v", err)
+	}
+	got := load("upgrade")
+	if len(got) != 1 {
+		t.Fatalf("upgrade should collapse to one entry; got %+v", got)
+	}
+	if got[0].URI != "oci://hub.aggrega.ai/plugin/cli/moo:0.2.2" {
+		t.Errorf("upgrade should replace the uri in place; got %q", got[0].URI)
+	}
+	if got[0].Digest != "digest-v2" {
+		t.Errorf("upgrade should replace the digest in place; got %q", got[0].Digest)
+	}
+
+	// Idempotent same-version re-add: re-pins the digest of the one entry.
+	if err := UpsertCLIPluginRef(path, "oci://hub.aggrega.ai/plugin/cli/moo:0.2.2", "digest-v2b"); err != nil {
+		t.Fatalf("UpsertCLIPluginRef (re-add v0.2.2): %v", err)
+	}
+	got = load("re-add")
+	if len(got) != 1 {
+		t.Fatalf("same-version re-add should stay at one entry; got %+v", got)
+	}
+	if got[0].URI != "oci://hub.aggrega.ai/plugin/cli/moo:0.2.2" {
+		t.Errorf("same-version re-add should leave the uri unchanged; got %q", got[0].URI)
+	}
+	if got[0].Digest != "digest-v2b" {
+		t.Errorf("same-version re-add should re-pin the digest; got %q", got[0].Digest)
+	}
+
+	// A distinct plugin appends a second entry.
+	if err := UpsertCLIPluginRef(path, "oci://hub.aggrega.ai/plugin/cli/bar:1.0.0", "digest-bar"); err != nil {
+		t.Fatalf("UpsertCLIPluginRef (add distinct bar): %v", err)
+	}
+	got = load("append distinct")
+	if len(got) != 2 {
+		t.Fatalf("a distinct plugin should append; got %+v", got)
+	}
+	// The upgraded moo entry keeps index 0; bar lands at index 1.
+	if got[0].URI != "oci://hub.aggrega.ai/plugin/cli/moo:0.2.2" {
+		t.Errorf("original entry should keep its list position; got %q at index 0", got[0].URI)
+	}
+	if got[1].URI != "oci://hub.aggrega.ai/plugin/cli/bar:1.0.0" {
+		t.Errorf("distinct plugin should append at index 1; got %q", got[1].URI)
+	}
+
+	// OCI-safety: a host:port reference collapses on version-less identity — the
+	// :5000 port colon must not be read as a version, so two versions of the same
+	// plugin behind a ported registry are the same entry.
+	freshDir := t.TempDir()
+	freshPath := filepath.Join(freshDir, ConfigFilename)
+	if err := os.WriteFile(freshPath, []byte("workspace: {}\n"), 0o644); err != nil {
+		t.Fatalf("seed fresh: %v", err)
+	}
+	if err := UpsertCLIPluginRef(freshPath, "oci://reg.example.com:5000/plugin/cli/zoo:1.0.0", "digest-a"); err != nil {
+		t.Fatalf("UpsertCLIPluginRef (ported add zoo:1.0.0): %v", err)
+	}
+	if err := UpsertCLIPluginRef(freshPath, "oci://reg.example.com:5000/plugin/cli/zoo:2.0.0", "digest-b"); err != nil {
+		t.Fatalf("UpsertCLIPluginRef (ported upgrade zoo:2.0.0): %v", err)
+	}
+	rw, err := Resolve(freshDir, "")
+	if err != nil {
+		t.Fatalf("resolve fresh: %v", err)
+	}
+	pg := rw.Config().Plugins.CLI
+	if len(pg) != 1 {
+		t.Fatalf("host:port versions should collapse to one entry; got %+v", pg)
+	}
+	if pg[0].URI != "oci://reg.example.com:5000/plugin/cli/zoo:2.0.0" {
+		t.Errorf("ported upgrade should replace the uri in place; got %q", pg[0].URI)
+	}
+	if pg[0].Digest != "digest-b" {
+		t.Errorf("ported upgrade should replace the digest in place; got %q", pg[0].Digest)
+	}
+}
+
 // TestCLIPluginRefComposesAcrossCascade proves the plugins.cli list composes
 // rather than whole-replaces across the config cascade: a CLI pin in an ancestor
 // (root) config and one in a nested (project) config both survive resolution
