@@ -20,9 +20,11 @@ import (
 //
 //  1. The compiler's build/render core packages — the IR, topology,
 //     renderer, closure, and lockfile packages build invokes to turn a
-//     pinned closure into rendered output — must not import the
-//     verification pass (pkg/pullverify) or the sigstore-go live-verify
-//     packages. A stray import would surface here.
+//     pinned closure into rendered output, plus the socket-resolution
+//     package that resolves the verdict-gate socket plugin from the local
+//     cache on the build path — must not import the verification pass
+//     (pkg/pullverify) or the sigstore-go live-verify packages. A stray
+//     import would surface here.
 //  2. The build command source must contain no call to the verify pass.
 //     Build's only path to verification is the in-process auto-pull (a
 //     pull, which legitimately verifies); build's own lockfile-read render
@@ -49,6 +51,7 @@ func TestBuildPathNeverVerifiesSignatures(t *testing.T) {
 		"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer",
 		"github.com/aggrega-ai/aggrega-cli/pkg/closure",
 		"github.com/aggrega-ai/aggrega-cli/pkg/lockfile",
+		"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath",
 	}
 	for _, pkg := range corePkgs {
 		out, lerr := exec.Command(goBin, "list", "-deps", pkg).CombinedOutput()
