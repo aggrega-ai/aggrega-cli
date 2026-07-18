@@ -4,9 +4,10 @@
 // Command plugindescribe extracts a Wasm plugin guest's describe() descriptor
 // once at build time and writes it as JSON alongside the embedded guest, so the
 // plugin listing can report the guest's static metadata without instantiating
-// it. It loads the guest through the same load-and-describe gate the runtime
-// uses and marshals the validated descriptor, so the extracted descriptor is
-// byte-for-byte the shape a runtime describe() produces for the same guest.
+// it. It loads the guest through the host's describe-only load gate — inert
+// host-function stubs, describe() invoked and validated — and marshals the
+// validated descriptor, so the extracted descriptor is byte-for-byte the shape a
+// runtime describe() produces for the same guest.
 //
 // It is a build tool, not a shipped command: the embedded-guest build scripts
 // invoke it after producing each guest's .wasm.gz and before the CLI is
@@ -51,7 +52,8 @@ func main() {
 }
 
 // run loads the guest at wasmPath, invokes its describe() export through the
-// host's load gate, and writes the validated descriptor as JSON to out.
+// host's describe-only load gate, and writes the validated descriptor as JSON to
+// out.
 func run(wasmPath, name, out string) error {
 	bytes, err := os.ReadFile(wasmPath)
 	if err != nil {
@@ -60,7 +62,7 @@ func run(wasmPath, name, out string) error {
 
 	ctx := context.Background()
 	loader := wasm.NewCachingLoader(nil)
-	plugin, desc, err := loader.LoadAndDescribe(ctx, wasm.PluginSpec{
+	plugin, desc, err := loader.LoadForDescribe(ctx, wasm.PluginSpec{
 		Name:           name,
 		Bytes:          bytes,
 		MaxMemoryPages: describeMaxMemoryPages,

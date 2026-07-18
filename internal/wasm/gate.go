@@ -6,7 +6,6 @@ package wasm
 import (
 	"context"
 	"fmt"
-	"io"
 )
 
 // describeExportName is the export every plugin implements to
@@ -31,36 +30,6 @@ const describeExportName = "describe"
 // wrap [ErrWasmManifestRejected].
 func (l *Loader) LoadAndDescribe(ctx context.Context, spec PluginSpec) (*Plugin, PluginDescriptor, error) {
 	plugin, err := l.Load(ctx, spec)
-	if err != nil {
-		return nil, PluginDescriptor{}, err
-	}
-	desc, err := l.DescribeAndValidate(ctx, plugin, spec)
-	if err != nil {
-		return nil, PluginDescriptor{}, err
-	}
-	return plugin, desc, nil
-}
-
-// LoadCLIAndDescribe is the runtime-CLI counterpart to LoadAndDescribe: it loads
-// the plugin named by spec under the terminal CLI instantiation profile (binding
-// the streaming stdout/stderr host functions to the supplied writers), invokes
-// its describe() export, validates the returned descriptor, and returns the live
-// plugin alongside the validated descriptor.
-//
-// It differs from LoadAndDescribe only in the load half: LoadCLI validates the
-// guest's imports against the union allowlist, so a CLI guest that imports the
-// streaming emitters is admitted, where LoadAndDescribe's build profile would
-// reject it before describe() could run. The post-load half is shared —
-// DescribeAndValidate is the same primitive both entry points pair with — so the
-// describe/validate/cross-check sequence lives in one place.
-//
-// The same rejection discipline as LoadAndDescribe applies: a load failure, a
-// describe() call failure, an unparseable descriptor, or a descriptor the host
-// refuses returns an error and no live plugin, with the plugin Closed before the
-// error propagates so a rejected load leaks no Wazero instance. On success the
-// caller invokes the plugin's exports and Closes it when done.
-func (l *Loader) LoadCLIAndDescribe(ctx context.Context, spec PluginSpec, stdout, stderr io.Writer) (*Plugin, PluginDescriptor, error) {
-	plugin, err := l.LoadCLI(ctx, spec, stdout, stderr)
 	if err != nil {
 		return nil, PluginDescriptor{}, err
 	}
@@ -114,9 +83,10 @@ func (l *Loader) LoadForDescribe(ctx context.Context, spec PluginSpec) (*Plugin,
 // already-loaded plugin: it invokes describe(), validates the returned
 // descriptor, cross-checks the descriptor's declared host functions against the
 // binary's imports, and — when the spec carries an authored capability claim —
-// cross-checks that too. It is the single post-load sequence shared by both load
-// profiles: LoadAndDescribe pairs it with the build-profile Load, and the
-// runtime CLI runner pairs it with the terminal-profile LoadCLI, so
+// cross-checks that too. It is the single post-load sequence shared across every
+// load profile: LoadAndDescribe pairs it with the build-profile Load,
+// LoadForDescribe pairs it with the describe-only load, and the runtime CLI
+// runner pairs it with the terminal-profile LoadCLI, so
 // describe/validate/cross-check lives in one place rather than being duplicated
 // per profile.
 //

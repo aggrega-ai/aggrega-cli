@@ -6,7 +6,6 @@ package wasm
 import (
 	"context"
 	"errors"
-	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -114,7 +113,7 @@ func TestDescribeAndValidate_CommandMirrorMatchPasses(t *testing.T) {
 		Commands:         describedCommands,
 		CommandsMirrored: true,
 	}
-	plugin, _, err := loader.LoadCLIAndDescribe(ctx, spec, io.Discard, io.Discard)
+	plugin, _, err := loader.LoadForDescribe(ctx, spec)
 	if err != nil {
 		t.Fatalf("a matching command mirror should pass the load gate; got %v", err)
 	}
@@ -136,7 +135,7 @@ func TestDescribeAndValidate_CommandMirrorDriftHalts(t *testing.T) {
 		Commands:         []PluginCLICommand{{Name: "greet-a", Description: "Greet in style A"}},
 		CommandsMirrored: true,
 	}
-	_, _, err := loader.LoadCLIAndDescribe(ctx, spec, io.Discard, io.Discard)
+	_, _, err := loader.LoadForDescribe(ctx, spec)
 	if !errors.Is(err, ErrWasmCommandsMirrorMismatch) {
 		t.Fatalf("a drifted command mirror should halt with ErrWasmCommandsMirrorMismatch; got %v", err)
 	}
@@ -169,7 +168,7 @@ func TestDescribeAndValidate_CommandMirrorFlagDriftHalts(t *testing.T) {
 		Commands:         mirror,
 		CommandsMirrored: true,
 	}
-	_, _, err := loader.LoadCLIAndDescribe(ctx, spec, io.Discard, io.Discard)
+	_, _, err := loader.LoadForDescribe(ctx, spec)
 	if !errors.Is(err, ErrWasmCommandsMirrorMismatch) {
 		t.Fatalf("a flag-only mirror divergence should halt with ErrWasmCommandsMirrorMismatch; got %v", err)
 	}
@@ -198,7 +197,7 @@ func TestDescribeAndValidate_BareLoadSkipsCommandCheck(t *testing.T) {
 		Commands:         []PluginCLICommand{{Name: "does-not-match", Description: "x"}},
 		CommandsMirrored: false,
 	}
-	plugin, desc, err := loader.LoadCLIAndDescribe(ctx, spec, io.Discard, io.Discard)
+	plugin, desc, err := loader.LoadForDescribe(ctx, spec)
 	if err != nil {
 		t.Fatalf("a bare CLI load must skip the command check; got %v", err)
 	}

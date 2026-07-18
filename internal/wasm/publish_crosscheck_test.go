@@ -88,30 +88,17 @@ func buildCLIArgsExitGuest(t *testing.T) []byte {
 
 // TestCrossCheckPublishedPlugin_StreamingCLIType proves the publish cross-check
 // admits a streaming CLI plugin: a guest importing the terminal streaming host
-// function aggrega_cli_write_stdout loads under the runtime CLI profile when the
-// entity's authored pluginType is cli, so describe() runs and the cross-check
-// completes. This is the case that could not be published before the profile was
-// selected by pluginType — the streaming import is absent from the build
-// profile's shared allowlist and would be rejected at load before describe().
+// function aggrega_cli_write_stdout loads under the describe-only profile, whose
+// union import allowlist admits a guest of any plugin type, so describe() runs
+// and the cross-check completes. The streaming import is absent from the build
+// profile's shared allowlist and would be rejected there before describe() could
+// run; the describe-only load reads the self-report without granting the guest
+// any real host capability, so any plugin type is publishable.
 func TestCrossCheckPublishedPlugin_StreamingCLIType(t *testing.T) {
 	wasmBytes := buildCLIArgsExitGuest(t)
 	// The guest authors no capability claim; an empty claim cross-checks as a
-	// no-op, so the test isolates the load-profile selection.
+	// no-op, so the test isolates the describe-only load of a streaming guest.
 	if _, err := CrossCheckPublishedPlugin(context.Background(), "cli/args-exit:1.0.0", EntityContractClaim{}, wasmBytes, 0, string(PluginTypeCLI)); err != nil {
-		t.Fatalf("streaming CLI plugin should pass the publish cross-check under the CLI load profile; got %v", err)
-	}
-}
-
-// TestCrossCheckPublishedPlugin_StreamingUnderBuildProfileRejected proves the
-// pluginType-driven profile selection is load-bearing on the publish path: the
-// same streaming guest, cross-checked as a non-CLI type, loads under the build
-// profile whose shared allowlist rejects the streaming import at load with an
-// error wrapping ErrWasmManifestRejected — the exact failure the CLI profile
-// selection avoids.
-func TestCrossCheckPublishedPlugin_StreamingUnderBuildProfileRejected(t *testing.T) {
-	wasmBytes := buildCLIArgsExitGuest(t)
-	_, err := CrossCheckPublishedPlugin(context.Background(), "cli/args-exit:1.0.0", EntityContractClaim{}, wasmBytes, 0, string(PluginTypeFRPStep))
-	if !errors.Is(err, ErrWasmManifestRejected) {
-		t.Fatalf("a streaming guest under the build profile should be rejected at load with ErrWasmManifestRejected; got %v", err)
+		t.Fatalf("streaming CLI plugin should pass the publish cross-check under the describe-only load; got %v", err)
 	}
 }

@@ -5,7 +5,6 @@ package wasm
 
 import (
 	"context"
-	"io"
 )
 
 // CrossCheckPublishedPlugin verifies, at publish time, that a Plugin
@@ -26,12 +25,11 @@ import (
 // CrossCheckContract — the same primitive the load gate uses, so the publish and
 // load surfaces share one comparison.
 //
-// The load profile is selected by pluginType. A CLI plugin imports the terminal
-// streaming emitters, which the build profile's shared allowlist rejects at load
-// — before describe() can run — so a CLI plugin loads under the runtime CLI
-// profile (LoadCLIAndDescribe), whose union allowlist admits the streaming
-// imports; terminal output is discarded because only describe() is needed. Every
-// other plugin type loads under the build profile (LoadAndDescribe).
+// The bytes load under the describe-only profile: inert host-function stubs and
+// the union import allowlist, so a guest of any plugin type — including a CLI
+// plugin that imports the terminal streaming emitters — instantiates purely to be
+// introspected, and its describe() reaches only no-op stubs rather than any real
+// host capability.
 //
 // maxMemoryPages caps the guest's linear memory for the describe() load. A large
 // guest whose working set exceeds the platform default cap would fail to
@@ -64,12 +62,11 @@ func CrossCheckPublishedPlugin(ctx context.Context, entityIdentity string, claim
 // command mirror, and the under-declaration advisory all read one load's
 // descriptor through it, so the guest is instantiated once per publish.
 //
-// The load profile is selected by pluginType, exactly as the entity-fronted load
-// gate selects it: a CLI plugin imports the terminal streaming emitters, which
-// the build profile's shared allowlist rejects at load before describe() can run,
-// so a CLI plugin loads under the runtime CLI profile whose union allowlist
-// admits the streaming imports (its terminal output is discarded because only
-// describe() is needed). Every other plugin type loads under the build profile.
+// The bytes load under the describe-only profile — inert host-function stubs and
+// the union import allowlist — so a guest of any plugin type, including a CLI
+// plugin that imports the terminal streaming emitters, instantiates purely to
+// have its describe() read; the guest reaches only no-op stubs and never any real
+// host capability.
 //
 // The Contract on the spec is left nil, so the load gate runs no entity
 // cross-check here — this primitive owns only the load and the descriptor; the
@@ -88,19 +85,7 @@ func DescribePluginBytes(ctx context.Context, identity string, wasmBytes []byte,
 		MaxMemoryPages: maxMemoryPages,
 	}
 
-	var (
-		plugin *Plugin
-		desc   PluginDescriptor
-		err    error
-	)
-	// A CLI plugin imports the terminal streaming emitters, which the build
-	// profile rejects at load before describe() can run; the CLI profile admits
-	// them. Terminal output is discarded — only describe() is needed here.
-	if pluginType == string(PluginTypeCLI) {
-		plugin, desc, err = loader.LoadCLIAndDescribe(ctx, spec, io.Discard, io.Discard)
-	} else {
-		plugin, desc, err = loader.LoadAndDescribe(ctx, spec)
-	}
+	plugin, desc, err := loader.LoadForDescribe(ctx, spec)
 	if err != nil {
 		return PluginDescriptor{}, err
 	}

@@ -38,22 +38,20 @@ type resolvedInstallable struct {
 // local guest bytes so install runs without a registry.
 var installPluginFetch = productionInstallPluginFetch
 
-// describeInstallable loads resolved plugin bytes under the runtime CLI profile
-// and returns its validated describe() descriptor. It is the real describe gate
-// (LoadCLI + DescribeAndValidate, the same sequence the runtime runner uses); a
-// test substitutes a crafted descriptor to exercise the install branches without
-// building a guest.
+// describeInstallable loads resolved plugin bytes under the describe-only profile
+// and returns their validated describe() descriptor. The load reads the guest's
+// self-report to warm the describe cache without granting the guest any real host
+// capability — its imports are satisfied by inert stubs — and admits any plugin
+// type through the union import allowlist. It never runs a command; command
+// execution happens at runtime in the CLI runner, not here. A test substitutes a
+// crafted descriptor to exercise the install branches without building a guest.
 var describeInstallable = func(ctx context.Context, src resolvedInstallable) (wasm.PluginDescriptor, error) {
 	spec := resolver.PluginSpec(pluginDiagName(src.URI), pluginpath.ResolvedPlugin{Bytes: src.Bytes})
 	if spec.MaxMemoryPages == 0 {
 		spec.MaxMemoryPages = describeMaxMemoryPages
 	}
 	loader := wasm.NewCachingLoaderFromContext(ctx, nil)
-	plugin, err := loader.LoadCLI(ctx, spec, io.Discard, io.Discard)
-	if err != nil {
-		return wasm.PluginDescriptor{}, err
-	}
-	desc, err := loader.DescribeAndValidate(ctx, plugin, spec)
+	plugin, desc, err := loader.LoadForDescribe(ctx, spec)
 	if err != nil {
 		return wasm.PluginDescriptor{}, err
 	}
