@@ -32,16 +32,26 @@ import (
 	"go.yaml.in/yaml/v3"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
+	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
 	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
 // offlineReferenceSHA is the catalog-only compose output built offline against
 // the standard catalog; the registry-tier build must reproduce it byte-for-byte.
 const offlineReferenceSHA = "9916a26d726a34546e64f77b5c1a92129ef6bca54c44d15a580d26a3f194ef65"
+
+// frpStepPluginType is the single fixture-side source for the pipeline plugins'
+// socket. A Plugin's identity coordinate is <pluginType>/<name> and its OCI
+// location is plugin/<lower(pluginType)>/<lower(name)>; every fixture that
+// authors, references, or resolves an frp_step plugin derives both from this
+// const through types.PluginCoordinate and catalog.OCILocation, so no site
+// hardcodes a divergent literal.
+const frpStepPluginType = "frp_step"
 
 func standardCatalogDir(t *testing.T) string {
 	t.Helper()
@@ -450,16 +460,17 @@ func TestIntegration_Capstone_LintAndExample(t *testing.T) {
 // entity and its .wasm land as ONE OCI manifest tagged by metadata.version — the
 // entity YAML is the manifest's config blob, the .wasm an inline layer addressed
 // by content digest. spec.plugin is the digest-free artifact identity
-// (oci://<host>/plugin/<socket>/<name>); the version comes from metadata.version,
-// so the version tag resolves to both the entity and the .wasm at once. The
-// entity's authored exports agree with the committed frp-step-go fixture's
-// describe() (export "step", operates=patch, scope=own), so the publish-time
-// cross-check passes. socketName is the socket-encoded metadata.name (e.g.
-// "pipeline/patch-server"). pluginPath is the pre-built fixture (resolved before
-// any chdir). Returns the .wasm content digest the consumer pins at pull.
-func publishPluginEntity(t *testing.T, host, socketName, version, pluginPath string) string {
+// (oci://<host>/plugin/<pluginType>/<name>); the version comes from
+// metadata.version, so the version tag resolves to both the entity and the .wasm
+// at once. The entity's authored exports agree with the committed frp-step-go
+// fixture's describe() (export "step", operates=patch, scope=own), so the
+// publish-time cross-check passes. name is the plugin's BARE metadata.name (e.g.
+// "patch-server"); the socket is frpStepPluginType. pluginPath is the pre-built
+// fixture (resolved before any chdir). Returns the .wasm content digest the
+// consumer pins at pull.
+func publishPluginEntity(t *testing.T, host, name, version, pluginPath string) string {
 	t.Helper()
-	return publishPluginEntityWithRuntime(t, host, socketName, version, pluginPath, "")
+	return publishPluginEntityWithRuntime(t, host, name, version, pluginPath, "")
 }
 
 // publishPluginEntityWithRuntime is publishPluginEntity plus an optional
@@ -469,7 +480,7 @@ func publishPluginEntity(t *testing.T, host, socketName, version, pluginPath str
 // Authoring an explicit runtime block is how a test drives an entity-declared
 // execution constraint (a memory or per-call wall-time cap) through the publish
 // path, so the constraint can be observed flowing to the build-time load.
-func publishPluginEntityWithRuntime(t *testing.T, host, socketName, version, pluginPath, runtimeBlock string) string {
+func publishPluginEntityWithRuntime(t *testing.T, host, name, version, pluginPath, runtimeBlock string) string {
 	t.Helper()
 	wasmBytes, err := os.ReadFile(pluginPath)
 	if err != nil {
@@ -479,14 +490,16 @@ func publishPluginEntityWithRuntime(t *testing.T, host, socketName, version, plu
 
 	entityDir := t.TempDir()
 	entityPath := filepath.Join(entityDir, "plugin.yaml")
-	// spec.plugin is the canonical BARE artifact identity — no ":version" tag; the
-	// version is supplied by metadata.version, and the .wasm rides inline in the
-	// entity's single manifest at <repo>:<version>.
+	// metadata.name is the BARE leaf; the socket is metadata.pluginType. The
+	// identity coordinate <pluginType>/<name> and the OCI location derive from the
+	// pair — spec.plugin is the digest-free artifact identity, the version is
+	// supplied by metadata.version, and the .wasm rides inline in the entity's
+	// single manifest at <repo>:<version>.
 	writeFixture(t, entityPath, `apiVersion: aggrega.ai/v1alpha1
 kind: Plugin
 metadata:
-  name: `+socketName+`
-  pluginType: frp_step
+  name: `+name+`
+  pluginType: `+frpStepPluginType+`
   version: "`+version+`"
 spec:
   abiVersion: v1alpha1
@@ -496,7 +509,7 @@ spec:
       scope: own
 `+runtimeBlock)
 	if err := pushRun(pushConfig{EntityPath: entityPath, PluginPath: pluginPath, Registry: host}); err != nil {
-		t.Fatalf("publish plugin entity %s:%s: %v", socketName, version, err)
+		t.Fatalf("publish plugin entity %s/%s:%s: %v", frpStepPluginType, name, version, err)
 	}
 	return contentDigest
 }
@@ -540,13 +553,13 @@ func TestIntegration_PipelinePluginPinning_RoundTrip(t *testing.T) {
 	const (
 		recipePluginName = "patch-server"
 		frPluginName     = "patch-credential"
-		pluginSocket     = "pipeline"
 	)
-	// BARE Plugin entity identities — the canonical reference shape. The pull
-	// binds <socket>/<name> to <registry>/plugin/<socket>/<name> itself; a
+	// Plugin identity coordinates <pluginType>/<name>:<version> — the canonical
+	// reference shape. The pull binds <pluginType>/<name> to its OCI location
+	// <registry>/plugin/<lower(pluginType)>/<lower(name)> itself; a
 	// registry-qualified reference would be refused with ErrQualifiedPluginReference.
-	recipePluginURI := pluginSocket + "/" + recipePluginName + ":1.0.0"
-	frPluginURI := pluginSocket + "/" + frPluginName + ":1.0.0"
+	recipePluginURI := types.PluginCoordinate(frpStepPluginType, recipePluginName) + ":1.0.0"
+	frPluginURI := types.PluginCoordinate(frpStepPluginType, frPluginName) + ":1.0.0"
 
 	// A controlled fixture catalog: a Component implemented by a pipeline-bearing
 	// Recipe, and a (secret) Feature implemented by a pipeline-bearing FeatureRecipe.
@@ -631,20 +644,20 @@ spec:
 	// the stamped entity) so each resolves above Tier-1 and participates in the
 	// lockfile pin on both axes. Both reuse the same committed .wasm fixture; their
 	// distinct OCI locations give distinct artifact URIs (same content digest).
-	recipePluginDigest := publishPluginEntity(t, host, pluginSocket+"/"+recipePluginName, "1.0.0", pluginPath)
-	frPluginDigest := publishPluginEntity(t, host, pluginSocket+"/"+frPluginName, "1.0.0", pluginPath)
-	// The .wasm ARTIFACT URIs are the entities' BARE spec.plugin identities — the
-	// single-manifest model addresses the .wasm by the entity's version tag, not by
-	// a content-digest-pinned reference; the plugins rows pin these bare URIs. Both
-	// reuse the same committed fixture, so the content digests match while the
-	// locations differ.
-	recipeArtifactURI := pluginSocket + "/" + recipePluginName
-	frArtifactURI := pluginSocket + "/" + frPluginName
+	recipePluginDigest := publishPluginEntity(t, host, recipePluginName, "1.0.0", pluginPath)
+	frPluginDigest := publishPluginEntity(t, host, frPluginName, "1.0.0", pluginPath)
+	// The .wasm ARTIFACT URIs are the entities' identity coordinates <pluginType>/
+	// <name> — the single-manifest model addresses the .wasm by the entity's version
+	// tag, not by a content-digest-pinned reference; the plugins rows pin these
+	// coordinate URIs. Both reuse the same committed fixture, so the content digests
+	// match while the locations differ.
+	recipeArtifactURI := types.PluginCoordinate(frpStepPluginType, recipePluginName)
+	frArtifactURI := types.PluginCoordinate(frpStepPluginType, frPluginName)
 
 	// Single-manifest witness: the plugin repo's version tag resolves to ONE
 	// manifest whose config blob is the entity YAML and whose inline layer is the
 	// .wasm — proven by a real registry read, not inferred from the lockfile.
-	assertSinglePluginManifest(t, host, pluginSocket+"/"+recipePluginName, "1.0.0", recipePluginDigest)
+	assertSinglePluginManifest(t, host, recipePluginName, "1.0.0", recipePluginDigest)
 
 	// A consumer workspace wiring the Component (with a secret attachment that pulls
 	// the Feature) through the Manifest mappings, resolved purely over the registry.
@@ -825,15 +838,16 @@ spec:
 // (config blob) and the inline .wasm (layer) — the single-manifest publish shape.
 // wantWasmDigest is the .wasm content digest the caller published; the fetched
 // layer must hash to it, tying the manifest to the artifact axis.
-func assertSinglePluginManifest(t *testing.T, host, socketName, version, wantWasmDigest string) {
+func assertSinglePluginManifest(t *testing.T, host, name, version, wantWasmDigest string) {
 	t.Helper()
-	repo, err := oci.NewRemoteRepository(host + "/plugin/" + socketName)
+	loc := catalog.OCILocation("Plugin", frpStepPluginType, name)
+	repo, err := oci.NewRemoteRepository(host + "/" + loc)
 	if err != nil {
-		t.Fatalf("new repo for %s: %v", socketName, err)
+		t.Fatalf("new repo for %s: %v", loc, err)
 	}
 	entityYAML, wasm, manifestDigest, err := oci.FetchPluginManifest(context.Background(), repo, version)
 	if err != nil {
-		t.Fatalf("fetch single plugin manifest %s:%s: %v", socketName, version, err)
+		t.Fatalf("fetch single plugin manifest %s:%s: %v", loc, version, err)
 	}
 	if !strings.Contains(string(entityYAML), "kind: Plugin") {
 		t.Errorf("manifest config blob is not a Plugin entity YAML: %q", string(entityYAML))
@@ -981,19 +995,17 @@ func TestIntegration_PipelinePlugin_RuntimeTimeoutFlowsToBuild(t *testing.T) {
 	// test resolves over the wire — the same mix a real workspace runs.
 	std := standardCatalogDir(t)
 
-	const (
-		pluginName   = "patch-server"
-		pluginSocket = "pipeline"
-	)
-	// BARE Plugin entity identity — the canonical reference shape the recipe
-	// pipeline step names; the pull binds <socket>/<name> to the registry repo.
-	pluginURI := pluginSocket + "/" + pluginName + ":1.0.0"
+	const pluginName = "patch-server"
+	// Plugin identity coordinate <pluginType>/<name>:<version> — the canonical
+	// reference shape the recipe pipeline step names; the pull binds
+	// <pluginType>/<name> to its OCI location in the registry.
+	pluginURI := types.PluginCoordinate(frpStepPluginType, pluginName) + ":1.0.0"
 
 	t.Run("tiny_timeout_fails_at_guest_call", func(t *testing.T) {
 		host := startRegistry(t, nil)
 		// Author spec.runtime.timeoutMs: 1 — a wall-time cap a real guest's Call
 		// cannot meet. Indented two spaces under spec.
-		publishPluginEntityWithRuntime(t, host, pluginSocket+"/"+pluginName, "1.0.0", pluginPath,
+		publishPluginEntityWithRuntime(t, host, pluginName, "1.0.0", pluginPath,
 			"  runtime:\n    timeoutMs: 1\n")
 		ws := writePipelinePluginFixtureCatalog(t, host, pluginURI)
 		t.Chdir(ws)
@@ -1031,7 +1043,7 @@ func TestIntegration_PipelinePlugin_RuntimeTimeoutFlowsToBuild(t *testing.T) {
 		// cap the guest Call comfortably meets. The only difference from the fail
 		// arm is this authored runtime block, so the build completing here vs.
 		// halting there is attributable to the authored timeout reaching the loader.
-		publishPluginEntityWithRuntime(t, host, pluginSocket+"/"+pluginName, "1.0.0", pluginPath,
+		publishPluginEntityWithRuntime(t, host, pluginName, "1.0.0", pluginPath,
 			"  runtime:\n    timeoutMs: 60000\n")
 		ws := writePipelinePluginFixtureCatalog(t, host, pluginURI)
 		t.Chdir(ws)

@@ -16,6 +16,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/signing"
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
 // publishSignedPluginEntity publishes a REAL kind:Plugin entity (the .wasm
@@ -25,8 +26,9 @@ import (
 // OCI manifest tagged by metadata.version, signed ONCE — the single manifest
 // signature transitively covers the inline .wasm. It returns the .wasm content
 // digest the closure pins. It is the signed counterpart of publishPluginEntity,
-// mirroring its canonical BARE spec.plugin identity.
-func publishSignedPluginEntity(t *testing.T, host, socketName, version, pluginPath string, signer signing.Signer) string {
+// mirroring its canonical BARE spec.plugin identity. name is the plugin's BARE
+// metadata.name; the socket is frpStepPluginType.
+func publishSignedPluginEntity(t *testing.T, host, name, version, pluginPath string, signer signing.Signer) string {
 	t.Helper()
 	wasmBytes, err := os.ReadFile(pluginPath)
 	if err != nil {
@@ -39,8 +41,8 @@ func publishSignedPluginEntity(t *testing.T, host, socketName, version, pluginPa
 	writeFixture(t, entityPath, `apiVersion: aggrega.ai/v1alpha1
 kind: Plugin
 metadata:
-  name: `+socketName+`
-  pluginType: frp_step
+  name: `+name+`
+  pluginType: `+frpStepPluginType+`
   version: "`+version+`"
 spec:
   abiVersion: v1alpha1
@@ -57,7 +59,7 @@ spec:
 		Sign:       &sign,
 		Signer:     signer,
 	}); err != nil {
-		t.Fatalf("publish signed plugin entity %s:%s: %v", socketName, version, err)
+		t.Fatalf("publish signed plugin entity %s/%s:%s: %v", frpStepPluginType, name, version, err)
 	}
 	return contentDigest
 }
@@ -192,8 +194,8 @@ func signedPluginWorkspaceConfigBody(host string, pinnedPubPEM []byte) string {
 // ONCE, so the single manifest signature transitively covers the .wasm. A
 // consumer workspace whose trust policy REQUIRES signatures and pins the
 // publisher's key runs the real pullRun. The pull walks the closure — the plugin
-// descent records the .wasm ARTIFACT row at its BARE spec.plugin identity
-// (oci://host/plugin/<socket>/<name>), digest = the .wasm content digest,
+// descent records the .wasm ARTIFACT row at its identity coordinate
+// <pluginType>/<name>, digest = the .wasm content digest,
 // manifest digest = the single manifest digest — and its verify pass verifies
 // that manifest's signature against the pinned key, folding the verified fact
 // onto the lockfile. This exercises the whole spine (resolution → closure
@@ -233,18 +235,18 @@ func TestIntegration_PullCommandVerifiesSignedPlugin_Keyed(t *testing.T) {
 	}
 
 	const (
-		pluginSocket = "pipeline"
-		pluginName   = "patch-server"
-		version      = "1.0.0"
+		pluginName = "patch-server"
+		version    = "1.0.0"
 	)
-	pluginURI := pluginSocket + "/" + pluginName + ":" + version
+	pluginURI := types.PluginCoordinate(frpStepPluginType, pluginName) + ":" + version
 
 	t.Run("positive_signed_plugin_verifies_through_pull_command", func(t *testing.T) {
 		host := startRegistry(t, nil)
-		wasmContentDg := publishSignedPluginEntity(t, host, pluginSocket+"/"+pluginName, version, pluginPath, signer)
-		// The .wasm ARTIFACT row is keyed by the entity's BARE spec.plugin identity
-		// under the single-manifest model — no @sha256: content-digest suffix.
-		artifactURI := pluginSocket + "/" + pluginName
+		wasmContentDg := publishSignedPluginEntity(t, host, pluginName, version, pluginPath, signer)
+		// The .wasm ARTIFACT row is keyed by the entity's identity coordinate
+		// <pluginType>/<name> under the single-manifest model — no @sha256:
+		// content-digest suffix.
+		artifactURI := types.PluginCoordinate(frpStepPluginType, pluginName)
 		// The whole Tier-3-resolved closure is under the require-signatures policy,
 		// so the catalog entities are signed by the same publisher too.
 		ws := writePipelinePluginConsumerWorkspace(t, host, pluginURI, pubPEM, signer)
@@ -291,7 +293,7 @@ func TestIntegration_PullCommandVerifiesSignedPlugin_Keyed(t *testing.T) {
 
 	t.Run("negative_wrong_pinned_key_halts_pull", func(t *testing.T) {
 		host := startRegistry(t, nil)
-		publishSignedPluginEntity(t, host, pluginSocket+"/"+pluginName, version, pluginPath, signer)
+		publishSignedPluginEntity(t, host, pluginName, version, pluginPath, signer)
 
 		// Pin a DIFFERENT key: the signature verifies against the publisher's key
 		// but not this one, so the require-signatures policy halts the pull.
@@ -315,7 +317,7 @@ func TestIntegration_PullCommandVerifiesSignedPlugin_Keyed(t *testing.T) {
 		// Publish the plugin UNSIGNED, then pull under a require-signatures policy:
 		// the missing signature on the host-carrying .wasm artifact is a Loud
 		// Guardrail.
-		publishPluginEntity(t, host, pluginSocket+"/"+pluginName, version, pluginPath)
+		publishPluginEntity(t, host, pluginName, version, pluginPath)
 		ws := writePipelinePluginConsumerWorkspace(t, host, pluginURI, pubPEM, nil)
 		t.Chdir(ws)
 

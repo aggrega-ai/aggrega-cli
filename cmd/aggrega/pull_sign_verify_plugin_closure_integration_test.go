@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
+	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
 	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
@@ -38,12 +39,12 @@ type signedPluginPublication struct {
 // pluginEntityYAML renders a Plugin entity fixture with the canonical BARE
 // spec.plugin identity (no ":version", no "@sha256:"); the version comes from
 // metadata.version and the .wasm rides inline in the single manifest.
-func pluginEntityYAML(host, socketName, version string) string {
+func pluginEntityYAML(host, name, version string) string {
 	return `apiVersion: aggrega.ai/v1alpha1
 kind: Plugin
 metadata:
-  name: ` + socketName + `
-  pluginType: frp_step
+  name: ` + name + `
+  pluginType: ` + frpStepPluginType + `
   version: "` + version + `"
 spec:
   abiVersion: v1alpha1
@@ -58,9 +59,10 @@ spec:
 // resolution records, by reading the one manifest back from the registry: the
 // entity YAML (config blob) and .wasm (inline layer) content digests, and the
 // manifest digest both axes commit to.
-func fetchPublishedPlugin(t *testing.T, host, socketName, version string) signedPluginPublication {
+func fetchPublishedPlugin(t *testing.T, host, name, version string) signedPluginPublication {
 	t.Helper()
-	repo, err := oci.NewRemoteRepository(host + "/plugin/" + socketName)
+	loc := catalog.OCILocation("Plugin", frpStepPluginType, name)
+	repo, err := oci.NewRemoteRepository(host + "/" + loc)
 	if err != nil {
 		t.Fatalf("entity repo: %v", err)
 	}
@@ -70,8 +72,8 @@ func fetchPublishedPlugin(t *testing.T, host, socketName, version string) signed
 	}
 	return signedPluginPublication{
 		host:            host,
-		entityURI:       host + "/plugin/" + socketName,
-		wasmURI:         "oci://" + host + "/plugin/" + socketName,
+		entityURI:       host + "/" + loc,
+		wasmURI:         "oci://" + host + "/" + loc,
 		entityContentDg: digest.ContentDigest(entityYAML),
 		wasmContentDg:   digest.ContentDigest(wasm),
 		manifestDg:      manifestDg,
@@ -88,12 +90,12 @@ func publishSignedPluginToRegistry(t *testing.T, signer signing.Signer) signedPl
 	pluginPath := wasmtest.EnsureFixtureBuilt(t, "frp-step-go.wasm")
 	host := startRegistry(t, nil)
 
-	const socketName = "pipeline/patch-server"
+	const name = "patch-server"
 	const version = "1.0.0"
 
 	entityDir := t.TempDir()
 	entityPath := filepath.Join(entityDir, "plugin.yaml")
-	writeFixture(t, entityPath, pluginEntityYAML(host, socketName, version))
+	writeFixture(t, entityPath, pluginEntityYAML(host, name, version))
 
 	wantSign := true
 	if perr := pushRun(pushConfig{
@@ -105,7 +107,7 @@ func publishSignedPluginToRegistry(t *testing.T, signer signing.Signer) signedPl
 	}); perr != nil {
 		t.Fatalf("publish signed plugin: %v", perr)
 	}
-	return fetchPublishedPlugin(t, host, socketName, version)
+	return fetchPublishedPlugin(t, host, name, version)
 }
 
 // publishUnsignedPluginToRegistry publishes a real Plugin entity + .wasm fixture
@@ -117,17 +119,17 @@ func publishUnsignedPluginToRegistry(t *testing.T) signedPluginPublication {
 	pluginPath := wasmtest.EnsureFixtureBuilt(t, "frp-step-go.wasm")
 	host := startRegistry(t, nil)
 
-	const socketName = "pipeline/patch-server"
+	const name = "patch-server"
 	const version = "1.0.0"
 
 	entityDir := t.TempDir()
 	entityPath := filepath.Join(entityDir, "plugin.yaml")
-	writeFixture(t, entityPath, pluginEntityYAML(host, socketName, version))
+	writeFixture(t, entityPath, pluginEntityYAML(host, name, version))
 
 	if perr := pushRun(pushConfig{EntityPath: entityPath, PluginPath: pluginPath, Registry: host}); perr != nil {
 		t.Fatalf("publish unsigned plugin: %v", perr)
 	}
-	return fetchPublishedPlugin(t, host, socketName, version)
+	return fetchPublishedPlugin(t, host, name, version)
 }
 
 // closureAndLockfileFor builds the two-row closure + lockfile the production
