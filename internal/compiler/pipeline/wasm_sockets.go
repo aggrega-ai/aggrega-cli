@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/analyzer"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/parsersocket"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/topology"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
@@ -293,7 +294,10 @@ func runRenderPolicySocket(ctx context.Context, inputs Inputs, catalogLookup res
 		return nil
 	}
 	lookup := resolveSocketLookup(inputs, catalogLookup, workspaceconfig.SocketPolicy)
-	artifacts := sortedRenderedArtifacts(files)
+	artifacts, err := sortedRenderedArtifacts(ctx, inputs, catalogLookup, files)
+	if err != nil {
+		return fmt.Errorf("Step 5 (render policy): %w", err)
+	}
 
 	var denyErrs []analyzer.AnalysisError
 	for _, ref := range refs {
@@ -441,18 +445,90 @@ func readPolicySources(ref workspaceconfig.PluginRef) ([]analyzer.PolicySource, 
 	return sources, nil
 }
 
+// policyNativeFormats are the source formats the policy guest reads natively
+// from an artifact's raw Content — it decodes JSON directly and parses YAML
+// itself — so the host does not pre-parse them and their Tree stays empty. Every
+// other format the extension table resolves is non-native: the host runs the
+// matching parser and carries the parsed tree alongside the raw content, so a
+// policy can reason over the structure of a format it cannot read on its own
+// (HCL, for example). The set is the single home of the native/non-native
+// distinction the render-policy seam applies.
+var policyNativeFormats = map[string]bool{
+	"json": true,
+	"yaml": true,
+}
+
 // sortedRenderedArtifacts projects the render output map into the render-stage
 // policy payload's ordered artifact list, sorted by path. Sorting the map keys
 // into a list here is determinism-safe: this is a socket INPUT payload, not an
 // emitted artifact, so the sort yields one canonical wire order for identical
 // input.
-func sortedRenderedArtifacts(files map[string][]byte) []analyzer.RenderedArtifact {
+//
+// For an artifact whose extension resolves to a format the policy guest does not
+// read natively, the host parses the content through the resolved parser and
+// carries the parsed tree on the artifact, so a policy can reason over the
+// structure of a non-native format. A native format (JSON, YAML) and an
+// extension the table does not map both leave the tree empty — the guest reads
+// the raw content directly, and the two native-format render-policy paths stay
+// byte-identical. The parser here feeds a verdict gate, so the host carries no
+// reproducibility posture of its own; a core parser embedded in the binary
+// resolves with no lockfile pin. A parse resolution or invocation failure on a
+// non-native artifact halts loudly rather than dropping the tree silently.
+func sortedRenderedArtifacts(ctx context.Context, inputs Inputs, catalogLookup resolver.CatalogLookup, files map[string][]byte) ([]analyzer.RenderedArtifact, error) {
 	arts := make([]analyzer.RenderedArtifact, 0, len(files))
 	for path, content := range files {
 		arts = append(arts, analyzer.RenderedArtifact{Path: path, Content: string(content)})
 	}
 	sort.Slice(arts, func(i, j int) bool { return arts[i].Path < arts[j].Path })
-	return arts
+
+	var res parsersocket.ParserResolver
+	var load parsersocket.ParserLoader
+	for i := range arts {
+		format, ok := parsersocket.FormatForExtension(arts[i].Path)
+		if !ok || policyNativeFormats[format] {
+			continue
+		}
+		if res == nil {
+			res, load = parserSeam(inputs, catalogLookup)
+		}
+		out, err := parsersocket.ParseArtifact(ctx, res, load, format, []byte(arts[i].Content), nil)
+		if err != nil {
+			return nil, fmt.Errorf("parse artifact %q as %q: %w", arts[i].Path, format, err)
+		}
+		arts[i].Tree = json.RawMessage(out.Tree)
+	}
+	return arts, nil
+}
+
+// parserResolverFunc adapts the catalog's format→parser lookup to the
+// parser-socket resolver seam.
+type parserResolverFunc func(format string) (types.Plugin, error)
+
+func (f parserResolverFunc) ParserPluginForFormat(format string) (types.Plugin, error) {
+	if f == nil {
+		return types.Plugin{}, fmt.Errorf("no parser resolver is available: the catalog exposes no parser lookup")
+	}
+	return f(format)
+}
+
+// parserSeam builds the resolver and loader the render-policy stage hands to the
+// parser socket. The resolver fronts the catalog's format→parser lookup; the
+// loader resolves the parser entity's bytes through the same entity-fronted
+// cascade the render pipeline uses (embed → sidecar → local → cache → registry),
+// so a core parser embedded in the binary resolves offline with no lockfile pin.
+func parserSeam(inputs Inputs, catalogLookup resolver.CatalogLookup) (parsersocket.ParserResolver, parsersocket.ParserLoader) {
+	res := parserResolverFunc(catalogLookup.ParserPlugin)
+	cascade := buildPluginResolver(inputs).Resolve
+	load := func(p types.Plugin) (wasm.PluginSpec, error) {
+		resolved, err := cascade(p.ArtifactReference())
+		if err != nil {
+			return wasm.PluginSpec{}, err
+		}
+		resolved.Contract = resolver.PluginContractClaim(p)
+		resolved.Limits = resolver.PluginRuntimeLimits(p)
+		return resolver.PluginSpec(pluginRefName(p.Coordinate()), resolved), nil
+	}
+	return res, load
 }
 
 // policyVerdictErrors converts a policy plugin's output into one AnalysisError

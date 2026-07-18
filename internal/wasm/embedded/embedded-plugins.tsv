@@ -21,3 +21,7 @@ provider	helm-chart	./plugins/helmchart-provider	go
 provider	terraform	./plugins/terraform-provider	go
 provider	cloudformation	./plugins/cloudformation-provider	go
 linter	publishing	plugins/publishing-linter	rust	../aggrega-pdk/rust
+parser	hcl	./plugins/hcl-parser	go
+parser	toml	./plugins/toml-parser	go
+parser	yaml	./plugins/yaml-parser	go
+parser	json	./plugins/json-parser	go

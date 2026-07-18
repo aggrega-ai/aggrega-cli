@@ -1405,6 +1405,7 @@ func (c *Catalog) CatalogLookup() resolver.CatalogLookup {
 		},
 		Plugin:         c.PluginByURI,
 		ProviderPlugin: c.ProviderPluginByName,
+		ParserPlugin:   c.ParserPluginForFormat,
 	}
 }
 

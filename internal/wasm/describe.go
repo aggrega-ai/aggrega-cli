@@ -60,6 +60,12 @@ const (
 	// subcommand, invoked by an operator at the command line rather than by
 	// the build pipeline. Its minimum export is cli_run.
 	PluginTypeCLI PluginType = "cli"
+
+	// PluginTypeParser is a parser plugin: it turns a foreign source text into
+	// a canonical structured tree, so any consumer can read the tree without
+	// carrying its own language parser. It advertises the formats it handles as
+	// parse:<format> capabilities. Its minimum export is parse.
+	PluginTypeParser PluginType = "parser"
 )
 
 // InputPattern selects how the host delivers an export's input payload.
@@ -130,6 +136,13 @@ const (
 // providerRenderExportName is the required export name for a provider
 // plugin.
 const providerRenderExportName = "render_node"
+
+// ParseExport is the required export name for a parser plugin — the
+// entry point the host dispatches to when it needs a source text turned into
+// a structured tree. It is the single home of the name; the parser-socket
+// orchestrator references it so the guest export the host invokes cannot drift
+// from the export the descriptor validator requires.
+const ParseExport = "parse"
 
 // CLIRunExportName is the required export name for a CLI plugin — the
 // entry point the host dispatches to when an operator invokes the
@@ -204,7 +217,7 @@ const (
 //     render_node; a linter declares at least one lint_* export; a
 //     feature-recipe-pipeline step declares step; a mutator declares
 //     mutate; a policy declares validate; a CLI plugin declares
-//     cli_run.
+//     cli_run; a parser declares parse.
 //   - every export's declared host functions are a subset of the
 //     host-function allowlist. This routes through the same
 //     validateHostFunctionsSubset gate the loader applies to the set
@@ -250,7 +263,7 @@ func (d PluginDescriptor) Validate(pluginIdentity string) error {
 	}
 
 	switch PluginType(d.PluginType) {
-	case PluginTypeProvider, PluginTypeLinter, PluginTypeFRPStep, PluginTypeMutator, PluginTypePolicy, PluginTypeCLI:
+	case PluginTypeProvider, PluginTypeLinter, PluginTypeFRPStep, PluginTypeMutator, PluginTypePolicy, PluginTypeCLI, PluginTypeParser:
 		// recognized
 	default:
 		return fmt.Errorf("plugin %q declares unknown plugin_type %q: %w",
@@ -429,6 +442,11 @@ func (d PluginDescriptor) validateMinimumExports(pluginIdentity string) error {
 		if !d.hasExport(CLIRunExportName) {
 			return fmt.Errorf("cli plugin %q declares no %q export: %w",
 				pluginIdentity, CLIRunExportName, ErrWasmManifestRejected)
+		}
+	case PluginTypeParser:
+		if !d.hasExport(ParseExport) {
+			return fmt.Errorf("parser plugin %q declares no %q export: %w",
+				pluginIdentity, ParseExport, ErrWasmManifestRejected)
 		}
 	}
 	return nil

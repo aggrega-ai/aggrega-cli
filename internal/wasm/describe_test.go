@@ -233,6 +233,23 @@ func TestPluginDescriptorValidateMinimumExports(t *testing.T) {
 				Exports:    []PluginExport{{Name: "cli_run"}},
 			},
 		},
+		"parser-without-parse": {
+			descriptor: PluginDescriptor{
+				AbiVersion:   ABIVersionV1Alpha1,
+				PluginType:   string(PluginTypeParser),
+				Capabilities: []string{"parse:hcl"},
+				Exports:      []PluginExport{{Name: "read"}},
+			},
+			wantReject: true,
+		},
+		"parser-with-parse": {
+			descriptor: PluginDescriptor{
+				AbiVersion:   ABIVersionV1Alpha1,
+				PluginType:   string(PluginTypeParser),
+				Capabilities: []string{"parse:hcl", "parse:toml"},
+				Exports:      []PluginExport{{Name: "parse"}},
+			},
+		},
 	}
 
 	for name, tc := range cases {

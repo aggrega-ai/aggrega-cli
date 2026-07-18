@@ -21,6 +21,10 @@ func TestManifestDerivedURIsAreStable(t *testing.T) {
 		"provider/terraform",
 		"provider/cloudformation",
 		"linter/publishing",
+		"parser/hcl",
+		"parser/toml",
+		"parser/yaml",
+		"parser/json",
 	}
 	got := embeddedArtifacts()
 	if len(got) != len(want) {

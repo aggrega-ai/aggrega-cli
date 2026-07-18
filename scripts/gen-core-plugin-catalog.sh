@@ -39,7 +39,7 @@ echo "built $BIN (version $_ver)"
 # Remove only the generated socket directories so stale version-dirs do not
 # accumulate. plugin-overlays/ (the authored input) is never touched.
 echo "=== clear generated socket dirs ==="
-rm -rf "$OUTPUT_DIR/provider" "$OUTPUT_DIR/linter"
+rm -rf "$OUTPUT_DIR/provider" "$OUTPUT_DIR/linter" "$OUTPUT_DIR/parser"
 
 echo "=== generate core plugin catalog entities ==="
 "$BIN" plugin gen-catalog --from-embedded \

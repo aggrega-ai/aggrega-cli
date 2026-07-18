@@ -3,7 +3,11 @@
 
 package analyzer
 
-import "github.com/aggrega-ai/aggrega-cli/pkg/types"
+import (
+	"encoding/json"
+
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
+)
 
 // PolicyInput is the JSON payload Step 4 hands to the policy socket. Graph
 // carries the full provider-agnostic IR graph — the same [types.IRGraph] the
@@ -96,8 +100,15 @@ type RenderPolicyInput struct {
 }
 
 // RenderedArtifact is one rendered output file in a render-stage policy input:
-// its Path and the rendered Content at that path.
+// its Path and the rendered Content at that path. Tree carries the parsed
+// structured tree of the artifact when the host parsed it before handing it to
+// the plugin — the canonical JSON view of a source format the policy guest does
+// not read natively (an HCL artifact parsed to JSON, for example). It is absent
+// when the host did not parse the artifact, in which case the plugin reads the
+// native Content directly; the host carries the tree verbatim without
+// interpreting its content.
 type RenderedArtifact struct {
-	Path    string `json:"path"`
-	Content string `json:"content"`
+	Path    string          `json:"path"`
+	Content string          `json:"content"`
+	Tree    json.RawMessage `json:"tree,omitempty"`
 }

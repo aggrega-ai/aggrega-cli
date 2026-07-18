@@ -62,6 +62,16 @@ type CatalogLookup struct {
 	// falls the caller back to its authored schema. May itself be nil in
 	// catalog-less / not-yet-resolved paths.
 	EffectiveSchema func(typeURI string) (compactform.Schema, bool)
+	// ParserPlugin resolves a source format to the parser Plugin entity that
+	// advertises it — the pluginType: parser Plugin whose capabilities list the
+	// composed parse:<format> string. A socket that must parse a foreign source
+	// format (the render-policy stage handing a policy plugin a non-native
+	// artifact's tree) fronts the parser-resolution seam with this lookup. It
+	// halts loudly on an unadvertised or ambiguous format rather than returning a
+	// soft miss — a requested format either has an advertiser or the build cannot
+	// proceed. May be nil in catalog-less paths; a consumer that needs it then
+	// resolves nothing and halts as no-parser-available.
+	ParserPlugin func(format string) (types.Plugin, error)
 }
 
 // RunGuards executes the catalog-aware semantic checks of Step 1 against the

@@ -172,6 +172,12 @@ func (l *LazyLookup) AsCatalogLookup() resolver.CatalogLookup {
 		// render dispatch resolves the same provider→Plugin binding from the lazy
 		// backing as the eager one.
 		ProviderPlugin: l.ProviderPluginByName,
+		// ParserPlugin resolves a source format to the parser Plugin that
+		// advertises parse:<format> over the lazily-walked set, so a socket that
+		// must parse a foreign artifact (render-policy handing a policy plugin a
+		// non-native artifact's tree) resolves the same format→parser binding from
+		// the lazy backing as the eager one.
+		ParserPlugin: l.ParserPluginForFormat,
 	}
 }
 
@@ -1370,6 +1376,17 @@ func (l *LazyLookup) ProviderPluginByName(ref string) (types.Plugin, bool, error
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	return l.recipeCatalog().ProviderPluginByName(ref)
+}
+
+// ParserPluginForFormat resolves a source format to the parser Plugin
+// advertising parse:<format> over the lazily-enumerated (Tier-1 + pinned Tier-2)
+// Plugin set, so a socket that must parse a foreign artifact resolves the same
+// format→parser binding from the lazy backing as the eager catalog does. It
+// halts loudly on an unadvertised or ambiguous format.
+func (l *LazyLookup) ParserPluginForFormat(format string) (types.Plugin, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.recipeCatalog().ParserPluginForFormat(format)
 }
 
 // ProviderPluginCandidates returns every provider-rendering Plugin serving the

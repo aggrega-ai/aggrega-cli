@@ -327,6 +327,15 @@ var providerHostVocabulary = map[string]string{
 // and as the seam a future granted-input field would hook into.
 var cliGuestVocabulary = map[string]string{}
 
+// parseGuestVocabulary is empty: the parse schema's non-scalar carries — the
+// source bytes ([]byte, base64 on the wire), the opaque options and tree
+// (json.RawMessage passthrough), and the def-local span/diagnostic types
+// referenced by $ref — already spell the neutral guest types the generator
+// emits. The parser attaches no meaning to the tree, so it carries it verbatim;
+// no host container or cross-package opaque type needs a rewrite, and every
+// annotation passes through unchanged.
+var parseGuestVocabulary = map[string]string{}
+
 var codecTargets = map[string]codecTarget{
 	"frp_gen.go": {
 		schema:     schemas.WasmFrpStepV1alpha1,
@@ -568,6 +577,34 @@ var codecTargets = map[string]codecTarget{
 		pkg:        "rendercore",
 		vocabulary: providerHostVocabulary,
 		helpers:    true, // the host provider render codec is alone in package rendercore
+	},
+
+	// Parser socket — guest codecs into aggrega-abi (Go/Rust/TS). A parser turns
+	// foreign source bytes into a canonical structured tree: it receives a
+	// ParseInput (format, base64 bytes, opaque options) and returns a ParseOutput
+	// (the opaque tree plus optional diagnostics and source spans). Every carry is
+	// a scalar, base64 bytes, an opaque json.RawMessage, or a def-local span/
+	// diagnostic type, so the guest vocabulary is empty. The abi Go codec
+	// references the helpers FRP owns in package abi (helpers: false, the default).
+	"parse_gen.go": {
+		schema:     schemas.WasmParseV1alpha1,
+		schemaFile: "wasm-parse-v1alpha1.schema.json",
+		pkg:        "abi",
+		vocabulary: parseGuestVocabulary,
+	},
+	"parse_gen.rs": {
+		schema:     schemas.WasmParseV1alpha1,
+		schemaFile: "wasm-parse-v1alpha1.schema.json",
+		pkg:        "abi",
+		vocabulary: parseGuestVocabulary,
+		lang:       "rust",
+	},
+	"parse_gen.ts": {
+		schema:     schemas.WasmParseV1alpha1,
+		schemaFile: "wasm-parse-v1alpha1.schema.json",
+		pkg:        "abi",
+		vocabulary: parseGuestVocabulary,
+		lang:       "ts",
 	},
 }
 
