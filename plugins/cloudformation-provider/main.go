@@ -270,7 +270,10 @@ func assembleBoundary() int32 {
 	}
 
 	out := rendercore.AssembleBoundaryOutput{
-		Files:       []rendercore.RenderedFile{{Path: cfncore.StackTemplateName, Content: stack}},
+		// The assembled stack template is pure-JSON long-form throughout, so the
+		// merged file is JSON. Declaring the format lets the host route it to the
+		// JSON parser without inferring from the extension.
+		Files:       []rendercore.RenderedFile{{Path: cfncore.StackTemplateName, Content: stack, Format: "json"}},
 		NestPerNode: false,
 	}
 	encoded, err := out.MarshalJSON()

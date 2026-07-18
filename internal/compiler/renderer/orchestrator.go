@@ -1034,9 +1034,10 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// emitted it. The prefix is reattached at the final flush.
 		groupFiles := map[string][]byte{}
 		// Producer-declared formats, keyed by the same group-relative path as
-		// groupFiles. Populated only for the flat-output case below; an assembler
-		// group leaves it empty because per-file format does not survive the merge
-		// boundary, so its artifacts fall back to extension-based selection.
+		// groupFiles. Both the flat-output case and the assembler case below
+		// populate it from the producer's declared format when present; a file
+		// whose producer declared none is absent here and falls back to
+		// extension-based selection.
 		groupFormats := map[string]string{}
 
 		// If engine is a BoundaryAssembler (helm-chart, compose) AND the dispatch path is non-empty:
@@ -1096,8 +1097,15 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 				}
 				result.Warnings = append(result.Warnings, warnings...)
 			}
-			for p, c := range boundaryFiles {
-				groupFiles[p] = c
+			for p, af := range boundaryFiles {
+				groupFiles[p] = af.Content
+				// Producer-declared format travels alongside the merged bytes on
+				// groupFormats, keyed by the same group-relative path, so the
+				// render-policy parser seam prefers the producer's format over the
+				// path extension. Empty format falls through to extension selection.
+				if af.Format != "" {
+					groupFormats[p] = af.Format
+				}
 			}
 			// Node files go under charts/<nodeID>/ (or flat if assembler says no nesting)
 			for nodeID, nodeFiles := range pd.files {

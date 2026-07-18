@@ -257,10 +257,25 @@ func assembleBoundaryFromInput(in rendercore.AssembleBoundaryInput) (rendercore.
 
 	out := rendercore.AssembleBoundaryOutput{Files: make([]rendercore.RenderedFile, 0, len(files))}
 	for _, path := range sortedKeys(files) {
-		out.Files = append(out.Files, rendercore.RenderedFile{Path: path, Content: files[path]})
+		out.Files = append(out.Files, rendercore.RenderedFile{Path: path, Content: files[path], Format: assembledFileFormat(path)})
 	}
 	out.NestPerNode = true
 	return out, nil
+}
+
+// assembledFileFormat reports the honest output syntax of an assembled umbrella
+// file so the host can route it to a matching parser. The umbrella Chart.yaml and
+// values.yaml are freshly marshaled structured YAML. Any other emitted path is
+// left unformatted so the host falls back to extension-based selection: a
+// Go-templated chart file is not valid YAML before render, so the assembler
+// declares a format only for the files it knows are structured.
+func assembledFileFormat(path string) string {
+	switch path {
+	case "Chart.yaml", "values.yaml":
+		return "yaml"
+	default:
+		return ""
+	}
 }
 
 //go:wasmexport carve

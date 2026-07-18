@@ -58,13 +58,13 @@ func (a *versionedAssembler) Contract() renderer.ProviderContract {
 // production assembling guests' self-report.
 func (a *versionedAssembler) BoundaryAssembly() string { return "merge" }
 
-func (a *versionedAssembler) AssembleBoundary(_ context.Context, info renderer.BoundaryInfo) (map[string][]byte, bool, error) {
+func (a *versionedAssembler) AssembleBoundary(_ context.Context, info renderer.BoundaryInfo) (map[string]renderer.AssembledFile, bool, error) {
 	*a.assembledBy = a.version
 	*a.assembleCount++
-	out := map[string][]byte{}
+	out := map[string]renderer.AssembledFile{}
 	for nodeID, files := range info.IntermediatesByNode {
 		for _, f := range files {
-			out["charts/"+nodeID+"/"+f.Name] = f.Body
+			out["charts/"+nodeID+"/"+f.Name] = renderer.AssembledFile{Content: f.Body}
 		}
 	}
 	return out, false, nil

@@ -44,7 +44,7 @@ import (
 // selection and the per-scope compatibility check on replay.
 func replayDeferredPatches(
 	ctx context.Context,
-	boundaryFiles map[string][]byte,
+	boundaryFiles map[string]AssembledFile,
 	provider string,
 	records []DeferredPatch,
 	engineFactory EngineFactory,
@@ -131,13 +131,21 @@ func replayDeferredPatches(
 		// Own-scope rewrites surface in pres.Own (keyed by emitted name);
 		// host-scope rewrites/EMITs surface in pres.HostPatched (keyed by path).
 		// Own folds back before host (own-before-host on the merged document).
+		// A byte patch rewrites content but does not change the file's syntax, so
+		// the existing declared format is preserved across the write-back. A newly
+		// EMITted path absent from boundaryFiles carries the zero-value empty
+		// format and falls back to extension selection.
 		if rec.OwnProvider != "" {
 			for _, f := range pres.Own {
-				boundaryFiles[f.Name] = f.Body
+				patched := boundaryFiles[f.Name]
+				patched.Content = f.Body
+				boundaryFiles[f.Name] = patched
 			}
 		}
 		for path, content := range pres.HostPatched {
-			boundaryFiles[path] = content
+			patched := boundaryFiles[path]
+			patched.Content = content
+			boundaryFiles[path] = patched
 		}
 	}
 	return warnings, nil
@@ -150,7 +158,7 @@ func replayDeferredPatches(
 // PATCH write-back address. Iterated in sorted key order so the root is
 // byte-stable across runs. The same projection serves both the own and host
 // roots — for an assembler node they are the same merged document set.
-func mergedDocsAsFiles(boundaryFiles map[string][]byte) []EmittedFile {
+func mergedDocsAsFiles(boundaryFiles map[string]AssembledFile) []EmittedFile {
 	names := make([]string, 0, len(boundaryFiles))
 	for name := range boundaryFiles {
 		names = append(names, name)
@@ -158,7 +166,8 @@ func mergedDocsAsFiles(boundaryFiles map[string][]byte) []EmittedFile {
 	sort.Strings(names)
 	out := make([]EmittedFile, 0, len(names))
 	for _, name := range names {
-		out = append(out, EmittedFile{Name: name, Origin: EmitOriginSource, Body: boundaryFiles[name]})
+		af := boundaryFiles[name]
+		out = append(out, EmittedFile{Name: name, Origin: EmitOriginSource, Body: af.Content, Format: af.Format})
 	}
 	return out
 }

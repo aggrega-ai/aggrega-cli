@@ -154,12 +154,26 @@ type ProviderVersionResolver func(providerRef string) string
 // orchestrator groups contributors by dispatch key and invokes
 // AssembleBoundary once per group.
 type BoundaryAssembler interface {
-	// AssembleBoundary returns files relative to the dispatch path.
+	// AssembleBoundary returns assembled files relative to the dispatch path.
 	// The orchestrator prefixes them with `boundaries/<evaluated_path>/`
 	// (or, post path-template-evaluation, the operator-authored path).
 	// Also signals whether per-node files should be nested under
 	// `charts/<nodeID>/`.
-	AssembleBoundary(ctx context.Context, info BoundaryInfo) (files map[string][]byte, nestPerNode bool, err error)
+	AssembleBoundary(ctx context.Context, info BoundaryInfo) (files map[string]AssembledFile, nestPerNode bool, err error)
+}
+
+// AssembledFile is one output of a boundary assembly, keyed by its dispatch-path-
+// relative path in the returned map. It pairs the assembled bytes with the
+// producer-declared render format the assembler guest reported for them, so the
+// format survives the merge boundary and reaches the render-policy parser seam
+// alongside the bytes. Format is empty when the producer declared none, in which
+// case a downstream consumer selects the format from the file extension. Format
+// is additive metadata: it never affects the emitted bytes. The single-carrier
+// shape keeps the assembled bytes and their format from drifting into parallel
+// maps keyed by the same path.
+type AssembledFile struct {
+	Content []byte
+	Format  string
 }
 
 // BoundaryAssemblyReporter is the optional interface an engine implements to

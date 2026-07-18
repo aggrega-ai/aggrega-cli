@@ -53,7 +53,9 @@ func NewAssembler(lookup pluginpath.Lookup, pluginURI string, loader *wasm.Loade
 
 // AssembleBoundary projects the host BoundaryInfo onto the assemble_boundary wire
 // input, drives the guest export, and folds the guest's per-file output back into
-// the BoundaryAssembler's path→bytes map plus the guest's nest-per-node signal.
+// the BoundaryAssembler's path→AssembledFile map — carrying each file's
+// producer-declared format alongside its bytes — plus the guest's nest-per-node
+// signal.
 // Rendered nodes are emitted in sorted-by-id order and each node's annotations are
 // inserted in sorted-key order, so the wire payload is byte-identical across runs
 // of identical input (the determinism contract). The boundary metadata is left
@@ -69,7 +71,7 @@ func NewAssembler(lookup pluginpath.Lookup, pluginURI string, loader *wasm.Loade
 // umbrella from pure data alone. Each sub-chart's values are inserted in sorted
 // key order for the determinism contract. A provider that does not project
 // sub-charts contributes none of these carriers.
-func (e *AssemblerEngine) AssembleBoundary(ctx context.Context, info renderer.BoundaryInfo) (map[string][]byte, bool, error) {
+func (e *AssemblerEngine) AssembleBoundary(ctx context.Context, info renderer.BoundaryInfo) (map[string]renderer.AssembledFile, bool, error) {
 	nodeIDs := make([]string, 0, len(info.IntermediatesByNode))
 	for id := range info.IntermediatesByNode {
 		nodeIDs = append(nodeIDs, id)
@@ -137,12 +139,12 @@ func (e *AssemblerEngine) AssembleBoundary(ctx context.Context, info renderer.Bo
 		return nil, false, err
 	}
 
-	files := make(map[string][]byte, len(out.Files))
+	files := make(map[string]renderer.AssembledFile, len(out.Files))
 	for _, f := range out.Files {
 		if _, dup := files[f.Path]; dup {
 			return nil, false, fmt.Errorf("wasmengine: assembler guest emitted duplicate output path %q", f.Path)
 		}
-		files[f.Path] = f.Content
+		files[f.Path] = renderer.AssembledFile{Content: f.Content, Format: f.Format}
 	}
 	return files, out.NestPerNode, nil
 }

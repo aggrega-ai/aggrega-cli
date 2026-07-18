@@ -222,7 +222,11 @@ func assembleBoundaryFromInput(in rendercore.AssembleBoundaryInput) (rendercore.
 
 	out := rendercore.AssembleBoundaryOutput{Files: make([]rendercore.RenderedFile, 0, len(files))}
 	for _, path := range sortedKeys(files) {
-		out.Files = append(out.Files, rendercore.RenderedFile{Path: path, Content: files[path]})
+		// The compose boundary merges to a single structured docker-compose
+		// document, so every assembled file is YAML. Declaring the format lets
+		// the host route the file to the YAML parser without inferring from the
+		// extension.
+		out.Files = append(out.Files, rendercore.RenderedFile{Path: path, Content: files[path], Format: "yaml"})
 	}
 	out.NestPerNode = false
 	return out, nil

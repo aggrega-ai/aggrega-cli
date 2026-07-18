@@ -326,11 +326,11 @@ func (c *captureComposerEngine) Contract() renderer.ProviderContract {
 	return renderer.ProviderContract{Sourced: true, Synthesized: true, ArtifactsStandalone: true}
 }
 
-func (c *captureComposerEngine) AssembleBoundary(_ context.Context, info renderer.BoundaryInfo) (map[string][]byte, bool, error) {
+func (c *captureComposerEngine) AssembleBoundary(_ context.Context, info renderer.BoundaryInfo) (map[string]renderer.AssembledFile, bool, error) {
 	for _, files := range info.IntermediatesByNode {
 		c.captured = append(c.captured, files...)
 	}
-	return map[string][]byte{}, false, nil
+	return map[string]renderer.AssembledFile{}, false, nil
 }
 
 // BoundaryAssembly marks this fake as a boundary-assembling provider that merges
