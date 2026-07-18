@@ -18,7 +18,6 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/ociref"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
-	"github.com/aggrega-ai/aggrega-cli/pkg/pullverify"
 	"github.com/aggrega-ai/aggrega-cli/pkg/registryhost"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
@@ -270,7 +269,19 @@ func productionInstallPluginFetch(ctx context.Context, rw *workspaceconfig.Resol
 	if err != nil {
 		return resolvedInstallable{}, fmt.Errorf("fetch %q: %w", ref, err)
 	}
-	if err := verifyInstallSignature(ctx, ref, wsCfg); err != nil {
+	// Route the fetched plugin through the single verification home — the same
+	// signature verification every other plugin fetch runs. A CLI plugin is fetched
+	// by its host-carrying oci:// reference without loading a catalog Plugin entity,
+	// so no host-function stamp is supplied and that check is a no-op here (exactly
+	// as it is for any plugin resolved without an entity body); the registry
+	// signature is verified. result.Digest is the fetched manifest digest the
+	// signature commits to.
+	if _, err := verifyFetchedPlugin(ctx, fetchedPlugin{
+		URI:            ref,
+		ManifestDigest: result.Digest,
+		Host:           registryhost.Of(bare),
+		Kind:           catalog.EntityKindForHint("plugin"),
+	}, wsCfg, remoteTargetFor, os.Stderr); err != nil {
 		return resolvedInstallable{}, err
 	}
 	pin := digest.ContentDigest(result.Bytes)
@@ -302,45 +313,3 @@ func splitPluginRefTag(ref string) (repoRef, tag string, err error) {
 	return repoRef, tag, nil
 }
 
-// verifyInstallSignature verifies the signature of a registry-resolved plugin
-// artifact through the same pull-time primitive the closure walk uses
-// (pullverify.Verify, targeting via remoteTargetFor). A local, sidecar, or
-// otherwise host-less reference carries no registry signature, so — exactly as
-// the closure verify pass skips non-registry items — verification is a no-op for
-// it. Signature verification against a live registry is operator-gated: the
-// sandbox exercises the local no-op path; the registry path runs against a real
-// hub with credentials.
-func verifyInstallSignature(ctx context.Context, ref string, wsCfg workspaceconfig.Config) error {
-	if wsCfg.Offline || wsCfg.SkipSignatureVerification {
-		return nil
-	}
-	bare := strings.TrimPrefix(ref, "oci://")
-	host := registryhost.Of(bare)
-	if !isRegistryHost(host) {
-		// Local / sidecar / catalog reference: no registry signature to verify,
-		// mirroring the closure verify pass's skip of non-registry items.
-		return nil
-	}
-	repoRef := bare
-	if at := strings.LastIndex(repoRef, "@"); at >= 0 {
-		repoRef = repoRef[:at]
-	}
-	repo, err := oci.NewRemoteRepository(repoRef)
-	if err != nil {
-		return err
-	}
-	desc, err := repo.Resolve(ctx, bare)
-	if err != nil {
-		return fmt.Errorf("resolve %q for signature verification: %w", ref, err)
-	}
-	_, err = pullverify.Verify(ctx, []pullverify.Entity{{
-		URI:            ref,
-		ManifestDigest: desc.Digest.String(),
-		Host:           host,
-	}}, pullverify.Options{
-		Config: wsCfg,
-		Target: remoteTargetFor,
-		Warn:   func(notice string) { fmt.Fprintf(os.Stderr, "  verify: %s\n", notice) },
-	})
-	return err
-}

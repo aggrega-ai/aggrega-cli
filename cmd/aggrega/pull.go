@@ -24,6 +24,9 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
 	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
+	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
+	"github.com/aggrega-ai/aggrega-cli/pkg/pullverify"
+	"github.com/aggrega-ai/aggrega-cli/pkg/registryhost"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
@@ -535,7 +538,7 @@ func pullRun(cfg pullConfig) error {
 	// an accept/reject verdict without shaping the output bytes, so its plugin is
 	// not part of the reproducibility closure (cache-not-pin): the pull fetches and
 	// caches its entity + .wasm, and the build resolves it from the cache by URI.
-	if err := cacheVerdictSocketPlugins(wsCfg, lookup); err != nil {
+	if err := cacheVerdictSocketPlugins(context.Background(), wsCfg, lookup, lazyView, workspaceRoot, cacheDir, remoteTargetFor, cfg.DiagOut); err != nil {
 		return err
 	}
 	// Re-derive each plugin's host functions from the freshly-cached, digest-
@@ -921,18 +924,23 @@ func resolveMutatorAttachments(refs []workspaceconfig.PluginRef, lazyView *catal
 // ResolvePlugin for the .wasm), inheriting that path's digest verification. It
 // does not append to the closure, so nothing it caches reaches the lockfile.
 //
-// Trust posture: the cache primitives verify the fetched entity against its OCI
-// manifest and the .wasm against its content digest. The stronger checks a pinned
-// plugin also gets at pull — host-function re-derivation and registry signature
-// verification — are not extended to gate plugins here; doing so is a socket-spec
-// decision beyond this pass, so it is deferred rather than silently skipped.
+// Trust posture: a freshly cached gate plugin is verified exactly as a pinned
+// plugin is at pull — registry signature verification against the resolving
+// registry's trust policy AND host-function stamp re-derivation from the cached
+// .wasm — through the one fetch-verification home every tier shares
+// (verifyFetchedPlugin). Because a verdict gate is cache-not-pin, the verified
+// fact is not recorded in the lockfile and never enters the reproducibility
+// closure; it is verified all the same, so a tampered or unsigned gate plugin
+// halts the pull rather than running unverified at build. A registry gate carries
+// a manifest digest and is signature-verified; a local / embedded gate carries
+// none and skips signature, exactly as the pinned path skips a non-registry item.
 //
 // A capability-only / empty-URI attachment carries nothing to fetch and is
 // skipped; a plugin that does not resolve from the registry (a local / embedded /
 // absent gate the build resolves in place) is skipped rather than treated as a
 // closure gap — a verdict gate is not on the pinned axis a missing closure entity
 // would halt.
-func cacheVerdictSocketPlugins(cfg workspaceconfig.Config, lookup closure.Lookup) error {
+func cacheVerdictSocketPlugins(ctx context.Context, cfg workspaceconfig.Config, lookup closure.Lookup, lazyView *catalog.LazyLookup, workspaceRoot, cacheDir string, targetFor pullverify.TargetFor, diagOut io.Writer) error {
 	for _, socket := range cfg.PluginSockets() {
 		if socket.Socket.Tier() != workspaceconfig.SocketTierVerdict {
 			continue
@@ -960,9 +968,62 @@ func cacheVerdictSocketPlugins(cfg workspaceconfig.Config, lookup closure.Lookup
 				return fmt.Errorf("cache %s socket plugin artifact %q: entity resolved but its .wasm did not: %w",
 					socket.Socket, ref.URI, closure.ErrUnresolvableURI)
 			}
+			if err := verifyCachedVerdictSocketPlugin(ctx, cfg, lazyView, ref.URI, artRes.ManifestDigest, workspaceRoot, cacheDir, targetFor, diagOut); err != nil {
+				return fmt.Errorf("verify %s socket plugin %q: %w", socket.Socket, ref.URI, err)
+			}
 		}
 	}
 	return nil
+}
+
+// verifyCachedVerdictSocketPlugin routes a freshly cached verdict-socket gate
+// plugin through the shared fetch-verification home. It binds the plugin's
+// host-less bare identity to its registry location for signature referrer
+// discovery (the same binding the pinned plugin-entity signature uses) and reads
+// the entity stamp + content-verified .wasm from the pull-populated cache (the
+// same cache-not-pin read the build resolves the gate through), then hands both
+// to verifyFetchedPlugin. The verified fact is discarded: a verdict gate is
+// cache-not-pin and never enters the lockfile.
+func verifyCachedVerdictSocketPlugin(ctx context.Context, cfg workspaceconfig.Config, lazyView *catalog.LazyLookup, uri, manifestDigest, workspaceRoot, cacheDir string, targetFor pullverify.TargetFor, diagOut io.Writer) error {
+	fp := fetchedPlugin{
+		URI:            uri,
+		ManifestDigest: manifestDigest,
+		Kind:           catalog.EntityKindForHint("plugin"),
+	}
+	// A gate plugin's URI is a host-less bare identity; bind its registry host and
+	// path from the workspace registry and the Plugin kind so referrer discovery
+	// targets the location it was fetched from.
+	location, bound := catalog.BindEntityLocation(cfg.DefaultRegistry, "plugin", uri)
+	fp.Host = registryhost.Of(uri)
+	if bound {
+		fp.Location = location
+		fp.Host = registryhost.Of(location)
+	}
+	// Read the entity stamp and its .wasm digest from the cache-not-pin slot the
+	// resolution just populated — the same read the build uses — so the
+	// host-function re-derivation runs against the identical bytes the build will.
+	// A clean cache miss leaves the host-function inputs zero (skip); only a
+	// verification/parse fault or a non-not-found read error halts.
+	entity, wasmDigest, ok, err := lazyView.PluginFromCacheByURI(uri)
+	if err != nil {
+		return err
+	}
+	if ok {
+		artifactRef := entity.ArtifactReference()
+		wasmBytes, rerr := oci.ReadCached(workspaceRoot, cacheDir, artifactRef, wasmDigest)
+		if rerr != nil && !errors.Is(rerr, oci.ErrFetchNotFound) {
+			return fmt.Errorf("read cached .wasm %s: %w", artifactRef, rerr)
+		}
+		if rerr == nil {
+			ent := entity
+			fp.Entity = &ent
+			fp.EntityURI = uri
+			fp.ArtifactURI = artifactRef
+			fp.WasmBytes = wasmBytes
+		}
+	}
+	_, err = verifyFetchedPlugin(ctx, fp, cfg, targetFor, diagOut)
+	return err
 }
 
 func copyConsumers(in []closure.LibraryConsumer) []lockfile.LibraryConsumer {
