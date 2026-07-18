@@ -32,13 +32,30 @@ func ProviderBindings(lf *Lockfile) map[string]string {
 // the LOCKFILE, never live config; a plugins.mutator change made after the pull
 // is adopted only on the next pull. Returns nil for an empty pinned set, so the
 // override runs no mutator regardless of live config.
+//
+// Each attachment's declared inputs are reconstructed onto the ref's With: the
+// settings object inline as pinned, and each pinned source file as a PinnedSource
+// carrying its base name and content. The socket therefore reads settings and
+// source content from the lockfile pin rather than re-reading live config or the
+// host filesystem, so a post-pull change to either does not move build output.
 func MutatorAttachments(lf *Lockfile) []workspaceconfig.PluginRef {
 	if len(lf.Mutators) == 0 {
 		return nil
 	}
 	refs := make([]workspaceconfig.PluginRef, 0, len(lf.Mutators))
 	for _, m := range lf.Mutators {
-		refs = append(refs, workspaceconfig.PluginRef{URI: m.Plugin, Function: m.Function})
+		ref := workspaceconfig.PluginRef{URI: m.Plugin, Function: m.Function}
+		if len(m.Settings) > 0 || len(m.Sources) > 0 {
+			with := &workspaceconfig.PluginRefWith{Settings: m.Settings}
+			for _, s := range m.Sources {
+				with.PinnedSources = append(with.PinnedSources, workspaceconfig.PinnedSource{
+					Path:    s.Path,
+					Content: s.Content,
+				})
+			}
+			ref.With = with
+		}
+		refs = append(refs, ref)
 	}
 	return refs
 }

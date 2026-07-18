@@ -297,6 +297,34 @@ type MutatorAttachment struct {
 	// <pluginType>/<name> identity, the same coordinate form ProviderBinding.Plugin
 	// uses and the identity the Entities / Plugins sections pin under.
 	Plugin string `yaml:"plugin"`
+	// Settings is the free-form settings object the attachment declared, pinned
+	// as authored and handed to the plugin verbatim. The mutator reads its
+	// settings from here — never live config — so a post-pull settings change
+	// does not move build output. Absent when the attachment declares none.
+	Settings map[string]any `yaml:"settings,omitempty"`
+	// Sources are the content-addressed pins of the attachment's declared source
+	// files, in base-name order. Each pin carries the file's content so build
+	// reconstructs the source the plugin reads from the lockfile rather than a
+	// live host read — keeping build output invariant to a post-pull change to
+	// the source file. Absent when the attachment declares none.
+	Sources []MutatorSourcePin `yaml:"sources,omitempty"`
+}
+
+// MutatorSourcePin is one content-addressed source-file pin for a mutator
+// attachment. Content carries the file's bytes verbatim (so build reconstructs
+// the plugin's source input from the lockfile, never a live host read); Digest
+// is the sha256:... content-address of those bytes; Path is the file's base name
+// (never an absolute host path — portability and determinism). Recording the
+// content alongside its digest is what makes a mutator build byte-identical
+// after a post-pull change to the source file: the build reads Content, and the
+// digest lets a re-pull detect that the underlying file drifted.
+//
+// Field declaration order is alphabetical to drive yaml.v3's canonical key
+// emission, matching the Lockfile-wide discipline.
+type MutatorSourcePin struct {
+	Content string `yaml:"content"`
+	Digest  string `yaml:"digest"`
+	Path    string `yaml:"path"`
 }
 
 // ProviderBinding records the resolved render-engine selection for one

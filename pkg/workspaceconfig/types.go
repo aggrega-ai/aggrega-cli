@@ -617,6 +617,21 @@ type PluginRef struct {
 type PluginRefWith struct {
 	Sources  []string       `yaml:"sources,omitempty"`
 	Settings map[string]any `yaml:"settings,omitempty"`
+	// PinnedSources carries source-file contents reconstructed from a lockfile
+	// pin — each entry the file's base name and its bytes. It is populated only
+	// when an attachment is rebuilt from the lockfile, never authored, and never
+	// serialized (the yaml/json tag drops it), so a socket may read pinned
+	// content rather than re-reading the host filesystem — keeping build output
+	// invariant to a post-pull change to the source file.
+	PinnedSources []PinnedSource `yaml:"-" json:"-"`
+}
+
+// PinnedSource is one lockfile-reconstructed source file: its base-name Path and
+// the file's Content, carried verbatim. It lets a socket read the exact bytes a
+// pull recorded rather than re-reading the host filesystem at build time.
+type PinnedSource struct {
+	Path    string
+	Content string
 }
 
 // LintConfig groups per-rule strictness dials. Future lint

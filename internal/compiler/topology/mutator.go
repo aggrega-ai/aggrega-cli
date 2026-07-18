@@ -15,14 +15,22 @@ import (
 )
 
 // AssembleMutatorInput builds the [MutatorInput] payload the Step-2 mutator
-// socket hands its guest: the release-level compilation context plus a
-// labels-only projection of the flattened topology graph. Each node projects
+// socket hands its guest: the release-level compilation context, a labels-only
+// projection of the flattened topology graph, and the attachment's own inputs —
+// the pinned source files and the free-form settings object. Each node projects
 // its underlying Component, the resolved Component version (read from the
 // catalog, the same source the IR builder stamps onto a node), and its label
 // set. Edges, values, and feature payloads are deliberately withheld — the
 // mutator's sanctioned job is labelling, not topology reshaping. Nodes project
 // in author order via the graph's OrderedMap so the payload is deterministic.
-func AssembleMutatorInput(topo *TopologyResult, catalogLookup resolver.CatalogLookup, cc CompilationContext) MutatorInput {
+//
+// It is the single home that builds the mutator input; the caller supplies the
+// attachment inputs already projected — sources as the ordered source entries
+// and settings as the authored object — so build-time source content comes from
+// the lockfile pin rather than a live host read. The settings object marshals to
+// its verbatim JSON form (deterministic sorted keys); an attachment with no
+// sources and no settings yields a payload byte-identical to one with neither.
+func AssembleMutatorInput(topo *TopologyResult, catalogLookup resolver.CatalogLookup, cc CompilationContext, sources []MutatorSource, settings map[string]any) (MutatorInput, error) {
 	nodes := types.NewOrderedMap[MutatorNode]()
 	for nodeID, node := range topo.Nodes.All() {
 		var version string
@@ -37,10 +45,19 @@ func AssembleMutatorInput(topo *TopologyResult, catalogLookup resolver.CatalogLo
 			Labels:          node.Labels,
 		})
 	}
-	return MutatorInput{
+	mi := MutatorInput{
 		CompilationContext: cc,
 		Graph:              MutatorGraph{Nodes: *nodes},
+		Sources:            sources,
 	}
+	if len(settings) > 0 {
+		raw, err := json.Marshal(settings)
+		if err != nil {
+			return MutatorInput{}, fmt.Errorf("marshal mutator settings: %w", err)
+		}
+		mi.Settings = raw
+	}
+	return mi, nil
 }
 
 // mutatorLabelsNode is the per-node shape of the labels-only document the host

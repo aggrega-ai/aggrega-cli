@@ -25,6 +25,8 @@ func TestManifestDerivedURIsAreStable(t *testing.T) {
 		"parser/toml",
 		"parser/yaml",
 		"parser/json",
+		"mutator/label-injector",
+		"mutator/selector-tagger",
 	}
 	got := embeddedArtifacts()
 	if len(got) != len(want) {

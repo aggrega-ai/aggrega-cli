@@ -22,6 +22,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/topology"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
+	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
@@ -851,10 +852,12 @@ func buildLockfile(releasePath string, cl closure.Closure, wsCfg workspaceconfig
 
 // resolveMutatorAttachments resolves each configured mutator-socket attachment
 // to the pinned record the lockfile carries: the plugin's resolved coordinate
-// identity and the export override, in authored order. Build and serve
-// reconstruct the mutator attachment list from these records rather than from
-// live workspace config, so the mutator set / order / export function that
-// shapes the rendered output is config-invariant after the pull.
+// identity, the export override, the attachment's settings object, and a
+// content-addressed pin of each declared source file, in authored order. Build
+// and serve reconstruct the mutator attachment list from these records rather
+// than from live workspace config, so the mutator set / order / export function
+// / settings / source content that shapes the rendered output is config-invariant
+// after the pull.
 //
 // Each attachment's Plugin entity resolves through the same pinned lazy view the
 // rest of the pull uses; the coordinate is derived through the single
@@ -862,6 +865,12 @@ func buildLockfile(releasePath string, cl closure.Closure, wsCfg workspaceconfig
 // ref that does not resolve is a build fault (the closure walk already pinned
 // the mutator entity, halting loudly on a missing one), so it halts here rather
 // than writing an unresolvable coordinate.
+//
+// Each declared source path is already anchored to an absolute host path by the
+// config layer; the pin records the file's content verbatim, its sha256 digest,
+// and its base name only (never the absolute host path — portability and
+// determinism), sorted by base name so the pinned wire is deterministic. A read
+// failure is a loud pull fault (a misconfigured attachment).
 func resolveMutatorAttachments(refs []workspaceconfig.PluginRef, lazyView *catalog.LazyLookup) ([]lockfile.MutatorAttachment, error) {
 	if len(refs) == 0 {
 		return nil, nil
@@ -875,10 +884,26 @@ func resolveMutatorAttachments(refs []workspaceconfig.PluginRef, lazyView *catal
 		if !ok {
 			return nil, fmt.Errorf("resolve: mutator socket plugin %q not resolvable for lockfile pin", ref.URI)
 		}
-		out = append(out, lockfile.MutatorAttachment{
+		att := lockfile.MutatorAttachment{
 			Plugin:   p.Coordinate(),
 			Function: ref.Function,
-		})
+		}
+		if ref.With != nil {
+			att.Settings = ref.With.Settings
+			for _, src := range ref.With.Sources {
+				content, err := os.ReadFile(src)
+				if err != nil {
+					return nil, fmt.Errorf("resolve: read mutator socket source %q: %w", src, err)
+				}
+				att.Sources = append(att.Sources, lockfile.MutatorSourcePin{
+					Path:    filepath.Base(src),
+					Content: string(content),
+					Digest:  digest.ContentDigest(content),
+				})
+			}
+			sort.Slice(att.Sources, func(i, j int) bool { return att.Sources[i].Path < att.Sources[j].Path })
+		}
+		out = append(out, att)
 	}
 	return out, nil
 }

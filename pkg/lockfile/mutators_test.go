@@ -12,6 +12,57 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 )
 
+// TestMutators_SettingsAndSourcesRoundTrip proves an attachment's pinned settings
+// and content-addressed source files survive WriteLockfile → LoadLockfile (the
+// schema-validating load admits the new keys), and that MutatorAttachments
+// reconstructs them onto the ref's With — the settings inline and each pinned
+// source as a PinnedSource carrying its base name and content — so a build reads
+// settings and source content from the lockfile rather than live config or the
+// host filesystem.
+func TestMutators_SettingsAndSourcesRoundTrip(t *testing.T) {
+	in := []lockfile.MutatorAttachment{{
+		Plugin:   "mutator/tag-injector",
+		Settings: map[string]any{"team": "checkout"},
+		Sources: []lockfile.MutatorSourcePin{{
+			Path:    "rules.rego",
+			Content: "package rules\n",
+			Digest:  "sha256:deadbeef",
+		}},
+	}}
+	path := filepath.Join(t.TempDir(), "release.lock")
+	if err := lockfile.WriteLockfile(path, mutatorSampleLockfile(in)); err != nil {
+		t.Fatalf("WriteLockfile: %v", err)
+	}
+	lf, _, err := lockfile.LoadLockfile(path)
+	if err != nil {
+		t.Fatalf("LoadLockfile (schema validation is part of the load): %v", err)
+	}
+	if len(lf.Mutators) != 1 {
+		t.Fatalf("mutators len = %d, want 1: %+v", len(lf.Mutators), lf.Mutators)
+	}
+	got := lf.Mutators[0]
+	if got.Settings["team"] != "checkout" {
+		t.Errorf("settings roundtrip: got %+v, want team=checkout", got.Settings)
+	}
+	if len(got.Sources) != 1 || got.Sources[0].Path != "rules.rego" ||
+		got.Sources[0].Content != "package rules\n" || got.Sources[0].Digest != "sha256:deadbeef" {
+		t.Errorf("source pin roundtrip: got %+v", got.Sources)
+	}
+
+	refs := lockfile.MutatorAttachments(lf)
+	if len(refs) != 1 || refs[0].With == nil {
+		t.Fatalf("MutatorAttachments reconstruction: got %+v", refs)
+	}
+	with := refs[0].With
+	if with.Settings["team"] != "checkout" {
+		t.Errorf("reconstructed settings: got %+v", with.Settings)
+	}
+	if len(with.PinnedSources) != 1 || with.PinnedSources[0].Path != "rules.rego" ||
+		with.PinnedSources[0].Content != "package rules\n" {
+		t.Errorf("reconstructed pinned sources: got %+v", with.PinnedSources)
+	}
+}
+
 // mutatorSampleLockfile returns a minimal schema-valid lockfile carrying the
 // supplied mutator attachments, so a write→load roundtrip exercises the
 // mutators section through the real writer and the schema-validating loader.
@@ -49,7 +100,7 @@ func TestMutators_OrderPreservedThroughRoundTrip(t *testing.T) {
 		t.Fatalf("mutators len = %d, want %d: %+v", len(lf.Mutators), len(in), lf.Mutators)
 	}
 	for i := range in {
-		if lf.Mutators[i] != in[i] {
+		if lf.Mutators[i].Plugin != in[i].Plugin || lf.Mutators[i].Function != in[i].Function {
 			t.Errorf("mutators[%d] = %+v, want %+v (author order must be preserved, not sorted)",
 				i, lf.Mutators[i], in[i])
 		}

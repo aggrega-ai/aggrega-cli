@@ -185,7 +185,11 @@ func runMutatorSocket(ctx context.Context, inputs Inputs, catalogLookup resolver
 		if err != nil {
 			return fmt.Errorf("Step 2 (mutator): resolve plugin %q: %w", ref.URI, err)
 		}
-		payload, err := json.Marshal(topology.AssembleMutatorInput(topo, catalogLookup, cc))
+		mi, err := topology.AssembleMutatorInput(topo, catalogLookup, cc, mutatorSources(ref), attachmentSettings(ref))
+		if err != nil {
+			return fmt.Errorf("Step 2 (mutator): assemble input for plugin %q: %w", ref.URI, err)
+		}
+		payload, err := json.Marshal(mi)
 		if err != nil {
 			return fmt.Errorf("Step 2 (mutator): marshal input for plugin %q: %w", ref.URI, err)
 		}
@@ -243,7 +247,7 @@ func runPolicySocket(ctx context.Context, inputs Inputs, catalogLookup resolver.
 		// copy), so per-ref marshalling adds only this attachment's inputs.
 		in := *analysis.PolicyInput
 		in.Sources = sources
-		in.Settings = policySettings(ref)
+		in.Settings = attachmentSettings(ref)
 		payload, err := json.Marshal(in)
 		if err != nil {
 			return fmt.Errorf("Step 4 (policy): marshal input for plugin %q: %w", ref.URI, err)
@@ -310,7 +314,7 @@ func runRenderPolicySocket(ctx context.Context, inputs Inputs, catalogLookup res
 		if err != nil {
 			return fmt.Errorf("Step 5 (render policy): plugin %q: %w", ref.URI, err)
 		}
-		settings := policySettings(ref)
+		settings := attachmentSettings(ref)
 		payload, err := json.Marshal(analyzer.RenderPolicyInput{
 			Artifacts: artifacts,
 			Sources:   sources,
@@ -408,14 +412,34 @@ func policyExport(ref workspaceconfig.PluginRef) string {
 	return wasm.ValidateExport
 }
 
-// policySettings returns the free-form settings object the attachment declared,
-// handed to the plugin verbatim, or nil when the attachment declares none. The
-// host does not parse or act on it.
-func policySettings(ref workspaceconfig.PluginRef) map[string]any {
+// attachmentSettings returns the free-form settings object the attachment
+// declared, handed to the plugin verbatim, or nil when the attachment declares
+// none. The host does not parse or act on it. The accessor is socket-agnostic —
+// the policy and mutator sockets share this one settings projection.
+func attachmentSettings(ref workspaceconfig.PluginRef) map[string]any {
 	if ref.With == nil {
 		return nil
 	}
 	return ref.With.Settings
+}
+
+// mutatorSources projects the attachment's pinned source files into the mutator
+// socket's ordered source entries, sorted by base name. It deliberately diverges
+// from readPolicySources: the policy socket reads live host files at compile
+// time, whereas the mutator reads CONTENT pinned in the lockfile and
+// reconstructed onto the ref (PinnedSources) — so a mutator build stays
+// byte-identical after a post-pull change to the source file. Returns nil when
+// the attachment pins no sources.
+func mutatorSources(ref workspaceconfig.PluginRef) []topology.MutatorSource {
+	if ref.With == nil || len(ref.With.PinnedSources) == 0 {
+		return nil
+	}
+	sources := make([]topology.MutatorSource, 0, len(ref.With.PinnedSources))
+	for _, s := range ref.With.PinnedSources {
+		sources = append(sources, topology.MutatorSource{Path: s.Path, Content: s.Content})
+	}
+	sort.Slice(sources, func(i, j int) bool { return sources[i].Path < sources[j].Path })
+	return sources
 }
 
 // readPolicySources reads the attachment's declared source files at compile time

@@ -1,0 +1,71 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Cognitio S.r.l.
+
+//go:build wasip1
+
+// Command selector-tagger-mutator is an embedded mutator Wasm guest. It reads a
+// component-to-tag map from a definition file and, for every topology node, sets
+// a tag label to the value the map assigns the node's component, falling back to
+// a default tag from its attachment settings when the component is absent from
+// the map. It self-describes as a mutator plugin whose mutate export the host
+// validates before dispatch; the mapping lookup and patch construction live in
+// mutatorcore, which is exercised directly on the host toolchain, so this guest
+// holds only the ABI decode, the call, and the ABI encode.
+//
+// Build: GOOS=wasip1 GOARCH=wasm go build -buildmode=c-shared -o selector-tagger.wasm ./plugins/selector-tagger-mutator
+package main
+
+import (
+	pdk "github.com/extism/go-pdk"
+
+	"github.com/aggrega-ai/aggrega-cli/plugins/mutatorcore"
+	"github.com/aggrega-ai/aggrega-pdk-go/pkg/aggrega"
+)
+
+// descriptor is the describe() self-report: a v1alpha1 mutator plugin whose
+// mutate export the host validates before dispatch. A mutator is attached by URI
+// at the mutator socket rather than matched by a served capability, so it
+// advertises none.
+func descriptor() aggrega.PluginDescriptor {
+	return aggrega.PluginDescriptor{
+		AbiVersion:  aggrega.APIVersion,
+		PluginType:  "mutator",
+		Description: "Set a tag label on each topology node from a component-to-tag map.",
+		Exports:     []aggrega.PluginExport{{Name: "mutate"}},
+		Metadata:    &aggrega.PluginDescriptorMeta{Author: "aggrega", License: "Apache-2.0"},
+	}
+}
+
+//go:wasmexport describe
+func describe() int32 {
+	out, err := aggrega.MarshalDescriptor(descriptor())
+	if err != nil {
+		pdk.SetError(err)
+		return 1
+	}
+	pdk.Output(out)
+	return 0
+}
+
+//go:wasmexport mutate
+func mutate() int32 {
+	var in aggrega.MutatorInput
+	if err := in.UnmarshalJSON(pdk.Input()); err != nil {
+		pdk.SetError(err)
+		return 1
+	}
+	patches, err := mutatorcore.SelectorTaggerPatches(in.Graph.Nodes, in.Settings, in.Sources)
+	if err != nil {
+		pdk.SetError(err)
+		return 1
+	}
+	out, err := aggrega.MutatorOutput{Patches: patches}.MarshalJSON()
+	if err != nil {
+		pdk.SetError(err)
+		return 1
+	}
+	pdk.Output(out)
+	return 0
+}
+
+func main() {}

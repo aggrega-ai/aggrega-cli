@@ -235,9 +235,12 @@ func canonicalise(lf *Lockfile) *Lockfile {
 	// in list order), so it is copied in author order and deliberately NOT
 	// sorted — unlike every URI-sorted section above. Two independent
 	// canonicalise calls over the same input still produce byte-identical output
-	// because the copy preserves the same order each time. MutatorAttachment
-	// holds only scalar fields, so a shallow copy fully detaches it from the
-	// caller's slice.
+	// because the copy preserves the same order each time. The shallow copy
+	// shares each attachment's Settings map and Sources slice with the caller —
+	// the same aliasing the Entities / Plugins shallow copies carry above — which
+	// is safe because the canonicalised output is written once (marshalled) and
+	// never mutated. The pinned sources are recorded in base-name order at pull,
+	// so the marshalled bytes stay deterministic without a re-sort here.
 	out.Mutators = make([]MutatorAttachment, len(lf.Mutators))
 	copy(out.Mutators, lf.Mutators)
 
