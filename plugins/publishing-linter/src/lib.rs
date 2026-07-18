@@ -5,7 +5,7 @@
 //!
 //! Convergence point for the publishing-discipline rule set. At plugin
 //! v0.1.0 the only rule registered is `schema-evolution` (PATCH /
-//! MINOR / MAJOR classification per VS §2.13). Subsequent rule work
+//! MINOR / MAJOR classification of a schema-evolution change). Subsequent rule work
 //! adds modules under [`rules`] and registers them in [`lint_rules`]'s
 //! dispatch table.
 //!

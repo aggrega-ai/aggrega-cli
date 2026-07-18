@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Cognitio S.r.l.
 
-//! Schema-evolution PATCH / MINOR / MAJOR classification per VS §2.13.
+//! Schema-evolution PATCH / MINOR / MAJOR classification.
 //!
 //! The classifier consumes the previous-version + proposed-version
 //! entity structures (parsed by the host from YAML to JSON before
