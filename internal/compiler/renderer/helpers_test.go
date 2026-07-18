@@ -527,7 +527,7 @@ func TestDispatchWorkloadSynthesis_AllBranches(t *testing.T) {
 // noopEngine is a minimal Engine impl for the synthesis-dispatch test.
 type noopEngine struct{}
 
-func (noopEngine) Render(ctx context.Context, _ map[string]any, _ NodeRenderContext) (map[string][]byte, error) {
+func (noopEngine) Render(ctx context.Context, _ map[string]any, _ NodeRenderContext) ([]RenderedFile, error) {
 	return nil, nil
 }
 

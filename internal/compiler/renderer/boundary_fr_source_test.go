@@ -21,9 +21,9 @@ import (
 // resolved to an extracted cache path (not verbatim-forwarded).
 type sourceCaptureEngine struct{ captured *any }
 
-func (e sourceCaptureEngine) Render(_ context.Context, _ map[string]any, nodeCtx NodeRenderContext) (map[string][]byte, error) {
+func (e sourceCaptureEngine) Render(_ context.Context, _ map[string]any, nodeCtx NodeRenderContext) ([]RenderedFile, error) {
 	*e.captured = nodeCtx.Source
-	return map[string][]byte{}, nil
+	return nil, nil
 }
 
 func (e sourceCaptureEngine) Contract() ProviderContract {

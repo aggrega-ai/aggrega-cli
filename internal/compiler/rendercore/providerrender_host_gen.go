@@ -112,6 +112,8 @@ type RenderedFile struct {
 	Path string `json:"path" yaml:"path"`
 	// Content The file's serialized bytes exactly as the guest produced them; the host writes these bytes verbatim and runs no serializer, so output is byte-identical to what the guest emitted (base64 on the JSON wire).
 	Content []byte `json:"content" yaml:"content"`
+	// Format The format the guest declares the emitted file was rendered in, so the host can route the file to a matching parser. Absent when the guest declares no format, in which case the host infers the format from the file extension.
+	Format string `json:"format,omitempty" yaml:"format,omitempty"`
 }
 
 // SourceFile One file of a pre-packaged source projection: its chart-root-relative path and its raw bytes, exactly as the host read them from the local source at compile time.
@@ -1215,6 +1217,14 @@ func (t RenderedFile) MarshalJSON() ([]byte, error) {
 	first = false
 	buf.WriteString("\"content\":")
 	writeJSONBytes(&buf, t.Content)
+	if t.Format != "" {
+		if !first {
+			buf.WriteByte(',')
+		}
+		first = false
+		buf.WriteString("\"format\":")
+		writeJSONString(&buf, t.Format)
+	}
 	buf.WriteByte('}')
 	return buf.Bytes(), nil
 }
@@ -1244,6 +1254,12 @@ func (t *RenderedFile) UnmarshalJSON(data []byte) error {
 				return err
 			} else {
 				t.Content = v
+			}
+		case "format":
+			if s, err := readString(dec); err != nil {
+				return err
+			} else {
+				t.Format = s
 			}
 		default:
 			if _, err := readRaw(dec, data); err != nil {

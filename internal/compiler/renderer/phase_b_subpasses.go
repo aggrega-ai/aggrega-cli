@@ -738,13 +738,11 @@ func renderFeatureRecipeFiles(
 			return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: frNodeCtx.NodeID}, "feature recipe render")
 		}
 		renderIsIntermediate := RenderIsIntermediate(frEngine)
-		names := make([]string, 0, len(files))
-		for p := range files {
-			names = append(names, p)
-		}
-		sort.Strings(names)
-		for _, p := range names {
-			state.EmittedFiles = append(state.EmittedFiles, EmittedFile{Name: p, Origin: EmitOriginSource, Body: files[p], Intermediate: renderIsIntermediate})
+		// Accumulate by sorted path for deterministic EmittedFile order, carrying
+		// each file's producer-declared format onto the EmittedFile.
+		sort.Slice(files, func(i, j int) bool { return files[i].Path < files[j].Path })
+		for _, f := range files {
+			state.EmittedFiles = append(state.EmittedFiles, EmittedFile{Name: f.Path, Origin: EmitOriginSource, Body: f.Content, Intermediate: renderIsIntermediate, Format: f.Format})
 		}
 	}
 

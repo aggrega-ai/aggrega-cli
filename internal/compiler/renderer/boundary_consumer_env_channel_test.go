@@ -19,7 +19,7 @@ type envOverrideStubEngine struct {
 	overrides map[string]map[string]string
 }
 
-func (e envOverrideStubEngine) Render(context.Context, map[string]any, NodeRenderContext) (map[string][]byte, error) {
+func (e envOverrideStubEngine) Render(context.Context, map[string]any, NodeRenderContext) ([]RenderedFile, error) {
 	return nil, nil
 }
 

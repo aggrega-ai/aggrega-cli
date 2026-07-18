@@ -82,4 +82,10 @@ type EmittedFile struct {
 	Origin       EmitOrigin // input kind that produced this file
 	Body         []byte     // file contents
 	Intermediate bool       // true → consumed by BoundaryAssembler; not written to disk directly
+	// Format is the producer-declared render format of this file (e.g. "hcl",
+	// "json"), carried verbatim from the rendering provider guest. Empty when the
+	// guest declared none, in which case a downstream consumer selects the format
+	// from the file extension instead. Additive metadata: it never affects the
+	// emitted bytes.
+	Format string
 }

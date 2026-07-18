@@ -31,7 +31,7 @@ type versionedAssembler struct {
 	assembleCount *int
 }
 
-func (a *versionedAssembler) Render(_ context.Context, _ map[string]any, nodeCtx renderer.NodeRenderContext) (map[string][]byte, error) {
+func (a *versionedAssembler) Render(_ context.Context, _ map[string]any, nodeCtx renderer.NodeRenderContext) ([]renderer.RenderedFile, error) {
 	var b strings.Builder
 	b.WriteString("apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: ")
 	b.WriteString(nodeCtx.NodeID)
@@ -45,7 +45,7 @@ func (a *versionedAssembler) Render(_ context.Context, _ map[string]any, nodeCtx
 	for _, k := range keys {
 		fmt.Fprintf(&b, "    %s: %q\n", k, labels[k])
 	}
-	return map[string][]byte{"manifest.yaml": []byte(b.String())}, nil
+	return []renderer.RenderedFile{{Path: "manifest.yaml", Content: []byte(b.String())}}, nil
 }
 
 func (a *versionedAssembler) Contract() renderer.ProviderContract {

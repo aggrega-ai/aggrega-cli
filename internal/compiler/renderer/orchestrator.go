@@ -18,8 +18,18 @@ import (
 )
 
 // RenderResult is the output of the full Step 5 rendering pipeline.
+//
+// Formats carries the producer-declared render format of a file (e.g. "hcl",
+// "json") keyed by the SAME boundary-relative path that keys Files, for the
+// files whose rendering provider declared one. It is a parallel map, not a
+// change to the Files byte contract: an entry is present only when the producer
+// declared a format, so a consumer reads a file's format by the same key it
+// reads the bytes and falls back to extension-based selection when absent. Files
+// assembled across a provider's merge boundary carry no per-file format and are
+// absent from Formats.
 type RenderResult struct {
 	Files    map[string][]byte // boundary-relative path → content
+	Formats  map[string]string // boundary-relative path → producer-declared format (parallel to Files; same keys)
 	Warnings []string
 }
 
@@ -40,6 +50,12 @@ type dispatchKey struct {
 // pendingDispatch holds per-(path, provider) state across the per-node loop
 // and the per-(path, provider) BoundaryAssembler assembly pass.
 //
+// formats mirrors files exactly — keyed [nodeID][path] with the SAME keys —
+// carrying each file's producer-declared format alongside its bytes. An entry
+// exists only when the rendering provider declared a format for that file. The
+// two maps are populated at the same site and must be keyed in lockstep; the
+// flat-output flush reads formats by the same key it reads files.
+//
 // intermediates carries Intermediate=true EmittedFiles separately from files
 // so the orchestrator never writes them at the dispatch path directly; they
 // flow only to the BoundaryAssembler at finalization. nodeAnnotations and
@@ -54,6 +70,7 @@ type dispatchKey struct {
 // the resolver-side BoundaryAnnotations map.
 type pendingDispatch struct {
 	files                  map[string]map[string][]byte
+	formats                map[string]map[string]string
 	intermediates          map[string][]EmittedFile
 	nodeAnnotations        map[string]map[string]string
 	nodeComponent          map[string]string
@@ -100,7 +117,8 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 
 	graph := input.Graph
 	result := &RenderResult{
-		Files: make(map[string][]byte),
+		Files:   make(map[string][]byte),
+		Formats: make(map[string]string),
 	}
 
 	// Resolve recipes per node
@@ -455,7 +473,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// engine.Render (the source-based render) runs only for sourced mode;
 		// synthesised renders in Phase B.4, artifacts-only emits in Phase B.3.
 		runEngineRender := hasSource
-		var files map[string][]byte
+		var files []RenderedFile
 		if runEngineRender {
 			var err error
 			files, err = engine.Render(ctx, values, nodeCtx)
@@ -480,17 +498,18 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// AssembleBoundary's IntermediatesByNode. Engines that are not
 		// BoundaryAssemblers also keep Intermediate=false.
 		renderIsIntermediate := RenderIsIntermediate(engine)
-		sourceNames := make([]string, 0, len(files))
-		for p := range files {
-			sourceNames = append(sourceNames, p)
-		}
-		sort.Strings(sourceNames)
-		for _, p := range sourceNames {
+		// Accumulate by sorted path so state.EmittedFiles order is stable across
+		// runs of identical input regardless of the guest's emission order. Each
+		// file's producer-declared Format rides onto the EmittedFile so it stays
+		// bound to its file downstream.
+		sort.Slice(files, func(i, j int) bool { return files[i].Path < files[j].Path })
+		for _, f := range files {
 			state.EmittedFiles = append(state.EmittedFiles, EmittedFile{
-				Name:         p,
+				Name:         f.Path,
 				Origin:       EmitOriginSource,
-				Body:         files[p],
+				Body:         f.Content,
 				Intermediate: renderIsIntermediate,
+				Format:       f.Format,
 			})
 		}
 
@@ -629,6 +648,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		if _, ok := dispatch[key]; !ok {
 			dispatch[key] = &pendingDispatch{
 				files:           map[string]map[string][]byte{},
+				formats:         map[string]map[string]string{},
 				intermediates:   map[string][]EmittedFile{},
 				nodeAnnotations: map[string]map[string]string{},
 				nodeComponent:   map[string]string{},
@@ -661,14 +681,21 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 			dispatch[key].contributingBoundaries = append(dispatch[key].contributingBoundaries, bp)
 		}
 		nodeFileMap := make(map[string][]byte, len(state.EmittedFiles))
+		nodeFormatMap := map[string]string{}
 		for _, f := range state.EmittedFiles {
 			if f.Intermediate {
 				dispatch[key].intermediates[nodeID] = append(dispatch[key].intermediates[nodeID], f)
 				continue
 			}
 			nodeFileMap[f.Name] = f.Body
+			// Keep the producer-declared format bound to its file, keyed identically
+			// to nodeFileMap so the flat-output flush reads them in lockstep.
+			if f.Format != "" {
+				nodeFormatMap[f.Name] = f.Format
+			}
 		}
 		dispatch[key].files[nodeID] = nodeFileMap
+		dispatch[key].formats[nodeID] = nodeFormatMap
 		dispatch[key].nodeAnnotations[nodeID] = nodeCtx.Annotations
 		dispatch[key].nodeComponent[nodeID] = node.Component
 		dispatch[key].engineByNode[nodeID] = engine
@@ -856,6 +883,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		if _, ok := dispatch[dKey]; !ok {
 			dispatch[dKey] = &pendingDispatch{
 				files:           map[string]map[string][]byte{},
+				formats:         map[string]map[string]string{},
 				intermediates:   map[string][]EmittedFile{},
 				nodeAnnotations: map[string]map[string]string{},
 				nodeComponent:   map[string]string{},
@@ -1005,6 +1033,11 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// pass addresses an assembled artifact by the name the provider
 		// emitted it. The prefix is reattached at the final flush.
 		groupFiles := map[string][]byte{}
+		// Producer-declared formats, keyed by the same group-relative path as
+		// groupFiles. Populated only for the flat-output case below; an assembler
+		// group leaves it empty because per-file format does not survive the merge
+		// boundary, so its artifacts fall back to extension-based selection.
+		groupFormats := map[string]string{}
 
 		// If engine is a BoundaryAssembler (helm-chart, compose) AND the dispatch path is non-empty:
 		// nest per-node under charts/<nodeID>/ and emit assembled files at the dispatch path.
@@ -1077,10 +1110,17 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 				}
 			}
 		} else {
-			// Flat: per-node files directly under the dispatch path
-			for _, nodeFiles := range pd.files {
+			// Flat: per-node files directly under the dispatch path. Each file's
+			// producer-declared format travels alongside its bytes on groupFormats,
+			// keyed by the same group-relative path, so the render-policy parser seam
+			// can prefer the producer's format over the path extension.
+			for nodeID, nodeFiles := range pd.files {
+				nodeFormats := pd.formats[nodeID]
 				for p, c := range nodeFiles {
 					groupFiles[p] = c
+					if fmtName := nodeFormats[p]; fmtName != "" {
+						groupFormats[p] = fmtName
+					}
 				}
 			}
 		}
@@ -1089,6 +1129,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 			provider: key.Provider,
 			prefix:   dispatchPrefix,
 			files:    groupFiles,
+			formats:  groupFormats,
 		}
 	}
 
@@ -1123,6 +1164,12 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		grp := assembledByDispatch[key]
 		for p, c := range grp.files {
 			result.Files[grp.prefix+p] = c
+			// Reattach the same disk-write prefix to the format key so Formats stays
+			// keyed in lockstep with Files. Present only for a file whose producer
+			// declared a format.
+			if fmtName := grp.formats[p]; fmtName != "" {
+				result.Formats[grp.prefix+p] = fmtName
+			}
 		}
 	}
 

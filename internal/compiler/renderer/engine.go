@@ -12,12 +12,15 @@ import (
 )
 
 // Engine renders one node's values dictionary into on-disk-style artifacts.
-// Keys are relative paths (e.g., "Chart.yaml", "templates/deployment.yaml");
-// values are file contents. Per-node files are later prefixed by the orchestrator
-// with the boundary path (and, for chart-structure engines, a `charts/<nodeID>/`
-// sub-chart prefix).
+// Each returned RenderedFile carries a relative path (e.g., "Chart.yaml",
+// "templates/deployment.yaml"), its file contents, and the producer-declared
+// format the guest rendered it in (empty when the guest declares none).
+// Per-node files are later prefixed by the orchestrator with the boundary path
+// (and, for chart-structure engines, a `charts/<nodeID>/` sub-chart prefix). The
+// per-file format travels with its file so a downstream consumer can prefer the
+// producer's format over the path extension; it never affects the emitted bytes.
 type Engine interface {
-	Render(ctx context.Context, values map[string]any, nodeCtx NodeRenderContext) (map[string][]byte, error)
+	Render(ctx context.Context, values map[string]any, nodeCtx NodeRenderContext) ([]RenderedFile, error)
 	// Contract reports which Recipe input kinds this engine renders. It is
 	// the Go analog of the Wasm provider plugin's describe() ABI — each engine
 	// self-reports, so the central input-kind gate (orchestrator) reads a

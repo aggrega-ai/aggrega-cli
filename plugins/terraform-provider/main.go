@@ -169,6 +169,17 @@ func renderNode() int32 {
 	}
 	// A payload with no projection yields an empty output.
 
+	// Declare each emitted file's rendered format from the terraform provider's
+	// own suffix classification, so the host routes the file to a matching parser
+	// without inferring the format from the extension. A file whose suffix the
+	// classifier does not recognize keeps an empty format and the host falls back
+	// to its extension table.
+	for i := range out.Files {
+		if out.Files[i].Format == "" {
+			out.Files[i].Format = terraformFileFormat(out.Files[i].Path)
+		}
+	}
+
 	encoded, err := out.MarshalJSON()
 	if err != nil {
 		pdk.SetError(err)
@@ -208,6 +219,22 @@ func validateNodeInput() int32 {
 	}
 	pdk.Output(encoded)
 	return 0
+}
+
+// terraformFileFormat classifies an emitted file's rendered format from its
+// suffix: a .tf.json file is JSON-encoded HCL, a .tf file is native HCL syntax.
+// Any other suffix returns the empty string, leaving the host to fall back to its
+// extension table. The format values originate here in the provider guest, not in
+// the host core.
+func terraformFileFormat(path string) string {
+	switch {
+	case strings.HasSuffix(path, ".tf.json"):
+		return "json"
+	case strings.HasSuffix(path, ".tf"):
+		return "hcl"
+	default:
+		return ""
+	}
 }
 
 // validateTerraformModule structurally parses every Terraform configuration file

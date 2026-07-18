@@ -111,4 +111,7 @@ type RenderedArtifact struct {
 	Path    string          `json:"path"`
 	Content string          `json:"content"`
 	Tree    json.RawMessage `json:"tree,omitempty"`
+	// Format is the rendered format when the producing provider declared it,
+	// carried verbatim; absent when the provider declared no format.
+	Format string `json:"format,omitempty"`
 }

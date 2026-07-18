@@ -38,7 +38,7 @@ type codecProviderEngine struct {
 	segments *int32
 }
 
-func (e codecProviderEngine) Render(context.Context, map[string]any, NodeRenderContext) (map[string][]byte, error) {
+func (e codecProviderEngine) Render(context.Context, map[string]any, NodeRenderContext) ([]RenderedFile, error) {
 	return nil, nil
 }
 func (e codecProviderEngine) Contract() ProviderContract { return ProviderContract{} }
@@ -53,7 +53,7 @@ func (e codecProviderEngine) PipelineCodec(yamlIndent int) (frp.Codec, bool) {
 // back to the stock codec.
 type plainEngine struct{}
 
-func (plainEngine) Render(context.Context, map[string]any, NodeRenderContext) (map[string][]byte, error) {
+func (plainEngine) Render(context.Context, map[string]any, NodeRenderContext) ([]RenderedFile, error) {
 	return nil, nil
 }
 func (plainEngine) Contract() ProviderContract { return ProviderContract{} }

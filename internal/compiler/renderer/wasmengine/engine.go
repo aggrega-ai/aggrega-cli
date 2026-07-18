@@ -253,12 +253,13 @@ func (e *Engine) Close(ctx context.Context) error {
 }
 
 // Render projects the sourced node into a render_node payload and returns the
-// guest's per-file output as a path→bytes map. nodeCtx.Source must be the
-// resolved filesystem path the orchestrator populates before dispatch; a
-// non-string value is an orchestrator bug rather than authoring drift, matching
-// the in-tree engine's contract. A duplicate output path from the guest is a
-// loud error rather than a silent last-writer-wins overwrite.
-func (e *Engine) Render(ctx context.Context, values map[string]any, nodeCtx renderer.NodeRenderContext) (map[string][]byte, error) {
+// guest's per-file output verbatim — each file's path, bytes, and the format the
+// guest declared it in. nodeCtx.Source must be the resolved filesystem path the
+// orchestrator populates before dispatch; a non-string value is an orchestrator
+// bug rather than authoring drift, matching the in-tree engine's contract. A
+// duplicate output path from the guest is a loud error rather than a silent
+// last-writer-wins overwrite.
+func (e *Engine) Render(ctx context.Context, values map[string]any, nodeCtx renderer.NodeRenderContext) ([]renderer.RenderedFile, error) {
 	src, ok := nodeCtx.Source.(string)
 	if !ok {
 		return nil, fmt.Errorf(
@@ -284,14 +285,14 @@ func (e *Engine) Render(ctx context.Context, values map[string]any, nodeCtx rend
 		return nil, err
 	}
 
-	files := make(map[string][]byte, len(out.Files))
+	seen := make(map[string]struct{}, len(out.Files))
 	for _, f := range out.Files {
-		if _, dup := files[f.Path]; dup {
+		if _, dup := seen[f.Path]; dup {
 			return nil, fmt.Errorf("wasmengine: node %q: guest emitted duplicate output path %q", nodeCtx.NodeID, f.Path)
 		}
-		files[f.Path] = f.Content
+		seen[f.Path] = struct{}{}
 	}
-	return files, nil
+	return out.Files, nil
 }
 
 // SynthesizeWorkload projects the evaluated workload and its per-slot secret

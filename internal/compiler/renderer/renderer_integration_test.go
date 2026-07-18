@@ -313,7 +313,7 @@ type captureComposerEngine struct {
 	captured []renderer.EmittedFile
 }
 
-func (c *captureComposerEngine) Render(_ context.Context, _ map[string]any, _ renderer.NodeRenderContext) (map[string][]byte, error) {
+func (c *captureComposerEngine) Render(_ context.Context, _ map[string]any, _ renderer.NodeRenderContext) ([]renderer.RenderedFile, error) {
 	return nil, nil
 }
 

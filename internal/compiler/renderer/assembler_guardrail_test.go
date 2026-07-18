@@ -25,7 +25,7 @@ type renderOnlyAssemblerWrapper struct {
 	wrapped renderer.Engine
 }
 
-func (renderOnlyAssemblerWrapper) Render(_ context.Context, _ map[string]any, _ renderer.NodeRenderContext) (map[string][]byte, error) {
+func (renderOnlyAssemblerWrapper) Render(_ context.Context, _ map[string]any, _ renderer.NodeRenderContext) ([]renderer.RenderedFile, error) {
 	return nil, nil
 }
 

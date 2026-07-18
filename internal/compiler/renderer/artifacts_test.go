@@ -21,7 +21,7 @@ import (
 // Engine value but not real rendering.
 type stubEngine struct{}
 
-func (stubEngine) Render(_ context.Context, _ map[string]any, _ NodeRenderContext) (map[string][]byte, error) {
+func (stubEngine) Render(_ context.Context, _ map[string]any, _ NodeRenderContext) ([]RenderedFile, error) {
 	return nil, nil
 }
 

@@ -288,13 +288,13 @@ func runPolicySocket(ctx context.Context, inputs Inputs, catalogLookup resolver.
 // stage). An unconfigured socket is a no-op. A resolution, load, source-read, or
 // output-unmarshal failure halts the build loudly (a misconfigured attachment is
 // a build fault, not a policy verdict).
-func runRenderPolicySocket(ctx context.Context, inputs Inputs, catalogLookup resolver.CatalogLookup, files map[string][]byte) error {
+func runRenderPolicySocket(ctx context.Context, inputs Inputs, catalogLookup resolver.CatalogLookup, files map[string][]byte, formats map[string]string) error {
 	refs := inputs.WorkspaceConfig.Plugins.Policy
 	if len(refs) == 0 {
 		return nil
 	}
 	lookup := resolveSocketLookup(inputs, catalogLookup, workspaceconfig.SocketPolicy)
-	artifacts, err := sortedRenderedArtifacts(ctx, inputs, catalogLookup, files)
+	artifacts, err := sortedRenderedArtifacts(ctx, inputs, catalogLookup, files, formats)
 	if err != nil {
 		return fmt.Errorf("Step 5 (render policy): %w", err)
 	}
@@ -464,27 +464,30 @@ var policyNativeFormats = map[string]bool{
 // emitted artifact, so the sort yields one canonical wire order for identical
 // input.
 //
-// For an artifact whose extension resolves to a format the policy guest does not
-// read natively, the host parses the content through the resolved parser and
-// carries the parsed tree on the artifact, so a policy can reason over the
-// structure of a non-native format. A native format (JSON, YAML) and an
-// extension the table does not map both leave the tree empty — the guest reads
-// the raw content directly, and the two native-format render-policy paths stay
-// byte-identical. The parser here feeds a verdict gate, so the host carries no
-// reproducibility posture of its own; a core parser embedded in the binary
+// The parser format is selected in precedence order: the producer-declared
+// format the rendering provider carried for the artifact wins; absent that, the
+// path extension selects it. There is no third path — the host never inspects an
+// artifact's content to guess a format. For an artifact whose selected format the
+// policy guest does not read natively, the host parses the content through the
+// resolved parser and carries the parsed tree on the artifact, so a policy can
+// reason over the structure of a non-native format. A native format (JSON, YAML)
+// and a selection that yields no format both leave the tree empty — the guest
+// reads the raw content directly, and the two native-format render-policy paths
+// stay byte-identical. The parser here feeds a verdict gate, so the host carries
+// no reproducibility posture of its own; a core parser embedded in the binary
 // resolves with no lockfile pin. A parse resolution or invocation failure on a
 // non-native artifact halts loudly rather than dropping the tree silently.
-func sortedRenderedArtifacts(ctx context.Context, inputs Inputs, catalogLookup resolver.CatalogLookup, files map[string][]byte) ([]analyzer.RenderedArtifact, error) {
+func sortedRenderedArtifacts(ctx context.Context, inputs Inputs, catalogLookup resolver.CatalogLookup, files map[string][]byte, formats map[string]string) ([]analyzer.RenderedArtifact, error) {
 	arts := make([]analyzer.RenderedArtifact, 0, len(files))
 	for path, content := range files {
-		arts = append(arts, analyzer.RenderedArtifact{Path: path, Content: string(content)})
+		arts = append(arts, analyzer.RenderedArtifact{Path: path, Content: string(content), Format: formats[path]})
 	}
 	sort.Slice(arts, func(i, j int) bool { return arts[i].Path < arts[j].Path })
 
 	var res parsersocket.ParserResolver
 	var load parsersocket.ParserLoader
 	for i := range arts {
-		format, ok := parsersocket.FormatForExtension(arts[i].Path)
+		format, ok := parsersocket.SelectFormat(arts[i].Format, arts[i].Path)
 		if !ok || policyNativeFormats[format] {
 			continue
 		}
