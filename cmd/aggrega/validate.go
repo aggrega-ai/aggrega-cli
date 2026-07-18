@@ -13,6 +13,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/topology"
+	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/compactform"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
@@ -48,6 +49,8 @@ import (
 func newValidateCmd() *cobra.Command {
 	var catalogDirs []string
 	var releasePath string
+	var pluginPath string
+	var pluginType string
 	c := &cobra.Command{
 		Use:   "validate [entity-path]",
 		Short: "Check correctness across the catalog, a Release, or one entity",
@@ -69,6 +72,22 @@ func newValidateCmd() *cobra.Command {
 			path := ""
 			if len(args) > 0 {
 				path = args[0]
+			}
+			// --type declares the plugin type for a binary-only .wasm check and is
+			// meaningful only alongside --plugin; reject it on its own so it never
+			// silently no-ops on a catalog-, release-, or entity-scoped run.
+			if pluginType != "" && pluginPath == "" {
+				return fmt.Errorf("OPS_ERROR: --type applies only with --plugin; pass --plugin <path-to-.wasm> to validate a binary")
+			}
+			if pluginPath != "" {
+				// Binary/entity plugin validation is a distinct scope: it checks a
+				// .wasm against its own describe() self-report (and, with a Plugin
+				// entity argument, against the entity's declared surface). It selects
+				// neither the whole-catalog nor the release closure.
+				if releasePath != "" {
+					return fmt.Errorf("OPS_ERROR: --plugin is mutually exclusive with --release; validate a .wasm binary or a Release closure, not both")
+				}
+				return validatePluginBinary(pluginPath, pluginType, path, cmd.OutOrStdout())
 			}
 			rw, err := workspaceFromContext(cmd.Context())
 			if err != nil {
@@ -92,7 +111,108 @@ func newValidateCmd() *cobra.Command {
 	c.Flags().StringArrayVar(&catalogDirs, "catalog", nil,
 		"Catalog directory; repeatable. Each --catalog is prepended to the workspace catalog_dirs search stack (first match wins). Defaults to the current directory.")
 	c.Flags().StringVar(&releasePath, "release", "", "Path to a Release YAML to validate over its resolved dependency closure (mutually exclusive with an entity argument)")
+	c.Flags().StringVar(&pluginPath, "plugin", "", "Path to a raw .wasm to validate against its describe() self-report — the pre-publish authoring check. Alone it needs --type; with a Plugin entity argument it cross-checks the binary against the entity's declared type, capability claim, command mirror, and host-function record.")
+	c.Flags().StringVar(&pluginType, "type", "", "Plugin type for a binary-only --plugin check, verified against the binary's self-reported type. Only meaningful with --plugin; when a Plugin entity supplies the type, omit it (a disagreeing value halts).")
 	return c
+}
+
+// validatePluginBinary runs the plugin scope: it validates a raw .wasm against
+// its own describe() self-report and, when a Plugin entity path is supplied,
+// additionally cross-checks the binary against the entity's declared surface.
+// The check is read-only and writes nothing to disk.
+//
+// Two modes select on entityPath:
+//
+//   - Binary-only (entityPath == ""): declaredType is required and is checked
+//     against the binary's self-reported plugin type. No entity surface is read.
+//   - Full (entityPath != ""): the file must be a Plugin entity. It is schema-
+//     gated, then the binary is cross-checked against the entity's declared
+//     capability claim, command mirror, and host-function record through the one
+//     publish validation door, so `validate` and publish apply the identical
+//     check. The declared type comes from the entity; a --type that disagrees
+//     halts, since a Plugin carries a single declared type.
+func validatePluginBinary(pluginPath, declaredType, entityPath string, out io.Writer) error {
+	wasmBytes, err := os.ReadFile(pluginPath)
+	if err != nil {
+		return fmt.Errorf("read .wasm %q: %w", pluginPath, err)
+	}
+	ctx := context.Background()
+
+	if entityPath == "" {
+		if declaredType == "" {
+			return fmt.Errorf("OPS_ERROR: binary-only plugin validation needs a declared type; pass --type <plugin-type>, or add a Plugin entity argument to take the type from the entity")
+		}
+		fmt.Fprintf(out, "Plugin: %s\n", pluginPath)
+		fmt.Fprintf(out, "Declared type: %s\n", declaredType)
+		if _, err := wasm.ValidatePlugin(ctx, wasmBytes, wasm.ValidateOptions{
+			Identity:       pluginPath,
+			DeclaredType:   declaredType,
+			MaxMemoryPages: describeMaxMemoryPages,
+		}); err != nil {
+			return err
+		}
+		fmt.Fprintln(out, "Describe: valid")
+		fmt.Fprintln(out, "Type: valid")
+		return nil
+	}
+
+	data, err := os.ReadFile(entityPath)
+	if err != nil {
+		return fmt.Errorf("read %q: %w", entityPath, err)
+	}
+	var preamble struct {
+		Kind string `yaml:"kind"`
+	}
+	if err := yaml.Unmarshal(data, &preamble); err != nil {
+		return fmt.Errorf("parse YAML preamble in %q: %w", entityPath, err)
+	}
+	kind, ok := knownEntityKind(preamble.Kind)
+	if !ok || kind != envelope.KindPlugin {
+		return fmt.Errorf("--plugin cross-checks a Plugin entity, but %q declares kind %q", entityPath, preamble.Kind)
+	}
+
+	fmt.Fprintf(out, "Entity: %s\n", entityPath)
+	fmt.Fprintf(out, "Kind:   %s\n", kind)
+
+	if _, verr := envelope.ValidateBytes(kind, data, entityPath); verr != nil {
+		return fmt.Errorf("schema: %w", verr)
+	}
+	fmt.Fprintln(out, "Schema: valid")
+
+	var entity types.Plugin
+	if err := yaml.Unmarshal(data, &entity); err != nil {
+		return fmt.Errorf("parse Plugin at %q: %w", entityPath, err)
+	}
+	// One declared type: the entity's metadata.pluginType is authoritative, so a
+	// --type that disagrees is an authoring contradiction, not a second source.
+	if declaredType != "" && declaredType != entity.Metadata.PluginType {
+		return fmt.Errorf("OPS_ERROR: --type %q disagrees with the entity's metadata.pluginType %q; a Plugin has one declared type — drop --type or fix the entity", declaredType, entity.Metadata.PluginType)
+	}
+
+	// The same entity → EntityInputs mapping the publish path builds, so validate
+	// and publish can never apply a divergent cross-check. An entity declaring no
+	// runtime block falls back to the describe-time memory headroom exactly as
+	// publish does.
+	maxPages := describeMaxMemoryPages
+	if entity.Spec.Runtime != nil && entity.Spec.Runtime.MaxMemoryPages != 0 {
+		maxPages = entity.Spec.Runtime.MaxMemoryPages
+	}
+	report, err := wasm.ValidatePlugin(ctx, wasmBytes, wasm.ValidateOptions{
+		Identity:       entity.Metadata.Name + ":" + entity.Metadata.Version,
+		DeclaredType:   entity.Metadata.PluginType,
+		MaxMemoryPages: maxPages,
+		Entity:         resolver.PluginEntityInputs(entity),
+	})
+	if err != nil {
+		return err
+	}
+	fmt.Fprintln(out, "Plugin: valid")
+	// Advisory only, exactly as publish reports: the binary offers more than the
+	// entity curates. Under-declaration is legitimate and never fails the check.
+	for _, notice := range report.Notices {
+		fmt.Fprintf(out, "  notice: %s\n", notice)
+	}
+	return nil
 }
 
 // knownEntityKind maps a peeked kind string to its envelope Kind, reporting

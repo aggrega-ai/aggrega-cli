@@ -1,0 +1,162 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Cognitio S.r.l.
+
+package wasm
+
+import (
+	"context"
+	"fmt"
+)
+
+// ValidateOptions is the input to ValidatePlugin: the declared plugin type the
+// bytes are validated against, the memory cap for the describe-load, the identity
+// used in diagnostics, and an optional entity front. A nil Entity runs the
+// binary-only checks (describe-load, declared-vs-reported type); a non-nil Entity
+// additionally cross-checks the binary against an authored entity surface.
+type ValidateOptions struct {
+	// DeclaredType is the plugin type the caller declares the bytes to be. It is
+	// checked against the binary's self-reported type. Required.
+	DeclaredType string
+
+	// MaxMemoryPages caps the guest's linear memory for the describe-load. Zero
+	// applies the platform default cap.
+	MaxMemoryPages uint32
+
+	// Identity names the plugin in every diagnostic ValidatePlugin emits.
+	Identity string
+
+	// Entity is the optional authored entity surface to cross-check the binary
+	// against. Nil runs binary-only validation; non-nil additionally runs the
+	// capability, command-mirror, and host-function cross-checks and collects the
+	// under-declaration notices.
+	Entity *EntityInputs
+}
+
+// EntityInputs carries the authored entity surface ValidatePlugin cross-checks a
+// binary against, in this package's neutral shapes. The caller maps the catalog
+// entity into these fields so this package stays ignorant of the catalog entity
+// types — the same neutral boundary the load gate's per-field cross-checks use.
+type EntityInputs struct {
+	// Claim is the authored capability claim, cross-checked against the binary's
+	// describe() self-report via CrossCheckContract.
+	Claim EntityContractClaim
+
+	// CommandMirror is the entity's machine-owned CLI-command record, checked for
+	// full equality against the binary's described commands.
+	CommandMirror []PluginCLICommand
+
+	// HostFunctions is the entity's machine-owned host-function record, checked for
+	// set-equality against the host functions the binary actually imports.
+	HostFunctions []string
+
+	// CuratedSurface is the entity's authored, curated surface, read to derive the
+	// advisory under-declaration notices (binary offers more than the entity
+	// curates).
+	CuratedSurface EntityCuratedSurface
+}
+
+// ValidateReport is the successful result of ValidatePlugin: the validated
+// describe() descriptor and any advisory under-declaration notices. Notices are
+// empty in binary-only mode and never signal failure — an author may curate a
+// partial surface deliberately.
+type ValidateReport struct {
+	// Descriptor is the binary's validated describe() self-report.
+	Descriptor PluginDescriptor
+
+	// Notices is the advisory list of surfaces the binary offers that the entity
+	// does not declare. Empty when Entity is nil or the entity covers everything
+	// the binary reports.
+	Notices []string
+}
+
+// ValidatePlugin is the single publish-side validation door over a .wasm binary:
+// it loads the bytes to read their describe() self-report, checks the declared
+// plugin type against the reported one, and cross-checks an optional authored
+// entity surface. It is the one home of the validate sequence so a caller cannot
+// assemble a partial or divergent subset of the checks.
+//
+// The sequence is ordered so the most precise diagnostic surfaces first:
+//
+//  1. Describe-load under the describe-only profile (inert host-function stubs,
+//     the union import allowlist), so a binary of any plugin type instantiates
+//     purely to have its describe() read and validated. This load is itself the
+//     import-legality gate: the descriptor validation rejects any declared host
+//     function illegal for the reported plugin type, and the load cross-checks the
+//     declared host functions against the functions the binary actually imports,
+//     so a binary cannot advertise a surface it lacks nor hide one it uses.
+//  2. Declared-vs-reported plugin type. A disagreement halts with
+//     ErrWasmPluginTypeMismatch, in both binary-only and entity modes.
+//  3. Entity cross-checks, only when opts.Entity is non-nil: the authored
+//     capability claim against describe(), the machine-owned command mirror for
+//     full equality against the described commands, and the machine-owned
+//     host-function record for set-equality against the binary's actual imports;
+//     the advisory under-declaration notices are collected into the report.
+//
+// The load binds inert host-function stubs and never invokes an export beyond
+// describe(), so validation grants the guest no real host capability. On any
+// failure ValidatePlugin returns the zero report and the halting error; on
+// success it returns the report with the validated descriptor and any notices.
+func ValidatePlugin(ctx context.Context, wasmBytes []byte, opts ValidateOptions) (ValidateReport, error) {
+	desc, err := DescribePluginBytes(ctx, opts.Identity, wasmBytes, opts.MaxMemoryPages, opts.DeclaredType)
+	if err != nil {
+		return ValidateReport{}, err
+	}
+
+	if opts.DeclaredType != desc.PluginType {
+		return ValidateReport{}, fmt.Errorf(
+			"plugin %q declares plugin type %q but its describe() reports %q: %w",
+			opts.Identity, opts.DeclaredType, desc.PluginType, ErrWasmPluginTypeMismatch)
+	}
+
+	report := ValidateReport{Descriptor: desc}
+
+	if opts.Entity != nil {
+		if err := CrossCheckContract(opts.Identity, opts.Entity.Claim, desc); err != nil {
+			return ValidateReport{}, err
+		}
+		if !CommandMirrorsEqual(opts.Entity.CommandMirror, desc.Commands) {
+			return ValidateReport{}, fmt.Errorf(
+				"plugin %q: recorded command mirror %s does not match the plugin describe() commands %s: %w",
+				opts.Identity, FormatCommandMirror(opts.Entity.CommandMirror), FormatCommandMirror(desc.Commands),
+				ErrWasmCommandsMirrorMismatch)
+		}
+		derived, err := DeriveHostFunctions(opts.Identity, wasmBytes)
+		if err != nil {
+			return ValidateReport{}, err
+		}
+		if !HostFunctionsEqual(opts.Entity.HostFunctions, derived) {
+			return ValidateReport{}, fmt.Errorf(
+				"plugin %q: recorded host-function record %v does not match the .wasm imports %v: %w",
+				opts.Identity, opts.Entity.HostFunctions, derived, ErrWasmHostFunctionsStampMismatch)
+		}
+		report.Notices = UnderDeclaredNotices(opts.Entity.CuratedSurface, desc)
+	}
+
+	return report, nil
+}
+
+// HostFunctionsEqual reports whether two host-function name sets are equal as
+// sets — order and duplicates ignored — treating a nil record and an explicit
+// empty set as equal. It is the single home of the machine-owned host-function
+// record comparison: the publish validation door and the record-sync tooling
+// both consult it, so a record verifies consistently whether a binary imports
+// nothing and its record is omitted or an explicit empty list.
+func HostFunctionsEqual(a, b []string) bool {
+	seen := make(map[string]bool, len(a))
+	for _, x := range a {
+		seen[x] = true
+	}
+	other := make(map[string]bool, len(b))
+	for _, x := range b {
+		other[x] = true
+	}
+	if len(seen) != len(other) {
+		return false
+	}
+	for x := range seen {
+		if !other[x] {
+			return false
+		}
+	}
+	return true
+}

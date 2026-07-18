@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
+	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator/envelope"
 )
 
@@ -148,6 +150,134 @@ func TestValidatePluginMissingRequiredHaltsLoudly(t *testing.T) {
 	}
 	if !errors.Is(err, envelope.ErrEntityEnvelope) {
 		t.Errorf("error does not wrap ErrEntityEnvelope: %v", err)
+	}
+}
+
+// TestValidatePluginBinaryOnlyPass drives the binary-only plugin scope: a raw
+// .wasm validated against a matching declared type. It asserts the deterministic
+// report and a clean exit. The wasm toolchain is present in this environment, so
+// the fixture builds rather than skipping.
+func TestValidatePluginBinaryOnlyPass(t *testing.T) {
+	pluginPath := wasmtest.EnsureFixtureBuilt(t, "parse-go.wasm")
+	var buf bytes.Buffer
+	if err := validatePluginBinary(pluginPath, "parser", "", &buf); err != nil {
+		t.Fatalf("validatePluginBinary: %v", err)
+	}
+	got := buf.String()
+	for _, want := range []string{"Declared type: parser", "Describe: valid", "Type: valid"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("output missing %q\nfull output:\n%s", want, got)
+		}
+	}
+}
+
+// TestValidatePluginBinaryOnlyTypeMismatchHaltsLoudly confirms a declared type
+// that disagrees with the binary's describe() self-report halts with the
+// plugin-type-mismatch sentinel.
+func TestValidatePluginBinaryOnlyTypeMismatchHaltsLoudly(t *testing.T) {
+	pluginPath := wasmtest.EnsureFixtureBuilt(t, "parse-go.wasm")
+	var buf bytes.Buffer
+	err := validatePluginBinary(pluginPath, "provider", "", &buf)
+	if err == nil {
+		t.Fatalf("expected a type-mismatch error, got nil; output:\n%s", buf.String())
+	}
+	if !errors.Is(err, wasm.ErrWasmPluginTypeMismatch) {
+		t.Errorf("error does not wrap ErrWasmPluginTypeMismatch: %v", err)
+	}
+}
+
+// TestValidatePluginBinaryOnlyRequiresType confirms binary-only mode refuses to
+// run without a declared type, since there is no entity to source one from.
+func TestValidatePluginBinaryOnlyRequiresType(t *testing.T) {
+	pluginPath := wasmtest.EnsureFixtureBuilt(t, "parse-go.wasm")
+	var buf bytes.Buffer
+	err := validatePluginBinary(pluginPath, "", "", &buf)
+	if err == nil {
+		t.Fatalf("expected a missing-type error, got nil; output:\n%s", buf.String())
+	}
+	if !strings.Contains(err.Error(), "--type") {
+		t.Errorf("diagnostic does not name --type: %v", err)
+	}
+}
+
+// TestValidatePluginFullModePass drives the full plugin scope: a Plugin entity
+// cross-checked against its matching .wasm through the one publish validation
+// door. It asserts the schema gate and the cross-check both report valid.
+func TestValidatePluginFullModePass(t *testing.T) {
+	entityPath, pluginPath, _ := writeAgreeingPlugin(t)
+	var buf bytes.Buffer
+	if err := validatePluginBinary(pluginPath, "", entityPath, &buf); err != nil {
+		t.Fatalf("validatePluginBinary: %v", err)
+	}
+	got := buf.String()
+	for _, want := range []string{"Kind:   Plugin", "Schema: valid", "Plugin: valid"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("output missing %q\nfull output:\n%s", want, got)
+		}
+	}
+}
+
+// TestValidatePluginFullModeTypeDisagreementHaltsLoudly confirms that a --type
+// contradicting the entity's metadata.pluginType halts: a Plugin carries one
+// declared type, so a second source in disagreement is an authoring error.
+func TestValidatePluginFullModeTypeDisagreementHaltsLoudly(t *testing.T) {
+	entityPath, pluginPath, _ := writeAgreeingPlugin(t)
+	var buf bytes.Buffer
+	err := validatePluginBinary(pluginPath, "provider", entityPath, &buf)
+	if err == nil {
+		t.Fatalf("expected a type-disagreement error, got nil; output:\n%s", buf.String())
+	}
+	if !strings.Contains(err.Error(), "disagrees with the entity's metadata.pluginType") {
+		t.Errorf("diagnostic does not name the pluginType disagreement: %v", err)
+	}
+}
+
+// TestValidatePluginFullModeNonPluginEntityHaltsLoudly confirms --plugin against
+// a non-Plugin entity is refused before any cross-check: the flag cross-checks a
+// Plugin surface, and a Component (or any other kind) has none.
+func TestValidatePluginFullModeNonPluginEntityHaltsLoudly(t *testing.T) {
+	pluginPath := wasmtest.EnsureFixtureBuilt(t, "parse-go.wasm")
+	var buf bytes.Buffer
+	err := validatePluginBinary(pluginPath, "", validateCompPath, &buf)
+	if err == nil {
+		t.Fatalf("expected a non-Plugin-entity error, got nil; output:\n%s", buf.String())
+	}
+	if !strings.Contains(err.Error(), "cross-checks a Plugin entity") {
+		t.Errorf("diagnostic does not explain the Plugin-entity requirement: %v", err)
+	}
+}
+
+// TestValidateTypeWithoutPluginGuard confirms --type on its own — with no
+// --plugin — is refused at the command layer, so it never silently no-ops on a
+// catalog-, release-, or entity-scoped run.
+func TestValidateTypeWithoutPluginGuard(t *testing.T) {
+	cmd := newValidateCmd()
+	cmd.SetArgs([]string{"--type", "parser"})
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatalf("expected a guard error for --type without --plugin, got nil")
+	}
+	if !strings.Contains(err.Error(), "--type applies only with --plugin") {
+		t.Errorf("diagnostic does not explain the --type/--plugin coupling: %v", err)
+	}
+}
+
+// TestValidatePluginReleaseMutuallyExclusiveGuard confirms --plugin and
+// --release are refused together: they select different validation scopes.
+func TestValidatePluginReleaseMutuallyExclusiveGuard(t *testing.T) {
+	pluginPath := wasmtest.EnsureFixtureBuilt(t, "parse-go.wasm")
+	cmd := newValidateCmd()
+	cmd.SetArgs([]string{"--plugin", pluginPath, "--type", "parser", "--release", "some-release.yaml"})
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatalf("expected a guard error for --plugin with --release, got nil")
+	}
+	if !strings.Contains(err.Error(), "mutually exclusive with --release") {
+		t.Errorf("diagnostic does not explain the --plugin/--release exclusivity: %v", err)
 	}
 }
 

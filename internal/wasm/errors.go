@@ -98,6 +98,21 @@ var ErrWasmContractMismatch = errors.New("wasm: entity contract claim does not m
 // binary's imports.
 var ErrWasmHostFunctionsStampMismatch = errors.New("wasm: stamped host-function record does not match .wasm imports")
 
+// ErrWasmPluginTypeMismatch indicates that the plugin type an entity declares
+// disagrees with the plugin type the .wasm binary self-reports in describe().
+// The declared type is the authoring surface's claim of what kind of plugin the
+// entity is; the describe() report is the binary's own statement of its kind. A
+// build validates the two against each other so an entity can never publish a
+// binary of a different kind than it declares — a linter entity fronting a
+// provider binary, say — which would mis-route the plugin at load.
+//
+// This is a structural identity check, distinct from the capability and command
+// cross-checks: those compare an authored surface against the binary's exports
+// and commands; this compares the single plugin-type label on each side. The
+// wrapping error names the entity identity, the declared type, and the reported
+// type so the author sees exactly which two kinds diverged.
+var ErrWasmPluginTypeMismatch = errors.New("wasm: declared plugin type does not match plugin describe()")
+
 // ErrWasmCommandsMirrorMismatch indicates that a Plugin entity's recorded
 // command mirror disagrees with the commands the plugin's describe() self-report
 // declares. The command mirror is machine-owned: the stamp step reads the CLI

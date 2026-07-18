@@ -5,6 +5,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -27,10 +28,11 @@ import (
 // identity. The resolved content digest is recorded by the consumer at pull, in
 // the lockfile; it is never embedded in the published entity.
 //
-// Before any bytes land, the .wasm is loaded and its describe() self-report is
-// cross-checked against the entity's authored exports and host-function
-// declaration (wasm.CrossCheckPublishedPlugin); a mismatch halts loudly so a
-// published entity can never promise a capability the binary does not provide.
+// Before any bytes land, the .wasm passes the single publish validation door
+// (wasm.ValidatePlugin): its describe() self-report is cross-checked against the
+// entity's authored capability claim, declared plugin type, command mirror, and
+// host-function record. A mismatch halts loudly so a published entity can never
+// promise a capability the binary does not provide.
 //
 // Signing signs the single manifest ONCE, reusing the entity-signing flow: the
 // manifest digest is signed and attached as a referrer of the version tag
@@ -73,61 +75,41 @@ func pushPlugin(out io.Writer, cfg pushConfig, registry string, wantSign bool, n
 	if entity.Spec.Runtime != nil && entity.Spec.Runtime.MaxMemoryPages != 0 {
 		crossCheckMaxPages = entity.Spec.Runtime.MaxMemoryPages
 	}
-	// Build the authored capability claim through the resolver's single
-	// entity → neutral → wasm mapping — the exact mapping the load gate
-	// cross-checks against — so the publish and load surfaces can never disagree
-	// on which authored fields (input kinds, boundary assembly, delimiters,
-	// source filter, reusable-instance, cross-boundary-linking) reach the
-	// describe() cross-check. An entity authoring neither exports nor a
-	// capabilities block yields a nil claim, mapped to an empty claim that
-	// cross-checks as a no-op.
-	var capClaim wasm.EntityContractClaim
-	if c := resolver.WasmContractClaim(resolver.PluginContractClaim(entity)); c != nil {
-		capClaim = *c
+	// One publish validation door: describe()-cross-check the authored capability
+	// claim, the declared-vs-reported plugin type, the machine-owned command
+	// mirror, and the machine-owned host-function record. The entity surface is
+	// assembled through the resolver's single entity → EntityInputs mapping — the
+	// exact fields the load gate cross-checks against — so publish, validate, and
+	// the test harness can never apply a divergent cross-check. The machine-owned
+	// records (commands, host functions) are checked read-only: the author records
+	// them with `aggrega plugin sync`, and publish only verifies them — it never
+	// rewrites the file. A divergence HALTS before any bytes land. The location
+	// context — which file is out of sync and the sync command that re-records it —
+	// is re-wrapped here because the neutral validation layer names neither.
+	report, err := wasm.ValidatePlugin(ctx, wasmBytes, wasm.ValidateOptions{
+		Identity:       entityIdentity,
+		DeclaredType:   entity.Metadata.PluginType,
+		MaxMemoryPages: crossCheckMaxPages,
+		Entity:         resolver.PluginEntityInputs(entity),
+	})
+	if errors.Is(err, wasm.ErrWasmCommandsMirrorMismatch) {
+		return fmt.Errorf("aggrega push: Plugin %s: spec.commands in %s is out of sync with the .wasm at %s — re-run `aggrega plugin sync %s --plugin %s` and commit the result before publishing: %w",
+			entityIdentity, entityPath, cfg.PluginPath, entityPath, cfg.PluginPath, err)
 	}
-	desc, err := wasm.CrossCheckPublishedPlugin(ctx, entityIdentity, capClaim, wasmBytes, crossCheckMaxPages, entity.Metadata.PluginType)
+	if errors.Is(err, wasm.ErrWasmHostFunctionsStampMismatch) {
+		return fmt.Errorf("aggrega push: Plugin %s: spec.runtime.hostFunctions in %s is out of sync with the .wasm at %s — re-run `aggrega plugin sync %s --plugin %s` and commit the result before publishing: %w",
+			entityIdentity, entityPath, cfg.PluginPath, entityPath, cfg.PluginPath, err)
+	}
 	if err != nil {
 		return fmt.Errorf("aggrega push: Plugin %s: %w", entityIdentity, err)
-	}
-
-	// Verify the machine-owned command mirror against the .wasm describe()
-	// self-report, read-only exactly as the host-function record is: the author
-	// records it with `aggrega plugin sync`, and publish only checks it here — it
-	// never rewrites the file. A divergence in name, short-help text, or order
-	// HALTS before any bytes land, directing the author to re-record the set. The
-	// describe() self-report is the one already loaded for the cross-check above,
-	// so the guest is not instantiated a second time.
-	committedCommands := entityCommandMirror(entity)
-	if !wasm.CommandMirrorsEqual(committedCommands, desc.Commands) {
-		return fmt.Errorf("aggrega push: Plugin %s: spec.commands in %s is out of sync with the .wasm at %s — the file records %s but the binary describes %s; re-run `aggrega plugin sync %s --plugin %s` and commit the result before publishing: %w",
-			entityIdentity, entityPath, cfg.PluginPath, wasm.FormatCommandMirror(committedCommands), wasm.FormatCommandMirror(desc.Commands), entityPath, cfg.PluginPath, wasm.ErrWasmCommandsMirrorMismatch)
 	}
 
 	// Advisory only: report where the binary's describe() offers more than the
 	// entity curates (binary ⊇ entity). Under-declaration of exports, capabilities,
 	// or the render-behavior contract is legitimate, so these are notices — they
 	// never halt the publish and never change its exit status.
-	for _, notice := range wasm.UnderDeclaredNotices(entityCuratedSurface(entity), desc) {
+	for _, notice := range report.Notices {
 		fmt.Fprintf(out, "  notice: %s: %s\n", entityIdentity, notice)
-	}
-
-	// Derive the host functions the .wasm actually imports, in canonical form,
-	// and verify the entity's committed record matches. The set is machine-owned:
-	// the author records it into the file with `aggrega plugin sync`, and publish
-	// only checks it here — it never rewrites the file. The same derivation
-	// primitive runs at load and at pull, so the committed record, the registered
-	// surface, and the pull-time verification can never diverge.
-	derivedHostFunctions, err := wasm.DeriveHostFunctions(entityIdentity, wasmBytes)
-	if err != nil {
-		return fmt.Errorf("aggrega push: Plugin %s: %w", entityIdentity, err)
-	}
-	var committedHostFunctions []string
-	if entity.Spec.Runtime != nil {
-		committedHostFunctions = entity.Spec.Runtime.HostFunctions
-	}
-	if !canonicalHostFunctionsEqual(committedHostFunctions, derivedHostFunctions) {
-		return fmt.Errorf("aggrega push: Plugin %s: spec.runtime.hostFunctions in %s is out of sync with the .wasm at %s — the file records %v but the binary imports %v; re-run `aggrega plugin sync %s --plugin %s` and commit the result before publishing: %w",
-			entityIdentity, entityPath, cfg.PluginPath, committedHostFunctions, derivedHostFunctions, entityPath, cfg.PluginPath, wasm.ErrWasmHostFunctionsStampMismatch)
 	}
 
 	// The content digest of the .wasm bytes equals the digest of the inline
@@ -288,26 +270,10 @@ func entityCuratedSurface(entity types.Plugin) wasm.EntityCuratedSurface {
 }
 
 // canonicalHostFunctionsEqual reports whether two host-function sets are equal
-// as sets (order and duplicates ignored). It treats an absent record (nil) and
-// an explicit empty set as equal, matching the pull-side verify, so a plugin
-// whose binary imports nothing verifies clean whether its file omits the record
-// or carries an explicit empty one.
+// as sets (order and duplicates ignored), treating an absent record (nil) and an
+// explicit empty set as equal. It delegates to the single set-equality home in
+// the wasm package so the record-sync tooling and the publish validation door
+// compare a host-function record by exactly the same rule.
 func canonicalHostFunctionsEqual(a, b []string) bool {
-	seen := make(map[string]bool, len(a))
-	for _, x := range a {
-		seen[x] = true
-	}
-	other := make(map[string]bool, len(b))
-	for _, x := range b {
-		other[x] = true
-	}
-	if len(seen) != len(other) {
-		return false
-	}
-	for x := range seen {
-		if !other[x] {
-			return false
-		}
-	}
-	return true
+	return wasm.HostFunctionsEqual(a, b)
 }
