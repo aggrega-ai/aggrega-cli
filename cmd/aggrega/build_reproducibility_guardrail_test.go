@@ -63,7 +63,7 @@ func TestBuildReproducibilityGuardrailWarnsAndSucceeds(t *testing.T) {
 	// fresh resolution of the same tree must carry the binding locally and the
 	// guardrail must fall silent.
 	dest := filepath.Join(root, workspaceconfig.ConfigFilename)
-	if err := workspaceconfig.CaptureBuildCritical(dest, rw.Config()); err != nil {
+	if err := workspaceconfig.CaptureBuildCritical(dest, rw.Config(), false); err != nil {
 		t.Fatalf("CaptureBuildCritical: %v", err)
 	}
 	rw2, err := workspaceconfig.Resolve(root, "", lookup)
@@ -74,5 +74,34 @@ func TestBuildReproducibilityGuardrailWarnsAndSucceeds(t *testing.T) {
 	_ = dispatchBuild(rw2, releasePath, []string{root}, false, &diag2, &out2)
 	if strings.Contains(diag2.String(), "aggrega config capture") {
 		t.Errorf("guardrail still warned after capture; diag=%q", diag2.String())
+	}
+}
+
+// TestBuildReproducibilityGuardrailSilentForGateSocket drives the build path with
+// a verdict-gate socket (policy) supplied only by the global config layer. A gate
+// socket does not shape the rendered output, so the build-time guardrail — which
+// speaks to the byte-determining sockets — must stay silent about it: a gate
+// binding is meant to vary by environment and capture deliberately leaves it
+// global-only by default.
+func TestBuildReproducibilityGuardrailSilentForGateSocket(t *testing.T) {
+	xdg := t.TempDir()
+	writeFixture(t, filepath.Join(xdg, "aggrega", "config.yaml"),
+		"plugins:\n  policy:\n    - uri: oci://h/pol:1\n")
+
+	root := t.TempDir()
+	writeFixture(t, filepath.Join(root, workspaceconfig.ConfigFilename), "workspace: {}\n")
+	releasePath := filepath.Join(root, "release.yaml")
+	writeFixture(t, releasePath, "kind: Release\n")
+
+	lookup := guardrailFrozenLookup(map[string]string{"XDG_CONFIG_HOME": xdg})
+	rw, err := workspaceconfig.Resolve(root, "", lookup)
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+
+	var diag, out bytes.Buffer
+	_ = dispatchBuild(rw, releasePath, []string{root}, false, &diag, &out)
+	if strings.Contains(diag.String(), "aggrega config capture") {
+		t.Errorf("guardrail warned about a global-only gate socket; diag=%q", diag.String())
 	}
 }

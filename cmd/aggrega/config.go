@@ -319,6 +319,8 @@ func configInitRun(cfg configInitConfig) error {
 // file so the workspace builds identically without relying on the machine's
 // global configuration.
 func newConfigCaptureCmd() *cobra.Command {
+	var allPlugins bool
+
 	c := &cobra.Command{
 		Use:   "capture",
 		Short: "Freeze the effective build-critical configuration into this workspace",
@@ -326,13 +328,16 @@ func newConfigCaptureCmd() *cobra.Command {
 config file, so the workspace builds identically without relying on the
 machine's global configuration.
 
-The build-critical subset is the configuration a build participates in: the
-provider bindings, the mutator/policy/linter/importer plugin socket
-attachments, the plugin sidecar directory, and the catalog directories. Each is
-written at its effective value — the value that resolves right now with the
-global configuration and the workspace tree merged together — so a binding that
-today comes only from the global config is materialized into the workspace and
-travels with the project.
+The build-critical subset is the configuration a build participates in: a set of
+plugin socket attachments, the plugin sidecar directory, and the catalog
+directories. By default the captured sockets are only those that determine the
+rendered output — the provider bindings and the mutator — since only those must
+travel with the project for byte-identical output. Pass --all-plugins to also
+freeze the policy, linter, and importer sockets, which otherwise stay free to
+vary by environment. Each field is written at its effective value — the value
+that resolves right now with the global configuration and the workspace tree
+merged together — so a binding that today comes only from the global config is
+materialized into the workspace and travels with the project.
 
 Machine-wide tooling settings, such as a registry's trust policy, are not
 captured: they stay in the global config by their nature. Capture always writes
@@ -345,18 +350,24 @@ configuration rewrites the same file byte-for-byte.`,
 				return err
 			}
 			return configCaptureRun(configCaptureConfig{
-				ws:  rw,
-				Out: cmd.OutOrStdout(),
+				ws:         rw,
+				allPlugins: allPlugins,
+				Out:        cmd.OutOrStdout(),
 			})
 		},
 	}
+	c.Flags().BoolVar(&allPlugins, "all-plugins", false, "Capture all plugin sockets, including the policy, linter, and importer gates. Without it, capture freezes only the sockets that determine the rendered output (the provider bindings and the mutator).")
 	return c
 }
 
 // configCaptureConfig is the input contract for `aggrega config capture`.
 type configCaptureConfig struct {
-	ws  *workspaceconfig.ResolvedWorkspace
-	Out io.Writer
+	ws *workspaceconfig.ResolvedWorkspace
+	// allPlugins widens the captured socket set from the byte-determining sockets
+	// (the provider bindings and the mutator) to every plugin socket, adding the
+	// policy and linter verdict gates and the importer.
+	allPlugins bool
+	Out        io.Writer
 }
 
 // configCaptureRun writes the effective build-critical configuration subset into
@@ -371,18 +382,20 @@ func configCaptureRun(cfg configCaptureConfig) error {
 	dest := filepath.Join(rw.Root(), workspaceconfig.ConfigFilename)
 	effective := rw.Config()
 
-	if err := workspaceconfig.CaptureBuildCritical(dest, effective); err != nil {
+	if err := workspaceconfig.CaptureBuildCritical(dest, effective, cfg.allPlugins); err != nil {
 		return fmt.Errorf("aggrega config capture: write %s: %w", dest, err)
 	}
-	reportCapture(cfg.Out, effective, dest)
+	reportCapture(cfg.Out, effective, dest, cfg.allPlugins)
 	return nil
 }
 
 // reportCapture prints the build-critical fields captured into dest, in a fixed
-// field order so the output is deterministic. A field with no effective value is
-// omitted. When nothing was build-critical, it says so rather than printing an
-// empty capture.
-func reportCapture(out io.Writer, cfg workspaceconfig.Config, dest string) {
+// field order so the output is deterministic. Only the sockets in scope for the
+// capture are reported, on the same byte-determining-vs-all axis as the write:
+// by default the sockets that shape the rendered output, widened to every plugin
+// socket when allPlugins is set. A field with no effective value is omitted. When
+// nothing was build-critical, it says so rather than printing an empty capture.
+func reportCapture(out io.Writer, cfg workspaceconfig.Config, dest string, allPlugins bool) {
 	if out == nil {
 		return
 	}
@@ -401,11 +414,18 @@ func reportCapture(out io.Writer, cfg workspaceconfig.Config, dest string) {
 		}
 	}
 
-	section("providers", providerLines(cfg.Plugins.Providers))
-	section("mutator", socketLines(cfg.Plugins.Mutator))
-	section("policy", socketLines(cfg.Plugins.Policy))
-	section("linter", socketLines(cfg.Plugins.Linter))
-	section("importer", socketLines(cfg.Plugins.Importer))
+	// The socket scope reads from the same tier classification the writer uses,
+	// so the report can never name a socket capture did not freeze.
+	for _, ps := range cfg.PluginSockets() {
+		if !allPlugins && ps.Socket.Tier() != workspaceconfig.SocketTierMutating {
+			continue
+		}
+		if ps.Socket == workspaceconfig.SocketProvider {
+			section("providers", providerLines(ps.Refs))
+			continue
+		}
+		section(string(ps.Socket), socketLines(ps.Refs))
+	}
 	if cfg.PluginSidecarDir != "" {
 		section("plugin_sidecar_dir", []string{cfg.PluginSidecarDir})
 	}

@@ -11,10 +11,11 @@ import (
 )
 
 // TestCaptureBuildCritical_WritesSubsetWithFidelity proves the capture writer
-// materializes every build-critical field — provider bindings, the four socket
-// lists, the sidecar directory, and the catalog directories — at full fidelity
-// (a socket attachment's function override and its `with` inputs survive), and
-// leaves a schema-valid file the resolver reads back.
+// materializes every build-critical field — provider bindings, the socket lists,
+// the sidecar directory, and the catalog directories — at full fidelity (a socket
+// attachment's function override and its `with` inputs survive), and leaves a
+// schema-valid file the resolver reads back. It captures with the widened socket
+// scope so a verdict-gate socket (policy) participates in the fidelity check.
 func TestCaptureBuildCritical_WritesSubsetWithFidelity(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, ConfigFilename)
@@ -44,7 +45,7 @@ func TestCaptureBuildCritical_WritesSubsetWithFidelity(t *testing.T) {
 		},
 	}
 
-	if err := CaptureBuildCritical(path, cfg); err != nil {
+	if err := CaptureBuildCritical(path, cfg, true); err != nil {
 		t.Fatalf("CaptureBuildCritical: %v", err)
 	}
 
@@ -95,14 +96,14 @@ func TestCaptureBuildCritical_Idempotent(t *testing.T) {
 		Workspace: WorkspaceConfig{CatalogDirs: []string{filepath.Join(dir, "catalog")}},
 	}
 
-	if err := CaptureBuildCritical(path, cfg); err != nil {
+	if err := CaptureBuildCritical(path, cfg, false); err != nil {
 		t.Fatalf("capture (first): %v", err)
 	}
 	first, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("read first: %v", err)
 	}
-	if err := CaptureBuildCritical(path, cfg); err != nil {
+	if err := CaptureBuildCritical(path, cfg, false); err != nil {
 		t.Fatalf("capture (second): %v", err)
 	}
 	second, err := os.ReadFile(path)
@@ -127,7 +128,7 @@ func TestCaptureBuildCritical_ExcludesRegistries(t *testing.T) {
 		Plugins:    PluginsConfig{Mutator: []PluginRef{{URI: "mutator/tag-injector:1.0.0"}}},
 		Registries: []RegistryConfig{{Host: "reg.example.com"}},
 	}
-	if err := CaptureBuildCritical(path, cfg); err != nil {
+	if err := CaptureBuildCritical(path, cfg, false); err != nil {
 		t.Fatalf("CaptureBuildCritical: %v", err)
 	}
 	body, err := os.ReadFile(path)

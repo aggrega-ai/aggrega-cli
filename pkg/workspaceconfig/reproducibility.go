@@ -29,19 +29,28 @@ type socketField struct {
 	Refs []PluginRef
 }
 
-// buildCriticalSocketFields enumerates the build-critical plugin-socket lists of
-// cfg in a fixed order. It is the single home of which plugin sockets are
-// build-critical, shared by the capture writer (which freezes them into the
-// workspace tree) and the reproducibility guardrail (which diffs them across
-// layers), so the two surfaces can never disagree on the set.
-func buildCriticalSocketFields(cfg Config) []socketField {
-	return []socketField{
-		{"providers", cfg.Plugins.Providers},
-		{"mutator", cfg.Plugins.Mutator},
-		{"policy", cfg.Plugins.Policy},
-		{"linter", cfg.Plugins.Linter},
-		{"importer", cfg.Plugins.Importer},
+// buildCriticalSocketFields enumerates the plugin-socket lists of cfg a build
+// must carry for reproducible output, in the fixed socket order. Membership is
+// sourced from the socket-tier classification rather than a second hardcoded
+// list: by default only the byte-determining sockets — those whose plugin shapes
+// the rendered output bytes — are included; allPlugins widens the set to every
+// plugin socket, adding the verdict gates and the orthogonal import socket.
+// Shared by the capture writer (which freezes the set into the workspace tree)
+// and the reproducibility guardrail (which diffs it across layers), so the two
+// surfaces can never disagree on the set.
+func buildCriticalSocketFields(cfg Config, allPlugins bool) []socketField {
+	var out []socketField
+	for _, ps := range cfg.PluginSockets() {
+		if !allPlugins && ps.Socket.Tier() != SocketTierMutating {
+			continue
+		}
+		key := string(ps.Socket)
+		if ps.Socket == SocketProvider {
+			key = "providers"
+		}
+		out = append(out, socketField{Key: key, Refs: ps.Refs})
 	}
+	return out
 }
 
 // GlobalOnlyBuildCritical reports the build-critical bindings the resolved
@@ -63,7 +72,12 @@ func buildCriticalSocketFields(cfg Config) []socketField {
 // build-critical binding makes the build non-reproducible on a machine without
 // that global file, which `aggrega config capture` remedies by freezing the
 // effective bindings into the workspace tree.
-func (r *ResolvedWorkspace) GlobalOnlyBuildCritical() ([]BuildCriticalBinding, error) {
+//
+// The socket scope follows the same axis capture uses: by default only the
+// byte-determining sockets (whose plugin shapes the rendered output) are
+// examined; allPlugins widens the scope to every plugin socket, including the
+// verdict gates and the import socket that are meant to vary by environment.
+func (r *ResolvedWorkspace) GlobalOnlyBuildCritical(allPlugins bool) ([]BuildCriticalBinding, error) {
 	treeOnly, err := resolve(r.start, r.flagRoot, r.lookup, true)
 	if err != nil {
 		return nil, err
@@ -78,8 +92,8 @@ func (r *ResolvedWorkspace) GlobalOnlyBuildCritical() ([]BuildCriticalBinding, e
 	// duplicate halts resolution), so provider bindings are capability-keyed;
 	// the four cross-cutting sockets admit multiple attachments, so their
 	// identity is the whole attachment (uri, capability, function).
-	fullSockets := buildCriticalSocketFields(full)
-	treeSockets := buildCriticalSocketFields(tree)
+	fullSockets := buildCriticalSocketFields(full, allPlugins)
+	treeSockets := buildCriticalSocketFields(tree, allPlugins)
 	for i, sf := range fullSockets {
 		key := pluginAttachmentKey
 		if sf.Key == "providers" {

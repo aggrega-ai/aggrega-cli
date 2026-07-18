@@ -503,12 +503,16 @@ func writeOrDeleteRefs[T any](pluginsNode *yaml.Node, key string, refs []T) erro
 // CaptureBuildCritical writes the effective build-critical configuration subset
 // of cfg into the workspace config file at path, preserving every other setting,
 // and writes the result back. The build-critical subset is the configuration a
-// build participates in: the provider bindings (plugins.providers), the four
-// cross-cutting plugin socket lists (plugins.mutator/policy/linter/importer),
-// the plugin sidecar directory (plugin_sidecar_dir), and the catalog
-// directories (workspace.catalog_dirs). Machine-wide tooling settings — the
-// registries trust policy above all — are deliberately excluded: they stay in
-// the global config by their nature and are not part of a project's build.
+// build participates in: a set of plugin sockets, the plugin sidecar directory
+// (plugin_sidecar_dir), and the catalog directories (workspace.catalog_dirs).
+// The socket set follows the byte-determining axis: by default only the sockets
+// whose plugin shapes the rendered output — the provider bindings
+// (plugins.providers) and the mutator (plugins.mutator) — are frozen, since only
+// those must travel with the project for byte-reproducible output; allPlugins
+// widens the set to every plugin socket, adding the policy and linter verdict
+// gates and the importer. Machine-wide tooling settings — the registries trust
+// policy above all — are deliberately excluded: they stay in the global config
+// by their nature and are not part of a project's build.
 //
 // This is the write path that freezes a workspace's build-participating
 // configuration so the tree is self-contained: after capture, resolving the
@@ -526,10 +530,10 @@ func writeOrDeleteRefs[T any](pluginsNode *yaml.Node, key string, refs []T) erro
 // writer uses. Like every config writer it routes through mutateConfigDocument,
 // so the schema gate, seed-fresh, and merged-document validation are shared
 // rather than re-derived here.
-func CaptureBuildCritical(path string, cfg Config) error {
+func CaptureBuildCritical(path string, cfg Config, allPlugins bool) error {
 	return mutateConfigDocument(path, func(mapping *yaml.Node) error {
 		var pluginsNode *yaml.Node
-		for _, s := range buildCriticalSocketFields(cfg) {
+		for _, s := range buildCriticalSocketFields(cfg, allPlugins) {
 			if len(s.Refs) == 0 {
 				continue
 			}

@@ -195,7 +195,7 @@ func dispatchBuildWithDiag(rw *workspaceconfig.ResolvedWorkspace, releasePath st
 	// halt, never change the exit code — naming each global-only binding and the
 	// command that pins them into the workspace. The provenance resolve failing
 	// must not affect the build, so any error here is swallowed advisory-side.
-	if bindings, gerr := rw.GlobalOnlyBuildCritical(); gerr == nil && len(bindings) > 0 {
+	if bindings, gerr := rw.GlobalOnlyBuildCritical(false); gerr == nil && len(bindings) > 0 {
 		var b strings.Builder
 		for i, bind := range bindings {
 			if i > 0 {

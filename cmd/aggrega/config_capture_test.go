@@ -113,6 +113,88 @@ func TestConfigCaptureMaterializesGlobalBindings(t *testing.T) {
 	}
 }
 
+// TestConfigCaptureScopeByTier proves the socket scope: a global-only gate
+// socket (policy/linter/importer) is frozen only when --all-plugins is set, while
+// the byte-determining sockets (provider bindings and the mutator) are always
+// frozen. The default keeps a workspace portable for byte-identical output
+// without dragging the environment-varying gates along.
+func TestConfigCaptureScopeByTier(t *testing.T) {
+	t.Parallel()
+
+	// A global config supplying every socket, each with a distinctive URI so the
+	// captured workspace file can be probed per socket.
+	globalBody := "workspace: {}\n" +
+		"plugins:\n" +
+		"  providers:\n" +
+		"    - capability: helm\n" +
+		"      uri: oci://h/provider-helm:1\n" +
+		"  mutator:\n" +
+		"    - uri: oci://h/mutator-plugin:1\n" +
+		"  policy:\n" +
+		"    - uri: oci://h/policy-plugin:1\n" +
+		"  linter:\n" +
+		"    - uri: oci://h/linter-plugin:1\n" +
+		"  importer:\n" +
+		"    - uri: oci://h/importer-plugin:1\n"
+
+	byteDetermining := []string{"oci://h/provider-helm:1", "oci://h/mutator-plugin:1"}
+	gates := []string{"oci://h/policy-plugin:1", "oci://h/linter-plugin:1", "oci://h/importer-plugin:1"}
+
+	capture := func(t *testing.T, allPlugins bool) (workspaceFile string, out string) {
+		t.Helper()
+		wsDir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(wsDir, workspaceconfig.ConfigFilename), []byte("workspace: {}\n"), 0o644); err != nil {
+			t.Fatalf("seed workspace: %v", err)
+		}
+		globalDir := t.TempDir()
+		globalPath := filepath.Join(globalDir, "aggrega", "config.yaml")
+		if err := os.MkdirAll(filepath.Dir(globalPath), 0o755); err != nil {
+			t.Fatalf("mkdir global dir: %v", err)
+		}
+		if err := os.WriteFile(globalPath, []byte(globalBody), 0o644); err != nil {
+			t.Fatalf("write global config: %v", err)
+		}
+		rw, err := workspaceconfig.Resolve(wsDir, "", frozenEnv(map[string]string{"AGGREGA_CONFIG": globalPath}))
+		if err != nil {
+			t.Fatalf("resolve with global: %v", err)
+		}
+		var buf bytes.Buffer
+		if err := configCaptureRun(configCaptureConfig{ws: rw, allPlugins: allPlugins, Out: &buf}); err != nil {
+			t.Fatalf("configCaptureRun(allPlugins=%v): %v", allPlugins, err)
+		}
+		body, _ := os.ReadFile(filepath.Join(wsDir, workspaceconfig.ConfigFilename))
+		return string(body), buf.String()
+	}
+
+	t.Run("default freezes only byte-determining sockets", func(t *testing.T) {
+		t.Parallel()
+		body, out := capture(t, false)
+		for _, want := range byteDetermining {
+			if !strings.Contains(body, want) {
+				t.Errorf("default capture missing byte-determining %q:\n%s", want, body)
+			}
+		}
+		for _, notWant := range gates {
+			if strings.Contains(body, notWant) {
+				t.Errorf("default capture froze gate socket %q it should have left global-only:\n%s", notWant, body)
+			}
+			if strings.Contains(out, notWant) {
+				t.Errorf("default capture report named gate socket %q:\n%s", notWant, out)
+			}
+		}
+	})
+
+	t.Run("all-plugins freezes every socket", func(t *testing.T) {
+		t.Parallel()
+		body, _ := capture(t, true)
+		for _, want := range append(append([]string{}, byteDetermining...), gates...) {
+			if !strings.Contains(body, want) {
+				t.Errorf("--all-plugins capture missing %q:\n%s", want, body)
+			}
+		}
+	})
+}
+
 // TestConfigCaptureIdempotent proves running capture twice on an unchanged
 // effective configuration produces a byte-identical workspace file.
 func TestConfigCaptureIdempotent(t *testing.T) {

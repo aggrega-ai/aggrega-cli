@@ -52,7 +52,7 @@ func TestGlobalOnlyBuildCriticalProviderGlobalOnly(t *testing.T) {
 		"plugins:\n  providers:\n    - capability: helm\n      uri: oci://h/helm:1\n",
 		"",
 	)
-	got, err := rw.GlobalOnlyBuildCritical()
+	got, err := rw.GlobalOnlyBuildCritical(false)
 	if err != nil {
 		t.Fatalf("GlobalOnlyBuildCritical: %v", err)
 	}
@@ -75,12 +75,61 @@ func TestGlobalOnlyBuildCriticalProviderInBoth(t *testing.T) {
 		"plugins:\n  providers:\n    - capability: helm\n      uri: oci://h/helm:1\n",
 		"workspace: {}\nplugins:\n  providers:\n    - capability: helm\n      uri: oci://h/helm:1\n",
 	)
-	got, err := rw.GlobalOnlyBuildCritical()
+	got, err := rw.GlobalOnlyBuildCritical(false)
 	if err != nil {
 		t.Fatalf("GlobalOnlyBuildCritical: %v", err)
 	}
 	if len(got) != 0 {
 		t.Fatalf("bindings: got %d, want 0 (capability present in the workspace tree): %+v", len(got), got)
+	}
+}
+
+// TestGlobalOnlyBuildCriticalMutatorByteDetermining: a mutator binding present
+// only in the global layer is byte-determining, so it is reported under the
+// default (byte-determining) scope.
+func TestGlobalOnlyBuildCriticalMutatorByteDetermining(t *testing.T) {
+	t.Parallel()
+	rw := resolveWithGlobal(t,
+		"plugins:\n  mutator:\n    - uri: oci://h/mut:1\n",
+		"",
+	)
+	got, err := rw.GlobalOnlyBuildCritical(false)
+	if err != nil {
+		t.Fatalf("GlobalOnlyBuildCritical: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("bindings: got %d, want 1 (mutator is byte-determining): %+v", len(got), got)
+	}
+	if got[0].Field != "plugins.mutator" {
+		t.Errorf("Field: got %q, want plugins.mutator", got[0].Field)
+	}
+}
+
+// TestGlobalOnlyBuildCriticalGateSocketScopedByAllPlugins: a global-only gate
+// socket (policy) is NOT byte-determining, so it is absent under the default
+// scope and reported only when the scope widens to all plugin sockets.
+func TestGlobalOnlyBuildCriticalGateSocketScopedByAllPlugins(t *testing.T) {
+	t.Parallel()
+	rw := resolveWithGlobal(t,
+		"plugins:\n  policy:\n    - uri: oci://h/pol:1\n",
+		"",
+	)
+	def, err := rw.GlobalOnlyBuildCritical(false)
+	if err != nil {
+		t.Fatalf("GlobalOnlyBuildCritical(false): %v", err)
+	}
+	if len(def) != 0 {
+		t.Fatalf("default scope: got %d, want 0 (policy is a verdict gate, not byte-determining): %+v", len(def), def)
+	}
+	all, err := rw.GlobalOnlyBuildCritical(true)
+	if err != nil {
+		t.Fatalf("GlobalOnlyBuildCritical(true): %v", err)
+	}
+	if len(all) != 1 {
+		t.Fatalf("all-plugins scope: got %d, want 1: %+v", len(all), all)
+	}
+	if all[0].Field != "plugins.policy" {
+		t.Errorf("Field: got %q, want plugins.policy", all[0].Field)
 	}
 }
 
@@ -100,7 +149,7 @@ func TestGlobalOnlyBuildCriticalAppendInBothIdentity(t *testing.T) {
 	if n := len(rw.Config().Plugins.Mutator); n != 2 {
 		t.Fatalf("full mutator list: got %d entries, want 2 (both appends concatenate): %+v", n, rw.Config().Plugins.Mutator)
 	}
-	got, err := rw.GlobalOnlyBuildCritical()
+	got, err := rw.GlobalOnlyBuildCritical(false)
 	if err != nil {
 		t.Fatalf("GlobalOnlyBuildCritical: %v", err)
 	}
@@ -117,7 +166,7 @@ func TestGlobalOnlyBuildCriticalFullyLocal(t *testing.T) {
 		"",
 		"workspace:\n  catalog_dirs:\n    - ./cat\nplugins:\n  providers:\n    - capability: helm\n      uri: oci://h/helm:1\n  mutator:\n    - uri: oci://h/mut:1\n",
 	)
-	got, err := rw.GlobalOnlyBuildCritical()
+	got, err := rw.GlobalOnlyBuildCritical(false)
 	if err != nil {
 		t.Fatalf("GlobalOnlyBuildCritical: %v", err)
 	}
@@ -134,7 +183,7 @@ func TestGlobalOnlyBuildCriticalScalarAndCatalogDirs(t *testing.T) {
 		"plugin_sidecar_dir: ./sidecar\nworkspace:\n  catalog_dirs:\n    - ./gcat\n",
 		"",
 	)
-	got, err := rw.GlobalOnlyBuildCritical()
+	got, err := rw.GlobalOnlyBuildCritical(false)
 	if err != nil {
 		t.Fatalf("GlobalOnlyBuildCritical: %v", err)
 	}
@@ -158,7 +207,7 @@ func TestGlobalOnlyBuildCriticalSidecarLocalWins(t *testing.T) {
 		"plugin_sidecar_dir: ./gsidecar\n",
 		"workspace: {}\nplugin_sidecar_dir: ./lsidecar\n",
 	)
-	got, err := rw.GlobalOnlyBuildCritical()
+	got, err := rw.GlobalOnlyBuildCritical(false)
 	if err != nil {
 		t.Fatalf("GlobalOnlyBuildCritical: %v", err)
 	}
@@ -187,7 +236,7 @@ func TestGlobalOnlyBuildCriticalEnvScalarOutOfScope(t *testing.T) {
 	if got := rw.Config().Workspace.CatalogDirs; !reflect.DeepEqual(got, []string{"/env/cat"}) {
 		t.Fatalf("catalog_dirs: got %v, want [/env/cat] (env overlay wins)", got)
 	}
-	bindings, err := rw.GlobalOnlyBuildCritical()
+	bindings, err := rw.GlobalOnlyBuildCritical(false)
 	if err != nil {
 		t.Fatalf("GlobalOnlyBuildCritical: %v", err)
 	}
@@ -204,11 +253,12 @@ func TestGlobalOnlyBuildCriticalDeterministic(t *testing.T) {
 		"plugin_sidecar_dir: ./sidecar\nplugins:\n  providers:\n    - capability: helm\n      uri: oci://h/helm:1\n  mutator:\n    - uri: oci://h/mut:1\n  policy:\n    - uri: oci://h/pol:1\nworkspace:\n  catalog_dirs:\n    - ./gcat\n",
 		"",
 	)
-	first, err := rw.GlobalOnlyBuildCritical()
+	// The all-plugins scope so every socket field participates in the order check.
+	first, err := rw.GlobalOnlyBuildCritical(true)
 	if err != nil {
 		t.Fatalf("GlobalOnlyBuildCritical (first): %v", err)
 	}
-	second, err := rw.GlobalOnlyBuildCritical()
+	second, err := rw.GlobalOnlyBuildCritical(true)
 	if err != nil {
 		t.Fatalf("GlobalOnlyBuildCritical (second): %v", err)
 	}
