@@ -33,13 +33,11 @@
 // output stays reproducible; the runtime controller does the fetching at
 // deploy time.
 //
-// **Status: contract definition only — not yet executed.** This package
-// ships the FRP-step ABI types alone. The runtime that builds the keyed
-// document set, dispatches each Wasm guest, applies the patches to the
-// named documents, restores the set by snapshot on failure, and emits the
-// accumulated side effects lands in later work; no production caller in
-// this repository constructs or consumes these payloads today. The shapes
-// are deliberately stable surface so that work can bind against them now.
-// Until the runtime ships, the document handoff these types describe is
-// unvalidated by a working pipeline.
+// This package also owns the runtime that speaks the ABI. [Walk] builds the
+// keyed document set, evaluates each step's `with` (and its optional `when`
+// gate), dispatches each Wasm guest, applies the returned patches to the
+// named documents, restores the set by snapshot on a failed step, and
+// accumulates the side effects. The renderer drives [Walk] for every Recipe
+// and FeatureRecipe `pipeline:` at render time. The reference plugins
+// exercise this contract; few third-party guests target it yet.
 package featurerecipe_pipeline

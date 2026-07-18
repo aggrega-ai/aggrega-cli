@@ -77,9 +77,11 @@ type DocumentSet struct {
 // shape every plugin boundary carries — rather than a package-local
 // redeclaration, so a render context is one type across every Wasm socket.
 //
-// **Status: contract definition only — not yet executed.** No production
-// caller constructs this payload today; the FRP runtime that builds the
-// keyed set and dispatches the guest is later work.
+// The renderer's pipeline walk constructs this payload and dispatches the
+// guest for each pipeline step: it builds the keyed document set, evaluates
+// the step's `with` block into StepInput, records the preceding steps, and
+// invokes the step's guest export with the marshalled payload. The reference
+// plugins exercise this contract; few third-party guests target it yet.
 type FRPStepInput struct {
 	Documents      DocumentSet             `json:"documents"`
 	StepInput      types.OrderedMap[any]   `json:"step_input,omitempty,omitzero"`
@@ -135,17 +137,18 @@ const (
 // explicitly. This is deliberately a different shape from the mutator
 // socket's opaque patch slice (topology.MutatorOutput.Patches,
 // []json.RawMessage): an FRP step's patches are applied by the apply
-// engine and restored by snapshot on a failed step (the apply +
-// snapshot-restore engine is later work), so the operations are explicit
-// here rather than opaque. The two patch surfaces serve different guest
-// contracts and are intentionally not unified.
+// engine and restored by snapshot on a failed step, so the operations are
+// explicit here rather than opaque. The two patch surfaces serve different
+// guest contracts and are intentionally not unified.
 //
 // Diagnostics reuses [renderctx.Diagnostic] so a diagnostic carries one
 // shape across every plugin boundary.
 //
-// **Status: contract definition only — not yet executed.** The apply
-// engine that applies these patches and the machinery that emits these
-// side effects are later work.
+// The apply engine applies these patches to the keyed document set and the
+// machinery emits these side effects into the node's output; on a failed
+// step, snapshot-restore discards that step's operations whole. The
+// reference plugins exercise this contract; few third-party guests target
+// it yet.
 type FRPStepOutput struct {
 	Patches     []JSONPatchOp          `json:"patches,omitempty"`
 	SideEffects []SideEffect           `json:"side_effects,omitempty"`

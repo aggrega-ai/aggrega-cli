@@ -10,6 +10,8 @@ import (
 	"strconv"
 	"strings"
 	"text/template"
+
+	"github.com/aggrega-ai/aggrega-cli/pkg/truthy"
 )
 
 // Validate implements the Validator interface. The algorithm:
@@ -651,20 +653,7 @@ func evaluateTemplate(tpl *template.Template, data any, params map[string]any) (
 	if err := clone.Execute(&buf, data); err != nil {
 		return false, err
 	}
-	out := strings.TrimSpace(buf.String())
-	switch out {
-	case "true", "True", "TRUE":
-		return true, nil
-	case "false", "False", "FALSE", "":
-		return false, nil
-	}
-	// Numeric: nonzero is truthy.
-	if n, err := strconv.ParseFloat(out, 64); err == nil {
-		return n != 0, nil
-	}
-	// Any other non-empty string is truthy (matches Go template
-	// convention for boolean-like outputs).
-	return true, nil
+	return truthy.Bool(buf.String()), nil
 }
 
 // navigate walks the instance to the position indicated by path.

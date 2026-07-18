@@ -419,4 +419,12 @@ type PipelineStep struct {
 	// step's output is discarded, and the pipeline continues. When false,
 	// any step failure halts after restoring the pre-step set.
 	Optional bool `json:"optional,omitempty" yaml:"optional,omitempty"`
+	// When is an inline Go template the host evaluates before running this
+	// step. When it renders a falsy value the step is skipped as a
+	// pass-through: the document set flows to the next step unchanged and the
+	// step contributes no patches, side effects, or preceding-step record. An
+	// empty or absent When always runs the step. Truthiness follows the shared
+	// convention for boolean-like template output (see the truthy package).
+	// When and Optional are orthogonal: a step may declare both.
+	When string `json:"when,omitempty" yaml:"when,omitempty"`
 }

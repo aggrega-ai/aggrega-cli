@@ -9,6 +9,7 @@ import (
 	"fmt"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderctx"
+	"github.com/aggrega-ai/aggrega-cli/pkg/truthy"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 
 	"go.yaml.in/yaml/v3"
@@ -123,6 +124,19 @@ func Walk(
 	docs = snapshotDocumentSet(docs)
 
 	for i, step := range steps {
+		// A step gated by a falsy `when` is skipped as a pass-through: the
+		// set flows to the next step unchanged, with no snapshot, no invoke,
+		// no side effects, and no preceding-step record. The gate decision is
+		// the host's alone and is independent of Optional — a broken predicate
+		// is an authoring defect, so it halts even for an optional step.
+		enabled, err := stepEnabled(step, i, withCtx, eval)
+		if err != nil {
+			return WalkResult{}, err
+		}
+		if !enabled {
+			continue
+		}
+
 		snap := snapshotDocumentSet(docs)
 
 		stepEffects, stepDiags, stepOps, err := runStep(ctx, &docs, step, i, preceding, invoke, withCtx, renderCtx, eval)
@@ -221,6 +235,23 @@ func runStep(
 	}
 
 	return out.SideEffects, out.Diagnostics, out.Patches, nil
+}
+
+// stepEnabled reports whether a step's `when` gate admits it. An empty `when`
+// always runs. Otherwise the gate renders through the same evaluator and
+// context the step's `with` body uses, and the rendered text is judged by the
+// shared truthiness rule: a falsy result skips the step. A render error is a
+// step failure regardless of the step's Optional flag — a broken gate
+// predicate is an authoring defect, not a soft step outcome.
+func stepEnabled(step types.PipelineStep, index int, withCtx *types.TemplateContext, eval TemplateEvaluator) (bool, error) {
+	if step.When == "" {
+		return true, nil
+	}
+	rendered, err := eval(fmt.Sprintf("pipeline-step[%s].when", step.ID), step.When, withCtx)
+	if err != nil {
+		return false, fmt.Errorf("%w: step %q (index %d) `when`: %w", ErrPipelineStepFailed, step.ID, index, err)
+	}
+	return truthy.Bool(rendered), nil
 }
 
 // evalWith renders the step's `with` template against the standard Recipe
