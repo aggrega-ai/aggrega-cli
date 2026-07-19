@@ -1209,6 +1209,9 @@ func (l *LazyLookup) recipeCatalog() *Catalog {
 		aggregateSources: l.aggregateSources,
 		entityBytes:      l.entityBytes,
 		workspaceRoot:    l.workspaceRoot,
+		// The lazy backing is the production build/pull resolution path, so it
+		// resolves core providers from the binary's embedded set (embedded-wins).
+		resolveEmbeddedProviders: true,
 	}
 	return l.recipeCat
 }

@@ -124,8 +124,24 @@ if [ -d "$CLI_ROOT/../aggrega-hub" ]; then
   step "check embedded plugin overlays"
   bash scripts/check-embedded-overlays.sh
   ok "embedded plugin overlays consistent"
+
+  # The full binary embeds a complete Plugin entity for every core guest so a
+  # no-local-catalog build resolves core providers offline. Each entity merges the
+  # guest's describe() self-report with its authored overlay (from the hub), so
+  # generation is hub-coupled like the hub-catalog generator. Ask the entity
+  # freshness oracle first (a fast mtime check) and regenerate only when an entity
+  # is stale or missing relative to its guest descriptor or overlay.
+  step "check embedded plugin-entity freshness"
+  if bash scripts/check-embedded-plugin-entities.sh; then
+    note "embedded plugin entities are fresh — regeneration skipped"
+  else
+    note "embedded plugin entities are stale or missing — regenerating"
+    step "regenerate embedded plugin entities"
+    bash scripts/gen-embedded-plugin-entities.sh
+    ok "embedded plugin entities regenerated"
+  fi
 else
-  note "aggrega-hub sibling absent — overlay-consistency check skipped"
+  note "aggrega-hub sibling absent — overlay-consistency check and embedded plugin-entity generation skipped"
 fi
 
 step "go build (embedded): aggrega"

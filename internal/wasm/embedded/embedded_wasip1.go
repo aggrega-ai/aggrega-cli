@@ -29,3 +29,11 @@ func Lookup(uri string) ([]byte, bool) {
 	copy(out, b)
 	return out, true
 }
+
+// LookupEntity mirrors the host signature so any resolution path that reaches it
+// compiles for wasip1. A guest embeds no entities, so it always misses.
+func LookupEntity(uri string) ([]byte, bool) { return nil, false }
+
+// EntityURIs mirrors the host signature so embedded-entity enumeration compiles
+// for wasip1. A guest embeds no entities, so it returns none.
+func EntityURIs() []string { return nil }

@@ -78,14 +78,16 @@ var pluginFS embed.FS
 var manifestTSV []byte
 
 // embeddedArtifact binds one embedded plugin's digest-free repository reference
-// to its gzip-compressed guest bytes and its build-extracted describe()
-// descriptor, both stored under plugins/. It is the single table the byte
-// registry and the descriptor registry are built from, so a plugin's URI and
-// its two asset paths are declared exactly once and cannot drift apart.
+// to its gzip-compressed guest bytes, its build-extracted describe() descriptor,
+// and its generated Plugin entity, all stored under plugins/. It is the single
+// table the byte registry, the descriptor registry, and the entity registry are
+// built from, so a plugin's URI and its three asset paths are declared exactly
+// once and cannot drift apart.
 type embeddedArtifact struct {
 	uri        string
 	wasmGz     string
 	descriptor string
+	entity     string
 }
 
 // embeddedArtifacts is the table of embedded plugins, derived from the
@@ -129,6 +131,7 @@ func parseManifest(b []byte) []embeddedArtifact {
 			uri:        socket + "/" + name,
 			wasmGz:     "plugins/" + name + ".wasm.gz",
 			descriptor: "plugins/" + name + ".describe.json",
+			entity:     "plugins/" + name + ".plugin.yaml",
 		})
 	}
 	if len(out) == 0 {
@@ -147,6 +150,15 @@ var registry = map[string][]byte{}
 // listing consults to report a guest's static metadata without instantiating
 // it, populated from pluginFS at init by registerDescriptors.
 var descriptorRegistry = map[string][]byte{}
+
+// entityRegistry maps a plugin's bare identity (`<socket>/<name>`) to its
+// generated Plugin entity YAML — the complete catalog entity (machine-derived
+// describe() contract merged with the authored overlay, runtime block included)
+// emitted beside the guest at generation time. It is the lookup provider
+// resolution consults to route a core provider by capability with no local
+// catalog and no registry round-trip, populated from pluginFS at init by
+// registerEntities.
+var entityRegistry = map[string][]byte{}
 
 // register binds embedded plugin bare identities to their bytes read from
 // pluginFS. It is the single place an embedded plugin's guest is wired: read its
@@ -186,9 +198,30 @@ func registerDescriptors() map[string][]byte {
 	return out
 }
 
+// registerEntities binds each embedded plugin's bare identity to the generated
+// Plugin entity YAML emitted beside its guest at generation time. An entity
+// asset that is absent — a tree built before the entities were generated, or a
+// hub-less checkout where the overlays the generator merges are unavailable — is
+// skipped rather than fatal, mirroring registerDescriptors: provider resolution
+// then finds no embedded entity for that coordinate and falls through to the
+// catalog/registry tiers exactly as it did before entities were embedded. The
+// guest bytes themselves remain mandatory (see register).
+func registerEntities() map[string][]byte {
+	out := map[string][]byte{}
+	for _, a := range embeddedArtifacts() {
+		b, err := pluginFS.ReadFile(a.entity)
+		if err != nil {
+			continue
+		}
+		out[a.uri] = b
+	}
+	return out
+}
+
 func init() {
 	registry = register()
 	descriptorRegistry = registerDescriptors()
+	entityRegistry = registerEntities()
 }
 
 // Lookup returns the embedded bytes for uri and whether the URI is embedded.
@@ -218,6 +251,34 @@ func LookupDescriptor(uri string) ([]byte, bool) {
 	out := make([]byte, len(b))
 	copy(out, b)
 	return out, true
+}
+
+// LookupEntity returns the generated Plugin entity YAML for uri and whether one
+// is registered. A hit yields a defensive copy so a caller cannot mutate the
+// embedded bytes backing every future lookup of the same URI. A miss — an
+// unregistered URI, or a tree built before the entity assets were generated —
+// returns false, and provider resolution falls through to the catalog/registry
+// tiers rather than routing off a core entity it does not have.
+func LookupEntity(uri string) ([]byte, bool) {
+	b, ok := entityRegistry[uri]
+	if !ok {
+		return nil, false
+	}
+	out := make([]byte, len(b))
+	copy(out, b)
+	return out, true
+}
+
+// EntityURIs returns the URIs of every embedded plugin that carries a generated
+// entity, in sorted order. Sorted so any consumer that enumerates the embedded
+// entity set is deterministic (Deterministic Output invariant).
+func EntityURIs() []string {
+	uris := make([]string, 0, len(entityRegistry))
+	for u := range entityRegistry {
+		uris = append(uris, u)
+	}
+	sort.Strings(uris)
+	return uris
 }
 
 // SeedForTest registers uri→bytes in the embedded set and returns a function

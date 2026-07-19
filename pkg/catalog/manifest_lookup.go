@@ -388,16 +388,43 @@ func matchOneFeatureRecipe(frs map[string]types.FeatureRecipe, provider, name, v
 // artifact resolution), not this accessor's job — this serves the entity struct
 // only.
 //
+// Resolution is local-first with an embedded fallback. An explicit entity-URI
+// reference resolves against the loaded catalog first, so an exact-version
+// reference to a present local plugin (a pipeline step's `mutator/x:1.0.0`, a
+// linter's) is honored verbatim — never shadowed by the binary's embedded core,
+// whose build version differs. Only when the local catalog cannot resolve the
+// reference does a production workspace view fall back to the embedded core
+// entities, so a no-local-catalog build can still resolve a core plugin entity by
+// URI. (Embedded-wins-over-local is a CAPABILITY-resolution behavior — see
+// pluginForCapability — not an entity-URI one: a bare provider name has no
+// author-declared version to honor, an explicit URI does.)
+//
 // Served by both catalog backings: the lazy backing exposes its enumerated
 // Plugin set through the recipeCatalog() *Catalog shell, so its
 // PluginByURI delegates here against the same matcher (no per-backing
 // reimplementation).
 func (c *Catalog) PluginByURI(uri string) (types.Plugin, bool) {
-	key, ok, _ := c.resolvePluginKey(uri)
+	if key, ok, _ := c.resolvePluginKey(uri); ok {
+		return c.Plugins[key], true
+	}
+	if !c.resolveEmbeddedProviders {
+		return types.Plugin{}, false
+	}
+	embeds, _ := embeddedPluginEntities()
+	if len(embeds) == 0 {
+		return types.Plugin{}, false
+	}
+	embedMap := make(map[string]types.Plugin, len(embeds))
+	for _, p := range embeds {
+		embedMap[entityIndexKey(p.Coordinate(), p.Metadata.Version)] = p
+	}
+	key, ok, _ := selectEntityVersion(embedMap, uri, func(v types.Plugin) (string, string) {
+		return v.Coordinate(), v.Metadata.Version
+	})
 	if !ok {
 		return types.Plugin{}, false
 	}
-	return c.Plugins[key], true
+	return embedMap[key], true
 }
 
 // ProviderPluginForTarget resolves a render-engine capability to the
@@ -461,6 +488,12 @@ func (c *Catalog) ProviderPluginForTarget(ref string, bindings map[string]string
 // (direct attach) instead, so routing them through capability resolution is a
 // clean structural miss, not an error.
 //
+// The candidate set is the render-time plugin set (providerResolutionPlugins):
+// the loaded catalog plugins overlaid with the binary's embedded core-provider
+// entities, embedded-wins on a shared coordinate. An explicit binding still
+// selects among the survivors, so a bound custom provider overrides the embedded
+// default while a local core entity of the same coordinate is shadowed by it.
+//
 // The diagnostics and sentinels are provider-scoped (ErrAmbiguousProviderPlugin
 // and its siblings) because the provider socket is the sole caller today; a
 // second capability-resolving socket would thread its own diagnostic phrasing.
@@ -476,7 +509,7 @@ func (c *Catalog) pluginForCapability(pluginType, ref string, bindings map[strin
 
 	matches := map[string]types.Plugin{}
 	distinctNames := map[string]struct{}{}
-	for key, p := range c.Plugins {
+	for key, p := range c.providerResolutionPlugins() {
 		if p.Metadata.PluginType != pluginType {
 			continue
 		}
@@ -555,7 +588,7 @@ func (c *Catalog) pluginForCapability(pluginType, ref string, bindings map[strin
 // The sort makes the returned order byte-identical across runs.
 func (c *Catalog) ProviderPluginCandidates(target string) []types.Plugin {
 	var out []types.Plugin
-	for _, p := range c.Plugins {
+	for _, p := range c.providerResolutionPlugins() {
 		if p.Metadata.PluginType != "provider" {
 			continue
 		}

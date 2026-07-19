@@ -30,30 +30,33 @@ spec:
 }
 
 // TestProviderPluginByNameResolvesShippedProviders proves the provider-name →
-// provider-Plugin resolution over a realistic catalog: each of the three shipped
-// provider names resolves to the Plugin that lists it in targets, a
-// name no plugin serves misses, and a non-provider (frp_step) plugin that happens
-// to list a provider name is NOT treated as a render engine.
+// provider-Plugin resolution over a realistic catalog: each of the three
+// provider names resolves to the Plugin that lists it in targets, a name no
+// plugin serves misses, and a non-provider (frp_step) plugin that happens to
+// list a provider name is NOT treated as a render engine. The fictional provider
+// names deliberately do NOT match any core provider the binary embeds, so this
+// exercises the catalog resolution algorithm in isolation from the embedded-wins
+// overlay a loaded catalog also applies.
 func TestProviderPluginByNameResolvesShippedProviders(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	writeYAMLToCatalog(t, dir, "plugins/helm-renderer.yaml", providerPlugin("helm-renderer", "1.0.0", "helm"))
-	writeYAMLToCatalog(t, dir, "plugins/compose-renderer.yaml", providerPlugin("compose-renderer", "1.0.0", "compose"))
-	writeYAMLToCatalog(t, dir, "plugins/helm-chart-renderer.yaml", providerPlugin("helm-chart-renderer", "1.0.0", "helm-chart"))
-	// An frp_step plugin that lists "helm" in targets — a DIFFERENT
+	writeYAMLToCatalog(t, dir, "plugins/acme-renderer.yaml", providerPlugin("acme-renderer", "1.0.0", "acme"))
+	writeYAMLToCatalog(t, dir, "plugins/widget-renderer.yaml", providerPlugin("widget-renderer", "1.0.0", "widget"))
+	writeYAMLToCatalog(t, dir, "plugins/gadget-renderer.yaml", providerPlugin("gadget-renderer", "1.0.0", "gadget"))
+	// An frp_step plugin that lists "acme" in targets — a DIFFERENT
 	// meaning (the provider a pipeline step renders alongside), not a render-engine
-	// claim. It must be excluded: if it counted, "helm" would be claimed by two
+	// claim. It must be excluded: if it counted, "acme" would be claimed by two
 	// distinct plugin names and resolve to (_, false).
-	writeYAMLToCatalog(t, dir, "plugins/helm-pipeline-step.yaml", `apiVersion: aggrega.ai/v1alpha1
+	writeYAMLToCatalog(t, dir, "plugins/acme-pipeline-step.yaml", `apiVersion: aggrega.ai/v1alpha1
 kind: Plugin
 metadata:
-  name: helm-pipeline-step
+  name: acme-pipeline-step
   pluginType: frp_step
   version: 1.0.0
 spec:
   abiVersion: v1alpha1
   capabilities:
-    - helm
+    - acme
 `)
 
 	cat, err := catalog.LoadAll("", dir)
@@ -69,9 +72,9 @@ spec:
 		provider string
 		wantName string
 	}{
-		{"helm", "helm-renderer"},
-		{"compose", "compose-renderer"},
-		{"helm-chart", "helm-chart-renderer"},
+		{"acme", "acme-renderer"},
+		{"widget", "widget-renderer"},
+		{"gadget", "gadget-renderer"},
 	}
 	for _, tc := range cases {
 		// Resolve through both the direct method and the CatalogLookup accessor;
@@ -96,34 +99,36 @@ spec:
 		}
 	}
 
-	if got, ok, err := cat.ProviderPluginByName("terraform"); ok || err != nil {
-		t.Errorf("ProviderPluginByName(\"terraform\"): got (%q, %v, %v); want (_, false, nil) for a provider no plugin serves", got.Metadata.Name, ok, err)
+	if got, ok, err := cat.ProviderPluginByName("nonesuch"); ok || err != nil {
+		t.Errorf("ProviderPluginByName(\"nonesuch\"): got (%q, %v, %v); want (_, false, nil) for a provider no plugin serves", got.Metadata.Name, ok, err)
 	}
 }
 
 // TestProviderPluginByNameSelectsHighestVersion proves several versions of ONE
 // provider plugin claiming the same provider are not a conflict — the highest
 // satisfying version wins, matching the three-form version select the other
-// by-name lookups use.
+// by-name lookups use. The fictional provider name does not match any core
+// provider the binary embeds, so this exercises the version-select in isolation
+// from the embedded-wins overlay.
 func TestProviderPluginByNameSelectsHighestVersion(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	writeYAMLToCatalog(t, dir, "plugins/helm-renderer-100.yaml", providerPlugin("helm-renderer", "1.0.0", "helm"))
-	writeYAMLToCatalog(t, dir, "plugins/helm-renderer-110.yaml", providerPlugin("helm-renderer", "1.1.0", "helm"))
+	writeYAMLToCatalog(t, dir, "plugins/acme-renderer-100.yaml", providerPlugin("acme-renderer", "1.0.0", "acme"))
+	writeYAMLToCatalog(t, dir, "plugins/acme-renderer-110.yaml", providerPlugin("acme-renderer", "1.1.0", "acme"))
 
 	cat, err := catalog.LoadAll("", dir)
 	if err != nil {
 		t.Fatalf("LoadAll: %v", err)
 	}
-	got, ok, err := cat.ProviderPluginByName("helm")
+	got, ok, err := cat.ProviderPluginByName("acme")
 	if err != nil {
-		t.Fatalf("ProviderPluginByName(\"helm\"): unexpected error %v", err)
+		t.Fatalf("ProviderPluginByName(\"acme\"): unexpected error %v", err)
 	}
 	if !ok {
-		t.Fatal("ProviderPluginByName(\"helm\"): not found; want the highest version")
+		t.Fatal("ProviderPluginByName(\"acme\"): not found; want the highest version")
 	}
 	if got.Metadata.Version != "1.1.0" {
-		t.Errorf("ProviderPluginByName(\"helm\"): got version %q; want the highest 1.1.0", got.Metadata.Version)
+		t.Errorf("ProviderPluginByName(\"acme\"): got version %q; want the highest 1.1.0", got.Metadata.Version)
 	}
 }
 

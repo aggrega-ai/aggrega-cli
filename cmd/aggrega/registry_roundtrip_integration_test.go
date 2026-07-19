@@ -41,9 +41,48 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
-// offlineReferenceSHA is the catalog-only compose output built offline against
-// the standard catalog; the registry-tier build must reproduce it byte-for-byte.
-const offlineReferenceSHA = "9916a26d726a34546e64f77b5c1a92129ef6bca54c44d15a580d26a3f194ef65"
+// offlineReferenceCompose builds the catalog-only example offline against the
+// standard catalog and returns the SHA-256 of its rendered compose output. It is
+// the reference the registry-tier build must reproduce byte-for-byte.
+//
+// The reference is computed at test time rather than frozen as a constant: a
+// core provider resolves from the binary's embedded entity, whose metadata
+// version is a build-provenance stamp that moves commit to commit and lands in
+// the rendered output as the aggrega.ai/provider-version label. A frozen constant
+// would therefore flake on every version bump; regenerating the reference from an
+// offline build that resolves the SAME embedded provider keeps the comparison a
+// genuine cross-path byte-identity check (registry path vs local path) with no
+// dependence on the version string. Product provenance behavior is unchanged —
+// the label still carries the resolved provider version; the test just anchors on
+// a freshly-built reference instead of a stale literal.
+//
+// std and exampleDir are resolved by the caller before any chdir (both helpers
+// walk up from cwd); the reference build runs in its own temp workspace and
+// restores the working directory before returning.
+func offlineReferenceCompose(t *testing.T, std, exampleDir string) string {
+	t.Helper()
+	prev, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	defer func() { _ = os.Chdir(prev) }()
+
+	ws := t.TempDir()
+	copyTree(t, exampleDir, ws)
+	_ = os.Remove(filepath.Join(ws, "release.lock"))
+	_ = os.RemoveAll(filepath.Join(ws, ".aggrega"))
+	_ = os.RemoveAll(filepath.Join(ws, "dist"))
+	if err := os.Chdir(ws); err != nil {
+		t.Fatalf("chdir reference workspace: %v", err)
+	}
+	if err := pullRun(pullConfig{ReleasePath: "release.yaml", CatalogDirs: []string{std}}); err != nil {
+		t.Fatalf("offline reference pull: %v", err)
+	}
+	if err := dispatchBuild(nil, "release.yaml", []string{std}, false, os.Stderr, os.Stdout); err != nil {
+		t.Fatalf("offline reference build: %v", err)
+	}
+	return sha256HexFile(t, filepath.Join("dist", "compose", "docker-compose.yaml"))
+}
 
 // frpStepPluginType is the single fixture-side source for the pipeline plugins'
 // socket. A Plugin's identity coordinate is <pluginType>/<name> and its OCI
@@ -202,8 +241,15 @@ func sha256HexFile(t *testing.T, path string) string {
 // pre-unification path required that (now-deleted) bridge to fold registry
 // entities into the build's view.
 func TestIntegration_RegistryRoundTrip_Positive(t *testing.T) {
+	// Resolve the reference before any chdir: a core provider resolves from the
+	// binary's embedded entity, so both the offline reference build and the
+	// registry-tier build below route compose through the SAME embedded provider —
+	// the reference is the offline path's rendered output, the byte-identity target.
+	std := standardCatalogDir(t)
+	wantSHA := offlineReferenceCompose(t, std, catalogOnlyExampleDir(t))
+
 	host := startRegistry(t, nil)
-	counts := pushCatalog(t, host, standardCatalogDir(t))
+	counts := pushCatalog(t, host, std)
 	// Every publishable kind present in the standard catalog pushed clean.
 	for _, k := range []string{"Component", "Feature", "Recipe", "FeatureRecipe", "SchemaLibrary"} {
 		if counts[k] == 0 {
@@ -225,8 +271,8 @@ func TestIntegration_RegistryRoundTrip_Positive(t *testing.T) {
 		t.Fatalf("registry build: %v", err)
 	}
 	got := sha256HexFile(t, filepath.Join("dist", "compose", "docker-compose.yaml"))
-	if got != offlineReferenceSHA {
-		t.Errorf("registry build output sha = %s; want offline reference %s", got, offlineReferenceSHA)
+	if got != wantSHA {
+		t.Errorf("registry build output sha = %s; want offline reference %s", got, wantSHA)
 	}
 
 	// lock == build: rebuild from the generated lock (no re-pull), byte-identical.
@@ -425,6 +471,11 @@ func TestIntegration_Capstone_LintAndExample(t *testing.T) {
 	// (the resolver walks "../.." from cwd); resolving it after the lint chdir into
 	// a temp dir would misresolve and skip the build half of the capstone.
 	exampleDir := catalogOnlyExampleDir(t)
+	// The reference is an independent offline build in its own workspace; comparing
+	// this capstone's offline build to it asserts two independent offline builds are
+	// byte-identical (the deterministic-output invariant), resolving compose through
+	// the same embedded provider both times.
+	wantSHA := offlineReferenceCompose(t, std, exampleDir)
 	// Lint enumerates + validates via its own eager whole-catalog load, wholly
 	// independent of any build closure. Run it from a bare working directory with
 	// no Release and no lockfile present: there is no closure for it to read, so a
@@ -450,8 +501,8 @@ func TestIntegration_Capstone_LintAndExample(t *testing.T) {
 	if err := dispatchBuild(nil, "release.yaml", []string{std}, false, os.Stderr, os.Stdout); err != nil {
 		t.Fatalf("catalog-only build against the shared catalog: %v", err)
 	}
-	if got := sha256HexFile(t, filepath.Join("dist", "compose", "docker-compose.yaml")); got != offlineReferenceSHA {
-		t.Errorf("offline example build sha = %s; want reference %s", got, offlineReferenceSHA)
+	if got := sha256HexFile(t, filepath.Join("dist", "compose", "docker-compose.yaml")); got != wantSHA {
+		t.Errorf("offline example build sha = %s; want reference %s", got, wantSHA)
 	}
 }
 

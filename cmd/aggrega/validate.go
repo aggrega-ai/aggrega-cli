@@ -388,6 +388,13 @@ func validateRecipeEntity(rw *workspaceconfig.ResolvedWorkspace, path string, da
 	if err != nil {
 		return err
 	}
+	// The recipe render tier resolves providers the way a real build does: core
+	// providers resolve from the binary's embedded entity set (embedded-wins), so
+	// validating a core-provider recipe in a workspace with no local catalog
+	// resolves the provider offline exactly as `aggrega build` would. This is
+	// scoped to the render-tier catalog; the shape and pillar validate paths that
+	// share loadResolvedCatalog read only SchemaLibraries and are unaffected.
+	cat.UseEmbeddedProviderResolution()
 	lookup := cat.CatalogLookup()
 	if lookup.Component == nil {
 		return fmt.Errorf("render: catalog has no Component index")
@@ -543,7 +550,10 @@ func runRenderTiers(h entityHarness, lookup resolver.CatalogLookup, recipeLookup
 	}
 	fmt.Fprintln(out, "Resolution: valid")
 
-	// Tier 3: real render through the embedded provider guests.
+	// Tier 3: real render. Provider resolution is embedded-wins (the render-tier
+	// catalog enables it upstream), so a core-provider recipe resolves its
+	// provider from the binary's embedded set and renders even in a workspace
+	// with no local catalog — matching how a real build resolves the provider.
 	result, err := pipeline.RunPipeline(ctx, inputs, lookup, recipeLookup, subAggregateLoader, pipeline.Options{})
 	if err != nil {
 		// The isolated render did not complete. This is a genuine finding — the

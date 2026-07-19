@@ -16,6 +16,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm/embedded"
+	"github.com/aggrega-ai/aggrega-cli/internal/wasm/entitysynth"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
@@ -87,7 +88,7 @@ func TestGenCatalogFromEmbeddedContractFieldsMatchDescribe(t *testing.T) {
 		if !ok {
 			t.Fatalf("no embedded descriptor for %s (build the guests first)", uri)
 		}
-		desc, _, err := parseDescriptorJSON(raw)
+		desc, _, err := entitysynth.ParseDescriptorJSON(raw)
 		if err != nil {
 			t.Fatalf("parse descriptor for %s: %v", uri, err)
 		}
@@ -154,7 +155,7 @@ func TestGenCatalogFromEmbeddedContractFieldsMatchDescribe(t *testing.T) {
 		if entity.Spec.Provider != nil {
 			contract = entity.Spec.Provider.Contract
 		}
-		if desc.Contract != nil && !isZeroContract(*desc.Contract) {
+		if desc.Contract != nil && !entitysynth.IsZeroContract(*desc.Contract) {
 			if contract == nil {
 				t.Errorf("%s: contract missing though describe() reports it", name)
 			} else if contract.BoundaryAssembly != desc.Contract.BoundaryAssembly {
@@ -220,7 +221,7 @@ func TestGenCatalogDescriptionOmittedWhenAbsent(t *testing.T) {
 	version := collectVersionInfo().Version
 	for _, uri := range embedded.URIs() {
 		raw, _ := embedded.LookupDescriptor(uri)
-		_, description, err := parseDescriptorJSON(raw)
+		_, description, err := entitysynth.ParseDescriptorJSON(raw)
 		if err != nil {
 			t.Fatalf("parse descriptor %s: %v", uri, err)
 		}
@@ -377,7 +378,7 @@ func TestGenCatalogCommandMirrorRoundTrips(t *testing.T) {
 		{Name: "mmm-third", Description: ""},
 	}
 
-	mapped := descriptorCommands(described)
+	mapped := entitysynth.DescriptorCommands(described)
 	if len(mapped) != len(described) {
 		t.Fatalf("descriptorCommands mapped %d commands, want %d", len(mapped), len(described))
 	}
@@ -398,8 +399,8 @@ func TestGenCatalogCommandMirrorRoundTrips(t *testing.T) {
 
 	// Empty describe() set yields an omitted (nil) field, which the mirror
 	// comparison treats as equal to a plugin describing no commands.
-	if got := descriptorCommands(nil); got != nil {
-		t.Errorf("descriptorCommands(nil) = %v, want nil", got)
+	if got := entitysynth.DescriptorCommands(nil); got != nil {
+		t.Errorf("entitysynth.DescriptorCommands(nil) = %v, want nil", got)
 	}
 	empty := types.Plugin{}
 	if !wasm.CommandMirrorsEqual(entityCommandMirror(empty), nil) {
@@ -422,7 +423,7 @@ func TestGenCatalogMergeStampsCommandMirror(t *testing.T) {
 	}
 	overlay := types.Plugin{Metadata: types.PluginMetadata{Name: "cli-demo"}}
 
-	entity, err := mergeGenCatalogEntity(desc, "", nil, overlay, "v0.0.0-test", "cli/cli-demo")
+	entity, err := entitysynth.MergeForPublish(desc, "", nil, overlay, "v0.0.0-test", "cli/cli-demo")
 	if err != nil {
 		t.Fatalf("mergeGenCatalogEntity: %v", err)
 	}

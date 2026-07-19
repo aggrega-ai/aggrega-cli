@@ -60,3 +60,13 @@ func URIs() []string { return nil }
 // build. A light binary embeds no descriptors, so it always misses — no embedded
 // entry is ever enumerated to look one up for.
 func LookupDescriptor(uri string) ([]byte, bool) { return nil, false }
+
+// LookupEntity mirrors the default-host signature so provider resolution
+// compiles for a light build. A light binary embeds no entities, so it always
+// misses and resolution continues through the catalog/registry tiers.
+func LookupEntity(uri string) ([]byte, bool) { return nil, false }
+
+// EntityURIs mirrors the default-host signature so embedded-entity enumeration
+// compiles for a light build. A light binary embeds no entities, so it returns
+// none.
+func EntityURIs() []string { return nil }

@@ -102,13 +102,13 @@ spec:
 	writeFixture(t, dir, "plugin.yaml", `apiVersion: aggrega.ai/v1alpha1
 kind: Plugin
 metadata:
-  name: helm-renderer
+  name: acme-renderer
   pluginType: provider
   version: 1.0.0
 spec:
   abiVersion: v1alpha1
   capabilities:
-    - helm
+    - acme
   exports:
     - name: render_node
 `)
@@ -150,25 +150,25 @@ spec:
 	// resolve the same Plugin entity for a URI and the same provider→Plugin binding
 	// for a provider name, or the daemon's render dispatch silently diverges from
 	// the CLI's.
-	ep, eok := eager.Plugin("provider/helm-renderer:1.0.0")
-	lp, lok := primed.Plugin("provider/helm-renderer:1.0.0")
+	ep, eok := eager.Plugin("provider/acme-renderer:1.0.0")
+	lp, lok := primed.Plugin("provider/acme-renderer:1.0.0")
 	if eok != lok || !reflect.DeepEqual(ep, lp) {
-		t.Errorf("Plugin provider/helm-renderer:1.0.0 diverges (eager ok=%v, lazy ok=%v)", eok, lok)
+		t.Errorf("Plugin provider/acme-renderer:1.0.0 diverges (eager ok=%v, lazy ok=%v)", eok, lok)
 	}
 	if !eok {
-		t.Fatal("fixture invalid: eager view is missing the helm-renderer Plugin (Plugin/ProviderPlugin parity is vacuous otherwise)")
+		t.Fatal("fixture invalid: eager view is missing the acme-renderer Plugin (Plugin/ProviderPlugin parity is vacuous otherwise)")
 	}
 
-	epp, eok, eerr := eager.ProviderPlugin("helm")
-	lpp, lok, lerr := primed.ProviderPlugin("helm")
+	epp, eok, eerr := eager.ProviderPlugin("acme")
+	lpp, lok, lerr := primed.ProviderPlugin("acme")
 	if eerr != nil || lerr != nil {
-		t.Fatalf("ProviderPlugin helm errored (eager=%v, lazy=%v)", eerr, lerr)
+		t.Fatalf("ProviderPlugin acme errored (eager=%v, lazy=%v)", eerr, lerr)
 	}
 	if eok != lok || !reflect.DeepEqual(epp, lpp) {
-		t.Errorf("ProviderPlugin helm diverges (eager ok=%v, lazy ok=%v)", eok, lok)
+		t.Errorf("ProviderPlugin acme diverges (eager ok=%v, lazy ok=%v)", eok, lok)
 	}
-	if !eok || epp.Metadata.Name != "helm-renderer" {
-		t.Errorf("ProviderPlugin(\"helm\"): got (%q, %v); want (helm-renderer, true)", epp.Metadata.Name, eok)
+	if !eok || epp.Metadata.Name != "acme-renderer" {
+		t.Errorf("ProviderPlugin(\"acme\"): got (%q, %v); want (acme-renderer, true)", epp.Metadata.Name, eok)
 	}
 
 	if !reflect.DeepEqual(eager.SchemaLibraries, primed.SchemaLibraries) {

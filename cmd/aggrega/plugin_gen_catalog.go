@@ -5,7 +5,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -19,6 +18,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm/embedded"
+	"github.com/aggrega-ai/aggrega-cli/internal/wasm/entitysynth"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator"
 )
@@ -205,9 +205,9 @@ func genCatalogFromPlugin(ctx context.Context, opts genCatalogOptions, version s
 // to <outputDir>/<pluginType>/<name>/<version>/plugin.yaml — the plugin
 // coordinate path that mirrors the catalog filesystem layout.
 func generateAndWrite(outputDir string, desc wasm.PluginDescriptor, description string, hostFunctions []string, overlay types.Plugin, version, identity string, out io.Writer) error {
-	entity, err := mergeGenCatalogEntity(desc, description, hostFunctions, overlay, version, identity)
+	entity, err := entitysynth.MergeForPublish(desc, description, hostFunctions, overlay, version, identity)
 	if err != nil {
-		return err
+		return fmt.Errorf("aggrega plugin gen-catalog: %w", err)
 	}
 	coordinate := entity.Coordinate()
 	dir := filepath.Join(outputDir, filepath.FromSlash(coordinate), entity.Metadata.Version)
@@ -236,198 +236,6 @@ func generateAndWrite(outputDir string, desc wasm.PluginDescriptor, description 
 	return nil
 }
 
-// mergeGenCatalogEntity assembles a Plugin entity from the describe() contract
-// fields (machine-derived — the compiler-checked truth of what the guest does),
-// the host-function set derived from the guest's own .wasm import section (also
-// machine-derived), the command mirror read from the guest's describe()
-// self-report (machine-derived — the top-level command verbs a CLI guest
-// contributes, in describe()-declared order), the authored overlay (identity,
-// runtime limits, provider block, and any authored metadata), and the binary's
-// own build version. The plugin-level description, when present, becomes
-// metadata.description. The contract fields, the host-function set, and the
-// command mirror always come from the binary, overriding any the overlay
-// carries, so the binary is the single source for the guest's declared behavior;
-// the overlay supplies only what the binary does not report.
-func mergeGenCatalogEntity(desc wasm.PluginDescriptor, description string, hostFunctions []string, overlay types.Plugin, version, identity string) (types.Plugin, error) {
-	if err := desc.Validate(identity); err != nil {
-		return types.Plugin{}, fmt.Errorf("aggrega plugin gen-catalog: %w", err)
-	}
-	if strings.TrimSpace(overlay.Metadata.Name) == "" {
-		return types.Plugin{}, fmt.Errorf("aggrega plugin gen-catalog: overlay for %q has no metadata.name identity", identity)
-	}
-
-	entity := types.Plugin{
-		APIVersion: "aggrega.ai/v1alpha1",
-		Kind:       "Plugin",
-		Metadata:   overlay.Metadata,
-		Spec:       types.PluginSpec{},
-	}
-	// Version is the binary's own build identity; description is the guest's
-	// plugin-level self-report. Everything else in metadata is authored.
-	entity.Metadata.Version = version
-	entity.Metadata.Description = description
-
-	// Identity is metadata.name (copied from the overlay above); runtime limits
-	// and the provider block are authored. The machine-owned host-function set is
-	// derived from the guest's .wasm import section and stamped into the runtime
-	// block here, so the generated entity is publish-ready without a separate
-	// recording step. The signature pointer is not the generator's to write —
-	// signing attaches the signature at push.
-	entity.Spec.Runtime = stampRuntimeHostFunctions(overlay.Spec.Runtime, hostFunctions)
-	entity.Spec.Provider = overlay.Spec.Provider
-
-	// Contract fields are machine-derived from describe(). pluginType is the
-	// plugin's socket identity and lives in metadata; the location and catalog
-	// coordinate derive from it plus the bare metadata.name.
-	entity.Metadata.PluginType = desc.PluginType
-	entity.Spec.AbiVersion = desc.AbiVersion
-	entity.Spec.Capabilities = desc.Capabilities
-	entity.Spec.Exports = descriptorExports(desc.Exports)
-	entity.Spec.Commands = descriptorCommands(desc.Commands)
-	if contract := descriptorContract(desc.Contract); contract != nil {
-		if entity.Spec.Provider == nil {
-			entity.Spec.Provider = &types.PluginProvider{}
-		}
-		entity.Spec.Provider.Contract = contract
-	}
-
-	return entity, nil
-}
-
-// stampRuntimeHostFunctions returns the entity's runtime block carrying the
-// machine-owned host-function set derived from the guest's .wasm. The set is
-// canonical (sorted, de-duplicated), so re-generating over unchanged bytes
-// yields byte-identical output.
-//
-// When the overlay authors a runtime block, its authored limits are preserved
-// and the derived set replaces whatever host functions it carried. When the
-// overlay authors no runtime block but the guest imports host functions, a
-// runtime block is created to hold the record — a validated machine-owned value
-// is never silently dropped. When the guest imports nothing and the overlay
-// authors no runtime block, the block stays absent; the field is omitempty and
-// the publish check treats an absent record as an empty set, so this is
-// publish-safe.
-func stampRuntimeHostFunctions(rt *types.PluginRuntime, hostFunctions []string) *types.PluginRuntime {
-	if rt == nil {
-		if len(hostFunctions) == 0 {
-			return nil
-		}
-		return &types.PluginRuntime{HostFunctions: hostFunctions}
-	}
-	out := *rt
-	out.HostFunctions = hostFunctions
-	return &out
-}
-
-// descriptorExports maps the describe() export declarations onto the entity's
-// authored-export shape, preserving declared order and carrying the four fields
-// the entity records (name, operates, scope, selector).
-func descriptorExports(exports []wasm.PluginExport) []types.PluginExport {
-	if len(exports) == 0 {
-		return nil
-	}
-	out := make([]types.PluginExport, 0, len(exports))
-	for _, e := range exports {
-		out = append(out, types.PluginExport{
-			Name:     e.Name,
-			Operates: e.Operates,
-			Scope:    e.Scope,
-			Selector: e.Selector,
-		})
-	}
-	return out
-}
-
-// descriptorCommands maps the describe() command declarations onto the entity's
-// machine-owned command mirror, preserving describe()-declared order and carrying
-// the command verb and its short-help text. It is the exact reverse of the
-// mirror projection the publish verify re-derives from the entity, so a generated
-// entity's recorded set matches what the binary describes without a separate
-// recording step. Empty input yields nil, so a non-CLI guest that describes no
-// commands leaves the omitempty field absent.
-func descriptorCommands(commands []wasm.PluginCLICommand) []types.PluginCommand {
-	if len(commands) == 0 {
-		return nil
-	}
-	out := make([]types.PluginCommand, 0, len(commands))
-	for _, c := range commands {
-		out = append(out, types.PluginCommand{
-			Name:        c.Name,
-			Description: c.Description,
-			Flags:       descriptorCommandFlags(c.Flags),
-		})
-	}
-	return out
-}
-
-// descriptorCommandFlags maps a describe() command's flag declarations onto the
-// entity's machine-owned flag mirror, preserving describe()-declared order and
-// carrying every flag field. Empty input yields nil, so a command that declares
-// no flags leaves the omitempty field absent.
-func descriptorCommandFlags(flags []wasm.PluginCommandFlag) []types.PluginCommandFlag {
-	if len(flags) == 0 {
-		return nil
-	}
-	out := make([]types.PluginCommandFlag, 0, len(flags))
-	for _, f := range flags {
-		out = append(out, types.PluginCommandFlag{
-			Name:        f.Name,
-			Shorthand:   f.Shorthand,
-			Description: f.Description,
-			Type:        f.Type,
-			Default:     f.Default,
-		})
-	}
-	return out
-}
-
-// isZeroContract reports whether a describe() render-behavior contract carries
-// no claim — every field at its zero value — so the generator emits no contract
-// block rather than an all-empty one. The cross-cutting sockets (linter, mutator,
-// policy) report no render-behavior contract.
-func isZeroContract(c wasm.ProviderContract) bool {
-	return c.InputKinds == (wasm.InputKinds{}) &&
-		c.BoundaryAssembly == "" &&
-		c.ArtifactDelimiters == nil &&
-		len(c.SourceFilter) == 0 &&
-		c.AssemblyNameAnnotation == nil &&
-		!c.ReusableInstance &&
-		!c.CrossBoundaryLinking
-}
-
-// descriptorContract maps the describe() provider render-behavior self-report
-// onto the entity's authored-contract shape, or returns nil when the guest
-// reports none.
-func descriptorContract(c *wasm.ProviderContract) *types.ProviderContract {
-	if c == nil || isZeroContract(*c) {
-		return nil
-	}
-	out := &types.ProviderContract{
-		InputKinds: types.PluginInputKinds{
-			Sourced:             c.InputKinds.Sourced,
-			Synthesized:         c.InputKinds.Synthesized,
-			ArtifactsStandalone: c.InputKinds.ArtifactsStandalone,
-		},
-		BoundaryAssembly:     c.BoundaryAssembly,
-		SourceFilter:         c.SourceFilter,
-		ReusableInstance:     c.ReusableInstance,
-		CrossBoundaryLinking: c.CrossBoundaryLinking,
-	}
-	if c.ArtifactDelimiters != nil {
-		out.ArtifactDelimiters = &types.PluginArtifactDelimiters{
-			Left:  c.ArtifactDelimiters.Left,
-			Right: c.ArtifactDelimiters.Right,
-		}
-	}
-	if c.AssemblyNameAnnotation != nil {
-		out.AssemblyNameAnnotation = &types.PluginAssemblyNameAnnotation{
-			Annotation:    c.AssemblyNameAnnotation.Annotation,
-			RequireUnique: c.AssemblyNameAnnotation.RequireUnique,
-		}
-	}
-	return out
-}
-
 // emitGenCatalogEntity marshals a Plugin entity to deterministic YAML with the
 // generated-output banner. The struct field order fixes the key order and the
 // encoder's fixed indent fixes the layout, so the same entity marshals to the
@@ -453,7 +261,7 @@ func emitGenCatalogEntity(entity types.Plugin) ([]byte, error) {
 // back to loading and describing the guest when the static descriptor is absent.
 func embeddedDescriptor(ctx context.Context, uri string) (wasm.PluginDescriptor, string, error) {
 	if raw, ok := embedded.LookupDescriptor(uri); ok {
-		desc, description, err := parseDescriptorJSON(raw)
+		desc, description, err := entitysynth.ParseDescriptorJSON(raw)
 		if err == nil {
 			return desc, description, nil
 		}
@@ -469,25 +277,6 @@ func embeddedDescriptor(ctx context.Context, uri string) (wasm.PluginDescriptor,
 		return wasm.PluginDescriptor{}, "", err
 	}
 	return desc, "", nil
-}
-
-// parseDescriptorJSON unmarshals a describe() descriptor JSON payload into the
-// validated descriptor shape and, separately, reads the optional plugin-level
-// description field. The description is read through a forward-compatible view so
-// the generator picks it up as soon as guests emit it, without this surface
-// declaring an ABI field of its own.
-func parseDescriptorJSON(raw []byte) (wasm.PluginDescriptor, string, error) {
-	var desc wasm.PluginDescriptor
-	if err := json.Unmarshal(raw, &desc); err != nil {
-		return wasm.PluginDescriptor{}, "", err
-	}
-	var extra struct {
-		Description string `json:"description"`
-	}
-	if err := json.Unmarshal(raw, &extra); err != nil {
-		return wasm.PluginDescriptor{}, "", err
-	}
-	return desc, extra.Description, nil
 }
 
 // describeWasmBytes loads a guest from bytes and returns its validated describe()

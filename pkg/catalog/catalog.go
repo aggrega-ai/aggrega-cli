@@ -120,6 +120,19 @@ type Catalog struct {
 	// the resolution-detail reporting path; it never alters which entity
 	// resolves (first-win is decided at merge), only makes the override visible.
 	Shadows []ShadowedEntity
+
+	// resolveEmbeddedProviders marks this catalog as the production build/pull
+	// workspace view that should resolve core providers from the binary's embedded
+	// entity set at render time (providerResolutionPlugins) — the embedded-wins
+	// overlay. It is set by the lazy backing shell (recipeCatalog), the resolution
+	// path every real build and pull runs through, so a no-local-catalog build
+	// resolves a core provider offline and a dev build renders with its own
+	// embedded core over a same-coordinate catalog entry. It is deliberately NOT
+	// set on the eager whole-catalog view or on a bare Catalog literal: those back
+	// controlled, self-contained catalogs (the build-faithful render harness, the
+	// resolver guards, direct-constructed test fixtures) that must render exactly
+	// the providers they declare, unperturbed by the binary's embedded set.
+	resolveEmbeddedProviders bool
 }
 
 // LoadAll walks dirs in argument order, recursively reads every .yaml / .yml
