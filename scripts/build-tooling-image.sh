@@ -87,13 +87,14 @@ fi
 [ -x "$BINARY" ] || die "aggrega binary not found or not executable at: $BINARY
 build it first with the repository build (scripts/build.sh), then re-run."
 
-# Verify the binary is the embedded build: `plugin list` lists guest URIs under
-# the embedded built-ins group only when guests are compiled in. A --light
-# binary prints the group header with "(none)" and would package a
-# non-functional tooling image, so check for an actual guest URI in that
-# section rather than just the header.
-EMBEDDED_SECTION="$("$BINARY" plugin list 2>/dev/null | awk '/Embedded built-ins:/{f=1;next} /Configured plugins:/{f=0} f')"
-if ! printf '%s' "$EMBEDDED_SECTION" | grep -q "oci://"; then
+# Verify the binary is the embedded build: `plugin list --json` reports the
+# guests compiled into the binary as a machine-readable array. A --light binary
+# reports an empty array and would package a non-functional tooling image. The
+# check reads the JSON rather than the human table, so it does not depend on the
+# table's display format (which lists bare `<socket>/<name>` identities, not
+# URIs). Whitespace is stripped so the non-empty test (`"embedded":[{`) is
+# insensitive to the pretty-printer, and it needs no jq.
+if ! "$BINARY" plugin list --json 2>/dev/null | tr -d '[:space:]' | grep -q '"embedded":\[{'; then
   die "binary at $BINARY is not the embedded build (no embedded guests).
 the tooling image needs the embedded binary; rebuild without --light."
 fi
