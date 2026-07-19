@@ -100,7 +100,18 @@ jobs:
       # referenced here, not invented — until the overlays exist the generate step
       # halts loudly. Each overlay's plugin identity must name a guest present in
       # the decompressed guest set below (the publish pairs them by that identity).
-      OVERLAY_DIR: ${{ vars.CLI_PUBLISH_OVERLAY_DIR || 'plugin-overlays' }}
+      # The overlays live in the aggrega-hub sibling checkout.
+      OVERLAY_DIR: ${{ vars.CLI_PUBLISH_OVERLAY_DIR || 'aggrega-hub/plugin-overlays' }}
+      # Sibling checkout refs. The CLI's own go.mod pins the schemas, abi, and pdk
+      # versions; the resolve step below reads those require lines and checks each
+      # sibling out at its pinned tag. A require still on the local-replace
+      # placeholder (v0.0.0) has no published tag, so it falls back to the matching
+      # ref variable here. aggrega-hub carries no CLI-side pin at all, so it always
+      # uses HUB_REF. Operators override any of these via repository variables.
+      SCHEMAS_REF: ${{ vars.CLI_PUBLISH_SCHEMAS_REF || 'main' }}
+      ABI_REF: ${{ vars.CLI_PUBLISH_ABI_REF || 'main' }}
+      PDK_REF: ${{ vars.CLI_PUBLISH_PDK_REF || 'main' }}
+      HUB_REF: ${{ vars.CLI_PUBLISH_HUB_REF || 'main' }}
       # Dispatch inputs surfaced as env so run scripts read them from the
       # environment rather than interpolating expressions into shell.
       EVENT_NAME: ${{ github.event_name }}
@@ -120,9 +131,9 @@ jobs:
       # image, plugin, or release is ever produced from an unvalidated build.
       # =====================================================================
 
-      - name: Mint org app token for private-submodule access
-        # The umbrella and its submodules are private; a GitHub App installation
-        # token scoped to the org grants the checkout read access to all of them.
+      - name: Mint org app token for private-sibling access
+        # The sibling repositories are private; a GitHub App installation token
+        # scoped to the org grants the checkout read access to all of them.
         id: app-token
         uses: actions/create-github-app-token@v3
         with:
@@ -130,22 +141,17 @@ jobs:
           private-key: ${{ secrets.SUBMODULE_APP_PRIVATE_KEY }}
           owner: ${{ github.repository_owner }}
 
-      - name: Check out the umbrella workspace with submodules and tags
-        # The CLI cannot build from a standalone checkout of its own repository:
-        # its module resolves sibling modules through parent-relative replace
-        # directives, and the build driver lives at the umbrella root. So the
-        # build needs the umbrella layout with the sibling repositories present.
-        #
-        # CHECKOUT SEAM: point AGGREGA_UMBRELLA_REPO at the umbrella repository and
-        # supply a token with read access to it and its submodules. On a
-        # self-hosted runner already provisioned with the umbrella workspace these
-        # may be unnecessary. Full history and tags are fetched so the build stamps
-        # the release version from the tag.
+      - name: Check out the CLI with full history and tags
+        # This workflow runs in the CLI repository; check it out into aggrega-cli/
+        # so its build driver and manifests sit under that path. Full history and
+        # tags are fetched so the build stamps the release version from the tag.
+        # The CLI cannot build alone: its module resolves the sibling modules
+        # through parent-relative replace directives (../aggrega-schemas,
+        # ../aggrega-pdk/go, ../aggrega-abi/go), so the sibling repositories are
+        # checked out beside it below.
         uses: actions/checkout@v4
         with:
-          repository: ${{ vars.AGGREGA_UMBRELLA_REPO }}
-          token: ${{ steps.app-token.outputs.token }}
-          submodules: recursive
+          path: aggrega-cli
           fetch-depth: 0
           fetch-tags: true
 
@@ -153,7 +159,7 @@ jobs:
         # A real manual publish (a dispatch that is not a dry run) targets a past
         # release tag, so it MUST name one. Fail fast here, before any build or
         # push, when the tag input is empty. A manual dry run needs no tag: it
-        # builds the umbrella's pinned pointer as-is and prints the plan.
+        # builds the checked-out CLI tree as-is and prints the plan.
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run == false && inputs.tag == '' }}
         run: |
           set -euo pipefail
@@ -162,11 +168,11 @@ jobs:
 
       - name: Pin the CLI tree to the release tag
         # Move the CLI tree onto the release tag before building so the build's
-        # `git describe` stamps the released version. On a tag push the umbrella's
-        # submodule pointer may lag the tag; on a manual dispatch that supplies a
-        # tag input the run targets a past release. In both cases the effective
-        # tag is the pushed tag (push) or the tag input (dispatch). A manual dry
-        # run with no tag input skips this and builds the pinned pointer as-is.
+        # `git describe` stamps the released version, and so the sibling pins are
+        # read from the tag's go.mod. On a manual dispatch that supplies a tag
+        # input the run targets a past release. The effective tag is the pushed
+        # tag (push) or the tag input (dispatch). A manual dry run with no tag
+        # input skips this and builds the checked-out tree as-is.
         if: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.tag != '') }}
         run: |
           set -euo pipefail
@@ -177,6 +183,70 @@ jobs:
           fi
           git -C aggrega-cli fetch --force --tags origin
           git -C aggrega-cli checkout --force "refs/tags/${TAG}"
+
+      - name: Resolve sibling checkout refs from the CLI's go.mod
+        # The CLI's own manifests decide the sibling versions: read the schemas,
+        # abi, and pdk pins from the (now tag-pinned) go.mod require lines so the
+        # siblings are checked out at exactly what this CLI build expects. Reading
+        # at runtime keeps the refs correct as the pins move, rather than
+        # hardcoding them here. A require still on the local-replace placeholder
+        # (v0.0.0) has no published tag, so it falls back to its ref variable.
+        # aggrega-hub carries no CLI-side pin, so it always uses HUB_REF.
+        id: pins
+        run: |
+          set -euo pipefail
+          gomod=aggrega-cli/go.mod
+          read_req() { grep -E "^[[:space:]]+$1 v" "$gomod" | awk '{print $2}' | head -1; }
+          # Placeholder (empty or v0.0.0) -> fall back to the ref variable.
+          resolve() { case "$1" in ''|v0.0.0) printf '%s' "$2";; *) printf '%s' "$1";; esac; }
+          schemas_ref="$(resolve "$(read_req github.com/aggrega-ai/aggrega-schemas)" "$SCHEMAS_REF")"
+          abi_ref="$(resolve "$(read_req github.com/aggrega-ai/aggrega-abi-go)" "$ABI_REF")"
+          pdk_ref="$(resolve "$(read_req github.com/aggrega-ai/aggrega-pdk-go)" "$PDK_REF")"
+          {
+            echo "schemas_ref=$schemas_ref"
+            echo "abi_ref=$abi_ref"
+            echo "pdk_ref=$pdk_ref"
+          } >> "$GITHUB_OUTPUT"
+          echo "resolved sibling refs: schemas=$schemas_ref abi=$abi_ref pdk=$pdk_ref hub=$HUB_REF"
+
+      - name: Check out the schemas sibling
+        # Satisfies the CLI go.mod replace ../aggrega-schemas.
+        uses: actions/checkout@v4
+        with:
+          repository: aggrega-ai/aggrega-schemas
+          path: aggrega-schemas
+          ref: ${{ steps.pins.outputs.schemas_ref }}
+          token: ${{ steps.app-token.outputs.token }}
+
+      - name: Check out the abi sibling
+        # Satisfies the CLI go.mod replace ../aggrega-abi/go (repo root holds go/).
+        uses: actions/checkout@v4
+        with:
+          repository: aggrega-ai/aggrega-abi
+          path: aggrega-abi
+          ref: ${{ steps.pins.outputs.abi_ref }}
+          token: ${{ steps.app-token.outputs.token }}
+
+      - name: Check out the pdk sibling
+        # Satisfies the CLI go.mod replace ../aggrega-pdk/go (repo root holds go/).
+        uses: actions/checkout@v4
+        with:
+          repository: aggrega-ai/aggrega-pdk
+          path: aggrega-pdk
+          ref: ${{ steps.pins.outputs.pdk_ref }}
+          token: ${{ steps.app-token.outputs.token }}
+
+      - name: Check out the hub sibling
+        # Supplies the authored plugin overlays (OVERLAY_DIR) that catalog
+        # generation consumes and that the embedded-overlay consistency check
+        # reads. aggrega-hub has no CLI-side version pin, so it is checked out at
+        # HUB_REF.
+        uses: actions/checkout@v4
+        with:
+          repository: aggrega-ai/aggrega-hub
+          path: aggrega-hub
+          ref: ${{ env.HUB_REF }}
+          token: ${{ steps.app-token.outputs.token }}
 
       - name: Set up Go
         # Pin the toolchain to the (tag-pinned) module's declared version and
@@ -212,7 +282,7 @@ jobs:
         # the run is faster).
         run: |
           set -euo pipefail
-          scripts/build.sh aggrega-cli
+          aggrega-cli/scripts/build.sh
 
       - name: Build the light binary for the release
         # The light no-embed binary ships as a downloadable release asset beside
@@ -224,7 +294,7 @@ jobs:
         # aggrega-cli/aggrega-light, beside the full aggrega-cli/aggrega.
         run: |
           set -euo pipefail
-          scripts/build.sh --light
+          aggrega-cli/scripts/build.sh --light
 
       - name: Assert ABI self-consistency
         # A real gate, not a comment: the binary reports the single ABI version its
@@ -408,10 +478,10 @@ jobs:
         # the registry with their Plugin entities; the release carries only the two
         # runnable binaries, and GitHub attaches the source archives on its own. A
         # dry run prints the planned release and asset names and creates nothing.
-        # The release lands on this repository — GH_REPO pins it, because the
-        # checked-out working tree is the umbrella, not this repo — for the tag the
-        # human already pushed; contents:write authorizes it. Asset names carry the
-        # binary's reported version and the build's linux/amd64 target.
+        # The release lands on this repository — GH_REPO pins it explicitly — for
+        # the tag the human already pushed; contents:write authorizes it. Asset
+        # names carry the binary's reported version and the build's linux/amd64
+        # target.
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
