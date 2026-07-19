@@ -220,11 +220,20 @@ func flattenAggregate(
 				result.Pruned[id] = true
 			}
 
-			// Rewire exported_components: alias scoped to sub-aggregate prefix
+			// Rewire exported_components: alias scoped to sub-aggregate prefix.
+			// A re-exported alias (the child re-publishing a grandchild's export
+			// under a new name) names the child's alias table rather than a real
+			// node; resolveExportTarget follows that indirection to the concrete
+			// internal node ID so every stored export value is already-resolved —
+			// the contract the edge-target rewrite relies on.
 			if childAgg != nil {
 				for exportAlias, localRef := range childAgg.Spec.ExportedComponents.All() {
-					resolvedID := qualifiedID(childPrefix, localRef)
-					result.ExportedComponents[qualifiedID(childPrefix, exportAlias)] = resolvedID
+					candidate := qualifiedID(childPrefix, localRef)
+					resolved, err := resolveExportTarget(candidate, result.Nodes, childResult.ExportedComponents)
+					if err != nil {
+						return nil, err
+					}
+					result.ExportedComponents[qualifiedID(childPrefix, exportAlias)] = resolved
 				}
 			}
 		}
@@ -342,6 +351,49 @@ func collectAttachments(result *flattenResult, nodeID string, comp types.Compone
 			Secret:       sec,
 			SourceTier:   tier,
 		})
+	}
+}
+
+// resolveExportTarget walks a re-exported alias to the concrete node it
+// ultimately names. When a parent aggregate re-publishes a child module's
+// exported alias under a new name, the freshly-qualified export value points
+// at the child's alias table rather than a real node; this walk follows that
+// indirection until it lands on a node, so every value stored in the export
+// table is an already-resolved internal node ID — the contract the edge-target
+// rewrite relies on.
+//
+// candidate is the freshly-qualified export value. nodes is the flattened node
+// map built so far (the child's nodes are already merged in at the call site).
+// childExports is the child's already-resolved alias table. The walk returns:
+//
+//   - the resolved node ID when candidate (or a followed alias) names a node;
+//   - candidate unchanged when it names neither a node nor a child alias, so the
+//     downstream dangling-target guardrail halts on the unresolved reference;
+//   - ErrReexportCycle when the alias chain revisits an alias before reaching a
+//     node, naming the walked chain.
+//
+// Export values are strictly deeper-qualified than the frame prefix, so a
+// follow-chain increases dotted-ID depth and terminates on well-formed input;
+// the visited-set is a backstop against a malformed alias table rather than a
+// shape reachable through the acyclic inclusion tree.
+func resolveExportTarget(candidate string, nodes types.OrderedMap[*TopologyNode], childExports map[string]string) (string, error) {
+	visited := make(map[string]bool)
+	var chain []string
+	cur := candidate
+	for {
+		if _, isNode := nodes.Get(cur); isNode {
+			return cur, nil
+		}
+		next, isAlias := childExports[cur]
+		if !isAlias {
+			return cur, nil
+		}
+		chain = append(chain, cur)
+		if visited[cur] {
+			return "", cerrors.Wrap(ErrReexportCycle, cerrors.DeveloperError, cerrors.SourceLocation{File: candidate}, fmt.Sprintf("re-exported component alias chain loops: %s", strings.Join(chain, " -> ")))
+		}
+		visited[cur] = true
+		cur = next
 	}
 }
 

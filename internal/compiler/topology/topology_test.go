@@ -31,7 +31,9 @@ package topology
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
@@ -609,5 +611,168 @@ func TestBuild_UnknownEdgeTargetHalts(t *testing.T) {
 	}
 	if !errors.Is(err, ErrDanglingUsesTarget) {
 		t.Errorf("expected ErrDanglingUsesTarget, got %v", err)
+	}
+}
+
+// reexportModuleLoader returns a SubAggregateLoader serving a two-level module
+// stack. The grandchild database module (modules/db) exposes its internal
+// main-db component under the alias public_db. The intermediate data-tier
+// module (modules/data-tier) imports the grandchild under the prefix gc and
+// re-exports the grandchild's alias under a NEW name (db_endpoint), so the
+// stack exercises a rename across a re-export hop. midReexportRef is the
+// intermediate's re-export target — the child-local path it re-publishes;
+// passing a live path (gc.public_db) exercises transitive resolution, a dead
+// path (gc.nonexistent) exercises the multi-hop dangling halt.
+func reexportModuleLoader(midReexportRef string) SubAggregateLoader {
+	return func(typeName string, _ map[string]any) (*types.Aggregate, string, map[string]any, error) {
+		switch typeName {
+		case "modules/db":
+			comps := types.OrderedMap[types.ComponentInstance]{}
+			comps.Set("main-db", types.ComponentInstance{Type: "core/datastore/postgres"})
+			exports := types.OrderedMap[string]{}
+			exports.Set("public_db", "main-db")
+			return &types.Aggregate{
+				Metadata: types.AggregateMetadata{Name: "db-module"},
+				Spec: types.AggregateSpec{
+					Components:         comps,
+					ExportedComponents: exports,
+				},
+			}, "", nil, nil
+		case "modules/data-tier":
+			subs := types.OrderedMap[types.SubAggregate]{}
+			subs.Set("gc", types.SubAggregate{Type: "modules/db"})
+			exports := types.OrderedMap[string]{}
+			exports.Set("db_endpoint", midReexportRef)
+			return &types.Aggregate{
+				Metadata: types.AggregateMetadata{Name: "data-tier-module"},
+				Spec: types.AggregateSpec{
+					Aggregates:         subs,
+					ExportedComponents: exports,
+				},
+			}, "", nil, nil
+		default:
+			return nil, "", nil, fmt.Errorf("unknown sub-aggregate: %s", typeName)
+		}
+	}
+}
+
+// TestBuild_TransitiveReexportEdgeTargetResolves — a root component's `uses`
+// edge targets an intermediate module's re-exported alias (mid.db_endpoint)
+// that ultimately re-publishes a grandchild module's exported alias under a new
+// name. The edge resolves through both hops to the grandchild's internal node
+// ID (mid.gc.main-db), and that target is a real node in the topology — the
+// byte-identical-to-direct-target proof for a multi-hop re-export chain.
+func TestBuild_TransitiveReexportEdgeTargetResolves(t *testing.T) {
+	t.Parallel()
+	uses := types.OrderedMap[types.UsesSocketValue]{}
+	uses.Set("databases", types.UsesSocketValue{Compact: []string{"mid.db_endpoint"}})
+	components := types.OrderedMap[types.ComponentInstance]{}
+	components.Set("api", types.ComponentInstance{Type: "core/compute/api-server", Uses: uses})
+	subs := types.OrderedMap[types.SubAggregate]{}
+	subs.Set("mid", types.SubAggregate{Type: "modules/data-tier"})
+	agg := &types.Aggregate{
+		Metadata: types.AggregateMetadata{Name: "root"},
+		Spec: types.AggregateSpec{
+			Components: components,
+			Aggregates: subs,
+		},
+	}
+
+	result, err := Build(BuildConfig{
+		ResolveResult: &resolver.ResolveResult{
+			Aggregate:     agg,
+			BoundaryInfra: map[string]*resolver.BoundaryInfra{},
+		},
+		LoadSubAggregate: reexportModuleLoader("gc.public_db"),
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(result.Edges) != 1 {
+		t.Fatalf("expected 1 edge, got %d", len(result.Edges))
+	}
+	e := result.Edges[0]
+	if e.Source != "api" || e.Socket != "databases" {
+		t.Fatalf("unexpected edge shape: %+v", e)
+	}
+	if e.Target != "mid.gc.main-db" {
+		t.Errorf("transitive re-export not resolved: got target %q, want %q", e.Target, "mid.gc.main-db")
+	}
+	if _, ok := result.Nodes.Get(e.Target); !ok {
+		t.Errorf("resolved target %q is not a node in the topology", e.Target)
+	}
+}
+
+// TestBuild_TransitiveReexportDanglingHalts — an intermediate module re-exports
+// a nonexistent grandchild path. Transitive resolution leaves the export value
+// unresolved (it names neither a node nor a live alias), so the consuming edge
+// halts loudly with ErrDanglingUsesTarget rather than resolving to a phantom
+// target. The Loud Guardrail survives the multi-hop re-export path.
+func TestBuild_TransitiveReexportDanglingHalts(t *testing.T) {
+	t.Parallel()
+	uses := types.OrderedMap[types.UsesSocketValue]{}
+	uses.Set("databases", types.UsesSocketValue{Compact: []string{"mid.db_endpoint"}})
+	components := types.OrderedMap[types.ComponentInstance]{}
+	components.Set("api", types.ComponentInstance{Type: "core/compute/api-server", Uses: uses})
+	subs := types.OrderedMap[types.SubAggregate]{}
+	subs.Set("mid", types.SubAggregate{Type: "modules/data-tier"})
+	agg := &types.Aggregate{
+		Metadata: types.AggregateMetadata{Name: "root"},
+		Spec: types.AggregateSpec{
+			Components: components,
+			Aggregates: subs,
+		},
+	}
+
+	_, err := Build(BuildConfig{
+		ResolveResult: &resolver.ResolveResult{
+			Aggregate:     agg,
+			BoundaryInfra: map[string]*resolver.BoundaryInfra{},
+		},
+		LoadSubAggregate: reexportModuleLoader("gc.nonexistent"),
+	})
+	if err == nil {
+		t.Fatal("expected ErrDanglingUsesTarget for a multi-hop dangling re-export, got nil")
+	}
+	if !errors.Is(err, ErrDanglingUsesTarget) {
+		t.Errorf("expected ErrDanglingUsesTarget, got %v", err)
+	}
+}
+
+// TestResolveExportTarget_CycleHalts — white-box backstop for the re-export
+// resolver. A malformed alias table whose entries loop back on each other
+// (a → b → a), with a node map containing neither, must halt with
+// ErrReexportCycle naming the walked chain, and must TERMINATE rather than
+// walk the loop forever. The condition is structurally unconstructible through
+// valid authoring (the inclusion tree is acyclic and export values deepen at
+// every hop); the direct call exercises the visited-set guard regardless.
+func TestResolveExportTarget_CycleHalts(t *testing.T) {
+	t.Parallel()
+	childExports := map[string]string{"a": "b", "b": "a"}
+	nodes := types.OrderedMap[*TopologyNode]{} // contains neither a nor b
+
+	type outcome struct {
+		resolved string
+		err      error
+	}
+	done := make(chan outcome, 1)
+	go func() {
+		r, e := resolveExportTarget("a", nodes, childExports)
+		done <- outcome{r, e}
+	}()
+
+	select {
+	case got := <-done:
+		if got.err == nil {
+			t.Fatalf("expected a cycle error, got resolved=%q with nil error", got.resolved)
+		}
+		if !errors.Is(got.err, ErrReexportCycle) {
+			t.Errorf("expected ErrReexportCycle, got %v", got.err)
+		}
+		if !strings.Contains(got.err.Error(), "a -> b -> a") {
+			t.Errorf("cycle error does not name the walked chain: %q", got.err.Error())
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("resolveExportTarget did not terminate on a cyclic alias table")
 	}
 }

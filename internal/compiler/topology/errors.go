@@ -94,6 +94,17 @@ var (
 	// false so the author can either keep the target present or drop the edge.
 	ErrUsesPrunedComponent = errors.New("uses edge target was pruned because its active toggle resolved to false")
 
+	// ErrReexportCycle fires from flattenAggregate when resolving a re-exported
+	// component alias walks a chain of exported aliases that loops back on itself
+	// before reaching a concrete node. A parent aggregate may re-publish a child
+	// module's exported alias under a new name; resolving that re-export follows
+	// the child's alias table to the underlying node. An acyclic inclusion tree
+	// makes such a loop unconstructible through normal authoring, so this is a
+	// backstop: rather than following the chain forever, the walk halts (Invariant
+	// 4). The wrapped error names the alias chain it walked so the author can see
+	// where the references close the loop.
+	ErrReexportCycle = errors.New("re-exported component alias forms a cycle")
+
 	// ErrMutatorPatchRejected fires when a mutator plugin returns a JSON Patch
 	// the host refuses to apply to the labels-only graph projection: a patch
 	// that fails to decode, a patch whose operation does not apply cleanly, or
