@@ -15,6 +15,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
+	"github.com/aggrega-ai/aggrega-cli/pkg/plugintype"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
@@ -24,14 +25,41 @@ import (
 const providerSocketKind = "provider"
 
 // configSocketKinds is the set of workspace-level config sockets a plugin
-// attaches to by its bare entity identity. The provider socket is handled
-// separately because it binds a capability rather than attaching a plugin to
-// a socket list.
-var configSocketKinds = map[string]bool{
-	"mutator":  true,
-	"policy":   true,
-	"linter":   true,
-	"importer": true,
+// attaches to by its bare entity identity. It is the plugin-type registry's
+// socket-attached subset minus the provider socket, which is handled separately
+// because it binds a capability rather than attaching a plugin to a socket list.
+var configSocketKinds = buildConfigSocketKinds()
+
+// buildConfigSocketKinds derives the config-socket membership set from the
+// canonical plugin-type registry so the socket vocabulary lives once: every
+// plugin type that names a workspace socket, except the provider socket. The
+// result is a membership set read by key, never range-iterated for output.
+func buildConfigSocketKinds() map[string]bool {
+	kinds := map[string]bool{}
+	for _, e := range plugintype.Entries() {
+		if e.Socket != "" && e.Socket != providerSocketKind {
+			kinds[e.Socket] = true
+		}
+	}
+	return kinds
+}
+
+// pluginKindsHint is the ordered list of accepted <type> arguments the plugin
+// add and remove commands name in their unknown-type errors: the provider
+// socket, the config sockets, then the cli type. The kind names are sourced from
+// the plugin-type registry (via the workspace socket constants and the cli plugin
+// type) so the vocabulary lives once; the order is the fixed presentation order
+// the surface has always shown, which differs from the registry's author order.
+func pluginKindsHint() string {
+	kinds := []string{
+		providerSocketKind,
+		string(workspaceconfig.SocketMutator),
+		string(workspaceconfig.SocketPolicy),
+		string(workspaceconfig.SocketLinter),
+		string(workspaceconfig.SocketImporter),
+		string(wasm.PluginTypeCLI),
+	}
+	return strings.Join(kinds, ", ")
 }
 
 // newPluginAddCmd builds the `plugin add` command: it searches the configured
@@ -149,7 +177,7 @@ func pluginAddRun(ctx context.Context, cfg pluginAddConfig) error {
 	isProvider := socket == providerSocketKind
 	isCLI := socket == string(wasm.PluginTypeCLI)
 	if !isProvider && !isCLI && !configSocketKinds[socket] {
-		return fmt.Errorf("aggrega plugin add: unknown type %q; expected one of provider, mutator, policy, linter, importer, cli", socket)
+		return fmt.Errorf("aggrega plugin add: unknown type %q; expected one of %s", socket, pluginKindsHint())
 	}
 	if isProvider && cfg.Capability == "" {
 		return fmt.Errorf("aggrega plugin add: the provider type requires --capability naming the capability the binding serves")

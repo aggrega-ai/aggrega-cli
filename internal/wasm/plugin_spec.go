@@ -21,10 +21,10 @@ type PluginSpec struct {
 	// catalog URI leaf (for example "publishing-linter").
 	Name string
 
-	// PluginType is the plugin's kind — provider, linter, frp_step, mutator,
-	// or policy. The Loader uses it only to compose a human-readable
-	// program-name label for the guest's WASI argv (see programName); it is a
-	// diagnostic label, not a dispatch key.
+	// PluginType is the plugin's kind; see plugintype.Type for the canonical
+	// set. The Loader uses it only to compose a human-readable program-name
+	// label for the guest's WASI argv (see programName); it is a diagnostic
+	// label, not a dispatch key.
 	PluginType PluginType
 
 	// Path is the filesystem path to the .wasm artifact bytes. Upstream

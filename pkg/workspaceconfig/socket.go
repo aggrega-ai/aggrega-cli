@@ -3,23 +3,40 @@
 
 package workspaceconfig
 
+import "github.com/aggrega-ai/aggrega-cli/pkg/plugintype"
+
 // Socket names one of the workspace-level Wasm plugin sockets. Every socket
 // takes the unified PluginRef attachment shape; the socket determines which
 // plugin type is expected and how an unconfigured socket behaves.
 type Socket string
 
-const (
+// socketName returns the workspace socket name a plugin type attaches at, read
+// from the canonical plugin-type registry so the literal lives once. It panics
+// if the type is absent from the registry or attaches at no socket — a static
+// programming error, since the caller passes a known socket-bearing plugin-type
+// constant.
+func socketName(t plugintype.Type) string {
+	e, ok := plugintype.Lookup(t)
+	if !ok || e.Socket == "" {
+		panic("workspaceconfig: no workspace socket for plugin type " + string(t))
+	}
+	return e.Socket
+}
+
+// The socket names read from the canonical plugin-type registry so each literal
+// lives once — the registry is the single home of the socket-name vocabulary.
+var (
 	// SocketMutator is the label-mutation socket (default export: mutate).
-	SocketMutator Socket = "mutator"
+	SocketMutator = Socket(socketName(plugintype.Mutator))
 	// SocketPolicy is the policy-validation socket (default export: validate).
-	SocketPolicy Socket = "policy"
+	SocketPolicy = Socket(socketName(plugintype.Policy))
 	// SocketLinter is the publishing-linter socket (default export: lint).
-	SocketLinter Socket = "linter"
+	SocketLinter = Socket(socketName(plugintype.Linter))
 	// SocketImporter is the import socket (default export: import).
-	SocketImporter Socket = "importer"
+	SocketImporter = Socket(socketName(plugintype.Importer))
 	// SocketProvider is the provider-rendering socket that binds render-engine
 	// capabilities to the plugins serving them.
-	SocketProvider Socket = "provider"
+	SocketProvider = Socket(socketName(plugintype.Provider))
 )
 
 // SocketPrefersCapabilityDefault reports whether an unconfigured socket prefers

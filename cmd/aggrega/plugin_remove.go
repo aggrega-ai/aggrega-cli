@@ -95,7 +95,7 @@ func pluginRemoveRun(cfg pluginRemoveConfig) error {
 	isProvider := socket == providerSocketKind
 	isCLI := socket == string(wasm.PluginTypeCLI)
 	if !isProvider && !isCLI && !configSocketKinds[socket] {
-		return fmt.Errorf("aggrega plugin remove: unknown type %q; expected one of provider, mutator, policy, linter, importer, cli", socket)
+		return fmt.Errorf("aggrega plugin remove: unknown type %q; expected one of %s", socket, pluginKindsHint())
 	}
 
 	op := workspaceconfig.OpConfigSocket

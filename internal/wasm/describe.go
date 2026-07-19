@@ -6,6 +6,7 @@ package wasm
 import (
 	"fmt"
 
+	"github.com/aggrega-ai/aggrega-cli/pkg/plugintype"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
@@ -28,44 +29,45 @@ import (
 
 // PluginType is the kind of a Wasm plugin. It selects the
 // minimum-export rule the host enforces and the default input pattern
-// for an export.
-type PluginType string
+// for an export. It is an alias for the canonical plugin-type vocabulary
+// so the host and the low-level registry name one type, not two.
+type PluginType = plugintype.Type
 
 const (
 	// PluginTypeProvider is a provider plugin: it renders IR nodes into
 	// provider-native artifacts. Its minimum export is render_node.
-	PluginTypeProvider PluginType = "provider"
+	PluginTypeProvider = plugintype.Provider
 
 	// PluginTypeLinter is a linter plugin: it inspects authored content
 	// and raises diagnostics. Its minimum surface is at least one
 	// lint_* export.
-	PluginTypeLinter PluginType = "linter"
+	PluginTypeLinter = plugintype.Linter
 
 	// PluginTypeFRPStep is a feature-recipe-pipeline step plugin: it
 	// transforms the IR within a feature recipe's pipeline. Its minimum
 	// export is step.
-	PluginTypeFRPStep PluginType = "frp_step"
+	PluginTypeFRPStep = plugintype.FRPStep
 
 	// PluginTypeMutator is a mutator plugin: it auto-tags topology-graph
 	// node labels at Step 2, returning JSON Patch documents the host applies
 	// to a labels-only projection of the graph. Its minimum export is mutate.
-	PluginTypeMutator PluginType = "mutator"
+	PluginTypeMutator = plugintype.Mutator
 
 	// PluginTypePolicy is a policy plugin: it evaluates the
 	// full IR graph at Step 4 and returns one pass/fail verdict per rule; a
 	// failed rule halts the build. Its minimum export is validate.
-	PluginTypePolicy PluginType = "policy"
+	PluginTypePolicy = plugintype.Policy
 
 	// PluginTypeCLI is a CLI plugin: it contributes a runtime aggrega <cmd>
 	// subcommand, invoked by an operator at the command line rather than by
 	// the build pipeline. Its minimum export is cli_run.
-	PluginTypeCLI PluginType = "cli"
+	PluginTypeCLI = plugintype.CLI
 
 	// PluginTypeParser is a parser plugin: it turns a foreign source text into
 	// a canonical structured tree, so any consumer can read the tree without
 	// carrying its own language parser. It advertises the formats it handles as
 	// parse:<format> capabilities. Its minimum export is parse.
-	PluginTypeParser PluginType = "parser"
+	PluginTypeParser = plugintype.Parser
 )
 
 // InputPattern selects how the host delivers an export's input payload.
@@ -99,23 +101,38 @@ const (
 // ABI-compatibility handshake in [PluginDescriptor.Validate].
 const ABIVersionV1Alpha1 = "v1alpha1"
 
+// minExportName returns the minimum-export name or prefix a plugin type
+// declares, read from the canonical plugin-type registry so the literal lives
+// once. It panics if the type is absent from the registry — a static
+// programming error, since the caller passes a known plugin-type constant.
+func minExportName(t plugintype.Type) string {
+	e, ok := plugintype.Lookup(t)
+	if !ok {
+		panic("wasm: no plugin-type registry entry for " + string(t))
+	}
+	return e.MinExport.Name
+}
+
 // lintExportPrefix is the prefix a linter plugin's rule exports carry;
 // a linter satisfies its minimum-export rule with at least one export
-// whose name begins with this prefix.
-const lintExportPrefix = "lint_"
+// whose name begins with this prefix. It reads the prefix from the canonical
+// plugin-type registry so the literal lives once.
+var lintExportPrefix = minExportName(plugintype.Linter)
 
 // frpStepExportName is the required export name for a
-// feature-recipe-pipeline step plugin.
-const frpStepExportName = "step"
+// feature-recipe-pipeline step plugin. It reads the name from the canonical
+// plugin-type registry so the literal lives once.
+var frpStepExportName = minExportName(plugintype.FRPStep)
 
 // MutateExport and ValidateExport are the default entry-function names for
 // the mutator and policy sockets. They are the single source for
-// both the minimum-export rule this gate enforces and the default a socket
-// applies when a plugin attachment leaves its entry function unset, so the
-// two sides read one name rather than each re-spelling the literal.
-const (
-	MutateExport   = "mutate"
-	ValidateExport = "validate"
+// the default a socket applies when a plugin attachment leaves its entry
+// function unset; they read the name from the canonical plugin-type registry
+// so the minimum-export rule this gate enforces and the socket default read
+// one name rather than each re-spelling the literal.
+var (
+	MutateExport   = minExportName(plugintype.Mutator)
+	ValidateExport = minExportName(plugintype.Policy)
 )
 
 // LinkPublishExport and LinkResolveExport are the two cross-boundary
@@ -134,22 +151,25 @@ const (
 )
 
 // providerRenderExportName is the required export name for a provider
-// plugin.
-const providerRenderExportName = "render_node"
+// plugin. It reads the name from the canonical plugin-type registry so the
+// literal lives once.
+var providerRenderExportName = minExportName(plugintype.Provider)
 
 // ParseExport is the required export name for a parser plugin — the
 // entry point the host dispatches to when it needs a source text turned into
-// a structured tree. It is the single home of the name; the parser-socket
-// orchestrator references it so the guest export the host invokes cannot drift
-// from the export the descriptor validator requires.
-const ParseExport = "parse"
+// a structured tree. The parser-socket orchestrator references it so the guest
+// export the host invokes cannot drift from the export the descriptor validator
+// requires. It reads the name from the canonical plugin-type registry so the
+// literal lives once.
+var ParseExport = minExportName(plugintype.Parser)
 
 // CLIRunExportName is the required export name for a CLI plugin — the
 // entry point the host dispatches to when an operator invokes the
-// plugin's aggrega <cmd> subcommand. It is the single home of the name;
-// the runtime CLI runner references it so the guest export the runner
-// invokes cannot drift from the export the descriptor validator requires.
-const CLIRunExportName = "cli_run"
+// plugin's aggrega <cmd> subcommand. The runtime CLI runner references it so
+// the guest export the runner invokes cannot drift from the export the
+// descriptor validator requires. It reads the name from the canonical
+// plugin-type registry so the literal lives once.
+var CLIRunExportName = minExportName(plugintype.CLI)
 
 // BoundaryAssemblyNone, BoundaryAssemblyMerge, and BoundaryAssemblyNest are
 // the three boundary-assembly modes a plugin reports via
@@ -410,44 +430,29 @@ func (d PluginDescriptor) validateExportCapabilities(pluginIdentity string) erro
 
 // validateMinimumExports enforces the per-plugin-type minimum-export
 // rule, returning an ErrWasmManifestRejected-wrapped error naming the
-// missing export when the rule is unmet.
+// missing export when the rule is unmet. It reads the rule — the required
+// export name or name prefix, and the human-facing type label — from the
+// canonical plugin-type registry rather than re-spelling one case per type,
+// so the gate and the registry can never disagree on what each type requires.
+// A type absent from the registry, or a reserved type with no rule, imposes no
+// minimum-export requirement here (an unrecognized plugin_type is rejected
+// earlier in Validate).
 func (d PluginDescriptor) validateMinimumExports(pluginIdentity string) error {
-	switch PluginType(d.PluginType) {
-	case PluginTypeProvider:
-		if !d.hasExport(providerRenderExportName) {
-			return fmt.Errorf("provider plugin %q declares no %q export: %w",
-				pluginIdentity, providerRenderExportName, ErrWasmManifestRejected)
+	entry, ok := plugintype.Lookup(PluginType(d.PluginType))
+	if !ok || entry.MinExport.Name == "" {
+		return nil
+	}
+	rule := entry.MinExport
+	if rule.IsPrefix {
+		if !d.hasExportWithPrefix(rule.Name) {
+			return fmt.Errorf("%s plugin %q declares no %s* export: %w",
+				entry.Label, pluginIdentity, rule.Name, ErrWasmManifestRejected)
 		}
-	case PluginTypeLinter:
-		if !d.hasExportWithPrefix(lintExportPrefix) {
-			return fmt.Errorf("linter plugin %q declares no %s* export: %w",
-				pluginIdentity, lintExportPrefix, ErrWasmManifestRejected)
-		}
-	case PluginTypeFRPStep:
-		if !d.hasExport(frpStepExportName) {
-			return fmt.Errorf("feature-recipe-pipeline plugin %q declares no %q export: %w",
-				pluginIdentity, frpStepExportName, ErrWasmManifestRejected)
-		}
-	case PluginTypeMutator:
-		if !d.hasExport(MutateExport) {
-			return fmt.Errorf("mutator plugin %q declares no %q export: %w",
-				pluginIdentity, MutateExport, ErrWasmManifestRejected)
-		}
-	case PluginTypePolicy:
-		if !d.hasExport(ValidateExport) {
-			return fmt.Errorf("policy plugin %q declares no %q export: %w",
-				pluginIdentity, ValidateExport, ErrWasmManifestRejected)
-		}
-	case PluginTypeCLI:
-		if !d.hasExport(CLIRunExportName) {
-			return fmt.Errorf("cli plugin %q declares no %q export: %w",
-				pluginIdentity, CLIRunExportName, ErrWasmManifestRejected)
-		}
-	case PluginTypeParser:
-		if !d.hasExport(ParseExport) {
-			return fmt.Errorf("parser plugin %q declares no %q export: %w",
-				pluginIdentity, ParseExport, ErrWasmManifestRejected)
-		}
+		return nil
+	}
+	if !d.hasExport(rule.Name) {
+		return fmt.Errorf("%s plugin %q declares no %q export: %w",
+			entry.Label, pluginIdentity, rule.Name, ErrWasmManifestRejected)
 	}
 	return nil
 }
