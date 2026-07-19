@@ -149,7 +149,7 @@ jobs:
         # through parent-relative replace directives (../aggrega-schemas,
         # ../aggrega-pdk/go, ../aggrega-abi/go), so the sibling repositories are
         # checked out beside it below.
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           path: aggrega-cli
           fetch-depth: 0
@@ -211,7 +211,7 @@ jobs:
 
       - name: Check out the schemas sibling
         # Satisfies the CLI go.mod replace ../aggrega-schemas.
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           repository: aggrega-ai/aggrega-schemas
           path: aggrega-schemas
@@ -220,7 +220,7 @@ jobs:
 
       - name: Check out the abi sibling
         # Satisfies the CLI go.mod replace ../aggrega-abi/go (repo root holds go/).
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           repository: aggrega-ai/aggrega-abi
           path: aggrega-abi
@@ -229,7 +229,7 @@ jobs:
 
       - name: Check out the pdk sibling
         # Satisfies the CLI go.mod replace ../aggrega-pdk/go (repo root holds go/).
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           repository: aggrega-ai/aggrega-pdk
           path: aggrega-pdk
@@ -241,7 +241,7 @@ jobs:
         # generation consumes and that the embedded-overlay consistency check
         # reads. aggrega-hub has no CLI-side version pin, so it is checked out at
         # HUB_REF.
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           repository: aggrega-ai/aggrega-hub
           path: aggrega-hub
