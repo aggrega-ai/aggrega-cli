@@ -3,8 +3,9 @@ name: Publish and sign core plugins
 # Tag-driven publisher for the core provider/linter plugins that are embedded in
 # the aggrega binary. On a release tag it builds the binary and its embedded
 # guests, builds and pushes the tooling image, then generates the core Plugin
-# catalog entities and publishes each with its guest to the registry, signed with
-# an offline key.
+# catalog entities and publishes each with its guest to the registry, signed
+# keyless via the GitHub Actions OIDC identity against the public Sigstore
+# instance (Fulcio + Rekor).
 #
 # The build order is load-bearing. The Wasm guests are reproducible build
 # outputs, not tracked files, so they are absent from a fresh checkout: the build
@@ -15,9 +16,9 @@ name: Publish and sign core plugins
 # Deciding the version and cutting the tag is a human action; this workflow only
 # publishes OCI artifacts.
 #
-# NOT YET LIVE. The destination registry, its pull/push credentials, the offline
-# signing key, the self-hosted runner, and the authored per-plugin overlays that
-# catalog generation consumes are all operator-configured and are not wired here.
+# NOT YET LIVE. The destination registry, its pull/push credentials, the
+# self-hosted runner, and the authored per-plugin overlays that catalog
+# generation consumes are all operator-configured and are not wired here.
 # Until they exist this workflow is authored but unexercised — it has never run
 # against a real registry. The manual-dispatch entry defaults to a dry run, so an
 # unconfigured or accidental invocation prints what it would do without building
@@ -37,13 +38,22 @@ on:
         required: false
         default: true
         type: boolean
+      tag:
+        description: "The release tag (vMAJOR.MINOR.PATCH) to build and publish on a manual run; required for a real manual publish, ignored on a tag push (which uses the pushed tag)."
+        required: false
+        default: ""
+        type: string
 
-# Keyed (offline-key) signing only. No id-token / keyless path: a public
-# transparency log would leak the existence and metadata of private artifacts.
-# The workflow reads only from the repositories it checks out and writes nothing
-# back to git, so read access is all it needs.
+# Keyless signing via the GitHub Actions OIDC identity. The workflow mints a
+# short-lived identity token from the Actions runtime and signs against the
+# public Sigstore instance (Fulcio + Rekor); no offline key is stored. The
+# artifacts publish to the public hub, so recording them in the public
+# transparency log is expected, not a leak. id-token:write lets the job mint the
+# OIDC token; the workflow reads only from the repositories it checks out and
+# writes nothing back to git, so contents:read is all the git access it needs.
 permissions:
   contents: read
+  id-token: write
 
 jobs:
   publish-sign:
@@ -65,12 +75,13 @@ jobs:
       # interpolated into a run script) to avoid expression injection. The
       # username feeds `aggrega login` and `docker login`; the password is read
       # by login from AGGREGA_REGISTRY_PASSWORD.
-      REGISTRY_USERNAME: ${{ secrets.REGISTRY_USERNAME }}
+      REGISTRY_USERNAME: ${{ vars.REGISTRY_USERNAME }}
       AGGREGA_REGISTRY_PASSWORD: ${{ secrets.REGISTRY_PASSWORD }}
-      # Offline signing key material, supplied as a secret and written to a
-      # private file for the --key path. Empty until configured, which makes a
-      # real signing run fail safely rather than publish unsigned.
-      SIGNING_KEY: ${{ secrets.PLUGIN_SIGNING_KEY }}
+      # Public-good Sigstore endpoints for keyless signing. The binary already
+      # defaults to these; they are named here so the direct `aggrega sign`
+      # calls state the trust roots explicitly.
+      FULCIO_URL: https://fulcio.sigstore.dev
+      REKOR_URL: https://rekor.sigstore.dev
       # Authored per-plugin overlay directory that catalog generation merges with
       # each guest's machine-derived contract fields. This is a REQUIRED input and
       # is currently pending: the overlays supply the OCI identity, runtime limits,
@@ -83,11 +94,25 @@ jobs:
       # environment rather than interpolating expressions into shell.
       EVENT_NAME: ${{ github.event_name }}
       DISPATCH_DRY_RUN: ${{ inputs.dry_run }}
+      # The release tag requested by a manual dispatch (empty on a tag push).
+      # Surfaced as env so the effective tag is resolved from the environment,
+      # never interpolated into a script body.
+      DISPATCH_TAG: ${{ inputs.tag }}
       # The pushed ref name (the tag on a push event). Surfaced as env for the
       # tag-equals-version assertion; never interpolated into a script body.
       REF_NAME: ${{ github.ref_name }}
 
     steps:
+      - name: Mint org app token for private-submodule access
+        # The umbrella and its submodules are private; a GitHub App installation
+        # token scoped to the org grants the checkout read access to all of them.
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ secrets.SUBMODULE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.SUBMODULE_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+
       - name: Check out the umbrella workspace with submodules and tags
         # The CLI cannot build from a standalone checkout of its own repository:
         # its module resolves sibling modules through parent-relative replace
@@ -102,21 +127,39 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: ${{ vars.AGGREGA_UMBRELLA_REPO }}
-          token: ${{ secrets.UMBRELLA_CHECKOUT_TOKEN }}
+          token: ${{ steps.app-token.outputs.token }}
           submodules: recursive
           fetch-depth: 0
           fetch-tags: true
 
-      - name: Pin the CLI tree to the pushed tag
-        # On a tag push the umbrella's submodule pointer may lag the tag, so move
-        # the CLI tree onto the pushed tag before building. This makes the build's
-        # `git describe` stamp the released version. On a manual dispatch there is
-        # no release tag, so the umbrella's pinned pointer is built as-is.
-        if: ${{ github.event_name == 'push' }}
+      - name: Require a tag for a real manual publish
+        # A real manual publish (a dispatch that is not a dry run) targets a past
+        # release tag, so it MUST name one. Fail fast here, before any build or
+        # push, when the tag input is empty. A manual dry run needs no tag: it
+        # builds the umbrella's pinned pointer as-is and prints the plan.
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run == false && inputs.tag == '' }}
         run: |
           set -euo pipefail
+          echo "publish-plugins: a manual publish requires the tag input (vMAJOR.MINOR.PATCH)" >&2
+          exit 2
+
+      - name: Pin the CLI tree to the release tag
+        # Move the CLI tree onto the release tag before building so the build's
+        # `git describe` stamps the released version. On a tag push the umbrella's
+        # submodule pointer may lag the tag; on a manual dispatch that supplies a
+        # tag input the run targets a past release. In both cases the effective
+        # tag is the pushed tag (push) or the tag input (dispatch). A manual dry
+        # run with no tag input skips this and builds the pinned pointer as-is.
+        if: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.tag != '') }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "push" ]; then
+            TAG="$REF_NAME"
+          else
+            TAG="$DISPATCH_TAG"
+          fi
           git -C aggrega-cli fetch --force --tags origin
-          git -C aggrega-cli checkout --force "refs/tags/${REF_NAME}"
+          git -C aggrega-cli checkout --force "refs/tags/${TAG}"
 
       - name: Build the binary and embedded guests
         # The default (embed) build: it regenerates the Wasm guests and their
@@ -140,13 +183,30 @@ jobs:
           aggrega-cli/aggrega login "$REGISTRY" --username "$REGISTRY_USERNAME"
           printf '%s' "$AGGREGA_REGISTRY_PASSWORD" | docker login "$REGISTRY" --username "$REGISTRY_USERNAME" --password-stdin
 
+      - name: Mint the Sigstore OIDC identity token
+        # Keyless signing needs a short-lived OIDC identity token. Request one
+        # from the Actions runtime (available because id-token:write is granted),
+        # audience-scoped to sigstore, and export it as SIGSTORE_ID_TOKEN so every
+        # `aggrega sign` in later steps reads it non-interactively — no browser,
+        # no offline key. Only a real publish signs, so a dry run skips this.
+        if: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.dry_run == false) }}
+        run: |
+          set -euo pipefail
+          token_json="$(curl -sSL \
+            -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=sigstore")"
+          id_token="$(printf '%s' "$token_json" | grep -o '"value":"[^"]*"' | head -1 | cut -d'"' -f4)"
+          [ -n "$id_token" ] || { echo "OIDC: runtime returned no token value" >&2; exit 1; }
+          echo "::add-mask::$id_token"
+          echo "SIGSTORE_ID_TOKEN=$id_token" >> "$GITHUB_ENV"
+
       - name: Build and push the tooling image
         # Packages the freshly-built embedded binary as the tooling image at the
         # reserved tools/ namespace so consumer CI can run the CLI without a Go
         # toolchain. A dry run prints the planned commands and pushes nothing; a
-        # real run pushes and then signs the image by reference with the offline
-        # key. The image tag is derived from the same version the binary reports,
-        # so the pushed reference and the binary stay in lockstep.
+        # real run pushes and then signs the image by reference keyless against
+        # public Sigstore. The image tag is derived from the same version the
+        # binary reports, so the pushed reference and the binary stay in lockstep.
         run: |
           set -euo pipefail
 
@@ -163,17 +223,14 @@ jobs:
 
           aggrega-cli/scripts/build-tooling-image.sh --registry "$REGISTRY" --push
 
-          # Write the offline signing key to a private file for --key, then sign
-          # the pushed image by its resolved reference. The image tag equals the
-          # binary's reported version (v-less), matching the tag the build script
-          # pushed.
-          KEY_PATH="$RUNNER_TEMP/plugin-signing.key"
-          umask 077
-          printf '%s' "$SIGNING_KEY" > "$KEY_PATH"
-
+          # Sign the pushed image by its resolved reference, keyless against
+          # public Sigstore. The identity token is read from SIGSTORE_ID_TOKEN
+          # (minted above). The image tag equals the binary's reported version
+          # (v-less), matching the tag the build script pushed.
           BIN_VERSION="$(aggrega-cli/aggrega version --json | grep -o '"version":"[^"]*"' | head -1 | cut -d'"' -f4)"
           [ -n "$BIN_VERSION" ] || { echo "binary reported no version" >&2; exit 1; }
-          aggrega-cli/aggrega sign "$REGISTRY/tools/aggrega:$BIN_VERSION" --key "$KEY_PATH"
+          aggrega-cli/aggrega sign "$REGISTRY/tools/aggrega:$BIN_VERSION" \
+            --fulcio-url "$FULCIO_URL" --rekor-url "$REKOR_URL"
 
       - name: Assert ABI self-consistency
         # A real gate, not a comment: the binary reports the single ABI version its
@@ -181,8 +238,9 @@ jobs:
         # against in its build descriptor. If any guest disagrees with the host, or
         # any value is empty, the generated catalog entities would advertise an ABI
         # the binary cannot honor — so the run fails here, before generating or
-        # publishing anything. On a tag push the binary's stamped version must also
-        # equal the pushed tag; a mismatch means the build did not stamp the
+        # publishing anything. Whenever a release tag is in play — a tag push, or a
+        # manual dispatch that supplied a tag input — the binary's stamped version
+        # must also equal that tag; a mismatch means the build did not stamp the
         # release and the run fails.
         run: |
           set -euo pipefail
@@ -211,9 +269,14 @@ jobs:
           [ "$mismatch" -eq 0 ] || { echo "ABI gate: host/guest ABI mismatch — refusing to generate or publish" >&2; exit 1; }
 
           if [ "$EVENT_NAME" = "push" ]; then
-            EXPECTED="${REF_NAME#v}"
+            TAG="$REF_NAME"
+          else
+            TAG="$DISPATCH_TAG"
+          fi
+          if [ -n "$TAG" ]; then
+            EXPECTED="${TAG#v}"
             if [ "$BIN_VERSION" != "$EXPECTED" ]; then
-              echo "ABI gate: binary version '$BIN_VERSION' does not equal the pushed tag '$EXPECTED'" >&2
+              echo "ABI gate: binary version '$BIN_VERSION' does not equal the release tag '$EXPECTED'" >&2
               exit 1
             fi
           fi
@@ -235,10 +298,11 @@ jobs:
       - name: Publish and sign the core plugins
         # Publishes exactly the set of guests built into this binary: each
         # generated entity paired with its decompressed guest, pushed and signed
-        # with the offline key. The guests are embedded compressed, so decompress
-        # them into a working directory the publish reads; the publish pairs each
-        # entity to its guest by the entity's plugin identity. A dry run prints the
-        # reference set and the sign plan without any network call or signing.
+        # keyless against public Sigstore. The guests are embedded compressed, so
+        # decompress them into a working directory the publish reads; the publish
+        # pairs each entity to its guest by the entity's plugin identity. A dry run
+        # prints the reference set and the sign plan without any network call or
+        # signing.
         run: |
           set -euo pipefail
           export AGGREGA_BIN="$PWD/aggrega-cli/aggrega"
@@ -260,14 +324,11 @@ jobs:
           if [ "$DRY" = "true" ]; then
             args+=(--dry-run)
           else
-            # Keyed signing while private. Reuse the key file if the image step
-            # wrote it; otherwise write it here from the secret.
-            KEY_PATH="$RUNNER_TEMP/plugin-signing.key"
-            if [ ! -s "$KEY_PATH" ]; then
-              umask 077
-              printf '%s' "$SIGNING_KEY" > "$KEY_PATH"
-            fi
-            args+=(--sign --key "$KEY_PATH")
+            # Keyless signing: publish-plugins.sh signs each reference through
+            # `aggrega push --plugin --sign`, which reads the identity token from
+            # SIGSTORE_ID_TOKEN (minted above) and uses the binary's public
+            # Sigstore defaults for Fulcio and Rekor.
+            args+=(--sign)
           fi
 
           aggrega-cli/scripts/publish-plugins.sh "${args[@]}"

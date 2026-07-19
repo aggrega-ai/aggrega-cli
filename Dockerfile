@@ -57,12 +57,15 @@ ARG ABI_VERSION=unknown
 # binary, which needs no elevated privileges.
 FROM debian:bookworm-slim
 
-# git + awk (gawk) + CA certificates for the consumer CIs described above.
+# git + awk (gawk) + CA certificates for the consumer CIs described above, plus
+# curl so a consumer job running inside this image can mint a short-lived OIDC
+# identity token over HTTPS before a keyless signing call.
 # --no-install-recommends and cleaning the apt lists in the same layer keep the
 # image minimal.
 RUN apt-get update \
  && apt-get install --no-install-recommends -y \
       ca-certificates \
+      curl \
       gawk \
       git \
  && rm -rf /var/lib/apt/lists/*
