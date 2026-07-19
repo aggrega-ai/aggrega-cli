@@ -1,20 +1,29 @@
 name: Publish and sign core plugins
 
 # Tag-driven publisher for the core provider/linter plugins that are embedded in
-# the aggrega binary. On a release tag it builds the binary and its embedded
-# guests, builds and pushes the tooling image, then generates the core Plugin
-# catalog entities and publishes each with its guest to the registry, signed
-# keyless via the GitHub Actions OIDC identity against the public Sigstore
-# instance (Fulcio + Rekor).
+# the aggrega binary. On a release tag it works in two phases within one job.
 #
-# The build order is load-bearing. The Wasm guests are reproducible build
-# outputs, not tracked files, so they are absent from a fresh checkout: the build
-# MUST run before catalog generation (which reads each guest's self-reported
-# descriptor) and before the publish (which needs the guest's compiled module).
+# The PREP phase has no external side effects: it builds the binary and its
+# embedded guests (plus the light no-embed binary for the release), asserts
+# host/guest ABI self-consistency, and generates the core Plugin catalog
+# entities. Every one of these is pure local computation — no registry push, no
+# image push, no release. Only when every prep step is green does the PUBLISH
+# phase run: it builds and pushes the tooling image, publishes each plugin with
+# its guest to the registry, and creates the GitHub release with the downloadable
+# binaries. Everything the publish phase signs is signed keyless via the GitHub
+# Actions OIDC identity against the public Sigstore instance (Fulcio + Rekor).
 #
-# This workflow NEVER creates or pushes a git tag and never writes git at all.
-# Deciding the version and cutting the tag is a human action; this workflow only
-# publishes OCI artifacts.
+# The prep-then-publish split is load-bearing. Nothing with an external side
+# effect runs until every validation has passed, so a failure in the ABI check or
+# in catalog generation can never strand an already-pushed tooling image or a
+# half-published plugin set. The Wasm guests are reproducible build outputs, not
+# tracked files, so they are absent from a fresh checkout: the build MUST run
+# before catalog generation (which reads each guest's self-reported descriptor)
+# and before the publish (which needs the guest's compiled module).
+#
+# This workflow NEVER creates or pushes a git tag. Deciding the version and
+# cutting the tag is a human action; this workflow publishes the OCI artifacts and
+# attaches the built binaries to the GitHub release for the already-pushed tag.
 #
 # NOT YET LIVE. The destination registry, its pull/push credentials, the
 # self-hosted runner, and the authored per-plugin overlays that catalog
@@ -22,24 +31,25 @@ name: Publish and sign core plugins
 # Until they exist this workflow is authored but unexercised — it has never run
 # against a real registry. The manual-dispatch entry defaults to a dry run, so an
 # unconfigured or accidental invocation prints what it would do without building
-# an image push, publishing, or signing.
+# an image push, publishing, signing, or creating a release.
 
 on:
   # A release tag is the trigger and the human gate: a person decides the version
-  # and pushes the tag. The pattern matches a plain vMAJOR.MINOR.PATCH tag; a
-  # pre-release suffix is intentionally excluded from automatic publishing.
+  # and pushes the tag. The pattern matches a plain MAJOR.MINOR.PATCH tag (no v
+  # prefix); a pre-release suffix is intentionally excluded from automatic
+  # publishing.
   push:
     tags:
-      - "v[0-9]+.[0-9]+.[0-9]+"
+      - "[0-9]+.[0-9]+.[0-9]+"
   workflow_dispatch:
     inputs:
       dry_run:
-        description: "Build, generate the entities, and print the publish plan without pushing the image, publishing, or signing."
+        description: "Build, generate the entities, and print the publish plan without pushing the image, publishing, signing, or creating a release."
         required: false
         default: true
         type: boolean
       tag:
-        description: "The release tag (vMAJOR.MINOR.PATCH) to build and publish on a manual run; required for a real manual publish, ignored on a tag push (which uses the pushed tag)."
+        description: "The release tag (MAJOR.MINOR.PATCH) to build and publish on a manual run; required for a real manual publish, ignored on a tag push (which uses the pushed tag)."
         required: false
         default: ""
         type: string
@@ -49,10 +59,11 @@ on:
 # public Sigstore instance (Fulcio + Rekor); no offline key is stored. The
 # artifacts publish to the public hub, so recording them in the public
 # transparency log is expected, not a leak. id-token:write lets the job mint the
-# OIDC token; the workflow reads only from the repositories it checks out and
-# writes nothing back to git, so contents:read is all the git access it needs.
+# OIDC token. contents:write lets the publish phase create the GitHub release and
+# upload the built binaries as release assets on this repository; it grants no
+# other git write (the workflow still never creates or pushes a tag).
 permissions:
-  contents: read
+  contents: write
   id-token: write
 
 jobs:
@@ -103,6 +114,12 @@ jobs:
       REF_NAME: ${{ github.ref_name }}
 
     steps:
+      # =====================================================================
+      # PREP PHASE — no external side effects. Build, validate, and generate.
+      # A failure anywhere below halts the run before the PUBLISH phase, so no
+      # image, plugin, or release is ever produced from an unvalidated build.
+      # =====================================================================
+
       - name: Mint org app token for private-submodule access
         # The umbrella and its submodules are private; a GitHub App installation
         # token scoped to the org grants the checkout read access to all of them.
@@ -140,7 +157,7 @@ jobs:
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run == false && inputs.tag == '' }}
         run: |
           set -euo pipefail
-          echo "publish-plugins: a manual publish requires the tag input (vMAJOR.MINOR.PATCH)" >&2
+          echo "publish-plugins: a manual publish requires the tag input (MAJOR.MINOR.PATCH)" >&2
           exit 2
 
       - name: Pin the CLI tree to the release tag
@@ -170,6 +187,94 @@ jobs:
         run: |
           set -euo pipefail
           scripts/build.sh
+
+      - name: Build the light binary for the release
+        # The light no-embed binary ships as a downloadable release asset beside
+        # the full binary. It embeds no Wasm guests (-tags light) and resolves
+        # every provider through the plugin cascade, so it plays no part in image
+        # or plugin publishing — it is built here purely for the GitHub release.
+        # Built in the prep phase alongside the full build so a light-build
+        # failure halts before any external side effect. The output is
+        # aggrega-cli/aggrega-light, beside the full aggrega-cli/aggrega.
+        run: |
+          set -euo pipefail
+          scripts/build.sh --light
+
+      - name: Assert ABI self-consistency
+        # A real gate, not a comment: the binary reports the single ABI version its
+        # host speaks, and every embedded guest self-reports the ABI it binds
+        # against in its build descriptor. If any guest disagrees with the host, or
+        # any value is empty, the generated catalog entities would advertise an ABI
+        # the binary cannot honor — so the run fails here, before generating or
+        # publishing anything. Whenever a release tag is in play — a tag push, or a
+        # manual dispatch that supplied a tag input — the binary's stamped version
+        # must also equal that tag; a mismatch means the build did not stamp the
+        # release and the run fails. This is a prep-phase check: it needs only the
+        # built binary and its guests, no registry and no image.
+        run: |
+          set -euo pipefail
+
+          VERSION_JSON="$(aggrega-cli/aggrega version --json)"
+          HOST_ABI="$(printf '%s' "$VERSION_JSON" | grep -o '"abiVersion":"[^"]*"' | head -1 | cut -d'"' -f4)"
+          BIN_VERSION="$(printf '%s' "$VERSION_JSON" | grep -o '"version":"[^"]*"' | head -1 | cut -d'"' -f4)"
+          [ -n "$HOST_ABI" ] || { echo "ABI gate: binary reported no abiVersion" >&2; exit 1; }
+
+          DESC_DIR="aggrega-cli/internal/wasm/embedded/plugins"
+          shopt -s nullglob
+          descriptors=("$DESC_DIR"/*.describe.json)
+          [ "${#descriptors[@]}" -gt 0 ] || { echo "ABI gate: no guest descriptors found in $DESC_DIR — the embedded build did not run" >&2; exit 1; }
+
+          mismatch=0
+          for d in "${descriptors[@]}"; do
+            guest_abi="$(grep -oE '"abi_version"[[:space:]]*:[[:space:]]*"[^"]+"' "$d" | head -1 | grep -oE '"[^"]+"$' | tr -d '"')"
+            if [ -z "$guest_abi" ]; then
+              echo "ABI gate: $d reports no abi_version" >&2
+              mismatch=1
+            elif [ "$guest_abi" != "$HOST_ABI" ]; then
+              echo "ABI gate: $d reports abi_version '$guest_abi' but the binary speaks '$HOST_ABI'" >&2
+              mismatch=1
+            fi
+          done
+          [ "$mismatch" -eq 0 ] || { echo "ABI gate: host/guest ABI mismatch — refusing to generate or publish" >&2; exit 1; }
+
+          if [ "$EVENT_NAME" = "push" ]; then
+            TAG="$REF_NAME"
+          else
+            TAG="$DISPATCH_TAG"
+          fi
+          if [ -n "$TAG" ]; then
+            EXPECTED="${TAG#v}"
+            if [ "$BIN_VERSION" != "$EXPECTED" ]; then
+              echo "ABI gate: binary version '$BIN_VERSION' does not equal the release tag '$EXPECTED'" >&2
+              exit 1
+            fi
+          fi
+
+          echo "ABI gate: host and ${#descriptors[@]} guest(s) all agree on '$HOST_ABI'"
+
+      - name: Generate the core plugin catalog entities
+        # Emits one Plugin entity per embedded guest by merging each guest's
+        # machine-derived contract fields with its authored overlay; the entity
+        # version is the binary's own build version. The overlay directory is the
+        # REQUIRED authored input surfaced above and is currently pending — until
+        # it exists this step halts loudly rather than inventing entity content.
+        # A prep-phase step: pure computation from the built guests, with no
+        # external side effect, so it runs before anything is pushed.
+        run: |
+          set -euo pipefail
+          export AGGREGA_BIN="$PWD/aggrega-cli/aggrega"
+          mkdir -p "$RUNNER_TEMP/entities"
+          "$AGGREGA_BIN" plugin gen-catalog --from-embedded --overlay "$OVERLAY_DIR" -o "$RUNNER_TEMP/entities"
+
+      # =====================================================================
+      # PUBLISH PHASE — reached only when every prep step above succeeded.
+      # These steps have real external side effects and are each gated to a real
+      # publish (a push event, or a manual dispatch with dry_run=false); a dry
+      # run prints its plan and pushes, publishes, signs, and releases nothing.
+      # Registry auth and the OIDC-token mint sit here at the phase boundary:
+      # neither pushes anything itself, but both are prerequisites of the pushes
+      # that follow, so they run immediately before them.
+      # =====================================================================
 
       - name: Authenticate to the registry
         # Only a real publish contacts the registry. A dry run does no network, so
@@ -232,69 +337,6 @@ jobs:
           aggrega-cli/aggrega sign "$REGISTRY/tools/aggrega:$BIN_VERSION" \
             --fulcio-url "$FULCIO_URL" --rekor-url "$REKOR_URL"
 
-      - name: Assert ABI self-consistency
-        # A real gate, not a comment: the binary reports the single ABI version its
-        # host speaks, and every embedded guest self-reports the ABI it binds
-        # against in its build descriptor. If any guest disagrees with the host, or
-        # any value is empty, the generated catalog entities would advertise an ABI
-        # the binary cannot honor — so the run fails here, before generating or
-        # publishing anything. Whenever a release tag is in play — a tag push, or a
-        # manual dispatch that supplied a tag input — the binary's stamped version
-        # must also equal that tag; a mismatch means the build did not stamp the
-        # release and the run fails.
-        run: |
-          set -euo pipefail
-
-          VERSION_JSON="$(aggrega-cli/aggrega version --json)"
-          HOST_ABI="$(printf '%s' "$VERSION_JSON" | grep -o '"abiVersion":"[^"]*"' | head -1 | cut -d'"' -f4)"
-          BIN_VERSION="$(printf '%s' "$VERSION_JSON" | grep -o '"version":"[^"]*"' | head -1 | cut -d'"' -f4)"
-          [ -n "$HOST_ABI" ] || { echo "ABI gate: binary reported no abiVersion" >&2; exit 1; }
-
-          DESC_DIR="aggrega-cli/internal/wasm/embedded/plugins"
-          shopt -s nullglob
-          descriptors=("$DESC_DIR"/*.describe.json)
-          [ "${#descriptors[@]}" -gt 0 ] || { echo "ABI gate: no guest descriptors found in $DESC_DIR — the embedded build did not run" >&2; exit 1; }
-
-          mismatch=0
-          for d in "${descriptors[@]}"; do
-            guest_abi="$(grep -oE '"abi_version"[[:space:]]*:[[:space:]]*"[^"]+"' "$d" | head -1 | grep -oE '"[^"]+"$' | tr -d '"')"
-            if [ -z "$guest_abi" ]; then
-              echo "ABI gate: $d reports no abi_version" >&2
-              mismatch=1
-            elif [ "$guest_abi" != "$HOST_ABI" ]; then
-              echo "ABI gate: $d reports abi_version '$guest_abi' but the binary speaks '$HOST_ABI'" >&2
-              mismatch=1
-            fi
-          done
-          [ "$mismatch" -eq 0 ] || { echo "ABI gate: host/guest ABI mismatch — refusing to generate or publish" >&2; exit 1; }
-
-          if [ "$EVENT_NAME" = "push" ]; then
-            TAG="$REF_NAME"
-          else
-            TAG="$DISPATCH_TAG"
-          fi
-          if [ -n "$TAG" ]; then
-            EXPECTED="${TAG#v}"
-            if [ "$BIN_VERSION" != "$EXPECTED" ]; then
-              echo "ABI gate: binary version '$BIN_VERSION' does not equal the release tag '$EXPECTED'" >&2
-              exit 1
-            fi
-          fi
-
-          echo "ABI gate: host and ${#descriptors[@]} guest(s) all agree on '$HOST_ABI'"
-
-      - name: Generate the core plugin catalog entities
-        # Emits one Plugin entity per embedded guest by merging each guest's
-        # machine-derived contract fields with its authored overlay; the entity
-        # version is the binary's own build version. The overlay directory is the
-        # REQUIRED authored input surfaced above and is currently pending — until
-        # it exists this step halts loudly rather than inventing entity content.
-        run: |
-          set -euo pipefail
-          export AGGREGA_BIN="$PWD/aggrega-cli/aggrega"
-          mkdir -p "$RUNNER_TEMP/entities"
-          "$AGGREGA_BIN" plugin gen-catalog --from-embedded --overlay "$OVERLAY_DIR" -o "$RUNNER_TEMP/entities"
-
       - name: Publish and sign the core plugins
         # Publishes exactly the set of guests built into this binary: each
         # generated entity paired with its decompressed guest, pushed and signed
@@ -332,3 +374,58 @@ jobs:
           fi
 
           aggrega-cli/scripts/publish-plugins.sh "${args[@]}"
+
+      - name: Create the GitHub release and upload the binaries
+        # The publish phase's final side effect: attach the full and light binaries
+        # to the GitHub release for this tag so they are downloadable from the
+        # release page. The embedded guests are NOT uploaded here — they publish to
+        # the registry with their Plugin entities; the release carries only the two
+        # runnable binaries, and GitHub attaches the source archives on its own. A
+        # dry run prints the planned release and asset names and creates nothing.
+        # The release lands on this repository — GH_REPO pins it, because the
+        # checked-out working tree is the umbrella, not this repo — for the tag the
+        # human already pushed; contents:write authorizes it. Asset names carry the
+        # binary's reported version and the build's linux/amd64 target.
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            DRY="$DISPATCH_DRY_RUN"
+            TAG="$DISPATCH_TAG"
+          else
+            DRY="false"
+            TAG="$REF_NAME"
+          fi
+
+          BIN_VERSION="$(aggrega-cli/aggrega version --json | grep -o '"version":"[^"]*"' | head -1 | cut -d'"' -f4)"
+          [ -n "$BIN_VERSION" ] || { echo "binary reported no version" >&2; exit 1; }
+
+          RELEASE_DIR="$RUNNER_TEMP/release"
+          mkdir -p "$RELEASE_DIR"
+          FULL_ASSET="$RELEASE_DIR/aggrega-$BIN_VERSION-linux-amd64"
+          LIGHT_ASSET="$RELEASE_DIR/aggrega-light-$BIN_VERSION-linux-amd64"
+          cp aggrega-cli/aggrega "$FULL_ASSET"
+          cp aggrega-cli/aggrega-light "$LIGHT_ASSET"
+
+          if [ "$DRY" = "true" ]; then
+            echo "publish-plugins (dry-run): would create release '$TAG' on $GH_REPO with assets:"
+            echo "  $(basename "$FULL_ASSET")"
+            echo "  $(basename "$LIGHT_ASSET")"
+            exit 0
+          fi
+
+          # Idempotent on re-run (a manual re-publish of a tag whose release
+          # already exists): create the release the first time, otherwise
+          # re-upload the assets over the existing ones.
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$FULL_ASSET" "$LIGHT_ASSET" --clobber
+          else
+            gh release create "$TAG" \
+              "$FULL_ASSET" \
+              "$LIGHT_ASSET" \
+              --title "$TAG" \
+              --notes "Release $TAG. Downloadable binaries for linux/amd64: aggrega (full, with embedded plugin guests) and aggrega-light (no-embed, resolves plugins through the cascade)."
+          fi
