@@ -282,7 +282,25 @@ jobs:
         # the run is faster).
         run: |
           set -euo pipefail
+          # The host binary embeds the provider/linter guests through the !light
+          # build of internal/wasm/embedded (embedded.go); the build passes no
+          # -tags. A GOFLAGS in the ambient environment carrying -tags=light (a
+          # repo/org variable, or a persistent `go env -w` on a reused runner)
+          # would compile the light stub instead — a runnable binary that embeds
+          # nothing and fails only much later at the tooling-image gate. Clear the
+          # go build environment so the host build is deterministic, then assert
+          # the guests actually embedded — fail HERE, with the environment printed,
+          # rather than opaquely downstream.
+          echo "go env: GOFLAGS=[$(go env GOFLAGS)] GOOS=[$(go env GOOS)] GOARCH=[$(go env GOARCH)]"
+          go env -u GOFLAGS GOOS GOARCH 2>/dev/null || true
+          unset GOFLAGS GOOS GOARCH || true
           aggrega-cli/scripts/build.sh
+          if ! aggrega-cli/aggrega plugin list 2>/dev/null \
+               | awk '/Embedded built-ins:/{f=1;next} /Configured plugins:/{f=0} f' \
+               | grep -qE 'provider|linter'; then
+            echo "ERROR: the built aggrega embeds no guests — the host build did not compile the embed. go env: GOFLAGS=[$(go env GOFLAGS)] GOOS=[$(go env GOOS)] GOARCH=[$(go env GOARCH)]" >&2
+            exit 1
+          fi
 
       - name: Build the light binary for the release
         # The light no-embed binary ships as a downloadable release asset beside
@@ -294,6 +312,10 @@ jobs:
         # aggrega-cli/aggrega-light, beside the full aggrega-cli/aggrega.
         run: |
           set -euo pipefail
+          # Same rationale as the embedded build: clear any ambient GOFLAGS/GOOS so
+          # the light binary is built for the host, deterministically.
+          go env -u GOFLAGS GOOS GOARCH 2>/dev/null || true
+          unset GOFLAGS GOOS GOARCH || true
           aggrega-cli/scripts/build.sh --light
 
       - name: Assert ABI self-consistency
