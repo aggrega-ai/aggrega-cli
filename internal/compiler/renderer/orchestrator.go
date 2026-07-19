@@ -19,18 +19,27 @@ import (
 
 // RenderResult is the output of the full Step 5 rendering pipeline.
 //
-// Formats carries the producer-declared render format of a file (e.g. "hcl",
-// "json") keyed by the SAME boundary-relative path that keys Files, for the
-// files whose rendering provider declared one. It is a parallel map, not a
-// change to the Files byte contract: an entry is present only when the producer
-// declared a format, so a consumer reads a file's format by the same key it
-// reads the bytes and falls back to extension-based selection when absent. Files
-// assembled across a provider's merge boundary carry no per-file format and are
-// absent from Formats.
+// Files maps each boundary-relative path to its rendered content paired with the
+// producer-declared render format (e.g. "hcl", "json"). Format is additive
+// metadata carried ON the file record, not a parallel map: it is empty when the
+// producing provider declared none, in which case a downstream consumer falls
+// back to extension-based selection. Format never affects the emitted bytes, so
+// carrying it alongside the content keeps the two from drifting apart.
 type RenderResult struct {
-	Files    map[string][]byte // boundary-relative path → content
-	Formats  map[string]string // boundary-relative path → producer-declared format (parallel to Files; same keys)
+	Files    map[string]AssembledFile // boundary-relative path → content + producer-declared format
 	Warnings []string
+}
+
+// FileBytes projects Files into a path→content map, dropping the per-file format
+// metadata. It is the seam for consumers that write or route the rendered bytes
+// alone (the CLI's dist/ writer, the daemon's artifact result) and never inspect
+// format. Keys and byte slices are the same the records carry.
+func (r *RenderResult) FileBytes() map[string][]byte {
+	out := make(map[string][]byte, len(r.Files))
+	for p, af := range r.Files {
+		out[p] = af.Content
+	}
+	return out
 }
 
 // dispatchKey identifies a per-(evaluated_path, provider) dispatch group.
@@ -117,8 +126,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 
 	graph := input.Graph
 	result := &RenderResult{
-		Files:   make(map[string][]byte),
-		Formats: make(map[string]string),
+		Files: make(map[string]AssembledFile),
 	}
 
 	// Resolve recipes per node
@@ -1031,14 +1039,11 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		}
 		// Group-relative files (keyed without the dispatch prefix) so the link
 		// pass addresses an assembled artifact by the name the provider
-		// emitted it. The prefix is reattached at the final flush.
-		groupFiles := map[string][]byte{}
-		// Producer-declared formats, keyed by the same group-relative path as
-		// groupFiles. Both the flat-output case and the assembler case below
-		// populate it from the producer's declared format when present; a file
-		// whose producer declared none is absent here and falls back to
-		// extension-based selection.
-		groupFormats := map[string]string{}
+		// emitted it. Each record pairs the assembled bytes with the producer-
+		// declared format (empty when the producer declared none — the consumer
+		// then falls back to extension-based selection). The prefix is reattached
+		// at the final flush.
+		groupFiles := map[string]AssembledFile{}
 
 		// If engine is a BoundaryAssembler (helm-chart, compose) AND the dispatch path is non-empty:
 		// nest per-node under charts/<nodeID>/ and emit assembled files at the dispatch path.
@@ -1097,38 +1102,34 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 				}
 				result.Warnings = append(result.Warnings, warnings...)
 			}
+			// The assembler already pairs each merged file's bytes with its
+			// producer-declared format; the record travels intact so the render-
+			// policy parser seam prefers the producer's format over the path
+			// extension (empty format falls through to extension selection).
 			for p, af := range boundaryFiles {
-				groupFiles[p] = af.Content
-				// Producer-declared format travels alongside the merged bytes on
-				// groupFormats, keyed by the same group-relative path, so the
-				// render-policy parser seam prefers the producer's format over the
-				// path extension. Empty format falls through to extension selection.
-				if af.Format != "" {
-					groupFormats[p] = af.Format
-				}
+				groupFiles[p] = af
 			}
-			// Node files go under charts/<nodeID>/ (or flat if assembler says no nesting)
+			// Node files go under charts/<nodeID>/ (or flat if assembler says no
+			// nesting). These per-node fragments carry no producer format at this
+			// nesting position, so their records leave Format empty.
 			for nodeID, nodeFiles := range pd.files {
 				nodeRel := ""
 				if nestPerNode {
 					nodeRel = "charts/" + nodeID + "/"
 				}
 				for p, c := range nodeFiles {
-					groupFiles[nodeRel+p] = c
+					groupFiles[nodeRel+p] = AssembledFile{Content: c}
 				}
 			}
 		} else {
 			// Flat: per-node files directly under the dispatch path. Each file's
-			// producer-declared format travels alongside its bytes on groupFormats,
-			// keyed by the same group-relative path, so the render-policy parser seam
-			// can prefer the producer's format over the path extension.
+			// producer-declared format (from the per-node source, empty when the
+			// producer declared none) rides on the record so the render-policy
+			// parser seam can prefer it over the path extension.
 			for nodeID, nodeFiles := range pd.files {
 				nodeFormats := pd.formats[nodeID]
 				for p, c := range nodeFiles {
-					groupFiles[p] = c
-					if fmtName := nodeFormats[p]; fmtName != "" {
-						groupFormats[p] = fmtName
-					}
+					groupFiles[p] = AssembledFile{Content: c, Format: nodeFormats[p]}
 				}
 			}
 		}
@@ -1137,7 +1138,6 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 			provider: key.Provider,
 			prefix:   dispatchPrefix,
 			files:    groupFiles,
-			formats:  groupFormats,
 		}
 	}
 
@@ -1170,14 +1170,8 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 	// orderedDispatch order for a deterministic walk.
 	for _, key := range orderedDispatch {
 		grp := assembledByDispatch[key]
-		for p, c := range grp.files {
-			result.Files[grp.prefix+p] = c
-			// Reattach the same disk-write prefix to the format key so Formats stays
-			// keyed in lockstep with Files. Present only for a file whose producer
-			// declared a format.
-			if fmtName := grp.formats[p]; fmtName != "" {
-				result.Formats[grp.prefix+p] = fmtName
-			}
+		for p, af := range grp.files {
+			result.Files[grp.prefix+p] = af
 		}
 	}
 

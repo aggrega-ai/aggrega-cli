@@ -142,7 +142,7 @@ func terraformLocalRecipeLookup(moduleDir, valuesMapping string) renderer.Recipe
 // findBySuffix returns the single result-file whose key ends in suffix. A flat
 // terraform node's output lands under a node/boundary prefix, so tests match by
 // the module-relative tail rather than the full emitted key.
-func findBySuffix(t *testing.T, files map[string][]byte, suffix string) []byte {
+func findBySuffix(t *testing.T, files map[string]renderer.AssembledFile, suffix string) []byte {
 	t.Helper()
 	var hit []byte
 	var matched string
@@ -151,7 +151,7 @@ func findBySuffix(t *testing.T, files map[string][]byte, suffix string) []byte {
 			if matched != "" {
 				t.Fatalf("two output files end in %q: %q and %q", suffix, matched, k)
 			}
-			hit = v
+			hit = v.Content
 			matched = k
 		}
 	}
@@ -252,7 +252,7 @@ rds_endpoint: "{{ .values.upstream_endpoint }}"
 		t.Fatalf("second run emitted %d files, first emitted %d", len(result2.Files), len(result.Files))
 	}
 	for k, v := range result.Files {
-		if !bytes.Equal(result2.Files[k], v) {
+		if !bytes.Equal(result2.Files[k].Content, v.Content) {
 			t.Errorf("non-deterministic output for %q across two runs", k)
 		}
 	}

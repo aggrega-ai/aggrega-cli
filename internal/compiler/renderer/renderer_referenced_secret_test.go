@@ -125,10 +125,10 @@ func TestIntegration_ReferencedSecret_ConsumerReadsGeneratedName(t *testing.T) {
 	var secretArtifact, consumerArtifact string
 	for path, content := range result.Files {
 		if strings.Contains(path, "secret.yaml") {
-			secretArtifact = string(content)
+			secretArtifact = string(content.Content)
 		}
 		if strings.Contains(path, "consumer.yaml") {
-			consumerArtifact = string(content)
+			consumerArtifact = string(content.Content)
 		}
 	}
 	if !strings.Contains(secretArtifact, "name: \"db-password\"") && !strings.Contains(secretArtifact, "name: db-password") {
@@ -238,10 +238,10 @@ func TestIntegration_ReferencedSecret_WorkloadConsumerSymmetry(t *testing.T) {
 	var deployment, consumerArtifact string
 	for path, content := range result.Files {
 		if strings.Contains(path, "deployment") {
-			deployment = string(content)
+			deployment = string(content.Content)
 		}
 		if strings.Contains(path, "consumer.yaml") {
-			consumerArtifact = string(content)
+			consumerArtifact = string(content.Content)
 		}
 	}
 
@@ -274,7 +274,7 @@ func TestIntegration_ReferencedSecret_WorkloadFileModeReadsProvides(t *testing.T
 	var workloadFile string
 	for path, content := range result.Files {
 		if strings.Contains(path, "deployment") || strings.Contains(path, "statefulset") {
-			workloadFile = string(content)
+			workloadFile = string(content.Content)
 		}
 	}
 	// File mode: the secret volume's SecretName is the generated Secret name

@@ -154,7 +154,7 @@ func TestMariaDBComposeRecipe_WorkloadSynthesis(t *testing.T) {
 		t.Fatalf("expected compose at %q; got paths %v", wantPath, paths)
 	}
 
-	merged := string(body)
+	merged := string(body.Content)
 
 	// Image: defaults from infra.engine_version unless overrides.image
 	// supplies a different reference.

@@ -42,8 +42,8 @@ func TestScanOrphanCrossBoundaryLinkSentinels(t *testing.T) {
 
 	t.Run("clean groups pass", func(t *testing.T) {
 		groups := map[dispatchKey]*assembledGroup{
-			{Path: "a", Provider: "cloudformation"}: {files: map[string][]byte{
-				"cloudformation-stack.json": []byte(`{"Resources":{}}`),
+			{Path: "a", Provider: "cloudformation"}: {files: map[string]AssembledFile{
+				"cloudformation-stack.json": {Content: []byte(`{"Resources":{}}`)},
 			}},
 		}
 		if err := scanOrphanCrossBoundaryLinkSentinels(groups); err != nil {
@@ -53,8 +53,8 @@ func TestScanOrphanCrossBoundaryLinkSentinels(t *testing.T) {
 
 	t.Run("surviving placeholder halts loudly", func(t *testing.T) {
 		groups := map[dispatchKey]*assembledGroup{
-			{Path: "a", Provider: "cloudformation"}: {files: map[string][]byte{
-				"cloudformation-stack.json": []byte(`{"host":"` + sentinel + `"}`),
+			{Path: "a", Provider: "cloudformation"}: {files: map[string]AssembledFile{
+				"cloudformation-stack.json": {Content: []byte(`{"host":"` + sentinel + `"}`)},
 			}},
 		}
 		err := scanOrphanCrossBoundaryLinkSentinels(groups)

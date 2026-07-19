@@ -168,7 +168,7 @@ spec:
 	if artFile == "" {
 		t.Fatalf("expected the declared artifact to be emitted, got keys: %v", fileKeys(result.Files))
 	}
-	body := string(result.Files[artFile])
+	body := string(result.Files[artFile].Content)
 	if !strings.Contains(body, "kind: NetworkPolicy") {
 		t.Errorf("artifact body not rendered, got:\n%s", body)
 	}
@@ -283,7 +283,7 @@ containers:
 
 	for path, content := range result.Files {
 		if strings.Contains(path, "api") && strings.Contains(path, "deployment") {
-			if strings.Contains(string(content), "db.svc.cluster.local") {
+			if strings.Contains(string(content.Content), "db.svc.cluster.local") {
 				return
 			}
 		}
@@ -451,7 +451,7 @@ containers:
 	if !strings.Contains(frDep, "features/mon/mon-") {
 		t.Errorf("FR deployment should be named for the instance (mon-*), got %q", frDep)
 	}
-	body := string(result.Files[frDep])
+	body := string(result.Files[frDep].Content)
 	if !strings.Contains(body, "prom/mon:v1") {
 		t.Errorf("FR deployment missing FR image, got:\n%s", body)
 	}
@@ -588,7 +588,7 @@ stringData:
 	if secretArt == "" {
 		t.Fatalf("missing credential FR artifact under secrets/root_password/, keys: %v", fileKeys(result.Files))
 	}
-	body := string(result.Files[secretArt])
+	body := string(result.Files[secretArt].Content)
 	// .secret_name propagates into the rendered manifest.
 	if !strings.Contains(body, "name: root_password") {
 		t.Errorf("expected .secret_name=root_password in rendered manifest, got:\n%s", body)
@@ -827,7 +827,7 @@ containers:
 	if apiDep == "" {
 		t.Fatalf("no api deployment rendered; keys: %v", fileKeys(result.Files))
 	}
-	body := string(result.Files[apiDep])
+	body := string(result.Files[apiDep].Content)
 	if !strings.Contains(body, "s3cr3t") {
 		t.Errorf("secret.inject did not reach consumer rendered output: want DB_PASSWORD=s3cr3t in:\n%s", body)
 	}
@@ -876,7 +876,7 @@ func TestRenderAll_GhostInfrastructureWarning(t *testing.T) {
 	}
 }
 
-func fileKeys(m map[string][]byte) []string {
+func fileKeys(m map[string]renderer.AssembledFile) []string {
 	keys := make([]string, 0, len(m))
 	for k := range m {
 		keys = append(keys, k)

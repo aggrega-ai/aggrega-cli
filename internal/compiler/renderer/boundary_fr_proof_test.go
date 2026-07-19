@@ -232,7 +232,7 @@ func TestComposeBridge_SingleBoundary_Proof(t *testing.T) {
 		t.Fatalf("expected merged compose at %q; got paths %v", wantPath, paths)
 	}
 
-	body := string(composeBody)
+	body := string(composeBody.Content)
 	// All three services must be present in one merged compose file:
 	// api + db (per-component) + aggrega-gw (boundary-scope FR).
 	for _, svcName := range []string{"api:", "db:", "aggrega-gw:"} {
@@ -389,7 +389,7 @@ func TestComposeBridge_MergedPath_Proof(t *testing.T) {
 		t.Fatalf("expected merged compose at %q; got paths %v", wantPath, paths)
 	}
 
-	body := string(composeBody)
+	body := string(composeBody.Content)
 	for _, svcName := range []string{"api:", "db:", "aggrega-gw:"} {
 		if !strings.Contains(body, svcName) {
 			t.Errorf("merged docker-compose.yaml missing service %q\n--- body ---\n%s", svcName, body)
@@ -474,7 +474,7 @@ func TestDispatchBoundaryScopeFR_EvaluatesValuesMapping(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected merged compose at dist/cluster/compose/docker-compose.yaml; got %v", keysOfFiles(result.Files))
 	}
-	s := string(body)
+	s := string(body.Content)
 	// The overlay (from valuesMapping) must be present.
 	if !strings.Contains(s, "15432") {
 		t.Errorf("boundary-scope FR valuesMapping not evaluated: ports overlay (15432) missing from merged compose:\n%s", s)
@@ -485,7 +485,7 @@ func TestDispatchBoundaryScopeFR_EvaluatesValuesMapping(t *testing.T) {
 	}
 }
 
-func keysOfFiles(m map[string][]byte) []string {
+func keysOfFiles(m map[string]renderer.AssembledFile) []string {
 	out := make([]string, 0, len(m))
 	for k := range m {
 		out = append(out, k)
@@ -612,7 +612,7 @@ containers:
 	if !ok {
 		t.Fatalf("expected merged compose at dist/cluster/compose/docker-compose.yaml; got %v", keysOfFiles(result.Files))
 	}
-	s := string(body)
+	s := string(body.Content)
 	// The synthesised workload's image (templated from .infra.mappedPort, a
 	// boundary-scope pillar) must appear in the assembled compose — proving the
 	// boundary-scope FR ran workload synthesis against the boundary context.

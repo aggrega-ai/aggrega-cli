@@ -123,7 +123,7 @@ func TestRenderAll_MixedProviderVersionGroup_AssemblesAtHighest(t *testing.T) {
 		FeatureRecipe: func(_, _ string) (*types.FeatureRecipe, bool) { return nil, false },
 	}
 
-	run := func() (map[string][]byte, string, int) {
+	run := func() (map[string]renderer.AssembledFile, string, int) {
 		var assembledBy string
 		var assembleCount int
 		factory := func(providerRef string) (renderer.Engine, error) {
@@ -170,18 +170,18 @@ func TestRenderAll_MixedProviderVersionGroup_AssemblesAtHighest(t *testing.T) {
 		t.Fatalf("file-count drift across runs: %d vs %d", len(files), len(files2))
 	}
 	for p, c := range files {
-		if !bytes.Equal(c, files2[p]) {
+		if !bytes.Equal(c.Content, files2[p].Content) {
 			t.Fatalf("non-deterministic output at %q across runs", p)
 		}
 	}
 }
 
-func allBodies(files map[string][]byte) string {
+func allBodies(files map[string]renderer.AssembledFile) string {
 	var b strings.Builder
 	for p, c := range files {
 		b.WriteString(p)
 		b.WriteString(":\n")
-		b.Write(c)
+		b.Write(c.Content)
 		b.WriteString("\n")
 	}
 	return b.String()

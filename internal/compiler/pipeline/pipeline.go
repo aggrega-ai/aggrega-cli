@@ -862,12 +862,12 @@ func RunPipeline(
 		// artifacts (path-sorted). A deny verdict returns a build-halting error
 		// carrying ErrPolicyViolation; warn / audit verdicts are non-halting
 		// diagnostics. Policy never mutates the rendered artifacts.
-		if err := runRenderPolicySocket(ctx, inputs, catalogLookup, renderResult.Files, renderResult.Formats); err != nil {
+		if err := runRenderPolicySocket(ctx, inputs, catalogLookup, renderResult.Files); err != nil {
 			return err
 		}
 
 		result = &Result{
-			Artifacts: renderResult.Files,
+			Artifacts: renderResult.FileBytes(),
 			IRGraph:   graph,
 		}
 		if memWriter != nil {

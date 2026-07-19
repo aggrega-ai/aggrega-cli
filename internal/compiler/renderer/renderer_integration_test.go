@@ -154,10 +154,10 @@ containers:
 	// The injectMapping should have rewritten DB_URL
 	for path, content := range result.Files {
 		if strings.Contains(path, "api") && strings.Contains(path, "deployment") {
-			if strings.Contains(string(content), "rewritten-by-feature.svc.cluster.local") {
+			if strings.Contains(string(content.Content), "rewritten-by-feature.svc.cluster.local") {
 				return // success — Phase A deep-merge worked
 			}
-			t.Errorf("expected rewritten DB_URL in api deployment, got:\n%s", string(content))
+			t.Errorf("expected rewritten DB_URL in api deployment, got:\n%s", string(content.Content))
 			return
 		}
 	}
@@ -210,7 +210,7 @@ containers:
 
 	for path, content := range result.Files {
 		if strings.Contains(path, "deployment") {
-			s := string(content)
+			s := string(content.Content)
 			checks := []string{
 				"aggrega.ai/component-id: api",
 				"aggrega.ai/boundary-path: prod/eks",
@@ -292,7 +292,7 @@ containers:
 
 	for path, content := range result.Files {
 		if strings.Contains(path, "api") && strings.Contains(path, "deployment") {
-			s := string(content)
+			s := string(content.Content)
 			if !strings.Contains(s, "containerPort: 8080") {
 				t.Errorf("expected containerPort: 8080 (from .values.port), got:\n%s", s)
 			}

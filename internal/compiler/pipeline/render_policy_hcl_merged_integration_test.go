@@ -23,11 +23,11 @@ import (
 // AssembleBoundary returns a fixed set of merged files, each pairing assembled
 // bytes with a producer-declared format (possibly empty). It stands in for a
 // real assembling provider guest that declares a format on its merged output, so
-// the end-to-end proofs drive RenderResult.Formats through the real assembler-
-// merge branch rather than a hand-built map. Its per-node Render emits one
-// fragment so the node contributes; the fragment is intermediate (BoundaryAssembly
-// "merge") and never written directly — only the declared merged files reach
-// RenderResult.Files.
+// the end-to-end proofs drive the per-file format on RenderResult.Files records
+// through the real assembler-merge branch rather than a hand-built map. Its
+// per-node Render emits one fragment so the node contributes; the fragment is
+// intermediate (BoundaryAssembly "merge") and never written directly — only the
+// declared merged files reach RenderResult.Files.
 type mergeFormatAssembler struct {
 	merged map[string]renderer.AssembledFile
 }
@@ -52,9 +52,10 @@ func (a *mergeFormatAssembler) AssembleBoundary(_ context.Context, _ renderer.Bo
 
 // runMergedRender drives the full Step 5 pipeline through a single merge-boundary
 // node whose engine assembles the given merged files, and returns the
-// RenderResult. RenderResult.Formats is populated by the real assembler-merge
-// branch, so a routing proof that feeds Files+Formats into sortedRenderedArtifacts
-// exercises the merge→Formats→parser-selection seam end-to-end.
+// RenderResult. Each file's producer-declared format is carried on its
+// RenderResult.Files record by the real assembler-merge branch, so a routing proof
+// that feeds Files into sortedRenderedArtifacts exercises the merge→format→parser-
+// selection seam end-to-end.
 func runMergedRender(t *testing.T, merged map[string]renderer.AssembledFile) *renderer.RenderResult {
 	t.Helper()
 	nodes := types.OrderedMap[types.IRNode]{}
@@ -116,10 +117,14 @@ func artifactEndingWith(t *testing.T, arts []analyzer.RenderedArtifact, suffix s
 	return found
 }
 
-func formatKeyEndingWith(t *testing.T, formats map[string]string, suffix string) (string, bool) {
+// formatKeyEndingWith returns the single RenderResult.Files key ending with
+// suffix whose record carries a non-empty producer-declared format, and whether
+// one was found — so a proof distinguishes a file the producer tagged from one it
+// left for extension fallback.
+func formatKeyEndingWith(t *testing.T, files map[string]renderer.AssembledFile, suffix string) (string, bool) {
 	t.Helper()
-	for k := range formats {
-		if strings.HasSuffix(k, suffix) {
+	for k, af := range files {
+		if strings.HasSuffix(k, suffix) && af.Format != "" {
 			return k, true
 		}
 	}
@@ -127,11 +132,11 @@ func formatKeyEndingWith(t *testing.T, formats map[string]string, suffix string)
 }
 
 // TestRenderPolicyHCL_MergedProducerFormatOverridesExtension is the end-to-end
-// merge→Formats→parser-routing proof. A render THROUGH the assembler-merge branch
+// merge→format→parser-routing proof. A render THROUGH the assembler-merge branch
 // emits one merged file at a ".json" path whose producing provider declared "hcl"
-// — a format the ".json" extension does not imply. The proof first asserts
-// RenderResult.Formats carries "hcl" for that file (the producer format survived
-// the merge), then feeds the merged render's Files+Formats into the same
+// — a format the ".json" extension does not imply. The proof first asserts the
+// merged file's RenderResult.Files record carries "hcl" (the producer format
+// survived the merge), then feeds the merged render's Files into the same
 // render-policy projection seam the flat proofs use and asserts the file parsed as
 // HCL (tree non-empty, resource block present) — the producer tag beat the
 // conflicting ".json" extension across the whole chain. The untagged control on
@@ -146,16 +151,16 @@ func TestRenderPolicyHCL_MergedProducerFormatOverridesExtension(t *testing.T) {
 	res := runMergedRender(t, map[string]renderer.AssembledFile{
 		"resource.json": {Content: []byte(hclArtifact), Format: "hcl"},
 	})
-	fk, ok := formatKeyEndingWith(t, res.Formats, "resource.json")
+	fk, ok := formatKeyEndingWith(t, res.Files, "resource.json")
 	if !ok {
-		t.Fatalf("RenderResult.Formats has no entry for the merged resource.json; producer format did not survive the merge (Formats=%v)", res.Formats)
+		t.Fatalf("no merged resource.json record carries a producer format; the format did not survive the merge (Files=%v)", res.Files)
 	}
-	if res.Formats[fk] != "hcl" {
-		t.Fatalf("merged producer format: Formats[%q] = %q, want %q", fk, res.Formats[fk], "hcl")
+	if res.Files[fk].Format != "hcl" {
+		t.Fatalf("merged producer format: Files[%q].Format = %q, want %q", fk, res.Files[fk].Format, "hcl")
 	}
-	t.Logf("merged Formats[%q] = %q (producer format survived the merge)", fk, res.Formats[fk])
+	t.Logf("merged Files[%q].Format = %q (producer format survived the merge)", fk, res.Files[fk].Format)
 
-	arts, err := sortedRenderedArtifacts(ctx, Inputs{WorkspaceConfig: workspaceconfig.Default()}, hclParserCatalogLookup(), res.Files, res.Formats)
+	arts, err := sortedRenderedArtifacts(ctx, Inputs{WorkspaceConfig: workspaceconfig.Default()}, hclParserCatalogLookup(), res.Files)
 	if err != nil {
 		t.Fatalf("sortedRenderedArtifacts (merged producer hcl over .json): %v", err)
 	}
@@ -181,10 +186,10 @@ func TestRenderPolicyHCL_MergedProducerFormatOverridesExtension(t *testing.T) {
 	ctrl := runMergedRender(t, map[string]renderer.AssembledFile{
 		"resource.json": {Content: []byte(hclArtifact), Format: ""},
 	})
-	if _, ok := formatKeyEndingWith(t, ctrl.Formats, "resource.json"); ok {
-		t.Errorf("control merged file carries a format entry; expected none (Formats=%v)", ctrl.Formats)
+	if _, ok := formatKeyEndingWith(t, ctrl.Files, "resource.json"); ok {
+		t.Errorf("control merged file carries a producer format; expected none (Files=%v)", ctrl.Files)
 	}
-	ctrlArts, err := sortedRenderedArtifacts(ctx, Inputs{WorkspaceConfig: workspaceconfig.Default()}, hclParserCatalogLookup(), ctrl.Files, ctrl.Formats)
+	ctrlArts, err := sortedRenderedArtifacts(ctx, Inputs{WorkspaceConfig: workspaceconfig.Default()}, hclParserCatalogLookup(), ctrl.Files)
 	if err != nil {
 		t.Fatalf("sortedRenderedArtifacts (control untagged .json): %v", err)
 	}
@@ -213,16 +218,16 @@ func TestRenderPolicyHCL_MergedMixedRoutesPerFile(t *testing.T) {
 		"beta.tf":    {Content: []byte(jsonArtifact), Format: "json"},
 	})
 
-	alphaK, ok := formatKeyEndingWith(t, res.Formats, "alpha.json")
-	if !ok || res.Formats[alphaK] != "hcl" {
-		t.Fatalf("alpha merged format entry missing/wrong: %v", res.Formats)
+	alphaK, ok := formatKeyEndingWith(t, res.Files, "alpha.json")
+	if !ok || res.Files[alphaK].Format != "hcl" {
+		t.Fatalf("alpha merged format missing/wrong: %v", res.Files)
 	}
-	betaK, ok := formatKeyEndingWith(t, res.Formats, "beta.tf")
-	if !ok || res.Formats[betaK] != "json" {
-		t.Fatalf("beta merged format entry missing/wrong: %v", res.Formats)
+	betaK, ok := formatKeyEndingWith(t, res.Files, "beta.tf")
+	if !ok || res.Files[betaK].Format != "json" {
+		t.Fatalf("beta merged format missing/wrong: %v", res.Files)
 	}
 
-	arts, err := sortedRenderedArtifacts(ctx, Inputs{WorkspaceConfig: workspaceconfig.Default()}, hclParserCatalogLookup(), res.Files, res.Formats)
+	arts, err := sortedRenderedArtifacts(ctx, Inputs{WorkspaceConfig: workspaceconfig.Default()}, hclParserCatalogLookup(), res.Files)
 	if err != nil {
 		t.Fatalf("sortedRenderedArtifacts (mixed merged output): %v", err)
 	}
@@ -269,11 +274,13 @@ func TestRenderPolicyHCL_MergedUntaggedExtensionFallback(t *testing.T) {
 		"main.tf":     {Content: []byte(hclArtifact), Format: ""},
 		"native.json": {Content: []byte(`{"a":1}`), Format: ""},
 	})
-	if len(res.Formats) != 0 {
-		t.Fatalf("untagged merged output populated Formats: %v", res.Formats)
+	for p, af := range res.Files {
+		if af.Format != "" {
+			t.Fatalf("untagged merged output carries a producer format Files[%q].Format = %q; expected empty", p, af.Format)
+		}
 	}
 
-	arts, err := sortedRenderedArtifacts(ctx, Inputs{WorkspaceConfig: workspaceconfig.Default()}, hclParserCatalogLookup(), res.Files, res.Formats)
+	arts, err := sortedRenderedArtifacts(ctx, Inputs{WorkspaceConfig: workspaceconfig.Default()}, hclParserCatalogLookup(), res.Files)
 	if err != nil {
 		t.Fatalf("sortedRenderedArtifacts (untagged merged output): %v", err)
 	}
@@ -312,7 +319,7 @@ func TestRenderPolicyHCL_MergedRoutingDeterministic(t *testing.T) {
 			"resource.json": {Content: []byte(hclArtifact), Format: "hcl"},
 			"native.json":   {Content: []byte(`{"a":1}`), Format: ""},
 		})
-		arts, err := sortedRenderedArtifacts(ctx, Inputs{WorkspaceConfig: workspaceconfig.Default()}, hclParserCatalogLookup(), res.Files, res.Formats)
+		arts, err := sortedRenderedArtifacts(ctx, Inputs{WorkspaceConfig: workspaceconfig.Default()}, hclParserCatalogLookup(), res.Files)
 		if err != nil {
 			t.Fatalf("sortedRenderedArtifacts: %v", err)
 		}

@@ -170,8 +170,8 @@ spec:
 			Annotations map[string]string `yaml:"annotations"`
 		} `yaml:"metadata"`
 	}
-	if err := yaml.Unmarshal(body, &doc); err != nil {
-		t.Fatalf("yaml.Unmarshal injected artifact: %v\nbody:\n%s", err, string(body))
+	if err := yaml.Unmarshal(body.Content, &doc); err != nil {
+		t.Fatalf("yaml.Unmarshal injected artifact: %v\nbody:\n%s", err, string(body.Content))
 	}
 	if doc.Kind != "CustomResourceDefinition" {
 		t.Errorf("kind = %q, want CustomResourceDefinition", doc.Kind)

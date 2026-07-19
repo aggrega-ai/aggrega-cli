@@ -17,6 +17,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/analyzer"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/parsersocket"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
@@ -99,12 +100,25 @@ func renderPolicyHCLFiles() map[string][]byte {
 	}
 }
 
+// assembled zips a path→bytes map with an optional path→format map into the
+// path→record shape the render-policy projection consumes, so a proof supplies
+// its file bytes and producer formats as two literals and hands the seam one
+// record map. A path absent from formats gets an empty Format (extension
+// fallback).
+func assembled(files map[string][]byte, formats map[string]string) map[string]renderer.AssembledFile {
+	out := make(map[string]renderer.AssembledFile, len(files))
+	for p, b := range files {
+		out[p] = renderer.AssembledFile{Content: b, Format: formats[p]}
+	}
+	return out
+}
+
 // TestRenderPolicyHCL_TreeOnlyForNonNative proves the render-policy projection
 // parses the HCL artifact into a tree while leaving the natively-read YAML
 // artifact's tree empty — the byte-identity guarantee for the YAML/JSON paths.
 func TestRenderPolicyHCL_TreeOnlyForNonNative(t *testing.T) {
 	ctx := context.Background()
-	arts, err := sortedRenderedArtifacts(ctx, Inputs{WorkspaceConfig: workspaceconfig.Default()}, hclParserCatalogLookup(), renderPolicyHCLFiles(), nil)
+	arts, err := sortedRenderedArtifacts(ctx, Inputs{WorkspaceConfig: workspaceconfig.Default()}, hclParserCatalogLookup(), assembled(renderPolicyHCLFiles(), nil))
 	if err != nil {
 		t.Fatalf("sortedRenderedArtifacts: %v", err)
 	}
@@ -157,7 +171,7 @@ func TestRenderPolicyHCL_ProducerFormatSelectsParser(t *testing.T) {
 
 	// With the producer-declared format, selection resolves to hcl and the host
 	// parses the artifact into a tree.
-	tagged, err := sortedRenderedArtifacts(ctx, Inputs{WorkspaceConfig: workspaceconfig.Default()}, hclParserCatalogLookup(), files, map[string]string{"module": "hcl"})
+	tagged, err := sortedRenderedArtifacts(ctx, Inputs{WorkspaceConfig: workspaceconfig.Default()}, hclParserCatalogLookup(), assembled(files, map[string]string{"module": "hcl"}))
 	if err != nil {
 		t.Fatalf("sortedRenderedArtifacts (producer-tagged): %v", err)
 	}
@@ -181,7 +195,7 @@ func TestRenderPolicyHCL_ProducerFormatSelectsParser(t *testing.T) {
 
 	// Control: the same extension-less path with no producer format selects no
 	// format, so its tree stays empty.
-	untagged, err := sortedRenderedArtifacts(ctx, Inputs{WorkspaceConfig: workspaceconfig.Default()}, hclParserCatalogLookup(), files, nil)
+	untagged, err := sortedRenderedArtifacts(ctx, Inputs{WorkspaceConfig: workspaceconfig.Default()}, hclParserCatalogLookup(), assembled(files, nil))
 	if err != nil {
 		t.Fatalf("sortedRenderedArtifacts (untagged): %v", err)
 	}
@@ -208,7 +222,7 @@ func TestRenderPolicyHCL_ProducerFormatOverridesExtension(t *testing.T) {
 	// native JSON and carry no tree.
 	files := map[string][]byte{"resource.json": []byte(hclArtifact)}
 
-	tagged, err := sortedRenderedArtifacts(ctx, Inputs{WorkspaceConfig: workspaceconfig.Default()}, hclParserCatalogLookup(), files, map[string]string{"resource.json": "hcl"})
+	tagged, err := sortedRenderedArtifacts(ctx, Inputs{WorkspaceConfig: workspaceconfig.Default()}, hclParserCatalogLookup(), assembled(files, map[string]string{"resource.json": "hcl"}))
 	if err != nil {
 		t.Fatalf("sortedRenderedArtifacts (producer hcl over .json): %v", err)
 	}
@@ -233,7 +247,7 @@ func TestRenderPolicyHCL_ProducerFormatOverridesExtension(t *testing.T) {
 	// Control: the same .json path with no producer format takes the extension
 	// path to native JSON, which the host does not pre-parse, so the tree stays
 	// empty. This is exactly what the producer tag overrode above.
-	untagged, err := sortedRenderedArtifacts(ctx, Inputs{WorkspaceConfig: workspaceconfig.Default()}, hclParserCatalogLookup(), files, nil)
+	untagged, err := sortedRenderedArtifacts(ctx, Inputs{WorkspaceConfig: workspaceconfig.Default()}, hclParserCatalogLookup(), assembled(files, nil))
 	if err != nil {
 		t.Fatalf("sortedRenderedArtifacts (untagged .json): %v", err)
 	}
@@ -264,7 +278,7 @@ func TestRenderPolicyHCL_MixedOutputRoutesPerFile(t *testing.T) {
 		"main.tf.json": "json",
 	}
 
-	arts, err := sortedRenderedArtifacts(ctx, Inputs{WorkspaceConfig: workspaceconfig.Default()}, hclParserCatalogLookup(), files, formats)
+	arts, err := sortedRenderedArtifacts(ctx, Inputs{WorkspaceConfig: workspaceconfig.Default()}, hclParserCatalogLookup(), assembled(files, formats))
 	if err != nil {
 		t.Fatalf("sortedRenderedArtifacts (mixed output): %v", err)
 	}
@@ -317,7 +331,7 @@ func TestRenderPolicyHCL_UntaggedExtensionFallback(t *testing.T) {
 	ctx := context.Background()
 	files := map[string][]byte{"main.tf": []byte(hclArtifact)}
 
-	arts, err := sortedRenderedArtifacts(ctx, Inputs{WorkspaceConfig: workspaceconfig.Default()}, hclParserCatalogLookup(), files, nil)
+	arts, err := sortedRenderedArtifacts(ctx, Inputs{WorkspaceConfig: workspaceconfig.Default()}, hclParserCatalogLookup(), assembled(files, nil))
 	if err != nil {
 		t.Fatalf("sortedRenderedArtifacts (untagged .tf): %v", err)
 	}
@@ -349,7 +363,7 @@ func TestRenderPolicyHCL_DenyReadsTree(t *testing.T) {
 	ctx := context.Background()
 	inputs := renderPolicyHCLInputs(t, "aws_kms_key")
 
-	err := runRenderPolicySocket(ctx, inputs, hclParserCatalogLookup(), renderPolicyHCLFiles(), nil)
+	err := runRenderPolicySocket(ctx, inputs, hclParserCatalogLookup(), assembled(renderPolicyHCLFiles(), nil))
 	if err == nil {
 		t.Fatalf("expected a policy halt for an absent required resource type, got nil")
 	}
@@ -378,7 +392,7 @@ func TestRenderPolicyHCL_AllowReadsTree(t *testing.T) {
 
 	var err error
 	stderr := captureRenderPolicyStderr(t, func() {
-		err = runRenderPolicySocket(ctx, inputs, hclParserCatalogLookup(), renderPolicyHCLFiles(), nil)
+		err = runRenderPolicySocket(ctx, inputs, hclParserCatalogLookup(), assembled(renderPolicyHCLFiles(), nil))
 	})
 	if err != nil {
 		t.Fatalf("expected the build to proceed for a present required resource type, got halt: %v", err)

@@ -28,31 +28,25 @@ func loadFrpStepGoBytes(t *testing.T) []byte {
 	return b
 }
 
-// TestCrossCheckPublishedPlugin_Agrees proves the publish-side entrypoint passes
-// when the entity's authored export claim agrees with the .wasm's describe().
-func TestCrossCheckPublishedPlugin_Agrees(t *testing.T) {
+// TestValidatePlugin_CapabilityClaimMismatch proves a disagreeing export claim
+// (scope=host where the binary reports scope=own) halts with
+// ErrWasmContractMismatch. The declared type matches the reported type and the
+// command-mirror and host-function records match (both empty for this fixture),
+// so the capability cross-check is the only divergence and the halt isolates it.
+func TestValidatePlugin_CapabilityClaimMismatch(t *testing.T) {
 	wasmBytes := loadFrpStepGoBytes(t)
-	claim := EntityContractClaim{Exports: []EntityExportClaim{
-		{Name: "step", Operates: operatesPatch, Scope: ScopeOwn},
-	}}
-	// The frp-step-go guest fits the platform default cap; a zero pages value
-	// applies that default.
-	if _, err := CrossCheckPublishedPlugin(context.Background(), "frp/patch:1.0.0", claim, wasmBytes, 0, string(PluginTypeFRPStep)); err != nil {
-		t.Fatalf("agreeing claim should pass the publish cross-check; got %v", err)
+	entity := &EntityInputs{
+		Claim: EntityContractClaim{Exports: []EntityExportClaim{
+			{Name: "step", Operates: operatesPatch, Scope: ScopeHost},
+		}},
 	}
-}
-
-// TestCrossCheckPublishedPlugin_CapabilityMismatch proves a disagreeing export
-// claim (scope=host where the plugin reports scope=own) halts with
-// ErrWasmContractMismatch through the publish entrypoint.
-func TestCrossCheckPublishedPlugin_CapabilityMismatch(t *testing.T) {
-	wasmBytes := loadFrpStepGoBytes(t)
-	claim := EntityContractClaim{Exports: []EntityExportClaim{
-		{Name: "step", Operates: operatesPatch, Scope: ScopeHost},
-	}}
-	_, err := CrossCheckPublishedPlugin(context.Background(), "frp/patch:1.0.0", claim, wasmBytes, 0, string(PluginTypeFRPStep))
+	_, err := ValidatePlugin(context.Background(), wasmBytes, ValidateOptions{
+		Identity:     "frp/patch:1.0.0",
+		DeclaredType: string(PluginTypeFRPStep),
+		Entity:       entity,
+	})
 	if !errors.Is(err, ErrWasmContractMismatch) {
-		t.Fatalf("a disagreeing claim should halt with ErrWasmContractMismatch; got %v", err)
+		t.Fatalf("a disagreeing capability claim should halt with ErrWasmContractMismatch; got %v", err)
 	}
 	if !strings.Contains(err.Error(), "frp/patch") {
 		t.Errorf("halt should name the entity identity; got %v", err)
@@ -84,21 +78,4 @@ func buildCLIArgsExitGuest(t *testing.T) []byte {
 		t.Fatalf("read built cli-args-exit guest: %v", err)
 	}
 	return b
-}
-
-// TestCrossCheckPublishedPlugin_StreamingCLIType proves the publish cross-check
-// admits a streaming CLI plugin: a guest importing the terminal streaming host
-// function aggrega_cli_write_stdout loads under the describe-only profile, whose
-// union import allowlist admits a guest of any plugin type, so describe() runs
-// and the cross-check completes. The streaming import is absent from the build
-// profile's shared allowlist and would be rejected there before describe() could
-// run; the describe-only load reads the self-report without granting the guest
-// any real host capability, so any plugin type is publishable.
-func TestCrossCheckPublishedPlugin_StreamingCLIType(t *testing.T) {
-	wasmBytes := buildCLIArgsExitGuest(t)
-	// The guest authors no capability claim; an empty claim cross-checks as a
-	// no-op, so the test isolates the describe-only load of a streaming guest.
-	if _, err := CrossCheckPublishedPlugin(context.Background(), "cli/args-exit:1.0.0", EntityContractClaim{}, wasmBytes, 0, string(PluginTypeCLI)); err != nil {
-		t.Fatalf("streaming CLI plugin should pass the publish cross-check under the describe-only load; got %v", err)
-	}
 }

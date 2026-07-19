@@ -47,8 +47,9 @@ func (a *mergeFormatAssembler) AssembleBoundary(_ context.Context, _ renderer.Bo
 
 // runMergeFormatRender drives the full Step 5 pipeline through a single merge-
 // boundary node whose engine assembles the given merged files. It returns the
-// RenderResult so a test reads RenderResult.Formats as populated by the real
-// assembler-merge branch — not a hand-built map.
+// RenderResult so a test reads each file's producer-declared format off its
+// RenderResult.Files record as populated by the real assembler-merge branch —
+// not a hand-built map.
 func runMergeFormatRender(t *testing.T, merged map[string]renderer.AssembledFile) *renderer.RenderResult {
 	t.Helper()
 	nodes := types.OrderedMap[types.IRNode]{}
@@ -94,7 +95,7 @@ func runMergeFormatRender(t *testing.T, merged map[string]renderer.AssembledFile
 // with suffix, failing when zero or more than one match — so a test addresses a
 // merged file by the name the assembler emitted, independent of the dispatch-
 // path prefix the orchestrator reattaches.
-func fileKeyEndingWith(t *testing.T, files map[string][]byte, suffix string) string {
+func fileKeyEndingWith(t *testing.T, files map[string]renderer.AssembledFile, suffix string) string {
 	t.Helper()
 	var found string
 	matches := 0
@@ -110,7 +111,7 @@ func fileKeyEndingWith(t *testing.T, files map[string][]byte, suffix string) str
 	return found
 }
 
-func keysOf(files map[string][]byte) []string {
+func keysOf(files map[string]renderer.AssembledFile) []string {
 	out := make([]string, 0, len(files))
 	for k := range files {
 		out = append(out, k)
@@ -119,11 +120,10 @@ func keysOf(files map[string][]byte) []string {
 }
 
 // TestRenderAll_MergedProducerFormat_PopulatesFormats proves a render THROUGH the
-// assembler-merge branch populates RenderResult.Formats for a merged file from
-// the producer-declared format the assembler reported — the format survives the
-// merge boundary keyed in lockstep with Files. The merged path ends ".json"
-// while the declared format is "hcl", so the entry cannot have come from an
-// extension inference.
+// assembler-merge branch carries the producer-declared format on the merged
+// file's RenderResult.Files record — the format survives the merge boundary bound
+// to its file. The merged path ends ".json" while the declared format is "hcl",
+// so the value cannot have come from an extension inference.
 func TestRenderAll_MergedProducerFormat_PopulatesFormats(t *testing.T) {
 	t.Parallel()
 	res := runMergeFormatRender(t, map[string]renderer.AssembledFile{
@@ -131,20 +131,17 @@ func TestRenderAll_MergedProducerFormat_PopulatesFormats(t *testing.T) {
 	})
 	key := fileKeyEndingWith(t, res.Files, "resource.json")
 	t.Logf("merged file key: %s", key)
-	if got := res.Formats[key]; got != "hcl" {
-		t.Fatalf("producer format did not survive the merge: Formats[%q] = %q, want %q", key, got, "hcl")
+	if got := res.Files[key].Format; got != "hcl" {
+		t.Fatalf("producer format did not survive the merge: Files[%q].Format = %q, want %q", key, got, "hcl")
 	}
-	if _, ok := res.Formats[key]; !ok {
-		t.Fatalf("Formats has no entry for the merged file %q", key)
-	}
-	t.Logf("Formats[%q] = %q (producer format survived the merge, format != .json extension)", key, res.Formats[key])
+	t.Logf("Files[%q].Format = %q (producer format survived the merge, format != .json extension)", key, res.Files[key].Format)
 }
 
 // TestRenderAll_MergedMixedFormats_CarryPerFile proves two merged files with
-// different declared formats each carry their own format through the merge into
-// RenderResult.Formats — neither leaks into the other. One path's extension
-// disagrees with its declared format in each direction, so each entry proves the
-// producer format, not the extension, populated it.
+// different declared formats each carry their own format through the merge on
+// their RenderResult.Files records — neither leaks into the other. One path's
+// extension disagrees with its declared format in each direction, so each record
+// proves the producer format, not the extension, supplied it.
 func TestRenderAll_MergedMixedFormats_CarryPerFile(t *testing.T) {
 	t.Parallel()
 	res := runMergeFormatRender(t, map[string]renderer.AssembledFile{
@@ -153,34 +150,35 @@ func TestRenderAll_MergedMixedFormats_CarryPerFile(t *testing.T) {
 	})
 	alpha := fileKeyEndingWith(t, res.Files, "alpha.json")
 	beta := fileKeyEndingWith(t, res.Files, "beta.tf")
-	if got := res.Formats[alpha]; got != "hcl" {
-		t.Errorf("alpha merged format: Formats[%q] = %q, want %q", alpha, got, "hcl")
+	if got := res.Files[alpha].Format; got != "hcl" {
+		t.Errorf("alpha merged format: Files[%q].Format = %q, want %q", alpha, got, "hcl")
 	}
-	if got := res.Formats[beta]; got != "json" {
-		t.Errorf("beta merged format: Formats[%q] = %q, want %q", beta, got, "json")
+	if got := res.Files[beta].Format; got != "json" {
+		t.Errorf("beta merged format: Files[%q].Format = %q, want %q", beta, got, "json")
 	}
-	t.Logf("mixed merge — Formats[%q]=%q, Formats[%q]=%q", alpha, res.Formats[alpha], beta, res.Formats[beta])
+	t.Logf("mixed merge — Files[%q].Format=%q, Files[%q].Format=%q", alpha, res.Files[alpha].Format, beta, res.Files[beta].Format)
 }
 
 // TestRenderAll_MergedUntaggedFormat_AbsentFromFormats proves a merged file whose
-// assembler declared an EMPTY format is present in RenderResult.Files but absent
-// from RenderResult.Formats — the parallel map carries an entry only when the
-// producer declared a format, so a consumer falls back to extension selection.
+// assembler declared an EMPTY format is present in RenderResult.Files with an
+// empty Format on its record — the record carries a format only when the producer
+// declared one, so a consumer falls back to extension selection.
 func TestRenderAll_MergedUntaggedFormat_AbsentFromFormats(t *testing.T) {
 	t.Parallel()
 	res := runMergeFormatRender(t, map[string]renderer.AssembledFile{
 		"main.tf": {Content: []byte("region = \"eu\"\n"), Format: ""},
 	})
 	key := fileKeyEndingWith(t, res.Files, "main.tf")
-	if _, ok := res.Formats[key]; ok {
-		t.Fatalf("untagged merged file carries a format entry Formats[%q] = %q; expected none", key, res.Formats[key])
+	if got := res.Files[key].Format; got != "" {
+		t.Fatalf("untagged merged file carries a format Files[%q].Format = %q; expected empty", key, got)
 	}
-	t.Logf("untagged merged file %q present in Files, absent from Formats (extension fallback applies downstream)", key)
+	t.Logf("untagged merged file %q present in Files with empty Format (extension fallback applies downstream)", key)
 }
 
 // TestRenderAll_MergedFormats_Deterministic proves two renders through the same
-// merge-boundary assembler produce byte-identical Files AND identical Formats —
-// the deterministic-output guarantee extends to the parallel format map.
+// merge-boundary assembler produce byte-identical file content AND identical
+// per-file formats — the deterministic-output guarantee holds for the content and
+// the format metadata carried on each record.
 func TestRenderAll_MergedFormats_Deterministic(t *testing.T) {
 	t.Parallel()
 	build := func() *renderer.RenderResult {
@@ -195,18 +193,13 @@ func TestRenderAll_MergedFormats_Deterministic(t *testing.T) {
 	if len(a.Files) != len(b.Files) {
 		t.Fatalf("Files count drift: %d vs %d", len(a.Files), len(b.Files))
 	}
-	for p, c := range a.Files {
-		if !bytes.Equal(c, b.Files[p]) {
+	for p, af := range a.Files {
+		if !bytes.Equal(af.Content, b.Files[p].Content) {
 			t.Fatalf("non-deterministic Files content at %q", p)
 		}
-	}
-	if len(a.Formats) != len(b.Formats) {
-		t.Fatalf("Formats count drift: %d vs %d (a=%v b=%v)", len(a.Formats), len(b.Formats), a.Formats, b.Formats)
-	}
-	for p, f := range a.Formats {
-		if b.Formats[p] != f {
-			t.Fatalf("non-deterministic Formats at %q: %q vs %q", p, f, b.Formats[p])
+		if af.Format != b.Files[p].Format {
+			t.Fatalf("non-deterministic Files format at %q: %q vs %q", p, af.Format, b.Files[p].Format)
 		}
 	}
-	t.Logf("byte-identical across runs: %d files, %d format entries", len(a.Files), len(a.Formats))
+	t.Logf("byte-identical across runs: %d files (content + format)", len(a.Files))
 }

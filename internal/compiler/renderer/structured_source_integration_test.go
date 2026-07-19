@@ -289,7 +289,7 @@ func structuredSourceRecipeLookup(provider, kind, url, version string) renderer.
 	}
 }
 
-func integrationKeys(m map[string][]byte) []string {
+func integrationKeys(m map[string]renderer.AssembledFile) []string {
 	keys := make([]string, 0, len(m))
 	for k := range m {
 		keys = append(keys, k)

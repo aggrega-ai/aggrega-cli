@@ -15,6 +15,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/analyzer"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/parsersocket"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/topology"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
@@ -292,13 +293,13 @@ func runPolicySocket(ctx context.Context, inputs Inputs, catalogLookup resolver.
 // stage). An unconfigured socket is a no-op. A resolution, load, source-read, or
 // output-unmarshal failure halts the build loudly (a misconfigured attachment is
 // a build fault, not a policy verdict).
-func runRenderPolicySocket(ctx context.Context, inputs Inputs, catalogLookup resolver.CatalogLookup, files map[string][]byte, formats map[string]string) error {
+func runRenderPolicySocket(ctx context.Context, inputs Inputs, catalogLookup resolver.CatalogLookup, files map[string]renderer.AssembledFile) error {
 	refs := inputs.WorkspaceConfig.Plugins.Policy
 	if len(refs) == 0 {
 		return nil
 	}
 	lookup := resolveSocketLookup(inputs, catalogLookup, workspaceconfig.SocketPolicy)
-	artifacts, err := sortedRenderedArtifacts(ctx, inputs, catalogLookup, files, formats)
+	artifacts, err := sortedRenderedArtifacts(ctx, inputs, catalogLookup, files)
 	if err != nil {
 		return fmt.Errorf("Step 5 (render policy): %w", err)
 	}
@@ -501,10 +502,10 @@ var policyNativeFormats = map[string]bool{
 // no reproducibility posture of its own; a core parser embedded in the binary
 // resolves with no lockfile pin. A parse resolution or invocation failure on a
 // non-native artifact halts loudly rather than dropping the tree silently.
-func sortedRenderedArtifacts(ctx context.Context, inputs Inputs, catalogLookup resolver.CatalogLookup, files map[string][]byte, formats map[string]string) ([]analyzer.RenderedArtifact, error) {
+func sortedRenderedArtifacts(ctx context.Context, inputs Inputs, catalogLookup resolver.CatalogLookup, files map[string]renderer.AssembledFile) ([]analyzer.RenderedArtifact, error) {
 	arts := make([]analyzer.RenderedArtifact, 0, len(files))
-	for path, content := range files {
-		arts = append(arts, analyzer.RenderedArtifact{Path: path, Content: string(content), Format: formats[path]})
+	for path, af := range files {
+		arts = append(arts, analyzer.RenderedArtifact{Path: path, Content: string(af.Content), Format: af.Format})
 	}
 	sort.Slice(arts, func(i, j int) bool { return arts[i].Path < arts[j].Path })
 

@@ -55,11 +55,11 @@ func RunCrossBoundaryLinkPassForTest(
 		nodeAnnotations[id] = n.Annotations
 		grp, ok := assembledByDispatch[key]
 		if !ok {
-			grp = &assembledGroup{provider: n.Provider, prefix: n.Path, files: map[string][]byte{}}
+			grp = &assembledGroup{provider: n.Provider, prefix: n.Path, files: map[string]AssembledFile{}}
 			assembledByDispatch[key] = grp
 		}
 		for name, body := range n.Files {
-			grp.files[name] = body
+			grp.files[name] = AssembledFile{Content: body}
 		}
 	}
 
@@ -70,7 +70,11 @@ func RunCrossBoundaryLinkPassForTest(
 
 	filesByPath = map[string]map[string][]byte{}
 	for key, grp := range assembledByDispatch {
-		filesByPath[key.Path] = grp.files
+		byName := make(map[string][]byte, len(grp.files))
+		for name, af := range grp.files {
+			byName[name] = af.Content
+		}
+		filesByPath[key.Path] = byName
 	}
 	return warnings, filesByPath, err
 }

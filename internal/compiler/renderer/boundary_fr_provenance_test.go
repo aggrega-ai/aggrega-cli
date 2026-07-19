@@ -156,8 +156,8 @@ func TestBoundaryScopeFR_HelmProvenanceUsesSanitizedComponentID(t *testing.T) {
 	var cm string
 	var cmPath string
 	for path, body := range result.Files {
-		if strings.Contains(string(body), "kind: ConfigMap") {
-			cm = string(body)
+		if strings.Contains(string(body.Content), "kind: ConfigMap") {
+			cm = string(body.Content)
 			cmPath = path
 			break
 		}

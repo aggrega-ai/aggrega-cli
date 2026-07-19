@@ -16,18 +16,16 @@ import (
 )
 
 // assembledGroup is one dispatch group's retained assembled output: the provider
-// that rendered it, the disk-write prefix reattached at the final flush, the
+// that rendered it, the disk-write prefix reattached at the final flush, and the
 // group-relative files (keyed without the prefix, by the name each provider
-// emitted), and the producer-declared per-file formats keyed by the same
-// group-relative path as files. The post-assembly link pass edits files in place
-// before the flush; a link patch rewrites a file's bytes but not its format, so
-// formats stays valid across the pass. A group assembled across a provider's
-// merge boundary carries no per-file format, so formats is empty for it.
+// emitted). Each file record pairs the assembled bytes with the producer-declared
+// format (empty when the producer declared none). The post-assembly link pass
+// edits files in place before the flush; a link patch rewrites a file's bytes but
+// preserves its format, so the record stays valid across the pass.
 type assembledGroup struct {
 	provider string
 	prefix   string
-	files    map[string][]byte
-	formats  map[string]string
+	files    map[string]AssembledFile
 }
 
 // wireCrossBoundaryLinks wires the graph's cross-boundary uses edges — those
@@ -205,7 +203,7 @@ func assembledFilesToRendered(grp *assembledGroup) []RenderedFile {
 	sort.Strings(names)
 	out := make([]RenderedFile, 0, len(names))
 	for _, name := range names {
-		out = append(out, RenderedFile{Path: name, Content: grp.files[name]})
+		out = append(out, RenderedFile{Path: name, Content: grp.files[name].Content})
 	}
 	return out
 }
@@ -242,7 +240,7 @@ func scanOrphanCrossBoundaryLinkSentinels(assembledByDispatch map[dispatchKey]*a
 		}
 		sort.Strings(names)
 		for _, name := range names {
-			if bytes.Contains(grp.files[name], prefix) {
+			if bytes.Contains(grp.files[name].Content, prefix) {
 				return cerrors.New(cerrors.TranslationError, cerrors.SourceLocation{File: name},
 					fmt.Sprintf("assembled file %q at dispatch path %q retains an unresolved cross-boundary link placeholder",
 						name, k.Path), nil, ErrOrphanCrossBoundaryLinkSentinel)
@@ -282,16 +280,19 @@ func applyLinkPatches(grp *assembledGroup, patches []LinkPatch, provider string,
 	codec := selectCodec(engineFactory, provider, yamlIndent)
 	var warnings []string
 	for _, patch := range patches {
-		body, ok := grp.files[patch.File]
+		rec, ok := grp.files[patch.File]
 		if !ok {
 			return nil, cerrors.New(cerrors.TranslationError, cerrors.SourceLocation{File: patch.File},
 				fmt.Sprintf("cross-boundary link patch targets file %q the dispatch group did not emit", patch.File), nil, nil)
 		}
-		patched, warns, err := applyLinkPatch(codec, patch.File, body, patch.Ops, nodeID)
+		patched, warns, err := applyLinkPatch(codec, patch.File, rec.Content, patch.Ops, nodeID)
 		if err != nil {
 			return nil, err
 		}
-		grp.files[patch.File] = patched
+		// A link patch rewrites bytes only; the producer-declared format is
+		// preserved on the record.
+		rec.Content = patched
+		grp.files[patch.File] = rec
 		warnings = append(warnings, warns...)
 	}
 	return warnings, nil
