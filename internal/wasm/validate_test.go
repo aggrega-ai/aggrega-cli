@@ -30,6 +30,25 @@ func TestValidatePlugin_TypeMismatch(t *testing.T) {
 	}
 }
 
+// TestValidatePlugin_EmptyDeclaredTypeRejected proves the required-field
+// precondition: validating with an empty DeclaredType halts up front rather than
+// loading the binary, since an empty declared type would otherwise skip the
+// describe-load's type verdict and admit unverified bytes. The halt names the
+// identity.
+func TestValidatePlugin_EmptyDeclaredTypeRejected(t *testing.T) {
+	wasmBytes := buildCLIArgsExitGuest(t)
+	_, err := ValidatePlugin(context.Background(), wasmBytes, ValidateOptions{
+		Identity:     "cli/args-exit:1.0.0",
+		DeclaredType: "",
+	})
+	if err == nil {
+		t.Fatal("an empty DeclaredType should halt validation; got nil error")
+	}
+	if !strings.Contains(err.Error(), "cli/args-exit:1.0.0") {
+		t.Errorf("the empty-declared-type halt should name the identity; got %v", err)
+	}
+}
+
 // TestValidatePlugin_StreamingCLIPasses proves a streaming CLI guest validated
 // with the matching DeclaredType passes in binary-only mode: the describe-only
 // load admits the streaming import through the union allowlist, and the descriptor

@@ -88,6 +88,11 @@ func pluginInstallRun(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace
 	if err != nil {
 		return fmt.Errorf("aggrega plugin add: describe %q: %w", ref, err)
 	}
+	// Installability precondition, deliberately distinct from the shared
+	// load-gate type-match: `plugin add` installs only a CLI plugin as a
+	// command, so it refuses any other reported type here. This is a
+	// reported-vs-installable check, not the gate's declared-vs-reported
+	// verdict — do not fold it into that gate.
 	if desc.PluginType != string(wasm.PluginTypeCLI) {
 		return fmt.Errorf("aggrega plugin add: %q is not a CLI plugin (declares type %q); only CLI plugins install as commands", ref, desc.PluginType)
 	}

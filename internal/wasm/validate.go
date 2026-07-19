@@ -75,6 +75,10 @@ type ValidateReport struct {
 // entity surface. It is the one home of the validate sequence so a caller cannot
 // assemble a partial or divergent subset of the checks.
 //
+// A declared plugin type is required: an empty DeclaredType is refused up front,
+// because the type verdict rides on the describe-load and fires only against a
+// declared expectation, so validating without one would admit unverified bytes.
+//
 // The sequence is ordered so the most precise diagnostic surfaces first:
 //
 //  1. Describe-load under the describe-only profile (inert host-function stubs,
@@ -83,10 +87,12 @@ type ValidateReport struct {
 //     import-legality gate: the descriptor validation rejects any declared host
 //     function illegal for the reported plugin type, and the load cross-checks the
 //     declared host functions against the functions the binary actually imports,
-//     so a binary cannot advertise a surface it lacks nor hide one it uses.
-//  2. Declared-vs-reported plugin type. A disagreement halts with
-//     ErrWasmPluginTypeMismatch, in both binary-only and entity modes.
-//  3. Entity cross-checks, only when opts.Entity is non-nil: the authored
+//     so a binary cannot advertise a surface it lacks nor hide one it uses. The
+//     declared plugin type flows into this load as the expected type, so the load
+//     gate itself halts on a declared-vs-reported disagreement with
+//     ErrWasmPluginTypeMismatch — the single home of that verdict, shared with
+//     every load-and-dispatch socket.
+//  2. Entity cross-checks, only when opts.Entity is non-nil: the authored
 //     capability claim against describe(), the machine-owned command mirror for
 //     full equality against the described commands, and the machine-owned
 //     host-function record for set-equality against the binary's actual imports;
@@ -97,15 +103,14 @@ type ValidateReport struct {
 // failure ValidatePlugin returns the zero report and the halting error; on
 // success it returns the report with the validated descriptor and any notices.
 func ValidatePlugin(ctx context.Context, wasmBytes []byte, opts ValidateOptions) (ValidateReport, error) {
+	if opts.DeclaredType == "" {
+		return ValidateReport{}, fmt.Errorf(
+			"plugin %q: a declared plugin type is required to validate the binary", opts.Identity)
+	}
+
 	desc, err := DescribePluginBytes(ctx, opts.Identity, wasmBytes, opts.MaxMemoryPages, opts.DeclaredType)
 	if err != nil {
 		return ValidateReport{}, err
-	}
-
-	if opts.DeclaredType != desc.PluginType {
-		return ValidateReport{}, fmt.Errorf(
-			"plugin %q declares plugin type %q but its describe() reports %q: %w",
-			opts.Identity, opts.DeclaredType, desc.PluginType, ErrWasmPluginTypeMismatch)
 	}
 
 	report := ValidateReport{Descriptor: desc}
