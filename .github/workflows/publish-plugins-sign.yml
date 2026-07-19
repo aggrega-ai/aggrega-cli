@@ -178,6 +178,23 @@ jobs:
           git -C aggrega-cli fetch --force --tags origin
           git -C aggrega-cli checkout --force "refs/tags/${TAG}"
 
+      - name: Set up Go
+        # Pin the toolchain to the (tag-pinned) module's declared version and
+        # cache modules so the guest and binary build does not re-download the
+        # dependency graph on every run.
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: aggrega-cli/go.mod
+          cache-dependency-path: aggrega-cli/go.sum
+
+      - name: Install Rust for the wasm32-wasip1 embedded guest
+        # Building the CLI regenerates its embedded guests; one guest is a Rust
+        # crate compiled to wasm32-wasip1, so the target must be installed.
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.85'
+          targets: wasm32-wasip1
+
       - name: Build the binary and embedded guests
         # The default (embed) build: it regenerates the Wasm guests and their
         # descriptors and produces the version-stamped binary with the guests
