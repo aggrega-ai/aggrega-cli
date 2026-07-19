@@ -195,15 +195,24 @@ jobs:
           toolchain: '1.85'
           targets: wasm32-wasip1
 
+      - name: Cache the Rust guest build
+        # The publishing linter guest is a Rust crate; cache its registry and
+        # target so a rebuild does not recompile the dependency graph every run.
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: aggrega-cli/plugins/publishing-linter
+
       - name: Build the binary and embedded guests
-        # The default (embed) build: it regenerates the Wasm guests and their
-        # descriptors and produces the version-stamped binary with the guests
-        # embedded. NOT the light build — the light binary embeds no guests and
-        # could neither generate the core entities nor supply the guests to
-        # publish.
+        # Regenerates the Wasm guests and their descriptors and produces the
+        # version-stamped binary with the guests embedded. NOT the light build —
+        # the light binary embeds no guests and could neither generate the core
+        # entities nor supply the guests to publish. Scoped to aggrega-cli:
+        # publishing needs only the binary and its embedded guests, not the PDK
+        # packages, so an unrelated PDK build issue cannot block a publish (and
+        # the run is faster).
         run: |
           set -euo pipefail
-          scripts/build.sh
+          scripts/build.sh aggrega-cli
 
       - name: Build the light binary for the release
         # The light no-embed binary ships as a downloadable release asset beside
