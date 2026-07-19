@@ -207,9 +207,12 @@ jobs:
             esac
             printf '%s' "$ref"
           }
+          # schemas tags v-prefixed, so its go.mod require matches its git tag
+          # directly. abi and pdk tag unprefixed (0.1.0), but every Go module
+          # require is v-prefixed (v0.1.0), so strip the v to recover the tag.
           schemas_ref="$(require_pin github.com/aggrega-ai/aggrega-schemas)"
-          abi_ref="$(require_pin github.com/aggrega-ai/aggrega-abi-go)"
-          pdk_ref="$(require_pin github.com/aggrega-ai/aggrega-pdk-go)"
+          abi_ref="$(require_pin github.com/aggrega-ai/aggrega-abi-go)"; abi_ref="${abi_ref#v}"
+          pdk_ref="$(require_pin github.com/aggrega-ai/aggrega-pdk-go)"; pdk_ref="${pdk_ref#v}"
           {
             echo "schemas_ref=$schemas_ref"
             echo "abi_ref=$abi_ref"
