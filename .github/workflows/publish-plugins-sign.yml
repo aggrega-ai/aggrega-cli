@@ -102,15 +102,13 @@ jobs:
       # the decompressed guest set below (the publish pairs them by that identity).
       # The overlays live in the aggrega-hub sibling checkout.
       OVERLAY_DIR: ${{ vars.CLI_PUBLISH_OVERLAY_DIR || 'aggrega-hub/plugin-overlays' }}
-      # Sibling checkout refs. The CLI's own go.mod pins the schemas, abi, and pdk
-      # versions; the resolve step below reads those require lines and checks each
-      # sibling out at its pinned tag. A require still on the local-replace
-      # placeholder (v0.0.0) has no published tag, so it falls back to the matching
-      # ref variable here. aggrega-hub carries no CLI-side pin at all, so it always
-      # uses HUB_REF. Operators override any of these via repository variables.
-      SCHEMAS_REF: ${{ vars.CLI_PUBLISH_SCHEMAS_REF || 'main' }}
-      ABI_REF: ${{ vars.CLI_PUBLISH_ABI_REF || 'main' }}
-      PDK_REF: ${{ vars.CLI_PUBLISH_PDK_REF || 'main' }}
+      # aggrega-hub carries no CLI-side version pin, so it is always checked out at
+      # HUB_REF (operator-overridable via a repository variable). The schemas, abi,
+      # and pdk siblings are NOT configured here: the CLI's own go.mod is the single
+      # source for their versions, and the resolve step below reads those require
+      # lines and checks each sibling out at exactly its pinned tag. An unpinned
+      # sibling (still on the local-replace placeholder) fails the resolve loudly —
+      # the release must pin every sibling before publishing.
       HUB_REF: ${{ vars.CLI_PUBLISH_HUB_REF || 'main' }}
       # Dispatch inputs surfaced as env so run scripts read them from the
       # environment rather than interpolating expressions into shell.
@@ -190,18 +188,28 @@ jobs:
         # siblings are checked out at exactly what this CLI build expects. Reading
         # at runtime keeps the refs correct as the pins move, rather than
         # hardcoding them here. A require still on the local-replace placeholder
-        # (v0.0.0) has no published tag, so it falls back to its ref variable.
+        # (empty or v0.0.0) has no published tag: the resolve fails loudly rather
+        # than guessing a branch, because a floating branch is exactly the drift a
+        # pinned release must not ship. Pin every sibling before publishing.
         # aggrega-hub carries no CLI-side pin, so it always uses HUB_REF.
         id: pins
         run: |
           set -euo pipefail
           gomod=aggrega-cli/go.mod
           read_req() { grep -E "^[[:space:]]+$1 v" "$gomod" | awk '{print $2}' | head -1; }
-          # Placeholder (empty or v0.0.0) -> fall back to the ref variable.
-          resolve() { case "$1" in ''|v0.0.0) printf '%s' "$2";; *) printf '%s' "$1";; esac; }
-          schemas_ref="$(resolve "$(read_req github.com/aggrega-ai/aggrega-schemas)" "$SCHEMAS_REF")"
-          abi_ref="$(resolve "$(read_req github.com/aggrega-ai/aggrega-abi-go)" "$ABI_REF")"
-          pdk_ref="$(resolve "$(read_req github.com/aggrega-ai/aggrega-pdk-go)" "$PDK_REF")"
+          require_pin() {
+            local module="$1" ref
+            ref="$(read_req "$module")"
+            case "$ref" in
+              ''|v0.0.0)
+                echo "resolve: $module is unpinned in go.mod (found '${ref:-<none>}'); pin it to a released tag before publishing" >&2
+                exit 1 ;;
+            esac
+            printf '%s' "$ref"
+          }
+          schemas_ref="$(require_pin github.com/aggrega-ai/aggrega-schemas)"
+          abi_ref="$(require_pin github.com/aggrega-ai/aggrega-abi-go)"
+          pdk_ref="$(require_pin github.com/aggrega-ai/aggrega-pdk-go)"
           {
             echo "schemas_ref=$schemas_ref"
             echo "abi_ref=$abi_ref"
