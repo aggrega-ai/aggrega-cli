@@ -59,6 +59,10 @@ type PluginExport struct {
 	Scope string `json:"scope,omitempty" yaml:"scope,omitempty"`
 	// Selector A free-form, human-readable description of what the export acts on. It is documentation for catalog readers; the host neither validates its content nor acts on it.
 	Selector string `json:"selector,omitempty" yaml:"selector,omitempty"`
+	// Input An optional JSON Schema document a step export declares to type the step-local input a pipeline entry supplies through its with block. When present, it describes the shape a step's with input satisfies; when absent, the export declares no input contract. The schema is the export's own free-form declaration of the input surface a pipeline author targets for this export.
+	Input json.RawMessage `json:"input,omitempty" yaml:"input,omitempty"`
+	// Output An optional JSON Schema document a step export declares to type the outputs it returns for one step — the shape of the addressable outputs a step contributes for a later step or a template to read. When present, it describes the shape of those returned outputs; when absent, the export declares no output contract. The schema is the export's own free-form declaration of the output surface this export produces.
+	Output json.RawMessage `json:"output,omitempty" yaml:"output,omitempty"`
 }
 
 // PluginCLICommand One top-level aggrega command verb a CLI plugin contributes, as declared in describe(). The host registers one command per entry and routes the resolved command name back to the guest at invocation, so a single guest may back several commands and select its behavior on the name.
@@ -474,6 +478,22 @@ func (t PluginExport) MarshalJSON() ([]byte, error) {
 		buf.WriteString("\"selector\":")
 		writeJSONString(&buf, t.Selector)
 	}
+	if len(t.Input) != 0 {
+		if !first {
+			buf.WriteByte(',')
+		}
+		first = false
+		buf.WriteString("\"input\":")
+		buf.Write(t.Input)
+	}
+	if len(t.Output) != 0 {
+		if !first {
+			buf.WriteByte(',')
+		}
+		first = false
+		buf.WriteString("\"output\":")
+		buf.Write(t.Output)
+	}
 	buf.WriteByte('}')
 	return buf.Bytes(), nil
 }
@@ -550,6 +570,18 @@ func (t *PluginExport) UnmarshalJSON(data []byte) error {
 				return err
 			} else {
 				t.Selector = s
+			}
+		case "input":
+			if raw, err := readRaw(dec, data); err != nil {
+				return err
+			} else {
+				t.Input = raw
+			}
+		case "output":
+			if raw, err := readRaw(dec, data); err != nil {
+				return err
+			} else {
+				t.Output = raw
 			}
 		default:
 			if _, err := readRaw(dec, data); err != nil {

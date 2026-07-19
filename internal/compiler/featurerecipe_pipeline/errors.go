@@ -23,6 +23,16 @@ var ErrPipelineTargetAbsent = errors.New("pipeline patch targets a document not 
 // specific engine error (for example jsonpatch.ErrTestFailed) through it.
 var ErrPipelineStepFailed = errors.New("pipeline step failed")
 
+// ErrPipelineContractViolation fires when a step's typed input or output does
+// not satisfy the schema its export declares: the rendered `with` input does
+// not match the export's declared input schema, or the guest's returned outputs
+// do not match its declared output schema. A declared typed-I/O contract is an
+// authoring commitment, so a violation halts the walk as a Loud Guardrail — even
+// for an optional step, the same way a broken `when`/`with` predicate halts
+// regardless of Optional. The wrapping caller names the offending step and
+// keeps this sentinel in the unwrap chain so callers match it with errors.Is.
+var ErrPipelineContractViolation = errors.New("pipeline step typed-I/O contract violation")
+
 // ErrPipelineTargetOpaque fires when a patch addresses a unit the codec
 // declined to give a tree-view — an opaque unit (a binary blob, free text,
 // or a region the provider cannot safely tree). An opaque unit is handed to

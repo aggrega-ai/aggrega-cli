@@ -37,6 +37,109 @@ func TestInspectRawPlugin_DerivesFromBinary(t *testing.T) {
 	}
 }
 
+// TestInspectRawPlugin_RendersExportContract proves the author-facing "what do I
+// pass / what do I get" view: inspect --plugin <path> reads a raw .wasm and renders,
+// per export, the input/output JSON Schema the guest declares in its describe()
+// self-report — and omits the line for an export that declares none. The three
+// fixtures cover an input-only export, an output-only export, and an export that
+// declares neither.
+func TestInspectRawPlugin_RendersExportContract(t *testing.T) {
+	t.Parallel()
+
+	inspect := func(t *testing.T, artifact string) string {
+		t.Helper()
+		path := wasmtest.EnsureFixtureBuilt(t, artifact)
+		var buf bytes.Buffer
+		if err := inspectRawPlugin(&buf, path); err != nil {
+			t.Fatalf("inspectRawPlugin(%s): %v", artifact, err)
+		}
+		return buf.String()
+	}
+
+	t.Run("input contract renders, output omitted", func(t *testing.T) {
+		t.Parallel()
+		out := inspect(t, "secret-injector-go.wasm")
+		if !strings.Contains(out, "input: {") {
+			t.Errorf("declaring guest should render an input schema; got:\n%s", out)
+		}
+		if !strings.Contains(out, `"secretName"`) {
+			t.Errorf("input schema should carry the declared property; got:\n%s", out)
+		}
+		if strings.Contains(out, "output:") {
+			t.Errorf("guest declares no output; the output line must be omitted; got:\n%s", out)
+		}
+	})
+
+	t.Run("output contract renders, input omitted", func(t *testing.T) {
+		t.Parallel()
+		out := inspect(t, "secret-ref-producer-go.wasm")
+		if !strings.Contains(out, "output: {") {
+			t.Errorf("declaring guest should render an output schema; got:\n%s", out)
+		}
+		if strings.Contains(out, "input:") {
+			t.Errorf("guest declares no input; the input line must be omitted; got:\n%s", out)
+		}
+	})
+
+	t.Run("no contract omits both lines", func(t *testing.T) {
+		t.Parallel()
+		out := inspect(t, "sidecar-injector-go.wasm")
+		if strings.Contains(out, "input:") || strings.Contains(out, "output:") {
+			t.Errorf("guest declares neither input nor output; both lines must be omitted; got:\n%s", out)
+		}
+	})
+}
+
+// TestInspectRawPlugin_DescribeBestEffort proves the raw-.wasm view treats the
+// describe() self-report as best-effort, not a validation gate. When describe()
+// succeeds the export contract renders; when it is absent or not yet wired the
+// command does not fail — it skips the export block, reports it unavailable, and
+// still prints the host functions derived straight from the binary (the
+// always-available part of this pre-publish diagnostic). The loudness for a guest
+// that cannot describe itself belongs to validate, not inspect.
+func TestInspectRawPlugin_DescribeBestEffort(t *testing.T) {
+	t.Parallel()
+
+	t.Run("describe succeeds: export contract renders", func(t *testing.T) {
+		t.Parallel()
+		path := wasmtest.EnsureFixtureBuilt(t, "secret-injector-go.wasm")
+		var buf bytes.Buffer
+		if err := inspectRawPlugin(&buf, path); err != nil {
+			t.Fatalf("inspectRawPlugin: %v", err)
+		}
+		out := buf.String()
+		if !strings.Contains(out, "input: {") {
+			t.Errorf("a describing guest should render its export contract; got:\n%s", out)
+		}
+		if strings.Contains(out, "did not report a describe") {
+			t.Errorf("a describing guest must not report the contract unavailable; got:\n%s", out)
+		}
+	})
+
+	t.Run("describe absent: host functions still shown, no error", func(t *testing.T) {
+		t.Parallel()
+		// fetch-probe-go is a readable reactor whose describe() self-report is not
+		// wired: DeriveHostFunctions reads its import section, but describe() is
+		// absent. Best-effort means the command still succeeds and still prints the
+		// derived host function.
+		path := wasmtest.EnsureFixtureBuilt(t, "fetch-probe-go.wasm")
+		var buf bytes.Buffer
+		if err := inspectRawPlugin(&buf, path); err != nil {
+			t.Fatalf("a non-describing but readable .wasm must not error; got: %v", err)
+		}
+		out := buf.String()
+		if !strings.Contains(out, "Exports: (unavailable") {
+			t.Errorf("an absent describe() should report the export contract unavailable; got:\n%s", out)
+		}
+		if !strings.Contains(out, "derived from binary, not yet stamped") {
+			t.Errorf("host functions must still be shown when describe() is absent; got:\n%s", out)
+		}
+		if !strings.Contains(out, "aggrega_fetch_external_input") {
+			t.Errorf("the derived host function should print; got:\n%s", out)
+		}
+	})
+}
+
 // pluginFixture declares a Plugin whose bare identity (metadata.name) plus its
 // pluginType derive its artifact-reference coordinate, two exports carrying full
 // capability claims (operates /

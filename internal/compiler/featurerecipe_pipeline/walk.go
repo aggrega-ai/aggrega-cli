@@ -6,6 +6,7 @@ package featurerecipe_pipeline
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderctx"
@@ -123,6 +124,16 @@ func Walk(
 	// strict halt must leave the caller's input untouched.
 	docs = snapshotDocumentSet(docs)
 
+	// Isolate the steps channel to this pipeline. `.steps` is a per-pipeline,
+	// within-pipeline channel: a step reads only the outputs of its own
+	// pipeline's earlier steps. The caller's context may arrive with foreign
+	// `.steps` entries (a shallow copy of a context an earlier pipeline
+	// populated) whose backing map the walk's Set calls would also mutate. A
+	// fresh map clears any inherited entries and gives the walk its own
+	// backing, so a step sees only its own pipeline's siblings and no Set
+	// leaks back through a shared context.
+	withCtx.Steps = types.OrderedMap[types.StepOutput]{}
+
 	for i, step := range steps {
 		// A step gated by a falsy `when` is skipped as a pass-through: the
 		// set flows to the next step unchanged, with no snapshot, no invoke,
@@ -139,7 +150,7 @@ func Walk(
 
 		snap := snapshotDocumentSet(docs)
 
-		stepEffects, stepDiags, stepOps, err := runStep(ctx, &docs, step, i, preceding, invoke, withCtx, renderCtx, eval)
+		stepEffects, stepDiags, stepOps, stepOutputs, err := runStep(ctx, &docs, step, i, preceding, invoke, withCtx, renderCtx, eval)
 
 		// Non-error diagnostics surface regardless of the step's outcome.
 		for _, d := range stepDiags {
@@ -150,7 +161,14 @@ func Walk(
 
 		if err != nil {
 			docs = snap // whole-step rollback
-			if step.Optional {
+			// A typed-I/O contract violation is an authoring defect, not a soft
+			// step outcome: a step whose rendered `with` input or returned
+			// outputs do not satisfy the export's declared schema halts the walk
+			// even when the step is Optional — the same way a broken
+			// `when`/`with` predicate halts regardless of Optional. Optional
+			// tolerates a runtime step failure; it does not tolerate a violated
+			// declared contract.
+			if step.Optional && !errors.Is(err, ErrPipelineContractViolation) {
 				warnings = append(warnings, renderctx.Diagnostic{
 					Severity: "warning",
 					Code:     "pipeline_step_skipped",
@@ -174,6 +192,20 @@ func Walk(
 			PluginURI:   step.Plugin,
 			SideEffects: stepEffects,
 		})
+
+		// Record the committed step's outputs into the inter-step channel so a
+		// later step's `when`/`with` can read them as .steps.<id>.outputs.<field>.
+		// A rolled-back or soft-failed step never reaches here, so its outputs
+		// are dropped with its restored snapshot. A step with an empty ID or no
+		// outputs contributes nothing — the channel stays untouched so a
+		// no-outputs pipeline renders byte-identically.
+		if step.ID != "" && stepOutputs.Len() > 0 {
+			out, err := toStepOutput(stepOutputs)
+			if err != nil {
+				return WalkResult{}, fmt.Errorf("%w: step %q (index %d) record outputs: %w", ErrPipelineStepFailed, step.ID, i, err)
+			}
+			withCtx.Steps.Set(step.ID, out)
+		}
 	}
 
 	return WalkResult{Documents: docs, SideEffects: sideEffects, Warnings: warnings, AppliedOps: applied}, nil
@@ -181,12 +213,13 @@ func Walk(
 
 // runStep evaluates, invokes, and applies one step, mutating docs in place
 // on success. It returns the step's side effects, the guest's diagnostics,
-// and the ops that successfully edited a unit (so the caller can record them
-// for surgical reassembly). A non-nil error means the step failed; the
-// caller restores the snapshot. docs may be partially mutated when the error
-// is non-nil — the caller's snapshot restore is what makes rollback
-// whole-step, and the dropped applied-ops slice is what keeps the walk-level
-// record consistent with the restored set.
+// the ops that successfully edited a unit (so the caller can record them for
+// surgical reassembly), and the wire outputs the step returned (so the caller
+// can record them into the inter-step channel). A non-nil error means the
+// step failed; the caller restores the snapshot. docs may be partially
+// mutated when the error is non-nil — the caller's snapshot restore is what
+// makes rollback whole-step, and the dropped applied-ops slice is what keeps
+// the walk-level record consistent with the restored set.
 func runStep(
 	ctx context.Context,
 	docs *DocumentSet,
@@ -197,10 +230,10 @@ func runStep(
 	withCtx *types.TemplateContext,
 	renderCtx renderctx.RenderContext,
 	eval TemplateEvaluator,
-) ([]SideEffect, []renderctx.Diagnostic, []JSONPatchOp, error) {
+) ([]SideEffect, []renderctx.Diagnostic, []JSONPatchOp, types.OrderedMap[any], error) {
 	stepInput, err := evalWith(step, withCtx, eval)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("%w: step %q (index %d) `with`: %w", ErrPipelineStepFailed, step.ID, index, err)
+		return nil, nil, nil, types.OrderedMap[any]{}, fmt.Errorf("%w: step %q (index %d) `with`: %w", ErrPipelineStepFailed, step.ID, index, err)
 	}
 
 	payload, err := json.Marshal(FRPStepInput{
@@ -211,30 +244,30 @@ func runStep(
 		PrecedingSteps: preceding,
 	})
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("%w: step %q (index %d) marshal input: %w", ErrPipelineStepFailed, step.ID, index, err)
+		return nil, nil, nil, types.OrderedMap[any]{}, fmt.Errorf("%w: step %q (index %d) marshal input: %w", ErrPipelineStepFailed, step.ID, index, err)
 	}
 
 	raw, err := invoke(ctx, step, payload)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("%w: step %q (index %d) invoke: %w", ErrPipelineStepFailed, step.ID, index, err)
+		return nil, nil, nil, types.OrderedMap[any]{}, fmt.Errorf("%w: step %q (index %d) invoke: %w", ErrPipelineStepFailed, step.ID, index, err)
 	}
 
 	var out FRPStepOutput
 	if err := json.Unmarshal(raw, &out); err != nil {
-		return nil, nil, nil, fmt.Errorf("%w: step %q (index %d) unmarshal output: %w", ErrPipelineStepFailed, step.ID, index, err)
+		return nil, nil, nil, types.OrderedMap[any]{}, fmt.Errorf("%w: step %q (index %d) unmarshal output: %w", ErrPipelineStepFailed, step.ID, index, err)
 	}
 
 	for _, d := range out.Diagnostics {
 		if d.Severity == "error" {
-			return nil, out.Diagnostics, nil, fmt.Errorf("%w: step %q (index %d) error diagnostic: %s", ErrPipelineStepFailed, step.ID, index, d.Message)
+			return nil, out.Diagnostics, nil, types.OrderedMap[any]{}, fmt.Errorf("%w: step %q (index %d) error diagnostic: %s", ErrPipelineStepFailed, step.ID, index, d.Message)
 		}
 	}
 
 	if err := ApplyPatches(docs, out.Patches); err != nil {
-		return nil, out.Diagnostics, nil, fmt.Errorf("step %q (index %d): %w", step.ID, index, err)
+		return nil, out.Diagnostics, nil, types.OrderedMap[any]{}, fmt.Errorf("step %q (index %d): %w", step.ID, index, err)
 	}
 
-	return out.SideEffects, out.Diagnostics, out.Patches, nil
+	return out.SideEffects, out.Diagnostics, out.Patches, out.Outputs, nil
 }
 
 // stepEnabled reports whether a step's `when` gate admits it. An empty `when`
@@ -277,6 +310,50 @@ func evalWith(step types.PipelineStep, withCtx *types.TemplateContext, eval Temp
 		return stepInput, fmt.Errorf("parse rendered `with` as a map: %w", err)
 	}
 	return stepInput, nil
+}
+
+// toStepOutput converts one step's wire outputs into the string-valued
+// [types.StepOutput] the .steps.<id>.outputs channel carries, preserving
+// author order (the wire OrderedMap is walked in order and each value is
+// stringified in place) so a no-change re-render is byte-identical.
+func toStepOutput(outputs types.OrderedMap[any]) (types.StepOutput, error) {
+	var out types.StepOutput
+	for k, v := range outputs.All() {
+		s, err := stringifyStepOutput(v)
+		if err != nil {
+			return types.StepOutput{}, err
+		}
+		out.Outputs.Set(k, s)
+	}
+	return out, nil
+}
+
+// stringifyStepOutput renders one pipeline-step output value into the string
+// form the .steps.<id>.outputs.<field> channel carries. This is the injection
+// boundary — the String Pipe: the host is blind to what an output means and
+// pipes it through as a string. A scalar reaches the next step's context in
+// its natural string form — the same stringify every other injection-boundary
+// scalar takes — so a number, boolean, or string lands unquoted; a JSON null
+// lands as the empty string. A composite value (a nested object or array a
+// guest placed in an output slot the channel type intends for scalars) has no
+// natural scalar form, so it renders as its canonical JSON encoding, an
+// author-order-preserving representation (a decoded nested object is an
+// OrderedMap, which marshals in author order) so identical input yields
+// byte-identical output. This is the single home of the FRP step-output
+// scalar-to-string conversion.
+func stringifyStepOutput(v any) (string, error) {
+	switch v.(type) {
+	case nil:
+		return "", nil
+	case *types.OrderedMap[any], []any:
+		b, err := json.Marshal(v)
+		if err != nil {
+			return "", err
+		}
+		return string(b), nil
+	default:
+		return fmt.Sprint(v), nil
+	}
 }
 
 // ApplyPatches applies each returned patch to the unit it addresses by scope

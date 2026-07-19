@@ -129,8 +129,14 @@ const (
 // FRPStepOutput is the JSON payload a FeatureRecipe-pipeline Wasm guest
 // returns for one pipeline step: the RFC 6902 patches the apply engine
 // applies to the keyed document set (Patches), the side effects this step
-// produced (SideEffects), and any diagnostics the guest raised
-// (Diagnostics).
+// produced (SideEffects), any diagnostics the guest raised (Diagnostics),
+// and the addressable outputs the step returns (Outputs).
+//
+// Outputs is a types.OrderedMap so the step's returned output channel
+// reaches the wire in author order and the payload is byte-identical across
+// runs of identical input — the same determinism guarantee the step input
+// upholds. It carries the key set a step contributes for a later step or a
+// template to read.
 //
 // Patches are structured [JSONPatchOp] values — the guest names each
 // target document by scope and key, then names the op, path, and value
@@ -153,6 +159,7 @@ type FRPStepOutput struct {
 	Patches     []JSONPatchOp          `json:"patches,omitempty"`
 	SideEffects []SideEffect           `json:"side_effects,omitempty"`
 	Diagnostics []renderctx.Diagnostic `json:"diagnostics,omitempty"`
+	Outputs     types.OrderedMap[any]  `json:"outputs,omitempty,omitzero"`
 }
 
 // JSONPatchOp is one RFC 6902 JSON-Patch operation an FRP step emits

@@ -60,6 +60,43 @@ func (d PluginDescriptor) validateSettingsSchema(pluginIdentity string) error {
 	return nil
 }
 
+// ValidateValueAgainstSchema validates value against a JSON Schema document. An
+// empty (nil or zero-length) schema declares no contract and accepts any value,
+// returning nil — so a surface that opts out of typing keeps free-form
+// pass-through behaviour. When a schema is present, value is validated against
+// it and a value that does not conform returns an error whose message names the
+// offending key and the schema's expectation.
+//
+// value is round-tripped through JSON before validation so it reaches the schema
+// library in the canonical JSON form the library expects, independent of the
+// concrete Go type the caller holds — a map, a struct, or an ordered map all
+// marshal to the same JSON value, and the validator never sees the Go wrapper.
+// A caller holding a Go nil marshals to JSON null, so a schema that requires
+// content halts a caller that supplies none.
+//
+// This is the single compile-and-validate home for generic tree-vs-JSON-Schema
+// checks; every typed surface delegates here rather than compiling and
+// validating independently. The host runs generic JSON Schema validation only;
+// it does not interpret what the value means.
+func ValidateValueAgainstSchema(schema json.RawMessage, value any) error {
+	if len(schema) == 0 {
+		return nil
+	}
+	compiled, err := compileSettingsSchema(schema)
+	if err != nil {
+		return err
+	}
+	raw, err := json.Marshal(value)
+	if err != nil {
+		return err
+	}
+	canonical, err := jsonschema.UnmarshalJSON(bytes.NewReader(raw))
+	if err != nil {
+		return err
+	}
+	return compiled.Validate(canonical)
+}
+
 // ValidateSettings validates an operator-supplied settings value against the
 // descriptor's declared settings schema. A descriptor that declares no schema
 // accepts any settings (free-form pass-through) and returns nil, so a plugin
@@ -71,26 +108,9 @@ func (d PluginDescriptor) validateSettingsSchema(pluginIdentity string) error {
 //
 // The value validated is the operator's settings object, or JSON null when the
 // attachment carries no settings — so a schema that requires settings halts a
-// build that supplies none. The settings are round-tripped through JSON before
-// validation so the value is in the canonical form the schema library expects,
-// independent of how the config layer decoded the authored YAML. The host runs
-// generic JSON Schema validation only; it does not interpret what the settings
-// mean.
+// build that supplies none. It delegates to [ValidateValueAgainstSchema], the
+// single compile-and-validate home, so the settings path and every other typed
+// surface interpret a guest-declared schema identically.
 func (d PluginDescriptor) ValidateSettings(settings map[string]any) error {
-	if len(d.SettingsSchema) == 0 {
-		return nil
-	}
-	schema, err := compileSettingsSchema(d.SettingsSchema)
-	if err != nil {
-		return err
-	}
-	raw, err := json.Marshal(settings)
-	if err != nil {
-		return err
-	}
-	value, err := jsonschema.UnmarshalJSON(bytes.NewReader(raw))
-	if err != nil {
-		return err
-	}
-	return schema.Validate(value)
+	return ValidateValueAgainstSchema(d.SettingsSchema, settings)
 }

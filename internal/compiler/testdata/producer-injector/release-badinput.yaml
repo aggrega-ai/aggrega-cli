@@ -1,0 +1,16 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: producer-injector-badinput-release
+  environment: testing
+  version: "1.0.0"
+spec:
+  aggregate: ./aggregate.yaml
+  manifest: ./manifest-badinput.yaml
+  boundaries:
+    main:
+      directory: ./dist/main
+      components:
+        api:
+          infra:
+            replicas: 1

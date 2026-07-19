@@ -4,6 +4,9 @@
 package main
 
 import (
+	"bytes"
+	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -16,24 +19,58 @@ import (
 	"go.yaml.in/yaml/v3"
 )
 
-// inspectRawPlugin derives and prints the host functions a raw .wasm artifact
-// imports — the pre-publish authoring view of a binary not yet published or
-// stamped into a Plugin entity. It reads the bytes and runs the single
-// derivation primitive (wasm.DeriveHostFunctions), the same one the publish flow
-// stamps with and the loader registers from, so what an author sees here is
-// exactly what publish would stamp. The set is labelled as derived-from-binary
-// and not-yet-stamped to distinguish it from the entity-read view inspect shows
-// for a published Plugin.
+// inspectRawPlugin prints the pre-publish authoring view of a raw .wasm artifact
+// not yet published or stamped into a Plugin entity: the per-export input/output
+// contract the guest declares in its describe() self-report, and the host
+// functions it imports.
+//
+// The export contract is the author-facing "what do I pass / what do I get" view —
+// for each export, its pipeline operation (operates / scope / selector) and the
+// JSON Schema it declares for its step-local input and its returned outputs. It is
+// read from the guest's own describe() through the shared describe-only load path,
+// the same one publish and validate read, so the guest is instantiated under inert
+// host-function stubs and reaches no real host capability while being described. An
+// export that declares no input or output contract omits that line.
+//
+// The export contract is best-effort. This view is a permissive diagnostic, not a
+// validation gate, so a raw .wasm whose describe() self-report is absent or not yet
+// wired still has its host functions shown — the export block is skipped and
+// reported as unavailable, and the command does not fail.
+//
+// The host functions are derived directly from the binary's import section via the
+// single derivation primitive (wasm.DeriveHostFunctions), the same one the publish
+// flow stamps with and the loader registers from, so what an author sees is exactly
+// what publish would stamp. The set is labelled as derived-from-binary and
+// not-yet-stamped to distinguish it from the entity-read view inspect shows for a
+// published Plugin.
 func inspectRawPlugin(out io.Writer, wasmPath string) error {
 	wasmBytes, err := os.ReadFile(wasmPath)
 	if err != nil {
 		return fmt.Errorf("read .wasm %q: %w", wasmPath, err)
 	}
-	derived, err := wasm.DeriveHostFunctions(filepath.Base(wasmPath), wasmBytes)
+	identity := filepath.Base(wasmPath)
+	derived, err := wasm.DeriveHostFunctions(identity, wasmBytes)
 	if err != nil {
 		return err
 	}
 	fmt.Fprintf(out, "Plugin .wasm: %s\n", wasmPath)
+
+	// describe() is best-effort here. Inspect on a raw .wasm is a permissive
+	// pre-publish diagnostic view, not a validation gate: its always-available job
+	// is to show the host functions the binary imports — what publish would stamp —
+	// and that works for any reactor .wasm, including one whose describe()
+	// self-report is absent or not yet wired. So a describe failure skips only the
+	// export-contract block and never aborts; the derived host functions below still
+	// print. The Loud Guardrail for a guest that cannot describe itself is
+	// `aggrega validate --plugin`, not inspect. The declared plugin type is left
+	// empty because a bare .wasm carries no entity front and the describe-only load
+	// admits any type, reading the contract from the guest rather than an entity claim.
+	if desc, err := wasm.DescribePluginBytes(context.Background(), identity, wasmBytes, describeMaxMemoryPages, ""); err == nil {
+		renderRawPluginExports(out, desc.Exports)
+	} else {
+		fmt.Fprintln(out, "Exports: (unavailable — this .wasm did not report a describe() contract)")
+	}
+
 	if len(derived) == 0 {
 		fmt.Fprintln(out, "hostFunctions (derived from binary, not yet stamped): (none)")
 		return nil
@@ -43,6 +80,54 @@ func inspectRawPlugin(out io.Writer, wasmPath string) error {
 		fmt.Fprintf(out, "  - %s\n", fn)
 	}
 	return nil
+}
+
+// renderRawPluginExports prints the describe()-reported exports of a raw .wasm in
+// declared order: each export's name, its pipeline operation claim (operates /
+// scope / selector), and the JSON Schema it declares for its step-local input and
+// its returned outputs. Each optional line is omitted when the export declares
+// none. This renders the describe descriptor's own export type; it is deliberately
+// separate from renderPluginExports, which renders the authored-entity export type
+// and carries no input/output contract.
+func renderRawPluginExports(out io.Writer, exports []wasm.PluginExport) {
+	if len(exports) == 0 {
+		fmt.Fprintln(out, "Exports: (none declared)")
+		return
+	}
+	fmt.Fprintln(out, "Exports:")
+	for _, exp := range exports {
+		fmt.Fprintf(out, "  %s\n", exp.Name)
+		if exp.Operates != "" {
+			fmt.Fprintf(out, "    operates: %s\n", exp.Operates)
+		}
+		if exp.Scope != "" {
+			fmt.Fprintf(out, "    scope: %s\n", exp.Scope)
+		}
+		if exp.Selector != "" {
+			fmt.Fprintf(out, "    selector: %s\n", exp.Selector)
+		}
+		if s := compactSchema(exp.Input); s != "" {
+			fmt.Fprintf(out, "    input: %s\n", s)
+		}
+		if s := compactSchema(exp.Output); s != "" {
+			fmt.Fprintf(out, "    output: %s\n", s)
+		}
+	}
+}
+
+// compactSchema renders a declared JSON Schema document as a single-line string
+// with insignificant whitespace removed, preserving the document's key order. It
+// returns the empty string when the export declares no schema (the raw message is
+// empty), which callers treat as the signal to omit the line.
+func compactSchema(raw json.RawMessage) string {
+	if len(raw) == 0 {
+		return ""
+	}
+	var buf bytes.Buffer
+	if err := json.Compact(&buf, raw); err != nil {
+		return strings.TrimSpace(string(raw))
+	}
+	return buf.String()
 }
 
 // renderPluginFile renders a Plugin authored as a standalone file. The

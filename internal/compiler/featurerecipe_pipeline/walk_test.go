@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/jsonpatch"
@@ -274,6 +275,37 @@ func TestWalk_InvokeTrapStrictAndOptional(t *testing.T) {
 	}
 	if len(res.Warnings) == 0 {
 		t.Errorf("trap optional: expected warning")
+	}
+}
+
+// TestWalk_ContractViolationHaltsEvenOptional proves a typed-I/O contract
+// violation halts the walk even when the step is Optional, while an ordinary
+// step failure on the same Optional step soft-fails with a warning. The
+// contract-violation guard is specific: it matches the sentinel, not any error.
+func TestWalk_ContractViolationHaltsEvenOptional(t *testing.T) {
+	docs := DocumentSet{Own: rawMap("a.yaml", `{"x":"0"}`)}
+
+	// A contract violation surfaced by the invoker halts even though the step
+	// is Optional — the same way a broken predicate does.
+	inv := newScripted()
+	inv.fail["s1"] = fmt.Errorf("`with` input does not satisfy the declared input contract: %w", ErrPipelineContractViolation)
+	_, err := Walk(context.Background(), docs, []types.PipelineStep{{ID: "s1", Plugin: "p", Function: "f", Optional: true}},
+		inv.invoke, &types.TemplateContext{}, renderctx.RenderContext{}, noEval)
+	if !errors.Is(err, ErrPipelineContractViolation) {
+		t.Fatalf("contract violation on optional step: err = %v, want halt with ErrPipelineContractViolation", err)
+	}
+
+	// A plain failure on the same Optional step soft-fails: the guard does not
+	// over-reach to every error.
+	inv2 := newScripted()
+	inv2.fail["s1"] = errors.New("guest trap")
+	res, err := Walk(context.Background(), docs, []types.PipelineStep{{ID: "s1", Plugin: "p", Function: "f", Optional: true}},
+		inv2.invoke, &types.TemplateContext{}, renderctx.RenderContext{}, noEval)
+	if err != nil {
+		t.Fatalf("plain failure on optional step should warn not halt: %v", err)
+	}
+	if len(res.Warnings) == 0 {
+		t.Errorf("plain failure on optional step: expected a warning")
 	}
 }
 

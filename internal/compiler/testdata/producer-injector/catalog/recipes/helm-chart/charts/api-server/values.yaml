@@ -1,0 +1,11 @@
+# Chart values for the api-server host component.
+# A pipeline /host PATCH injects a secret reference into the environment block
+# and a companion container into the containers list below; this comment and the
+# sibling keys must survive the surgical edit verbatim.
+image: api-server:latest
+replicas: 1
+environment:
+  EXISTING_VAR: 'keep-me'
+containers:
+  app:
+    image: api-server:latest

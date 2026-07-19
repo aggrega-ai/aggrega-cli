@@ -1,0 +1,11 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Plugin
+metadata:
+  name: sidecar-injector
+  version: "1.0.0"
+  pluginType: frp_step
+  description: Patch the consuming workload to add a companion sidecar container.
+spec:
+  abiVersion: v1alpha1
+  capabilities:
+    - helm-chart

@@ -6,6 +6,7 @@ package renderer
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"sort"
@@ -421,8 +422,75 @@ func newStepInvoker(lookup pluginpath.Lookup) frp.StepInvoker {
 			return nil, err
 		}
 		defer plugin.Close(ctx)
-		return wasm.InvokeExport(ctx, plugin, desc, step.Function, payload)
+
+		// An export that declares a typed input/output schema types the step
+		// seam: the rendered `with` input is validated against the declared
+		// input before the guest runs, and the guest's returned outputs against
+		// the declared output after. An absent export (undeclared function) is
+		// left for InvokeExport to surface precisely; an export that declares no
+		// schema is unchecked (free-form pass-through).
+		export, hasExport := findExport(desc, step.Function)
+		if hasExport {
+			if err := validateStepInput(export, payload, step); err != nil {
+				return nil, err
+			}
+		}
+		raw, err := wasm.InvokeExport(ctx, plugin, desc, step.Function, payload)
+		if err != nil {
+			return nil, err
+		}
+		if hasExport {
+			if err := validateStepOutput(export, raw, step); err != nil {
+				return nil, err
+			}
+		}
+		return raw, nil
 	}
+}
+
+// validateStepInput checks the step's rendered `with` input against the
+// export's declared input schema. An export that declares no input schema is a
+// no-op. A value that does not satisfy the schema returns a plain,
+// operator-facing error naming the step and wrapping
+// [frp.ErrPipelineContractViolation] so the walk halts even for an optional
+// step. The step input is taken from the marshalled [frp.FRPStepInput] payload
+// the walk built, and the validator round-trips it through JSON so the schema
+// sees a plain JSON value, not the ordered-map wrapper.
+func validateStepInput(export wasm.PluginExport, payload []byte, step types.PipelineStep) error {
+	if len(export.Input) == 0 {
+		return nil
+	}
+	var in frp.FRPStepInput
+	if err := json.Unmarshal(payload, &in); err != nil {
+		return err
+	}
+	if err := wasm.ValidateValueAgainstSchema(export.Input, in.StepInput); err != nil {
+		return fmt.Errorf("pipeline step %q `with` input does not satisfy the declared input contract: %w: %w",
+			step.ID, err, frp.ErrPipelineContractViolation)
+	}
+	return nil
+}
+
+// validateStepOutput checks the guest's returned outputs against the export's
+// declared output schema. An export that declares no output schema is a no-op.
+// Outputs that do not satisfy the schema return a plain, operator-facing error
+// naming the step and wrapping [frp.ErrPipelineContractViolation] so the walk
+// halts even for an optional step. The outputs are taken from the returned
+// [frp.FRPStepOutput] bytes, and the validator round-trips them through JSON so
+// the schema sees a plain JSON value, not the ordered-map wrapper.
+func validateStepOutput(export wasm.PluginExport, raw []byte, step types.PipelineStep) error {
+	if len(export.Output) == 0 {
+		return nil
+	}
+	var out frp.FRPStepOutput
+	if err := json.Unmarshal(raw, &out); err != nil {
+		return err
+	}
+	if err := wasm.ValidateValueAgainstSchema(export.Output, out.Outputs); err != nil {
+		return fmt.Errorf("pipeline step %q returned outputs that do not satisfy the declared output contract: %w: %w",
+			step.ID, err, frp.ErrPipelineContractViolation)
+	}
+	return nil
 }
 
 // stepDescriber reads one pipeline step's plugin describe() descriptor — the
@@ -524,15 +592,26 @@ func enforceProviderCompatibility(
 	return nil
 }
 
+// findExport returns the descriptor's export whose name matches function, and
+// whether one was found. It is the single find-an-export-by-name home the
+// pipeline seam shares: the compatibility check reads the found export's scope,
+// and the invoker reads its declared input/output schemas.
+func findExport(desc wasm.PluginDescriptor, function string) (wasm.PluginExport, bool) {
+	for _, e := range desc.Exports {
+		if e.Name == function {
+			return e, true
+		}
+	}
+	return wasm.PluginExport{}, false
+}
+
 // exportScope returns the declared scope of the named export, or the empty
 // string when the descriptor declares no such export (the walk's InvokeExport
 // gate surfaces an undeclared export precisely; here an absent export yields the
 // own-scope default so a malformed descriptor is not silently treated as host).
 func exportScope(desc wasm.PluginDescriptor, function string) string {
-	for _, e := range desc.Exports {
-		if e.Name == function {
-			return e.Scope
-		}
+	if e, ok := findExport(desc, function); ok {
+		return e.Scope
 	}
 	return ""
 }
