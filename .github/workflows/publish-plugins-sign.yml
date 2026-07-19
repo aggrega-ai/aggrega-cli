@@ -35,12 +35,13 @@ name: Publish and sign core plugins
 
 on:
   # A release tag is the trigger and the human gate: a person decides the version
-  # and pushes the tag. The pattern matches a plain MAJOR.MINOR.PATCH tag (no v
-  # prefix); a pre-release suffix is intentionally excluded from automatic
-  # publishing.
+  # and pushes the tag. The pattern matches a vMAJOR.MINOR.PATCH tag; a
+  # pre-release suffix is intentionally excluded from automatic publishing. The
+  # git tag is v-prefixed; the build stamps a v-less version onto the binary,
+  # image, and plugins.
   push:
     tags:
-      - "[0-9]+.[0-9]+.[0-9]+"
+      - "v[0-9]+.[0-9]+.[0-9]+"
   workflow_dispatch:
     inputs:
       dry_run:
@@ -49,7 +50,7 @@ on:
         default: true
         type: boolean
       tag:
-        description: "The release tag (MAJOR.MINOR.PATCH) to build and publish on a manual run; required for a real manual publish, ignored on a tag push (which uses the pushed tag)."
+        description: "The release tag (vMAJOR.MINOR.PATCH) to build and publish on a manual run; required for a real manual publish, ignored on a tag push (which uses the pushed tag)."
         required: false
         default: ""
         type: string
@@ -161,7 +162,7 @@ jobs:
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run == false && inputs.tag == '' }}
         run: |
           set -euo pipefail
-          echo "publish-plugins: a manual publish requires the tag input (MAJOR.MINOR.PATCH)" >&2
+          echo "publish-plugins: a manual publish requires the tag input (vMAJOR.MINOR.PATCH)" >&2
           exit 2
 
       - name: Pin the CLI tree to the release tag
@@ -207,12 +208,11 @@ jobs:
             esac
             printf '%s' "$ref"
           }
-          # schemas tags v-prefixed, so its go.mod require matches its git tag
-          # directly. abi and pdk tag unprefixed (0.1.0), but every Go module
-          # require is v-prefixed (v0.1.0), so strip the v to recover the tag.
+          # Every sibling tags v-prefixed, so each go.mod require matches its git
+          # tag directly — no rewriting needed.
           schemas_ref="$(require_pin github.com/aggrega-ai/aggrega-schemas)"
-          abi_ref="$(require_pin github.com/aggrega-ai/aggrega-abi-go)"; abi_ref="${abi_ref#v}"
-          pdk_ref="$(require_pin github.com/aggrega-ai/aggrega-pdk-go)"; pdk_ref="${pdk_ref#v}"
+          abi_ref="$(require_pin github.com/aggrega-ai/aggrega-abi-go)"
+          pdk_ref="$(require_pin github.com/aggrega-ai/aggrega-pdk-go)"
           {
             echo "schemas_ref=$schemas_ref"
             echo "abi_ref=$abi_ref"
