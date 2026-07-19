@@ -84,10 +84,6 @@ func ParseArtifact(ctx context.Context, res ParserResolver, load ParserLoader, f
 	}
 	defer guest.Close(ctx)
 
-	if desc.PluginType != string(wasm.PluginTypeParser) {
-		return abi.ParseOutput{}, fmt.Errorf("plugin %q declares plugin_type %q but is attached at the parser socket", spec.Name, desc.PluginType)
-	}
-
 	out, err := wasm.InvokeExport(ctx, guest, desc, wasm.ParseExport, payload)
 	if err != nil {
 		return abi.ParseOutput{}, fmt.Errorf("call %q on parser %q: %w", wasm.ParseExport, plugin.Coordinate(), err)

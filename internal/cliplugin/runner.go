@@ -29,13 +29,6 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 )
 
-// ErrPluginNotCLI is returned when a resolved plugin is loaded to be run as a
-// command but its describe() reports a non-CLI plugin type — for example a
-// provider or policy plugin, which the build pipeline dispatches but
-// which has no terminal command form. The error names the plugin and its actual
-// type.
-var ErrPluginNotCLI = errors.New("cliplugin: plugin is not a CLI plugin")
-
 // ErrNoResolver is returned when Run is invoked on a Runner with no Resolve seam
 // set, so there is no way to turn the plugin URI into bytes.
 var ErrNoResolver = errors.New("cliplugin: no plugin resolver configured")
@@ -80,7 +73,8 @@ type Runner struct {
 // it: a non-zero code is an ordinary command result (the shell's $?), NOT a Go
 // error. Run returns a non-nil error only for a host-side failure — the URI does
 // not resolve, the bytes are not a loadable CLI plugin, the resolved plugin is
-// not of CLI type (ErrPluginNotCLI), or the guest traps or panics mid-run. In
+// not of CLI type (the load gate halts with wasm.ErrWasmPluginTypeMismatch), or
+// the guest traps or panics mid-run. In
 // every error case the returned exit code is zero and the caller distinguishes
 // "the command ran and exited non-zero" (err == nil, code != 0) from "the
 // command could not be run" (err != nil).
@@ -120,6 +114,10 @@ func (r Runner) Run(ctx context.Context, uri, command string, argv []string) (in
 		digest = r.Digest(resolved.Bytes)
 	}
 	spec := resolver.PluginSpec(uri, resolved)
+	// The runtime CLI socket only runs CLI-typed guests, so the load gate is told
+	// to expect one; a guest that self-reports any other kind halts the load
+	// rather than reaching cli_run.
+	spec.PluginType = wasm.PluginTypeCLI
 
 	plugin, err := loader.LoadCLI(ctx, spec, stdout, stderr)
 	if err != nil {
@@ -135,11 +133,6 @@ func (r Runner) Run(ctx context.Context, uri, command string, argv []string) (in
 		return 0, digest, err
 	}
 	defer func() { _ = plugin.Close(ctx) }()
-
-	if desc.PluginType != string(wasm.PluginTypeCLI) {
-		return 0, digest, fmt.Errorf("cliplugin: plugin %q reports type %q, not %q: %w",
-			uri, desc.PluginType, wasm.PluginTypeCLI, ErrPluginNotCLI)
-	}
 
 	payload, err := json.Marshal(abi.CLIRunInput{Command: command, Args: argv})
 	if err != nil {

@@ -6,6 +6,8 @@ package wasm
 import (
 	"context"
 	"fmt"
+
+	"github.com/aggrega-ai/aggrega-cli/pkg/plugintype"
 )
 
 // describeExportName is the export every plugin implements to
@@ -90,13 +92,23 @@ func (l *Loader) LoadForDescribe(ctx context.Context, spec PluginSpec) (*Plugin,
 // describe/validate/cross-check lives in one place rather than being duplicated
 // per profile.
 //
+// When spec carries an expected plugin type (spec.PluginType is non-empty),
+// the descriptor's self-reported plugin type must equal it; a mismatch — a
+// mutator guest attached at the policy socket, a provider guest at the linter
+// socket, a non-CLI guest run as a terminal command — halts with an error
+// wrapping [ErrWasmPluginTypeMismatch]. An empty spec.PluginType declares no
+// expectation (the introspection path that reads a guest's self-report without
+// asserting a kind) and skips the check. This is the single type-match gate
+// every load-and-dispatch socket routes through rather than each socket
+// re-checking the descriptor's type inline.
+//
 // The caller supplies a plugin already loaded from spec. On any rejection —
 // describe() call failure, an unparseable descriptor, a descriptor the host
-// refuses, or a host-function/capability cross-check mismatch — the plugin is
-// Closed before the error propagates, so a rejected load leaks no Wazero
-// instance; descriptor-rejection errors wrap [ErrWasmManifestRejected]. On
-// success the live plugin remains open for the caller to invoke through
-// InvokeExport / InvokeExportStatus and Close when done.
+// refuses, a host-function/capability cross-check mismatch, or an expected-type
+// mismatch — the plugin is Closed before the error propagates, so a rejected
+// load leaks no Wazero instance; descriptor-rejection errors wrap
+// [ErrWasmManifestRejected]. On success the live plugin remains open for the
+// caller to invoke through InvokeExport / InvokeExportStatus and Close when done.
 func (l *Loader) DescribeAndValidate(ctx context.Context, plugin *Plugin, spec PluginSpec) (PluginDescriptor, error) {
 	raw, err := plugin.Call(ctx, describeExportName, nil)
 	if err != nil {
@@ -119,6 +131,18 @@ func (l *Loader) DescribeAndValidate(ctx context.Context, plugin *Plugin, spec P
 	if err := crossCheckHostFunctions(spec.Name, desc, plugin.HostFunctions()); err != nil {
 		_ = plugin.Close(ctx)
 		return PluginDescriptor{}, err
+	}
+
+	// When the spec declares an expected plugin type (the load-and-dispatch
+	// sockets set it), the descriptor's self-reported type must match it. An
+	// empty expectation is the introspection path and skips the check. On
+	// mismatch, Close before returning so a rejected load leaks no instance,
+	// matching the descriptor-rejection discipline above.
+	if spec.PluginType != "" {
+		if err := gateExpectedType(spec.Name, desc, spec.PluginType); err != nil {
+			_ = plugin.Close(ctx)
+			return PluginDescriptor{}, err
+		}
 	}
 
 	// When the spec carries an authored capability claim (the entity-fronted
@@ -172,6 +196,27 @@ func parseAndValidateDescriptor(raw []byte, identity string) (PluginDescriptor, 
 		return PluginDescriptor{}, err
 	}
 	return desc, nil
+}
+
+// gateExpectedType compares a validated descriptor's self-reported plugin type
+// against the type expected at the load site. It returns nil when they agree and
+// an error wrapping [ErrWasmPluginTypeMismatch] otherwise. The human noun in the
+// message comes from the canonical plugin-type registry, so the gate and the
+// registry never disagree on what to call a type; when a type carries no registry
+// label the raw type string stands in. The message names the plugin identity and
+// both the expected and reported types so the author sees exactly which two kinds
+// diverged.
+func gateExpectedType(pluginIdentity string, desc PluginDescriptor, expected PluginType) error {
+	if desc.PluginType == string(expected) {
+		return nil
+	}
+	noun := string(expected)
+	if entry, ok := plugintype.Lookup(expected); ok && entry.Label != "" {
+		noun = entry.Label
+	}
+	return fmt.Errorf(
+		"wasm: plugin %q: expected a %s plugin (plugin type %q) but its describe() reports plugin type %q: %w",
+		pluginIdentity, noun, string(expected), desc.PluginType, ErrWasmPluginTypeMismatch)
 }
 
 // InvokeExport calls the named export after confirming the descriptor

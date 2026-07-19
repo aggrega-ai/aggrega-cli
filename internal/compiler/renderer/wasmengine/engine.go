@@ -177,7 +177,9 @@ func (e *Engine) describe() (*wasm.PluginDescriptor, error) {
 		e.descriptorErr = fmt.Errorf("wasmengine: resolve plugin %q: %w", e.pluginURI, err)
 		return nil, e.descriptorErr
 	}
-	plugin, desc, err := e.loader.LoadAndDescribe(context.Background(), resolver.PluginSpec(e.pluginURI, resolved))
+	spec := resolver.PluginSpec(e.pluginURI, resolved)
+	spec.PluginType = wasm.PluginTypeProvider
+	plugin, desc, err := e.loader.LoadAndDescribe(context.Background(), spec)
 	if err != nil {
 		e.descriptorErr = err
 		return nil, e.descriptorErr
@@ -429,7 +431,9 @@ func (e *Engine) Warm(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("wasmengine: resolve plugin %q: %w", e.pluginURI, err)
 	}
-	plugin, desc, err := e.loader.LoadAndDescribe(ctx, resolver.PluginSpec(e.pluginURI, resolved))
+	spec := resolver.PluginSpec(e.pluginURI, resolved)
+	spec.PluginType = wasm.PluginTypeProvider
+	plugin, desc, err := e.loader.LoadAndDescribe(ctx, spec)
 	if err != nil {
 		return err
 	}

@@ -417,7 +417,9 @@ func newStepInvoker(lookup pluginpath.Lookup) frp.StepInvoker {
 		// carries the process-wide shared compilation cache, so a step's guest
 		// compiles once and every later step and concurrent request reuses it.
 		loader := wasm.NewCachingLoaderFromContext(ctx, wasm.ExternalInputsFromContext(ctx))
-		plugin, desc, err := loader.LoadAndDescribe(ctx, resolver.PluginSpec(step.Plugin, resolved))
+		stepSpec := resolver.PluginSpec(step.Plugin, resolved)
+		stepSpec.PluginType = wasm.PluginTypeFRPStep
+		plugin, desc, err := loader.LoadAndDescribe(ctx, stepSpec)
 		if err != nil {
 			return nil, err
 		}
@@ -520,7 +522,9 @@ func newStepDescriber(lookup pluginpath.Lookup) stepDescriber {
 		// guest code too, so its loader carries the same fetch surface and the
 		// same process-wide shared compilation cache.
 		loader := wasm.NewCachingLoaderFromContext(ctx, wasm.ExternalInputsFromContext(ctx))
-		plugin, desc, err := loader.LoadAndDescribe(ctx, resolver.PluginSpec(step.Plugin, resolved))
+		stepSpec := resolver.PluginSpec(step.Plugin, resolved)
+		stepSpec.PluginType = wasm.PluginTypeFRPStep
+		plugin, desc, err := loader.LoadAndDescribe(ctx, stepSpec)
 		if err != nil {
 			return wasm.PluginDescriptor{}, err
 		}

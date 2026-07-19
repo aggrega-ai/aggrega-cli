@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
 )
 
@@ -141,8 +142,8 @@ func TestRunner_ExitCodeNonZero(t *testing.T) {
 
 // TestRunner_RefusesNonCLIPlugin proves the runner refuses a plugin whose
 // describe() reports a non-CLI type: it loads and describes the provider-typed
-// noncli-probe guest, then returns an error wrapping ErrPluginNotCLI without
-// invoking any command export.
+// noncli-probe guest, then returns an error wrapping wasm.ErrWasmPluginTypeMismatch
+// from the shared load gate without invoking any command export.
 func TestRunner_RefusesNonCLIPlugin(t *testing.T) {
 	ctx := context.Background()
 	guest := buildGuest(t, "noncli-probe")
@@ -151,8 +152,8 @@ func TestRunner_RefusesNonCLIPlugin(t *testing.T) {
 	r := Runner{Resolve: bytesLookup(guest), Stdout: &stdout, Stderr: &stderr}
 
 	code, _, err := r.Run(ctx, "test://noncli-probe", "noncli-probe", nil)
-	if !errors.Is(err, ErrPluginNotCLI) {
-		t.Fatalf("Run error = %v; want an error wrapping ErrPluginNotCLI", err)
+	if !errors.Is(err, wasm.ErrWasmPluginTypeMismatch) {
+		t.Fatalf("Run error = %v; want an error wrapping wasm.ErrWasmPluginTypeMismatch", err)
 	}
 	if code != 0 {
 		t.Fatalf("exit code = %d; want 0 on a host-side refusal", code)

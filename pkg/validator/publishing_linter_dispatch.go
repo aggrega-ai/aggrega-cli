@@ -48,6 +48,10 @@ func DispatchPublishingLinter(spec wasm.PluginSpec, input LinterInput) ([]Linter
 		return nil, fmt.Errorf("publishing_linter: marshal input: %w", err)
 	}
 
+	// The linter socket only runs linter-typed guests, so the load gate is told
+	// to expect one; a guest that self-reports any other kind halts the load.
+	spec.PluginType = wasm.PluginTypeLinter
+
 	loader := wasm.NewCachingLoader(nil)
 	ctx := context.Background()
 	plugin, desc, err := loader.LoadAndDescribe(ctx, spec)
@@ -87,6 +91,10 @@ func DispatchPublishingLinter(spec wasm.PluginSpec, input LinterInput) ([]Linter
 // once in LoadAndDescribe), and spec's caps bound each per-input Call's memory
 // and wall time.
 func DispatchPublishingLinterBatch(spec wasm.PluginSpec, inputs []LinterInput) ([][]LinterFinding, error) {
+	// The linter socket only runs linter-typed guests, so the load gate is told
+	// to expect one; a guest that self-reports any other kind halts the load.
+	spec.PluginType = wasm.PluginTypeLinter
+
 	loader := wasm.NewCachingLoader(nil)
 	ctx := context.Background()
 	plugin, desc, err := loader.LoadAndDescribe(ctx, spec)

@@ -517,6 +517,26 @@ func TestDispatchPublishingLinterBatch(t *testing.T) {
 	}
 }
 
+// TestDispatchPublishingLinterRejectsNonLinter proves the linter socket halts a
+// guest whose describe() reports a non-linter plugin type. The dispatcher declares
+// the expected linter type on the spec, so loading the frp-step guest — a
+// well-formed guest that otherwise loads and describes cleanly — at the linter
+// socket fails the shared load gate's type-match check with
+// ErrWasmPluginTypeMismatch rather than proceeding to invoke a lint_ export the
+// guest does not declare. Exercises a real non-linter guest; skips cleanly when the
+// toolchain is absent.
+func TestDispatchPublishingLinterRejectsNonLinter(t *testing.T) {
+	nonLinter := wasmtest.EnsureFixtureBytes(t, "frp-step-go.wasm")
+	_, err := validator.DispatchPublishingLinter(linterSpec(nonLinter), validator.LinterInput{
+		RuleID:     "name-shape",
+		EntityKind: "Component",
+		Proposed:   json.RawMessage(`{"kind":"Component","metadata":{"name":"core/compute/api-server"}}`),
+	})
+	if !errors.Is(err, wasm.ErrWasmPluginTypeMismatch) {
+		t.Fatalf("a non-linter guest at the linter socket should halt with ErrWasmPluginTypeMismatch; got %v", err)
+	}
+}
+
 // TestDispatchPublishingLinterCrossCheckHalts proves the dispatcher arms the
 // load gate's describe()-vs-entity cross-check when the spec carries a capability
 // claim. The real publishing-linter's describe() declares the lint_rules export

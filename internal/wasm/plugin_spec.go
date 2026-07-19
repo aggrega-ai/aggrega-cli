@@ -21,10 +21,16 @@ type PluginSpec struct {
 	// catalog URI leaf (for example "publishing-linter").
 	Name string
 
-	// PluginType is the plugin's kind; see plugintype.Type for the canonical
-	// set. The Loader uses it only to compose a human-readable program-name
-	// label for the guest's WASI argv (see programName); it is a diagnostic
-	// label, not a dispatch key.
+	// PluginType is the expected plugin type at this load site — the kind of
+	// plugin the socket declares it is loading; see plugintype.Type for the
+	// canonical set. When set, the load gate enforces it: the loaded descriptor's
+	// self-reported type must equal it or the load is rejected with an error
+	// wrapping ErrWasmPluginTypeMismatch, so a guest of the wrong kind never
+	// reaches its socket's dispatch. Empty declares no expectation and skips the
+	// check — the introspection path that reads a guest's self-report to discover
+	// its kind rather than to assert one. It also remains the source of the
+	// guest's WASI argv program-name label (see programName): one concept — the
+	// plugin's kind as expected at this socket — with two consumers.
 	PluginType PluginType
 
 	// Path is the filesystem path to the .wasm artifact bytes. Upstream

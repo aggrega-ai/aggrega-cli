@@ -141,12 +141,10 @@ func invokeSocketPlugin(ctx context.Context, spec wasm.PluginSpec, export string
 //
 // The loader carries the process-wide shared compilation cache (honoring the ctx
 // persistent-cache dial), so a socket guest compiles once and every later socket
-// call and concurrent request reuses the machine code. When spec.PluginType is
-// set, the loaded descriptor's self-reported plugin type must match it; a
-// mismatch — a mutator plugin attached at the policy socket, or the reverse —
-// fails loudly with a legible message rather than through the cryptic
-// missing-export error the wrong export name would raise. An empty spec.PluginType
-// declares no expectation and skips the check.
+// call and concurrent request reuses the machine code. The socket sets
+// spec.PluginType to the kind it expects, so the shared load gate rejects a guest
+// of the wrong kind — a mutator plugin attached at the policy socket, or the
+// reverse — loudly, before fn ever sees the descriptor.
 func withSocketPlugin(ctx context.Context, spec wasm.PluginSpec, fn func(*wasm.Plugin, wasm.PluginDescriptor) error) error {
 	loader := wasm.NewCachingLoaderFromContext(ctx, nil)
 	plugin, desc, err := loader.LoadAndDescribe(ctx, spec)
@@ -154,9 +152,6 @@ func withSocketPlugin(ctx context.Context, spec wasm.PluginSpec, fn func(*wasm.P
 		return fmt.Errorf("load: %w", err)
 	}
 	defer plugin.Close(ctx)
-	if spec.PluginType != "" && desc.PluginType != string(spec.PluginType) {
-		return fmt.Errorf("plugin declares plugin_type %q but is attached at the %q socket", desc.PluginType, spec.PluginType)
-	}
 	return fn(plugin, desc)
 }
 
