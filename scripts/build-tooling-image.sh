@@ -8,6 +8,14 @@
 # `aggrega push`, which is entity-kind-dispatched and cannot carry an image.
 # It is NOT pushed to GHCR.
 #
+# On a real --push the same build is also published as the moving tag
+# <registry>/tools/aggrega:stable, pointing at the identical image (same
+# digest) as the version tag. Consumer CI that tracks :stable therefore always
+# resolves to the most recently published tooling image. Because :stable and
+# the version tag share one digest, a signature made against the version
+# reference (which resolves to that digest) already covers :stable — no
+# separate signing pass is needed.
+#
 # This script does NOT build the binary. The binary is produced by the
 # repository build (`scripts/build.sh` at the workspace root), which regenerates
 # the embedded Wasm guests and stamps the git-describe version. Run that first;
@@ -109,10 +117,14 @@ case "$TAG" in
 esac
 
 IMAGE_REF="$REGISTRY/$IMAGE_NAME:$TAG"
+STABLE_REF="$REGISTRY/$IMAGE_NAME:stable"
 
 # docker buildx build with the binary's version + ABI stamped as labels via
 # build args. --push publishes; otherwise --load leaves the image in the local
-# store for inspection or a separate push.
+# store for inspection or a separate push. On a push the same build carries the
+# moving :stable tag as a second --tag, so both references are published from
+# one build and resolve to the identical digest. :stable rides on push only —
+# a local --load never fabricates a moving tag.
 declare -a BUILD_CMD=(
   docker buildx build
   --platform "$PLATFORM"
@@ -122,13 +134,16 @@ declare -a BUILD_CMD=(
   --file "$CLI_DIR/Dockerfile"
 )
 if [ "$PUSH" = 1 ]; then
-  BUILD_CMD+=(--push)
+  BUILD_CMD+=(--tag "$STABLE_REF" --push)
 else
   BUILD_CMD+=(--load)
 fi
 BUILD_CMD+=("$CLI_DIR")
 
 printf 'image:     %s\n' "$IMAGE_REF"
+if [ "$PUSH" = 1 ]; then
+  printf 'stable:    %s\n' "$STABLE_REF"
+fi
 printf 'version:   %s\n' "$BIN_VERSION"
 printf 'abi:       %s\n' "$BIN_ABI"
 printf 'platform:  %s\n' "$PLATFORM"
@@ -148,5 +163,7 @@ command -v docker >/dev/null 2>&1 || die "docker not found on PATH"
 
 if [ "$PUSH" = 1 ]; then
   printf '\npushed %s\n' "$IMAGE_REF"
+  printf 'pushed %s (moving tag, same digest)\n' "$STABLE_REF"
   printf 'sign it by reference:\n  aggrega sign %s\n' "$IMAGE_REF"
+  printf 'the signature resolves to the shared digest, so it also covers %s\n' "$STABLE_REF"
 fi
