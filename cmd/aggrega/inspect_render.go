@@ -177,8 +177,8 @@ func resolveImplementsFeature(rw *workspaceconfig.ResolvedWorkspace, catalogDirs
 // loadCatalogLookup loads the catalog over the first-win search stack and
 // returns its CatalogLookup. It is the single catalog entry point for the
 // --show-implements path; the as-authored file renderers do not load a catalog
-// for their default render. Like the catalog-name Component path
-// (inspectCatalogComponent), it does no per-node IR rendering, so it passes an
+// for their default render. Like the catalog-name entity path
+// (inspectCatalogEntity), it does no per-node IR rendering, so it passes an
 // empty workspace root — no workspace-relative source-path stamping is needed
 // to resolve an implements reference.
 func loadCatalogLookup(rw *workspaceconfig.ResolvedWorkspace, catalogDirs []string) (resolver.CatalogLookup, error) {

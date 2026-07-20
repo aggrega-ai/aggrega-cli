@@ -30,6 +30,16 @@ var ErrConfigInvalid = errors.New("workspaceconfig: file failed schema validatio
 // one win.
 var ErrDuplicateProviderTarget = errors.New("workspaceconfig: capability is bound to more than one provider plugin")
 
+// ErrCapabilityOnCrossCuttingSocket reports that a cross-cutting socket
+// (mutator, policy, linter, importer) is bound by capability instead of by
+// uri. Errors satisfying errors.Is(err, ErrCapabilityOnCrossCuttingSocket)
+// carry the offending socket name and capability value. These sockets attach
+// their plugin directly by uri: the attached plugin serves no capability, so a
+// capability lookup would match nothing. A capability binding on one of them is
+// therefore an attachment that can never resolve, and it halts loudly at load
+// rather than surfacing later as an opaque resolve miss.
+var ErrCapabilityOnCrossCuttingSocket = errors.New("workspaceconfig: a cross-cutting socket is bound by capability but attaches by uri")
+
 // ErrDuplicateRegistryAlias reports that a registry alias is already used by a
 // different host entry. Errors satisfying errors.Is(err, ErrDuplicateRegistryAlias)
 // carry the offending alias and the host that already holds it. A registry alias

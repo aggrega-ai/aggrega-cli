@@ -179,6 +179,28 @@ func pushArtifactRun(cfg pushArtifactConfig) error {
 		target = repo
 	}
 
+	// Immutability guard on the version tag: a re-push of a byte-identical
+	// artifact is an idempotent no-op; a tag already pointing at different
+	// content is refused. The proposed digest is previewed with the SAME
+	// (mediaType, content, nil-annotations) triple oci.Push receives below, so
+	// the preview digest equals the digest the push would land.
+	existingDigest, exists, err := oci.Resolve(context.Background(), target, cfg.Tag)
+	if err != nil {
+		return fmt.Errorf("aggrega push-artifact: resolve %s:%s: %w", reference, cfg.Tag, err)
+	}
+	proposedDigest, err := oci.ManifestDigest(context.Background(), mediaType, content, nil)
+	if err != nil {
+		return fmt.Errorf("aggrega push-artifact: %s:%s: %w", reference, cfg.Tag, err)
+	}
+	if exists {
+		if existingDigest == proposedDigest {
+			fmt.Fprintf(out, "Already published: %s:%s (%s)\n", reference, cfg.Tag, existingDigest)
+			return nil
+		}
+		return fmt.Errorf("aggrega push-artifact: %s:%s is already published as %s; refusing to overwrite with %s — publish a new version: %w",
+			reference, cfg.Tag, existingDigest, proposedDigest, oci.ErrImmutableTagConflict)
+	}
+
 	digest, err := oci.Push(context.Background(), target, cfg.Tag, mediaType, content, nil)
 	if err != nil {
 		return fmt.Errorf("aggrega push-artifact: push %s:%s: %w", reference, cfg.Tag, err)

@@ -217,7 +217,7 @@ func TestPolicySocketWrongPluginTypeE2E(t *testing.T) {
 	if err == nil {
 		t.Fatalf("RunPipeline with a mutator plugin at the policy socket: expected a halt, got nil")
 	}
-	for _, want := range []string{"plugin_type", "mutator", "policy"} {
+	for _, want := range []string{"plugin type", "mutator", "policy"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("wrong-socket halt error missing %q:\n%v", want, err)
 		}

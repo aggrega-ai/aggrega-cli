@@ -46,7 +46,7 @@ func newInspectCmd() *cobra.Command {
 	)
 	c := &cobra.Command{
 		Use:   "inspect [identifier]",
-		Short: "Inspect a catalog Component or a Release file (resolves by entity kind)",
+		Short: "Inspect a catalog entity by name or an entity file (resolves by entity kind)",
 		// Arg-count contract enforced before RunE (so genuine misuse surfaces the
 		// Usage block): exactly one identifier in the normal path; zero when
 		// --plugin names a raw .wasm to derive host functions from.
@@ -133,8 +133,10 @@ func newInspectCmd() *cobra.Command {
 //     compatible "not yet implemented" error).
 //   - OCI URI (starts with oci://) → "not yet implemented" error; the
 //     OCI resolver path is a separate work item.
-//   - Anything else → treated as a catalog Component name, dispatched to
-//     the legacy schema-rendering branch.
+//   - Anything else → treated as a catalog entity name, resolved by identity
+//     across every entity kind (Component, Plugin, Feature, Recipe,
+//     FeatureRecipe, Aggregate, SchemaLibrary, MappingLibrary) and rendered
+//     by the matched kind's inspector.
 //
 // catalogDirs supplies the repeatable --catalog flag directories for both the
 // catalog-name branch and the Release branch's pipeline; each load site resolves
@@ -148,7 +150,7 @@ func dispatchInspect(rw *workspaceconfig.ResolvedWorkspace, identifier string, c
 		return inspectPath(rw, identifier, catalogDirs, opts)
 	}
 
-	return inspectCatalogComponent(rw, identifier, catalogDirs, opts)
+	return inspectCatalogEntity(rw, identifier, catalogDirs, opts)
 }
 
 // isPathInput returns true when the identifier names a filesystem path
@@ -259,13 +261,31 @@ func inspectPath(rw *workspaceconfig.ResolvedWorkspace, path string, catalogDirs
 	return fmt.Errorf("unknown entity kind %q in %q", preamble.Kind, path)
 }
 
-// inspectCatalogComponent runs the legacy catalog-component-name path.
-// Loads the catalog at catalogDir, resolves extends chains, looks up
-// the named Component, and prints its merged schema + usesSchema.
-func inspectCatalogComponent(rw *workspaceconfig.ResolvedWorkspace, componentType string, catalogDirs []string, opts inspectOptions) error {
-	// Workspace-agnostic inspection: this path prints catalog Component
-	// details without rendering any per-node IR, so no workspace-relative
-	// path normalization is needed. The walk still skips the configured
+// inspectCatalogEntity resolves a bare identifier against the catalog across
+// every entity kind and renders the first match. It loads the catalog over the
+// first-win search stack, resolves extends chains, then tries kinds in a fixed
+// precedence — Component, Plugin, Feature, Recipe, FeatureRecipe, Aggregate,
+// SchemaLibrary, MappingLibrary — returning the first identity match.
+//
+// A Component match keeps its dedicated render path: the merged schema +
+// usesSchema view plus a best-effort deprecation advisory. Every other kind is
+// handed to the same per-kind inspector the file-path branch uses (via the
+// kindRenderers table), so a bare identifier and a standalone file of the same
+// entity render identically. For the pure-unmarshal kinds the matched in-memory
+// entity is re-marshaled to YAML for that dispatch; a bare non-Component
+// identifier therefore shows the entity's canonical re-marshaled form under
+// --raw / --output yaml, since catalog entities retain no single authored-file
+// byte source uniformly across kinds. Aggregate is the exception: its inspector
+// runs the topology pass over the entity read from its source file, so it
+// receives the retained source path and authored bytes rather than a re-marshal.
+//
+// No match in any kind is a clear not-found naming the identifier and stating it
+// matched no catalog entity of any kind — the bare identifier is not assumed to
+// be a Component.
+func inspectCatalogEntity(rw *workspaceconfig.ResolvedWorkspace, identifier string, catalogDirs []string, opts inspectOptions) error {
+	// Workspace-agnostic inspection: catalog entity details print without
+	// rendering any per-node IR, so no workspace-relative path normalization is
+	// needed (empty workspace root below). The walk still skips the configured
 	// cache directory so cached library.yaml files are not shown as authored
 	// Tier-1 catalog.
 	rw, err := workspaceOrResolve(rw)
@@ -284,21 +304,65 @@ func inspectCatalogComponent(rw *workspaceconfig.ResolvedWorkspace, componentTyp
 	if extErrs := cat.ResolveAllExtends(); len(extErrs) > 0 {
 		return fmt.Errorf("resolve extends: %s", extErrs[0].Error())
 	}
-	comp, found := cat.CatalogLookup().Component(componentType)
-	if !found {
-		return fmt.Errorf("component %q not found in catalog", componentType)
+	lookup := cat.CatalogLookup()
+
+	// Component is first and keeps its render path exactly: the structured
+	// schema view plus the best-effort deprecation probe. A probe failure
+	// degrades to showing nothing — inspect never fails on the deprecation probe.
+	if comp, found := lookup.Component(identifier); found {
+		if err := renderComponentStructured(comp, identifier, opts); err != nil {
+			return err
+		}
+		if v, ok := lookupComponentDeprecation(wsCfg, identifier); ok {
+			renderDeprecationBlock(opts.out, v)
+		}
+		return nil
 	}
-	if err := renderComponentStructured(comp, componentType, opts); err != nil {
-		return err
+
+	// Remaining kinds resolve through the version-aware catalog accessors; the
+	// first match wins in the fixed precedence below.
+	if p, ok := lookup.Plugin(identifier); ok {
+		return renderCatalogMatch(rw, "Plugin", identifier, p, catalogDirs, opts)
 	}
-	// Best-effort live surfacing: when the workspace has a registry configured,
-	// probe it for a deprecation marker on this component and render an advisory
-	// notice. A probe failure degrades to showing nothing — inspect never fails
-	// on the deprecation probe.
-	if v, ok := lookupComponentDeprecation(wsCfg, componentType); ok {
-		renderDeprecationBlock(opts.out, v)
+	if f, ok := lookup.Feature(identifier); ok {
+		return renderCatalogMatch(rw, "Feature", identifier, f, catalogDirs, opts)
 	}
-	return nil
+	if r, ok := cat.RecipeByURI(identifier); ok {
+		return renderCatalogMatch(rw, "Recipe", identifier, r, catalogDirs, opts)
+	}
+	if fr, ok := cat.FeatureRecipeByURI(identifier); ok {
+		return renderCatalogMatch(rw, "FeatureRecipe", identifier, fr, catalogDirs, opts)
+	}
+	// Aggregate is a resolved-instance kind: its inspector reads the entity from
+	// a filesystem path to run the topology pass, unlike the pure-unmarshal
+	// renderers that read the passed bytes. The catalog-resolved match carries
+	// the retained source path and authored bytes, so it is dispatched directly
+	// rather than through a re-marshal.
+	if ra, ok := cat.AggregateLookup()(identifier); ok {
+		return kindRenderers["Aggregate"](rw, ra.Path, ra.Bytes, catalogDirs, opts)
+	}
+	if lib, ok := cat.SchemaLibraries[identifier]; ok {
+		return renderCatalogMatch(rw, "SchemaLibrary", identifier, lib, catalogDirs, opts)
+	}
+	if lib, ok := cat.MappingLibraries[identifier]; ok {
+		return renderCatalogMatch(rw, "MappingLibrary", identifier, lib, catalogDirs, opts)
+	}
+	return fmt.Errorf("%q matched no catalog entity of any kind", identifier)
+}
+
+// renderCatalogMatch re-marshals a catalog-resolved entity to YAML and
+// dispatches it through the kind's file-path inspector, which re-unmarshals into
+// the same typed struct. It is the bare-name analogue of inspectPath for the
+// pure-unmarshal kinds: the render logic is shared with the file branch, so a
+// bare identifier and a standalone file of the same entity render identically.
+// The identifier stands in for the file path (used only in the inspectors'
+// error strings and YAML round-trip diagnostics, never read from disk).
+func renderCatalogMatch(rw *workspaceconfig.ResolvedWorkspace, kind, identifier string, entity any, catalogDirs []string, opts inspectOptions) error {
+	data, err := yaml.Marshal(entity)
+	if err != nil {
+		return fmt.Errorf("marshal %s %q: %w", kind, identifier, err)
+	}
+	return kindRenderers[kind](rw, identifier, data, catalogDirs, opts)
 }
 
 // inspectReleaseFile loads a Release plus its referenced Aggregate and

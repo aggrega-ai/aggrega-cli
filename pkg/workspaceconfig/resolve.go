@@ -329,6 +329,13 @@ func resolve(start, flagRoot string, lookup func(string) string, skipGlobal bool
 		return nil, err
 	}
 
+	// The cross-cutting sockets attach by uri; their plugins serve no
+	// capability, so a capability binding on one of them can never resolve.
+	// Catch it at load on the composed lists rather than as a late resolve miss.
+	if err := checkCrossCuttingSocketAttach(merged.Plugins); err != nil {
+		return nil, err
+	}
+
 	// Environment overlay: the top config layer, above the merged file cascade
 	// and below the CLI flags the command applies. A SET variable wins over the
 	// config value; an unset one falls through.
@@ -637,6 +644,35 @@ func checkUniqueProviderTargets(providers []PluginRef) error {
 			return fmt.Errorf("workspaceconfig: capability %q is bound to more than one provider plugin; keep exactly one plugins.providers entry per capability: %w", ref.Capability, ErrDuplicateProviderTarget)
 		}
 		seen[ref.Capability] = struct{}{}
+	}
+	return nil
+}
+
+// checkCrossCuttingSocketAttach returns a wrapped
+// ErrCapabilityOnCrossCuttingSocket when any of the four cross-cutting socket
+// lists (mutator, policy, linter, importer) carries a capability-bound entry.
+// Those sockets attach their plugin directly by uri; the attached plugin serves
+// no capability, so a capability lookup matches nothing. The lists are walked in
+// a fixed order (mutator, policy, linter, importer) and each in list order, so
+// the error names the first offending binding deterministically for a given
+// composed config. The check keys only on the socket identity and a non-empty
+// Capability — it never resolves, loads, or describes the referenced plugin.
+func checkCrossCuttingSocketAttach(plugins PluginsConfig) error {
+	sockets := []struct {
+		name string
+		refs []PluginRef
+	}{
+		{"mutator", plugins.Mutator},
+		{"policy", plugins.Policy},
+		{"linter", plugins.Linter},
+		{"importer", plugins.Importer},
+	}
+	for _, socket := range sockets {
+		for _, ref := range socket.refs {
+			if ref.Capability != "" {
+				return fmt.Errorf("workspaceconfig: the %s socket is bound by capability %q, but the cross-cutting sockets attach by uri: their plugin serves no capability, so a capability lookup matches nothing; attach it with `uri:` instead: %w", socket.name, ref.Capability, ErrCapabilityOnCrossCuttingSocket)
+			}
+		}
 	}
 	return nil
 }

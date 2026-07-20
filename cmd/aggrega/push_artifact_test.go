@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -147,6 +148,68 @@ func TestPushArtifactBypassesKindDispatch(t *testing.T) {
 		Out:        &bytes.Buffer{},
 	}); err != nil {
 		t.Fatalf("pushArtifactRun should publish opaque bytes without kind dispatch; got %v", err)
+	}
+}
+
+// TestPushArtifactImmutableTag exercises the version-tag immutability guard:
+// a fresh tag publishes, a re-push of byte-identical content under the same
+// tag is an idempotent no-op, and a re-push of different content under the
+// same tag is refused with ErrImmutableTagConflict.
+func TestPushArtifactImmutableTag(t *testing.T) {
+	store := memory.New()
+	path, _ := makeDocsBundle(t)
+
+	// First publish of a fresh tag succeeds.
+	var first bytes.Buffer
+	if err := pushArtifactRun(pushArtifactConfig{
+		FilePath:   path,
+		Name:       "aggrega-docs",
+		Tag:        "1.0.0",
+		Registry:   "example.com",
+		PushTarget: store,
+		Out:        &first,
+	}); err != nil {
+		t.Fatalf("first pushArtifactRun: %v", err)
+	}
+	if !strings.Contains(first.String(), "Push complete") {
+		t.Errorf("first push missing completion line; got:\n%s", first.String())
+	}
+
+	// Re-push of identical bytes under the same tag: idempotent no-op.
+	var second bytes.Buffer
+	if err := pushArtifactRun(pushArtifactConfig{
+		FilePath:   path,
+		Name:       "aggrega-docs",
+		Tag:        "1.0.0",
+		Registry:   "example.com",
+		PushTarget: store,
+		Out:        &second,
+	}); err != nil {
+		t.Fatalf("idempotent re-push should return nil; got %v", err)
+	}
+	if !strings.Contains(second.String(), "Already published") {
+		t.Errorf("idempotent re-push missing 'Already published'; got:\n%s", second.String())
+	}
+	if strings.Contains(second.String(), "Push complete") {
+		t.Errorf("idempotent re-push should not overwrite; got:\n%s", second.String())
+	}
+
+	// Push of different bytes under the same tag: refused.
+	otherPath := filepath.Join(t.TempDir(), "other.tar.gz")
+	if err := os.WriteFile(otherPath, []byte("different opaque bytes"), 0o644); err != nil {
+		t.Fatalf("write other artifact: %v", err)
+	}
+	var third bytes.Buffer
+	err := pushArtifactRun(pushArtifactConfig{
+		FilePath:   otherPath,
+		Name:       "aggrega-docs",
+		Tag:        "1.0.0",
+		Registry:   "example.com",
+		PushTarget: store,
+		Out:        &third,
+	})
+	if !errors.Is(err, oci.ErrImmutableTagConflict) {
+		t.Fatalf("conflicting re-push should return ErrImmutableTagConflict; got %v", err)
 	}
 }
 

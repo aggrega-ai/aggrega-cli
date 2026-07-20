@@ -156,7 +156,7 @@ func TestInspectPath_MalformedYAMLPreamble(t *testing.T) {
 // error path.
 func TestInspectCatalogComponent_MissingCatalog(t *testing.T) {
 	t.Parallel()
-	err := inspectCatalogComponent(resolveTempWorkspace(t), "any-name", []string{"/nonexistent/dir"}, testInspectOptions(io.Discard))
+	err := inspectCatalogEntity(resolveTempWorkspace(t), "any-name", []string{"/nonexistent/dir"}, testInspectOptions(io.Discard))
 	if err == nil {
 		t.Errorf("missing catalog should error")
 	}
@@ -168,12 +168,12 @@ func TestInspectCatalogComponent_ComponentNotFound(t *testing.T) {
 	t.Parallel()
 	tmp := t.TempDir()
 	// Empty catalog dir.
-	err := inspectCatalogComponent(resolveTempWorkspace(t), "absent-component", []string{tmp}, testInspectOptions(io.Discard))
+	err := inspectCatalogEntity(resolveTempWorkspace(t), "absent-component", []string{tmp}, testInspectOptions(io.Discard))
 	if err == nil {
 		t.Errorf("missing component should error")
 	}
-	if !strings.Contains(err.Error(), "not found") {
-		t.Errorf("error should mention not found; got %v", err)
+	if !strings.Contains(err.Error(), "no catalog entity of any kind") {
+		t.Errorf("error should state no entity matched across kinds; got %v", err)
 	}
 }
 
@@ -200,7 +200,7 @@ spec:
 	if err := os.WriteFile(filepath.Join(tmp, "component.yaml"), []byte(compYAML), 0o644); err != nil {
 		t.Fatalf("write: %v", err)
 	}
-	if err := inspectCatalogComponent(resolveTempWorkspace(t), "core/server", []string{tmp}, testInspectOptions(io.Discard)); err != nil {
+	if err := inspectCatalogEntity(resolveTempWorkspace(t), "core/server", []string{tmp}, testInspectOptions(io.Discard)); err != nil {
 		t.Errorf("happy: %v", err)
 	}
 }

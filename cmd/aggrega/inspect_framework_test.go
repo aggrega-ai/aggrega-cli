@@ -194,7 +194,7 @@ func TestInspectCatalogPrecedence_FlagBeatsConfig(t *testing.T) {
 
 	// --catalog flag dir prepended → flag wins on the colliding name.
 	var buf bytes.Buffer
-	if err := inspectCatalogComponent(rw, "core/server", []string{flagDir}, testInspectOptions(&buf)); err != nil {
+	if err := inspectCatalogEntity(rw, "core/server", []string{flagDir}, testInspectOptions(&buf)); err != nil {
 		t.Fatalf("inspect with flag: %v", err)
 	}
 	if !strings.Contains(buf.String(), "from-flag") {
@@ -203,7 +203,7 @@ func TestInspectCatalogPrecedence_FlagBeatsConfig(t *testing.T) {
 
 	// No flag → config catalog_dirs resolves.
 	buf.Reset()
-	if err := inspectCatalogComponent(rw, "core/server", nil, testInspectOptions(&buf)); err != nil {
+	if err := inspectCatalogEntity(rw, "core/server", nil, testInspectOptions(&buf)); err != nil {
 		t.Fatalf("inspect without flag: %v", err)
 	}
 	if !strings.Contains(buf.String(), "from-config") {
