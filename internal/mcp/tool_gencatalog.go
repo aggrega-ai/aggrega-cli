@@ -9,17 +9,16 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"os"
-	"os/exec"
 	"strings"
+
+	"github.com/aggrega-ai/aggrega-cli/internal/gencatalog"
 )
 
-// genCatalogRunner runs the catalog-generation operation with the supplied
-// argument vector, writing its output to stdout and stderr. It is the seam the
-// gen-catalog tool drives: the production value re-invokes the running binary's
-// catalog-generation subcommand so the generation logic has a single home, and
-// a test injects a fake that records the arguments.
-type genCatalogRunner func(ctx context.Context, args []string, stdout, stderr io.Writer) error
+// genCatalogRunner runs the catalog-generation core with the supplied options,
+// writing its per-entity listing to out. It is the seam the gen-catalog tool
+// drives: the production value is the in-process core so the generation logic
+// has a single home, and a test injects a fake that records the options.
+type genCatalogRunner func(ctx context.Context, opts gencatalog.Options, out io.Writer) error
 
 // genCatalogArgs is the gen-catalog tool's argument shape, mirroring the
 // catalog-generation subcommand's inputs.
@@ -92,41 +91,20 @@ func genCatalogInvoke(s *server, ctx context.Context, args json.RawMessage) (*ca
 		return nil, &rpcError{Code: codeInvalidParams, Message: "gen-catalog requires an 'overlay' path (a directory with from_embedded, a file with plugin)"}
 	}
 
-	argv := []string{"plugin", "gen-catalog", "--output", a.Output, "--overlay", a.Overlay}
-	if a.FromEmbedded {
-		argv = append(argv, "--from-embedded")
-	} else {
-		argv = append(argv, "--plugin", a.Plugin)
+	opts := gencatalog.Options{
+		FromEmbedded: a.FromEmbedded,
+		PluginPath:   strings.TrimSpace(a.Plugin),
+		OutputDir:    strings.TrimSpace(a.Output),
+		OverlayPath:  strings.TrimSpace(a.Overlay),
 	}
-
 	run := s.runGenCatalog
 	if run == nil {
-		run = selfExecGenCatalog
+		run = gencatalog.Run
 	}
-	var stdout, stderr bytes.Buffer
-	if err := run(ctx, argv, &stdout, &stderr); err != nil {
-		detail := strings.TrimSpace(stderr.String())
-		if detail == "" {
-			detail = err.Error()
-		}
-		return errorResult(explainToolError("Catalog generation failed.", fmt.Errorf("%s", detail), "plugin"))
+	var stdout bytes.Buffer
+	if err := run(ctx, opts, &stdout); err != nil {
+		return errorResult(explainToolError("Catalog generation failed.", fmt.Errorf("%s", err.Error()), "plugin"))
 	}
 	out := stdout.String()
 	return textResult(strings.TrimRight(out, "\n"), genCatalogResultPayload{Output: out})
-}
-
-// selfExecGenCatalog runs the catalog-generation operation by re-invoking the
-// running binary's catalog-generation subcommand as a subprocess, so the
-// generation logic keeps its single home in the command layer rather than being
-// duplicated here. The subprocess inherits the current working directory, which
-// grounds the embedded-guest and overlay resolution the subcommand performs.
-func selfExecGenCatalog(ctx context.Context, args []string, stdout, stderr io.Writer) error {
-	self, err := os.Executable()
-	if err != nil {
-		return fmt.Errorf("locate running binary for catalog generation: %w", err)
-	}
-	cmd := exec.CommandContext(ctx, self, args...)
-	cmd.Stdout = stdout
-	cmd.Stderr = stderr
-	return cmd.Run()
 }

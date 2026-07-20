@@ -48,7 +48,7 @@ var installPluginFetch = productionInstallPluginFetch
 var describeInstallable = func(ctx context.Context, src resolvedInstallable) (wasm.PluginDescriptor, error) {
 	spec := resolver.PluginSpec(pluginDiagName(src.URI), pluginpath.ResolvedPlugin{Bytes: src.Bytes})
 	if spec.MaxMemoryPages == 0 {
-		spec.MaxMemoryPages = describeMaxMemoryPages
+		spec.MaxMemoryPages = wasm.DescribeMaxMemoryPages
 	}
 	loader := wasm.NewCachingLoaderFromContext(ctx, nil)
 	plugin, desc, err := loader.LoadForDescribe(ctx, spec)

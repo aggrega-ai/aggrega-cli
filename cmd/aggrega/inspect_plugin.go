@@ -65,7 +65,7 @@ func inspectRawPlugin(out io.Writer, wasmPath string) error {
 	// `aggrega validate --plugin`, not inspect. The declared plugin type is left
 	// empty because a bare .wasm carries no entity front and the describe-only load
 	// admits any type, reading the contract from the guest rather than an entity claim.
-	if desc, err := wasm.DescribePluginBytes(context.Background(), identity, wasmBytes, describeMaxMemoryPages, ""); err == nil {
+	if desc, err := wasm.DescribePluginBytes(context.Background(), identity, wasmBytes, wasm.DescribeMaxMemoryPages, ""); err == nil {
 		renderRawPluginExports(out, desc.Exports)
 	} else {
 		fmt.Fprintln(out, "Exports: (unavailable — this .wasm did not report a describe() contract)")

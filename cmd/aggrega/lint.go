@@ -512,7 +512,7 @@ func pluginUnderDeclarationAdvisory(entityBytes []byte, wsCfg workspaceconfig.Co
 			entity.Metadata.Name, err)
 		return
 	}
-	desc, err := wasm.DescribePluginBytes(context.Background(), entity.Metadata.Name, resolved.Bytes, describeMaxMemoryPages, entity.Metadata.PluginType)
+	desc, err := wasm.DescribePluginBytes(context.Background(), entity.Metadata.Name, resolved.Bytes, wasm.DescribeMaxMemoryPages, entity.Metadata.PluginType)
 	if err != nil {
 		fmt.Fprintf(diagOut, "under-declaration advisory: skipped for %q (its .wasm did not describe: %v)\n",
 			entity.Metadata.Name, err)

@@ -71,7 +71,7 @@ func pushPlugin(out io.Writer, cfg pushConfig, registry string, wantSign bool, n
 	// entity declares none.
 	ctx := context.Background()
 	entityIdentity := name + ":" + version
-	crossCheckMaxPages := describeMaxMemoryPages
+	crossCheckMaxPages := wasm.DescribeMaxMemoryPages
 	if entity.Spec.Runtime != nil && entity.Spec.Runtime.MaxMemoryPages != 0 {
 		crossCheckMaxPages = entity.Spec.Runtime.MaxMemoryPages
 	}

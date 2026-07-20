@@ -17,6 +17,7 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compilerops"
+	"github.com/aggrega-ai/aggrega-cli/internal/gencatalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
@@ -323,37 +324,46 @@ func TestExplainErrorTool(t *testing.T) {
 	}
 }
 
-// TestGenCatalogToolWrapsSubcommand asserts the gen-catalog tool assembles the
-// catalog-generation argument vector and returns the operation's output through
-// the injected runner seam.
-func TestGenCatalogToolWrapsSubcommand(t *testing.T) {
+// TestGenCatalogToolInvokesCore asserts the gen-catalog tool builds the
+// catalog-generation options from its arguments, drives the in-process core
+// through the injected runner seam, and returns the operation's output.
+func TestGenCatalogToolInvokesCore(t *testing.T) {
 	s := newTestServer()
-	var gotArgs []string
-	s.runGenCatalog = func(_ context.Context, args []string, stdout, _ io.Writer) error {
-		gotArgs = args
-		_, _ = io.WriteString(stdout, "generated out/core/helm-provider/1.0.0/plugin.yaml\n")
+	var gotOpts gencatalog.Options
+	s.runGenCatalog = func(_ context.Context, opts gencatalog.Options, out io.Writer) error {
+		gotOpts = opts
+		_, _ = io.WriteString(out, "generated out/core/helm-provider/1.0.0/plugin.yaml\n")
 		return nil
 	}
 	res := callTool(t, s, "gen-catalog", genCatalogArgs{FromEmbedded: true, Output: "out", Overlay: "overlays"})
 	if res.IsError {
 		t.Fatalf("gen-catalog reported error: %s", res.Content[0].Text)
 	}
-	wantArgs := []string{"plugin", "gen-catalog", "--output", "out", "--overlay", "overlays", "--from-embedded"}
-	if !equalStrings(gotArgs, wantArgs) {
-		t.Fatalf("gen-catalog argv = %v, want %v", gotArgs, wantArgs)
+	wantEmbedded := gencatalog.Options{FromEmbedded: true, OutputDir: "out", OverlayPath: "overlays"}
+	if gotOpts != wantEmbedded {
+		t.Fatalf("gen-catalog options = %+v, want %+v", gotOpts, wantEmbedded)
 	}
 	if !strings.Contains(res.Content[0].Text, "plugin.yaml") {
 		t.Errorf("gen-catalog did not return the operation output: %q", res.Content[0].Text)
 	}
 
-	// A generation failure surfaces the subcommand's stderr as guidance.
-	s.runGenCatalog = func(_ context.Context, _ []string, _, stderr io.Writer) error {
-		_, _ = io.WriteString(stderr, "overlay for guest has no metadata.name")
-		return fmt.Errorf("exit status 1")
+	// The single-plugin case builds the plugin-path options.
+	res = callTool(t, s, "gen-catalog", genCatalogArgs{Plugin: "p.wasm", Output: "out", Overlay: "o.yaml"})
+	if res.IsError {
+		t.Fatalf("gen-catalog (single) reported error: %s", res.Content[0].Text)
+	}
+	wantSingle := gencatalog.Options{PluginPath: "p.wasm", OutputDir: "out", OverlayPath: "o.yaml"}
+	if gotOpts != wantSingle {
+		t.Fatalf("gen-catalog single options = %+v, want %+v", gotOpts, wantSingle)
+	}
+
+	// A generation failure surfaces the core's error as guidance.
+	s.runGenCatalog = func(_ context.Context, _ gencatalog.Options, _ io.Writer) error {
+		return fmt.Errorf("overlay for guest has no metadata.name")
 	}
 	bad := callTool(t, s, "gen-catalog", genCatalogArgs{Plugin: "p.wasm", Output: "out", Overlay: "o.yaml"})
 	if !bad.IsError || !strings.Contains(bad.Content[0].Text, "metadata.name") {
-		t.Errorf("gen-catalog failure did not surface stderr guidance: %+v", bad)
+		t.Errorf("gen-catalog failure did not surface error guidance: %+v", bad)
 	}
 }
 

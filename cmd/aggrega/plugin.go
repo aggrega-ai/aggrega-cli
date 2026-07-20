@@ -25,14 +25,6 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
-// describeMaxMemoryPages is the memory cap applied when describing a plugin that
-// carries no explicit limit. The platform default cap is generous for a running
-// render but too small to instantiate the largest built-in provider guests for a
-// describe() call, so the list command raises the ceiling to the value the
-// provider catalog entities themselves declare. It is a describe-time convenience
-// only — the render path applies each plugin's own authored limits.
-const describeMaxMemoryPages uint32 = 4096
-
 // newPluginCmd builds the `plugin` parent command grouping the plugin-inspection
 // subcommands.
 func newPluginCmd() *cobra.Command {
@@ -232,7 +224,7 @@ func describePluginURI(ctx context.Context, source, uri, origin string, in plugi
 
 	spec := resolver.PluginSpec(pluginDiagName(uri), resolved)
 	if spec.MaxMemoryPages == 0 {
-		spec.MaxMemoryPages = describeMaxMemoryPages
+		spec.MaxMemoryPages = wasm.DescribeMaxMemoryPages
 	}
 	loader := wasm.NewCachingLoaderFromContext(ctx, nil)
 	plugin, desc, err := loader.LoadForDescribe(ctx, spec)

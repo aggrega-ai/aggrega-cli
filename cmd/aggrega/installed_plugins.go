@@ -158,7 +158,7 @@ func describeConfiguredCLI(ctx context.Context, ref workspaceconfig.CLIPluginRef
 	}
 	spec := resolver.PluginSpec(pluginDiagName(ref.URI), resolved)
 	if spec.MaxMemoryPages == 0 {
-		spec.MaxMemoryPages = describeMaxMemoryPages
+		spec.MaxMemoryPages = wasm.DescribeMaxMemoryPages
 	}
 	loader := wasm.NewCachingLoaderFromContext(ctx, nil)
 	plugin, desc, err := loader.LoadForDescribe(ctx, spec)

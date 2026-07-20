@@ -42,7 +42,7 @@ func TestEmbeddedDescriptorFidelity(t *testing.T) {
 			plugin, runtime, err := loader.LoadAndDescribe(ctx, wasm.PluginSpec{
 				Name:           uri,
 				Bytes:          guest,
-				MaxMemoryPages: describeMaxMemoryPages,
+				MaxMemoryPages: wasm.DescribeMaxMemoryPages,
 			})
 			if err != nil {
 				t.Fatalf("load and describe %q: %v", uri, err)

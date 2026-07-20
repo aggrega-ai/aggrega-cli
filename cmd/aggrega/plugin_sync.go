@@ -91,7 +91,7 @@ func stampPluginFile(out io.Writer, entityPath, pluginPath string) error {
 	// has enough memory to instantiate even a large guest. Recording is not the
 	// place to enforce the entity's cap — a too-small authored cap surfaces at
 	// publish and load, not here — so the cap is raised, never lowered.
-	maxPages := describeMaxMemoryPages
+	maxPages := wasm.DescribeMaxMemoryPages
 	if entity.Spec.Runtime != nil && entity.Spec.Runtime.MaxMemoryPages > maxPages {
 		maxPages = entity.Spec.Runtime.MaxMemoryPages
 	}

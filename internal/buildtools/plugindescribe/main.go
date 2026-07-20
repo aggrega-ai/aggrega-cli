@@ -27,13 +27,6 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 )
 
-// describeMaxMemoryPages is the linear-memory cap applied for the describe()
-// call. It matches the ceiling the plugin listing raises so the largest
-// built-in provider guests instantiate for a describe(); the descriptor is a
-// static self-report, so the cap only needs to admit the guest, not size any
-// render.
-const describeMaxMemoryPages uint32 = 4096
-
 func main() {
 	wasmPath := flag.String("wasm", "", "path to the guest .wasm to describe")
 	name := flag.String("name", "", "diagnostic name for the guest")
@@ -65,7 +58,7 @@ func run(wasmPath, name, out string) error {
 	plugin, desc, err := loader.LoadForDescribe(ctx, wasm.PluginSpec{
 		Name:           name,
 		Bytes:          bytes,
-		MaxMemoryPages: describeMaxMemoryPages,
+		MaxMemoryPages: wasm.DescribeMaxMemoryPages,
 	})
 	if err != nil {
 		return fmt.Errorf("describe guest: %w", err)

@@ -9,6 +9,7 @@ import (
 	"os"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/validateops"
+	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 
 	"github.com/spf13/cobra"
@@ -108,7 +109,7 @@ func newValidateCmd() *cobra.Command {
 // result: the header, per-check status lines, and advisory notices go to out;
 // the first blocking error (if any) is returned so the exit code reflects it.
 func validatePluginBinary(pluginPath, declaredType, entityPath string, out io.Writer) error {
-	res, err := validateops.ValidatePluginBinary(pluginPath, declaredType, entityPath, describeMaxMemoryPages)
+	res, err := validateops.ValidatePluginBinary(pluginPath, declaredType, entityPath, wasm.DescribeMaxMemoryPages)
 	for _, line := range res.Diagnostics {
 		fmt.Fprintln(out, line)
 	}

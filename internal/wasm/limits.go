@@ -13,6 +13,14 @@ package wasm
 // block.
 const DefaultMaxMemoryPages uint32 = 1024
 
+// DescribeMaxMemoryPages is the memory cap applied when describing a plugin that
+// carries no explicit limit. The platform default cap is generous for a running
+// render but too small to instantiate the largest built-in provider guests for a
+// describe() call, so describe-time paths raise the ceiling to the value the
+// provider catalog entities themselves declare. It is a describe-time convenience
+// only — the render path applies each plugin's own authored limits.
+const DescribeMaxMemoryPages uint32 = 4096
+
 // DefaultTimeoutMs is the platform default cap on a single plugin Call's wall
 // time, in milliseconds. 5000 ms is a wide ceiling for a per-step render or lint
 // while still turning a hung guest (an infinite loop, a frozen clock) into a

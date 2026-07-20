@@ -59,9 +59,8 @@ type server struct {
 	docsBundleVersion string
 
 	// runGenCatalog runs the catalog-generation helper for the gen-catalog
-	// tool. Nil self-execs the running binary's catalog-generation subcommand.
-	// A test injects a fake that records the arguments and returns canned
-	// output.
+	// tool. Nil calls the in-process catalog-generation core. A test injects a
+	// fake that records the options and returns canned output.
 	runGenCatalog genCatalogRunner
 
 	// runLint runs the lint helper for the deferred lint tool. Nil self-execs
