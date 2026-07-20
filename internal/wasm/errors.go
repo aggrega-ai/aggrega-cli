@@ -138,3 +138,25 @@ var ErrWasmPluginTypeMismatch = errors.New("wasm: declared plugin type does not 
 // against the verified binary's imports; this covers the recorded command mirror
 // against the plugin's describe() self-report.
 var ErrWasmCommandsMirrorMismatch = errors.New("wasm: recorded command mirror does not match plugin describe()")
+
+// ErrWasmPluginVersionMismatch indicates that a Plugin entity's recorded
+// metadata.version disagrees with the build-provenance version the plugin's
+// describe() self-report declares. The recorded version is machine-sourced: the
+// entity's metadata.version is derived from the guest's describe() version when
+// the entity is generated, so the two agree by construction. Publish verifies the
+// committed version against the binary before any bytes land; a hand-edit that
+// diverges the recorded version from the guest's build-provenance version is a
+// Loud Guardrail that halts and directs the author to re-record the version.
+//
+// A guest that carries no build-provenance version (an unstamped build) reports
+// an empty version, which the check treats as the value to match: the entity's
+// metadata.version must equal it exactly. The comparison is by design an exact
+// string match, so a published entity's metadata.version always reflects the
+// version its binary actually reports.
+//
+// The wrapping error names the plugin, the recorded version, and the described
+// version so the divergence is visible. This sentinel is distinct from
+// ErrWasmCommandsMirrorMismatch and ErrWasmHostFunctionsStampMismatch: those
+// cover the command mirror and host-function record; this covers the recorded
+// metadata.version against the plugin's describe() build-provenance version.
+var ErrWasmPluginVersionMismatch = errors.New("wasm: entity metadata.version does not match plugin describe()")

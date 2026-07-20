@@ -103,7 +103,13 @@ func ensureRenderProviderWasm(t *testing.T) string {
 	}
 
 	artifact := filepath.Join(scratch, "render-synth-provider-go.wasm")
-	cmd := exec.Command("go", "build", "-buildmode=c-shared", "-o", artifact, "./")
+	// Stamp a build version so the guest self-reports it through describe(); the
+	// entities published against this guest author the same metadata.version, and
+	// the publish cross-check halts on a mismatch. This build bypasses the
+	// example's build.sh, so the stamp is applied here rather than inherited.
+	cmd := exec.Command("go", "build", "-buildmode=c-shared",
+		"-ldflags", "-X github.com/aggrega-ai/aggrega-pdk-go/pkg/aggrega.Version=1.0.0",
+		"-o", artifact, "./")
 	cmd.Dir = scratch
 	cmd.Env = append(os.Environ(), "GOWORK=off", "GOOS=wasip1", "GOARCH=wasm")
 	if out, err := cmd.CombinedOutput(); err != nil {

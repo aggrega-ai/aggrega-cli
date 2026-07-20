@@ -48,6 +48,12 @@ cd "$CLI_ROOT"
 # the guest builder, which forces GOWORK=off internally.
 export GOWORK=off
 
+# The build-provenance version (_ver) and short commit (_sha) come from the one
+# shared recipe, so this binary, the embedded guests' describe(), and the
+# embedded plugin-entity generator can never derive them by divergent
+# invocations. Sourced after the cd above so git resolves against the module root.
+. scripts/lib/build-version.sh
+
 BINPATH="./cmd/aggrega"
 
 CYAN='\033[36m'
@@ -79,14 +85,12 @@ for arg in "$@"; do
   esac
 done
 
-# stamp_flags — emit the -ldflags value that stamps version and commit into the
-# binary and clears the build id for reproducibility. Read via command
-# substitution at build time so a --dirty tree stamps the current working state.
+# stamp_ldflags — emit the -ldflags value that stamps version and commit into the
+# binary and clears the build id for reproducibility. The version and commit are
+# the shared recipe's values, sourced once above so a --dirty tree stamps the
+# current working state.
 stamp_ldflags() {
-  local ver sha
-  ver="$(git describe --tags --always --dirty 2>/dev/null || echo dev)"; ver="${ver#v}"
-  sha="$(git rev-parse --short HEAD 2>/dev/null || echo unknown)"
-  printf -- '-X main.version=%s -X main.commit=%s -buildid=' "$ver" "$sha"
+  printf -- '-X main.version=%s -X main.commit=%s -buildid=' "$_ver" "$_sha"
 }
 
 if [ "$MODE" = "light" ]; then

@@ -48,8 +48,8 @@ type genCatalogOptions struct {
 // deterministic, idempotent Plugin entity for each selected guest by merging the
 // machine-derived contract fields from the guest's describe() self-report with
 // an authored per-plugin overlay (identity, runtime limits, provider block) and
-// the binary's own build version. Re-running over the same inputs produces
-// byte-identical output.
+// the guest's describe() self-report version. Re-running over the same inputs
+// produces byte-identical output.
 func newPluginGenCatalogCmd() *cobra.Command {
 	opts := genCatalogOptions{}
 	c := &cobra.Command{
@@ -61,8 +61,8 @@ Each entity's contract fields — pluginType, abiVersion, capabilities, exports,
 and contract — are derived from the guest's describe() self-report, so the
 entity can never promise a capability the binary does not provide. The entity's
 identity (metadata.name), runtime limits, and provider block come from an authored
-per-plugin overlay; the entity version is the binary's own build version. The
-plugin-level description, when the guest reports one, is emitted as
+per-plugin overlay; the entity version is the guest's describe() self-report
+version. The plugin-level description, when the guest reports one, is emitted as
 metadata.description and omitted cleanly when it does not.
 
 Two selection modes:
@@ -104,12 +104,10 @@ func genCatalogRun(ctx context.Context, opts genCatalogOptions, out io.Writer) e
 		return fmt.Errorf("aggrega plugin gen-catalog: --overlay is required (a directory for --from-embedded, a file for --plugin)")
 	}
 
-	version := collectVersionInfo().Version
-
 	if opts.fromEmbedded {
-		return genCatalogFromEmbedded(ctx, opts, version, out)
+		return genCatalogFromEmbedded(ctx, opts, out)
 	}
-	return genCatalogFromPlugin(ctx, opts, version, out)
+	return genCatalogFromPlugin(ctx, opts, out)
 }
 
 // genCatalogFromEmbedded generates an entity for every embedded guest, matching
@@ -121,7 +119,7 @@ func genCatalogRun(ctx context.Context, opts genCatalogOptions, out io.Writer) e
 // guest with no matching overlay halts loudly: the overlay set is the authored
 // input the generator merges, so a missing one is an authoring gap, not a value
 // to invent.
-func genCatalogFromEmbedded(ctx context.Context, opts genCatalogOptions, version string, out io.Writer) error {
+func genCatalogFromEmbedded(ctx context.Context, opts genCatalogOptions, out io.Writer) error {
 	overlays, err := loadOverlaysByPlugin(opts.overlayPath)
 	if err != nil {
 		return err
@@ -152,7 +150,7 @@ func genCatalogFromEmbedded(ctx context.Context, opts genCatalogOptions, version
 		if got := types.PluginCoordinate(string(desc.PluginType), overlay.Metadata.Name); got != uri {
 			return fmt.Errorf("aggrega plugin gen-catalog: overlay for %q derives identity coordinate %q, which does not match embedded guest %q; fix the overlay's metadata.name or socket", bareName, got, uri)
 		}
-		if err := generateAndWrite(opts.outputDir, desc, description, hostFunctions, overlay, version, uri, out); err != nil {
+		if err := generateAndWrite(opts.outputDir, desc, description, hostFunctions, overlay, uri, out); err != nil {
 			return err
 		}
 	}
@@ -173,7 +171,7 @@ func coordinateLeaf(coordinate string) string {
 // genCatalogFromPlugin generates a single entity for one non-embedded guest read
 // from disk, described through the Wasm loader, and merged with the single
 // overlay file.
-func genCatalogFromPlugin(ctx context.Context, opts genCatalogOptions, version string, out io.Writer) error {
+func genCatalogFromPlugin(ctx context.Context, opts genCatalogOptions, out io.Writer) error {
 	wasmBytes, err := os.ReadFile(opts.pluginPath)
 	if err != nil {
 		return fmt.Errorf("aggrega plugin gen-catalog: read .wasm %s: %w", opts.pluginPath, err)
@@ -198,14 +196,14 @@ func genCatalogFromPlugin(ctx context.Context, opts genCatalogOptions, version s
 	// one, so the single-guest path emits a description only once that field
 	// lands. The embedded path reads the description from the build-extracted
 	// descriptor JSON.
-	return generateAndWrite(opts.outputDir, desc, "", hostFunctions, overlay, version, opts.pluginPath, out)
+	return generateAndWrite(opts.outputDir, desc, "", hostFunctions, overlay, opts.pluginPath, out)
 }
 
 // generateAndWrite merges one descriptor with its overlay and writes the entity
 // to <outputDir>/<pluginType>/<name>/<version>/plugin.yaml — the plugin
 // coordinate path that mirrors the catalog filesystem layout.
-func generateAndWrite(outputDir string, desc wasm.PluginDescriptor, description string, hostFunctions []string, overlay types.Plugin, version, identity string, out io.Writer) error {
-	entity, err := entitysynth.MergeForPublish(desc, description, hostFunctions, overlay, version, identity)
+func generateAndWrite(outputDir string, desc wasm.PluginDescriptor, description string, hostFunctions []string, overlay types.Plugin, identity string, out io.Writer) error {
+	entity, err := entitysynth.MergeForPublish(desc, description, hostFunctions, overlay, identity)
 	if err != nil {
 		return fmt.Errorf("aggrega plugin gen-catalog: %w", err)
 	}

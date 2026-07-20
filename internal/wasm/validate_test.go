@@ -75,7 +75,23 @@ func TestValidatePlugin_StreamingCLIPasses(t *testing.T) {
 func TestValidatePlugin_EntityCrossChecks(t *testing.T) {
 	wasmBytes := loadFrpStepGoBytes(t)
 
+	// Discover the binary's describe() build-provenance version via a binary-only
+	// validate, so the agreeing entity's recorded version tracks whatever the
+	// fixture reports rather than hard-coding the build-provenance string.
+	base, err := ValidatePlugin(context.Background(), wasmBytes, ValidateOptions{
+		Identity:     "frp/patch:1.0.0",
+		DeclaredType: string(PluginTypeFRPStep),
+	})
+	if err != nil {
+		t.Fatalf("binary-only validate should pass; got %v", err)
+	}
+	describeVersion := ""
+	if base.Descriptor.Metadata != nil {
+		describeVersion = base.Descriptor.Metadata.Version
+	}
+
 	ok := &EntityInputs{
+		Version: describeVersion,
 		Claim: EntityContractClaim{Exports: []EntityExportClaim{
 			{Name: "step", Operates: operatesPatch, Scope: ScopeOwn},
 		}},
@@ -92,13 +108,65 @@ func TestValidatePlugin_EntityCrossChecks(t *testing.T) {
 		Claim:         EntityContractClaim{Exports: []EntityExportClaim{{Name: "step", Operates: operatesPatch, Scope: ScopeOwn}}},
 		HostFunctions: []string{"aggrega_log"}, // the binary imports none
 	}
-	_, err := ValidatePlugin(context.Background(), wasmBytes, ValidateOptions{
+	_, err = ValidatePlugin(context.Background(), wasmBytes, ValidateOptions{
 		Identity:     "frp/patch:1.0.0",
 		DeclaredType: string(PluginTypeFRPStep),
 		Entity:       stale,
 	})
 	if !errors.Is(err, ErrWasmHostFunctionsStampMismatch) {
 		t.Fatalf("a stale host-function record should halt with ErrWasmHostFunctionsStampMismatch; got %v", err)
+	}
+}
+
+// TestValidatePlugin_VersionCrossCheck proves the entity-mode version cross-check:
+// a recorded metadata.version that diverges from the binary's describe()
+// build-provenance version halts with ErrWasmPluginVersionMismatch, and a matching
+// version passes. The describe() version is discovered from the binary itself so
+// the test does not hard-code the fixture's build-provenance string; the mismatch
+// case appends a divergent suffix to guarantee inequality.
+func TestValidatePlugin_VersionCrossCheck(t *testing.T) {
+	wasmBytes := loadFrpStepGoBytes(t)
+
+	// Discover the binary's describe() build-provenance version via a binary-only
+	// validate, so the match case tracks whatever the fixture reports.
+	base, err := ValidatePlugin(context.Background(), wasmBytes, ValidateOptions{
+		Identity:     "frp/patch:1.0.0",
+		DeclaredType: string(PluginTypeFRPStep),
+	})
+	if err != nil {
+		t.Fatalf("binary-only validate should pass; got %v", err)
+	}
+	describeVersion := ""
+	if base.Descriptor.Metadata != nil {
+		describeVersion = base.Descriptor.Metadata.Version
+	}
+
+	claim := EntityContractClaim{Exports: []EntityExportClaim{
+		{Name: "step", Operates: operatesPatch, Scope: ScopeOwn},
+	}}
+
+	mismatched := &EntityInputs{Claim: claim, Version: describeVersion + "9.9.9-divergent"}
+	_, err = ValidatePlugin(context.Background(), wasmBytes, ValidateOptions{
+		Identity:     "frp/patch:1.0.0",
+		DeclaredType: string(PluginTypeFRPStep),
+		Entity:       mismatched,
+	})
+	if !errors.Is(err, ErrWasmPluginVersionMismatch) {
+		t.Fatalf("a divergent metadata.version should halt with ErrWasmPluginVersionMismatch; got %v", err)
+	}
+	for _, want := range []string{"frp/patch:1.0.0", describeVersion + "9.9.9-divergent"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("version-mismatch halt should name %q; got %v", want, err)
+		}
+	}
+
+	matched := &EntityInputs{Claim: claim, Version: describeVersion}
+	if _, err := ValidatePlugin(context.Background(), wasmBytes, ValidateOptions{
+		Identity:     "frp/patch:1.0.0",
+		DeclaredType: string(PluginTypeFRPStep),
+		Entity:       matched,
+	}); err != nil {
+		t.Fatalf("a matching metadata.version should pass validation; got %v", err)
 	}
 }
 

@@ -9,8 +9,9 @@
 //
 // MergeForPublish assembles a publish-ready entity by merging the descriptor
 // with an authored overlay (identity, runtime limits, provider block), the
-// binary's build version, the machine-derived host-function set, and the guest's
-// plugin-level description. The descriptor-to-routing-field assembly it shares
+// guest's describe() self-report version, the machine-derived host-function set,
+// and the guest's plugin-level description. The descriptor-to-routing-field
+// assembly it shares
 // with the descriptor helpers lives in exactly one place (applyDescriptorContract),
 // so a synthesized entity's routing fields can never drift from the descriptor.
 package entitysynth
@@ -31,19 +32,25 @@ import (
 // describe() self-report (machine-derived — the top-level command verbs a CLI
 // guest contributes, in describe()-declared order), the authored overlay
 // (identity, runtime limits, provider block, and any authored metadata), and the
-// binary's own build version. The plugin-level description, when present, becomes
-// metadata.description. The contract fields, the host-function set, and the
-// command mirror always come from the binary, overriding any the overlay
-// carries, so the binary is the single source for the guest's declared behavior;
-// the overlay supplies only what the binary does not report.
+// guest's describe() self-report version. The plugin-level description, when
+// present, becomes metadata.description. The contract fields, the host-function
+// set, and the command mirror always come from the binary, overriding any the
+// overlay carries, so the binary is the single source for the guest's declared
+// behavior; the overlay supplies only what the binary does not report.
 //
-// identity names the guest in the descriptor-validation rejection message.
-func MergeForPublish(desc wasm.PluginDescriptor, description string, hostFunctions []string, overlay types.Plugin, version, identity string) (types.Plugin, error) {
+// A versioned entity requires a version, so an unstamped guest — one whose
+// describe() reports no build-provenance version — halts rather than generating
+// an entity with no version. identity names the guest in that rejection message
+// and in the descriptor-validation rejection message.
+func MergeForPublish(desc wasm.PluginDescriptor, description string, hostFunctions []string, overlay types.Plugin, identity string) (types.Plugin, error) {
 	if err := desc.Validate(identity); err != nil {
 		return types.Plugin{}, err
 	}
 	if strings.TrimSpace(overlay.Metadata.Name) == "" {
 		return types.Plugin{}, fmt.Errorf("overlay for %q has no metadata.name identity", identity)
+	}
+	if desc.Metadata == nil || strings.TrimSpace(desc.Metadata.Version) == "" {
+		return types.Plugin{}, fmt.Errorf("guest %q reports no describe() version; a stamped build-provenance version is required to generate a versioned entity", identity)
 	}
 
 	entity := types.Plugin{
@@ -52,9 +59,9 @@ func MergeForPublish(desc wasm.PluginDescriptor, description string, hostFunctio
 		Metadata:   overlay.Metadata,
 		Spec:       types.PluginSpec{},
 	}
-	// Version is the binary's own build identity; description is the guest's
+	// Version is the guest's describe() self-report; description is the guest's
 	// plugin-level self-report. Everything else in metadata is authored.
-	entity.Metadata.Version = version
+	entity.Metadata.Version = desc.Metadata.Version
 	entity.Metadata.Description = description
 
 	// Identity is metadata.name (copied from the overlay above); runtime limits

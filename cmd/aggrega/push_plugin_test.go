@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -347,6 +348,21 @@ func largeGuestBytes(t *testing.T) []byte {
 	return nil
 }
 
+// largeGuestURI returns the embedded URI of the helm provider guest — the same
+// guest largeGuestBytes returns bytes for. It is the key embeddedGuestVersion
+// reads the guest's describe() self-report version from, so a Plugin entity's
+// authored version can be aligned to what the guest actually announces.
+func largeGuestURI(t *testing.T) string {
+	t.Helper()
+	for _, uri := range embedded.URIs() {
+		if strings.HasSuffix(uri, "/helm") {
+			return uri
+		}
+	}
+	t.Skip("embedded helm provider guest not built into the test binary")
+	return ""
+}
+
 // writeLargeGuestPlugin writes the large guest .wasm and a Plugin entity (with
 // the given runtime block) into a fresh tempdir, chdirs into it, and returns the
 // entity path and the .wasm path. The entity's authored claim agrees with the
@@ -362,12 +378,13 @@ func writeLargeGuestPlugin(t *testing.T, runtimeBlock string) (entityPath, plugi
 		t.Fatalf("write large guest .wasm: %v", err)
 	}
 	entityPath = filepath.Join(root, "helm-plugin.yaml")
-	writeEntityFixture(t, entityPath, `apiVersion: aggrega.ai/v1alpha1
+	version := embeddedGuestVersion(t, largeGuestURI(t))
+	writeEntityFixture(t, entityPath, fmt.Sprintf(`apiVersion: aggrega.ai/v1alpha1
 kind: Plugin
 metadata:
   name: helm-renderer
   pluginType: provider
-  version: "0.4.1"
+  version: %q
 spec:
   plugin: "oci://hub.aggrega.ai/plugin/provider/helm"
   abiVersion: v1alpha1
@@ -375,7 +392,7 @@ spec:
     - helm
   exports:
     - name: render_node
-`+runtimeBlock)
+`, version)+runtimeBlock)
 	// Record the machine-owned host-function set before publishing, mirroring the
 	// author workflow: publish is verify-read-only and halts on an out-of-sync
 	// record.
@@ -466,12 +483,13 @@ func writeProviderPluginWithContract(t *testing.T, specTail string) (entityPath,
 		t.Fatalf("write provider guest .wasm: %v", err)
 	}
 	entityPath = filepath.Join(root, "helm-plugin.yaml")
-	writeEntityFixture(t, entityPath, `apiVersion: aggrega.ai/v1alpha1
+	version := embeddedGuestVersion(t, largeGuestURI(t))
+	writeEntityFixture(t, entityPath, fmt.Sprintf(`apiVersion: aggrega.ai/v1alpha1
 kind: Plugin
 metadata:
   name: helm-renderer
   pluginType: provider
-  version: "0.4.1"
+  version: %q
 spec:
   plugin: "oci://hub.aggrega.ai/plugin/provider/helm"
   abiVersion: v1alpha1
@@ -479,7 +497,7 @@ spec:
     - helm
   exports:
     - name: render_node
-`+specTail)
+`, version)+specTail)
 	// Record the machine-owned host-function set before publishing, mirroring the
 	// author workflow: publish is verify-read-only and halts on an out-of-sync
 	// record.

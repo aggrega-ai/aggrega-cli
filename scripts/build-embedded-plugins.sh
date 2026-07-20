@@ -34,10 +34,11 @@ MANIFEST="internal/wasm/embedded/embedded-plugins.tsv"
 EMBED_DIR="internal/wasm/embedded/plugins"
 [ -f "$MANIFEST" ] || { echo "build-embedded-plugins: manifest not found: $MANIFEST" >&2; exit 1; }
 
-# Build-provenance stamps, computed once and shared by every entry so a single
-# rebuild pass stamps a consistent version across all guests.
-_ver="$(git describe --tags --always --dirty 2>/dev/null || echo dev)"; _ver="${_ver#v}"
-_sha="$(git rev-parse --short HEAD 2>/dev/null || echo unknown)"
+# Build-provenance stamps (_ver, _sha) from the one shared recipe, computed once
+# and shared by every entry so a single rebuild pass stamps a consistent version
+# across all guests — the same version the shipped binary and the plugin-entity
+# generator derive.
+. scripts/lib/build-version.sh
 
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT

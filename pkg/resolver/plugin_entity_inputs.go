@@ -25,6 +25,8 @@ import (
 // zero claim that cross-checks as a no-op. The host-function record is the
 // entity's runtime block (nil when it declares none). The command mirror and
 // curated surface are mechanical field projections preserving declared order.
+// The version is the entity's metadata.version, carried in for exact-string
+// cross-check against the binary's describe() build-provenance version.
 //
 // The describe-load memory cap is deliberately not assembled here: it is caller
 // policy — the CLI's platform-default headroom versus an entity's declared
@@ -43,6 +45,7 @@ func PluginEntityInputs(entity types.Plugin) *wasm.EntityInputs {
 		CommandMirror:  entityCommandMirror(entity),
 		HostFunctions:  hostFunctions,
 		CuratedSurface: entityCuratedSurface(entity),
+		Version:        entity.Metadata.Version,
 	}
 }
 

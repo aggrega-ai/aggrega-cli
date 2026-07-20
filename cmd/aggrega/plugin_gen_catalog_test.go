@@ -46,6 +46,25 @@ spec:
 	}
 }
 
+// embeddedGuestVersion returns the describe() self-report version an embedded
+// guest carries — the single source the generator stamps onto its entity and
+// uses in the output path.
+func embeddedGuestVersion(t *testing.T, uri string) string {
+	t.Helper()
+	raw, ok := embedded.LookupDescriptor(uri)
+	if !ok {
+		t.Fatalf("no embedded descriptor for %s (build the guests first)", uri)
+	}
+	desc, _, err := entitysynth.ParseDescriptorJSON(raw)
+	if err != nil {
+		t.Fatalf("parse descriptor for %s: %v", uri, err)
+	}
+	if desc.Metadata == nil || desc.Metadata.Version == "" {
+		t.Fatalf("embedded guest %s reports no describe() version", uri)
+	}
+	return desc.Metadata.Version
+}
+
 // readGeneratedEntity reads and parses a generated Plugin entity written under
 // out/<name>/<version>/plugin.yaml.
 func readGeneratedEntity(t *testing.T, outDir, name, version string) types.Plugin {
@@ -69,8 +88,8 @@ func readGeneratedEntity(t *testing.T, outDir, name, version string) types.Plugi
 // over the real embedded guests and asserts each generated entity's contract
 // fields (pluginType, abiVersion, targets, exports, capabilities) equal the
 // guest's describe() self-report, the overlay-sourced identity and runtime are
-// carried verbatim, and the emitted version equals the binary's own build
-// version.
+// carried verbatim, and the emitted version equals the guest's describe()
+// self-report version.
 func TestGenCatalogFromEmbeddedContractFieldsMatchDescribe(t *testing.T) {
 	overlayDir := t.TempDir()
 	outDir := t.TempDir()
@@ -81,7 +100,6 @@ func TestGenCatalogFromEmbeddedContractFieldsMatchDescribe(t *testing.T) {
 		t.Fatalf("gen-catalog --from-embedded: %v", err)
 	}
 
-	wantVersion := collectVersionInfo().Version
 	for _, uri := range embedded.URIs() {
 		name := uri
 		raw, ok := embedded.LookupDescriptor(uri)
@@ -92,6 +110,10 @@ func TestGenCatalogFromEmbeddedContractFieldsMatchDescribe(t *testing.T) {
 		if err != nil {
 			t.Fatalf("parse descriptor for %s: %v", uri, err)
 		}
+		if desc.Metadata == nil || desc.Metadata.Version == "" {
+			t.Fatalf("embedded guest %s reports no describe() version", uri)
+		}
+		wantVersion := desc.Metadata.Version
 
 		entity := readGeneratedEntity(t, outDir, name, wantVersion)
 
@@ -100,7 +122,7 @@ func TestGenCatalogFromEmbeddedContractFieldsMatchDescribe(t *testing.T) {
 			bareName = bareName[i+1:]
 		}
 		if entity.Metadata.Version != wantVersion {
-			t.Errorf("%s: metadata.version = %q, want binary version %q", name, entity.Metadata.Version, wantVersion)
+			t.Errorf("%s: metadata.version = %q, want describe() version %q", name, entity.Metadata.Version, wantVersion)
 		}
 		if entity.Metadata.Name != bareName {
 			t.Errorf("%s: metadata.name = %q, want bare identity %q", name, entity.Metadata.Name, bareName)
@@ -188,9 +210,8 @@ func TestGenCatalogIdempotent(t *testing.T) {
 		t.Fatalf("second run: %v", err)
 	}
 
-	version := collectVersionInfo().Version
 	for _, uri := range embedded.URIs() {
-		rel := filepath.Join(filepath.FromSlash(uri), version, genCatalogPluginFilename)
+		rel := filepath.Join(filepath.FromSlash(uri), embeddedGuestVersion(t, uri), genCatalogPluginFilename)
 		a, err := os.ReadFile(filepath.Join(outA, rel))
 		if err != nil {
 			t.Fatalf("read A %s: %v", rel, err)
@@ -218,14 +239,16 @@ func TestGenCatalogDescriptionOmittedWhenAbsent(t *testing.T) {
 	if err := genCatalogRun(context.Background(), opts, &bytes.Buffer{}); err != nil {
 		t.Fatalf("gen-catalog: %v", err)
 	}
-	version := collectVersionInfo().Version
 	for _, uri := range embedded.URIs() {
 		raw, _ := embedded.LookupDescriptor(uri)
-		_, description, err := entitysynth.ParseDescriptorJSON(raw)
+		desc, description, err := entitysynth.ParseDescriptorJSON(raw)
 		if err != nil {
 			t.Fatalf("parse descriptor %s: %v", uri, err)
 		}
-		entity := readGeneratedEntity(t, outDir, uri, version)
+		if desc.Metadata == nil || desc.Metadata.Version == "" {
+			t.Fatalf("embedded guest %s reports no describe() version", uri)
+		}
+		entity := readGeneratedEntity(t, outDir, uri, desc.Metadata.Version)
 		if description == "" && entity.Metadata.Description != "" {
 			t.Errorf("%s: description emitted %q though guest reports none", uri, entity.Metadata.Description)
 		}
@@ -267,7 +290,7 @@ spec:
 		t.Fatalf("gen-catalog --plugin: %v", err)
 	}
 
-	version := collectVersionInfo().Version
+	version := embeddedGuestVersion(t, embedded.PublishingLinterURI)
 	entPath := filepath.Join(outDir, "linter", "publishing-linter", version, genCatalogPluginFilename)
 	entityYAML, err := os.ReadFile(entPath)
 	if err != nil {
@@ -338,7 +361,7 @@ spec:
 		t.Fatalf("gen-catalog --plugin: %v", err)
 	}
 
-	version := collectVersionInfo().Version
+	version := embeddedGuestVersion(t, guestURI)
 	entPath := filepath.Join(outDir, "provider", "helm", version, genCatalogPluginFilename)
 	entityYAML, err := os.ReadFile(entPath)
 	if err != nil {
@@ -420,12 +443,17 @@ func TestGenCatalogMergeStampsCommandMirror(t *testing.T) {
 			{Name: "greet", Description: "greet a target"},
 			{Name: "farewell", Description: "bid a target goodbye"},
 		},
+		Metadata: &wasm.PluginDescriptorMeta{Version: "v0.0.0-test"},
 	}
 	overlay := types.Plugin{Metadata: types.PluginMetadata{Name: "cli-demo"}}
 
-	entity, err := entitysynth.MergeForPublish(desc, "", nil, overlay, "v0.0.0-test", "cli/cli-demo")
+	entity, err := entitysynth.MergeForPublish(desc, "", nil, overlay, "cli/cli-demo")
 	if err != nil {
 		t.Fatalf("mergeGenCatalogEntity: %v", err)
+	}
+	// The entity version is the guest's describe() self-report version, carried verbatim.
+	if entity.Metadata.Version != "v0.0.0-test" {
+		t.Errorf("entity version = %q, want the guest's describe() version %q", entity.Metadata.Version, "v0.0.0-test")
 	}
 	if !wasm.CommandMirrorsEqual(entityCommandMirror(entity), desc.Commands) {
 		t.Errorf("entity command mirror diverges from describe(): entity records %s, describe reports %s",
@@ -437,6 +465,40 @@ func TestGenCatalogMergeStampsCommandMirror(t *testing.T) {
 			t.Errorf("commands[%d] = {%q,%q}, want {%q,%q}", i,
 				entity.Spec.Commands[i].Name, entity.Spec.Commands[i].Description, c.Name, c.Description)
 		}
+	}
+}
+
+// TestMergeForPublishRequiresGuestVersion asserts the merge halts when the
+// descriptor reports no build-provenance version — proving the entity version has
+// a single source (the guest's describe() self-report) with no fallback. A guest
+// with no metadata and a guest with an empty version string both halt.
+func TestMergeForPublishRequiresGuestVersion(t *testing.T) {
+	base := wasm.PluginDescriptor{
+		PluginType: string(wasm.PluginTypeCLI),
+		AbiVersion: wasm.ABIVersionV1Alpha1,
+		Exports:    []wasm.PluginExport{{Name: wasm.CLIRunExportName}},
+	}
+	overlay := types.Plugin{Metadata: types.PluginMetadata{Name: "cli-demo"}}
+
+	cases := []struct {
+		name string
+		meta *wasm.PluginDescriptorMeta
+	}{
+		{"no metadata", nil},
+		{"empty version", &wasm.PluginDescriptorMeta{Version: "  "}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			desc := base
+			desc.Metadata = tc.meta
+			_, err := entitysynth.MergeForPublish(desc, "", nil, overlay, "cli/cli-demo")
+			if err == nil {
+				t.Fatal("expected a halt when the descriptor reports no version")
+			}
+			if !strings.Contains(err.Error(), "version") {
+				t.Errorf("error = %v, want a missing-version halt", err)
+			}
+		})
 	}
 }
 
@@ -503,7 +565,7 @@ spec:
 		t.Errorf("error = %v, want a workloadSchema-invalid halt", err)
 	}
 	// The invalid entity must not have been written.
-	version := collectVersionInfo().Version
+	version := embeddedGuestVersion(t, uri)
 	path := filepath.Join(outDir, filepath.FromSlash(name), version, genCatalogPluginFilename)
 	if _, statErr := os.Stat(path); statErr == nil {
 		t.Errorf("invalid entity was written to %s despite the guard", path)

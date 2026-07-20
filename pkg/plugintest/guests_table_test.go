@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm/embedded"
+	"github.com/aggrega-ai/aggrega-cli/internal/wasm/entitysynth"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/plugintest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
@@ -140,12 +141,27 @@ func TestValidateEntity_Mutator(t *testing.T) {
 	if !ok || len(b) == 0 {
 		t.Fatalf("embedded.Lookup(%q) = (%d bytes, %v), want a non-empty hit", uri, len(b), ok)
 	}
+	// The entity's authored metadata.version must equal what the guest reports
+	// through describe(); the publish cross-check halts on a mismatch. Read the
+	// guest's self-reported version so the fixture tracks the build stamp rather
+	// than hard-coding a string that drifts from the embedded binary.
+	descRaw, ok := embedded.LookupDescriptor(uri)
+	if !ok {
+		t.Fatalf("embedded.LookupDescriptor(%q) returned no descriptor", uri)
+	}
+	desc, _, err := entitysynth.ParseDescriptorJSON(descRaw)
+	if err != nil {
+		t.Fatalf("parse descriptor for %q: %v", uri, err)
+	}
+	if desc.Metadata == nil || desc.Metadata.Version == "" {
+		t.Fatalf("embedded guest %q reports no describe() version", uri)
+	}
 	entity := types.Plugin{
 		APIVersion: "aggrega.ai/v1alpha1",
 		Kind:       "Plugin",
 		Metadata: types.PluginMetadata{
 			Name:       uri,
-			Version:    "0.1.0",
+			Version:    desc.Metadata.Version,
 			PluginType: "mutator",
 		},
 		Spec: types.PluginSpec{

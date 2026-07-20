@@ -49,6 +49,11 @@ type EntityInputs struct {
 	// set-equality against the host functions the binary actually imports.
 	HostFunctions []string
 
+	// Version is the authored metadata.version, cross-checked for exact-string
+	// equality against the binary's describe() build-provenance version so a
+	// hand-edit cannot diverge the recorded version from the binary silently.
+	Version string
+
 	// CuratedSurface is the entity's authored, curated surface, read to derive the
 	// advisory under-declaration notices (binary offers more than the entity
 	// curates).
@@ -94,9 +99,11 @@ type ValidateReport struct {
 //     every load-and-dispatch socket.
 //  2. Entity cross-checks, only when opts.Entity is non-nil: the authored
 //     capability claim against describe(), the machine-owned command mirror for
-//     full equality against the described commands, and the machine-owned
-//     host-function record for set-equality against the binary's actual imports;
-//     the advisory under-declaration notices are collected into the report.
+//     full equality against the described commands, the machine-owned
+//     host-function record for set-equality against the binary's actual imports,
+//     and the recorded metadata.version for exact-string equality against the
+//     binary's describe() build-provenance version; the advisory under-declaration
+//     notices are collected into the report.
 //
 // The load binds inert host-function stubs and never invokes an export beyond
 // describe(), so validation grants the guest no real host capability. On any
@@ -133,6 +140,15 @@ func ValidatePlugin(ctx context.Context, wasmBytes []byte, opts ValidateOptions)
 			return ValidateReport{}, fmt.Errorf(
 				"plugin %q: recorded host-function record %v does not match the .wasm imports %v: %w",
 				opts.Identity, opts.Entity.HostFunctions, derived, ErrWasmHostFunctionsStampMismatch)
+		}
+		describeVersion := ""
+		if desc.Metadata != nil {
+			describeVersion = desc.Metadata.Version
+		}
+		if opts.Entity.Version != describeVersion {
+			return ValidateReport{}, fmt.Errorf(
+				"plugin %q: recorded metadata.version %q does not match the plugin describe() version %q: %w",
+				opts.Identity, opts.Entity.Version, describeVersion, ErrWasmPluginVersionMismatch)
 		}
 		report.Notices = UnderDeclaredNotices(opts.Entity.CuratedSurface, desc)
 	}

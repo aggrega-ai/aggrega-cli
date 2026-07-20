@@ -15,13 +15,15 @@
 # single emit is not forked; this script relocates gen-catalog's per-coordinate
 # output to the flat, name-based embed layout beside the guest's describe.json.
 #
-# The build version is derived without the working-tree --dirty marker, matching
-# the hub catalog generator, so a regeneration performed with uncommitted edits
-# still stamps a clean version rather than a "-dirty" one. The overlays are
-# sourced from the sibling aggrega-hub, exactly as gen-core-plugin-catalog.sh
-# does; a hub-less checkout cannot generate the entities and this script fails
-# loudly (the embedded guests still build; only the offline entity view is
-# unavailable, the same coupling the hub-catalog generator already carries).
+# The build version is single-sourced with the shipped binary's provenance stamp
+# (scripts/lib/build-version.sh), so a generated entity's version always matches
+# the binary that embeds it. Committed embedded entities stay clean by
+# regenerating from a clean working tree — not by stripping the working-tree
+# --dirty marker. The overlays are sourced from the sibling aggrega-hub, exactly
+# as gen-core-plugin-catalog.sh does; a hub-less checkout cannot generate the
+# entities and this script fails loudly (the embedded guests still build; only
+# the offline entity view is unavailable, the same coupling the hub-catalog
+# generator already carries).
 #
 # Usage:
 #   gen-embedded-plugin-entities.sh
@@ -39,9 +41,8 @@ EMBED_DIR="internal/wasm/embedded/plugins"
 [ -f "$MANIFEST" ] || { echo "gen-embedded-plugin-entities: manifest not found: $MANIFEST" >&2; exit 1; }
 [ -d "$OVERLAY_DIR" ] || { echo "gen-embedded-plugin-entities: overlay dir not found: $OVERLAY_DIR (the sibling aggrega-hub is required to generate embedded entities)" >&2; exit 1; }
 
-echo "=== build aggrega (clean version stamp) ==="
-_ver="$(git describe --tags --always 2>/dev/null || echo dev)"; _ver="${_ver#v}"
-_sha="$(git rev-parse --short HEAD 2>/dev/null || echo unknown)"
+echo "=== build aggrega (provenance version stamp) ==="
+. scripts/lib/build-version.sh
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 BIN="$TMP/aggrega"
