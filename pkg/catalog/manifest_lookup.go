@@ -92,15 +92,23 @@ var ErrProviderBindingUnsatisfied = errors.New("plugins.providers entry names a 
 // absent from the catalog (a dangling mapping).
 var ErrNoRecipeResolved = errors.New("no recipe resolved for component/feature instance: add an explicit Manifest mapping for its type")
 
-// recipeURIKey composes the bare "name:version" URI form Manifest mapping
-// values and the closure walker use. A versionless entity keys on its bare
-// name. The catalog's identity key wraps this with the provider segment —
-// see recipeIdentityKey.
-func recipeURIKey(name, version string) string {
+// RecipeMappingURI composes the bare "name:version" URI form that Manifest
+// mapping values and the closure walker use. A versionless entity keys on its
+// bare name. It is the single home for this URI form, so a caller synthesizing
+// a Manifest mapping value (for example a standalone-render harness) produces
+// the exact string the resolver expects rather than reconstructing it.
+func RecipeMappingURI(name, version string) string {
 	if version == "" {
 		return name
 	}
 	return name + ":" + version
+}
+
+// recipeURIKey composes the bare "name:version" URI form Manifest mapping
+// values and the closure walker use. The catalog's identity key wraps this
+// with the provider segment — see recipeIdentityKey.
+func recipeURIKey(name, version string) string {
+	return RecipeMappingURI(name, version)
 }
 
 // recipeIdentityKey is the catalog's identity key for a recipe or feature

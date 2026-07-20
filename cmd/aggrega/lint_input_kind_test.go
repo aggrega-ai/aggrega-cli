@@ -17,6 +17,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/validateops"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
@@ -154,7 +155,7 @@ func wlFeatureRecipe(name, provider string, workload bool) types.FeatureRecipe {
 // workload: on helm-chart (engine ships, Synthesized=false) → flagged, with a
 // message at parity with the render gate's clause.
 func TestInputKindCapabilityErrors_FlagsWorkloadOnNonSynthesizingEngine(t *testing.T) {
-	errs := inputKindCapabilityErrors(fakeProviderPlugins, []types.Recipe{wlRecipe("api", "helm-chart", true)}, nil)
+	errs := validateops.InputKindCapabilityErrors(fakeProviderPlugins, []types.Recipe{wlRecipe("api", "helm-chart", true)}, nil)
 	if len(errs) != 1 {
 		t.Fatalf("expected 1 error for workload:+helm-chart; got %d: %v", len(errs), errs)
 	}
@@ -169,7 +170,7 @@ func TestInputKindCapabilityErrors_FlagsWorkloadOnNonSynthesizingEngine(t *testi
 // workload: on a synthesizing engine (helm, compose, and the empty-name helm
 // default) → clean.
 func TestInputKindCapabilityErrors_AllowsSynthesizingEngines(t *testing.T) {
-	errs := inputKindCapabilityErrors(fakeProviderPlugins, []types.Recipe{
+	errs := validateops.InputKindCapabilityErrors(fakeProviderPlugins, []types.Recipe{
 		wlRecipe("a", "helm", true),
 		wlRecipe("b", "compose", true),
 		wlRecipe("c", "", true),
@@ -182,7 +183,7 @@ func TestInputKindCapabilityErrors_AllowsSynthesizingEngines(t *testing.T) {
 // A non-workload Recipe on helm-chart (sourced/artifacts mode) → clean: only
 // workload: triggers the check.
 func TestInputKindCapabilityErrors_IgnoresNonWorkload(t *testing.T) {
-	errs := inputKindCapabilityErrors(fakeProviderPlugins, []types.Recipe{wlRecipe("api", "helm-chart", false)}, nil)
+	errs := validateops.InputKindCapabilityErrors(fakeProviderPlugins, []types.Recipe{wlRecipe("api", "helm-chart", false)}, nil)
 	if len(errs) != 0 {
 		t.Fatalf("non-workload recipe must not trip the check; got: %v", errs)
 	}
@@ -192,7 +193,7 @@ func TestInputKindCapabilityErrors_IgnoresNonWorkload(t *testing.T) {
 // (ContractFor ok=false) → skipped, no false positive against forward-looking
 // catalog scaffolding.
 func TestInputKindCapabilityErrors_SkipsUnknownProviders(t *testing.T) {
-	errs := inputKindCapabilityErrors(fakeProviderPlugins, []types.Recipe{
+	errs := validateops.InputKindCapabilityErrors(fakeProviderPlugins, []types.Recipe{
 		wlRecipe("b", "cloudformation", true),
 		wlRecipe("c", "eval", true),
 		wlRecipe("d", "nonsense-typo", true),
@@ -205,7 +206,7 @@ func TestInputKindCapabilityErrors_SkipsUnknownProviders(t *testing.T) {
 // workload: on terraform (engine ships, Synthesized=false) → flagged, with a
 // message naming the input kinds terraform does support (sourced, artifacts-only).
 func TestInputKindCapabilityErrors_FlagsWorkloadOnTerraform(t *testing.T) {
-	errs := inputKindCapabilityErrors(fakeProviderPlugins, []types.Recipe{wlRecipe("api", "terraform", true)}, nil)
+	errs := validateops.InputKindCapabilityErrors(fakeProviderPlugins, []types.Recipe{wlRecipe("api", "terraform", true)}, nil)
 	if len(errs) != 1 {
 		t.Fatalf("expected 1 error for workload:+terraform; got %d: %v", len(errs), errs)
 	}
@@ -219,7 +220,7 @@ func TestInputKindCapabilityErrors_FlagsWorkloadOnTerraform(t *testing.T) {
 
 // FeatureRecipe is checked on the same footing as Recipe.
 func TestInputKindCapabilityErrors_FeatureRecipe(t *testing.T) {
-	errs := inputKindCapabilityErrors(fakeProviderPlugins, nil, []types.FeatureRecipe{wlFeatureRecipe("sidecar", "helm-chart", true)})
+	errs := validateops.InputKindCapabilityErrors(fakeProviderPlugins, nil, []types.FeatureRecipe{wlFeatureRecipe("sidecar", "helm-chart", true)})
 	if len(errs) != 1 || !strings.Contains(errs[0].Error(), `FeatureRecipe "sidecar:1.0.0"`) {
 		t.Fatalf("expected 1 FeatureRecipe error; got: %v", errs)
 	}
@@ -228,7 +229,7 @@ func TestInputKindCapabilityErrors_FeatureRecipe(t *testing.T) {
 // Output order is deterministic regardless of input order (whole-catalog mode
 // ranges an unordered map).
 func TestInputKindCapabilityErrors_Deterministic(t *testing.T) {
-	errs := inputKindCapabilityErrors(fakeProviderPlugins, []types.Recipe{
+	errs := validateops.InputKindCapabilityErrors(fakeProviderPlugins, []types.Recipe{
 		wlRecipe("zeta", "helm-chart", true),
 		wlRecipe("alpha", "helm-chart", true),
 	}, nil)

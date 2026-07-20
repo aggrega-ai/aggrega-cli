@@ -7,6 +7,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/validateops"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
@@ -88,7 +89,7 @@ func TestVerifyNoOCILocationCollision(t *testing.T) {
 		"AIDatastores":   schemaLib("AIDatastores"),
 		"BaseComponents": schemaLib("BaseComponents"),
 	}}
-	if err := verifyNoOCILocationCollision(clean); err != nil {
+	if err := validateops.VerifyNoOCILocationCollision(clean); err != nil {
 		t.Fatalf("clean catalog: unexpected collision: %v", err)
 	}
 
@@ -96,7 +97,7 @@ func TestVerifyNoOCILocationCollision(t *testing.T) {
 		"AIDatastores": schemaLib("AIDatastores"),
 		"AiDatastores": schemaLib("AiDatastores"),
 	}}
-	if err := verifyNoOCILocationCollision(bad); !errors.Is(err, oci.ErrOCILocationCollision) {
+	if err := validateops.VerifyNoOCILocationCollision(bad); !errors.Is(err, oci.ErrOCILocationCollision) {
 		t.Errorf("case-variant identities should collide; got %v", err)
 	}
 }

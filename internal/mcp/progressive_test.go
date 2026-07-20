@@ -134,10 +134,13 @@ func TestDescribeCapabilitiesKindFilter(t *testing.T) {
 	if !containsStr(plugNames, "gen-catalog") {
 		t.Errorf("kind=plugin result omits gen-catalog: %v", plugNames)
 	}
-	for _, unwanted := range []string{"validate", "build"} {
-		if containsStr(plugNames, unwanted) {
-			t.Errorf("kind=plugin surfaced %q (release-only): %v", unwanted, plugNames)
-		}
+	// validate serves the plugin kind (binary and Plugin-entity scopes), so it is
+	// expected here; build remains release-only and must not surface.
+	if !containsStr(plugNames, "validate") {
+		t.Errorf("kind=plugin result omits validate (serves plugin scope): %v", plugNames)
+	}
+	if containsStr(plugNames, "build") {
+		t.Errorf("kind=plugin surfaced build (release-only): %v", plugNames)
 	}
 }
 
