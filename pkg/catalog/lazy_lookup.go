@@ -178,7 +178,47 @@ func (l *LazyLookup) AsCatalogLookup() resolver.CatalogLookup {
 		// non-native artifact's tree) resolves the same format→parser binding from
 		// the lazy backing as the eager one.
 		ParserPlugin: l.ParserPluginForFormat,
+		// PluginColocatedDirs maps each Tier-1-enumerated Plugin entity's artifact
+		// reference to its catalog directory, so the build-load cascade's co-located
+		// tier resolves a core guest from beside its catalog entity when the binary
+		// embeds none. Only catalog-directory (Tier-1) entities carry a directory;
+		// a registry-resolved (Tier-2) entity lives in a content-addressed cache
+		// slot and never appears here.
+		PluginColocatedDirs: l.pluginColocatedDirs(),
 	}
+}
+
+// pluginColocatedDirs maps each Tier-1-enumerated Plugin entity's bare-identity
+// artifact reference to the catalog directory its plugin.yaml was authored in —
+// the directory a co-located .wasm sits in beside the entity. It mirrors the
+// eager catalog's PluginColocatedDirs over the lazily-walked local set; a
+// registry-resolved (Tier-2) entity has no authored directory and is skipped.
+// The caller (AsCatalogLookup) holds l.mu. Returns nil when no local Plugin
+// entity was enumerated. On two versions of one identity, the lexicographically
+// last source path wins, so the map is deterministic regardless of map order.
+func (l *LazyLookup) pluginColocatedDirs() map[string]string {
+	l.buildRecipeIndex()
+	if len(l.plugins) == 0 {
+		return nil
+	}
+	keys := make([]string, 0, len(l.plugins))
+	for key := range l.plugins {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	dirs := make(map[string]string, len(l.plugins))
+	for _, key := range keys {
+		src, ok := l.localEntityPaths[entityBytesKey("Plugin", key)]
+		if !ok || src == "" {
+			continue
+		}
+		p := l.plugins[key]
+		dirs[p.ArtifactReference()] = filepath.Dir(src)
+	}
+	if len(dirs) == 0 {
+		return nil
+	}
+	return dirs
 }
 
 // effectiveSchema serves the composed (parent+child) schema for an
@@ -1101,6 +1141,9 @@ func (l *LazyLookup) foldRecipeShellEntity(kind string, parseData, rawBytes []by
 		foldFirstWin(l.plugins, key, e,
 			func() {
 				l.entityBytes[entityBytesKey("Plugin", e.Coordinate())] = rawBytes
+				if local {
+					l.localEntityPaths[entityBytesKey("Plugin", key)] = src
+				}
 			},
 			func() {
 				l.recordRecipeSkip(src, fmt.Errorf("duplicate wasm plugin identity %q; this file is shadowed", key))

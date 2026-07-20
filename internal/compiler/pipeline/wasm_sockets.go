@@ -89,6 +89,7 @@ func resolveVerdictSocketPluginFromCache(inputs Inputs, catalogLookup resolver.C
 	// is integrity-checked without a lockfile row.
 	r := pluginpath.Resolver{
 		SidecarDir:    inputs.WorkspaceConfig.PluginSidecarDir,
+		ColocatedDirs: catalogLookup.PluginColocatedDirs,
 		WorkspaceRoot: inputs.WorkspaceRoot,
 		CacheDir:      inputs.WorkspaceConfig.ResolvedArtifactCacheDir(),
 		Pins:          map[string]string{artifactRef: wasmDigest},
@@ -541,7 +542,7 @@ func (f parserResolverFunc) ParserPluginForFormat(format string) (types.Plugin, 
 // so a core parser embedded in the binary resolves offline with no lockfile pin.
 func parserSeam(inputs Inputs, catalogLookup resolver.CatalogLookup) (parsersocket.ParserResolver, parsersocket.ParserLoader) {
 	res := parserResolverFunc(catalogLookup.ParserPlugin)
-	cascade := buildPluginResolver(inputs).Resolve
+	cascade := buildPluginResolver(inputs, catalogLookup.PluginColocatedDirs).Resolve
 	load := func(p types.Plugin) (wasm.PluginSpec, error) {
 		resolved, err := cascade(p.ArtifactReference())
 		if err != nil {

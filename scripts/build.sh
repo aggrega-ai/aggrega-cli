@@ -140,6 +140,16 @@ if [ -d "$CLI_ROOT/../aggrega-hub" ]; then
     bash scripts/gen-embedded-plugin-entities.sh
     ok "embedded plugin entities regenerated"
   fi
+
+  # Lay down the gitignored, developer-owned co-located catalog: each core
+  # guest's .wasm beside its (byte-identical-to-embedded) Plugin entity. It is
+  # opt-in and never referenced by a committed build, so it perturbs neither the
+  # full binary here nor determinism; it exists so the aggrega-light dev binary
+  # can resolve core providers fully offline when a developer points catalog_dirs
+  # at it. Regenerated wholesale from the just-refreshed embed assets.
+  step "regenerate co-located plugin catalog (dev, gitignored)"
+  bash scripts/gen-colocated-plugin-catalog.sh
+  ok "co-located plugin catalog regenerated"
 else
   note "aggrega-hub sibling absent — overlay-consistency check and embedded plugin-entity generation skipped"
 fi

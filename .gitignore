@@ -38,6 +38,14 @@ internal/wasm/embedded/plugins/*.wasm.gz
 internal/wasm/embedded/plugins/*.describe.json
 internal/wasm/embedded/plugins/*.plugin.yaml
 
+# The co-located plugin catalog is a developer-owned, regenerated-on-build
+# convenience: each core guest's .wasm laid down beside its Plugin entity so the
+# no-embed aggrega-light dev binary resolves core providers offline. It is
+# opt-in (referenced only when a developer points catalog_dirs at it) and never
+# part of a committed build, so it stays untracked like the embed artifacts it
+# is derived from.
+/.dev-catalog/
+
 # Dependency directories (if you vendor)
 vendor/
 

@@ -13,6 +13,8 @@
 //
 //	0a embed      — bytes compiled into the CLI binary (core, version-locked)
 //	0b sidecar    — an on-disk plugin directory the operator points at
+//	0c colocated  — a .wasm laid down beside its Plugin entity in a catalog
+//	                directory (the offline path when nothing is embedded)
 //	1  local      — an explicit ./ or ../ filesystem path (or an absolute path)
 //	2  cache      — the workspace content cache (a previously-pulled artifact)
 //	3  registry   — an OCI pull (lock/pull time only; never at hermetic build)
@@ -54,11 +56,12 @@ import (
 type Tier string
 
 const (
-	TierEmbed    Tier = "embed"    // 0a
-	TierSidecar  Tier = "sidecar"  // 0b
-	TierLocal    Tier = "local"    // 1
-	TierCache    Tier = "cache"    // 2
-	TierRegistry Tier = "registry" // 3
+	TierEmbed     Tier = "embed"     // 0a
+	TierSidecar   Tier = "sidecar"   // 0b
+	TierColocated Tier = "colocated" // 0c
+	TierLocal     Tier = "local"     // 1
+	TierCache     Tier = "cache"     // 2
+	TierRegistry  Tier = "registry"  // 3
 )
 
 // ResolvedPlugin is the cascade's output: the plugin's .wasm bytes, the tier
@@ -262,6 +265,19 @@ type Resolver struct {
 	// a URI resolves to <SidecarDir>/<uri-leaf>.wasm.
 	SidecarDir string
 
+	// ColocatedDirs maps a plugin's artifact reference to the on-disk directory
+	// holding its co-located .wasm — the module laid down beside its Plugin
+	// entity in a catalog directory. It is the offline resolution path (Tier 0c)
+	// for a build that embeds no core guests: the .wasm is read from the catalog
+	// directory the entity was indexed from, at <dir>/<uri-leaf>.wasm (the same
+	// leaf mapping the sidecar tier uses). Key is the artifact reference the
+	// cascade resolves by, so the front's entity → artifact translation leaves
+	// this tier's lookup unchanged. nil or empty disables the tier; a reference
+	// absent from the map, or a missing .wasm file, is a clean miss that falls
+	// through to the next tier. The tier sits after embed, so an embedded guest
+	// always wins and this never shadows a built-in.
+	ColocatedDirs map[string]string
+
 	// WorkspaceRoot and CacheDir address the workspace content cache (Tier 2).
 	// Both empty disables the cache tier.
 	WorkspaceRoot string
@@ -330,8 +346,8 @@ const unsetMsg = "no plugin path configured. Either:\n" +
 // Resolve runs the tier cascade for uri and returns the resolved bytes. It
 // satisfies the Lookup type when bound as a method value (r.Resolve).
 //
-// Precedence is embed (0a) → sidecar (0b) → local (1) → cache (2) → registry
-// (3); the first tier that produces bytes wins. An explicit Override short-
+// Precedence is embed (0a) → sidecar (0b) → colocated (0c) → local (1) → cache
+// (2) → registry (3); the first tier that produces bytes wins. An explicit Override short-
 // circuits the cascade. When the URI carries a digest pin, the winning tier's
 // bytes are verified against it; a mismatch halts with a wrapped
 // oci.ErrFetchIntegrity. A sidecar artifact that shadows an embedded one of the
@@ -384,6 +400,19 @@ func (r Resolver) Resolve(uri string) (ResolvedPlugin, error) {
 		return r.verified(uri, embedBytes, TierEmbed)
 	}
 
+	// 0c colocated: a .wasm beside its Plugin entity in a catalog directory —
+	// the offline path when the binary embeds no core guests. It sits after the
+	// embed consume so an embedded guest always wins.
+	if len(r.ColocatedDirs) > 0 {
+		b, ok, err := r.readColocated(uri)
+		if err != nil {
+			return ResolvedPlugin{}, err
+		}
+		if ok {
+			return r.verified(uri, b, TierColocated)
+		}
+	}
+
 	// 1 local: an explicit ./ ../ or absolute filesystem path.
 	if isLocalPathRef(uri) {
 		abs := uri
@@ -428,7 +457,7 @@ func (r Resolver) Resolve(uri string) (ResolvedPlugin, error) {
 	if workspaceconfig.LooksLikeOCIURI(uri) {
 		return ResolvedPlugin{}, fmt.Errorf("plugin %q not resolvable: %s: %w", uri, ociNotWiredHint, oci.ErrFetchNotFound)
 	}
-	return ResolvedPlugin{}, fmt.Errorf("plugin %q not resolvable through any tier (embed, sidecar, local, cache, registry): %w", uri, oci.ErrFetchNotFound)
+	return ResolvedPlugin{}, fmt.Errorf("plugin %q not resolvable through any tier (embed, sidecar, colocated, local, cache, registry): %w", uri, oci.ErrFetchNotFound)
 }
 
 // verified checks bytes against the URI's digest pin when one is present, then
@@ -490,6 +519,28 @@ func (r Resolver) readSidecar(uri string) ([]byte, bool, error) {
 			return nil, false, nil
 		}
 		return nil, false, fmt.Errorf("read sidecar plugin %q at %s: %w", uri, path, err)
+	}
+	return b, true, nil
+}
+
+// readColocated reads the co-located artifact for uri — the .wasm beside its
+// Plugin entity in the catalog directory keyed by the URI's artifact reference —
+// returning (bytes, true, nil) on a hit, (nil, false, nil) on a clean miss (no
+// mapped directory, or no such file), or a wrapped error on an unreadable
+// present file. The leaf is the shared sidecarLeaf mapping, so a co-located
+// .wasm keys by the same <uri-leaf>.wasm the sidecar tier reads.
+func (r Resolver) readColocated(uri string) ([]byte, bool, error) {
+	dir, ok := r.ColocatedDirs[uri]
+	if !ok || dir == "" {
+		return nil, false, nil
+	}
+	path := filepath.Join(dir, sidecarLeaf(uri))
+	b, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, false, nil
+		}
+		return nil, false, fmt.Errorf("read colocated plugin %q at %s: %w", uri, path, err)
 	}
 	return b, true, nil
 }

@@ -1416,10 +1416,44 @@ func (c *Catalog) CatalogLookup() resolver.CatalogLookup {
 			}
 			return compactform.Schema{}, false
 		},
-		Plugin:         c.PluginByURI,
-		ProviderPlugin: c.ProviderPluginByName,
-		ParserPlugin:   c.ParserPluginForFormat,
+		Plugin:              c.PluginByURI,
+		ProviderPlugin:      c.ProviderPluginByName,
+		ParserPlugin:        c.ParserPluginForFormat,
+		PluginColocatedDirs: c.PluginColocatedDirs(),
 	}
+}
+
+// PluginColocatedDirs maps each indexed Plugin entity's bare-identity artifact
+// reference to the directory its plugin.yaml was loaded from — the directory a
+// co-located .wasm sits in beside the entity. The build-time plugin cascade's
+// co-located tier consults it, so a binary with no embedded core guests resolves
+// them from beside their catalog entities. Returns nil when no Plugin entity was
+// indexed. Keys are built through the single Plugin.ArtifactReference derivation,
+// so the tier keys by the same reference the cascade resolves by. When two
+// versions of one identity are indexed (same artifact reference, distinct
+// directories), the lexicographically last source path wins, so the map is
+// deterministic regardless of index-map iteration order.
+func (c *Catalog) PluginColocatedDirs() map[string]string {
+	if len(c.pluginSources) == 0 {
+		return nil
+	}
+	keys := make([]string, 0, len(c.pluginSources))
+	for wkey := range c.pluginSources {
+		keys = append(keys, wkey)
+	}
+	sort.Strings(keys)
+	dirs := make(map[string]string, len(c.pluginSources))
+	for _, wkey := range keys {
+		p, ok := c.Plugins[wkey]
+		if !ok {
+			continue
+		}
+		dirs[p.ArtifactReference()] = filepath.Dir(c.pluginSources[wkey])
+	}
+	if len(dirs) == 0 {
+		return nil
+	}
+	return dirs
 }
 
 // AggregateSourceFile returns the path the Aggregate entity named

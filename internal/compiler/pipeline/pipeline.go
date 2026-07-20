@@ -560,10 +560,14 @@ func RunTier4Pipeline(
 // cached bundle blob against it before the guest loads — an offline integrity
 // gate that re-runs no signature verification. The sidecar-overrides-embed
 // notice is surfaced to stderr alongside the pipeline's other mid-build
-// diagnostics.
-func buildPluginResolver(inputs Inputs) pluginpath.Resolver {
+// diagnostics. colocatedDirs is the catalog's artifact-reference → catalog-
+// directory map, feeding the co-located tier so a binary that embeds no core
+// guests resolves them from beside their catalog entities; nil at a socket with
+// no catalog access, which disables that tier.
+func buildPluginResolver(inputs Inputs, colocatedDirs map[string]string) pluginpath.Resolver {
 	r := pluginpath.Resolver{
 		SidecarDir:    inputs.WorkspaceConfig.PluginSidecarDir,
+		ColocatedDirs: colocatedDirs,
 		WorkspaceRoot: inputs.WorkspaceRoot,
 		CacheDir:      inputs.WorkspaceConfig.ResolvedArtifactCacheDir(),
 		OverrideLog:   func(msg string) { fmt.Fprintf(os.Stderr, "  plugin: %s\n", msg) },
@@ -598,7 +602,7 @@ func buildPluginResolver(inputs Inputs) pluginpath.Resolver {
 // ErrPluginEntityNotFound. This is the same entity-front the linter's
 // workspace-config path binds, so the entity → artifact linkage is single-sourced.
 func buildEntityPluginLookup(inputs Inputs, catalogLookup resolver.CatalogLookup) pluginpath.Lookup {
-	cascade := buildPluginResolver(inputs).Resolve
+	cascade := buildPluginResolver(inputs, catalogLookup.PluginColocatedDirs).Resolve
 	return pluginpath.EntityLookup(func(uri string) (string, *pluginpath.PluginContractClaim, *pluginpath.PluginRuntimeLimits, *[]pluginpath.PluginCommandMirror, bool) {
 		if catalogLookup.Plugin == nil {
 			return "", nil, nil, nil, false
