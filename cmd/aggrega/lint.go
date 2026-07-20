@@ -347,7 +347,11 @@ func lintRun(cfg lintConfig) error {
 	parentJSON, _ := resolveParent(header, wsCfg, cfg.EntityPath, cfg.DiagOut)
 
 	inputs := buildRuleInputs(header.Kind, proposedJSON, previousJSON, parentJSON, policies, cfg.EntityPath, prePublish)
-	rawFindings, err := validator.DispatchPublishingLinterBatch(pluginSpec, inputs)
+	export := ""
+	if len(wsCfg.Plugins.Linter) > 0 {
+		export = wsCfg.Plugins.Linter[0].Function
+	}
+	rawFindings, err := validator.DispatchPublishingLinterBatch(pluginSpec, export, inputs)
 	if err != nil {
 		return fmt.Errorf("aggrega lint: dispatch: %w", err)
 	}

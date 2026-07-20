@@ -225,7 +225,7 @@ func dispatchAndCheckRule(t *testing.T, pluginPath string, c participationCase) 
 	if err != nil {
 		t.Fatalf("read plugin %s: %v", pluginPath, err)
 	}
-	findings, err := validator.DispatchPublishingLinter(wasm.PluginSpec{Name: "publishing-linter", Bytes: pluginBytes}, input)
+	findings, err := validator.DispatchPublishingLinter(wasm.PluginSpec{Name: "publishing-linter", Bytes: pluginBytes}, "", input)
 	if err != nil {
 		t.Fatalf("DispatchPublishingLinter(%s): %v", c.ruleID, err)
 	}
@@ -353,7 +353,7 @@ func dispatchAllAndCollectRuleIDs(t *testing.T, pluginPath string, yamlBytes []b
 		if ruleID == "category-matches-directory" {
 			input.SourcePath = entityPath
 		}
-		findings, err := validator.DispatchPublishingLinter(wasm.PluginSpec{Name: "publishing-linter", Bytes: pluginBytes}, input)
+		findings, err := validator.DispatchPublishingLinter(wasm.PluginSpec{Name: "publishing-linter", Bytes: pluginBytes}, "", input)
 		if err != nil {
 			t.Fatalf("dispatch %s: %v", ruleID, err)
 		}
@@ -391,7 +391,7 @@ func TestPluginDefaultLimits(t *testing.T) {
 			Proposed:   proposedJSON,
 			Policies:   buildParticipationPolicies(nil),
 		}
-		findings, err := validator.DispatchPublishingLinter(wasm.PluginSpec{Name: "publishing-linter", Bytes: pluginBytes}, input)
+		findings, err := validator.DispatchPublishingLinter(wasm.PluginSpec{Name: "publishing-linter", Bytes: pluginBytes}, "", input)
 		if err != nil {
 			t.Fatalf("DispatchPublishingLinter: %v", err)
 		}

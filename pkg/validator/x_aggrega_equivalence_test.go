@@ -229,7 +229,7 @@ func TestXAggregaWalkerAndRuleProduceEquivalentFindings(t *testing.T) {
 
 			// Drive Wasm rule via Extism through DispatchPublishingLinter.
 			proposed := buildProposedJSON(entityName, schemaJSON)
-			wasmRaw, err := DispatchPublishingLinter(wasm.PluginSpec{Name: "publishing-linter", Bytes: pluginBytes}, LinterInput{
+			wasmRaw, err := DispatchPublishingLinter(wasm.PluginSpec{Name: "publishing-linter", Bytes: pluginBytes}, "", LinterInput{
 				RuleID:     "x-aggrega-discouragement",
 				EntityKind: "Component",
 				Proposed:   proposed,

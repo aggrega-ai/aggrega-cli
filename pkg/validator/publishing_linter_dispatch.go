@@ -17,11 +17,13 @@ import (
 // single-sourcing the wire shape with the portable guest codec in aggrega-abi
 // and the PDKs. This file carries the dispatch behaviour that consumes them.
 
-// lintExportName is the publishing-linter's rule-evaluation export.
+// lintExportName is the publishing-linter's default rule-evaluation export.
 // It carries the lint_ prefix the shared describe() gate requires of a
 // linter plugin's minimum export; the host dispatches every rule
-// invocation to this single export, selecting the rule via
-// LinterInput.RuleID rather than per-rule exports.
+// invocation to a single export, selecting the rule via
+// LinterInput.RuleID rather than per-rule exports. The dispatch export is
+// this default unless the linter attachment names a per-attachment override,
+// which the caller threads through as the dispatchers' export argument.
 const lintExportName = "lint_rules"
 
 // DispatchPublishingLinter invokes the publishing-linter Wasm plugin
@@ -42,7 +44,14 @@ const lintExportName = "lint_rules"
 // the load gate's describe()-vs-entity cross-check, and spec's caps bound the
 // plugin's memory and per-call wall time. Returns a wrapped error on
 // loader/gate failure, plugin call failure, or output unmarshal failure.
-func DispatchPublishingLinter(spec wasm.PluginSpec, input LinterInput) ([]LinterFinding, error) {
+//
+// export is the entry function to dispatch to; an empty export selects the
+// socket's default (lintExportName), mirroring a linter attachment that names
+// no per-attachment override.
+func DispatchPublishingLinter(spec wasm.PluginSpec, export string, input LinterInput) ([]LinterFinding, error) {
+	if export == "" {
+		export = lintExportName
+	}
 	payload, err := json.Marshal(input)
 	if err != nil {
 		return nil, fmt.Errorf("publishing_linter: marshal input: %w", err)
@@ -60,9 +69,9 @@ func DispatchPublishingLinter(spec wasm.PluginSpec, input LinterInput) ([]Linter
 	}
 	defer plugin.Close(ctx)
 
-	out, err := wasm.InvokeExport(ctx, plugin, desc, lintExportName, payload)
+	out, err := wasm.InvokeExport(ctx, plugin, desc, export, payload)
 	if err != nil {
-		return nil, fmt.Errorf("publishing_linter: call %s: %w", lintExportName, err)
+		return nil, fmt.Errorf("publishing_linter: call %s: %w", export, err)
 	}
 
 	var output LinterOutput
@@ -90,7 +99,14 @@ func DispatchPublishingLinter(spec wasm.PluginSpec, input LinterInput) ([]Linter
 // spec.Contract arms the load gate's describe()-vs-entity cross-check (fired
 // once in LoadAndDescribe), and spec's caps bound each per-input Call's memory
 // and wall time.
-func DispatchPublishingLinterBatch(spec wasm.PluginSpec, inputs []LinterInput) ([][]LinterFinding, error) {
+//
+// export is the entry function to dispatch to; an empty export selects the
+// socket's default (lintExportName), mirroring a linter attachment that names
+// no per-attachment override.
+func DispatchPublishingLinterBatch(spec wasm.PluginSpec, export string, inputs []LinterInput) ([][]LinterFinding, error) {
+	if export == "" {
+		export = lintExportName
+	}
 	// The linter socket only runs linter-typed guests, so the load gate is told
 	// to expect one; a guest that self-reports any other kind halts the load.
 	spec.PluginType = wasm.PluginTypeLinter
@@ -109,9 +125,9 @@ func DispatchPublishingLinterBatch(spec wasm.PluginSpec, inputs []LinterInput) (
 		if err != nil {
 			return nil, fmt.Errorf("publishing_linter: marshal input[%d]: %w", i, err)
 		}
-		out, err := wasm.InvokeExport(ctx, plugin, desc, lintExportName, payload)
+		out, err := wasm.InvokeExport(ctx, plugin, desc, export, payload)
 		if err != nil {
-			return nil, fmt.Errorf("publishing_linter: call %s input[%d]: %w", lintExportName, i, err)
+			return nil, fmt.Errorf("publishing_linter: call %s input[%d]: %w", export, i, err)
 		}
 		var output LinterOutput
 		if err := json.Unmarshal(out, &output); err != nil {

@@ -114,6 +114,10 @@ func lintConventionsFiles(rw *workspaceconfig.ResolvedWorkspace, catalogFlagDirs
 	}
 	pluginSpec := resolver.PluginSpec("publishing-linter", resolvedPlugin)
 	policies := effectivePolicies(wsCfg.Lint.PublishingDiscipline, func(_ string, ws bool) bool { return ws })
+	export := ""
+	if len(wsCfg.Plugins.Linter) > 0 {
+		export = wsCfg.Plugins.Linter[0].Function
+	}
 
 	findingCount := 0
 	for _, path := range paths {
@@ -127,7 +131,7 @@ func lintConventionsFiles(rw *workspaceconfig.ResolvedWorkspace, catalogFlagDirs
 		}
 		parentJSON, _ := resolveParent(header, wsCfg, path, diagOut)
 		inputs := buildRuleInputs(header.Kind, proposedJSON, nil, parentJSON, policies, path, false)
-		rawFindings, err := validator.DispatchPublishingLinterBatch(pluginSpec, inputs)
+		rawFindings, err := validator.DispatchPublishingLinterBatch(pluginSpec, export, inputs)
 		if err != nil {
 			return fmt.Errorf("aggrega lint: dispatch %s: %w", path, err)
 		}
