@@ -206,6 +206,18 @@ func (s *Server) runTier4Validation(ctx context.Context, file string, content []
 		})
 	}
 
+	// Input-kind capability errors — computed after the pipeline, this class
+	// keeps serve's verdict inclusive of an input-kind failure so the daemon
+	// reaches the same verdict as the other front ends.
+	for _, e := range vr.InputKindErrors {
+		diags = append(diags, Diagnostic{
+			Line:     1,
+			Column:   1,
+			Severity: "error",
+			Message:  "Dependencies: input-kind: " + e.Error(),
+		})
+	}
+
 	return diags
 }
 

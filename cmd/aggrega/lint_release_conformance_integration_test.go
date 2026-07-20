@@ -6,10 +6,13 @@
 package main
 
 import (
-	"os"
+	"bytes"
+	"io"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/aggrega-ai/aggrega-cli/internal/compilerops"
 )
 
 // composeRecipe returns a minimal compose Recipe implementing the given component
@@ -164,15 +167,20 @@ spec:
 			writeWorkspaceConfig(t, ws, "workspace:\n  catalog_dirs:\n    - "+cd+"\n    - "+std+"\n")
 			t.Chdir(ws)
 
-			err := validateRelease(nil, "release.yaml", nil, os.Stderr, os.Stdout)
+			var diag bytes.Buffer
+			err := validateRelease(nil, "release.yaml", nil, compilerops.VerbosityDetailed, &diag, io.Discard)
 			if tc.wantErr && err == nil {
 				t.Fatalf("%s: expected a value-conformance error; got nil", tc.name)
 			}
 			if !tc.wantErr && err != nil {
 				t.Fatalf("%s: expected conformance to pass; got %v", tc.name, err)
 			}
-			if tc.wantErr && !strings.Contains(err.Error(), "conformance") {
-				t.Errorf("%s: error should be a value-conformance failure; got %v", tc.name, err)
+			// The value-conformance violation surfaces as a diagnostic naming the
+			// offending values pillar; the verdict error carries the diagnostic
+			// count. Assert the diagnostic itself identifies a values-pillar-vs-
+			// schema conformance failure.
+			if tc.wantErr && !strings.Contains(diag.String(), "does not conform to the Component schema") {
+				t.Errorf("%s: expected a values-conformance diagnostic; got err=%v diagnostics:\n%s", tc.name, err, diag.String())
 			}
 		})
 	}

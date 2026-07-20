@@ -9,6 +9,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/aggrega-ai/aggrega-cli/internal/compilerops"
 )
 
 // TestIntegration_LintRelease_ClosureScoped exercises `aggrega lint --release`
@@ -37,7 +39,7 @@ func TestIntegration_LintRelease_ClosureScoped(t *testing.T) {
 	t.Chdir(ws)
 
 	// Clean closure → exit 0.
-	if err := validateRelease(nil, "release-compose.yaml", nil, os.Stderr, os.Stdout); err != nil {
+	if err := validateRelease(nil, "release-compose.yaml", nil, compilerops.VerbosityDetailed, os.Stderr, os.Stdout); err != nil {
 		t.Fatalf("lint --release over a clean closure must pass; got %v", err)
 	}
 
@@ -57,7 +59,7 @@ spec:
       storage:
         $ref: "Nonexistent#/schemas/Storage"
 `)
-	if err := validateRelease(nil, "release-compose.yaml", nil, os.Stderr, os.Stdout); err != nil {
+	if err := validateRelease(nil, "release-compose.yaml", nil, compilerops.VerbosityDetailed, os.Stderr, os.Stdout); err != nil {
 		t.Errorf("an out-of-closure broken entity must not fail closure-scoped lint --release; got %v", err)
 	}
 

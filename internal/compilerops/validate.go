@@ -8,6 +8,7 @@ import (
 	"errors"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline"
+	"github.com/aggrega-ai/aggrega-cli/internal/validateops"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
@@ -38,30 +39,61 @@ type ValidateInputs struct {
 // non-nil PillarError means the closure-scoped schema-pillar gate stopped it;
 // otherwise Tier4 and RunErr carry the Steps 1-4 pipeline outcome and
 // ResolutionFindings carries the resolution-completeness findings over the built
-// IR graph. Each field's producer is single-sourced here so every front end maps
-// the same outcome into its own diagnostics.
+// IR graph.
+//
+// InputKindErrors is an additional error class computed after the pipeline gates
+// (only when the extends and pillar gates both passed): each entry names a
+// closure Recipe or FeatureRecipe whose synthesized workload targets a provider
+// whose serving plugin cannot synthesize — an early, non-authoritative detector
+// whose entries contribute to a non-zero verdict alongside the pipeline
+// diagnostics.
+//
+// LintWarnings and NarrowingWarnings are advisory, exit-code-neutral lines: the
+// schema-pillar-overlap advisories for the closure's Components and Features, and
+// the narrowing-on-extend advisories accumulated while composing the closure's
+// extends chains. A caller surfaces them informationally; they never change the
+// verdict.
+//
+// Each field's producer is single-sourced here so every front end maps the same
+// outcome into its own diagnostics.
 type ValidateResult struct {
 	ClosureExtendsErrors []error
 	PillarError          error
 	Tier4                *pipeline.Tier4Result
 	RunErr               error
 	ResolutionFindings   []error
+	InputKindErrors      []error
+	LintWarnings         []string
+	NarrowingWarnings    []string
 }
 
 // Validate runs the semantic-validation core against explicit inputs: the
 // closure-scoped extends gate, the closure-scoped schema-pillar gate, the
-// Steps 1-4 pipeline (resolve, topology, IR, analyse), and the
-// resolution-completeness findings over the built IR graph. It stops at the
-// first gate that fails and returns a discriminated result the caller maps into
-// positioned diagnostics; it produces no diagnostics itself.
+// Steps 1-4 pipeline (resolve, topology, IR, analyse), the
+// resolution-completeness findings over the built IR graph, the closure-scoped
+// input-kind capability check, and the exit-code-neutral advisory lines. It
+// stops at the first of the extends and pillar gates that fails and returns a
+// discriminated result the caller maps into positioned diagnostics; it produces
+// no diagnostics itself.
 //
 // The extends and pillar gates read through the request-scoped view, so an
 // in-closure entity that a drifted cache slot skipped is reported rather than
 // self-healed via a registry re-fetch. Only the entities the Release reaches
 // are validated; a broken out-of-closure entity is never validated here.
 //
+// When the extends and pillar gates both pass, the pipeline runs and its
+// diagnostics, the resolution-completeness findings, the input-kind capability
+// errors, and the advisory lines are all populated on the result — the pipeline
+// diagnostics and the input-kind errors do not short-circuit one another, so a
+// caller sees the full set. The input-kind check reads the closure's Recipe and
+// FeatureRecipe entities and the provider-plugin resolver through the same
+// request-scoped view; the advisory lines read the closure-scoped overlap and
+// narrowing accumulators (the narrowings are produced by the extends gate above,
+// so they are populated before this point).
+//
 // Cancellation (the caller's shutdown drain) surfaces as a context error in
-// RunErr; resolution-completeness findings are not computed on a cancelled run.
+// RunErr; no findings are computed on a cancelled run — resolution-completeness,
+// input-kind capability, and the advisory lines all stay empty.
 func Validate(ctx context.Context, in ValidateInputs) *ValidateResult {
 	r := &ValidateResult{}
 
@@ -93,7 +125,39 @@ func Validate(ctx context.Context, in ValidateInputs) *ValidateResult {
 	if !isCancellation(runErr) && tier4 != nil && tier4.IRGraph != nil {
 		r.ResolutionFindings = in.View.ResolutionFindings(in.Manifest, tier4.IRGraph)
 	}
+
+	if !isCancellation(runErr) {
+		recipes, featureRecipes := closureRecipes(in.View, in.Closure)
+		r.InputKindErrors = validateops.InputKindCapabilityErrors(
+			in.View.AsCatalogLookup().ProviderPlugin, recipes, featureRecipes)
+		r.LintWarnings = in.View.ClosureLintWarnings(in.Closure)
+		r.NarrowingWarnings = in.View.ClosureNarrowingWarnings()
+	}
 	return r
+}
+
+// closureRecipes resolves the Recipe and FeatureRecipe entities a closure reaches
+// from the closure's recorded kind-hints, for the closure-scoped input-kind
+// detector. Entities the closure classified as neither (an empty or other
+// KindHint) are not recipe-shaped and are skipped; an entry that fails to resolve
+// through the view is likewise skipped (the render-time gate remains the
+// authoritative backstop).
+func closureRecipes(view *catalog.LazyLookup, cl closure.Closure) ([]types.Recipe, []types.FeatureRecipe) {
+	var recipes []types.Recipe
+	var featureRecipes []types.FeatureRecipe
+	for _, e := range cl.Entities {
+		switch e.KindHint {
+		case "recipe":
+			if r, ok := view.RecipeByURI(e.URI); ok {
+				recipes = append(recipes, r)
+			}
+		case "feature_recipe":
+			if fr, ok := view.FeatureRecipeByURI(e.URI); ok {
+				featureRecipes = append(featureRecipes, fr)
+			}
+		}
+	}
+	return recipes, featureRecipes
 }
 
 // isCancellation reports whether err is a shutdown-drain cancellation, for

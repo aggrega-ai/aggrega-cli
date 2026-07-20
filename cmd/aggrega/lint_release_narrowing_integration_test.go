@@ -11,6 +11,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/aggrega-ai/aggrega-cli/internal/compilerops"
 )
 
 // TestIntegration_LintRelease_NarrowingAdvisory proves `aggrega lint --release`
@@ -111,7 +113,7 @@ spec:
 	t.Chdir(ws)
 
 	var buf bytes.Buffer
-	err := validateRelease(nil, "release.yaml", nil, &buf, io.Discard)
+	err := validateRelease(nil, "release.yaml", nil, compilerops.VerbosityDetailed, &buf, io.Discard)
 	out := buf.String()
 
 	// Invariant 1 / exit invariance: narrowing is advisory — lint --release still

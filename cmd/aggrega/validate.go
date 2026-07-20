@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/compilerops"
 	"github.com/aggrega-ai/aggrega-cli/internal/validateops"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
@@ -40,6 +41,7 @@ func newValidateCmd() *cobra.Command {
 	var releasePath string
 	var pluginPath string
 	var pluginType string
+	var responseFormat string
 	c := &cobra.Command{
 		Use:   "validate [entity-path]",
 		Short: "Check correctness across the catalog, a Release, or one entity",
@@ -88,7 +90,7 @@ func newValidateCmd() *cobra.Command {
 				if path != "" {
 					return fmt.Errorf("OPS_ERROR: --release is mutually exclusive with an entity argument; pass one or the other")
 				}
-				return validateRelease(rw, releasePath, catalogDirs, os.Stderr, cmd.OutOrStdout())
+				return validateRelease(rw, releasePath, catalogDirs, compilerops.ParseVerbosity(responseFormat), os.Stderr, cmd.OutOrStdout())
 			}
 			if path == "" {
 				// No entity argument → whole-catalog correctness.
@@ -102,6 +104,7 @@ func newValidateCmd() *cobra.Command {
 	c.Flags().StringVar(&releasePath, "release", "", "Path to a Release YAML to validate over its resolved dependency closure (mutually exclusive with an entity argument)")
 	c.Flags().StringVar(&pluginPath, "plugin", "", "Path to a raw .wasm to validate against its describe() self-report — the pre-publish authoring check. Alone it needs --type; with a Plugin entity argument it cross-checks the binary against the entity's declared type, capability claim, command mirror, and host-function record.")
 	c.Flags().StringVar(&pluginType, "type", "", "Plugin type for a binary-only --plugin check, verified against the binary's self-reported type. Only meaningful with --plugin; when a Plugin entity supplies the type, omit it (a disagreeing value halts).")
+	c.Flags().StringVar(&responseFormat, "response-format", compilerops.VerbosityDetailed, "Output volume for the --release scope: `detailed` (default) reports every diagnostic plus advisory lines; `concise` reports the diagnostic count and the first diagnostic only. The verdict and exit code are identical for both.")
 	return c
 }
 

@@ -7,6 +7,8 @@ import (
 	"context"
 	"encoding/json"
 	"strings"
+
+	"github.com/aggrega-ai/aggrega-cli/internal/compilerops"
 )
 
 // toolSpec is one tool the server can run: its name, the rich natural-language
@@ -85,8 +87,8 @@ type callToolResult struct {
 // assistant new to the workspace benefits from the fuller result, and a terse
 // form is an explicit opt-in.
 const (
-	responseFormatDetailed = "detailed"
-	responseFormatConcise  = "concise"
+	responseFormatDetailed = compilerops.VerbosityDetailed
+	responseFormatConcise  = compilerops.VerbosityConcise
 )
 
 // parseResponseFormat maps a client-supplied response_format value to one of the

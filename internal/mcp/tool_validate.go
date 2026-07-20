@@ -236,6 +236,7 @@ func validateReleaseScope(s *server, ctx context.Context, a validateArgs, releas
 		Release:     releasePath,
 		Valid:       len(diags) == 0,
 		Diagnostics: diags,
+		Notices:     releaseAdvisories(vr),
 	}
 	text := renderValidateText(payload, parseResponseFormat(a.ResponseFormat))
 	return textResult(text, payload)
@@ -352,7 +353,8 @@ func validateCatalogScope(s *server, a validateArgs) (*callToolResult, *rpcError
 // validateDiagnostics flattens a ValidateResult into the ordered list of
 // diagnostic strings, in the order the semantic-validation gates run:
 // closure-scoped extends, then the schema-pillar gate, then the resolve/analyze
-// pipeline, then the resolution-completeness findings. It surfaces each error
+// pipeline, then the resolution-completeness findings, then the input-kind
+// capability check computed after the pipeline. It surfaces each error
 // verbatim — the same text the CLI validation produces — so a consumer reads
 // the compiler's own message. The gate order matches the shared layer's
 // documented field order, so this is the single mapping every front end shares.
@@ -384,6 +386,23 @@ func validateDiagnostics(vr *compilerops.ValidateResult) []string {
 	for _, f := range vr.ResolutionFindings {
 		out = append(out, f.Error())
 	}
+	for _, e := range vr.InputKindErrors {
+		out = append(out, "input-kind: "+e.Error())
+	}
+	return out
+}
+
+// releaseAdvisories collects a ValidateResult's exit-code-neutral advisory lines
+// in gate order — the schema-pillar overlap advisories, then the narrowing-on-
+// extend advisories. These never change the verdict; they travel in the payload's
+// Notices field for callers and the detailed render form.
+func releaseAdvisories(vr *compilerops.ValidateResult) []string {
+	if len(vr.LintWarnings) == 0 && len(vr.NarrowingWarnings) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(vr.LintWarnings)+len(vr.NarrowingWarnings))
+	out = append(out, vr.LintWarnings...)
+	out = append(out, vr.NarrowingWarnings...)
 	return out
 }
 
@@ -394,11 +413,22 @@ func isCancellation(err error) bool {
 }
 
 // renderValidateText renders the human-readable release-scope validate result.
-// The concise form reports the count and the first diagnostic; the detailed form
-// lists all.
+// The concise form reports the count and the first diagnostic and emits no
+// advisory lines; the detailed form lists every diagnostic and then the advisory
+// notices. Verbosity governs output volume only — the payload's verdict (Valid)
+// is identical across both forms.
 func renderValidateText(p validateResultPayload, format string) string {
 	if p.Valid {
-		return fmt.Sprintf("Release %s validated clean: no diagnostics.", p.Release)
+		clean := fmt.Sprintf("Release %s validated clean: no diagnostics.", p.Release)
+		if format == responseFormatConcise || len(p.Notices) == 0 {
+			return clean
+		}
+		var b strings.Builder
+		b.WriteString(clean)
+		for _, n := range p.Notices {
+			fmt.Fprintf(&b, "\n  notice: %s", n)
+		}
+		return b.String()
 	}
 	if format == responseFormatConcise {
 		return fmt.Sprintf("Release %s has %d validation diagnostic(s). First: %s",
@@ -408,6 +438,9 @@ func renderValidateText(p validateResultPayload, format string) string {
 	fmt.Fprintf(&b, "Release %s has %d validation diagnostic(s):\n", p.Release, len(p.Diagnostics))
 	for i, d := range p.Diagnostics {
 		fmt.Fprintf(&b, "  %d. %s\n", i+1, d)
+	}
+	for _, n := range p.Notices {
+		fmt.Fprintf(&b, "  notice: %s\n", n)
 	}
 	return strings.TrimRight(b.String(), "\n")
 }
