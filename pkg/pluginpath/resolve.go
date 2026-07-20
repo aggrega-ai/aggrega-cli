@@ -254,18 +254,19 @@ var ErrPluginBundleDigestMismatch = errors.New("cached signature bundle does not
 type Lookup func(uri string) (ResolvedPlugin, error)
 
 // Resolver carries the per-invocation resolution context the cascade consults.
-// A zero Resolver resolves only the embed and local tiers (no sidecar dir, no
-// cache, no registry, no pins) — the minimum a caller with no workspace context
-// can do. Callers populate the fields their socket has: the build path sets
-// WorkspaceRoot/CacheDir/Pins (and a nil Puller, since build is hermetic); the
-// pull path additionally sets a real Puller; the linter sets Override.
+// It is obtained only from NewResolver — its fields are unexported, so a caller
+// in another package cannot hand-populate an under-wired copy; the sole
+// construction path threads the tier sources and pin posture in one place. A
+// Resolver built from a zero ResolutionContext under PinPostureNone resolves
+// only the embed and local tiers (no sidecar dir, no cache, no registry, no
+// pins) — the minimum a caller with no workspace context can do.
 type Resolver struct {
-	// SidecarDir is the on-disk plugin directory (Tier 0b), already resolved
+	// sidecarDir is the on-disk plugin directory (Tier 0b), already resolved
 	// to an absolute path. Empty disables the sidecar tier. Layout is flat:
-	// a URI resolves to <SidecarDir>/<uri-leaf>.wasm.
-	SidecarDir string
+	// a URI resolves to <sidecarDir>/<uri-leaf>.wasm.
+	sidecarDir string
 
-	// ColocatedDirs maps a plugin's artifact reference to the on-disk directory
+	// colocatedDirs maps a plugin's artifact reference to the on-disk directory
 	// holding its co-located .wasm — the module laid down beside its Plugin
 	// entity in a catalog directory. It is the offline resolution path (Tier 0c)
 	// for a build that embeds no core guests: the .wasm is read from the catalog
@@ -276,50 +277,50 @@ type Resolver struct {
 	// absent from the map, or a missing .wasm file, is a clean miss that falls
 	// through to the next tier. The tier sits after embed, so an embedded guest
 	// always wins and this never shadows a built-in.
-	ColocatedDirs map[string]string
+	colocatedDirs map[string]string
 
-	// WorkspaceRoot and CacheDir address the workspace content cache (Tier 2).
+	// workspaceRoot and cacheDir address the workspace content cache (Tier 2).
 	// Both empty disables the cache tier.
-	WorkspaceRoot string
-	CacheDir      string
+	workspaceRoot string
+	cacheDir      string
 
-	// Pins maps a plugin URI to its lockfile digest pin (a "sha256:..."
+	// pins maps a plugin URI to its lockfile digest pin (a "sha256:..."
 	// string). When a URI has a pin, the bytes resolved at EVERY tier are
 	// verified against it and a mismatch halts. nil or a URI absent from the
 	// map disables verification for that URI — the publish-time linter path,
 	// where nothing is pinned yet.
-	Pins map[string]string
+	pins map[string]string
 
-	// PinVersions maps a plugin URI to its lockfile resolved version, used to
+	// pinVersions maps a plugin URI to its lockfile resolved version, used to
 	// address the versioned cache slot (Tier 2). Absent leaves the version
 	// empty, addressing the unversioned slot.
-	PinVersions map[string]string
+	pinVersions map[string]string
 
-	// BundleDigests maps a plugin URI to the recorded digest of its cached
+	// bundleDigests maps a plugin URI to the recorded digest of its cached
 	// signature-bundle blob (a "sha256:..." string), present only for a guest
 	// that carried a verified signature fact when it was pulled. When a URI has
-	// an entry, the cached bundle blob under CacheDir is re-hashed and compared
+	// an entry, the cached bundle blob under cacheDir is re-hashed and compared
 	// to it before the resolved bytes are returned — an offline byte/hash
 	// integrity check over the cached blob, never a signature re-verification and
 	// never a network touch. nil or a URI absent from the map disables the check
 	// for that URI: an unsigned guest (no signature fact was recorded), or the
 	// publish-time linter path where nothing is pinned yet.
-	BundleDigests map[string]string
+	bundleDigests map[string]string
 
-	// Puller performs the Tier-3 OCI pull. nil disables Tier 3 — the hermetic
+	// puller performs the Tier-3 OCI pull. nil disables Tier 3 — the hermetic
 	// build path, where a cache miss is a loud halt rather than a network
 	// fetch. The pull/lock path supplies a real puller.
-	Puller Puller
+	puller Puller
 
-	// Override is an explicit filesystem path that wins over the cascade
+	// override is an explicit filesystem path that wins over the cascade
 	// entirely (the linter's --plugin flag). Returned as local-tier bytes.
-	Override string
+	override string
 
-	// OverrideLog receives the loud notice when a sidecar artifact overrides an
+	// overrideLog receives the loud notice when a sidecar artifact overrides an
 	// embedded one of the same URI. nil discards the notice (tests, and any
 	// caller that does not surface it). The production wiring points it at the
 	// diagnostic stream.
-	OverrideLog func(string)
+	overrideLog func(string)
 }
 
 // Puller fetches a plugin artifact's bytes from a registry by URI. It is the
@@ -354,12 +355,12 @@ const unsetMsg = "no plugin path configured. Either:\n" +
 // same URI emits a loud override notice (the pinned digest still governs output,
 // so the override is determinism-safe when it matches the pin).
 func (r Resolver) Resolve(uri string) (ResolvedPlugin, error) {
-	if r.Override != "" {
-		abs := r.Override
+	if r.override != "" {
+		abs := r.override
 		if !filepath.IsAbs(abs) {
 			a, err := filepath.Abs(abs)
 			if err != nil {
-				return ResolvedPlugin{}, fmt.Errorf("resolve plugin override %q: %w", r.Override, err)
+				return ResolvedPlugin{}, fmt.Errorf("resolve plugin override %q: %w", r.override, err)
 			}
 			abs = a
 		}
@@ -379,7 +380,7 @@ func (r Resolver) Resolve(uri string) (ResolvedPlugin, error) {
 	embedBytes, isEmbedded := embedded.Lookup(uri)
 
 	// 0b sidecar.
-	if r.SidecarDir != "" {
+	if r.sidecarDir != "" {
 		b, ok, err := r.readSidecar(uri)
 		if err != nil {
 			return ResolvedPlugin{}, err
@@ -389,7 +390,7 @@ func (r Resolver) Resolve(uri string) (ResolvedPlugin, error) {
 				r.logOverride(fmt.Sprintf(
 					"plugin %q: sidecar artifact (%s) overrides the embedded built-in plugin; "+
 						"the pinned digest governs output, so the override is determinism-safe when it matches the pin",
-					uri, filepath.Join(r.SidecarDir, sidecarLeaf(uri))))
+					uri, filepath.Join(r.sidecarDir, sidecarLeaf(uri))))
 			}
 			return r.verified(uri, b, TierSidecar)
 		}
@@ -403,7 +404,7 @@ func (r Resolver) Resolve(uri string) (ResolvedPlugin, error) {
 	// 0c colocated: a .wasm beside its Plugin entity in a catalog directory —
 	// the offline path when the binary embeds no core guests. It sits after the
 	// embed consume so an embedded guest always wins.
-	if len(r.ColocatedDirs) > 0 {
+	if len(r.colocatedDirs) > 0 {
 		b, ok, err := r.readColocated(uri)
 		if err != nil {
 			return ResolvedPlugin{}, err
@@ -431,9 +432,9 @@ func (r Resolver) Resolve(uri string) (ResolvedPlugin, error) {
 	}
 
 	// 2 cache: a previously-pulled artifact in the workspace content cache.
-	if r.WorkspaceRoot != "" || r.CacheDir != "" {
-		version := r.PinVersions[uri]
-		b, err := oci.ReadCached(r.WorkspaceRoot, r.CacheDir, uri, version)
+	if r.workspaceRoot != "" || r.cacheDir != "" {
+		version := r.pinVersions[uri]
+		b, err := oci.ReadCached(r.workspaceRoot, r.cacheDir, uri, version)
 		switch {
 		case err == nil:
 			return r.verified(uri, b, TierCache)
@@ -446,8 +447,8 @@ func (r Resolver) Resolve(uri string) (ResolvedPlugin, error) {
 
 	// 3 registry: an OCI pull. nil puller = hermetic build; a cache miss here
 	// is a loud halt, not a network fetch.
-	if r.Puller != nil {
-		b, err := r.Puller.PullPlugin(context.Background(), uri)
+	if r.puller != nil {
+		b, err := r.puller.PullPlugin(context.Background(), uri)
 		if err != nil {
 			return ResolvedPlugin{}, fmt.Errorf("pull plugin %q: %w", uri, err)
 		}
@@ -468,19 +469,19 @@ func (r Resolver) Resolve(uri string) (ResolvedPlugin, error) {
 // ErrPluginBundleDigestMismatch. With no pin and no bundle digest (the linter
 // path) the bytes pass through unchecked.
 func (r Resolver) verified(uri string, b []byte, tier Tier) (ResolvedPlugin, error) {
-	if pin, ok := r.Pins[uri]; ok && pin != "" {
+	if pin, ok := r.pins[uri]; ok && pin != "" {
 		if got := digest.ContentDigest(b); got != pin {
 			return ResolvedPlugin{}, fmt.Errorf(
 				"plugin %q resolved from %s tier: content digest %s does not match lockfile pin %s: %w",
 				uri, tier, got, pin, oci.ErrFetchIntegrity)
 		}
 	}
-	if bundleDigest, ok := r.BundleDigests[uri]; ok && bundleDigest != "" {
+	if bundleDigest, ok := r.bundleDigests[uri]; ok && bundleDigest != "" {
 		if err := r.verifyCachedBundle(uri, tier, bundleDigest); err != nil {
 			return ResolvedPlugin{}, err
 		}
 	}
-	return ResolvedPlugin{Bytes: b, Tier: tier, URI: uri, Version: r.PinVersions[uri]}, nil
+	return ResolvedPlugin{Bytes: b, Tier: tier, URI: uri, Version: r.pinVersions[uri]}, nil
 }
 
 // verifyCachedBundle re-hashes the cached signature-bundle blob recorded for a
@@ -493,7 +494,7 @@ func (r Resolver) verified(uri string, b []byte, tier Tier) (ResolvedPlugin, err
 // checked here is the slot the pull path wrote; the re-hash uses the single
 // content-address spelling in digest.ContentDigest, so an intact bundle matches.
 func (r Resolver) verifyCachedBundle(uri string, tier Tier, bundleDigest string) error {
-	path := oci.SignatureBundlePath(r.CacheDir, bundleDigest)
+	path := oci.SignatureBundlePath(r.cacheDir, bundleDigest)
 	b, err := os.ReadFile(path)
 	if err != nil {
 		return fmt.Errorf(
@@ -512,7 +513,7 @@ func (r Resolver) verifyCachedBundle(uri string, tier Tier, bundleDigest string)
 // on a hit, (nil, false, nil) on a clean miss (no such file), or a wrapped
 // error on an unreadable present file.
 func (r Resolver) readSidecar(uri string) ([]byte, bool, error) {
-	path := filepath.Join(r.SidecarDir, sidecarLeaf(uri))
+	path := filepath.Join(r.sidecarDir, sidecarLeaf(uri))
 	b, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -530,7 +531,7 @@ func (r Resolver) readSidecar(uri string) ([]byte, bool, error) {
 // present file. The leaf is the shared sidecarLeaf mapping, so a co-located
 // .wasm keys by the same <uri-leaf>.wasm the sidecar tier reads.
 func (r Resolver) readColocated(uri string) ([]byte, bool, error) {
-	dir, ok := r.ColocatedDirs[uri]
+	dir, ok := r.colocatedDirs[uri]
 	if !ok || dir == "" {
 		return nil, false, nil
 	}
@@ -546,7 +547,7 @@ func (r Resolver) readColocated(uri string) ([]byte, bool, error) {
 }
 
 func (r Resolver) logOverride(msg string) {
-	if r.OverrideLog != nil {
-		r.OverrideLog(msg)
+	if r.overrideLog != nil {
+		r.overrideLog(msg)
 	}
 }

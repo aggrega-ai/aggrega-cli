@@ -18,7 +18,6 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/topology"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
-	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
@@ -47,19 +46,9 @@ func resolveSocketLookup(inputs Inputs, catalogLookup resolver.CatalogLookup, so
 	if socket.Tier() != workspaceconfig.SocketTierVerdict {
 		return base
 	}
-	return func(entityURI string) (pluginpath.ResolvedPlugin, error) {
-		resolved, err := base(entityURI)
-		if err == nil {
-			return resolved, nil
-		}
-		// Only a not-found miss on the pinned / Tier-1 path falls through to the
-		// cache-not-pin read; any other error (a drifted pin, a load fault) is real
-		// and halts.
-		if !stderrors.Is(err, pluginpath.ErrPluginEntityNotFound) && !stderrors.Is(err, oci.ErrFetchNotFound) {
-			return pluginpath.ResolvedPlugin{}, err
-		}
+	return resolver.VerdictLookup(base, func(entityURI string) (pluginpath.ResolvedPlugin, error) {
 		return resolveVerdictSocketPluginFromCache(inputs, catalogLookup, entityURI)
-	}
+	})
 }
 
 // resolveVerdictSocketPluginFromCache resolves a verdict-socket (policy / linter)
@@ -71,38 +60,13 @@ func resolveSocketLookup(inputs Inputs, catalogLookup resolver.CatalogLookup, so
 // path uses, so the .wasm is digest-checked exactly as a pinned plugin's is. The
 // entity axis is never pinned or drift-gated; only its bytes are integrity-checked.
 func resolveVerdictSocketPluginFromCache(inputs Inputs, catalogLookup resolver.CatalogLookup, entityURI string) (pluginpath.ResolvedPlugin, error) {
-	if catalogLookup.PluginFromCache == nil {
-		return pluginpath.ResolvedPlugin{}, fmt.Errorf("resolve verdict-socket plugin %q: no cache-backed catalog lookup: %w", entityURI, oci.ErrFetchNotFound)
-	}
-	entity, wasmDigest, ok, err := catalogLookup.PluginFromCache(entityURI)
-	if err != nil {
-		return pluginpath.ResolvedPlugin{}, err
-	}
-	if !ok {
-		return pluginpath.ResolvedPlugin{}, fmt.Errorf("resolve verdict-socket plugin %q: %s: %w",
-			entityURI, "not present in the content cache; run `aggrega pull` first", oci.ErrFetchNotFound)
-	}
-	artifactRef := entity.ArtifactReference()
-	// A fresh resolver keyed only by the manifest-derived .wasm digest: the pin
-	// governs the bytes (verify-on-read) but is synthesized from the cached
-	// manifest, not read from the lockfile, so the gate plugin's .wasm resolves and
-	// is integrity-checked without a lockfile row.
-	r := pluginpath.Resolver{
+	sources := resolver.VerdictPluginTierSources{
 		SidecarDir:    inputs.WorkspaceConfig.PluginSidecarDir,
 		ColocatedDirs: catalogLookup.PluginColocatedDirs,
 		WorkspaceRoot: inputs.WorkspaceRoot,
 		CacheDir:      inputs.WorkspaceConfig.ResolvedArtifactCacheDir(),
-		Pins:          map[string]string{artifactRef: wasmDigest},
-		PinVersions:   map[string]string{artifactRef: wasmDigest},
 	}
-	resolved, err := r.Resolve(artifactRef)
-	if err != nil {
-		return pluginpath.ResolvedPlugin{}, err
-	}
-	resolved.Version = entity.Metadata.Version
-	resolved.Contract = resolver.PluginContractClaim(entity)
-	resolved.Limits = resolver.PluginRuntimeLimits(entity)
-	return resolved, nil
+	return resolver.ResolveVerdictPluginFromCache(sources, catalogLookup.PluginFromCache, entityURI)
 }
 
 // invokeSocketPlugin loads a plugin through the shared describe() gate, invokes

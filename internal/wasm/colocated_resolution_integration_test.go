@@ -48,12 +48,17 @@ func TestColocatedResolvedPluginLoadsThroughGate(t *testing.T) {
 		t.Fatalf("write colocated entity: %v", err)
 	}
 
-	resolver := pluginpath.Resolver{
-		ColocatedDirs: map[string]string{ref: dir},
-		// The pin is computed from the fixture bytes at test time — never a
-		// hardcoded, version-stamped golden.
-		Pins: map[string]string{ref: digest.ContentDigest(content)},
-	}
+	resolver := pluginpath.NewResolver(
+		pluginpath.ResolutionContext{
+			ColocatedDirs: map[string]string{ref: dir},
+		},
+		pluginpath.PinPostureLockfile,
+		pluginpath.PinMaps{
+			// The pin is computed from the fixture bytes at test time — never a
+			// hardcoded, version-stamped golden.
+			Pins: map[string]string{ref: digest.ContentDigest(content)},
+		},
+	)
 	resolved, err := resolver.Resolve(ref)
 	if err != nil {
 		t.Fatalf("cascade resolve: %v", err)
@@ -87,7 +92,7 @@ func TestColocatedMissFallsThroughToExhaustionHalt(t *testing.T) {
 		t.Fatalf("mkdir: %v", err)
 	}
 
-	_, err := pluginpath.Resolver{ColocatedDirs: map[string]string{ref: emptyDir}}.Resolve(ref)
+	_, err := pluginpath.NewResolver(pluginpath.ResolutionContext{ColocatedDirs: map[string]string{ref: emptyDir}}, pluginpath.PinPostureNone, pluginpath.PinMaps{}).Resolve(ref)
 	if err == nil {
 		t.Fatal("expected an exhaustion halt on a co-located miss; got nil")
 	}

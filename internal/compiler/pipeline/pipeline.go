@@ -565,31 +565,31 @@ func RunTier4Pipeline(
 // guests resolves them from beside their catalog entities; nil at a socket with
 // no catalog access, which disables that tier.
 func buildPluginResolver(inputs Inputs, colocatedDirs map[string]string) pluginpath.Resolver {
-	r := pluginpath.Resolver{
-		SidecarDir:    inputs.WorkspaceConfig.PluginSidecarDir,
-		ColocatedDirs: colocatedDirs,
-		WorkspaceRoot: inputs.WorkspaceRoot,
-		CacheDir:      inputs.WorkspaceConfig.ResolvedArtifactCacheDir(),
-		OverrideLog:   func(msg string) { fmt.Fprintf(os.Stderr, "  plugin: %s\n", msg) },
-	}
+	var pins pluginpath.PinMaps
 	if inputs.Lockfile != nil && len(inputs.Lockfile.Plugins) > 0 {
-		pins := make(map[string]string, len(inputs.Lockfile.Plugins))
+		pinDigests := make(map[string]string, len(inputs.Lockfile.Plugins))
 		versions := make(map[string]string, len(inputs.Lockfile.Plugins))
 		bundleDigests := make(map[string]string, len(inputs.Lockfile.Plugins))
 		for _, wp := range inputs.Lockfile.Plugins {
-			pins[wp.URI] = wp.Digest
+			pinDigests[wp.URI] = wp.Digest
 			versions[wp.URI] = wp.ResolvedVersion
 			if wp.Signature != nil && wp.Signature.BundleDigest != "" {
 				bundleDigests[wp.URI] = wp.Signature.BundleDigest
 			}
 		}
-		r.Pins = pins
-		r.PinVersions = versions
+		pins.Pins = pinDigests
+		pins.PinVersions = versions
 		if len(bundleDigests) > 0 {
-			r.BundleDigests = bundleDigests
+			pins.BundleDigests = bundleDigests
 		}
 	}
-	return r
+	return pluginpath.NewResolver(pluginpath.ResolutionContext{
+		SidecarDir:    inputs.WorkspaceConfig.PluginSidecarDir,
+		ColocatedDirs: colocatedDirs,
+		WorkspaceRoot: inputs.WorkspaceRoot,
+		CacheDir:      inputs.WorkspaceConfig.ResolvedArtifactCacheDir(),
+		OverrideLog:   func(msg string) { fmt.Fprintf(os.Stderr, "  plugin: %s\n", msg) },
+	}, pluginpath.PinPostureLockfile, pins)
 }
 
 // buildEntityPluginLookup fronts the build-time artifact cascade with the

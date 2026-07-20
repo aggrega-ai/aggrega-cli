@@ -284,12 +284,16 @@ func lintRun(cfg lintConfig) error {
 	// path is artifact-direct and never consults this, so the catalog is built only
 	// for the URI path.
 	var pluginByURI func(uri string) (types.Plugin, bool)
+	var cacheResolvers []func(uri string) (pluginpath.ResolvedPlugin, error)
 	if cfg.PluginPath == "" {
 		dirs := resolveCatalogDirs(nil, wsCfg, rw.Root())
 		lazyView := catalog.NewLazyLookup(rw.Root(), wsCfg.ResolvedArtifactCacheDir(), dirs, nil)
 		pluginByURI = lazyView.PluginByURI
+		cacheResolvers = []func(uri string) (pluginpath.ResolvedPlugin, error){
+			linterCacheResolve(rw.Root(), wsCfg, lazyView.PluginFromCacheByURI),
+		}
 	}
-	resolvedPlugin, err := resolveLinterPlugin(cfg.PluginPath, wsCfg, pluginByURI)
+	resolvedPlugin, err := resolveLinterPlugin(cfg.PluginPath, wsCfg, pluginByURI, cacheResolvers...)
 	if err != nil {
 		return err
 	}
@@ -445,15 +449,23 @@ func downgradeRuleToWarning(findings []validator.LinterFinding, ruleID string) [
 //
 // The linter passes NO digest pins: it lints a not-yet-pinned proposed entity
 // at publish time, so there is no lockfile to verify the plugin against. It
-// wires no puller — the linter resolves locally (embed / sidecar / local); an
-// OCI artifact reference with nothing cached halts with the cascade's
-// not-resolvable message.
-func resolveLinterPlugin(cliFlag string, wsCfg workspaceconfig.Config, pluginByURI func(uri string) (types.Plugin, bool)) (pluginpath.ResolvedPlugin, error) {
-	cascade := pluginpath.Resolver{
+// wires no puller — the linter resolves locally (embed / sidecar / local).
+//
+// The linter socket is a verdict socket: a configured, non-embedded linter guest
+// is cached at pull but not pinned (cache-not-pin), so the configured-URI path is
+// wrapped in the shared verdict-lookup — the pinned / Tier-1 cascade is tried
+// first, and an entity-URI that misses there falls through to the pull-populated
+// content cache, read by URI and digest-checked against the cached manifest. This
+// mirrors the policy socket exactly. The optional cacheResolve is the caller's
+// workspace-root-anchored cache resolver, threaded from the command so the cache
+// read anchors at the resolved workspace root; a direct invocation that omits it
+// falls back to a working-directory-anchored resolver built from wsCfg.
+func resolveLinterPlugin(cliFlag string, wsCfg workspaceconfig.Config, pluginByURI func(uri string) (types.Plugin, bool), cacheResolve ...func(uri string) (pluginpath.ResolvedPlugin, error)) (pluginpath.ResolvedPlugin, error) {
+	cascade := pluginpath.NewResolver(pluginpath.ResolutionContext{
 		SidecarDir:  wsCfg.PluginSidecarDir,
 		Override:    cliFlag,
 		OverrideLog: func(msg string) { fmt.Fprintf(os.Stderr, "  plugin: %s\n", msg) },
-	}
+	}, pluginpath.PinPostureNone, pluginpath.PinMaps{})
 	// The --plugin override is the artifact-direct escape hatch: resolve it
 	// verbatim through the cascade override, never the entity model. The cascade
 	// override path sets no Contract/Limits, so the load gets a nil claim and
@@ -488,7 +500,44 @@ func resolveLinterPlugin(cliFlag string, wsCfg workspaceconfig.Config, pluginByU
 		}
 		return entity.ArtifactReference(), resolver.PluginContractClaim(entity), resolver.PluginRuntimeLimits(entity), resolver.PluginCommandsMirror(entity), true
 	}, cascade.Resolve, pluginpath.SurfacePermissive)
-	return front(uri)
+
+	// Verdict socket: an entity-URI that the pinned / Tier-1 cascade does not
+	// surface falls through to the pull-populated content cache (cache-not-pin),
+	// exactly as the policy socket does. The caller threads a workspace-root-
+	// anchored resolver; a direct invocation falls back to one anchored at the
+	// working directory.
+	cr := linterCacheResolveOrDefault(wsCfg, cacheResolve)
+	return resolver.VerdictLookup(front, cr)(uri)
+}
+
+// linterCacheResolve returns the verdict-socket cache-not-pin resolver the linter
+// falls back to when the pinned / Tier-1 cascade does not surface a configured,
+// non-embedded linter guest. The guest is cached at pull but never pinned, so it
+// is read from the content cache by URI and its .wasm is digest-checked against
+// the cached manifest. workspaceRoot and wsCfg anchor the content cache; cacheRead
+// reads a Plugin entity from that cache by URI.
+func linterCacheResolve(workspaceRoot string, wsCfg workspaceconfig.Config, cacheRead func(uri string) (types.Plugin, string, bool, error)) func(uri string) (pluginpath.ResolvedPlugin, error) {
+	sources := resolver.VerdictPluginTierSources{
+		SidecarDir:    wsCfg.PluginSidecarDir,
+		WorkspaceRoot: workspaceRoot,
+		CacheDir:      wsCfg.ResolvedArtifactCacheDir(),
+	}
+	return func(uri string) (pluginpath.ResolvedPlugin, error) {
+		return resolver.ResolveVerdictPluginFromCache(sources, cacheRead, uri)
+	}
+}
+
+// linterCacheResolveOrDefault picks the caller-threaded cache resolver when one
+// was supplied — the command threads a workspace-root-anchored resolver over the
+// same catalog view it already built — and otherwise constructs a fallback for a
+// direct invocation, anchored at the working directory and reading the content
+// cache the workspace config names.
+func linterCacheResolveOrDefault(wsCfg workspaceconfig.Config, cacheResolve []func(uri string) (pluginpath.ResolvedPlugin, error)) func(uri string) (pluginpath.ResolvedPlugin, error) {
+	if len(cacheResolve) > 0 && cacheResolve[0] != nil {
+		return cacheResolve[0]
+	}
+	lazyView := catalog.NewLazyLookup("", wsCfg.ResolvedArtifactCacheDir(), nil, nil)
+	return linterCacheResolve("", wsCfg, lazyView.PluginFromCacheByURI)
 }
 
 // pluginUnderDeclarationAdvisory reports, as advisory notices, where a Plugin
@@ -505,7 +554,9 @@ func pluginUnderDeclarationAdvisory(entityBytes []byte, wsCfg workspaceconfig.Co
 		fmt.Fprintf(diagOut, "under-declaration advisory: skipped (entity does not parse as a Plugin)\n")
 		return
 	}
-	cascade := pluginpath.Resolver{SidecarDir: wsCfg.PluginSidecarDir}
+	cascade := pluginpath.NewResolver(pluginpath.ResolutionContext{
+		SidecarDir: wsCfg.PluginSidecarDir,
+	}, pluginpath.PinPostureNone, pluginpath.PinMaps{})
 	resolved, err := cascade.Resolve(entity.ArtifactReference())
 	if err != nil {
 		fmt.Fprintf(diagOut, "under-declaration advisory: skipped for %q (its .wasm is not resolvable locally: %v)\n",

@@ -98,7 +98,7 @@ func TestComposeProviderEmbeddedResolutionChain(t *testing.T) {
 
 	t.Run("CleanResolveThroughEmbedTier", func(t *testing.T) {
 		refDigest := embeddedReferenceDigest(t, composeArtifactURI)
-		res := pluginpath.Resolver{Pins: map[string]string{composeArtifactURI: refDigest}}
+		res := pluginpath.NewResolver(pluginpath.ResolutionContext{}, pluginpath.PinPostureLockfile, pluginpath.PinMaps{Pins: map[string]string{composeArtifactURI: refDigest}})
 		front := entityFront(lookup, res.Resolve)
 
 		resolved, err := front(composePluginEntity)
@@ -128,7 +128,7 @@ func TestComposeProviderEmbeddedResolutionChain(t *testing.T) {
 
 	t.Run("WrongPinHaltsWithFetchIntegrity", func(t *testing.T) {
 		wrongPin := "sha256:" + strings.Repeat("0", 64)
-		res := pluginpath.Resolver{Pins: map[string]string{composeArtifactURI: wrongPin}}
+		res := pluginpath.NewResolver(pluginpath.ResolutionContext{}, pluginpath.PinPostureLockfile, pluginpath.PinMaps{Pins: map[string]string{composeArtifactURI: wrongPin}})
 		front := entityFront(lookup, res.Resolve)
 
 		_, err := front(composePluginEntity)
@@ -148,7 +148,7 @@ func TestComposeProviderEmbeddedResolutionChain(t *testing.T) {
 			// coherence bonus, skipped under -short.
 			t.Skip("skipping embedded-guest load under -short")
 		}
-		res := pluginpath.Resolver{Pins: map[string]string{composeArtifactURI: embeddedReferenceDigest(t, composeArtifactURI)}}
+		res := pluginpath.NewResolver(pluginpath.ResolutionContext{}, pluginpath.PinPostureLockfile, pluginpath.PinMaps{Pins: map[string]string{composeArtifactURI: embeddedReferenceDigest(t, composeArtifactURI)}})
 		front := entityFront(lookup, res.Resolve)
 		resolved, err := front(composePluginEntity)
 		if err != nil {

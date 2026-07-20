@@ -108,7 +108,8 @@ func lintConventionsFiles(rw *workspaceconfig.ResolvedWorkspace, catalogFlagDirs
 	wsCfg := rw.Config()
 	dirs := resolveCatalogDirs(catalogFlagDirs, wsCfg, rw.Root())
 	lazyView := catalog.NewLazyLookup(rw.Root(), wsCfg.ResolvedArtifactCacheDir(), dirs, nil)
-	resolvedPlugin, err := resolveLinterPlugin("", wsCfg, lazyView.PluginByURI)
+	resolvedPlugin, err := resolveLinterPlugin("", wsCfg, lazyView.PluginByURI,
+		linterCacheResolve(rw.Root(), wsCfg, lazyView.PluginFromCacheByURI))
 	if err != nil {
 		return err
 	}

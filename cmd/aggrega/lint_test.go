@@ -256,9 +256,11 @@ func TestResolvePluginBytesOverride(t *testing.T) {
 }
 
 // TestResolvePluginBytesOCIUnresolvable: the configured linter URI is a
-// Plugin entity URI whose bare identity is neither embedded nor cached; the
-// linter wires no puller, so the entity-front resolves the artifact through the
-// cascade and halts loudly when nothing is cached.
+// Plugin entity URI whose bare identity is neither embedded nor cached. The
+// linter is a verdict socket, so an entity-URI the pinned / Tier-1 cascade does
+// not surface falls through to the pull-populated content cache (cache-not-pin);
+// with nothing pulled it halts loudly with the not-found sentinel, exactly as the
+// policy socket does.
 func TestResolvePluginBytesOCIUnresolvable(t *testing.T) {
 	wsCfg := workspaceconfig.Default()
 	wsCfg.Plugins.Linter = []workspaceconfig.PluginRef{
@@ -274,13 +276,16 @@ func TestResolvePluginBytesOCIUnresolvable(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for uncached OCI artifact; got nil")
 	}
-	if !strings.Contains(err.Error(), "not resolvable") {
-		t.Errorf("error should describe the unresolvable OCI artifact; got: %v", err)
+	if !errors.Is(err, oci.ErrFetchNotFound) {
+		t.Errorf("error should wrap the not-found sentinel; got: %v", err)
 	}
 }
 
 // TestResolvePluginBytesEntityNotFound: a configured linter URI that matches no
-// Plugin entity halts loudly with the entity-not-found Loud Guardrail.
+// local Plugin entity. The linter is a verdict socket, so the reference falls
+// through to the pull-populated content cache (cache-not-pin) rather than halting
+// on the entity-not-found form; a URI absent from the cache too halts loudly with
+// the not-found sentinel, exactly as the policy socket does.
 func TestResolvePluginBytesEntityNotFound(t *testing.T) {
 	wsCfg := workspaceconfig.Default()
 	wsCfg.Plugins.Linter = []workspaceconfig.PluginRef{
@@ -293,8 +298,8 @@ func TestResolvePluginBytesEntityNotFound(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for a non-entity linter URI; got nil")
 	}
-	if !errors.Is(err, pluginpath.ErrPluginEntityNotFound) {
-		t.Errorf("error should be ErrPluginEntityNotFound; got: %v", err)
+	if !errors.Is(err, oci.ErrFetchNotFound) {
+		t.Errorf("error should wrap the not-found sentinel; got: %v", err)
 	}
 }
 

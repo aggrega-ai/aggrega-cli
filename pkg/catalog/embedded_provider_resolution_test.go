@@ -135,7 +135,7 @@ func TestHelmProviderEmbeddedResolutionChain(t *testing.T) {
 
 	t.Run("CleanResolveThroughEmbedTier", func(t *testing.T) {
 		refDigest := embeddedReferenceDigest(t, helmArtifactURI)
-		res := pluginpath.Resolver{Pins: map[string]string{helmArtifactURI: refDigest}}
+		res := pluginpath.NewResolver(pluginpath.ResolutionContext{}, pluginpath.PinPostureLockfile, pluginpath.PinMaps{Pins: map[string]string{helmArtifactURI: refDigest}})
 		front := entityFront(lookup, res.Resolve)
 
 		resolved, err := front(helmPluginEntity)
@@ -165,7 +165,7 @@ func TestHelmProviderEmbeddedResolutionChain(t *testing.T) {
 
 	t.Run("WrongPinHaltsWithFetchIntegrity", func(t *testing.T) {
 		wrongPin := "sha256:" + strings.Repeat("0", 64)
-		res := pluginpath.Resolver{Pins: map[string]string{helmArtifactURI: wrongPin}}
+		res := pluginpath.NewResolver(pluginpath.ResolutionContext{}, pluginpath.PinPostureLockfile, pluginpath.PinMaps{Pins: map[string]string{helmArtifactURI: wrongPin}})
 		front := entityFront(lookup, res.Resolve)
 
 		_, err := front(helmPluginEntity)
@@ -185,7 +185,7 @@ func TestHelmProviderEmbeddedResolutionChain(t *testing.T) {
 			// coherence bonus, skipped under -short.
 			t.Skip("skipping embedded-guest load under -short")
 		}
-		res := pluginpath.Resolver{Pins: map[string]string{helmArtifactURI: embeddedReferenceDigest(t, helmArtifactURI)}}
+		res := pluginpath.NewResolver(pluginpath.ResolutionContext{}, pluginpath.PinPostureLockfile, pluginpath.PinMaps{Pins: map[string]string{helmArtifactURI: embeddedReferenceDigest(t, helmArtifactURI)}})
 		front := entityFront(lookup, res.Resolve)
 		resolved, err := front(helmPluginEntity)
 		if err != nil {

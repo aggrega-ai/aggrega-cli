@@ -98,7 +98,7 @@ func fixtureSocketLookup(t *testing.T, catalogLookup resolver.CatalogLookup, uri
 			return "", nil, nil, nil, false
 		}
 		return entity.ArtifactReference(), resolver.PluginContractClaim(entity), resolver.PluginRuntimeLimits(entity), resolver.PluginCommandsMirror(entity), true
-	}, (pluginpath.Resolver{}).Resolve, pluginpath.SurfaceEntityOnly)
+	}, pluginpath.NewResolver(pluginpath.ResolutionContext{}, pluginpath.PinPostureNone, pluginpath.PinMaps{}).Resolve, pluginpath.SurfaceEntityOnly)
 	return func(uri string) (pluginpath.ResolvedPlugin, error) {
 		if b, ok := bytesByURI[uri]; ok {
 			return pluginpath.ResolvedPlugin{Bytes: b, URI: uri}, nil

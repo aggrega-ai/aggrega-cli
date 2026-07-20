@@ -97,7 +97,7 @@ func TestTerraformProviderEmbeddedResolutionChain(t *testing.T) {
 
 	t.Run("CleanResolveThroughEmbedTier", func(t *testing.T) {
 		refDigest := embeddedReferenceDigest(t, terraformArtifactURI)
-		res := pluginpath.Resolver{Pins: map[string]string{terraformArtifactURI: refDigest}}
+		res := pluginpath.NewResolver(pluginpath.ResolutionContext{}, pluginpath.PinPostureLockfile, pluginpath.PinMaps{Pins: map[string]string{terraformArtifactURI: refDigest}})
 		front := entityFront(lookup, res.Resolve)
 
 		resolved, err := front(terraformPluginEntity)
@@ -127,7 +127,7 @@ func TestTerraformProviderEmbeddedResolutionChain(t *testing.T) {
 
 	t.Run("WrongPinHaltsWithFetchIntegrity", func(t *testing.T) {
 		wrongPin := "sha256:" + strings.Repeat("0", 64)
-		res := pluginpath.Resolver{Pins: map[string]string{terraformArtifactURI: wrongPin}}
+		res := pluginpath.NewResolver(pluginpath.ResolutionContext{}, pluginpath.PinPostureLockfile, pluginpath.PinMaps{Pins: map[string]string{terraformArtifactURI: wrongPin}})
 		front := entityFront(lookup, res.Resolve)
 
 		_, err := front(terraformPluginEntity)
@@ -147,7 +147,7 @@ func TestTerraformProviderEmbeddedResolutionChain(t *testing.T) {
 			// coherence bonus, skipped under -short.
 			t.Skip("skipping embedded-guest load under -short")
 		}
-		res := pluginpath.Resolver{Pins: map[string]string{terraformArtifactURI: embeddedReferenceDigest(t, terraformArtifactURI)}}
+		res := pluginpath.NewResolver(pluginpath.ResolutionContext{}, pluginpath.PinPostureLockfile, pluginpath.PinMaps{Pins: map[string]string{terraformArtifactURI: embeddedReferenceDigest(t, terraformArtifactURI)}})
 		front := entityFront(lookup, res.Resolve)
 		resolved, err := front(terraformPluginEntity)
 		if err != nil {

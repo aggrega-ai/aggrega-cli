@@ -298,13 +298,14 @@ type pluginResolutionInputs struct {
 // the bytes cached at install; the runtime supplies no puller, so a cache miss is
 // a loud offline halt rather than a network fetch.
 func resolvePluginURI(uri string, in pluginResolutionInputs) (pluginpath.ResolvedPlugin, error) {
-	cascade := pluginpath.Resolver{
+	cascade := pluginpath.NewResolver(pluginpath.ResolutionContext{
 		SidecarDir:    in.sidecarDir,
 		WorkspaceRoot: in.workspaceRoot,
 		CacheDir:      in.cacheDir,
-		Pins:          in.pins,
-		PinVersions:   in.pins,
-	}
+	}, pluginpath.PinPostureLockfile, pluginpath.PinMaps{
+		Pins:        in.pins,
+		PinVersions: in.pins,
+	})
 	if in.pluginByURI != nil {
 		front := pluginpath.EntityLookup(func(entityURI string) (string, *pluginpath.PluginContractClaim, *pluginpath.PluginRuntimeLimits, *[]pluginpath.PluginCommandMirror, bool) {
 			entity, ok := in.pluginByURI(entityURI)

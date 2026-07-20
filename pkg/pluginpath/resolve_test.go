@@ -42,7 +42,7 @@ func TestResolveOverride(t *testing.T) {
 	if err := os.WriteFile(path, content, 0o644); err != nil {
 		t.Fatalf("write: %v", err)
 	}
-	got, err := Resolver{Override: path}.Resolve("any/uri:1.0.0")
+	got, err := Resolver{override: path}.Resolve("any/uri:1.0.0")
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
@@ -75,7 +75,7 @@ func TestEmbedCheckedFirst(t *testing.T) {
 		t.Fatalf("seed cache: %v", err)
 	}
 
-	got, err := Resolver{WorkspaceRoot: ws, CacheDir: cacheDir, PinVersions: map[string]string{uri: "1.0.0"}}.Resolve(uri)
+	got, err := Resolver{workspaceRoot: ws, cacheDir: cacheDir, pinVersions: map[string]string{uri: "1.0.0"}}.Resolve(uri)
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
@@ -130,11 +130,11 @@ func TestPrecedenceOrder(t *testing.T) {
 	writeSidecar(t, sidecarDir, uri, sidecarBytes)
 
 	base := Resolver{
-		SidecarDir:    sidecarDir,
-		WorkspaceRoot: ws,
-		CacheDir:      cacheDir,
-		PinVersions:   map[string]string{uri: "1.0.0"},
-		Puller:        stubPuller{bytes: registryBytes},
+		sidecarDir:    sidecarDir,
+		workspaceRoot: ws,
+		cacheDir:      cacheDir,
+		pinVersions:   map[string]string{uri: "1.0.0"},
+		puller:        stubPuller{bytes: registryBytes},
 	}
 
 	// 0b sidecar overrides 0a embed when both are present (the loud-logged
@@ -150,7 +150,7 @@ func TestPrecedenceOrder(t *testing.T) {
 
 	// 0a embed wins once no sidecar shadows it — and over cache + registry.
 	noSidecar := base
-	noSidecar.SidecarDir = ""
+	noSidecar.sidecarDir = ""
 	got, err = noSidecar.Resolve(uri)
 	if err != nil {
 		t.Fatalf("Resolve embed: %v", err)
@@ -171,7 +171,7 @@ func TestPrecedenceOrder(t *testing.T) {
 
 	// 3 registry wins once the cache slot is gone.
 	noCache := noSidecar
-	noCache.WorkspaceRoot = t.TempDir() // empty workspace = cache miss
+	noCache.workspaceRoot = t.TempDir() // empty workspace = cache miss
 	got, err = noCache.Resolve(uri)
 	if err != nil {
 		t.Fatalf("Resolve registry: %v", err)
@@ -193,7 +193,7 @@ func TestSidecarOverridesEmbedLogsLoudly(t *testing.T) {
 	writeSidecar(t, sidecarDir, uri, sidecarBytes)
 
 	var logged string
-	got, err := Resolver{SidecarDir: sidecarDir, OverrideLog: func(m string) { logged = m }}.Resolve(uri)
+	got, err := Resolver{sidecarDir: sidecarDir, overrideLog: func(m string) { logged = m }}.Resolve(uri)
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
@@ -215,8 +215,8 @@ func TestPinVerifyMatchAcrossTiers(t *testing.T) {
 	pin := digest.ContentDigest(content)
 
 	regGot, err := Resolver{
-		Puller: stubPuller{bytes: content},
-		Pins:   map[string]string{uri: pin},
+		puller: stubPuller{bytes: content},
+		pins:   map[string]string{uri: pin},
 	}.Resolve(uri)
 	if err != nil {
 		t.Fatalf("registry resolve: %v", err)
@@ -225,8 +225,8 @@ func TestPinVerifyMatchAcrossTiers(t *testing.T) {
 	sidecarDir := filepath.Join(t.TempDir(), "sidecar")
 	writeSidecar(t, sidecarDir, uri, content)
 	sideGot, err := Resolver{
-		SidecarDir: sidecarDir,
-		Pins:       map[string]string{uri: pin},
+		sidecarDir: sidecarDir,
+		pins:       map[string]string{uri: pin},
 	}.Resolve(uri)
 	if err != nil {
 		t.Fatalf("sidecar resolve: %v", err)
@@ -251,8 +251,8 @@ func TestPinMismatchHalts(t *testing.T) {
 	writeSidecar(t, sidecarDir, uri, []byte("DIFFERENT-bytes"))
 
 	_, err := Resolver{
-		SidecarDir: sidecarDir,
-		Pins:       map[string]string{uri: pin},
+		sidecarDir: sidecarDir,
+		pins:       map[string]string{uri: pin},
 	}.Resolve(uri)
 	if err == nil {
 		t.Fatal("expected integrity halt; got nil")
@@ -268,7 +268,7 @@ func TestNoPinSkipsVerification(t *testing.T) {
 	const uri = "core/unpinned:1.0.0"
 	sidecarDir := filepath.Join(t.TempDir(), "sidecar")
 	writeSidecar(t, sidecarDir, uri, []byte("whatever"))
-	got, err := Resolver{SidecarDir: sidecarDir}.Resolve(uri)
+	got, err := Resolver{sidecarDir: sidecarDir}.Resolve(uri)
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}

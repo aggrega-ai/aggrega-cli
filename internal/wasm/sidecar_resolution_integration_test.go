@@ -38,10 +38,11 @@ func TestSidecarResolvedPluginLoadsThroughGate(t *testing.T) {
 		t.Fatalf("write sidecar: %v", err)
 	}
 
-	resolver := pluginpath.Resolver{
-		SidecarDir: sidecarDir,
-		Pins:       map[string]string{uri: digest.ContentDigest(content)},
-	}
+	resolver := pluginpath.NewResolver(
+		pluginpath.ResolutionContext{SidecarDir: sidecarDir},
+		pluginpath.PinPostureLockfile,
+		pluginpath.PinMaps{Pins: map[string]string{uri: digest.ContentDigest(content)}},
+	)
 	resolved, err := resolver.Resolve(uri)
 	if err != nil {
 		t.Fatalf("cascade resolve: %v", err)
@@ -77,10 +78,11 @@ func TestSidecarPinMismatchHaltsBeforeLoad(t *testing.T) {
 		t.Fatalf("write sidecar: %v", err)
 	}
 
-	resolver := pluginpath.Resolver{
-		SidecarDir: sidecarDir,
-		Pins:       map[string]string{uri: digest.ContentDigest([]byte("the-real-bytes"))},
-	}
+	resolver := pluginpath.NewResolver(
+		pluginpath.ResolutionContext{SidecarDir: sidecarDir},
+		pluginpath.PinPostureLockfile,
+		pluginpath.PinMaps{Pins: map[string]string{uri: digest.ContentDigest([]byte("the-real-bytes"))}},
+	)
 	if _, err := resolver.Resolve(uri); !errors.Is(err, oci.ErrFetchIntegrity) {
 		t.Fatalf("want integrity halt at resolution; got %v", err)
 	}
@@ -99,7 +101,7 @@ func TestResolvedGarbageBytesHaltAtGate(t *testing.T) {
 		t.Fatalf("write sidecar: %v", err)
 	}
 
-	resolved, err := pluginpath.Resolver{SidecarDir: sidecarDir}.Resolve(uri)
+	resolved, err := pluginpath.NewResolver(pluginpath.ResolutionContext{SidecarDir: sidecarDir}, pluginpath.PinPostureNone, pluginpath.PinMaps{}).Resolve(uri)
 	if err != nil {
 		t.Fatalf("resolve (no pin) should succeed; got %v", err)
 	}
