@@ -312,7 +312,7 @@ func resolvePluginURI(uri string, in pluginResolutionInputs) (pluginpath.Resolve
 				return "", nil, nil, nil, false
 			}
 			return entity.ArtifactReference(), resolver.PluginContractClaim(entity), resolver.PluginRuntimeLimits(entity), resolver.PluginCommandsMirror(entity), true
-		}, cascade.Resolve)
+		}, cascade.Resolve, pluginpath.SurfacePermissive)
 		resolved, err := front(uri)
 		if err == nil {
 			return resolved, nil

@@ -40,6 +40,18 @@ var ErrDuplicateProviderTarget = errors.New("workspaceconfig: capability is boun
 // rather than surfacing later as an opaque resolve miss.
 var ErrCapabilityOnCrossCuttingSocket = errors.New("workspaceconfig: a cross-cutting socket is bound by capability but attaches by uri")
 
+// ErrInertFieldOnProviderSocket reports that a provider-socket binding sets a
+// field that has no referent on that socket — `function` or `with`. Errors
+// satisfying errors.Is(err, ErrInertFieldOnProviderSocket) carry the offending
+// capability and name the inert field. A provider drives a fixed set of
+// phase-keyed exports rather than one selectable entry, so `function` names
+// nothing on it; and provider render configuration belongs in the Recipe, not
+// the workspace provider binding, so `with` misplaces render config across the
+// domain boundary. A field with no referent on a socket is rejected at
+// authoring rather than silently dropped, so the operator learns the field is
+// inert instead of quietly seeing it ignored.
+var ErrInertFieldOnProviderSocket = errors.New("workspaceconfig: a provider socket binding sets a field with no referent on that socket")
+
 // ErrDuplicateRegistryAlias reports that a registry alias is already used by a
 // different host entry. Errors satisfying errors.Is(err, ErrDuplicateRegistryAlias)
 // carry the offending alias and the host that already holds it. A registry alias

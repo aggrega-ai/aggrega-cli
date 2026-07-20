@@ -487,7 +487,7 @@ func resolveLinterPlugin(cliFlag string, wsCfg workspaceconfig.Config, pluginByU
 			return "", nil, nil, nil, false
 		}
 		return entity.ArtifactReference(), resolver.PluginContractClaim(entity), resolver.PluginRuntimeLimits(entity), resolver.PluginCommandsMirror(entity), true
-	}, cascade.Resolve)
+	}, cascade.Resolve, pluginpath.SurfacePermissive)
 	return front(uri)
 }
 

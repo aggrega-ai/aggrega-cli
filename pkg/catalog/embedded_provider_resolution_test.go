@@ -88,7 +88,7 @@ func entityFront(lookup resolver.CatalogLookup, cascade pluginpath.Lookup) plugi
 			return "", nil, nil, nil, false
 		}
 		return p.ArtifactReference(), resolver.PluginContractClaim(p), resolver.PluginRuntimeLimits(p), resolver.PluginCommandsMirror(p), true
-	}, cascade)
+	}, cascade, pluginpath.SurfaceEntityOnly)
 }
 
 // TestHelmProviderEmbeddedResolutionChain proves the full provider→plugin→artifact

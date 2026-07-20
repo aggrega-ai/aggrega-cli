@@ -28,7 +28,7 @@ func TestEntityLookup_TranslatesEntityToArtifact(t *testing.T) {
 			return artifactURI, claim, limits, nil, true
 		}
 		return "", nil, nil, nil, false
-	}, cascade)
+	}, cascade, SurfaceEntityOnly)
 
 	res, err := front(entityURI)
 	if err != nil {
@@ -65,7 +65,7 @@ func TestEntityLookup_BareWasmHaltsLoudly(t *testing.T) {
 	// An entity lookup that finds nothing — every reference is a miss.
 	front := EntityLookup(func(uri string) (string, *PluginContractClaim, *PluginRuntimeLimits, *[]PluginCommandMirror, bool) {
 		return "", nil, nil, nil, false
-	}, cascade)
+	}, cascade, SurfaceEntityOnly)
 
 	const bareWasm = "frp-step-patch-rust.wasm"
 	_, err := front(bareWasm)
@@ -92,7 +92,7 @@ func TestEntityLookup_NilTranslatorHaltsLoudly(t *testing.T) {
 	front := EntityLookup(nil, func(uri string) (ResolvedPlugin, error) {
 		t.Fatalf("cascade must not run with a nil translator")
 		return ResolvedPlugin{}, nil
-	})
+	}, SurfaceEntityOnly)
 	_, err := front("core/frp/patch:1.0.0")
 	if !errors.Is(err, ErrPluginEntityNotFound) {
 		t.Errorf("nil translator should halt with ErrPluginEntityNotFound; got: %v", err)

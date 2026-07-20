@@ -612,7 +612,7 @@ func buildEntityPluginLookup(inputs Inputs, catalogLookup resolver.CatalogLookup
 			return "", nil, nil, nil, false
 		}
 		return entity.ArtifactReference(), resolver.PluginContractClaim(entity), resolver.PluginRuntimeLimits(entity), resolver.PluginCommandsMirror(entity), true
-	}, cascade)
+	}, cascade, pluginpath.SurfaceEntityOnly)
 }
 
 // pluginCompileRevealDelay is the wall-clock a provider-guest warm must exceed

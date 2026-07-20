@@ -336,6 +336,14 @@ func resolve(start, flagRoot string, lookup func(string) string, skipGlobal bool
 		return nil, err
 	}
 
+	// The provider socket drives a fixed set of phase-keyed exports and takes
+	// its render configuration from the Recipe, so `function` and `with` have no
+	// referent on a provider binding. Reject them at authoring on the composed
+	// list rather than silently dropping them.
+	if err := checkInertProviderFields(merged.Plugins.Providers); err != nil {
+		return nil, err
+	}
+
 	// Environment overlay: the top config layer, above the merged file cascade
 	// and below the CLI flags the command applies. A SET variable wins over the
 	// config value; an unset one falls through.
@@ -672,6 +680,34 @@ func checkCrossCuttingSocketAttach(plugins PluginsConfig) error {
 			if ref.Capability != "" {
 				return fmt.Errorf("workspaceconfig: the %s socket is bound by capability %q, but the cross-cutting sockets attach by uri: their plugin serves no capability, so a capability lookup matches nothing; attach it with `uri:` instead: %w", socket.name, ref.Capability, ErrCapabilityOnCrossCuttingSocket)
 			}
+		}
+	}
+	return nil
+}
+
+// checkInertProviderFields returns a wrapped ErrInertFieldOnProviderSocket when
+// a provider-socket binding sets a field that has no referent on that socket:
+// `function` or `with`. This enforces a general inert-by-design stance — a
+// PluginRef field with no referent on a socket is rejected at authoring rather
+// than silently dropped, so the operator learns the field is inert instead of
+// quietly seeing it ignored.
+//
+// On the provider socket both fields are inert. A provider drives a fixed set of
+// phase-keyed exports rather than one selectable entry, so `function` has no
+// entry to name; and provider render configuration belongs in the Recipe, not
+// the workspace provider binding, so `with` would misplace render config across
+// the authoring boundary. The composed provider list is walked in list order,
+// and each binding's `function` is checked before its `with`, so the wrapped
+// error names the first offending binding deterministically for a given composed
+// config. The check keys only on field presence; it never resolves, loads, or
+// describes the referenced plugin.
+func checkInertProviderFields(providers []PluginRef) error {
+	for _, ref := range providers {
+		if ref.Function != "" {
+			return fmt.Errorf("workspaceconfig: the provider socket binding for capability %q sets `function:`, but a provider drives a fixed set of phase-keyed exports rather than one selectable entry, so `function:` names nothing there; remove it: %w", ref.Capability, ErrInertFieldOnProviderSocket)
+		}
+		if ref.With != nil {
+			return fmt.Errorf("workspaceconfig: the provider socket binding for capability %q sets `with:`, but provider render configuration belongs in the Recipe, not the workspace provider binding; remove it: %w", ref.Capability, ErrInertFieldOnProviderSocket)
 		}
 	}
 	return nil

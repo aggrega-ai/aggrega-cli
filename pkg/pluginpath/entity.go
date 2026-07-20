@@ -43,13 +43,27 @@ var ErrPluginEntityNotFound = errors.New("plugin reference is not a Plugin entit
 // field) leaves the mirror unattached, so the load gate's command check is
 // skipped.
 //
+// policy is the per-surface acceptance policy applied to the reference FORM
+// before any entity translation: SurfaceEntityOnly rejects a filesystem-path or
+// artifact reference early — the pipeline-plugin surface — naming the offending
+// reference; SurfacePermissive accepts every form and lets entity translation
+// decide — the cross-cutting sockets. The form check layers with entity
+// existence: a well-formed bare entity URI that names no Plugin entity passes the
+// form gate and still halts below as not-found. Both the form rejection and the
+// not-found halt wrap ErrPluginEntityNotFound, so a caller that falls back on
+// that sentinel behaves identically whether the reference was rejected early for
+// its form or late for naming no entity.
+//
 // A reference that does not match a Plugin entity halts with
 // ErrPluginEntityNotFound, naming the offending reference and stating that a
 // Plugin entity URI is required. A nil entityToArtifact disables the entity
 // translation entirely (every reference halts as not-an-entity); a nil cascade
 // is a programming error and panics through the returned Lookup's nil call.
-func EntityLookup(entityToArtifact func(uri string) (artifactURI string, claim *PluginContractClaim, limits *PluginRuntimeLimits, commands *[]PluginCommandMirror, ok bool), cascade Lookup) Lookup {
+func EntityLookup(entityToArtifact func(uri string) (artifactURI string, claim *PluginContractClaim, limits *PluginRuntimeLimits, commands *[]PluginCommandMirror, ok bool), cascade Lookup, policy SurfacePolicy) Lookup {
 	return func(entityURI string) (ResolvedPlugin, error) {
+		if err := AcceptReferenceForm(entityURI, policy); err != nil {
+			return ResolvedPlugin{}, err
+		}
 		var artifactURI string
 		var claim *PluginContractClaim
 		var limits *PluginRuntimeLimits
