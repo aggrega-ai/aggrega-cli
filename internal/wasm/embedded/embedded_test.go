@@ -5,7 +5,50 @@
 
 package embedded
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
+)
+
+// TestContentDigestsMatchGuestDerivation asserts the embedded-identity accessor
+// reports exactly the content digest each guest derives to — the same derivation
+// every content-addressing consumer (the loader, the content-addressed caches)
+// performs on the decompressed guest bytes. Covering the full embedded set
+// (URIs), not only the entity-carrying subset, because a describe-cache entry is
+// keyed by the guest's content digest whether or not that guest ships an entity.
+// It is order-aligned with URIs so the set is deterministic.
+func TestContentDigestsMatchGuestDerivation(t *testing.T) {
+	uris := URIs()
+	got := ContentDigests()
+	if len(got) != len(uris) {
+		t.Fatalf("ContentDigests count = %d; want %d (one per embedded URI)", len(got), len(uris))
+	}
+	for i, u := range uris {
+		b, ok := Lookup(u)
+		if !ok {
+			t.Fatalf("Lookup miss for embedded URI %q", u)
+		}
+		want := digest.ContentDigest(b)
+		if got[i] != want {
+			t.Errorf("ContentDigests[%d] for %q = %q; want %q", i, u, got[i], want)
+		}
+	}
+}
+
+// TestContentDigestsDeterministic asserts repeated calls return byte-identical,
+// order-stable output (Deterministic Output invariant).
+func TestContentDigestsDeterministic(t *testing.T) {
+	a, b := ContentDigests(), ContentDigests()
+	if len(a) != len(b) {
+		t.Fatalf("length drift: %d vs %d", len(a), len(b))
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			t.Fatalf("order/content drift at %d: %q vs %q", i, a[i], b[i])
+		}
+	}
+}
 
 // TestManifestDerivedURIsAreStable pins the exact bare identities the embedded
 // set registers under. The registry keys are load-bearing: the plugin-resolution

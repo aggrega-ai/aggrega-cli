@@ -40,8 +40,9 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strings"
 	"testing"
+
+	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
 )
 
 // indexFileName is the compile-attribution index's filename under the user
@@ -85,19 +86,6 @@ type Index struct {
 // lets the slice carry the deterministic leaf-key ordering.
 type fileFormat struct {
 	Entries []Entry `json:"entries"`
-}
-
-// normalize reduces a content digest to its referrer form: the lowercase hex
-// with any "sha256:" algorithm prefix stripped.
-//
-// This MUST match the provenance index's Normalize spelling exactly, so a
-// referrer digest recorded here joins the provenance index's identity records
-// by the same key. It is copied rather than imported because the provenance
-// index depends on the wasm loader package, which in turn calls into this
-// package; importing it here would cycle. If the provenance index's spelling
-// ever changes, change this in lockstep.
-func normalize(d string) string {
-	return strings.ToLower(strings.TrimPrefix(d, "sha256:"))
 }
 
 // DefaultIndexPath returns the compile-attribution index's path under the given
@@ -185,7 +173,7 @@ func RecordGuestLeaf(path, leafKey string, size int64, guestDigest string) error
 		e := ix.byLeaf[leafKey]
 		e.Leaf = leafKey
 		e.Size = size
-		e.Referrers = union(e.Referrers, normalize(guestDigest))
+		e.Referrers = union(e.Referrers, digest.BareHex(guestDigest))
 		ix.byLeaf[leafKey] = e
 	})
 }
@@ -199,7 +187,7 @@ func RecordKernelLeaf(path, leafKey string, size int64, firstGuestDigest string)
 		e.Leaf = leafKey
 		e.Size = size
 		e.Kernel = true
-		e.Referrers = union(e.Referrers, normalize(firstGuestDigest))
+		e.Referrers = union(e.Referrers, digest.BareHex(firstGuestDigest))
 		ix.byLeaf[leafKey] = e
 	})
 }
@@ -214,7 +202,7 @@ func AddKernelReferrer(path, guestDigest string) error {
 		for _, key := range sortedKeys(ix.byLeaf) {
 			e := ix.byLeaf[key]
 			if e.Kernel {
-				e.Referrers = union(e.Referrers, normalize(guestDigest))
+				e.Referrers = union(e.Referrers, digest.BareHex(guestDigest))
 				ix.byLeaf[key] = e
 				return
 			}
@@ -242,7 +230,7 @@ func RemoveLeaves(path string, removedLeafKeys, droppedReferrers []string) error
 		}
 		drop := map[string]bool{}
 		for _, d := range droppedReferrers {
-			drop[normalize(d)] = true
+			drop[digest.BareHex(d)] = true
 		}
 		for key := range ix.byLeaf {
 			e := ix.byLeaf[key]

@@ -41,6 +41,8 @@ import (
 	"io"
 	"sort"
 	"strings"
+
+	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
 )
 
 // The embedded guests are reproducible build artifacts, not tracked files:
@@ -309,6 +311,30 @@ func URIs() []string {
 	}
 	sort.Strings(uris)
 	return uris
+}
+
+// ContentDigests returns the content digest of every embedded plugin guest, in
+// URI-sorted order. Each digest is derived on demand from the decompressed guest
+// bytes — the same derivation every content-addressing consumer performs — so a
+// caller retaining the embedded set against a content-addressed cache sees the
+// exact digests that cache addresses its entries by. It scopes the full embedded
+// set (URIs), not only the entity-carrying subset, because a describe-cache entry
+// is keyed by a guest's content digest whether or not that guest ships a
+// generated entity. It is derived here, in the one place that holds the embedded
+// bytes, so no consumer re-enumerates the embedded plugins or re-derives their
+// identity. Sorted so any consumer that enumerates it is deterministic
+// (Deterministic Output invariant).
+func ContentDigests() []string {
+	uris := URIs()
+	out := make([]string, 0, len(uris))
+	for _, u := range uris {
+		b, ok := Lookup(u)
+		if !ok {
+			continue
+		}
+		out = append(out, digest.ContentDigest(b))
+	}
+	return out
 }
 
 // mustRead reads an embedded artifact or panics. A failure means the embed

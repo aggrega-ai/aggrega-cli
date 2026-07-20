@@ -26,11 +26,11 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strings"
 	"testing"
 	"time"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
+	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
 )
 
 // indexFileName is the provenance index's filename under the user cache root,
@@ -76,14 +76,6 @@ type Index struct {
 // lets the slice carry the deterministic digest ordering.
 type fileFormat struct {
 	Entries []Entry `json:"entries"`
-}
-
-// Normalize reduces a content digest to its index-key form: the lowercase hex
-// with any "sha256:" algorithm prefix stripped. It is the single home of the
-// prefix-free spelling the provenance index and the cache enumeration both key
-// on, so both sides normalize identically before any comparison.
-func Normalize(d string) string {
-	return strings.ToLower(strings.TrimPrefix(d, "sha256:"))
 }
 
 // DefaultIndexPath returns the provenance index's path under the user cache root
@@ -152,7 +144,7 @@ func (ix Index) Entries() []Entry {
 // than propagated, since the index is re-derivable metadata. An empty normalized
 // digest is a no-op.
 func Upsert(path, rawDigest string, id Identity, sizeGuestBytes int64, now time.Time) error {
-	key := Normalize(rawDigest)
+	key := digest.BareHex(rawDigest)
 	if key == "" {
 		return nil
 	}

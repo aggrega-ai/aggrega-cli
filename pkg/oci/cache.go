@@ -9,6 +9,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
 )
 
 // CachePath returns the cache slot for the given URI + version under
@@ -81,12 +83,13 @@ func IndexBasePath(workspaceRoot, cacheDir, host string) string {
 //
 //	<cacheDir>/signatures/<digest>.bundle
 //
-// The digest's ":" separator is replaced with "-" so the blob name is a single
-// stable filesystem segment. It is the one site that spells the bundle-blob
-// location, shared by the pull path that writes each verified signature bundle
-// and the build path that re-hashes the cached blob against its recorded digest.
+// The digest is rendered as a single filesystem segment via the shared
+// digest-segment spelling (digest.Segment), so the blob name is a stable
+// single segment. It is the one site that spells the bundle-blob location,
+// shared by the pull path that writes each verified signature bundle and the
+// build path that re-hashes the cached blob against its recorded digest.
 func SignatureBundlePath(cacheDir, bundleDigest string) string {
-	name := strings.ReplaceAll(bundleDigest, ":", "-") + ".bundle"
+	name := digest.Segment(bundleDigest) + ".bundle"
 	return filepath.Join(cacheDir, "signatures", name)
 }
 
@@ -167,12 +170,14 @@ func WriteCachedManifest(workspaceRoot, cacheDir, uri, version string, manifestB
 
 // ContentDigestTag converts a content digest ("sha256:<hex>") into a valid OCI
 // tag: a tag may not contain ":", so the algorithm and hex are joined with "-"
-// ("sha256-<hex>"). An artifact addressed by content can then be tagged by this
-// digest-derived tag, distinct from any version tag in the same repository. The
-// push that publishes an artifact and the pull that fetches it both derive the
-// tag here, so the two sides never disagree on the tag string.
+// ("sha256-<hex>") via the shared digest-segment spelling (digest.Segment). An
+// artifact addressed by content can then be tagged by this digest-derived tag,
+// distinct from any version tag in the same repository. The plugin-describe
+// cache uses this transform to address each cached descriptor file by its
+// content pin: the read and the write derive the filename here, so the two
+// sides never disagree on the on-disk name.
 func ContentDigestTag(contentDigest string) string {
-	return strings.ReplaceAll(contentDigest, ":", "-")
+	return digest.Segment(contentDigest)
 }
 
 // encodeURI maps an OCI URI (e.g.,

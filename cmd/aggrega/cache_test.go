@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm/attribindex"
+	"github.com/aggrega-ai/aggrega-cli/internal/wasm/embedded"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm/provindex"
 	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/docscache"
@@ -79,12 +80,19 @@ func writeInputBlob(t *testing.T, wsRoot, hexDigest string, blob []byte) string 
 	return p
 }
 
-func writeDescribe(t *testing.T, describeDir, hexDigest string) string {
+// writeDescribe seeds a plugin-describe cache entry under describeDir. Its
+// parameter is a colon-form content digest ("sha256:<hex>"); the file is named
+// with the exact stem the real describe-cache writer produces — the colon-free
+// tag form of that digest via oci.ContentDigestTag, i.e. "sha256-<hex>.json".
+// Routing the stem through the same transform the writer uses keeps every test
+// exercising the on-disk stem the writer actually emits, never a bare-hex shape
+// the writer never produces.
+func writeDescribe(t *testing.T, describeDir, contentDigest string) string {
 	t.Helper()
 	if err := os.MkdirAll(describeDir, 0o755); err != nil {
 		t.Fatalf("mkdir describe: %v", err)
 	}
-	p := filepath.Join(describeDir, hexDigest+".json")
+	p := filepath.Join(describeDir, oci.ContentDigestTag(contentDigest)+".json")
 	if err := os.WriteFile(p, []byte(`{"name":"x"}`), 0o644); err != nil {
 		t.Fatalf("write describe: %v", err)
 	}
@@ -116,11 +124,12 @@ func newCacheFixture(t *testing.T) cacheFixture {
 	unrefInputBlob := writeInputBlob(t, wsRoot, unrefInputHex, []byte("unref-input"))
 
 	// Describe cache: referenced == a lockfile plugin digest; unreferenced not.
+	// Seeded in colon form so the on-disk stem is the real "sha256-<hex>.json"
+	// the writer emits, exercising the dash-form stem the retain side must match.
 	pluginDigest := digest.ContentDigest([]byte("plugin-guest-bytes"))
 	pluginHex := normalizeDigestHex(pluginDigest)
-	unrefDescHex := normalizeDigestHex(digest.ContentDigest([]byte("orphan-guest")))
-	refDescribe := writeDescribe(t, describeDir, pluginHex)
-	unrefDescribe := writeDescribe(t, describeDir, unrefDescHex)
+	refDescribe := writeDescribe(t, describeDir, pluginDigest)
+	unrefDescribe := writeDescribe(t, describeDir, digest.ContentDigest([]byte("orphan-guest")))
 
 	// Compiled-module cache: one module file plus a transient compile-lock sidecar.
 	modDir := filepath.Join(compileDir, "wazero-1.0-amd64-linux")
@@ -307,6 +316,48 @@ func TestCachePruneSelective(t *testing.T) {
 	}
 	if !exists(fx.compileLock) {
 		t.Errorf("prune removed a compile-lock sidecar: %s", fx.compileLock)
+	}
+}
+
+// TestCachePruneRetainsEmbeddedAndPinnedDescribe drives prune over describe
+// entries seeded in the real "sha256-<hex>.json" stem form and proves the three
+// retention outcomes that matter for the describe class:
+//
+//   - an actively-embedded provider's describe entry is retained, because the
+//     reference set folds in the content digest of every embedded guest;
+//   - a lockfile-pinned plugin's describe entry is retained (the fixture pins
+//     one plugin digest);
+//   - a describe entry that is neither embedded nor lockfile-pinned is removed.
+//
+// The embedded digest is sourced through the one embedded-identity accessor, the
+// same value the reference set folds, so the retention is proven end-to-end
+// rather than inferred from the stem transform.
+func TestCachePruneRetainsEmbeddedAndPinnedDescribe(t *testing.T) {
+	fx := newCacheFixture(t)
+
+	embDigests := embedded.ContentDigests()
+	if len(embDigests) == 0 {
+		t.Fatal("no embedded plugin guests present; cannot prove the embedded-provider describe entry is retained")
+	}
+	// Seed a describe entry for an actively-embedded provider, in the real stem.
+	embDescribe := writeDescribe(t, fx.loc.describeDir, embDigests[0])
+	// Seed a describe entry for a digest neither embedded nor lockfile-pinned.
+	unmatchedDescribe := writeDescribe(t, fx.loc.describeDir, digest.ContentDigest([]byte("neither-embedded-nor-pinned")))
+
+	var out bytes.Buffer
+	if err := runCachePrune(&out, fx.loc); err != nil {
+		t.Fatalf("prune: %v", err)
+	}
+	t.Logf("prune output:\n%s", out.String())
+
+	if !exists(embDescribe) {
+		t.Errorf("prune removed an actively-embedded provider's describe entry: %s\n%s", embDescribe, out.String())
+	}
+	if !exists(fx.refDescribe) {
+		t.Errorf("prune removed a lockfile-pinned plugin's describe entry: %s\n%s", fx.refDescribe, out.String())
+	}
+	if exists(unmatchedDescribe) {
+		t.Errorf("prune retained an unreferenced describe entry: %s\n%s", unmatchedDescribe, out.String())
 	}
 }
 

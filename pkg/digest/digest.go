@@ -12,6 +12,7 @@ package digest
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"strings"
 )
 
 // ContentDigest returns the canonical content-address of b: the lowercase
@@ -23,4 +24,34 @@ import (
 func ContentDigest(b []byte) string {
 	sum := sha256.Sum256(b)
 	return "sha256:" + hex.EncodeToString(sum[:])
+}
+
+// BareHex reduces a content digest to its prefix-free comparison key: the bare
+// hex with any algorithm prefix stripped, lowercased. It accepts all three
+// spellings a digest travels in — the colon form "sha256:<hex>" (the
+// lockfile/equality spelling), the dash form "sha256-<hex>" (the
+// filesystem/tag-segment spelling), and bare "<hex>" (the membership-key
+// spelling) — and returns the same key for all three. The forms are mutually
+// unambiguous: bare hex contains none of the prefix characters, so it can begin
+// with neither prefix.
+//
+// The return value is guaranteed lowercased bare hex. Callers may rely on this
+// lowercasing as a stated contract: a digest keyed or compared through BareHex
+// joins any other BareHex-keyed value regardless of the case or prefix spelling
+// it arrived in.
+func BareHex(d string) string {
+	d = strings.TrimPrefix(d, "sha256:")
+	d = strings.TrimPrefix(d, "sha256-")
+	return strings.ToLower(d)
+}
+
+// Segment renders a content digest as a single filesystem/tag segment: the
+// colon form "sha256:<hex>" becomes the dash form "sha256-<hex>" by replacing
+// the ":" separator with "-". A path or tag segment may not contain ":", so
+// this is the one spelling every caller that names a digest-addressed file or
+// tag shares, keeping the segment form single-sourced with the colon form
+// ContentDigest produces and the bare form BareHex reduces to. An input with no
+// ":" (already a dash-form or bare digest) is returned unchanged.
+func Segment(d string) string {
+	return strings.ReplaceAll(d, ":", "-")
 }

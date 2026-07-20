@@ -22,6 +22,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm/attribindex"
+	"github.com/aggrega-ai/aggrega-cli/internal/wasm/embedded"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm/provindex"
 	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/docscache"
@@ -415,9 +416,11 @@ func provenanceIdentities(provIndexPath string) map[string]string {
 }
 
 // enumDescribe enumerates the plugin-describe cache. Each entry is a
-// `<guest-digest-hex>.json` file; the filename stem is the guest's content
-// digest, which equals the pinned digest a lockfile plugin entry records, so a
-// describe entry maps to a lockfile reference by that digest.
+// `sha256-<hex>.json` file whose stem is the colon-free tag form of the guest's
+// content digest (the same form the describe-cache writer emits). The stem is
+// reduced to the bare-hex comparison key, which equals the pinned digest a
+// lockfile plugin entry records once both are normalized, so a describe entry
+// maps to a lockfile reference by that key.
 func enumDescribe(root string) []cacheElement {
 	var out []cacheElement
 	entries, err := os.ReadDir(root)
@@ -1062,6 +1065,17 @@ func buildReferenceSet(lockPaths []string) (map[string]bool, int) {
 			addDigest(refset, e.Digest)
 		}
 	}
+	// Fold in the content digests of the providers embedded in the binary. Their
+	// describe-cache entries are keyed by the guest's content digest, which appears
+	// in no lockfile section, so without this the retain set would omit an
+	// actively-embedded provider and prune would evict its describe entry. Sourced
+	// through the single embedded-identity accessor so cache/prune never
+	// re-enumerates the embedded set or re-derives its digests, and normalized
+	// through the same addDigest path as the lockfile digests so both sides compare
+	// identically.
+	for _, d := range embedded.ContentDigests() {
+		addDigest(refset, d)
+	}
 	return refset, loaded
 }
 
@@ -1071,15 +1085,16 @@ func addDigest(set map[string]bool, d string) {
 	}
 }
 
-// normalizeDigestHex reduces a digest to its comparable form: the lowercase
-// hex, with any "sha256:" algorithm prefix stripped. The lockfile records
-// digests in both spellings (prefixed for entities and libraries, bare hex for
-// external inputs), and the cache element digests are computed in the prefixed
-// spelling, so both sides normalize here before comparison. It delegates to the
-// single home of the prefix-free spelling so cache enumeration and the
-// provenance index key digests identically.
+// normalizeDigestHex reduces a digest to its comparable form: lowercased bare
+// hex, with any algorithm prefix stripped. The lockfile records digests in both
+// spellings (prefixed for entities and libraries, bare hex for external
+// inputs), and the cache element digests are computed in the prefixed spelling,
+// so both sides normalize here before comparison. It delegates to the single
+// home of the prefix-free spelling so cache enumeration and the provenance
+// index key digests identically. Retained as a named in-package delegator for
+// call-site legibility.
 func normalizeDigestHex(d string) string {
-	return provindex.Normalize(d)
+	return digest.BareHex(d)
 }
 
 // removeEmptyParents removes now-empty parent directories of a removed slot,

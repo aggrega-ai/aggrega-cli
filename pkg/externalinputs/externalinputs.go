@@ -479,12 +479,18 @@ func parseOCIReference(rawURL string) (repoRef, ref string, err error) {
 // content-address spelling in pkg/digest so the two computations can never
 // diverge.
 func payloadHex(b []byte) string {
-	return strings.TrimPrefix(digest.ContentDigest(b), "sha256:")
+	return digest.BareHex(digest.ContentDigest(b))
 }
 
 // manifestHex extracts the hex portion of an OCI manifest digest string
 // ("sha256:<hex>"). Any other algorithm is rejected: the input store is
 // sha256-addressed.
+//
+// This is a validating extractor, not a plain prefix strip: it deliberately
+// does not route through the shared prefix-free normalizer, which is permissive
+// (it also strips the dash form, lowercases, and never errors). manifestHex must
+// instead reject any non-sha256 or non-lowercase-hex input, so it keeps its own
+// checked path.
 func manifestHex(d string) (string, error) {
 	hex, ok := strings.CutPrefix(d, "sha256:")
 	if !ok || !isHexDigest(hex) {

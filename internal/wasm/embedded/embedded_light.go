@@ -70,3 +70,8 @@ func LookupEntity(uri string) ([]byte, bool) { return nil, false }
 // compiles for a light build. A light binary embeds no entities, so it returns
 // none.
 func EntityURIs() []string { return nil }
+
+// ContentDigests mirrors the default-host signature so an embedded-set retain
+// caller compiles for a light build. A light binary embeds no plugins, so it
+// returns no digests.
+func ContentDigests() []string { return nil }

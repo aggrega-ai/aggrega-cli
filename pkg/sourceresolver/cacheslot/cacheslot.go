@@ -190,6 +190,12 @@ func splitURL(sourceURL string) (host, urlPath string) {
 	return
 }
 
+// digestPrefix intentionally keeps a case-preserving prefix strip rather than
+// routing through the shared lowercasing normalizer: its input can be a digest
+// read straight from the user-editable lockfile, which is not normalized to
+// lowercase on load. Lowercasing here would shift the on-disk cache-slot path
+// segment for a non-lowercase digest, so the strip stays local. The 12-char
+// truncation is likewise local to this slot-naming rule.
 func digestPrefix(digest string) string {
 	hex := strings.TrimPrefix(digest, "sha256:")
 	if len(hex) > DigestPrefixLen {

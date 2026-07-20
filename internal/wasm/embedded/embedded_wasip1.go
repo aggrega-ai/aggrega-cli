@@ -37,3 +37,7 @@ func LookupEntity(uri string) ([]byte, bool) { return nil, false }
 // EntityURIs mirrors the host signature so embedded-entity enumeration compiles
 // for wasip1. A guest embeds no entities, so it returns none.
 func EntityURIs() []string { return nil }
+
+// ContentDigests mirrors the host signature so any retain caller that reaches it
+// compiles for wasip1. A guest embeds no plugins, so it returns no digests.
+func ContentDigests() []string { return nil }

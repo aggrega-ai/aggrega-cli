@@ -8,9 +8,10 @@ package wasm
 import (
 	"os"
 	"path/filepath"
-	"strings"
 
 	"golang.org/x/sys/unix"
+
+	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
 )
 
 // flockGuestCompile takes an exclusive advisory lock on a per-guest lock file
@@ -27,7 +28,7 @@ import (
 // from the guest content digest with the algorithm prefix stripped so it is a
 // plain filesystem-safe token.
 func flockGuestCompile(dir, key string) func() {
-	lockPath := filepath.Join(dir, ".compile-"+strings.TrimPrefix(key, "sha256:")+".lock")
+	lockPath := filepath.Join(dir, ".compile-"+digest.BareHex(key)+".lock")
 	f, err := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0o600)
 	if err != nil {
 		return func() {}
