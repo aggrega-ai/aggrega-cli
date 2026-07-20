@@ -296,7 +296,7 @@ func inspectCatalogEntity(rw *workspaceconfig.ResolvedWorkspace, identifier stri
 	cacheDir := wsCfg.ResolvedArtifactCacheDir()
 	// Strict load (inspect must fail on a broken catalog, unlike build's tolerant
 	// Pass-1) over the first-win stack: --catalog dirs prepended to catalog_dirs.
-	dirs := resolveCatalogDirs(catalogDirs, wsCfg, ".")
+	dirs := workspaceconfig.ResolveCatalogDirs(catalogDirs, wsCfg, ".")
 	cat, err := catalog.LoadAllWithCacheDir("", cacheDir, dirs...)
 	if err != nil {
 		return fmt.Errorf("catalog load: %w", err)
@@ -414,7 +414,7 @@ func renderReleaseFile(rw *workspaceconfig.ResolvedWorkspace, releasePath string
 	wsCfg := rw.Config()
 	cacheDir := wsCfg.ResolvedArtifactCacheDir()
 	// Strict load over the first-win stack (--catalog dirs prepended to catalog_dirs).
-	dirs := resolveCatalogDirs(catalogDirs, wsCfg, ".")
+	dirs := workspaceconfig.ResolveCatalogDirs(catalogDirs, wsCfg, ".")
 	cat, err := catalog.LoadAllWithCacheDir(wsRoot, cacheDir, dirs...)
 	if err != nil {
 		return fmt.Errorf("catalog load: %w", err)

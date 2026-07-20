@@ -105,7 +105,7 @@ is held unchanged. A URI given without --upgrade is a usage error.`,
 type pullConfig struct {
 	ReleasePath string
 	// CatalogDirs holds the repeatable --catalog flag directories (UNresolved):
-	// pullRun prepends them to the workspace catalog_dirs via resolveCatalogDirs.
+	// pullRun prepends them to the workspace catalog_dirs via ResolveCatalogDirs.
 	// build's auto-pull integration forwards its own flag dirs so the pull path
 	// re-derives the identical stack under the same config.
 	CatalogDirs []string
@@ -324,7 +324,7 @@ func pullRun(cfg pullConfig) error {
 	// Effective first-win catalog search stack: --catalog flag dirs prepended to
 	// the workspace catalog_dirs. Resolved here (not by the caller) so direct pull
 	// and build's auto-pull derive the identical stack under the same config.
-	dirs := resolveCatalogDirs(cfg.CatalogDirs, wsCfg, ".")
+	dirs := workspaceconfig.ResolveCatalogDirs(cfg.CatalogDirs, wsCfg, ".")
 	// Tolerant Pass-1: a file that fails to parse/index is skipped (recorded), not
 	// fatal — a broken catalog entity OUTSIDE this Release's closure never fails the
 	// pull. A cross-document $ref to a remote library cannot expand at load (Pass-2)

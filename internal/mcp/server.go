@@ -63,9 +63,9 @@ type server struct {
 	// fake that records the options and returns canned output.
 	runGenCatalog genCatalogRunner
 
-	// runLint runs the lint helper for the deferred lint tool. Nil self-execs
-	// the running binary's lint subcommand. A test injects a fake that records
-	// the arguments and returns canned output.
+	// runLint runs the lint helper for the deferred lint tool. Nil runs the
+	// shared lint core in-process on the server's resolved workspace. A test
+	// injects a fake that records the request and returns canned output.
 	runLint lintRunner
 
 	// runHelp runs a command's help output for the cli:// resource. Nil

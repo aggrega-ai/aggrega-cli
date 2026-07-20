@@ -159,13 +159,13 @@ func TestDescribeCapabilitiesUnknownKind(t *testing.T) {
 
 // TestDeferredLintInvocableViaToolsCall asserts a deferred tool discovered
 // through the capability tool is invocable by name through the same tools/call
-// path as a curated tool, and that the lint tool assembles the subcommand
-// argument vector correctly through the injected runner seam.
+// path as a curated tool, and that the lint tool translates its wire arguments
+// into the in-process request correctly through the injected runner seam.
 func TestDeferredLintInvocableViaToolsCall(t *testing.T) {
 	s := newTestServer()
-	var gotArgs []string
-	s.runLint = func(_ context.Context, args []string, stdout, stderr io.Writer) error {
-		gotArgs = args
+	var gotReq lintRequest
+	s.runLint = func(_ context.Context, req lintRequest, stdout, stderr io.Writer) error {
+		gotReq = req
 		_, _ = io.WriteString(stdout, "lint passed: core/compute/api-server\n")
 		_, _ = io.WriteString(stderr, "[warning] name-shape: consider a hyphenated name\n")
 		return nil
@@ -178,9 +178,8 @@ func TestDeferredLintInvocableViaToolsCall(t *testing.T) {
 	if res.IsError {
 		t.Fatalf("lint reported error: %s", res.Content[0].Text)
 	}
-	wantArgs := []string{"lint", "--workspace-root", "/ws", "catalog/component/api.yaml", "--pre-publish"}
-	if !equalStrings(gotArgs, wantArgs) {
-		t.Fatalf("lint argv = %v, want %v", gotArgs, wantArgs)
+	if gotReq.entity != "catalog/component/api.yaml" || !gotReq.prePublish || gotReq.workspaceRoot != "/ws" || gotReq.release != "" {
+		t.Fatalf("lint request = %+v, want entity mode with pre-publish and workspace override", gotReq)
 	}
 	// The success summary and the advisory (stderr) both reach the caller.
 	if !strings.Contains(res.Content[0].Text, "lint passed") {
@@ -195,12 +194,12 @@ func TestDeferredLintInvocableViaToolsCall(t *testing.T) {
 	if res2.IsError {
 		t.Fatalf("lint release mode reported error: %s", res2.Content[0].Text)
 	}
-	if !equalStrings(gotArgs, []string{"lint", "--release", "envs/prod/release.yaml"}) {
-		t.Fatalf("lint release argv = %v", gotArgs)
+	if gotReq.release != "envs/prod/release.yaml" || gotReq.entity != "" {
+		t.Fatalf("lint release request = %+v, want release mode", gotReq)
 	}
 
-	// A halting lint surfaces the subcommand's findings as guidance.
-	s.runLint = func(_ context.Context, _ []string, _, stderr io.Writer) error {
+	// A halting lint surfaces the operation's findings as guidance.
+	s.runLint = func(_ context.Context, _ lintRequest, _, stderr io.Writer) error {
 		_, _ = io.WriteString(stderr, "[error] category-matches-directory: category label does not match directory")
 		return errDummyExit
 	}

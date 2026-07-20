@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Cognitio S.r.l.
 
-package main
+package lintops
 
 import (
 	"bytes"
@@ -12,7 +12,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/spf13/cobra"
 	"oras.land/oras-go/v2/content/memory"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm/embedded"
@@ -119,15 +118,15 @@ func TestLintPrePublishMatrixComponent(t *testing.T) {
 			proposedYAML := componentFixtureBytes(t, tc.changeCategory, "proposed.yaml")
 			proposedPath := writeEntityFile(t, proposedYAML, tc.proposedVer)
 
-			cfg := lintConfig{
+			cfg := Config{
 				EntityPath:     proposedPath,
 				PrePublish:     true,
 				PluginPath:     pluginPath,
 				PolicyResolver: func(_ string, ws bool) bool { return ws },
 				FetchTarget:    target,
-				ws:             resolveTempWorkspace(t),
+				Workspace:      resolveTempWorkspace(t),
 			}
-			err := lintRun(cfg)
+			err := RunEntity(cfg)
 			// NO silent-swallow. Matrix
 			// fixtures are clean across all 7 rules; any halt is
 			// the schema-evolution one we care about (or a
@@ -164,14 +163,14 @@ spec:
 	if err := os.WriteFile(entityPath, yaml, 0o644); err != nil {
 		t.Fatalf("write proposed: %v", err)
 	}
-	cfg := lintConfig{
+	cfg := Config{
 		EntityPath:     entityPath,
 		PrePublish:     false,
 		PluginPath:     pluginPath,
 		PolicyResolver: func(_ string, ws bool) bool { return ws },
-		ws:             resolveTempWorkspace(t),
+		Workspace:      resolveTempWorkspace(t),
 	}
-	err := lintRun(cfg)
+	err := RunEntity(cfg)
 	if err != nil {
 		t.Errorf("default mode should NOT halt (every finding downgraded to warning); got: %v", err)
 	}
@@ -207,15 +206,15 @@ spec:
 		t.Fatalf("write proposed: %v", err)
 	}
 
-	cfg := lintConfig{
+	cfg := Config{
 		EntityPath:     proposedPath,
 		PrePublish:     true,
 		PluginPath:     pluginPath,
 		PolicyResolver: func(_ string, ws bool) bool { return ws },
 		FetchTarget:    target,
-		ws:             resolveTempWorkspace(t),
+		Workspace:      resolveTempWorkspace(t),
 	}
-	err := lintRun(cfg)
+	err := RunEntity(cfg)
 	if err != nil {
 		t.Errorf("first publication should PASS; got HALT: %v", err)
 	}
@@ -236,9 +235,9 @@ func TestResolvePluginBytesOverride(t *testing.T) {
 	wsCfg := workspaceconfig.Default()
 	// The --plugin override is the artifact-direct escape hatch; it never consults
 	// the entity model, so a nil entity lookup is fine.
-	got, err := resolveLinterPlugin(path, wsCfg, nil)
+	got, err := ResolveLinterPlugin(path, wsCfg, nil)
 	if err != nil {
-		t.Fatalf("resolveLinterPlugin: %v", err)
+		t.Fatalf("ResolveLinterPlugin: %v", err)
 	}
 	if !bytes.Equal(got.Bytes, content) {
 		t.Errorf("got %q; want %q", got.Bytes, content)
@@ -272,7 +271,7 @@ func TestResolvePluginBytesOCIUnresolvable(t *testing.T) {
 		wp.Metadata.PluginType = "linter"
 		return wp, true
 	}
-	_, err := resolveLinterPlugin("", wsCfg, pluginByURI)
+	_, err := ResolveLinterPlugin("", wsCfg, pluginByURI)
 	if err == nil {
 		t.Fatal("expected error for uncached OCI artifact; got nil")
 	}
@@ -294,7 +293,7 @@ func TestResolvePluginBytesEntityNotFound(t *testing.T) {
 	pluginByURI := func(uri string) (types.Plugin, bool) {
 		return types.Plugin{}, false
 	}
-	_, err := resolveLinterPlugin("", wsCfg, pluginByURI)
+	_, err := ResolveLinterPlugin("", wsCfg, pluginByURI)
 	if err == nil {
 		t.Fatal("expected error for a non-entity linter URI; got nil")
 	}
@@ -309,7 +308,7 @@ func TestResolvePluginBytesEntityNotFound(t *testing.T) {
 // of the box rather than halting on an unconfigured path.
 func TestResolveLinterPluginDefaultsToEmbedded(t *testing.T) {
 	wsCfg := workspaceconfig.Default()
-	resolved, err := resolveLinterPlugin("", wsCfg, nil)
+	resolved, err := ResolveLinterPlugin("", wsCfg, nil)
 	if err != nil {
 		t.Fatalf("unset linter path should resolve the built-in; got error: %v", err)
 	}
@@ -349,9 +348,9 @@ func TestResolveLinterPluginCarriesEntityRuntimeCap(t *testing.T) {
 		wp.Spec.Runtime = &types.PluginRuntime{MaxMemoryPages: 32, TimeoutMs: 250}
 		return wp, true
 	}
-	resolved, err := resolveLinterPlugin("", wsCfg, pluginByURI)
+	resolved, err := ResolveLinterPlugin("", wsCfg, pluginByURI)
 	if err != nil {
-		t.Fatalf("resolveLinterPlugin: %v", err)
+		t.Fatalf("ResolveLinterPlugin: %v", err)
 	}
 	spec := resolver.PluginSpec("publishing-linter", resolved)
 	if spec.MaxMemoryPages != 32 || spec.TimeoutMs != 250 {
@@ -382,11 +381,13 @@ func TestLooksLikeOCIURI(t *testing.T) {
 	}
 }
 
-// TestEffectivePoliciesTriState: tri-state
-// precedence across all 8 workspace flags (6 allow_* + 2 enforce_*).
-// Per-flag: 3 cells (no override; --<flag>; --no-<flag>) × 8 flags
-// = 24 cells.
-func TestEffectivePoliciesTriState(t *testing.T) {
+// TestEffectivePolicies pins effectivePolicies' consumption of the policy
+// resolver across all 8 workspace flags (6 allow_* + 2 enforce_*). Per flag: the
+// workspace value passes through when the resolver echoes it, a resolver forcing
+// false emits false, and a resolver forcing true emits true. The resolver's own
+// tri-state precedence (the cobra --X/--no-X flag pairs) is covered separately at
+// the command layer.
+func TestEffectivePolicies(t *testing.T) {
 	flagBases := []struct {
 		flag      string
 		workspace func(*workspaceconfig.PublishingDisciplineConfig, bool)
@@ -402,8 +403,8 @@ func TestEffectivePoliciesTriState(t *testing.T) {
 		{"enforce-immutability", func(c *workspaceconfig.PublishingDisciplineConfig, v bool) { c.EnforceImmutability = v }, "enforce_immutability"},
 	}
 	for _, tc := range flagBases {
-		// Cell 1: workspace=true, no CLI override → effective=true
-		t.Run(tc.flag+"/workspace-true-no-override", func(t *testing.T) {
+		// Cell 1: workspace=true, resolver echoes workspace → effective=true
+		t.Run(tc.flag+"/workspace-true-passthrough", func(t *testing.T) {
 			ws := workspaceconfig.PublishingDisciplineConfig{}
 			tc.workspace(&ws, true)
 			resolve := func(_ string, wsVal bool) bool { return wsVal }
@@ -412,32 +413,24 @@ func TestEffectivePoliciesTriState(t *testing.T) {
 				t.Errorf("expected %s=true; got %s", tc.jsonKey, string(out))
 			}
 		})
-		// Cell 2: workspace=true, --no-<flag> → effective=false
-		t.Run(tc.flag+"/no-override-forces-false", func(t *testing.T) {
+		// Cell 2: workspace=true, resolver forces false → effective=false
+		t.Run(tc.flag+"/resolver-forces-false", func(t *testing.T) {
 			ws := workspaceconfig.PublishingDisciplineConfig{}
 			tc.workspace(&ws, true)
-			cmd := &cobra.Command{}
-			cmd.Flags().Bool(tc.flag, false, "")
-			cmd.Flags().Bool("no-"+tc.flag, false, "")
-			_ = cmd.Flags().Set("no-"+tc.flag, "true")
-			resolve := makeResolverFromCobra(cmd)
+			resolve := func(_ string, _ bool) bool { return false }
 			out := effectivePolicies(ws, resolve)
 			if !strings.Contains(string(out), `"`+tc.jsonKey+`":false`) {
-				t.Errorf("--no-%s should force false despite workspace=true; got %s", tc.flag, string(out))
+				t.Errorf("resolver forcing false should emit %s=false despite workspace=true; got %s", tc.jsonKey, string(out))
 			}
 		})
-		// Cell 3: workspace=false, --<flag> → effective=true
-		t.Run(tc.flag+"/override-forces-true", func(t *testing.T) {
+		// Cell 3: workspace=false, resolver forces true → effective=true
+		t.Run(tc.flag+"/resolver-forces-true", func(t *testing.T) {
 			ws := workspaceconfig.PublishingDisciplineConfig{}
 			tc.workspace(&ws, false)
-			cmd := &cobra.Command{}
-			cmd.Flags().Bool(tc.flag, false, "")
-			cmd.Flags().Bool("no-"+tc.flag, false, "")
-			_ = cmd.Flags().Set(tc.flag, "true")
-			resolve := makeResolverFromCobra(cmd)
+			resolve := func(_ string, _ bool) bool { return true }
 			out := effectivePolicies(ws, resolve)
 			if !strings.Contains(string(out), `"`+tc.jsonKey+`":true`) {
-				t.Errorf("--%s should force true despite workspace=false; got %s", tc.flag, string(out))
+				t.Errorf("resolver forcing true should emit %s=true despite workspace=false; got %s", tc.jsonKey, string(out))
 			}
 		})
 	}
@@ -516,7 +509,7 @@ func TestDefaultRuleIDs(t *testing.T) {
 
 // TestLintMissingEntityPath pins the diagnostic for missing entity path.
 func TestLintMissingEntityPath(t *testing.T) {
-	err := lintRun(lintConfig{EntityPath: "", ws: resolveTempWorkspace(t)})
+	err := RunEntity(Config{EntityPath: "", Workspace: resolveTempWorkspace(t)})
 	if err == nil {
 		t.Fatal("expected error for missing entity path; got nil")
 	}
@@ -525,51 +518,26 @@ func TestLintMissingEntityPath(t *testing.T) {
 	}
 }
 
-// TestLintReleasePrePublishMutuallyExclusive asserts that combining --release
-// with --pre-publish halts with a clear different-scope OPS_ERROR — rather than
-// silently taking the release-closure branch and ignoring --pre-publish — and
-// that neither scope-flag on its own trips that guard (the three symmetric lint
-// scopes stay intact).
-func TestLintReleasePrePublishMutuallyExclusive(t *testing.T) {
-	const guardMsg = "OPS_ERROR: --pre-publish is mutually exclusive with --release"
-
-	runLint := func(t *testing.T, args ...string) error {
-		t.Helper()
-		cmd := newLintCmd()
-		var out bytes.Buffer
-		cmd.SetOut(&out)
-		cmd.SetErr(&out)
-		cmd.SetContext(withWorkspaceResolver(context.Background(), t.TempDir(), nil))
-		cmd.SetArgs(args)
-		return cmd.Execute()
+// resolveTempWorkspace resolves an isolated workspace rooted at a fresh temp
+// directory that carries a `workspace: {}` marker, and returns it for tests that
+// would otherwise pass a nil workspace to a core helper.
+//
+// A nil workspace routes through the resolve-from-current-directory fallback,
+// which walks the current directory upward looking for the nearest config that
+// anchors a root. Seeding `workspace: {}` at the temp directory and resolving
+// from there anchors the root at the temp directory on the very first step of
+// discovery, so resolution never climbs to any ancestor. The result is hermetic
+// against whatever configuration happens to sit above the checkout. It must not
+// be "simplified" back to nil — the isolation is the point.
+func resolveTempWorkspace(t *testing.T) *workspaceconfig.ResolvedWorkspace {
+	t.Helper()
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, workspaceconfig.ConfigFilename), []byte("workspace: {}\n"), 0o644); err != nil {
+		t.Fatalf("seed config: %v", err)
 	}
-
-	t.Run("release plus pre-publish halts", func(t *testing.T) {
-		err := runLint(t, "--release", filepath.Join(t.TempDir(), "release.yaml"), "--pre-publish")
-		if err == nil {
-			t.Fatal("--release with --pre-publish must halt")
-		}
-		if !strings.Contains(err.Error(), guardMsg) {
-			t.Fatalf("expected the different-scope OPS_ERROR; got: %v", err)
-		}
-	})
-
-	t.Run("release alone does not trip the guard", func(t *testing.T) {
-		// --release alone is a valid scope. It may fail downstream (the Release
-		// file does not exist), but it must never surface the pre-publish conflict.
-		err := runLint(t, "--release", filepath.Join(t.TempDir(), "release.yaml"))
-		if err != nil && strings.Contains(err.Error(), guardMsg) {
-			t.Fatalf("--release alone must not trip the pre-publish guard: %v", err)
-		}
-	})
-
-	t.Run("entity plus pre-publish does not trip the guard", func(t *testing.T) {
-		// The single-entity + --pre-publish shape is exactly what --pre-publish is
-		// for. It may fail downstream (the entity file does not exist), but it must
-		// never surface the pre-publish/release conflict.
-		err := runLint(t, filepath.Join(t.TempDir(), "component.yaml"), "--pre-publish")
-		if err != nil && strings.Contains(err.Error(), guardMsg) {
-			t.Fatalf("entity + --pre-publish must not trip the pre-publish guard: %v", err)
-		}
-	})
+	rw, err := workspaceconfig.Resolve(dir, "")
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	return rw
 }

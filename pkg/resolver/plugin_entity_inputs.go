@@ -44,7 +44,7 @@ func PluginEntityInputs(entity types.Plugin) *wasm.EntityInputs {
 		Claim:          claim,
 		CommandMirror:  entityCommandMirror(entity),
 		HostFunctions:  hostFunctions,
-		CuratedSurface: entityCuratedSurface(entity),
+		CuratedSurface: ProjectCuratedSurface(entity),
 		Version:        entity.Metadata.Version,
 	}
 }
@@ -86,10 +86,10 @@ func entityCommandFlags(flags []types.PluginCommandFlag) []wasm.PluginCommandFla
 	return out
 }
 
-// entityCuratedSurface projects a Plugin entity's authored, curated surface — its
+// ProjectCuratedSurface projects a Plugin entity's authored, curated surface — its
 // export names, plugin-level capabilities, and whether it authors a
 // render-behavior contract — into the shape the under-declaration advisory reads.
-func entityCuratedSurface(entity types.Plugin) wasm.EntityCuratedSurface {
+func ProjectCuratedSurface(entity types.Plugin) wasm.EntityCuratedSurface {
 	exportNames := make([]string, len(entity.Spec.Exports))
 	for i, e := range entity.Spec.Exports {
 		exportNames[i] = e.Name

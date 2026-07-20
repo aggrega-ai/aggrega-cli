@@ -35,11 +35,40 @@ import (
 // walk. ReleasePath is the absolute path of the Release whose siblings and
 // closure are resolved; WorkspaceRoot and WorkspaceConfig supply the closure
 // walk's workspace anchor and resolved artifact-cache directory.
+//
+// Lockfile, Augment, and AfterManifest are per-caller opt-ins; their zero values
+// preserve the base resolution shape (no pin gate, no library-axis fold, no
+// hook).
 type ClosureInputs struct {
 	View            *catalog.LazyLookup
 	ReleasePath     string
 	WorkspaceRoot   string
 	WorkspaceConfig workspaceconfig.Config
+
+	// Lockfile, when non-nil and carrying a registry pin (a real resolved
+	// version) for the Release's top-level Aggregate, suppresses seeding that
+	// Aggregate as an external entity. A registry-pinned top-level resolves
+	// through the view's pinned tier; seeding it external — externals are
+	// consulted first — would shadow it with a version-less pin and drift against
+	// the pin set. A nil Lockfile skips the gate, leaving the Aggregate seeded
+	// external. The Manifest is always external; it has no registry tier.
+	Lockfile *lockfile.Lockfile
+
+	// Augment, when true, folds the cross-document library axes into the computed
+	// closure — the SchemaLibrary and MappingLibrary references the entity walk
+	// does not descend — so the resolved closure matches the one a build or lint
+	// verifies against. false leaves the closure as ComputeClosure produced it,
+	// which is what a caller that folds the library axes separately needs so the
+	// fold does not run twice.
+	Augment bool
+
+	// AfterManifest, when non-nil, runs after the Manifest's extends chain is
+	// composed and before the top-level Aggregate resolves, receiving the composed
+	// Manifest and its source path. A caller injects a manifest-level consistency
+	// gate here so it fires at the earliest loud point — before the closure walk. A
+	// returned error aborts resolution with a compose-stage ClosureError. nil skips
+	// the hook.
+	AfterManifest func(manifest *types.Manifest, manifestPath string) error
 }
 
 // ResolvedClosure bundles the entities a build or drift flow needs together —
@@ -98,15 +127,21 @@ func (e *ClosureError) Unwrap() error { return e.err }
 // ResolveClosure loads the Manifest and Aggregate siblings to the Release at
 // in.ReleasePath and computes the catalog closure over the request-scoped view.
 //
-// The top-level Aggregate is resolved by same-directory scan or a `./`/`../`
-// file (nil catalog tier): a Release sits beside its Aggregate, and a
-// catalog-resident top-level Aggregate is not part of this co-located
-// resolution.
+// The top-level Aggregate is resolved through the request-scoped view's
+// aggregate lookup — a same-directory scan, a `./`/`../` file, or the catalog
+// tier the view exposes — so a co-located or a catalog-resident top-level
+// Aggregate both resolve against the request's pin set.
 //
 // The closure compute uses a hermetic lookup (nil puller): registry pull never
 // fires during resolution; a missing cache entry surfaces as a closure-walk
 // failure rather than an out-of-band network fetch. A broken out-of-closure
 // entity is never enumerated-fatal.
+//
+// The optional inputs shape the resolution: a non-nil in.Lockfile gates the
+// external Aggregate seed on a registry pin; in.AfterManifest runs a
+// manifest-level hook before the Aggregate resolves; in.Augment folds the
+// cross-document library axes into the returned closure. Their zero values leave
+// the base resolution unchanged.
 //
 // On failure the returned *ClosureError names the failing stage and carries the
 // rendered detail; the *ResolvedClosure is nil. On success the error is nil.
@@ -136,7 +171,16 @@ func ResolveClosure(in ClosureInputs) (*ResolvedClosure, *ClosureError) {
 			err:   err,
 		}
 	}
-	aggRes, err := resolver.ResolveAggregate(releaseDir, rel.Spec.Aggregate, nil, nil)
+	if in.AfterManifest != nil {
+		if herr := in.AfterManifest(manifest, manRes.Path); herr != nil {
+			return nil, &ClosureError{
+				Stage: ClosureStageComposeManifest,
+				msg:   herr.Error(),
+				err:   herr,
+			}
+		}
+	}
+	aggRes, err := resolver.ResolveAggregate(releaseDir, rel.Spec.Aggregate, in.View.AggregateLookup(), nil)
 	if err != nil {
 		return nil, &ClosureError{
 			Stage: ClosureStageLoadAggregate,
@@ -146,7 +190,15 @@ func ResolveClosure(in ClosureInputs) (*ResolvedClosure, *ClosureError) {
 	}
 	aggregate := aggRes.Aggregate
 	aggBytes := aggRes.Bytes
-	externals := lockfile.ExternalEntitiesFromBytes(rel, aggRes.Bytes, manRes.Bytes)
+	// A registry-pinned top-level Aggregate resolves through the view's pinned
+	// tier; seeding it external — externals are consulted first — would shadow it
+	// with a version-less pin and drift against the pin set. Gate the external seed
+	// on the pin. The Manifest is always external (it has no registry tier).
+	aggExternal := aggRes.Bytes
+	if in.Lockfile != nil && lockfileHasRegistryPin(in.Lockfile, rel.Spec.Aggregate) {
+		aggExternal = nil
+	}
+	externals := lockfile.ExternalEntitiesFromBytes(rel, aggExternal, manRes.Bytes)
 	cacheDir := in.WorkspaceConfig.ResolvedArtifactCacheDir()
 	lookup := in.View.ClosureLookup(nil, in.WorkspaceRoot, cacheDir, externals)
 	cl, err := closure.ComputeClosure(rel, manifest, aggregate, in.WorkspaceConfig, lookup)
@@ -155,6 +207,19 @@ func ResolveClosure(in ClosureInputs) (*ResolvedClosure, *ClosureError) {
 			Stage: ClosureStageComputeClosure,
 			msg:   fmt.Sprintf("closure compute: %v", err),
 			err:   err,
+		}
+	}
+	// Fold the cross-document library axes into the closure (the SchemaLibrary and
+	// MappingLibrary references the entity walk does not descend) so the resolved
+	// closure matches the one a build or lint verifies against. Opt-in: a caller
+	// that folds these axes separately leaves it off so the fold does not run twice.
+	if in.Augment {
+		if aerr := closure.AugmentClosure(&cl, in.View, lookup); aerr != nil {
+			return nil, &ClosureError{
+				Stage: ClosureStageComputeClosure,
+				msg:   fmt.Sprintf("closure augment: %v", aerr),
+				err:   aerr,
+			}
 		}
 	}
 	return &ResolvedClosure{
@@ -166,4 +231,21 @@ func ResolveClosure(in ClosureInputs) (*ResolvedClosure, *ClosureError) {
 		Closure:       cl,
 		Lookup:        lookup,
 	}, nil
+}
+
+// lockfileHasRegistryPin reports whether the lockfile pins uri as a registry
+// entity — one carrying a real resolved version. A version-less pin marks an
+// external (local) top-level; a real version marks one registry-resolved at pull
+// that must resolve through the view's pinned tier, not the external tier (which
+// would re-pin version "" and drift against the lockfile).
+func lockfileHasRegistryPin(lf *lockfile.Lockfile, uri string) bool {
+	if lf == nil {
+		return false
+	}
+	for _, e := range lf.Entities {
+		if e.URI == uri {
+			return e.ResolvedVersion != ""
+		}
+	}
+	return false
 }

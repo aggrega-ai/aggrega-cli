@@ -341,7 +341,7 @@ func workspacePluginResolutionInputs(rw *workspaceconfig.ResolvedWorkspace) plug
 		return pluginResolutionInputs{}
 	}
 	wsCfg := rw.Config()
-	dirs := resolveCatalogDirs(nil, wsCfg, rw.Root())
+	dirs := workspaceconfig.ResolveCatalogDirs(nil, wsCfg, rw.Root())
 	lazyView := catalog.NewLazyLookup(rw.Root(), wsCfg.ResolvedArtifactCacheDir(), dirs, nil)
 	var pins map[string]string
 	for _, ref := range wsCfg.Plugins.CLI {

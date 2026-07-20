@@ -21,17 +21,18 @@ import (
 //  1. No os.Getwd() in the CLI or daemon packages. Workspace-root discovery
 //     belongs to workspaceconfig.Resolve; a command re-rolling CWD discovery is
 //     exactly the divergence this work removed.
-//  2. Every pullConfig / pushConfig / lintConfig built in production code sets
-//     the ws field. Production must pass the context-resolved workspace; the
-//     nil → resolve-from-CWD fallback in workspaceOrResolve exists only so tests
-//     can invoke the command helpers directly. A production caller leaving ws
+//  2. Every pullConfig / pushConfig / signConfig — and the relocated
+//     lintops.Config — built in production code sets its workspace field.
+//     Production must pass the context-resolved workspace; the nil →
+//     resolve-from-CWD fallback exists only so tests can invoke the command and
+//     core helpers directly. A production caller leaving the workspace field
 //     unset would silently re-resolve from CWD and ignore --workspace-root —
 //     reintroducing per-command divergence.
 //
 // Test files are exempt (the fallback is theirs to use).
 func TestWorkspaceResolutionChokepointGuard(t *testing.T) {
 	dirs := []string{".", filepath.Join("..", "..", "internal", "serve")}
-	cfgTypes := map[string]bool{"pullConfig": true, "pushConfig": true, "lintConfig": true, "signConfig": true}
+	cfgTypes := map[string]bool{"pullConfig": true, "pushConfig": true, "signConfig": true}
 
 	for _, dir := range dirs {
 		matches, err := filepath.Glob(filepath.Join(dir, "*.go"))
@@ -69,20 +70,37 @@ func TestWorkspaceResolutionChokepointGuard(t *testing.T) {
 						}
 					}
 				case *ast.CompositeLit:
-					id, ok := v.Type.(*ast.Ident)
-					if !ok || !cfgTypes[id.Name] {
+					// The config-struct commands must thread the context-resolved
+					// workspace into their config literal. The same-package configs
+					// (pull/push/sign) are bare identifiers carrying a `ws` field; the
+					// relocated lint config is a `lintops.Config` selector carrying a
+					// `Workspace` field. Either way, a production literal that omits the
+					// workspace field would silently re-resolve from CWD and ignore
+					// --workspace-root.
+					typeName, wsField := "", ""
+					switch tp := v.Type.(type) {
+					case *ast.Ident:
+						if cfgTypes[tp.Name] {
+							typeName, wsField = tp.Name, "ws"
+						}
+					case *ast.SelectorExpr:
+						if pkg, ok := tp.X.(*ast.Ident); ok && pkg.Name == "lintops" && tp.Sel.Name == "Config" {
+							typeName, wsField = "lintops.Config", "Workspace"
+						}
+					}
+					if typeName == "" {
 						return true
 					}
 					hasWS := false
 					for _, elt := range v.Elts {
 						if kv, ok := elt.(*ast.KeyValueExpr); ok {
-							if k, ok := kv.Key.(*ast.Ident); ok && k.Name == "ws" {
+							if k, ok := kv.Key.(*ast.Ident); ok && k.Name == wsField {
 								hasWS = true
 							}
 						}
 					}
 					if !hasWS {
-						t.Errorf("%s: %s literal without a ws field — production must thread the context-resolved workspace (workspaceFromContext); the nil/CWD fallback is test-only", fset.Position(v.Pos()), id.Name)
+						t.Errorf("%s: %s literal without a %s field — production must thread the context-resolved workspace (workspaceFromContext); the nil/CWD fallback is test-only", fset.Position(v.Pos()), typeName, wsField)
 					}
 				}
 				return true
@@ -148,5 +166,47 @@ func TestOCIRemoteConstructionChokepointGuard(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatalf("walk %s: %v", root, err)
+	}
+}
+
+// TestResolveCatalogDirsChokepointGuard enforces the single home for the
+// catalog-dir precedence stack structurally. The flag-dirs-prepend-config
+// first-win assembly lives once, exported from pkg/workspaceconfig as
+// ResolveCatalogDirs; a command or the daemon re-rolling a local
+// resolveCatalogDirs would reintroduce the byte-identical copy this
+// consolidation removed, where the two drift silently the moment one is
+// touched. The guard fails if a func resolveCatalogDirs declaration reappears
+// in the CLI or MCP packages.
+//
+// Test files are exempt: this guard file names the symbol in prose, and the
+// unit test for the mechanic lives with its home in pkg/workspaceconfig.
+func TestResolveCatalogDirsChokepointGuard(t *testing.T) {
+	dirs := []string{".", filepath.Join("..", "..", "internal", "mcp")}
+
+	for _, dir := range dirs {
+		matches, err := filepath.Glob(filepath.Join(dir, "*.go"))
+		if err != nil {
+			t.Fatalf("glob %s: %v", dir, err)
+		}
+		for _, file := range matches {
+			if strings.HasSuffix(file, "_test.go") {
+				continue
+			}
+			fset := token.NewFileSet()
+			node, err := parser.ParseFile(fset, file, nil, 0)
+			if err != nil {
+				t.Fatalf("parse %s: %v", file, err)
+			}
+			ast.Inspect(node, func(n ast.Node) bool {
+				fn, ok := n.(*ast.FuncDecl)
+				if !ok {
+					return true
+				}
+				if fn.Recv == nil && fn.Name.Name == "resolveCatalogDirs" {
+					t.Errorf("%s: func resolveCatalogDirs re-rolled outside its home — route catalog-dir assembly through workspaceconfig.ResolveCatalogDirs", fset.Position(fn.Pos()))
+				}
+				return true
+			})
+		}
 	}
 }

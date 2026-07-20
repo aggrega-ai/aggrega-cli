@@ -52,11 +52,18 @@ import (
 // reconstructed closure. Callers that do not verify drift (the quiet
 // validation load) pass nil to skip the reconstruction.
 func (s *Server) resolveReleaseClosure(view *catalog.LazyLookup, releasePath string, lf *lockfile.Lockfile) (*compilerops.ResolvedClosure, *jsonRPCError) {
+	// Augment stays off: serve folds the library axes and reconstructs the
+	// sub-aggregate + plugin axes in reconstructClosureAxes below (only on the
+	// drift path, when lf is non-nil), so folding here as well would run the
+	// augment twice. The Lockfile gates the external Aggregate seed on a registry
+	// pin, matching the CLI build.
 	resolved, cerr := compilerops.ResolveClosure(compilerops.ClosureInputs{
 		View:            view,
 		ReleasePath:     releasePath,
 		WorkspaceRoot:   s.workspaceRoot,
 		WorkspaceConfig: s.wsConfig,
+		Lockfile:        lf,
+		Augment:         false,
 	})
 	if cerr != nil {
 		if cerr.Stage == compilerops.ClosureStageComputeClosure {

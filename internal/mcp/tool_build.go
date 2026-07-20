@@ -99,6 +99,8 @@ func buildInvoke(s *server, ctx context.Context, args json.RawMessage) (*callToo
 		ReleasePath:     releasePath,
 		WorkspaceRoot:   tw.root,
 		WorkspaceConfig: tw.cfg,
+		Lockfile:        lf,
+		Augment:         true,
 	})
 	if cerr != nil {
 		return errorResult(explainToolError(

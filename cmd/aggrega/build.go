@@ -14,13 +14,13 @@ import (
 	"time"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline"
+	"github.com/aggrega-ai/aggrega-cli/internal/compilerops"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
 	"github.com/aggrega-ai/aggrega-cli/pkg/externalinputs"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
-	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 
@@ -218,7 +218,7 @@ func dispatchBuildWithDiag(rw *workspaceconfig.ResolvedWorkspace, releasePath st
 
 	// Effective first-win catalog search stack: --catalog dirs prepended to the
 	// workspace catalog_dirs, defaulting to the current directory.
-	dirs := resolveCatalogDirs(catalogFlagDirs, wsCfg, ".")
+	dirs := workspaceconfig.ResolveCatalogDirs(catalogFlagDirs, wsCfg, ".")
 
 	// Tolerant Pass-1 catalog load. A file that fails to read, parse, or index is
 	// SKIPPED (recorded) rather than aborting the walk — so a broken catalog entity
@@ -290,26 +290,33 @@ func dispatchBuildWithDiag(rw *workspaceconfig.ResolvedWorkspace, releasePath st
 
 	// Shared Release→closure orchestration: load the Release, resolve + compose
 	// the Manifest, resolve the Aggregate, gate the external seed on a registry
-	// pin, and compute the closure once. lint runs the identical front door, so
-	// the sequence lives in releaseClosure and cannot drift between them. The
-	// build's manifest-implements consistency halt runs via afterManifest so it
-	// still fires before the closure walk — the earliest loud point. An in-closure
-	// entity skipped at tolerant load surfaces as an unresolvable URI;
-	// withSkipContext replays WHY it was skipped so the failure is never a bare
-	// "not found".
+	// pin, and compute + augment the closure once. Every front door runs this same
+	// shared resolver, so the sequence cannot drift between them. The build's
+	// manifest-implements consistency halt runs via AfterManifest so it still fires
+	// before the closure walk — the earliest loud point — and Augment folds the
+	// cross-document library axes so the closure matches the one drift is verified
+	// against. An in-closure entity skipped at tolerant load surfaces as an
+	// unresolvable URI; withSkipContext replays WHY it was skipped so the failure is
+	// never a bare "not found".
 	progress.phase(phaseClosure)
-	rc, err := releaseClosure(releasePath, lazyView, lf, wsCfg, wsRoot, cacheDir,
-		func(manifest *types.Manifest, manifestPath string) error {
-			return lazyView.AssertManifestImplementsConsistency(manifest, manifestPath)
-		})
-	if err != nil {
-		return withSkipContext(err, skipped)
+	resolved, cerr := compilerops.ResolveClosure(compilerops.ClosureInputs{
+		View:            lazyView,
+		ReleasePath:     releasePath,
+		WorkspaceRoot:   wsRoot,
+		WorkspaceConfig: wsCfg,
+		Lockfile:        lf,
+		Augment:         true,
+		AfterManifest: func(m *types.Manifest, p string) error {
+			return lazyView.AssertManifestImplementsConsistency(m, p)
+		},
+	})
+	if cerr != nil {
+		return withSkipContext(cerr, skipped)
 	}
-	rel := rc.Release
-	manifest := rc.Manifest
-	aggRes := rc.Aggregate
-	aggBytes := aggRes.Bytes
-	cl := rc.Closure
+	rel := resolved.Release
+	manifest := resolved.Manifest
+	aggBytes := resolved.AggBytes
+	cl := resolved.Closure
 	progress.note("closure entities: %d", len(cl.Entities))
 	progress.note("schema libraries: %d, mapping libraries: %d", len(cl.SchemaLibraries), len(cl.MappingLibraries))
 
@@ -333,7 +340,7 @@ func dispatchBuildWithDiag(rw *workspaceconfig.ResolvedWorkspace, releasePath st
 	// re-fold shifts the lazy view's pin set to the augmented closure to make the
 	// just-pinned plugin entities visible; the pins are restored to the lockfile
 	// view afterward so the render path below resolves exactly as before.
-	closureLookup := rc.Lookup
+	closureLookup := resolved.Lookup
 	reconAggLoader, _ := closureLookup.(closure.AggregateLoader)
 	reconBindings := lockfile.ProviderBindings(lf)
 	reconResolver := func(ref string) (types.Plugin, bool, error) {
@@ -408,7 +415,7 @@ func dispatchBuildWithDiag(rw *workspaceconfig.ResolvedWorkspace, releasePath st
 	// dispatch — the single path both the CLI build and the build-faithful test
 	// harness use, so a test renders through exactly the plugins a real build does.
 	progress.phase(phaseRender)
-	relAggPath := catalog.RelativeToWorkspace(wsRoot, aggRes.Path)
+	relAggPath := catalog.RelativeToWorkspace(wsRoot, resolved.AggregatePath)
 	buildLookup := lazyView.AsCatalogLookup()
 	// Provider resolution reads the resolved bindings from the LOCKFILE, never the
 	// workspace config — so build output is invariant to a plugins.providers change
@@ -570,27 +577,10 @@ func newExternalInputsService(cacheDir string, lf *lockfile.Lockfile, noAcquire 
 // The lockfile must exist before the lazy lookup is pinned: its pins drive the
 // verify-on-read Tier-2 reads through which every closure entity (and the
 // libraries a $ref names) resolves.
-
-// lockfileHasRegistryPin reports whether the lockfile pins uri as a registry
-// entity — one carrying a real resolved version. A version-less pin marks an
-// external (local) top-level; a real version marks one registry-resolved at pull
-// that must resolve at build through the lazy lookup's pinned Tier-2 read, not the
-// external tier (which would re-pin version "" and drift against the lockfile).
-func lockfileHasRegistryPin(lf *lockfile.Lockfile, uri string) bool {
-	if lf == nil {
-		return false
-	}
-	for _, e := range lf.Entities {
-		if e.URI == uri {
-			return e.ResolvedVersion != ""
-		}
-	}
-	return false
-}
-
-// acquireLockfile writes any diagnostics (the no-pull --detail note, and the
-// auto-pull's reuse/verify notices forwarded through pullConfig.DiagOut) to
-// diagOut (os.Stderr in production).
+//
+// It writes any diagnostics (the no-pull --detail note, and the auto-pull's
+// reuse/verify notices forwarded through pullConfig.DiagOut) to diagOut
+// (os.Stderr in production).
 func acquireLockfile(rw *workspaceconfig.ResolvedWorkspace, releasePath string, catalogFlagDirs []string, wsCfg workspaceconfig.Config, autoPull, upgrade, detail bool, diagOut io.Writer) (bool, error) {
 	lockfilePath := lockfile.PathFor(releasePath)
 
@@ -641,111 +631,6 @@ func acquireLockfile(rw *workspaceconfig.ResolvedWorkspace, releasePath string, 
 	}
 	return false, fmt.Errorf("aggrega build: lockfile %s missing; run `aggrega pull %s` first to create it, or pass --auto-pull (or enable auto_pull) to fill it during the build",
 		lockfilePath, releasePath)
-}
-
-// releaseClosureResult carries the resolved entities and the computed closure
-// the shared Release→closure orchestration produces. The Manifest is the
-// extends-composed result (not the child's own entries); the Aggregate carries
-// its raw bytes + path for the caller's downstream pipeline call.
-type releaseClosureResult struct {
-	Release   *types.Release
-	Manifest  *types.Manifest
-	Aggregate resolver.ResolvedAggregate
-	Closure   closure.Closure
-	// Lookup is the hermetic Lookup the closure was walked through (nil
-	// OCIPuller). The build reuses it to reconstruct the sub-aggregate and plugin
-	// axes for drift verification; lint ignores it.
-	Lookup closure.Lookup
-}
-
-// releaseClosure runs the Release→closure orchestration shared by the build and
-// lint front doors: load the Release, resolve + compose the Manifest, resolve
-// the Aggregate, gate the external aggregate seed on a registry pin, and compute
-// the closure once. Both dispatchBuild and lintRelease call it so the sequence
-// lives in one place and cannot drift between them.
-//
-// The helper ends at the closure: caller-specific setup (the lazyView and its
-// pins/integrity policy) is supplied by the caller, and all post-closure work
-// (validation, lockfile verification, extends, render) stays in the caller —
-// the build and lint post-closure sequences differ deliberately.
-//
-// afterManifest, when non-nil, runs after the Manifest is composed and before
-// the Aggregate resolves. The build injects its manifest-implements consistency
-// halt there so that check still fires before the closure walk; lint passes nil.
-// lf may be nil (lint tolerates a missing lockfile); the pin gate is skipped
-// when it is, leaving the aggregate seeded external exactly as before.
-func releaseClosure(
-	releasePath string,
-	lazyView *catalog.LazyLookup,
-	lf *lockfile.Lockfile,
-	wsCfg workspaceconfig.Config,
-	wsRoot, cacheDir string,
-	afterManifest func(manifest *types.Manifest, manifestPath string) error,
-) (releaseClosureResult, error) {
-	releaseDir := filepath.Dir(releasePath)
-	rel, err := resolver.LoadRelease(releasePath)
-	if err != nil {
-		return releaseClosureResult{}, fmt.Errorf("load release: %w", err)
-	}
-	manRes, err := resolver.ResolveManifest(releaseDir, rel.Spec.Manifest)
-	if err != nil {
-		return releaseClosureResult{}, fmt.Errorf("load manifest: %w", err)
-	}
-	// Compose the Manifest's extends chain before any downstream lookup reads its
-	// mappings, so the recipe cascade and resolution-completeness pass operate on
-	// the inherited result. A Manifest with no extends is returned unchanged.
-	manifest, err := resolver.ResolveManifestExtends(releaseDir, manRes.Manifest)
-	if err != nil {
-		return releaseClosureResult{}, fmt.Errorf("compose manifest extends: %w", err)
-	}
-	if afterManifest != nil {
-		if err := afterManifest(manifest, manRes.Path); err != nil {
-			return releaseClosureResult{}, err
-		}
-	}
-	aggRes, err := resolver.ResolveAggregate(releaseDir, rel.Spec.Aggregate, lazyView.AggregateLookup(), nil)
-	if err != nil {
-		return releaseClosureResult{}, fmt.Errorf("load aggregate: %w", err)
-	}
-	// A registry-pinned top-level resolves through the lazy lookup (Tier-1 / pinned
-	// Tier-2); seeding it external — externals are consulted first — would shadow it
-	// with a version-less pin and drift. Gate the external seed on the pin; the
-	// manifest is always external (it has no registry tier).
-	aggExternal := aggRes.Bytes
-	if lf != nil && lockfileHasRegistryPin(lf, rel.Spec.Aggregate) {
-		aggExternal = nil
-	}
-	externals := lockfile.ExternalEntitiesFromBytes(rel, aggExternal, manRes.Bytes)
-
-	cl, lookup, err := computeBuildClosure(rel, manifest, aggRes.Aggregate, externals, wsCfg, lazyView, wsRoot, cacheDir)
-	if err != nil {
-		return releaseClosureResult{}, err
-	}
-	return releaseClosureResult{Release: rel, Manifest: manifest, Aggregate: aggRes, Closure: cl, Lookup: lookup}, nil
-}
-
-// computeBuildClosure walks the Release's closure ONCE, hermetically (the lazy
-// lookup carries a nil OCIPuller, so Tier 3 never fires at build time), and
-// resolves the cross-document SchemaLibrary + MappingLibrary axes the entity walk
-// does not descend. The single closure is reused for closure-scoped validation,
-// lockfile-drift verification, and closure-scoped extends — so the closure is
-// walked once, not once per concern. Discovery runs through the lazy lookup (the
-// same producer pull uses), so a remote pinned library resolves from the pinned
-// cache and the drift compare is like-for-like with pull.
-// The computed closure is returned alongside the hermetic Lookup it was walked
-// through (nil OCIPuller). The caller reuses that same Lookup to reconstruct the
-// sub-aggregate and plugin axes for drift verification, so the reconstruction
-// resolves against the identical pinned view — no second lookup is built.
-func computeBuildClosure(rel *types.Release, manifest *types.Manifest, aggregate *types.Aggregate, externals map[string][]byte, wsCfg workspaceconfig.Config, lazyView *catalog.LazyLookup, wsRoot, cacheDir string) (closure.Closure, closure.Lookup, error) {
-	lookup := lazyView.ClosureLookup(nil, wsRoot, cacheDir, externals)
-	cl, err := closure.ComputeClosure(rel, manifest, aggregate, wsCfg, lookup)
-	if err != nil {
-		return closure.Closure{}, nil, err
-	}
-	if err := closure.AugmentClosure(&cl, lazyView, lookup); err != nil {
-		return closure.Closure{}, nil, err
-	}
-	return cl, lookup, nil
 }
 
 // withSkipContext annotates an in-closure resolution / validation failure with

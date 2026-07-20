@@ -257,22 +257,6 @@ func entityCommandFlags(flags []types.PluginCommandFlag) []wasm.PluginCommandFla
 	return out
 }
 
-// entityCuratedSurface projects a Plugin entity's authored, curated surface — its
-// export names, plugin-level capabilities, and whether it authors a
-// render-behavior contract — into the shape the under-declaration advisory reads.
-func entityCuratedSurface(entity types.Plugin) wasm.EntityCuratedSurface {
-	exportNames := make([]string, len(entity.Spec.Exports))
-	for i, e := range entity.Spec.Exports {
-		exportNames[i] = e.Name
-	}
-	hasContract := entity.Spec.Provider != nil && entity.Spec.Provider.Contract != nil
-	return wasm.EntityCuratedSurface{
-		ExportNames:  exportNames,
-		Capabilities: entity.Spec.Capabilities,
-		HasContract:  hasContract,
-	}
-}
-
 // canonicalHostFunctionsEqual reports whether two host-function sets are equal
 // as sets (order and duplicates ignored), treating an absent record (nil) and an
 // explicit empty set as equal. It delegates to the single set-equality home in

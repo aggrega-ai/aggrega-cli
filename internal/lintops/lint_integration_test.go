@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Cognitio S.r.l.
 
-package main
+package lintops
 
 import (
 	"context"
@@ -31,7 +31,7 @@ import (
 //     triggers more than one rule simultaneously.
 
 // integrationFixturePath returns the on-disk path of an
-// integration fixture under cmd/aggrega/testdata/integration/.
+// integration fixture under internal/lintops/testdata/integration/.
 func integrationFixturePath(parts ...string) string {
 	segments := append([]string{"testdata", "integration"}, parts...)
 	return filepath.Join(segments...)
@@ -119,15 +119,15 @@ func TestSchemaEvolutionMatrixAllKinds(t *testing.T) {
 				proposedYAML := readFixture(t, k.dir, "major", "proposed.yaml")
 				proposedPath := mutateProposedVersion(t, proposedYAML, c.proposedVer)
 
-				cfg := lintConfig{
+				cfg := Config{
 					EntityPath:     proposedPath,
 					PrePublish:     true,
 					PluginPath:     pluginPath,
 					PolicyResolver: func(_ string, ws bool) bool { return ws },
 					FetchTarget:    target,
-					ws:             resolveTempWorkspace(t),
+					Workspace:      resolveTempWorkspace(t),
 				}
-				err := lintRun(cfg)
+				err := RunEntity(cfg)
 				if c.wantHalt && err == nil {
 					t.Errorf("expected HALT; got PASS")
 				}
@@ -187,7 +187,7 @@ func TestRuleParticipation(t *testing.T) {
 
 // dispatchAndCheckRule dispatches a single rule against a
 // participation fixture and returns whether that rule's
-// findings appear in the output. Mirrors what lintRun does
+// findings appear in the output. Mirrors what RunEntity does
 // per-rule but isolates the rule under test (so the test
 // asserts the rule actually fires rather than relying on the
 // full rule-set dispatch).
@@ -292,23 +292,23 @@ func TestMultiRuleCrossTalk(t *testing.T) {
 		t.Fatalf("write: %v", err)
 	}
 
-	cfg := lintConfig{
+	cfg := Config{
 		EntityPath:     entityPath,
 		PrePublish:     false, // default mode; cross-talk is about aggregation, not version bumping
 		PluginPath:     pluginPath,
 		PolicyResolver: func(_ string, ws bool) bool { return ws },
-		ws:             resolveTempWorkspace(t),
+		Workspace:      resolveTempWorkspace(t),
 	}
 	// Run lint; in default mode every finding downgrades to
 	// warning and the command exits clean (no error).
-	err := lintRun(cfg)
+	err := RunEntity(cfg)
 	if err != nil {
 		t.Errorf("default mode should not halt; got: %v", err)
 	}
 
 	// We can't easily intercept the printed findings from
-	// lintRun's stderr emission. Instead, invoke each rule
-	// directly via the batch dispatcher (mirrors what lintRun
+	// RunEntity's stderr emission. Instead, invoke each rule
+	// directly via the batch dispatcher (mirrors what RunEntity
 	// does internally) and assert the multi-rule union.
 	expectedRules := []string{
 		"name-shape",
@@ -327,7 +327,7 @@ func TestMultiRuleCrossTalk(t *testing.T) {
 
 // dispatchAllAndCollectRuleIDs runs every rule in the default
 // rule slice against the fixture and returns the set of rule_ids
-// that produced at least one finding. Mirrors lintRun's per-rule
+// that produced at least one finding. Mirrors RunEntity's per-rule
 // iteration without needing to intercept stderr.
 func dispatchAllAndCollectRuleIDs(t *testing.T, pluginPath string, yamlBytes []byte, entityPath string) map[string]bool {
 	t.Helper()
@@ -370,7 +370,7 @@ func dispatchAllAndCollectRuleIDs(t *testing.T, pluginPath string, yamlBytes []b
 // TestPluginDefaultLimits exercises the publish-time advisory that
 // warns when a Plugin entity declares no explicit runtime cap. It
 // proves the silent half (a Plugin with a non-zero cap produces no
-// finding) and that the warning is non-halting (default-mode lintRun
+// finding) and that the warning is non-halting (default-mode RunEntity
 // returns nil even though the finding is present).
 func TestPluginDefaultLimits(t *testing.T) {
 	pluginPath := wasmtest.EnsureFixtureBuilt(t, "publishing-linter.wasm")
@@ -438,21 +438,21 @@ spec:
 		}
 	})
 
-	// The warning does not halt default-mode lintRun.
+	// The warning does not halt default-mode RunEntity.
 	t.Run("non_halting", func(t *testing.T) {
 		dir := t.TempDir()
 		entityPath := filepath.Join(dir, "plugin.yaml")
 		if err := os.WriteFile(entityPath, noRuntime, 0o644); err != nil {
 			t.Fatalf("write: %v", err)
 		}
-		cfg := lintConfig{
+		cfg := Config{
 			EntityPath:     entityPath,
 			PrePublish:     false,
 			PluginPath:     pluginPath,
 			PolicyResolver: func(_ string, ws bool) bool { return ws },
-			ws:             resolveTempWorkspace(t),
+			Workspace:      resolveTempWorkspace(t),
 		}
-		if err := lintRun(cfg); err != nil {
+		if err := RunEntity(cfg); err != nil {
 			t.Errorf("default mode should not halt on a warning; got: %v", err)
 		}
 	})
@@ -496,7 +496,7 @@ func TestRuleParticipationCoversAllDispatchedRules(t *testing.T) {
 	for id := range dispatched {
 		if !expectedSet[id] {
 			t.Errorf("rule %q is dispatched but missing from the participation list; "+
-				"add a participation fixture under cmd/aggrega/testdata/integration/participation/",
+				"add a participation fixture under internal/lintops/testdata/integration/participation/",
 				id)
 		}
 	}

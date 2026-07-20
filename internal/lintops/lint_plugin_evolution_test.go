@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Cognitio S.r.l.
 
-package main
+package lintops
 
 import (
 	"bytes"
@@ -20,7 +20,7 @@ import (
 )
 
 // pluginFixtureBytes returns the YAML bytes of one of the plugin
-// lint-matrix fixtures under cmd/aggrega/testdata/lint-matrix/plugin/.
+// lint-matrix fixtures under internal/lintops/testdata/lint-matrix/plugin/.
 func pluginFixtureBytes(t *testing.T, changeDir, file string) []byte {
 	t.Helper()
 	path := filepath.Join("testdata", "lint-matrix", "plugin", changeDir, file)
@@ -88,16 +88,16 @@ func TestLintPrePublishPluginEvolution(t *testing.T) {
 				proposedPath := writeEntityFile(t, proposedYAML, c.proposedVer)
 
 				var diag bytes.Buffer
-				cfg := lintConfig{
+				cfg := Config{
 					EntityPath:     proposedPath,
 					PrePublish:     true,
 					PluginPath:     pluginPath,
 					PolicyResolver: func(_ string, ws bool) bool { return ws },
 					FetchTarget:    target,
-					ws:             resolveTempWorkspace(t),
+					Workspace:      resolveTempWorkspace(t),
 					DiagOut:        &diag,
 				}
-				err := lintRun(cfg)
+				err := RunEntity(cfg)
 				if c.wantHalt {
 					if err == nil {
 						t.Fatalf("expected HALT for %s; got PASS (diag: %s)", c.proposedVer, diag.String())
@@ -118,7 +118,7 @@ func TestLintPrePublishPluginEvolution(t *testing.T) {
 
 // failingFetchTarget is an oras.ReadOnlyTarget (plus TagLister) whose every
 // method errors, so a test proves the registry is never consulted: any
-// consultation turns into a lintRun error rather than a silent pass.
+// consultation turns into a RunEntity error rather than a silent pass.
 type failingFetchTarget struct{}
 
 func (failingFetchTarget) Fetch(context.Context, ocispec.Descriptor) (io.ReadCloser, error) {
@@ -147,16 +147,16 @@ func TestLintPrePublishCoreExempt(t *testing.T) {
 	entityPath := filepath.Join("testdata", "lint-matrix", "plugin", "core-exempt", "plugin.yaml")
 
 	var diag bytes.Buffer
-	cfg := lintConfig{
+	cfg := Config{
 		EntityPath:     entityPath,
 		PrePublish:     true,
 		PluginPath:     pluginPath,
 		PolicyResolver: func(_ string, ws bool) bool { return ws },
 		FetchTarget:    failingFetchTarget{},
-		ws:             resolveTempWorkspace(t),
+		Workspace:      resolveTempWorkspace(t),
 		DiagOut:        &diag,
 	}
-	err := lintRun(cfg)
+	err := RunEntity(cfg)
 	if err != nil {
 		t.Fatalf("core plugin should be exempt from the evolution gate; got HALT: %v (diag: %s)", err, diag.String())
 	}

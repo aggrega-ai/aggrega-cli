@@ -18,6 +18,7 @@ import (
 // (or the process working directory when absent); the server holds no cached
 // workspace, so two concurrent calls never share resolution state.
 type toolWorkspace struct {
+	rw       *workspaceconfig.ResolvedWorkspace
 	root     string
 	cfg      workspaceconfig.Config
 	cacheDir string
@@ -44,10 +45,11 @@ func (s *server) resolveToolWorkspace(rootArg string, catalogDirs []string) (*to
 	cfg := rw.Config()
 	root := rw.Root()
 	tw := &toolWorkspace{
+		rw:       rw,
 		root:     root,
 		cfg:      cfg,
 		cacheDir: cfg.ResolvedArtifactCacheDir(),
-		dirs:     resolveCatalogDirs(catalogDirs, cfg, root),
+		dirs:     workspaceconfig.ResolveCatalogDirs(catalogDirs, cfg, root),
 	}
 	return tw, nil
 }
@@ -86,26 +88,4 @@ func loadReleaseLockfile(releasePath string) *lockfile.Lockfile {
 		return nil
 	}
 	return lf
-}
-
-// resolveCatalogDirs assembles the first-win catalog search stack for a tool
-// call: the call's catalog directories (made absolute) prepended to the
-// workspace's configured catalog_dirs, falling back to the workspace root when
-// neither supplies a directory. It mirrors the non-daemon build front door's
-// catalog-directory assembly so a tool resolves the identical catalog a CLI
-// build of the same workspace would.
-func resolveCatalogDirs(flagDirs []string, cfg workspaceconfig.Config, fallback string) []string {
-	dirs := make([]string, 0, len(flagDirs)+len(cfg.Workspace.CatalogDirs))
-	for _, d := range flagDirs {
-		if abs, err := filepath.Abs(d); err == nil {
-			dirs = append(dirs, abs)
-		} else {
-			dirs = append(dirs, d)
-		}
-	}
-	dirs = append(dirs, cfg.Workspace.CatalogDirs...)
-	if len(dirs) == 0 {
-		dirs = []string{fallback}
-	}
-	return dirs
 }

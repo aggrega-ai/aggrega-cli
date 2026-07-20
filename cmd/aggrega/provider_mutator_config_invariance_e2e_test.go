@@ -69,7 +69,7 @@ func serveRenderArtifacts(t *testing.T, ws, releaseRel string, catDirs []string,
 	wsRoot := rw.Root()
 	wsCfg := rw.Config()
 	cacheDir := wsCfg.ResolvedArtifactCacheDir()
-	dirs := resolveCatalogDirs(catDirs, wsCfg, ws)
+	dirs := workspaceconfig.ResolveCatalogDirs(catDirs, wsCfg, ws)
 	releasePath := filepath.Join(ws, releaseRel)
 
 	lf, _, err := lockfile.LoadLockfile(lockfile.PathFor(releasePath))

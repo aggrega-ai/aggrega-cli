@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Cognitio S.r.l.
 
-package main
+package lintops
 
 import (
 	"fmt"
@@ -13,6 +13,7 @@ import (
 
 	"go.yaml.in/yaml/v3"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/compilerops"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
@@ -21,16 +22,16 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
-// lintConventionsCatalogWide resolves the workspace's catalog directories and
-// runs the structural publishing-linter rules over every catalog entity found
-// under them. Catalog directories come from the repeatable --catalog flag
-// prepended to the workspace config's catalog_dirs; at least one source must be
-// set — a whole-tree enumeration with no configured directory is refused rather
-// than silently scanning the working directory. This is the conventions
-// counterpart to whole-catalog correctness (`aggrega validate`): correctness
-// halts on a broken entity, conventions report publishing-discipline advisories
-// and never halt on a convention finding alone.
-func lintConventionsCatalogWide(rw *workspaceconfig.ResolvedWorkspace, catalogFlagDirs []string, out, diagOut io.Writer) error {
+// RunCatalogWide resolves the workspace's catalog directories and runs the
+// structural publishing-linter rules over every catalog entity found under them.
+// Catalog directories come from the repeatable catalogFlagDirs prepended to the
+// workspace config's catalog_dirs; at least one source must be set — a whole-tree
+// enumeration with no configured directory is refused rather than silently
+// scanning the working directory. This is the conventions counterpart to
+// whole-catalog correctness (`aggrega validate`): correctness halts on a broken
+// entity, conventions report publishing-discipline advisories and never halt on a
+// convention finding alone.
+func RunCatalogWide(rw *workspaceconfig.ResolvedWorkspace, catalogFlagDirs []string, out, diagOut io.Writer) error {
 	rw, err := workspaceOrResolve(rw)
 	if err != nil {
 		return fmt.Errorf("load workspace config: %w", err)
@@ -39,7 +40,7 @@ func lintConventionsCatalogWide(rw *workspaceconfig.ResolvedWorkspace, catalogFl
 	if len(catalogFlagDirs) == 0 && len(wsCfg.Workspace.CatalogDirs) == 0 {
 		return fmt.Errorf("OPS_ERROR: whole-catalog conventions check needs catalog directories to scan; pass --catalog or set `workspace.catalog_dirs` in .aggrega-config.yaml (or check a specific Release with --release)")
 	}
-	dirs := resolveCatalogDirs(catalogFlagDirs, wsCfg, rw.Root())
+	dirs := workspaceconfig.ResolveCatalogDirs(catalogFlagDirs, wsCfg, rw.Root())
 	files, err := walkCatalogEntityFiles(dirs)
 	if err != nil {
 		return err
@@ -51,15 +52,15 @@ func lintConventionsCatalogWide(rw *workspaceconfig.ResolvedWorkspace, catalogFl
 	return lintConventionsFiles(rw, catalogFlagDirs, paths, out, diagOut)
 }
 
-// lintConventionsRelease computes a Release's resolved closure through the SAME
-// build machinery the compiler uses (releaseClosure over the lazy lookup) and
-// runs the structural publishing-linter rules over the catalog entity files that
-// closure reaches. Entities are resolved to their author-owned catalog files;
-// registry-pinned entities living in a content-addressed cache slot carry no
-// local file to lint and are skipped (the publishing-linter checks author-time
+// RunRelease computes a Release's resolved closure through the SAME build
+// machinery the compiler uses (the shared closure resolver over the lazy lookup)
+// and runs the structural publishing-linter rules over the catalog entity files
+// that closure reaches. Entities are resolved to their author-owned catalog
+// files; registry-pinned entities living in a content-addressed cache slot carry
+// no local file to lint and are skipped (the publishing-linter checks author-time
 // conventions, which only apply to locally-authored files). Findings are advisory
 // — conventions never halt on a convention finding alone.
-func lintConventionsRelease(rw *workspaceconfig.ResolvedWorkspace, releasePath string, catalogFlagDirs []string, out, diagOut io.Writer) error {
+func RunRelease(rw *workspaceconfig.ResolvedWorkspace, releasePath string, catalogFlagDirs []string, out, diagOut io.Writer) error {
 	rw, err := workspaceOrResolve(rw)
 	if err != nil {
 		return fmt.Errorf("workspaceconfig: %w", err)
@@ -67,7 +68,7 @@ func lintConventionsRelease(rw *workspaceconfig.ResolvedWorkspace, releasePath s
 	wsRoot := rw.Root()
 	wsCfg := rw.Config()
 	cacheDir := wsCfg.ResolvedArtifactCacheDir()
-	dirs := resolveCatalogDirs(catalogFlagDirs, wsCfg, wsRoot)
+	dirs := workspaceconfig.ResolveCatalogDirs(catalogFlagDirs, wsCfg, wsRoot)
 
 	lazyView := catalog.NewLazyLookup(wsRoot, cacheDir, dirs, nil)
 	lf, _, lfErr := lockfile.LoadLockfile(lockfile.PathFor(releasePath))
@@ -76,9 +77,16 @@ func lintConventionsRelease(rw *workspaceconfig.ResolvedWorkspace, releasePath s
 		lazyView.SetPins(catalog.PinsFromLockfile(lf))
 		lockForClosure = lf
 	}
-	rc, err := releaseClosure(releasePath, lazyView, lockForClosure, wsCfg, wsRoot, cacheDir, nil)
-	if err != nil {
-		return err
+	rc, cerr := compilerops.ResolveClosure(compilerops.ClosureInputs{
+		View:            lazyView,
+		ReleasePath:     releasePath,
+		WorkspaceRoot:   wsRoot,
+		WorkspaceConfig: wsCfg,
+		Lockfile:        lockForClosure,
+		Augment:         true,
+	})
+	if cerr != nil {
+		return cerr
 	}
 
 	files, err := walkCatalogEntityFiles(dirs)
@@ -106,9 +114,9 @@ func lintConventionsRelease(rw *workspaceconfig.ResolvedWorkspace, releasePath s
 // (os.Stderr in production); the final summary is written to out (os.Stdout).
 func lintConventionsFiles(rw *workspaceconfig.ResolvedWorkspace, catalogFlagDirs []string, paths []string, out, diagOut io.Writer) error {
 	wsCfg := rw.Config()
-	dirs := resolveCatalogDirs(catalogFlagDirs, wsCfg, rw.Root())
+	dirs := workspaceconfig.ResolveCatalogDirs(catalogFlagDirs, wsCfg, rw.Root())
 	lazyView := catalog.NewLazyLookup(rw.Root(), wsCfg.ResolvedArtifactCacheDir(), dirs, nil)
-	resolvedPlugin, err := resolveLinterPlugin("", wsCfg, lazyView.PluginByURI,
+	resolvedPlugin, err := ResolveLinterPlugin("", wsCfg, lazyView.PluginByURI,
 		linterCacheResolve(rw.Root(), wsCfg, lazyView.PluginFromCacheByURI))
 	if err != nil {
 		return err

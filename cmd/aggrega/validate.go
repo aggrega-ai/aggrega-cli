@@ -130,7 +130,7 @@ func dispatchValidate(rw *workspaceconfig.ResolvedWorkspace, path string, catalo
 	}
 	wsCfg := rw.Config()
 	cacheDir := wsCfg.ResolvedArtifactCacheDir()
-	dirs := resolveCatalogDirs(catalogFlagDirs, wsCfg, ".")
+	dirs := workspaceconfig.ResolveCatalogDirs(catalogFlagDirs, wsCfg, ".")
 
 	res, verr := validateops.ValidateEntity(rw.Root(), cacheDir, dirs, path)
 	for _, line := range res.Diagnostics {

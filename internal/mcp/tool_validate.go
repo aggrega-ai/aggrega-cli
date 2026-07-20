@@ -206,11 +206,18 @@ func validateReleaseScope(s *server, ctx context.Context, a validateArgs, releas
 	lf := loadReleaseLockfile(releasePath)
 	view := tw.newView(lf)
 
+	// Augment stays off: the release-scope validation core runs over the
+	// un-augmented closure (the same footing serve's Tier-4 validation uses).
+	// Folding the library axes here would turn a schema-pillar validation
+	// diagnostic — the case a $ref to an absent library exercises — into an earlier
+	// closure-resolution error, changing the verb's diagnostic surface.
 	resolved, cerr := compilerops.ResolveClosure(compilerops.ClosureInputs{
 		View:            view,
 		ReleasePath:     releasePath,
 		WorkspaceRoot:   tw.root,
 		WorkspaceConfig: tw.cfg,
+		Lockfile:        lf,
+		Augment:         false,
 	})
 	if cerr != nil {
 		return errorResult(explainToolError(

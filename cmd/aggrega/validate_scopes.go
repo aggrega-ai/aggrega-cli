@@ -37,7 +37,7 @@ func validateCatalogWideFromWorkspace(rw *workspaceconfig.ResolvedWorkspace, cat
 	if len(catalogFlagDirs) == 0 && len(wsCfg.Workspace.CatalogDirs) == 0 {
 		return fmt.Errorf("OPS_ERROR: whole-catalog validation needs catalog directories to scan; pass --catalog or set `workspace.catalog_dirs` in .aggrega-config.yaml (or validate a specific Release with --release)")
 	}
-	dirs := resolveCatalogDirs(catalogFlagDirs, wsCfg, wsRoot)
+	dirs := workspaceconfig.ResolveCatalogDirs(catalogFlagDirs, wsCfg, wsRoot)
 	return validateCatalogWide(wsRoot, cacheDir, dirs, os.Stderr, os.Stdout)
 }
 
@@ -78,7 +78,7 @@ func validateCatalogWide(wsRoot, cacheDir string, dirs []string, diagOut, out io
 
 // validateRelease runs the release-scoped correctness pass: it computes a
 // Release's resolved closure through the SAME build machinery the compiler uses
-// (releaseClosure over the lazy lookup — never a local fork, which would re-open
+// (the shared closure resolver over the lazy lookup — never a local fork, which would re-open
 // the build/validate view divergence) and validates over exactly the entities
 // that Release reaches: closure-scoped extends resolution, closure-scoped
 // schema-pillar validation, and pre-render authored-value conformance via the
@@ -105,7 +105,7 @@ func validateRelease(rw *workspaceconfig.ResolvedWorkspace, releasePath string, 
 	wsRoot := rw.Root()
 	wsCfg := rw.Config()
 	cacheDir := wsCfg.ResolvedArtifactCacheDir()
-	dirs := resolveCatalogDirs(catalogFlagDirs, wsCfg, wsRoot)
+	dirs := workspaceconfig.ResolveCatalogDirs(catalogFlagDirs, wsCfg, wsRoot)
 
 	lazyView := catalog.NewLazyLookup(wsRoot, cacheDir, dirs, nil)
 	lf, _, lfErr := lockfile.LoadLockfile(lockfile.PathFor(releasePath))
@@ -120,11 +120,18 @@ func validateRelease(rw *workspaceconfig.ResolvedWorkspace, releasePath string, 
 	// extends and schema-pillar gates, the Steps 1-4 pipeline, the
 	// resolution-completeness findings, the input-kind capability check, and the
 	// advisory lines.
+	// Augment stays off: the release-scope validation core runs over the
+	// un-augmented closure (the same footing serve's Tier-4 validation uses).
+	// Folding the library axes here would turn a schema-pillar validation
+	// diagnostic — the case a $ref to an absent library exercises — into an earlier
+	// closure-resolution error, changing the verb's diagnostic surface.
 	resolved, cerr := compilerops.ResolveClosure(compilerops.ClosureInputs{
 		View:            lazyView,
 		ReleasePath:     releasePath,
 		WorkspaceRoot:   wsRoot,
 		WorkspaceConfig: wsCfg,
+		Lockfile:        lf,
+		Augment:         false,
 	})
 	if cerr != nil {
 		return cerr

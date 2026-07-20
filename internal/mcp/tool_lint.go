@@ -9,17 +9,28 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"os"
-	"os/exec"
 	"strings"
+
+	"github.com/aggrega-ai/aggrega-cli/internal/lintops"
 )
 
-// lintRunner runs the lint operation with the supplied argument vector, writing
-// its output to stdout and stderr. It is the seam the lint tool drives: the
-// production value re-invokes the running binary's lint subcommand so the
-// publishing-discipline rule set has a single home, and a test injects a fake
-// that records the arguments.
-type lintRunner func(ctx context.Context, args []string, stdout, stderr io.Writer) error
+// lintRequest is the in-process lint operation's argument shape, translated from
+// the tool's wire arguments. Exactly one of entity or release selects the
+// subject.
+type lintRequest struct {
+	entity        string
+	release       string
+	prePublish    bool
+	plugin        string
+	workspaceRoot string
+}
+
+// lintRunner runs the lint operation over an in-process request, writing its
+// output to the summary (stdout) and diagnostic (stderr) writers. It is the seam
+// the lint tool drives: the production value runs the shared lint core in-process
+// on the server's resolved workspace, and a test injects a fake that records the
+// request.
+type lintRunner func(ctx context.Context, req lintRequest, stdout, stderr io.Writer) error
 
 // lintArgs is the lint tool's argument shape. Exactly one of entity or release
 // selects the subject.
@@ -94,30 +105,24 @@ func lintInvoke(s *server, ctx context.Context, args json.RawMessage) (*callTool
 		return nil, &rpcError{Code: codeInvalidParams, Message: "lint requires either an 'entity' (catalog entity path) or a 'release' (Release path)"}
 	}
 
-	argv := []string{"lint"}
-	if root := strings.TrimSpace(a.WorkspaceRoot); root != "" {
-		argv = append(argv, "--workspace-root", root)
+	kind := "component"
+	req := lintRequest{
+		entity:        entity,
+		release:       release,
+		prePublish:    a.PrePublish,
+		plugin:        strings.TrimSpace(a.Plugin),
+		workspaceRoot: strings.TrimSpace(a.WorkspaceRoot),
 	}
-	kind := ""
 	if release != "" {
-		argv = append(argv, "--release", release)
 		kind = "release"
-	} else {
-		argv = append(argv, entity)
-		if a.PrePublish {
-			argv = append(argv, "--pre-publish")
-		}
-		if p := strings.TrimSpace(a.Plugin); p != "" {
-			argv = append(argv, "--plugin", p)
-		}
 	}
 
 	run := s.runLint
 	if run == nil {
-		run = selfExecLint
+		run = s.lintInProcess
 	}
 	var stdout, stderr bytes.Buffer
-	if err := run(ctx, argv, &stdout, &stderr); err != nil {
+	if err := run(ctx, req, &stdout, &stderr); err != nil {
 		detail := strings.TrimSpace(stderr.String())
 		if detail == "" {
 			detail = err.Error()
@@ -137,18 +142,31 @@ func lintInvoke(s *server, ctx context.Context, args json.RawMessage) (*callTool
 	return textResult(out, lintResultPayload{Output: stdout.String() + stderr.String()})
 }
 
-// selfExecLint runs the lint operation by re-invoking the running binary's lint
-// subcommand as a subprocess, so the publishing-discipline rule set keeps its
-// single home in the command layer rather than being duplicated here. The
-// subprocess inherits the current working directory, which grounds workspace
-// discovery when no workspace_root override is supplied.
-func selfExecLint(ctx context.Context, args []string, stdout, stderr io.Writer) error {
-	self, err := os.Executable()
+// lintInProcess runs the lint operation in-process over the shared lint core,
+// resolving the server's tool workspace exactly as the sibling tools do. The
+// success summary is written to stdout and diagnostic findings to stderr, kept on
+// separate streams so a clean pass still surfaces its advisories. The policy
+// resolver passes the workspace value through unchanged — the tool exposes no
+// allow/enforce overrides, so the effective policy is always the workspace value.
+func (s *server) lintInProcess(ctx context.Context, req lintRequest, stdout, stderr io.Writer) error {
+	tw, err := s.resolveToolWorkspace(req.workspaceRoot, nil)
 	if err != nil {
-		return fmt.Errorf("locate running binary for lint: %w", err)
+		return err
 	}
-	cmd := exec.CommandContext(ctx, self, args...)
-	cmd.Stdout = stdout
-	cmd.Stderr = stderr
-	return cmd.Run()
+	if req.release != "" {
+		return lintops.RunRelease(tw.rw, tw.absReleasePath(req.release), nil, stdout, stderr)
+	}
+	pluginPath := req.plugin
+	if pluginPath != "" {
+		pluginPath = tw.absReleasePath(pluginPath)
+	}
+	return lintops.RunEntity(lintops.Config{
+		EntityPath:     tw.absReleasePath(req.entity),
+		PrePublish:     req.prePublish,
+		PluginPath:     pluginPath,
+		PolicyResolver: func(_ string, ws bool) bool { return ws },
+		Workspace:      tw.rw,
+		Out:            stdout,
+		DiagOut:        stderr,
+	})
 }

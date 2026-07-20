@@ -158,6 +158,8 @@ func (s *server) describeRelease(a describeArgs, release string) (*callToolResul
 		ReleasePath:     releasePath,
 		WorkspaceRoot:   tw.root,
 		WorkspaceConfig: tw.cfg,
+		Lockfile:        lf,
+		Augment:         true,
 	})
 	if cerr != nil {
 		return errorResult(explainToolError(
