@@ -702,11 +702,13 @@ func TestValidate_StreamingHostFuncs_DescriptorLevelDisjointness(t *testing.T) {
 
 // TestHostFunctionAllowlistUnchanged pins the v1alpha1 host-function
 // surface to exactly the curated set: the two baseline diagnostic
-// functions, the external-input fetch channel, and the two source
-// callbacks a sourced provider guest uses to pack a resolved selection
-// and to read a single file for content-based selection. A change that
-// adds a host function without a corresponding decision fails here
-// loudly rather than silently widening the bound surface.
+// functions, the external-input fetch channel, the two source callbacks
+// a sourced provider guest uses to pack a resolved selection and to read
+// a single file for content-based selection, and the producer-consumption
+// callback a consumer guest uses to obtain a source's canonical tree
+// through the host. A change that adds a host function without a
+// corresponding decision fails here loudly rather than silently widening
+// the bound surface.
 func TestHostFunctionAllowlistUnchanged(t *testing.T) {
 	t.Parallel()
 
@@ -716,6 +718,7 @@ func TestHostFunctionAllowlistUnchanged(t *testing.T) {
 		"aggrega_fetch_external_input": true,
 		"aggrega_pack_source":          true,
 		"aggrega_read_source_file":     true,
+		"aggrega_parse_source":         true,
 	}
 	if !reflect.DeepEqual(hostFunctionAllowlist, want) {
 		t.Fatalf("hostFunctionAllowlist changed: got %v, want %v", hostFunctionAllowlist, want)

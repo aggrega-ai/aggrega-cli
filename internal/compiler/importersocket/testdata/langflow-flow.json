@@ -1,0 +1,46 @@
+{
+  "data": {
+    "nodes": [
+      {
+        "id": "OpenAIModel-a1b2",
+        "data": {
+          "type": "OpenAIModel",
+          "node": {
+            "template": {
+              "model_name": { "type": "str", "value": "gpt-4o" },
+              "temperature": { "type": "float", "value": 0.2 },
+              "api_key": { "type": "str", "value": "" }
+            }
+          }
+        }
+      },
+      {
+        "id": "Retrieval-c3d4",
+        "data": {
+          "type": "Retrieval",
+          "node": {
+            "template": {
+              "top_k": { "type": "int", "value": 5 },
+              "search_query": { "type": "str", "value": "" }
+            }
+          }
+        }
+      },
+      {
+        "id": "CustomLogic-e5f6",
+        "data": {
+          "type": "CustomPythonComponent",
+          "node": {
+            "template": {
+              "code": { "type": "code", "value": "def run(): pass" }
+            }
+          }
+        }
+      }
+    ],
+    "edges": [
+      { "source": "OpenAIModel-a1b2", "target": "CustomLogic-e5f6" },
+      { "source": "Retrieval-c3d4", "target": "CustomLogic-e5f6" }
+    ]
+  }
+}

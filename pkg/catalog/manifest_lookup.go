@@ -477,7 +477,36 @@ func (c *Catalog) PluginByURI(uri string) (types.Plugin, bool) {
 // set through the recipeCatalog() *Catalog shell, so its ProviderPluginForTarget
 // delegates here against the same matcher (no per-backing reimplementation).
 func (c *Catalog) ProviderPluginForTarget(ref string, bindings map[string]string) (types.Plugin, bool, error) {
-	return c.pluginForCapability("provider", ref, bindings)
+	capability, verSeg, hasVer := splitVersionedURI(ref)
+	return c.pluginForCapability("provider", capability, verSeg, hasVer, bindings, providerCapabilityDiag)
+}
+
+// capabilityDiag carries a capability-resolving socket's own diagnostic
+// vocabulary, so the shared select emits each socket's phrasing rather than a
+// single hardcoded one. noun is woven into the binding-unsatisfied and
+// version-no-serving-plugin halts; bindingUnsatisfied and versionUnsatisfiable
+// are the sentinels those two halts (and the unsatisfiable-version-select halt)
+// wrap; ambiguous builds the more-than-one-serving-plugin halt, whose phrasing
+// is socket-specific — the provider names its plugins.providers binding surface,
+// a format-routed socket names the format — so it is a closure rather than a
+// noun-substituted template.
+type capabilityDiag struct {
+	noun                 string
+	bindingUnsatisfied   error
+	versionUnsatisfiable error
+	ambiguous            func(capability string, candidates []string) error
+}
+
+// providerCapabilityDiag is the provider socket's diagnostic set. Its phrasing
+// reproduces the provider wording verbatim, so provider resolution's halts stay
+// byte-identical now that the shared select is generalized across sockets.
+var providerCapabilityDiag = capabilityDiag{
+	noun:                 "provider-rendering plugin",
+	bindingUnsatisfied:   ErrProviderBindingUnsatisfied,
+	versionUnsatisfiable: ErrProviderVersionUnsatisfiable,
+	ambiguous: func(capability string, candidates []string) error {
+		return fmt.Errorf("%w: capability %q is served by more than one provider plugin (%s); add a plugins.providers entry for %q selecting one", ErrAmbiguousProviderPlugin, capability, strings.Join(candidates, ", "), capability)
+	},
 }
 
 // pluginForCapability is the single generalized capability-resolution core the
@@ -502,15 +531,17 @@ func (c *Catalog) ProviderPluginForTarget(ref string, bindings map[string]string
 // selects among the survivors, so a bound custom provider overrides the embedded
 // default while a local core entity of the same coordinate is shadowed by it.
 //
-// The diagnostics and sentinels are provider-scoped (ErrAmbiguousProviderPlugin
-// and its siblings) because the provider socket is the sole caller today; a
-// second capability-resolving socket would thread its own diagnostic phrasing.
-func (c *Catalog) pluginForCapability(pluginType, ref string, bindings map[string]string) (types.Plugin, bool, error) {
-	name, verSeg, hasVer := splitVersionedURI(ref)
-
+// The capability is the already-separated capability string (the provider passes
+// the pre-split bare name; a format-routed socket passes its full "prefix:value"
+// capability, which may itself carry a colon), and refPin/refHasPin is the
+// caller's optional version constraint on the resolved plugin. The diagnostics
+// are threaded via diag, so each socket surfaces its own sentinels and phrasing
+// rather than a hardcoded provider one — the provider socket passes
+// providerCapabilityDiag to keep its halts byte-identical.
+func (c *Catalog) pluginForCapability(pluginType, capability, refPin string, refHasPin bool, bindings map[string]string, diag capabilityDiag) (types.Plugin, bool, error) {
 	var bindBase, bindVer string
 	var bindHasVer, bound bool
-	if bv, ok := bindings[name]; ok && bv != "" {
+	if bv, ok := bindings[capability]; ok && bv != "" {
 		bound = true
 		bindBase, bindVer, bindHasVer = ociref.SplitVersionTag(bv)
 	}
@@ -521,7 +552,7 @@ func (c *Catalog) pluginForCapability(pluginType, ref string, bindings map[strin
 		if p.Metadata.PluginType != pluginType {
 			continue
 		}
-		if !slices.Contains(p.Spec.Capabilities, name) {
+		if !slices.Contains(p.Spec.Capabilities, capability) {
 			continue
 		}
 		// A binding selects the plugin repository by its coordinate identity
@@ -534,11 +565,11 @@ func (c *Catalog) pluginForCapability(pluginType, ref string, bindings map[strin
 		distinctNames[p.Metadata.Name] = struct{}{}
 	}
 
-	// The version pin priority: the recipe's target pin, else the binding's
-	// optional version. Threaded into the diagnostic and the version select alike.
+	// The version pin priority: the caller's pin, else the binding's optional
+	// version. Threaded into the diagnostic and the version select alike.
 	pin := ""
-	if hasVer {
-		pin = verSeg
+	if refHasPin {
+		pin = refPin
 	} else if bound && bindHasVer {
 		pin = bindVer
 	}
@@ -546,10 +577,10 @@ func (c *Catalog) pluginForCapability(pluginType, ref string, bindings map[strin
 	switch len(distinctNames) {
 	case 0:
 		if bound {
-			return types.Plugin{}, false, fmt.Errorf("%w: capability %q is bound to plugin %q, but no provider-rendering plugin serving %q matches that identity", ErrProviderBindingUnsatisfied, name, bindBase, name)
+			return types.Plugin{}, false, fmt.Errorf("%w: capability %q is bound to plugin %q, but no %s serving %q matches that identity", diag.bindingUnsatisfied, capability, bindBase, diag.noun, capability)
 		}
-		if hasVer {
-			return types.Plugin{}, false, fmt.Errorf("%w: capability %q pins %q but no provider-rendering plugin serves it", ErrProviderVersionUnsatisfiable, name, verSeg)
+		if refHasPin {
+			return types.Plugin{}, false, fmt.Errorf("%w: capability %q pins %q but no %s serves it", diag.versionUnsatisfiable, capability, refPin, diag.noun)
 		}
 		// No serving plugin, no binding, no pin — a bare miss the caller resolves.
 		return types.Plugin{}, false, nil
@@ -561,7 +592,7 @@ func (c *Catalog) pluginForCapability(pluginType, ref string, bindings map[strin
 			names = append(names, n)
 		}
 		sort.Strings(names)
-		return types.Plugin{}, false, fmt.Errorf("%w: capability %q is served by more than one provider plugin (%s); add a plugins.providers entry for %q selecting one", ErrAmbiguousProviderPlugin, name, strings.Join(names, ", "), name)
+		return types.Plugin{}, false, diag.ambiguous(capability, names)
 	}
 
 	var base string
@@ -580,8 +611,8 @@ func (c *Catalog) pluginForCapability(pluginType, ref string, bindings map[strin
 	})
 	if err != nil {
 		// selectEntityVersion signals an unsatisfiable exact/caret constraint;
-		// translate it to the provider-specific halt naming the pin.
-		return types.Plugin{}, false, fmt.Errorf("%w: capability %q pins %q but no serving plugin version satisfies it", ErrProviderVersionUnsatisfiable, name, pin)
+		// translate it to the socket's version halt naming the pin.
+		return types.Plugin{}, false, fmt.Errorf("%w: capability %q pins %q but no serving plugin version satisfies it", diag.versionUnsatisfiable, capability, pin)
 	}
 	if !ok {
 		return types.Plugin{}, false, nil

@@ -68,6 +68,12 @@ const (
 	// carrying its own language parser. It advertises the formats it handles as
 	// parse:<format> capabilities. Its minimum export is parse.
 	PluginTypeParser = plugintype.Parser
+
+	// PluginTypeImporter is an importer plugin: it turns a foreign infrastructure
+	// or agent-definition source into draft Aggrega authoring files. It advertises
+	// the formats it handles as import:<format> capabilities. Its minimum export
+	// is import.
+	PluginTypeImporter = plugintype.Importer
 )
 
 // InputPattern selects how the host delivers an export's input payload.
@@ -134,6 +140,13 @@ var (
 	MutateExport   = minExportName(plugintype.Mutator)
 	ValidateExport = minExportName(plugintype.Policy)
 )
+
+// ImportExport is the required export name for an importer plugin — the entry
+// point the host dispatches to when it turns a foreign source into draft Aggrega
+// authoring files. It reads the name from the canonical plugin-type registry so
+// the minimum-export rule this gate enforces and the export the host dispatches
+// to read one name rather than each re-spelling the literal.
+var ImportExport = minExportName(plugintype.Importer)
 
 // LinkPublishExport and LinkResolveExport are the two cross-boundary
 // edge-linking exports a provider plugin declares as a pair. link_publish
@@ -237,7 +250,7 @@ const (
 //     render_node; a linter declares at least one lint_* export; a
 //     feature-recipe-pipeline step declares step; a mutator declares
 //     mutate; a policy declares validate; a CLI plugin declares
-//     cli_run; a parser declares parse.
+//     cli_run; a parser declares parse; an importer declares import.
 //   - every export's declared host functions are a subset of the
 //     host-function allowlist. This routes through the same
 //     validateHostFunctionsSubset gate the loader applies to the set
@@ -283,7 +296,7 @@ func (d PluginDescriptor) Validate(pluginIdentity string) error {
 	}
 
 	switch PluginType(d.PluginType) {
-	case PluginTypeProvider, PluginTypeLinter, PluginTypeFRPStep, PluginTypeMutator, PluginTypePolicy, PluginTypeCLI, PluginTypeParser:
+	case PluginTypeProvider, PluginTypeLinter, PluginTypeFRPStep, PluginTypeMutator, PluginTypePolicy, PluginTypeCLI, PluginTypeParser, PluginTypeImporter:
 		// recognized
 	default:
 		return fmt.Errorf("plugin %q declares unknown plugin_type %q: %w",

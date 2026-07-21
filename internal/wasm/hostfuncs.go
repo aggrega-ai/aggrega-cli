@@ -44,6 +44,7 @@ var hostFunctionAllowlist = map[string]bool{
 	"aggrega_fetch_external_input": true,
 	"aggrega_pack_source":          true,
 	"aggrega_read_source_file":     true,
+	"aggrega_parse_source":         true,
 }
 
 // allowlistedHostFunctionNames returns the curated names as a slice,
@@ -122,6 +123,7 @@ var hostFunctionSignatures = map[string]hostFunctionSignature{
 	"aggrega_fetch_external_input": {params: []extism.ValueType{extism.ValueTypeI64}, results: []extism.ValueType{extism.ValueTypeI64}},
 	"aggrega_pack_source":          {params: []extism.ValueType{extism.ValueTypeI64}, results: []extism.ValueType{extism.ValueTypeI64}},
 	"aggrega_read_source_file":     {params: []extism.ValueType{extism.ValueTypeI64}, results: []extism.ValueType{extism.ValueTypeI64}},
+	"aggrega_parse_source":         {params: []extism.ValueType{extism.ValueTypeI64}, results: []extism.ValueType{extism.ValueTypeI64}},
 	"aggrega_cli_write_stdout":     {params: []extism.ValueType{extism.ValueTypeI64, extism.ValueTypeI64}},
 	"aggrega_cli_write_stderr":     {params: []extism.ValueType{extism.ValueTypeI64, extism.ValueTypeI64}},
 }
@@ -220,6 +222,8 @@ func (p *Plugin) hostFunctionsForDeclared(declared []string) []extism.HostFuncti
 			out = append(out, p.hostFunctionAggregaPackSource())
 		case "aggrega_read_source_file":
 			out = append(out, p.hostFunctionAggregaReadSourceFile())
+		case "aggrega_parse_source":
+			out = append(out, p.hostFunctionAggregaParseSource())
 		default:
 			// Invariant violation: validateHostFunctionsSubset
 			// admitted a name the builder switch doesn't handle.
@@ -692,6 +696,97 @@ func (p *Plugin) handleAggregaReadSourceFile(reader pluginMemoryReader, writer p
 		return
 	}
 	stack[0] = p.writeEnvelopeBytes(writer, b)
+}
+
+// hostFunctionAggregaParseSource returns the host-side closure binding
+// aggrega_parse_source(request_ptr i64) -> response_ptr i64. The guest passes a
+// pointer to a ParseInput JSON document naming a syntactic format, the source
+// bytes, and an optional opaque options document; the host runs the producer (a
+// parser) for that format through the injected source-parser seam and writes one
+// ParseSourceResponse JSON document — the canonical tree on success, an error
+// message on failure — back into plugin memory, returning its offset.
+//
+// It is the single shared entry every host-mediated producer-consumption call
+// routes through, so the re-entrancy guard here protects any consumer/producer
+// pair. The seam is read from the plugin at call time (Plugin.sourceParser), not
+// captured when the closure is built, because one plugin instance may serve many
+// invocations; the caller injects it through SetSourceParser before each
+// invocation. Failure is in-band — an error envelope, never a trap — so a
+// no-producer resolution, a producer failure, or a denied re-entrant call
+// surfaces as a message the consuming guest carries into its own diagnostics.
+//
+// Body extracted into handleAggregaParseSource so the test suite can exercise the
+// read-guard-run-write path against fake memory interfaces without fabricating an
+// *extism.CurrentPlugin.
+func (p *Plugin) hostFunctionAggregaParseSource() extism.HostFunction {
+	return newBoundHostFunction(
+		"aggrega_parse_source",
+		func(ctx context.Context, cp *extism.CurrentPlugin, stack []uint64) {
+			p.handleAggregaParseSource(ctx, cp, cp, stack)
+		},
+	)
+}
+
+// handleAggregaParseSource is the testable inner logic of the aggrega_parse_source
+// host function body. It reads the ParseInput request from plugin memory at
+// stack[0], denies a re-entrant producer-consumption call, runs the injected
+// source-parser seam under an incremented producer-consumption depth, and writes
+// the ParseSourceResponse envelope into plugin memory, leaving its offset in
+// stack[0]. Every failure produces an error envelope rather than a trap.
+//
+// The re-entrancy guard is checked before the seam-presence check so a nested
+// call is denied as a re-entry regardless of whether the reached plugin carries a
+// seam — the re-entry is the salient failure. The depth rides ctx: the seam runs
+// the producer's export with the incremented-depth context, so a producer that
+// calls back into aggrega_parse_source observes depth at the limit and is denied
+// here.
+func (p *Plugin) handleAggregaParseSource(ctx context.Context, reader pluginMemoryReader, writer pluginMemoryWriter, stack []uint64) {
+	reqJSON, err := reader.ReadString(stack[0])
+	if err != nil {
+		log.Printf("plugin %q: aggrega_parse_source: memory read failed: %v", p.name, err)
+		stack[0] = p.writeParseSourceFailure(writer, fmt.Sprintf("aggrega_parse_source: reading the request from plugin memory failed: %v", err))
+		return
+	}
+	var req abi.ParseInput
+	if err := req.UnmarshalJSON([]byte(reqJSON)); err != nil {
+		stack[0] = p.writeParseSourceFailure(writer, fmt.Sprintf("aggrega_parse_source: decoding the request failed: %v", err))
+		return
+	}
+	if producerConsumptionDepthFromContext(ctx) >= producerConsumptionDepthLimit {
+		stack[0] = p.writeParseSourceFailure(writer, fmt.Sprintf("aggrega_parse_source: %v", ErrProducerConsumptionReentry))
+		return
+	}
+	if p.sourceParser == nil {
+		stack[0] = p.writeParseSourceFailure(writer, "aggrega_parse_source: no source parser is available in this context")
+		return
+	}
+	depth := producerConsumptionDepthFromContext(ctx)
+	tree, err := p.sourceParser(contextWithProducerConsumptionDepth(ctx, depth+1), req.Format, req.Bytes, req.Options)
+	if err != nil {
+		stack[0] = p.writeParseSourceFailure(writer, err.Error())
+		return
+	}
+	b, err := abi.ParseSourceResponse{Tree: tree}.MarshalJSON()
+	if err != nil {
+		log.Printf("plugin %q: aggrega_parse_source: response marshal failed: %v", p.name, err)
+		stack[0] = 0
+		return
+	}
+	stack[0] = p.writeEnvelopeBytes(writer, b)
+}
+
+// writeParseSourceFailure records message on the plugin's warning channel and
+// writes a ParseSourceResponse error envelope carrying it, returning the
+// envelope's offset. The warning mirrors the envelope so the host caller sees the
+// same diagnostic the guest received.
+func (p *Plugin) writeParseSourceFailure(writer pluginMemoryWriter, message string) uint64 {
+	p.appendWarning(fmt.Sprintf("plugin %s: %s", p.name, message))
+	b, err := abi.ParseSourceResponse{Error: message}.MarshalJSON()
+	if err != nil {
+		log.Printf("plugin %q: aggrega_parse_source: error envelope marshal failed: %v", p.name, err)
+		return 0
+	}
+	return p.writeEnvelopeBytes(writer, b)
 }
 
 // packSourceSelection resolves a selection under the plugin's source root and

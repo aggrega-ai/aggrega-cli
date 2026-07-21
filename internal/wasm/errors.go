@@ -139,6 +139,20 @@ var ErrWasmPluginTypeMismatch = errors.New("wasm: declared plugin type does not 
 // against the plugin's describe() self-report.
 var ErrWasmCommandsMirrorMismatch = errors.New("wasm: recorded command mirror does not match plugin describe()")
 
+// ErrProducerConsumptionReentry indicates that a producer reached through the
+// host-mediated producer-consumption seam attempted a further producer-consumption
+// call of its own. The mechanism lets a consumer obtain a producer's output
+// through the host — a consumer at the base level drives one producer — but a
+// producer running through the seam that calls back into it is a re-entrant cycle
+// the host refuses, bounding the mechanism to a single producer level.
+//
+// The denial is a Loud Guardrail: the seam halts the nested call rather than
+// recursing, and the failure crosses to the calling guest in-band as a message
+// carrying this sentinel's text. The sentinel is producer- and consumer-agnostic
+// — it guards any consumer/producer pair routed through the one shared seam, not
+// a single socket pair.
+var ErrProducerConsumptionReentry = errors.New("producer-consumption re-entry denied: a producer reached through the host may not issue a further producer-consumption call")
+
 // ErrWasmPluginVersionMismatch indicates that a Plugin entity's recorded
 // metadata.version disagrees with the build-provenance version the plugin's
 // describe() self-report declares. The recorded version is machine-sourced: the

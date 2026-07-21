@@ -96,6 +96,9 @@ var codecTargetPaths = map[string][]string{
 	"parse_gen.go":          {"..", "..", "..", "..", "aggrega-abi", "go", "pkg", "abi"},
 	"parse_gen.rs":          {"..", "..", "..", "..", "aggrega-abi", "rust", "src"},
 	"parse_gen.ts":          {"..", "..", "..", "..", "aggrega-abi", "typescript", "src"},
+	"import_gen.go":         {"..", "..", "..", "..", "aggrega-abi", "go", "pkg", "abi"},
+	"import_gen.rs":         {"..", "..", "..", "..", "aggrega-abi", "rust", "src"},
+	"import_gen.ts":         {"..", "..", "..", "..", "aggrega-abi", "typescript", "src"},
 	// The host describe codec is committed inside aggrega-cli's wasm package.
 	"describe_host_gen.go": {"..", "..", "wasm"},
 	// The host mutator codec is committed inside aggrega-cli's topology package.

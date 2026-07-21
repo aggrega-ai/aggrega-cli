@@ -1,0 +1,34 @@
+{
+  "nodes": [
+    {
+      "id": "chatOpenAI_0",
+      "type": "customNode",
+      "position": { "x": 140, "y": 300 },
+      "data": {
+        "id": "chatOpenAI_0",
+        "name": "chatOpenAI",
+        "label": "ChatOpenAI",
+        "category": "Chat Models",
+        "inputs": { "modelName": "gpt-4o-mini" }
+      }
+    },
+    {
+      "id": "conversationChain_0",
+      "type": "customNode",
+      "position": { "x": 520, "y": 300 },
+      "data": {
+        "id": "conversationChain_0",
+        "name": "conversationChain",
+        "label": "Conversation Chain",
+        "category": "Chains"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "source": "chatOpenAI_0",
+      "target": "conversationChain_0",
+      "id": "chatOpenAI_0-conversationChain_0"
+    }
+  ]
+}

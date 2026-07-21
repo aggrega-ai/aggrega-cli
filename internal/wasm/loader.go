@@ -52,6 +52,7 @@ package wasm
 import (
 	"context"
 	"crypto/rand"
+	"encoding/json"
 	"fmt"
 	"io"
 	"io/fs"
@@ -82,6 +83,26 @@ import (
 type FetchService interface {
 	Fetch(ctx context.Context, url string, requiredBy string) ([]byte, error)
 }
+
+// SourceParser is the seam a consumer socket's host runs to obtain a source's
+// canonical structured tree through the host, without the consumer guest ever
+// invoking a producer guest directly. Given the syntactic format, the source
+// bytes, and an opaque options document, it resolves and runs the producer (the
+// parser) and returns the tree, or an error the host surfaces in-band to the
+// consuming guest. A nil options is passed through verbatim.
+//
+// The seam is host-mediated producer consumption made generic: the callback
+// plumbing, injection, and the re-entrancy guard are producer- and
+// consumer-agnostic, so any consumer socket reuses them with only a typed leaf.
+// The parser is the sole producer leaf today. The type is declared here, on the
+// consuming side, so package wasm depends on no concrete producer implementation
+// (which would invert the dependency direction — a producer's orchestration
+// imports this package); the consumer socket injects a closure wrapping the
+// producer-resolution-and-run path. The ctx carries the producer-consumption
+// depth: the host-function body increments it before invoking the seam so a
+// producer that attempts a nested producer-consumption call is denied at the
+// shared seam entry.
+type SourceParser func(ctx context.Context, format string, source []byte, options json.RawMessage) (json.RawMessage, error)
 
 // Loader is the package's entry point for constructing a Plugin from a
 // PluginSpec. A zero-value Loader is ready to use; callers SHOULD reuse
@@ -420,6 +441,39 @@ func ExternalInputsFromContext(ctx context.Context) FetchService {
 	return svc
 }
 
+// producerConsumptionDepthLimit bounds host-mediated producer consumption to a
+// single level. A consumer at depth 0 may drive a producer (which runs at depth
+// 1 and returns to 0, so sequential consumption of many sources is fine), but a
+// producer running at depth 1 that attempts a further producer-consumption call
+// is denied. The bound is 1 because the mechanism has one producer leaf and no
+// legitimate need to nest; a deeper chain is a cycle to halt loudly, not a
+// workflow.
+const producerConsumptionDepthLimit = 1
+
+// producerConsumptionDepthContextKey keys the producer-consumption nesting depth
+// on a context. The depth rides the context across the host-call boundary — the
+// context an export is invoked with reaches the host-function body that runs the
+// seam — so the re-entrancy guard needs no shared mutable state.
+type producerConsumptionDepthContextKey struct{}
+
+// producerConsumptionDepthFromContext reports the host-mediated
+// producer-consumption nesting depth carried by ctx. The zero value — no key
+// attached — is depth 0, a consumer that has not yet entered the seam.
+func producerConsumptionDepthFromContext(ctx context.Context) int {
+	depth, _ := ctx.Value(producerConsumptionDepthContextKey{}).(int)
+	return depth
+}
+
+// contextWithProducerConsumptionDepth returns a context carrying depth for the
+// downstream producer run, so a nested producer-consumption call the producer
+// attempts observes the incremented depth and is denied at the shared seam
+// entry. The seam-entry host body sets the incremented depth on the context it
+// hands the seam, and the seam threads that context into the producer's export
+// invocation.
+func contextWithProducerConsumptionDepth(ctx context.Context, depth int) context.Context {
+	return context.WithValue(ctx, producerConsumptionDepthContextKey{}, depth)
+}
+
 // disablePluginCacheContextKey keys the disable-persistent-cache dial on a
 // context for the Loader construction site, which receives its per-build
 // choices only through the context it is called with.
@@ -501,6 +555,13 @@ type Plugin struct {
 	// load. The host-function closures read it at call time, so a stale value
 	// from a prior node never leaks into a later one.
 	sourceRoot string
+	// sourceParser is the producer-consumption seam the aggrega_parse_source host
+	// function runs to obtain a source's canonical tree through the host. It is
+	// injected per invocation through SetSourceParser, the same way sourceRoot is
+	// injected, because one plugin instance may serve many invocations. The
+	// host-function body reads it at call time; nil yields an in-band
+	// not-available failure rather than a silent no-op.
+	sourceParser SourceParser
 	// stdout and stderr are the streams the CLI streaming host functions
 	// (aggrega_cli_write_stdout / aggrega_cli_write_stderr) write guest output
 	// to. They are set only on the runtime CLI profile, by Loader.LoadCLI; the
@@ -520,6 +581,17 @@ type Plugin struct {
 // not-available error rather than resolving against a stale or absent root.
 func (p *Plugin) SetSourceRoot(root string) {
 	p.sourceRoot = root
+}
+
+// SetSourceParser injects the producer-consumption seam the aggrega_parse_source
+// host function runs to obtain a source's canonical tree through the host. The
+// consumer socket sets it immediately before invoking a consuming export, the
+// same way SetSourceRoot injects the acquired source location, because one plugin
+// instance may serve many invocations. A nil seam disables producer consumption:
+// a parse-source request then receives an in-band not-available failure rather
+// than reaching a producer.
+func (p *Plugin) SetSourceParser(parse SourceParser) {
+	p.sourceParser = parse
 }
 
 // HostFunctions returns the host functions this guest imports from its .wasm,

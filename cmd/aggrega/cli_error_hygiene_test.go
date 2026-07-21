@@ -67,6 +67,10 @@ var runtimeErrorCommands = []struct {
 	{"acquire", []string{"acquire", "--release", "/nonexistent-aggrega-xyz/release.yaml", "--catalog", "/nonexistent-aggrega-xyz/catalog"}},
 	{"pull", []string{"pull", "--release", "/nonexistent-aggrega-xyz/release.yaml", "--catalog", "/nonexistent-aggrega-xyz/catalog"}},
 	{"inspect", []string{"inspect", "/nonexistent-aggrega-xyz/release.yaml"}},
+	// import reaches its RunE with a well-formed single argument, then fails in
+	// its own work reading the non-existent source file, before format detection
+	// or workspace resolution.
+	{"import", []string{"import", "/nonexistent-aggrega-xyz/source.json"}},
 	// get-schema reaches its RunE with a well-formed single argument, then
 	// fails in its own work: no schema matches the unknown kind.
 	{"get-schema", []string{"get-schema", "bogus"}},

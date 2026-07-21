@@ -1,0 +1,35 @@
+{
+  "id": "e2c1b6f0-1111-4a2b-8c3d-000000000001",
+  "name": "Sample Flow",
+  "description": "A minimal Langflow flow whose graph is nested under a top-level data object.",
+  "data": {
+    "nodes": [
+      {
+        "id": "OpenAIModel-abc12",
+        "type": "genericNode",
+        "position": { "x": 120, "y": 240 },
+        "data": {
+          "type": "OpenAIModel",
+          "node": {
+            "display_name": "OpenAI",
+            "template": {
+              "model_name": { "value": "gpt-4o-mini" }
+            }
+          }
+        }
+      },
+      {
+        "id": "ChatOutput-def34",
+        "type": "genericNode",
+        "position": { "x": 480, "y": 240 },
+        "data": {
+          "type": "ChatOutput",
+          "node": { "display_name": "Chat Output" }
+        }
+      }
+    ],
+    "edges": [
+      { "id": "edge-1", "source": "OpenAIModel-abc12", "target": "ChatOutput-def34" }
+    ]
+  }
+}

@@ -336,6 +336,15 @@ var cliGuestVocabulary = map[string]string{}
 // annotation passes through unchanged.
 var parseGuestVocabulary = map[string]string{}
 
+// importGuestVocabulary is empty: the import schema's non-scalar carries — the
+// source bytes ([]byte, base64 on the wire), the opaque settings document
+// (json.RawMessage passthrough), the string-to-string label and annotation maps
+// (map[string]string, sorted-key marshal), and the def-local nested types
+// referenced by $ref — already spell the neutral guest types the generator
+// emits. No host container or cross-package opaque type needs a rewrite, and
+// every annotation passes through unchanged.
+var importGuestVocabulary = map[string]string{}
+
 var codecTargets = map[string]codecTarget{
 	"frp_gen.go": {
 		schema:     schemas.WasmFrpStepV1alpha1,
@@ -604,6 +613,36 @@ var codecTargets = map[string]codecTarget{
 		schemaFile: "wasm-parse-v1alpha1.schema.json",
 		pkg:        "abi",
 		vocabulary: parseGuestVocabulary,
+		lang:       "ts",
+	},
+
+	// Importer socket — guest codecs into aggrega-abi (Go/Rust/TS). An importer
+	// turns a foreign infrastructure description into Aggrega entities: it
+	// receives an ImportInput (format, base64 primary bytes, optional named
+	// sources, opaque settings) and returns an ImportOutput (the emitted
+	// entities, the mapping decisions behind them, optional diagnostics, and
+	// optional scaffold files). Every carry is a scalar, base64 bytes, an opaque
+	// json.RawMessage, a string-to-string map, or a def-local nested type
+	// referenced by $ref, so the guest vocabulary is empty. The abi Go codec
+	// references the helpers FRP owns in package abi (helpers: false, the default).
+	"import_gen.go": {
+		schema:     schemas.WasmImportV1alpha1,
+		schemaFile: "wasm-import-v1alpha1.schema.json",
+		pkg:        "abi",
+		vocabulary: importGuestVocabulary,
+	},
+	"import_gen.rs": {
+		schema:     schemas.WasmImportV1alpha1,
+		schemaFile: "wasm-import-v1alpha1.schema.json",
+		pkg:        "abi",
+		vocabulary: importGuestVocabulary,
+		lang:       "rust",
+	},
+	"import_gen.ts": {
+		schema:     schemas.WasmImportV1alpha1,
+		schemaFile: "wasm-import-v1alpha1.schema.json",
+		pkg:        "abi",
+		vocabulary: importGuestVocabulary,
 		lang:       "ts",
 	},
 }

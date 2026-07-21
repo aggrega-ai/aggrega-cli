@@ -121,7 +121,7 @@ func TestPlugin_EnvelopeRejectsMalformed(t *testing.T) {
 	cases := map[string]string{
 		"unknown pluginType": `apiVersion: aggrega.ai/v1alpha1
 kind: Plugin
-metadata: {name: p, version: 1.0.0, pluginType: importer}
+metadata: {name: p, version: 1.0.0, pluginType: nonexistent}
 spec:
   abiVersion: v1alpha1
 `,

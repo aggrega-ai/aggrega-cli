@@ -1,0 +1,19 @@
+{
+  "data": {
+    "nodes": [
+      {
+        "id": "AnthropicModel-z9",
+        "data": {
+          "type": "AnthropicModel",
+          "node": {
+            "template": {
+              "model": { "type": "str", "value": "claude-3" },
+              "api_key": { "type": "str", "value": "" }
+            }
+          }
+        }
+      }
+    ],
+    "edges": []
+  }
+}

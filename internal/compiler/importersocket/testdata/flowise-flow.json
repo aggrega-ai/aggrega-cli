@@ -1,0 +1,19 @@
+{
+  "nodes": [
+    {
+      "id": "chatOpenAI_0",
+      "data": {
+        "name": "chatOpenAI",
+        "inputs": { "modelName": "gpt-4o", "temperature": "0.2", "openAIApiKey": "" }
+      }
+    },
+    {
+      "id": "httpRequest_0",
+      "data": {
+        "name": "httpRequest",
+        "inputs": { "method": "POST", "url": "https://example.test/hook" }
+      }
+    }
+  ],
+  "edges": [ { "source": "chatOpenAI_0", "target": "httpRequest_0" } ]
+}

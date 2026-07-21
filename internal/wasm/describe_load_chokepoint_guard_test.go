@@ -79,6 +79,7 @@ func TestDescribeLoadDoorsSingleSourced(t *testing.T) {
 	got := scanForCallSites(t, "LoadAndDescribe")
 	want := []string{
 		"cmd/aggrega/plugin_run_local.go",
+		"internal/compiler/importersocket/importersocket.go",
 		"internal/compiler/parsersocket/parsersocket.go",
 		"internal/compiler/pipeline/wasm_sockets.go",
 		"internal/compiler/renderer/pipeline_exec.go",

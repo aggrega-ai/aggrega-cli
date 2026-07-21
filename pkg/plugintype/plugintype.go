@@ -26,10 +26,10 @@ const (
 	// Parser turns a foreign source text into a canonical structured tree so a
 	// consumer can read the tree without carrying its own language parser.
 	Parser Type = "parser"
-	// Importer names the reserved import socket. It is a workspace socket but
-	// not yet a plugin type: it has no minimum export and no dispatcher. The
-	// registry carries it so its half-presence — a socket without a plugin
-	// type — reads as documented intent rather than drift.
+	// Importer turns a foreign infrastructure or agent-definition source into
+	// draft Aggrega authoring files, advertising the formats it handles as
+	// import:<format> capabilities. It attaches at the import workspace socket
+	// and declares an import export the host dispatches to.
 	Importer Type = "importer"
 )
 
@@ -189,13 +189,12 @@ var entries = []Entry{
 	},
 	{
 		Type:        Importer,
-		Label:       "",
-		MinExport:   MinExport{},
+		Label:       "importer",
+		MinExport:   MinExport{Name: "import"},
 		Socket:      "importer",
 		Tier:        TierOrthogonal,
 		Mechanism:   MechanismWorkspaceSocket,
 		LoadProfile: LoadProfileBuild,
-		Reserved:    true,
 	},
 }
 
