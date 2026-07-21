@@ -34,7 +34,7 @@
 //! - Recipe / FeatureRecipe: load-bearing-field diff.
 //! - Aggregate: catalog-aggregate diff.
 //! - Plugin: describe()-surface diff (exports, served capabilities,
-//!   provider self-report, ABI version).
+//!   provider self-report, ABI version, command surface).
 
 use std::collections::BTreeMap;
 
@@ -322,11 +322,13 @@ fn classify_aggregate(previous: &Value, proposed: &Value) -> (String, String) {
 /// to its describe()-surface, read from the Plugin entity YAML (which the
 /// host cross-checks against the guest's live describe() report). The
 /// surface spans the declared exports, the served capabilities, the
-/// provider self-report, and the ABI
-/// version. Each surface yields an independent verdict; the highest
+/// provider self-report, the ABI
+/// version, and the declared command surface. Each surface yields an
+/// independent verdict; the highest
 /// magnitude wins (MAJOR > MINOR > PATCH). A change confined to
-/// documentation — `metadata.description`, `spec.description`, or an
-/// export's free-form `selector` — carries no magnitude and leaves the
+/// documentation — `metadata.description`, `spec.description`, an
+/// export's free-form `selector`, or a command's or flag's
+/// `description` — carries no magnitude and leaves the
 /// result at PATCH.
 fn classify_plugin(previous: &Value, proposed: &Value) -> (String, String) {
     let checks = [
@@ -334,6 +336,7 @@ fn classify_plugin(previous: &Value, proposed: &Value) -> (String, String) {
         classify_plugin_capabilities(previous, proposed),
         classify_self_report(previous, proposed, "spec.provider"),
         classify_plugin_abi_version(previous, proposed),
+        classify_plugin_commands(previous, proposed),
     ];
 
     let mut minor: Option<String> = None;
@@ -365,8 +368,8 @@ fn classify_plugin(previous: &Value, proposed: &Value) -> (String, String) {
 /// additive (MINOR). The per-export `selector` is free-form
 /// documentation and does not count as a surface change.
 fn classify_plugin_exports(previous: &Value, proposed: &Value) -> (String, String) {
-    let prev = exports_by_name(get_path(previous, "spec.exports"));
-    let prop = exports_by_name(get_path(proposed, "spec.exports"));
+    let prev = array_by_name(get_path(previous, "spec.exports"));
+    let prop = array_by_name(get_path(proposed, "spec.exports"));
 
     for name in prev.keys() {
         if !prop.contains_key(name) {
@@ -399,11 +402,12 @@ fn classify_plugin_exports(previous: &Value, proposed: &Value) -> (String, Strin
     ("PATCH".to_string(), "spec.exports unchanged".to_string())
 }
 
-/// `exports_by_name` indexes an export array by each entry's `name`
-/// field. Entries without a string `name` are skipped. The `BTreeMap`
-/// keeps the diagnostic deterministic when several exports change at
-/// once.
-fn exports_by_name(value: Option<&Value>) -> BTreeMap<&str, &Value> {
+/// `array_by_name` indexes a JSON array by each entry's `name` field —
+/// the shared indexer for the name-keyed describe()-surface arrays
+/// (exports, commands, per-command flags). Entries without a string
+/// `name` are skipped. The `BTreeMap` keeps the diagnostic deterministic
+/// when several entries change at once.
+fn array_by_name(value: Option<&Value>) -> BTreeMap<&str, &Value> {
     let mut map = BTreeMap::new();
     if let Some(Value::Array(entries)) = value {
         for entry in entries {
@@ -413,6 +417,117 @@ fn exports_by_name(value: Option<&Value>) -> BTreeMap<&str, &Value> {
         }
     }
     map
+}
+
+/// `classify_plugin_commands` diffs `spec.commands` — an array of command
+/// objects keyed by their `name` field, each carrying an array of `flags`
+/// keyed by flag `name`. The command surface is invocation contract:
+/// removing a command, removing a flag, or narrowing a flag's `type`,
+/// `default`, or an existing non-empty `shorthand` is breaking (MAJOR).
+/// Adding a command, adding a flag, or giving an existing flag a
+/// previously-absent `shorthand` widens the surface (MINOR). A command's
+/// or flag's `description`, and reordering alone, are free-form
+/// documentation and carry no magnitude (PATCH).
+fn classify_plugin_commands(previous: &Value, proposed: &Value) -> (String, String) {
+    let prev = array_by_name(get_path(previous, "spec.commands"));
+    let prop = array_by_name(get_path(proposed, "spec.commands"));
+
+    // MAJOR pass: removed command, removed flag, or a narrowed flag field.
+    for name in prev.keys() {
+        if !prop.contains_key(name) {
+            return (
+                "MAJOR".to_string(),
+                format!("spec.commands removed command {name:?}"),
+            );
+        }
+    }
+    for (name, prev_cmd) in &prev {
+        let Some(prop_cmd) = prop.get(name) else {
+            continue;
+        };
+        let prev_flags = array_by_name(prev_cmd.get("flags"));
+        let prop_flags = array_by_name(prop_cmd.get("flags"));
+        for flag_name in prev_flags.keys() {
+            if !prop_flags.contains_key(flag_name) {
+                return (
+                    "MAJOR".to_string(),
+                    format!("spec.commands command {name:?} removed flag {flag_name:?}"),
+                );
+            }
+        }
+        for (flag_name, prev_flag) in &prev_flags {
+            let Some(prop_flag) = prop_flags.get(flag_name) else {
+                continue;
+            };
+            for field in ["type", "default"] {
+                if prev_flag.get(field) != prop_flag.get(field) {
+                    return (
+                        "MAJOR".to_string(),
+                        format!(
+                            "spec.commands command {name:?} flag {flag_name:?} changed {field} (breaking)"
+                        ),
+                    );
+                }
+            }
+            // A non-empty shorthand that is removed or changed breaks
+            // existing invocations; a newly-non-empty shorthand is a pure
+            // add handled in the MINOR pass below.
+            let prev_short = flag_shorthand(prev_flag);
+            let prop_short = flag_shorthand(prop_flag);
+            if !prev_short.is_empty() && prev_short != prop_short {
+                return (
+                    "MAJOR".to_string(),
+                    format!(
+                        "spec.commands command {name:?} flag {flag_name:?} changed shorthand (breaking)"
+                    ),
+                );
+            }
+        }
+    }
+
+    // MINOR pass: new command, new flag, or a newly-non-empty shorthand.
+    for name in prop.keys() {
+        if !prev.contains_key(name) {
+            return (
+                "MINOR".to_string(),
+                format!("spec.commands added command {name:?}"),
+            );
+        }
+    }
+    for (name, prev_cmd) in &prev {
+        let Some(prop_cmd) = prop.get(name) else {
+            continue;
+        };
+        let prev_flags = array_by_name(prev_cmd.get("flags"));
+        let prop_flags = array_by_name(prop_cmd.get("flags"));
+        for flag_name in prop_flags.keys() {
+            if !prev_flags.contains_key(flag_name) {
+                return (
+                    "MINOR".to_string(),
+                    format!("spec.commands command {name:?} added flag {flag_name:?}"),
+                );
+            }
+        }
+        for (flag_name, prev_flag) in &prev_flags {
+            let Some(prop_flag) = prop_flags.get(flag_name) else {
+                continue;
+            };
+            if flag_shorthand(prev_flag).is_empty() && !flag_shorthand(prop_flag).is_empty() {
+                return (
+                    "MINOR".to_string(),
+                    format!("spec.commands command {name:?} flag {flag_name:?} added shorthand"),
+                );
+            }
+        }
+    }
+
+    ("PATCH".to_string(), "spec.commands unchanged".to_string())
+}
+
+/// `flag_shorthand` reads a flag's `shorthand` as a string, treating a
+/// missing or non-string value as empty.
+fn flag_shorthand(flag: &Value) -> &str {
+    flag.get("shorthand").and_then(Value::as_str).unwrap_or("")
 }
 
 /// `classify_plugin_capabilities` diffs `spec.capabilities` — an array of strings

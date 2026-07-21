@@ -3,8 +3,9 @@
 
 //! Plugin-kind schema-evolution rubric coverage. The classifier scores a
 //! re-published Plugin entity from the change to its describe()-surface —
-//! exports, capabilities, provider self-report, and ABI
-//! version. Fixtures are inline serde_json::json! literals exercising the
+//! exports, capabilities, provider self-report, ABI
+//! version, and the declared command surface. Fixtures are inline
+//! serde_json::json! literals exercising the
 //! structured-value pathway directly (the host parses YAML to JSON before
 //! invoking the plugin; these tests bypass the Extism boundary and call
 //! rubric::classify directly).
@@ -167,6 +168,227 @@ fn plugin_major_abi_version_changed() {
     // the current enum cardinality.
     let prev = json!({"kind": "Plugin", "spec": {"abiVersion": "v1alpha1"}});
     let prop = json!({"kind": "Plugin", "spec": {"abiVersion": "v1alpha2"}});
+    assert_eq!(classify_once(&fixture(prev, prop)), "MAJOR");
+}
+
+// ----- command surface -----
+
+#[test]
+fn plugin_major_command_removed() {
+    let prev = json!({
+        "kind": "Plugin",
+        "spec": {"commands": [
+            {"name": "build"},
+            {"name": "lint"},
+        ]},
+    });
+    let prop = json!({
+        "kind": "Plugin",
+        "spec": {"commands": [
+            {"name": "build"},
+        ]},
+    });
+    assert_eq!(classify_once(&fixture(prev, prop)), "MAJOR");
+}
+
+#[test]
+fn plugin_major_command_flag_removed() {
+    let prev = json!({
+        "kind": "Plugin",
+        "spec": {"commands": [
+            {"name": "build", "flags": [
+                {"name": "output", "type": "string"},
+                {"name": "verbose", "type": "bool"},
+            ]},
+        ]},
+    });
+    let prop = json!({
+        "kind": "Plugin",
+        "spec": {"commands": [
+            {"name": "build", "flags": [
+                {"name": "output", "type": "string"},
+            ]},
+        ]},
+    });
+    assert_eq!(classify_once(&fixture(prev, prop)), "MAJOR");
+}
+
+#[test]
+fn plugin_major_command_flag_type_changed() {
+    let prev = json!({
+        "kind": "Plugin",
+        "spec": {"commands": [
+            {"name": "build", "flags": [{"name": "output", "type": "string"}]},
+        ]},
+    });
+    let prop = json!({
+        "kind": "Plugin",
+        "spec": {"commands": [
+            {"name": "build", "flags": [{"name": "output", "type": "int"}]},
+        ]},
+    });
+    assert_eq!(classify_once(&fixture(prev, prop)), "MAJOR");
+}
+
+#[test]
+fn plugin_major_command_flag_default_changed() {
+    let prev = json!({
+        "kind": "Plugin",
+        "spec": {"commands": [
+            {"name": "build", "flags": [{"name": "output", "type": "string", "default": "out"}]},
+        ]},
+    });
+    let prop = json!({
+        "kind": "Plugin",
+        "spec": {"commands": [
+            {"name": "build", "flags": [{"name": "output", "type": "string", "default": "dist"}]},
+        ]},
+    });
+    assert_eq!(classify_once(&fixture(prev, prop)), "MAJOR");
+}
+
+#[test]
+fn plugin_major_command_flag_shorthand_removed() {
+    let prev = json!({
+        "kind": "Plugin",
+        "spec": {"commands": [
+            {"name": "build", "flags": [{"name": "output", "type": "string", "shorthand": "o"}]},
+        ]},
+    });
+    let prop = json!({
+        "kind": "Plugin",
+        "spec": {"commands": [
+            {"name": "build", "flags": [{"name": "output", "type": "string"}]},
+        ]},
+    });
+    assert_eq!(classify_once(&fixture(prev, prop)), "MAJOR");
+}
+
+#[test]
+fn plugin_major_command_flag_shorthand_changed() {
+    let prev = json!({
+        "kind": "Plugin",
+        "spec": {"commands": [
+            {"name": "build", "flags": [{"name": "output", "type": "string", "shorthand": "o"}]},
+        ]},
+    });
+    let prop = json!({
+        "kind": "Plugin",
+        "spec": {"commands": [
+            {"name": "build", "flags": [{"name": "output", "type": "string", "shorthand": "f"}]},
+        ]},
+    });
+    assert_eq!(classify_once(&fixture(prev, prop)), "MAJOR");
+}
+
+#[test]
+fn plugin_minor_command_flag_shorthand_added() {
+    let prev = json!({
+        "kind": "Plugin",
+        "spec": {"commands": [
+            {"name": "build", "flags": [{"name": "output", "type": "string"}]},
+        ]},
+    });
+    let prop = json!({
+        "kind": "Plugin",
+        "spec": {"commands": [
+            {"name": "build", "flags": [{"name": "output", "type": "string", "shorthand": "o"}]},
+        ]},
+    });
+    assert_eq!(classify_once(&fixture(prev, prop)), "MINOR");
+}
+
+#[test]
+fn plugin_minor_command_added() {
+    let prev = json!({
+        "kind": "Plugin",
+        "spec": {"commands": [{"name": "build"}]},
+    });
+    let prop = json!({
+        "kind": "Plugin",
+        "spec": {"commands": [{"name": "build"}, {"name": "lint"}]},
+    });
+    assert_eq!(classify_once(&fixture(prev, prop)), "MINOR");
+}
+
+#[test]
+fn plugin_minor_command_flag_added() {
+    let prev = json!({
+        "kind": "Plugin",
+        "spec": {"commands": [
+            {"name": "build", "flags": [{"name": "output", "type": "string"}]},
+        ]},
+    });
+    let prop = json!({
+        "kind": "Plugin",
+        "spec": {"commands": [
+            {"name": "build", "flags": [
+                {"name": "output", "type": "string"},
+                {"name": "verbose", "type": "bool"},
+            ]},
+        ]},
+    });
+    assert_eq!(classify_once(&fixture(prev, prop)), "MINOR");
+}
+
+#[test]
+fn plugin_patch_command_description_only_change() {
+    let prev = json!({
+        "kind": "Plugin",
+        "spec": {"commands": [{"name": "build", "description": "builds the thing"}]},
+    });
+    let prop = json!({
+        "kind": "Plugin",
+        "spec": {"commands": [{"name": "build", "description": "assembles the thing"}]},
+    });
+    assert_eq!(classify_once(&fixture(prev, prop)), "PATCH");
+}
+
+#[test]
+fn plugin_patch_command_flag_description_only_change() {
+    let prev = json!({
+        "kind": "Plugin",
+        "spec": {"commands": [
+            {"name": "build", "flags": [
+                {"name": "output", "type": "string", "description": "output path"},
+            ]},
+        ]},
+    });
+    let prop = json!({
+        "kind": "Plugin",
+        "spec": {"commands": [
+            {"name": "build", "flags": [
+                {"name": "output", "type": "string", "description": "where output is written"},
+            ]},
+        ]},
+    });
+    assert_eq!(classify_once(&fixture(prev, prop)), "PATCH");
+}
+
+#[test]
+fn plugin_major_command_change_folds_over_patch_surfaces() {
+    // A breaking command change must win the fold-in even when every other
+    // describe()-surface (exports, capabilities, provider, ABI) is at PATCH.
+    let prev = json!({
+        "kind": "Plugin",
+        "metadata": {"description": "first cut"},
+        "spec": {
+            "exports": [{"name": "render_node", "operates": "emit", "scope": "own"}],
+            "capabilities": ["helm"],
+            "abiVersion": "v1alpha1",
+            "commands": [{"name": "build"}, {"name": "lint"}],
+        },
+    });
+    let prop = json!({
+        "kind": "Plugin",
+        "metadata": {"description": "rewritten"},
+        "spec": {
+            "exports": [{"name": "render_node", "operates": "emit", "scope": "own"}],
+            "capabilities": ["helm"],
+            "abiVersion": "v1alpha1",
+            "commands": [{"name": "build"}],
+        },
+    });
     assert_eq!(classify_once(&fixture(prev, prop)), "MAJOR");
 }
 

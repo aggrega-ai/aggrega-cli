@@ -1,0 +1,26 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Plugin
+metadata:
+  name: custom-renderer
+  version: 1.0.0
+  pluginType: provider
+  description: A partner-authored rendering plugin.
+spec:
+  abiVersion: v1alpha1
+  capabilities:
+    - helm
+  runtime:
+    maxMemoryPages: 256
+    timeoutMs: 3000
+  exports:
+    - name: render_node
+      operates: emit
+      scope: own
+  commands:
+    - name: validate
+      description: Validate the aggregate without rendering.
+      flags:
+        - name: strict
+          type: bool
+          default: "false"
+          description: Fail on warnings.

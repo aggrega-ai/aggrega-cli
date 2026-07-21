@@ -116,6 +116,132 @@ func TestLintPrePublishPluginEvolution(t *testing.T) {
 	}
 }
 
+// TestLintPrePublishPluginCommandEvolution drives the same real `aggrega
+// lint --pre-publish` path as the export matrix, but exercises the
+// command-surface classifier: a Plugin's declared invocation contract
+// (spec.commands and each command's flags). A removed command demands
+// MAJOR, an added command demands at least MINOR, and a narrowed flag
+// field (here a flag's type) demands MAJOR. Each pair's only delta is the
+// command surface — exports, capabilities, provider, and abiVersion are
+// identical across previous and proposed — so the command classifier is
+// unambiguously what drives the verdict.
+func TestLintPrePublishPluginCommandEvolution(t *testing.T) {
+	pluginPath := wasmtest.EnsureFixtureBuilt(t, "publishing-linter.wasm")
+
+	type cell struct {
+		proposedVer string
+		wantHalt    bool
+	}
+	cases := []struct {
+		changeDir   string
+		cells       []cell
+		wantSurface string // substring the diagnostic must name on a halt
+		wantVerdict string // required-bump substring the halt error must carry
+	}{
+		{
+			changeDir: "removed-command",
+			cells: []cell{
+				{"1.0.1", true},  // PATCH rejected
+				{"1.1.0", true},  // MINOR rejected
+				{"2.0.0", false}, // MAJOR accepted
+			},
+			wantSurface: "spec.commands removed command",
+			wantVerdict: "MAJOR",
+		},
+		{
+			changeDir: "added-command",
+			cells: []cell{
+				{"1.0.1", true},  // PATCH rejected
+				{"1.1.0", false}, // MINOR accepted
+			},
+			wantSurface: "spec.commands added command",
+			wantVerdict: "MINOR",
+		},
+		{
+			changeDir: "changed-flag-type",
+			cells: []cell{
+				{"1.1.0", true},  // MINOR rejected
+				{"2.0.0", false}, // MAJOR accepted
+			},
+			wantSurface: "changed type (breaking)",
+			wantVerdict: "MAJOR",
+		},
+	}
+
+	for _, tc := range cases {
+		for _, c := range tc.cells {
+			t.Run(tc.changeDir+"/"+c.proposedVer, func(t *testing.T) {
+				target := &memoryRegistryTarget{Store: memory.New()}
+				previousYAML := pluginFixtureBytes(t, tc.changeDir, "previous.yaml")
+				pushFixtureToTarget(t, target, "plugin", "partner/custom-renderer", "1.0.0", previousYAML)
+
+				proposedYAML := pluginFixtureBytes(t, tc.changeDir, "proposed.yaml")
+				proposedPath := writeEntityFile(t, proposedYAML, c.proposedVer)
+
+				var diag bytes.Buffer
+				cfg := Config{
+					EntityPath:     proposedPath,
+					PrePublish:     true,
+					PluginPath:     pluginPath,
+					PolicyResolver: func(_ string, ws bool) bool { return ws },
+					FetchTarget:    target,
+					Workspace:      resolveTempWorkspace(t),
+					DiagOut:        &diag,
+				}
+				err := RunEntity(cfg)
+				if c.wantHalt {
+					if err == nil {
+						t.Fatalf("expected HALT for %s; got PASS (diag: %s)", c.proposedVer, diag.String())
+					}
+					if tc.wantVerdict != "" && !strings.Contains(err.Error(), tc.wantVerdict) {
+						t.Errorf("halt error should demand a %s bump; got: %v", tc.wantVerdict, err)
+					}
+					if tc.wantSurface != "" && !strings.Contains(diag.String(), tc.wantSurface) {
+						t.Errorf("diagnostic should name the changed surface %q; got: %s", tc.wantSurface, diag.String())
+					}
+				} else if err != nil {
+					t.Fatalf("expected PASS for %s; got HALT: %v (diag: %s)", c.proposedVer, err, diag.String())
+				}
+			})
+		}
+	}
+}
+
+// TestLintPrePublishPluginCommandFirstPublish proves a command-bearing
+// Plugin published for the first time (no prior version in the registry)
+// passes cleanly: with nothing to diff against, the command-surface
+// classifier records no violation and the run reports the
+// first-publication path instead of enforcing a version bump.
+func TestLintPrePublishPluginCommandFirstPublish(t *testing.T) {
+	pluginPath := wasmtest.EnsureFixtureBuilt(t, "publishing-linter.wasm")
+
+	// No prior version seeded: an empty in-memory registry, so the
+	// pre-publish path takes the first-publication branch.
+	target := &memoryRegistryTarget{Store: memory.New()}
+
+	proposedYAML := pluginFixtureBytes(t, "added-command", "proposed.yaml")
+	proposedPath := writeEntityFile(t, proposedYAML, "1.0.0")
+
+	var diag bytes.Buffer
+	cfg := Config{
+		EntityPath:     proposedPath,
+		PrePublish:     true,
+		PluginPath:     pluginPath,
+		PolicyResolver: func(_ string, ws bool) bool { return ws },
+		FetchTarget:    target,
+		Workspace:      resolveTempWorkspace(t),
+		DiagOut:        &diag,
+	}
+	err := RunEntity(cfg)
+	if err != nil {
+		t.Fatalf("first publication of a command-bearing plugin should PASS; got HALT: %v (diag: %s)", err, diag.String())
+	}
+	if !strings.Contains(diag.String(), "first publication of") ||
+		!strings.Contains(diag.String(), "no version-bump verification") {
+		t.Errorf("expected the first-publication diagnostic; got: %s", diag.String())
+	}
+}
+
 // failingFetchTarget is an oras.ReadOnlyTarget (plus TagLister) whose every
 // method errors, so a test proves the registry is never consulted: any
 // consultation turns into a RunEntity error rather than a silent pass.
