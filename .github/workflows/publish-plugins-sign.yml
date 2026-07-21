@@ -70,13 +70,13 @@ permissions:
 jobs:
   publish-sign:
     # Configurable runner label. Building the embedded guests is heavy; point the
-    # CLI_PUBLISH_RUNNER repository variable at a self-hosted label to run the
+    # AGGREGA_RUNNER repository variable at a self-hosted label to run the
     # build off metered hosted minutes. The default hosted runner is unlikely to
     # complete the guest build within the free-tier budget — if the build proves
     # infeasible on a hosted runner, provision a self-hosted one rather than
     # splitting the build across jobs (the guests, the image, and the publish all
     # need the one build's outputs on the same workspace).
-    runs-on: ${{ vars.CLI_PUBLISH_RUNNER || 'ubuntu-latest' }}
+    runs-on: ${{ vars.AGGREGA_RUNNER || 'ubuntu-latest' }}
 
     env:
       # Destination registry host:port. A repository variable the operator sets
