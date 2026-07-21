@@ -17,8 +17,8 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
 )
 
-// TestColocatedResolvedPluginLoadsThroughGate is the offline dev-loop analogue of
-// the sidecar end-to-end check: a real .wasm laid down beside its Plugin entity
+// TestColocatedResolvedPluginLoadsThroughGate is the offline dev-loop
+// end-to-end check: a real .wasm laid down beside its Plugin entity
 // in a catalog directory resolves through the co-located tier (with its digest
 // pin verified), the resolved bytes feed PluginSpec.Bytes, and the plugin loads
 // + describes through the gate. It proves the co-located resolution → verified
@@ -40,7 +40,7 @@ func TestColocatedResolvedPluginLoadsThroughGate(t *testing.T) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	leaf := pluginpath.SidecarLeaf(ref)
+	leaf := pluginpath.PluginLeaf(ref)
 	if err := os.WriteFile(filepath.Join(dir, leaf), content, 0o644); err != nil {
 		t.Fatalf("write colocated module: %v", err)
 	}
@@ -101,5 +101,54 @@ func TestColocatedMissFallsThroughToExhaustionHalt(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "colocated") {
 		t.Fatalf("halt message should name the colocated tier; got %q", err.Error())
+	}
+}
+
+// TestColocatedPinMismatchHaltsBeforeLoad: a co-located artifact whose bytes drift
+// from the lockfile pin halts at resolution — the drifted bytes never reach the
+// loader.
+func TestColocatedPinMismatchHaltsBeforeLoad(t *testing.T) {
+	const ref = "frp-step-patch:1.0.0"
+	dir := filepath.Join(t.TempDir(), "plugin", "frp-step-patch", "1.0.0")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, pluginpath.PluginLeaf(ref)), []byte("drifted"), 0o644); err != nil {
+		t.Fatalf("write colocated module: %v", err)
+	}
+
+	resolver := pluginpath.NewResolver(
+		pluginpath.ResolutionContext{ColocatedDirs: map[string]string{ref: dir}},
+		pluginpath.PinPostureLockfile,
+		pluginpath.PinMaps{Pins: map[string]string{ref: digest.ContentDigest([]byte("the-real-bytes"))}},
+	)
+	if _, err := resolver.Resolve(ref); !errors.Is(err, oci.ErrFetchIntegrity) {
+		t.Fatalf("want integrity halt at resolution; got %v", err)
+	}
+}
+
+// TestResolvedGarbageBytesHaltAtGate: bytes that resolve cleanly (no pin) but are
+// not a loadable plugin halt at the loader/describe gate — proving the ABI gate
+// runs on cascade-resolved bytes exactly as it does on file-read bytes.
+func TestResolvedGarbageBytesHaltAtGate(t *testing.T) {
+	const ref = "not-a-plugin:1.0.0"
+	dir := filepath.Join(t.TempDir(), "plugin", "not-a-plugin", "1.0.0")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, pluginpath.PluginLeaf(ref)), []byte("not wasm at all"), 0o644); err != nil {
+		t.Fatalf("write colocated module: %v", err)
+	}
+
+	resolved, err := pluginpath.NewResolver(pluginpath.ResolutionContext{ColocatedDirs: map[string]string{ref: dir}}, pluginpath.PinPostureNone, pluginpath.PinMaps{}).Resolve(ref)
+	if err != nil {
+		t.Fatalf("resolve (no pin) should succeed; got %v", err)
+	}
+	loader := &wasm.Loader{}
+	if _, _, err := loader.LoadAndDescribe(context.Background(), wasm.PluginSpec{
+		Name:  "not-a-plugin",
+		Bytes: resolved.Bytes,
+	}); err == nil {
+		t.Fatal("expected the gate to reject non-plugin bytes; got nil")
 	}
 }

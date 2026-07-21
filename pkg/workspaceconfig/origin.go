@@ -206,7 +206,6 @@ func originFields() []originField {
 		sc("offline", func(c Config) string { return strconv.FormatBool(c.Offline) }),
 		sc("auto_pull", func(c Config) string { return strconv.FormatBool(c.AutoPull) }),
 		sc("artifact_cache_dir", func(c Config) string { return c.ArtifactCacheDir }),
-		sc("plugin_sidecar_dir", func(c Config) string { return c.PluginSidecarDir }),
 		sc("skip_signature_verification", func(c Config) string { return strconv.FormatBool(c.SkipSignatureVerification) }),
 		sc("build.authoring_release", func(c Config) string { return c.Build.AuthoringRelease }),
 		sc("build.halt_on_deprecated", func(c Config) string { return strconv.FormatBool(c.Build.HaltOnDeprecated) }),

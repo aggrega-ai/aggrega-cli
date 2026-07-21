@@ -6,7 +6,7 @@
 // Package main's end-to-end proofs for the two embedded mutator guests
 // (mutator/label-injector and mutator/selector-tagger) driven through the real
 // pull -> build pipeline. Each mutator is attached at the mutator socket by its
-// bare embedded identity: its .wasm resolves through the embed tier (no sidecar),
+// bare embedded identity: its .wasm resolves through the embed tier,
 // and a workspace-catalog Plugin entity supplies the entity the closure pins.
 //
 // The compose provider entity ships in the standard catalog (its .wasm is

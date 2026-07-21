@@ -66,7 +66,7 @@ spec:
 `)
 	// The helm-renderer provider Plugin binds the helm provider to the embedded
 	// helm rendering guest; its digest-free spec.plugin identity resolves through
-	// the plugin-resolution cascade's embed tier with no sidecar, cache, or lockfile.
+	// the plugin-resolution cascade's embed tier with no cache or lockfile.
 	writeFixtureFile(t, filepath.Join(catalogDir, "plugins", "helm-renderer.yaml"), `apiVersion: aggrega.ai/v1alpha1
 kind: Plugin
 metadata:

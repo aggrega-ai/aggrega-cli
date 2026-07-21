@@ -12,7 +12,7 @@ import (
 
 // TestCaptureBuildCritical_WritesSubsetWithFidelity proves the capture writer
 // materializes every build-critical field — provider bindings, the socket lists,
-// the sidecar directory, and the catalog directories — at full fidelity (a socket
+// and the catalog directories — at full fidelity (a socket
 // attachment's function override and its `with` inputs survive), and leaves a
 // schema-valid file the resolver reads back. It captures with the widened socket
 // scope so a verdict-gate socket (policy) participates in the fidelity check.
@@ -23,11 +23,9 @@ func TestCaptureBuildCritical_WritesSubsetWithFidelity(t *testing.T) {
 		t.Fatalf("seed: %v", err)
 	}
 
-	sidecar := filepath.Join(dir, "sidecars")
 	catalog := filepath.Join(dir, "catalog")
 	cfg := Config{
-		PluginSidecarDir: sidecar,
-		Workspace:        WorkspaceConfig{CatalogDirs: []string{catalog}},
+		Workspace: WorkspaceConfig{CatalogDirs: []string{catalog}},
 		Plugins: PluginsConfig{
 			Providers: []PluginRef{
 				{Capability: "helm", URI: "oci://hub.aggrega.ai/plugin/provider/helm:1.0.0"},
@@ -71,9 +69,6 @@ func TestCaptureBuildCritical_WritesSubsetWithFidelity(t *testing.T) {
 	}
 	if p.With == nil || len(p.With.Sources) != 1 || p.With.Settings["strict"] != true {
 		t.Errorf("socket ref `with` inputs not preserved at full fidelity: %+v", p.With)
-	}
-	if got.PluginSidecarDir != sidecar {
-		t.Errorf("plugin_sidecar_dir not captured: %q", got.PluginSidecarDir)
 	}
 	if len(got.Workspace.CatalogDirs) != 1 || got.Workspace.CatalogDirs[0] != catalog {
 		t.Errorf("catalog_dirs not captured: %+v", got.Workspace.CatalogDirs)

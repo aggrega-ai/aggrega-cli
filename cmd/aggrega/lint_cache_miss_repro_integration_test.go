@@ -98,8 +98,8 @@ func genNonEmbeddedLinterEntity(t *testing.T, pluginPath, name string) (entityPa
 // gate: it proves that a non-embedded linter guest which `aggrega pull` fetches
 // and caches (as a verdict-socket plugin, cache-not-pin) is unreachable when the
 // linter socket resolves it, because resolveLinterPlugin builds a plugin resolver
-// wired with the sidecar and override sources only — no workspace-root/cache-dir,
-// so the content-cache tier is absent from the cascade.
+// wired with the override source only — no workspace-root/cache-dir, so the
+// content-cache tier is absent from the cascade.
 //
 // The test asserts the DESIRED end state — the linter resolves the pulled guest —
 // so it FAILS today (witnessing the bug) and passes once the linter's resolver is
@@ -190,7 +190,6 @@ func TestIntegration_LinterCacheMiss_PulledGuestUnreachableAtLint(t *testing.T) 
 		// and the arc's premise is wrong (escalate).
 		wired := pluginpath.NewResolver(
 			pluginpath.ResolutionContext{
-				SidecarDir:    wsCfg.PluginSidecarDir,
 				WorkspaceRoot: rw.Root(),
 				CacheDir:      cacheDir,
 			},

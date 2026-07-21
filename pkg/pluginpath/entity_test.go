@@ -19,7 +19,7 @@ func TestEntityLookup_TranslatesEntityToArtifact(t *testing.T) {
 	var sawArtifact string
 	cascade := func(uri string) (ResolvedPlugin, error) {
 		sawArtifact = uri
-		return ResolvedPlugin{Bytes: []byte("\x00asm-bytes"), Tier: TierSidecar, URI: uri}, nil
+		return ResolvedPlugin{Bytes: []byte("\x00asm-bytes"), Tier: TierColocated, URI: uri}, nil
 	}
 	claim := &PluginContractClaim{Exports: []PluginExportClaim{{Name: "step", Operates: "patch", Scope: "own"}}}
 	limits := &PluginRuntimeLimits{MaxMemoryPages: 64, TimeoutMs: 1500}

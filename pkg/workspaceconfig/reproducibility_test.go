@@ -175,19 +175,19 @@ func TestGlobalOnlyBuildCriticalFullyLocal(t *testing.T) {
 	}
 }
 
-// TestGlobalOnlyBuildCriticalScalarAndCatalogDirs: a global-only
-// plugin_sidecar_dir and a global-only catalog directory are both reported.
-func TestGlobalOnlyBuildCriticalScalarAndCatalogDirs(t *testing.T) {
+// TestGlobalOnlyBuildCriticalCatalogDirs: a global-only catalog directory is
+// reported, with its identity resolved to an absolute on-disk path.
+func TestGlobalOnlyBuildCriticalCatalogDirs(t *testing.T) {
 	t.Parallel()
 	rw := resolveWithGlobal(t,
-		"plugin_sidecar_dir: ./sidecar\nworkspace:\n  catalog_dirs:\n    - ./gcat\n",
+		"workspace:\n  catalog_dirs:\n    - ./gcat\n",
 		"",
 	)
 	got, err := rw.GlobalOnlyBuildCritical(false)
 	if err != nil {
 		t.Fatalf("GlobalOnlyBuildCritical: %v", err)
 	}
-	if want := []string{"plugin_sidecar_dir", "workspace.catalog_dirs"}; !reflect.DeepEqual(fieldsOf(got), want) {
+	if want := []string{"workspace.catalog_dirs"}; !reflect.DeepEqual(fieldsOf(got), want) {
 		t.Fatalf("fields: got %v, want %v: %+v", fieldsOf(got), want, got)
 	}
 	// The identities are the resolved (absolute) values, so each names a real
@@ -196,23 +196,6 @@ func TestGlobalOnlyBuildCriticalScalarAndCatalogDirs(t *testing.T) {
 		if !filepath.IsAbs(b.Identity) {
 			t.Errorf("Identity %q for %s: want an absolute resolved path", b.Identity, b.Field)
 		}
-	}
-}
-
-// TestGlobalOnlyBuildCriticalSidecarLocalWins: a plugin_sidecar_dir set by BOTH
-// layers is not reported — the workspace value wins and the tree carries it.
-func TestGlobalOnlyBuildCriticalSidecarLocalWins(t *testing.T) {
-	t.Parallel()
-	rw := resolveWithGlobal(t,
-		"plugin_sidecar_dir: ./gsidecar\n",
-		"workspace: {}\nplugin_sidecar_dir: ./lsidecar\n",
-	)
-	got, err := rw.GlobalOnlyBuildCritical(false)
-	if err != nil {
-		t.Fatalf("GlobalOnlyBuildCritical: %v", err)
-	}
-	if len(got) != 0 {
-		t.Fatalf("bindings: got %d, want 0 (workspace sets plugin_sidecar_dir): %+v", len(got), got)
 	}
 }
 
@@ -250,7 +233,7 @@ func TestGlobalOnlyBuildCriticalEnvScalarOutOfScope(t *testing.T) {
 func TestGlobalOnlyBuildCriticalDeterministic(t *testing.T) {
 	t.Parallel()
 	rw := resolveWithGlobal(t,
-		"plugin_sidecar_dir: ./sidecar\nplugins:\n  providers:\n    - capability: helm\n      uri: oci://h/helm:1\n  mutator:\n    - uri: oci://h/mut:1\n  policy:\n    - uri: oci://h/pol:1\nworkspace:\n  catalog_dirs:\n    - ./gcat\n",
+		"plugins:\n  providers:\n    - capability: helm\n      uri: oci://h/helm:1\n  mutator:\n    - uri: oci://h/mut:1\n  policy:\n    - uri: oci://h/pol:1\nworkspace:\n  catalog_dirs:\n    - ./gcat\n",
 		"",
 	)
 	// The all-plugins scope so every socket field participates in the order check.
@@ -265,9 +248,8 @@ func TestGlobalOnlyBuildCriticalDeterministic(t *testing.T) {
 	if !reflect.DeepEqual(first, second) {
 		t.Fatalf("non-deterministic bindings:\n first=%+v\nsecond=%+v", first, second)
 	}
-	// Fixed field order: providers, mutator, policy, then the scalar, then
-	// catalog_dirs.
-	want := []string{"plugins.providers", "plugins.mutator", "plugins.policy", "plugin_sidecar_dir", "workspace.catalog_dirs"}
+	// Fixed field order: providers, mutator, policy, then catalog_dirs.
+	want := []string{"plugins.providers", "plugins.mutator", "plugins.policy", "workspace.catalog_dirs"}
 	if !reflect.DeepEqual(fieldsOf(first), want) {
 		t.Fatalf("field order: got %v, want %v", fieldsOf(first), want)
 	}

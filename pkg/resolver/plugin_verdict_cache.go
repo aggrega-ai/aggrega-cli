@@ -14,14 +14,12 @@ import (
 
 // VerdictPluginTierSources is the caller-agnostic projection of the artifact
 // tiers a verdict-socket cache-not-pin read resolves guest bytes through: the
-// operator sidecar directory, the co-located catalog directories, and the
-// workspace content cache (workspace root plus cache directory). Each caller —
-// the build pipeline, the publishing linter — fills it from its own workspace
-// handles, so the shared cache-not-pin composition carries no caller-specific
-// type. A zero field disables that tier exactly as it does on the underlying
-// resolver.
+// co-located catalog directories and the workspace content cache (workspace
+// root plus cache directory). Each caller — the build pipeline, the publishing
+// linter — fills it from its own workspace handles, so the shared cache-not-pin
+// composition carries no caller-specific type. A zero field disables that tier
+// exactly as it does on the underlying resolver.
 type VerdictPluginTierSources struct {
-	SidecarDir    string
 	ColocatedDirs map[string]string
 	WorkspaceRoot string
 	CacheDir      string
@@ -60,7 +58,6 @@ func ResolveVerdictPluginFromCache(sources VerdictPluginTierSources, pluginFromC
 	// manifest, not read from the lockfile, so the gate plugin's .wasm resolves and
 	// is integrity-checked without a lockfile row.
 	r := pluginpath.NewResolver(pluginpath.ResolutionContext{
-		SidecarDir:    sources.SidecarDir,
 		ColocatedDirs: sources.ColocatedDirs,
 		WorkspaceRoot: sources.WorkspaceRoot,
 		CacheDir:      sources.CacheDir,
@@ -80,7 +77,7 @@ func ResolveVerdictPluginFromCache(sources VerdictPluginTierSources, pluginFromC
 
 // VerdictLookup composes a verdict-socket's cache-not-pin resolution: it tries
 // base first (the pinned / Tier-1 entity-fronted cascade, honoring a pin, a
-// sidecar override, or an embedded built-in), and on a not-found miss ONLY falls
+// co-located artifact, or an embedded built-in), and on a not-found miss ONLY falls
 // through to cacheResolve (the pull-populated cache read by URI). A verdict
 // socket's plugin is cached at pull but not pinned, so a gate plugin the pinned
 // path does not surface still resolves from the cache.

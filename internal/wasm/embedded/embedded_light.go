@@ -7,7 +7,7 @@
 // the CLI binary. This is the light host build of the package: it embeds no
 // artifacts, so the binary carries no plugin bytes and stays small. Every
 // plugin resolves instead through the later tiers of the plugin-resolution
-// cascade (sidecar, local, workspace cache, registry), pinned by content
+// cascade (colocated, local, workspace cache, registry), pinned by content
 // digest to the lockfile. The registry is empty and Lookup always misses,
 // which makes the cascade's embed tier a clean no-op for a light binary.
 //

@@ -12,8 +12,7 @@
 // Resolution is a strict tier cascade, highest precedence first:
 //
 //	0a embed      — bytes compiled into the CLI binary (core, version-locked)
-//	0b sidecar    — an on-disk plugin directory the operator points at
-//	0c colocated  — a .wasm laid down beside its Plugin entity in a catalog
+//	0b colocated  — a .wasm laid down beside its Plugin entity in a catalog
 //	                directory (the offline path when nothing is embedded)
 //	1  local      — an explicit ./ or ../ filesystem path (or an absolute path)
 //	2  cache      — the workspace content cache (a previously-pulled artifact)
@@ -22,9 +21,9 @@
 // Every tier yields the resolved bytes plus a source-tier tag. When the caller
 // supplies a digest pin for the URI (the build path, reading the lockfile), the
 // resolved bytes are verified against that pin at EVERY tier — the pinned
-// digest, not the source tier, governs determinism: a sidecar artifact whose
+// digest, not the source tier, governs determinism: a co-located artifact whose
 // bytes match the pin resolves byte-identically to the registry artifact it
-// overrides, and a mismatch halts. When no pin is supplied (the publish-time
+// stands in for, and a mismatch halts. When no pin is supplied (the publish-time
 // linter, which lints a not-yet-pinned proposed entity) verification is skipped.
 //
 // Trust at build is offline and free of any cryptographic re-verification: the
@@ -51,14 +50,12 @@ import (
 
 // Tier names the resolution tier a plugin's bytes came from. It is a
 // diagnostic tag — the loaded bytes are identical regardless of tier when the
-// digest pin matches; the tag exists for logging and for the
-// sidecar-overrides-embed notice.
+// digest pin matches; the tag exists for logging.
 type Tier string
 
 const (
 	TierEmbed     Tier = "embed"     // 0a
-	TierSidecar   Tier = "sidecar"   // 0b
-	TierColocated Tier = "colocated" // 0c
+	TierColocated Tier = "colocated" // 0b
 	TierLocal     Tier = "local"     // 1
 	TierCache     Tier = "cache"     // 2
 	TierRegistry  Tier = "registry"  // 3
@@ -258,20 +255,14 @@ type Lookup func(uri string) (ResolvedPlugin, error)
 // in another package cannot hand-populate an under-wired copy; the sole
 // construction path threads the tier sources and pin posture in one place. A
 // Resolver built from a zero ResolutionContext under PinPostureNone resolves
-// only the embed and local tiers (no sidecar dir, no cache, no registry, no
+// only the embed and local tiers (no colocated dirs, no cache, no registry, no
 // pins) — the minimum a caller with no workspace context can do.
 type Resolver struct {
-	// sidecarDir is the on-disk plugin directory (Tier 0b), already resolved
-	// to an absolute path. Empty disables the sidecar tier. Layout is flat:
-	// a URI resolves to <sidecarDir>/<uri-leaf>.wasm.
-	sidecarDir string
-
 	// colocatedDirs maps a plugin's artifact reference to the on-disk directory
 	// holding its co-located .wasm — the module laid down beside its Plugin
 	// entity in a catalog directory. It is the offline resolution path (Tier 0c)
 	// for a build that embeds no core guests: the .wasm is read from the catalog
-	// directory the entity was indexed from, at <dir>/<uri-leaf>.wasm (the same
-	// leaf mapping the sidecar tier uses). Key is the artifact reference the
+	// directory the entity was indexed from, at <dir>/<uri-leaf>.wasm. Key is the artifact reference the
 	// cascade resolves by, so the front's entity → artifact translation leaves
 	// this tier's lookup unchanged. nil or empty disables the tier; a reference
 	// absent from the map, or a missing .wasm file, is a clean miss that falls
@@ -315,12 +306,6 @@ type Resolver struct {
 	// override is an explicit filesystem path that wins over the cascade
 	// entirely (the linter's --plugin flag). Returned as local-tier bytes.
 	override string
-
-	// overrideLog receives the loud notice when a sidecar artifact overrides an
-	// embedded one of the same URI. nil discards the notice (tests, and any
-	// caller that does not surface it). The production wiring points it at the
-	// diagnostic stream.
-	overrideLog func(string)
 }
 
 // Puller fetches a plugin artifact's bytes from a registry by URI. It is the
@@ -332,10 +317,10 @@ type Puller interface {
 
 // ociNotWiredHint is woven into a Tier-exhaustion error for an OCI URI when no
 // puller is wired (the hermetic build path) so the message points at the fix —
-// pull first, or point a sidecar/local path at the artifact — rather than
+// pull first, or point a local path at the artifact — rather than
 // reading as an unexplained miss.
 const ociNotWiredHint = "an OCI plugin URI requires a prior `aggrega pull` (so its bytes are cached) " +
-	"or an explicit sidecar/local path; the hermetic build does not fetch from a registry"
+	"or an explicit local path; the hermetic build does not fetch from a registry"
 
 // unsetMsg is the single-sourced diagnostic for the no-URI / no-override case.
 // The substring "no plugin path configured" is load-bearing: callers and tests
@@ -347,13 +332,11 @@ const unsetMsg = "no plugin path configured. Either:\n" +
 // Resolve runs the tier cascade for uri and returns the resolved bytes. It
 // satisfies the Lookup type when bound as a method value (r.Resolve).
 //
-// Precedence is embed (0a) → sidecar (0b) → colocated (0c) → local (1) → cache
-// (2) → registry (3); the first tier that produces bytes wins. An explicit Override short-
+// Precedence is embed (0a) → colocated (0b) → local (1) → cache (2) → registry
+// (3); the first tier that produces bytes wins. An explicit Override short-
 // circuits the cascade. When the URI carries a digest pin, the winning tier's
 // bytes are verified against it; a mismatch halts with a wrapped
-// oci.ErrFetchIntegrity. A sidecar artifact that shadows an embedded one of the
-// same URI emits a loud override notice (the pinned digest still governs output,
-// so the override is determinism-safe when it matches the pin).
+// oci.ErrFetchIntegrity.
 func (r Resolver) Resolve(uri string) (ResolvedPlugin, error) {
 	if r.override != "" {
 		abs := r.override
@@ -375,33 +358,13 @@ func (r Resolver) Resolve(uri string) (ResolvedPlugin, error) {
 		return ResolvedPlugin{}, errors.New(unsetMsg)
 	}
 
-	// 0a embed (looked up now; consumed after the sidecar tier so a sidecar
-	// override of an embedded plugin can win and be logged).
-	embedBytes, isEmbedded := embedded.Lookup(uri)
-
-	// 0b sidecar.
-	if r.sidecarDir != "" {
-		b, ok, err := r.readSidecar(uri)
-		if err != nil {
-			return ResolvedPlugin{}, err
-		}
-		if ok {
-			if isEmbedded {
-				r.logOverride(fmt.Sprintf(
-					"plugin %q: sidecar artifact (%s) overrides the embedded built-in plugin; "+
-						"the pinned digest governs output, so the override is determinism-safe when it matches the pin",
-					uri, filepath.Join(r.sidecarDir, sidecarLeaf(uri))))
-			}
-			return r.verified(uri, b, TierSidecar)
-		}
-	}
-
-	// 0a embed: consume after a sidecar miss.
-	if isEmbedded {
+	// 0a embed: bytes compiled into the CLI binary; an embedded guest always
+	// wins.
+	if embedBytes, isEmbedded := embedded.Lookup(uri); isEmbedded {
 		return r.verified(uri, embedBytes, TierEmbed)
 	}
 
-	// 0c colocated: a .wasm beside its Plugin entity in a catalog directory —
+	// 0b colocated: a .wasm beside its Plugin entity in a catalog directory —
 	// the offline path when the binary embeds no core guests. It sits after the
 	// embed consume so an embedded guest always wins.
 	if len(r.colocatedDirs) > 0 {
@@ -458,7 +421,7 @@ func (r Resolver) Resolve(uri string) (ResolvedPlugin, error) {
 	if workspaceconfig.LooksLikeOCIURI(uri) {
 		return ResolvedPlugin{}, fmt.Errorf("plugin %q not resolvable: %s: %w", uri, ociNotWiredHint, oci.ErrFetchNotFound)
 	}
-	return ResolvedPlugin{}, fmt.Errorf("plugin %q not resolvable through any tier (embed, sidecar, colocated, local, cache, registry): %w", uri, oci.ErrFetchNotFound)
+	return ResolvedPlugin{}, fmt.Errorf("plugin %q not resolvable through any tier (embed, colocated, local, cache, registry): %w", uri, oci.ErrFetchNotFound)
 }
 
 // verified checks bytes against the URI's digest pin when one is present, then
@@ -509,33 +472,18 @@ func (r Resolver) verifyCachedBundle(uri string, tier Tier, bundleDigest string)
 	return nil
 }
 
-// readSidecar reads the sidecar artifact for uri, returning (bytes, true, nil)
-// on a hit, (nil, false, nil) on a clean miss (no such file), or a wrapped
-// error on an unreadable present file.
-func (r Resolver) readSidecar(uri string) ([]byte, bool, error) {
-	path := filepath.Join(r.sidecarDir, sidecarLeaf(uri))
-	b, err := os.ReadFile(path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, false, nil
-		}
-		return nil, false, fmt.Errorf("read sidecar plugin %q at %s: %w", uri, path, err)
-	}
-	return b, true, nil
-}
-
 // readColocated reads the co-located artifact for uri — the .wasm beside its
 // Plugin entity in the catalog directory keyed by the URI's artifact reference —
 // returning (bytes, true, nil) on a hit, (nil, false, nil) on a clean miss (no
 // mapped directory, or no such file), or a wrapped error on an unreadable
-// present file. The leaf is the shared sidecarLeaf mapping, so a co-located
-// .wasm keys by the same <uri-leaf>.wasm the sidecar tier reads.
+// present file. The leaf is the shared pluginLeaf mapping, so a co-located
+// .wasm keys by <uri-leaf>.wasm.
 func (r Resolver) readColocated(uri string) ([]byte, bool, error) {
 	dir, ok := r.colocatedDirs[uri]
 	if !ok || dir == "" {
 		return nil, false, nil
 	}
-	path := filepath.Join(dir, sidecarLeaf(uri))
+	path := filepath.Join(dir, pluginLeaf(uri))
 	b, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -544,10 +492,4 @@ func (r Resolver) readColocated(uri string) ([]byte, bool, error) {
 		return nil, false, fmt.Errorf("read colocated plugin %q at %s: %w", uri, path, err)
 	}
 	return b, true, nil
-}
-
-func (r Resolver) logOverride(msg string) {
-	if r.overrideLog != nil {
-		r.overrideLog(msg)
-	}
 }

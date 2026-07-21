@@ -16,21 +16,20 @@ import (
 // content-selects the rendered Deployment, PATCHes it (own-scope annotation), and
 // EMITs an own-scope ConfigMap. The fixture exercises the production entity-front:
 // the entity's spec.plugin .wasm artifact is built on demand from the Rust PDK
-// example and staged into a sidecar directory keyed by its artifact reference, so
-// the build resolves entity URI → spec.plugin → cascade end-to-end. When the wasm
-// toolchain is absent EnsureFixtureBuilt skips the calling test.
+// example and staged co-located beside its Plugin entity in the catalog, so the
+// build resolves entity URI → spec.plugin → co-located tier end-to-end. When the
+// wasm toolchain is absent EnsureFixtureBytes skips the calling test.
 func pipelineRenderFixtureInput(t *testing.T) pipelinetest.Input {
 	t.Helper()
-	sidecarDir := stagePluginSidecar(t, map[string]string{
-		"oci://hub.aggrega.ai/plugin/frp/patch": "frp-step-patch-rust.wasm",
+	catalogPaths := stageColocatedCatalog(t, []string{
+		"testdata/pipeline-render/catalog/base",
+		"testdata/pipeline-render/catalog/recipes/helm",
+	}, map[string]string{
+		"frp_step/patch": "frp-step-patch-rust.wasm",
 	})
 	return pipelinetest.Input{
-		ReleasePath: "testdata/pipeline-render/release.yaml",
-		CatalogPaths: []string{
-			"testdata/pipeline-render/catalog/base",
-			"testdata/pipeline-render/catalog/recipes/helm",
-		},
-		PluginSidecarDir: sidecarDir,
+		ReleasePath:  "testdata/pipeline-render/release.yaml",
+		CatalogPaths: catalogPaths,
 	}
 }
 

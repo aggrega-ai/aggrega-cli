@@ -503,8 +503,8 @@ func writeOrDeleteRefs[T any](pluginsNode *yaml.Node, key string, refs []T) erro
 // CaptureBuildCritical writes the effective build-critical configuration subset
 // of cfg into the workspace config file at path, preserving every other setting,
 // and writes the result back. The build-critical subset is the configuration a
-// build participates in: a set of plugin sockets, the plugin sidecar directory
-// (plugin_sidecar_dir), and the catalog directories (workspace.catalog_dirs).
+// build participates in: a set of plugin sockets and the catalog directories
+// (workspace.catalog_dirs).
 // The socket set follows the byte-determining axis: by default only the sockets
 // whose plugin shapes the rendered output — the provider bindings
 // (plugins.providers) and the mutator (plugins.mutator) — are frozen, since only
@@ -541,12 +541,6 @@ func CaptureBuildCritical(path string, cfg Config, allPlugins bool) error {
 				pluginsNode = getOrCreateMapping(mapping, "plugins")
 			}
 			if err := setEncodedKey(pluginsNode, s.Key, s.Refs); err != nil {
-				return err
-			}
-		}
-
-		if cfg.PluginSidecarDir != "" {
-			if err := setEncodedKey(mapping, "plugin_sidecar_dir", cfg.PluginSidecarDir); err != nil {
 				return err
 			}
 		}

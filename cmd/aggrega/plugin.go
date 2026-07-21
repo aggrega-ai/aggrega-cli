@@ -124,9 +124,9 @@ func pluginListRun(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, w
 
 	var embeddedEntries []pluginListEntry
 	for _, uri := range embedded.URIs() {
-		// An embedded built-in resolves at the embed tier with no entity view; pass
-		// only the sidecar directory so the listing matches its runtime resolution.
-		embeddedEntries = append(embeddedEntries, describePluginURI(ctx, "embedded", uri, "", pluginResolutionInputs{sidecarDir: in.sidecarDir}))
+		// An embedded built-in resolves at the embed tier with no entity view, so
+		// the listing matches its runtime resolution with an empty input set.
+		embeddedEntries = append(embeddedEntries, describePluginURI(ctx, "embedded", uri, "", pluginResolutionInputs{}))
 	}
 
 	var configuredEntries []pluginListEntry
@@ -272,15 +272,14 @@ func installedReadiness(pinned, fresh string, err error) string {
 }
 
 // pluginResolutionInputs is the workspace-derived context the plugin cascade
-// consults: the sidecar directory and catalog Plugin-by-URI entity view every
-// plugin type shares, plus the content-cache location and the per-URI content
-// pins the installed CLI plugins carry so their pinned bytes resolve from the
-// workspace cache offline. Only plugins.cli entries populate the pin map; a
-// plugin type with no pin probes the cache tier with an empty version (a miss
-// that falls through to the existing tiers), so enriching the shared resolver
-// does not change how the socket plugin types resolve.
+// consults: the catalog Plugin-by-URI entity view every plugin type shares,
+// plus the content-cache location and the per-URI content pins the installed
+// CLI plugins carry so their pinned bytes resolve from the workspace cache
+// offline. Only plugins.cli entries populate the pin map; a plugin type with no
+// pin probes the cache tier with an empty version (a miss that falls through to
+// the existing tiers), so enriching the shared resolver does not change how the
+// socket plugin types resolve.
 type pluginResolutionInputs struct {
-	sidecarDir    string
 	pluginByURI   func(string) (types.Plugin, bool)
 	workspaceRoot string
 	cacheDir      string
@@ -299,7 +298,6 @@ type pluginResolutionInputs struct {
 // a loud offline halt rather than a network fetch.
 func resolvePluginURI(uri string, in pluginResolutionInputs) (pluginpath.ResolvedPlugin, error) {
 	cascade := pluginpath.NewResolver(pluginpath.ResolutionContext{
-		SidecarDir:    in.sidecarDir,
 		WorkspaceRoot: in.workspaceRoot,
 		CacheDir:      in.cacheDir,
 	}, pluginpath.PinPostureLockfile, pluginpath.PinMaps{
@@ -326,8 +324,8 @@ func resolvePluginURI(uri string, in pluginResolutionInputs) (pluginpath.Resolve
 }
 
 // workspacePluginResolutionInputs derives the plugin-resolution inputs from a
-// resolved workspace: the sidecar plugin directory, the catalog Plugin-by-URI
-// entity view, the content-cache location, and the per-URI content pins the
+// resolved workspace: the catalog Plugin-by-URI entity view, the content-cache
+// location, and the per-URI content pins the
 // installed CLI plugins carry (their plugins.cli {uri, digest} entries). Only the
 // CLI plugins populate the pin map — the same prefixed content digest keys both
 // the pin check and the cache-slot version — so the socket plugin types are
@@ -354,7 +352,6 @@ func workspacePluginResolutionInputs(rw *workspaceconfig.ResolvedWorkspace) plug
 		pins[ref.URI] = ref.Digest
 	}
 	return pluginResolutionInputs{
-		sidecarDir:    wsCfg.PluginSidecarDir,
 		pluginByURI:   lazyView.PluginByURI,
 		workspaceRoot: rw.Root(),
 		cacheDir:      wsCfg.ResolvedArtifactCacheDir(),

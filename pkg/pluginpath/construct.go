@@ -41,12 +41,8 @@ const (
 // lockfile, pipeline, or command type, so it stays package-neutral and every
 // caller can construct it from its own context.
 type ResolutionContext struct {
-	// SidecarDir is the operator's on-disk plugin directory (Tier 0b), already
-	// resolved to an absolute path. Empty disables the sidecar tier.
-	SidecarDir string
-
 	// ColocatedDirs maps a plugin's artifact reference to the catalog directory
-	// holding its co-located .wasm (Tier 0c). nil or empty disables the tier.
+	// holding its co-located .wasm (Tier 0b). nil or empty disables the tier.
 	ColocatedDirs map[string]string
 
 	// WorkspaceRoot and CacheDir address the workspace content cache (Tier 2).
@@ -57,10 +53,6 @@ type ResolutionContext struct {
 	// Override is an explicit filesystem path that wins over the cascade
 	// entirely (the linter's --plugin flag). Empty leaves the cascade intact.
 	Override string
-
-	// OverrideLog receives the loud notice when a sidecar artifact overrides an
-	// embedded one of the same URI. nil discards the notice.
-	OverrideLog func(string)
 
 	// Puller performs the Tier-3 OCI pull. nil disables Tier 3 — the hermetic
 	// build and linter paths, where a cache miss is a loud halt.
@@ -102,12 +94,10 @@ type PinMaps struct {
 // posture and treats the resulting populated (or empty) Pins map identically.
 func NewResolver(rc ResolutionContext, posture PinPosture, pins PinMaps) Resolver {
 	r := Resolver{
-		sidecarDir:    rc.SidecarDir,
 		colocatedDirs: rc.ColocatedDirs,
 		workspaceRoot: rc.WorkspaceRoot,
 		cacheDir:      rc.CacheDir,
 		override:      rc.Override,
-		overrideLog:   rc.OverrideLog,
 		puller:        rc.Puller,
 	}
 	switch posture {

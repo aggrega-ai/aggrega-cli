@@ -21,19 +21,18 @@ func isLocalPathRef(uri string) bool {
 		strings.HasPrefix(uri, "/")
 }
 
-// SidecarLeaf maps a plugin URI to its flat on-disk sidecar filename:
+// PluginLeaf maps a plugin URI to its flat on-disk leaf filename:
 // <uri-leaf>.wasm. The leaf is the URI's final path segment with any version
 // pin (":tag") and ".wasm" suffix stripped, so both a bare catalog URI
 // (core/helm-renderer:0.4.1) and a local path (./plugins/foo.wasm) map to a
-// stable "<name>.wasm" the operator drops into the sidecar directory. It is the
-// single source of the sidecar leaf mapping: the resolver computes a sidecar
-// path with it, and a caller staging an artifact into a sidecar directory keys
-// the file by it.
-func SidecarLeaf(uri string) string {
-	return sidecarLeaf(uri)
+// stable "<name>.wasm". It is the single source of the leaf mapping: the
+// resolver computes a co-located artifact's path with it, and a caller staging
+// a .wasm beside its Plugin entity keys the file by it.
+func PluginLeaf(uri string) string {
+	return pluginLeaf(uri)
 }
 
-func sidecarLeaf(uri string) string {
+func pluginLeaf(uri string) string {
 	leaf := path.Base(strings.TrimPrefix(uri, "oci://"))
 	// Strip a version pin: a trailing ":tag" on the leaf (a digest pin
 	// "@sha256:..." already lost its tail to path.Base's segment split is not

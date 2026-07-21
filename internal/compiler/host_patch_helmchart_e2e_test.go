@@ -19,21 +19,20 @@ import (
 // chart source is discrete (not a pre-assembly fragment), so the /host PATCH runs
 // per-node through the helm-chart codec — no post-assembly phase. The step references a Plugin
 // ENTITY URI; the entity's spec.plugin .wasm artifact is built on demand from the
-// Rust PDK example and staged into a sidecar directory so the build's entity-front
-// resolves it. When the wasm toolchain is absent the staging build skips the
-// calling test.
+// Rust PDK example and staged co-located beside its Plugin entity in the catalog so
+// the build's entity-front resolves it. When the wasm toolchain is absent the
+// staging build skips the calling test.
 func hostPatchHelmchartFixtureInput(t *testing.T) pipelinetest.Input {
 	t.Helper()
-	sidecarDir := stagePluginSidecar(t, map[string]string{
-		"oci://hub.aggrega.ai/plugin/frp/host-patch": "frp-step-host-patch-rust.wasm",
+	catalogPaths := stageColocatedCatalog(t, []string{
+		"testdata/host-patch-helmchart/catalog/base",
+		"testdata/host-patch-helmchart/catalog/recipes/helm-chart",
+	}, map[string]string{
+		"frp_step/host-patch": "frp-step-host-patch-rust.wasm",
 	})
 	return pipelinetest.Input{
-		ReleasePath: "testdata/host-patch-helmchart/release.yaml",
-		CatalogPaths: []string{
-			"testdata/host-patch-helmchart/catalog/base",
-			"testdata/host-patch-helmchart/catalog/recipes/helm-chart",
-		},
-		PluginSidecarDir: sidecarDir,
+		ReleasePath:  "testdata/host-patch-helmchart/release.yaml",
+		CatalogPaths: catalogPaths,
 	}
 }
 

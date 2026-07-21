@@ -36,8 +36,8 @@ type cliPluginDispatcher interface {
 // installedPluginRunnerFor builds the dispatcher that runs a configured CLI
 // plugin command for a resolved workspace. The production value resolves the
 // plugin URI through the same workspace-derived cascade the install path uses —
-// the sidecar directory, the catalog entity view, and the shared compilation
-// cache — so any URI an install accepts is resolvable at run time. It is a
+// the catalog entity view and the shared compilation cache — so any URI an
+// install accepts is resolvable at run time. It is a
 // package-level seam so a test can substitute a fake dispatcher that records the
 // argument vector without a real guest or workspace.
 var installedPluginRunnerFor = func(rw *workspaceconfig.ResolvedWorkspace) cliPluginDispatcher {

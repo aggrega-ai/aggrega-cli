@@ -329,8 +329,8 @@ config file, so the workspace builds identically without relying on the
 machine's global configuration.
 
 The build-critical subset is the configuration a build participates in: a set of
-plugin socket attachments, the plugin sidecar directory, and the catalog
-directories. By default the captured sockets are only those that determine the
+plugin socket attachments and the catalog directories. By default the captured
+sockets are only those that determine the
 rendered output — the provider bindings and the mutator — since only those must
 travel with the project for byte-identical output. Pass --all-plugins to also
 freeze the policy, linter, and importer sockets, which otherwise stay free to
@@ -425,9 +425,6 @@ func reportCapture(out io.Writer, cfg workspaceconfig.Config, dest string, allPl
 			continue
 		}
 		section(string(ps.Socket), socketLines(ps.Refs))
-	}
-	if cfg.PluginSidecarDir != "" {
-		section("plugin_sidecar_dir", []string{cfg.PluginSidecarDir})
 	}
 	section("catalog_dirs", cfg.Workspace.CatalogDirs)
 

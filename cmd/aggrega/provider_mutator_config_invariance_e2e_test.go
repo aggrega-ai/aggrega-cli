@@ -24,7 +24,7 @@
 // build of a REGISTRY socket therefore reports drift and halts rather than
 // rendering offline. Build-side config-invariance is proven for the achievable
 // non-registry sockets by the sibling suites (an embedded provider and a
-// local/sidecar mutator, whose entities are never pinned and so never drift);
+// local mutator, whose entities are never pinned and so never drift);
 // the registry-socket frozen-build gap is characterized here as a guarded
 // current-state test.
 //

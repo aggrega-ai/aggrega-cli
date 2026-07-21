@@ -16,15 +16,19 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 )
 
-// writeSidecar writes content as the flat sidecar artifact for uri under dir.
-func writeSidecar(t *testing.T, dir, uri string, content []byte) {
+// writeColocated writes content as the co-located artifact for uri under dir —
+// the .wasm beside its Plugin entity — and returns dir so the caller can map the
+// URI to it via ResolutionContext.ColocatedDirs. The leaf is the shared
+// pluginLeaf mapping the co-located tier reads.
+func writeColocated(t *testing.T, dir, uri string, content []byte) string {
 	t.Helper()
 	if err := os.MkdirAll(dir, 0o755); err != nil {
-		t.Fatalf("mkdir sidecar dir: %v", err)
+		t.Fatalf("mkdir colocated dir: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, sidecarLeaf(uri)), content, 0o644); err != nil {
-		t.Fatalf("write sidecar: %v", err)
+	if err := os.WriteFile(filepath.Join(dir, pluginLeaf(uri)), content, 0o644); err != nil {
+		t.Fatalf("write colocated: %v", err)
 	}
+	return dir
 }
 
 // stubPuller returns canned bytes for any URI — stands in for the Tier-3
@@ -62,7 +66,7 @@ func TestResolveUnset(t *testing.T) {
 
 // TestEmbedCheckedFirst: a seeded embedded entry wins even when a cache slot
 // also resolves the URI — proving the embed tier is consulted ahead of the
-// lower tiers when no sidecar override is present.
+// lower tiers.
 func TestEmbedCheckedFirst(t *testing.T) {
 	const uri = "core/embedded-only:1.0.0"
 	embedBytes := []byte("embedded-content")
@@ -107,61 +111,60 @@ func TestNonEmbeddedURIFallsThroughToLocal(t *testing.T) {
 }
 
 // TestPrecedenceOrder asserts the cascade order by peeling sources away tier by
-// tier. The sidecar tier is an OVERRIDE tier: a sidecar artifact deliberately
-// wins over an embedded one of the same URI (the loud-logged override), so with
-// both present the sidecar wins. Embed wins once no sidecar shadows it; cache
-// once neither embed nor sidecar resolves; registry once the cache slot is gone.
-// A bare catalog URI carries no local path, so Tier 1 (local) is inapplicable
-// here and exercised separately by the local-tier tests.
+// tier. Embed (0a) wins over every lower tier; the co-located tier (0c) wins once
+// no embed shadows it; cache (2) once neither embed nor co-located resolves;
+// registry (3) once the cache slot is gone. A bare catalog URI carries no local
+// path, so Tier 1 (local) is inapplicable here and exercised separately by the
+// local-tier tests.
 func TestPrecedenceOrder(t *testing.T) {
 	const uri = "core/all-tiers:1.0.0"
 	ws := t.TempDir()
 	cacheDir := ".aggrega/cache"
-	sidecarDir := filepath.Join(t.TempDir(), "sidecar")
+	colocatedDir := filepath.Join(t.TempDir(), "colocated")
 
 	embedBytes := []byte("tier-embed")
-	sidecarBytes := []byte("tier-sidecar")
+	colocatedBytes := []byte("tier-colocated")
 	cacheBytes := []byte("tier-cache")
 	registryBytes := []byte("tier-registry")
 
 	if err := oci.WriteCached(ws, cacheDir, uri, "1.0.0", cacheBytes); err != nil {
 		t.Fatalf("seed cache: %v", err)
 	}
-	writeSidecar(t, sidecarDir, uri, sidecarBytes)
+	writeColocated(t, colocatedDir, uri, colocatedBytes)
 
 	base := Resolver{
-		sidecarDir:    sidecarDir,
+		colocatedDirs: map[string]string{uri: colocatedDir},
 		workspaceRoot: ws,
 		cacheDir:      cacheDir,
 		pinVersions:   map[string]string{uri: "1.0.0"},
 		puller:        stubPuller{bytes: registryBytes},
 	}
 
-	// 0b sidecar overrides 0a embed when both are present (the loud-logged
-	// override) and wins over the lower tiers too.
+	// 0a embed wins over every lower tier, including a co-located artifact of the
+	// same URI.
 	restore := embedded.SeedForTest(uri, embedBytes)
 	got, err := base.Resolve(uri)
 	if err != nil {
-		t.Fatalf("Resolve sidecar-over-embed: %v", err)
-	}
-	if got.Tier != TierSidecar {
-		t.Errorf("with embed+sidecar: got %s; want sidecar (override)", got.Tier)
-	}
-
-	// 0a embed wins once no sidecar shadows it — and over cache + registry.
-	noSidecar := base
-	noSidecar.sidecarDir = ""
-	got, err = noSidecar.Resolve(uri)
-	if err != nil {
-		t.Fatalf("Resolve embed: %v", err)
+		t.Fatalf("Resolve embed-over-colocated: %v", err)
 	}
 	if got.Tier != TierEmbed {
-		t.Errorf("with embed (no sidecar): got %s; want embed", got.Tier)
+		t.Errorf("with embed+colocated: got %s; want embed", got.Tier)
 	}
 	restore()
 
-	// 2 cache wins once neither embed nor sidecar resolves.
-	got, err = noSidecar.Resolve(uri)
+	// 0c co-located wins once no embed shadows it — and over cache + registry.
+	got, err = base.Resolve(uri)
+	if err != nil {
+		t.Fatalf("Resolve colocated: %v", err)
+	}
+	if got.Tier != TierColocated {
+		t.Errorf("with colocated (no embed): got %s; want colocated", got.Tier)
+	}
+
+	// 2 cache wins once neither embed nor co-located resolves.
+	noColocated := base
+	noColocated.colocatedDirs = nil
+	got, err = noColocated.Resolve(uri)
 	if err != nil {
 		t.Fatalf("Resolve cache: %v", err)
 	}
@@ -170,7 +173,7 @@ func TestPrecedenceOrder(t *testing.T) {
 	}
 
 	// 3 registry wins once the cache slot is gone.
-	noCache := noSidecar
+	noCache := noColocated
 	noCache.workspaceRoot = t.TempDir() // empty workspace = cache miss
 	got, err = noCache.Resolve(uri)
 	if err != nil {
@@ -181,34 +184,10 @@ func TestPrecedenceOrder(t *testing.T) {
 	}
 }
 
-// TestSidecarOverridesEmbedLogsLoudly: when a sidecar artifact shadows an
-// embedded one of the same URI, the override notice fires and the sidecar wins.
-func TestSidecarOverridesEmbedLogsLoudly(t *testing.T) {
-	const uri = "core/override-me:1.0.0"
-	restore := embedded.SeedForTest(uri, []byte("embedded"))
-	defer restore()
-
-	sidecarDir := filepath.Join(t.TempDir(), "sidecar")
-	sidecarBytes := []byte("sidecar-override")
-	writeSidecar(t, sidecarDir, uri, sidecarBytes)
-
-	var logged string
-	got, err := Resolver{sidecarDir: sidecarDir, overrideLog: func(m string) { logged = m }}.Resolve(uri)
-	if err != nil {
-		t.Fatalf("Resolve: %v", err)
-	}
-	if got.Tier != TierSidecar || string(got.Bytes) != string(sidecarBytes) {
-		t.Errorf("got tier=%s; want sidecar override", got.Tier)
-	}
-	if !strings.Contains(logged, "overrides the embedded") {
-		t.Errorf("expected loud override notice; got %q", logged)
-	}
-}
-
-// TestPinVerifyMatchAcrossTiers (determinism): a sidecar artifact whose bytes
+// TestPinVerifyMatchAcrossTiers (determinism): a co-located artifact whose bytes
 // match the pin resolves to the SAME bytes a registry source would — the pinned
-// digest, not the source tier, governs output. A sidecar override of a pinned
-// plugin is therefore output-identical to the pinned artifact.
+// digest, not the source tier, governs output. A co-located plugin is therefore
+// output-identical to the pinned artifact a registry pull produces.
 func TestPinVerifyMatchAcrossTiers(t *testing.T) {
 	const uri = "core/pinned:1.0.0"
 	content := []byte("the-pinned-bytes")
@@ -222,37 +201,35 @@ func TestPinVerifyMatchAcrossTiers(t *testing.T) {
 		t.Fatalf("registry resolve: %v", err)
 	}
 
-	sidecarDir := filepath.Join(t.TempDir(), "sidecar")
-	writeSidecar(t, sidecarDir, uri, content)
-	sideGot, err := Resolver{
-		sidecarDir: sidecarDir,
-		pins:       map[string]string{uri: pin},
+	colocatedDir := writeColocated(t, filepath.Join(t.TempDir(), "colocated"), uri, content)
+	coGot, err := Resolver{
+		colocatedDirs: map[string]string{uri: colocatedDir},
+		pins:          map[string]string{uri: pin},
 	}.Resolve(uri)
 	if err != nil {
-		t.Fatalf("sidecar resolve: %v", err)
+		t.Fatalf("colocated resolve: %v", err)
 	}
 
-	if string(regGot.Bytes) != string(sideGot.Bytes) {
-		t.Errorf("sidecar bytes differ from registry bytes despite matching pin")
+	if string(regGot.Bytes) != string(coGot.Bytes) {
+		t.Errorf("colocated bytes differ from registry bytes despite matching pin")
 	}
-	if regGot.Tier != TierRegistry || sideGot.Tier != TierSidecar {
-		t.Errorf("tiers: registry=%s sidecar=%s; want registry/sidecar", regGot.Tier, sideGot.Tier)
+	if regGot.Tier != TierRegistry || coGot.Tier != TierColocated {
+		t.Errorf("tiers: registry=%s colocated=%s; want registry/colocated", regGot.Tier, coGot.Tier)
 	}
 }
 
-// TestPinMismatchHalts: a sidecar artifact whose bytes do NOT match the pin
+// TestPinMismatchHalts: a co-located artifact whose bytes do NOT match the pin
 // halts with a wrapped oci.ErrFetchIntegrity rather than resolving drifted
 // content.
 func TestPinMismatchHalts(t *testing.T) {
 	const uri = "core/drifted:1.0.0"
 	pin := digest.ContentDigest([]byte("the-pinned-bytes"))
 
-	sidecarDir := filepath.Join(t.TempDir(), "sidecar")
-	writeSidecar(t, sidecarDir, uri, []byte("DIFFERENT-bytes"))
+	colocatedDir := writeColocated(t, filepath.Join(t.TempDir(), "colocated"), uri, []byte("DIFFERENT-bytes"))
 
 	_, err := Resolver{
-		sidecarDir: sidecarDir,
-		pins:       map[string]string{uri: pin},
+		colocatedDirs: map[string]string{uri: colocatedDir},
+		pins:          map[string]string{uri: pin},
 	}.Resolve(uri)
 	if err == nil {
 		t.Fatal("expected integrity halt; got nil")
@@ -266,9 +243,8 @@ func TestPinMismatchHalts(t *testing.T) {
 // path), bytes pass through unverified — any artifact resolves.
 func TestNoPinSkipsVerification(t *testing.T) {
 	const uri = "core/unpinned:1.0.0"
-	sidecarDir := filepath.Join(t.TempDir(), "sidecar")
-	writeSidecar(t, sidecarDir, uri, []byte("whatever"))
-	got, err := Resolver{sidecarDir: sidecarDir}.Resolve(uri)
+	colocatedDir := writeColocated(t, filepath.Join(t.TempDir(), "colocated"), uri, []byte("whatever"))
+	got, err := Resolver{colocatedDirs: map[string]string{uri: colocatedDir}}.Resolve(uri)
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}

@@ -275,7 +275,7 @@ spec:
 // rather than two competing ones. The .wasm artifact reference is derived from
 // that bare identity and resolves through the plugin-resolution cascade's embed
 // tier (the exact bytes compiled into the binary), so the build's render step
-// routes the helm provider to the shipped guest with no sidecar, cache, or lockfile.
+// routes the helm provider to the shipped guest with no cache or lockfile.
 func writeHelmRendererPlugin(t *testing.T, providersDir string) {
 	t.Helper()
 	writeFixture(t, filepath.Join(providersDir, "helm-renderer.yaml"), `apiVersion: aggrega.ai/v1alpha1

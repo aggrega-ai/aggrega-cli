@@ -13,8 +13,8 @@ import "fmt"
 type BuildCriticalBinding struct {
 	// Field is the configuration surface the binding comes from, in its
 	// authored spelling: "plugins.providers", "plugins.mutator",
-	// "plugins.policy", "plugins.linter", "plugins.importer",
-	// "plugin_sidecar_dir", or "workspace.catalog_dirs".
+	// "plugins.policy", "plugins.linter", "plugins.importer", or
+	// "workspace.catalog_dirs".
 	Field string
 	// Identity is a stable label for the specific binding within Field — a
 	// provider capability, a socket attachment's uri/capability, or a directory
@@ -100,14 +100,6 @@ func (r *ResolvedWorkspace) GlobalOnlyBuildCritical(allPlugins bool) ([]BuildCri
 			key = providerBindingKey
 		}
 		out = append(out, globalOnlyRefs("plugins."+sf.Key, sf.Refs, treeSockets[i].Refs, key)...)
-	}
-
-	// plugin_sidecar_dir is a scalar whole-replaced per layer. The global layer
-	// sits beneath the tree, so the effective value can differ from the
-	// tree-only value only when the tree does not set it and the global layer
-	// does — i.e. the effective value is global-only.
-	if full.PluginSidecarDir != tree.PluginSidecarDir {
-		out = append(out, BuildCriticalBinding{Field: "plugin_sidecar_dir", Identity: full.PluginSidecarDir})
 	}
 
 	// catalog_dirs concatenate across layers; a directory in the full list whose

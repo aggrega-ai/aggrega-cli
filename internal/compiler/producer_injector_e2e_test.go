@@ -20,23 +20,22 @@ import (
 // (.steps.ref.outputs.secretName) and PATCHes the host workload to reference it,
 // and a sidecar-injector that appends a companion container to the host workload.
 // Each step references a Plugin ENTITY URI; the entity's .wasm artifact is built
-// on demand from the Go PDK example and staged into a sidecar directory so the
-// build's entity-front resolves it. When the wasm toolchain is absent the staging
-// build skips the calling test.
+// on demand from the Go PDK example and staged co-located beside its Plugin entity
+// in the catalog so the build's entity-front resolves it. When the wasm toolchain
+// is absent the staging build skips the calling test.
 func producerInjectorChainInput(t *testing.T) pipelinetest.Input {
 	t.Helper()
-	sidecarDir := stagePluginSidecar(t, map[string]string{
-		"oci://hub.aggrega.ai/plugin/frp/secret-ref-producer": "secret-ref-producer-go.wasm",
-		"oci://hub.aggrega.ai/plugin/frp/secret-injector":     "secret-injector-go.wasm",
-		"oci://hub.aggrega.ai/plugin/frp/sidecar-injector":    "sidecar-injector-go.wasm",
+	catalogPaths := stageColocatedCatalog(t, []string{
+		"testdata/producer-injector/catalog/base",
+		"testdata/producer-injector/catalog/recipes/helm-chart",
+	}, map[string]string{
+		"frp_step/secret-ref-producer": "secret-ref-producer-go.wasm",
+		"frp_step/secret-injector":     "secret-injector-go.wasm",
+		"frp_step/sidecar-injector":    "sidecar-injector-go.wasm",
 	})
 	return pipelinetest.Input{
-		ReleasePath: "testdata/producer-injector/release-chain.yaml",
-		CatalogPaths: []string{
-			"testdata/producer-injector/catalog/base",
-			"testdata/producer-injector/catalog/recipes/helm-chart",
-		},
-		PluginSidecarDir: sidecarDir,
+		ReleasePath:  "testdata/producer-injector/release-chain.yaml",
+		CatalogPaths: catalogPaths,
 	}
 }
 
@@ -113,16 +112,15 @@ func TestProducerInjector_Deterministic(t *testing.T) {
 // contract requires a string). The build must halt with the typed-I/O
 // contract-violation guardrail before the guest runs.
 func TestProducerInjector_HaltOnBadInput(t *testing.T) {
-	sidecarDir := stagePluginSidecar(t, map[string]string{
-		"oci://hub.aggrega.ai/plugin/frp/secret-injector": "secret-injector-go.wasm",
+	catalogPaths := stageColocatedCatalog(t, []string{
+		"testdata/producer-injector/catalog/base",
+		"testdata/producer-injector/catalog/recipes/helm-chart",
+	}, map[string]string{
+		"frp_step/secret-injector": "secret-injector-go.wasm",
 	})
 	in := pipelinetest.Input{
-		ReleasePath: "testdata/producer-injector/release-badinput.yaml",
-		CatalogPaths: []string{
-			"testdata/producer-injector/catalog/base",
-			"testdata/producer-injector/catalog/recipes/helm-chart",
-		},
-		PluginSidecarDir: sidecarDir,
+		ReleasePath:  "testdata/producer-injector/release-badinput.yaml",
+		CatalogPaths: catalogPaths,
 	}
 	t.Parallel()
 
@@ -151,16 +149,15 @@ func TestProducerInjector_HaltOnBadInput(t *testing.T) {
 // where a string secretName is required). The build must halt with the typed-I/O
 // contract-violation guardrail after the guest runs.
 func TestProducerInjector_HaltOnBadOutput(t *testing.T) {
-	sidecarDir := stagePluginSidecar(t, map[string]string{
-		"oci://hub.aggrega.ai/plugin/frp/secret-ref-producer-badoutput": "secret-ref-producer-badoutput-go.wasm",
+	catalogPaths := stageColocatedCatalog(t, []string{
+		"testdata/producer-injector/catalog/base",
+		"testdata/producer-injector/catalog/recipes/helm-chart",
+	}, map[string]string{
+		"frp_step/secret-ref-producer-badoutput": "secret-ref-producer-badoutput-go.wasm",
 	})
 	in := pipelinetest.Input{
-		ReleasePath: "testdata/producer-injector/release-badoutput.yaml",
-		CatalogPaths: []string{
-			"testdata/producer-injector/catalog/base",
-			"testdata/producer-injector/catalog/recipes/helm-chart",
-		},
-		PluginSidecarDir: sidecarDir,
+		ReleasePath:  "testdata/producer-injector/release-badoutput.yaml",
+		CatalogPaths: catalogPaths,
 	}
 	t.Parallel()
 

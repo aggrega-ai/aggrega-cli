@@ -20,20 +20,20 @@ import (
 // host-patch-compose fixture (which defers a component-scope FeatureRecipe's
 // /host pipeline). The step references a Plugin ENTITY URI; the entity's
 // spec.plugin .wasm artifact is built on demand from the Rust PDK example and
-// staged into a sidecar directory so the build's entity-front resolves it. When
-// the wasm toolchain is absent the staging build skips the calling test.
+// staged co-located beside its Plugin entity in the catalog so the build's
+// entity-front resolves it. When the wasm toolchain is absent the staging build
+// skips the calling test.
 func ownPatchComposeFixtureInput(t *testing.T) pipelinetest.Input {
 	t.Helper()
-	sidecarDir := stagePluginSidecar(t, map[string]string{
-		"oci://hub.aggrega.ai/plugin/frp/own-patch-compose": "frp-step-own-patch-compose-rust.wasm",
+	catalogPaths := stageColocatedCatalog(t, []string{
+		"testdata/own-patch-compose/catalog/base",
+		"testdata/own-patch-compose/catalog/recipes/compose",
+	}, map[string]string{
+		"frp_step/own-patch-compose": "frp-step-own-patch-compose-rust.wasm",
 	})
 	return pipelinetest.Input{
-		ReleasePath: "testdata/own-patch-compose/release.yaml",
-		CatalogPaths: []string{
-			"testdata/own-patch-compose/catalog/base",
-			"testdata/own-patch-compose/catalog/recipes/compose",
-		},
-		PluginSidecarDir: sidecarDir,
+		ReleasePath:  "testdata/own-patch-compose/release.yaml",
+		CatalogPaths: catalogPaths,
 	}
 }
 

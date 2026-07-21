@@ -32,7 +32,7 @@ const lintExportName = "lint_rules"
 // spec is the loader input the caller built from the resolved plugin: the bytes
 // to compile (produced by the shared plugin-resolution cascade, pkg/pluginpath)
 // plus the optional entity capability claim and runtime caps. Resolution — tier
-// selection (embed / sidecar / local / cache / registry) and any digest-pin
+// selection (embed / colocated / local / cache / registry) and any digest-pin
 // verification — happens at the caller before dispatch; this dispatcher only
 // loads and runs the spec it is handed.
 //

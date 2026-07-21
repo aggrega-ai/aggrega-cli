@@ -18,10 +18,11 @@
 // reconstructs the function from the lockfile, so such a change made after the
 // pull does not move build output.
 //
-// The mutator here is a local (workspace-catalog + sidecar) plugin, so its .wasm
-// is resolved through the sidecar tier and carries no registry artifact pin —
-// which keeps the test focused on the runtime attachment reconstruction under
-// test rather than on the separate registry-artifact reconstruction path.
+// The mutator here is a local workspace-catalog plugin, so its .wasm is resolved
+// through the co-located tier (the .wasm laid down beside its Plugin entity in the
+// catalog) and carries no registry artifact pin — which keeps the test focused on
+// the runtime attachment reconstruction under test rather than on the separate
+// registry-artifact reconstruction path.
 package main
 
 import (
@@ -36,12 +37,12 @@ import (
 )
 
 // localMutatorWorkspace lays a workspace whose local catalog serves a compose
-// component and its Recipe, plus a mutator Plugin entity whose .wasm is dropped
-// into the workspace sidecar directory. The Recipe emits every node-label value
-// into a compose container variable, so a label the mutator injects surfaces
-// deterministically in the rendered artifact. Returns the workspace root and the
-// catalog dir; the caller writes the .aggrega-config.yaml (so it can vary the
-// plugins block between pull and the post-pull rebuild).
+// component and its Recipe, plus a mutator Plugin entity whose .wasm is laid down
+// co-located beside its plugin.yaml in the catalog. The Recipe emits every
+// node-label value into a compose container variable, so a label the mutator
+// injects surfaces deterministically in the rendered artifact. Returns the
+// workspace root and the catalog dir; the caller writes the .aggrega-config.yaml
+// (so it can vary the plugins block between pull and the post-pull rebuild).
 func localMutatorWorkspace(t *testing.T, mutatorBytes []byte) (root, catalogDir string) {
 	t.Helper()
 	root = t.TempDir()
@@ -124,25 +125,24 @@ spec:
     - name: mutate
 `)
 
-	// The mutator .wasm resolves through the sidecar tier: <sidecar>/<leaf>.wasm,
-	// where the leaf is the plugin coordinate's version-stripped final segment.
-	sidecar := filepath.Join(root, "sidecar")
-	if err := os.MkdirAll(sidecar, 0o755); err != nil {
-		t.Fatalf("mkdir sidecar: %v", err)
-	}
-	leaf := pluginpath.SidecarLeaf("mutator/tag-injector")
-	if err := os.WriteFile(filepath.Join(sidecar, leaf), mutatorBytes, 0o644); err != nil {
-		t.Fatalf("write sidecar mutator: %v", err)
+	// The mutator .wasm resolves through the co-located tier: it sits beside its
+	// plugin.yaml in the catalog directory the indexer maps into
+	// PluginColocatedDirs. The leaf is the plugin coordinate's version-stripped
+	// final segment.
+	colocatedDir := filepath.Join(catalogDir, "plugin", "mutator", "tag-injector", "1.0.0")
+	leaf := pluginpath.PluginLeaf("mutator/tag-injector")
+	if err := os.WriteFile(filepath.Join(colocatedDir, leaf), mutatorBytes, 0o644); err != nil {
+		t.Fatalf("write colocated mutator: %v", err)
 	}
 	return root, catalogDir
 }
 
 // resolveLocalWorkspace writes the .aggrega-config.yaml at root with the supplied
 // plugins block and resolves the workspace. offline keeps the build hermetic; the
-// sidecar directory binds the local mutator .wasm.
+// mutator .wasm binds through the catalog's co-located tier.
 func resolveLocalWorkspace(t *testing.T, root, pluginsBlock string) *workspaceconfig.ResolvedWorkspace {
 	t.Helper()
-	cfg := "workspace: {}\noffline: true\nplugin_sidecar_dir: sidecar\n" + pluginsBlock
+	cfg := "workspace: {}\noffline: true\n" + pluginsBlock
 	writeFixture(t, filepath.Join(root, workspaceconfig.ConfigFilename), cfg)
 	rw, err := workspaceconfig.Resolve(root, "")
 	if err != nil {

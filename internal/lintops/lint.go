@@ -302,9 +302,9 @@ func downgradeRuleToWarning(findings []validator.LinterFinding, ruleID string) [
 // override: a direct artifact path read verbatim through the cascade's override,
 // bypassing the entity model. The workspace config's plugins.linter[0].uri is a
 // Plugin entity URI, resolved through the shared entity-front: entity URI →
-// artifact reference → the cascade (embed → sidecar → local → cache), so the
+// artifact reference → the cascade (embed → colocated → local → cache), so the
 // linter sees the same entity model and the same tier model every plugin socket
-// does, including the embedded built-ins and the operator's sidecar directory.
+// does, including the embedded built-ins.
 //
 // Only the entity-URI path carries a capability claim and runtime limits: the
 // entity-front attaches them from the in-hand Plugin entity, so the linter load
@@ -321,7 +321,7 @@ func downgradeRuleToWarning(findings []validator.LinterFinding, ruleID string) [
 //
 // The linter passes NO digest pins: it lints a not-yet-pinned proposed entity
 // at publish time, so there is no lockfile to verify the plugin against. It
-// wires no puller — the linter resolves locally (embed / sidecar / local).
+// wires no puller — the linter resolves locally (embed / colocated / local).
 //
 // The linter socket is a verdict socket: a configured, non-embedded linter guest
 // is cached at pull but not pinned (cache-not-pin), so the configured-URI path is
@@ -334,9 +334,7 @@ func downgradeRuleToWarning(findings []validator.LinterFinding, ruleID string) [
 // falls back to a working-directory-anchored resolver built from wsCfg.
 func ResolveLinterPlugin(cliFlag string, wsCfg workspaceconfig.Config, pluginByURI func(uri string) (types.Plugin, bool), cacheResolve ...func(uri string) (pluginpath.ResolvedPlugin, error)) (pluginpath.ResolvedPlugin, error) {
 	cascade := pluginpath.NewResolver(pluginpath.ResolutionContext{
-		SidecarDir:  wsCfg.PluginSidecarDir,
-		Override:    cliFlag,
-		OverrideLog: func(msg string) { fmt.Fprintf(os.Stderr, "  plugin: %s\n", msg) },
+		Override: cliFlag,
 	}, pluginpath.PinPostureNone, pluginpath.PinMaps{})
 	// The --plugin override is the artifact-direct escape hatch: resolve it
 	// verbatim through the cascade override, never the entity model. The cascade
@@ -390,7 +388,6 @@ func ResolveLinterPlugin(cliFlag string, wsCfg workspaceconfig.Config, pluginByU
 // reads a Plugin entity from that cache by URI.
 func linterCacheResolve(workspaceRoot string, wsCfg workspaceconfig.Config, cacheRead func(uri string) (types.Plugin, string, bool, error)) func(uri string) (pluginpath.ResolvedPlugin, error) {
 	sources := resolver.VerdictPluginTierSources{
-		SidecarDir:    wsCfg.PluginSidecarDir,
 		WorkspaceRoot: workspaceRoot,
 		CacheDir:      wsCfg.ResolvedArtifactCacheDir(),
 	}
@@ -416,7 +413,7 @@ func linterCacheResolveOrDefault(wsCfg workspaceconfig.Config, cacheResolve []fu
 // entity's .wasm describe() self-report offers more than the entity curates
 // (binary ⊇ entity — the inverse of the load-gate cross-check). It resolves the
 // entity's .wasm through the plugin cascade by the entity's identity (embed,
-// sidecar, cache, or a local path); a .wasm that does not resolve is skipped with
+// colocated, cache, or a local path); a .wasm that does not resolve is skipped with
 // a one-line note rather than treated as an error. It never halts and never
 // changes the exit status — under-declaration of a curated surface is legitimate.
 // The derivation is single-sourced with the publish advisory (wasm.UnderDeclaredNotices).
@@ -426,9 +423,7 @@ func pluginUnderDeclarationAdvisory(entityBytes []byte, wsCfg workspaceconfig.Co
 		fmt.Fprintf(diagOut, "under-declaration advisory: skipped (entity does not parse as a Plugin)\n")
 		return
 	}
-	cascade := pluginpath.NewResolver(pluginpath.ResolutionContext{
-		SidecarDir: wsCfg.PluginSidecarDir,
-	}, pluginpath.PinPostureNone, pluginpath.PinMaps{})
+	cascade := pluginpath.NewResolver(pluginpath.ResolutionContext{}, pluginpath.PinPostureNone, pluginpath.PinMaps{})
 	resolved, err := cascade.Resolve(entity.ArtifactReference())
 	if err != nil {
 		fmt.Fprintf(diagOut, "under-declaration advisory: skipped for %q (its .wasm is not resolvable locally: %v)\n",

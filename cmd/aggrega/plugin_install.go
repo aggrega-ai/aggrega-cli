@@ -229,8 +229,8 @@ func recordInstalledCLIPlugin(configPath string, src resolvedInstallable, desc w
 // the closure walk uses, its signature verified against the registry's trust
 // policy, pinned by content digest, and cached under the workspace artifact cache
 // as two self-verifying blobs (content + manifest) so a later offline run
-// resolves the pinned bytes from cache with no network. A local, sidecar, or
-// embedded reference resolves through the shared plugin cascade with no network
+// resolves the pinned bytes from cache with no network. A local or embedded
+// reference resolves through the shared plugin cascade with no network
 // and no cache write, since it carries no registry signature and needs none —
 // its bytes are already on disk or in the binary.
 func productionInstallPluginFetch(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, ref string) (resolvedInstallable, error) {
@@ -245,7 +245,7 @@ func productionInstallPluginFetch(ctx context.Context, rw *workspaceconfig.Resol
 
 	bare := strings.TrimPrefix(ref, "oci://")
 	if !isRegistryHost(registryhost.Of(bare)) {
-		// Local / sidecar / embedded reference: resolve through the shared cascade
+		// Local / embedded reference: resolve through the shared cascade
 		// with no network and no cache write, mirroring the closure verify pass's
 		// skip of non-registry items.
 		resolved, err := workspacePluginResolver(rw)(ref)
@@ -315,4 +315,3 @@ func splitPluginRefTag(ref string) (repoRef, tag string, err error) {
 	}
 	return repoRef, tag, nil
 }
-

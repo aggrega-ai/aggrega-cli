@@ -23,23 +23,22 @@ import (
 // files and is never assembled — the deferred own-scope step has no merged own
 // document to patch, so the build halts. Each step references a distinct Plugin
 // ENTITY URI; both entities' spec.plugin .wasm artifacts are built on demand from
-// the Rust PDK examples and staged into ONE sidecar directory keyed by their
-// artifact references, so the build's entity-front dispatches each step to its own
-// plugin through the sidecar tier. When the wasm toolchain is absent the staging
-// build skips the calling test.
+// the Rust PDK examples and staged co-located beside their Plugin entities in the
+// catalog, so the build's entity-front dispatches each step to its own plugin
+// through the co-located tier. When the wasm toolchain is absent the staging build
+// skips the calling test.
 func mixedScopeComposeFixtureInput(t *testing.T) pipelinetest.Input {
 	t.Helper()
-	sidecarDir := stagePluginSidecar(t, map[string]string{
-		"oci://hub.aggrega.ai/plugin/frp/own-patch-compose":  "frp-step-own-patch-compose-rust.wasm",
-		"oci://hub.aggrega.ai/plugin/frp/host-patch-compose": "frp-step-host-patch-compose-rust.wasm",
+	catalogPaths := stageColocatedCatalog(t, []string{
+		"testdata/mixed-scope-compose/catalog/base",
+		"testdata/mixed-scope-compose/catalog/recipes/compose",
+	}, map[string]string{
+		"frp_step/own-patch-compose":  "frp-step-own-patch-compose-rust.wasm",
+		"frp_step/host-patch-compose": "frp-step-host-patch-compose-rust.wasm",
 	})
 	return pipelinetest.Input{
-		ReleasePath: "testdata/mixed-scope-compose/release.yaml",
-		CatalogPaths: []string{
-			"testdata/mixed-scope-compose/catalog/base",
-			"testdata/mixed-scope-compose/catalog/recipes/compose",
-		},
-		PluginSidecarDir: sidecarDir,
+		ReleasePath:  "testdata/mixed-scope-compose/release.yaml",
+		CatalogPaths: catalogPaths,
 	}
 }
 

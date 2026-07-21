@@ -17,7 +17,7 @@ import (
 // its parent directories) carrying build-critical bindings supplied only by the
 // global layer, plus a tool-scoped registry entry, and returns nothing. The
 // caller points a frozen $AGGREGA_CONFIG lookup at path.
-func writeGlobalConfig(t *testing.T, path, sidecar, catalog string) {
+func writeGlobalConfig(t *testing.T, path, catalog string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatalf("mkdir global dir: %v", err)
@@ -25,7 +25,6 @@ func writeGlobalConfig(t *testing.T, path, sidecar, catalog string) {
 	// catalog_dirs lives under the workspace block; a tool-scoped registry rides
 	// alongside so the test can prove capture leaves it in the global config.
 	body := "workspace:\n  catalog_dirs:\n    - " + catalog + "\n" +
-		"plugin_sidecar_dir: " + sidecar + "\n" +
 		"plugins:\n" +
 		"  providers:\n" +
 		"    - capability: helm\n" +
@@ -52,9 +51,8 @@ func TestConfigCaptureMaterializesGlobalBindings(t *testing.T) {
 	}
 	globalDir := t.TempDir()
 	globalPath := filepath.Join(globalDir, "aggrega", "config.yaml")
-	sidecar := filepath.Join(globalDir, "sidecars")
 	catalog := filepath.Join(globalDir, "catalog")
-	writeGlobalConfig(t, globalPath, sidecar, catalog)
+	writeGlobalConfig(t, globalPath, catalog)
 
 	withGlobal := frozenEnv(map[string]string{"AGGREGA_CONFIG": globalPath})
 
@@ -78,7 +76,6 @@ func TestConfigCaptureMaterializesGlobalBindings(t *testing.T) {
 	for _, want := range []string{
 		"oci://hub.aggrega.ai/plugin/provider/helm:1.0.0",
 		"mutator/tag-injector:1.0.0",
-		sidecar,
 		catalog,
 	} {
 		if !strings.Contains(string(body), want) {
@@ -104,9 +101,6 @@ func TestConfigCaptureMaterializesGlobalBindings(t *testing.T) {
 	}
 	if len(tc.Plugins.Mutator) != 1 || tc.Plugins.Mutator[0].URI != "mutator/tag-injector:1.0.0" {
 		t.Errorf("mutator attachment not yielded by tree-only resolve: %+v", tc.Plugins.Mutator)
-	}
-	if tc.PluginSidecarDir != sidecar {
-		t.Errorf("plugin_sidecar_dir not yielded by tree-only resolve: %q", tc.PluginSidecarDir)
 	}
 	if len(tc.Workspace.CatalogDirs) != 1 || tc.Workspace.CatalogDirs[0] != catalog {
 		t.Errorf("catalog_dirs not yielded by tree-only resolve: %+v", tc.Workspace.CatalogDirs)
@@ -205,7 +199,7 @@ func TestConfigCaptureIdempotent(t *testing.T) {
 	}
 	globalDir := t.TempDir()
 	globalPath := filepath.Join(globalDir, "aggrega", "config.yaml")
-	writeGlobalConfig(t, globalPath, filepath.Join(globalDir, "sidecars"), filepath.Join(globalDir, "catalog"))
+	writeGlobalConfig(t, globalPath, filepath.Join(globalDir, "catalog"))
 	withGlobal := frozenEnv(map[string]string{"AGGREGA_CONFIG": globalPath})
 
 	rw, err := workspaceconfig.Resolve(wsDir, "", withGlobal)

@@ -18,21 +18,20 @@ import (
 // — the /host PATCH defers to the post-assembly phase, where the merged
 // document is re-segmented and the deferred step replayed host-scope-only. The
 // step references a Plugin ENTITY URI; the entity's spec.plugin .wasm
-// artifact is built on demand from the Rust PDK example and staged into a sidecar
-// directory so the build's entity-front resolves it. When the wasm toolchain is
-// absent the staging build skips the calling test.
+// artifact is built on demand from the Rust PDK example and staged co-located
+// beside its Plugin entity in the catalog so the build's entity-front resolves it.
+// When the wasm toolchain is absent the staging build skips the calling test.
 func hostPatchComposeFixtureInput(t *testing.T) pipelinetest.Input {
 	t.Helper()
-	sidecarDir := stagePluginSidecar(t, map[string]string{
-		"oci://hub.aggrega.ai/plugin/frp/host-patch-compose": "frp-step-host-patch-compose-rust.wasm",
+	catalogPaths := stageColocatedCatalog(t, []string{
+		"testdata/host-patch-compose/catalog/base",
+		"testdata/host-patch-compose/catalog/recipes/compose",
+	}, map[string]string{
+		"frp_step/host-patch-compose": "frp-step-host-patch-compose-rust.wasm",
 	})
 	return pipelinetest.Input{
-		ReleasePath: "testdata/host-patch-compose/release.yaml",
-		CatalogPaths: []string{
-			"testdata/host-patch-compose/catalog/base",
-			"testdata/host-patch-compose/catalog/recipes/compose",
-		},
-		PluginSidecarDir: sidecarDir,
+		ReleasePath:  "testdata/host-patch-compose/release.yaml",
+		CatalogPaths: catalogPaths,
 	}
 }
 
