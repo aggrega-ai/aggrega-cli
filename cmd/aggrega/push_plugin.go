@@ -205,7 +205,9 @@ func pushPlugin(out io.Writer, cfg pushConfig, registry string, wantSign bool, n
 	// Publish the one manifest — entity config plus inline .wasm layer — tagged
 	// by the entity's version. The returned digest is the manifest the signature
 	// (if any) commits to.
-	manifestDigest, err := oci.PushPluginManifest(ctx, target, version, entityYAML, wasmBytes, annotations)
+	manifestDigest, err := retryTransient(ctx, func() (string, error) {
+		return oci.PushPluginManifest(ctx, target, version, entityYAML, wasmBytes, annotations)
+	}, isRetryablePublishError)
 	if err != nil {
 		return fmt.Errorf("aggrega push: push plugin %s:%s: %w", reference, version, err)
 	}

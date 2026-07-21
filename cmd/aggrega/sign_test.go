@@ -145,7 +145,7 @@ func TestSignWithRealKeyedSignerRoundTrips(t *testing.T) {
 func TestSignKeylessRefusesWithoutLiveInfra(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	signer := &signing.KeylessSigner{} // no IDToken/Fulcio/Rekor configured
+	signer := &signing.KeylessSigner{} // no token source/Fulcio/Rekor configured
 	_, _, err := signer.Sign(ctx, "sha256:abc")
 	if !errors.Is(err, signing.ErrKeylessLive) {
 		t.Fatalf("want ErrKeylessLive, got %v", err)

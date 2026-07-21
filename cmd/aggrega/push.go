@@ -384,7 +384,9 @@ func pushRun(cfg pushConfig) error {
 		}
 	}
 
-	digest, err := oci.Push(ctx, target, tag, mediaType, bundleBytes, annotations)
+	digest, err := retryTransient(ctx, func() (string, error) {
+		return oci.Push(ctx, target, tag, mediaType, bundleBytes, annotations)
+	}, isRetryablePublishError)
 	if err != nil {
 		return fmt.Errorf("aggrega push: push %s:%s: %w", reference, tag, err)
 	}

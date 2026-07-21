@@ -23,11 +23,20 @@ import (
 // signerParams carries the resolved signing inputs buildSigner constructs a
 // signer from. The values are already resolved through the precedence chain
 // (CLI flag > per-registry config > global config) by the caller; buildSigner
-// applies only the public-good endpoint defaults on top. IDToken is never
+// applies only the public-good endpoint defaults on top. The identity is never
 // sourced from config — it is a short-lived secret supplied at runtime.
+//
+// The identity reaches buildSigner one of two ways. IDToken carries a token
+// resolved once as a string (a flag, an environment variable, or a single
+// interactive acquisition); buildSigner validates its subject at construction
+// and wraps it as a constant source. TokenSource, when set, is a live source
+// buildSigner uses directly — it is fetched fresh per signature and validates
+// its own subject per fetch. Exactly one of the two is populated for the
+// keyless path; both are empty for the keyed path.
 type signerParams struct {
 	KeyPath      string
 	IDToken      string
+	TokenSource  signing.IdentityTokenSource
 	FulcioURL    string
 	RekorURL     string
 	TimestampURL string
@@ -96,6 +105,50 @@ func resolveOrAcquireIDToken(flagToken string, look func(string) string, tty fun
 	return "", fmt.Errorf("keyless signing needs an identity token and no interactive terminal is available; export %s or %s (for example a CI workflow OIDC token), or pass --identity-token", envIdentityToken, envSigstoreIDToken)
 }
 
+// resolveIdentityTokenSource resolves the keyless identity as a token SOURCE
+// for the push path, in one strict precedence with a single home here:
+//
+//  1. the --identity-token flag (non-empty) — an explicit operator token;
+//  2. AGGREGA_IDENTITY_TOKEN (non-empty);
+//  3. the ambient GitHub Actions OIDC endpoint, when reachable — a live source
+//     that mints a fresh token per signature;
+//  4. SIGSTORE_ID_TOKEN (non-empty) — the sigstore-ecosystem interop alias;
+//  5. an interactive terminal, where one token is acquired once;
+//  6. otherwise a loud refusal, so a keyless push never silently proceeds or
+//     hangs waiting on a browser in a non-interactive context.
+//
+// The ambient source outranks the frozen SIGSTORE_ID_TOKEN so a CI job whose
+// exported token would expire mid-run self-heals with no workflow change,
+// while an explicit operator token still wins over the ambient endpoint. A
+// static resolution returns its token as a string (buildSigner validates the
+// subject once at construction); the ambient resolution returns a live source
+// that fetches and validates per signature via the injected validate func, so
+// subject derivation is not duplicated. look, tty, and acquire are injected
+// seams for tests; the ordering is not duplicated in resolveIDToken, which is
+// the string-only precedence for the interactive re-acquire path.
+func resolveIdentityTokenSource(flagToken string, look func(string) string, tty func() bool, acquire func() (string, error), validate func(string) error) (idToken string, source signing.IdentityTokenSource, err error) {
+	if flagToken != "" {
+		return flagToken, nil, nil
+	}
+	if t := look(envIdentityToken); t != "" {
+		return t, nil, nil
+	}
+	if signing.GitHubActionsAmbientAvailable(look) {
+		return "", signing.AmbientGitHubActionsSource(look, nil, validate), nil
+	}
+	if t := look(envSigstoreIDToken); t != "" {
+		return t, nil, nil
+	}
+	if tty() {
+		t, aerr := acquire()
+		if aerr != nil {
+			return "", nil, aerr
+		}
+		return t, nil, nil
+	}
+	return "", nil, fmt.Errorf("keyless signing needs an identity token and no interactive terminal is available; export %s or %s (for example a CI workflow OIDC token), or pass --identity-token", envIdentityToken, envSigstoreIDToken)
+}
+
 // tokenGetterOrDefault returns getter when non-nil, else the production
 // interactive acquisition function. The one place the seam falls through to
 // production, so both verbs default identically.
@@ -140,18 +193,25 @@ func buildSigner(p signerParams) (signing.Signer, error) {
 	if rekor == "" {
 		rekor = signing.DefaultRekorURL
 	}
-	// Local pre-sign verification check: the same subject the certificate authority
-	// derives from the token's claims must be present before the token is
-	// handed off, so a token that structurally lacks a usable subject fails
-	// fast here with a precise diagnostic instead of as an opaque downstream
-	// "no subject found in claims". This decodes the token's claims without
-	// verifying its signature — it is a verification check, not a trust decision;
-	// the certificate authority still performs the real verification.
-	if err := checkIDTokenSubject(p.IDToken); err != nil {
-		return nil, err
+	source := p.TokenSource
+	if source == nil {
+		// Static-token path: the identity is a fixed string resolved once. The
+		// same subject the certificate authority derives from the token's claims
+		// must be present before the token is handed off, so a token that
+		// structurally lacks a usable subject fails fast here with a precise
+		// diagnostic instead of as an opaque downstream "no subject found in
+		// claims". This decodes the token's claims without verifying its
+		// signature — it is a verification check, not a trust decision; the
+		// certificate authority still performs the real verification. A live
+		// source validates its own freshly-fetched token per fetch instead, so
+		// this construction-time check applies only to the static path.
+		if err := checkIDTokenSubject(p.IDToken); err != nil {
+			return nil, err
+		}
+		source = signing.StaticIdentityToken(p.IDToken)
 	}
 	return &signing.KeylessSigner{
-		IDToken:      p.IDToken,
+		TokenSource:  source,
 		FulcioURL:    fulcio,
 		RekorURL:     rekor,
 		TimestampURL: p.TimestampURL,
@@ -267,14 +327,18 @@ func resolvePushSigner(cfg pushConfig, registry string) (signing.Signer, error) 
 	}
 	resolved := rw.Config().ResolveSigning(registryhost.Of(registry))
 	keyPath := firstNonEmpty(cfg.KeyPath, resolved.KeyPath)
-	// Only the keyless branch resolves an identity token; the keyed path
-	// never reaches acquisition. Resolve (or interactively acquire) the
-	// token before constructing the signer so a missing token refuses
-	// BEFORE any bytes reach the registry.
+	// Only the keyless branch resolves an identity; the keyed path never
+	// reaches acquisition. Resolve the identity as a SOURCE before constructing
+	// the signer so a missing token refuses BEFORE any bytes reach the
+	// registry. A static resolution comes back as idToken (validated once at
+	// construction); the ambient resolution comes back as a live source that
+	// stays fresh per signature. The single construction below is what
+	// guarantees both signatures of a multi-artifact publish share one source.
 	var idToken string
+	var tokenSource signing.IdentityTokenSource
 	if keyPath == "" {
 		var terr error
-		idToken, terr = resolveOrAcquireIDToken(cfg.IDToken, envLookupOrGetenv(cfg.EnvLookup), ttyOrDefault(cfg.IsTTY), tokenGetterOrDefault(cfg.TokenGetter))
+		idToken, tokenSource, terr = resolveIdentityTokenSource(cfg.IDToken, envLookupOrGetenv(cfg.EnvLookup), ttyOrDefault(cfg.IsTTY), tokenGetterOrDefault(cfg.TokenGetter), checkIDTokenSubject)
 		if terr != nil {
 			return nil, fmt.Errorf("aggrega push: %w: %w", terr, signing.ErrUnsignedPushRefused)
 		}
@@ -282,6 +346,7 @@ func resolvePushSigner(cfg pushConfig, registry string) (signing.Signer, error) 
 	signer, berr := buildSigner(signerParams{
 		KeyPath:      keyPath,
 		IDToken:      idToken,
+		TokenSource:  tokenSource,
 		FulcioURL:    firstNonEmpty(cfg.FulcioURL, resolved.FulcioURL),
 		RekorURL:     firstNonEmpty(cfg.RekorURL, resolved.RekorURL),
 		TimestampURL: firstNonEmpty(cfg.TimestampURL, resolved.TimestampURL),
@@ -300,7 +365,17 @@ func resolvePushSigner(cfg pushConfig, registry string) (signing.Signer, error) 
 // resolvePushSigner and call this per digest so both signatures share the
 // signer. reference and tag name the artifact in any rejection message.
 func signPushDigestWith(ctx context.Context, signer signing.Signer, reference, tag, proposedDigest string) (bundle []byte, artifactType string, err error) {
-	bundle, artifactType, err = signDigest(ctx, signer, proposedDigest)
+	// Retry the raw signing call on a transient certificate-authority or
+	// network failure so a long publish is not lost to a single flaky token
+	// mint. The retry wraps signDigest BEFORE the ErrUnsignedPushRefused
+	// mapping below, so the classifier sees the raw underlying error; the
+	// subject-failure mapping and terminal wrapping act on the error that
+	// survives retry exhaustion.
+	res, err := retryTransient(ctx, func() (signBundle, error) {
+		b, at, serr := signDigest(ctx, signer, proposedDigest)
+		return signBundle{bytes: b, artifactType: at}, serr
+	}, isRetryablePublishError)
+	bundle, artifactType = res.bytes, res.artifactType
 	if err != nil {
 		// A token without a usable signing subject is misdiagnosed by a generic
 		// rejection message; name the real cause — the identity the OIDC flow

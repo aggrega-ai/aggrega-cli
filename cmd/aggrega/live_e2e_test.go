@@ -113,7 +113,7 @@ func TestLiveE2E_KeylessPublishVerifyRoundTrip(t *testing.T) {
 
 	// Keyless-sign the manifest digest against live Fulcio + Rekor.
 	signer := &signing.KeylessSigner{
-		IDToken:      cfg.OIDCToken,
+		TokenSource:  signing.StaticIdentityToken(cfg.OIDCToken),
 		FulcioURL:    cfg.FulcioURL,
 		RekorURL:     cfg.RekorURL,
 		TimestampURL: cfg.TimestampURL,

@@ -22,17 +22,20 @@ import (
 // from a held key.
 //
 // LIVE-ONLY: every Sign call contacts a live OIDC identity provider (for
-// the IDToken), a live Fulcio (FulcioURL), and a live Rekor (RekorURL).
-// There is no offline mode and no simulated mode — the certificate
-// issuance, transparency-log inclusion, and timestamp are all network
-// operations against running services. This path cannot be exercised
+// the identity token), a live Fulcio (FulcioURL), and a live Rekor
+// (RekorURL). There is no offline mode and no simulated mode — the
+// certificate issuance, transparency-log inclusion, and timestamp are all
+// network operations against running services. This path cannot be exercised
 // without that infrastructure; correctness is provable only against live
 // Fulcio/Rekor/OIDC, not in an offline unit test.
 type KeylessSigner struct {
-	// IDToken is the OIDC identity token presented to Fulcio for
-	// certificate issuance. In a CI publish it is the workflow identity
-	// token; interactively it is obtained from an OIDC flow.
-	IDToken string
+	// TokenSource yields the OIDC identity token presented to Fulcio for
+	// certificate issuance. It is consulted once per Sign, so a source
+	// backed by a live provider supplies a fresh token for each signature —
+	// a long publish job never presents a token that expired since it began.
+	// In a CI publish it draws on the workflow identity; interactively it is
+	// a token obtained once from an OIDC flow.
+	TokenSource IdentityTokenSource
 	// FulcioURL is the certificate authority that issues the short-lived
 	// signing certificate bound to the OIDC identity.
 	FulcioURL string
@@ -43,23 +46,32 @@ type KeylessSigner struct {
 	TimestampURL string
 }
 
-// Sign performs the keyless flow: generate an ephemeral key, obtain a
-// Fulcio certificate for the OIDC identity, sign artifactDigest, record
-// the signature in Rekor, and return a Sigstore bundle. The ephemeral
-// key is discarded.
+// Sign performs the keyless flow: fetch a fresh OIDC identity token from the
+// token source, generate an ephemeral key, obtain a Fulcio certificate for
+// that identity, sign artifactDigest, record the signature in Rekor, and
+// return a Sigstore bundle. The token is fetched anew on every call, so a
+// long-running signing job cannot present a token that expired since it
+// started. The ephemeral key is discarded.
 //
 // LIVE-ONLY: this contacts Fulcio, Rekor, and (transitively) the OIDC
-// provider. It returns ErrKeylessLive when no identity token is configured,
-// and otherwise depends entirely on those live services — it has no offline
-// path and no test exercises its network behaviour. The Fulcio and Rekor
-// URLs are optional here: a caller that leaves them empty is expected to
-// have defaulted them to the public-good Sigstore instances before
-// constructing the signer.
+// provider. It returns ErrKeylessLive when no token source is configured or
+// the source yields an empty token, and otherwise depends entirely on those
+// live services — it has no offline path and no test exercises its network
+// behaviour. The Fulcio and Rekor URLs are optional here: a caller that leaves
+// them empty is expected to have defaulted them to the public-good Sigstore
+// instances before constructing the signer.
 func (k *KeylessSigner) Sign(ctx context.Context, artifactDigest string) (bundleBytes []byte, artifactType string, err error) {
-	// Defensive backstop for a signer constructed directly with no token. The
+	// Defensive backstop for a signer constructed directly with no source. The
 	// operator-facing token resolution and the helpful refuse message live at
 	// the command layer; this terse guard is a distinct internal surface.
-	if k.IDToken == "" {
+	if k.TokenSource == nil {
+		return nil, "", fmt.Errorf("%w: an identity token source is required", ErrKeylessLive)
+	}
+	idToken, err := k.TokenSource(ctx)
+	if err != nil {
+		return nil, "", fmt.Errorf("signing: identity token: %w", err)
+	}
+	if idToken == "" {
 		return nil, "", fmt.Errorf("%w: an identity token is required", ErrKeylessLive)
 	}
 
@@ -75,7 +87,7 @@ func (k *KeylessSigner) Sign(ctx context.Context, artifactDigest string) (bundle
 	opts := sign.BundleOptions{
 		Context:                    ctx,
 		CertificateProvider:        sign.NewFulcio(&sign.FulcioOptions{BaseURL: k.FulcioURL}),
-		CertificateProviderOptions: &sign.CertificateProviderOptions{IDToken: k.IDToken},
+		CertificateProviderOptions: &sign.CertificateProviderOptions{IDToken: idToken},
 		TransparencyLogs:           []sign.Transparency{sign.NewRekor(&sign.RekorOptions{BaseURL: k.RekorURL})},
 	}
 	if k.TimestampURL != "" {
