@@ -21,13 +21,13 @@ entities:
         - manifest.spec.mappings.features.type.core/compose-bridge:1.0.0
     - uri: core/datastore/postgres
       resolved_version: 1.0.0
-      digest: sha256:62c90d01212ae848e9b3ee98318a917958a9a1fc173d07529e9d7936380a9f72
+      digest: sha256:88173d78b2ab2fe33ba1ef8e1fa0fec4c824f45e8a186c6e7a2efdd9843674f8
       referenced_from:
         - aggregate.spec.subsystems.default.components.db.type
         - manifest.spec.mappings.components.type.core/datastore/postgres
     - uri: core/devtool/adminer
       resolved_version: 1.0.0
-      digest: sha256:91199fb08dafe0a8e3abb46b5127035ec7df20452335c248d78e3c466250fb05
+      digest: sha256:eceff74d4c89a088eb6292b783f5264abda8788fcdd44b408a803b4fa35e7bb7
       referenced_from:
         - aggregate.spec.subsystems.default.components.adminer.type
         - manifest.spec.mappings.components.type.core/devtool/adminer

@@ -11,22 +11,22 @@ entities:
         - release.spec.aggregate
     - uri: core/datastore/mariadb
       resolved_version: 1.0.0
-      digest: sha256:baecc76ac46c153f3804065fc18902757f1f831caf3cdc9a837dfeb4e6d69831
+      digest: sha256:fd6db199068f25ec1f1f437c7c2a116867edb57f49586752ea64e62ce0dd5b1b
       referenced_from:
         - aggregate.spec.subsystems.default.components.db.type
     - uri: core/datastore/mariadb:1.0.0
       resolved_version: 1.0.0
-      digest: sha256:baecc76ac46c153f3804065fc18902757f1f831caf3cdc9a837dfeb4e6d69831
+      digest: sha256:fd6db199068f25ec1f1f437c7c2a116867edb57f49586752ea64e62ce0dd5b1b
       referenced_from:
         - manifest.spec.mappings.components.type.core/datastore/mariadb:1.0.0
     - uri: core/devtool/adminer
       resolved_version: 1.0.0
-      digest: sha256:91199fb08dafe0a8e3abb46b5127035ec7df20452335c248d78e3c466250fb05
+      digest: sha256:eceff74d4c89a088eb6292b783f5264abda8788fcdd44b408a803b4fa35e7bb7
       referenced_from:
         - aggregate.spec.subsystems.default.components.web.type
     - uri: core/devtool/adminer:1.0.0
       resolved_version: 1.0.0
-      digest: sha256:91199fb08dafe0a8e3abb46b5127035ec7df20452335c248d78e3c466250fb05
+      digest: sha256:eceff74d4c89a088eb6292b783f5264abda8788fcdd44b408a803b4fa35e7bb7
       referenced_from:
         - manifest.spec.mappings.components.type.core/devtool/adminer:1.0.0
     - uri: core/secret-provided
