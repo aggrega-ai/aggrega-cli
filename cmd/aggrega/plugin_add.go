@@ -5,6 +5,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"path"
@@ -237,7 +238,7 @@ func pluginAddRun(ctx context.Context, cfg pluginAddConfig) error {
 	// identity (<pluginType>/<name>) and pin the latest published version so the
 	// attachment is version-pinned.
 	entity := strings.TrimPrefix(repoPath, catalog.KindPathSegment("Plugin")+"/")
-	version, err := resolveLatestPluginVersion(ctx, rw.Config(), host, repoPath)
+	version, err := resolveLatestPluginVersion(ctx, rw, host, repoPath)
 	if err != nil {
 		return fmt.Errorf("aggrega plugin add: %w", err)
 	}
@@ -271,7 +272,7 @@ func pluginAddCLIRun(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace,
 	if err != nil {
 		return err
 	}
-	version, err := resolveLatestPluginVersion(ctx, rw.Config(), host, repoPath)
+	version, err := resolveLatestPluginVersion(ctx, rw, host, repoPath)
 	if err != nil {
 		return fmt.Errorf("aggrega plugin add: %w", err)
 	}
@@ -333,14 +334,54 @@ var pluginRepoTagLister = func(ctx context.Context, cfg workspaceconfig.Config, 
 	return oci.ListTags(ctx, repo)
 }
 
-// resolveLatestPluginVersion returns the highest strict-SemVer tag published for
-// the plugin repository, or the empty string when the repository carries no
-// conforming version tag. Pre-release tags are excluded from the selection, the
-// same rule the publishing and deprecation paths apply.
-func resolveLatestPluginVersion(ctx context.Context, cfg workspaceconfig.Config, host, repoPath string) (string, error) {
+// resolveLatestPluginVersion returns the highest strict-SemVer version published
+// for the plugin repository, or the empty string when no conforming version is
+// found. Discovery reads the local registry index by default — the snapshot a
+// `registry update` builds — so version resolution costs no network round-trip on
+// the common path; the record's headline version is the same highest-released
+// selection a live tag list yields. Pre-release versions are excluded, the same
+// rule the publishing and deprecation paths apply.
+//
+// When the local index does not carry the repository — never built, or the
+// repository is absent from the snapshot — resolution falls back to a live tag
+// list, except in an offline workspace, where discovery must not network: it
+// fails loudly, pointing at `registry update`. The actual plugin fetch/add is
+// always live regardless; only this version discovery reads the snapshot.
+func resolveLatestPluginVersion(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, host, repoPath string) (string, error) {
+	if version, ok, err := pluginVersionFromIndex(rw, host, repoPath); err != nil {
+		return "", err
+	} else if ok {
+		return version, nil
+	}
+	cfg := rw.Config()
+	if cfg.Offline {
+		return "", fmt.Errorf("offline workspace has no local index entry for %s; run 'aggrega registry update' to build the discovery index", repoPath)
+	}
 	tags, err := pluginRepoTagLister(ctx, cfg, host, repoPath)
 	if err != nil {
 		return "", fmt.Errorf("list versions for %s: %w", repoPath, err)
 	}
 	return oci.SelectLatestVersion(tags, false /* includePreRelease */), nil
+}
+
+// pluginVersionFromIndex resolves a plugin repository's headline version from the
+// host's local discovery index. It reports the version and whether the repository
+// was present. An index that has not been built reports (absent) so the caller
+// can fall back to a live lookup; a genuine read or parse fault of a built index
+// surfaces as an error rather than a silent fallback.
+func pluginVersionFromIndex(rw *workspaceconfig.ResolvedWorkspace, host, repoPath string) (string, bool, error) {
+	loaded, err := loadHostIndex(rw.Root(), rw.Config().ResolvedArtifactCacheDir(), host)
+	if err != nil {
+		if errors.Is(err, errIndexNotBuilt) {
+			return "", false, nil
+		}
+		return "", false, err
+	}
+	uri := "oci://" + host + "/" + repoPath
+	for _, rec := range loaded.Records {
+		if rec.URI == uri {
+			return rec.Version, true, nil
+		}
+	}
+	return "", false, nil
 }

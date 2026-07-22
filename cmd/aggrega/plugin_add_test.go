@@ -228,6 +228,68 @@ func TestPluginAddRun_CapabilityFlagsRejectedOffCLI(t *testing.T) {
 	}
 }
 
+// TestResolveLatestPluginVersion_IndexDefault proves version discovery reads the
+// local index by default: with a built index carrying the repository, the headline
+// version is resolved from the snapshot and the live tag lister is never consulted.
+func TestResolveLatestPluginVersion_IndexDefault(t *testing.T) {
+	rw := resolvedTestWorkspace(t)
+	const host = "hub.aggrega.ai"
+	const repoPath = "plugin/mutator/tag-injector"
+	writeIndexFixture(t, rw.Root(), rw.Config().ResolvedArtifactCacheDir(), host, RegistryIndex{
+		Host: host,
+		Records: []IndexRecord{{
+			URI:      "oci://" + host + "/" + repoPath,
+			Name:     repoPath,
+			Version:  "1.2.0",
+			Versions: []string{"1.0.0", "1.2.0"},
+			Kind:     "Plugin",
+		}},
+	}, "2026-07-16T12:00:00Z\n")
+
+	// The live tag lister must NOT be consulted when the index answers.
+	prev := pluginRepoTagLister
+	pluginRepoTagLister = func(context.Context, workspaceconfig.Config, string, string) ([]string, error) {
+		t.Fatalf("live tag lister called; discovery must read the local index by default")
+		return nil, nil
+	}
+	t.Cleanup(func() { pluginRepoTagLister = prev })
+
+	got, err := resolveLatestPluginVersion(context.Background(), rw, host, repoPath)
+	if err != nil {
+		t.Fatalf("resolveLatestPluginVersion: %v", err)
+	}
+	if got != "1.2.0" {
+		t.Errorf("resolved version = %q; want 1.2.0 from the index headline", got)
+	}
+}
+
+// TestResolveLatestPluginVersion_OfflineNoIndex proves an offline workspace with
+// no local index entry fails loudly, pointing at 'registry update', rather than
+// silently networking for discovery.
+func TestResolveLatestPluginVersion_OfflineNoIndex(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, workspaceconfig.ConfigFilename)
+	if err := os.WriteFile(cfgPath, []byte("workspace: {}\ndefault_registry: hub.aggrega.ai\noffline: true\n"), 0o644); err != nil {
+		t.Fatalf("seed config: %v", err)
+	}
+	rw, err := workspaceconfig.Resolve(dir, "")
+	if err != nil {
+		t.Fatalf("resolve workspace: %v", err)
+	}
+
+	prev := pluginRepoTagLister
+	pluginRepoTagLister = func(context.Context, workspaceconfig.Config, string, string) ([]string, error) {
+		t.Fatalf("offline discovery must not network for a live tag list")
+		return nil, nil
+	}
+	t.Cleanup(func() { pluginRepoTagLister = prev })
+
+	_, err = resolveLatestPluginVersion(context.Background(), rw, "hub.aggrega.ai", "plugin/mutator/tag-injector")
+	if err == nil || !strings.Contains(err.Error(), "registry update") {
+		t.Fatalf("want a loud offline error pointing at 'registry update'; got %v", err)
+	}
+}
+
 // TestResolveSinglePluginRepo_ExactNameWins proves that when several plugins
 // share a substring, an exact plugin-name (final segment) match is selected.
 func TestResolveSinglePluginRepo_ExactNameWins(t *testing.T) {

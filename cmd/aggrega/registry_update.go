@@ -18,6 +18,7 @@ import (
 	"github.com/spf13/cobra"
 	"oras.land/oras-go/v2"
 
+	"github.com/aggrega-ai/aggrega-cli/pkg/deprecation"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
@@ -73,30 +74,55 @@ var registryIndexTarget = func(cfg workspaceconfig.Config, host string) (registr
 }
 
 // IndexRecord is one entity's row in a local registry index: its OCI URI, the
-// latest published version, and the searchable catalog facets read back from
-// that version's manifest annotations. Labels reconstructs the catalog category
-// label from the category facet so a search can match records with the same
-// label selector the catalog uses; it is absent when the entity declares no
-// category. PluginType and Capabilities carry a plugin's socket facets and are
-// absent on non-plugin entities.
+// latest published version, the full list of published versions, and the
+// searchable catalog facets read back from the latest version's manifest
+// annotations. Labels reconstructs the catalog category label from the category
+// facet so a search can match records with the same label selector the catalog
+// uses; it is absent when the entity declares no category. PluginType and
+// Capabilities carry a plugin's socket facets and are absent on non-plugin
+// entities.
+//
+// Versions is every published tag that conforms to strict SemVer, in ascending
+// order (pre-release tags included). Version stays the selected headline
+// (highest released). ManifestDigest is the resolved manifest digest of the
+// headline version, recorded as a revalidation validator: a later refresh
+// re-resolves the version and reuses the stored record when the digest is
+// unchanged. Deprecations records, per deprecated version, the authoritative
+// deprecation marker discovered from that version's referrers, so the advisory
+// display reads a marker from the local index rather than probing the registry
+// live. All three are omitted when empty.
 type IndexRecord struct {
-	URI          string                    `json:"uri"`
-	Name         string                    `json:"name"`
-	Version      string                    `json:"version"`
-	Kind         string                    `json:"kind,omitempty"`
-	Description  string                    `json:"description,omitempty"`
-	Category     string                    `json:"category,omitempty"`
-	Labels       *types.OrderedMap[string] `json:"labels,omitempty"`
-	PluginType   string                    `json:"pluginType,omitempty"`
-	Capabilities []string                  `json:"capabilities,omitempty"`
+	URI            string                    `json:"uri"`
+	Name           string                    `json:"name"`
+	Version        string                    `json:"version"`
+	Versions       []string                  `json:"versions,omitempty"`
+	Kind           string                    `json:"kind,omitempty"`
+	Description    string                    `json:"description,omitempty"`
+	Category       string                    `json:"category,omitempty"`
+	Labels         *types.OrderedMap[string] `json:"labels,omitempty"`
+	PluginType     string                    `json:"pluginType,omitempty"`
+	Capabilities   []string                  `json:"capabilities,omitempty"`
+	ManifestDigest string                    `json:"manifestDigest,omitempty"`
+	Deprecations   []VersionDeprecation      `json:"deprecations,omitempty"`
 }
 
-// RegistryIndex is the deterministic per-host index a registry update writes:
-// the host it was built from and the entity records, one per repository whose
-// latest version conforms to strict SemVer. Records are sorted by URI then
-// version, and the struct carries no timestamp, so the marshalled file is
-// byte-identical across two builds against the same registry state. The
-// freshness timestamp lives in a sibling file rather than in this record set.
+// VersionDeprecation pairs a strict-SemVer version with the authoritative
+// deprecation marker discovered on that version's referrers. The whole marker is
+// stored (all its fields), so the advisory display reconstructs the same view
+// off the local index that a live referrer probe produced. The marshalled marker
+// carries a fixed field order, so a record is byte-identical for identical
+// registry state.
+type VersionDeprecation struct {
+	Version string             `json:"version"`
+	Marker  deprecation.Marker `json:"marker"`
+}
+
+// RegistryIndex is the in-memory aggregate a registry update builds for one
+// host: the host it was built from and the entity records, one per repository
+// whose latest version conforms to strict SemVer. It is the shape the writer
+// iterates to emit one file per repository under the host's index directory;
+// the on-disk layout is per-repository files, not this struct serialized whole.
+// Records are held in URI-then-version order.
 type RegistryIndex struct {
 	Host    string        `json:"host"`
 	Records []IndexRecord `json:"records"`
@@ -107,6 +133,7 @@ type RegistryIndex struct {
 // manifest annotations, and writes a deterministic local searchable index a
 // later offline search reads.
 func newRegistryUpdateCmd() *cobra.Command {
+	var upgrade bool
 	c := &cobra.Command{
 		Use:   "update [<name|host>]",
 		Short: "Build the local searchable index of configured registries",
@@ -123,9 +150,17 @@ manifest. A repository with no conforming version is skipped; a repository that
 cannot be read is skipped with a note, so one unreadable repository does not
 abandon the whole index.
 
-The per-host records file is byte-identical across two runs against the same
+The per-repository records are byte-identical across two runs against the same
 registry state; the freshness timestamp is written to a sibling file so it never
-disturbs the records.`,
+disturbs the records.
+
+A refresh revalidates each repository conditionally: it re-resolves the selected
+version's manifest digest and reuses the cached record untouched when the tag set
+and digest are unchanged, so an unchanged registry costs a round of cheap digest
+resolves rather than a full re-read of every repository's manifest and referrers.
+Use --upgrade to ignore the cached validators and re-read every repository — this
+picks up a change a conditional refresh skips, such as a deprecation marker added
+to an existing version whose digest did not change.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			rw, err := workspaceFromContext(cmd.Context())
@@ -133,21 +168,29 @@ disturbs the records.`,
 				return err
 			}
 			return registryUpdateRun(registryUpdateConfig{
-				ws:   rw,
-				Args: args,
-				Out:  cmd.OutOrStdout(),
+				ws:      rw,
+				Args:    args,
+				Upgrade: upgrade,
+				Out:     cmd.OutOrStdout(),
 			})
 		},
 	}
+	c.Flags().BoolVar(&upgrade, "upgrade", false, "Re-read every repository from the registry, ignoring the cached revalidation validators (picks up changes a conditional refresh would skip)")
 	return c
 }
 
 // registryUpdateConfig is the input contract for `aggrega registry update`,
-// populated by the cobra command from its optional argument.
+// populated by the cobra command from its optional argument and flags.
 type registryUpdateConfig struct {
 	// Args carries the optional single registry token (host or alias). Empty
 	// selects every configured registry.
 	Args []string
+	// Upgrade forces a full re-read of every repository, ignoring the cached
+	// revalidation validators. It is the escape from the conditional refresh's one
+	// bound: a deprecation added to an existing version whose tag set and manifest
+	// digest are unchanged is invisible to digest-compare, and a full re-read picks
+	// it up.
+	Upgrade bool
 
 	ws  *workspaceconfig.ResolvedWorkspace
 	Out io.Writer
@@ -210,7 +253,7 @@ func registryUpdateRun(cfg registryUpdateConfig) error {
 	cacheDir := wsCfg.ResolvedArtifactCacheDir()
 	var failed []string
 	for _, host := range hosts {
-		count, herr := updateHostIndex(ctx, wsCfg, root, cacheDir, host, now, out)
+		count, herr := updateHostIndex(ctx, wsCfg, root, cacheDir, host, now, cfg.Upgrade, out)
 		if herr != nil {
 			if singleExplicit {
 				return fmt.Errorf("aggrega registry update: %s: %w", host, herr)
@@ -232,12 +275,16 @@ func registryUpdateRun(cfg registryUpdateConfig) error {
 // success. The returned error is unwrapped by host so the caller frames it for
 // the single-registry path (returned immediately) or the all-registries path
 // (noted per host, walk continues).
-func updateHostIndex(ctx context.Context, cfg workspaceconfig.Config, root, cacheDir, host string, now func() time.Time, out io.Writer) (int, error) {
+func updateHostIndex(ctx context.Context, cfg workspaceconfig.Config, root, cacheDir, host string, now func() time.Time, upgrade bool, out io.Writer) (int, error) {
 	src, err := registryIndexTarget(cfg, host)
 	if err != nil {
 		return 0, err
 	}
-	idx, err := buildHostIndex(ctx, host, src, out)
+	var prior map[string]IndexRecord
+	if !upgrade {
+		prior = loadPriorRecords(root, cacheDir, host)
+	}
+	idx, err := buildHostIndex(ctx, host, src, prior, out)
 	if err != nil {
 		return 0, err
 	}
@@ -247,18 +294,41 @@ func updateHostIndex(ctx context.Context, cfg workspaceconfig.Config, root, cach
 	return len(idx.Records), nil
 }
 
+// loadPriorRecords loads the previous per-host index records keyed by URI, so a
+// conditional refresh can reuse an unchanged repository's record. A not-yet-built
+// or unreadable prior index yields a nil map, degrading the refresh to a full
+// build rather than failing — the first update after a cache wipe re-reads
+// everything.
+func loadPriorRecords(root, cacheDir, host string) map[string]IndexRecord {
+	loaded, err := loadHostIndex(root, cacheDir, host)
+	if err != nil {
+		return nil
+	}
+	prior := make(map[string]IndexRecord, len(loaded.Records))
+	for _, rec := range loaded.Records {
+		prior[rec.URI] = rec
+	}
+	return prior
+}
+
 // buildHostIndex enumerates the host's repositories through the one search
 // enumeration primitive (progress-aware and partial-on-error) and appends one
-// record per repository whose latest version conforms to strict SemVer. Records
-// are sorted by URI then version so the marshalled file is deterministic.
-func buildHostIndex(ctx context.Context, host string, src registryIndexSource, out io.Writer) (RegistryIndex, error) {
+// record per repository whose latest version conforms to strict SemVer. Each
+// repository is revalidated conditionally against prior (keyed by URI): a
+// repository whose tag set and headline manifest digest match its prior record
+// reuses that record, skipping the manifest read and the per-version referrer
+// scan. A nil prior forces a full read of every repository. Records are sorted
+// by URI then version so the emitted files are deterministic. A repository that
+// dropped out of the registry is simply not enumerated, so it contributes no
+// record and its file is not rewritten (the writer resets the host directory).
+func buildHostIndex(ctx context.Context, host string, src registryIndexSource, prior map[string]IndexRecord, out io.Writer) (RegistryIndex, error) {
 	repos, err := searchRegistry(ctx, src, "", catalogSearchScope)
 	if err != nil {
 		return RegistryIndex{}, err
 	}
 	idx := RegistryIndex{Host: host}
 	for _, repo := range repos {
-		rec, ok := indexRepo(ctx, host, src, repo, out)
+		rec, ok := indexRepo(ctx, host, src, repo, prior, out)
 		if !ok {
 			continue
 		}
@@ -287,13 +357,22 @@ func sortIndexRecords(records []IndexRecord) {
 	})
 }
 
-// indexRepo builds the record for one repository's latest published version. A
-// repository with no strict-SemVer version is skipped silently (a deterministic
+// indexRepo builds the record for one repository's latest published version. It
+// lists the tags and selects the headline version, then revalidates against the
+// prior record for the repository's URI: when the tag set and the re-resolved
+// headline manifest digest both match the prior record, that record is reused
+// untouched — skipping the manifest read and the per-version referrer scan, so an
+// unchanged repository costs one tag list plus one cheap digest resolve. Only a
+// changed or previously-unseen repository re-reads the manifest annotations and
+// re-scans referrers. A nil prior (a full-upgrade refresh, or the first build)
+// reuses nothing.
+//
+// A repository with no strict-SemVer version is skipped silently (a deterministic
 // non-error). A repository that cannot be read — no per-repo target, a tag-list
-// failure, or a manifest read failure — is skipped with a note so one
-// unreadable repository does not abandon the walk, mirroring the search
+// failure, a resolve failure, or a manifest read failure — is skipped with a note
+// so one unreadable repository does not abandon the walk, mirroring the search
 // primitive's partial-on-error posture.
-func indexRepo(ctx context.Context, host string, src registryIndexSource, repo string, out io.Writer) (IndexRecord, bool) {
+func indexRepo(ctx context.Context, host string, src registryIndexSource, repo string, prior map[string]IndexRecord, out io.Writer) (IndexRecord, bool) {
 	target, err := src.Repository(repo)
 	if err != nil {
 		fmt.Fprintf(out, "  skipped %s: %v\n", repo, err)
@@ -308,12 +387,75 @@ func indexRepo(ctx context.Context, host string, src registryIndexSource, repo s
 	if version == "" {
 		return IndexRecord{}, false
 	}
-	annotations, err := oci.FetchManifestAnnotations(ctx, target, version)
+	versions := oci.SortedSemverTags(tags)
+
+	// Conditional revalidation: re-resolve the headline manifest digest (a cheap
+	// metadata read, no content blob) and reuse the prior record when the tag set
+	// and digest are unchanged.
+	digest, exists, err := oci.Resolve(ctx, target, version)
 	if err != nil {
 		fmt.Fprintf(out, "  skipped %s: %v\n", repo, err)
 		return IndexRecord{}, false
 	}
-	return recordFromAnnotations(host, repo, version, annotations), true
+	if !exists {
+		fmt.Fprintf(out, "  skipped %s: selected version %s no longer resolves\n", repo, version)
+		return IndexRecord{}, false
+	}
+	uri := "oci://" + host + "/" + repo
+	if p, ok := prior[uri]; ok && p.ManifestDigest != "" && p.ManifestDigest == digest && equalStrings(p.Versions, versions) {
+		return p, true
+	}
+
+	annotations, manifestDigest, err := oci.FetchManifestAnnotations(ctx, target, version)
+	if err != nil {
+		fmt.Fprintf(out, "  skipped %s: %v\n", repo, err)
+		return IndexRecord{}, false
+	}
+	rec := recordFromAnnotations(host, repo, version, annotations)
+	rec.Versions = versions
+	rec.ManifestDigest = manifestDigest
+	rec.Deprecations = collectVersionDeprecations(ctx, target, versions)
+	return rec, true
+}
+
+// equalStrings reports whether two string slices are element-wise equal. The
+// conditional refresh compares a repository's live tag set against the prior
+// record's Versions to decide reuse.
+func equalStrings(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+// collectVersionDeprecations scans each conforming version's deprecation
+// referrers and records the authoritative marker for every version that carries
+// one, in the ascending version order it is given. Each version's marker is
+// selected by the same newest-issuedOn rule the live probe uses (with the
+// manifest digest as the deterministic tiebreak), so the index-served advisory
+// reproduces the live view. Every step is best-effort: a referrer-listing or
+// decode failure skips that version rather than failing the build, mirroring the
+// walk's partial-on-error posture. A version with no marker contributes nothing,
+// so the slice is empty when no version is deprecated.
+func collectVersionDeprecations(ctx context.Context, target oras.ReadOnlyTarget, versions []string) []VersionDeprecation {
+	var deprecations []VersionDeprecation
+	for _, version := range versions {
+		markers, err := oci.ListReferrers(ctx, target, version, deprecation.ArtifactType)
+		if err != nil || len(markers) == 0 {
+			continue
+		}
+		_, marker, err := latestDeprecationMarker(ctx, target, markers)
+		if err != nil {
+			continue
+		}
+		deprecations = append(deprecations, VersionDeprecation{Version: version, Marker: marker})
+	}
+	return deprecations
 }
 
 // recordFromAnnotations assembles an IndexRecord from a repository's latest
@@ -344,27 +486,37 @@ func recordFromAnnotations(host, repo, version string, ann map[string]string) In
 	return rec
 }
 
-// writeHostIndex writes the host's records file and its freshness sibling under
-// the artifact cache's index subtree. The records file is deterministic —
-// indented JSON with a trailing newline, ordered slices, and author-order
-// labels — so two builds against the same registry state produce byte-identical
-// bytes. The timestamp lives only in the sibling `.updated` file so it never
-// perturbs the records.
+// writeHostIndex writes one file per repository under the host's index
+// directory, plus the host's freshness sibling, under the artifact cache's index
+// subtree. The host directory is rebuilt from scratch — removed then recreated —
+// so the file set on disk is exactly the current record set: a repository that
+// dropped out of the registry leaves no stale file behind. Each per-repo file is
+// deterministic — indented JSON with a trailing newline, ordered slices, and
+// author-order labels — so two builds against the same registry state produce
+// byte-identical files and an identical file set. The timestamp lives only in
+// the sibling `.updated` file, beside the host directory, so it never perturbs
+// the records.
 func writeHostIndex(workspaceRoot, cacheDir string, idx RegistryIndex, now time.Time) error {
-	dir := oci.IndexRoot(workspaceRoot, cacheDir)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return fmt.Errorf("index mkdir %s: %w", dir, err)
+	hostDir := oci.IndexBasePath(workspaceRoot, cacheDir, idx.Host)
+	if err := os.RemoveAll(hostDir); err != nil {
+		return fmt.Errorf("index reset %s: %w", hostDir, err)
 	}
-	data, err := json.MarshalIndent(idx, "", "  ")
-	if err != nil {
-		return fmt.Errorf("index marshal: %w", err)
+	if err := os.MkdirAll(hostDir, 0o755); err != nil {
+		return fmt.Errorf("index mkdir %s: %w", hostDir, err)
 	}
-	data = append(data, '\n')
+	for _, rec := range idx.Records {
+		data, err := json.MarshalIndent(rec, "", "  ")
+		if err != nil {
+			return fmt.Errorf("index marshal %s: %w", rec.Name, err)
+		}
+		data = append(data, '\n')
+		repoPath := oci.IndexRepoPath(workspaceRoot, cacheDir, idx.Host, rec.Name)
+		if err := os.WriteFile(repoPath, data, 0o644); err != nil {
+			return fmt.Errorf("index write %s: %w", repoPath, err)
+		}
+	}
 
 	base := oci.IndexBasePath(workspaceRoot, cacheDir, idx.Host)
-	if err := os.WriteFile(base+".json", data, 0o644); err != nil {
-		return fmt.Errorf("index write %s: %w", base+".json", err)
-	}
 	stamp := now.Format(time.RFC3339) + "\n"
 	if err := os.WriteFile(base+".updated", []byte(stamp), 0o644); err != nil {
 		return fmt.Errorf("index timestamp write %s: %w", base+".updated", err)

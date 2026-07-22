@@ -17,6 +17,29 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
+// indexStaleAfter is the fixed age beyond which a loaded index is considered
+// clearly old and search prints a one-line advisory to refresh it. It is a plain
+// constant, not a configurable or tuned threshold: the advisory only nudges; it
+// never forces a network refresh.
+const indexStaleAfter = 30 * 24 * time.Hour
+
+// searchNow supplies the clock the staleness advisory compares a snapshot's age
+// against. It is a package seam so tests pin freshness deterministically.
+var searchNow = time.Now
+
+// searchIndexesStale reports whether any loaded snapshot is clearly old — its
+// timestamp is absent, or older than indexStaleAfter relative to now — so search
+// can print a single advisory line to refresh. It reads only the already-loaded
+// timestamps and contacts no network.
+func searchIndexesStale(indexes []loadedIndex, now time.Time) bool {
+	for _, li := range indexes {
+		if !li.HasTimestamp || now.Sub(li.LastUpdated) > indexStaleAfter {
+			return true
+		}
+	}
+	return false
+}
+
 // newSearchCmd builds `search [query]`, which searches the local index of the
 // configured registries — built offline by `aggrega registry update` — for
 // entities matching a free-text query and the given facet filters.
@@ -165,6 +188,14 @@ func searchRun(rw *workspaceconfig.ResolvedWorkspace, out, errOut io.Writer, opt
 		} else {
 			fmt.Fprintf(errOut, "Index for %s last updated (timestamp unavailable)\n", li.Host)
 		}
+	}
+
+	// Thin staleness surface: advise, never force. When a loaded snapshot is
+	// clearly old (or carries no timestamp) a one-line nudge to refresh is written
+	// to errOut. Search itself never contacts the network; the refresh it points at
+	// is the cheap conditional 'registry update'.
+	if searchIndexesStale(byHost, searchNow()) {
+		fmt.Fprintln(errOut, "One or more indexes are stale; run 'aggrega registry update' to refresh.")
 	}
 
 	var records []IndexRecord

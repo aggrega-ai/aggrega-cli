@@ -69,12 +69,30 @@ func IndexRoot(workspaceRoot, cacheDir string) string {
 //	<workspaceRoot>/<cacheDir>/index/<host-encoded>
 //
 // The host is encoded through the same single-segment URI encoder the entity
-// cache uses, so a host maps to one stable filesystem segment and both the
-// records file (base + ".json") and the freshness-timestamp sibling
-// (base + ".updated") share it. The encoder is spelled once here, so an index
-// writer and an index reader cannot disagree about a host's on-disk segment.
+// cache uses, so a host maps to one stable filesystem segment. The base path
+// doubles as the directory holding the host's per-repository index files
+// (IndexRepoPath composes each repo file beneath it) and as the stem of the
+// freshness-timestamp sibling (base + ".updated"), which sits beside that
+// directory without colliding with it. The encoder is spelled once here, so an
+// index writer and an index reader cannot disagree about a host's on-disk
+// segment.
 func IndexBasePath(workspaceRoot, cacheDir, host string) string {
 	return filepath.Join(IndexRoot(workspaceRoot, cacheDir), encodeURI(host))
+}
+
+// IndexRepoPath returns the per-repository index file path under a host's index
+// directory:
+//
+//	<workspaceRoot>/<cacheDir>/index/<host-encoded>/<repo-encoded>.json
+//
+// The host segment is the same single encoded segment IndexBasePath spells (the
+// per-host base doubles as the directory holding these per-repo files), and the
+// repository is encoded through the same single-segment URI encoder, so a
+// repository maps to one stable filesystem segment. The per-repo spelling lives
+// once here, so an index writer and reader cannot disagree about a repository's
+// on-disk path.
+func IndexRepoPath(workspaceRoot, cacheDir, host, repo string) string {
+	return filepath.Join(IndexBasePath(workspaceRoot, cacheDir, host), encodeURI(repo)+".json")
 }
 
 // SignatureBundlePath returns the content-addressed filesystem path of the

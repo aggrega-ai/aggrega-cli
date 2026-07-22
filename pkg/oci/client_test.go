@@ -288,6 +288,34 @@ func TestHasAnySemverTag(t *testing.T) {
 	}
 }
 
+func TestSortedSemverTags(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name string
+		tags []string
+		want []string
+	}{
+		{"empty", nil, []string{}},
+		{"drops non-conformant", []string{"1.0.0", "latest", "v2.0.0", "1.2.3.4", "2.0.0"}, []string{"1.0.0", "2.0.0"}},
+		{"ascending regardless of input order", []string{"2.0.0", "1.0.0", "1.10.0", "1.2.0"}, []string{"1.0.0", "1.2.0", "1.10.0", "2.0.0"}},
+		{"pre-release retained and ordered below its release", []string{"1.0.0", "1.0.0-rc.1", "1.0.0-alpha.1"}, []string{"1.0.0-alpha.1", "1.0.0-rc.1", "1.0.0"}},
+		{"only non-conformant yields empty", []string{"latest", "edge"}, []string{}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := oci.SortedSemverTags(tc.tags)
+			if len(got) != len(tc.want) {
+				t.Fatalf("SortedSemverTags(%v) = %v; want %v", tc.tags, got, tc.want)
+			}
+			for i := range tc.want {
+				if got[i] != tc.want[i] {
+					t.Errorf("SortedSemverTags(%v)[%d] = %q; want %q", tc.tags, i, got[i], tc.want[i])
+				}
+			}
+		})
+	}
+}
+
 func TestListTagsRejectsNonTagListerTarget(t *testing.T) {
 	t.Parallel()
 	// A bare oras.ReadOnlyTarget that doesn't implement TagLister

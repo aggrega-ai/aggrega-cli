@@ -57,7 +57,19 @@ func buildSearchWorkspace(t *testing.T) *workspaceconfig.ResolvedWorkspace {
 	if err := registryUpdateRun(registryUpdateConfig{ws: rw, Out: new(bytes.Buffer), now: searchFrozen}); err != nil {
 		t.Fatalf("seed index via registryUpdateRun: %v", err)
 	}
+	// Pin the staleness clock just after the stamped time so the seeded index reads
+	// fresh in the round-trip tests (no staleness advisory perturbs the freshness
+	// header). The dedicated staleness test overrides this to a far-future clock.
+	withSearchClock(t, searchFrozen().Add(time.Hour))
 	return rw
+}
+
+// withSearchClock pins the search staleness clock for the duration of the test.
+func withSearchClock(t *testing.T, at time.Time) {
+	t.Helper()
+	prev := searchNow
+	searchNow = func() time.Time { return at }
+	t.Cleanup(func() { searchNow = prev })
 }
 
 // runSearch drives the search run function and returns its stdout, stderr, and
@@ -250,5 +262,36 @@ func TestSearchFailsLoudWhenNoIndexAllRegistries(t *testing.T) {
 	// The per-host not-built note is written to errOut before the loud return.
 	if !strings.Contains(errOut, "hub.aggrega.ai") {
 		t.Errorf("errOut %q should note the not-built host", errOut)
+	}
+}
+
+// TestSearchStalenessAdvisory proves the thin staleness surface: a clearly-old
+// snapshot draws a one-line advisory to run 'registry update' on errOut, while
+// stdout still carries the results and no network is contacted. A fresh snapshot
+// draws no advisory.
+func TestSearchStalenessAdvisory(t *testing.T) {
+	rw := buildSearchWorkspace(t)
+
+	// Fresh (fixture pins the clock ~1h after the stamp): no advisory.
+	_, errFresh, err := runSearch(t, rw, searchOptions{Output: "names"})
+	if err != nil {
+		t.Fatalf("searchRun (fresh): %v", err)
+	}
+	if strings.Contains(errFresh, "stale") {
+		t.Errorf("fresh snapshot must draw no staleness advisory; errOut:\n%s", errFresh)
+	}
+
+	// Clearly old: pin the clock far past indexStaleAfter.
+	withSearchClock(t, searchFrozen().Add(90*24*time.Hour))
+	out, errStale, err := runSearch(t, rw, searchOptions{Output: "names"})
+	if err != nil {
+		t.Fatalf("searchRun (stale): %v", err)
+	}
+	if !strings.Contains(errStale, "run 'aggrega registry update' to refresh") {
+		t.Errorf("clearly-old snapshot must draw the refresh advisory; errOut:\n%s", errStale)
+	}
+	// The results still come through — the advisory never blocks or forces a fetch.
+	if !strings.Contains(out, componentURI) {
+		t.Errorf("stale search still returns results; stdout:\n%s", out)
 	}
 }

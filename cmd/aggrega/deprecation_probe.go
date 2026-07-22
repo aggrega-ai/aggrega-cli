@@ -4,99 +4,89 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"io"
 	"time"
 
-	"oras.land/oras-go/v2"
-
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/deprecation"
-	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
 // deprecationView is the display-facing summary of the latest deprecation
-// marker resolved for an artifact at query time. It is read live from the
-// registry for advisory display in search and inspect and is NOT
-// signature-verified — the signed, verified enforcement path runs at pull time
-// and records the build-time gate. So a view surfaced here is a hint, not a
+// marker recorded for an artifact. It is read from the local discovery index
+// (the snapshot a registry update builds) for advisory display in inspect, and
+// is NOT signature-verified — the signed, verified enforcement path runs at pull
+// time and records the build-time gate. So a view surfaced here is a hint, not a
 // trust decision.
 type deprecationView struct {
 	Severity    string
 	Reason      string
 	Replacement string
 	IssuedOn    string
-	// Tag is the version the winning marker was found on, so a per-repository
-	// probe can name which release is deprecated.
+	// Tag is the version the winning marker was recorded on, so a per-repository
+	// advisory can name which release is deprecated.
 	Tag string
 }
 
 // repoDeprecationLookup resolves the latest deprecation marker for a repository
-// path, best-effort. It reports the view and whether one was found; any failure
-// yields (zero, false) so a probe never fails its caller. A nil lookup means
-// probing is disabled (offline, or no registry configured).
+// path from the local index, best-effort. It reports the view and whether one
+// was found; a repository absent from the index yields (zero, false) so a lookup
+// never fails its caller. A nil lookup means the advisory is disabled (no local
+// index, or no registry configured).
 type repoDeprecationLookup func(repoPath string) (deprecationView, bool)
 
-// newRepoDeprecationLookup builds the live repository-deprecation lookup for a
-// registry host, or returns nil when probing is disabled — an offline workspace
-// or an empty host. It is a package-level seam so search and inspect tests
-// exercise the surfacing without a network. Each probe constructs a repository
-// client through the shared credential path and reads referrers live.
-var newRepoDeprecationLookup = func(cfg workspaceconfig.Config, host string) repoDeprecationLookup {
+// newRepoDeprecationLookup builds the index-served repository-deprecation lookup
+// for a registry host, or returns nil when the advisory is disabled — an empty
+// host, or no local index built for the host. It reads the host's local
+// discovery index once and serves each per-repository advisory from the recorded
+// per-version markers, so it issues no network call and works in an offline
+// workspace with a built index. It is a package-level seam so inspect tests
+// exercise the surfacing without a cache.
+var newRepoDeprecationLookup = func(rw *workspaceconfig.ResolvedWorkspace, host string) repoDeprecationLookup {
 	if host == "" {
 		return nil
 	}
-	// The offline decision lives at the egress gate: a refused (offline) workspace
-	// disables the probe entirely, so this best-effort adornment stays silent (no
-	// lookup) rather than attempting or surfacing a network error.
-	httpClient, err := workspaceEgressClient(cfg)
+	loaded, err := loadHostIndex(rw.Root(), rw.Config().ResolvedArtifactCacheDir(), host)
 	if err != nil {
+		// No local index for the host (not built) or an unreadable one: the
+		// advisory is best-effort and simply shows nothing, the same silent
+		// degrade the probe had when it could not reach the registry.
 		return nil
 	}
+	byURI := make(map[string][]VersionDeprecation, len(loaded.Records))
+	for _, rec := range loaded.Records {
+		if len(rec.Deprecations) > 0 {
+			byURI[rec.URI] = rec.Deprecations
+		}
+	}
 	return func(repoPath string) (deprecationView, bool) {
-		repo, err := oci.NewRemoteRepository(host+"/"+repoPath, httpClient)
-		if err != nil {
+		deps, ok := byURI["oci://"+host+"/"+repoPath]
+		if !ok {
 			return deprecationView{}, false
 		}
-		return probeLatestDeprecation(context.Background(), repo)
+		return latestDeprecationView(deps)
 	}
 }
 
-// probeLatestDeprecation resolves the newest deprecation marker across every tag
-// of a repository target. For each tag it lists the deprecation referrers,
-// selects that tag's authoritative marker by issuedOn, and keeps the newest
-// across all tags — the same newest-issuedOn ordering the discovery pass uses,
-// with the manifest digest as the deterministic tiebreak. Every step is
-// best-effort: a tag-listing, referrer-listing, fetch, or decode failure skips
-// that tag rather than failing the probe, so a display probe never breaks the
-// caller. It reports the view and whether any marker was found.
-func probeLatestDeprecation(ctx context.Context, target oras.ReadOnlyTarget) (deprecationView, bool) {
-	tags, err := oci.ListTags(ctx, target)
-	if err != nil {
-		return deprecationView{}, false
-	}
+// latestDeprecationView selects the newest recorded deprecation across a
+// repository's per-version markers and renders the display view. The newest
+// issuedOn wins — the same ordering the recording pass applies within a version —
+// with the version string as the deterministic tiebreak when two versions share
+// an issuedOn (the higher version wins), so the view is stable regardless of the
+// stored order. It reports the view and whether any marker was present.
+func latestDeprecationView(deps []VersionDeprecation) (deprecationView, bool) {
 	var (
 		best     deprecation.Marker
-		bestTag  string
+		bestVer  string
 		bestTime time.Time
 		bestHas  bool
-		bestDig  string
 		found    bool
 	)
-	for _, tag := range tags {
-		markers, lerr := oci.ListReferrers(ctx, target, tag, deprecation.ArtifactType)
-		if lerr != nil || len(markers) == 0 {
-			continue
-		}
-		desc, marker, merr := latestDeprecationMarker(ctx, target, markers)
-		if merr != nil {
-			continue
-		}
-		t, has := marker.IssuedOnTime()
-		if !found || laterMarker(has, t, desc.Digest.String(), bestHas, bestTime, bestDig) {
-			best, bestTag, bestTime, bestHas, bestDig, found = marker, tag, t, has, desc.Digest.String(), true
+	for _, d := range deps {
+		t, has := d.Marker.IssuedOnTime()
+		if !found || laterMarker(has, t, d.Version, bestHas, bestTime, bestVer) {
+			best, bestVer, bestTime, bestHas, found = d.Marker, d.Version, t, has, true
 		}
 	}
 	if !found {
@@ -107,18 +97,18 @@ func probeLatestDeprecation(ctx context.Context, target oras.ReadOnlyTarget) (de
 		Reason:      best.Reason,
 		Replacement: best.Replacement,
 		IssuedOn:    best.IssuedOn,
-		Tag:         bestTag,
+		Tag:         bestVer,
 	}, true
 }
 
-// lookupComponentDeprecation probes the workspace's configured registry for the
-// latest deprecation marker on a catalog Component, best-effort. It returns
-// (zero, false) when probing is disabled (offline or no registry) or when no
-// marker is found. The repository path derives from the single OCI-location rule
-// so it matches where the component publishes. It is a package-level seam so
-// inspect tests exercise the surfacing without a network.
-var lookupComponentDeprecation = func(cfg workspaceconfig.Config, componentName string) (deprecationView, bool) {
-	lookup := newRepoDeprecationLookup(cfg, cfg.DefaultRegistry)
+// lookupComponentDeprecation resolves the latest recorded deprecation marker for
+// a catalog Component from the local discovery index, best-effort. It returns
+// (zero, false) when the advisory is disabled (no local index or no registry) or
+// when no marker is recorded. The repository path derives from the single
+// OCI-location rule so it matches where the component publishes. It is a
+// package-level seam so inspect tests exercise the surfacing without a cache.
+var lookupComponentDeprecation = func(rw *workspaceconfig.ResolvedWorkspace, componentName string) (deprecationView, bool) {
+	lookup := newRepoDeprecationLookup(rw, rw.Config().DefaultRegistry)
 	if lookup == nil {
 		return deprecationView{}, false
 	}

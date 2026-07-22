@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sort"
 
 	"github.com/Masterminds/semver/v3"
 	"github.com/aggrega-ai/aggrega-cli/pkg/registryhost"
@@ -407,25 +408,29 @@ func parseManifest(manifestBytes []byte) (ociManifestView, error) {
 
 // FetchManifestAnnotations resolves tag on target and returns the annotation
 // map stamped on its OCI manifest (the searchable catalog facets a publish
-// records; see SearchableMetadata for the aggrega-scoped keys). It reads the
-// raw manifest through the one manifest-parse home and returns without fetching
-// any content blob, so an index build reads a manifest's facets cheaply without
-// re-deriving the manifest shape. A manifest carrying no annotations returns a
-// nil map and a nil error.
-func FetchManifestAnnotations(ctx context.Context, target oras.ReadOnlyTarget, tag string) (map[string]string, error) {
+// records; see SearchableMetadata for the aggrega-scoped keys) together with the
+// resolved manifest digest. The digest comes from the resolve step, before any
+// content is fetched, so an index build can record it as a cheap revalidation
+// validator: a later refresh re-resolves the same tag and skips the manifest
+// read when the digest is unchanged. It reads the raw manifest through the one
+// manifest-parse home and returns without fetching any content blob, so a
+// manifest's facets are read cheaply without re-deriving the manifest shape. A
+// manifest carrying no annotations returns a nil map and a nil error; the digest
+// is returned regardless.
+func FetchManifestAnnotations(ctx context.Context, target oras.ReadOnlyTarget, tag string) (map[string]string, string, error) {
 	manifestDesc, err := target.Resolve(ctx, tag)
 	if err != nil {
-		return nil, fmt.Errorf("oci: resolve %q: %w", tag, err)
+		return nil, "", fmt.Errorf("oci: resolve %q: %w", tag, err)
 	}
 	manifestBytes, err := fetchBlob(ctx, target, manifestDesc)
 	if err != nil {
-		return nil, fmt.Errorf("oci: fetch manifest %q: %w", tag, err)
+		return nil, "", fmt.Errorf("oci: fetch manifest %q: %w", tag, err)
 	}
 	view, err := parseManifest(manifestBytes)
 	if err != nil {
-		return nil, fmt.Errorf("oci: parse manifest %q: %w", tag, err)
+		return nil, "", fmt.Errorf("oci: parse manifest %q: %w", tag, err)
 	}
-	return view.Annotations, nil
+	return view.Annotations, manifestDesc.Digest.String(), nil
 }
 
 // descriptorFromManifest parses an OCI image manifest's JSON bytes and
@@ -626,4 +631,42 @@ func HasAnySemverTag(tags []string) bool {
 		}
 	}
 	return false
+}
+
+// SortedSemverTags returns the subset of tags that conform to strict SemVer
+// 2.0.0, in ascending SemVer precedence order. Non-conformant tags (a "v"
+// prefix, a four-part "1.2.3.4", a bare "latest") are dropped. Conformance
+// derives from the same parse as SelectLatestVersion / SelectHighestBelow, so
+// callers cannot disagree about what counts as a version. Pre-release tags are
+// retained — they are strict-SemVer-conforming — and a caller that wants only
+// released versions filters them out itself.
+//
+// The order is a total order: when two tags share SemVer precedence (build
+// metadata is ignored by precedence, so "1.0.0+a" and "1.0.0+b" compare equal),
+// the original tag strings break the tie, so the result is deterministic
+// regardless of the input order.
+func SortedSemverTags(tags []string) []string {
+	type parsed struct {
+		orig string
+		ver  *semver.Version
+	}
+	conforming := make([]parsed, 0, len(tags))
+	for _, t := range tags {
+		v, ok := strictSemverTag(t)
+		if !ok {
+			continue
+		}
+		conforming = append(conforming, parsed{orig: t, ver: v})
+	}
+	sort.Slice(conforming, func(i, j int) bool {
+		if c := conforming[i].ver.Compare(conforming[j].ver); c != 0 {
+			return c < 0
+		}
+		return conforming[i].orig < conforming[j].orig
+	})
+	out := make([]string, len(conforming))
+	for i, p := range conforming {
+		out[i] = p.orig
+	}
+	return out
 }

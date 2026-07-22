@@ -313,7 +313,7 @@ func inspectCatalogEntity(rw *workspaceconfig.ResolvedWorkspace, identifier stri
 		if err := renderComponentStructured(comp, identifier, opts); err != nil {
 			return err
 		}
-		if v, ok := lookupComponentDeprecation(wsCfg, identifier); ok {
+		if v, ok := lookupComponentDeprecation(rw, identifier); ok {
 			renderDeprecationBlock(opts.out, v)
 		}
 		return nil

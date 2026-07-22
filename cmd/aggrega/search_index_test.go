@@ -14,25 +14,27 @@ import (
 )
 
 // writeIndexFixture lays out one host's index files under the temp workspace
-// using the same path helpers and byte layout the index writer uses, so the
-// loader is exercised against the real on-disk shape.
+// using the same path helpers and per-repo byte layout the index writer uses, so
+// the loader is exercised against the real on-disk shape: one file per record in
+// the host directory, plus the freshness sibling beside it.
 func writeIndexFixture(t *testing.T, root, cacheDir, host string, idx RegistryIndex, stamp string) {
 	t.Helper()
-	dir := oci.IndexRoot(root, cacheDir)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		t.Fatalf("mkdir index dir: %v", err)
+	hostDir := oci.IndexBasePath(root, cacheDir, host)
+	if err := os.MkdirAll(hostDir, 0o755); err != nil {
+		t.Fatalf("mkdir host index dir: %v", err)
 	}
-	data, err := json.MarshalIndent(idx, "", "  ")
-	if err != nil {
-		t.Fatalf("marshal index: %v", err)
-	}
-	data = append(data, '\n')
-	base := oci.IndexBasePath(root, cacheDir, host)
-	if err := os.WriteFile(base+".json", data, 0o644); err != nil {
-		t.Fatalf("write records: %v", err)
+	for _, rec := range idx.Records {
+		data, err := json.MarshalIndent(rec, "", "  ")
+		if err != nil {
+			t.Fatalf("marshal record %q: %v", rec.Name, err)
+		}
+		data = append(data, '\n')
+		if err := os.WriteFile(oci.IndexRepoPath(root, cacheDir, host, rec.Name), data, 0o644); err != nil {
+			t.Fatalf("write record %q: %v", rec.Name, err)
+		}
 	}
 	if stamp != "" {
-		if err := os.WriteFile(base+".updated", []byte(stamp), 0o644); err != nil {
+		if err := os.WriteFile(oci.IndexBasePath(root, cacheDir, host)+".updated", []byte(stamp), 0o644); err != nil {
 			t.Fatalf("write timestamp: %v", err)
 		}
 	}
@@ -113,13 +115,12 @@ func TestLoadHostIndexUnparseable(t *testing.T) {
 	root := t.TempDir()
 	const cacheDir = "cache"
 	const host = "registry.example.com"
-	dir := oci.IndexRoot(root, cacheDir)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		t.Fatalf("mkdir index dir: %v", err)
+	hostDir := oci.IndexBasePath(root, cacheDir, host)
+	if err := os.MkdirAll(hostDir, 0o755); err != nil {
+		t.Fatalf("mkdir host index dir: %v", err)
 	}
-	base := oci.IndexBasePath(root, cacheDir, host)
-	if err := os.WriteFile(base+".json", []byte("{not json"), 0o644); err != nil {
-		t.Fatalf("write records: %v", err)
+	if err := os.WriteFile(oci.IndexRepoPath(root, cacheDir, host, "broken"), []byte("{not json"), 0o644); err != nil {
+		t.Fatalf("write record: %v", err)
 	}
 	_, err := loadHostIndex(root, cacheDir, host)
 	if err == nil {

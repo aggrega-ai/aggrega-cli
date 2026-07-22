@@ -14,6 +14,7 @@ import (
 
 	"oras.land/oras-go/v2/content/memory"
 
+	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/deprecation"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/signing"
@@ -219,34 +220,60 @@ func (s *tagListingStore) Tags(_ context.Context, _ string, fn func([]string) er
 	return fn(s.tags)
 }
 
-// TestProbeLatestDeprecation_NewestWins proves the query-time probe selects the
-// marker with the newest issuedOn across a repository's tags.
-func TestProbeLatestDeprecation_NewestWins(t *testing.T) {
-	ctx := context.Background()
-	store := &tagListingStore{Store: memory.New(), tags: []string{"1.0.0", "2.0.0"}}
-	signer := keyedTestSigner(t)
-	for _, tag := range store.tags {
-		if _, err := oci.Push(ctx, store, tag, oci.MediaTypeComponent, []byte("subject "+tag), nil); err != nil {
-			t.Fatalf("Push %s: %v", tag, err)
-		}
+// TestLatestDeprecationView_NewestWins proves the index-served advisory selects
+// the recorded marker with the newest issuedOn across a repository's versions.
+func TestLatestDeprecationView_NewestWins(t *testing.T) {
+	deps := []VersionDeprecation{
+		{Version: "1.0.0", Marker: deprecation.Marker{Severity: "warning", Reason: "older", IssuedOn: "2026-01-01T00:00:00Z"}},
+		{Version: "2.0.0", Marker: deprecation.Marker{Severity: "warning", Reason: "newer", IssuedOn: "2026-06-01T00:00:00Z"}},
 	}
-
-	// Attach an older marker to 1.0.0 and a newer one to 2.0.0.
-	attach := func(tag, reason, issued string) {
-		marker := deprecation.Marker{Severity: "warning", Reason: reason, IssuedOn: issued}
-		if err := attachSignedMarker(ctx, &bytes.Buffer{}, store, tag, "reg.test/x:"+tag, marker, signer); err != nil {
-			t.Fatalf("attach %s: %v", tag, err)
-		}
-	}
-	attach("1.0.0", "older", "2026-01-01T00:00:00Z")
-	attach("2.0.0", "newer", "2026-06-01T00:00:00Z")
-
-	v, ok := probeLatestDeprecation(ctx, store)
+	v, ok := latestDeprecationView(deps)
 	if !ok {
-		t.Fatal("probe should find a marker")
+		t.Fatal("view should find a marker")
 	}
 	if v.Reason != "newer" || v.Tag != "2.0.0" {
-		t.Errorf("probe = %+v, want the newer marker on 2.0.0", v)
+		t.Errorf("view = %+v, want the newer marker on 2.0.0", v)
+	}
+}
+
+// TestLookupComponentDeprecation_IndexServedOffline proves the deprecation
+// advisory is served from the local index and issues no network call: an offline
+// workspace with a built index carrying a per-version marker surfaces the
+// advisory (where the old live probe returned blank offline).
+func TestLookupComponentDeprecation_IndexServedOffline(t *testing.T) {
+	const host = "hub.aggrega.ai"
+	const componentName = "core/compute/api-server"
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, workspaceconfig.ConfigFilename)
+	if err := os.WriteFile(cfgPath, []byte("workspace: {}\ndefault_registry: "+host+"\noffline: true\n"), 0o644); err != nil {
+		t.Fatalf("seed config: %v", err)
+	}
+	rw, err := workspaceconfig.Resolve(dir, "")
+	if err != nil {
+		t.Fatalf("resolve workspace: %v", err)
+	}
+
+	repoPath := catalog.OCILocation("Component", "", componentName)
+	writeIndexFixture(t, rw.Root(), rw.Config().ResolvedArtifactCacheDir(), host, RegistryIndex{
+		Host: host,
+		Records: []IndexRecord{{
+			URI:     "oci://" + host + "/" + repoPath,
+			Name:    repoPath,
+			Version: "1.0.0",
+			Kind:    "Component",
+			Deprecations: []VersionDeprecation{{
+				Version: "1.0.0",
+				Marker:  deprecation.Marker{Severity: "warning", Reason: "old", IssuedOn: "2026-01-01T00:00:00Z"},
+			}},
+		}},
+	}, "2026-01-01T00:00:00Z\n")
+
+	v, ok := lookupComponentDeprecation(rw, componentName)
+	if !ok {
+		t.Fatalf("offline workspace with a built index should surface the recorded advisory")
+	}
+	if v.Severity != "warning" || v.Tag != "1.0.0" || v.Reason != "old" {
+		t.Errorf("view = %+v; want the recorded 1.0.0 warning", v)
 	}
 }
 
@@ -257,7 +284,7 @@ func TestProbeLatestDeprecation_NewestWins(t *testing.T) {
 func TestInspect_CatalogComponent_SurfacesDeprecation(t *testing.T) {
 	const componentName = "core/compute/api-server"
 	prev := lookupComponentDeprecation
-	lookupComponentDeprecation = func(_ workspaceconfig.Config, name string) (deprecationView, bool) {
+	lookupComponentDeprecation = func(_ *workspaceconfig.ResolvedWorkspace, name string) (deprecationView, bool) {
 		if name == componentName {
 			return deprecationView{Severity: "retracted", Reason: "withdrawn for a defect", Replacement: "core/compute/api-server:2", IssuedOn: "2026-01-02T03:04:05Z", Tag: "1.0.0"}, true
 		}

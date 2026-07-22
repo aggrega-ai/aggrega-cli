@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -35,14 +36,18 @@ type loadedIndex struct {
 }
 
 // loadHostIndex reads one host's local searchable index from the artifact cache
-// and returns its records plus the freshness timestamp. The records file and its
-// timestamp sibling are located through the single index-path helper, so a reader
-// and the writer cannot disagree about a host's on-disk layout.
+// and returns its records plus the freshness timestamp. The host's per-repository
+// files live in a directory located through the single index-path helper, and the
+// timestamp sibling beside it, so a reader and the writer cannot disagree about a
+// host's on-disk layout.
 //
-// An absent records file returns errIndexNotBuilt, distinct from a read or parse
-// fault, so the caller can distinguish "run the index build first" from a
-// corrupt cache. A records file that is present but cannot be read or unmarshalled
-// returns a wrapped error naming the path.
+// An absent host directory returns errIndexNotBuilt, distinct from a read or
+// parse fault, so the caller can distinguish "run the index build first" from a
+// corrupt cache. A present directory with no per-repo files is a built-but-empty
+// index (zero records). A per-repo file that cannot be read or unmarshalled
+// returns a wrapped error naming the path. Records are sorted into the
+// deterministic URI-then-version order at load, so the assembled order does not
+// depend on the directory walk order.
 //
 // A missing timestamp sibling is not fatal: the records are returned with
 // HasTimestamp false and the zero time, since the records stand on their own and
@@ -51,19 +56,32 @@ type loadedIndex struct {
 // returns a wrapped error.
 func loadHostIndex(workspaceRoot, cacheDir, host string) (loadedIndex, error) {
 	base := oci.IndexBasePath(workspaceRoot, cacheDir, host)
-	recordsPath := base + ".json"
-	data, err := os.ReadFile(recordsPath)
+	hostDir := base
+	entries, err := os.ReadDir(hostDir)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			return loadedIndex{}, errIndexNotBuilt
 		}
-		return loadedIndex{}, fmt.Errorf("read index %s: %w", recordsPath, err)
+		return loadedIndex{}, fmt.Errorf("read index %s: %w", hostDir, err)
 	}
-	var idx RegistryIndex
-	if err := json.Unmarshal(data, &idx); err != nil {
-		return loadedIndex{}, fmt.Errorf("parse index %s: %w", recordsPath, err)
+	var records []IndexRecord
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
+			continue
+		}
+		recordPath := filepath.Join(hostDir, entry.Name())
+		data, rerr := os.ReadFile(recordPath)
+		if rerr != nil {
+			return loadedIndex{}, fmt.Errorf("read index %s: %w", recordPath, rerr)
+		}
+		var rec IndexRecord
+		if uerr := json.Unmarshal(data, &rec); uerr != nil {
+			return loadedIndex{}, fmt.Errorf("parse index %s: %w", recordPath, uerr)
+		}
+		records = append(records, rec)
 	}
-	result := loadedIndex{Host: idx.Host, Records: idx.Records}
+	sortIndexRecords(records)
+	result := loadedIndex{Host: host, Records: records}
 
 	timestampPath := base + ".updated"
 	stamp, err := os.ReadFile(timestampPath)

@@ -58,7 +58,7 @@ func withSearchTarget(t *testing.T, reg registryRepoLister, err error) {
 	// Disable the live deprecation probe so a search stays network-free: the fake
 	// target's host would otherwise trigger a per-result registry probe.
 	prevLookup := newRepoDeprecationLookup
-	newRepoDeprecationLookup = func(workspaceconfig.Config, string) repoDeprecationLookup { return nil }
+	newRepoDeprecationLookup = func(*workspaceconfig.ResolvedWorkspace, string) repoDeprecationLookup { return nil }
 	t.Cleanup(func() {
 		registrySearchTarget = prev
 		newRepoDeprecationLookup = prevLookup

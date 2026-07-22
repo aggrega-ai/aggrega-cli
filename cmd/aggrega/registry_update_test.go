@@ -6,18 +6,41 @@ package main
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"testing"
 	"time"
 
+	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"oras.land/oras-go/v2"
 	"oras.land/oras-go/v2/content/memory"
 
+	"github.com/aggrega-ai/aggrega-cli/pkg/deprecation"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
+
+// countingTarget wraps a per-repo target and counts content-blob Fetch calls, so
+// a test can assert that a conditional refresh skips the manifest read (and the
+// referrer-payload reads) for an unchanged repository. Resolve and Tags are not
+// counted — those are the cheap metadata reads the digest-compare relies on.
+type countingTarget struct {
+	*memTagTarget
+	fetches *int
+}
+
+func (c *countingTarget) Fetch(ctx context.Context, target ocispec.Descriptor) (io.ReadCloser, error) {
+	*c.fetches++
+	return c.memTagTarget.Fetch(ctx, target)
+}
+
+const updateTestConfig = "workspace: {}\ndefault_registry: hub.aggrega.ai\n" +
+	"registries:\n  - host: hub.aggrega.ai\n    name: hub\n"
+
+func frozenClock() func() time.Time {
+	return func() time.Time { return time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC) }
+}
 
 // memTagTarget wraps an in-memory oras store with a tags slice so a per-repo
 // target satisfies registry.TagLister — the capability oci.ListTags requires.
@@ -157,33 +180,43 @@ func TestRegistryUpdateBuildsSearchableIndex(t *testing.T) {
 	}
 
 	cacheDir := rw.Config().ResolvedArtifactCacheDir()
-	indexPath := oci.IndexBasePath(root, cacheDir, host) + ".json"
 	updatedPath := oci.IndexBasePath(root, cacheDir, host) + ".updated"
+	compPath := oci.IndexRepoPath(root, cacheDir, host, "component/core/api-server")
 
-	firstBytes, err := os.ReadFile(indexPath)
+	loaded, err := loadHostIndex(root, cacheDir, host)
 	if err != nil {
-		t.Fatalf("read index file %s: %v", indexPath, err)
+		t.Fatalf("loadHostIndex: %v", err)
 	}
-	t.Logf("index file %s:\n%s", indexPath, firstBytes)
-
-	var idx RegistryIndex
-	if err := json.Unmarshal(firstBytes, &idx); err != nil {
-		t.Fatalf("unmarshal index: %v", err)
+	if loaded.Host != host {
+		t.Errorf("index host = %q; want %q", loaded.Host, host)
 	}
-	if idx.Host != host {
-		t.Errorf("index host = %q; want %q", idx.Host, host)
-	}
-	if len(idx.Records) != 2 {
-		t.Fatalf("index has %d records; want 2 (legacy no-semver repo skipped): %+v", len(idx.Records), idx.Records)
+	if len(loaded.Records) != 2 {
+		t.Fatalf("index has %d records; want 2 (legacy no-semver repo skipped): %+v", len(loaded.Records), loaded.Records)
 	}
 
-	// Records are sorted by URI: component/... sorts before plugin/...
-	comp := idx.Records[0]
+	// Records load in URI-then-version order: component/... sorts before plugin/...
+	comp := loaded.Records[0]
 	if comp.URI != "oci://hub.aggrega.ai/component/core/api-server" {
 		t.Errorf("component URI = %q", comp.URI)
 	}
 	if comp.Version != "1.2.0" {
 		t.Errorf("component version = %q; want 1.2.0 (highest strict semver, non-semver 'latest' skipped)", comp.Version)
+	}
+	// The full version list is retained and ascending; the non-semver 'latest' is
+	// excluded — the version history the flat index used to discard.
+	wantVersions := []string{"1.0.0", "1.1.0", "1.2.0"}
+	if len(comp.Versions) != len(wantVersions) {
+		t.Fatalf("component versions = %v; want %v", comp.Versions, wantVersions)
+	}
+	for i, v := range wantVersions {
+		if comp.Versions[i] != v {
+			t.Errorf("component versions[%d] = %q; want %q", i, comp.Versions[i], v)
+		}
+	}
+	// The resolved manifest digest of the headline version is recorded as a
+	// revalidation validator.
+	if comp.ManifestDigest == "" {
+		t.Errorf("component manifestDigest is empty; want the resolved manifest digest")
 	}
 	if comp.Kind != "Component" {
 		t.Errorf("component kind = %q; want Component", comp.Kind)
@@ -201,7 +234,7 @@ func TestRegistryUpdateBuildsSearchableIndex(t *testing.T) {
 		t.Errorf("component label %s = %q (ok=%v); want compute", componentCategoryLabel, v, ok)
 	}
 
-	plug := idx.Records[1]
+	plug := loaded.Records[1]
 	if plug.URI != "oci://hub.aggrega.ai/plugin/provider/helm" {
 		t.Errorf("plugin URI = %q", plug.URI)
 	}
@@ -228,25 +261,62 @@ func TestRegistryUpdateBuildsSearchableIndex(t *testing.T) {
 		t.Errorf("plugin labels = %v; want nil (no category facet)", plug.Labels)
 	}
 
-	// Freshness timestamp lives in the sibling, not the records file.
+	// Freshness timestamp lives in the sibling, not any per-repo record file.
 	if _, err := os.Stat(updatedPath); err != nil {
 		t.Errorf("timestamp sibling %s missing: %v", updatedPath, err)
 	}
+	firstBytes, err := os.ReadFile(compPath)
+	if err != nil {
+		t.Fatalf("read per-repo record file %s: %v", compPath, err)
+	}
 	if bytes.Contains(firstBytes, []byte("2026-01-02")) {
-		t.Errorf("records file must not contain the timestamp; found it in:\n%s", firstBytes)
+		t.Errorf("per-repo record file must not contain the timestamp; found it in:\n%s", firstBytes)
 	}
 
-	// Byte-identity across two runs against the same registry state.
+	// The on-disk file set is exactly the record set: one file per record.
+	firstSet := indexFileSet(t, root, cacheDir, host)
+	if len(firstSet) != 2 {
+		t.Errorf("host index directory has %d record files; want 2: %v", len(firstSet), firstSet)
+	}
+
+	// Byte-identity per file AND identical file set across two runs against the
+	// same registry state.
 	if err := registryUpdateRun(registryUpdateConfig{ws: rw, Out: &out, now: frozen}); err != nil {
 		t.Fatalf("registryUpdateRun (second): %v", err)
 	}
-	secondBytes, err := os.ReadFile(indexPath)
+	secondBytes, err := os.ReadFile(compPath)
 	if err != nil {
-		t.Fatalf("re-read index file: %v", err)
+		t.Fatalf("re-read per-repo record file: %v", err)
 	}
 	if !bytes.Equal(firstBytes, secondBytes) {
-		t.Errorf("records file not byte-identical across two runs:\nfirst:\n%s\nsecond:\n%s", firstBytes, secondBytes)
+		t.Errorf("per-repo record file not byte-identical across two runs:\nfirst:\n%s\nsecond:\n%s", firstBytes, secondBytes)
 	}
+	secondSet := indexFileSet(t, root, cacheDir, host)
+	if len(secondSet) != len(firstSet) {
+		t.Errorf("file set changed across two runs: first %v second %v", firstSet, secondSet)
+	}
+	for name := range firstSet {
+		if !secondSet[name] {
+			t.Errorf("file %q present after first run, absent after second", name)
+		}
+	}
+}
+
+// indexFileSet returns the set of per-repo record file names in a host's index
+// directory, so a test can assert the on-disk file set equals the record set.
+func indexFileSet(t *testing.T, root, cacheDir, host string) map[string]bool {
+	t.Helper()
+	entries, err := os.ReadDir(oci.IndexBasePath(root, cacheDir, host))
+	if err != nil {
+		t.Fatalf("read host index dir: %v", err)
+	}
+	set := make(map[string]bool)
+	for _, e := range entries {
+		if !e.IsDir() {
+			set[e.Name()] = true
+		}
+	}
+	return set
 }
 
 // TestRegistryUpdateSingleRegistryByAlias proves the single-argument form
@@ -271,17 +341,12 @@ func TestRegistryUpdateSingleRegistryByAlias(t *testing.T) {
 	}
 
 	cacheDir := rw.Config().ResolvedArtifactCacheDir()
-	indexPath := oci.IndexBasePath(root, cacheDir, host) + ".json"
-	data, err := os.ReadFile(indexPath)
+	loaded, err := loadHostIndex(root, cacheDir, host)
 	if err != nil {
-		t.Fatalf("read index file %s: %v", indexPath, err)
+		t.Fatalf("loadHostIndex: %v", err)
 	}
-	var idx RegistryIndex
-	if err := json.Unmarshal(data, &idx); err != nil {
-		t.Fatalf("unmarshal index: %v", err)
-	}
-	if idx.Host != host || len(idx.Records) != 1 || idx.Records[0].Version != "1.0.0" {
-		t.Fatalf("single-alias index unexpected: host=%q records=%+v", idx.Host, idx.Records)
+	if loaded.Host != host || len(loaded.Records) != 1 || loaded.Records[0].Version != "1.0.0" {
+		t.Fatalf("single-alias index unexpected: host=%q records=%+v", loaded.Host, loaded.Records)
 	}
 }
 
@@ -327,23 +392,18 @@ func TestRegistryUpdateAllRegistriesPartialOnError(t *testing.T) {
 
 	// The reachable registry is still indexed and written.
 	cacheDir := rw.Config().ResolvedArtifactCacheDir()
-	goodPath := oci.IndexBasePath(root, cacheDir, goodHost) + ".json"
-	data, rerr := os.ReadFile(goodPath)
+	loaded, rerr := loadHostIndex(root, cacheDir, goodHost)
 	if rerr != nil {
-		t.Fatalf("reachable registry index not written at %s: %v", goodPath, rerr)
+		t.Fatalf("reachable registry index not readable: %v", rerr)
 	}
-	var idx RegistryIndex
-	if uerr := json.Unmarshal(data, &idx); uerr != nil {
-		t.Fatalf("unmarshal reachable index: %v", uerr)
-	}
-	if idx.Host != goodHost || len(idx.Records) != 1 || idx.Records[0].Version != "1.0.0" {
-		t.Fatalf("reachable index unexpected: host=%q records=%+v", idx.Host, idx.Records)
+	if loaded.Host != goodHost || len(loaded.Records) != 1 || loaded.Records[0].Version != "1.0.0" {
+		t.Fatalf("reachable index unexpected: host=%q records=%+v", loaded.Host, loaded.Records)
 	}
 
 	// The unreachable registry wrote nothing.
-	badPath := oci.IndexBasePath(root, cacheDir, badHost) + ".json"
-	if _, serr := os.Stat(badPath); !os.IsNotExist(serr) {
-		t.Errorf("unreachable registry must not write an index; stat(%s) err=%v", badPath, serr)
+	badDir := oci.IndexBasePath(root, cacheDir, badHost)
+	if _, serr := os.Stat(badDir); !os.IsNotExist(serr) {
+		t.Errorf("unreachable registry must not write an index; stat(%s) err=%v", badDir, serr)
 	}
 
 	// The failure is noted per host on the command output.
@@ -373,8 +433,259 @@ func TestRegistryUpdateSingleRegistryFailureIsLoud(t *testing.T) {
 	}
 
 	cacheDir := rw.Config().ResolvedArtifactCacheDir()
-	indexPath := oci.IndexBasePath(root, cacheDir, host) + ".json"
-	if _, serr := os.Stat(indexPath); !os.IsNotExist(serr) {
-		t.Errorf("single-registry failure must write nothing; stat(%s) err=%v", indexPath, serr)
+	hostDir := oci.IndexBasePath(root, cacheDir, host)
+	if _, serr := os.Stat(hostDir); !os.IsNotExist(serr) {
+		t.Errorf("single-registry failure must write nothing; stat(%s) err=%v", hostDir, serr)
+	}
+}
+
+// TestRegistryUpdateRecordsPerVersionDeprecations proves the update walk records
+// a per-version deprecation marker discovered on a version's referrers into the
+// per-repo record — only the deprecated version appears, the whole marker is
+// preserved, and the record round-trips through the sparse loader byte-for-byte
+// across two builds against the same state.
+func TestRegistryUpdateRecordsPerVersionDeprecations(t *testing.T) {
+	const host = "hub.aggrega.ai"
+	const repo = "component/core/api-server"
+	ctx := context.Background()
+
+	meta := oci.SearchableMetadata{Description: "d", Category: "compute", Kind: "Component"}
+	target := seedComponentRepo(t, []string{"1.0.0", "2.0.0"}, meta)
+
+	// Attach a deprecation marker to 1.0.0 only; 2.0.0 stays undeprecated.
+	marker := deprecation.Marker{
+		Severity:    deprecation.SeverityWarning,
+		Reason:      "superseded by 2.0.0",
+		Replacement: "oci://hub.aggrega.ai/component/core/api-server:2.0.0",
+		IssuedOn:    "2026-05-01T00:00:00Z",
+	}
+	payload, err := deprecation.Marshal(marker)
+	if err != nil {
+		t.Fatalf("marshal marker: %v", err)
+	}
+	if _, err := oci.AttachReferrer(ctx, target.Store, "1.0.0", deprecation.ArtifactType, payload); err != nil {
+		t.Fatalf("attach deprecation referrer: %v", err)
+	}
+
+	src := fakeIndexSource{
+		repos:   []string{repo},
+		targets: map[string]oras.ReadOnlyTarget{repo: target},
+	}
+	withIndexTarget(t, src)
+
+	root := t.TempDir()
+	content := "workspace: {}\ndefault_registry: hub.aggrega.ai\n" +
+		"registries:\n  - host: hub.aggrega.ai\n    name: hub\n"
+	rw := resolveWorkspaceWithConfig(t, root, content)
+	frozen := func() time.Time { return time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC) }
+
+	var out bytes.Buffer
+	if err := registryUpdateRun(registryUpdateConfig{ws: rw, Out: &out, now: frozen}); err != nil {
+		t.Fatalf("registryUpdateRun: %v", err)
+	}
+
+	cacheDir := rw.Config().ResolvedArtifactCacheDir()
+	loaded, err := loadHostIndex(root, cacheDir, host)
+	if err != nil {
+		t.Fatalf("loadHostIndex: %v", err)
+	}
+	if len(loaded.Records) != 1 {
+		t.Fatalf("records = %d; want 1", len(loaded.Records))
+	}
+	rec := loaded.Records[0]
+	if len(rec.Deprecations) != 1 {
+		t.Fatalf("deprecations = %+v; want exactly the one deprecated version", rec.Deprecations)
+	}
+	got := rec.Deprecations[0]
+	if got.Version != "1.0.0" {
+		t.Errorf("deprecated version = %q; want 1.0.0 (2.0.0 is not deprecated)", got.Version)
+	}
+	if got.Marker.Severity != deprecation.SeverityWarning ||
+		got.Marker.Reason != marker.Reason ||
+		got.Marker.Replacement != marker.Replacement ||
+		got.Marker.IssuedOn != marker.IssuedOn {
+		t.Errorf("marker round-trip mismatch: got %+v want %+v", got.Marker, marker)
+	}
+
+	// The per-repo record file is byte-identical across two runs against the same
+	// state (the marker's fixed field order keeps validators content-derived).
+	recPath := oci.IndexRepoPath(root, cacheDir, host, repo)
+	first, err := os.ReadFile(recPath)
+	if err != nil {
+		t.Fatalf("read record file: %v", err)
+	}
+	if err := registryUpdateRun(registryUpdateConfig{ws: rw, Out: &out, now: frozen}); err != nil {
+		t.Fatalf("registryUpdateRun (second): %v", err)
+	}
+	second, err := os.ReadFile(recPath)
+	if err != nil {
+		t.Fatalf("re-read record file: %v", err)
+	}
+	if !bytes.Equal(first, second) {
+		t.Errorf("record file not byte-identical across two runs:\nfirst:\n%s\nsecond:\n%s", first, second)
+	}
+}
+
+// TestRegistryUpdateConditionalReusesUnchangedRepo proves the digest-compare
+// baseline: an unchanged repository (same tag set, same headline manifest digest)
+// is reused from the prior index on the next refresh without a manifest-blob read.
+func TestRegistryUpdateConditionalReusesUnchangedRepo(t *testing.T) {
+	const host = "hub.aggrega.ai"
+	const repo = "component/core/api-server"
+	meta := oci.SearchableMetadata{Description: "d", Category: "compute", Kind: "Component"}
+	base := seedComponentRepo(t, []string{"1.0.0", "1.1.0"}, meta)
+	fetches := 0
+	target := &countingTarget{memTagTarget: base, fetches: &fetches}
+	src := fakeIndexSource{repos: []string{repo}, targets: map[string]oras.ReadOnlyTarget{repo: target}}
+	withIndexTarget(t, src)
+
+	root := t.TempDir()
+	rw := resolveWorkspaceWithConfig(t, root, updateTestConfig)
+	frozen := frozenClock()
+	var out bytes.Buffer
+
+	// First run — full build; the manifest blob is read.
+	if err := registryUpdateRun(registryUpdateConfig{ws: rw, Out: &out, now: frozen}); err != nil {
+		t.Fatalf("registryUpdateRun (first): %v", err)
+	}
+	if fetches == 0 {
+		t.Fatalf("first build fetched no content blob; want the manifest read")
+	}
+
+	// Second run — unchanged registry state; the conditional refresh must reuse the
+	// prior record and read no content blob.
+	fetches = 0
+	if err := registryUpdateRun(registryUpdateConfig{ws: rw, Out: &out, now: frozen}); err != nil {
+		t.Fatalf("registryUpdateRun (second): %v", err)
+	}
+	if fetches != 0 {
+		t.Errorf("unchanged repo read %d content blobs on refresh; want 0 (digest-compare reuse)", fetches)
+	}
+}
+
+// TestRegistryUpdateConditionalFromScratchParityAndFileSet proves a conditional
+// refresh produces the same on-disk result as a from-scratch build, and that a
+// dropped repository's file is removed and a new repository's file is created.
+func TestRegistryUpdateConditionalFromScratchParityAndFileSet(t *testing.T) {
+	const host = "hub.aggrega.ai"
+	meta := oci.SearchableMetadata{Description: "d", Category: "compute", Kind: "Component"}
+	repoA := "component/core/api-server"
+	repoB := "component/core/worker"
+
+	src := fakeIndexSource{
+		repos: []string{repoA, repoB},
+		targets: map[string]oras.ReadOnlyTarget{
+			repoA: seedComponentRepo(t, []string{"1.0.0"}, meta),
+			repoB: seedComponentRepo(t, []string{"2.0.0"}, meta),
+		},
+	}
+	withIndexTarget(t, src)
+	root := t.TempDir()
+	rw := resolveWorkspaceWithConfig(t, root, updateTestConfig)
+	cacheDir := rw.Config().ResolvedArtifactCacheDir()
+	frozen := frozenClock()
+	var out bytes.Buffer
+
+	// First (full) build, then a conditional refresh against unchanged state.
+	if err := registryUpdateRun(registryUpdateConfig{ws: rw, Out: &out, now: frozen}); err != nil {
+		t.Fatalf("registryUpdateRun (build): %v", err)
+	}
+	aBytes, err := os.ReadFile(oci.IndexRepoPath(root, cacheDir, host, repoA))
+	if err != nil {
+		t.Fatalf("read repoA record: %v", err)
+	}
+	if err := registryUpdateRun(registryUpdateConfig{ws: rw, Out: &out, now: frozen}); err != nil {
+		t.Fatalf("registryUpdateRun (conditional): %v", err)
+	}
+	aBytes2, err := os.ReadFile(oci.IndexRepoPath(root, cacheDir, host, repoA))
+	if err != nil {
+		t.Fatalf("re-read repoA record: %v", err)
+	}
+	if !bytes.Equal(aBytes, aBytes2) {
+		t.Errorf("conditional refresh not byte-identical to build for repoA")
+	}
+	if set := indexFileSet(t, root, cacheDir, host); len(set) != 2 {
+		t.Fatalf("file set after refresh = %v; want 2 files", set)
+	}
+
+	// Drop repoB, add a new repoC — the file set must track the live enumeration.
+	repoC := "component/core/gateway"
+	src2 := fakeIndexSource{
+		repos: []string{repoA, repoC},
+		targets: map[string]oras.ReadOnlyTarget{
+			repoA: seedComponentRepo(t, []string{"1.0.0"}, meta),
+			repoC: seedComponentRepo(t, []string{"3.0.0"}, meta),
+		},
+	}
+	withIndexTarget(t, src2)
+	if err := registryUpdateRun(registryUpdateConfig{ws: rw, Out: &out, now: frozen}); err != nil {
+		t.Fatalf("registryUpdateRun (drop/add): %v", err)
+	}
+	if _, serr := os.Stat(oci.IndexRepoPath(root, cacheDir, host, repoB)); !os.IsNotExist(serr) {
+		t.Errorf("dropped repo %s must have no record file; stat err=%v", repoB, serr)
+	}
+	if _, serr := os.Stat(oci.IndexRepoPath(root, cacheDir, host, repoC)); serr != nil {
+		t.Errorf("new repo %s must have a record file; stat err=%v", repoC, serr)
+	}
+}
+
+// TestRegistryUpdateDeprecationOnExistingTagBound documents and proves the one
+// bound of the digest-compare baseline: a deprecation marker attached to an
+// existing version (no new tag, unchanged manifest digest) is invisible to a
+// conditional refresh and is picked up only by a full --upgrade re-read.
+func TestRegistryUpdateDeprecationOnExistingTagBound(t *testing.T) {
+	const host = "hub.aggrega.ai"
+	const repo = "component/core/api-server"
+	ctx := context.Background()
+	meta := oci.SearchableMetadata{Description: "d", Category: "compute", Kind: "Component"}
+	target := seedComponentRepo(t, []string{"1.0.0"}, meta)
+	src := fakeIndexSource{repos: []string{repo}, targets: map[string]oras.ReadOnlyTarget{repo: target}}
+	withIndexTarget(t, src)
+
+	root := t.TempDir()
+	rw := resolveWorkspaceWithConfig(t, root, updateTestConfig)
+	cacheDir := rw.Config().ResolvedArtifactCacheDir()
+	frozen := frozenClock()
+	var out bytes.Buffer
+
+	// Initial build: 1.0.0 carries no marker.
+	if err := registryUpdateRun(registryUpdateConfig{ws: rw, Out: &out, now: frozen}); err != nil {
+		t.Fatalf("registryUpdateRun (build): %v", err)
+	}
+
+	// Attach a marker to the EXISTING 1.0.0 tag: this adds a sibling referrer, so
+	// neither the tag set nor 1.0.0's manifest digest changes.
+	marker := deprecation.Marker{Severity: deprecation.SeverityWarning, Reason: "old", IssuedOn: "2026-05-01T00:00:00Z"}
+	payload, err := deprecation.Marshal(marker)
+	if err != nil {
+		t.Fatalf("marshal marker: %v", err)
+	}
+	if _, err := oci.AttachReferrer(ctx, target.Store, "1.0.0", deprecation.ArtifactType, payload); err != nil {
+		t.Fatalf("attach referrer: %v", err)
+	}
+
+	// Conditional refresh reuses the prior record — the new marker is NOT seen.
+	if err := registryUpdateRun(registryUpdateConfig{ws: rw, Out: &out, now: frozen}); err != nil {
+		t.Fatalf("registryUpdateRun (conditional): %v", err)
+	}
+	loaded, err := loadHostIndex(root, cacheDir, host)
+	if err != nil {
+		t.Fatalf("loadHostIndex: %v", err)
+	}
+	if len(loaded.Records) != 1 || len(loaded.Records[0].Deprecations) != 0 {
+		t.Errorf("conditional refresh saw the marker on an existing tag; digest-compare bound broken: %+v", loaded.Records[0].Deprecations)
+	}
+
+	// A full --upgrade re-read picks it up.
+	if err := registryUpdateRun(registryUpdateConfig{ws: rw, Out: &out, now: frozen, Upgrade: true}); err != nil {
+		t.Fatalf("registryUpdateRun (upgrade): %v", err)
+	}
+	loaded, err = loadHostIndex(root, cacheDir, host)
+	if err != nil {
+		t.Fatalf("loadHostIndex (after upgrade): %v", err)
+	}
+	if len(loaded.Records) != 1 || len(loaded.Records[0].Deprecations) != 1 ||
+		loaded.Records[0].Deprecations[0].Version != "1.0.0" {
+		t.Errorf("--upgrade did not pick up the marker on the existing tag: %+v", loaded.Records[0].Deprecations)
 	}
 }
