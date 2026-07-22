@@ -6,9 +6,12 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -69,6 +72,53 @@ func (f fakeIndexSource) Repositories(_ context.Context, _ string, fn func(repos
 
 func (f fakeIndexSource) Repository(repo string) (oras.ReadOnlyTarget, error) {
 	return f.targets[repo], nil
+}
+
+// tagList exposes the seeded tags so the in-memory ConditionalTags can serve them.
+func (m *memTagTarget) tagList() []string {
+	return m.tags
+}
+
+// syntheticTagsETag mirrors a registry that validates its tag listing with a strong
+// entity-tag over the serialized set: stable for an unchanged set, different for a
+// changed one. It stands in for the registry's synthetic listing validator so the
+// in-memory build exercises the conditional revalidation path without a network.
+func syntheticTagsETag(tags []string) string {
+	sum := sha256.Sum256([]byte(strings.Join(tags, ",")))
+	return fmt.Sprintf("%q", "sha256:"+hex.EncodeToString(sum[:]))
+}
+
+// ConditionalTags serves the seeded tags with a synthetic listing validator,
+// answering a matching If-None-Match as not-modified so the conditional refresh's
+// 304 reuse path runs without a network.
+func (f fakeIndexSource) ConditionalTags(_ context.Context, repo, ifNoneMatch string) (tags []string, etag string, notModified bool, truncated bool, err error) {
+	tgt, ok := f.targets[repo]
+	if !ok || tgt == nil {
+		return nil, "", false, false, fmt.Errorf("no target for %q", repo)
+	}
+	lister, ok := tgt.(interface{ tagList() []string })
+	if !ok {
+		return nil, "", false, false, fmt.Errorf("target for %q exposes no tag list", repo)
+	}
+	tags = lister.tagList()
+	etag = syntheticTagsETag(tags)
+	if ifNoneMatch != "" && ifNoneMatch == etag {
+		return nil, etag, true, false, nil
+	}
+	return tags, etag, false, false, nil
+}
+
+// listingSpySource wraps fakeIndexSource and records the If-None-Match presented to
+// the most recent ConditionalTags call, so a test can prove the stored listing
+// validator is what drives the conditional refresh.
+type listingSpySource struct {
+	fakeIndexSource
+	lastIfNoneMatch *string
+}
+
+func (s listingSpySource) ConditionalTags(ctx context.Context, repo, ifNoneMatch string) ([]string, string, bool, bool, error) {
+	*s.lastIfNoneMatch = ifNoneMatch
+	return s.fakeIndexSource.ConditionalTags(ctx, repo, ifNoneMatch)
 }
 
 // seedComponentRepo packs a real catalog Component manifest per tag with the
@@ -687,5 +737,61 @@ func TestRegistryUpdateDeprecationOnExistingTagBound(t *testing.T) {
 	if len(loaded.Records) != 1 || len(loaded.Records[0].Deprecations) != 1 ||
 		loaded.Records[0].Deprecations[0].Version != "1.0.0" {
 		t.Errorf("--upgrade did not pick up the marker on the existing tag: %+v", loaded.Records[0].Deprecations)
+	}
+}
+
+// TestRegistryUpdateListingDigestRevalidates proves the client half of the
+// conditional-GET round-trip: a build records the registry's listing validator, and
+// a later refresh presents exactly that validator on the tags/list probe so an
+// unchanged listing revalidates as not-modified and the record is reused.
+func TestRegistryUpdateListingDigestRevalidates(t *testing.T) {
+	const host = "hub.aggrega.ai"
+	const repo = "component/core/api-server"
+	meta := oci.SearchableMetadata{Description: "d", Category: "compute", Kind: "Component"}
+	tags := []string{"1.0.0", "1.1.0"}
+	target := seedComponentRepo(t, tags, meta)
+	base := fakeIndexSource{repos: []string{repo}, targets: map[string]oras.ReadOnlyTarget{repo: target}}
+
+	root := t.TempDir()
+	rw := resolveWorkspaceWithConfig(t, root, updateTestConfig)
+	cacheDir := rw.Config().ResolvedArtifactCacheDir()
+	frozen := frozenClock()
+	var out bytes.Buffer
+
+	// First build records the listing validator.
+	withIndexTarget(t, base)
+	if err := registryUpdateRun(registryUpdateConfig{ws: rw, Out: &out, now: frozen}); err != nil {
+		t.Fatalf("registryUpdateRun (build): %v", err)
+	}
+	loaded, err := loadHostIndex(root, cacheDir, host)
+	if err != nil {
+		t.Fatalf("loadHostIndex: %v", err)
+	}
+	if len(loaded.Records) != 1 {
+		t.Fatalf("want 1 record, got %d", len(loaded.Records))
+	}
+	wantETag := syntheticTagsETag(tags)
+	if loaded.Records[0].ListingDigest != wantETag {
+		t.Fatalf("stored ListingDigest = %q; want %q", loaded.Records[0].ListingDigest, wantETag)
+	}
+
+	// The conditional refresh must present exactly that stored validator on its probe.
+	var seen string
+	spy := listingSpySource{fakeIndexSource: base, lastIfNoneMatch: &seen}
+	withIndexTarget(t, spy)
+	if err := registryUpdateRun(registryUpdateConfig{ws: rw, Out: &out, now: frozen}); err != nil {
+		t.Fatalf("registryUpdateRun (refresh): %v", err)
+	}
+	if seen != wantETag {
+		t.Fatalf("refresh presented If-None-Match %q; want the stored %q", seen, wantETag)
+	}
+
+	// The record is unchanged and still carries the validator.
+	reloaded, err := loadHostIndex(root, cacheDir, host)
+	if err != nil {
+		t.Fatalf("loadHostIndex (reload): %v", err)
+	}
+	if reloaded.Records[0].ListingDigest != wantETag || reloaded.Records[0].Version != "1.1.0" {
+		t.Fatalf("post-refresh record drifted: %+v", reloaded.Records[0])
 	}
 }

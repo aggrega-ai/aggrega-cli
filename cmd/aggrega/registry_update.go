@@ -35,6 +35,13 @@ import (
 type registryIndexSource interface {
 	registryRepoLister
 	Repository(repo string) (oras.ReadOnlyTarget, error)
+	// ConditionalTags lists a repository's tags, revalidating against a stored
+	// listing validator: when ifNoneMatch matches the registry's current validator
+	// the registry answers that the listing is unchanged (notModified true, tags
+	// nil), otherwise it returns the current tags and the new validator. truncated
+	// reports a listing that did not fit one page, so its single-request validator
+	// does not cover the whole set. An empty ifNoneMatch lists unconditionally.
+	ConditionalTags(ctx context.Context, repo, ifNoneMatch string) (tags []string, etag string, notModified bool, truncated bool, err error)
 }
 
 // remoteIndexSource is the production registryIndexSource. It enumerates through
@@ -53,6 +60,10 @@ func (s remoteIndexSource) Repositories(ctx context.Context, last string, fn fun
 
 func (s remoteIndexSource) Repository(repo string) (oras.ReadOnlyTarget, error) {
 	return oci.NewRemoteRepository(s.host+"/"+repo, s.httpClient)
+}
+
+func (s remoteIndexSource) ConditionalTags(ctx context.Context, repo, ifNoneMatch string) (tags []string, etag string, notModified bool, truncated bool, err error) {
+	return oci.ConditionalListTags(ctx, s.host, repo, ifNoneMatch, s.httpClient)
 }
 
 // registryIndexTarget resolves the index source for a registry host. Production
@@ -87,10 +98,14 @@ var registryIndexTarget = func(cfg workspaceconfig.Config, host string) (registr
 // (highest released). ManifestDigest is the resolved manifest digest of the
 // headline version, recorded as a revalidation validator: a later refresh
 // re-resolves the version and reuses the stored record when the digest is
-// unchanged. Deprecations records, per deprecated version, the authoritative
-// deprecation marker discovered from that version's referrers, so the advisory
-// display reads a marker from the local index rather than probing the registry
-// live. All three are omitted when empty.
+// unchanged. ListingDigest is the registry's strong validator for the
+// repository's tag listing, recorded so a later refresh can revalidate the tag
+// set with a conditional request and skip the re-list when the registry answers
+// that the listing is unchanged; it is empty when the registry serves no
+// validator or the listing spanned more than one page. Deprecations records, per
+// deprecated version, the authoritative deprecation marker discovered from that
+// version's referrers, so the advisory display reads a marker from the local
+// index rather than probing the registry live. All are omitted when empty.
 type IndexRecord struct {
 	URI            string                    `json:"uri"`
 	Name           string                    `json:"name"`
@@ -103,6 +118,7 @@ type IndexRecord struct {
 	PluginType     string                    `json:"pluginType,omitempty"`
 	Capabilities   []string                  `json:"capabilities,omitempty"`
 	ManifestDigest string                    `json:"manifestDigest,omitempty"`
+	ListingDigest  string                    `json:"listingDigest,omitempty"`
 	Deprecations   []VersionDeprecation      `json:"deprecations,omitempty"`
 }
 
@@ -358,14 +374,16 @@ func sortIndexRecords(records []IndexRecord) {
 }
 
 // indexRepo builds the record for one repository's latest published version. It
-// lists the tags and selects the headline version, then revalidates against the
-// prior record for the repository's URI: when the tag set and the re-resolved
-// headline manifest digest both match the prior record, that record is reused
-// untouched — skipping the manifest read and the per-version referrer scan, so an
-// unchanged repository costs one tag list plus one cheap digest resolve. Only a
-// changed or previously-unseen repository re-reads the manifest annotations and
-// re-scans referrers. A nil prior (a full-upgrade refresh, or the first build)
-// reuses nothing.
+// revalidates against the prior record for the repository's URI in two conditional
+// steps before deciding to re-read. First a conditional tags listing: when the
+// stored listing validator still matches, the tag set is unchanged and the tag
+// re-list is skipped. Then a headline manifest digest re-resolve (a cheap metadata
+// read, no content blob): when the digest also matches the prior record, that
+// record is reused untouched — skipping the manifest read and the per-version
+// referrer scan, so an unchanged repository costs one conditional tag listing plus
+// one cheap digest resolve. Only a changed or previously-unseen repository re-reads
+// the manifest annotations and re-scans referrers. A nil prior (a full-upgrade
+// refresh, or the first build) reuses nothing.
 //
 // A repository with no strict-SemVer version is skipped silently (a deterministic
 // non-error). A repository that cannot be read — no per-repo target, a tag-list
@@ -378,20 +396,54 @@ func indexRepo(ctx context.Context, host string, src registryIndexSource, repo s
 		fmt.Fprintf(out, "  skipped %s: %v\n", repo, err)
 		return IndexRecord{}, false
 	}
-	tags, err := oci.ListTags(ctx, target)
+	uri := "oci://" + host + "/" + repo
+	p, hasPrior := prior[uri]
+
+	// Conditional tags listing: present the prior record's listing validator so an
+	// unchanged tag set answers as not-modified and skips the re-list.
+	priorListing := ""
+	if hasPrior {
+		priorListing = p.ListingDigest
+	}
+	tags, listingDigest, notModified, truncated, err := src.ConditionalTags(ctx, repo, priorListing)
 	if err != nil {
 		fmt.Fprintf(out, "  skipped %s: %v\n", repo, err)
 		return IndexRecord{}, false
 	}
+	if notModified {
+		// The tag set is unchanged. Confirm the headline manifest digest is unchanged
+		// too — a tag re-pushed to new content changes the digest without changing the
+		// set — and reuse the prior record when it is.
+		digest, exists, rerr := oci.Resolve(ctx, target, p.Version)
+		if rerr == nil && exists && p.ManifestDigest != "" && p.ManifestDigest == digest {
+			return p, true
+		}
+		// The headline manifest moved (or the resolve failed): re-list unconditionally
+		// to get the current tag set and validator, then fall through to a full read.
+		tags, listingDigest, _, truncated, err = src.ConditionalTags(ctx, repo, "")
+		if err != nil {
+			fmt.Fprintf(out, "  skipped %s: %v\n", repo, err)
+			return IndexRecord{}, false
+		}
+	}
+	// A truncated listing's single-request validator does not cover the whole tag set,
+	// so fall back to the full enumeration and record no validator (the next refresh
+	// re-reads rather than falsely matching a partial validator).
+	if truncated {
+		tags, err = oci.ListTags(ctx, target)
+		if err != nil {
+			fmt.Fprintf(out, "  skipped %s: %v\n", repo, err)
+			return IndexRecord{}, false
+		}
+		listingDigest = ""
+	}
+
 	version := oci.SelectLatestVersion(tags, false /* includePreRelease */)
 	if version == "" {
 		return IndexRecord{}, false
 	}
 	versions := oci.SortedSemverTags(tags)
 
-	// Conditional revalidation: re-resolve the headline manifest digest (a cheap
-	// metadata read, no content blob) and reuse the prior record when the tag set
-	// and digest are unchanged.
 	digest, exists, err := oci.Resolve(ctx, target, version)
 	if err != nil {
 		fmt.Fprintf(out, "  skipped %s: %v\n", repo, err)
@@ -401,8 +453,10 @@ func indexRepo(ctx context.Context, host string, src registryIndexSource, repo s
 		fmt.Fprintf(out, "  skipped %s: selected version %s no longer resolves\n", repo, version)
 		return IndexRecord{}, false
 	}
-	uri := "oci://" + host + "/" + repo
-	if p, ok := prior[uri]; ok && p.ManifestDigest != "" && p.ManifestDigest == digest && equalStrings(p.Versions, versions) {
+	if hasPrior && p.ManifestDigest != "" && p.ManifestDigest == digest && equalStrings(p.Versions, versions) {
+		// The manifest and tag set are unchanged; reuse the prior record but carry the
+		// refreshed listing validator forward (it may have been absent before).
+		p.ListingDigest = listingDigest
 		return p, true
 	}
 
@@ -414,6 +468,7 @@ func indexRepo(ctx context.Context, host string, src registryIndexSource, repo s
 	rec := recordFromAnnotations(host, repo, version, annotations)
 	rec.Versions = versions
 	rec.ManifestDigest = manifestDigest
+	rec.ListingDigest = listingDigest
 	rec.Deprecations = collectVersionDeprecations(ctx, target, versions)
 	return rec, true
 }
