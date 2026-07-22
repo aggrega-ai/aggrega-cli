@@ -4,6 +4,7 @@
 package terraform
 
 import (
+	"encoding/json"
 	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
@@ -54,6 +55,14 @@ func PlaceArtifacts(proj rendercore.ArtifactsProjection, nodeCtx rendercore.Node
 	out := make([]rendercore.RenderedFile, 0, len(proj.Entries)+1)
 	for _, ent := range proj.Entries {
 		body := ent.Content
+		if strings.HasSuffix(ent.Name, ".tf.json") {
+			// Recipe output labels ride as per-resource tags on structurally
+			// addressable JSON bodies only. A body that carries no taggable
+			// resource, or that does not parse, is emitted byte-for-byte
+			// unchanged (the verbatim-emission contract); native-HCL bodies never
+			// reach this branch and stay opaque.
+			body = injectResourceTags(ent.Content, nodeCtx.OutputLabels)
+		}
 		if !hasJSONBody {
 			// Copy provComment per body so the shared slice is never aliased into
 			// an emitted file.
@@ -65,4 +74,67 @@ func PlaceArtifacts(proj rendercore.ArtifactsProjection, nodeCtx rendercore.Node
 		out = append(out, rendercore.RenderedFile{Path: ProvenanceFileName, Content: provComment})
 	}
 	return out
+}
+
+// injectResourceTags merges recipe output labels into the tag attribute of each
+// top-level resource block in a Terraform JSON (.tf.json) body, best-effort.
+//
+// The offline render sandbox has no provider schema, so taggability is inferred
+// from local evidence only: a resource block that already declares a "tags"
+// object (the AWS / azurerm convention) or a "labels" object (the Google
+// convention) is taggable, and the declared attribute names where the tags go.
+// A block with neither is left untouched — inventing an attribute would emit
+// invalid Terraform for a non-taggable resource. The computed "tags_all"
+// attribute is never written. An author-declared tag key is authoritative: an
+// output label never overwrites a key the block already sets.
+//
+// A body that does not parse as JSON, carries no "resource" block, or gains no
+// tag is returned byte-for-byte unchanged (the verbatim-emission contract). A
+// body that is modified is re-serialized deterministically (object keys sorted);
+// key order and whitespace are not semantically load-bearing in Terraform JSON.
+func injectResourceTags(content []byte, labels map[string]string) []byte {
+	if len(labels) == 0 {
+		return content
+	}
+	var root map[string]any
+	if err := json.Unmarshal(content, &root); err != nil {
+		return content
+	}
+	resources, ok := root["resource"].(map[string]any)
+	if !ok {
+		return content
+	}
+	changed := false
+	for _, byType := range resources {
+		byName, ok := byType.(map[string]any)
+		if !ok {
+			continue
+		}
+		for _, block := range byName {
+			blk, ok := block.(map[string]any)
+			if !ok {
+				continue
+			}
+			for _, attr := range []string{"tags", "labels"} {
+				existing, ok := blk[attr].(map[string]any)
+				if !ok {
+					continue
+				}
+				for k, v := range labels {
+					if _, present := existing[k]; !present {
+						existing[k] = v
+						changed = true
+					}
+				}
+			}
+		}
+	}
+	if !changed {
+		return content
+	}
+	reemitted, err := json.MarshalIndent(root, "", "  ")
+	if err != nil {
+		return content
+	}
+	return append(reemitted, '\n')
 }

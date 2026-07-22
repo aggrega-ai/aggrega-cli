@@ -60,6 +60,8 @@ type IRNodeProjection struct {
 	RecipeVersion string `json:"recipe_version,omitempty" yaml:"recipe_version,omitempty"`
 	// LabelComponentID The Kubernetes-safe component identity. When non-empty it overrides the node id as the app.kubernetes.io/name and aggrega.ai/component-id label value, for resources whose node id carries marker syntax that needs sanitization; empty means the node id is already label-valid and is used directly.
 	LabelComponentID string `json:"label_component_id,omitempty" yaml:"label_component_id,omitempty"`
+	// OutputLabels The recipe-author-declared output labels (recipe.spec.outputLabels) the guest stamps onto every emitted manifest alongside the build-identity provenance, keyed by label name. Disjoint from the provenance keyspace by load-time validation (no aggrega.ai/ or app.kubernetes.io/ key), so stamping never collides with a provenance label. A guest whose output is not Kubernetes YAML translates them onto its own label surface (Compose service labels) or ignores them.
+	OutputLabels map[string]string `json:"output_labels,omitempty" yaml:"output_labels,omitempty"`
 	// Provenance The build-identity provenance the guest stamps onto every emitted manifest as aggrega.ai labels.
 	Provenance NodeProvenance `json:"provenance" yaml:"provenance"`
 }
@@ -654,6 +656,31 @@ func (t IRNodeProjection) MarshalJSON() ([]byte, error) {
 		buf.WriteString("\"label_component_id\":")
 		writeJSONString(&buf, t.LabelComponentID)
 	}
+	if len(t.OutputLabels) != 0 {
+		if !first {
+			buf.WriteByte(',')
+		}
+		first = false
+		buf.WriteString("\"output_labels\":")
+		{
+			keys := make([]string, 0, len(t.OutputLabels))
+			for k := range t.OutputLabels {
+				keys = append(keys, k)
+			}
+			sort.Strings(keys)
+			buf.WriteByte('{')
+			for i, k := range keys {
+				if i > 0 {
+					buf.WriteByte(',')
+				}
+				writeJSONString(&buf, k)
+				buf.WriteByte(':')
+				mv := t.OutputLabels[k]
+				writeJSONString(&buf, mv)
+			}
+			buf.WriteByte('}')
+		}
+	}
 	if !first {
 		buf.WriteByte(',')
 	}
@@ -759,6 +786,27 @@ func (t *IRNodeProjection) UnmarshalJSON(data []byte) error {
 				return err
 			} else {
 				t.LabelComponentID = s
+			}
+		case "output_labels":
+			t.OutputLabels = make(map[string]string)
+			if err := expectDelim(dec, '{'); err != nil {
+				return err
+			}
+			for dec.More() {
+				mk, err := readKey(dec)
+				if err != nil {
+					return err
+				}
+				var mv string
+				if s, err := readString(dec); err != nil {
+					return err
+				} else {
+					mv = s
+				}
+				t.OutputLabels[mk] = mv
+			}
+			if err := expectDelim(dec, '}'); err != nil {
+				return err
 			}
 		case "provenance":
 			if raw, err := readRaw(dec, data); err != nil {

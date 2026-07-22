@@ -239,3 +239,80 @@ func TestValidateRecipe_Nil_NoError(t *testing.T) {
 		t.Errorf("nil Recipe should pass, got %v", err)
 	}
 }
+
+// ----- outputLabels reserved-namespace rule -----
+
+func recipeWithLabels(provider string, labels map[string]string) *types.Recipe {
+	r := newRecipe(provider)
+	r.Spec.Artifacts = types.OrderedMap[types.ArtifactEntry]{}
+	r.Spec.Artifacts.Set("out.yaml", types.ArtifactEntry{Inline: "kind: ConfigMap"})
+	r.Spec.OutputLabels = labels
+	return r
+}
+
+func TestValidateRecipe_OutputLabels_AggregaAIReserved_Fails(t *testing.T) {
+	t.Parallel()
+	r := recipeWithLabels("helm", map[string]string{"aggrega.ai/foo": "bar"})
+	err := validator.ValidateRecipe(r, tFile)
+	if !errors.Is(err, validator.ErrRecipeOutputLabelReservedNamespace) {
+		t.Fatalf("expected ErrRecipeOutputLabelReservedNamespace, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "aggrega.ai/foo") {
+		t.Errorf("error should name the offending key, got %q", err.Error())
+	}
+}
+
+func TestValidateRecipe_OutputLabels_K8sRecommendedReserved_Fails(t *testing.T) {
+	t.Parallel()
+	r := recipeWithLabels("helm", map[string]string{"app.kubernetes.io/bar": "baz"})
+	if err := validator.ValidateRecipe(r, tFile); !errors.Is(err, validator.ErrRecipeOutputLabelReservedNamespace) {
+		t.Fatalf("expected ErrRecipeOutputLabelReservedNamespace, got %v", err)
+	}
+}
+
+func TestValidateRecipe_OutputLabels_NonReserved_Passes(t *testing.T) {
+	t.Parallel()
+	r := recipeWithLabels("helm", map[string]string{"hosting": "managed", "team": "payments"})
+	if err := validator.ValidateRecipe(r, tFile); err != nil {
+		t.Fatalf("non-reserved outputLabels should pass, got %v", err)
+	}
+}
+
+// The reserved-namespace rule is engine-agnostic: it fires even on an eval
+// Recipe, which the eval carve-out would otherwise short-circuit past.
+func TestValidateRecipe_OutputLabels_EvalReserved_Fails(t *testing.T) {
+	t.Parallel()
+	r := newRecipe("eval")
+	r.Spec.OutputLabels = map[string]string{"aggrega.ai/x": "y"}
+	if err := validator.ValidateRecipe(r, tFile); !errors.Is(err, validator.ErrRecipeOutputLabelReservedNamespace) {
+		t.Fatalf("expected reserved-namespace reject on eval Recipe, got %v", err)
+	}
+}
+
+// The sentinel threads through the converted CompilerError, so callers that
+// inspect the wrapped compiler error still match errors.Is.
+func TestValidateRecipe_OutputLabels_ThreadsThroughCompilerError(t *testing.T) {
+	t.Parallel()
+	r := recipeWithLabels("helm", map[string]string{"aggrega.ai/foo": "bar"})
+	err := validator.ValidateRecipe(r, tFile)
+	var rve *validator.RecipeValidationError
+	if !errors.As(err, &rve) {
+		t.Fatalf("expected *RecipeValidationError, got %v", err)
+	}
+	if !errors.Is(rve.ToCompilerError(), validator.ErrRecipeOutputLabelReservedNamespace) {
+		t.Fatalf("sentinel should thread through the converted CompilerError")
+	}
+}
+
+// The first-reported collision is deterministic (keys checked in sorted order).
+func TestValidateRecipe_OutputLabels_FirstReportedIsDeterministic(t *testing.T) {
+	t.Parallel()
+	r := recipeWithLabels("helm", map[string]string{
+		"app.kubernetes.io/z": "1",
+		"aggrega.ai/a":        "2",
+	})
+	err := validator.ValidateRecipe(r, tFile)
+	if err == nil || !strings.Contains(err.Error(), "aggrega.ai/a") {
+		t.Fatalf("expected the sorted-first key aggrega.ai/a reported, got %v", err)
+	}
+}

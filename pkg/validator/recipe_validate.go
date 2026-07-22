@@ -5,6 +5,7 @@ package validator
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
@@ -31,6 +32,13 @@ import (
 func ValidateRecipe(r *types.Recipe, sourcePath string) error {
 	if r == nil {
 		return nil
+	}
+
+	// The reserved-namespace rule is engine-agnostic and runs before the eval
+	// carve-out: an eval Recipe declares no rendering surface but must still not
+	// claim a reserved provenance key.
+	if err := validateRecipeOutputLabels(r, sourcePath); err != nil {
+		return err
 	}
 
 	if r.Spec.Capability == "eval" {
@@ -77,6 +85,43 @@ func validateRecipeEvalProvider(r *types.Recipe, sourcePath string) error {
 		Detail:      fmt.Sprintf("forbidden fields declared: %s", strings.Join(declared, ", ")),
 		Err:         ErrRecipeEvalProviderConstraint,
 	}
+}
+
+// validateRecipeOutputLabels rejects any spec.outputLabels key under a
+// platform-reserved namespace (aggrega.ai/ or app.kubernetes.io/). Those
+// prefixes are the compiler-owned provenance keyspace; a recipe stamping them
+// would spoof provenance, and reserving them keeps a validated output-label set
+// disjoint from the fixed provenance set so the render-stage merge is
+// collision-free. Non-reserved keys and their values are unpoliced — the core
+// does not validate label charset (a downstream runtime rejects an invalid
+// label). Keys are checked in sorted order so the first-reported collision is
+// deterministic.
+func validateRecipeOutputLabels(r *types.Recipe, sourcePath string) error {
+	if len(r.Spec.OutputLabels) == 0 {
+		return nil
+	}
+	keys := make([]string, 0, len(r.Spec.OutputLabels))
+	for k := range r.Spec.OutputLabels {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		if strings.HasPrefix(key, types.ReservedLabelPrefixAggregaAI) ||
+			strings.HasPrefix(key, types.ReservedLabelPrefixK8sRecommended) {
+			return &RecipeValidationError{
+				Path:        sourcePath,
+				Name:        r.Metadata.Name,
+				Version:     r.Metadata.Version,
+				Rule:        "output-labels",
+				Description: "outputLabels may not use a reserved namespace",
+				Detail: fmt.Sprintf(
+					"key %q uses a reserved namespace (%q and %q are reserved for platform provenance)",
+					key, types.ReservedLabelPrefixAggregaAI, types.ReservedLabelPrefixK8sRecommended),
+				Err: ErrRecipeOutputLabelReservedNamespace,
+			}
+		}
+	}
+	return nil
 }
 
 // validateRecipeRule1: valuesMapping requires source.

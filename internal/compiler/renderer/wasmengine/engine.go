@@ -799,6 +799,7 @@ func (e *Engine) nodeProjection(nodeCtx renderer.NodeRenderContext, values types
 		RecipeName:       nodeCtx.RecipeName,
 		RecipeVersion:    nodeCtx.RecipeVersion,
 		LabelComponentID: nodeCtx.LabelComponentID,
+		OutputLabels:     nodeCtx.OutputLabels,
 		Provenance: renderer.NodeProvenance{
 			CompilerVersion: nodeCtx.Provenance.CompilerVersion,
 			AggregateName:   nodeCtx.Provenance.AggregateName,

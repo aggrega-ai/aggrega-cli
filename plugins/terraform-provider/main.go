@@ -335,6 +335,7 @@ func nodeCtxFromInput(in rendercore.RenderNodeInput) rendercore.NodeRenderContex
 		RecipeName:       in.Node.RecipeName,
 		RecipeVersion:    in.Node.RecipeVersion,
 		LabelComponentID: in.Node.LabelComponentID,
+		OutputLabels:     in.Node.OutputLabels,
 		ProviderName:     in.Node.Provenance.ProviderName,
 		ProviderVersion:  in.Node.Provenance.ProviderVersion,
 		Provenance: rendercore.ProvenanceContext{

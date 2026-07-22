@@ -198,3 +198,159 @@ func TestPlaceArtifacts_Deterministic(t *testing.T) {
 		}
 	}
 }
+
+// --- Recipe output labels as per-resource tags (.tf.json, best-effort) ---
+
+func terraformNodeCtxWithLabels(labels map[string]string) renderer.NodeRenderContext {
+	nc := terraformNodeCtx()
+	nc.OutputLabels = labels
+	return nc
+}
+
+const jsonBodyTaggable = `{
+  "resource": {
+    "aws_db_instance": {
+      "prod-db": {
+        "identifier": "prod-db",
+        "tags": {
+          "owner": "dba"
+        }
+      }
+    }
+  }
+}
+`
+
+// A resource that already declares a tags object is taggable by local evidence:
+// the output labels merge in, the author's existing key is preserved, and the
+// body re-serializes as valid JSON with the injected tag present.
+func TestPlaceArtifacts_OutputLabels_MergeIntoExistingTags(t *testing.T) {
+	t.Parallel()
+	proj := renderer.ArtifactsProjection{Entries: []renderer.ArtifactProjectionEntry{entry("main.tf.json", jsonBodyTaggable)}}
+	files := PlaceArtifacts(proj, terraformNodeCtxWithLabels(map[string]string{"hosting": "managed", "owner": "override-attempt"}))
+
+	body := fileByPath(t, files, "main.tf.json")
+	var root map[string]any
+	if err := json.Unmarshal(body.Content, &root); err != nil {
+		t.Fatalf("emitted body is not valid JSON: %v", err)
+	}
+	tags := root["resource"].(map[string]any)["aws_db_instance"].(map[string]any)["prod-db"].(map[string]any)["tags"].(map[string]any)
+	if tags["hosting"] != "managed" {
+		t.Errorf("output label hosting=managed not injected into tags; got %v", tags)
+	}
+	if tags["owner"] != "dba" {
+		t.Errorf("author-declared tag must win on collision (owner=dba), got %v", tags["owner"])
+	}
+}
+
+const jsonBodyGoogleLabels = `{
+  "resource": {
+    "google_storage_bucket": {
+      "b": {
+        "name": "b",
+        "labels": {
+          "team": "data"
+        }
+      }
+    }
+  }
+}
+`
+
+// A Google resource declares "labels", not "tags"; the merge targets the
+// attribute the block already uses.
+func TestPlaceArtifacts_OutputLabels_MergeIntoGoogleLabels(t *testing.T) {
+	t.Parallel()
+	proj := renderer.ArtifactsProjection{Entries: []renderer.ArtifactProjectionEntry{entry("main.tf.json", jsonBodyGoogleLabels)}}
+	files := PlaceArtifacts(proj, terraformNodeCtxWithLabels(map[string]string{"hosting": "managed"}))
+
+	body := fileByPath(t, files, "main.tf.json")
+	var root map[string]any
+	if err := json.Unmarshal(body.Content, &root); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	labels := root["resource"].(map[string]any)["google_storage_bucket"].(map[string]any)["b"].(map[string]any)["labels"].(map[string]any)
+	if labels["hosting"] != "managed" {
+		t.Errorf("output label not merged into google labels; got %v", labels)
+	}
+}
+
+// A resource with neither tags nor labels is not taggable by local evidence: the
+// guest must not invent an attribute (that would emit invalid Terraform for a
+// non-taggable resource). The body emits byte-for-byte unchanged.
+func TestPlaceArtifacts_OutputLabels_NonTaggableResourceUntouched(t *testing.T) {
+	t.Parallel()
+	proj := renderer.ArtifactsProjection{Entries: []renderer.ArtifactProjectionEntry{entry("main.tf.json", jsonBody)}}
+	files := PlaceArtifacts(proj, terraformNodeCtxWithLabels(map[string]string{"hosting": "managed"}))
+
+	body := fileByPath(t, files, "main.tf.json")
+	if string(body.Content) != jsonBody {
+		t.Errorf("non-taggable resource body must emit verbatim; got:\n%s", body.Content)
+	}
+	if strings.Contains(string(body.Content), "hosting") {
+		t.Errorf("no tag attribute existed; nothing should be injected")
+	}
+}
+
+const jsonBodyStringTags = `{
+  "resource": {
+    "aws_db_instance": {
+      "prod-db": {
+        "tags": "${var.common_tags}"
+      }
+    }
+  }
+}
+`
+
+// A tags attribute whose value is an interpolation string (not an object) can't
+// be structurally merged; the block is skipped and the body emits verbatim.
+func TestPlaceArtifacts_OutputLabels_NonObjectTagsSkipped(t *testing.T) {
+	t.Parallel()
+	proj := renderer.ArtifactsProjection{Entries: []renderer.ArtifactProjectionEntry{entry("main.tf.json", jsonBodyStringTags)}}
+	files := PlaceArtifacts(proj, terraformNodeCtxWithLabels(map[string]string{"hosting": "managed"}))
+
+	body := fileByPath(t, files, "main.tf.json")
+	if string(body.Content) != jsonBodyStringTags {
+		t.Errorf("interpolation-valued tags must be left untouched; got:\n%s", body.Content)
+	}
+}
+
+// With no output labels declared, every .tf.json body emits byte-for-byte
+// unchanged (the no-op / non-regression guarantee).
+func TestPlaceArtifacts_OutputLabels_EmptyIsVerbatim(t *testing.T) {
+	t.Parallel()
+	proj := renderer.ArtifactsProjection{Entries: []renderer.ArtifactProjectionEntry{entry("main.tf.json", jsonBodyTaggable)}}
+	files := PlaceArtifacts(proj, terraformNodeCtx())
+	body := fileByPath(t, files, "main.tf.json")
+	if string(body.Content) != jsonBodyTaggable {
+		t.Errorf("no output labels => verbatim body; got:\n%s", body.Content)
+	}
+}
+
+// A native-HCL body never enters the JSON-tag path: it carries the prepended
+// provenance comment and no injected tag even when output labels are declared.
+func TestPlaceArtifacts_OutputLabels_NativeHCLUntagged(t *testing.T) {
+	t.Parallel()
+	proj := renderer.ArtifactsProjection{Entries: []renderer.ArtifactProjectionEntry{entry("main.tf", hclBody)}}
+	files := PlaceArtifacts(proj, terraformNodeCtxWithLabels(map[string]string{"hosting": "managed"}))
+	body := fileByPath(t, files, "main.tf")
+	if strings.TrimPrefix(string(body.Content), wantProvenanceComment) != hclBody {
+		t.Errorf("native-HCL body must stay verbatim (provenance comment + input), no tag injection")
+	}
+	if strings.Contains(string(body.Content), "hosting") {
+		t.Errorf("native-HCL body must not be tagged")
+	}
+}
+
+// Tag injection preserves byte-identity across independent placements.
+func TestPlaceArtifacts_OutputLabels_Deterministic(t *testing.T) {
+	t.Parallel()
+	proj := renderer.ArtifactsProjection{Entries: []renderer.ArtifactProjectionEntry{entry("main.tf.json", jsonBodyTaggable)}}
+	labels := map[string]string{"hosting": "managed", "example.io/team": "platform"}
+	a := PlaceArtifacts(proj, terraformNodeCtxWithLabels(labels))
+	b := PlaceArtifacts(proj, terraformNodeCtxWithLabels(labels))
+	if string(fileByPath(t, a, "main.tf.json").Content) != string(fileByPath(t, b, "main.tf.json").Content) {
+		t.Errorf("tag injection must be deterministic")
+	}
+}

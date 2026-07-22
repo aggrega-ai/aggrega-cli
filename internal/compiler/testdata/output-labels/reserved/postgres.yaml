@@ -1,0 +1,38 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: helm-postgres-synthesized-with-artifacts
+  version: "1.0.0"
+spec:
+  capability: helm
+  implements: core/datastore/postgres
+  outputLabels:
+    hosting: self-hosted
+    example.io/team: platform
+  provides:
+    host: "{{ .context.instance_id }}.svc.cluster.local"
+    service_port: "5432"
+  workload: |
+    apiVersion: aggrega.ai/v1alpha1
+    kind: Workload
+    replicas: {{ optional .infra `replicas` 1 }}
+    containers:
+      main:
+        image: postgres:15
+        ports:
+          db: 5432
+        variables:
+          POSTGRES_DB: "{{ .values.database_name }}"
+    services:
+      db:
+        type: ClusterIP
+        ports:
+          db: 5432
+  artifacts:
+    db-init.yaml: |
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: {{ .context.instance_id }}-init
+      data:
+        DATABASE: {{ .values.database_name }}

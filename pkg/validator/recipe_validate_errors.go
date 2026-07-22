@@ -42,6 +42,14 @@ var (
 	// exempts the Recipe from rule 5 — eval Recipes legitimately declare
 	// only `provides:` and have zero input kinds.
 	ErrRecipeEvalProviderConstraint = errors.New("recipe eval-provider constraint: input-kind fields are forbidden when provider is eval")
+
+	// ErrRecipeOutputLabelReservedNamespace: an outputLabels key uses a
+	// platform-reserved namespace (aggrega.ai/ or app.kubernetes.io/). Those
+	// prefixes are owned by the fixed provenance set; a recipe may not stamp
+	// them, which also keeps a validated output-label set disjoint from the
+	// provenance set. Engine-agnostic: enforced at load, before any provider
+	// consumes the labels.
+	ErrRecipeOutputLabelReservedNamespace = errors.New("recipe output-labels constraint: key uses a reserved namespace")
 )
 
 // RecipeValidationError carries the structured detail for a load-time or

@@ -40,6 +40,12 @@ func ProvenanceComponentID(nodeCtx NodeRenderContext) string {
 // so the partition and the component-id value are identical across all three.
 // (The compose engine keeps the whole set as service labels: its label values
 // are unconstrained and it has no annotation concept.)
+//
+// The returned set is the compiler-owned provenance keys plus the recipe's
+// author-declared output labels (nodeCtx.OutputLabels). The two are disjoint by
+// construction — load-time validation rejects any output-label key under the
+// reserved aggrega.ai/ or app.kubernetes.io/ prefixes — so the merge overwrites
+// nothing. Every emitting surface sorts keys, so merge order is not observable.
 func BuildAggregaProvenanceLabels(nodeCtx NodeRenderContext) map[string]string {
 	componentID := ProvenanceComponentID(nodeCtx)
 	labels := map[string]string{
@@ -60,6 +66,9 @@ func BuildAggregaProvenanceLabels(nodeCtx NodeRenderContext) map[string]string {
 	}
 	if nodeCtx.Provenance.Environment != "" {
 		labels["aggrega.ai/environment"] = nodeCtx.Provenance.Environment
+	}
+	for k, v := range nodeCtx.OutputLabels {
+		labels[k] = v
 	}
 	return labels
 }

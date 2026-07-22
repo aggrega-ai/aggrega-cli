@@ -1,0 +1,33 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: compose-api-synthesized
+  version: "1.0.0"
+spec:
+  capability: compose
+  implements: core/compute/api-server
+  outputLabels:
+    hosting: self-hosted
+    example.io/team: platform
+  provides:
+    host: "{{ .context.instance_id }}"
+    service_port: "{{ optional .infra `port` 8080 }}"
+  workload: |
+    apiVersion: aggrega.ai/v1alpha1
+    kind: Workload
+    replicas: {{ optional .infra `replicas` 1 }}
+    containers:
+      main:
+        image: api-server:latest
+        ports:
+          web: {{ optional .infra `port` 8080 }}
+        variables:
+          PORT: "{{ optional .infra `port` 8080 }}"
+          {{- range $k, $v := .context.inject.env }}
+          {{ $k }}: "{{ $v }}"
+          {{- end }}
+    services:
+      api:
+        type: ClusterIP
+        ports:
+          web: {{ optional .infra `port` 8080 }}

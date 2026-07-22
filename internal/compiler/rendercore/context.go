@@ -53,7 +53,14 @@ type NodeRenderContext struct {
 	// label-value rules. Empty means "use NodeID directly" — the default for
 	// regular component nodes whose NodeIDs are already alphanumeric.
 	LabelComponentID string
-	Provenance       ProvenanceContext
+	// OutputLabels are the recipe-author-declared labels (recipe.spec.outputLabels)
+	// stamped onto every object this node's rendered output produces. They ride
+	// the same rail as the fixed provenance labels: merged into the set
+	// [BuildAggregaProvenanceLabels] returns. Load-time validation guarantees the
+	// keys are disjoint from the compiler-owned provenance keyspace (no
+	// aggrega.ai/ or app.kubernetes.io/ key), so the merge never collides.
+	OutputLabels map[string]string
+	Provenance   ProvenanceContext
 	// YAMLIndent is the indentation width for artifacts rendered from this
 	// node (clamped to [2,9], default 2). Forwarded from RendererInput.
 	YAMLIndent int

@@ -157,7 +157,7 @@ func LoadManifestFromBytes(data []byte, path string) (*types.Manifest, error) {
 // using the reserved aggrega.ai/ prefix. First-violation-halt matches
 // existing Manifest-load patterns for shape-level rejections.
 func rejectReservedAnnotationBindings(man *types.Manifest, path string) error {
-	const reservedPrefix = "aggrega.ai/"
+	reservedPrefix := types.ReservedLabelPrefixAggregaAI
 	check := func(annotations *types.OrderedMap[types.AnnotationBinding]) error {
 		if annotations == nil {
 			return nil

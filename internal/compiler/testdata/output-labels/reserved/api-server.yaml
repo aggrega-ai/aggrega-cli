@@ -1,0 +1,39 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: helm-api-server-synthesized-with-artifacts
+  version: "1.0.0"
+spec:
+  capability: helm
+  implements: core/compute/api-server
+  outputLabels:
+    aggrega.ai/hosting: self-hosted
+    example.io/team: platform
+  provides:
+    host: "{{ .context.instance_id }}.svc.cluster.local"
+    service_port: "{{ optional .infra `port` 8080 }}"
+  workload: |
+    apiVersion: aggrega.ai/v1alpha1
+    kind: Workload
+    replicas: {{ optional .infra `replicas` 1 }}
+    containers:
+      main:
+        image: api-server:latest
+        ports:
+          web: {{ optional .infra `port` 8080 }}
+        variables:
+          PORT: "{{ optional .infra `port` 8080 }}"
+    services:
+      api:
+        type: ClusterIP
+        ports:
+          web: {{ optional .infra `port` 8080 }}
+  artifacts:
+    app-config.yaml: |
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: {{ .context.instance_id }}-app-config
+      data:
+        SERVICE: {{ .context.instance_id }}
+        PORT: "{{ .infra.port }}"

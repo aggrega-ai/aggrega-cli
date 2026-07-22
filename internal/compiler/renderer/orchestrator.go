@@ -464,6 +464,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		if recipe != nil {
 			nodeCtx.RecipeName = recipe.Metadata.Name
 			nodeCtx.RecipeVersion = recipe.Metadata.Version
+			nodeCtx.OutputLabels = recipe.Spec.OutputLabels
 		}
 		// Route the non-fatal advisories a provider guest raises while rendering
 		// this node into the per-node warnings accumulator, which the orchestrator
