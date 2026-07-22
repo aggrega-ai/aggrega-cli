@@ -42,7 +42,7 @@ import (
 // guards the loaded descriptor against, e.g. "mutator" or "policy"); export is
 // the single entry function the entity authors (the guest's own describe() must
 // declare it, so the publish-time cross-check passes). socketName is the plugin
-// coordinate <pluginType>/<name> (e.g. "mutator/tag-injector"); the entity's bare
+// coordinate <pluginType>/<name> (e.g. "governance/tag-injector"); the entity's bare
 // metadata.name is its leaf. pluginPath is the
 // pre-built fixture (resolved before any chdir). Returns the .wasm content digest
 // the consumer pins at pull.
@@ -311,16 +311,16 @@ func TestIntegration_ConfigSocketPluginPinning_RoundTrip(t *testing.T) {
 	configSocketFixtureCatalog(t, host)
 
 	const (
-		mutatorSocket     = "mutator/tag-injector"
-		denyPolicySocket  = "policy/deny-gate"
-		allowPolicySocket = "policy/admit-gate"
+		mutatorSocket     = "governance/tag-injector"
+		denyPolicySocket  = "governance/deny-gate"
+		allowPolicySocket = "governance/admit-gate"
 	)
-	mutatorDigest := publishSocketPluginEntity(t, host, mutatorSocket, "1.0.0", mutatorPath, "mutator", "mutate")
+	mutatorDigest := publishSocketPluginEntity(t, host, mutatorSocket, "1.0.0", mutatorPath, "governance", "mutate")
 	// The policy entities are published to the registry so the build can resolve
 	// them at their point of use, but their content digests are not asserted: a
 	// verdict-only policy socket is not recorded on the pinned lockfile axis.
-	publishSocketPluginEntity(t, host, denyPolicySocket, "1.0.0", denyPolicyPath, "policy", "validate")
-	publishSocketPluginEntity(t, host, allowPolicySocket, "1.0.0", allowPolicyPath, "policy", "validate")
+	publishSocketPluginEntity(t, host, denyPolicySocket, "1.0.0", denyPolicyPath, "governance", "validate")
+	publishSocketPluginEntity(t, host, allowPolicySocket, "1.0.0", allowPolicyPath, "governance", "validate")
 
 	// proofMutatorLabel is the value the mutator-proof fixture injects as a node
 	// label; the fixture recipe emits every node-label value into a compose
@@ -347,7 +347,7 @@ func TestIntegration_ConfigSocketPluginPinning_RoundTrip(t *testing.T) {
 	}
 
 	t.Run("mutator", func(t *testing.T) {
-		pluginsBlock := "plugins:\n  mutator:\n    - uri: " + mutatorSocket + ":1.0.0\n"
+		pluginsBlock := "plugins:\n  governance:\n    - uri: " + mutatorSocket + ":1.0.0\n      role: label-transform\n"
 		ws := writeConfigSocketWorkspace(t, host, pluginsBlock, true)
 		lf := pullAndLoadLock(t, ws)
 		assertSocketPinnedInLock(t, lf, host, mutatorSocket, mutatorDigest)
@@ -365,7 +365,7 @@ func TestIntegration_ConfigSocketPluginPinning_RoundTrip(t *testing.T) {
 	})
 
 	t.Run("policy_deny", func(t *testing.T) {
-		pluginsBlock := "plugins:\n  policy:\n    - uri: " + denyPolicySocket + ":1.0.0\n"
+		pluginsBlock := "plugins:\n  governance:\n    - uri: " + denyPolicySocket + ":1.0.0\n      role: ir-verdict\n"
 		ws := writeConfigSocketWorkspace(t, host, pluginsBlock, true)
 		// The policy socket is a verdict-only environment gate: it renders an
 		// accept/reject decision without altering the rendered bytes, so it is NOT
@@ -395,8 +395,8 @@ func TestIntegration_ConfigSocketPluginPinning_RoundTrip(t *testing.T) {
 
 	t.Run("both_sockets", func(t *testing.T) {
 		pluginsBlock := "plugins:\n" +
-			"  mutator:\n    - uri: " + mutatorSocket + ":1.0.0\n" +
-			"  policy:\n    - uri: " + allowPolicySocket + ":1.0.0\n"
+			"  governance:\n    - uri: " + mutatorSocket + ":1.0.0\n      role: label-transform\n" +
+			"    - uri: " + allowPolicySocket + ":1.0.0\n      role: ir-verdict\n"
 		ws := writeConfigSocketWorkspace(t, host, pluginsBlock, true)
 		lf := pullAndLoadLock(t, ws)
 		// The mutator shapes the rendered bytes, so it is pinned on both axes by the
@@ -418,7 +418,7 @@ func TestIntegration_ConfigSocketPluginPinning_RoundTrip(t *testing.T) {
 	})
 
 	t.Run("verdict_socket_not_pinned_no_drift", func(t *testing.T) {
-		pluginsBlock := "plugins:\n  policy:\n    - uri: " + denyPolicySocket + ":1.0.0\n"
+		pluginsBlock := "plugins:\n  governance:\n    - uri: " + denyPolicySocket + ":1.0.0\n      role: ir-verdict\n"
 		ws := writeConfigSocketWorkspace(t, host, pluginsBlock, true)
 		lf := pullAndLoadLock(t, ws)
 		// The pulled verdict gate is on neither pinned lockfile axis.
@@ -432,7 +432,7 @@ func TestIntegration_ConfigSocketPluginPinning_RoundTrip(t *testing.T) {
 		// Swapping the attached policy gate is a verdict-socket config change. Because
 		// a verdict socket is cache-not-pin — not drift-gated — the change is adopted
 		// at the next build without a re-pull and verify does NOT halt on drift.
-		changed := "plugins:\n  policy:\n    - uri: " + allowPolicySocket + ":1.0.0\n"
+		changed := "plugins:\n  governance:\n    - uri: " + allowPolicySocket + ":1.0.0\n      role: ir-verdict\n"
 		writeWorkspaceConfig(t, ws, "default_registry: \""+host+"\"\nauto_pull: true\noffline: false\n"+changed)
 		if err := pullRun(pullConfig{ReleasePath: "release.yaml", CatalogDirs: []string{std}, Verify: true}); err != nil {
 			t.Fatalf("verify halted after a policy config change; a verdict socket must not drift-gate: %v", err)

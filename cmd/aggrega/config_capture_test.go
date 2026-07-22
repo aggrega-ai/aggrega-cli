@@ -29,8 +29,9 @@ func writeGlobalConfig(t *testing.T, path, catalog string) {
 		"  providers:\n" +
 		"    - capability: helm\n" +
 		"      uri: oci://hub.aggrega.ai/plugin/provider/helm:1.0.0\n" +
-		"  mutator:\n" +
-		"    - uri: mutator/tag-injector:1.0.0\n" +
+		"  governance:\n" +
+		"    - uri: governance/tag-injector:1.0.0\n" +
+		"      role: label-transform\n" +
 		"registries:\n" +
 		"  - host: global-only.example.com\n"
 	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
@@ -75,7 +76,7 @@ func TestConfigCaptureMaterializesGlobalBindings(t *testing.T) {
 	body, _ := os.ReadFile(wsFile)
 	for _, want := range []string{
 		"oci://hub.aggrega.ai/plugin/provider/helm:1.0.0",
-		"mutator/tag-injector:1.0.0",
+		"governance/tag-injector:1.0.0",
 		catalog,
 	} {
 		if !strings.Contains(string(body), want) {
@@ -99,19 +100,20 @@ func TestConfigCaptureMaterializesGlobalBindings(t *testing.T) {
 	if uris := tc.Plugins.ProviderTargetURIs(); uris["helm"] != "oci://hub.aggrega.ai/plugin/provider/helm:1.0.0" {
 		t.Errorf("provider binding not yielded by tree-only resolve: %+v", tc.Plugins.Providers)
 	}
-	if len(tc.Plugins.Mutator) != 1 || tc.Plugins.Mutator[0].URI != "mutator/tag-injector:1.0.0" {
-		t.Errorf("mutator attachment not yielded by tree-only resolve: %+v", tc.Plugins.Mutator)
+	if len(tc.Plugins.Governance) != 1 || tc.Plugins.Governance[0].URI != "governance/tag-injector:1.0.0" {
+		t.Errorf("governance attachment not yielded by tree-only resolve: %+v", tc.Plugins.Governance)
 	}
 	if len(tc.Workspace.CatalogDirs) != 1 || tc.Workspace.CatalogDirs[0] != catalog {
 		t.Errorf("catalog_dirs not yielded by tree-only resolve: %+v", tc.Workspace.CatalogDirs)
 	}
 }
 
-// TestConfigCaptureScopeByTier proves the socket scope: a global-only gate
-// socket (policy/linter/importer) is frozen only when --all-plugins is set, while
-// the byte-determining sockets (provider bindings and the mutator) are always
-// frozen. The default keeps a workspace portable for byte-identical output
-// without dragging the environment-varying gates along.
+// TestConfigCaptureScopeByTier proves the socket scope: global-only verdict
+// attachments (a verdict governance role, linter, importer) are frozen only when
+// --all-plugins is set, while the byte-determining attachments (provider bindings
+// and the label-transform governance attachment) are always frozen. The default
+// keeps a workspace portable for byte-identical output without dragging the
+// environment-varying gates along.
 func TestConfigCaptureScopeByTier(t *testing.T) {
 	t.Parallel()
 
@@ -122,10 +124,11 @@ func TestConfigCaptureScopeByTier(t *testing.T) {
 		"  providers:\n" +
 		"    - capability: helm\n" +
 		"      uri: oci://h/provider-helm:1\n" +
-		"  mutator:\n" +
+		"  governance:\n" +
 		"    - uri: oci://h/mutator-plugin:1\n" +
-		"  policy:\n" +
+		"      role: label-transform\n" +
 		"    - uri: oci://h/policy-plugin:1\n" +
+		"      role: ir-verdict\n" +
 		"  linter:\n" +
 		"    - uri: oci://h/linter-plugin:1\n" +
 		"  importer:\n" +

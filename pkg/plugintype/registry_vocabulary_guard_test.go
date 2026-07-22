@@ -263,7 +263,7 @@ func describePluginTypeConstRefs(t *testing.T) map[string]string {
 
 // socketVarPluginTypeRefs parses pkg/workspaceconfig/socket.go and returns, keyed
 // by var name, the plugintype selector each Socket* var routes through
-// socketName (e.g. SocketMutator -> "Mutator"). A Socket* var whose value does
+// socketName (e.g. SocketGovernance -> "Governance"). A Socket* var whose value does
 // not call socketName(plugintype.*) — a re-spelled socket-name literal, say —
 // fails the test here, which is the regression guard for the socket-name
 // vocabulary.

@@ -529,7 +529,7 @@ func pullRun(cfg pullConfig) error {
 	// attachment set / order / export function is recorded for the lockfile and
 	// build reconstructs it from there rather than from live config — keeping
 	// build output invariant to a plugins.mutator change made after the pull.
-	mutatorAttachments, err := resolveMutatorAttachments(wsCfg.Plugins.Mutator, lazyView)
+	mutatorAttachments, err := resolveMutatorAttachments(wsCfg.Plugins.TransformGovernanceRefs(), lazyView)
 	if err != nil {
 		return err
 	}
@@ -945,10 +945,11 @@ func resolveMutatorAttachments(refs []workspaceconfig.PluginRef, lazyView *catal
 // would halt.
 func cacheVerdictSocketPlugins(ctx context.Context, cfg workspaceconfig.Config, lookup closure.Lookup, lazyView *catalog.LazyLookup, workspaceRoot, cacheDir string, targetFor pullverify.TargetFor, diagOut io.Writer) error {
 	for _, socket := range cfg.PluginSockets() {
-		if socket.Socket.Tier() != workspaceconfig.SocketTierVerdict {
+		verdictRefs := socket.RefsByTier(workspaceconfig.SocketTierVerdict)
+		if len(verdictRefs) == 0 {
 			continue
 		}
-		for _, ref := range socket.Refs {
+		for _, ref := range verdictRefs {
 			if ref.URI == "" {
 				continue
 			}

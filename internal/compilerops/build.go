@@ -55,20 +55,21 @@ func BuildToBuffer(ctx context.Context, in BuildInputs, opts pipeline.Options) (
 
 	// Reconstruct the byte-determining plugin selections from the LOCKFILE, never
 	// the workspace config, so rendered output is invariant to a plugins.providers
-	// or plugins.mutator change made after the pull (adopted only on the next
-	// pull). Provider resolution reads the pinned bindings — a federated catalog
-	// with more than one plugin serving a capability is disambiguated by the
-	// binding, so an ambiguous target resolves rather than halting. The mutator
-	// override is unconditional under a lockfile — an empty pinned set runs no
-	// mutator regardless of live config. wsCfg is a per-call value copy and
-	// catLookup is a value struct, so both rewrites touch only this call's
-	// pipeline inputs, never the caller's config or the shared view.
+	// or plugins.governance transform change made after the pull (adopted only on
+	// the next pull). Provider resolution reads the pinned bindings — a federated
+	// catalog with more than one plugin serving a capability is disambiguated by
+	// the binding, so an ambiguous target resolves rather than halting. The
+	// label-transform override is unconditional under a lockfile — an empty pinned
+	// set runs no transform regardless of live config — while the verdict
+	// attachments shape no output and are read live and composed back. wsCfg is a
+	// per-call value copy and catLookup is a value struct, so both rewrites touch
+	// only this call's pipeline inputs, never the caller's config or the shared view.
 	if in.Lockfile != nil {
 		bindings := lockfile.ProviderBindings(in.Lockfile)
 		catLookup.ProviderPlugin = func(ref string) (types.Plugin, bool, error) {
 			return view.ProviderPluginForTarget(ref, bindings)
 		}
-		wsCfg.Plugins.Mutator = lockfile.MutatorAttachments(in.Lockfile)
+		wsCfg.Plugins.Governance = append(lockfile.MutatorAttachments(in.Lockfile), wsCfg.Plugins.VerdictGovernanceRefs()...)
 	}
 
 	return pipeline.RunPipeline(

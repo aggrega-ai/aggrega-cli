@@ -189,13 +189,14 @@ func TestPluginAddProviderGlobalOverride(t *testing.T) {
 // TestPluginAddConfigSocketDefaultsToWorkspace proves a config-socket attachment
 // — build-scoped — defaults to the workspace config file.
 func TestPluginAddConfigSocketDefaultsToWorkspace(t *testing.T) {
-	withSearchTarget(t, fakeRepoLister{repos: []string{"plugin/mutator/tag-injector"}}, nil)
+	withSearchTarget(t, fakeRepoLister{repos: []string{"plugin/governance/tag-injector"}}, nil)
 	withTagLister(t, []string{"1.0.0"})
 	rw := resolvedTestWorkspace(t)
 	var out bytes.Buffer
 
 	if err := pluginAddRun(context.Background(), pluginAddConfig{
-		Socket: "mutator",
+		Socket: "governance",
+		Role:   "label-transform",
 		Query:  "tag-injector",
 		ws:     rw,
 		Out:    &out,

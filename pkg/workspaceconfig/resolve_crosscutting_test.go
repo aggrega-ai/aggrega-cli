@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/pkg/plugintype"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
@@ -17,7 +18,7 @@ import (
 // require — halts resolution loudly. The attached plugin serves no capability,
 // so a capability lookup would match nothing; catching it at load turns a late,
 // opaque resolve miss into a legible diagnostic that names the socket and the
-// offending capability. Each of the four sockets is covered so every branch of
+// offending capability. Each of the three sockets is covered so every branch of
 // the fixed-order walk is exercised.
 func TestResolveCapabilityOnCrossCuttingSocketHalts(t *testing.T) {
 	t.Parallel()
@@ -25,8 +26,7 @@ func TestResolveCapabilityOnCrossCuttingSocketHalts(t *testing.T) {
 		socket string
 		yaml   string
 	}{
-		{"mutator", "workspace: {}\nplugins:\n  mutator:\n    - capability: helm\n"},
-		{"policy", "workspace: {}\nplugins:\n  policy:\n    - capability: helm\n"},
+		{"governance", "workspace: {}\nplugins:\n  governance:\n    - capability: helm\n"},
 		{"linter", "workspace: {}\nplugins:\n  linter:\n    - capability: compose\n"},
 		{"importer", "workspace: {}\nplugins:\n  importer:\n    - capability: compose\n"},
 	}
@@ -65,10 +65,10 @@ func TestResolveCapabilityOnCrossCuttingSocketViaAppendHalts(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
 	write(t, filepath.Join(root, ".aggrega-config.yaml"),
-		"workspace: {}\nplugins:\n  policy:\n    - uri: ./base-policy.wasm\n")
+		"workspace: {}\nplugins:\n  governance:\n    - uri: ./base-governance.wasm\n      role: ir-verdict\n")
 	child := filepath.Join(root, "svc")
 	write(t, filepath.Join(child, ".aggrega-config.yaml"),
-		"plugins:\n  policy_append:\n    - capability: helm\n")
+		"plugins:\n  governance_append:\n    - capability: helm\n")
 
 	_, err := workspaceconfig.Resolve(child, "")
 	if err == nil {
@@ -77,7 +77,7 @@ func TestResolveCapabilityOnCrossCuttingSocketViaAppendHalts(t *testing.T) {
 	if !errors.Is(err, workspaceconfig.ErrCapabilityOnCrossCuttingSocket) {
 		t.Fatalf("append-contributed halt must be ErrCapabilityOnCrossCuttingSocket; got: %v", err)
 	}
-	if !strings.Contains(err.Error(), "policy") || !strings.Contains(err.Error(), "helm") {
+	if !strings.Contains(err.Error(), "governance") || !strings.Contains(err.Error(), "helm") {
 		t.Errorf("error must name the socket and capability; got: %v", err)
 	}
 }
@@ -89,14 +89,14 @@ func TestResolveUriAttachedCrossCuttingSocketResolves(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	write(t, filepath.Join(dir, ".aggrega-config.yaml"),
-		"workspace: {}\nplugins:\n  mutator:\n    - uri: ./m.wasm\n  importer:\n    - uri: oci://h/importer:1\n")
+		"workspace: {}\nplugins:\n  governance:\n    - uri: ./m.wasm\n      role: label-transform\n  importer:\n    - uri: oci://h/importer:1\n")
 
 	rw, err := workspaceconfig.Resolve(dir, "")
 	if err != nil {
 		t.Fatalf("Resolve over uri-attached cross-cutting sockets: %v", err)
 	}
-	if got := len(rw.Config().Plugins.Mutator); got != 1 {
-		t.Errorf("mutator list: got %d, want 1", got)
+	if got := len(rw.Config().Plugins.Governance); got != 1 {
+		t.Errorf("governance list: got %d, want 1", got)
 	}
 	if got := len(rw.Config().Plugins.Importer); got != 1 {
 		t.Errorf("importer list: got %d, want 1", got)
@@ -190,7 +190,7 @@ func TestResolveInertFieldOnProviderSocketViaAppendHalts(t *testing.T) {
 }
 
 // TestResolveFunctionAndWithOnConsumingSocketsResolve proves non-regression: the
-// sockets that DO consume `function:` and `with:` (mutator, policy, linter) are
+// sockets that DO consume `function:` and `with:` (governance, linter) are
 // unaffected by the provider-socket inert-field rejection. A provider drives a
 // fixed export set so those fields are inert on it, but the cross-cutting
 // sockets have real referents for both, so a binding carrying them resolves
@@ -200,19 +200,20 @@ func TestResolveFunctionAndWithOnConsumingSocketsResolve(t *testing.T) {
 	dir := t.TempDir()
 	write(t, filepath.Join(dir, ".aggrega-config.yaml"),
 		"workspace: {}\nplugins:\n"+
-			"  mutator:\n    - uri: oci://h/mut:1\n      function: custom_mutate\n"+
-			"  policy:\n    - uri: ./pol.wasm\n      with:\n        settings:\n          strict: true\n"+
+			"  governance:\n"+
+			"    - uri: oci://h/mut:1\n      role: label-transform\n      function: custom_mutate\n"+
+			"    - uri: ./pol.wasm\n      role: ir-verdict\n      with:\n        settings:\n          strict: true\n"+
 			"  linter:\n    - uri: oci://h/lint:1\n      function: custom_lint\n")
 
 	rw, err := workspaceconfig.Resolve(dir, "")
 	if err != nil {
 		t.Fatalf("Resolve over consuming sockets carrying function/with: %v", err)
 	}
-	if got := rw.Config().Plugins.Mutator[0].Function; got != "custom_mutate" {
-		t.Errorf("mutator function must survive: got %q", got)
+	if got := rw.Config().Plugins.GovernanceRefsForRole(plugintype.RoleLabelTransform)[0].Function; got != "custom_mutate" {
+		t.Errorf("label-transform function must survive: got %q", got)
 	}
-	if rw.Config().Plugins.Policy[0].With == nil {
-		t.Error("policy with must survive: got nil")
+	if rw.Config().Plugins.GovernanceRefsForRole(plugintype.RoleIRVerdict)[0].With == nil {
+		t.Error("verdict with must survive: got nil")
 	}
 	if got := rw.Config().Plugins.Linter[0].Function; got != "custom_lint" {
 		t.Errorf("linter function must survive: got %q", got)

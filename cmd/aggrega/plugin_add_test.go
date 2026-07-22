@@ -94,13 +94,14 @@ func TestPluginAddRun_ProviderRequiresCapability(t *testing.T) {
 // prefix to the bare entity identity, pins the latest non-pre-release published
 // version, and writes a schema-valid plugins.<socket> entry.
 func TestPluginAddRun_ConfigSocket(t *testing.T) {
-	withSearchTarget(t, fakeRepoLister{repos: []string{"plugin/mutator/tag-injector"}}, nil)
+	withSearchTarget(t, fakeRepoLister{repos: []string{"plugin/governance/tag-injector"}}, nil)
 	withTagLister(t, []string{"1.0.0", "1.2.0", "2.0.0-rc1"})
 	rw := resolvedTestWorkspace(t)
 	var out bytes.Buffer
 
 	if err := pluginAddRun(context.Background(), pluginAddConfig{
-		Socket: "mutator",
+		Socket: "governance",
+		Role:   "label-transform",
 		Query:  "tag-injector",
 		ws:     rw,
 		Out:    &out,
@@ -112,13 +113,16 @@ func TestPluginAddRun_ConfigSocket(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolve written config: %v", err)
 	}
-	got := reread.Config().Plugins.Mutator
+	got := reread.Config().Plugins.Governance
 	if len(got) != 1 {
-		t.Fatalf("want exactly one mutator attachment; got %+v", got)
+		t.Fatalf("want exactly one governance attachment; got %+v", got)
 	}
 	// 2.0.0-rc1 is pre-release and excluded; 1.2.0 is the highest stable tag.
-	if got[0].URI != "mutator/tag-injector:1.2.0" {
-		t.Errorf("attachment URI = %q; want mutator/tag-injector:1.2.0", got[0].URI)
+	if got[0].URI != "governance/tag-injector:1.2.0" {
+		t.Errorf("attachment URI = %q; want governance/tag-injector:1.2.0", got[0].URI)
+	}
+	if got[0].Role != "label-transform" {
+		t.Errorf("attachment role = %q; want label-transform", got[0].Role)
 	}
 }
 
@@ -126,10 +130,10 @@ func TestPluginAddRun_ConfigSocket(t *testing.T) {
 // resolved plugin repository carries no published version tag, rather than
 // writing an unpinned attachment.
 func TestPluginAddRun_ConfigSocketNoVersion(t *testing.T) {
-	withSearchTarget(t, fakeRepoLister{repos: []string{"plugin/policy/deny-gate"}}, nil)
+	withSearchTarget(t, fakeRepoLister{repos: []string{"plugin/governance/deny-gate"}}, nil)
 	withTagLister(t, []string{"latest"}) // no strict-SemVer tag
 	rw := resolvedTestWorkspace(t)
-	err := pluginAddRun(context.Background(), pluginAddConfig{Socket: "policy", Query: "deny-gate", ws: rw, Out: &bytes.Buffer{}})
+	err := pluginAddRun(context.Background(), pluginAddConfig{Socket: "governance", Role: "ir-verdict", Query: "deny-gate", ws: rw, Out: &bytes.Buffer{}})
 	if err == nil || !strings.Contains(err.Error(), "no published version") {
 		t.Fatalf("want a no-published-version error; got %v", err)
 	}
@@ -150,11 +154,11 @@ func TestPluginAddRun_UnknownType(t *testing.T) {
 // than guessing.
 func TestPluginAddRun_AmbiguousQuery(t *testing.T) {
 	withSearchTarget(t, fakeRepoLister{repos: []string{
-		"plugin/mutator/tag-injector",
-		"plugin/mutator/tag-rewriter",
+		"plugin/governance/tag-injector",
+		"plugin/governance/tag-rewriter",
 	}}, nil)
 	rw := resolvedTestWorkspace(t)
-	err := pluginAddRun(context.Background(), pluginAddConfig{Socket: "mutator", Query: "tag", ws: rw, Out: &bytes.Buffer{}})
+	err := pluginAddRun(context.Background(), pluginAddConfig{Socket: "governance", Role: "label-transform", Query: "tag", ws: rw, Out: &bytes.Buffer{}})
 	if err == nil || !strings.Contains(err.Error(), "narrow the query") {
 		t.Fatalf("want an ambiguity error; got %v", err)
 	}
@@ -217,7 +221,8 @@ func TestPluginAddRun_CLIInstallsViaSearchResolve(t *testing.T) {
 func TestPluginAddRun_CapabilityFlagsRejectedOffCLI(t *testing.T) {
 	rw := resolvedTestWorkspace(t)
 	err := pluginAddRun(context.Background(), pluginAddConfig{
-		Socket:    "mutator",
+		Socket:    "governance",
+		Role:      "label-transform",
 		Query:     "x",
 		AssumeYes: true,
 		ws:        rw,
@@ -234,7 +239,7 @@ func TestPluginAddRun_CapabilityFlagsRejectedOffCLI(t *testing.T) {
 func TestResolveLatestPluginVersion_IndexDefault(t *testing.T) {
 	rw := resolvedTestWorkspace(t)
 	const host = "hub.aggrega.ai"
-	const repoPath = "plugin/mutator/tag-injector"
+	const repoPath = "plugin/governance/tag-injector"
 	writeIndexFixture(t, rw.Root(), rw.Config().ResolvedArtifactCacheDir(), host, RegistryIndex{
 		Host: host,
 		Records: []IndexRecord{{
@@ -284,7 +289,7 @@ func TestResolveLatestPluginVersion_OfflineNoIndex(t *testing.T) {
 	}
 	t.Cleanup(func() { pluginRepoTagLister = prev })
 
-	_, err = resolveLatestPluginVersion(context.Background(), rw, "hub.aggrega.ai", "plugin/mutator/tag-injector")
+	_, err = resolveLatestPluginVersion(context.Background(), rw, "hub.aggrega.ai", "plugin/governance/tag-injector")
 	if err == nil || !strings.Contains(err.Error(), "registry update") {
 		t.Fatalf("want a loud offline error pointing at 'registry update'; got %v", err)
 	}
@@ -293,12 +298,12 @@ func TestResolveLatestPluginVersion_OfflineNoIndex(t *testing.T) {
 // TestResolveSinglePluginRepo_ExactNameWins proves that when several plugins
 // share a substring, an exact plugin-name (final segment) match is selected.
 func TestResolveSinglePluginRepo_ExactNameWins(t *testing.T) {
-	matches := []string{"plugin/mutator/tag", "plugin/mutator/tag-injector"}
-	got, err := resolveSinglePluginRepo(matches, "tag", "mutator")
+	matches := []string{"plugin/governance/tag", "plugin/governance/tag-injector"}
+	got, err := resolveSinglePluginRepo(matches, "tag", "governance")
 	if err != nil {
 		t.Fatalf("resolveSinglePluginRepo: %v", err)
 	}
-	if got != "plugin/mutator/tag" {
-		t.Errorf("exact-name match = %q; want plugin/mutator/tag", got)
+	if got != "plugin/governance/tag" {
+		t.Errorf("exact-name match = %q; want plugin/governance/tag", got)
 	}
 }

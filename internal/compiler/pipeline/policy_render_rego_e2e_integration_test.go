@@ -19,6 +19,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/topology"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
+	"github.com/aggrega-ai/aggrega-cli/pkg/plugintype"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
@@ -120,8 +121,9 @@ func regorusRenderPolicyInputs(t *testing.T, rego string) (pipeline.Inputs, reso
 	if err := os.WriteFile(srcPath, []byte(rego), 0o644); err != nil {
 		t.Fatalf("write rego: %v", err)
 	}
-	inputs.WorkspaceConfig.Plugins.Policy = []workspaceconfig.PluginRef{{
+	inputs.WorkspaceConfig.Plugins.Governance = []workspaceconfig.PluginRef{{
 		URI:  "proof://policy-regorus-render",
+		Role: plugintype.RoleRenderVerdict,
 		With: &workspaceconfig.PluginRefWith{Sources: []string{srcPath}},
 	}}
 	inputs.PluginPathLookup = fixtureSocketLookup(t, buildLookup, map[string]string{

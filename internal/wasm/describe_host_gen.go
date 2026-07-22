@@ -21,7 +21,7 @@ import (
 type PluginDescriptor struct {
 	// AbiVersion The plugin ABI the guest binds against. The host accepts exactly this version; a guest built against any other ABI is refused at load rather than mis-invoked at dispatch.
 	AbiVersion string `json:"abi_version" yaml:"abi_version"`
-	// PluginType The plugin's kind. It selects the minimum-export rule the host validates and, together with the export name, the default input-delivery pattern.
+	// PluginType The plugin's kind. It selects the minimum-export rule the host validates and, together with the export name, the default input-delivery pattern. A governance plugin serves the build-pipeline transform and verdict roles; the role it is attached at — not its kind — fixes what it may emit.
 	PluginType string `json:"plugin_type" yaml:"plugin_type"`
 	// Capabilities What the plugin serves, interpreted per plugin type: for a provider, the render-engine capability names (such as helm or compose) whose output shape it renders; for a feature-recipe-pipeline step, the provider capabilities its step is compatible with. The cross-cutting sockets leave it empty. Entries are in declared order and are an explicit, tested-compatibility claim. An absent or empty list declares no capability claim.
 	Capabilities []string `json:"capabilities,omitempty" yaml:"capabilities,omitempty"`
@@ -33,8 +33,6 @@ type PluginDescriptor struct {
 	Description string `json:"description,omitempty" yaml:"description,omitempty"`
 	// Commands The top-level aggrega command verbs a CLI plugin contributes, each with its own short-help line. One CLI plugin may contribute several commands; the host registers one command per entry and routes the resolved command name to the guest at invocation. A non-CLI plugin leaves it empty.
 	Commands []PluginCLICommand `json:"commands,omitempty" yaml:"commands,omitempty"`
-	// Stage The compilation stage a policy plugin evaluates at: ir evaluates the provider-agnostic IR graph, render evaluates the rendered provider-native artifacts. It is meaningful for the policy plugin type only; an absent stage defaults to ir. Other plugin types leave it empty.
-	Stage string `json:"stage,omitempty" yaml:"stage,omitempty"`
 	// SettingsSchema An optional JSON Schema document a plugin declares to type the operator-supplied settings its attachment carries. When present, the host compiles it at load and validates the attachment's settings against it at dispatch before invoking the plugin; settings that do not conform halt the build. When absent, the plugin declares no shape and settings pass through verbatim. The schema is the plugin's own free-form declaration; the host runs generic JSON Schema validation against it and does not interpret the settings' meaning.
 	SettingsSchema json.RawMessage `json:"settings_schema,omitempty" yaml:"settings_schema,omitempty"`
 	// Metadata Optional authorship and build-provenance information. It carries no behavioral contract — the host neither validates nor acts on it.
@@ -239,14 +237,6 @@ func (t PluginDescriptor) MarshalJSON() ([]byte, error) {
 		}
 		buf.WriteByte(']')
 	}
-	if t.Stage != "" {
-		if !first {
-			buf.WriteByte(',')
-		}
-		first = false
-		buf.WriteString("\"stage\":")
-		writeJSONString(&buf, t.Stage)
-	}
 	if len(t.SettingsSchema) != 0 {
 		if !first {
 			buf.WriteByte(',')
@@ -367,12 +357,6 @@ func (t *PluginDescriptor) UnmarshalJSON(data []byte) error {
 			}
 			if err := expectDelim(dec, ']'); err != nil {
 				return err
-			}
-		case "stage":
-			if s, err := readString(dec); err != nil {
-				return err
-			} else {
-				t.Stage = s
 			}
 		case "settings_schema":
 			if raw, err := readRaw(dec, data); err != nil {

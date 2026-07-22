@@ -16,6 +16,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
+	"github.com/aggrega-ai/aggrega-cli/pkg/plugintype"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
@@ -247,8 +248,8 @@ func TestServeByteIdenticalSingleProviderRender(t *testing.T) {
 		return res.Artifacts
 	}
 
-	hermetic := render(lf)  // provider resolution reads the lockfile bindings
-	byName := render(nil)   // provider resolution falls to by-name (pre-change path)
+	hermetic := render(lf) // provider resolution reads the lockfile bindings
+	byName := render(nil)  // provider resolution falls to by-name (pre-change path)
 
 	if len(hermetic) == 0 {
 		t.Fatal("render produced no artifacts; the byte-identity assertion would be vacuous")
@@ -301,9 +302,9 @@ func TestServeMutatorConfigInvariance(t *testing.T) {
 			t.Fatalf("ResolveClosure: %v", cerr)
 		}
 		wsCfg := srv.wsConfig
-		// A live-config mutator whose URI cannot resolve: if the pipeline reads it,
-		// Step 2b halts on the unresolvable plugin.
-		wsCfg.Plugins.Mutator = []workspaceconfig.PluginRef{{URI: "bogus://unresolvable-mutator"}}
+		// A live-config label-transform governance attachment whose URI cannot
+		// resolve: if the pipeline reads it, Step 2b halts on the unresolvable plugin.
+		wsCfg.Plugins.Governance = []workspaceconfig.PluginRef{{URI: "bogus://unresolvable-mutator", Role: plugintype.RoleLabelTransform}}
 		_, err := compilerops.BuildToBuffer(context.Background(), compilerops.BuildInputs{
 			View:                             view,
 			Resolved:                         resolved,

@@ -113,12 +113,12 @@ spec:
         variables:
           NODE_LABELS: "{{ range $k, $v := .context.labels }}{{ $v }};{{ end }}"
 `)
-	writeFixtureEntity(t, catalogDir, "plugin/mutator/tag-injector/1.0.0/plugin.yaml", `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureEntity(t, catalogDir, "plugin/governance/tag-injector/1.0.0/plugin.yaml", `apiVersion: aggrega.ai/v1alpha1
 kind: Plugin
 metadata:
   name: tag-injector
   version: "1.0.0"
-  pluginType: mutator
+  pluginType: governance
 spec:
   abiVersion: v1alpha1
   exports:
@@ -129,8 +129,8 @@ spec:
 	// plugin.yaml in the catalog directory the indexer maps into
 	// PluginColocatedDirs. The leaf is the plugin coordinate's version-stripped
 	// final segment.
-	colocatedDir := filepath.Join(catalogDir, "plugin", "mutator", "tag-injector", "1.0.0")
-	leaf := pluginpath.PluginLeaf("mutator/tag-injector")
+	colocatedDir := filepath.Join(catalogDir, "plugin", "governance", "tag-injector", "1.0.0")
+	leaf := pluginpath.PluginLeaf("governance/tag-injector")
 	if err := os.WriteFile(filepath.Join(colocatedDir, leaf), mutatorBytes, 0o644); err != nil {
 		t.Fatalf("write colocated mutator: %v", err)
 	}
@@ -167,13 +167,13 @@ func TestMutatorSocket_BuildIsInvariantToConfigAfterPull(t *testing.T) {
 	catDirs := []string{catalogDir, standardCatalogDir(t)}
 
 	const (
-		mutatorSocket     = "mutator/tag-injector"
+		mutatorSocket     = "governance/tag-injector"
 		proofMutatorLabel = "mutator-proof"
 	)
 
 	// Pull with the mutator attached (default mutate export). The pull pins the
 	// attachment coordinate + function into the lockfile's mutators section.
-	rwPull := resolveLocalWorkspace(t, root, "plugins:\n  mutator:\n    - uri: "+mutatorSocket+":1.0.0\n")
+	rwPull := resolveLocalWorkspace(t, root, "plugins:\n  governance:\n    - uri: "+mutatorSocket+":1.0.0\n      role: label-transform\n")
 	releasePath := filepath.Join(root, "release.yaml")
 	if err := pullRun(pullConfig{ReleasePath: releasePath, CatalogDirs: catDirs, ws: rwPull, DiagOut: os.Stderr, Out: os.Stderr, diag: buildDiagOptions{quiet: true}}); err != nil {
 		t.Fatalf("pull (mutator attached): %v", err)
@@ -207,7 +207,7 @@ func TestMutatorSocket_BuildIsInvariantToConfigAfterPull(t *testing.T) {
 	// runtime function read live, the build would call the bogus export and halt;
 	// because it is read from the lockfile, the build runs the pinned mutate
 	// export and produces byte-identical output.
-	rwFlipped := resolveLocalWorkspace(t, root, "plugins:\n  mutator:\n    - uri: "+mutatorSocket+":1.0.0\n      function: does-not-exist\n")
+	rwFlipped := resolveLocalWorkspace(t, root, "plugins:\n  governance:\n    - uri: "+mutatorSocket+":1.0.0\n      role: label-transform\n      function: does-not-exist\n")
 	out2 := filepath.Join(root, "out2")
 	if err := dispatchBuildWithDiag(rwFlipped, releasePath, catDirs, false, buildDiagOptions{quiet: true}, buildRunOptions{outDir: out2}, os.Stderr, os.Stderr); err != nil {
 		t.Fatalf("build 2 (config function flipped, no re-pull): %v; build must read the pinned attachment, not the config", err)

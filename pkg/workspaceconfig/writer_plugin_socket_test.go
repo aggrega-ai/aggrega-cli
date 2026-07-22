@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/aggrega-ai/aggrega-cli/pkg/plugintype"
 )
 
 // TestUpsertPluginSocketRef_PreservesExistingContent proves the config-socket
@@ -24,7 +26,7 @@ default_registry: hub.aggrega.ai
 		t.Fatalf("seed: %v", err)
 	}
 
-	if err := UpsertPluginSocketRef(path, "mutator", "mutator/tag-injector:1.0.0"); err != nil {
+	if err := UpsertPluginSocketRef(path, "governance", "governance/tag-injector:1.0.0", plugintype.RoleLabelTransform); err != nil {
 		t.Fatalf("UpsertPluginSocketRef (add): %v", err)
 	}
 
@@ -37,31 +39,31 @@ default_registry: hub.aggrega.ai
 	if cfg.DefaultRegistry != "hub.aggrega.ai" || !cfg.Offline {
 		t.Errorf("existing keys not preserved: default_registry=%q offline=%v", cfg.DefaultRegistry, cfg.Offline)
 	}
-	if len(cfg.Plugins.Mutator) != 1 || cfg.Plugins.Mutator[0].URI != "mutator/tag-injector:1.0.0" {
-		t.Fatalf("attachment not written; got %+v", cfg.Plugins.Mutator)
+	if len(cfg.Plugins.Governance) != 1 || cfg.Plugins.Governance[0].URI != "governance/tag-injector:1.0.0" {
+		t.Fatalf("attachment not written; got %+v", cfg.Plugins.Governance)
 	}
 
 	// Idempotent: re-adding the identical URI must not duplicate it.
-	if err := UpsertPluginSocketRef(path, "mutator", "mutator/tag-injector:1.0.0"); err != nil {
+	if err := UpsertPluginSocketRef(path, "governance", "governance/tag-injector:1.0.0", plugintype.RoleLabelTransform); err != nil {
 		t.Fatalf("UpsertPluginSocketRef (re-add): %v", err)
 	}
 	rw, err = Resolve(dir, "")
 	if err != nil {
 		t.Fatalf("resolve after re-add: %v", err)
 	}
-	if got := rw.Config().Plugins.Mutator; len(got) != 1 {
+	if got := rw.Config().Plugins.Governance; len(got) != 1 {
 		t.Errorf("re-adding the same URI must not duplicate it; got %+v", got)
 	}
 
 	// A distinct URI appends a second attachment.
-	if err := UpsertPluginSocketRef(path, "mutator", "mutator/other:2.0.0"); err != nil {
+	if err := UpsertPluginSocketRef(path, "governance", "governance/other:2.0.0", plugintype.RoleLabelTransform); err != nil {
 		t.Fatalf("UpsertPluginSocketRef (append distinct): %v", err)
 	}
 	rw, err = Resolve(dir, "")
 	if err != nil {
 		t.Fatalf("resolve after append: %v", err)
 	}
-	if got := rw.Config().Plugins.Mutator; len(got) != 2 {
+	if got := rw.Config().Plugins.Governance; len(got) != 2 {
 		t.Fatalf("a distinct URI must append; got %+v", got)
 	}
 }
@@ -71,15 +73,15 @@ default_registry: hub.aggrega.ai
 func TestUpsertPluginSocketRef_CreatesMissingFile(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, ConfigFilename)
-	if err := UpsertPluginSocketRef(path, "policy", "policy/deny-gate:1.0.0"); err != nil {
+	if err := UpsertPluginSocketRef(path, "governance", "governance/deny-gate:1.0.0", plugintype.RoleIRVerdict); err != nil {
 		t.Fatalf("UpsertPluginSocketRef: %v", err)
 	}
 	rw, err := Resolve(dir, "")
 	if err != nil {
 		t.Fatalf("resolve created file: %v", err)
 	}
-	got := rw.Config().Plugins.Policy
-	if len(got) != 1 || got[0].URI != "policy/deny-gate:1.0.0" {
+	got := rw.Config().Plugins.Governance
+	if len(got) != 1 || got[0].URI != "governance/deny-gate:1.0.0" {
 		t.Fatalf("attachment not written to fresh file; got %+v", got)
 	}
 }
@@ -90,7 +92,7 @@ func TestUpsertPluginSocketRef_CreatesMissingFile(t *testing.T) {
 func TestUpsertPluginSocketRef_RejectsUnknownSocket(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, ConfigFilename)
-	if err := UpsertPluginSocketRef(path, "bogus", "bogus/x:1.0.0"); err == nil {
+	if err := UpsertPluginSocketRef(path, "bogus", "bogus/x:1.0.0", ""); err == nil {
 		t.Fatal("UpsertPluginSocketRef accepted an unknown socket key; the schema gate must reject it")
 	}
 	if _, statErr := os.Stat(path); statErr == nil {

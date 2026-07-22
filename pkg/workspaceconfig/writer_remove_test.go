@@ -109,14 +109,14 @@ func TestRemoveCLIPluginRef_MissingFile(t *testing.T) {
 func TestRemovePluginSocketRef_ByNamePreservesSiblings(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, ConfigFilename)
-	seed := "workspace: {}\nplugins:\n  mutator:\n" +
-		"    - uri: mutator/tag-injector:1.2.0\n" +
-		"    - uri: mutator/tag-rewriter:1.0.0\n"
+	seed := "workspace: {}\nplugins:\n  governance:\n" +
+		"    - uri: governance/tag-injector:1.2.0\n      role: label-transform\n" +
+		"    - uri: governance/tag-rewriter:1.0.0\n      role: label-transform\n"
 	if err := os.WriteFile(path, []byte(seed), 0o644); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
 
-	removed, err := RemovePluginSocketRef(path, "mutator", "tag-injector")
+	removed, err := RemovePluginSocketRef(path, "governance", "tag-injector")
 	if err != nil || !removed {
 		t.Fatalf("RemovePluginSocketRef = %v, %v; want true, nil", removed, err)
 	}
@@ -124,13 +124,13 @@ func TestRemovePluginSocketRef_ByNamePreservesSiblings(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolve after remove: %v", err)
 	}
-	got := rw.Config().Plugins.Mutator
-	if len(got) != 1 || got[0].URI != "mutator/tag-rewriter:1.0.0" {
+	got := rw.Config().Plugins.Governance
+	if len(got) != 1 || got[0].URI != "governance/tag-rewriter:1.0.0" {
 		t.Fatalf("sibling entry not preserved; got %+v", got)
 	}
 
 	// A socket key present but with no matching entry is a no-match.
-	removed, err = RemovePluginSocketRef(path, "mutator", "does-not-exist")
+	removed, err = RemovePluginSocketRef(path, "governance", "does-not-exist")
 	if err != nil {
 		t.Fatalf("RemovePluginSocketRef(no match): %v", err)
 	}

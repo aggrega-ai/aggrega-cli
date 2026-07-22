@@ -19,6 +19,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/topology"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
+	"github.com/aggrega-ai/aggrega-cli/pkg/plugintype"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
@@ -31,19 +32,23 @@ import (
 // it has at least one plugin to run, so an unconfigured socket builds no lookup
 // and stays a clean no-op.
 //
-// The socket type selects how an unpinned gate plugin resolves. A mutating socket
-// (mutator) resolves strictly through the pinned entity-fronted cascade — its
-// plugin shapes output bytes and is pinned in the lockfile. A verdict socket
-// (policy / linter) renders an accept/reject verdict without shaping output, so
-// its plugin is cached at pull but not pinned (cache-not-pin): the entity-fronted
-// cascade is tried first (honoring a pin / Tier-1 / embed source), and an unpinned
-// gate plugin that misses there resolves from the pull-populated cache by URI.
-func resolveSocketLookup(inputs Inputs, catalogLookup resolver.CatalogLookup, socket workspaceconfig.Socket) pluginpath.Lookup {
+// The attachment's tier selects how an unpinned gate plugin resolves — and for
+// the governance socket the tier is a property of the attachment's role, so each
+// runner passes the tier it knows statically rather than reading it from the
+// socket. A mutating attachment (a label-transform governance role) resolves
+// strictly through the pinned entity-fronted cascade — its plugin shapes output
+// bytes and is pinned in the lockfile. A verdict attachment (a verdict governance
+// role, or the linter socket) renders an accept/reject verdict without shaping
+// output, so its plugin is cached at pull but not pinned (cache-not-pin): the
+// entity-fronted cascade is tried first (honoring a pin / Tier-1 / embed source),
+// and an unpinned gate plugin that misses there resolves from the pull-populated
+// cache by URI.
+func resolveSocketLookup(inputs Inputs, catalogLookup resolver.CatalogLookup, tier workspaceconfig.SocketTier) pluginpath.Lookup {
 	if inputs.PluginPathLookup != nil {
 		return inputs.PluginPathLookup
 	}
 	base := buildEntityPluginLookup(inputs, catalogLookup)
-	if socket.Tier() != workspaceconfig.SocketTierVerdict {
+	if tier != workspaceconfig.SocketTierVerdict {
 		return base
 	}
 	return resolver.VerdictLookup(base, func(entityURI string) (pluginpath.ResolvedPlugin, error) {
@@ -98,17 +103,19 @@ func invokeSocketPlugin(ctx context.Context, spec wasm.PluginSpec, export string
 // the plugin-type guard, invokes fn with the live plugin and its validated
 // descriptor, and closes the plugin as the call unwinds. It is the single
 // load+describe+guard+Close core the sockets share: invokeSocketPlugin builds on
-// it to dispatch one export, and the stage-aware policy runners build on it to
-// read a plugin's declared stage from the same descriptor before deciding
-// whether to invoke — so a stage check and an export dispatch never double-load a
-// guest within one pass, and no runner duplicates the loader machinery.
+// it to dispatch one export, and the verdict runners build on it to validate the
+// attachment's settings against the same descriptor before dispatching — so a
+// settings check and an export dispatch never double-load a guest within one
+// pass, and no runner duplicates the loader machinery.
 //
 // The loader carries the process-wide shared compilation cache (honoring the ctx
 // persistent-cache dial), so a socket guest compiles once and every later socket
-// call and concurrent request reuses the machine code. The socket sets
+// call and concurrent request reuses the machine code. A typed socket sets
 // spec.PluginType to the kind it expects, so the shared load gate rejects a guest
-// of the wrong kind — a mutator plugin attached at the policy socket, or the
-// reverse — loudly, before fn ever sees the descriptor.
+// of the wrong kind loudly before fn ever sees the descriptor. The governance
+// socket sets the governance type, which every governance guest reports; what a
+// governance plugin may emit is fixed by the role the runner dispatches it at, not
+// by this type check.
 func withSocketPlugin(ctx context.Context, spec wasm.PluginSpec, fn func(*wasm.Plugin, wasm.PluginDescriptor) error) error {
 	loader := wasm.NewCachingLoaderFromContext(ctx, nil)
 	plugin, desc, err := loader.LoadAndDescribe(ctx, spec)
@@ -129,11 +136,11 @@ func withSocketPlugin(ctx context.Context, spec wasm.PluginSpec, fn func(*wasm.P
 // without the socket. A resolution, load, output-unmarshal, or patch-confinement
 // failure halts the build loudly.
 func runMutatorSocket(ctx context.Context, inputs Inputs, catalogLookup resolver.CatalogLookup, topo *topology.TopologyResult) error {
-	refs := inputs.WorkspaceConfig.Plugins.Mutator
+	refs := inputs.WorkspaceConfig.Plugins.GovernanceRefsForRole(plugintype.RoleLabelTransform)
 	if len(refs) == 0 {
 		return nil
 	}
-	lookup := resolveSocketLookup(inputs, catalogLookup, workspaceconfig.SocketMutator)
+	lookup := resolveSocketLookup(inputs, catalogLookup, workspaceconfig.SocketTierMutating)
 	cc := mutatorCompilationContext(inputs.Release)
 
 	for _, ref := range refs {
@@ -154,7 +161,7 @@ func runMutatorSocket(ctx context.Context, inputs Inputs, catalogLookup resolver
 			return fmt.Errorf("Step 2 (mutator): marshal input for plugin %q: %w", ref.URI, err)
 		}
 		spec := resolver.PluginSpec(pluginRefName(ref.URI), resolved)
-		spec.PluginType = wasm.PluginTypeMutator
+		spec.PluginType = wasm.PluginTypeGovernance
 		out, err := invokeSocketPlugin(ctx, spec, export, payload)
 		if err != nil {
 			return fmt.Errorf("Step 2 (mutator): plugin %q: %w", ref.URI, err)
@@ -183,14 +190,14 @@ func runMutatorSocket(ctx context.Context, inputs Inputs, catalogLookup resolver
 // failure halts the build loudly (a misconfigured plugin is a build fault, not a
 // policy verdict).
 func runPolicySocket(ctx context.Context, inputs Inputs, catalogLookup resolver.CatalogLookup, analysis *analyzer.AnalysisResult) error {
-	refs := inputs.WorkspaceConfig.Plugins.Policy
+	refs := inputs.WorkspaceConfig.Plugins.GovernanceRefsForRole(plugintype.RoleIRVerdict)
 	if len(refs) == 0 {
 		return nil
 	}
 	if analysis == nil || analysis.PolicyInput == nil {
 		return nil
 	}
-	lookup := resolveSocketLookup(inputs, catalogLookup, workspaceconfig.SocketPolicy)
+	lookup := resolveSocketLookup(inputs, catalogLookup, workspaceconfig.SocketTierVerdict)
 
 	for _, ref := range refs {
 		export := policyExport(ref)
@@ -213,15 +220,10 @@ func runPolicySocket(ctx context.Context, inputs Inputs, catalogLookup resolver.
 			return fmt.Errorf("Step 4 (policy): marshal input for plugin %q: %w", ref.URI, err)
 		}
 		spec := resolver.PluginSpec(pluginRefName(ref.URI), resolved)
-		spec.PluginType = wasm.PluginTypePolicy
-		out, ran, err := invokeStagedPolicy(ctx, spec, export, payload, wasm.StageIR, in.Settings)
+		spec.PluginType = wasm.PluginTypeGovernance
+		out, err := invokeVerdictPlugin(ctx, spec, export, payload, in.Settings)
 		if err != nil {
 			return fmt.Errorf("Step 4 (policy): plugin %q: %w", ref.URI, err)
-		}
-		if !ran {
-			// A render-stage plugin does not run at the IR stage; the render-stage
-			// pass runs it after render.
-			continue
 		}
 		var po analyzer.PolicyOutput
 		if err := json.Unmarshal(out, &po); err != nil {
@@ -253,11 +255,11 @@ func runPolicySocket(ctx context.Context, inputs Inputs, catalogLookup resolver.
 // output-unmarshal failure halts the build loudly (a misconfigured attachment is
 // a build fault, not a policy verdict).
 func runRenderPolicySocket(ctx context.Context, inputs Inputs, catalogLookup resolver.CatalogLookup, files map[string]renderer.AssembledFile) error {
-	refs := inputs.WorkspaceConfig.Plugins.Policy
+	refs := inputs.WorkspaceConfig.Plugins.GovernanceRefsForRole(plugintype.RoleRenderVerdict)
 	if len(refs) == 0 {
 		return nil
 	}
-	lookup := resolveSocketLookup(inputs, catalogLookup, workspaceconfig.SocketPolicy)
+	lookup := resolveSocketLookup(inputs, catalogLookup, workspaceconfig.SocketTierVerdict)
 	artifacts, err := sortedRenderedArtifacts(ctx, inputs, catalogLookup, files)
 	if err != nil {
 		return fmt.Errorf("Step 5 (render policy): %w", err)
@@ -284,13 +286,10 @@ func runRenderPolicySocket(ctx context.Context, inputs Inputs, catalogLookup res
 			return fmt.Errorf("Step 5 (render policy): marshal input for plugin %q: %w", ref.URI, err)
 		}
 		spec := resolver.PluginSpec(pluginRefName(ref.URI), resolved)
-		spec.PluginType = wasm.PluginTypePolicy
-		out, ran, err := invokeStagedPolicy(ctx, spec, export, payload, wasm.StageRender, settings)
+		spec.PluginType = wasm.PluginTypeGovernance
+		out, err := invokeVerdictPlugin(ctx, spec, export, payload, settings)
 		if err != nil {
 			return fmt.Errorf("Step 5 (render policy): plugin %q: %w", ref.URI, err)
-		}
-		if !ran {
-			continue
 		}
 		var po analyzer.PolicyOutput
 		if err := json.Unmarshal(out, &po); err != nil {
@@ -316,29 +315,22 @@ func runRenderPolicySocket(ctx context.Context, inputs Inputs, catalogLookup res
 	return stderrors.Join(errs...)
 }
 
-// invokeStagedPolicy loads a policy plugin through the shared describe() gate,
-// reads its declared stage from the same descriptor, and invokes the export only
-// when that stage matches wantStage (an absent stage defaults to the IR stage).
-// When the stage matches, it validates the attachment's settings against the
-// plugin's declared settings schema before dispatch: a plugin that declares a
+// invokeVerdictPlugin loads a verdict-role governance plugin through the shared
+// describe() gate, validates the attachment's settings against the plugin's
+// declared settings schema, and dispatches the export. A plugin that declares a
 // schema has its attachment's with.settings checked, and settings that do not
 // conform halt the build loudly (wrapping ErrPolicySettingsInvalid) before the
 // guest is invoked; a plugin that declares no schema accepts any settings
-// (free-form pass-through). Validating inside the stage-matched branch means the
-// check runs exactly once, at the stage that dispatches the plugin.
-//
-// It returns the guest output, whether the plugin ran (ran is false when the
-// stage did not match, so the caller skips it without treating the skip as an
-// error), and any load, settings-validation, or invocation error. Sharing
-// withSocketPlugin means the stage check, the settings check, and the export
-// dispatch read one loaded guest — no double-load within the pass, no duplicated
-// loader machinery.
-func invokeStagedPolicy(ctx context.Context, spec wasm.PluginSpec, export string, payload []byte, wantStage string, settings map[string]any) (out []byte, ran bool, err error) {
+// (free-form pass-through). Which stage a verdict runs at is fixed by the
+// attachment role — an ir-verdict runner dispatches at Step 4, a render-verdict
+// runner at Step 5 — so there is no guest-declared stage to consult and the
+// dispatch is unconditional. It reads a verdict and applies nothing: the host has
+// no code path here that would honor a patch in the guest's output, so a verdict
+// role is structurally non-mutating regardless of what the guest emits. Sharing
+// withSocketPlugin means the settings check and the export dispatch read one
+// loaded guest — no double-load within the pass, no duplicated loader machinery.
+func invokeVerdictPlugin(ctx context.Context, spec wasm.PluginSpec, export string, payload []byte, settings map[string]any) (out []byte, err error) {
 	err = withSocketPlugin(ctx, spec, func(plugin *wasm.Plugin, desc wasm.PluginDescriptor) error {
-		if effectivePolicyStage(desc.Stage) != wantStage {
-			return nil
-		}
-		ran = true
 		if serr := desc.ValidateSettings(settings); serr != nil {
 			return fmt.Errorf("with.settings does not satisfy the plugin's declared settings schema: %v: %w", serr, ErrPolicySettingsInvalid)
 		}
@@ -349,18 +341,7 @@ func invokeStagedPolicy(ctx context.Context, spec wasm.PluginSpec, export string
 		out = o
 		return nil
 	})
-	return out, ran, err
-}
-
-// effectivePolicyStage resolves a descriptor's declared stage to the stage the
-// runner routes it by: an empty (absent) stage defaults to the IR stage, so a
-// plugin that declares no stage runs at the IR stage exactly as before the
-// render stage existed.
-func effectivePolicyStage(stage string) string {
-	if stage == "" {
-		return wasm.StageIR
-	}
-	return stage
+	return out, err
 }
 
 // policyExport returns the entry function a policy attachment dispatches to: the

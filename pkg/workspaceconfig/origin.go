@@ -252,15 +252,10 @@ func originFields() []originField {
 			func(c Config) string {
 				return joinStrings(c.Workspace.CatalogDirs) + originAppendSep + joinStrings(c.Workspace.CatalogDirsAppend)
 			}),
-		ls("plugins.mutator",
-			func(c Config) string { return joinPluginRefs(c.Plugins.Mutator) },
+		ls("plugins.governance",
+			func(c Config) string { return joinPluginRefs(c.Plugins.Governance) },
 			func(c Config) string {
-				return joinPluginRefs(c.Plugins.Mutator) + originAppendSep + joinPluginRefs(c.Plugins.MutatorAppend)
-			}),
-		ls("plugins.policy",
-			func(c Config) string { return joinPluginRefs(c.Plugins.Policy) },
-			func(c Config) string {
-				return joinPluginRefs(c.Plugins.Policy) + originAppendSep + joinPluginRefs(c.Plugins.PolicyAppend)
+				return joinPluginRefs(c.Plugins.Governance) + originAppendSep + joinPluginRefs(c.Plugins.GovernanceAppend)
 			}),
 		ls("plugins.linter",
 			func(c Config) string { return joinPluginRefs(c.Plugins.Linter) },

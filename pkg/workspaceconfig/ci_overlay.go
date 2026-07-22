@@ -46,8 +46,7 @@ func foldCIAdditive(cfg Config) appendSlices {
 	return appendSlices{
 		CatalogDirs:         concat(cfg.Workspace.CatalogDirs, cfg.Workspace.CatalogDirsAppend),
 		NarrowingExemptions: concat(pd.NarrowingExemptions, pd.NarrowingExemptionsAppend),
-		Mutator:             concat(cfg.Plugins.Mutator, cfg.Plugins.MutatorAppend),
-		Policy:              concat(cfg.Plugins.Policy, cfg.Plugins.PolicyAppend),
+		Governance:          concat(cfg.Plugins.Governance, cfg.Plugins.GovernanceAppend),
 		Linter:              concat(cfg.Plugins.Linter, cfg.Plugins.LinterAppend),
 		Importer:            concat(cfg.Plugins.Importer, cfg.Plugins.ImporterAppend),
 		Providers:           concat(cfg.Plugins.Providers, cfg.Plugins.ProvidersAppend),

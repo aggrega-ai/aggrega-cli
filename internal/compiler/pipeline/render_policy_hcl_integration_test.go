@@ -20,6 +20,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
+	"github.com/aggrega-ai/aggrega-cli/pkg/plugintype"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
@@ -75,8 +76,9 @@ func renderPolicyHCLInputs(t *testing.T, requireResourceType string) Inputs {
 	inputs := Inputs{
 		WorkspaceConfig: workspaceconfig.Default(),
 	}
-	inputs.WorkspaceConfig.Plugins.Policy = []workspaceconfig.PluginRef{{
-		URI: "proof://policy-render-hcl",
+	inputs.WorkspaceConfig.Plugins.Governance = []workspaceconfig.PluginRef{{
+		URI:  "proof://policy-render-hcl",
+		Role: plugintype.RoleRenderVerdict,
 		With: &workspaceconfig.PluginRefWith{
 			Settings: map[string]any{"require_resource_type": requireResourceType},
 		},

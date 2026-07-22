@@ -25,9 +25,9 @@ const ConfigFilename = ".aggrega-config.yaml"
 // without ever touching the developer's hand-authored base config.
 //
 // The overlay is additive-only and validates against the same
-// aggrega-config-v1alpha1 schema as the base file. For each of the seven
-// list-valued fields (catalog_dirs, narrowing_exemptions, the four plugin
-// sockets mutator/policy/linter/importer, and the provider bindings) its
+// aggrega-config-v1alpha1 schema as the base file. For each of the six
+// list-valued fields (catalog_dirs, narrowing_exemptions, the three plugin
+// sockets governance/linter/importer, and the provider bindings) its
 // entries — both the base list and any `_append` companion — are concatenated
 // onto the resolved list in cascade order. It cannot remove or scalar-override anything the base declares: a
 // scalar or map field carried in the overlay has no additive meaning, so it is
@@ -544,8 +544,7 @@ func resolveConfigPaths(cfg *Config, dir string) {
 	for i, d := range cfg.Workspace.CatalogDirs {
 		cfg.Workspace.CatalogDirs[i] = resolveFilesystemPath(dir, d)
 	}
-	resolvePluginURIs(cfg.Plugins.Mutator, dir)
-	resolvePluginURIs(cfg.Plugins.Policy, dir)
+	resolvePluginURIs(cfg.Plugins.Governance, dir)
 	resolvePluginURIs(cfg.Plugins.Linter, dir)
 	resolvePluginURIs(cfg.Plugins.Importer, dir)
 }
@@ -557,8 +556,7 @@ func resolveAppendPaths(a *appendSlices, dir string) {
 	for i, d := range a.CatalogDirs {
 		a.CatalogDirs[i] = resolveFilesystemPath(dir, d)
 	}
-	resolvePluginURIs(a.Mutator, dir)
-	resolvePluginURIs(a.Policy, dir)
+	resolvePluginURIs(a.Governance, dir)
 	resolvePluginURIs(a.Linter, dir)
 	resolvePluginURIs(a.Importer, dir)
 }
@@ -656,11 +654,11 @@ func checkUniqueProviderTargets(providers []PluginRef) error {
 }
 
 // checkCrossCuttingSocketAttach returns a wrapped
-// ErrCapabilityOnCrossCuttingSocket when any of the four cross-cutting socket
-// lists (mutator, policy, linter, importer) carries a capability-bound entry.
+// ErrCapabilityOnCrossCuttingSocket when any of the three cross-cutting socket
+// lists (governance, linter, importer) carries a capability-bound entry.
 // Those sockets attach their plugin directly by uri; the attached plugin serves
 // no capability, so a capability lookup matches nothing. The lists are walked in
-// a fixed order (mutator, policy, linter, importer) and each in list order, so
+// a fixed order (governance, linter, importer) and each in list order, so
 // the error names the first offending binding deterministically for a given
 // composed config. The check keys only on the socket identity and a non-empty
 // Capability — it never resolves, loads, or describes the referenced plugin.
@@ -669,8 +667,7 @@ func checkCrossCuttingSocketAttach(plugins PluginsConfig) error {
 		name string
 		refs []PluginRef
 	}{
-		{"mutator", plugins.Mutator},
-		{"policy", plugins.Policy},
+		{"governance", plugins.Governance},
 		{"linter", plugins.Linter},
 		{"importer", plugins.Importer},
 	}

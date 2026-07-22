@@ -427,16 +427,18 @@ func dispatchBuildWithDiag(rw *workspaceconfig.ResolvedWorkspace, releasePath st
 	buildLookup.ProviderPlugin = func(ref string) (types.Plugin, bool, error) {
 		return lazyView.ProviderPluginForTarget(ref, lockfileBindings)
 	}
-	// Reconstruct the mutator-socket attachment set from the LOCKFILE, never the
-	// workspace config, so build output is invariant to a plugins.mutator change
-	// made after the pull (adopted only on the next pull). The mutator rewrites
-	// the IR and shapes output bytes, so its attachment set / order / export
-	// function is pinned; the pinned .wasm bytes are drift-verified separately on
-	// the entity / plugin axes. The override is unconditional — an empty pinned
-	// set runs no mutator regardless of live config. wsCfg is a per-build value
-	// copy, so this rewrites only the in-memory pipeline input, never the config
-	// on disk.
-	wsCfg.Plugins.Mutator = lockfile.MutatorAttachments(lf)
+	// Reconstruct the label-transform governance attachments from the LOCKFILE,
+	// never the workspace config, so build output is invariant to a
+	// plugins.governance transform change made after the pull (adopted only on the
+	// next pull). A label-transform plugin rewrites node labels and shapes output
+	// bytes, so its attachment set / order / export function is pinned; the pinned
+	// .wasm bytes are drift-verified separately on the entity / plugin axes. The
+	// verdict attachments shape no output and are cache-not-pin, so they are read
+	// live and composed back onto the reconstructed transform set. The transform
+	// override is unconditional — an empty pinned set runs no transform regardless
+	// of live config. wsCfg is a per-build value copy, so this rewrites only the
+	// in-memory pipeline input, never the config on disk.
+	wsCfg.Plugins.Governance = append(lockfile.MutatorAttachments(lf), wsCfg.Plugins.VerdictGovernanceRefs()...)
 	// The pipeline context carries the external-input service to the
 	// renderer's plugin-load sites, where each loader picks it up as its
 	// fetch seam.

@@ -4,7 +4,7 @@
 //go:build integration
 
 // Package main's end-to-end proofs for the two embedded mutator guests
-// (mutator/label-injector and mutator/selector-tagger) driven through the real
+// (governance/label-injector and governance/selector-tagger) driven through the real
 // pull -> build pipeline. Each mutator is attached at the mutator socket by its
 // bare embedded identity: its .wasm resolves through the embed tier,
 // and a workspace-catalog Plugin entity supplies the entity the closure pins.
@@ -29,8 +29,8 @@ import (
 )
 
 const (
-	labelInjectorURI  = "mutator/label-injector"
-	selectorTaggerURI = "mutator/selector-tagger"
+	labelInjectorURI  = "governance/label-injector"
+	selectorTaggerURI = "governance/selector-tagger"
 )
 
 // writeComposeComponentRecipe writes a Component of type compType (carrying the
@@ -83,12 +83,12 @@ spec:
 func writeMutatorPluginEntities(t *testing.T, catalogDir string) {
 	t.Helper()
 	for _, name := range []string{"label-injector", "selector-tagger"} {
-		writeFixtureEntity(t, catalogDir, "plugin/mutator/"+name+"/1.0.0/plugin.yaml", `apiVersion: aggrega.ai/v1alpha1
+		writeFixtureEntity(t, catalogDir, "plugin/governance/"+name+"/1.0.0/plugin.yaml", `apiVersion: aggrega.ai/v1alpha1
 kind: Plugin
 metadata:
   name: `+name+`
   version: "1.0.0"
-  pluginType: mutator
+  pluginType: governance
 spec:
   abiVersion: v1alpha1
   exports:
@@ -166,8 +166,9 @@ func TestMutatorEmbedded_LabelInjectorApplies(t *testing.T) {
 	rwSettings := resolveWorkspaceWithConfig(t, root, `workspace: {}
 offline: true
 plugins:
-  mutator:
+  governance:
     - uri: `+labelInjectorURI+`:1.0.0
+      role: label-transform
       with:
         settings:
           rules:
@@ -206,8 +207,9 @@ plugins:
 	rwSources := resolveWorkspaceWithConfig(t, root, `workspace: {}
 offline: true
 plugins:
-  mutator:
+  governance:
     - uri: `+labelInjectorURI+`:1.0.0
+      role: label-transform
       with:
         sources:
           - rules.yaml
@@ -294,8 +296,9 @@ spec:
 	rw := resolveWorkspaceWithConfig(t, root, `workspace: {}
 offline: true
 plugins:
-  mutator:
+  governance:
     - uri: `+selectorTaggerURI+`:1.0.0
+      role: label-transform
       with:
         sources:
           - mapping.yaml
@@ -433,8 +436,9 @@ spec:
 	rwMutator := resolveWorkspaceWithConfig(t, root, `workspace: {}
 offline: true
 plugins:
-  mutator:
+  governance:
     - uri: `+labelInjectorURI+`:1.0.0
+      role: label-transform
       with:
         settings:
           rules:
@@ -469,8 +473,9 @@ func TestMutatorEmbedded_SettingsConfigInvariantAfterPull(t *testing.T) {
 	rwPull := resolveWorkspaceWithConfig(t, root, `workspace: {}
 offline: true
 plugins:
-  mutator:
+  governance:
     - uri: `+labelInjectorURI+`:1.0.0
+      role: label-transform
       with:
         settings:
           rules:
@@ -497,8 +502,9 @@ plugins:
 	rwChanged := resolveWorkspaceWithConfig(t, root, `workspace: {}
 offline: true
 plugins:
-  mutator:
+  governance:
     - uri: `+labelInjectorURI+`:1.0.0
+      role: label-transform
       with:
         settings:
           rules:
@@ -538,8 +544,9 @@ func TestMutatorEmbedded_SourceContentConfigInvariantAfterPull(t *testing.T) {
 	rw := resolveWorkspaceWithConfig(t, root, `workspace: {}
 offline: true
 plugins:
-  mutator:
+  governance:
     - uri: `+labelInjectorURI+`:1.0.0
+      role: label-transform
       with:
         sources:
           - rules.yaml
@@ -586,8 +593,9 @@ func TestMutatorEmbedded_DeterministicOutput(t *testing.T) {
 	rw := resolveWorkspaceWithConfig(t, root, `workspace: {}
 offline: true
 plugins:
-  mutator:
+  governance:
     - uri: `+labelInjectorURI+`:1.0.0
+      role: label-transform
       with:
         settings:
           rules:

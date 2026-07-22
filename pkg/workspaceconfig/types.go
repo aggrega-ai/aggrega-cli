@@ -29,8 +29,8 @@
 // validates → yaml.Unmarshal into a Default()-initialised value)
 // preserves the documented defaults when the file omits a key.
 //
-// List-append escape hatches: seven list-valued fields (catalog_dirs,
-// narrowing_exemptions, the four plugin sockets mutator/policy/linter/
+// List-append escape hatches: six list-valued fields (catalog_dirs,
+// narrowing_exemptions, the three plugin sockets governance/linter/
 // importer, and the provider bindings) carry a sibling `<field>_append`
 // companion. At
 // each precedence layer, any entries in the `_append` companion are
@@ -61,6 +61,8 @@ import (
 	_ "embed"
 	"encoding/json"
 	"fmt"
+
+	"github.com/aggrega-ai/aggrega-cli/pkg/plugintype"
 )
 
 // Config carries the workspace's full configuration. Fields map to
@@ -494,18 +496,19 @@ type BuildConfig struct {
 // per the socket contract; PluginRef.Function overrides the socket's
 // default when set. Providers is the peer list that binds render-engine
 // capabilities to the provider-rendering plugins that serve them. Every
-// socket list — the four cross-cutting sockets and the provider bindings
+// socket list — the three cross-cutting sockets and the provider bindings
 // — is the one unified PluginRef shape, so a single attachment reference
-// serves every socket.
+// serves every socket. A Governance entry additionally names the pipeline
+// Role it is attached at.
 //
-// MutatorAppend / PolicyAppend / LinterAppend / ImporterAppend /
+// GovernanceAppend / LinterAppend / ImporterAppend /
 // ProvidersAppend are the merge-time companions for the base lists. At
 // each precedence layer the entries here are concatenated onto the
 // resolved base list for that socket. LoadWithGlobal zeroes these
 // fields on the returned Config.
 //
 // CLI is the exception to the whole-replace-per-layer base semantic the
-// four cross-cutting sockets follow: it pins the CLI-extension plugins
+// three cross-cutting sockets follow: it pins the CLI-extension plugins
 // installed as top-level aggrega commands, and its entries COMPOSE across
 // the config cascade rather than shadow. A CLI plugin pinned in the global
 // config registers its command(s) everywhere; one pinned in a workspace
@@ -514,17 +517,15 @@ type BuildConfig struct {
 // single-named (one `cli` key at every scope), and where the entry sits
 // decides its reach.
 type PluginsConfig struct {
-	Mutator         []PluginRef    `yaml:"mutator"`
-	MutatorAppend   []PluginRef    `yaml:"mutator_append"`
-	Policy          []PluginRef    `yaml:"policy"`
-	PolicyAppend    []PluginRef    `yaml:"policy_append"`
-	Linter          []PluginRef    `yaml:"linter"`
-	LinterAppend    []PluginRef    `yaml:"linter_append"`
-	Importer        []PluginRef    `yaml:"importer"`
-	ImporterAppend  []PluginRef    `yaml:"importer_append"`
-	Providers       []PluginRef    `yaml:"providers"`
-	ProvidersAppend []PluginRef    `yaml:"providers_append"`
-	CLI             []CLIPluginRef `yaml:"cli"`
+	Governance       []PluginRef    `yaml:"governance"`
+	GovernanceAppend []PluginRef    `yaml:"governance_append"`
+	Linter           []PluginRef    `yaml:"linter"`
+	LinterAppend     []PluginRef    `yaml:"linter_append"`
+	Importer         []PluginRef    `yaml:"importer"`
+	ImporterAppend   []PluginRef    `yaml:"importer_append"`
+	Providers        []PluginRef    `yaml:"providers"`
+	ProvidersAppend  []PluginRef    `yaml:"providers_append"`
+	CLI              []CLIPluginRef `yaml:"cli"`
 }
 
 // CLIPluginRef pins one CLI-extension plugin installed as a top-level aggrega
@@ -564,8 +565,8 @@ func (p PluginsConfig) ProviderTargetURIs() map[string]string {
 }
 
 // PluginRef references a Wasm plugin attached at a workspace-level socket.
-// It is the one unified attachment shape every socket uses — the four
-// cross-cutting sockets (mutator, policy, linter, importer) and the
+// It is the one unified attachment shape every socket uses — the three
+// cross-cutting sockets (governance, linter, importer) and the
 // provider-rendering bindings alike — so a single reference type serves all
 // of them.
 //
@@ -584,17 +585,20 @@ func (p PluginsConfig) ProviderTargetURIs() map[string]string {
 //     identity, in a federated catalog where more than one plugin serves the
 //     capability.
 //
-// Function overrides the socket's default entry function (mutator → mutate,
-// policy → validate, linter → lint, importer → import); when omitted, the
-// socket's documented default applies. The empty-string value of Function is
-// the "use default" sentinel; consumers apply the per-socket default when
-// Function == "". With carries optional attachment-time inputs the plugin
-// reads; nil when the attachment declares none.
+// Function overrides the socket's default entry function (governance
+// label-transform → mutate, governance verdict roles → validate, linter →
+// lint, importer → import); when omitted, the socket's documented default
+// applies. The empty-string value of Function is the "use default" sentinel;
+// consumers apply the per-socket default when Function == "". Role names the
+// governance attachment role and is read on a governance entry only; it is the
+// empty value on every other socket's entries. With carries optional
+// attachment-time inputs the plugin reads; nil when the attachment declares none.
 type PluginRef struct {
-	URI        string         `yaml:"uri,omitempty"`
-	Capability string         `yaml:"capability,omitempty"`
-	Function   string         `yaml:"function,omitempty"`
-	With       *PluginRefWith `yaml:"with,omitempty"`
+	URI        string          `yaml:"uri,omitempty"`
+	Capability string          `yaml:"capability,omitempty"`
+	Function   string          `yaml:"function,omitempty"`
+	Role       plugintype.Role `yaml:"role,omitempty"`
+	With       *PluginRefWith  `yaml:"with,omitempty"`
 }
 
 // PluginRefWith carries optional attachment-time inputs a plugin reads.

@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/aggrega-ai/aggrega-cli/pkg/plugintype"
 )
 
 // TestCaptureBuildCritical_WritesSubsetWithFidelity proves the capture writer
@@ -15,7 +17,7 @@ import (
 // and the catalog directories — at full fidelity (a socket
 // attachment's function override and its `with` inputs survive), and leaves a
 // schema-valid file the resolver reads back. It captures with the widened socket
-// scope so a verdict-gate socket (policy) participates in the fidelity check.
+// scope so a verdict-role governance attachment participates in the fidelity check.
 func TestCaptureBuildCritical_WritesSubsetWithFidelity(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, ConfigFilename)
@@ -30,10 +32,11 @@ func TestCaptureBuildCritical_WritesSubsetWithFidelity(t *testing.T) {
 			Providers: []PluginRef{
 				{Capability: "helm", URI: "oci://hub.aggrega.ai/plugin/provider/helm:1.0.0"},
 			},
-			Policy: []PluginRef{
+			Governance: []PluginRef{
 				{
-					URI:      "policy/deny-gate:1.0.0",
+					URI:      "governance/deny-gate:1.0.0",
 					Function: "validate",
+					Role:     plugintype.RoleIRVerdict,
 					With: &PluginRefWith{
 						Sources:  []string{filepath.Join(dir, "policy.rego")},
 						Settings: map[string]any{"strict": true},
@@ -60,11 +63,11 @@ func TestCaptureBuildCritical_WritesSubsetWithFidelity(t *testing.T) {
 		got.Plugins.Providers[0].URI != "oci://hub.aggrega.ai/plugin/provider/helm:1.0.0" {
 		t.Fatalf("provider binding not captured: %+v", got.Plugins.Providers)
 	}
-	if len(got.Plugins.Policy) != 1 {
-		t.Fatalf("policy socket not captured: %+v", got.Plugins.Policy)
+	if len(got.Plugins.Governance) != 1 {
+		t.Fatalf("governance socket not captured: %+v", got.Plugins.Governance)
 	}
-	p := got.Plugins.Policy[0]
-	if p.URI != "policy/deny-gate:1.0.0" || p.Function != "validate" {
+	p := got.Plugins.Governance[0]
+	if p.URI != "governance/deny-gate:1.0.0" || p.Function != "validate" {
 		t.Errorf("socket ref uri/function not preserved: %+v", p)
 	}
 	if p.With == nil || len(p.With.Sources) != 1 || p.With.Settings["strict"] != true {
@@ -85,8 +88,8 @@ func TestCaptureBuildCritical_Idempotent(t *testing.T) {
 	}
 	cfg := Config{
 		Plugins: PluginsConfig{
-			Providers: []PluginRef{{Capability: "helm", URI: "oci://hub.aggrega.ai/plugin/provider/helm:1.0.0"}},
-			Mutator:   []PluginRef{{URI: "mutator/tag-injector:1.0.0"}},
+			Providers:  []PluginRef{{Capability: "helm", URI: "oci://hub.aggrega.ai/plugin/provider/helm:1.0.0"}},
+			Governance: []PluginRef{{URI: "governance/tag-injector:1.0.0", Role: plugintype.RoleLabelTransform}},
 		},
 		Workspace: WorkspaceConfig{CatalogDirs: []string{filepath.Join(dir, "catalog")}},
 	}
@@ -120,7 +123,7 @@ func TestCaptureBuildCritical_ExcludesRegistries(t *testing.T) {
 		t.Fatalf("seed: %v", err)
 	}
 	cfg := Config{
-		Plugins:    PluginsConfig{Mutator: []PluginRef{{URI: "mutator/tag-injector:1.0.0"}}},
+		Plugins:    PluginsConfig{Governance: []PluginRef{{URI: "governance/tag-injector:1.0.0", Role: plugintype.RoleLabelTransform}}},
 		Registries: []RegistryConfig{{Host: "reg.example.com"}},
 	}
 	if err := CaptureBuildCritical(path, cfg, false); err != nil {
@@ -133,7 +136,7 @@ func TestCaptureBuildCritical_ExcludesRegistries(t *testing.T) {
 	if strings.Contains(string(body), "reg.example.com") {
 		t.Errorf("registries leaked into the captured workspace file:\n%s", body)
 	}
-	if !strings.Contains(string(body), "mutator/tag-injector:1.0.0") {
-		t.Errorf("build-critical mutator attachment not captured:\n%s", body)
+	if !strings.Contains(string(body), "governance/tag-injector:1.0.0") {
+		t.Errorf("build-critical label-transform attachment not captured:\n%s", body)
 	}
 }

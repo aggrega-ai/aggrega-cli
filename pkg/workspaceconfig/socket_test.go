@@ -6,12 +6,13 @@ package workspaceconfig_test
 import (
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/pkg/plugintype"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
 // TestSocketPrefersCapabilityDefault pins the per-socket capability-default
 // policy: provider and linter opt in (an unconfigured socket prefers a capable
-// embedded plugin), while mutator, policy, and importer opt out (an
+// embedded plugin), while governance and importer opt out (an
 // unconfigured socket runs no plugin). The table is the single source of the
 // policy, so a change to any socket's stance is a deliberate edit here.
 func TestSocketPrefersCapabilityDefault(t *testing.T) {
@@ -22,8 +23,7 @@ func TestSocketPrefersCapabilityDefault(t *testing.T) {
 	}{
 		{workspaceconfig.SocketProvider, true},
 		{workspaceconfig.SocketLinter, true},
-		{workspaceconfig.SocketMutator, false},
-		{workspaceconfig.SocketPolicy, false},
+		{workspaceconfig.SocketGovernance, false},
 		{workspaceconfig.SocketImporter, false},
 	}
 	for _, tc := range cases {
@@ -40,11 +40,11 @@ func TestSocketPrefersCapabilityDefault(t *testing.T) {
 func TestUnifiedPluginRefRoundTrips(t *testing.T) {
 	t.Parallel()
 	pc := workspaceconfig.PluginsConfig{
-		Policy:    []workspaceconfig.PluginRef{{URI: "policy/opa:1.0.0"}},
-		Providers: []workspaceconfig.PluginRef{{Capability: "helm"}, {Capability: "compose", URI: "provider/compose-alt"}},
+		Governance: []workspaceconfig.PluginRef{{URI: "governance/opa:1.0.0", Role: plugintype.RoleIRVerdict}},
+		Providers:  []workspaceconfig.PluginRef{{Capability: "helm"}, {Capability: "compose", URI: "provider/compose-alt"}},
 	}
-	if pc.Policy[0].URI != "policy/opa:1.0.0" || pc.Policy[0].Capability != "" {
-		t.Errorf("uri-only policy ref not preserved: %+v", pc.Policy[0])
+	if pc.Governance[0].URI != "governance/opa:1.0.0" || pc.Governance[0].Capability != "" {
+		t.Errorf("uri-only governance ref not preserved: %+v", pc.Governance[0])
 	}
 	uris := pc.ProviderTargetURIs()
 	if uris["helm"] != "" {

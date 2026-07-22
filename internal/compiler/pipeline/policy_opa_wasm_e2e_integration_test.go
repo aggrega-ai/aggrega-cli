@@ -14,6 +14,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/analyzer"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
+	"github.com/aggrega-ai/aggrega-cli/pkg/plugintype"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
@@ -34,8 +35,9 @@ func runOpaWasmPolicy(t *testing.T, settings map[string]any) (*pipeline.Result, 
 	t.Helper()
 	wasmtest.EnsureFixtureBuilt(t, "policy-opa-wasm-rust.wasm")
 	inputs, buildLookup, recipeLookup, subAgg := loadFullstackForSockets(t)
-	inputs.WorkspaceConfig.Plugins.Policy = []workspaceconfig.PluginRef{{
-		URI: "proof://policy-opa-wasm",
+	inputs.WorkspaceConfig.Plugins.Governance = []workspaceconfig.PluginRef{{
+		URI:  "proof://policy-opa-wasm",
+		Role: plugintype.RoleIRVerdict,
 		With: &workspaceconfig.PluginRefWith{
 			Settings: settings,
 		},

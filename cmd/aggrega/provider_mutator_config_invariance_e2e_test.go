@@ -196,12 +196,12 @@ func TestIntegration_MutatorConfigInvariance_Serve(t *testing.T) {
 	host := startRegistry(t, nil)
 	configSocketFixtureCatalog(t, host)
 	const (
-		mutatorSocket     = "mutator/tag-injector"
+		mutatorSocket     = "governance/tag-injector"
 		proofMutatorLabel = "mutator-proof"
 	)
-	publishSocketPluginEntity(t, host, mutatorSocket, "1.0.0", mutatorPath, "mutator", "mutate")
+	publishSocketPluginEntity(t, host, mutatorSocket, "1.0.0", mutatorPath, "governance", "mutate")
 
-	pinned := "plugins:\n  mutator:\n    - uri: " + mutatorSocket + ":1.0.0\n"
+	pinned := "plugins:\n  governance:\n    - uri: " + mutatorSocket + ":1.0.0\n      role: label-transform\n"
 	ws := writeConfigSocketWorkspace(t, host, pinned, true)
 	t.Chdir(ws)
 	if err := pullRun(pullConfig{ReleasePath: "release.yaml", CatalogDirs: catDirs}); err != nil {
@@ -228,7 +228,7 @@ func TestIntegration_MutatorConfigInvariance_Serve(t *testing.T) {
 	// Flip the live config mutator export function to a NON-EXISTENT export,
 	// leaving the URI unchanged. Read live, the bogus export halts; read from the
 	// lockfile, the render runs the pinned mutate export and is unchanged.
-	flipped := "plugins:\n  mutator:\n    - uri: " + mutatorSocket + ":1.0.0\n      function: does-not-exist\n"
+	flipped := "plugins:\n  governance:\n    - uri: " + mutatorSocket + ":1.0.0\n      role: label-transform\n      function: does-not-exist\n"
 	writeWorkspaceConfig(t, ws, "default_registry: \""+host+"\"\nauto_pull: false\noffline: false\n"+flipped)
 
 	afterFlip, err := serveRenderArtifacts(t, ws, "release.yaml", catDirs, true)
@@ -286,9 +286,9 @@ func TestIntegration_RegistrySocketFrozenBuild_ReconstructsSocketAxis(t *testing
 		catDirs := []string{std}
 		host := startRegistry(t, nil)
 		configSocketFixtureCatalog(t, host)
-		const mutatorSocket = "mutator/tag-injector"
-		publishSocketPluginEntity(t, host, mutatorSocket, "1.0.0", mutatorPath, "mutator", "mutate")
-		pinned := "plugins:\n  mutator:\n    - uri: " + mutatorSocket + ":1.0.0\n"
+		const mutatorSocket = "governance/tag-injector"
+		publishSocketPluginEntity(t, host, mutatorSocket, "1.0.0", mutatorPath, "governance", "mutate")
+		pinned := "plugins:\n  governance:\n    - uri: " + mutatorSocket + ":1.0.0\n      role: label-transform\n"
 		ws := writeConfigSocketWorkspace(t, host, pinned, true)
 		t.Chdir(ws)
 		if err := pullRun(pullConfig{ReleasePath: "release.yaml", CatalogDirs: catDirs}); err != nil {
@@ -331,9 +331,9 @@ func TestIntegration_RegistrySocketFrozenBuild_TamperedPinStillDrifts(t *testing
 		catDirs := []string{std}
 		host := startRegistry(t, nil)
 		configSocketFixtureCatalog(t, host)
-		const mutatorSocket = "mutator/tag-injector"
-		publishSocketPluginEntity(t, host, mutatorSocket, "1.0.0", mutatorPath, "mutator", "mutate")
-		pinned := "plugins:\n  mutator:\n    - uri: " + mutatorSocket + ":1.0.0\n"
+		const mutatorSocket = "governance/tag-injector"
+		publishSocketPluginEntity(t, host, mutatorSocket, "1.0.0", mutatorPath, "governance", "mutate")
+		pinned := "plugins:\n  governance:\n    - uri: " + mutatorSocket + ":1.0.0\n      role: label-transform\n"
 		ws := writeConfigSocketWorkspace(t, host, pinned, true)
 		t.Chdir(ws)
 		if err := pullRun(pullConfig{ReleasePath: "release.yaml", CatalogDirs: catDirs}); err != nil {

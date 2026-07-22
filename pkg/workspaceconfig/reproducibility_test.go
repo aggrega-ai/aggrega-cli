@@ -84,13 +84,13 @@ func TestGlobalOnlyBuildCriticalProviderInBoth(t *testing.T) {
 	}
 }
 
-// TestGlobalOnlyBuildCriticalMutatorByteDetermining: a mutator binding present
-// only in the global layer is byte-determining, so it is reported under the
-// default (byte-determining) scope.
+// TestGlobalOnlyBuildCriticalMutatorByteDetermining: a label-transform governance
+// binding present only in the global layer is byte-determining, so it is reported
+// under the default (byte-determining) scope.
 func TestGlobalOnlyBuildCriticalMutatorByteDetermining(t *testing.T) {
 	t.Parallel()
 	rw := resolveWithGlobal(t,
-		"plugins:\n  mutator:\n    - uri: oci://h/mut:1\n",
+		"plugins:\n  governance:\n    - uri: oci://h/mut:1\n      role: label-transform\n",
 		"",
 	)
 	got, err := rw.GlobalOnlyBuildCritical(false)
@@ -98,20 +98,20 @@ func TestGlobalOnlyBuildCriticalMutatorByteDetermining(t *testing.T) {
 		t.Fatalf("GlobalOnlyBuildCritical: %v", err)
 	}
 	if len(got) != 1 {
-		t.Fatalf("bindings: got %d, want 1 (mutator is byte-determining): %+v", len(got), got)
+		t.Fatalf("bindings: got %d, want 1 (label-transform is byte-determining): %+v", len(got), got)
 	}
-	if got[0].Field != "plugins.mutator" {
-		t.Errorf("Field: got %q, want plugins.mutator", got[0].Field)
+	if got[0].Field != "plugins.governance" {
+		t.Errorf("Field: got %q, want plugins.governance", got[0].Field)
 	}
 }
 
-// TestGlobalOnlyBuildCriticalGateSocketScopedByAllPlugins: a global-only gate
-// socket (policy) is NOT byte-determining, so it is absent under the default
+// TestGlobalOnlyBuildCriticalGateSocketScopedByAllPlugins: a global-only verdict
+// governance attachment is NOT byte-determining, so it is absent under the default
 // scope and reported only when the scope widens to all plugin sockets.
 func TestGlobalOnlyBuildCriticalGateSocketScopedByAllPlugins(t *testing.T) {
 	t.Parallel()
 	rw := resolveWithGlobal(t,
-		"plugins:\n  policy:\n    - uri: oci://h/pol:1\n",
+		"plugins:\n  governance:\n    - uri: oci://h/pol:1\n      role: ir-verdict\n",
 		"",
 	)
 	def, err := rw.GlobalOnlyBuildCritical(false)
@@ -119,7 +119,7 @@ func TestGlobalOnlyBuildCriticalGateSocketScopedByAllPlugins(t *testing.T) {
 		t.Fatalf("GlobalOnlyBuildCritical(false): %v", err)
 	}
 	if len(def) != 0 {
-		t.Fatalf("default scope: got %d, want 0 (policy is a verdict gate, not byte-determining): %+v", len(def), def)
+		t.Fatalf("default scope: got %d, want 0 (a verdict role is not byte-determining): %+v", len(def), def)
 	}
 	all, err := rw.GlobalOnlyBuildCritical(true)
 	if err != nil {
@@ -128,8 +128,8 @@ func TestGlobalOnlyBuildCriticalGateSocketScopedByAllPlugins(t *testing.T) {
 	if len(all) != 1 {
 		t.Fatalf("all-plugins scope: got %d, want 1: %+v", len(all), all)
 	}
-	if all[0].Field != "plugins.policy" {
-		t.Errorf("Field: got %q, want plugins.policy", all[0].Field)
+	if all[0].Field != "plugins.governance" {
+		t.Errorf("Field: got %q, want plugins.governance", all[0].Field)
 	}
 }
 
@@ -141,13 +141,13 @@ func TestGlobalOnlyBuildCriticalGateSocketScopedByAllPlugins(t *testing.T) {
 func TestGlobalOnlyBuildCriticalAppendInBothIdentity(t *testing.T) {
 	t.Parallel()
 	rw := resolveWithGlobal(t,
-		"plugins:\n  mutator_append:\n    - uri: oci://h/mut:1\n",
-		"workspace: {}\nplugins:\n  mutator_append:\n    - uri: oci://h/mut:1\n",
+		"plugins:\n  governance_append:\n    - uri: oci://h/mut:1\n      role: label-transform\n",
+		"workspace: {}\nplugins:\n  governance_append:\n    - uri: oci://h/mut:1\n      role: label-transform\n",
 	)
 	// Sanity: the full resolution really does carry the entry twice (both
 	// appends concatenate), so this exercises the set-vs-multiset distinction.
-	if n := len(rw.Config().Plugins.Mutator); n != 2 {
-		t.Fatalf("full mutator list: got %d entries, want 2 (both appends concatenate): %+v", n, rw.Config().Plugins.Mutator)
+	if n := len(rw.Config().Plugins.Governance); n != 2 {
+		t.Fatalf("full governance list: got %d entries, want 2 (both appends concatenate): %+v", n, rw.Config().Plugins.Governance)
 	}
 	got, err := rw.GlobalOnlyBuildCritical(false)
 	if err != nil {
@@ -164,7 +164,7 @@ func TestGlobalOnlyBuildCriticalFullyLocal(t *testing.T) {
 	t.Parallel()
 	rw := resolveWithGlobal(t,
 		"",
-		"workspace:\n  catalog_dirs:\n    - ./cat\nplugins:\n  providers:\n    - capability: helm\n      uri: oci://h/helm:1\n  mutator:\n    - uri: oci://h/mut:1\n",
+		"workspace:\n  catalog_dirs:\n    - ./cat\nplugins:\n  providers:\n    - capability: helm\n      uri: oci://h/helm:1\n  governance:\n    - uri: oci://h/mut:1\n      role: label-transform\n",
 	)
 	got, err := rw.GlobalOnlyBuildCritical(false)
 	if err != nil {
@@ -233,7 +233,7 @@ func TestGlobalOnlyBuildCriticalEnvScalarOutOfScope(t *testing.T) {
 func TestGlobalOnlyBuildCriticalDeterministic(t *testing.T) {
 	t.Parallel()
 	rw := resolveWithGlobal(t,
-		"plugins:\n  providers:\n    - capability: helm\n      uri: oci://h/helm:1\n  mutator:\n    - uri: oci://h/mut:1\n  policy:\n    - uri: oci://h/pol:1\nworkspace:\n  catalog_dirs:\n    - ./gcat\n",
+		"plugins:\n  providers:\n    - capability: helm\n      uri: oci://h/helm:1\n  governance:\n    - uri: oci://h/mut:1\n      role: label-transform\n    - uri: oci://h/pol:1\n      role: ir-verdict\nworkspace:\n  catalog_dirs:\n    - ./gcat\n",
 		"",
 	)
 	// The all-plugins scope so every socket field participates in the order check.
@@ -248,8 +248,9 @@ func TestGlobalOnlyBuildCriticalDeterministic(t *testing.T) {
 	if !reflect.DeepEqual(first, second) {
 		t.Fatalf("non-deterministic bindings:\n first=%+v\nsecond=%+v", first, second)
 	}
-	// Fixed field order: providers, mutator, policy, then catalog_dirs.
-	want := []string{"plugins.providers", "plugins.mutator", "plugins.policy", "workspace.catalog_dirs"}
+	// Fixed field order: providers, then the governance attachments in authored
+	// order (label-transform, then ir-verdict), then catalog_dirs.
+	want := []string{"plugins.providers", "plugins.governance", "plugins.governance", "workspace.catalog_dirs"}
 	if !reflect.DeepEqual(fieldsOf(first), want) {
 		t.Fatalf("field order: got %v, want %v", fieldsOf(first), want)
 	}

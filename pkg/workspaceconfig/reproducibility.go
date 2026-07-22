@@ -41,14 +41,21 @@ type socketField struct {
 func buildCriticalSocketFields(cfg Config, allPlugins bool) []socketField {
 	var out []socketField
 	for _, ps := range cfg.PluginSockets() {
-		if !allPlugins && ps.Socket.Tier() != SocketTierMutating {
-			continue
+		refs := ps.Refs
+		if !allPlugins {
+			// Membership is per-attachment: for the governance socket only the
+			// byte-determining (label-transform) attachments are build-critical;
+			// its verdict attachments shape no output and are excluded.
+			refs = ps.RefsByTier(SocketTierMutating)
+			if len(refs) == 0 {
+				continue
+			}
 		}
 		key := string(ps.Socket)
 		if ps.Socket == SocketProvider {
 			key = "providers"
 		}
-		out = append(out, socketField{Key: key, Refs: ps.Refs})
+		out = append(out, socketField{Key: key, Refs: refs})
 	}
 	return out
 }
@@ -94,12 +101,22 @@ func (r *ResolvedWorkspace) GlobalOnlyBuildCritical(allPlugins bool) ([]BuildCri
 	// identity is the whole attachment (uri, capability, function).
 	fullSockets := buildCriticalSocketFields(full, allPlugins)
 	treeSockets := buildCriticalSocketFields(tree, allPlugins)
-	for i, sf := range fullSockets {
+	// Pair the two layers by socket key, not by position: a socket can be present
+	// in the full enumeration yet absent from the tree-only one (the governance
+	// socket is enumerated only when it carries a build-critical attachment, so a
+	// binding present only in the global layer leaves the tree-only side without
+	// that socket). A tree side missing the key contributes no refs, so the
+	// global-only diff is the full side's whole attachment set.
+	treeRefsByKey := make(map[string][]PluginRef, len(treeSockets))
+	for _, sf := range treeSockets {
+		treeRefsByKey[sf.Key] = sf.Refs
+	}
+	for _, sf := range fullSockets {
 		key := pluginAttachmentKey
 		if sf.Key == "providers" {
 			key = providerBindingKey
 		}
-		out = append(out, globalOnlyRefs("plugins."+sf.Key, sf.Refs, treeSockets[i].Refs, key)...)
+		out = append(out, globalOnlyRefs("plugins."+sf.Key, sf.Refs, treeRefsByKey[sf.Key], key)...)
 	}
 
 	// catalog_dirs concatenate across layers; a directory in the full list whose

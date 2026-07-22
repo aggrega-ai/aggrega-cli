@@ -12,6 +12,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
+	"github.com/aggrega-ai/aggrega-cli/pkg/plugintype"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
@@ -406,7 +407,7 @@ func TestPluginDescent_FeatureRecipePinned(t *testing.T) {
 // to its spec.plugin .wasm artifact at pull time even though no Recipe references it.
 func TestPluginDescent_WorkspaceSocketEntityArtifactPinned(t *testing.T) {
 	const socketName = "baseline"
-	const socketArtifact = "mutator/" + socketName
+	const socketArtifact = "governance/" + socketName
 	const socketEntity = socketArtifact + ":1.0.0"
 
 	lookup := pluginDescentLookup()
@@ -420,14 +421,14 @@ func TestPluginDescent_WorkspaceSocketEntityArtifactPinned(t *testing.T) {
 			recipeURI: recipeWithPipelinePlugin(t, "svc", registryProvider, ""),
 		},
 		plugins: map[string]*types.Plugin{
-			socketEntity: pluginEntity(t, socketName, "mutator"),
+			socketEntity: pluginEntity(t, socketName, "governance"),
 		},
 	}
 
 	rel := loadRelease(t, providerDescentRelease)
 	man := loadManifest(t, providerDescentManifest)
 	cfg := workspaceconfig.Config{}
-	cfg.Plugins.Mutator = []workspaceconfig.PluginRef{{URI: socketEntity}}
+	cfg.Plugins.Governance = []workspaceconfig.PluginRef{{URI: socketEntity, Role: plugintype.RoleLabelTransform}}
 	cl, err := closure.ComputeClosure(rel, man, nil, cfg, lookup)
 	if err != nil {
 		t.Fatalf("ComputeClosure: %v", err)

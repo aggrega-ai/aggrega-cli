@@ -94,7 +94,7 @@ func (l *Loader) LoadForDescribe(ctx context.Context, spec PluginSpec) (*Plugin,
 //
 // When spec carries an expected plugin type (spec.PluginType is non-empty),
 // the descriptor's self-reported plugin type must equal it; a mismatch — a
-// mutator guest attached at the policy socket, a provider guest at the linter
+// provider guest attached at the linter socket, a parser guest at the importer
 // socket, a non-CLI guest run as a terminal command — halts with an error
 // wrapping [ErrWasmPluginTypeMismatch]. An empty spec.PluginType declares no
 // expectation (the introspection path that reads a guest's self-report without

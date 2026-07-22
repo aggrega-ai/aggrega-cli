@@ -417,14 +417,18 @@ func reportCapture(out io.Writer, cfg workspaceconfig.Config, dest string, allPl
 	// The socket scope reads from the same tier classification the writer uses,
 	// so the report can never name a socket capture did not freeze.
 	for _, ps := range cfg.PluginSockets() {
-		if !allPlugins && ps.Socket.Tier() != workspaceconfig.SocketTierMutating {
-			continue
+		refs := ps.Refs
+		if !allPlugins {
+			refs = ps.RefsByTier(workspaceconfig.SocketTierMutating)
+			if len(refs) == 0 {
+				continue
+			}
 		}
 		if ps.Socket == workspaceconfig.SocketProvider {
-			section("providers", providerLines(ps.Refs))
+			section("providers", providerLines(refs))
 			continue
 		}
-		section(string(ps.Socket), socketLines(ps.Refs))
+		section(string(ps.Socket), socketLines(refs))
 	}
 	section("catalog_dirs", cfg.Workspace.CatalogDirs)
 

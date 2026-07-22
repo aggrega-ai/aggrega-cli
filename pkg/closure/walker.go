@@ -286,8 +286,8 @@ func (s *walkState) walkWorkspacePlugins(cfg workspaceconfig.Config) {
 		}
 		s.addEntityKind(uri, refPath, pluginKindHint)
 	}
-	for _, p := range cfg.Plugins.Mutator {
-		record(p.URI, ".aggrega-config.yaml.plugins.mutator")
+	for _, p := range cfg.Plugins.TransformGovernanceRefs() {
+		record(p.URI, ".aggrega-config.yaml.plugins.governance")
 	}
 }
 

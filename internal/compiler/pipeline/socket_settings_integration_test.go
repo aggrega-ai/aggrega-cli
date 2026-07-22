@@ -14,6 +14,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/topology"
+	"github.com/aggrega-ai/aggrega-cli/pkg/plugintype"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
@@ -24,8 +25,9 @@ import (
 func settingsPolicyInputs(t *testing.T, settings map[string]any) (pipeline.Inputs, resolver.CatalogLookup, renderer.RecipeLookup, topology.SubAggregateLoader) {
 	t.Helper()
 	inputs, buildLookup, recipeLookup, subAgg := loadFullstackForSockets(t)
-	inputs.WorkspaceConfig.Plugins.Policy = []workspaceconfig.PluginRef{{
+	inputs.WorkspaceConfig.Plugins.Governance = []workspaceconfig.PluginRef{{
 		URI:  "proof://policy-settings",
+		Role: plugintype.RoleIRVerdict,
 		With: &workspaceconfig.PluginRefWith{Settings: settings},
 	}}
 	inputs.PluginPathLookup = fixtureSocketLookup(t, buildLookup, map[string]string{
@@ -105,8 +107,9 @@ func TestPolicySocketSettingsViolationE2E(t *testing.T) {
 func TestPolicySocketNoSettingsSchemaFreeFormE2E(t *testing.T) {
 	ctx := context.Background()
 	inputs, buildLookup, recipeLookup, subAgg := loadFullstackForSockets(t)
-	inputs.WorkspaceConfig.Plugins.Policy = []workspaceconfig.PluginRef{{
-		URI: "proof://policy-allow",
+	inputs.WorkspaceConfig.Plugins.Governance = []workspaceconfig.PluginRef{{
+		URI:  "proof://policy-allow",
+		Role: plugintype.RoleIRVerdict,
 		With: &workspaceconfig.PluginRefWith{Settings: map[string]any{
 			"anything": "goes",
 			"nested":   map[string]any{"count": 3},

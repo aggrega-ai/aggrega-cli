@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/ociref"
+	"github.com/aggrega-ai/aggrega-cli/pkg/plugintype"
 	"go.yaml.in/yaml/v3"
 )
 
@@ -183,13 +184,13 @@ func UpsertProviderBinding(path, target, plugin string) error {
 // schema-gate discipline stay unified with the provider-binding writer. A socket
 // key the schema does not admit is rejected by that merged-document validation
 // rather than silently written.
-func UpsertPluginSocketRef(path, socket, uri string) error {
+func UpsertPluginSocketRef(path, socket, uri string, role plugintype.Role) error {
 	if socket == "" || uri == "" {
 		return fmt.Errorf("workspaceconfig: UpsertPluginSocketRef: socket and uri are required")
 	}
 	return mutateConfigDocument(path, func(mapping *yaml.Node) error {
 		pluginsNode := getOrCreateMapping(mapping, "plugins")
-		refs := upsertPluginRefURI(readPluginRefs(pluginsNode, socket), uri)
+		refs := upsertPluginRefURI(readPluginRefs(pluginsNode, socket), uri, role)
 
 		var refsNode yaml.Node
 		if err := refsNode.Encode(refs); err != nil {
@@ -573,13 +574,13 @@ func setEncodedKey(parent *yaml.Node, key string, v any) error {
 // in refs carries it, or returns refs unchanged when one already does. The
 // idempotent no-clobber semantic mirrors UpsertProviderRef: re-adding the same
 // attachment neither duplicates it nor disturbs an entry's other members.
-func upsertPluginRefURI(refs []PluginRef, uri string) []PluginRef {
+func upsertPluginRefURI(refs []PluginRef, uri string, role plugintype.Role) []PluginRef {
 	for i := range refs {
 		if refs[i].URI == uri {
 			return refs
 		}
 	}
-	return append(refs, PluginRef{URI: uri})
+	return append(refs, PluginRef{URI: uri, Role: role})
 }
 
 // readPluginRefs decodes the existing `<socket>` list from a `plugins` mapping

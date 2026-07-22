@@ -10,6 +10,8 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/aggrega-ai/aggrega-cli/pkg/plugintype"
 )
 
 // writeFixture writes content to a fresh path under t.TempDir and
@@ -41,11 +43,12 @@ build:
   halt_on_deprecated_severity: warning
 
 plugins:
-  mutator:
+  governance:
     - uri: oci://hub.aggrega.ai/aggrega-team/mutator-bundle@v1
       function: custom_mutate
-  policy:
+      role: label-transform
     - uri: oci://hub.aggrega.ai/aggrega-team/policy-bundle@v1
+      role: ir-verdict
   linter: []
   importer: []
 
@@ -94,17 +97,19 @@ lint:
 		t.Errorf("Build.HaltOnDeprecatedSeverity: %q", got.Build.HaltOnDeprecatedSeverity)
 	}
 
-	if len(got.Plugins.Mutator) != 1 {
-		t.Fatalf("Plugins.Mutator len: %d", len(got.Plugins.Mutator))
+	mut := got.Plugins.GovernanceRefsForRole(plugintype.RoleLabelTransform)
+	if len(mut) != 1 {
+		t.Fatalf("governance label-transform len: %d", len(mut))
 	}
-	if got.Plugins.Mutator[0].URI == "" || got.Plugins.Mutator[0].Function != "custom_mutate" {
-		t.Errorf("Plugins.Mutator[0]: %+v", got.Plugins.Mutator[0])
+	if mut[0].URI == "" || mut[0].Function != "custom_mutate" {
+		t.Errorf("governance label-transform[0]: %+v", mut[0])
 	}
-	if len(got.Plugins.Policy) != 1 {
-		t.Fatalf("Plugins.Policy len: %d", len(got.Plugins.Policy))
+	pol := got.Plugins.GovernanceRefsForRole(plugintype.RoleIRVerdict)
+	if len(pol) != 1 {
+		t.Fatalf("governance ir-verdict len: %d", len(pol))
 	}
-	if got.Plugins.Policy[0].Function != "" {
-		t.Errorf("Plugins.Policy[0].Function: want empty (use socket default); got %q", got.Plugins.Policy[0].Function)
+	if pol[0].Function != "" {
+		t.Errorf("governance ir-verdict[0].Function: want empty (use socket default); got %q", pol[0].Function)
 	}
 
 	pd := got.Lint.PublishingDiscipline
@@ -357,28 +362,31 @@ build:
 
 func TestPluginRefRoundTripPreservesOptionalFunction(t *testing.T) {
 	t.Parallel()
-	// plugins.mutator carries function: custom_mutate (override);
-	// plugins.policy omits function (use socket default). Both
+	// the label-transform entry carries function: custom_mutate (override);
+	// the ir-verdict entry omits function (use socket default). Both
 	// must round-trip; the function-absent entry's PluginRef.Function
 	// must be empty-string (sentinel for "use socket default").
 	content := `
 plugins:
-  mutator:
+  governance:
     - uri: oci://hub.aggrega.ai/team/mutator@v1
       function: custom_mutate
-  policy:
+      role: label-transform
     - uri: oci://hub.aggrega.ai/team/policy@v1
+      role: ir-verdict
 `
 	path := writeFixture(t, content)
 	got, err := load(path)
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if len(got.Plugins.Mutator) != 1 || got.Plugins.Mutator[0].Function != "custom_mutate" {
-		t.Errorf("Plugins.Mutator: %+v", got.Plugins.Mutator)
+	mut := got.Plugins.GovernanceRefsForRole(plugintype.RoleLabelTransform)
+	if len(mut) != 1 || mut[0].Function != "custom_mutate" {
+		t.Errorf("governance label-transform: %+v", mut)
 	}
-	if len(got.Plugins.Policy) != 1 || got.Plugins.Policy[0].Function != "" {
-		t.Errorf("Plugins.Policy: %+v", got.Plugins.Policy)
+	pol := got.Plugins.GovernanceRefsForRole(plugintype.RoleIRVerdict)
+	if len(pol) != 1 || pol[0].Function != "" {
+		t.Errorf("governance ir-verdict: %+v", pol)
 	}
 }
 

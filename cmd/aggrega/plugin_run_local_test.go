@@ -65,14 +65,14 @@ spec:
     - name: transpile
 `
 
-// parserEntityWrongType claims a pluginType (policy) the parser guest's
+// parserEntityWrongType claims a pluginType (governance) the parser guest's
 // describe() does not report, so the type gate halts before the guest runs.
 const parserEntityWrongType = `apiVersion: aggrega.ai/v1alpha1
 kind: Plugin
 metadata:
   name: demo-parser
   version: "1.0.0"
-  pluginType: policy
+  pluginType: governance
 spec:
   abiVersion: v1alpha1
   exports:
@@ -255,7 +255,7 @@ func TestRunLocal_TypeGate(t *testing.T) {
 	t.Run("mismatched type halts", func(t *testing.T) {
 		t.Parallel()
 		guest := wasmtest.EnsureFixtureBuilt(t, "parse-go.wasm")
-		_, err := runLocal(t, "--plugin", guest, "--export", "parse", "--type", "policy", "--with", parsePayload)
+		_, err := runLocal(t, "--plugin", guest, "--export", "parse", "--type", "governance", "--with", parsePayload)
 		if !errors.Is(err, wasm.ErrWasmPluginTypeMismatch) {
 			t.Fatalf("a mismatched --type should halt with ErrWasmPluginTypeMismatch; got %v", err)
 		}

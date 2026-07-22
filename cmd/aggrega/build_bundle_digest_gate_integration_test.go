@@ -209,9 +209,9 @@ func TestIntegration_BuildBundleDigestGate(t *testing.T) {
 		t.Fatalf("LoadKeyedSigner: %v", err)
 	}
 
-	const mutatorSocket = "mutator/tag-injector"
+	const mutatorSocket = "governance/tag-injector"
 	const proofMutatorLabel = "mutator-proof"
-	pluginsBlock := "plugins:\n  mutator:\n    - uri: " + mutatorSocket + ":1.0.0\n"
+	pluginsBlock := "plugins:\n  governance:\n    - uri: " + mutatorSocket + ":1.0.0\n      role: label-transform\n"
 	artifactURIFor := func(string) string { return mutatorSocket }
 
 	// pullSigned publishes the SIGNED mutator, writes a verify-if-present
@@ -222,7 +222,7 @@ func TestIntegration_BuildBundleDigestGate(t *testing.T) {
 		t.Helper()
 		host := startRegistry(t, nil)
 		configSocketFixtureCatalog(t, host)
-		publishSocketPluginEntitySigned(t, host, mutatorSocket, "1.0.0", mutatorPath, "mutator", "mutate", signer)
+		publishSocketPluginEntitySigned(t, host, mutatorSocket, "1.0.0", mutatorPath, "governance", "mutate", signer)
 		ws := writeVerifyIfPresentConfigSocketWorkspace(t, host, pubPEM, pluginsBlock)
 		t.Chdir(ws)
 		if perr := pullRun(pullConfig{ReleasePath: "release.yaml", CatalogDirs: []string{std}}); perr != nil {
@@ -297,7 +297,7 @@ func TestIntegration_BuildBundleDigestGate(t *testing.T) {
 		configSocketFixtureCatalog(t, host)
 		// Publish the mutator UNSIGNED under the same verify-if-present policy (its
 		// pinned key never engages because no signature referrer is present).
-		publishSocketPluginEntity(t, host, mutatorSocket, "1.0.0", mutatorPath, "mutator", "mutate")
+		publishSocketPluginEntity(t, host, mutatorSocket, "1.0.0", mutatorPath, "governance", "mutate")
 		ws := writeVerifyIfPresentConfigSocketWorkspace(t, host, pubPEM, pluginsBlock)
 		t.Chdir(ws)
 		if perr := pullRun(pullConfig{ReleasePath: "release.yaml", CatalogDirs: []string{std}}); perr != nil {

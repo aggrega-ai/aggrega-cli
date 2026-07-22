@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/pkg/plugintype"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
@@ -287,15 +288,15 @@ func TestResolveDeclaringFilePaths(t *testing.T) {
 	gdir := t.TempDir()
 	gpath := filepath.Join(gdir, "global.yaml")
 	// Global declares a base linter plugin (relative, anchored to gdir) and an
-	// oci policy plugin via append (scheme URI, must pass through).
-	write(t, gpath, "plugins:\n  linter:\n    - uri: ./glob.wasm\n  policy_append:\n    - uri: oci://h/p:1\n")
+	// oci verdict plugin via append (scheme URI, must pass through).
+	write(t, gpath, "plugins:\n  linter:\n    - uri: ./glob.wasm\n  governance_append:\n    - uri: oci://h/p:1\n      role: ir-verdict\n")
 	t.Setenv("AGGREGA_CONFIG", gpath)
 	// Root: the workspace: marker, no plugins.linter (so the global's base
 	// survives the overlay — the idempotence case), plus a relative and an
-	// absolute mutator.
+	// absolute label-transform governance attachment.
 	absPlugin := filepath.Join(root, "abs", "m.wasm")
 	write(t, filepath.Join(root, ".aggrega-config.yaml"),
-		"workspace: {}\nplugins:\n  mutator:\n    - uri: ./rel.wasm\n    - uri: "+absPlugin+"\n")
+		"workspace: {}\nplugins:\n  governance:\n    - uri: ./rel.wasm\n      role: label-transform\n    - uri: "+absPlugin+"\n      role: label-transform\n")
 
 	rw, err := workspaceconfig.Resolve(root, "")
 	if err != nil {
@@ -308,15 +309,17 @@ func TestResolveDeclaringFilePaths(t *testing.T) {
 		t.Errorf("linter URI: got %q; want %q (declaring file is the global; a nearer overlay must not re-anchor it)", got, want)
 	}
 	// oci:// append passes through unchanged.
-	if len(cfg.Plugins.Policy) != 1 || cfg.Plugins.Policy[0].URI != "oci://h/p:1" {
-		t.Errorf("policy URI: got %v; want [oci://h/p:1] (scheme URI not resolved)", cfg.Plugins.Policy)
+	verdict := cfg.Plugins.GovernanceRefsForRole(plugintype.RoleIRVerdict)
+	if len(verdict) != 1 || verdict[0].URI != "oci://h/p:1" {
+		t.Errorf("verdict URI: got %v; want [oci://h/p:1] (scheme URI not resolved)", verdict)
 	}
-	// root mutator: relative → root-anchored; absolute → unchanged.
-	if got, want := cfg.Plugins.Mutator[0].URI, filepath.Join(root, "rel.wasm"); got != want {
-		t.Errorf("mutator[0]: got %q; want %q (relative anchored to declaring root)", got, want)
+	// root label-transform: relative → root-anchored; absolute → unchanged.
+	mut := cfg.Plugins.GovernanceRefsForRole(plugintype.RoleLabelTransform)
+	if got, want := mut[0].URI, filepath.Join(root, "rel.wasm"); got != want {
+		t.Errorf("label-transform[0]: got %q; want %q (relative anchored to declaring root)", got, want)
 	}
-	if got := cfg.Plugins.Mutator[1].URI; got != absPlugin {
-		t.Errorf("mutator[1]: got %q; want %q (absolute unchanged)", got, absPlugin)
+	if got := mut[1].URI; got != absPlugin {
+		t.Errorf("label-transform[1]: got %q; want %q (absolute unchanged)", got, absPlugin)
 	}
 }
 
@@ -329,25 +332,25 @@ func TestResolvePluginSourcePaths(t *testing.T) {
 	root := t.TempDir()
 	gdir := t.TempDir()
 	gpath := filepath.Join(gdir, "global.yaml")
-	// Global declares a policy plugin via append whose source is relative to the
+	// Global declares a verdict plugin via append whose source is relative to the
 	// global file's dir.
-	write(t, gpath, "plugins:\n  policy_append:\n    - uri: oci://h/p:1\n      with:\n        sources:\n          - ./g-src.def\n")
+	write(t, gpath, "plugins:\n  governance_append:\n    - uri: oci://h/p:1\n      role: ir-verdict\n      with:\n        sources:\n          - ./g-src.def\n")
 	t.Setenv("AGGREGA_CONFIG", gpath)
-	// Root: the workspace marker plus a base policy plugin with one relative and
+	// Root: the workspace marker plus a base verdict plugin with one relative and
 	// one absolute source.
 	absSrc := filepath.Join(root, "abs", "policy.def")
 	write(t, filepath.Join(root, ".aggrega-config.yaml"),
-		"workspace: {}\nplugins:\n  policy:\n    - uri: oci://h/base:1\n      with:\n        sources:\n          - ./rel.def\n          - "+absSrc+"\n")
+		"workspace: {}\nplugins:\n  governance:\n    - uri: oci://h/base:1\n      role: ir-verdict\n      with:\n        sources:\n          - ./rel.def\n          - "+absSrc+"\n")
 
 	rw, err := workspaceconfig.Resolve(root, "")
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
 	cfg := rw.Config()
-	if len(cfg.Plugins.Policy) != 2 {
-		t.Fatalf("policy plugins: got %d, want 2 (base + global append): %+v", len(cfg.Plugins.Policy), cfg.Plugins.Policy)
+	if len(cfg.Plugins.Governance) != 2 {
+		t.Fatalf("governance plugins: got %d, want 2 (base + global append): %+v", len(cfg.Plugins.Governance), cfg.Plugins.Governance)
 	}
-	base := cfg.Plugins.Policy[0]
+	base := cfg.Plugins.Governance[0]
 	if base.With == nil || len(base.With.Sources) != 2 {
 		t.Fatalf("base plugin sources: got %+v, want 2", base.With)
 	}
@@ -358,7 +361,7 @@ func TestResolvePluginSourcePaths(t *testing.T) {
 		t.Errorf("base source[1]: got %q; want %q (absolute unchanged)", got, absSrc)
 	}
 	// The appended plugin's source anchors to the global file's dir, not root.
-	appended := cfg.Plugins.Policy[1]
+	appended := cfg.Plugins.Governance[1]
 	if appended.With == nil || len(appended.With.Sources) != 1 {
 		t.Fatalf("appended plugin sources: got %+v, want 1", appended.With)
 	}
@@ -367,23 +370,22 @@ func TestResolvePluginSourcePaths(t *testing.T) {
 	}
 }
 
-// appendLens reports the length of each of the seven `_append`-target fields, so
+// appendLens reports the length of each of the six `_append`-target fields, so
 // a per-field test can assert an append landed in exactly the right field.
 func appendLens(c workspaceconfig.Config) map[string]int {
 	return map[string]int{
 		"catalog_dirs": len(c.Workspace.CatalogDirs),
 		"narrowing":    len(c.Lint.PublishingDiscipline.NarrowingExemptions),
-		"mutator":      len(c.Plugins.Mutator),
-		"policy":       len(c.Plugins.Policy),
+		"governance":   len(c.Plugins.Governance),
 		"linter":       len(c.Plugins.Linter),
 		"importer":     len(c.Plugins.Importer),
 		"providers":    len(c.Plugins.Providers),
 	}
 }
 
-// TestResolveAppendPerField exercises each of the seven `_append` fields
-// independently. applyAppends is seven hand-written append statements, not a
-// generic loop, so a cross-wired statement (e.g. policy appending the mutator
+// TestResolveAppendPerField exercises each of the six `_append` fields
+// independently. applyAppends is six hand-written append statements, not a
+// generic loop, so a cross-wired statement (e.g. linter appending the governance
 // slice) is only caught by a per-field assertion. Each case sets exactly one
 // `_append` field with one entry and asserts that field grew by one while every
 // other field stayed at its baseline.
@@ -403,8 +405,7 @@ func TestResolveAppendPerField(t *testing.T) {
 	}{
 		{"catalog_dirs", "workspace:\n  catalog_dirs_append: [\"x\"]\n"},
 		{"narrowing", "workspace: {}\nlint:\n  publishing_discipline:\n    narrowing_exemptions_append:\n      - entity: e\n        paths: [p]\n        reason: r\n"},
-		{"mutator", "workspace: {}\nplugins:\n  mutator_append:\n    - uri: oci://x@v1\n"},
-		{"policy", "workspace: {}\nplugins:\n  policy_append:\n    - uri: oci://x@v1\n"},
+		{"governance", "workspace: {}\nplugins:\n  governance_append:\n    - uri: oci://x@v1\n      role: ir-verdict\n"},
 		{"linter", "workspace: {}\nplugins:\n  linter_append:\n    - uri: oci://x@v1\n"},
 		{"importer", "workspace: {}\nplugins:\n  importer_append:\n    - uri: oci://x@v1\n"},
 		{"providers", "workspace: {}\nplugins:\n  providers_append:\n    - capability: t\n      uri: oci://x@v1\n"},

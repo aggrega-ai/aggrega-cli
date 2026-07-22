@@ -78,15 +78,15 @@ func TestBuildReproducibilityGuardrailWarnsAndSucceeds(t *testing.T) {
 }
 
 // TestBuildReproducibilityGuardrailSilentForGateSocket drives the build path with
-// a verdict-gate socket (policy) supplied only by the global config layer. A gate
-// socket does not shape the rendered output, so the build-time guardrail — which
-// speaks to the byte-determining sockets — must stay silent about it: a gate
-// binding is meant to vary by environment and capture deliberately leaves it
-// global-only by default.
+// a verdict-role governance attachment supplied only by the global config layer.
+// A verdict role does not shape the rendered output, so the build-time guardrail —
+// which speaks to the byte-determining attachments — must stay silent about it: a
+// verdict binding is meant to vary by environment and capture deliberately leaves
+// it global-only by default.
 func TestBuildReproducibilityGuardrailSilentForGateSocket(t *testing.T) {
 	xdg := t.TempDir()
 	writeFixture(t, filepath.Join(xdg, "aggrega", "config.yaml"),
-		"plugins:\n  policy:\n    - uri: oci://h/pol:1\n")
+		"plugins:\n  governance:\n    - uri: oci://h/pol:1\n      role: ir-verdict\n")
 
 	root := t.TempDir()
 	writeFixture(t, filepath.Join(root, workspaceconfig.ConfigFilename), "workspace: {}\n")

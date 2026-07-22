@@ -3,12 +3,13 @@
 
 //go:build wasip1
 
-// Command selector-tagger-mutator is an embedded mutator Wasm guest. It reads a
-// component-to-tag map from a definition file and, for every topology node, sets
-// a tag label to the value the map assigns the node's component, falling back to
-// a default tag from its attachment settings when the component is absent from
-// the map. It self-describes as a mutator plugin whose mutate export the host
-// validates before dispatch; the mapping lookup and patch construction live in
+// Command selector-tagger-mutator is an embedded governance Wasm guest for the
+// label-transform role. It reads a component-to-tag map from a definition file
+// and, for every topology node, sets a tag label to the value the map assigns
+// the node's component, falling back to a default tag from its attachment
+// settings when the component is absent from the map. It self-describes as a
+// governance plugin whose mutate export the host validates before dispatch at a
+// label-transform role; the mapping lookup and patch construction live in
 // mutatorcore, which is exercised directly on the host toolchain, so this guest
 // holds only the ABI decode, the call, and the ABI encode.
 //
@@ -22,14 +23,14 @@ import (
 	"github.com/aggrega-ai/aggrega-pdk-go/pkg/aggrega"
 )
 
-// descriptor is the describe() self-report: a v1alpha1 mutator plugin whose
-// mutate export the host validates before dispatch. A mutator is attached by URI
-// at the mutator socket rather than matched by a served capability, so it
-// advertises none.
+// descriptor is the describe() self-report: a v1alpha1 governance plugin whose
+// mutate export the host validates before dispatch at a label-transform role. A
+// governance guest is attached by URI at the governance socket rather than
+// matched by a served capability, so it advertises none.
 func descriptor() aggrega.PluginDescriptor {
 	return aggrega.PluginDescriptor{
 		AbiVersion:  aggrega.APIVersion,
-		PluginType:  "mutator",
+		PluginType:  "governance",
 		Description: "Set a tag label on each topology node from a component-to-tag map.",
 		Exports:     []aggrega.PluginExport{{Name: "mutate"}},
 		Metadata:    &aggrega.PluginDescriptorMeta{Author: "aggrega", License: "Apache-2.0"},

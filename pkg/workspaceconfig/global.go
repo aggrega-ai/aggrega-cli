@@ -72,8 +72,7 @@ const EnvConfigOverride = "AGGREGA_CONFIG"
 type appendSlices struct {
 	CatalogDirs         []string
 	NarrowingExemptions []NarrowingExemption
-	Mutator             []PluginRef
-	Policy              []PluginRef
+	Governance          []PluginRef
 	Linter              []PluginRef
 	Importer            []PluginRef
 	Providers           []PluginRef
@@ -89,8 +88,7 @@ func captureAppends(cfg Config) appendSlices {
 	return appendSlices{
 		CatalogDirs:         cfg.Workspace.CatalogDirsAppend,
 		NarrowingExemptions: cfg.Lint.PublishingDiscipline.NarrowingExemptionsAppend,
-		Mutator:             cfg.Plugins.MutatorAppend,
-		Policy:              cfg.Plugins.PolicyAppend,
+		Governance:          cfg.Plugins.GovernanceAppend,
 		Linter:              cfg.Plugins.LinterAppend,
 		Importer:            cfg.Plugins.ImporterAppend,
 		Providers:           cfg.Plugins.ProvidersAppend,
@@ -107,8 +105,7 @@ func captureAppends(cfg Config) appendSlices {
 func stripAppends(cfg *Config) {
 	cfg.Workspace.CatalogDirsAppend = nil
 	cfg.Lint.PublishingDiscipline.NarrowingExemptionsAppend = nil
-	cfg.Plugins.MutatorAppend = nil
-	cfg.Plugins.PolicyAppend = nil
+	cfg.Plugins.GovernanceAppend = nil
 	cfg.Plugins.LinterAppend = nil
 	cfg.Plugins.ImporterAppend = nil
 	cfg.Plugins.ProvidersAppend = nil
@@ -125,8 +122,7 @@ func applyAppends(merged *Config, layers ...appendSlices) {
 	for _, layer := range layers {
 		merged.Workspace.CatalogDirs = append(merged.Workspace.CatalogDirs, layer.CatalogDirs...)
 		merged.Lint.PublishingDiscipline.NarrowingExemptions = append(merged.Lint.PublishingDiscipline.NarrowingExemptions, layer.NarrowingExemptions...)
-		merged.Plugins.Mutator = append(merged.Plugins.Mutator, layer.Mutator...)
-		merged.Plugins.Policy = append(merged.Plugins.Policy, layer.Policy...)
+		merged.Plugins.Governance = append(merged.Plugins.Governance, layer.Governance...)
 		merged.Plugins.Linter = append(merged.Plugins.Linter, layer.Linter...)
 		merged.Plugins.Importer = append(merged.Plugins.Importer, layer.Importer...)
 		merged.Plugins.Providers = append(merged.Plugins.Providers, layer.Providers...)

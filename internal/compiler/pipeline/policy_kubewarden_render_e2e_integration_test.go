@@ -16,6 +16,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/topology"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
+	"github.com/aggrega-ai/aggrega-cli/pkg/plugintype"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
@@ -38,8 +39,9 @@ const (
 func kubewardenRenderPolicyInputs(t *testing.T, requiredLabel string) (pipeline.Inputs, resolver.CatalogLookup, renderer.RecipeLookup, topology.SubAggregateLoader) {
 	t.Helper()
 	inputs, buildLookup, recipeLookup, subAgg := loadFullstackForSockets(t)
-	inputs.WorkspaceConfig.Plugins.Policy = []workspaceconfig.PluginRef{{
+	inputs.WorkspaceConfig.Plugins.Governance = []workspaceconfig.PluginRef{{
 		URI:  "proof://policy-kubewarden-render",
+		Role: plugintype.RoleRenderVerdict,
 		With: &workspaceconfig.PluginRefWith{Settings: map[string]any{"required_label": requiredLabel}},
 	}}
 	inputs.PluginPathLookup = fixtureSocketLookup(t, buildLookup, map[string]string{

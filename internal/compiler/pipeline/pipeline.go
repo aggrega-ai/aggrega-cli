@@ -272,11 +272,12 @@ func runStepsOneToFour(
 			Topology:      topoResult,
 		}
 
-		// Step 2b: mutator socket. Config-driven off WorkspaceConfig.Plugins.Mutator
-		// — a no-op when unconfigured, so an unattached build is byte-identical to a
-		// build without the socket. When configured, each plugin auto-tags node
-		// labels via JSON Patch (the narrow mutation exception); the tags flow into
-		// the IR because Step 3 reads its labels from this same topoResult.
+		// Step 2b: label-transform governance role. Config-driven off the
+		// label-transform attachments in WorkspaceConfig.Plugins.Governance — a no-op
+		// when unconfigured, so an unattached build is byte-identical to a build
+		// without the role. When configured, each plugin auto-tags node labels via
+		// JSON Patch (the narrow mutation exception); the tags flow into the IR
+		// because Step 3 reads its labels from this same topoResult.
 		if err := runMutatorSocket(ctx, inputs, catalogLookup, topoResult); err != nil {
 			return err
 		}
@@ -309,13 +310,13 @@ func runStepsOneToFour(
 		}
 		out.Analysis = analysis
 
-		// Step 4b: policy socket. Config-driven off
-		// WorkspaceConfig.Plugins.Policy — a no-op when unconfigured. When
-		// configured, each plugin evaluates the full IR graph and its failed
-		// verdicts append to analysis.Errors, so a policy rejection halts the build
-		// through the same gate selector/appliesTo violations use (RunPipeline joins
-		// Errors; the Tier-4 path surfaces them as diagnostics). Policy never
-		// mutates the graph.
+		// Step 4b: ir-verdict governance role. Config-driven off the ir-verdict
+		// attachments in WorkspaceConfig.Plugins.Governance — a no-op when
+		// unconfigured. When configured, each plugin evaluates the full IR graph and
+		// its failed verdicts append to analysis.Errors, so a verdict rejection halts
+		// the build through the same gate selector/appliesTo violations use
+		// (RunPipeline joins Errors; the Tier-4 path surfaces them as diagnostics). A
+		// verdict role never mutates the graph.
 		if err := runPolicySocket(ctx, inputs, catalogLookup, analysis); err != nil {
 			return err
 		}
@@ -857,12 +858,12 @@ func RunPipeline(
 			fmt.Fprintf(os.Stderr, "  warning: %s\n", w)
 		}
 
-		// Render-stage policy socket. Config-driven off
-		// WorkspaceConfig.Plugins.Policy — a no-op when unconfigured, and it runs
-		// only the plugins that declare the render stage over the rendered
-		// artifacts (path-sorted). A deny verdict returns a build-halting error
-		// carrying ErrPolicyViolation; warn / audit verdicts are non-halting
-		// diagnostics. Policy never mutates the rendered artifacts.
+		// Render-verdict governance role. Config-driven off the render-verdict
+		// attachments in WorkspaceConfig.Plugins.Governance — a no-op when
+		// unconfigured, and it runs those attachments over the rendered artifacts
+		// (path-sorted). A deny verdict returns a build-halting error carrying
+		// ErrPolicyViolation; warn / audit verdicts are non-halting diagnostics. A
+		// verdict role never mutates the rendered artifacts.
 		if err := runRenderPolicySocket(ctx, inputs, catalogLookup, renderResult.Files); err != nil {
 			return err
 		}

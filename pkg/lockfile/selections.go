@@ -7,6 +7,7 @@ import (
 	"sort"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/ociref"
+	"github.com/aggrega-ai/aggrega-cli/pkg/plugintype"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
@@ -44,7 +45,7 @@ func MutatorAttachments(lf *Lockfile) []workspaceconfig.PluginRef {
 	}
 	refs := make([]workspaceconfig.PluginRef, 0, len(lf.Mutators))
 	for _, m := range lf.Mutators {
-		ref := workspaceconfig.PluginRef{URI: m.Plugin, Function: m.Function}
+		ref := workspaceconfig.PluginRef{URI: m.Plugin, Function: m.Function, Role: plugintype.RoleLabelTransform}
 		if len(m.Settings) > 0 || len(m.Sources) > 0 {
 			with := &workspaceconfig.PluginRefWith{Settings: m.Settings}
 			for _, s := range m.Sources {

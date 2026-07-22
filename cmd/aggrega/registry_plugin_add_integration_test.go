@@ -28,8 +28,8 @@ import (
 // attach → resolve → pin path for a config-socket plugin. A real mutator Plugin
 // entity is published to the in-process registry; `plugin add mutator tag-injector`
 // searches, pins the latest published version, and writes a schema-valid
-// plugins.mutator entry; a subsequent pull resolves the attachment and pins both
-// the entity and its .wasm artifact in the lockfile.
+// plugins.governance entry; a subsequent pull resolves the attachment and pins
+// both the entity and its .wasm artifact in the lockfile.
 func TestIntegration_PluginAdd_ConfigSocket_RoundTrip(t *testing.T) {
 	// Resolve the committed .wasm fixture BEFORE any chdir (umbrella-root
 	// discovery walks up from cwd); a clean skip only if the toolchain is absent.
@@ -39,8 +39,8 @@ func TestIntegration_PluginAdd_ConfigSocket_RoundTrip(t *testing.T) {
 	host := startRegistry(t, nil)
 	configSocketFixtureCatalog(t, host)
 
-	const mutatorSocket = "mutator/tag-injector"
-	mutatorDigest := publishSocketPluginEntity(t, host, mutatorSocket, "1.0.0", mutatorPath, "mutator", "mutate")
+	const mutatorSocket = "governance/tag-injector"
+	mutatorDigest := publishSocketPluginEntity(t, host, mutatorSocket, "1.0.0", mutatorPath, "governance", "mutate")
 
 	// A workspace with NO plugins block; the add command writes it. auto_pull on so
 	// the follow-up pull runs under the hermetic complete-lockfile posture.
@@ -54,7 +54,8 @@ func TestIntegration_PluginAdd_ConfigSocket_RoundTrip(t *testing.T) {
 
 	var out bytes.Buffer
 	if err := pluginAddRun(context.Background(), pluginAddConfig{
-		Socket: "mutator",
+		Socket: "governance",
+		Role:   "label-transform",
 		Query:  "tag-injector",
 		ws:     rw,
 		Out:    &out,
@@ -63,15 +64,15 @@ func TestIntegration_PluginAdd_ConfigSocket_RoundTrip(t *testing.T) {
 	}
 	t.Logf("plugin add output: %s", out.String())
 
-	// The add wrote a schema-valid plugins.mutator entry (a green re-resolve is the
-	// config-schema validation), pinned at the latest published version.
+	// The add wrote a schema-valid plugins.governance entry (a green re-resolve is
+	// the config-schema validation), pinned at the latest published version.
 	reread, err := workspaceconfig.Resolve(ws, "")
 	if err != nil {
 		t.Fatalf("resolve written config: %v", err)
 	}
-	got := reread.Config().Plugins.Mutator
+	got := reread.Config().Plugins.Governance
 	if len(got) != 1 || got[0].URI != mutatorSocket+":1.0.0" {
-		t.Fatalf("plugins.mutator = %+v; want one entry %q", got, mutatorSocket+":1.0.0")
+		t.Fatalf("plugins.governance = %+v; want one entry %q", got, mutatorSocket+":1.0.0")
 	}
 	if body, rerr := os.ReadFile(workspaceconfig.ConfigFilename); rerr == nil {
 		t.Logf("written .aggrega-config.yaml:\n%s", body)

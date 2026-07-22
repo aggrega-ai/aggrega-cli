@@ -25,6 +25,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
+	"github.com/aggrega-ai/aggrega-cli/pkg/plugintype"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
@@ -116,7 +117,7 @@ func TestMutatorSocketInjectsLabelE2E(t *testing.T) {
 
 	build := func() *pipeline.Result {
 		inputs, buildLookup, recipeLookup, subAgg := loadFullstackForSockets(t)
-		inputs.WorkspaceConfig.Plugins.Mutator = []workspaceconfig.PluginRef{{URI: "proof://mutator"}}
+		inputs.WorkspaceConfig.Plugins.Governance = []workspaceconfig.PluginRef{{URI: "proof://mutator", Role: plugintype.RoleLabelTransform}}
 		inputs.PluginPathLookup = fixtureSocketLookup(t, buildLookup, map[string]string{"proof://mutator": "mutator-proof-go.wasm"})
 		res, err := pipeline.RunPipeline(ctx, inputs, buildLookup, recipeLookup, subAgg,
 			pipeline.Options{})
@@ -157,7 +158,7 @@ func TestMutatorSocketInjectsLabelE2E(t *testing.T) {
 func TestPolicySocketAllowE2E(t *testing.T) {
 	ctx := context.Background()
 	inputs, buildLookup, recipeLookup, subAgg := loadFullstackForSockets(t)
-	inputs.WorkspaceConfig.Plugins.Policy = []workspaceconfig.PluginRef{{URI: "proof://policy-allow"}}
+	inputs.WorkspaceConfig.Plugins.Governance = []workspaceconfig.PluginRef{{URI: "proof://policy-allow", Role: plugintype.RoleIRVerdict}}
 	inputs.PluginPathLookup = fixtureSocketLookup(t, buildLookup, map[string]string{"proof://policy-allow": "policy-allow-go.wasm"})
 
 	res, err := pipeline.RunPipeline(ctx, inputs, buildLookup, recipeLookup, subAgg,
@@ -176,7 +177,7 @@ func TestPolicySocketAllowE2E(t *testing.T) {
 func TestPolicySocketHaltE2E(t *testing.T) {
 	ctx := context.Background()
 	inputs, buildLookup, recipeLookup, subAgg := loadFullstackForSockets(t)
-	inputs.WorkspaceConfig.Plugins.Policy = []workspaceconfig.PluginRef{{URI: "proof://policy"}}
+	inputs.WorkspaceConfig.Plugins.Governance = []workspaceconfig.PluginRef{{URI: "proof://policy", Role: plugintype.RoleIRVerdict}}
 	inputs.PluginPathLookup = fixtureSocketLookup(t, buildLookup, map[string]string{"proof://policy": "policy-go.wasm"})
 
 	_, err := pipeline.RunPipeline(ctx, inputs, buildLookup, recipeLookup, subAgg,
@@ -203,24 +204,31 @@ func TestPolicySocketHaltE2E(t *testing.T) {
 	}
 }
 
-// TestPolicySocketWrongPluginTypeE2E proves attaching a mutator plugin at the
-// policy socket fails loudly with a plugin_type-mismatch message rather than
-// through the cryptic missing-export error the wrong export name would raise.
-func TestPolicySocketWrongPluginTypeE2E(t *testing.T) {
+// TestVerdictRoleConfinesMutateOnlyGuestE2E proves the verdict role is
+// structurally non-mutating: a governance guest built only to transform (it
+// exports mutate and emits label patches) cannot mutate when attached at a
+// verdict role. The verdict dispatch path has no mutate/patch code path — it
+// demands the role's validate export — so a mutate-only guest is rejected loudly
+// at the verdict step rather than silently mutating the build. This is the
+// structural replacement for the retired plugin-type-identity guard: confinement
+// is a property of the role's host code, not of what the guest declares itself to
+// be.
+func TestVerdictRoleConfinesMutateOnlyGuestE2E(t *testing.T) {
 	ctx := context.Background()
 	inputs, buildLookup, recipeLookup, subAgg := loadFullstackForSockets(t)
-	inputs.WorkspaceConfig.Plugins.Policy = []workspaceconfig.PluginRef{{URI: "proof://mutator-at-policy"}}
-	inputs.PluginPathLookup = fixtureSocketLookup(t, buildLookup, map[string]string{"proof://mutator-at-policy": "mutator-proof-go.wasm"})
+	inputs.WorkspaceConfig.Plugins.Governance = []workspaceconfig.PluginRef{{URI: "proof://mutate-only-at-verdict", Role: plugintype.RoleIRVerdict}}
+	inputs.PluginPathLookup = fixtureSocketLookup(t, buildLookup, map[string]string{"proof://mutate-only-at-verdict": "mutator-proof-go.wasm"})
 
 	_, err := pipeline.RunPipeline(ctx, inputs, buildLookup, recipeLookup, subAgg,
 		pipeline.Options{})
 	if err == nil {
-		t.Fatalf("RunPipeline with a mutator plugin at the policy socket: expected a halt, got nil")
+		t.Fatalf("a mutate-only guest at a verdict role: expected a loud halt (the verdict role has no mutate path), got nil")
 	}
-	for _, want := range []string{"plugin type", "mutator", "policy"} {
-		if !strings.Contains(err.Error(), want) {
-			t.Errorf("wrong-socket halt error missing %q:\n%v", want, err)
-		}
+	// The halt is the verdict step demanding its validate export — the guest's
+	// mutate never ran, and no patch was applied — so the failure surfaces at the
+	// IR-verdict step and names the offending attachment.
+	if !strings.Contains(err.Error(), "Step 4") || !strings.Contains(err.Error(), "proof://mutate-only-at-verdict") {
+		t.Errorf("verdict-role confinement halt should surface at the IR-verdict step and name the attachment:\n%v", err)
 	}
 }
 
@@ -295,8 +303,9 @@ func observePolicyInputs(t *testing.T, severity string) (pipeline.Inputs, resolv
 	if err := os.WriteFile(srcPath, []byte(srcContent), 0o644); err != nil {
 		t.Fatalf("write source: %v", err)
 	}
-	inputs.WorkspaceConfig.Plugins.Policy = []workspaceconfig.PluginRef{{
-		URI: "proof://policy-observe",
+	inputs.WorkspaceConfig.Plugins.Governance = []workspaceconfig.PluginRef{{
+		URI:  "proof://policy-observe",
+		Role: plugintype.RoleIRVerdict,
 		With: &workspaceconfig.PluginRefWith{
 			Sources:  []string{srcPath},
 			Settings: map[string]any{"severity": severity},
@@ -401,8 +410,9 @@ func TestPolicySocketSeverityAuditE2E(t *testing.T) {
 func renderPolicyInputs(t *testing.T, severity string) (pipeline.Inputs, resolver.CatalogLookup, renderer.RecipeLookup, topology.SubAggregateLoader) {
 	t.Helper()
 	inputs, buildLookup, recipeLookup, subAgg := loadFullstackForSockets(t)
-	inputs.WorkspaceConfig.Plugins.Policy = []workspaceconfig.PluginRef{{
+	inputs.WorkspaceConfig.Plugins.Governance = []workspaceconfig.PluginRef{{
 		URI:  "proof://policy-render",
+		Role: plugintype.RoleRenderVerdict,
 		With: &workspaceconfig.PluginRefWith{Settings: map[string]any{"severity": severity}},
 	}}
 	inputs.PluginPathLookup = fixtureSocketLookup(t, buildLookup, map[string]string{

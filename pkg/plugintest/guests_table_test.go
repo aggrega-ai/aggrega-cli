@@ -88,9 +88,9 @@ func pdkFixtures() []pdkFixture {
 	var out []pdkFixture
 	for _, lang := range []string{"go", "rust", "typescript"} {
 		out = append(out,
-			pdkFixture{example: "mutator", lang: lang, declaredType: "mutator"},
+			pdkFixture{example: "mutator", lang: lang, declaredType: "governance"},
 			pdkFixture{example: "parse", lang: lang, declaredType: "parser"},
-			pdkFixture{example: "policy", lang: lang, declaredType: "policy"},
+			pdkFixture{example: "policy", lang: lang, declaredType: "governance"},
 		)
 	}
 	out = append(out,
@@ -131,12 +131,12 @@ func TestValidatePDKExampleFixtures(t *testing.T) {
 }
 
 // TestValidateEntity_Mutator exercises entity mode end-to-end: a minimal
-// authored Plugin entity for the label-injector mutator — declaring its type,
-// its single mutate export, and no host functions — validates against the
+// authored Plugin entity for the label-injector governance guest — declaring its
+// type, its single mutate export, and no host functions — validates against the
 // embedded guest through the full entity cross-check (type, capability claim,
 // command mirror, host-function record).
 func TestValidateEntity_Mutator(t *testing.T) {
-	const uri = "mutator/label-injector"
+	const uri = "governance/label-injector"
 	b, ok := embedded.Lookup(uri)
 	if !ok || len(b) == 0 {
 		t.Fatalf("embedded.Lookup(%q) = (%d bytes, %v), want a non-empty hit", uri, len(b), ok)
@@ -162,7 +162,7 @@ func TestValidateEntity_Mutator(t *testing.T) {
 		Metadata: types.PluginMetadata{
 			Name:       uri,
 			Version:    desc.Metadata.Version,
-			PluginType: "mutator",
+			PluginType: "governance",
 		},
 		Spec: types.PluginSpec{
 			AbiVersion: "v1alpha1",
@@ -174,8 +174,8 @@ func TestValidateEntity_Mutator(t *testing.T) {
 	if err != nil {
 		t.Fatalf("entity-mode validation of %q failed: %v", uri, err)
 	}
-	if report.PluginType != "mutator" {
-		t.Fatalf("entity-mode report type = %q, want mutator", report.PluginType)
+	if report.PluginType != "governance" {
+		t.Fatalf("entity-mode report type = %q, want governance", report.PluginType)
 	}
 	// Dogfood the entity-mode test sugar over the same entity.
 	plugintest.RequireValidEntity(t, b, entity)
@@ -192,9 +192,9 @@ func TestValidateGuest_WrongDeclaredType_Fails(t *testing.T) {
 	}
 	uri := uris[0]
 	trueType := declaredTypeOf(uri)
-	wrongType := "policy"
+	wrongType := "governance"
 	if trueType == wrongType {
-		wrongType = "mutator"
+		wrongType = "provider"
 	}
 
 	b, ok := embedded.Lookup(uri)

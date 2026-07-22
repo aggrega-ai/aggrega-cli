@@ -13,59 +13,59 @@ import (
 )
 
 // TestCIOverlayAddsToBaseAndDoesNotRemove: a base `.aggrega-config.yaml`
-// declaring a policy attachment plus a CI overlay declaring ANOTHER policy
+// declaring a governance attachment plus a CI overlay declaring ANOTHER governance
 // attachment resolve to BOTH — base first, CI appended. The overlay adds; it
 // never removes what the base declares.
 func TestCIOverlayAddsToBaseAndDoesNotRemove(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
 	write(t, filepath.Join(root, ".aggrega-config.yaml"),
-		"workspace: {}\nplugins:\n  policy:\n    - uri: oci://h/base:1\n")
+		"workspace: {}\nplugins:\n  governance:\n    - uri: oci://h/base:1\n")
 	write(t, filepath.Join(root, ".aggrega-config-append-ci.yaml"),
-		"plugins:\n  policy:\n    - uri: oci://h/ci:1\n")
+		"plugins:\n  governance:\n    - uri: oci://h/ci:1\n")
 
 	rw, err := workspaceconfig.Resolve(root, "")
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
-	got := rw.Config().Plugins.Policy
+	got := rw.Config().Plugins.Governance
 	if len(got) != 2 {
-		t.Fatalf("Policy: got %d entries %v; want 2 (base + CI overlay)", len(got), got)
+		t.Fatalf("Governance: got %d entries %v; want 2 (base + CI overlay)", len(got), got)
 	}
 	if got[0].URI != "oci://h/base:1" {
-		t.Errorf("Policy[0]: got %q; want oci://h/base:1 (base is not removed and stays first)", got[0].URI)
+		t.Errorf("Governance[0]: got %q; want oci://h/base:1 (base is not removed and stays first)", got[0].URI)
 	}
 	if got[1].URI != "oci://h/ci:1" {
-		t.Errorf("Policy[1]: got %q; want oci://h/ci:1 (CI overlay appended)", got[1].URI)
+		t.Errorf("Governance[1]: got %q; want oci://h/ci:1 (CI overlay appended)", got[1].URI)
 	}
 }
 
 // TestCIOverlayFoldsAppendCompanion: a CI overlay may write either the base
-// `policy` list or its `policy_append` companion; both fold additively onto the
+// `governance` list or its `governance_append` companion; both fold additively onto the
 // resolved list. Exercises the fold-both-forms contract.
 func TestCIOverlayFoldsAppendCompanion(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
 	write(t, filepath.Join(root, ".aggrega-config.yaml"),
-		"workspace: {}\nplugins:\n  policy:\n    - uri: oci://h/base:1\n")
+		"workspace: {}\nplugins:\n  governance:\n    - uri: oci://h/base:1\n")
 	write(t, filepath.Join(root, ".aggrega-config-append-ci.yaml"),
-		"plugins:\n  policy:\n    - uri: oci://h/ci-base:1\n  policy_append:\n    - uri: oci://h/ci-append:1\n")
+		"plugins:\n  governance:\n    - uri: oci://h/ci-base:1\n  governance_append:\n    - uri: oci://h/ci-append:1\n")
 
 	rw, err := workspaceconfig.Resolve(root, "")
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
 	var uris []string
-	for _, p := range rw.Config().Plugins.Policy {
+	for _, p := range rw.Config().Plugins.Governance {
 		uris = append(uris, p.URI)
 	}
 	want := []string{"oci://h/base:1", "oci://h/ci-base:1", "oci://h/ci-append:1"}
 	if !reflect.DeepEqual(uris, want) {
-		t.Errorf("Policy URIs: got %v; want %v (base, then CI base list, then CI append companion)", uris, want)
+		t.Errorf("Governance URIs: got %v; want %v (base, then CI base list, then CI append companion)", uris, want)
 	}
 }
 
-// TestCIOverlayResolvesPathsAgainstOwnDir: a CI overlay's policy `uri` and
+// TestCIOverlayResolvesPathsAgainstOwnDir: a CI overlay's governance `uri` and
 // `with.sources` resolve declaring-file-relative — against the CI file's OWN
 // directory, which here is a child that carries no base config at all.
 func TestCIOverlayResolvesPathsAgainstOwnDir(t *testing.T) {
@@ -74,7 +74,7 @@ func TestCIOverlayResolvesPathsAgainstOwnDir(t *testing.T) {
 	write(t, filepath.Join(root, ".aggrega-config.yaml"), "workspace: {}\n")
 	child := filepath.Join(root, "svc")
 	write(t, filepath.Join(child, ".aggrega-config-append-ci.yaml"),
-		"plugins:\n  policy:\n    - uri: ./ci.wasm\n      with:\n        sources:\n          - ./ci-src.def\n")
+		"plugins:\n  governance:\n    - uri: ./ci.wasm\n      with:\n        sources:\n          - ./ci-src.def\n")
 
 	rw, err := workspaceconfig.Resolve(child, "")
 	if err != nil {
@@ -83,18 +83,18 @@ func TestCIOverlayResolvesPathsAgainstOwnDir(t *testing.T) {
 	if rw.Root() != root {
 		t.Fatalf("Root: got %q; want %q (base workspace: anchors; CI child does not)", rw.Root(), root)
 	}
-	pol := rw.Config().Plugins.Policy
+	pol := rw.Config().Plugins.Governance
 	if len(pol) != 1 {
-		t.Fatalf("Policy: got %d %v; want 1 (CI overlay in child contributes)", len(pol), pol)
+		t.Fatalf("Governance: got %d %v; want 1 (CI overlay in child contributes)", len(pol), pol)
 	}
 	if got, want := pol[0].URI, filepath.Join(child, "ci.wasm"); got != want {
-		t.Errorf("Policy URI: got %q; want %q (resolved against CI file's own dir)", got, want)
+		t.Errorf("Governance URI: got %q; want %q (resolved against CI file's own dir)", got, want)
 	}
 	if pol[0].With == nil || len(pol[0].With.Sources) != 1 {
-		t.Fatalf("Policy sources: got %+v; want 1 entry", pol[0].With)
+		t.Fatalf("Governance sources: got %+v; want 1 entry", pol[0].With)
 	}
 	if got, want := pol[0].With.Sources[0], filepath.Join(child, "ci-src.def"); got != want {
-		t.Errorf("Policy source: got %q; want %q (resolved against CI file's own dir)", got, want)
+		t.Errorf("Governance source: got %q; want %q (resolved against CI file's own dir)", got, want)
 	}
 }
 
@@ -134,7 +134,7 @@ func TestCIOverlayDoesNotAnchorRoot(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
 	write(t, filepath.Join(root, ".aggrega-config-append-ci.yaml"),
-		"plugins:\n  policy:\n    - uri: oci://h/ci:1\n")
+		"plugins:\n  governance:\n    - uri: oci://h/ci:1\n")
 
 	rw, err := workspaceconfig.Resolve(root, "")
 	if err != nil {
@@ -147,8 +147,8 @@ func TestCIOverlayDoesNotAnchorRoot(t *testing.T) {
 		t.Errorf("Root: got %q; want %q (CWD fallback)", rw.Root(), root)
 	}
 	// The overlay still contributes its additive attachment.
-	if pol := rw.Config().Plugins.Policy; len(pol) != 1 || pol[0].URI != "oci://h/ci:1" {
-		t.Errorf("Policy: got %v; want [oci://h/ci:1] (CI-only dir contributes attachments)", pol)
+	if pol := rw.Config().Plugins.Governance; len(pol) != 1 || pol[0].URI != "oci://h/ci:1" {
+		t.Errorf("Governance: got %v; want [oci://h/ci:1] (CI-only dir contributes attachments)", pol)
 	}
 }
 
@@ -158,9 +158,9 @@ func TestCIOverlayDeterministic(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
 	write(t, filepath.Join(root, ".aggrega-config.yaml"),
-		"workspace: {}\ndefault_registry: base.io\nplugins:\n  policy:\n    - uri: oci://h/base:1\n")
+		"workspace: {}\ndefault_registry: base.io\nplugins:\n  governance:\n    - uri: oci://h/base:1\n")
 	write(t, filepath.Join(root, ".aggrega-config-append-ci.yaml"),
-		"default_registry: ci.io\nplugins:\n  policy:\n    - uri: oci://h/ci:1\n")
+		"default_registry: ci.io\nplugins:\n  governance:\n    - uri: oci://h/ci:1\n")
 
 	rw1, err := workspaceconfig.Resolve(root, "")
 	if err != nil {

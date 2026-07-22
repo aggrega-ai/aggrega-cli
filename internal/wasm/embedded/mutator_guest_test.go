@@ -18,8 +18,8 @@ import (
 )
 
 const (
-	labelInjectorURI = "mutator/label-injector"
-	selectorTaggerURI = "mutator/selector-tagger"
+	labelInjectorURI  = "governance/label-injector"
+	selectorTaggerURI = "governance/selector-tagger"
 )
 
 // twoNodeTopo returns a minimal topology with a labelled frontend node and a
@@ -52,14 +52,14 @@ func runMutatorGuest(t *testing.T, uri string, payload []byte) []byte {
 	plugin, desc, err := loader.LoadAndDescribe(ctx, wasm.PluginSpec{
 		Name:       uri,
 		Bytes:      bytesGz,
-		PluginType: wasm.PluginTypeMutator,
+		PluginType: wasm.PluginTypeGovernance,
 	})
 	if err != nil {
 		t.Fatalf("LoadAndDescribe(%q): %v", uri, err)
 	}
 	defer plugin.Close(ctx)
-	if desc.PluginType != string(wasm.PluginTypeMutator) {
-		t.Fatalf("%q describe pluginType = %q, want %q", uri, desc.PluginType, wasm.PluginTypeMutator)
+	if desc.PluginType != string(wasm.PluginTypeGovernance) {
+		t.Fatalf("%q describe pluginType = %q, want %q", uri, desc.PluginType, wasm.PluginTypeGovernance)
 	}
 	out, err := wasm.InvokeExport(ctx, plugin, desc, wasm.MutateExport, payload)
 	if err != nil {

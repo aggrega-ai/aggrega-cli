@@ -48,15 +48,13 @@ const (
 	// export is step.
 	PluginTypeFRPStep = plugintype.FRPStep
 
-	// PluginTypeMutator is a mutator plugin: it auto-tags topology-graph
-	// node labels at Step 2, returning JSON Patch documents the host applies
-	// to a labels-only projection of the graph. Its minimum export is mutate.
-	PluginTypeMutator = plugintype.Mutator
-
-	// PluginTypePolicy is a policy plugin: it evaluates the
-	// full IR graph at Step 4 and returns one pass/fail verdict per rule; a
-	// failed rule halts the build. Its minimum export is validate.
-	PluginTypePolicy = plugintype.Policy
+	// PluginTypeGovernance is a governance plugin: it serves the build-pipeline
+	// transform and verdict roles. Attached at a transform role it auto-tags
+	// topology-graph node labels (declaring mutate); attached at a verdict role it
+	// renders an accept/reject verdict over the IR graph or the rendered artifacts
+	// (declaring validate). The role it is attached at, not its type, fixes what it
+	// may emit; the role's required export gates which roles a guest can serve.
+	PluginTypeGovernance = plugintype.Governance
 
 	// PluginTypeCLI is a CLI plugin: it contributes a runtime aggrega <cmd>
 	// subcommand, invoked by an operator at the command line rather than by
@@ -130,16 +128,23 @@ var lintExportPrefix = minExportName(plugintype.Linter)
 // plugin-type registry so the literal lives once.
 var frpStepExportName = minExportName(plugintype.FRPStep)
 
-// MutateExport and ValidateExport are the default entry-function names for
-// the mutator and policy sockets. They are the single source for
-// the default a socket applies when a plugin attachment leaves its entry
-// function unset; they read the name from the canonical plugin-type registry
-// so the minimum-export rule this gate enforces and the socket default read
-// one name rather than each re-spelling the literal.
+// MutateExport and ValidateExport are the default entry-function names for the
+// governance roles: a transform role calls mutate, a verdict role calls
+// validate. They are the single source for the default a role applies when a
+// governance attachment leaves its entry function unset; they read the name from
+// the canonical governance role→export rule so the export the dispatch requires
+// and the socket default read one name rather than each re-spelling the literal.
 var (
-	MutateExport   = minExportName(plugintype.Mutator)
-	ValidateExport = minExportName(plugintype.Policy)
+	MutateExport   = governanceRoleExportName(plugintype.RoleLabelTransform)
+	ValidateExport = governanceRoleExportName(plugintype.RoleIRVerdict)
 )
+
+// governanceRoleExportName reads a governance role's required export name from
+// the canonical role→export rule, so the literal lives once.
+func governanceRoleExportName(role plugintype.Role) string {
+	name, _ := plugintype.GovernanceRoleExport(role)
+	return name
+}
 
 // ImportExport is the required export name for an importer plugin — the entry
 // point the host dispatches to when it turns a foreign source into draft Aggrega
@@ -224,17 +229,6 @@ const (
 	ScopeHost = types.ScopeHost
 )
 
-// StageIR and StageRender are the two compilation stages a policy
-// plugin may declare it evaluates at via [PluginDescriptor.Stage]: ir evaluates
-// the provider-agnostic IR graph, render evaluates the rendered provider-native
-// artifacts. The shape validator accepts these two values or the empty string;
-// an absent stage defaults to ir. The value is meaningful for the
-// policy plugin type only.
-const (
-	StageIR     = "ir"
-	StageRender = "render"
-)
-
 // Validate checks a parsed descriptor against the host's contract and
 // returns nil if the plugin is admissible, or an error wrapping
 // [ErrWasmManifestRejected] naming pluginIdentity and the specific
@@ -248,9 +242,11 @@ const (
 //   - plugin_type is a recognized [PluginType].
 //   - the per-type minimum export is present: a provider declares
 //     render_node; a linter declares at least one lint_* export; a
-//     feature-recipe-pipeline step declares step; a mutator declares
-//     mutate; a policy declares validate; a CLI plugin declares
-//     cli_run; a parser declares parse; an importer declares import.
+//     feature-recipe-pipeline step declares step; a CLI plugin declares
+//     cli_run; a parser declares parse; an importer declares import. A
+//     governance plugin has no single minimum export — the required export is
+//     the attachment role's (mutate for a transform role, validate for a verdict
+//     role), enforced at dispatch — so the load gate admits it on any role.
 //   - every export's declared host functions are a subset of the
 //     host-function allowlist. This routes through the same
 //     validateHostFunctionsSubset gate the loader applies to the set
@@ -277,8 +273,6 @@ const (
 //     carries a non-empty name. This is shape validation only — the gate does
 //     not require any command to be present per plugin type (a CLI plugin's
 //     command presence is enforced at install), and does not act on the value.
-//   - stage is ir, render, or empty. This is shape validation only — the host
-//     does not cross-check the value against the plugin type or act on it here.
 //   - a declared settings_schema compiles as a JSON Schema. This is shape
 //     validation only — the gate confirms the schema is well-formed; it does
 //     not cross-check the schema against the plugin type or validate any
@@ -296,7 +290,7 @@ func (d PluginDescriptor) Validate(pluginIdentity string) error {
 	}
 
 	switch PluginType(d.PluginType) {
-	case PluginTypeProvider, PluginTypeLinter, PluginTypeFRPStep, PluginTypeMutator, PluginTypePolicy, PluginTypeCLI, PluginTypeParser, PluginTypeImporter:
+	case PluginTypeProvider, PluginTypeLinter, PluginTypeFRPStep, PluginTypeGovernance, PluginTypeCLI, PluginTypeParser, PluginTypeImporter:
 		// recognized
 	default:
 		return fmt.Errorf("plugin %q declares unknown plugin_type %q: %w",
@@ -316,10 +310,6 @@ func (d PluginDescriptor) Validate(pluginIdentity string) error {
 	}
 
 	if err := d.validateContract(pluginIdentity); err != nil {
-		return err
-	}
-
-	if err := d.validateStage(pluginIdentity); err != nil {
 		return err
 	}
 
@@ -348,20 +338,6 @@ func (d PluginDescriptor) validateCommands(pluginIdentity string) error {
 		}
 	}
 	return nil
-}
-
-// validateStage shape-checks the descriptor's stage: it must be ir, render, or
-// empty. This is shape validation only — it does not cross-check the value
-// against the plugin type or act on it. A returned error wraps
-// [ErrWasmManifestRejected] and names pluginIdentity and the offending value.
-func (d PluginDescriptor) validateStage(pluginIdentity string) error {
-	switch d.Stage {
-	case "", StageIR, StageRender:
-		return nil
-	default:
-		return fmt.Errorf("plugin %q declares unknown stage %q (want %q, %q, or empty): %w",
-			pluginIdentity, d.Stage, StageIR, StageRender, ErrWasmManifestRejected)
-	}
 }
 
 // validateLinkCapability enforces the cross-boundary-linking coherence rule:

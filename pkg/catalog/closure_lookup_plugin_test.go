@@ -9,6 +9,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
+	"github.com/aggrega-ai/aggrega-cli/pkg/plugintype"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
@@ -20,7 +21,7 @@ const localPluginEntity = `apiVersion: aggrega.ai/v1alpha1
 kind: Plugin
 metadata:
   name: baseline
-  pluginType: linter
+  pluginType: governance
   version: 1.0.0
 spec:
   abiVersion: v1alpha1
@@ -35,7 +36,7 @@ func TestClosureLookupResolvesLocalPluginEntityAtTier1(t *testing.T) {
 	dir := t.TempDir()
 	writeYAMLToCatalog(t, dir, "wasm-plugins/baseline.yaml", localPluginEntity)
 
-	const entityURI = "linter/baseline:1.0.0"
+	const entityURI = "governance/baseline:1.0.0"
 
 	check := func(t *testing.T, lookup closure.Lookup, backing string) {
 		res, err := lookup.ResolveCatalogEntity(entityURI, "plugin")
@@ -98,15 +99,15 @@ func TestComputeClosureLocalPluginSocketDoesNotHalt(t *testing.T) {
 
 	// A minimal Release (non-nil so the walk reaches the workspace-plugin axis;
 	// nil aggregate/manifest leave those axes empty). The workspace config wires the
-	// output-shaping mutator plugin socket — the socket the closure pins — at the
-	// local Plugin entity URI.
+	// output-shaping label-transform governance attachment — the one the closure
+	// pins — at the local Plugin entity URI.
 	rel := &types.Release{}
 	rel.Metadata.Name = "prod"
 	rel.Metadata.Version = "1.0.0"
 
 	cfg := workspaceconfig.Config{}
-	cfg.Plugins.Mutator = []workspaceconfig.PluginRef{
-		{URI: "linter/baseline:1.0.0"},
+	cfg.Plugins.Governance = []workspaceconfig.PluginRef{
+		{URI: "governance/baseline:1.0.0", Role: plugintype.RoleLabelTransform},
 	}
 
 	cl, err := closure.ComputeClosure(rel, nil, nil, cfg, lookup)
@@ -120,7 +121,7 @@ func TestComputeClosureLocalPluginSocketDoesNotHalt(t *testing.T) {
 	// The socket entity is pinned on the catalog-entity axis.
 	var found bool
 	for _, e := range cl.Entities {
-		if e.URI == "linter/baseline:1.0.0" {
+		if e.URI == "governance/baseline:1.0.0" {
 			found = true
 			if e.KindHint != "plugin" {
 				t.Errorf("entity KindHint: got %q; want plugin", e.KindHint)

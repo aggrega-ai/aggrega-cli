@@ -14,12 +14,11 @@ const (
 	Linter Type = "linter"
 	// FRPStep transforms the IR within a feature recipe's pipeline.
 	FRPStep Type = "frp_step"
-	// Mutator auto-tags topology-graph node labels, returning JSON Patch
-	// documents the host applies to a labels-only projection of the graph.
-	Mutator Type = "mutator"
-	// Policy evaluates the full IR graph and returns one pass/fail verdict per
-	// rule; a failed rule halts the build.
-	Policy Type = "policy"
+	// Governance serves the build-pipeline governance roles: it transforms
+	// topology-graph node labels at a transform role, or renders an accept/reject
+	// verdict over the IR graph or the rendered artifacts at a verdict role. The
+	// role a plugin is attached at — not its type — fixes what it may emit.
+	Governance Type = "governance"
 	// CLI contributes a runtime aggrega subcommand invoked by an operator at
 	// the command line rather than by the build pipeline.
 	CLI Type = "cli"
@@ -51,6 +50,67 @@ const (
 	// nor pinned.
 	TierOrthogonal
 )
+
+// Role is the pipeline attachment role a governance plugin is bound to. The role
+// — not the plugin's declared type — fixes what a governance plugin may emit and
+// the tier it participates in. It is the single home of the governance-role
+// vocabulary: the config surface, the dispatch runners, and the wire schema all
+// read these values.
+type Role string
+
+const (
+	// RoleLabelTransform auto-tags topology-graph node labels at Step 2: the
+	// plugin returns JSON Patch documents the host applies to a labels-only
+	// projection of the graph. It is a transform role and shapes output bytes.
+	RoleLabelTransform Role = "label-transform"
+	// RoleIRVerdict renders an accept/reject verdict over the IR graph at Step 4;
+	// a rejected rule halts the build. It is a verdict role and shapes no output.
+	RoleIRVerdict Role = "ir-verdict"
+	// RoleRenderVerdict renders an accept/reject verdict over the rendered
+	// artifacts at Step 5; a rejected rule halts the build. It is a verdict role
+	// and shapes no output.
+	RoleRenderVerdict Role = "render-verdict"
+)
+
+// GovernanceRoles returns every governance attachment role in fixed
+// author-defined order. It is the single home of the role set, so a consumer
+// enumerating valid roles reads them from here rather than re-listing them.
+func GovernanceRoles() []Role {
+	return []Role{RoleLabelTransform, RoleIRVerdict, RoleRenderVerdict}
+}
+
+// GovernanceRoleTier reports the reproducibility tier a governance plugin
+// participates in when attached at role, and whether role is a known governance
+// role. It is the single home of the role→tier classification: a transform role
+// shapes output bytes (TierMutating — pinned, drift-gated); a verdict role shapes
+// no output (TierVerdict — cache-not-pin). Because pull and build both read this
+// one function, they can never disagree on which roles are verdict roles.
+func GovernanceRoleTier(role Role) (Tier, bool) {
+	switch role {
+	case RoleLabelTransform:
+		return TierMutating, true
+	case RoleIRVerdict, RoleRenderVerdict:
+		return TierVerdict, true
+	default:
+		return TierMutating, false
+	}
+}
+
+// GovernanceRoleExport reports the entry-function export name a governance
+// plugin must declare to serve role, and whether role is a known governance
+// role. It is the single home of the role→export rule: a transform role calls
+// mutate; a verdict role calls validate. The host enforces the role's required
+// export at dispatch — a guest that does not declare it does not serve the role.
+func GovernanceRoleExport(role Role) (string, bool) {
+	switch role {
+	case RoleLabelTransform:
+		return "mutate", true
+	case RoleIRVerdict, RoleRenderVerdict:
+		return "validate", true
+	default:
+		return "", false
+	}
+}
 
 // Mechanism names how a plugin type attaches to the host.
 type Mechanism string
@@ -152,20 +212,19 @@ var entries = []Entry{
 		LoadProfile: LoadProfileBuild,
 	},
 	{
-		Type:        Mutator,
-		Label:       "mutator",
-		MinExport:   MinExport{Name: "mutate"},
-		Socket:      "mutator",
+		Type:  Governance,
+		Label: "governance",
+		// Governance has no single minimum export: the required export is the
+		// attachment role's (mutate for a transform role, validate for a verdict
+		// role), enforced at dispatch via GovernanceRoleExport. The zero MinExport
+		// rule admits any governance guest at load; the role gates the export.
+		MinExport: MinExport{},
+		Socket:    "governance",
+		// The registry Tier is the conservative fallback for a governance ref with
+		// no resolvable role; the real tier is role-resolved via GovernanceRoleTier
+		// (a transform role pins, a verdict role does not). Over-pinning is the safe
+		// default — it never breaks the deterministic-output contract.
 		Tier:        TierMutating,
-		Mechanism:   MechanismWorkspaceSocket,
-		LoadProfile: LoadProfileBuild,
-	},
-	{
-		Type:        Policy,
-		Label:       "policy",
-		MinExport:   MinExport{Name: "validate"},
-		Socket:      "policy",
-		Tier:        TierVerdict,
 		Mechanism:   MechanismWorkspaceSocket,
 		LoadProfile: LoadProfileBuild,
 	},

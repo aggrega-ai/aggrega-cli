@@ -33,13 +33,13 @@ func seedWorkspaceConfig(t *testing.T, body string) (*workspaceconfig.ResolvedWo
 // the plugins.<socket> entry, preserves the sibling, and confirms the removal —
 // no registry search is involved.
 func TestPluginRemoveRun_ConfigSocket(t *testing.T) {
-	rw, _ := seedWorkspaceConfig(t, "workspace: {}\nplugins:\n  mutator:\n"+
-		"    - uri: mutator/tag-injector:1.2.0\n"+
-		"    - uri: mutator/tag-rewriter:1.0.0\n")
+	rw, _ := seedWorkspaceConfig(t, "workspace: {}\nplugins:\n  governance:\n"+
+		"    - uri: governance/tag-injector:1.2.0\n      role: label-transform\n"+
+		"    - uri: governance/tag-rewriter:1.0.0\n      role: label-transform\n")
 	var out bytes.Buffer
 
 	if err := pluginRemoveRun(pluginRemoveConfig{
-		Socket:    "mutator",
+		Socket:    "governance",
 		Query:     "tag-injector",
 		Workspace: true,
 		ws:        rw,
@@ -52,11 +52,11 @@ func TestPluginRemoveRun_ConfigSocket(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolve written config: %v", err)
 	}
-	got := reread.Config().Plugins.Mutator
-	if len(got) != 1 || got[0].URI != "mutator/tag-rewriter:1.0.0" {
+	got := reread.Config().Plugins.Governance
+	if len(got) != 1 || got[0].URI != "governance/tag-rewriter:1.0.0" {
 		t.Fatalf("sibling attachment not preserved; got %+v", got)
 	}
-	if !strings.Contains(out.String(), "Removed mutator plugin") {
+	if !strings.Contains(out.String(), "Removed governance plugin") {
 		t.Fatalf("confirmation line missing:\n%s", out.String())
 	}
 }
@@ -131,9 +131,9 @@ func TestPluginRemoveRun_CLIDefaultsGlobal(t *testing.T) {
 // with a specific error naming the type, query, and searched file rather than a
 // silent no-op.
 func TestPluginRemoveRun_NoMatchErrorsLoudly(t *testing.T) {
-	rw, path := seedWorkspaceConfig(t, "workspace: {}\nplugins:\n  mutator:\n    - uri: mutator/tag-injector:1.2.0\n")
+	rw, path := seedWorkspaceConfig(t, "workspace: {}\nplugins:\n  governance:\n    - uri: governance/tag-injector:1.2.0\n      role: label-transform\n")
 	err := pluginRemoveRun(pluginRemoveConfig{
-		Socket:    "mutator",
+		Socket:    "governance",
 		Query:     "absent",
 		Workspace: true,
 		ws:        rw,
@@ -142,7 +142,7 @@ func TestPluginRemoveRun_NoMatchErrorsLoudly(t *testing.T) {
 	if err == nil {
 		t.Fatalf("want a no-match error")
 	}
-	for _, want := range []string{"no mutator plugin matching", "absent", path} {
+	for _, want := range []string{"no governance plugin matching", "absent", path} {
 		if !strings.Contains(err.Error(), want) {
 			t.Fatalf("error %q should contain %q", err.Error(), want)
 		}

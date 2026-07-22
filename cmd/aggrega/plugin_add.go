@@ -54,8 +54,7 @@ func buildConfigSocketKinds() map[string]bool {
 func pluginKindsHint() string {
 	kinds := []string{
 		providerSocketKind,
-		string(workspaceconfig.SocketMutator),
-		string(workspaceconfig.SocketPolicy),
+		string(workspaceconfig.SocketGovernance),
 		string(workspaceconfig.SocketLinter),
 		string(workspaceconfig.SocketImporter),
 		string(wasm.PluginTypeCLI),
@@ -71,6 +70,7 @@ func pluginKindsHint() string {
 // installs the plugin as a top-level aggrega command.
 func newPluginAddCmd() *cobra.Command {
 	var capability string
+	var role string
 	var global bool
 	var workspace bool
 	var acceptCaps bool
@@ -82,8 +82,8 @@ func newPluginAddCmd() *cobra.Command {
 query to one plugin, and add it to your configuration.
 
 Arguments:
-  <type>   The plugin socket to add for. One of: provider, mutator, policy,
-           linter, importer, or cli.
+  <type>   The plugin socket to add for. One of: provider, governance,
+           linter, importer, or cli. The governance type requires --role.
   <query>  A case-insensitive substring matched against the plugin names of the
            chosen type. It must resolve to exactly one plugin — an exact
            plugin-name match wins when several share the substring; otherwise the
@@ -91,9 +91,10 @@ Arguments:
 
 What add writes depends on the type:
 
-  - A config type (mutator, policy, linter, importer) pins the latest published
+  - A config type (governance, linter, importer) pins the latest published
     version and adds the bare plugin identity (<type>/<name>:<version>) to the
-    plugins.<type> list.
+    plugins.<type> list. A governance entry also records its --role
+    (label-transform, ir-verdict, or render-verdict).
   - The provider type writes the plugin's oci:// identity as a plugins.providers
     entry; --capability names the capability the binding serves, preserving
     existing settings.
@@ -116,6 +117,7 @@ What add writes depends on the type:
 				Socket:     args[0],
 				Query:      args[1],
 				Capability: capability,
+				Role:       role,
 				Global:     global,
 				Workspace:  workspace,
 				AcceptCaps: acceptCaps,
@@ -127,6 +129,7 @@ What add writes depends on the type:
 		},
 	}
 	c.Flags().StringVar(&capability, "capability", "", "Capability the provider binding serves (required for, and only valid with, the provider type)")
+	c.Flags().StringVar(&role, "role", "", "Governance attachment role: label-transform, ir-verdict, or render-verdict (required for, and only valid with, the governance type)")
 	c.Flags().BoolVar(&global, "global", false, "Write the attachment to the global config shared across every workspace.")
 	c.Flags().BoolVar(&workspace, "workspace", false, "Write the attachment to this project's workspace config. A provider or socket attachment defaults here; a cli plugin defaults to the global config.")
 	c.Flags().BoolVar(&acceptCaps, "accept-capabilities", false, "Accept a cli plugin's declared capabilities without the interactive prompt (cli type only)")
@@ -140,6 +143,7 @@ type pluginAddConfig struct {
 	Socket     string
 	Query      string
 	Capability string
+	Role       string
 
 	// Global and Workspace are the operator's write-target overrides. A plugin
 	// attachment is build-scoped, so it defaults to this project's workspace
@@ -185,6 +189,14 @@ func pluginAddRun(ctx context.Context, cfg pluginAddConfig) error {
 	}
 	if !isProvider && cfg.Capability != "" {
 		return fmt.Errorf("aggrega plugin add: --capability applies only to the provider type")
+	}
+	isGovernance := socket == string(workspaceconfig.SocketGovernance)
+	if isGovernance {
+		if _, ok := plugintype.GovernanceRoleTier(plugintype.Role(cfg.Role)); !ok {
+			return fmt.Errorf("aggrega plugin add: the governance type requires --role naming the attachment role (label-transform, ir-verdict, or render-verdict)")
+		}
+	} else if cfg.Role != "" {
+		return fmt.Errorf("aggrega plugin add: --role applies only to the governance type")
 	}
 	if !isCLI && (cfg.AcceptCaps || cfg.AssumeYes) {
 		return fmt.Errorf("aggrega plugin add: --accept-capabilities and --yes apply only to the cli type")
@@ -246,7 +258,7 @@ func pluginAddRun(ctx context.Context, cfg pluginAddConfig) error {
 		return fmt.Errorf("aggrega plugin add: %s has no published version tag to attach; publish a version first", repoPath)
 	}
 	identity := entity + ":" + version
-	if err := workspaceconfig.UpsertPluginSocketRef(configPath, socket, identity); err != nil {
+	if err := workspaceconfig.UpsertPluginSocketRef(configPath, socket, identity, plugintype.Role(cfg.Role)); err != nil {
 		return fmt.Errorf("aggrega plugin add: write %s: %w", configPath, err)
 	}
 	fmt.Fprintf(cfg.Out, "Added %s as a %s plugin in %s\n", identity, socket, configPath)

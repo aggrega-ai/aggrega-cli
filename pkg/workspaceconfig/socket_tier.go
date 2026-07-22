@@ -38,16 +38,43 @@ func (s Socket) Tier() SocketTier {
 		if e.Socket != string(s) {
 			continue
 		}
-		switch e.Tier {
-		case plugintype.TierMutating:
-			return SocketTierMutating
-		case plugintype.TierVerdict:
-			return SocketTierVerdict
-		case plugintype.TierOrthogonal:
-			return SocketTierOrthogonal
-		}
+		return socketTierFor(e.Tier)
 	}
 	return SocketTierOrthogonal
+}
+
+// RefTier reports the reproducibility tier of one attachment at this socket.
+// It is the per-attachment refinement of Tier: for the governance socket the
+// tier is a property of the attachment's role, not of the socket (a
+// label-transform attachment shapes output bytes and pins; a verdict attachment
+// shapes nothing and does not), so RefTier reads the role through the canonical
+// role→tier classification. For every other socket the tier is a pure property
+// of the socket and RefTier delegates to Tier. Because the governance role→tier
+// classification lives in one place (plugintype.GovernanceRoleTier), pull and
+// build read the same tier for the same attachment and can never disagree on
+// which attachments are verdict attachments. A governance attachment whose role
+// does not resolve falls back to the socket's tier — the conservative pinning
+// default that never breaks deterministic output.
+func (s Socket) RefTier(ref PluginRef) SocketTier {
+	if s == SocketGovernance {
+		if tier, ok := plugintype.GovernanceRoleTier(ref.Role); ok {
+			return socketTierFor(tier)
+		}
+	}
+	return s.Tier()
+}
+
+// socketTierFor translates a registry-level plugin tier into the
+// workspaceconfig-facing SocketTier, so the mapping lives in one place.
+func socketTierFor(t plugintype.Tier) SocketTier {
+	switch t {
+	case plugintype.TierMutating:
+		return SocketTierMutating
+	case plugintype.TierVerdict:
+		return SocketTierVerdict
+	default:
+		return SocketTierOrthogonal
+	}
 }
 
 // PluginSocket pairs a workspace-level plugin socket with its effective (merged)
@@ -55,6 +82,63 @@ func (s Socket) Tier() SocketTier {
 type PluginSocket struct {
 	Socket Socket
 	Refs   []PluginRef
+}
+
+// TransformGovernanceRefs returns the governance attachments bound to a
+// transform role — the byte-determining label-transform attachments the build
+// pins in and reconstructs from the lockfile. It is the pull/walk side of the
+// pinned axis: these refs shape output bytes, so their set / order / export
+// function is a build-critical input.
+func (p PluginsConfig) TransformGovernanceRefs() []PluginRef {
+	return p.governanceRefsAtTier(plugintype.TierMutating)
+}
+
+// VerdictGovernanceRefs returns the governance attachments bound to a verdict
+// role (ir-verdict / render-verdict), in authored order. These shape no output
+// and are read live (cache-not-pin), so build composes the lockfile-pinned
+// transform set with these live verdict refs rather than overwriting them.
+func (p PluginsConfig) VerdictGovernanceRefs() []PluginRef {
+	return p.governanceRefsAtTier(plugintype.TierVerdict)
+}
+
+// GovernanceRefsForRole returns the governance attachments bound to exactly
+// role, in authored order. The dispatch routes by role: each pipeline runner
+// reads the attachments for the one role it serves, so the role — not the plugin
+// type — determines which runner (and therefore which facet) an attachment feeds.
+func (p PluginsConfig) GovernanceRefsForRole(role plugintype.Role) []PluginRef {
+	var out []PluginRef
+	for _, ref := range p.Governance {
+		if ref.Role == role {
+			out = append(out, ref)
+		}
+	}
+	return out
+}
+
+func (p PluginsConfig) governanceRefsAtTier(t plugintype.Tier) []PluginRef {
+	var out []PluginRef
+	for _, ref := range p.Governance {
+		if tier, ok := plugintype.GovernanceRoleTier(ref.Role); ok && tier == t {
+			out = append(out, ref)
+		}
+	}
+	return out
+}
+
+// RefsByTier returns this socket's attachments whose per-attachment tier equals
+// t, preserving authored order. For a single-tier socket the result is
+// all-or-nothing (every attachment shares the socket's tier); for the governance
+// socket, whose tier is a property of each attachment's role, it selects exactly
+// the matching-tier subset — the label-transform attachments at the mutating tier,
+// the verdict attachments at the verdict tier.
+func (ps PluginSocket) RefsByTier(t SocketTier) []PluginRef {
+	var out []PluginRef
+	for _, ref := range ps.Refs {
+		if ps.Socket.RefTier(ref) == t {
+			out = append(out, ref)
+		}
+	}
+	return out
 }
 
 // PluginSockets enumerates the config's workspace-level plugin sockets with their
@@ -70,8 +154,7 @@ type PluginSocket struct {
 func (c Config) PluginSockets() []PluginSocket {
 	return []PluginSocket{
 		{SocketProvider, c.Plugins.Providers},
-		{SocketMutator, c.Plugins.Mutator},
-		{SocketPolicy, c.Plugins.Policy},
+		{SocketGovernance, c.Plugins.Governance},
 		{SocketLinter, c.Plugins.Linter},
 		{SocketImporter, c.Plugins.Importer},
 	}

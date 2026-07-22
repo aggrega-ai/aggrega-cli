@@ -26,10 +26,9 @@ func socketName(t plugintype.Type) string {
 // The socket names read from the canonical plugin-type registry so each literal
 // lives once — the registry is the single home of the socket-name vocabulary.
 var (
-	// SocketMutator is the label-mutation socket (default export: mutate).
-	SocketMutator = Socket(socketName(plugintype.Mutator))
-	// SocketPolicy is the policy-validation socket (default export: validate).
-	SocketPolicy = Socket(socketName(plugintype.Policy))
+	// SocketGovernance is the governance socket: one socket serving the pipeline
+	// transform and verdict roles, each attachment naming the role it is bound to.
+	SocketGovernance = Socket(socketName(plugintype.Governance))
 	// SocketLinter is the publishing-linter socket (default export: lint).
 	SocketLinter = Socket(socketName(plugintype.Linter))
 	// SocketImporter is the import socket (default export: import).
@@ -47,7 +46,7 @@ var (
 //   - Provider and linter opt IN: an unconfigured provider capability resolves
 //     to the embedded plugin serving it, and an unconfigured linter socket
 //     falls back to the embedded publishing-linter.
-//   - Mutator, policy, and importer opt OUT: an unconfigured socket runs no
+//   - Governance and importer opt OUT: an unconfigured socket runs no
 //     plugin, so a build with the socket unset is byte-identical to a build
 //     without the socket.
 //
