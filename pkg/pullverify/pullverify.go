@@ -26,9 +26,9 @@ import (
 	"fmt"
 
 	"github.com/sigstore/sigstore-go/pkg/root"
-	"github.com/sigstore/sigstore-go/pkg/tuf"
 	"oras.land/oras-go/v2"
 
+	"github.com/aggrega-ai/aggrega-cli/pkg/egress/livetrust"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/registryhost"
 	"github.com/aggrega-ai/aggrega-cli/pkg/signing"
@@ -160,7 +160,7 @@ func Verify(ctx context.Context, entities []Entity, opts Options) ([]Result, err
 			continue
 		}
 
-		res, verr := verifyEntity(ctx, e, policy, configured, opts.Target)
+		res, verr := verifyEntity(ctx, opts.Config, e, policy, configured, opts.Target)
 		if verr != nil {
 			if errors.Is(verr, signing.ErrNoSignatureFound) && !requireSignature {
 				// Unknown / non-mandatory registry, no signature present:
@@ -183,7 +183,7 @@ func Verify(ctx context.Context, entities []Entity, opts Options) ([]Result, err
 // verifyEntity fetches and verifies one entity's signature. Returns a nil
 // Result with no error when the entity has no reachable registry (skipped).
 // Returns ErrNoSignatureFound when no signature referrer is present.
-func verifyEntity(ctx context.Context, e Entity, policy workspaceconfig.RegistryConfig, configured bool, targetFor TargetFor) (*Result, error) {
+func verifyEntity(ctx context.Context, cfg workspaceconfig.Config, e Entity, policy workspaceconfig.RegistryConfig, configured bool, targetFor TargetFor) (*Result, error) {
 	if targetFor == nil {
 		return nil, nil
 	}
@@ -215,7 +215,7 @@ func verifyEntity(ctx context.Context, e Entity, policy workspaceconfig.Registry
 			lastErr = ferr
 			continue
 		}
-		res, verr := VerifyBundle(bundleBytes, e.ManifestDigest, policy)
+		res, verr := VerifyBundle(cfg, bundleBytes, e.ManifestDigest, policy)
 		if verr == nil {
 			res.URI = e.URI
 			return res, nil
@@ -247,7 +247,7 @@ func verifyEntity(ctx context.Context, e Entity, policy workspaceconfig.Registry
 // deprecation-marker pass verifies a marker's own signature through it too
 // (passing a policy whose trusted set is the deprecation-signer set), so both
 // surfaces share one crypto path and cannot drift.
-func VerifyBundle(bundleBytes []byte, artifactDigest string, policy workspaceconfig.RegistryConfig) (*Result, error) {
+func VerifyBundle(cfg workspaceconfig.Config, bundleBytes []byte, artifactDigest string, policy workspaceconfig.RegistryConfig) (*Result, error) {
 	digest := blobDigest(bundleBytes)
 	if policy.PublicKey != "" {
 		if err := signing.VerifyKeyedBundle(bundleBytes, []byte(policy.PublicKey), artifactDigest); err != nil {
@@ -270,7 +270,7 @@ func VerifyBundle(bundleBytes []byte, artifactDigest string, policy workspacecon
 		})
 	}
 
-	anchor, err := keylessAnchor(policy)
+	anchor, err := keylessAnchor(cfg, policy)
 	if err != nil {
 		return nil, err
 	}
@@ -301,21 +301,18 @@ func keyedSignerIdentity(publicKeyPEM string) string {
 // trust root (air-gapped, offline) when policy.TrustedRoot is set,
 // otherwise the live public-good root fetched via TUF.
 //
-// LIVE-ONLY for the no-pinned-root branch: with no pinned root, the
-// keyless anchor is the real public-good Sigstore trust root fetched and
-// cached via TUF — the one network-touching branch of the verify pass. An
-// air-gapped deployment pins a trusted_root and never reaches it; the
-// pinned-root branch and the verification logic that consumes either
-// anchor are fully exercised offline.
-func keylessAnchor(policy workspaceconfig.RegistryConfig) (root.TrustedMaterial, error) {
+// LIVE-ONLY for the no-pinned-root branch: with no pinned root, the keyless
+// anchor is the real public-good Sigstore trust root fetched and cached via
+// TUF — the one network-touching branch of the verify pass — obtained through
+// the network-egress gate, so an offline workspace refuses the fetch loudly
+// before any dial. An air-gapped deployment pins a trusted_root and never
+// reaches the live branch; the pinned-root branch and the verification logic
+// that consumes either anchor are fully exercised offline.
+func keylessAnchor(cfg workspaceconfig.Config, policy workspaceconfig.RegistryConfig) (root.TrustedMaterial, error) {
 	if policy.TrustedRoot != "" {
 		return signing.TrustedMaterialFromRootPath(policy.TrustedRoot)
 	}
-	live, err := root.NewLiveTrustedRoot(tuf.DefaultOptions())
-	if err != nil {
-		return nil, fmt.Errorf("%w: live TUF fetch: %v", signing.ErrTrustRootLoad, err)
-	}
-	return live, nil
+	return livetrust.TrustedRoot(cfg)
 }
 
 // blobDigest returns the sha256:... digest of b — the content address of

@@ -451,5 +451,6 @@ func deprecateSigner(cfg deprecateConfig) (signing.Signer, error) {
 		FulcioURL:    firstNonEmpty(cfg.FulcioURL, resolved.FulcioURL),
 		RekorURL:     firstNonEmpty(cfg.RekorURL, resolved.RekorURL),
 		TimestampURL: firstNonEmpty(cfg.TimestampURL, resolved.TimestampURL),
+		Config:       rw.Config(),
 	})
 }

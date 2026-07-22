@@ -343,6 +343,7 @@ func (b *batchSigner) buildRefSigner(ref string) (signing.Signer, error) {
 		FulcioURL:    firstNonEmpty(b.cfg.FulcioURL, resolved.FulcioURL),
 		RekorURL:     firstNonEmpty(b.cfg.RekorURL, resolved.RekorURL),
 		TimestampURL: firstNonEmpty(b.cfg.TimestampURL, resolved.TimestampURL),
+		Config:       rw.Config(),
 	})
 }
 

@@ -6,11 +6,13 @@ package helm
 import (
 	"errors"
 	"fmt"
+	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"github.com/aggrega-ai/aggrega-cli/pkg/egress"
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/cacheslot"
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/internal/archive"
@@ -27,7 +29,7 @@ const KindHTTPS = "helm-https-chart"
 // helm's repo.LoadIndexFile, look up the chart+version) and the
 // test-injected resolver that returns a fixed URL without network
 // access.
-type indexResolver func(repoURL, chart, version string) (directURL string, err error)
+type indexResolver func(repoURL, chart, version string, opts ...getter.Option) (directURL string, err error)
 
 // httpsGetter abstracts helm.sh/helm/v3/pkg/getter.Getter so tests
 // can inject a static-body implementation without spinning up
@@ -60,8 +62,8 @@ type httpsAdapter struct {
 func NewHTTPSAdapter() sourceresolver.Adapter {
 	g := &productionGetter{providers: newProvidersNoEnv()}
 	return &httpsAdapter{
-		resolveIndex: func(repoURL, chart, version string) (string, error) {
-			return resolveFromIndexProduction(g, repoURL, chart, version)
+		resolveIndex: func(repoURL, chart, version string, opts ...getter.Option) (string, error) {
+			return resolveFromIndexProduction(g, repoURL, chart, version, opts...)
 		},
 		getter: g,
 	}
@@ -100,6 +102,20 @@ func (a *httpsAdapter) Kind() string { return KindHTTPS }
 // pulls of the same version is caught at the next pull via
 // ErrFetchIntegrity.
 func (a *httpsAdapter) Resolve(spec sourceresolver.SourceSpec) (*sourceresolver.ResolvedSource, error) {
+	// Production routes every fetch — the chart .tgz and any index.yaml lookup —
+	// through the network-egress gate's transport, so an offline workspace is
+	// refused before any dial and helm never builds its own ungated transport.
+	// A test-injected getter carries its own static body and never touches the
+	// network, so the gate applies only to the production getter.
+	var httpOpts []getter.Option
+	if _, isProd := a.getter.(*productionGetter); isProd {
+		transport, ok := egressTransport(spec.Client)
+		if !ok {
+			return nil, egress.ErrOfflineEgress
+		}
+		httpOpts = append(httpOpts, getter.WithTransport(transport))
+	}
+
 	fetchURL := spec.URL
 	// resolvedURL is provenance: empty unless the authored URL differs from the
 	// concrete .tgz the index resolves to (the repo-root form), keeping the
@@ -110,7 +126,7 @@ func (a *httpsAdapter) Resolve(spec sourceresolver.SourceSpec) (*sourceresolver.
 			return nil, sourceresolver.Wrap(spec, sourceresolver.ErrFetchNotFound,
 				errors.New("repo-root URL requires spec.Chart"))
 		}
-		u, err := a.resolveIndex(spec.URL, spec.Chart, spec.Version)
+		u, err := a.resolveIndex(spec.URL, spec.Chart, spec.Version, httpOpts...)
 		if err != nil {
 			return nil, mapHTTPError(spec, err)
 		}
@@ -118,7 +134,7 @@ func (a *httpsAdapter) Resolve(spec sourceresolver.SourceSpec) (*sourceresolver.
 		resolvedURL = u
 	}
 
-	buf, err := a.getter.Get(fetchURL)
+	buf, err := a.getter.Get(fetchURL, httpOpts...)
 	if err != nil {
 		return nil, mapHTTPError(spec, err)
 	}
@@ -164,6 +180,19 @@ func newProvidersNoEnv() getter.Providers {
 	return getter.All(s)
 }
 
+// egressTransport extracts the concrete *http.Transport the network-egress gate
+// constructs, for injection into the helm getter via getter.WithTransport (which
+// takes a *http.Transport, not a RoundTripper). A nil client is the gate's
+// offline signal; a client whose transport is not a *http.Transport reports not
+// ok so the caller refuses rather than let the getter build its own transport.
+func egressTransport(client *http.Client) (*http.Transport, bool) {
+	if client == nil {
+		return nil, false
+	}
+	t, ok := client.Transport.(*http.Transport)
+	return t, ok
+}
+
 // productionGetter wraps the helm getter providers in the
 // httpsGetter seam so the adapter has a typed surface to consume.
 type productionGetter struct {
@@ -192,9 +221,9 @@ func (p *productionGetter) Get(href string, options ...getter.Option) (*tarGzBuf
 // + version, and returns the first direct .tgz URL from the
 // entry's URLs slice. If the URL is relative, it is joined against
 // the repo root per Helm's index.yaml convention.
-func resolveFromIndexProduction(g *productionGetter, repoURL, chart, version string) (string, error) {
+func resolveFromIndexProduction(g *productionGetter, repoURL, chart, version string, opts ...getter.Option) (string, error) {
 	indexURL := strings.TrimRight(repoURL, "/") + "/index.yaml"
-	buf, err := g.Get(indexURL)
+	buf, err := g.Get(indexURL, opts...)
 	if err != nil {
 		return "", err
 	}

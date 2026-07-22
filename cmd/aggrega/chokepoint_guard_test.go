@@ -261,6 +261,93 @@ func TestEgressConstructionChokepointGuard(t *testing.T) {
 	}
 }
 
+// TestEgressLibraryImportChokepointGuard enforces the single home for each
+// library-owned network transport. Three libraries construct their own HTTP
+// client internally, so a raw-http-construction matcher cannot see their egress:
+// go-git (the clone transport), sigstore-go's keyless signing, and the helm
+// getter. The offline gate threads its transport into each library at its home
+// package; this guard keeps a NEW package from importing one of these libraries
+// and egressing around the gate.
+//
+// It is deny-by-default over a whole-module walk with a per-library home
+// exemption: each library import is permitted only in pkg/egress (the gate) and
+// the one domain package that owns that library's use. A package that does not
+// exist today is covered the moment it is added — a future package importing
+// go-git or the helm getter trips this guard with zero edits here. The live-TUF
+// package is the strict case: it is permitted only in pkg/egress/livetrust,
+// because the live-trust-root fetch is single-sourced there
+// (livetrust.TrustedRoot). That gate is a sibling of the egress core rather
+// than part of it, so the sigstore TUF machinery stays off the build/render path.
+//
+// The go-git matcher targets the network package path exactly
+// (github.com/go-git/go-git/v5, the CloneContext home), not the module prefix,
+// so the non-network gitignore subpackage imported by the workspace walker does
+// not trip. Test files are exempt: a test legitimately imports a library to
+// build a fixture.
+func TestEgressLibraryImportChokepointGuard(t *testing.T) {
+	root := filepath.Join("..", "..")
+	// Each banned import path maps to the set of package directories (relative to
+	// the module root, slash-separated) permitted to import it.
+	banned := map[string]map[string]bool{
+		"github.com/go-git/go-git/v5": {
+			"pkg/egress":                   true,
+			"pkg/sourceresolver/terraform": true,
+		},
+		"github.com/sigstore/sigstore-go/pkg/sign": {
+			"pkg/egress":  true,
+			"pkg/signing": true,
+		},
+		"github.com/sigstore/sigstore-go/pkg/tuf": {
+			"pkg/egress/livetrust": true,
+		},
+		"helm.sh/helm/v3/pkg/getter": {
+			"pkg/egress":              true,
+			"pkg/sourceresolver/helm": true,
+		},
+	}
+
+	err := filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			base := d.Name()
+			if base == "vendor" || base == "testdata" || (p != root && strings.HasPrefix(base, ".")) {
+				return fs.SkipDir
+			}
+			return nil
+		}
+		if !strings.HasSuffix(p, ".go") || strings.HasSuffix(p, "_test.go") {
+			return nil
+		}
+		rel, rerr := filepath.Rel(root, filepath.Dir(p))
+		if rerr != nil {
+			t.Fatalf("rel %s: %v", p, rerr)
+		}
+		pkgDir := filepath.ToSlash(rel)
+
+		fset := token.NewFileSet()
+		node, perr := parser.ParseFile(fset, p, nil, parser.ImportsOnly)
+		if perr != nil {
+			t.Fatalf("parse %s: %v", p, perr)
+		}
+		for _, imp := range node.Imports {
+			path := strings.Trim(imp.Path.Value, `"`)
+			allowed, isBanned := banned[path]
+			if !isBanned {
+				continue
+			}
+			if !allowed[pkgDir] {
+				t.Errorf("%s: package %q imports the library-owned network package %q outside its egress-gated home — route the transport through pkg/egress or the library's home package", fset.Position(imp.Pos()), pkgDir, path)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walk %s: %v", root, err)
+	}
+}
+
 // TestResolveCatalogDirsChokepointGuard enforces the single home for the
 // catalog-dir precedence stack structurally. The flag-dirs-prepend-config
 // first-win assembly lives once, exported from pkg/workspaceconfig as

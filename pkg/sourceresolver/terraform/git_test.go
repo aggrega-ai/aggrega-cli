@@ -6,6 +6,7 @@ package terraform
 import (
 	"context"
 	"errors"
+	"net/http"
 	"os"
 	"path/filepath"
 	"testing"
@@ -214,7 +215,7 @@ func buildFixtureRepoWithTag(t *testing.T, tag string, files map[string]string) 
 }
 
 func cloneFromFixture(fixtureDir string) cloneFunc {
-	return func(ctx context.Context, destDir, url string) (*git.Repository, error) {
+	return func(ctx context.Context, destDir, url string, _ *http.Client) (*git.Repository, error) {
 		return git.PlainCloneContext(ctx, destDir, false, &git.CloneOptions{
 			URL:        fixtureDir,
 			NoCheckout: true,

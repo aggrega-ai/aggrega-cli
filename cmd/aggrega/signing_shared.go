@@ -19,6 +19,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/registryhost"
 	"github.com/aggrega-ai/aggrega-cli/pkg/signing"
+	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
 // signerParams carries the resolved signing inputs buildSigner constructs a
@@ -41,6 +42,7 @@ type signerParams struct {
 	FulcioURL    string
 	RekorURL     string
 	TimestampURL string
+	Config       workspaceconfig.Config
 }
 
 // firstNonEmpty returns the first non-empty string in order, implementing
@@ -187,6 +189,7 @@ func buildSigner(p signerParams) (signing.Signer, error) {
 		FulcioURL:    fulcio,
 		RekorURL:     rekor,
 		TimestampURL: p.TimestampURL,
+		Config:       p.Config,
 	}, nil
 }
 
@@ -323,6 +326,7 @@ func resolvePushSigner(cfg pushConfig, registry string) (signing.Signer, error) 
 		FulcioURL:    firstNonEmpty(cfg.FulcioURL, resolved.FulcioURL),
 		RekorURL:     firstNonEmpty(cfg.RekorURL, resolved.RekorURL),
 		TimestampURL: firstNonEmpty(cfg.TimestampURL, resolved.TimestampURL),
+		Config:       rw.Config(),
 	})
 	if berr != nil {
 		return nil, fmt.Errorf("aggrega push: construct signer: %w: %w", berr, signing.ErrUnsignedPushRefused)

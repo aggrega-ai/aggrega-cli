@@ -73,7 +73,7 @@ func discoverClosureDeprecations(
 			origSigner = &rr
 		}
 
-		rec, verr := discoverEntityDeprecation(ctx, e, policy, origSigner, targetFor)
+		rec, verr := discoverEntityDeprecation(ctx, wsCfg, e, policy, origSigner, targetFor)
 		if verr != nil {
 			// A missing marker is not an error — most artifacts are not
 			// deprecated. Only an untrusted/unsigned MARKER (one that exists but
@@ -248,6 +248,7 @@ func laterMarker(aHasTime bool, aTime time.Time, aDigest string, bHasTime bool, 
 // verify; and the verified DeprecationRecord otherwise.
 func discoverEntityDeprecation(
 	ctx context.Context,
+	wsCfg workspaceconfig.Config,
 	e pullverify.Entity,
 	policy workspaceconfig.RegistryConfig,
 	origSigner *pullverify.Result,
@@ -301,7 +302,7 @@ func discoverEntityDeprecation(
 			lastErr = ferr
 			continue
 		}
-		res, verr := pullverify.VerifyBundle(bundle, markerDigest, markerPolicy)
+		res, verr := pullverify.VerifyBundle(wsCfg, bundle, markerDigest, markerPolicy)
 		if verr == nil {
 			// The recorded diagnostic falls back to the reason when a marker
 			// carries no separate message, so the build-time notice is never blank.

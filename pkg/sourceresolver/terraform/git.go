@@ -27,16 +27,20 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"github.com/aggrega-ai/aggrega-cli/pkg/egress"
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/cacheslot"
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/internal/archive"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/transport"
+	transportclient "github.com/go-git/go-git/v5/plumbing/transport/client"
+	githttp "github.com/go-git/go-git/v5/plumbing/transport/http"
 )
 
 // Kind names the terraform-module-git source kind.
@@ -49,10 +53,11 @@ const MediatypeTarGz = "application/gzip"
 
 // cloneFunc is the seam between production go-git CloneContext and
 // test-injected clone behaviour. Production wires this to a thin
-// wrapper around git.PlainCloneContext (filesystem-backed). Tests
-// inject their own implementation that clones from a local fixture
-// repo.
-type cloneFunc func(ctx context.Context, destDir, url string) (*git.Repository, error)
+// wrapper around git.PlainCloneContext (filesystem-backed) that also
+// receives the network-egress client. Tests inject their own
+// implementation that clones from a local fixture repo and ignores the
+// client argument.
+type cloneFunc func(ctx context.Context, destDir, url string, httpClient *http.Client) (*git.Repository, error)
 
 type adapter struct {
 	clone cloneFunc
@@ -64,7 +69,22 @@ func NewAdapter() sourceresolver.Adapter {
 	return &adapter{clone: defaultClone}
 }
 
-func defaultClone(ctx context.Context, destDir, url string) (*git.Repository, error) {
+// defaultClone is the production clone. It refuses an offline workspace before
+// touching the network (a nil client is the egress gate's offline signal), and
+// for HTTP(S) remotes it wires the gate's client into go-git's HTTP transport so
+// go-git's network egress crosses the same gate the rest of the compiler does.
+// go-git exposes no per-clone HTTP-client option, so the transport is installed
+// through the library's process-global protocol registry; the client wraps the
+// gate's shared transport, so the install is deterministic and idempotent. SSH,
+// git, and file remotes carry no HTTP client — go-git builds their transports
+// itself — so for those schemes the nil-client refusal above is the whole egress
+// guarantee.
+func defaultClone(ctx context.Context, destDir, url string, httpClient *http.Client) (*git.Repository, error) {
+	if httpClient == nil {
+		return nil, egress.ErrOfflineEgress
+	}
+	transportclient.InstallProtocol("https", githttp.NewClient(httpClient))
+	transportclient.InstallProtocol("http", githttp.NewClient(httpClient))
 	return git.PlainCloneContext(ctx, destDir, false, &git.CloneOptions{
 		URL:        url,
 		NoCheckout: true,
@@ -91,8 +111,14 @@ func (a *adapter) Resolve(spec sourceresolver.SourceSpec) (*sourceresolver.Resol
 	defer os.RemoveAll(cloneDir)
 
 	ctx := context.Background()
-	repo, err := a.clone(ctx, cloneDir, spec.URL)
+	repo, err := a.clone(ctx, cloneDir, spec.URL, spec.Client)
 	if err != nil {
+		// Preserve the egress refusal as the specific offline sentinel; the
+		// generic fetch-error mapping would flatten it into a network-unreachable
+		// message and lose the errors.Is match.
+		if errors.Is(err, egress.ErrOfflineEgress) {
+			return nil, err
+		}
 		return nil, mapGitError(spec, err)
 	}
 

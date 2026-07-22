@@ -12,6 +12,9 @@ import (
 
 	"github.com/sigstore/sigstore-go/pkg/bundle"
 	"github.com/sigstore/sigstore-go/pkg/sign"
+
+	"github.com/aggrega-ai/aggrega-cli/pkg/egress"
+	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
 // KeylessSigner signs with an ephemeral key whose public half is bound to
@@ -44,6 +47,13 @@ type KeylessSigner struct {
 	// TimestampURL is an RFC3161 timestamp authority. Optional; when
 	// empty no signed timestamp is requested.
 	TimestampURL string
+	// Config is the resolved workspace configuration. Sign derives the offline
+	// decision from it through the network-egress gate: an offline workspace
+	// refuses with ErrOfflineEgress before any certificate, transparency-log, or
+	// timestamp request, and an online workspace supplies the gate's transport to
+	// the Fulcio and timestamp-authority clients. It carries no caller-asserted
+	// boolean; only a resolved configuration reaches the gate.
+	Config workspaceconfig.Config
 }
 
 // Sign performs the keyless flow: fetch a fresh OIDC identity token from the
@@ -67,6 +77,15 @@ func (k *KeylessSigner) Sign(ctx context.Context, artifactDigest string) (bundle
 	if k.TokenSource == nil {
 		return nil, "", fmt.Errorf("%w: an identity token source is required", ErrKeylessLive)
 	}
+	// The keyless flow is irreducibly live — certificate issuance, transparency-log
+	// inclusion, and timestamping are all network operations with no offline mode.
+	// Refuse an offline workspace here, before the token fetch and any dial, so the
+	// failure is the specific egress refusal rather than an opaque network error
+	// deep inside a certificate or transparency-log request.
+	transport, err := egress.RoundTripper(k.Config)
+	if err != nil {
+		return nil, "", fmt.Errorf("signing: keyless: %w", err)
+	}
 	idToken, err := k.TokenSource(ctx)
 	if err != nil {
 		return nil, "", fmt.Errorf("signing: identity token: %w", err)
@@ -84,15 +103,20 @@ func (k *KeylessSigner) Sign(ctx context.Context, artifactDigest string) (bundle
 		return nil, "", err
 	}
 
+	// The certificate authority and timestamp authority take the egress gate's
+	// transport for dependency injection, so their network flows through the one
+	// gate-constructed transport. The transparency-log client exposes no transport
+	// option in this release; its egress is governed by the offline refusal above,
+	// which returns before this bundle flow runs.
 	opts := sign.BundleOptions{
 		Context:                    ctx,
-		CertificateProvider:        sign.NewFulcio(&sign.FulcioOptions{BaseURL: k.FulcioURL}),
+		CertificateProvider:        sign.NewFulcio(&sign.FulcioOptions{BaseURL: k.FulcioURL, Transport: transport}),
 		CertificateProviderOptions: &sign.CertificateProviderOptions{IDToken: idToken},
 		TransparencyLogs:           []sign.Transparency{sign.NewRekor(&sign.RekorOptions{BaseURL: k.RekorURL})},
 	}
 	if k.TimestampURL != "" {
 		opts.TimestampAuthorities = []*sign.TimestampAuthority{
-			sign.NewTimestampAuthority(&sign.TimestampAuthorityOptions{URL: k.TimestampURL}),
+			sign.NewTimestampAuthority(&sign.TimestampAuthorityOptions{URL: k.TimestampURL, Transport: transport}),
 		}
 	}
 

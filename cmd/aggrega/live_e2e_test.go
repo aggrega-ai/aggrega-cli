@@ -39,6 +39,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/signing"
+	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
 // liveE2EConfig holds the live-infrastructure coordinates and credentials the
@@ -154,7 +155,7 @@ func TestLiveE2E_KeylessPublishVerifyRoundTrip(t *testing.T) {
 		t.Skip("live keyless verify requires AGGREGA_LIVE_E2E_IDENTITY and AGGREGA_LIVE_E2E_ISSUER to assert the signer identity")
 	}
 	ids := []signing.TrustedIdentity{{Identity: identity, Issuer: issuer}}
-	matched, err := signing.VerifyKeylessLive(pulled, ids, manifestDigest)
+	matched, err := signing.VerifyKeylessLive(workspaceconfig.Config{}, pulled, ids, manifestDigest)
 	if err != nil {
 		t.Fatalf("keyless verify against TUF-fetched root: %v", err)
 	}

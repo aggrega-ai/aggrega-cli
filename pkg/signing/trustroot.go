@@ -7,7 +7,9 @@ import (
 	"fmt"
 
 	"github.com/sigstore/sigstore-go/pkg/root"
-	"github.com/sigstore/sigstore-go/pkg/tuf"
+
+	"github.com/aggrega-ai/aggrega-cli/pkg/egress/livetrust"
+	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
 // TrustedMaterialFromRootPath loads a pinned Sigstore trust-root bundle
@@ -42,11 +44,14 @@ func TrustedMaterialFromRootPath(path string) (root.TrustedMaterial, error) {
 // against the real Sigstore is provable only against live TUF/Fulcio/Rekor.
 // Offline callers pin a trust root via TrustedMaterialFromRootPath and use
 // VerifyKeylessBundle instead.
-func VerifyKeylessLive(bundleBytes []byte, identities []TrustedIdentity, artifactDigest string) (KeylessIdentity, error) {
-	opts := tuf.DefaultOptions()
-	live, err := root.NewLiveTrustedRoot(opts)
+//
+// The live root is fetched through the network-egress gate, so an offline
+// resolved configuration refuses with ErrOfflineEgress before any dial rather
+// than attempting a live TUF fetch.
+func VerifyKeylessLive(cfg workspaceconfig.Config, bundleBytes []byte, identities []TrustedIdentity, artifactDigest string) (KeylessIdentity, error) {
+	live, err := livetrust.TrustedRoot(cfg)
 	if err != nil {
-		return KeylessIdentity{}, fmt.Errorf("%w: live TUF fetch: %v", ErrTrustRootLoad, err)
+		return KeylessIdentity{}, err
 	}
 	return VerifyKeylessBundle(bundleBytes, live, identities, artifactDigest)
 }
