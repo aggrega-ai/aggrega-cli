@@ -55,7 +55,7 @@ func TestOCIAcquirePinsByManifestDigest(t *testing.T) {
 
 	payload := []byte("chart archive payload bytes")
 	repoRef := host + "/inputs/demo"
-	repo, err := oci.NewRemoteRepository(repoRef)
+	repo, err := oci.NewRemoteRepository(repoRef, &http.Client{})
 	if err != nil {
 		t.Fatalf("remote repository: %v", err)
 	}
@@ -66,7 +66,7 @@ func TestOCIAcquirePinsByManifestDigest(t *testing.T) {
 	wantHex := strings.TrimPrefix(manifestDigest, "sha256:")
 
 	root := t.TempDir()
-	svc := externalinputs.NewService(root, true, nil, nil)
+	svc := externalinputs.NewService(root, true, &http.Client{}, nil)
 	inputURL := "oci://" + repoRef + ":1.0.0"
 
 	got, err := svc.Fetch(ctx, inputURL, "recipe.helm.demo")
@@ -122,7 +122,7 @@ func TestOCIRefillPullsByPinnedDigest(t *testing.T) {
 
 	payload := []byte("original chart payload")
 	repoRef := host + "/inputs/moving"
-	repo, err := oci.NewRemoteRepository(repoRef)
+	repo, err := oci.NewRemoteRepository(repoRef, &http.Client{})
 	if err != nil {
 		t.Fatalf("remote repository: %v", err)
 	}
@@ -145,7 +145,7 @@ func TestOCIRefillPullsByPinnedDigest(t *testing.T) {
 		URL:        inputURL,
 	}}
 	root := t.TempDir()
-	svc := externalinputs.NewService(root, false, nil, pinned)
+	svc := externalinputs.NewService(root, false, &http.Client{}, pinned)
 
 	got, err := svc.Fetch(ctx, inputURL, "recipe.helm.demo")
 	if err != nil {

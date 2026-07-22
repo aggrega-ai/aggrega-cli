@@ -23,6 +23,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -64,7 +65,7 @@ func TestIntegration_PluginAddCLI_FetchCachesForOfflineRun(t *testing.T) {
 	host := startRegistry(t, nil)
 	// Publish the .wasm as the single content layer of a version-tagged manifest —
 	// the exact shape the add path's pull reads its bytes from.
-	repo, err := oci.NewRemoteRepository(host + "/plugin/cli/greet")
+	repo, err := oci.NewRemoteRepository(host+"/plugin/cli/greet", &http.Client{})
 	if err != nil {
 		t.Fatalf("new repo: %v", err)
 	}

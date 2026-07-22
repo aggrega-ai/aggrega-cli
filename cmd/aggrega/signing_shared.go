@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
 	"strings"
 
@@ -94,7 +95,7 @@ func acquireInteractiveIDToken() (string, error) {
 // one token per command and returns it as a static string, so an interactive
 // batch mints once and reuses it. look, tty, and acquire are injected seams for
 // tests.
-func resolveIdentityTokenSource(flagToken string, look func(string) string, tty func() bool, acquire func() (string, error), validate func(string) error) (idToken string, source signing.IdentityTokenSource, err error) {
+func resolveIdentityTokenSource(flagToken string, look func(string) string, tty func() bool, acquire func() (string, error), validate func(string) error, httpClient *http.Client) (idToken string, source signing.IdentityTokenSource, err error) {
 	if flagToken != "" {
 		return flagToken, nil, nil
 	}
@@ -102,7 +103,10 @@ func resolveIdentityTokenSource(flagToken string, look func(string) string, tty 
 		return t, nil, nil
 	}
 	if signing.GitHubActionsAmbientAvailable(look) {
-		return "", signing.AmbientGitHubActionsSource(look, nil, validate), nil
+		// The ambient identity-token fetch transports over the network-egress
+		// gate's client; it is nil for an offline workspace, in which case the
+		// source refuses loudly when the signer invokes it.
+		return "", signing.AmbientGitHubActionsSource(look, httpClient, validate), nil
 	}
 	if t := look(envSigstoreIDToken); t != "" {
 		return t, nil, nil
@@ -306,7 +310,8 @@ func resolvePushSigner(cfg pushConfig, registry string) (signing.Signer, error) 
 	var tokenSource signing.IdentityTokenSource
 	if keyPath == "" {
 		var terr error
-		idToken, tokenSource, terr = resolveIdentityTokenSource(cfg.IDToken, envLookupOrGetenv(cfg.EnvLookup), ttyOrDefault(cfg.IsTTY), tokenGetterOrDefault(cfg.TokenGetter), checkIDTokenSubject)
+		ambientClient, _ := workspaceEgressClient(rw.Config())
+		idToken, tokenSource, terr = resolveIdentityTokenSource(cfg.IDToken, envLookupOrGetenv(cfg.EnvLookup), ttyOrDefault(cfg.IsTTY), tokenGetterOrDefault(cfg.TokenGetter), checkIDTokenSubject, ambientClient)
 		if terr != nil {
 			return nil, fmt.Errorf("aggrega push: %w: %w", terr, signing.ErrUnsignedPushRefused)
 		}

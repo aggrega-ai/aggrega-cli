@@ -150,7 +150,11 @@ func pushPlugin(out io.Writer, cfg pushConfig, registry string, wantSign bool, n
 
 	target := cfg.PushTarget
 	if target == nil {
-		repo, err := oci.NewRemoteRepository(reference)
+		httpClient, err := workspaceEgressClient(cfg.ws.Config())
+		if err != nil {
+			return fmt.Errorf("aggrega push: %s: %w", reference, err)
+		}
+		repo, err := oci.NewRemoteRepository(reference, httpClient)
 		if err != nil {
 			return fmt.Errorf("aggrega push: %s: %w", reference, err)
 		}

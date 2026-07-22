@@ -6,6 +6,7 @@ package helm
 import (
 	"context"
 	"errors"
+	"net/http"
 	"os"
 	"path/filepath"
 	"testing"
@@ -26,7 +27,7 @@ func TestOCIResolveHappyPath(t *testing.T) {
 	root := t.TempDir()
 
 	store, archiveBytes, _ := buildChartStore(t, "mariadb", "25.0.8")
-	a := &ociAdapter{newTarget: func(string) (oras.ReadOnlyTarget, error) { return store, nil }}
+	a := &ociAdapter{newTarget: func(string, *http.Client) (oras.ReadOnlyTarget, error) { return store, nil }}
 
 	got, err := a.Resolve(sourceresolver.SourceSpec{
 		Kind:          KindOCI,
@@ -83,7 +84,7 @@ func TestOCIResolveSetsManifestDigest(t *testing.T) {
 	root := t.TempDir()
 
 	store, _, manifestDigest := buildChartStore(t, "mariadb", "25.0.8")
-	a := &ociAdapter{newTarget: func(string) (oras.ReadOnlyTarget, error) { return store, nil }}
+	a := &ociAdapter{newTarget: func(string, *http.Client) (oras.ReadOnlyTarget, error) { return store, nil }}
 
 	got, err := a.Resolve(sourceresolver.SourceSpec{
 		Kind:          KindOCI,
@@ -118,7 +119,7 @@ func TestOCIResolveSetsManifestDigest(t *testing.T) {
 func TestOCIResolveNotFoundWrapsSentinel(t *testing.T) {
 	t.Parallel()
 	store, _, _ := buildChartStore(t, "mariadb", "25.0.8")
-	a := &ociAdapter{newTarget: func(string) (oras.ReadOnlyTarget, error) { return store, nil }}
+	a := &ociAdapter{newTarget: func(string, *http.Client) (oras.ReadOnlyTarget, error) { return store, nil }}
 
 	_, err := a.Resolve(sourceresolver.SourceSpec{
 		Kind:          KindOCI,
@@ -138,7 +139,7 @@ func TestOCIResolveNotFoundWrapsSentinel(t *testing.T) {
 func TestOCIResolveTargetFactoryFailureWrapsNetwork(t *testing.T) {
 	t.Parallel()
 	boom := errors.New("dial tcp: lookup failed")
-	a := &ociAdapter{newTarget: func(string) (oras.ReadOnlyTarget, error) { return nil, boom }}
+	a := &ociAdapter{newTarget: func(string, *http.Client) (oras.ReadOnlyTarget, error) { return nil, boom }}
 
 	_, err := a.Resolve(sourceresolver.SourceSpec{
 		Kind:          KindOCI,
@@ -166,7 +167,7 @@ func TestOCIResolveSignedChartSelectsContentLayer(t *testing.T) {
 	root := t.TempDir()
 
 	store, content, prov := buildSignedChartStore(t, "25.0.8")
-	a := &ociAdapter{newTarget: func(string) (oras.ReadOnlyTarget, error) { return store, nil }}
+	a := &ociAdapter{newTarget: func(string, *http.Client) (oras.ReadOnlyTarget, error) { return store, nil }}
 
 	got, err := a.Resolve(sourceresolver.SourceSpec{
 		Kind:          KindOCI,

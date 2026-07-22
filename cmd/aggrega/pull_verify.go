@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"slices"
@@ -19,6 +20,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
+	"github.com/aggrega-ai/aggrega-cli/pkg/egress"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pullverify"
@@ -326,7 +328,11 @@ type fetchedPlugin struct {
 // function.
 func verifyFetchedPlugin(ctx context.Context, in fetchedPlugin, wsCfg workspaceconfig.Config, targetFor pullverify.TargetFor, diagOut io.Writer) (*lockfile.VerifiedSignature, error) {
 	var fact *lockfile.VerifiedSignature
-	if !wsCfg.Offline && isRegistryHost(in.Host) && in.ManifestDigest != "" {
+	// An explicitly requested verify does not silently skip the network when the
+	// workspace is offline: the signature fetch runs and is refused loudly by the
+	// egress gate (through targetFor / the live-trust-root fetch) rather than
+	// passing as unverified. The offline decision lives at the gate, not here.
+	if isRegistryHost(in.Host) && in.ManifestDigest != "" {
 		results, err := pullverify.Verify(ctx, []pullverify.Entity{{
 			URI:            in.URI,
 			ManifestDigest: in.ManifestDigest,
@@ -394,28 +400,39 @@ func signatureFact(r pullverify.Result) *lockfile.VerifiedSignature {
 // (host/path, no scheme) and a content-pinned .wasm artifact URI
 // (oci://host/path@sha256:...). Authentication delegates to the shared OCI
 // credential mechanisms.
-func remoteTargetFor(e pullverify.Entity) (oras.ReadOnlyTarget, string, error) {
-	// A catalog entity's URI is a host-less bare identity, so its repository
-	// reference is the location bound at pull time (host + path), carried on the
-	// entity. A host-carrying artifact (a content-pinned .wasm plugin) leaves
-	// Location empty and supplies its reference through the URI.
-	repoRef := e.Location
-	if repoRef == "" {
-		// A content-pinned .wasm artifact URI carries the oci:// scheme; the
-		// remote-repository parser wants a bare host/path reference, so strip it.
-		repoRef = strings.TrimPrefix(e.URI, "oci://")
-		// Strip any version or content-digest suffix from the URI to form the
-		// repository reference; the subject ref is the manifest digest the
-		// signature commits to.
-		if at := strings.LastIndex(repoRef, "@"); at >= 0 {
-			repoRef = repoRef[:at]
+// remoteTargetForWith binds an egress-gate HTTP client to the resolution: the
+// client is nil for an offline workspace, in which case a referrer fetch is
+// refused loudly with ErrOfflineEgress. An explicitly requested verify never
+// silently skips the network step when offline — it refuses, so a
+// pinned-trust-root offline verify (which never reaches this fetch) stays the
+// only offline-capable verify path.
+func remoteTargetForWith(httpClient *http.Client) pullverify.TargetFor {
+	return func(e pullverify.Entity) (oras.ReadOnlyTarget, string, error) {
+		if httpClient == nil {
+			return nil, "", egress.ErrOfflineEgress
 		}
+		// A catalog entity's URI is a host-less bare identity, so its repository
+		// reference is the location bound at pull time (host + path), carried on the
+		// entity. A host-carrying artifact (a content-pinned .wasm plugin) leaves
+		// Location empty and supplies its reference through the URI.
+		repoRef := e.Location
+		if repoRef == "" {
+			// A content-pinned .wasm artifact URI carries the oci:// scheme; the
+			// remote-repository parser wants a bare host/path reference, so strip it.
+			repoRef = strings.TrimPrefix(e.URI, "oci://")
+			// Strip any version or content-digest suffix from the URI to form the
+			// repository reference; the subject ref is the manifest digest the
+			// signature commits to.
+			if at := strings.LastIndex(repoRef, "@"); at >= 0 {
+				repoRef = repoRef[:at]
+			}
+		}
+		repo, err := oci.NewRemoteRepository(repoRef, httpClient)
+		if err != nil {
+			return nil, "", err
+		}
+		return repo, e.ManifestDigest, nil
 	}
-	repo, err := oci.NewRemoteRepository(repoRef)
-	if err != nil {
-		return nil, "", err
-	}
-	return repo, e.ManifestDigest, nil
 }
 
 // cacheBundleBlob writes bundle to the content-addressed signature-bundle blob

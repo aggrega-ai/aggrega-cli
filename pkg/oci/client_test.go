@@ -297,7 +297,7 @@ func TestNewRemoteRepository_LoopbackPlainHTTP(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.ref, func(t *testing.T) {
 			t.Parallel()
-			repo, err := oci.NewRemoteRepository(tc.ref)
+			repo, err := oci.NewRemoteRepository(tc.ref, &http.Client{})
 			if err != nil {
 				t.Fatalf("NewRemoteRepository(%q): %v", tc.ref, err)
 			}

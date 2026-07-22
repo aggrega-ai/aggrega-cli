@@ -11,6 +11,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/aggrega-ai/aggrega-cli/pkg/egress"
 )
 
 // craftJWT builds a syntactically valid JWT whose payload is the given JSON
@@ -203,8 +205,22 @@ func TestAmbientGitHubActionsSourceNon2xx(t *testing.T) {
 // variable is a descriptive error rather than a request to an empty URL.
 func TestAmbientGitHubActionsSourceMissingEnv(t *testing.T) {
 	t.Parallel()
-	src := AmbientGitHubActionsSource(lookFrom(map[string]string{}), nil, nil)
+	src := AmbientGitHubActionsSource(lookFrom(map[string]string{}), &http.Client{}, nil)
 	if _, err := src(context.Background()); err == nil {
 		t.Fatal("want an error when the ambient environment is absent, got nil")
+	}
+}
+
+// TestAmbientGitHubActionsSourceOfflineRefuses proves a nil client (the
+// network-egress gate's offline signal) refuses the ambient token fetch loudly
+// rather than reaching for a default client.
+func TestAmbientGitHubActionsSourceOfflineRefuses(t *testing.T) {
+	t.Parallel()
+	src := AmbientGitHubActionsSource(lookFrom(map[string]string{
+		envActionsIDTokenRequestURL:   "https://token.example.invalid",
+		envActionsIDTokenRequestToken: "req-token",
+	}), nil, nil)
+	if _, err := src(context.Background()); !errors.Is(err, egress.ErrOfflineEgress) {
+		t.Fatalf("nil client (offline) should refuse with ErrOfflineEgress, got %v", err)
 	}
 }

@@ -25,6 +25,7 @@ func TestComposeResolveHappyPath(t *testing.T) {
 
 	root := t.TempDir()
 	a := NewAdapter().(*adapter)
+	a.client = &http.Client{}
 	got, err := a.Resolve(sourceresolver.SourceSpec{
 		Kind:          Kind,
 		URL:           server.URL + "/compose-fragment.yaml",
@@ -62,6 +63,7 @@ func TestComposeResolveDeterministicArchive(t *testing.T) {
 	defer server.Close()
 
 	a := NewAdapter().(*adapter)
+	a.client = &http.Client{}
 	spec := sourceresolver.SourceSpec{
 		Kind:          Kind,
 		URL:           server.URL + "/x.yaml",
@@ -101,6 +103,7 @@ func TestComposeResolve404WrapsNotFound(t *testing.T) {
 	}))
 	defer server.Close()
 	a := NewAdapter().(*adapter)
+	a.client = &http.Client{}
 	_, err := a.Resolve(sourceresolver.SourceSpec{
 		Kind:          Kind,
 		URL:           server.URL + "/missing.yaml",
@@ -120,6 +123,7 @@ func TestComposeResolve401WrapsUnauthorized(t *testing.T) {
 	}))
 	defer server.Close()
 	a := NewAdapter().(*adapter)
+	a.client = &http.Client{}
 	_, err := a.Resolve(sourceresolver.SourceSpec{
 		Kind:          Kind,
 		URL:           server.URL + "/private.yaml",
@@ -135,6 +139,7 @@ func TestComposeResolve401WrapsUnauthorized(t *testing.T) {
 func TestComposeResolveConnectionRefusedWrapsNetwork(t *testing.T) {
 	t.Parallel()
 	a := NewAdapter().(*adapter)
+	a.client = &http.Client{}
 	_, err := a.Resolve(sourceresolver.SourceSpec{
 		Kind:          Kind,
 		URL:           "http://127.0.0.1:1/never-listens.yaml",

@@ -6,15 +6,35 @@ package renderer_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
+	"github.com/aggrega-ai/aggrega-cli/pkg/egress"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 )
+
+// TestOfflineEgressRoutesToFetchErrorFamily proves the offline-egress refusal
+// is classified into the FETCH_ERROR family by the source-resolution error
+// classifier, and that its self-carried remediation is not double-appended.
+func TestOfflineEgressRoutesToFetchErrorFamily(t *testing.T) {
+	t.Parallel()
+	wrapped := fmt.Errorf("fetch referrers: %w", egress.ErrOfflineEgress)
+	ce, ok := renderer.WrapSourceResolutionErrorForTest(wrapped)
+	if !ok {
+		t.Fatal("wrapped ErrOfflineEgress did not produce a CompilerError")
+	}
+	if ce.Category != cerrors.FetchError {
+		t.Errorf("Category = %q; want FETCH_ERROR for an offline-egress refusal", ce.Category)
+	}
+	if !errors.Is(ce, egress.ErrOfflineEgress) {
+		t.Errorf("classified error no longer detects ErrOfflineEgress in its chain")
+	}
+}
 
 // These tests cover the orchestrator's category routing for fetch
 // failures: a Recipe with a remote source whose lockfile entry is

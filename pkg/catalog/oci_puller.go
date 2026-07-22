@@ -7,8 +7,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"strings"
 
+	"github.com/aggrega-ai/aggrega-cli/pkg/egress"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
@@ -53,10 +55,15 @@ var ErrUnscopedRecipeReference = errors.New("recipe reference must be provider-s
 // the same canonical helper. Local copies would drift; one
 // implementation prevents that.
 func NewDefaultOCIPuller(wsCfg workspaceconfig.Config) OCIPuller {
-	if wsCfg.Offline {
+	httpClient, err := egress.HTTPClient(wsCfg)
+	if err != nil {
+		// The network-egress gate refused (the workspace is offline): return no
+		// puller so closure-walker and lazy-lookup Tier-3 paths surface NotFound
+		// without attempting any network access. The offline decision lives at the
+		// gate; this call site only reacts to it.
 		return nil
 	}
-	return DefaultOCIPuller{registry: wsCfg.DefaultRegistry}
+	return DefaultOCIPuller{registry: wsCfg.DefaultRegistry, httpClient: httpClient}
 }
 
 // DefaultOCIPuller is the production OCIPuller implementation. Pull constructs a
@@ -65,11 +72,12 @@ func NewDefaultOCIPuller(wsCfg workspaceconfig.Config) OCIPuller {
 // default registry, used by PullLibrary to bind a host-less library identity to a
 // physical location.
 type DefaultOCIPuller struct {
-	registry string
+	registry   string
+	httpClient *http.Client
 }
 
-func (DefaultOCIPuller) Pull(ctx context.Context, reference, tag string) (*oci.PullResult, error) {
-	repo, err := oci.NewRemoteRepository(reference)
+func (p DefaultOCIPuller) Pull(ctx context.Context, reference, tag string) (*oci.PullResult, error) {
+	repo, err := oci.NewRemoteRepository(reference, p.httpClient)
 	if err != nil {
 		return nil, err
 	}
@@ -86,7 +94,7 @@ func (DefaultOCIPuller) Pull(ctx context.Context, reference, tag string) (*oci.P
 // is pinned — the build never lists tags or fetches.
 func (p DefaultOCIPuller) PullLibrary(ctx context.Context, name, kind, floorVersion string) (*oci.PullResult, string, error) {
 	reference := libraryReference(p.registry, kind, name)
-	repo, err := oci.NewRemoteRepository(reference)
+	repo, err := oci.NewRemoteRepository(reference, p.httpClient)
 	if err != nil {
 		return nil, "", err
 	}
@@ -119,7 +127,7 @@ func (p DefaultOCIPuller) PullLibrary(ctx context.Context, name, kind, floorVers
 // tags `latest`/`stable` over the versioned identity.
 func (p DefaultOCIPuller) PullAggregate(ctx context.Context, name, floorVersion string) (*oci.PullResult, string, error) {
 	reference := p.registry + "/" + OCILocation("Aggregate", "", name)
-	repo, err := oci.NewRemoteRepository(reference)
+	repo, err := oci.NewRemoteRepository(reference, p.httpClient)
 	if err != nil {
 		return nil, "", err
 	}
@@ -157,7 +165,7 @@ func (p DefaultOCIPuller) PullEntity(ctx context.Context, identity, kind, floorV
 	if berr != nil {
 		return nil, "", berr
 	}
-	repo, err := oci.NewRemoteRepository(reference)
+	repo, err := oci.NewRemoteRepository(reference, p.httpClient)
 	if err != nil {
 		return nil, "", err
 	}

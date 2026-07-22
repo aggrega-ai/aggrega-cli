@@ -172,7 +172,11 @@ func pushArtifactRun(cfg pushArtifactConfig) error {
 
 	target := cfg.PushTarget
 	if target == nil {
-		repo, err := oci.NewRemoteRepository(reference)
+		httpClient, err := workspaceEgressClient(wsCfg)
+		if err != nil {
+			return fmt.Errorf("aggrega push-artifact: %s: %w", reference, err)
+		}
+		repo, err := oci.NewRemoteRepository(reference, httpClient)
 		if err != nil {
 			return fmt.Errorf("aggrega push-artifact: %s: %w", reference, err)
 		}

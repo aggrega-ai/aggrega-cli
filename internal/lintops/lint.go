@@ -19,6 +19,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm/embedded"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
+	"github.com/aggrega-ai/aggrega-cli/pkg/egress"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
@@ -524,8 +525,16 @@ func fetchPreviousRegistryVersion(
 ) (json.RawMessage, string, error) {
 	target := overrideTarget
 	if target == nil {
+		httpClient, err := egress.HTTPClient(wsCfg)
+		if err != nil {
+			// The pre-publish evolution comparison fetches the previous registry
+			// version; an offline workspace cannot, and silently skipping the
+			// comparison would let a version publish without the bump-vs-change
+			// check, so the refusal is loud.
+			return nil, "", fmt.Errorf("fetch previous registry version: %w", err)
+		}
 		reference := wsCfg.DefaultRegistry + "/" + catalog.OCILocation(header.Kind, header.Spec.Capability, header.Metadata.Name)
-		repo, err := oci.NewRemoteRepository(reference)
+		repo, err := oci.NewRemoteRepository(reference, httpClient)
 		if err != nil {
 			return nil, "", fmt.Errorf("construct repo: %w", err)
 		}

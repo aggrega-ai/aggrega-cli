@@ -233,6 +233,10 @@ func pushRun(cfg pushConfig) error {
 		return fmt.Errorf("workspaceconfig: %w", err)
 	}
 	wsCfg := rw.Config()
+	// Carry the resolved workspace forward so downstream helpers (pushPlugin)
+	// source the egress client from the same resolution, not a possibly-nil
+	// caller-supplied ws (a direct-call test leaves it nil).
+	cfg.ws = rw
 
 	token := cfg.Registry
 	if token == "" {
@@ -332,7 +336,11 @@ func pushRun(cfg pushConfig) error {
 
 	target := cfg.PushTarget
 	if target == nil {
-		repo, err := oci.NewRemoteRepository(reference)
+		httpClient, err := workspaceEgressClient(wsCfg)
+		if err != nil {
+			return fmt.Errorf("aggrega push: %s: %w", reference, err)
+		}
+		repo, err := oci.NewRemoteRepository(reference, httpClient)
 		if err != nil {
 			return fmt.Errorf("aggrega push: %s: %w", reference, err)
 		}

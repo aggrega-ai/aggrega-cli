@@ -237,7 +237,7 @@ func pluginAddRun(ctx context.Context, cfg pluginAddConfig) error {
 	// identity (<pluginType>/<name>) and pin the latest published version so the
 	// attachment is version-pinned.
 	entity := strings.TrimPrefix(repoPath, catalog.KindPathSegment("Plugin")+"/")
-	version, err := resolveLatestPluginVersion(ctx, host, repoPath)
+	version, err := resolveLatestPluginVersion(ctx, rw.Config(), host, repoPath)
 	if err != nil {
 		return fmt.Errorf("aggrega plugin add: %w", err)
 	}
@@ -271,7 +271,7 @@ func pluginAddCLIRun(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace,
 	if err != nil {
 		return err
 	}
-	version, err := resolveLatestPluginVersion(ctx, host, repoPath)
+	version, err := resolveLatestPluginVersion(ctx, rw.Config(), host, repoPath)
 	if err != nil {
 		return fmt.Errorf("aggrega plugin add: %w", err)
 	}
@@ -321,8 +321,12 @@ func resolveSinglePluginRepo(matches []string, query, socket string) (string, er
 // It is a package-level seam so config-socket version resolution runs against a
 // fake in tests; production lists live tags through the shared repository client
 // so the loopback plain-HTTP and credential wiring match every other pull.
-var pluginRepoTagLister = func(ctx context.Context, host, repoPath string) ([]string, error) {
-	repo, err := oci.NewRemoteRepository(host + "/" + repoPath)
+var pluginRepoTagLister = func(ctx context.Context, cfg workspaceconfig.Config, host, repoPath string) ([]string, error) {
+	httpClient, err := workspaceEgressClient(cfg)
+	if err != nil {
+		return nil, err
+	}
+	repo, err := oci.NewRemoteRepository(host+"/"+repoPath, httpClient)
 	if err != nil {
 		return nil, err
 	}
@@ -333,8 +337,8 @@ var pluginRepoTagLister = func(ctx context.Context, host, repoPath string) ([]st
 // the plugin repository, or the empty string when the repository carries no
 // conforming version tag. Pre-release tags are excluded from the selection, the
 // same rule the publishing and deprecation paths apply.
-func resolveLatestPluginVersion(ctx context.Context, host, repoPath string) (string, error) {
-	tags, err := pluginRepoTagLister(ctx, host, repoPath)
+func resolveLatestPluginVersion(ctx context.Context, cfg workspaceconfig.Config, host, repoPath string) (string, error) {
+	tags, err := pluginRepoTagLister(ctx, cfg, host, repoPath)
 	if err != nil {
 		return "", fmt.Errorf("list versions for %s: %w", repoPath, err)
 	}

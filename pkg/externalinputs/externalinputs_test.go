@@ -58,7 +58,7 @@ func seedBlob(t *testing.T, root, hexDigest string, b []byte) {
 func TestHermeticMiss(t *testing.T) {
 	t.Parallel()
 	srv, calls := countingServer(t, []byte("never served"))
-	svc := externalinputs.NewService(t.TempDir(), false, nil, nil)
+	svc := externalinputs.NewService(t.TempDir(), false, &http.Client{}, nil)
 
 	inputURL := srv.URL + "/input.yaml"
 	_, err := svc.Fetch(context.Background(), inputURL, "recipe.helm.demo")
@@ -85,7 +85,7 @@ func TestAcquirePins(t *testing.T) {
 	body := []byte("acquired payload bytes")
 	srv, calls := countingServer(t, body)
 	root := t.TempDir()
-	svc := externalinputs.NewService(root, true, nil, nil)
+	svc := externalinputs.NewService(root, true, &http.Client{}, nil)
 
 	inputURL := srv.URL + "/input.yaml"
 	got, err := svc.Fetch(context.Background(), inputURL, "recipe.helm.demo")
@@ -127,7 +127,7 @@ func TestAcquiredRecordsSortedByURL(t *testing.T) {
 	t.Parallel()
 	body := []byte("payload")
 	srv, _ := countingServer(t, body)
-	svc := externalinputs.NewService(t.TempDir(), true, nil, nil)
+	svc := externalinputs.NewService(t.TempDir(), true, &http.Client{}, nil)
 
 	ctx := context.Background()
 	urlB := srv.URL + "/b.yaml"
@@ -163,7 +163,7 @@ func TestPinnedWins(t *testing.T) {
 		Size:       int64(len(body)),
 		URL:        inputURL,
 	}}
-	svc := externalinputs.NewService(root, true, nil, pinned)
+	svc := externalinputs.NewService(root, true, &http.Client{}, pinned)
 
 	ctx := context.Background()
 	got, err := svc.Fetch(ctx, inputURL, "recipe.helm.second")
@@ -216,7 +216,7 @@ func TestRefillVerifies(t *testing.T) {
 	}}
 	// Frozen mode: a refill is a cache fill gated by the recorded digest, so
 	// it runs even with acquisition disabled.
-	svc := externalinputs.NewService(root, false, nil, pinned)
+	svc := externalinputs.NewService(root, false, &http.Client{}, pinned)
 
 	got, err := svc.Fetch(context.Background(), inputURL, "recipe.helm.demo")
 	if err != nil {
@@ -256,7 +256,7 @@ func TestRefillMismatchHalts(t *testing.T) {
 		Size:       int64(len(original)),
 		URL:        inputURL,
 	}}
-	svc := externalinputs.NewService(root, true, nil, pinned)
+	svc := externalinputs.NewService(root, true, &http.Client{}, pinned)
 
 	_, err := svc.Fetch(context.Background(), inputURL, "recipe.helm.demo")
 	if !errors.Is(err, externalinputs.ErrDigestMismatch) {
@@ -293,7 +293,7 @@ func TestTamperedStore(t *testing.T) {
 		Size:       int64(len(body)),
 		URL:        inputURL,
 	}}
-	svc := externalinputs.NewService(root, true, nil, pinned)
+	svc := externalinputs.NewService(root, true, &http.Client{}, pinned)
 
 	_, err := svc.Fetch(context.Background(), inputURL, "recipe.helm.demo")
 	if !errors.Is(err, externalinputs.ErrStoreCorrupt) {
@@ -316,7 +316,7 @@ func TestTamperedStore(t *testing.T) {
 // allowed set, before any pin lookup or network activity.
 func TestSchemeRejection(t *testing.T) {
 	t.Parallel()
-	svc := externalinputs.NewService(t.TempDir(), true, nil, nil)
+	svc := externalinputs.NewService(t.TempDir(), true, &http.Client{}, nil)
 	ctx := context.Background()
 
 	_, err := svc.Fetch(ctx, "ftp://example.com/x.tgz", "recipe.helm.demo")
@@ -341,7 +341,7 @@ func TestSchemeRejection(t *testing.T) {
 	// names and the unspecified 0.0.0.0 address, not just literal loopback IPs.
 	// With acquisition disabled these stop at the acquisition guard, proving the
 	// scheme gate let them through rather than rejecting the plain-http scheme.
-	noAcq := externalinputs.NewService(t.TempDir(), false, nil, nil)
+	noAcq := externalinputs.NewService(t.TempDir(), false, &http.Client{}, nil)
 	for _, loopbackHTTP := range []string{
 		"http://app.localhost/x.tgz",
 		"http://0.0.0.0/x.tgz",
@@ -358,7 +358,7 @@ func TestSchemeRejection(t *testing.T) {
 // reproducible to pin.
 func TestOCIReferenceRequiresTagOrDigest(t *testing.T) {
 	t.Parallel()
-	svc := externalinputs.NewService(t.TempDir(), true, nil, nil)
+	svc := externalinputs.NewService(t.TempDir(), true, &http.Client{}, nil)
 	_, err := svc.Fetch(context.Background(), "oci://localhost:5000/inputs/chart", "recipe.helm.demo")
 	if err == nil || !strings.Contains(err.Error(), "must carry a tag or digest") {
 		t.Fatalf("want tag-or-digest error, got %v", err)

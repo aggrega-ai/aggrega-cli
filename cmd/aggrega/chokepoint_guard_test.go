@@ -169,6 +169,98 @@ func TestOCIRemoteConstructionChokepointGuard(t *testing.T) {
 	}
 }
 
+// TestEgressConstructionChokepointGuard enforces the single network-egress
+// construction path structurally. Every network client and transport is
+// constructed inside pkg/egress (the offline-gate home) so a package cannot
+// build its own client and egress around the offline decision. The guard is
+// deny-by-default over a whole-module walk: it enumerates every package and
+// asserts the negative — no raw http.Client / http.Transport composite literal,
+// no http.DefaultClient / http.DefaultTransport reference, no http.Get / Post /
+// Head / PostForm call, and no net.Dial / DialContext / DialTimeout call —
+// exempting only pkg/egress (the gate) and pkg/oci (which owns the oras-specific
+// repository/registry construction and receives its client from the gate). A
+// package that does not exist today is covered the moment it is added: the walk
+// visits it and the assertion is negative-by-default, so a future package that
+// writes http.Get or builds &http.Client{} trips this guard with zero edits
+// here — there is no offender list to maintain, only the two-name exemption set.
+//
+// Test files are exempt: a test legitimately builds an httptest-backed client
+// (or a raw client against a local server) to exercise a real code path, and
+// that independence is intentional.
+func TestEgressConstructionChokepointGuard(t *testing.T) {
+	root := filepath.Join("..", "..")
+	egressDir := filepath.Join(root, "pkg", "egress")
+	ociDir := filepath.Join(root, "pkg", "oci")
+
+	err := filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			base := d.Name()
+			if p == egressDir || p == ociDir || base == "vendor" || base == "testdata" ||
+				(p != root && strings.HasPrefix(base, ".")) {
+				return fs.SkipDir
+			}
+			return nil
+		}
+		if !strings.HasSuffix(p, ".go") || strings.HasSuffix(p, "_test.go") {
+			return nil
+		}
+		fset := token.NewFileSet()
+		node, perr := parser.ParseFile(fset, p, nil, 0)
+		if perr != nil {
+			t.Fatalf("parse %s: %v", p, perr)
+		}
+		ast.Inspect(node, func(n ast.Node) bool {
+			switch v := n.(type) {
+			case *ast.CompositeLit:
+				// &http.Client{} / http.Client{} and the same for http.Transport:
+				// a raw network-client or transport construction outside the gate.
+				if sel, ok := v.Type.(*ast.SelectorExpr); ok {
+					if id, ok := sel.X.(*ast.Ident); ok && id.Name == "http" &&
+						(sel.Sel.Name == "Client" || sel.Sel.Name == "Transport") {
+						t.Errorf("%s: raw http.%s construction outside pkg/egress — obtain the client/transport from pkg/egress", fset.Position(v.Pos()), sel.Sel.Name)
+					}
+				}
+			case *ast.SelectorExpr:
+				// http.DefaultClient / http.DefaultTransport: the ambient client
+				// that egresses without going through the gate.
+				if id, ok := v.X.(*ast.Ident); ok && id.Name == "http" &&
+					(v.Sel.Name == "DefaultClient" || v.Sel.Name == "DefaultTransport") {
+					t.Errorf("%s: http.%s referenced outside pkg/egress — obtain the client/transport from pkg/egress", fset.Position(v.Pos()), v.Sel.Name)
+				}
+			case *ast.CallExpr:
+				sel, ok := v.Fun.(*ast.SelectorExpr)
+				if !ok {
+					return true
+				}
+				id, ok := sel.X.(*ast.Ident)
+				if !ok {
+					return true
+				}
+				switch id.Name {
+				case "http":
+					if sel.Sel.Name == "Get" || sel.Sel.Name == "Post" ||
+						sel.Sel.Name == "Head" || sel.Sel.Name == "PostForm" {
+						t.Errorf("%s: http.%s outside pkg/egress — route the fetch through a client obtained from pkg/egress", fset.Position(v.Pos()), sel.Sel.Name)
+					}
+				case "net":
+					if sel.Sel.Name == "Dial" || sel.Sel.Name == "DialContext" ||
+						sel.Sel.Name == "DialTimeout" {
+						t.Errorf("%s: net.%s outside pkg/egress — network dialing belongs behind the egress gate", fset.Position(v.Pos()), sel.Sel.Name)
+					}
+				}
+			}
+			return true
+		})
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walk %s: %v", root, err)
+	}
+}
+
 // TestResolveCatalogDirsChokepointGuard enforces the single home for the
 // catalog-dir precedence stack structurally. The flag-dirs-prepend-config
 // first-win assembly lives once, exported from pkg/workspaceconfig as

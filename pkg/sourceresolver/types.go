@@ -21,6 +21,8 @@
 // stateless string-consumers of the resolved extracted path.
 package sourceresolver
 
+import "net/http"
+
 // SourceSpec is the lock-time input to source resolution: the
 // declared kind, the base URL, the version constraint, plus
 // kind-specific side knobs. OriginalSource preserves the verbatim
@@ -61,6 +63,12 @@ type SourceSpec struct {
 	WorkspaceRoot  string
 	CacheDir       string
 	OriginalSource any
+	// Client is the HTTP client an adapter uses for its remote fetch, obtained
+	// from the network-egress gate (pkg/egress) by the caller that builds the
+	// spec. It is non-nil only when the workspace permits egress; the gate refuses
+	// an offline workspace before a spec reaches an adapter, so an adapter that
+	// reaches its fetch always has a permitted client.
+	Client *http.Client
 }
 
 // ResolvedSource is the lock-time output of source resolution: the

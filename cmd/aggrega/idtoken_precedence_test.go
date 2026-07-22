@@ -86,6 +86,7 @@ func TestResolveIdentityTokenSourceStaticPrecedence(t *testing.T) {
 				func() bool { return false },
 				noAcquire(t),
 				checkIDTokenSubject,
+				nil,
 			)
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
@@ -130,6 +131,7 @@ func TestResolveIdentityTokenSourceAmbientOverSigstore(t *testing.T) {
 		func() bool { return false },
 		noAcquire(t),
 		checkIDTokenSubject,
+		srv.Client(),
 	)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -160,6 +162,7 @@ func TestResolveIdentityTokenSourceInteractiveFallback(t *testing.T) {
 		func() bool { return true },
 		func() (string, error) { return "acquired-token", nil },
 		checkIDTokenSubject,
+		nil,
 	)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -183,6 +186,7 @@ func TestResolveIdentityTokenSourceLoudRefusal(t *testing.T) {
 		func() bool { return false },
 		func() (string, error) { return "", fmt.Errorf("acquire should not be called") },
 		checkIDTokenSubject,
+		nil,
 	)
 	if err == nil {
 		t.Fatal("want a loud refusal error, got nil")

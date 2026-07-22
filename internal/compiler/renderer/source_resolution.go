@@ -7,6 +7,7 @@ import (
 	"errors"
 	"strings"
 
+	"github.com/aggrega-ai/aggrega-cli/pkg/egress"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
@@ -77,7 +78,8 @@ func isLocalURL(s string) bool {
 }
 
 // matchFetchSentinel walks the error chain via errors.Is against each
-// of the four fetch sentinels declared at pkg/oci/errors.go. Returns
+// fetch-family sentinel: the four remote-acquisition faults declared at
+// pkg/oci/errors.go plus the offline-egress refusal from pkg/egress. Returns
 // the matched sentinel + true on first hit; returns (nil, false)
 // when the chain carries no fetch sentinel.
 //
@@ -97,6 +99,11 @@ func matchFetchSentinel(err error) (error, bool) {
 		return oci.ErrFetchNetworkUnreachable, true
 	case errors.Is(err, oci.ErrFetchIntegrity):
 		return oci.ErrFetchIntegrity, true
+	case errors.Is(err, egress.ErrOfflineEgress):
+		// An offline-egress refusal is a fetch-family fault: from the user's
+		// perspective it is an inability to fetch. It carries its own remediation,
+		// so the classifier appends none.
+		return egress.ErrOfflineEgress, true
 	default:
 		return nil, false
 	}

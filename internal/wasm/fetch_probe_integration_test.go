@@ -55,7 +55,7 @@ func TestFetchProbe_AcquireModeFetchesAndPins(t *testing.T) {
 	defer srv.Close()
 	inputURL := srv.URL + "/input.txt"
 
-	svc := externalinputs.NewService(t.TempDir(), true, nil, nil)
+	svc := externalinputs.NewService(t.TempDir(), true, srv.Client(), nil)
 	ctx := context.Background()
 	plugin := loadFetchProbe(t, ctx, svc)
 

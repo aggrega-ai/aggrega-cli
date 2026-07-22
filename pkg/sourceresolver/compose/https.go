@@ -45,12 +45,13 @@ type adapter struct {
 	client httpDoer
 }
 
-// NewAdapter returns a compose-https-fragment adapter wired to
-// http.DefaultClient in production. Tests inject their own httptest
-// server URL via spec.URL; the default client transports against
-// any HTTP endpoint.
+// NewAdapter returns a compose-https-fragment adapter. In production the adapter
+// carries no client of its own and transports each fetch over the network-egress
+// gate's client threaded through the source spec (SourceSpec.Client), so the gate
+// is the sole client constructor and an offline workspace is refused upstream.
+// Tests inject their own httptest-backed client via the unexported constructor.
 func NewAdapter() sourceresolver.Adapter {
-	return &adapter{client: http.DefaultClient}
+	return &adapter{}
 }
 
 // Kind returns the compose-https-fragment kind string.
@@ -71,7 +72,17 @@ func (a *adapter) Resolve(spec sourceresolver.SourceSpec) (*sourceresolver.Resol
 	if err != nil {
 		return nil, sourceresolver.Wrap(spec, sourceresolver.ErrFetchNetworkUnreachable, err)
 	}
-	resp, err := a.client.Do(req)
+	// Production carries no client of its own: the egress-gate client threaded
+	// through the spec transports the fetch. Tests inject a client on the adapter.
+	client := a.client
+	if client == nil {
+		client = spec.Client
+	}
+	if client == nil {
+		return nil, sourceresolver.Wrap(spec, sourceresolver.ErrFetchNetworkUnreachable,
+			fmt.Errorf("compose-https-fragment: no egress client available for %q", spec.URL))
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, mapTransportError(spec, err)
 	}

@@ -37,7 +37,7 @@ func resolvedTestWorkspace(t *testing.T) *workspaceconfig.ResolvedWorkspace {
 func withTagLister(t *testing.T, tags []string) {
 	t.Helper()
 	prev := pluginRepoTagLister
-	pluginRepoTagLister = func(context.Context, string, string) ([]string, error) {
+	pluginRepoTagLister = func(context.Context, workspaceconfig.Config, string, string) ([]string, error) {
 		return tags, nil
 	}
 	t.Cleanup(func() { pluginRepoTagLister = prev })

@@ -16,6 +16,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/externalinputs"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
+	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
 func TestBuildNoAcquireInputsFlagRegistered(t *testing.T) {
@@ -63,7 +64,7 @@ func TestNewExternalInputsServiceAcquires(t *testing.T) {
 	defer srv.Close()
 
 	cacheDir := t.TempDir()
-	svc := newExternalInputsService(cacheDir, &lockfile.Lockfile{}, false)
+	svc := newExternalInputsService(cacheDir, &lockfile.Lockfile{}, false, workspaceconfig.Config{})
 
 	got, err := svc.Fetch(context.Background(), srv.URL+"/a", "unit-test")
 	if err != nil {
@@ -89,7 +90,7 @@ func TestNewExternalInputsServiceAcquires(t *testing.T) {
 // fetched.
 func TestNewExternalInputsServiceFrozenRefusesUnpinned(t *testing.T) {
 	t.Parallel()
-	svc := newExternalInputsService(t.TempDir(), &lockfile.Lockfile{}, true)
+	svc := newExternalInputsService(t.TempDir(), &lockfile.Lockfile{}, true, workspaceconfig.Config{})
 
 	_, err := svc.Fetch(context.Background(), "https://example.com/never-pinned", "unit-test")
 	if !errors.Is(err, externalinputs.ErrAcquisitionDisabled) {
@@ -124,7 +125,7 @@ func TestNewExternalInputsServiceSeedsLockfilePins(t *testing.T) {
 	}}}
 
 	// Frozen mode AND an unresolvable host: only the store can serve this.
-	svc := newExternalInputsService(cacheDir, lf, true)
+	svc := newExternalInputsService(cacheDir, lf, true, workspaceconfig.Config{})
 	got, err := svc.Fetch(context.Background(), pinnedURL, "unit-test")
 	if err != nil {
 		t.Fatalf("pinned URL must be served from the store without network: %v", err)

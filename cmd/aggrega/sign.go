@@ -230,6 +230,9 @@ func (b *batchSigner) prepare() error {
 		resolved := rw.Config().ResolveSigning(registryhost.Of(b.cfg.References[0]))
 		b.keyPath = firstNonEmpty(b.cfg.KeyPath, resolved.KeyPath)
 		b.keyless = b.keyPath == ""
+		// Carry the resolved workspace forward so signRef sources the egress
+		// client from the same resolution, not a possibly-nil caller-supplied ws.
+		b.cfg.ws = rw
 	} else {
 		// An injected signer stands in for whatever the flags would build. The
 		// keyless acquire-once block still runs unless a key path is supplied,
@@ -238,7 +241,12 @@ func (b *batchSigner) prepare() error {
 	}
 
 	if b.keyless {
-		idToken, source, err := resolveIdentityTokenSource(b.cfg.IDToken, envLookupOrGetenv(b.cfg.EnvLookup), ttyOrDefault(b.cfg.IsTTY), tokenGetterOrDefault(b.cfg.TokenGetter), checkIDTokenSubject)
+		rw, werr := workspaceOrResolve(b.cfg.ws)
+		if werr != nil {
+			return fmt.Errorf("workspaceconfig: %w", werr)
+		}
+		ambientClient, _ := workspaceEgressClient(rw.Config())
+		idToken, source, err := resolveIdentityTokenSource(b.cfg.IDToken, envLookupOrGetenv(b.cfg.EnvLookup), ttyOrDefault(b.cfg.IsTTY), tokenGetterOrDefault(b.cfg.TokenGetter), checkIDTokenSubject, ambientClient)
 		if err != nil {
 			return fmt.Errorf("aggrega sign: %w", err)
 		}
@@ -257,7 +265,15 @@ func (b *batchSigner) prepare() error {
 func (b *batchSigner) signRef(ctx context.Context, ref string) error {
 	target := b.cfg.Target
 	if target == nil {
-		repo, err := oci.NewRemoteRepository(ref)
+		rw, werr := workspaceOrResolve(b.cfg.ws)
+		if werr != nil {
+			return fmt.Errorf("%s: %w", ref, werr)
+		}
+		httpClient, err := workspaceEgressClient(rw.Config())
+		if err != nil {
+			return fmt.Errorf("%s: %w", ref, err)
+		}
+		repo, err := oci.NewRemoteRepository(ref, httpClient)
 		if err != nil {
 			return fmt.Errorf("%s: %w", ref, err)
 		}

@@ -91,10 +91,17 @@ var registrySearchTarget = func(cfg workspaceconfig.Config) (registryRepoLister,
 	if host == "" {
 		return nil, "", errors.New("no default registry is configured to search")
 	}
+	httpClient, err := workspaceEgressClient(cfg)
+	if err != nil {
+		// The network-egress gate refused (the workspace is offline); the caller
+		// decides whether that is loud (registry search / plugin add) or silent
+		// (the best-effort install hint).
+		return nil, host, err
+	}
 	// Construction routes through the one registry home so the loopback
 	// plain-HTTP handling and the Docker-credential authentication match the
 	// repository client exactly.
-	reg, err := oci.NewRemoteRegistry(host)
+	reg, err := oci.NewRemoteRegistry(host, httpClient)
 	if err != nil {
 		return nil, host, err
 	}
@@ -116,9 +123,9 @@ func productionPluginDiscoverable(name string) bool {
 		return false
 	}
 	cfg := rw.Config()
-	if cfg.Offline {
-		return false
-	}
+	// The offline decision lives at the egress gate: registrySearchTarget derives
+	// its client there and returns an error for an offline workspace, which this
+	// best-effort hint treats as "not discoverable" (silent).
 	reg, _, err := registrySearchTarget(cfg)
 	if err != nil {
 		return false

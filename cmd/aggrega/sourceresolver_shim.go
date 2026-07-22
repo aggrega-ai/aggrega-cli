@@ -5,7 +5,9 @@ package main
 
 import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
+	"github.com/aggrega-ai/aggrega-cli/pkg/egress"
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver"
+	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
 // sourceResolverShim adapts the closure-package SourceResolver
@@ -20,9 +22,22 @@ import (
 // composes. The build command does NOT use this shim; it goes through
 // pkg/sourcecache.LookupAndExtract directly on the build path. The
 // shim's only caller is pull.go's DescendRecipeSources invocation.
-type sourceResolverShim struct{}
+//
+// The shim is the single production seam where lock-time source resolution
+// crosses the network-egress gate: it derives the HTTP client from the resolved
+// workspace config and refuses an offline workspace loudly (source acquisition is
+// a primary fetch verb). Local sources never reach the shim — the descent skips
+// them before resolution — so a local-only closure is unaffected by an offline
+// workspace here.
+type sourceResolverShim struct {
+	wsCfg workspaceconfig.Config
+}
 
-func (sourceResolverShim) Resolve(spec closure.SourceSpec) (*closure.ResolvedSource, error) {
+func (s sourceResolverShim) Resolve(spec closure.SourceSpec) (*closure.ResolvedSource, error) {
+	httpClient, err := egress.HTTPClient(s.wsCfg)
+	if err != nil {
+		return nil, err
+	}
 	rs, err := sourceresolver.Resolve(sourceresolver.SourceSpec{
 		Kind:           spec.Kind,
 		URL:            spec.URL,
@@ -33,6 +48,7 @@ func (sourceResolverShim) Resolve(spec closure.SourceSpec) (*closure.ResolvedSou
 		WorkspaceRoot:  spec.WorkspaceRoot,
 		CacheDir:       spec.CacheDir,
 		OriginalSource: spec.OriginalSource,
+		Client:         httpClient,
 	})
 	if err != nil {
 		return nil, err

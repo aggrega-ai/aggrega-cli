@@ -27,6 +27,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"strings"
 
 	ocierr "github.com/aggrega-ai/aggrega-cli/pkg/oci"
@@ -50,7 +51,7 @@ const MediatypeHelmChart = "application/vnd.cncf.helm.chart.content.v1.tar+gzip"
 // Production wires this to oci.NewRemoteRepository; tests inject a
 // memory CAS implementing oras.ReadOnlyTarget so the adapter is
 // exercised end-to-end without network access.
-type ociTargetFactory func(reference string) (oras.ReadOnlyTarget, error)
+type ociTargetFactory func(reference string, httpClient *http.Client) (oras.ReadOnlyTarget, error)
 
 type ociAdapter struct {
 	newTarget ociTargetFactory
@@ -64,8 +65,8 @@ func NewOCIAdapter() sourceresolver.Adapter {
 	return &ociAdapter{newTarget: defaultOCITargetFactory}
 }
 
-func defaultOCITargetFactory(reference string) (oras.ReadOnlyTarget, error) {
-	repo, err := ocierr.NewRemoteRepository(reference)
+func defaultOCITargetFactory(reference string, httpClient *http.Client) (oras.ReadOnlyTarget, error) {
+	repo, err := ocierr.NewRemoteRepository(reference, httpClient)
 	if err != nil {
 		return nil, err
 	}
@@ -88,7 +89,7 @@ func (a *ociAdapter) Kind() string { return KindOCI }
 // context via sourceresolver.Wrap.
 func (a *ociAdapter) Resolve(spec sourceresolver.SourceSpec) (*sourceresolver.ResolvedSource, error) {
 	reference := strings.TrimPrefix(spec.URL, "oci://")
-	target, err := a.newTarget(reference)
+	target, err := a.newTarget(reference, spec.Client)
 	if err != nil {
 		return nil, sourceresolver.Wrap(spec, sourceresolver.ErrFetchNetworkUnreachable, err)
 	}

@@ -7,6 +7,7 @@ package main
 
 import (
 	"context"
+	"net/http"
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/deprecation"
@@ -41,7 +42,7 @@ func TestIntegration_DeprecateAttachesSignedMarker(t *testing.T) {
 	}
 
 	// Publish a subject artifact to the real registry.
-	repo, err := oci.NewRemoteRepository(host + "/component/core/legacy-api")
+	repo, err := oci.NewRemoteRepository(host+"/component/core/legacy-api", &http.Client{})
 	if err != nil {
 		t.Fatalf("NewRemoteRepository: %v", err)
 	}

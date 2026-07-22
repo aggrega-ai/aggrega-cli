@@ -95,7 +95,7 @@ func TestLoginAuthenticatesEndToEnd(t *testing.T) {
 
 	t.Run("unauthenticated request is rejected", func(t *testing.T) {
 		t.Setenv("DOCKER_CONFIG", t.TempDir()) // no login
-		repo, err := oci.NewRemoteRepository(repoRef)
+		repo, err := oci.NewRemoteRepository(repoRef, &http.Client{})
 		if err != nil {
 			t.Fatalf("NewRemoteRepository: %v", err)
 		}
@@ -114,7 +114,7 @@ func TestLoginAuthenticatesEndToEnd(t *testing.T) {
 		}); err != nil {
 			t.Fatalf("loginRun (valid credential, verify on): %v", err)
 		}
-		repo, err := oci.NewRemoteRepository(repoRef)
+		repo, err := oci.NewRemoteRepository(repoRef, &http.Client{})
 		if err != nil {
 			t.Fatalf("NewRemoteRepository: %v", err)
 		}

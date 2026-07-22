@@ -16,6 +16,7 @@ import (
 	"oras.land/oras-go/v2/content/memory"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
+	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
 // memTagTarget wraps an in-memory oras store with a tags slice so a per-repo
@@ -91,14 +92,14 @@ func seedPluginRepo(t *testing.T, tags []string, meta oci.SearchableMetadata) *m
 func withIndexTarget(t *testing.T, src registryIndexSource) {
 	t.Helper()
 	prev := registryIndexTarget
-	registryIndexTarget = func(string) (registryIndexSource, error) { return src, nil }
+	registryIndexTarget = func(workspaceconfig.Config, string) (registryIndexSource, error) { return src, nil }
 	t.Cleanup(func() { registryIndexTarget = prev })
 }
 
 // withIndexTargetFunc points the index-target seam at a caller-supplied resolver
 // for the duration of the test, so a test can make one host's source resolution
 // fail while another host succeeds.
-func withIndexTargetFunc(t *testing.T, fn func(string) (registryIndexSource, error)) {
+func withIndexTargetFunc(t *testing.T, fn func(workspaceconfig.Config, string) (registryIndexSource, error)) {
 	t.Helper()
 	prev := registryIndexTarget
 	registryIndexTarget = fn
@@ -301,7 +302,7 @@ func TestRegistryUpdateAllRegistriesPartialOnError(t *testing.T) {
 	}
 	// The unreachable host fails at source resolution; the reachable host
 	// resolves to the in-memory source.
-	withIndexTargetFunc(t, func(host string) (registryIndexSource, error) {
+	withIndexTargetFunc(t, func(_ workspaceconfig.Config, host string) (registryIndexSource, error) {
 		if host == goodHost {
 			return good, nil
 		}
@@ -357,7 +358,7 @@ func TestRegistryUpdateAllRegistriesPartialOnError(t *testing.T) {
 // partial success.
 func TestRegistryUpdateSingleRegistryFailureIsLoud(t *testing.T) {
 	const host = "hub.aggrega.ai"
-	withIndexTargetFunc(t, func(string) (registryIndexSource, error) {
+	withIndexTargetFunc(t, func(workspaceconfig.Config, string) (registryIndexSource, error) {
 		return nil, fmt.Errorf("unreachable")
 	})
 

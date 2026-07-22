@@ -279,12 +279,13 @@ func productionInstallPluginFetch(ctx context.Context, rw *workspaceconfig.Resol
 	// as it is for any plugin resolved without an entity body); the registry
 	// signature is verified. result.Digest is the fetched manifest digest the
 	// signature commits to.
+	installVerifyClient, _ := workspaceEgressClient(wsCfg)
 	if _, err := verifyFetchedPlugin(ctx, fetchedPlugin{
 		URI:            ref,
 		ManifestDigest: result.Digest,
 		Host:           registryhost.Of(bare),
 		Kind:           catalog.EntityKindForHint("plugin"),
-	}, wsCfg, remoteTargetFor, os.Stderr); err != nil {
+	}, wsCfg, remoteTargetForWith(installVerifyClient), os.Stderr); err != nil {
 		return resolvedInstallable{}, err
 	}
 	pin := digest.ContentDigest(result.Bytes)

@@ -5,9 +5,23 @@ package renderer
 
 import (
 	"context"
+	"errors"
 
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
+
+// WrapSourceResolutionErrorForTest exposes the unexported source-resolution
+// error classifier so the external test package can assert a sentinel's
+// fetch-family categorization directly.
+func WrapSourceResolutionErrorForTest(err error) (*cerrors.CompilerError, bool) {
+	wrapped := wrapSourceResolutionError(err, "node", "source resolution")
+	var ce *cerrors.CompilerError
+	if !errors.As(wrapped, &ce) {
+		return nil, false
+	}
+	return ce, true
+}
 
 // LinkPassNode is the test-facing description of one endpoint the
 // cross-boundary link pass operates over. The external test package cannot

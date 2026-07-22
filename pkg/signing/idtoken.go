@@ -10,6 +10,8 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+
+	"github.com/aggrega-ai/aggrega-cli/pkg/egress"
 )
 
 // IdentityTokenSource yields an OIDC identity token. It is called once per
@@ -56,14 +58,19 @@ func GitHubActionsAmbientAvailable(look func(string) string) bool {
 // environment variable, or an empty token value is a descriptive error.
 //
 // look reads the environment (pass os.Getenv in production); client performs
-// the request (nil selects http.DefaultClient); validate, when non-nil, is
-// applied to each freshly fetched token so subject validation stays with its
-// single owner rather than being duplicated here.
+// the request and is obtained from the network-egress gate (a nil client means
+// the workspace is offline, so the source refuses the fetch rather than reaching
+// for a default client); validate, when non-nil, is applied to each freshly
+// fetched token so subject validation stays with its single owner rather than
+// being duplicated here.
 func AmbientGitHubActionsSource(look func(string) string, client *http.Client, validate func(string) error) IdentityTokenSource {
-	if client == nil {
-		client = http.DefaultClient
-	}
 	return func(ctx context.Context) (string, error) {
+		if client == nil {
+			// The client is obtained from the network-egress gate (pkg/egress); a
+			// nil client means the workspace is offline, so the ambient-token fetch
+			// is refused rather than reaching for a default client.
+			return "", fmt.Errorf("github actions ambient identity token: %w", egress.ErrOfflineEgress)
+		}
 		base := look(envActionsIDTokenRequestURL)
 		reqToken := look(envActionsIDTokenRequestToken)
 		if base == "" || reqToken == "" {

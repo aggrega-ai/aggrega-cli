@@ -45,11 +45,18 @@ type repoDeprecationLookup func(repoPath string) (deprecationView, bool)
 // exercise the surfacing without a network. Each probe constructs a repository
 // client through the shared credential path and reads referrers live.
 var newRepoDeprecationLookup = func(cfg workspaceconfig.Config, host string) repoDeprecationLookup {
-	if host == "" || cfg.Offline {
+	if host == "" {
+		return nil
+	}
+	// The offline decision lives at the egress gate: a refused (offline) workspace
+	// disables the probe entirely, so this best-effort adornment stays silent (no
+	// lookup) rather than attempting or surfacing a network error.
+	httpClient, err := workspaceEgressClient(cfg)
+	if err != nil {
 		return nil
 	}
 	return func(repoPath string) (deprecationView, bool) {
-		repo, err := oci.NewRemoteRepository(host + "/" + repoPath)
+		repo, err := oci.NewRemoteRepository(host+"/"+repoPath, httpClient)
 		if err != nil {
 			return deprecationView{}, false
 		}

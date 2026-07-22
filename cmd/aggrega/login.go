@@ -17,6 +17,7 @@ import (
 	"oras.land/oras-go/v2/registry/remote/credentials"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
+	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
 func newLoginCmd() *cobra.Command {
@@ -32,11 +33,16 @@ func newLoginCmd() *cobra.Command {
 			"credential helper or OS keychain when present. No external login tool is required.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			rw, err := workspaceFromContext(cmd.Context())
+			if err != nil {
+				return err
+			}
 			return loginRun(loginConfig{
 				Registry:      args[0],
 				Username:      username,
 				PasswordStdin: passwordStdin,
 				SkipVerify:    skipVerify,
+				ws:            rw,
 			})
 		},
 	}
@@ -55,6 +61,13 @@ type loginConfig struct {
 	Username      string
 	PasswordStdin bool
 	SkipVerify    bool
+
+	// ws is the resolved workspace, threaded in by the command's RunE. It sources
+	// the network-egress client for the credential-verification ping; an offline
+	// workspace refuses the ping loudly (use --skip-verify to store a credential
+	// without contacting the registry). Nil only when a test invokes loginRun
+	// directly with SkipVerify set.
+	ws *workspaceconfig.ResolvedWorkspace
 
 	Store credentials.Store // nil → NewStoreFromDocker (AllowPlaintextPut)
 	In    io.Reader         // nil → os.Stdin (username prompt / --password-stdin)
@@ -136,7 +149,15 @@ func loginRun(cfg loginConfig) error {
 	cred := auth.Credential{Username: username, Password: password}
 
 	if !cfg.SkipVerify {
-		if err := oci.VerifyCredential(context.Background(), cfg.Registry, cred); err != nil {
+		rw, werr := workspaceOrResolve(cfg.ws)
+		if werr != nil {
+			return fmt.Errorf("aggrega login: %w", werr)
+		}
+		httpClient, err := workspaceEgressClient(rw.Config())
+		if err != nil {
+			return fmt.Errorf("aggrega login: %s: %w (use --skip-verify to store the credential without contacting the registry)", cfg.Registry, err)
+		}
+		if err := oci.VerifyCredential(context.Background(), cfg.Registry, cred, httpClient); err != nil {
 			return fmt.Errorf("aggrega login: %s: %w", cfg.Registry, err)
 		}
 	}

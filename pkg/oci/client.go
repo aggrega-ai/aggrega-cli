@@ -266,12 +266,16 @@ func Resolve(ctx context.Context, target oras.ReadOnlyTarget, tag string) (diges
 // detection is host-based and automatic: plaintext can only ever go to
 // the local machine, and every non-loopback host keeps HTTPS exactly
 // as before. There is no configuration surface for this.
-func NewRemoteRepository(reference string) (*remote.Repository, error) {
+// The HTTP client is supplied by the caller and obtained from the network-egress
+// gate (pkg/egress): this package owns OCI semantics but never decides network
+// policy, so the gate's offline refusal happens before this constructor is
+// reached and a non-nil client here means egress permitted the connection.
+func NewRemoteRepository(reference string, httpClient *http.Client) (*remote.Repository, error) {
 	repo, err := remote.NewRepository(reference)
 	if err != nil {
 		return nil, fmt.Errorf("oci: parse reference %q: %w", reference, err)
 	}
-	plainHTTP, client, err := remoteClient(repo.Reference.Registry)
+	plainHTTP, client, err := remoteClient(repo.Reference.Registry, httpClient)
 	if err != nil {
 		return nil, err
 	}
@@ -292,12 +296,14 @@ func NewRemoteRepository(reference string) (*remote.Repository, error) {
 // without a port) is contacted over plain HTTP so a local development registry
 // works without TLS; every non-loopback host keeps HTTPS. There is no
 // configuration surface for this.
-func NewRemoteRegistry(host string) (*remote.Registry, error) {
+// The HTTP client is supplied by the caller and obtained from the network-egress
+// gate (pkg/egress), mirroring NewRemoteRepository.
+func NewRemoteRegistry(host string, httpClient *http.Client) (*remote.Registry, error) {
 	reg, err := remote.NewRegistry(host)
 	if err != nil {
 		return nil, fmt.Errorf("oci: parse registry %q: %w", host, err)
 	}
-	plainHTTP, client, err := remoteClient(reg.Reference.Registry)
+	plainHTTP, client, err := remoteClient(reg.Reference.Registry, httpClient)
 	if err != nil {
 		return nil, err
 	}
@@ -313,12 +319,16 @@ func NewRemoteRegistry(host string) (*remote.Registry, error) {
 // credential mechanisms (Docker, containers-storage, and Helm registry configs
 // in priority order, with credential-helper delegation honoured). The wiring
 // lives here once so the repository and registry clients cannot diverge.
-func remoteClient(registryHost string) (plainHTTP bool, client *auth.Client, err error) {
+func remoteClient(registryHost string, httpClient *http.Client) (plainHTTP bool, client *auth.Client, err error) {
+	if httpClient == nil {
+		return false, nil, fmt.Errorf("oci: nil egress client; obtain the HTTP client from pkg/egress before constructing a remote target")
+	}
 	store, err := credentials.NewStoreFromDocker(credentials.StoreOptions{})
 	if err != nil {
 		return false, nil, fmt.Errorf("oci: credential store: %w", err)
 	}
 	return registryhost.IsLoopback(registryHost), &auth.Client{
+		Client:     httpClient,
 		Credential: credentials.Credential(store),
 	}, nil
 }
@@ -333,8 +343,8 @@ func remoteClient(registryHost string) (plainHTTP bool, client *auth.Client, err
 //
 // A 401/403 maps to ErrFetchUnauthorized (wrong credential); other failures
 // (DNS, TCP, TLS) pass through wrapped with the registry host for diagnosis.
-func VerifyCredential(ctx context.Context, registryHost string, cred auth.Credential) error {
-	reg, err := NewRemoteRegistry(registryHost)
+func VerifyCredential(ctx context.Context, registryHost string, cred auth.Credential, httpClient *http.Client) error {
+	reg, err := NewRemoteRegistry(registryHost, httpClient)
 	if err != nil {
 		return err
 	}
@@ -342,8 +352,9 @@ func VerifyCredential(ctx context.Context, registryHost string, cred auth.Creden
 	// for the resolved registry host: verify authenticates with the credential
 	// passed in rather than whatever the store holds, so a typo fails loudly at
 	// login time rather than silently at the first push. The home's loopback
-	// plain-HTTP decision is kept.
+	// plain-HTTP decision and egress-supplied transport are kept.
 	reg.Client = &auth.Client{
+		Client:     httpClient,
 		Credential: auth.StaticCredential(reg.Reference.Registry, cred),
 	}
 	if err := reg.Ping(ctx); err != nil {

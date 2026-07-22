@@ -538,7 +538,8 @@ func pullRun(cfg pullConfig) error {
 	// an accept/reject verdict without shaping the output bytes, so its plugin is
 	// not part of the reproducibility closure (cache-not-pin): the pull fetches and
 	// caches its entity + .wasm, and the build resolves it from the cache by URI.
-	if err := cacheVerdictSocketPlugins(context.Background(), wsCfg, lookup, lazyView, workspaceRoot, cacheDir, remoteTargetFor, cfg.DiagOut); err != nil {
+	verdictHTTPClient, _ := workspaceEgressClient(wsCfg)
+	if err := cacheVerdictSocketPlugins(context.Background(), wsCfg, lookup, lazyView, workspaceRoot, cacheDir, remoteTargetForWith(verdictHTTPClient), cfg.DiagOut); err != nil {
 		return err
 	}
 	// Re-derive each plugin's host functions from the freshly-cached, digest-
@@ -691,7 +692,7 @@ func pullRun(cfg pullConfig) error {
 					})
 			}
 
-			var srcResolver closure.SourceResolver = sourceResolverShim{}
+			var srcResolver closure.SourceResolver = sourceResolverShim{wsCfg: wsCfg}
 			if cfg.sourceResolver != nil {
 				srcResolver = cfg.sourceResolver
 			}
@@ -732,12 +733,14 @@ func pullRun(cfg pullConfig) error {
 			// entity's signature against the registry's trust policy, record
 			// the verified fact, and cache the bundle for air-gapped re-verify.
 			// Pull verifies; build reads the recorded fact and never re-verifies
-			// (the AOT boundary). Skipped under workspace.offline (no network to
-			// fetch referrers).
-			if !wsCfg.Offline {
-				if err := verifyClosureSignatures(context.Background(), lf, cl, wsCfg, cacheDir, cfg.DiagOut, remoteTargetFor); err != nil {
-					return fmt.Errorf("verify signatures: %w", err)
-				}
+			// (the AOT boundary). The verify is explicitly requested, so when the
+			// workspace is offline a registry-resolved entity's referrer fetch is
+			// refused loudly through the egress gate (a nil client) rather than
+			// silently passing as unverified; a closure with nothing registry-
+			// resolved needs no fetch and is unaffected.
+			verifyHTTPClient, _ := workspaceEgressClient(wsCfg)
+			if err := verifyClosureSignatures(context.Background(), lf, cl, wsCfg, cacheDir, cfg.DiagOut, remoteTargetForWith(verifyHTTPClient)); err != nil {
+				return fmt.Errorf("verify signatures: %w", err)
 			}
 			progress.phase(pullPhaseLockfile)
 			if err := lockfile.WriteLockfilePreservingTimestamp(lockfilePath, lf); err != nil {

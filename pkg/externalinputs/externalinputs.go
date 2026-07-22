@@ -35,6 +35,7 @@ import (
 	"time"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
+	"github.com/aggrega-ai/aggrega-cli/pkg/egress"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/registryhost"
@@ -87,12 +88,15 @@ func StoreRoot(cacheDir string) string {
 // service owns the `sha256/<digest>` layout beneath it. acquire enables
 // acquisition of unpinned URLs; when false the closure is frozen — pinned
 // inputs are served (and refilled when their blob is missing) but an unpinned
-// URL is an error. client transports plain HTTP(S) fetches; nil uses a
-// default client bounded by defaultFetchTimeout. pinned is the lockfile's
+// URL is an error. client transports plain HTTP(S) fetches and is obtained from
+// the network-egress gate (pkg/egress) by the caller; it is nil for an offline
+// workspace, in which case pinned inputs are still served from cache but any
+// fetch (acquisition or a missing-blob refill) refuses with ErrOfflineEgress —
+// offline forbids the fetch, not the cache read. pinned is the lockfile's
 // external-inputs view; when it carries duplicate URLs the last record wins.
 func NewService(root string, acquire bool, client *http.Client, pinned []lockfile.ExternalInput) *Service {
-	if client == nil {
-		client = &http.Client{Timeout: defaultFetchTimeout}
+	if client != nil {
+		client.Timeout = defaultFetchTimeout
 	}
 	records := make(map[string]lockfile.ExternalInput, len(pinned))
 	for _, rec := range pinned {
@@ -330,6 +334,9 @@ func (s *Service) appendProvenance(rawURL, requiredBy string) {
 // httpGet fetches rawURL over the service's HTTP client and returns the body
 // bytes. Non-2xx statuses are errors naming the URL and status.
 func (s *Service) httpGet(ctx context.Context, rawURL string) ([]byte, error) {
+	if s.client == nil {
+		return nil, fmt.Errorf("externalinputs: fetch %q: %w", rawURL, egress.ErrOfflineEgress)
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("externalinputs: build request for %q: %w", rawURL, err)
@@ -353,7 +360,10 @@ func (s *Service) httpGet(ctx context.Context, rawURL string) ([]byte, error) {
 // tag or a digest reference ("sha256:<hex>"); the underlying pull verifies
 // the payload against the manifest's layer descriptor either way.
 func (s *Service) ociPull(ctx context.Context, repoRef, ref string) (*oci.PullResult, error) {
-	repo, err := oci.NewRemoteRepository(repoRef)
+	if s.client == nil {
+		return nil, fmt.Errorf("externalinputs: pull %q: %w", repoRef, egress.ErrOfflineEgress)
+	}
+	repo, err := oci.NewRemoteRepository(repoRef, s.client)
 	if err != nil {
 		return nil, err
 	}

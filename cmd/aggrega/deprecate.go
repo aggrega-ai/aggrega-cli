@@ -356,7 +356,15 @@ func promptDeprecationContent(in io.Reader, out io.Writer, severity, reason, rep
 func deprecateTargetFor(cfg deprecateConfig, reference string) (oras.Target, string, error) {
 	target := cfg.Target
 	if target == nil {
-		repo, rerr := oci.NewRemoteRepository(reference)
+		rw, cerr := workspaceOrResolve(cfg.ws)
+		if cerr != nil {
+			return nil, "", fmt.Errorf("workspaceconfig: %w", cerr)
+		}
+		httpClient, cerr := workspaceEgressClient(rw.Config())
+		if cerr != nil {
+			return nil, "", fmt.Errorf("aggrega deprecate: %s: %w", reference, cerr)
+		}
+		repo, rerr := oci.NewRemoteRepository(reference, httpClient)
 		if rerr != nil {
 			return nil, "", fmt.Errorf("aggrega deprecate: %s: %w", reference, rerr)
 		}
@@ -430,7 +438,8 @@ func deprecateSigner(cfg deprecateConfig) (signing.Signer, error) {
 	var tokenSource signing.IdentityTokenSource
 	if keyPath == "" {
 		var terr error
-		idToken, tokenSource, terr = resolveIdentityTokenSource(cfg.IDToken, envLookupOrGetenv(cfg.EnvLookup), ttyOrDefault(cfg.IsTTY), tokenGetterOrDefault(cfg.TokenGetter), checkIDTokenSubject)
+		ambientClient, _ := workspaceEgressClient(rw.Config())
+		idToken, tokenSource, terr = resolveIdentityTokenSource(cfg.IDToken, envLookupOrGetenv(cfg.EnvLookup), ttyOrDefault(cfg.IsTTY), tokenGetterOrDefault(cfg.TokenGetter), checkIDTokenSubject, ambientClient)
 		if terr != nil {
 			return nil, terr
 		}

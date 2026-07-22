@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"sort"
 	"strings"
@@ -40,8 +41,9 @@ type registryIndexSource interface {
 // repository on demand, both through the one registry-client home so the
 // enumeration and the per-repo reads share loopback and credential handling.
 type remoteIndexSource struct {
-	reg  registryRepoLister
-	host string
+	reg        registryRepoLister
+	host       string
+	httpClient *http.Client
 }
 
 func (s remoteIndexSource) Repositories(ctx context.Context, last string, fn func(repos []string) error) error {
@@ -49,7 +51,7 @@ func (s remoteIndexSource) Repositories(ctx context.Context, last string, fn fun
 }
 
 func (s remoteIndexSource) Repository(repo string) (oras.ReadOnlyTarget, error) {
-	return oci.NewRemoteRepository(s.host + "/" + repo)
+	return oci.NewRemoteRepository(s.host+"/"+repo, s.httpClient)
 }
 
 // registryIndexTarget resolves the index source for a registry host. Production
@@ -58,12 +60,16 @@ func (s remoteIndexSource) Repository(repo string) (oras.ReadOnlyTarget, error) 
 // path needs registry credentials the sandbox does not carry — the index-build
 // logic is proven against a fake source, and the live registry resolution is
 // operator-gated. It mirrors registrySearchTarget.
-var registryIndexTarget = func(host string) (registryIndexSource, error) {
-	reg, err := oci.NewRemoteRegistry(host)
+var registryIndexTarget = func(cfg workspaceconfig.Config, host string) (registryIndexSource, error) {
+	httpClient, err := workspaceEgressClient(cfg)
 	if err != nil {
 		return nil, err
 	}
-	return remoteIndexSource{reg: reg, host: host}, nil
+	reg, err := oci.NewRemoteRegistry(host, httpClient)
+	if err != nil {
+		return nil, err
+	}
+	return remoteIndexSource{reg: reg, host: host, httpClient: httpClient}, nil
 }
 
 // IndexRecord is one entity's row in a local registry index: its OCI URI, the
@@ -204,7 +210,7 @@ func registryUpdateRun(cfg registryUpdateConfig) error {
 	cacheDir := wsCfg.ResolvedArtifactCacheDir()
 	var failed []string
 	for _, host := range hosts {
-		count, herr := updateHostIndex(ctx, root, cacheDir, host, now, out)
+		count, herr := updateHostIndex(ctx, wsCfg, root, cacheDir, host, now, out)
 		if herr != nil {
 			if singleExplicit {
 				return fmt.Errorf("aggrega registry update: %s: %w", host, herr)
@@ -226,8 +232,8 @@ func registryUpdateRun(cfg registryUpdateConfig) error {
 // success. The returned error is unwrapped by host so the caller frames it for
 // the single-registry path (returned immediately) or the all-registries path
 // (noted per host, walk continues).
-func updateHostIndex(ctx context.Context, root, cacheDir, host string, now func() time.Time, out io.Writer) (int, error) {
-	src, err := registryIndexTarget(host)
+func updateHostIndex(ctx context.Context, cfg workspaceconfig.Config, root, cacheDir, host string, now func() time.Time, out io.Writer) (int, error) {
+	src, err := registryIndexTarget(cfg, host)
 	if err != nil {
 		return 0, err
 	}

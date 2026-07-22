@@ -18,6 +18,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
+	"github.com/aggrega-ai/aggrega-cli/pkg/egress"
 	"github.com/aggrega-ai/aggrega-cli/pkg/externalinputs"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
@@ -266,7 +267,7 @@ func dispatchBuildWithDiag(rw *workspaceconfig.ResolvedWorkspace, releasePath st
 	// the closure is frozen (--no-acquire-inputs). Seeded with the
 	// lockfile's pinned view; newly-acquired pins merge back after a
 	// successful build below.
-	extInputs := newExternalInputsService(cacheDir, lf, run.noAcquireInputs)
+	extInputs := newExternalInputsService(cacheDir, lf, run.noAcquireInputs, wsCfg)
 
 	// The build's determinism-wired lazy lookup: EVERY dispatchBuild catalog
 	// consumer — guards, triad aggregate resolution, manifest-implements gate,
@@ -556,10 +557,13 @@ func formatTotalBuildTimeLine(value string) string {
 // newExternalInputsService constructs the per-build external-input gate over
 // the workspace artifact cache's inputs store, seeded with the lockfile's
 // pinned view. Acquisition is on unless the operator froze the closure
-// (--no-acquire-inputs); the nil client selects the store's default HTTP
-// client.
-func newExternalInputsService(cacheDir string, lf *lockfile.Lockfile, noAcquire bool) *externalinputs.Service {
-	return externalinputs.NewService(externalinputs.StoreRoot(cacheDir), !noAcquire, nil, lf.ExternalInputs)
+// (--no-acquire-inputs). The HTTP client comes from the network-egress gate; it
+// is nil for an offline workspace, so pinned inputs are still served from the
+// cache but any fetch (acquisition or a missing-blob refill) refuses loudly —
+// offline dominates acquire mechanically, without a separate consult.
+func newExternalInputsService(cacheDir string, lf *lockfile.Lockfile, noAcquire bool, wsCfg workspaceconfig.Config) *externalinputs.Service {
+	httpClient, _ := egress.HTTPClient(wsCfg)
+	return externalinputs.NewService(externalinputs.StoreRoot(cacheDir), !noAcquire, httpClient, lf.ExternalInputs)
 }
 
 // acquireLockfile ensures the per-Release lockfile exists before the build wires
@@ -591,8 +595,10 @@ func acquireLockfile(rw *workspaceconfig.ResolvedWorkspace, releasePath string, 
 	}
 
 	// Offline: never network. Build is frozen against whatever lockfile exists;
-	// a missing one cannot be filled here.
-	if wsCfg.Offline {
+	// a missing one cannot be filled here. The offline decision is read from the
+	// egress gate (the sole home of that decision), not from the config field
+	// directly, so this pre-flight and the actual fill cannot diverge.
+	if _, egErr := egress.RoundTripper(wsCfg); stderrors.Is(egErr, egress.ErrOfflineEgress) {
 		if preexisted {
 			return true, nil
 		}

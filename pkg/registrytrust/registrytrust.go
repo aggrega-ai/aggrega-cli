@@ -33,6 +33,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/aggrega-ai/aggrega-cli/pkg/egress"
 	"github.com/aggrega-ai/aggrega-cli/pkg/registryhost"
 )
 
@@ -170,8 +171,12 @@ func Fetch(ctx context.Context, client *http.Client, host string) (AdvertisedTru
 		return AdvertisedTrust{}, fmt.Errorf("registrytrust: a registry host is required")
 	}
 	if client == nil {
-		client = &http.Client{Timeout: fetchTimeout}
+		// The client is obtained from the network-egress gate (pkg/egress); a nil
+		// client means the workspace is offline, so the well-known trust fetch is
+		// refused before any dial.
+		return AdvertisedTrust{}, fmt.Errorf("registrytrust: fetch %s: %w", host, egress.ErrOfflineEgress)
 	}
+	client.Timeout = fetchTimeout
 
 	scheme := "https"
 	if registryhost.IsLoopback(host) {

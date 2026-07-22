@@ -892,7 +892,7 @@ spec:
 func assertSinglePluginManifest(t *testing.T, host, name, version, wantWasmDigest string) {
 	t.Helper()
 	loc := catalog.OCILocation("Plugin", frpStepPluginType, name)
-	repo, err := oci.NewRemoteRepository(host + "/" + loc)
+	repo, err := oci.NewRemoteRepository(host+"/"+loc, &http.Client{})
 	if err != nil {
 		t.Fatalf("new repo for %s: %v", loc, err)
 	}
@@ -1280,7 +1280,7 @@ func TestIntegration_KindCoverage_Aggregate(t *testing.T) {
 	for _, ent := range []struct{ kind, ref string }{
 		{"Aggregate", host + "/aggregate/test/app-agg"},
 	} {
-		repo, err := oci.NewRemoteRepository(ent.ref)
+		repo, err := oci.NewRemoteRepository(ent.ref, &http.Client{})
 		if err != nil {
 			t.Fatalf("%s: new repo %s: %v", ent.kind, ent.ref, err)
 		}

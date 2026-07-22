@@ -8,6 +8,7 @@ package main
 import (
 	"context"
 	"errors"
+	"net/http"
 	"os"
 	"path/filepath"
 	"testing"
@@ -84,7 +85,7 @@ func TestIntegration_EntitySignatureVerifiesAgainstManifestDigest(t *testing.T) 
 	// closure now captures), and the content digest from the pulled bytes (the
 	// cache/integrity pin). They MUST differ — that difference is exactly what
 	// the F1 bug papered over.
-	repo, err := oci.NewRemoteRepository(host + "/component/core/api-server")
+	repo, err := oci.NewRemoteRepository(host+"/component/core/api-server", &http.Client{})
 	if err != nil {
 		t.Fatalf("NewRemoteRepository: %v", err)
 	}
@@ -110,7 +111,7 @@ func TestIntegration_EntitySignatureVerifiesAgainstManifestDigest(t *testing.T) 
 
 	// ARM 1 (the fix): the closure row carries the content digest as Digest and
 	// the manifest digest as ManifestDigest. The production verify entrypoint
-	// (verifyClosureSignatures → remoteTargetFor) discovers the real referrer and
+	// (verifyClosureSignatures → remoteTargetForWith(&http.Client{})) discovers the real referrer and
 	// verifies the entity signature against ManifestDigest — it PASSES.
 	cl := closure.Closure{
 		Entities: []closure.ResolvedRef{
@@ -120,7 +121,7 @@ func TestIntegration_EntitySignatureVerifiesAgainstManifestDigest(t *testing.T) 
 	lf := &lockfile.Lockfile{
 		Entities: []lockfile.Entity{{URI: entityURI, Digest: contentDg, ManifestDigest: manifestDigest}},
 	}
-	if verr := verifyClosureSignatures(ctx, lf, cl, wsCfg, t.TempDir(), nil, remoteTargetFor); verr != nil {
+	if verr := verifyClosureSignatures(ctx, lf, cl, wsCfg, t.TempDir(), nil, remoteTargetForWith(&http.Client{})); verr != nil {
 		t.Fatalf("verify against the recorded manifest digest should PASS, got: %v", verr)
 	}
 	if lf.Entities[0].Signature == nil {
