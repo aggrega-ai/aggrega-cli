@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/Masterminds/semver/v3"
@@ -33,8 +34,13 @@ import (
 // and hands it to RunEntity. FetchTarget overrides registry construction for
 // end-to-end tests (in-memory oras.ReadOnlyTarget).
 type Config struct {
-	EntityPath     string
-	PrePublish     bool
+	EntityPath string
+	PrePublish bool
+	// Baseline optionally forces the pre-publish predecessor to a specific
+	// already-published version instead of the auto-selected highest version
+	// strictly below the candidate. Empty selects the default. Consulted only on
+	// the pre-publish single-entity path.
+	Baseline       string
 	PluginPath     string
 	PolicyResolver func(flagBase string, wsValue bool) bool
 	FetchTarget    oras.ReadOnlyTarget
@@ -214,7 +220,7 @@ func RunEntity(cfg Config) error {
 	)
 	if prePublish {
 		previousJSON, previousVersion, err = fetchPreviousRegistryVersion(
-			context.Background(), cfg.FetchTarget, wsCfg, header, cfg.DiagOut,
+			context.Background(), cfg.FetchTarget, wsCfg, header, cfg.Baseline, cfg.DiagOut,
 		)
 		if err != nil {
 			return fmt.Errorf("aggrega lint: fetch previous: %w", err)
@@ -513,14 +519,22 @@ func effectivePolicies(ws workspaceconfig.PublishingDisciplineConfig, resolve fu
 }
 
 // fetchPreviousRegistryVersion lists tags on the entity's registry reference,
-// picks the latest non-pre-release, and pulls its bytes. Returns ("", "", nil)
-// when no qualifying tag exists (first publication). The pre-release-only warning
-// is written to diagOut (os.Stderr in production).
+// selects the predecessor to diff against, and pulls its bytes. The default
+// predecessor is the highest version strictly below the candidate
+// (header.Metadata.Version) — the version just beneath the one being published,
+// which is the correct comparison target for a back-patch where the highest tag
+// overall may sit far above the candidate. When baseline is non-empty it forces
+// that specific version as the predecessor instead: the value must be a
+// strict-SemVer tag present in the registry, else a loud error. Returns
+// ("", "", nil) when no qualifying predecessor exists (first publication, or a
+// candidate below every existing stable tag). The pre-release-only warning is
+// written to diagOut (os.Stderr in production).
 func fetchPreviousRegistryVersion(
 	ctx context.Context,
 	overrideTarget oras.ReadOnlyTarget,
 	wsCfg workspaceconfig.Config,
 	header lintEntityHeader,
+	baseline string,
 	diagOut io.Writer,
 ) (json.RawMessage, string, error) {
 	target := overrideTarget
@@ -544,18 +558,31 @@ func fetchPreviousRegistryVersion(
 	if err != nil {
 		return nil, "", fmt.Errorf("list tags: %w", err)
 	}
-	latest := oci.SelectLatestVersion(tags, false /* includePreRelease */)
-	if latest == "" {
-		// Distinguish "no previous version exists" (true first publication)
-		// from "tags exist but all are pre-release" (different shape;
-		// operator should know).
-		if oci.HasAnySemverTag(tags) {
-			fmt.Fprintf(diagOut,
-				"warning: registry has only pre-release tags for this entity; "+
-					"treating as first publication. Promote a pre-release "+
-					"to a stable version to enable bump-vs-classification verification.\n")
+	var latest string
+	if baseline != "" {
+		// Operator-forced predecessor. It must be a real strict-SemVer version
+		// the registry actually holds; HasAnySemverTag reuses the one selection
+		// parse so conformance cannot disagree with the default path.
+		if !oci.HasAnySemverTag([]string{baseline}) || !slices.Contains(tags, baseline) {
+			return nil, "", fmt.Errorf(
+				"--baseline %q is not a strict-SemVer version present in the registry for this entity",
+				baseline)
 		}
-		return nil, "", nil
+		latest = baseline
+	} else {
+		latest = oci.SelectHighestBelow(tags, header.Metadata.Version)
+		if latest == "" {
+			// Distinguish "no previous version exists" (true first publication)
+			// from "tags exist but all are pre-release" (different shape;
+			// operator should know).
+			if oci.HasAnySemverTag(tags) {
+				fmt.Fprintf(diagOut,
+					"warning: registry has only pre-release tags for this entity; "+
+						"treating as first publication. Promote a pre-release "+
+						"to a stable version to enable bump-vs-classification verification.\n")
+			}
+			return nil, "", nil
+		}
 	}
 	pull, err := oci.Pull(ctx, target, latest)
 	if err != nil {

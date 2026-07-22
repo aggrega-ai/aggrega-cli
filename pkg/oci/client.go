@@ -576,6 +576,43 @@ func SelectLatestVersion(tags []string, includePreRelease bool) string {
 	return highestOrig
 }
 
+// SelectHighestBelow returns the highest tag that conforms to strict SemVer
+// 2.0.0 and is strictly below candidate. It answers "the version just beneath
+// this one" — the correct predecessor for a back-patch, where the highest tag
+// overall may sit far above the candidate. Tags carrying a pre-release component
+// are skipped, as are non-conformant tags (a "v" prefix, a four-part "1.2.3.4",
+// a bare "latest") and any tag equal to or above candidate. Conformance and
+// ordering derive from the same parse as SelectLatestVersion, so the two never
+// disagree about what counts as a version. Returns an empty string when no
+// qualifying tag is present; like SelectLatestVersion it never fails. When
+// candidate itself is not strict SemVer there is no meaningful bound, and the
+// result is the empty string.
+func SelectHighestBelow(tags []string, candidate string) string {
+	cand, ok := strictSemverTag(candidate)
+	if !ok {
+		return ""
+	}
+	var highest *semver.Version
+	var highestOrig string
+	for _, t := range tags {
+		v, ok := strictSemverTag(t)
+		if !ok {
+			continue
+		}
+		if v.Prerelease() != "" {
+			continue
+		}
+		if !v.LessThan(cand) {
+			continue
+		}
+		if highest == nil || v.GreaterThan(highest) {
+			highest = v
+			highestOrig = t
+		}
+	}
+	return highestOrig
+}
+
 // HasAnySemverTag reports whether at least one tag conforms to strict SemVer
 // 2.0.0 (regardless of pre-release status). It derives conformance from the
 // same parse as SelectLatestVersion, so the two never disagree about what

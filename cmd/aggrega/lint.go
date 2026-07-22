@@ -19,6 +19,7 @@ var (
 	lintEntityPath  string
 	lintReleasePath string
 	lintPrePublish  bool
+	lintBaseline    string
 	lintPluginPath  string
 	lintCatalogDirs []string
 
@@ -101,9 +102,15 @@ can be overridden per invocation via the --allow-*/--no-allow-* and
 				// No entity argument → whole-catalog conventions.
 				return lintops.RunCatalogWide(rw, lintCatalogDirs, cmd.OutOrStdout(), os.Stderr)
 			}
+			if lintBaseline != "" && !lintPrePublish {
+				// --baseline only shapes the pre-publish predecessor; forcing a
+				// baseline without the check it feeds is a mistake, so halt loudly.
+				return fmt.Errorf("OPS_ERROR: --baseline requires --pre-publish")
+			}
 			return lintops.RunEntity(lintops.Config{
 				EntityPath:     path,
 				PrePublish:     lintPrePublish,
+				Baseline:       lintBaseline,
 				PluginPath:     lintPluginPath,
 				PolicyResolver: makeResolverFromCobra(cmd),
 				Workspace:      rw,
@@ -116,6 +123,7 @@ can be overridden per invocation via the --allow-*/--no-allow-* and
 	c.Flags().StringVar(&lintReleasePath, "release", "", "Path to a Release YAML to check conventions over its resolved dependency closure (mutually exclusive with an entity argument)")
 	c.Flags().StringVar(&lintEntityPath, "entity", "", "Path to the entity YAML to lint (alternatively pass as the positional arg)")
 	c.Flags().BoolVar(&lintPrePublish, "pre-publish", false, "Fetch the previous registry version and verify the proposed bump against the schema-evolution classification")
+	c.Flags().StringVar(&lintBaseline, "baseline", "", "Diff the pre-publish evolution check against this specific already-published version instead of the auto-selected highest version below the one being published; must be a strict-SemVer tag present in the registry (requires --pre-publish)")
 	c.Flags().StringVar(&lintPluginPath, "plugin", "", "Filesystem path to the publishing-linter .wasm artifact (overrides workspace plugins.linter[0].uri)")
 
 	// Tri-state allow_* flags

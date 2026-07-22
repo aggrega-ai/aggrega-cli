@@ -226,6 +226,38 @@ func TestSelectLatestVersionStrictGrammar(t *testing.T) {
 	}
 }
 
+// TestSelectHighestBelow pins the "version just beneath the candidate"
+// predecessor selection: the highest strict-SemVer tag strictly below the
+// candidate, pre-release and non-conformant tags skipped, the candidate itself
+// and anything above it excluded. The back-patch case is the reason it exists —
+// publishing 1.4.2 while 2.0.0 already sits in the registry must diff against
+// 1.4.1, not the far-future latest.
+func TestSelectHighestBelow(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name      string
+		tags      []string
+		candidate string
+		want      string
+	}{
+		{"empty tags", nil, "2.1.0", ""},
+		{"forward: highest below latest", []string{"1.0.0", "2.0.0"}, "2.1.0", "2.0.0"},
+		{"back-patch: below-version not latest", []string{"1.4.1", "1.4.3", "2.0.0"}, "1.4.2", "1.4.1"},
+		{"equal excluded", []string{"2.0.0"}, "2.0.0", ""},
+		{"all above excluded", []string{"2.0.0", "3.0.0"}, "1.5.0", ""},
+		{"pre-release below skipped", []string{"1.4.1", "1.4.2-rc.1"}, "1.4.2", "1.4.1"},
+		{"non-semver noise skipped", []string{"latest", "v1.4.1", "1.2.3.4", "1.4.0"}, "1.4.2", "1.4.0"},
+		{"non-conformant candidate yields empty", []string{"1.0.0", "1.4.0"}, "v1.4.2", ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := oci.SelectHighestBelow(tc.tags, tc.candidate); got != tc.want {
+				t.Errorf("SelectHighestBelow(%v, %q): got %q; want %q", tc.tags, tc.candidate, got, tc.want)
+			}
+		})
+	}
+}
+
 // TestHasAnySemverTag pins the helper used by the CLI to distinguish "no
 // previous version exists" from "tags exist but all are pre-release". It
 // shares its conformance parse with SelectLatestVersion, so a "v"-prefixed or
