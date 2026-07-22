@@ -21,12 +21,14 @@ package importersocket
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/parsersocket"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
+	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
@@ -112,6 +114,14 @@ func ImportArtifact(ctx context.Context, res ImporterResolver, load ImporterLoad
 	guest.SetSourceParser(func(ctx context.Context, format string, source []byte, options json.RawMessage) (json.RawMessage, error) {
 		parsed, err := parsersocket.ParseArtifact(ctx, parserRes, parserLoad, format, source, options)
 		if err != nil {
+			// Map the parser-resolution sentinel — whose home is pkg/catalog, a
+			// package the host boundary must not import — to its public wire code
+			// here, at the layer that owns the catalog dependency. The boundary
+			// reads the code off the CodedHostError; any other seam error stays
+			// uncoded and the boundary treats it as a parse failure.
+			if errors.Is(err, catalog.ErrNoParserForFormat) {
+				return nil, &wasm.CodedHostError{Code: abi.CodeNoParserForFormat, Err: err}
+			}
 			return nil, err
 		}
 		return parsed.Tree, nil

@@ -303,6 +303,13 @@ func goTypeToRust(goType, _ string, defTypes map[string]bool) string {
 		return "Vec<" + goTypeToRust(goType[2:], "", defTypes) + ">"
 	case strings.HasPrefix(goType, "*"):
 		elem := goType[1:]
+		switch elem {
+		case "string", "bool", "int", "int64", "float64", "[]byte":
+			// A pointer to a scalar models a present-or-absent scalar (a nil
+			// pointer is omitted; a pointer to the zero value is still emitted),
+			// so it maps to Option<scalar> — not the opaque carrier.
+			return "Option<" + goTypeToRust(elem, "", defTypes) + ">"
+		}
 		if defTypes[elem] {
 			return "Option<Box<" + elem + ">>"
 		}

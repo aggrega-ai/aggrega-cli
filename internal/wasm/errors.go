@@ -5,6 +5,24 @@ package wasm
 
 import "errors"
 
+// CodedHostError carries a machine-matchable host-function wire error code
+// alongside an underlying error. A seam adapter that owns the dependency for a
+// cross-package failure (for example a parser-resolution failure whose sentinel
+// lives outside this package) wraps its error in a CodedHostError, mapping the
+// internal failure to the public wire code at its own layer. The host-function
+// boundary reads the code with errors.As and sets it on the reply envelope,
+// without importing the seam's packages. Error and Unwrap delegate to the wrapped
+// error, so the human message and errors.Is matching against the underlying
+// sentinel are both preserved.
+type CodedHostError struct {
+	Code string
+	Err  error
+}
+
+func (e *CodedHostError) Error() string { return e.Err.Error() }
+
+func (e *CodedHostError) Unwrap() error { return e.Err }
+
 // ErrWasmManifestRejected indicates that the sandbox rejected a plugin
 // because it declares or requires a capability, or reports a
 // descriptor, the sandbox does not grant or accept. It is the shared

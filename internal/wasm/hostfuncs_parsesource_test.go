@@ -103,6 +103,9 @@ func TestHandleParseSource_ReentryDenied(t *testing.T) {
 	if !strings.Contains(env.Error, ErrProducerConsumptionReentry.Error()) {
 		t.Errorf("envelope error = %q; want it to carry the re-entry sentinel message %q", env.Error, ErrProducerConsumptionReentry.Error())
 	}
+	if env.ErrorCode != abi.CodeProducerConsumptionReentry {
+		t.Errorf("error_code = %q; want %q", env.ErrorCode, abi.CodeProducerConsumptionReentry)
+	}
 	warnings := p.DrainWarnings()
 	if len(warnings) != 1 || !strings.Contains(warnings[0], ErrProducerConsumptionReentry.Error()) {
 		t.Errorf("warnings = %v; want one warning carrying the re-entry message", warnings)
@@ -141,6 +144,9 @@ func TestHandleParseSource_MissingSeam(t *testing.T) {
 	if !strings.Contains(env.Error, "no source parser is available") {
 		t.Errorf("envelope error = %q; want the no-seam-available message", env.Error)
 	}
+	if env.ErrorCode != abi.CodeNoSourceParser {
+		t.Errorf("error_code = %q; want %q", env.ErrorCode, abi.CodeNoSourceParser)
+	}
 	if len(p.DrainWarnings()) != 1 {
 		t.Errorf("missing-seam failure was not recorded on the warning channel")
 	}
@@ -165,9 +171,38 @@ func TestHandleParseSource_SeamErrorSurfaced(t *testing.T) {
 	if env.Error != sentinel.Error() {
 		t.Errorf("envelope error = %q; want the seam's error message %q", env.Error, sentinel.Error())
 	}
+	if env.ErrorCode != abi.CodeParseFailed {
+		t.Errorf("error_code = %q; want the generic %q for an uncoded seam error", env.ErrorCode, abi.CodeParseFailed)
+	}
 	warnings := p.DrainWarnings()
 	if len(warnings) != 1 || !strings.Contains(warnings[0], sentinel.Error()) {
 		t.Errorf("warnings = %v; want one warning carrying the seam error", warnings)
+	}
+}
+
+// TestHandleParseSource_CodedSeamError proves the boundary reads the wire code
+// off a CodedHostError the seam returns: a parser-resolution failure wrapped by
+// the importer seam adapter surfaces as no_parser_for_format, with the human
+// message preserved. This is the sentinel-to-wire-code mapping done at the seam,
+// not by importing the sentinel's package into the host boundary.
+func TestHandleParseSource_CodedSeamError(t *testing.T) {
+	t.Parallel()
+	underlying := errors.New("resolve parser for format \"terraform\": no parser plugin advertises the requested format")
+	seam := func(ctx context.Context, format string, source []byte, options json.RawMessage) (json.RawMessage, error) {
+		return nil, &CodedHostError{Code: abi.CodeNoParserForFormat, Err: underlying}
+	}
+	p := &Plugin{name: "parse-source-test", sourceParser: seam}
+	reader := &fakeMemoryReader{stringsByOffset: map[uint64]string{7: parseSourceRequest(t, "terraform", []byte("x"), nil)}}
+	writer := &fakeMemoryWriter{}
+
+	p.handleAggregaParseSource(context.Background(), reader, writer, []uint64{7})
+
+	env := lastParseSourceEnvelope(t, writer)
+	if env.ErrorCode != abi.CodeNoParserForFormat {
+		t.Errorf("error_code = %q; want %q from the coded seam error", env.ErrorCode, abi.CodeNoParserForFormat)
+	}
+	if env.Error != underlying.Error() {
+		t.Errorf("envelope error = %q; want the coded error's underlying message %q", env.Error, underlying.Error())
 	}
 }
 
@@ -192,6 +227,9 @@ func TestHandleParseSource_BadRequest(t *testing.T) {
 	env := lastParseSourceEnvelope(t, writer)
 	if !strings.Contains(env.Error, "decoding the request failed") {
 		t.Errorf("envelope error = %q; want the decode-failure message", env.Error)
+	}
+	if env.ErrorCode != abi.CodeRequestUndecodable {
+		t.Errorf("error_code = %q; want %q", env.ErrorCode, abi.CodeRequestUndecodable)
 	}
 }
 

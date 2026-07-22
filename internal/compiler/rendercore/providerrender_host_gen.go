@@ -162,6 +162,8 @@ type SourcePackResponse struct {
 	SourceProjection *SourceProjection `json:"source_projection,omitempty" yaml:"source_projection,omitempty"`
 	// Error The failure message on failure, naming the selection and the reason; absent on success.
 	Error string `json:"error,omitempty" yaml:"error,omitempty"`
+	// ErrorCode The machine-matchable failure identity on failure, from the closed host-function error-code catalog, set beside the human error message; absent on success. A guest branches on this code without parsing the message, tolerating an absent code (older host) or an unrecognized one (newer host) by falling back to the message.
+	ErrorCode string `json:"error_code,omitempty" yaml:"error_code,omitempty"`
 }
 
 // SourceFileRequest The single-file content read a guest asks the host to perform through the read-source-file host function, for a guest whose resolution logic must inspect a file's content before choosing what to pack. The host resolves the path under the source root, rejecting any escape above it, and returns the file's bytes.
@@ -176,6 +178,18 @@ type SourceFileResponse struct {
 	Content []byte `json:"content,omitempty" yaml:"content,omitempty"`
 	// Error The failure message on failure, naming the file and the reason; absent on success.
 	Error string `json:"error,omitempty" yaml:"error,omitempty"`
+	// ErrorCode The machine-matchable failure identity on failure, from the closed host-function error-code catalog, set beside the human error message; absent on success. A guest branches on this code without parsing the message, tolerating an absent code (older host) or an unrecognized one (newer host) by falling back to the message.
+	ErrorCode string `json:"error_code,omitempty" yaml:"error_code,omitempty"`
+}
+
+// FetchExternalInputResponse The fetch-external-input host function's reply: on success the fetched content, on failure an error message. Exactly one of content or error is populated. Failure is delivered in-band rather than by trapping, so a guest carries an unresolvable URL or a fetch failure into its own diagnostics as a deterministic render failure. The request is a bare URL string rather than a JSON payload, so only the reply has a wire shape.
+type FetchExternalInputResponse struct {
+	// Content The fetched content on success (base64 on the JSON wire); absent on failure. A pointer so a zero-length payload still emits the content key and stays distinguishable from a failure.
+	Content *string `json:"content,omitempty" yaml:"content,omitempty"`
+	// Error The failure message on failure, naming the URL and the remedy; absent on success.
+	Error string `json:"error,omitempty" yaml:"error,omitempty"`
+	// ErrorCode The machine-matchable failure identity on failure, from the closed host-function error-code catalog, set beside the human error message; absent on success. A guest branches on this code without parsing the message, tolerating an absent code (older host) or an unrecognized one (newer host) by falling back to the message.
+	ErrorCode string `json:"error_code,omitempty" yaml:"error_code,omitempty"`
 }
 
 // WorkloadProjection The pre-evaluated workload content the host hands a Provider guest so the guest synthesizes provider-native manifests from it in memory, present when the bound Recipe declares a workload rather than a chart source. Determinism is the guest's responsibility: identical input must produce identical bytes.
@@ -1659,6 +1673,14 @@ func (t SourcePackResponse) MarshalJSON() ([]byte, error) {
 		buf.WriteString("\"error\":")
 		writeJSONString(&buf, t.Error)
 	}
+	if t.ErrorCode != "" {
+		if !first {
+			buf.WriteByte(',')
+		}
+		first = false
+		buf.WriteString("\"error_code\":")
+		writeJSONString(&buf, t.ErrorCode)
+	}
 	buf.WriteByte('}')
 	return buf.Bytes(), nil
 }
@@ -1692,6 +1714,12 @@ func (t *SourcePackResponse) UnmarshalJSON(data []byte) error {
 				return err
 			} else {
 				t.Error = s
+			}
+		case "error_code":
+			if s, err := readString(dec); err != nil {
+				return err
+			} else {
+				t.ErrorCode = s
 			}
 		default:
 			if _, err := readRaw(dec, data); err != nil {
@@ -1775,6 +1803,14 @@ func (t SourceFileResponse) MarshalJSON() ([]byte, error) {
 		buf.WriteString("\"error\":")
 		writeJSONString(&buf, t.Error)
 	}
+	if t.ErrorCode != "" {
+		if !first {
+			buf.WriteByte(',')
+		}
+		first = false
+		buf.WriteString("\"error_code\":")
+		writeJSONString(&buf, t.ErrorCode)
+	}
 	buf.WriteByte('}')
 	return buf.Bytes(), nil
 }
@@ -1804,6 +1840,98 @@ func (t *SourceFileResponse) UnmarshalJSON(data []byte) error {
 				return err
 			} else {
 				t.Error = s
+			}
+		case "error_code":
+			if s, err := readString(dec); err != nil {
+				return err
+			} else {
+				t.ErrorCode = s
+			}
+		default:
+			if _, err := readRaw(dec, data); err != nil {
+				return err
+			}
+		}
+	}
+	if err := expectDelim(dec, '}'); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON encodes FetchExternalInputResponse in field-declaration order, omitting
+// empty non-required fields, dispatch-free.
+func (t FetchExternalInputResponse) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	buf.WriteByte('{')
+	first := true
+	if t.Content != nil {
+		if !first {
+			buf.WriteByte(',')
+		}
+		first = false
+		buf.WriteString("\"content\":")
+		if enc, err := json.Marshal(t.Content); err != nil {
+			return nil, err
+		} else {
+			buf.Write(enc)
+		}
+	}
+	if t.Error != "" {
+		if !first {
+			buf.WriteByte(',')
+		}
+		first = false
+		buf.WriteString("\"error\":")
+		writeJSONString(&buf, t.Error)
+	}
+	if t.ErrorCode != "" {
+		if !first {
+			buf.WriteByte(',')
+		}
+		first = false
+		buf.WriteString("\"error_code\":")
+		writeJSONString(&buf, t.ErrorCode)
+	}
+	buf.WriteByte('}')
+	return buf.Bytes(), nil
+}
+
+// UnmarshalJSON decodes FetchExternalInputResponse with a streaming token walk, descending
+// into composite fields by direct call to each nested type's generated
+// UnmarshalJSON, dispatch-free. Unknown keys are skipped.
+func (t *FetchExternalInputResponse) UnmarshalJSON(data []byte) error {
+	dec := json.NewDecoder(bytes.NewReader(data))
+	if err := expectDelim(dec, '{'); err != nil {
+		return err
+	}
+	for dec.More() {
+		key, err := readKey(dec)
+		if err != nil {
+			return err
+		}
+		switch key {
+		case "content":
+			if raw, err := readRaw(dec, data); err != nil {
+				return err
+			} else {
+				dec2 := json.NewDecoder(bytes.NewReader(raw))
+				dec2.UseNumber()
+				if err := dec2.Decode(&t.Content); err != nil {
+					return err
+				}
+			}
+		case "error":
+			if s, err := readString(dec); err != nil {
+				return err
+			} else {
+				t.Error = s
+			}
+		case "error_code":
+			if s, err := readString(dec); err != nil {
+				return err
+			} else {
+				t.ErrorCode = s
 			}
 		default:
 			if _, err := readRaw(dec, data); err != nil {

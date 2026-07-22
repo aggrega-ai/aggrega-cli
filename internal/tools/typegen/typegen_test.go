@@ -48,17 +48,34 @@ func TestRegenClean_Enums(t *testing.T) {
 			if err != nil {
 				t.Fatalf("generate enums %s: %v", outFile, err)
 			}
-			path := filepath.Join("..", "..", "..", "pkg", "types", outFile)
+			dir, ok := enumTargetPaths[outFile]
+			if !ok {
+				t.Fatalf("no committed path registered for enum target %q", outFile)
+			}
+			path := filepath.Join(append(append([]string{}, dir...), outFile)...)
 			want, err := os.ReadFile(path)
 			if err != nil {
 				t.Fatalf("read committed %s: %v", path, err)
 			}
 			if string(got) != string(want) {
 				t.Errorf("%s is stale: generator output differs from the committed file.\n"+
-					"Run `go generate ./pkg/types/...` and commit the result.", outFile)
+					"Regenerate the target and commit the result.", outFile)
 			}
 		})
 	}
+}
+
+// enumTargetPaths maps each enum target's output basename to the directory
+// (relative to this test package) holding the committed generated file. The
+// Plugin entity's enum consts live in pkg/types; the host-function error-code
+// consts are committed across the aggrega-abi submodule boundary (Go/Rust/TS),
+// reached up to the umbrella root then into aggrega-abi, and read with
+// os.ReadFile so the cross-module read needs no go.work membership.
+var enumTargetPaths = map[string][]string{
+	"plugin_enums_gen.go":         {"..", "..", "..", "pkg", "types"},
+	"hostfunc_error_enums_gen.go": {"..", "..", "..", "..", "aggrega-abi", "go", "pkg", "abi"},
+	"hostfunc_error_enums_gen.rs": {"..", "..", "..", "..", "aggrega-abi", "rust", "src"},
+	"hostfunc_error_enums_gen.ts": {"..", "..", "..", "..", "aggrega-abi", "typescript", "src"},
 }
 
 // codecTargetPaths maps each codec target's output basename to the directory

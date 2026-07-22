@@ -6,7 +6,7 @@ package wasm
 import (
 	"context"
 	"encoding/base64"
-	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -468,22 +468,11 @@ type pluginMemoryWriter interface {
 	WriteBytes(b []byte) (uint64, error)
 }
 
-// fetchEnvelope is the single JSON payload aggrega_fetch_external_input
-// writes back into plugin memory. Exactly one field is populated per
-// envelope: Content carries the fetched bytes in standard base64
-// encoding on success; Error carries a failure message naming the URL
-// and the remedy. Content is a pointer so a zero-length payload still
-// emits the content key and stays distinguishable from a failure.
-type fetchEnvelope struct {
-	Content *string `json:"content,omitempty"`
-	Error   string  `json:"error,omitempty"`
-}
-
 // hostFunctionAggregaFetchExternalInput returns the host-side closure
 // binding aggrega_fetch_external_input(url_ptr i64) -> envelope_ptr
 // i64. The guest passes a pointer to a UTF-8 URL string in plugin
 // memory; the host resolves the URL through the plugin's external-
-// input service and writes one fetchEnvelope JSON document back into
+// input service and writes one FetchExternalInputResponse JSON document back into
 // plugin memory, returning its offset.
 //
 // Failure is deliberately in-band — an error envelope, never a trap or
@@ -526,30 +515,30 @@ func (p *Plugin) handleAggregaFetchExternalInput(ctx context.Context, reader plu
 	if err != nil {
 		log.Printf("plugin %q: aggrega_fetch_external_input: memory read failed: %v", p.name, err)
 		stack[0] = p.writeFetchFailure(writer,
-			fmt.Sprintf("aggrega_fetch_external_input: reading the URL from plugin memory failed: %v", err))
+			fmt.Sprintf("aggrega_fetch_external_input: reading the URL from plugin memory failed: %v", err), abi.CodeFetchRequestUnreadable)
 		return
 	}
 	if p.externalInputs == nil {
 		stack[0] = p.writeFetchFailure(writer,
-			fmt.Sprintf("external inputs are not available in this context: cannot fetch %q", rawURL))
+			fmt.Sprintf("external inputs are not available in this context: cannot fetch %q", rawURL), abi.CodeFetchInputUnavailable)
 		return
 	}
 	payload, err := p.externalInputs.Fetch(ctx, rawURL, p.name)
 	if err != nil {
-		stack[0] = p.writeFetchFailure(writer, err.Error())
+		stack[0] = p.writeFetchFailure(writer, err.Error(), abi.CodeFetchFailed)
 		return
 	}
 	encoded := base64.StdEncoding.EncodeToString(payload)
-	stack[0] = p.writeFetchEnvelope(writer, fetchEnvelope{Content: &encoded})
+	stack[0] = p.writeFetchEnvelope(writer, abi.FetchExternalInputResponse{Content: &encoded})
 }
 
 // writeFetchFailure records message on the plugin's warning channel and
 // writes an error envelope carrying it, returning the envelope's
 // offset. The warning mirrors the envelope so the host caller sees the
 // same diagnostic the guest received.
-func (p *Plugin) writeFetchFailure(writer pluginMemoryWriter, message string) uint64 {
+func (p *Plugin) writeFetchFailure(writer pluginMemoryWriter, message, code string) uint64 {
 	p.appendWarning(fmt.Sprintf("plugin %s: %s", p.name, message))
-	return p.writeFetchEnvelope(writer, fetchEnvelope{Error: message})
+	return p.writeFetchEnvelope(writer, abi.FetchExternalInputResponse{Error: message, ErrorCode: code})
 }
 
 // writeFetchEnvelope marshals env and writes it into plugin memory,
@@ -557,8 +546,8 @@ func (p *Plugin) writeFetchFailure(writer pluginMemoryWriter, message string) ui
 // write failure it logs a host-side diagnostic and returns offset 0 —
 // the one case where no envelope can be delivered; the guest-side PDK
 // wrapper treats a zero offset as "host returned no envelope".
-func (p *Plugin) writeFetchEnvelope(writer pluginMemoryWriter, env fetchEnvelope) uint64 {
-	b, err := json.Marshal(env)
+func (p *Plugin) writeFetchEnvelope(writer pluginMemoryWriter, env abi.FetchExternalInputResponse) uint64 {
+	b, err := env.MarshalJSON()
 	if err != nil {
 		log.Printf("plugin %q: aggrega_fetch_external_input: envelope marshal failed: %v", p.name, err)
 		return 0
@@ -607,21 +596,21 @@ func (p *Plugin) handleAggregaPackSource(reader pluginMemoryReader, writer plugi
 	reqJSON, err := reader.ReadString(stack[0])
 	if err != nil {
 		log.Printf("plugin %q: aggrega_pack_source: memory read failed: %v", p.name, err)
-		stack[0] = p.writeSourcePackFailure(writer, fmt.Sprintf("aggrega_pack_source: reading the request from plugin memory failed: %v", err))
+		stack[0] = p.writeSourcePackFailure(writer, fmt.Sprintf("aggrega_pack_source: reading the request from plugin memory failed: %v", err), abi.CodeRequestUnreadable)
 		return
 	}
 	var req abi.SourcePackRequest
 	if err := req.UnmarshalJSON([]byte(reqJSON)); err != nil {
-		stack[0] = p.writeSourcePackFailure(writer, fmt.Sprintf("aggrega_pack_source: decoding the request failed: %v", err))
+		stack[0] = p.writeSourcePackFailure(writer, fmt.Sprintf("aggrega_pack_source: decoding the request failed: %v", err), abi.CodeRequestUndecodable)
 		return
 	}
 	if p.sourceRoot == "" {
-		stack[0] = p.writeSourcePackFailure(writer, "aggrega_pack_source: no acquired source is available in this context")
+		stack[0] = p.writeSourcePackFailure(writer, "aggrega_pack_source: no acquired source is available in this context", abi.CodeSourceRootUnavailable)
 		return
 	}
-	proj, err := p.packSourceSelection(req.Op, req.Path)
+	proj, code, err := p.packSourceSelection(req.Op, req.Path)
 	if err != nil {
-		stack[0] = p.writeSourcePackFailure(writer, err.Error())
+		stack[0] = p.writeSourcePackFailure(writer, err.Error(), code)
 		return
 	}
 	b, err := abi.SourcePackResponse{SourceProjection: proj}.MarshalJSON()
@@ -667,26 +656,26 @@ func (p *Plugin) handleAggregaReadSourceFile(reader pluginMemoryReader, writer p
 	reqJSON, err := reader.ReadString(stack[0])
 	if err != nil {
 		log.Printf("plugin %q: aggrega_read_source_file: memory read failed: %v", p.name, err)
-		stack[0] = p.writeSourceFileFailure(writer, fmt.Sprintf("aggrega_read_source_file: reading the request from plugin memory failed: %v", err))
+		stack[0] = p.writeSourceFileFailure(writer, fmt.Sprintf("aggrega_read_source_file: reading the request from plugin memory failed: %v", err), abi.CodeRequestUnreadable)
 		return
 	}
 	var req abi.SourceFileRequest
 	if err := req.UnmarshalJSON([]byte(reqJSON)); err != nil {
-		stack[0] = p.writeSourceFileFailure(writer, fmt.Sprintf("aggrega_read_source_file: decoding the request failed: %v", err))
+		stack[0] = p.writeSourceFileFailure(writer, fmt.Sprintf("aggrega_read_source_file: decoding the request failed: %v", err), abi.CodeRequestUndecodable)
 		return
 	}
 	if p.sourceRoot == "" {
-		stack[0] = p.writeSourceFileFailure(writer, "aggrega_read_source_file: no acquired source is available in this context")
+		stack[0] = p.writeSourceFileFailure(writer, "aggrega_read_source_file: no acquired source is available in this context", abi.CodeSourceRootUnavailable)
 		return
 	}
-	resolved, err := p.resolveUnderSourceRoot(req.Path)
+	resolved, code, err := p.resolveUnderSourceRoot(req.Path)
 	if err != nil {
-		stack[0] = p.writeSourceFileFailure(writer, err.Error())
+		stack[0] = p.writeSourceFileFailure(writer, err.Error(), code)
 		return
 	}
 	data, err := os.ReadFile(resolved)
 	if err != nil {
-		stack[0] = p.writeSourceFileFailure(writer, fmt.Sprintf("aggrega_read_source_file: reading %q failed: %v", req.Path, err))
+		stack[0] = p.writeSourceFileFailure(writer, fmt.Sprintf("aggrega_read_source_file: reading %q failed: %v", req.Path, err), abi.CodeSourceReadFailed)
 		return
 	}
 	b, err := abi.SourceFileResponse{Content: data}.MarshalJSON()
@@ -744,26 +733,33 @@ func (p *Plugin) handleAggregaParseSource(ctx context.Context, reader pluginMemo
 	reqJSON, err := reader.ReadString(stack[0])
 	if err != nil {
 		log.Printf("plugin %q: aggrega_parse_source: memory read failed: %v", p.name, err)
-		stack[0] = p.writeParseSourceFailure(writer, fmt.Sprintf("aggrega_parse_source: reading the request from plugin memory failed: %v", err))
+		stack[0] = p.writeParseSourceFailure(writer, fmt.Sprintf("aggrega_parse_source: reading the request from plugin memory failed: %v", err), abi.CodeRequestUnreadable)
 		return
 	}
 	var req abi.ParseInput
 	if err := req.UnmarshalJSON([]byte(reqJSON)); err != nil {
-		stack[0] = p.writeParseSourceFailure(writer, fmt.Sprintf("aggrega_parse_source: decoding the request failed: %v", err))
+		stack[0] = p.writeParseSourceFailure(writer, fmt.Sprintf("aggrega_parse_source: decoding the request failed: %v", err), abi.CodeRequestUndecodable)
 		return
 	}
 	if producerConsumptionDepthFromContext(ctx) >= producerConsumptionDepthLimit {
-		stack[0] = p.writeParseSourceFailure(writer, fmt.Sprintf("aggrega_parse_source: %v", ErrProducerConsumptionReentry))
+		stack[0] = p.writeParseSourceFailure(writer, fmt.Sprintf("aggrega_parse_source: %v", ErrProducerConsumptionReentry), abi.CodeProducerConsumptionReentry)
 		return
 	}
 	if p.sourceParser == nil {
-		stack[0] = p.writeParseSourceFailure(writer, "aggrega_parse_source: no source parser is available in this context")
+		stack[0] = p.writeParseSourceFailure(writer, "aggrega_parse_source: no source parser is available in this context", abi.CodeNoSourceParser)
 		return
 	}
 	depth := producerConsumptionDepthFromContext(ctx)
 	tree, err := p.sourceParser(contextWithProducerConsumptionDepth(ctx, depth+1), req.Format, req.Bytes, req.Options)
 	if err != nil {
-		stack[0] = p.writeParseSourceFailure(writer, err.Error())
+		// The seam adapter maps a cross-package resolution sentinel to its wire
+		// code via a CodedHostError; any other seam error is a parse failure.
+		code := abi.CodeParseFailed
+		var coded *CodedHostError
+		if errors.As(err, &coded) {
+			code = coded.Code
+		}
+		stack[0] = p.writeParseSourceFailure(writer, err.Error(), code)
 		return
 	}
 	b, err := abi.ParseSourceResponse{Tree: tree}.MarshalJSON()
@@ -779,9 +775,9 @@ func (p *Plugin) handleAggregaParseSource(ctx context.Context, reader pluginMemo
 // writes a ParseSourceResponse error envelope carrying it, returning the
 // envelope's offset. The warning mirrors the envelope so the host caller sees the
 // same diagnostic the guest received.
-func (p *Plugin) writeParseSourceFailure(writer pluginMemoryWriter, message string) uint64 {
+func (p *Plugin) writeParseSourceFailure(writer pluginMemoryWriter, message, code string) uint64 {
 	p.appendWarning(fmt.Sprintf("plugin %s: %s", p.name, message))
-	b, err := abi.ParseSourceResponse{Error: message}.MarshalJSON()
+	b, err := abi.ParseSourceResponse{Error: message, ErrorCode: code}.MarshalJSON()
 	if err != nil {
 		log.Printf("plugin %q: aggrega_parse_source: error envelope marshal failed: %v", p.name, err)
 		return 0
@@ -804,22 +800,26 @@ func (p *Plugin) writeParseSourceFailure(writer pluginMemoryWriter, message stri
 // above it is refused. The keying and walk order match the enumeration the
 // host-side source projection historically produced, so the packed bytes are
 // byte-identical to the pre-listing model for the same input.
-func (p *Plugin) packSourceSelection(op, rel string) (*abi.SourceProjection, error) {
-	resolved, err := p.resolveUnderSourceRoot(rel)
+// packSourceSelection returns the wire error code for the failure condition it
+// hits alongside the error, so the host boundary sets one code per condition
+// (the sandbox escape's code is owned by resolveUnderSourceRoot). On success the
+// code is the empty string.
+func (p *Plugin) packSourceSelection(op, rel string) (*abi.SourceProjection, string, error) {
+	resolved, code, err := p.resolveUnderSourceRoot(rel)
 	if err != nil {
-		return nil, err
+		return nil, code, err
 	}
 	switch op {
 	case "file":
 		data, err := os.ReadFile(resolved)
 		if err != nil {
-			return nil, fmt.Errorf("aggrega_pack_source: reading %q failed: %v", rel, err)
+			return nil, abi.CodeSourceReadFailed, fmt.Errorf("aggrega_pack_source: reading %q failed: %v", rel, err)
 		}
-		return &abi.SourceProjection{Files: []abi.SourceFile{{Path: filepath.Base(resolved), Content: data}}}, nil
+		return &abi.SourceProjection{Files: []abi.SourceFile{{Path: filepath.Base(resolved), Content: data}}}, "", nil
 	case "dir":
 		entries, err := os.ReadDir(resolved)
 		if err != nil {
-			return nil, fmt.Errorf("aggrega_pack_source: listing %q failed: %v", rel, err)
+			return nil, abi.CodeSourceReadFailed, fmt.Errorf("aggrega_pack_source: listing %q failed: %v", rel, err)
 		}
 		var files []abi.SourceFile
 		for _, e := range entries {
@@ -828,11 +828,11 @@ func (p *Plugin) packSourceSelection(op, rel string) (*abi.SourceProjection, err
 			}
 			data, err := os.ReadFile(filepath.Join(resolved, e.Name()))
 			if err != nil {
-				return nil, fmt.Errorf("aggrega_pack_source: reading %q failed: %v", e.Name(), err)
+				return nil, abi.CodeSourceReadFailed, fmt.Errorf("aggrega_pack_source: reading %q failed: %v", e.Name(), err)
 			}
 			files = append(files, abi.SourceFile{Path: e.Name(), Content: data})
 		}
-		return &abi.SourceProjection{Files: files}, nil
+		return &abi.SourceProjection{Files: files}, "", nil
 	case "tree":
 		var files []abi.SourceFile
 		walkErr := filepath.WalkDir(resolved, func(pth string, d fs.DirEntry, err error) error {
@@ -854,11 +854,11 @@ func (p *Plugin) packSourceSelection(op, rel string) (*abi.SourceProjection, err
 			return nil
 		})
 		if walkErr != nil {
-			return nil, fmt.Errorf("aggrega_pack_source: walking %q failed: %v", rel, walkErr)
+			return nil, abi.CodeSourceReadFailed, fmt.Errorf("aggrega_pack_source: walking %q failed: %v", rel, walkErr)
 		}
-		return &abi.SourceProjection{Files: files}, nil
+		return &abi.SourceProjection{Files: files}, "", nil
 	default:
-		return nil, fmt.Errorf("aggrega_pack_source: unknown selection op %q", op)
+		return nil, abi.CodeUnknownSelectionOp, fmt.Errorf("aggrega_pack_source: unknown selection op %q", op)
 	}
 }
 
@@ -868,22 +868,25 @@ func (p *Plugin) packSourceSelection(op, rel string) (*abi.SourceProjection, err
 // itself. The sandbox cleans the joined path and confirms it stays at or under
 // the cleaned root, so a "../" traversal in the guest-supplied path is a loud
 // refusal rather than a read outside the acquired source.
-func (p *Plugin) resolveUnderSourceRoot(rel string) (string, error) {
+// resolveUnderSourceRoot owns the sandbox-escape wire code: on a refused escape
+// it returns CodeSourceEscape alongside the error, so the escape condition maps
+// to its code in exactly one place. On success the code is the empty string.
+func (p *Plugin) resolveUnderSourceRoot(rel string) (string, string, error) {
 	rootClean := filepath.Clean(p.sourceRoot)
 	joined := filepath.Clean(filepath.Join(rootClean, filepath.FromSlash(rel)))
 	if joined != rootClean && !strings.HasPrefix(joined, rootClean+string(filepath.Separator)) {
-		return "", fmt.Errorf("selection %q escapes the source root", rel)
+		return "", abi.CodeSourceEscape, fmt.Errorf("selection %q escapes the source root", rel)
 	}
-	return joined, nil
+	return joined, "", nil
 }
 
 // writeSourcePackFailure records message on the plugin's warning channel and
 // writes a SourcePackResponse error envelope carrying it, returning the
 // envelope's offset. The warning mirrors the envelope so the host caller sees
 // the same diagnostic the guest received.
-func (p *Plugin) writeSourcePackFailure(writer pluginMemoryWriter, message string) uint64 {
+func (p *Plugin) writeSourcePackFailure(writer pluginMemoryWriter, message, code string) uint64 {
 	p.appendWarning(fmt.Sprintf("plugin %s: %s", p.name, message))
-	b, err := abi.SourcePackResponse{Error: message}.MarshalJSON()
+	b, err := abi.SourcePackResponse{Error: message, ErrorCode: code}.MarshalJSON()
 	if err != nil {
 		log.Printf("plugin %q: aggrega_pack_source: error envelope marshal failed: %v", p.name, err)
 		return 0
@@ -895,9 +898,9 @@ func (p *Plugin) writeSourcePackFailure(writer pluginMemoryWriter, message strin
 // writeSourcePackFailure: it records message on the plugin's warning channel and
 // writes a SourceFileResponse error envelope carrying it, returning the
 // envelope's offset.
-func (p *Plugin) writeSourceFileFailure(writer pluginMemoryWriter, message string) uint64 {
+func (p *Plugin) writeSourceFileFailure(writer pluginMemoryWriter, message, code string) uint64 {
 	p.appendWarning(fmt.Sprintf("plugin %s: %s", p.name, message))
-	b, err := abi.SourceFileResponse{Error: message}.MarshalJSON()
+	b, err := abi.SourceFileResponse{Error: message, ErrorCode: code}.MarshalJSON()
 	if err != nil {
 		log.Printf("plugin %q: aggrega_read_source_file: error envelope marshal failed: %v", p.name, err)
 		return 0

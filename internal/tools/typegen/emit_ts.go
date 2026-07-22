@@ -161,6 +161,12 @@ func tsEncodeExpr(acc, goType string, defTypes map[string]bool, depth int) strin
 		return tsEncodeSlice(acc, goType[2:], defTypes, depth)
 	case strings.HasPrefix(goType, "*"):
 		elem := goType[1:]
+		switch elem {
+		case "string", "bool", "int", "int64", "float64", "[]byte":
+			// A pointer to a scalar encodes as the scalar; the caller's omit
+			// guard decides whether an absent pointer is emitted at all.
+			return tsEncodeExpr(acc, elem, defTypes, depth)
+		}
 		if defTypes[elem] {
 			return fmt.Sprintf("encode%s(%s)", elem, acc)
 		}
@@ -235,6 +241,12 @@ func goTypeToTS(goType string, defTypes map[string]bool) string {
 		return goTypeToTS(goType[2:], defTypes) + "[]"
 	case strings.HasPrefix(goType, "*"):
 		elem := goType[1:]
+		switch elem {
+		case "string", "bool", "int", "int64", "float64", "[]byte":
+			// A pointer to a scalar carries the scalar itself; the interface
+			// field's optional marker (?) expresses the present-or-absent axis.
+			return goTypeToTS(elem, defTypes)
+		}
 		if defTypes[elem] {
 			return elem
 		}

@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	abi "github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
 )
 
 // writePackFixture lays out a small source tree for the packer tests: a.txt at
@@ -34,7 +36,7 @@ func writePackFixture(t *testing.T) string {
 func TestPackSourceSelection_File(t *testing.T) {
 	t.Parallel()
 	p := &Plugin{sourceRoot: writePackFixture(t)}
-	proj, err := p.packSourceSelection("file", "sub/b.txt")
+	proj, _, err := p.packSourceSelection("file", "sub/b.txt")
 	if err != nil {
 		t.Fatalf("file pack: %v", err)
 	}
@@ -49,7 +51,7 @@ func TestPackSourceSelection_File(t *testing.T) {
 func TestPackSourceSelection_Dir(t *testing.T) {
 	t.Parallel()
 	p := &Plugin{sourceRoot: writePackFixture(t)}
-	proj, err := p.packSourceSelection("dir", "sub")
+	proj, _, err := p.packSourceSelection("dir", "sub")
 	if err != nil {
 		t.Fatalf("dir pack: %v", err)
 	}
@@ -67,7 +69,7 @@ func TestPackSourceSelection_Dir(t *testing.T) {
 func TestPackSourceSelection_Tree(t *testing.T) {
 	t.Parallel()
 	p := &Plugin{sourceRoot: writePackFixture(t)}
-	proj, err := p.packSourceSelection("tree", "")
+	proj, _, err := p.packSourceSelection("tree", "")
 	if err != nil {
 		t.Fatalf("tree pack: %v", err)
 	}
@@ -92,8 +94,12 @@ func TestPackSourceSelection_Tree(t *testing.T) {
 func TestPackSourceSelection_UnknownOpHalts(t *testing.T) {
 	t.Parallel()
 	p := &Plugin{sourceRoot: writePackFixture(t)}
-	if _, err := p.packSourceSelection("bogus", ""); err == nil {
+	_, code, err := p.packSourceSelection("bogus", "")
+	if err == nil {
 		t.Error("unknown op should halt")
+	}
+	if code != abi.CodeUnknownSelectionOp {
+		t.Errorf("unknown op code = %q; want %q", code, abi.CodeUnknownSelectionOp)
 	}
 }
 
@@ -104,8 +110,12 @@ func TestPackSourceSelection_SandboxRejectsEscape(t *testing.T) {
 	t.Parallel()
 	p := &Plugin{sourceRoot: writePackFixture(t)}
 	for _, rel := range []string{"../outside.txt", "sub/../../outside.txt", "../../etc/passwd"} {
-		if _, err := p.packSourceSelection("file", rel); err == nil {
+		_, code, err := p.packSourceSelection("file", rel)
+		if err == nil {
 			t.Errorf("selection %q escaping the source root should be refused", rel)
+		}
+		if code != abi.CodeSourceEscape {
+			t.Errorf("selection %q escape code = %q; want %q", rel, code, abi.CodeSourceEscape)
 		}
 	}
 }
@@ -118,7 +128,7 @@ func TestResolveUnderSourceRoot_RootItself(t *testing.T) {
 	root := t.TempDir()
 	p := &Plugin{sourceRoot: root}
 	for _, rel := range []string{"", "."} {
-		got, err := p.resolveUnderSourceRoot(rel)
+		got, _, err := p.resolveUnderSourceRoot(rel)
 		if err != nil {
 			t.Fatalf("resolve %q: %v", rel, err)
 		}

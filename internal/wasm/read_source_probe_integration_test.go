@@ -73,7 +73,15 @@ func TestReadSourceProbe_SandboxRejectsEscape(t *testing.T) {
 	if err != nil {
 		t.Fatalf("probe call: %v", err)
 	}
+	// The guest branched on the machine-matchable error code end-to-end: a real
+	// host sandbox-escape refusal crossed the ABI as source_escape, the PDK
+	// surfaced it as a typed HostError, and the guest matched the code — proving
+	// the code identity crosses, not just the prose.
+	if !strings.Contains(string(out), "code=source_escape") {
+		t.Errorf("guest output = %q; want the coded escape identity code=source_escape", out)
+	}
+	// The free-form message is preserved beside the code.
 	if !strings.Contains(string(out), "escapes the source root") {
-		t.Errorf("guest output = %q; want the sandbox refusal message", out)
+		t.Errorf("guest output = %q; want the sandbox refusal message preserved", out)
 	}
 }

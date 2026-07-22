@@ -11,6 +11,8 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+
+	abi "github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
 )
 
 // fakeMemoryWriter is a pluginMemoryWriter test double the fetch host-
@@ -32,13 +34,13 @@ func (f *fakeMemoryWriter) WriteBytes(b []byte) (uint64, error) {
 }
 
 // lastEnvelope decodes the most recent payload the fake writer received
-// as a fetchEnvelope.
-func (f *fakeMemoryWriter) lastEnvelope(t *testing.T) fetchEnvelope {
+// as a FetchExternalInputResponse.
+func (f *fakeMemoryWriter) lastEnvelope(t *testing.T) abi.FetchExternalInputResponse {
 	t.Helper()
 	if len(f.written) == 0 {
 		t.Fatalf("no envelope was written to plugin memory")
 	}
-	var env fetchEnvelope
+	var env abi.FetchExternalInputResponse
 	if err := json.Unmarshal(f.written[len(f.written)-1], &env); err != nil {
 		t.Fatalf("envelope is not valid JSON: %v (payload %q)", err, f.written[len(f.written)-1])
 	}
@@ -138,6 +140,9 @@ func TestHandleFetchExternalInputNilService(t *testing.T) {
 			t.Errorf("error envelope missing %q: %s", want, env.Error)
 		}
 	}
+	if env.ErrorCode != abi.CodeFetchInputUnavailable {
+		t.Errorf("error_code = %q; want %q", env.ErrorCode, abi.CodeFetchInputUnavailable)
+	}
 	warnings := p.Warnings()
 	if len(warnings) != 1 || !strings.Contains(warnings[0], "external inputs are not available in this context") {
 		t.Errorf("failure envelope must mirror onto the warning channel; got %v", warnings)
@@ -159,6 +164,9 @@ func TestHandleFetchExternalInputFetchError(t *testing.T) {
 	env := writer.lastEnvelope(t)
 	if !strings.Contains(env.Error, "https://example.com/y") || !strings.Contains(env.Error, "not pinned") {
 		t.Errorf("error envelope must carry the service's message verbatim; got %q", env.Error)
+	}
+	if env.ErrorCode != abi.CodeFetchFailed {
+		t.Errorf("error_code = %q; want %q", env.ErrorCode, abi.CodeFetchFailed)
 	}
 	warnings := p.Warnings()
 	if len(warnings) != 1 || !strings.Contains(warnings[0], "not pinned") {
@@ -184,6 +192,9 @@ func TestHandleFetchExternalInputMemoryReadFailure(t *testing.T) {
 	env := writer.lastEnvelope(t)
 	if !strings.Contains(env.Error, "reading the URL from plugin memory failed") {
 		t.Errorf("read failure must still deliver an error envelope; got %+v", env)
+	}
+	if env.ErrorCode != abi.CodeFetchRequestUnreadable {
+		t.Errorf("error_code = %q; want %q", env.ErrorCode, abi.CodeFetchRequestUnreadable)
 	}
 }
 

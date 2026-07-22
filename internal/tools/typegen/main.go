@@ -102,6 +102,15 @@ type enumSource struct {
 	schemaFile string
 	pkg        string
 	fields     []string
+	// lang selects the emission backend: an empty value (or "go") emits Go bare
+	// consts; "rust" emits Rust &str consts; "ts" emits TypeScript string
+	// consts. One schema declaration feeds every language backend, so the code
+	// vocabulary is single-sourced across all three the way the wire structs are.
+	lang string
+	// regen is the "Regenerate with ..." header line(s) for this target, so a
+	// target committed under pkg/types and one committed across the aggrega-abi
+	// submodule boundary each name their own regeneration command.
+	regen string
 	// doc is a file-level documentation comment emitted after the header,
 	// explaining the file's single-source role and any deliberately-separate
 	// sibling vocabularies. Each line is emitted as a `//` comment.
@@ -114,6 +123,7 @@ var enumSources = map[string]enumSource{
 		schemaFile: "plugin-v1alpha1.schema.json",
 		pkg:        "types",
 		fields:     []string{"operates", "scope"},
+		regen:      "// Regenerate with `go generate ./pkg/types/...`.\n",
 		doc: "These consts are the single source for the Plugin entity's per-export\n" +
 			"operates and scope vocabularies. The describe() host descriptor re-exports\n" +
 			"them so the load-time shape gate and the runtime read one set of values.\n" +
@@ -124,7 +134,47 @@ var enumSources = map[string]enumSource{
 			"enum independently of the Plugin schema; unifying the two schemas is a\n" +
 			"tracked follow-up.",
 	},
+
+	// Host-function error codes — the single source of the machine-matchable
+	// wire-code vocabulary, generated into the aggrega-abi Go/Rust/TS codec from
+	// one schema so the three languages share one closed set. The host sets a
+	// code as error_code on a host-function reply envelope when a callback fails;
+	// a guest branches on it without parsing the message.
+	"hostfunc_error_enums_gen.go": {
+		schema:     schemas.WasmHostfuncErrorV1alpha1,
+		schemaFile: "wasm-hostfunc-error-v1alpha1.schema.json",
+		pkg:        "abi",
+		fields:     []string{"code"},
+		regen:      "// Regenerate with `go generate ./internal/tools/typegen` from the\n// aggrega-cli checkout.\n",
+		doc:        hostfuncErrorEnumDoc,
+	},
+	"hostfunc_error_enums_gen.rs": {
+		schema:     schemas.WasmHostfuncErrorV1alpha1,
+		schemaFile: "wasm-hostfunc-error-v1alpha1.schema.json",
+		fields:     []string{"code"},
+		lang:       "rust",
+		regen:      "// Regenerate with `go generate ./internal/tools/typegen` from the\n// aggrega-cli checkout.\n",
+		doc:        hostfuncErrorEnumDoc,
+	},
+	"hostfunc_error_enums_gen.ts": {
+		schema:     schemas.WasmHostfuncErrorV1alpha1,
+		schemaFile: "wasm-hostfunc-error-v1alpha1.schema.json",
+		fields:     []string{"code"},
+		lang:       "ts",
+		regen:      "// Regenerate with `go generate ./internal/tools/typegen` from the\n// aggrega-cli checkout.\n",
+		doc:        hostfuncErrorEnumDoc,
+	},
 }
+
+// hostfuncErrorEnumDoc is the shared file-level doc for the three host-function
+// error-code enum targets, so the Go/Rust/TS files carry one explanation.
+const hostfuncErrorEnumDoc = "These consts are the single source of the host-function error-code wire\n" +
+	"vocabulary, shared across every host-function reply envelope. The host sets\n" +
+	"one as error_code beside the free-form error message when a callback fails;\n" +
+	"a guest branches on the code without parsing the message, tolerating an\n" +
+	"absent code (older host) or an unrecognized one (newer host) by falling back\n" +
+	"to the message. Generated into Go, Rust, and TypeScript from one schema so\n" +
+	"the three codecs share one closed vocabulary."
 
 // codecTarget binds an output filename to a multi-type codec emission: the
 // embedded `$defs`-shaped schema, the schema file basename for the generated
@@ -1496,32 +1546,9 @@ func collectEnums(n schemaNode, want map[string]bool, seen map[string]bool, out 
 // consumer (a string switch scrutinee, a string struct field) without forcing a
 // type conversion at the comparison site.
 func generateEnums(e enumSource) ([]byte, error) {
-	root, err := decodeNode(json.RawMessage(e.schema))
+	enums, err := resolveEnums(e)
 	if err != nil {
-		return nil, fmt.Errorf("decode schema: %w", err)
-	}
-
-	want := map[string]bool{}
-	for _, f := range e.fields {
-		want[f] = true
-	}
-	var enums []namedEnum
-	collectEnums(root, want, map[string]bool{}, &enums)
-
-	// Every requested field must resolve to an enum; a missing one means the
-	// schema changed (the field was renamed or its enum dropped) and the
-	// generated consts would silently vanish. Fail loudly instead.
-	for _, f := range e.fields {
-		found := false
-		for _, en := range enums {
-			if en.field == f {
-				found = true
-				break
-			}
-		}
-		if !found {
-			return nil, fmt.Errorf("enum field %q not found in schema %s", f, e.schemaFile)
-		}
+		return nil, err
 	}
 
 	var body strings.Builder
@@ -1534,24 +1561,121 @@ func generateEnums(e enumSource) ([]byte, error) {
 		body.WriteString(")\n\n")
 	}
 
-	var docLines string
-	if e.doc != "" {
-		for _, line := range strings.Split(e.doc, "\n") {
-			if line == "" {
-				docLines += "//\n"
-			} else {
-				docLines += "// " + line + "\n"
-			}
-		}
-		docLines += "\n"
-	}
-
 	head := genHeader("package "+e.pkg,
 		fmt.Sprintf("// aggrega-schemas/json/%s. DO NOT EDIT.\n", e.schemaFile),
-		"// Regenerate with `go generate ./pkg/types/...`.\n",
+		e.regen,
 		map[string]bool{})
 
-	return formatSource(head, docLines+body.String())
+	return formatSource(head, enumDocComment(e.doc)+body.String())
+}
+
+// resolveEnums decodes an enum source's schema and resolves every requested
+// field to its string enum, failing loudly if a requested field is missing (a
+// schema rename or a dropped enum would otherwise silently vanish the consts).
+// It is the shared front-end for the Go, Rust, and TS enum backends, so the
+// three languages emit from one resolved vocabulary.
+func resolveEnums(e enumSource) ([]namedEnum, error) {
+	root, err := decodeNode(json.RawMessage(e.schema))
+	if err != nil {
+		return nil, fmt.Errorf("decode schema: %w", err)
+	}
+
+	want := map[string]bool{}
+	for _, f := range e.fields {
+		want[f] = true
+	}
+	var enums []namedEnum
+	collectEnums(root, want, map[string]bool{}, &enums)
+
+	for _, f := range e.fields {
+		found := false
+		for _, en := range enums {
+			if en.field == f {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return nil, fmt.Errorf("enum field %q not found in schema %s", f, e.schemaFile)
+		}
+	}
+	return enums, nil
+}
+
+// enumDocComment renders a file-level doc block as `//` comment lines, blank
+// source lines becoming bare `//`, with a trailing blank line. An empty doc
+// yields no output. Shared by the Go/Rust/TS enum backends so the file-level
+// explanation is identical across languages.
+func enumDocComment(doc string) string {
+	if doc == "" {
+		return ""
+	}
+	var out string
+	for _, line := range strings.Split(doc, "\n") {
+		if line == "" {
+			out += "//\n"
+		} else {
+			out += "// " + line + "\n"
+		}
+	}
+	return out + "\n"
+}
+
+// screamingSnake upper-cases a lowercase-snake token (the wire values and the
+// field name are already snake) for the Rust SCREAMING_SNAKE_CASE const idiom.
+func screamingSnake(s string) string {
+	return strings.ToUpper(s)
+}
+
+// generateEnumsRust emits the Rust &str consts for an enum source: one
+// `pub const <FIELD>_<VALUE>: &str = "<value>";` per value, in schema
+// declaration order so regeneration is byte-stable. The consts are bare &str so
+// they drop into a string comparison without a type conversion, matching the Go
+// bare-const contract.
+func generateEnumsRust(e enumSource) ([]byte, error) {
+	enums, err := resolveEnums(e)
+	if err != nil {
+		return nil, err
+	}
+
+	var b strings.Builder
+	b.WriteString("// SPDX-License-Identifier: Apache-2.0\n// Copyright 2026 Cognitio S.r.l.\n\n")
+	fmt.Fprintf(&b, "// Code generated by internal/tools/typegen from\n// aggrega-schemas/json/%s. DO NOT EDIT.\n", e.schemaFile)
+	b.WriteString(e.regen)
+	b.WriteString("\n")
+	b.WriteString(enumDocComment(e.doc))
+	for _, en := range enums {
+		fieldScream := screamingSnake(en.field)
+		for _, v := range en.values {
+			fmt.Fprintf(&b, "pub const %s_%s: &str = %q;\n", fieldScream, screamingSnake(v), v)
+		}
+	}
+	return []byte(b.String()), nil
+}
+
+// generateEnumsTS emits the TypeScript string consts for an enum source: one
+// `export const <Field><Value> = "<value>";` per value, in schema declaration
+// order so regeneration is byte-stable. The const identifiers mirror the Go
+// PascalCase names so the PDK re-export is symmetric across languages.
+func generateEnumsTS(e enumSource) ([]byte, error) {
+	enums, err := resolveEnums(e)
+	if err != nil {
+		return nil, err
+	}
+
+	var b strings.Builder
+	b.WriteString("// SPDX-License-Identifier: Apache-2.0\n// Copyright 2026 Cognitio S.r.l.\n\n")
+	fmt.Fprintf(&b, "// Code generated by internal/tools/typegen from\n// aggrega-schemas/json/%s. DO NOT EDIT.\n", e.schemaFile)
+	b.WriteString(e.regen)
+	b.WriteString("\n")
+	b.WriteString(enumDocComment(e.doc))
+	for _, en := range enums {
+		fieldPascal := pascal(en.field)
+		for _, v := range en.values {
+			fmt.Fprintf(&b, "export const %s%s = %q;\n", fieldPascal, pascal(v), v)
+		}
+	}
+	return []byte(b.String()), nil
 }
 
 // generateDefs dispatches a multi-type codec target to its language backend.
@@ -1784,7 +1908,16 @@ func generateFor(base string) ([]byte, error) {
 		return generate(src.typeName, src.schema)
 	}
 	if e, ok := enumSources[base]; ok {
-		return generateEnums(e)
+		switch e.lang {
+		case "", "go":
+			return generateEnums(e)
+		case "rust":
+			return generateEnumsRust(e)
+		case "ts":
+			return generateEnumsTS(e)
+		default:
+			return nil, fmt.Errorf("typegen: unknown enum lang %q for %q", e.lang, base)
+		}
 	}
 	if t, ok := codecTargets[base]; ok {
 		return generateDefs(t)
