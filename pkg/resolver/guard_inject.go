@@ -91,7 +91,7 @@ func guardInjectKeys(na types.NormalizedAggregate, catalog CatalogLookup) []*Res
 			resolvedType[compType] = false
 			return nil, false
 		}
-		keys := componentProvidesKeys(catComp, catalog.SchemaLibraries)
+		keys := ComponentProvidesKeys(catComp, catalog.SchemaLibraries)
 		providesCache[compType] = keys
 		resolvedType[compType] = true
 		return keys, true
@@ -323,19 +323,21 @@ func invalidInjectKeyMessage(key, targetType string, declared map[string]bool) s
 	return fmt.Sprintf("inject from-key %q is not declared in component type %q provides; declared keys are: %v", key, targetType, keys)
 }
 
-// componentProvidesKeys returns the set of declared `provides` keys for a
-// catalog Component. The keys are the property names of the `provides` pillar
-// in the Component's spec.schema, compiled to JSON Schema 2020-12 via
-// pkg/compactform (the same compile path the provider-base and pillar
-// validators use). A Component with no spec.schema, no `provides` pillar, or a
-// `provides` pillar that compiles to no properties yields an empty set.
+// ComponentProvidesKeys returns the set of declared `provides` keys for a
+// catalog Component — the output contract a realizing Recipe must publish. The
+// keys are the property names of the `provides` pillar in the Component's
+// spec.schema, compiled to JSON Schema 2020-12 via pkg/compactform (the same
+// compile path the provider-base and pillar validators use). A Component with
+// no spec.schema, no `provides` pillar, or a `provides` pillar that compiles to
+// no properties yields an empty set. Mirrors FeatureProvidesKeys; both delegate
+// to providesKeysFromSchema.
 //
 // The schema is read as-authored on the resolved Component; cross-document
 // $ref expansion uses the supplied SchemaLibraries map when present.
 // providesKeysFromEffective extracts the declared provides-key set from an
 // already-composed effective schema (the whole-entity compactform schema), by
 // navigating properties.provides.properties. This is the effective-schema
-// analogue of componentProvidesKeys (which compiles the authored provides
+// analogue of ComponentProvidesKeys (which compiles the authored provides
 // sub-node directly): the merged schema nests the provides pillar one level
 // deeper under the entity's properties. An absent provides pillar yields the
 // empty set.
@@ -359,13 +361,13 @@ func providesKeysFromEffective(eff compactform.Schema) map[string]bool {
 	return keys
 }
 
-func componentProvidesKeys(comp types.Component, libraries map[string]types.SchemaLibrary) map[string]bool {
+func ComponentProvidesKeys(comp types.Component, libraries map[string]types.SchemaLibrary) map[string]bool {
 	return providesKeysFromSchema(comp.Spec.Schema, libraries)
 }
 
 // FeatureProvidesKeys returns the provides-pillar keys a Feature declares in its
-// spec.schema — the output contract a filling credential FeatureRecipe must
-// publish. Mirrors componentProvidesKeys; both delegate to providesKeysFromSchema.
+// spec.schema — the output contract a realizing FeatureRecipe must publish.
+// Mirrors ComponentProvidesKeys; both delegate to providesKeysFromSchema.
 func FeatureProvidesKeys(feat types.Feature, libraries map[string]types.SchemaLibrary) map[string]bool {
 	return providesKeysFromSchema(feat.Spec.Schema, libraries)
 }

@@ -103,13 +103,87 @@ func evalAttachmentFRProvides(fr *types.FeatureRecipe, instanceName, nodeID stri
 	return provided, nil
 }
 
+// enforceFeatureProvidesContracts halts when a bound non-credential FeatureRecipe
+// does not publish every provides key its Feature declares as the output contract
+// in schema.provides. It walks every feature attachment in the node's
+// FeatureValuesMapping — independent of whether the attachment declares inject,
+// because a Feature's provides may be consumed via .context / pillar reads as well
+// as via `inject from:` — mirroring the per-slot credential walk in
+// ResolveSecretProvides. An attachment with no bound FeatureRecipe, a catalog-absent
+// Feature type, or a Feature declaring no provides is skipped (nothing to enforce).
+// Instances are walked in sorted order so the first-reported shortfall is
+// deterministic. Structural key-presence only; see enforceProvidesContract.
+func enforceFeatureProvidesContracts(graph *types.IRGraph, nodeID string, recipeLookup RecipeLookup, catalogLookup resolver.CatalogLookup) error {
+	if recipeLookup.FeatureRecipe == nil || catalogLookup.Feature == nil {
+		return nil
+	}
+	fvm, ok := graph.Spec.FeatureValuesMapping.Get(nodeID)
+	if !ok || fvm.Len() == 0 {
+		return nil
+	}
+	instances := fvm.Keys()
+	sort.Strings(instances)
+	for _, instanceName := range instances {
+		entry, _ := fvm.Get(instanceName)
+		fr, found := recipeLookup.FeatureRecipe(instanceName, entry.Type)
+		if !found || fr == nil {
+			continue
+		}
+		feat, ffound := catalogLookup.Feature(entry.Type)
+		if !ffound {
+			continue
+		}
+		contract := resolver.FeatureProvidesKeys(feat, catalogLookup.SchemaLibraries)
+		if len(contract) == 0 {
+			continue
+		}
+		provided, err := evalAttachmentFRProvides(fr, instanceName, nodeID, entry)
+		if err != nil {
+			return err
+		}
+		if err := enforceProvidesContract(contract, provided, nodeID,
+			fmt.Sprintf("node %q feature %q", nodeID, instanceName),
+			fmt.Sprintf("FeatureRecipe %q", fr.Metadata.Name),
+			fmt.Sprintf("Feature %q", entry.Type)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// enforceProvidesContract halts when a realizer's produced provides bag omits
+// any key the abstract entity declares as its output contract. The contract is
+// structural key-presence — subset-required, superset-permitted: every declared
+// key must appear in produced, while extra produced keys are tolerated. Produced
+// values are never inspected (they are opaque runtime pointers). Declared keys
+// are checked in sorted order so the first missing key reported, and the halt,
+// are byte-identical across runs. contextPrefix locates the binding (e.g.
+// `node "x" secret "y"`); realizer and abstract are the pre-quoted entity
+// descriptors (e.g. `Recipe "z"`, `Component "core/service"`) the diagnostic
+// names. nodeID sets the halt's source location. A single home for the one
+// realizing-side fulfilment semantic shared by every realizer/abstract pair.
+func enforceProvidesContract(declared map[string]bool, produced types.OrderedMap[string], nodeID, contextPrefix, realizer, abstract string) error {
+	keys := make([]string, 0, len(declared))
+	for k := range declared {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		if _, has := produced.Get(key); !has {
+			return cerrors.Wrap(ErrProvidesContractUnfulfilled, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID},
+				fmt.Sprintf("%s: %s does not publish provides key %q declared by %s's schema.provides contract", contextPrefix, realizer, key, abstract))
+		}
+	}
+	return nil
+}
+
 // ResolveSecretProvides resolves each credential secret attachment's filling
 // FeatureRecipe `provides` ONCE — before the consumer renders — keyed by slot
 // (= attachment instance name), and enforces the producer-fulfilment contract:
 // the bound FeatureRecipe must publish every provides key the slot's Feature
 // declares in schema.provides; a missing key halts with
-// ErrCredentialProvidesContractUnfulfilled (structural key-presence, never a
-// judgement of the value). The returned bag is consumed by BOTH the consumer's
+// ErrProvidesContractUnfulfilled (structural key-presence, never a judgement of
+// the value). The returned bag is consumed by BOTH the consumer's
 // `.secrets.<slot>.provides` and the credential render's `frCtx.Provides` at
 // Phase B.6 — a single evaluation, so the two cannot drift.
 func ResolveSecretProvides(graph *types.IRGraph, nodeID string, recipeLookup RecipeLookup, catalogLookup resolver.CatalogLookup) (map[string]types.OrderedMap[string], error) {
@@ -138,16 +212,11 @@ func ResolveSecretProvides(graph *types.IRGraph, nodeID string, recipeLookup Rec
 		if catalogLookup.Feature != nil {
 			if feat, ffound := catalogLookup.Feature(entry.Type); ffound {
 				contract := resolver.FeatureProvidesKeys(feat, catalogLookup.SchemaLibraries)
-				keys := make([]string, 0, len(contract))
-				for k := range contract {
-					keys = append(keys, k)
-				}
-				sort.Strings(keys)
-				for _, key := range keys {
-					if _, has := provided.Get(key); !has {
-						return nil, cerrors.Wrap(ErrCredentialProvidesContractUnfulfilled, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID},
-							fmt.Sprintf("node %q secret %q: FeatureRecipe %q does not publish provides key %q declared by Feature %q's schema.provides contract", nodeID, slot, fr.Metadata.Name, key, entry.Type))
-					}
+				if err := enforceProvidesContract(contract, provided, nodeID,
+					fmt.Sprintf("node %q secret %q", nodeID, slot),
+					fmt.Sprintf("FeatureRecipe %q", fr.Metadata.Name),
+					fmt.Sprintf("Feature %q", entry.Type)); err != nil {
+					return nil, err
 				}
 			}
 		}

@@ -10,13 +10,31 @@ import (
 )
 
 var (
-	ErrProvidesSelfContainment               = errors.New("provides block references a root outside the self-contained set (.context.instance_id, .values, .infra, .locals)")
-	ErrProvidesEvaluation                    = errors.New("provides template evaluation failed")
-	ErrCredentialProvidesContractUnfulfilled = errors.New("credential FeatureRecipe does not publish a provides key its Feature schema.provides contract declares")
-	ErrSelfInjectForbiddenReference          = errors.New("self-inject value: template references cross-node data")
-	ErrSelfInjectKeyCollision                = errors.New("duplicate delivery key across self-inject and uses-inject")
-	ErrAttachmentInjectKeyCollision          = errors.New("duplicate delivery key across attachment-inject and another inject source")
-	ErrUnmappedCustomMechanism               = errors.New("custom inject mechanism has no matching key in injectMapping output; add the mechanism's key to the Recipe injectMapping")
+	ErrProvidesSelfContainment      = errors.New("provides block references a root outside the self-contained set (.context.instance_id, .values, .infra, .locals)")
+	ErrProvidesEvaluation           = errors.New("provides template evaluation failed")
+	ErrSelfInjectForbiddenReference = errors.New("self-inject value: template references cross-node data")
+	ErrSelfInjectKeyCollision       = errors.New("duplicate delivery key across self-inject and uses-inject")
+	ErrAttachmentInjectKeyCollision = errors.New("duplicate delivery key across attachment-inject and another inject source")
+	ErrUnmappedCustomMechanism      = errors.New("custom inject mechanism has no matching key in injectMapping output; add the mechanism's key to the Recipe injectMapping")
+
+	// ErrProvidesContractUnfulfilled is the Loud Guardrail halt raised at render
+	// when a bound realizer does not publish every provides key its abstract
+	// entity declares as the output contract in schema.provides — a Recipe short
+	// of its Component's provides, or a FeatureRecipe short of its Feature's
+	// provides (credential and non-credential attachments alike). The contract is
+	// structural key-presence, subset-required and superset-permitted: every
+	// declared key must appear in the realizer's produced provides bag, while
+	// extra produced keys are tolerated. Produced values are never inspected —
+	// they are opaque runtime pointers piped as strings, so their declared types
+	// stay a documentary consumer contract, not a build-time check. Without this
+	// halt a missing key would silently deliver nothing at inject/render time,
+	// leaving the consumer's reference an unset environment variable, argument, or
+	// file with no diagnostic. The wrapping chain at each emission site names the
+	// realizer, the abstract entity, and the first missing key (declared keys are
+	// checked in sorted order, so the reported key and the halt are byte-identical
+	// across runs). Category: CATALOG_ERROR. Match with
+	// errors.Is(err, ErrProvidesContractUnfulfilled).
+	ErrProvidesContractUnfulfilled = errors.New("realizer does not publish a provides key its abstract entity's schema.provides contract declares")
 
 	// ErrMappingImportShape fires when a valuesMapping $import: (or a recursive
 	// MappingLibrary entry body's field-root $import:) is neither a host-bearing

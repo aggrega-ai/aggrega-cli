@@ -148,6 +148,32 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{}, "Step 5 Pass 1: provides evaluation")
 	}
 
+	// Producer-fulfilment (Component↔Recipe): the bound Recipe must publish every
+	// provides key its Component declares as the output contract in schema.provides.
+	// The binding is a render-time fact (Manifest-driven), so the check runs here
+	// where the produced bag exists — a shortfall halts loudly rather than dropping
+	// the missing key silently at inject/render time.
+	if input.CatalogLookup.Component != nil {
+		for _, nodeID := range nodeIDs {
+			recipe := nodeRecipes[nodeID]
+			if recipe == nil {
+				continue
+			}
+			node, _ := graph.Spec.Nodes.Get(nodeID)
+			comp, found := input.CatalogLookup.Component(node.Component)
+			if !found {
+				continue
+			}
+			contract := resolver.ComponentProvidesKeys(comp, input.CatalogLookup.SchemaLibraries)
+			if err := enforceProvidesContract(contract, allProvides[nodeID], nodeID,
+				fmt.Sprintf("node %q", nodeID),
+				fmt.Sprintf("Recipe %q", recipe.Metadata.Name),
+				fmt.Sprintf("Component %q", node.Component)); err != nil {
+				return nil, err
+			}
+		}
+	}
+
 	// Step 5b: Recipe / FeatureRecipe assertions.
 	if err := EvaluateRecipeAndFeatureRecipeAssertions(graph, nodeRecipes, recipeLookup, allProvides); err != nil {
 		return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{}, "Step 5b (Recipe/FeatureRecipe assertions)")
@@ -271,6 +297,14 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// FeatureRecipe injectMapping last-wins overlay.
 		if err := ResolveAttachmentInject(&inject, graph, nodeID, recipeLookup); err != nil {
 			return nil, cerrors.Wrap(err, cerrors.DeveloperError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("Step 5 node %q attachment inject", nodeID))
+		}
+
+		// Producer-fulfilment (Feature↔non-credential-FeatureRecipe): every bound
+		// FeatureRecipe must publish every provides key its Feature declares. The
+		// credential sibling is enforced by ResolveSecretProvides below; this covers
+		// the non-credential feature attachments, inject-bearing or not.
+		if err := enforceFeatureProvidesContracts(graph, nodeID, recipeLookup, input.CatalogLookup); err != nil {
+			return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("Step 5 node %q feature provides", nodeID))
 		}
 
 		// Build template context

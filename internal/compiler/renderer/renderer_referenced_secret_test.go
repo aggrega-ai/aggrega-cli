@@ -327,7 +327,7 @@ func TestIntegration_ReferencedSecret_FulfilmentHalt(t *testing.T) {
 	input, lookup := referencedSecretFixture(partial)
 
 	_, err := renderer.ResolveSecretProvides(input.Graph, "db", lookup, input.CatalogLookup)
-	if !errors.Is(err, renderer.ErrCredentialProvidesContractUnfulfilled) {
-		t.Fatalf("a FeatureRecipe omitting a contract key should halt with ErrCredentialProvidesContractUnfulfilled; got: %v", err)
+	if !errors.Is(err, renderer.ErrProvidesContractUnfulfilled) {
+		t.Fatalf("a FeatureRecipe omitting a contract key should halt with ErrProvidesContractUnfulfilled; got: %v", err)
 	}
 }

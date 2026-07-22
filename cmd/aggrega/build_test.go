@@ -319,3 +319,364 @@ func chainContains(err error, needle string) bool {
 	}
 	return false
 }
+
+// providesContractFixture writes a complete build workspace (Aggregate, Release,
+// Manifest, catalog) whose Component core/store declares a two-key provides
+// output contract (endpoint, dsn). The bound Recipe's provides block is supplied
+// by recipeProvides so a caller can under-deliver (omit a declared key) or
+// over-deliver (superset). Returns the workspace root.
+func providesContractFixture(t *testing.T, recipeProvides string) string {
+	t.Helper()
+	root := t.TempDir()
+
+	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: provides-smoke
+  version: "1.0.0"
+spec:
+  components:
+    only:
+      type: core/store
+      values:
+        port: 8080
+`)
+
+	writeFixture(t, filepath.Join(root, "release.yaml"), `apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: provides-smoke-release
+  environment: testing
+  version: "1.0.0"
+spec:
+  aggregate: ./aggregate.yaml
+  manifest: ./manifest.yaml
+  boundaries:
+    main:
+      directory: ./dist/main
+      components:
+        only:
+          infra:
+            replicas: 1
+`)
+
+	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1alpha1
+kind: Manifest
+metadata:
+  name: provides-smoke-manifest
+  version: "1.0.0"
+spec:
+  mappings:
+    components:
+      type:
+        core/store: store-recipe:1.0.0
+`)
+
+	catalogRoot := filepath.Join(root, "catalog")
+	writeFixture(t, filepath.Join(catalogRoot, "base", "components", "store.yaml"), `apiVersion: aggrega.ai/v1alpha1
+kind: Component
+metadata:
+  name: core/store
+  version: "1.0.0"
+  labels:
+    component.aggrega.ai/type: "server"
+spec:
+  schema:
+    values:
+      port: { type: integer, default: 8080 }
+    provides:
+      endpoint: { type: string }
+      dsn: { type: string }
+`)
+
+	writeFixture(t, filepath.Join(catalogRoot, "base", "providers", "helm.yaml"), `apiVersion: aggrega.ai/v1alpha1
+kind: Provider
+metadata:
+  name: helm
+  version: "1.0.0"
+spec:
+  plugin: "builtin:helm"
+`)
+	writeHelmRendererPlugin(t, filepath.Join(catalogRoot, "base", "providers"))
+
+	writeFixture(t, filepath.Join(catalogRoot, "recipes", "helm", "store.yaml"), `apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: store-recipe
+  version: "1.0.0"
+spec:
+  capability: helm
+  implements: core/store
+`+recipeProvides+`
+  workload: |
+    apiVersion: aggrega.ai/v1alpha1
+    kind: Workload
+    replicas: {{ .infra.replicas | default 1 }}
+    containers:
+      store:
+        image: test-store:latest
+        ports:
+          web: {{ .values.port }}
+    services:
+      svc:
+        type: ClusterIP
+        ports:
+          web: {{ .values.port }}
+`)
+	return root
+}
+
+// TestRunBuild_ProvidesContractUnfulfilledHaltsCLI pins the CLI-level wire-in of
+// the Component↔Recipe producer-fulfilment check. The bound Recipe declares only
+// the endpoint provides key while its Component declares endpoint AND dsn, so the
+// realizer under-delivers its declared output contract. The build must halt at the
+// render step with ErrProvidesContractUnfulfilled naming the missing key rather
+// than silently dropping it at inject/render time.
+func TestRunBuild_ProvidesContractUnfulfilledHaltsCLI(t *testing.T) {
+	root := providesContractFixture(t, `  provides:
+    endpoint: "{{ .context.instance_id }}.svc.local"`)
+
+	prevRelease, prevCatalog, prevTrace := releasePath, catalogDirs, traceEnabled
+	t.Cleanup(func() { releasePath, catalogDirs, traceEnabled = prevRelease, prevCatalog, prevTrace })
+	releasePath = filepath.Join(root, "release.yaml")
+	catalogDirs = []string{filepath.Join(root, "catalog")}
+	traceEnabled = false
+
+	ws := resolveTempWorkspace(t)
+	if err := pullRun(pullConfig{ReleasePath: releasePath, CatalogDirs: catalogDirs, ws: ws}); err != nil {
+		t.Fatalf("prime lockfile via pull: %v", err)
+	}
+	err := dispatchBuild(ws, releasePath, catalogDirs, traceEnabled, os.Stderr, os.Stdout)
+	if err == nil {
+		t.Fatal("build returned nil; expected a provides-contract shortfall halt")
+	}
+	if !errors.Is(err, renderer.ErrProvidesContractUnfulfilled) {
+		t.Errorf("expected ErrProvidesContractUnfulfilled in chain; got %v", err)
+	}
+	if !chainContains(err, `"dsn"`) {
+		t.Errorf("expected the halt to name the missing key \"dsn\"; got %v", err)
+	}
+	if !chainContains(err, "core/store") || !chainContains(err, "store-recipe") {
+		t.Errorf("expected the halt to name the Component and Recipe; got %v", err)
+	}
+}
+
+// TestRunBuild_ProvidesContractSupersetBuildsCLI pins that a Recipe producing MORE
+// provides keys than its Component declares (endpoint, dsn, extra vs endpoint, dsn)
+// satisfies the contract — subset-required, superset-permitted — and the build
+// completes through the render step.
+func TestRunBuild_ProvidesContractSupersetBuildsCLI(t *testing.T) {
+	root := providesContractFixture(t, `  provides:
+    endpoint: "{{ .context.instance_id }}.svc.local"
+    dsn: "postgres://{{ .context.instance_id }}"
+    extra: "surplus"`)
+
+	ws := resolveTempWorkspace(t)
+	if err := pullRun(pullConfig{ReleasePath: filepath.Join(root, "release.yaml"), CatalogDirs: []string{filepath.Join(root, "catalog")}, ws: ws}); err != nil {
+		t.Fatalf("prime lockfile via pull: %v", err)
+	}
+	err := dispatchBuildWithDiag(
+		ws,
+		filepath.Join(root, "release.yaml"),
+		[]string{filepath.Join(root, "catalog")},
+		false,
+		buildDiagOptions{},
+		buildRunOptions{outDir: filepath.Join(root, "out")},
+		os.Stderr, os.Stdout,
+	)
+	if err != nil {
+		t.Fatalf("a superset-producing Recipe must satisfy the contract and build clean; got %v", err)
+	}
+}
+
+// featureProvidesContractFixture writes a complete build workspace whose component
+// core/store (no provides of its own) attaches a non-credential Feature core/metrics
+// that declares a two-key provides output contract (endpoint, dsn). The bound
+// FeatureRecipe's provides block is supplied by frProvides so a caller can
+// under-deliver or over-deliver. Returns the workspace root.
+func featureProvidesContractFixture(t *testing.T, frProvides string) string {
+	t.Helper()
+	root := t.TempDir()
+
+	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: feat-provides-smoke
+  version: "1.0.0"
+spec:
+  components:
+    only:
+      type: core/store
+      values:
+        port: 8080
+      features:
+        obs:
+          type: core/metrics
+`)
+
+	writeFixture(t, filepath.Join(root, "release.yaml"), `apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: feat-provides-smoke-release
+  environment: testing
+  version: "1.0.0"
+spec:
+  aggregate: ./aggregate.yaml
+  manifest: ./manifest.yaml
+  boundaries:
+    main:
+      directory: ./dist/main
+      components:
+        only:
+          infra:
+            replicas: 1
+`)
+
+	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1alpha1
+kind: Manifest
+metadata:
+  name: feat-provides-smoke-manifest
+  version: "1.0.0"
+spec:
+  mappings:
+    components:
+      type:
+        core/store: store-recipe:1.0.0
+    features:
+      type:
+        core/metrics: metrics-fr:1.0.0
+`)
+
+	catalogRoot := filepath.Join(root, "catalog")
+	writeFixture(t, filepath.Join(catalogRoot, "base", "components", "store.yaml"), `apiVersion: aggrega.ai/v1alpha1
+kind: Component
+metadata:
+  name: core/store
+  version: "1.0.0"
+  labels:
+    component.aggrega.ai/type: "server"
+spec:
+  schema:
+    values:
+      port: { type: integer, default: 8080 }
+`)
+
+	writeFixture(t, filepath.Join(catalogRoot, "base", "features", "metrics.yaml"), `apiVersion: aggrega.ai/v1alpha1
+kind: Feature
+metadata:
+  name: core/metrics
+  version: "1.0.0"
+spec:
+  schema:
+    provides:
+      endpoint: { type: string }
+      dsn: { type: string }
+`)
+
+	writeFixture(t, filepath.Join(catalogRoot, "base", "providers", "helm.yaml"), `apiVersion: aggrega.ai/v1alpha1
+kind: Provider
+metadata:
+  name: helm
+  version: "1.0.0"
+spec:
+  plugin: "builtin:helm"
+`)
+	writeHelmRendererPlugin(t, filepath.Join(catalogRoot, "base", "providers"))
+
+	writeFixture(t, filepath.Join(catalogRoot, "recipes", "helm", "store.yaml"), `apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: store-recipe
+  version: "1.0.0"
+spec:
+  capability: helm
+  implements: core/store
+  workload: |
+    apiVersion: aggrega.ai/v1alpha1
+    kind: Workload
+    replicas: {{ .infra.replicas | default 1 }}
+    containers:
+      store:
+        image: test-store:latest
+        ports:
+          web: {{ .values.port }}
+    services:
+      svc:
+        type: ClusterIP
+        ports:
+          web: {{ .values.port }}
+`)
+
+	writeFixture(t, filepath.Join(catalogRoot, "feature-recipes", "helm", "metrics.yaml"), `apiVersion: aggrega.ai/v1alpha1
+kind: FeatureRecipe
+metadata:
+  name: metrics-fr
+  version: "1.0.0"
+spec:
+  capability: helm
+  implements: core/metrics
+`+frProvides+`
+`)
+	return root
+}
+
+// TestRunBuild_FeatureProvidesContractUnfulfilledHaltsCLI pins the CLI-level
+// wire-in of the Feature↔non-credential-FeatureRecipe producer-fulfilment check.
+// The bound FeatureRecipe declares only the endpoint provides key while its Feature
+// declares endpoint AND dsn, so the realizer under-delivers its declared output
+// contract. The build must halt at render with ErrProvidesContractUnfulfilled
+// naming the missing key.
+func TestRunBuild_FeatureProvidesContractUnfulfilledHaltsCLI(t *testing.T) {
+	root := featureProvidesContractFixture(t, `  provides:
+    endpoint: "{{ .context.instance_id }}.metrics"`)
+
+	prevRelease, prevCatalog, prevTrace := releasePath, catalogDirs, traceEnabled
+	t.Cleanup(func() { releasePath, catalogDirs, traceEnabled = prevRelease, prevCatalog, prevTrace })
+	releasePath = filepath.Join(root, "release.yaml")
+	catalogDirs = []string{filepath.Join(root, "catalog")}
+	traceEnabled = false
+
+	ws := resolveTempWorkspace(t)
+	if err := pullRun(pullConfig{ReleasePath: releasePath, CatalogDirs: catalogDirs, ws: ws}); err != nil {
+		t.Fatalf("prime lockfile via pull: %v", err)
+	}
+	err := dispatchBuild(ws, releasePath, catalogDirs, traceEnabled, os.Stderr, os.Stdout)
+	if err == nil {
+		t.Fatal("build returned nil; expected a feature provides-contract shortfall halt")
+	}
+	if !errors.Is(err, renderer.ErrProvidesContractUnfulfilled) {
+		t.Errorf("expected ErrProvidesContractUnfulfilled in chain; got %v", err)
+	}
+	if !chainContains(err, `"dsn"`) {
+		t.Errorf("expected the halt to name the missing key \"dsn\"; got %v", err)
+	}
+	if !chainContains(err, "core/metrics") || !chainContains(err, "metrics-fr") {
+		t.Errorf("expected the halt to name the Feature and FeatureRecipe; got %v", err)
+	}
+}
+
+// TestRunBuild_FeatureProvidesContractFulfilledBuildsCLI pins that a FeatureRecipe
+// publishing every key its Feature declares satisfies the contract and the build
+// completes.
+func TestRunBuild_FeatureProvidesContractFulfilledBuildsCLI(t *testing.T) {
+	root := featureProvidesContractFixture(t, `  provides:
+    endpoint: "{{ .context.instance_id }}.metrics"
+    dsn: "metric://{{ .context.instance_id }}"`)
+
+	ws := resolveTempWorkspace(t)
+	if err := pullRun(pullConfig{ReleasePath: filepath.Join(root, "release.yaml"), CatalogDirs: []string{filepath.Join(root, "catalog")}, ws: ws}); err != nil {
+		t.Fatalf("prime lockfile via pull: %v", err)
+	}
+	err := dispatchBuildWithDiag(
+		ws,
+		filepath.Join(root, "release.yaml"),
+		[]string{filepath.Join(root, "catalog")},
+		false,
+		buildDiagOptions{},
+		buildRunOptions{outDir: filepath.Join(root, "out")},
+		os.Stderr, os.Stdout,
+	)
+	if err != nil {
+		t.Fatalf("a FeatureRecipe fulfilling the contract must build clean; got %v", err)
+	}
+}

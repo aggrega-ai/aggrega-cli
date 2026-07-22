@@ -5,6 +5,7 @@ package renderer
 
 import (
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
@@ -138,5 +139,56 @@ func TestResolveAttachmentInject_CollisionWithExistingKeyHalts(t *testing.T) {
 	err := ResolveAttachmentInject(&inject, graph, "api", lookup)
 	if !errors.Is(err, ErrAttachmentInjectKeyCollision) {
 		t.Fatalf("expected ErrAttachmentInjectKeyCollision, got %v", err)
+	}
+}
+
+// providedBag builds a produced provides bag from the given keys.
+func providedBag(keys ...string) types.OrderedMap[string] {
+	m := types.OrderedMap[string]{}
+	for _, k := range keys {
+		m.Set(k, "v-"+k)
+	}
+	return m
+}
+
+func TestEnforceProvidesContract_ExactMatchPasses(t *testing.T) {
+	t.Parallel()
+	declared := map[string]bool{"host": true, "port": true}
+	produced := providedBag("host", "port")
+	if err := enforceProvidesContract(declared, produced, "web",
+		`node "web"`, `Recipe "svc"`, `Component "core/service"`); err != nil {
+		t.Fatalf("produced covering every declared key must pass; got: %v", err)
+	}
+}
+
+func TestEnforceProvidesContract_SupersetPasses(t *testing.T) {
+	t.Parallel()
+	declared := map[string]bool{"host": true}
+	produced := providedBag("host", "port", "extra")
+	if err := enforceProvidesContract(declared, produced, "web",
+		`node "web"`, `Recipe "svc"`, `Component "core/service"`); err != nil {
+		t.Fatalf("extra produced keys beyond the declared set must be tolerated; got: %v", err)
+	}
+}
+
+func TestEnforceProvidesContract_ShortfallHalts(t *testing.T) {
+	t.Parallel()
+	declared := map[string]bool{"host": true, "port": true}
+	produced := providedBag("host")
+	err := enforceProvidesContract(declared, produced, "web",
+		`node "web"`, `Recipe "svc"`, `Component "core/service"`)
+	if !errors.Is(err, ErrProvidesContractUnfulfilled) {
+		t.Fatalf("a missing declared key must halt with ErrProvidesContractUnfulfilled; got: %v", err)
+	}
+	if !strings.Contains(err.Error(), `"port"`) {
+		t.Fatalf("the halt must name the missing key %q; got: %v", "port", err)
+	}
+}
+
+func TestEnforceProvidesContract_EmptyDeclaredPasses(t *testing.T) {
+	t.Parallel()
+	if err := enforceProvidesContract(map[string]bool{}, providedBag(), "web",
+		`node "web"`, `Recipe "svc"`, `Component "core/service"`); err != nil {
+		t.Fatalf("a contract with no declared keys has nothing to enforce; got: %v", err)
 	}
 }
