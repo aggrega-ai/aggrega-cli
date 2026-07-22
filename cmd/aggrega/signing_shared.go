@@ -53,22 +53,6 @@ func firstNonEmpty(vals ...string) string {
 	return ""
 }
 
-// resolveIDToken resolves the keyless OIDC identity token through its single
-// precedence order — the --identity-token flag, then AGGREGA_IDENTITY_TOKEN,
-// then SIGSTORE_ID_TOKEN — and returns the first non-empty value. The token is
-// a short-lived secret and is never a config field, so it is resolved here at
-// the signer-construction boundary rather than through the workspace-config
-// overlay. Both push and sign call this so the ordering has one definition.
-//
-// SIGSTORE_ID_TOKEN is the sigstore-ecosystem interop alias. It is read ONLY
-// here and is deliberately NOT an AGGREGA_-prefixed binding-table entry — it is
-// a foreign alias the ecosystem already sets, not an Aggrega setting, so it
-// must not be folded into the environment-overlay table. look reads the
-// environment; pass os.Getenv in production.
-func resolveIDToken(flagToken string, look func(string) string) string {
-	return firstNonEmpty(flagToken, look(envIdentityToken), look(envSigstoreIDToken))
-}
-
 // isTerminal reports whether stdin is an interactive terminal. It is a
 // package-level seam: tests replace it to drive the acquisition decision
 // without a real TTY.
@@ -87,26 +71,9 @@ func acquireInteractiveIDToken() (string, error) {
 	return tok.RawString, nil
 }
 
-// resolveOrAcquireIDToken returns the keyless OIDC identity token, choosing
-// among three runtime paths in strict precedence: an explicit token (the
-// --identity-token flag or AGGREGA_IDENTITY_TOKEN / SIGSTORE_ID_TOKEN, via the
-// resolveIDToken primitive) wins; otherwise, when stdin is an interactive
-// terminal, one is acquired interactively; otherwise it refuses loudly so a
-// keyless sign never silently proceeds or hangs waiting on a browser in a
-// non-interactive context. acquire and tty are injected seams for tests; the
-// flag/env ordering is not duplicated here — it stays in resolveIDToken.
-func resolveOrAcquireIDToken(flagToken string, look func(string) string, tty func() bool, acquire func() (string, error)) (string, error) {
-	if t := resolveIDToken(flagToken, look); t != "" {
-		return t, nil
-	}
-	if tty() {
-		return acquire()
-	}
-	return "", fmt.Errorf("keyless signing needs an identity token and no interactive terminal is available; export %s or %s (for example a CI workflow OIDC token), or pass --identity-token", envIdentityToken, envSigstoreIDToken)
-}
-
-// resolveIdentityTokenSource resolves the keyless identity as a token SOURCE
-// for the push path, in one strict precedence with a single home here:
+// resolveIdentityTokenSource resolves the keyless identity as a token SOURCE —
+// the single home for identity-token precedence across push, sign, and
+// deprecate — in one strict precedence:
 //
 //  1. the --identity-token flag (non-empty) — an explicit operator token;
 //  2. AGGREGA_IDENTITY_TOKEN (non-empty);
@@ -123,9 +90,10 @@ func resolveOrAcquireIDToken(flagToken string, look func(string) string, tty fun
 // static resolution returns its token as a string (buildSigner validates the
 // subject once at construction); the ambient resolution returns a live source
 // that fetches and validates per signature via the injected validate func, so
-// subject derivation is not duplicated. look, tty, and acquire are injected
-// seams for tests; the ordering is not duplicated in resolveIDToken, which is
-// the string-only precedence for the interactive re-acquire path.
+// subject derivation is not duplicated. The interactive branch acquires at most
+// one token per command and returns it as a static string, so an interactive
+// batch mints once and reuses it. look, tty, and acquire are injected seams for
+// tests.
 func resolveIdentityTokenSource(flagToken string, look func(string) string, tty func() bool, acquire func() (string, error), validate func(string) error) (idToken string, source signing.IdentityTokenSource, err error) {
 	if flagToken != "" {
 		return flagToken, nil, nil
@@ -146,7 +114,7 @@ func resolveIdentityTokenSource(flagToken string, look func(string) string, tty 
 		}
 		return t, nil, nil
 	}
-	return "", nil, fmt.Errorf("keyless signing needs an identity token and no interactive terminal is available; export %s or %s (for example a CI workflow OIDC token), or pass --identity-token", envIdentityToken, envSigstoreIDToken)
+	return "", nil, fmt.Errorf("keyless signing needs an identity token: no --identity-token was passed, no %s or %s is exported, no ambient GitHub Actions OIDC endpoint is available, and stdin is not an interactive terminal; on GitHub Actions the workflow OIDC token is used automatically, otherwise export one of those variables (for example a CI workflow OIDC token) or pass --identity-token", envIdentityToken, envSigstoreIDToken)
 }
 
 // tokenGetterOrDefault returns getter when non-nil, else the production

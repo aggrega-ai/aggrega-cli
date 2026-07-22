@@ -61,7 +61,7 @@ func newSignCmd() *cobra.Command {
 	c.Flags().StringVar(&signFulcio, "fulcio-url", "", "Fulcio certificate-authority URL for keyless signing.")
 	c.Flags().StringVar(&signRekor, "rekor-url", "", "Rekor transparency-log URL for keyless signing.")
 	c.Flags().StringVar(&signTimestamp, "timestamp-url", "", "Optional RFC3161 timestamp-authority URL for keyless signing.")
-	c.Flags().StringVar(&signIDToken, "identity-token", "", "OIDC identity token for keyless signing. Optional at an interactive terminal (a browser flow acquires one); required for non-interactive/CI use, where it may instead be exported as AGGREGA_IDENTITY_TOKEN or SIGSTORE_ID_TOKEN.")
+	c.Flags().StringVar(&signIDToken, "identity-token", "", "OIDC identity token for keyless signing. Optional at an interactive terminal (a browser flow acquires one) and on GitHub Actions (the workflow OIDC token is minted automatically); required for other non-interactive/CI use, where it may instead be exported as AGGREGA_IDENTITY_TOKEN or SIGSTORE_ID_TOKEN.")
 	return c
 }
 
@@ -127,18 +127,16 @@ type signConfig struct {
 // artifacts are never re-pushed or mutated; each referrer is a sibling
 // manifest, so signing is immutability-safe.
 //
-// One interactive authentication serves the whole batch: on the keyless path
-// the identity token is acquired once before the loop and reused for every
-// reference, while a fresh short-lived certificate is issued per artifact by
-// the per-reference signer. The keyed path acquires no token.
+// One authentication serves the whole batch: on the keyless path the identity
+// is resolved once before the loop — a static token, or a live source that
+// mints a fresh token per signature — and reused for every reference, while a
+// fresh short-lived certificate is issued per artifact by the per-reference
+// signer. The keyed path resolves no identity.
 //
 // Signing is continue-and-report: a reference that fails to resolve, sign, or
 // attach is recorded and the batch proceeds to the next reference; after the
 // loop, if any reference failed, a summary is printed to stderr and a non-zero
-// error is returned. One keyless exception interrupts the per-reference flow:
-// when an interactively-acquired token is rejected mid-batch (it may have
-// expired), the token is re-acquired once for the whole batch and the current
-// reference is retried; a supplied token is never silently re-prompted.
+// error is returned.
 func signRun(cfg signConfig) error {
 	if len(cfg.References) == 0 {
 		return fmt.Errorf("aggrega sign: at least one reference required")
@@ -186,26 +184,21 @@ type refFailure struct {
 }
 
 // batchSigner carries the once-resolved signing posture across the batch loop:
-// whether the keyless identity was interactively acquired (so it may be
-// re-acquired on rejection), the single acquired token, and the latch that
-// bounds re-acquisition to once per batch.
+// the identity resolved once as either a static token or a live source, reused
+// for every reference's signer.
 type batchSigner struct {
 	cfg signConfig
 
 	// keyless reports whether the batch uses the keyless flow. The keyed path
-	// never acquires or re-acquires a token.
+	// never resolves an identity.
 	keyless bool
-	// tokenWasInteractive is true iff the keyless token was acquired
-	// interactively (no flag/env supplied), so a rejected token may be
-	// re-acquired. A supplied token is never silently re-prompted.
-	tokenWasInteractive bool
-	// idToken is the single acquired/supplied identity token, reused for every
-	// reference's signer.
+	// idToken is the single static identity token, reused for every reference's
+	// signer. Empty when the identity resolved to a live source instead.
 	idToken string
-	// reacquired latches true once the token has been re-acquired, bounding
-	// re-acquisition to once for the whole batch regardless of how many
-	// references are rejected.
-	reacquired bool
+	// tokenSource is the live identity source (the ambient GitHub Actions OIDC
+	// endpoint) when the identity resolved to one, reused for every reference's
+	// signer so the batch shares a single source. Nil on the static path.
+	tokenSource signing.IdentityTokenSource
 
 	// resolved holds the workspace-config signing overlay for the batch. The
 	// per-reference signer applies it together with the CLI flags.
@@ -217,10 +210,13 @@ type batchSigner struct {
 }
 
 // prepare resolves the batch's signing posture once: it decides keyless vs
-// keyed and, on the keyless branch, acquires the identity token a single time.
-// When cfg.Signer is injected the per-reference signer is the injected one, but
-// the keyless acquire-once block still runs so the token getter is invoked at
-// most once for the whole batch — the property the batch contract guarantees.
+// keyed and, on the keyless branch, resolves the identity a single time through
+// the shared precedence — as a static token (flag, environment, or one
+// interactive acquisition) or as a live source (the ambient GitHub Actions OIDC
+// endpoint) — and stores it for reuse across every reference. When cfg.Signer is
+// injected the per-reference signer is the injected one, but the keyless
+// resolution still runs so the interactive token getter is invoked at most once
+// for the whole batch — the property the batch contract guarantees.
 func (b *batchSigner) prepare() error {
 	if b.cfg.Signer == nil {
 		rw, err := workspaceOrResolve(b.cfg.ws)
@@ -242,23 +238,22 @@ func (b *batchSigner) prepare() error {
 	}
 
 	if b.keyless {
-		look := envLookupOrGetenv(b.cfg.EnvLookup)
-		b.tokenWasInteractive = resolveIDToken(b.cfg.IDToken, look) == ""
-		tok, err := resolveOrAcquireIDToken(b.cfg.IDToken, look, ttyOrDefault(b.cfg.IsTTY), tokenGetterOrDefault(b.cfg.TokenGetter))
+		idToken, source, err := resolveIdentityTokenSource(b.cfg.IDToken, envLookupOrGetenv(b.cfg.EnvLookup), ttyOrDefault(b.cfg.IsTTY), tokenGetterOrDefault(b.cfg.TokenGetter), checkIDTokenSubject)
 		if err != nil {
 			return fmt.Errorf("aggrega sign: %w", err)
 		}
-		b.idToken = tok
+		b.idToken = idToken
+		b.tokenSource = source
 	}
 	return nil
 }
 
 // signRef signs one reference and attaches its signature. It builds the
-// per-reference signer from the batch's once-acquired token (keyless) or the
-// resolved key path (keyed) — never acquiring a token itself; the acquire-once
-// lives in prepare. On a keyless signing failure with an interactively-acquired
-// token and the per-batch re-acquire latch unset, it re-acquires once, rebuilds
-// the signer with the fresh token, and retries this reference a single time.
+// per-reference signer from the batch's once-resolved identity (keyless) or the
+// resolved key path (keyed) — never resolving an identity itself; the single
+// resolution lives in prepare. A keyless failure whose cause is a token without
+// a usable signing subject is mapped to a precise diagnostic; every other
+// failure is returned as-is so the batch continues and reports it.
 func (b *batchSigner) signRef(ctx context.Context, ref string) error {
 	target := b.cfg.Target
 	if target == nil {
@@ -291,44 +286,15 @@ func (b *batchSigner) signRef(ctx context.Context, ref string) error {
 
 	bundleBytes, artifactType, err := signDigest(ctx, signer, digest)
 	if err != nil {
-		// A token that structurally lacks a usable signing subject is a distinct
-		// failure from an expired or rejected token: re-acquiring or re-exporting
-		// it cannot help, because the identity the OIDC flow returned — not the
-		// token's freshness — is the problem. Classify it before the re-acquire
-		// path so the operator is pointed at the identity provider/client/scope
-		// rather than told to re-export, and so no pointless re-acquisition runs.
+		// A token that structurally lacks a usable signing subject cannot be
+		// fixed by re-exporting or re-acquiring it: the identity the OIDC flow
+		// returned — not the token's freshness — is the problem. Name that cause
+		// precisely so the operator is pointed at the identity provider/client/
+		// scope rather than told to re-export a token that cannot help.
 		if b.keyless && keylessSubjectFailure(err) {
 			return fmt.Errorf("%s: signing failed; the identity token carries no verified email or subject claim — the OIDC flow/client did not return an email-scoped identity (re-exporting or re-acquiring the token will not help); configure the identity provider/client/scope to return one: %w", ref, err)
 		}
-		// A keyless cert-issuance failure otherwise has no classifiable upstream
-		// signal — the certificate authority's rejection arrives as an opaque
-		// string-wrapped error, indistinguishable from a transient outage. When
-		// the token was interactively acquired and the per-batch latch is unset,
-		// treat the failure as a possibly-expired token: re-acquire once, rebuild
-		// the signer, and retry this reference a single time. A supplied token is
-		// never silently re-prompted; the batch fails loudly so the operator can
-		// supply a fresh one.
-		if b.keyless && !b.reacquired {
-			if !b.tokenWasInteractive {
-				return fmt.Errorf("%s: signing failed; the supplied identity token was rejected (it may have expired); re-export a fresh %s or pass a fresh --identity-token: %w", ref, envIdentityToken, err)
-			}
-			fresh, aerr := tokenGetterOrDefault(b.cfg.TokenGetter)()
-			b.reacquired = true
-			if aerr != nil {
-				return fmt.Errorf("%s: signing failed and re-acquiring a fresh identity token failed: %w", ref, aerr)
-			}
-			b.idToken = fresh
-			signer, err = b.buildRefSigner(ref)
-			if err != nil {
-				return fmt.Errorf("%s: %w", ref, err)
-			}
-			bundleBytes, artifactType, err = signDigest(ctx, signer, digest)
-			if err != nil {
-				return fmt.Errorf("%s: signing failed; retried once with a fresh identity token (it may have expired): %w", ref, err)
-			}
-		} else {
-			return fmt.Errorf("%s: %w", ref, err)
-		}
+		return fmt.Errorf("%s: %w", ref, err)
 	}
 
 	if err := attachBundle(ctx, target, subjectRef, artifactType, bundleBytes); err != nil {
@@ -342,8 +308,9 @@ func (b *batchSigner) signRef(ctx context.Context, ref string) error {
 // buildRefSigner returns the signer for one reference. An injected signer is
 // reused as-is across the batch; otherwise a fresh signer is built per
 // reference from that reference's resolved endpoint URLs and the batch's
-// once-acquired token (keyless) or key path (keyed). It never acquires a
-// token — the keyless acquire-once is owned by prepare.
+// once-resolved identity — the static token or the live source (keyless) or key
+// path (keyed). It never resolves an identity — the single keyless resolution is
+// owned by prepare.
 func (b *batchSigner) buildRefSigner(ref string) (signing.Signer, error) {
 	if b.cfg.Signer != nil {
 		return b.cfg.Signer, nil
@@ -355,6 +322,7 @@ func (b *batchSigner) buildRefSigner(ref string) (signing.Signer, error) {
 	resolved := rw.Config().ResolveSigning(registryhost.Of(ref))
 	return buildSigner(signerParams{
 		KeyPath:      firstNonEmpty(b.cfg.KeyPath, resolved.KeyPath),
+		TokenSource:  b.tokenSource,
 		IDToken:      b.idToken,
 		FulcioURL:    firstNonEmpty(b.cfg.FulcioURL, resolved.FulcioURL),
 		RekorURL:     firstNonEmpty(b.cfg.RekorURL, resolved.RekorURL),

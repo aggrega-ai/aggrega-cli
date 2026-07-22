@@ -168,13 +168,13 @@ func TestKeylessSubjectFailure(t *testing.T) {
 	}
 }
 
-// TestSignNoSubjectFailureSkipsReacquire proves a no-subject keyless failure is
+// TestSignNoSubjectFailureDiagnostic proves a no-subject keyless failure is
 // classified at the batch wrap site: the message names the missing
-// verified-email/subject, never suggests expiry or re-export, and the token is
-// never re-acquired — re-acquisition cannot fix a structurally subject-less
-// identity. The injected signer bypasses the pre-sign guard, so this exercises
-// the classifier on the certificate authority's own error text.
-func TestSignNoSubjectFailureSkipsReacquire(t *testing.T) {
+// verified-email/subject and never suggests expiry or re-export, because
+// re-minting cannot fix a structurally subject-less identity. The batch resolves
+// the identity exactly once. The injected signer bypasses the pre-sign guard, so
+// this exercises the classifier on the certificate authority's own error text.
+func TestSignNoSubjectFailureDiagnostic(t *testing.T) {
 	t.Parallel()
 	store := memory.New()
 	refs, subjects := publishN(t, store, 1)
@@ -194,7 +194,7 @@ func TestSignNoSubjectFailureSkipsReacquire(t *testing.T) {
 		t.Fatal("signRun should fail when the token carries no subject")
 	}
 	if acquired != 1 {
-		t.Errorf("token getter called %d times, want exactly 1 (initial only; no re-acquire on a subject failure)", acquired)
+		t.Errorf("token getter called %d times, want exactly 1 (the batch resolves the identity once)", acquired)
 	}
 	msg := err.Error()
 	if !strings.Contains(msg, "no verified email or subject claim") {
@@ -216,10 +216,10 @@ func TestSignNoSubjectFailureSkipsReacquire(t *testing.T) {
 	}
 }
 
-// TestSignUnverifiedEmailFailureSkipsReacquire proves an unverified-email
-// keyless failure is handled in the same no-subject class: no re-acquire, no
-// expiry framing.
-func TestSignUnverifiedEmailFailureSkipsReacquire(t *testing.T) {
+// TestSignUnverifiedEmailFailureDiagnostic proves an unverified-email keyless
+// failure is handled in the same no-subject class: the precise diagnostic, no
+// expiry framing, identity resolved once.
+func TestSignUnverifiedEmailFailureDiagnostic(t *testing.T) {
 	t.Parallel()
 	store := memory.New()
 	refs, subjects := publishN(t, store, 1)
@@ -239,7 +239,7 @@ func TestSignUnverifiedEmailFailureSkipsReacquire(t *testing.T) {
 		t.Fatal("signRun should fail when the token's email is unverified")
 	}
 	if acquired != 1 {
-		t.Errorf("token getter called %d times, want exactly 1 (no re-acquire on an unverified-email failure)", acquired)
+		t.Errorf("token getter called %d times, want exactly 1 (the batch resolves the identity once)", acquired)
 	}
 	msg := err.Error()
 	if !strings.Contains(msg, "no verified email or subject claim") {
@@ -250,33 +250,3 @@ func TestSignUnverifiedEmailFailureSkipsReacquire(t *testing.T) {
 	}
 }
 
-// TestSignGenericRejectionKeepsExpiryBehavior proves a generic keyless failure
-// (not a subject failure) preserves the existing interactive re-acquire path:
-// the token is re-acquired once and the expiry framing is kept.
-func TestSignGenericRejectionKeepsExpiryBehavior(t *testing.T) {
-	t.Parallel()
-	store := memory.New()
-	refs, subjects := publishN(t, store, 1)
-
-	var acquired int
-	fake := &signingtest.FakeSigner{Err: errors.New("signing: keyless bundle: certificate request rejected")}
-	err := signRun(signConfig{
-		References:  refs,
-		SubjectRefs: subjects,
-		Target:      store,
-		Signer:      fake,
-		EnvLookup:   func(string) string { return "" },
-		IsTTY:       func() bool { return true },
-		TokenGetter: func() (string, error) { acquired++; return "fresh", nil },
-	})
-	if err == nil {
-		t.Fatal("signRun should fail when the certificate request is rejected")
-	}
-	// Initial acquire (prepare) + one re-acquire on the generic rejection.
-	if acquired != 2 {
-		t.Errorf("token getter called %d times, want exactly 2 (initial + one re-acquire)", acquired)
-	}
-	if !strings.Contains(err.Error(), "may have expired") {
-		t.Errorf("error %q dropped the expiry framing for a generic rejection", err.Error())
-	}
-}

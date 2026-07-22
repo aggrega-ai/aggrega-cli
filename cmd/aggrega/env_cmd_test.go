@@ -16,55 +16,6 @@ func fakeEnv(vals map[string]string) func(string) string {
 	return func(k string) string { return vals[k] }
 }
 
-// TestResolveIDTokenPrecedence pins the single identity-token ordering shared by
-// push and sign: the --identity-token flag wins, then AGGREGA_IDENTITY_TOKEN,
-// then the SIGSTORE_ID_TOKEN interop alias, then empty.
-func TestResolveIDTokenPrecedence(t *testing.T) {
-	t.Parallel()
-
-	cases := []struct {
-		name string
-		flag string
-		env  map[string]string
-		want string
-	}{
-		{
-			name: "flag wins over both env vars",
-			flag: "from-flag",
-			env:  map[string]string{envIdentityToken: "from-aggrega", envSigstoreIDToken: "from-sigstore"},
-			want: "from-flag",
-		},
-		{
-			name: "aggrega env wins over sigstore alias",
-			flag: "",
-			env:  map[string]string{envIdentityToken: "from-aggrega", envSigstoreIDToken: "from-sigstore"},
-			want: "from-aggrega",
-		},
-		{
-			name: "sigstore alias is the last fallback",
-			flag: "",
-			env:  map[string]string{envSigstoreIDToken: "from-sigstore"},
-			want: "from-sigstore",
-		},
-		{
-			name: "none set yields empty",
-			flag: "",
-			env:  nil,
-			want: "",
-		},
-	}
-
-	for _, tc := range cases {
-		tc := tc
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			if got := resolveIDToken(tc.flag, fakeEnv(tc.env)); got != tc.want {
-				t.Errorf("resolveIDToken(%q, env) = %q; want %q", tc.flag, got, tc.want)
-			}
-		})
-	}
-}
-
 // TestLoginPasswordPrecedence: --password-stdin wins over the environment;
 // the environment fills in when stdin is absent; the interactive prompt is the
 // last resort (asserted indirectly — when neither stdin nor env supplies a

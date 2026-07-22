@@ -97,7 +97,7 @@ func newDeprecateCmd() *cobra.Command {
 	c.Flags().StringVar(&deprecateFulcio, "fulcio-url", "", "Fulcio certificate-authority URL for keyless signing.")
 	c.Flags().StringVar(&deprecateRekor, "rekor-url", "", "Rekor transparency-log URL for keyless signing.")
 	c.Flags().StringVar(&deprecateTimestamp, "timestamp-url", "", "Optional RFC3161 timestamp-authority URL for keyless signing.")
-	c.Flags().StringVar(&deprecateIDToken, "identity-token", "", "OIDC identity token for keyless signing. Optional at an interactive terminal (a browser flow acquires one); required for non-interactive/CI use, where it may instead be exported as AGGREGA_IDENTITY_TOKEN or SIGSTORE_ID_TOKEN.")
+	c.Flags().StringVar(&deprecateIDToken, "identity-token", "", "OIDC identity token for keyless signing. Optional at an interactive terminal (a browser flow acquires one) and on GitHub Actions (the workflow OIDC token is minted automatically); required for other non-interactive/CI use, where it may instead be exported as AGGREGA_IDENTITY_TOKEN or SIGSTORE_ID_TOKEN.")
 	return c
 }
 
@@ -412,8 +412,9 @@ func attachSignedMarker(ctx context.Context, out io.Writer, target oras.Target, 
 // single signer-construction path buildSigner. An injected signer is returned
 // as-is; otherwise the keyed/keyless inputs are resolved through the precedence
 // chain (CLI flag > per-registry config > global config) and, on the keyless
-// branch, the identity token is resolved or interactively acquired once. The
-// keyed path never acquires a token.
+// branch, the identity is resolved as a token SOURCE through the single
+// resolution home so an ambient GitHub Actions OIDC endpoint self-mints exactly
+// as it does for a push. The keyed path never resolves an identity.
 func deprecateSigner(cfg deprecateConfig) (signing.Signer, error) {
 	if cfg.Signer != nil {
 		return cfg.Signer, nil
@@ -426,16 +427,18 @@ func deprecateSigner(cfg deprecateConfig) (signing.Signer, error) {
 	keyPath := firstNonEmpty(cfg.KeyPath, resolved.KeyPath)
 
 	var idToken string
+	var tokenSource signing.IdentityTokenSource
 	if keyPath == "" {
-		tok, terr := resolveOrAcquireIDToken(cfg.IDToken, envLookupOrGetenv(cfg.EnvLookup), ttyOrDefault(cfg.IsTTY), tokenGetterOrDefault(cfg.TokenGetter))
+		var terr error
+		idToken, tokenSource, terr = resolveIdentityTokenSource(cfg.IDToken, envLookupOrGetenv(cfg.EnvLookup), ttyOrDefault(cfg.IsTTY), tokenGetterOrDefault(cfg.TokenGetter), checkIDTokenSubject)
 		if terr != nil {
 			return nil, terr
 		}
-		idToken = tok
 	}
 	return buildSigner(signerParams{
 		KeyPath:      keyPath,
 		IDToken:      idToken,
+		TokenSource:  tokenSource,
 		FulcioURL:    firstNonEmpty(cfg.FulcioURL, resolved.FulcioURL),
 		RekorURL:     firstNonEmpty(cfg.RekorURL, resolved.RekorURL),
 		TimestampURL: firstNonEmpty(cfg.TimestampURL, resolved.TimestampURL),

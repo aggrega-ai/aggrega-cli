@@ -300,10 +300,10 @@ func TestSignKeyedBatchAcquiresNoToken(t *testing.T) {
 	}
 }
 
-// TestSignSuppliedTokenRejectionHardFails proves a rejected supplied token is
-// never silently re-prompted: the batch fails loudly and re-acquisition never
-// runs.
-func TestSignSuppliedTokenRejectionHardFails(t *testing.T) {
+// TestSignKeylessRejectionContinuesAndReports proves a keyless cert-issuance
+// rejection is returned as a batch failure — no silent re-prompt, no re-mint —
+// so the operator supplies a fresh identity and re-runs.
+func TestSignKeylessRejectionContinuesAndReports(t *testing.T) {
 	t.Parallel()
 	store := memory.New()
 	refs, subjects := publishN(t, store, 1)
@@ -315,65 +315,18 @@ func TestSignSuppliedTokenRejectionHardFails(t *testing.T) {
 		SubjectRefs: subjects,
 		Target:      store,
 		Signer:      fake,
-		IDToken:     "supplied-token", // supplied, not interactively acquired
+		IDToken:     "supplied-token",
 		EnvLookup:   func(string) string { return "" },
 		IsTTY:       func() bool { return true },
 		TokenGetter: func() (string, error) { acquired++; return "fresh", nil },
 	})
 	if err == nil {
-		t.Fatal("signRun should hard-fail when a supplied token is rejected")
+		t.Fatal("signRun should fail when the certificate request is rejected")
 	}
 	if acquired != 0 {
-		t.Errorf("re-acquired %d times, want 0 for a supplied token", acquired)
+		t.Errorf("token getter called %d times, want 0 (a supplied token is never re-minted)", acquired)
 	}
-	if !strings.Contains(err.Error(), "supplied identity token was rejected") {
-		t.Errorf("error %q lacks the supplied-token-rejected diagnostic", err.Error())
-	}
-}
-
-// TestSignInteractiveTokenReacquiresOnce proves an interactively-acquired token
-// that is rejected mid-batch is re-acquired exactly once (the per-batch latch),
-// the reference then signs, and a later rejection does not trigger a second
-// re-acquire.
-func TestSignInteractiveTokenReacquiresOnce(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-	store := memory.New()
-	refs, subjects := publishN(t, store, 1)
-	firstDigest, _, err := oci.Resolve(ctx, store, subjects[refs[0]])
-	if err != nil {
-		t.Fatalf("Resolve: %v", err)
-	}
-
-	// Fail the first attempt of the reference, then succeed on retry.
-	var attempts int
-	fake := &signingtest.FakeSigner{
-		FailOn: func(digest string) error {
-			if digest == firstDigest {
-				attempts++
-				if attempts == 1 {
-					return errors.New("synthetic token rejection on first attempt")
-				}
-			}
-			return nil
-		},
-	}
-
-	var acquired int
-	err = signRun(signConfig{
-		References:  refs,
-		SubjectRefs: subjects,
-		Target:      store,
-		Signer:      fake,
-		EnvLookup:   func(string) string { return "" },
-		IsTTY:       func() bool { return true },
-		TokenGetter: func() (string, error) { acquired++; return "token", nil },
-	})
-	if err != nil {
-		t.Fatalf("signRun should recover after one re-acquire: %v", err)
-	}
-	// Once at prepare (initial) + once on re-acquire = exactly twice.
-	if acquired != 2 {
-		t.Errorf("token getter called %d times, want exactly 2 (initial + one re-acquire)", acquired)
+	if !strings.Contains(err.Error(), refs[0]) {
+		t.Errorf("error summary %q does not name the failed reference %q", err.Error(), refs[0])
 	}
 }
