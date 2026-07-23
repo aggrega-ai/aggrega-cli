@@ -51,7 +51,7 @@ release: release.yaml
 schema_libraries:
     - uri: BaseComponents
       resolved_version: 1.0.0
-      digest: sha256:e217cfd9d6c74768f6ac33384c8e5adfc1fbff09fa5a31bef9f6fc914abd697d
+      digest: sha256:c0a8cfda4d91097f028bcd3026e81a57c369ba47a04675775c89fb4f1968e70e
       consumers:
         - consumer_uri: BaseComponents
           fragments:
