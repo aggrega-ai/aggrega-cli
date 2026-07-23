@@ -823,3 +823,168 @@ func TestSynthesizeWorkload_ByteIdenticalAcrossRuns(t *testing.T) {
 		}
 	}
 }
+
+// TestSynthesizeWorkload_ImagePullPolicyAndEnvFrom — imagePullPolicy renders on
+// the container; envFrom imports a ConfigMap source (configMapRef by name) and
+// a Secret source (secretRef whose name resolves from the slot provides, with a
+// per-source prefix).
+func TestSynthesizeWorkload_ImagePullPolicyAndEnvFrom(t *testing.T) {
+	t.Parallel()
+	w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload"}
+	c := types.ContainerSpec{Image: "app:1.0", ImagePullPolicy: "IfNotPresent"}
+	c.Ports.Set("web", 8080)
+	c.EnvFrom = []types.EnvFromSource{
+		{ConfigMap: "app-config"},
+		{Secret: "db-credentials", Prefix: "DB_"},
+	}
+	w.Containers.Set("main", c)
+
+	svc := types.ServiceSpec{Type: "ClusterIP"}
+	svc.Ports.Set("web", 8080)
+	w.Services.Set("api", svc)
+
+	secretProvides := map[string]types.OrderedMap[string]{
+		"db-credentials": providesBag("db-creds-secret", "password"),
+	}
+	files, err := SynthesizeWorkloadCore(w, secretProvides, nodeCtxFor("api"))
+	if err != nil {
+		t.Fatalf("SynthesizeWorkload: %v", err)
+	}
+	goldenCheck(t, "imagepullpolicy-and-envfrom", files[0].Body)
+}
+
+// TestSynthesizeWorkload_PodLevelFieldsAndAccessModes — the new pod-level fields
+// render on the PodSpec (imagePullSecrets, priorityClassName,
+// terminationGracePeriodSeconds, dnsPolicy, dnsConfig, hostAliases) and an
+// author-supplied PVC accessModes overrides the ReadWriteOnce default.
+func TestSynthesizeWorkload_PodLevelFieldsAndAccessModes(t *testing.T) {
+	t.Parallel()
+	grace := 45
+	w := &types.Workload{
+		APIVersion:                    "aggrega.ai/v1alpha1",
+		Kind:                          "Workload",
+		Form:                          "stateful",
+		ImagePullSecrets:              []string{"regcred", "regcred-2"},
+		PriorityClassName:             "high-priority",
+		TerminationGracePeriodSeconds: &grace,
+		DNSPolicy:                     "None",
+		DNSConfig: &types.DNSConfig{
+			Nameservers: []string{"1.1.1.1", "8.8.8.8"},
+			Searches:    []string{"svc.cluster.local"},
+		},
+		HostAliases: []types.HostAlias{
+			{IP: "10.0.0.1", Hostnames: []string{"db.internal", "cache.internal"}},
+		},
+	}
+	c := types.ContainerSpec{Image: "db:1.0"}
+	c.Ports.Set("db", 5432)
+	c.VolumeMounts = []types.VolumeMount{{Name: "data", Path: "/var/lib/db"}}
+	w.Containers.Set("main", c)
+	w.Volumes.Set("data", types.VolumeSpec{Persistent: &types.PersistentVolume{Size: "10Gi", AccessModes: []string{"ReadWriteMany"}}})
+
+	svc := types.ServiceSpec{Type: "Headless"}
+	svc.Ports.Set("db", 5432)
+	w.Services.Set("db", svc)
+
+	files, err := SynthesizeWorkloadCore(w, renderer.SecretProvidesFromContext(nil), nodeCtxFor("db"))
+	if err != nil {
+		t.Fatalf("SynthesizeWorkload: %v", err)
+	}
+	// Golden the full multi-file emission (statefulset + pvc + service).
+	var all []byte
+	for _, f := range files {
+		all = append(all, []byte("--- "+f.Name+" ---\n")...)
+		all = append(all, f.Body...)
+	}
+	goldenCheck(t, "pod-fields-and-accessmodes", all)
+}
+
+// TestSynthesizeWorkload_ReferenceExternalName — a form: reference workload emits
+// a single ExternalName Service (no controller, no PVC, no Secret). The endpoint
+// host is extracted from a scheme/port-bearing URL; the optional port renders.
+func TestSynthesizeWorkload_ReferenceExternalName(t *testing.T) {
+	t.Parallel()
+	w := &types.Workload{
+		APIVersion: "aggrega.ai/v1alpha1",
+		Kind:       "Workload",
+		Form:       "reference",
+		Endpoint:   "https://api.anthropic.com:443/v1",
+		Port:       443,
+		Credential: &types.Credential{From: "api_key", Env: "ANTHROPIC_API_KEY"},
+	}
+	files, err := SynthesizeWorkloadCore(w, renderer.SecretProvidesFromContext(nil), nodeCtxFor("anthropic"))
+	if err != nil {
+		t.Fatalf("SynthesizeWorkload: %v", err)
+	}
+	if len(files) != 1 {
+		t.Fatalf("expected exactly 1 emitted file (ExternalName Service), got %d", len(files))
+	}
+	goldenCheck(t, "reference-externalname", files[0].Body)
+}
+
+// TestSynthesizeWorkload_ReferenceRequiresEndpoint — a reference workload with no
+// endpoint halts on the shared companion validation.
+func TestSynthesizeWorkload_ReferenceRequiresEndpoint(t *testing.T) {
+	t.Parallel()
+	w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload", Form: "reference"}
+	_, err := SynthesizeWorkloadCore(w, renderer.SecretProvidesFromContext(nil), nodeCtxFor("x"))
+	if !errors.Is(err, rendercore.ErrReferenceFormRequiresEndpoint) {
+		t.Errorf("expected ErrReferenceFormRequiresEndpoint, got %v", err)
+	}
+}
+
+// TestExternalNameHost — host extraction strips scheme, path, and port.
+func TestExternalNameHost(t *testing.T) {
+	cases := map[string]string{
+		"https://api.anthropic.com:443/v1": "api.anthropic.com",
+		"api.anthropic.com":                "api.anthropic.com",
+		"http://db.internal":               "db.internal",
+		"db.internal:5432":                 "db.internal",
+	}
+	for in, want := range cases {
+		if got := externalNameHost(in); got != want {
+			t.Errorf("externalNameHost(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+// TestSynthesizeWorkload_ConditionalFormBranches — a persistence-driven
+// conditional form (form: "{{ if .values.persistence.enabled }}stateful{{ else
+// }}stateless{{ end }}") resolves upstream to a literal form before synthesis;
+// this regression confirms both branches that conditional can resolve to render
+// the expected controller AND pass Workload validation, so a component may drive
+// form from a persistence value without changing component.
+func TestSynthesizeWorkload_ConditionalFormBranches(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		form     string
+		wantKind string
+	}{
+		{"stateful", "StatefulSet"},
+		{"stateless", "Deployment"},
+	}
+	for _, tc := range cases {
+		w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload", Form: tc.form}
+		c := types.ContainerSpec{Image: "db:1.0"}
+		c.Ports.Set("db", 5432)
+		if tc.form == "stateful" {
+			c.VolumeMounts = []types.VolumeMount{{Name: "data", Path: "/var/lib/db"}}
+			w.Volumes.Set("data", types.VolumeSpec{PersistentTemplate: &types.PersistentTemplateVolume{Size: "10Gi"}})
+		}
+		w.Containers.Set("main", c)
+		svc := types.ServiceSpec{Type: "Headless"}
+		svc.Ports.Set("db", 5432)
+		w.Services.Set("db", svc)
+
+		if err := validator.ValidateWorkload(w, "", "", ""); err != nil {
+			t.Fatalf("form %q: ValidateWorkload: %v", tc.form, err)
+		}
+		files, err := SynthesizeWorkloadCore(w, renderer.SecretProvidesFromContext(nil), nodeCtxFor("db"))
+		if err != nil {
+			t.Fatalf("form %q: SynthesizeWorkload: %v", tc.form, err)
+		}
+		if !strings.Contains(string(files[0].Body), "kind: "+tc.wantKind) {
+			t.Errorf("form %q: expected kind %q in first emitted file, got:\n%s", tc.form, tc.wantKind, files[0].Body)
+		}
+	}
+}

@@ -1,0 +1,18 @@
+services:
+  api:
+    image: app:1.0
+    labels:
+      aggrega.ai/aggregate-name: test-agg
+      aggrega.ai/boundary-path: default
+      aggrega.ai/compiler-version: test
+      aggrega.ai/component-id: api
+      aggrega.ai/environment: test-env
+    stop_grace_period: 45s
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
+    dns_search:
+      - svc.cluster.local
+    extra_hosts:
+      - db.internal:10.0.0.1
+      - cache.internal:10.0.0.1

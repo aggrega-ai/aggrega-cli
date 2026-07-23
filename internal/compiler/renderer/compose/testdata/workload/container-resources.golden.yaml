@@ -1,0 +1,17 @@
+services:
+  api:
+    image: app:1.0
+    labels:
+      aggrega.ai/aggregate-name: test-agg
+      aggrega.ai/boundary-path: default
+      aggrega.ai/compiler-version: test
+      aggrega.ai/component-id: api
+      aggrega.ai/environment: test-env
+    deploy:
+      resources:
+        limits:
+          cpus: "1"
+          memory: "268435456"
+        reservations:
+          cpus: "0.25"
+          memory: "134217728"

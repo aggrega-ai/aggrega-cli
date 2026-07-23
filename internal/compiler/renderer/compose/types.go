@@ -24,6 +24,7 @@ type ComposeFile struct {
 // (e.g., secrets, deploy) lands as needed in future iterations.
 type Service struct {
 	Image       string                   `yaml:"image,omitempty"`
+	PullPolicy  string                   `yaml:"pull_policy,omitempty"`
 	Command     []string                 `yaml:"command,omitempty"`
 	Entrypoint  []string                 `yaml:"entrypoint,omitempty"`
 	Environment types.OrderedMap[string] `yaml:"environment,omitempty"`
@@ -41,9 +42,36 @@ type Service struct {
 	WorkingDir  string                   `yaml:"working_dir,omitempty"`
 	Privileged  bool                     `yaml:"privileged,omitempty"`
 	ReadOnly    bool                     `yaml:"read_only,omitempty"`
-	CapAdd      []string                 `yaml:"cap_add,omitempty"`
-	CapDrop     []string                 `yaml:"cap_drop,omitempty"`
-	Configs     []ServiceConfig          `yaml:"configs,omitempty"`
+	CapAdd          []string             `yaml:"cap_add,omitempty"`
+	CapDrop         []string             `yaml:"cap_drop,omitempty"`
+	Configs         []ServiceConfig      `yaml:"configs,omitempty"`
+	Deploy          *Deploy              `yaml:"deploy,omitempty"`
+	StopGracePeriod string               `yaml:"stop_grace_period,omitempty"`
+	DNS             []string             `yaml:"dns,omitempty"`
+	DNSSearch       []string             `yaml:"dns_search,omitempty"`
+	ExtraHosts      []string             `yaml:"extra_hosts,omitempty"`
+}
+
+// Deploy is the compose service deploy block. Only the resources sub-block is
+// synthesised today: it is honored by `docker compose` in non-swarm mode
+// (unlike deploy.replicas, which is swarm-only). Workload container resource
+// limits map to deploy.resources.limits and requests map to
+// deploy.resources.reservations.
+type Deploy struct {
+	Resources *DeployResources `yaml:"resources,omitempty"`
+}
+
+// DeployResources holds the compose deploy.resources limits/reservations pair.
+type DeployResources struct {
+	Limits       *ResourceQuantities `yaml:"limits,omitempty"`
+	Reservations *ResourceQuantities `yaml:"reservations,omitempty"`
+}
+
+// ResourceQuantities is a compose deploy.resources cpus/memory pair. cpus is a
+// fractional-core string ("0.5", "2"); memory is an exact byte count string.
+type ResourceQuantities struct {
+	CPUs   string `yaml:"cpus,omitempty"`
+	Memory string `yaml:"memory,omitempty"`
 }
 
 // Config is a top-level compose config declaration with inline content. The

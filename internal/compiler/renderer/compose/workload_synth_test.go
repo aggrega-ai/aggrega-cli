@@ -387,6 +387,65 @@ func TestSynthesizeWorkload_PersistentTemplateRequiresStateful(t *testing.T) {
 	}
 }
 
+// TestSynthesizeWorkload_ContainerResources — container resource requests and
+// limits render to the compose deploy.resources block: requests become
+// reservations, limits become limits, cpu millicpu converts to fractional
+// cores, memory converts to an exact byte count.
+func TestSynthesizeWorkload_ContainerResources(t *testing.T) {
+	t.Parallel()
+	w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload"}
+
+	c := types.ContainerSpec{Image: "app:1.0"}
+	c.Ports.Set("web", 8080)
+	c.Resources = &types.ResourceSpec{
+		Requests: &types.ResourceList{CPU: "250m", Memory: "128Mi"},
+		Limits:   &types.ResourceList{CPU: "1", Memory: "256Mi"},
+	}
+	w.Containers.Set("main", c)
+
+	svc := types.ServiceSpec{Type: "ClusterIP"}
+	svc.Ports.Set("web", 8080)
+	w.Services.Set("api", svc)
+
+	files, err := SynthesizeWorkloadCore(w, nodeCtxFor("api"))
+	if err != nil {
+		t.Fatalf("SynthesizeWorkload: %v", err)
+	}
+	goldenCheck(t, "container-resources", files[0].Body)
+}
+
+// TestSynthesizeWorkload_LifecycleHalts — a container declaring lifecycle hooks
+// halts loudly on a compose target (compose has no lifecycle-hook primitive).
+func TestSynthesizeWorkload_LifecycleHalts(t *testing.T) {
+	t.Parallel()
+	w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload"}
+	c := types.ContainerSpec{Image: "app:1.0"}
+	c.Lifecycle = &types.LifecycleSpec{
+		PreStop: &types.LifecycleHookSpec{Exec: []string{"/bin/drain"}},
+	}
+	w.Containers.Set("main", c)
+
+	_, err := SynthesizeWorkloadCore(w, nodeCtxFor("x"))
+	if !errors.Is(err, ErrUnsupportedComposeLifecycle) {
+		t.Errorf("expected ErrUnsupportedComposeLifecycle, got %v", err)
+	}
+}
+
+// TestSynthesizeWorkload_UnconvertibleResourceQuantityHalts — a fractional
+// memory quantity has no exact compose byte count and halts rather than round.
+func TestSynthesizeWorkload_UnconvertibleResourceQuantityHalts(t *testing.T) {
+	t.Parallel()
+	w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload"}
+	c := types.ContainerSpec{Image: "app:1.0"}
+	c.Resources = &types.ResourceSpec{Limits: &types.ResourceList{Memory: "1.5Gi"}}
+	w.Containers.Set("main", c)
+
+	_, err := SynthesizeWorkloadCore(w, nodeCtxFor("x"))
+	if !errors.Is(err, ErrUnconvertibleComposeQuantity) {
+		t.Errorf("expected ErrUnconvertibleComposeQuantity, got %v", err)
+	}
+}
+
 // TestSynthesizeWorkload_ByteIdenticalAcrossRuns — determinism check.
 // Synthesizing the same Workload twice must produce byte-identical output.
 func TestSynthesizeWorkload_ByteIdenticalAcrossRuns(t *testing.T) {
@@ -403,5 +462,109 @@ func TestSynthesizeWorkload_ByteIdenticalAcrossRuns(t *testing.T) {
 	}
 	if string(files1[0].Body) != string(files2[0].Body) {
 		t.Errorf("byte-identical-across-runs guard failed:\n--- run 1 ---\n%s\n--- run 2 ---\n%s", files1[0].Body, files2[0].Body)
+	}
+}
+
+// TestSynthesizeWorkload_ImagePullPolicy — imagePullPolicy maps to the compose
+// service pull_policy (IfNotPresent → if_not_present).
+func TestSynthesizeWorkload_ImagePullPolicy(t *testing.T) {
+	t.Parallel()
+	w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload"}
+	c := types.ContainerSpec{Image: "app:1.0", ImagePullPolicy: "IfNotPresent"}
+	c.Ports.Set("web", 8080)
+	w.Containers.Set("main", c)
+
+	svc := types.ServiceSpec{Type: "ClusterIP"}
+	svc.Ports.Set("web", 8080)
+	w.Services.Set("api", svc)
+
+	files, err := SynthesizeWorkloadCore(w, nodeCtxFor("api"))
+	if err != nil {
+		t.Fatalf("SynthesizeWorkload: %v", err)
+	}
+	goldenCheck(t, "imagepullpolicy", files[0].Body)
+}
+
+// TestSynthesizeWorkload_EnvFromHalts — envFrom has no compose env-from-object
+// primitive and halts loudly.
+func TestSynthesizeWorkload_EnvFromHalts(t *testing.T) {
+	t.Parallel()
+	w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload"}
+	c := types.ContainerSpec{Image: "app:1.0"}
+	c.EnvFrom = []types.EnvFromSource{{ConfigMap: "app-config"}}
+	w.Containers.Set("main", c)
+
+	_, err := SynthesizeWorkloadCore(w, nodeCtxFor("x"))
+	if !errors.Is(err, ErrUnsupportedComposeEnvFrom) {
+		t.Errorf("expected ErrUnsupportedComposeEnvFrom, got %v", err)
+	}
+}
+
+// TestSynthesizeWorkload_PodLevelFields — terminationGracePeriodSeconds maps to
+// stop_grace_period, dnsConfig to dns/dns_search, and hostAliases to extra_hosts;
+// imagePullSecrets/priorityClassName/dnsPolicy are helm-only and omitted.
+func TestSynthesizeWorkload_PodLevelFields(t *testing.T) {
+	t.Parallel()
+	grace := 45
+	w := &types.Workload{
+		APIVersion:                    "aggrega.ai/v1alpha1",
+		Kind:                          "Workload",
+		ImagePullSecrets:              []string{"regcred"},   // helm-only; omitted on compose
+		PriorityClassName:             "high-priority",       // helm-only; omitted on compose
+		DNSPolicy:                     "None",                // helm-only; omitted on compose
+		TerminationGracePeriodSeconds: &grace,
+		DNSConfig: &types.DNSConfig{
+			Nameservers: []string{"1.1.1.1", "8.8.8.8"},
+			Searches:    []string{"svc.cluster.local"},
+		},
+		HostAliases: []types.HostAlias{
+			{IP: "10.0.0.1", Hostnames: []string{"db.internal", "cache.internal"}},
+		},
+	}
+	c := types.ContainerSpec{Image: "app:1.0"}
+	c.Ports.Set("web", 8080)
+	w.Containers.Set("main", c)
+	svc := types.ServiceSpec{Type: "ClusterIP"}
+	svc.Ports.Set("web", 8080)
+	w.Services.Set("api", svc)
+
+	files, err := SynthesizeWorkloadCore(w, nodeCtxFor("api"))
+	if err != nil {
+		t.Fatalf("SynthesizeWorkload: %v", err)
+	}
+	goldenCheck(t, "pod-level-fields", files[0].Body)
+}
+
+// TestSynthesizeWorkload_ReferenceEmitsNoFragment — a form: reference workload
+// has no compose analog; compose emits no fragment (the endpoint reaches
+// consumers through the recipe provides).
+func TestSynthesizeWorkload_ReferenceEmitsNoFragment(t *testing.T) {
+	t.Parallel()
+	w := &types.Workload{
+		APIVersion: "aggrega.ai/v1alpha1",
+		Kind:       "Workload",
+		Form:       "reference",
+		Endpoint:   "https://api.anthropic.com",
+		Credential: &types.Credential{From: "api_key", Env: "ANTHROPIC_API_KEY"},
+	}
+	files, err := SynthesizeWorkloadCore(w, nodeCtxFor("anthropic"))
+	if err != nil {
+		t.Fatalf("SynthesizeWorkload: %v", err)
+	}
+	if len(files) != 0 {
+		t.Errorf("expected no fragment for a reference workload, got %d files", len(files))
+	}
+}
+
+// TestSynthesizeWorkload_EndpointRequiresReferenceForm — an endpoint on a
+// non-reference form halts on the shared companion validation.
+func TestSynthesizeWorkload_EndpointRequiresReferenceForm(t *testing.T) {
+	t.Parallel()
+	w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload", Endpoint: "api.example.com"}
+	c := types.ContainerSpec{Image: "app:1.0"}
+	w.Containers.Set("main", c)
+	_, err := SynthesizeWorkloadCore(w, nodeCtxFor("x"))
+	if !errors.Is(err, rendercore.ErrEndpointRequiresReferenceForm) {
+		t.Errorf("expected ErrEndpointRequiresReferenceForm, got %v", err)
 	}
 }

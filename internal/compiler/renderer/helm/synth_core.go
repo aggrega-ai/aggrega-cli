@@ -54,6 +54,7 @@ package helm
 import (
 	"fmt"
 	"sort"
+	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
@@ -93,6 +94,14 @@ func SynthesizeWorkloadCore(
 	// The controller shape is chosen by the workload's form; empty is
 	// stateless.
 	form := rendercore.NormalizeWorkloadForm(w.Form)
+
+	// A reference workload has no compute: it emits a single ExternalName
+	// Service aliasing an in-cluster name to the external endpoint. No
+	// controller, no PVCs, no Secret (the credential stays a pointer carried to
+	// consumers via provides, per the AOT boundary).
+	if form == rendercore.WorkloadFormReference {
+		return synthesizeReference(w, nodeCtx)
+	}
 
 	labels := buildAggregaLabels(nodeCtx)
 	annotations := buildAggregaAnnotations(nodeCtx)
@@ -287,6 +296,54 @@ func SynthesizeWorkloadCore(
 	return out, nil
 }
 
+// synthesizeReference emits the render shape for a form: reference workload —
+// one ExternalName Service aliasing an in-cluster name (the component id) to the
+// external endpoint host, with the optional port. It emits no controller and no
+// Secret: the credential is a pointer the recipe's provides carry to consumers
+// (AOT boundary — the secret value is never resolved here).
+func synthesizeReference(w *types.Workload, nodeCtx rendercore.NodeRenderContext) ([]rendercore.EmittedFile, error) {
+	labels := buildAggregaLabels(nodeCtx)
+	annotations := buildAggregaAnnotations(nodeCtx)
+	componentID := rendercore.ProvenanceComponentID(nodeCtx)
+	resourceLabels := mergeLabels(map[string]string{"app": componentID}, labels)
+	namespace := rendercore.NamespaceFromAnnotations(nodeCtx.Annotations)
+
+	spec := ExternalNameServiceSpec{
+		Type:         "ExternalName",
+		ExternalName: externalNameHost(w.Endpoint),
+	}
+	if w.Port != 0 {
+		spec.Ports = []ExternalNamePort{{Port: int32(w.Port)}}
+	}
+	svc := ExternalNameService{
+		APIVersion: k8sServiceAPIVersion,
+		Kind:       "Service",
+		Metadata:   ObjectMeta{Name: componentID, Namespace: namespace, Labels: resourceLabels, Annotations: nilIfEmpty(annotations)},
+		Spec:       spec,
+	}
+	body, err := marshalDeterministic(&svc, nodeCtx.YAMLIndent)
+	if err != nil {
+		return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("helm: node %q externalname service marshal", nodeCtx.NodeID))
+	}
+	return []rendercore.EmittedFile{{Name: componentID + "-service.yaml", Body: body}}, nil
+}
+
+// externalNameHost extracts the bare DNS host from an endpoint that may carry a
+// scheme, a path, or a port. K8s externalName must be a bare host.
+func externalNameHost(endpoint string) string {
+	s := endpoint
+	if i := strings.Index(s, "://"); i >= 0 {
+		s = s[i+3:]
+	}
+	if i := strings.IndexByte(s, '/'); i >= 0 {
+		s = s[:i]
+	}
+	if i := strings.IndexByte(s, ':'); i >= 0 {
+		s = s[:i]
+	}
+	return s
+}
+
 // jobValidTemplate returns a copy of the pod template with a Job-valid
 // restartPolicy. A Job (and a CronJob's per-run Job) pod template restartPolicy
 // must be Never or OnFailure; Always (the pod default) is invalid. An author-set
@@ -373,10 +430,11 @@ func translateInitContainers(w *types.Workload, nodeID string, secretProvides ma
 // Container. Author-order preserved across ports / variables / secrets.
 func translateContainer(name string, c types.ContainerSpec, nodeID string, secretProvides map[string]types.OrderedMap[string]) (Container, error) {
 	out := Container{
-		Name:    sanitizeContainerName(name),
-		Image:   c.Image,
-		Command: c.Command,
-		Args:    c.Args,
+		Name:            sanitizeContainerName(name),
+		Image:           c.Image,
+		ImagePullPolicy: c.ImagePullPolicy,
+		Command:         c.Command,
+		Args:            c.Args,
 	}
 
 	// Container ports (named) — preserves Workload.Containers.<n>.Ports
@@ -425,6 +483,27 @@ func translateContainer(name string, c types.ContainerSpec, nodeID string, secre
 				Name:      nodeID + "-secret-" + ref.From,
 				MountPath: ref.Path,
 				ReadOnly:  true,
+			})
+		}
+	}
+
+	// Bulk env-from-source (envFrom), author order preserved. A configMap
+	// source becomes a configMapRef by name; a secret source becomes a
+	// secretRef whose name resolves from the slot's provides. Each carries the
+	// entry's optional prefix.
+	for _, ef := range c.EnvFrom {
+		switch {
+		case ef.ConfigMap != "":
+			out.EnvFrom = append(out.EnvFrom, EnvFromSource{
+				ConfigMapRef: &LocalObjectReference{Name: ef.ConfigMap},
+				Prefix:       ef.Prefix,
+			})
+		case ef.Secret != "":
+			provides := secretProvides[ef.Secret]
+			secretName, _ := provides.Get("name")
+			out.EnvFrom = append(out.EnvFrom, EnvFromSource{
+				SecretRef: &LocalObjectReference{Name: secretName},
+				Prefix:    ef.Prefix,
 			})
 		}
 	}
@@ -707,7 +786,7 @@ func translateVolumeClaimTemplates(w *types.Workload, nodeID string) []Persisten
 			APIVersion: k8sPVCAPIVersion,
 			Kind:       "PersistentVolumeClaim",
 			Metadata:   ObjectMeta{Name: name},
-			Spec:       buildPVCSpec(v.PersistentTemplate.Size, v.PersistentTemplate.Class),
+			Spec:       buildPVCSpec(v.PersistentTemplate.Size, v.PersistentTemplate.Class, v.PersistentTemplate.AccessModes),
 		}
 		_ = nodeID // pvc names inside volumeClaimTemplates are local to the
 		// StatefulSet; no nodeID prefix needed.
@@ -733,7 +812,7 @@ func translatePersistentPVCs(w *types.Workload, nodeID, namespace string, labels
 				Labels:      labels,
 				Annotations: annotations,
 			},
-			Spec: buildPVCSpec(v.Persistent.Size, v.Persistent.Class),
+			Spec: buildPVCSpec(v.Persistent.Size, v.Persistent.Class, v.Persistent.AccessModes),
 		}
 		out = append(out, pvc)
 	}
@@ -741,10 +820,16 @@ func translatePersistentPVCs(w *types.Workload, nodeID, namespace string, labels
 }
 
 // buildPVCSpec creates the PersistentVolumeClaimSpec from a size + optional
-// storage class. AccessModes default to ReadWriteOnce.
-func buildPVCSpec(size, class string) PersistentVolumeClaimSpec {
+// storage class + optional access modes. When accessModes is empty it defaults
+// to [ReadWriteOnce]; an author-supplied list is emitted verbatim (author
+// order preserved).
+func buildPVCSpec(size, class string, accessModes []string) PersistentVolumeClaimSpec {
+	modes := accessModes
+	if len(modes) == 0 {
+		modes = []string{"ReadWriteOnce"}
+	}
 	spec := PersistentVolumeClaimSpec{
-		AccessModes: []string{"ReadWriteOnce"},
+		AccessModes: modes,
 		Resources: ResourceRequirements{
 			Requests: map[string]string{"storage": size},
 		},
@@ -852,6 +937,25 @@ func applyPodLevelFields(spec *PodSpec, w *types.Workload) {
 	}
 	if w.ServiceAccount != "" {
 		spec.ServiceAccountName = w.ServiceAccount
+	}
+	for _, name := range w.ImagePullSecrets {
+		spec.ImagePullSecrets = append(spec.ImagePullSecrets, LocalObjectReference{Name: name})
+	}
+	spec.PriorityClassName = w.PriorityClassName
+	if w.TerminationGracePeriodSeconds != nil {
+		v := int64(*w.TerminationGracePeriodSeconds)
+		spec.TerminationGracePeriodSeconds = &v
+	}
+	spec.DNSPolicy = w.DNSPolicy
+	if w.DNSConfig != nil {
+		spec.DNSConfig = &PodDNSConfig{
+			Nameservers: w.DNSConfig.Nameservers,
+			Searches:    w.DNSConfig.Searches,
+			Options:     w.DNSConfig.Options,
+		}
+	}
+	for _, ha := range w.HostAliases {
+		spec.HostAliases = append(spec.HostAliases, HostAlias{IP: ha.IP, Hostnames: ha.Hostnames})
 	}
 
 	// RestartPolicy: bubble up the first container's restartPolicy when

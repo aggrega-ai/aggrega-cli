@@ -62,6 +62,12 @@ func SynthesizeWorkloadCore(
 	// adds the named volume). daemon, scheduled, and task have no clean
 	// single-host compose mapping and halt loudly.
 	switch rendercore.NormalizeWorkloadForm(w.Form) {
+	case rendercore.WorkloadFormReference:
+		// A reference workload has no compute, and compose has no ExternalName
+		// analog. The endpoint (and optional credential) reach consumers through
+		// the recipe's provides — the injection contract — so compose emits no
+		// fragment for the reference node itself.
+		return nil, nil
 	case rendercore.WorkloadFormStateless, rendercore.WorkloadFormStateful:
 		// supported
 	default:
@@ -182,6 +188,49 @@ func translateContainer(
 	svc := Service{
 		Image:  c.Image,
 		Labels: buildAggregaLabels(nodeCtx),
+	}
+
+	// Lifecycle hooks have no compose primitive. A silently-unrun postStart/
+	// preStop hook is a correctness surprise, so a declared lifecycle halts
+	// loudly rather than drop the hook (the loud-halt discipline for a shape
+	// compose cannot express).
+	if c.Lifecycle != nil {
+		return Service{}, cerrors.New(cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID},
+			fmt.Sprintf("compose: node %q declares container lifecycle hooks; compose has no lifecycle-hook primitive", nodeCtx.NodeID),
+			nil, ErrUnsupportedComposeLifecycle)
+	}
+
+	// Container resource requests/limits → compose deploy.resources
+	// (reservations/limits). Honored by docker compose in non-swarm mode.
+	deploy, err := translateComposeResources(c.Resources, nodeCtx.NodeID)
+	if err != nil {
+		return Service{}, err
+	}
+	svc.Deploy = deploy
+
+	// envFrom (bulk env from a ConfigMap or Secret object) has no compose
+	// primitive; a source reference is not a host file, so any env_file
+	// reinterpretation would silently change meaning. Halt loudly.
+	if len(c.EnvFrom) > 0 {
+		return Service{}, cerrors.New(cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID},
+			fmt.Sprintf("compose: node %q declares container envFrom; compose has no env-from-object primitive", nodeCtx.NodeID),
+			nil, ErrUnsupportedComposeEnvFrom)
+	}
+
+	// imagePullPolicy → compose pull_policy (schema-validated enum).
+	switch c.ImagePullPolicy {
+	case "":
+		// unset — leave the compose default
+	case "Always":
+		svc.PullPolicy = "always"
+	case "Never":
+		svc.PullPolicy = "never"
+	case "IfNotPresent":
+		svc.PullPolicy = "if_not_present"
+	default:
+		return Service{}, cerrors.New(cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID},
+			fmt.Sprintf("compose: node %q unknown imagePullPolicy %q", nodeCtx.NodeID, c.ImagePullPolicy),
+			nil, nil)
 	}
 
 	// K8s command/args map to compose entrypoint/command, not one-to-one:
@@ -471,6 +520,33 @@ func applyContainerSecurityContext(svc *Service, sc *types.ContainerSecurityCont
 //     level (compose `deploy.replicas` is swarm-only; out of scope for the
 //     current single-host compose target)
 func applyPodLevelFieldsToService(svc *Service, w *types.Workload) {
+	applyPodUser(svc, w)
+
+	// terminationGracePeriodSeconds → stop_grace_period ("<n>s").
+	if w.TerminationGracePeriodSeconds != nil {
+		svc.StopGracePeriod = fmt.Sprintf("%ds", *w.TerminationGracePeriodSeconds)
+	}
+
+	// dnsConfig nameservers/searches → dns / dns_search (author order). dnsPolicy
+	// and dnsConfig.options have no compose analog and are omitted (documented on
+	// the schema).
+	if w.DNSConfig != nil {
+		svc.DNS = w.DNSConfig.Nameservers
+		svc.DNSSearch = w.DNSConfig.Searches
+	}
+
+	// hostAliases → extra_hosts, one "hostname:ip" entry per hostname, in
+	// author order.
+	for _, ha := range w.HostAliases {
+		for _, host := range ha.Hostnames {
+			svc.ExtraHosts = append(svc.ExtraHosts, host+":"+ha.IP)
+		}
+	}
+}
+
+// applyPodUser sets the compose service user from the pod-level security
+// context, unless a container-level User already won.
+func applyPodUser(svc *Service, w *types.Workload) {
 	if svc.User != "" {
 		return // container-level User wins
 	}

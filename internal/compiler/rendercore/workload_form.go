@@ -20,6 +20,7 @@ const (
 	WorkloadFormDaemon    = "daemon"
 	WorkloadFormScheduled = "scheduled"
 	WorkloadFormTask      = "task"
+	WorkloadFormReference = "reference"
 )
 
 // ErrPersistentTemplateRequiresStatefulForm is the cross-provider companion
@@ -45,6 +46,20 @@ var ErrScheduledFormRequiresSchedule = errors.New("form: scheduled requires a sc
 // rather than silently ignore the schedule. Surfaced wrapped in a CompilerError
 // via cerrors so errors.Is matches.
 var ErrScheduleRequiresScheduledForm = errors.New("schedule requires form: scheduled")
+
+// ErrReferenceFormRequiresEndpoint is the companion constraint that a
+// form: reference workload must declare an endpoint: a reference is an external
+// endpoint pointer with no compute, and without an endpoint there is nothing to
+// point at. Surfaced wrapped in a CompilerError via cerrors so errors.Is
+// matches.
+var ErrReferenceFormRequiresEndpoint = errors.New("form: reference requires an endpoint")
+
+// ErrEndpointRequiresReferenceForm is the reverse companion constraint: an
+// endpoint (and its companion port/credential) is only meaningful on a
+// form: reference workload. Declaring it on any other form halts loudly rather
+// than silently ignore it. Surfaced wrapped in a CompilerError via cerrors so
+// errors.Is matches.
+var ErrEndpointRequiresReferenceForm = errors.New("endpoint requires form: reference")
 
 // ErrInvalidCronSchedule is emitted when a schedule fails the structural cron
 // check: it is neither one of the accepted macros (@hourly, @daily, @weekly,
@@ -83,6 +98,14 @@ func ValidateWorkloadForm(w *types.Workload, nodeID string) error {
 	}
 
 	switch {
+	case form == WorkloadFormReference && w.Endpoint == "":
+		return cerrors.New(cerrors.TranslationError, cerrors.SourceLocation{File: nodeID},
+			"workload is form: reference but declares no endpoint; set endpoint to the external host or URL the reference points at",
+			nil, ErrReferenceFormRequiresEndpoint)
+	case form != WorkloadFormReference && w.Endpoint != "":
+		return cerrors.New(cerrors.TranslationError, cerrors.SourceLocation{File: nodeID},
+			"workload declares an endpoint but is not form: reference; declare form: reference or remove the endpoint",
+			nil, ErrEndpointRequiresReferenceForm)
 	case form == WorkloadFormScheduled && w.Schedule == "":
 		return cerrors.New(cerrors.TranslationError, cerrors.SourceLocation{File: nodeID},
 			"workload is form: scheduled but declares no schedule; set schedule to a 5-field cron expression or an @-macro (e.g. @daily)",

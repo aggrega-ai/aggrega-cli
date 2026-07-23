@@ -238,3 +238,52 @@ func TestValidateWorkload_FindingsCarryFieldPath(t *testing.T) {
 		t.Errorf("error should reference the offending field, got: %q", msg)
 	}
 }
+
+// ----- Reference form (conditional schema) -----
+
+func referenceWorkload() *types.Workload {
+	return &types.Workload{
+		APIVersion: "aggrega.ai/v1alpha1",
+		Kind:       "Workload",
+		Form:       "reference",
+		Endpoint:   "https://api.anthropic.com",
+		Port:       443,
+		Credential: &types.Credential{From: "api_key", Env: "ANTHROPIC_API_KEY"},
+	}
+}
+
+func TestValidateWorkload_Reference_NoContainers_Passes(t *testing.T) {
+	t.Parallel()
+	if err := validator.ValidateWorkload(referenceWorkload(), "", "", ""); err != nil {
+		t.Fatalf("reference workload with endpoint and no containers should pass, got %v", err)
+	}
+}
+
+func TestValidateWorkload_Reference_NoEndpoint_Fails(t *testing.T) {
+	t.Parallel()
+	w := referenceWorkload()
+	w.Endpoint = ""
+	w.Port = 0
+	w.Credential = nil
+	if err := validator.ValidateWorkload(w, "", "", ""); !errors.Is(err, validator.ErrWorkloadValidation) {
+		t.Fatalf("reference without endpoint should fail schema, got %v", err)
+	}
+}
+
+func TestValidateWorkload_Reference_WithContainers_Fails(t *testing.T) {
+	t.Parallel()
+	w := referenceWorkload()
+	w.Containers.Set("main", types.ContainerSpec{Image: "app:1.0"})
+	if err := validator.ValidateWorkload(w, "", "", ""); !errors.Is(err, validator.ErrWorkloadValidation) {
+		t.Fatalf("reference with containers should fail schema, got %v", err)
+	}
+}
+
+func TestValidateWorkload_NonReference_WithEndpoint_Fails(t *testing.T) {
+	t.Parallel()
+	w := minimalWorkload() // stateless with containers
+	w.Endpoint = "api.example.com"
+	if err := validator.ValidateWorkload(w, "", "", ""); !errors.Is(err, validator.ErrWorkloadValidation) {
+		t.Fatalf("non-reference with endpoint should fail schema, got %v", err)
+	}
+}

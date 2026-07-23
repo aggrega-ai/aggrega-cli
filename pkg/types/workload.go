@@ -44,6 +44,48 @@ type Workload struct {
 	Scheduling         *Scheduling               `json:"scheduling,omitempty" yaml:"scheduling,omitempty"`
 	PodSecurityContext *PodSecurityContext       `json:"podSecurityContext,omitempty" yaml:"podSecurityContext,omitempty"`
 	ServiceAccount     string                    `json:"serviceAccount,omitempty" yaml:"serviceAccount,omitempty"`
+	// Pod-level fields. imagePullSecrets, priorityClassName, and dnsPolicy are
+	// helm-only (compose has no in-file analog and omits them, documented on
+	// the schema). terminationGracePeriodSeconds, dnsConfig, and hostAliases
+	// map to compose stop_grace_period, dns/dns_search, and extra_hosts.
+	ImagePullSecrets              []string    `json:"imagePullSecrets,omitempty" yaml:"imagePullSecrets,omitempty"`
+	PriorityClassName             string      `json:"priorityClassName,omitempty" yaml:"priorityClassName,omitempty"`
+	TerminationGracePeriodSeconds *int        `json:"terminationGracePeriodSeconds,omitempty" yaml:"terminationGracePeriodSeconds,omitempty"`
+	DNSPolicy                     string      `json:"dnsPolicy,omitempty" yaml:"dnsPolicy,omitempty"`
+	DNSConfig                     *DNSConfig  `json:"dnsConfig,omitempty" yaml:"dnsConfig,omitempty"`
+	HostAliases                   []HostAlias `json:"hostAliases,omitempty" yaml:"hostAliases,omitempty"`
+	// Reference-form fields (form: reference only — an external endpoint with
+	// no compute). Endpoint is the external host or URL, piped through as a
+	// deterministic pointer (AOT: never resolved). Port is optional. Credential
+	// is an optional secretsSchema-slot pointer carried to consumers via
+	// provides — the secret value is never resolved here.
+	Endpoint   string      `json:"endpoint,omitempty" yaml:"endpoint,omitempty"`
+	Port       int         `json:"port,omitempty" yaml:"port,omitempty"`
+	Credential *Credential `json:"credential,omitempty" yaml:"credential,omitempty"`
+}
+
+// Credential is a reference-form credential pointer: a secretsSchema slot
+// (From) delivered to consumers as an environment variable (Env). Per the AOT
+// boundary the secret value is never resolved; this is a pointer only.
+type Credential struct {
+	From string `json:"from,omitempty" yaml:"from,omitempty"`
+	Env  string `json:"env,omitempty" yaml:"env,omitempty"`
+}
+
+// DNSConfig mirrors the K8s pod dnsConfig shape. Nameservers and Searches have
+// compose analogs (dns / dns_search); Options is opaque K8s-shaped pass-through
+// with no compose analog.
+type DNSConfig struct {
+	Nameservers []string `json:"nameservers,omitempty" yaml:"nameservers,omitempty"`
+	Searches    []string `json:"searches,omitempty" yaml:"searches,omitempty"`
+	Options     []any    `json:"options,omitempty" yaml:"options,omitempty"`
+}
+
+// HostAlias is a static hostname-to-IP mapping. helm emits pod.hostAliases;
+// compose emits one extra_hosts entry per hostname.
+type HostAlias struct {
+	IP        string   `json:"ip,omitempty" yaml:"ip,omitempty"`
+	Hostnames []string `json:"hostnames,omitempty" yaml:"hostnames,omitempty"`
 }
 
 // WorkloadMetadata carries optional labels and annotations on the
@@ -77,10 +119,12 @@ type WorkloadMetadata struct {
 type ContainerSpec struct {
 	Name            string                    `json:"name,omitempty" yaml:"name,omitempty"`
 	Image           string                    `json:"image,omitempty" yaml:"image,omitempty"`
+	ImagePullPolicy string                    `json:"imagePullPolicy,omitempty" yaml:"imagePullPolicy,omitempty"`
 	Command         []string                  `json:"command,omitempty" yaml:"command,omitempty"`
 	Args            []string                  `json:"args,omitempty" yaml:"args,omitempty"`
 	Variables       OrderedMap[string]        `json:"variables,omitempty,omitzero" yaml:"variables,omitempty"`
 	Secrets         OrderedMap[SecretRef]     `json:"secrets,omitempty,omitzero" yaml:"secrets,omitempty"`
+	EnvFrom         []EnvFromSource           `json:"envFrom,omitempty" yaml:"envFrom,omitempty"`
 	Ports           OrderedMap[int]           `json:"ports,omitempty,omitzero" yaml:"ports,omitempty"`
 	Resources       *ResourceSpec             `json:"resources,omitempty" yaml:"resources,omitempty"`
 	Health          *HealthSpec               `json:"health,omitempty" yaml:"health,omitempty"`
@@ -88,6 +132,17 @@ type ContainerSpec struct {
 	RestartPolicy   string                    `json:"restartPolicy,omitempty" yaml:"restartPolicy,omitempty"`
 	Lifecycle       *LifecycleSpec            `json:"lifecycle,omitempty" yaml:"lifecycle,omitempty"`
 	SecurityContext *ContainerSecurityContext `json:"securityContext,omitempty" yaml:"securityContext,omitempty"`
+}
+
+// EnvFromSource imports a whole ConfigMap or Secret source as environment
+// variables. Exactly one of ConfigMap / Secret is set (schema-enforced
+// disjunction, not a Go-type constraint). ConfigMap names a ConfigMap source;
+// Secret names a secretsSchema slot whose provides resolve the Secret name.
+// Prefix, when set, is prepended to every imported variable name.
+type EnvFromSource struct {
+	ConfigMap string `json:"configMap,omitempty" yaml:"configMap,omitempty"`
+	Secret    string `json:"secret,omitempty" yaml:"secret,omitempty"`
+	Prefix    string `json:"prefix,omitempty" yaml:"prefix,omitempty"`
 }
 
 // SecretRef references a Component secretsSchema slot. As is "env" or "file";
@@ -140,10 +195,13 @@ type SecretVolume struct {
 	Items  []any  `json:"items,omitempty" yaml:"items,omitempty"`
 }
 
-// PersistentVolume — Deployment-compatible PVC.
+// PersistentVolume — Deployment-compatible PVC. AccessModes, when set, override
+// the default [ReadWriteOnce] on the helm PVC; compose has no access-mode
+// concept.
 type PersistentVolume struct {
-	Size  string `json:"size" yaml:"size"`
-	Class string `json:"class,omitempty" yaml:"class,omitempty"`
+	Size        string   `json:"size" yaml:"size"`
+	Class       string   `json:"class,omitempty" yaml:"class,omitempty"`
+	AccessModes []string `json:"accessModes,omitempty" yaml:"accessModes,omitempty"`
 }
 
 // PersistentTemplateVolume — per-replica claim template (a StatefulSet
@@ -151,8 +209,9 @@ type PersistentVolume struct {
 // form: stateful; declaring it on a workload of any other form is a
 // loud error.
 type PersistentTemplateVolume struct {
-	Size  string `json:"size" yaml:"size"`
-	Class string `json:"class,omitempty" yaml:"class,omitempty"`
+	Size        string   `json:"size" yaml:"size"`
+	Class       string   `json:"class,omitempty" yaml:"class,omitempty"`
+	AccessModes []string `json:"accessModes,omitempty" yaml:"accessModes,omitempty"`
 }
 
 // ServiceSpec describes one Service in a Workload. Type is one of

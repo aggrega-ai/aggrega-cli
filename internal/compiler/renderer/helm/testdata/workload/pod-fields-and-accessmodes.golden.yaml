@@ -1,0 +1,104 @@
+--- db-statefulset.yaml ---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: db
+  labels:
+    aggrega.ai/aggregate-name: test-agg
+    aggrega.ai/compiler-version: test
+    aggrega.ai/component-id: db
+    aggrega.ai/environment: test-env
+    app: db
+    app.kubernetes.io/name: db
+  annotations:
+    aggrega.ai/boundary-path: default
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: db
+  serviceName: db-db
+  template:
+    metadata:
+      name: ""
+      labels:
+        aggrega.ai/aggregate-name: test-agg
+        aggrega.ai/compiler-version: test
+        aggrega.ai/component-id: db
+        aggrega.ai/environment: test-env
+        app: db
+        app.kubernetes.io/name: db
+    spec:
+      containers:
+        - name: main
+          image: db:1.0
+          ports:
+            - name: db
+              containerPort: 5432
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/db
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: db-data
+      imagePullSecrets:
+        - name: regcred
+        - name: regcred-2
+      priorityClassName: high-priority
+      terminationGracePeriodSeconds: 45
+      dnsPolicy: None
+      dnsConfig:
+        nameservers:
+          - 1.1.1.1
+          - 8.8.8.8
+        searches:
+          - svc.cluster.local
+      hostAliases:
+        - ip: 10.0.0.1
+          hostnames:
+            - db.internal
+            - cache.internal
+--- db-data-pvc.yaml ---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: db-data
+  labels:
+    aggrega.ai/aggregate-name: test-agg
+    aggrega.ai/compiler-version: test
+    aggrega.ai/component-id: db
+    aggrega.ai/environment: test-env
+    app: db
+    app.kubernetes.io/name: db
+  annotations:
+    aggrega.ai/boundary-path: default
+spec:
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 10Gi
+--- db-db-service.yaml ---
+apiVersion: v1
+kind: Service
+metadata:
+  name: db-db
+  labels:
+    aggrega.ai/aggregate-name: test-agg
+    aggrega.ai/compiler-version: test
+    aggrega.ai/component-id: db
+    aggrega.ai/environment: test-env
+    app: db
+    app.kubernetes.io/name: db
+  annotations:
+    aggrega.ai/boundary-path: default
+spec:
+  type: ClusterIP
+  clusterIP: None
+  selector:
+    app: db
+  ports:
+    - name: db
+      port: 5432
+      targetPort: db

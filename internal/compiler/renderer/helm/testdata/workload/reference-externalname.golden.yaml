@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: anthropic
+  labels:
+    aggrega.ai/aggregate-name: test-agg
+    aggrega.ai/compiler-version: test
+    aggrega.ai/component-id: anthropic
+    aggrega.ai/environment: test-env
+    app: anthropic
+    app.kubernetes.io/name: anthropic
+  annotations:
+    aggrega.ai/boundary-path: default
+spec:
+  type: ExternalName
+  externalName: api.anthropic.com
+  ports:
+    - port: 443

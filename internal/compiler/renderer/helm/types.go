@@ -100,6 +100,28 @@ type Service struct {
 	Spec       ServiceSpec `yaml:"spec"`
 }
 
+// ExternalNameService is a v1 Service of type ExternalName — the render shape
+// for a form: reference workload. It CNAMEs an in-cluster name to an external
+// host and carries no selector or clusterIP.
+type ExternalNameService struct {
+	APIVersion string                  `yaml:"apiVersion"`
+	Kind       string                  `yaml:"kind"`
+	Metadata   ObjectMeta              `yaml:"metadata"`
+	Spec       ExternalNameServiceSpec `yaml:"spec"`
+}
+
+// ExternalNameServiceSpec is the reduced spec for an ExternalName Service.
+type ExternalNameServiceSpec struct {
+	Type         string             `yaml:"type"`
+	ExternalName string             `yaml:"externalName"`
+	Ports        []ExternalNamePort `yaml:"ports,omitempty"`
+}
+
+// ExternalNamePort is a single port on an ExternalName Service.
+type ExternalNamePort struct {
+	Port int32 `yaml:"port"`
+}
+
 // ObjectMeta carries K8s resource metadata.
 type ObjectMeta struct {
 	Name        string            `yaml:"name"`
@@ -150,16 +172,36 @@ type PodTemplateSpec struct {
 // from the YAML output. The Workload synthesizer populates the additional
 // fields per the parsed Workload's pod-level shape.
 type PodSpec struct {
-	Containers                []Container         `yaml:"containers"`
-	InitContainers            []Container         `yaml:"initContainers,omitempty"`
-	Volumes                   []Volume            `yaml:"volumes,omitempty"`
-	NodeSelector              map[string]string   `yaml:"nodeSelector,omitempty"`
-	Affinity                  any                 `yaml:"affinity,omitempty"`
-	Tolerations               []any               `yaml:"tolerations,omitempty"`
-	TopologySpreadConstraints []any               `yaml:"topologySpreadConstraints,omitempty"`
-	SecurityContext           *PodSecurityContext `yaml:"securityContext,omitempty"`
-	ServiceAccountName        string              `yaml:"serviceAccountName,omitempty"`
-	RestartPolicy             string              `yaml:"restartPolicy,omitempty"`
+	Containers                    []Container            `yaml:"containers"`
+	InitContainers                []Container            `yaml:"initContainers,omitempty"`
+	Volumes                       []Volume               `yaml:"volumes,omitempty"`
+	NodeSelector                  map[string]string      `yaml:"nodeSelector,omitempty"`
+	Affinity                      any                    `yaml:"affinity,omitempty"`
+	Tolerations                   []any                  `yaml:"tolerations,omitempty"`
+	TopologySpreadConstraints     []any                  `yaml:"topologySpreadConstraints,omitempty"`
+	SecurityContext               *PodSecurityContext    `yaml:"securityContext,omitempty"`
+	ServiceAccountName            string                 `yaml:"serviceAccountName,omitempty"`
+	ImagePullSecrets              []LocalObjectReference `yaml:"imagePullSecrets,omitempty"`
+	PriorityClassName             string                 `yaml:"priorityClassName,omitempty"`
+	TerminationGracePeriodSeconds *int64                 `yaml:"terminationGracePeriodSeconds,omitempty"`
+	DNSPolicy                     string                 `yaml:"dnsPolicy,omitempty"`
+	DNSConfig                     *PodDNSConfig          `yaml:"dnsConfig,omitempty"`
+	HostAliases                   []HostAlias            `yaml:"hostAliases,omitempty"`
+	RestartPolicy                 string                 `yaml:"restartPolicy,omitempty"`
+}
+
+// PodDNSConfig mirrors the K8s pod dnsConfig shape (nameservers, searches,
+// options).
+type PodDNSConfig struct {
+	Nameservers []string `yaml:"nameservers,omitempty"`
+	Searches    []string `yaml:"searches,omitempty"`
+	Options     []any    `yaml:"options,omitempty"`
+}
+
+// HostAlias is a static hostname-to-IP mapping in the pod spec.
+type HostAlias struct {
+	IP        string   `yaml:"ip,omitempty"`
+	Hostnames []string `yaml:"hostnames,omitempty"`
 }
 
 // Container is one workload container. Sourceless.go uses only
@@ -168,6 +210,7 @@ type PodSpec struct {
 type Container struct {
 	Name            string                    `yaml:"name"`
 	Image           string                    `yaml:"image"`
+	ImagePullPolicy string                    `yaml:"imagePullPolicy,omitempty"`
 	Command         []string                  `yaml:"command,omitempty"`
 	Args            []string                  `yaml:"args,omitempty"`
 	Ports           []ContainerPort           `yaml:"ports,omitempty"`
@@ -209,11 +252,13 @@ type SecretKeySelector struct {
 	Key  string `yaml:"key"`
 }
 
-// EnvFromSource references an entire secret or configmap as env.
-// Used when a container secrets entry uses `as: env` and the synthesizer
-// chooses the envFrom-secretRef pattern.
+// EnvFromSource references an entire ConfigMap or Secret as bulk env, with an
+// optional per-source Prefix prepended to each imported variable name. Exactly
+// one of ConfigMapRef / SecretRef is set.
 type EnvFromSource struct {
-	SecretRef *LocalObjectReference `yaml:"secretRef,omitempty"`
+	ConfigMapRef *LocalObjectReference `yaml:"configMapRef,omitempty"`
+	SecretRef    *LocalObjectReference `yaml:"secretRef,omitempty"`
+	Prefix       string                `yaml:"prefix,omitempty"`
 }
 
 // LocalObjectReference is a name-only reference to an in-namespace object.

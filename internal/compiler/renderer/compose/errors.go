@@ -39,3 +39,22 @@ var ErrTranslationConfigMapMissingArtifact = errors.New("TRANSLATION_ERROR: conf
 // compose mapping, so they halt loudly rather than degrade into a plain
 // service that misrepresents the intent.
 var ErrUnsupportedComposeForm = errors.New("TRANSLATION_ERROR: compose cannot express this workload form")
+
+// ErrUnsupportedComposeLifecycle is emitted when a container declares lifecycle
+// hooks (postStart/preStop) on a compose target. compose has no lifecycle-hook
+// primitive; a silently-unrun hook is a correctness surprise, so a declared
+// lifecycle halts loudly rather than drop the hook.
+var ErrUnsupportedComposeLifecycle = errors.New("TRANSLATION_ERROR: compose has no lifecycle-hook primitive; container declares lifecycle hooks")
+
+// ErrUnsupportedComposeEnvFrom is emitted when a container declares envFrom
+// (bulk env from a ConfigMap or Secret source) on a compose target. compose
+// has no env-from-object primitive; a source reference is not a host file, so
+// reinterpreting it as an env_file would silently change meaning. It halts
+// loudly rather than degrade.
+var ErrUnsupportedComposeEnvFrom = errors.New("TRANSLATION_ERROR: compose has no env-from-object primitive; container declares envFrom")
+
+// ErrUnconvertibleComposeQuantity is emitted when a container resources quantity
+// (cpu or memory) cannot be converted to the compose deploy.resources form
+// without loss — for example a fractional memory quantity or an unrecognized
+// suffix. It halts loudly rather than round or emit a wrong value.
+var ErrUnconvertibleComposeQuantity = errors.New("TRANSLATION_ERROR: resources quantity cannot be converted to a compose deploy.resources value")
