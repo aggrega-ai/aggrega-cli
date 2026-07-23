@@ -39,7 +39,7 @@ func ParseHCL(src []byte) abi.ParseOutput {
 	tree := convertHCLBody(body, src)
 	raw, err := marshalDeterministic(tree)
 	if err != nil {
-		out.Diagnostics = append(out.Diagnostics, abi.ParseDiagnostic{Severity: "error", Message: "encode parsed tree: " + err.Error()})
+		out.Diagnostics = append(out.Diagnostics, abi.Diagnostic{Severity: "error", Message: "encode parsed tree: " + err.Error()})
 		return out
 	}
 	out.Tree = raw
@@ -153,11 +153,11 @@ func appendHCLBlock(parent map[string]any, key string, child map[string]any) {
 // preserving order. A diagnostic's source range becomes a span carrying both the
 // byte offsets (the exact location) and the line and column numbers (for
 // human-readable messages).
-func hclDiagnostics(diags hcl.Diagnostics) []abi.ParseDiagnostic {
+func hclDiagnostics(diags hcl.Diagnostics) []abi.Diagnostic {
 	if len(diags) == 0 {
 		return nil
 	}
-	out := make([]abi.ParseDiagnostic, 0, len(diags))
+	out := make([]abi.Diagnostic, 0, len(diags))
 	for _, d := range diags {
 		severity := "warning"
 		if d.Severity == hcl.DiagError {
@@ -167,16 +167,16 @@ func hclDiagnostics(diags hcl.Diagnostics) []abi.ParseDiagnostic {
 		if d.Detail != "" {
 			message = d.Summary + ": " + d.Detail
 		}
-		diag := abi.ParseDiagnostic{Severity: severity, Message: message}
+		diag := abi.Diagnostic{Severity: severity, Message: message}
 		if d.Subject != nil {
-			diag.Span = &abi.SourceSpan{
+			diag.Location = &abi.Location{Span: &abi.Span{
 				StartOffset: d.Subject.Start.Byte,
 				EndOffset:   d.Subject.End.Byte,
 				StartLine:   d.Subject.Start.Line,
 				StartColumn: d.Subject.Start.Column,
 				EndLine:     d.Subject.End.Line,
 				EndColumn:   d.Subject.End.Column,
-			}
+			}}
 		}
 		out = append(out, diag)
 	}

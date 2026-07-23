@@ -38,7 +38,7 @@
 
 use std::collections::BTreeMap;
 
-use aggrega_pdk_rust::{LinterFinding, LinterInput};
+use aggrega_pdk_rust::{Diagnostic, LinterInput};
 use serde_json::Value;
 
 use crate::raw;
@@ -48,13 +48,14 @@ use crate::raw;
 /// carrying exactly one finding: the classification verdict for the
 /// supplied entity pair. The verdict string is one of "PATCH" / "MINOR"
 /// / "MAJOR".
-pub fn classify(input: &LinterInput) -> Vec<LinterFinding> {
+pub fn classify(input: &LinterInput) -> Vec<Diagnostic> {
     let (verdict, message) = classify_one(input);
-    vec![LinterFinding {
+    vec![Diagnostic {
         rule_id: "schema-evolution".to_string(),
         severity: "error".to_string(),
         classification: verdict,
         message,
+        ..Default::default()
     }]
 }
 

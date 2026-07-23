@@ -98,13 +98,13 @@ type CatalogProjection struct {
 type RenderNodeOutput struct {
 	// Files The output files the guest emitted, in emission order. Each names its on-disk path and carries the serialized bytes the host writes verbatim.
 	Files []RenderedFile `json:"files" yaml:"files"`
-	// Diagnostics Diagnostics the guest raised while rendering. Each element carries the shared Wasm-plugin diagnostic shape; the element shape is opaque at this schema layer so a guest emits the shared diagnostic without the provider socket schema rebinding it.
+	// Diagnostics Diagnostics the guest raised while rendering. Each element is the shared Wasm-plugin diagnostic shape.
 	Diagnostics []renderctx.Diagnostic `json:"diagnostics,omitempty" yaml:"diagnostics,omitempty"`
 }
 
 // ValidateNodeOutput The payload a Provider guest returns from its optional validate_node_input export: the diagnostics raised by a structural check of the node's resolved input. The export consumes the same RenderNodeInput projection render_node receives and emits no files — it only reports diagnostics. An error-severity diagnostic halts the build loudly, naming the node and provider; a warning or info diagnostic surfaces to the build result without changing rendered output. An empty diagnostics list means the input passed the structural check.
 type ValidateNodeOutput struct {
-	// Diagnostics Diagnostics the guest raised while validating the node's input. Each element carries the shared Wasm-plugin diagnostic shape; the element shape is opaque at this schema layer so a guest emits the shared diagnostic without the provider socket schema rebinding it. Empty when the input passed the structural check.
+	// Diagnostics Diagnostics the guest raised while validating the node's input. Each element is the shared Wasm-plugin diagnostic shape. Empty when the input passed the structural check.
 	Diagnostics []renderctx.Diagnostic `json:"diagnostics,omitempty" yaml:"diagnostics,omitempty"`
 }
 
@@ -276,7 +276,7 @@ type SubChart struct {
 type AssembleBoundaryOutput struct {
 	// Files The assembled output files the guest emitted, in emission order. Each names its on-disk path and carries the serialized bytes the host writes verbatim.
 	Files []RenderedFile `json:"files" yaml:"files"`
-	// Diagnostics Diagnostics the guest raised while assembling. Each element carries the shared Wasm-plugin diagnostic shape; the element shape is opaque at this schema layer so a guest emits the shared diagnostic without the provider socket schema rebinding it.
+	// Diagnostics Diagnostics the guest raised while assembling. Each element is the shared Wasm-plugin diagnostic shape.
 	Diagnostics []renderctx.Diagnostic `json:"diagnostics,omitempty" yaml:"diagnostics,omitempty"`
 	// NestPerNode Whether the orchestrator nests each contributor's per-node files under charts/<nodeID>/ rather than emitting them flat; the assembler signals this per provider (compose emits flat, so false; an umbrella-chart assembler nests, so true).
 	NestPerNode bool `json:"nest_per_node,omitempty" yaml:"nest_per_node,omitempty"`

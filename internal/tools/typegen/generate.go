@@ -20,3 +20,6 @@ package main
 //go:generate go run . ../../../../aggrega-abi/rust/src/annotationtransform_gen.rs
 //go:generate go run . ../../../../aggrega-abi/typescript/src/annotationtransform_gen.ts
 //go:generate go run . ../../compiler/pipeline/annotationtransform_host_gen.go
+//go:generate go run . ../../../../aggrega-abi/go/pkg/abi/diagnostic_gen.go
+//go:generate go run . ../../../../aggrega-abi/rust/src/diagnostic_gen.rs
+//go:generate go run . ../../../../aggrega-abi/typescript/src/diagnostic_gen.ts

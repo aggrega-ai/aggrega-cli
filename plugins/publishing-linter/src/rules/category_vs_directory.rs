@@ -26,7 +26,7 @@
 //! preserve that invariant; the test
 //! `category_workspace_flag_suppresses_unknown_category_too` pins it.
 
-use aggrega_pdk_rust::{LinterFinding, LinterInput};
+use aggrega_pdk_rust::{Diagnostic, LinterInput};
 
 use crate::raw;
 
@@ -48,7 +48,7 @@ const KNOWN_CATEGORIES: &[&str] = &[
     "devtool",
 ];
 
-pub fn classify(input: &LinterInput) -> Vec<LinterFinding> {
+pub fn classify(input: &LinterInput) -> Vec<Diagnostic> {
     if input.entity_kind != "Component" {
         return vec![];
     }
@@ -105,8 +105,8 @@ fn derive_core_category(path: &str) -> Option<String> {
     Some((*category).to_string())
 }
 
-fn finding(message: String) -> LinterFinding {
-    LinterFinding {
+fn finding(message: String) -> Diagnostic {
+    Diagnostic {
         rule_id: "category-matches-directory".to_string(),
         severity: "error".to_string(),
         message,

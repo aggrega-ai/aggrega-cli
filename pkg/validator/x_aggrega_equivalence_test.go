@@ -14,6 +14,7 @@ import (
 	"sort"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
 	"go.yaml.in/yaml/v3"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
@@ -25,7 +26,7 @@ import (
 // RFC 6901 JSON Pointer locating it within the entity schema.
 // Severity field intentionally omitted — the Go walker emits at
 // warning severity (via log.Printf); the Wasm rule emits at error
-// severity (via LinterFinding.Severity); the divergence is by
+// severity (via Diagnostic.Severity); the divergence is by
 // design and is normalised out of the equivalence comparison.
 type xAggregaFinding struct {
 	Entity  string
@@ -62,11 +63,11 @@ func parseGoWalkerOutput(captured string) []xAggregaFinding {
 // publishing-linter Wasm plugin's findings. Message format is
 // identical to the Go walker's log line except for the leading
 // "warning: " prefix (severity carried separately in
-// LinterFinding.Severity). The RuleID filter is defensive against
+// Diagnostic.Severity). The RuleID filter is defensive against
 // the dispatcher returning findings from other rules; harmless
 // here since DispatchPublishingLinter only returns findings for
 // the requested rule.
-func parseWasmFindings(findings []LinterFinding) []xAggregaFinding {
+func parseWasmFindings(findings []abi.Diagnostic) []xAggregaFinding {
 	re := regexp.MustCompile(`entity "([^"]+)" authors (x-aggrega-\S+) at <([^>]+)> in schema content`)
 	result := make([]xAggregaFinding, 0, len(findings))
 	for _, f := range findings {

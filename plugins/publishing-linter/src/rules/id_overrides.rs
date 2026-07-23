@@ -24,7 +24,7 @@
 //! `.aggrega-config.yaml` suppresses every finding from this rule
 //! uniformly across the depth.
 
-use aggrega_pdk_rust::{LinterFinding, LinterInput};
+use aggrega_pdk_rust::{Diagnostic, LinterInput};
 use serde_json::Value;
 
 use crate::rules::schema_library_walker::visit_schemas_recursive;
@@ -38,7 +38,7 @@ use crate::rules::schema_library_walker::visit_schemas_recursive;
 /// `allow_id_overrides` is true OR when no entry carries an
 /// explicit `$id` at any sub-schema position OR when the entity is
 /// not a SchemaLibrary.
-pub fn classify(input: &LinterInput) -> Vec<LinterFinding> {
+pub fn classify(input: &LinterInput) -> Vec<Diagnostic> {
     let policies = &input.policies;
     if policies.allow_id_overrides {
         return vec![];
@@ -53,7 +53,7 @@ pub fn classify(input: &LinterInput) -> Vec<LinterFinding> {
                 } else {
                     format!(" at {pointer}")
                 };
-                findings.push(LinterFinding {
+                findings.push(Diagnostic {
                     rule_id: "id-overrides".to_string(),
                     severity: "error".to_string(),
                     message: format!(

@@ -17,11 +17,11 @@
 //! every other kind, and silent for a Plugin that already declares a
 //! non-zero cap on either axis.
 
-use aggrega_pdk_rust::{LinterFinding, LinterInput};
+use aggrega_pdk_rust::{Diagnostic, LinterInput};
 
 use crate::raw;
 
-pub fn classify(input: &LinterInput) -> Vec<LinterFinding> {
+pub fn classify(input: &LinterInput) -> Vec<Diagnostic> {
     if input.entity_kind != "Plugin" {
         return vec![];
     }
@@ -41,7 +41,7 @@ pub fn classify(input: &LinterInput) -> Vec<LinterFinding> {
     if has_explicit_cap {
         return vec![];
     }
-    vec![LinterFinding {
+    vec![Diagnostic {
         rule_id: "plugin-default-limits".to_string(),
         severity: "warning".to_string(),
         message: "Plugin declares no explicit runtime cap (spec.runtime.maxMemoryPages \

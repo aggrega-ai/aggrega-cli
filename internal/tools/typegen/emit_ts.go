@@ -8,6 +8,16 @@ import (
 	"strings"
 )
 
+// externalDefModuleTS maps an external def type (a type emitted by a sibling
+// codec target and referenced across modules) to the TypeScript module basename
+// that emits it. The Go and Rust backends resolve a sibling type through the
+// package/crate root, but a TS import names the source module explicitly, so a
+// cross-module external def type is registered here.
+var externalDefModuleTS = map[string]string{
+	"IRGraph":    "ir_gen",
+	"Diagnostic": "diagnostic_gen",
+}
+
 // generateDefsTS produces the TypeScript source for a multi-type codec module:
 // one interface per `$defs` entry plus a thin per-type encoder and decoder. A
 // bare JSON.stringify over an interface would emit object keys in insertion
@@ -53,11 +63,15 @@ func generateDefsTS(t codecTarget) ([]byte, error) {
 	b.WriteString("// Regenerate with `go generate ./internal/tools/typegen` from the\n// aggrega-cli checkout.\n\n")
 
 	// A field typed as a sibling-codec type imports its interface and its encoder
-	// from that module. The decoder is not imported: a struct decode is a
-	// structural JSON.parse, so the nested type is parsed in place and only the
-	// encoder (which sorts map keys) is needed. The IR types live in ir_gen.ts.
+	// from the module that emits it. The decoder is not imported: a struct decode
+	// is a structural JSON.parse, so the nested type is parsed in place and only
+	// the encoder (which sorts map keys) is needed.
 	for _, ext := range t.externalDefTypes {
-		fmt.Fprintf(&b, "import { type %s, encode%s } from \"./ir_gen.ts\";\n", ext, ext)
+		mod, ok := externalDefModuleTS[ext]
+		if !ok {
+			return nil, fmt.Errorf("no TS source module registered for external def type %q", ext)
+		}
+		fmt.Fprintf(&b, "import { type %s, encode%s } from \"./%s.ts\";\n", ext, ext, mod)
 	}
 	if len(t.externalDefTypes) > 0 {
 		b.WriteString("\n")

@@ -31,7 +31,7 @@
 //! suppresses both checks. The flag covers the reserved-namespace
 //! family uniformly; per-prefix granularity is a future iteration.
 
-use aggrega_pdk_rust::{LinterFinding, LinterInput};
+use aggrega_pdk_rust::{Diagnostic, LinterInput};
 
 use crate::raw;
 
@@ -39,7 +39,7 @@ use crate::raw;
 /// emits one finding per reserved-prefix violation. Returns an empty
 /// vector when no violations are found OR when the per-workspace
 /// opt-out is set.
-pub fn classify(input: &LinterInput) -> Vec<LinterFinding> {
+pub fn classify(input: &LinterInput) -> Vec<Diagnostic> {
     let policies = &input.policies;
     if policies.allow_aggrega_ai_prefix {
         return vec![];
@@ -60,7 +60,7 @@ pub fn classify(input: &LinterInput) -> Vec<LinterFinding> {
 
     for key in annotations.keys() {
         if is_bare_aggrega_ai(key) && !WELL_KNOWN_ANNOTATIONS.contains(&key.as_str()) {
-            findings.push(LinterFinding {
+            findings.push(Diagnostic {
                 rule_id: "annotation-prefix".to_string(),
                 severity: "error".to_string(),
                 message: format!(
@@ -73,7 +73,7 @@ pub fn classify(input: &LinterInput) -> Vec<LinterFinding> {
             continue;
         }
         if is_feature_aggrega_ai(key) && entity_kind != "Feature" {
-            findings.push(LinterFinding {
+            findings.push(Diagnostic {
                 rule_id: "annotation-prefix".to_string(),
                 severity: "error".to_string(),
                 message: format!(

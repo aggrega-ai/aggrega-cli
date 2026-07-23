@@ -222,7 +222,6 @@ type codecTarget struct {
 // in a standalone, dependency-free module a Wasm guest can import directly.
 var frpGuestNeutralVocabulary = map[string]string{
 	"renderctx.RenderContext": "json.RawMessage",
-	"renderctx.Diagnostic":    "json.RawMessage",
 	"OrderedMap[Unit]":        "map[string]Unit",
 	"OrderedMap[any]":         "map[string]json.RawMessage",
 	"DocumentScope":           "string",
@@ -282,7 +281,8 @@ var linterGuestVocabulary = map[string]string{}
 // Policies struct the guest realizes. The proposed/previous/parent fields
 // already carry json.RawMessage from the schema annotations.
 var linterHostVocabulary = map[string]string{
-	"Policies": "json.RawMessage",
+	"Policies":   "json.RawMessage",
+	"Diagnostic": "abi.Diagnostic",
 }
 
 // irGuestVocabulary maps the IR schema's host container spellings to the neutral
@@ -325,13 +325,22 @@ var describeGuestVocabulary = map[string]string{}
 // through verbatim — mirroring the guest describe vocabulary.
 var describeHostVocabulary = map[string]string{}
 
+// diagnosticGuestVocabulary is empty: the shared diagnostic's non-scalar field is
+// the optional location (a def-local Location, itself carrying an optional
+// def-local Span), whose x-aggrega-go-type annotations already carry the def-local
+// pointer spellings; every other field is a scalar. Absence of an entry passes
+// each annotation through verbatim.
+var diagnosticGuestVocabulary = map[string]string{}
+
 // providerGuestVocabulary maps the provider render schema's host type spellings
 // to the neutral, cycle-free guest vocabulary: an opaque cross-package host type
-// (the render-time context, the per-render boundary context, the shared
-// diagnostic, the enriched uses edge the boundary-env-overrides input carries)
-// becomes json.RawMessage (verbatim passthrough preserves its
-// bytes), and every order-preserving host container becomes a plain map (the
-// guest reads a map; key order on the wire is the emitting host's concern). The
+// (the render-time context, the per-render boundary context, the enriched uses
+// edge the boundary-env-overrides input carries) becomes json.RawMessage
+// (verbatim passthrough preserves its bytes), and every order-preserving host
+// container becomes a plain map (the guest reads a map; key order on the wire is
+// the emitting host's concern). The shared diagnostic is not opaque: it is the
+// generated abi.Diagnostic (named in the target's externalDefTypes), so the guest
+// codec dispatches straight to its own generated codec. The
 // ordered structured content of an output file is the same order-preserving-any
 // container as a node's values, so both surface to the guest as
 // map[string]json.RawMessage — the guest reads and echoes the content by key,
@@ -341,16 +350,15 @@ var describeHostVocabulary = map[string]string{}
 // carve/reassemble exports carries them verbatim, while the host realizes them
 // as the typed frp shapes its pipeline drives.
 var providerGuestVocabulary = map[string]string{
-	"renderctx.RenderContext":                    "json.RawMessage",
-	"renderctx.BoundaryContext":                  "json.RawMessage",
-	"renderctx.Diagnostic":                       "json.RawMessage",
-	"Unit":                                       "json.RawMessage",
-	"PatchedUnit":                                "json.RawMessage",
-	"JSONPatchOp":                                "json.RawMessage",
-	"types.EnrichedEdge":                         "json.RawMessage",
-	"OrderedMap[any]":                            "map[string]json.RawMessage",
-	"OrderedMap[[]string]":                       "map[string][]string",
-	"types.OrderedMap[string]":                   "map[string]string",
+	"renderctx.RenderContext":   "json.RawMessage",
+	"renderctx.BoundaryContext": "json.RawMessage",
+	"Unit":                      "json.RawMessage",
+	"PatchedUnit":               "json.RawMessage",
+	"JSONPatchOp":               "json.RawMessage",
+	"types.EnrichedEdge":        "json.RawMessage",
+	"OrderedMap[any]":           "map[string]json.RawMessage",
+	"OrderedMap[[]string]":      "map[string][]string",
+	"types.OrderedMap[string]":  "map[string]string",
 	"types.OrderedMap[types.OrderedMap[string]]": "map[string]map[string]string",
 	"OrderedMap[types.IRFeatureEntry]":           "map[string]json.RawMessage",
 	"OrderedMap[types.Component]":                "map[string]json.RawMessage",
@@ -369,9 +377,10 @@ var providerGuestVocabulary = map[string]string{
 // The ordered structured content of an output file is the recursively
 // order-preserving types.OrderedMap[any], so the guest's key order is carried to
 // the host serializer intact rather than collapsed by an unordered map. The
-// cross-package opaque host types (the render context, the boundary context, the
-// shared diagnostic) carry their real host spelling verbatim (no entry needed);
-// the host marshals them through their own order-preserving codecs. The
+// render context and boundary context carry their real host spelling verbatim (no
+// entry needed); the shared diagnostic maps to renderctx.Diagnostic (the host
+// realization of the single generated diagnostic shape). The host marshals these
+// through their own codecs. The
 // pipeline-codec unit and patched-unit shapes resolve to the typed frp shapes
 // the host pipeline carves and reassembles with, so the codec seam reuses the
 // same types end-to-end rather than a parallel host copy.
@@ -387,6 +396,7 @@ var providerHostVocabulary = map[string]string{
 	"OrderedMap[types.Recipe]":         "types.OrderedMap[types.Recipe]",
 	"OrderedMap[types.FeatureRecipe]":  "types.OrderedMap[types.FeatureRecipe]",
 	"OrderedMap[types.MappingLibrary]": "types.OrderedMap[types.MappingLibrary]",
+	"Diagnostic":                       "renderctx.Diagnostic",
 }
 
 // cliGuestVocabulary is empty: the CLI run input carries only an argument
@@ -416,24 +426,56 @@ var importGuestVocabulary = map[string]string{}
 
 var codecTargets = map[string]codecTarget{
 	"frp_gen.go": {
-		schema:     schemas.WasmFrpStepV1alpha1,
-		schemaFile: "wasm-frp-step-v1alpha1.schema.json",
-		pkg:        "abi",
-		vocabulary: frpGuestNeutralVocabulary,
-		helpers:    true, // FRP owns the shared streaming-decode helpers in package abi
+		schema:           schemas.WasmFrpStepV1alpha1,
+		schemaFile:       "wasm-frp-step-v1alpha1.schema.json",
+		pkg:              "abi",
+		vocabulary:       frpGuestNeutralVocabulary,
+		helpers:          true, // FRP owns the shared streaming-decode helpers in package abi
+		externalDefTypes: []string{"Diagnostic"},
 	},
 	"frp_gen.rs": {
-		schema:     schemas.WasmFrpStepV1alpha1,
-		schemaFile: "wasm-frp-step-v1alpha1.schema.json",
-		pkg:        "abi",
-		vocabulary: frpGuestNeutralVocabulary,
-		lang:       "rust",
+		schema:           schemas.WasmFrpStepV1alpha1,
+		schemaFile:       "wasm-frp-step-v1alpha1.schema.json",
+		pkg:              "abi",
+		vocabulary:       frpGuestNeutralVocabulary,
+		lang:             "rust",
+		externalDefTypes: []string{"Diagnostic"},
 	},
 	"frp_gen.ts": {
-		schema:     schemas.WasmFrpStepV1alpha1,
-		schemaFile: "wasm-frp-step-v1alpha1.schema.json",
+		schema:           schemas.WasmFrpStepV1alpha1,
+		schemaFile:       "wasm-frp-step-v1alpha1.schema.json",
+		pkg:              "abi",
+		vocabulary:       frpGuestNeutralVocabulary,
+		lang:             "ts",
+		externalDefTypes: []string{"Diagnostic"},
+	},
+
+	// Shared diagnostic — guest codecs into aggrega-abi (Go/Rust/TS). The single
+	// diagnostic shape every socket shares; a socket that carries diagnostics
+	// references it (a $ref + x-aggrega-go-type: Diagnostic annotation) and lists
+	// it in externalDefTypes, so the socket's codec dispatches directly to this
+	// type's own generated codec rather than through a reflective json.Marshal —
+	// the same single-sourced cross-codec pattern the policy graph's IRGraph uses.
+	// Emitted once into package abi; the abi Go codec references the helpers FRP
+	// owns in package abi (helpers: false, the default).
+	"diagnostic_gen.go": {
+		schema:     schemas.WasmDiagnosticV1alpha1,
+		schemaFile: "wasm-diagnostic-v1alpha1.schema.json",
 		pkg:        "abi",
-		vocabulary: frpGuestNeutralVocabulary,
+		vocabulary: diagnosticGuestVocabulary,
+	},
+	"diagnostic_gen.rs": {
+		schema:     schemas.WasmDiagnosticV1alpha1,
+		schemaFile: "wasm-diagnostic-v1alpha1.schema.json",
+		pkg:        "abi",
+		vocabulary: diagnosticGuestVocabulary,
+		lang:       "rust",
+	},
+	"diagnostic_gen.ts": {
+		schema:     schemas.WasmDiagnosticV1alpha1,
+		schemaFile: "wasm-diagnostic-v1alpha1.schema.json",
+		pkg:        "abi",
+		vocabulary: diagnosticGuestVocabulary,
 		lang:       "ts",
 	},
 
@@ -569,24 +611,27 @@ var codecTargets = map[string]codecTarget{
 	// json.RawMessage it assembles dynamically; the guest realizes the typed
 	// Policies struct.
 	"linter_gen.go": {
-		schema:     schemas.WasmLinterV1alpha1,
-		schemaFile: "wasm-linter-v1alpha1.schema.json",
-		pkg:        "abi",
-		vocabulary: linterGuestVocabulary,
+		schema:           schemas.WasmLinterV1alpha1,
+		schemaFile:       "wasm-linter-v1alpha1.schema.json",
+		pkg:              "abi",
+		vocabulary:       linterGuestVocabulary,
+		externalDefTypes: []string{"Diagnostic"},
 	},
 	"linter_gen.rs": {
-		schema:     schemas.WasmLinterV1alpha1,
-		schemaFile: "wasm-linter-v1alpha1.schema.json",
-		pkg:        "abi",
-		vocabulary: linterGuestVocabulary,
-		lang:       "rust",
+		schema:           schemas.WasmLinterV1alpha1,
+		schemaFile:       "wasm-linter-v1alpha1.schema.json",
+		pkg:              "abi",
+		vocabulary:       linterGuestVocabulary,
+		lang:             "rust",
+		externalDefTypes: []string{"Diagnostic"},
 	},
 	"linter_gen.ts": {
-		schema:     schemas.WasmLinterV1alpha1,
-		schemaFile: "wasm-linter-v1alpha1.schema.json",
-		pkg:        "abi",
-		vocabulary: linterGuestVocabulary,
-		lang:       "ts",
+		schema:           schemas.WasmLinterV1alpha1,
+		schemaFile:       "wasm-linter-v1alpha1.schema.json",
+		pkg:              "abi",
+		vocabulary:       linterGuestVocabulary,
+		lang:             "ts",
+		externalDefTypes: []string{"Diagnostic"},
 	},
 	"linter_host_gen.go": {
 		schema:     schemas.WasmLinterV1alpha1,
@@ -631,7 +676,7 @@ var codecTargets = map[string]codecTarget{
 		schemaFile:       "wasm-policy-v1alpha1.schema.json",
 		pkg:              "abi",
 		vocabulary:       policyGuestVocabulary,
-		externalDefTypes: []string{"IRGraph"},
+		externalDefTypes: []string{"IRGraph", "Diagnostic"},
 	},
 	"policy_gen.rs": {
 		schema:           schemas.WasmPolicyV1alpha1,
@@ -639,7 +684,7 @@ var codecTargets = map[string]codecTarget{
 		pkg:              "abi",
 		vocabulary:       policyGuestVocabulary,
 		lang:             "rust",
-		externalDefTypes: []string{"IRGraph"},
+		externalDefTypes: []string{"IRGraph", "Diagnostic"},
 	},
 	"policy_gen.ts": {
 		schema:           schemas.WasmPolicyV1alpha1,
@@ -647,7 +692,7 @@ var codecTargets = map[string]codecTarget{
 		pkg:              "abi",
 		vocabulary:       policyGuestVocabulary,
 		lang:             "ts",
-		externalDefTypes: []string{"IRGraph"},
+		externalDefTypes: []string{"IRGraph", "Diagnostic"},
 	},
 
 	// Provider render socket — guest codecs into aggrega-abi (Go/Rust/TS) and the
@@ -663,24 +708,27 @@ var codecTargets = map[string]codecTarget{
 	// socket's codec target distinctly; the generator dispatches by basename, so a
 	// descriptive stem keeps this codec target unambiguous against other basenames.
 	"providerrender_gen.go": {
-		schema:     schemas.WasmProviderV1alpha1,
-		schemaFile: "wasm-provider-v1alpha1.schema.json",
-		pkg:        "abi",
-		vocabulary: providerGuestVocabulary,
+		schema:           schemas.WasmProviderV1alpha1,
+		schemaFile:       "wasm-provider-v1alpha1.schema.json",
+		pkg:              "abi",
+		vocabulary:       providerGuestVocabulary,
+		externalDefTypes: []string{"Diagnostic"},
 	},
 	"providerrender_gen.rs": {
-		schema:     schemas.WasmProviderV1alpha1,
-		schemaFile: "wasm-provider-v1alpha1.schema.json",
-		pkg:        "abi",
-		vocabulary: providerGuestVocabulary,
-		lang:       "rust",
+		schema:           schemas.WasmProviderV1alpha1,
+		schemaFile:       "wasm-provider-v1alpha1.schema.json",
+		pkg:              "abi",
+		vocabulary:       providerGuestVocabulary,
+		lang:             "rust",
+		externalDefTypes: []string{"Diagnostic"},
 	},
 	"providerrender_gen.ts": {
-		schema:     schemas.WasmProviderV1alpha1,
-		schemaFile: "wasm-provider-v1alpha1.schema.json",
-		pkg:        "abi",
-		vocabulary: providerGuestVocabulary,
-		lang:       "ts",
+		schema:           schemas.WasmProviderV1alpha1,
+		schemaFile:       "wasm-provider-v1alpha1.schema.json",
+		pkg:              "abi",
+		vocabulary:       providerGuestVocabulary,
+		lang:             "ts",
+		externalDefTypes: []string{"Diagnostic"},
 	},
 	"providerrender_host_gen.go": {
 		schema:     schemas.WasmProviderV1alpha1,
@@ -698,24 +746,27 @@ var codecTargets = map[string]codecTarget{
 	// diagnostic type, so the guest vocabulary is empty. The abi Go codec
 	// references the helpers FRP owns in package abi (helpers: false, the default).
 	"parse_gen.go": {
-		schema:     schemas.WasmParseV1alpha1,
-		schemaFile: "wasm-parse-v1alpha1.schema.json",
-		pkg:        "abi",
-		vocabulary: parseGuestVocabulary,
+		schema:           schemas.WasmParseV1alpha1,
+		schemaFile:       "wasm-parse-v1alpha1.schema.json",
+		pkg:              "abi",
+		vocabulary:       parseGuestVocabulary,
+		externalDefTypes: []string{"Diagnostic"},
 	},
 	"parse_gen.rs": {
-		schema:     schemas.WasmParseV1alpha1,
-		schemaFile: "wasm-parse-v1alpha1.schema.json",
-		pkg:        "abi",
-		vocabulary: parseGuestVocabulary,
-		lang:       "rust",
+		schema:           schemas.WasmParseV1alpha1,
+		schemaFile:       "wasm-parse-v1alpha1.schema.json",
+		pkg:              "abi",
+		vocabulary:       parseGuestVocabulary,
+		lang:             "rust",
+		externalDefTypes: []string{"Diagnostic"},
 	},
 	"parse_gen.ts": {
-		schema:     schemas.WasmParseV1alpha1,
-		schemaFile: "wasm-parse-v1alpha1.schema.json",
-		pkg:        "abi",
-		vocabulary: parseGuestVocabulary,
-		lang:       "ts",
+		schema:           schemas.WasmParseV1alpha1,
+		schemaFile:       "wasm-parse-v1alpha1.schema.json",
+		pkg:              "abi",
+		vocabulary:       parseGuestVocabulary,
+		lang:             "ts",
+		externalDefTypes: []string{"Diagnostic"},
 	},
 
 	// Importer socket — guest codecs into aggrega-abi (Go/Rust/TS). An importer
@@ -728,24 +779,27 @@ var codecTargets = map[string]codecTarget{
 	// referenced by $ref, so the guest vocabulary is empty. The abi Go codec
 	// references the helpers FRP owns in package abi (helpers: false, the default).
 	"import_gen.go": {
-		schema:     schemas.WasmImportV1alpha1,
-		schemaFile: "wasm-import-v1alpha1.schema.json",
-		pkg:        "abi",
-		vocabulary: importGuestVocabulary,
+		schema:           schemas.WasmImportV1alpha1,
+		schemaFile:       "wasm-import-v1alpha1.schema.json",
+		pkg:              "abi",
+		vocabulary:       importGuestVocabulary,
+		externalDefTypes: []string{"Diagnostic"},
 	},
 	"import_gen.rs": {
-		schema:     schemas.WasmImportV1alpha1,
-		schemaFile: "wasm-import-v1alpha1.schema.json",
-		pkg:        "abi",
-		vocabulary: importGuestVocabulary,
-		lang:       "rust",
+		schema:           schemas.WasmImportV1alpha1,
+		schemaFile:       "wasm-import-v1alpha1.schema.json",
+		pkg:              "abi",
+		vocabulary:       importGuestVocabulary,
+		lang:             "rust",
+		externalDefTypes: []string{"Diagnostic"},
 	},
 	"import_gen.ts": {
-		schema:     schemas.WasmImportV1alpha1,
-		schemaFile: "wasm-import-v1alpha1.schema.json",
-		pkg:        "abi",
-		vocabulary: importGuestVocabulary,
-		lang:       "ts",
+		schema:           schemas.WasmImportV1alpha1,
+		schemaFile:       "wasm-import-v1alpha1.schema.json",
+		pkg:              "abi",
+		vocabulary:       importGuestVocabulary,
+		lang:             "ts",
+		externalDefTypes: []string{"Diagnostic"},
 	},
 }
 
@@ -758,6 +812,7 @@ var knownImports = map[string]string{
 	"types":     "github.com/aggrega-ai/aggrega-cli/pkg/types",
 	"renderctx": "github.com/aggrega-ai/aggrega-cli/internal/compiler/renderctx",
 	"frp":       "github.com/aggrega-ai/aggrega-cli/internal/compiler/featurerecipe_pipeline",
+	"abi":       "github.com/aggrega-ai/aggrega-abi-go/pkg/abi",
 }
 
 // schemaNode is a decoded JSON Schema object node preserving the declared

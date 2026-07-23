@@ -17,6 +17,7 @@ import (
 	"go.yaml.in/yaml/v3"
 	"oras.land/oras-go/v2"
 
+	"github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm/embedded"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
@@ -291,8 +292,8 @@ func RunEntity(cfg Config) error {
 // satisfies its classification verdict; the rule emits Error severity to convey
 // the classification, but the halt-on-error logic requires downgrading once the
 // bump is verified compatible.
-func downgradeRuleToWarning(findings []validator.LinterFinding, ruleID string) []validator.LinterFinding {
-	out := make([]validator.LinterFinding, len(findings))
+func downgradeRuleToWarning(findings []abi.Diagnostic, ruleID string) []abi.Diagnostic {
+	out := make([]abi.Diagnostic, len(findings))
 	for i, f := range findings {
 		if f.RuleID == ruleID && f.Severity == "error" {
 			f.Severity = "warning"
@@ -670,8 +671,8 @@ func buildRuleInputs(
 
 // aggregateFindings flattens per-rule [][]LinterFinding slices into a single
 // ordered list, preserving rule-iteration order.
-func aggregateFindings(perRule [][]validator.LinterFinding) []validator.LinterFinding {
-	var all []validator.LinterFinding
+func aggregateFindings(perRule [][]abi.Diagnostic) []abi.Diagnostic {
+	var all []abi.Diagnostic
 	for _, findings := range perRule {
 		all = append(all, findings...)
 	}
@@ -680,8 +681,8 @@ func aggregateFindings(perRule [][]validator.LinterFinding) []validator.LinterFi
 
 // downgradeToWarning maps every error finding to a warning. Default mode (no
 // --pre-publish) treats every rule's output as informational.
-func downgradeToWarning(findings []validator.LinterFinding) []validator.LinterFinding {
-	out := make([]validator.LinterFinding, len(findings))
+func downgradeToWarning(findings []abi.Diagnostic) []abi.Diagnostic {
+	out := make([]abi.Diagnostic, len(findings))
 	for i, f := range findings {
 		if f.Severity == "error" {
 			f.Severity = "warning"
@@ -694,8 +695,8 @@ func downgradeToWarning(findings []validator.LinterFinding) []validator.LinterFi
 // downgradeFirstPublicationToWarning maps the schema-evolution rule's
 // classification finding to warning severity for the first-publication case.
 // Other rules' findings stay at whatever severity they had.
-func downgradeFirstPublicationToWarning(findings []validator.LinterFinding) []validator.LinterFinding {
-	out := make([]validator.LinterFinding, len(findings))
+func downgradeFirstPublicationToWarning(findings []abi.Diagnostic) []abi.Diagnostic {
+	out := make([]abi.Diagnostic, len(findings))
 	for i, f := range findings {
 		if f.RuleID == "schema-evolution" && f.Severity == "error" {
 			f.Severity = "warning"
@@ -707,7 +708,7 @@ func downgradeFirstPublicationToWarning(findings []validator.LinterFinding) []va
 
 // printFindings writes each finding to diagOut (os.Stderr in production) in a
 // stable format and returns true when at least one finding is severity=error.
-func printFindings(findings []validator.LinterFinding, diagOut io.Writer) bool {
+func printFindings(findings []abi.Diagnostic, diagOut io.Writer) bool {
 	halted := false
 	for _, f := range findings {
 		if f.Severity == "error" {
@@ -718,7 +719,7 @@ func printFindings(findings []validator.LinterFinding, diagOut io.Writer) bool {
 	return halted
 }
 
-func countErrors(findings []validator.LinterFinding) int {
+func countErrors(findings []abi.Diagnostic) int {
 	n := 0
 	for _, f := range findings {
 		if f.Severity == "error" {
@@ -731,7 +732,7 @@ func countErrors(findings []validator.LinterFinding) int {
 // classificationFromFindings extracts the schema-evolution rule's classification
 // verdict. Returns "" when no schema-evolution finding exists. Multi-finding edge
 // case: HIGHEST classification wins (MAJOR > MINOR > PATCH).
-func classificationFromFindings(findings []validator.LinterFinding) string {
+func classificationFromFindings(findings []abi.Diagnostic) string {
 	rank := map[string]int{"PATCH": 0, "MINOR": 1, "MAJOR": 2}
 	highest := ""
 	for _, f := range findings {

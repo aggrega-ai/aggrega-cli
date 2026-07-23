@@ -27,12 +27,12 @@
 //! `allow_direct_x_aggrega_extensions: true` under
 //! `lint.publishing_discipline` in `.aggrega-config.yaml`.
 
-use aggrega_pdk_rust::{LinterFinding, LinterInput};
+use aggrega_pdk_rust::{Diagnostic, LinterInput};
 use serde_json::Value;
 
 use crate::raw;
 
-pub fn classify(input: &LinterInput) -> Vec<LinterFinding> {
+pub fn classify(input: &LinterInput) -> Vec<Diagnostic> {
     let policies = &input.policies;
     if policies.allow_direct_x_aggrega_extensions {
         return vec![];
@@ -58,7 +58,7 @@ fn collect_x_aggrega_occurrences(
     value: &Value,
     pointer: &str,
     entity_name: &str,
-    findings: &mut Vec<LinterFinding>,
+    findings: &mut Vec<Diagnostic>,
 ) {
     match value {
         Value::Object(map) => {
@@ -71,7 +71,7 @@ fn collect_x_aggrega_occurrences(
                     // Pointer wrapped in <...> so the parse regex
                     // in the equivalence test can capture YAML keys
                     // containing spaces.
-                    findings.push(LinterFinding {
+                    findings.push(Diagnostic {
                         rule_id: "x-aggrega-discouragement".to_string(),
                         severity: "error".to_string(),
                         message: format!(

@@ -26,7 +26,7 @@
 //! `allow_dynamic_refs: true` under `lint.publishing_discipline` in
 //! `.aggrega-config.yaml`.
 
-use aggrega_pdk_rust::{LinterFinding, LinterInput};
+use aggrega_pdk_rust::{Diagnostic, LinterInput};
 use serde_json::Value;
 
 use crate::rules::schema_library_walker::visit_schemas_recursive;
@@ -41,7 +41,7 @@ use crate::rules::schema_library_walker::visit_schemas_recursive;
 /// `allow_dynamic_refs` is true OR when no offending construct is
 /// found at a sub-schema position OR when the entity is not a
 /// SchemaLibrary.
-pub fn classify(input: &LinterInput) -> Vec<LinterFinding> {
+pub fn classify(input: &LinterInput) -> Vec<Diagnostic> {
     let policies = &input.policies;
     if policies.allow_dynamic_refs {
         return vec![];
@@ -57,7 +57,7 @@ pub fn classify(input: &LinterInput) -> Vec<LinterFinding> {
                     } else {
                         format!(" at {pointer}")
                     };
-                    findings.push(LinterFinding {
+                    findings.push(Diagnostic {
                         rule_id: "dynamic-refs".to_string(),
                         severity: "error".to_string(),
                         message: format!(

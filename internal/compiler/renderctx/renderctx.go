@@ -3,7 +3,10 @@
 
 package renderctx
 
-import "github.com/aggrega-ai/aggrega-cli/pkg/types"
+import (
+	"github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
+)
 
 // RenderContext is the render-time context a Provider guest receives:
 // the fulfilled parameters, the three annotation buckets
@@ -58,9 +61,12 @@ type BoundaryContext struct {
 
 // Diagnostic is the shared diagnostic a Wasm guest raises across the
 // plugin ABI surfaces. A Provider guest reports it in render and
-// assembly output; the linter and feature-recipe-pipeline ABI surfaces
-// import this exact type rather than redeclaring their own, so a
-// diagnostic carries one shape across every plugin boundary.
+// assembly output; the parser, importer, publishing-linter, policy, and
+// feature-recipe-pipeline ABI surfaces carry this exact type rather than
+// redeclaring their own, so a diagnostic carries one shape across every
+// plugin boundary. It is an alias for the single generated
+// [abi.Diagnostic]: the wire shape lives in one place and every surface
+// resolves to it.
 //
 // This is intentionally distinct from the editor-protocol diagnostic the
 // language server emits and from the tolerant-load diagnostic the
@@ -69,26 +75,15 @@ type BoundaryContext struct {
 // couple unrelated surfaces. Diagnostic here is the Wasm-plugin ABI
 // diagnostic and only that.
 //
-// Severity is "error", "warning", or "info". Code is a stable
-// machine-readable identifier for the diagnostic class. Message is the
-// human-readable text. Location, when present, pins the diagnostic to a
-// source position via [DiagnosticLocation]. Suggest, when present,
-// offers a remediation hint.
-type Diagnostic struct {
-	Severity string              `json:"severity"`
-	Code     string              `json:"code"`
-	Message  string              `json:"message"`
-	Location *DiagnosticLocation `json:"location,omitempty"`
-	Suggest  string              `json:"suggest,omitempty"`
-}
+// Severity is an open string so each socket keeps its own vocabulary.
+// Message is the human-readable text. Location, when present, pins the
+// diagnostic to a source position via [DiagnosticLocation]. The
+// socket-specific Code, RuleID, Classification, SourceRef, and Suggest
+// fields are populated by the sockets that use them and omitted otherwise.
+type Diagnostic = abi.Diagnostic
 
-// DiagnosticLocation pins a [Diagnostic] to a source position. Kind
-// names the source surface, URI identifies the source artifact, KeyPath
-// is the dotted path to the offending key within it, and Line is the
-// line number when one is known.
-type DiagnosticLocation struct {
-	Kind    string `json:"kind"`
-	URI     string `json:"uri"`
-	KeyPath string `json:"key_path,omitempty"`
-	Line    int    `json:"line,omitempty"`
-}
+// DiagnosticLocation pins a [Diagnostic] to a source position. It is an
+// alias for the single generated [abi.Location]: Span carries a raw-byte
+// source span, KeyPath the dotted path into a structured document, URI
+// the source artifact, Line a document line, and Kind the source surface.
+type DiagnosticLocation = abi.Location

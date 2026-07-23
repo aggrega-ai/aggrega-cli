@@ -13,6 +13,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
 	"strconv"
 	"unicode/utf8"
 )
@@ -38,19 +39,7 @@ type LinterInput struct {
 // LinterOutput The response shape the publishing-linter plugin emits. findings carries one entry per rule invocation that produced a result. The schema-evolution rule emits exactly one finding (the classification verdict); structural rules may emit zero (no violations) or many (one per offence).
 type LinterOutput struct {
 	// Findings Per-rule findings produced by the plugin invocation, in plugin emit order.
-	Findings []LinterFinding `json:"findings" yaml:"findings"`
-}
-
-// LinterFinding One rule's verdict. rule_id names the rule that produced it. severity distinguishes errors (publish-time halt) from warnings (informational). classification carries the PATCH/MINOR/MAJOR verdict for the schema-evolution rule; omitted for rules whose finding does not carry a classification (structural rules typically). message carries the human-readable diagnostic surfaced in CLI output.
-type LinterFinding struct {
-	// RuleID The rule that emitted the finding. For the schema-evolution rule the value is 'schema-evolution'. Unknown rule_ids requested via LinterInput.rule_id produce a finding with rule_id 'unknown_rule'.
-	RuleID string `json:"rule_id" yaml:"rule_id"`
-	// Severity Diagnostic severity. 'error' halts the publish-time gate; 'warning' is informational and does not affect the gate.
-	Severity string `json:"severity" yaml:"severity"`
-	// Classification PATCH / MINOR / MAJOR verdict from the schema-evolution rule. Omitted for rules that do not carry a classification.
-	Classification string `json:"classification,omitempty" yaml:"classification,omitempty"`
-	// Message Human-readable diagnostic surfaced in CLI output. Names the offending field(s) for evolution findings; names the policy condition for structural findings.
-	Message string `json:"message" yaml:"message"`
+	Findings []abi.Diagnostic `json:"findings" yaml:"findings"`
 }
 
 // Policies Per-workspace publishing-discipline configuration the rule set consults. Mirrors workspaceconfig.PublishingDisciplineConfig field-for-field. Schema is the contract: both the Go workspaceconfig struct's godoc AND the Rust policies.rs struct doc cross-reference this $def. Field omission defaults each flag to false; the host's serialiser writes only fields with non-default values.
@@ -227,7 +216,7 @@ func (t LinterOutput) MarshalJSON() ([]byte, error) {
 			buf.WriteByte(',')
 		}
 		ev := t.Findings[i]
-		if enc, err := ev.MarshalJSON(); err != nil {
+		if enc, err := json.Marshal(ev); err != nil {
 			return nil, err
 		} else {
 			buf.Write(enc)
@@ -258,11 +247,13 @@ func (t *LinterOutput) UnmarshalJSON(data []byte) error {
 				return err
 			}
 			for dec.More() {
-				var elem LinterFinding
+				var elem abi.Diagnostic
 				if raw, err := readRaw(dec, data); err != nil {
 					return err
 				} else {
-					if err := elem.UnmarshalJSON(raw); err != nil {
+					dec2 := json.NewDecoder(bytes.NewReader(raw))
+					dec2.UseNumber()
+					if err := dec2.Decode(&elem); err != nil {
 						return err
 					}
 				}
@@ -270,92 +261,6 @@ func (t *LinterOutput) UnmarshalJSON(data []byte) error {
 			}
 			if err := expectDelim(dec, ']'); err != nil {
 				return err
-			}
-		default:
-			if _, err := readRaw(dec, data); err != nil {
-				return err
-			}
-		}
-	}
-	if err := expectDelim(dec, '}'); err != nil {
-		return err
-	}
-	return nil
-}
-
-// MarshalJSON encodes LinterFinding in field-declaration order, omitting
-// empty non-required fields, dispatch-free.
-func (t LinterFinding) MarshalJSON() ([]byte, error) {
-	var buf bytes.Buffer
-	buf.WriteByte('{')
-	first := true
-	if !first {
-		buf.WriteByte(',')
-	}
-	first = false
-	buf.WriteString("\"rule_id\":")
-	writeJSONString(&buf, t.RuleID)
-	if !first {
-		buf.WriteByte(',')
-	}
-	first = false
-	buf.WriteString("\"severity\":")
-	writeJSONString(&buf, t.Severity)
-	if t.Classification != "" {
-		if !first {
-			buf.WriteByte(',')
-		}
-		first = false
-		buf.WriteString("\"classification\":")
-		writeJSONString(&buf, t.Classification)
-	}
-	if !first {
-		buf.WriteByte(',')
-	}
-	first = false
-	buf.WriteString("\"message\":")
-	writeJSONString(&buf, t.Message)
-	buf.WriteByte('}')
-	return buf.Bytes(), nil
-}
-
-// UnmarshalJSON decodes LinterFinding with a streaming token walk, descending
-// into composite fields by direct call to each nested type's generated
-// UnmarshalJSON, dispatch-free. Unknown keys are skipped.
-func (t *LinterFinding) UnmarshalJSON(data []byte) error {
-	dec := json.NewDecoder(bytes.NewReader(data))
-	if err := expectDelim(dec, '{'); err != nil {
-		return err
-	}
-	for dec.More() {
-		key, err := readKey(dec)
-		if err != nil {
-			return err
-		}
-		switch key {
-		case "rule_id":
-			if s, err := readString(dec); err != nil {
-				return err
-			} else {
-				t.RuleID = s
-			}
-		case "severity":
-			if s, err := readString(dec); err != nil {
-				return err
-			} else {
-				t.Severity = s
-			}
-		case "classification":
-			if s, err := readString(dec); err != nil {
-				return err
-			} else {
-				t.Classification = s
-			}
-		case "message":
-			if s, err := readString(dec); err != nil {
-				return err
-			} else {
-				t.Message = s
 			}
 		default:
 			if _, err := readRaw(dec, data); err != nil {

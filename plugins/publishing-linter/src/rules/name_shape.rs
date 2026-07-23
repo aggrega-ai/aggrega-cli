@@ -19,7 +19,7 @@
 //! suppresses the rule entirely (matches the workspace-config flag
 //! that the build-time `linter.wasm` warning path also honours).
 
-use aggrega_pdk_rust::{LinterFinding, LinterInput};
+use aggrega_pdk_rust::{Diagnostic, LinterInput};
 use regex::Regex;
 
 use crate::raw;
@@ -28,7 +28,7 @@ use crate::raw;
 /// when the name matches the per-kind pattern, when the rule is
 /// suppressed by `allow_nonstandard_names`, or when the entity kind
 /// has no documented pattern.
-pub fn classify(input: &LinterInput) -> Vec<LinterFinding> {
+pub fn classify(input: &LinterInput) -> Vec<Diagnostic> {
     let policies = &input.policies;
     if policies.allow_nonstandard_names {
         return vec![];
@@ -58,7 +58,7 @@ pub fn classify(input: &LinterInput) -> Vec<LinterFinding> {
     let re = match Regex::new(pattern) {
         Ok(r) => r,
         Err(e) => {
-            return vec![LinterFinding {
+            return vec![Diagnostic {
                 rule_id: "name-shape".to_string(),
                 severity: "error".to_string(),
                 message: format!("name-shape rule: regex compile failure: {e}"),
@@ -71,7 +71,7 @@ pub fn classify(input: &LinterInput) -> Vec<LinterFinding> {
         return vec![];
     }
 
-    vec![LinterFinding {
+    vec![Diagnostic {
         rule_id: "name-shape".to_string(),
         severity: "error".to_string(),
         message: format!(

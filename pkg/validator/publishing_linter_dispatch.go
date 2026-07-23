@@ -8,14 +8,16 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 )
 
-// The LinterInput / LinterOutput / LinterFinding wire types are generated from
+// The LinterInput / LinterOutput wire types are generated from
 // wasm-linter-v1alpha1 into linter_host_gen.go (the host vocabulary realizes the
 // dynamically assembled policies payload as an opaque json.RawMessage),
 // single-sourcing the wire shape with the portable guest codec in aggrega-abi
-// and the PDKs. This file carries the dispatch behaviour that consumes them.
+// and the PDKs. A finding is the shared [abi.Diagnostic] every socket carries.
+// This file carries the dispatch behaviour that consumes them.
 
 // lintExportName is the publishing-linter's default rule-evaluation export.
 // It carries the lint_ prefix the shared describe() gate requires of a
@@ -48,7 +50,7 @@ const lintExportName = "lint_rules"
 // export is the entry function to dispatch to; an empty export selects the
 // socket's default (lintExportName), mirroring a linter attachment that names
 // no per-attachment override.
-func DispatchPublishingLinter(spec wasm.PluginSpec, export string, input LinterInput) ([]LinterFinding, error) {
+func DispatchPublishingLinter(spec wasm.PluginSpec, export string, input LinterInput) ([]abi.Diagnostic, error) {
 	if export == "" {
 		export = lintExportName
 	}
@@ -83,7 +85,7 @@ func DispatchPublishingLinter(spec wasm.PluginSpec, export string, input LinterI
 
 // DispatchPublishingLinterBatch invokes the publishing-linter Wasm
 // plugin once per input, loading the plugin a single time at batch
-// open. The returned slice carries one []LinterFinding per input,
+// open. The returned slice carries one []abi.Diagnostic per input,
 // in input order. Errors from any individual call short-circuit the
 // batch.
 //
@@ -103,7 +105,7 @@ func DispatchPublishingLinter(spec wasm.PluginSpec, export string, input LinterI
 // export is the entry function to dispatch to; an empty export selects the
 // socket's default (lintExportName), mirroring a linter attachment that names
 // no per-attachment override.
-func DispatchPublishingLinterBatch(spec wasm.PluginSpec, export string, inputs []LinterInput) ([][]LinterFinding, error) {
+func DispatchPublishingLinterBatch(spec wasm.PluginSpec, export string, inputs []LinterInput) ([][]abi.Diagnostic, error) {
 	if export == "" {
 		export = lintExportName
 	}
@@ -119,7 +121,7 @@ func DispatchPublishingLinterBatch(spec wasm.PluginSpec, export string, inputs [
 	}
 	defer plugin.Close(ctx)
 
-	results := make([][]LinterFinding, 0, len(inputs))
+	results := make([][]abi.Diagnostic, 0, len(inputs))
 	for i, input := range inputs {
 		payload, err := json.Marshal(input)
 		if err != nil {

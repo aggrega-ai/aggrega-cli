@@ -13,6 +13,7 @@ import (
 
 	"oras.land/oras-go/v2/content/memory"
 
+	"github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
@@ -379,7 +380,7 @@ func TestPluginDefaultLimits(t *testing.T) {
 		t.Fatalf("read plugin %s: %v", pluginPath, err)
 	}
 
-	dispatch := func(yamlBytes []byte) []validator.LinterFinding {
+	dispatch := func(yamlBytes []byte) []abi.Diagnostic {
 		t.Helper()
 		proposedJSON, header, err := yamlToLinterJSON(yamlBytes)
 		if err != nil {
@@ -398,7 +399,7 @@ func TestPluginDefaultLimits(t *testing.T) {
 		return findings
 	}
 
-	hasRuleFinding := func(findings []validator.LinterFinding) *validator.LinterFinding {
+	hasRuleFinding := func(findings []abi.Diagnostic) *abi.Diagnostic {
 		for i := range findings {
 			if findings[i].RuleID == "plugin-default-limits" {
 				return &findings[i]

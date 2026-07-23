@@ -45,7 +45,7 @@
 //! a violation at `entity X` `path P` is exempted when an exemption
 //! entry has `entity == X` AND `paths` contains `P`.
 
-use aggrega_pdk_rust::{LinterFinding, LinterInput, NarrowingExemption};
+use aggrega_pdk_rust::{Diagnostic, LinterInput, NarrowingExemption};
 use serde_json::Value;
 
 use crate::raw;
@@ -73,7 +73,7 @@ const NAMESPACING_KEYS: &[&str] = &[
     "dependentSchemas",
 ];
 
-pub fn classify(input: &LinterInput) -> Vec<LinterFinding> {
+pub fn classify(input: &LinterInput) -> Vec<Diagnostic> {
     let policies = &input.policies;
 
     // Default OFF — workspaces opt in explicitly.
@@ -115,7 +115,7 @@ pub fn classify(input: &LinterInput) -> Vec<LinterFinding> {
     violations
         .into_iter()
         .filter(|path| !is_exempted(entity_name, path, exemptions))
-        .map(|path| LinterFinding {
+        .map(|path| Diagnostic {
             rule_id: "narrowing".to_string(),
             severity: "error".to_string(),
             message: format!(

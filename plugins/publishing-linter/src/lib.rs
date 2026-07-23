@@ -14,7 +14,7 @@
 //! [`lint_rules`].
 
 use aggrega_pdk_rust::{
-    describe, LinterFinding, LinterInput, LinterOutput, PluginDescriptor, PluginDescriptorMeta,
+    describe, Diagnostic, LinterInput, LinterOutput, PluginDescriptor, PluginDescriptorMeta,
     PluginExport, API_VERSION,
 };
 use extism_pdk::{plugin_fn, FnResult, Json};
@@ -77,7 +77,7 @@ pub fn lint_rules(input: Json<LinterInput>) -> FnResult<Json<LinterOutput>> {
         "category-matches-directory" => rules::category_vs_directory::classify(&input),
         "x-aggrega-discouragement" => rules::x_aggrega_discouragement::classify(&input),
         "plugin-default-limits" => rules::plugin_default_limits::classify(&input),
-        other => vec![LinterFinding {
+        other => vec![Diagnostic {
             rule_id: "unknown_rule".to_string(),
             severity: "error".to_string(),
             message: format!("rule_id {other:?} not implemented at this plugin version"),

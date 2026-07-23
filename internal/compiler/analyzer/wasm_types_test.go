@@ -158,7 +158,45 @@ func TestPolicyTypes_JSONSchemaFieldCoverage(t *testing.T) {
 	assertGoStructPropertiesIn(t, reflect.TypeOf(analyzer.PolicyInput{}), "PolicyInput")
 	assertGoStructPropertiesIn(t, reflect.TypeOf(analyzer.PolicyOutput{}), "PolicyOutput")
 	assertGoStructPropertiesIn(t, reflect.TypeOf(analyzer.PrecalculatedPath{}), "PrecalculatedPath")
-	assertGoStructPropertiesIn(t, reflect.TypeOf(analyzer.PolicyResult{}), "PolicyResult")
 	assertGoStructPropertiesIn(t, reflect.TypeOf(analyzer.RenderPolicyInput{}), "RenderPolicyInput")
 	assertGoStructPropertiesIn(t, reflect.TypeOf(analyzer.RenderedArtifact{}), "RenderedArtifact")
+
+	// A fired verdict is one entry of the shared diagnostic shape, defined in the
+	// wasm-diagnostic schema rather than the policy schema. Assert the lean host
+	// verdict type's fields are all present in that shared def.
+	diagPath := filepath.Join("..", "..", "..", "..", "aggrega-schemas", "json", "wasm-diagnostic-v1alpha1.schema.json")
+	diagBytes, err := os.ReadFile(diagPath)
+	if err != nil {
+		t.Skipf("wasm-diagnostic schema not reachable at %s: %v", diagPath, err)
+	}
+	var diagRaw map[string]any
+	if err := json.Unmarshal(diagBytes, &diagRaw); err != nil {
+		t.Fatalf("unmarshal diagnostic schema: %v", err)
+	}
+	diagDefs, ok := diagRaw["$defs"].(map[string]any)
+	if !ok {
+		t.Fatalf("diagnostic schema $defs missing or not an object")
+	}
+	diagDef, ok := diagDefs["Diagnostic"].(map[string]any)
+	if !ok {
+		t.Fatalf("diagnostic schema $defs.Diagnostic missing or not an object")
+	}
+	diagProps, ok := diagDef["properties"].(map[string]any)
+	if !ok {
+		t.Fatalf("diagnostic schema $defs.Diagnostic.properties missing or not an object")
+	}
+	prType := reflect.TypeOf(analyzer.PolicyResult{})
+	for i := 0; i < prType.NumField(); i++ {
+		f := prType.Field(i)
+		if !f.IsExported() {
+			continue
+		}
+		name := strings.Split(f.Tag.Get("json"), ",")[0]
+		if name == "" {
+			name = f.Name
+		}
+		if _, present := diagProps[name]; !present {
+			t.Errorf("diagnostic schema $defs.Diagnostic.properties missing %q (Go field PolicyResult.%s)", name, f.Name)
+		}
+	}
 }

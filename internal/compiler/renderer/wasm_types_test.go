@@ -257,7 +257,7 @@ func TestDiagnostic_OmitemptyAndRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal minimal: %v", err)
 	}
-	const wantMinimal = `{"severity":"error","code":"missing-required","message":"values.image is required"}`
+	const wantMinimal = `{"severity":"error","message":"values.image is required","code":"missing-required"}`
 	if string(raw) != wantMinimal {
 		t.Errorf("omitempty did not drop optional fields:\n  want: %s\n  got:  %s", wantMinimal, raw)
 	}
