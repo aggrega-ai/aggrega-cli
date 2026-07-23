@@ -20,9 +20,10 @@ import (
 //   - Slice fields sorted by their canonical key: Entities,
 //     SchemaLibraries, MappingLibraries, Plugins by URI;
 //     SourceArtifacts by the composite (Kind, URL, Chart, PinnedVersion);
-//     ExternalInputs by URL. Mutators is the exception: its order is
-//     semantic (the mutator runner applies attachments in list order),
-//     so it is copied in author order and never sorted.
+//     ExternalInputs by URL; VerdictInputs by (Plugin, Role), with each
+//     entry's Sources by base name. Mutators is the exception: its order
+//     is semantic (each transform runner applies its role's attachments
+//     in list order), so it is copied in author order and never sorted.
 //   - Inside each Entity / Plugin: ReferencedFrom sorted
 //     lexicographically.
 //   - Inside each ExternalInput: RequiredBy sorted lexicographically
@@ -243,6 +244,29 @@ func canonicalise(lf *Lockfile) *Lockfile {
 	// so the marshalled bytes stay deterministic without a re-sort here.
 	out.Mutators = make([]MutatorAttachment, len(lf.Mutators))
 	copy(out.Mutators, lf.Mutators)
+
+	// VerdictInputs is provenance (not a semantic-order build input), so unlike
+	// Mutators it is sorted for a canonical form: by plugin coordinate, then role,
+	// so the same plugin attached at both verdict stages orders deterministically.
+	// Each entry's Sources slice is reallocated so the sort cannot mutate the
+	// caller's slice, and is ordered by source base name.
+	out.VerdictInputs = make([]VerdictInput, len(lf.VerdictInputs))
+	for i, v := range lf.VerdictInputs {
+		entryCopy := v
+		entryCopy.Sources = make([]VerdictSourcePin, len(v.Sources))
+		copy(entryCopy.Sources, v.Sources)
+		sort.Slice(entryCopy.Sources, func(a, b int) bool {
+			return entryCopy.Sources[a].Path < entryCopy.Sources[b].Path
+		})
+		out.VerdictInputs[i] = entryCopy
+	}
+	sort.Slice(out.VerdictInputs, func(i, j int) bool {
+		a, b := out.VerdictInputs[i], out.VerdictInputs[j]
+		if a.Plugin != b.Plugin {
+			return a.Plugin < b.Plugin
+		}
+		return a.Role < b.Role
+	})
 
 	return out
 }

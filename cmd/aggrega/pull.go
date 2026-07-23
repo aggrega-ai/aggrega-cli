@@ -25,6 +25,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
+	"github.com/aggrega-ai/aggrega-cli/pkg/plugintype"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pullverify"
 	"github.com/aggrega-ai/aggrega-cli/pkg/registryhost"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
@@ -524,12 +525,22 @@ func pullRun(cfg pullConfig) error {
 	if err := closure.DescendRecipePluginArtifacts(&cl, lazyView.ClosureRecipeLoader(), lookup); err != nil {
 		return fmt.Errorf("resolve: pipeline-plugin artifact descent: %w", err)
 	}
-	// Resolve the mutator-socket attachments to their pinned lockfile records, in
-	// authored order. The mutator rewrites the IR and shapes output bytes, so its
-	// attachment set / order / export function is recorded for the lockfile and
-	// build reconstructs it from there rather than from live config — keeping
-	// build output invariant to a plugins.mutator change made after the pull.
+	// Resolve the transform-role governance attachments (label-transform /
+	// annotation-transform) to their pinned lockfile records, in authored order. A
+	// transform role shapes output bytes, so its attachment set / order / role /
+	// export function is recorded for the lockfile and build reconstructs it from
+	// there rather than from live config — keeping build output invariant to a
+	// plugins.governance transform change made after the pull.
 	mutatorAttachments, err := resolveMutatorAttachments(wsCfg.Plugins.TransformGovernanceRefs(), lazyView)
+	if err != nil {
+		return err
+	}
+	// Record the verdict-role attachments' external rule-input digests for the
+	// lockfile. This is provenance, not a pin: the verdict plugin is cache-not-pin
+	// and reads its rule inputs live, so only the digest is recorded — enough to
+	// audit the inputs that shaped a verdict and to surface a changed rule file as
+	// a lockfile diff on the next pull.
+	verdictInputs, err := resolveVerdictInputs(wsCfg.Plugins.VerdictGovernanceRefs())
 	if err != nil {
 		return err
 	}
@@ -713,7 +724,7 @@ func pullRun(cfg pullConfig) error {
 				return fmt.Errorf("freeze recipe pins: %w", err)
 			}
 
-			lf := buildLockfile(cfg.ReleasePath, cl, wsCfg, resolvedBindings, mutatorAttachments, postFreezeRecipeDigests)
+			lf := buildLockfile(cfg.ReleasePath, cl, wsCfg, resolvedBindings, mutatorAttachments, verdictInputs, postFreezeRecipeDigests)
 			// Carry forward each unchanged pin's recorded deprecation fact from the
 			// prior lockfile before verification runs. A warm-cache (Tier-2) re-pull
 			// does not re-touch the registry, so it does not re-discover markers; the
@@ -762,7 +773,7 @@ func pullRun(cfg pullConfig) error {
 // buildLockfile materialises a *lockfile.Lockfile from the closure
 // result. Field-for-field copy across the closure / lockfile package
 // boundary; both types intentionally mirror the same shape.
-func buildLockfile(releasePath string, cl closure.Closure, wsCfg workspaceconfig.Config, bindings map[string]lockfile.ProviderBinding, mutators []lockfile.MutatorAttachment, postFreezeRecipeDigests map[string]string) *lockfile.Lockfile {
+func buildLockfile(releasePath string, cl closure.Closure, wsCfg workspaceconfig.Config, bindings map[string]lockfile.ProviderBinding, mutators []lockfile.MutatorAttachment, verdictInputs []lockfile.VerdictInput, postFreezeRecipeDigests map[string]string) *lockfile.Lockfile {
 	lf := &lockfile.Lockfile{
 		Version:     1,
 		Release:     filepath.Base(releasePath),
@@ -778,6 +789,10 @@ func buildLockfile(releasePath string, cl closure.Closure, wsCfg workspaceconfig
 	// carried through unsorted (WriteLockfile likewise preserves the order). The
 	// copy avoids aliasing the caller's slice.
 	lf.Mutators = append([]lockfile.MutatorAttachment(nil), mutators...)
+
+	// Verdict-input digest records are provenance (WriteLockfile canonicalises
+	// their order), so they are carried through with only an aliasing-safe copy.
+	lf.VerdictInputs = append([]lockfile.VerdictInput(nil), verdictInputs...)
 
 	for _, e := range cl.Entities {
 		// A writable recipe's content digest was captured at resolution, before
@@ -856,14 +871,15 @@ func buildLockfile(releasePath string, cl closure.Closure, wsCfg workspaceconfig
 	return lf
 }
 
-// resolveMutatorAttachments resolves each configured mutator-socket attachment
-// to the pinned record the lockfile carries: the plugin's resolved coordinate
-// identity, the export override, the attachment's settings object, and a
+// resolveMutatorAttachments resolves each configured transform-role governance
+// attachment (label-transform / annotation-transform) to the pinned record the
+// lockfile carries: the plugin's resolved coordinate identity, the transform
+// role, the export override, the attachment's settings object, and a
 // content-addressed pin of each declared source file, in authored order. Build
-// and serve reconstruct the mutator attachment list from these records rather
-// than from live workspace config, so the mutator set / order / export function
-// / settings / source content that shapes the rendered output is config-invariant
-// after the pull.
+// and serve reconstruct the attachment list from these records rather than from
+// live workspace config, so the set / order / role / export function / settings /
+// source content that shapes the rendered output is config-invariant after the
+// pull.
 //
 // Each attachment's Plugin entity resolves through the same pinned lazy view the
 // rest of the pull uses; the coordinate is derived through the single
@@ -894,6 +910,13 @@ func resolveMutatorAttachments(refs []workspaceconfig.PluginRef, lazyView *catal
 			Plugin:   p.Coordinate(),
 			Function: ref.Function,
 		}
+		// Pin the transform role so the build reconstructs the attachment at the
+		// runner it was authored for. label-transform is the default reconstruction,
+		// so it is left unrecorded — only a non-default role (annotation-transform)
+		// carries a role line.
+		if ref.Role != plugintype.RoleLabelTransform {
+			att.Role = string(ref.Role)
+		}
 		if ref.With != nil {
 			att.Settings = ref.With.Settings
 			for _, src := range ref.With.Sources {
@@ -910,6 +933,49 @@ func resolveMutatorAttachments(refs []workspaceconfig.PluginRef, lazyView *catal
 			sort.Slice(att.Sources, func(i, j int) bool { return att.Sources[i].Path < att.Sources[j].Path })
 		}
 		out = append(out, att)
+	}
+	return out, nil
+}
+
+// resolveVerdictInputs records, for each verdict-role governance attachment, the
+// content digest of every external rule input it reads at compile time — a
+// Kyverno / Rego file supplied through the attachment's with.sources. Unlike a
+// transform attachment this is PROVENANCE, not a build input: the verdict plugin
+// is cache-not-pin and reads its rule inputs LIVE, so the lockfile records only
+// the digest (never the content), so the inputs that shaped an accept/reject
+// decision are auditable and a changed rule file surfaces as a lockfile diff on
+// the next pull. An attachment that declares no sources contributes no entry.
+// Digests are recorded in source base-name order for a deterministic record.
+//
+// The verdict plugin is cache-not-pin and so is absent from the entities /
+// plugins sections; the record therefore identifies the attachment by its
+// authored URI (self-standing provenance), not by a resolved coordinate that
+// would join into those sections.
+func resolveVerdictInputs(refs []workspaceconfig.PluginRef) ([]lockfile.VerdictInput, error) {
+	if len(refs) == 0 {
+		return nil, nil
+	}
+	var out []lockfile.VerdictInput
+	for _, ref := range refs {
+		if ref.URI == "" || ref.With == nil || len(ref.With.Sources) == 0 {
+			continue
+		}
+		vi := lockfile.VerdictInput{
+			Plugin: ref.URI,
+			Role:   string(ref.Role),
+		}
+		for _, src := range ref.With.Sources {
+			content, err := os.ReadFile(src)
+			if err != nil {
+				return nil, fmt.Errorf("resolve: read verdict socket source %q: %w", src, err)
+			}
+			vi.Sources = append(vi.Sources, lockfile.VerdictSourcePin{
+				Path:   filepath.Base(src),
+				Digest: digest.ContentDigest(content),
+			})
+		}
+		sort.Slice(vi.Sources, func(i, j int) bool { return vi.Sources[i].Path < vi.Sources[j].Path })
+		out = append(out, vi)
 	}
 	return out, nil
 }

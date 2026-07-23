@@ -87,4 +87,5 @@ schema_libraries:
           fragments:
             - '#/schemas/Storage'
 source_artifacts: []
+verdict_inputs: []
 version: 1

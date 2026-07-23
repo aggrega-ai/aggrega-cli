@@ -46,6 +46,7 @@ type Lockfile struct {
 	Release          string              `yaml:"release"`
 	SchemaLibraries  []SchemaLibrary     `yaml:"schema_libraries"`
 	SourceArtifacts  []SourceArtifact    `yaml:"source_artifacts"`
+	VerdictInputs    []VerdictInput      `yaml:"verdict_inputs"`
 	Version          int                 `yaml:"version"`
 }
 
@@ -269,36 +270,46 @@ type Plugin struct {
 	Signature   *VerifiedSignature `yaml:"signature,omitempty"`
 }
 
-// MutatorAttachment records one mutator-socket attachment the pull resolved,
-// keeping its position in the authored attachment order. The mutator rewrites
-// the IR and therefore shapes the rendered output bytes, so its attachment set
-// — the ordered list, plus per attachment the plugin coordinate and export
-// function — is a byte-determining input the lockfile pins. Build and serve
-// reconstruct the attachment list from this section rather than from live
-// workspace config, so a plugins.mutator change made after the pull does not
-// move build output (the change is adopted only on the next pull).
+// MutatorAttachment records one transform-role governance attachment the pull
+// resolved, keeping its position in the authored attachment order. A transform
+// role (label-transform, which rewrites node labels; or annotation-transform,
+// which injects annotations before expansion) shapes the rendered output bytes,
+// so its attachment set — the ordered list, plus per attachment the role, plugin
+// coordinate, and export function — is a byte-determining input the lockfile
+// pins. Build and serve reconstruct the attachment list from this section rather
+// than from live workspace config, so a plugins.governance transform change made
+// after the pull does not move build output (the change is adopted only on the
+// next pull).
 //
 // The plugin's content digest is NOT duplicated here — it stays single-sourced
 // in the Entities and Plugins sections, which this record points into by
-// identity. This section pins the attachment set, order, and export function;
-// the .wasm bytes are pinned and drift-checked on the entity / plugin axes.
+// identity. This section pins the attachment set, order, role, and export
+// function; the .wasm bytes are pinned and drift-checked on the entity / plugin
+// axes.
 //
-// Order is SEMANTIC: the mutator runner applies each attachment in list order,
-// so WriteLockfile preserves this slice's order — it does NOT sort it, unlike
-// the URI-sorted Plugins / Providers sections.
+// Order is SEMANTIC: each transform runner applies its role's attachments in
+// list order, so WriteLockfile preserves this slice's order — it does NOT sort
+// it, unlike the URI-sorted Plugins / Providers sections.
 //
 // Field declaration order is alphabetical to drive yaml.v3's canonical key
 // emission, matching the Lockfile-wide discipline.
 type MutatorAttachment struct {
 	// Function is the export override the attachment names; empty (and omitted)
-	// selects the mutator socket's default mutate export.
+	// selects the role's default export (mutate for label-transform,
+	// transform_annotations for annotation-transform).
 	Function string `yaml:"function,omitempty"`
-	// Plugin is the resolved plugin coordinate — the mutator Plugin entity's
+	// Plugin is the resolved plugin coordinate — the governance Plugin entity's
 	// <pluginType>/<name> identity, the same coordinate form ProviderBinding.Plugin
 	// uses and the identity the Entities / Plugins sections pin under.
 	Plugin string `yaml:"plugin"`
+	// Role is the transform role this attachment is bound to, fixing which runner
+	// (and therefore which facet) reconstruction dispatches it at. Empty (and
+	// omitted) means label-transform — the default that keeps a lockfile written
+	// before the annotation role existed reconstructing unchanged, and keeps a
+	// label-transform pin free of a redundant role line.
+	Role string `yaml:"role,omitempty"`
 	// Settings is the free-form settings object the attachment declared, pinned
-	// as authored and handed to the plugin verbatim. The mutator reads its
+	// as authored and handed to the plugin verbatim. The transform reads its
 	// settings from here — never live config — so a post-pull settings change
 	// does not move build output. Absent when the attachment declares none.
 	Settings map[string]any `yaml:"settings,omitempty"`
@@ -308,6 +319,52 @@ type MutatorAttachment struct {
 	// live host read — keeping build output invariant to a post-pull change to
 	// the source file. Absent when the attachment declares none.
 	Sources []MutatorSourcePin `yaml:"sources,omitempty"`
+}
+
+// VerdictInput records the external rule inputs one verdict-role governance
+// attachment (ir-verdict / render-verdict) reads at compile time — a Kyverno /
+// Rego rule file supplied through the attachment's with.sources. Unlike
+// MutatorAttachment this is PROVENANCE, not a build input: a verdict plugin is
+// cache-not-pin and reads its rule inputs LIVE (the verdict shapes no output
+// bytes, so it is outside the deterministic-output pin closure). This section
+// records only the content DIGEST of each rule input — never its content — so
+// the inputs that determined an accept/reject decision are auditable and the
+// digest that shaped a verdict is diffable across pulls: a changed rule file
+// surfaces as a lockfile diff on the next pull. Build does not read this section.
+//
+// A verdict plugin is cache-not-pin and so is absent from the Entities / Plugins
+// sections; this record identifies the attachment by its authored URI —
+// self-standing provenance, not a closure join.
+//
+// Field declaration order is alphabetical to drive yaml.v3's canonical key
+// emission, matching the Lockfile-wide discipline.
+type VerdictInput struct {
+	// Plugin is the verdict attachment's authored plugin URI, as written in
+	// .aggrega-config.yaml plugins.governance. It identifies which attachment the
+	// recorded rule inputs belong to; the cache-not-pin verdict plugin has no
+	// entry in the Plugins / Entities sections to join to.
+	Plugin string `yaml:"plugin"`
+	// Role is the verdict role this attachment is bound to (ir-verdict /
+	// render-verdict), distinguishing the same plugin attached at both verdict
+	// stages, each potentially with its own rule inputs.
+	Role string `yaml:"role"`
+	// Sources are the content-digest records of the attachment's declared rule
+	// inputs, in base-name order. Absent when the attachment declares none.
+	Sources []VerdictSourcePin `yaml:"sources,omitempty"`
+}
+
+// VerdictSourcePin is one content-digest record for a verdict attachment's rule
+// input. It carries the file's base name and the sha256:... content-address of
+// its bytes at pull time — deliberately WITHOUT the content, the distinction from
+// MutatorSourcePin: a verdict input is read live and recorded for audit, not
+// reconstructed from the lockfile. A re-pull recomputes the digest, so a changed
+// rule file surfaces as a lockfile diff.
+//
+// Field declaration order is alphabetical to drive yaml.v3's canonical key
+// emission, matching the Lockfile-wide discipline.
+type VerdictSourcePin struct {
+	Digest string `yaml:"digest"`
+	Path   string `yaml:"path"`
 }
 
 // MutatorSourcePin is one content-addressed source-file pin for a mutator

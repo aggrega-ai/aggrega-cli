@@ -33,6 +33,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
+	"github.com/aggrega-ai/aggrega-cli/pkg/plugintype"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
@@ -149,6 +150,49 @@ func resolveLocalWorkspace(t *testing.T, root, pluginsBlock string) *workspaceco
 		t.Fatalf("Resolve workspace: %v", err)
 	}
 	return rw
+}
+
+// TestAnnotationTransformSocket_RolePinnedThroughLockfile proves the second
+// transform role round-trips through the real pull -> lockfile -> reconstruction
+// path: an attachment authored at role annotation-transform is pinned with its
+// role and reconstructs at that role, so the build dispatches it at the
+// annotation runner (Step 1) rather than the label runner. Before the role was
+// pinned, a lockfile-driven build reconstructed every transform attachment as
+// label-transform, silently routing an annotation attachment to the wrong runner.
+//
+// The proof is the pull -> lockfile capture and the reconstruction role; it does
+// not build (the harness guest exports mutate, not transform_annotations — the
+// lockfile role round-trip under test is independent of the guest's exports,
+// which the build-stage dispatch, not the pull, matches to the role).
+func TestAnnotationTransformSocket_RolePinnedThroughLockfile(t *testing.T) {
+	mutatorBytes := wasmtest.EnsureFixtureBytes(t, "mutator-proof-go.wasm")
+	root, catalogDir := localMutatorWorkspace(t, mutatorBytes)
+	catDirs := []string{catalogDir, standardCatalogDir(t)}
+	const socket = "governance/tag-injector"
+
+	rwPull := resolveLocalWorkspace(t, root, "plugins:\n  governance:\n    - uri: "+socket+":1.0.0\n      role: annotation-transform\n")
+	releasePath := filepath.Join(root, "release.yaml")
+	if err := pullRun(pullConfig{ReleasePath: releasePath, CatalogDirs: catDirs, ws: rwPull, DiagOut: os.Stderr, Out: os.Stderr, diag: buildDiagOptions{quiet: true}}); err != nil {
+		t.Fatalf("pull (annotation-transform attached): %v", err)
+	}
+
+	lf, _, err := lockfile.LoadLockfile(lockfile.PathFor(releasePath))
+	if err != nil {
+		t.Fatalf("load lockfile: %v", err)
+	}
+	if len(lf.Mutators) != 1 {
+		t.Fatalf("lockfile mutators = %+v; want one transform attachment pinned", lf.Mutators)
+	}
+	if lf.Mutators[0].Role != string(plugintype.RoleAnnotationTransform) {
+		t.Fatalf("pinned transform role = %q, want %q; the annotation role must survive the pull",
+			lf.Mutators[0].Role, plugintype.RoleAnnotationTransform)
+	}
+
+	refs := lockfile.MutatorAttachments(lf)
+	if len(refs) != 1 || refs[0].Role != plugintype.RoleAnnotationTransform {
+		t.Fatalf("reconstructed attachment = %+v; want role %q so build dispatches at the annotation runner",
+			refs, plugintype.RoleAnnotationTransform)
+	}
 }
 
 // TestMutatorSocket_BuildIsInvariantToConfigAfterPull is the mutator determinism

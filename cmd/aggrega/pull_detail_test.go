@@ -32,7 +32,7 @@ func TestLockfileIgnoresResolutionTier(t *testing.T) {
 	}
 
 	write := func(cl closure.Closure) []byte {
-		lf := buildLockfile("release-prod.yaml", cl, workspaceconfig.Config{}, nil, nil, nil)
+		lf := buildLockfile("release-prod.yaml", cl, workspaceconfig.Config{}, nil, nil, nil, nil)
 		// generated_at is intentionally non-deterministic (wall-clock) and is
 		// excluded from the byte-identity guarantee; normalise it so the proof
 		// isolates the resolution-tier field.

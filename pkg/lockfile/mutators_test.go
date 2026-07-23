@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
+	"github.com/aggrega-ai/aggrega-cli/pkg/plugintype"
 )
 
 // TestMutators_SettingsAndSourcesRoundTrip proves an attachment's pinned settings
@@ -60,6 +61,53 @@ func TestMutators_SettingsAndSourcesRoundTrip(t *testing.T) {
 	if len(with.PinnedSources) != 1 || with.PinnedSources[0].Path != "rules.rego" ||
 		with.PinnedSources[0].Content != "package rules\n" {
 		t.Errorf("reconstructed pinned sources: got %+v", with.PinnedSources)
+	}
+}
+
+// TestMutators_RoleRoundTrip proves the transform role survives WriteLockfile ->
+// LoadLockfile -> MutatorAttachments so the build reconstructs an attachment at
+// the runner (and facet) it was authored for. An annotation-transform attachment
+// records and reconstructs as RoleAnnotationTransform (the load-bearing fix — a
+// second transform role now round-trips through the lockfile, where it previously
+// came back mis-tagged as label-transform), while a role-less attachment
+// reconstructs as the RoleLabelTransform default. The label default is also proven
+// to omit the role key, so a lockfile written before the annotation role existed
+// reconstructs unchanged.
+func TestMutators_RoleRoundTrip(t *testing.T) {
+	in := []lockfile.MutatorAttachment{
+		{Plugin: "governance/annotation-injector", Role: string(plugintype.RoleAnnotationTransform)},
+		{Plugin: "governance/tag-injector"}, // role-less -> label-transform default
+	}
+	path := filepath.Join(t.TempDir(), "release.lock")
+	if err := lockfile.WriteLockfile(path, mutatorSampleLockfile(in)); err != nil {
+		t.Fatalf("WriteLockfile: %v", err)
+	}
+
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if got := string(raw); strings.Count(got, "role:") != 1 {
+		t.Errorf("expected exactly one role key (annotation-transform present, label default omitted); got:\n%s", got)
+	}
+
+	lf, _, err := lockfile.LoadLockfile(path)
+	if err != nil {
+		t.Fatalf("LoadLockfile (schema validation is part of the load): %v", err)
+	}
+	refs := lockfile.MutatorAttachments(lf)
+	if len(refs) != 2 {
+		t.Fatalf("MutatorAttachments len = %d, want 2: %+v", len(refs), refs)
+	}
+	byURI := map[string]plugintype.Role{}
+	for _, r := range refs {
+		byURI[r.URI] = r.Role
+	}
+	if got := byURI["governance/annotation-injector"]; got != plugintype.RoleAnnotationTransform {
+		t.Errorf("annotation attachment reconstructed role = %q, want %q", got, plugintype.RoleAnnotationTransform)
+	}
+	if got := byURI["governance/tag-injector"]; got != plugintype.RoleLabelTransform {
+		t.Errorf("role-less attachment reconstructed role = %q, want the %q default", got, plugintype.RoleLabelTransform)
 	}
 }
 

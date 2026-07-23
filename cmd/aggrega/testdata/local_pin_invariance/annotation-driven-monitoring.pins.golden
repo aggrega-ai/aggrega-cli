@@ -60,4 +60,5 @@ schema_libraries:
           fragments:
             - '#/schemas/BaseFeatureParameter'
 source_artifacts: []
+verdict_inputs: []
 version: 1

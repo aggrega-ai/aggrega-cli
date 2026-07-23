@@ -438,4 +438,41 @@ func TestIntegration_ConfigSocketPluginPinning_RoundTrip(t *testing.T) {
 			t.Fatalf("verify halted after a policy config change; a verdict socket must not drift-gate: %v", err)
 		}
 	})
+
+	t.Run("verdict_input_digest_recorded", func(t *testing.T) {
+		// A verdict attachment that reads an external rule file records that file's
+		// content digest in the lockfile's verdict_inputs section — provenance for
+		// the inputs that shaped the accept/reject decision. The plugin itself stays
+		// cache-not-pin (absent from the pinned axes); only the rule input's digest
+		// is recorded. Changing the rule file surfaces as a lockfile diff on re-pull.
+		pluginsBlock := "plugins:\n  governance:\n    - uri: " + denyPolicySocket + ":1.0.0\n      role: ir-verdict\n      with:\n        sources:\n          - ./rules.rego\n"
+		ws := writeConfigSocketWorkspace(t, host, pluginsBlock, true)
+		writeFixture(t, filepath.Join(ws, "rules.rego"), "package fixture\n# v1\n")
+
+		lf := pullAndLoadLock(t, ws)
+		// The verdict plugin is not pinned; only its rule input's digest is recorded.
+		assertPluginAbsentFromLock(t, lf, denyPolicySocket)
+		if len(lf.VerdictInputs) != 1 {
+			t.Fatalf("verdict_inputs = %+v; want one record for the rule-input-bearing verdict attachment", lf.VerdictInputs)
+		}
+		vi := lf.VerdictInputs[0]
+		if vi.Plugin != denyPolicySocket+":1.0.0" || vi.Role != "ir-verdict" {
+			t.Fatalf("verdict input identity = (%q,%q); want (%q, ir-verdict)", vi.Plugin, vi.Role, denyPolicySocket+":1.0.0")
+		}
+		if len(vi.Sources) != 1 || vi.Sources[0].Path != "rules.rego" || vi.Sources[0].Digest == "" {
+			t.Fatalf("verdict input sources = %+v; want one rules.rego digest", vi.Sources)
+		}
+		before := vi.Sources[0].Digest
+
+		// Change the rule file and re-pull: the recorded digest changes, so a changed
+		// verdict input is visible as a lockfile diff.
+		writeFixture(t, filepath.Join(ws, "rules.rego"), "package fixture\n# v2 changed\n")
+		lf2 := pullAndLoadLock(t, ws)
+		if len(lf2.VerdictInputs) != 1 || lf2.VerdictInputs[0].Sources[0].Digest == "" {
+			t.Fatalf("verdict_inputs after re-pull = %+v", lf2.VerdictInputs)
+		}
+		if lf2.VerdictInputs[0].Sources[0].Digest == before {
+			t.Fatalf("a changed rule file must change the recorded verdict-input digest (was %q); the lockfile did not surface the drift", before)
+		}
+	})
 }

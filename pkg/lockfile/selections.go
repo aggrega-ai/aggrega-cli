@@ -39,13 +39,23 @@ func ProviderBindings(lf *Lockfile) map[string]string {
 // carrying its base name and content. The socket therefore reads settings and
 // source content from the lockfile pin rather than re-reading live config or the
 // host filesystem, so a post-pull change to either does not move build output.
+//
+// Each attachment's role is reconstructed from the pin so it dispatches at the
+// runner (and facet) it was authored for: label-transform to the Step-2 label
+// runner, annotation-transform to the Step-1 annotation runner. An empty role
+// means label-transform — the default that keeps a lockfile written before the
+// annotation role existed reconstructing unchanged.
 func MutatorAttachments(lf *Lockfile) []workspaceconfig.PluginRef {
 	if len(lf.Mutators) == 0 {
 		return nil
 	}
 	refs := make([]workspaceconfig.PluginRef, 0, len(lf.Mutators))
 	for _, m := range lf.Mutators {
-		ref := workspaceconfig.PluginRef{URI: m.Plugin, Function: m.Function, Role: plugintype.RoleLabelTransform}
+		role := plugintype.Role(m.Role)
+		if role == "" {
+			role = plugintype.RoleLabelTransform
+		}
+		ref := workspaceconfig.PluginRef{URI: m.Plugin, Function: m.Function, Role: role}
 		if len(m.Settings) > 0 || len(m.Sources) > 0 {
 			with := &workspaceconfig.PluginRefWith{Settings: m.Settings}
 			for _, s := range m.Sources {
