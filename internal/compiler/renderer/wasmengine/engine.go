@@ -503,6 +503,9 @@ func (e *Engine) invoke(ctx context.Context, export string, input renderer.Rende
 	if err := out.UnmarshalJSON(raw); err != nil {
 		return renderer.RenderNodeOutput{}, fmt.Errorf("wasmengine: decode render_node output: %w", err)
 	}
+	if err := wasm.GuestReturnedError(export, out.Error); err != nil {
+		return renderer.RenderNodeOutput{}, fmt.Errorf("wasmengine: %w", err)
+	}
 	// Fold any guest-emitted warnings (aggrega_emit_warning host function) into
 	// the output's diagnostics as warning-severity entries, so the two guest
 	// advisory channels — structured output diagnostics and the emit-warning host
@@ -643,6 +646,9 @@ func (e *Engine) invokeValidate(ctx context.Context, export string, input render
 	var out renderer.ValidateNodeOutput
 	if err := out.UnmarshalJSON(raw); err != nil {
 		return nil, fmt.Errorf("wasmengine: decode validate_node_input output: %w", err)
+	}
+	if err := wasm.GuestReturnedError(export, out.Error); err != nil {
+		return nil, fmt.Errorf("wasmengine: %w", err)
 	}
 	diags := out.Diagnostics
 	for _, w := range plugin.DrainWarnings() {

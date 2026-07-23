@@ -78,6 +78,9 @@ func runAnnotationSocket(ctx context.Context, inputs Inputs, catalogLookup resol
 		if err := json.Unmarshal(out, &ao); err != nil {
 			return fmt.Errorf("Step 1 (annotation transform): plugin %q output: %w", ref.URI, err)
 		}
+		if err := wasm.GuestReturnedError(export, ao.Error); err != nil {
+			return fmt.Errorf("Step 1 (annotation transform): plugin %q: %w", ref.URI, err)
+		}
 		if err := applyAnnotationInjections(rr, ao, targetSet, ref.URI); err != nil {
 			return fmt.Errorf("Step 1 (annotation transform): plugin %q: %w", ref.URI, err)
 		}

@@ -136,5 +136,8 @@ func ImportArtifact(ctx context.Context, res ImporterResolver, load ImporterLoad
 	if err := io.UnmarshalJSON(out); err != nil {
 		return abi.ImportOutput{}, fmt.Errorf("decode import output from importer %q: %w", plugin.Coordinate(), err)
 	}
+	if err := wasm.GuestReturnedError(wasm.ImportExport, io.Error); err != nil {
+		return abi.ImportOutput{}, fmt.Errorf("importer %q: %w", plugin.Coordinate(), err)
+	}
 	return io, nil
 }

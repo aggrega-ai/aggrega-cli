@@ -3,7 +3,10 @@
 
 package wasm
 
-import "errors"
+import (
+	"errors"
+	"fmt"
+)
 
 // CodedHostError carries a machine-matchable host-function wire error code
 // alongside an underlying error. A seam adapter that owns the dependency for a
@@ -80,6 +83,29 @@ var ErrWasmGuestPanic = errors.New("wasm: guest plugin panicked during call")
 // The wrapping error carries the exit code the plugin passed to
 // proc_exit so callers see the failure code in the message.
 var ErrWasmPluginExited = errors.New("wasm: plugin invoked proc_exit")
+
+// ErrWasmGuestError indicates that a guest plugin ran to completion but
+// reported, through the optional error field on its socket-output envelope, that
+// it could not complete the operation. It is the structured-return counterpart
+// to the crash-path sentinels ErrWasmGuestPanic and ErrWasmPluginExited: all
+// three surface a guest-side failure through one host taxonomy that callers
+// classify with errors.Is, by distinct transport (a panic escaping the call, a
+// proc_exit, or a message the guest itself placed on its output). The wrapping
+// error carries the export name and the guest's message.
+var ErrWasmGuestError = errors.New("wasm: guest plugin reported an error")
+
+// GuestReturnedError maps a guest-returned socket-output error message onto the
+// host taxonomy: it returns an error wrapping ErrWasmGuestError (naming the
+// export and carrying the message) when msg is non-empty, and nil when msg is
+// empty (the success case). A socket consumer calls it right after decoding a
+// guest output so a guest that reports "I could not complete" halts through the
+// same classification a guest crash does.
+func GuestReturnedError(export, msg string) error {
+	if msg == "" {
+		return nil
+	}
+	return fmt.Errorf("call %q: %w: %s", export, ErrWasmGuestError, msg)
+}
 
 // ErrWasmContractMismatch indicates that a catalog Plugin entity's
 // authored contract claim disagrees with the plugin's self-reported describe()

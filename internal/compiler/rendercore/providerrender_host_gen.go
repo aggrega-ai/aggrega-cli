@@ -100,12 +100,16 @@ type RenderNodeOutput struct {
 	Files []RenderedFile `json:"files" yaml:"files"`
 	// Diagnostics Diagnostics the guest raised while rendering. Each element is the shared Wasm-plugin diagnostic shape.
 	Diagnostics []renderctx.Diagnostic `json:"diagnostics,omitempty" yaml:"diagnostics,omitempty"`
+	// Error A failure message set when the guest ran but could not complete the operation; absent on success. It is distinct from any diagnostics the output carries: diagnostics report issues found during a run that still produced a result, while error reports that the operation itself did not complete. The host surfaces a present error as a failed plugin invocation.
+	Error string `json:"error,omitempty" yaml:"error,omitempty"`
 }
 
 // ValidateNodeOutput The payload a Provider guest returns from its optional validate_node_input export: the diagnostics raised by a structural check of the node's resolved input. The export consumes the same RenderNodeInput projection render_node receives and emits no files — it only reports diagnostics. An error-severity diagnostic halts the build loudly, naming the node and provider; a warning or info diagnostic surfaces to the build result without changing rendered output. An empty diagnostics list means the input passed the structural check.
 type ValidateNodeOutput struct {
 	// Diagnostics Diagnostics the guest raised while validating the node's input. Each element is the shared Wasm-plugin diagnostic shape. Empty when the input passed the structural check.
 	Diagnostics []renderctx.Diagnostic `json:"diagnostics,omitempty" yaml:"diagnostics,omitempty"`
+	// Error A failure message set when the guest ran but could not complete the operation; absent on success. It is distinct from any diagnostics the output carries: diagnostics report issues found during a run that still produced a result, while error reports that the operation itself did not complete. The host surfaces a present error as a failed plugin invocation.
+	Error string `json:"error,omitempty" yaml:"error,omitempty"`
 }
 
 // RenderedFile One output file a Provider guest emitted: its on-disk path relative to the node's output root, and its serialized bytes exactly as the guest produced them. The host writes these bytes verbatim and runs no serializer, so the on-disk output is byte-identical to what the guest emitted.
@@ -280,6 +284,8 @@ type AssembleBoundaryOutput struct {
 	Diagnostics []renderctx.Diagnostic `json:"diagnostics,omitempty" yaml:"diagnostics,omitempty"`
 	// NestPerNode Whether the orchestrator nests each contributor's per-node files under charts/<nodeID>/ rather than emitting them flat; the assembler signals this per provider (compose emits flat, so false; an umbrella-chart assembler nests, so true).
 	NestPerNode bool `json:"nest_per_node,omitempty" yaml:"nest_per_node,omitempty"`
+	// Error A failure message set when the guest ran but could not complete the operation; absent on success. It is distinct from any diagnostics the output carries: diagnostics report issues found during a run that still produced a result, while error reports that the operation itself did not complete. The host surfaces a present error as a failed plugin invocation.
+	Error string `json:"error,omitempty" yaml:"error,omitempty"`
 }
 
 // CarveInput The payload a Provider guest receives on its optional carve export: one named output file the pipeline carves into addressable units before a FeatureRecipe step edits some of them. A provider whose output shape the stock YAML codec cannot carve directly (a templated chart, for instance) advertises carve and reassemble so its own output-shape knowledge lives in the guest; a provider that omits the exports borrows the host's stock YAML codec.
@@ -1114,6 +1120,14 @@ func (t RenderNodeOutput) MarshalJSON() ([]byte, error) {
 		}
 		buf.WriteByte(']')
 	}
+	if t.Error != "" {
+		if !first {
+			buf.WriteByte(',')
+		}
+		first = false
+		buf.WriteString("\"error\":")
+		writeJSONString(&buf, t.Error)
+	}
 	buf.WriteByte('}')
 	return buf.Bytes(), nil
 }
@@ -1172,6 +1186,12 @@ func (t *RenderNodeOutput) UnmarshalJSON(data []byte) error {
 			if err := expectDelim(dec, ']'); err != nil {
 				return err
 			}
+		case "error":
+			if s, err := readString(dec); err != nil {
+				return err
+			} else {
+				t.Error = s
+			}
 		default:
 			if _, err := readRaw(dec, data); err != nil {
 				return err
@@ -1209,6 +1229,14 @@ func (t ValidateNodeOutput) MarshalJSON() ([]byte, error) {
 			}
 		}
 		buf.WriteByte(']')
+	}
+	if t.Error != "" {
+		if !first {
+			buf.WriteByte(',')
+		}
+		first = false
+		buf.WriteString("\"error\":")
+		writeJSONString(&buf, t.Error)
 	}
 	buf.WriteByte('}')
 	return buf.Bytes(), nil
@@ -1248,6 +1276,12 @@ func (t *ValidateNodeOutput) UnmarshalJSON(data []byte) error {
 			}
 			if err := expectDelim(dec, ']'); err != nil {
 				return err
+			}
+		case "error":
+			if s, err := readString(dec); err != nil {
+				return err
+			} else {
+				t.Error = s
 			}
 		default:
 			if _, err := readRaw(dec, data); err != nil {
@@ -2881,6 +2915,14 @@ func (t AssembleBoundaryOutput) MarshalJSON() ([]byte, error) {
 			buf.WriteString("false")
 		}
 	}
+	if t.Error != "" {
+		if !first {
+			buf.WriteByte(',')
+		}
+		first = false
+		buf.WriteString("\"error\":")
+		writeJSONString(&buf, t.Error)
+	}
 	buf.WriteByte('}')
 	return buf.Bytes(), nil
 }
@@ -2944,6 +2986,12 @@ func (t *AssembleBoundaryOutput) UnmarshalJSON(data []byte) error {
 				return err
 			} else {
 				t.NestPerNode = v
+			}
+		case "error":
+			if s, err := readString(dec); err != nil {
+				return err
+			} else {
+				t.Error = s
 			}
 		default:
 			if _, err := readRaw(dec, data); err != nil {

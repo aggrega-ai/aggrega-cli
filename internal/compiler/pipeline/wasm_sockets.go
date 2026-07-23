@@ -170,6 +170,9 @@ func runMutatorSocket(ctx context.Context, inputs Inputs, catalogLookup resolver
 		if err := json.Unmarshal(out, &mo); err != nil {
 			return fmt.Errorf("Step 2 (mutator): plugin %q output: %w", ref.URI, err)
 		}
+		if err := wasm.GuestReturnedError(export, mo.Error); err != nil {
+			return fmt.Errorf("Step 2 (mutator): plugin %q: %w", ref.URI, err)
+		}
 		if err := topology.ApplyMutatorPatches(topo, mo); err != nil {
 			return fmt.Errorf("Step 2 (mutator): plugin %q: %w", ref.URI, err)
 		}
@@ -228,6 +231,9 @@ func runPolicySocket(ctx context.Context, inputs Inputs, catalogLookup resolver.
 		var po analyzer.PolicyOutput
 		if err := json.Unmarshal(out, &po); err != nil {
 			return fmt.Errorf("Step 4 (policy): plugin %q output: %w", ref.URI, err)
+		}
+		if err := wasm.GuestReturnedError(export, po.Error); err != nil {
+			return fmt.Errorf("Step 4 (policy): plugin %q: %w", ref.URI, err)
 		}
 		analysis.Errors = append(analysis.Errors, policyVerdictErrors(ref.URI, po)...)
 		for _, r := range po.Results {
@@ -294,6 +300,9 @@ func runRenderPolicySocket(ctx context.Context, inputs Inputs, catalogLookup res
 		var po analyzer.PolicyOutput
 		if err := json.Unmarshal(out, &po); err != nil {
 			return fmt.Errorf("Step 5 (render policy): plugin %q output: %w", ref.URI, err)
+		}
+		if err := wasm.GuestReturnedError(export, po.Error); err != nil {
+			return fmt.Errorf("Step 5 (render policy): plugin %q: %w", ref.URI, err)
 		}
 		denyErrs = append(denyErrs, policyVerdictErrors(ref.URI, po)...)
 		for _, r := range po.Results {

@@ -10,6 +10,7 @@ import (
 	"fmt"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderctx"
+	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/pkg/truthy"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 
@@ -255,6 +256,10 @@ func runStep(
 	var out FRPStepOutput
 	if err := json.Unmarshal(raw, &out); err != nil {
 		return nil, nil, nil, types.OrderedMap[any]{}, fmt.Errorf("%w: step %q (index %d) unmarshal output: %w", ErrPipelineStepFailed, step.ID, index, err)
+	}
+
+	if out.Error != "" {
+		return nil, nil, nil, types.OrderedMap[any]{}, fmt.Errorf("%w: step %q (index %d): %w: %s", ErrPipelineStepFailed, step.ID, index, wasm.ErrWasmGuestError, out.Error)
 	}
 
 	for _, d := range out.Diagnostics {

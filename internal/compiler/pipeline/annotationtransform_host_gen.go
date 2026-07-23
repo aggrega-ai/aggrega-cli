@@ -34,6 +34,8 @@ type AnnotationTransformInput struct {
 type AnnotationTransformOutput struct {
 	// Injections Annotation injections to apply, in order. Each names an existing target coordinate and the annotation key and string value to add there.
 	Injections []AnnotationInjection `json:"injections" yaml:"injections"`
+	// Error A failure message set when the guest ran but could not complete the operation; absent on success. It is distinct from any diagnostics the output carries: diagnostics report issues found during a run that still produced a result, while error reports that the operation itself did not complete. The host surfaces a present error as a failed plugin invocation.
+	Error string `json:"error,omitempty" yaml:"error,omitempty"`
 }
 
 // AnnotationTarget One resolved injection target the plugin may inject annotations onto: its boundary path and component name, and the annotation set the component already carries.
@@ -247,6 +249,14 @@ func (t AnnotationTransformOutput) MarshalJSON() ([]byte, error) {
 		}
 	}
 	buf.WriteByte(']')
+	if t.Error != "" {
+		if !first {
+			buf.WriteByte(',')
+		}
+		first = false
+		buf.WriteString("\"error\":")
+		writeJSONString(&buf, t.Error)
+	}
 	buf.WriteByte('}')
 	return buf.Bytes(), nil
 }
@@ -283,6 +293,12 @@ func (t *AnnotationTransformOutput) UnmarshalJSON(data []byte) error {
 			}
 			if err := expectDelim(dec, ']'); err != nil {
 				return err
+			}
+		case "error":
+			if s, err := readString(dec); err != nil {
+				return err
+			} else {
+				t.Error = s
 			}
 		default:
 			if _, err := readRaw(dec, data); err != nil {

@@ -84,5 +84,8 @@ pub fn lint_rules(input: Json<LinterInput>) -> FnResult<Json<LinterOutput>> {
             ..Default::default()
         }],
     };
-    Ok(Json(LinterOutput { findings }))
+    Ok(Json(LinterOutput {
+        findings,
+        ..Default::default()
+    }))
 }

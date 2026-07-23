@@ -184,6 +184,9 @@ func (e *AssemblerEngine) invokeAssemble(ctx context.Context, export string, inp
 	if err := out.UnmarshalJSON(raw); err != nil {
 		return renderer.AssembleBoundaryOutput{}, fmt.Errorf("wasmengine: decode assemble_boundary output: %w", err)
 	}
+	if err := wasm.GuestReturnedError(export, out.Error); err != nil {
+		return renderer.AssembleBoundaryOutput{}, fmt.Errorf("wasmengine: %w", err)
+	}
 	// Fold guest-emitted warnings into the assemble output's diagnostics as
 	// warning-severity entries, mirroring the render surface, so both guest
 	// advisory channels reach the caller through one list. Drained before the

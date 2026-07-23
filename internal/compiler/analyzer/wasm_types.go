@@ -51,9 +51,12 @@ type PolicySource struct {
 // during evaluation, one [PolicyResult] each; an allowing rule emits nothing,
 // so an empty Results slice means no verdict fired. The policy socket
 // unmarshals this shape from the policy plugin and turns each fired verdict
-// into a build diagnostic.
+// into a build diagnostic. Error, when present, reports that the guest ran but
+// could not complete the evaluation; the socket surfaces it as a failed plugin
+// invocation rather than as a verdict.
 type PolicyOutput struct {
 	Results []PolicyResult `json:"results"`
+	Error   string         `json:"error,omitempty"`
 }
 
 // PolicyResult is one fired policy verdict: its Severity and a human-readable

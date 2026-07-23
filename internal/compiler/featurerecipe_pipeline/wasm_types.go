@@ -160,6 +160,10 @@ type FRPStepOutput struct {
 	SideEffects []SideEffect           `json:"side_effects,omitempty"`
 	Diagnostics []renderctx.Diagnostic `json:"diagnostics,omitempty"`
 	Outputs     types.OrderedMap[any]  `json:"outputs,omitempty,omitzero"`
+	// Error, when present, reports that the guest ran but could not complete the
+	// step; the pipeline surfaces it as a failed plugin invocation rather than as
+	// a diagnostic. Absent on success.
+	Error string `json:"error,omitempty"`
 }
 
 // JSONPatchOp is one RFC 6902 JSON-Patch operation an FRP step emits

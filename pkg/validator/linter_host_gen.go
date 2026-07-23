@@ -40,6 +40,8 @@ type LinterInput struct {
 type LinterOutput struct {
 	// Findings Per-rule findings produced by the plugin invocation, in plugin emit order.
 	Findings []abi.Diagnostic `json:"findings" yaml:"findings"`
+	// Error A failure message set when the guest ran but could not complete the operation; absent on success. It is distinct from any diagnostics the output carries: diagnostics report issues found during a run that still produced a result, while error reports that the operation itself did not complete. The host surfaces a present error as a failed plugin invocation.
+	Error string `json:"error,omitempty" yaml:"error,omitempty"`
 }
 
 // Policies Per-workspace publishing-discipline configuration the rule set consults. Mirrors workspaceconfig.PublishingDisciplineConfig field-for-field. Schema is the contract: both the Go workspaceconfig struct's godoc AND the Rust policies.rs struct doc cross-reference this $def. Field omission defaults each flag to false; the host's serialiser writes only fields with non-default values.
@@ -223,6 +225,14 @@ func (t LinterOutput) MarshalJSON() ([]byte, error) {
 		}
 	}
 	buf.WriteByte(']')
+	if t.Error != "" {
+		if !first {
+			buf.WriteByte(',')
+		}
+		first = false
+		buf.WriteString("\"error\":")
+		writeJSONString(&buf, t.Error)
+	}
 	buf.WriteByte('}')
 	return buf.Bytes(), nil
 }
@@ -261,6 +271,12 @@ func (t *LinterOutput) UnmarshalJSON(data []byte) error {
 			}
 			if err := expectDelim(dec, ']'); err != nil {
 				return err
+			}
+		case "error":
+			if s, err := readString(dec); err != nil {
+				return err
+			} else {
+				t.Error = s
 			}
 		default:
 			if _, err := readRaw(dec, data); err != nil {
