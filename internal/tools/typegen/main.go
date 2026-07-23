@@ -248,6 +248,25 @@ var mutatorHostVocabulary = map[string]string{
 	"OrderedMap[string]":      "types.OrderedMap[string]",
 }
 
+// annotationTransformGuestVocabulary maps the annotation-transform schema's host
+// container spelling to the neutral guest vocabulary: the order-preserving host
+// container becomes a plain map (the guest reads a map; key order on the wire is
+// the host's concern). The annotation-transform carries no cross-package opaque
+// host type.
+var annotationTransformGuestVocabulary = map[string]string{
+	"OrderedMap[string]": "map[string]string",
+}
+
+// annotationTransformHostVocabulary maps the annotation-transform schema's
+// container annotation to the host realization: the order-preserving
+// types.OrderedMap (qualified, since the codec lands in package pipeline) so the
+// host wire is byte-deterministic across runs of identical input (the determinism
+// contract). The guest reads a plain map (its vocabulary rewrites OrderedMap ->
+// map): key order on the wire is the emitting host's concern.
+var annotationTransformHostVocabulary = map[string]string{
+	"OrderedMap[string]": "types.OrderedMap[string]",
+}
+
 // linterGuestVocabulary is empty: the linter schema's opaque fields already
 // carry the neutral json.RawMessage spelling, and it declares no host container
 // type. Absence of an entry passes each annotation through verbatim — including
@@ -509,6 +528,39 @@ var codecTargets = map[string]codecTarget{
 		pkg:        "topology",
 		vocabulary: mutatorHostVocabulary,
 		helpers:    true, // the host mutator codec is alone in package topology
+	},
+
+	// Annotation-transform socket — guest codecs into aggrega-abi (Go/Rust/TS) and
+	// the host codec into aggrega-cli's pipeline package. The abi Go codec
+	// references the helpers FRP owns in package abi (helpers: false); the pipeline
+	// host codec is alone in its package for this schema and owns its helpers
+	// (helpers: true).
+	"annotationtransform_gen.go": {
+		schema:     schemas.WasmAnnotationTransformV1alpha1,
+		schemaFile: "wasm-annotation-transform-v1alpha1.schema.json",
+		pkg:        "abi",
+		vocabulary: annotationTransformGuestVocabulary,
+	},
+	"annotationtransform_gen.rs": {
+		schema:     schemas.WasmAnnotationTransformV1alpha1,
+		schemaFile: "wasm-annotation-transform-v1alpha1.schema.json",
+		pkg:        "abi",
+		vocabulary: annotationTransformGuestVocabulary,
+		lang:       "rust",
+	},
+	"annotationtransform_gen.ts": {
+		schema:     schemas.WasmAnnotationTransformV1alpha1,
+		schemaFile: "wasm-annotation-transform-v1alpha1.schema.json",
+		pkg:        "abi",
+		vocabulary: annotationTransformGuestVocabulary,
+		lang:       "ts",
+	},
+	"annotationtransform_host_gen.go": {
+		schema:     schemas.WasmAnnotationTransformV1alpha1,
+		schemaFile: "wasm-annotation-transform-v1alpha1.schema.json",
+		pkg:        "pipeline",
+		vocabulary: annotationTransformHostVocabulary,
+		helpers:    true, // the host annotation-transform codec is alone in package pipeline
 	},
 
 	// Linter socket — guest codecs into aggrega-abi (Go/Rust/TS) and the host

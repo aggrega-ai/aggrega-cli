@@ -1,0 +1,9 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Feature
+metadata:
+  name: core/proof-injector
+  version: "1.0.0"
+spec:
+  schema:
+    infra:
+      marker: { type: string }

@@ -59,6 +59,12 @@ const (
 type Role string
 
 const (
+	// RoleAnnotationTransform injects annotations onto resolved components after
+	// resolve and before annotation expansion: the plugin returns a list of
+	// annotation injections the host applies to existing component coordinates,
+	// so a bound injected annotation expands into a Feature attachment. It is a
+	// transform role and shapes output bytes.
+	RoleAnnotationTransform Role = "annotation-transform"
 	// RoleLabelTransform auto-tags topology-graph node labels at Step 2: the
 	// plugin returns JSON Patch documents the host applies to a labels-only
 	// projection of the graph. It is a transform role and shapes output bytes.
@@ -76,7 +82,7 @@ const (
 // author-defined order. It is the single home of the role set, so a consumer
 // enumerating valid roles reads them from here rather than re-listing them.
 func GovernanceRoles() []Role {
-	return []Role{RoleLabelTransform, RoleIRVerdict, RoleRenderVerdict}
+	return []Role{RoleAnnotationTransform, RoleLabelTransform, RoleIRVerdict, RoleRenderVerdict}
 }
 
 // GovernanceRoleTier reports the reproducibility tier a governance plugin
@@ -87,7 +93,7 @@ func GovernanceRoles() []Role {
 // one function, they can never disagree on which roles are verdict roles.
 func GovernanceRoleTier(role Role) (Tier, bool) {
 	switch role {
-	case RoleLabelTransform:
+	case RoleAnnotationTransform, RoleLabelTransform:
 		return TierMutating, true
 	case RoleIRVerdict, RoleRenderVerdict:
 		return TierVerdict, true
@@ -98,11 +104,14 @@ func GovernanceRoleTier(role Role) (Tier, bool) {
 
 // GovernanceRoleExport reports the entry-function export name a governance
 // plugin must declare to serve role, and whether role is a known governance
-// role. It is the single home of the role→export rule: a transform role calls
-// mutate; a verdict role calls validate. The host enforces the role's required
-// export at dispatch — a guest that does not declare it does not serve the role.
+// role. It is the single home of the role→export rule: the annotation-transform
+// role calls transform_annotations; the label-transform role calls mutate; a
+// verdict role calls validate. The host enforces the role's required export at
+// dispatch — a guest that does not declare it does not serve the role.
 func GovernanceRoleExport(role Role) (string, bool) {
 	switch role {
+	case RoleAnnotationTransform:
+		return "transform_annotations", true
 	case RoleLabelTransform:
 		return "mutate", true
 	case RoleIRVerdict, RoleRenderVerdict:

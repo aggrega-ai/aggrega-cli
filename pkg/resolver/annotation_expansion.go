@@ -290,10 +290,7 @@ func expandBoundary(
 				continue
 			}
 			comp.Features.Set(key, feature)
-			rr.AnnotationProvenance[AnnotationProvenanceKey(currentPath, compName, key)] = AnnotationProvenance{
-				AnnotationKey:    key,
-				AnnotationSource: effectiveSources[key],
-			}
+			recordAnnotationProvenance(rr, AnnotationProvenanceKey(currentPath, compName, key), key, effectiveSources[key])
 		}
 
 		writeComponent(rr.Release, currentPath, compName, comp)
@@ -767,13 +764,25 @@ func expandAggregateTopLevelComponent(name string, comp types.ComponentInstance,
 			return wrapAggregateAnnotationOpsError(componentPath, key, "expansion", errors.Join(errs...))
 		}
 		comp.Features.Set(key, feature)
-		rr.AnnotationProvenance[AnnotationProvenanceKey(componentPath, "", key)] = AnnotationProvenance{
-			AnnotationKey:    key,
-			AnnotationSource: sourceLoc,
-		}
+		recordAnnotationProvenance(rr, AnnotationProvenanceKey(componentPath, "", key), key, sourceLoc)
 	}
 	writeAggregateComponent(rr.Aggregate, componentPath, comp)
 	return nil
+}
+
+// recordAnnotationProvenance writes the side-table entry for a synthetic Feature
+// attachment, preserving a host pre-seeded InjectedByPlugin. The
+// annotation-transform role runs before expansion and pre-seeds the side-table
+// at the injection coordinate with the injecting plugin's URI; expansion then
+// records the annotation key and source at that same coordinate without
+// clobbering the provenance the host already stamped, so a host-injected
+// annotation's synthetic attachment carries both its trigger and its author.
+func recordAnnotationProvenance(rr *ResolveResult, provKey, annotationKey, source string) {
+	prov := AnnotationProvenance{AnnotationKey: annotationKey, AnnotationSource: source}
+	if existing, ok := rr.AnnotationProvenance[provKey]; ok {
+		prov.InjectedByPlugin = existing.InjectedByPlugin
+	}
+	rr.AnnotationProvenance[provKey] = prov
 }
 
 // expandAggregateSubsystem walks one subsystem of the Aggregate's
@@ -848,10 +857,7 @@ func expandAggregateSubsystem(
 				return wrapAggregateAnnotationOpsError(componentPath, key, "expansion", errors.Join(errs...))
 			}
 			comp.Features.Set(key, feature)
-			rr.AnnotationProvenance[AnnotationProvenanceKey(componentPath, "", key)] = AnnotationProvenance{
-				AnnotationKey:    key,
-				AnnotationSource: effectiveSources[key],
-			}
+			recordAnnotationProvenance(rr, AnnotationProvenanceKey(componentPath, "", key), key, effectiveSources[key])
 		}
 		writeAggregateComponent(rr.Aggregate, componentPath, comp)
 	}

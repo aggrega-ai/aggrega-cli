@@ -128,15 +128,18 @@ var lintExportPrefix = minExportName(plugintype.Linter)
 // plugin-type registry so the literal lives once.
 var frpStepExportName = minExportName(plugintype.FRPStep)
 
-// MutateExport and ValidateExport are the default entry-function names for the
-// governance roles: a transform role calls mutate, a verdict role calls
-// validate. They are the single source for the default a role applies when a
-// governance attachment leaves its entry function unset; they read the name from
-// the canonical governance role→export rule so the export the dispatch requires
-// and the socket default read one name rather than each re-spelling the literal.
+// TransformAnnotationsExport, MutateExport, and ValidateExport are the default
+// entry-function names for the governance roles: the annotation-transform role
+// calls transform_annotations, the label-transform role calls mutate, and a
+// verdict role calls validate. They are the single source for the default a role
+// applies when a governance attachment leaves its entry function unset; they read
+// the name from the canonical governance role→export rule so the export the
+// dispatch requires and the socket default read one name rather than each
+// re-spelling the literal.
 var (
-	MutateExport   = governanceRoleExportName(plugintype.RoleLabelTransform)
-	ValidateExport = governanceRoleExportName(plugintype.RoleIRVerdict)
+	TransformAnnotationsExport = governanceRoleExportName(plugintype.RoleAnnotationTransform)
+	MutateExport               = governanceRoleExportName(plugintype.RoleLabelTransform)
+	ValidateExport             = governanceRoleExportName(plugintype.RoleIRVerdict)
 )
 
 // governanceRoleExportName reads a governance role's required export name from

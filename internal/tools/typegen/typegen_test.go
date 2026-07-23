@@ -98,6 +98,9 @@ var codecTargetPaths = map[string][]string{
 	"mutator_gen.go":        {"..", "..", "..", "..", "aggrega-abi", "go", "pkg", "abi"},
 	"mutator_gen.rs":        {"..", "..", "..", "..", "aggrega-abi", "rust", "src"},
 	"mutator_gen.ts":        {"..", "..", "..", "..", "aggrega-abi", "typescript", "src"},
+	"annotationtransform_gen.go": {"..", "..", "..", "..", "aggrega-abi", "go", "pkg", "abi"},
+	"annotationtransform_gen.rs": {"..", "..", "..", "..", "aggrega-abi", "rust", "src"},
+	"annotationtransform_gen.ts": {"..", "..", "..", "..", "aggrega-abi", "typescript", "src"},
 	"linter_gen.go":         {"..", "..", "..", "..", "aggrega-abi", "go", "pkg", "abi"},
 	"linter_gen.rs":         {"..", "..", "..", "..", "aggrega-abi", "rust", "src"},
 	"linter_gen.ts":         {"..", "..", "..", "..", "aggrega-abi", "typescript", "src"},
@@ -120,6 +123,8 @@ var codecTargetPaths = map[string][]string{
 	"describe_host_gen.go": {"..", "..", "wasm"},
 	// The host mutator codec is committed inside aggrega-cli's topology package.
 	"wasm_types_gen.go": {"..", "..", "compiler", "topology"},
+	// The host annotation-transform codec is committed inside aggrega-cli's pipeline package.
+	"annotationtransform_host_gen.go": {"..", "..", "compiler", "pipeline"},
 	// The host linter codec is committed inside aggrega-cli's validator package.
 	"linter_host_gen.go": {"..", "..", "..", "pkg", "validator"},
 	// The host provider render codec is committed inside aggrega-cli's rendercore package.

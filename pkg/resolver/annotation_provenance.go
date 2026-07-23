@@ -23,6 +23,17 @@ type AnnotationProvenance struct {
 	// tracked through the resolver pipeline; the format upgrades when
 	// yaml.Node access lands in a follow-up implementation pass.
 	AnnotationSource string
+
+	// InjectedByPlugin, when non-empty, is the URI of the
+	// annotation-transform governance plugin that injected the
+	// triggering annotation before expansion. It is host-written and
+	// carried through expansion (the expansion pass preserves a
+	// pre-seeded value rather than clobbering it), so a synthetic
+	// Feature attachment produced from a host-injected annotation
+	// records which plugin authored the injection. Empty for an
+	// author-written annotation — its absence is the "author-declared"
+	// signal, mirroring the side-table's explicit/synthetic asymmetry.
+	InjectedByPlugin string
 }
 
 // annotationProvenanceKeySeparator is the NUL byte used to separate

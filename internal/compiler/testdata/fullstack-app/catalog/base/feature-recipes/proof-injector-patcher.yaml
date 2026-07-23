@@ -1,0 +1,10 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: FeatureRecipe
+metadata:
+  name: proof-injector-patcher
+  version: "1.0.0"
+spec:
+  capability: helm
+  implements: "core/proof-injector"
+  injectMapping: |
+    {"env": {"PROOF_INJECTED_MARKER": "{{ .infra.marker }}"}}

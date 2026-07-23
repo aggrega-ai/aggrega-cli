@@ -15,3 +15,14 @@ import "errors"
 // schema's expectation, so the operator sees exactly which setting to fix. A
 // build halts on it loudly rather than handing the plugin ill-shaped settings.
 var ErrPolicySettingsInvalid = errors.New("policy attachment settings do not satisfy the plugin's declared settings schema")
+
+// ErrAnnotationInjectionRejected is the ABI-stable sentinel for an
+// annotation-transform plugin whose output the host refuses to apply: an
+// injection naming a component coordinate the host did not supply as a target.
+// The annotation-transform role is host-confined to adding string-valued
+// annotations onto existing component coordinates; the wire shape admits nothing
+// else, and an injection that reaches outside the supplied target set halts the
+// build loudly rather than being silently absorbed. It is the annotation-role
+// analogue of the label role's patch-confinement halt — the structural facet
+// guarantee for the annotation-transform role.
+var ErrAnnotationInjectionRejected = errors.New("annotation-transform plugin output was rejected: an injection targets a component coordinate the host did not supply")

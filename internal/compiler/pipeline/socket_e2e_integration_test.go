@@ -27,6 +27,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
 	"github.com/aggrega-ai/aggrega-cli/pkg/plugintype"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
@@ -106,6 +107,154 @@ func fixtureSocketLookup(t *testing.T, catalogLookup resolver.CatalogLookup, uri
 		}
 		return entityCascade(uri)
 	}
+}
+
+// proofInjectAnnotationKey is the registered annotation key the
+// annotation-injector proof guest injects; proofInjectFeature is the Feature it
+// binds to; proofInjectMarker is the value that flows through binding expansion
+// into the synthetic Feature's infra and out into rendered output.
+const (
+	proofInjectAnnotationKey = "feature.proof/inject"
+	proofInjectFeature       = "core/proof-injector"
+	proofInjectMarker        = "annotation-transform-was-here"
+	proofInjectUnboundKey    = "proof.aggrega/unbound"
+	injectedByAnnotation     = "aggrega.ai/injected-by"
+)
+
+// loadFullstackWithProofBinding loads the shared fullstack fixture like
+// loadFullstackForSockets, but registers the proof-injector annotation binding in
+// the Manifest in-memory (the shared manifest.yaml stays untouched, so the
+// golden-path and other socket tests are unaffected). The binding maps the
+// annotation key to the catalog's core/proof-injector Feature through a single
+// infra path, so a scalar injection routes unambiguously and expands into a
+// visible Feature attachment.
+func loadFullstackWithProofBinding(t *testing.T) (pipeline.Inputs, resolver.CatalogLookup, renderer.RecipeLookup, topology.SubAggregateLoader) {
+	t.Helper()
+	rel, err := resolver.LoadRelease(fullstackReleasePath)
+	if err != nil {
+		t.Fatalf("load release: %v", err)
+	}
+	manifest, err := resolver.LoadManifest(fullstackManifestPath)
+	if err != nil {
+		t.Fatalf("load manifest: %v", err)
+	}
+	if manifest.Spec.Mappings.Features == nil {
+		t.Fatalf("fullstack manifest has no features mapping tier; the proof binding cannot attach")
+	}
+	manifest.Spec.Mappings.Features.Type.Set(proofInjectFeature, "proof-injector-patcher:1.0.0")
+	bindings := types.OrderedMap[types.AnnotationBinding]{}
+	bindings.Set(proofInjectAnnotationKey, types.AnnotationBinding{
+		Feature: proofInjectFeature,
+		Maps:    types.AnnotationBindingMaps{Infra: []string{"marker"}},
+	})
+	manifest.Spec.Mappings.Features.Annotations = &bindings
+
+	aggBytes, err := os.ReadFile(fullstackAggregatePath)
+	if err != nil {
+		t.Fatalf("read aggregate: %v", err)
+	}
+	cat, err := catalog.LoadAll("", fullstackCatalogPath)
+	if err != nil {
+		t.Fatalf("catalog load: %v", err)
+	}
+	if extErrs := cat.ResolveAllExtends(); len(extErrs) > 0 {
+		t.Fatalf("catalog extends: %d error(s); first: %v", len(extErrs), extErrs[0])
+	}
+	inputs := pipeline.Inputs{
+		Release:           rel,
+		Manifest:          manifest,
+		AggregateRawBytes: aggBytes,
+		AggregatePath:     fullstackAggregatePath,
+		WorkspaceConfig:   workspaceconfig.Default(),
+		CompilerVersion:   fixtureCompilerVersion,
+	}
+	return inputs, cat.CatalogLookup(), cat.RecipeLookupWithManifest(manifest), cat.SubAggregateLoader()
+}
+
+// TestAnnotationTransformSocketInjectsFeatureE2E proves the pre-expansion
+// annotation-transform governance role end-to-end: a guest attached at the role
+// injects a bound annotation that expands into a synthetic Feature attachment
+// VISIBLE in rendered output, carries the host-stamped aggrega.ai/injected-by
+// provenance marker, is byte-identical across two builds, and injects an unbound
+// annotation that behaves exactly as an authored unbound annotation — it rides
+// through as a plain annotation and produces no Feature (no silent compute,
+// Invariant 4).
+func TestAnnotationTransformSocketInjectsFeatureE2E(t *testing.T) {
+	ctx := context.Background()
+	const pluginURI = "proof://annotation-injector"
+
+	build := func() *pipeline.Result {
+		inputs, buildLookup, recipeLookup, subAgg := loadFullstackWithProofBinding(t)
+		inputs.WorkspaceConfig.Plugins.Governance = []workspaceconfig.PluginRef{{URI: pluginURI, Role: plugintype.RoleAnnotationTransform}}
+		inputs.PluginPathLookup = fixtureSocketLookup(t, buildLookup, map[string]string{pluginURI: "annotation-injector-go.wasm"})
+		res, err := pipeline.RunPipeline(ctx, inputs, buildLookup, recipeLookup, subAgg, pipeline.Options{})
+		if err != nil {
+			t.Fatalf("RunPipeline with annotation-transform: %v", err)
+		}
+		return res
+	}
+
+	res := build()
+
+	// The bound injection expanded into a synthetic Feature attachment.
+	var foundNode string
+	var entry types.IRFeatureEntry
+	for nodeID, feats := range res.IRGraph.Spec.FeatureValuesMapping.All() {
+		if e, ok := feats.Get(proofInjectAnnotationKey); ok {
+			foundNode, entry = nodeID, e
+			break
+		}
+	}
+	if foundNode == "" {
+		t.Fatalf("no synthetic Feature attachment produced from the injected annotation %q", proofInjectAnnotationKey)
+	}
+	if entry.Origin != types.OriginAnnotation {
+		t.Errorf("injected feature origin = %q, want %q (annotation-driven)", entry.Origin, types.OriginAnnotation)
+	}
+	if entry.Type != proofInjectFeature {
+		t.Errorf("injected feature type = %q, want %q", entry.Type, proofInjectFeature)
+	}
+	if v, ok := entry.Infra.Get("marker"); !ok || v != proofInjectMarker {
+		t.Errorf("injected feature infra.marker = %v (present=%v), want %q", v, ok, proofInjectMarker)
+	}
+
+	// The host-stamped injected-by provenance marker rides on the target node.
+	node, ok := res.IRGraph.Spec.Nodes.Get(foundNode)
+	if !ok {
+		t.Fatalf("node %q missing from IR graph", foundNode)
+	}
+	if v, ok := node.ReleaseAnnotations.Get(injectedByAnnotation); !ok || v != pluginURI {
+		t.Errorf("node %q %s = %q (present=%v), want %q", foundNode, injectedByAnnotation, v, ok, pluginURI)
+	}
+
+	// The unbound injected annotation produced no Feature anywhere...
+	for nodeID, feats := range res.IRGraph.Spec.FeatureValuesMapping.All() {
+		if _, ok := feats.Get(proofInjectUnboundKey); ok {
+			t.Errorf("unbound injected annotation %q produced a Feature attachment on node %q (silent compute — Invariant 4 breach)", proofInjectUnboundKey, nodeID)
+		}
+	}
+	// ...yet rode through as a plain annotation, exactly like an authored one.
+	if v, ok := node.ReleaseAnnotations.Get(proofInjectUnboundKey); !ok || v != "no-binding-here" {
+		t.Errorf("unbound injected annotation %q did not ride through as a plain annotation: got %q (present=%v)", proofInjectUnboundKey, v, ok)
+	}
+
+	// The synthetic Feature attachment is visible in real rendered output: its
+	// FeatureRecipe injectMapping rendered the injected marker into the target
+	// component's artifacts.
+	visible := false
+	for _, content := range res.Artifacts {
+		if strings.Contains(string(content), proofInjectMarker) {
+			visible = true
+			break
+		}
+	}
+	if !visible {
+		t.Errorf("injected feature is not visible in rendered output (no artifact carries %q)", proofInjectMarker)
+	}
+
+	// Determinism: a second build of identical input yields byte-identical output.
+	res2 := build()
+	assertArtifactsByteIdentical(t, res.Artifacts, res2.Artifacts)
 }
 
 // TestMutatorSocketInjectsLabelE2E proves the Step-2 mutator socket runs a

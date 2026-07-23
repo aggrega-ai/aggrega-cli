@@ -375,6 +375,14 @@ func ResolveAndValidate(
 		AggregatePath:     inputs.AggregatePath,
 		ReleasePath:       inputs.ReleasePath,
 	}, func(resolveResult *resolver.ResolveResult) error {
+		// The annotation-transform governance role runs first in the resolve
+		// continuation: it injects annotations onto resolved components before
+		// binding validation and expansion, so a bound injection is validated and
+		// expanded into a Feature attachment with no re-run. Unconfigured, it is a
+		// byte-identical no-op.
+		if err := runAnnotationSocket(ctx, inputs, catalogLookup, resolveResult); err != nil {
+			return err
+		}
 		if err := resolver.ValidateAnnotationBindingTargets(resolveResult.Manifest, catalogLookup); err != nil {
 			return fmt.Errorf("Step 1 (annotation binding validation): %w", err)
 		}
