@@ -27,7 +27,7 @@ func newPluginRemoveCmd() *cobra.Command {
 		Long: `Remove a configured plugin of the named type from a config file so it no longer
 participates.
 
-The type is one of provider, mutator, policy, linter, importer, or cli — the same
+The type is one of provider, governance, linter, importer, or cli — the same
 set 'plugin add' accepts. The query identifies the entry to remove: the plugin's
 short name (matched against 'add's short name so remove is symmetric with add),
 its full pinned reference, or, for the provider type, the capability the binding

@@ -784,7 +784,7 @@ func buildLockfile(releasePath string, cl closure.Closure, wsCfg workspaceconfig
 	}
 	sort.Slice(lf.Providers, func(i, j int) bool { return lf.Providers[i].Capability < lf.Providers[j].Capability })
 
-	// Author order is semantic for the mutator runner, so the attachments are
+	// Author order is semantic for the transform runner, so the attachments are
 	// carried through unsorted (WriteLockfile likewise preserves the order). The
 	// copy avoids aliasing the caller's slice.
 	lf.Mutators = append([]lockfile.MutatorAttachment(nil), mutators...)
@@ -884,7 +884,7 @@ func buildLockfile(releasePath string, cl closure.Closure, wsCfg workspaceconfig
 // rest of the pull uses; the coordinate is derived through the single
 // Plugin.Coordinate rule, the same identity ProviderBinding.Plugin records. A
 // ref that does not resolve is a build fault (the closure walk already pinned
-// the mutator entity, halting loudly on a missing one), so it halts here rather
+// the transform-role governance entity, halting loudly on a missing one), so it halts here rather
 // than writing an unresolvable coordinate.
 //
 // Each declared source path is already anchored to an absolute host path by the
@@ -903,7 +903,7 @@ func resolveMutatorAttachments(refs []workspaceconfig.PluginRef, lazyView *catal
 		}
 		p, ok := lazyView.PluginByURI(ref.URI)
 		if !ok {
-			return nil, fmt.Errorf("resolve: mutator socket plugin %q not resolvable for lockfile pin", ref.URI)
+			return nil, fmt.Errorf("resolve: transform-role governance plugin %q not resolvable for lockfile pin", ref.URI)
 		}
 		att := lockfile.MutatorAttachment{
 			Plugin:   p.Coordinate(),
@@ -919,7 +919,7 @@ func resolveMutatorAttachments(refs []workspaceconfig.PluginRef, lazyView *catal
 			for _, src := range ref.With.Sources {
 				content, err := os.ReadFile(src)
 				if err != nil {
-					return nil, fmt.Errorf("resolve: read mutator socket source %q: %w", src, err)
+					return nil, fmt.Errorf("resolve: read transform-role governance source %q: %w", src, err)
 				}
 				att.Sources = append(att.Sources, lockfile.MutatorSourcePin{
 					Path:    filepath.Base(src),

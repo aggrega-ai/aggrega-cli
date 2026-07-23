@@ -64,7 +64,7 @@ combining as AND across facets and OR within a repeatable facet:
   --kind          entity kind (component, feature, recipe, featurerecipe,
                   workload, plugin); repeatable, case-insensitive
   --capability    a plugin capability; repeatable
-  --plugin-type   a plugin socket type (for example provider, policy)
+  --plugin-type   a plugin socket type (for example provider, governance)
   -l, --selector  a label selector over the entity's catalog labels
 
 Category is matched through the label selector, not a dedicated flag: a catalog
@@ -89,7 +89,7 @@ registry's index is searched.`,
 	c.Flags().StringArrayVar(&opts.Kinds, "kind", nil, "Entity kind to match (component|feature|recipe|featurerecipe|workload|plugin). Repeatable; a record matching any one is kept. Case-insensitive.")
 	c.Flags().StringVarP(&opts.Selector, "selector", "l", "", "Label selector over the entity's catalog labels. Category is a label: -l component.aggrega.ai/category=compute.")
 	c.Flags().StringArrayVar(&opts.Capabilities, "capability", nil, "Plugin capability to match. Repeatable; a record declaring any one is kept.")
-	c.Flags().StringVar(&opts.PluginType, "plugin-type", "", "Plugin socket type to match (for example provider, policy, mutator).")
+	c.Flags().StringVar(&opts.PluginType, "plugin-type", "", "Plugin socket type to match (for example provider, governance, linter).")
 	c.Flags().StringVar(&opts.Registry, "registry", "", "Search only this registry, addressed by host or friendly alias. Default searches every configured registry.")
 	c.Flags().IntVar(&opts.Limit, "limit", 0, "Cap the number of results (0 means no cap).")
 	c.Flags().StringVarP(&opts.Output, "output", "o", "table", "Output format: table|json|names.")

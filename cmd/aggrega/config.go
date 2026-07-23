@@ -331,9 +331,9 @@ machine's global configuration.
 The build-critical subset is the configuration a build participates in: a set of
 plugin socket attachments and the catalog directories. By default the captured
 sockets are only those that determine the
-rendered output — the provider bindings and the mutator — since only those must
+rendered output — the provider bindings and the transform-role governance attachments — since only those must
 travel with the project for byte-identical output. Pass --all-plugins to also
-freeze the policy, linter, and importer sockets, which otherwise stay free to
+freeze the verdict-role governance, linter, and importer sockets, which otherwise stay free to
 vary by environment. Each field is written at its effective value — the value
 that resolves right now with the global configuration and the workspace tree
 merged together — so a binding that today comes only from the global config is
@@ -356,7 +356,7 @@ configuration rewrites the same file byte-for-byte.`,
 			})
 		},
 	}
-	c.Flags().BoolVar(&allPlugins, "all-plugins", false, "Capture all plugin sockets, including the policy, linter, and importer gates. Without it, capture freezes only the sockets that determine the rendered output (the provider bindings and the mutator).")
+	c.Flags().BoolVar(&allPlugins, "all-plugins", false, "Capture all plugin sockets, including the verdict-role governance, linter, and importer gates. Without it, capture freezes only the sockets that determine the rendered output (the provider bindings and the transform-role governance attachments).")
 	return c
 }
 
@@ -364,8 +364,8 @@ configuration rewrites the same file byte-for-byte.`,
 type configCaptureConfig struct {
 	ws *workspaceconfig.ResolvedWorkspace
 	// allPlugins widens the captured socket set from the byte-determining sockets
-	// (the provider bindings and the mutator) to every plugin socket, adding the
-	// policy and linter verdict gates and the importer.
+	// (the provider bindings and the transform-role governance attachments) to every
+	// plugin socket, adding the verdict-role governance and linter gates and the importer.
 	allPlugins bool
 	Out        io.Writer
 }

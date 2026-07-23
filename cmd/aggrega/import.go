@@ -394,7 +394,7 @@ func selectImporterAttachment(refs []workspaceconfig.PluginRef, format string) (
 
 // importWithInputs builds the consumer-scoped importer inputs from one
 // attachment's with-config: with.sources read into base-name-keyed,
-// name-sorted ImportSource entries (live files, modeled on the policy socket's
+// name-sorted ImportSource entries (live files, modeled on the governance verdict roles'
 // source reading), and with.settings marshalled to a deterministic JSON document
 // (Go's map-key-sorted encoding). Both are optional; a with declaring neither
 // yields (nil, nil). It reads only the passed attachment's with, so one importer
