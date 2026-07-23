@@ -623,6 +623,185 @@ func TestRenderStagePolicySocketAuditE2E(t *testing.T) {
 	assertArtifactsByteIdentical(t, res.Artifacts, res2.Artifacts)
 }
 
+// governanceMultiroleURI is the single URI the four-role proof attaches at every
+// governance role; governanceMultiroleVerdictMsg is the substring the guest's
+// verdict export writes, used to count verdict emissions per stage.
+const (
+	governanceMultiroleURI        = "proof://governance-multirole"
+	governanceMultiroleVerdictMsg = "governance-multirole verdict"
+)
+
+// governanceMultiroleInputs attaches ONE governance guest at all four roles on a
+// single build — annotation-transform, label-transform, ir-verdict,
+// render-verdict — with the two verdict roles driven by their own per-attachment
+// severity. It uses the proof annotation binding so the annotation facet's
+// injection expands into a visible Feature. This is the "one engine, four roles"
+// scenario: the same URI resolves to one guest binary, and the role on each entry
+// fixes which facet the host dispatches it into.
+func governanceMultiroleInputs(t *testing.T, irSeverity, renderSeverity string) (pipeline.Inputs, resolver.CatalogLookup, renderer.RecipeLookup, topology.SubAggregateLoader) {
+	t.Helper()
+	inputs, buildLookup, recipeLookup, subAgg := loadFullstackWithProofBinding(t)
+	inputs.WorkspaceConfig.Plugins.Governance = []workspaceconfig.PluginRef{
+		{URI: governanceMultiroleURI, Role: plugintype.RoleAnnotationTransform},
+		{URI: governanceMultiroleURI, Role: plugintype.RoleLabelTransform},
+		{URI: governanceMultiroleURI, Role: plugintype.RoleIRVerdict, With: &workspaceconfig.PluginRefWith{Settings: map[string]any{"severity": irSeverity}}},
+		{URI: governanceMultiroleURI, Role: plugintype.RoleRenderVerdict, With: &workspaceconfig.PluginRefWith{Settings: map[string]any{"severity": renderSeverity}}},
+	}
+	inputs.PluginPathLookup = fixtureSocketLookup(t, buildLookup, map[string]string{governanceMultiroleURI: "governance-multirole-go.wasm"})
+	return inputs, buildLookup, recipeLookup, subAgg
+}
+
+// TestGovernanceEngineAllFourRolesE2E is the four-role end-to-end proof: ONE
+// governance engine attached at all four roles on ONE build. It also greens the
+// positive half of the failing-first proof — a single guest serving both a
+// transform and a verdict role, build succeeds — which the retired plugin-type
+// identity guard used to make impossible. With both verdict roles at audit
+// severity the build proceeds, and every role's effect is observed on the one
+// build: the label-transform proof label is on every node; the
+// annotation-transform injection expanded into a synthetic Feature visible in
+// rendered output carrying the host-stamped injected-by provenance; and both the
+// ir-verdict and render-verdict roles recorded their audit verdict on stderr (two
+// emissions, one per verdict role). Output is byte-identical across two runs.
+func TestGovernanceEngineAllFourRolesE2E(t *testing.T) {
+	ctx := context.Background()
+
+	var res *pipeline.Result
+	stderr := captureStderr(t, func() {
+		inputs, buildLookup, recipeLookup, subAgg := governanceMultiroleInputs(t, analyzer.SeverityAudit, analyzer.SeverityAudit)
+		r, err := pipeline.RunPipeline(ctx, inputs, buildLookup, recipeLookup, subAgg, pipeline.Options{})
+		if err != nil {
+			t.Fatalf("one engine at all four roles (verdicts audit): unexpected halt: %v", err)
+		}
+		res = r
+	})
+	if res == nil || len(res.Artifacts) == 0 {
+		t.Fatalf("four-role build produced no artifacts")
+	}
+
+	// label-transform role ran: the proof label is on every node.
+	injected := 0
+	for nodeID, node := range res.IRGraph.Spec.Nodes.All() {
+		v, ok := node.Labels.Get(proofMutatorLabelKey)
+		if !ok {
+			t.Errorf("node %q missing the label-transform proof label %q", nodeID, proofMutatorLabelKey)
+			continue
+		}
+		if v != proofMutatorLabelValue {
+			t.Errorf("node %q label %q = %q, want %q", nodeID, proofMutatorLabelKey, v, proofMutatorLabelValue)
+		}
+		injected++
+	}
+	if injected == 0 {
+		t.Fatalf("label-transform role stamped no labels")
+	}
+
+	// annotation-transform role ran: the bound injection expanded into a
+	// synthetic Feature attachment carrying the injected marker.
+	var foundNode string
+	var entry types.IRFeatureEntry
+	for nodeID, feats := range res.IRGraph.Spec.FeatureValuesMapping.All() {
+		if e, ok := feats.Get(proofInjectAnnotationKey); ok {
+			foundNode, entry = nodeID, e
+			break
+		}
+	}
+	if foundNode == "" {
+		t.Fatalf("annotation-transform role produced no synthetic Feature from %q", proofInjectAnnotationKey)
+	}
+	if entry.Type != proofInjectFeature {
+		t.Errorf("injected feature type = %q, want %q", entry.Type, proofInjectFeature)
+	}
+	node, ok := res.IRGraph.Spec.Nodes.Get(foundNode)
+	if !ok {
+		t.Fatalf("node %q missing from IR graph", foundNode)
+	}
+	if v, ok := node.ReleaseAnnotations.Get(injectedByAnnotation); !ok || v != governanceMultiroleURI {
+		t.Errorf("node %q %s = %q (present=%v), want %q", foundNode, injectedByAnnotation, v, ok, governanceMultiroleURI)
+	}
+
+	// The synthetic Feature is visible in real rendered output.
+	visible := false
+	for _, content := range res.Artifacts {
+		if strings.Contains(string(content), proofInjectMarker) {
+			visible = true
+			break
+		}
+	}
+	if !visible {
+		t.Errorf("injected feature not visible in rendered output (no artifact carries %q)", proofInjectMarker)
+	}
+
+	// Both verdict roles ran on this one build: the ir-verdict role's audit AND
+	// the render-verdict role's audit each recorded the guest's message on
+	// stderr — two emissions, one per verdict role.
+	if got := strings.Count(stderr, governanceMultiroleVerdictMsg); got != 2 {
+		t.Errorf("expected the verdict message on stderr twice (ir-verdict + render-verdict), got %d:\n%s", got, stderr)
+	}
+
+	// Determinism: a second build of identical input is byte-identical.
+	inputs2, buildLookup2, recipeLookup2, subAgg2 := governanceMultiroleInputs(t, analyzer.SeverityAudit, analyzer.SeverityAudit)
+	res2, err := pipeline.RunPipeline(ctx, inputs2, buildLookup2, recipeLookup2, subAgg2, pipeline.Options{})
+	if err != nil {
+		t.Fatalf("four-role build (second run): %v", err)
+	}
+	assertArtifactsByteIdentical(t, res.Artifacts, res2.Artifacts)
+}
+
+// TestGovernanceEngineAllFourRolesIRVerdictHaltsE2E proves the ir-verdict facet
+// of the four-role engine halts the build: with the ir-verdict attachment at deny
+// the build halts at the IR stage with ErrPolicyViolation, before render — so the
+// render-verdict role (at audit) never records its verdict on stderr.
+func TestGovernanceEngineAllFourRolesIRVerdictHaltsE2E(t *testing.T) {
+	ctx := context.Background()
+	var err error
+	stderr := captureStderr(t, func() {
+		inputs, buildLookup, recipeLookup, subAgg := governanceMultiroleInputs(t, analyzer.SeverityDeny, analyzer.SeverityAudit)
+		_, err = pipeline.RunPipeline(ctx, inputs, buildLookup, recipeLookup, subAgg, pipeline.Options{})
+	})
+	if err == nil {
+		t.Fatalf("ir-verdict deny: expected a halt, got nil")
+	}
+	if !errors.Is(err, analyzer.ErrPolicyViolation) {
+		t.Fatalf("ir-verdict deny not errors.Is ErrPolicyViolation: %v", err)
+	}
+	if !strings.Contains(err.Error(), governanceMultiroleVerdictMsg) {
+		t.Errorf("ir-verdict halt does not carry the guest verdict message:\n%v", err)
+	}
+	// The halt is at the IR stage, before render: the render-verdict audit never
+	// ran, so no verdict message reached stderr.
+	if strings.Contains(stderr, governanceMultiroleVerdictMsg) {
+		t.Errorf("ir-verdict deny should halt before render; render-verdict audit must not have run:\n%s", stderr)
+	}
+}
+
+// TestGovernanceEngineAllFourRolesRenderVerdictHaltsE2E proves the render-verdict
+// facet of the four-role engine halts the build: with the ir-verdict at audit
+// (which lets the build proceed and records on stderr) and the render-verdict at
+// deny, the build passes the IR stage and halts at render with ErrPolicyViolation
+// — proving the render-verdict role, not the ir-verdict role, produced the halt.
+func TestGovernanceEngineAllFourRolesRenderVerdictHaltsE2E(t *testing.T) {
+	ctx := context.Background()
+	var err error
+	stderr := captureStderr(t, func() {
+		inputs, buildLookup, recipeLookup, subAgg := governanceMultiroleInputs(t, analyzer.SeverityAudit, analyzer.SeverityDeny)
+		_, err = pipeline.RunPipeline(ctx, inputs, buildLookup, recipeLookup, subAgg, pipeline.Options{})
+	})
+	if err == nil {
+		t.Fatalf("render-verdict deny: expected a halt, got nil")
+	}
+	if !errors.Is(err, analyzer.ErrPolicyViolation) {
+		t.Fatalf("render-verdict deny not errors.Is ErrPolicyViolation: %v", err)
+	}
+	if !strings.Contains(err.Error(), governanceMultiroleVerdictMsg) {
+		t.Errorf("render-verdict halt does not carry the guest verdict message:\n%v", err)
+	}
+	// The build passed the IR stage (the ir-verdict audit recorded on stderr) and
+	// halted at render — so the halt came from the render-verdict role.
+	if !strings.Contains(stderr, governanceMultiroleVerdictMsg) {
+		t.Errorf("render-verdict deny should run after a passing ir-verdict audit; the ir-verdict audit did not record:\n%s", stderr)
+	}
+}
+
 // assertArtifactsByteIdentical fails unless a and b carry the same path set and
 // byte-identical content for every path.
 func assertArtifactsByteIdentical(t *testing.T, a, b map[string][]byte) {
