@@ -20,9 +20,9 @@ func TestCIOverlayAddsToBaseAndDoesNotRemove(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
 	write(t, filepath.Join(root, ".aggrega-config.yaml"),
-		"workspace: {}\nplugins:\n  governance:\n    - uri: oci://h/base:1\n")
+		"workspace: {}\nplugins:\n  governance:\n    - uri: oci://h/base:1\n      role: label-transform\n")
 	write(t, filepath.Join(root, ".aggrega-config-append-ci.yaml"),
-		"plugins:\n  governance:\n    - uri: oci://h/ci:1\n")
+		"plugins:\n  governance:\n    - uri: oci://h/ci:1\n      role: label-transform\n")
 
 	rw, err := workspaceconfig.Resolve(root, "")
 	if err != nil {
@@ -47,9 +47,9 @@ func TestCIOverlayFoldsAppendCompanion(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
 	write(t, filepath.Join(root, ".aggrega-config.yaml"),
-		"workspace: {}\nplugins:\n  governance:\n    - uri: oci://h/base:1\n")
+		"workspace: {}\nplugins:\n  governance:\n    - uri: oci://h/base:1\n      role: label-transform\n")
 	write(t, filepath.Join(root, ".aggrega-config-append-ci.yaml"),
-		"plugins:\n  governance:\n    - uri: oci://h/ci-base:1\n  governance_append:\n    - uri: oci://h/ci-append:1\n")
+		"plugins:\n  governance:\n    - uri: oci://h/ci-base:1\n      role: label-transform\n  governance_append:\n    - uri: oci://h/ci-append:1\n      role: label-transform\n")
 
 	rw, err := workspaceconfig.Resolve(root, "")
 	if err != nil {
@@ -74,7 +74,7 @@ func TestCIOverlayResolvesPathsAgainstOwnDir(t *testing.T) {
 	write(t, filepath.Join(root, ".aggrega-config.yaml"), "workspace: {}\n")
 	child := filepath.Join(root, "svc")
 	write(t, filepath.Join(child, ".aggrega-config-append-ci.yaml"),
-		"plugins:\n  governance:\n    - uri: ./ci.wasm\n      with:\n        sources:\n          - ./ci-src.def\n")
+		"plugins:\n  governance:\n    - uri: ./ci.wasm\n      role: label-transform\n      with:\n        sources:\n          - ./ci-src.def\n")
 
 	rw, err := workspaceconfig.Resolve(child, "")
 	if err != nil {
@@ -134,7 +134,7 @@ func TestCIOverlayDoesNotAnchorRoot(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
 	write(t, filepath.Join(root, ".aggrega-config-append-ci.yaml"),
-		"plugins:\n  governance:\n    - uri: oci://h/ci:1\n")
+		"plugins:\n  governance:\n    - uri: oci://h/ci:1\n      role: label-transform\n")
 
 	rw, err := workspaceconfig.Resolve(root, "")
 	if err != nil {
@@ -158,9 +158,9 @@ func TestCIOverlayDeterministic(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
 	write(t, filepath.Join(root, ".aggrega-config.yaml"),
-		"workspace: {}\ndefault_registry: base.io\nplugins:\n  governance:\n    - uri: oci://h/base:1\n")
+		"workspace: {}\ndefault_registry: base.io\nplugins:\n  governance:\n    - uri: oci://h/base:1\n      role: label-transform\n")
 	write(t, filepath.Join(root, ".aggrega-config-append-ci.yaml"),
-		"default_registry: ci.io\nplugins:\n  governance:\n    - uri: oci://h/ci:1\n")
+		"default_registry: ci.io\nplugins:\n  governance:\n    - uri: oci://h/ci:1\n      role: label-transform\n")
 
 	rw1, err := workspaceconfig.Resolve(root, "")
 	if err != nil {

@@ -4,6 +4,7 @@
 package lockfile_test
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -22,7 +23,8 @@ import (
 // host filesystem.
 func TestMutators_SettingsAndSourcesRoundTrip(t *testing.T) {
 	in := []lockfile.MutatorAttachment{{
-		Plugin:   "mutator/tag-injector",
+		Plugin:   "governance/tag-injector",
+		Role:     string(plugintype.RoleLabelTransform),
 		Settings: map[string]any{"team": "checkout"},
 		Sources: []lockfile.MutatorSourcePin{{
 			Path:    "rules.rego",
@@ -64,19 +66,18 @@ func TestMutators_SettingsAndSourcesRoundTrip(t *testing.T) {
 	}
 }
 
-// TestMutators_RoleRoundTrip proves the transform role survives WriteLockfile ->
+// TestMutators_RoleRoundTrip proves each transform role survives WriteLockfile ->
 // LoadLockfile -> MutatorAttachments so the build reconstructs an attachment at
-// the runner (and facet) it was authored for. An annotation-transform attachment
-// records and reconstructs as RoleAnnotationTransform (the load-bearing fix — a
-// second transform role now round-trips through the lockfile, where it previously
-// came back mis-tagged as label-transform), while a role-less attachment
-// reconstructs as the RoleLabelTransform default. The label default is also proven
-// to omit the role key, so a lockfile written before the annotation role existed
-// reconstructs unchanged.
+// the runner (and facet) it was authored for. Both transform roles round-trip
+// verbatim: the annotation-transform attachment reconstructs as
+// RoleAnnotationTransform, the label-transform attachment as RoleLabelTransform.
+// The role is recorded on every attachment — never inferred at reconstruction —
+// so an attachment cannot come back at a role other than the one authored, the
+// mis-route class the earlier omit-then-re-synthesize pair could hide.
 func TestMutators_RoleRoundTrip(t *testing.T) {
 	in := []lockfile.MutatorAttachment{
 		{Plugin: "governance/annotation-injector", Role: string(plugintype.RoleAnnotationTransform)},
-		{Plugin: "governance/tag-injector"}, // role-less -> label-transform default
+		{Plugin: "governance/tag-injector", Role: string(plugintype.RoleLabelTransform)},
 	}
 	path := filepath.Join(t.TempDir(), "release.lock")
 	if err := lockfile.WriteLockfile(path, mutatorSampleLockfile(in)); err != nil {
@@ -87,8 +88,8 @@ func TestMutators_RoleRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read: %v", err)
 	}
-	if got := string(raw); strings.Count(got, "role:") != 1 {
-		t.Errorf("expected exactly one role key (annotation-transform present, label default omitted); got:\n%s", got)
+	if got := string(raw); strings.Count(got, "role:") != 2 {
+		t.Errorf("expected a role key on every attachment (role is required, never inferred); got:\n%s", got)
 	}
 
 	lf, _, err := lockfile.LoadLockfile(path)
@@ -107,7 +108,32 @@ func TestMutators_RoleRoundTrip(t *testing.T) {
 		t.Errorf("annotation attachment reconstructed role = %q, want %q", got, plugintype.RoleAnnotationTransform)
 	}
 	if got := byURI["governance/tag-injector"]; got != plugintype.RoleLabelTransform {
-		t.Errorf("role-less attachment reconstructed role = %q, want the %q default", got, plugintype.RoleLabelTransform)
+		t.Errorf("label attachment reconstructed role = %q, want %q", got, plugintype.RoleLabelTransform)
+	}
+}
+
+// TestMutators_RolelessAttachmentFailsLoudly proves a lockfile whose transform
+// attachment omits role is rejected at load rather than silently defaulting.
+// The mutators section requires role on every attachment, so the
+// schema-validating load halts with ErrLockfileInvalid — reconstruction never
+// sees a role-less attachment, so it can never infer a role the author did not
+// write.
+func TestMutators_RolelessAttachmentFailsLoudly(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "release.lock")
+	roleless := "version: 1\n" +
+		"release: release.yaml\n" +
+		"generated_at: \"2026-07-17T00:00:00Z\"\n" +
+		"mutators:\n" +
+		"    - plugin: governance/tag-injector\n"
+	if err := os.WriteFile(path, []byte(roleless), 0o644); err != nil {
+		t.Fatalf("write role-less lockfile: %v", err)
+	}
+	_, _, err := lockfile.LoadLockfile(path)
+	if err == nil {
+		t.Fatal("expected a role-less transform attachment to fail schema validation, got nil")
+	}
+	if !errors.Is(err, lockfile.ErrLockfileInvalid) {
+		t.Fatalf("expected ErrLockfileInvalid for a role-less transform attachment, got: %v", err)
 	}
 }
 
@@ -130,10 +156,11 @@ func mutatorSampleLockfile(mutators []lockfile.MutatorAttachment) *lockfile.Lock
 // would be observable, and the loader validates against the embedded schema so
 // the roundtrip also proves the schema admits the new section.
 func TestMutators_OrderPreservedThroughRoundTrip(t *testing.T) {
+	lt := string(plugintype.RoleLabelTransform)
 	in := []lockfile.MutatorAttachment{
-		{Plugin: "mutator/zeta", Function: "custom_mutate"},
-		{Plugin: "mutator/alpha"},
-		{Plugin: "mutator/middle", Function: "mutate"},
+		{Plugin: "governance/zeta", Role: lt, Function: "custom_mutate"},
+		{Plugin: "governance/alpha", Role: lt},
+		{Plugin: "governance/middle", Role: lt, Function: "mutate"},
 	}
 	path := filepath.Join(t.TempDir(), "release.lock")
 	if err := lockfile.WriteLockfile(path, mutatorSampleLockfile(in)); err != nil {
@@ -161,7 +188,7 @@ func TestMutators_OrderPreservedThroughRoundTrip(t *testing.T) {
 func TestMutators_EmptyFunctionOmitted(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "release.lock")
 	if err := lockfile.WriteLockfile(path, mutatorSampleLockfile([]lockfile.MutatorAttachment{
-		{Plugin: "mutator/tag-injector"},
+		{Plugin: "governance/tag-injector", Role: string(plugintype.RoleLabelTransform)},
 	})); err != nil {
 		t.Fatalf("WriteLockfile: %v", err)
 	}
@@ -177,7 +204,7 @@ func TestMutators_EmptyFunctionOmitted(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadLockfile: %v", err)
 	}
-	if len(lf.Mutators) != 1 || lf.Mutators[0].Plugin != "mutator/tag-injector" || lf.Mutators[0].Function != "" {
+	if len(lf.Mutators) != 1 || lf.Mutators[0].Plugin != "governance/tag-injector" || lf.Mutators[0].Function != "" {
 		t.Fatalf("attachment roundtrip: got %+v", lf.Mutators)
 	}
 }
@@ -187,9 +214,10 @@ func TestMutators_EmptyFunctionOmitted(t *testing.T) {
 // byte-identical output — the determinism contract, holding for the
 // order-preserving section as it does for the sorted ones.
 func TestMutators_WriteIsDeterministic(t *testing.T) {
+	lt := string(plugintype.RoleLabelTransform)
 	in := []lockfile.MutatorAttachment{
-		{Plugin: "mutator/second", Function: "mutate"},
-		{Plugin: "mutator/first"},
+		{Plugin: "governance/second", Role: lt, Function: "mutate"},
+		{Plugin: "governance/first", Role: lt},
 	}
 	dir := t.TempDir()
 	p1 := filepath.Join(dir, "a.lock")

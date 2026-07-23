@@ -128,6 +128,56 @@ func TestResolveCapabilityOnProviderSocketResolves(t *testing.T) {
 // configuration from the Recipe (so `with:` misplaces render config), so both
 // fields are inert-by-design and rejected at authoring. Each field is covered so
 // both branches of the per-binding walk are exercised.
+// TestResolveGovernanceRoleMissingHalts proves a governance attachment authored
+// with no role halts resolution loudly rather than being silently dropped. The
+// role selects which pipeline runner (and facet) an attachment feeds, and the
+// dispatch reads attachments by role, so an attachment with no role would attach
+// to no runner and vanish without a diagnostic; catching it at load turns that
+// silent drop into a legible halt that names the attachment and the valid roles.
+// A role is optional on the shared attachment shape (linter / importer / provider
+// entries carry none), so its absence on a governance entry is caught here rather
+// than by the schema.
+func TestResolveGovernanceRoleMissingHalts(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	write(t, filepath.Join(dir, ".aggrega-config.yaml"),
+		"workspace: {}\nplugins:\n  governance:\n    - uri: oci://h/gov:1\n")
+
+	_, err := workspaceconfig.Resolve(dir, "")
+	if err == nil {
+		t.Fatal("Resolve over a role-less governance attachment returned nil; expected a loud halt")
+	}
+	if !errors.Is(err, workspaceconfig.ErrGovernanceRoleInvalid) {
+		t.Fatalf("halt must be ErrGovernanceRoleInvalid; got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "oci://h/gov:1") {
+		t.Errorf("error must name the offending attachment; got: %v", err)
+	}
+	if !strings.Contains(err.Error(), string(plugintype.RoleLabelTransform)) {
+		t.Errorf("error must list the valid roles; got: %v", err)
+	}
+}
+
+// TestResolveGovernanceRoleUnknownHalts proves a governance attachment authored
+// with a role outside the known set is rejected loudly at load. An unknown role
+// value is not one of the four the attachment surface admits, so the config
+// schema's role enum rejects it before dispatch — a typo'd role never reaches a
+// runner as a silently ignored attachment.
+func TestResolveGovernanceRoleUnknownHalts(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	write(t, filepath.Join(dir, ".aggrega-config.yaml"),
+		"workspace: {}\nplugins:\n  governance:\n    - uri: oci://h/gov:1\n      role: mutate\n")
+
+	_, err := workspaceconfig.Resolve(dir, "")
+	if err == nil {
+		t.Fatal("Resolve over an unknown governance role returned nil; expected a loud halt")
+	}
+	if !errors.Is(err, workspaceconfig.ErrConfigInvalid) {
+		t.Fatalf("halt must be ErrConfigInvalid (schema role enum); got: %v", err)
+	}
+}
+
 func TestResolveInertFieldOnProviderSocketHalts(t *testing.T) {
 	t.Parallel()
 	cases := []struct {

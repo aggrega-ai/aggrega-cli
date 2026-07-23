@@ -25,7 +25,6 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
-	"github.com/aggrega-ai/aggrega-cli/pkg/plugintype"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pullverify"
 	"github.com/aggrega-ai/aggrega-cli/pkg/registryhost"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
@@ -909,13 +908,11 @@ func resolveMutatorAttachments(refs []workspaceconfig.PluginRef, lazyView *catal
 		att := lockfile.MutatorAttachment{
 			Plugin:   p.Coordinate(),
 			Function: ref.Function,
-		}
-		// Pin the transform role so the build reconstructs the attachment at the
-		// runner it was authored for. label-transform is the default reconstruction,
-		// so it is left unrecorded — only a non-default role (annotation-transform)
-		// carries a role line.
-		if ref.Role != plugintype.RoleLabelTransform {
-			att.Role = string(ref.Role)
+			// Pin the transform role verbatim so the build reconstructs the
+			// attachment at the runner it was authored for. The role is recorded on
+			// every attachment (never inferred at reconstruction), so the pinned
+			// dispatch cannot diverge from the authored one.
+			Role: string(ref.Role),
 		}
 		if ref.With != nil {
 			att.Settings = ref.With.Settings

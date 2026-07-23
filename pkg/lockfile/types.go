@@ -303,11 +303,13 @@ type MutatorAttachment struct {
 	// uses and the identity the Entities / Plugins sections pin under.
 	Plugin string `yaml:"plugin"`
 	// Role is the transform role this attachment is bound to, fixing which runner
-	// (and therefore which facet) reconstruction dispatches it at. Empty (and
-	// omitted) means label-transform — the default that keeps a lockfile written
-	// before the annotation role existed reconstructing unchanged, and keeps a
-	// label-transform pin free of a redundant role line.
-	Role string `yaml:"role,omitempty"`
+	// (and therefore which facet) reconstruction dispatches it at (label-transform
+	// to the Step-2 label runner, annotation-transform to the Step-1 annotation
+	// runner). It is recorded verbatim from the authored attachment and is
+	// required: reconstruction dispatches at the exact role the attachment was
+	// authored for rather than inferring one, and the schema-validating load
+	// rejects an attachment that omits it.
+	Role string `yaml:"role"`
 	// Settings is the free-form settings object the attachment declared, pinned
 	// as authored and handed to the plugin verbatim. The transform reads its
 	// settings from here — never live config — so a post-pull settings change

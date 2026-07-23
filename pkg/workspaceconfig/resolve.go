@@ -11,6 +11,8 @@ import (
 	"strings"
 
 	"go.yaml.in/yaml/v3"
+
+	"github.com/aggrega-ai/aggrega-cli/pkg/plugintype"
 )
 
 // ConfigFilename is the single canonical basename of the per-directory
@@ -341,6 +343,14 @@ func resolve(start, flagRoot string, lookup func(string) string, skipGlobal bool
 	// referent on a provider binding. Reject them at authoring on the composed
 	// list rather than silently dropping them.
 	if err := checkInertProviderFields(merged.Plugins.Providers); err != nil {
+		return nil, err
+	}
+
+	// Each governance attachment's role fixes which pipeline runner (and facet)
+	// dispatches it; the dispatch reads attachments by role, so a missing or
+	// unknown role would silently attach to no runner. Reject it at authoring on
+	// the composed list rather than letting the attachment drop out unnoticed.
+	if err := checkGovernanceRoles(merged.Plugins.Governance); err != nil {
 		return nil, err
 	}
 
@@ -705,6 +715,37 @@ func checkInertProviderFields(providers []PluginRef) error {
 		if ref.With != nil {
 			return fmt.Errorf("workspaceconfig: the provider socket binding for capability %q sets `with:`, but provider render configuration belongs in the Recipe, not the workspace provider binding; remove it: %w", ref.Capability, ErrInertFieldOnProviderSocket)
 		}
+	}
+	return nil
+}
+
+// checkGovernanceRoles returns a wrapped ErrGovernanceRoleInvalid when a
+// governance attachment carries no role, or a role that is not a known
+// governance role. The role — not the plugin's declared kind — selects which
+// pipeline runner (and therefore which facet) an attachment feeds, and the
+// dispatch reads attachments by role, so an attachment with a missing or
+// unknown role would attach to no runner and be silently ignored. This rejects
+// it at authoring on the composed list, so a hand-edited config with a typo'd
+// or absent role halts loudly rather than dropping the plugin. The list is
+// walked in order so the error names the first offending attachment
+// deterministically. The check keys only on the role value; it never resolves,
+// loads, or describes the referenced plugin.
+func checkGovernanceRoles(governance []PluginRef) error {
+	for _, ref := range governance {
+		if _, ok := plugintype.GovernanceRoleTier(ref.Role); ok {
+			continue
+		}
+		roles := plugintype.GovernanceRoles()
+		names := make([]string, len(roles))
+		for i, r := range roles {
+			names[i] = string(r)
+		}
+		if ref.Role == "" {
+			return fmt.Errorf("workspaceconfig: governance attachment %q declares no role; set `role:` to one of %s: %w",
+				ref.URI, strings.Join(names, ", "), ErrGovernanceRoleInvalid)
+		}
+		return fmt.Errorf("workspaceconfig: governance attachment %q declares unknown role %q; use one of %s: %w",
+			ref.URI, ref.Role, strings.Join(names, ", "), ErrGovernanceRoleInvalid)
 	}
 	return nil
 }

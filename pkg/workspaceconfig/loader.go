@@ -31,7 +31,7 @@ var ErrConfigInvalid = errors.New("workspaceconfig: file failed schema validatio
 var ErrDuplicateProviderTarget = errors.New("workspaceconfig: capability is bound to more than one provider plugin")
 
 // ErrCapabilityOnCrossCuttingSocket reports that a cross-cutting socket
-// (mutator, policy, linter, importer) is bound by capability instead of by
+// (governance, linter, importer) is bound by capability instead of by
 // uri. Errors satisfying errors.Is(err, ErrCapabilityOnCrossCuttingSocket)
 // carry the offending socket name and capability value. These sockets attach
 // their plugin directly by uri: the attached plugin serves no capability, so a
@@ -51,6 +51,18 @@ var ErrCapabilityOnCrossCuttingSocket = errors.New("workspaceconfig: a cross-cut
 // authoring rather than silently dropped, so the operator learns the field is
 // inert instead of quietly seeing it ignored.
 var ErrInertFieldOnProviderSocket = errors.New("workspaceconfig: a provider socket binding sets a field with no referent on that socket")
+
+// ErrGovernanceRoleInvalid reports that a governance attachment declares no
+// role, or a role that is not a known governance role. Errors satisfying
+// errors.Is(err, ErrGovernanceRoleInvalid) carry the offending attachment
+// identity and the invalid role value. The role — not the plugin's declared
+// kind — selects which pipeline runner (and therefore which facet) an
+// attachment feeds, and the dispatch reads attachments by role, so an
+// attachment with a missing or unknown role would attach to no runner and be
+// silently ignored. It is rejected at authoring on the composed config so a
+// hand-edited role typo or omission halts loudly rather than dropping the
+// plugin.
+var ErrGovernanceRoleInvalid = errors.New("workspaceconfig: a governance attachment declares no role or an unknown role")
 
 // ErrDuplicateRegistryAlias reports that a registry alias is already used by a
 // different host entry. Errors satisfying errors.Is(err, ErrDuplicateRegistryAlias)
