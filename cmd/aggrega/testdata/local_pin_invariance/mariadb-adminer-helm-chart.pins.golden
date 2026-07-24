@@ -91,3 +91,4 @@ schema_libraries:
 source_artifacts: []
 verdict_inputs: []
 version: 1
+workload_libraries: []

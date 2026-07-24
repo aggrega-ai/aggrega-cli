@@ -22,10 +22,11 @@ import (
 // the behaviour of a fully wired Lookup composed of *catalog.Catalog
 // + *oci.Client without requiring either to be present.
 type fakeLookup struct {
-	entities    map[string]closure.Resolution
-	plugins     map[string]closure.Resolution
-	schemaLibs  map[string]closure.LibraryResolution
-	mappingLibs map[string]closure.LibraryResolution
+	entities     map[string]closure.Resolution
+	plugins      map[string]closure.Resolution
+	schemaLibs   map[string]closure.LibraryResolution
+	mappingLibs  map[string]closure.LibraryResolution
+	workloadLibs map[string]closure.LibraryResolution
 }
 
 func (f *fakeLookup) ResolveCatalogEntity(uri, kindHint string) (closure.Resolution, error) {
@@ -58,6 +59,13 @@ func fakeBaseName(uri string) string {
 
 func (f *fakeLookup) ResolveMappingLibrary(uri string) (closure.LibraryResolution, error) {
 	if res, ok := f.mappingLibs[fakeBaseName(uri)]; ok {
+		return res, nil
+	}
+	return closure.LibraryResolution{Resolution: closure.Resolution{NotFound: true}}, nil
+}
+
+func (f *fakeLookup) ResolveWorkloadLibrary(uri string) (closure.LibraryResolution, error) {
+	if res, ok := f.workloadLibs[fakeBaseName(uri)]; ok {
 		return res, nil
 	}
 	return closure.LibraryResolution{Resolution: closure.Resolution{NotFound: true}}, nil

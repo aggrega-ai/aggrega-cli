@@ -92,11 +92,11 @@ type Inputs struct {
 	// when no MappingLibraries are present.
 	MappingLibraries map[string]types.MappingLibrary
 
-	// WorkloadLibraries is the local-catalog WorkloadLibrary set, keyed by bare
-	// name. It flows to the renderer so a Recipe workload's bare-name
-	// `$import: <Library>#/workloads/<entry>` resolves at render. The set is
-	// sourced from the local catalog only; a remote workload import is not
-	// bridged. nil when no WorkloadLibraries are present.
+	// WorkloadLibraries is the resolved WorkloadLibrary set (local catalog plus
+	// lockfile-pinned libraries bridged in at load), keyed by bare name. It
+	// flows to the renderer so a Recipe workload's bare-name
+	// `$import: <Library>#/workloads/<entry>` resolves at render. nil when no
+	// WorkloadLibraries are present.
 	WorkloadLibraries map[string]types.WorkloadLibrary
 
 	// TolerateCatalogViewInconsistency opts a caller out of the guard-layer

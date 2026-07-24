@@ -319,7 +319,7 @@ func dispatchBuildWithDiag(rw *workspaceconfig.ResolvedWorkspace, releasePath st
 	aggBytes := resolved.AggBytes
 	cl := resolved.Closure
 	progress.note("closure entities: %d", len(cl.Entities))
-	progress.note("schema libraries: %d, mapping libraries: %d", len(cl.SchemaLibraries), len(cl.MappingLibraries))
+	progress.note("schema libraries: %d, mapping libraries: %d, workload libraries: %d", len(cl.SchemaLibraries), len(cl.MappingLibraries), len(cl.WorkloadLibraries))
 
 	// Closure-scoped Pass-2: validate ONLY the entities the Release reaches against
 	// the closure's libraries (resolved through the lazy lookup). An in-closure
@@ -456,6 +456,7 @@ func dispatchBuildWithDiag(rw *workspaceconfig.ResolvedWorkspace, releasePath st
 			Lockfile:          lf,
 			WorkspaceRoot:     wsRoot,
 			MappingLibraries:  lazyView.MappingLibraries(),
+			WorkloadLibraries: lazyView.WorkloadLibraries(),
 			CompilerVersion:   provenanceCompilerVersion(),
 		},
 		buildLookup,

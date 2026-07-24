@@ -833,6 +833,16 @@ func buildLockfile(releasePath string, cl closure.Closure, wsCfg workspaceconfig
 	}
 	sort.Slice(lf.MappingLibraries, func(i, j int) bool { return lf.MappingLibraries[i].URI < lf.MappingLibraries[j].URI })
 
+	for _, l := range cl.WorkloadLibraries {
+		lf.WorkloadLibraries = append(lf.WorkloadLibraries, lockfile.WorkloadLibrary{
+			URI:             l.URI,
+			ResolvedVersion: l.ResolvedVersion,
+			Digest:          l.Digest,
+			Consumers:       copyConsumers(l.Consumers),
+		})
+	}
+	sort.Slice(lf.WorkloadLibraries, func(i, j int) bool { return lf.WorkloadLibraries[i].URI < lf.WorkloadLibraries[j].URI })
+
 	for _, w := range cl.Plugins {
 		lf.Plugins = append(lf.Plugins, lockfile.Plugin{
 			URI:             w.URI,

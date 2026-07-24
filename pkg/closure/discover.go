@@ -40,6 +40,23 @@ type MappingConsumer struct {
 // library); a false found return stops transitive descent into that library.
 type MappingBodyFunc func(lib ResolvedLibrary) (entryBodies []string, found bool, err error)
 
+// WorkloadConsumer pairs a resolved Recipe/FeatureRecipe URI (or a WorkloadLibrary
+// URI, during transitive descent) with a template body so DiscoverWorkloadLibraries
+// can scan it for a field-root `$import:` WorkloadLibrary reference. For a Recipe /
+// FeatureRecipe the Template is the workload body in `$import: <ref>` directive form;
+// for a WorkloadLibrary entry it is the entry's own template body (which may itself
+// carry a field-root `$import:`).
+type WorkloadConsumer struct {
+	URI      string
+	Template string
+}
+
+// WorkloadBodyFunc returns the entry template bodies of a resolved WorkloadLibrary
+// so its own cross-library `$import:` references can be descended transitively.
+// The caller resolves the bodies from the catalog (a locally-authored or bridged
+// library); a false found return stops transitive descent into that library.
+type WorkloadBodyFunc func(lib ResolvedLibrary) (entryBodies []string, found bool, err error)
+
 // DiscoverMappingLibraries is the mapping-axis mirror of DiscoverSchemaLibraries:
 // it discovers the MappingLibrary closure reachable from a set of
 // Recipe/FeatureRecipe valuesMapping bodies via field-root `$import:` references,
@@ -67,7 +84,7 @@ func (c *Closure) DiscoverMappingLibraries(lookup Lookup, consumers []MappingCon
 				return err
 			}
 		}
-		if err := state.resolveLibraries(lookup, false /* mapping */); err != nil {
+		if err := state.resolveLibraries(state.mappingLibs, lookup.ResolveMappingLibrary); err != nil {
 			return err
 		}
 		c.MappingLibraries = nil
@@ -91,6 +108,63 @@ func (c *Closure) DiscoverMappingLibraries(lookup Lookup, consumers []MappingCon
 			}
 			for _, b := range bodies {
 				frontier = append(frontier, MappingConsumer{URI: lib.URI, Template: b})
+			}
+		}
+	}
+	return nil
+}
+
+// DiscoverWorkloadLibraries is the workload-axis mirror of DiscoverMappingLibraries:
+// it discovers the WorkloadLibrary closure reachable from a set of
+// Recipe/FeatureRecipe workload bodies via field-root `$import:` references,
+// resolves each discovered library (minimum-version selection + lookup), and
+// transitively descends each resolved library's own entry bodies to a fixpoint.
+// The discovered + resolved libraries are merged into c.WorkloadLibraries.
+//
+// As on the mapping axis, this is the single producer of the workload-library axis
+// of the closure, so pull's pin flow and build's drift-verify flow compute the
+// identical closure. Termination is by a visited-set on the canonical library
+// identity; a genuine library↔library cycle terminates discovery without error
+// and surfaces as a cycle at `$import:` consumption (render time), not here.
+func (c *Closure) DiscoverWorkloadLibraries(lookup Lookup, consumers []WorkloadConsumer, body WorkloadBodyFunc) error {
+	descended := map[string]struct{}{}
+
+	frontier := append([]WorkloadConsumer{}, consumers...)
+
+	for len(frontier) > 0 {
+		state := newWalkState()
+		for _, lib := range c.WorkloadLibraries {
+			state.workloadLibs[lib.URI] = libraryFromResolved(lib)
+		}
+		for _, wc := range frontier {
+			if err := state.walkWorkloadImportInto(wc.Template, wc.URI); err != nil {
+				return err
+			}
+		}
+		if err := state.resolveLibraries(state.workloadLibs, lookup.ResolveWorkloadLibrary); err != nil {
+			return err
+		}
+		c.WorkloadLibraries = nil
+		for _, lib := range state.materialiseWorkloadLibs() {
+			c.WorkloadLibraries = append(c.WorkloadLibraries, lib)
+		}
+		canonicaliseClosure(c)
+
+		frontier = frontier[:0]
+		for _, lib := range c.WorkloadLibraries {
+			if _, seen := descended[lib.URI]; seen {
+				continue
+			}
+			descended[lib.URI] = struct{}{}
+			bodies, found, err := body(lib)
+			if err != nil {
+				return err
+			}
+			if !found {
+				continue
+			}
+			for _, b := range bodies {
+				frontier = append(frontier, WorkloadConsumer{URI: lib.URI, Template: b})
 			}
 		}
 	}
@@ -141,7 +215,7 @@ func (c *Closure) DiscoverSchemaLibraries(lookup Lookup, consumers []SchemaConsu
 				return err
 			}
 		}
-		if err := state.resolveLibraries(lookup, true /* schema */); err != nil {
+		if err := state.resolveLibraries(state.schemaLibs, lookup.ResolveSchemaLibrary); err != nil {
 			return err
 		}
 		c.SchemaLibraries = nil

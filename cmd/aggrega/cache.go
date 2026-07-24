@@ -1058,6 +1058,9 @@ func buildReferenceSet(lockPaths []string) (map[string]bool, int) {
 		for _, e := range lf.MappingLibraries {
 			addDigest(refset, e.Digest)
 		}
+		for _, e := range lf.WorkloadLibraries {
+			addDigest(refset, e.Digest)
+		}
 		for _, e := range lf.Plugins {
 			addDigest(refset, e.Digest)
 		}

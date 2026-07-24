@@ -18,6 +18,7 @@ var EntityKinds = []string{
 	"Plugin",
 	"SchemaLibrary",
 	"MappingLibrary",
+	"WorkloadLibrary",
 }
 
 // APIVersions enumerates the known apiVersion values. Single-item

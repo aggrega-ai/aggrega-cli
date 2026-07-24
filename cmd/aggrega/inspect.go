@@ -135,8 +135,8 @@ func newInspectCmd() *cobra.Command {
 //     OCI resolver path is a separate work item.
 //   - Anything else → treated as a catalog entity name, resolved by identity
 //     across every entity kind (Component, Plugin, Feature, Recipe,
-//     FeatureRecipe, Aggregate, SchemaLibrary, MappingLibrary) and rendered
-//     by the matched kind's inspector.
+//     FeatureRecipe, Aggregate, SchemaLibrary, MappingLibrary, WorkloadLibrary)
+//     and rendered by the matched kind's inspector.
 //
 // catalogDirs supplies the repeatable --catalog flag directories for both the
 // catalog-name branch and the Release branch's pipeline; each load site resolves
@@ -214,16 +214,17 @@ type kindRenderer func(rw *workspaceconfig.ResolvedWorkspace, path string, data 
 // dispatches through this table; kinds absent from it fall through to the
 // not-yet-implemented / non-standalone handling in inspectPath.
 var kindRenderers = map[string]kindRenderer{
-	"Component":      renderComponentFile,
-	"Feature":        renderFeatureFile,
-	"Recipe":         renderRecipeFile,
-	"FeatureRecipe":  renderFeatureRecipeFile,
-	"Plugin":         renderPluginFile,
-	"MappingLibrary": renderMappingLibraryFile,
-	"SchemaLibrary":  renderSchemaLibraryFile,
-	"Manifest":       renderManifestFile,
-	"Aggregate":      renderAggregateFile,
-	"Release":        renderReleaseFile,
+	"Component":       renderComponentFile,
+	"Feature":         renderFeatureFile,
+	"Recipe":          renderRecipeFile,
+	"FeatureRecipe":   renderFeatureRecipeFile,
+	"Plugin":          renderPluginFile,
+	"MappingLibrary":  renderMappingLibraryFile,
+	"WorkloadLibrary": renderWorkloadLibraryFile,
+	"SchemaLibrary":   renderSchemaLibraryFile,
+	"Manifest":        renderManifestFile,
+	"Aggregate":       renderAggregateFile,
+	"Release":         renderReleaseFile,
 }
 
 // nonStandalone names the kinds that exist only embedded under another entity
@@ -265,7 +266,7 @@ func inspectPath(rw *workspaceconfig.ResolvedWorkspace, path string, catalogDirs
 // every entity kind and renders the first match. It loads the catalog over the
 // first-win search stack, resolves extends chains, then tries kinds in a fixed
 // precedence — Component, Plugin, Feature, Recipe, FeatureRecipe, Aggregate,
-// SchemaLibrary, MappingLibrary — returning the first identity match.
+// SchemaLibrary, MappingLibrary, WorkloadLibrary — returning the first identity match.
 //
 // A Component match keeps its dedicated render path: the merged schema +
 // usesSchema view plus a best-effort deprecation advisory. Every other kind is
@@ -346,6 +347,9 @@ func inspectCatalogEntity(rw *workspaceconfig.ResolvedWorkspace, identifier stri
 	}
 	if lib, ok := cat.MappingLibraries[identifier]; ok {
 		return renderCatalogMatch(rw, "MappingLibrary", identifier, lib, catalogDirs, opts)
+	}
+	if lib, ok := cat.WorkloadLibraries[identifier]; ok {
+		return renderCatalogMatch(rw, "WorkloadLibrary", identifier, lib, catalogDirs, opts)
 	}
 	return fmt.Errorf("%q matched no catalog entity of any kind", identifier)
 }

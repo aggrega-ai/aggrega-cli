@@ -65,8 +65,8 @@ func EntityYAMLFromBundle(blob []byte) ([]byte, error) {
 // switches on):
 //
 //   - Component / Feature / Aggregate / SchemaLibrary /
-//     MappingLibrary / Plugin → bare YAML, no archive; bytes are
-//     the file contents unchanged.
+//     MappingLibrary / WorkloadLibrary / Plugin → bare YAML, no archive;
+//     bytes are the file contents unchanged.
 //   - Recipe / FeatureRecipe → tar.gz containing the YAML plus any
 //     co-located source: directories, $import:-referenced files in
 //     the same directory tree, and inline artifacts: payloads. File
@@ -100,7 +100,7 @@ func Bundle(kind, entityPath string) ([]byte, string, error) {
 	}
 
 	switch kind {
-	case "Component", "Feature", "Aggregate", "SchemaLibrary", "MappingLibrary", "Plugin":
+	case "Component", "Feature", "Aggregate", "SchemaLibrary", "MappingLibrary", "WorkloadLibrary", "Plugin":
 		data, err := os.ReadFile(entityPath)
 		if err != nil {
 			return nil, "", fmt.Errorf("oci: bundle read %s: %w", entityPath, err)

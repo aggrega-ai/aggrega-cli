@@ -47,11 +47,12 @@ import (
 // confines source-descent's dependencies (RecipeLoader,
 // SourceResolver) to the new function.
 type Closure struct {
-	Entities         []ResolvedRef
-	MappingLibraries []ResolvedLibrary
-	SchemaLibraries  []ResolvedLibrary
-	SourceArtifacts  []SourceArtifact
-	Plugins          []ResolvedRef
+	Entities          []ResolvedRef
+	MappingLibraries  []ResolvedLibrary
+	SchemaLibraries   []ResolvedLibrary
+	WorkloadLibraries []ResolvedLibrary
+	SourceArtifacts   []SourceArtifact
+	Plugins           []ResolvedRef
 }
 
 // SourceArtifact mirrors lockfile.SourceArtifact field-for-field;
@@ -228,10 +229,10 @@ type ResolvedRef struct {
 	KindHint string
 }
 
-// ResolvedLibrary captures a SchemaLibrary or MappingLibrary
-// resolution result with its consumer chain. Mirrors the lockfile
-// package's SchemaLibrary / MappingLibrary wire shapes so the
-// lockfile writer can copy field-for-field.
+// ResolvedLibrary captures a SchemaLibrary, MappingLibrary, or
+// WorkloadLibrary resolution result with its consumer chain. Mirrors
+// the lockfile package's SchemaLibrary / MappingLibrary / WorkloadLibrary
+// wire shapes so the lockfile writer can copy field-for-field.
 type ResolvedLibrary struct {
 	URI             string
 	ResolvedVersion string
@@ -261,13 +262,13 @@ type LibraryConsumer struct {
 // callback-struct or bare-function patterns established elsewhere
 // in aggrega-cli (pkg/resolver/CatalogLookup is a struct of two
 // callback fields; pkg/validator/ResolveInheritance takes a bare
-// function-value parameter). The four-method surface here would be
+// function-value parameter). The six-method surface here would be
 // awkward as a callback struct: each test mock would need a
-// 4-field literal with at least 3 non-nil function values, and a
+// 6-field literal with at least 5 non-nil function values, and a
 // partial construction would panic at call site rather than fail
 // at construction. Method-set interface satisfaction gives
 // compile-time guarantees that every implementer provides all
-// five resolution surfaces.
+// six resolution surfaces.
 type Lookup interface {
 	// ResolveCatalogEntity resolves a core catalog entity (Component / Feature /
 	// Recipe / FeatureRecipe). kindHint is the KindHint recorded at
@@ -283,6 +284,7 @@ type Lookup interface {
 	ResolveAggregate(uri string) (Resolution, error)
 	ResolveSchemaLibrary(uri string) (LibraryResolution, error)
 	ResolveMappingLibrary(uri string) (LibraryResolution, error)
+	ResolveWorkloadLibrary(uri string) (LibraryResolution, error)
 	// ResolvePlugin resolves a Plugin entity's .wasm artifact reference — the
 	// entity's bare identity (<socket>/<name>). The .wasm rides inline as a layer
 	// of the single plugin manifest published under the entity's version tag, so

@@ -223,8 +223,8 @@ spec:
 // TestLazyLookup_WorkloadLibraries_LocalFold verifies the lazy backing folds a
 // local-catalog WorkloadLibrary into the enumerated set exposed by
 // WorkloadLibraries() — the set the renderer's workload `$import` resolution
-// consumes. A local library enumerates; the remote/lockfile bridge is not part
-// of this path, so a WorkloadLibrary reaches the set only from the catalog dirs.
+// consumes. This covers the local (Tier-1) arm; the lockfile-pinned remote
+// (Tier-2) bridge into the same set is proven by the pinned-enumeration test.
 func TestLazyLookup_WorkloadLibraries_LocalFold(t *testing.T) {
 	t.Parallel()
 

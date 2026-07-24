@@ -226,7 +226,7 @@ type Server struct {
 	// lazyCatalog is the session-scoped catalog lookup: the per-URI Tier-1/2/3
 	// cascade for the WHOLE catalog surface — Component + Feature (on-demand
 	// cascade) plus the tolerantly-enumerated Recipe / FeatureRecipe / Aggregate /
-	// Plugin / SchemaLibrary / MappingLibrary shell. Constructed once at startup
+	// Plugin / SchemaLibrary / MappingLibrary / WorkloadLibrary shell. Constructed once at startup
 	// via catalog.NewLazyLookup; no per-request reconstruction, no eager
 	// whole-catalog load. It holds the session-stable, pin-independent Tier-1
 	// filesystem indexes; Reset() on invalidation re-walks a changed workspace.

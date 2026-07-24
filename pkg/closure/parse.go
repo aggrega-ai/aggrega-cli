@@ -14,11 +14,14 @@ import (
 // SchemaLibrary entry reference (`<Library>#/schemas/<Entry>`), the surface
 // parseIdentityRef parses. mappingsFragmentPrefix is the parallel marker for a
 // MappingLibrary `$import:` entry reference (`<Library>#/mappings/<Entry>`),
-// parsed by parseIdentityImportRef. Both share the host-less identity grammar
-// and differ only in the fragment surface they admit.
+// parsed by parseIdentityImportRef. workloadsFragmentPrefix is the marker for a
+// WorkloadLibrary `$import:` entry reference (`<Library>#/workloads/<Entry>`),
+// parsed by parseIdentityWorkloadImportRef. All three share the host-less
+// identity grammar and differ only in the fragment surface they admit.
 const (
-	schemasFragmentPrefix  = "/schemas/"
-	mappingsFragmentPrefix = "/mappings/"
+	schemasFragmentPrefix   = "/schemas/"
+	mappingsFragmentPrefix  = "/mappings/"
+	workloadsFragmentPrefix = "/workloads/"
 )
 
 // isIdentityRefWithFragment reports whether value is a host-less cross-document
@@ -45,6 +48,14 @@ func isIdentityLibraryRef(value string) bool {
 // fragment) and the host-bearing `oci://…` form both return false.
 func isIdentityImportRef(value string) bool {
 	return isIdentityRefWithFragment(value, mappingsFragmentPrefix)
+}
+
+// isIdentityWorkloadImportRef reports whether an `$import:` value is a host-less
+// cross-document WorkloadLibrary reference in the identity form
+// `<Library>[:<version>]#/workloads/<Entry>`. A local file path (mode 2, no
+// fragment) and the host-bearing `oci://…` form both return false.
+func isIdentityWorkloadImportRef(value string) bool {
+	return isIdentityRefWithFragment(value, workloadsFragmentPrefix)
 }
 
 // parseIdentityRefWithFragment parses a host-less identity library reference
@@ -89,8 +100,15 @@ func parseIdentityImportRef(s string) (libraryName, version, fragment string, er
 	return parseIdentityRefWithFragment(s, mappingsFragmentPrefix)
 }
 
-// formatFragmentRef rebuilds the wire-form fragment ("#/schemas/X" or
-// "#/mappings/X") from the bare body returned by the identity-ref parsers.
+// parseIdentityWorkloadImportRef parses a host-less identity WorkloadLibrary
+// `$import:` reference `<Library>[:<version>]#/workloads/<Entry>`. See
+// parseIdentityRefWithFragment.
+func parseIdentityWorkloadImportRef(s string) (libraryName, version, fragment string, err error) {
+	return parseIdentityRefWithFragment(s, workloadsFragmentPrefix)
+}
+
+// formatFragmentRef rebuilds the wire-form fragment ("#/schemas/X",
+// "#/mappings/X", or "#/workloads/X") from the bare body returned by the identity-ref parsers.
 // Empty input produces an empty output (a top-level library reference with
 // no fragment).
 func formatFragmentRef(fragment string) string {

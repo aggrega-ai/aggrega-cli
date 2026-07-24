@@ -111,6 +111,15 @@ spec:
   mappings:
     SimpleValues: 'image: {{ .Values.image }}'
 `
+	pinnedWorkloadLibYAML = `apiVersion: aggrega.ai/v1alpha1
+kind: WorkloadLibrary
+metadata:
+  name: BaseWorkloads
+  version: 1.0.0
+spec:
+  workloads:
+    SimpleService: 'kind: Deployment'
+`
 )
 
 // pinCacheCountingPuller is an OCIPuller that records every Pull. The determinism
@@ -160,13 +169,14 @@ func TestLazyLookup_PinnedCacheEnumeration_Resolves(t *testing.T) {
 	// pins BARE with a separate ResolvedVersion (the real lockfile form — the
 	// case that strands a version-less pin against a versioned slot).
 	const (
-		compSlot    = "core/datastore/mariadb:1.0.0"
-		featSlot    = "core/secret-value:1.0.0"
-		recipeSlot  = "compose/mariadb:1.0.0"
-		frSlot      = "compose/dotenv-secret:1.0.0"
-		aggSlot     = "example/app:1.0.0"
-		schemaSlot  = "DbSizing:1.0.0"
-		mappingSlot = "BaseMappings:1.0.0"
+		compSlot     = "core/datastore/mariadb:1.0.0"
+		featSlot     = "core/secret-value:1.0.0"
+		recipeSlot   = "compose/mariadb:1.0.0"
+		frSlot       = "compose/dotenv-secret:1.0.0"
+		aggSlot      = "example/app:1.0.0"
+		schemaSlot   = "DbSizing:1.0.0"
+		mappingSlot  = "BaseMappings:1.0.0"
+		workloadSlot = "BaseWorkloads:1.0.0"
 	)
 
 	pins := map[string]Pin{}
@@ -179,6 +189,9 @@ func TestLazyLookup_PinnedCacheEnumeration_Resolves(t *testing.T) {
 	pins["example/app"] = writePinnedSlot(t, ws, cacheDir, aggSlot, oci.MediaTypeAggregate, []byte(pinnedAggregateYAML))
 	pins["DbSizing"] = writePinnedSlot(t, ws, cacheDir, schemaSlot, oci.MediaTypeSchemaLibrary, []byte(dbSizingLibYAML))
 	pins[mappingSlot] = writePinnedSlot(t, ws, cacheDir, mappingSlot, oci.MediaTypeMappingLibrary, []byte(pinnedMappingLibYAML))
+	// BARE-URI workload-library pin (slot versioned) — the B→A bridge: a
+	// lockfile-pinned remote WorkloadLibrary folds into the enumerated set.
+	pins["BaseWorkloads"] = writePinnedSlot(t, ws, cacheDir, workloadSlot, oci.MediaTypeWorkloadLibrary, []byte(pinnedWorkloadLibYAML))
 
 	// --- Subject: determinism-wired lazy lookup (nil puller + pins, no catalog dirs) ---
 	subject := NewLazyLookup(ws, cacheDir, nil, nil)
@@ -206,6 +219,7 @@ func TestLazyLookup_PinnedCacheEnumeration_Resolves(t *testing.T) {
 		entityBytesKey("Aggregate", "example/app"):                                              []byte(pinnedAggregateYAML),
 		entityBytesKey("SchemaLibrary", "DbSizing"):                                             []byte(dbSizingLibYAML),
 		entityBytesKey("MappingLibrary", "BaseMappings"):                                        []byte(pinnedMappingLibYAML),
+		entityBytesKey("WorkloadLibrary", "BaseWorkloads"):                                      []byte(pinnedWorkloadLibYAML),
 	}
 	for k, want := range wantBytes {
 		got, ok := subject.entityBytes[k]
@@ -225,6 +239,11 @@ func TestLazyLookup_PinnedCacheEnumeration_Resolves(t *testing.T) {
 	}
 	if _, ok := subject.schemaLibraries["DbSizing"]; !ok {
 		t.Errorf("bare-URI-pinned SchemaLibrary DbSizing not folded into the enumerated set")
+	}
+	// The bare-pinned remote WorkloadLibrary folded into the enumerated set the
+	// renderer's workload `$import` resolution consumes — the B→A bridge.
+	if _, ok := subject.workloadLibraries["BaseWorkloads"]; !ok {
+		t.Errorf("bare-URI-pinned WorkloadLibrary BaseWorkloads not folded into the enumerated set (B→A bridge)")
 	}
 }
 

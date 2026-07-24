@@ -26,20 +26,24 @@ type LibrarySource interface {
 	RecipeByURI(uri string) (types.Recipe, bool)
 	FeatureRecipeByURI(uri string) (types.FeatureRecipe, bool)
 	MappingLibrary(uri string) (types.MappingLibrary, bool)
+	WorkloadLibrary(uri string) (types.WorkloadLibrary, bool)
 }
 
 // AugmentClosure resolves the cross-document library axes the entity walk does
-// not descend — the SchemaLibrary axis first, then the MappingLibrary axis —
-// merging each into the closure. Both discoveries read the resolved closure
-// through the same source, so a pull and a build of the same Release compute the
-// identical library closure. It routes libraries only; the plugin,
-// sub-aggregate, and source axes are reconstructed by their own passes.
+// not descend — the SchemaLibrary axis first, then the MappingLibrary axis, then
+// the WorkloadLibrary axis — merging each into the closure. Every discovery reads
+// the resolved closure through the same source, so a pull and a build of the same
+// Release compute the identical library closure. It routes libraries only; the
+// plugin, sub-aggregate, and source axes are reconstructed by their own passes.
 func AugmentClosure(cl *Closure, src LibrarySource, lookup Lookup) error {
 	if err := discoverClosureLibraries(cl, src, lookup); err != nil {
 		return fmt.Errorf("schema-library discovery: %w", err)
 	}
 	if err := discoverClosureMappingLibraries(cl, src, lookup); err != nil {
 		return fmt.Errorf("mapping-library discovery: %w", err)
+	}
+	if err := discoverClosureWorkloadLibraries(cl, src, lookup); err != nil {
+		return fmt.Errorf("workload-library discovery: %w", err)
 	}
 	return nil
 }
@@ -188,4 +192,79 @@ func valuesMappingImportDirective(vm types.ValuesMapping) (string, bool) {
 		return "", false
 	}
 	return "$import: " + vm.Import, true
+}
+
+// discoverClosureWorkloadLibraries is the workload-axis mirror of
+// discoverClosureMappingLibraries: the single producer of the closure's
+// WorkloadLibrary axis, shared by pull's pin flow and build's drift-verify flow.
+// It scans every Recipe and FeatureRecipe workload in the loaded catalog for a
+// field-root `$import:` library reference, resolves the discovered libraries
+// (minimum-version selection + the injected lookup), and descends them
+// transitively to a fixpoint, merging the result into cl.WorkloadLibraries.
+//
+// A workload is presented to the walker in its authored `$import: <ref>`
+// directive form; a Mode-1 inline template and a Mode-2 local-file import carry
+// no library reference and are skipped by the walker's identity gate. A
+// FeatureRecipe workload `#/workloads/` reference is refused at envelope
+// validation (the featurerecipe schema admits only inline + local-file at this
+// site), so an FR consumer contributes no workload-library edge here; scanning it
+// is harmless and keeps the producer symmetric with the mapping axis. Iteration
+// is sorted-name for deterministic output.
+func discoverClosureWorkloadLibraries(cl *Closure, src LibrarySource, lookup Lookup) error {
+	var recipeConsumers, frConsumers []WorkloadConsumer
+	rSeen, frSeen := map[string]struct{}{}, map[string]struct{}{}
+	for _, e := range cl.Entities {
+		if r, ok := src.RecipeByURI(e.URI); ok {
+			if _, dup := rSeen[e.URI]; dup {
+				continue
+			}
+			rSeen[e.URI] = struct{}{}
+			if tmpl, ok := workloadImportDirective(r.Spec.Workload); ok {
+				recipeConsumers = append(recipeConsumers, WorkloadConsumer{URI: e.URI, Template: tmpl})
+			}
+			continue
+		}
+		if fr, ok := src.FeatureRecipeByURI(e.URI); ok {
+			if _, dup := frSeen[e.URI]; dup {
+				continue
+			}
+			frSeen[e.URI] = struct{}{}
+			if tmpl, ok := workloadImportDirective(fr.Spec.Workload); ok {
+				frConsumers = append(frConsumers, WorkloadConsumer{URI: e.URI, Template: tmpl})
+			}
+		}
+	}
+	sort.Slice(recipeConsumers, func(i, j int) bool { return recipeConsumers[i].URI < recipeConsumers[j].URI })
+	sort.Slice(frConsumers, func(i, j int) bool { return frConsumers[i].URI < frConsumers[j].URI })
+	consumers := append(recipeConsumers, frConsumers...)
+
+	// Transitive body accessor: a discovered WorkloadLibrary's own entry bodies,
+	// for descending their field-root `$import:`s, resolved through the lazy
+	// library walk. A library the closure does not reach lands with the lookup's
+	// Tier-3 path.
+	body := func(lib ResolvedLibrary) ([]string, bool, error) {
+		wl, ok := src.WorkloadLibrary(lib.URI)
+		if !ok {
+			return nil, false, nil
+		}
+		bodies := make([]string, 0, wl.Spec.Workloads.Len())
+		for _, k := range wl.Spec.Workloads.Keys() {
+			entry, _ := wl.Spec.Workloads.Get(k)
+			bodies = append(bodies, entry.Body)
+		}
+		return bodies, true, nil
+	}
+
+	return cl.DiscoverWorkloadLibraries(lookup, consumers, body)
+}
+
+// workloadImportDirective renders a workload template that carries an `$import:`
+// target back into its authored directive form (`$import: <target>`) for the
+// discovery walker, which scans a template body for a field-root `$import:`. A
+// Mode-1 inline workload template carries no import and yields ok=false.
+func workloadImportDirective(w types.WorkloadTemplate) (string, bool) {
+	if w.Import == "" {
+		return "", false
+	}
+	return "$import: " + w.Import, true
 }

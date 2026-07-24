@@ -14,8 +14,8 @@ import (
 // ErrLockfileDrift wraps every drift detection failure raised by
 // Verify. Errors satisfying errors.Is(err, ErrLockfileDrift) carry a
 // wrapped message naming every offending URI surfaced across the
-// closure axes (entities, schema libraries, mapping libraries, Wasm
-// plugins). Each axis collects all of its drift entries before
+// closure axes (entities, schema libraries, mapping libraries,
+// workload libraries, Wasm plugins). Each axis collects all of its drift entries before
 // returning, so an operator with multiple drifts sees the full list
 // in one diagnostic rather than one URI per iteration. The
 // documented remediation is `aggrega pull --upgrade <release>`.
@@ -37,8 +37,8 @@ var ErrLockfileDrift = errors.New("lockfile: out of date; it no longer matches t
 // drift entry across every axis is reported in one joined error so
 // operators see the full picture.
 //
-// Walks four axes: Entities, SchemaLibraries, MappingLibraries,
-// Plugins. SourceArtifacts are not verified here — they pass
+// Walks five axes: Entities, SchemaLibraries, MappingLibraries,
+// WorkloadLibraries, Plugins. SourceArtifacts are not verified here — they pass
 // through pkg/sourcecache.LookupAndExtract's existing digest gate at
 // build-time read, which compares the cached blob's content digest
 // against the lockfile-supplied digest the orchestrator routes
@@ -49,6 +49,7 @@ func Verify(lf *Lockfile, expected closure.Closure) error {
 	driftErrs = append(driftErrs, collectEntityDrift(lf.Entities, expected.Entities)...)
 	driftErrs = append(driftErrs, collectSchemaLibraryDrift(lf.SchemaLibraries, expected.SchemaLibraries)...)
 	driftErrs = append(driftErrs, collectMappingLibraryDrift(lf.MappingLibraries, expected.MappingLibraries)...)
+	driftErrs = append(driftErrs, collectWorkloadLibraryDrift(lf.WorkloadLibraries, expected.WorkloadLibraries)...)
 	driftErrs = append(driftErrs, collectPluginDrift(lf.Plugins, expected.Plugins)...)
 	if len(driftErrs) == 0 {
 		return nil
@@ -127,6 +128,31 @@ func collectMappingLibraryDrift(have []MappingLibrary, want []closure.ResolvedLi
 	}
 	for _, uri := range sortedExtras(haveByURI, seen) {
 		out = append(out, fmt.Errorf("mapping-library %q no longer used by the release", uri))
+	}
+	return out
+}
+
+func collectWorkloadLibraryDrift(have []WorkloadLibrary, want []closure.ResolvedLibrary) []error {
+	haveByURI := make(map[string]WorkloadLibrary, len(have))
+	for _, e := range have {
+		haveByURI[e.URI] = e
+	}
+	seen := make(map[string]struct{}, len(want))
+	var out []error
+	for _, w := range want {
+		seen[w.URI] = struct{}{}
+		h, ok := haveByURI[w.URI]
+		if !ok {
+			out = append(out, fmt.Errorf("workload-library %q not in lockfile", w.URI))
+			continue
+		}
+		if h.ResolvedVersion != w.ResolvedVersion || h.Digest != w.Digest {
+			out = append(out, fmt.Errorf("workload-library %q changed: lockfile=(%s,%s) current=(%s,%s)",
+				w.URI, h.ResolvedVersion, h.Digest, w.ResolvedVersion, w.Digest))
+		}
+	}
+	for _, uri := range sortedExtras(haveByURI, seen) {
+		out = append(out, fmt.Errorf("workload-library %q no longer used by the release", uri))
 	}
 	return out
 }

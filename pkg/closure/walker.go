@@ -65,9 +65,10 @@ func ComputeClosure(
 // recursive walkers descend through the release / manifest /
 // aggregate trees.
 type walkState struct {
-	entities    map[string]*pendingRef
-	schemaLibs  map[string]*pendingLibrary
-	mappingLibs map[string]*pendingLibrary
+	entities     map[string]*pendingRef
+	schemaLibs   map[string]*pendingLibrary
+	mappingLibs  map[string]*pendingLibrary
+	workloadLibs map[string]*pendingLibrary
 }
 
 // pendingRef collects the per-URI accumulating data the walker
@@ -96,9 +97,10 @@ type pendingLibrary struct {
 
 func newWalkState() *walkState {
 	return &walkState{
-		entities:    map[string]*pendingRef{},
-		schemaLibs:  map[string]*pendingLibrary{},
-		mappingLibs: map[string]*pendingLibrary{},
+		entities:     map[string]*pendingRef{},
+		schemaLibs:   map[string]*pendingLibrary{},
+		mappingLibs:  map[string]*pendingLibrary{},
+		workloadLibs: map[string]*pendingLibrary{},
 	}
 }
 
@@ -457,6 +459,33 @@ func (s *walkState) walkMappingImportInto(template, consumerURI string) error {
 	return nil
 }
 
+func (s *walkState) walkWorkloadImportInto(template, consumerURI string) error {
+	trimmed := strings.TrimSpace(template)
+	if !strings.HasPrefix(trimmed, "$import:") {
+		return nil
+	}
+	rest := strings.TrimPrefix(trimmed, "$import:")
+	if newline := strings.IndexByte(rest, '\n'); newline >= 0 {
+		rest = rest[:newline]
+	}
+	url := strings.TrimSpace(rest)
+	if url == "" {
+		return nil
+	}
+	// Record only host-less identity WorkloadLibrary references; a local-file
+	// import or a host-bearing form is not a cross-library edge and is left for
+	// its consumption site.
+	if !isIdentityWorkloadImportRef(url) {
+		return nil
+	}
+	libName, version, fragment, err := parseIdentityWorkloadImportRef(url)
+	if err != nil {
+		return err
+	}
+	s.addWorkloadLibrary(libName, version, consumerURI, formatFragmentRef(fragment))
+	return nil
+}
+
 // resolveAll iterates the pending entity / library maps and invokes
 // the Lookup interface per URI. NotFound on a catalog entity is a
 // fatal closure gap and returns ErrUnresolvableURI. Library
@@ -466,10 +495,13 @@ func (s *walkState) resolveAll(lookup Lookup) error {
 	if err := s.resolveEntities(lookup); err != nil {
 		return err
 	}
-	if err := s.resolveLibraries(lookup, true /* schema */); err != nil {
+	if err := s.resolveLibraries(s.schemaLibs, lookup.ResolveSchemaLibrary); err != nil {
 		return err
 	}
-	return s.resolveLibraries(lookup, false /* mapping */)
+	if err := s.resolveLibraries(s.mappingLibs, lookup.ResolveMappingLibrary); err != nil {
+		return err
+	}
+	return s.resolveLibraries(s.workloadLibs, lookup.ResolveWorkloadLibrary)
 }
 
 func (s *walkState) resolveEntities(lookup Lookup) error {
@@ -499,14 +531,12 @@ func (s *walkState) resolveEntities(lookup Lookup) error {
 }
 
 // resolveLibraries applies minimum version selection (MVS) across
-// the per-library consumer→version mapping, then invokes the
-// appropriate Lookup method to obtain digest + resolution-path
-// metadata.
-func (s *walkState) resolveLibraries(lookup Lookup, schemas bool) error {
-	pending := s.schemaLibs
-	if !schemas {
-		pending = s.mappingLibs
-	}
+// the per-library consumer→version mapping, then invokes the given
+// Lookup resolver (one of ResolveSchemaLibrary / ResolveMappingLibrary /
+// ResolveWorkloadLibrary) to obtain digest + resolution-path metadata.
+// The pending map and resolver are supplied together so every library
+// axis runs through one resolution loop rather than a per-axis copy.
+func (s *walkState) resolveLibraries(pending map[string]*pendingLibrary, resolve func(uri string) (LibraryResolution, error)) error {
 	for uri, lib := range pending {
 		selected, err := selectMVSVersion(uri, lib.versionByConsumer)
 		if err != nil {
@@ -521,12 +551,7 @@ func (s *walkState) resolveLibraries(lookup Lookup, schemas bool) error {
 		if selected != "" {
 			resolveURI = uri + ":" + selected
 		}
-		var res LibraryResolution
-		if schemas {
-			res, err = lookup.ResolveSchemaLibrary(resolveURI)
-		} else {
-			res, err = lookup.ResolveMappingLibrary(resolveURI)
-		}
+		res, err := resolve(resolveURI)
 		if err != nil {
 			return fmt.Errorf("resolve: resolve library %q: %w", uri, err)
 		}
@@ -686,6 +711,7 @@ func (s *walkState) materialise() Closure {
 	// its .wasm artifact. ComputeClosure pins only the entities.
 	c.SchemaLibraries = s.materialiseSchemaLibs()
 	c.MappingLibraries = s.materialiseMappingLibs()
+	c.WorkloadLibraries = s.materialiseWorkloadLibs()
 	return c
 }
 
@@ -705,6 +731,14 @@ func (s *walkState) materialiseMappingLibs() []ResolvedLibrary {
 	return out
 }
 
+func (s *walkState) materialiseWorkloadLibs() []ResolvedLibrary {
+	out := make([]ResolvedLibrary, 0, len(s.workloadLibs))
+	for uri, lib := range s.workloadLibs {
+		out = append(out, lib.toResolvedLibrary(uri))
+	}
+	return out
+}
+
 // canonicaliseClosure sorts every slice field by its canonical
 // key (URI for top-level slices; ConsumerURI for Consumers;
 // lexicographic for Fragments and ReferencedFrom). Two
@@ -715,6 +749,7 @@ func canonicaliseClosure(c *Closure) {
 	sort.Slice(c.Plugins, func(i, j int) bool { return c.Plugins[i].URI < c.Plugins[j].URI })
 	sort.Slice(c.SchemaLibraries, func(i, j int) bool { return c.SchemaLibraries[i].URI < c.SchemaLibraries[j].URI })
 	sort.Slice(c.MappingLibraries, func(i, j int) bool { return c.MappingLibraries[i].URI < c.MappingLibraries[j].URI })
+	sort.Slice(c.WorkloadLibraries, func(i, j int) bool { return c.WorkloadLibraries[i].URI < c.WorkloadLibraries[j].URI })
 
 	for i := range c.Entities {
 		sort.Strings(c.Entities[i].ReferencedFrom)
@@ -727,6 +762,9 @@ func canonicaliseClosure(c *Closure) {
 	}
 	for i := range c.MappingLibraries {
 		sortLibrary(&c.MappingLibraries[i])
+	}
+	for i := range c.WorkloadLibraries {
+		sortLibrary(&c.WorkloadLibraries[i])
 	}
 }
 
@@ -812,6 +850,27 @@ func (s *walkState) addMappingLibrary(libURI, version, consumerURI, fragment str
 		}
 	}
 	l := s.mappingLibs[libURI]
+	if version != "" {
+		l.versionByConsumer[consumerURI] = version
+	} else if _, present := l.versionByConsumer[consumerURI]; !present {
+		l.versionByConsumer[consumerURI] = ""
+	}
+	if l.fragmentsByCons[consumerURI] == nil {
+		l.fragmentsByCons[consumerURI] = map[string]struct{}{}
+	}
+	if fragment != "" {
+		l.fragmentsByCons[consumerURI][fragment] = struct{}{}
+	}
+}
+
+func (s *walkState) addWorkloadLibrary(libURI, version, consumerURI, fragment string) {
+	if s.workloadLibs[libURI] == nil {
+		s.workloadLibs[libURI] = &pendingLibrary{
+			versionByConsumer: map[string]string{},
+			fragmentsByCons:   map[string]map[string]struct{}{},
+		}
+	}
+	l := s.workloadLibs[libURI]
 	if version != "" {
 		l.versionByConsumer[consumerURI] = version
 	} else if _, present := l.versionByConsumer[consumerURI]; !present {

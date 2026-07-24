@@ -457,8 +457,8 @@ spec:
 }
 
 // TestPushReferenceRoundTripsThroughSplitURIForOCI pins the
-// publish/consume reference-shape symmetry across all seven
-// publishable catalog kinds. The push-side helper
+// publish/consume reference-shape symmetry across every
+// publishable catalog kind. The push-side helper
 // buildPushReference constructs a reference; appending ":<version>"
 // yields a canonical entity URI; catalog.SplitURIForOCI parses it
 // back into (reference, tag); the round-trip MUST be exact.
@@ -488,6 +488,7 @@ func TestPushReferenceRoundTripsThroughSplitURIForOCI(t *testing.T) {
 		{"Provider", "", "helm", "3.0.0"},
 		{"SchemaLibrary", "", "Probes", "1.0.0"},
 		{"MappingLibrary", "", "BaseMappings", "2.1.0"},
+		{"WorkloadLibrary", "", "BaseWorkloads", "1.0.0"},
 		// Plugin kind: path segment is "plugin"; the plugin's
 		// metadata.name path-encodes the socket. Reference shape:
 		// <registry>/plugin/<socket>/<name>.

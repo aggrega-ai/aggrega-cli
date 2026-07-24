@@ -26,15 +26,16 @@ import (
 // instead, see classifyByFilename), and Workload/IR are not
 // editor-authored standalone documents.
 var entityKindByName = map[string]envelope.Kind{
-	"Component":      envelope.KindComponent,
-	"Feature":        envelope.KindFeature,
-	"Recipe":         envelope.KindRecipe,
-	"FeatureRecipe":  envelope.KindFeatureRecipe,
-	"SchemaLibrary":  envelope.KindSchemaLibrary,
-	"MappingLibrary": envelope.KindMappingLibrary,
-	"Aggregate":      envelope.KindAggregate,
-	"Manifest":       envelope.KindManifest,
-	"Release":        envelope.KindRelease,
+	"Component":       envelope.KindComponent,
+	"Feature":         envelope.KindFeature,
+	"Recipe":          envelope.KindRecipe,
+	"FeatureRecipe":   envelope.KindFeatureRecipe,
+	"SchemaLibrary":   envelope.KindSchemaLibrary,
+	"MappingLibrary":  envelope.KindMappingLibrary,
+	"WorkloadLibrary": envelope.KindWorkloadLibrary,
+	"Aggregate":       envelope.KindAggregate,
+	"Manifest":        envelope.KindManifest,
+	"Release":         envelope.KindRelease,
 }
 
 // classifyAggregaDocument peeks apiVersion + kind from the parsed buffer

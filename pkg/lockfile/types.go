@@ -14,8 +14,8 @@
 //     Release / Aggregate / Manifest / .aggrega-config.yaml each URI
 //     was pulled in from — answers "why is this in the closure?".
 //   - consumers (list of {consumer_uri, fragments} records) appears on
-//     schema_libraries and mapping_libraries. It records which
-//     catalog entity references which <entry-name> fragments of the
+//     schema_libraries, mapping_libraries, and workload_libraries. It
+//     records which catalog entity references which <entry-name> fragments of the
 //     library — answers "if this library bumps, who is affected and
 //     at which fragments?". The structured shape captures the
 //     library's fan-in (many consumers, each potentially at many
@@ -36,18 +36,19 @@ package lockfile
 // Field declaration order is alphabetical to drive yaml.v3's
 // canonical key emission.
 type Lockfile struct {
-	Entities         []Entity            `yaml:"entities"`
-	ExternalInputs   []ExternalInput     `yaml:"external_inputs"`
-	GeneratedAt      string              `yaml:"generated_at"`
-	MappingLibraries []MappingLibrary    `yaml:"mapping_libraries"`
-	Mutators         []MutatorAttachment `yaml:"mutators"`
-	Plugins          []Plugin            `yaml:"plugins"`
-	Providers        []ProviderBinding   `yaml:"providers"`
-	Release          string              `yaml:"release"`
-	SchemaLibraries  []SchemaLibrary     `yaml:"schema_libraries"`
-	SourceArtifacts  []SourceArtifact    `yaml:"source_artifacts"`
-	VerdictInputs    []VerdictInput      `yaml:"verdict_inputs"`
-	Version          int                 `yaml:"version"`
+	Entities          []Entity            `yaml:"entities"`
+	ExternalInputs    []ExternalInput     `yaml:"external_inputs"`
+	GeneratedAt       string              `yaml:"generated_at"`
+	MappingLibraries  []MappingLibrary    `yaml:"mapping_libraries"`
+	Mutators          []MutatorAttachment `yaml:"mutators"`
+	Plugins           []Plugin            `yaml:"plugins"`
+	Providers         []ProviderBinding   `yaml:"providers"`
+	Release           string              `yaml:"release"`
+	SchemaLibraries   []SchemaLibrary     `yaml:"schema_libraries"`
+	SourceArtifacts   []SourceArtifact    `yaml:"source_artifacts"`
+	VerdictInputs     []VerdictInput      `yaml:"verdict_inputs"`
+	Version           int                 `yaml:"version"`
+	WorkloadLibraries []WorkloadLibrary   `yaml:"workload_libraries"`
 }
 
 // Entity carries a catalog-entity pin: Component, Feature, Recipe,
@@ -167,6 +168,17 @@ type SchemaLibrary struct {
 // remain visibly separate at the Go API surface even though their
 // shape coincides today.
 type MappingLibrary struct {
+	URI             string            `yaml:"uri"`
+	ResolvedVersion string            `yaml:"resolved_version"`
+	Digest          string            `yaml:"digest"`
+	Consumers       []LibraryConsumer `yaml:"consumers"`
+}
+
+// WorkloadLibrary is structurally identical to SchemaLibrary and
+// MappingLibrary — declared as a distinct type so the lockfile's
+// library sections remain visibly separate at the Go API surface even
+// though their shape coincides today.
+type WorkloadLibrary struct {
 	URI             string            `yaml:"uri"`
 	ResolvedVersion string            `yaml:"resolved_version"`
 	Digest          string            `yaml:"digest"`

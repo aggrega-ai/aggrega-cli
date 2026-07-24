@@ -138,6 +138,7 @@ func TestBundleBareKindsPerVersionSubdir(t *testing.T) {
 		{"Component", "component.yaml", oci.MediaTypeComponent},
 		{"Feature", "feature.yaml", oci.MediaTypeFeature},
 		{"Aggregate", "aggregate.yaml", oci.MediaTypeAggregate},
+		{"WorkloadLibrary", "library.yaml", oci.MediaTypeWorkloadLibrary},
 	}
 	body := func(kind string) []byte {
 		return []byte("apiVersion: aggrega.ai/v1alpha1\nkind: " + kind + "\nmetadata:\n  name: demo/x\n  version: 1.0.0\n")

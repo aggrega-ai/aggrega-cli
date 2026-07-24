@@ -56,7 +56,8 @@ var (
 	ErrWorkloadImportShape = errors.New("workload $import: is not a bare-name workload-library reference (<Library>#/workloads/<entry>)")
 
 	// ErrWorkloadLibraryNotFound fires when a bare-name workload-library import
-	// names a WorkloadLibrary absent from the resolved set (the local catalog).
+	// names a WorkloadLibrary absent from the resolved set (the local catalog plus
+	// any lockfile-pinned libraries bridged in at load).
 	ErrWorkloadLibraryNotFound = errors.New("workload-library import references a WorkloadLibrary not present in the catalog")
 
 	// ErrWorkloadEntryNotFound fires when a bare-name workload-library import names

@@ -18,7 +18,7 @@ import (
 //   - Top-level keys emitted in alphabetical order (driven by struct
 //     field declaration order in types.go).
 //   - Slice fields sorted by their canonical key: Entities,
-//     SchemaLibraries, MappingLibraries, Plugins by URI;
+//     SchemaLibraries, MappingLibraries, WorkloadLibraries, Plugins by URI;
 //     SourceArtifacts by the composite (Kind, URL, Chart, PinnedVersion);
 //     ExternalInputs by URL; VerdictInputs by (Plugin, Role), with each
 //     entry's Sources by base name. Mutators is the exception: its order
@@ -28,9 +28,9 @@ import (
 //     lexicographically.
 //   - Inside each ExternalInput: RequiredBy sorted lexicographically
 //     and deduplicated.
-//   - Inside each SchemaLibrary / MappingLibrary: Consumers sorted by
-//     ConsumerURI; within each LibraryConsumer, Fragments sorted
-//     lexicographically.
+//   - Inside each SchemaLibrary / MappingLibrary / WorkloadLibrary:
+//     Consumers sorted by ConsumerURI; within each LibraryConsumer,
+//     Fragments sorted lexicographically.
 //   - Inside each SourceArtifact: ReferencedBy sorted by the
 //     composite (URI, Field).
 //
@@ -127,8 +127,8 @@ func generatedAtValue(b []byte) string {
 // sortedCopy or canonicaliseConsumers.
 //
 // Maintenance hazard: any new field added to Entity / ExternalInput /
-// SchemaLibrary / MappingLibrary / Plugin / LibraryConsumer that holds
-// a slice MUST be reallocated here. The outer struct-copy via `entryCopy := m`
+// SchemaLibrary / MappingLibrary / WorkloadLibrary / Plugin / LibraryConsumer
+// that holds a slice MUST be reallocated here. The outer struct-copy via `entryCopy := m`
 // clones scalar fields but shares slice headers, so without explicit
 // reallocation a subsequent sort would mutate the caller's slice. The
 // existing sortedCopy helper covers []string; new shapes need
@@ -186,6 +186,16 @@ func canonicalise(lf *Lockfile) *Lockfile {
 	}
 	sort.Slice(out.MappingLibraries, func(i, j int) bool {
 		return out.MappingLibraries[i].URI < out.MappingLibraries[j].URI
+	})
+
+	out.WorkloadLibraries = make([]WorkloadLibrary, len(lf.WorkloadLibraries))
+	for i, l := range lf.WorkloadLibraries {
+		entryCopy := l
+		entryCopy.Consumers = canonicaliseConsumers(l.Consumers)
+		out.WorkloadLibraries[i] = entryCopy
+	}
+	sort.Slice(out.WorkloadLibraries, func(i, j int) bool {
+		return out.WorkloadLibraries[i].URI < out.WorkloadLibraries[j].URI
 	})
 
 	out.SourceArtifacts = make([]SourceArtifact, len(lf.SourceArtifacts))

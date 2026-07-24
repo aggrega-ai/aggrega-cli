@@ -575,15 +575,16 @@ type Pin struct {
 
 // PinsFromLockfile builds the version-aware pin set SetPins consumes from a loaded
 // lockfile, across every kind the closure walker resolves through the Tier-2 cache
-// (entities, schema libraries, mapping libraries, wasm plugins) — the same axes
-// Lockfile.PinsByURI covers, but retaining ResolvedVersion so a bare-URI pin can
+// (entities, schema libraries, mapping libraries, workload libraries, wasm
+// plugins) — the same axes Lockfile.PinsByURI covers, over the identical URI set,
+// but retaining ResolvedVersion so a bare-URI pin can
 // address its versioned cache slot. Source artifacts are excluded (they descend on
 // their own read-time digest gate, not the closure walker's Tier-2 reuse).
 func PinsFromLockfile(lf *lockfile.Lockfile) map[string]Pin {
 	if lf == nil {
 		return nil
 	}
-	pins := make(map[string]Pin, len(lf.Entities)+len(lf.SchemaLibraries)+len(lf.MappingLibraries)+len(lf.Plugins))
+	pins := make(map[string]Pin, len(lf.Entities)+len(lf.SchemaLibraries)+len(lf.MappingLibraries)+len(lf.WorkloadLibraries)+len(lf.Plugins))
 	for _, e := range lf.Entities {
 		pins[e.URI] = Pin{ResolvedVersion: e.ResolvedVersion, Digest: e.Digest, ManifestDigest: e.ManifestDigest}
 	}
@@ -592,6 +593,9 @@ func PinsFromLockfile(lf *lockfile.Lockfile) map[string]Pin {
 	}
 	for _, ml := range lf.MappingLibraries {
 		pins[ml.URI] = Pin{ResolvedVersion: ml.ResolvedVersion, Digest: ml.Digest}
+	}
+	for _, wl := range lf.WorkloadLibraries {
+		pins[wl.URI] = Pin{ResolvedVersion: wl.ResolvedVersion, Digest: wl.Digest}
 	}
 	for _, wp := range lf.Plugins {
 		pins[wp.URI] = Pin{ResolvedVersion: wp.ResolvedVersion, Digest: wp.Digest, ManifestDigest: wp.ManifestDigest}
@@ -1062,7 +1066,7 @@ func (l *LazyLookup) buildRecipeIndex() {
 	// the lazy backing see them. Runs AFTER the Tier-1 walk so a locally-authored
 	// entity wins on a name/identity collision.
 	l.foldPinnedCacheEntities(map[string]bool{
-		"Recipe": true, "FeatureRecipe": true, "Aggregate": true, "MappingLibrary": true, "Plugin": true,
+		"Recipe": true, "FeatureRecipe": true, "Aggregate": true, "MappingLibrary": true, "WorkloadLibrary": true, "Plugin": true,
 	})
 }
 
@@ -1286,13 +1290,12 @@ func (l *LazyLookup) MappingLibraries() map[string]types.MappingLibrary {
 	return l.mappingLibraries
 }
 
-// WorkloadLibraries returns the local-catalog WorkloadLibrary set, keyed by bare
-// name, for the pipeline's WorkloadLibraries input (the set the renderer's
-// workload `$import: <Library>#/workloads/<entry>` resolution consumes). The set
-// is sourced from the local catalog directories only; a lockfile-pinned remote
-// WorkloadLibrary is not bridged, so a remote workload import surfaces a
-// library-not-found halt rather than resolving. Triggers the recipe-shell
-// enumeration on first call.
+// WorkloadLibraries returns the WorkloadLibrary set, keyed by bare name, for the
+// pipeline's WorkloadLibraries input (the set the renderer's workload
+// `$import: <Library>#/workloads/<entry>` resolution consumes). The set is the
+// local catalog directories plus every lockfile-pinned remote WorkloadLibrary
+// bridged in from the Tier-2 cache, so a remote workload import resolves through
+// the same map as a local one. Triggers the recipe-shell enumeration on first call.
 func (l *LazyLookup) WorkloadLibraries() map[string]types.WorkloadLibrary {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -1497,9 +1500,10 @@ func (l *LazyLookup) ClosureRecipeLoader() closure.RecipeLoader {
 	return l.recipeCatalog().ClosureRecipeLoader()
 }
 
-// SchemaLibrary / MappingLibrary resolve a library by its bare-name URI over the
-// lazily-walked (Tier-1 + pinned Tier-2) library sets, for the closure-library
-// discovery's transitive body access. Returns ok=false when the library is absent.
+// SchemaLibrary / MappingLibrary / WorkloadLibrary resolve a library by its
+// bare-name URI over the lazily-walked (Tier-1 + pinned Tier-2) library sets, for
+// the closure-library discovery's transitive body access. Returns ok=false when
+// the library is absent.
 func (l *LazyLookup) SchemaLibrary(uri string) (types.SchemaLibrary, bool) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -1513,6 +1517,14 @@ func (l *LazyLookup) MappingLibrary(uri string) (types.MappingLibrary, bool) {
 	defer l.mu.Unlock()
 	l.buildRecipeIndex()
 	lib, ok := l.mappingLibraries[uri]
+	return lib, ok
+}
+
+func (l *LazyLookup) WorkloadLibrary(uri string) (types.WorkloadLibrary, bool) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.buildRecipeIndex()
+	lib, ok := l.workloadLibraries[uri]
 	return lib, ok
 }
 
@@ -1858,6 +1870,12 @@ func (x *lazyClosureLookup) ResolveMappingLibrary(uri string) (closure.LibraryRe
 	x.l.mu.Lock()
 	defer x.l.mu.Unlock()
 	return x.base.ResolveMappingLibrary(uri)
+}
+
+func (x *lazyClosureLookup) ResolveWorkloadLibrary(uri string) (closure.LibraryResolution, error) {
+	x.l.mu.Lock()
+	defer x.l.mu.Unlock()
+	return x.base.ResolveWorkloadLibrary(uri)
 }
 
 func (x *lazyClosureLookup) ResolvePlugin(uri, version string) (closure.Resolution, error) {
