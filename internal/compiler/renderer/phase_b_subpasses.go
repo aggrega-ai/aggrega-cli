@@ -457,7 +457,7 @@ func phaseB6(
 		// gate's uniform capability diagnostic, engine.Render failures, and the
 		// Phase B sub-pass CATALOG_ERRORs) already carry their own context, and
 		// re-wrapping would bury the gate diagnostic the user needs to see.
-		frFiles, err := renderFeatureRecipeFiles(ctx, frEngine, fr, &frCtx, frNodeCtx, frValues, resolvedSrc, ref.InstanceName, featureSecretSlots(fr, input))
+		frFiles, err := renderFeatureRecipeFiles(ctx, frEngine, fr, &frCtx, frNodeCtx, frValues, resolvedSrc, ref.InstanceName, featureSecretSlots(fr, input), input.WorkloadLibraries)
 		if err != nil {
 			return nil, nil, nil, err
 		}
@@ -593,7 +593,7 @@ func phaseB6(
 			}
 			frNodeCtx.Source = resolvedSrc
 
-			frFiles, err := renderFeatureRecipeFiles(ctx, frEngine, fr, &frCtx, frNodeCtx, frValues, resolvedSrc, secretName, featureSecretSlots(fr, input))
+			frFiles, err := renderFeatureRecipeFiles(ctx, frEngine, fr, &frCtx, frNodeCtx, frValues, resolvedSrc, secretName, featureSecretSlots(fr, input), input.WorkloadLibraries)
 			if err != nil {
 				return nil, nil, nil, err
 			}
@@ -672,6 +672,7 @@ func renderFeatureRecipeFiles(
 	resolvedSrc any,
 	instanceLabel string,
 	slots types.OrderedMap[types.SecretSlot],
+	workloadLibs map[string]types.WorkloadLibrary,
 ) ([]EmittedFile, error) {
 	hasSource := resolvedSrc != nil
 	if s, ok := resolvedSrc.(string); ok && s == "" {
@@ -726,6 +727,11 @@ func renderFeatureRecipeFiles(
 		},
 	}
 	state := NewPhaseBState(synth, frNodeCtx.NodeID, frNodeCtx.BoundaryPath, "")
+	// The FR workload flows through the same phaseB2 resolveWorkloadText as a
+	// base Recipe; a workload library `$import` resolves against this set. The
+	// base path sets the same field on its node state, sourced identically from
+	// the render input — single source, no second lib map.
+	state.WorkloadLibraries = workloadLibs
 
 	// Sourced mode hits engine.Render; synthesised renders at B.4, artifacts at
 	// B.3. EmitOriginSource files accumulate by sorted filename for

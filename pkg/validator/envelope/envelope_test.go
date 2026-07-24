@@ -283,3 +283,58 @@ spec:
 		t.Errorf("diagnostic must name the offending key: %v", err)
 	}
 }
+
+// frWorkloadImportDoc builds a minimal envelope-valid FeatureRecipe whose
+// spec.workload is a single-key `$import:` map carrying imp.
+func frWorkloadImportDoc(imp string) []byte {
+	return []byte(`
+apiVersion: aggrega.ai/v1alpha1
+kind: FeatureRecipe
+metadata:
+  name: fr-workload-import
+  version: "1.0.0"
+spec:
+  capability: helm
+  implements: core/frwl:1.0.0
+  workload:
+    $import: "` + imp + `"
+`)
+}
+
+// TestEnvelope_FeatureRecipeWorkloadLibraryImport pins the relaxed
+// featurerecipe.workload `$import` envelope: a bare-name WorkloadLibrary
+// reference and a local file path both pass; a host-bearing `oci://…`
+// reference still fails loudly. A library is addressed by identity, so the
+// registry host is rejected at the authoring surface — the version comes
+// from the per-Release lockfile.
+func TestEnvelope_FeatureRecipeWorkloadLibraryImport(t *testing.T) {
+	t.Parallel()
+
+	admit := []struct {
+		name string
+		imp  string
+	}{
+		{"bare-name library reference", "BaseWorkloads#/workloads/Deployment"},
+		{"local file path", "./workloads/deployment.yaml"},
+	}
+	for _, tc := range admit {
+		tc := tc
+		t.Run("admit/"+tc.name, func(t *testing.T) {
+			t.Parallel()
+			if _, err := ValidateBytes(KindFeatureRecipe, frWorkloadImportDoc(tc.imp), "fr.yaml"); err != nil {
+				t.Fatalf("featurerecipe.workload $import %q should pass the envelope: %v", tc.imp, err)
+			}
+		})
+	}
+
+	t.Run("reject/oci host", func(t *testing.T) {
+		t.Parallel()
+		_, err := ValidateBytes(KindFeatureRecipe, frWorkloadImportDoc("oci://hub/BaseWorkloads#/workloads/Deployment"), "fr.yaml")
+		if err == nil {
+			t.Fatal("oci:// host at featurerecipe.workload $import must fail the envelope; got nil")
+		}
+		if !errors.Is(err, ErrEntityEnvelope) {
+			t.Fatalf("want errors.Is(err, ErrEntityEnvelope); got %v", err)
+		}
+	})
+}
