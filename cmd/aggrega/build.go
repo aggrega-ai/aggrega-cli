@@ -46,6 +46,7 @@ var (
 	verifyDeterminism  bool
 	buildAutoPull      bool
 	buildUpgrade       bool
+	noDegradationWarns bool
 )
 
 func newBuildCmd() *cobra.Command {
@@ -62,6 +63,7 @@ func newBuildCmd() *cobra.Command {
 	c.Flags().BoolVar(&buildProgress, "progress", false, "Force the build-progress surface on even when stderr is not a terminal, printing plain static phase lines. The default is auto: the interactive phase checklist is shown only when stderr is a terminal. --quiet and --debug both override --progress")
 	c.Flags().BoolVar(&buildDebug, "debug", false, "Emit human-readable verbose diagnostics on stderr — per-phase wall-clock timing and entity/dependency counts. Wins over --quiet: verbose output always emits. Distinct from --trace, which writes machine-readable per-node intermediate files to .trace/")
 	c.Flags().BoolVar(&noAcquireInputs, "no-acquire-inputs", false, "Freeze the external-input set: a render that requests an unpinned external URL halts with a diagnostic instead of fetching and pinning it. Pinned inputs are still served from the content-addressed store (and refilled by digest when the blob is missing)")
+	c.Flags().BoolVar(&noDegradationWarns, "no-degradation-warnings", false, "Silence the target-degradation warning class: the per-field notices a lower-fidelity target (such as compose) emits for authored Workload fields it cannot honor. Other render warnings still surface. Display-only; does not change the rendered output")
 	c.Flags().BoolVar(&disablePluginCache, "disable-plugin-cache", false, "Skip the persistent on-disk plugin compile cache for this build and compile plugin guests fresh in an in-memory cache that is discarded when the build ends. Off by default, which reuses the shared on-disk cache across builds. Does not change rendered output")
 	c.Flags().BoolVar(&verifyDeterminism, "verify-determinism", false, "Render every node twice and compare the emitted bytes, halting the build if any node's two renders differ. Off by default. Use it to confirm a provider renders deterministically — identical input yields byte-identical output — which the GitOps-diff and byte-identical-output guarantees rely on")
 	c.Flags().BoolVar(&buildAutoPull, "auto-pull", false, "Run the pull step before building: resolve the Release's dependencies into the lockfile and cache in-process, then build against them. This is the same in-process fill the workspace auto_pull setting performs, turned on for a single build without editing workspace config. On its own it is an incremental fill — existing pins are honored, and references with no pin are resolved and added")
@@ -91,7 +93,7 @@ func runBuild(cmd *cobra.Command, args []string) error {
 	}
 	return dispatchBuildWithDiag(rw, releasePath, catalogDirs, traceEnabled,
 		buildDiagOptions{quiet: buildQuiet, debug: buildDebug, progress: buildProgress, noColor: globalDisplay.colorOff, plain: globalDisplay.plain},
-		buildRunOptions{noAcquireInputs: noAcquireInputs, disablePluginCache: disablePluginCache, verifyDeterminism: verifyDeterminism, autoPull: buildAutoPull, upgrade: buildUpgrade}, os.Stderr, os.Stdout)
+		buildRunOptions{noAcquireInputs: noAcquireInputs, disablePluginCache: disablePluginCache, verifyDeterminism: verifyDeterminism, autoPull: buildAutoPull, upgrade: buildUpgrade, suppressDegradationWarnings: noDegradationWarns}, os.Stderr, os.Stdout)
 }
 
 // buildRunOptions carries the build-dispatch knobs that are not stderr
@@ -121,6 +123,11 @@ type buildRunOptions struct {
 	// auto-pull step — requesting it turns the pull step on when neither the flag
 	// nor workspace auto_pull is set.
 	upgrade bool
+	// suppressDegradationWarnings silences the target-degradation warning class on
+	// the render-warning surface — the per-field notices a lower-fidelity target
+	// emits for authored fields it cannot honor. Display-only; other render
+	// warnings still surface and the rendered output is unchanged.
+	suppressDegradationWarnings bool
 	// outDir overrides the rendered-artifact output directory; empty
 	// renders to dist/. The acquire command points it at a discard
 	// directory so an acquisition pass never touches dist/.
@@ -478,9 +485,10 @@ func dispatchBuildWithDiag(rw *workspaceconfig.ResolvedWorkspace, releasePath st
 			// stdout stays byte-deterministic. A silent reporter ignores the calls;
 			// when Begin is set, the pipeline runs the eager compile pass so a guest
 			// compilation is attributed rather than buried in the first node's render.
-			PluginCompileBegin:     progress.pluginCompileBegin,
-			PluginCompileGuestDone: progress.pluginCompileGuestDone,
-			PluginCompileRunning:   progress.pluginCompileRunning,
+			PluginCompileBegin:          progress.pluginCompileBegin,
+			PluginCompileGuestDone:      progress.pluginCompileGuestDone,
+			PluginCompileRunning:        progress.pluginCompileRunning,
+			SuppressDegradationWarnings: run.suppressDegradationWarnings,
 		},
 	)
 	if err != nil {

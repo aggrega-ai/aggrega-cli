@@ -52,7 +52,7 @@ func makeFragment(t *testing.T, nodeID string, w *types.Workload, annotations ma
 	t.Helper()
 	nodeCtx := nodeCtxFor(nodeID)
 	nodeCtx.Annotations = annotations
-	files, err := SynthesizeWorkloadCore(w, nodeCtx)
+	files, _, err := SynthesizeWorkloadCore(w, nodeCtx)
 	if err != nil {
 		t.Fatalf("SynthesizeWorkloadCore(%s): %v", nodeID, err)
 	}

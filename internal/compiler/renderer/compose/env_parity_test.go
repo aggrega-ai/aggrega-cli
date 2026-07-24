@@ -46,7 +46,7 @@ func TestEnvOrderParity_ComposeMatchesHelm(t *testing.T) {
 		},
 	}
 
-	composeFiles, err := compose.SynthesizeWorkloadCore(makeWorkload(), nodeCtx)
+	composeFiles, _, err := compose.SynthesizeWorkloadCore(makeWorkload(), nodeCtx)
 	if err != nil {
 		t.Fatalf("compose SynthesizeWorkloadCore: %v", err)
 	}

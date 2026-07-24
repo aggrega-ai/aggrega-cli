@@ -19,9 +19,11 @@ import (
 func TestSingleFormatCarrier(t *testing.T) {
 	t.Parallel()
 
-	// RenderResult: exactly {Files, Warnings}, with Files valued by AssembledFile.
-	// A reintroduced `Formats map[string]string` sidecar shows up as a third
-	// exported field and trips the set check.
+	// RenderResult: {Files, Warnings, DegradationWarnings}, with Files valued by
+	// AssembledFile. Warnings and DegradationWarnings are advisory streams, not
+	// per-file carriers; a reintroduced `Formats map[string]string` sidecar keyed
+	// like the bytes shows up as an unexpected exported field and trips the set
+	// check.
 	rr := reflect.TypeOf(RenderResult{})
 	exported := map[string]reflect.Type{}
 	for i := 0; i < rr.NumField(); i++ {
@@ -30,7 +32,7 @@ func TestSingleFormatCarrier(t *testing.T) {
 			exported[f.Name] = f.Type
 		}
 	}
-	want := map[string]bool{"Files": true, "Warnings": true}
+	want := map[string]bool{"Files": true, "Warnings": true, "DegradationWarnings": true}
 	for name := range exported {
 		if !want[name] {
 			t.Errorf("RenderResult has unexpected exported field %q; a per-file format sidecar map must not reappear", name)

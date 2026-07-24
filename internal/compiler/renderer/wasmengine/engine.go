@@ -549,10 +549,28 @@ func (e *Engine) verifyRenderDeterminism(ctx context.Context, plugin *wasm.Plugi
 // never affect emitted bytes, so a node's rendered output is byte-identical
 // whether or not a sink is attached.
 func (e *Engine) surfaceNodeDiagnostics(nodeCtx renderer.NodeRenderContext, diags []renderer.Diagnostic) error {
-	errs, advisories := renderer.SplitDiagnostics(diags)
-	for _, a := range advisories {
+	var errs []string
+	for _, d := range diags {
+		if d.Severity == "error" {
+			errs = append(errs, d.Message)
+			continue
+		}
+		// Target-degradation advisories route to the structured degradation sink
+		// (when one is attached), enriched with the node and provider so the
+		// display and downstream consumers keep attribution. This keeps the class
+		// separately suppressible by its stable code while other advisories flow to
+		// the free-form warning sink unchanged. When no degradation sink is
+		// attached the class falls through to the warning sink, so it never goes
+		// silent.
+		if d.Code == renderer.TargetDegradationCode && nodeCtx.DegradationSink != nil {
+			if d.Location == nil {
+				d.Location = &renderer.DiagnosticLocation{URI: nodeCtx.NodeID, Kind: nodeCtx.ProviderName}
+			}
+			nodeCtx.DegradationSink(d)
+			continue
+		}
 		if nodeCtx.WarningSink != nil {
-			nodeCtx.WarningSink(fmt.Sprintf("node %q (provider %q): %s", nodeCtx.NodeID, nodeCtx.ProviderName, a))
+			nodeCtx.WarningSink(fmt.Sprintf("node %q (provider %q): %s", nodeCtx.NodeID, nodeCtx.ProviderName, d.Message))
 		}
 	}
 	if len(errs) > 0 {

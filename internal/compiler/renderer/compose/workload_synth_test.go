@@ -70,8 +70,9 @@ func minimalWorkload() *types.Workload {
 // TestSynthesizeWorkload_GPUFieldsDegrade proves the compose degradation
 // contract for the two GPU-only Workload surfaces: cpu/memory still translate to
 // deploy.resources, while extended-resource keys (nvidia.com/gpu) and
-// runtimeClassName have no compose analog and are omitted — silently, matching the
-// existing pod-level-field precedent (scheduling, priorityClassName). No halt.
+// runtimeClassName have no compose analog and are omitted from the rendered
+// bytes. The omission is out-of-band-warned (asserted in the degradation tests),
+// not silent, and never halts. This test locks the rendered bytes.
 func TestSynthesizeWorkload_GPUFieldsDegrade(t *testing.T) {
 	t.Parallel()
 	w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload"}
@@ -85,7 +86,7 @@ func TestSynthesizeWorkload_GPUFieldsDegrade(t *testing.T) {
 	c.Resources = &types.ResourceSpec{Requests: requests, Limits: limits}
 	w.Containers.Set("main", c)
 
-	files, err := SynthesizeWorkloadCore(w, nodeCtxFor("inference"))
+	files, _, err := SynthesizeWorkloadCore(w, nodeCtxFor("inference"))
 	if err != nil {
 		t.Fatalf("SynthesizeWorkload: %v", err)
 	}
@@ -112,7 +113,7 @@ func TestSynthesizeWorkload_ImageRegistryAnnotation(t *testing.T) {
 	c.Ports.Set("db", 5432)
 	w.Containers.Set("main", c)
 
-	plainFiles, err := SynthesizeWorkloadCore(w, nodeCtxFor("db"))
+	plainFiles, _, err := SynthesizeWorkloadCore(w, nodeCtxFor("db"))
 	if err != nil {
 		t.Fatalf("SynthesizeWorkloadCore (plain): %v", err)
 	}
@@ -122,7 +123,7 @@ func TestSynthesizeWorkload_ImageRegistryAnnotation(t *testing.T) {
 
 	ctx := nodeCtxFor("db")
 	ctx.Annotations = map[string]string{rendercore.AnnotationImageRegistry: "reg.internal:5000"}
-	regFiles, err := SynthesizeWorkloadCore(w, ctx)
+	regFiles, _, err := SynthesizeWorkloadCore(w, ctx)
 	if err != nil {
 		t.Fatalf("SynthesizeWorkloadCore (registry): %v", err)
 	}
@@ -135,7 +136,7 @@ func TestSynthesizeWorkload_MinimalSingleContainer(t *testing.T) {
 	t.Parallel()
 	w := minimalWorkload()
 	nodeCtx := nodeCtxFor("api-server")
-	files, err := SynthesizeWorkloadCore(w, nodeCtx)
+	files, _, err := SynthesizeWorkloadCore(w, nodeCtx)
 	if err != nil {
 		t.Fatalf("SynthesizeWorkload: %v", err)
 	}
@@ -166,7 +167,7 @@ func TestSynthesizeWorkload_MultiContainerMainAndSidecar(t *testing.T) {
 	pubSvc.Ports.Set("http", 8080)
 	w.Services.Set("public", pubSvc)
 
-	files, err := SynthesizeWorkloadCore(w, nodeCtxFor("api"))
+	files, _, err := SynthesizeWorkloadCore(w, nodeCtxFor("api"))
 	if err != nil {
 		t.Fatalf("SynthesizeWorkload: %v", err)
 	}
@@ -202,7 +203,7 @@ func TestSynthesizeWorkload_AllVolumeVariants(t *testing.T) {
 	svc.Ports.Set("api", 9000)
 	w.Services.Set("internal", svc)
 
-	files, err := SynthesizeWorkloadCore(w, nodeCtxFor("store"))
+	files, _, err := SynthesizeWorkloadCore(w, nodeCtxFor("store"))
 	if err != nil {
 		t.Fatalf("SynthesizeWorkload: %v", err)
 	}
@@ -247,7 +248,7 @@ func TestSynthesizeWorkload_AllProbeShapes(t *testing.T) {
 	pubSvc.Ports.Set("http", 8080)
 	w.Services.Set("public", pubSvc)
 
-	files, err := SynthesizeWorkloadCore(w, nodeCtxFor("multi"))
+	files, _, err := SynthesizeWorkloadCore(w, nodeCtxFor("multi"))
 	if err != nil {
 		t.Fatalf("SynthesizeWorkload: %v", err)
 	}
@@ -267,7 +268,7 @@ func TestSynthesizeWorkload_HTTPProbeNoPort_Errors(t *testing.T) {
 	}
 	w.Containers.Set("main", c)
 
-	_, err := SynthesizeWorkloadCore(w, nodeCtxFor("x"))
+	_, _, err := SynthesizeWorkloadCore(w, nodeCtxFor("x"))
 	if err == nil {
 		t.Fatal("expected TRANSLATION_ERROR for http probe with no ports")
 	}
@@ -293,7 +294,7 @@ func TestSynthesizeWorkload_SecretsAsEnvAndFile(t *testing.T) {
 	svc.Ports.Set("web", 8080)
 	w.Services.Set("api", svc)
 
-	files, err := SynthesizeWorkloadCore(w, nodeCtxFor("api"))
+	files, _, err := SynthesizeWorkloadCore(w, nodeCtxFor("api"))
 	if err != nil {
 		t.Fatalf("SynthesizeWorkload: %v", err)
 	}
@@ -316,7 +317,7 @@ func TestSynthesizeWorkload_EnvAuthorOrder(t *testing.T) {
 	c.Secrets.Set("NESTED", types.SecretRef{From: "db-credentials", As: "env"})
 	w.Containers.Set("main", c)
 
-	files, err := SynthesizeWorkloadCore(w, nodeCtxFor("api"))
+	files, _, err := SynthesizeWorkloadCore(w, nodeCtxFor("api"))
 	if err != nil {
 		t.Fatalf("SynthesizeWorkload: %v", err)
 	}
@@ -341,7 +342,7 @@ func TestSynthesizeWorkload_CommandAndArgs(t *testing.T) {
 	svc.Ports.Set("web", 8080)
 	w.Services.Set("api", svc)
 
-	files, err := SynthesizeWorkloadCore(w, nodeCtxFor("api"))
+	files, _, err := SynthesizeWorkloadCore(w, nodeCtxFor("api"))
 	if err != nil {
 		t.Fatalf("SynthesizeWorkload: %v", err)
 	}
@@ -386,7 +387,7 @@ func TestSynthesizeWorkload_ServiceTypeNodePort_PublishesPorts(t *testing.T) {
 	internal.Ports.Set("metrics", 9090)
 	w.Services.Set("metrics-only", internal)
 
-	files, err := SynthesizeWorkloadCore(w, nodeCtxFor("web"))
+	files, _, err := SynthesizeWorkloadCore(w, nodeCtxFor("web"))
 	if err != nil {
 		t.Fatalf("SynthesizeWorkload: %v", err)
 	}
@@ -408,7 +409,7 @@ func TestSynthesizeWorkload_FormStatefulRendersService(t *testing.T) {
 	svc.Ports.Set("db", 5432)
 	w.Services.Set("db", svc)
 
-	files, err := SynthesizeWorkloadCore(w, nodeCtxFor("db-server"))
+	files, _, err := SynthesizeWorkloadCore(w, nodeCtxFor("db-server"))
 	if err != nil {
 		t.Fatalf("SynthesizeWorkload: %v", err)
 	}
@@ -430,7 +431,7 @@ func TestSynthesizeWorkload_UnsupportedFormsHalt(t *testing.T) {
 		c := types.ContainerSpec{Image: "app:1.0"}
 		w.Containers.Set("main", c)
 
-		_, err := SynthesizeWorkloadCore(w, nodeCtxFor("x"))
+		_, _, err := SynthesizeWorkloadCore(w, nodeCtxFor("x"))
 		if !errors.Is(err, ErrUnsupportedComposeForm) {
 			t.Errorf("form %q: expected ErrUnsupportedComposeForm; got %v", form, err)
 		}
@@ -446,7 +447,7 @@ func TestSynthesizeWorkload_PersistentTemplateRequiresStateful(t *testing.T) {
 	w.Containers.Set("main", c)
 	w.Volumes.Set("data", types.VolumeSpec{PersistentTemplate: &types.PersistentTemplateVolume{Size: "10Gi"}})
 
-	_, err := SynthesizeWorkloadCore(w, nodeCtxFor("db"))
+	_, _, err := SynthesizeWorkloadCore(w, nodeCtxFor("db"))
 	if !errors.Is(err, rendercore.ErrPersistentTemplateRequiresStatefulForm) {
 		t.Fatalf("expected ErrPersistentTemplateRequiresStatefulForm; got %v", err)
 	}
@@ -472,7 +473,7 @@ func TestSynthesizeWorkload_ContainerResources(t *testing.T) {
 	svc.Ports.Set("web", 8080)
 	w.Services.Set("api", svc)
 
-	files, err := SynthesizeWorkloadCore(w, nodeCtxFor("api"))
+	files, _, err := SynthesizeWorkloadCore(w, nodeCtxFor("api"))
 	if err != nil {
 		t.Fatalf("SynthesizeWorkload: %v", err)
 	}
@@ -490,7 +491,7 @@ func TestSynthesizeWorkload_LifecycleHalts(t *testing.T) {
 	}
 	w.Containers.Set("main", c)
 
-	_, err := SynthesizeWorkloadCore(w, nodeCtxFor("x"))
+	_, _, err := SynthesizeWorkloadCore(w, nodeCtxFor("x"))
 	if !errors.Is(err, ErrUnsupportedComposeLifecycle) {
 		t.Errorf("expected ErrUnsupportedComposeLifecycle, got %v", err)
 	}
@@ -505,7 +506,7 @@ func TestSynthesizeWorkload_UnconvertibleResourceQuantityHalts(t *testing.T) {
 	c.Resources = &types.ResourceSpec{Limits: &types.ResourceList{Memory: "1.5Gi"}}
 	w.Containers.Set("main", c)
 
-	_, err := SynthesizeWorkloadCore(w, nodeCtxFor("x"))
+	_, _, err := SynthesizeWorkloadCore(w, nodeCtxFor("x"))
 	if !errors.Is(err, ErrUnconvertibleComposeQuantity) {
 		t.Errorf("expected ErrUnconvertibleComposeQuantity, got %v", err)
 	}
@@ -517,11 +518,11 @@ func TestSynthesizeWorkload_ByteIdenticalAcrossRuns(t *testing.T) {
 	t.Parallel()
 	w := minimalWorkload()
 	nodeCtx := nodeCtxFor("api-server")
-	files1, err := SynthesizeWorkloadCore(w, nodeCtx)
+	files1, _, err := SynthesizeWorkloadCore(w, nodeCtx)
 	if err != nil {
 		t.Fatalf("first run: %v", err)
 	}
-	files2, err := SynthesizeWorkloadCore(w, nodeCtx)
+	files2, _, err := SynthesizeWorkloadCore(w, nodeCtx)
 	if err != nil {
 		t.Fatalf("second run: %v", err)
 	}
@@ -543,7 +544,7 @@ func TestSynthesizeWorkload_ImagePullPolicy(t *testing.T) {
 	svc.Ports.Set("web", 8080)
 	w.Services.Set("api", svc)
 
-	files, err := SynthesizeWorkloadCore(w, nodeCtxFor("api"))
+	files, _, err := SynthesizeWorkloadCore(w, nodeCtxFor("api"))
 	if err != nil {
 		t.Fatalf("SynthesizeWorkload: %v", err)
 	}
@@ -559,7 +560,7 @@ func TestSynthesizeWorkload_EnvFromHalts(t *testing.T) {
 	c.EnvFrom = []types.EnvFromSource{{ConfigMap: "app-config"}}
 	w.Containers.Set("main", c)
 
-	_, err := SynthesizeWorkloadCore(w, nodeCtxFor("x"))
+	_, _, err := SynthesizeWorkloadCore(w, nodeCtxFor("x"))
 	if !errors.Is(err, ErrUnsupportedComposeEnvFrom) {
 		t.Errorf("expected ErrUnsupportedComposeEnvFrom, got %v", err)
 	}
@@ -593,7 +594,7 @@ func TestSynthesizeWorkload_PodLevelFields(t *testing.T) {
 	svc.Ports.Set("web", 8080)
 	w.Services.Set("api", svc)
 
-	files, err := SynthesizeWorkloadCore(w, nodeCtxFor("api"))
+	files, _, err := SynthesizeWorkloadCore(w, nodeCtxFor("api"))
 	if err != nil {
 		t.Fatalf("SynthesizeWorkload: %v", err)
 	}
@@ -612,7 +613,7 @@ func TestSynthesizeWorkload_ReferenceEmitsNoFragment(t *testing.T) {
 		Endpoint:   "https://api.anthropic.com",
 		Credential: &types.Credential{From: "api_key", Env: "ANTHROPIC_API_KEY"},
 	}
-	files, err := SynthesizeWorkloadCore(w, nodeCtxFor("anthropic"))
+	files, _, err := SynthesizeWorkloadCore(w, nodeCtxFor("anthropic"))
 	if err != nil {
 		t.Fatalf("SynthesizeWorkload: %v", err)
 	}
@@ -628,7 +629,7 @@ func TestSynthesizeWorkload_EndpointRequiresReferenceForm(t *testing.T) {
 	w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload", Endpoint: "api.example.com"}
 	c := types.ContainerSpec{Image: "app:1.0"}
 	w.Containers.Set("main", c)
-	_, err := SynthesizeWorkloadCore(w, nodeCtxFor("x"))
+	_, _, err := SynthesizeWorkloadCore(w, nodeCtxFor("x"))
 	if !errors.Is(err, rendercore.ErrEndpointRequiresReferenceForm) {
 		t.Errorf("expected ErrEndpointRequiresReferenceForm, got %v", err)
 	}
@@ -640,13 +641,13 @@ func TestSynthesizeWorkload_EndpointRequiresReferenceForm(t *testing.T) {
 // Workload without it. Compose has no ServiceAccount concept.
 func TestSynthesizeWorkload_ServiceAccountAnnotationNoOp(t *testing.T) {
 	t.Parallel()
-	base, err := SynthesizeWorkloadCore(minimalWorkload(), nodeCtxFor("api"))
+	base, _, err := SynthesizeWorkloadCore(minimalWorkload(), nodeCtxFor("api"))
 	if err != nil {
 		t.Fatalf("SynthesizeWorkloadCore (no annotation): %v", err)
 	}
 	ctx := nodeCtxFor("api")
 	ctx.Annotations = map[string]string{rendercore.AnnotationServiceAccount: "op-sa"}
-	withAnn, err := SynthesizeWorkloadCore(minimalWorkload(), ctx)
+	withAnn, _, err := SynthesizeWorkloadCore(minimalWorkload(), ctx)
 	if err != nil {
 		t.Fatalf("SynthesizeWorkloadCore (with annotation): %v", err)
 	}

@@ -28,6 +28,14 @@ import (
 type RenderResult struct {
 	Files    map[string]AssembledFile // boundary-relative path → content + producer-declared format
 	Warnings []string
+	// DegradationWarnings carries the structured target-degradation diagnostics
+	// raised during render — one per authored field a lower-fidelity target could
+	// not honor — separately from the free-form Warnings stream. Each entry keeps
+	// its stable code and names the node and provider via its Location, so a
+	// display surface can suppress the whole class by code while other render
+	// warnings still surface, and so downstream consumers can match them
+	// structurally. Out-of-band: never part of the emitted bytes.
+	DegradationWarnings []Diagnostic
 }
 
 // FileBytes projects Files into a path→content map, dropping the per-file format
@@ -474,6 +482,9 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// engine.Render, artifacts emission, workload synthesis, and the FeatureRecipe
 		// sub-renders that copy it — surfaces its guest warnings through one channel.
 		nodeCtx.WarningSink = func(w string) { state.Warnings = append(state.Warnings, w) }
+		// Structured target-degradation diagnostics route here, kept apart from the
+		// free-form warnings so the class stays suppressible by its stable code.
+		nodeCtx.DegradationSink = func(d Diagnostic) { state.Degradations = append(state.Degradations, d) }
 		if err := resolveSourceForNode(input, recipe, &nodeCtx); err != nil {
 			return nil, wrapSourceResolutionError(err, nodeID,
 				fmt.Sprintf("Step 5 node %q source resolution", nodeID))
@@ -820,6 +831,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// to state.Warnings reaches result.Warnings, not just B.3's
 		// helm-chart provenance-skip notice today.
 		result.Warnings = append(result.Warnings, state.Warnings...)
+		result.DegradationWarnings = append(result.DegradationWarnings, state.Degradations...)
 
 		// Trace point: per-node emission log (slot 11). Captures the
 		// post-Phase-B node summary — the warnings accumulated during the

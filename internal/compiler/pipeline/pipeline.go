@@ -18,6 +18,7 @@ import (
 	"context"
 	stderrors "errors"
 	"fmt"
+	"io"
 	"os"
 	"sort"
 	"time"
@@ -187,6 +188,36 @@ type Options struct {
 	// from a timer goroutine, so the callback must be safe to call concurrently
 	// with the pass.
 	PluginCompileRunning func()
+
+	// SuppressDegradationWarnings, when true, silences the target-degradation
+	// warning class on the render-warning surface — the per-authored-field notices
+	// a lower-fidelity target emits for fields it cannot honor. Other render
+	// warnings still surface. It is a pure display filter over structured
+	// diagnostics carried out-of-band; it never re-renders and never changes the
+	// emitted bytes. Left false — the default — the class surfaces.
+	SuppressDegradationWarnings bool
+}
+
+// emitRenderWarnings writes the render step's advisory warnings to w: first the
+// free-form warning stream, then — unless suppressDegradation is set — the
+// structured target-degradation class, each degradation entry attributed to its
+// node and provider from its location. Suppression drops the degradation class
+// alone; the free-form warnings always surface. This is a pure display pass over
+// out-of-band diagnostics and never touches the rendered bytes.
+func emitRenderWarnings(w io.Writer, result *renderer.RenderResult, suppressDegradation bool) {
+	for _, warning := range result.Warnings {
+		fmt.Fprintf(w, "  warning: %s\n", warning)
+	}
+	if suppressDegradation {
+		return
+	}
+	for _, d := range result.DegradationWarnings {
+		msg := d.Message
+		if d.Location != nil && d.Location.URI != "" {
+			msg = fmt.Sprintf("node %q (provider %q): %s", d.Location.URI, d.Location.Kind, d.Message)
+		}
+		fmt.Fprintf(w, "  warning: %s\n", msg)
+	}
 }
 
 // guestWarmer is the compile-only capability the eager plugin-compilation pass
@@ -870,9 +901,7 @@ func RunPipeline(
 			return fmt.Errorf("Step 5 (render): %w", rerr)
 		}
 
-		for _, w := range renderResult.Warnings {
-			fmt.Fprintf(os.Stderr, "  warning: %s\n", w)
-		}
+		emitRenderWarnings(os.Stderr, renderResult, opts.SuppressDegradationWarnings)
 
 		// Render-verdict governance role. Config-driven off the render-verdict
 		// attachments in WorkspaceConfig.Plugins.Governance — a no-op when

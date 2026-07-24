@@ -339,7 +339,7 @@ func renderSynthFromInput(in rendercore.RenderNodeInput) (rendercore.RenderNodeO
 
 	nodeCtx := nodeCtxFromInput(in)
 
-	emitted, err := compose.SynthesizeWorkloadCore(&in.WorkloadProjection.Workload, nodeCtx)
+	emitted, diags, err := compose.SynthesizeWorkloadCore(&in.WorkloadProjection.Workload, nodeCtx)
 	if err != nil {
 		return rendercore.RenderNodeOutput{}, err
 	}
@@ -348,6 +348,10 @@ func renderSynthFromInput(in rendercore.RenderNodeInput) (rendercore.RenderNodeO
 	for _, f := range emitted {
 		out.Files = append(out.Files, rendercore.RenderedFile{Path: f.Name, Content: f.Body})
 	}
+	// The synth core's degradation warnings ride back out-of-band; the host
+	// folds RenderNodeOutput.Diagnostics into the build/lint warning stream and
+	// they never affect the rendered bytes.
+	out.Diagnostics = append(out.Diagnostics, diags...)
 	return out, nil
 }
 

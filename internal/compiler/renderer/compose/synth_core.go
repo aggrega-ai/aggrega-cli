@@ -33,9 +33,14 @@ import (
 	"sort"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderctx"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
+
+// composeTargetName is the user-facing name of this render target, used in the
+// degradation warnings emitted for authored Workload fields compose cannot honor.
+const composeTargetName = "compose"
 
 // SynthesizeWorkloadCore translates a parsed Workload into a per-node compose
 // fragment for the compose provider. Returns one EmittedFile
@@ -50,12 +55,12 @@ import (
 func SynthesizeWorkloadCore(
 	w *types.Workload,
 	nodeCtx rendercore.NodeRenderContext,
-) ([]rendercore.EmittedFile, error) {
+) ([]rendercore.EmittedFile, []renderctx.Diagnostic, error) {
 	// Companion validation (provider-agnostic): a persistentTemplate volume
 	// requires form: stateful. Single-sourced in rendercore and called at the
 	// entry of every provider synth core.
 	if err := rendercore.ValidateWorkloadForm(w, nodeCtx.NodeID); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	// compose renders stateless and stateful workloads as services (stateful
@@ -67,14 +72,21 @@ func SynthesizeWorkloadCore(
 		// analog. The endpoint (and optional credential) reach consumers through
 		// the recipe's provides — the injection contract — so compose emits no
 		// fragment for the reference node itself.
-		return nil, nil
+		return nil, nil, nil
 	case rendercore.WorkloadFormStateless, rendercore.WorkloadFormStateful:
 		// supported
 	default:
-		return nil, cerrors.New(cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID},
+		return nil, nil, cerrors.New(cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID},
 			fmt.Sprintf("compose: workload form %q has no compose mapping; compose supports stateless and stateful only", rendercore.NormalizeWorkloadForm(w.Form)),
 			nil, ErrUnsupportedComposeForm)
 	}
+
+	// Degradation diagnostics accumulate here in a deterministic order: per
+	// container in author order (each container's runAsNonRoot and dropped
+	// extended resources), then the main container's pod-level drops, then the
+	// per-volume partial degradations. They ride the render-output ABI back to
+	// the host out-of-band; the rendered fragment bytes are unaffected.
+	var diags []renderctx.Diagnostic
 
 	frag := ComposeFile{
 		Services: map[string]Service{},
@@ -104,15 +116,16 @@ func SynthesizeWorkloadCore(
 			serviceName = mainServiceName + "-" + sanitizeServiceName(containerName)
 		}
 
-		svc, err := translateContainer(c, w, nodeCtx, isMain, mainServiceName)
+		svc, cdiags, err := translateContainer(c, w, nodeCtx, isMain, mainServiceName)
 		if err != nil {
-			return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("compose: node %q container %q", nodeCtx.NodeID, containerName))
+			return nil, nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("compose: node %q container %q", nodeCtx.NodeID, containerName))
 		}
+		diags = append(diags, cdiags...)
 
 		// Apply pod-level fields onto the main service only — sidecars share
 		// the main's network namespace and pod-level identity.
 		if isMain {
-			applyPodLevelFieldsToService(&svc, w)
+			diags = append(diags, applyPodLevelFieldsToService(&svc, w)...)
 		}
 
 		frag.Services[serviceName] = svc
@@ -125,10 +138,13 @@ func SynthesizeWorkloadCore(
 		case v.Persistent != nil:
 			frag.Volumes[volumeName(componentID, name)] = Volume{}
 		case v.PersistentTemplate != nil:
-			// Degrades to the same shape as persistent; the
-			// pod-level mount declaration carries a warning
-			// comment about the per-replica template loss.
+			// Degrades to the same shape as persistent: compose cannot
+			// express per-replica templating, so the volume collapses to a
+			// single shared persistent volume. A partial-degradation warning
+			// records the reduced fidelity out-of-band.
 			frag.Volumes[volumeName(componentID, name)] = Volume{}
+			diags = append(diags, rendercore.PartialDegradationDiagnostic(composeTargetName, "persistentTemplate",
+				"per-replica volume templating is not available and the volume degrades to a shared persistent volume"))
 		}
 	}
 
@@ -137,12 +153,12 @@ func SynthesizeWorkloadCore(
 	// publishing is a service-level field. Aggregate ports across all
 	// Workload.Services entries; the Type field decides whether to publish.
 	if err := applyWorkloadServicePorts(&frag, w, mainServiceName); err != nil {
-		return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("compose: node %q apply service ports", nodeCtx.NodeID))
+		return nil, nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("compose: node %q apply service ports", nodeCtx.NodeID))
 	}
 
 	body, err := marshalDeterministic(&frag, nodeCtx.YAMLIndent)
 	if err != nil {
-		return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("compose: node %q fragment marshal", nodeCtx.NodeID))
+		return nil, nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("compose: node %q fragment marshal", nodeCtx.NodeID))
 	}
 
 	return []rendercore.EmittedFile{
@@ -151,7 +167,7 @@ func SynthesizeWorkloadCore(
 			Body:         body,
 			Intermediate: true,
 		},
-	}, nil
+	}, diags, nil
 }
 
 // pickMainContainerName chooses the main container by convention:
@@ -184,7 +200,9 @@ func translateContainer(
 	nodeCtx rendercore.NodeRenderContext,
 	isMain bool,
 	mainServiceName string,
-) (Service, error) {
+) (Service, []renderctx.Diagnostic, error) {
+	var diags []renderctx.Diagnostic
+
 	svc := Service{
 		Image:  rendercore.ApplyImageRegistry(c.Image, rendercore.ImageRegistryFromAnnotations(nodeCtx.Annotations)),
 		Labels: buildAggregaLabels(nodeCtx),
@@ -195,7 +213,7 @@ func translateContainer(
 	// loudly rather than drop the hook (the loud-halt discipline for a shape
 	// compose cannot express).
 	if c.Lifecycle != nil {
-		return Service{}, cerrors.New(cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID},
+		return Service{}, nil, cerrors.New(cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID},
 			fmt.Sprintf("compose: node %q declares container lifecycle hooks; compose has no lifecycle-hook primitive", nodeCtx.NodeID),
 			nil, ErrUnsupportedComposeLifecycle)
 	}
@@ -204,15 +222,20 @@ func translateContainer(
 	// (reservations/limits). Honored by docker compose in non-swarm mode.
 	deploy, err := translateComposeResources(c.Resources, nodeCtx.NodeID)
 	if err != nil {
-		return Service{}, err
+		return Service{}, nil, err
 	}
 	svc.Deploy = deploy
+
+	// Extended (vendor/domain-scoped) resource quantities such as nvidia.com/gpu
+	// have no single-host compose analog — only cpu and memory map to
+	// deploy.resources — so each authored extended key is dropped with a warning.
+	diags = append(diags, extendedResourceDegradations(c.Resources)...)
 
 	// envFrom (bulk env from a ConfigMap or Secret object) has no compose
 	// primitive; a source reference is not a host file, so any env_file
 	// reinterpretation would silently change meaning. Halt loudly.
 	if len(c.EnvFrom) > 0 {
-		return Service{}, cerrors.New(cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID},
+		return Service{}, nil, cerrors.New(cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID},
 			fmt.Sprintf("compose: node %q declares container envFrom; compose has no env-from-object primitive", nodeCtx.NodeID),
 			nil, ErrUnsupportedComposeEnvFrom)
 	}
@@ -228,7 +251,7 @@ func translateContainer(
 	case "IfNotPresent":
 		svc.PullPolicy = "if_not_present"
 	default:
-		return Service{}, cerrors.New(cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID},
+		return Service{}, nil, cerrors.New(cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID},
 			fmt.Sprintf("compose: node %q unknown imagePullPolicy %q", nodeCtx.NodeID, c.ImagePullPolicy),
 			nil, nil)
 	}
@@ -310,7 +333,7 @@ func translateContainer(
 	if c.Health != nil {
 		hc, err := translateHealthcheck(c.Health, c.Ports)
 		if err != nil {
-			return Service{}, err
+			return Service{}, nil, err
 		}
 		if hc != nil {
 			svc.Healthcheck = hc
@@ -319,7 +342,7 @@ func translateContainer(
 
 	// Container security primitives that compose supports.
 	if c.SecurityContext != nil {
-		applyContainerSecurityContext(&svc, c.SecurityContext)
+		diags = append(diags, applyContainerSecurityContext(&svc, c.SecurityContext)...)
 	}
 
 	// Sidecar services share the main service's network namespace.
@@ -342,7 +365,36 @@ func translateContainer(
 		svc.Restart = "no"
 	}
 
-	return svc, nil
+	return svc, diags, nil
+}
+
+// extendedResourceDegradations returns one degradation warning per distinct
+// extended (vendor/domain-scoped) resource key authored on the container's
+// requests or limits — keys such as nvidia.com/gpu that have no single-host
+// compose analog (only cpu and memory map to deploy.resources). Keys are
+// reported in a deterministic order: limits in author order, then any
+// requests-only keys in author order, each key deduplicated across the two.
+func extendedResourceDegradations(r *types.ResourceSpec) []renderctx.Diagnostic {
+	if r == nil {
+		return nil
+	}
+	var diags []renderctx.Diagnostic
+	seen := map[string]bool{}
+	emit := func(rl *types.ResourceList) {
+		if rl == nil {
+			return
+		}
+		for key := range rl.Extended.All() {
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+			diags = append(diags, rendercore.UnsupportedFieldDiagnostic(composeTargetName, key))
+		}
+	}
+	emit(r.Limits)
+	emit(r.Requests)
+	return diags
 }
 
 // volumeMountEntry produces the compose ServiceVolume entry for a given
@@ -488,8 +540,9 @@ func resolveHTTPProbePort(ports types.OrderedMap[int]) (int, error) {
 //   - allowPrivilegeEscalation == false → privileged stays default
 //   - runAsUser / runAsGroup  → user (formatted as "<uid>:<gid>" or "<uid>")
 //
-// runAsNonRoot has no compose equivalent; ignored.
-func applyContainerSecurityContext(svc *Service, sc *types.ContainerSecurityContext) {
+// runAsNonRoot has no compose equivalent; an authored value is dropped with a
+// degradation warning. Returns one diagnostic per authored-and-dropped field.
+func applyContainerSecurityContext(svc *Service, sc *types.ContainerSecurityContext) []renderctx.Diagnostic {
 	if sc.ReadOnlyRootFilesystem != nil {
 		svc.ReadOnly = *sc.ReadOnlyRootFilesystem
 	}
@@ -504,6 +557,12 @@ func applyContainerSecurityContext(svc *Service, sc *types.ContainerSecurityCont
 			svc.User = fmt.Sprintf("%d", *sc.RunAsUser)
 		}
 	}
+
+	var diags []renderctx.Diagnostic
+	if sc.RunAsNonRoot != nil {
+		diags = append(diags, rendercore.UnsupportedFieldDiagnostic(composeTargetName, "runAsNonRoot"))
+	}
+	return diags
 }
 
 // applyPodLevelFieldsToService applies Workload pod-level configuration to
@@ -519,7 +578,13 @@ func applyContainerSecurityContext(svc *Service, sc *types.ContainerSecurityCont
 //   - Workload.Replicas                    → no equivalent at the service
 //     level (compose `deploy.replicas` is swarm-only; out of scope for the
 //     current single-host compose target)
-func applyPodLevelFieldsToService(svc *Service, w *types.Workload) {
+//
+// Every authored pod-level field compose cannot honor — scheduling,
+// serviceAccount, initContainers, replicas, runtimeClassName, priorityClassName,
+// imagePullSecrets, dnsPolicy, and dnsConfig.options — is dropped with a
+// degradation warning. Returns one diagnostic per authored-and-dropped field, in
+// a deterministic order.
+func applyPodLevelFieldsToService(svc *Service, w *types.Workload) []renderctx.Diagnostic {
 	applyPodUser(svc, w)
 
 	// terminationGracePeriodSeconds → stop_grace_period ("<n>s").
@@ -528,8 +593,7 @@ func applyPodLevelFieldsToService(svc *Service, w *types.Workload) {
 	}
 
 	// dnsConfig nameservers/searches → dns / dns_search (author order). dnsPolicy
-	// and dnsConfig.options have no compose analog and are omitted (documented on
-	// the schema).
+	// and dnsConfig.options have no compose analog and are dropped with a warning.
 	if w.DNSConfig != nil {
 		svc.DNS = w.DNSConfig.Nameservers
 		svc.DNSSearch = w.DNSConfig.Searches
@@ -542,6 +606,36 @@ func applyPodLevelFieldsToService(svc *Service, w *types.Workload) {
 			svc.ExtraHosts = append(svc.ExtraHosts, host+":"+ha.IP)
 		}
 	}
+
+	var diags []renderctx.Diagnostic
+	if w.Scheduling != nil {
+		diags = append(diags, rendercore.UnsupportedFieldDiagnostic(composeTargetName, "scheduling"))
+	}
+	if w.ServiceAccount != "" {
+		diags = append(diags, rendercore.UnsupportedFieldDiagnostic(composeTargetName, "serviceAccount"))
+	}
+	if len(w.InitContainers) > 0 {
+		diags = append(diags, rendercore.UnsupportedFieldDiagnostic(composeTargetName, "initContainers"))
+	}
+	if w.Replicas != nil {
+		diags = append(diags, rendercore.UnsupportedFieldDiagnostic(composeTargetName, "replicas"))
+	}
+	if w.RuntimeClassName != "" {
+		diags = append(diags, rendercore.UnsupportedFieldDiagnostic(composeTargetName, "runtimeClassName"))
+	}
+	if w.PriorityClassName != "" {
+		diags = append(diags, rendercore.UnsupportedFieldDiagnostic(composeTargetName, "priorityClassName"))
+	}
+	if len(w.ImagePullSecrets) > 0 {
+		diags = append(diags, rendercore.UnsupportedFieldDiagnostic(composeTargetName, "imagePullSecrets"))
+	}
+	if w.DNSPolicy != "" {
+		diags = append(diags, rendercore.UnsupportedFieldDiagnostic(composeTargetName, "dnsPolicy"))
+	}
+	if w.DNSConfig != nil && len(w.DNSConfig.Options) > 0 {
+		diags = append(diags, rendercore.UnsupportedFieldDiagnostic(composeTargetName, "dnsConfig.options"))
+	}
+	return diags
 }
 
 // applyPodUser sets the compose service user from the pod-level security

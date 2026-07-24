@@ -75,6 +75,14 @@ type PhaseBState struct {
 	// the pipeline both reach the result. Drain position is load-bearing.
 	Warnings []string
 
+	// Degradations is the per-node accumulator for structured
+	// target-degradation diagnostics — one per authored field the target could
+	// not honor — drained into result.DegradationWarnings alongside Warnings at
+	// the end of the per-node sequence. Kept separate from Warnings so the class
+	// stays independently suppressible by its stable code and machine-matchable
+	// downstream.
+	Degradations []Diagnostic
+
 	// Trace is the per-node trace.Writer threaded from the orchestrator.
 	// nil-safe: a no-op writer when --trace is off, an async fs writer
 	// when --trace is on. Sub-passes call state.Trace.Write directly to
