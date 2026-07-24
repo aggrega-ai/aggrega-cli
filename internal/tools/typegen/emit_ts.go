@@ -73,7 +73,22 @@ func generateDefsTS(t codecTarget) ([]byte, error) {
 		}
 		fmt.Fprintf(&b, "import { type %s, encode%s } from \"./%s.ts\";\n", ext, ext, mod)
 	}
-	if len(t.externalDefTypes) > 0 {
+
+	// The canonical-CBOR codec fork, parallel to the JSON codec, for a guest
+	// target. Built into a temp buffer first so the CBOR-helper and external-CBOR
+	// imports can be placed at the top, above the interfaces they annotate.
+	var cborSrc strings.Builder
+	if t.emitsCBOR() {
+		for _, d := range root.defs {
+			emitTSCBOR(&cborSrc, d.name, d.node, t.vocabulary, defTypes)
+		}
+		b.WriteString("import {\n")
+		b.WriteString("  writeHead, writeInt, writeText, writeBytes, writeBool, writeFloat,\n")
+		b.WriteString("  sortKeys, b64decode, b64encode, utf8Encode, utf8Decode, CborDec,\n")
+		b.WriteString("} from \"./cbor_gen.ts\";\n")
+		b.WriteString(tsCBORExternalImports(t, cborSrc.String()))
+	}
+	if len(t.externalDefTypes) > 0 || t.emitsCBOR() {
 		b.WriteString("\n")
 	}
 
@@ -86,6 +101,7 @@ func generateDefsTS(t codecTarget) ([]byte, error) {
 	for _, d := range root.defs {
 		emitTSCodec(&b, d.name, d.node, t.vocabulary, defTypes)
 	}
+	b.WriteString(cborSrc.String())
 
 	return []byte(b.String()), nil
 }

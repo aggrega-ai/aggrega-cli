@@ -9,6 +9,8 @@ package main
 // boundary by path rather than driven from a directive inside aggrega-abi.
 // Run from the umbrella checkout: `go generate ./internal/tools/typegen`.
 //
+//go:generate go run . ../../../../aggrega-abi/rust/src/cbor_gen.rs
+//go:generate go run . ../../../../aggrega-abi/typescript/src/cbor_gen.ts
 //go:generate go run . ../../../../aggrega-abi/go/pkg/abi/frp_gen.go
 //go:generate go run . ../../../../aggrega-abi/go/pkg/abi/describe_gen.go
 //go:generate go run . ../../../../aggrega-abi/go/pkg/abi/parse_gen.go

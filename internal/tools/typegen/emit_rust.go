@@ -66,6 +66,16 @@ func generateDefsRust(t codecTarget) ([]byte, error) {
 	for _, d := range root.defs {
 		emitRustStruct(&structs, d.name, d.node, t.vocabulary, defTypes, defaultableTypes)
 	}
+	// The canonical-CBOR codec impls, parallel to the serde structs, for a guest
+	// target. Appended after the structs; they reference the shared cbor_gen
+	// module as crate::cbor_gen::* and add no new imports beyond BTreeMap (which a
+	// map-bearing struct already declares).
+	if t.emitsCBOR() {
+		structs.WriteString("\n")
+		for _, d := range root.defs {
+			emitRustCBOR(&structs, d.name, d.node, t.vocabulary, defTypes)
+		}
+	}
 	structSrc := structs.String()
 
 	var body strings.Builder

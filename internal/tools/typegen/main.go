@@ -213,6 +213,15 @@ type codecTarget struct {
 	externalDefTypes []string
 }
 
+// emitsCBOR reports whether a codec target carries the canonical-CBOR codec
+// alongside JSON. The guest codecs (package abi) carry CBOR — EncodeCBOR/
+// DecodeCBOR plus a `cbor:"<key>[,omitempty]"` struct tag in Go, and the
+// hand-written CBOR encoders in Rust and TS. The host codec targets (their own
+// cli packages) carry JSON only until the host↔guest wire moves to CBOR.
+func (t codecTarget) emitsCBOR() bool {
+	return t.pkg == "abi"
+}
+
 // frpGuestNeutralVocabulary maps the FRP schema's host type spellings to a
 // neutral, cycle-free guest vocabulary: an opaque cross-package host type
 // becomes json.RawMessage (verbatim passthrough preserves its bytes), and the
@@ -802,6 +811,19 @@ var codecTargets = map[string]codecTarget{
 		lang:             "ts",
 		externalDefTypes: []string{"Diagnostic"},
 	},
+	// The shared CBOR machinery emitted once per guest crate/package. These
+	// targets are schema-free: they carry the read/write helpers, the runtime key
+	// sort, the float16 conversions, and a dependency-free base64 codec that the
+	// per-type CBOR codecs reference. The Go guest emits its helpers into the
+	// helpers-bearing codec file (FRP); Rust and TS emit a dedicated module.
+	"cbor_gen.rs": {
+		pkg:  "abi",
+		lang: "rust-cbor-helpers",
+	},
+	"cbor_gen.ts": {
+		pkg:  "abi",
+		lang: "ts-cbor-helpers",
+	},
 }
 
 // knownImports maps a package selector that may appear in an x-aggrega-go-type
@@ -1036,7 +1058,7 @@ func isIdentByte(b byte) bool {
 // (<parent><Field>). Returns the nested object structs it discovered, to emit
 // after; records package selectors used by field types into `used`. A non-nil
 // vocab rewrites x-aggrega-go-type field values per the target's vocabulary.
-func emitStruct(b *strings.Builder, typeName, doc string, n schemaNode, used map[string]bool, vocab map[string]string) []pending {
+func emitStruct(b *strings.Builder, typeName, doc string, n schemaNode, used map[string]bool, vocab map[string]string, cbor bool) []pending {
 	required := map[string]bool{}
 	for _, r := range n.Required {
 		required[r] = true
@@ -1069,7 +1091,20 @@ func emitStruct(b *strings.Builder, typeName, doc string, n schemaNode, used map
 		if p.node.Description != "" {
 			fmt.Fprintf(b, "\t// %s %s\n", field, oneLine(p.node.Description))
 		}
-		fmt.Fprintf(b, "\t%s %s `json:%q yaml:%q`\n", field, gt, jsonTag, yamlTag)
+		if cbor {
+			// The cbor tag mirrors the JSON wire key (with omitempty for
+			// non-required fields) so a reference CBOR encoder used as a test
+			// oracle keys the map by the wire key and omits the same fields the
+			// generated codec omits. (omitzero has no cbor analog; guest codec
+			// types carry no OrderedMap, so the omitzero case never applies here.)
+			cborTag := p.name
+			if !required[p.name] {
+				cborTag += ",omitempty"
+			}
+			fmt.Fprintf(b, "\t%s %s `json:%q yaml:%q cbor:%q`\n", field, gt, jsonTag, yamlTag, cborTag)
+		} else {
+			fmt.Fprintf(b, "\t%s %s `json:%q yaml:%q`\n", field, gt, jsonTag, yamlTag)
+		}
 	}
 	b.WriteString("}\n\n")
 	return nested
@@ -1609,7 +1644,7 @@ func generate(typeName, schemaJSON string) ([]byte, error) {
 	// Top-level entity struct, then its nested named structs breadth-first in
 	// declared order.
 	queue := []pending{{name: typeName, doc: root.Description, node: root}}
-	emitQueue(&body, queue, used, nil)
+	emitQueue(&body, queue, used, nil, false)
 
 	head := genHeader("package types",
 		fmt.Sprintf("// aggrega-schemas/json/%s-v1alpha1.schema.json. DO NOT EDIT.\n", strings.ToLower(typeName)),
@@ -1798,6 +1833,10 @@ func generateDefs(t codecTarget) ([]byte, error) {
 		return generateDefsRust(t)
 	case "ts":
 		return generateDefsTS(t)
+	case "rust-cbor-helpers":
+		return generateRustCBORHelpers(t)
+	case "ts-cbor-helpers":
+		return generateTSCBORHelpers(t)
 	default:
 		return nil, fmt.Errorf("typegen: unknown codec target language %q", t.lang)
 	}
@@ -1827,7 +1866,7 @@ func generateDefsGo(t codecTarget) ([]byte, error) {
 	for _, d := range root.defs {
 		queue = append(queue, pending{name: d.name, doc: d.node.Description, node: d.node})
 	}
-	emitQueue(&body, queue, used, t.vocabulary)
+	emitQueue(&body, queue, used, t.vocabulary, t.emitsCBOR())
 
 	// defTypes names the generated def struct types, so the codec emitter can
 	// tell a nested generated type — decoded by a direct call to its own
@@ -1851,8 +1890,19 @@ func generateDefsGo(t codecTarget) ([]byte, error) {
 	for _, d := range root.defs {
 		emitCodec(&body, d.name, d.node, t.vocabulary, defTypes)
 	}
+	// The canonical-CBOR codec, parallel to the JSON codec above, for a guest
+	// target. Emitted per def type in the same declared order; the shared CBOR
+	// helpers land in the same helpers-bearing file the JSON helpers do.
+	if t.emitsCBOR() {
+		for _, d := range root.defs {
+			emitCBORCodec(&body, d.name, d.node, t.vocabulary, defTypes)
+		}
+	}
 	if t.helpers {
 		emitCodecHelpers(&body)
+	}
+	if t.helpers && t.emitsCBOR() {
+		emitCBORHelpers(&body)
 	}
 
 	// The codec spine's imports are derived from the emitted body so a file that
@@ -1883,6 +1933,7 @@ func codecSpineImports(body string) []string {
 		{"base64.", "encoding/base64"},
 		{"json.", "encoding/json"},
 		{"fmt.", "fmt"},
+		{"math.", "math"},
 		{"sort.", "sort"},
 		{"strconv.", "strconv"},
 		{"utf8.", "unicode/utf8"},
@@ -1906,11 +1957,11 @@ func codecSpineImports(body string) []string {
 
 // emitQueue drains a breadth-first struct-emission queue into body, emitting
 // each queued struct and the nested anonymous structs it discovers, in order.
-func emitQueue(body *strings.Builder, queue []pending, used map[string]bool, vocab map[string]string) {
+func emitQueue(body *strings.Builder, queue []pending, used map[string]bool, vocab map[string]string, cbor bool) {
 	for len(queue) > 0 {
 		cur := queue[0]
 		queue = queue[1:]
-		nested := emitStruct(body, cur.name, cur.doc, cur.node, used, vocab)
+		nested := emitStruct(body, cur.name, cur.doc, cur.node, used, vocab, cbor)
 		queue = append(queue, nested...)
 	}
 }
