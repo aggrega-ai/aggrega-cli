@@ -344,6 +344,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		state := NewPhaseBState(recipe, nodeID, node.BoundaryPath, "")
 		state.Trace = traceWriter
 		state.MappingLibraries = input.MappingLibraries
+		state.WorkloadLibraries = input.WorkloadLibraries
 		state.SecretProvides = secretProvides
 
 		// Phase B.0 — locals + source-as-template eval; populates

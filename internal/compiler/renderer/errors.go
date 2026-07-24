@@ -50,6 +50,19 @@ var (
 	// an entry absent from the resolved MappingLibrary's mappings map.
 	ErrMappingEntryNotFound = errors.New("mapping-library import references an entry not present in the MappingLibrary")
 
+	// ErrWorkloadImportShape fires when a workload $import: (or a recursive
+	// WorkloadLibrary entry body's field-root $import:) is neither a host-bearing
+	// reference nor a well-formed bare-name `<Library>#/workloads/<entry>` identity.
+	ErrWorkloadImportShape = errors.New("workload $import: is not a bare-name workload-library reference (<Library>#/workloads/<entry>)")
+
+	// ErrWorkloadLibraryNotFound fires when a bare-name workload-library import
+	// names a WorkloadLibrary absent from the resolved set (the local catalog).
+	ErrWorkloadLibraryNotFound = errors.New("workload-library import references a WorkloadLibrary not present in the catalog")
+
+	// ErrWorkloadEntryNotFound fires when a bare-name workload-library import names
+	// an entry absent from the resolved WorkloadLibrary's workloads map.
+	ErrWorkloadEntryNotFound = errors.New("workload-library import references an entry not present in the WorkloadLibrary")
+
 	// ErrCircularImport is the $import-surface name for a mapping-library import
 	// expansion cycle. It is the shared refcycle.ErrCycle sentinel — the same
 	// identity the $ref surface reports via ErrCircularRef — so one detector
@@ -59,14 +72,16 @@ var (
 	// or, equivalently, errors.Is(err, refcycle.ErrCycle).
 	ErrCircularImport = refcycle.ErrCycle
 
-	// ErrHostInLibraryImport fires when a valuesMapping $import: carries a
-	// registry host — the `oci://…` form. A mapping-library import is
-	// addressed by bare-name identity (`<Library>#/mappings/<entry>`),
-	// never by physical registry location: the library name resolves
-	// against the loaded closure and the version is supplied by the
-	// lockfile. A host in the reference is rejected so physical location
-	// cannot leak into authored source.
-	ErrHostInLibraryImport = errors.New("valuesMapping $import: carries a registry host; reference the mapping library by identity (valuesMapping: { $import: <Library>#/mappings/<entry> })")
+	// ErrHostInLibraryImport fires when a library $import: carries a
+	// registry host — the `oci://…` form. It is shared by the valuesMapping
+	// (`<Library>#/mappings/<entry>`) and workload
+	// (`<Library>#/workloads/<entry>`) surfaces: a library import is addressed
+	// by bare-name identity, never by physical registry location — the library
+	// name resolves against the loaded catalog and the version is supplied by
+	// the lockfile. A host in the reference is rejected so physical location
+	// cannot leak into authored source. The per-surface wrapping context names
+	// which surface carried the host.
+	ErrHostInLibraryImport = errors.New("library $import: carries a registry host; reference the library by bare-name identity")
 
 	// ErrProviderNodeInputInvalid is the Loud Guardrail halt a provider
 	// engine raises when its optional input-validation export reports an

@@ -219,21 +219,35 @@ func TestResolveValuesMappingText_AllModes(t *testing.T) {
 	}
 }
 
-// TestResolveWorkloadText_AllModes pins inline + file + missing-file.
+// TestResolveWorkloadText_AllModes pins inline + file + missing-file + library +
+// host-rejection across the four content modes.
 func TestResolveWorkloadText_AllModes(t *testing.T) {
 	t.Parallel()
+	wlibs := map[string]types.WorkloadLibrary{
+		"BaseWorkloads": workloadLibraryFixture("BaseWorkloads", map[string]string{"Deployment": "kind: Deployment"}),
+	}
 	// Empty.
-	got, err := resolveWorkloadText(types.WorkloadTemplate{}, "n")
+	got, err := resolveWorkloadText(types.WorkloadTemplate{}, "n", wlibs)
 	if err != nil || got != "" {
 		t.Errorf("empty: (%q, %v)", got, err)
 	}
 	// Inline.
-	got, err = resolveWorkloadText(types.WorkloadTemplate{Inline: "kind: Workload"}, "n")
+	got, err = resolveWorkloadText(types.WorkloadTemplate{Inline: "kind: Workload"}, "n", wlibs)
 	if err != nil || got != "kind: Workload" {
 		t.Errorf("inline: (%q, %v)", got, err)
 	}
+	// Library import.
+	got, err = resolveWorkloadText(types.WorkloadTemplate{Import: "BaseWorkloads#/workloads/Deployment"}, "n", wlibs)
+	if err != nil || got != "kind: Deployment" {
+		t.Errorf("library import: (%q, %v)", got, err)
+	}
+	// Host-bearing reference rejected.
+	_, err = resolveWorkloadText(types.WorkloadTemplate{Import: "oci://hub/BaseWorkloads#/workloads/Deployment"}, "n", wlibs)
+	if err == nil || !errors.Is(err, ErrHostInLibraryImport) {
+		t.Errorf("oci:// $import should error ErrHostInLibraryImport; got %v", err)
+	}
 	// File missing.
-	_, err = resolveWorkloadText(types.WorkloadTemplate{Import: "/nope/x"}, "n")
+	_, err = resolveWorkloadText(types.WorkloadTemplate{Import: "/nope/x"}, "n", wlibs)
 	if err == nil {
 		t.Errorf("missing file should error")
 	}

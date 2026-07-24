@@ -154,7 +154,7 @@ func phaseB2(ctx *types.TemplateContext, state *PhaseBState, slots types.Ordered
 		return nil
 	}
 
-	workloadText, wlErr := resolveWorkloadText(state.Recipe.Spec.Workload, state.Recipe.Metadata.Name)
+	workloadText, wlErr := resolveWorkloadText(state.Recipe.Spec.Workload, state.Recipe.Metadata.Name, state.WorkloadLibraries)
 	if wlErr != nil {
 		return wlErr
 	}

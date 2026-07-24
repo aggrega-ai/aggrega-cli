@@ -92,6 +92,13 @@ type Inputs struct {
 	// when no MappingLibraries are present.
 	MappingLibraries map[string]types.MappingLibrary
 
+	// WorkloadLibraries is the local-catalog WorkloadLibrary set, keyed by bare
+	// name. It flows to the renderer so a Recipe workload's bare-name
+	// `$import: <Library>#/workloads/<entry>` resolves at render. The set is
+	// sourced from the local catalog only; a remote workload import is not
+	// bridged. nil when no WorkloadLibraries are present.
+	WorkloadLibraries map[string]types.WorkloadLibrary
+
 	// TolerateCatalogViewInconsistency opts a caller out of the guard-layer
 	// halt for a component type that resolved AS A CATALOG REFERENCE yet is
 	// absent from the guard's catalog view (the resolved-set / view divergence
@@ -778,13 +785,14 @@ func RunPipeline(
 		}()
 
 		rendererInput := renderer.RendererInput{
-			Graph:            graph,
-			FeatureOrder:     featureOrder,
-			ResolveResult:    resolveResult,
-			CatalogLookup:    catalogLookup,
-			MappingLibraries: inputs.MappingLibraries,
-			Trace:            traceWriter,
-			YAMLIndent:       inputs.WorkspaceConfig.Build.YAMLIndent,
+			Graph:             graph,
+			FeatureOrder:      featureOrder,
+			ResolveResult:     resolveResult,
+			CatalogLookup:     catalogLookup,
+			MappingLibraries:  inputs.MappingLibraries,
+			WorkloadLibraries: inputs.WorkloadLibraries,
+			Trace:             traceWriter,
+			YAMLIndent:        inputs.WorkspaceConfig.Build.YAMLIndent,
 			// Bind the entity-fronted plugin-resolution path so a Recipe /
 			// FeatureRecipe pipeline step's plugin URI — a Plugin entity URI —
 			// resolves to its verified .wasm bytes: the entity-front translates the

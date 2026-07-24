@@ -90,6 +90,13 @@ type PhaseBState struct {
 	// valuesMapping never reads it).
 	MappingLibraries map[string]types.MappingLibrary
 
+	// WorkloadLibraries is the local-catalog WorkloadLibrary set, keyed by bare
+	// name. B.2 resolves a Recipe workload's bare-name
+	// `$import: <Library>#/workloads/<entry>` against it. The orchestrator
+	// populates it once per node from the RendererInput; nil when no
+	// WorkloadLibraries are present (a non-library workload never reads it).
+	WorkloadLibraries map[string]types.WorkloadLibrary
+
 	// SecretProvides is the per-node `slot → resolved fill provides` map computed
 	// once before context assembly (ResolveSecretProvides). The same bag is
 	// surfaced to the consumer as `.secrets.<slot>.provides` AND reused at Phase

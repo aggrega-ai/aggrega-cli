@@ -83,6 +83,7 @@ func BuildToBuffer(ctx context.Context, in BuildInputs, opts pipeline.Options) (
 			Lockfile:                         in.Lockfile,
 			WorkspaceRoot:                    in.WorkspaceRoot,
 			MappingLibraries:                 view.MappingLibraries(),
+			WorkloadLibraries:                view.WorkloadLibraries(),
 			CompilerVersion:                  in.CompilerVersion,
 			TolerateCatalogViewInconsistency: in.TolerateCatalogViewInconsistency,
 		},

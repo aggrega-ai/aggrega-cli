@@ -54,19 +54,30 @@ func resolveValuesMappingText(vm types.ValuesMapping, entityName, entityKind str
 
 // resolveWorkloadText resolves a WorkloadTemplate struct to its Go-
 // template source string. Mode 1 (inline) returns the authored content
-// directly; mode 2 (file $import:) reads the file from disk. The
-// envelope schema rejects oci:// prefixes at workload: — library
-// imports aren't a supported mode at this site — so an oci:// value
-// reaches this function only when authors bypass envelope validation
-// (which production load doesn't enforce); the file read surfaces a
-// generic "file not found" error in that case. The empty struct
-// returns "" + nil (callers treat as "no workload declared").
-func resolveWorkloadText(w types.WorkloadTemplate, entityName string) (string, error) {
+// directly; mode 2 (file $import:) reads the file from disk; mode 3
+// (library $import: in the bare-name identity form
+// `<Library>#/workloads/<entry>`) resolves the referenced WorkloadLibrary
+// entry's template fragment from workloadLibs (the local catalog),
+// recursively when an entry body is itself a field-root `$import:`. A
+// host-bearing `oci://…` $import: is rejected with ErrHostInLibraryImport
+// — a library is addressed by identity, not by registry location. The
+// empty struct returns "" + nil (callers treat as "no workload declared").
+func resolveWorkloadText(w types.WorkloadTemplate, entityName string, workloadLibs map[string]types.WorkloadLibrary) (string, error) {
 	if w.IsEmpty() {
 		return "", nil
 	}
 	if w.Inline != "" {
 		return w.Inline, nil
+	}
+	if w.HasOCIPrefix() {
+		return "", cerrors.Wrap(ErrHostInLibraryImport, cerrors.CatalogError, cerrors.SourceLocation{File: entityName}, fmt.Sprintf("Recipe %q workload $import %q", entityName, w.Import))
+	}
+	if w.IsLibraryImport() {
+		text, err := resolveWorkloadLibraryImport(w.Import, workloadLibs, nil)
+		if err != nil {
+			return "", cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: entityName}, fmt.Sprintf("Recipe %q workload library import %q", entityName, w.Import))
+		}
+		return text, nil
 	}
 	data, err := os.ReadFile(w.Import)
 	if err != nil {

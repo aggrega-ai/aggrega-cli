@@ -27,6 +27,13 @@ type RendererInput struct {
 	// when no MappingLibraries are present.
 	MappingLibraries map[string]types.MappingLibrary
 
+	// WorkloadLibraries is the local-catalog WorkloadLibrary set, keyed by bare
+	// name. It is the source for resolving a Recipe workload's bare-name
+	// `$import: <Library>#/workloads/<entry>` at render. The set is sourced from
+	// the local catalog only; a remote workload import is not bridged. nil when
+	// no WorkloadLibraries are present.
+	WorkloadLibraries map[string]types.WorkloadLibrary
+
 	// Lockfile, WorkspaceRoot, and CacheDir together enable orchestrator-
 	// side source-artifact resolution. When all three are set, the
 	// orchestrator looks up each Recipe's spec.source against

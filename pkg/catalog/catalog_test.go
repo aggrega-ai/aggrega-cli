@@ -179,6 +179,84 @@ spec:
 	}
 }
 
+// TestLoad_WorkloadLibrary verifies the eager catalog load arm indexes a
+// WorkloadLibrary into Catalog.WorkloadLibraries, keyed by metadata.name,
+// with its workload entries captured.
+func TestLoad_WorkloadLibrary(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	libPath := filepath.Join(dir, "workloadlibrary", "core", "BaseWorkloads", "1.0.0", "library.yaml")
+	if err := os.MkdirAll(filepath.Dir(libPath), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	body := `apiVersion: aggrega.ai/v1alpha1
+kind: WorkloadLibrary
+metadata:
+  name: BaseWorkloads
+  version: 1.0.0
+spec:
+  workloads:
+    Deployment: 'kind: Deployment'
+    Service: 'kind: Service'
+`
+	if err := os.WriteFile(libPath, []byte(body), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	c, err := LoadAll("", dir)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if len(c.WorkloadLibraries) != 1 {
+		t.Fatalf("expected 1 WorkloadLibrary; got %d", len(c.WorkloadLibraries))
+	}
+	lib, ok := c.WorkloadLibraries["BaseWorkloads"]
+	if !ok {
+		t.Fatalf("expected BaseWorkloads WorkloadLibrary; got %v", c.WorkloadLibraries)
+	}
+	if lib.Spec.Workloads.Len() != 2 {
+		t.Errorf("expected 2 workload entries; got %d", lib.Spec.Workloads.Len())
+	}
+}
+
+// TestLazyLookup_WorkloadLibraries_LocalFold verifies the lazy backing folds a
+// local-catalog WorkloadLibrary into the enumerated set exposed by
+// WorkloadLibraries() — the set the renderer's workload `$import` resolution
+// consumes. A local library enumerates; the remote/lockfile bridge is not part
+// of this path, so a WorkloadLibrary reaches the set only from the catalog dirs.
+func TestLazyLookup_WorkloadLibraries_LocalFold(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	libPath := filepath.Join(dir, "BaseWorkloads.yaml")
+	body := `apiVersion: aggrega.ai/v1alpha1
+kind: WorkloadLibrary
+metadata:
+  name: BaseWorkloads
+  version: 1.0.0
+spec:
+  workloads:
+    Deployment: 'kind: Deployment'
+`
+	if err := os.WriteFile(libPath, []byte(body), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	ll := NewLazyLookup("", "", []string{dir}, nil)
+	libs := ll.WorkloadLibraries()
+	if len(libs) != 1 {
+		t.Fatalf("expected 1 enumerated WorkloadLibrary; got %d", len(libs))
+	}
+	lib, ok := libs["BaseWorkloads"]
+	if !ok {
+		t.Fatalf("expected BaseWorkloads enumerated; got %v", libs)
+	}
+	if lib.Spec.Workloads.Len() != 1 {
+		t.Errorf("expected 1 workload entry; got %d", lib.Spec.Workloads.Len())
+	}
+}
+
 // TestLoad_MappingLibrary_NonScalarEntryRejected verifies the catalog
 // walker surfaces the Go-side typed-unmarshal rejection when a
 // MappingLibrary entry's value is not a string scalar (e.g., a mapping

@@ -65,26 +65,27 @@ import (
 // where most catalog entities are never referenced.
 func NewLazyLookup(workspaceRoot, cacheDir string, catalogDirs []string, puller OCIPuller) *LazyLookup {
 	return &LazyLookup{
-		workspaceRoot:    workspaceRoot,
-		cacheDir:         cacheDir,
-		catalogDirs:      catalogDirs,
-		puller:           puller,
-		components:       map[string]types.Component{},
-		features:         map[string]types.Feature{},
-		schemaLibraries:  map[string]types.SchemaLibrary{},
-		componentMisses:  map[string]struct{}{},
-		featureMisses:    map[string]struct{}{},
-		componentIndex:   map[string]string{},
-		featureIndex:     map[string]string{},
-		recipes:          map[string]types.Recipe{},
-		featureRecipes:   map[string]types.FeatureRecipe{},
-		aggregates:       map[string]types.Aggregate{},
-		mappingLibraries: map[string]types.MappingLibrary{},
-		plugins:          map[string]types.Plugin{},
-		aggregateSources: map[string]string{},
-		recipeSkips:      map[string]error{},
-		entityBytes:      map[string][]byte{},
-		localEntityPaths: map[string]string{},
+		workspaceRoot:     workspaceRoot,
+		cacheDir:          cacheDir,
+		catalogDirs:       catalogDirs,
+		puller:            puller,
+		components:        map[string]types.Component{},
+		features:          map[string]types.Feature{},
+		schemaLibraries:   map[string]types.SchemaLibrary{},
+		componentMisses:   map[string]struct{}{},
+		featureMisses:     map[string]struct{}{},
+		componentIndex:    map[string]string{},
+		featureIndex:      map[string]string{},
+		recipes:           map[string]types.Recipe{},
+		featureRecipes:    map[string]types.FeatureRecipe{},
+		aggregates:        map[string]types.Aggregate{},
+		mappingLibraries:  map[string]types.MappingLibrary{},
+		workloadLibraries: map[string]types.WorkloadLibrary{},
+		plugins:           map[string]types.Plugin{},
+		aggregateSources:  map[string]string{},
+		recipeSkips:       map[string]error{},
+		entityBytes:       map[string][]byte{},
+		localEntityPaths:  map[string]string{},
 	}
 }
 
@@ -281,6 +282,7 @@ func (l *LazyLookup) Reset() {
 	l.featureRecipes = map[string]types.FeatureRecipe{}
 	l.aggregates = map[string]types.Aggregate{}
 	l.mappingLibraries = map[string]types.MappingLibrary{}
+	l.workloadLibraries = map[string]types.WorkloadLibrary{}
 	l.plugins = map[string]types.Plugin{}
 	l.aggregateSources = map[string]string{}
 	l.recipeSkips = map[string]error{}
@@ -438,14 +440,15 @@ type LazyLookup struct {
 	// recorded reason rather than aborting the walk — so a broken UNUSED recipe is
 	// invisible to a resolution that doesn't need it (the blast-radius fix). The
 	// eager catalog, by contrast, fails the whole walk on the first broken recipe.
-	recipes          map[string]types.Recipe
-	featureRecipes   map[string]types.FeatureRecipe
-	aggregates       map[string]types.Aggregate
-	mappingLibraries map[string]types.MappingLibrary
-	plugins          map[string]types.Plugin // keyed by identity (metadata.name:version), like the eager catalog
-	aggregateSources map[string]string
-	recipeSkips      map[string]error // skipped recipe/FR/aggregate/maplib/plugin file path -> reason
-	recipeIndexBuilt bool
+	recipes           map[string]types.Recipe
+	featureRecipes    map[string]types.FeatureRecipe
+	aggregates        map[string]types.Aggregate
+	mappingLibraries  map[string]types.MappingLibrary
+	workloadLibraries map[string]types.WorkloadLibrary
+	plugins           map[string]types.Plugin // keyed by identity (metadata.name:version), like the eager catalog
+	aggregateSources  map[string]string
+	recipeSkips       map[string]error // skipped recipe/FR/aggregate/maplib/plugin file path -> reason
+	recipeIndexBuilt  bool
 
 	// localEntityPaths maps entityBytesKey(kind, identityKey) to the writable
 	// filesystem path a Recipe / FeatureRecipe was authored in, for Tier-1
@@ -518,6 +521,7 @@ func (l *LazyLookup) SetPins(pins map[string]Pin) {
 	l.featureRecipes = map[string]types.FeatureRecipe{}
 	l.aggregates = map[string]types.Aggregate{}
 	l.mappingLibraries = map[string]types.MappingLibrary{}
+	l.workloadLibraries = map[string]types.WorkloadLibrary{}
 	l.plugins = map[string]types.Plugin{}
 	l.aggregateSources = map[string]string{}
 	l.recipeSkips = map[string]error{}
@@ -1063,7 +1067,7 @@ func (l *LazyLookup) buildRecipeIndex() {
 }
 
 // foldRecipeShellEntity parses one enumerated recipe-shell entity (Recipe,
-// FeatureRecipe, Aggregate, MappingLibrary, or Plugin) and folds it into the hot
+// FeatureRecipe, Aggregate, MappingLibrary, WorkloadLibrary, or Plugin) and folds it into the hot
 // maps, keyed exactly as the eager catalog keys it, first-wins on a name/identity
 // collision (a later duplicate is skipped and recorded). parseData is the YAML to
 // parse; rawBytes is retained as entityBytes for digest fidelity — identical to
@@ -1130,6 +1134,17 @@ func (l *LazyLookup) foldRecipeShellEntity(kind string, parseData, rawBytes []by
 			func() { l.entityBytes[entityBytesKey("MappingLibrary", e.Metadata.Name)] = rawBytes },
 			func() {
 				l.recordRecipeSkip(src, fmt.Errorf("duplicate mapping library name %q; this file is shadowed", e.Metadata.Name))
+			})
+	case "WorkloadLibrary":
+		e, perr := parseWorkloadLibraryEntity(parseData, src)
+		if perr != nil {
+			l.recordRecipeSkip(src, perr)
+			return
+		}
+		foldFirstWin(l.workloadLibraries, e.Metadata.Name, e,
+			func() { l.entityBytes[entityBytesKey("WorkloadLibrary", e.Metadata.Name)] = rawBytes },
+			func() {
+				l.recordRecipeSkip(src, fmt.Errorf("duplicate workload library name %q; this file is shadowed", e.Metadata.Name))
 			})
 	case "Plugin":
 		e, perr := parsePluginEntity(parseData, src)
@@ -1243,15 +1258,16 @@ func (l *LazyLookup) recipeCatalog() *Catalog {
 	l.buildRecipeIndex()
 	_ = l.buildSchemaLibraries()
 	l.recipeCat = &Catalog{
-		Recipes:          l.recipes,
-		FeatureRecipes:   l.featureRecipes,
-		Aggregates:       l.aggregates,
-		SchemaLibraries:  l.schemaLibraries,
-		MappingLibraries: l.mappingLibraries,
-		Plugins:          l.plugins,
-		aggregateSources: l.aggregateSources,
-		entityBytes:      l.entityBytes,
-		workspaceRoot:    l.workspaceRoot,
+		Recipes:           l.recipes,
+		FeatureRecipes:    l.featureRecipes,
+		Aggregates:        l.aggregates,
+		SchemaLibraries:   l.schemaLibraries,
+		MappingLibraries:  l.mappingLibraries,
+		WorkloadLibraries: l.workloadLibraries,
+		Plugins:           l.plugins,
+		aggregateSources:  l.aggregateSources,
+		entityBytes:       l.entityBytes,
+		workspaceRoot:     l.workspaceRoot,
 		// The lazy backing is the production build/pull resolution path, so it
 		// resolves core providers from the binary's embedded set (embedded-wins).
 		resolveEmbeddedProviders: true,
@@ -1268,6 +1284,20 @@ func (l *LazyLookup) MappingLibraries() map[string]types.MappingLibrary {
 	defer l.mu.Unlock()
 	l.buildRecipeIndex()
 	return l.mappingLibraries
+}
+
+// WorkloadLibraries returns the local-catalog WorkloadLibrary set, keyed by bare
+// name, for the pipeline's WorkloadLibraries input (the set the renderer's
+// workload `$import: <Library>#/workloads/<entry>` resolution consumes). The set
+// is sourced from the local catalog directories only; a lockfile-pinned remote
+// WorkloadLibrary is not bridged, so a remote workload import surfaces a
+// library-not-found halt rather than resolving. Triggers the recipe-shell
+// enumeration on first call.
+func (l *LazyLookup) WorkloadLibraries() map[string]types.WorkloadLibrary {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.buildRecipeIndex()
+	return l.workloadLibraries
 }
 
 // RecipeLookupWithManifest exposes the catalog matcher's Manifest-aware recipe

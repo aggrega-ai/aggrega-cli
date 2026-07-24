@@ -135,6 +135,7 @@ func compile(in Input) (*pipeline.Result, error) {
 			AggregateRawBytes: aggBytes,
 			AggregatePath:     aggRes.Path,
 			MappingLibraries:  cat.MappingLibraries,
+			WorkloadLibraries: cat.WorkloadLibraries,
 			// Arbitrary fixed fixture, not a real version: production derives the
 			// compiler-version from the build, but tests inject a constant so the
 			// provenance stamp (and the aggrega.ai/compiler-version label it renders

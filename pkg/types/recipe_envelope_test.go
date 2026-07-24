@@ -243,12 +243,13 @@ spec:
 	}
 }
 
-// TestRecipeEnvelope_RejectsWorkloadBareNameLibraryImport pins that the
-// envelope guard at workload: rejects a bare-name library reference too, not
-// only the host-bearing form — library imports are unsupported at this site in
-// any form, and the `#/`-fragment guard surfaces it loudly at load rather than
-// as a file-not-found at consumption.
-func TestRecipeEnvelope_RejectsWorkloadBareNameLibraryImport(t *testing.T) {
+// TestRecipeEnvelope_AcceptsWorkloadBareNameLibraryImport pins that the envelope
+// admits a bare-name WorkloadLibrary reference at workload: — the supported
+// library-import mode `<Library>#/workloads/<entry>`. The host-bearing `oci://`
+// form stays rejected (see TestRecipeEnvelope_RejectsWorkloadOCIImport); the
+// bare-name identity form is the library surface a Recipe uses to factor a shared
+// Workload template.
+func TestRecipeEnvelope_AcceptsWorkloadBareNameLibraryImport(t *testing.T) {
 	t.Parallel()
 	v := recipeEnvelopeValidator(t)
 
@@ -268,8 +269,8 @@ spec:
 	if err != nil {
 		t.Fatalf("Validate: %v", err)
 	}
-	if len(rpt.Findings) == 0 {
-		t.Fatalf("expected envelope rejection on a bare-name library import at workload: site; got no findings")
+	if len(rpt.Findings) != 0 {
+		t.Fatalf("expected a bare-name library import at workload: to be accepted; got findings: %v", rpt.Findings)
 	}
 }
 
