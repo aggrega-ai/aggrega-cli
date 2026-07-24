@@ -122,15 +122,17 @@ func SynthesizeWorkloadCore(
 	resourceAnnotations := nilIfEmpty(annotations)
 	namespace := rendercore.NamespaceFromAnnotations(nodeCtx.Annotations)
 	saAnnotation := rendercore.ServiceAccountFromAnnotations(nodeCtx.Annotations)
+	imageRegistry := rendercore.ImageRegistryFromAnnotations(nodeCtx.Annotations)
+	pullSecretAnnotation := rendercore.ImagePullSecretFromAnnotations(nodeCtx.Annotations)
 
 	var out []rendercore.EmittedFile
 
 	// Containers: translate each in author-order.
-	containers, err := translateContainers(w, componentID, secretProvides)
+	containers, err := translateContainers(w, componentID, secretProvides, imageRegistry)
 	if err != nil {
 		return nil, err
 	}
-	initContainers, err := translateInitContainers(w, componentID, secretProvides)
+	initContainers, err := translateInitContainers(w, componentID, secretProvides, imageRegistry)
 	if err != nil {
 		return nil, err
 	}
@@ -145,7 +147,7 @@ func SynthesizeWorkloadCore(
 		InitContainers: initContainers,
 		Volumes:        podVolumes,
 	}
-	applyPodLevelFields(&podSpec, w, saAnnotation)
+	applyPodLevelFields(&podSpec, w, saAnnotation, pullSecretAnnotation)
 
 	template := PodTemplateSpec{
 		Metadata: ObjectMeta{Labels: resourceLabels},
@@ -391,10 +393,10 @@ func statefulSetGoverningService(services []Service, nodeID string) (string, err
 // translateContainers walks Workload.Containers in author order and produces
 // K8s-shape Container values. Returns an error if any container's
 // translation fails (e.g., probe http: with no available port).
-func translateContainers(w *types.Workload, nodeID string, secretProvides map[string]types.OrderedMap[string]) ([]Container, error) {
+func translateContainers(w *types.Workload, nodeID string, secretProvides map[string]types.OrderedMap[string], imageRegistry string) ([]Container, error) {
 	var out []Container
 	for name, c := range w.Containers.All() {
-		k8sContainer, err := translateContainer(name, c, nodeID, secretProvides)
+		k8sContainer, err := translateContainer(name, c, nodeID, secretProvides, imageRegistry)
 		if err != nil {
 			return nil, err
 		}
@@ -408,7 +410,7 @@ func translateContainers(w *types.Workload, nodeID string, secretProvides map[st
 // entry's authored name is honored as the emitted container name; an entry
 // without a name falls back to "init-<index>", where the index is the entry's
 // position in the list.
-func translateInitContainers(w *types.Workload, nodeID string, secretProvides map[string]types.OrderedMap[string]) ([]Container, error) {
+func translateInitContainers(w *types.Workload, nodeID string, secretProvides map[string]types.OrderedMap[string], imageRegistry string) ([]Container, error) {
 	if len(w.InitContainers) == 0 {
 		return nil, nil
 	}
@@ -418,7 +420,7 @@ func translateInitContainers(w *types.Workload, nodeID string, secretProvides ma
 		if name == "" {
 			name = fmt.Sprintf("init-%d", i)
 		}
-		k8sContainer, err := translateContainer(name, c, nodeID, secretProvides)
+		k8sContainer, err := translateContainer(name, c, nodeID, secretProvides, imageRegistry)
 		if err != nil {
 			return nil, err
 		}
@@ -428,11 +430,13 @@ func translateInitContainers(w *types.Workload, nodeID string, secretProvides ma
 }
 
 // translateContainer maps a single Workload ContainerSpec to a K8s-shape
-// Container. Author-order preserved across ports / variables / secrets.
-func translateContainer(name string, c types.ContainerSpec, nodeID string, secretProvides map[string]types.OrderedMap[string]) (Container, error) {
+// Container. Author-order preserved across ports / variables / secrets. When
+// imageRegistry is non-empty, the container image ref is relocated under that
+// registry prefix (regular and init containers share this single site).
+func translateContainer(name string, c types.ContainerSpec, nodeID string, secretProvides map[string]types.OrderedMap[string], imageRegistry string) (Container, error) {
 	out := Container{
 		Name:            sanitizeContainerName(name),
-		Image:           c.Image,
+		Image:           rendercore.ApplyImageRegistry(c.Image, imageRegistry),
 		ImagePullPolicy: c.ImagePullPolicy,
 		Command:         c.Command,
 		Args:            c.Args,
@@ -928,10 +932,15 @@ func translateServiceType(t string) string {
 // Workload.Scheduling, Workload.PodSecurityContext, Workload.ServiceAccount.
 // Container-level restartPolicy bubbles up to pod-level when set.
 //
-// saAnnotation is the resolved aggrega.ai/service-account value (empty when
-// unset). When present it wins over Workload.ServiceAccount: the operator's
-// boundary-layer directive overrides the recipe author's default.
-func applyPodLevelFields(spec *PodSpec, w *types.Workload, saAnnotation string) {
+// Well-known annotations that mirror a workload field resolve by cardinality,
+// each in exactly one place here:
+//   - saAnnotation (aggrega.ai/service-account, a scalar) overrides
+//     Workload.ServiceAccount when set — the operator boundary is last-writer.
+//   - pullSecretAnnotation (aggrega.ai/image-pull-secret, a list value) unions
+//     into imagePullSecrets, appended after the workload's entries in author
+//     order and skipped if already present — a scalar override would silently
+//     drop recipe-declared pull secrets.
+func applyPodLevelFields(spec *PodSpec, w *types.Workload, saAnnotation, pullSecretAnnotation string) {
 	if w.Scheduling != nil {
 		spec.NodeSelector = w.Scheduling.NodeSelector
 		spec.Affinity = w.Scheduling.Affinity
@@ -956,8 +965,18 @@ func applyPodLevelFields(spec *PodSpec, w *types.Workload, saAnnotation string) 
 	if sa != "" {
 		spec.ServiceAccountName = sa
 	}
+	// imagePullSecrets: the recipe field entries verbatim in author order (so
+	// output is unchanged when no annotation is set), then the operator-boundary
+	// annotation unioned in — appended only if it is not already a field entry.
+	fieldPullSecret := false
 	for _, name := range w.ImagePullSecrets {
 		spec.ImagePullSecrets = append(spec.ImagePullSecrets, LocalObjectReference{Name: name})
+		if name == pullSecretAnnotation {
+			fieldPullSecret = true
+		}
+	}
+	if pullSecretAnnotation != "" && !fieldPullSecret {
+		spec.ImagePullSecrets = append(spec.ImagePullSecrets, LocalObjectReference{Name: pullSecretAnnotation})
 	}
 	spec.PriorityClassName = w.PriorityClassName
 	spec.RuntimeClassName = w.RuntimeClassName

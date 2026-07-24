@@ -1,0 +1,62 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: db
+  labels:
+    aggrega.ai/aggregate-name: test-agg
+    aggrega.ai/compiler-version: test
+    aggrega.ai/component-id: db
+    aggrega.ai/environment: test-env
+    app: db
+    app.kubernetes.io/name: db
+  annotations:
+    aggrega.ai/boundary-path: default
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: db
+  template:
+    metadata:
+      name: ""
+      labels:
+        aggrega.ai/aggregate-name: test-agg
+        aggrega.ai/compiler-version: test
+        aggrega.ai/component-id: db
+        aggrega.ai/environment: test-env
+        app: db
+        app.kubernetes.io/name: db
+    spec:
+      containers:
+        - name: main
+          image: reg.internal:5000/library/postgres:16
+          ports:
+            - name: db
+              containerPort: 5432
+      initContainers:
+        - name: setup
+          image: reg.internal:5000/busybox:1
+      imagePullSecrets:
+        - name: recipe-pull
+        - name: op-pull
+apiVersion: v1
+kind: Service
+metadata:
+  name: db-db
+  labels:
+    aggrega.ai/aggregate-name: test-agg
+    aggrega.ai/compiler-version: test
+    aggrega.ai/component-id: db
+    aggrega.ai/environment: test-env
+    app: db
+    app.kubernetes.io/name: db
+  annotations:
+    aggrega.ai/boundary-path: default
+spec:
+  type: ClusterIP
+  selector:
+    app: db
+  ports:
+    - name: db
+      port: 5432
+      targetPort: db

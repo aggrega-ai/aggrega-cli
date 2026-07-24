@@ -189,7 +189,7 @@ func TestTranslateContainer_VolumeMountsAndSecretsBranches(t *testing.T) {
 		{Name: "data", Path: "/data", ReadOnly: true},
 	}
 
-	got, err := translateContainer("c1", c, "node-1", nil)
+	got, err := translateContainer("c1", c, "node-1", nil, "")
 	if err != nil {
 		t.Fatalf("translate: %v", err)
 	}

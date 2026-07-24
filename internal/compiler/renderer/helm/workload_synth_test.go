@@ -263,6 +263,135 @@ func TestSynthesizeWorkload_ServiceAccountAnnotationWinsOverField(t *testing.T) 
 	goldenCheck(t, "service-account-annotation-wins", concatBodies(files))
 }
 
+// TestSynthesizeWorkload_ImageRegistryAnnotation proves the operator-boundary
+// aggrega.ai/image-registry annotation rewrites every container image ref —
+// regular AND init — under the single prefix, and that its absence leaves images
+// untouched.
+func TestSynthesizeWorkload_ImageRegistryAnnotation(t *testing.T) {
+	t.Parallel()
+	build := func() *types.Workload {
+		w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload"}
+		main := types.ContainerSpec{Image: "docker.io/library/postgres:16"}
+		main.Ports.Set("db", 5432)
+		w.Containers.Set("main", main)
+		w.InitContainers = []types.ContainerSpec{{Name: "setup", Image: "busybox:1"}}
+		svc := types.ServiceSpec{Type: "ClusterIP"}
+		svc.Ports.Set("db", 5432)
+		w.Services.Set("db", svc)
+		return w
+	}
+
+	// Absent annotation → images unchanged.
+	filesPlain, err := SynthesizeWorkloadCore(build(), renderer.SecretProvidesFromContext(nil), nodeCtxFor("db"))
+	if err != nil {
+		t.Fatalf("SynthesizeWorkloadCore (plain): %v", err)
+	}
+	plain := string(concatBodies(filesPlain))
+	if !strings.Contains(plain, "image: docker.io/library/postgres:16") {
+		t.Errorf("absent annotation should leave the regular image unchanged; got:\n%s", plain)
+	}
+	if !strings.Contains(plain, "image: busybox:1") {
+		t.Errorf("absent annotation should leave the init image unchanged; got:\n%s", plain)
+	}
+
+	// Present annotation → both images rewritten under the prefix.
+	ctx := nodeCtxWithAnnotations("db", map[string]string{rendercore.AnnotationImageRegistry: "reg.internal:5000"})
+	filesReg, err := SynthesizeWorkloadCore(build(), renderer.SecretProvidesFromContext(nil), ctx)
+	if err != nil {
+		t.Fatalf("SynthesizeWorkloadCore (registry): %v", err)
+	}
+	reg := string(concatBodies(filesReg))
+	if !strings.Contains(reg, "image: reg.internal:5000/library/postgres:16") {
+		t.Errorf("regular image not rewritten; got:\n%s", reg)
+	}
+	if !strings.Contains(reg, "image: reg.internal:5000/busybox:1") {
+		t.Errorf("init image not rewritten (single-site claim); got:\n%s", reg)
+	}
+}
+
+// TestSynthesizeWorkload_ImagePullSecretAnnotation proves the list-union rule for
+// aggrega.ai/image-pull-secret: the operator-boundary annotation appends to the
+// recipe-layer workload.imagePullSecrets (author order preserved), coexisting
+// with recipe entries, and deduping against an existing field entry.
+func TestSynthesizeWorkload_ImagePullSecretAnnotation(t *testing.T) {
+	t.Parallel()
+	build := func(field []string) *types.Workload {
+		w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload"}
+		c := types.ContainerSpec{Image: "app:1.0"}
+		c.Ports.Set("web", 8080)
+		w.Containers.Set("main", c)
+		svc := types.ServiceSpec{Type: "ClusterIP"}
+		svc.Ports.Set("web", 8080)
+		w.Services.Set("api", svc)
+		w.ImagePullSecrets = field
+		return w
+	}
+	render := func(t *testing.T, field []string, annotation string) string {
+		t.Helper()
+		ann := map[string]string{}
+		if annotation != "" {
+			ann[rendercore.AnnotationImagePullSecret] = annotation
+		}
+		files, err := SynthesizeWorkloadCore(build(field), renderer.SecretProvidesFromContext(nil), nodeCtxWithAnnotations("api", ann))
+		if err != nil {
+			t.Fatalf("SynthesizeWorkloadCore: %v", err)
+		}
+		return string(concatBodies(files))
+	}
+
+	// 1. neither field nor annotation → no imagePullSecrets block.
+	if body := render(t, nil, ""); strings.Contains(body, "imagePullSecrets") {
+		t.Errorf("neither set: imagePullSecrets should be absent; got:\n%s", body)
+	}
+	// 2. field only → field entries in order, no annotation.
+	if body := render(t, []string{"rc-a", "rc-b"}, ""); strings.Index(body, "- name: rc-a") < 0 ||
+		strings.Index(body, "- name: rc-a") > strings.Index(body, "- name: rc-b") {
+		t.Errorf("field only: expected [rc-a, rc-b] in order; got:\n%s", body)
+	}
+	// 3. annotation only → single annotation entry.
+	body := render(t, nil, "op-x")
+	if !strings.Contains(body, "- name: op-x") {
+		t.Errorf("annotation only: expected op-x; got:\n%s", body)
+	}
+	// 4. both → union, field entry before appended annotation.
+	body = render(t, []string{"rc-a"}, "op-x")
+	if i, j := strings.Index(body, "- name: rc-a"), strings.Index(body, "- name: op-x"); i < 0 || j < 0 || i > j {
+		t.Errorf("both: expected union [rc-a, op-x] in order; got:\n%s", body)
+	}
+	// 5. annotation duplicates a field entry → deduped (exactly one).
+	body = render(t, []string{"rc-a"}, "rc-a")
+	if n := strings.Count(body, "- name: rc-a"); n != 1 {
+		t.Errorf("dedup: expected exactly one rc-a, got %d; body:\n%s", n, body)
+	}
+}
+
+// TestSynthesizeWorkload_ImageAnnotationsCombined gold-checks the full rendered
+// Deployment when both operator-boundary annotations are set together: the
+// image-registry prefix rewrites the regular and init images, and the
+// image-pull-secret unions after the recipe-declared pull secret.
+func TestSynthesizeWorkload_ImageAnnotationsCombined(t *testing.T) {
+	t.Parallel()
+	w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload"}
+	main := types.ContainerSpec{Image: "docker.io/library/postgres:16"}
+	main.Ports.Set("db", 5432)
+	w.Containers.Set("main", main)
+	w.InitContainers = []types.ContainerSpec{{Name: "setup", Image: "busybox:1"}}
+	w.ImagePullSecrets = []string{"recipe-pull"}
+	svc := types.ServiceSpec{Type: "ClusterIP"}
+	svc.Ports.Set("db", 5432)
+	w.Services.Set("db", svc)
+
+	ctx := nodeCtxWithAnnotations("db", map[string]string{
+		rendercore.AnnotationImageRegistry:   "reg.internal:5000",
+		rendercore.AnnotationImagePullSecret: "op-pull",
+	})
+	files, err := SynthesizeWorkloadCore(w, renderer.SecretProvidesFromContext(nil), ctx)
+	if err != nil {
+		t.Fatalf("SynthesizeWorkloadCore: %v", err)
+	}
+	goldenCheck(t, "image-annotations-combined", concatBodies(files))
+}
+
 // ----- Category 2 — Multi-container (main + sidecar) -----
 
 func TestSynthesizeWorkload_MultiContainer(t *testing.T) {

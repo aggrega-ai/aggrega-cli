@@ -102,6 +102,35 @@ func TestSynthesizeWorkload_GPUFieldsDegrade(t *testing.T) {
 	goldenCheck(t, "gpu-fields-degrade", files[0].Body)
 }
 
+// TestSynthesizeWorkload_ImageRegistryAnnotation proves the compose engine honors
+// aggrega.ai/image-registry, rewriting the service image under the prefix, and
+// leaves the image untouched when the annotation is absent.
+func TestSynthesizeWorkload_ImageRegistryAnnotation(t *testing.T) {
+	t.Parallel()
+	w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload"}
+	c := types.ContainerSpec{Image: "docker.io/library/postgres:16"}
+	c.Ports.Set("db", 5432)
+	w.Containers.Set("main", c)
+
+	plainFiles, err := SynthesizeWorkloadCore(w, nodeCtxFor("db"))
+	if err != nil {
+		t.Fatalf("SynthesizeWorkloadCore (plain): %v", err)
+	}
+	if plain := string(plainFiles[0].Body); !strings.Contains(plain, "image: docker.io/library/postgres:16") {
+		t.Errorf("absent annotation should leave image unchanged; got:\n%s", plain)
+	}
+
+	ctx := nodeCtxFor("db")
+	ctx.Annotations = map[string]string{rendercore.AnnotationImageRegistry: "reg.internal:5000"}
+	regFiles, err := SynthesizeWorkloadCore(w, ctx)
+	if err != nil {
+		t.Fatalf("SynthesizeWorkloadCore (registry): %v", err)
+	}
+	if reg := string(regFiles[0].Body); !strings.Contains(reg, "image: reg.internal:5000/library/postgres:16") {
+		t.Errorf("image not rewritten under prefix; got:\n%s", reg)
+	}
+}
+
 func TestSynthesizeWorkload_MinimalSingleContainer(t *testing.T) {
 	t.Parallel()
 	w := minimalWorkload()

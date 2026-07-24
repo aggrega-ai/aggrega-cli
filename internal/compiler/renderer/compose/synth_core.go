@@ -186,7 +186,7 @@ func translateContainer(
 	mainServiceName string,
 ) (Service, error) {
 	svc := Service{
-		Image:  c.Image,
+		Image:  rendercore.ApplyImageRegistry(c.Image, rendercore.ImageRegistryFromAnnotations(nodeCtx.Annotations)),
 		Labels: buildAggregaLabels(nodeCtx),
 	}
 
