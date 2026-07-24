@@ -1,0 +1,14 @@
+services:
+  inference:
+    image: vllm:latest
+    labels:
+      aggrega.ai/aggregate-name: test-agg
+      aggrega.ai/boundary-path: default
+      aggrega.ai/compiler-version: test
+      aggrega.ai/component-id: inference
+      aggrega.ai/environment: test-env
+    deploy:
+      resources:
+        limits:
+          cpus: "4"
+          memory: "17179869184"

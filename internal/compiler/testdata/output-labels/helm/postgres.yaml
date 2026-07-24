@@ -16,6 +16,7 @@ spec:
     apiVersion: aggrega.ai/v1alpha1
     kind: Workload
     replicas: {{ optional .infra `replicas` 1 }}
+    runtimeClassName: nvidia
     containers:
       main:
         image: postgres:15
@@ -23,6 +24,13 @@ spec:
           db: 5432
         variables:
           POSTGRES_DB: "{{ .values.database_name }}"
+        resources:
+          limits:
+            cpu: "2"
+            memory: 8Gi
+            nvidia.com/gpu: "1"
+          requests:
+            nvidia.com/gpu: "1"
     services:
       db:
         type: ClusterIP

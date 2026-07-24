@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	"go.yaml.in/yaml/v3"
@@ -64,6 +65,41 @@ func minimalWorkload() *types.Workload {
 	svc.Ports.Set("web", 8080)
 	w.Services.Set("api", svc)
 	return w
+}
+
+// TestSynthesizeWorkload_GPUFieldsDegrade proves the compose degradation
+// contract for the two GPU-only Workload surfaces: cpu/memory still translate to
+// deploy.resources, while extended-resource keys (nvidia.com/gpu) and
+// runtimeClassName have no compose analog and are omitted — silently, matching the
+// existing pod-level-field precedent (scheduling, priorityClassName). No halt.
+func TestSynthesizeWorkload_GPUFieldsDegrade(t *testing.T) {
+	t.Parallel()
+	w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload"}
+	w.RuntimeClassName = "nvidia"
+	c := types.ContainerSpec{Image: "vllm:latest"}
+	c.Ports.Set("http", 8000)
+	limits := &types.ResourceList{CPU: "4", Memory: "16Gi"}
+	limits.Extended.Set("nvidia.com/gpu", "1")
+	requests := &types.ResourceList{}
+	requests.Extended.Set("nvidia.com/gpu", "1")
+	c.Resources = &types.ResourceSpec{Requests: requests, Limits: limits}
+	w.Containers.Set("main", c)
+
+	files, err := SynthesizeWorkloadCore(w, nodeCtxFor("inference"))
+	if err != nil {
+		t.Fatalf("SynthesizeWorkload: %v", err)
+	}
+	body := string(files[0].Body)
+	if strings.Contains(body, "nvidia.com/gpu") {
+		t.Errorf("extended-resource key must be omitted on compose; got:\n%s", body)
+	}
+	if strings.Contains(body, "runtimeClassName") || strings.Contains(body, "nvidia") {
+		t.Errorf("runtimeClassName must be omitted on compose; got:\n%s", body)
+	}
+	if !strings.Contains(body, "cpus:") || !strings.Contains(body, "memory:") {
+		t.Errorf("cpu/memory must still translate to deploy.resources; got:\n%s", body)
+	}
+	goldenCheck(t, "gpu-fields-degrade", files[0].Body)
 }
 
 func TestSynthesizeWorkload_MinimalSingleContainer(t *testing.T) {

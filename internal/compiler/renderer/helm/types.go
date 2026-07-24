@@ -183,6 +183,7 @@ type PodSpec struct {
 	ServiceAccountName            string                 `yaml:"serviceAccountName,omitempty"`
 	ImagePullSecrets              []LocalObjectReference `yaml:"imagePullSecrets,omitempty"`
 	PriorityClassName             string                 `yaml:"priorityClassName,omitempty"`
+	RuntimeClassName              string                 `yaml:"runtimeClassName,omitempty"`
 	TerminationGracePeriodSeconds *int64                 `yaml:"terminationGracePeriodSeconds,omitempty"`
 	DNSPolicy                     string                 `yaml:"dnsPolicy,omitempty"`
 	DNSConfig                     *PodDNSConfig          `yaml:"dnsConfig,omitempty"`

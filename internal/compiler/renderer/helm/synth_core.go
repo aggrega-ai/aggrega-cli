@@ -569,6 +569,9 @@ func translateResources(r *types.ResourceSpec) *ResourceRequirements {
 		if r.Requests.Memory != "" {
 			out.Requests["memory"] = r.Requests.Memory
 		}
+		for k, v := range r.Requests.Extended.All() {
+			out.Requests[k] = v
+		}
 	}
 	if r.Limits != nil {
 		out.Limits = make(map[string]string)
@@ -577,6 +580,9 @@ func translateResources(r *types.ResourceSpec) *ResourceRequirements {
 		}
 		if r.Limits.Memory != "" {
 			out.Limits["memory"] = r.Limits.Memory
+		}
+		for k, v := range r.Limits.Extended.All() {
+			out.Limits[k] = v
 		}
 	}
 	return out
@@ -942,6 +948,7 @@ func applyPodLevelFields(spec *PodSpec, w *types.Workload) {
 		spec.ImagePullSecrets = append(spec.ImagePullSecrets, LocalObjectReference{Name: name})
 	}
 	spec.PriorityClassName = w.PriorityClassName
+	spec.RuntimeClassName = w.RuntimeClassName
 	if w.TerminationGracePeriodSeconds != nil {
 		v := int64(*w.TerminationGracePeriodSeconds)
 		spec.TerminationGracePeriodSeconds = &v

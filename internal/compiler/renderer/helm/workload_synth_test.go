@@ -106,6 +106,40 @@ func TestSynthesizeWorkload_MinimalDeploymentClusterIP(t *testing.T) {
 	goldenCheck(t, "minimal-deployment-clusterip", concat)
 }
 
+// ----- GPU — extended-resource limit + runtimeClassName -----
+
+func TestSynthesizeWorkload_GPUExtendedResourceAndRuntimeClass(t *testing.T) {
+	t.Parallel()
+	w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload"}
+	w.RuntimeClassName = "nvidia"
+
+	c := types.ContainerSpec{Image: "vllm:latest"}
+	c.Ports.Set("http", 8000)
+	limits := &types.ResourceList{CPU: "4", Memory: "16Gi"}
+	limits.Extended.Set("nvidia.com/gpu", "1")
+	requests := &types.ResourceList{}
+	requests.Extended.Set("nvidia.com/gpu", "1")
+	c.Resources = &types.ResourceSpec{Requests: requests, Limits: limits}
+	w.Containers.Set("main", c)
+
+	svc := types.ServiceSpec{Type: "ClusterIP"}
+	svc.Ports.Set("http", 8000)
+	w.Services.Set("api", svc)
+
+	files, err := SynthesizeWorkloadCore(w, renderer.SecretProvidesFromContext(nil), nodeCtxFor("inference"))
+	if err != nil {
+		t.Fatalf("SynthesizeWorkload: %v", err)
+	}
+	body := string(files[0].Body)
+	if !strings.Contains(body, "nvidia.com/gpu:") {
+		t.Errorf("Deployment must carry the extended-resource key; got:\n%s", body)
+	}
+	if !strings.Contains(body, "runtimeClassName: nvidia") {
+		t.Errorf("pod spec must carry runtimeClassName: nvidia; got:\n%s", body)
+	}
+	goldenCheck(t, "gpu-extended-resource-runtimeclass", concatBodies(files))
+}
+
 // concatBodies concatenates EmittedFile bodies in their author order.
 // Tests gold-check the full concatenation so a single golden file covers
 // every emitted resource for a given Workload.

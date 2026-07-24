@@ -152,3 +152,30 @@ func TestOutputLabels_Deterministic(t *testing.T) {
 	t.Parallel()
 	pipelinetest.AssertDeterministic(t, helmSynthesizedOutputLabelsInput())
 }
+
+// TestGPUSynthesis_ExtendedResourceAndRuntimeClass_E2E proves the full build
+// pipeline — including the host→guest render boundary where the Workload crosses
+// the codec as a WorkloadProjection — carries a container's extended-resource
+// limit (nvidia.com/gpu) and the pod-level runtimeClassName all the way into the
+// rendered helm Deployment. This is the end-to-end proof that the schema
+// relaxation, the pkg/types codec, and the helm synth wiring compose correctly
+// through the real guest, not only in isolation.
+func TestGPUSynthesis_ExtendedResourceAndRuntimeClass_E2E(t *testing.T) {
+	t.Parallel()
+	res := pipelinetest.Build(t, helmSynthesizedOutputLabelsInput())
+
+	dep, path := findFile(res.Artifacts, "dist/data/", "deployment")
+	if dep == "" {
+		t.Fatalf("data deployment not found; files: %v", sortedKeys(res.Artifacts))
+	}
+	if !strings.Contains(dep, "nvidia.com/gpu: \"1\"") {
+		t.Errorf("rendered Deployment must carry the extended-resource limit nvidia.com/gpu: \"1\" in %s:\n%s", path, dep)
+	}
+	if !strings.Contains(dep, "runtimeClassName: nvidia") {
+		t.Errorf("rendered Deployment pod spec must carry runtimeClassName: nvidia in %s:\n%s", path, dep)
+	}
+	// The named quantities still translate alongside the extended key.
+	if !strings.Contains(dep, "cpu: \"2\"") || !strings.Contains(dep, "memory: 8Gi") {
+		t.Errorf("cpu/memory must survive alongside the extended key in %s:\n%s", path, dep)
+	}
+}

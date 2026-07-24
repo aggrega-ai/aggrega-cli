@@ -19,6 +19,15 @@
 
 package types
 
+import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"io"
+
+	"go.yaml.in/yaml/v3"
+)
+
 // Workload is the platform-owned synthesisable deployment unit.
 type Workload struct {
 	APIVersion string           `json:"apiVersion" yaml:"apiVersion"`
@@ -44,12 +53,19 @@ type Workload struct {
 	Scheduling         *Scheduling               `json:"scheduling,omitempty" yaml:"scheduling,omitempty"`
 	PodSecurityContext *PodSecurityContext       `json:"podSecurityContext,omitempty" yaml:"podSecurityContext,omitempty"`
 	ServiceAccount     string                    `json:"serviceAccount,omitempty" yaml:"serviceAccount,omitempty"`
-	// Pod-level fields. imagePullSecrets, priorityClassName, and dnsPolicy are
-	// helm-only (compose has no in-file analog and omits them, documented on
-	// the schema). terminationGracePeriodSeconds, dnsConfig, and hostAliases
-	// map to compose stop_grace_period, dns/dns_search, and extra_hosts.
-	ImagePullSecrets              []string    `json:"imagePullSecrets,omitempty" yaml:"imagePullSecrets,omitempty"`
-	PriorityClassName             string      `json:"priorityClassName,omitempty" yaml:"priorityClassName,omitempty"`
+	// Pod-level fields. imagePullSecrets, priorityClassName, runtimeClassName,
+	// and dnsPolicy are helm-only (compose has no in-file analog and omits them,
+	// documented on the schema). terminationGracePeriodSeconds, dnsConfig, and
+	// hostAliases map to compose stop_grace_period, dns/dns_search, and
+	// extra_hosts.
+	ImagePullSecrets  []string `json:"imagePullSecrets,omitempty" yaml:"imagePullSecrets,omitempty"`
+	PriorityClassName string   `json:"priorityClassName,omitempty" yaml:"priorityClassName,omitempty"`
+	// RuntimeClassName selects the container runtime the workload runs under (for
+	// example a GPU-enabled runtime such as "nvidia"). The name is piped through
+	// verbatim; the cluster resolves it to a configured RuntimeClass at schedule
+	// time. helm emits pod.runtimeClassName; compose has no runtime-class analog
+	// and omits it. Compute-only: not permitted on a reference workload.
+	RuntimeClassName              string      `json:"runtimeClassName,omitempty" yaml:"runtimeClassName,omitempty"`
 	TerminationGracePeriodSeconds *int        `json:"terminationGracePeriodSeconds,omitempty" yaml:"terminationGracePeriodSeconds,omitempty"`
 	DNSPolicy                     string      `json:"dnsPolicy,omitempty" yaml:"dnsPolicy,omitempty"`
 	DNSConfig                     *DNSConfig  `json:"dnsConfig,omitempty" yaml:"dnsConfig,omitempty"`
@@ -228,10 +244,173 @@ type ResourceSpec struct {
 	Limits   *ResourceList `json:"limits,omitempty" yaml:"limits,omitempty"`
 }
 
-// ResourceList — CPU and memory as Kubernetes-shaped quantity strings.
+// ResourceList carries Kubernetes-shaped resource quantities: the named cpu and
+// memory quantities, plus vendor/domain-scoped extended-resource quantities (for
+// example nvidia.com/gpu) routed into Extended. Extended holds the fully-qualified
+// <domain>/<name> extended-resource names the schema admits alongside cpu and
+// memory, in author order; every quantity is a string piped through verbatim.
+//
+// The custom yaml and json codecs are load-bearing. A workload crosses two decode
+// surfaces — a yaml.Unmarshal at recipe parse and an encoding/json round-trip when
+// the render payload carries the workload projection — and encoding/json has no
+// inline-map support, so an inline map would be dropped on the json crossing. Both
+// surfaces are handled explicitly here, routing cpu and memory to the typed fields
+// and every other key into Extended. A ResourceList with no extended keys emits
+// cpu then memory, byte-identical to a plain two-field struct.
 type ResourceList struct {
-	CPU    string `json:"cpu,omitempty" yaml:"cpu,omitempty"`
-	Memory string `json:"memory,omitempty" yaml:"memory,omitempty"`
+	CPU      string             `json:"cpu,omitempty" yaml:"cpu,omitempty"`
+	Memory   string             `json:"memory,omitempty" yaml:"memory,omitempty"`
+	Extended OrderedMap[string] `json:"-" yaml:"-"`
+}
+
+// UnmarshalYAML decodes a mapping node, routing cpu and memory to the typed
+// fields and every other key into Extended preserving author order.
+func (r *ResourceList) UnmarshalYAML(node *yaml.Node) error {
+	if node.Kind != yaml.MappingNode {
+		return fmt.Errorf("ResourceList: expected mapping node, got kind %d at line %d", node.Kind, node.Line)
+	}
+	for i := 0; i < len(node.Content); i += 2 {
+		keyNode, valNode := node.Content[i], node.Content[i+1]
+		var key string
+		if err := keyNode.Decode(&key); err != nil {
+			return fmt.Errorf("ResourceList: decoding key at line %d: %w", keyNode.Line, err)
+		}
+		var val string
+		if err := valNode.Decode(&val); err != nil {
+			return fmt.Errorf("ResourceList.%s at line %d: %w", key, valNode.Line, err)
+		}
+		switch key {
+		case "cpu":
+			r.CPU = val
+		case "memory":
+			r.Memory = val
+		default:
+			r.Extended.Set(key, val)
+		}
+	}
+	return nil
+}
+
+// UnmarshalJSON decodes a JSON object with the same dispatch as UnmarshalYAML,
+// using a streaming decoder so extended keys survive the render-payload json
+// crossing (encoding/json's default object decode would drop keys with no
+// matching struct field).
+func (r *ResourceList) UnmarshalJSON(data []byte) error {
+	if bytes.Equal(bytes.TrimSpace(data), []byte("null")) {
+		return nil
+	}
+	dec := json.NewDecoder(bytes.NewReader(data))
+	tok, err := dec.Token()
+	if err != nil {
+		return fmt.Errorf("ResourceList: reading JSON opening token: %w", err)
+	}
+	if delim, ok := tok.(json.Delim); !ok || delim != '{' {
+		return fmt.Errorf("ResourceList: expected JSON object, got token %v", tok)
+	}
+	for dec.More() {
+		keyTok, err := dec.Token()
+		if err != nil {
+			return fmt.Errorf("ResourceList: reading JSON key: %w", err)
+		}
+		key, ok := keyTok.(string)
+		if !ok {
+			return fmt.Errorf("ResourceList: expected string key, got token %v", keyTok)
+		}
+		var val string
+		if err := dec.Decode(&val); err != nil {
+			return fmt.Errorf("ResourceList.%s: %w", key, err)
+		}
+		switch key {
+		case "cpu":
+			r.CPU = val
+		case "memory":
+			r.Memory = val
+		default:
+			r.Extended.Set(key, val)
+		}
+	}
+	if _, err := dec.Token(); err != nil && err != io.EOF {
+		return fmt.Errorf("ResourceList: reading JSON closing token: %w", err)
+	}
+	return nil
+}
+
+// MarshalYAML emits a mapping node with cpu then memory (when non-empty) followed
+// by Extended entries in author order. Value receiver matches OrderedMap's
+// dispatch rationale — yaml.v3 sees value-receiver methods regardless of
+// addressability.
+func (r ResourceList) MarshalYAML() (any, error) {
+	out := &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
+	addPair := func(k, v string) error {
+		keyNode := &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: k}
+		valNode := &yaml.Node{}
+		if err := valNode.Encode(v); err != nil {
+			return fmt.Errorf("ResourceList: encoding value for key %q: %w", k, err)
+		}
+		out.Content = append(out.Content, keyNode, valNode)
+		return nil
+	}
+	if r.CPU != "" {
+		if err := addPair("cpu", r.CPU); err != nil {
+			return nil, err
+		}
+	}
+	if r.Memory != "" {
+		if err := addPair("memory", r.Memory); err != nil {
+			return nil, err
+		}
+	}
+	for k, v := range r.Extended.All() {
+		if err := addPair(k, v); err != nil {
+			return nil, err
+		}
+	}
+	return out, nil
+}
+
+// MarshalJSON emits a JSON object preserving the same emission order as
+// MarshalYAML — cpu then memory (when non-empty), then Extended entries in author
+// order. Builds the object manually because encoding/json does not expose map-key
+// ordering control.
+func (r ResourceList) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	buf.WriteByte('{')
+	first := true
+	addPair := func(k, v string) error {
+		if !first {
+			buf.WriteByte(',')
+		}
+		first = false
+		kb, err := json.Marshal(k)
+		if err != nil {
+			return fmt.Errorf("ResourceList: encoding JSON key %q: %w", k, err)
+		}
+		buf.Write(kb)
+		buf.WriteByte(':')
+		vb, err := json.Marshal(v)
+		if err != nil {
+			return fmt.Errorf("ResourceList: encoding JSON value for key %q: %w", k, err)
+		}
+		buf.Write(vb)
+		return nil
+	}
+	if r.CPU != "" {
+		if err := addPair("cpu", r.CPU); err != nil {
+			return nil, err
+		}
+	}
+	if r.Memory != "" {
+		if err := addPair("memory", r.Memory); err != nil {
+			return nil, err
+		}
+	}
+	for k, v := range r.Extended.All() {
+		if err := addPair(k, v); err != nil {
+			return nil, err
+		}
+	}
+	buf.WriteByte('}')
+	return buf.Bytes(), nil
 }
 
 // HealthSpec carries readiness, liveness, and startup probes.

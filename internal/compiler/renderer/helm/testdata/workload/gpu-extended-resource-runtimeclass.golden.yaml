@@ -1,0 +1,64 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: inference
+  labels:
+    aggrega.ai/aggregate-name: test-agg
+    aggrega.ai/compiler-version: test
+    aggrega.ai/component-id: inference
+    aggrega.ai/environment: test-env
+    app: inference
+    app.kubernetes.io/name: inference
+  annotations:
+    aggrega.ai/boundary-path: default
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: inference
+  template:
+    metadata:
+      name: ""
+      labels:
+        aggrega.ai/aggregate-name: test-agg
+        aggrega.ai/compiler-version: test
+        aggrega.ai/component-id: inference
+        aggrega.ai/environment: test-env
+        app: inference
+        app.kubernetes.io/name: inference
+    spec:
+      containers:
+        - name: main
+          image: vllm:latest
+          ports:
+            - name: http
+              containerPort: 8000
+          resources:
+            requests:
+              nvidia.com/gpu: "1"
+            limits:
+              cpu: "4"
+              memory: 16Gi
+              nvidia.com/gpu: "1"
+      runtimeClassName: nvidia
+apiVersion: v1
+kind: Service
+metadata:
+  name: inference-api
+  labels:
+    aggrega.ai/aggregate-name: test-agg
+    aggrega.ai/compiler-version: test
+    aggrega.ai/component-id: inference
+    aggrega.ai/environment: test-env
+    app: inference
+    app.kubernetes.io/name: inference
+  annotations:
+    aggrega.ai/boundary-path: default
+spec:
+  type: ClusterIP
+  selector:
+    app: inference
+  ports:
+    - name: http
+      port: 8000
+      targetPort: http
