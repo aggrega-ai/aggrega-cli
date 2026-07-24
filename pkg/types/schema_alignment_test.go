@@ -215,6 +215,13 @@ func alignmentCases() []alignmentCase {
 			maximal:    maximalMappingLibrary(),
 		},
 		{
+			kind:       envelope.KindWorkloadLibrary,
+			schema:     schemas.WorkloadLibraryV1alpha1,
+			roots:      []reflect.Type{reflect.TypeOf(types.WorkloadLibrary{})},
+			exceptions: map[string]string{},
+			maximal:    maximalWorkloadLibrary(),
+		},
+		{
 			kind:   envelope.KindAggregate,
 			schema: schemas.AggregateV1alpha1,
 			// ParameterContract folded in: Aggregate.Spec.Parameters is

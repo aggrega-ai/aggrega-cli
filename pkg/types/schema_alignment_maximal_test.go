@@ -207,6 +207,17 @@ func maximalMappingLibrary() types.MappingLibrary {
 	}
 }
 
+func maximalWorkloadLibrary() types.WorkloadLibrary {
+	return types.WorkloadLibrary{
+		APIVersion: "aggrega.ai/v1alpha1",
+		Kind:       "WorkloadLibrary",
+		Metadata:   types.WorkloadLibraryMetadata{Name: "BaseWorkloads", Version: "1.0.0"},
+		Spec: types.WorkloadLibrarySpec{
+			Workloads: om[types.WorkloadEntry]("Frag", types.WorkloadEntry{Body: "apiVersion: aggrega.ai/v1alpha1\nkind: Workload"}),
+		},
+	}
+}
+
 func maximalAggregate() types.Aggregate {
 	return types.Aggregate{
 		APIVersion: "aggrega.ai/v1alpha1",
