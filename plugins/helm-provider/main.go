@@ -270,8 +270,8 @@ func placeArtifactsFromInput(in rendercore.RenderNodeInput) (rendercore.RenderNo
 }
 
 // mergeAnnotations flattens the three render-context annotation buckets
-// into the single merged map the helm engine reads (for the namespace
-// annotation). Later buckets win on key collision, matching the
+// into the single merged map the helm engine reads for the well-known
+// aggrega.ai/* annotations. Later buckets win on key collision, matching the
 // aggregate-then-release-then-catalog precedence.
 func mergeAnnotations(a renderctx.RenderAnnotations) map[string]string {
 	out := map[string]string{}

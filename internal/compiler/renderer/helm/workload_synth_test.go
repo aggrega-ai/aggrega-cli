@@ -151,6 +151,118 @@ func concatBodies(files []renderer.EmittedFile) []byte {
 	return out
 }
 
+// nodeCtxWithAnnotations returns a minimal NodeRenderContext carrying the given
+// merged per-node annotations — the same map the provider plugin fills from the
+// IR's aggregate/release/catalog buckets.
+func nodeCtxWithAnnotations(nodeID string, ann map[string]string) renderer.NodeRenderContext {
+	ctx := nodeCtxFor(nodeID)
+	ctx.Annotations = ann
+	return ctx
+}
+
+// saWorkload builds a single-container Workload exposing one ClusterIP service,
+// with Workload.ServiceAccount set to field (empty leaves it unset).
+func saWorkload(field string) *types.Workload {
+	w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload"}
+	c := types.ContainerSpec{Image: "app:1.0"}
+	c.Ports.Set("web", 8080)
+	w.Containers.Set("main", c)
+	svc := types.ServiceSpec{Type: "ClusterIP"}
+	svc.Ports.Set("web", 8080)
+	w.Services.Set("api", svc)
+	if field != "" {
+		w.ServiceAccount = field
+	}
+	return w
+}
+
+// TestSynthesizeWorkload_ServiceAccountPrecedence proves the four combinations
+// of the recipe-layer workload.serviceAccount field and the operator-boundary
+// aggrega.ai/service-account annotation. The annotation wins when both are set.
+func TestSynthesizeWorkload_ServiceAccountPrecedence(t *testing.T) {
+	t.Parallel()
+	const annKey = rendercore.AnnotationServiceAccount
+	cases := []struct {
+		name   string
+		field  string
+		annVal string
+		wantSA string // "" means serviceAccountName must be absent
+	}{
+		{name: "neither", field: "", annVal: "", wantSA: ""},
+		{name: "field-only", field: "recipe-sa", annVal: "", wantSA: "recipe-sa"},
+		{name: "annotation-only", field: "", annVal: "op-sa", wantSA: "op-sa"},
+		{name: "both-annotation-wins", field: "recipe-sa", annVal: "op-sa", wantSA: "op-sa"},
+	}
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			var ann map[string]string
+			if tc.annVal != "" {
+				ann = map[string]string{annKey: tc.annVal}
+			}
+			files, err := SynthesizeWorkloadCore(
+				saWorkload(tc.field),
+				renderer.SecretProvidesFromContext(nil),
+				nodeCtxWithAnnotations("api", ann),
+			)
+			if err != nil {
+				t.Fatalf("SynthesizeWorkloadCore: %v", err)
+			}
+			got := string(concatBodies(files))
+			if tc.wantSA == "" {
+				if strings.Contains(got, "serviceAccountName") {
+					t.Errorf("expected no serviceAccountName, got:\n%s", got)
+				}
+				return
+			}
+			want := "serviceAccountName: " + tc.wantSA
+			if !strings.Contains(got, want) {
+				t.Errorf("expected %q in output, got:\n%s", want, got)
+			}
+		})
+	}
+}
+
+func TestServiceAccountFromAnnotations(t *testing.T) {
+	t.Parallel()
+	if got := rendercore.ServiceAccountFromAnnotations(nil); got != "" {
+		t.Errorf("nil map: want %q, got %q", "", got)
+	}
+	if got := rendercore.ServiceAccountFromAnnotations(map[string]string{}); got != "" {
+		t.Errorf("empty map: want %q, got %q", "", got)
+	}
+	if got := rendercore.ServiceAccountFromAnnotations(map[string]string{rendercore.AnnotationServiceAccount: "op-sa"}); got != "op-sa" {
+		t.Errorf("present: want %q, got %q", "op-sa", got)
+	}
+}
+
+// TestSynthesizeWorkload_ServiceAccountAnnotation gold-checks the full rendered
+// Deployment when only the operator-boundary aggrega.ai/service-account
+// annotation is set (no recipe workload.serviceAccount).
+func TestSynthesizeWorkload_ServiceAccountAnnotation(t *testing.T) {
+	t.Parallel()
+	ctx := nodeCtxWithAnnotations("api", map[string]string{rendercore.AnnotationServiceAccount: "op-sa"})
+	files, err := SynthesizeWorkloadCore(saWorkload(""), renderer.SecretProvidesFromContext(nil), ctx)
+	if err != nil {
+		t.Fatalf("SynthesizeWorkloadCore: %v", err)
+	}
+	goldenCheck(t, "service-account-annotation", concatBodies(files))
+}
+
+// TestSynthesizeWorkload_ServiceAccountAnnotationWinsOverField gold-checks that
+// when both the annotation and the recipe field are set, the rendered
+// serviceAccountName is the annotation value (precedence, proven at render).
+func TestSynthesizeWorkload_ServiceAccountAnnotationWinsOverField(t *testing.T) {
+	t.Parallel()
+	ctx := nodeCtxWithAnnotations("api", map[string]string{rendercore.AnnotationServiceAccount: "op-sa"})
+	files, err := SynthesizeWorkloadCore(saWorkload("recipe-sa"), renderer.SecretProvidesFromContext(nil), ctx)
+	if err != nil {
+		t.Fatalf("SynthesizeWorkloadCore: %v", err)
+	}
+	goldenCheck(t, "service-account-annotation-wins", concatBodies(files))
+}
+
 // ----- Category 2 — Multi-container (main + sidecar) -----
 
 func TestSynthesizeWorkload_MultiContainer(t *testing.T) {

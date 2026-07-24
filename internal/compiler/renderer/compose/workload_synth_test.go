@@ -545,9 +545,9 @@ func TestSynthesizeWorkload_PodLevelFields(t *testing.T) {
 	w := &types.Workload{
 		APIVersion:                    "aggrega.ai/v1alpha1",
 		Kind:                          "Workload",
-		ImagePullSecrets:              []string{"regcred"},   // helm-only; omitted on compose
-		PriorityClassName:             "high-priority",       // helm-only; omitted on compose
-		DNSPolicy:                     "None",                // helm-only; omitted on compose
+		ImagePullSecrets:              []string{"regcred"}, // helm-only; omitted on compose
+		PriorityClassName:             "high-priority",     // helm-only; omitted on compose
+		DNSPolicy:                     "None",              // helm-only; omitted on compose
 		TerminationGracePeriodSeconds: &grace,
 		DNSConfig: &types.DNSConfig{
 			Nameservers: []string{"1.1.1.1", "8.8.8.8"},
@@ -602,5 +602,29 @@ func TestSynthesizeWorkload_EndpointRequiresReferenceForm(t *testing.T) {
 	_, err := SynthesizeWorkloadCore(w, nodeCtxFor("x"))
 	if !errors.Is(err, rendercore.ErrEndpointRequiresReferenceForm) {
 		t.Errorf("expected ErrEndpointRequiresReferenceForm, got %v", err)
+	}
+}
+
+// TestSynthesizeWorkload_ServiceAccountAnnotationNoOp proves the K8s-only
+// aggrega.ai/service-account annotation is a silent no-op on compose: a compose
+// render of a Workload carrying the annotation is byte-identical to the same
+// Workload without it. Compose has no ServiceAccount concept.
+func TestSynthesizeWorkload_ServiceAccountAnnotationNoOp(t *testing.T) {
+	t.Parallel()
+	base, err := SynthesizeWorkloadCore(minimalWorkload(), nodeCtxFor("api"))
+	if err != nil {
+		t.Fatalf("SynthesizeWorkloadCore (no annotation): %v", err)
+	}
+	ctx := nodeCtxFor("api")
+	ctx.Annotations = map[string]string{rendercore.AnnotationServiceAccount: "op-sa"}
+	withAnn, err := SynthesizeWorkloadCore(minimalWorkload(), ctx)
+	if err != nil {
+		t.Fatalf("SynthesizeWorkloadCore (with annotation): %v", err)
+	}
+	if string(base[0].Body) != string(withAnn[0].Body) {
+		t.Errorf("compose output changed with the service-account annotation; must be a no-op\n--- without ---\n%s\n--- with ---\n%s", base[0].Body, withAnn[0].Body)
+	}
+	if strings.Contains(string(withAnn[0].Body), "op-sa") {
+		t.Errorf("compose output leaked the service-account value:\n%s", withAnn[0].Body)
 	}
 }

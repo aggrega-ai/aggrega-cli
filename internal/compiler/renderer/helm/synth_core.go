@@ -121,6 +121,7 @@ func SynthesizeWorkloadCore(
 	resourceLabels := mergeLabels(selectorLabels, labels)
 	resourceAnnotations := nilIfEmpty(annotations)
 	namespace := rendercore.NamespaceFromAnnotations(nodeCtx.Annotations)
+	saAnnotation := rendercore.ServiceAccountFromAnnotations(nodeCtx.Annotations)
 
 	var out []rendercore.EmittedFile
 
@@ -144,7 +145,7 @@ func SynthesizeWorkloadCore(
 		InitContainers: initContainers,
 		Volumes:        podVolumes,
 	}
-	applyPodLevelFields(&podSpec, w)
+	applyPodLevelFields(&podSpec, w, saAnnotation)
 
 	template := PodTemplateSpec{
 		Metadata: ObjectMeta{Labels: resourceLabels},
@@ -926,7 +927,11 @@ func translateServiceType(t string) string {
 // applyPodLevelFields populates pod-level configuration on a PodSpec from
 // Workload.Scheduling, Workload.PodSecurityContext, Workload.ServiceAccount.
 // Container-level restartPolicy bubbles up to pod-level when set.
-func applyPodLevelFields(spec *PodSpec, w *types.Workload) {
+//
+// saAnnotation is the resolved aggrega.ai/service-account value (empty when
+// unset). When present it wins over Workload.ServiceAccount: the operator's
+// boundary-layer directive overrides the recipe author's default.
+func applyPodLevelFields(spec *PodSpec, w *types.Workload, saAnnotation string) {
 	if w.Scheduling != nil {
 		spec.NodeSelector = w.Scheduling.NodeSelector
 		spec.Affinity = w.Scheduling.Affinity
@@ -941,8 +946,15 @@ func applyPodLevelFields(spec *PodSpec, w *types.Workload) {
 			SupplementalGroups: intsToInt64s(w.PodSecurityContext.SupplementalGroups),
 		}
 	}
-	if w.ServiceAccount != "" {
-		spec.ServiceAccountName = w.ServiceAccount
+	// ServiceAccount precedence, resolved in exactly one place: the
+	// aggrega.ai/service-account annotation (operator boundary) wins over the
+	// recipe-layer workload.serviceAccount field when both are set.
+	sa := w.ServiceAccount
+	if saAnnotation != "" {
+		sa = saAnnotation
+	}
+	if sa != "" {
+		spec.ServiceAccountName = sa
 	}
 	for _, name := range w.ImagePullSecrets {
 		spec.ImagePullSecrets = append(spec.ImagePullSecrets, LocalObjectReference{Name: name})
