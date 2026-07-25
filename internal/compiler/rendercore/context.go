@@ -74,15 +74,15 @@ type NodeRenderContext struct {
 	// so byte-identity of rendered files is independent of whether a sink is
 	// attached. Host-only: it is not part of any wire projection sent to a guest.
 	WarningSink func(string)
-	// DegradationSink, when non-nil, receives the target-degradation advisories a
+	// UnsupportedFieldSink, when non-nil, receives the unsupported-field advisories a
 	// provider engine raises while rendering this node — the structured
 	// warning-severity diagnostics reporting an authored field the target could
 	// not honor. It is routed separately from WarningSink so a display surface can
-	// suppress the degradation class alone by its stable code while other render
+	// suppress the unsupported-field class alone by its stable code while other render
 	// warnings still surface, and so the structured diagnostics stay
 	// machine-matchable downstream. Like WarningSink it never affects emitted
 	// bytes and is host-only: not part of any wire projection sent to a guest.
-	DegradationSink func(renderctx.Diagnostic)
+	UnsupportedFieldSink func(renderctx.Diagnostic)
 }
 
 // ProvenanceContext carries build identity for resource labels.

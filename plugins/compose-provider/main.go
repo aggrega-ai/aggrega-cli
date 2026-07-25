@@ -348,7 +348,7 @@ func renderSynthFromInput(in rendercore.RenderNodeInput) (rendercore.RenderNodeO
 	for _, f := range emitted {
 		out.Files = append(out.Files, rendercore.RenderedFile{Path: f.Name, Content: f.Body})
 	}
-	// The synth core's degradation warnings ride back out-of-band; the host
+	// The synth core's unsupported-field warnings ride back out-of-band; the host
 	// folds RenderNodeOutput.Diagnostics into the build/lint warning stream and
 	// they never affect the rendered bytes.
 	out.Diagnostics = append(out.Diagnostics, diags...)

@@ -555,18 +555,18 @@ func (e *Engine) surfaceNodeDiagnostics(nodeCtx renderer.NodeRenderContext, diag
 			errs = append(errs, d.Message)
 			continue
 		}
-		// Target-degradation advisories route to the structured degradation sink
+		// Unsupported-field advisories route to the structured unsupported-field sink
 		// (when one is attached), enriched with the node and provider so the
 		// display and downstream consumers keep attribution. This keeps the class
 		// separately suppressible by its stable code while other advisories flow to
-		// the free-form warning sink unchanged. When no degradation sink is
+		// the free-form warning sink unchanged. When no unsupported-field sink is
 		// attached the class falls through to the warning sink, so it never goes
 		// silent.
-		if d.Code == renderer.TargetDegradationCode && nodeCtx.DegradationSink != nil {
+		if d.Code == renderer.UnsupportedFieldCode && nodeCtx.UnsupportedFieldSink != nil {
 			if d.Location == nil {
 				d.Location = &renderer.DiagnosticLocation{URI: nodeCtx.NodeID, Kind: nodeCtx.ProviderName}
 			}
-			nodeCtx.DegradationSink(d)
+			nodeCtx.UnsupportedFieldSink(d)
 			continue
 		}
 		if nodeCtx.WarningSink != nil {

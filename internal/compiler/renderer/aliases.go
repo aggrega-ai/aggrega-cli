@@ -11,10 +11,10 @@ import rendercore "github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercor
 // package's own references — and its exported surface — pointing at the single
 // definition in rendercore rather than a second copy.
 
-// TargetDegradationCode re-exports the stable code carried by every
-// target-degradation diagnostic, so the render orchestration package and its
+// UnsupportedFieldCode re-exports the stable code carried by every
+// unsupported-field diagnostic, so the render orchestration package and its
 // display consumers match the class by the single definition in rendercore.
-const TargetDegradationCode = rendercore.TargetDegradationCode
+const UnsupportedFieldCode = rendercore.UnsupportedFieldCode
 
 // Wire types of the provider-render socket.
 type (

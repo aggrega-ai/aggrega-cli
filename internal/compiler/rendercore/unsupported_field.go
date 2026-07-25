@@ -9,13 +9,13 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderctx"
 )
 
-// TargetDegradationCode is the stable, machine-matchable code carried by every
+// UnsupportedFieldCode is the stable, machine-matchable code carried by every
 // diagnostic a render target emits when it cannot honor an authored Workload
-// field. Both the full-omission and partial-degradation diagnostics share this
+// field. Both the full-omission and partial-support diagnostics share this
 // one code so a single display filter can suppress the whole class. It is the
 // key the build and lint suppress flag matches on; it is independent of the
 // human-readable message text.
-const TargetDegradationCode = "target-degradation"
+const UnsupportedFieldCode = "unsupported-field"
 
 // UnsupportedFieldDiagnostic builds the warning a render target emits when it
 // cannot express an authored Workload field at all and drops it from the output.
@@ -27,25 +27,25 @@ const TargetDegradationCode = "target-degradation"
 func UnsupportedFieldDiagnostic(target, field string) renderctx.Diagnostic {
 	return renderctx.Diagnostic{
 		Severity:  "warning",
-		Code:      TargetDegradationCode,
+		Code:      UnsupportedFieldCode,
 		SourceRef: field,
 		Message:   fmt.Sprintf("target %q does not support %s and omitted it", target, field),
 	}
 }
 
-// PartialDegradationDiagnostic builds the warning a render target emits when it
+// PartialSupportDiagnostic builds the warning a render target emits when it
 // can express an authored Workload field only in a reduced form rather than
 // dropping it outright. target is the target's user-facing name; field is the
-// authored schema field name; degradesTo describes, in user-facing terms, what
+// authored schema field name; reducedTo describes, in user-facing terms, what
 // the field becomes in the target (for example "per-replica volume templating is
 // not available and the volume degrades to a shared persistent volume"). It
-// shares TargetDegradationCode with the full-omission diagnostic so the same
+// shares UnsupportedFieldCode with the full-omission diagnostic so the same
 // suppress filter covers both, and is likewise warning-severity and out-of-band.
-func PartialDegradationDiagnostic(target, field, degradesTo string) renderctx.Diagnostic {
+func PartialSupportDiagnostic(target, field, reducedTo string) renderctx.Diagnostic {
 	return renderctx.Diagnostic{
 		Severity:  "warning",
-		Code:      TargetDegradationCode,
+		Code:      UnsupportedFieldCode,
 		SourceRef: field,
-		Message:   fmt.Sprintf("target %q does not fully support %s; %s", target, field, degradesTo),
+		Message:   fmt.Sprintf("target %q does not fully support %s; %s", target, field, reducedTo),
 	}
 }

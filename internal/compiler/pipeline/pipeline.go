@@ -196,29 +196,29 @@ type Options struct {
 	// with the pass.
 	PluginCompileRunning func()
 
-	// SuppressDegradationWarnings, when true, silences the target-degradation
+	// SuppressUnsupportedFieldWarnings, when true, silences the unsupported-field
 	// warning class on the render-warning surface — the per-authored-field notices
 	// a lower-fidelity target emits for fields it cannot honor. Other render
 	// warnings still surface. It is a pure display filter over structured
 	// diagnostics carried out-of-band; it never re-renders and never changes the
 	// emitted bytes. Left false — the default — the class surfaces.
-	SuppressDegradationWarnings bool
+	SuppressUnsupportedFieldWarnings bool
 }
 
 // emitRenderWarnings writes the render step's advisory warnings to w: first the
-// free-form warning stream, then — unless suppressDegradation is set — the
-// structured target-degradation class, each degradation entry attributed to its
-// node and provider from its location. Suppression drops the degradation class
+// free-form warning stream, then — unless suppressUnsupportedFields is set — the
+// structured unsupported-field class, each entry attributed to its
+// node and provider from its location. Suppression drops that class
 // alone; the free-form warnings always surface. This is a pure display pass over
 // out-of-band diagnostics and never touches the rendered bytes.
-func emitRenderWarnings(w io.Writer, result *renderer.RenderResult, suppressDegradation bool) {
+func emitRenderWarnings(w io.Writer, result *renderer.RenderResult, suppressUnsupportedFields bool) {
 	for _, warning := range result.Warnings {
 		fmt.Fprintf(w, "  warning: %s\n", warning)
 	}
-	if suppressDegradation {
+	if suppressUnsupportedFields {
 		return
 	}
-	for _, d := range result.DegradationWarnings {
+	for _, d := range result.UnsupportedFieldWarnings {
 		msg := d.Message
 		if d.Location != nil && d.Location.URI != "" {
 			msg = fmt.Sprintf("node %q (provider %q): %s", d.Location.URI, d.Location.Kind, d.Message)
@@ -909,7 +909,7 @@ func RunPipeline(
 			return fmt.Errorf("Step 5 (render): %w", rerr)
 		}
 
-		emitRenderWarnings(os.Stderr, renderResult, opts.SuppressDegradationWarnings)
+		emitRenderWarnings(os.Stderr, renderResult, opts.SuppressUnsupportedFieldWarnings)
 
 		// Render-verdict governance role. Config-driven off the render-verdict
 		// attachments in WorkspaceConfig.Plugins.Governance — a no-op when

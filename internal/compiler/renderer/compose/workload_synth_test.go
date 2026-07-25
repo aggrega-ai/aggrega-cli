@@ -67,11 +67,11 @@ func minimalWorkload() *types.Workload {
 	return w
 }
 
-// TestSynthesizeWorkload_GPUFieldsDegrade proves the compose degradation
+// TestSynthesizeWorkload_GPUFieldsDegrade proves the compose unsupported-field
 // contract for the two GPU-only Workload surfaces: cpu/memory still translate to
 // deploy.resources, while extended-resource keys (nvidia.com/gpu) and
 // runtimeClassName have no compose analog and are omitted from the rendered
-// bytes. The omission is out-of-band-warned (asserted in the degradation tests),
+// bytes. The omission is out-of-band-warned (asserted in the unsupported-field tests),
 // not silent, and never halts. This test locks the rendered bytes.
 func TestSynthesizeWorkload_GPUFieldsDegrade(t *testing.T) {
 	t.Parallel()

@@ -102,7 +102,7 @@ func runBuild(cmd *cobra.Command, args []string) error {
 	}
 	return dispatchBuildWithDiag(rw, releasePath, catalogDirs, traceEnabled,
 		buildDiagOptions{quiet: buildQuiet, debug: buildDebug, progress: buildProgress, noColor: globalDisplay.colorOff, plain: globalDisplay.plain},
-		buildRunOptions{noAcquireInputs: noAcquireInputs, disablePluginCache: disablePluginCache, verifyDeterminism: verifyDeterminism, autoPull: buildAutoPull, upgrade: buildUpgrade, suppressDegradationWarnings: noUnsupportedFieldWarns}, os.Stderr, os.Stdout)
+		buildRunOptions{noAcquireInputs: noAcquireInputs, disablePluginCache: disablePluginCache, verifyDeterminism: verifyDeterminism, autoPull: buildAutoPull, upgrade: buildUpgrade, suppressUnsupportedFieldWarnings: noUnsupportedFieldWarns}, os.Stderr, os.Stdout)
 }
 
 // buildRunOptions carries the build-dispatch knobs that are not stderr
@@ -132,11 +132,11 @@ type buildRunOptions struct {
 	// auto-pull step — requesting it turns the pull step on when neither the flag
 	// nor workspace auto_pull is set.
 	upgrade bool
-	// suppressDegradationWarnings silences the target-degradation warning class on
+	// suppressUnsupportedFieldWarnings silences the unsupported-field warning class on
 	// the render-warning surface — the per-field notices a lower-fidelity target
 	// emits for authored fields it cannot honor. Display-only; other render
 	// warnings still surface and the rendered output is unchanged.
-	suppressDegradationWarnings bool
+	suppressUnsupportedFieldWarnings bool
 	// outDir overrides the rendered-artifact output directory; empty
 	// renders to dist/. The acquire command points it at a discard
 	// directory so an acquisition pass never touches dist/.
@@ -498,7 +498,7 @@ func dispatchBuildWithDiag(rw *workspaceconfig.ResolvedWorkspace, releasePath st
 			PluginCompileBegin:          progress.pluginCompileBegin,
 			PluginCompileGuestDone:      progress.pluginCompileGuestDone,
 			PluginCompileRunning:        progress.pluginCompileRunning,
-			SuppressDegradationWarnings: run.suppressDegradationWarnings,
+			SuppressUnsupportedFieldWarnings: run.suppressUnsupportedFieldWarnings,
 		},
 	)
 	if err != nil {

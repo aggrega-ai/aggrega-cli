@@ -11,17 +11,17 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
 )
 
-// TestEmitRenderWarnings_SuppressDegradationClass proves the degradation class is
+// TestEmitRenderWarnings_SuppressUnsupportedFieldClass proves the unsupported-field class is
 // printed by default with node/provider attribution and suppressed alone when the
 // flag is set, while the free-form warning stream always surfaces.
-func TestEmitRenderWarnings_SuppressDegradationClass(t *testing.T) {
+func TestEmitRenderWarnings_SuppressUnsupportedFieldClass(t *testing.T) {
 	t.Parallel()
 	result := &renderer.RenderResult{
 		Warnings: []string{`node "api" (provider "compose"): some other advisory`},
-		DegradationWarnings: []renderer.Diagnostic{
+		UnsupportedFieldWarnings: []renderer.Diagnostic{
 			{
 				Severity: "warning",
-				Code:     renderer.TargetDegradationCode,
+				Code:     renderer.UnsupportedFieldCode,
 				Message:  `target "compose" does not support scheduling and omitted it`,
 				Location: &renderer.DiagnosticLocation{URI: "api", Kind: "compose"},
 			},
@@ -35,19 +35,19 @@ func TestEmitRenderWarnings_SuppressDegradationClass(t *testing.T) {
 		t.Errorf("free-form warning missing when unsuppressed:\n%s", out)
 	}
 	if !strings.Contains(out, "does not support scheduling") {
-		t.Errorf("degradation warning missing when unsuppressed:\n%s", out)
+		t.Errorf("unsupported-field warning missing when unsuppressed:\n%s", out)
 	}
 	if !strings.Contains(out, `node "api" (provider "compose"): target "compose" does not support scheduling`) {
-		t.Errorf("degradation warning not node/provider-attributed:\n%s", out)
+		t.Errorf("unsupported-field warning not node/provider-attributed:\n%s", out)
 	}
 
 	var suppressed bytes.Buffer
 	emitRenderWarnings(&suppressed, result, true)
 	sout := suppressed.String()
 	if !strings.Contains(sout, "some other advisory") {
-		t.Errorf("free-form warning must still surface when degradation suppressed:\n%s", sout)
+		t.Errorf("free-form warning must still surface when the class is suppressed:\n%s", sout)
 	}
 	if strings.Contains(sout, "does not support scheduling") {
-		t.Errorf("degradation warning must be suppressed by the flag:\n%s", sout)
+		t.Errorf("unsupported-field warning must be suppressed by the flag:\n%s", sout)
 	}
 }

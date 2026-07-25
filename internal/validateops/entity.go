@@ -409,7 +409,7 @@ func runRenderTiers(res *EntityResult, h entityHarness, lookup resolver.CatalogL
 	// provider from the binary's embedded set and renders even in a workspace
 	// with no local catalog — matching how a real build resolves the provider.
 	result, err := pipeline.RunPipeline(ctx, inputs, lookup, recipeLookup, subAggregateLoader, pipeline.Options{
-		SuppressDegradationWarnings: suppressUnsupportedFieldWarnings,
+		SuppressUnsupportedFieldWarnings: suppressUnsupportedFieldWarnings,
 	})
 	if err != nil {
 		// The isolated render did not complete. This is a genuine finding — the

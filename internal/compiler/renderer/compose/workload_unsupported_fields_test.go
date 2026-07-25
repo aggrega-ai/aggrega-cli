@@ -14,7 +14,7 @@ import (
 
 // baseDegradeWorkload is a minimal stateless single-container Workload with none
 // of the compose-unsupported fields set — the zero baseline the per-field
-// degradation cases mutate.
+// unsupported-field cases mutate.
 func baseDegradeWorkload() *types.Workload {
 	w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload"}
 	c := types.ContainerSpec{Image: "app:1.0"}
@@ -37,11 +37,11 @@ func withMainContainer(w *types.Workload, mut func(c *types.ContainerSpec)) {
 func ptrBool(b bool) *bool { return &b }
 func ptrInt(i int) *int    { return &i }
 
-// TestDegradation_PerAuthoredField proves each compose-unsupported authored
+// TestUnsupportedField_PerAuthoredField proves each compose-unsupported authored
 // field emits exactly one warning diagnostic with the stable class code, the
 // field's authored name as the source ref, and the field name in the message —
 // and that leaving the field unset emits none for it.
-func TestDegradation_PerAuthoredField(t *testing.T) {
+func TestUnsupportedField_PerAuthoredField(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
 		field string
@@ -108,8 +108,8 @@ func TestDegradation_PerAuthoredField(t *testing.T) {
 				if d.Severity != "warning" {
 					t.Errorf("%s: severity = %q, want warning", tc.field, d.Severity)
 				}
-				if d.Code != rendercore.TargetDegradationCode {
-					t.Errorf("%s: code = %q, want %q", tc.field, d.Code, rendercore.TargetDegradationCode)
+				if d.Code != rendercore.UnsupportedFieldCode {
+					t.Errorf("%s: code = %q, want %q", tc.field, d.Code, rendercore.UnsupportedFieldCode)
 				}
 				if !strings.Contains(d.Message, tc.field) {
 					t.Errorf("%s: message %q does not name the field", tc.field, d.Message)
@@ -125,9 +125,9 @@ func TestDegradation_PerAuthoredField(t *testing.T) {
 	}
 }
 
-// TestDegradation_OutOfBand proves a diagnostic-producing field does not change
+// TestUnsupportedField_OutOfBand proves a diagnostic-producing field does not change
 // the rendered fragment bytes — the Invariant-8 out-of-band guarantee.
-func TestDegradation_OutOfBand(t *testing.T) {
+func TestUnsupportedField_OutOfBand(t *testing.T) {
 	t.Parallel()
 	base := baseDegradeWorkload()
 	baseFiles, baseDiags, err := SynthesizeWorkloadCore(base, nodeCtxFor("api"))
@@ -147,7 +147,7 @@ func TestDegradation_OutOfBand(t *testing.T) {
 		t.Fatalf("synth with fields: %v", err)
 	}
 	if len(wfDiags) == 0 {
-		t.Fatal("expected degradation diagnostics, got none")
+		t.Fatal("expected unsupported-field diagnostics, got none")
 	}
 	if !bytes.Equal(baseFiles[0].Body, wfFiles[0].Body) {
 		t.Errorf("degraded fields changed rendered bytes (must be out-of-band)\n--- base ---\n%s\n--- with fields ---\n%s",
@@ -155,9 +155,9 @@ func TestDegradation_OutOfBand(t *testing.T) {
 	}
 }
 
-// TestDegradation_MultiFieldDeterministic proves a Workload authoring several
+// TestUnsupportedField_MultiFieldDeterministic proves a Workload authoring several
 // unsupported fields emits one warning each in a deterministic order across runs.
-func TestDegradation_MultiFieldDeterministic(t *testing.T) {
+func TestUnsupportedField_MultiFieldDeterministic(t *testing.T) {
 	t.Parallel()
 	build := func() *types.Workload {
 		w := baseDegradeWorkload()
@@ -196,10 +196,10 @@ func TestDegradation_MultiFieldDeterministic(t *testing.T) {
 	}
 }
 
-// TestDegradation_PersistentTemplatePartial proves persistentTemplate emits a
-// partial-degradation warning (worded "does not fully support") sharing the same
+// TestUnsupportedField_PersistentTemplatePartial proves persistentTemplate emits a
+// partial-support warning (worded "does not fully support") sharing the same
 // class code, distinct from the full-omission wording.
-func TestDegradation_PersistentTemplatePartial(t *testing.T) {
+func TestUnsupportedField_PersistentTemplatePartial(t *testing.T) {
 	t.Parallel()
 	w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload", Form: "stateful"}
 	c := types.ContainerSpec{Image: "store:1.0"}
@@ -221,11 +221,11 @@ func TestDegradation_PersistentTemplatePartial(t *testing.T) {
 			continue
 		}
 		found = true
-		if d.Code != rendercore.TargetDegradationCode {
-			t.Errorf("code = %q, want %q", d.Code, rendercore.TargetDegradationCode)
+		if d.Code != rendercore.UnsupportedFieldCode {
+			t.Errorf("code = %q, want %q", d.Code, rendercore.UnsupportedFieldCode)
 		}
 		if !strings.Contains(d.Message, "does not fully support") {
-			t.Errorf("partial-degradation message %q missing the partial wording", d.Message)
+			t.Errorf("partial-support message %q missing the partial wording", d.Message)
 		}
 	}
 	if !found {

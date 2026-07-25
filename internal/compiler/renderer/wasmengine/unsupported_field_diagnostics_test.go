@@ -10,23 +10,23 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
 )
 
-// TestSurfaceNodeDiagnostics_RoutesDegradationClass proves the render-node
-// diagnostic router sends the target-degradation class to the structured
-// degradation sink (attributed to the node and provider), routes other advisories
+// TestSurfaceNodeDiagnostics_RoutesUnsupportedFieldClass proves the render-node
+// diagnostic router sends the unsupported-field class to the structured
+// unsupported-field sink (attributed to the node and provider), routes other advisories
 // to the free-form warning sink, and joins error-severity diagnostics into a
 // returned error.
-func TestSurfaceNodeDiagnostics_RoutesDegradationClass(t *testing.T) {
+func TestSurfaceNodeDiagnostics_RoutesUnsupportedFieldClass(t *testing.T) {
 	t.Parallel()
 	var warnings []string
-	var degradations []renderer.Diagnostic
+	var unsupportedFields []renderer.Diagnostic
 	nodeCtx := renderer.NodeRenderContext{
 		NodeID:          "api",
 		ProviderName:    "compose",
 		WarningSink:     func(w string) { warnings = append(warnings, w) },
-		DegradationSink: func(d renderer.Diagnostic) { degradations = append(degradations, d) },
+		UnsupportedFieldSink: func(d renderer.Diagnostic) { unsupportedFields = append(unsupportedFields, d) },
 	}
 	diags := []renderer.Diagnostic{
-		{Severity: "warning", Code: renderer.TargetDegradationCode, SourceRef: "scheduling",
+		{Severity: "warning", Code: renderer.UnsupportedFieldCode, SourceRef: "scheduling",
 			Message: `target "compose" does not support scheduling and omitted it`},
 		{Severity: "warning", Message: "some other advisory"},
 		{Severity: "info", Message: "an info note"},
@@ -37,24 +37,24 @@ func TestSurfaceNodeDiagnostics_RoutesDegradationClass(t *testing.T) {
 		t.Fatalf("surfaceNodeDiagnostics returned error for advisory-only diags: %v", err)
 	}
 
-	if len(degradations) != 1 {
-		t.Fatalf("degradation sink got %d, want 1: %+v", len(degradations), degradations)
+	if len(unsupportedFields) != 1 {
+		t.Fatalf("unsupported-field sink got %d, want 1: %+v", len(unsupportedFields), unsupportedFields)
 	}
-	d := degradations[0]
-	if d.Code != renderer.TargetDegradationCode || d.SourceRef != "scheduling" {
-		t.Errorf("degradation diagnostic malformed: %+v", d)
+	d := unsupportedFields[0]
+	if d.Code != renderer.UnsupportedFieldCode || d.SourceRef != "scheduling" {
+		t.Errorf("unsupported-field diagnostic malformed: %+v", d)
 	}
 	if d.Location == nil || d.Location.URI != "api" || d.Location.Kind != "compose" {
-		t.Errorf("degradation diagnostic not attributed to node/provider: %+v", d.Location)
+		t.Errorf("unsupported-field diagnostic not attributed to node/provider: %+v", d.Location)
 	}
 	// The other advisory and the info note route to the free-form sink; the
-	// degradation class does not.
+	// unsupported-field class does not.
 	if len(warnings) != 2 {
-		t.Fatalf("warning sink got %d, want 2 (non-degradation advisories): %+v", len(warnings), warnings)
+		t.Fatalf("warning sink got %d, want 2 (other advisories): %+v", len(warnings), warnings)
 	}
 	for _, w := range warnings {
 		if strings.Contains(w, "does not support scheduling") {
-			t.Errorf("degradation warning leaked into the free-form sink: %q", w)
+			t.Errorf("unsupported-field warning leaked into the free-form sink: %q", w)
 		}
 	}
 }
@@ -67,7 +67,7 @@ func TestSurfaceNodeDiagnostics_ErrorSeverityHalts(t *testing.T) {
 		NodeID:          "api",
 		ProviderName:    "compose",
 		WarningSink:     func(string) {},
-		DegradationSink: func(renderer.Diagnostic) {},
+		UnsupportedFieldSink: func(renderer.Diagnostic) {},
 	}
 	diags := []renderer.Diagnostic{{Severity: "error", Message: "boom"}}
 	if err := (&Engine{}).surfaceNodeDiagnostics(nodeCtx, diags); err == nil {

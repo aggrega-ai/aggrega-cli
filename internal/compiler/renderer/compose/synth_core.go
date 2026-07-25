@@ -39,7 +39,7 @@ import (
 )
 
 // composeTargetName is the user-facing name of this render target, used in the
-// degradation warnings emitted for authored Workload fields compose cannot honor.
+// unsupported-field warnings emitted for authored Workload fields compose cannot honor.
 const composeTargetName = "compose"
 
 // SynthesizeWorkloadCore translates a parsed Workload into a per-node compose
@@ -81,10 +81,10 @@ func SynthesizeWorkloadCore(
 			nil, ErrUnsupportedComposeForm)
 	}
 
-	// Degradation diagnostics accumulate here in a deterministic order: per
+	// Unsupported-field diagnostics accumulate here in a deterministic order: per
 	// container in author order (each container's runAsNonRoot and dropped
 	// extended resources), then the main container's pod-level drops, then the
-	// per-volume partial degradations. They ride the render-output ABI back to
+	// per-volume partial-support entries. They ride the render-output ABI back to
 	// the host out-of-band; the rendered fragment bytes are unaffected.
 	var diags []renderctx.Diagnostic
 
@@ -140,10 +140,10 @@ func SynthesizeWorkloadCore(
 		case v.PersistentTemplate != nil:
 			// Degrades to the same shape as persistent: compose cannot
 			// express per-replica templating, so the volume collapses to a
-			// single shared persistent volume. A partial-degradation warning
+			// single shared persistent volume. A partial-support warning
 			// records the reduced fidelity out-of-band.
 			frag.Volumes[volumeName(componentID, name)] = Volume{}
-			diags = append(diags, rendercore.PartialDegradationDiagnostic(composeTargetName, "persistentTemplate",
+			diags = append(diags, rendercore.PartialSupportDiagnostic(composeTargetName, "persistentTemplate",
 				"per-replica volume templating is not available and the volume degrades to a shared persistent volume"))
 		}
 	}
@@ -229,7 +229,7 @@ func translateContainer(
 	// Extended (vendor/domain-scoped) resource quantities such as nvidia.com/gpu
 	// have no single-host compose analog — only cpu and memory map to
 	// deploy.resources — so each authored extended key is dropped with a warning.
-	diags = append(diags, extendedResourceDegradations(c.Resources)...)
+	diags = append(diags, extendedResourceDiagnostics(c.Resources)...)
 
 	// envFrom (bulk env from a ConfigMap or Secret object) has no compose
 	// primitive; a source reference is not a host file, so any env_file
@@ -368,13 +368,13 @@ func translateContainer(
 	return svc, diags, nil
 }
 
-// extendedResourceDegradations returns one degradation warning per distinct
+// extendedResourceDiagnostics returns one unsupported-field warning per distinct
 // extended (vendor/domain-scoped) resource key authored on the container's
 // requests or limits — keys such as nvidia.com/gpu that have no single-host
 // compose analog (only cpu and memory map to deploy.resources). Keys are
 // reported in a deterministic order: limits in author order, then any
 // requests-only keys in author order, each key deduplicated across the two.
-func extendedResourceDegradations(r *types.ResourceSpec) []renderctx.Diagnostic {
+func extendedResourceDiagnostics(r *types.ResourceSpec) []renderctx.Diagnostic {
 	if r == nil {
 		return nil
 	}
@@ -541,7 +541,7 @@ func resolveHTTPProbePort(ports types.OrderedMap[int]) (int, error) {
 //   - runAsUser / runAsGroup  → user (formatted as "<uid>:<gid>" or "<uid>")
 //
 // runAsNonRoot has no compose equivalent; an authored value is dropped with a
-// degradation warning. Returns one diagnostic per authored-and-dropped field.
+// unsupported-field warning. Returns one diagnostic per authored-and-dropped field.
 func applyContainerSecurityContext(svc *Service, sc *types.ContainerSecurityContext) []renderctx.Diagnostic {
 	if sc.ReadOnlyRootFilesystem != nil {
 		svc.ReadOnly = *sc.ReadOnlyRootFilesystem
@@ -582,7 +582,7 @@ func applyContainerSecurityContext(svc *Service, sc *types.ContainerSecurityCont
 // Every authored pod-level field compose cannot honor — scheduling,
 // serviceAccount, initContainers, replicas, runtimeClassName, priorityClassName,
 // imagePullSecrets, dnsPolicy, and dnsConfig.options — is dropped with a
-// degradation warning. Returns one diagnostic per authored-and-dropped field, in
+// unsupported-field warning. Returns one diagnostic per authored-and-dropped field, in
 // a deterministic order.
 func applyPodLevelFieldsToService(svc *Service, w *types.Workload) []renderctx.Diagnostic {
 	applyPodUser(svc, w)
