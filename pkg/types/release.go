@@ -20,8 +20,9 @@ package types
 // Features is typed as OrderedMap[BoundaryFeature], the same typed
 // shape as [BoundaryComponent.Features]: boundary-wide feature
 // attachments carry type, infra, and uses, decoded directly from YAML.
-// Secrets remains OrderedMap[any] — boundary-wide secret attachments
-// still arrive as opaque payloads the IR builder coerces separately.
+// A credential is a Feature carrying the feature.aggrega.ai/kind: secret
+// label, so Features is the boundary's whole attachment surface — there is
+// no separate credential surface at this scope.
 //
 // Boundary carries no Infra field — physical sizing is per-component
 // concern and lives on [BoundaryComponent] only.
@@ -50,7 +51,6 @@ type Boundary struct {
 	// template substrate).
 	Annotations OrderedMap[*AnnotationValue]  `json:"annotations,omitempty,omitzero" yaml:"annotations,omitempty"`
 	Features    OrderedMap[BoundaryFeature]   `json:"features,omitempty,omitzero" yaml:"features,omitempty"`
-	Secrets     OrderedMap[any]               `json:"secrets,omitempty,omitzero" yaml:"secrets,omitempty"`
 	Boundaries  OrderedMap[Boundary]          `json:"boundaries,omitempty,omitzero" yaml:"boundaries,omitempty"`
 	Components  OrderedMap[BoundaryComponent] `json:"components,omitempty,omitzero" yaml:"components,omitempty"`
 	Aggregates  OrderedMap[AggregateRouting]  `json:"aggregates,omitempty,omitzero" yaml:"aggregates,omitempty"`
@@ -88,7 +88,6 @@ type BoundaryComponent struct {
 	Annotations OrderedMap[*AnnotationValue] `json:"annotations,omitempty,omitzero" yaml:"annotations,omitempty"`
 	Infra       OrderedMap[any]              `json:"infra,omitempty,omitzero" yaml:"infra,omitempty"`
 	Features    OrderedMap[BoundaryFeature]  `json:"features,omitempty,omitzero" yaml:"features,omitempty"`
-	Secrets     OrderedMap[BoundaryFeature]  `json:"secrets,omitempty,omitzero" yaml:"secrets,omitempty"`
 	// Uses is the operator edge surface, socket-keyed then alias-keyed (the
 	// same topology shape as the Aggregate uses block). Within Architect-
 	// declared sockets the Release may wire a declared-but-unbound socket to an
@@ -111,10 +110,11 @@ type ReleaseUsesEntry struct {
 	Infra  OrderedMap[any] `json:"infra,omitempty,omitzero" yaml:"infra,omitempty"`
 }
 
-// BoundaryFeature is a feature or secret attachment within a Release boundary.
-// Release provides type (for Ops-injected), infra (physical sizing), and uses
-// (topology wiring). Never values — values are the Developer's domain on the
-// Aggregate.
+// BoundaryFeature is a feature attachment within a Release boundary — including
+// a credential, which is a Feature carrying the feature.aggrega.ai/kind: secret
+// label and attaches through the same surface as any other. Release provides
+// type (for Ops-injected), infra (physical sizing), and uses (topology wiring).
+// Never values — values are the Developer's domain on the Aggregate.
 //
 // Uses on a boundary-wide attachment projects per-consumer: a boundary (or
 // subsystem) feature carrying a uses-edge to a shared target contributes that

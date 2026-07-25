@@ -307,23 +307,27 @@ func phaseB5(state *PhaseBState) error {
 	return nil
 }
 
-// phaseB6 runs FeatureRecipe Resource Generation per the existing
-// mechanism (chapter 16; the prior semantics are preserved verbatim —
-// only re-positioned in the sub-pass sequence). Two inner loops:
+// phaseB6 runs FeatureRecipe Resource Generation (chapter 16). It walks ONE
+// sequence of resource-generating attachments and renders every one of them
+// through the same path: derive the attachment-scoped context, evaluate the
+// FeatureRecipe's locals and valuesMapping against it, dispatch to the engine
+// named by the FR's own provider, run the FR's pipeline when it declares one,
+// and emit the FR's files under the attachment's output prefix.
 //
-//  1. Non-credential FRs: walks featureRefs filtered by
-//     isResourceGeneratingFR; per FR, evaluates locals + valuesMapping in
-//     the FR-scoped context, dispatches to the FR's own provider engine,
-//     emits files under "features/<instance>/" prefix.
+// attachmentRenderSequence assembles that sequence from the node's two IR
+// attachment buckets — features in FeatureOrder, then credentials in author
+// order — applying the isResourceGeneratingFR guard uniformly: an inject-only
+// FeatureRecipe contributes through Phase A and emits nothing here, whichever
+// bucket it came from. What varies between attachments is DATA on the queued
+// item (its context pillars, the delivery pipe a credential populates, its
+// output prefix), never a second render path.
 //
-//  2. Credential FRs: walks secretsForNode (graph.Spec.Secrets[nodeID]);
-//     per secret, populates the FR-scoped context with the secret-specific
-//     .inject, dispatches similarly, emits files under "secrets/<name>/"
-//     prefix.
-//
-// Both loops derive their FR-scoped context through attachmentFRContext, so
-// every attachment — whichever loop renders it — can name its own instance in
-// a template.
+// A FeatureRecipe declaring spec.executionScope: boundary takes the
+// boundary-scope dispatch instead: dedup by (boundary_path, fr_instance),
+// evaluate against the boundary-scope TemplateContext (.boundary.* pillars in
+// place of the per-component .context.*), and route output via boundaryFRState
+// for post-loop assembly. See boundary_fr.go for the full lifecycle. The scope
+// is read from the FeatureRecipe, so it governs every attachment identically.
 //
 // Returns a map of prefixed paths (e.g. "features/mon/deployment.yaml")
 // to file contents (the FR's own generated files), plus a second map of
@@ -368,88 +372,75 @@ func phaseB6(
 	var deferred []DeferredPatch
 	nodeID := state.NodeID
 
-	// Running host document set threaded across FRs in FeatureOrder: each
+	// Running host document set threaded across the attachment sequence: each
 	// component-scope FR's pipeline sees the host documents as modified by the
-	// FRs that ran before it (the existing Onion-order cascade), so a later FR
-	// patches on top of an earlier FR's host changes. Non-intermediate host
-	// docs only — intermediate fragments are not discrete /host targets.
+	// FRs that ran before it (the Onion-order cascade), so a later FR patches on
+	// top of an earlier FR's host changes. Non-intermediate host docs only —
+	// intermediate fragments are not discrete /host targets.
 	runningHost := nonIntermediateFiles(hostOwn)
 
-	// Non-credential FR Resource Generation. For each attached FR that
-	// carries source or valuesMapping (resource-generating, i.e. not
-	// inject-only), in Onion Model order: evaluate FR locals as templates,
-	// build feature-scoped context, evaluate FR valuesMapping, dispatch to
-	// the engine named by the FR's own provider, emit under
-	// features/<instance>/.
-	//
-	// Boundary-scope FRs (spec.executionScope: boundary) take a different
-	// dispatch path: dedup by (boundary_path, fr_instance), evaluate against
-	// the boundary-scope TemplateContext (.boundary.* pillars instead of
-	// per-component .context.*), and route output via boundaryFRState for
-	// post-loop assembly. See boundary_fr.go for the full lifecycle.
-	for featureOrderIndex, ref := range featureRefs {
-		fr := ref.FeatureRecipe
-		if !isResourceGeneratingFR(fr) {
-			continue
-		}
+	// ONE attachment render loop. The sequence carries every resource-
+	// generating attachment the node holds, drawn from both IR attachment
+	// buckets; the per-attachment differences travel as data on the item, so
+	// the render path below exists exactly once.
+	for seqIndex, item := range attachmentRenderSequence(tmplCtx, featureRefs, secretsForNode, recipeLookup, state.SecretProvides) {
+		fr := item.FR
 
 		if fr.Spec.ExecutionScope == "boundary" && boundaryFRState != nil {
 			// Walk up from the component's boundary path to find the
 			// ANCESTOR boundary that holds this FR-instance attachment
 			// (the IR builder's Tier-4 propagation may have inherited
-			// the feature from a parent boundary; the dedup key is the
+			// the attachment from a parent boundary; the dedup key is the
 			// owning boundary, not the component's containing boundary).
-			owningBP := findFRAttachmentBoundary(graph.Spec.BoundaryFeatures, state.BoundaryPath, ref.InstanceName)
-			key := boundaryFRKey{BoundaryPath: owningBP, FRInstance: ref.InstanceName}
+			owningBP := findFRAttachmentBoundary(graph.Spec.BoundaryFeatures, state.BoundaryPath, item.Instance)
+			key := boundaryFRKey{BoundaryPath: owningBP, FRInstance: item.Instance}
 			if boundaryFRState.Dedup[key] {
 				continue // FR already ran for this boundary
 			}
 			boundaryFRState.Dedup[key] = true
 			if err := dispatchBoundaryScopeFR(
-				ctx, fr, ref.InstanceName, key, state, boundaryFRState,
+				ctx, fr, item.Instance, key, state, boundaryFRState,
 				nodeCtx, engineFactory, graph, release, boundaryAnnotations, allProvides, input,
 			); err != nil {
-				return nil, nil, nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("Step 5 node %q boundary-scope feature %q", nodeID, ref.InstanceName))
+				return nil, nil, nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("Step 5 node %q boundary-scope attachment %q", nodeID, item.Instance))
 			}
 			continue
 		}
 
-		feat, hasFeat := tmplCtx.Features.Get(ref.InstanceName)
-		frValuesPillar, frInfraPillar := tmplCtx.Values, tmplCtx.Infra
-		if hasFeat {
-			frValuesPillar, frInfraPillar = feat.Values, feat.Infra
-		}
-		frCtx := attachmentFRContext(tmplCtx, ref.InstanceName, frValuesPillar, frInfraPillar)
+		frCtx := attachmentFRContext(tmplCtx, item.Instance, item.CtxValues, item.CtxInfra)
 
 		frEvaluatedLocals, err := EvaluateFeatureRecipeLocals(
-			fr, ref.InstanceName, frCtx.Values, frCtx.Infra, allProvides[nodeID],
+			fr, item.Instance, frCtx.Values, frCtx.Infra, allProvides[nodeID],
 		)
 		if err != nil {
-			return nil, nil, nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("Step 5 node %q feature %q locals", nodeID, ref.InstanceName))
+			return nil, nil, nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("Step 5 node %q attachment %q locals", nodeID, item.Instance))
 		}
 		frCtx.Locals = mergeFeatureLocals(tmplCtx.Locals, frEvaluatedLocals)
+		// The delivery pipe and the resolved-fill provides are populated only
+		// for an attachment whose family carries them; both land after the
+		// locals evaluation, which reads neither.
+		if item.Inject != nil {
+			frCtx.Inject = item.Inject
+		}
+		if item.Provides != nil {
+			frCtx.Provides = *item.Provides
+		}
 
 		frValues, err := ExecutePhaseBForFeature(&frCtx, fr, input.MappingLibraries)
 		if err != nil {
-			return nil, nil, nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("Step 5 node %q feature %q", nodeID, ref.InstanceName))
+			return nil, nil, nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("Step 5 node %q attachment %q", nodeID, item.Instance))
 		}
 
 		frEngine, err := engineFactory(fr.Spec.Capability)
 		if err != nil {
-			return nil, nil, nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("Step 5 node %q feature %q engine factory", nodeID, ref.InstanceName))
+			return nil, nil, nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("Step 5 node %q attachment %q engine factory", nodeID, item.Instance))
 		}
 
 		frNodeCtx := nodeCtx
 		frNodeCtx.OriginalSource = fr.Spec.Source
-		frInfra := map[string]any{}
-		frSrcValues := map[string]any{}
-		if hasFeat {
-			frInfra = feat.Infra.TemplateAlphabeticalMapDeep()
-			frSrcValues = feat.Values.TemplateAlphabeticalMapDeep()
-		}
-		resolvedSrc, err := resolveEntitySource(input, fr.Spec.Source, fr.Spec.Locals, frSourceURI(fr), frSrcValues, frInfra, fr.Spec.SourceDigests)
+		resolvedSrc, err := resolveEntitySource(input, fr.Spec.Source, fr.Spec.Locals, frSourceURI(fr), item.OwnValues, item.OwnInfra, fr.Spec.SourceDigests)
 		if err != nil {
-			return nil, nil, nil, wrapSourceResolutionError(err, nodeID, fmt.Sprintf("Step 5 node %q feature %q source resolution", nodeID, ref.InstanceName))
+			return nil, nil, nil, wrapSourceResolutionError(err, nodeID, fmt.Sprintf("Step 5 node %q attachment %q source resolution", nodeID, item.Instance))
 		}
 		frNodeCtx.Source = resolvedSrc
 
@@ -457,17 +448,21 @@ func phaseB6(
 		// gate's uniform capability diagnostic, engine.Render failures, and the
 		// Phase B sub-pass CATALOG_ERRORs) already carry their own context, and
 		// re-wrapping would bury the gate diagnostic the user needs to see.
-		frFiles, err := renderFeatureRecipeFiles(ctx, frEngine, fr, &frCtx, frNodeCtx, frValues, resolvedSrc, ref.InstanceName, featureSecretSlots(fr, input), input.WorkloadLibraries, input.ArtifactsLibraries)
+		frFiles, err := renderFeatureRecipeFiles(ctx, frEngine, fr, &frCtx, frNodeCtx, frValues, resolvedSrc, item.Instance, featureSecretSlots(fr, input), input.WorkloadLibraries, input.ArtifactsLibraries)
 		if err != nil {
 			return nil, nil, nil, err
 		}
 
-		// Component-scope FeatureRecipe pipeline.
+		// Component-scope FeatureRecipe pipeline. Every attachment's
+		// FeatureRecipe runs its pipeline here — the pipeline is a property of
+		// the FeatureRecipe, so a credential can transform the host component's
+		// rendered documents on invitation exactly as an operational attachment
+		// can.
 		//
 		// Flat host (the common case): own + host run together per-node. own is
 		// the FR's own generated files; host is the running host-document set
 		// (the host component's own docs, modified by FRs that ran earlier in
-		// FeatureOrder), so a /host PATCH rewrites a host doc and threads forward
+		// the sequence), so a /host PATCH rewrites a host doc and threads forward
 		// for a later FR to see.
 		//
 		// Assembler host (compose): the host's per-node output is pre-assembly
@@ -479,8 +474,8 @@ func phaseB6(
 		// rendered above; only its pipeline's host work defers.
 		//
 		// Own-scope-on-assembler via a component-scope FeatureRecipe: a
-		// FeatureRecipe's own output is emitted under features/<instance>/ as
-		// discrete files — it is NOT routed to a BoundaryAssembler (only a
+		// FeatureRecipe's own output is emitted under the attachment's own output
+		// prefix as discrete files — it is NOT routed to a BoundaryAssembler (only a
 		// component's own render output is), so there is no merged document for a
 		// post-assembly /own replay to target. An /own PATCH against an
 		// FR-rendered assembler fragment therefore stays a per-node concern and
@@ -502,8 +497,8 @@ func phaseB6(
 					RenderCtx:         renderCtx,
 					HostProvider:      hostProvider,
 					NodeID:            nodeID,
-					FRInstance:        ref.InstanceName,
-					FeatureOrderIndex: featureOrderIndex,
+					FRInstance:        item.Instance,
+					FeatureOrderIndex: seqIndex,
 				})
 			} else {
 				// own provider is the FR's own engine kind (version pin stripped —
@@ -522,89 +517,115 @@ func phaseB6(
 			}
 		}
 
-		prefix := "features/" + ref.InstanceName + "/"
 		for _, f := range frFiles {
-			out[prefix+f.Name] = f.Body
-		}
-	}
-
-	// Credential FR Resource Generation. Secrets live in graph.Spec.Secrets[nodeID]
-	// (IR partitions credential features here via guardCredentialPartition).
-	// This sub-pass renders ONLY resource-generating credential FRs (those with a
-	// source or valuesMapping — e.g. a Kubernetes Secret manifest), mirroring the
-	// non-credential path's isResourceGeneratingFR guard above. Inject-only
-	// credential FRs (injectMapping but no source/workload — e.g. a dotenv
-	// polyfill) contribute through Phase A and are skipped here; rendering them
-	// would have nothing to emit. For each resource-generating secret, build the
-	// attachment-scoped context (which names the instance) and additionally
-	// populate the top-level .inject this family delivers, then render via the
-	// FR's own provider engine. Output files under secrets/<name>/.
-	if secretsForNode.Len() > 0 && recipeLookup.FeatureRecipe != nil {
-		secretNames := secretsForNode.Keys()
-		sort.Strings(secretNames)
-		for _, secretName := range secretNames {
-			entry, _ := secretsForNode.Get(secretName)
-			fr, found := recipeLookup.FeatureRecipe(secretName, entry.Type)
-			if !found {
-				continue
-			}
-			if !isResourceGeneratingFR(fr) {
-				// Inject-only credential FR: Phase A owns its inject merge; B.6
-				// renders nothing for it.
-				continue
-			}
-
-			frCtx := attachmentFRContext(tmplCtx, secretName, entry.Values, entry.Infra)
-
-			frEvaluatedLocals, err := EvaluateFeatureRecipeLocals(
-				fr, secretName, frCtx.Values, frCtx.Infra, allProvides[nodeID],
-			)
-			if err != nil {
-				return nil, nil, nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("Step 5 node %q secret %q locals", nodeID, secretName))
-			}
-			frCtx.Locals = mergeFeatureLocals(tmplCtx.Locals, frEvaluatedLocals)
-			frCtx.Inject = buildSecretInject(entry)
-			// Reuse the SAME resolved fill provides the consumer sees via
-			// .secrets.<slot>.provides (computed once before B.4) as this
-			// FeatureRecipe's .provides, so a valuesMapping deriving the Secret
-			// name from .provides renders the exact name the consumer read —
-			// single source, no drift.
-			if b, ok := state.SecretProvides[secretName]; ok {
-				frCtx.Provides = b
-			}
-
-			frValues, err := ExecutePhaseBForFeature(&frCtx, fr, input.MappingLibraries)
-			if err != nil {
-				return nil, nil, nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("Step 5 node %q secret %q", nodeID, secretName))
-			}
-
-			frEngine, err := engineFactory(fr.Spec.Capability)
-			if err != nil {
-				return nil, nil, nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("Step 5 node %q secret %q engine factory", nodeID, secretName))
-			}
-
-			frNodeCtx := nodeCtx
-			frNodeCtx.OriginalSource = fr.Spec.Source
-			resolvedSrc, err := resolveEntitySource(input, fr.Spec.Source, fr.Spec.Locals, frSourceURI(fr), entry.Values.TemplateAlphabeticalMapDeep(), entry.Infra.TemplateAlphabeticalMapDeep(), fr.Spec.SourceDigests)
-			if err != nil {
-				return nil, nil, nil, wrapSourceResolutionError(err, nodeID, fmt.Sprintf("Step 5 node %q secret %q source resolution", nodeID, secretName))
-			}
-			frNodeCtx.Source = resolvedSrc
-
-			frFiles, err := renderFeatureRecipeFiles(ctx, frEngine, fr, &frCtx, frNodeCtx, frValues, resolvedSrc, secretName, featureSecretSlots(fr, input), input.WorkloadLibraries, input.ArtifactsLibraries)
-			if err != nil {
-				return nil, nil, nil, err
-			}
-
-			prefix := "secrets/" + secretName + "/"
-			for _, f := range frFiles {
-				out[prefix+f.Name] = f.Body
-			}
+			out[item.Prefix+f.Name] = f.Body
 		}
 	}
 
 	state.PhaseReached = 6
 	return out, hostPatched, deferred, nil
+}
+
+// attachmentRenderItem is one resource-generating attachment queued for the
+// Phase B.6 render loop. Everything that differs between attachment families
+// is a field here, so the loop that consumes the sequence has one body:
+//
+//   - CtxValues / CtxInfra are the .values / .infra pillars the attachment's
+//     render context carries.
+//   - OwnValues / OwnInfra are the attachment's own pillars flattened for the
+//     source resolver's template substitution. They are empty when the
+//     attachment contributes no pillars of its own, in which case the context
+//     pillars above fall back to the host component's.
+//   - Inject is the delivery pipe an attachment publishes on its own
+//     .inject pillar; nil when the attachment publishes none.
+//   - Provides, when non-nil, replaces the inherited .provides pillar with the
+//     attachment's own resolved fill provides.
+//   - Prefix is the attachment's output prefix, applied to every file its
+//     FeatureRecipe emits.
+type attachmentRenderItem struct {
+	Instance  string
+	FR        *types.FeatureRecipe
+	CtxValues types.OrderedMap[any]
+	CtxInfra  types.OrderedMap[any]
+	OwnValues map[string]any
+	OwnInfra  map[string]any
+	Inject    *types.InjectPipe
+	Provides  *types.OrderedMap[string]
+	Prefix    string
+}
+
+// attachmentRenderSequence assembles the one ordered sequence Phase B.6
+// renders: every attachment on the node whose bound FeatureRecipe is
+// resource-generating (it declares a source, a workload, artifacts or a
+// valuesMapping). An inject-only FeatureRecipe is excluded — Phase A owns its
+// inject merge and it has nothing to emit here.
+//
+// The node's attachments arrive in two IR buckets, and the sequence spans both:
+// features in FeatureOrder (the 5-Tier Onion Model order the caller resolved),
+// then credentials in the credential bucket's author order — the same order
+// Phase A walks that bucket in, so both phases see one ordering rule. Only the
+// features bucket carries an order vector today; when the buckets fold into one,
+// the whole sequence draws its order from that vector.
+//
+// A credential additionally publishes its authored delivery pipe on .inject and
+// reuses the resolved fill provides the consumer reads through the attachment
+// pillar (computed once before B.4) as its FeatureRecipe's .provides — so a
+// valuesMapping deriving the emitted resource's name from .provides renders the
+// exact name the consumer read, from one evaluation with no drift.
+func attachmentRenderSequence(
+	tmplCtx *types.TemplateContext,
+	featureRefs []FeatureRecipeRef,
+	credentials types.OrderedMap[types.IRSecretEntry],
+	recipeLookup RecipeLookup,
+	fillProvides map[string]types.OrderedMap[string],
+) []attachmentRenderItem {
+	seq := make([]attachmentRenderItem, 0, len(featureRefs)+credentials.Len())
+
+	for _, ref := range featureRefs {
+		if !isResourceGeneratingFR(ref.FeatureRecipe) {
+			continue
+		}
+		item := attachmentRenderItem{
+			Instance:  ref.InstanceName,
+			FR:        ref.FeatureRecipe,
+			CtxValues: tmplCtx.Values,
+			CtxInfra:  tmplCtx.Infra,
+			OwnValues: map[string]any{},
+			OwnInfra:  map[string]any{},
+			Prefix:    "features/" + ref.InstanceName + "/",
+		}
+		if attach, ok := tmplCtx.Features.Get(ref.InstanceName); ok {
+			item.CtxValues, item.CtxInfra = attach.Values, attach.Infra
+			item.OwnValues = attach.Values.TemplateAlphabeticalMapDeep()
+			item.OwnInfra = attach.Infra.TemplateAlphabeticalMapDeep()
+		}
+		seq = append(seq, item)
+	}
+
+	if recipeLookup.FeatureRecipe == nil {
+		return seq
+	}
+	for name, entry := range credentials.All() {
+		fr, found := recipeLookup.FeatureRecipe(name, entry.Type)
+		if !found || !isResourceGeneratingFR(fr) {
+			continue
+		}
+		item := attachmentRenderItem{
+			Instance:  name,
+			FR:        fr,
+			CtxValues: entry.Values,
+			CtxInfra:  entry.Infra,
+			OwnValues: entry.Values.TemplateAlphabeticalMapDeep(),
+			OwnInfra:  entry.Infra.TemplateAlphabeticalMapDeep(),
+			Inject:    buildSecretInject(entry),
+			Prefix:    "secrets/" + name + "/",
+		}
+		if provides, ok := fillProvides[name]; ok {
+			item.Provides = &provides
+		}
+		seq = append(seq, item)
+	}
+	return seq
 }
 
 // attachmentFRContext derives an attachment FeatureRecipe's render context from

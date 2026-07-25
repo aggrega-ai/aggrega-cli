@@ -241,8 +241,9 @@ func (s *walkState) walkManifest(m *types.Manifest) {
 }
 
 // walkReleaseAttachments descends Release.Spec.Boundaries recursively
-// and collects boundary-attached Features / Secrets and per-component
-// Features / Secrets type URIs.
+// and collects the type URIs of per-component Feature attachments. A
+// credential is a Feature carrying the feature.aggrega.ai/kind: secret
+// label, so it is collected through the same walk as any other attachment.
 func (s *walkState) walkReleaseAttachments(r *types.Release) {
 	if r == nil {
 		return
@@ -258,12 +259,6 @@ func (s *walkState) walkBoundary(b types.Boundary, path string) {
 		for fname, bf := range bc.Features.All() {
 			if bf.Type != "" {
 				s.addEntityKind(bf.Type, fmt.Sprintf("%s.features.%s.type", compPath, fname), "feature")
-			}
-		}
-		for sname, bs := range bc.Secrets.All() {
-			if bs.Type != "" {
-				// A secret-type reference resolves to a Feature entity.
-				s.addEntityKind(bs.Type, fmt.Sprintf("%s.secrets.%s.type", compPath, sname), "feature")
 			}
 		}
 	}

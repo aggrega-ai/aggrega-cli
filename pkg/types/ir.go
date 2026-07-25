@@ -91,6 +91,16 @@ type IRSpec struct {
 // only Type and Infra are projected; Type resolves to the FeatureRecipe (source /
 // locals / provides) and Infra is the boundary infra a boundary-scope FR renders
 // against.
+//
+// The absent values field is deliberate and is not an asymmetry to complete: the
+// Release schema bans a values: block, and the attachment cascade honours that by
+// construction — a Release-side tier contributes Infra with an empty values map,
+// an Aggregate-side tier contributes Values with an empty infra map. Adding a
+// Values field here would create the very surface the ban exists to deny. Where
+// both pillars DO belong on one attachment shape is the per-node render
+// projection (TemplateAttachment), which carries values, infra and provides
+// together because an Aggregate-side and a Release-side contribution merge into
+// one entry there.
 // Schema: ir-v1alpha1.schema.json#/properties/spec/properties/boundary_features
 type IRBoundaryFeature struct {
 	Type  string          `json:"type"`

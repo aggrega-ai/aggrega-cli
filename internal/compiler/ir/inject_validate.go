@@ -109,11 +109,11 @@ func ValidateInjectBlock(b *types.InjectBlock, pathPrefix string) error {
 // As of the current schema, no Release-side struct type carries a
 // top-level *types.InjectBlock — BoundaryFeature has
 // Type/Description/Infra/Uses (uses carries its own inject inline via
-// the verbose UsesSocketValue form, not a struct-level InjectBlock);
-// Boundary.Features is OrderedMap[BoundaryFeature]; Boundary.Secrets is
-// OrderedMap[any]. The walk is therefore a structural no-op today; if a
-// future schema revision adds an InjectBlock-bearing field to any Release
-// surface, the walker is the extension point.
+// the verbose UsesSocketValue form, not a struct-level InjectBlock), and
+// both Boundary.Features and BoundaryComponent.Features are
+// OrderedMap[BoundaryFeature]. The walk is therefore a structural no-op
+// today; if a future schema revision adds an InjectBlock-bearing field to
+// any Release surface, the walker is the extension point.
 //
 // Errors are aggregated across all walks with semicolon-separated field
 // paths; the operator sees every violation at once rather than fixing one
