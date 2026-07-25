@@ -5,6 +5,7 @@ package renderer
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 
@@ -14,34 +15,42 @@ import (
 )
 
 // providesAllowedTopLevelRoots are the only top-level template roots a provides
-// template may reference. The provides block is evaluated in Pass 1 from
-// self-contained node data alone (see ProvidesContext), so its reachable roots
-// are exactly the context surface that pass exposes.
-var providesAllowedTopLevelRoots = map[string]bool{
-	"context": true,
-	"values":  true,
-	"infra":   true,
-	"locals":  true,
-}
+// template may reference, in the order the diagnostic lists them. The provides
+// block is evaluated in Pass 1 from self-contained node data alone (see
+// ProvidesContext), so its reachable roots are exactly the context surface that
+// pass exposes.
+//
+// Recipe locals are deliberately absent. Locals are evaluated against resolved
+// provides — a local may read .provides, so provides is resolved first — which
+// makes evaluated locals unreachable from a provides template by construction.
+// A provides template that needs a local's value inlines the expression the
+// local itself computes.
+//
+// This slice and providesAllowedContextRoots are the single home of the rule:
+// CheckProvidesSelfContainment enforces them and providesAllowedRootsPhrase
+// renders them into the diagnostic, so what the build refuses and what the
+// author is told cannot disagree.
+var providesAllowedTopLevelRoots = []string{"context", "values", "infra"}
 
 // providesAllowedContextRoots are the only .context.* sub-roots a provides
 // template may reference. Everything else under .context — inject and uses
 // (cross-node), annotations, labels, and metadata (placement- or
 // deployment-coupled) — is outside the self-contained Pass-1 surface.
-var providesAllowedContextRoots = map[string]bool{
-	"instance_id": true,
-}
+var providesAllowedContextRoots = []string{"instance_id"}
 
 // CheckProvidesSelfContainment verifies a provides template references only the
-// self-contained Pass-1 roots: .context.instance_id, .values, .infra, .locals,
-// and static text. Any other root halts with ErrProvidesSelfContainment naming
-// the offending expression — a non-wired .context.* key (.context.inject,
-// .context.uses, .context.annotations, .context.labels, .context.metadata, …)
-// or a non-wired top-level root (.metadata, .provides, …). The check is a
+// self-contained Pass-1 roots: .context.instance_id, .values, .infra, and
+// static text. Any other root halts with ErrProvidesSelfContainment naming the
+// offending expression — a non-wired .context.* key (.context.inject,
+// .context.uses, .context.annotations, .context.labels, .context.metadata, …),
+// a non-wired top-level root (.metadata, .provides, …), or .locals, which is
+// resolved after provides and so cannot be read from one. The check is a
 // positive allowlist over the template's parsed field accesses, so a reference
 // to a root the provides context does not expose is a Loud Guardrail rather
-// than a silent empty render. The halt is structural ("root not in the provides
-// context"), never a judgment about what the referenced value means.
+// than a silent empty render — or, for .locals, rather than the raw authored
+// template text reaching a consumer's rendered output. The halt is structural
+// ("root not in the provides context"), never a judgment about what the
+// referenced value means.
 func CheckProvidesSelfContainment(templateText, recipeID string) error {
 	paths, err := CollectTemplateFieldAccesses(templateText)
 	if err != nil {
@@ -51,20 +60,39 @@ func CheckProvidesSelfContainment(templateText, recipeID string) error {
 	for _, p := range paths {
 		segs := strings.Split(strings.TrimPrefix(p, "."), ".")
 		root := segs[0]
-		if root == "" || !providesAllowedTopLevelRoots[root] {
+		if root == "" || !slices.Contains(providesAllowedTopLevelRoots, root) {
 			return providesContainmentErr(recipeID, p)
 		}
-		if root == "context" && (len(segs) < 2 || !providesAllowedContextRoots[segs[1]]) {
+		if root == "context" && (len(segs) < 2 || !slices.Contains(providesAllowedContextRoots, segs[1])) {
 			return providesContainmentErr(recipeID, p)
 		}
 	}
 	return nil
 }
 
+// providesAllowedRootsPhrase renders the allowlists as the prose list the
+// self-containment diagnostic quotes. Derived rather than restated so the
+// message names exactly the roots the check admits: .context is gated at two
+// levels, so it contributes one entry per permitted sub-root, and every other
+// root contributes itself.
+func providesAllowedRootsPhrase() string {
+	roots := make([]string, 0, len(providesAllowedTopLevelRoots)+len(providesAllowedContextRoots))
+	for _, root := range providesAllowedTopLevelRoots {
+		if root == "context" {
+			for _, sub := range providesAllowedContextRoots {
+				roots = append(roots, ".context."+sub)
+			}
+			continue
+		}
+		roots = append(roots, "."+root)
+	}
+	return strings.Join(roots, ", ")
+}
+
 func providesContainmentErr(recipeID, expr string) error {
 	return cerrors.Wrap(ErrProvidesSelfContainment, cerrors.CatalogError, cerrors.SourceLocation{File: recipeID},
 		fmt.Sprintf("Recipe %q provides references %q — the provides block is self-contained and may reference only "+
-			".context.instance_id, .values, .infra, .locals, and static text", recipeID, expr))
+			"%s, and static text", recipeID, expr, providesAllowedRootsPhrase()))
 }
 
 // EvaluateAllProvides executes Pass 1: evaluate all provides templates in any order.
@@ -105,11 +133,14 @@ func EvaluateAllProvides(
 			_ = parse.IRPayload(raw, &infra)
 		}
 
+		// Locals stays zero here. A base Recipe's locals are resolved after
+		// provides, so the only value this pass could supply is the authored
+		// template text — which the self-containment check above has already
+		// refused, since .locals is not an admitted root.
 		pCtx := ProvidesContext{
 			Context: ProvidesContextBlock{InstanceID: nodeID},
 			Values:  values,
 			Infra:   infra,
-			Locals:  recipe.Spec.Locals,
 		}
 
 		// Evaluate each provides template in author order

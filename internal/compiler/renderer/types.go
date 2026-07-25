@@ -103,10 +103,17 @@ type NodeProvides map[string]types.OrderedMap[string]
 // ProvidesContext is the restricted context available during provides evaluation.
 // Only self-contained data: instance_id, outputs, values, infra.
 type ProvidesContext struct {
-	Context ProvidesContextBlock     `json:"context"`
-	Values  types.OrderedMap[any]    `json:"values"`
-	Infra   types.OrderedMap[any]    `json:"infra"`
-	Locals  types.OrderedMap[string] `json:"locals"`
+	Context ProvidesContextBlock  `json:"context"`
+	Values  types.OrderedMap[any] `json:"values"`
+	Infra   types.OrderedMap[any] `json:"infra"`
+	// Locals carries EVALUATED locals, and is populated only on the attachment
+	// FeatureRecipe path, which resolves that entity's own locals against this
+	// same scope before evaluating its provides against it — so an attachment
+	// FeatureRecipe's provides may read .locals and receives resolved values.
+	// Do not remove this field as unused: a base Recipe's provides pass leaves
+	// it zero because a base Recipe's locals are resolved after provides, and
+	// .locals is not an admitted root there.
+	Locals types.OrderedMap[string] `json:"locals"`
 	// SecretName is the attachment instance name, populated only for an
 	// attachment credential FeatureRecipe's provides evaluation so its provides
 	// templates may reference .secret_name — the same value the credential render

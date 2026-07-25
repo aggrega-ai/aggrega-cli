@@ -5,6 +5,7 @@ package renderer
 
 import (
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
@@ -154,6 +155,10 @@ func TestCheckProvidesSelfContainment_ForbiddenRoots(t *testing.T) {
 		"context.inject":      `{{ .context.inject.env.X }}`,
 		"context.uses":        `{{ .context.uses.db.provides.host }}`,
 		"unknown top-level":   `{{ .provides.host }}`,
+		// Locals are resolved against provides, so a provides template can never
+		// receive an evaluated local. Permitting the root delivered the raw
+		// authored template text into the consumer's rendered output at exit 0.
+		"locals": `{{ .locals.db_identifier }}`,
 	}
 	for name, tmpl := range forbidden {
 		t.Run(name, func(t *testing.T) {
@@ -175,7 +180,6 @@ func TestCheckProvidesSelfContainment_AllowedRoots(t *testing.T) {
 		`{{ .context.instance_id }}-default`,
 		`{{ .values.port }}`,
 		`{{ .infra.tier }}`,
-		`{{ .locals.computed }}`,
 		`{{ .context.instance_id }}:{{ .values.port }}`,
 		`static-only`,
 	}
@@ -183,6 +187,27 @@ func TestCheckProvidesSelfContainment_AllowedRoots(t *testing.T) {
 		if err := CheckProvidesSelfContainment(tmpl, "ok-recipe"); err != nil {
 			t.Errorf("expected no error for %q, got: %v", tmpl, err)
 		}
+	}
+}
+
+func TestProvidesContainmentErr_ListsExactlyTheAdmittedRoots(t *testing.T) {
+	t.Parallel()
+	// The diagnostic's root list is derived from the allowlists, so it cannot
+	// name a root the check refuses. This pins the derivation: every admitted
+	// root appears, and the root this halt most often fires on does not.
+	msg := providesContainmentErr("bad-recipe", ".locals.db_identifier").Error()
+	for _, want := range []string{".context.instance_id", ".values", ".infra"} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("diagnostic omits admitted root %s: %s", want, msg)
+		}
+	}
+	if strings.Contains(msg, ".locals,") {
+		t.Errorf("diagnostic still offers .locals as permitted: %s", msg)
+	}
+	// The offending expression and the recipe both have to be nameable from the
+	// message alone, since that is all the author sees.
+	if !strings.Contains(msg, ".locals.db_identifier") || !strings.Contains(msg, "bad-recipe") {
+		t.Errorf("diagnostic does not name both the recipe and the expression: %s", msg)
 	}
 }
 

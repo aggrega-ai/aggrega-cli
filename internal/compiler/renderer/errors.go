@@ -10,7 +10,11 @@ import (
 )
 
 var (
-	ErrProvidesSelfContainment      = errors.New("provides block references a root outside the self-contained set (.context.instance_id, .values, .infra, .locals)")
+	// ErrProvidesSelfContainment names the condition only. The wrapping
+	// diagnostic spells out which roots the provides surface admits, derived
+	// from the allowlists themselves, so the permitted set is stated once and
+	// cannot drift from the check that enforces it.
+	ErrProvidesSelfContainment      = errors.New("provides block references a root outside the self-contained set")
 	ErrProvidesEvaluation           = errors.New("provides template evaluation failed")
 	ErrSelfInjectForbiddenReference = errors.New("self-inject value: template references cross-node data")
 	ErrSelfInjectKeyCollision       = errors.New("duplicate delivery key across self-inject and uses-inject")
