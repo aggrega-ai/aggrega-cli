@@ -220,7 +220,7 @@ func TestBuildResolvesRemotePinnedArtifactsLibrary(t *testing.T) {
 		}
 	}
 	if !pinned {
-		t.Fatalf("lockfile did not pin SharedArtifacts; artifact_libraries=%+v", lf.ArtifactsLibraries)
+		t.Fatalf("lockfile did not pin SharedArtifacts; artifacts_libraries=%+v", lf.ArtifactsLibraries)
 	}
 
 	relocateArtifactsLibraryToCache(t, root, cacheDir, "1.0.0")

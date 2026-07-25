@@ -14,12 +14,12 @@
 //     Release / Aggregate / Manifest / .aggrega-config.yaml each URI
 //     was pulled in from — answers "why is this in the closure?".
 //   - consumers (list of {consumer_uri, fragments} records) appears on
-//     schema_libraries, mapping_libraries, and workload_libraries. It
-//     records which catalog entity references which <entry-name> fragments of the
-//     library — answers "if this library bumps, who is affected and
-//     at which fragments?". The structured shape captures the
-//     library's fan-in (many consumers, each potentially at many
-//     fragments) cleanly.
+//     schema_libraries, mapping_libraries, workload_libraries, and
+//     artifacts_libraries. It records which catalog entity references
+//     which <entry-name> fragments of the library — answers "if this
+//     library bumps, who is affected and at which fragments?". The
+//     structured shape captures the library's fan-in (many consumers,
+//     each potentially at many fragments) cleanly.
 //
 // The Lockfile struct field declaration order is alphabetical so
 // yaml.v3's marshaller (which emits struct fields in declaration
@@ -49,7 +49,7 @@ type Lockfile struct {
 	VerdictInputs      []VerdictInput      `yaml:"verdict_inputs"`
 	Version            int                 `yaml:"version"`
 	WorkloadLibraries  []WorkloadLibrary   `yaml:"workload_libraries"`
-	ArtifactsLibraries []ArtifactsLibrary  `yaml:"artifact_libraries"`
+	ArtifactsLibraries []ArtifactsLibrary  `yaml:"artifacts_libraries"`
 }
 
 // Entity carries a catalog-entity pin: Component, Feature, Recipe,
