@@ -123,6 +123,76 @@ fn annotation_prefix_well_known_keys_exempted() {
 }
 
 #[test]
+fn annotation_prefix_cloud_target_keys_exempted() {
+    // The three cloud-target keys are live: a provider declares them and an
+    // engine reads them on the cross-boundary link path, so a catalog entity
+    // that annotates one is authoring correctly and must not be flagged.
+    let input = fixture(
+        "Recipe",
+        json!({
+            "aggrega.ai/aws-account": "123456789012",
+            "aggrega.ai/aws-region": "us-east-1",
+            "aggrega.ai/aws-assume-role-arn": "arn:aws:iam::123456789012:role/peer",
+        }),
+        None,
+    );
+    let findings = annotation_prefix::classify(&input);
+    assert_eq!(findings.len(), 0, "cloud-target annotation keys are reserved and exempt");
+}
+
+#[test]
+fn annotation_prefix_reserved_but_unread_keys_exempted() {
+    // The register is a reservation, not a support claim: a reserved name stays
+    // exempt even while no engine reads it, so the name cannot be taken by an
+    // enterprise catalog and collide when the platform makes it live.
+    let input = fixture(
+        "Recipe",
+        json!({
+            "aggrega.ai/region": "eu-west-1",
+            "aggrega.ai/account-id": "123456789012",
+            "aggrega.ai/iam-role": "workload-role",
+            "aggrega.ai/stack-name": "my-stack",
+            "aggrega.ai/tf-backend": "remote-state",
+            "aggrega.ai/cluster-domain": "cluster.local",
+            "aggrega.ai/ingress-class": "nginx",
+            "aggrega.ai/service-mesh": "istio",
+            "aggrega.ai/pod-security-standard": "restricted",
+            "aggrega.ai/chart-version": "1.2.3",
+            "aggrega.ai/project-name": "acme",
+        }),
+        None,
+    );
+    let findings = annotation_prefix::classify(&input);
+    assert_eq!(
+        findings.len(),
+        0,
+        "a reserved name stays exempt even with no engine reading it"
+    );
+}
+
+#[test]
+fn annotation_prefix_unreserved_bare_key_still_flagged_alongside_reserved_ones() {
+    // The exemption stays a list, not a blanket pass on the bare prefix: an
+    // unreserved key is still namespace pollution even when it sits beside
+    // reserved keys in the same annotations block.
+    let input = fixture(
+        "Recipe",
+        json!({
+            "aggrega.ai/aws-region": "us-east-1",
+            "aggrega.ai/not-a-real-key": "whatever",
+        }),
+        None,
+    );
+    let findings = annotation_prefix::classify(&input);
+    assert_eq!(findings.len(), 1, "only the unreserved key is flagged");
+    assert!(findings[0].message.contains("aggrega.ai/not-a-real-key"));
+    assert!(
+        !findings[0].message.contains("aws-region"),
+        "the reserved key must not appear in any finding"
+    );
+}
+
+#[test]
 fn annotation_prefix_no_annotations_no_findings() {
     let input = common::fixture(
         "Component",

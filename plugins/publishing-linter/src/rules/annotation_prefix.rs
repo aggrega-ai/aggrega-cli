@@ -11,7 +11,8 @@
 //!   `aggrega-docs/language-reference/providers/well-known-annotations.md`)
 //!   IS the canonical usage; everything else using the bare prefix is
 //!   namespace pollution. The list is carried as a static constant
-//!   below and lockstep-maintained with the public doc.
+//!   below, and a parity check holds it and the public matrix to the
+//!   same set of names — see that constant's own documentation.
 //! - **`feature.aggrega.ai/`** is reserved for Feature-scoped
 //!   conventions. The Feature kind is the canonical context (e.g.,
 //!   `feature.aggrega.ai/kind: secret` on Feature labels — compiler
@@ -114,33 +115,58 @@ fn is_feature_aggrega_ai(key: &str) -> bool {
 }
 
 /// Well-known platform-native annotation keys exempt from the
-/// bare-`aggrega.ai/` rule. Derived from
-/// `aggrega-docs/language-reference/providers/well-known-annotations.md`
-/// (Categories 1-5 + provenance labels). The list MUST be maintained
-/// in lockstep with the public doc; if the platform adds new
-/// well-known annotations, this array gains the matching entries.
+/// bare-`aggrega.ai/` rule.
+///
+/// This array is one of the two homes of the platform's annotation
+/// **reservation register** — the set of bare-prefix names the platform
+/// owns. The other home is the matrix in
+/// `aggrega-docs/language-reference/providers/well-known-annotations.md`.
+/// Both homes carry the same set of names, and
+/// `scripts/check-annotation-register-parity.sh` reads both, compares
+/// them as sets, and fails on divergence, naming each key and the side
+/// it is missing from. The two sides are therefore held together
+/// mechanically: adding a name here without the matching public entry,
+/// or the reverse, fails that check.
+///
+/// Both homes exist deliberately and neither is redundant. This array is
+/// compiled into a guest that must build with no access to the
+/// documentation tree, and the public matrix is the authoritative
+/// human-facing statement of the vocabulary. Collapsing either into the
+/// other would cost one of those two properties.
+///
+/// The register is a **reservation**, not a support claim. A name stays
+/// listed once reserved even when no engine reads it, so an enterprise
+/// catalog cannot take that name for its own meaning and collide when
+/// the platform makes it live. The entries marked `reserved, not read`
+/// have no consumer today. What an engine actually reads is the
+/// separate, narrower statement each provider makes on its own
+/// `wellKnownAnnotations` declaration.
 const WELL_KNOWN_ANNOTATIONS: &[&str] = &[
     // Placement
     "aggrega.ai/namespace",
-    "aggrega.ai/region",
-    "aggrega.ai/account-id",
-    "aggrega.ai/project-name",
+    "aggrega.ai/region",              // reserved, not read
+    "aggrega.ai/account-id",          // reserved, not read
+    "aggrega.ai/project-name",        // reserved, not read
     // Registry
     "aggrega.ai/image-registry",
     "aggrega.ai/image-pull-secret",
     // Networking
-    "aggrega.ai/cluster-domain",
-    "aggrega.ai/ingress-class",
-    "aggrega.ai/service-mesh",
+    "aggrega.ai/cluster-domain",      // reserved, not read
+    "aggrega.ai/ingress-class",       // reserved, not read
+    "aggrega.ai/service-mesh",        // reserved, not read
     // Security
     "aggrega.ai/service-account",
-    "aggrega.ai/pod-security-standard",
-    "aggrega.ai/iam-role",
+    "aggrega.ai/pod-security-standard", // reserved, not read
+    "aggrega.ai/iam-role",              // reserved, not read
     // Packaging
     "aggrega.ai/chart-name",
-    "aggrega.ai/chart-version",
-    "aggrega.ai/stack-name",
-    "aggrega.ai/tf-backend",
+    "aggrega.ai/chart-version",       // reserved, not read
+    "aggrega.ai/stack-name",          // reserved, not read
+    "aggrega.ai/tf-backend",          // reserved, not read
+    // Cloud target
+    "aggrega.ai/aws-account",
+    "aggrega.ai/aws-region",
+    "aggrega.ai/aws-assume-role-arn",
     // Provenance labels emitted by providers
     "aggrega.ai/component-id",
     "aggrega.ai/recipe-uri",
