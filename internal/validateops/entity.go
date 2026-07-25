@@ -59,7 +59,7 @@ type EntityResult struct {
 //
 // The catalog directories are the already-resolved first-win search stack; the
 // workspace root and cache directory are resolved likewise by the caller.
-func ValidateEntity(wsRoot, cacheDir string, dirs []string, path string) (EntityResult, error) {
+func ValidateEntity(wsRoot, cacheDir string, dirs []string, path string, suppressUnsupportedFieldWarnings bool) (EntityResult, error) {
 	var res EntityResult
 	res.Path = path
 
@@ -102,7 +102,7 @@ func ValidateEntity(wsRoot, cacheDir string, dirs []string, path string) (Entity
 	case envelope.KindWorkload:
 		return res, validateWorkloadEntity(&res, path, data)
 	case envelope.KindRecipe:
-		return res, validateRecipeEntity(&res, wsRoot, cacheDir, dirs, path, data)
+		return res, validateRecipeEntity(&res, wsRoot, cacheDir, dirs, path, data, suppressUnsupportedFieldWarnings)
 	case envelope.KindFeatureRecipe:
 		return res, validateFeatureRecipeEntity(&res, path, data)
 	case envelope.KindPlugin:
@@ -222,7 +222,7 @@ func validateWorkloadEntity(res *EntityResult, path string, data []byte) error {
 // minimal deployment around a single instance of that Component bound to the
 // Recipe under test, and drives the real pipeline — first resolution and guards
 // (render skipped), then a real isolated render.
-func validateRecipeEntity(res *EntityResult, wsRoot, cacheDir string, dirs []string, path string, data []byte) error {
+func validateRecipeEntity(res *EntityResult, wsRoot, cacheDir string, dirs []string, path string, data []byte, suppressUnsupportedFieldWarnings bool) error {
 	var rec types.Recipe
 	if err := yaml.Unmarshal(data, &rec); err != nil {
 		return fmt.Errorf("parse Recipe at %q: %w", path, err)
@@ -267,7 +267,7 @@ func validateRecipeEntity(res *EntityResult, wsRoot, cacheDir string, dirs []str
 		// (possibly not-yet-published or edited-in-place) file drive the render.
 		Recipe: func(string, string) (*types.Recipe, bool) { return &rec, true },
 	}
-	return runRenderTiers(res, harness, lookup, recipeLookup, cat.SubAggregateLoader())
+	return runRenderTiers(res, harness, lookup, recipeLookup, cat.SubAggregateLoader(), suppressUnsupportedFieldWarnings)
 }
 
 // validateFeatureRecipeEntity runs the FeatureRecipe shape check. The render
@@ -387,7 +387,7 @@ func buildEntityHarness(implements, recipeURI string, comp *types.Component, loo
 // (guard violations, render warnings) surface on the process diagnostic stream
 // through the pipeline itself; the accumulated result carries only this scope's
 // deterministic report.
-func runRenderTiers(res *EntityResult, h entityHarness, lookup resolver.CatalogLookup, recipeLookup renderer.RecipeLookup, subAggregateLoader topology.SubAggregateLoader) error {
+func runRenderTiers(res *EntityResult, h entityHarness, lookup resolver.CatalogLookup, recipeLookup renderer.RecipeLookup, subAggregateLoader topology.SubAggregateLoader, suppressUnsupportedFieldWarnings bool) error {
 	inputs := pipeline.Inputs{
 		Release:           h.release,
 		Manifest:          h.manifest,
@@ -408,7 +408,9 @@ func runRenderTiers(res *EntityResult, h entityHarness, lookup resolver.CatalogL
 	// catalog enables it upstream), so a core-provider recipe resolves its
 	// provider from the binary's embedded set and renders even in a workspace
 	// with no local catalog — matching how a real build resolves the provider.
-	result, err := pipeline.RunPipeline(ctx, inputs, lookup, recipeLookup, subAggregateLoader, pipeline.Options{})
+	result, err := pipeline.RunPipeline(ctx, inputs, lookup, recipeLookup, subAggregateLoader, pipeline.Options{
+		SuppressDegradationWarnings: suppressUnsupportedFieldWarnings,
+	})
 	if err != nil {
 		// The isolated render did not complete. This is a genuine finding — the
 		// entity does not render standalone — but the cause may be a harness

@@ -42,6 +42,7 @@ func newValidateCmd() *cobra.Command {
 	var pluginPath string
 	var pluginType string
 	var responseFormat string
+	var noUnsupportedFieldWarnings bool
 	c := &cobra.Command{
 		Use:   "validate [entity-path]",
 		Short: "Check correctness across the catalog, a Release, or one entity",
@@ -96,7 +97,7 @@ func newValidateCmd() *cobra.Command {
 				// No entity argument → whole-catalog correctness.
 				return validateCatalogWideFromWorkspace(rw, catalogDirs)
 			}
-			return dispatchValidate(rw, path, catalogDirs, cmd.OutOrStdout())
+			return dispatchValidate(rw, path, catalogDirs, noUnsupportedFieldWarnings, cmd.OutOrStdout())
 		},
 	}
 	c.Flags().StringArrayVar(&catalogDirs, "catalog", nil,
@@ -105,6 +106,7 @@ func newValidateCmd() *cobra.Command {
 	c.Flags().StringVar(&pluginPath, "plugin", "", "Path to a raw .wasm to validate against its describe() self-report — the pre-publish authoring check. Alone it needs --type; with a Plugin entity argument it cross-checks the binary against the entity's declared type, capability claim, command mirror, and host-function record.")
 	c.Flags().StringVar(&pluginType, "type", "", "Plugin type for a binary-only --plugin check, verified against the binary's self-reported type. Only meaningful with --plugin; when a Plugin entity supplies the type, omit it (a disagreeing value halts).")
 	c.Flags().StringVar(&responseFormat, "response-format", compilerops.VerbosityDetailed, "Output volume for the --release scope: `detailed` (default) reports every diagnostic plus advisory lines; `concise` reports the diagnostic count and the first diagnostic only. The verdict and exit code are identical for both.")
+	c.Flags().BoolVar(&noUnsupportedFieldWarnings, flagNoUnsupportedFieldWarnings, false, helpNoUnsupportedFieldWarnings+". Applies to the entity scope, the one scope that renders")
 	return c
 }
 
@@ -123,7 +125,7 @@ func validatePluginBinary(pluginPath, declaredType, entityPath string, out io.Wr
 // single-entity scope core, and renders its structured result: the report lines
 // and rendered artifacts go to out (stdout), advisory notes to stderr. It
 // returns the core's first blocking error so a schema break halts loudly.
-func dispatchValidate(rw *workspaceconfig.ResolvedWorkspace, path string, catalogFlagDirs []string, out io.Writer) error {
+func dispatchValidate(rw *workspaceconfig.ResolvedWorkspace, path string, catalogFlagDirs []string, suppressUnsupportedFieldWarnings bool, out io.Writer) error {
 	rw, err := workspaceOrResolve(rw)
 	if err != nil {
 		return fmt.Errorf("workspaceconfig: %w", err)
@@ -132,7 +134,7 @@ func dispatchValidate(rw *workspaceconfig.ResolvedWorkspace, path string, catalo
 	cacheDir := wsCfg.ResolvedArtifactCacheDir()
 	dirs := workspaceconfig.ResolveCatalogDirs(catalogFlagDirs, wsCfg, ".")
 
-	res, verr := validateops.ValidateEntity(rw.Root(), cacheDir, dirs, path)
+	res, verr := validateops.ValidateEntity(rw.Root(), cacheDir, dirs, path, suppressUnsupportedFieldWarnings)
 	for _, line := range res.Diagnostics {
 		fmt.Fprintln(out, line)
 	}

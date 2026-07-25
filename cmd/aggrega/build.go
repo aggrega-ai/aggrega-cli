@@ -34,19 +34,28 @@ import (
 var _ wasm.FetchService = (*externalinputs.Service)(nil)
 
 var (
-	releasePath        string
-	catalogDirs        []string
-	traceEnabled       bool
-	buildDetail        bool
-	buildQuiet         bool
-	buildProgress      bool
-	buildDebug         bool
-	noAcquireInputs    bool
-	disablePluginCache bool
-	verifyDeterminism  bool
-	buildAutoPull      bool
-	buildUpgrade       bool
-	noDegradationWarns bool
+	releasePath             string
+	catalogDirs             []string
+	traceEnabled            bool
+	buildDetail             bool
+	buildQuiet              bool
+	buildProgress           bool
+	buildDebug              bool
+	noAcquireInputs         bool
+	disablePluginCache      bool
+	verifyDeterminism       bool
+	buildAutoPull           bool
+	buildUpgrade            bool
+	noUnsupportedFieldWarns bool
+)
+
+// Every command that renders offers the unsupported-field warning filter, so the
+// flag's name and help text are declared once here and shared by each
+// registration — two literals would be free to drift apart.
+const (
+	flagNoUnsupportedFieldWarnings = "no-unsupported-field-warnings"
+
+	helpNoUnsupportedFieldWarnings = "Silence the unsupported-field warning class: the per-field notices a lower-fidelity target (such as compose) emits for authored Workload fields it cannot honor. Other render warnings still surface. Display-only; does not change the rendered output"
 )
 
 func newBuildCmd() *cobra.Command {
@@ -63,7 +72,7 @@ func newBuildCmd() *cobra.Command {
 	c.Flags().BoolVar(&buildProgress, "progress", false, "Force the build-progress surface on even when stderr is not a terminal, printing plain static phase lines. The default is auto: the interactive phase checklist is shown only when stderr is a terminal. --quiet and --debug both override --progress")
 	c.Flags().BoolVar(&buildDebug, "debug", false, "Emit human-readable verbose diagnostics on stderr — per-phase wall-clock timing and entity/dependency counts. Wins over --quiet: verbose output always emits. Distinct from --trace, which writes machine-readable per-node intermediate files to .trace/")
 	c.Flags().BoolVar(&noAcquireInputs, "no-acquire-inputs", false, "Freeze the external-input set: a render that requests an unpinned external URL halts with a diagnostic instead of fetching and pinning it. Pinned inputs are still served from the content-addressed store (and refilled by digest when the blob is missing)")
-	c.Flags().BoolVar(&noDegradationWarns, "no-degradation-warnings", false, "Silence the target-degradation warning class: the per-field notices a lower-fidelity target (such as compose) emits for authored Workload fields it cannot honor. Other render warnings still surface. Display-only; does not change the rendered output")
+	c.Flags().BoolVar(&noUnsupportedFieldWarns, flagNoUnsupportedFieldWarnings, false, helpNoUnsupportedFieldWarnings)
 	c.Flags().BoolVar(&disablePluginCache, "disable-plugin-cache", false, "Skip the persistent on-disk plugin compile cache for this build and compile plugin guests fresh in an in-memory cache that is discarded when the build ends. Off by default, which reuses the shared on-disk cache across builds. Does not change rendered output")
 	c.Flags().BoolVar(&verifyDeterminism, "verify-determinism", false, "Render every node twice and compare the emitted bytes, halting the build if any node's two renders differ. Off by default. Use it to confirm a provider renders deterministically — identical input yields byte-identical output — which the GitOps-diff and byte-identical-output guarantees rely on")
 	c.Flags().BoolVar(&buildAutoPull, "auto-pull", false, "Run the pull step before building: resolve the Release's dependencies into the lockfile and cache in-process, then build against them. This is the same in-process fill the workspace auto_pull setting performs, turned on for a single build without editing workspace config. On its own it is an incremental fill — existing pins are honored, and references with no pin are resolved and added")
@@ -93,7 +102,7 @@ func runBuild(cmd *cobra.Command, args []string) error {
 	}
 	return dispatchBuildWithDiag(rw, releasePath, catalogDirs, traceEnabled,
 		buildDiagOptions{quiet: buildQuiet, debug: buildDebug, progress: buildProgress, noColor: globalDisplay.colorOff, plain: globalDisplay.plain},
-		buildRunOptions{noAcquireInputs: noAcquireInputs, disablePluginCache: disablePluginCache, verifyDeterminism: verifyDeterminism, autoPull: buildAutoPull, upgrade: buildUpgrade, suppressDegradationWarnings: noDegradationWarns}, os.Stderr, os.Stdout)
+		buildRunOptions{noAcquireInputs: noAcquireInputs, disablePluginCache: disablePluginCache, verifyDeterminism: verifyDeterminism, autoPull: buildAutoPull, upgrade: buildUpgrade, suppressDegradationWarnings: noUnsupportedFieldWarns}, os.Stderr, os.Stdout)
 }
 
 // buildRunOptions carries the build-dispatch knobs that are not stderr

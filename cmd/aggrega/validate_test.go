@@ -33,7 +33,7 @@ const (
 // present in this environment, so the render tier runs rather than skipping.
 func TestValidateRecipeRendersInIsolation(t *testing.T) {
 	var buf bytes.Buffer
-	if err := dispatchValidate(resolveTempWorkspace(t), validateRecipePath, []string{validateCatalogDir}, &buf); err != nil {
+	if err := dispatchValidate(resolveTempWorkspace(t), validateRecipePath, []string{validateCatalogDir}, false, &buf); err != nil {
 		t.Fatalf("dispatchValidate: %v", err)
 	}
 	got := buf.String()
@@ -57,10 +57,10 @@ func TestValidateRecipeRendersInIsolation(t *testing.T) {
 // on, surfaced through validate's own output.
 func TestValidateRecipeDeterministic(t *testing.T) {
 	var a, b bytes.Buffer
-	if err := dispatchValidate(resolveTempWorkspace(t), validateRecipePath, []string{validateCatalogDir}, &a); err != nil {
+	if err := dispatchValidate(resolveTempWorkspace(t), validateRecipePath, []string{validateCatalogDir}, false, &a); err != nil {
 		t.Fatalf("run 1: %v", err)
 	}
-	if err := dispatchValidate(resolveTempWorkspace(t), validateRecipePath, []string{validateCatalogDir}, &b); err != nil {
+	if err := dispatchValidate(resolveTempWorkspace(t), validateRecipePath, []string{validateCatalogDir}, false, &b); err != nil {
 		t.Fatalf("run 2: %v", err)
 	}
 	if !bytes.Equal(a.Bytes(), b.Bytes()) {
@@ -72,7 +72,7 @@ func TestValidateRecipeDeterministic(t *testing.T) {
 // (the render tiers do not apply: a Component alone has no workload to render).
 func TestValidateComponentPillars(t *testing.T) {
 	var buf bytes.Buffer
-	if err := dispatchValidate(resolveTempWorkspace(t), validateCompPath, []string{validateCatalogDir}, &buf); err != nil {
+	if err := dispatchValidate(resolveTempWorkspace(t), validateCompPath, []string{validateCatalogDir}, false, &buf); err != nil {
 		t.Fatalf("dispatchValidate: %v", err)
 	}
 	got := buf.String()
@@ -88,7 +88,7 @@ func TestValidateComponentPillars(t *testing.T) {
 // render tiers are reported as skipped rather than attempted.
 func TestValidateFeatureRecipeShape(t *testing.T) {
 	var buf bytes.Buffer
-	if err := dispatchValidate(resolveTempWorkspace(t), validateFRPath, []string{validateCatalogDir}, &buf); err != nil {
+	if err := dispatchValidate(resolveTempWorkspace(t), validateFRPath, []string{validateCatalogDir}, false, &buf); err != nil {
 		t.Fatalf("dispatchValidate: %v", err)
 	}
 	got := buf.String()
@@ -105,7 +105,7 @@ func TestValidateFeatureRecipeShape(t *testing.T) {
 // an unrecognized single-entity kind no longer applies to a Plugin.
 func TestValidatePluginSchemaOnly(t *testing.T) {
 	var buf bytes.Buffer
-	if err := dispatchValidate(resolveTempWorkspace(t), validatePluginPath, []string{validateCatalogDir}, &buf); err != nil {
+	if err := dispatchValidate(resolveTempWorkspace(t), validatePluginPath, []string{validateCatalogDir}, false, &buf); err != nil {
 		t.Fatalf("dispatchValidate: %v", err)
 	}
 	got := buf.String()
@@ -128,7 +128,7 @@ func TestValidatePluginSchemaOnly(t *testing.T) {
 // halts at the envelope gate with the recoverable sentinel.
 func TestValidatePluginBadTypeHaltsLoudly(t *testing.T) {
 	var buf bytes.Buffer
-	err := dispatchValidate(resolveTempWorkspace(t), validatePluginBadTypePath, []string{validateCatalogDir}, &buf)
+	err := dispatchValidate(resolveTempWorkspace(t), validatePluginBadTypePath, []string{validateCatalogDir}, false, &buf)
 	if err == nil {
 		t.Fatalf("expected a schema error, got nil; output:\n%s", buf.String())
 	}
@@ -144,7 +144,7 @@ func TestValidatePluginBadTypeHaltsLoudly(t *testing.T) {
 // required spec field halts at the envelope gate with the recoverable sentinel.
 func TestValidatePluginMissingRequiredHaltsLoudly(t *testing.T) {
 	var buf bytes.Buffer
-	err := dispatchValidate(resolveTempWorkspace(t), validatePluginMissingABIPath, []string{validateCatalogDir}, &buf)
+	err := dispatchValidate(resolveTempWorkspace(t), validatePluginMissingABIPath, []string{validateCatalogDir}, false, &buf)
 	if err == nil {
 		t.Fatalf("expected a schema error, got nil; output:\n%s", buf.String())
 	}
@@ -286,7 +286,7 @@ func TestValidatePluginReleaseMutuallyExclusiveGuard(t *testing.T) {
 // work.
 func TestValidateBrokenEntityHaltsLoudly(t *testing.T) {
 	var buf bytes.Buffer
-	err := dispatchValidate(resolveTempWorkspace(t), validateBrokenPath, []string{validateCatalogDir}, &buf)
+	err := dispatchValidate(resolveTempWorkspace(t), validateBrokenPath, []string{validateCatalogDir}, false, &buf)
 	if err == nil {
 		t.Fatalf("expected a schema error, got nil; output:\n%s", buf.String())
 	}

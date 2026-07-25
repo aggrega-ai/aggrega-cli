@@ -262,7 +262,7 @@ func validateEntityScope(s *server, a validateArgs, entity string) (*callToolRes
 	}
 	entityPath := tw.absReleasePath(entity)
 
-	res, verr := validateops.ValidateEntity(tw.root, tw.cacheDir, tw.dirs, entityPath)
+	res, verr := validateops.ValidateEntity(tw.root, tw.cacheDir, tw.dirs, entityPath, false)
 
 	var diags []string
 	if verr != nil {
