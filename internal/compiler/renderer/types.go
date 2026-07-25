@@ -114,13 +114,19 @@ type ProvidesContext struct {
 	// it zero because a base Recipe's locals are resolved after provides, and
 	// .locals is not an admitted root there.
 	Locals types.OrderedMap[string] `json:"locals"`
-	// SecretName is the attachment instance name, populated only for an
-	// attachment credential FeatureRecipe's provides evaluation so its provides
-	// templates may reference .secret_name — the same value the credential render
-	// exposes at Phase B.6. Empty for a base Recipe's provides, whose
-	// self-containment allowlist admits only .context.instance_id under context
-	// (a base provides referencing .secret_name still halts).
-	SecretName string `json:"secret_name,omitempty"`
+	// AttachmentName is the attachment instance name, populated for every
+	// attachment FeatureRecipe's provides evaluation so its provides templates
+	// may name the instance they are resolving for. Empty for a base Recipe's
+	// provides, whose self-containment allowlist admits only
+	// .context.instance_id under context (a base provides referencing the
+	// attachment name still halts).
+	//
+	// The template key stays `secret_name` deliberately: it is the published
+	// spelling that catalog FeatureRecipes read in their `provides` templates,
+	// so changing it here would orphan those templates. The Go field name and
+	// the template key are renamed together, in one change that also re-authors
+	// every template reading the old spelling.
+	AttachmentName string `json:"secret_name,omitempty"`
 }
 
 // ProvidesContextBlock holds only the instance_id for provides evaluation.

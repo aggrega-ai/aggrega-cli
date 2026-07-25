@@ -23,10 +23,10 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator"
 )
 
-func slotMap(name string, inject []string) types.OrderedMap[types.SecretSlot] {
-	m := types.OrderedMap[types.SecretSlot]{}
+func slotMap(name string, inject []string) types.OrderedMap[types.AttachmentSlot] {
+	m := types.OrderedMap[types.AttachmentSlot]{}
 	if name != "" {
-		m.Set(name, types.SecretSlot{Inject: inject})
+		m.Set(name, types.AttachmentSlot{Inject: inject})
 	}
 	return m
 }
@@ -38,7 +38,7 @@ func slotMap(name string, inject []string) types.OrderedMap[types.SecretSlot] {
 // core/referenced-secret credential (its FeatureRecipe publishes provides
 // {name, key}) so the workload reference resolves; when false the slot has no
 // referenceable fill.
-func renderBaseWithSlot(t *testing.T, compSlots types.OrderedMap[types.SecretSlot], fillReferenceable bool) error {
+func renderBaseWithSlot(t *testing.T, compSlots types.OrderedMap[types.AttachmentSlot], fillReferenceable bool) error {
 	t.Helper()
 	nodes := types.OrderedMap[types.IRNode]{}
 	nodes.Set("db", types.IRNode{Component: "core/datastore/pgprobe", BoundaryPath: "backend"})
@@ -119,8 +119,8 @@ func TestIntegration_WorkloadSecretSlots_BaseRecipe_HaltNonReferenceable(t *test
 	t.Parallel()
 	// Transparent slot but no referenceable fill: nothing to point at.
 	err := renderBaseWithSlot(t, slotMap("password", []string{"env"}), false)
-	if !errors.Is(err, validator.ErrSecretSlotNotReferenceable) {
-		t.Fatalf("transparent slot without a referenceable fill should HALT with ErrSecretSlotNotReferenceable, got: %v", err)
+	if !errors.Is(err, validator.ErrSlotNotReferenceable) {
+		t.Fatalf("transparent slot without a referenceable fill should HALT with ErrSlotNotReferenceable, got: %v", err)
 	}
 }
 
@@ -147,7 +147,7 @@ func TestIntegration_WorkloadSecretSlots_BaseRecipe_HaltBlackbox(t *testing.T) {
 // core/referenced-secret credential so the FR workload reference resolves
 // (the FR path renders against a shallow copy of the node context, which
 // carries the resolved provides); when false the slot has no referenceable fill.
-func renderFRWithSlot(t *testing.T, featSlots types.OrderedMap[types.SecretSlot], fillReferenceable bool) error {
+func renderFRWithSlot(t *testing.T, featSlots types.OrderedMap[types.AttachmentSlot], fillReferenceable bool) error {
 	t.Helper()
 	nodes := types.OrderedMap[types.IRNode]{}
 	nodes.Set("api", types.IRNode{Component: "core/compute/api-server", BoundaryPath: "backend"})
@@ -242,8 +242,8 @@ func TestIntegration_WorkloadSecretSlots_FeatureRecipe_AdmitDeclaredTransparent(
 func TestIntegration_WorkloadSecretSlots_FeatureRecipe_HaltNonReferenceable(t *testing.T) {
 	t.Parallel()
 	err := renderFRWithSlot(t, slotMap("frpass", []string{"env"}), false)
-	if !errors.Is(err, validator.ErrSecretSlotNotReferenceable) {
-		t.Fatalf("FR transparent slot without a referenceable fill should HALT with ErrSecretSlotNotReferenceable, got: %v", err)
+	if !errors.Is(err, validator.ErrSlotNotReferenceable) {
+		t.Fatalf("FR transparent slot without a referenceable fill should HALT with ErrSlotNotReferenceable, got: %v", err)
 	}
 }
 

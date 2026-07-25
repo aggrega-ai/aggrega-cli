@@ -16,20 +16,12 @@ var (
 	// and the appliesTo checks carry this one sentinel.
 	ErrSelectorViolation = errors.New("selector violation")
 
-	// ErrSecretSlotSelectorUnsatisfied is the ABI-stable sentinel for a
-	// secretsSchema slot whose declared `selector` is not satisfied by the
-	// labels of the credential Feature attached to fill it — the credential
-	// analog of a usesSchema socket selector violation, evaluated against the
-	// attached Feature's labels at Step 4.
-	ErrSecretSlotSelectorUnsatisfied = errors.New("secret slot selector unsatisfied")
-
-	// ErrSecretSlotSelectorNotSecretKind is the ABI-stable sentinel for a
-	// secretsSchema slot whose declared `selector` does not constrain its fill
-	// to secret-kind Features — its admitted set is not a subset of
-	// {feature.aggrega.ai/kind=secret}, so it could broaden a slot back out of
-	// the credential partition. A structural check on the parsed selector,
-	// never a judgement of the secret's meaning.
-	ErrSecretSlotSelectorNotSecretKind = errors.New("secret slot selector does not constrain to secret-kind Features")
+	// ErrSlotSelectorUnsatisfied is the ABI-stable sentinel for an attachment
+	// slot whose declared `selector` is not satisfied by the labels of the
+	// Feature attached to fill it — the slot analog of a usesSchema socket
+	// selector violation, evaluated against the attached Feature's labels at
+	// Step 4.
+	ErrSlotSelectorUnsatisfied = errors.New("attachment slot selector unsatisfied")
 
 	// ErrPolicyViolation is the ABI-stable sentinel for a Step-4
 	// policy socket verdict that fails: a plugin result whose

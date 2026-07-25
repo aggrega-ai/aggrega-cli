@@ -160,8 +160,8 @@ func referencedSecretWorkloadFixture(asMode string) (renderer.RendererInput, ren
 
 	// Component secretsSchema: a transparent password slot (inject allowlist
 	// permits env + file) so the preserved cross-check admits the workload ref.
-	slots := types.OrderedMap[types.SecretSlot]{}
-	slots.Set("password", types.SecretSlot{Inject: []string{"env", "file"}})
+	slots := types.OrderedMap[types.AttachmentSlot]{}
+	slots.Set("password", types.AttachmentSlot{Inject: []string{"env", "file"}})
 	comp := types.Component{Spec: types.ComponentSpec{SecretsSchema: slots}}
 
 	input := renderer.RendererInput{
@@ -315,8 +315,8 @@ func TestIntegration_ReferencedSecret_WorkloadNotReferenceableHalt(t *testing.T)
 	}
 
 	_, err := renderer.RenderAll(context.Background(), input, lookup, testHelmFactory(t))
-	if !errors.Is(err, validator.ErrSecretSlotNotReferenceable) {
-		t.Fatalf("a workload referencing a non-referenceable slot should halt with ErrSecretSlotNotReferenceable; got: %v", err)
+	if !errors.Is(err, validator.ErrSlotNotReferenceable) {
+		t.Fatalf("a workload referencing a non-referenceable slot should halt with ErrSlotNotReferenceable; got: %v", err)
 	}
 }
 

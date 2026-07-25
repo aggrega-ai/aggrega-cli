@@ -12,7 +12,7 @@ import "go.yaml.in/yaml/v3"
 // schema; their godoc is the schema's descriptions. This hand-written companion
 // holds the value types the generated spec references — UsesSchemaEntry (its
 // per-socket valueSchema/infraSchema content-shape yaml.Node fields) and
-// SecretSlot — both shared with Feature's usesSchema / secretsSchema.
+// AttachmentSlot — both shared with Feature's usesSchema / secretsSchema.
 
 // UsesSchemaEntry defines one socket category in a Component or Feature usesSchema.
 // Schema: component-v1alpha1.schema.json#/properties/spec/properties/usesSchema
@@ -35,20 +35,25 @@ type UsesSchemaEntry struct {
 	InfraSchema yaml.Node `json:"infraSchema,omitempty" yaml:"infraSchema,omitempty"`
 }
 
-// SecretSlot declares one credential slot in a Component or Feature secretsSchema.
-// Required=true means the slot must be populated in the Aggregate. Inject is a
-// allowlist of delivery mechanisms for this secret — empty means Black-Box
-// (the secret is consumed by a Recipe internally, not delivered to the workload).
+// AttachmentSlot declares one named attachment slot on a Component or Feature.
+// A slot is a place an attachment is expected: the entity declares it, and a
+// deployment fills it by attaching a Feature under the slot's name.
+// Required=true means the slot must be filled. Inject is an allowlist of
+// delivery mechanisms for the slot's material — empty means Black-Box (the
+// material is consumed by a Recipe internally, not delivered to the workload).
 // Schema: component-v1alpha1.schema.json#/properties/spec/properties/secretsSchema
-type SecretSlot struct {
+type AttachmentSlot struct {
 	Required    bool     `json:"required,omitempty" yaml:"required,omitempty"`
 	Inject      []string `json:"inject,omitempty" yaml:"inject,omitempty"`
 	Description string   `json:"description,omitempty" yaml:"description,omitempty"`
 	// Selector is an optional Kubernetes-style label selector (same grammar and
 	// pkg/selector engine as UsesSchemaEntry.Selector) constraining which
-	// credential Feature may fill this slot. Evaluated against the attached
-	// Feature's labels; an unsatisfied fill halts. A declared selector must
-	// constrain to secret-kind Features. Empty accepts any fill the secrets
-	// partition admits.
+	// Feature may fill this slot. It is evaluated against the attached Feature's
+	// own labels; a fill whose labels do not satisfy it halts. Empty declares no
+	// constraint and accepts any fill.
 	Selector string `json:"selector,omitempty" yaml:"selector,omitempty"`
+	// Sensitive declares that the material this slot carries is sensitive. It is
+	// a declaration only: no compiler behavior reads it, so setting it changes
+	// nothing about validation, rendering, or emitted output.
+	Sensitive bool `json:"sensitive,omitempty" yaml:"sensitive,omitempty"`
 }

@@ -48,7 +48,7 @@ type ComponentSpec struct {
 	// Extends URI of a base Component to inherit YAML metadata from and auto-merge JSON Schema 2020-12 declarations with.
 	Extends string `json:"extends,omitempty" yaml:"extends,omitempty"`
 	// SecretsSchema Declarative credential slot definitions. Parallel to usesSchema. The compiler generates JSON Schema 2020-12 validation rules from this schema.
-	SecretsSchema OrderedMap[SecretSlot] `json:"secretsSchema,omitempty,omitzero" yaml:"secretsSchema,omitempty"`
+	SecretsSchema OrderedMap[AttachmentSlot] `json:"secretsSchema,omitempty,omitzero" yaml:"secretsSchema,omitempty"`
 	// RequiredFeatures A list of Feature types that must be attached to this component instance in the Aggregate.
 	RequiredFeatures []string `json:"requiredFeatures,omitempty" yaml:"requiredFeatures,omitempty"`
 	// Inject Allowlisted self-inject delivery mechanisms (e.g., ['env', 'file', 'arg']). When present, developers may use the inject: block at the component level in the Aggregate to inject their own values or provides keys directly into the delivery pipe. If omitted, component-level self-inject is forbidden (Black-Box pattern — the Recipe handles all internal wiring). Same semantics as usesSchema[].inject but governs the component's own values rather than cross-component topology.

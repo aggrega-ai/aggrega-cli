@@ -216,8 +216,8 @@ func concatDedupeString(parent, child []string) []string {
 // mergeSecretsSchema overlays parent and child secretsSchema entries. Child
 // wins on the same slot name; slots unique to the parent are preserved.
 // Same semantics as mergeUsesSchema.
-func mergeSecretsSchema(parent, child types.OrderedMap[types.SecretSlot]) types.OrderedMap[types.SecretSlot] {
-	out := types.OrderedMap[types.SecretSlot]{}
+func mergeSecretsSchema(parent, child types.OrderedMap[types.AttachmentSlot]) types.OrderedMap[types.AttachmentSlot] {
+	out := types.OrderedMap[types.AttachmentSlot]{}
 	for k, v := range parent.All() {
 		out.Set(k, v)
 	}

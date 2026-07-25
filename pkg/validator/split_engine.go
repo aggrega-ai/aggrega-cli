@@ -109,7 +109,7 @@ func GenerateBaseUsesJSONSchema(usesSchema types.OrderedMap[types.UsesSchemaEntr
 // mechanisms get rejected at the schema level.
 //
 // Author-order from the OrderedMap input drives PropertyOrder.
-func GenerateBaseSecretsJSONSchema(secretsSchema types.OrderedMap[types.SecretSlot]) *jsonschema.Schema {
+func GenerateBaseSecretsJSONSchema(secretsSchema types.OrderedMap[types.AttachmentSlot]) *jsonschema.Schema {
 	if secretsSchema.Len() == 0 {
 		return nil
 	}

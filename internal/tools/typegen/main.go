@@ -21,7 +21,7 @@
 //
 // The annotation vocabulary is uniform: `x-aggrega-go-type` names the Go type
 // of the node it annotates. On an object node it is that type (e.g.
-// OrderedMap[SecretSlot], yaml.Node, *Interoperability); on an `items` node it
+// OrderedMap[AttachmentSlot], yaml.Node, *Interoperability); on an `items` node it
 // is the element type and the mechanical array recursion lifts it to []T (e.g.
 // Maintainer → []Maintainer, SelectorTerm → []SelectorTerm). There is no
 // context-dependent meaning and no per-form special case: the generator emits

@@ -135,7 +135,7 @@ func phaseB1(ctx *types.TemplateContext, state *PhaseBState) error {
 //     Workload JSON Schema.
 //  2. validator.ValidateWorkloadSecrets — cross-wave check against the
 //     Component's secretsSchema slot allowlist.
-//  3. validator.ValidateWorkloadSecretReferenceability — every secrets entry's
+//  3. validator.ValidateWorkloadResourceReferences — every secrets entry's
 //     slot must expose the referenceable-secret provides keys (name, key) the
 //     synthesizer reads to resolve the reference; checked against the slot's
 //     resolved provides on the template context (ctx.Secrets) — the same bag the
@@ -148,7 +148,7 @@ func phaseB1(ctx *types.TemplateContext, state *PhaseBState) error {
 // slots is the Component's SecretsSchema (passed by the orchestrator from
 // the catalog lookup). nil/empty slots is acceptable when the Recipe's
 // Workload declares no secrets entries.
-func phaseB2(ctx *types.TemplateContext, state *PhaseBState, slots types.OrderedMap[types.SecretSlot]) error {
+func phaseB2(ctx *types.TemplateContext, state *PhaseBState, slots types.OrderedMap[types.AttachmentSlot]) error {
 	if state.Recipe == nil {
 		state.PhaseReached = 2
 		return nil
@@ -188,7 +188,7 @@ func phaseB2(ctx *types.TemplateContext, state *PhaseBState, slots types.Ordered
 	// secret-volume name — so the base and FeatureRecipe workload paths (the
 	// latter renders against a shallow copy of this context) are checked
 	// uniformly.
-	if err := validator.ValidateWorkloadSecretReferenceability(&w, SecretProvidesFromContext(ctx), state.RecipePath, state.RecipeName, state.RecipeVersion); err != nil {
+	if err := validator.ValidateWorkloadResourceReferences(&w, SecretProvidesFromContext(ctx), state.RecipePath, state.RecipeName, state.RecipeVersion); err != nil {
 		return err
 	}
 
@@ -317,9 +317,13 @@ func phaseB5(state *PhaseBState) error {
 //     emits files under "features/<instance>/" prefix.
 //
 //  2. Credential FRs: walks secretsForNode (graph.Spec.Secrets[nodeID]);
-//     per secret, populates the FR-scoped context with .secret_name +
-//     secret-specific .inject, dispatches similarly, emits files under
-//     "secrets/<name>/" prefix.
+//     per secret, populates the FR-scoped context with the secret-specific
+//     .inject, dispatches similarly, emits files under "secrets/<name>/"
+//     prefix.
+//
+// Both loops derive their FR-scoped context through attachmentFRContext, so
+// every attachment — whichever loop renders it — can name its own instance in
+// a template.
 //
 // Returns a map of prefixed paths (e.g. "features/mon/deployment.yaml")
 // to file contents (the FR's own generated files), plus a second map of
@@ -411,11 +415,11 @@ func phaseB6(
 		}
 
 		feat, hasFeat := tmplCtx.Features.Get(ref.InstanceName)
-		frCtx := *tmplCtx // shallow copy; we'll overwrite Values/Infra/Locals
+		frValuesPillar, frInfraPillar := tmplCtx.Values, tmplCtx.Infra
 		if hasFeat {
-			frCtx.Values = feat.Values
-			frCtx.Infra = feat.Infra
+			frValuesPillar, frInfraPillar = feat.Values, feat.Infra
 		}
+		frCtx := attachmentFRContext(tmplCtx, ref.InstanceName, frValuesPillar, frInfraPillar)
 
 		frEvaluatedLocals, err := EvaluateFeatureRecipeLocals(
 			fr, ref.InstanceName, frCtx.Values, frCtx.Infra, allProvides[nodeID],
@@ -531,9 +535,10 @@ func phaseB6(
 	// non-credential path's isResourceGeneratingFR guard above. Inject-only
 	// credential FRs (injectMapping but no source/workload — e.g. a dotenv
 	// polyfill) contribute through Phase A and are skipped here; rendering them
-	// would have nothing to emit. For each resource-generating secret, build a
-	// feature-scoped context with .secret_name + top-level .inject populated and
-	// render via the FR's own provider engine. Output files under secrets/<name>/.
+	// would have nothing to emit. For each resource-generating secret, build the
+	// attachment-scoped context (which names the instance) and additionally
+	// populate the top-level .inject this family delivers, then render via the
+	// FR's own provider engine. Output files under secrets/<name>/.
 	if secretsForNode.Len() > 0 && recipeLookup.FeatureRecipe != nil {
 		secretNames := secretsForNode.Keys()
 		sort.Strings(secretNames)
@@ -549,9 +554,7 @@ func phaseB6(
 				continue
 			}
 
-			frCtx := *tmplCtx // shallow copy
-			frCtx.Values = entry.Values
-			frCtx.Infra = entry.Infra
+			frCtx := attachmentFRContext(tmplCtx, secretName, entry.Values, entry.Infra)
 
 			frEvaluatedLocals, err := EvaluateFeatureRecipeLocals(
 				fr, secretName, frCtx.Values, frCtx.Infra, allProvides[nodeID],
@@ -560,7 +563,6 @@ func phaseB6(
 				return nil, nil, nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("Step 5 node %q secret %q locals", nodeID, secretName))
 			}
 			frCtx.Locals = mergeFeatureLocals(tmplCtx.Locals, frEvaluatedLocals)
-			frCtx.SecretName = secretName
 			frCtx.Inject = buildSecretInject(entry)
 			// Reuse the SAME resolved fill provides the consumer sees via
 			// .secrets.<slot>.provides (computed once before B.4) as this
@@ -605,6 +607,23 @@ func phaseB6(
 	return out, hostPatched, deferred, nil
 }
 
+// attachmentFRContext derives an attachment FeatureRecipe's render context from
+// the host node's context: a shallow copy whose values and infra pillars are the
+// attachment's own, and which names the attachment instance being rendered.
+//
+// It is the only site that names an attachment instance on the render context,
+// so every attachment family reads that name from one place and the spelling
+// cannot diverge between families. Callers overwrite the remaining per-family
+// pillars (locals, and the delivery pipe where a family populates one) after
+// this returns.
+func attachmentFRContext(tmplCtx *types.TemplateContext, instanceName string, values, infra types.OrderedMap[any]) types.TemplateContext {
+	frCtx := *tmplCtx // shallow copy; callers overwrite the per-family pillars
+	frCtx.Values = values
+	frCtx.Infra = infra
+	frCtx.SecretName = instanceName
+	return frCtx
+}
+
 // nonIntermediateFiles returns the emitted files that are not pre-assembly
 // fragments — the discrete documents a /host pipeline operation may target.
 func nonIntermediateFiles(files []EmittedFile) []EmittedFile {
@@ -637,13 +656,13 @@ func applyHostPatchToRunning(running []EmittedFile, path string, content []byte)
 // FR-synthesized Workload's containers.secrets cross-check (parallel to a
 // Component governing its own Recipe). Returns an empty map when the Feature
 // declares no slots or cannot be resolved.
-func featureSecretSlots(fr *types.FeatureRecipe, input RendererInput) types.OrderedMap[types.SecretSlot] {
+func featureSecretSlots(fr *types.FeatureRecipe, input RendererInput) types.OrderedMap[types.AttachmentSlot] {
 	if fr != nil && input.CatalogLookup.Feature != nil {
 		if feat, found := input.CatalogLookup.Feature(fr.Spec.Implements); found {
 			return feat.Spec.SecretsSchema
 		}
 	}
-	return types.OrderedMap[types.SecretSlot]{}
+	return types.OrderedMap[types.AttachmentSlot]{}
 }
 
 // renderFeatureRecipeFiles runs the full input-kind render for a resource-
@@ -667,7 +686,7 @@ func renderFeatureRecipeFiles(
 	frValues map[string]any,
 	resolvedSrc any,
 	instanceLabel string,
-	slots types.OrderedMap[types.SecretSlot],
+	slots types.OrderedMap[types.AttachmentSlot],
 	workloadLibs map[string]types.WorkloadLibrary,
 	artifactsLibs map[string]types.ArtifactsLibrary,
 ) ([]EmittedFile, error) {

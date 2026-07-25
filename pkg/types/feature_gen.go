@@ -48,7 +48,7 @@ type FeatureSpec struct {
 	// Extends URI of a base Feature to inherit YAML metadata from and auto-merge JSON Schema 2020-12 declarations with.
 	Extends string `json:"extends,omitempty" yaml:"extends,omitempty"`
 	// SecretsSchema Declarative credential slot definitions. Parallel to usesSchema. The compiler generates JSON Schema 2020-12 validation rules from this schema.
-	SecretsSchema OrderedMap[SecretSlot] `json:"secretsSchema,omitempty,omitzero" yaml:"secretsSchema,omitempty"`
+	SecretsSchema OrderedMap[AttachmentSlot] `json:"secretsSchema,omitempty,omitzero" yaml:"secretsSchema,omitempty"`
 	// AppliesTo Kubernetes-style label-selector string matching Components. Comma-separated requirements all must hold (AND). Supported forms: key=value, key!=value, key in (v1, v2), key notin (v1, v2), bare key (label present), !key (label absent). Example: "tier in (critical, production), !legacy". An empty or absent selector declares no constraint. The pattern here is a loose shape gate; the compiler's selector parser performs the full grammar validation.
 	AppliesTo string `json:"appliesTo,omitempty" yaml:"appliesTo,omitempty"`
 	// AppliesToAnyOf A list of selectors; the Feature applies if ANY item matches (OR logic). Each item is either a label-selector string (same grammar as appliesTo; requirements inside the string AND together) or a flat key-value map where every pair must match (equality only).

@@ -569,7 +569,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// No-op for Recipes that don't declare workload:. The workload-secret
 		// cross-check validates containers.<n>.secrets against the bound
 		// Component's secretsSchema slot allowlist.
-		var slots types.OrderedMap[types.SecretSlot]
+		var slots types.OrderedMap[types.AttachmentSlot]
 		if input.CatalogLookup.Component != nil {
 			if comp, found := input.CatalogLookup.Component(node.Component); found {
 				slots = comp.Spec.SecretsSchema

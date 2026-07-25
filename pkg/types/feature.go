@@ -20,7 +20,7 @@ import (
 // marshalers — the generator emits a []SelectorTerm field referencing it
 // but never the type itself) and the Interoperability nested struct the
 // generated spec references by pointer. The shared Maintainer type the
-// generated metadata references lives in common.go; the shared SecretSlot
+// generated metadata references lives in common.go; the shared AttachmentSlot
 // and UsesSchemaEntry value types live in component.go.
 
 // SelectorTerm is one item in appliesToAnyOf (OR logic between items). An

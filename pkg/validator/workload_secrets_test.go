@@ -14,9 +14,9 @@ import (
 
 func slotsWith(entries ...struct {
 	name string
-	slot types.SecretSlot
-}) types.OrderedMap[types.SecretSlot] {
-	out := types.OrderedMap[types.SecretSlot]{}
+	slot types.AttachmentSlot
+}) types.OrderedMap[types.AttachmentSlot] {
+	out := types.OrderedMap[types.AttachmentSlot]{}
 	for _, e := range entries {
 		out.Set(e.name, e.slot)
 	}
@@ -30,8 +30,8 @@ func TestValidateWorkloadSecrets_AllowlistedSlot_Passes(t *testing.T) {
 	slots := slotsWith(
 		struct {
 			name string
-			slot types.SecretSlot
-		}{"db-password", types.SecretSlot{Required: true, Inject: []string{"env", "file"}}},
+			slot types.AttachmentSlot
+		}{"db-password", types.AttachmentSlot{Required: true, Inject: []string{"env", "file"}}},
 	)
 
 	w := &types.Workload{}
@@ -49,8 +49,8 @@ func TestValidateWorkloadSecrets_FileDelivery_Passes(t *testing.T) {
 	slots := slotsWith(
 		struct {
 			name string
-			slot types.SecretSlot
-		}{"tls-cert", types.SecretSlot{Required: true, Inject: []string{"file"}}},
+			slot types.AttachmentSlot
+		}{"tls-cert", types.AttachmentSlot{Required: true, Inject: []string{"file"}}},
 	)
 
 	w := &types.Workload{}
@@ -65,7 +65,7 @@ func TestValidateWorkloadSecrets_FileDelivery_Passes(t *testing.T) {
 
 func TestValidateWorkloadSecrets_NoSecrets_Passes(t *testing.T) {
 	t.Parallel()
-	slots := types.OrderedMap[types.SecretSlot]{}
+	slots := types.OrderedMap[types.AttachmentSlot]{}
 	w := &types.Workload{}
 	w.Containers.Set("main", types.ContainerSpec{Image: "app:1.0"})
 
@@ -76,7 +76,7 @@ func TestValidateWorkloadSecrets_NoSecrets_Passes(t *testing.T) {
 
 func TestValidateWorkloadSecrets_NilWorkload_NoError(t *testing.T) {
 	t.Parallel()
-	slots := types.OrderedMap[types.SecretSlot]{}
+	slots := types.OrderedMap[types.AttachmentSlot]{}
 	if err := validator.ValidateWorkloadSecrets(nil, slots, "", "", ""); err != nil {
 		t.Errorf("nil Workload should pass, got %v", err)
 	}
@@ -89,8 +89,8 @@ func TestValidateWorkloadSecrets_UndeclaredSlot_Fails(t *testing.T) {
 	slots := slotsWith(
 		struct {
 			name string
-			slot types.SecretSlot
-		}{"db-password", types.SecretSlot{Inject: []string{"env"}}},
+			slot types.AttachmentSlot
+		}{"db-password", types.AttachmentSlot{Inject: []string{"env"}}},
 	)
 
 	w := &types.Workload{}
@@ -112,8 +112,8 @@ func TestValidateWorkloadSecrets_AsNotInAllowlist_Fails(t *testing.T) {
 	slots := slotsWith(
 		struct {
 			name string
-			slot types.SecretSlot
-		}{"db-password", types.SecretSlot{Inject: []string{"env"}}}, // file NOT in allowlist
+			slot types.AttachmentSlot
+		}{"db-password", types.AttachmentSlot{Inject: []string{"env"}}}, // file NOT in allowlist
 	)
 
 	w := &types.Workload{}
@@ -138,8 +138,8 @@ func TestValidateWorkloadSecrets_BlackboxSlot_Fails(t *testing.T) {
 	slots := slotsWith(
 		struct {
 			name string
-			slot types.SecretSlot
-		}{"opaque-token", types.SecretSlot{Required: true, Inject: nil}},
+			slot types.AttachmentSlot
+		}{"opaque-token", types.AttachmentSlot{Required: true, Inject: nil}},
 	)
 
 	w := &types.Workload{}
@@ -161,8 +161,8 @@ func TestValidateWorkloadSecrets_InitContainerWalked(t *testing.T) {
 	slots := slotsWith(
 		struct {
 			name string
-			slot types.SecretSlot
-		}{"db-password", types.SecretSlot{Inject: []string{"env"}}},
+			slot types.AttachmentSlot
+		}{"db-password", types.AttachmentSlot{Inject: []string{"env"}}},
 	)
 
 	c := types.ContainerSpec{Image: "migrator:1.0"}
@@ -184,8 +184,8 @@ func TestValidateWorkloadSecrets_MultipleFindings_AllSurfaced(t *testing.T) {
 	slots := slotsWith(
 		struct {
 			name string
-			slot types.SecretSlot
-		}{"db-password", types.SecretSlot{Inject: []string{"env"}}},
+			slot types.AttachmentSlot
+		}{"db-password", types.AttachmentSlot{Inject: []string{"env"}}},
 	)
 
 	c := types.ContainerSpec{Image: "app:1.0"}
@@ -215,8 +215,8 @@ func TestValidateWorkloadSecrets_ErrorMessageFormat(t *testing.T) {
 	slots := slotsWith(
 		struct {
 			name string
-			slot types.SecretSlot
-		}{"db", types.SecretSlot{Inject: []string{"env"}}},
+			slot types.AttachmentSlot
+		}{"db", types.AttachmentSlot{Inject: []string{"env"}}},
 	)
 	w := &types.Workload{}
 	c := types.ContainerSpec{Image: "app:1.0"}

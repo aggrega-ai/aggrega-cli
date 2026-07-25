@@ -28,12 +28,12 @@ var (
 	// reserved for Recipe-internal plumbing).
 	ErrWorkloadSecretsSchema = errors.New("workload secretsSchema cross-check failed")
 
-	// ErrSecretSlotNotReferenceable: a Workload secrets entry references a
-	// slot whose resolved provides does not expose the referenceable-secret
-	// contract keys a workload reference reads (name, key). The slot's fill
-	// is not a referenceable secret — it cannot be referenced by name from a
-	// Workload. Structural key-presence only; no value inspection.
-	ErrSecretSlotNotReferenceable = errors.New("workload secret slot is not a referenceable secret")
+	// ErrSlotNotReferenceable: a Workload slot reference names a slot whose
+	// resolved provides does not expose the contract keys a workload reference
+	// reads (name, key). The slot's fill is not referenceable — it cannot be
+	// referenced by name from a Workload. Structural key-presence only; no
+	// value inspection.
+	ErrSlotNotReferenceable = errors.New("workload secret slot is not a referenceable secret")
 )
 
 // WorkloadValidationError carries the structured detail for a Workload
@@ -51,8 +51,9 @@ type WorkloadValidationError struct {
 	// RecipeVersion is the owning Recipe's metadata.version; empty when not
 	// available.
 	RecipeVersion string
-	// Stage is "schema" for schema-validation failures; "secretsSchema"
-	// for cross-wave check failures.
+	// Stage is "schema" for schema-validation failures, "secretsSchema" for
+	// cross-wave slot-declaration check failures, and "slotReferenceability"
+	// for slot-provides key-presence failures.
 	Stage string
 	// Findings lists per-field failures. Each entry is a path + reason +
 	// optional fix suggestion. Schema validation produces one Finding

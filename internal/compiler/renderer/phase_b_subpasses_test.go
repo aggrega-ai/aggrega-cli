@@ -85,7 +85,7 @@ func TestPhaseB_ContextAvailabilityMatrix(t *testing.T) {
 
 	// After B.2 (no workload declared): .workload still nil — sourced-mode
 	// Recipe doesn't trigger workload parsing.
-	emptySlots := types.OrderedMap[types.SecretSlot]{}
+	emptySlots := types.OrderedMap[types.AttachmentSlot]{}
 	if err := phaseB2(ctx, state, emptySlots); err != nil {
 		t.Fatalf("phaseB2: %v", err)
 	}
@@ -113,7 +113,7 @@ containers:
 `}
 	state := NewPhaseBState(r, "test-node", "default", "recipe.yaml")
 	emptyProvides := types.OrderedMap[string]{}
-	emptySlots := types.OrderedMap[types.SecretSlot]{}
+	emptySlots := types.OrderedMap[types.AttachmentSlot]{}
 
 	if err := phaseB0(ctx, state, emptyProvides); err != nil {
 		t.Fatalf("phaseB0: %v", err)
@@ -159,7 +159,7 @@ containers:
     image: app:1.0
 `}
 	state := NewPhaseBState(r, "test", "default", "recipe.yaml")
-	emptySlots := types.OrderedMap[types.SecretSlot]{}
+	emptySlots := types.OrderedMap[types.AttachmentSlot]{}
 
 	// Run prerequisites (B.0, B.1) so the template eval has a complete ctx.
 	emptyProvides := types.OrderedMap[string]{}
@@ -201,7 +201,7 @@ services:
       web: 8080
 `}
 	state := NewPhaseBState(r, "test", "default", "recipe.yaml")
-	emptySlots := types.OrderedMap[types.SecretSlot]{}
+	emptySlots := types.OrderedMap[types.AttachmentSlot]{}
 
 	emptyProvides := types.OrderedMap[string]{}
 	_ = phaseB0(ctx, state, emptyProvides)
@@ -230,8 +230,8 @@ containers:
 	state := NewPhaseBState(r, "test", "default", "recipe.yaml")
 
 	// Slots: only "other" exists; the workload references "undeclared-slot".
-	slots := types.OrderedMap[types.SecretSlot]{}
-	slots.Set("other", types.SecretSlot{Inject: []string{"env"}})
+	slots := types.OrderedMap[types.AttachmentSlot]{}
+	slots.Set("other", types.AttachmentSlot{Inject: []string{"env"}})
 
 	emptyProvides := types.OrderedMap[string]{}
 	_ = phaseB0(ctx, state, emptyProvides)

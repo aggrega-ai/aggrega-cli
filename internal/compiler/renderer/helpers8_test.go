@@ -15,7 +15,7 @@ import (
 func TestPhaseB2_NilRecipe(t *testing.T) {
 	t.Parallel()
 	state := &PhaseBState{}
-	if err := phaseB2(&types.TemplateContext{}, state, types.OrderedMap[types.SecretSlot]{}); err != nil {
+	if err := phaseB2(&types.TemplateContext{}, state, types.OrderedMap[types.AttachmentSlot]{}); err != nil {
 		t.Errorf("nil recipe: %v", err)
 	}
 	if state.PhaseReached != 2 {
@@ -28,7 +28,7 @@ func TestPhaseB2_NilRecipe(t *testing.T) {
 func TestPhaseB2_NoWorkload(t *testing.T) {
 	t.Parallel()
 	state := &PhaseBState{Recipe: &types.Recipe{}}
-	if err := phaseB2(&types.TemplateContext{}, state, types.OrderedMap[types.SecretSlot]{}); err != nil {
+	if err := phaseB2(&types.TemplateContext{}, state, types.OrderedMap[types.AttachmentSlot]{}); err != nil {
 		t.Errorf("no workload: %v", err)
 	}
 	if state.ParsedWorkload != nil {

@@ -56,7 +56,7 @@ func maximalComponent() types.Component {
 		},
 		Spec: types.ComponentSpec{
 			Extends:          "core/compute/base",
-			SecretsSchema:    om[types.SecretSlot]("api_key", types.SecretSlot{Required: true, Inject: []string{"env"}, Description: "key"}),
+			SecretsSchema:    om[types.AttachmentSlot]("api_key", types.AttachmentSlot{Required: true, Inject: []string{"env"}, Description: "key"}),
 			RequiredFeatures: []string{"core/logging"},
 			Inject:           []string{"env", "file"},
 			UsesSchema: om[types.UsesSchemaEntry]("databases", types.UsesSchemaEntry{
@@ -83,7 +83,7 @@ func maximalFeature() types.Feature {
 		},
 		Spec: types.FeatureSpec{
 			Extends:          "core/base-feature",
-			SecretsSchema:    om[types.SecretSlot]("token", types.SecretSlot{Required: true}),
+			SecretsSchema:    om[types.AttachmentSlot]("token", types.AttachmentSlot{Required: true}),
 			AppliesTo:        "component.aggrega.ai/type=server",
 			AppliesToAnyOf:   []types.SelectorTerm{types.StringTerm("component.aggrega.ai/type=worker")},
 			Interoperability: &types.Interoperability{ConflictsWith: []string{"core/other"}, ComponentRefPath: "spec.target"},

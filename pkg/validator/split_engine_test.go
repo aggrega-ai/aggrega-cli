@@ -119,9 +119,9 @@ func TestGenerateBaseUsesJSONSchema_ClosedAdditionalProperties(t *testing.T) {
 }
 
 func TestGenerateBaseSecretsJSONSchema_RequiredVsOptional(t *testing.T) {
-	schema := types.OrderedMap[types.SecretSlot]{}
-	schema.Set("db_password", types.SecretSlot{Required: true, Inject: []string{"env"}})
-	schema.Set("api_token", types.SecretSlot{Required: false, Inject: []string{"file"}})
+	schema := types.OrderedMap[types.AttachmentSlot]{}
+	schema.Set("db_password", types.AttachmentSlot{Required: true, Inject: []string{"env"}})
+	schema.Set("api_token", types.AttachmentSlot{Required: false, Inject: []string{"file"}})
 
 	out := GenerateBaseSecretsJSONSchema(schema)
 	if out == nil {
@@ -157,10 +157,10 @@ func TestGenerateBaseSecretsJSONSchema_RequiredVsOptional(t *testing.T) {
 func TestGenerateBaseSecretsJSONSchema_RequiredSortedAlphabetically(t *testing.T) {
 	// Author order is preserved for PropertyOrder; Required is sorted
 	// alphabetically post-construction for cross-build byte-identity.
-	schema := types.OrderedMap[types.SecretSlot]{}
-	schema.Set("zulu", types.SecretSlot{Required: true})
-	schema.Set("alpha", types.SecretSlot{Required: true})
-	schema.Set("mike", types.SecretSlot{Required: true})
+	schema := types.OrderedMap[types.AttachmentSlot]{}
+	schema.Set("zulu", types.AttachmentSlot{Required: true})
+	schema.Set("alpha", types.AttachmentSlot{Required: true})
+	schema.Set("mike", types.AttachmentSlot{Required: true})
 
 	out := GenerateBaseSecretsJSONSchema(schema)
 	expectedRequired := []string{"alpha", "mike", "zulu"}
@@ -182,8 +182,8 @@ func TestGenerateBaseSecretsJSONSchema_RequiredSortedAlphabetically(t *testing.T
 }
 
 func TestGenerateBaseSecretsJSONSchema_BlackboxNoInject(t *testing.T) {
-	schema := types.OrderedMap[types.SecretSlot]{}
-	schema.Set("internal_only", types.SecretSlot{Required: true})
+	schema := types.OrderedMap[types.AttachmentSlot]{}
+	schema.Set("internal_only", types.AttachmentSlot{Required: true})
 
 	out := GenerateBaseSecretsJSONSchema(schema)
 	slot := out.Properties["internal_only"]
@@ -196,7 +196,7 @@ func TestGenerateBaseSecretsJSONSchema_BlackboxNoInject(t *testing.T) {
 }
 
 func TestGenerateBaseSecretsJSONSchema_Empty(t *testing.T) {
-	out := GenerateBaseSecretsJSONSchema(types.OrderedMap[types.SecretSlot]{})
+	out := GenerateBaseSecretsJSONSchema(types.OrderedMap[types.AttachmentSlot]{})
 	if out != nil {
 		t.Errorf("expected nil for empty secretsSchema; got %v", out)
 	}

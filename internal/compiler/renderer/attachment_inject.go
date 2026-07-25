@@ -79,11 +79,11 @@ func ResolveAttachmentInject(
 // references resolve against.
 func evalAttachmentFRProvides(fr *types.FeatureRecipe, instanceName, nodeID string, entry types.IRFeatureEntry) (types.OrderedMap[string], error) {
 	scope := ProvidesContext{
-		Context:    ProvidesContextBlock{InstanceID: nodeID},
-		Values:     entry.Values,
-		Infra:      entry.Infra,
-		Locals:     types.OrderedMap[string]{},
-		SecretName: instanceName,
+		Context:        ProvidesContextBlock{InstanceID: nodeID},
+		Values:         entry.Values,
+		Infra:          entry.Infra,
+		Locals:         types.OrderedMap[string]{},
+		AttachmentName: instanceName,
 	}
 	for k, tmplText := range fr.Spec.Locals.All() {
 		out, err := EvalTemplate(fmt.Sprintf("attach-inject-local[%s.%s]", instanceName, k), tmplText, scope)

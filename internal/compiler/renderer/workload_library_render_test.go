@@ -33,7 +33,7 @@ func runWorkloadPhaseB(t *testing.T, w types.WorkloadTemplate, wlibs map[string]
 	state := NewPhaseBState(r, "test-node", "default", "recipe.yaml")
 	state.WorkloadLibraries = wlibs
 	emptyProvides := types.OrderedMap[string]{}
-	emptySlots := types.OrderedMap[types.SecretSlot]{}
+	emptySlots := types.OrderedMap[types.AttachmentSlot]{}
 	if err := phaseB0(ctx, state, emptyProvides); err != nil {
 		t.Fatalf("phaseB0: %v", err)
 	}

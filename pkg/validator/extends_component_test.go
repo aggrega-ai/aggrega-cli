@@ -150,18 +150,18 @@ func TestResolveComponentExtends_MergesLabelsAndListFields(t *testing.T) {
 
 func TestResolveComponentExtends_MergesSecretsSchema(t *testing.T) {
 	t.Parallel()
-	secretsSchema := types.OrderedMap[types.SecretSlot]{}
-	secretsSchema.Set("root_password", types.SecretSlot{Required: true, Inject: []string{"env"}})
-	secretsSchema.Set("tls_ca", types.SecretSlot{Required: false})
+	secretsSchema := types.OrderedMap[types.AttachmentSlot]{}
+	secretsSchema.Set("root_password", types.AttachmentSlot{Required: true, Inject: []string{"env"}})
+	secretsSchema.Set("tls_ca", types.AttachmentSlot{Required: false})
 	parent := types.Component{
 		Metadata: types.ComponentMetadata{Name: "core/db/base", Version: "1.0.0"},
 		Spec: types.ComponentSpec{
 			SecretsSchema: secretsSchema,
 		},
 	}
-	secretsSchema2 := types.OrderedMap[types.SecretSlot]{}
-	secretsSchema2.Set("root_password", types.SecretSlot{Required: true, Inject: []string{"env"}, Description: "strict"})
-	secretsSchema2.Set("api_token", types.SecretSlot{Required: true})
+	secretsSchema2 := types.OrderedMap[types.AttachmentSlot]{}
+	secretsSchema2.Set("root_password", types.AttachmentSlot{Required: true, Inject: []string{"env"}, Description: "strict"})
+	secretsSchema2.Set("api_token", types.AttachmentSlot{Required: true})
 	child := types.Component{
 		Metadata: types.ComponentMetadata{Name: "core/db/strict", Version: "1.0.0"},
 		Spec: types.ComponentSpec{
