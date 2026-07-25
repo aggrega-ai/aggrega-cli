@@ -307,36 +307,32 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 			return nil, cerrors.Wrap(err, cerrors.DeveloperError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("Step 5 node %q attachment inject", nodeID))
 		}
 
-		// Producer-fulfilment (Feature↔non-credential-FeatureRecipe): every bound
-		// FeatureRecipe must publish every provides key its Feature declares. The
-		// credential sibling is enforced by ResolveSecretProvides below; this covers
-		// the non-credential feature attachments, inject-bearing or not.
-		if err := enforceFeatureProvidesContracts(graph, nodeID, recipeLookup, input.CatalogLookup); err != nil {
-			return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("Step 5 node %q feature provides", nodeID))
-		}
-
 		// Build template context
 		tmplCtx := AssembleNodeContext(nodeID, graph, allProvides, inject, injectRaw)
 		if input.ResolveResult != nil && input.ResolveResult.Release != nil {
 			AssembleNodeContextWithRelease(tmplCtx, input.ResolveResult.Release)
 		}
 
-		// Resolve each credential attachment's fill provides ONCE (single bag) and
-		// expose it to the consumer as .secrets.<slot>.provides. The same bag is
-		// retained on state below and reused at Phase B.6 as the credential
-		// FeatureRecipe's .provides, so the consumer's read and the generated
-		// Secret derive from one evaluation (no drift). Also halts a bound
-		// FeatureRecipe that does not fulfil its Feature's provides contract.
-		secretProvides, err := ResolveSecretProvides(graph, nodeID, recipeLookup, input.CatalogLookup)
+		// Resolve every attachment's bound-FeatureRecipe provides ONCE (single bag
+		// per bucket) and expose it to the consumer as .features.<name>.provides /
+		// .secrets.<slot>.provides. The credential bag is retained on state below
+		// and reused at Phase B.6 as the attachment FeatureRecipe's .provides, so
+		// the consumer's read and the generated resource derive from one evaluation
+		// (no drift). Resolution also halts a bound FeatureRecipe that does not
+		// fulfil its Feature's provides contract.
+		featureAttachments, _ := graph.Spec.FeatureValuesMapping.Get(nodeID)
+		featureProvides, err := ResolveAttachmentProvides(featureAttachments, nodeID, "feature", recipeLookup, input.CatalogLookup)
+		if err != nil {
+			return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("Step 5 node %q feature provides", nodeID))
+		}
+		applyAttachmentProvides(&tmplCtx.Features, featureProvides)
+
+		secretAttachments, _ := graph.Spec.Secrets.Get(nodeID)
+		secretProvides, err := ResolveAttachmentProvides(secretAttachments, nodeID, "secret", recipeLookup, input.CatalogLookup)
 		if err != nil {
 			return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("Step 5 node %q secret provides", nodeID))
 		}
-		for slot, provided := range secretProvides {
-			if sec, ok := tmplCtx.Secrets.Get(slot); ok {
-				sec.Provides = provided
-				tmplCtx.Secrets.Set(slot, sec)
-			}
-		}
+		applyAttachmentProvides(&tmplCtx.Secrets, secretProvides)
 
 		// Trace points: per-node pre-loop captures.
 		_ = traceWriter.Write(trace.PassPillarsInitial, nodeID, node.BoundaryPath, "", trace.PillarSnapshot(tmplCtx, trace.PassPillarsInitial))

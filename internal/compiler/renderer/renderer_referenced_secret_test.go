@@ -108,9 +108,10 @@ func TestIntegration_ReferencedSecret_ConsumerReadsGeneratedName(t *testing.T) {
 	input, lookup := referencedSecretFixture(fullContractProvides())
 
 	// Consumer side: the resolved bag the .secrets.<slot>.provides exposure uses.
-	bag, err := renderer.ResolveSecretProvides(input.Graph, "db", lookup, input.CatalogLookup)
+	dbSecrets, _ := input.Graph.Spec.Secrets.Get("db")
+	bag, err := renderer.ResolveAttachmentProvides(dbSecrets, "db", "secret", lookup, input.CatalogLookup)
 	if err != nil {
-		t.Fatalf("ResolveSecretProvides: %v", err)
+		t.Fatalf("ResolveAttachmentProvides: %v", err)
 	}
 	pw := bag["password"]
 	if got, _ := pw.Get("name"); got != "db-password" {
@@ -290,7 +291,7 @@ func TestIntegration_ReferencedSecret_WorkloadNotReferenceableHalt(t *testing.T)
 	// schema.provides contract, so the slot's resolved provides lacks name/key.
 	input, lookup := referencedSecretWorkloadFixture("env")
 	// Swap the slot's Feature to a contract-less one and the FR to a no-provides
-	// fill, so ResolveSecretProvides yields no name/key for the slot.
+	// fill, so the slot's resolved provides yields no name/key.
 	dbSecrets, _ := input.Graph.Spec.Secrets.Get("db")
 	entry, _ := dbSecrets.Get("password")
 	entry.Type = "core/secret-value"
@@ -326,7 +327,8 @@ func TestIntegration_ReferencedSecret_FulfilmentHalt(t *testing.T) {
 	partial.Set("name", "{{ .context.instance_id }}-{{ .secret_name }}")
 	input, lookup := referencedSecretFixture(partial)
 
-	_, err := renderer.ResolveSecretProvides(input.Graph, "db", lookup, input.CatalogLookup)
+	dbSecrets, _ := input.Graph.Spec.Secrets.Get("db")
+	_, err := renderer.ResolveAttachmentProvides(dbSecrets, "db", "secret", lookup, input.CatalogLookup)
 	if !errors.Is(err, renderer.ErrProvidesContractUnfulfilled) {
 		t.Fatalf("a FeatureRecipe omitting a contract key should halt with ErrProvidesContractUnfulfilled; got: %v", err)
 	}

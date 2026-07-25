@@ -152,8 +152,8 @@ func TestExecutePhaseA_FeatureLocalsOverlay(t *testing.T) {
 		types.OrderedMap[string]{}
 	locals.Set("host", "db-base.svc")
 	locals.Set("port", "5432")
-	features := types.OrderedMap[types.TemplateFeature]{}
-	features.Set("mon", types.TemplateFeature{Type: "core/monitoring"})
+	features := types.OrderedMap[types.TemplateAttachment]{}
+	features.Set("mon", types.TemplateAttachment{Type: "core/monitoring"})
 
 	ctx := &types.TemplateContext{
 		Context: types.ContextBlock{

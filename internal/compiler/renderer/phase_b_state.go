@@ -112,11 +112,12 @@ type PhaseBState struct {
 	// ArtifactsLibraries are present (a non-library artifacts entry never reads it).
 	ArtifactsLibraries map[string]types.ArtifactsLibrary
 
-	// SecretProvides is the per-node `slot → resolved fill provides` map computed
-	// once before context assembly (ResolveSecretProvides). The same bag is
-	// surfaced to the consumer as `.secrets.<slot>.provides` AND reused at Phase
-	// B.6 as the credential FeatureRecipe's `.provides`, so the consumer's read
-	// and the rendered Secret derive from one evaluation (no drift). nil when no
+	// SecretProvides is the per-node `slot → resolved fill provides` map the
+	// orchestrator resolves once, through the single attachment-provides
+	// resolution, before context assembly. The same bag is surfaced to the
+	// consumer as `.secrets.<slot>.provides` AND reused at Phase B.6 as the
+	// credential FeatureRecipe's `.provides`, so the consumer's read and the
+	// rendered Secret derive from one evaluation (no drift). nil when no
 	// credential attachment resolves a provides bag.
 	SecretProvides map[string]types.OrderedMap[string]
 }

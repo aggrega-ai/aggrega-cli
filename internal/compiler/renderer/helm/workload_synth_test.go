@@ -833,8 +833,8 @@ func TestSynthesizeWorkload_SecretsEnvAndFile(t *testing.T) {
 	// `from` names the slot; the generated Secret's name and data key come from
 	// the slot's resolved provides bag.
 	tmplCtx := &types.TemplateContext{}
-	tmplCtx.Secrets.Set("db-password", types.TemplateSecret{Provides: providesBag("db-creds", "password")})
-	tmplCtx.Secrets.Set("tls-cert", types.TemplateSecret{Provides: providesBag("tls-bundle", "tls.crt")})
+	tmplCtx.Secrets.Set("db-password", types.TemplateAttachment{Provides: providesBag("db-creds", "password")})
+	tmplCtx.Secrets.Set("tls-cert", types.TemplateAttachment{Provides: providesBag("tls-bundle", "tls.crt")})
 
 	files, err := SynthesizeWorkloadCore(w, renderer.SecretProvidesFromContext(tmplCtx), nodeCtxFor("api"))
 	if err != nil {
@@ -869,7 +869,7 @@ func TestSynthesizeWorkload_SecretsMultiKeyOneSlot(t *testing.T) {
 	provides := types.OrderedMap[string]{}
 	provides.Set("name", "app-creds")
 	tmplCtx := &types.TemplateContext{}
-	tmplCtx.Secrets.Set("app-credentials", types.TemplateSecret{Provides: provides})
+	tmplCtx.Secrets.Set("app-credentials", types.TemplateAttachment{Provides: provides})
 
 	files, err := SynthesizeWorkloadCore(w, renderer.SecretProvidesFromContext(tmplCtx), nodeCtxFor("api"))
 	if err != nil {

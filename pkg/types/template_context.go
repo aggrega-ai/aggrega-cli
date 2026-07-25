@@ -24,21 +24,21 @@ import (
 //     validator.ValidateWorkload + validator.ValidateWorkloadSecrets succeed.
 //     nil before B.2; nil for Recipes that don't declare workload:.
 type TemplateContext struct {
-	Context    ContextBlock                `json:"context" yaml:"context"`
-	Values     OrderedMap[any]             `json:"values" yaml:"values"`
-	Infra      OrderedMap[any]             `json:"infra" yaml:"infra"`
-	Locals     OrderedMap[string]          `json:"locals" yaml:"locals"`
-	Provides   OrderedMap[string]          `json:"provides,omitempty,omitzero" yaml:"provides,omitempty"`
-	Features   OrderedMap[TemplateFeature] `json:"features,omitempty,omitzero" yaml:"features,omitempty"`
-	Secrets    OrderedMap[TemplateSecret]  `json:"secrets,omitempty,omitzero" yaml:"secrets,omitempty"`
-	Metadata   *TemplateMetadata           `json:"metadata,omitempty" yaml:"metadata,omitempty"`
-	SecretName string                      `json:"secret_name,omitempty" yaml:"secret_name,omitempty"`
-	Inject     *InjectPipe                 `json:"inject,omitempty" yaml:"inject,omitempty"`         // secret-specific inject
-	InjectRaw  any                         `json:"inject_raw,omitempty" yaml:"inject_raw,omitempty"` // immutable Developer intent; null if omitted
-	Steps      OrderedMap[StepOutput]      `json:"steps,omitempty,omitzero" yaml:"steps,omitempty"`
-	Source     any                         `json:"source,omitempty" yaml:"source,omitempty"`     // resolved Recipe.Spec.Source (Phase B.0+); nil for sourceless Recipes
-	Workload   *Workload                   `json:"workload,omitempty" yaml:"workload,omitempty"` // parsed Workload (Phase B.2+); nil for non-synthesized Recipes
-	Boundary   *BoundaryContext            `json:"boundary,omitempty" yaml:"boundary,omitempty"` // populated only for boundary-scope FRs (spec.executionScope: boundary); nil otherwise
+	Context    ContextBlock                   `json:"context" yaml:"context"`
+	Values     OrderedMap[any]                `json:"values" yaml:"values"`
+	Infra      OrderedMap[any]                `json:"infra" yaml:"infra"`
+	Locals     OrderedMap[string]             `json:"locals" yaml:"locals"`
+	Provides   OrderedMap[string]             `json:"provides,omitempty,omitzero" yaml:"provides,omitempty"`
+	Features   OrderedMap[TemplateAttachment] `json:"features,omitempty,omitzero" yaml:"features,omitempty"`
+	Secrets    OrderedMap[TemplateAttachment] `json:"secrets,omitempty,omitzero" yaml:"secrets,omitempty"`
+	Metadata   *TemplateMetadata              `json:"metadata,omitempty" yaml:"metadata,omitempty"`
+	SecretName string                         `json:"secret_name,omitempty" yaml:"secret_name,omitempty"`
+	Inject     *InjectPipe                    `json:"inject,omitempty" yaml:"inject,omitempty"`         // secret-specific inject
+	InjectRaw  any                            `json:"inject_raw,omitempty" yaml:"inject_raw,omitempty"` // immutable Developer intent; null if omitted
+	Steps      OrderedMap[StepOutput]         `json:"steps,omitempty,omitzero" yaml:"steps,omitempty"`
+	Source     any                            `json:"source,omitempty" yaml:"source,omitempty"`     // resolved Recipe.Spec.Source (Phase B.0+); nil for sourceless Recipes
+	Workload   *Workload                      `json:"workload,omitempty" yaml:"workload,omitempty"` // parsed Workload (Phase B.2+); nil for non-synthesized Recipes
+	Boundary   *BoundaryContext               `json:"boundary,omitempty" yaml:"boundary,omitempty"` // populated only for boundary-scope FRs (spec.executionScope: boundary); nil otherwise
 }
 
 // ContextBlock is the compiler-assembled execution context providing identity, topology, and delivery data.
@@ -331,23 +331,28 @@ type TemplateMetadata struct {
 	AggregateName  string `json:"aggregate_name" yaml:"aggregate_name"`
 }
 
-// TemplateFeature is a feature attachment available in the template context.
-// Schema: template-context-v1alpha1.schema.json#/properties/features
-type TemplateFeature struct {
-	Type   string          `json:"type" yaml:"type"`
-	Values OrderedMap[any] `json:"values,omitempty,omitzero" yaml:"values,omitempty"`
-	Infra  OrderedMap[any] `json:"infra,omitempty,omitzero" yaml:"infra,omitempty"`
-}
-
-// TemplateSecret is a credential feature attachment available in the template context.
-// Schema: template-context-v1alpha1.schema.json#/properties/secrets
-type TemplateSecret struct {
-	Type   string          `json:"type" yaml:"type"`
-	Values OrderedMap[any] `json:"values,omitempty,omitzero" yaml:"values,omitempty"`
-	// Provides is the filling credential FeatureRecipe's resolved provides — its
-	// declared output (the generated Secret's name, key, …) exposed to the
-	// consumer as .secrets.<slot>.provides.<key>, mirroring .uses.<alias>.provides.
-	// The consumer reads the producer's contract instead of re-deriving it.
+// TemplateAttachment is one attachment available in the template context —
+// the per-instance view of an attached Feature, keyed by the instance name the
+// author gave it. Every attachment exposes the same four fields; what differs
+// between attachments is what they produce, not the shape they are read through.
+//
+// Type is the attached Feature's catalog URI. Values and Infra are the
+// attachment's own per-instance pillars — developer intent and operational
+// sizing — carried verbatim from the attachment declaration and opaque to the
+// compiler.
+//
+// Provides is the bound FeatureRecipe's resolved provides: the attachment's
+// published output (an emitted resource's name, a data key, an identity) exposed
+// to the consumer as .features.<name>.provides.<key>, mirroring
+// .uses.<alias>.provides. The consumer reads the producer's published contract
+// instead of re-deriving it. An attachment whose FeatureRecipe publishes nothing
+// carries an empty map, never a missing field.
+//
+// Schema: template-context-v1alpha1.schema.json#/$defs/template_attachment
+type TemplateAttachment struct {
+	Type     string             `json:"type" yaml:"type"`
+	Values   OrderedMap[any]    `json:"values,omitempty,omitzero" yaml:"values,omitempty"`
+	Infra    OrderedMap[any]    `json:"infra,omitempty,omitzero" yaml:"infra,omitempty"`
 	Provides OrderedMap[string] `json:"provides,omitempty,omitzero" yaml:"provides,omitempty"`
 }
 
@@ -373,7 +378,7 @@ type BoundaryContext struct {
 	CrossBoundaryUsesEdges         []EnrichedEdge            `json:"cross_boundary_uses_edges,omitempty" yaml:"cross_boundary_uses_edges,omitempty"`
 	Labels                         OrderedMap[string]        `json:"labels,omitempty,omitzero" yaml:"labels,omitempty"`
 	Annotations                    OrderedMap[string]        `json:"annotations,omitempty,omitzero" yaml:"annotations,omitempty"`
-	FeatureAttachments             []TemplateFeature         `json:"feature_attachments,omitempty" yaml:"feature_attachments,omitempty"`
+	FeatureAttachments             []TemplateAttachment      `json:"feature_attachments,omitempty" yaml:"feature_attachments,omitempty"`
 }
 
 // ComponentInfo is the per-component view exposed via .boundary.components

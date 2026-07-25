@@ -188,11 +188,7 @@ func phaseB2(ctx *types.TemplateContext, state *PhaseBState, slots types.Ordered
 	// secret-volume name — so the base and FeatureRecipe workload paths (the
 	// latter renders against a shallow copy of this context) are checked
 	// uniformly.
-	secretProvides := map[string]types.OrderedMap[string]{}
-	for slot, sec := range ctx.Secrets.All() {
-		secretProvides[slot] = sec.Provides
-	}
-	if err := validator.ValidateWorkloadSecretReferenceability(&w, secretProvides, state.RecipePath, state.RecipeName, state.RecipeVersion); err != nil {
+	if err := validator.ValidateWorkloadSecretReferenceability(&w, SecretProvidesFromContext(ctx), state.RecipePath, state.RecipeName, state.RecipeVersion); err != nil {
 		return err
 	}
 

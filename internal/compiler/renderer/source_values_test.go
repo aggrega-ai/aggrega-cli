@@ -142,7 +142,7 @@ func TestResolveSourceForNode_MaterializedInfraDriveSource(t *testing.T) {
 // shared helper the FR/secret render sites call resolves `.values`-driven source
 // versions per the values passed; two instances of the same FeatureRecipe type
 // with different values resolve their OWN instance's source identity (the FR
-// sites pass each attachment's per-instance values — TemplateFeature.Values,
+// sites pass each attachment's per-instance values — TemplateAttachment.Values,
 // populated from the FVM entry the lock side also reads, so build==lock).
 func TestResolveEntitySource_PerInstanceValuesResolveDistinctSources(t *testing.T) {
 	t.Parallel()

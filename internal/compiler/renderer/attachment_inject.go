@@ -103,54 +103,6 @@ func evalAttachmentFRProvides(fr *types.FeatureRecipe, instanceName, nodeID stri
 	return provided, nil
 }
 
-// enforceFeatureProvidesContracts halts when a bound non-credential FeatureRecipe
-// does not publish every provides key its Feature declares as the output contract
-// in schema.provides. It walks every feature attachment in the node's
-// FeatureValuesMapping — independent of whether the attachment declares inject,
-// because a Feature's provides may be consumed via .context / pillar reads as well
-// as via `inject from:` — mirroring the per-slot credential walk in
-// ResolveSecretProvides. An attachment with no bound FeatureRecipe, a catalog-absent
-// Feature type, or a Feature declaring no provides is skipped (nothing to enforce).
-// Instances are walked in sorted order so the first-reported shortfall is
-// deterministic. Structural key-presence only; see enforceProvidesContract.
-func enforceFeatureProvidesContracts(graph *types.IRGraph, nodeID string, recipeLookup RecipeLookup, catalogLookup resolver.CatalogLookup) error {
-	if recipeLookup.FeatureRecipe == nil || catalogLookup.Feature == nil {
-		return nil
-	}
-	fvm, ok := graph.Spec.FeatureValuesMapping.Get(nodeID)
-	if !ok || fvm.Len() == 0 {
-		return nil
-	}
-	instances := fvm.Keys()
-	sort.Strings(instances)
-	for _, instanceName := range instances {
-		entry, _ := fvm.Get(instanceName)
-		fr, found := recipeLookup.FeatureRecipe(instanceName, entry.Type)
-		if !found || fr == nil {
-			continue
-		}
-		feat, ffound := catalogLookup.Feature(entry.Type)
-		if !ffound {
-			continue
-		}
-		contract := resolver.FeatureProvidesKeys(feat, catalogLookup.SchemaLibraries)
-		if len(contract) == 0 {
-			continue
-		}
-		provided, err := evalAttachmentFRProvides(fr, instanceName, nodeID, entry)
-		if err != nil {
-			return err
-		}
-		if err := enforceProvidesContract(contract, provided, nodeID,
-			fmt.Sprintf("node %q feature %q", nodeID, instanceName),
-			fmt.Sprintf("FeatureRecipe %q", fr.Metadata.Name),
-			fmt.Sprintf("Feature %q", entry.Type)); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 // enforceProvidesContract halts when a realizer's produced provides bag omits
 // any key the abstract entity declares as its output contract. The contract is
 // structural key-presence — subset-required, superset-permitted: every declared
@@ -177,50 +129,56 @@ func enforceProvidesContract(declared map[string]bool, produced types.OrderedMap
 	return nil
 }
 
-// ResolveSecretProvides resolves each credential secret attachment's filling
-// FeatureRecipe `provides` ONCE — before the consumer renders — keyed by slot
-// (= attachment instance name), and enforces the producer-fulfilment contract:
-// the bound FeatureRecipe must publish every provides key the slot's Feature
+// ResolveAttachmentProvides resolves every attachment in one bucket against its
+// bound FeatureRecipe's `provides` ONCE — before the consumer renders — keyed by
+// attachment instance name, and enforces the producer-fulfilment contract: the
+// bound FeatureRecipe must publish every provides key the attachment's Feature
 // declares in schema.provides; a missing key halts with
 // ErrProvidesContractUnfulfilled (structural key-presence, never a judgement of
-// the value). The returned bag is consumed by BOTH the consumer's
-// `.secrets.<slot>.provides` and the credential render's `frCtx.Provides` at
-// Phase B.6 — a single evaluation, so the two cannot drift.
-func ResolveSecretProvides(graph *types.IRGraph, nodeID string, recipeLookup RecipeLookup, catalogLookup resolver.CatalogLookup) (map[string]types.OrderedMap[string], error) {
-	if recipeLookup.FeatureRecipe == nil {
-		return nil, nil
-	}
-	secrets, ok := graph.Spec.Secrets.Get(nodeID)
-	if !ok || secrets.Len() == 0 {
+// the value).
+//
+// This is the one home for resolving an attachment's provides. Every attachment
+// family routes through it, so the published output a consumer reads at
+// .features.<name>.provides / .secrets.<slot>.provides, the contract check, and
+// the attachment FeatureRecipe's own .provides at Phase B.6 all derive from a
+// single evaluation and cannot drift. An attachment with no bound FeatureRecipe
+// is skipped; instances are walked in sorted order so the first-reported
+// shortfall is deterministic.
+//
+// noun names the authoring surface the attachment was declared under
+// ("feature", "secret"); it appears in the diagnostic only and steers no
+// behavior.
+func ResolveAttachmentProvides(attachments types.OrderedMap[types.IRFeatureEntry], nodeID, noun string, recipeLookup RecipeLookup, catalogLookup resolver.CatalogLookup) (map[string]types.OrderedMap[string], error) {
+	if recipeLookup.FeatureRecipe == nil || attachments.Len() == 0 {
 		return nil, nil
 	}
 	out := map[string]types.OrderedMap[string]{}
-	slots := secrets.Keys()
-	sort.Strings(slots)
-	for _, slot := range slots {
-		entry, _ := secrets.Get(slot)
-		fr, found := recipeLookup.FeatureRecipe(slot, entry.Type)
+	instances := attachments.Keys()
+	sort.Strings(instances)
+	for _, instanceName := range instances {
+		entry, _ := attachments.Get(instanceName)
+		fr, found := recipeLookup.FeatureRecipe(instanceName, entry.Type)
 		if !found || fr == nil {
 			continue
 		}
-		provided, err := evalAttachmentFRProvides(fr, slot, nodeID, entry)
+		provided, err := evalAttachmentFRProvides(fr, instanceName, nodeID, entry)
 		if err != nil {
 			return nil, err
 		}
 		// Producer-fulfilment: the bound FeatureRecipe must publish every provides
-		// key the slot's Feature declares as its output contract.
+		// key the attachment's Feature declares as its output contract.
 		if catalogLookup.Feature != nil {
 			if feat, ffound := catalogLookup.Feature(entry.Type); ffound {
 				contract := resolver.FeatureProvidesKeys(feat, catalogLookup.SchemaLibraries)
 				if err := enforceProvidesContract(contract, provided, nodeID,
-					fmt.Sprintf("node %q secret %q", nodeID, slot),
+					fmt.Sprintf("node %q %s %q", nodeID, noun, instanceName),
 					fmt.Sprintf("FeatureRecipe %q", fr.Metadata.Name),
 					fmt.Sprintf("Feature %q", entry.Type)); err != nil {
 					return nil, err
 				}
 			}
 		}
-		out[slot] = provided
+		out[instanceName] = provided
 	}
 	if len(out) == 0 {
 		return nil, nil

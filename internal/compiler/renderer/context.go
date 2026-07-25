@@ -44,28 +44,12 @@ func AssembleNodeContext(
 		}
 	}
 
-	// Features from feature_values_mapping (author-order preserved)
-	features := types.OrderedMap[types.TemplateFeature]{}
-	if fvm, ok := graph.Spec.FeatureValuesMapping.Get(nodeID); ok && fvm.Len() > 0 {
-		for name, entry := range fvm.All() {
-			features.Set(name, types.TemplateFeature{
-				Type:   entry.Type,
-				Values: entry.Values,
-				Infra:  entry.Infra,
-			})
-		}
-	}
-
-	// Secrets from secrets mapping (author-order preserved)
-	secrets := types.OrderedMap[types.TemplateSecret]{}
-	if sec, ok := graph.Spec.Secrets.Get(nodeID); ok && sec.Len() > 0 {
-		for name, entry := range sec.All() {
-			secrets.Set(name, types.TemplateSecret{
-				Type:   entry.Type,
-				Values: entry.Values,
-			})
-		}
-	}
+	// Attachments from the feature and credential buckets (author-order
+	// preserved). Both buckets project through the same shape, so an attachment
+	// is read the same way whichever bucket carries it. Provides is filled in by
+	// the orchestrator once the bound FeatureRecipe has been evaluated.
+	features := projectAttachments(graph.Spec.FeatureValuesMapping, nodeID)
+	secrets := projectAttachments(graph.Spec.Secrets, nodeID)
 
 	// Metadata from Release
 	var metadata *types.TemplateMetadata
@@ -98,6 +82,45 @@ func AssembleNodeContext(
 	}
 
 	return ctx
+}
+
+// projectAttachments projects one node's attachment bucket onto the template
+// surface, preserving author order. One projection for every attachment bucket:
+// a bucket-specific copy would be free to lose a pillar, which is how a pillar
+// carried in the IR becomes unreadable from a template.
+func projectAttachments(bucket types.OrderedMap[types.OrderedMap[types.IRFeatureEntry]], nodeID string) types.OrderedMap[types.TemplateAttachment] {
+	out := types.OrderedMap[types.TemplateAttachment]{}
+	entries, ok := bucket.Get(nodeID)
+	if !ok {
+		return out
+	}
+	for name, entry := range entries.All() {
+		out.Set(name, types.TemplateAttachment{
+			Type:   entry.Type,
+			Values: entry.Values,
+			Infra:  entry.Infra,
+		})
+	}
+	return out
+}
+
+// applyAttachmentProvides folds each attachment's resolved provides bag onto the
+// projected attachment. Iteration runs over the projection's author order rather
+// than the resolved-bag map so the write order is deterministic; an attachment
+// with no resolved bag keeps its empty Provides.
+func applyAttachmentProvides(attachments *types.OrderedMap[types.TemplateAttachment], provides map[string]types.OrderedMap[string]) {
+	if len(provides) == 0 {
+		return
+	}
+	for _, name := range attachments.Keys() {
+		bag, ok := provides[name]
+		if !ok {
+			continue
+		}
+		att, _ := attachments.Get(name)
+		att.Provides = bag
+		attachments.Set(name, att)
+	}
 }
 
 // AssembleNodeContextWithRelease enriches the context with Release metadata.

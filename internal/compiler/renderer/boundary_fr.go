@@ -734,7 +734,7 @@ func buildBoundaryContext(
 	if graph != nil {
 		if inner, ok := graph.Spec.BoundaryFeatures.Get(boundaryPath); ok {
 			for fname, bf := range inner.All() {
-				bc.FeatureAttachments = append(bc.FeatureAttachments, types.TemplateFeature{
+				bc.FeatureAttachments = append(bc.FeatureAttachments, types.TemplateAttachment{
 					Type:   bf.Type,
 					Values: types.OrderedMap[any]{},
 					Infra:  bf.Infra,
