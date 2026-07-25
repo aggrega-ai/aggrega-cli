@@ -346,7 +346,7 @@ type TemplateSecret struct {
 	Values OrderedMap[any] `json:"values,omitempty,omitzero" yaml:"values,omitempty"`
 	// Provides is the filling credential FeatureRecipe's resolved provides — its
 	// declared output (the generated Secret's name, key, …) exposed to the
-	// consumer as .secrets.<slot>.provides.<key>, mirroring .uses.<socket>.provides.
+	// consumer as .secrets.<slot>.provides.<key>, mirroring .uses.<alias>.provides.
 	// The consumer reads the producer's contract instead of re-deriving it.
 	Provides OrderedMap[string] `json:"provides,omitempty,omitzero" yaml:"provides,omitempty"`
 }

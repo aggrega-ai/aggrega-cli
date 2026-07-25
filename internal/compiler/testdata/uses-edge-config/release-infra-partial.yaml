@@ -1,0 +1,29 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: uses-edge-config-release-infra-partial
+  environment: local
+  version: "1.0.0"
+spec:
+  aggregate: uses-edge-config-app
+  manifest: uses-edge-config-manifest
+  boundaries:
+    cluster:
+      directory: ./dist/cluster
+      components:
+        api:
+          # The operator authors ONE of the two infra keys the databases socket
+          # declares, and wires the caches socket with NO infra at all. So the
+          # authored tls_mode must win while pool_size fills from the socket's
+          # declared default, and the freshly-wired caches edge must carry its
+          # own socket's declared pool_size default.
+          uses:
+            databases:
+              main:
+                infra:
+                  tls_mode: mutual
+            caches:
+              primary:
+                target: redis
+        db: {}
+        redis: {}

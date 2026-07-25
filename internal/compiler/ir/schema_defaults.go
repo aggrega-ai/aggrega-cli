@@ -51,27 +51,30 @@ func componentPillarDefaults(comp types.Component, libraries map[string]types.Sc
 	return compactform.PillarDefaults(compiled, "values"), compactform.PillarDefaults(compiled, "infra")
 }
 
-// socketValuesDefaults compiles the per-edge `values` contract a socket declares
-// and returns its declared defaults. The contract lives on the CONSUMING
-// component — the edge's source — under
-// spec.usesSchema.<socket>.valueSchema, which is the same place the Step-1
-// per-edge conformance guard reads it from.
+// socketPillarDefaults compiles the per-edge contract a socket declares for one
+// pillar and returns its declared defaults. The contract lives on the CONSUMING
+// component — the edge's source — under spec.usesSchema.<socket>.valueSchema
+// for the `values` pillar and spec.usesSchema.<socket>.infraSchema for the
+// `infra` pillar, which is the same place the Step-1 per-edge conformance guard
+// reads it from.
 //
 // An unknown component type, an undeclared socket, a socket declaring no
-// `values` contract, or content that fails to compile all yield an empty map:
-// a malformed schema surfaces through the validator, not here.
+// contract for the pillar, or content that fails to compile all yield an empty
+// map: a malformed schema surfaces through the validator, not here.
 //
+// The pillar is a parameter rather than one wrapper per pillar so both pillars
+// materialise through a single function and cannot acquire divergent behaviour.
 // The compile and the default extraction both route through the shared
 // primitives (resolver.CompileSocketPillarSchema and
 // compactform.PillarDefaults) that the conformance guard uses, so a socket's
 // declared defaults are interpreted identically whether they are being
 // validated against or materialised into the graph.
-func socketValuesDefaults(lookup resolver.CatalogLookup, componentType, socket string) types.OrderedMap[any] {
-	compiled, ok := resolver.CompileSocketPillarSchema(lookup, componentType, socket, "values")
+func socketPillarDefaults(lookup resolver.CatalogLookup, componentType, socket, pillar string) types.OrderedMap[any] {
+	compiled, ok := resolver.CompileSocketPillarSchema(lookup, componentType, socket, pillar)
 	if !ok {
 		return types.OrderedMap[any]{}
 	}
-	return compactform.PillarDefaults(compiled, "values")
+	return compactform.PillarDefaults(compiled, pillar)
 }
 
 // mergeSchemaDefaults fills declared defaults into author for keys the author

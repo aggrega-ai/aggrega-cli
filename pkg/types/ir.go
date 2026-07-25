@@ -196,10 +196,13 @@ type IREdge struct {
 	// and carries the Release infra in Infra. OriginFeature set => Feature;
 	// OriginRelease true => Release; neither => Aggregate.
 	OriginRelease bool `json:"origin_release,omitempty"`
-	// Values and Infra carry the resolved per-connection config for this edge,
-	// validated at Step 1 against the target socket's valueSchema / infraSchema
-	// and projected into the consuming node's render context at
-	// .uses.<socket>.<alias>.values / .infra. Opaque to the core.
+	// Values and Infra carry the resolved per-connection config for this edge.
+	// Both are validated against the per-edge contract the CONSUMING component —
+	// the edge's source — declares on the socket (valueSchema for Values,
+	// infraSchema for Infra), and both carry that contract's declared defaults
+	// for keys the author omitted (an authored value wins). Both project into
+	// the consuming node's render context at .uses.<alias>.values / .infra
+	// (the uses map is alias-keyed). Opaque to the core.
 	Values OrderedMap[any]                `json:"values,omitempty,omitzero"`
 	Infra  OrderedMap[any]                `json:"infra,omitempty,omitzero"`
 	Inject OrderedMap[OrderedMap[string]] `json:"inject,omitempty,omitzero"`

@@ -91,6 +91,52 @@ func TestUsesEdgeConfig_ValueSchemaDefaultsMaterialise(t *testing.T) {
 	}
 }
 
+// TestUsesEdgeConfig_InfraSchemaDefaultsMaterialise proves the same default-fill
+// contract holds for the OPERATOR pillar: a socket's declared per-edge `infra`
+// default reaches the consumer's real rendered output when no Release authors the
+// key, and an authored value still wins while its omitted siblings still fill.
+//
+// The databases socket's infraSchema declares pool_size (default 10) and tls_mode
+// (default require); the caches socket's declares pool_size (default 5). Three
+// cases cover the pillar:
+//
+//   - the defaults release authors no per-edge infra anywhere, so both databases
+//     keys must render from the schema alone;
+//   - the partial release authors tls_mode only, so tls_mode must survive while
+//     pool_size fills, and the Release-WIRED caches edge must carry the caches
+//     socket's own default;
+//   - a socket left unbound produces no edge, so it contributes no defaulted
+//     infra — a default attaches to an edge, never to an unwired socket.
+func TestUsesEdgeConfig_InfraSchemaDefaultsMaterialise(t *testing.T) {
+	t.Parallel()
+
+	filled := usesEdgeBuild(t, "testdata/uses-edge-config/release-edge-defaults.yaml")
+	for _, want := range []string{
+		`DB_POOL_SIZE: "10"`,
+		"DB_TLS_MODE: require",
+	} {
+		if !strings.Contains(filled, want) {
+			t.Errorf("declared per-edge infra default did not reach rendered output: missing %q\n--- merged ---\n%s", want, filled)
+		}
+	}
+	// The caches socket is declared but left unbound in that deployment, so no
+	// edge exists to carry its default.
+	if !strings.Contains(filled, `CACHE_POOL: ""`) {
+		t.Errorf("an unbound socket must contribute no defaulted infra; want an empty CACHE_POOL\n--- merged ---\n%s", filled)
+	}
+
+	partial := usesEdgeBuild(t, "testdata/uses-edge-config/release-infra-partial.yaml")
+	for _, want := range []string{
+		"DB_TLS_MODE: mutual", // authored, wins over the declared default
+		`DB_POOL_SIZE: "10"`,  // omitted sibling, filled from the declared default
+		`CACHE_POOL: "5"`,     // Release-wired edge, filled from its own socket's default
+	} {
+		if !strings.Contains(partial, want) {
+			t.Errorf("per-edge infra default-fill alongside an authored key: missing %q\n--- merged ---\n%s", want, partial)
+		}
+	}
+}
+
 // TestUsesEdgeConfig_TargetRenderInvariant is the real-output safety proof: the
 // target (db) renders identically whether or not the consumer (api) attaches
 // per-edge config and wires the extra cache edge. Only the consumer's output

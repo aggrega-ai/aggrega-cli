@@ -185,7 +185,7 @@ type NormalizedEdge struct {
 	// verbose Aggregate uses entry; Infra from the Aggregate entry and/or merged
 	// from a Release per-edge entry. Opaque OrderedMaps the core does not
 	// interpret — the conformance gate (Step 1) validates them and the renderer
-	// projects them at .uses.<socket>.<alias>.{values,infra}.
+	// projects them at .uses.<alias>.{values,infra}.
 	Values types.OrderedMap[any]
 	Infra  types.OrderedMap[any]
 }

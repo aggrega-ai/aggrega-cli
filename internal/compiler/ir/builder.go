@@ -312,25 +312,34 @@ func BuildIRContext(ctx context.Context, cfg BuildIRConfig) (*types.IRGraph, Fea
 	}
 
 	// 2. Convert topology edges to IR edges. A socket's declared per-edge
-	// `values` defaults materialise here, for keys the author omitted, under the
-	// same default-fill contract component values get above — so a declared
-	// default reaches rendered output instead of being validation-only. Applying
-	// it at IR-build keeps the render-side projection a verbatim, catalog-free
-	// JOIN: the renderer never needs socket schema knowledge to see a default.
+	// defaults materialise here — for both the `values` and the `infra` pillar,
+	// for keys the author omitted — under the same default-fill contract the
+	// component pillars get above, so a declared default reaches rendered output
+	// instead of being validation-only. Applying it at IR-build keeps the
+	// render-side projection a verbatim, catalog-free JOIN: the renderer never
+	// needs socket schema knowledge to see a default.
 	irEdges := make([]types.IREdge, 0, len(topo.Edges))
 	socketDefaults := map[string]types.OrderedMap[any]{}
+	// Keyed by pillar as well as (componentType, socket): the two pillars are
+	// separate declarations on the same socket.
+	defaultsFor := func(componentType, socket, pillar string) types.OrderedMap[any] {
+		key := componentType + "\x00" + socket + "\x00" + pillar
+		defs, cached := socketDefaults[key]
+		if !cached {
+			defs = socketPillarDefaults(cfg.CatalogLookup, componentType, socket, pillar)
+			socketDefaults[key] = defs
+		}
+		return defs
+	}
 	for _, e := range topo.Edges {
-		edgeValues := e.Values
+		edgeValues, edgeInfra := e.Values, e.Infra
 		if cfg.CatalogLookup.Component != nil {
 			if src, ok := topo.Nodes.Get(e.Source); ok && src != nil {
-				key := src.ComponentType + "\x00" + e.Socket
-				defs, cached := socketDefaults[key]
-				if !cached {
-					defs = socketValuesDefaults(cfg.CatalogLookup, src.ComponentType, e.Socket)
-					socketDefaults[key] = defs
-				}
-				if defs.Len() > 0 {
+				if defs := defaultsFor(src.ComponentType, e.Socket, "values"); defs.Len() > 0 {
 					edgeValues = mergeSchemaDefaults(e.Values, defs)
+				}
+				if defs := defaultsFor(src.ComponentType, e.Socket, "infra"); defs.Len() > 0 {
+					edgeInfra = mergeSchemaDefaults(e.Infra, defs)
 				}
 			}
 		}
@@ -343,7 +352,7 @@ func BuildIRContext(ctx context.Context, cfg BuildIRConfig) (*types.IRGraph, Fea
 			OriginFeatureInstance: e.OriginFeatureInstance,
 			OriginRelease:         e.OriginRelease,
 			Values:                edgeValues,
-			Infra:                 e.Infra,
+			Infra:                 edgeInfra,
 			Inject:                convertInjectBlock(e.Inject),
 		}
 		irEdges = append(irEdges, irEdge)
