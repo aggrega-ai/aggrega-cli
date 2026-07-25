@@ -1,0 +1,19 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: uses-edge-defaults-release
+  environment: local
+  version: "1.0.0"
+spec:
+  aggregate: uses-edge-defaults-app
+  manifest: uses-edge-config-manifest
+  boundaries:
+    cluster:
+      directory: ./dist/cluster
+      # No per-edge operator config either: the whole point of this release is
+      # that nothing is authored on the edge, so every per-edge value in the
+      # rendered output arrives from the socket's declared defaults.
+      components:
+        api: {}
+        db: {}
+        redis: {}

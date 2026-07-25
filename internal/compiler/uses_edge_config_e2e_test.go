@@ -62,6 +62,35 @@ func TestUsesEdgeConfig_PositiveRendersConsumerConfig(t *testing.T) {
 	}
 }
 
+// TestUsesEdgeConfig_ValueSchemaDefaultsMaterialise proves a socket's declared
+// per-edge `values` default reaches the consumer's real rendered output when the
+// author omits the key, and that an authored value still wins.
+//
+// The socket's valueSchema declares protocol (default grpc) and statement_cache
+// (default 0). The defaults release authors neither, so both must render from
+// the schema alone; the positive release authors statement_cache: 200, which
+// must survive. Without default materialisation the omitted keys render empty,
+// which is the shape a reader following the entity reference would hit: the
+// reference documents authoring a per-edge default as the way to get the value.
+func TestUsesEdgeConfig_ValueSchemaDefaultsMaterialise(t *testing.T) {
+	t.Parallel()
+
+	filled := usesEdgeBuild(t, "testdata/uses-edge-config/release-edge-defaults.yaml")
+	for _, want := range []string{
+		"DB_PROTOCOL: grpc",
+		`DB_STATEMENT_CACHE: "0"`,
+	} {
+		if !strings.Contains(filled, want) {
+			t.Errorf("declared per-edge values default did not reach rendered output: missing %q\n--- merged ---\n%s", want, filled)
+		}
+	}
+
+	authored := usesEdgeBuild(t, "testdata/uses-edge-config/release.yaml")
+	if !strings.Contains(authored, `DB_STATEMENT_CACHE: "200"`) {
+		t.Errorf("authored per-edge value must win over the declared default; want 200\n--- merged ---\n%s", authored)
+	}
+}
+
 // TestUsesEdgeConfig_TargetRenderInvariant is the real-output safety proof: the
 // target (db) renders identically whether or not the consumer (api) attaches
 // per-edge config and wires the extra cache edge. Only the consumer's output

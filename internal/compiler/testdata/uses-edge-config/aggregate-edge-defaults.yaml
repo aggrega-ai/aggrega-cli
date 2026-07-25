@@ -1,0 +1,22 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: uses-edge-defaults-app
+  version: "1.0.0"
+spec:
+  components:
+    api:
+      type: core/api
+      # Developer wires the databases socket and authors NO per-edge `values`.
+      # The socket's valueSchema declares a default for both of its keys
+      # (protocol: grpc, statement_cache: 0), so both reach the consumer's
+      # rendered output from the schema alone — the default-fill contract
+      # component values already have, applied per edge.
+      uses:
+        databases:
+          main:
+            target: db
+    db:
+      type: core/db
+    redis:
+      type: core/cache

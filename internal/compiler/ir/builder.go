@@ -311,9 +311,29 @@ func BuildIRContext(ctx context.Context, cfg BuildIRConfig) (*types.IRGraph, Fea
 		return nil, nil, joinAttachmentConformance(attachmentConformanceErrs)
 	}
 
-	// 2. Convert topology edges to IR edges
+	// 2. Convert topology edges to IR edges. A socket's declared per-edge
+	// `values` defaults materialise here, for keys the author omitted, under the
+	// same default-fill contract component values get above — so a declared
+	// default reaches rendered output instead of being validation-only. Applying
+	// it at IR-build keeps the render-side projection a verbatim, catalog-free
+	// JOIN: the renderer never needs socket schema knowledge to see a default.
 	irEdges := make([]types.IREdge, 0, len(topo.Edges))
+	socketDefaults := map[string]types.OrderedMap[any]{}
 	for _, e := range topo.Edges {
+		edgeValues := e.Values
+		if cfg.CatalogLookup.Component != nil {
+			if src, ok := topo.Nodes.Get(e.Source); ok && src != nil {
+				key := src.ComponentType + "\x00" + e.Socket
+				defs, cached := socketDefaults[key]
+				if !cached {
+					defs = socketValuesDefaults(cfg.CatalogLookup, src.ComponentType, e.Socket)
+					socketDefaults[key] = defs
+				}
+				if defs.Len() > 0 {
+					edgeValues = mergeSchemaDefaults(e.Values, defs)
+				}
+			}
+		}
 		irEdge := types.IREdge{
 			Source:                e.Source,
 			Target:                e.Target,
@@ -322,7 +342,7 @@ func BuildIRContext(ctx context.Context, cfg BuildIRConfig) (*types.IRGraph, Fea
 			OriginFeature:         e.OriginFeature,
 			OriginFeatureInstance: e.OriginFeatureInstance,
 			OriginRelease:         e.OriginRelease,
-			Values:                e.Values,
+			Values:                edgeValues,
 			Infra:                 e.Infra,
 			Inject:                convertInjectBlock(e.Inject),
 		}

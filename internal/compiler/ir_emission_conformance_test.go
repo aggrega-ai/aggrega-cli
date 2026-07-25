@@ -32,6 +32,7 @@ func TestEmittedIRConformsToSchema(t *testing.T) {
 		{"capability-socket", "testdata/capability-socket/release-green.yaml", []string{"testdata/capability-socket/catalog"}},
 		{"scope-feature-uses", "testdata/scope-feature-uses/release.yaml", []string{"testdata/scope-feature-uses/catalog/base"}},
 		{"uses-edge-config", "testdata/uses-edge-config/release.yaml", []string{"testdata/uses-edge-config/catalog/base"}},
+		{"uses-edge-defaults", "testdata/uses-edge-config/release-edge-defaults.yaml", []string{"testdata/uses-edge-config/catalog/base"}},
 		{"uses-edge-subagg", "testdata/uses-edge-subagg/release.yaml", []string{"testdata/uses-edge-config/catalog/base", "testdata/uses-edge-subagg/catalog/base"}},
 		{"compose-bridge", "testdata/compose-bridge/release.yaml", []string{
 			"testdata/compose-bridge/catalog/base",
