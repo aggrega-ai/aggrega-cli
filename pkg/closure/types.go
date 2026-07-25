@@ -47,12 +47,13 @@ import (
 // confines source-descent's dependencies (RecipeLoader,
 // SourceResolver) to the new function.
 type Closure struct {
-	Entities          []ResolvedRef
-	MappingLibraries  []ResolvedLibrary
-	SchemaLibraries   []ResolvedLibrary
-	WorkloadLibraries []ResolvedLibrary
-	SourceArtifacts   []SourceArtifact
-	Plugins           []ResolvedRef
+	Entities           []ResolvedRef
+	MappingLibraries   []ResolvedLibrary
+	SchemaLibraries    []ResolvedLibrary
+	WorkloadLibraries  []ResolvedLibrary
+	ArtifactsLibraries []ResolvedLibrary
+	SourceArtifacts    []SourceArtifact
+	Plugins            []ResolvedRef
 }
 
 // SourceArtifact mirrors lockfile.SourceArtifact field-for-field;
@@ -285,6 +286,7 @@ type Lookup interface {
 	ResolveSchemaLibrary(uri string) (LibraryResolution, error)
 	ResolveMappingLibrary(uri string) (LibraryResolution, error)
 	ResolveWorkloadLibrary(uri string) (LibraryResolution, error)
+	ResolveArtifactsLibrary(uri string) (LibraryResolution, error)
 	// ResolvePlugin resolves a Plugin entity's .wasm artifact reference — the
 	// entity's bare identity (<socket>/<name>). The .wasm rides inline as a layer
 	// of the single plugin manifest published under the entity's version tag, so

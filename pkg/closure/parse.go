@@ -22,6 +22,7 @@ const (
 	schemasFragmentPrefix   = "/schemas/"
 	mappingsFragmentPrefix  = "/mappings/"
 	workloadsFragmentPrefix = "/workloads/"
+	artifactsFragmentPrefix = "/artifacts/"
 )
 
 // isIdentityRefWithFragment reports whether value is a host-less cross-document
@@ -56,6 +57,14 @@ func isIdentityImportRef(value string) bool {
 // fragment) and the host-bearing `oci://…` form both return false.
 func isIdentityWorkloadImportRef(value string) bool {
 	return isIdentityRefWithFragment(value, workloadsFragmentPrefix)
+}
+
+// isIdentityArtifactImportRef reports whether an `$import:` value is a host-less
+// cross-document ArtifactsLibrary reference in the identity form
+// `<Library>[:<version>]#/artifacts/<Entry>`. A local file path (mode 2, no
+// fragment) and the host-bearing `oci://…` form both return false.
+func isIdentityArtifactImportRef(value string) bool {
+	return isIdentityRefWithFragment(value, artifactsFragmentPrefix)
 }
 
 // parseIdentityRefWithFragment parses a host-less identity library reference
@@ -105,6 +114,13 @@ func parseIdentityImportRef(s string) (libraryName, version, fragment string, er
 // parseIdentityRefWithFragment.
 func parseIdentityWorkloadImportRef(s string) (libraryName, version, fragment string, err error) {
 	return parseIdentityRefWithFragment(s, workloadsFragmentPrefix)
+}
+
+// parseIdentityArtifactImportRef parses a host-less identity ArtifactsLibrary
+// `$import:` reference `<Library>[:<version>]#/artifacts/<Entry>`. See
+// parseIdentityRefWithFragment.
+func parseIdentityArtifactImportRef(s string) (libraryName, version, fragment string, err error) {
+	return parseIdentityRefWithFragment(s, artifactsFragmentPrefix)
 }
 
 // formatFragmentRef rebuilds the wire-form fragment ("#/schemas/X",

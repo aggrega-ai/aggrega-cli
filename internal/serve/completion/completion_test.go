@@ -17,8 +17,8 @@ import (
 func TestCompletionKindReturnsAllEntityKinds(t *testing.T) {
 	t.Parallel()
 	items := Kind()
-	if len(items) != 11 {
-		t.Fatalf("Kind() returned %d items; want 11 entity kinds", len(items))
+	if len(items) != 12 {
+		t.Fatalf("Kind() returned %d items; want 12 entity kinds", len(items))
 	}
 	// First item should be the authoring-progression's natural starting point: Aggregate.
 	if items[0].Label != "Aggregate" {
@@ -29,7 +29,7 @@ func TestCompletionKindReturnsAllEntityKinds(t *testing.T) {
 	for _, item := range items {
 		got[item.Label] = true
 	}
-	for _, want := range []string{"Aggregate", "Manifest", "Release", "Component", "Feature", "Recipe", "FeatureRecipe", "Plugin", "SchemaLibrary", "MappingLibrary", "WorkloadLibrary"} {
+	for _, want := range []string{"Aggregate", "Manifest", "Release", "Component", "Feature", "Recipe", "FeatureRecipe", "Plugin", "SchemaLibrary", "MappingLibrary", "WorkloadLibrary", "ArtifactsLibrary"} {
 		if !got[want] {
 			t.Errorf("kind %q missing from Kind() output", want)
 		}
@@ -510,10 +510,10 @@ func TestClassifyForCompletionReturnsUnknownForUnrecognized(t *testing.T) {
 
 // --- Closed-set table verification ---
 
-func TestEntityKindsTableContainsExpectedEleven(t *testing.T) {
+func TestEntityKindsTableContainsExpectedTwelve(t *testing.T) {
 	t.Parallel()
-	if len(EntityKinds) != 11 {
-		t.Errorf("EntityKinds has %d entries; want 11", len(EntityKinds))
+	if len(EntityKinds) != 12 {
+		t.Errorf("EntityKinds has %d entries; want 12", len(EntityKinds))
 	}
 }
 

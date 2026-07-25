@@ -24,9 +24,10 @@ import (
 type fakeLookup struct {
 	entities     map[string]closure.Resolution
 	plugins      map[string]closure.Resolution
-	schemaLibs   map[string]closure.LibraryResolution
-	mappingLibs  map[string]closure.LibraryResolution
-	workloadLibs map[string]closure.LibraryResolution
+	schemaLibs    map[string]closure.LibraryResolution
+	mappingLibs   map[string]closure.LibraryResolution
+	workloadLibs  map[string]closure.LibraryResolution
+	artifactsLibs map[string]closure.LibraryResolution
 }
 
 func (f *fakeLookup) ResolveCatalogEntity(uri, kindHint string) (closure.Resolution, error) {
@@ -66,6 +67,13 @@ func (f *fakeLookup) ResolveMappingLibrary(uri string) (closure.LibraryResolutio
 
 func (f *fakeLookup) ResolveWorkloadLibrary(uri string) (closure.LibraryResolution, error) {
 	if res, ok := f.workloadLibs[fakeBaseName(uri)]; ok {
+		return res, nil
+	}
+	return closure.LibraryResolution{Resolution: closure.Resolution{NotFound: true}}, nil
+}
+
+func (f *fakeLookup) ResolveArtifactsLibrary(uri string) (closure.LibraryResolution, error) {
+	if res, ok := f.artifactsLibs[fakeBaseName(uri)]; ok {
 		return res, nil
 	}
 	return closure.LibraryResolution{Resolution: closure.Resolution{NotFound: true}}, nil

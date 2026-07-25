@@ -64,6 +64,29 @@ var (
 	// an entry absent from the resolved WorkloadLibrary's workloads map.
 	ErrWorkloadEntryNotFound = errors.New("workload-library import references an entry not present in the WorkloadLibrary")
 
+	// ErrArtifactImportShape fires when an artifacts entry `$import:` value is
+	// neither a host-bearing reference nor a well-formed bare-name
+	// `<Library>#/artifacts/<entry>` identity — including a field-root `$import:`
+	// nested inside a bundle file body, which is not supported (a single bundle
+	// file cannot expand into another bundle; compose at the consumption site).
+	ErrArtifactImportShape = errors.New("artifacts $import: is not a bare-name artifacts-library reference (<Library>#/artifacts/<entry>)")
+
+	// ErrArtifactsLibraryNotFound fires when a bare-name artifacts-library import
+	// names an ArtifactsLibrary absent from the resolved set (the local catalog
+	// plus any lockfile-pinned libraries bridged in at load).
+	ErrArtifactsLibraryNotFound = errors.New("artifacts-library import references an ArtifactsLibrary not present in the catalog")
+
+	// ErrArtifactsLibraryEntryNotFound fires when a bare-name artifacts-library
+	// import names a bundle absent from the resolved ArtifactsLibrary's artifacts map.
+	ErrArtifactsLibraryEntryNotFound = errors.New("artifacts-library import references a bundle not present in the ArtifactsLibrary")
+
+	// ErrArtifactOutputCollision fires when two artifact outputs resolve to the
+	// same output filename — two bundle files, or a bundle file and another
+	// artifacts entry. A collision halts loudly rather than one output silently
+	// overwriting another (a Loud Guardrail, per the No Ghost Infrastructure
+	// invariant).
+	ErrArtifactOutputCollision = errors.New("artifacts output filename collision: two artifact outputs resolve to the same filename")
+
 	// ErrCircularImport is the $import-surface name for a mapping-library import
 	// expansion cycle. It is the shared refcycle.ErrCycle sentinel — the same
 	// identity the $ref surface reports via ErrCircularRef — so one detector

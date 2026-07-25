@@ -57,17 +57,25 @@ type ArtifactsEmitter interface {
 
 // buildArtifactsProjection performs the generic, invariant-forced host work for a
 // node's artifacts: it walks Recipe.Spec.Artifacts in author order, resolves each
-// entry's text (inline content or the $import:-loaded file the host reads per
-// Invariant 2), runs the pillar pre-check, and evaluates the entry as a Go
-// template against tmplCtx using the supplied delimiter pair. It attaches the
-// host-computed build-provenance label and annotation key sets — the same key
-// computation every emitting surface shares — to each entry. Format, provenance
-// placement, path, and final bytes are the guest's concern via
-// [ArtifactsEmitter.EmitArtifacts].
+// entry's content, runs the pillar pre-check, and evaluates it as a Go template
+// against tmplCtx using the supplied delimiter pair. It attaches the host-computed
+// build-provenance label and annotation key sets — the same key computation every
+// emitting surface shares — to each entry. Format, provenance placement, path, and
+// final bytes are the guest's concern via [ArtifactsEmitter.EmitArtifacts].
 //
-// The per-entry output name is the author-declared map key for an inline entry
-// and the imported file's base name for an $import:-loaded entry; origin records
-// which form the entry took so a guest that rejects one form can halt on it.
+// Each entry resolves by content-shape (per the file-import vocabulary):
+//   - Mode 1 (inline): output name is the author-declared map key.
+//   - Mode 2 (local file $import): output name is the imported file's base name;
+//     the artifactDigests file-pin is verified.
+//   - Mode 3 (library $import, `<Library>#/artifacts/<entry>`): the referenced
+//     ArtifactsLibrary bundle expands into one output per file, each named by the
+//     bundle's authored filename (not the consumption key). The library version
+//     is lockfile-pinned, so no artifactDigests file-pin applies. A host-bearing
+//     `oci://…` reference is rejected (ErrHostInLibraryImport).
+//
+// origin records which form the entry took so a guest that rejects one form can
+// halt on it. Two outputs resolving to the same filename halt loudly with
+// ErrArtifactOutputCollision.
 func buildArtifactsProjection(
 	tmplCtx *types.TemplateContext,
 	state *PhaseBState,
@@ -78,52 +86,95 @@ func buildArtifactsProjection(
 	annotations := BuildAggregaProvenanceAnnotations(nodeCtx, recipeURI(state))
 
 	var proj ArtifactsProjection
-	for _, key := range state.Recipe.Spec.Artifacts.Keys() {
-		entry, _ := state.Recipe.Spec.Artifacts.Get(key)
-		tmplText, err := resolveArtifactEntryText(entry, state.RecipeName, key)
-		if err != nil {
-			return ArtifactsProjection{}, err
-		}
-		name := key
-		origin := "inline"
-		if entry.Import != "" {
-			name = filepath.Base(entry.Import)
-			origin = "import"
-			// Build-verify: an imported artifact whose recipe carries a recorded
-			// pin must still hash to that pin — a file edited after resolution
-			// halts loudly rather than rendering unverified content. A recipe with
-			// no recorded pin (never frozen) has nothing to compare and proceeds.
-			if pin, ok := recipepin.MatchArtifactPin(state.Recipe.Spec.ArtifactDigests, key); ok {
-				if got := digest.ContentDigest([]byte(tmplText)); got != pin.Digest {
-					return ArtifactsProjection{}, cerrors.Wrap(ErrArtifactContentMismatch,
-						cerrors.CatalogError, cerrors.SourceLocation{File: entry.Import},
-						fmt.Sprintf("Recipe %q artifact %q imported file %s digest %s does not match recorded pin %s",
-							state.RecipeName, key, entry.Import, got, pin.Digest))
-				}
-			}
-		}
-		if err := preCheckArtifactPillars(state, name, tmplText, leftDelim, rightDelim); err != nil {
-			return ArtifactsProjection{}, err
+	// seen tracks every emitted output filename so a collision — two bundle
+	// files, or a bundle file and another artifacts entry, resolving to the same
+	// output name — halts loudly rather than one output silently overwriting
+	// another (a Loud Guardrail per the No Ghost Infrastructure invariant).
+	seen := map[string]struct{}{}
+	emit := func(outputName, origin, tmplText string) error {
+		if err := preCheckArtifactPillars(state, outputName, tmplText, leftDelim, rightDelim); err != nil {
+			return err
 		}
 		rendered, err := EvalTemplateWithDelims(
-			fmt.Sprintf("artifacts[%s/%s]", state.RecipeName, name),
+			fmt.Sprintf("artifacts[%s/%s]", state.RecipeName, outputName),
 			tmplText, tmplCtx, leftDelim, rightDelim,
 		)
 		if err != nil {
-			return ArtifactsProjection{}, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: name}, fmt.Sprintf("artifact %q template eval", name))
+			return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: outputName}, fmt.Sprintf("artifact %q template eval", outputName))
 		}
 		// A presence-guarded body that renders to nothing must not emit a
 		// zero-length file; skip the entry so it never reaches the guest.
 		if strings.TrimSpace(rendered) == "" {
-			continue
+			return nil
 		}
+		if _, dup := seen[outputName]; dup {
+			return cerrors.Wrap(ErrArtifactOutputCollision, cerrors.CatalogError, cerrors.SourceLocation{File: outputName},
+				fmt.Sprintf("Recipe %q emits artifact output %q more than once", state.RecipeName, outputName))
+		}
+		seen[outputName] = struct{}{}
 		proj.Entries = append(proj.Entries, ArtifactProjectionEntry{
-			Name:        name,
+			Name:        outputName,
 			Origin:      origin,
 			Content:     []byte(rendered),
 			Labels:      labels,
 			Annotations: annotations,
 		})
+		return nil
+	}
+
+	for _, key := range state.Recipe.Spec.Artifacts.Keys() {
+		entry, _ := state.Recipe.Spec.Artifacts.Get(key)
+		switch {
+		case entry.HasOCIPrefix():
+			// A library is addressed by bare-name identity, never by registry
+			// location; reject a host-bearing reference (mirrors workload:).
+			return ArtifactsProjection{}, cerrors.Wrap(ErrHostInLibraryImport,
+				cerrors.CatalogError, cerrors.SourceLocation{File: state.RecipeName},
+				fmt.Sprintf("Recipe %q artifact %q $import %q", state.RecipeName, key, entry.Import))
+		case entry.IsLibraryImport():
+			// Mode 3: a bundle expands into one output per file. Each file's name
+			// is the bundle's authored filename (not the consumption key); the
+			// library version is lockfile-pinned, so no artifactDigests file-pin
+			// applies here (that check guards only mode-2 local-file imports).
+			bundle, err := resolveArtifactLibraryImport(entry.Import, state.ArtifactsLibraries)
+			if err != nil {
+				return ArtifactsProjection{}, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: state.RecipeName},
+					fmt.Sprintf("Recipe %q artifacts library import %q", state.RecipeName, entry.Import))
+			}
+			for _, fname := range bundle.Files.Keys() {
+				body, _ := bundle.Files.Get(fname)
+				if err := emit(fname, "import", body); err != nil {
+					return ArtifactsProjection{}, err
+				}
+			}
+		default:
+			// Mode 1 (inline) / mode 2 (local file).
+			tmplText, err := resolveArtifactEntryText(entry, state.RecipeName, key)
+			if err != nil {
+				return ArtifactsProjection{}, err
+			}
+			name := key
+			origin := "inline"
+			if entry.Import != "" {
+				name = filepath.Base(entry.Import)
+				origin = "import"
+				// Build-verify: an imported artifact whose recipe carries a recorded
+				// pin must still hash to that pin — a file edited after resolution
+				// halts loudly rather than rendering unverified content. A recipe with
+				// no recorded pin (never frozen) has nothing to compare and proceeds.
+				if pin, ok := recipepin.MatchArtifactPin(state.Recipe.Spec.ArtifactDigests, key); ok {
+					if got := digest.ContentDigest([]byte(tmplText)); got != pin.Digest {
+						return ArtifactsProjection{}, cerrors.Wrap(ErrArtifactContentMismatch,
+							cerrors.CatalogError, cerrors.SourceLocation{File: entry.Import},
+							fmt.Sprintf("Recipe %q artifact %q imported file %s digest %s does not match recorded pin %s",
+								state.RecipeName, key, entry.Import, got, pin.Digest))
+					}
+				}
+			}
+			if err := emit(name, origin, tmplText); err != nil {
+				return ArtifactsProjection{}, err
+			}
+		}
 	}
 	return proj, nil
 }

@@ -160,6 +160,8 @@ func (s *Server) renderByKind(kind string, e hover.Entity) string {
 		return hover.MappingLibrary(e)
 	case "WorkloadLibrary":
 		return hover.WorkloadLibrary(e)
+	case "ArtifactsLibrary":
+		return hover.ArtifactsLibrary(e)
 	case "Aggregate":
 		return hover.Aggregate(e)
 	case "Manifest":

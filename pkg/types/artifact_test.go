@@ -89,3 +89,43 @@ func TestArtifactEntry_RejectsMapWithExtraKeys(t *testing.T) {
 		t.Errorf("expected ErrArtifactEntryShape; got %v", err)
 	}
 }
+
+// TestArtifactEntry_IsLibraryImport pins mode-3 discrimination on the
+// `#/artifacts/` fragment surface, mirroring WorkloadTemplate.IsLibraryImport:
+// only a host-less bare-name ArtifactsLibrary reference is a library import; an
+// inline body, a local-file import, and a host-bearing oci:// form are not.
+func TestArtifactEntry_IsLibraryImport(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name  string
+		entry ArtifactEntry
+		want  bool
+	}{
+		{"bare-name library", ArtifactEntry{Import: "SharedCRDs#/artifacts/WidgetCRD"}, true},
+		{"versioned library", ArtifactEntry{Import: "SharedCRDs:1.2.0#/artifacts/WidgetCRD"}, true},
+		{"local file", ArtifactEntry{Import: "./crd.yaml"}, false},
+		{"oci host", ArtifactEntry{Import: "oci://hub.aggrega.ai/SharedCRDs#/artifacts/WidgetCRD"}, false},
+		{"inline", ArtifactEntry{Inline: "kind: ConfigMap"}, false},
+		{"wrong fragment", ArtifactEntry{Import: "SharedCRDs#/workloads/WidgetCRD"}, false},
+	}
+	for _, tc := range cases {
+		if got := tc.entry.IsLibraryImport(); got != tc.want {
+			t.Errorf("%s: IsLibraryImport() = %v, want %v", tc.name, got, tc.want)
+		}
+	}
+}
+
+// TestArtifactEntry_HasOCIPrefix pins that a host-bearing reference is reported
+// for rejection and a bare-name / local-file import is not.
+func TestArtifactEntry_HasOCIPrefix(t *testing.T) {
+	t.Parallel()
+	if !(ArtifactEntry{Import: "oci://hub/SharedCRDs#/artifacts/X"}).HasOCIPrefix() {
+		t.Error("expected HasOCIPrefix true for oci:// form")
+	}
+	if (ArtifactEntry{Import: "SharedCRDs#/artifacts/X"}).HasOCIPrefix() {
+		t.Error("expected HasOCIPrefix false for bare-name form")
+	}
+	if (ArtifactEntry{Import: "./crd.yaml"}).HasOCIPrefix() {
+		t.Error("expected HasOCIPrefix false for local file")
+	}
+}

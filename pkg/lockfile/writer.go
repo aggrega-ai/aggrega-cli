@@ -198,6 +198,16 @@ func canonicalise(lf *Lockfile) *Lockfile {
 		return out.WorkloadLibraries[i].URI < out.WorkloadLibraries[j].URI
 	})
 
+	out.ArtifactsLibraries = make([]ArtifactsLibrary, len(lf.ArtifactsLibraries))
+	for i, l := range lf.ArtifactsLibraries {
+		entryCopy := l
+		entryCopy.Consumers = canonicaliseConsumers(l.Consumers)
+		out.ArtifactsLibraries[i] = entryCopy
+	}
+	sort.Slice(out.ArtifactsLibraries, func(i, j int) bool {
+		return out.ArtifactsLibraries[i].URI < out.ArtifactsLibraries[j].URI
+	})
+
 	out.SourceArtifacts = make([]SourceArtifact, len(lf.SourceArtifacts))
 	for i, sa := range lf.SourceArtifacts {
 		entryCopy := sa

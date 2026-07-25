@@ -36,19 +36,20 @@ package lockfile
 // Field declaration order is alphabetical to drive yaml.v3's
 // canonical key emission.
 type Lockfile struct {
-	Entities          []Entity            `yaml:"entities"`
-	ExternalInputs    []ExternalInput     `yaml:"external_inputs"`
-	GeneratedAt       string              `yaml:"generated_at"`
-	MappingLibraries  []MappingLibrary    `yaml:"mapping_libraries"`
-	Mutators          []MutatorAttachment `yaml:"mutators"`
-	Plugins           []Plugin            `yaml:"plugins"`
-	Providers         []ProviderBinding   `yaml:"providers"`
-	Release           string              `yaml:"release"`
-	SchemaLibraries   []SchemaLibrary     `yaml:"schema_libraries"`
-	SourceArtifacts   []SourceArtifact    `yaml:"source_artifacts"`
-	VerdictInputs     []VerdictInput      `yaml:"verdict_inputs"`
-	Version           int                 `yaml:"version"`
-	WorkloadLibraries []WorkloadLibrary   `yaml:"workload_libraries"`
+	Entities           []Entity            `yaml:"entities"`
+	ExternalInputs     []ExternalInput     `yaml:"external_inputs"`
+	GeneratedAt        string              `yaml:"generated_at"`
+	MappingLibraries   []MappingLibrary    `yaml:"mapping_libraries"`
+	Mutators           []MutatorAttachment `yaml:"mutators"`
+	Plugins            []Plugin            `yaml:"plugins"`
+	Providers          []ProviderBinding   `yaml:"providers"`
+	Release            string              `yaml:"release"`
+	SchemaLibraries    []SchemaLibrary     `yaml:"schema_libraries"`
+	SourceArtifacts    []SourceArtifact    `yaml:"source_artifacts"`
+	VerdictInputs      []VerdictInput      `yaml:"verdict_inputs"`
+	Version            int                 `yaml:"version"`
+	WorkloadLibraries  []WorkloadLibrary   `yaml:"workload_libraries"`
+	ArtifactsLibraries []ArtifactsLibrary  `yaml:"artifact_libraries"`
 }
 
 // Entity carries a catalog-entity pin: Component, Feature, Recipe,
@@ -179,6 +180,17 @@ type MappingLibrary struct {
 // library sections remain visibly separate at the Go API surface even
 // though their shape coincides today.
 type WorkloadLibrary struct {
+	URI             string            `yaml:"uri"`
+	ResolvedVersion string            `yaml:"resolved_version"`
+	Digest          string            `yaml:"digest"`
+	Consumers       []LibraryConsumer `yaml:"consumers"`
+}
+
+// ArtifactsLibrary is structurally identical to SchemaLibrary,
+// MappingLibrary, and WorkloadLibrary — declared as a distinct type so the
+// lockfile's library sections remain visibly separate at the Go API surface
+// even though their shape coincides today.
+type ArtifactsLibrary struct {
 	URI             string            `yaml:"uri"`
 	ResolvedVersion string            `yaml:"resolved_version"`
 	Digest          string            `yaml:"digest"`

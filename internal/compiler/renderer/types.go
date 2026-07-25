@@ -34,6 +34,12 @@ type RendererInput struct {
 	// no WorkloadLibraries are present.
 	WorkloadLibraries map[string]types.WorkloadLibrary
 
+	// ArtifactsLibraries is the local-catalog ArtifactsLibrary set, keyed by bare
+	// name. It is the source for resolving a Recipe / FeatureRecipe artifacts
+	// entry's bare-name `artifacts.<name>: { $import: <Library>#/artifacts/<entry> }`
+	// at render. nil when no ArtifactsLibraries are present.
+	ArtifactsLibraries map[string]types.ArtifactsLibrary
+
 	// Lockfile, WorkspaceRoot, and CacheDir together enable orchestrator-
 	// side source-artifact resolution. When all three are set, the
 	// orchestrator looks up each Recipe's spec.source against

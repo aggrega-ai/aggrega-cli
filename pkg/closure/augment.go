@@ -27,6 +27,7 @@ type LibrarySource interface {
 	FeatureRecipeByURI(uri string) (types.FeatureRecipe, bool)
 	MappingLibrary(uri string) (types.MappingLibrary, bool)
 	WorkloadLibrary(uri string) (types.WorkloadLibrary, bool)
+	ArtifactsLibrary(uri string) (types.ArtifactsLibrary, bool)
 }
 
 // AugmentClosure resolves the cross-document library axes the entity walk does
@@ -44,6 +45,9 @@ func AugmentClosure(cl *Closure, src LibrarySource, lookup Lookup) error {
 	}
 	if err := discoverClosureWorkloadLibraries(cl, src, lookup); err != nil {
 		return fmt.Errorf("workload-library discovery: %w", err)
+	}
+	if err := discoverClosureArtifactsLibraries(cl, src, lookup); err != nil {
+		return fmt.Errorf("artifacts-library discovery: %w", err)
 	}
 	return nil
 }
@@ -267,4 +271,82 @@ func workloadImportDirective(w types.WorkloadTemplate) (string, bool) {
 		return "", false
 	}
 	return "$import: " + w.Import, true
+}
+
+// discoverClosureArtifactsLibraries is the artifacts-axis mirror of
+// discoverClosureWorkloadLibraries: the single producer of the closure's
+// ArtifactsLibrary axis, shared by pull's pin flow and build's drift-verify flow.
+// It scans every Recipe and FeatureRecipe artifacts map in the loaded catalog for
+// field-root `$import:` library references, resolves the discovered libraries
+// (minimum-version selection + the injected lookup), and descends them
+// transitively to a fixpoint, merging the result into cl.ArtifactsLibraries.
+//
+// Unlike the workload and mapping axes — where a Recipe carries a single
+// `spec.workload` / `spec.valuesMapping` field — artifacts is a MAP, so a single
+// Recipe may contribute several `$import:` edges (one per artifacts entry that
+// imports a bundle). Each entry is emitted as its own consumer; a Mode-1 inline
+// body and a Mode-2 local-file import carry no library reference and are skipped
+// by the walker's identity gate. Iteration is sorted-URI (entries within a recipe
+// keep author order) for deterministic output.
+func discoverClosureArtifactsLibraries(cl *Closure, src LibrarySource, lookup Lookup) error {
+	var recipeConsumers, frConsumers []ArtifactsConsumer
+	rSeen, frSeen := map[string]struct{}{}, map[string]struct{}{}
+	for _, e := range cl.Entities {
+		if r, ok := src.RecipeByURI(e.URI); ok {
+			if _, dup := rSeen[e.URI]; dup {
+				continue
+			}
+			rSeen[e.URI] = struct{}{}
+			recipeConsumers = append(recipeConsumers, artifactsImportConsumers(e.URI, r.Spec.Artifacts)...)
+			continue
+		}
+		if fr, ok := src.FeatureRecipeByURI(e.URI); ok {
+			if _, dup := frSeen[e.URI]; dup {
+				continue
+			}
+			frSeen[e.URI] = struct{}{}
+			frConsumers = append(frConsumers, artifactsImportConsumers(e.URI, fr.Spec.Artifacts)...)
+		}
+	}
+	sort.SliceStable(recipeConsumers, func(i, j int) bool { return recipeConsumers[i].URI < recipeConsumers[j].URI })
+	sort.SliceStable(frConsumers, func(i, j int) bool { return frConsumers[i].URI < frConsumers[j].URI })
+	consumers := append(recipeConsumers, frConsumers...)
+
+	// Transitive body accessor: a discovered ArtifactsLibrary's own bundle file
+	// bodies (flattened across every bundle entry), for descending their field-root
+	// `$import:`s, resolved through the lazy library walk. A library the closure
+	// does not reach lands with the lookup's Tier-3 path.
+	body := func(lib ResolvedLibrary) ([]string, bool, error) {
+		al, ok := src.ArtifactsLibrary(lib.URI)
+		if !ok {
+			return nil, false, nil
+		}
+		var bodies []string
+		for _, k := range al.Spec.Artifacts.Keys() {
+			entry, _ := al.Spec.Artifacts.Get(k)
+			for _, fk := range entry.Files.Keys() {
+				fb, _ := entry.Files.Get(fk)
+				bodies = append(bodies, fb)
+			}
+		}
+		return bodies, true, nil
+	}
+
+	return cl.DiscoverArtifactsLibraries(lookup, consumers, body)
+}
+
+// artifactsImportConsumers renders every artifacts-map entry that carries an
+// `$import:` target into an ArtifactsConsumer in authored directive form
+// (`$import: <target>`) for the discovery walker. A Mode-1 inline body yields no
+// consumer. Author order of the entries is preserved.
+func artifactsImportConsumers(uri string, artifacts types.OrderedMap[types.ArtifactEntry]) []ArtifactsConsumer {
+	var out []ArtifactsConsumer
+	for _, k := range artifacts.Keys() {
+		entry, _ := artifacts.Get(k)
+		if entry.Import == "" {
+			continue
+		}
+		out = append(out, ArtifactsConsumer{URI: uri, Template: "$import: " + entry.Import})
+	}
+	return out
 }

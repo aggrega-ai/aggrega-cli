@@ -55,8 +55,8 @@ func TestCompletionDispatchKindCursor(t *testing.T) {
 
 	// Cursor on "Aggregate" value at line 1, char 10.
 	result := completionRequest(t, srv, path, 1, 10)
-	if len(result.Items) != 11 {
-		t.Errorf("kind completion returned %d items; want 11 entity kinds", len(result.Items))
+	if len(result.Items) != 12 {
+		t.Errorf("kind completion returned %d items; want 12 entity kinds", len(result.Items))
 	}
 	labels := map[string]bool{}
 	for _, it := range result.Items {

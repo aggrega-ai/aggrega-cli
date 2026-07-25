@@ -57,6 +57,25 @@ type WorkloadConsumer struct {
 // library); a false found return stops transitive descent into that library.
 type WorkloadBodyFunc func(lib ResolvedLibrary) (entryBodies []string, found bool, err error)
 
+// ArtifactsConsumer pairs a resolved Recipe/FeatureRecipe URI (or an ArtifactsLibrary
+// URI, during transitive descent) with a template body so DiscoverArtifactsLibraries
+// can scan it for a field-root `$import:` ArtifactsLibrary reference. For a Recipe /
+// FeatureRecipe the Template is one artifacts-map entry's body in `$import: <ref>`
+// directive form (an artifacts map may contribute several consumers); for an
+// ArtifactsLibrary bundle it is one bundle file body (which may itself carry a
+// field-root `$import:`).
+type ArtifactsConsumer struct {
+	URI      string
+	Template string
+}
+
+// ArtifactsBodyFunc returns the bundle file bodies of a resolved ArtifactsLibrary
+// (flattened across every bundle entry) so its own cross-library `$import:`
+// references can be descended transitively. The caller resolves the bodies from
+// the catalog (a locally-authored or bridged library); a false found return stops
+// transitive descent into that library.
+type ArtifactsBodyFunc func(lib ResolvedLibrary) (entryBodies []string, found bool, err error)
+
 // DiscoverMappingLibraries is the mapping-axis mirror of DiscoverSchemaLibraries:
 // it discovers the MappingLibrary closure reachable from a set of
 // Recipe/FeatureRecipe valuesMapping bodies via field-root `$import:` references,
@@ -165,6 +184,63 @@ func (c *Closure) DiscoverWorkloadLibraries(lookup Lookup, consumers []WorkloadC
 			}
 			for _, b := range bodies {
 				frontier = append(frontier, WorkloadConsumer{URI: lib.URI, Template: b})
+			}
+		}
+	}
+	return nil
+}
+
+// DiscoverArtifactsLibraries is the artifacts-axis mirror of DiscoverWorkloadLibraries:
+// it discovers the ArtifactsLibrary closure reachable from a set of
+// Recipe/FeatureRecipe artifacts bodies via field-root `$import:` references,
+// resolves each discovered library (minimum-version selection + lookup), and
+// transitively descends each resolved library's own bundle file bodies to a
+// fixpoint. The discovered + resolved libraries are merged into c.ArtifactsLibraries.
+//
+// As on the workload axis, this is the single producer of the artifacts-library axis
+// of the closure, so pull's pin flow and build's drift-verify flow compute the
+// identical closure. Termination is by a visited-set on the canonical library
+// identity; a genuine library↔library cycle terminates discovery without error
+// and surfaces as a cycle at `$import:` consumption (render time), not here.
+func (c *Closure) DiscoverArtifactsLibraries(lookup Lookup, consumers []ArtifactsConsumer, body ArtifactsBodyFunc) error {
+	descended := map[string]struct{}{}
+
+	frontier := append([]ArtifactsConsumer{}, consumers...)
+
+	for len(frontier) > 0 {
+		state := newWalkState()
+		for _, lib := range c.ArtifactsLibraries {
+			state.artifactsLibs[lib.URI] = libraryFromResolved(lib)
+		}
+		for _, ac := range frontier {
+			if err := state.walkArtifactImportInto(ac.Template, ac.URI); err != nil {
+				return err
+			}
+		}
+		if err := state.resolveLibraries(state.artifactsLibs, lookup.ResolveArtifactsLibrary); err != nil {
+			return err
+		}
+		c.ArtifactsLibraries = nil
+		for _, lib := range state.materialiseArtifactsLibs() {
+			c.ArtifactsLibraries = append(c.ArtifactsLibraries, lib)
+		}
+		canonicaliseClosure(c)
+
+		frontier = frontier[:0]
+		for _, lib := range c.ArtifactsLibraries {
+			if _, seen := descended[lib.URI]; seen {
+				continue
+			}
+			descended[lib.URI] = struct{}{}
+			bodies, found, err := body(lib)
+			if err != nil {
+				return err
+			}
+			if !found {
+				continue
+			}
+			for _, b := range bodies {
+				frontier = append(frontier, ArtifactsConsumer{URI: lib.URI, Template: b})
 			}
 		}
 	}

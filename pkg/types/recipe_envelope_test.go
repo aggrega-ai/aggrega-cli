@@ -274,9 +274,13 @@ spec:
 	}
 }
 
-// TestRecipeEnvelope_RejectsArtifactsBareNameLibraryImport pins the parallel
-// bare-name rejection for artifacts entries.
-func TestRecipeEnvelope_RejectsArtifactsBareNameLibraryImport(t *testing.T) {
+// TestRecipeEnvelope_AcceptsArtifactsBareNameLibraryImport pins that the envelope
+// admits a bare-name ArtifactsLibrary reference at an artifacts entry — the
+// supported library-import mode `<Library>#/artifacts/<entry>` (the entry names a
+// bundle). The host-bearing `oci://` form stays rejected (see
+// TestRecipeEnvelope_RejectsArtifactsOCIImport); the bare-name identity form is the
+// library surface a Recipe uses to factor a shared artifact bundle.
+func TestRecipeEnvelope_AcceptsArtifactsBareNameLibraryImport(t *testing.T) {
 	t.Parallel()
 	v := recipeEnvelopeValidator(t)
 
@@ -292,7 +296,7 @@ spec:
   valuesMapping: |
     {}
   artifacts:
-    policy.yaml:
+    bundle:
       $import: Policies#/artifacts/Default
   locals: {}
 `
@@ -300,8 +304,8 @@ spec:
 	if err != nil {
 		t.Fatalf("Validate: %v", err)
 	}
-	if len(rpt.Findings) == 0 {
-		t.Fatalf("expected envelope rejection on a bare-name library import at artifacts entry; got no findings")
+	if len(rpt.Findings) != 0 {
+		t.Fatalf("expected a bare-name library import at artifacts to be accepted; got findings: %v", rpt.Findings)
 	}
 }
 

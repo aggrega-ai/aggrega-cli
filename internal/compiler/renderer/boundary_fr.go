@@ -323,7 +323,7 @@ func dispatchBoundaryScopeFR(
 	// assembler routing. instanceLabel is "" so the boundary-disambiguated
 	// LabelComponentID set above stays the resource-naming basis (a per-instance
 	// label would collide across boundaries sharing an FR-instance name).
-	emitted, err := renderFeatureRecipeFiles(ctx, frEngine, fr, frCtx, frNodeCtx, frValues, resolvedSrc, "", featureSecretSlots(fr, input), input.WorkloadLibraries)
+	emitted, err := renderFeatureRecipeFiles(ctx, frEngine, fr, frCtx, frNodeCtx, frValues, resolvedSrc, "", featureSecretSlots(fr, input), input.WorkloadLibraries, input.ArtifactsLibraries)
 	if err != nil {
 		return err
 	}

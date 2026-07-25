@@ -536,6 +536,23 @@ func (l *catalogLookup) ResolveWorkloadLibrary(uri string) (closure.LibraryResol
 	return closure.LibraryResolution{Resolution: res}, err
 }
 
+func (l *catalogLookup) ResolveArtifactsLibrary(uri string) (closure.LibraryResolution, error) {
+	if res, entries, ok := l.tier1ArtifactsLibrary(uri); ok {
+		return closure.LibraryResolution{Resolution: res, Entries: entries}, nil
+	}
+	fetchURI := l.pinnedFetchURI(uri)
+	if _, res, ok := l.tier2(fetchURI); ok {
+		res, err := l.honorPinDigest(uri, res)
+		return closure.LibraryResolution{Resolution: res}, err
+	}
+	res, err := l.tier3Library(fetchURI, "ArtifactsLibrary")
+	if err != nil {
+		return closure.LibraryResolution{Resolution: res}, err
+	}
+	res, err = l.honorPinDigest(uri, res)
+	return closure.LibraryResolution{Resolution: res}, err
+}
+
 func (l *catalogLookup) ResolvePlugin(uri, version string) (closure.Resolution, error) {
 	// Embed tier: a core plugin embedded in the binary resolves offline by its
 	// bare identity (<socket>/<name>). Its reference digest is derived from the
@@ -834,6 +851,23 @@ func (l *catalogLookup) tier1WorkloadLibrary(uri string) (closure.Resolution, ma
 		entries[n] = struct{}{}
 	}
 	return l.tier1Resolution("WorkloadLibrary", lib.Metadata.Name, lib.Metadata.Version, resolved), entries, true
+}
+
+func (l *catalogLookup) tier1ArtifactsLibrary(uri string) (closure.Resolution, map[string]struct{}, bool) {
+	name := schemaLibraryNameFromURI(uri)
+	lib, ok := l.catalog.ArtifactsLibraries[name]
+	if !ok {
+		return closure.Resolution{}, nil, false
+	}
+	resolved := lib.Metadata.Version
+	if _, v, hasV := splitVersionedURI(uri); hasV && v != "" {
+		resolved = v
+	}
+	entries := map[string]struct{}{}
+	for n := range lib.Spec.Artifacts.All() {
+		entries[n] = struct{}{}
+	}
+	return l.tier1Resolution("ArtifactsLibrary", lib.Metadata.Name, lib.Metadata.Version, resolved), entries, true
 }
 
 func (l *catalogLookup) tier1Resolution(kind, identifier, metaVersion, requestedVersion string) closure.Resolution {

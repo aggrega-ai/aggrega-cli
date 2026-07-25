@@ -100,6 +100,13 @@ type Inputs struct {
 	// WorkloadLibraries are present.
 	WorkloadLibraries map[string]types.WorkloadLibrary
 
+	// ArtifactsLibraries is the resolved ArtifactsLibrary set (local catalog plus
+	// lockfile-pinned libraries bridged in at load), keyed by bare name. It flows
+	// to the renderer so a Recipe / FeatureRecipe artifacts entry's bare-name
+	// `artifacts.<name>: { $import: <Library>#/artifacts/<entry> }` resolves at
+	// render. nil when no ArtifactsLibraries are present.
+	ArtifactsLibraries map[string]types.ArtifactsLibrary
+
 	// TolerateCatalogViewInconsistency opts a caller out of the guard-layer
 	// halt for a component type that resolved AS A CATALOG REFERENCE yet is
 	// absent from the guard's catalog view (the resolved-set / view divergence
@@ -816,14 +823,15 @@ func RunPipeline(
 		}()
 
 		rendererInput := renderer.RendererInput{
-			Graph:             graph,
-			FeatureOrder:      featureOrder,
-			ResolveResult:     resolveResult,
-			CatalogLookup:     catalogLookup,
-			MappingLibraries:  inputs.MappingLibraries,
-			WorkloadLibraries: inputs.WorkloadLibraries,
-			Trace:             traceWriter,
-			YAMLIndent:        inputs.WorkspaceConfig.Build.YAMLIndent,
+			Graph:              graph,
+			FeatureOrder:       featureOrder,
+			ResolveResult:      resolveResult,
+			CatalogLookup:      catalogLookup,
+			MappingLibraries:   inputs.MappingLibraries,
+			WorkloadLibraries:  inputs.WorkloadLibraries,
+			ArtifactsLibraries: inputs.ArtifactsLibraries,
+			Trace:              traceWriter,
+			YAMLIndent:         inputs.WorkspaceConfig.Build.YAMLIndent,
 			// Bind the entity-fronted plugin-resolution path so a Recipe /
 			// FeatureRecipe pipeline step's plugin URI — a Plugin entity URI —
 			// resolves to its verified .wasm bytes: the entity-front translates the

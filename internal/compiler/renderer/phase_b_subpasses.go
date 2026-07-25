@@ -457,7 +457,7 @@ func phaseB6(
 		// gate's uniform capability diagnostic, engine.Render failures, and the
 		// Phase B sub-pass CATALOG_ERRORs) already carry their own context, and
 		// re-wrapping would bury the gate diagnostic the user needs to see.
-		frFiles, err := renderFeatureRecipeFiles(ctx, frEngine, fr, &frCtx, frNodeCtx, frValues, resolvedSrc, ref.InstanceName, featureSecretSlots(fr, input), input.WorkloadLibraries)
+		frFiles, err := renderFeatureRecipeFiles(ctx, frEngine, fr, &frCtx, frNodeCtx, frValues, resolvedSrc, ref.InstanceName, featureSecretSlots(fr, input), input.WorkloadLibraries, input.ArtifactsLibraries)
 		if err != nil {
 			return nil, nil, nil, err
 		}
@@ -593,7 +593,7 @@ func phaseB6(
 			}
 			frNodeCtx.Source = resolvedSrc
 
-			frFiles, err := renderFeatureRecipeFiles(ctx, frEngine, fr, &frCtx, frNodeCtx, frValues, resolvedSrc, secretName, featureSecretSlots(fr, input), input.WorkloadLibraries)
+			frFiles, err := renderFeatureRecipeFiles(ctx, frEngine, fr, &frCtx, frNodeCtx, frValues, resolvedSrc, secretName, featureSecretSlots(fr, input), input.WorkloadLibraries, input.ArtifactsLibraries)
 			if err != nil {
 				return nil, nil, nil, err
 			}
@@ -673,6 +673,7 @@ func renderFeatureRecipeFiles(
 	instanceLabel string,
 	slots types.OrderedMap[types.SecretSlot],
 	workloadLibs map[string]types.WorkloadLibrary,
+	artifactsLibs map[string]types.ArtifactsLibrary,
 ) ([]EmittedFile, error) {
 	hasSource := resolvedSrc != nil
 	if s, ok := resolvedSrc.(string); ok && s == "" {
@@ -732,6 +733,10 @@ func renderFeatureRecipeFiles(
 	// base path sets the same field on its node state, sourced identically from
 	// the render input — single source, no second lib map.
 	state.WorkloadLibraries = workloadLibs
+	// The FR artifacts flow through the same phaseB3 buildArtifactsProjection as a
+	// base Recipe; an artifacts library `$import` resolves against this set,
+	// sourced identically from the render input — single source, no second map.
+	state.ArtifactsLibraries = artifactsLibs
 
 	// Sourced mode hits engine.Render; synthesised renders at B.4, artifacts at
 	// B.3. EmitOriginSource files accumulate by sorted filename for

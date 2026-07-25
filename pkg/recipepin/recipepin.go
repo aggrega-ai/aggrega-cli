@@ -215,16 +215,19 @@ func currentPinRegion(lines []string, spec *yaml.Node, childIndent int) (int, in
 }
 
 // ArtifactPinsForRecipe computes the artifactDigests for a recipe's artifacts
-// map: one pin per entry whose value is a file import ($import), digesting the
-// imported file's bytes. Inline (literal) entries are part of the entity and
-// carry no pin. Each entry's Import is the resolved absolute $import path (the
-// catalog rewrites relative $import paths to absolute at load). The result is
-// sorted by name.
+// map: one pin per entry whose value is a LOCAL file import ($import), digesting
+// the imported file's bytes. Inline (literal) entries are part of the entity and
+// carry no pin. A library import (`<Library>#/artifacts/<entry>`) carries no file
+// pin either — its content is lockfile-pinned by the per-Release library pin, not
+// file-digest-pinned — and a host-bearing (`oci://…`) import is rejected at the
+// consumption site; both are skipped here. Each remaining entry's Import is the
+// resolved absolute $import path (the catalog rewrites relative $import paths to
+// absolute at load). The result is sorted by name.
 func ArtifactPinsForRecipe(artifacts types.OrderedMap[types.ArtifactEntry]) ([]types.ArtifactDigest, error) {
 	var pins []types.ArtifactDigest
 	for _, name := range artifacts.Keys() {
 		entry, _ := artifacts.Get(name)
-		if entry.Import == "" {
+		if entry.Import == "" || entry.IsLibraryImport() || entry.HasOCIPrefix() {
 			continue
 		}
 		body, err := entry.Text()

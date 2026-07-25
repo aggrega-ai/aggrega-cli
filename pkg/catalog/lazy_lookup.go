@@ -65,27 +65,28 @@ import (
 // where most catalog entities are never referenced.
 func NewLazyLookup(workspaceRoot, cacheDir string, catalogDirs []string, puller OCIPuller) *LazyLookup {
 	return &LazyLookup{
-		workspaceRoot:     workspaceRoot,
-		cacheDir:          cacheDir,
-		catalogDirs:       catalogDirs,
-		puller:            puller,
-		components:        map[string]types.Component{},
-		features:          map[string]types.Feature{},
-		schemaLibraries:   map[string]types.SchemaLibrary{},
-		componentMisses:   map[string]struct{}{},
-		featureMisses:     map[string]struct{}{},
-		componentIndex:    map[string]string{},
-		featureIndex:      map[string]string{},
-		recipes:           map[string]types.Recipe{},
-		featureRecipes:    map[string]types.FeatureRecipe{},
-		aggregates:        map[string]types.Aggregate{},
-		mappingLibraries:  map[string]types.MappingLibrary{},
-		workloadLibraries: map[string]types.WorkloadLibrary{},
-		plugins:           map[string]types.Plugin{},
-		aggregateSources:  map[string]string{},
-		recipeSkips:       map[string]error{},
-		entityBytes:       map[string][]byte{},
-		localEntityPaths:  map[string]string{},
+		workspaceRoot:      workspaceRoot,
+		cacheDir:           cacheDir,
+		catalogDirs:        catalogDirs,
+		puller:             puller,
+		components:         map[string]types.Component{},
+		features:           map[string]types.Feature{},
+		schemaLibraries:    map[string]types.SchemaLibrary{},
+		componentMisses:    map[string]struct{}{},
+		featureMisses:      map[string]struct{}{},
+		componentIndex:     map[string]string{},
+		featureIndex:       map[string]string{},
+		recipes:            map[string]types.Recipe{},
+		featureRecipes:     map[string]types.FeatureRecipe{},
+		aggregates:         map[string]types.Aggregate{},
+		mappingLibraries:   map[string]types.MappingLibrary{},
+		workloadLibraries:  map[string]types.WorkloadLibrary{},
+		artifactsLibraries: map[string]types.ArtifactsLibrary{},
+		plugins:            map[string]types.Plugin{},
+		aggregateSources:   map[string]string{},
+		recipeSkips:        map[string]error{},
+		entityBytes:        map[string][]byte{},
+		localEntityPaths:   map[string]string{},
 	}
 }
 
@@ -283,6 +284,7 @@ func (l *LazyLookup) Reset() {
 	l.aggregates = map[string]types.Aggregate{}
 	l.mappingLibraries = map[string]types.MappingLibrary{}
 	l.workloadLibraries = map[string]types.WorkloadLibrary{}
+	l.artifactsLibraries = map[string]types.ArtifactsLibrary{}
 	l.plugins = map[string]types.Plugin{}
 	l.aggregateSources = map[string]string{}
 	l.recipeSkips = map[string]error{}
@@ -440,15 +442,16 @@ type LazyLookup struct {
 	// recorded reason rather than aborting the walk — so a broken UNUSED recipe is
 	// invisible to a resolution that doesn't need it (the blast-radius fix). The
 	// eager catalog, by contrast, fails the whole walk on the first broken recipe.
-	recipes           map[string]types.Recipe
-	featureRecipes    map[string]types.FeatureRecipe
-	aggregates        map[string]types.Aggregate
-	mappingLibraries  map[string]types.MappingLibrary
-	workloadLibraries map[string]types.WorkloadLibrary
-	plugins           map[string]types.Plugin // keyed by identity (metadata.name:version), like the eager catalog
-	aggregateSources  map[string]string
-	recipeSkips       map[string]error // skipped recipe/FR/aggregate/maplib/plugin file path -> reason
-	recipeIndexBuilt  bool
+	recipes            map[string]types.Recipe
+	featureRecipes     map[string]types.FeatureRecipe
+	aggregates         map[string]types.Aggregate
+	mappingLibraries   map[string]types.MappingLibrary
+	workloadLibraries  map[string]types.WorkloadLibrary
+	artifactsLibraries map[string]types.ArtifactsLibrary
+	plugins            map[string]types.Plugin // keyed by identity (metadata.name:version), like the eager catalog
+	aggregateSources   map[string]string
+	recipeSkips        map[string]error // skipped recipe/FR/aggregate/maplib/plugin file path -> reason
+	recipeIndexBuilt   bool
 
 	// localEntityPaths maps entityBytesKey(kind, identityKey) to the writable
 	// filesystem path a Recipe / FeatureRecipe was authored in, for Tier-1
@@ -522,6 +525,7 @@ func (l *LazyLookup) SetPins(pins map[string]Pin) {
 	l.aggregates = map[string]types.Aggregate{}
 	l.mappingLibraries = map[string]types.MappingLibrary{}
 	l.workloadLibraries = map[string]types.WorkloadLibrary{}
+	l.artifactsLibraries = map[string]types.ArtifactsLibrary{}
 	l.plugins = map[string]types.Plugin{}
 	l.aggregateSources = map[string]string{}
 	l.recipeSkips = map[string]error{}
@@ -584,7 +588,7 @@ func PinsFromLockfile(lf *lockfile.Lockfile) map[string]Pin {
 	if lf == nil {
 		return nil
 	}
-	pins := make(map[string]Pin, len(lf.Entities)+len(lf.SchemaLibraries)+len(lf.MappingLibraries)+len(lf.WorkloadLibraries)+len(lf.Plugins))
+	pins := make(map[string]Pin, len(lf.Entities)+len(lf.SchemaLibraries)+len(lf.MappingLibraries)+len(lf.WorkloadLibraries)+len(lf.ArtifactsLibraries)+len(lf.Plugins))
 	for _, e := range lf.Entities {
 		pins[e.URI] = Pin{ResolvedVersion: e.ResolvedVersion, Digest: e.Digest, ManifestDigest: e.ManifestDigest}
 	}
@@ -596,6 +600,9 @@ func PinsFromLockfile(lf *lockfile.Lockfile) map[string]Pin {
 	}
 	for _, wl := range lf.WorkloadLibraries {
 		pins[wl.URI] = Pin{ResolvedVersion: wl.ResolvedVersion, Digest: wl.Digest}
+	}
+	for _, al := range lf.ArtifactsLibraries {
+		pins[al.URI] = Pin{ResolvedVersion: al.ResolvedVersion, Digest: al.Digest}
 	}
 	for _, wp := range lf.Plugins {
 		pins[wp.URI] = Pin{ResolvedVersion: wp.ResolvedVersion, Digest: wp.Digest, ManifestDigest: wp.ManifestDigest}
@@ -1066,12 +1073,12 @@ func (l *LazyLookup) buildRecipeIndex() {
 	// the lazy backing see them. Runs AFTER the Tier-1 walk so a locally-authored
 	// entity wins on a name/identity collision.
 	l.foldPinnedCacheEntities(map[string]bool{
-		"Recipe": true, "FeatureRecipe": true, "Aggregate": true, "MappingLibrary": true, "WorkloadLibrary": true, "Plugin": true,
+		"Recipe": true, "FeatureRecipe": true, "Aggregate": true, "MappingLibrary": true, "WorkloadLibrary": true, "ArtifactsLibrary": true, "Plugin": true,
 	})
 }
 
 // foldRecipeShellEntity parses one enumerated recipe-shell entity (Recipe,
-// FeatureRecipe, Aggregate, MappingLibrary, WorkloadLibrary, or Plugin) and folds it into the hot
+// FeatureRecipe, Aggregate, MappingLibrary, WorkloadLibrary, ArtifactsLibrary, or Plugin) and folds it into the hot
 // maps, keyed exactly as the eager catalog keys it, first-wins on a name/identity
 // collision (a later duplicate is skipped and recorded). parseData is the YAML to
 // parse; rawBytes is retained as entityBytes for digest fidelity — identical to
@@ -1149,6 +1156,17 @@ func (l *LazyLookup) foldRecipeShellEntity(kind string, parseData, rawBytes []by
 			func() { l.entityBytes[entityBytesKey("WorkloadLibrary", e.Metadata.Name)] = rawBytes },
 			func() {
 				l.recordRecipeSkip(src, fmt.Errorf("duplicate workload library name %q; this file is shadowed", e.Metadata.Name))
+			})
+	case "ArtifactsLibrary":
+		e, perr := parseArtifactsLibraryEntity(parseData, src)
+		if perr != nil {
+			l.recordRecipeSkip(src, perr)
+			return
+		}
+		foldFirstWin(l.artifactsLibraries, e.Metadata.Name, e,
+			func() { l.entityBytes[entityBytesKey("ArtifactsLibrary", e.Metadata.Name)] = rawBytes },
+			func() {
+				l.recordRecipeSkip(src, fmt.Errorf("duplicate artifacts library name %q; this file is shadowed", e.Metadata.Name))
 			})
 	case "Plugin":
 		e, perr := parsePluginEntity(parseData, src)
@@ -1262,16 +1280,17 @@ func (l *LazyLookup) recipeCatalog() *Catalog {
 	l.buildRecipeIndex()
 	_ = l.buildSchemaLibraries()
 	l.recipeCat = &Catalog{
-		Recipes:           l.recipes,
-		FeatureRecipes:    l.featureRecipes,
-		Aggregates:        l.aggregates,
-		SchemaLibraries:   l.schemaLibraries,
-		MappingLibraries:  l.mappingLibraries,
-		WorkloadLibraries: l.workloadLibraries,
-		Plugins:           l.plugins,
-		aggregateSources:  l.aggregateSources,
-		entityBytes:       l.entityBytes,
-		workspaceRoot:     l.workspaceRoot,
+		Recipes:            l.recipes,
+		FeatureRecipes:     l.featureRecipes,
+		Aggregates:         l.aggregates,
+		SchemaLibraries:    l.schemaLibraries,
+		MappingLibraries:   l.mappingLibraries,
+		WorkloadLibraries:  l.workloadLibraries,
+		ArtifactsLibraries: l.artifactsLibraries,
+		Plugins:            l.plugins,
+		aggregateSources:   l.aggregateSources,
+		entityBytes:        l.entityBytes,
+		workspaceRoot:      l.workspaceRoot,
 		// The lazy backing is the production build/pull resolution path, so it
 		// resolves core providers from the binary's embedded set (embedded-wins).
 		resolveEmbeddedProviders: true,
@@ -1301,6 +1320,20 @@ func (l *LazyLookup) WorkloadLibraries() map[string]types.WorkloadLibrary {
 	defer l.mu.Unlock()
 	l.buildRecipeIndex()
 	return l.workloadLibraries
+}
+
+// ArtifactsLibraries returns the ArtifactsLibrary set, keyed by bare name, for the
+// pipeline's ArtifactsLibraries input (the set the renderer's artifacts
+// `artifacts.<name>: { $import: <Library>#/artifacts/<entry> }` resolution consumes).
+// The set is the local catalog directories plus every lockfile-pinned remote
+// ArtifactsLibrary bridged in from the Tier-2 cache, so a remote artifacts import
+// resolves through the same map as a local one. Triggers the recipe-shell
+// enumeration on first call.
+func (l *LazyLookup) ArtifactsLibraries() map[string]types.ArtifactsLibrary {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.buildRecipeIndex()
+	return l.artifactsLibraries
 }
 
 // RecipeLookupWithManifest exposes the catalog matcher's Manifest-aware recipe
@@ -1525,6 +1558,14 @@ func (l *LazyLookup) WorkloadLibrary(uri string) (types.WorkloadLibrary, bool) {
 	defer l.mu.Unlock()
 	l.buildRecipeIndex()
 	lib, ok := l.workloadLibraries[uri]
+	return lib, ok
+}
+
+func (l *LazyLookup) ArtifactsLibrary(uri string) (types.ArtifactsLibrary, bool) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.buildRecipeIndex()
+	lib, ok := l.artifactsLibraries[uri]
 	return lib, ok
 }
 
@@ -1876,6 +1917,12 @@ func (x *lazyClosureLookup) ResolveWorkloadLibrary(uri string) (closure.LibraryR
 	x.l.mu.Lock()
 	defer x.l.mu.Unlock()
 	return x.base.ResolveWorkloadLibrary(uri)
+}
+
+func (x *lazyClosureLookup) ResolveArtifactsLibrary(uri string) (closure.LibraryResolution, error) {
+	x.l.mu.Lock()
+	defer x.l.mu.Unlock()
+	return x.base.ResolveArtifactsLibrary(uri)
 }
 
 func (x *lazyClosureLookup) ResolvePlugin(uri, version string) (closure.Resolution, error) {

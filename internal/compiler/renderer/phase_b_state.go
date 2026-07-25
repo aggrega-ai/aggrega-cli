@@ -105,6 +105,13 @@ type PhaseBState struct {
 	// WorkloadLibraries are present (a non-library workload never reads it).
 	WorkloadLibraries map[string]types.WorkloadLibrary
 
+	// ArtifactsLibraries is the local-catalog ArtifactsLibrary set, keyed by bare
+	// name. B.3 resolves a Recipe / FeatureRecipe artifacts entry's bare-name
+	// `artifacts.<name>: { $import: <Library>#/artifacts/<entry> }` against it. The
+	// orchestrator populates it once per node from the RendererInput; nil when no
+	// ArtifactsLibraries are present (a non-library artifacts entry never reads it).
+	ArtifactsLibraries map[string]types.ArtifactsLibrary
+
 	// SecretProvides is the per-node `slot → resolved fill provides` map computed
 	// once before context assembly (ResolveSecretProvides). The same bag is
 	// surfaced to the consumer as `.secrets.<slot>.provides` AND reused at Phase

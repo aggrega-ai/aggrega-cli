@@ -38,15 +38,16 @@ import (
 // single map fetch. Components, Features, and Aggregates index by
 // metadata.name because that is the URI the resolver receives.
 type Catalog struct {
-	Components        map[string]types.Component
-	Features          map[string]types.Feature
-	Recipes           map[string]types.Recipe          // keyed by identity (provider/name:version)
-	FeatureRecipes    map[string]types.FeatureRecipe   // keyed by identity (provider/name:version)
-	Aggregates        map[string]types.Aggregate       // keyed by metadata.name
-	SchemaLibraries   map[string]types.SchemaLibrary   // keyed by metadata.name (PascalCase library identifier)
-	MappingLibraries  map[string]types.MappingLibrary  // keyed by metadata.name (PascalCase library identifier)
-	WorkloadLibraries map[string]types.WorkloadLibrary // keyed by metadata.name (PascalCase library identifier)
-	Plugins           map[string]types.Plugin          // keyed by identity (metadata.name:version)
+	Components         map[string]types.Component
+	Features           map[string]types.Feature
+	Recipes            map[string]types.Recipe           // keyed by identity (provider/name:version)
+	FeatureRecipes     map[string]types.FeatureRecipe    // keyed by identity (provider/name:version)
+	Aggregates         map[string]types.Aggregate        // keyed by metadata.name
+	SchemaLibraries    map[string]types.SchemaLibrary    // keyed by metadata.name (PascalCase library identifier)
+	MappingLibraries   map[string]types.MappingLibrary   // keyed by metadata.name (PascalCase library identifier)
+	WorkloadLibraries  map[string]types.WorkloadLibrary  // keyed by metadata.name (PascalCase library identifier)
+	ArtifactsLibraries map[string]types.ArtifactsLibrary // keyed by metadata.name (PascalCase library identifier)
+	Plugins            map[string]types.Plugin           // keyed by identity (metadata.name:version)
 
 	// componentSources / featureSources / pluginSources
 	// track the file path each entity was loaded from. Populated by Pass 1
@@ -362,22 +363,23 @@ func loadAllPassOneImpl(workspaceRoot, cacheDir string, tolerant bool, dirs ...s
 // so they share one initialisation.
 func newPassOneCatalog(workspaceRoot string) *Catalog {
 	return &Catalog{
-		workspaceRoot:     workspaceRoot,
-		Components:        make(map[string]types.Component),
-		Features:          make(map[string]types.Feature),
-		Recipes:           make(map[string]types.Recipe),
-		FeatureRecipes:    make(map[string]types.FeatureRecipe),
-		Aggregates:        make(map[string]types.Aggregate),
-		SchemaLibraries:   make(map[string]types.SchemaLibrary),
-		MappingLibraries:  make(map[string]types.MappingLibrary),
-		WorkloadLibraries: make(map[string]types.WorkloadLibrary),
-		Plugins:           make(map[string]types.Plugin),
-		componentSources:  make(map[string]string),
-		featureSources:    make(map[string]string),
-		pluginSources:     make(map[string]string),
-		aggregateSources:  make(map[string]string),
-		entityBytes:       make(map[string][]byte),
-		pathByIdentity:    make(map[string]string),
+		workspaceRoot:      workspaceRoot,
+		Components:         make(map[string]types.Component),
+		Features:           make(map[string]types.Feature),
+		Recipes:            make(map[string]types.Recipe),
+		FeatureRecipes:     make(map[string]types.FeatureRecipe),
+		Aggregates:         make(map[string]types.Aggregate),
+		SchemaLibraries:    make(map[string]types.SchemaLibrary),
+		MappingLibraries:   make(map[string]types.MappingLibrary),
+		WorkloadLibraries:  make(map[string]types.WorkloadLibrary),
+		ArtifactsLibraries: make(map[string]types.ArtifactsLibrary),
+		Plugins:            make(map[string]types.Plugin),
+		componentSources:   make(map[string]string),
+		featureSources:     make(map[string]string),
+		pluginSources:      make(map[string]string),
+		aggregateSources:   make(map[string]string),
+		entityBytes:        make(map[string][]byte),
+		pathByIdentity:     make(map[string]string),
 	}
 }
 
@@ -471,6 +473,10 @@ func (acc *Catalog) mergeFrom(perDir *Catalog, perDirRoot string, winnerDir map[
 	})
 	mergeKind(acc, "WorkloadLibrary", acc.WorkloadLibraries, perDir.WorkloadLibraries, perDir, perDirRoot, winnerDir, func(k string) {
 		bk := entityBytesKey("WorkloadLibrary", k)
+		acc.entityBytes[bk] = perDir.entityBytes[bk]
+	})
+	mergeKind(acc, "ArtifactsLibrary", acc.ArtifactsLibraries, perDir.ArtifactsLibraries, perDir, perDirRoot, winnerDir, func(k string) {
+		bk := entityBytesKey("ArtifactsLibrary", k)
 		acc.entityBytes[bk] = perDir.entityBytes[bk]
 	})
 	// Plugin's bytes side-table keys on the plugin coordinate (the closure walker
@@ -753,7 +759,7 @@ type entityHeader struct {
 // entity kinds — the SSOT for "what counts as a catalog entity" in this
 // package. The switch arms enumerate every catalog entity kind
 // (Component, Feature, Recipe, FeatureRecipe, Aggregate,
-// SchemaLibrary, MappingLibrary, WorkloadLibrary, Plugin), leaving out Manifest and
+// SchemaLibrary, MappingLibrary, WorkloadLibrary, ArtifactsLibrary, Plugin), leaving out Manifest and
 // Release (which are deployment-side and are silently skipped — see
 // LoadAll's error model). Adding a new catalog-resident kind requires
 // extending the switch here AND adding the matching map field on Catalog.
@@ -888,6 +894,23 @@ func (c *Catalog) indexFile(data []byte, path string) error {
 		}
 		c.WorkloadLibraries[e.Metadata.Name] = e
 		c.entityBytes[entityBytesKey("WorkloadLibrary", e.Metadata.Name)] = data
+	case "ArtifactsLibrary":
+		if _, eerr := envelope.ValidateBytes(envelope.KindArtifactsLibrary, data, path); eerr != nil {
+			return cerrors.Wrap(eerr, cerrors.CatalogError, cerrors.SourceLocation{File: path}, eerr.Error())
+		}
+		var e types.ArtifactsLibrary
+		if err := yaml.Unmarshal(data, &e); err != nil {
+			return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, "unmarshal ArtifactsLibrary")
+		}
+		// No template-body content validation: ArtifactsLibrary bundle files are
+		// opaque Go template strings; the compiler does not parse them at entity
+		// load. Content semantics (including any cross-library $import: references)
+		// resolve at Recipe / FeatureRecipe render time via the Go template engine.
+		if err := c.claimIdentity("ArtifactsLibrary:"+e.Metadata.Name, fmt.Sprintf("ArtifactsLibrary identity %q", e.Metadata.Name), path); err != nil {
+			return err
+		}
+		c.ArtifactsLibraries[e.Metadata.Name] = e
+		c.entityBytes[entityBytesKey("ArtifactsLibrary", e.Metadata.Name)] = data
 	case "Plugin":
 		if _, eerr := envelope.ValidateBytes(envelope.KindPlugin, data, path); eerr != nil {
 			return cerrors.Wrap(eerr, cerrors.CatalogError, cerrors.SourceLocation{File: path}, eerr.Error())
@@ -1003,7 +1026,10 @@ func parseRecipeEntity(data []byte, path string) (types.Recipe, error) {
 	}
 	for _, name := range e.Spec.Artifacts.Keys() {
 		entry, _ := e.Spec.Artifacts.Get(name)
-		if entry.Import == "" || filepath.IsAbs(entry.Import) {
+		// A library identity ref (`<Library>#/artifacts/<entry>`) is not a
+		// filesystem path — leave it untouched for the render-site resolver;
+		// only a relative local-file import is rewritten to absolute.
+		if entry.Import == "" || entry.IsLibraryImport() || filepath.IsAbs(entry.Import) {
 			continue
 		}
 		abs, err := filepath.Abs(filepath.Join(filepath.Dir(path), entry.Import))
@@ -1044,7 +1070,10 @@ func parseFeatureRecipeEntity(data []byte, path string) (types.FeatureRecipe, er
 	}
 	for _, name := range e.Spec.Artifacts.Keys() {
 		entry, _ := e.Spec.Artifacts.Get(name)
-		if entry.Import == "" || filepath.IsAbs(entry.Import) {
+		// A library identity ref (`<Library>#/artifacts/<entry>`) is not a
+		// filesystem path — leave it untouched for the render-site resolver;
+		// only a relative local-file import is rewritten to absolute.
+		if entry.Import == "" || entry.IsLibraryImport() || filepath.IsAbs(entry.Import) {
 			continue
 		}
 		abs, err := filepath.Abs(filepath.Join(filepath.Dir(path), entry.Import))
@@ -1146,6 +1175,27 @@ func parseWorkloadLibraryEntity(data []byte, path string) (types.WorkloadLibrary
 	}
 	if e.Kind != "WorkloadLibrary" {
 		return types.WorkloadLibrary{}, fmt.Errorf("expected kind WorkloadLibrary, got %q", e.Kind)
+	}
+	return e, nil
+}
+
+// parseArtifactsLibraryEntity is the single per-entity ArtifactsLibrary resolution,
+// mirroring parseWorkloadLibraryEntity: full unmarshal + kind-check. There is no
+// forbidden-keyword / template-body scan — ArtifactsLibrary bundle files are opaque
+// Go template strings the compiler does not parse at entity load (their content,
+// including any cross-library `$import:`, resolves at Recipe / FeatureRecipe render
+// time). Used by the build-side bridge so a lockfile-pinned remote ArtifactsLibrary
+// is parsed identically to a local one.
+func parseArtifactsLibraryEntity(data []byte, path string) (types.ArtifactsLibrary, error) {
+	if _, err := envelope.ValidateBytes(envelope.KindArtifactsLibrary, data, path); err != nil {
+		return types.ArtifactsLibrary{}, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, err.Error())
+	}
+	var e types.ArtifactsLibrary
+	if err := yaml.Unmarshal(data, &e); err != nil {
+		return types.ArtifactsLibrary{}, err
+	}
+	if e.Kind != "ArtifactsLibrary" {
+		return types.ArtifactsLibrary{}, fmt.Errorf("expected kind ArtifactsLibrary, got %q", e.Kind)
 	}
 	return e, nil
 }

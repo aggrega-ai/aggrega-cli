@@ -37,8 +37,8 @@ var ErrLockfileDrift = errors.New("lockfile: out of date; it no longer matches t
 // drift entry across every axis is reported in one joined error so
 // operators see the full picture.
 //
-// Walks five axes: Entities, SchemaLibraries, MappingLibraries,
-// WorkloadLibraries, Plugins. SourceArtifacts are not verified here — they pass
+// Walks six axes: Entities, SchemaLibraries, MappingLibraries,
+// WorkloadLibraries, ArtifactsLibraries, Plugins. SourceArtifacts are not verified here — they pass
 // through pkg/sourcecache.LookupAndExtract's existing digest gate at
 // build-time read, which compares the cached blob's content digest
 // against the lockfile-supplied digest the orchestrator routes
@@ -50,6 +50,7 @@ func Verify(lf *Lockfile, expected closure.Closure) error {
 	driftErrs = append(driftErrs, collectSchemaLibraryDrift(lf.SchemaLibraries, expected.SchemaLibraries)...)
 	driftErrs = append(driftErrs, collectMappingLibraryDrift(lf.MappingLibraries, expected.MappingLibraries)...)
 	driftErrs = append(driftErrs, collectWorkloadLibraryDrift(lf.WorkloadLibraries, expected.WorkloadLibraries)...)
+	driftErrs = append(driftErrs, collectArtifactsLibraryDrift(lf.ArtifactsLibraries, expected.ArtifactsLibraries)...)
 	driftErrs = append(driftErrs, collectPluginDrift(lf.Plugins, expected.Plugins)...)
 	if len(driftErrs) == 0 {
 		return nil
@@ -153,6 +154,31 @@ func collectWorkloadLibraryDrift(have []WorkloadLibrary, want []closure.Resolved
 	}
 	for _, uri := range sortedExtras(haveByURI, seen) {
 		out = append(out, fmt.Errorf("workload-library %q no longer used by the release", uri))
+	}
+	return out
+}
+
+func collectArtifactsLibraryDrift(have []ArtifactsLibrary, want []closure.ResolvedLibrary) []error {
+	haveByURI := make(map[string]ArtifactsLibrary, len(have))
+	for _, e := range have {
+		haveByURI[e.URI] = e
+	}
+	seen := make(map[string]struct{}, len(want))
+	var out []error
+	for _, w := range want {
+		seen[w.URI] = struct{}{}
+		h, ok := haveByURI[w.URI]
+		if !ok {
+			out = append(out, fmt.Errorf("artifacts-library %q not in lockfile", w.URI))
+			continue
+		}
+		if h.ResolvedVersion != w.ResolvedVersion || h.Digest != w.Digest {
+			out = append(out, fmt.Errorf("artifacts-library %q changed: lockfile=(%s,%s) current=(%s,%s)",
+				w.URI, h.ResolvedVersion, h.Digest, w.ResolvedVersion, w.Digest))
+		}
+	}
+	for _, uri := range sortedExtras(haveByURI, seen) {
+		out = append(out, fmt.Errorf("artifacts-library %q no longer used by the release", uri))
 	}
 	return out
 }

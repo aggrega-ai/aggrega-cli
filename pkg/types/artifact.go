@@ -6,6 +6,7 @@ package types
 import (
 	"errors"
 	"os"
+	"strings"
 
 	"go.yaml.in/yaml/v3"
 )
@@ -16,17 +17,25 @@ import (
 // with extra siblings beyond `$import:`.
 var ErrArtifactEntryShape = errors.New("artifacts entry: shape must be a string scalar or {$import: <local-path>}")
 
-// ArtifactEntry carries one Recipe artifact entry with two content-
-// shape-dispatched modes per chapter 07:
+// ArtifactEntry carries one Recipe artifact entry with three content-
+// shape-dispatched modes per the file-import vocabulary (chapter 07):
 //
 //   - Mode 1 (inline): a Go template string scalar whose output is the
 //     artifact body emitted to the boundary's output directory.
 //   - Mode 2 (file import): a YAML map of exactly one key `$import:
-//     <local-path>` pointing at a Go-template file.
+//     <local-path>` pointing at a Go-template file. Import carries the
+//     path; IsLibraryImport returns false.
+//   - Mode 3 (library import): a YAML map of exactly one key
+//     `$import: <Library>#/artifacts/<entry>`, a host-less bare-name
+//     reference into an ArtifactsLibrary bundle (the version is supplied
+//     by the per-Release lockfile; no registry host appears in the
+//     reference). Import carries the identity reference; IsLibraryImport
+//     returns true. The referenced entry is a bundle of files that expands
+//     into one output per file at the consumption site.
 //
-// Library-import mode (oci:// URL) is not supported at this site; the
-// envelope schema rejects oci:// prefixes via a `not: pattern` regex
-// constraint on the `$import:` value.
+// A host-bearing `oci://…` reference is not a library import; the envelope
+// schema rejects it via a `not: pattern` constraint on the `$import:` value
+// and the consumption site rejects it via HasOCIPrefix.
 //
 // The owning Recipe.Spec.Artifacts is an OrderedMap[ArtifactEntry]
 // keyed by output filename. File-loaded entries derive their map-key
@@ -39,6 +48,25 @@ type ArtifactEntry struct {
 // IsEmpty reports whether neither mode is populated.
 func (a ArtifactEntry) IsEmpty() bool {
 	return a.Inline == "" && a.Import == ""
+}
+
+// IsLibraryImport reports whether a.Import is a host-less bare-name
+// ArtifactsLibrary reference (mode 3, `<Library>#/artifacts/<entry>`) as
+// opposed to a local file path (mode 2). The discriminator is the
+// `#/artifacts/` fragment surface with no registry host, mirroring
+// WorkloadTemplate's `#/workloads/` gate. The host-bearing `oci://…` form is
+// not a library import; HasOCIPrefix reports it for rejection.
+func (a ArtifactEntry) IsLibraryImport() bool {
+	_, _, ok := IdentityRefParts(a.Import, "/artifacts/")
+	return ok
+}
+
+// HasOCIPrefix reports whether a.Import carries a registry host (the
+// `oci://…` form). A library import is addressed by bare-name identity,
+// never by physical registry location; the consumption site rejects a
+// host-bearing reference rather than treating it as a library import.
+func (a ArtifactEntry) HasOCIPrefix() bool {
+	return strings.HasPrefix(a.Import, "oci://")
 }
 
 // Text resolves the entry to its Go-template source string: an empty

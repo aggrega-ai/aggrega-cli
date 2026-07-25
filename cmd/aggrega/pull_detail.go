@@ -65,6 +65,9 @@ func printPullDetail(out io.Writer, cl closure.Closure) {
 	for _, l := range cl.WorkloadLibraries {
 		rows = append(rows, row{tier: pullEventTier(l.ResolutionPath), kind: "WorkloadLibrary", uri: l.URI})
 	}
+	for _, l := range cl.ArtifactsLibraries {
+		rows = append(rows, row{tier: pullEventTier(l.ResolutionPath), kind: "ArtifactsLibrary", uri: l.URI})
+	}
 	sort.Slice(rows, func(i, j int) bool {
 		if rows[i].uri != rows[j].uri {
 			return rows[i].uri < rows[j].uri

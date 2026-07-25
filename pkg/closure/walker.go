@@ -65,10 +65,11 @@ func ComputeClosure(
 // recursive walkers descend through the release / manifest /
 // aggregate trees.
 type walkState struct {
-	entities     map[string]*pendingRef
-	schemaLibs   map[string]*pendingLibrary
-	mappingLibs  map[string]*pendingLibrary
-	workloadLibs map[string]*pendingLibrary
+	entities      map[string]*pendingRef
+	schemaLibs    map[string]*pendingLibrary
+	mappingLibs   map[string]*pendingLibrary
+	workloadLibs  map[string]*pendingLibrary
+	artifactsLibs map[string]*pendingLibrary
 }
 
 // pendingRef collects the per-URI accumulating data the walker
@@ -97,10 +98,11 @@ type pendingLibrary struct {
 
 func newWalkState() *walkState {
 	return &walkState{
-		entities:     map[string]*pendingRef{},
-		schemaLibs:   map[string]*pendingLibrary{},
-		mappingLibs:  map[string]*pendingLibrary{},
-		workloadLibs: map[string]*pendingLibrary{},
+		entities:      map[string]*pendingRef{},
+		schemaLibs:    map[string]*pendingLibrary{},
+		mappingLibs:   map[string]*pendingLibrary{},
+		workloadLibs:  map[string]*pendingLibrary{},
+		artifactsLibs: map[string]*pendingLibrary{},
 	}
 }
 
@@ -486,6 +488,33 @@ func (s *walkState) walkWorkloadImportInto(template, consumerURI string) error {
 	return nil
 }
 
+func (s *walkState) walkArtifactImportInto(template, consumerURI string) error {
+	trimmed := strings.TrimSpace(template)
+	if !strings.HasPrefix(trimmed, "$import:") {
+		return nil
+	}
+	rest := strings.TrimPrefix(trimmed, "$import:")
+	if newline := strings.IndexByte(rest, '\n'); newline >= 0 {
+		rest = rest[:newline]
+	}
+	url := strings.TrimSpace(rest)
+	if url == "" {
+		return nil
+	}
+	// Record only host-less identity ArtifactsLibrary references; a local-file
+	// import or a host-bearing form is not a cross-library edge and is left for
+	// its consumption site.
+	if !isIdentityArtifactImportRef(url) {
+		return nil
+	}
+	libName, version, fragment, err := parseIdentityArtifactImportRef(url)
+	if err != nil {
+		return err
+	}
+	s.addArtifactsLibrary(libName, version, consumerURI, formatFragmentRef(fragment))
+	return nil
+}
+
 // resolveAll iterates the pending entity / library maps and invokes
 // the Lookup interface per URI. NotFound on a catalog entity is a
 // fatal closure gap and returns ErrUnresolvableURI. Library
@@ -501,7 +530,10 @@ func (s *walkState) resolveAll(lookup Lookup) error {
 	if err := s.resolveLibraries(s.mappingLibs, lookup.ResolveMappingLibrary); err != nil {
 		return err
 	}
-	return s.resolveLibraries(s.workloadLibs, lookup.ResolveWorkloadLibrary)
+	if err := s.resolveLibraries(s.workloadLibs, lookup.ResolveWorkloadLibrary); err != nil {
+		return err
+	}
+	return s.resolveLibraries(s.artifactsLibs, lookup.ResolveArtifactsLibrary)
 }
 
 func (s *walkState) resolveEntities(lookup Lookup) error {
@@ -712,6 +744,7 @@ func (s *walkState) materialise() Closure {
 	c.SchemaLibraries = s.materialiseSchemaLibs()
 	c.MappingLibraries = s.materialiseMappingLibs()
 	c.WorkloadLibraries = s.materialiseWorkloadLibs()
+	c.ArtifactsLibraries = s.materialiseArtifactsLibs()
 	return c
 }
 
@@ -739,6 +772,14 @@ func (s *walkState) materialiseWorkloadLibs() []ResolvedLibrary {
 	return out
 }
 
+func (s *walkState) materialiseArtifactsLibs() []ResolvedLibrary {
+	out := make([]ResolvedLibrary, 0, len(s.artifactsLibs))
+	for uri, lib := range s.artifactsLibs {
+		out = append(out, lib.toResolvedLibrary(uri))
+	}
+	return out
+}
+
 // canonicaliseClosure sorts every slice field by its canonical
 // key (URI for top-level slices; ConsumerURI for Consumers;
 // lexicographic for Fragments and ReferencedFrom). Two
@@ -750,6 +791,7 @@ func canonicaliseClosure(c *Closure) {
 	sort.Slice(c.SchemaLibraries, func(i, j int) bool { return c.SchemaLibraries[i].URI < c.SchemaLibraries[j].URI })
 	sort.Slice(c.MappingLibraries, func(i, j int) bool { return c.MappingLibraries[i].URI < c.MappingLibraries[j].URI })
 	sort.Slice(c.WorkloadLibraries, func(i, j int) bool { return c.WorkloadLibraries[i].URI < c.WorkloadLibraries[j].URI })
+	sort.Slice(c.ArtifactsLibraries, func(i, j int) bool { return c.ArtifactsLibraries[i].URI < c.ArtifactsLibraries[j].URI })
 
 	for i := range c.Entities {
 		sort.Strings(c.Entities[i].ReferencedFrom)
@@ -765,6 +807,9 @@ func canonicaliseClosure(c *Closure) {
 	}
 	for i := range c.WorkloadLibraries {
 		sortLibrary(&c.WorkloadLibraries[i])
+	}
+	for i := range c.ArtifactsLibraries {
+		sortLibrary(&c.ArtifactsLibraries[i])
 	}
 }
 
@@ -871,6 +916,27 @@ func (s *walkState) addWorkloadLibrary(libURI, version, consumerURI, fragment st
 		}
 	}
 	l := s.workloadLibs[libURI]
+	if version != "" {
+		l.versionByConsumer[consumerURI] = version
+	} else if _, present := l.versionByConsumer[consumerURI]; !present {
+		l.versionByConsumer[consumerURI] = ""
+	}
+	if l.fragmentsByCons[consumerURI] == nil {
+		l.fragmentsByCons[consumerURI] = map[string]struct{}{}
+	}
+	if fragment != "" {
+		l.fragmentsByCons[consumerURI][fragment] = struct{}{}
+	}
+}
+
+func (s *walkState) addArtifactsLibrary(libURI, version, consumerURI, fragment string) {
+	if s.artifactsLibs[libURI] == nil {
+		s.artifactsLibs[libURI] = &pendingLibrary{
+			versionByConsumer: map[string]string{},
+			fragmentsByCons:   map[string]map[string]struct{}{},
+		}
+	}
+	l := s.artifactsLibs[libURI]
 	if version != "" {
 		l.versionByConsumer[consumerURI] = version
 	} else if _, present := l.versionByConsumer[consumerURI]; !present {

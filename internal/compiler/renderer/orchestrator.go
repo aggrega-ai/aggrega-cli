@@ -353,6 +353,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		state.Trace = traceWriter
 		state.MappingLibraries = input.MappingLibraries
 		state.WorkloadLibraries = input.WorkloadLibraries
+		state.ArtifactsLibraries = input.ArtifactsLibraries
 		state.SecretProvides = secretProvides
 
 		// Phase B.0 — locals + source-as-template eval; populates
