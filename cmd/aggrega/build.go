@@ -391,7 +391,7 @@ func dispatchBuildWithDiag(rw *workspaceconfig.ResolvedWorkspace, releasePath st
 	// pre-existing lockfile is verified; an auto-pulled one matches by construction.
 	if lockfilePreexisted {
 		if err := lockfile.Verify(lf, cl); err != nil {
-			return fmt.Errorf("%w; run `aggrega pull --upgrade %s` to refresh the lockfile against current catalog state",
+			return fmt.Errorf("%w; run `aggrega pull --upgrade --release %s` to refresh the lockfile against current catalog state",
 				err, releasePath)
 		}
 	}
@@ -623,7 +623,7 @@ func acquireLockfile(rw *workspaceconfig.ResolvedWorkspace, releasePath string, 
 		if preexisted {
 			return true, nil
 		}
-		return false, fmt.Errorf("aggrega build: lockfile %s missing and workspace is offline; run `aggrega pull %s` from a connected environment first: %w",
+		return false, fmt.Errorf("aggrega build: lockfile %s missing and workspace is offline; run `aggrega pull --release %s` from a connected environment first: %w",
 			lockfilePath, releasePath, oci.ErrFetchNotFound)
 	}
 
@@ -656,7 +656,7 @@ func acquireLockfile(rw *workspaceconfig.ResolvedWorkspace, releasePath string, 
 		}
 		return true, nil
 	}
-	return false, fmt.Errorf("aggrega build: lockfile %s missing; run `aggrega pull %s` first to create it, or pass --auto-pull (or enable auto_pull) to fill it during the build",
+	return false, fmt.Errorf("aggrega build: lockfile %s missing; run `aggrega pull --release %s` first to create it, or pass --auto-pull (or enable auto_pull) to fill it during the build",
 		lockfilePath, releasePath)
 }
 

@@ -39,12 +39,12 @@ import (
 //
 // The sentinel wraps oci.ErrFetchIntegrity so cache-metadata
 // corruption surfaces as a fetch-class error at the orchestrator
-// boundary, with the same `aggrega pull --upgrade` remediation
-// that catches archive-bytes corruption. Both signals mean the same
-// thing operationally: the cache slot is bad, re-pull. Callers can
-// errors.Is the returned error against ErrCacheMetadataInvalid for
-// the specific cause, or against oci.ErrFetchIntegrity for the
-// fetch-class category.
+// boundary, with the same `aggrega pull --upgrade --release <release>`
+// remediation that catches archive-bytes corruption. Both signals
+// mean the same thing operationally: the cache slot is bad,
+// re-pull. Callers can errors.Is the returned error against
+// ErrCacheMetadataInvalid for the specific cause, or against
+// oci.ErrFetchIntegrity for the fetch-class category.
 var ErrCacheMetadataInvalid = fmt.Errorf("metadata: cache metadata.yaml failed schema validation: %w", oci.ErrFetchIntegrity)
 
 var (

@@ -4,7 +4,8 @@
 // Package lockfile parses and writes the per-Release lockfile
 // (`<release-stem>.lock`) that pins every URI resolved from a Release
 // for deterministic future builds. The lockfile is produced by
-// `aggrega pull <release>` and consumed by `aggrega build <release>`.
+// `aggrega pull --release <release>` and consumed by
+// `aggrega build --release <release>`.
 //
 // Two provenance shapes capture two distinct closure-graph
 // relationships:

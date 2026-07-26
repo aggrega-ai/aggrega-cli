@@ -411,7 +411,7 @@ func (l *catalogLookup) honorPinDigest(uri string, res closure.Resolution) (clos
 		return res, nil
 	}
 	return closure.Resolution{}, fmt.Errorf(
-		"%w: pinned entity %q: registry now serves digest %s for the pinned version, not the pinned digest %s; run `aggrega pull --upgrade` to update the pin",
+		"%w: pinned entity %q: registry now serves digest %s for the pinned version, not the pinned digest %s; run `aggrega pull --upgrade --release <release>` to update the pin",
 		oci.ErrFetchIntegrity, uri, res.Digest, pin.Digest)
 }
 

@@ -598,11 +598,11 @@ func runCachePrune(w io.Writer, loc cacheLocations) error {
 
 	lockPaths := findLockfiles(wsRoot, cacheDir)
 	if len(lockPaths) == 0 {
-		return fmt.Errorf("cache prune needs a pulled workspace: no lockfiles (*.lock) found under %s; run `aggrega pull <release>` first", wsRoot)
+		return fmt.Errorf("cache prune needs a pulled workspace: no lockfiles (*.lock) found under %s; run `aggrega pull --release <release>` first", wsRoot)
 	}
 	refset, loaded := buildReferenceSet(lockPaths)
 	if loaded == 0 {
-		return fmt.Errorf("cache prune found %d lockfile candidate(s) under %s but none parsed as a lockfile; run `aggrega pull <release>` first", len(lockPaths), wsRoot)
+		return fmt.Errorf("cache prune found %d lockfile candidate(s) under %s but none parsed as a lockfile; run `aggrega pull --release <release>` first", len(lockPaths), wsRoot)
 	}
 
 	// Prune every prunable class, drawn from the single class-set assembly. The

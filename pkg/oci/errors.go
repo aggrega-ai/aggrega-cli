@@ -27,8 +27,8 @@ var ErrFetchNetworkUnreachable = errors.New("oci: network unreachable")
 
 // ErrFetchIntegrity is returned when pulled bytes don't match the
 // manifest's claimed digest. Call sites wrap this sentinel with the
-// URL, the expected digest, and an `aggrega pull --upgrade`
-// remediation pointer.
+// URL, the expected digest, and an
+// `aggrega pull --upgrade --release <release>` remediation pointer.
 var ErrFetchIntegrity = errors.New("oci: content digest mismatch")
 
 // ErrNoContentLayer is returned when an OCI manifest carries no layer of
@@ -53,7 +53,8 @@ var ErrAmbiguousContentLayer = errors.New("oci: manifest has multiple layers of 
 // content blob that mismatches its pin): this sentinel names a corrupted or
 // tampered manifest blob specifically. Call sites wrap it with the URI, the
 // recomputed digest, and the expected digest; the remediation is
-// `aggrega pull --upgrade` to refresh the cache from authoritative bytes.
+// `aggrega pull --upgrade --release <release>` to refresh the cache
+// from authoritative bytes.
 var ErrCachedManifestIntegrity = errors.New("oci: cached manifest digest mismatch")
 
 // ErrImmutableTagConflict is returned by the publish path when the
@@ -125,7 +126,7 @@ func RemediationFor(sentinel error, registryHost string) string {
 	case errors.Is(sentinel, ErrFetchNetworkUnreachable):
 		return "remediation: check network connectivity to " + host + "; corporate proxies typically need HTTPS_PROXY exported"
 	case errors.Is(sentinel, ErrFetchIntegrity), errors.Is(sentinel, ErrCachedManifestIntegrity):
-		return "remediation: run aggrega pull --upgrade <release> to refresh the lockfile and cache"
+		return "remediation: run aggrega pull --upgrade --release <release> to refresh the lockfile and cache"
 	default:
 		return ""
 	}
