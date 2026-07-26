@@ -56,12 +56,14 @@ const (
 	// carry.
 	AnalysisErrorPolicy AnalysisErrorKind = "policy"
 
-	// AnalysisErrorAttachmentRequirement marks a presence-mandate violation:
-	// a component's declared required attachment type that no attachment
-	// satisfies, or a mandate whose declaration is itself malformed. The
-	// violation is per-node rather than per-edge, so
-	// [AnalysisError.Error] prefixes the node and returns the rest of the
-	// diagnostic verbatim instead of composing it from the edge fields.
+	// AnalysisErrorAttachmentRequirement marks an attachment requirement the
+	// node does not satisfy: a declared required attachment type that no
+	// attachment satisfies, a mandate whose declaration is itself malformed,
+	// or a declared slot marked required that no attachment binds. The kind
+	// classifies the message SHAPE — the violation is per-node rather than
+	// per-edge, so [AnalysisError.Error] prefixes the node and returns the
+	// rest of the diagnostic verbatim instead of composing it from the edge
+	// fields. Which rule failed is carried by the Sentinel, not by the kind.
 	AnalysisErrorAttachmentRequirement AnalysisErrorKind = "attachment-requirement"
 )
 
@@ -276,8 +278,9 @@ type PrecalculatedPath struct {
 //
 //  1. Selector-violation errors from validateSelectors.
 //  2. AppliesTo-violation errors from validateAppliesTo, attachment-slot
-//     selector errors from validateSlotSelectors, and presence-mandate
-//     errors from validateRequiredAttachmentTypes (all appended to the
+//     selector errors from validateSlotSelectors, presence-mandate errors
+//     from validateRequiredAttachmentTypes, and unfilled-required-slot
+//     errors from validateRequiredAttachmentSlots (all appended to the
 //     same Errors slice).
 //  3. Precalculated paths from calculatePaths.
 //  4. The PolicyInput payload from assemblePolicyInput.
@@ -328,6 +331,15 @@ func AnalyzeContext(ctx context.Context, graph *types.IRGraph, catalogLookup res
 		return nil, err
 	}
 	errs = append(errs, mandateErrs...)
+
+	// 2d. required attachment slots — each slot a node's Component declares
+	// required is bound by some attachment. A separate check from 2c: a slot
+	// names one binding point, a mandate names a type at any name.
+	slotFillErrs, err := validateRequiredAttachmentSlots(ctx, graph, catalogLookup)
+	if err != nil {
+		return nil, err
+	}
+	errs = append(errs, slotFillErrs...)
 
 	// 3. DFS path calculation
 	paths := calculatePaths(graph)

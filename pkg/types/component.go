@@ -46,9 +46,14 @@ type UsesSchemaEntry struct {
 // means Black-Box (the material is consumed by a Recipe internally, not
 // delivered to the workload).
 //
-// Required declares the slot as expected to be filled. It is a declaration of
-// intent: no build-time check currently rejects a deployment that leaves a
-// required slot unfilled.
+// Required declares that the slot must end up bound. On a Component's slot the
+// build halts when no attachment binds the slot's name on a node of that type,
+// tested against the attachment set the node holds after the whole attachment
+// cascade — so an attachment contributed at a scope the component inherits from
+// satisfies the slot exactly as a fill authored on the component itself does. On
+// a Feature's slot the field is a declaration only: an attachment carries no
+// nested attachment block, so a Feature's own slots have no surface to be bound
+// from.
 // Schema: component-v1alpha1.schema.json#/properties/spec/properties/featuresSchema
 type AttachmentSlot struct {
 	Required    bool     `json:"required,omitempty" yaml:"required,omitempty"`

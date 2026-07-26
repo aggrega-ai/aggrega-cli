@@ -1,0 +1,18 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: tier4-required-attachment-slot
+  version: "1.0.0"
+spec:
+  components:
+    # Leaves the required slot unbound at every scope.
+    unbound:
+      type: example/slotted-db
+    # Binds the required slot correctly.
+    bound:
+      type: example/slotted-db
+      features:
+        root_password:
+          type: example/pw
+          values:
+            origin: pw-value

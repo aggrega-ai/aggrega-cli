@@ -1,0 +1,3 @@
+workspace:
+  catalog_dirs:
+    - ./catalog

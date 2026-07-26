@@ -9,3 +9,6 @@ spec:
       type:
         core/datastore/mariadb:1.0.0: cloudformation/mariadb-rds:1.0.0
         example/compute/db-reader:1.0.0: cloudformation/db-reader:1.0.0
+    features:
+      type:
+        core/generated-secret:1.0.0: cloudformation/generated-secret:1.0.0

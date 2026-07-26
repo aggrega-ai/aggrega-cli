@@ -96,11 +96,16 @@ type CatalogLookup struct {
 //  6. Schema conformance — authored values/infra pillars match the declared schema.
 //  7. Release uses-socket validation — Release per-edge sockets exist in usesSchema.
 //  8. Per-edge conformance — per-edge values/infra match the socket's per-edge schema.
+//  9. Attachment slot shape — an attachment binding a declared slot matches the
+//     shape that slot projects.
 //
-// A component's required-attachment-type mandate is NOT checked here: the
-// mandate is satisfied by the node's final merged attachment set, which does
-// not exist until the attachment cascade has run, so it is evaluated over the
-// finalised graph rather than over the pre-flatten Aggregate.
+// Neither of the two attachment REQUIREMENT rules is checked here, and for the
+// same reason: a component's required-attachment-type mandate and a slot's
+// `required: true` are both satisfied by the node's final merged attachment
+// set, which does not exist until the attachment cascade has run. Both are
+// evaluated over the finalised graph rather than over the pre-flatten
+// Aggregate. What IS checked here is the shape of what the author wrote, which
+// is a question about the authored document and belongs at its authoring site.
 //
 // All violations are collected; no guard short-circuits the others. Within a
 // guard, errors sort by (Entity, Field) for byte-identical output across
@@ -119,5 +124,6 @@ func RunGuards(na types.NormalizedAggregate, release *types.Release, catalog Cat
 	errs = append(errs, guardRequiredUsesSockets(na, catalog)...)
 	errs = append(errs, guardSchemaConformance(na, catalog, boundaryInfra, parameters)...)
 	errs = append(errs, guardEdgeConformance(na, release, catalog, parameters)...)
+	errs = append(errs, guardAttachmentSlotShape(na, catalog)...)
 	return errs
 }

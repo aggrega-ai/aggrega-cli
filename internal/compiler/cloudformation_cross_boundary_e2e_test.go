@@ -37,19 +37,25 @@ import (
 const cfnHubCatalog = "../../../aggrega-hub/aggrega-catalog"
 
 // cfnCatalogPaths are the entities the example consumes — the fragment-form
-// mariadb-rds Recipe, the db-reader consumer Component and Recipe, and the
-// mariadb Component all come from the sibling hub, so the example uses the
-// catalog rather than duplicating any recipe body. The cloudformation rendering
-// Plugin entity comes from a version-independent test fixture whose guest is
-// still resolved from the binary's embed tier, so the example is decoupled from
-// the hub's versioned Plugin directory and needs no edit when a release tag
-// changes.
+// mariadb-rds Recipe, the db-reader consumer Component and Recipe, the mariadb
+// Component, and the engine-managed credential Feature plus its cloudformation
+// FeatureRecipe that bind the mariadb Component's required slot all come from
+// the sibling hub, so the example uses the catalog rather than duplicating any
+// recipe body. That credential pair is the honest fill here: the mariadb-rds
+// Recipe sets the provider's own managed-password directive, so RDS generates
+// and rotates the password and the FeatureRecipe renders nothing.
+//
+// One entity is fixture-local: the cloudformation rendering Plugin, kept
+// version-independent so the example needs no edit when a release tag changes
+// (its guest still resolves from the binary's embed tier).
 func cfnCatalogPaths() []string {
 	return []string{
 		cfnHubCatalog + "/component/core/datastore/mariadb/1.0.0/component.yaml",
 		cfnHubCatalog + "/component/example/compute/db-reader/1.0.0/component.yaml",
 		cfnHubCatalog + "/recipe/cloudformation/mariadb-rds/1.0.0/recipe.yaml",
 		cfnHubCatalog + "/recipe/cloudformation/db-reader/1.0.0/recipe.yaml",
+		cfnHubCatalog + "/feature/core/generated-secret/1.0.0/feature.yaml",
+		cfnHubCatalog + "/feature-recipe/cloudformation/generated-secret/1.0.0/recipe.yaml",
 		"testdata/cloudformation-two-boundary/catalog/cloudformation-renderer.plugin.yaml",
 	}
 }

@@ -17,6 +17,14 @@ spec:
         user: appuser
         charset: utf8mb4
         collation: utf8mb4_general_ci
+      features:
+        # The slot core/datastore/mariadb declares as one every deployment
+        # binds. RDS generates and rotates the master password itself, so the
+        # slot is delegated to the engine: no value is authored and nothing is
+        # rendered for it. The directive that turns engine management on lives
+        # in the CloudFormation Recipe.
+        root_password:
+          type: core/generated-secret
     app-a:
       type: example/compute/db-reader
       values:

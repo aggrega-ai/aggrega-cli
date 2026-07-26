@@ -1,0 +1,11 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Feature
+metadata:
+  name: example/pw
+  version: "1.0.0"
+spec:
+  schema:
+    values:
+      origin:
+        type: string
+        required: true

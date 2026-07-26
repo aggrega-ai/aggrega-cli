@@ -67,6 +67,18 @@ var (
 	// monotonic-narrowing, which stays signal-only.
 	ErrSchemaConformance = errors.New("authored pillar does not conform to its declared schema")
 
+	// ErrAttachmentSlotShape wraps an authored attachment that binds a
+	// declared slot but does not match that slot's declared shape: a key the
+	// slot does not permit, or an inject delivery mechanism outside the
+	// slot's allowlist (including any mechanism at all on a Black-Box slot,
+	// whose empty allowlist reserves delivery to the Recipe). Validated at
+	// Step 1 against the shape the entity's featuresSchema projects.
+	//
+	// It is a SHAPE sentinel only. Whether a slot declared `required: true`
+	// ends up bound is a different question, asked of the attachment set a
+	// node holds after the whole cascade, and it is never reported here.
+	ErrAttachmentSlotShape = errors.New("attachment does not conform to its declared slot shape")
+
 	// ErrAttachmentSlotNearMiss marks an ADVISORY finding, not a halt: an
 	// attachment whose name is not a declared slot on its component's type but
 	// is within a small edit distance of one — the shape a slot-name typo
@@ -86,8 +98,9 @@ var (
 	// which legitimately have no catalog entity, are not this error.)
 	ErrGuardEntityViewInconsistency = errors.New("guard catalog-entity view inconsistency")
 
-	// ErrMissingRequiredFeature wraps a component whose declared catalog
-	// type lists a requiredFeature that no attached Feature instance satisfies.
+	// ErrMissingRequiredFeature wraps a component whose declared catalog type
+	// carries a presence mandate — a features.aggrega.ai/requiredType.<label>
+	// annotation — that no attachment in the node's final set satisfies.
 	ErrMissingRequiredFeature = errors.New("missing required feature: attach a Feature of the required type to the component")
 
 	// ErrFeatureMergeConflict wraps a conflict during Release-side Feature

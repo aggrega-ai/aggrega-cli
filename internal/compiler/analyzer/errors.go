@@ -23,6 +23,26 @@ var (
 	// Step 4.
 	ErrSlotSelectorUnsatisfied = errors.New("attachment slot selector unsatisfied")
 
+	// ErrRequiredSlotUnfilled is the ABI-stable sentinel for an attachment
+	// slot a Component declares `required: true` that the node's final
+	// attachment set leaves unbound — the slot analog of a missing required
+	// uses socket, evaluated at Step 4 over the resolved set rather than over
+	// an authored block.
+	//
+	// The stage is what makes the rule honest: an attachment contributed at a
+	// subsystem, boundary or Release scope binds the slot for every component
+	// under that scope, so a slot is satisfied whether the deployment fills it
+	// per-consumer or attaches once at a scope the consumers share. Only the
+	// post-cascade set can see both shapes, and the check is a name-presence
+	// test over it — it never inspects what the fill means.
+	//
+	// It is deliberately distinct from ErrMissingRequiredFeature, which reports
+	// an unsatisfied presence mandate. A mandate demands that SOME attachment
+	// of a named type be present, at any name, with at-least-one cardinality; a
+	// slot's `required` demands that ONE NAMED binding point be bound. Two
+	// questions with two remediations, so two sentinels.
+	ErrRequiredSlotUnfilled = errors.New("required attachment slot unfilled")
+
 	// ErrPolicyViolation is the ABI-stable sentinel for a Step-4
 	// policy socket verdict that fails: a plugin result whose
 	// pass flag is false. Each failed rule is recorded as an

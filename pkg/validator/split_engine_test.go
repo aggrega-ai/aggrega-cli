@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
+	jsonvalidator "github.com/aggrega-ai/aggrega-cli/pkg/validator/jsonschema"
 )
 
 // ----- JSON Schema bridge synthesis -----
@@ -127,9 +128,11 @@ func TestGenerateBaseAttachmentsJSONSchema_RequiredVsOptional(t *testing.T) {
 	if out == nil {
 		t.Fatal("expected non-nil schema; got nil")
 	}
-	// Required slots land in Required: []string (sorted alphabetically).
-	if len(out.Required) != 1 || out.Required[0] != "db_password" {
-		t.Errorf("expected Required=[db_password]; got %v", out.Required)
+	// A required slot does NOT land in the outer required list: presence is a
+	// question about the post-cascade attachment set, not about the block this
+	// schema describes.
+	if len(out.Required) != 0 {
+		t.Errorf("expected no outer required list; got %v", out.Required)
 	}
 	dbSlot := out.Properties["db_password"]
 	if dbSlot == nil {
@@ -154,23 +157,22 @@ func TestGenerateBaseAttachmentsJSONSchema_RequiredVsOptional(t *testing.T) {
 	}
 }
 
-func TestGenerateBaseAttachmentsJSONSchema_RequiredSortedAlphabetically(t *testing.T) {
-	// Author order is preserved for PropertyOrder; Required is sorted
-	// alphabetically post-construction for cross-build byte-identity.
+func TestGenerateBaseAttachmentsJSONSchema_NeverEmitsAPresenceRequirement(t *testing.T) {
+	// The single-source rung for "a slot's declared requirement": presence is
+	// enforced in exactly one place, over the node's post-cascade attachment
+	// set. This projection must be structurally incapable of making the same
+	// claim over an authored block, because the two would disagree — a slot
+	// bound by an attachment cascading in from a broader scope is satisfied,
+	// and an outer required list here would reject it. Every slot declared
+	// required, and still no outer required list.
 	schema := types.OrderedMap[types.AttachmentSlot]{}
 	schema.Set("zulu", types.AttachmentSlot{Required: true})
 	schema.Set("alpha", types.AttachmentSlot{Required: true})
 	schema.Set("mike", types.AttachmentSlot{Required: true})
 
 	out := GenerateBaseAttachmentsJSONSchema(schema)
-	expectedRequired := []string{"alpha", "mike", "zulu"}
-	if len(out.Required) != 3 {
-		t.Fatalf("expected 3 required slots; got %v", out.Required)
-	}
-	for i, want := range expectedRequired {
-		if out.Required[i] != want {
-			t.Errorf("expected Required[%d]=%q (sorted); got %q", i, want, out.Required[i])
-		}
+	if len(out.Required) != 0 {
+		t.Errorf("projection emitted a presence requirement %v; presence belongs to the post-cascade check alone", out.Required)
 	}
 	// PropertyOrder preserves author sequence.
 	expectedOrder := []string{"zulu", "alpha", "mike"}
@@ -178,6 +180,37 @@ func TestGenerateBaseAttachmentsJSONSchema_RequiredSortedAlphabetically(t *testi
 		if out.PropertyOrder[i] != want {
 			t.Errorf("expected PropertyOrder[%d]=%q (author order); got %q", i, want, out.PropertyOrder[i])
 		}
+	}
+}
+
+func TestGenerateBaseAttachmentsJSONSchema_InjectModelsTheAuthoredShape(t *testing.T) {
+	// The slot's contract is the set of permitted mechanism NAMES. Each
+	// permitted mechanism's value is an array, because that is what an author
+	// writes (`env: [{in: …, from: …}]`); modelling it as anything else would
+	// reject every legal fill that authors delivery. The entry shape itself is
+	// the entity schema's contract and is deliberately not restated here.
+	schema := types.OrderedMap[types.AttachmentSlot]{}
+	schema.Set("password", types.AttachmentSlot{Inject: []string{"env", "file"}})
+
+	out := GenerateBaseAttachmentsJSONSchema(schema)
+	inject := out.Properties["password"].Properties["inject"]
+	if inject == nil {
+		t.Fatal("expected an inject sub-schema for a slot declaring an allowlist")
+	}
+	for _, mech := range []string{"env", "file"} {
+		m := inject.Properties[mech]
+		if m == nil {
+			t.Fatalf("expected allowlisted mechanism %q to be permitted", mech)
+		}
+		if m.Type != "array" {
+			t.Errorf("mechanism %q modelled as %q; an authored delivery block is an array", mech, m.Type)
+		}
+	}
+	if _, ok := inject.Properties["arg"]; ok {
+		t.Error("a mechanism outside the allowlist must not be permitted")
+	}
+	if inject.AdditionalProperties == nil || inject.AdditionalProperties.Not == nil {
+		t.Errorf("expected the inject object closed so an un-allowlisted mechanism is rejected; got %+v", inject.AdditionalProperties)
 	}
 }
 
@@ -240,24 +273,80 @@ func TestGenerateBaseAttachmentsJSONSchema_OpenOuterClosedSlots(t *testing.T) {
 	}
 }
 
+func TestGenerateBaseAttachmentsJSONSchema_RequiredSlotFillMustNameAType(t *testing.T) {
+	// A required slot's fill must name the Feature it attaches — the one
+	// slot-internal meaning `required` keeps. Asserted at schema level because
+	// that is the only level at which it is reachable: the entity envelope
+	// schema requires `type` on every attachment at every name and halts first,
+	// and the Go attachment struct always marshals the key. The constraint
+	// stays in the projection because a description of a fill's shape that
+	// omitted its one mandatory key would be an incomplete description.
+	slots := types.OrderedMap[types.AttachmentSlot]{}
+	slots.Set("root_password", types.AttachmentSlot{Required: true})
+	v, err := jsonvalidator.New(GenerateBaseAttachmentsJSONSchema(slots))
+	if err != nil {
+		t.Fatalf("new validator: %v", err)
+	}
+
+	bad := map[string]any{"root_password": map[string]any{"values": map[string]any{"origin": "x"}}}
+	rpt, err := v.Validate(bad, &jsonvalidator.Context{Surround: bad, SkipPredicates: true})
+	if err != nil {
+		t.Fatalf("validate: %v", err)
+	}
+	if rpt == nil || len(rpt.Findings) == 0 {
+		t.Error("a fill naming no type does not describe an attachment; the projection must reject it")
+	}
+
+	good := map[string]any{"root_password": map[string]any{"type": "core/secret-value"}}
+	rpt2, err := v.Validate(good, &jsonvalidator.Context{Surround: good, SkipPredicates: true})
+	if err != nil {
+		t.Fatalf("validate: %v", err)
+	}
+	if rpt2 != nil && len(rpt2.Findings) != 0 {
+		t.Errorf("a fill naming its type must be accepted; got %+v", rpt2.Findings)
+	}
+}
+
+func TestGenerateBaseJSONSchemas_CompileAsValidators(t *testing.T) {
+	// Both projections must be usable, not merely well-formed on paper. The
+	// library resolves a schema document as a tree and refuses one where the
+	// same *Schema node sits at two positions, so reusing a single closed-object
+	// node across depths yields a projection that fails at validator
+	// construction — and a caller that treats a construction failure as
+	// "nothing to check" would then validate nothing at all, silently. Both
+	// generators place a closed object at more than one depth, so both need this
+	// guard.
+	slots := types.OrderedMap[types.AttachmentSlot]{}
+	slots.Set("root_password", types.AttachmentSlot{Required: true, Inject: []string{}})
+	slots.Set("user_password", types.AttachmentSlot{Inject: []string{"env", "file"}})
+	if _, err := jsonvalidator.New(GenerateBaseAttachmentsJSONSchema(slots)); err != nil {
+		t.Errorf("attachment projection does not compile into a validator: %v", err)
+	}
+
+	sockets := types.OrderedMap[types.UsesSchemaEntry]{}
+	sockets.Set("database", types.UsesSchemaEntry{Selector: "a=b", Inject: []string{"env"}})
+	sockets.Set("cache", types.UsesSchemaEntry{Selector: "c=d"})
+	if _, err := jsonvalidator.New(GenerateBaseUsesJSONSchema(sockets)); err != nil {
+		t.Errorf("uses projection does not compile into a validator: %v", err)
+	}
+}
+
 func TestGenerateBaseAttachmentsJSONSchema_OptionalSlotStillConstrainsShape(t *testing.T) {
-	// slot.Required drives two things at two schema depths: membership of
-	// the outer required list, AND the slot-internal "a fill must declare a
-	// type" requirement. An optional slot drops the former and keeps the
-	// latter's parent closed-ness, so a fill it DOES receive is still
-	// shape-constrained rather than free-form.
+	// An optional slot still shapes a fill it DOES receive: its sub-schema
+	// stays closed and permits exactly the keys an attachment may carry, so
+	// declaring `required: false` relaxes presence and nothing else.
 	schema := types.OrderedMap[types.AttachmentSlot]{}
 	schema.Set("password", types.AttachmentSlot{Required: false})
 
 	out := GenerateBaseAttachmentsJSONSchema(schema)
-	if len(out.Required) != 0 {
-		t.Errorf("expected optional slot absent from the outer required list; got %v", out.Required)
-	}
 	slot := out.Properties["password"]
 	if slot.AdditionalProperties == nil || slot.AdditionalProperties.Not == nil {
 		t.Errorf("expected an optional slot's sub-schema to stay closed; got %+v", slot.AdditionalProperties)
 	}
-	for _, want := range []string{"type", "values", "uses"} {
+	// The permitted key set mirrors the attachment shape the entity schemas
+	// admit: a key legal on a free attachment stays legal on a slot fill, or
+	// wiring the projection would reject authoring the envelope allows.
+	for _, want := range []string{"type", "description", "values", "uses"} {
 		if _, ok := slot.Properties[want]; !ok {
 			t.Errorf("expected optional slot to permit %q", want)
 		}
