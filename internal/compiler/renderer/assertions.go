@@ -15,7 +15,7 @@ import (
 // Field availability by phase:
 //
 //   - Step 4b (Component / Feature assertions): Values, Infra, Uses,
-//     Secrets, Metadata are populated; Provides, Locals, Recipe are nil
+//     Features, Metadata are populated; Provides, Locals, Recipe are nil
 //     (a missingkey=error halt fires on accidental references).
 //   - Step 5b (Recipe / FeatureRecipe assertions): all fields populated.
 //
@@ -28,7 +28,7 @@ type AssertionContext struct {
 	Values   map[string]any
 	Infra    map[string]any
 	Uses     map[string]any
-	Secrets  map[string]any
+	Features map[string]any
 	Metadata map[string]any
 	Provides map[string]any
 	Locals   map[string]any

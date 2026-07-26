@@ -159,8 +159,10 @@ func TestPullDetailRendersLibraryAxis(t *testing.T) {
 
 // TestKindFromReferenceSite pins the reference-site → kind table, including the
 // nuance that distinguishes a Manifest mapping value (Recipe/FeatureRecipe)
-// from an instance attachment (Component/Feature/Secret), and a feature nested
-// under a component (Feature, not the enclosing Component).
+// from an instance attachment (Component/Feature), and an attachment nested
+// under a component (Feature, not the enclosing Component). A credential
+// attachment reaches the table through the same `features` collection, so it
+// resolves to Feature — there is no second collection for it to arrive under.
 func TestKindFromReferenceSite(t *testing.T) {
 	cases := map[string]string{
 		"release.spec.aggregate":                                               "Aggregate",
@@ -171,7 +173,7 @@ func TestKindFromReferenceSite(t *testing.T) {
 		"aggregate.spec.components.api.type":                                   "Component",
 		"aggregate.spec.aggregates.sub0.type":                                  "Aggregate",
 		"aggregate.spec.components.api.features.cache.type":                    "Feature",
-		"aggregate.spec.components.api.secrets.db.type":                        "Secret",
+		"aggregate.spec.components.api.features.db.type":                       "Feature",
 		"release.spec.boundaries.primary.components.api.features.ingress.type": "Feature",
 		"something.unmapped":                                                   "",
 	}

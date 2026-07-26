@@ -109,7 +109,11 @@ func TestCollectNodeFeatures_SimpleComponent(t *testing.T) {
 	}
 }
 
-func TestCollectNodeFeatures_CredentialToSecrets(t *testing.T) {
+// TestCollectNodeFeatures_CredentialLandsInTheOneBucket pins that a credential
+// attachment is collected into the same bucket, through the same merge, as any
+// other attachment — and that it appears in the one order vector, so Phase A and
+// Phase B.6 both reach it.
+func TestCollectNodeFeatures_CredentialLandsInTheOneBucket(t *testing.T) {
 	t.Parallel()
 	values := types.OrderedMap[any]{}
 	values.Set("vault_path", "/secret/db")
@@ -118,9 +122,9 @@ func TestCollectNodeFeatures_CredentialToSecrets(t *testing.T) {
 	nodes.Set("api", apiNode)
 	topoResult := &topology.TopologyResult{
 		Nodes: nodes,
-		SecretAttachments: map[string][]topology.SecretAttachment{
+		FeatureAttachments: map[string][]topology.FeatureAttachment{
 			"api": {
-				{InstanceName: "db-creds", Secret: types.SecretInstance{Type: "core/db-creds", Values: values}},
+				{InstanceName: "db-creds", Feature: types.FeatureInstance{Type: "core/db-creds", Values: values}},
 			},
 		},
 	}
@@ -132,15 +136,15 @@ func TestCollectNodeFeatures_CredentialToSecrets(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if result.Features.Len() != 0 {
-		t.Errorf("expected 0 features, got %d (credential should be in secrets)", result.Features.Len())
+	if result.Features.Len() != 1 {
+		t.Fatalf("expected 1 attachment, got %d", result.Features.Len())
 	}
-	if result.Secrets.Len() != 1 {
-		t.Fatalf("expected 1 secret, got %d", result.Secrets.Len())
-	}
-	s, _ := result.Secrets.Get("db-creds")
+	s, _ := result.Features.Get("db-creds")
 	if s.Type != "core/db-creds" {
 		t.Errorf("type: %q", s.Type)
+	}
+	if len(result.FeatureOrder) != 1 || result.FeatureOrder[0] != "db-creds" {
+		t.Errorf("a credential must appear in the one order vector; got %v", result.FeatureOrder)
 	}
 }
 
@@ -176,23 +180,23 @@ func TestResolvedVersionIsFeatureVersionNotComponent(t *testing.T) {
 	if f, _ := result.Features.Get("mon"); f.ResolvedVersion != "2.5.0" {
 		t.Errorf("feature resolved_version = %q; want 2.5.0 (feature catalog version)", f.ResolvedVersion)
 	}
-	if s, _ := result.Secrets.Get("creds"); s.ResolvedVersion != "3.1.0" {
+	if s, _ := result.Features.Get("creds"); s.ResolvedVersion != "3.1.0" {
 		t.Errorf("credential resolved_version = %q; want 3.1.0 (feature catalog version)", s.ResolvedVersion)
 	}
 }
 
-// TestCollectNodeFeatures_TopologySecretResolvedVersion pins resolved_version on the
-// topology SecretAttachments path (the :237 constructor), distinct from the
-// mergeContribution credential branch.
-func TestCollectNodeFeatures_TopologySecretResolvedVersion(t *testing.T) {
+// TestCollectNodeFeatures_CredentialResolvedVersion pins resolved_version on a
+// credential attachment arriving through the topology attachment path: it is the
+// credential Feature's OWN catalog version, resolved by the one construction site.
+func TestCollectNodeFeatures_CredentialResolvedVersion(t *testing.T) {
 	t.Parallel()
 	apiNode := &topology.TopologyNode{InstanceID: "api"}
 	nodes := types.OrderedMap[*topology.TopologyNode]{}
 	nodes.Set("api", apiNode)
 	topoResult := &topology.TopologyResult{
 		Nodes: nodes,
-		SecretAttachments: map[string][]topology.SecretAttachment{
-			"api": {{InstanceName: "db-creds", Secret: types.SecretInstance{Type: "core/db-creds"}}},
+		FeatureAttachments: map[string][]topology.FeatureAttachment{
+			"api": {{InstanceName: "db-creds", Feature: types.FeatureInstance{Type: "core/db-creds"}}},
 		},
 	}
 	cat := resolver.CatalogLookup{
@@ -209,8 +213,8 @@ func TestCollectNodeFeatures_TopologySecretResolvedVersion(t *testing.T) {
 	if err != nil {
 		t.Fatalf("collectNodeFeatures: %v", err)
 	}
-	if s, _ := result.Secrets.Get("db-creds"); s.ResolvedVersion != "3.1.0" {
-		t.Errorf("topology secret resolved_version = %q; want 3.1.0", s.ResolvedVersion)
+	if s, _ := result.Features.Get("db-creds"); s.ResolvedVersion != "3.1.0" {
+		t.Errorf("credential attachment resolved_version = %q; want 3.1.0", s.ResolvedVersion)
 	}
 }
 
@@ -228,16 +232,16 @@ func TestCollectNodeFeatures_ProjectsAuthoredAttachmentInject(t *testing.T) {
 	topoResult := &topology.TopologyResult{
 		Nodes: nodes,
 		FeatureAttachments: map[string][]topology.FeatureAttachment{
-			"api": {{InstanceName: "cache", Feature: types.FeatureInstance{
-				Type:   "core/cache",
-				Inject: &types.InjectBlock{Env: map[string]any{"CACHE_URL": "url"}},
-			}}},
-		},
-		SecretAttachments: map[string][]topology.SecretAttachment{
-			"api": {{InstanceName: "db-creds", Secret: types.SecretInstance{
-				Type:   "core/db-creds",
-				Inject: &types.InjectBlock{Env: map[string]any{"DB_PASSWORD": "root_password"}},
-			}}},
+			"api": {
+				{InstanceName: "cache", Feature: types.FeatureInstance{
+					Type:   "core/cache",
+					Inject: &types.InjectBlock{Env: map[string]any{"CACHE_URL": "url"}},
+				}},
+				{InstanceName: "db-creds", Feature: types.FeatureInstance{
+					Type:   "core/db-creds",
+					Inject: &types.InjectBlock{Env: map[string]any{"DB_PASSWORD": "root_password"}},
+				}},
+			},
 		},
 	}
 	cat := resolver.CatalogLookup{
@@ -260,23 +264,21 @@ func TestCollectNodeFeatures_ProjectsAuthoredAttachmentInject(t *testing.T) {
 		t.Errorf("feature inject env.CACHE_URL = %q, want url (provides-key reference)", v)
 	}
 
-	s, ok := result.Secrets.Get("db-creds")
+	s, ok := result.Features.Get("db-creds")
 	if !ok {
-		t.Fatal("secret 'db-creds' absent from result")
+		t.Fatal("credential attachment 'db-creds' absent from result")
 	}
 	if env, ok := s.Inject.Get("env"); !ok {
-		t.Fatalf("secret entry inject missing env mechanism; got %v", s.Inject.Keys())
+		t.Fatalf("credential entry inject missing env mechanism; got %v", s.Inject.Keys())
 	} else if v, _ := env.Get("DB_PASSWORD"); v != "root_password" {
-		t.Errorf("secret inject env.DB_PASSWORD = %q, want root_password (provides-key reference)", v)
+		t.Errorf("credential inject env.DB_PASSWORD = %q, want root_password (provides-key reference)", v)
 	}
 }
 
-// TestMergeContribution_CredentialCarriesPerInstanceInfra pins the secret/feature
-// IR-entry unification: a credential routed into the secrets bucket carries its
-// per-instance infra (the Release-tier infra in scope at the merge site), exactly
-// as a feature does — not the former lossy {Type, Values}-only projection that
-// dropped it. Before the unification this infra was discarded and the secret
-// render path read an empty bag.
+// TestMergeContribution_CredentialCarriesPerInstanceInfra pins the attachment
+// IR-entry unification: a credential attachment carries its per-instance infra
+// (the Release-tier infra in scope at the merge site) exactly as any other
+// attachment does, rather than a lossy {Type, Values}-only projection.
 func TestMergeContribution_CredentialCarriesPerInstanceInfra(t *testing.T) {
 	t.Parallel()
 	result := newFeatureResult()
@@ -289,16 +291,13 @@ func TestMergeContribution_CredentialCarriesPerInstanceInfra(t *testing.T) {
 	if err := mergeContribution(result, "db-creds", "core/db-creds", values, infra, nil, markerSet, featureCatalog(), "api", explicitProvenance, scopeComponent); err != nil {
 		t.Fatalf("mergeContribution: %v", err)
 	}
-	if result.Features.Len() != 0 {
-		t.Errorf("credential should route to secrets, not features; got %d features", result.Features.Len())
-	}
-	s, ok := result.Secrets.Get("db-creds")
+	s, ok := result.Features.Get("db-creds")
 	if !ok {
-		t.Fatal("expected secret db-creds")
+		t.Fatal("expected the credential attachment db-creds")
 	}
 	got, ok := s.Infra.Get("replica_count")
 	if !ok || got != "3" {
-		t.Errorf("secret per-instance infra not carried: Infra=%v; want replica_count=3", s.Infra)
+		t.Errorf("credential per-instance infra not carried: Infra=%v; want replica_count=3", s.Infra)
 	}
 }
 
@@ -1286,15 +1285,16 @@ func TestMergeContribution_NearestScopeWins_BothAttachmentFamilies(t *testing.T)
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	// The non-credential attachment lands in Features; the credential-
-	// labelled one lands in Secrets. Both are merged by the same body.
+	// Both attachments land in the ONE bucket and are merged by the same body,
+	// so nearest-scope-wins-per-leaf is proven over the folded key space rather
+	// than once per former bucket.
 	feat, ok := result.Features.Get("monitoring")
 	if !ok {
-		t.Fatal("non-credential attachment missing from the features bucket")
+		t.Fatal("non-credential attachment missing from the attachment bucket")
 	}
-	cred, ok := result.Secrets.Get("creds")
+	cred, ok := result.Features.Get("creds")
 	if !ok {
-		t.Fatal("credential-labelled attachment missing from the secrets bucket")
+		t.Fatal("credential-labelled attachment missing from the attachment bucket")
 	}
 
 	for _, tc := range []struct {
@@ -1638,25 +1638,57 @@ func TestBuildCatalogMetadata_PopulatedReturnsAllFields(t *testing.T) {
 	}
 }
 
-// TestIsCredential_NilFeatureLookupReturnsFalse pins the nil-Feature
-// guard. Without a Feature lookup function the discriminator returns
-// false rather than panic.
-func TestIsCredential_NilFeatureLookupReturnsFalse(t *testing.T) {
+// TestCollectNodeFeatures_CredentialLabelSteersNothing is the negative proof for
+// the label's retirement: two attachments identical except that one's catalog
+// Feature carries feature.aggrega.ai/kind: secret produce entries that agree on
+// every field the IR carries. The label survives on the catalog entity as opaque
+// metadata; no branch in this package reads it.
+func TestCollectNodeFeatures_CredentialLabelSteersNothing(t *testing.T) {
 	t.Parallel()
-	if isCredential("anything", resolver.CatalogLookup{}) {
-		t.Errorf("nil Feature lookup should return false")
-	}
-}
-
-// TestIsCredential_LookupMissReturnsFalse pins the not-found branch.
-// A Feature URI absent from the catalog returns false (treating the
-// missing Feature as non-credential).
-func TestIsCredential_LookupMissReturnsFalse(t *testing.T) {
-	t.Parallel()
+	labelled := types.OrderedMap[string]{}
+	labelled.Set(types.FeatureKindLabel, types.FeatureKindSecret)
 	cl := resolver.CatalogLookup{
-		Feature: func(string) (types.Feature, bool) { return types.Feature{}, false },
+		Component: func(string) (types.Component, bool) { return types.Component{}, false },
+		Feature: func(typeURI string) (types.Feature, bool) {
+			switch typeURI {
+			case "core/plain":
+				return types.Feature{Metadata: types.FeatureMetadata{Name: "core/plain", Version: "1.0.0"}}, true
+			case "core/labelled":
+				return types.Feature{Metadata: types.FeatureMetadata{Name: "core/labelled", Version: "1.0.0", Labels: labelled}}, true
+			}
+			return types.Feature{}, false
+		},
 	}
-	if isCredential("not/in/catalog", cl) {
-		t.Errorf("lookup miss should return false")
+	apiNode := &topology.TopologyNode{InstanceID: "api"}
+	nodes := types.OrderedMap[*topology.TopologyNode]{}
+	nodes.Set("api", apiNode)
+	vals := valuesMap("k", "v")
+	topoResult := &topology.TopologyResult{
+		Nodes: nodes,
+		FeatureAttachments: map[string][]topology.FeatureAttachment{
+			"api": {
+				{InstanceName: "plain", Feature: types.FeatureInstance{Type: "core/plain", Values: vals}},
+				{InstanceName: "labelled", Feature: types.FeatureInstance{Type: "core/labelled", Values: vals}},
+			},
+		},
+	}
+	rr := &resolver.ResolveResult{Aggregate: &types.Aggregate{Metadata: types.AggregateMetadata{Name: "t"}}}
+	result, err := collectNodeFeatures("api", apiNode, topoResult, rr, cl)
+	if err != nil {
+		t.Fatalf("collectNodeFeatures: %v", err)
+	}
+	plain, okP := result.Features.Get("plain")
+	labelledEntry, okL := result.Features.Get("labelled")
+	if !okP || !okL {
+		t.Fatalf("both attachments must land in the one bucket; keys=%v", result.Features.Keys())
+	}
+	if plain.Origin != labelledEntry.Origin || plain.ResolvedVersion != labelledEntry.ResolvedVersion {
+		t.Errorf("label steered a field: plain=%+v labelled=%+v", plain, labelledEntry)
+	}
+	if plain.ValuesProvenance.Len() != labelledEntry.ValuesProvenance.Len() {
+		t.Errorf("label steered provenance recording: %d vs %d", plain.ValuesProvenance.Len(), labelledEntry.ValuesProvenance.Len())
+	}
+	if len(result.FeatureOrder) != 2 {
+		t.Errorf("both attachments must appear in the one order vector; got %v", result.FeatureOrder)
 	}
 }

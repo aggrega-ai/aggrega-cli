@@ -10,33 +10,23 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
-// FeatureRecipeRef pairs a feature instance name with its resolved FeatureRecipe.
+// FeatureRecipeRef pairs an attachment instance name with its resolved
+// FeatureRecipe.
 //
 // A ref participates in Phase A by having its FeatureRecipe's injectMapping
-// evaluated against a feature-scoped context. By default that context's
-// .values/.infra come from the matching entry in ctx.Features. Secret-derived
-// refs (credential Features partitioned into the IR secrets bucket) instead
-// carry an explicit scope: their .values are the secret entry's own values and
-// .infra is empty, mirroring the credential context the Phase B.6 path builds.
-// The scope is optional and unexported so feature refs constructed elsewhere
-// resolve from ctx.Features unchanged.
+// evaluated against an attachment-scoped context whose .values/.infra come from
+// the matching entry in ctx.Features. One lookup serves every attachment
+// family, so a credential FeatureRecipe's injectMapping reads the attachment's
+// own infra exactly as any other attachment's does.
 type FeatureRecipeRef struct {
 	InstanceName  string
 	FeatureRecipe *types.FeatureRecipe
-	scope         *phaseAScope
-}
-
-// phaseAScope supplies a Phase A ref's feature-scoped .values/.infra directly,
-// bypassing the ctx.Features lookup. Used by secret-derived refs.
-type phaseAScope struct {
-	Values types.OrderedMap[any]
-	Infra  types.OrderedMap[any]
 }
 
 // ExecutePhaseA runs Phase A (Pre-Render Interception) for one node.
 // It iterates FeatureRecipes in the provided order (5-Tier Onion Model from ir.FeatureOrder),
 // evaluates each injectMapping template, and deep-merges the output over ctx.Context.Inject.
-// For each FeatureRecipe, .values and .infra are swapped to the feature's own values/infra.
+// For each FeatureRecipe, .values and .infra are swapped to the attachment's own values/infra.
 //
 // The authored-mechanism set is collected once from ctx.InjectRaw — the
 // immutable Developer intent populated by BuildInjectPipe. The set is passed
@@ -89,12 +79,9 @@ func ExecutePhaseA(ctx *types.TemplateContext, featureRecipes []FeatureRecipeRef
 		// (FR wins on collision). The current implementation uses a raw-string
 		// overlay; template-evaluated overlay is a future enhancement.
 		featureCtx := *ctx // shallow copy
-		if ref.scope != nil {
-			featureCtx.Values = ref.scope.Values
-			featureCtx.Infra = ref.scope.Infra
-		} else if feat, ok := ctx.Features.Get(ref.InstanceName); ok {
-			featureCtx.Values = feat.Values
-			featureCtx.Infra = feat.Infra
+		if attachment, ok := ctx.Features.Get(ref.InstanceName); ok {
+			featureCtx.Values = attachment.Values
+			featureCtx.Infra = attachment.Infra
 		}
 		featureCtx.Locals = mergeFeatureLocals(ctx.Locals, ref.FeatureRecipe.Spec.Locals)
 

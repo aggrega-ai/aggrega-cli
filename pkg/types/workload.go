@@ -130,7 +130,7 @@ type WorkloadMetadata struct {
 // generated init-<index> name. Map containers derive their name from the
 // map key, so this field is ignored there.
 //
-// Variables / Secrets / Ports preserve author order (OrderedMap); other
+// Variables / Attachments / Ports preserve author order (OrderedMap); other
 // fields are typed Go values decoded directly by yaml.Unmarshal.
 type ContainerSpec struct {
 	Name            string                    `json:"name,omitempty" yaml:"name,omitempty"`
@@ -139,7 +139,7 @@ type ContainerSpec struct {
 	Command         []string                  `json:"command,omitempty" yaml:"command,omitempty"`
 	Args            []string                  `json:"args,omitempty" yaml:"args,omitempty"`
 	Variables       OrderedMap[string]        `json:"variables,omitempty,omitzero" yaml:"variables,omitempty"`
-	Secrets         OrderedMap[SecretRef]     `json:"secrets,omitempty,omitzero" yaml:"secrets,omitempty"`
+	Attachments     OrderedMap[AttachmentRef] `json:"attachments,omitempty,omitzero" yaml:"attachments,omitempty"`
 	EnvFrom         []EnvFromSource           `json:"envFrom,omitempty" yaml:"envFrom,omitempty"`
 	Ports           OrderedMap[int]           `json:"ports,omitempty,omitzero" yaml:"ports,omitempty"`
 	Resources       *ResourceSpec             `json:"resources,omitempty" yaml:"resources,omitempty"`
@@ -161,19 +161,21 @@ type EnvFromSource struct {
 	Prefix    string `json:"prefix,omitempty" yaml:"prefix,omitempty"`
 }
 
-// SecretRef references a Component featuresSchema slot. As is "env" or "file";
-// when As == "file", Path is required (the in-container mount path).
+// AttachmentRef references a featuresSchema slot on the entity that owns the
+// Workload, delivering what the attachment filling that slot published. As is
+// "env" or "file"; when As == "file", Path is required (the in-container mount
+// path).
 //
 // Key, meaningful only when As == "env", names the specific data key of the
-// referenced slot's secret this entry reads. When set, the entry reads that
-// key; two entries may reference the same slot with different Key values to
-// consume several keys from one multi-key secret. When empty, the entry reads
-// the slot's single published data key.
+// referenced slot's published resource this entry reads. When set, the entry
+// reads that key; two entries may reference the same slot with different Key
+// values to consume several keys from one multi-key resource. When empty, the
+// entry reads the slot's single published data key.
 //
 // Mutual exclusion of env vs file is a schema-validation rule, not a Go-type
 // constraint — both fields can be set simultaneously by programmatic
 // construction. Validate via validator.ValidateWorkload.
-type SecretRef struct {
+type AttachmentRef struct {
 	From string `json:"from,omitempty" yaml:"from,omitempty"`
 	As   string `json:"as,omitempty" yaml:"as,omitempty"`
 	Key  string `json:"key,omitempty" yaml:"key,omitempty"`

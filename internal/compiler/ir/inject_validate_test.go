@@ -317,45 +317,12 @@ func TestValidateAggregate_FeatureInstance_NestedUses(t *testing.T) {
 // TestValidateAggregate_FeatureInstance_NestedSecrets pins that the walker
 // reaches both-present InjectBlock instances nested inside a feature's
 // Secrets substructure.
-func TestValidateAggregate_FeatureInstance_NestedSecrets(t *testing.T) {
-	t.Parallel()
-
-	featureSecrets := types.OrderedMap[types.SecretInstance]{}
-	featureSecrets.Set("password", types.SecretInstance{
-		Type: "core/secret-value",
-		Inject: &types.InjectBlock{
-			Env: []any{verboseEntry("PASSWORD", "v", "ref")},
-		},
-	})
-
-	features := types.OrderedMap[types.FeatureInstance]{}
-	features.Set("metrics", types.FeatureInstance{
-		Type:    "core/prometheus-exporter",
-		Secrets: featureSecrets,
-	})
-
-	components := types.OrderedMap[types.ComponentInstance]{}
-	components.Set("api", types.ComponentInstance{Features: features})
-
-	agg := &types.Aggregate{Spec: types.AggregateSpec{Components: components}}
-
-	err := ValidateInjectBlocks(normalized(t, agg), nil)
-	if err == nil {
-		t.Fatalf("expected error on feature-instance nested-secrets both-present, got nil")
-	}
-	if !errors.Is(err, ErrInjectEntryAmbiguous) {
-		t.Errorf("error is not ErrInjectEntryAmbiguous: %v", err)
-	}
-	if !strings.Contains(err.Error(), `components["api"].features["metrics"].secrets["password"].inject.env[0]`) {
-		t.Errorf("error path missing feature-secrets signature: %v", err)
-	}
-}
-
-// TestValidateAggregate_SecretInstance_NestedUses pins that the walker
-// reaches both-present InjectBlock instances nested inside a secret's
-// own Uses substructure — same surface type as the
-// FeatureInstance-nested-uses path but reached via SecretInstance.Uses.
-func TestValidateAggregate_SecretInstance_NestedUses(t *testing.T) {
+// TestValidateAggregate_CredentialAttachment_NestedUses pins that the walker
+// reaches both-present InjectBlock instances nested inside a credential
+// attachment's own Uses substructure. A credential is declared on the one
+// attachment surface, so it is reached through the same walk as any other
+// attachment — which is exactly why there is no second walk to forget.
+func TestValidateAggregate_CredentialAttachment_NestedUses(t *testing.T) {
 	t.Parallel()
 
 	verbose := types.OrderedMap[types.VerboseUsesEntry]{}
@@ -368,14 +335,14 @@ func TestValidateAggregate_SecretInstance_NestedUses(t *testing.T) {
 	uses := types.OrderedMap[types.UsesSocketValue]{}
 	uses.Set("backend", types.UsesSocketValue{Verbose: verbose})
 
-	secrets := types.OrderedMap[types.SecretInstance]{}
-	secrets.Set("db-creds", types.SecretInstance{
+	secrets := types.OrderedMap[types.FeatureInstance]{}
+	secrets.Set("db-creds", types.FeatureInstance{
 		Type: "core/secret-value",
 		Uses: uses,
 	})
 
 	components := types.OrderedMap[types.ComponentInstance]{}
-	components.Set("api", types.ComponentInstance{Secrets: secrets})
+	components.Set("api", types.ComponentInstance{Features: secrets})
 
 	agg := &types.Aggregate{Spec: types.AggregateSpec{Components: components}}
 
@@ -386,7 +353,7 @@ func TestValidateAggregate_SecretInstance_NestedUses(t *testing.T) {
 	if !errors.Is(err, ErrInjectEntryAmbiguous) {
 		t.Errorf("error is not ErrInjectEntryAmbiguous: %v", err)
 	}
-	if !strings.Contains(err.Error(), `components["api"].secrets["db-creds"].uses["backend"]["alias"].inject.env[0]`) {
-		t.Errorf("error path missing secret-uses signature: %v", err)
+	if !strings.Contains(err.Error(), `components["api"].features["db-creds"].uses["backend"]["alias"].inject.env[0]`) {
+		t.Errorf("error path missing attachment-uses signature: %v", err)
 	}
 }

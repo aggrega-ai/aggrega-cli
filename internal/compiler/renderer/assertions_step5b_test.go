@@ -34,7 +34,6 @@ func step5bGraph(t *testing.T, nodeID string, values, infra types.OrderedMap[any
 			ValuesMapping:        vm,
 			InfraMapping:         im,
 			FeatureValuesMapping: types.OrderedMap[types.OrderedMap[types.IRFeatureEntry]]{},
-			Secrets:              types.OrderedMap[types.OrderedMap[types.IRSecretEntry]]{},
 		},
 	}
 }
@@ -194,7 +193,6 @@ func TestStep5b_MultiInstanceEvaluatesEachInstance(t *testing.T) {
 			ValuesMapping:        vm,
 			InfraMapping:         types.OrderedMap[json.RawMessage]{},
 			FeatureValuesMapping: types.OrderedMap[types.OrderedMap[types.IRFeatureEntry]]{},
-			Secrets:              types.OrderedMap[types.OrderedMap[types.IRSecretEntry]]{},
 		},
 	}
 	recipe := &types.Recipe{

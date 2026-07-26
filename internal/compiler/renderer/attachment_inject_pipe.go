@@ -7,11 +7,12 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
-// buildSecretInject constructs the top-level TemplateContext.Inject for a
-// credential FeatureRecipe from an IRSecretEntry.Inject map (mechanism → key → value).
-// Guarantees non-zero OrderedMaps for env/file/arg and builds .All via the shared helper.
-// Custom mechanisms beyond env/file/arg are not surfaced today.
-func buildSecretInject(entry types.IRSecretEntry) *types.InjectPipe {
+// buildAttachmentInject constructs the top-level TemplateContext.Inject an
+// attachment FeatureRecipe reads, from the attachment's authored
+// IRFeatureEntry.Inject map (mechanism → key → value). Guarantees non-zero
+// OrderedMaps for env/file/arg and builds .All via the shared helper. Custom
+// mechanisms beyond env/file/arg are not surfaced today.
+func buildAttachmentInject(entry types.IRFeatureEntry) *types.InjectPipe {
 	env, _ := entry.Inject.Get("env")
 	file, _ := entry.Inject.Get("file")
 	arg, _ := entry.Inject.Get("arg")

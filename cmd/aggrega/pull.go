@@ -190,8 +190,8 @@ func pullProgressSpine() progressSpine {
 // Returns wrapped errors on workspace-config validation failure,
 // Release/Manifest/Aggregate load failure, closure walk failure
 // (typically a missing catalog entity surfaced by closure.ErrUnresolvableURI),
-// irEntityInfra derives the per-instance source infra for FeatureRecipe / secret
-// entities from the IR render-set (graph.Spec) — the exact feature/secret set the
+// irEntityInfra derives the per-instance source infra for FeatureRecipe
+// entities from the IR render-set (graph.Spec) — the exact attachment set the
 // renderer renders, assembled across all five tiers (Aggregate component/subsystem,
 // Release boundary-wide/component, annotation-expanded) at IR-build. Reading the IR
 // (rather than the topology or a Release-boundary walk, each short by tiers) is what
@@ -201,8 +201,7 @@ func pullProgressSpine() progressSpine {
 // string the closure records as the source-descent entity — so the returned map
 // joins against closure entities. An instance whose type has no Manifest mapping
 // carries no source-descent entity and is skipped. Per-instance infra is the
-// IR-resolved entry.Infra (the secret entry carries it post-unification), so no
-// Release-side join is needed.
+// IR-resolved entry.Infra, so no Release-side join is needed.
 //
 // scopeOf reports a FeatureRecipe's executionScope by feature type. A
 // boundary-scope FR renders once at its boundary from the boundary's own infra,
@@ -244,13 +243,6 @@ func irEntityInfra(graph *types.IRGraph, manifest *types.Manifest, scopeOf func(
 				continue // pinned once from the boundary projection below
 			}
 			if err := add(nodeID, "features", instName, entry.Type, entry.Infra, entry.Values); err != nil {
-				return nil, err
-			}
-		}
-	}
-	for nodeID, secs := range graph.Spec.Secrets.All() {
-		for instName, entry := range secs.All() {
-			if err := add(nodeID, "secrets", instName, entry.Type, entry.Infra, entry.Values); err != nil {
 				return nil, err
 			}
 		}
@@ -637,16 +629,16 @@ func pullRun(cfg pullConfig) error {
 			// mapping carries no source-descent entity and is skipped.
 			perEntityInfra := map[string][]closure.ComponentSourceInfra{}
 
-			// Feature / secret instances: derive from the IR render-set, not a Release
-			// walk. The renderer renders graph.Spec (the IR), whose feature/secret set is
+			// Attachment instances: derive from the IR render-set, not a Release walk.
+			// The renderer renders graph.Spec (the IR), whose attachment set is
 			// assembled across all five tiers (Aggregate component/subsystem, Release
 			// boundary-wide/component, annotation-expanded) at IR-build — a Release-boundary
 			// walk and the topology are each short by tiers, so the using-set must come from
 			// the IR for the no-using-instance skip to be congruent with rendering. Building
 			// the IR here is acyclic (it consumes topology + resolve + catalog and copies
 			// the recipe source pointer, never a fetched artifact); pull thus inherits the
-			// IR-build failure surface. Per-instance infra is the IR-resolved entry.Infra
-			// (Part B made secrets carry it), so no Release-side join is needed.
+			// IR-build failure surface. Per-instance infra is the IR-resolved entry.Infra,
+			// so no Release-side join is needed.
 			graph, _, err := ir.BuildIR(ir.BuildIRConfig{
 				Topology:        topo,
 				ResolveResult:   rr,

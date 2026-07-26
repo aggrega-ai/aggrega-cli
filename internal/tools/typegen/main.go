@@ -655,8 +655,8 @@ var codecTargets = map[string]codecTarget{
 	// IR graph — guest codec into aggrega-abi (Go/Rust/TS). The full
 	// provider-agnostic IR graph the Topology Builder emits; the policy socket's
 	// graph references it. inject/values/infra carry opaque (the schema annotates
-	// them json.RawMessage); the recursive provenance pointer and the secrets
-	// self-map break their cycles by pointer/map.
+	// them json.RawMessage); the one reference cycle — field provenance pointing at
+	// the annotation contribution it suppressed — is broken by a pointer.
 	"ir_gen.go": {
 		schema:     schemas.IRSchemaV1alpha1,
 		schemaFile: "ir-v1alpha1.schema.json",

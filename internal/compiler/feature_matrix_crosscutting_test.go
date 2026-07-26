@@ -554,7 +554,7 @@ func testFilenameCollision(t *testing.T) {
 	}
 }
 
-// testWorkloadSecretsReject exercises ValidateWorkloadSecrets's blackbox-
+// testWorkloadSecretsReject exercises ValidateWorkloadAttachments's blackbox-
 // reference rejection. The workload-secrets-blackbox-violation variant has
 // a db Recipe whose Workload's container references the slot root_password
 // (declared blackbox via inject: [] on the db Component) — the validator

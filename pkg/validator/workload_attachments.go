@@ -9,8 +9,8 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
-// ValidateWorkloadSecrets enforces the cross-wave featuresSchema check: every
-// `containers.<n>.secrets.<KEY>` and `initContainers[<i>].secrets.<KEY>`
+// ValidateWorkloadAttachments enforces the cross-entity featuresSchema check: every
+// `containers.<n>.attachments.<KEY>` and `initContainers[<i>].attachments.<KEY>`
 // entry on a Workload must reference a slot declared in the owning
 // Component's featuresSchema, with a delivery mechanism (`as:`) permitted by
 // that slot's `inject:` allowlist. Blackbox slots (whose `inject:` is empty)
@@ -21,18 +21,18 @@ import (
 // *WorkloadValidationError with one finding per offending entry.
 //
 // This is the slot-membership and delivery-mechanism half of the workload
-// secret check. The companion ValidateWorkloadResourceReferences enforces that
-// the referenced slot's fill is a referenceable secret (its provides expose
-// name/key) — a workload `containers.secrets` entry references a Secret
-// resource by name, so a non-referenceable (inject-delivered) credential cannot
-// be referenced there; it is delivered through the slot's inject pipe instead.
+// attachment check. The companion ValidateWorkloadResourceReferences enforces
+// that the referenced slot's fill is referenceable (its provides expose
+// name/key) — a workload `containers.attachments` entry references an emitted
+// resource by name, so a fill that publishes no locator cannot be referenced
+// there; it is delivered through the slot's inject pipe instead.
 // The two checks are distinct rules over the same input and must stay separate:
 // this one reads the slot declarations, its companion reads the slots' resolved
 // provides. Neither subsumes the other.
 //
 // recipePath / recipeName / recipeVersion are threaded into the error for
 // operator-facing message context; pass "" when not available.
-func ValidateWorkloadSecrets(
+func ValidateWorkloadAttachments(
 	w *types.Workload,
 	slots types.OrderedMap[types.AttachmentSlot],
 	recipePath, recipeName, recipeVersion string,
@@ -46,14 +46,14 @@ func ValidateWorkloadSecrets(
 	// Containers (named, in OrderedMap author order).
 	for name, c := range w.Containers.All() {
 		findings = append(findings,
-			checkContainerSecrets(c, slots, fmt.Sprintf(".containers.%s", name))...,
+			checkContainerAttachments(c, slots, fmt.Sprintf(".containers.%s", name))...,
 		)
 	}
 
 	// InitContainers (positional list).
 	for i, c := range w.InitContainers {
 		findings = append(findings,
-			checkContainerSecrets(c, slots, fmt.Sprintf(".initContainers[%d]", i))...,
+			checkContainerAttachments(c, slots, fmt.Sprintf(".initContainers[%d]", i))...,
 		)
 	}
 
@@ -70,18 +70,18 @@ func ValidateWorkloadSecrets(
 	}
 }
 
-// checkContainerSecrets walks a single ContainerSpec's secrets entries and
+// checkContainerAttachments walks a single ContainerSpec's attachments entries and
 // produces a finding per offence. Container path is the dotted-prefix the
 // caller wants prepended to each finding's FieldPath.
-func checkContainerSecrets(
+func checkContainerAttachments(
 	c types.ContainerSpec,
 	slots types.OrderedMap[types.AttachmentSlot],
 	containerPath string,
 ) []WorkloadValidationFinding {
 	var findings []WorkloadValidationFinding
 
-	for key, ref := range c.Secrets.All() {
-		fieldPath := fmt.Sprintf("%s.secrets.%s", containerPath, key)
+	for key, ref := range c.Attachments.All() {
+		fieldPath := fmt.Sprintf("%s.attachments.%s", containerPath, key)
 
 		slot, slotOK := slots.Get(ref.From)
 		if !slotOK {
@@ -94,11 +94,11 @@ func checkContainerSecrets(
 		}
 
 		// Blackbox slot: inject is empty. Reserved for Recipe-internal use
-		// (e.g., Helm existingSecret); must not appear in Workload secrets.
+		// (e.g., Helm existingSecret); must not appear in Workload attachments.
 		if len(slot.Inject) == 0 {
 			findings = append(findings, WorkloadValidationFinding{
 				FieldPath:  fieldPath + ".from",
-				Constraint: fmt.Sprintf("slot %q is blackbox (no `inject:` allowlist) and cannot be referenced from a Workload secrets entry", ref.From),
+				Constraint: fmt.Sprintf("slot %q is blackbox (no `inject:` allowlist) and cannot be referenced from a Workload attachments entry", ref.From),
 				Suggestion: "blackbox slots are delivered by Recipe-internal plumbing; remove the Workload-side reference, or widen the slot's inject allowlist if Workload-side delivery is intended",
 			})
 			continue
@@ -128,16 +128,16 @@ func checkContainerSecrets(
 // (the helm secretKeyRef / SecretVolumeSource reads, and any future provider).
 //
 // It is the referenceability half of the workload slot check; its companion
-// ValidateWorkloadSecrets enforces slot membership and the delivery-mechanism
-// allowlist. The two are distinct rules over the same input.
+// ValidateWorkloadAttachments enforces slot membership and the
+// delivery-mechanism allowlist. The two are distinct rules over the same input.
 //
-// slotProvides maps slot name → the slot's resolved provides bag, resolved by
+// attachmentProvides maps slot name → the slot's resolved provides bag, resolved by
 // the orchestrator before Phase B. A slot absent from the map (no provides) or
 // present but missing a key fails the same way. recipePath / recipeName /
 // recipeVersion thread into the error for operator-facing context.
 func ValidateWorkloadResourceReferences(
 	w *types.Workload,
-	slotProvides map[string]types.OrderedMap[string],
+	attachmentProvides map[string]types.OrderedMap[string],
 	recipePath, recipeName, recipeVersion string,
 ) error {
 	if w == nil {
@@ -148,12 +148,12 @@ func ValidateWorkloadResourceReferences(
 
 	for name, c := range w.Containers.All() {
 		findings = append(findings,
-			checkContainerReferenceability(c, slotProvides, fmt.Sprintf(".containers.%s", name))...,
+			checkContainerReferenceability(c, attachmentProvides, fmt.Sprintf(".containers.%s", name))...,
 		)
 	}
 	for i, c := range w.InitContainers {
 		findings = append(findings,
-			checkContainerReferenceability(c, slotProvides, fmt.Sprintf(".initContainers[%d]", i))...,
+			checkContainerReferenceability(c, attachmentProvides, fmt.Sprintf(".initContainers[%d]", i))...,
 		)
 	}
 
@@ -170,7 +170,7 @@ func ValidateWorkloadResourceReferences(
 	}
 }
 
-// checkContainerReferenceability walks a ContainerSpec's secrets entries and
+// checkContainerReferenceability walks a ContainerSpec's attachments entries and
 // produces a finding per entry whose slot's resolved provides is missing a key
 // a workload reference reads. Which provides keys are required depends on the
 // entry:
@@ -178,23 +178,23 @@ func ValidateWorkloadResourceReferences(
 //   - When the entry names an explicit data key (its `key` field is set), only
 //     the slot's resource locator (provides `name`) must be published — the
 //     entry supplies the data key itself, so it may reference a multi-key
-//     secret whose provides publishes only the locator.
+//     resource whose provides publishes only the locator.
 //   - When the entry names no explicit key, it reads the slot's single
 //     published data key, so both provides `name` and `key` must be present.
 //
-// A referenceable-secret Feature declares the keys its consumers read; a fill
-// lacking a required key is not referenceable regardless of the entry's
-// delivery mechanism.
+// An attachment's Feature declares the keys its consumers read; a fill lacking
+// a required key is not referenceable regardless of the entry's delivery
+// mechanism.
 func checkContainerReferenceability(
 	c types.ContainerSpec,
-	slotProvides map[string]types.OrderedMap[string],
+	attachmentProvides map[string]types.OrderedMap[string],
 	containerPath string,
 ) []WorkloadValidationFinding {
 	var findings []WorkloadValidationFinding
 
-	for key, ref := range c.Secrets.All() {
-		fieldPath := fmt.Sprintf("%s.secrets.%s", containerPath, key)
-		provides := slotProvides[ref.From]
+	for key, ref := range c.Attachments.All() {
+		fieldPath := fmt.Sprintf("%s.attachments.%s", containerPath, key)
+		provides := attachmentProvides[ref.From]
 
 		want := []string{"name", "key"}
 		reads := "name and key"
@@ -207,8 +207,8 @@ func checkContainerReferenceability(
 			if _, ok := provides.Get(need); !ok {
 				findings = append(findings, WorkloadValidationFinding{
 					FieldPath:  fieldPath + ".from",
-					Constraint: fmt.Sprintf("slot %q is not a referenceable secret: its resolved provides does not expose %q (a workload secret reference reads the provides keys %s)", ref.From, need, reads),
-					Suggestion: "reference a slot filled by a referenceable-secret feature (one whose schema.provides declares the keys this reference reads), or deliver this secret through the slot's inject pipe rather than a workload reference",
+					Constraint: fmt.Sprintf("slot %q is not referenceable: its resolved provides does not expose %q (a workload attachment reference reads the provides keys %s)", ref.From, need, reads),
+					Suggestion: "reference a slot filled by an attachment whose schema.provides declares the keys this reference reads, or deliver it through the slot's inject pipe rather than a workload reference",
 				})
 			}
 		}

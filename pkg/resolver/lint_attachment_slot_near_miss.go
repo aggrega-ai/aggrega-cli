@@ -68,32 +68,22 @@ func LintAttachmentSlotNearMiss(na types.NormalizedAggregate, catalog CatalogLoo
 		slotNames := comp.Spec.FeaturesSchema.Keys()
 		base := componentFieldPath(p.subsystemPath, p.name, p.synthesized)
 
-		// Both authoring blocks land in the same attachment family, so a typo
-		// in either is the same mistake and reads the same slot declarations.
-		for _, block := range []struct {
-			field string
-			names []string
-		}{
-			{"features", p.inst.Features.Keys()},
-			{"secrets", p.inst.Secrets.Keys()},
-		} {
-			names := append([]string(nil), block.names...)
-			sort.Strings(names)
-			for _, name := range names {
-				if _, declared := comp.Spec.FeaturesSchema.Get(name); declared {
-					continue
-				}
-				for _, slot := range nearMissCandidates(name, slotNames) {
-					out = append(out, &ResolverError{
-						Entity: entity,
-						Field:  fmt.Sprintf("%s.%s[%q]", base, block.field, name),
-						Message: fmt.Sprintf(
-							"attachment %q on component %q is not a declared slot of type %q, but the type declares the slot %q — if %q was meant, the attachment is currently a free attachment and does not fill it",
-							name, p.name, p.inst.Type, slot, slot,
-						),
-						Err: ErrAttachmentSlotNearMiss,
-					})
-				}
+		names := append([]string(nil), p.inst.Features.Keys()...)
+		sort.Strings(names)
+		for _, name := range names {
+			if _, declared := comp.Spec.FeaturesSchema.Get(name); declared {
+				continue
+			}
+			for _, slot := range nearMissCandidates(name, slotNames) {
+				out = append(out, &ResolverError{
+					Entity: entity,
+					Field:  fmt.Sprintf("%s.features[%q]", base, name),
+					Message: fmt.Sprintf(
+						"attachment %q on component %q is not a declared slot of type %q, but the type declares the slot %q — if %q was meant, the attachment is currently a free attachment and does not fill it",
+						name, p.name, p.inst.Type, slot, slot,
+					),
+					Err: ErrAttachmentSlotNearMiss,
+				})
 			}
 		}
 	}

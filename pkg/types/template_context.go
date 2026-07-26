@@ -21,24 +21,27 @@ import (
 //   - .source — populated at Phase B.0 from Recipe.Spec.Source after Go-template
 //     evaluation. nil before B.0; nil for Recipes that don't declare source.
 //   - .workload — populated at Phase B.2 after Workload yaml.Unmarshal +
-//     validator.ValidateWorkload + validator.ValidateWorkloadSecrets succeed.
-//     nil before B.2; nil for Recipes that don't declare workload:.
+//     validator.ValidateWorkload + validator.ValidateWorkloadAttachments
+//     succeed. nil before B.2; nil for Recipes that don't declare workload:.
 type TemplateContext struct {
-	Context    ContextBlock                   `json:"context" yaml:"context"`
-	Values     OrderedMap[any]                `json:"values" yaml:"values"`
-	Infra      OrderedMap[any]                `json:"infra" yaml:"infra"`
-	Locals     OrderedMap[string]             `json:"locals" yaml:"locals"`
-	Provides   OrderedMap[string]             `json:"provides,omitempty,omitzero" yaml:"provides,omitempty"`
-	Features   OrderedMap[TemplateAttachment] `json:"features,omitempty,omitzero" yaml:"features,omitempty"`
-	Secrets    OrderedMap[TemplateAttachment] `json:"secrets,omitempty,omitzero" yaml:"secrets,omitempty"`
-	Metadata   *TemplateMetadata              `json:"metadata,omitempty" yaml:"metadata,omitempty"`
-	SecretName string                         `json:"secret_name,omitempty" yaml:"secret_name,omitempty"`
-	Inject     *InjectPipe                    `json:"inject,omitempty" yaml:"inject,omitempty"`         // secret-specific inject
-	InjectRaw  any                            `json:"inject_raw,omitempty" yaml:"inject_raw,omitempty"` // immutable Developer intent; null if omitted
-	Steps      OrderedMap[StepOutput]         `json:"steps,omitempty,omitzero" yaml:"steps,omitempty"`
-	Source     any                            `json:"source,omitempty" yaml:"source,omitempty"`     // resolved Recipe.Spec.Source (Phase B.0+); nil for sourceless Recipes
-	Workload   *Workload                      `json:"workload,omitempty" yaml:"workload,omitempty"` // parsed Workload (Phase B.2+); nil for non-synthesized Recipes
-	Boundary   *BoundaryContext               `json:"boundary,omitempty" yaml:"boundary,omitempty"` // populated only for boundary-scope FRs (spec.executionScope: boundary); nil otherwise
+	Context  ContextBlock                   `json:"context" yaml:"context"`
+	Values   OrderedMap[any]                `json:"values" yaml:"values"`
+	Infra    OrderedMap[any]                `json:"infra" yaml:"infra"`
+	Locals   OrderedMap[string]             `json:"locals" yaml:"locals"`
+	Provides OrderedMap[string]             `json:"provides,omitempty,omitzero" yaml:"provides,omitempty"`
+	// Features is every attachment on the node, keyed by the instance name
+	// the author gave it. One pillar for every attachment family — what
+	// differs between attachments is what they produce, not how a template
+	// reads them.
+	Features       OrderedMap[TemplateAttachment] `json:"features,omitempty,omitzero" yaml:"features,omitempty"`
+	Metadata       *TemplateMetadata              `json:"metadata,omitempty" yaml:"metadata,omitempty"`
+	AttachmentName string                         `json:"attachment_name,omitempty" yaml:"attachment_name,omitempty"`
+	Inject         *InjectPipe                    `json:"inject,omitempty" yaml:"inject,omitempty"`         // the attachment's own authored delivery pipe
+	InjectRaw      any                            `json:"inject_raw,omitempty" yaml:"inject_raw,omitempty"` // immutable Developer intent; null if omitted
+	Steps          OrderedMap[StepOutput]         `json:"steps,omitempty,omitzero" yaml:"steps,omitempty"`
+	Source         any                            `json:"source,omitempty" yaml:"source,omitempty"`     // resolved Recipe.Spec.Source (Phase B.0+); nil for sourceless Recipes
+	Workload       *Workload                      `json:"workload,omitempty" yaml:"workload,omitempty"` // parsed Workload (Phase B.2+); nil for non-synthesized Recipes
+	Boundary       *BoundaryContext               `json:"boundary,omitempty" yaml:"boundary,omitempty"` // populated only for boundary-scope FRs (spec.executionScope: boundary); nil otherwise
 }
 
 // ContextBlock is the compiler-assembled execution context providing identity, topology, and delivery data.
@@ -347,6 +350,10 @@ type TemplateMetadata struct {
 // .uses.<alias>.provides. The consumer reads the producer's published contract
 // instead of re-deriving it. An attachment whose FeatureRecipe publishes nothing
 // carries an empty map, never a missing field.
+//
+// The four fields are the same for every attachment family, which is what keeps
+// a credential attachment's infra and provides readable rather than silently
+// dropped on the way to a template.
 //
 // Schema: template-context-v1alpha1.schema.json#/$defs/template_attachment
 type TemplateAttachment struct {

@@ -6,7 +6,7 @@ entities:
         - manifest.spec.mappings.components.type.core/devtool/adminer:1.0.0
     - uri: aggregate
       resolved_version: ""
-      digest: sha256:e6ef8e6a5c4f3f5bfa9d3f45dc0ae655667e81d6423c444097f9cadb2b647d38
+      digest: sha256:af2d0d6d1068153516bd585fb408795439a062187a401fa6005f49c5820a1391
       referenced_from:
         - release.spec.aggregate
     - uri: core/datastore/mariadb
@@ -31,22 +31,22 @@ entities:
         - manifest.spec.mappings.components.type.core/devtool/adminer:1.0.0
     - uri: core/secret-provided
       resolved_version: 1.0.0
-      digest: sha256:b9d302535607b5f4a04b8704ba8220e6c4fe83126a67f174b2ed59991cdd81f2
+      digest: sha256:b743dad6d1459f17d9b9471b8c6bfb24ed63481379969efb2d65f25ba1b6c3be
       referenced_from:
-        - aggregate.spec.subsystems.default.components.db.secrets.user_password.type
+        - aggregate.spec.subsystems.default.components.db.features.user_password.type
     - uri: core/secret-provided:1.0.0
       resolved_version: 1.0.0
-      digest: sha256:b9d302535607b5f4a04b8704ba8220e6c4fe83126a67f174b2ed59991cdd81f2
+      digest: sha256:b743dad6d1459f17d9b9471b8c6bfb24ed63481379969efb2d65f25ba1b6c3be
       referenced_from:
         - manifest.spec.mappings.features.type.core/secret-provided:1.0.0
     - uri: core/secret-value
       resolved_version: 1.0.0
-      digest: sha256:5bd30d7cdba764adb03032634cd1412291856a0f8fef290805a00eb14fe6efda
+      digest: sha256:a584ceda2bf870f004d54d684f63ddae63e8d34b2c77c3baae471e63da2f856d
       referenced_from:
-        - aggregate.spec.subsystems.default.components.db.secrets.root_password.type
+        - aggregate.spec.subsystems.default.components.db.features.root_password.type
     - uri: core/secret-value:1.0.0
       resolved_version: 1.0.0
-      digest: sha256:5bd30d7cdba764adb03032634cd1412291856a0f8fef290805a00eb14fe6efda
+      digest: sha256:a584ceda2bf870f004d54d684f63ddae63e8d34b2c77c3baae471e63da2f856d
       referenced_from:
         - manifest.spec.mappings.features.type.core/secret-value:1.0.0
     - uri: env-secret:1.0.0

@@ -57,7 +57,7 @@ func EvaluateComponentAndFeatureAssertions(
 					Values:   base.Values,
 					Infra:    base.Infra,
 					Uses:     base.Uses,
-					Secrets:  base.Secrets,
+					Features: base.Features,
 					Metadata: base.Metadata,
 				}
 				if err := walkAssertions("Component", node.Component, nodeID, comp.Spec.Assertions, ctx); err != nil {
@@ -82,7 +82,7 @@ func EvaluateComponentAndFeatureAssertions(
 				Values:   entry.Values.TemplateAlphabeticalMapDeep(),
 				Infra:    entry.Infra.TemplateAlphabeticalMapDeep(),
 				Uses:     base.Uses,
-				Secrets:  base.Secrets,
+				Features: base.Features,
 				Metadata: featureMetadata(base.Metadata, entry, instanceName),
 			}
 			if err := walkAssertions("Feature", entry.Type, nodeID, feat.Spec.Assertions, ctx); err != nil {

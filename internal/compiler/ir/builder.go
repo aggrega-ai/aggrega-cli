@@ -19,9 +19,9 @@ import (
 // required for a successful build:
 //
 //   - Topology supplies the flattened node graph plus edges and per-node
-//     feature/secret attachments. Step 2 produces it; the IR builder reads
-//     Nodes (in author order, OrderedMap-backed), Edges (already sorted),
-//     FeatureAttachments, and SecretAttachments.
+//     attachments. Step 2 produces it; the IR builder reads Nodes (in author
+//     order, OrderedMap-backed), Edges (already sorted), and
+//     FeatureAttachments.
 //   - ResolveResult supplies the original Aggregate / Manifest / Release
 //     plus per-node BoundaryInfra. The IR builder reads Aggregate for
 //     subsystem traversal (Tier 3), Release for boundary traversal (Tiers
@@ -32,8 +32,8 @@ import (
 //   - CatalogLookup is the same callback shape produced by pkg/catalog. The
 //     IR builder uses it to resolve component `metadata.version` (for
 //     IRNode.ResolvedVersion), to extract catalog annotations and the
-//     CatalogMetadata enterprise suite, and to test feature catalog
-//     entities for the credential label that routes them into Secrets.
+//     CatalogMetadata enterprise suite, and to resolve each attachment's own
+//     catalog version.
 //   - CompilerVersion is plumbed through to provenance generation so the
 //     emitted IRGraph records the binary that produced it. The orchestrator
 //     at cmd/aggrega/build.go is the production caller and supplies the
@@ -85,11 +85,11 @@ type FeatureOrder map[string][]string
 // OrderedMap populated during subsystem flattening in author order, and
 // author order flows through to IR JSON output via OrderedMap.MarshalJSON.
 // The feature_markers slice is accumulated into a set then sort-extracted
-// for stability across runs; secrets and features within a node iterate
-// in the topology attachment order; the edges slice is inherited from
+// for stability across runs; a node's attachments iterate in the topology
+// attachment order; the edges slice is inherited from
 // topology in compositional author order (component sequence ×
 // within-component `uses:` socket order × within-socket alias order ×
-// per-node feature/secret attachments — topology.Build step 4 drives
+// per-node attachments — topology.Build step 4 drives
 // the cross-product via OrderedMap.All()). Both inheritance commitments
 // are the consumer side of the cross-package determinism contract — see
 // this package's doc.go for the full statement.
@@ -128,7 +128,6 @@ func BuildIRContext(ctx context.Context, cfg BuildIRConfig) (*types.IRGraph, Fea
 	valuesMapping := types.OrderedMap[json.RawMessage]{}
 	infraMapping := types.OrderedMap[json.RawMessage]{}
 	featureValuesMapping := types.OrderedMap[types.OrderedMap[types.IRFeatureEntry]]{}
-	secrets := types.OrderedMap[types.OrderedMap[types.IRSecretEntry]]{}
 	featureOrder := make(FeatureOrder)
 	allMarkers := map[string]bool{}
 
@@ -274,18 +273,15 @@ func BuildIRContext(ctx context.Context, cfg BuildIRConfig) (*types.IRGraph, Fea
 			featureValuesMapping.Set(nodeID, featResult.Features)
 			featureOrder[nodeID] = featResult.FeatureOrder
 		}
-		if featResult.Secrets.Len() > 0 {
-			secrets.Set(nodeID, featResult.Secrets)
-		}
 		for _, m := range featResult.Markers {
 			allMarkers[m] = true
 		}
 
 		// Validate the merged attachment pillars against each attachment's
-		// declared Feature/Secret schema (collected across all nodes for one
-		// joined halt below).
+		// declared Feature schema (collected across all nodes for one joined
+		// halt below).
 		attachmentConformanceErrs = append(attachmentConformanceErrs,
-			validateNodeAttachments(nodeID, featResult.Features, featResult.Secrets,
+			validateNodeAttachments(nodeID, featResult.Features,
 				attachmentParams, attachmentEntity, compiledFeature)...)
 	}
 
@@ -373,7 +369,6 @@ func BuildIRContext(ctx context.Context, cfg BuildIRConfig) (*types.IRGraph, Fea
 			ValuesMapping:        valuesMapping,
 			InfraMapping:         infraMapping,
 			FeatureValuesMapping: featureValuesMapping,
-			Secrets:              secrets,
 			BoundaryFeatures:     boundaryFeatures,
 			Provenance:           prov,
 		},

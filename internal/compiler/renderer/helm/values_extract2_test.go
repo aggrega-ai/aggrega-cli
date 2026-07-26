@@ -109,15 +109,15 @@ func TestTranslatePodVolumes_SecretFileVolumesDedupedAcrossContainers(t *testing
 	t.Parallel()
 	w := &types.Workload{}
 	c1 := types.ContainerSpec{Image: "x"}
-	c1.Secrets.Set("creds/key", types.SecretRef{From: "shared", As: "file", Path: "/tmp/key"})
+	c1.Attachments.Set("creds/key", types.AttachmentRef{From: "shared", As: "file", Path: "/tmp/key"})
 	c2 := types.ContainerSpec{Image: "y"}
-	c2.Secrets.Set("creds/key", types.SecretRef{From: "shared", As: "file", Path: "/tmp/key"})
+	c2.Attachments.Set("creds/key", types.AttachmentRef{From: "shared", As: "file", Path: "/tmp/key"})
 	w.Containers.Set("c1", c1)
 	w.Containers.Set("c2", c2)
 	w.InitContainers = []types.ContainerSpec{
 		{Image: "init"},
 	}
-	w.InitContainers[0].Secrets.Set("init-creds", types.SecretRef{From: "shared", As: "file", Path: "/tmp/key2"})
+	w.InitContainers[0].Attachments.Set("init-creds", types.AttachmentRef{From: "shared", As: "file", Path: "/tmp/key2"})
 
 	vols := translatePodVolumes(w, "node-1", nil)
 	// "node-1-secret-shared" should appear exactly once across all
@@ -140,7 +140,7 @@ func TestTranslatePodVolumes_EnvSecretsIgnored(t *testing.T) {
 	t.Parallel()
 	w := &types.Workload{}
 	c := types.ContainerSpec{Image: "x"}
-	c.Secrets.Set("API_TOKEN", types.SecretRef{From: "creds", As: "env"})
+	c.Attachments.Set("API_TOKEN", types.AttachmentRef{From: "creds", As: "env"})
 	w.Containers.Set("c", c)
 	if len(translatePodVolumes(w, "n", nil)) != 0 {
 		t.Errorf("as:env secrets should NOT produce volume entries")
@@ -183,8 +183,8 @@ func TestTranslateContainer_VolumeMountsAndSecretsBranches(t *testing.T) {
 	}
 	c.Ports.Set("http", 8080)
 	c.Variables.Set("ENV1", "v1")
-	c.Secrets.Set("API_TOKEN", types.SecretRef{From: "creds", As: "env"})
-	c.Secrets.Set("tls-key", types.SecretRef{From: "tls", As: "file", Path: "/tls/key"})
+	c.Attachments.Set("API_TOKEN", types.AttachmentRef{From: "creds", As: "env"})
+	c.Attachments.Set("tls-key", types.AttachmentRef{From: "tls", As: "file", Path: "/tls/key"})
 	c.VolumeMounts = []types.VolumeMount{
 		{Name: "data", Path: "/data", ReadOnly: true},
 	}

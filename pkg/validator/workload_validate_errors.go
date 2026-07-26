@@ -13,27 +13,27 @@ import (
 
 // Workload-validation sentinels. Two are surfaced today: the schema-
 // validation failure (rule violations on the embedded Workload JSON
-// Schema) and the cross-wave featuresSchema check (Workload secret
+// Schema) and the cross-entity featuresSchema check (Workload attachment
 // references vs the Component's featuresSchema slot declarations).
 var (
 	// ErrWorkloadValidation: schema-validation failure on the parsed
 	// Workload against the embedded Workload JSON Schema.
 	ErrWorkloadValidation = errors.New("workload validation failed")
 
-	// ErrWorkloadFeaturesSchema: cross-wave check failure between Workload
-	// secret references and the Component's featuresSchema slot allowlist.
-	// Surfaces when a Workload's secrets entry names an undeclared slot,
+	// ErrWorkloadFeaturesSchema: cross-entity check failure between Workload
+	// attachment references and the Component's featuresSchema slot allowlist.
+	// Surfaces when a Workload's attachments entry names an undeclared slot,
 	// uses a delivery mechanism (`as:`) not in the slot's `inject:`
 	// allowlist, or references a blackbox slot (Inject == nil/empty,
 	// reserved for Recipe-internal plumbing).
 	ErrWorkloadFeaturesSchema = errors.New("workload featuresSchema cross-check failed")
 
-	// ErrSlotNotReferenceable: a Workload slot reference names a slot whose
-	// resolved provides does not expose the contract keys a workload reference
-	// reads (name, key). The slot's fill is not referenceable — it cannot be
-	// referenced by name from a Workload. Structural key-presence only; no
-	// value inspection.
-	ErrSlotNotReferenceable = errors.New("workload secret slot is not a referenceable secret")
+	// ErrSlotNotReferenceable: a Workload attachment reference names a slot
+	// whose resolved provides does not expose the contract keys a workload
+	// reference reads (name, key). The slot's fill publishes no locator to
+	// point at, so it cannot be referenced by name from a Workload.
+	// Structural key-presence only; no value inspection.
+	ErrSlotNotReferenceable = errors.New("workload attachment slot is not referenceable")
 )
 
 // WorkloadValidationError carries the structured detail for a Workload
@@ -52,7 +52,7 @@ type WorkloadValidationError struct {
 	// available.
 	RecipeVersion string
 	// Stage is "schema" for schema-validation failures, "featuresSchema" for
-	// cross-wave slot-declaration check failures, and "slotReferenceability"
+	// cross-entity slot-declaration check failures, and "slotReferenceability"
 	// for slot-provides key-presence failures.
 	Stage string
 	// Findings lists per-field failures. Each entry is a path + reason +

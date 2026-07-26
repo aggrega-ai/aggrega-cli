@@ -2,7 +2,7 @@
 // Copyright 2026 Cognitio S.r.l.
 
 // The Phase B.2 workload-secret cross-check validates a synthesized Workload's
-// containers.<n>.secrets against the bound owning entity's featuresSchema slots:
+// containers.<n>.attachments against the bound owning entity's featuresSchema slots:
 // the Component on the base-Recipe path, the implemented Feature on the
 // FeatureRecipe path. A declared transparent slot is admitted; an undeclared or
 // blackbox slot halts with ErrWorkloadFeaturesSchema. These guard both threading
@@ -48,11 +48,11 @@ func renderBaseWithSlot(t *testing.T, compSlots types.OrderedMap[types.Attachmen
 		vals := types.OrderedMap[any]{}
 		vals.Set("key", "POSTGRES_PASSWORD")
 		vals.Set("origin", "supersecret")
-		secrets := types.OrderedMap[types.IRSecretEntry]{}
-		secrets.Set("password", types.IRSecretEntry{Type: "core/referenced-secret", Values: vals})
-		nodeSecrets := types.OrderedMap[types.OrderedMap[types.IRSecretEntry]]{}
+		secrets := types.OrderedMap[types.IRFeatureEntry]{}
+		secrets.Set("password", types.IRFeatureEntry{Type: "core/referenced-secret", Values: vals})
+		nodeSecrets := types.OrderedMap[types.OrderedMap[types.IRFeatureEntry]]{}
 		nodeSecrets.Set("db", secrets)
-		spec.Secrets = nodeSecrets
+		spec.FeatureValuesMapping = nodeSecrets
 	}
 
 	input := renderer.RendererInput{
@@ -86,7 +86,7 @@ kind: Workload
 containers:
   main:
     image: postgres:16
-    secrets:
+    attachments:
       POSTGRES_PASSWORD:
         from: password
         as: env
@@ -165,11 +165,11 @@ func renderFRWithSlot(t *testing.T, featSlots types.OrderedMap[types.AttachmentS
 		vals := types.OrderedMap[any]{}
 		vals.Set("key", "FR_PW")
 		vals.Set("origin", "supersecret")
-		secrets := types.OrderedMap[types.IRSecretEntry]{}
-		secrets.Set("frpass", types.IRSecretEntry{Type: "core/referenced-secret", Values: vals})
-		nodeSecrets := types.OrderedMap[types.OrderedMap[types.IRSecretEntry]]{}
+		secrets := types.OrderedMap[types.IRFeatureEntry]{}
+		secrets.Set("frpass", types.IRFeatureEntry{Type: "core/referenced-secret", Values: vals})
+		nodeSecrets := types.OrderedMap[types.OrderedMap[types.IRFeatureEntry]]{}
 		nodeSecrets.Set("api", secrets)
-		spec.Secrets = nodeSecrets
+		spec.FeatureValuesMapping = nodeSecrets
 	}
 
 	input := renderer.RendererInput{
@@ -211,7 +211,7 @@ kind: Workload
 containers:
   main:
     image: helper:1
-    secrets:
+    attachments:
       FR_PW:
         from: frpass
         as: env

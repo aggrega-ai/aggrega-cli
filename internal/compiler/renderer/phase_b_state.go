@@ -45,7 +45,7 @@ type PhaseBState struct {
 	ResolvedValues map[string]any
 
 	// ParsedWorkload is the typed Workload B.2 produces after yaml.Unmarshal
-	// + validator.ValidateWorkload + validator.ValidateWorkloadSecrets all
+	// + validator.ValidateWorkload + validator.ValidateWorkloadAttachments all
 	// succeed. nil before B.2 and for Recipes that don't declare workload:.
 	ParsedWorkload *types.Workload
 
@@ -112,14 +112,14 @@ type PhaseBState struct {
 	// ArtifactsLibraries are present (a non-library artifacts entry never reads it).
 	ArtifactsLibraries map[string]types.ArtifactsLibrary
 
-	// SecretProvides is the per-node `slot → resolved fill provides` map the
+	// AttachmentProvides is the per-node `slot → resolved fill provides` map the
 	// orchestrator resolves once, through the single attachment-provides
 	// resolution, before context assembly. The same bag is surfaced to the
-	// consumer as `.secrets.<slot>.provides` AND reused at Phase B.6 as the
+	// consumer as `.features.<name>.provides` AND reused at Phase B.6 as the
 	// credential FeatureRecipe's `.provides`, so the consumer's read and the
 	// rendered Secret derive from one evaluation (no drift). nil when no
 	// credential attachment resolves a provides bag.
-	SecretProvides map[string]types.OrderedMap[string]
+	AttachmentProvides map[string]types.OrderedMap[string]
 }
 
 // NewPhaseBState constructs a fresh accumulator for one node's Phase B run.

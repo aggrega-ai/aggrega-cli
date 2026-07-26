@@ -354,9 +354,9 @@ func TestValidateBoundaryScopeFRTemplate_AllBranches(t *testing.T) {
 	frArtBad := &types.FeatureRecipe{}
 	frArtBad.Metadata.Name = "frArtBad"
 	art := types.OrderedMap[types.ArtifactEntry]{}
-	art.Set("cm.yaml", types.ArtifactEntry{Inline: "data: {{ .secret_name }}"})
+	art.Set("cm.yaml", types.ArtifactEntry{Inline: "data: {{ .attachment_name }}"})
 	frArtBad.Spec.Artifacts = art
 	if err := validateBoundaryScopeFRTemplate(frArtBad); !errors.Is(err, ErrFRTemplateInvalidField) {
-		t.Errorf("boundary-scope artifact referencing .secret_name must be rejected, got: %v", err)
+		t.Errorf("boundary-scope artifact referencing .attachment_name must be rejected, got: %v", err)
 	}
 }

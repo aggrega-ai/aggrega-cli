@@ -179,17 +179,19 @@ func TestBuild_FeatureUsesProducesEdgesWithOriginFeature(t *testing.T) {
 	}
 }
 
-// TestBuild_SecretUsesProducesEdges pins the secret-uses edge arm of
-// Build's step 5. A Secret attached to a component with `uses:`
-// produces edges marked with the Secret's type as OriginFeature.
-func TestBuild_SecretUsesProducesEdges(t *testing.T) {
+// TestBuild_CredentialAttachmentUsesProducesEdges pins the attachment-uses
+// edge arm of Build's step 5 for a credential attachment. A credential
+// attached to a component with `uses:` produces edges marked with the
+// credential Feature's type as OriginFeature, exactly as any other
+// attachment's uses block does.
+func TestBuild_CredentialAttachmentUsesProducesEdges(t *testing.T) {
 	t.Parallel()
 	agg := &types.Aggregate{}
 	secUses := types.OrderedMap[types.UsesSocketValue]{}
 	secUses.Set("backing_secret", types.UsesSocketValue{Compact: []string{"backend"}})
-	secs := types.OrderedMap[types.SecretInstance]{}
-	secs.Set("db-creds", types.SecretInstance{Type: "core/credentials", Uses: secUses})
-	agg.Spec.Components.Set("api", types.ComponentInstance{Type: "core/server", Secrets: secs})
+	secs := types.OrderedMap[types.FeatureInstance]{}
+	secs.Set("db-creds", types.FeatureInstance{Type: "core/credentials", Uses: secUses})
+	agg.Spec.Components.Set("api", types.ComponentInstance{Type: "core/server", Features: secs})
 	agg.Spec.Components.Set("backend", types.ComponentInstance{Type: "core/server"})
 	rr := &resolver.ResolveResult{Aggregate: agg}
 	result, err := Build(BuildConfig{ResolveResult: rr})
@@ -222,7 +224,6 @@ func TestFlattenSubsystem_NestedSubsystemRecursion(t *testing.T) {
 	result := &flattenResult{
 		Nodes:              types.OrderedMap[*TopologyNode]{},
 		FeatureAttachments: map[string][]FeatureAttachment{},
-		SecretAttachments:  map[string][]SecretAttachment{},
 	}
 	if err := flattenSubsystem(result, "", ".outer", "", mid, nil, nil); err != nil {
 		t.Fatalf("flattenSubsystem: %v", err)

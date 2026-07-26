@@ -355,18 +355,13 @@ func TestPipeline_FeatureNormalization(t *testing.T) {
 	values.Set("level", "warn")
 	values2 := types.OrderedMap[any]{}
 	values2.Set("path", "/secret")
+	// Both attachments — an operational Feature and a credential Feature — are
+	// declared on the one attachment surface and land in the one IR bucket.
 	features := types.OrderedMap[types.FeatureInstance]{}
-	features.Set("mon", types.FeatureInstance{Type: "core/monitoring",
-
-		// Feature should be in feature_values_mapping
-		Values: values})
-	secrets := types.OrderedMap[types.SecretInstance]{}
-	secrets.Set("creds", types.SecretInstance{Type: "core/db-creds", Values: values2})
+	features.Set("mon", types.FeatureInstance{Type: "core/monitoring", Values: values})
+	features.Set("creds", types.FeatureInstance{Type: "core/db-creds", Values: values2})
 	components := types.OrderedMap[types.ComponentInstance]{}
-	components.Set("api", types.ComponentInstance{Type: "core/compute/api-server", Features: features, Secrets:
-
-	// Secret should be in secrets (credential partition)
-	secrets})
+	components.Set("api", types.ComponentInstance{Type: "core/compute/api-server", Features: features})
 	agg := &types.Aggregate{
 		Metadata: types.AggregateMetadata{Name: "feat-norm-app"},
 		Spec: types.AggregateSpec{
@@ -385,13 +380,12 @@ func TestPipeline_FeatureNormalization(t *testing.T) {
 		t.Errorf("feature type: %q", monEntry.Type)
 	}
 
-	sec, ok := graph.Spec.Secrets.Get("api")
-	if !ok || sec.Len() == 0 {
-		t.Fatal("expected secrets for api")
+	credsEntry, ok := fvm.Get("creds")
+	if !ok {
+		t.Fatal("expected the credential attachment in feature_values_mapping for api")
 	}
-	credsEntry, _ := sec.Get("creds")
 	if credsEntry.Type != "core/db-creds" {
-		t.Errorf("secret type: %q", credsEntry.Type)
+		t.Errorf("credential attachment type: %q", credsEntry.Type)
 	}
 
 	// Markers should include both

@@ -18,11 +18,11 @@ import (
 func slotGraph(compType string, slots types.OrderedMap[types.AttachmentSlot]) (*types.IRGraph, resolver.CatalogLookup) {
 	nodes := types.OrderedMap[types.IRNode]{}
 	nodes.Set("db", types.IRNode{Component: compType})
-	secrets := types.OrderedMap[types.IRSecretEntry]{}
-	secrets.Set("password", types.IRSecretEntry{Type: "core/secret-value"})
-	nodeSecrets := types.OrderedMap[types.OrderedMap[types.IRSecretEntry]]{}
-	nodeSecrets.Set("db", secrets)
-	graph := &types.IRGraph{Spec: types.IRSpec{Nodes: nodes, Secrets: nodeSecrets}}
+	attachments := types.OrderedMap[types.IRFeatureEntry]{}
+	attachments.Set("password", types.IRFeatureEntry{Type: "core/secret-value"})
+	nodeAttachments := types.OrderedMap[types.OrderedMap[types.IRFeatureEntry]]{}
+	nodeAttachments.Set("db", attachments)
+	graph := &types.IRGraph{Spec: types.IRSpec{Nodes: nodes, FeatureValuesMapping: nodeAttachments}}
 
 	featLabels := types.OrderedMap[string]{}
 	featLabels.Set(types.FeatureKindLabel, types.FeatureKindSecret)

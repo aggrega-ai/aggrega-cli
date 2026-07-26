@@ -44,8 +44,9 @@ const composeTargetName = "compose"
 
 // SynthesizeWorkloadCore translates a parsed Workload into a per-node compose
 // fragment for the compose provider. Returns one EmittedFile
-// (`<nodeID>.compose-fragment.yaml`, Intermediate=true); the Track 2 merger
-// consumes fragments to produce the Release's single docker-compose.yaml.
+// (`<nodeID>.compose-fragment.yaml`, Intermediate=true); the boundary merger
+// (AssembleBoundaryCore) consumes fragments to produce the single
+// docker-compose.yaml at the dispatch path.
 //
 // Compose's synthesis reads no per-slot secret provides: an `as: env` secret
 // entry emits the env-var name with an empty value (compose has no
@@ -193,7 +194,7 @@ func pickMainContainerName(w *types.Workload) (string, bool) {
 }
 
 // translateContainer maps a single Workload ContainerSpec to a compose Service.
-// Author order preserved across env vars / ports / secrets via OrderedMap.All().
+// Author order preserved across env vars / ports / attachments via OrderedMap.All().
 func translateContainer(
 	c types.ContainerSpec,
 	w *types.Workload,
@@ -270,24 +271,24 @@ func translateContainer(
 	// Environment variables. Compose `environment:` accepts both list and map
 	// forms — we emit map form for clarity, backed by an OrderedMap so the
 	// rendered key order is the container's author order (Variables then, below,
-	// secrets), matching the helm engine's ordered env for the same Workload.
+	// attachments), matching the helm engine's ordered env for the same Workload.
 	for k, v := range c.Variables.All() {
 		svc.Environment.Set(k, v)
 	}
 
-	// Container secrets:
-	//   - as: env  → add to Environment (copy literal value-from-secret syntax
-	//     is K8s-only; compose has no equivalent. The synthesizer omits the
-	//     secret from environment entirely in Track 1; sourced-mode and
-	//     env_file lookup in Track 2.) For now: add an env entry with empty
-	//     value referencing the slot name as a documentation comment.
-	//   - as: file → bind-mount from secret-name:path:ro.
-	for slotKey, ref := range c.Secrets.All() {
+	// Container attachments:
+	//   - as: env  → add an Environment entry keyed by the attachment key with
+	//     an empty value. Value-from-reference env syntax is Kubernetes-only,
+	//     and compose has no env-from-secret primitive, so the name is emitted
+	//     and the value left empty; populating it from the attachment's
+	//     resolved material is not yet implemented.
+	//   - as: file → bind-mount the slot name at the entry's path, read-only.
+	for slotKey, ref := range c.Attachments.All() {
 		switch ref.As {
 		case "env":
-			// Compose has no native env-from-secret. Track 1 emits the env
-			// var name with an empty value as a placeholder; Track 2 wires
-			// env_file: lookup against the secret slot name.
+			// Compose has no native env-from-secret, so the env var name is
+			// emitted with an empty value. Sourcing the value is not yet
+			// implemented.
 			svc.Environment.Set(slotKey, "")
 		case "file":
 			svc.Volumes = append(svc.Volumes, ServiceVolume{
@@ -689,9 +690,9 @@ func applyWorkloadServicePorts(frag *ComposeFile, w *types.Workload, mainService
 		}
 		for portName, portNum := range svc.Ports.All() {
 			_ = portName
-			// Compose maps host:container 1:1 by default; future Recipe
-			// authoring may carve out an explicit hostPort field, but Track 1
-			// uses the same number on both sides.
+			// Compose maps host:container 1:1: the same number is used on
+			// both sides. An explicit per-port host-port authoring field is
+			// not implemented.
 			publishedByCtr[portNum] = publishedPort{host: portNum, ctr: portNum}
 		}
 	}

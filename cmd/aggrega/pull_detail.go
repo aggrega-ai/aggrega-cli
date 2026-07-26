@@ -134,9 +134,10 @@ func entityKindForDetail(kindHint string, referencedFrom []string) string {
 //
 // Instance-type sites end `.<collection>.<instance>.type`; the kind is the
 // collection segment IMMEDIATELY before the instance name — not any earlier
-// segment — so a Feature or Secret nested under a component
-// (`…components.api.features.cache.type`) maps to Feature/Secret, not the
-// enclosing Component.
+// segment — so an attachment nested under a component
+// (`…components.api.features.cache.type`) maps to Feature, not the enclosing
+// Component. Every attachment family reaches this table through `features`,
+// because that is the one attachment collection an authoring surface carries.
 func kindFromReferenceSite(ref string) string {
 	switch {
 	case ref == "release.spec.aggregate":
@@ -154,8 +155,6 @@ func kindFromReferenceSite(ref string) string {
 			return "Component"
 		case "features":
 			return "Feature"
-		case "secrets":
-			return "Secret"
 		case "aggregates":
 			return "Aggregate"
 		}

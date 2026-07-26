@@ -56,7 +56,7 @@ func TestDiscourageDirectXAggregaInSchema_FiresOnInject(t *testing.T) {
 	log.SetOutput(&buf)
 	defer log.SetOutput(prev)
 
-	in := `secrets:
+	in := `features:
   db_password:
     x-aggrega-inject:
       username: connection.user

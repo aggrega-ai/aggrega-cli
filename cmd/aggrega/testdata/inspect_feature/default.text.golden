@@ -5,7 +5,7 @@ Schema:
 Uses sockets:
   backend: selector="component.aggrega.ai/type=stateful-server"
     inject: [env]
-Secret slots:
+Attachment slots:
   token (required)
 Targeting:
   appliesTo: component.aggrega.ai/type=server

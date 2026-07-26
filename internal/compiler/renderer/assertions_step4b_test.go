@@ -55,7 +55,6 @@ func graphWithNode(t *testing.T, nodeID, componentType string, values types.Orde
 			ValuesMapping:        vm,
 			InfraMapping:         types.OrderedMap[json.RawMessage]{},
 			FeatureValuesMapping: types.OrderedMap[types.OrderedMap[types.IRFeatureEntry]]{},
-			Secrets:              types.OrderedMap[types.OrderedMap[types.IRSecretEntry]]{},
 		},
 	}
 }
@@ -189,7 +188,6 @@ func TestStep4b_MultiInstanceEvaluatesEachInstance(t *testing.T) {
 			ValuesMapping:        vm,
 			InfraMapping:         types.OrderedMap[json.RawMessage]{},
 			FeatureValuesMapping: types.OrderedMap[types.OrderedMap[types.IRFeatureEntry]]{},
-			Secrets:              types.OrderedMap[types.OrderedMap[types.IRSecretEntry]]{},
 		},
 	}
 	comp := types.Component{
@@ -250,7 +248,6 @@ func TestStep4b_UsesTargetReferenceWorks(t *testing.T) {
 			ValuesMapping:        types.OrderedMap[json.RawMessage]{},
 			InfraMapping:         types.OrderedMap[json.RawMessage]{},
 			FeatureValuesMapping: types.OrderedMap[types.OrderedMap[types.IRFeatureEntry]]{},
-			Secrets:              types.OrderedMap[types.OrderedMap[types.IRSecretEntry]]{},
 		},
 	}
 	// Assertion references .Uses.primary_db.target — populated by ExtractNodeBaseContext
@@ -291,7 +288,6 @@ func TestStep4b_UsesProvidesReferenceFails(t *testing.T) {
 			ValuesMapping:        types.OrderedMap[json.RawMessage]{},
 			InfraMapping:         types.OrderedMap[json.RawMessage]{},
 			FeatureValuesMapping: types.OrderedMap[types.OrderedMap[types.IRFeatureEntry]]{},
-			Secrets:              types.OrderedMap[types.OrderedMap[types.IRSecretEntry]]{},
 		},
 	}
 	comp := types.Component{

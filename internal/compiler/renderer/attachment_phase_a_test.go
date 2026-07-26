@@ -33,12 +33,17 @@ func k8sSecretFR() *types.FeatureRecipe {
 			Capability:    "helm",
 			Implements:    "core/secret-value:1.0.0",
 			Source:        "./charts/k8s-secret",
-			ValuesMapping: types.ValuesMapping{Inline: `secretName: "{{ .secret_name }}"`},
+			ValuesMapping: types.ValuesMapping{Inline: `secretName: "{{ .attachment_name }}"`},
 		},
 	}
 }
 
-func emptyComponentInjectCtx() *types.TemplateContext {
+// componentInjectCtxWithAttachment returns a component render context whose
+// inject pipe is empty and whose one attachment carries the given pillars —
+// the shape Phase A reads .values/.infra from for every attachment family.
+func componentInjectCtxWithAttachment(instance string, values types.OrderedMap[any]) *types.TemplateContext {
+	features := types.OrderedMap[types.TemplateAttachment]{}
+	features.Set(instance, types.TemplateAttachment{Type: "core/secret-value", Values: values})
 	return &types.TemplateContext{
 		Context: types.ContextBlock{
 			InstanceID: "db",
@@ -49,6 +54,7 @@ func emptyComponentInjectCtx() *types.TemplateContext {
 				All:  types.OrderedMap[string]{},
 			},
 		},
+		Features: features,
 	}
 }
 
@@ -59,24 +65,21 @@ func secretValues(key, source string) types.OrderedMap[any] {
 	return v
 }
 
-// TestExecutePhaseA_SecretScopedInjectReachesComponentPipe is the load-bearing
-// secret-subsystem proof: a core/secret-value Secret attached via an inject-only credential FR
-// (dotenv-secret shape) merges its value into the COMPONENT's inject pipe in
-// Phase A — so a base Recipe reading .context.inject.env.<VAR> resolves it. The
-// secret-scoped context supplies .values from the secret entry. This is the
-// secret subsystem, not the literal-credential Feature.
-func TestExecutePhaseA_SecretScopedInjectReachesComponentPipe(t *testing.T) {
+// TestExecutePhaseA_CredentialScopedInjectReachesComponentPipe is the
+// load-bearing credential proof: a core/secret-value credential attached via an
+// inject-only FeatureRecipe (dotenv-secret shape) merges its value into the
+// COMPONENT's inject pipe in Phase A — so a base Recipe reading
+// .context.inject.env.<VAR> resolves it. The attachment-scoped context supplies
+// .values from the attachment's own pillar, through the same lookup every
+// attachment family uses.
+func TestExecutePhaseA_CredentialScopedInjectReachesComponentPipe(t *testing.T) {
 	t.Parallel()
-	ctx := emptyComponentInjectCtx()
+	ctx := componentInjectCtxWithAttachment("root-password", secretValues("MARIADB_ROOT_PASSWORD", "dev-root-pw-change-me"))
 
 	refs := []FeatureRecipeRef{
 		{
 			InstanceName:  "root-password",
 			FeatureRecipe: dotenvSecretFR(),
-			scope: &phaseAScope{
-				Values: secretValues("MARIADB_ROOT_PASSWORD", "dev-root-pw-change-me"),
-				Infra:  types.OrderedMap[any]{},
-			},
 		},
 	}
 
@@ -97,20 +100,21 @@ func TestExecutePhaseA_SecretScopedInjectReachesComponentPipe(t *testing.T) {
 	}
 }
 
-// TestResolveSecretRecipes_ScopesToSecretEntryValues pins that the orchestrator
-// builds a Phase A ref for each node secret, scoped to the secret entry's own
-// values with empty infra.
-func TestResolveSecretRecipes_ScopesToSecretEntryValues(t *testing.T) {
+// TestResolveFeatureRecipes_CredentialAttachmentGetsAPhaseARef pins that the
+// orchestrator builds a Phase A ref for a credential attachment through the one
+// ref-resolution path every attachment uses, scoped to the attachment's own
+// pillars.
+func TestResolveFeatureRecipes_CredentialAttachmentGetsAPhaseARef(t *testing.T) {
 	t.Parallel()
 
-	inner := types.OrderedMap[types.IRSecretEntry]{}
-	inner.Set("root-password", types.IRSecretEntry{
+	inner := types.OrderedMap[types.IRFeatureEntry]{}
+	inner.Set("root-password", types.IRFeatureEntry{
 		Type:   "core/secret-value",
 		Values: secretValues("MARIADB_ROOT_PASSWORD", "dev-root-pw-change-me"),
 	})
-	outer := types.OrderedMap[types.OrderedMap[types.IRSecretEntry]]{}
+	outer := types.OrderedMap[types.OrderedMap[types.IRFeatureEntry]]{}
 	outer.Set("db", inner)
-	graph := &types.IRGraph{Spec: types.IRSpec{Secrets: outer}}
+	graph := &types.IRGraph{Spec: types.IRSpec{FeatureValuesMapping: outer}}
 
 	lookup := RecipeLookup{
 		FeatureRecipe: func(_, featureType string) (*types.FeatureRecipe, bool) {
@@ -121,41 +125,35 @@ func TestResolveSecretRecipes_ScopesToSecretEntryValues(t *testing.T) {
 		},
 	}
 
-	refs := resolveSecretRecipes("db", graph, lookup)
+	refs := resolveFeatureRecipes("db", map[string][]string{"db": {"root-password"}}, graph, lookup)
 	if len(refs) != 1 {
 		t.Fatalf("len(refs) = %d, want 1", len(refs))
 	}
 	if refs[0].InstanceName != "root-password" {
 		t.Errorf("InstanceName = %q, want root-password", refs[0].InstanceName)
 	}
-	if refs[0].scope == nil {
-		t.Fatal("secret ref carries no scope")
-	}
-	if v, _ := refs[0].scope.Values.Get("key"); v != "MARIADB_ROOT_PASSWORD" {
-		t.Errorf("scope.Values.key = %v, want MARIADB_ROOT_PASSWORD", v)
-	}
-	if refs[0].scope.Infra.Len() != 0 {
-		t.Errorf("scope.Infra should be empty, got %v", refs[0].scope.Infra.Keys())
+	if refs[0].FeatureRecipe == nil {
+		t.Fatal("credential ref carries no FeatureRecipe")
 	}
 }
 
-// TestResolveSecretRecipes_NoSecretsOrLookup covers the nil paths.
-func TestResolveSecretRecipes_NoSecretsOrLookup(t *testing.T) {
+// TestResolveFeatureRecipes_NoAttachmentsOrLookup covers the nil paths.
+func TestResolveFeatureRecipes_NoAttachmentsOrLookup(t *testing.T) {
 	t.Parallel()
 	graph := &types.IRGraph{}
-	if refs := resolveSecretRecipes("db", graph, RecipeLookup{}); refs != nil {
+	if refs := resolveFeatureRecipes("db", map[string][]string{"db": {"x"}}, graph, RecipeLookup{}); refs != nil {
 		t.Errorf("nil FeatureRecipe lookup should yield no refs, got %d", len(refs))
 	}
 	lookup := RecipeLookup{FeatureRecipe: func(_, _ string) (*types.FeatureRecipe, bool) { return nil, false }}
-	if refs := resolveSecretRecipes("absent", graph, lookup); refs != nil {
-		t.Errorf("node with no secrets should yield no refs, got %d", len(refs))
+	if refs := resolveFeatureRecipes("absent", map[string][]string{}, graph, lookup); refs != nil {
+		t.Errorf("node with no attachments should yield no refs, got %d", len(refs))
 	}
 }
 
-// TestIsResourceGeneratingFR_SecretShapes pins the predicate the Phase B.6
-// credential guard relies on: inject-only secret FRs are skipped from render
-// (false), resource-generating and dual-mode FRs render (true).
-func TestIsResourceGeneratingFR_SecretShapes(t *testing.T) {
+// TestIsResourceGeneratingFR_CredentialShapes pins the predicate the Phase B.6
+// render sequence relies on: an inject-only credential FR is skipped from render
+// (false); resource-generating and dual-mode FRs render (true).
+func TestIsResourceGeneratingFR_CredentialShapes(t *testing.T) {
 	t.Parallel()
 	if isResourceGeneratingFR(dotenvSecretFR()) {
 		t.Error("inject-only dotenv-secret FR must NOT be resource-generating (B.6 must skip it)")
@@ -171,14 +169,14 @@ func TestIsResourceGeneratingFR_SecretShapes(t *testing.T) {
 	}
 }
 
-// TestExecutePhaseA_DualModeSecretFRMergesInject confirms a dual-mode secret FR
-// (injectMapping AND source/valuesMapping) merges its inject in Phase A. Phase A
-// owns the single inject merge; the Phase B.6 path (predicate true above) renders
-// the FR's auxiliary resource but never merges into the component pipe — so there
-// is no double-merge.
-func TestExecutePhaseA_DualModeSecretFRMergesInject(t *testing.T) {
+// TestExecutePhaseA_DualModeCredentialFRMergesInject confirms a dual-mode
+// credential FR (injectMapping AND source/valuesMapping) merges its inject in
+// Phase A. Phase A owns the single inject merge; the Phase B.6 path (predicate
+// true above) renders the FR's auxiliary resource but never merges into the
+// component pipe — so there is no double-merge.
+func TestExecutePhaseA_DualModeCredentialFRMergesInject(t *testing.T) {
 	t.Parallel()
-	ctx := emptyComponentInjectCtx()
+	ctx := componentInjectCtxWithAttachment("root-password", secretValues("MARIADB_ROOT_PASSWORD", "dev-root-pw-change-me"))
 
 	dual := dotenvSecretFR()
 	dual.Spec.Source = "./charts/k8s-secret"
@@ -188,10 +186,6 @@ func TestExecutePhaseA_DualModeSecretFRMergesInject(t *testing.T) {
 		{
 			InstanceName:  "root-password",
 			FeatureRecipe: dual,
-			scope: &phaseAScope{
-				Values: secretValues("MARIADB_ROOT_PASSWORD", "dev-root-pw-change-me"),
-				Infra:  types.OrderedMap[any]{},
-			},
 		},
 	}
 

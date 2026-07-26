@@ -16,10 +16,9 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
-// featureResult holds the normalized features and secrets for one node.
+// featureResult holds the normalized attachments for one node.
 type featureResult struct {
 	Features     types.OrderedMap[types.IRFeatureEntry]
-	Secrets      types.OrderedMap[types.IRSecretEntry]
 	FeatureOrder []string // deterministic order following Onion Model
 	Markers      []string // canonical feature type strings
 
@@ -37,24 +36,20 @@ type featureResult struct {
 func newFeatureResult() *featureResult {
 	return &featureResult{
 		Features:  types.OrderedMap[types.IRFeatureEntry]{},
-		Secrets:   types.OrderedMap[types.IRSecretEntry]{},
 		leafScope: map[scopeKey]attachmentScope{},
 	}
 }
 
-// scopeKey addresses one contested leaf: the bucket the attachment landed
-// in, its instance name, the pillar, and the flat-dotted leaf path.
+// scopeKey addresses one contested leaf: the attachment's instance name, the
+// pillar, and the flat-dotted leaf path. Instance names are unique per node,
+// so the name plus pillar plus leaf addresses a leaf outright.
 type scopeKey struct {
-	bucket   string
 	instance string
 	pillar   string
 	leaf     string
 }
 
 const (
-	bucketFeatures = "features"
-	bucketSecrets  = "secrets"
-
 	pillarValues = "values"
 	pillarInfra  = "infra"
 )
@@ -272,15 +267,15 @@ func aggregateCanonicalPath(topoNode *topology.TopologyNode) string {
 // orders the pre-render injection mapping — ranking inject by scope would
 // put two different orderings on one attachment.
 //
-// After the five tiers, credential attachments authored through the
-// secrets: keyword are added into result.Secrets directly from topology.
-// They arrive as complete entries rather than contributions, so they do not
-// pass through the merge and the precedence rules above do not govern them.
+// Every attachment a node holds routes through these five tiers and the one
+// mergeContribution body, whatever the attachment produces. There is no
+// second construction path for a credential to drift down, and no second
+// precedence semantic for one to be governed by.
 //
 // Markers (the canonical feature-type strings the IR exposes via
-// FeatureMarkers) are accumulated into a set across all five tiers plus
-// the Secret pass, then sort-extracted at the end so byte-identical
-// input produces byte-identical output across runs.
+// FeatureMarkers) are accumulated into a set across all five tiers, then
+// sort-extracted at the end so byte-identical input produces
+// byte-identical output across runs.
 func collectNodeFeatures(
 	nodeID string,
 	topoNode *topology.TopologyNode,
@@ -378,22 +373,6 @@ func collectNodeFeatures(
 		}
 	}
 
-	// Credentials authored through the secrets: keyword arrive as complete
-	// entries rather than contributions, so they are set directly and do not
-	// pass through mergeContribution. The precedence contract above governs
-	// merge-routed attachments; a secrets:-keyword credential is not one.
-	if attachments, ok := topoResult.SecretAttachments[nodeID]; ok {
-		for _, sa := range attachments {
-			result.Secrets.Set(sa.InstanceName, types.IRSecretEntry{
-				Type:            sa.Secret.Type,
-				ResolvedVersion: featureVersion(catalogLookup, sa.Secret.Type),
-				Values:          sa.Secret.Values,
-				Inject:          convertInjectBlock(sa.Secret.Inject),
-			})
-			markerSet[sa.Secret.Type] = true
-		}
-	}
-
 	// Build sorted markers
 	for m := range markerSet {
 		result.Markers = append(result.Markers, m)
@@ -407,21 +386,23 @@ func collectNodeFeatures(
 	return result, nil
 }
 
-// validateNodeAttachments validates a node's merged Feature and Secret
-// attachment pillars against each attachment's declared catalog schema, closed
-// and default-aware, via the shared resolver.ValidatePillarConformance entry
-// point — the same validator the Step-1 component gate uses, so an authored
-// schema is interpreted identically across surfaces.
+// validateNodeAttachments validates a node's merged attachment pillars against
+// each attachment's declared catalog schema, closed and default-aware, via the
+// shared resolver.ValidatePillarConformance entry point — the same validator the
+// Step-1 component gate uses, so an authored schema is interpreted identically
+// across surfaces.
 //
 // What is validated is the EFFECTIVE merged result of the 5-Tier Onion Model
 // (the values/infra after collectNodeFeatures folds every tier), not a single
 // pre-merge fragment — so a value made conformant in one tier and illegal by a
 // later tier's override is caught.
 //
-// Feature and Secret attachments resolve their schema through the same Feature
-// catalog lookup (a Secret is a credential-labelled Feature). An attachment
-// whose type has no catalog schema, or whose schema does not declare the pillar,
-// contributes nothing. Attachment infra is closed against the attachment's own
+// Every attachment resolves its schema through the Feature catalog lookup — a
+// credential is a Feature carrying the credential-kind label, so one lookup
+// serves them all. An attachment whose type has no catalog schema, or whose
+// schema does not declare the pillar, contributes nothing.
+//
+// Attachment infra is closed against the attachment's own
 // schema.infra — there is NO provider union (the component-gate construction):
 // an attachment is an overlay and does not own a rendering provider, so its
 // schema.infra is its complete infra contract. Errors are returned unsorted;
@@ -429,26 +410,19 @@ func collectNodeFeatures(
 func validateNodeAttachments(
 	nodeID string,
 	feats types.OrderedMap[types.IRFeatureEntry],
-	secrets types.OrderedMap[types.IRSecretEntry],
 	parameters map[string]any,
 	entity string,
 	compiledFor func(featureType string) (compactform.Schema, bool),
 ) []*resolver.ResolverError {
 	var errs []*resolver.ResolverError
-	validate := func(attachKind, name, ftype, schemaLabel string, vals, infra types.OrderedMap[any]) {
-		compiled, ok := compiledFor(ftype)
-		if !ok {
-			return
-		}
-		prefix := fmt.Sprintf(".spec.components.%s.%s.%s", nodeID, attachKind, name)
-		errs = append(errs, resolver.ValidatePillarConformance(compiled, "values", vals, parameters, entity, prefix, schemaLabel)...)
-		errs = append(errs, resolver.ValidatePillarConformance(compiled, "infra", infra, parameters, entity, prefix, schemaLabel)...)
-	}
 	for name, entry := range feats.All() {
-		validate("features", name, entry.Type, "the Feature schema", entry.Values, entry.Infra)
-	}
-	for name, entry := range secrets.All() {
-		validate("secrets", name, entry.Type, "the Secret schema", entry.Values, entry.Infra)
+		compiled, ok := compiledFor(entry.Type)
+		if !ok {
+			continue
+		}
+		prefix := fmt.Sprintf(".spec.components.%s.features.%s", nodeID, name)
+		errs = append(errs, resolver.ValidatePillarConformance(compiled, "values", entry.Values, parameters, entity, prefix, "the Feature schema")...)
+		errs = append(errs, resolver.ValidatePillarConformance(compiled, "infra", entry.Infra, parameters, entity, prefix, "the Feature schema")...)
 	}
 	return errs
 }
@@ -472,9 +446,9 @@ func joinAttachmentConformance(errs []*resolver.ResolverError) error {
 	return errors.Join(wrapped...)
 }
 
-// newAttachmentEntry builds a fresh IR attachment entry (a feature or, in the
-// secrets bucket, a credential) from one contribution. Both buckets share the
-// shape, so both build it here — there is no lossier secret construction to drift.
+// newAttachmentEntry builds a fresh IR attachment entry from one contribution.
+// It is the ONLY site that constructs one, so there is no lossier construction
+// path for any attachment family to drift down.
 //
 // The first-sight stamp on top-level Origin/AnnotationKey/AnnotationSource
 // preserves per-attachment provenance for contributions carrying no Values/Infra
@@ -532,13 +506,12 @@ func featureVersion(catalogLookup resolver.CatalogLookup, featType string) strin
 // featureResult through a per-pillar per-leaf merge that records
 // FieldProvenance for every leaf in both pillars.
 //
-// One body serves both buckets. A credential is a Feature whose catalog
-// entity carries the feature.aggrega.ai/kind: secret label; it is
-// partitioned into result.Secrets rather than result.Features and is then
-// merged by exactly the same rules, so there is no second precedence
-// semantic for a credential to drift behind. Both buckets hold the same
-// entry shape, so a credential FeatureRecipe reads .infra and per-leaf
-// provenance exactly as a feature's does.
+// One body serves every attachment family. A credential — a Feature whose
+// catalog entity carries the feature.aggrega.ai/kind: secret label — lands in
+// the same bucket as any other attachment and is merged by the same rules, so
+// there is no second precedence semantic for it to drift behind and its
+// FeatureRecipe reads .infra and per-leaf provenance exactly as another's
+// does. Nothing here reads that label.
 //
 // Rules:
 //
@@ -559,11 +532,9 @@ func featureVersion(catalogLookup resolver.CatalogLookup, featType string) strin
 //
 // The markerSet parameter aggregates attachment-type strings across all
 // tiers; the caller sort-extracts at the end of collectNodeFeatures.
-// FeatureOrder is appended only on first sight of a feature instance name,
-// so the order vector stays stable across re-merges of the same instance.
-// The secrets bucket carries no separate order vector — its OrderedMap is
-// its order — which is why the append is bucket-conditional; that is
-// order bookkeeping, not a second merge semantic.
+// FeatureOrder is appended only on first sight of an attachment instance
+// name, so the order vector stays stable across re-merges of the same
+// instance. It is the one execution order Phase A and Phase B.6 both follow.
 func mergeContribution(
 	result *featureResult,
 	instanceName string,
@@ -585,19 +556,12 @@ func mergeContribution(
 	// Aggregate-side tiers (Release boundary tiers pass nil).
 	injectMap := convertInjectBlock(inject)
 
-	bucket, bucketName := &result.Features, bucketFeatures
-	if isCredential(featType, catalogLookup) {
-		bucket, bucketName = &result.Secrets, bucketSecrets
-	}
-
-	existing, exists := bucket.Get(instanceName)
+	existing, exists := result.Features.Get(instanceName)
 	if !exists {
 		entry := newAttachmentEntry(featType, version, values, infra, injectMap, provenance)
-		bucket.Set(instanceName, entry)
-		if bucketName == bucketFeatures {
-			result.FeatureOrder = append(result.FeatureOrder, instanceName)
-		}
-		recordLeafScopes(result.leafScope, bucketName, instanceName, values, infra, scope)
+		result.Features.Set(instanceName, entry)
+		result.FeatureOrder = append(result.FeatureOrder, instanceName)
+		recordLeafScopes(result.leafScope, instanceName, values, infra, scope)
 		markerSet[featType] = true
 		return nil
 	}
@@ -612,11 +576,11 @@ func mergeContribution(
 	}
 
 	for _, leaf := range types.FlattenLeaves(values) {
-		key := scopeKey{bucket: bucketName, instance: instanceName, pillar: pillarValues, leaf: leaf.Path}
+		key := scopeKey{instance: instanceName, pillar: pillarValues, leaf: leaf.Path}
 		mergeLeaf(&existing.Values, &existing.ValuesProvenance, result.leafScope, key, leaf.Value, provenance, scope)
 	}
 	for _, leaf := range types.FlattenLeaves(infra) {
-		key := scopeKey{bucket: bucketName, instance: instanceName, pillar: pillarInfra, leaf: leaf.Path}
+		key := scopeKey{instance: instanceName, pillar: pillarInfra, leaf: leaf.Path}
 		mergeLeaf(&existing.Infra, &existing.InfraProvenance, result.leafScope, key, leaf.Value, provenance, scope)
 	}
 
@@ -640,7 +604,7 @@ func mergeContribution(
 			existing.ResolvedVersion = version
 		}
 	}
-	bucket.Set(instanceName, existing)
+	result.Features.Set(instanceName, existing)
 	markerSet[featType] = true
 	return nil
 }
@@ -653,15 +617,15 @@ func mergeContribution(
 // records over the same leaves.
 func recordLeafScopes(
 	scopes map[scopeKey]attachmentScope,
-	bucket, instance string,
+	instance string,
 	values, infra types.OrderedMap[any],
 	scope attachmentScope,
 ) {
 	for _, leaf := range types.FlattenLeaves(values) {
-		scopes[scopeKey{bucket: bucket, instance: instance, pillar: pillarValues, leaf: leaf.Path}] = scope
+		scopes[scopeKey{instance: instance, pillar: pillarValues, leaf: leaf.Path}] = scope
 	}
 	for _, leaf := range types.FlattenLeaves(infra) {
-		scopes[scopeKey{bucket: bucket, instance: instance, pillar: pillarInfra, leaf: leaf.Path}] = scope
+		scopes[scopeKey{instance: instance, pillar: pillarInfra, leaf: leaf.Path}] = scope
 	}
 }
 
@@ -760,9 +724,8 @@ func mergeLeaf(
 //     AnnotationSource empty (consumers read per-leaf detail from
 //     ValuesProvenance / InfraProvenance).
 //
-// A Feature attachment with no populated leaves keeps the empty
-// Origin (the IR builder reaches this state only on credential
-// routing, which excludes the entry from Features; defensive default).
+// An attachment with no populated leaves keeps the first-sight stamp
+// mergeContribution wrote.
 func finalizeTopLevelOrigin(result *featureResult) {
 	for name, entry := range result.Features.All() {
 		if entry.ValuesProvenance.Len() == 0 && entry.InfraProvenance.Len() == 0 {
@@ -820,18 +783,6 @@ func deriveTopLevelOrigin(values, infra types.OrderedMap[types.FieldProvenance])
 		return types.OriginAnnotation, firstAnnotation.AnnotationKey, firstAnnotation.AnnotationSource
 	}
 	return types.OriginMixed, "", ""
-}
-
-func isCredential(typeURI string, catalogLookup resolver.CatalogLookup) bool {
-	if catalogLookup.Feature == nil {
-		return false
-	}
-	feat, found := catalogLookup.Feature(typeURI)
-	if !found {
-		return false
-	}
-	kind, _ := feat.Metadata.Labels.Get(types.FeatureKindLabel)
-	return kind == types.FeatureKindSecret
 }
 
 // namedFeature pairs an instance name with a FeatureInstance for ordered collection.

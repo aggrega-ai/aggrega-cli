@@ -118,22 +118,22 @@ func NewBoundaryFRState() *BoundaryFRState {
 //     .context.instance_id, .context.inject, .context.uses are
 //     meaningless at boundary scope.
 //   - workload — per-component Workload; absent at boundary scope.
-//   - secret_name, inject, inject_raw — secret-specific; absent at
+//   - attachment_name, inject, inject_raw — per-attachment; absent at
 //     boundary scope.
 //
 // boundary-scope FRs reference .boundary.* pillars instead. The allowlist-
 // rejection at parse time prevents shape-mismatch errors at runtime.
 var boundaryScopeFRRejectedFields = map[string]bool{
-	"context":     true,
-	"workload":    true,
-	"secret_name": true,
-	"inject":      true,
-	"inject_raw":  true,
+	"context":         true,
+	"workload":        true,
+	"attachment_name": true,
+	"inject":          true,
+	"inject_raw":      true,
 }
 
 // validateBoundaryScopeFRTemplate parses every inline template field on a FR
 // with spec.executionScope: boundary and verifies that no template references
-// any per-component-only field (.context.*, .workload.*, .secret_name,
+// any per-component-only field (.context.*, .workload.*, .attachment_name,
 // .inject, .inject_raw). Returns nil on pass; ErrFRTemplateInvalidField
 // wrapped with the FR name + offending field on the first violation, or a
 // CATALOG_ERROR if any inline template fails to parse.
@@ -169,7 +169,7 @@ func validateBoundaryScopeFRTemplate(fr *types.FeatureRecipe) error {
 	// scope allowlist (file / library imports defer to render-time validation,
 	// as with valuesMapping above). A boundary-scope FR's synthesised workload
 	// or emitted artifacts reference .boundary.* pillars, never .context.* /
-	// .workload / .secret_name / .inject.
+	// .workload / .attachment_name / .inject.
 	if fr.Spec.Workload.Inline != "" {
 		tmpls = append(tmpls, tmplField{label: "workload", text: fr.Spec.Workload.Inline})
 	}
@@ -198,7 +198,7 @@ func validateBoundaryScopeFRTemplate(fr *types.FeatureRecipe) error {
 		fields := collectTopLevelFields(t2)
 		for _, f := range fields {
 			if boundaryScopeFRRejectedFields[f] {
-				inner := fmt.Errorf("%w: FeatureRecipe %q with executionScope: boundary references per-component-only field .%s in %s; boundary-scope FRs use .boundary.* pillars in place of .context.* / .workload / .secret_name / .inject — see aggrega-docs/language-reference/entities/featurerecipe.md",
+				inner := fmt.Errorf("%w: FeatureRecipe %q with executionScope: boundary references per-component-only field .%s in %s; boundary-scope FRs use .boundary.* pillars in place of .context.* / .workload / .attachment_name / .inject — see aggrega-docs/language-reference/entities/featurerecipe.md",
 					ErrFRTemplateInvalidField, frName, f, t.label)
 				return cerrors.Wrap(inner, cerrors.CatalogError, cerrors.SourceLocation{}, inner.Error())
 			}
@@ -323,7 +323,7 @@ func dispatchBoundaryScopeFR(
 	// assembler routing. instanceLabel is "" so the boundary-disambiguated
 	// LabelComponentID set above stays the resource-naming basis (a per-instance
 	// label would collide across boundaries sharing an FR-instance name).
-	emitted, err := renderFeatureRecipeFiles(ctx, frEngine, fr, frCtx, frNodeCtx, frValues, resolvedSrc, "", featureSecretSlots(fr, input), input.WorkloadLibraries, input.ArtifactsLibraries)
+	emitted, err := renderFeatureRecipeFiles(ctx, frEngine, fr, frCtx, frNodeCtx, frValues, resolvedSrc, "", featureAttachmentSlots(fr, input), input.WorkloadLibraries, input.ArtifactsLibraries)
 	if err != nil {
 		return err
 	}

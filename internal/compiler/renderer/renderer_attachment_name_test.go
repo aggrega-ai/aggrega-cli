@@ -54,9 +54,9 @@ func TestRenderAll_NonCredentialFeatureRecipeReadsAttachmentName(t *testing.T) {
 				art.Set("scrape.yaml", types.ArtifactEntry{Inline: `apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: {{ .context.instance_id }}-{{ .secret_name }}
+  name: {{ .context.instance_id }}-{{ .attachment_name }}
 data:
-  attachment: "{{ .secret_name }}"
+  attachment: "{{ .attachment_name }}"
 `})
 				return &types.FeatureRecipe{
 					Metadata: types.FeatureRecipeMetadata{Name: "monitoring"},

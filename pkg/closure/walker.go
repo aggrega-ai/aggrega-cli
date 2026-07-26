@@ -184,19 +184,14 @@ func (s *walkState) walkSubsystem(sys types.Subsystem, path string) {
 	}
 }
 
-// walkComponentInstanceFeatures collects every Feature URI declared
-// via the component-instance's Features and Secrets maps.
+// walkComponentInstanceFeatures collects every Feature URI declared via the
+// component-instance's Features map. Every attachment family is declared there,
+// so one walk reaches them all — a credential attachment's type resolves to a
+// Feature entity like any other, and its registry location is feature/<name>.
 func (s *walkState) walkComponentInstanceFeatures(ci types.ComponentInstance, path string) {
 	for name, fi := range ci.Features.All() {
 		if fi.Type != "" {
 			s.addEntityKind(fi.Type, fmt.Sprintf("%s.features.%s.type", path, name), "feature")
-		}
-	}
-	for name, si := range ci.Secrets.All() {
-		if si.Type != "" {
-			// A secret-type reference resolves to a Feature entity (secrets are
-			// Features labeled secret); its registry location is feature/<name>.
-			s.addEntityKind(si.Type, fmt.Sprintf("%s.secrets.%s.type", path, name), "feature")
 		}
 	}
 }

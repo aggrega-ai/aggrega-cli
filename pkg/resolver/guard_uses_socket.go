@@ -174,18 +174,6 @@ func guardUsesSocket(na types.NormalizedAggregate, catalog CatalogLookup) []*Res
 					)...)
 				}
 			}
-
-			for secName, sec := range comp.Secrets.All() {
-				if sec.Uses.Len() > 0 {
-					errs = append(errs, validateFeatureUsesAgainstSchema(
-						entity,
-						fmt.Sprintf("%s.secrets[%q].uses", base, secName),
-						sec.Uses,
-						sec.Type,
-						catalog,
-					)...)
-				}
-			}
 		}
 	}
 
@@ -250,9 +238,9 @@ func ValidateUsesAgainstSchema(entity, fieldPath string, uses types.OrderedMap[t
 // validateFeatureUsesAgainstSchema is the Feature-side mirror of
 // ValidateUsesAgainstSchema. Same two failure modes (no usesSchema =
 // declarations rejected; non-empty usesSchema = each socket must exist
-// as a key) and same silent-skip on unknown catalog Feature type. Used
-// for both feature attachments (.features) and secret attachments
-// (.secrets), which share the Feature catalog kind.
+// as a key) and same silent-skip on unknown catalog Feature type. Used for
+// every attachment on the one `features` surface, whatever the attachment
+// produces — they all resolve through the Feature catalog kind.
 func validateFeatureUsesAgainstSchema(entity, fieldPath string, uses types.OrderedMap[types.UsesSocketValue], featType string, catalog CatalogLookup) []*ResolverError {
 	catFeat, found := catalog.Feature(featType)
 	if !found {

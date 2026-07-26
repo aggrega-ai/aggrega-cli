@@ -15,8 +15,10 @@ import (
 
 // mandateGraph builds a one-node graph for component "web" whose catalog
 // annotations carry the supplied key/value pairs, with the named attachment
-// types present in the requested bucket. bucket is "features" or "secrets".
-func mandateGraph(bucket string, attachedTypes []string, annotationPairs ...string) *types.IRGraph {
+// types present on the node's attachment bucket. Every attachment family —
+// operational, credential, identity — shares that one bucket, so a fixture
+// needs no family discriminator.
+func mandateGraph(attachedTypes []string, annotationPairs ...string) *types.IRGraph {
 	ann := types.OrderedMap[string]{}
 	for i := 0; i+1 < len(annotationPairs); i += 2 {
 		ann.Set(annotationPairs[i], annotationPairs[i+1])
@@ -29,24 +31,14 @@ func mandateGraph(bucket string, attachedTypes []string, annotationPairs ...stri
 	})
 	spec := types.IRSpec{Nodes: nodes}
 
-	switch bucket {
-	case "features":
-		entries := types.OrderedMap[types.IRFeatureEntry]{}
-		for i, ftype := range attachedTypes {
-			entries.Set(instanceName(i), types.IRFeatureEntry{Type: ftype})
-		}
-		per := types.OrderedMap[types.OrderedMap[types.IRFeatureEntry]]{}
-		per.Set("web", entries)
-		spec.FeatureValuesMapping = per
-	case "secrets":
-		entries := types.OrderedMap[types.IRSecretEntry]{}
-		for i, ftype := range attachedTypes {
-			entries.Set(instanceName(i), types.IRSecretEntry{Type: ftype})
-		}
-		per := types.OrderedMap[types.OrderedMap[types.IRSecretEntry]]{}
-		per.Set("web", entries)
-		spec.Secrets = per
+	entries := types.OrderedMap[types.IRFeatureEntry]{}
+	for i, ftype := range attachedTypes {
+		entries.Set(instanceName(i), types.IRFeatureEntry{Type: ftype})
 	}
+	per := types.OrderedMap[types.OrderedMap[types.IRFeatureEntry]]{}
+	per.Set("web", entries)
+	spec.FeatureValuesMapping = per
+
 	return &types.IRGraph{Spec: spec}
 }
 
@@ -60,7 +52,7 @@ const monitoringMandate = "features.aggrega.ai/requiredType.monitoring"
 // slot declares, which is the case the mandate exists for — passes clean.
 func TestRequiredAttachmentTypes_SatisfiedByFreeAttachment(t *testing.T) {
 	t.Parallel()
-	graph := mandateGraph("features", []string{"core/prometheus-exporter"},
+	graph := mandateGraph([]string{"core/prometheus-exporter"},
 		monitoringMandate, "core/prometheus-exporter")
 	errs, err := validateRequiredAttachmentTypes(context.Background(), graph)
 	if err != nil {
@@ -71,11 +63,11 @@ func TestRequiredAttachmentTypes_SatisfiedByFreeAttachment(t *testing.T) {
 	}
 }
 
-// The credential bucket satisfies a mandate too: presence is presence, and the
-// rule does not care which bucket an attachment routed into.
-func TestRequiredAttachmentTypes_SatisfiedFromCredentialBucket(t *testing.T) {
+// A credential attachment satisfies a mandate too: presence is presence, and
+// the rule does not care which family the attached type belongs to.
+func TestRequiredAttachmentTypes_SatisfiedByCredentialAttachment(t *testing.T) {
 	t.Parallel()
-	graph := mandateGraph("secrets", []string{"core/referenced-secret"},
+	graph := mandateGraph([]string{"core/referenced-secret"},
 		"features.aggrega.ai/requiredType.credential", "core/referenced-secret")
 	errs, err := validateRequiredAttachmentTypes(context.Background(), graph)
 	if err != nil {
@@ -88,7 +80,7 @@ func TestRequiredAttachmentTypes_SatisfiedFromCredentialBucket(t *testing.T) {
 
 func TestRequiredAttachmentTypes_UnmetHalts(t *testing.T) {
 	t.Parallel()
-	graph := mandateGraph("features", []string{"core/public-ingress"},
+	graph := mandateGraph([]string{"core/public-ingress"},
 		monitoringMandate, "core/prometheus-exporter")
 	errs, err := validateRequiredAttachmentTypes(context.Background(), graph)
 	if err != nil {
@@ -122,7 +114,7 @@ func TestRequiredAttachmentTypes_UnmetHalts(t *testing.T) {
 // path must not skip the check.
 func TestRequiredAttachmentTypes_NoAttachmentsAtAllHalts(t *testing.T) {
 	t.Parallel()
-	graph := mandateGraph("features", nil, monitoringMandate, "core/prometheus-exporter")
+	graph := mandateGraph(nil, monitoringMandate, "core/prometheus-exporter")
 	errs, _ := validateRequiredAttachmentTypes(context.Background(), graph)
 	if len(errs) != 1 {
 		t.Fatalf("want 1 violation, got %d: %v", len(errs), errs)
@@ -134,7 +126,7 @@ func TestRequiredAttachmentTypes_NoAttachmentsAtAllHalts(t *testing.T) {
 // outcomes carry different sentinels.
 func TestRequiredAttachmentTypes_MalformedIsDistinct(t *testing.T) {
 	t.Parallel()
-	graph := mandateGraph("features", []string{"core/prometheus-exporter"},
+	graph := mandateGraph([]string{"core/prometheus-exporter"},
 		monitoringMandate, "prometheus-exporter")
 	errs, _ := validateRequiredAttachmentTypes(context.Background(), graph)
 	if len(errs) != 1 {
@@ -159,7 +151,7 @@ func TestRequiredAttachmentTypes_MalformedIsDistinct(t *testing.T) {
 // check exists to close.
 func TestRequiredAttachmentTypes_LabellessKeyReported(t *testing.T) {
 	t.Parallel()
-	graph := mandateGraph("features", []string{"core/prometheus-exporter"},
+	graph := mandateGraph([]string{"core/prometheus-exporter"},
 		"features.aggrega.ai/requiredType", "core/prometheus-exporter")
 	errs, _ := validateRequiredAttachmentTypes(context.Background(), graph)
 	if len(errs) != 1 {
@@ -198,7 +190,7 @@ func TestRequiredAttachmentTypes_LocatorElidesSynthesizedSubsystem(t *testing.T)
 
 func TestRequiredAttachmentTypes_NoMandateNoViolation(t *testing.T) {
 	t.Parallel()
-	graph := mandateGraph("features", nil, "component.aggrega.ai/type", "server")
+	graph := mandateGraph(nil, "component.aggrega.ai/type", "server")
 	errs, _ := validateRequiredAttachmentTypes(context.Background(), graph)
 	if len(errs) != 0 {
 		t.Fatalf("want no violations, got %v", errs)
@@ -209,7 +201,7 @@ func TestRequiredAttachmentTypes_NoMandateNoViolation(t *testing.T) {
 // annotation map's author order.
 func TestRequiredAttachmentTypes_MultipleMandatesDeterministicOrder(t *testing.T) {
 	t.Parallel()
-	graph := mandateGraph("features", nil,
+	graph := mandateGraph(nil,
 		monitoringMandate, "core/prometheus-exporter",
 		"features.aggrega.ai/requiredType.tracing", "core/context-propagation")
 	errs, _ := validateRequiredAttachmentTypes(context.Background(), graph)
@@ -225,7 +217,7 @@ func TestRequiredAttachmentTypes_MultipleMandatesDeterministicOrder(t *testing.T
 // analyzer's structured Errors slice the build gates on.
 func TestAnalyzeContext_SurfacesMandateViolation(t *testing.T) {
 	t.Parallel()
-	graph := mandateGraph("features", nil, monitoringMandate, "core/prometheus-exporter")
+	graph := mandateGraph(nil, monitoringMandate, "core/prometheus-exporter")
 	result, err := AnalyzeContext(context.Background(), graph, resolver.CatalogLookup{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)

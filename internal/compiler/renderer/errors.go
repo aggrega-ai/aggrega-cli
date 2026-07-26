@@ -176,7 +176,7 @@ var (
 	// per-component-only field in any of its templates (workload,
 	// injectMapping, provides, valuesMapping, artifacts). Boundary-scope
 	// FRs use .boundary.* pillars in place of .context.* / .workload /
-	// .secret_name; references to per-component fields are flagged at
+	// .attachment_name; references to per-component fields are flagged at
 	// parse time so the runtime never has to defend against shape
 	// mismatches. Category: CATALOG_ERROR (catalog-authored FR
 	// references invalid context for its scope).

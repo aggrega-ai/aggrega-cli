@@ -24,7 +24,6 @@ const maxSubAggregateDepth = 10
 type flattenResult struct {
 	Nodes              types.OrderedMap[*TopologyNode]
 	FeatureAttachments map[string][]FeatureAttachment
-	SecretAttachments  map[string][]SecretAttachment
 	ExportedComponents map[string]string
 	// Pruned is the set of flattened node IDs a false `active` toggle removed
 	// from the topology. Pruned nodes are absent from Nodes (so their own edges
@@ -127,7 +126,6 @@ func flattenAggregate(
 	result := &flattenResult{
 		Nodes:              types.OrderedMap[*TopologyNode]{},
 		FeatureAttachments: make(map[string][]FeatureAttachment),
-		SecretAttachments:  make(map[string][]SecretAttachment),
 		ExportedComponents: make(map[string]string),
 		Pruned:             make(map[string]bool),
 	}
@@ -212,9 +210,6 @@ func flattenAggregate(
 			}
 			for id, feats := range childResult.FeatureAttachments {
 				result.FeatureAttachments[id] = append(result.FeatureAttachments[id], feats...)
-			}
-			for id, secs := range childResult.SecretAttachments {
-				result.SecretAttachments[id] = append(result.SecretAttachments[id], secs...)
 			}
 			for id := range childResult.Pruned {
 				result.Pruned[id] = true
@@ -321,12 +316,10 @@ func flattenSubsystem(result *flattenResult, prefix, subsystemPath, sourceFile s
 	return nil
 }
 
-// collectAttachments records a node's feature and secret attachments
-// into the per-node slices on flattenResult, preserving author order
-// from the Aggregate's component instance. The IR builder reads
-// FeatureAttachments[nodeID] and SecretAttachments[nodeID] in this
-// order and feeds them through the per-node feature-cascade
-// normalisation. Author order is the only ordering applied here; later
+// collectAttachments records a node's attachments into the per-node slice
+// on flattenResult, preserving author order from the Aggregate's component
+// instance. The IR builder reads FeatureAttachments[nodeID] in this order
+// and feeds it through the per-node attachment-cascade normalisation. Author order is the only ordering applied here; later
 // merge passes inside IR may dedupe by instance name with "last wins"
 // semantics, but topology surfaces the raw author-attached entries.
 //
@@ -335,20 +328,10 @@ func flattenSubsystem(result *flattenResult, prefix, subsystemPath, sourceFile s
 // today. The field exists for future use; SourceTier carries no
 // meaningful tier information in the current implementation.
 func collectAttachments(result *flattenResult, nodeID string, comp types.ComponentInstance, tier int) {
-	// Features (author order)
 	for fname, feat := range comp.Features.All() {
 		result.FeatureAttachments[nodeID] = append(result.FeatureAttachments[nodeID], FeatureAttachment{
 			InstanceName: fname,
 			Feature:      feat,
-			SourceTier:   tier,
-		})
-	}
-
-	// Secrets (author order)
-	for sname, sec := range comp.Secrets.All() {
-		result.SecretAttachments[nodeID] = append(result.SecretAttachments[nodeID], SecretAttachment{
-			InstanceName: sname,
-			Secret:       sec,
 			SourceTier:   tier,
 		})
 	}

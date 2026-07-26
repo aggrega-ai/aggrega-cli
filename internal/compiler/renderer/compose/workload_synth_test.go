@@ -286,8 +286,8 @@ func TestSynthesizeWorkload_SecretsAsEnvAndFile(t *testing.T) {
 
 	c := types.ContainerSpec{Image: "app:1.0"}
 	c.Ports.Set("web", 8080)
-	c.Secrets.Set("DB_PASSWORD", types.SecretRef{From: "db-credentials", As: "env"})
-	c.Secrets.Set("tls-cert", types.SecretRef{From: "tls-cert", As: "file", Path: "/etc/tls/server.crt"})
+	c.Attachments.Set("DB_PASSWORD", types.AttachmentRef{From: "db-credentials", As: "env"})
+	c.Attachments.Set("tls-cert", types.AttachmentRef{From: "tls-cert", As: "file", Path: "/etc/tls/server.crt"})
 	w.Containers.Set("main", c)
 
 	svc := types.ServiceSpec{Type: "ClusterIP"}
@@ -314,7 +314,7 @@ func TestSynthesizeWorkload_EnvAuthorOrder(t *testing.T) {
 	c.Variables.Set("ZEBRA", "z")
 	c.Variables.Set("ALPHA", "a")
 	c.Variables.Set("MIDDLE", "m")
-	c.Secrets.Set("NESTED", types.SecretRef{From: "db-credentials", As: "env"})
+	c.Attachments.Set("NESTED", types.AttachmentRef{From: "db-credentials", As: "env"})
 	w.Containers.Set("main", c)
 
 	files, _, err := SynthesizeWorkloadCore(w, nodeCtxFor("api"))

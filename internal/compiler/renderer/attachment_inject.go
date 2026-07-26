@@ -13,10 +13,10 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
-// ResolveAttachmentInject delivers authored attachment-level inject
-// (feature.inject / secret.inject) into the node's delivery pipe.
+// ResolveAttachmentInject delivers authored attachment-level inject into the
+// node's delivery pipe.
 //
-// A feature/secret-level inject value is a provides-key reference resolved
+// An attachment-level inject value is a provides-key reference resolved
 // against the attachment's OWN resolved provides — its FeatureRecipe's provides
 // evaluated against the attachment's values/infra/locals — delivered into the
 // host component's .context.inject under the local delivery key. This is
@@ -28,8 +28,8 @@ import (
 // when this runs, so a delivery key already present is a duplicate across
 // developer-authored sources and halts with ErrAttachmentInjectKeyCollision. The
 // FeatureRecipe injectMapping interception in Phase A is a later, last-wins
-// overlay and is intentionally not a collision. Attachments are processed
-// features-then-secrets in IR (author) order for deterministic emission.
+// overlay and is intentionally not a collision. Attachments are processed in
+// IR (author) order for deterministic emission.
 func ResolveAttachmentInject(
 	inject *types.InjectPipe,
 	graph *types.IRGraph,
@@ -39,32 +39,24 @@ func ResolveAttachmentInject(
 	if recipeLookup.FeatureRecipe == nil {
 		return nil
 	}
-	deliver := func(entries types.OrderedMap[types.IRFeatureEntry]) error {
-		for instanceName, entry := range entries.All() {
-			if entry.Inject.Len() == 0 {
-				continue
-			}
-			fr, found := recipeLookup.FeatureRecipe(instanceName, entry.Type)
-			if !found {
-				continue
-			}
-			provided, err := evalAttachmentFRProvides(fr, instanceName, nodeID, entry)
-			if err != nil {
-				return err
-			}
-			if err := deliverAttachmentInjectKeys(inject, instanceName, entry.Inject, provided, nodeID); err != nil {
-				return err
-			}
-		}
+	entries, ok := graph.Spec.FeatureValuesMapping.Get(nodeID)
+	if !ok {
+		inject.All = buildInjectAll(*inject)
 		return nil
 	}
-	if fvm, ok := graph.Spec.FeatureValuesMapping.Get(nodeID); ok {
-		if err := deliver(fvm); err != nil {
+	for instanceName, entry := range entries.All() {
+		if entry.Inject.Len() == 0 {
+			continue
+		}
+		fr, found := recipeLookup.FeatureRecipe(instanceName, entry.Type)
+		if !found {
+			continue
+		}
+		provided, err := evalAttachmentFRProvides(fr, instanceName, nodeID, entry)
+		if err != nil {
 			return err
 		}
-	}
-	if secrets, ok := graph.Spec.Secrets.Get(nodeID); ok {
-		if err := deliver(secrets); err != nil {
+		if err := deliverAttachmentInjectKeys(inject, instanceName, entry.Inject, provided, nodeID); err != nil {
 			return err
 		}
 	}
@@ -110,7 +102,7 @@ func evalAttachmentFRProvides(fr *types.FeatureRecipe, instanceName, nodeID stri
 // values are never inspected (they are opaque runtime pointers). Declared keys
 // are checked in sorted order so the first missing key reported, and the halt,
 // are byte-identical across runs. contextPrefix locates the binding (e.g.
-// `node "x" secret "y"`); realizer and abstract are the pre-quoted entity
+// `node "x" attachment "y"`); realizer and abstract are the pre-quoted entity
 // descriptors (e.g. `Recipe "z"`, `Component "core/service"`) the diagnostic
 // names. nodeID sets the halt's source location. A single home for the one
 // realizing-side fulfilment semantic shared by every realizer/abstract pair.
@@ -138,17 +130,13 @@ func enforceProvidesContract(declared map[string]bool, produced types.OrderedMap
 // the value).
 //
 // This is the one home for resolving an attachment's provides. Every attachment
-// family routes through it, so the published output a consumer reads at
-// .features.<name>.provides / .secrets.<slot>.provides, the contract check, and
-// the attachment FeatureRecipe's own .provides at Phase B.6 all derive from a
-// single evaluation and cannot drift. An attachment with no bound FeatureRecipe
-// is skipped; instances are walked in sorted order so the first-reported
-// shortfall is deterministic.
-//
-// noun names the authoring surface the attachment was declared under
-// ("feature", "secret"); it appears in the diagnostic only and steers no
-// behavior.
-func ResolveAttachmentProvides(attachments types.OrderedMap[types.IRFeatureEntry], nodeID, noun string, recipeLookup RecipeLookup, catalogLookup resolver.CatalogLookup) (map[string]types.OrderedMap[string], error) {
+// routes through it, so the published output a consumer reads at
+// .features.<name>.provides, the contract check, and the attachment
+// FeatureRecipe's own .provides at Phase B.6 all derive from a single
+// evaluation and cannot drift. An attachment with no bound FeatureRecipe is
+// skipped; instances are walked in sorted order so the first-reported shortfall
+// is deterministic.
+func ResolveAttachmentProvides(attachments types.OrderedMap[types.IRFeatureEntry], nodeID string, recipeLookup RecipeLookup, catalogLookup resolver.CatalogLookup) (map[string]types.OrderedMap[string], error) {
 	if recipeLookup.FeatureRecipe == nil || attachments.Len() == 0 {
 		return nil, nil
 	}
@@ -171,7 +159,7 @@ func ResolveAttachmentProvides(attachments types.OrderedMap[types.IRFeatureEntry
 			if feat, ffound := catalogLookup.Feature(entry.Type); ffound {
 				contract := resolver.FeatureProvidesKeys(feat, catalogLookup.SchemaLibraries)
 				if err := enforceProvidesContract(contract, provided, nodeID,
-					fmt.Sprintf("node %q %s %q", nodeID, noun, instanceName),
+					fmt.Sprintf("node %q attachment %q", nodeID, instanceName),
 					fmt.Sprintf("FeatureRecipe %q", fr.Metadata.Name),
 					fmt.Sprintf("Feature %q", entry.Type)); err != nil {
 					return nil, err

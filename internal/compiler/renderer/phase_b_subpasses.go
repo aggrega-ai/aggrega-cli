@@ -133,13 +133,13 @@ func phaseB1(ctx *types.TemplateContext, state *PhaseBState) error {
 //
 //  1. validator.ValidateWorkload — schema validation against the embedded
 //     Workload JSON Schema.
-//  2. validator.ValidateWorkloadSecrets — cross-wave check against the
+//  2. validator.ValidateWorkloadAttachments — cross-entity check against the
 //     Component's featuresSchema slot allowlist.
-//  3. validator.ValidateWorkloadResourceReferences — every secrets entry's
-//     slot must expose the referenceable-secret provides keys (name, key) the
-//     synthesizer reads to resolve the reference; checked against the slot's
-//     resolved provides on the template context (ctx.Secrets) — the same bag the
-//     synthesizer reads, so the base and FeatureRecipe paths check uniformly.
+//  3. validator.ValidateWorkloadResourceReferences — every attachments entry's
+//     slot must expose the provides keys (name, key) the synthesizer reads to
+//     resolve the reference; checked against the slot's resolved provides on
+//     the template context (ctx.Features) — the same bag the synthesizer reads,
+//     so the base and FeatureRecipe paths check uniformly.
 //
 // On all pass: state.ParsedWorkload and ctx.Workload populate. Any failure
 // stops the build before B.3 runs; failures carry CATALOG_ERROR-prefixed
@@ -147,7 +147,7 @@ func phaseB1(ctx *types.TemplateContext, state *PhaseBState) error {
 //
 // slots is the Component's FeaturesSchema (passed by the orchestrator from
 // the catalog lookup). nil/empty slots is acceptable when the Recipe's
-// Workload declares no secrets entries.
+// Workload declares no attachments entries.
 func phaseB2(ctx *types.TemplateContext, state *PhaseBState, slots types.OrderedMap[types.AttachmentSlot]) error {
 	if state.Recipe == nil {
 		state.PhaseReached = 2
@@ -180,15 +180,14 @@ func phaseB2(ctx *types.TemplateContext, state *PhaseBState, slots types.Ordered
 	if err := validator.ValidateWorkload(&w, state.RecipePath, state.RecipeName, state.RecipeVersion); err != nil {
 		return err
 	}
-	if err := validator.ValidateWorkloadSecrets(&w, slots, state.RecipePath, state.RecipeName, state.RecipeVersion); err != nil {
+	if err := validator.ValidateWorkloadAttachments(&w, slots, state.RecipePath, state.RecipeName, state.RecipeVersion); err != nil {
 		return err
 	}
 	// Referenceability reads each slot's resolved provides from the template
-	// context — the same bag the synthesizer reads to render the secretKeyRef /
-	// secret-volume name — so the base and FeatureRecipe workload paths (the
-	// latter renders against a shallow copy of this context) are checked
-	// uniformly.
-	if err := validator.ValidateWorkloadResourceReferences(&w, SecretProvidesFromContext(ctx), state.RecipePath, state.RecipeName, state.RecipeVersion); err != nil {
+	// context — the same bag the synthesizer reads to render the reference — so
+	// the base and FeatureRecipe workload paths (the latter renders against a
+	// shallow copy of this context) are checked uniformly.
+	if err := validator.ValidateWorkloadResourceReferences(&w, AttachmentProvidesFromContext(ctx), state.RecipePath, state.RecipeName, state.RecipeVersion); err != nil {
 		return err
 	}
 
@@ -354,7 +353,6 @@ func phaseB6(
 	featureRefs []FeatureRecipeRef,
 	engineFactory EngineFactory,
 	allProvides NodeProvides,
-	secretsForNode types.OrderedMap[types.IRSecretEntry],
 	recipeLookup RecipeLookup,
 	nodeCtx NodeRenderContext,
 	boundaryFRState *BoundaryFRState,
@@ -379,11 +377,19 @@ func phaseB6(
 	// intermediate fragments are not discrete /host targets.
 	runningHost := nonIntermediateFiles(hostOwn)
 
-	// ONE attachment render loop. The sequence carries every resource-
-	// generating attachment the node holds, drawn from both IR attachment
-	// buckets; the per-attachment differences travel as data on the item, so
-	// the render path below exists exactly once.
-	for seqIndex, item := range attachmentRenderSequence(tmplCtx, featureRefs, secretsForNode, recipeLookup, state.SecretProvides) {
+	// The node's attachment entries supply the pillar the render context does
+	// not carry — the authored delivery pipe. Order comes from featureRefs (the
+	// cascade order the IR recorded); this map supplies the per-attachment data.
+	var nodeAttachments types.OrderedMap[types.IRFeatureEntry]
+	if graph != nil {
+		nodeAttachments, _ = graph.Spec.FeatureValuesMapping.Get(nodeID)
+	}
+
+	// ONE attachment render loop over ONE sequence. The sequence carries every
+	// resource-generating attachment the node holds; the per-attachment
+	// differences travel as data on the item, so the render path below exists
+	// exactly once.
+	for seqIndex, item := range attachmentRenderSequence(tmplCtx, featureRefs, nodeAttachments, state.AttachmentProvides) {
 		fr := item.FR
 
 		if fr.Spec.ExecutionScope == "boundary" && boundaryFRState != nil {
@@ -448,7 +454,7 @@ func phaseB6(
 		// gate's uniform capability diagnostic, engine.Render failures, and the
 		// Phase B sub-pass CATALOG_ERRORs) already carry their own context, and
 		// re-wrapping would bury the gate diagnostic the user needs to see.
-		frFiles, err := renderFeatureRecipeFiles(ctx, frEngine, fr, &frCtx, frNodeCtx, frValues, resolvedSrc, item.Instance, featureSecretSlots(fr, input), input.WorkloadLibraries, input.ArtifactsLibraries)
+		frFiles, err := renderFeatureRecipeFiles(ctx, frEngine, fr, &frCtx, frNodeCtx, frValues, resolvedSrc, item.Instance, featureAttachmentSlots(fr, input), input.WorkloadLibraries, input.ArtifactsLibraries)
 		if err != nil {
 			return nil, nil, nil, err
 		}
@@ -536,10 +542,10 @@ func phaseB6(
 //     source resolver's template substitution. They are empty when the
 //     attachment contributes no pillars of its own, in which case the context
 //     pillars above fall back to the host component's.
-//   - Inject is the delivery pipe an attachment publishes on its own
-//     .inject pillar; nil when the attachment publishes none.
+//   - Inject is the delivery pipe the attachment publishes on its own .inject
+//     pillar; nil when the attachment authored none.
 //   - Provides, when non-nil, replaces the inherited .provides pillar with the
-//     attachment's own resolved fill provides.
+//     attachment's own resolved provides.
 //   - Prefix is the attachment's output prefix, applied to every file its
 //     FeatureRecipe emits.
 type attachmentRenderItem struct {
@@ -560,26 +566,22 @@ type attachmentRenderItem struct {
 // valuesMapping). An inject-only FeatureRecipe is excluded — Phase A owns its
 // inject merge and it has nothing to emit here.
 //
-// The node's attachments arrive in two IR buckets, and the sequence spans both:
-// features in FeatureOrder (the 5-Tier Onion Model order the caller resolved),
-// then credentials in the credential bucket's author order — the same order
-// Phase A walks that bucket in, so both phases see one ordering rule. Only the
-// features bucket carries an order vector today; when the buckets fold into one,
-// the whole sequence draws its order from that vector.
+// The order is the refs' order, which is the cascade order the IR recorded —
+// the same order Phase A walks — so both phases see one ordering rule and there
+// is no second sequence for an attachment family to be appended to.
 //
-// A credential additionally publishes its authored delivery pipe on .inject and
-// reuses the resolved fill provides the consumer reads through the attachment
-// pillar (computed once before B.4) as its FeatureRecipe's .provides — so a
-// valuesMapping deriving the emitted resource's name from .provides renders the
-// exact name the consumer read, from one evaluation with no drift.
+// Every item carries its authored delivery pipe on .inject and its own resolved
+// provides (computed once before B.4, the same bag the consumer reads through
+// the attachment pillar) as its FeatureRecipe's .provides — so a valuesMapping
+// deriving an emitted resource's name from .provides renders the exact name the
+// consumer read, from one evaluation with no drift.
 func attachmentRenderSequence(
 	tmplCtx *types.TemplateContext,
 	featureRefs []FeatureRecipeRef,
-	credentials types.OrderedMap[types.IRSecretEntry],
-	recipeLookup RecipeLookup,
-	fillProvides map[string]types.OrderedMap[string],
+	attachments types.OrderedMap[types.IRFeatureEntry],
+	attachmentProvides map[string]types.OrderedMap[string],
 ) []attachmentRenderItem {
-	seq := make([]attachmentRenderItem, 0, len(featureRefs)+credentials.Len())
+	seq := make([]attachmentRenderItem, 0, len(featureRefs))
 
 	for _, ref := range featureRefs {
 		if !isResourceGeneratingFR(ref.FeatureRecipe) {
@@ -599,28 +601,10 @@ func attachmentRenderSequence(
 			item.OwnValues = attach.Values.TemplateAlphabeticalMapDeep()
 			item.OwnInfra = attach.Infra.TemplateAlphabeticalMapDeep()
 		}
-		seq = append(seq, item)
-	}
-
-	if recipeLookup.FeatureRecipe == nil {
-		return seq
-	}
-	for name, entry := range credentials.All() {
-		fr, found := recipeLookup.FeatureRecipe(name, entry.Type)
-		if !found || !isResourceGeneratingFR(fr) {
-			continue
+		if entry, ok := attachments.Get(ref.InstanceName); ok && entry.Inject.Len() > 0 {
+			item.Inject = buildAttachmentInject(entry)
 		}
-		item := attachmentRenderItem{
-			Instance:  name,
-			FR:        fr,
-			CtxValues: entry.Values,
-			CtxInfra:  entry.Infra,
-			OwnValues: entry.Values.TemplateAlphabeticalMapDeep(),
-			OwnInfra:  entry.Infra.TemplateAlphabeticalMapDeep(),
-			Inject:    buildSecretInject(entry),
-			Prefix:    "secrets/" + name + "/",
-		}
-		if provides, ok := fillProvides[name]; ok {
+		if provides, ok := attachmentProvides[ref.InstanceName]; ok {
 			item.Provides = &provides
 		}
 		seq = append(seq, item)
@@ -641,7 +625,7 @@ func attachmentFRContext(tmplCtx *types.TemplateContext, instanceName string, va
 	frCtx := *tmplCtx // shallow copy; callers overwrite the per-family pillars
 	frCtx.Values = values
 	frCtx.Infra = infra
-	frCtx.SecretName = instanceName
+	frCtx.AttachmentName = instanceName
 	return frCtx
 }
 
@@ -672,12 +656,12 @@ func applyHostPatchToRunning(running []EmittedFile, path string, content []byte)
 	return append(running, EmittedFile{Name: path, Origin: EmitOriginPipeline, Body: content})
 }
 
-// featureSecretSlots returns the featuresSchema slots of the Feature the given
-// FeatureRecipe implements — the owning entity whose slot allowlist governs an
-// FR-synthesized Workload's containers.secrets cross-check (parallel to a
-// Component governing its own Recipe). Returns an empty map when the Feature
-// declares no slots or cannot be resolved.
-func featureSecretSlots(fr *types.FeatureRecipe, input RendererInput) types.OrderedMap[types.AttachmentSlot] {
+// featureAttachmentSlots returns the featuresSchema slots of the Feature the
+// given FeatureRecipe implements — the owning entity whose slot allowlist
+// governs an FR-synthesized Workload's containers.attachments cross-check
+// (parallel to a Component governing its own Recipe). Returns an empty map when
+// the Feature declares no slots or cannot be resolved.
+func featureAttachmentSlots(fr *types.FeatureRecipe, input RendererInput) types.OrderedMap[types.AttachmentSlot] {
 	if fr != nil && input.CatalogLookup.Feature != nil {
 		if feat, found := input.CatalogLookup.Feature(fr.Spec.Implements); found {
 			return feat.Spec.FeaturesSchema
@@ -696,8 +680,8 @@ func featureSecretSlots(fr *types.FeatureRecipe, input RendererInput) types.Orde
 // read state.Recipe.Spec.* — operate unchanged; this is reuse of the component
 // machinery, not a parallel FeatureRecipe track. Returns the accumulated
 // EmittedFiles (each carrying its Origin and Intermediate flag); the per-
-// component callers flatten them under features/<instance>/ or secrets/<name>/,
-// while the boundary-scope caller routes them by the Intermediate flag.
+// component callers flatten them under features/<instance>/, while the
+// boundary-scope caller routes them by the Intermediate flag.
 func renderFeatureRecipeFiles(
 	ctx context.Context,
 	frEngine Engine,

@@ -15,14 +15,15 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
-// TestIrEntityInfra_DerivesUsingSetFromIRRenderSet pins Part A: the FeatureRecipe /
-// secret per-instance using-set is derived from the IR render-set (graph.Spec) —
-// every feature/secret entry the renderer renders, keyed by the Manifest-mapped
+// TestIrEntityInfra_DerivesUsingSetFromIRRenderSet pins that the per-instance
+// FeatureRecipe using-set is derived from the IR render-set (graph.Spec) — every
+// attachment entry the renderer renders, keyed by the Manifest-mapped
 // FeatureRecipe URI, carrying its own IR-resolved infra. Two instances of one FR on
-// different nodes yield two references with distinct infra; the secret bucket is
-// derived alongside features; an instance whose type has no Manifest mapping is
-// skipped. (The IR's five-tier assembly is tested in the ir package; this pins that
-// pull reads that render-set rather than a tier-short proxy.)
+// different nodes yield two references with distinct infra; a credential attachment
+// is walked through the same one bucket as an operational one; an instance whose
+// type has no Manifest mapping is skipped. (The IR's five-tier assembly is tested in
+// the ir package; this pins that pull reads that render-set rather than a
+// tier-short proxy.)
 func TestIrEntityInfra_DerivesUsingSetFromIRRenderSet(t *testing.T) {
 	t.Parallel()
 	entry := func(typ, infraKey, infraVal string) types.IRFeatureEntry {
@@ -35,18 +36,16 @@ func TestIrEntityInfra_DerivesUsingSetFromIRRenderSet(t *testing.T) {
 	apiFeats := types.OrderedMap[types.IRFeatureEntry]{}
 	apiFeats.Set("tls", entry("core/tls", "chart_version", "1.2.3"))
 	apiFeats.Set("orphan", entry("core/unmapped", "", "")) // no Manifest mapping
+	// A credential attachment shares the one bucket, so it is pinned through the
+	// same walk as an operational attachment.
+	apiFeats.Set("db", entry("core/db-creds", "size", "large"))
 	webFeats := types.OrderedMap[types.IRFeatureEntry]{}
 	webFeats.Set("tls", entry("core/tls", "chart_version", "4.5.6"))
 	fvm := types.OrderedMap[types.OrderedMap[types.IRFeatureEntry]]{}
 	fvm.Set("api", apiFeats)
 	fvm.Set("web", webFeats)
 
-	apiSecrets := types.OrderedMap[types.IRSecretEntry]{}
-	apiSecrets.Set("db", entry("core/db-creds", "size", "large"))
-	secs := types.OrderedMap[types.OrderedMap[types.IRSecretEntry]]{}
-	secs.Set("api", apiSecrets)
-
-	graph := &types.IRGraph{Spec: types.IRSpec{FeatureValuesMapping: fvm, Secrets: secs}}
+	graph := &types.IRGraph{Spec: types.IRSpec{FeatureValuesMapping: fvm}}
 
 	flatF := &types.MappingTier{}
 	flatF.Type.Set("core/tls", "tls-helm:1.0.0")
@@ -71,8 +70,8 @@ func TestIrEntityInfra_DerivesUsingSetFromIRRenderSet(t *testing.T) {
 		t.Errorf("per-instance infra not carried from the IR: %v", gotInfra)
 	}
 	db := out["db-creds-helm:1.0.0"]
-	if len(db) != 1 || db[0].Component != "api.secrets.db" || db[0].Infra["size"] != "large" {
-		t.Errorf("secret using-set not derived from the IR render-set: %v", db)
+	if len(db) != 1 || db[0].Component != "api.features.db" || db[0].Infra["size"] != "large" {
+		t.Errorf("credential using-set not derived from the IR render-set: %v", db)
 	}
 	if _, ok := out["core/unmapped"]; ok {
 		t.Error("a type with no Manifest mapping must not appear in the using-set")

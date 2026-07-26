@@ -32,7 +32,7 @@ func TestEnvOrderParity_ComposeMatchesHelm(t *testing.T) {
 		c.Variables.Set("ZEBRA", "z")
 		c.Variables.Set("ALPHA", "a")
 		c.Variables.Set("MIDDLE", "m")
-		c.Secrets.Set("NESTED", types.SecretRef{From: "db-credentials", As: "env"})
+		c.Attachments.Set("NESTED", types.AttachmentRef{From: "db-credentials", As: "env"})
 		w.Containers.Set("main", c)
 		return w
 	}
@@ -50,7 +50,7 @@ func TestEnvOrderParity_ComposeMatchesHelm(t *testing.T) {
 	if err != nil {
 		t.Fatalf("compose SynthesizeWorkloadCore: %v", err)
 	}
-	helmFiles, err := helm.SynthesizeWorkloadCore(makeWorkload(), renderer.SecretProvidesFromContext(nil), nodeCtx)
+	helmFiles, err := helm.SynthesizeWorkloadCore(makeWorkload(), renderer.AttachmentProvidesFromContext(nil), nodeCtx)
 	if err != nil {
 		t.Fatalf("helm SynthesizeWorkloadCore: %v", err)
 	}

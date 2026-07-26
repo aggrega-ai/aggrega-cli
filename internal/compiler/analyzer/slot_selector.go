@@ -23,6 +23,11 @@ import (
 // declared and the labels the attached Feature carries, and reports whether one
 // admits the other; it never inspects what the slot or the fill means.
 //
+// It walks every attachment the node holds and checks the ones whose instance
+// name matches a declared slot, so a slot's selector constrains its fill
+// whatever that fill produces. An attachment whose name matches no slot is a
+// free attachment and is not selector-constrained.
+//
 // Catalog misses skip silently (Step 1's resolver guards cover the user-facing
 // case), mirroring validateAppliesTo.
 func validateSlotSelectors(ctx context.Context, graph *types.IRGraph, catalogLookup resolver.CatalogLookup) ([]AnalysisError, error) {
@@ -42,7 +47,7 @@ func validateSlotSelectors(ctx context.Context, graph *types.IRGraph, catalogLoo
 		if !ok {
 			continue
 		}
-		attachments, ok := graph.Spec.Secrets.Get(nodeID)
+		attachments, ok := graph.Spec.FeatureValuesMapping.Get(nodeID)
 		if !ok || attachments.Len() == 0 {
 			continue
 		}

@@ -714,7 +714,7 @@ spec:
   components:
     app:
       type: test/svc
-      secrets:
+      features:
         cred:
           type: test/cred
 `)
@@ -1186,7 +1186,7 @@ spec:
       type: core/datastore/mariadb
       values:
         database: appdb
-      secrets:
+      features:
         root_password:
           type: core/secret-value
           values:

@@ -40,16 +40,14 @@ import (
 // TopologyResult's own fields are all author-declared; the synthesised-
 // derived discipline applies elsewhere.
 //
-// FeatureAttachments and SecretAttachments are per-node slices; the
-// per-node iteration order is the YAML attachment order from
-// collectAttachments. ExportedComponents maps the alias an Aggregate
+// FeatureAttachments is a per-node slice; the per-node iteration order is
+// the YAML attachment order from collectAttachments. ExportedComponents maps the alias an Aggregate
 // publishes via spec.exportedComponents to the dot-notation ID that
 // alias resolves to after sub-aggregate flattening.
 type TopologyResult struct {
 	Nodes              types.OrderedMap[*TopologyNode]
 	Edges              []NormalizedEdge
 	FeatureAttachments map[string][]FeatureAttachment
-	SecretAttachments  map[string][]SecretAttachment
 	ExportedComponents map[string]string // alias → resolved dot-notation ID
 }
 
@@ -209,19 +207,6 @@ type FeatureAttachment struct {
 	SourceTier   int // Onion Model tier (set by IR builder in Step 3)
 }
 
-// SecretAttachment pairs a secret instance name with its SecretInstance
-// payload for one node. Same shape and same tier-tagging caveat as
-// FeatureAttachment: SourceTier is currently always 0. Secret attachments
-// flow into IR's Secrets bucket without going through the Onion Model
-// merge (secrets are typed instances rather than label-discriminated
-// credential Features; the credential-routing branch in IR's mergeFeature
-// is the parallel mechanism for kind:secret-labelled Features).
-type SecretAttachment struct {
-	InstanceName string
-	Secret       types.SecretInstance
-	SourceTier   int
-}
-
 // SubAggregateLoader resolves a sub-aggregate type URI to its loaded
 // Aggregate definition. flattenAggregate calls back through this
 // function whenever it encounters a `spec.aggregates` entry that names a
@@ -296,7 +281,7 @@ type BuildConfig struct {
 //     instance IDs; dot-notation IDs flow from sub-aggregate flattening;
 //     a depth bound on inclusion recursion (maxSubAggregateDepth = 10)
 //     terminates pathological chains. The result carries the per-node
-//     FeatureAttachments / SecretAttachments / ExportedComponents.
+//     FeatureAttachments / ExportedComponents.
 //  2. Populate Labels from the catalog. Labels live on the Component
 //     catalog entity (the schema bans them on Aggregate component
 //     instances), so the resolved label map is fetched here.
@@ -306,10 +291,10 @@ type BuildConfig struct {
 //     flat.Nodes via OrderedMap.All() to drive compositional author-
 //     order edge emission; the inline comment at the call site names
 //     the cross-product discipline directly.
-//  5. Collect Feature and Secret uses edges. Feature/Secret `uses`
-//     blocks declare their own edges; each edge carries OriginFeature
-//     so Feature-authored edges remain separable from Component-authored
-//     edges in downstream policy and rendering.
+//  5. Collect attachment uses edges. An attachment's `uses` block declares
+//     its own edges; each edge carries OriginFeature so Feature-authored
+//     edges remain separable from Component-authored edges in downstream
+//     policy and rendering.
 //
 // Cyclic edges are accepted without error — Build does not topologically
 // sort or reject back-edges; the runtime `uses` graph legitimately
@@ -425,8 +410,8 @@ func BuildContext(ctx context.Context, cfg BuildConfig) (*TopologyResult, error)
 			edges = append(edges, compEdges...)
 		}
 
-		// 5. Feature uses (create edges with OriginFeature). A feature attached
-		// to a sub-aggregate component is authored inside that sub-aggregate, so
+		// 5. Attachment uses (create edges with OriginFeature). An attachment on
+		// a sub-aggregate component is authored inside that sub-aggregate, so
 		// its uses targets are local — namespaced with the node's prefix the same
 		// way component-edge targets are (identity for root/subsystem nodes).
 		if feats, ok := flat.FeatureAttachments[nodeID]; ok {
@@ -440,22 +425,6 @@ func BuildContext(ctx context.Context, cfg BuildConfig) (*TopologyResult, error)
 						featEdges[i].Target = qualifiedID(node.SourceAggregate, featEdges[i].Target)
 					}
 					edges = append(edges, featEdges...)
-				}
-			}
-		}
-
-		// Secret uses (same local-target namespacing as feature attachments).
-		if secs, ok := flat.SecretAttachments[nodeID]; ok {
-			for _, sa := range secs {
-				if sa.Secret.Uses.Len() > 0 {
-					secEdges, err := normalizeUses(sa.Secret.Uses, nodeID, sa.Secret.Type, sa.InstanceName)
-					if err != nil {
-						return nil, err
-					}
-					for i := range secEdges {
-						secEdges[i].Target = qualifiedID(node.SourceAggregate, secEdges[i].Target)
-					}
-					edges = append(edges, secEdges...)
 				}
 			}
 		}
@@ -634,7 +603,6 @@ func BuildContext(ctx context.Context, cfg BuildConfig) (*TopologyResult, error)
 		Nodes:              flat.Nodes,
 		Edges:              edges,
 		FeatureAttachments: flat.FeatureAttachments,
-		SecretAttachments:  flat.SecretAttachments,
 		ExportedComponents: flat.ExportedComponents,
 	}
 

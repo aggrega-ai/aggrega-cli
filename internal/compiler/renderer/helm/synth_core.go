@@ -32,7 +32,7 @@
 //   - ephemeral volume variant → emptyDir { sizeLimit }.
 //
 // Author-order preservation: containers, services, volumes, container
-// ports, container variables, container secrets — all iterated via
+// ports, container variables, container attachments — all iterated via
 // OrderedMap.All() so byte-identical input produces byte-identical
 // output across compilations.
 //
@@ -70,8 +70,8 @@ const (
 )
 
 // SynthesizeWorkloadCore translates a parsed Workload into K8s manifest files
-// for the helm provider. secretProvides maps each secret slot to its resolved
-// provides bag: a workload secrets entry's `from` is the slot; the generated
+// for the helm provider. attachmentProvides maps each attachment slot to its
+// resolved provides bag: a workload attachments entry's `from` is the slot; the generated
 // Secret's identity (name, key) comes from the slot's provides. The
 // referenceability check upstream guarantees every referenced slot carries the
 // keys read below.
@@ -81,7 +81,7 @@ const (
 // order is load-bearing — callers preserve it rather than re-sorting.
 func SynthesizeWorkloadCore(
 	w *types.Workload,
-	secretProvides map[string]types.OrderedMap[string],
+	attachmentProvides map[string]types.OrderedMap[string],
 	nodeCtx rendercore.NodeRenderContext,
 ) ([]rendercore.EmittedFile, error) {
 	// Companion validation (provider-agnostic): a persistentTemplate volume
@@ -128,17 +128,17 @@ func SynthesizeWorkloadCore(
 	var out []rendercore.EmittedFile
 
 	// Containers: translate each in author-order.
-	containers, err := translateContainers(w, componentID, secretProvides, imageRegistry)
+	containers, err := translateContainers(w, componentID, attachmentProvides, imageRegistry)
 	if err != nil {
 		return nil, err
 	}
-	initContainers, err := translateInitContainers(w, componentID, secretProvides, imageRegistry)
+	initContainers, err := translateInitContainers(w, componentID, attachmentProvides, imageRegistry)
 	if err != nil {
 		return nil, err
 	}
 
 	// Pod-spec volumes (excludes persistentTemplate variants).
-	podVolumes := translatePodVolumes(w, componentID, secretProvides)
+	podVolumes := translatePodVolumes(w, componentID, attachmentProvides)
 
 	// Pod-level configuration: scheduling, podSecurityContext,
 	// serviceAccount, restartPolicy.
@@ -393,10 +393,10 @@ func statefulSetGoverningService(services []Service, nodeID string) (string, err
 // translateContainers walks Workload.Containers in author order and produces
 // K8s-shape Container values. Returns an error if any container's
 // translation fails (e.g., probe http: with no available port).
-func translateContainers(w *types.Workload, nodeID string, secretProvides map[string]types.OrderedMap[string], imageRegistry string) ([]Container, error) {
+func translateContainers(w *types.Workload, nodeID string, attachmentProvides map[string]types.OrderedMap[string], imageRegistry string) ([]Container, error) {
 	var out []Container
 	for name, c := range w.Containers.All() {
-		k8sContainer, err := translateContainer(name, c, nodeID, secretProvides, imageRegistry)
+		k8sContainer, err := translateContainer(name, c, nodeID, attachmentProvides, imageRegistry)
 		if err != nil {
 			return nil, err
 		}
@@ -410,7 +410,7 @@ func translateContainers(w *types.Workload, nodeID string, secretProvides map[st
 // entry's authored name is honored as the emitted container name; an entry
 // without a name falls back to "init-<index>", where the index is the entry's
 // position in the list.
-func translateInitContainers(w *types.Workload, nodeID string, secretProvides map[string]types.OrderedMap[string], imageRegistry string) ([]Container, error) {
+func translateInitContainers(w *types.Workload, nodeID string, attachmentProvides map[string]types.OrderedMap[string], imageRegistry string) ([]Container, error) {
 	if len(w.InitContainers) == 0 {
 		return nil, nil
 	}
@@ -420,7 +420,7 @@ func translateInitContainers(w *types.Workload, nodeID string, secretProvides ma
 		if name == "" {
 			name = fmt.Sprintf("init-%d", i)
 		}
-		k8sContainer, err := translateContainer(name, c, nodeID, secretProvides, imageRegistry)
+		k8sContainer, err := translateContainer(name, c, nodeID, attachmentProvides, imageRegistry)
 		if err != nil {
 			return nil, err
 		}
@@ -430,10 +430,10 @@ func translateInitContainers(w *types.Workload, nodeID string, secretProvides ma
 }
 
 // translateContainer maps a single Workload ContainerSpec to a K8s-shape
-// Container. Author-order preserved across ports / variables / secrets. When
+// Container. Author-order preserved across ports / variables / attachments. When
 // imageRegistry is non-empty, the container image ref is relocated under that
 // registry prefix (regular and init containers share this single site).
-func translateContainer(name string, c types.ContainerSpec, nodeID string, secretProvides map[string]types.OrderedMap[string], imageRegistry string) (Container, error) {
+func translateContainer(name string, c types.ContainerSpec, nodeID string, attachmentProvides map[string]types.OrderedMap[string], imageRegistry string) (Container, error) {
 	out := Container{
 		Name:            sanitizeContainerName(name),
 		Image:           rendercore.ApplyImageRegistry(c.Image, imageRegistry),
@@ -465,8 +465,8 @@ func translateContainer(name string, c types.ContainerSpec, nodeID string, secre
 	// which lets two entries read different keys of one multi-key secret —
 	// otherwise the slot's single published `key`. The env-var name stays
 	// the entry's map key.
-	for secretKey, ref := range c.Secrets.All() {
-		provides := secretProvides[ref.From]
+	for secretKey, ref := range c.Attachments.All() {
+		provides := attachmentProvides[ref.From]
 		switch ref.As {
 		case "env":
 			secretName, _ := provides.Get("name")
@@ -504,7 +504,7 @@ func translateContainer(name string, c types.ContainerSpec, nodeID string, secre
 				Prefix:       ef.Prefix,
 			})
 		case ef.Secret != "":
-			provides := secretProvides[ef.Secret]
+			provides := attachmentProvides[ef.Secret]
 			secretName, _ := provides.Get("name")
 			out.EnvFrom = append(out.EnvFrom, EnvFromSource{
 				SecretRef: &LocalObjectReference{Name: secretName},
@@ -692,13 +692,13 @@ func translateContainerSecurityContext(s *types.ContainerSecurityContext) *Conta
 // Excludes persistentTemplate variants (those become volumeClaimTemplates
 // on the StatefulSet, not pod-spec volumes). Author order preserved.
 //
-// Also adds secret-volume entries for container secrets entries that use
+// Also adds secret-volume entries for container attachments entries that use
 // `as: file` — one volume per (container, secret-key) pair, named per
 // the convention "<instance_id>-secret-<slot>". The volume name stays
 // convention-based (pod-internal); the SecretVolumeSource.SecretName it
 // mounts is the generated Secret's name, read from the slot's resolved
 // provides.
-func translatePodVolumes(w *types.Workload, nodeID string, secretProvides map[string]types.OrderedMap[string]) []Volume {
+func translatePodVolumes(w *types.Workload, nodeID string, attachmentProvides map[string]types.OrderedMap[string]) []Volume {
 	var out []Volume
 
 	for name, v := range w.Volumes.All() {
@@ -741,7 +741,7 @@ func translatePodVolumes(w *types.Workload, nodeID string, secretProvides map[st
 	// container iteration; deduplicated by slot name.
 	seenSecretVolumes := map[string]struct{}{}
 	for _, c := range w.Containers.All() {
-		for _, ref := range c.Secrets.All() {
+		for _, ref := range c.Attachments.All() {
 			if ref.As != "file" {
 				continue
 			}
@@ -750,7 +750,7 @@ func translatePodVolumes(w *types.Workload, nodeID string, secretProvides map[st
 				continue
 			}
 			seenSecretVolumes[volName] = struct{}{}
-			provides := secretProvides[ref.From]
+			provides := attachmentProvides[ref.From]
 			secretName, _ := provides.Get("name")
 			out = append(out, Volume{
 				Name: volName,
@@ -761,7 +761,7 @@ func translatePodVolumes(w *types.Workload, nodeID string, secretProvides map[st
 		}
 	}
 	for _, c := range w.InitContainers {
-		for _, ref := range c.Secrets.All() {
+		for _, ref := range c.Attachments.All() {
 			if ref.As != "file" {
 				continue
 			}
@@ -770,7 +770,7 @@ func translatePodVolumes(w *types.Workload, nodeID string, secretProvides map[st
 				continue
 			}
 			seenSecretVolumes[volName] = struct{}{}
-			provides := secretProvides[ref.From]
+			provides := attachmentProvides[ref.From]
 			secretName, _ := provides.Get("name")
 			out = append(out, Volume{
 				Name: volName,

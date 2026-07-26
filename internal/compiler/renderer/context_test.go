@@ -49,14 +49,8 @@ func TestAssembleNodeContext_FullContext(t *testing.T) {
 				vals := types.OrderedMap[any]{}
 				vals.Set("enabled", true)
 				inner.Set("monitoring", types.IRFeatureEntry{Type: "core/monitoring", Values: vals})
+				inner.Set("db-creds", types.IRFeatureEntry{Type: "core/db-creds"})
 				outer := types.OrderedMap[types.OrderedMap[types.IRFeatureEntry]]{}
-				outer.Set("api", inner)
-				return outer
-			}(),
-			Secrets: func() types.OrderedMap[types.OrderedMap[types.IRSecretEntry]] {
-				inner := types.OrderedMap[types.IRSecretEntry]{}
-				inner.Set("db-creds", types.IRSecretEntry{Type: "core/db-creds"})
-				outer := types.OrderedMap[types.OrderedMap[types.IRSecretEntry]]{}
 				outer.Set("api", inner)
 				return outer
 			}(),
@@ -151,10 +145,10 @@ func TestAssembleNodeContext_FullContext(t *testing.T) {
 		t.Errorf("features: %v", ctx.Features.Keys())
 	}
 
-	// Secrets
-	dbSecret, _ := ctx.Secrets.Get("db-creds")
-	if dbSecret.Type != "core/db-creds" {
-		t.Errorf("secrets: %v", ctx.Secrets.Keys())
+	// A credential attachment reads from the same one pillar.
+	dbCreds, _ := ctx.Features.Get("db-creds")
+	if dbCreds.Type != "core/db-creds" {
+		t.Errorf("features: %v", ctx.Features.Keys())
 	}
 
 	// InjectRaw (nil since we passed nil)

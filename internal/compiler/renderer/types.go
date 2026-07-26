@@ -121,12 +121,12 @@ type ProvidesContext struct {
 	// .context.instance_id under context (a base provides referencing the
 	// attachment name still halts).
 	//
-	// The template key stays `secret_name` deliberately: it is the published
-	// spelling that catalog FeatureRecipes read in their `provides` templates,
-	// so changing it here would orphan those templates. The Go field name and
-	// the template key are renamed together, in one change that also re-authors
-	// every template reading the old spelling.
-	AttachmentName string `json:"secret_name,omitempty"`
+	// The template key mirrors the field name: it is the published spelling
+	// catalog FeatureRecipes read in their `provides` templates, and the two
+	// scopes that expose the attachment name — this provides scope and the
+	// render scope — publish it under the same key so a template author reads
+	// one name at both.
+	AttachmentName string `json:"attachment_name,omitempty"`
 }
 
 // ProvidesContextBlock holds only the instance_id for provides evaluation.

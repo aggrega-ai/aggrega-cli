@@ -225,10 +225,9 @@ func TestFlattenAggregate_FeatureAttachments(t *testing.T) {
 	t.Parallel()
 	features := types.OrderedMap[types.FeatureInstance]{}
 	features.Set("monitoring", types.FeatureInstance{Type: "core/monitoring"})
-	secrets := types.OrderedMap[types.SecretInstance]{}
-	secrets.Set("db-creds", types.SecretInstance{Type: "core/db-credentials"})
+	features.Set("db-creds", types.FeatureInstance{Type: "core/db-credentials"})
 	components := types.OrderedMap[types.ComponentInstance]{}
-	components.Set("api", types.ComponentInstance{Type: "core/compute/api-server", Features: features, Secrets: secrets})
+	components.Set("api", types.ComponentInstance{Type: "core/compute/api-server", Features: features})
 
 	agg := &types.Aggregate{
 		Metadata: types.AggregateMetadata{Name: "test"},
@@ -241,13 +240,13 @@ func TestFlattenAggregate_FeatureAttachments(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(result.FeatureAttachments["api"]) != 1 {
-		t.Errorf("expected 1 feature attachment, got %d", len(result.FeatureAttachments["api"]))
-	}
-	if len(result.SecretAttachments["api"]) != 1 {
-		t.Errorf("expected 1 secret attachment, got %d", len(result.SecretAttachments["api"]))
+	if len(result.FeatureAttachments["api"]) != 2 {
+		t.Errorf("expected 2 attachments, got %d", len(result.FeatureAttachments["api"]))
 	}
 	if result.FeatureAttachments["api"][0].InstanceName != "monitoring" {
-		t.Errorf("feature name: %q", result.FeatureAttachments["api"][0].InstanceName)
+		t.Errorf("attachment name: %q", result.FeatureAttachments["api"][0].InstanceName)
+	}
+	if result.FeatureAttachments["api"][1].InstanceName != "db-creds" {
+		t.Errorf("attachment name: %q", result.FeatureAttachments["api"][1].InstanceName)
 	}
 }

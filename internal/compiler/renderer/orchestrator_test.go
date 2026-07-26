@@ -513,24 +513,25 @@ func TestRenderAll_CredentialFeatureRecipeRendering(t *testing.T) {
 	t.Parallel()
 
 	input := testInput()
-	// Attach a credential secret to the api node.
-	input.Graph.Spec.Secrets = func() types.OrderedMap[types.OrderedMap[types.IRSecretEntry]] {
+	// Attach a credential to the api node, on the one attachment surface.
+	input.Graph.Spec.FeatureValuesMapping = func() types.OrderedMap[types.OrderedMap[types.IRFeatureEntry]] {
 		vals := types.OrderedMap[any]{}
 		vals.Set("length", float64(32))
 		envInj := types.OrderedMap[string]{}
 		envInj.Set("DB_PASSWORD", "ref:root_password")
 		inj := types.OrderedMap[types.OrderedMap[string]]{}
 		inj.Set("env", envInj)
-		inner := types.OrderedMap[types.IRSecretEntry]{}
-		inner.Set("root_password", types.IRSecretEntry{
+		inner := types.OrderedMap[types.IRFeatureEntry]{}
+		inner.Set("root_password", types.IRFeatureEntry{
 			Type:   "core/db-password",
 			Values: vals,
 			Inject: inj,
 		})
-		outer := types.OrderedMap[types.OrderedMap[types.IRSecretEntry]]{}
+		outer := types.OrderedMap[types.OrderedMap[types.IRFeatureEntry]]{}
 		outer.Set("api", inner)
 		return outer
 	}()
+	input.FeatureOrder = ir.FeatureOrder{"api": []string{"root_password"}}
 
 	lookup := renderer.RecipeLookup{
 		Recipe: func(_, componentType string) (*types.Recipe, bool) {
@@ -549,13 +550,13 @@ func TestRenderAll_CredentialFeatureRecipeRendering(t *testing.T) {
 		FeatureRecipe: func(_, featureType string) (*types.FeatureRecipe, bool) {
 			if featureType == "core/db-password" {
 				// Credential FR with artifacts: it emits a Secret manifest
-				// (an artifact-shaped resource) referencing .secret_name and
+				// (an artifact-shaped resource) referencing .attachment_name and
 				// the top-level .inject map populated by buildSecretInject.
 				art := types.OrderedMap[types.ArtifactEntry]{}
 				art.Set("secret.yaml", types.ArtifactEntry{Inline: `apiVersion: v1
 kind: Secret
 metadata:
-  name: {{ .secret_name }}
+  name: {{ .attachment_name }}
 stringData:
   binding: "{{ .inject.env.DB_PASSWORD }}"
 `})
@@ -577,21 +578,21 @@ stringData:
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	// The credential FR artifact lands under secrets/<secretName>/.
+	// The credential FR artifact lands under features/<instance>/ — the one prefix.
 	var secretArt string
 	for k := range result.Files {
-		if strings.Contains(k, "secrets/root_password/") && strings.Contains(k, "secret.yaml") {
+		if strings.Contains(k, "features/root_password/") && strings.Contains(k, "secret.yaml") {
 			secretArt = k
 			break
 		}
 	}
 	if secretArt == "" {
-		t.Fatalf("missing credential FR artifact under secrets/root_password/, keys: %v", fileKeys(result.Files))
+		t.Fatalf("missing credential FR artifact under features/root_password/, keys: %v", fileKeys(result.Files))
 	}
 	body := string(result.Files[secretArt].Content)
-	// .secret_name propagates into the rendered manifest.
+	// .attachment_name propagates into the rendered manifest.
 	if !strings.Contains(body, "name: root_password") {
-		t.Errorf("expected .secret_name=root_password in rendered manifest, got:\n%s", body)
+		t.Errorf("expected .attachment_name=root_password in rendered manifest, got:\n%s", body)
 	}
 	// .inject top-level was built from the IR secret entry's inject block.
 	if !strings.Contains(body, "ref:root_password") {
@@ -759,21 +760,18 @@ func TestRenderAll_AttachmentInjectReachesConsumerRenderedOutput(t *testing.T) {
 		outer.Set("api", inner)
 		return outer
 	}()
-	input.FeatureOrder = ir.FeatureOrder{"api": []string{"cache"}}
-	// Credential secret attachment with an authored top-level inject.
-	input.Graph.Spec.Secrets = func() types.OrderedMap[types.OrderedMap[types.IRSecretEntry]] {
-		svals := types.OrderedMap[any]{}
-		svals.Set("generated", "s3cr3t")
-		senv := types.OrderedMap[string]{}
-		senv.Set("DB_PASSWORD", "root_password")
-		sinj := types.OrderedMap[types.OrderedMap[string]]{}
-		sinj.Set("env", senv)
-		inner := types.OrderedMap[types.IRSecretEntry]{}
-		inner.Set("root_password", types.IRSecretEntry{Type: "core/db-password", Values: svals, Inject: sinj})
-		outer := types.OrderedMap[types.OrderedMap[types.IRSecretEntry]]{}
-		outer.Set("api", inner)
-		return outer
-	}()
+	// The credential attachment joins the same bucket, with its own authored
+	// top-level inject; one bucket, one order vector.
+	svals := types.OrderedMap[any]{}
+	svals.Set("generated", "s3cr3t")
+	senv := types.OrderedMap[string]{}
+	senv.Set("DB_PASSWORD", "root_password")
+	sinj := types.OrderedMap[types.OrderedMap[string]]{}
+	sinj.Set("env", senv)
+	apiAttachments, _ := input.Graph.Spec.FeatureValuesMapping.Get("api")
+	apiAttachments.Set("root_password", types.IRFeatureEntry{Type: "core/db-password", Values: svals, Inject: sinj})
+	input.Graph.Spec.FeatureValuesMapping.Set("api", apiAttachments)
+	input.FeatureOrder = ir.FeatureOrder{"api": []string{"cache", "root_password"}}
 
 	lookup := renderer.RecipeLookup{
 		Recipe: func(_, componentType string) (*types.Recipe, bool) {

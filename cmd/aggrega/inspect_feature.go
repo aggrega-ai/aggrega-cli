@@ -43,7 +43,7 @@ func renderFeatureFile(_ *workspaceconfig.ResolvedWorkspace, path string, data [
 	renderHeader(opts, "Feature", identifier)
 
 	if kind, ok := feat.Metadata.Labels.Get(types.FeatureKindLabel); ok && kind == types.FeatureKindSecret {
-		fmt.Fprintln(opts.out, "Credential Feature — fills a secrets: slot")
+		fmt.Fprintln(opts.out, "Credential Feature — fills a featuresSchema slot")
 	}
 
 	if err := renderSchemaBody(opts, "Schema:", feat.Spec.Schema); err != nil {
@@ -65,7 +65,7 @@ func renderFeatureFile(_ *workspaceconfig.ResolvedWorkspace, path string, data [
 	}
 
 	if feat.Spec.FeaturesSchema.Len() > 0 {
-		fmt.Fprintln(opts.out, "Secret slots:")
+		fmt.Fprintln(opts.out, "Attachment slots:")
 		for slot, entry := range feat.Spec.FeaturesSchema.All() {
 			req := ""
 			if entry.Required {

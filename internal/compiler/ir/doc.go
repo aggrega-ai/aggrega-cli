@@ -16,26 +16,29 @@
 //
 // Conventions and contracts the package commits to:
 //
-//   - Per-node feature cascade. collectNodeFeatures and mergeFeature
-//     fold features from five sources in order: sub-aggregate component,
-//     root-aggregate component, root-aggregate subsystem,
-//     release boundary, release component-specific. The cascade is the
-//     canonical merge order this package implements.
+//   - Per-node attachment cascade. collectNodeFeatures and
+//     mergeContribution fold attachments from five sources in order:
+//     sub-aggregate component, root-aggregate component, root-aggregate
+//     subsystem, release boundary, release component-specific. The cascade
+//     is the canonical merge order this package implements.
 //   - Per-edge origin marker. NormalizedEdge.OriginFeature populated by
 //     topology is copied into IREdge.OriginFeature so Feature-authored
 //     edges remain separable from Component-authored edges in the IR.
-//   - Credential routing. Credential Features (those carrying
-//     `feature.aggrega.ai/kind: secret` on their catalog entity) route
-//     into IRSpec.Secrets rather than IRSpec.FeatureValuesMapping; the
-//     mergeFeature credential-routing branch implements the split.
+//   - One attachment bucket. Every attachment a node holds lands in
+//     IRSpec.FeatureValuesMapping whatever it produces, so a credential
+//     Feature is merged by the same rules and projected through the same
+//     shape as any other attachment. The `feature.aggrega.ai/kind: secret`
+//     label is opaque metadata here; no branch in this package reads it.
 //   - Annotation buckets. The IR keeps three independent annotation
 //     buckets (catalog, release, aggregate). The aggregate bucket is
 //     permanently empty today because the schema bans annotations on
 //     Aggregate ComponentInstance blocks; buildAnnotationBuckets returns
 //     the empty third value to keep the IRNode shape symmetric.
 //   - Type-match fatal halt. ErrFeatureTypeMismatch fires when the same
-//     Feature instance name carries divergent type URIs across
-//     authoring surfaces.
+//     attachment instance name carries divergent type URIs across
+//     authoring surfaces. With one bucket per node the instance-name key
+//     space is single, so this halt is what a same-name/different-type
+//     collision resolves to — never a last-writer-wins merge.
 //   - Determinism. Every iteration in this package that contributes to
 //     IRGraph output runs in deterministic order: the topology's Nodes
 //     OrderedMap preserves Aggregate author order; Markers are

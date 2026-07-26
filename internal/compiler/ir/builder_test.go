@@ -104,7 +104,6 @@ func TestBuildIR_SimpleGraph(t *testing.T) {
 			{Source: "api", Target: "main-db", Socket: "databases", Alias: "main-db"},
 		},
 		FeatureAttachments: map[string][]topology.FeatureAttachment{},
-		SecretAttachments:  map[string][]topology.SecretAttachment{},
 	}
 	annotations := types.OrderedMap[string]{}
 	annotations.Set("env", "local")
@@ -209,11 +208,7 @@ func TestBuildIR_FeatureNormalization(t *testing.T) {
 		FeatureAttachments: map[string][]topology.FeatureAttachment{
 			"api": {
 				{InstanceName: "logging", Feature: types.FeatureInstance{Type: "core/logging", Values: values}},
-			},
-		},
-		SecretAttachments: map[string][]topology.SecretAttachment{
-			"api": {
-				{InstanceName: "db-creds", Secret: types.SecretInstance{Type: "core/db-creds", Values: values2}},
+				{InstanceName: "db-creds", Feature: types.FeatureInstance{Type: "core/db-creds", Values: values2}},
 			},
 		},
 	}
@@ -232,7 +227,7 @@ func TestBuildIR_FeatureNormalization(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	// Features
+	// Attachments — the operational Feature and the credential share one bucket.
 	if fvm, ok := graph.Spec.FeatureValuesMapping.Get("api"); !ok || fvm.Len() == 0 {
 		t.Fatal("expected feature values mapping for api")
 	} else {
@@ -240,21 +235,15 @@ func TestBuildIR_FeatureNormalization(t *testing.T) {
 		if loggingEntry.Type != "core/logging" {
 			t.Errorf("feature type: %q", loggingEntry.Type)
 		}
-	}
-
-	// Secrets
-	if sec, ok := graph.Spec.Secrets.Get("api"); !ok || sec.Len() == 0 {
-		t.Fatal("expected secrets for api")
-	} else {
-		dbEntry, _ := sec.Get("db-creds")
+		dbEntry, _ := fvm.Get("db-creds")
 		if dbEntry.Type != "core/db-creds" {
-			t.Errorf("secret type: %q", dbEntry.Type)
+			t.Errorf("credential attachment type: %q", dbEntry.Type)
 		}
 	}
 
-	// Feature order
-	if len(order["api"]) != 1 || order["api"][0] != "logging" {
-		t.Errorf("feature order: %v", order["api"])
+	// Attachment order — one vector covering every attachment, in cascade order.
+	if len(order["api"]) != 2 || order["api"][0] != "logging" || order["api"][1] != "db-creds" {
+		t.Errorf("attachment order: %v", order["api"])
 	}
 
 	// Markers
@@ -283,7 +272,6 @@ func TestBuildIR_SyncWave(t *testing.T) {
 		Nodes:              nodes,
 		Edges:              nil,
 		FeatureAttachments: map[string][]topology.FeatureAttachment{},
-		SecretAttachments:  map[string][]topology.SecretAttachment{},
 	}
 	resolveResult := &resolver.ResolveResult{
 		Aggregate: &types.Aggregate{Metadata: types.AggregateMetadata{Name: "test"}},
@@ -326,7 +314,6 @@ func TestBuildIR_SyncWave_DefaultZero(t *testing.T) {
 		Nodes:              nodes,
 		Edges:              nil,
 		FeatureAttachments: map[string][]topology.FeatureAttachment{},
-		SecretAttachments:  map[string][]topology.SecretAttachment{},
 	}
 	resolveResult := &resolver.ResolveResult{
 		Aggregate: &types.Aggregate{Metadata: types.AggregateMetadata{Name: "test"}},
@@ -363,7 +350,6 @@ func TestBuildIR_InfraMapping(t *testing.T) {
 		Nodes:              nodes,
 		Edges:              nil,
 		FeatureAttachments: map[string][]topology.FeatureAttachment{},
-		SecretAttachments:  map[string][]topology.SecretAttachment{},
 	}
 	infra := types.OrderedMap[any]{}
 	infra.Set("replicas", 3)
@@ -611,7 +597,6 @@ func TestBuildIR_EdgeCarriesValuesInfraAndOrigin(t *testing.T) {
 			},
 		},
 		FeatureAttachments: map[string][]topology.FeatureAttachment{},
-		SecretAttachments:  map[string][]topology.SecretAttachment{},
 	}
 	resolveResult := &resolver.ResolveResult{
 		Aggregate: &types.Aggregate{Metadata: types.AggregateMetadata{Name: "test-app", Version: "1.0.0"}},

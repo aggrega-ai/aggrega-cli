@@ -23,7 +23,7 @@ type NodeBaseContext struct {
 	Values   map[string]any
 	Infra    map[string]any
 	Uses     map[string]any
-	Secrets  map[string]any
+	Features map[string]any
 	Metadata map[string]any
 }
 
@@ -73,17 +73,17 @@ func ExtractNodeBaseContext(nodeID string, graph *types.IRGraph) NodeBaseContext
 	}
 	out.Uses = uses
 
-	secrets := make(map[string]any)
-	if sec, ok := graph.Spec.Secrets.Get(nodeID); ok {
-		for name, entry := range sec.All() {
-			secrets[name] = map[string]any{
+	features := make(map[string]any)
+	if attachments, ok := graph.Spec.FeatureValuesMapping.Get(nodeID); ok {
+		for name, entry := range attachments.All() {
+			features[name] = map[string]any{
 				"type":             entry.Type,
 				"resolved_version": entry.ResolvedVersion,
 				"values":           entry.Values.TemplateAlphabeticalMapDeep(),
 			}
 		}
 	}
-	out.Secrets = secrets
+	out.Features = features
 
 	node, ok := graph.Spec.Nodes.Get(nodeID)
 	metadata := map[string]any{

@@ -20,7 +20,7 @@ spec:
           db: {{ optional .infra `port` 3306 }}
         variables:
           MARIADB_DATABASE: "{{ .values.database }}"
-        secrets:
+        attachments:
           ROOT_PASSWORD:
             from: root_password
             as: env

@@ -242,7 +242,7 @@ type EnvVar struct {
 }
 
 // EnvVarSource is a discriminated reference for an env var's source.
-// Used when a container secrets entry uses `as: env`.
+// Used when a container attachments entry uses `as: env`.
 type EnvVarSource struct {
 	SecretKeyRef *SecretKeySelector `yaml:"secretKeyRef,omitempty"`
 }

@@ -69,26 +69,26 @@ func dispatchWorkloadSynthesis(
 	return files, nil
 }
 
-// SecretProvidesFromContext projects each secret slot's resolved provides into
-// a slot→provides lookup a WorkloadSynthesizer reads to resolve a workload
-// secret reference to the generated Secret's identity. A workload secrets
-// entry's `from` is the slot; the generated Secret's identity (name, key) comes
-// from the slot's provides — resolved by the orchestrator before Phase B and
-// exposed on the template context. The orchestrator populates the per-slot
-// provides before Phase B; a nil context yields an empty lookup.
+// AttachmentProvidesFromContext projects each attachment's resolved provides
+// into an instance-name→provides lookup a WorkloadSynthesizer reads to resolve a
+// workload attachment reference to the emitted resource's identity. A workload
+// attachments entry's `from` names the slot; the resource's identity (name, key)
+// comes from the provides of whatever fills that slot — resolved by the
+// orchestrator before Phase B and exposed on the template context. A nil context
+// yields an empty lookup.
 //
 // This is a render-context projection, not provider logic: it lives in the
 // renderer so every host-side synthesizer surface — the in-tree provider
 // engines and the wasmengine adapter that projects a workload onto the provider
-// render wire — builds the per-slot secret map from one source of truth rather
-// than re-deriving it.
-func SecretProvidesFromContext(tmplCtx *types.TemplateContext) map[string]types.OrderedMap[string] {
+// render wire — builds the lookup from one source of truth rather than
+// re-deriving it.
+func AttachmentProvidesFromContext(tmplCtx *types.TemplateContext) map[string]types.OrderedMap[string] {
 	out := map[string]types.OrderedMap[string]{}
 	if tmplCtx == nil {
 		return out
 	}
-	for slot, sec := range tmplCtx.Secrets.All() {
-		out[slot] = sec.Provides
+	for name, attachment := range tmplCtx.Features.All() {
+		out[name] = attachment.Provides
 	}
 	return out
 }

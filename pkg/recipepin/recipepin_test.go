@@ -420,9 +420,15 @@ func TestWritePinsByteFaithfulRemoveRestoresOriginal(t *testing.T) {
 
 // TestWritePinsByteFaithfulOnRealRecipe copies a published example recipe into a
 // temp dir (the original is never touched), freezes one source pin, and asserts
-// the folded description, the literal valuesMapping block, and the 2-space
-// indentation carry through byte-for-byte while only a sourceDigests block is
-// added.
+// that no byte outside the pin region drifts: the folded description, the literal
+// valuesMapping block, and the 2-space indentation carry through byte-for-byte,
+// and the frozen result carries a sourceDigests block and no artifactDigests.
+//
+// The example is read as-is, so it may arrive pin-free or already carrying a
+// frozen pin section — the freeze correspondingly adds the block or replaces the
+// one present. The non-pin comparison therefore excises the pin region from both
+// the frozen result and the copied original, which isolates the bytes the splice
+// must not touch without constraining what the example happens to carry.
 func TestWritePinsByteFaithfulOnRealRecipe(t *testing.T) {
 	const realPath = "/workspaces/aggrega-umbrella/aggrega-docs/language-reference/examples/mariadb-adminer/catalog-helm-bitnami/recipe/mariadb-bitnami.yaml"
 	original, err := os.ReadFile(realPath)
@@ -450,9 +456,11 @@ func TestWritePinsByteFaithfulOnRealRecipe(t *testing.T) {
 	}
 	result := mustRead(t, p)
 
-	// Everything outside the appended sourceDigests block is byte-identical.
-	if got := excisePinSection(result); !bytes.Equal(got, original) {
-		t.Fatalf("bytes outside the pin section drifted from the original recipe")
+	// Every byte outside the pin region is identical. Both sides are excised so
+	// the comparison isolates the non-pin bytes regardless of whether the example
+	// already carried a frozen pin section of its own.
+	if got, want := excisePinSection(result), excisePinSection(original); !bytes.Equal(got, want) {
+		t.Fatalf("bytes outside the pin section drifted from the original recipe at line(s) %v", differingLines(got, want))
 	}
 	// Only a sourceDigests block was added; no artifactDigests appeared.
 	if !bytes.Contains(result, []byte("\n  sourceDigests:\n")) {

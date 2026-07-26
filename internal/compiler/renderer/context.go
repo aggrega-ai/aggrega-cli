@@ -44,12 +44,10 @@ func AssembleNodeContext(
 		}
 	}
 
-	// Attachments from the feature and credential buckets (author-order
-	// preserved). Both buckets project through the same shape, so an attachment
-	// is read the same way whichever bucket carries it. Provides is filled in by
-	// the orchestrator once the bound FeatureRecipe has been evaluated.
+	// Every attachment the node holds, author-order preserved, projected through
+	// one shape onto one pillar. Provides is filled in by the orchestrator once
+	// the bound FeatureRecipe has been evaluated.
 	features := projectAttachments(graph.Spec.FeatureValuesMapping, nodeID)
-	secrets := projectAttachments(graph.Spec.Secrets, nodeID)
 
 	// Metadata from Release
 	var metadata *types.TemplateMetadata
@@ -76,7 +74,6 @@ func AssembleNodeContext(
 		Locals:    types.OrderedMap[string]{},
 		Provides:  providesForNode,
 		Features:  features,
-		Secrets:   secrets,
 		Metadata:  metadata,
 		InjectRaw: injectRaw,
 	}
@@ -84,9 +81,9 @@ func AssembleNodeContext(
 	return ctx
 }
 
-// projectAttachments projects one node's attachment bucket onto the template
-// surface, preserving author order. One projection for every attachment bucket:
-// a bucket-specific copy would be free to lose a pillar, which is how a pillar
+// projectAttachments projects one node's attachments onto the template surface,
+// preserving author order. One projection for every attachment family: a
+// family-specific copy would be free to lose a pillar, which is how a pillar
 // carried in the IR becomes unreadable from a template.
 func projectAttachments(bucket types.OrderedMap[types.OrderedMap[types.IRFeatureEntry]], nodeID string) types.OrderedMap[types.TemplateAttachment] {
 	out := types.OrderedMap[types.TemplateAttachment]{}

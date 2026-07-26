@@ -46,16 +46,16 @@ func providesFR(implements, provideKey, provideTmpl string) *types.FeatureRecipe
 // merely that entry.Inject is populated.
 func TestResolveAttachmentInject_SecretDeliversResolvedProvidesToHostPipe(t *testing.T) {
 	t.Parallel()
-	entry := types.IRSecretEntry{
+	entry := types.IRFeatureEntry{
 		Type:   "core/db-creds",
 		Values: attachValues("generated", "s3cr3t"),
 		Inject: injectEnvBlock("DB_PASSWORD", "root_password"),
 	}
-	inner := types.OrderedMap[types.IRSecretEntry]{}
+	inner := types.OrderedMap[types.IRFeatureEntry]{}
 	inner.Set("db-creds", entry)
-	secrets := types.OrderedMap[types.OrderedMap[types.IRSecretEntry]]{}
+	secrets := types.OrderedMap[types.OrderedMap[types.IRFeatureEntry]]{}
 	secrets.Set("api", inner)
-	graph := &types.IRGraph{Spec: types.IRSpec{Secrets: secrets}}
+	graph := &types.IRGraph{Spec: types.IRSpec{FeatureValuesMapping: secrets}}
 
 	lookup := RecipeLookup{FeatureRecipe: func(_, ft string) (*types.FeatureRecipe, bool) {
 		if ft == "core/db-creds" {
@@ -119,16 +119,16 @@ func TestResolveAttachmentInject_FeatureDeliversResolvedProvidesToHostPipe(t *te
 // sources and halts with ErrAttachmentInjectKeyCollision rather than silently overwriting.
 func TestResolveAttachmentInject_CollisionWithExistingKeyHalts(t *testing.T) {
 	t.Parallel()
-	entry := types.IRSecretEntry{
+	entry := types.IRFeatureEntry{
 		Type:   "core/db-creds",
 		Values: attachValues("generated", "s3cr3t"),
 		Inject: injectEnvBlock("DB_PASSWORD", "root_password"),
 	}
-	inner := types.OrderedMap[types.IRSecretEntry]{}
+	inner := types.OrderedMap[types.IRFeatureEntry]{}
 	inner.Set("db-creds", entry)
-	secrets := types.OrderedMap[types.OrderedMap[types.IRSecretEntry]]{}
+	secrets := types.OrderedMap[types.OrderedMap[types.IRFeatureEntry]]{}
 	secrets.Set("api", inner)
-	graph := &types.IRGraph{Spec: types.IRSpec{Secrets: secrets}}
+	graph := &types.IRGraph{Spec: types.IRSpec{FeatureValuesMapping: secrets}}
 
 	lookup := RecipeLookup{FeatureRecipe: func(_, ft string) (*types.FeatureRecipe, bool) {
 		return providesFR("core/db-creds:1.0.0", "root_password", "{{ .values.generated }}"), true

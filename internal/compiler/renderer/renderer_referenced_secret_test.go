@@ -4,8 +4,8 @@
 // A core/referenced-secret credential Feature declares its referenceable-secret
 // output contract (schema.provides {name, key}); the filling FeatureRecipe
 // publishes it. The compiler resolves that fill's provides once and exposes it
-// as .secrets.<slot>.provides.<key>, AND reuses the same bag as the credential
-// render's .provides — so a consumer reading .secrets.<slot>.provides.name and
+// as .features.<slot>.provides.<key>, AND reuses the same bag as the credential
+// render's .provides — so a consumer reading .features.<slot>.provides.name and
 // the rendered Secret's name are one evaluated string (no drift, no locals
 // re-derivation). A FeatureRecipe that omits a contract key halts.
 
@@ -46,17 +46,17 @@ func referencedSecretFixture(frProvides types.OrderedMap[string]) (renderer.Rend
 	vals := types.OrderedMap[any]{}
 	vals.Set("key", "POSTGRES_PASSWORD")
 	vals.Set("origin", "supersecret")
-	secrets := types.OrderedMap[types.IRSecretEntry]{}
-	secrets.Set("password", types.IRSecretEntry{Type: "core/referenced-secret", Values: vals})
-	nodeSecrets := types.OrderedMap[types.OrderedMap[types.IRSecretEntry]]{}
+	secrets := types.OrderedMap[types.IRFeatureEntry]{}
+	secrets.Set("password", types.IRFeatureEntry{Type: "core/referenced-secret", Values: vals})
+	nodeSecrets := types.OrderedMap[types.OrderedMap[types.IRFeatureEntry]]{}
 	nodeSecrets.Set("db", secrets)
 
 	input := renderer.RendererInput{
 		Graph: &types.IRGraph{
 			Metadata: types.IRMetadata{AggregateName: "test"},
-			Spec:     types.IRSpec{Nodes: nodes, Secrets: nodeSecrets, ValuesMapping: types.OrderedMap[json.RawMessage]{}},
+			Spec:     types.IRSpec{Nodes: nodes, FeatureValuesMapping: nodeSecrets, ValuesMapping: types.OrderedMap[json.RawMessage]{}},
 		},
-		FeatureOrder:  ir.FeatureOrder{},
+		FeatureOrder:  ir.FeatureOrder{"db": {"password"}},
 		ResolveResult: &resolver.ResolveResult{Aggregate: &types.Aggregate{}, BoundaryInfra: map[string]*resolver.BoundaryInfra{}},
 		CatalogLookup: resolver.CatalogLookup{
 			Feature: func(typeURI string) (types.Feature, bool) {
@@ -73,9 +73,9 @@ func referencedSecretFixture(frProvides types.OrderedMap[string]) (renderer.Rend
 
 	lookup := renderer.RecipeLookup{
 		Recipe: func(_, _ string) (*types.Recipe, bool) {
-			// The consumer (db recipe) reads .secrets.password.provides.name in an artifact.
+			// The consumer (db recipe) reads .features.password.provides.name in an artifact.
 			ra := types.OrderedMap[types.ArtifactEntry]{}
-			ra.Set("consumer.yaml", types.ArtifactEntry{Inline: "host: \"{{ .secrets.password.provides.name }}\"\n"})
+			ra.Set("consumer.yaml", types.ArtifactEntry{Inline: "host: \"{{ .features.password.provides.name }}\"\n"})
 			return &types.Recipe{Metadata: types.RecipeMetadata{Name: "pg-recipe"}, Spec: types.RecipeSpec{Artifacts: ra}}, true
 		},
 		FeatureRecipe: func(_, ft string) (*types.FeatureRecipe, bool) {
@@ -98,7 +98,7 @@ func referencedSecretFixture(frProvides types.OrderedMap[string]) (renderer.Rend
 
 func fullContractProvides() types.OrderedMap[string] {
 	p := types.OrderedMap[string]{}
-	p.Set("name", "{{ .context.instance_id }}-{{ .secret_name }}")
+	p.Set("name", "{{ .context.instance_id }}-{{ .attachment_name }}")
 	p.Set("key", "{{ .values.key }}")
 	return p
 }
@@ -107,15 +107,15 @@ func TestIntegration_ReferencedSecret_ConsumerReadsGeneratedName(t *testing.T) {
 	t.Parallel()
 	input, lookup := referencedSecretFixture(fullContractProvides())
 
-	// Consumer side: the resolved bag the .secrets.<slot>.provides exposure uses.
-	dbSecrets, _ := input.Graph.Spec.Secrets.Get("db")
-	bag, err := renderer.ResolveAttachmentProvides(dbSecrets, "db", "secret", lookup, input.CatalogLookup)
+	// Consumer side: the resolved bag the .features.<slot>.provides exposure uses.
+	dbAttachments, _ := input.Graph.Spec.FeatureValuesMapping.Get("db")
+	bag, err := renderer.ResolveAttachmentProvides(dbAttachments, "db", lookup, input.CatalogLookup)
 	if err != nil {
 		t.Fatalf("ResolveAttachmentProvides: %v", err)
 	}
 	pw := bag["password"]
 	if got, _ := pw.Get("name"); got != "db-password" {
-		t.Errorf(".secrets.password.provides.name = %q, want db-password", got)
+		t.Errorf(".features.password.provides.name = %q, want db-password", got)
 	}
 
 	// Producer side: the rendered Secret name must match (single source).
@@ -136,13 +136,13 @@ func TestIntegration_ReferencedSecret_ConsumerReadsGeneratedName(t *testing.T) {
 		t.Errorf("rendered Secret name != db-password; got:\n%s", secretArtifact)
 	}
 	if !strings.Contains(consumerArtifact, "db-password") {
-		t.Errorf("consumer read of .secrets.password.provides.name != db-password; got:\n%s", consumerArtifact)
+		t.Errorf("consumer read of .features.password.provides.name != db-password; got:\n%s", consumerArtifact)
 	}
 }
 
 // referencedSecretWorkloadFixture: node "db" with a referenced-secret "password"
 // slot declared in the Component's featuresSchema (transparent: inject [env, file]),
-// a recipe that both reads .secrets.password.provides.name in a source artifact AND
+// a recipe that both reads .features.password.provides.name in a source artifact AND
 // declares a workload whose container references the slot via `as: <asMode>`. The
 // backing FeatureRecipe publishes the full {name, key} contract. Exercises the
 // source/workload symmetry: the same provides feeds both readers.
@@ -153,9 +153,9 @@ func referencedSecretWorkloadFixture(asMode string) (renderer.RendererInput, ren
 	vals := types.OrderedMap[any]{}
 	vals.Set("key", "POSTGRES_PASSWORD")
 	vals.Set("origin", "supersecret")
-	secrets := types.OrderedMap[types.IRSecretEntry]{}
-	secrets.Set("password", types.IRSecretEntry{Type: "core/referenced-secret", Values: vals})
-	nodeSecrets := types.OrderedMap[types.OrderedMap[types.IRSecretEntry]]{}
+	secrets := types.OrderedMap[types.IRFeatureEntry]{}
+	secrets.Set("password", types.IRFeatureEntry{Type: "core/referenced-secret", Values: vals})
+	nodeSecrets := types.OrderedMap[types.OrderedMap[types.IRFeatureEntry]]{}
 	nodeSecrets.Set("db", secrets)
 
 	// Component featuresSchema: a transparent password slot (inject allowlist
@@ -167,9 +167,9 @@ func referencedSecretWorkloadFixture(asMode string) (renderer.RendererInput, ren
 	input := renderer.RendererInput{
 		Graph: &types.IRGraph{
 			Metadata: types.IRMetadata{AggregateName: "test"},
-			Spec:     types.IRSpec{Nodes: nodes, Secrets: nodeSecrets, ValuesMapping: types.OrderedMap[json.RawMessage]{}},
+			Spec:     types.IRSpec{Nodes: nodes, FeatureValuesMapping: nodeSecrets, ValuesMapping: types.OrderedMap[json.RawMessage]{}},
 		},
-		FeatureOrder:  ir.FeatureOrder{},
+		FeatureOrder:  ir.FeatureOrder{"db": {"password"}},
 		ResolveResult: &resolver.ResolveResult{Aggregate: &types.Aggregate{}, BoundaryInfra: map[string]*resolver.BoundaryInfra{}},
 		CatalogLookup: resolver.CatalogLookup{
 			Component: func(typeURI string) (types.Component, bool) {
@@ -194,13 +194,13 @@ func referencedSecretWorkloadFixture(asMode string) (renderer.RendererInput, ren
 	if asMode == "file" {
 		secretEntry = "from: password\n        as: file\n        path: /etc/secret/password"
 	}
-	workload := "apiVersion: aggrega.ai/v1alpha1\nkind: Workload\ncontainers:\n  main:\n    image: postgres:16\n    secrets:\n      POSTGRES_PASSWORD:\n        " + secretEntry + "\n"
+	workload := "apiVersion: aggrega.ai/v1alpha1\nkind: Workload\ncontainers:\n  main:\n    image: postgres:16\n    attachments:\n      POSTGRES_PASSWORD:\n        " + secretEntry + "\n"
 
 	lookup := renderer.RecipeLookup{
 		Recipe: func(_, _ string) (*types.Recipe, bool) {
 			ra := types.OrderedMap[types.ArtifactEntry]{}
 			// Source-side reader: identical provides read to the workload's.
-			ra.Set("consumer.yaml", types.ArtifactEntry{Inline: "host: \"{{ .secrets.password.provides.name }}\"\n"})
+			ra.Set("consumer.yaml", types.ArtifactEntry{Inline: "host: \"{{ .features.password.provides.name }}\"\n"})
 			return &types.Recipe{
 				Metadata: types.RecipeMetadata{Name: "pg-recipe"},
 				Spec: types.RecipeSpec{
@@ -259,7 +259,7 @@ func TestIntegration_ReferencedSecret_WorkloadConsumerSymmetry(t *testing.T) {
 	}
 	// Source side: the same provides read renders the same generated name.
 	if !strings.Contains(consumerArtifact, "db-password") {
-		t.Errorf("source recipe read of .secrets.password.provides.name != db-password; got:\n%s", consumerArtifact)
+		t.Errorf("source recipe read of .features.password.provides.name != db-password; got:\n%s", consumerArtifact)
 	}
 }
 
@@ -292,11 +292,11 @@ func TestIntegration_ReferencedSecret_WorkloadNotReferenceableHalt(t *testing.T)
 	input, lookup := referencedSecretWorkloadFixture("env")
 	// Swap the slot's Feature to a contract-less one and the FR to a no-provides
 	// fill, so the slot's resolved provides yields no name/key.
-	dbSecrets, _ := input.Graph.Spec.Secrets.Get("db")
+	dbSecrets, _ := input.Graph.Spec.FeatureValuesMapping.Get("db")
 	entry, _ := dbSecrets.Get("password")
 	entry.Type = "core/secret-value"
 	dbSecrets.Set("password", entry)
-	input.Graph.Spec.Secrets.Set("db", dbSecrets)
+	input.Graph.Spec.FeatureValuesMapping.Set("db", dbSecrets)
 	input.CatalogLookup.Feature = func(typeURI string) (types.Feature, bool) {
 		if typeURI == "core/secret-value" {
 			return types.Feature{}, true // no schema.provides contract
@@ -324,11 +324,11 @@ func TestIntegration_ReferencedSecret_FulfilmentHalt(t *testing.T) {
 	t.Parallel()
 	// FeatureRecipe omits the `key` contract key the Feature declares.
 	partial := types.OrderedMap[string]{}
-	partial.Set("name", "{{ .context.instance_id }}-{{ .secret_name }}")
+	partial.Set("name", "{{ .context.instance_id }}-{{ .attachment_name }}")
 	input, lookup := referencedSecretFixture(partial)
 
-	dbSecrets, _ := input.Graph.Spec.Secrets.Get("db")
-	_, err := renderer.ResolveAttachmentProvides(dbSecrets, "db", "secret", lookup, input.CatalogLookup)
+	dbSecrets, _ := input.Graph.Spec.FeatureValuesMapping.Get("db")
+	_, err := renderer.ResolveAttachmentProvides(dbSecrets, "db", lookup, input.CatalogLookup)
 	if !errors.Is(err, renderer.ErrProvidesContractUnfulfilled) {
 		t.Fatalf("a FeatureRecipe omitting a contract key should halt with ErrProvidesContractUnfulfilled; got: %v", err)
 	}

@@ -224,7 +224,7 @@ func TestWalk_WhenSkipDeterministicVsAbsent(t *testing.T) {
 // TestWalk_WhenReadsTemplateContext proves the `when` gate renders against the
 // same TemplateContext the walk threads through, gating on one of its fields.
 func TestWalk_WhenReadsTemplateContext(t *testing.T) {
-	when := `{{ eq .SecretName "go" }}`
+	when := `{{ eq .AttachmentName "go" }}`
 	mkSteps := func() []types.PipelineStep {
 		return []types.PipelineStep{{ID: "s1", Plugin: "p", Function: "f", When: when}}
 	}
@@ -234,10 +234,10 @@ func TestWalk_WhenReadsTemplateContext(t *testing.T) {
 		return inv
 	}
 
-	// SecretName == "go" -> gate truthy -> step runs.
+	// AttachmentName == "go" -> gate truthy -> step runs.
 	invRun := newInv()
 	resRun, err := Walk(context.Background(), DocumentSet{Own: rawMap("a.yaml", `{"x":"0"}`)}, mkSteps(),
-		invRun.invoke, &types.TemplateContext{SecretName: "go"}, renderctx.RenderContext{}, realTemplateEval)
+		invRun.invoke, &types.TemplateContext{AttachmentName: "go"}, renderctx.RenderContext{}, realTemplateEval)
 	if err != nil {
 		t.Fatalf("Walk (gate truthy): %v", err)
 	}
@@ -245,10 +245,10 @@ func TestWalk_WhenReadsTemplateContext(t *testing.T) {
 		t.Errorf("gate truthy on context field: x=%q, want ran", got)
 	}
 
-	// SecretName != "go" -> gate falsy -> step skipped.
+	// AttachmentName != "go" -> gate falsy -> step skipped.
 	invSkip := newInv()
 	resSkip, err := Walk(context.Background(), DocumentSet{Own: rawMap("a.yaml", `{"x":"0"}`)}, mkSteps(),
-		invSkip.invoke, &types.TemplateContext{SecretName: "stop"}, renderctx.RenderContext{}, realTemplateEval)
+		invSkip.invoke, &types.TemplateContext{AttachmentName: "stop"}, renderctx.RenderContext{}, realTemplateEval)
 	if err != nil {
 		t.Fatalf("Walk (gate falsy): %v", err)
 	}

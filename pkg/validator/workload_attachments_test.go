@@ -25,7 +25,7 @@ func slotsWith(entries ...struct {
 
 // ----- Pass cases -----
 
-func TestValidateWorkloadSecrets_AllowlistedSlot_Passes(t *testing.T) {
+func TestValidateWorkloadAttachments_AllowlistedSlot_Passes(t *testing.T) {
 	t.Parallel()
 	slots := slotsWith(
 		struct {
@@ -36,15 +36,15 @@ func TestValidateWorkloadSecrets_AllowlistedSlot_Passes(t *testing.T) {
 
 	w := &types.Workload{}
 	c := types.ContainerSpec{Image: "app:1.0"}
-	c.Secrets.Set("DB_PASS", types.SecretRef{From: "db-password", As: "env"})
+	c.Attachments.Set("DB_PASS", types.AttachmentRef{From: "db-password", As: "env"})
 	w.Containers.Set("main", c)
 
-	if err := validator.ValidateWorkloadSecrets(w, slots, "", "", ""); err != nil {
+	if err := validator.ValidateWorkloadAttachments(w, slots, "", "", ""); err != nil {
 		t.Fatalf("expected pass, got %v", err)
 	}
 }
 
-func TestValidateWorkloadSecrets_FileDelivery_Passes(t *testing.T) {
+func TestValidateWorkloadAttachments_FileDelivery_Passes(t *testing.T) {
 	t.Parallel()
 	slots := slotsWith(
 		struct {
@@ -55,36 +55,36 @@ func TestValidateWorkloadSecrets_FileDelivery_Passes(t *testing.T) {
 
 	w := &types.Workload{}
 	c := types.ContainerSpec{Image: "app:1.0"}
-	c.Secrets.Set("TLS", types.SecretRef{From: "tls-cert", As: "file", Path: "/etc/tls/cert.pem"})
+	c.Attachments.Set("TLS", types.AttachmentRef{From: "tls-cert", As: "file", Path: "/etc/tls/cert.pem"})
 	w.Containers.Set("main", c)
 
-	if err := validator.ValidateWorkloadSecrets(w, slots, "", "", ""); err != nil {
+	if err := validator.ValidateWorkloadAttachments(w, slots, "", "", ""); err != nil {
 		t.Fatalf("expected pass, got %v", err)
 	}
 }
 
-func TestValidateWorkloadSecrets_NoSecrets_Passes(t *testing.T) {
+func TestValidateWorkloadAttachments_NoSecrets_Passes(t *testing.T) {
 	t.Parallel()
 	slots := types.OrderedMap[types.AttachmentSlot]{}
 	w := &types.Workload{}
 	w.Containers.Set("main", types.ContainerSpec{Image: "app:1.0"})
 
-	if err := validator.ValidateWorkloadSecrets(w, slots, "", "", ""); err != nil {
+	if err := validator.ValidateWorkloadAttachments(w, slots, "", "", ""); err != nil {
 		t.Errorf("workload with no secrets should pass, got %v", err)
 	}
 }
 
-func TestValidateWorkloadSecrets_NilWorkload_NoError(t *testing.T) {
+func TestValidateWorkloadAttachments_NilWorkload_NoError(t *testing.T) {
 	t.Parallel()
 	slots := types.OrderedMap[types.AttachmentSlot]{}
-	if err := validator.ValidateWorkloadSecrets(nil, slots, "", "", ""); err != nil {
+	if err := validator.ValidateWorkloadAttachments(nil, slots, "", "", ""); err != nil {
 		t.Errorf("nil Workload should pass, got %v", err)
 	}
 }
 
 // ----- Fail cases -----
 
-func TestValidateWorkloadSecrets_UndeclaredSlot_Fails(t *testing.T) {
+func TestValidateWorkloadAttachments_UndeclaredSlot_Fails(t *testing.T) {
 	t.Parallel()
 	slots := slotsWith(
 		struct {
@@ -95,10 +95,10 @@ func TestValidateWorkloadSecrets_UndeclaredSlot_Fails(t *testing.T) {
 
 	w := &types.Workload{}
 	c := types.ContainerSpec{Image: "app:1.0"}
-	c.Secrets.Set("OTHER", types.SecretRef{From: "not-declared", As: "env"})
+	c.Attachments.Set("OTHER", types.AttachmentRef{From: "not-declared", As: "env"})
 	w.Containers.Set("main", c)
 
-	err := validator.ValidateWorkloadSecrets(w, slots, "", "", "")
+	err := validator.ValidateWorkloadAttachments(w, slots, "", "", "")
 	if !errors.Is(err, validator.ErrWorkloadFeaturesSchema) {
 		t.Fatalf("expected ErrWorkloadFeaturesSchema, got %v", err)
 	}
@@ -107,7 +107,7 @@ func TestValidateWorkloadSecrets_UndeclaredSlot_Fails(t *testing.T) {
 	}
 }
 
-func TestValidateWorkloadSecrets_AsNotInAllowlist_Fails(t *testing.T) {
+func TestValidateWorkloadAttachments_AsNotInAllowlist_Fails(t *testing.T) {
 	t.Parallel()
 	slots := slotsWith(
 		struct {
@@ -118,10 +118,10 @@ func TestValidateWorkloadSecrets_AsNotInAllowlist_Fails(t *testing.T) {
 
 	w := &types.Workload{}
 	c := types.ContainerSpec{Image: "app:1.0"}
-	c.Secrets.Set("DB_PASS", types.SecretRef{From: "db-password", As: "file", Path: "/etc/db"})
+	c.Attachments.Set("DB_PASS", types.AttachmentRef{From: "db-password", As: "file", Path: "/etc/db"})
 	w.Containers.Set("main", c)
 
-	err := validator.ValidateWorkloadSecrets(w, slots, "", "", "")
+	err := validator.ValidateWorkloadAttachments(w, slots, "", "", "")
 	if !errors.Is(err, validator.ErrWorkloadFeaturesSchema) {
 		t.Fatalf("expected ErrWorkloadFeaturesSchema, got %v", err)
 	}
@@ -130,7 +130,7 @@ func TestValidateWorkloadSecrets_AsNotInAllowlist_Fails(t *testing.T) {
 	}
 }
 
-func TestValidateWorkloadSecrets_BlackboxSlot_Fails(t *testing.T) {
+func TestValidateWorkloadAttachments_BlackboxSlot_Fails(t *testing.T) {
 	t.Parallel()
 	// Blackbox slot: Inject is nil/empty. Reserved for Recipe-internal
 	// plumbing (Helm existingSecret etc.); cannot be referenced from a
@@ -144,10 +144,10 @@ func TestValidateWorkloadSecrets_BlackboxSlot_Fails(t *testing.T) {
 
 	w := &types.Workload{}
 	c := types.ContainerSpec{Image: "app:1.0"}
-	c.Secrets.Set("TOKEN", types.SecretRef{From: "opaque-token", As: "env"})
+	c.Attachments.Set("TOKEN", types.AttachmentRef{From: "opaque-token", As: "env"})
 	w.Containers.Set("main", c)
 
-	err := validator.ValidateWorkloadSecrets(w, slots, "", "", "")
+	err := validator.ValidateWorkloadAttachments(w, slots, "", "", "")
 	if !errors.Is(err, validator.ErrWorkloadFeaturesSchema) {
 		t.Fatalf("expected ErrWorkloadFeaturesSchema, got %v", err)
 	}
@@ -156,7 +156,7 @@ func TestValidateWorkloadSecrets_BlackboxSlot_Fails(t *testing.T) {
 	}
 }
 
-func TestValidateWorkloadSecrets_InitContainerWalked(t *testing.T) {
+func TestValidateWorkloadAttachments_InitContainerWalked(t *testing.T) {
 	t.Parallel()
 	slots := slotsWith(
 		struct {
@@ -166,11 +166,11 @@ func TestValidateWorkloadSecrets_InitContainerWalked(t *testing.T) {
 	)
 
 	c := types.ContainerSpec{Image: "migrator:1.0"}
-	c.Secrets.Set("DB_PASS", types.SecretRef{From: "not-declared", As: "env"})
+	c.Attachments.Set("DB_PASS", types.AttachmentRef{From: "not-declared", As: "env"})
 
 	w := &types.Workload{InitContainers: []types.ContainerSpec{c}}
 
-	err := validator.ValidateWorkloadSecrets(w, slots, "", "", "")
+	err := validator.ValidateWorkloadAttachments(w, slots, "", "", "")
 	if !errors.Is(err, validator.ErrWorkloadFeaturesSchema) {
 		t.Fatalf("expected ErrWorkloadFeaturesSchema for initContainer ref, got %v", err)
 	}
@@ -179,7 +179,7 @@ func TestValidateWorkloadSecrets_InitContainerWalked(t *testing.T) {
 	}
 }
 
-func TestValidateWorkloadSecrets_MultipleFindings_AllSurfaced(t *testing.T) {
+func TestValidateWorkloadAttachments_MultipleFindings_AllSurfaced(t *testing.T) {
 	t.Parallel()
 	slots := slotsWith(
 		struct {
@@ -189,13 +189,13 @@ func TestValidateWorkloadSecrets_MultipleFindings_AllSurfaced(t *testing.T) {
 	)
 
 	c := types.ContainerSpec{Image: "app:1.0"}
-	c.Secrets.Set("DB_PASS", types.SecretRef{From: "missing-1", As: "env"})  // undeclared
-	c.Secrets.Set("OTHER", types.SecretRef{From: "db-password", As: "file"}) // wrong as
+	c.Attachments.Set("DB_PASS", types.AttachmentRef{From: "missing-1", As: "env"})  // undeclared
+	c.Attachments.Set("OTHER", types.AttachmentRef{From: "db-password", As: "file"}) // wrong as
 
 	w := &types.Workload{}
 	w.Containers.Set("main", c)
 
-	err := validator.ValidateWorkloadSecrets(w, slots, "", "", "")
+	err := validator.ValidateWorkloadAttachments(w, slots, "", "", "")
 	if !errors.Is(err, validator.ErrWorkloadFeaturesSchema) {
 		t.Fatalf("expected ErrWorkloadFeaturesSchema, got %v", err)
 	}
@@ -210,7 +210,7 @@ func TestValidateWorkloadSecrets_MultipleFindings_AllSurfaced(t *testing.T) {
 
 // ----- Error message format -----
 
-func TestValidateWorkloadSecrets_ErrorMessageFormat(t *testing.T) {
+func TestValidateWorkloadAttachments_ErrorMessageFormat(t *testing.T) {
 	t.Parallel()
 	slots := slotsWith(
 		struct {
@@ -220,10 +220,10 @@ func TestValidateWorkloadSecrets_ErrorMessageFormat(t *testing.T) {
 	)
 	w := &types.Workload{}
 	c := types.ContainerSpec{Image: "app:1.0"}
-	c.Secrets.Set("X", types.SecretRef{From: "absent", As: "env"})
+	c.Attachments.Set("X", types.AttachmentRef{From: "absent", As: "env"})
 	w.Containers.Set("main", c)
 
-	err := validator.ValidateWorkloadSecrets(w, slots, "recipe.yaml", "test", "1.0.0")
+	err := validator.ValidateWorkloadAttachments(w, slots, "recipe.yaml", "test", "1.0.0")
 	if err == nil {
 		t.Fatal("expected error")
 	}

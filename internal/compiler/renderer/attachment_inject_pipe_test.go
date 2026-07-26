@@ -36,10 +36,10 @@ func mkMultiMech(groups ...any) types.OrderedMap[types.OrderedMap[string]] {
 	return out
 }
 
-func TestBuildSecretInject_BasicMechanisms(t *testing.T) {
+func TestBuildAttachmentInject_BasicMechanisms(t *testing.T) {
 	t.Parallel()
 
-	entry := types.IRSecretEntry{
+	entry := types.IRFeatureEntry{
 		Inject: mkMultiMech(
 			"env", []string{"DB_PASSWORD", "ref:root_password"},
 			"file", []string{"/etc/db/pw", "ref:root_password"},
@@ -47,7 +47,7 @@ func TestBuildSecretInject_BasicMechanisms(t *testing.T) {
 		),
 	}
 
-	pipe := buildSecretInject(entry)
+	pipe := buildAttachmentInject(entry)
 	if pipe == nil {
 		t.Fatal("expected non-nil pipe")
 	}
@@ -69,10 +69,10 @@ func TestBuildSecretInject_BasicMechanisms(t *testing.T) {
 	}
 }
 
-func TestBuildSecretInject_GuaranteedEmptyMaps(t *testing.T) {
+func TestBuildAttachmentInject_GuaranteedEmptyMaps(t *testing.T) {
 	t.Parallel()
 
-	pipe := buildSecretInject(types.IRSecretEntry{}) // empty inject
+	pipe := buildAttachmentInject(types.IRFeatureEntry{}) // empty inject
 	if pipe == nil {
 		t.Fatal("expected non-nil pipe")
 	}
@@ -82,14 +82,14 @@ func TestBuildSecretInject_GuaranteedEmptyMaps(t *testing.T) {
 	}
 }
 
-func TestBuildSecretInject_PartialChannels(t *testing.T) {
+func TestBuildAttachmentInject_PartialChannels(t *testing.T) {
 	t.Parallel()
 
-	entry := types.IRSecretEntry{
+	entry := types.IRFeatureEntry{
 		Inject: mkMech("env", "PG_PASSWORD", "ref:primary"),
 	}
 
-	pipe := buildSecretInject(entry)
+	pipe := buildAttachmentInject(entry)
 	if v, _ := pipe.Env.Get("PG_PASSWORD"); v != "ref:primary" {
 		t.Errorf("env: %v", pipe.Env.Keys())
 	}
@@ -98,18 +98,18 @@ func TestBuildSecretInject_PartialChannels(t *testing.T) {
 	}
 }
 
-func TestBuildSecretInject_DoesNotMutateSource(t *testing.T) {
+func TestBuildAttachmentInject_DoesNotMutateSource(t *testing.T) {
 	t.Parallel()
 
 	src := types.OrderedMap[string]{}
 	src.Set("K", "v")
 	inject := types.OrderedMap[types.OrderedMap[string]]{}
 	inject.Set("env", src)
-	entry := types.IRSecretEntry{Inject: inject}
+	entry := types.IRFeatureEntry{Inject: inject}
 
-	pipe := buildSecretInject(entry)
+	pipe := buildAttachmentInject(entry)
 	pipe.Env.Set("K", "mutated")
 	if got, _ := src.Get("K"); got != "v" {
-		t.Error("buildSecretInject should not alias the source map")
+		t.Error("buildAttachmentInject should not alias the source map")
 	}
 }

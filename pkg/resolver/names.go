@@ -145,17 +145,6 @@ func validateComponentInstanceNames(entity, compName string, comp types.Componen
 		}
 	}
 
-	for sname := range comp.Secrets.All() {
-		if !instanceNamePattern.MatchString(sname) {
-			errs = append(errs, &ResolverError{
-				Entity:  entity,
-				Field:   fmt.Sprintf("%s.secrets[%q]", basePath, sname),
-				Message: fmt.Sprintf("secret instance name %q is invalid: must match %s", sname, instanceNamePattern.String()),
-				Err:     ErrInvalidInstanceName,
-			})
-		}
-	}
-
 	return errs
 }
 

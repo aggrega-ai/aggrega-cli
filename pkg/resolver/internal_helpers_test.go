@@ -397,32 +397,23 @@ func TestCollectUsesInjectDeliveryKeys_VerboseFormShapes(t *testing.T) {
 	}
 }
 
-// TestValidateComponentInstanceNames_FeatureAndSecretNames pins both
-// loop branches: invalid feature names produce one error; invalid
-// secret names produce another. The branches share the path-format
-// shape but use distinct sub-block dispatches.
-func TestValidateComponentInstanceNames_FeatureAndSecretNames(t *testing.T) {
+// TestValidateComponentInstanceNames_AttachmentNames pins the attachment-name
+// branch: every invalid attachment instance name produces one error, whatever
+// the attachment produces, because there is one attachment block to walk.
+func TestValidateComponentInstanceNames_AttachmentNames(t *testing.T) {
 	t.Parallel()
 	feats := types.OrderedMap[types.FeatureInstance]{}
 	feats.Set("bad.feature.name", types.FeatureInstance{Type: "x"})
-	secrets := types.OrderedMap[types.SecretInstance]{}
-	secrets.Set("bad/secret/name", types.SecretInstance{Type: "y"})
-	comp := types.ComponentInstance{Features: feats, Secrets: secrets}
+	feats.Set("bad/secret/name", types.FeatureInstance{Type: "y"})
+	comp := types.ComponentInstance{Features: feats}
 	errs := validateComponentInstanceNames("Aggregate", "api", comp)
 	if len(errs) != 2 {
-		t.Fatalf("expected 2 errors (one feature + one secret); got %d: %v", len(errs), errs)
+		t.Fatalf("expected 2 errors (one per invalid attachment name); got %d: %v", len(errs), errs)
 	}
-	var sawFeature, sawSecret bool
 	for _, e := range errs {
-		if strings.Contains(e.Field, ".features[") {
-			sawFeature = true
+		if !strings.Contains(e.Field, ".features[") {
+			t.Errorf("attachment-name error must locate under .features[]; got %q", e.Field)
 		}
-		if strings.Contains(e.Field, ".secrets[") {
-			sawSecret = true
-		}
-	}
-	if !sawFeature || !sawSecret {
-		t.Errorf("expected one feature error + one secret error; got %v", errs)
 	}
 }
 

@@ -313,26 +313,19 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 			AssembleNodeContextWithRelease(tmplCtx, input.ResolveResult.Release)
 		}
 
-		// Resolve every attachment's bound-FeatureRecipe provides ONCE (single bag
-		// per bucket) and expose it to the consumer as .features.<name>.provides /
-		// .secrets.<slot>.provides. The credential bag is retained on state below
-		// and reused at Phase B.6 as the attachment FeatureRecipe's .provides, so
-		// the consumer's read and the generated resource derive from one evaluation
-		// (no drift). Resolution also halts a bound FeatureRecipe that does not
-		// fulfil its Feature's provides contract.
-		featureAttachments, _ := graph.Spec.FeatureValuesMapping.Get(nodeID)
-		featureProvides, err := ResolveAttachmentProvides(featureAttachments, nodeID, "feature", recipeLookup, input.CatalogLookup)
+		// Resolve every attachment's bound-FeatureRecipe provides ONCE (a single
+		// bag for the node) and expose it to the consumer as
+		// .features.<name>.provides. The same bag is retained on state below and
+		// reused at Phase B.6 as the attachment FeatureRecipe's own .provides, so
+		// the consumer's read and the generated resource derive from one
+		// evaluation (no drift). Resolution also halts a bound FeatureRecipe that
+		// does not fulfil its Feature's provides contract.
+		attachments, _ := graph.Spec.FeatureValuesMapping.Get(nodeID)
+		attachmentProvides, err := ResolveAttachmentProvides(attachments, nodeID, recipeLookup, input.CatalogLookup)
 		if err != nil {
-			return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("Step 5 node %q feature provides", nodeID))
+			return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("Step 5 node %q attachment provides", nodeID))
 		}
-		applyAttachmentProvides(&tmplCtx.Features, featureProvides)
-
-		secretAttachments, _ := graph.Spec.Secrets.Get(nodeID)
-		secretProvides, err := ResolveAttachmentProvides(secretAttachments, nodeID, "secret", recipeLookup, input.CatalogLookup)
-		if err != nil {
-			return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("Step 5 node %q secret provides", nodeID))
-		}
-		applyAttachmentProvides(&tmplCtx.Secrets, secretProvides)
+		applyAttachmentProvides(&tmplCtx.Features, attachmentProvides)
 
 		// Trace points: per-node pre-loop captures.
 		_ = traceWriter.Write(trace.PassPillarsInitial, nodeID, node.BoundaryPath, "", trace.PillarSnapshot(tmplCtx, trace.PassPillarsInitial))
@@ -350,7 +343,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		state.MappingLibraries = input.MappingLibraries
 		state.WorkloadLibraries = input.WorkloadLibraries
 		state.ArtifactsLibraries = input.ArtifactsLibraries
-		state.SecretProvides = secretProvides
+		state.AttachmentProvides = attachmentProvides
 
 		// Phase B.0 — locals + source-as-template eval; populates
 		// ctx.Locals + ctx.Source. May replace state.Recipe with a local
@@ -364,21 +357,14 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// Sits between B.0 and B.1 — chapter 16 sub-pass numbering scopes
 		// to Phase B; Phase A is a separate phase and stays at the
 		// orchestrator level.
+		// One ref set in one order. Every attachment participates in Phase A —
+		// an inject-only FeatureRecipe (no source/workload) rewrites the
+		// component's inject pipe whatever the attachment produces — and the
+		// order is the cascade order the IR recorded, which Phase B.6 walks too.
+		// The Phase A deep-merge is last-writer-wins per delivery key, so on a
+		// collision the later attachment in that one order wins.
 		featureRefs := resolveFeatureRecipes(nodeID, input.FeatureOrder, graph, recipeLookup)
-		// Credential-partitioned secrets participate in Phase A too: an
-		// inject-only credential FeatureRecipe (no source/workload) rewrites the
-		// component's inject pipe exactly as a Feature FR does. Feature refs
-		// (Onion order) first, then secret refs (author order). The Phase A
-		// deep-merge is last-writer-wins per delivery key, so on a collision a
-		// secret overrides a feature (and a later secret overrides an earlier
-		// one) — deterministic by this ordering. featureRefs is reused by phaseB6
-		// below, so build a separate combined slice rather than appending in
-		// place.
-		secretRefs := resolveSecretRecipes(nodeID, graph, recipeLookup)
-		phaseARefs := make([]FeatureRecipeRef, 0, len(featureRefs)+len(secretRefs))
-		phaseARefs = append(phaseARefs, featureRefs...)
-		phaseARefs = append(phaseARefs, secretRefs...)
-		if err := ExecutePhaseA(tmplCtx, phaseARefs); err != nil {
+		if err := ExecutePhaseA(tmplCtx, featureRefs); err != nil {
 			return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("Step 5 node %q", nodeID))
 		}
 		// Boundary->component env channel: apply any per-consumer env overrides
@@ -565,9 +551,9 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 			})
 		}
 
-		// Phase B.2 — workload eval + ValidateWorkload + ValidateWorkloadSecrets.
+		// Phase B.2 — workload eval + ValidateWorkload + ValidateWorkloadAttachments.
 		// No-op for Recipes that don't declare workload:. The workload-secret
-		// cross-check validates containers.<n>.secrets against the bound
+		// cross-check validates containers.<n>.attachments against the bound
 		// Component's featuresSchema slot allowlist.
 		var slots types.OrderedMap[types.AttachmentSlot]
 		if input.CatalogLookup.Component != nil {
@@ -768,11 +754,9 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 			version: providerVersion,
 		})
 
-		// Phase B.6 — FeatureRecipe Resource Generation (both non-credential
-		// and credential FRs). Returns prefixed paths
-		// ("features/<instance>/<file>", "secrets/<name>/<file>") merged
+		// Phase B.6 — FeatureRecipe Resource Generation for every attachment on
+		// the node. Returns prefixed paths ("features/<instance>/<file>") merged
 		// into the per-node files map alongside source/workload outputs.
-		secretsForNode, _ := graph.Spec.Secrets.Get(nodeID)
 		var releaseForFR *types.Release
 		var boundaryAnnotationsForFR map[string]types.OrderedMap[string]
 		if input.ResolveResult != nil {
@@ -790,7 +774,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// /host documents. renderCtx is the render-time context every pipeline
 		// step receives.
 		pipelineRenderCtx := buildPipelineRenderCtx(node, bi, parameters)
-		frFiles, hostPatched, deferred, err := phaseB6(ctx, tmplCtx, state, featureRefs, engineFactory, allProvides, secretsForNode, recipeLookup, nodeCtx, boundaryFRState, graph, releaseForFR, boundaryAnnotationsForFR, input, state.EmittedFiles, renderIsIntermediate, providerName, pipelineRenderCtx)
+		frFiles, hostPatched, deferred, err := phaseB6(ctx, tmplCtx, state, featureRefs, engineFactory, allProvides, recipeLookup, nodeCtx, boundaryFRState, graph, releaseForFR, boundaryAnnotationsForFR, input, state.EmittedFiles, renderIsIntermediate, providerName, pipelineRenderCtx)
 		if err != nil {
 			return nil, err
 		}
@@ -1223,6 +1207,11 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 	return result, nil
 }
 
+// resolveFeatureRecipes builds the node's attachment refs in cascade order —
+// the one order vector the IR recorded — resolving each attachment's
+// FeatureRecipe by its Type. It is the single source both Phase A and Phase B.6
+// draw their sequence from, so the two phases cannot disagree on order. An
+// attachment whose FeatureRecipe is not found is skipped.
 func resolveFeatureRecipes(
 	nodeID string,
 	featureOrder map[string][]string,
@@ -1252,39 +1241,6 @@ func resolveFeatureRecipes(
 		refs = append(refs, FeatureRecipeRef{
 			InstanceName:  instanceName,
 			FeatureRecipe: fr,
-		})
-	}
-	return refs
-}
-
-// resolveSecretRecipes builds Phase A refs for the node's credential-partitioned
-// secrets (graph.Spec.Secrets[nodeID]). Each secret resolves its FeatureRecipe
-// by the secret's Type and carries a scope set to the secret entry's own values
-// with empty infra — so an inject-only credential FR's injectMapping rewrites the
-// component inject pipe with the secret-scoped context. Secrets are walked in
-// author order (the IR secrets bucket is author-ordered). A secret whose FR is
-// not found, or carries no injectMapping, is skipped by Phase A downstream.
-func resolveSecretRecipes(nodeID string, graph *types.IRGraph, recipeLookup RecipeLookup) []FeatureRecipeRef {
-	if recipeLookup.FeatureRecipe == nil {
-		return nil
-	}
-	secretsForNode, ok := graph.Spec.Secrets.Get(nodeID)
-	if !ok {
-		return nil
-	}
-	var refs []FeatureRecipeRef
-	for secretName, entry := range secretsForNode.All() {
-		fr, found := recipeLookup.FeatureRecipe(secretName, entry.Type)
-		if !found {
-			continue
-		}
-		refs = append(refs, FeatureRecipeRef{
-			InstanceName:  secretName,
-			FeatureRecipe: fr,
-			scope: &phaseAScope{
-				Values: entry.Values,
-				Infra:  types.OrderedMap[any]{},
-			},
 		})
 	}
 	return refs

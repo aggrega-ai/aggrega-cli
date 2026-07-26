@@ -25,18 +25,16 @@ import (
 // message at [TestInjectBlockSurfaceInventory_NoDrift] names what
 // changed.
 //
-// The four entries below correspond to the four typed surfaces walked
+// The three entries below correspond to the three typed surfaces walked
 // today:
 //
 //   - ComponentInstance.Inject (component self-inject)
 //   - FeatureInstance.Inject (feature attachment inject)
-//   - SecretInstance.Inject (secret attachment inject)
 //   - VerboseUsesEntry.Inject (uses[].inject — reached via every
-//     ComponentInstance / FeatureInstance / SecretInstance with a Uses block)
+//     ComponentInstance / FeatureInstance with a Uses block)
 var expectedInjectBlockFields = map[string]struct{}{
 	"ComponentInstance.Inject": {},
 	"FeatureInstance.Inject":   {},
-	"SecretInstance.Inject":    {},
 	"VerboseUsesEntry.Inject":  {},
 }
 
@@ -68,8 +66,7 @@ var expectedInjectBlockFields = map[string]struct{}{
 //   - Aggregate-rooted type graph (covers Aggregate.Spec.Components,
 //     Aggregate.Spec.Subsystems recursively, and every nested instance
 //     type reachable from there: ComponentInstance, FeatureInstance,
-//     SecretInstance, UsesSocketValue → VerboseUsesEntry, Subsystem
-//     recursive).
+//     UsesSocketValue → VerboseUsesEntry, Subsystem recursive).
 //
 //   - Release-rooted type graph (covers Release.Spec.Boundaries
 //     recursively; today this surfaces no *InjectBlock fields per the

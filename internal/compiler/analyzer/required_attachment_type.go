@@ -97,19 +97,11 @@ func validateRequiredAttachmentTypes(ctx context.Context, graph *types.IRGraph) 
 }
 
 // attachedTypes returns the node's satisfying set: the non-empty attachment
-// types across both of the node's attachment buckets. The map is a
-// presence-set; values are always true.
+// types the node carries. The map is a presence-set; values are always true.
 func attachedTypes(graph *types.IRGraph, nodeID string) map[string]bool {
 	attached := map[string]bool{}
 	if feats, ok := graph.Spec.FeatureValuesMapping.Get(nodeID); ok {
 		for _, entry := range feats.All() {
-			if entry.Type != "" {
-				attached[entry.Type] = true
-			}
-		}
-	}
-	if secrets, ok := graph.Spec.Secrets.Get(nodeID); ok {
-		for _, entry := range secrets.All() {
 			if entry.Type != "" {
 				attached[entry.Type] = true
 			}

@@ -59,10 +59,13 @@ type IRMetadata struct {
 //   - ValuesMapping / InfraMapping — per-node opaque developer payloads
 //     keyed by node ID, carried as json.RawMessage so the renderer
 //     hands them through to provider engines without re-marshalling.
-//   - FeatureValuesMapping — per-node Feature attachment map (node ID
-//     → instance name → IRFeatureEntry) for the per-node Feature cascade.
-//   - Secrets — per-node credential attachment map paralleling
-//     FeatureValuesMapping but typed for credentials.
+//   - FeatureValuesMapping — the per-node attachment map (node ID →
+//     instance name → IRFeatureEntry) for the per-node attachment
+//     cascade. ONE bucket carries every attachment a node holds,
+//     whatever it produces: an operational Feature, a credential
+//     Feature, an identity Feature. Instance names are unique per node,
+//     so a same-named attachment arriving from two cascade tiers with
+//     disagreeing types halts rather than merging.
 //   - Provenance — compiler / aggregate / release / manifest version
 //     traceability for the IR build.
 //
@@ -74,7 +77,6 @@ type IRSpec struct {
 	ValuesMapping        OrderedMap[json.RawMessage]            `json:"values_mapping"`
 	InfraMapping         OrderedMap[json.RawMessage]            `json:"infra_mapping"`
 	FeatureValuesMapping OrderedMap[OrderedMap[IRFeatureEntry]] `json:"feature_values_mapping"`
-	Secrets              OrderedMap[OrderedMap[IRSecretEntry]]  `json:"secrets"`
 	// BoundaryFeatures is the un-folded projection of each Release boundary's
 	// Feature attachments, keyed boundary-path -> instance-name. It mirrors
 	// release.Spec.Boundaries[*].Features as the single source both lock-time
@@ -218,8 +220,17 @@ type IREdge struct {
 	Inject OrderedMap[OrderedMap[string]] `json:"inject,omitempty,omitzero"`
 }
 
-// IRFeatureEntry is one feature attached to a node in the feature_values_mapping.
+// IRFeatureEntry is one attachment on a node in the feature_values_mapping.
 // Schema: ir-v1alpha1.schema.json feature_values_mapping entry
+//
+// Every attachment family carries this shape, so no family gets a lossier
+// projection than another: a credential Feature reads .infra and per-leaf
+// provenance exactly as an operational Feature does. Type and ResolvedVersion
+// are always serialised; ResolvedVersion is the ATTACHMENT's own resolved
+// catalog version, not the host component's. For a credential attachment
+// Values holds pointers into a secret store — no plaintext is implied, and
+// infra / origin / provenance are structural metadata the compiler never
+// resolves into material.
 //
 // Origin distinguishes Feature attachments authored in an explicit
 // features: block on the Aggregate, Subsystem, Boundary, or
@@ -253,7 +264,6 @@ type IRFeatureEntry struct {
 	Values           OrderedMap[any]                `json:"values,omitempty,omitzero"`
 	Infra            OrderedMap[any]                `json:"infra,omitempty,omitzero"`
 	Inject           OrderedMap[OrderedMap[string]] `json:"inject,omitempty,omitzero"`
-	Secrets          OrderedMap[IRSecretEntry]      `json:"secrets,omitempty,omitzero"`
 	Origin           AttachmentOrigin               `json:"origin,omitempty"`
 	AnnotationKey    string                         `json:"annotation_key,omitempty"`
 	AnnotationSource string                         `json:"annotation_source,omitempty"`
@@ -295,25 +305,6 @@ type FieldProvenance struct {
 	AnnotationSource     string           `json:"annotation_source,omitempty"`
 	OverriddenAnnotation *FieldProvenance `json:"overridden_annotation,omitempty"`
 }
-
-// IRSecretEntry is a per-node credential request. A secret is structurally a
-// feature with kind=secret (see [FeatureKindSecret]): it carries the same IR
-// attachment shape as [IRFeatureEntry] and is partitioned into the secrets bucket
-// rather than given a lossier projection. Modelling the two as one shape keeps the
-// secret projection from drifting behind the feature projection — the accident that
-// dropped per-instance secret infra. No plaintext is implied: Values holds vault
-// pointers, and infra/provenance/origin are structural metadata, never resolved
-// secret values (the compiler stays blind to plaintext).
-//
-// Type and ResolvedVersion are always serialised (non-omitempty); ResolvedVersion
-// carries the credential's OWN resolved catalog version (the Feature's version, not
-// the host component's). Every other field is omitempty, so the serialised KEY set
-// for a credential carrying only Type+Values matches the former dedicated shape —
-// the added fields (infra, provenance, origin, nested secrets) appear only when
-// populated.
-//
-// Schema: ir-v1alpha1.schema.json secrets entry (shares the feature entry shape).
-type IRSecretEntry = IRFeatureEntry
 
 // IRProvenance records compiler and source traceability for an IR build.
 // Schema: ir-v1alpha1.schema.json#/properties/spec/properties/provenance

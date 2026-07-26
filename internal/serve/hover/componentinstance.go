@@ -53,9 +53,6 @@ func RenderComponentInstance(ci ComponentInstance) string {
 	if n := mappingChild(ci.Instance, "features"); n != nil && n.Kind == yaml.MappingNode {
 		body = append(body, fmt.Sprintf("**Features**: %d attached", mappingPairCount(n)))
 	}
-	if n := mappingChild(ci.Instance, "secrets"); n != nil && n.Kind == yaml.MappingNode {
-		body = append(body, fmt.Sprintf("**Secrets**: %d attached", mappingPairCount(n)))
-	}
 
 	return Assemble(
 		header,

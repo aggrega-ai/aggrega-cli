@@ -13,7 +13,7 @@ spec:
   source: ./placeholder
 
   # Invalid: an executionScope:boundary FR template MUST NOT reference
-  # per-component-only fields (.context.*, .workload.*, .secret_name,
+  # per-component-only fields (.context.*, .workload.*, .attachment_name,
   # .inject, .inject_raw). The reference below to .context.instance_id
   # should trigger ErrFRTemplateInvalidField at FR validation time.
   valuesMapping: |

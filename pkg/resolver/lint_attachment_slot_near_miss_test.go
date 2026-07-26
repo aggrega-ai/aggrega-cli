@@ -30,21 +30,20 @@ func slotCatalog() CatalogLookup {
 	}
 }
 
-func aggWithAttachments(t *testing.T, featureNames, secretNames []string) types.NormalizedAggregate {
+func aggWithAttachments(t *testing.T, featureNames, credentialNames []string) types.NormalizedAggregate {
 	t.Helper()
 	features := types.OrderedMap[types.FeatureInstance]{}
 	for _, n := range featureNames {
 		features.Set(n, types.FeatureInstance{Type: "core/some-feature"})
 	}
-	secrets := types.OrderedMap[types.SecretInstance]{}
-	for _, n := range secretNames {
-		secrets.Set(n, types.SecretInstance{Type: "core/some-credential"})
+	// A credential is declared on the same surface; the lint reads one block.
+	for _, n := range credentialNames {
+		features.Set(n, types.FeatureInstance{Type: "core/some-credential"})
 	}
 	components := types.OrderedMap[types.ComponentInstance]{}
 	components.Set("db", types.ComponentInstance{
 		Type:     "core/datastore/db",
 		Features: features,
-		Secrets:  secrets,
 	})
 	return normalized(t, &types.Aggregate{
 		Metadata: types.AggregateMetadata{Name: "test-app"},
@@ -68,7 +67,7 @@ func TestLintAttachmentSlotNearMiss_TypoReported(t *testing.T) {
 		}
 	}
 	// The Field locator is what places the advisory on the authoring key.
-	wantField := `.spec.components["db"].secrets["db_passwrod"]`
+	wantField := `.spec.components["db"].features["db_passwrod"]`
 	if got[0].Field != wantField {
 		t.Errorf("expected Field %q; got %q", wantField, got[0].Field)
 	}
@@ -101,7 +100,7 @@ func TestLintAttachmentSlotNearMiss_BothBlocksWalked(t *testing.T) {
 		if strings.Contains(a.Field, ".features[") {
 			sawFeatures = true
 		}
-		if strings.Contains(a.Field, ".secrets[") {
+		if strings.Contains(a.Field, ".features[") {
 			sawSecrets = true
 		}
 	}

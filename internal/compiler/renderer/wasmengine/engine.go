@@ -325,7 +325,7 @@ func (e *Engine) SynthesizeWorkload(
 		Context: e.renderContext(nodeCtx),
 		WorkloadProjection: &renderer.WorkloadProjection{
 			Workload: *w,
-			Secrets:  renderer.SecretProvidesFromContext(tmplCtx),
+			Secrets:  renderer.AttachmentProvidesFromContext(tmplCtx),
 		},
 	}
 	out, err := e.invoke(ctx, RenderNodeExport, input, "")

@@ -981,14 +981,14 @@ func TestAttachmentSlotNearMissPublishesAsEditorWarning(t *testing.T) {
 	content := `spec:
   components:
     db:
-      secrets:
+      features:
         db_passwrod:
           type: core/referenced-secret
 `
 	doc := parseYAML(t, content)
 	advisory := &resolver.ResolverError{
 		Entity:  "Aggregate test-app",
-		Field:   `.spec.components.db.secrets.db_passwrod`,
+		Field:   `.spec.components.db.features.db_passwrod`,
 		Message: `attachment "db_passwrod" is not a declared slot, but the type declares the slot "db_password"`,
 		Err:     resolver.ErrAttachmentSlotNearMiss,
 	}

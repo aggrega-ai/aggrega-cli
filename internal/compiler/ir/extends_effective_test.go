@@ -41,7 +41,6 @@ func TestBuildIR_InheritedDefaultMaterialised(t *testing.T) {
 	topoResult := &topology.TopologyResult{
 		Nodes:              nodes,
 		FeatureAttachments: map[string][]topology.FeatureAttachment{},
-		SecretAttachments:  map[string][]topology.SecretAttachment{},
 	}
 	resolveResult := &resolver.ResolveResult{
 		Aggregate:     &types.Aggregate{Metadata: types.AggregateMetadata{Name: "test"}},

@@ -205,7 +205,7 @@ containers:
     args: ["--port", "8080"]
     variables:
       LOG_LEVEL: info
-    secrets:
+    attachments:
       DB_PASS:
         from: db-password
         as: env

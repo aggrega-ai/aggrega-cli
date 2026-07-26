@@ -379,23 +379,16 @@ func DecodeVerboseInjectEntry(entry any) (in, value, from string, hasValue, hasF
 	return
 }
 
-// FeatureInstance is a feature attachment on a component or subsystem.
-// Used in Aggregate component.features, subsystem.features, and Release boundary features.
+// FeatureInstance is one Feature attachment, keyed by the instance name the
+// author gave it. Used in Aggregate component.features, subsystem.features, and
+// Release boundary features.
+//
+// This is the one attachment shape. A credential Feature — one carrying the
+// feature.aggrega.ai/kind: secret label — is attached here like any other, with
+// the same fields; the label selects what the attachment's bound FeatureRecipe
+// produces, not the surface it is declared on. For a credential, Values holds
+// pointers into a secret store rather than resolved material.
 type FeatureInstance struct {
-	Type        string                      `json:"type" yaml:"type"`
-	Description string                      `json:"description,omitempty" yaml:"description,omitempty"`
-	Values      OrderedMap[any]             `json:"values,omitempty,omitzero" yaml:"values,omitempty"`
-	Uses        OrderedMap[UsesSocketValue] `json:"uses,omitempty,omitzero" yaml:"uses,omitempty"`
-	Inject      *InjectBlock                `json:"inject,omitempty" yaml:"inject,omitempty"`
-	Secrets     OrderedMap[SecretInstance]  `json:"secrets,omitempty,omitzero" yaml:"secrets,omitempty"`
-}
-
-// SecretInstance is a credential feature attachment (labeled
-// feature.aggrega.ai/kind: secret). Used in Aggregate component.secrets,
-// feature.secrets, and Release boundary secrets. Structurally parallel to
-// [FeatureInstance] except for nested Secrets: credentials are leaf
-// attachments and a SecretInstance cannot itself carry nested secrets.
-type SecretInstance struct {
 	Type        string                      `json:"type" yaml:"type"`
 	Description string                      `json:"description,omitempty" yaml:"description,omitempty"`
 	Values      OrderedMap[any]             `json:"values,omitempty,omitzero" yaml:"values,omitempty"`

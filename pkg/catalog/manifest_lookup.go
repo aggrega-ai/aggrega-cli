@@ -806,14 +806,6 @@ func (c *Catalog) ResolutionFindings(manifest *types.Manifest, graph *types.IRGr
 			}
 		}
 	}
-	for nodeID, secs := range graph.Spec.Secrets.All() {
-		_ = nodeID
-		for instName, entry := range secs.All() {
-			if err := c.resolveFeatureRecipeForVerify(manifest, instName, entry.Type); err != nil {
-				errs = append(errs, err)
-			}
-		}
-	}
 	for bp, feats := range graph.Spec.BoundaryFeatures.All() {
 		_ = bp
 		for instName, bf := range feats.All() {

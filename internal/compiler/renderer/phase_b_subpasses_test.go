@@ -146,7 +146,7 @@ containers:
 // ----- TestPhaseB2_WorkloadValidationFlow -----
 
 // Verifies B.2's three-stage flow: yaml.Unmarshal + ValidateWorkload +
-// ValidateWorkloadSecrets. Each stage's failure mode produces a distinct
+// ValidateWorkloadAttachments. Each stage's failure mode produces a distinct
 // error type.
 func TestPhaseB2_WorkloadValidationFlow_ValidPasses(t *testing.T) {
 	t.Parallel()
@@ -222,7 +222,7 @@ kind: Workload
 containers:
   main:
     image: app:1.0
-    secrets:
+    attachments:
       DB:
         from: undeclared-slot
         as: env

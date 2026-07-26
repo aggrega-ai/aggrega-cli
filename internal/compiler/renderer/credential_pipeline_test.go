@@ -36,15 +36,16 @@ func credentialPipelineInput(t *testing.T) (renderer.RendererInput, renderer.Rec
 	envInj.Set("DB_PASSWORD", "ref:root_password")
 	inj := types.OrderedMap[types.OrderedMap[string]]{}
 	inj.Set("env", envInj)
-	inner := types.OrderedMap[types.IRSecretEntry]{}
-	inner.Set("root_password", types.IRSecretEntry{
+	inner := types.OrderedMap[types.IRFeatureEntry]{}
+	inner.Set("root_password", types.IRFeatureEntry{
 		Type:   "core/db-password",
 		Values: vals,
 		Inject: inj,
 	})
-	outer := types.OrderedMap[types.OrderedMap[types.IRSecretEntry]]{}
+	outer := types.OrderedMap[types.OrderedMap[types.IRFeatureEntry]]{}
 	outer.Set("api", inner)
-	input.Graph.Spec.Secrets = outer
+	input.Graph.Spec.FeatureValuesMapping = outer
+	input.FeatureOrder = map[string][]string{"api": {"root_password"}}
 
 	lookup := renderer.RecipeLookup{
 		Recipe: func(_, componentType string) (*types.Recipe, bool) {
@@ -73,7 +74,7 @@ containers:
 			art.Set("secret.yaml", types.ArtifactEntry{Inline: `apiVersion: v1
 kind: Secret
 metadata:
-  name: {{ .secret_name }}
+  name: {{ .attachment_name }}
 stringData:
   binding: "{{ .inject.env.DB_PASSWORD }}"
 `})
@@ -118,7 +119,7 @@ func TestRenderAll_CredentialFeatureRecipePipelineExecutes(t *testing.T) {
 	var ownEmit, hostEmit string
 	for _, k := range keys {
 		switch {
-		case strings.Contains(k, "secrets/root_password/") && strings.HasSuffix(k, "pipeline-configmap.yaml"):
+		case strings.Contains(k, "features/root_password/") && strings.HasSuffix(k, "pipeline-configmap.yaml"):
 			ownEmit = k
 		case strings.HasSuffix(k, "pipeline-host-marker.yaml"):
 			hostEmit = k

@@ -71,7 +71,7 @@ func (a *ActiveFlag) UnmarshalJSON(data []byte) error {
 // schema; their godoc is the schema's descriptions. This hand-written companion
 // holds the per-instance carrier types the generated spec references —
 // SubAggregate, Subsystem, and ComponentInstance — which carry the
-// Annotations / Uses / Inject / Secrets surfaces and their polymorphic decode.
+// Annotations / Uses / Inject / Features surfaces and their polymorphic decode.
 // Annotations live on those per-instance carriers; AggregateSpec itself carries
 // no top-level Annotations.
 
@@ -142,7 +142,6 @@ type ComponentInstance struct {
 	Inject      *InjectBlock                `json:"inject,omitempty" yaml:"inject,omitempty"`      // Component-level self-inject
 	Uses        OrderedMap[UsesSocketValue] `json:"uses,omitempty,omitzero" yaml:"uses,omitempty"` // UsesBlock: socket → simple []string or verbose alias-map
 	Features    OrderedMap[FeatureInstance] `json:"features,omitempty,omitzero" yaml:"features,omitempty"`
-	Secrets     OrderedMap[SecretInstance]  `json:"secrets,omitempty,omitzero" yaml:"secrets,omitempty"`
 
 	// Annotations are Developer-authored annotations at the component
 	// scope. Values follow the same [AnnotationValue] shape as on

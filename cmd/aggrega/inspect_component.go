@@ -83,7 +83,7 @@ func renderComponentStructured(comp types.Component, identifier string, opts ins
 			}
 		}
 		if comp.Spec.FeaturesSchema.Len() > 0 {
-			fmt.Fprintln(opts.out, "Secret slots:")
+			fmt.Fprintln(opts.out, "Attachment slots:")
 			for slot, entry := range comp.Spec.FeaturesSchema.All() {
 				req := ""
 				if entry.Required {

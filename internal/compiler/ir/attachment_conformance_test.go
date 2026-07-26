@@ -86,17 +86,16 @@ func vmap(pairs ...any) types.OrderedMap[any] {
 }
 
 // buildWithAttachments runs BuildIR end-to-end for a single node "api" carrying
-// the given Feature and Secret attachments, returning the build error (nil on
-// success). This exercises the real attachment-gate wiring: the builder's
-// per-type schema compile cache, validateNodeAttachments, and the joined halt.
-func buildWithAttachments(t *testing.T, feats []topology.FeatureAttachment, secs []topology.SecretAttachment) error {
+// the given attachments, returning the build error (nil on success). This
+// exercises the real attachment-gate wiring: the builder's per-type schema
+// compile cache, validateNodeAttachments, and the joined halt.
+func buildWithAttachments(t *testing.T, feats []topology.FeatureAttachment) error {
 	t.Helper()
 	nodes := types.OrderedMap[*topology.TopologyNode]{}
 	nodes.Set("api", &topology.TopologyNode{InstanceID: "api", ComponentType: "core/server"})
 	topoResult := &topology.TopologyResult{
 		Nodes:              nodes,
 		FeatureAttachments: map[string][]topology.FeatureAttachment{"api": feats},
-		SecretAttachments:  map[string][]topology.SecretAttachment{"api": secs},
 	}
 	resolveResult := &resolver.ResolveResult{
 		Aggregate:     &types.Aggregate{Metadata: types.AggregateMetadata{Name: "test"}},
@@ -127,28 +126,31 @@ func requireConformanceHalt(t *testing.T, err error, wantFieldSubstr string) {
 	}
 }
 
-// --- Feature/Secret attachment values, end-to-end through BuildIR ------------
+// --- Attachment values, end-to-end through BuildIR --------------------------
 
 func TestAttachmentConformance_FeatureValuesViolationHalts(t *testing.T) {
 	t.Parallel()
 	err := buildWithAttachments(t,
-		[]topology.FeatureAttachment{feat("mon", "core/monitoring", vmap("level", "bogus"))}, nil)
+		[]topology.FeatureAttachment{feat("mon", "core/monitoring", vmap("level", "bogus"))})
 	requireConformanceHalt(t, err, ".spec.components.api.features.mon.values.level")
 }
 
-func TestAttachmentConformance_SecretValuesViolationHalts(t *testing.T) {
+// A credential attachment is gated by the same schema check on the same one
+// authoring surface as any other attachment — the halt names .features, because
+// there is no second attachment keyword for it to land under.
+func TestAttachmentConformance_CredentialValuesViolationHalts(t *testing.T) {
 	t.Parallel()
 	// username is required with no default; omitting it must halt.
-	err := buildWithAttachments(t, nil,
-		[]topology.SecretAttachment{{InstanceName: "db", Secret: types.SecretInstance{Type: "core/db-creds", Values: vmap()}}})
-	requireConformanceHalt(t, err, ".spec.components.api.secrets.db.values")
+	err := buildWithAttachments(t,
+		[]topology.FeatureAttachment{{InstanceName: "db", Feature: types.FeatureInstance{Type: "core/db-creds", Values: vmap()}}})
+	requireConformanceHalt(t, err, ".spec.components.api.features.db.values")
 }
 
 func TestAttachmentConformance_SchemalessAttachmentSkips(t *testing.T) {
 	t.Parallel()
 	// core/bare declares no schema → its attachment is not validated.
 	err := buildWithAttachments(t,
-		[]topology.FeatureAttachment{feat("b", "core/bare", vmap("anything", "goes"))}, nil)
+		[]topology.FeatureAttachment{feat("b", "core/bare", vmap("anything", "goes"))})
 	if err != nil {
 		t.Fatalf("schemaless attachment must skip validation; got %v", err)
 	}
@@ -158,7 +160,7 @@ func TestAttachmentConformance_DefaultAwareNoFalsePositive(t *testing.T) {
 	t.Parallel()
 	// retention is required BUT defaulted (7); omitting it must not be flagged.
 	err := buildWithAttachments(t,
-		[]topology.FeatureAttachment{feat("mon", "core/monitoring", vmap("level", "info"))}, nil)
+		[]topology.FeatureAttachment{feat("mon", "core/monitoring", vmap("level", "info"))})
 	if err != nil {
 		t.Fatalf("required-with-default attachment value must not be flagged; got %v", err)
 	}
@@ -167,7 +169,7 @@ func TestAttachmentConformance_DefaultAwareNoFalsePositive(t *testing.T) {
 func TestAttachmentConformance_ConformingPasses(t *testing.T) {
 	t.Parallel()
 	err := buildWithAttachments(t,
-		[]topology.FeatureAttachment{feat("mon", "core/monitoring", vmap("level", "warn", "port", 8080, "retention", 14))}, nil)
+		[]topology.FeatureAttachment{feat("mon", "core/monitoring", vmap("level", "warn", "port", 8080, "retention", 14))})
 	if err != nil {
 		t.Fatalf("conforming attachment must pass; got %v", err)
 	}
@@ -185,7 +187,7 @@ func TestAttachmentConformance_LaterTierOverrideToIllegalHalts(t *testing.T) {
 	err := buildWithAttachments(t, []topology.FeatureAttachment{
 		feat("mon", "core/monitoring", vmap("level", "info")),
 		feat("mon", "core/monitoring", vmap("level", "bogus")),
-	}, nil)
+	})
 	requireConformanceHalt(t, err, ".spec.components.api.features.mon.values.level")
 }
 
@@ -197,7 +199,7 @@ func TestAttachmentConformance_LaterTierOverrideToLegalPasses(t *testing.T) {
 	err := buildWithAttachments(t, []topology.FeatureAttachment{
 		feat("mon", "core/monitoring", vmap("level", "bogus")),
 		feat("mon", "core/monitoring", vmap("level", "info")),
-	}, nil)
+	})
 	if err != nil {
 		t.Fatalf("merged-result must be validated, not the illegal first fragment; got %v", err)
 	}
@@ -210,7 +212,7 @@ func TestAttachmentConformance_FeatureInfraViolation(t *testing.T) {
 	t.Parallel()
 	feats := types.OrderedMap[types.IRFeatureEntry]{}
 	feats.Set("mon", types.IRFeatureEntry{Type: "core/monitoring", Infra: vmap("replicas", 0)})
-	errs := validateNodeAttachments("api", feats, types.OrderedMap[types.IRSecretEntry]{},
+	errs := validateNodeAttachments("api", feats,
 		nil, "Aggregate test", testCompiledFor(t, conformanceFeatureCatalog(t)))
 	if len(errs) == 0 {
 		t.Fatal("expected an infra conformance violation for replicas below minimum")
@@ -247,7 +249,6 @@ func TestAttachmentConformance_InheritedFeatureConstraintEnforced(t *testing.T) 
 		FeatureAttachments: map[string][]topology.FeatureAttachment{
 			"api": {feat("mon", "core/monitoring", vmap("level", "info"))},
 		},
-		SecretAttachments: map[string][]topology.SecretAttachment{},
 	}
 	resolveResult := &resolver.ResolveResult{
 		Aggregate:     &types.Aggregate{Metadata: types.AggregateMetadata{Name: "test"}},
@@ -282,7 +283,6 @@ func TestAttachmentConformance_PredicateReadsParameter(t *testing.T) {
 		topoResult := &topology.TopologyResult{
 			Nodes:              nodes,
 			FeatureAttachments: map[string][]topology.FeatureAttachment{"api": {feat("g", "core/gated", vmap("tier", "gold"))}},
-			SecretAttachments:  map[string][]topology.SecretAttachment{},
 		}
 		rr := &resolver.ResolveResult{
 			Aggregate:     &types.Aggregate{Metadata: types.AggregateMetadata{Name: "test"}},

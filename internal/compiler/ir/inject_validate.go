@@ -98,10 +98,9 @@ func ValidateInjectBlock(b *types.InjectBlock, pathPrefix string) error {
 // Aggregate-side surfaces walked:
 //
 //   - Aggregate.Spec.Components[*].Inject (component self-inject)
-//   - Aggregate.Spec.Components[*].Features[*].Inject (feature attachment)
-//   - Aggregate.Spec.Components[*].Secrets[*].Inject (secret attachment)
+//   - Aggregate.Spec.Components[*].Features[*].Inject (attachment inject)
 //   - Aggregate.Spec.Components[*].Uses[*].Verbose[*].Inject (uses[].inject)
-//   - Aggregate.Spec.Subsystems[*].{Components[*].(same four), Features[*].Inject,
+//   - Aggregate.Spec.Subsystems[*].{Components[*].(same three), Features[*].Inject,
 //     Subsystems[*]...} recursively
 //
 // Release-side surfaces walked: the resolved Release.Spec.Boundaries tree
@@ -158,43 +157,19 @@ func validateComponentInstance(comp types.ComponentInstance, prefix string) []er
 	for fname, feat := range comp.Features.All() {
 		errs = append(errs, validateFeatureInstance(feat, fmt.Sprintf("%s.features[%q]", prefix, fname))...)
 	}
-	for sname, sec := range comp.Secrets.All() {
-		errs = append(errs, validateSecretInstance(sec, fmt.Sprintf("%s.secrets[%q]", prefix, sname))...)
-	}
 	return errs
 }
 
-// validateFeatureInstance walks a FeatureInstance recursively. A
-// FeatureInstance carries its own Inject + Uses substructure (each Uses
-// entry carries *InjectBlock via VerboseUsesEntry) + Secrets substructure
-// (each SecretInstance carries its own Inject + Uses). Without this
-// recursion, both-present InjectBlock instances reached via a feature's
-// nested Uses or Secrets would slip past the validator.
+// validateFeatureInstance walks one attachment: its own Inject plus its Uses
+// substructure (each Uses entry carries *InjectBlock via VerboseUsesEntry).
+// Without the Uses descent, a both-present InjectBlock reached through an
+// attachment's nested Uses would slip past the validator.
 func validateFeatureInstance(feat types.FeatureInstance, prefix string) []error {
 	var errs []error
 	if err := ValidateInjectBlock(feat.Inject, prefix+".inject"); err != nil {
 		errs = append(errs, err)
 	}
 	errs = append(errs, validateUsesBlock(feat.Uses, prefix)...)
-	for sname, sec := range feat.Secrets.All() {
-		errs = append(errs, validateSecretInstance(sec, fmt.Sprintf("%s.secrets[%q]", prefix, sname))...)
-	}
-	return errs
-}
-
-// validateSecretInstance walks a SecretInstance recursively. A
-// SecretInstance carries Inject + Uses substructure (each Uses entry
-// carries *InjectBlock via VerboseUsesEntry). Unlike FeatureInstance,
-// SecretInstance cannot carry nested Secrets — credentials are leaf
-// attachments per the type's contract — so recursion terminates here on
-// the secret side; the Uses-side branch reaches no deeper than its
-// VerboseUsesEntry.Inject leaves.
-func validateSecretInstance(sec types.SecretInstance, prefix string) []error {
-	var errs []error
-	if err := ValidateInjectBlock(sec.Inject, prefix+".inject"); err != nil {
-		errs = append(errs, err)
-	}
-	errs = append(errs, validateUsesBlock(sec.Uses, prefix)...)
 	return errs
 }
 
