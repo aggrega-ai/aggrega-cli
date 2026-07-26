@@ -297,13 +297,14 @@ func (e *Engine) Render(ctx context.Context, values map[string]any, nodeCtx rend
 	return out.Files, nil
 }
 
-// SynthesizeWorkload projects the evaluated workload and its per-slot secret
-// provides into a render_node payload and returns the guest's synthesized
-// manifests in emission order. Emission order is deterministic and load-bearing,
-// so the guest's file order is preserved — never re-sorted. The per-slot secret
-// provides are projected from the template context through the same host
-// projection the in-tree engine uses, so both surfaces resolve a workload secret
-// reference to the same generated Secret identity.
+// SynthesizeWorkload projects the evaluated workload and its attachments'
+// resolved provides into a render_node payload and returns the guest's
+// synthesized manifests in emission order. Emission order is deterministic and
+// load-bearing, so the guest's file order is preserved — never re-sorted. The
+// attachment provides are projected from the template context through
+// AttachmentProvidesFromContext, the one host projection every synthesizer
+// surface builds the lookup from, so a workload attachment reference resolves to
+// the same emitted resource identity wherever it is read.
 //
 // Each emitted file carries the Intermediate marking classified from the guest's
 // boundary-assembly self-report (renderer.RenderIsIntermediate): a fragment-merging
@@ -324,8 +325,8 @@ func (e *Engine) SynthesizeWorkload(
 		Node:    e.nodeProjection(nodeCtx, types.OrderedMap[any]{}),
 		Context: e.renderContext(nodeCtx),
 		WorkloadProjection: &renderer.WorkloadProjection{
-			Workload: *w,
-			Secrets:  renderer.AttachmentProvidesFromContext(tmplCtx),
+			Workload:           *w,
+			AttachmentProvides: renderer.AttachmentProvidesFromContext(tmplCtx),
 		},
 	}
 	out, err := e.invoke(ctx, RenderNodeExport, input, "")

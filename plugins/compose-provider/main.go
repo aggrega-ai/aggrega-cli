@@ -327,11 +327,11 @@ func placeArtifactsFromInput(in rendercore.RenderNodeInput) (rendercore.RenderNo
 // the in-tree engine runs, and returns the fragment's serialized bytes as a
 // RenderedFile. The workload arrives in the workload projection; the node's
 // identity, provenance, and merged annotations arrive in the node projection and
-// render context. Compose's synthesis reads no per-slot secret provides, so the
-// projection's Secrets are ignored by design. The core's emission order is
-// deterministic and load-bearing (a single Intermediate=true fragment named
-// `<nodeID>.compose-fragment.yaml`), so the files are collected in order and
-// never re-sorted.
+// render context. Compose's synthesis reads no attachment provides, so the
+// projection's AttachmentProvides are ignored by design. The core's emission
+// order is deterministic and load-bearing (a single Intermediate=true fragment
+// named `<nodeID>.compose-fragment.yaml`), so the files are collected in order
+// and never re-sorted.
 func renderSynthFromInput(in rendercore.RenderNodeInput) (rendercore.RenderNodeOutput, error) {
 	if in.WorkloadProjection == nil {
 		return rendercore.RenderNodeOutput{}, errors.New("compose-provider: render_node input carries no workload projection")

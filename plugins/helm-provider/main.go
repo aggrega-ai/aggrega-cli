@@ -220,8 +220,8 @@ func renderSourcedFromInput(in rendercore.RenderNodeInput) (rendercore.RenderNod
 // renderSynthFromInput synthesizes provider-native manifests from the wire
 // input's workload projection, running the same filesystem-free synthesis core
 // the in-tree engine runs, and returns each synthesized manifest's serialized
-// bytes as a RenderedFile. The workload and its per-slot secret provides arrive
-// in the workload projection; the node's identity, provenance, and merged
+// bytes as a RenderedFile. The workload and its attachments' resolved provides
+// arrive in the workload projection; the node's identity, provenance, and merged
 // annotations arrive in the node projection and render context. The core's
 // emission order is deterministic and load-bearing, so the files are collected
 // in order and never re-sorted.
@@ -232,7 +232,7 @@ func renderSynthFromInput(in rendercore.RenderNodeInput) (rendercore.RenderNodeO
 
 	nodeCtx := nodeCtxFromInput(in)
 
-	emitted, err := helm.SynthesizeWorkloadCore(&in.WorkloadProjection.Workload, in.WorkloadProjection.Secrets, nodeCtx)
+	emitted, err := helm.SynthesizeWorkloadCore(&in.WorkloadProjection.Workload, in.WorkloadProjection.AttachmentProvides, nodeCtx)
 	if err != nil {
 		return rendercore.RenderNodeOutput{}, err
 	}
