@@ -1,0 +1,9 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Manifest
+metadata:
+  name: tier4-required-attachment-type-manifest
+  version: "1.0.0"
+spec:
+  mappings:
+    components:
+      type: {}

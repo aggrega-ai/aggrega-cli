@@ -171,7 +171,7 @@ func renderAggregateNodes(opts inspectOptions, topo *topology.TopologyResult, lo
 		body := indent + "  "
 		renderAggregateNodeValues(opts, body, node.Values)
 		renderAggregateNodeUses(opts, body, node.Uses)
-		renderAggregateNodeRequiredFeatures(opts, body, node.ComponentType, lookup)
+		renderAggregateNodeRequiredAttachments(opts, body, node.ComponentType, lookup)
 	}
 }
 
@@ -232,22 +232,27 @@ func renderAggregateNodeUses(opts inspectOptions, indent string, uses types.Orde
 	}
 }
 
-// renderAggregateNodeRequiredFeatures prints the Features the node's Component
-// catalog entity declares as required. The list comes from the shared catalog
-// lookup (the same index the build path resolves against), so it cannot drift
-// from the compiler's view. A Component absent from the catalog, or one
-// declaring none, prints nothing.
-func renderAggregateNodeRequiredFeatures(opts inspectOptions, indent, componentType string, lookup resolver.CatalogLookup) {
+// renderAggregateNodeRequiredAttachments prints the presence mandates the
+// node's Component catalog entity declares — each requiredType annotation, as
+// "<label>: <type>". The mandates come from the shared catalog lookup (the same
+// index the build path resolves against), so they cannot drift from the
+// compiler's view. A Component absent from the catalog, or one declaring none,
+// prints nothing.
+func renderAggregateNodeRequiredAttachments(opts inspectOptions, indent, componentType string, lookup resolver.CatalogLookup) {
 	if lookup.Component == nil {
 		return
 	}
 	comp, found := lookup.Component(componentType)
-	if !found || len(comp.Spec.RequiredFeatures) == 0 {
+	if !found {
 		return
 	}
-	fmt.Fprintf(opts.out, "%sRequired Features:\n", indent)
-	for _, rf := range comp.Spec.RequiredFeatures {
-		fmt.Fprintf(opts.out, "%s  - %s\n", indent, rf)
+	mandates := types.RequiredAttachmentTypes(comp.Metadata.Annotations)
+	if len(mandates) == 0 {
+		return
+	}
+	fmt.Fprintf(opts.out, "%sRequired attachment types:\n", indent)
+	for _, m := range mandates {
+		fmt.Fprintf(opts.out, "%s  %s: %s\n", indent, m.Label, m.Type)
 	}
 }
 

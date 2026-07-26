@@ -6,7 +6,7 @@ entities:
         - manifest.spec.mappings.features.type.core/prometheus-exporter
     - uri: example/compute/service
       resolved_version: 1.0.0
-      digest: sha256:25684ab8d353515f4023716f58d62c7d860f2b5d15ea0dc40d79dd2d9b6f2158
+      digest: sha256:802974845ec075695d20b3d86bbcd48515e7d472751435cde7a29ddf225248e9
       referenced_from:
         - aggregate.spec.subsystems.default.components.api.type
         - aggregate.spec.subsystems.default.components.etl.type
@@ -16,7 +16,7 @@ entities:
         - aggregate.spec.subsystems.default.components.worker.type
     - uri: example/compute/service:1.0.0
       resolved_version: 1.0.0
-      digest: sha256:25684ab8d353515f4023716f58d62c7d860f2b5d15ea0dc40d79dd2d9b6f2158
+      digest: sha256:802974845ec075695d20b3d86bbcd48515e7d472751435cde7a29ddf225248e9
       referenced_from:
         - manifest.spec.mappings.components.type.example/compute/service:1.0.0
     - uri: monitoring-demo

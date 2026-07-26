@@ -173,16 +173,11 @@ func versionedName(feature *types.Feature) string {
 // normal cross-side-composition scenario, not a violation.
 //
 // Pipeline placement: the orchestrator invokes ExpandAnnotations
-// between Resolve and RunGuards. RunGuards' requiredFeatures
-// completeness check therefore reads synthetic Features identically to
-// explicit ones — a component that satisfies a requiredFeatures
-// dependency via an annotation-driven attachment passes the guard.
-// Operators debugging a failed requiredFeatures check on an
-// annotation-driven attachment will see an author-shape error message
-// until IR-level provenance markers (Origin: "annotation",
-// AnnotationKey, AnnotationSource) ship in the IR-provenance pass and
-// give the diagnostic layer the information to surface annotation-
-// origin in error chains.
+// between Resolve and RunGuards, so an expanded attachment is
+// indistinguishable from an explicitly authored one everywhere
+// downstream. A component whose presence mandate is satisfied only by
+// an annotation-driven attachment therefore passes: the mandate tests
+// the attachment set, not how each attachment got there.
 //
 // Null-opt-out: explicit YAML `null` on an annotation key removes the
 // inherited binding from the overriding boundary or component. The

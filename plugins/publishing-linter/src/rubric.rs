@@ -115,7 +115,6 @@ const COMPONENT_FIELD_PATHS: &[&str] = &[
     "spec.schema",
     "spec.usesSchema",
     "spec.featuresSchema",
-    "spec.requiredFeatures",
     "spec.extends",
 ];
 const FEATURE_FIELD_PATHS: &[&str] = &[

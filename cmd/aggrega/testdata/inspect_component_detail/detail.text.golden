@@ -5,7 +5,7 @@ Schema:
 Uses sockets:
   db: selector="component.aggrega.ai/type=stateful-server"
 Self-inject mechanisms: [env file]
-Required features:
-  - core/metrics
+Required attachment types:
+  observability: core/metrics
 Labels:
   component.aggrega.ai/type: server

@@ -35,6 +35,18 @@ var (
 	// Guardrail); the message the plugin supplied is surfaced verbatim.
 	ErrPolicyViolation = errors.New("policy violation")
 
+	// ErrMalformedAttachmentRequirement is the ABI-stable sentinel for a
+	// presence mandate whose declaration cannot be evaluated: a
+	// features.aggrega.ai/requiredType.<label> annotation with no label, or
+	// whose value is not a Feature type URI. It is deliberately distinct from
+	// the missing-required-feature sentinel, which reports a well-formed
+	// requirement that no attachment satisfies. The two have different
+	// remediations — correct the Component catalog entity, versus attach the
+	// feature — and an annotation value is an opaque string that no structural
+	// validation upstream has checked, so a broken declaration must announce
+	// itself as broken rather than as unsatisfied.
+	ErrMalformedAttachmentRequirement = errors.New("malformed attachment requirement")
+
 	// ErrCatalogLookup is the ABI-stable sentinel reserved for catalog
 	// lookups that fail during analyzer-phase evaluation. Today catalog
 	// misses inside validateSelectors and validateAppliesTo trigger a

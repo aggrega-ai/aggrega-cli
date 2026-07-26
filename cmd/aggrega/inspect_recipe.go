@@ -15,7 +15,7 @@ import (
 // is mode-prominent: a Synthesized or Sourced section names the input kind, with
 // mode-specific body. spec.implements renders as authored (isolation default);
 // --show-implements resolves the bound Component against the catalog via the
-// shared lookup and surfaces its requiredFeatures.
+// shared lookup and surfaces the presence mandates it declares.
 //
 //   - levelList: identifier, implements, provider.
 //   - levelDefault: implements, provider, mode section, valuesMapping summary.
@@ -69,11 +69,8 @@ func renderRecipeFile(rw *workspaceconfig.ResolvedWorkspace, path string, data [
 		}
 		fmt.Fprintf(opts.out, "Implements Component: %s\n",
 			opts.colorize.uri(identifierVersion(comp.Metadata.Name, comp.Metadata.Version)))
-		if len(comp.Spec.RequiredFeatures) > 0 {
-			fmt.Fprintln(opts.out, "  required features:")
-			for _, rf := range comp.Spec.RequiredFeatures {
-				fmt.Fprintf(opts.out, "    - %s\n", rf)
-			}
+		for _, m := range types.RequiredAttachmentTypes(comp.Metadata.Annotations) {
+			fmt.Fprintf(opts.out, "  requires attachment (%s): %s\n", m.Label, m.Type)
 		}
 	}
 	return nil

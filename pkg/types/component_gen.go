@@ -49,8 +49,6 @@ type ComponentSpec struct {
 	Extends string `json:"extends,omitempty" yaml:"extends,omitempty"`
 	// FeaturesSchema Declarative attachment slot definitions: the named binding points at which this entity expects a Feature to be attached. A slot constrains which fill may bind it (selector) and how the fill's material may be delivered (inject); the fill's own Feature owns its values and infra contract. Declaring a slot never closes the attachment block — a deployment may attach a Feature under a name no slot declares, so one entity serves both a slot-filled attachment and a credential shared at a broader scope. A slot is a binding point, not a dependency socket: usesSchema declares the separate topology surface.
 	FeaturesSchema OrderedMap[AttachmentSlot] `json:"featuresSchema,omitempty,omitzero" yaml:"featuresSchema,omitempty"`
-	// RequiredFeatures A list of Feature types that must be attached to this component instance in the Aggregate.
-	RequiredFeatures []string `json:"requiredFeatures,omitempty" yaml:"requiredFeatures,omitempty"`
 	// Inject Allowlisted self-inject delivery mechanisms (e.g., ['env', 'file', 'arg']). When present, developers may use the inject: block at the component level in the Aggregate to inject their own values or provides keys directly into the delivery pipe. If omitted, component-level self-inject is forbidden (Black-Box pattern — the Recipe handles all internal wiring). Same semantics as usesSchema[].inject but governs the component's own values rather than cross-component topology.
 	Inject []string `json:"inject,omitempty" yaml:"inject,omitempty"`
 	// UsesSchema Native YAML schema defining the topology. The Go CLI natively reads this to validate selectors and allowed inject paradigms.

@@ -52,21 +52,6 @@ func TestSubsystemGuardCoverage_SelfInject(t *testing.T) {
 	requireSubsystemHalt(t, guardSelfInject(normalized(t, agg), selfInjectCatalog()), ErrSelfInjectForbidden, subsysDBPath)
 }
 
-// TestSubsystemGuardCoverage_Required — an unsatisfied requiredFeature on a
-// subsystem component now halts (the fourth root-only gap, surfaced and fixed by
-// the shared walker).
-func TestSubsystemGuardCoverage_Required(t *testing.T) {
-	t.Parallel()
-	agg := aggWithSubsystemComponent("db", types.ComponentInstance{Type: "core/needs-logging"})
-	cat := CatalogLookup{Component: func(u string) (types.Component, bool) {
-		if u == "core/needs-logging" {
-			return types.Component{Spec: types.ComponentSpec{RequiredFeatures: []string{"core/logging"}}}, true
-		}
-		return types.Component{}, false
-	}}
-	requireSubsystemHalt(t, guardRequiredFeatures(normalized(t, agg), &types.Release{}, cat), ErrMissingRequiredFeature, subsysDBPath)
-}
-
 // TestSubsystemGuardCoverage_Merge — a feature-type merge conflict on a
 // subsystem component now halts (was a root-only gap). The Release boundary
 // attaches the same feature name with a conflicting type for the same instance.

@@ -42,8 +42,8 @@ func renderComponentFile(_ *workspaceconfig.ResolvedWorkspace, path string, data
 //
 //   - levelList: the identifier plus its usesSchema socket names.
 //   - levelDefault: header, schema body, and the usesSchema sockets (selector).
-//   - levelDetail: adds inject mechanisms, requiredFeatures, featuresSchema, and
-//     metadata labels.
+//   - levelDetail: adds inject mechanisms, the declared presence mandates,
+//     featuresSchema, and metadata labels.
 //
 // All map iteration uses OrderedMap.All() for author-order determinism.
 func renderComponentStructured(comp types.Component, identifier string, opts inspectOptions) error {
@@ -76,10 +76,10 @@ func renderComponentStructured(comp types.Component, identifier string, opts ins
 		if len(comp.Spec.Inject) > 0 {
 			fmt.Fprintf(opts.out, "Self-inject mechanisms: %v\n", comp.Spec.Inject)
 		}
-		if len(comp.Spec.RequiredFeatures) > 0 {
-			fmt.Fprintln(opts.out, "Required features:")
-			for _, rf := range comp.Spec.RequiredFeatures {
-				fmt.Fprintf(opts.out, "  - %s\n", rf)
+		if mandates := types.RequiredAttachmentTypes(comp.Metadata.Annotations); len(mandates) > 0 {
+			fmt.Fprintln(opts.out, "Required attachment types:")
+			for _, m := range mandates {
+				fmt.Fprintf(opts.out, "  %s: %s\n", m.Label, m.Type)
 			}
 		}
 		if comp.Spec.FeaturesSchema.Len() > 0 {

@@ -55,10 +55,9 @@ func maximalComponent() types.Component {
 			Annotations: om[string]("a", "b"),
 		},
 		Spec: types.ComponentSpec{
-			Extends:          "core/compute/base",
-			FeaturesSchema:    om[types.AttachmentSlot]("api_key", types.AttachmentSlot{Required: true, Inject: []string{"env"}, Description: "key"}),
-			RequiredFeatures: []string{"core/logging"},
-			Inject:           []string{"env", "file"},
+			Extends:        "core/compute/base",
+			FeaturesSchema: om[types.AttachmentSlot]("api_key", types.AttachmentSlot{Required: true, Inject: []string{"env"}, Description: "key"}),
+			Inject:         []string{"env", "file"},
 			UsesSchema: om[types.UsesSchemaEntry]("databases", types.UsesSchemaEntry{
 				Selector:    "component.aggrega.ai/type=stateful-server",
 				Required:    true,
@@ -83,7 +82,7 @@ func maximalFeature() types.Feature {
 		},
 		Spec: types.FeatureSpec{
 			Extends:          "core/base-feature",
-			FeaturesSchema:    om[types.AttachmentSlot]("token", types.AttachmentSlot{Required: true}),
+			FeaturesSchema:   om[types.AttachmentSlot]("token", types.AttachmentSlot{Required: true}),
 			AppliesTo:        "component.aggrega.ai/type=server",
 			AppliesToAnyOf:   []types.SelectorTerm{types.StringTerm("component.aggrega.ai/type=worker")},
 			Interoperability: &types.Interoperability{ConflictsWith: []string{"core/other"}, ComponentRefPath: "spec.target"},

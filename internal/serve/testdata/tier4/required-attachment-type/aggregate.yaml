@@ -1,0 +1,13 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: tier4-required-attachment-type
+  version: "1.0.0"
+spec:
+  components:
+    # Declares a well-formed mandate its instance does not satisfy.
+    unmonitored:
+      type: example/needs-exporter
+    # Declares a mandate whose value is not a Feature type URI.
+    broken:
+      type: example/broken-requirement

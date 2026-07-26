@@ -176,7 +176,6 @@ func BuildIRContext(ctx context.Context, cfg BuildIRConfig) (*types.IRGraph, Fea
 		return compiled, true
 	}
 	var attachmentConformanceErrs []*resolver.ResolverError
-	var requiredFeatureErrs []*resolver.ResolverError
 	var attachmentParams map[string]any
 	attachmentEntity := "Aggregate"
 	if res != nil {
@@ -288,23 +287,6 @@ func BuildIRContext(ctx context.Context, cfg BuildIRConfig) (*types.IRGraph, Fea
 		attachmentConformanceErrs = append(attachmentConformanceErrs,
 			validateNodeAttachments(nodeID, featResult.Features, featResult.Secrets,
 				attachmentParams, attachmentEntity, compiledFeature)...)
-
-		// Required-features enforcement for flattened sub-aggregate nodes. The
-		// Step-1 guard covers root and subsystem components; sub-aggregate nodes
-		// do not exist before flattening, so their requiredFeatures contract is
-		// enforced here against the node's merged attachment set.
-		if topoNode.SourceAggregate != "" {
-			requiredFeatureErrs = append(requiredFeatureErrs,
-				validateNodeRequiredFeatures(nodeID, topoNode.ComponentType,
-					featResult.Features, featResult.Secrets, cfg.CatalogLookup, attachmentEntity)...)
-		}
-	}
-
-	// Presence before validity: a missing required feature halts ahead of an
-	// attachment-conformance violation, matching the Step-1-before-Step-3
-	// ordering the root/subsystem path already produces.
-	if len(requiredFeatureErrs) > 0 {
-		return nil, nil, joinRequiredFeatures(requiredFeatureErrs)
 	}
 
 	if len(attachmentConformanceErrs) > 0 {

@@ -16,10 +16,9 @@ type FeatureLookup func(uri string) (types.Feature, bool)
 
 // ResolveComponentExtends returns a fully-merged Component after walking the
 // extends chain. Labels/Annotations maps are deep-merged (child wins per key),
-// list fields (Inject, RequiredFeatures) are concatenated and
-// deduplicated, UsesSchema entries are merged (child entry overrides parent on
-// the same socket name). Returns the original component unchanged when
-// Spec.Extends == "".
+// the Inject list is concatenated and deduplicated, UsesSchema entries are
+// merged (child entry overrides parent on the same socket name). Returns the
+// original component unchanged when Spec.Extends == "".
 //
 // Spec.Schema is left as-authored on the merged component. JSON Schema
 // composition across the extends chain runs through the JSON-Schema-merge
@@ -161,7 +160,6 @@ func mergeComponent(parent, child types.Component) types.Component {
 	out.Metadata.Annotations = mergeStringMap(parent.Metadata.Annotations, child.Metadata.Annotations)
 
 	out.Spec.FeaturesSchema = mergeFeaturesSchema(parent.Spec.FeaturesSchema, child.Spec.FeaturesSchema)
-	out.Spec.RequiredFeatures = concatDedupeString(parent.Spec.RequiredFeatures, child.Spec.RequiredFeatures)
 	out.Spec.Inject = concatDedupeString(parent.Spec.Inject, child.Spec.Inject)
 	out.Spec.UsesSchema = mergeUsesSchema(parent.Spec.UsesSchema, child.Spec.UsesSchema)
 	return out

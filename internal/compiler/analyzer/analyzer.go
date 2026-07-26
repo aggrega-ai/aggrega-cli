@@ -5,6 +5,7 @@ package analyzer
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -54,6 +55,14 @@ const (
 	// composing it from the edge fields, which a policy verdict does not
 	// carry.
 	AnalysisErrorPolicy AnalysisErrorKind = "policy"
+
+	// AnalysisErrorAttachmentRequirement marks a presence-mandate violation:
+	// a component's declared required attachment type that no attachment
+	// satisfies, or a mandate whose declaration is itself malformed. The
+	// violation is per-node rather than per-edge, so
+	// [AnalysisError.Error] prefixes the node and returns the rest of the
+	// diagnostic verbatim instead of composing it from the edge fields.
+	AnalysisErrorAttachmentRequirement AnalysisErrorKind = "attachment-requirement"
 )
 
 // AnalysisError is one violation discovered during Step 4. The struct
@@ -157,7 +166,9 @@ func appliesToFieldPath(nodeID, instance, subsystemPath string) string {
 
 // Error formats the violation as a single human-readable string. A policy
 // verdict (Kind [AnalysisErrorPolicy]) returns its Message verbatim — the
-// plugin already supplied a complete diagnostic. Selector violations (Socket
+// plugin already supplied a complete diagnostic. A presence-mandate violation
+// (Kind [AnalysisErrorAttachmentRequirement]) reads as "<node>: <message>",
+// naming the node the mandate was evaluated against. Selector violations (Socket
 // non-empty) read as "<source> -> <target> (<socket>): <message>"; appliesTo
 // violations (Socket empty) read as
 // "<source> attaches Feature <target>: <message>" since the appliesTo check's
@@ -166,6 +177,9 @@ func appliesToFieldPath(nodeID, instance, subsystemPath string) string {
 func (e AnalysisError) Error() string {
 	if e.Kind == AnalysisErrorPolicy {
 		return e.Message
+	}
+	if e.Kind == AnalysisErrorAttachmentRequirement {
+		return fmt.Sprintf("%s: %s", e.Source, e.Message)
 	}
 	if e.Socket != "" {
 		return fmt.Sprintf("%s -> %s (%s): %s", e.Source, e.Target, e.Socket, e.Message)
@@ -199,8 +213,15 @@ func (e AnalysisError) Error() string {
 // empty, matching the prior behavior.
 func (e *AnalysisError) ToCompilerError() *cerrors.CompilerError {
 	category := cerrors.DeveloperError
-	if e.Kind == AnalysisErrorPolicy {
+	switch {
+	case e.Kind == AnalysisErrorPolicy:
 		category = cerrors.PolicyError
+	case errors.Is(e.Sentinel, ErrMalformedAttachmentRequirement):
+		// The broken declaration is on the Component catalog entity, so the
+		// remediation belongs to whoever authors the catalog — unlike an
+		// unsatisfied mandate, which the Aggregate's author resolves by
+		// attaching the feature.
+		category = cerrors.CatalogError
 	}
 	return cerrors.New(
 		category,
@@ -254,8 +275,10 @@ type PrecalculatedPath struct {
 // non-nil [AnalysisResult] populated with:
 //
 //  1. Selector-violation errors from validateSelectors.
-//  2. AppliesTo-violation errors from validateAppliesTo (appended
-//     to the same Errors slice).
+//  2. AppliesTo-violation errors from validateAppliesTo, attachment-slot
+//     selector errors from validateSlotSelectors, and presence-mandate
+//     errors from validateRequiredAttachmentTypes (all appended to the
+//     same Errors slice).
 //  3. Precalculated paths from calculatePaths.
 //  4. The PolicyInput payload from assemblePolicyInput.
 //
@@ -297,6 +320,14 @@ func AnalyzeContext(ctx context.Context, graph *types.IRGraph, catalogLookup res
 		return nil, err
 	}
 	errs = append(errs, slotErrs...)
+
+	// 2c. presence mandates — each requiredType annotation a node's Component
+	// declares is satisfied by some attachment of that type.
+	mandateErrs, err := validateRequiredAttachmentTypes(ctx, graph)
+	if err != nil {
+		return nil, err
+	}
+	errs = append(errs, mandateErrs...)
 
 	// 3. DFS path calculation
 	paths := calculatePaths(graph)

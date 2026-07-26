@@ -1,0 +1,9 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Feature
+metadata:
+  name: example/exporter
+  version: "1.0.0"
+spec:
+  schema:
+    values:
+      interval: { type: string, default: "30s" }

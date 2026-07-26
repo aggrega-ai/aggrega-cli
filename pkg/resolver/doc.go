@@ -16,9 +16,8 @@
 //
 //   - RunGuards executes the semantic checks that need a catalog lookup
 //     (uses-socket existence, self-inject allowlist, inject key collisions,
-//     credential label partition, requiredFeatures completeness, Release
-//     feature merge, required uses-socket population). Callers run
-//     RunGuards after Resolve and before topology.
+//     Release feature merge, required uses-socket population, schema
+//     conformance). Callers run RunGuards after Resolve and before topology.
 //
 // JSON Schema parsing and validation live in pkg/validator. The resolver
 // surfaces catalog state to RunGuards; the schema-content validation flow

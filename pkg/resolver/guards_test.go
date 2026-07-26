@@ -23,9 +23,6 @@ func testCatalog() CatalogLookup {
 						Version: "1.0.0",
 						Labels:  labels,
 					},
-					Spec: types.ComponentSpec{
-						RequiredFeatures: []string{"core/logging:1.0.0"},
-					},
 				}, true
 			case "core/worker:1.0.0":
 				labels2 := types.OrderedMap[string]{}
@@ -63,88 +60,6 @@ func testCatalog() CatalogLookup {
 			}
 			return types.Feature{}, false
 		},
-	}
-}
-
-// --- RequiredFeatures tests ---
-
-func TestGuardRequiredFeatures_AllSatisfied(t *testing.T) {
-	features := types.OrderedMap[types.FeatureInstance]{}
-	features.Set("logging", types.FeatureInstance{Type: "core/logging:1.0.0"})
-	components := types.OrderedMap[types.ComponentInstance]{}
-	components.Set("web", types.ComponentInstance{Type: "core/server:1.0.0", Features: features})
-	agg := &types.Aggregate{
-		Metadata: types.AggregateMetadata{Name: "test-app"},
-		Spec: types.AggregateSpec{
-			Components: components,
-		},
-	}
-
-	errs := guardRequiredFeatures(normalized(t, agg), nil, testCatalog())
-	if len(errs) > 0 {
-		t.Fatalf("expected no errors when required features satisfied, got: %v", errs[0].Error())
-	}
-}
-
-func TestGuardRequiredFeatures_Missing(t *testing.T) {
-	components := types.OrderedMap[types.ComponentInstance]{}
-	components.Set("web", types.ComponentInstance{Type: "core/server:1.0.0", Features: types.OrderedMap[types.FeatureInstance]{}})
-	agg := &types.Aggregate{
-		Metadata: types.AggregateMetadata{Name: "test-app"},
-		Spec: types.AggregateSpec{
-			Components: components,
-		},
-	}
-
-	errs := guardRequiredFeatures(normalized(t, agg), nil, testCatalog())
-	if len(errs) == 0 {
-		t.Fatal("expected error for missing required feature")
-	}
-	if !errors.Is(errs[0], ErrMissingRequiredFeature) {
-		t.Errorf("expected ErrMissingRequiredFeature, got %v", errs[0].Err)
-	}
-}
-
-func TestGuardRequiredFeatures_SatisfiedByRelease(t *testing.T) {
-	components := types.OrderedMap[types.ComponentInstance]{}
-	components.Set("web", types.ComponentInstance{Type: "core/server:1.0.0", Features: types.OrderedMap[types.FeatureInstance]{}})
-	agg := &types.Aggregate{
-		Metadata: types.AggregateMetadata{Name: "test-app"},
-		Spec: types.AggregateSpec{
-			Components: components,
-		},
-	}
-	features := types.OrderedMap[types.BoundaryFeature]{}
-	features.Set("logging", types.BoundaryFeature{Type: "core/logging:1.0.0"})
-	components2 := types.OrderedMap[types.BoundaryComponent]{}
-	components2.Set("web", types.BoundaryComponent{Features: features})
-	boundaries := types.OrderedMap[types.Boundary]{}
-	boundaries.Set("prod", types.Boundary{Components: components2})
-	release := &types.Release{
-		Spec: types.ReleaseSpec{
-			Boundaries: boundaries,
-		},
-	}
-
-	errs := guardRequiredFeatures(normalized(t, agg), release, testCatalog())
-	if len(errs) > 0 {
-		t.Fatalf("expected no errors when Release satisfies required feature, got: %v", errs[0].Error())
-	}
-}
-
-func TestGuardRequiredFeatures_NoRequirements(t *testing.T) {
-	components := types.OrderedMap[types.ComponentInstance]{}
-	components.Set("bg", types.ComponentInstance{Type: "core/worker:1.0.0"})
-	agg := &types.Aggregate{
-		Metadata: types.AggregateMetadata{Name: "test-app"},
-		Spec: types.AggregateSpec{
-			Components: components,
-		},
-	}
-
-	errs := guardRequiredFeatures(normalized(t, agg), nil, testCatalog())
-	if len(errs) > 0 {
-		t.Fatalf("expected no errors for component without requiredFeatures, got: %v", errs[0].Error())
 	}
 }
 
@@ -219,12 +134,16 @@ func TestRunGuards_MultipleViolationsCollected(t *testing.T) {
 	// RunGuards collects every violation class; no guard short-circuits the
 	// others. The graph below violates two independent guards at once:
 	// core/server declares no usesSchema (so the `databases` socket is
-	// unknown) and lists core/logging as a requiredFeature (which nothing
-	// attaches). Both must appear in one result.
+	// unknown) and no spec.inject allowlist (so the component-level inject
+	// block is forbidden). Both must appear in one result.
 	uses := types.OrderedMap[types.UsesSocketValue]{}
 	uses.Set("databases", types.UsesSocketValue{Compact: []string{"db"}})
 	components := types.OrderedMap[types.ComponentInstance]{}
-	components.Set("web", types.ComponentInstance{Type: "core/server:1.0.0", Uses: uses})
+	components.Set("web", types.ComponentInstance{
+		Type:   "core/server:1.0.0",
+		Uses:   uses,
+		Inject: &types.InjectBlock{Env: map[string]any{"PORT": "8080"}},
+	})
 	components.Set("db", types.ComponentInstance{Type: "core/worker:1.0.0"})
 	agg := &types.Aggregate{
 		Metadata: types.AggregateMetadata{Name: "test-app"},
@@ -235,23 +154,23 @@ func TestRunGuards_MultipleViolationsCollected(t *testing.T) {
 
 	errs := RunGuards(normalized(t, agg), nil, testCatalog(), nil, nil)
 	if len(errs) < 2 {
-		t.Fatalf("expected at least 2 violations (unknown socket + required feature), got %d: %v", len(errs), errs)
+		t.Fatalf("expected at least 2 violations (unknown socket + self-inject), got %d: %v", len(errs), errs)
 	}
 
-	var hasUnknownSocket, hasRequired bool
+	var hasUnknownSocket, hasSelfInject bool
 	for _, e := range errs {
 		if errors.Is(e, ErrUnknownUsesSocket) {
 			hasUnknownSocket = true
 		}
-		if errors.Is(e, ErrMissingRequiredFeature) {
-			hasRequired = true
+		if errors.Is(e, ErrSelfInjectForbidden) {
+			hasSelfInject = true
 		}
 	}
 	if !hasUnknownSocket {
 		t.Error("expected ErrUnknownUsesSocket in results")
 	}
-	if !hasRequired {
-		t.Error("expected ErrMissingRequiredFeature in results")
+	if !hasSelfInject {
+		t.Error("expected ErrSelfInjectForbidden in results")
 	}
 }
 

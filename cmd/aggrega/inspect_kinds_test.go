@@ -296,12 +296,12 @@ metadata:
   version: "1.0.0"
   labels:
     component.aggrega.ai/type: server
+  annotations:
+    features.aggrega.ai/requiredType.observability: core/metrics
 spec:
   schema: |
     values: { port?: int | *8080 }
   inject: [env, file]
-  requiredFeatures:
-    - core/metrics
   usesSchema:
     db:
       selector: 'component.aggrega.ai/type=stateful-server'
@@ -317,8 +317,11 @@ func TestInspectComponent_Detail_Golden(t *testing.T) {
 		t.Fatalf("inspect component --detail: %v", err)
 	}
 	out := strings.ReplaceAll(buf.String(), path, "COMPONENT_DETAIL_PATH")
-	if !strings.Contains(out, "Required features:") {
-		t.Errorf("--detail should surface requiredFeatures; got:\n%s", out)
+	if !strings.Contains(out, "Required attachment types:") {
+		t.Errorf("--detail should surface the component's presence mandates; got:\n%s", out)
+	}
+	if !strings.Contains(out, "observability: core/metrics") {
+		t.Errorf("--detail should name each mandate's label and required type; got:\n%s", out)
 	}
 	if !strings.Contains(out, "Self-inject mechanisms") {
 		t.Errorf("--detail should surface inject mechanisms; got:\n%s", out)
@@ -360,8 +363,8 @@ func TestInspectKind_Determinism(t *testing.T) {
 
 // TestInspectRecipe_ShowImplements_ResolvesComponent proves --show-implements
 // resolves a Recipe's implements reference via the shared catalog lookup (the
-// three-form matching shared with build), surfacing the bound Component and its
-// requiredFeatures.
+// three-form matching shared with build), surfacing the bound Component and the
+// presence mandates it declares.
 func TestInspectRecipe_ShowImplements_ResolvesComponent(t *testing.T) {
 	t.Parallel()
 	catDir := t.TempDir()
@@ -372,11 +375,11 @@ metadata:
   version: "1.0.0"
   labels:
     component.aggrega.ai/type: server
+  annotations:
+    features.aggrega.ai/requiredType.observability: core/metrics
 spec:
   schema:
     values: {}
-  requiredFeatures:
-    - core/metrics
 `), 0o644); err != nil {
 		t.Fatalf("write component: %v", err)
 	}
@@ -392,8 +395,8 @@ spec:
 	if !strings.Contains(out, "Implements Component: core/api-server:1.0.0") {
 		t.Errorf("--show-implements should resolve the bound Component; got:\n%s", out)
 	}
-	if !strings.Contains(out, "core/metrics") {
-		t.Errorf("--show-implements should surface the Component's requiredFeatures; got:\n%s", out)
+	if !strings.Contains(out, "requires attachment (observability): core/metrics") {
+		t.Errorf("--show-implements should surface the Component's presence mandates; got:\n%s", out)
 	}
 }
 
