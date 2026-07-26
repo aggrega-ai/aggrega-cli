@@ -51,20 +51,28 @@ var providesAllowedContextRoots = []string{"instance_id"}
 // template text reaching a consumer's rendered output. The halt is structural
 // ("root not in the provides context"), never a judgment about what the
 // referenced value means.
+//
+// The root walk is collectTemplateRootRefs, the same one the evaluator applies
+// to every other template surface — this surface differs only in the narrower
+// allowlist it passes, not in how a root is identified. Sharing the walk is what
+// keeps a defensive wrapper from reading as a reference to a root named after
+// the key it guards: only the wrapped expression reaches the context root, so
+// the trailing key of a chained fallback is not mistaken for a root.
 func CheckProvidesSelfContainment(templateText, recipeID string) error {
-	paths, err := CollectTemplateFieldAccesses(templateText)
+	if templateText == "" {
+		return nil
+	}
+	tree, err := parseTemplateForRootWalk(templateText, "{{", "}}")
 	if err != nil {
 		// Malformed template: let provides evaluation report the parse error.
 		return nil
 	}
-	for _, p := range paths {
-		segs := strings.Split(strings.TrimPrefix(p, "."), ".")
-		root := segs[0]
-		if root == "" || !slices.Contains(providesAllowedTopLevelRoots, root) {
-			return providesContainmentErr(recipeID, p)
+	for _, ref := range collectTemplateRootRefs(tree) {
+		if !slices.Contains(providesAllowedTopLevelRoots, ref.Segs[0]) {
+			return providesContainmentErr(recipeID, ref.Path)
 		}
-		if root == "context" && (len(segs) < 2 || !slices.Contains(providesAllowedContextRoots, segs[1])) {
-			return providesContainmentErr(recipeID, p)
+		if ref.Segs[0] == "context" && (len(ref.Segs) < 2 || !slices.Contains(providesAllowedContextRoots, ref.Segs[1])) {
+			return providesContainmentErr(recipeID, ref.Path)
 		}
 	}
 	return nil

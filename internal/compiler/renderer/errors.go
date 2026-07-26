@@ -14,7 +14,18 @@ var (
 	// diagnostic spells out which roots the provides surface admits, derived
 	// from the allowlists themselves, so the permitted set is stated once and
 	// cannot drift from the check that enforces it.
-	ErrProvidesSelfContainment      = errors.New("provides block references a root outside the self-contained set")
+	ErrProvidesSelfContainment = errors.New("provides block references a root outside the self-contained set")
+
+	// ErrTemplateUnknownRoot is the halt raised when a template references a
+	// top-level root its render context does not define. The wrapping
+	// diagnostic names the offending path and lists the roots the context does
+	// define, both derived from the context type so the refused set and the
+	// reported set are one derivation. It fires identically whether the
+	// reference is bare or wrapped in a fallback, because a root that does not
+	// exist is an authoring error at either spelling — a wrapper can supply a
+	// default for an absent KEY, never for an absent ROOT.
+	ErrTemplateUnknownRoot = errors.New("template references a root the render context does not define")
+
 	ErrProvidesEvaluation           = errors.New("provides template evaluation failed")
 	ErrSelfInjectForbiddenReference = errors.New("self-inject value: template references cross-node data")
 	ErrSelfInjectKeyCollision       = errors.New("duplicate delivery key across self-inject and uses-inject")

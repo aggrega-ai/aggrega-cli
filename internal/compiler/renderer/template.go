@@ -46,6 +46,13 @@ func EvalTemplate(name, tmplText string, data any) (string, error) {
 // Caller passes the explicit delimiter pair every time — there is no
 // empty-string sentinel. The default-delimiter path is the EvalTemplate
 // thin wrapper above.
+//
+// Every template evaluated here is checked against the root names its context
+// type defines before it executes: a reference to a root the context does not
+// define halts with ErrTemplateUnknownRoot instead of resolving to nothing. A
+// missing KEY under a defined root is unaffected and still follows
+// missingkey=zero, so an optional-key idiom keeps working; what cannot happen is
+// a fallback wrapper turning an unknown ROOT into an empty value.
 func EvalTemplateWithDelims(name, tmplText string, data any, leftDelim, rightDelim string) (string, error) {
 	templateData := toLowercaseMap(data)
 
@@ -56,6 +63,11 @@ func EvalTemplateWithDelims(name, tmplText string, data any, leftDelim, rightDel
 		Parse(tmplText)
 	if err != nil {
 		return "", cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: name}, fmt.Sprintf("template %q parse", name))
+	}
+	// Root-name validation runs on the tree that is about to execute, so the
+	// walk cannot disagree with the evaluation about what the template says.
+	if err := checkTemplateRoots(name, t.Tree.Root, data); err != nil {
+		return "", err
 	}
 	var buf bytes.Buffer
 	if err := t.Execute(&buf, templateData); err != nil {
@@ -167,6 +179,21 @@ func validatePathTemplateFields(boundaryName, tmplText string, allowlist map[str
 // collects the FIRST identifier of every field-chain reference (e.g.,
 // `.parameters.region` → "parameters", `.parent_boundary.directory` →
 // "parent_boundary"). Returns the deduplicated list.
+//
+// This walker deliberately OVER-collects: it records a field read inside a
+// range or with body even though the dot is rebound there, and it records the
+// trailing field of a chained expression even though that field hangs off the
+// expression's value. Both of its consumers are DENY-lists — the path-template
+// invalid-field check above and the boundary-scope FeatureRecipe rejected-field
+// check — and for a deny-list over-collection is the fail-safe direction: a
+// forbidden field cannot slip past by hiding inside a rebound body or behind a
+// wrapper. TestCollectTopLevelFields_AllNodeKinds pins that behaviour.
+//
+// collectTemplateRootRefs is the counterpart used by the ALLOW-lists, and it
+// under-collects for the same reason reversed: an allow-list that over-collects
+// refuses legitimate authoring. The two walkers are therefore not one walker
+// with a parameter — they have opposite safety directions, and folding them
+// together would quietly turn each consumer's failure mode into the wrong one.
 func collectTopLevelFields(t *template.Template) []string {
 	seen := map[string]bool{}
 	var collected []string
