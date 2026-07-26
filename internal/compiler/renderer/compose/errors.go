@@ -26,10 +26,10 @@ var ErrTranslationProbeShape = errors.New("TRANSLATION_ERROR: probe declares no 
 // Compose has no ConfigMap primitive — a configmap volume becomes a
 // bind-mount from a generated file path; the file MUST exist.
 //
-// Track 1 cannot detect this (the artifacts input kind's emission runs in a
-// separate sub-pass); the sentinel is declared here so the synthesizer can
-// wire it once artifacts-input awareness lands. See the configmap-volume
-// comment in workload_synth.go.
+// Workload synthesis cannot detect this on its own (the artifacts input kind's
+// emission runs in a separate sub-pass); the sentinel is declared here so the
+// synthesizer can wire it once artifacts-input awareness lands. See the
+// configmap-volume comment in workload_synth.go.
 var ErrTranslationConfigMapMissingArtifact = errors.New("TRANSLATION_ERROR: configmap volume requires a file emitted via the Recipe's artifacts: input; none found")
 
 // ErrUnsupportedComposeForm is emitted when a Workload declares a controller

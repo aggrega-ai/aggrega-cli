@@ -11,7 +11,7 @@
 // ComposeFile populated with the node's services, volumes, and networks. The
 // fragment is self-contained: it round-trips through yaml.Unmarshal cleanly.
 //
-// Release-level merge (Track 2). A future BoundaryComposer/Release-merger
+// Release-level merge. A BoundaryComposer/Release-merger
 // reads the per-node fragments, deep-merges them, and emits a single
 // docker-compose.yaml at the Release output root. Until that lands, fragments
 // remain visible in the output tree.

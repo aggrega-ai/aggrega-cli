@@ -8,8 +8,8 @@ import "github.com/aggrega-ai/aggrega-cli/pkg/types"
 // ComposeFile is a Compose Specification document (no `version:` key — the
 // modern compose-spec deprecates it; Compose v2.2+ ignores it). Fragment
 // outputs from SynthesizeWorkload populate Services/Volumes/Networks with the
-// node's contributions; the Release-level merger (Track 2) collects fragments
-// and emits a single ComposeFile at the Release output root.
+// node's contributions; the Release-level merger collects fragments and emits a
+// single ComposeFile at the Release output root.
 type ComposeFile struct {
 	Services map[string]Service `yaml:"services,omitempty"`
 	Volumes  map[string]Volume  `yaml:"volumes,omitempty"`
@@ -109,10 +109,10 @@ type Volume struct {
 	Labels     map[string]string `yaml:"labels,omitempty"`
 }
 
-// Network is a top-level docker network declaration. The Track 2 merger
+// Network is a top-level docker network declaration. The Release-level merger
 // emits one network per boundary, named after the boundary's
-// `aggrega.ai/namespace` annotation when present; until Track 2 lands,
-// fragments do not declare networks.
+// `aggrega.ai/namespace` annotation when present; per-node fragments do not
+// declare networks.
 type Network struct {
 	Driver     string            `yaml:"driver,omitempty"`
 	DriverOpts map[string]string `yaml:"driver_opts,omitempty"`
