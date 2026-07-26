@@ -255,7 +255,7 @@ spec:
 }
 
 // TestEnvelope_StraySecretNamesRefused is the loader-side companion of
-// the types-level TestSecretsSchema_UnknownSecretNamesKeyIgnoredAtParse:
+// the types-level TestFeaturesSchema_UnknownSecretNamesKeyIgnoredAtParse:
 // yaml.Unmarshal silently drops the retired secretNames key, and THIS
 // gate is where the loud rejection lives — a document carrying it fails
 // the envelope before typed unmarshal.

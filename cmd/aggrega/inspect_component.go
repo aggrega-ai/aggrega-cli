@@ -42,7 +42,7 @@ func renderComponentFile(_ *workspaceconfig.ResolvedWorkspace, path string, data
 //
 //   - levelList: the identifier plus its usesSchema socket names.
 //   - levelDefault: header, schema body, and the usesSchema sockets (selector).
-//   - levelDetail: adds inject mechanisms, requiredFeatures, secretsSchema, and
+//   - levelDetail: adds inject mechanisms, requiredFeatures, featuresSchema, and
 //     metadata labels.
 //
 // All map iteration uses OrderedMap.All() for author-order determinism.
@@ -82,9 +82,9 @@ func renderComponentStructured(comp types.Component, identifier string, opts ins
 				fmt.Fprintf(opts.out, "  - %s\n", rf)
 			}
 		}
-		if comp.Spec.SecretsSchema.Len() > 0 {
+		if comp.Spec.FeaturesSchema.Len() > 0 {
 			fmt.Fprintln(opts.out, "Secret slots:")
-			for slot, entry := range comp.Spec.SecretsSchema.All() {
+			for slot, entry := range comp.Spec.FeaturesSchema.All() {
 				req := ""
 				if entry.Required {
 					req = " (required)"

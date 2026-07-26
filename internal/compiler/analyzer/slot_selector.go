@@ -53,7 +53,7 @@ func validateSlotSelectors(ctx context.Context, graph *types.IRGraph, catalogLoo
 		slotNames := attachments.Keys()
 		sort.Strings(slotNames)
 		for _, slotName := range slotNames {
-			slot, slotOK := comp.Spec.SecretsSchema.Get(slotName)
+			slot, slotOK := comp.Spec.FeaturesSchema.Get(slotName)
 			if !slotOK || slot.Selector == "" {
 				continue
 			}

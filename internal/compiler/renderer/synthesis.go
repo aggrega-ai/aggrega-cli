@@ -22,7 +22,7 @@ type WorkloadSynthesizer interface {
 	// SynthesizeWorkload produces provider-native manifests from a parsed
 	// Workload. ctx is the per-node TemplateContext (gives access to
 	// .context.instance_id, .values, .infra, etc.); w is the
-	// schema-validated, secretsSchema-checked Workload; nodeCtx carries
+	// schema-validated, featuresSchema-checked Workload; nodeCtx carries
 	// the boundary path / labels / annotations.
 	//
 	// Returns []EmittedFile (each tagged EmitOriginWorkload by the caller

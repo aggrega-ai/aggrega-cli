@@ -141,7 +141,7 @@ func TestIntegration_ReferencedSecret_ConsumerReadsGeneratedName(t *testing.T) {
 }
 
 // referencedSecretWorkloadFixture: node "db" with a referenced-secret "password"
-// slot declared in the Component's secretsSchema (transparent: inject [env, file]),
+// slot declared in the Component's featuresSchema (transparent: inject [env, file]),
 // a recipe that both reads .secrets.password.provides.name in a source artifact AND
 // declares a workload whose container references the slot via `as: <asMode>`. The
 // backing FeatureRecipe publishes the full {name, key} contract. Exercises the
@@ -158,11 +158,11 @@ func referencedSecretWorkloadFixture(asMode string) (renderer.RendererInput, ren
 	nodeSecrets := types.OrderedMap[types.OrderedMap[types.IRSecretEntry]]{}
 	nodeSecrets.Set("db", secrets)
 
-	// Component secretsSchema: a transparent password slot (inject allowlist
+	// Component featuresSchema: a transparent password slot (inject allowlist
 	// permits env + file) so the preserved cross-check admits the workload ref.
 	slots := types.OrderedMap[types.AttachmentSlot]{}
 	slots.Set("password", types.AttachmentSlot{Inject: []string{"env", "file"}})
-	comp := types.Component{Spec: types.ComponentSpec{SecretsSchema: slots}}
+	comp := types.Component{Spec: types.ComponentSpec{FeaturesSchema: slots}}
 
 	input := renderer.RendererInput{
 		Graph: &types.IRGraph{

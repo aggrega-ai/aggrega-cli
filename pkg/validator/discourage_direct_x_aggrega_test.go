@@ -76,7 +76,7 @@ func TestDiscourageDirectXAggregaInSchema_FiresOnInject(t *testing.T) {
 
 // TestDiscourageDirectXAggregaInSchema_SilentOnCleanContent verifies the
 // walk emits nothing when schema content carries no x-aggrega-* keys —
-// the recommended authoring path (usesSchema / secretsSchema produces
+// the recommended authoring path (usesSchema / featuresSchema produces
 // the extension keys via bridge synthesis, not via inline authoring).
 func TestDiscourageDirectXAggregaInSchema_SilentOnCleanContent(t *testing.T) {
 	var buf bytes.Buffer

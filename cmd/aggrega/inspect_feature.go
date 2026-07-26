@@ -14,7 +14,7 @@ import (
 // renderFeatureFile renders a Feature authored as a standalone file. The schema
 // pillar renders through the same helper as Component (the merged-schema shape
 // is unified). A Feature's injection surface is its per-socket usesSchema inject
-// paradigms and its secretsSchema slots; the free-form self-inject block is a
+// paradigms and its featuresSchema slots; the free-form self-inject block is a
 // Component concept and does not exist on a Feature. Targeting renders from
 // appliesTo / appliesToAnyOf. A credential Feature (labeled
 // feature.aggrega.ai/kind: secret) is marked prominently.
@@ -64,9 +64,9 @@ func renderFeatureFile(_ *workspaceconfig.ResolvedWorkspace, path string, data [
 		}
 	}
 
-	if feat.Spec.SecretsSchema.Len() > 0 {
+	if feat.Spec.FeaturesSchema.Len() > 0 {
 		fmt.Fprintln(opts.out, "Secret slots:")
-		for slot, entry := range feat.Spec.SecretsSchema.All() {
+		for slot, entry := range feat.Spec.FeaturesSchema.All() {
 			req := ""
 			if entry.Required {
 				req = " (required)"

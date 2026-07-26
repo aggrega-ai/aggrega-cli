@@ -52,24 +52,6 @@ func TestSubsystemGuardCoverage_SelfInject(t *testing.T) {
 	requireSubsystemHalt(t, guardSelfInject(normalized(t, agg), selfInjectCatalog()), ErrSelfInjectForbidden, subsysDBPath)
 }
 
-// TestSubsystemGuardCoverage_Credential — a credential-labeled Feature in the
-// features: block of a subsystem component now halts (was a root-only gap).
-func TestSubsystemGuardCoverage_Credential(t *testing.T) {
-	t.Parallel()
-	feats := types.OrderedMap[types.FeatureInstance]{}
-	feats.Set("creds", types.FeatureInstance{Type: "core/secret-thing"})
-	agg := aggWithSubsystemComponent("db", types.ComponentInstance{Type: "core/datastore/postgres", Features: feats})
-	cat := CatalogLookup{Feature: func(u string) (types.Feature, bool) {
-		if u == "core/secret-thing" {
-			labels := types.OrderedMap[string]{}
-			labels.Set(types.FeatureKindLabel, types.FeatureKindSecret)
-			return types.Feature{Metadata: types.FeatureMetadata{Labels: labels}}, true
-		}
-		return types.Feature{}, false
-	}}
-	requireSubsystemHalt(t, guardCredentialPartition(normalized(t, agg), cat), ErrCredentialLabelPartition, subsysDBPath)
-}
-
 // TestSubsystemGuardCoverage_Required — an unsatisfied requiredFeature on a
 // subsystem component now halts (the fourth root-only gap, surfaced and fixed by
 // the shared walker).

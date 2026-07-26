@@ -2,10 +2,10 @@
 // Copyright 2026 Cognitio S.r.l.
 
 // The Phase B.2 workload-secret cross-check validates a synthesized Workload's
-// containers.<n>.secrets against the bound owning entity's secretsSchema slots:
+// containers.<n>.secrets against the bound owning entity's featuresSchema slots:
 // the Component on the base-Recipe path, the implemented Feature on the
 // FeatureRecipe path. A declared transparent slot is admitted; an undeclared or
-// blackbox slot halts with ErrWorkloadSecretsSchema. These guard both threading
+// blackbox slot halts with ErrWorkloadFeaturesSchema. These guard both threading
 // sites against regressing to an empty slot allowlist.
 
 package renderer_test
@@ -31,7 +31,7 @@ func slotMap(name string, inject []string) types.OrderedMap[types.AttachmentSlot
 	return m
 }
 
-// --- Base-Recipe path: orchestrator threads Component.SecretsSchema ---
+// --- Base-Recipe path: orchestrator threads Component.FeaturesSchema ---
 
 // renderBaseWithSlot renders a base Recipe whose workload references the
 // `password` slot. When fillReferenceable is true the slot is filled by a
@@ -65,7 +65,7 @@ func renderBaseWithSlot(t *testing.T, compSlots types.OrderedMap[types.Attachmen
 		CatalogLookup: resolver.CatalogLookup{
 			Component: func(typeURI string) (types.Component, bool) {
 				if typeURI == "core/datastore/pgprobe" {
-					return types.Component{Spec: types.ComponentSpec{SecretsSchema: compSlots}}, true
+					return types.Component{Spec: types.ComponentSpec{FeaturesSchema: compSlots}}, true
 				}
 				return types.Component{}, false
 			},
@@ -127,20 +127,20 @@ func TestIntegration_WorkloadSecretSlots_BaseRecipe_HaltNonReferenceable(t *test
 func TestIntegration_WorkloadSecretSlots_BaseRecipe_HaltUndeclared(t *testing.T) {
 	t.Parallel()
 	err := renderBaseWithSlot(t, slotMap("", nil), false) // no slots declared
-	if !errors.Is(err, validator.ErrWorkloadSecretsSchema) {
-		t.Fatalf("undeclared slot should HALT with ErrWorkloadSecretsSchema, got: %v", err)
+	if !errors.Is(err, validator.ErrWorkloadFeaturesSchema) {
+		t.Fatalf("undeclared slot should HALT with ErrWorkloadFeaturesSchema, got: %v", err)
 	}
 }
 
 func TestIntegration_WorkloadSecretSlots_BaseRecipe_HaltBlackbox(t *testing.T) {
 	t.Parallel()
 	err := renderBaseWithSlot(t, slotMap("password", []string{}), false) // blackbox: inject:[]
-	if !errors.Is(err, validator.ErrWorkloadSecretsSchema) {
-		t.Fatalf("blackbox slot should HALT with ErrWorkloadSecretsSchema, got: %v", err)
+	if !errors.Is(err, validator.ErrWorkloadFeaturesSchema) {
+		t.Fatalf("blackbox slot should HALT with ErrWorkloadFeaturesSchema, got: %v", err)
 	}
 }
 
-// --- FeatureRecipe path: renderFeatureRecipeFiles threads Feature.SecretsSchema ---
+// --- FeatureRecipe path: renderFeatureRecipeFiles threads Feature.FeaturesSchema ---
 
 // renderFRWithSlot renders a FeatureRecipe-synthesized workload that references
 // the `frpass` slot. When fillReferenceable is true the slot is filled by a
@@ -183,7 +183,7 @@ func renderFRWithSlot(t *testing.T, featSlots types.OrderedMap[types.AttachmentS
 			Component: func(string) (types.Component, bool) { return types.Component{}, false },
 			Feature: func(typeURI string) (types.Feature, bool) {
 				if typeURI == "core/frprobe:1.0.0" || typeURI == "core/frprobe" {
-					return types.Feature{Spec: types.FeatureSpec{SecretsSchema: featSlots}}, true
+					return types.Feature{Spec: types.FeatureSpec{FeaturesSchema: featSlots}}, true
 				}
 				if typeURI == "core/referenced-secret" {
 					return referencedSecretFeature(), true
@@ -250,7 +250,7 @@ func TestIntegration_WorkloadSecretSlots_FeatureRecipe_HaltNonReferenceable(t *t
 func TestIntegration_WorkloadSecretSlots_FeatureRecipe_HaltUndeclared(t *testing.T) {
 	t.Parallel()
 	err := renderFRWithSlot(t, slotMap("", nil), false) // Feature declares no slots
-	if !errors.Is(err, validator.ErrWorkloadSecretsSchema) {
-		t.Fatalf("FR undeclared slot should HALT with ErrWorkloadSecretsSchema, got: %v", err)
+	if !errors.Is(err, validator.ErrWorkloadFeaturesSchema) {
+		t.Fatalf("FR undeclared slot should HALT with ErrWorkloadFeaturesSchema, got: %v", err)
 	}
 }

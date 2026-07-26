@@ -67,11 +67,14 @@ var (
 	// monotonic-narrowing, which stays signal-only.
 	ErrSchemaConformance = errors.New("authored pillar does not conform to its declared schema")
 
-	// ErrCredentialLabelPartition wraps a Feature instance that violates the
-	// credential-label partition rule (credential and non-credential
-	// features must not coexist on a single component without explicit
-	// labelling).
-	ErrCredentialLabelPartition = errors.New("credential label partition violated")
+	// ErrAttachmentSlotNearMiss marks an ADVISORY finding, not a halt: an
+	// attachment whose name is not a declared slot on its component's type but
+	// is within a small edit distance of one — the shape a slot-name typo
+	// takes. An attachment name matching no slot is legal (the attachment
+	// surface is open), so this sentinel never reaches a build's verdict; it
+	// exists so a front end can recognise the advisory class and render it as a
+	// warning.
+	ErrAttachmentSlotNearMiss = errors.New("attachment name is a near miss for a declared slot")
 
 	// ErrGuardEntityViewInconsistency wraps an internal-consistency failure: a
 	// guard needs a catalog entity for a type that resolution resolved AS A

@@ -12,7 +12,7 @@ import (
 // function fields return a typed entity for a type URI, plus a found flag;
 // the resolver guards consult them to validate Aggregate-side type
 // references against catalog declarations (usesSchema, requiredFeatures,
-// secretsSchema, label partitions). The typical caller — cmd/aggrega/build.go
+// featuresSchema). The typical caller — cmd/aggrega/build.go
 // — supplies the lookup via cat.CatalogLookup() after loading the catalog.
 //
 // Either function field may be nil; guards that need a missing function
@@ -91,13 +91,12 @@ type CatalogLookup struct {
 //  1. Uses-socket validation — socket names must exist in usesSchema.
 //  2. Self-inject validation — allowlist membership and delivery-key collision.
 //  3. Inject key validation — inject from-keys must reference target's provides.
-//  4. Credential label partition — credentials in secrets:, non-credentials in features:.
-//  5. requiredFeatures completeness — each declared requirement satisfied.
-//  6. Release feature merge — type agreement on dual-declared features.
-//  7. Required uses-socket population — usesSchema.required enforcement.
-//  8. Schema conformance — authored values/infra pillars match the declared schema.
-//  9. Release uses-socket validation — Release per-edge sockets exist in usesSchema.
-//  10. Per-edge conformance — per-edge values/infra match the socket's per-edge schema.
+//  4. requiredFeatures completeness — each declared requirement satisfied.
+//  5. Release feature merge — type agreement on dual-declared features.
+//  6. Required uses-socket population — usesSchema.required enforcement.
+//  7. Schema conformance — authored values/infra pillars match the declared schema.
+//  8. Release uses-socket validation — Release per-edge sockets exist in usesSchema.
+//  9. Per-edge conformance — per-edge values/infra match the socket's per-edge schema.
 //
 // All violations are collected; no guard short-circuits the others. Within a
 // guard, errors sort by (Entity, Field) for byte-identical output across
@@ -112,7 +111,6 @@ func RunGuards(na types.NormalizedAggregate, release *types.Release, catalog Cat
 	errs = append(errs, guardReleaseUsesSocket(na, release, catalog)...)
 	errs = append(errs, guardSelfInject(na, catalog)...)
 	errs = append(errs, guardInjectKeys(na, catalog)...)
-	errs = append(errs, guardCredentialPartition(na, catalog)...)
 	errs = append(errs, guardRequiredFeatures(na, release, catalog)...)
 	errs = append(errs, guardFeatureMerge(na, release)...)
 	errs = append(errs, guardRequiredUsesSockets(na, catalog)...)

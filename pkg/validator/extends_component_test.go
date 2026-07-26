@@ -148,25 +148,25 @@ func TestResolveComponentExtends_MergesLabelsAndListFields(t *testing.T) {
 	}
 }
 
-func TestResolveComponentExtends_MergesSecretsSchema(t *testing.T) {
+func TestResolveComponentExtends_MergesFeaturesSchema(t *testing.T) {
 	t.Parallel()
-	secretsSchema := types.OrderedMap[types.AttachmentSlot]{}
-	secretsSchema.Set("root_password", types.AttachmentSlot{Required: true, Inject: []string{"env"}})
-	secretsSchema.Set("tls_ca", types.AttachmentSlot{Required: false})
+	featuresSchema := types.OrderedMap[types.AttachmentSlot]{}
+	featuresSchema.Set("root_password", types.AttachmentSlot{Required: true, Inject: []string{"env"}})
+	featuresSchema.Set("tls_ca", types.AttachmentSlot{Required: false})
 	parent := types.Component{
 		Metadata: types.ComponentMetadata{Name: "core/db/base", Version: "1.0.0"},
 		Spec: types.ComponentSpec{
-			SecretsSchema: secretsSchema,
+			FeaturesSchema: featuresSchema,
 		},
 	}
-	secretsSchema2 := types.OrderedMap[types.AttachmentSlot]{}
-	secretsSchema2.Set("root_password", types.AttachmentSlot{Required: true, Inject: []string{"env"}, Description: "strict"})
-	secretsSchema2.Set("api_token", types.AttachmentSlot{Required: true})
+	featuresSchema2 := types.OrderedMap[types.AttachmentSlot]{}
+	featuresSchema2.Set("root_password", types.AttachmentSlot{Required: true, Inject: []string{"env"}, Description: "strict"})
+	featuresSchema2.Set("api_token", types.AttachmentSlot{Required: true})
 	child := types.Component{
 		Metadata: types.ComponentMetadata{Name: "core/db/strict", Version: "1.0.0"},
 		Spec: types.ComponentSpec{
 			Extends:       "core/db/base",
-			SecretsSchema: secretsSchema2,
+			FeaturesSchema: featuresSchema2,
 		},
 	}
 	lookup := func(uri string) (types.Component, bool) {
@@ -179,14 +179,14 @@ func TestResolveComponentExtends_MergesSecretsSchema(t *testing.T) {
 	if len(errs) != 0 {
 		t.Fatalf("unexpected errors: %v", errs)
 	}
-	rootSlot, _ := got.Spec.SecretsSchema.Get("root_password")
+	rootSlot, _ := got.Spec.FeaturesSchema.Get("root_password")
 	if rootSlot.Description != "strict" {
 		t.Errorf("child slot should override parent's, got %v", rootSlot)
 	}
-	if _, ok := got.Spec.SecretsSchema.Get("tls_ca"); !ok {
+	if _, ok := got.Spec.FeaturesSchema.Get("tls_ca"); !ok {
 		t.Error("parent-only slot lost during merge")
 	}
-	if _, ok := got.Spec.SecretsSchema.Get("api_token"); !ok {
+	if _, ok := got.Spec.FeaturesSchema.Get("api_token"); !ok {
 		t.Error("child-only slot missing")
 	}
 }

@@ -96,11 +96,21 @@ func GenerateBaseUsesJSONSchema(usesSchema types.OrderedMap[types.UsesSchemaEntr
 	}
 }
 
-// GenerateBaseSecretsJSONSchema builds a JSON Schema 2020-12
-// sub-schema from a component/feature secretsSchema map. Each slot
-// becomes a property in the `secrets` object; required slots land in
+// GenerateBaseAttachmentsJSONSchema builds a JSON Schema 2020-12
+// sub-schema from a component/feature featuresSchema map. Each slot
+// becomes a property in the attachment object; required slots land in
 // the parent's Required: []string array (alphabetically sorted for
 // determinism); optional slots stay outside.
+//
+// Open outer object, closed slot sub-schemas. The returned parent
+// object sets no additionalProperties constraint, so an attachment
+// whose name no slot declares is admitted: declaring one slot must
+// never forbid the attachments an entity did not enumerate, which is
+// what lets a single entity serve both a slot-filled attachment and an
+// attachment shared at a broader scope. Each declared slot's own
+// sub-schema stays closed, so a fill that DOES bind a declared slot is
+// still constrained to that slot's shape. The two are independent
+// decisions at two depths; opening the parent does not relax the slots.
 //
 // Extension keyword: `x-aggrega-inject` (when the slot supplies an
 // Inject allowlist) carries the list of permitted mechanism strings
@@ -109,16 +119,22 @@ func GenerateBaseUsesJSONSchema(usesSchema types.OrderedMap[types.UsesSchemaEntr
 // mechanisms get rejected at the schema level.
 //
 // Author-order from the OrderedMap input drives PropertyOrder.
-func GenerateBaseSecretsJSONSchema(secretsSchema types.OrderedMap[types.AttachmentSlot]) *jsonschema.Schema {
-	if secretsSchema.Len() == 0 {
+func GenerateBaseAttachmentsJSONSchema(featuresSchema types.OrderedMap[types.AttachmentSlot]) *jsonschema.Schema {
+	if featuresSchema.Len() == 0 {
 		return nil
 	}
 
-	propertyOrder := make([]string, 0, secretsSchema.Len())
+	propertyOrder := make([]string, 0, featuresSchema.Len())
 	properties := map[string]*jsonschema.Schema{}
 	var required []string
 
-	for slotName, slot := range secretsSchema.All() {
+	for slotName, slot := range featuresSchema.All() {
+		// A slot constrains WHICH fill may bind it, not what the fill
+		// configures: `infra` is deliberately absent from the permitted
+		// set, because the attached Feature's own schema owns its values
+		// and infra contract. A slot-level infraSchema/valueSchema would
+		// be a second validation home for one rule. Do not "complete the
+		// parallel" with usesSchema by adding it here.
 		slotSchema := &jsonschema.Schema{
 			Type: "object",
 			Properties: map[string]*jsonschema.Schema{
@@ -170,11 +186,14 @@ func GenerateBaseSecretsJSONSchema(secretsSchema types.OrderedMap[types.Attachme
 		sort.Strings(required)
 	}
 
+	// No AdditionalProperties constraint: the outer attachment object is
+	// open by design (see the godoc). The `uses` generator above closes
+	// its parent because an undeclared socket name is a topology error;
+	// an undeclared attachment name is a legal free attachment.
 	return &jsonschema.Schema{
-		Type:                 "object",
-		Properties:           properties,
-		PropertyOrder:        propertyOrder,
-		Required:             required,
-		AdditionalProperties: jsonSchemaFalseSentinel,
+		Type:          "object",
+		Properties:    properties,
+		PropertyOrder: propertyOrder,
+		Required:      required,
 	}
 }

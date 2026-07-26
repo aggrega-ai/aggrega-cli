@@ -9,7 +9,7 @@ import (
 	"go.yaml.in/yaml/v3"
 )
 
-func TestSecretsSchema_YAMLRoundTrip(t *testing.T) {
+func TestFeaturesSchema_YAMLRoundTrip(t *testing.T) {
 	t.Parallel()
 	src := []byte(`
 apiVersion: aggrega.ai/v1alpha1
@@ -20,7 +20,7 @@ metadata:
   labels:
     component.aggrega.ai/type: stateful-server
 spec:
-  secretsSchema:
+  featuresSchema:
     root_password:
       required: true
       inject: [env, file]
@@ -36,7 +36,7 @@ spec:
 		t.Fatalf("unmarshal: %v", err)
 	}
 
-	root, _ := comp.Spec.SecretsSchema.Get("root_password")
+	root, _ := comp.Spec.FeaturesSchema.Get("root_password")
 	if !root.Required {
 		t.Errorf("root_password.required: got false, want true")
 	}
@@ -47,7 +47,7 @@ spec:
 		t.Errorf("root_password.description: %q", root.Description)
 	}
 
-	tls, _ := comp.Spec.SecretsSchema.Get("tls_ca")
+	tls, _ := comp.Spec.FeaturesSchema.Get("tls_ca")
 	if tls.Required {
 		t.Errorf("tls_ca.required: got true, want false")
 	}
@@ -56,12 +56,12 @@ spec:
 	}
 }
 
-// TestSecretsSchema_UnknownSecretNamesKeyIgnoredAtParse pins the
+// TestFeaturesSchema_UnknownSecretNamesKeyIgnoredAtParse pins the
 // types-layer posture for the retired secretNames key: yaml.Unmarshal
 // drops unknown keys, so a stray secretNames contributes nothing to the
 // parsed spec. The loud rejection of the key is JSON-schema
 // validation's job, not the unmarshaler's.
-func TestSecretsSchema_UnknownSecretNamesKeyIgnoredAtParse(t *testing.T) {
+func TestFeaturesSchema_UnknownSecretNamesKeyIgnoredAtParse(t *testing.T) {
 	t.Parallel()
 	src := []byte(`
 apiVersion: aggrega.ai/v1alpha1
@@ -73,7 +73,7 @@ metadata:
     component.aggrega.ai/type: server
 spec:
   secretNames: [old_key]
-  secretsSchema:
+  featuresSchema:
     new_key:
       required: true
 `)
@@ -81,11 +81,11 @@ spec:
 	if err := yaml.Unmarshal(src, &comp); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if comp.Spec.SecretsSchema.Len() != 1 {
-		t.Errorf("secretsSchema should parse; got %v", comp.Spec.SecretsSchema.Keys())
+	if comp.Spec.FeaturesSchema.Len() != 1 {
+		t.Errorf("featuresSchema should parse; got %v", comp.Spec.FeaturesSchema.Keys())
 	}
-	newKey, _ := comp.Spec.SecretsSchema.Get("new_key")
+	newKey, _ := comp.Spec.FeaturesSchema.Get("new_key")
 	if !newKey.Required {
-		t.Errorf("SecretsSchema.new_key.required missing")
+		t.Errorf("FeaturesSchema.new_key.required missing")
 	}
 }

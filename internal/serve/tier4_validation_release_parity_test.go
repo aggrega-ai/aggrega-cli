@@ -291,7 +291,7 @@ func serveCoreHasErrors(vr *compilerops.ValidateResult) bool {
 // serveExpectedFinding returns the core-derived text the daemon is expected to
 // carry in some diagnostic for a failing case. It projects each class the way the
 // daemon's mapping does — the resolver classes surface the violation Message
-// (resolverViolationToDiagnostic), while the closure classes surface the error's
+// (resolverFindingToDiagnostic), while the closure classes surface the error's
 // full text — so the assertion is an independent oracle of that mapping.
 func serveExpectedFinding(t *testing.T, name string, vr *compilerops.ValidateResult) string {
 	t.Helper()

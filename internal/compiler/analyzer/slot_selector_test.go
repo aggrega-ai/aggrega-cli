@@ -31,7 +31,7 @@ func slotGraph(compType string, slots types.OrderedMap[types.AttachmentSlot]) (*
 	lookup := resolver.CatalogLookup{
 		Component: func(typeURI string) (types.Component, bool) {
 			if typeURI == compType {
-				return types.Component{Spec: types.ComponentSpec{SecretsSchema: slots}}, true
+				return types.Component{Spec: types.ComponentSpec{FeaturesSchema: slots}}, true
 			}
 			return types.Component{}, false
 		},

@@ -66,70 +66,6 @@ func testCatalog() CatalogLookup {
 	}
 }
 
-// --- Credential partition tests ---
-
-func TestGuardCredentialPartition_CorrectPlacement(t *testing.T) {
-	features := types.OrderedMap[types.FeatureInstance]{}
-	features.Set("logging", types.FeatureInstance{Type: "core/logging:1.0.0"})
-	secrets := types.OrderedMap[types.SecretInstance]{}
-	secrets.Set("vault", types.SecretInstance{Type: "security/vault:1.0.0"})
-	components := types.OrderedMap[types.ComponentInstance]{}
-	components.Set("web", types.ComponentInstance{Type: "core/server:1.0.0", Features: features, Secrets: secrets})
-	agg := &types.Aggregate{
-		Metadata: types.AggregateMetadata{Name: "test-app"},
-		Spec: types.AggregateSpec{
-			Components: components,
-		},
-	}
-
-	errs := guardCredentialPartition(normalized(t, agg), testCatalog())
-	if len(errs) > 0 {
-		t.Fatalf("expected no errors for correct placement, got %d: %v", len(errs), errs[0].Error())
-	}
-}
-
-func TestGuardCredentialPartition_CredentialInFeatures(t *testing.T) {
-	features := types.OrderedMap[types.FeatureInstance]{}
-	features.Set("vault", types.FeatureInstance{Type: "security/vault:1.0.0"})
-	components := types.OrderedMap[types.ComponentInstance]{}
-	components.Set("web", types.ComponentInstance{Type: "core/server:1.0.0", Features: features})
-	agg := &types.Aggregate{
-		Metadata: types.AggregateMetadata{Name: "test-app"},
-		Spec: types.AggregateSpec{
-			Components: components,
-		},
-	}
-
-	errs := guardCredentialPartition(normalized(t, agg), testCatalog())
-	if len(errs) == 0 {
-		t.Fatal("expected error for credential Feature in features: block")
-	}
-	if !errors.Is(errs[0], ErrCredentialLabelPartition) {
-		t.Errorf("expected ErrCredentialLabelPartition, got %v", errs[0].Err)
-	}
-}
-
-func TestGuardCredentialPartition_NonCredentialInSecrets(t *testing.T) {
-	secrets := types.OrderedMap[types.SecretInstance]{}
-	secrets.Set("logging", types.SecretInstance{Type: "core/logging:1.0.0"})
-	components := types.OrderedMap[types.ComponentInstance]{}
-	components.Set("web", types.ComponentInstance{Type: "core/server:1.0.0", Secrets: secrets})
-	agg := &types.Aggregate{
-		Metadata: types.AggregateMetadata{Name: "test-app"},
-		Spec: types.AggregateSpec{
-			Components: components,
-		},
-	}
-
-	errs := guardCredentialPartition(normalized(t, agg), testCatalog())
-	if len(errs) == 0 {
-		t.Fatal("expected error for non-credential Feature in secrets: block")
-	}
-	if !errors.Is(errs[0], ErrCredentialLabelPartition) {
-		t.Errorf("expected ErrCredentialLabelPartition, got %v", errs[0].Err)
-	}
-}
-
 // --- RequiredFeatures tests ---
 
 func TestGuardRequiredFeatures_AllSatisfied(t *testing.T) {
@@ -280,10 +216,16 @@ func TestGuardFeatureMerge_TypeMismatch(t *testing.T) {
 // --- Guard ordering test ---
 
 func TestRunGuards_MultipleViolationsCollected(t *testing.T) {
-	features := types.OrderedMap[types.FeatureInstance]{}
-	features.Set("vault", types.FeatureInstance{Type: "security/vault:1.0.0"})
+	// RunGuards collects every violation class; no guard short-circuits the
+	// others. The graph below violates two independent guards at once:
+	// core/server declares no usesSchema (so the `databases` socket is
+	// unknown) and lists core/logging as a requiredFeature (which nothing
+	// attaches). Both must appear in one result.
+	uses := types.OrderedMap[types.UsesSocketValue]{}
+	uses.Set("databases", types.UsesSocketValue{Compact: []string{"db"}})
 	components := types.OrderedMap[types.ComponentInstance]{}
-	components.Set("web", types.ComponentInstance{Type: "core/server:1.0.0", Features: features})
+	components.Set("web", types.ComponentInstance{Type: "core/server:1.0.0", Uses: uses})
+	components.Set("db", types.ComponentInstance{Type: "core/worker:1.0.0"})
 	agg := &types.Aggregate{
 		Metadata: types.AggregateMetadata{Name: "test-app"},
 		Spec: types.AggregateSpec{
@@ -293,21 +235,20 @@ func TestRunGuards_MultipleViolationsCollected(t *testing.T) {
 
 	errs := RunGuards(normalized(t, agg), nil, testCatalog(), nil, nil)
 	if len(errs) < 2 {
-		t.Fatalf("expected at least 2 violations (credential + required), got %d", len(errs))
+		t.Fatalf("expected at least 2 violations (unknown socket + required feature), got %d: %v", len(errs), errs)
 	}
 
-	// Verify both error types are present
-	var hasCredential, hasRequired bool
+	var hasUnknownSocket, hasRequired bool
 	for _, e := range errs {
-		if errors.Is(e, ErrCredentialLabelPartition) {
-			hasCredential = true
+		if errors.Is(e, ErrUnknownUsesSocket) {
+			hasUnknownSocket = true
 		}
 		if errors.Is(e, ErrMissingRequiredFeature) {
 			hasRequired = true
 		}
 	}
-	if !hasCredential {
-		t.Error("expected ErrCredentialLabelPartition in results")
+	if !hasUnknownSocket {
+		t.Error("expected ErrUnknownUsesSocket in results")
 	}
 	if !hasRequired {
 		t.Error("expected ErrMissingRequiredFeature in results")

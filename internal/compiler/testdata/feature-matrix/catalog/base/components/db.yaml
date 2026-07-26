@@ -15,7 +15,7 @@ spec:
     provides:
       host: { type: string, required: true }
       port: { type: string, required: true }
-  secretsSchema:
+  featuresSchema:
     root_password:
       inject: []
     db_password:

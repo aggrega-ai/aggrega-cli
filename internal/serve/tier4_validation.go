@@ -172,7 +172,7 @@ func (s *Server) runTier4Validation(ctx context.Context, file string, content []
 	// populated uniformly for both single- and multi-violation cases.
 	if tier4 != nil && len(tier4.ResolveDiagnostics) > 0 {
 		for _, ve := range tier4.ResolveDiagnostics {
-			diags = append(diags, resolverViolationToDiagnostic(ve, doc, idx))
+			diags = append(diags, resolverFindingToDiagnostic(ve, "error", doc, idx))
 		}
 	} else if vr.RunErr != nil {
 		// Non-resolver pre-analyzer phase error (topology / IR / guards
@@ -183,6 +183,16 @@ func (s *Server) runTier4Validation(ctx context.Context, file string, content []
 			Severity: "error",
 			Message:  tier4PhaseErrorMessage(vr.RunErr),
 		})
+	}
+
+	// Advisory findings — exit-code-neutral, so they publish at warning
+	// severity and never contribute to the verdict. They ride the same
+	// position-recovery path as the halting violations above, so the editor
+	// squiggles the offending authoring key rather than the head of the file.
+	if tier4 != nil {
+		for _, a := range tier4.LintAdvisories {
+			diags = append(diags, resolverFindingToDiagnostic(a, "warning", doc, idx))
+		}
 	}
 
 	if tier4 != nil && tier4.Analysis != nil {
@@ -272,16 +282,21 @@ func analyzerErrorsToDiagnostics(errs []analyzer.AnalysisError, file string, doc
 	return out
 }
 
-// resolverViolationToDiagnostic maps a resolver-class violation to a
-// source-positioned diagnostic. The Field locator (e.g.,
-// ".spec.parameters.foo" or ".spec.components.bar.extends") is walked
+// resolverFindingToDiagnostic maps a resolver-class finding to a
+// source-positioned diagnostic at the supplied severity. The Field locator
+// (e.g., ".spec.parameters.foo" or ".spec.components.bar.extends") is walked
 // against the parsed yaml.Node to find the matching key; when found,
 // the diagnostic carries the key's start and end position so the
 // editor renders a squiggle spanning the whole token. When the Field
 // walks to a path the document does not contain (orthogonal to the
 // authoring shape), or when the Field is empty, the diagnostic falls
 // back to file:1:1.
-func resolverViolationToDiagnostic(ve *resolver.ResolverError, doc *yaml.Node, idx yamlpos.LineIndex) Diagnostic {
+//
+// Severity is the caller's, not the finding's: halting violations and
+// exit-code-neutral advisories share this one position-recovery path, so an
+// advisory lands on its authoring site with the same fidelity a violation gets
+// rather than acquiring a second walker that drifts from this one.
+func resolverFindingToDiagnostic(ve *resolver.ResolverError, severity string, doc *yaml.Node, idx yamlpos.LineIndex) Diagnostic {
 	line, col := 1, 1
 	var endLine, endCol int
 	if node := walkYAMLToField(doc, ve.Field); node != nil {
@@ -292,7 +307,7 @@ func resolverViolationToDiagnostic(ve *resolver.ResolverError, doc *yaml.Node, i
 		Column:    col,
 		EndLine:   endLine,
 		EndColumn: endCol,
-		Severity:  "error",
+		Severity:  severity,
 		Message:   ve.Message,
 	}
 }

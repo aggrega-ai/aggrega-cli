@@ -73,14 +73,14 @@ type Workload struct {
 	// Reference-form fields (form: reference only — an external endpoint with
 	// no compute). Endpoint is the external host or URL, piped through as a
 	// deterministic pointer (AOT: never resolved). Port is optional. Credential
-	// is an optional secretsSchema-slot pointer carried to consumers via
+	// is an optional featuresSchema-slot pointer carried to consumers via
 	// provides — the secret value is never resolved here.
 	Endpoint   string      `json:"endpoint,omitempty" yaml:"endpoint,omitempty"`
 	Port       int         `json:"port,omitempty" yaml:"port,omitempty"`
 	Credential *Credential `json:"credential,omitempty" yaml:"credential,omitempty"`
 }
 
-// Credential is a reference-form credential pointer: a secretsSchema slot
+// Credential is a reference-form credential pointer: a featuresSchema slot
 // (From) delivered to consumers as an environment variable (Env). Per the AOT
 // boundary the secret value is never resolved; this is a pointer only.
 type Credential struct {
@@ -153,7 +153,7 @@ type ContainerSpec struct {
 // EnvFromSource imports a whole ConfigMap or Secret source as environment
 // variables. Exactly one of ConfigMap / Secret is set (schema-enforced
 // disjunction, not a Go-type constraint). ConfigMap names a ConfigMap source;
-// Secret names a secretsSchema slot whose provides resolve the Secret name.
+// Secret names a featuresSchema slot whose provides resolve the Secret name.
 // Prefix, when set, is prepended to every imported variable name.
 type EnvFromSource struct {
 	ConfigMap string `json:"configMap,omitempty" yaml:"configMap,omitempty"`
@@ -161,7 +161,7 @@ type EnvFromSource struct {
 	Prefix    string `json:"prefix,omitempty" yaml:"prefix,omitempty"`
 }
 
-// SecretRef references a Component secretsSchema slot. As is "env" or "file";
+// SecretRef references a Component featuresSchema slot. As is "env" or "file";
 // when As == "file", Path is required (the in-container mount path).
 //
 // Key, meaningful only when As == "env", names the specific data key of the

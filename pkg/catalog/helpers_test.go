@@ -41,7 +41,7 @@ func TestDeprecationWarnings_NoActiveRules(t *testing.T) {
 
 	comp := types.Component{}
 	comp.Metadata.Name = "comp/modern"
-	comp.Spec.SecretsSchema.Set("slot", types.AttachmentSlot{})
+	comp.Spec.FeaturesSchema.Set("slot", types.AttachmentSlot{})
 	c.Components["comp/modern"] = comp
 
 	if got := c.DeprecationWarnings(); len(got) != 0 {

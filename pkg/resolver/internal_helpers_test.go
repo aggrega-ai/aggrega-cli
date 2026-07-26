@@ -180,45 +180,6 @@ func TestSchemaSubSchemaAtPath_EveryBranch(t *testing.T) {
 	}
 }
 
-// TestIsCredentialFeature_EveryBranch pins all four documented return
-// paths of the credential-feature discriminator:
-//   - nil catalog Feature lookup → false
-//   - catalog miss → false
-//   - present but no kind=secret label → false
-//   - present with kind=secret label → true
-func TestIsCredentialFeature_EveryBranch(t *testing.T) {
-	t.Parallel()
-	// (a) Nil lookup.
-	if isCredentialFeature("anything", CatalogLookup{}) {
-		t.Errorf("nil lookup should return false")
-	}
-	// (b) Catalog miss.
-	emptyCat := CatalogLookup{Feature: func(string) (types.Feature, bool) { return types.Feature{}, false }}
-	if isCredentialFeature("missing", emptyCat) {
-		t.Errorf("catalog miss should return false")
-	}
-	// (c) Present, no kind label.
-	noLabel := CatalogLookup{Feature: func(string) (types.Feature, bool) {
-		return types.Feature{Metadata: types.FeatureMetadata{Name: "x"}}, true
-	}}
-	if isCredentialFeature("x", noLabel) {
-		t.Errorf("no kind label should return false")
-	}
-	// (d) Present, kind=secret label.
-	labels := types.OrderedMap[string]{}
-	labels.Set(types.FeatureKindLabel, types.FeatureKindSecret)
-	withSecret := CatalogLookup{Feature: func(string) (types.Feature, bool) {
-		return types.Feature{Metadata: types.FeatureMetadata{Name: "x", Labels: labels}}, true
-	}}
-	if !isCredentialFeature("x", withSecret) {
-		t.Errorf("kind=secret label should return true")
-	}
-}
-
-// TestResolveSubDirectory_PrefersComponentLevel pins the precedence
-// rule: when a component declares its own subdirectory, the
-// component-level value wins; when the component omits it, the
-// boundary-level value is used.
 func TestResolveSubDirectory_PrefersComponentLevel(t *testing.T) {
 	t.Parallel()
 	cases := []struct {

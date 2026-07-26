@@ -169,7 +169,7 @@ func TestResolverViolationToDiagnostic_FieldMatchesYAML(t *testing.T) {
 		Message: "parameter host: expected string, got integer",
 		Err:     resolver.ErrParameterContractViolation,
 	}
-	diag := resolverViolationToDiagnostic(ve, doc, lineIndexFor(content))
+	diag := resolverFindingToDiagnostic(ve, "error", doc, lineIndexFor(content))
 	if diag.Line != 5 {
 		t.Errorf("Line = %d; want 5 (host key line)", diag.Line)
 	}
@@ -199,7 +199,7 @@ func TestResolverViolationToDiagnostic_FieldMissingFallsBackToNeighborhood(t *te
 	}
 	// .spec matches but .parameters does not, so the walker falls back
 	// to the deepest reached key (.spec at line 1, column 1).
-	diag := resolverViolationToDiagnostic(ve, doc, lineIndexFor(content))
+	diag := resolverFindingToDiagnostic(ve, "error", doc, lineIndexFor(content))
 	if diag.Line != 1 || diag.Column != 1 {
 		t.Errorf("expected fall-back to .spec at 1:1; got %d:%d", diag.Line, diag.Column)
 	}
@@ -918,7 +918,7 @@ func diagMessages(ds []Diagnostic) []string {
 // confirming the pipeline-side extraction path: when
 // runTier4Validation receives a MultiResolverError-wrapped result,
 // the structured Violations slice round-trips into the Diagnostic
-// slice via resolverViolationToDiagnostic. This catches the
+// slice via resolverFindingToDiagnostic. This catches the
 // regression where the Violations slice would be lost at the
 // pipeline boundary.
 func TestMultiResolverErrorRoundTripPreservesViolations(t *testing.T) {
@@ -943,7 +943,7 @@ func TestMultiResolverErrorRoundTripPreservesViolations(t *testing.T) {
 		t.Errorf("Violations length = %d; want 2", len(got.Violations))
 	}
 
-	// Walk each violation through resolverViolationToDiagnostic and
+	// Walk each violation through resolverFindingToDiagnostic and
 	// confirm the position recovery works against a real YAML doc.
 	content := `spec:
   parameters:
@@ -956,7 +956,7 @@ func TestMultiResolverErrorRoundTripPreservesViolations(t *testing.T) {
 	idx := lineIndexFor(content)
 	diags := make([]Diagnostic, 0, len(got.Violations))
 	for _, ve := range got.Violations {
-		diags = append(diags, resolverViolationToDiagnostic(ve, doc, idx))
+		diags = append(diags, resolverFindingToDiagnostic(ve, "error", doc, idx))
 	}
 	if len(diags) != 2 {
 		t.Fatalf("expected 2 diagnostics; got %d", len(diags))
@@ -967,5 +967,83 @@ func TestMultiResolverErrorRoundTripPreservesViolations(t *testing.T) {
 	}
 	if diags[1].Line != 5 {
 		t.Errorf("second diag Line = %d; want 5", diags[1].Line)
+	}
+}
+
+// TestAttachmentSlotNearMissPublishesAsEditorWarning pins the editor-visibility
+// contract for the advisory class: an attachment-slot near miss must reach the
+// language-server diagnostic stream at WARNING severity, positioned on the
+// offending authoring key, and must not be published as an error. Terminal-only
+// visibility is not sufficient — the author sees this in the editor or not at
+// all.
+func TestAttachmentSlotNearMissPublishesAsEditorWarning(t *testing.T) {
+	t.Parallel()
+	content := `spec:
+  components:
+    db:
+      secrets:
+        db_passwrod:
+          type: core/referenced-secret
+`
+	doc := parseYAML(t, content)
+	advisory := &resolver.ResolverError{
+		Entity:  "Aggregate test-app",
+		Field:   `.spec.components.db.secrets.db_passwrod`,
+		Message: `attachment "db_passwrod" is not a declared slot, but the type declares the slot "db_password"`,
+		Err:     resolver.ErrAttachmentSlotNearMiss,
+	}
+
+	diag := resolverFindingToDiagnostic(advisory, "warning", doc, lineIndexFor(content))
+	if diag.Severity != "warning" {
+		t.Errorf("Severity = %q; want %q — an advisory must never publish as an error", diag.Severity, "warning")
+	}
+	// Positioned on the misspelled key (line 5), not at the head of the file.
+	if diag.Line != 5 {
+		t.Errorf("Line = %d; want 5 (the db_passwrod key line)", diag.Line)
+	}
+	if diag.Column != 9 || diag.EndLine != 5 || diag.EndColumn != 20 {
+		t.Errorf("range = %d:%d-%d:%d; want 5:9-5:20 (spanning the key token)",
+			diag.Line, diag.Column, diag.EndLine, diag.EndColumn)
+	}
+	if diag.Message != advisory.Message {
+		t.Errorf("Message = %q; want %q", diag.Message, advisory.Message)
+	}
+}
+
+// TestTier4AdvisoriesMapToWarningsAlongsideErrors pins that the advisory slice
+// on Tier4Result is a SEPARATE channel from ResolveDiagnostics: advisories map
+// to warnings, violations to errors, and the presence of one does not suppress
+// the other.
+func TestTier4AdvisoriesMapToWarningsAlongsideErrors(t *testing.T) {
+	t.Parallel()
+	content := `spec:
+  parameters:
+    host:
+      type: string
+`
+	doc := parseYAML(t, content)
+	idx := lineIndexFor(content)
+
+	violation := &resolver.ResolverError{
+		Entity: "Aggregate", Field: ".spec.parameters.host",
+		Message: "boom", Err: resolver.ErrParameterContractViolation,
+	}
+	advisory := &resolver.ResolverError{
+		Entity: "Aggregate", Field: ".spec.parameters.host",
+		Message: "near miss", Err: resolver.ErrAttachmentSlotNearMiss,
+	}
+
+	got := []Diagnostic{
+		resolverFindingToDiagnostic(violation, "error", doc, idx),
+		resolverFindingToDiagnostic(advisory, "warning", doc, idx),
+	}
+	if got[0].Severity != "error" || got[1].Severity != "warning" {
+		t.Fatalf("severities = %q,%q; want error,warning", got[0].Severity, got[1].Severity)
+	}
+	// Both recover the same position through the one shared walker, so an
+	// advisory is never demoted to a file-head diagnostic.
+	if got[0].Line != got[1].Line || got[0].Column != got[1].Column {
+		t.Errorf("advisory position %d:%d differs from violation %d:%d; both must use the shared walker",
+			got[1].Line, got[1].Column, got[0].Line, got[0].Column)
 	}
 }

@@ -6,7 +6,7 @@
 //! content.
 //!
 //! The platform's recommended authoring paths are the declarative
-//! `usesSchema` (dependency sockets) and `secretsSchema` (credential
+//! `usesSchema` (dependency sockets) and `featuresSchema` (credential
 //! bindings) tables on `spec`. The schema-composition layer
 //! synthesises the inline `x-aggrega-*` extension form from those
 //! declarative tables; authors writing the extension form directly
@@ -97,7 +97,7 @@ fn collect_x_aggrega_occurrences(
 fn recommended_authoring_path(key: &str) -> &'static str {
     match key {
         "x-aggrega-selector" => "the usesSchema field's declarative socket table",
-        "x-aggrega-inject" => "the usesSchema or secretsSchema declarative tables",
+        "x-aggrega-inject" => "the usesSchema or featuresSchema declarative tables",
         _ => "the appropriate declarative table on spec",
     }
 }

@@ -263,10 +263,17 @@ type Result struct {
 // Step 1 succeeded (the function-level error is nil) or when the error
 // chain carries no *ResolverError at all. Tier-4 position-recovery
 // walks the slice with a uniform code path regardless of cardinality.
+//
+// LintAdvisories carries the exit-code-neutral advisory findings the resolve
+// scope produced — presently the attachment-slot near-miss lint. They are
+// structurally identical to ResolveDiagnostics (entity, field locator, message)
+// so a front end reuses one position-recovery path for both, but they never
+// contribute to a verdict: a caller renders them as warnings and proceeds.
 type Tier4Result struct {
 	IRGraph            *types.IRGraph
 	Analysis           *analyzer.AnalysisResult
 	ResolveDiagnostics []*resolver.ResolverError
+	LintAdvisories     []*resolver.ResolverError
 }
 
 // stepsOneToFourOutput bundles the outputs runStepsOneToFour produces inside
@@ -438,7 +445,20 @@ func ResolveAndValidate(
 			return fmt.Errorf("Step 1 (annotation expansion): %w", err)
 		}
 
-		guardErrs := resolver.RunGuards(types.Normalize(resolveResult.Aggregate), resolveResult.Release, catalogLookup, resolveResult.BoundaryInfra, resolveResult.Parameters)
+		normalized := types.Normalize(resolveResult.Aggregate)
+
+		// Advisory checks run in the same scope as the halting guards and read
+		// the same normalized aggregate and catalog view, so this is the single
+		// producer both front ends consume: the build renders them to stderr
+		// below, the daemon maps them to editor warnings off Tier4Result. They
+		// are computed before the guard verdict so an advisory is not lost when
+		// an unrelated guard halts.
+		resolveResult.LintAdvisories = resolver.LintAttachmentSlotNearMiss(normalized, catalogLookup)
+		for _, a := range resolveResult.LintAdvisories {
+			fmt.Fprintf(os.Stderr, "  lint: %s\n", a)
+		}
+
+		guardErrs := resolver.RunGuards(normalized, resolveResult.Release, catalogLookup, resolveResult.BoundaryInfra, resolveResult.Parameters)
 		if inputs.TolerateCatalogViewInconsistency {
 			// Resilient inspection against a lazily-populated view: a resolved
 			// catalog reference momentarily absent from the view (a drifted cache
@@ -556,6 +576,9 @@ func RunTier4Pipeline(
 		// Analysis.Errors, consumed below.
 		out.IRGraph = stepsOut.IRGraph
 		out.Analysis = stepsOut.Analysis
+		if stepsOut.ResolveResult != nil {
+			out.LintAdvisories = stepsOut.ResolveResult.LintAdvisories
+		}
 		return nil
 	})
 

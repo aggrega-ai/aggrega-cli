@@ -134,7 +134,7 @@ func phaseB1(ctx *types.TemplateContext, state *PhaseBState) error {
 //  1. validator.ValidateWorkload — schema validation against the embedded
 //     Workload JSON Schema.
 //  2. validator.ValidateWorkloadSecrets — cross-wave check against the
-//     Component's secretsSchema slot allowlist.
+//     Component's featuresSchema slot allowlist.
 //  3. validator.ValidateWorkloadResourceReferences — every secrets entry's
 //     slot must expose the referenceable-secret provides keys (name, key) the
 //     synthesizer reads to resolve the reference; checked against the slot's
@@ -145,7 +145,7 @@ func phaseB1(ctx *types.TemplateContext, state *PhaseBState) error {
 // stops the build before B.3 runs; failures carry CATALOG_ERROR-prefixed
 // messages with field paths.
 //
-// slots is the Component's SecretsSchema (passed by the orchestrator from
+// slots is the Component's FeaturesSchema (passed by the orchestrator from
 // the catalog lookup). nil/empty slots is acceptable when the Recipe's
 // Workload declares no secrets entries.
 func phaseB2(ctx *types.TemplateContext, state *PhaseBState, slots types.OrderedMap[types.AttachmentSlot]) error {
@@ -672,7 +672,7 @@ func applyHostPatchToRunning(running []EmittedFile, path string, content []byte)
 	return append(running, EmittedFile{Name: path, Origin: EmitOriginPipeline, Body: content})
 }
 
-// featureSecretSlots returns the secretsSchema slots of the Feature the given
+// featureSecretSlots returns the featuresSchema slots of the Feature the given
 // FeatureRecipe implements — the owning entity whose slot allowlist governs an
 // FR-synthesized Workload's containers.secrets cross-check (parallel to a
 // Component governing its own Recipe). Returns an empty map when the Feature
@@ -680,7 +680,7 @@ func applyHostPatchToRunning(running []EmittedFile, path string, content []byte)
 func featureSecretSlots(fr *types.FeatureRecipe, input RendererInput) types.OrderedMap[types.AttachmentSlot] {
 	if fr != nil && input.CatalogLookup.Feature != nil {
 		if feat, found := input.CatalogLookup.Feature(fr.Spec.Implements); found {
-			return feat.Spec.SecretsSchema
+			return feat.Spec.FeaturesSchema
 		}
 	}
 	return types.OrderedMap[types.AttachmentSlot]{}

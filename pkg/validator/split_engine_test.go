@@ -118,12 +118,12 @@ func TestGenerateBaseUsesJSONSchema_ClosedAdditionalProperties(t *testing.T) {
 	}
 }
 
-func TestGenerateBaseSecretsJSONSchema_RequiredVsOptional(t *testing.T) {
+func TestGenerateBaseAttachmentsJSONSchema_RequiredVsOptional(t *testing.T) {
 	schema := types.OrderedMap[types.AttachmentSlot]{}
 	schema.Set("db_password", types.AttachmentSlot{Required: true, Inject: []string{"env"}})
 	schema.Set("api_token", types.AttachmentSlot{Required: false, Inject: []string{"file"}})
 
-	out := GenerateBaseSecretsJSONSchema(schema)
+	out := GenerateBaseAttachmentsJSONSchema(schema)
 	if out == nil {
 		t.Fatal("expected non-nil schema; got nil")
 	}
@@ -154,7 +154,7 @@ func TestGenerateBaseSecretsJSONSchema_RequiredVsOptional(t *testing.T) {
 	}
 }
 
-func TestGenerateBaseSecretsJSONSchema_RequiredSortedAlphabetically(t *testing.T) {
+func TestGenerateBaseAttachmentsJSONSchema_RequiredSortedAlphabetically(t *testing.T) {
 	// Author order is preserved for PropertyOrder; Required is sorted
 	// alphabetically post-construction for cross-build byte-identity.
 	schema := types.OrderedMap[types.AttachmentSlot]{}
@@ -162,7 +162,7 @@ func TestGenerateBaseSecretsJSONSchema_RequiredSortedAlphabetically(t *testing.T
 	schema.Set("alpha", types.AttachmentSlot{Required: true})
 	schema.Set("mike", types.AttachmentSlot{Required: true})
 
-	out := GenerateBaseSecretsJSONSchema(schema)
+	out := GenerateBaseAttachmentsJSONSchema(schema)
 	expectedRequired := []string{"alpha", "mike", "zulu"}
 	if len(out.Required) != 3 {
 		t.Fatalf("expected 3 required slots; got %v", out.Required)
@@ -181,11 +181,11 @@ func TestGenerateBaseSecretsJSONSchema_RequiredSortedAlphabetically(t *testing.T
 	}
 }
 
-func TestGenerateBaseSecretsJSONSchema_BlackboxNoInject(t *testing.T) {
+func TestGenerateBaseAttachmentsJSONSchema_BlackboxNoInject(t *testing.T) {
 	schema := types.OrderedMap[types.AttachmentSlot]{}
 	schema.Set("internal_only", types.AttachmentSlot{Required: true})
 
-	out := GenerateBaseSecretsJSONSchema(schema)
+	out := GenerateBaseAttachmentsJSONSchema(schema)
 	slot := out.Properties["internal_only"]
 	if _, ok := slot.Extra["x-aggrega-inject"]; ok {
 		t.Errorf("expected no x-aggrega-inject for Black-Box (Inject empty); got %v", slot.Extra)
@@ -195,10 +195,72 @@ func TestGenerateBaseSecretsJSONSchema_BlackboxNoInject(t *testing.T) {
 	}
 }
 
-func TestGenerateBaseSecretsJSONSchema_Empty(t *testing.T) {
-	out := GenerateBaseSecretsJSONSchema(types.OrderedMap[types.AttachmentSlot]{})
+func TestGenerateBaseAttachmentsJSONSchema_Empty(t *testing.T) {
+	out := GenerateBaseAttachmentsJSONSchema(types.OrderedMap[types.AttachmentSlot]{})
 	if out != nil {
-		t.Errorf("expected nil for empty secretsSchema; got %v", out)
+		t.Errorf("expected nil for empty featuresSchema; got %v", out)
+	}
+}
+
+func TestGenerateBaseAttachmentsJSONSchema_OpenOuterClosedSlots(t *testing.T) {
+	// The two depths are independent decisions and both matter:
+	//
+	//   outer object OPEN  — an attachment name no slot declares is a legal
+	//                        free attachment, so declaring one slot must not
+	//                        forbid the attachments the entity did not
+	//                        enumerate.
+	//   slot sub-schema CLOSED — a fill that DOES bind a declared slot is
+	//                        still constrained to that slot's shape.
+	//
+	// Asserting only one of the pair would let the other regress silently:
+	// closing the outer object breaks free attachments, and opening a slot
+	// sub-schema drops the shape constraint on every fill.
+	schema := types.OrderedMap[types.AttachmentSlot]{}
+	schema.Set("password", types.AttachmentSlot{Inject: []string{"env"}})
+
+	out := GenerateBaseAttachmentsJSONSchema(schema)
+	if out == nil {
+		t.Fatal("expected non-nil schema; got nil")
+	}
+	if out.AdditionalProperties != nil {
+		t.Errorf("expected OPEN outer object (no additionalProperties constraint); got %+v", out.AdditionalProperties)
+	}
+	slot := out.Properties["password"]
+	if slot == nil {
+		t.Fatal("expected password slot; got nil")
+	}
+	if slot.AdditionalProperties == nil || slot.AdditionalProperties.Not == nil {
+		t.Errorf("expected CLOSED slot sub-schema (AdditionalProperties.Not non-nil); got %+v", slot.AdditionalProperties)
+	}
+	// A slot constrains which fill may bind it, not what the fill
+	// configures; infra stays absent so the rule has one home on the
+	// attached Feature's own schema.
+	if _, ok := slot.Properties["infra"]; ok {
+		t.Errorf("expected no infra property on a slot sub-schema; the attached Feature's schema owns that contract")
+	}
+}
+
+func TestGenerateBaseAttachmentsJSONSchema_OptionalSlotStillConstrainsShape(t *testing.T) {
+	// slot.Required drives two things at two schema depths: membership of
+	// the outer required list, AND the slot-internal "a fill must declare a
+	// type" requirement. An optional slot drops the former and keeps the
+	// latter's parent closed-ness, so a fill it DOES receive is still
+	// shape-constrained rather than free-form.
+	schema := types.OrderedMap[types.AttachmentSlot]{}
+	schema.Set("password", types.AttachmentSlot{Required: false})
+
+	out := GenerateBaseAttachmentsJSONSchema(schema)
+	if len(out.Required) != 0 {
+		t.Errorf("expected optional slot absent from the outer required list; got %v", out.Required)
+	}
+	slot := out.Properties["password"]
+	if slot.AdditionalProperties == nil || slot.AdditionalProperties.Not == nil {
+		t.Errorf("expected an optional slot's sub-schema to stay closed; got %+v", slot.AdditionalProperties)
+	}
+	for _, want := range []string{"type", "values", "uses"} {
+		if _, ok := slot.Properties[want]; !ok {
+			t.Errorf("expected optional slot to permit %q", want)
+		}
 	}
 }
 

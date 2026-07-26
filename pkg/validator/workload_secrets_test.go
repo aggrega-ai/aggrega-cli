@@ -99,8 +99,8 @@ func TestValidateWorkloadSecrets_UndeclaredSlot_Fails(t *testing.T) {
 	w.Containers.Set("main", c)
 
 	err := validator.ValidateWorkloadSecrets(w, slots, "", "", "")
-	if !errors.Is(err, validator.ErrWorkloadSecretsSchema) {
-		t.Fatalf("expected ErrWorkloadSecretsSchema, got %v", err)
+	if !errors.Is(err, validator.ErrWorkloadFeaturesSchema) {
+		t.Fatalf("expected ErrWorkloadFeaturesSchema, got %v", err)
 	}
 	if !strings.Contains(err.Error(), "not-declared") {
 		t.Errorf("error should name the undeclared slot: %v", err)
@@ -122,8 +122,8 @@ func TestValidateWorkloadSecrets_AsNotInAllowlist_Fails(t *testing.T) {
 	w.Containers.Set("main", c)
 
 	err := validator.ValidateWorkloadSecrets(w, slots, "", "", "")
-	if !errors.Is(err, validator.ErrWorkloadSecretsSchema) {
-		t.Fatalf("expected ErrWorkloadSecretsSchema, got %v", err)
+	if !errors.Is(err, validator.ErrWorkloadFeaturesSchema) {
+		t.Fatalf("expected ErrWorkloadFeaturesSchema, got %v", err)
 	}
 	if !strings.Contains(err.Error(), `"file"`) {
 		t.Errorf("error should name the disallowed mechanism, got: %v", err)
@@ -148,8 +148,8 @@ func TestValidateWorkloadSecrets_BlackboxSlot_Fails(t *testing.T) {
 	w.Containers.Set("main", c)
 
 	err := validator.ValidateWorkloadSecrets(w, slots, "", "", "")
-	if !errors.Is(err, validator.ErrWorkloadSecretsSchema) {
-		t.Fatalf("expected ErrWorkloadSecretsSchema, got %v", err)
+	if !errors.Is(err, validator.ErrWorkloadFeaturesSchema) {
+		t.Fatalf("expected ErrWorkloadFeaturesSchema, got %v", err)
 	}
 	if !strings.Contains(err.Error(), "blackbox") {
 		t.Errorf("error should name the blackbox classification, got: %v", err)
@@ -171,8 +171,8 @@ func TestValidateWorkloadSecrets_InitContainerWalked(t *testing.T) {
 	w := &types.Workload{InitContainers: []types.ContainerSpec{c}}
 
 	err := validator.ValidateWorkloadSecrets(w, slots, "", "", "")
-	if !errors.Is(err, validator.ErrWorkloadSecretsSchema) {
-		t.Fatalf("expected ErrWorkloadSecretsSchema for initContainer ref, got %v", err)
+	if !errors.Is(err, validator.ErrWorkloadFeaturesSchema) {
+		t.Fatalf("expected ErrWorkloadFeaturesSchema for initContainer ref, got %v", err)
 	}
 	if !strings.Contains(err.Error(), ".initContainers[0]") {
 		t.Errorf("error should reference initContainers[0] path, got: %v", err)
@@ -196,8 +196,8 @@ func TestValidateWorkloadSecrets_MultipleFindings_AllSurfaced(t *testing.T) {
 	w.Containers.Set("main", c)
 
 	err := validator.ValidateWorkloadSecrets(w, slots, "", "", "")
-	if !errors.Is(err, validator.ErrWorkloadSecretsSchema) {
-		t.Fatalf("expected ErrWorkloadSecretsSchema, got %v", err)
+	if !errors.Is(err, validator.ErrWorkloadFeaturesSchema) {
+		t.Fatalf("expected ErrWorkloadFeaturesSchema, got %v", err)
 	}
 	msg := err.Error()
 	if !strings.Contains(msg, "missing-1") {
@@ -234,7 +234,7 @@ func TestValidateWorkloadSecrets_ErrorMessageFormat(t *testing.T) {
 	if !strings.Contains(msg, "test:1.0.0") {
 		t.Errorf("must contain recipe name:version, got: %q", msg)
 	}
-	if !strings.Contains(msg, "secretsSchema validation failed") {
+	if !strings.Contains(msg, "featuresSchema validation failed") {
 		t.Errorf("must contain stage tag, got: %q", msg)
 	}
 }

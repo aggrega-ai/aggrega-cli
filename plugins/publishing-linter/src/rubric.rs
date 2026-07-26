@@ -114,14 +114,14 @@ const FEATURE_DOCS_PATHS: &[&str] = &[
 const COMPONENT_FIELD_PATHS: &[&str] = &[
     "spec.schema",
     "spec.usesSchema",
-    "spec.secretsSchema",
+    "spec.featuresSchema",
     "spec.requiredFeatures",
     "spec.extends",
 ];
 const FEATURE_FIELD_PATHS: &[&str] = &[
     "spec.schema",
     "spec.usesSchema",
-    "spec.secretsSchema",
+    "spec.featuresSchema",
     "spec.appliesTo",
     "spec.appliesToInfra",
     "spec.appliesToValues",

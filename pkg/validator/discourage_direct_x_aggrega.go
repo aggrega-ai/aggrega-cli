@@ -17,7 +17,7 @@ import (
 // occurrence, the function emits a warn-level log line naming the
 // entity, the offending key, the RFC 6901 JSON Pointer locating
 // the key within the schema tree, and the recommended authoring
-// path (usesSchema for dependency sockets; secretsSchema for
+// path (usesSchema for dependency sockets; featuresSchema for
 // credential bindings).
 //
 // One log line per occurrence; multiple occurrences of the same
@@ -94,7 +94,7 @@ func recommendedAuthoringPath(extKey string) string {
 	case "x-aggrega-selector":
 		return "the usesSchema field's declarative socket table"
 	case "x-aggrega-inject":
-		return "the usesSchema or secretsSchema declarative tables"
+		return "the usesSchema or featuresSchema declarative tables"
 	default:
 		return "the appropriate declarative table on spec"
 	}

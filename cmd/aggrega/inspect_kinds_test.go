@@ -81,7 +81,7 @@ spec:
     backend:
       selector: 'component.aggrega.ai/type=stateful-server'
       inject: [env]
-  secretsSchema:
+  featuresSchema:
     token:
       required: true
   appliesTo: 'component.aggrega.ai/type=server'

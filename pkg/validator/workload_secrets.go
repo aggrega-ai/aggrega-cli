@@ -9,10 +9,10 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
-// ValidateWorkloadSecrets enforces the cross-wave secretsSchema check: every
+// ValidateWorkloadSecrets enforces the cross-wave featuresSchema check: every
 // `containers.<n>.secrets.<KEY>` and `initContainers[<i>].secrets.<KEY>`
 // entry on a Workload must reference a slot declared in the owning
-// Component's secretsSchema, with a delivery mechanism (`as:`) permitted by
+// Component's featuresSchema, with a delivery mechanism (`as:`) permitted by
 // that slot's `inject:` allowlist. Blackbox slots (whose `inject:` is empty)
 // are reserved for Recipe-internal plumbing and cannot be referenced from a
 // Workload at all.
@@ -64,9 +64,9 @@ func ValidateWorkloadSecrets(
 		Path:          recipePath,
 		RecipeName:    recipeName,
 		RecipeVersion: recipeVersion,
-		Stage:         "secretsSchema",
+		Stage:         "featuresSchema",
 		Findings:      findings,
-		Err:           ErrWorkloadSecretsSchema,
+		Err:           ErrWorkloadFeaturesSchema,
 	}
 }
 
@@ -87,8 +87,8 @@ func checkContainerSecrets(
 		if !slotOK {
 			findings = append(findings, WorkloadValidationFinding{
 				FieldPath:  fieldPath + ".from",
-				Constraint: fmt.Sprintf("references slot %q which is not declared in the Component's secretsSchema", ref.From),
-				Suggestion: "either declare the slot in the Component (or Feature) secretsSchema, or rename the reference to an existing slot",
+				Constraint: fmt.Sprintf("references slot %q which is not declared in the Component's featuresSchema", ref.From),
+				Suggestion: "either declare the slot in the Component (or Feature) featuresSchema, or rename the reference to an existing slot",
 			})
 			continue
 		}
@@ -109,7 +109,7 @@ func checkContainerSecrets(
 			findings = append(findings, WorkloadValidationFinding{
 				FieldPath:  fieldPath + ".as",
 				Constraint: fmt.Sprintf("delivery mechanism %q is not permitted by slot %q (inject allowlist: %v)", ref.As, ref.From, slot.Inject),
-				Suggestion: fmt.Sprintf("use one of the allowlisted delivery mechanisms (%v), or widen the slot's inject allowlist in the Component/Feature secretsSchema", slot.Inject),
+				Suggestion: fmt.Sprintf("use one of the allowlisted delivery mechanisms (%v), or widen the slot's inject allowlist in the Component/Feature featuresSchema", slot.Inject),
 			})
 		}
 	}

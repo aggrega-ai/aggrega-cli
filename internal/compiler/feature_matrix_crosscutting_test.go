@@ -66,7 +66,7 @@ func joinErrorChain(err error) string {
 //     the documented collision error.
 //  8. WorkloadSecrets — a fixture variant whose Workload references the
 //     blackbox slot root_password fails Recipe load with the documented
-//     ErrWorkloadSecretsSchema.
+//     ErrWorkloadFeaturesSchema.
 //
 // The 4 path-driven sentinels not covered by criterion 7 (PATH_COLLISION /
 // INSTANCE_ID_COLLISION / CHART_NAME_MISMATCH / FR_TEMPLATE_INVALID_FIELD)
@@ -558,7 +558,7 @@ func testFilenameCollision(t *testing.T) {
 // reference rejection. The workload-secrets-blackbox-violation variant has
 // a db Recipe whose Workload's container references the slot root_password
 // (declared blackbox via inject: [] on the db Component) — the validator
-// should fail the Recipe at load with ErrWorkloadSecretsSchema.
+// should fail the Recipe at load with ErrWorkloadFeaturesSchema.
 func testWorkloadSecretsReject(t *testing.T) {
 	t.Parallel()
 	res, err := tryRunFeatureMatrixVariant(t, featureMatrixVariant{

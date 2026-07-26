@@ -13,20 +13,20 @@ import (
 
 // Workload-validation sentinels. Two are surfaced today: the schema-
 // validation failure (rule violations on the embedded Workload JSON
-// Schema) and the cross-wave secretsSchema check (Workload secret
-// references vs the Component's secretsSchema slot declarations).
+// Schema) and the cross-wave featuresSchema check (Workload secret
+// references vs the Component's featuresSchema slot declarations).
 var (
 	// ErrWorkloadValidation: schema-validation failure on the parsed
 	// Workload against the embedded Workload JSON Schema.
 	ErrWorkloadValidation = errors.New("workload validation failed")
 
-	// ErrWorkloadSecretsSchema: cross-wave check failure between Workload
-	// secret references and the Component's secretsSchema slot allowlist.
+	// ErrWorkloadFeaturesSchema: cross-wave check failure between Workload
+	// secret references and the Component's featuresSchema slot allowlist.
 	// Surfaces when a Workload's secrets entry names an undeclared slot,
 	// uses a delivery mechanism (`as:`) not in the slot's `inject:`
 	// allowlist, or references a blackbox slot (Inject == nil/empty,
 	// reserved for Recipe-internal plumbing).
-	ErrWorkloadSecretsSchema = errors.New("workload secretsSchema cross-check failed")
+	ErrWorkloadFeaturesSchema = errors.New("workload featuresSchema cross-check failed")
 
 	// ErrSlotNotReferenceable: a Workload slot reference names a slot whose
 	// resolved provides does not expose the contract keys a workload reference
@@ -37,7 +37,7 @@ var (
 )
 
 // WorkloadValidationError carries the structured detail for a Workload
-// validation failure (schema validation or secretsSchema cross-check). The
+// validation failure (schema validation or featuresSchema cross-check). The
 // Error() output uses the same CATALOG_ERROR-prefixed format as
 // RecipeValidationError so operator-facing messages are uniform across
 // load-time validation surfaces.
@@ -51,13 +51,13 @@ type WorkloadValidationError struct {
 	// RecipeVersion is the owning Recipe's metadata.version; empty when not
 	// available.
 	RecipeVersion string
-	// Stage is "schema" for schema-validation failures, "secretsSchema" for
+	// Stage is "schema" for schema-validation failures, "featuresSchema" for
 	// cross-wave slot-declaration check failures, and "slotReferenceability"
 	// for slot-provides key-presence failures.
 	Stage string
 	// Findings lists per-field failures. Each entry is a path + reason +
 	// optional fix suggestion. Schema validation produces one Finding
-	// per validator error; secretsSchema produces one Finding per
+	// per validator error; featuresSchema produces one Finding per
 	// offending entry.
 	Findings []WorkloadValidationFinding
 	// Err is the sentinel for errors.Is matching.
@@ -118,7 +118,7 @@ func (e *WorkloadValidationError) Unwrap() error {
 // facing presentation is consistent regardless of conversion path.
 //
 // Inner error chain preserved via cerrors.Wrap so errors.Is against
-// ErrWorkloadValidation / ErrWorkloadSecretsSchema continues to match.
+// ErrWorkloadValidation / ErrWorkloadFeaturesSchema continues to match.
 func (e *WorkloadValidationError) ToCompilerError() *cerrors.CompilerError {
 	return cerrors.Wrap(e, cerrors.CatalogError, cerrors.SourceLocation{File: e.Path}, e.Error())
 }

@@ -160,7 +160,7 @@ func mergeComponent(parent, child types.Component) types.Component {
 	out.Metadata.Labels = mergeStringMap(parent.Metadata.Labels, child.Metadata.Labels)
 	out.Metadata.Annotations = mergeStringMap(parent.Metadata.Annotations, child.Metadata.Annotations)
 
-	out.Spec.SecretsSchema = mergeSecretsSchema(parent.Spec.SecretsSchema, child.Spec.SecretsSchema)
+	out.Spec.FeaturesSchema = mergeFeaturesSchema(parent.Spec.FeaturesSchema, child.Spec.FeaturesSchema)
 	out.Spec.RequiredFeatures = concatDedupeString(parent.Spec.RequiredFeatures, child.Spec.RequiredFeatures)
 	out.Spec.Inject = concatDedupeString(parent.Spec.Inject, child.Spec.Inject)
 	out.Spec.UsesSchema = mergeUsesSchema(parent.Spec.UsesSchema, child.Spec.UsesSchema)
@@ -172,7 +172,7 @@ func mergeFeature(parent, child types.Feature) types.Feature {
 	out.Metadata.Labels = mergeStringMap(parent.Metadata.Labels, child.Metadata.Labels)
 	out.Metadata.Annotations = mergeStringMap(parent.Metadata.Annotations, child.Metadata.Annotations)
 
-	out.Spec.SecretsSchema = mergeSecretsSchema(parent.Spec.SecretsSchema, child.Spec.SecretsSchema)
+	out.Spec.FeaturesSchema = mergeFeaturesSchema(parent.Spec.FeaturesSchema, child.Spec.FeaturesSchema)
 	out.Spec.UsesSchema = mergeUsesSchema(parent.Spec.UsesSchema, child.Spec.UsesSchema)
 	return out
 }
@@ -213,10 +213,10 @@ func concatDedupeString(parent, child []string) []string {
 	return out
 }
 
-// mergeSecretsSchema overlays parent and child secretsSchema entries. Child
+// mergeFeaturesSchema overlays parent and child featuresSchema entries. Child
 // wins on the same slot name; slots unique to the parent are preserved.
 // Same semantics as mergeUsesSchema.
-func mergeSecretsSchema(parent, child types.OrderedMap[types.AttachmentSlot]) types.OrderedMap[types.AttachmentSlot] {
+func mergeFeaturesSchema(parent, child types.OrderedMap[types.AttachmentSlot]) types.OrderedMap[types.AttachmentSlot] {
 	out := types.OrderedMap[types.AttachmentSlot]{}
 	for k, v := range parent.All() {
 		out.Set(k, v)

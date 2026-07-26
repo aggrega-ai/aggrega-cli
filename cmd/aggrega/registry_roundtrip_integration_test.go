@@ -428,14 +428,6 @@ func TestIntegration_RegistryBuild_GuardNegatives(t *testing.T) {
 			},
 			wantErr: resolver.ErrInvalidInjectKey,
 		},
-		{
-			name: "credential_partition",
-			mutate: func(t *testing.T, ws string) {
-				// A non-secret Feature (audit-logging) placed in a secrets: block.
-				mutateFile(t, ws, "aggregate.yaml", "      secrets:\n        root_password:", "      secrets:\n        bad:\n          type: core/audit-logging\n        root_password:")
-			},
-			wantErr: resolver.ErrCredentialLabelPartition,
-		},
 	}
 
 	for _, tc := range cases {

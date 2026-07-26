@@ -12,7 +12,7 @@ import "go.yaml.in/yaml/v3"
 // schema; their godoc is the schema's descriptions. This hand-written companion
 // holds the value types the generated spec references — UsesSchemaEntry (its
 // per-socket valueSchema/infraSchema content-shape yaml.Node fields) and
-// AttachmentSlot — both shared with Feature's usesSchema / secretsSchema.
+// AttachmentSlot — both shared with Feature's usesSchema / featuresSchema.
 
 // UsesSchemaEntry defines one socket category in a Component or Feature usesSchema.
 // Schema: component-v1alpha1.schema.json#/properties/spec/properties/usesSchema
@@ -37,11 +37,19 @@ type UsesSchemaEntry struct {
 
 // AttachmentSlot declares one named attachment slot on a Component or Feature.
 // A slot is a place an attachment is expected: the entity declares it, and a
-// deployment fills it by attaching a Feature under the slot's name.
-// Required=true means the slot must be filled. Inject is an allowlist of
-// delivery mechanisms for the slot's material — empty means Black-Box (the
-// material is consumed by a Recipe internally, not delivered to the workload).
-// Schema: component-v1alpha1.schema.json#/properties/spec/properties/secretsSchema
+// deployment fills it by attaching a Feature under the slot's name. Declaring a
+// slot never closes the attachment surface — a deployment may attach a Feature
+// under a name no slot declares, so one entity serves both a slot-filled
+// attachment and an attachment shared at a broader scope.
+//
+// Inject is an allowlist of delivery mechanisms for the slot's material — empty
+// means Black-Box (the material is consumed by a Recipe internally, not
+// delivered to the workload).
+//
+// Required declares the slot as expected to be filled. It is a declaration of
+// intent: no build-time check currently rejects a deployment that leaves a
+// required slot unfilled.
+// Schema: component-v1alpha1.schema.json#/properties/spec/properties/featuresSchema
 type AttachmentSlot struct {
 	Required    bool     `json:"required,omitempty" yaml:"required,omitempty"`
 	Inject      []string `json:"inject,omitempty" yaml:"inject,omitempty"`

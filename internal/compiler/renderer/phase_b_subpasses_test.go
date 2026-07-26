@@ -213,7 +213,7 @@ services:
 	}
 }
 
-func TestPhaseB2_WorkloadValidationFlow_SecretsSchemaFails(t *testing.T) {
+func TestPhaseB2_WorkloadValidationFlow_FeaturesSchemaFails(t *testing.T) {
 	t.Parallel()
 	ctx := minimalCtx()
 	r := minimalRecipe("test")
@@ -238,8 +238,8 @@ containers:
 	_ = phaseB1(ctx, state)
 
 	err := phaseB2(ctx, state, slots)
-	if !errors.Is(err, validator.ErrWorkloadSecretsSchema) {
-		t.Fatalf("expected ErrWorkloadSecretsSchema, got %v", err)
+	if !errors.Is(err, validator.ErrWorkloadFeaturesSchema) {
+		t.Fatalf("expected ErrWorkloadFeaturesSchema, got %v", err)
 	}
 }
 

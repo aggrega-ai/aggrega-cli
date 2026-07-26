@@ -33,7 +33,7 @@ type PhaseBState struct {
 
 	// RecipePath / RecipeName / RecipeVersion are operator-facing
 	// identifiers threaded into validator errors (Workload validation,
-	// secretsSchema check, rule 7 collision detection).
+	// featuresSchema check, rule 7 collision detection).
 	RecipePath    string
 	RecipeName    string
 	RecipeVersion string

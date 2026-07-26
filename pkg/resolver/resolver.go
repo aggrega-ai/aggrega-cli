@@ -96,6 +96,17 @@ type ResolveResult struct {
 	// Resolve returns; consumers can range or Get without nil
 	// checks.
 	AnnotationProvenance map[string]AnnotationProvenance
+
+	// LintAdvisories carries the exit-code-neutral advisory findings the
+	// catalog-aware checks produced alongside the halting guards — findings
+	// whose subject is legal authoring that is probably not what the author
+	// meant. They share the ResolverError shape (entity, field locator,
+	// message) so one position-recovery path serves both classes, but they
+	// never contribute to a verdict: a consumer renders them and proceeds.
+	//
+	// Filled by the caller that runs the checks, which is also the caller
+	// holding the catalog view the checks need; empty on a catalog-less path.
+	LintAdvisories []*ResolverError
 }
 
 // ResolveAndUse is the single exported producer of a ResolveResult. It runs

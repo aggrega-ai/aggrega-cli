@@ -23,7 +23,7 @@
 // JSON Schema parsing and validation live in pkg/validator. The resolver
 // surfaces catalog state to RunGuards; the schema-content validation flow
 // runs in the validator pipeline against the entity's authored Schema
-// content composed with usesSchema / secretsSchema bridge synthesis.
+// content composed with usesSchema / featuresSchema bridge synthesis.
 //
 // The Resolve pipeline ordering is:
 //
