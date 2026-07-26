@@ -22,6 +22,120 @@ type featureResult struct {
 	Secrets      types.OrderedMap[types.IRSecretEntry]
 	FeatureOrder []string // deterministic order following Onion Model
 	Markers      []string // canonical feature type strings
+
+	// leafScope records which authoring scope currently owns each merged
+	// leaf, so a contribution from a broader scope cannot overwrite a
+	// narrower scope's leaf just by arriving later in the cascade. It is
+	// merge-time bookkeeping: the emitted IR carries the winning value and
+	// its provenance, never the contest that produced them. Addressed by
+	// key only and never iterated, so it has no bearing on output order.
+	leafScope map[scopeKey]attachmentScope
+}
+
+// newFeatureResult is the one construction site for a per-node result, so
+// no caller can produce one whose merge bookkeeping is unallocated.
+func newFeatureResult() *featureResult {
+	return &featureResult{
+		Features:  types.OrderedMap[types.IRFeatureEntry]{},
+		Secrets:   types.OrderedMap[types.IRSecretEntry]{},
+		leafScope: map[scopeKey]attachmentScope{},
+	}
+}
+
+// scopeKey addresses one contested leaf: the bucket the attachment landed
+// in, its instance name, the pillar, and the flat-dotted leaf path.
+type scopeKey struct {
+	bucket   string
+	instance string
+	pillar   string
+	leaf     string
+}
+
+const (
+	bucketFeatures = "features"
+	bucketSecrets  = "secrets"
+
+	pillarValues = "values"
+	pillarInfra  = "infra"
+)
+
+// attachmentScope is the authoring scope one attachment contribution came
+// from. The per-node merge compares scopes so a same-instance-name contest
+// at one leaf resolves by where the contribution was authored rather than
+// by the order in which the cascade happens to visit the tiers.
+//
+// The scope has two ranked axes, and the order in which they are compared
+// is the contract:
+//
+//   - authority — a declaration on the composing document outranks one made
+//     inside a document that composing document pulls in.
+//   - reach — a declaration naming one component instance is narrower than
+//     one made subsystem-wide or boundary-wide.
+//
+// authority is compared first. A composing Aggregate's subsystem-wide
+// declaration therefore beats a composed sub-Aggregate's component-level
+// one: a composed document must not be able to defeat its composer merely
+// by declaring at a narrower scope, or composition would stop being
+// authoritative.
+type attachmentScope struct {
+	authority uint8
+	reach     uint8
+}
+
+const (
+	authorityComposed  uint8 = 0
+	authorityComposing uint8 = 1
+
+	reachShared    uint8 = 0
+	reachComponent uint8 = 1
+)
+
+var (
+	// scopeComposedComponent is a component-level attachment declared inside
+	// a sub-Aggregate the build composes.
+	scopeComposedComponent = attachmentScope{authority: authorityComposed, reach: reachComponent}
+
+	// scopeShared is a subsystem-wide (Aggregate) or boundary-wide (Release)
+	// attachment on the composing document.
+	scopeShared = attachmentScope{authority: authorityComposing, reach: reachShared}
+
+	// scopeComponent is a component-scoped attachment on the composing
+	// document — an Aggregate component features: block, or a Release
+	// boundary's per-component features entry.
+	scopeComponent = attachmentScope{authority: authorityComposing, reach: reachComponent}
+)
+
+// outranks reports whether s beats other for ownership of one leaf. The
+// comparison order — authority, then reach — IS the precedence rule order
+// collectNodeFeatures states as its contract.
+//
+// Equal scopes do not outrank each other, so two contributions from the
+// same scope fall through to author order and the later one wins; that is
+// what keeps an inner subsystem beating an outer one and a deeper boundary
+// beating a shallower one.
+//
+// The developer scopes and the operator scopes are never compared against
+// each other, because each authoring side supplies only its own pillar: a
+// values leaf is contested among Aggregate scopes alone and an infra leaf
+// among Release scopes alone.
+func (s attachmentScope) outranks(other attachmentScope) bool {
+	if s.authority != other.authority {
+		return s.authority > other.authority
+	}
+	return s.reach > other.reach
+}
+
+// componentAttachmentScope reports the scope of a node's own
+// component-level features: block. The attachments a node receives at that
+// scope come from exactly ONE aggregate — the one that declares the
+// component — because a node ID colliding between a composed document and
+// its composer halts topology construction. So the node's source aggregate
+// decides the scope outright rather than approximating it.
+func componentAttachmentScope(topoNode *topology.TopologyNode) attachmentScope {
+	if topoNode != nil && topoNode.SourceAggregate != "" {
+		return scopeComposedComponent
+	}
+	return scopeComponent
 }
 
 // featureProvenance carries the per-contribution provenance facts that
@@ -42,7 +156,7 @@ type featureProvenance struct {
 
 // toFieldProvenance converts the per-contribution provenance into the
 // per-leaf wire-shape struct stored on IRFeatureEntry. The conversion
-// is direct — fields map 1:1; OverridesAnnotation stays nil at this
+// is direct — fields map 1:1; OverriddenAnnotation stays nil at this
 // point and the merge step populates it when an explicit contribution
 // suppresses an existing annotation leaf.
 func (p featureProvenance) toFieldProvenance() types.FieldProvenance {
@@ -95,40 +209,73 @@ func aggregateCanonicalPath(topoNode *topology.TopologyNode) string {
 	return "subsystems." + strings.Join(parts, ".subsystems.") + ".components." + topoNode.InstanceID
 }
 
-// collectNodeFeatures assembles the merged Feature list for one node by
-// processing five ordered cascade tiers in sequence. mergeFeature handles
-// per-instance "last wins" on values, the type-mismatch fatal halt that
-// guards same-instance-name divergence between Aggregate and Release,
-// and the credential-routing branch that diverts kind:secret features
-// into the per-node Secrets map rather than Features.
+// collectNodeFeatures assembles the merged attachment set for one node by
+// processing five ordered cascade tiers in sequence, folding every
+// contribution through the single mergeContribution body.
 //
 // Tier order, with the data sources each tier reads from:
 //
 //   - Tier 1 — Sub-aggregate component features. Already collected into
 //     topoResult.FeatureAttachments by the topology builder's
 //     flattenAggregate; iterated here in attachment order.
-//   - Tier 2 — Root Aggregate component features. Same source; the
-//     topology builder appends Tier 2 attachments after Tier 1 so a
-//     single iteration over FeatureAttachments processes both in the
-//     correct outer-to-inner order.
+//   - Tier 2 — Root Aggregate component features. Same source and the same
+//     loop. A node's component-level attachments come from exactly one
+//     aggregate — the one that declares the component — so a given node is
+//     a Tier 1 node or a Tier 2 node, never both.
 //   - Tier 3 — Root Aggregate subsystem features (outer-to-inner).
 //     collectSubsystemFeatures walks the subsystem path on the resolved
 //     Aggregate, emitting features at each level in author order.
 //   - Tier 4 — Release boundary-wide features (outer-to-inner).
 //     collectBoundaryWideFeatures walks the boundary path on the Release
 //     and reads boundary-level Features. Release contributions to a
-//     same-named instance are infra-only — values come from the
-//     Aggregate side, infra from the Release side; see the post-merge
-//     infra overlay block here.
+//     same-named instance are infra-only — values come from the Aggregate
+//     side, infra from the Release side.
 //   - Tier 5 — Release component-specific features.
 //     collectReleaseComponentFeatures recursively scans every boundary's
 //     per-component Features map for entries keyed by nodeID.
 //
-// After the five tiers, secret attachments from topology are added
-// directly into result.Secrets — these are typed Secret instances rather
-// than label-discriminated credential Features, so they bypass the
-// mergeFeature credential-routing branch and land straight in the
-// secrets bucket.
+// # Precedence contract
+//
+// The tier sequence above is the MECHANISM, not the precedence rule. That
+// same sequence fixes the order in which the rendering pass executes each
+// attachment's injectMapping, so it cannot double as the answer to "which
+// contribution owns a contested leaf". Ownership is decided by four rules,
+// and the ORDER OF THE RULES is the contract:
+//
+//	R1 (origin)  >  R3 (composition authority)  >  R4 (specificity)
+//
+//   - R1 — ORIGIN. Explicit authoring beats annotation-driven expansion,
+//     independent of the scope either came from. R1 is resolved in
+//     mergeLeaf, which documents its three cases; it outranks every scope
+//     rule below.
+//   - R2 — PILLAR OWNERSHIP. Each authoring domain fills its own pillar —
+//     the Aggregate tiers contribute values, the Release tiers contribute
+//     infra — so the two never contest the same leaf. That is why there is
+//     no developer-versus-operator precedence question to answer.
+//   - R3 — COMPOSITION AUTHORITY. A declaration on the composing Aggregate
+//     outranks one made inside an Aggregate it composes, even when the
+//     composed document declared at the narrower scope. Otherwise a
+//     composed document could defeat its composer simply by choosing a
+//     narrower scope, and composition would stop being authoritative.
+//   - R4 — SPECIFICITY. Within one authoring level and one pillar, the
+//     narrower scope refines the broader one, per leaf: a component-scoped
+//     attachment overrides a subsystem-wide or boundary-wide attachment of
+//     the same instance name leaf by leaf, and the leaves the narrower
+//     scope does not mention keep the broader scope's values.
+//
+// R3 is compared before R4 deliberately; attachmentScope.outranks is where
+// that rule order lives, as the order in which it compares the two axes.
+//
+// Precedence governs value and fill resolution only. An attachment's
+// authored inject block merges per-mechanism-per-key with the incoming
+// contribution winning at the delivery key, because the tier sequence also
+// orders the pre-render injection mapping — ranking inject by scope would
+// put two different orderings on one attachment.
+//
+// After the five tiers, credential attachments authored through the
+// secrets: keyword are added into result.Secrets directly from topology.
+// They arrive as complete entries rather than contributions, so they do not
+// pass through the merge and the precedence rules above do not govern them.
 //
 // Markers (the canonical feature-type strings the IR exposes via
 // FeatureMarkers) are accumulated into a set across all five tiers plus
@@ -141,10 +288,7 @@ func collectNodeFeatures(
 	resolveResult *resolver.ResolveResult,
 	catalogLookup resolver.CatalogLookup,
 ) (*featureResult, error) {
-	result := &featureResult{
-		Features: types.OrderedMap[types.IRFeatureEntry]{},
-		Secrets:  types.OrderedMap[types.IRSecretEntry]{},
-	}
+	result := newFeatureResult()
 
 	markerSet := map[string]bool{}
 
@@ -162,6 +306,7 @@ func collectNodeFeatures(
 	// keyed by the canonical Aggregate-rooted path for the topology node.
 	if attachments, ok := topoResult.FeatureAttachments[nodeID]; ok {
 		canonicalPath := aggregateCanonicalPath(topoNode)
+		componentScope := componentAttachmentScope(topoNode)
 		for _, fa := range attachments {
 			prov := explicitProvenance
 			if canonicalPath != "" {
@@ -174,7 +319,7 @@ func collectNodeFeatures(
 					}
 				}
 			}
-			if err := mergeContribution(result, fa.InstanceName, fa.Feature.Type, fa.Feature.Values, types.OrderedMap[any]{}, fa.Feature.Inject, markerSet, catalogLookup, nodeID, prov); err != nil {
+			if err := mergeContribution(result, fa.InstanceName, fa.Feature.Type, fa.Feature.Values, types.OrderedMap[any]{}, fa.Feature.Inject, markerSet, catalogLookup, nodeID, prov, componentScope); err != nil {
 				return nil, err
 			}
 		}
@@ -188,7 +333,7 @@ func collectNodeFeatures(
 	if topoNode.SubsystemPath != "" {
 		subsystemFeatures := collectSubsystemFeatures(types.Normalize(resolveResult.Aggregate), topoNode.SubsystemPath)
 		for _, sf := range subsystemFeatures {
-			if err := mergeContribution(result, sf.name, sf.feat.Type, sf.feat.Values, types.OrderedMap[any]{}, sf.feat.Inject, markerSet, catalogLookup, nodeID, explicitProvenance); err != nil {
+			if err := mergeContribution(result, sf.name, sf.feat.Type, sf.feat.Values, types.OrderedMap[any]{}, sf.feat.Inject, markerSet, catalogLookup, nodeID, explicitProvenance, scopeShared); err != nil {
 				return nil, err
 			}
 		}
@@ -202,7 +347,7 @@ func collectNodeFeatures(
 	if topoNode.BoundaryPath != "" && resolveResult.Release != nil {
 		boundaryFeatures := collectBoundaryWideFeatures(resolveResult.Release.Spec.Boundaries, topoNode.BoundaryPath)
 		for _, bf := range boundaryFeatures {
-			if err := mergeContribution(result, bf.name, bf.feat.Type, types.OrderedMap[any]{}, bf.feat.Infra, nil, markerSet, catalogLookup, nodeID, explicitProvenance); err != nil {
+			if err := mergeContribution(result, bf.name, bf.feat.Type, types.OrderedMap[any]{}, bf.feat.Infra, nil, markerSet, catalogLookup, nodeID, explicitProvenance, scopeShared); err != nil {
 				return nil, err
 			}
 		}
@@ -227,13 +372,16 @@ func collectNodeFeatures(
 					AnnotationSource: record.AnnotationSource,
 				}
 			}
-			if err := mergeContribution(result, cf.name, cf.feat.Type, types.OrderedMap[any]{}, cf.feat.Infra, nil, markerSet, catalogLookup, nodeID, prov); err != nil {
+			if err := mergeContribution(result, cf.name, cf.feat.Type, types.OrderedMap[any]{}, cf.feat.Infra, nil, markerSet, catalogLookup, nodeID, prov, scopeComponent); err != nil {
 				return nil, err
 			}
 		}
 	}
 
-	// Collect secrets from topology attachments
+	// Credentials authored through the secrets: keyword arrive as complete
+	// entries rather than contributions, so they are set directly and do not
+	// pass through mergeContribution. The precedence contract above governs
+	// merge-routed attachments; a secrets:-keyword credential is not one.
 	if attachments, ok := topoResult.SecretAttachments[nodeID]; ok {
 		for _, sa := range attachments {
 			result.Secrets.Set(sa.InstanceName, types.IRSecretEntry{
@@ -324,42 +472,6 @@ func joinAttachmentConformance(errs []*resolver.ResolverError) error {
 	return errors.Join(wrapped...)
 }
 
-// mergeContribution folds one Feature contribution into the per-node
-// featureResult, applying per-pillar per-leaf merge with explicit-wins-
-// at-leaf override semantics. The function replaces the older "last
-// wins on Values; infra overlay outside" pattern with a uniform per-
-// leaf merge that records FieldProvenance for every leaf in both
-// pillars.
-//
-// Rules:
-//
-//   - Credential routing. isCredential checks the feature type URI
-//     against the catalog and returns true when the catalog entity
-//     carries the feature.aggrega.ai/kind: secret label. Credential
-//     features route into result.Secrets and never appear in
-//     result.Features.
-//   - Type-match fatal halt. When an existing feature entry for
-//     instanceName carries a non-empty Type that disagrees with the
-//     incoming Type, the merge halts with ErrFeatureTypeMismatch.
-//     Same instance name across tiers must describe the same Feature.
-//   - Per-leaf merge per pillar. For each leaf in the incoming Values
-//     and the incoming Infra contribution, the leaf-level merge
-//     applies the explicit-wins-at-leaf rule:
-//   - New leaf → incoming wins; per-leaf provenance recorded.
-//   - Existing leaf annotation, incoming explicit → incoming wins
-//     and the existing annotation provenance moves to
-//     OverridesAnnotation on the new explicit provenance.
-//   - Existing leaf explicit, incoming annotation → existing stays;
-//     incoming is suppressed silently. The author's explicit
-//     declaration wins.
-//   - Same-origin leaves → last-tier-wins on value; provenance
-//     refreshes to the latest contribution. Author-order through
-//     the cascade picks the deepest authoring scope.
-//
-// The markerSet parameter aggregates feature-type strings across all
-// tiers; the caller sort-extracts at the end of collectNodeFeatures.
-// FeatureOrder is appended only on first sight of an instance name so
-// the order vector is stable across re-merges of the same instance.
 // newAttachmentEntry builds a fresh IR attachment entry (a feature or, in the
 // secrets bucket, a credential) from one contribution. Both buckets share the
 // shape, so both build it here — there is no lossier secret construction to drift.
@@ -416,6 +528,42 @@ func featureVersion(catalogLookup resolver.CatalogLookup, featType string) strin
 	return feat.Metadata.Version
 }
 
+// mergeContribution folds one attachment contribution into the per-node
+// featureResult through a per-pillar per-leaf merge that records
+// FieldProvenance for every leaf in both pillars.
+//
+// One body serves both buckets. A credential is a Feature whose catalog
+// entity carries the feature.aggrega.ai/kind: secret label; it is
+// partitioned into result.Secrets rather than result.Features and is then
+// merged by exactly the same rules, so there is no second precedence
+// semantic for a credential to drift behind. Both buckets hold the same
+// entry shape, so a credential FeatureRecipe reads .infra and per-leaf
+// provenance exactly as a feature's does.
+//
+// Rules:
+//
+//   - Type-match fatal halt. When an existing entry for instanceName
+//     carries a non-empty Type that disagrees with the incoming Type, the
+//     merge halts with ErrFeatureTypeMismatch. One instance name across
+//     tiers must describe one attachment.
+//   - Per-leaf merge per pillar. Every leaf of the incoming values and
+//     infra contribution is resolved by mergeLeaf, which applies the
+//     origin rule first and the authoring-scope rank second — see the
+//     precedence contract on collectNodeFeatures for the rule order and
+//     mergeLeaf for each case.
+//   - Authored inject merges per-mechanism-per-key with the incoming
+//     contribution winning at the delivery key. Scope does not rank
+//     inject: the tier sequence also orders the pre-render injection
+//     mapping, so a scope-ranked inject would put two orderings on one
+//     attachment.
+//
+// The markerSet parameter aggregates attachment-type strings across all
+// tiers; the caller sort-extracts at the end of collectNodeFeatures.
+// FeatureOrder is appended only on first sight of a feature instance name,
+// so the order vector stays stable across re-merges of the same instance.
+// The secrets bucket carries no separate order vector — its OrderedMap is
+// its order — which is why the append is bucket-conditional; that is
+// order bookkeeping, not a second merge semantic.
 func mergeContribution(
 	result *featureResult,
 	instanceName string,
@@ -426,6 +574,7 @@ func mergeContribution(
 	catalogLookup resolver.CatalogLookup,
 	nodeID string,
 	provenance featureProvenance,
+	scope attachmentScope,
 ) error {
 	// resolved_version is the attachment's OWN feature/credential version, not the
 	// host component's — resolved once here from the catalog.
@@ -435,22 +584,20 @@ func mergeContribution(
 	// projects into the IR entry; the topology layer carries it only on the
 	// Aggregate-side tiers (Release boundary tiers pass nil).
 	injectMap := convertInjectBlock(inject)
+
+	bucket, bucketName := &result.Features, bucketFeatures
 	if isCredential(featType, catalogLookup) {
-		// A credential routes into the secrets bucket, but carries the same IR
-		// attachment shape as a feature (per-instance infra + provenance), not a
-		// lossier projection — so a secret FeatureRecipe's source/valuesMapping can
-		// read .infra exactly as a feature can. infra here is the in-scope
-		// per-instance bag the Release tiers pass.
-		result.Secrets.Set(instanceName, newAttachmentEntry(featType, version, values, infra, injectMap, provenance))
-		markerSet[featType] = true
-		return nil
+		bucket, bucketName = &result.Secrets, bucketSecrets
 	}
 
-	existing, exists := result.Features.Get(instanceName)
+	existing, exists := bucket.Get(instanceName)
 	if !exists {
 		entry := newAttachmentEntry(featType, version, values, infra, injectMap, provenance)
-		result.Features.Set(instanceName, entry)
-		result.FeatureOrder = append(result.FeatureOrder, instanceName)
+		bucket.Set(instanceName, entry)
+		if bucketName == bucketFeatures {
+			result.FeatureOrder = append(result.FeatureOrder, instanceName)
+		}
+		recordLeafScopes(result.leafScope, bucketName, instanceName, values, infra, scope)
 		markerSet[featType] = true
 		return nil
 	}
@@ -460,15 +607,17 @@ func mergeContribution(
 			ErrFeatureTypeMismatch,
 			cerrors.OpsError,
 			cerrors.SourceLocation{File: nodeID},
-			fmt.Sprintf("node %q feature %q: existing type %q conflicts with %q", nodeID, instanceName, existing.Type, featType),
+			fmt.Sprintf("node %q attachment %q: existing type %q conflicts with %q", nodeID, instanceName, existing.Type, featType),
 		)
 	}
 
 	for _, leaf := range types.FlattenLeaves(values) {
-		mergeLeaf(&existing.Values, &existing.ValuesProvenance, leaf.Path, leaf.Value, provenance)
+		key := scopeKey{bucket: bucketName, instance: instanceName, pillar: pillarValues, leaf: leaf.Path}
+		mergeLeaf(&existing.Values, &existing.ValuesProvenance, result.leafScope, key, leaf.Value, provenance, scope)
 	}
 	for _, leaf := range types.FlattenLeaves(infra) {
-		mergeLeaf(&existing.Infra, &existing.InfraProvenance, leaf.Path, leaf.Value, provenance)
+		key := scopeKey{bucket: bucketName, instance: instanceName, pillar: pillarInfra, leaf: leaf.Path}
+		mergeLeaf(&existing.Infra, &existing.InfraProvenance, result.leafScope, key, leaf.Value, provenance, scope)
 	}
 
 	// Merge the authored attachment inject per-mechanism-per-key (incoming wins
@@ -491,56 +640,109 @@ func mergeContribution(
 			existing.ResolvedVersion = version
 		}
 	}
-	result.Features.Set(instanceName, existing)
+	bucket.Set(instanceName, existing)
 	markerSet[featType] = true
 	return nil
 }
 
-// mergeLeaf applies one leaf-level merge into a pillar tree per the
-// explicit-wins-at-leaf rule. leafPath is a flat-dotted-leaf path
-// (e.g. "pool" for a top-level leaf or "ingress.host" for a nested
-// leaf); the pillar values map carries the nested OrderedMap tree,
-// and types.SetLeafAtPath writes the leaf value at the path's
-// terminal position, creating intermediate OrderedMap nodes as
-// needed. The pillar provenance map is keyed by the flat-dotted-leaf
-// path so every leaf has its own FieldProvenance regardless of
+// recordLeafScopes stamps the owning scope onto every leaf of a
+// first-sight contribution, so a later broader-scope contribution to the
+// same instance can be ranked against it. The traversal delegates to
+// types.FlattenLeaves — the one home for "which leaves does this pillar
+// have" — so it cannot disagree with the provenance newAttachmentEntry
+// records over the same leaves.
+func recordLeafScopes(
+	scopes map[scopeKey]attachmentScope,
+	bucket, instance string,
+	values, infra types.OrderedMap[any],
+	scope attachmentScope,
+) {
+	for _, leaf := range types.FlattenLeaves(values) {
+		scopes[scopeKey{bucket: bucket, instance: instance, pillar: pillarValues, leaf: leaf.Path}] = scope
+	}
+	for _, leaf := range types.FlattenLeaves(infra) {
+		scopes[scopeKey{bucket: bucket, instance: instance, pillar: pillarInfra, leaf: leaf.Path}] = scope
+	}
+}
+
+// mergeLeaf resolves ownership of one leaf in a pillar tree. key.leaf is a
+// flat-dotted-leaf path (e.g. "pool" for a top-level leaf or
+// "ingress.host" for a nested leaf); the pillar values map carries the
+// nested OrderedMap tree, and types.SetLeafAtPath writes the leaf value at
+// the path's terminal position, creating intermediate OrderedMap nodes as
+// needed. The pillar provenance map is keyed by the same flat-dotted-leaf
+// path, so every leaf carries its own FieldProvenance regardless of
 // nesting depth.
+//
+// # R1 — ORIGIN, and why it outranks every scope rule
+//
+// Explicit authoring beats annotation-driven expansion at a contested
+// leaf, whatever scope either contribution came from. An author who wrote
+// the leaf down means it; an annotation is a convenience expansion over
+// the same surface, and letting an expansion at a narrower scope silently
+// beat an explicit declaration would make the authored file untrustworthy.
+// The three cases:
+//
+//   - Existing explicit, incoming annotation → the explicit leaf stays and
+//     the annotation contribution is suppressed silently.
+//   - Existing annotation, incoming explicit → the explicit contribution
+//     wins, and the suppressed annotation provenance is retained on the
+//     winner as OverriddenAnnotation so the advisory lint and the inspect
+//     rendering can name what was replaced. Only ONE suppressed
+//     contribution is ever retained: a same-origin replacement replaces
+//     the provenance wholesale rather than chaining.
+//   - Same origin → falls through to the authoring-scope rank below.
+//
+// # Scope rank — R3 then R4
+//
+// For a same-origin contest the owning scope decides: the incoming
+// contribution takes the leaf unless the scope that already owns it
+// outranks the incoming scope, per attachmentScope.outranks. Equal scopes
+// do not outrank each other, so same-scope contributions still resolve by
+// author order with the later one winning.
+//
+// A leaf with provenance but no recorded scope falls back to the zero
+// attachmentScope, which outranks nothing — so the incoming contribution
+// wins rather than a missing record silently pinning a leaf.
 func mergeLeaf(
-	pillarValues *types.OrderedMap[any],
+	pillarTree *types.OrderedMap[any],
 	pillarProv *types.OrderedMap[types.FieldProvenance],
-	leafPath string,
+	scopes map[scopeKey]attachmentScope,
+	key scopeKey,
 	incomingValue any,
 	incomingProv featureProvenance,
+	incomingScope attachmentScope,
 ) {
-	if pillarValues.Len() == 0 {
-		*pillarValues = types.OrderedMap[any]{}
+	if pillarTree.Len() == 0 {
+		*pillarTree = types.OrderedMap[any]{}
 	}
 	if pillarProv.Len() == 0 {
 		*pillarProv = types.OrderedMap[types.FieldProvenance]{}
 	}
-	existingProv, exists := pillarProv.Get(leafPath)
+	take := func(prov types.FieldProvenance) {
+		types.SetLeafAtPath(pillarTree, key.leaf, incomingValue)
+		pillarProv.Set(key.leaf, prov)
+		scopes[key] = incomingScope
+	}
+	existingProv, exists := pillarProv.Get(key.leaf)
 	if !exists {
-		types.SetLeafAtPath(pillarValues, leafPath, incomingValue)
-		pillarProv.Set(leafPath, incomingProv.toFieldProvenance())
+		take(incomingProv.toFieldProvenance())
 		return
 	}
 	if existingProv.Origin == types.OriginExplicit && incomingProv.Origin == types.OriginAnnotation {
-		// Explicit already at this leaf; the annotation contribution is
-		// suppressed silently. The lint pass (separate run) emits the
-		// advisory if the suppressed annotation's effective value would
-		// have differed.
 		return
 	}
 	if existingProv.Origin == types.OriginAnnotation && incomingProv.Origin == types.OriginExplicit {
 		suppressed := existingProv
 		newProv := incomingProv.toFieldProvenance()
-		newProv.OverridesAnnotation = &suppressed
-		types.SetLeafAtPath(pillarValues, leafPath, incomingValue)
-		pillarProv.Set(leafPath, newProv)
+		newProv.OverriddenAnnotation = &suppressed
+		take(newProv)
 		return
 	}
-	types.SetLeafAtPath(pillarValues, leafPath, incomingValue)
-	pillarProv.Set(leafPath, incomingProv.toFieldProvenance())
+	if scopes[key].outranks(incomingScope) {
+		return
+	}
+	take(incomingProv.toFieldProvenance())
 }
 
 // finalizeTopLevelOrigin walks every IRFeatureEntry in the per-node
@@ -648,9 +850,10 @@ type namedBoundaryFeature struct {
 // for a node sitting inside a subsystem path like "subsys-a/subsys-b",
 // walk the Aggregate's subsystem tree from root toward the leaf, emitting
 // every subsystem-level Feature attached at each level in OrderedMap
-// author order. Outer subsystems are emitted before inner subsystems so
-// the same Feature declared at a deeper level overrides one declared at
-// a shallower level via "last wins" in mergeFeature.
+// author order. Outer subsystems are emitted before inner subsystems, and
+// every level of the chain carries the same subsystem-wide scope, so the
+// same Feature declared at a deeper level refines one declared at a
+// shallower level through the merge's same-scope author-order fall-through.
 //
 // The path traversal stops short on the first missing path part so that
 // a subsystem-path the topology asserts but the resolved Aggregate no
@@ -690,10 +893,11 @@ func collectSubsystemFeatures(na types.NormalizedAggregate, subsystemPath string
 //
 // Boundary features are typed [types.BoundaryFeature] values decoded
 // directly from YAML (Boundary.Features is OrderedMap[BoundaryFeature]).
-// Mergeable values are NOT collected here — Release boundaries
-// contribute infra-only under the pillar-split rule (values from the
-// Aggregate, infra from the Release), and collectNodeFeatures applies
-// that infra overlay separately after the merge.
+// Mergeable values are NOT collected here — Release boundaries contribute
+// infra-only under the pillar-split rule (values from the Aggregate, infra
+// from the Release), which is what keeps the developer and operator scopes
+// from ever contesting one leaf. The infra these entries carry is folded in
+// by the same per-leaf merge every other tier goes through.
 func collectBoundaryWideFeatures(boundaries types.OrderedMap[types.Boundary], boundaryPath string) []namedBoundaryFeature {
 	parts := splitPath(boundaryPath)
 	if len(parts) == 0 {
@@ -722,15 +926,14 @@ func collectBoundaryWideFeatures(boundaries types.OrderedMap[types.Boundary], bo
 // level — boundary entries that name a particular component instance
 // directly (rather than cascading boundary-wide). For a given nodeID,
 // recursively scan every Release boundary's per-component Features map
-// and emit the entries keyed by nodeID. This level merges last so it
-// wins on collisions with the broader boundary-wide cascade.
+// and emit the entries keyed by nodeID. This is the narrowest operator
+// scope, so it refines the broader boundary-wide cascade per leaf.
 //
 // The recursion is unconstrained by boundary path: any boundary anywhere
 // in the tree may carry a per-component Features map for nodeID, and all
 // of them contribute. As with the boundary-wide level, Features-instance
 // payloads here arrive as the same opaque BoundaryFeature shape and
-// contribute infra only — collectNodeFeatures applies the infra overlay
-// after merge.
+// contribute infra only.
 func collectReleaseComponentFeatures(boundaries types.OrderedMap[types.Boundary], nodeID string) []namedBoundaryFeature {
 	var result []namedBoundaryFeature
 	collectCompFeaturesRecursive(boundaries, nodeID, &result)

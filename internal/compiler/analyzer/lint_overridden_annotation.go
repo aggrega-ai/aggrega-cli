@@ -10,7 +10,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
-// lintExplicitOverridesAnnotation walks every IRFeatureEntry's
+// lintOverriddenAnnotation walks every IRFeatureEntry's
 // per-pillar provenance maps and emits one advisory warning for each
 // leaf where an explicit contribution suppressed an annotation
 // contribution. The lint surfaces the authoring scenario where a
@@ -19,7 +19,7 @@ import (
 // be unaware of the suppression because the annotation's contribution
 // no longer appears in the rendered output.
 //
-// The lint fires per leaf where FieldProvenance.OverridesAnnotation
+// The lint fires per leaf where FieldProvenance.OverriddenAnnotation
 // is non-nil, regardless of whether the explicit value would have
 // produced an output difference from the suppressed annotation
 // value. The IR builder's per-leaf merge overwrites the suppressed
@@ -34,7 +34,7 @@ import (
 // order it encounters them within each node's author-order Feature
 // map and the per-pillar OrderedMap iteration. Same input produces
 // byte-identical warnings across runs.
-func lintExplicitOverridesAnnotation(graph *types.IRGraph) []string {
+func lintOverriddenAnnotation(graph *types.IRGraph) []string {
 	if graph == nil {
 		return nil
 	}
@@ -59,17 +59,17 @@ func lintExplicitOverridesAnnotation(graph *types.IRGraph) []string {
 }
 
 // collectOverrideWarnings appends one warning per leaf where the
-// per-leaf FieldProvenance carries a non-nil OverridesAnnotation
+// per-leaf FieldProvenance carries a non-nil OverriddenAnnotation
 // reference. The warning text names the node, the Feature instance,
 // the pillar, the leaf, and the suppressed annotation's key + source
 // so operators can navigate from the diagnostic to the authoring
 // site without further plumbing.
 func collectOverrideWarnings(nodeID, instanceName, pillar string, provenance types.OrderedMap[types.FieldProvenance], out *[]string) {
 	for leaf, prov := range provenance.All() {
-		if prov.OverridesAnnotation == nil {
+		if prov.OverriddenAnnotation == nil {
 			continue
 		}
-		suppressed := prov.OverridesAnnotation
+		suppressed := prov.OverriddenAnnotation
 		*out = append(*out, fmt.Sprintf(
 			"LINT: node %q feature %q pillar %q leaf %q: explicit attachment overrides annotation %q from %s",
 			nodeID, instanceName, pillar, leaf,

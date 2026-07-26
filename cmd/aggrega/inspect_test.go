@@ -309,19 +309,19 @@ func TestFeatureProvenanceLayout_CrossSide_Heterogeneous(t *testing.T) {
 	}
 }
 
-func TestFeatureProvenanceLayout_ExplicitOverridesAnnotation_Heterogeneous(t *testing.T) {
+func TestFeatureProvenanceLayout_OverriddenAnnotation_Heterogeneous(t *testing.T) {
 	t.Parallel()
 	suppressed := annotationProvenance("feature.myco/db-pool", "aggregate.yaml", "aggregate")
 	overrideProv := types.FieldProvenance{
 		Origin:              "explicit",
-		OverridesAnnotation: &suppressed,
+		OverriddenAnnotation: &suppressed,
 	}
 	entry := types.IRFeatureEntry{
 		Values:           orderedMapAny("pool", "explicit-value"),
 		ValuesProvenance: orderedMapProvenance("pool", overrideProv),
 	}
 	if featureProvenanceLayout(entry) {
-		t.Error("attachment with OverridesAnnotation on any leaf should be heterogeneous")
+		t.Error("attachment with OverriddenAnnotation on any leaf should be heterogeneous")
 	}
 }
 
@@ -342,12 +342,12 @@ func TestPerLeafBracket_Annotation(t *testing.T) {
 	}
 }
 
-func TestPerLeafBracket_ExplicitOverridesAnnotation(t *testing.T) {
+func TestPerLeafBracket_OverriddenAnnotation(t *testing.T) {
 	t.Parallel()
 	suppressed := annotationProvenance("feature.myco/db-pool", "aggregate.yaml:subsystems.data.annotations.feature.myco/db-pool", "aggregate")
 	got := perLeafBracket(types.FieldProvenance{
 		Origin:              "explicit",
-		OverridesAnnotation: &suppressed,
+		OverriddenAnnotation: &suppressed,
 	})
 	want := "[explicit; overrides annotation: feature.myco/db-pool from aggregate.yaml:subsystems.data.annotations.feature.myco/db-pool]"
 	if got != want {

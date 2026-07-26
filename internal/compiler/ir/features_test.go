@@ -165,15 +165,12 @@ func TestResolvedVersionIsFeatureVersionNotComponent(t *testing.T) {
 			return types.Feature{}, false
 		},
 	}
-	result := &featureResult{
-		Features: types.OrderedMap[types.IRFeatureEntry]{},
-		Secrets:  types.OrderedMap[types.IRSecretEntry]{},
-	}
+	result := newFeatureResult()
 	empty := types.OrderedMap[any]{}
-	if err := mergeContribution(result, "mon", "core/monitoring", empty, empty, nil, map[string]bool{}, cat, "api", explicitProvenance); err != nil {
+	if err := mergeContribution(result, "mon", "core/monitoring", empty, empty, nil, map[string]bool{}, cat, "api", explicitProvenance, scopeComponent); err != nil {
 		t.Fatalf("mergeContribution feature: %v", err)
 	}
-	if err := mergeContribution(result, "creds", "core/db-creds", empty, empty, nil, map[string]bool{}, cat, "api", explicitProvenance); err != nil {
+	if err := mergeContribution(result, "creds", "core/db-creds", empty, empty, nil, map[string]bool{}, cat, "api", explicitProvenance, scopeComponent); err != nil {
 		t.Fatalf("mergeContribution credential: %v", err)
 	}
 	if f, _ := result.Features.Get("mon"); f.ResolvedVersion != "2.5.0" {
@@ -282,17 +279,14 @@ func TestCollectNodeFeatures_ProjectsAuthoredAttachmentInject(t *testing.T) {
 // render path read an empty bag.
 func TestMergeContribution_CredentialCarriesPerInstanceInfra(t *testing.T) {
 	t.Parallel()
-	result := &featureResult{
-		Features: types.OrderedMap[types.IRFeatureEntry]{},
-		Secrets:  types.OrderedMap[types.IRSecretEntry]{},
-	}
+	result := newFeatureResult()
 	values := types.OrderedMap[any]{}
 	values.Set("vault_path", "/secret/db")
 	infra := types.OrderedMap[any]{}
 	infra.Set("replica_count", "3")
 	markerSet := map[string]bool{}
 
-	if err := mergeContribution(result, "db-creds", "core/db-creds", values, infra, nil, markerSet, featureCatalog(), "api", explicitProvenance); err != nil {
+	if err := mergeContribution(result, "db-creds", "core/db-creds", values, infra, nil, markerSet, featureCatalog(), "api", explicitProvenance, scopeComponent); err != nil {
 		t.Fatalf("mergeContribution: %v", err)
 	}
 	if result.Features.Len() != 0 {
@@ -596,7 +590,7 @@ func TestSplitPath(t *testing.T) {
 // These tests pin the per-pillar-per-leaf merge introduced by the
 // IR-builder restructure: ValuesProvenance / InfraProvenance maps
 // carry FieldProvenance per leaf; explicit-wins-at-leaf overrides
-// annotation contributions and records OverridesAnnotation; top-level
+// annotation contributions and records OverriddenAnnotation; top-level
 // Origin derives to "explicit" / "annotation" / "mixed" per the
 // compatibility rule.
 
@@ -851,7 +845,7 @@ func TestIRBuilder_CrossSideCompose_PopulatesBothPillarProvenance(t *testing.T) 
 	}
 }
 
-func TestIRBuilder_ExplicitOverridesAnnotation_FieldLevel_Provenance(t *testing.T) {
+func TestIRBuilder_OverriddenAnnotation_FieldLevel_Provenance(t *testing.T) {
 	t.Parallel()
 	// Tier 3 explicit subsystem contribution lands a leaf BEFORE Tier
 	// 5 annotation tries to contribute the same leaf — wait, ordering
@@ -862,7 +856,7 @@ func TestIRBuilder_ExplicitOverridesAnnotation_FieldLevel_Provenance(t *testing.
 	//
 	// Sequence: Tier 1/2 with annotation provenance writes pool=annot;
 	// Tier 3 explicit writes pool=explicit. The explicit override
-	// records OverridesAnnotation.
+	// records OverriddenAnnotation.
 
 	apiNode := &topology.TopologyNode{InstanceID: "api", SubsystemPath: "data"}
 	nodes := types.OrderedMap[*topology.TopologyNode]{}
@@ -911,11 +905,11 @@ func TestIRBuilder_ExplicitOverridesAnnotation_FieldLevel_Provenance(t *testing.
 	if prov.Origin != "explicit" {
 		t.Errorf("pool prov Origin = %q, want explicit", prov.Origin)
 	}
-	if prov.OverridesAnnotation == nil {
-		t.Fatal("OverridesAnnotation should be populated with the suppressed annotation provenance")
+	if prov.OverriddenAnnotation == nil {
+		t.Fatal("OverriddenAnnotation should be populated with the suppressed annotation provenance")
 	}
-	if prov.OverridesAnnotation.AnnotationKey != "feature.myco/db-pool" {
-		t.Errorf("suppressed AnnotationKey = %q, want feature.myco/db-pool", prov.OverridesAnnotation.AnnotationKey)
+	if prov.OverriddenAnnotation.AnnotationKey != "feature.myco/db-pool" {
+		t.Errorf("suppressed AnnotationKey = %q, want feature.myco/db-pool", prov.OverriddenAnnotation.AnnotationKey)
 	}
 }
 
@@ -1192,11 +1186,15 @@ func provenanceKeys(m types.OrderedMap[types.FieldProvenance]) []string {
 	return out
 }
 
-func TestIRBuilder_LeavesLastWins_SameOrigin_ProvenanceRefreshes(t *testing.T) {
+func TestIRBuilder_LeavesNearestScopeWins_SameOrigin_ProvenanceRefreshes(t *testing.T) {
 	t.Parallel()
-	// Two explicit contributions to the same leaf: the later tier
-	// wins on value, and the per-leaf provenance refreshes to the
-	// later contribution's provenance (still explicit).
+	// Two explicit contributions to the same leaf, from two different
+	// authoring scopes: the NARROWER scope owns the leaf. The component
+	// block is the narrower scope, so it refines the subsystem-wide
+	// attachment even though the subsystem tier is folded in later — the
+	// tier sequence is the mechanism, not the precedence rule. Per-leaf
+	// provenance stays on the winning contribution (still explicit), and
+	// same-origin precedence never records a suppressed annotation.
 	apiNode := &topology.TopologyNode{InstanceID: "api", SubsystemPath: "data"}
 	nodes := types.OrderedMap[*topology.TopologyNode]{}
 	nodes.Set("api", apiNode)
@@ -1226,15 +1224,120 @@ func TestIRBuilder_LeavesLastWins_SameOrigin_ProvenanceRefreshes(t *testing.T) {
 	}
 	feat, _ := result.Features.Get("monitoring")
 	enabled, _ := feat.Values.Get("enabled")
-	if enabled != true {
-		t.Errorf("enabled = %v, want true (Tier 3 last-wins over Tier 1/2)", enabled)
+	if enabled != false {
+		t.Errorf("enabled = %v, want false (the component-scope fill refines the subsystem-wide attachment)", enabled)
 	}
 	prov, _ := feat.ValuesProvenance.Get("enabled")
 	if prov.Origin != "explicit" {
 		t.Errorf("Origin = %q, want explicit", prov.Origin)
 	}
-	if prov.OverridesAnnotation != nil {
-		t.Error("same-origin merge should not populate OverridesAnnotation")
+	if prov.OverriddenAnnotation != nil {
+		t.Error("same-origin precedence should not populate OverriddenAnnotation")
+	}
+}
+
+// TestMergeContribution_NearestScopeWins_BothAttachmentFamilies is the guard
+// against precedence acquiring a second home. One merge body decides
+// precedence for both attachment families, so this drives a credential-
+// labelled attachment AND a non-credential one through ONE graph and one
+// collectNodeFeatures call: a test exercising only one family could not see
+// the two paths diverge, which is the whole risk.
+//
+// Each family gets the same instance name at two scopes, and each
+// contribution mentions one leaf the other does not, so the assertions pin
+// both halves of the rule: the narrower scope wins the CONTESTED leaf, and
+// the broader scope's UNCONTESTED leaf survives. The second half is what
+// distinguishes a per-leaf refinement from a wholesale replace — a
+// wholesale replace would drop the leaf the winning contribution omitted.
+func TestMergeContribution_NearestScopeWins_BothAttachmentFamilies(t *testing.T) {
+	t.Parallel()
+	apiNode := &topology.TopologyNode{InstanceID: "api", SubsystemPath: "data"}
+	nodes := types.OrderedMap[*topology.TopologyNode]{}
+	nodes.Set("api", apiNode)
+	topoResult := &topology.TopologyResult{
+		Nodes: nodes,
+		FeatureAttachments: map[string][]topology.FeatureAttachment{
+			"api": {
+				{InstanceName: "monitoring", Feature: types.FeatureInstance{
+					Type:   "core/monitoring",
+					Values: valuesMap("contested", "component"),
+				}},
+				{InstanceName: "creds", Feature: types.FeatureInstance{
+					Type:   "core/db-creds",
+					Values: valuesMap("contested", "component"),
+				}},
+			},
+		},
+	}
+	subsystem := types.Subsystem{}
+	subsystem.Features.Set("monitoring", types.FeatureInstance{
+		Type:   "core/monitoring",
+		Values: valuesMap("contested", "shared", "shared_only", "kept"),
+	})
+	subsystem.Features.Set("creds", types.FeatureInstance{
+		Type:   "core/db-creds",
+		Values: valuesMap("contested", "shared", "shared_only", "kept"),
+	})
+	agg := &types.Aggregate{Metadata: types.AggregateMetadata{Name: "test"}}
+	agg.Spec.Subsystems.Set("data", subsystem)
+
+	result, err := collectNodeFeatures("api", apiNode, topoResult, &resolver.ResolveResult{Aggregate: agg}, featureCatalog())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// The non-credential attachment lands in Features; the credential-
+	// labelled one lands in Secrets. Both are merged by the same body.
+	feat, ok := result.Features.Get("monitoring")
+	if !ok {
+		t.Fatal("non-credential attachment missing from the features bucket")
+	}
+	cred, ok := result.Secrets.Get("creds")
+	if !ok {
+		t.Fatal("credential-labelled attachment missing from the secrets bucket")
+	}
+
+	for _, tc := range []struct {
+		family string
+		values types.OrderedMap[any]
+	}{
+		{"non-credential", feat.Values},
+		{"credential", cred.Values},
+	} {
+		if got, _ := tc.values.Get("contested"); got != "component" {
+			t.Errorf("%s: contested leaf = %v, want \"component\" (the narrower scope wins)", tc.family, got)
+		}
+		if got, _ := tc.values.Get("shared_only"); got != "kept" {
+			t.Errorf("%s: shared_only leaf = %v, want \"kept\" (an uncontested broader-scope leaf survives, so the merge is per leaf and not a wholesale replace)", tc.family, got)
+		}
+	}
+}
+
+// TestAttachmentScope_RuleOrder_AuthorityBeforeSpecificity pins the rule
+// ORDER, which is the contract: composition authority is compared before
+// specificity, so a composing document's broader declaration beats a
+// composed document's narrower one. Reversing the two comparisons would let
+// a composed sub-Aggregate defeat its composer by declaring at a narrower
+// scope, and composition would stop being authoritative.
+func TestAttachmentScope_RuleOrder_AuthorityBeforeSpecificity(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name string
+		a, b attachmentScope
+		want bool
+	}{
+		{"composing shared beats composed component (authority before reach)", scopeShared, scopeComposedComponent, true},
+		{"composed component does not beat composing shared", scopeComposedComponent, scopeShared, false},
+		{"composing component beats composing shared (reach, same authority)", scopeComponent, scopeShared, true},
+		{"composing shared does not beat composing component", scopeShared, scopeComponent, false},
+		{"composing component beats composed component", scopeComponent, scopeComposedComponent, true},
+		{"equal scopes do not outrank each other, so author order decides", scopeShared, scopeShared, false},
+		{"equal component scopes do not outrank each other", scopeComponent, scopeComponent, false},
+	}
+	for _, tc := range tests {
+		if got := tc.a.outranks(tc.b); got != tc.want {
+			t.Errorf("%s: outranks = %v, want %v", tc.name, got, tc.want)
+		}
 	}
 }
 

@@ -245,8 +245,8 @@ type IREdge struct {
 // keyed by the same leaf names that appear in the Values / Infra
 // OrderedMaps. The maps populate at IR-build time during the per-
 // pillar per-leaf merge; downstream consumers (inspect, lint) read
-// them to surface per-leaf origin markers and emit explicit-overrides-
-// annotation warnings.
+// them to surface per-leaf origin markers and to warn when an explicit
+// contribution suppressed an annotation one.
 type IRFeatureEntry struct {
 	Type             string                         `json:"type"`
 	ResolvedVersion  string                         `json:"resolved_version"`
@@ -278,19 +278,22 @@ type IRFeatureEntry struct {
 // <file-path>:<dotted-yaml-key-path>. Both fields are empty for
 // "explicit"-origin leaves.
 //
-// OverridesAnnotation is populated when an explicit contribution
-// overwrites an annotation contribution at the same leaf, capturing
-// the suppressed FieldProvenance so inspect rendering can surface the
-// override and the lint pass can emit explicit-overrides-annotation
-// warnings. Nil when no override occurred at this leaf.
+// OverriddenAnnotation holds the annotation contribution that lost this
+// leaf: it is populated when an explicit contribution overwrites an
+// annotation contribution at the same leaf, retaining the suppressed
+// FieldProvenance so inspect rendering can surface the override and the
+// advisory lint can name what was replaced. Nil when no override occurred
+// at this leaf. Singular, because exactly one suppressed contribution is
+// ever retained — a same-origin replacement replaces the provenance
+// wholesale rather than chaining.
 type FieldProvenance struct {
 	// Origin is OriginExplicit or OriginAnnotation; a single leaf's provenance
 	// never widens to OriginMixed (mixing is an attachment-top-level notion).
-	Origin              AttachmentOrigin `json:"origin"`
-	Side                string           `json:"side,omitempty"`
-	AnnotationKey       string           `json:"annotation_key,omitempty"`
-	AnnotationSource    string           `json:"annotation_source,omitempty"`
-	OverridesAnnotation *FieldProvenance `json:"overrides_annotation,omitempty"`
+	Origin               AttachmentOrigin `json:"origin"`
+	Side                 string           `json:"side,omitempty"`
+	AnnotationKey        string           `json:"annotation_key,omitempty"`
+	AnnotationSource     string           `json:"annotation_source,omitempty"`
+	OverriddenAnnotation *FieldProvenance `json:"overridden_annotation,omitempty"`
 }
 
 // IRSecretEntry is a per-node credential request. A secret is structurally a

@@ -41,10 +41,10 @@ func makeProvenanceMap(pairs ...any) types.OrderedMap[types.FieldProvenance] {
 	return m
 }
 
-func TestLintExplicitOverridesAnnotation_NoOverride_NoWarning(t *testing.T) {
+func TestLintOverriddenAnnotation_NoOverride_NoWarning(t *testing.T) {
 	t.Parallel()
 	// IRGraph with one feature whose leaves are all explicit; no
-	// OverridesAnnotation populated anywhere. The lint produces no
+	// OverriddenAnnotation populated anywhere. The lint produces no
 	// warnings.
 	entry := types.IRFeatureEntry{
 		ValuesProvenance: makeProvenanceMap(
@@ -53,24 +53,24 @@ func TestLintExplicitOverridesAnnotation_NoOverride_NoWarning(t *testing.T) {
 		),
 	}
 	graph := buildIRGraphWithFeature("api", "feature.myco/db-pool", entry)
-	warnings := lintExplicitOverridesAnnotation(graph)
+	warnings := lintOverriddenAnnotation(graph)
 	if len(warnings) != 0 {
 		t.Errorf("expected zero warnings; got %d: %v", len(warnings), warnings)
 	}
 }
 
-func TestLintExplicitOverridesAnnotation_OneOverride_OneWarning(t *testing.T) {
+func TestLintOverriddenAnnotation_OneOverride_OneWarning(t *testing.T) {
 	t.Parallel()
-	// One leaf carries an OverridesAnnotation reference; the lint emits
+	// One leaf carries an OverriddenAnnotation reference; the lint emits
 	// one warning naming the suppressed annotation key + source.
 	suppressed := provenance("annotation", "aggregate", "feature.myco/db-pool",
 		"aggregate.yaml:subsystems.data.annotations.feature.myco/db-pool")
-	override := types.FieldProvenance{Origin: "explicit", OverridesAnnotation: &suppressed}
+	override := types.FieldProvenance{Origin: "explicit", OverriddenAnnotation: &suppressed}
 	entry := types.IRFeatureEntry{
 		ValuesProvenance: makeProvenanceMap("pool", override),
 	}
 	graph := buildIRGraphWithFeature("api", "feature.myco/db-pool", entry)
-	warnings := lintExplicitOverridesAnnotation(graph)
+	warnings := lintOverriddenAnnotation(graph)
 	if len(warnings) != 1 {
 		t.Fatalf("expected exactly 1 warning; got %d: %v", len(warnings), warnings)
 	}
@@ -88,14 +88,14 @@ func TestLintExplicitOverridesAnnotation_OneOverride_OneWarning(t *testing.T) {
 	}
 }
 
-func TestLintExplicitOverridesAnnotation_MultipleOverrides_PerOverride(t *testing.T) {
+func TestLintOverriddenAnnotation_MultipleOverrides_PerOverride(t *testing.T) {
 	t.Parallel()
 	// Three overrides across both pillars; the lint emits one warning
 	// per override, deterministic node-and-pillar-and-leaf order.
 	suppressedV := provenance("annotation", "aggregate", "feature.myco/db-pool", "aggregate.yaml:...db-pool")
 	suppressedI := provenance("annotation", "release", "feature.myco/rewrite-host", "release.yaml:...rewrite-host")
-	overrideV := types.FieldProvenance{Origin: "explicit", OverridesAnnotation: &suppressedV}
-	overrideI := types.FieldProvenance{Origin: "explicit", OverridesAnnotation: &suppressedI}
+	overrideV := types.FieldProvenance{Origin: "explicit", OverriddenAnnotation: &suppressedV}
+	overrideI := types.FieldProvenance{Origin: "explicit", OverriddenAnnotation: &suppressedI}
 	entry := types.IRFeatureEntry{
 		ValuesProvenance: makeProvenanceMap(
 			"pool", overrideV,
@@ -104,7 +104,7 @@ func TestLintExplicitOverridesAnnotation_MultipleOverrides_PerOverride(t *testin
 		InfraProvenance: makeProvenanceMap("upstream", overrideI),
 	}
 	graph := buildIRGraphWithFeature("api", "feature.myco/db-pool", entry)
-	warnings := lintExplicitOverridesAnnotation(graph)
+	warnings := lintOverriddenAnnotation(graph)
 	if len(warnings) != 3 {
 		t.Fatalf("expected 3 warnings; got %d: %v", len(warnings), warnings)
 	}
@@ -121,19 +121,19 @@ func TestLintExplicitOverridesAnnotation_MultipleOverrides_PerOverride(t *testin
 	}
 }
 
-func TestLintExplicitOverridesAnnotation_WarningContainsKeyAndSource(t *testing.T) {
+func TestLintOverriddenAnnotation_WarningContainsKeyAndSource(t *testing.T) {
 	t.Parallel()
 	// The warning carries the suppressed annotation's key + source
 	// verbatim so operators navigate from the diagnostic to the
 	// authoring site.
 	suppressed := provenance("annotation", "release", "feature.myco/rewrite-host",
 		"release.yaml:boundaries.prod.annotations.feature.myco/rewrite-host")
-	override := types.FieldProvenance{Origin: "explicit", OverridesAnnotation: &suppressed}
+	override := types.FieldProvenance{Origin: "explicit", OverriddenAnnotation: &suppressed}
 	entry := types.IRFeatureEntry{
 		InfraProvenance: makeProvenanceMap("upstream", override),
 	}
 	graph := buildIRGraphWithFeature("api", "feature.myco/rewrite-host", entry)
-	warnings := lintExplicitOverridesAnnotation(graph)
+	warnings := lintOverriddenAnnotation(graph)
 	if len(warnings) != 1 {
 		t.Fatalf("expected 1 warning; got %d", len(warnings))
 	}

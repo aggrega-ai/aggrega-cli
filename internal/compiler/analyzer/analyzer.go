@@ -305,7 +305,7 @@ func AnalyzeContext(ctx context.Context, graph *types.IRGraph, catalogLookup res
 	policyInput := assemblePolicyInput(graph, paths)
 
 	// 5. Advisory lints (non-fatal warnings).
-	warnings := lintExplicitOverridesAnnotation(graph)
+	warnings := lintOverriddenAnnotation(graph)
 
 	return &AnalysisResult{
 		Errors:      errs,

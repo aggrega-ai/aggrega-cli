@@ -543,10 +543,10 @@ func perLeafBracket(prov types.FieldProvenance) string {
 	if prov.Origin == "annotation" {
 		return fmt.Sprintf("[annotation: %s from %s]", prov.AnnotationKey, prov.AnnotationSource)
 	}
-	if prov.OverridesAnnotation != nil {
+	if prov.OverriddenAnnotation != nil {
 		return fmt.Sprintf("[explicit; overrides annotation: %s from %s]",
-			prov.OverridesAnnotation.AnnotationKey,
-			prov.OverridesAnnotation.AnnotationSource)
+			prov.OverriddenAnnotation.AnnotationKey,
+			prov.OverriddenAnnotation.AnnotationSource)
 	}
 	return "[explicit]"
 }
@@ -558,7 +558,7 @@ func perLeafBracket(prov types.FieldProvenance) string {
 //     the top-level provenance is the only signal).
 //   - Every populated leaf shares the same FieldProvenance shape
 //     (same Origin, Side, AnnotationKey, AnnotationSource, no
-//     OverridesAnnotation at any leaf) → uniform.
+//     OverriddenAnnotation at any leaf) → uniform.
 //   - Otherwise → heterogeneous.
 //
 // Uniform attachments fall back to the per-attachment marker for
@@ -569,7 +569,7 @@ func featureProvenanceLayout(entry types.IRFeatureEntry) bool {
 	hasFirst := false
 	check := func(m types.OrderedMap[types.FieldProvenance]) bool {
 		for _, fp := range m.All() {
-			if fp.OverridesAnnotation != nil {
+			if fp.OverriddenAnnotation != nil {
 				return false
 			}
 			if !hasFirst {
