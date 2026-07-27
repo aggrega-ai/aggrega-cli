@@ -90,6 +90,14 @@ func buildArtifactsProjection(
 	// files, or a bundle file and another artifacts entry, resolving to the same
 	// output name — halts loudly rather than one output silently overwriting
 	// another (a Loud Guardrail per the No Ghost Infrastructure invariant).
+	//
+	// Deliberately narrow, and deliberately not the only collision check: this
+	// map spans one Recipe's own artifacts entries, so it sees a Recipe naming
+	// one output filename twice and nothing else. Two separate producers meeting
+	// on one path once their output is assembled is a different key space this
+	// map never observes, guarded separately where a group's files are resolved.
+	// Consolidating the two would either blind this check to the intra-Recipe
+	// case or widen it to a scope it cannot see from here.
 	seen := map[string]struct{}{}
 	emit := func(outputName, origin, tmplText string) error {
 		if err := preCheckArtifactPillars(state, outputName, tmplText, leftDelim, rightDelim); err != nil {

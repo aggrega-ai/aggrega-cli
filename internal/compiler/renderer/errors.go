@@ -132,6 +132,25 @@ var (
 	// invariant).
 	ErrArtifactOutputCollision = errors.New("artifacts output filename collision: two artifact outputs resolve to the same filename")
 
+	// ErrAssembledOutputCollision fires when two contributors to one assembly
+	// write a file at the same output path — two components, a component and a
+	// boundary-attached feature, or a contributor and the assembled output
+	// itself. The colliding writes halt loudly rather than one silently
+	// overwriting another (a Loud Guardrail, per the No Ghost Infrastructure
+	// invariant).
+	//
+	// It is a sibling of ErrArtifactOutputCollision, not a widening of it, and the
+	// two must not be merged. They differ in surface and in remedy, not merely in
+	// scope: ErrArtifactOutputCollision says one Recipe's own artifacts map names
+	// one output filename twice, which its author fixes by renaming an entry in
+	// that map. This sentinel says two contributors that know nothing about each
+	// other landed on one path once the assembly merged their output, which is
+	// fixed by changing what one of them emits or by separating their output
+	// paths. A caller matching one is not asking about the other. A third,
+	// likewise separate, guard covers two resources colliding inside a single
+	// component's own render, before any of them reach an assembly.
+	ErrAssembledOutputCollision = errors.New("assembled output collision: two contributors write the same output path")
+
 	// ErrCircularImport is the $import-surface name for a mapping-library import
 	// expansion cycle. It is the shared refcycle.ErrCycle sentinel — the same
 	// identity the $ref surface reports via ErrCircularRef — so one detector

@@ -109,6 +109,136 @@ type assemblerCandidate struct {
 	version string
 }
 
+// boundaryFRNodePrefix marks a synthetic per-node key that carries a
+// boundary-scope FeatureRecipe's contribution rather than a component's. It is
+// declared once so the key's construction and every reader of it agree.
+const boundaryFRNodePrefix = "<boundary-fr>:"
+
+// assembledFileEntry is one producer's placement of one file into a dispatch
+// group: the group-relative path the file lands at, the file itself, and the
+// authoring-level name of whatever placed it.
+type assembledFileEntry struct {
+	path     string
+	file     AssembledFile
+	producer string
+}
+
+// assembledFileSet accumulates every file a dispatch group's producers place,
+// then resolves them into the group's path→file map.
+//
+// Placing a file into a group is one operation with one implementation: the
+// boundary assembler's merged documents and each node's own rendered files —
+// nested under their instance or written flat — all place through put. No
+// producer holds the resulting map, and the map does not exist until resolve
+// builds it, so a producer added later cannot place a file where the collision
+// check cannot see it.
+//
+// The check runs in resolve rather than in put deliberately. The maps the
+// producers iterate are plain Go maps, whose iteration order is randomised per
+// run; halting at the moment of the second placement would name whichever
+// producer happened to be walked first, so identical input would fail with a
+// different message on different runs. resolve sees every placement at once and
+// orders the diagnostic by path and by producer, making the message a function
+// of the input alone.
+//
+// The scope is one dispatch group's assembled output — several independent
+// producers meeting on one path. A single Recipe naming one output filename
+// twice inside its own artifacts map is a different defect on a different key
+// space, caught earlier and separately where that map is projected.
+type assembledFileSet struct {
+	entries []assembledFileEntry
+}
+
+func (s *assembledFileSet) put(path string, file AssembledFile, producer string) {
+	s.entries = append(s.entries, assembledFileEntry{path: path, file: file, producer: producer})
+}
+
+// resolve returns the group's path→file map, or halts when two producers placed
+// a file at the same path. prefix is the group's disk-write prefix, applied to
+// the reported paths so the diagnostic names the file as it would have been
+// written.
+func (s *assembledFileSet) resolve(prefix string) (map[string]AssembledFile, error) {
+	byPath := make(map[string][]assembledFileEntry, len(s.entries))
+	for _, e := range s.entries {
+		byPath[e.path] = append(byPath[e.path], e)
+	}
+	var collided []string
+	for path, placements := range byPath {
+		if len(placements) > 1 {
+			collided = append(collided, path)
+		}
+	}
+	if len(collided) > 0 {
+		sort.Strings(collided)
+		clauses := make([]string, 0, len(collided))
+		for _, path := range collided {
+			clauses = append(clauses, collisionClause(prefix+path, byPath[path]))
+		}
+		inner := fmt.Errorf("%w: %s; rename one of the colliding files so each output path is written once",
+			ErrAssembledOutputCollision, strings.Join(clauses, "; "))
+		return nil, cerrors.Wrap(inner, cerrors.TranslationError, cerrors.SourceLocation{File: prefix + collided[0]}, inner.Error())
+	}
+	files := make(map[string]AssembledFile, len(byPath))
+	for path, placements := range byPath {
+		files[path] = placements[0].file
+	}
+	return files, nil
+}
+
+// collisionClause reports one colliding output path and every producer that
+// wrote it, ordered by producer so the sentence does not depend on the order the
+// contributing maps happened to iterate in. The declared format is named only
+// when the producers disagree about it, where it is the likeliest explanation of
+// what went wrong.
+func collisionClause(outputPath string, placements []assembledFileEntry) string {
+	ordered := make([]assembledFileEntry, len(placements))
+	copy(ordered, placements)
+	sort.Slice(ordered, func(i, j int) bool {
+		if ordered[i].producer != ordered[j].producer {
+			return ordered[i].producer < ordered[j].producer
+		}
+		return ordered[i].file.Format < ordered[j].file.Format
+	})
+	nameFormats := false
+	for _, e := range ordered[1:] {
+		if e.file.Format != ordered[0].file.Format {
+			nameFormats = true
+			break
+		}
+	}
+	names := make([]string, 0, len(ordered))
+	for _, e := range ordered {
+		switch {
+		case !nameFormats:
+			names = append(names, e.producer)
+		case e.file.Format == "":
+			names = append(names, e.producer+" (no declared format)")
+		default:
+			names = append(names, fmt.Sprintf("%s (declared format %q)", e.producer, e.file.Format))
+		}
+	}
+	return fmt.Sprintf("%q is written by %s", outputPath, joinWithAnd(names))
+}
+
+// nodeProducerLabel names a per-node contributor in authoring terms, so a
+// collision points at something the author can find in their own input.
+func nodeProducerLabel(nodeID string) string {
+	if instance, isFeature := strings.CutPrefix(nodeID, boundaryFRNodePrefix); isFeature {
+		return fmt.Sprintf("feature %q", instance)
+	}
+	return fmt.Sprintf("component %q", nodeID)
+}
+
+func joinWithAnd(items []string) string {
+	switch len(items) {
+	case 0:
+		return ""
+	case 1:
+		return items[0]
+	}
+	return strings.Join(items[:len(items)-1], ", ") + " and " + items[len(items)-1]
+}
+
 // RecipeLookup resolves a component/feature instance to its Recipe and
 // FeatureRecipes. Both closures take the instance NAME plus the catalog TYPE so
 // the Manifest name tier (a per-instance recipe override) can take precedence
@@ -915,12 +1045,12 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		}
 		// Use the FR's provider for the {{ .capability }} substitution
 		// instead of any per-component provider.
-		finalPath, err := computeFinalPath("<boundary-fr>:"+key.FRInstance, key.BoundaryPath, frProvider, fr.Metadata.Name, bi, parameters, boundaryDirEvals, perBoundaryAnnotations)
+		finalPath, err := computeFinalPath(boundaryFRNodePrefix+key.FRInstance, key.BoundaryPath, frProvider, fr.Metadata.Name, bi, parameters, boundaryDirEvals, perBoundaryAnnotations)
 		if err != nil {
 			return nil, cerrors.Wrap(err, cerrors.OpsError, cerrors.SourceLocation{}, fmt.Sprintf("Step 5 boundary-scope FR %q path eval", key.FRInstance))
 		}
 		dKey := dispatchKey{Path: finalPath, Provider: frProvider}
-		syntheticNodeID := "<boundary-fr>:" + key.FRInstance
+		syntheticNodeID := boundaryFRNodePrefix + key.FRInstance
 		if _, ok := dispatch[dKey]; !ok {
 			dispatch[dKey] = &pendingDispatch{
 				files:           map[string]map[string][]byte{},
@@ -1076,7 +1206,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// declared format (empty when the producer declared none — the consumer
 		// then falls back to extension-based selection). The prefix is reattached
 		// at the final flush.
-		groupFiles := map[string]AssembledFile{}
+		var groupFiles assembledFileSet
 
 		// If engine is a BoundaryAssembler (helm-chart, compose) AND the dispatch path is non-empty:
 		// nest per-node under charts/<nodeID>/ and emit assembled files at the dispatch path.
@@ -1139,8 +1269,9 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 			// producer-declared format; the record travels intact so the render-
 			// policy parser seam prefers the producer's format over the path
 			// extension (empty format falls through to extension selection).
+			assemblyProducer := fmt.Sprintf("the %q assembly", key.Provider)
 			for p, af := range boundaryFiles {
-				groupFiles[p] = af
+				groupFiles.put(p, af, assemblyProducer)
 			}
 			// Node files go under charts/<nodeID>/ (or flat if assembler says no
 			// nesting). These per-node fragments carry no producer format at this
@@ -1150,8 +1281,9 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 				if nestPerNode {
 					nodeRel = "charts/" + nodeID + "/"
 				}
+				producer := nodeProducerLabel(nodeID)
 				for p, c := range nodeFiles {
-					groupFiles[nodeRel+p] = AssembledFile{Content: c}
+					groupFiles.put(nodeRel+p, AssembledFile{Content: c}, producer)
 				}
 			}
 		} else {
@@ -1161,16 +1293,21 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 			// parser seam can prefer it over the path extension.
 			for nodeID, nodeFiles := range pd.files {
 				nodeFormats := pd.formats[nodeID]
+				producer := nodeProducerLabel(nodeID)
 				for p, c := range nodeFiles {
-					groupFiles[p] = AssembledFile{Content: c, Format: nodeFormats[p]}
+					groupFiles.put(p, AssembledFile{Content: c, Format: nodeFormats[p]}, producer)
 				}
 			}
 		}
 
+		files, err := groupFiles.resolve(dispatchPrefix)
+		if err != nil {
+			return nil, err
+		}
 		assembledByDispatch[key] = &assembledGroup{
 			provider: key.Provider,
 			prefix:   dispatchPrefix,
-			files:    groupFiles,
+			files:    files,
 		}
 	}
 

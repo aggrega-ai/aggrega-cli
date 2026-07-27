@@ -194,8 +194,8 @@ fi
 # Cross-package coverage check (optional, --cross flag). Combines per-test
 # coverage of every test binary against every package via -coverpkg=./..., so
 # that a test in pkg A covering code in pkg B is credited correctly. The
-# combined number is the load-bearing aggregate the WI's Phase 5 acceptance
-# uses; the per-package floors above are the per-package complement.
+# combined number is the load-bearing coverage aggregate for the repository;
+# the per-package floors above are the per-package complement.
 if [[ "$cross" -eq 1 ]]; then
     echo ""
     echo "coverage-gate: computing cross-package coverage (-coverpkg=./...)..."
