@@ -5,11 +5,11 @@ package analyzer_test
 
 import (
 	"encoding/json"
-	"os"
-	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
+
+	schemas "github.com/aggrega-ai/aggrega-schemas"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/analyzer"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
@@ -109,13 +109,8 @@ func TestPolicyOutput_RoundTrip(t *testing.T) {
 // "Go struct grew a field, schema didn't" drift directly.
 func TestPolicyTypes_JSONSchemaFieldCoverage(t *testing.T) {
 	t.Parallel()
-	schemaPath := filepath.Join("..", "..", "..", "..", "aggrega-schemas", "json", "wasm-policy-v1alpha1.schema.json")
-	schemaBytes, err := os.ReadFile(schemaPath)
-	if err != nil {
-		t.Skipf("wasm-policy schema not reachable at %s: %v", schemaPath, err)
-	}
 	var raw map[string]any
-	if err := json.Unmarshal(schemaBytes, &raw); err != nil {
+	if err := json.Unmarshal([]byte(schemas.WasmPolicyV1alpha1), &raw); err != nil {
 		t.Fatalf("unmarshal policy schema: %v", err)
 	}
 	defs, ok := raw["$defs"].(map[string]any)
@@ -164,13 +159,8 @@ func TestPolicyTypes_JSONSchemaFieldCoverage(t *testing.T) {
 	// A fired verdict is one entry of the shared diagnostic shape, defined in the
 	// wasm-diagnostic schema rather than the policy schema. Assert the lean host
 	// verdict type's fields are all present in that shared def.
-	diagPath := filepath.Join("..", "..", "..", "..", "aggrega-schemas", "json", "wasm-diagnostic-v1alpha1.schema.json")
-	diagBytes, err := os.ReadFile(diagPath)
-	if err != nil {
-		t.Skipf("wasm-diagnostic schema not reachable at %s: %v", diagPath, err)
-	}
 	var diagRaw map[string]any
-	if err := json.Unmarshal(diagBytes, &diagRaw); err != nil {
+	if err := json.Unmarshal([]byte(schemas.WasmDiagnosticV1alpha1), &diagRaw); err != nil {
 		t.Fatalf("unmarshal diagnostic schema: %v", err)
 	}
 	diagDefs, ok := diagRaw["$defs"].(map[string]any)

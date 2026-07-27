@@ -5,34 +5,26 @@ package types_test
 
 import (
 	"encoding/json"
-	"os"
-	"path/filepath"
 	"testing"
 
+	schemas "github.com/aggrega-ai/aggrega-schemas"
 	libschema "github.com/google/jsonschema-go/jsonschema"
 	"go.yaml.in/yaml/v3"
 
 	jsonvalidator "github.com/aggrega-ai/aggrega-cli/pkg/validator/jsonschema"
 )
 
-// recipeEnvelopeValidator loads the shipped Recipe JSON Schema from the
-// sibling aggrega-schemas repo and constructs a Validator over it.
-// Tests use the validator to assert envelope-level acceptance of the
-// supported authoring shapes at workspace-load time.
+// recipeEnvelopeValidator constructs a Validator over the shipped Recipe
+// JSON Schema. Tests use the validator to assert envelope-level acceptance
+// of the supported authoring shapes at workspace-load time.
 //
-// Path is stable within the umbrella workspace: from
-// aggrega-cli/pkg/types/, the schema sits at
-// ../../../aggrega-schemas/json/recipe-v1alpha1.schema.json.
-// The helper t.Skipf's gracefully if the schema is unreachable.
+// The schema is compiled into this test binary from a referenced variable,
+// so a schema edit invalidates this package's cached result rather than
+// serving a stale one.
 func recipeEnvelopeValidator(t *testing.T) jsonvalidator.Validator {
 	t.Helper()
-	schemaPath := filepath.Join("..", "..", "..", "aggrega-schemas", "json", "recipe-v1alpha1.schema.json")
-	schemaBytes, err := os.ReadFile(schemaPath)
-	if err != nil {
-		t.Skipf("Recipe envelope schema not reachable at %s; envelope-validation tests skipped in this environment: %v", schemaPath, err)
-	}
 	schema := &libschema.Schema{}
-	if err := json.Unmarshal(schemaBytes, schema); err != nil {
+	if err := json.Unmarshal([]byte(schemas.RecipeV1alpha1), schema); err != nil {
 		t.Fatalf("unmarshal envelope schema: %v", err)
 	}
 	v, err := jsonvalidator.New(schema)
@@ -44,13 +36,8 @@ func recipeEnvelopeValidator(t *testing.T) jsonvalidator.Validator {
 
 func featureRecipeEnvelopeValidator(t *testing.T) jsonvalidator.Validator {
 	t.Helper()
-	schemaPath := filepath.Join("..", "..", "..", "aggrega-schemas", "json", "featurerecipe-v1alpha1.schema.json")
-	schemaBytes, err := os.ReadFile(schemaPath)
-	if err != nil {
-		t.Skipf("FeatureRecipe envelope schema not reachable at %s: %v", schemaPath, err)
-	}
 	schema := &libschema.Schema{}
-	if err := json.Unmarshal(schemaBytes, schema); err != nil {
+	if err := json.Unmarshal([]byte(schemas.FeatureRecipeV1alpha1), schema); err != nil {
 		t.Fatalf("unmarshal envelope schema: %v", err)
 	}
 	v, err := jsonvalidator.New(schema)

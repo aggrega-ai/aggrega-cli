@@ -6,11 +6,11 @@ package featurerecipe_pipeline_test
 import (
 	"context"
 	"encoding/json"
-	"os"
-	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
+
+	schemas "github.com/aggrega-ai/aggrega-schemas"
 
 	frp "github.com/aggrega-ai/aggrega-cli/internal/compiler/featurerecipe_pipeline"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
@@ -465,13 +465,8 @@ func TestWalk_WithEvalIntoStepInput(t *testing.T) {
 // would couple two independent per-package cross-checks.
 func TestFRPTypes_JSONSchemaFieldCoverage(t *testing.T) {
 	t.Parallel()
-	schemaPath := filepath.Join("..", "..", "..", "..", "aggrega-schemas", "json", "wasm-frp-step-v1alpha1.schema.json")
-	schemaBytes, err := os.ReadFile(schemaPath)
-	if err != nil {
-		t.Skipf("wasm-frp-step schema not reachable at %s: %v", schemaPath, err)
-	}
 	var raw map[string]any
-	if err := json.Unmarshal(schemaBytes, &raw); err != nil {
+	if err := json.Unmarshal([]byte(schemas.WasmFrpStepV1alpha1), &raw); err != nil {
 		t.Fatalf("unmarshal wasm-frp-step schema: %v", err)
 	}
 	defs, ok := raw["$defs"].(map[string]any)

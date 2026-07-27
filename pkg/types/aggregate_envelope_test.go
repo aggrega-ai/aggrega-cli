@@ -5,26 +5,22 @@ package types_test
 
 import (
 	"encoding/json"
-	"os"
-	"path/filepath"
 	"testing"
 
+	schemas "github.com/aggrega-ai/aggrega-schemas"
 	libschema "github.com/google/jsonschema-go/jsonschema"
 
 	jsonvalidator "github.com/aggrega-ai/aggrega-cli/pkg/validator/jsonschema"
 )
 
-// aggregateEnvelopeValidator loads the shipped Aggregate JSON Schema from
-// the sibling aggrega-schemas repo and constructs a Validator over it.
+// aggregateEnvelopeValidator constructs a Validator over the shipped
+// Aggregate JSON Schema. The schema is compiled into this test binary from a
+// referenced variable, so a schema edit invalidates this package's cached
+// result rather than serving a stale one.
 func aggregateEnvelopeValidator(t *testing.T) jsonvalidator.Validator {
 	t.Helper()
-	schemaPath := filepath.Join("..", "..", "..", "aggrega-schemas", "json", "aggregate-v1alpha1.schema.json")
-	schemaBytes, err := os.ReadFile(schemaPath)
-	if err != nil {
-		t.Skipf("Aggregate envelope schema not reachable at %s: %v", schemaPath, err)
-	}
 	schema := &libschema.Schema{}
-	if err := json.Unmarshal(schemaBytes, schema); err != nil {
+	if err := json.Unmarshal([]byte(schemas.AggregateV1alpha1), schema); err != nil {
 		t.Fatalf("unmarshal envelope schema: %v", err)
 	}
 	v, err := jsonvalidator.New(schema)

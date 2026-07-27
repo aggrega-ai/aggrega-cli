@@ -5,12 +5,11 @@ package topology_test
 
 import (
 	"encoding/json"
-	"os"
-	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
 
+	schemas "github.com/aggrega-ai/aggrega-schemas"
 	libschema "github.com/google/jsonschema-go/jsonschema"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/topology"
@@ -18,20 +17,14 @@ import (
 	jsonvalidator "github.com/aggrega-ai/aggrega-cli/pkg/validator/jsonschema"
 )
 
-// mutatorSchemaValidator loads the shipped wasm-mutator JSON Schema from
-// the sibling aggrega-schemas repo and constructs a Validator over it.
-// The schema must be reachable from the test working directory; an
-// absent file produces t.Skipf so tests run cleanly on consumer
-// checkouts that do not vendor the schemas submodule.
+// mutatorSchemaValidator constructs a Validator over the shipped
+// wasm-mutator JSON Schema. The schema is compiled into this test binary
+// from a referenced variable, so a schema edit invalidates this package's
+// cached result rather than serving a stale one.
 func mutatorSchemaValidator(t *testing.T) jsonvalidator.Validator {
 	t.Helper()
-	schemaPath := filepath.Join("..", "..", "..", "..", "aggrega-schemas", "json", "wasm-mutator-v1alpha1.schema.json")
-	schemaBytes, err := os.ReadFile(schemaPath)
-	if err != nil {
-		t.Skipf("wasm-mutator schema not reachable at %s: %v", schemaPath, err)
-	}
 	schema := &libschema.Schema{}
-	if err := json.Unmarshal(schemaBytes, schema); err != nil {
+	if err := json.Unmarshal([]byte(schemas.WasmMutatorV1alpha1), schema); err != nil {
 		t.Fatalf("unmarshal mutator schema: %v", err)
 	}
 	v, err := jsonvalidator.New(schema)
@@ -157,13 +150,8 @@ func TestMutatorOutput_RoundTripJSONSchema(t *testing.T) {
 // "Go struct grew a field, schema didn't" drift directly.
 func TestMutatorTypes_JSONSchemaFieldCoverage(t *testing.T) {
 	t.Parallel()
-	schemaPath := filepath.Join("..", "..", "..", "..", "aggrega-schemas", "json", "wasm-mutator-v1alpha1.schema.json")
-	schemaBytes, err := os.ReadFile(schemaPath)
-	if err != nil {
-		t.Skipf("wasm-mutator schema not reachable at %s: %v", schemaPath, err)
-	}
 	var raw map[string]any
-	if err := json.Unmarshal(schemaBytes, &raw); err != nil {
+	if err := json.Unmarshal([]byte(schemas.WasmMutatorV1alpha1), &raw); err != nil {
 		t.Fatalf("unmarshal mutator schema: %v", err)
 	}
 	defs, ok := raw["$defs"].(map[string]any)

@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	schemas "github.com/aggrega-ai/aggrega-schemas"
 )
 
 // TestLoadAggregateParameterContract_EnvelopeRejection_BadType pins
@@ -121,28 +123,27 @@ spec:
 	}
 }
 
-// TestParameterContractSchema_NoDrift is the maintenance-contract guard
-// for the hardcoded parameterContractSchemaJSON literal. It reads the
-// canonical aggregate-v1alpha1.schema.json from the aggrega-schemas
-// subrepo, extracts the `properties.spec.properties.parameters` subtree,
-// and asserts byte-equivalent content (after canonical JSON formatting)
-// against the hardcoded literal. Drift in either direction fails the
-// test with a directed message naming the canonical schema path.
+// TestParameterContractSchema_NoDrift is the maintenance-contract guard for
+// the hardcoded parameterContractSchemaJSON literal. It reads the canonical
+// Aggregate schema, extracts the `properties.spec.properties.parameters`
+// subtree, and asserts byte-equivalent content (after canonical JSON
+// formatting) against the hardcoded literal. Drift in either direction fails
+// the test with a directed message naming the canonical source.
 //
-// MAINTENANCE — when `aggregate-v1alpha1.schema.json` legitimately
-// changes its `properties.spec.properties.parameters` subtree, update
-// the hardcoded literal at parameterContractSchemaJSON in lockstep.
+// The canonical schema is compiled into this test binary from a referenced
+// variable, so a schema edit invalidates this package's cached result rather
+// than serving a stale one.
+//
+// MAINTENANCE — when the Aggregate schema legitimately changes its
+// `properties.spec.properties.parameters` subtree, update the hardcoded
+// literal at parameterContractSchemaJSON in lockstep.
 func TestParameterContractSchema_NoDrift(t *testing.T) {
 	t.Parallel()
 
-	schemaPath := filepath.Join("..", "..", "..", "aggrega-schemas", "json", "aggregate-v1alpha1.schema.json")
-	schemaBytes, err := os.ReadFile(schemaPath)
-	if err != nil {
-		t.Skipf("aggregate-v1alpha1.schema.json not reachable at %s: %v", schemaPath, err)
-	}
+	const canonicalSource = "aggregate-v1alpha1.schema.json"
 
 	var root map[string]any
-	if err := json.Unmarshal(schemaBytes, &root); err != nil {
+	if err := json.Unmarshal([]byte(schemas.AggregateV1alpha1), &root); err != nil {
 		t.Fatalf("unmarshal canonical schema: %v", err)
 	}
 	props, _ := root["properties"].(map[string]any)
@@ -169,7 +170,7 @@ func TestParameterContractSchema_NoDrift(t *testing.T) {
 			"  Hardcoded literal: pkg/resolver/step1a_parameter_schema.go::parameterContractSchemaJSON\n"+
 			"  Update the literal in lockstep with the canonical schema.\n\n"+
 			"  Canonical:\n%s\n\n  Hardcoded:\n%s\n",
-			schemaPath, canonical, hardcodedCanonical)
+			canonicalSource, canonical, hardcodedCanonical)
 	}
 }
 

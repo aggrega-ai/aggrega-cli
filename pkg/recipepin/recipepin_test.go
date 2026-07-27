@@ -418,22 +418,26 @@ func TestWritePinsByteFaithfulRemoveRestoresOriginal(t *testing.T) {
 	}
 }
 
-// TestWritePinsByteFaithfulOnRealRecipe copies a published example recipe into a
-// temp dir (the original is never touched), freezes one source pin, and asserts
-// that no byte outside the pin region drifts: the folded description, the literal
-// valuesMapping block, and the 2-space indentation carry through byte-for-byte,
-// and the frozen result carries a sourceDigests block and no artifactDigests.
+// TestWritePinsByteFaithfulOnRealRecipe copies a real-shaped recipe fixture
+// into a temp dir (the fixture itself is never touched), freezes one source
+// pin, and asserts that no byte outside the pin region drifts: the folded
+// description, the literal valuesMapping block, and the 2-space indentation
+// carry through byte-for-byte, and the frozen result carries a sourceDigests
+// block and no artifactDigests.
 //
-// The example is read as-is, so it may arrive pin-free or already carrying a
+// The fixture is read as-is, so it may arrive pin-free or already carrying a
 // frozen pin section — the freeze correspondingly adds the block or replaces the
 // one present. The non-pin comparison therefore excises the pin region from both
 // the frozen result and the copied original, which isolates the bytes the splice
-// must not touch without constraining what the example happens to carry.
+// must not touch without constraining what the fixture happens to carry.
+//
+// The property under test — a pin splice touches no byte outside the pin
+// region — holds for any real-shaped recipe, so the fixture supplies shape
+// rather than standing in for any particular published document.
 func TestWritePinsByteFaithfulOnRealRecipe(t *testing.T) {
-	const realPath = "/workspaces/aggrega-umbrella/aggrega-docs/language-reference/examples/mariadb-adminer/catalog-helm-bitnami/recipe/mariadb-bitnami.yaml"
-	original, err := os.ReadFile(realPath)
+	original, err := os.ReadFile(filepath.Join("testdata", "mariadb-bitnami.yaml"))
 	if err != nil {
-		t.Skipf("example recipe not available: %v", err)
+		t.Fatalf("read recipe fixture: %v", err)
 	}
 	p := filepath.Join(t.TempDir(), "mariadb-bitnami.yaml")
 	if err := os.WriteFile(p, original, 0o644); err != nil {
