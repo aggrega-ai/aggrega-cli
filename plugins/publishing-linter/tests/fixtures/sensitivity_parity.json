@@ -1,0 +1,273 @@
+{
+  "_about": [
+    "Shared cases for the sensitivity-declaration parity check. This file is the ONE",
+    "source of cases for both readers of a sensitivity declaration: the compiler's",
+    "reader over a compiled schema, and this plugin's reader over the authored entity",
+    "JSON it receives. Both sides enumerate this file, so a case added here is checked",
+    "on both sides and a case removed from here fails the compiler-side check's",
+    "shape-class census. Add a case HERE rather than inline in either reader's own",
+    "unit tests, or the two sides stop being compared on it.",
+    "",
+    "Every `schema` value is an entity's authored spec.schema, written in JSON because",
+    "that is the form the plugin receives (the host converts the entity YAML to JSON",
+    "before invoking a rule) and because JSON is valid YAML, so the compiler side",
+    "compiles the identical bytes.",
+    "",
+    "`expect` is the compiler-side truth: the flat-dotted leaf paths, per pillar, that",
+    "the compiler reads as declared sensitive. An omitted pillar means the empty set.",
+    "",
+    "`guestBlindPaths` names paths the plugin-side reader cannot reach because the",
+    "declaration is nested inside a YAML text block that only a YAML parser can open.",
+    "The plugin has no YAML parser, so the divergence is real and is recorded here",
+    "rather than hidden: the plugin side asserts it collects `expect` MINUS these, and",
+    "that it reports exactly these as unreadable."
+  ],
+  "leafCases": [
+    {
+      "name": "typeless-leaf-declares",
+      "why": "A leaf carrying only the marker is a leaf, not an object with a property named sensitive.",
+      "schema": { "values": { "token": { "sensitive": true } } },
+      "expect": { "values": ["token"] }
+    },
+    {
+      "name": "typed-leaf-declares",
+      "why": "The ordinary shape: a marker beside a type.",
+      "schema": { "values": { "password": { "type": "string", "sensitive": true } } },
+      "expect": { "values": ["password"] }
+    },
+    {
+      "name": "sibling-declares-nothing",
+      "why": "A marker on one leaf must not spread to its siblings.",
+      "schema": {
+        "values": {
+          "password": { "type": "string", "sensitive": true },
+          "host": { "type": "string" }
+        }
+      },
+      "expect": { "values": ["password"] }
+    },
+    {
+      "name": "pillars-are-independent",
+      "why": "A path is unique only within its pillar, so the same name may differ across pillars.",
+      "schema": {
+        "values": { "dsn": { "type": "string" } },
+        "infra": { "root_token": { "type": "string", "sensitive": true } },
+        "provides": {
+          "dsn": { "type": "string", "sensitive": true },
+          "name": { "type": "string" },
+          "key": { "type": "string" }
+        }
+      },
+      "expect": { "infra": ["root_token"], "provides": ["dsn"] }
+    },
+    {
+      "name": "nested-implicit-object",
+      "why": "Nesting expressed by YAML hierarchy alone; the collected path is the dotted chain.",
+      "schema": {
+        "values": {
+          "auth": {
+            "basic": {
+              "password": { "type": "string", "sensitive": true },
+              "username": { "type": "string" }
+            }
+          }
+        }
+      },
+      "expect": { "values": ["auth.basic.password"] }
+    },
+    {
+      "name": "nested-explicit-properties",
+      "why": "Nesting expressed with an authored properties map; `properties` is a keyword, not a leaf name.",
+      "schema": {
+        "values": {
+          "auth": { "properties": { "password": { "type": "string", "sensitive": true } } }
+        }
+      },
+      "expect": { "values": ["auth.password"] }
+    },
+    {
+      "name": "marker-beside-ref",
+      "why": "A marker beside a reference is carried onto the referring node.",
+      "schema": {
+        "values": { "cred": { "$ref": "#/$defs/Credential", "sensitive": true } }
+      },
+      "expect": { "values": ["cred"] }
+    },
+    {
+      "name": "marker-beside-allof",
+      "why": "A marker beside a composition keyword is carried onto the composing node.",
+      "schema": {
+        "values": { "c": { "allOf": [{ "type": "string" }], "sensitive": true } }
+      },
+      "expect": { "values": ["c"] }
+    },
+    {
+      "name": "marker-beside-anyof",
+      "why": "Same as allOf; each composition keyword takes the same path.",
+      "schema": {
+        "values": { "c": { "anyOf": [{ "type": "string" }, { "type": "integer" }], "sensitive": true } }
+      },
+      "expect": { "values": ["c"] }
+    },
+    {
+      "name": "marker-beside-oneof",
+      "why": "Same as allOf; each composition keyword takes the same path.",
+      "schema": {
+        "values": { "c": { "oneOf": [{ "type": "string" }], "sensitive": true } }
+      },
+      "expect": { "values": ["c"] }
+    },
+    {
+      "name": "composition-branch-declares-nothing",
+      "why": "A marker inside a composing branch is not a declaration on the composing node.",
+      "schema": {
+        "values": { "c": { "anyOf": [{ "type": "string", "sensitive": true }] } }
+      },
+      "expect": {}
+    },
+    {
+      "name": "reference-sibling-properties-are-not-walked",
+      "why": "A property map beside a reference yields no reachable leaf on either side.",
+      "schema": {
+        "values": {
+          "c": {
+            "$ref": "#/$defs/Credential",
+            "properties": { "inner": { "type": "string", "sensitive": true } }
+          }
+        }
+      },
+      "expect": {}
+    },
+    {
+      "name": "array-items-are-not-walked",
+      "why": "A marker on an array's element type is not a leaf of the enclosing object.",
+      "schema": {
+        "values": {
+          "list": { "type": "array", "items": { "type": "string", "sensitive": true } }
+        }
+      },
+      "expect": {}
+    },
+    {
+      "name": "object-marker-and-nested-marker",
+      "why": "An object may declare the marker itself and still carry declaring children.",
+      "schema": {
+        "values": {
+          "auth": {
+            "sensitive": true,
+            "properties": { "pw": { "type": "string", "sensitive": true } }
+          }
+        }
+      },
+      "expect": { "values": ["auth", "auth.pw"] }
+    },
+    {
+      "name": "only-boolean-true-declares",
+      "why": "A composed schema records which entity declared a keyword under the same keyword spelling, mapped to an entity name; a presence-only read would take that for a declaration.",
+      "schema": {
+        "values": {
+          "truthy": { "type": "string", "sensitive": true },
+          "falsy": { "type": "string", "sensitive": false },
+          "stringy": { "type": "string", "sensitive": "core/parent" }
+        }
+      },
+      "expect": { "values": ["truthy"] }
+    },
+    {
+      "name": "explicit-jsonschema-mode-declares-nothing",
+      "why": "Under an explicit JSON Schema mode the key is authored JSON Schema content, not the compact-form marker.",
+      "schema": {
+        "values": { "x": { "$mode": "jsonschema", "type": "string", "sensitive": true } }
+      },
+      "expect": {}
+    },
+    {
+      "name": "escape-mapping-body-declares-nothing-at-its-own-node",
+      "why": "An escaped body is embedded as authored JSON Schema, so its own key is not the marker.",
+      "schema": {
+        "values": { "x": { "$jsonschema": { "type": "string", "sensitive": true } } }
+      },
+      "expect": {}
+    },
+    {
+      "name": "escape-mapping-body-nested-leaf-declares",
+      "why": "Children inside an escaped body are dispatched normally, so a nested compact leaf still declares.",
+      "schema": {
+        "values": {
+          "x": { "$jsonschema": { "properties": { "pw": { "type": "string", "sensitive": true } } } }
+        }
+      },
+      "expect": { "values": ["x.pw"] }
+    },
+    {
+      "name": "escape-text-body-is-unreadable-in-the-guest",
+      "why": "A YAML text block needs a YAML parser to open; the guest has none, so this divergence is declared rather than hidden.",
+      "schema": {
+        "values": { "x": { "$jsonschema": "type: string\nsensitive: true\n" } }
+      },
+      "expect": { "values": ["x"] },
+      "guestBlindPaths": { "values": ["x"] }
+    },
+    {
+      "name": "pillar-root-as-a-leaf-declares-nothing",
+      "why": "A pillar whose own node reads as a leaf exposes no properties, so nothing is collected — the shape an author hits when naming a property `sensitive`.",
+      "schema": { "values": { "sensitive": true } },
+      "expect": {}
+    },
+    {
+      "name": "nothing-declared",
+      "why": "The silent half: a schema with no marker anywhere collects nothing.",
+      "schema": {
+        "values": { "host": { "type": "string" } },
+        "provides": { "name": { "type": "string" } }
+      },
+      "expect": {}
+    },
+    {
+      "name": "pillar-outside-the-axis",
+      "why": "The axis covers values, infra and provides only.",
+      "schema": { "locals": { "x": { "type": "string", "sensitive": true } } },
+      "expect": {}
+    },
+    {
+      "name": "empty-schema",
+      "why": "An entity with no schema content declares nothing.",
+      "schema": {},
+      "expect": {}
+    }
+  ],
+  "slotCases": [
+    {
+      "name": "slot-marker-absent",
+      "slot": { "selector": "feature.aggrega.ai/kind=secret", "inject": ["env"] },
+      "expectSensitive": false,
+      "compilerDecodes": true
+    },
+    {
+      "name": "slot-marker-false",
+      "slot": { "sensitive": false },
+      "expectSensitive": false,
+      "compilerDecodes": true
+    },
+    {
+      "name": "slot-marker-true",
+      "slot": { "sensitive": true },
+      "expectSensitive": true,
+      "compilerDecodes": true
+    },
+    {
+      "name": "slot-marker-quoted-string",
+      "why": "A non-boolean is not a declaration on either side; the compiler additionally refuses to decode it.",
+      "slot": { "sensitive": "true" },
+      "expectSensitive": false,
+      "compilerDecodes": false
+    },
+    {
+      "name": "slot-marker-number",
+      "why": "As above: the marker is boolean-only.",
+      "slot": { "sensitive": 1 },
+      "expectSensitive": false,
+      "compilerDecodes": false
+    }
+  ]
+}

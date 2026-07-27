@@ -23,6 +23,7 @@ pub mod policies;
 pub mod raw;
 pub mod rubric;
 pub mod rules;
+pub mod sensitivity;
 
 /// `descriptor` is the `describe()` self-report the host reads once at load:
 /// a v1alpha1 linter plugin whose minimum export, `lint_rules`, is present.
@@ -77,6 +78,9 @@ pub fn lint_rules(input: Json<LinterInput>) -> FnResult<Json<LinterOutput>> {
         "category-matches-directory" => rules::category_vs_directory::classify(&input),
         "x-aggrega-discouragement" => rules::x_aggrega_discouragement::classify(&input),
         "plugin-default-limits" => rules::plugin_default_limits::classify(&input),
+        "secret-slot-declares-sensitive" => {
+            rules::secret_slot_declares_sensitive::classify(&input)
+        }
         other => vec![Diagnostic {
             rule_id: "unknown_rule".to_string(),
             severity: "error".to_string(),

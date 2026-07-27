@@ -173,6 +173,7 @@ func TestRuleParticipation(t *testing.T) {
 		{ruleID: "category-matches-directory", fixtureFile: "category_mismatch.yaml"},
 		{ruleID: "x-aggrega-discouragement", fixtureFile: "x_aggrega_in_schema.yaml"},
 		{ruleID: "plugin-default-limits", fixtureFile: "plugin_default_limits.yaml"},
+		{ruleID: "secret-slot-declares-sensitive", fixtureFile: "secret_slot_unmarked.yaml"},
 	}
 
 	for _, c := range cases {
@@ -479,6 +480,7 @@ func TestRuleParticipationCoversAllDispatchedRules(t *testing.T) {
 		"category-matches-directory",
 		"x-aggrega-discouragement",
 		"plugin-default-limits",
+		"secret-slot-declares-sensitive",
 	}
 	for _, ruleID := range expectedInParticipation {
 		if !dispatched[ruleID] {

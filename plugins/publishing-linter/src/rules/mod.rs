@@ -19,4 +19,5 @@ pub mod name_shape;
 pub mod narrowing;
 pub mod plugin_default_limits;
 pub mod schema_library_walker;
+pub mod secret_slot_declares_sensitive;
 pub mod x_aggrega_discouragement;

@@ -101,7 +101,9 @@ type lintEntityHeader struct {
 //
 // LOCKSTEP: the slice MUST match the plugin's lib.rs dispatcher arms. Adding a
 // rule requires updating both this slice AND
-// aggrega-cli/plugins/publishing-linter/src/lib.rs.
+// aggrega-cli/plugins/publishing-linter/src/lib.rs. The agreement is guarded by
+// a test that reads the plugin's dispatch table, so a one-sided addition fails
+// rather than producing a rule that silently never runs.
 func defaultRuleIDs(prePublish bool) []string {
 	rules := []string{
 		"annotation-prefix",
@@ -112,6 +114,7 @@ func defaultRuleIDs(prePublish bool) []string {
 		"category-matches-directory",
 		"x-aggrega-discouragement",
 		"plugin-default-limits",
+		"secret-slot-declares-sensitive",
 	}
 	if prePublish {
 		return append([]string{"schema-evolution"}, rules...)
