@@ -56,6 +56,7 @@ func TestStep5b_RecipeAssertionPasses(t *testing.T) {
 		map[string]*types.Recipe{"web": recipe},
 		RecipeLookup{},
 		NodeProvides{},
+		NodeLocals{},
 	)
 	if err != nil {
 		t.Errorf("expected nil; got %v", err)
@@ -80,6 +81,7 @@ func TestStep5b_RecipeAssertionFailsHaltsBuild(t *testing.T) {
 		map[string]*types.Recipe{"web": recipe},
 		RecipeLookup{},
 		NodeProvides{},
+		NodeLocals{},
 	)
 	if err == nil || !errors.Is(err, ErrAssertionFailed) {
 		t.Fatalf("expected ErrAssertionFailed; got %v", err)
@@ -114,6 +116,7 @@ func TestStep5b_ProvidesAvailableInContext(t *testing.T) {
 		map[string]*types.Recipe{"web": recipe},
 		RecipeLookup{},
 		provides,
+		NodeLocals{},
 	); err != nil {
 		t.Errorf("expected nil (host populated via .Provides); got %v", err)
 	}
@@ -137,15 +140,17 @@ func TestStep5b_RecipeMetadataAvailableInContext(t *testing.T) {
 		map[string]*types.Recipe{"web": recipe},
 		RecipeLookup{},
 		NodeProvides{},
+		NodeLocals{},
 	); err != nil {
 		t.Errorf("expected nil; got %v", err)
 	}
 }
 
-// TestStep5b_LocalsAvailableInContext pins .Locals access after pre-loop
-// Locals evaluation. The pre-loop pass evaluates the Recipe's Locals
-// against per-node values + infra + provides; the resolved value flows
-// into AssertionContext.Locals for assertion-time consumption.
+// TestStep5b_LocalsAvailableInContext pins .Locals access through the whole
+// chain the values actually travel: the Pass-1 preamble resolves the Recipe's
+// Locals against per-node values + infra, and this pass reads that one
+// evaluation into AssertionContext.Locals rather than re-evaluating the
+// templates.
 func TestStep5b_LocalsAvailableInContext(t *testing.T) {
 	t.Parallel()
 	graph := step5bGraph(t, "web", omAny(t, "name", "myapp"), omAny(t))
@@ -161,11 +166,21 @@ func TestStep5b_LocalsAvailableInContext(t *testing.T) {
 			),
 		},
 	}
+	nodeRecipes := map[string]*types.Recipe{"web": recipe}
+	allProvides, allLocals, err := EvaluateAllProvides(graph, nodeRecipes)
+	if err != nil {
+		t.Fatalf("Pass 1: %v", err)
+	}
+	webLocals := allLocals["web"]
+	if got, _ := webLocals.Get("derived_name"); got != "app-myapp" {
+		t.Fatalf("Pass-1 preamble locals: got %q, want %q", got, "app-myapp")
+	}
 	if err := EvaluateRecipeAndFeatureRecipeAssertions(
 		graph,
-		map[string]*types.Recipe{"web": recipe},
+		nodeRecipes,
 		RecipeLookup{},
-		NodeProvides{},
+		allProvides,
+		allLocals,
 	); err != nil {
 		t.Errorf("expected nil (locals populated); got %v", err)
 	}
@@ -209,7 +224,7 @@ func TestStep5b_MultiInstanceEvaluatesEachInstance(t *testing.T) {
 		"web-2": recipe,
 		"web-3": recipe,
 	}
-	err := EvaluateRecipeAndFeatureRecipeAssertions(graph, nodeRecipes, RecipeLookup{}, NodeProvides{})
+	err := EvaluateRecipeAndFeatureRecipeAssertions(graph, nodeRecipes, RecipeLookup{}, NodeProvides{}, NodeLocals{})
 	if err == nil || !strings.Contains(err.Error(), "web-2") {
 		t.Errorf("expected error naming web-2; got %v", err)
 	}
@@ -236,6 +251,7 @@ func TestStep5b_RecipeMetadataProviderAvailable(t *testing.T) {
 		map[string]*types.Recipe{"web": recipe},
 		RecipeLookup{},
 		NodeProvides{},
+		NodeLocals{},
 	); err != nil {
 		t.Errorf("expected nil (provider populated); got %v", err)
 	}
@@ -279,6 +295,7 @@ func TestStep5b_FeatureRecipeMetadataProviderAvailable(t *testing.T) {
 		map[string]*types.Recipe{"web": recipe},
 		rl,
 		NodeProvides{},
+		NodeLocals{},
 	); err != nil {
 		t.Errorf("expected nil (FeatureRecipe provider populated); got %v", err)
 	}
@@ -313,6 +330,7 @@ func TestStep5b_FeatureRecipeAssertionFailsHaltsBuild(t *testing.T) {
 		map[string]*types.Recipe{"web": recipe},
 		rl,
 		NodeProvides{},
+		NodeLocals{},
 	)
 	if err == nil || !errors.Is(err, ErrAssertionFailed) {
 		t.Fatalf("expected ErrAssertionFailed; got %v", err)

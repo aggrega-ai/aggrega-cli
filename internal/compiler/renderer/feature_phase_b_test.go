@@ -14,7 +14,7 @@ import (
 func TestEvaluateFeatureRecipeLocals_FeatureScoped(t *testing.T) {
 	t.Parallel()
 	locals := types.OrderedMap[string]{}
-	locals.Set("scrape_target", `{{ .provides.host }}:{{ .values.scrape_port }}`)
+	locals.Set("scrape_target", `{{ .context.instance_id }}:{{ .values.scrape_port }}`)
 	locals.Set("tier", `{{ .values.tier }}`)
 
 	fr := &types.FeatureRecipe{
@@ -27,15 +27,13 @@ func TestEvaluateFeatureRecipeLocals_FeatureScoped(t *testing.T) {
 	values := types.OrderedMap[any]{}
 	values.Set("scrape_port", float64(9090))
 	values.Set("tier", "prod")
-	provides := types.OrderedMap[string]{}
-	provides.Set("host", "api.svc")
 
-	got, err := EvaluateFeatureRecipeLocals(fr, "mon", values, types.OrderedMap[any]{}, provides)
+	got, err := EvaluateFeatureRecipeLocals(fr, "mon", values, types.OrderedMap[any]{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	scrapeTarget, _ := got.Get("scrape_target")
-	if scrapeTarget != "api.svc:9090" {
+	if scrapeTarget != "mon:9090" {
 		t.Errorf("scrape_target: %q", scrapeTarget)
 	}
 	tier, _ := got.Get("tier")
@@ -44,9 +42,32 @@ func TestEvaluateFeatureRecipeLocals_FeatureScoped(t *testing.T) {
 	}
 }
 
+// The FeatureRecipe locals surface shares LocalsContext with the Recipe surface, so
+// it refuses .provides for the same ordering reason: an attachment's locals resolve
+// before the provides that may read them.
+func TestEvaluateFeatureRecipeLocals_RejectsProvidesRef(t *testing.T) {
+	t.Parallel()
+	locals := types.OrderedMap[string]{}
+	locals.Set("scrape_target", `{{ .provides.host }}:9090`)
+	fr := &types.FeatureRecipe{
+		Metadata: types.FeatureRecipeMetadata{Name: "mon"},
+		Spec:     types.FeatureRecipeSpec{Locals: locals},
+	}
+	_, err := EvaluateFeatureRecipeLocals(fr, "mon", types.OrderedMap[any]{}, types.OrderedMap[any]{})
+	if err == nil {
+		t.Fatal("expected a halt on the reverse reference, got nil")
+	}
+	if !errors.Is(err, ErrTemplateUnknownRoot) {
+		t.Errorf("expected the unknown-reference halt, got: %v", err)
+	}
+	if !strings.Contains(diagnosticChainText(err), ".provides.host") {
+		t.Errorf("diagnostic does not name the authored path: %s", diagnosticChainText(err))
+	}
+}
+
 func TestEvaluateFeatureRecipeLocals_NilFR(t *testing.T) {
 	t.Parallel()
-	got, err := EvaluateFeatureRecipeLocals(nil, "n", types.OrderedMap[any]{}, types.OrderedMap[any]{}, types.OrderedMap[string]{})
+	got, err := EvaluateFeatureRecipeLocals(nil, "n", types.OrderedMap[any]{}, types.OrderedMap[any]{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -65,7 +86,7 @@ func TestEvaluateFeatureRecipeLocals_RejectsInjectRef(t *testing.T) {
 			Locals: locals,
 		},
 	}
-	_, err := EvaluateFeatureRecipeLocals(fr, "n", types.OrderedMap[any]{}, types.OrderedMap[any]{}, types.OrderedMap[string]{})
+	_, err := EvaluateFeatureRecipeLocals(fr, "n", types.OrderedMap[any]{}, types.OrderedMap[any]{})
 	if err == nil {
 		t.Fatal("expected self-containment error")
 	}

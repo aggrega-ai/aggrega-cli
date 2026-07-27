@@ -576,6 +576,23 @@ func mergeConsumerEnvOverrides(state *BoundaryFRState, overrides map[string]map[
 // provides into state.Provides under key (provides feed the cross-boundary
 // consumer cascade, a boundary-FR-specific concern).
 //
+// The locals resolve through evaluateLocalsInOrder — the one home of the locals
+// contract — so an entry may read an earlier sibling and a forward or unknown
+// sibling reference halts, exactly as on the Recipe, per-component FeatureRecipe
+// and attachment FeatureRecipe surfaces. The provides then read the fully resolved
+// block, and a provides template naming a local the block does not declare halts
+// through the same shared refusal every provides surface applies.
+//
+// This surface evaluates against *types.TemplateContext rather than the
+// locals-specific LocalsContext, and that is a context-SHAPE difference, not a
+// contract difference: a boundary-scope FR reads .boundary.* pillars that the
+// node-local type does not carry, so the two cannot be one type. The evaluation
+// contract — author order, the resolved-so-far prefix published per entry, the
+// same reference check, the same two halts — is shared through the loop above and
+// is not restated here. Do not "unify" the two context types (it would strip the
+// boundary pillars this surface exists to read), and do not read two context types
+// as two contracts (there is one, and it lives in evaluateLocalsInOrder).
+//
 // The FR's valuesMapping is evaluated separately at the dispatch site
 // (dispatchBoundaryScopeFR) through the shared ExecutePhaseBForFeature — the
 // same evaluator the per-component FR path uses — and its output drives
@@ -588,16 +605,34 @@ func evaluateBoundaryFRTemplates(
 	state *BoundaryFRState,
 	key boundaryFRKey,
 ) error {
-	// Evaluate locals.
-	resolvedLocals := types.OrderedMap[string]{}
-	for k, tmplText := range fr.Spec.Locals.All() {
-		out, err := EvalTemplate("fr-local["+frInstance+"."+k+"]", tmplText, frCtx)
-		if err != nil {
-			return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: fr.Metadata.Name}, fmt.Sprintf("boundary-scope FR %q locals[%q]", frInstance, k))
-		}
-		resolvedLocals.Set(k, out)
+	resolvedLocals, err := evaluateLocalsInOrder(
+		fr.Spec.Locals,
+		func(k string) localsRefSite {
+			return localsRefSite{
+				Where: fmt.Sprintf("boundary-scope FR %q locals[%q]", frInstance, k),
+				File:  fr.Metadata.Name,
+				Key:   k,
+			}
+		},
+		func(k string) string { return "fr-local[" + frInstance + "." + k + "]" },
+		func(resolved types.OrderedMap[string]) any {
+			frCtx.Locals = resolved
+			return frCtx
+		},
+	)
+	if err != nil {
+		return err
 	}
 	frCtx.Locals = resolvedLocals
+
+	if err := checkProvidesLocalsReferences(fr.Spec.Provides, resolvedLocals, func(k string) localsRefSite {
+		return localsRefSite{
+			Where: fmt.Sprintf("boundary-scope FR %q provides[%q]", frInstance, k),
+			File:  fr.Metadata.Name,
+		}
+	}); err != nil {
+		return err
+	}
 
 	// Evaluate provides — store into state.Provides for cascade-aware
 	// consumer resolution. Uses the same EvalTemplate (Sprig-enabled,

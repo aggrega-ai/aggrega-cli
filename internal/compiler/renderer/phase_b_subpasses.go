@@ -27,32 +27,42 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator"
 )
 
-// phaseB0 evaluates Recipe.Spec.Locals and Recipe.Spec.Source as Go templates
-// against the self-contained context (values / infra / providesForNode only;
-// no inject / uses access). Populates ctx.Locals and ctx.Source on success.
+// phaseB0 publishes the node's resolved locals onto the render context and
+// evaluates Recipe.Spec.Source as a Go template against the self-contained context
+// (instance_id / values / infra / locals; no inject / uses access and no provides).
+// Populates ctx.Locals and ctx.Source on success.
+//
+// localsForNode is the node's locals as Pass 1 resolved them, ahead of that node's
+// provides. They arrive resolved rather than being evaluated here so that the
+// values a provides template read, the values an assertion sees, and the values a
+// rendered artifact carries all come from one evaluation.
+//
+// The ORDER of the two steps is load-bearing: the locals are published onto the
+// context before the source template is evaluated, so a source template reading
+// .locals receives resolved values. Reversing the two would deliver an empty
+// pillar, and because a locals reference is checked against what the pillar
+// carries, it would report every such reference as naming a key the block does not
+// declare.
 //
 // On entry: ctx.Source is nil (sub-pass availability matrix invariant).
 // On exit:  ctx.Source carries the resolved source value (string URI or
 // structured object); ctx.Locals carries the resolved locals; state.Recipe
 // is replaced with a local copy whose Spec.Source carries the resolved
 // value (engines downstream consume the resolved form via state.Recipe).
-func phaseB0(ctx *types.TemplateContext, state *PhaseBState, providesForNode types.OrderedMap[string]) error {
+func phaseB0(ctx *types.TemplateContext, state *PhaseBState, localsForNode types.OrderedMap[string]) error {
 	if state.Recipe == nil {
 		state.PhaseReached = 0
 		return nil
 	}
 
-	resolvedLocals, err := EvaluateRecipeLocals(
-		state.Recipe, state.NodeID, ctx.Values, ctx.Infra, providesForNode,
-	)
-	if err != nil {
-		return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: state.RecipePath}, fmt.Sprintf("Phase B.0 node %q locals", state.NodeID))
-	}
-	ctx.Locals = resolvedLocals
+	ctx.Locals = localsForNode
 
 	if state.Recipe.Spec.Source != nil {
+		// The locals were published onto the context immediately above, so the source
+		// template reads the same resolved values every other reader of this node's
+		// locals reads.
 		resolvedSource, err := EvaluateRecipeSource(
-			state.Recipe.Spec.Source, state.NodeID, ctx.Values, ctx.Infra, providesForNode,
+			state.Recipe.Spec.Source, state.NodeID, ctx.Values, ctx.Infra, ctx.Locals,
 		)
 		if err != nil {
 			return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: state.RecipePath}, fmt.Sprintf("Phase B.0 node %q source", state.NodeID))
@@ -66,10 +76,10 @@ func phaseB0(ctx *types.TemplateContext, state *PhaseBState, providesForNode typ
 		ctx.Source = resolvedSource
 	}
 
-	// Trace points: B.0 source eval (slot 05) and B.0 locals eval (slot 06).
+	// Trace points: B.0 source eval (slot 05) and B.0 locals (slot 06).
 	// Slot 05 fires only when Recipe.Spec.Source is non-nil (a sourceless
 	// Recipe has no source-eval to capture); slot 06 fires unconditionally —
-	// phaseB0 always evaluates locals, even into an empty map.
+	// every node reaching B.0 publishes its locals, even an empty map.
 	if state.Trace != nil {
 		if state.Recipe.Spec.Source != nil {
 			_ = state.Trace.Write(trace.PassPhaseB0, state.NodeID, state.BoundaryPath, "", trace.PillarSnapshot(ctx, trace.PassPhaseB0))
@@ -416,7 +426,7 @@ func phaseB6(
 		frCtx := attachmentFRContext(tmplCtx, item.Instance, item.CtxValues, item.CtxInfra)
 
 		frEvaluatedLocals, err := EvaluateFeatureRecipeLocals(
-			fr, item.Instance, frCtx.Values, frCtx.Infra, allProvides[nodeID],
+			fr, item.Instance, frCtx.Values, frCtx.Infra,
 		)
 		if err != nil {
 			return nil, nil, nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("Step 5 node %q attachment %q locals", nodeID, item.Instance))

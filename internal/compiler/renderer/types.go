@@ -100,20 +100,43 @@ type RendererInput struct {
 // Key: nodeID, Value: provides dictionary (key → resolved value string).
 type NodeProvides map[string]types.OrderedMap[string]
 
+// NodeLocals holds the resolved locals for all nodes, evaluated in the Pass-1
+// preamble ahead of each node's provides.
+// Key: nodeID, Value: locals dictionary (key → resolved value string).
+//
+// The map is the single home of a node's resolved locals: the render passes and
+// the assertion pass both read it rather than each re-evaluating the templates,
+// so the value an assertion sees and the value a rendered artifact carries come
+// from one evaluation.
+type NodeLocals map[string]types.OrderedMap[string]
+
 // ProvidesContext is the restricted context available during provides evaluation.
-// Only self-contained data: instance_id, outputs, values, infra.
+// Only self-contained data: instance_id, values, infra, and the node's own
+// resolved locals.
+//
+// The attachment FeatureRecipe path also evaluates its LOCALS against this type,
+// one entry at a time, before it evaluates its provides. Both stages therefore read
+// one context shape; what differs is how much of the locals block the Locals field
+// carries at each — see that field.
 type ProvidesContext struct {
 	Context ProvidesContextBlock  `json:"context"`
 	Values  types.OrderedMap[any] `json:"values"`
 	Infra   types.OrderedMap[any] `json:"infra"`
-	// Locals carries EVALUATED locals, and is populated only on the attachment
-	// FeatureRecipe path, which resolves that entity's own locals against this
-	// same scope before evaluating its provides against it — so an attachment
-	// FeatureRecipe's provides may read .locals and receives resolved values.
-	// Do not remove this field as unused: a base Recipe's provides pass leaves
-	// it zero because a base Recipe's locals are resolved after provides, and
-	// the base pass's self-containment check declares .locals a narrowing of
-	// this type for exactly that reason.
+	// Locals carries EVALUATED locals — never authored template text — and how much
+	// of the block it carries follows the stage it is built for.
+	//
+	// During PROVIDES evaluation it carries the whole resolved block. Both paths
+	// that evaluate provides resolve the entity's own locals first and populate this
+	// field with the result: the base Recipe pass in its Pass-1 preamble, and the
+	// attachment FeatureRecipe path against this same scope. A provides template may
+	// therefore read .locals on either path and receives resolved values; naming a
+	// key the block does not declare halts rather than rendering empty, because the
+	// pillar is an open keyed map and would otherwise resolve the key away.
+	//
+	// During the attachment path's LOCALS evaluation it carries a PREFIX: at the
+	// entry for key k, exactly the entries above k in author order. That is what
+	// lets a local read an earlier sibling while a reference to a later one halts
+	// rather than rendering empty.
 	Locals types.OrderedMap[string] `json:"locals"`
 	// AttachmentName is the attachment instance name, populated for every
 	// attachment FeatureRecipe's provides evaluation so its provides templates

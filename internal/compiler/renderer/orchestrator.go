@@ -119,7 +119,8 @@ type RecipeLookup struct {
 }
 
 // RenderAll executes the full Step 5 pipeline:
-//  1. Pass 1: Evaluate all provides (any order, self-contained)
+//  1. Pass 1: Evaluate every node's locals, then its provides (nodes in any
+//     order, each node self-contained)
 //  2. For each node (sorted):
 //     a. Pass 2: Pre-hydrate inject from provides
 //     b. Build template context
@@ -150,10 +151,12 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		}
 	}
 
-	// Pass 1: Evaluate all provides
-	allProvides, err := EvaluateAllProvides(graph, nodeRecipes)
+	// Pass 1: per node, resolve locals then provides. The locals travel with the
+	// provides so every downstream reader — Step 5b assertions and Phase B.0 —
+	// consumes one evaluation rather than repeating it.
+	allProvides, allLocals, err := EvaluateAllProvides(graph, nodeRecipes)
 	if err != nil {
-		return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{}, "Step 5 Pass 1: provides evaluation")
+		return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{}, "Step 5 Pass 1: locals and provides evaluation")
 	}
 
 	// Producer-fulfilment (Component↔Recipe): the bound Recipe must publish every
@@ -183,7 +186,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 	}
 
 	// Step 5b: Recipe / FeatureRecipe assertions.
-	if err := EvaluateRecipeAndFeatureRecipeAssertions(graph, nodeRecipes, recipeLookup, allProvides); err != nil {
+	if err := EvaluateRecipeAndFeatureRecipeAssertions(graph, nodeRecipes, recipeLookup, allProvides, allLocals); err != nil {
 		return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{}, "Step 5b (Recipe/FeatureRecipe assertions)")
 	}
 
@@ -345,10 +348,11 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		state.ArtifactsLibraries = input.ArtifactsLibraries
 		state.AttachmentProvides = attachmentProvides
 
-		// Phase B.0 — locals + source-as-template eval; populates
-		// ctx.Locals + ctx.Source. May replace state.Recipe with a local
-		// copy whose Spec.Source carries the resolved value.
-		if err := phaseB0(tmplCtx, state, allProvides[nodeID]); err != nil {
+		// Phase B.0 — publishes the Pass-1 locals and evaluates
+		// source-as-template; populates ctx.Locals + ctx.Source. May replace
+		// state.Recipe with a local copy whose Spec.Source carries the resolved
+		// value.
+		if err := phaseB0(tmplCtx, state, allLocals[nodeID]); err != nil {
 			return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("Step 5 node %q", nodeID))
 		}
 		recipe = state.Recipe // pick up the local copy with resolved source

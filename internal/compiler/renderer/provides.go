@@ -20,42 +20,41 @@ import (
 // than by a second list beside it. A field added to that block therefore becomes
 // reachable from a provides template with no edit here.
 //
-// Two roots the type defines are excluded, and the reason is ordering rather than
-// taste:
+// One root the type defines is excluded, and the reason is ordering rather than
+// taste: attachment_name. No attachment is being resolved during a base Recipe's
+// provides pass, so the name would render empty. The exclusion is deliberately
+// kept a narrowing — the type carries the field because the attachment
+// FeatureRecipe path populates it, and this surface refuses it because its own
+// pass cannot. Removing it from the exclude set would reopen a silent-empty
+// render rather than simplify anything.
 //
-//   - locals. A base Recipe's locals are evaluated against resolved provides — a
-//     local may read .provides, so provides resolves first — which makes
-//     evaluated locals unreachable from a base provides template by construction.
-//     Permitting the root delivered the raw authored template text into the
-//     consumer's rendered output instead of a value. The ProvidesContext.Locals
-//     field is populated on the attachment FeatureRecipe path, which resolves
-//     that entity's own locals BEFORE its provides and does not run this check;
-//     the exclusion is therefore specific to the base Recipe pass this check
-//     guards, not a claim that the field is always empty.
-//   - attachment_name. No attachment is being resolved during a base Recipe's
-//     provides pass, so the name would render empty.
+// .locals is admitted, and admitting it is also an ordering property: a node's
+// locals are resolved in the pass preamble, ahead of that node's provides, so a
+// provides template reading .locals receives resolved values. That holds on both
+// paths that populate the pillar — the base Recipe pass this check guards, and the
+// attachment FeatureRecipe path, which resolves its own locals before its provides
+// and does not run this check.
 //
-// Both exclusions are deliberately kept narrowings: the type carries the fields
-// because another pass populates them, and this surface refuses them because its
-// own pass cannot. Removing either from the exclude set would reopen a
-// silent-empty or raw-text render rather than simplify anything.
+// Admitting the root admits an OPEN keyed map, so the root check alone cannot refuse
+// a key the block never declared. The key-level refusal is a separate check run once
+// the block is resolved (checkProvidesLocalsReferences) — the root is admitted here,
+// and the key is checked there.
 var providesScope = templateScope{
 	data:    ProvidesContext{},
-	exclude: []string{"locals", "attachment_name"},
+	exclude: []string{"attachment_name"},
 }
 
 // CheckProvidesSelfContainment verifies a provides template references only the
-// self-contained Pass-1 roots: .context.instance_id, .values, .infra, and
-// static text. Any other root halts with ErrProvidesSelfContainment naming the
-// offending expression — a non-wired .context.* key (.context.inject,
-// .context.uses, .context.annotations, .context.labels, .context.metadata, …),
-// a non-wired top-level root (.metadata, .provides, …), or .locals, which is
-// resolved after provides and so cannot be read from one. The check is a
-// positive allowlist over the template's parsed field accesses, so a reference
-// to a root the provides context does not expose is a Loud Guardrail rather
-// than a silent empty render — or, for .locals, rather than the raw authored
-// template text reaching a consumer's rendered output. The halt is structural
-// ("root not in the provides context"), never a judgment about what the
+// self-contained Pass-1 roots: .context.instance_id, .values, .infra, .locals —
+// resolved in the pass preamble, ahead of provides — and static text. Any other
+// root halts with ErrProvidesSelfContainment naming the offending expression — a
+// non-wired .context.* key (.context.inject, .context.uses, .context.annotations,
+// .context.labels, .context.metadata, …), a non-wired top-level root (.metadata,
+// .provides, …), or .attachment_name, which names no attachment during a base
+// Recipe's provides pass. The check is a positive allowlist over the template's
+// parsed field accesses, so a reference to a root the provides context does not
+// expose is a Loud Guardrail rather than a silent empty render. The halt is
+// structural ("root not in the provides context"), never a judgment about what the
 // referenced value means.
 //
 // The check is providesScope, evaluated by the same walk and the same
@@ -107,31 +106,44 @@ func providesContainmentErr(recipeID, expr string) error {
 			"%s, and static text", recipeID, expr, providesAllowedRootsPhrase()))
 }
 
-// EvaluateAllProvides executes Pass 1: evaluate all provides templates in any order.
-// Each provides template receives only self-contained data (instance_id, outputs, values, infra).
-// Returns resolved provides per node.
+// EvaluateAllProvides executes Pass 1: per node, resolve that node's locals and
+// then its provides. Both are node-local computations — neither reads another
+// node's data — so the walk is order-independent across nodes. Within a node the
+// order is fixed, locals first, and that is what lets a provides template read
+// .locals and receive resolved values rather than authored template text.
+//
+// A locals template receives self-contained node-local data
+// (.context.instance_id, .values, .infra) plus the entries of its own block
+// resolved so far, so a local may read an earlier sibling; a provides template
+// receives the same node-local data plus the node's whole resolved .locals. A
+// provides template naming a local the block does not declare halts rather than
+// rendering empty. Returns
+// the resolved provides and the resolved locals per node — the locals travel out of
+// this pass rather than being recomputed downstream, so the render passes and the
+// assertion pass read one evaluation.
 func EvaluateAllProvides(
 	graph *types.IRGraph,
 	recipes map[string]*types.Recipe, // nodeID → resolved Recipe
-) (NodeProvides, error) {
-	result := make(NodeProvides)
+) (NodeProvides, NodeLocals, error) {
+	allProvides := make(NodeProvides)
+	allLocals := make(NodeLocals)
 
 	// Sorted node iteration for determinism — graph.Spec.Nodes preserves
 	// whatever ordering the IR builder produced (currently alphabetical).
 	nodeIDs := graph.Spec.Nodes.Keys()
 	sort.Strings(nodeIDs)
 	for _, nodeID := range nodeIDs {
-		node, _ := graph.Spec.Nodes.Get(nodeID)
-		recipe, ok := recipes[nodeID]
-		if !ok || recipe == nil || recipe.Spec.Provides.Len() == 0 {
-			result[nodeID] = types.OrderedMap[string]{}
-			continue
-		}
+		recipe := recipes[nodeID]
 
-		// Check self-containment for each provides template
-		for key, tmplText := range recipe.Spec.Provides.All() {
-			if err := CheckProvidesSelfContainment(tmplText, recipe.Metadata.Name); err != nil {
-				return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("node %q provides[%q]", nodeID, key))
+		// Check self-containment for each provides template. The check reads
+		// template text and evaluates nothing, so it runs ahead of the locals
+		// preamble: a provides template naming a root this surface refuses reports
+		// that refusal whatever else the Recipe declares.
+		if recipe != nil {
+			for key, tmplText := range recipe.Spec.Provides.All() {
+				if err := CheckProvidesSelfContainment(tmplText, recipe.Metadata.Name); err != nil {
+					return nil, nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("node %q provides[%q]", nodeID, key))
+				}
 			}
 		}
 
@@ -145,14 +157,34 @@ func EvaluateAllProvides(
 			_ = parse.IRPayload(raw, &infra)
 		}
 
-		// Locals stays zero here. A base Recipe's locals are resolved after
-		// provides, so the only value this pass could supply is the authored
-		// template text — which the self-containment check above has already
-		// refused, since .locals is not an admitted root.
+		nodeLocals, err := EvaluateRecipeLocals(recipe, nodeID, values, infra)
+		if err != nil {
+			return nil, nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("node %q locals", nodeID))
+		}
+		allLocals[nodeID] = nodeLocals
+
+		if recipe == nil || recipe.Spec.Provides.Len() == 0 {
+			allProvides[nodeID] = types.OrderedMap[string]{}
+			continue
+		}
+
+		// The self-containment check above admits .locals as a whole root; the block's
+		// key set is only known once the preamble has resolved it, so the key-level
+		// refusal runs here rather than beside the root check.
+		if err := checkProvidesLocalsReferences(recipe.Spec.Provides, nodeLocals, func(key string) localsRefSite {
+			return localsRefSite{
+				Where: fmt.Sprintf("Recipe %q provides[%q]", recipe.Metadata.Name, key),
+				File:  recipe.Metadata.Name,
+			}
+		}); err != nil {
+			return nil, nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("node %q provides", nodeID))
+		}
+
 		pCtx := ProvidesContext{
 			Context: ProvidesContextBlock{InstanceID: nodeID},
 			Values:  values,
 			Infra:   infra,
+			Locals:  nodeLocals,
 		}
 
 		// Evaluate each provides template in author order
@@ -160,19 +192,16 @@ func EvaluateAllProvides(
 		for key, tmplText := range recipe.Spec.Provides.All() {
 			val, err := evalTemplateString(tmplText, pCtx, fmt.Sprintf("provides[%q]", key))
 			if err != nil {
-				return nil, cerrors.Wrap(ErrProvidesEvaluation, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID},
+				return nil, nil, cerrors.Wrap(ErrProvidesEvaluation, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID},
 					fmt.Sprintf("node %q provides[%q]: %v", nodeID, key, err))
 			}
 			resolved.Set(key, strings.TrimSpace(val))
 		}
 
-		// Also resolve component type version for the provides
-		_ = node // node available if needed for version
-
-		result[nodeID] = resolved
+		allProvides[nodeID] = resolved
 	}
 
-	return result, nil
+	return allProvides, allLocals, nil
 }
 
 // evalTemplateString evaluates a Go template string with Sprig functions.

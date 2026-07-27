@@ -45,7 +45,7 @@ func TestPhaseB_ContextAvailabilityMatrix(t *testing.T) {
 	r.Spec.Source = "./chart"
 	r.Spec.ValuesMapping = types.ValuesMapping{Inline: `{"image": "demo:1"}`}
 	state := NewPhaseBState(r, "test-node", "default", "recipe.yaml")
-	emptyProvides := types.OrderedMap[string]{}
+	emptyLocals := types.OrderedMap[string]{}
 
 	// Before B.0: .source nil, .workload nil.
 	if ctx.Source != nil {
@@ -56,7 +56,7 @@ func TestPhaseB_ContextAvailabilityMatrix(t *testing.T) {
 	}
 
 	// After B.0: .source populated; .workload still nil.
-	if err := phaseB0(ctx, state, emptyProvides); err != nil {
+	if err := phaseB0(ctx, state, emptyLocals); err != nil {
 		t.Fatalf("phaseB0: %v", err)
 	}
 	if ctx.Source == nil {
@@ -112,10 +112,10 @@ containers:
     image: app:1.0
 `}
 	state := NewPhaseBState(r, "test-node", "default", "recipe.yaml")
-	emptyProvides := types.OrderedMap[string]{}
+	emptyLocals := types.OrderedMap[string]{}
 	emptySlots := types.OrderedMap[types.AttachmentSlot]{}
 
-	if err := phaseB0(ctx, state, emptyProvides); err != nil {
+	if err := phaseB0(ctx, state, emptyLocals); err != nil {
 		t.Fatalf("phaseB0: %v", err)
 	}
 	// Before B.2: ctx.Workload still nil.
@@ -162,8 +162,8 @@ containers:
 	emptySlots := types.OrderedMap[types.AttachmentSlot]{}
 
 	// Run prerequisites (B.0, B.1) so the template eval has a complete ctx.
-	emptyProvides := types.OrderedMap[string]{}
-	if err := phaseB0(ctx, state, emptyProvides); err != nil {
+	emptyLocals := types.OrderedMap[string]{}
+	if err := phaseB0(ctx, state, emptyLocals); err != nil {
 		t.Fatalf("phaseB0: %v", err)
 	}
 	if err := phaseB1(ctx, state); err != nil {
@@ -203,8 +203,8 @@ services:
 	state := NewPhaseBState(r, "test", "default", "recipe.yaml")
 	emptySlots := types.OrderedMap[types.AttachmentSlot]{}
 
-	emptyProvides := types.OrderedMap[string]{}
-	_ = phaseB0(ctx, state, emptyProvides)
+	emptyLocals := types.OrderedMap[string]{}
+	_ = phaseB0(ctx, state, emptyLocals)
 	_ = phaseB1(ctx, state)
 
 	err := phaseB2(ctx, state, emptySlots)
@@ -233,8 +233,8 @@ containers:
 	slots := types.OrderedMap[types.AttachmentSlot]{}
 	slots.Set("other", types.AttachmentSlot{Inject: []string{"env"}})
 
-	emptyProvides := types.OrderedMap[string]{}
-	_ = phaseB0(ctx, state, emptyProvides)
+	emptyLocals := types.OrderedMap[string]{}
+	_ = phaseB0(ctx, state, emptyLocals)
 	_ = phaseB1(ctx, state)
 
 	err := phaseB2(ctx, state, slots)

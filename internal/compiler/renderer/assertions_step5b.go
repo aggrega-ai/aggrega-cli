@@ -4,7 +4,6 @@
 package renderer
 
 import (
-	"fmt"
 	"sort"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
@@ -12,8 +11,9 @@ import (
 
 // EvaluateRecipeAndFeatureRecipeAssertions runs Step 5b: per-instance
 // evaluation of every Recipe and FeatureRecipe assertion in the IR graph,
-// against the binding established in nodeRecipes and the provides values
-// from allProvides. Walk order matches Step 4b's deterministic-sorted-nodeID.
+// against the binding established in nodeRecipes and the provides and locals
+// values from allProvides and allLocals. Walk order matches Step 4b's
+// deterministic-sorted-nodeID.
 //
 // Per node with a bound Recipe:
 //
@@ -26,11 +26,10 @@ import (
 //     has entries, evaluate similarly with the FeatureRecipe's metadata
 //     and source pointer on the Recipe field of the context. First fail halts.
 //
-// Locals evaluation: Step 5b evaluates each Recipe's Locals against the
-// per-node restricted LocalsContext (instance_id + values + infra +
-// provides) before constructing the assertion's AssertionContext. The
-// resulting Locals OrderedMap[string] flattens into a map[string]any
-// for the template-render boundary.
+// Locals: this pass reads the node's locals as Pass 1 resolved them rather than
+// evaluating the templates again, so an assertion and the artifact it guards read
+// one evaluation and cannot disagree. The OrderedMap[string] flattens into a
+// map[string]any for the template-render boundary.
 //
 // Returns nil on pass. Returns a non-nil error wrapping ErrAssertionFailed
 // on the first failure.
@@ -39,6 +38,7 @@ func EvaluateRecipeAndFeatureRecipeAssertions(
 	nodeRecipes map[string]*types.Recipe,
 	recipeLookup RecipeLookup,
 	allProvides NodeProvides,
+	allLocals NodeLocals,
 ) error {
 	if graph == nil {
 		return nil
@@ -55,19 +55,7 @@ func EvaluateRecipeAndFeatureRecipeAssertions(
 		providesForNode := allProvides[nodeID]
 		providesMap := orderedStringMapToAny(providesForNode)
 
-		// Step 5b evaluates Recipe Locals inline here so they're available to
-		// assertion templates via AssertionContext.Locals. The orchestrator's
-		// main render loop re-evaluates the same Locals during rendering;
-		// double evaluation is accepted today because Locals templates are
-		// pure (same input -> same output). A future refactor may
-		// consolidate via a pre-loop pass into a shared map[nodeID]locals.
-		valuesOM := orderedAnyFromMap(base.Values)
-		infraOM := orderedAnyFromMap(base.Infra)
-		locals, lerr := EvaluateRecipeLocals(recipe, nodeID, valuesOM, infraOM, providesForNode)
-		if lerr != nil {
-			return fmt.Errorf("Recipe %q instance %q locals evaluation: %w", recipe.Metadata.Name, nodeID, lerr)
-		}
-		localsMap := orderedStringMapToAny(locals)
+		localsMap := orderedStringMapToAny(allLocals[nodeID])
 
 		recipeCtx := &AssertionRecipeContext{
 			Metadata: map[string]any{
@@ -140,23 +128,6 @@ func orderedStringMapToAny(m types.OrderedMap[string]) map[string]any {
 	out := make(map[string]any, m.Len())
 	for k, v := range m.All() {
 		out[k] = v
-	}
-	return out
-}
-
-// orderedAnyFromMap rebuilds an OrderedMap[any] from a plain map[string]any
-// for callers that need OrderedMap as input (e.g., EvaluateRecipeLocals).
-// Key iteration order is alphabetical (the input plain map has no author
-// order to preserve).
-func orderedAnyFromMap(m map[string]any) types.OrderedMap[any] {
-	out := types.OrderedMap[any]{}
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	for _, k := range keys {
-		out.Set(k, m[k])
 	}
 	return out
 }

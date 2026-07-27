@@ -19,14 +19,6 @@ func omSrcInfra(pairs ...any) types.OrderedMap[any] {
 	return m
 }
 
-func omSrcStr(pairs ...string) types.OrderedMap[string] {
-	m := types.OrderedMap[string]{}
-	for i := 0; i+1 < len(pairs); i += 2 {
-		m.Set(pairs[i], pairs[i+1])
-	}
-	return m
-}
-
 func TestEvaluateRecipeSource_NilPassesThrough(t *testing.T) {
 	t.Parallel()
 	got, err := EvaluateRecipeSource(nil, "n", types.OrderedMap[any]{}, types.OrderedMap[any]{}, types.OrderedMap[string]{})
@@ -135,14 +127,24 @@ func TestEvaluateRecipeSource_RejectsUsesRef(t *testing.T) {
 	}
 }
 
-func TestEvaluateRecipeSource_ProvidesAvailable(t *testing.T) {
+// The source surface shares LocalsContext with Recipe locals, so it refuses
+// .provides for the same reason: source and locals are both evaluated ahead of the
+// node's provides, and the shared context type declares no such pillar.
+func TestEvaluateRecipeSource_RejectsProvidesRef(t *testing.T) {
 	t.Parallel()
-	provides := omSrcStr("host", "api.svc")
-	got, err := EvaluateRecipeSource(`{{ .provides.host }}`, "api", types.OrderedMap[any]{}, types.OrderedMap[any]{}, provides)
-	if err != nil {
-		t.Fatalf("unexpected: %v", err)
+	_, err := EvaluateRecipeSource(`{{ .provides.host }}`, "api", types.OrderedMap[any]{}, types.OrderedMap[any]{}, types.OrderedMap[string]{})
+	if err == nil {
+		t.Fatal("expected a halt on the reverse reference, got nil")
 	}
-	if got != "api.svc" {
-		t.Errorf("got %v", got)
+	if !errors.Is(err, ErrTemplateUnknownRoot) {
+		t.Errorf("expected the unknown-reference halt, got: %v", err)
+	}
+	if !strings.Contains(diagnosticChainText(err), ".provides.host") {
+		t.Errorf("diagnostic does not name the authored path: %s", diagnosticChainText(err))
+	}
+	// A structured source's string sub-field is checked identically.
+	structured := map[string]any{"version": `{{ .provides.chart_version }}`}
+	if _, err := EvaluateRecipeSource(structured, "api", types.OrderedMap[any]{}, types.OrderedMap[any]{}, types.OrderedMap[string]{}); err == nil {
+		t.Error("expected the same halt on a structured source sub-field")
 	}
 }

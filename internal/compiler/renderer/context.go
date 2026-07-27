@@ -69,8 +69,11 @@ func AssembleNodeContext(
 		},
 		Values: values,
 		Infra:  infra,
-		// Locals starts empty; the orchestrator overwrites it with the resolved
-		// Recipe.Spec.Locals map (Phase B preamble, see EvaluateRecipeLocals).
+		// Locals starts empty. Evaluation happens earlier, in the Pass-1 preamble
+		// ahead of each node's provides (see EvaluateRecipeLocals); publication onto
+		// this context happens later, at Phase B.0, which overwrites the field with
+		// that node's already-resolved map. The two are separate steps, and the field
+		// is empty in between.
 		Locals:    types.OrderedMap[string]{},
 		Provides:  providesForNode,
 		Features:  features,

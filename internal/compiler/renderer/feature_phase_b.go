@@ -6,7 +6,6 @@ package renderer
 import (
 	"fmt"
 	"os"
-	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/parse"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
@@ -102,35 +101,46 @@ func resolveArtifactEntryText(a types.ArtifactEntry, entityName, artifactName st
 // EvaluateFeatureRecipeLocals evaluates fr.Spec.Locals templates against the
 // feature-scoped context and returns the resolved map. The context is
 // LocalsContext, the same node-local type Recipe locals use, so the two surfaces
-// admit and refuse exactly the same references without either restating the rule.
-// Iteration is in author order (fr.Spec.Locals is an OrderedMap).
+// admit and refuse exactly the same references — the attachment's own identity,
+// values and infra, and no provides pillar — without either restating the rule.
+//
+// Iteration is in author order (fr.Spec.Locals is an OrderedMap), and an entry may
+// read an earlier sibling: the evaluation routes through evaluateLocalsInOrder,
+// the one home of the locals contract, which publishes the resolved-so-far prefix
+// for each entry and halts on a forward or unknown sibling reference.
+//
+// The prefix is the FeatureRecipe's OWN block only. A base Recipe's locals are
+// merged over this result AFTER it returns, so they are not resolved at the point
+// an attachment's local is evaluated, and an attachment local naming a base-Recipe
+// key reports the unknown-reference halt.
 func EvaluateFeatureRecipeLocals(
 	fr *types.FeatureRecipe,
 	instanceName string,
 	values types.OrderedMap[any],
 	infra types.OrderedMap[any],
-	provides types.OrderedMap[string],
 ) (types.OrderedMap[string], error) {
-	resolved := types.OrderedMap[string]{}
-	if fr == nil || fr.Spec.Locals.Len() == 0 {
-		return resolved, nil
+	if fr == nil {
+		return types.OrderedMap[string]{}, nil
 	}
-
-	lCtx := LocalsContext{
-		Context:  ProvidesContextBlock{InstanceID: instanceName},
-		Values:   values,
-		Infra:    infra,
-		Provides: provides,
-	}
-
-	for key, tmplText := range fr.Spec.Locals.All() {
-		val, err := EvalTemplate(fmt.Sprintf("fr-locals[%q]", key), tmplText, lCtx)
-		if err != nil {
-			return types.OrderedMap[string]{}, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: fr.Metadata.Name}, fmt.Sprintf("FeatureRecipe %q locals[%q]", fr.Metadata.Name, key))
-		}
-		resolved.Set(key, strings.TrimSpace(val))
-	}
-	return resolved, nil
+	return evaluateLocalsInOrder(
+		fr.Spec.Locals,
+		func(key string) localsRefSite {
+			return localsRefSite{
+				Where: fmt.Sprintf("FeatureRecipe %q locals[%q]", fr.Metadata.Name, key),
+				File:  fr.Metadata.Name,
+				Key:   key,
+			}
+		},
+		func(key string) string { return fmt.Sprintf("fr-locals[%q]", key) },
+		func(resolved types.OrderedMap[string]) any {
+			return LocalsContext{
+				Context: ProvidesContextBlock{InstanceID: instanceName},
+				Values:  values,
+				Infra:   infra,
+				Locals:  resolved,
+			}
+		},
+	)
 }
 
 // ExecutePhaseBForFeature evaluates a FeatureRecipe's valuesMapping and

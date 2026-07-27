@@ -70,7 +70,6 @@ func selfContainedSurfaces(t *testing.T) []struct {
 	t.Helper()
 	values := selfContainmentValues(t)
 	infra := types.OrderedMap[any]{}
-	provides := types.OrderedMap[string]{}
 	return []struct {
 		name     string
 		category cerrors.Category
@@ -79,15 +78,15 @@ func selfContainedSurfaces(t *testing.T) []struct {
 		// Recipe and FeatureRecipe locals: and source: are catalog-authored, so a
 		// diagnostic on them is the catalog author's to act on.
 		{"Recipe locals:", cerrors.CatalogError, func(tmpl string) error {
-			_, err := EvaluateRecipeLocals(localsRecipe(tmpl), "api", values, infra, provides)
+			_, err := EvaluateRecipeLocals(localsRecipe(tmpl), "api", values, infra)
 			return err
 		}},
 		{"FeatureRecipe locals:", cerrors.CatalogError, func(tmpl string) error {
-			_, err := EvaluateFeatureRecipeLocals(localsFeatureRecipe(tmpl), "api", values, infra, provides)
+			_, err := EvaluateFeatureRecipeLocals(localsFeatureRecipe(tmpl), "api", values, infra)
 			return err
 		}},
 		{"Recipe source:", cerrors.CatalogError, func(tmpl string) error {
-			_, err := EvaluateRecipeSource(tmpl, "api", values, infra, provides)
+			_, err := EvaluateRecipeSource(tmpl, "api", values, infra, types.OrderedMap[string]{})
 			return err
 		}},
 		// A component-level inject: block is authored on the Aggregate, so this one
@@ -111,6 +110,11 @@ func TestSelfContainedSurfacesRefuseCrossNodeData(t *testing.T) {
 			`{{ .context.uses }}`,
 			// A fallback wrapper cannot launder an undefined key into an empty value.
 			`{{ default "x" .context.inject.env.SECRET }}`,
+			// Not cross-node but refused by the same mechanism, and for an ordering
+			// reason: each of these surfaces is evaluated BEFORE the node's own
+			// provides exist, so none of their context types defines the pillar.
+			`{{ .provides.host }}`,
+			`{{ default "x" .provides.host }}`,
 		} {
 			err := surface.eval(tmpl)
 			if err == nil {

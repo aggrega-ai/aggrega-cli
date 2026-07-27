@@ -270,7 +270,12 @@ func TestContextRootNames_NarrowSurfacesAdmitLess(t *testing.T) {
 	}
 	sorted := append([]string(nil), locals...)
 	sort.Strings(sorted)
-	want := []string{"context", "infra", "provides", "values"}
+	// No provides root: a local resolves before its node's provides do, which is
+	// what lets a provides template read .locals. A locals root IS declared, and
+	// declaring it is what lets an entry read an earlier sibling; what the entry
+	// receives through it is a prefix of the block, which is a property of how the
+	// pillar is POPULATED per entry rather than of what this type admits.
+	want := []string{"context", "infra", "locals", "values"}
 	if strings.Join(sorted, ",") != strings.Join(want, ",") {
 		t.Fatalf("LocalsContext roots = %v, want %v", sorted, want)
 	}

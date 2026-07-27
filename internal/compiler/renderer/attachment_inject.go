@@ -69,20 +69,51 @@ func ResolveAttachmentInject(
 // own evaluated locals), mirroring the boundary-scope FR provides evaluation.
 // The resolved provides are the source the authored inject's provides-key
 // references resolve against.
+//
+// The locals resolve first, through evaluateLocalsInOrder — the one home of the
+// locals contract — so an entry may read an earlier sibling and a forward or
+// unknown sibling reference halts. The provides then evaluate against the same
+// scope carrying the fully resolved block, which is what lets a provides template
+// read .locals and receive resolved values; a provides template naming a local the
+// block does not declare halts through the same shared refusal.
 func evalAttachmentFRProvides(fr *types.FeatureRecipe, instanceName, nodeID string, entry types.IRFeatureEntry) (types.OrderedMap[string], error) {
+	resolvedLocals, err := evaluateLocalsInOrder(
+		fr.Spec.Locals,
+		func(key string) localsRefSite {
+			return localsRefSite{
+				Where: fmt.Sprintf("node %q attachment %q locals[%q]", nodeID, instanceName, key),
+				File:  fr.Metadata.Name,
+				Key:   key,
+			}
+		},
+		func(key string) string { return fmt.Sprintf("attach-inject-local[%s.%s]", instanceName, key) },
+		func(resolved types.OrderedMap[string]) any {
+			return ProvidesContext{
+				Context:        ProvidesContextBlock{InstanceID: nodeID},
+				Values:         entry.Values,
+				Infra:          entry.Infra,
+				Locals:         resolved,
+				AttachmentName: instanceName,
+			}
+		},
+	)
+	if err != nil {
+		return types.OrderedMap[string]{}, err
+	}
+	if err := checkProvidesLocalsReferences(fr.Spec.Provides, resolvedLocals, func(key string) localsRefSite {
+		return localsRefSite{
+			Where: fmt.Sprintf("node %q attachment %q provides[%q]", nodeID, instanceName, key),
+			File:  fr.Metadata.Name,
+		}
+	}); err != nil {
+		return types.OrderedMap[string]{}, err
+	}
 	scope := ProvidesContext{
 		Context:        ProvidesContextBlock{InstanceID: nodeID},
 		Values:         entry.Values,
 		Infra:          entry.Infra,
-		Locals:         types.OrderedMap[string]{},
+		Locals:         resolvedLocals,
 		AttachmentName: instanceName,
-	}
-	for k, tmplText := range fr.Spec.Locals.All() {
-		out, err := EvalTemplate(fmt.Sprintf("attach-inject-local[%s.%s]", instanceName, k), tmplText, scope)
-		if err != nil {
-			return types.OrderedMap[string]{}, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: fr.Metadata.Name}, fmt.Sprintf("node %q attachment %q locals[%q]", nodeID, instanceName, k))
-		}
-		scope.Locals.Set(k, strings.TrimSpace(out))
 	}
 	provided := types.OrderedMap[string]{}
 	for k, tmplText := range fr.Spec.Provides.All() {
