@@ -5,6 +5,7 @@ package renderer
 
 import (
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -126,4 +127,143 @@ func TestEvaluateAssertion_FailMessagePropagates(t *testing.T) {
 	if !strings.Contains(err.Error(), "the-exact-message-text") {
 		t.Errorf("expected fail message intact; got %q", err.Error())
 	}
+}
+
+// The key set an assertion body reads is a published authoring contract, so it is
+// pinned directly against the delivered keys rather than left to whatever a field
+// name happens to lower-case to. A change to either side of this — a tag, or a new
+// field without one — is a change to what every authored assertion in every catalog
+// can reference.
+func TestAssertionContext_DeliveredKeySet(t *testing.T) {
+	t.Parallel()
+	delivered, ok := toLowercaseMap(AssertionContext{}).(map[string]any)
+	if !ok {
+		t.Fatalf("the assertion context must be delivered as a keyed map, got %T", toLowercaseMap(AssertionContext{}))
+	}
+	want := []string{"Values", "Infra", "Uses", "Features", "Metadata", "Provides", "Locals", "Recipe"}
+	for _, key := range want {
+		if _, present := delivered[key]; !present {
+			t.Errorf("delivered key set omits %q: %v", key, sortedMapKeys(delivered))
+		}
+	}
+	if len(delivered) != len(want) {
+		t.Errorf("delivered key set is %v, want exactly %v", sortedMapKeys(delivered), want)
+	}
+	// The reference check consults the same derivation, so the admitted set and the
+	// delivered set are one reading of the type rather than two.
+	admitted, derivable := (templateScope{data: AssertionContext{}}).admittedRoots()
+	if !derivable {
+		t.Fatal("the assertion context's reference set must be derivable from its type")
+	}
+	if strings.Join(admitted, ",") != strings.Join(want, ",") {
+		t.Errorf("admitted set %v does not match the delivered set %v", admitted, want)
+	}
+	// .Recipe is a struct behind a pointer, so its keys are checked too.
+	keys, gated := (templateScope{data: AssertionContext{}}).admittedKeys("Recipe")
+	if !gated || strings.Join(keys, ",") != "Metadata,Source" {
+		t.Errorf(".Recipe admits %v (gated=%v), want Metadata,Source", keys, gated)
+	}
+}
+
+func sortedMapKeys(m map[string]any) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	slices.Sort(out)
+	return out
+}
+
+// The assertion bodies shipped in the catalog today, verbatim. They are exercised
+// here rather than inferred from the context type: an assertion surface whose
+// authored references stop resolving is a build that fails on content nobody
+// touched.
+func shippedCatalogAssertions() map[string]string {
+	return map[string]string{
+		"kafka_operator_prerequisite": "{{- if not .Infra.control_plane_present -}}\n" +
+			`{{- fail "the Strimzi Cluster Operator must be installed in the target cluster before this realization emits its Kafka custom resource; once the operator is present, affirm the prerequisite by setting infra.control_plane_present to true in the Release" -}}` +
+			"\n{{- end -}}",
+		"gateway_control_plane_prerequisite": "{{- if not .Infra.control_plane_present -}}\n" +
+			`{{- fail "the Envoy AI Gateway control plane must be installed in the target cluster before this realization emits its custom resources; once the gateway is present, affirm the prerequisite by setting infra.control_plane_present to true in the Release" -}}` +
+			"\n{{- end -}}",
+		"kserve_control_plane_prerequisite": "{{- if not .Infra.control_plane_present -}}\n" +
+			`{{- fail "the KServe control plane must be installed in the target cluster before this realization emits its InferenceService; once KServe is present, affirm the prerequisite by setting infra.control_plane_present to true in the Release" -}}` +
+			"\n{{- end -}}",
+		"kubeai_control_plane_prerequisite": "{{- if not .Infra.control_plane_present -}}\n" +
+			`{{- fail "the KubeAI control plane must be installed in the target cluster before this realization emits its Model custom resource; once KubeAI is present, affirm the prerequisite by setting infra.control_plane_present to true in the Release" -}}` +
+			"\n{{- end -}}",
+	}
+}
+
+func TestEvaluateAssertion_ShippedCatalogBodiesEvaluate(t *testing.T) {
+	t.Parallel()
+	names := make([]string, 0, 4)
+	for name := range shippedCatalogAssertions() {
+		names = append(names, name)
+	}
+	slices.Sort(names)
+	if len(names) != 4 {
+		t.Fatalf("expected 4 shipped bodies, have %d", len(names))
+	}
+	for _, name := range names {
+		body := shippedCatalogAssertions()[name]
+		t.Run(name, func(t *testing.T) {
+			// Prerequisite affirmed: the assertion passes.
+			if err := EvaluateAssertion(name, body, AssertionContext{Infra: map[string]any{"control_plane_present": true}}); err != nil {
+				t.Errorf("affirmed prerequisite must pass: %v", err)
+			}
+			// Prerequisite denied: the assertion halts with its authored message.
+			err := EvaluateAssertion(name, body, AssertionContext{Infra: map[string]any{"control_plane_present": false}})
+			if !errors.Is(err, ErrAssertionFailed) {
+				t.Errorf("denied prerequisite must report ErrAssertionFailed: %v", err)
+			}
+			// Key absent entirely: infra is an open map, so the halt comes from the
+			// surface's missing-key policy rather than from a reference refusal.
+			err = EvaluateAssertion(name, body, AssertionContext{Infra: map[string]any{}})
+			if err == nil {
+				t.Error("an absent prerequisite key must halt under missingkey=error")
+			}
+			if !strings.Contains(err.Error(), "control_plane_present") {
+				t.Errorf("the halt must name the absent key: %v", err)
+			}
+			t.Logf("absent-key halt: %v", err)
+		})
+	}
+}
+
+// At the Component / Feature phase Provides, Locals and Recipe carry nothing, and a
+// reference to one halts rather than rendering. The pillars are open maps so the
+// halt comes from the missing-key policy; .Recipe is a struct behind a pointer, so
+// a reference under it halts on the nil rather than resolving to a zero struct.
+func TestEvaluateAssertion_NilPhaseReferencesHalt(t *testing.T) {
+	t.Parallel()
+	step4b := AssertionContext{
+		Values:   map[string]any{"port": 8080},
+		Infra:    map[string]any{},
+		Uses:     map[string]any{},
+		Features: map[string]any{},
+		Metadata: map[string]any{},
+	}
+	for _, tc := range []struct{ body, names string }{
+		{`{{ if .Provides.host }}{{ end }}`, "host"},
+		{`{{ if .Locals.x }}{{ end }}`, "x"},
+		{`{{ if .Recipe.Metadata }}{{ end }}`, "Metadata"},
+	} {
+		err := EvaluateAssertion("nilphase", tc.body, step4b)
+		if err == nil {
+			t.Errorf("%s must halt at the Component/Feature phase", tc.body)
+			continue
+		}
+		if !strings.Contains(err.Error(), tc.names) {
+			t.Errorf("%s: the halt must name %q: %v", tc.body, tc.names, err)
+		}
+		t.Logf("%-34s -> %v", tc.body, err)
+	}
+	// A reference to a name the context does not define at all is refused before
+	// execution, which is a different class from an absent key under a defined one.
+	err := EvaluateAssertion("nilphase", `{{ if .NoSuchRoot }}{{ end }}`, step4b)
+	if !errors.Is(err, ErrTemplateUnknownRoot) {
+		t.Errorf("an undefined reference must report ErrTemplateUnknownRoot: %v", err)
+	}
+	t.Logf("undefined reference   -> %v", err)
 }

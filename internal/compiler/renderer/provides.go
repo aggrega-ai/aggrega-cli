@@ -5,7 +5,6 @@ package renderer
 
 import (
 	"fmt"
-	"slices"
 	"sort"
 	"strings"
 
@@ -14,29 +13,36 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
-// providesAllowedTopLevelRoots are the only top-level template roots a provides
-// template may reference, in the order the diagnostic lists them. The provides
-// block is evaluated in Pass 1 from self-contained node data alone (see
-// ProvidesContext), so its reachable roots are exactly the context surface that
-// pass exposes.
+// providesScope is the reference set a provides template is checked against. The
+// universe is ProvidesContext — the same type the provides pass evaluates against
+// — so the roots the check admits are exactly the surface that pass exposes, and
+// .context is gated one level down by ProvidesContextBlock's own fields rather
+// than by a second list beside it. A field added to that block therefore becomes
+// reachable from a provides template with no edit here.
 //
-// Recipe locals are deliberately absent. Locals are evaluated against resolved
-// provides — a local may read .provides, so provides is resolved first — which
-// makes evaluated locals unreachable from a provides template by construction.
-// A provides template that needs a local's value inlines the expression the
-// local itself computes.
+// Two roots the type defines are excluded, and the reason is ordering rather than
+// taste:
 //
-// This slice and providesAllowedContextRoots are the single home of the rule:
-// CheckProvidesSelfContainment enforces them and providesAllowedRootsPhrase
-// renders them into the diagnostic, so what the build refuses and what the
-// author is told cannot disagree.
-var providesAllowedTopLevelRoots = []string{"context", "values", "infra"}
-
-// providesAllowedContextRoots are the only .context.* sub-roots a provides
-// template may reference. Everything else under .context — inject and uses
-// (cross-node), annotations, labels, and metadata (placement- or
-// deployment-coupled) — is outside the self-contained Pass-1 surface.
-var providesAllowedContextRoots = []string{"instance_id"}
+//   - locals. A base Recipe's locals are evaluated against resolved provides — a
+//     local may read .provides, so provides resolves first — which makes
+//     evaluated locals unreachable from a base provides template by construction.
+//     Permitting the root delivered the raw authored template text into the
+//     consumer's rendered output instead of a value. The ProvidesContext.Locals
+//     field is populated on the attachment FeatureRecipe path, which resolves
+//     that entity's own locals BEFORE its provides and does not run this check;
+//     the exclusion is therefore specific to the base Recipe pass this check
+//     guards, not a claim that the field is always empty.
+//   - attachment_name. No attachment is being resolved during a base Recipe's
+//     provides pass, so the name would render empty.
+//
+// Both exclusions are deliberately kept narrowings: the type carries the fields
+// because another pass populates them, and this surface refuses them because its
+// own pass cannot. Removing either from the exclude set would reopen a
+// silent-empty or raw-text render rather than simplify anything.
+var providesScope = templateScope{
+	data:    ProvidesContext{},
+	exclude: []string{"locals", "attachment_name"},
+}
 
 // CheckProvidesSelfContainment verifies a provides template references only the
 // self-contained Pass-1 roots: .context.instance_id, .values, .infra, and
@@ -52,12 +58,13 @@ var providesAllowedContextRoots = []string{"instance_id"}
 // ("root not in the provides context"), never a judgment about what the
 // referenced value means.
 //
-// The root walk is collectTemplateRootRefs, the same one the evaluator applies
-// to every other template surface — this surface differs only in the narrower
-// allowlist it passes, not in how a root is identified. Sharing the walk is what
-// keeps a defensive wrapper from reading as a reference to a root named after
-// the key it guards: only the wrapped expression reaches the context root, so
-// the trailing key of a chained fallback is not mistaken for a root.
+// The check is providesScope, evaluated by the same walk and the same
+// type-derived derivation the evaluator applies to every other template surface —
+// this surface differs only in the narrowing it declares, not in how a reference
+// is identified. Sharing the walk is what keeps a defensive wrapper from reading
+// as a reference to a root named after the key it guards: only the wrapped
+// expression reaches the context root, so the trailing key of a chained fallback
+// is not mistaken for a root.
 func CheckProvidesSelfContainment(templateText, recipeID string) error {
 	if templateText == "" {
 		return nil
@@ -67,34 +74,31 @@ func CheckProvidesSelfContainment(templateText, recipeID string) error {
 		// Malformed template: let provides evaluation report the parse error.
 		return nil
 	}
-	for _, ref := range collectTemplateRootRefs(tree) {
-		if !slices.Contains(providesAllowedTopLevelRoots, ref.Segs[0]) {
-			return providesContainmentErr(recipeID, ref.Path)
-		}
-		if ref.Segs[0] == "context" && (len(ref.Segs) < 2 || !slices.Contains(providesAllowedContextRoots, ref.Segs[1])) {
-			return providesContainmentErr(recipeID, ref.Path)
-		}
+	if v := providesScope.check(tree); v != nil {
+		return providesContainmentErr(recipeID, v.Ref.Path)
 	}
 	return nil
 }
 
-// providesAllowedRootsPhrase renders the allowlists as the prose list the
-// self-containment diagnostic quotes. Derived rather than restated so the
-// message names exactly the roots the check admits: .context is gated at two
-// levels, so it contributes one entry per permitted sub-root, and every other
-// root contributes itself.
+// providesAllowedRootsPhrase renders the scope's admitted set as the prose list
+// the self-containment diagnostic quotes. Derived from the scope rather than
+// restated so the message names exactly the references the check admits: a root
+// gated one level down contributes one entry per admitted key, and an open root
+// contributes itself.
 func providesAllowedRootsPhrase() string {
-	roots := make([]string, 0, len(providesAllowedTopLevelRoots)+len(providesAllowedContextRoots))
-	for _, root := range providesAllowedTopLevelRoots {
-		if root == "context" {
-			for _, sub := range providesAllowedContextRoots {
-				roots = append(roots, ".context."+sub)
-			}
+	roots, ok := providesScope.admittedRoots()
+	if !ok {
+		return ""
+	}
+	out := make([]string, 0, len(roots))
+	for _, root := range roots {
+		if keys, gated := providesScope.admittedKeys(root); gated {
+			out = append(out, templateRootsPhrase("."+root, keys))
 			continue
 		}
-		roots = append(roots, "."+root)
+		out = append(out, "."+root)
 	}
-	return strings.Join(roots, ", ")
+	return strings.Join(out, ", ")
 }
 
 func providesContainmentErr(recipeID, expr string) error {

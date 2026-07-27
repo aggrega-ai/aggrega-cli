@@ -7,6 +7,7 @@ import (
 	"errors"
 	"testing"
 
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
@@ -100,8 +101,22 @@ func TestExecutePass2a_ForbiddenReference(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for forbidden reference")
 	}
-	if !errors.Is(err, ErrSelfInjectForbiddenReference) {
-		t.Errorf("expected ErrSelfInjectForbiddenReference, got: %v", err)
+	// The inject pipe is not a pillar of this surface's context, so the reference
+	// halts as the undefined key it is rather than through a condition naming
+	// cross-node data — one condition for every reference the context does not
+	// define, on every surface.
+	if !errors.Is(err, ErrTemplateUnknownRoot) {
+		t.Errorf("expected ErrTemplateUnknownRoot, got: %v", err)
+	}
+	// Every frame the diagnostic carries is rendered to the author, so every frame
+	// has to name the artifact actually at fault. A component-level inject: block is
+	// authored on the Aggregate, so a catalog-tagged frame anywhere in this chain
+	// would point the author at a Recipe that is not at fault.
+	for _, category := range chainCategories(err) {
+		if category != cerrors.DeveloperError {
+			t.Errorf("self-inject diagnostic carries a %s frame; every frame on this surface must be %s: %v",
+				category, cerrors.DeveloperError, err)
+		}
 	}
 }
 

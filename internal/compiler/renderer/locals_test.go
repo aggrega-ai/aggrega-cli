@@ -4,6 +4,7 @@
 package renderer
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -85,8 +86,11 @@ func TestEvaluateRecipeLocals_RejectsInjectRef(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected self-containment error, got nil")
 	}
-	if !strings.Contains(err.Error(), "locals must be self-contained") {
-		t.Errorf("unexpected message: %v", err)
+	if !errors.Is(err, ErrTemplateUnknownRoot) {
+		t.Errorf("expected the unknown-reference halt, got: %v", err)
+	}
+	if !strings.Contains(diagnosticChainText(err), ".context.inject.env.DB_URL") {
+		t.Errorf("diagnostic does not name the authored path: %s", diagnosticChainText(err))
 	}
 }
 

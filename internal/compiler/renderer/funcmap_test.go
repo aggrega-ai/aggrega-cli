@@ -4,7 +4,6 @@
 package renderer
 
 import (
-	"strings"
 	"testing"
 )
 
@@ -162,27 +161,41 @@ func TestOptional_InTemplateContext(t *testing.T) {
 	}
 }
 
-// TestOptional_PathTemplatesRejectAtParse confirms that EvalPathTemplate
-// — which does not use aggregaFuncMap and therefore does not register
-// optional — fails at parse time when a path template references
-// optional. The parse-time rejection is the load-bearing enforcement
-// that keeps optional out of path-template surfaces.
-func TestOptional_PathTemplatesRejectAtParse(t *testing.T) {
-	_, err := EvalPathTemplate(
-		"path-test",
-		"directory",
-		"some-boundary",
-		`{{ optional .parameters "x" "y" }}`,
-		map[string]any{"parameters": map[string]any{}},
-	)
-	if err == nil {
-		t.Fatalf("expected parse-time error for optional in path template; got nil")
+// TestOptional_PathTemplatesShareTheOneFuncSet pins that a path template reaches
+// the same function set every other renderer surface does, optional included:
+// every template-bearing surface runs through one evaluator, so a per-surface
+// function set would be a second place for the surfaces to disagree.
+//
+// Reaching optional from a path template widens nothing the surface could not
+// already express. Under missingkey=error a bare reference to an absent key halts,
+// but index does not consult the missing-key policy — it yields the element type's
+// zero value — so index piped through default already produced a fallback on this
+// surface. The second arm below is that equivalence, asserted rather than assumed:
+// both spellings render the same fallback.
+func TestOptional_PathTemplatesShareTheOneFuncSet(t *testing.T) {
+	data := PathTemplateContext{Parameters: map[string]any{}}
+	got, err := EvalPathTemplate("path-test", "directory", "some-boundary",
+		`{{ optional .parameters "x" "y" }}`, data)
+	if err != nil {
+		t.Fatalf("optional must be reachable from a path template: %v", err)
 	}
-	// The wrap renders a path-template parse-failure message; the
-	// underlying text/template error is what flagged the unknown function.
-	// Confirm the wrapped surface signals a parse failure.
-	if !strings.Contains(err.Error(), "parse") {
-		t.Errorf("expected error message to indicate parse failure; got: %v", err)
+	if got != "y" {
+		t.Errorf("optional fallback = %q; want y", got)
+	}
+	viaIndex, err := EvalPathTemplate("path-test", "directory", "some-boundary",
+		`{{ index .parameters "x" | default "y" }}`, data)
+	if err != nil {
+		t.Fatalf("index+default must be reachable from a path template: %v", err)
+	}
+	if viaIndex != got {
+		t.Errorf("index+default rendered %q but optional rendered %q; the two spellings must agree, "+
+			"which is what makes optional on this surface a convenience rather than a new capability", viaIndex, got)
+	}
+	// A bare reference to the same absent key still halts, so the surface's
+	// missing-key strictness is intact and only the explicit fallback is exempt.
+	if _, err := EvalPathTemplate("path-test", "directory", "some-boundary",
+		`{{ .parameters.x }}`, data); err == nil {
+		t.Error("a bare reference to an absent parameter key must still halt under missingkey=error")
 	}
 }
 

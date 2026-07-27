@@ -1481,13 +1481,13 @@ func computeFinalPath(
 	boundaryDirEvals map[string]string,
 	perBoundaryAnnotations map[string]types.OrderedMap[string],
 ) (string, error) {
-	data := map[string]any{
-		"capability":      providerName,
-		"boundary_name":   bp,
-		"parameters":      parameters,
-		"component_id":    nodeID,
-		"manifest":        map[string]any{"recipe_name": recipeName},
-		"parent_boundary": parentBoundaryData(bp, parameters, boundaryDirEvals, perBoundaryAnnotations),
+	data := PathTemplateContext{
+		Capability:     providerName,
+		BoundaryName:   bp,
+		Parameters:     parameters,
+		ComponentID:    nodeID,
+		Manifest:       PathTemplateManifest{RecipeName: recipeName},
+		ParentBoundary: parentBoundaryData(bp, parameters, boundaryDirEvals, perBoundaryAnnotations),
 	}
 
 	// Evaluate directory:
@@ -1592,8 +1592,8 @@ func splitParentPath(bp string) (parentPath, parentName string, ok bool) {
 // evaluateAllBoundaryDirectories walks the Release boundary tree top-down and
 // returns a map keyed by boundary path of evaluated `directory:` strings.
 // The eval at each boundary uses the parent's already-evaluated directory as
-// `.parent_boundary.directory` (cascade). `.provider` is set to empty during
-// the walk because boundary-level `directory:` cannot meaningfully reference
+// `.parent_boundary.directory` (cascade). `.capability` is empty during the walk
+// because a boundary-level `directory:` cannot meaningfully reference a
 // per-component provider — per-provider segregation is the `subDirectory:`
 // concern (default `{{ .capability }}`). Boundaries without an explicit
 // `directory:` declaration are skipped (consumers fall back to the default
@@ -1618,12 +1618,14 @@ func evaluateAllBoundaryDirectories(
 			currentPath = parentPath + "/" + name
 		}
 		if b.Directory != "" {
-			data := map[string]any{
-				"capability":      "",
-				"boundary_name":   currentPath,
-				"parameters":      parameters,
-				"manifest":        map[string]any{"recipe_name": ""},
-				"parent_boundary": parentBoundaryData(currentPath, parameters, out, perBoundaryAnnotations),
+			// Capability and Manifest.RecipeName are left zero: this walk runs once
+			// per boundary, before any component is placed, so neither a provider
+			// binding nor a bound recipe exists to name. They render as empty
+			// segments, which is what a boundary-level directory template gets today.
+			data := PathTemplateContext{
+				BoundaryName:   currentPath,
+				Parameters:     parameters,
+				ParentBoundary: parentBoundaryData(currentPath, parameters, out, perBoundaryAnnotations),
 			}
 			eval, err := EvalPathTemplate("directory:"+currentPath, "directory", currentPath, b.Directory, data)
 			if err != nil {

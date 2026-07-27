@@ -41,9 +41,9 @@ package renderer
 import (
 	"context"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
-	"text/template"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderctx"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
@@ -106,37 +106,46 @@ func NewBoundaryFRState() *BoundaryFRState {
 	}
 }
 
-// boundaryScopeFRRejectedFields enumerates the per-component-only field
-// references that a boundary-scope FR template MUST NOT reference. Each
-// entry is a top-level dotted-field key returned by walkNodeForFields
-// (the same AST walker used by EvalPathTemplate's allowlist validation).
+// boundaryScopeFRScope is the reference set a boundary-scope FR template is
+// checked against. The universe is types.TemplateContext — the same type a
+// boundary-scope FR evaluates against, with .boundary populated and the
+// per-component pillars left zero — so the roots the check admits are derived
+// from that type rather than enumerated here.
 //
-// Per the boundary-scope TemplateContext shape, these pillars are absent
-// or replaced by per-boundary equivalents:
+// The surface declares one narrowing: the pillars that are zero at boundary
+// scope. Each is a deliberately kept exclusion, because the type carries the
+// field for the per-component path and only this surface cannot use it:
 //
 //   - context  — replaced by .boundary.{path,boundary_name,components,...}.
 //     .context.instance_id, .context.inject, .context.uses are
-//     meaningless at boundary scope.
-//   - workload — per-component Workload; absent at boundary scope.
-//   - attachment_name, inject, inject_raw — per-attachment; absent at
-//     boundary scope.
+//     meaningless when the FR renders once for a boundary rather than once
+//     per component.
+//   - workload — the per-component Workload; there is no single component.
+//   - attachment_name, inject, inject_raw — per-attachment; a boundary
+//     attachment has no per-component delivery pipe.
 //
-// boundary-scope FRs reference .boundary.* pillars instead. The allowlist-
-// rejection at parse time prevents shape-mismatch errors at runtime.
-var boundaryScopeFRRejectedFields = map[string]bool{
-	"context":         true,
-	"workload":        true,
-	"attachment_name": true,
-	"inject":          true,
-	"inject_raw":      true,
+// boundary-scope FRs reference .boundary.* pillars instead. The check runs at the
+// start of the boundary-scope dispatch, before any of the FR's templates are
+// evaluated and before the FR reaches its provider engine, so a shape mismatch is
+// named as an authoring error rather than surfacing as an engine failure.
+var boundaryScopeFRScope = templateScope{
+	data:    &types.TemplateContext{},
+	exclude: []string{"context", "workload", "attachment_name", "inject", "inject_raw"},
 }
 
 // validateBoundaryScopeFRTemplate parses every inline template field on a FR
-// with spec.executionScope: boundary and verifies that no template references
-// any per-component-only field (.context.*, .workload.*, .attachment_name,
-// .inject, .inject_raw). Returns nil on pass; ErrFRTemplateInvalidField
-// wrapped with the FR name + offending field on the first violation, or a
-// CATALOG_ERROR if any inline template fails to parse.
+// with spec.executionScope: boundary and checks each one against
+// boundaryScopeFRScope. Returns nil on pass; ErrFRTemplateInvalidField wrapped
+// with the FR name and the offending reference when a template names a
+// per-component-only pillar (.context.*, .workload.*, .attachment_name, .inject,
+// .inject_raw); ErrTemplateUnknownRoot when it names a reference the boundary-scope
+// render context does not define at all; or a CATALOG_ERROR if any inline template
+// fails to parse.
+//
+// Because the check is a positive scope over what the context type defines rather
+// than a list of refused names, a template that reaches for a pillar that does not
+// exist — or for a mistyped key under .boundary — is refused here too, instead of
+// rendering as an empty value in the FR's emitted output.
 //
 // Templates checked (inline only): valuesMapping, injectMapping, each provides
 // entry, each locals entry, and each pipeline step `with` template. Templates
@@ -190,21 +199,31 @@ func validateBoundaryScopeFRTemplate(fr *types.FeatureRecipe) error {
 		}
 	}
 	for _, t := range tmpls {
-		t2, err := template.New("fr-validate").Funcs(aggregaFuncMap()).Parse(t.text)
+		tree, err := parseTemplateForRootWalk(t.text, "{{", "}}")
 		if err != nil {
 			return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: frName},
 				fmt.Sprintf("FeatureRecipe %q %s template failed to parse", frName, t.label))
 		}
-		fields := collectTopLevelFields(t2)
-		for _, f := range fields {
-			if boundaryScopeFRRejectedFields[f] {
-				inner := fmt.Errorf("%w: FeatureRecipe %q with executionScope: boundary references per-component-only field .%s in %s; boundary-scope FRs use .boundary.* pillars in place of .context.* / .workload / .attachment_name / .inject — see aggrega-docs/language-reference/entities/featurerecipe.md",
-					ErrFRTemplateInvalidField, frName, f, t.label)
-				return cerrors.Wrap(inner, cerrors.CatalogError, cerrors.SourceLocation{}, inner.Error())
-			}
+		if v := boundaryScopeFRScope.check(tree); v != nil {
+			return boundaryScopeFRErr(frName, t.label, v)
 		}
 	}
 	return nil
+}
+
+// boundaryScopeFRErr names a refused reference with the diagnostic that actually
+// describes it. A per-component pillar this surface excludes reports the
+// boundary-scope halt; a reference the render context does not define at all — a
+// stale root, or a mistyped key under a closed pillar such as .boundary — reports
+// the unknown-reference halt instead, so neither diagnostic tells the author their
+// reference is something it is not.
+func boundaryScopeFRErr(frName, label string, v *templateScopeViolation) error {
+	if v.Level == scopeLevelRoot && slices.Contains(boundaryScopeFRScope.exclude, v.Ref.Segs[0]) {
+		inner := fmt.Errorf("%w: FeatureRecipe %q with executionScope: boundary references per-component-only field %s in %s; boundary-scope FRs use .boundary.* pillars in place of .context.* / .workload / .attachment_name / .inject — see aggrega-docs/language-reference/entities/featurerecipe.md",
+			ErrFRTemplateInvalidField, frName, v.Ref.Path, label)
+		return cerrors.Wrap(inner, cerrors.CatalogError, cerrors.SourceLocation{}, inner.Error())
+	}
+	return templateUnknownRootErr(fmt.Sprintf("%s %s", frName, label), v)
 }
 
 // dispatchBoundaryScopeFR runs a boundary-scope FeatureRecipe once for a

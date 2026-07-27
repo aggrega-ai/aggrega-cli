@@ -314,9 +314,18 @@ func TestValidateBoundaryScopeFRTemplate_AllBranches(t *testing.T) {
 	// FR with allowed fields.
 	fr := &types.FeatureRecipe{}
 	fr.Metadata.Name = "fr"
-	fr.Spec.ValuesMapping = types.ValuesMapping{Inline: "{{ .boundary.name }}"}
+	fr.Spec.ValuesMapping = types.ValuesMapping{Inline: "{{ .boundary.boundary_name }}"}
 	if err := validateBoundaryScopeFRTemplate(fr); err != nil {
 		t.Errorf("allowed fields should pass: %v", err)
+	}
+	// A key .boundary does not define is refused here rather than rendering as an
+	// empty value in the FR's output. The boundary pillar is a closed struct, so
+	// the admitted keys come from its own fields.
+	frTypo := &types.FeatureRecipe{}
+	frTypo.Metadata.Name = "frTypo"
+	frTypo.Spec.ValuesMapping = types.ValuesMapping{Inline: "{{ .boundary.name }}"}
+	if err := validateBoundaryScopeFRTemplate(frTypo); !errors.Is(err, ErrTemplateUnknownRoot) {
+		t.Errorf("a mistyped key under .boundary must be refused, got: %v", err)
 	}
 	// FR with rejected fields (any per-component pillar reference).
 	fr2 := &types.FeatureRecipe{}
@@ -339,7 +348,7 @@ func TestValidateBoundaryScopeFRTemplate_AllBranches(t *testing.T) {
 	// boundary-scope allowlist. A workload referencing only .boundary.* passes.
 	frWL := &types.FeatureRecipe{}
 	frWL.Metadata.Name = "frWL"
-	frWL.Spec.Workload = types.WorkloadTemplate{Inline: "image: app:{{ .boundary.name }}"}
+	frWL.Spec.Workload = types.WorkloadTemplate{Inline: "image: app:{{ .boundary.boundary_name }}"}
 	if err := validateBoundaryScopeFRTemplate(frWL); err != nil {
 		t.Errorf("boundary-scope workload with .boundary.* should pass: %v", err)
 	}

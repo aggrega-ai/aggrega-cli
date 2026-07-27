@@ -301,7 +301,11 @@ func TestContextRootNames_NonStructIsNotCheckable(t *testing.T) {
 func TestTemplateUnknownRootErr_NamesOffenderAndAvailableRoots(t *testing.T) {
 	t.Parallel()
 	roots, _ := contextRootNames(populatedTemplateContext(t))
-	msg := templateUnknownRootErr("workload[db-recipe]", ".staleroot.key", roots).Error()
+	msg := templateUnknownRootErr("workload[db-recipe]", &templateScopeViolation{
+		Ref:      templateRootRef{Segs: []string{"staleroot", "key"}, Path: ".staleroot.key"},
+		Admitted: roots,
+		Level:    scopeLevelRoot,
+	}).Error()
 	for _, want := range []string{"workload[db-recipe]", ".staleroot.key", ".values", ".infra", ".features", ".context"} {
 		if !strings.Contains(msg, want) {
 			t.Errorf("diagnostic omits %q: %s", want, msg)

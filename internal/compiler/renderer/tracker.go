@@ -6,7 +6,6 @@ package renderer
 import (
 	"sort"
 	"strings"
-	"text/template"
 	"text/template/parse"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
@@ -41,25 +40,19 @@ func CollectTemplateFieldAccessesWithDelims(tmplText, leftDelim, rightDelim stri
 	if tmplText == "" {
 		return nil, nil
 	}
-	// Parse with the evaluator's funcmap so a template referencing catalog
-	// functions (trimSuffix, toJson, until, int, default, …) parses here
-	// identically to the way it renders. Go's parser fails on any undefined
-	// function identifier, so a tracker parsing with a bare funcmap would
-	// reject templates the evaluator accepts — the two surfaces must share
-	// one funcmap source. aggregaFuncMap is that single source; the tracker
-	// calls it, never re-lists funcs. The funcmap only affects whether Parse
-	// succeeds — the FieldNode/ChainNode walk below is unchanged, so this is
-	// strictly more permissive and alters no existing field-access result.
-	tmpl, err := template.New("tracker").
-		Option("missingkey=zero").
-		Delims(leftDelim, rightDelim).
-		Funcs(aggregaFuncMap()).
-		Parse(tmplText)
+	// The tracker parses through the same helper the reference checks use, so a
+	// template referencing catalog functions (trimSuffix, toJson, until, int,
+	// default, …) parses here identically to the way it renders. Go's parser fails
+	// on any undefined function identifier, so a tracker parsing with a bare
+	// funcmap would reject templates the evaluator accepts — which is why the parse
+	// has one home rather than one copy per surface. The funcmap only affects
+	// whether Parse succeeds; the FieldNode/ChainNode walk below is unchanged.
+	root, err := parseTemplateForRootWalk(tmplText, leftDelim, rightDelim)
 	if err != nil {
 		return nil, err
 	}
 	seen := map[string]bool{}
-	collectFromNode(tmpl.Root, seen)
+	collectFromNode(root, seen)
 	paths := make([]string, 0, len(seen))
 	for p := range seen {
 		paths = append(paths, p)

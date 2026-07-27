@@ -5,12 +5,12 @@ package renderer
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
-	"text/template"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"go.yaml.in/yaml/v3"
@@ -237,72 +237,12 @@ func TestIsEmptyForTemplate_EveryReflectKind(t *testing.T) {
 	}
 }
 
-// TestCollectTopLevelFields_AllNodeKinds pins the AST walker: parses
-// templates that exercise each handled node kind (Action, Pipe, If,
-// Range, With, Field, Chain) and verifies the collected field set.
-func TestCollectTopLevelFields_AllNodeKinds(t *testing.T) {
-	t.Parallel()
-	tmplText := `{{ .alpha.x }} {{ if .beta }}{{ .gamma }}{{ end }} {{ range .delta }}{{ . }}{{ end }} {{ with .epsilon }}{{ .zeta }}{{ end }} {{ (printf "%s" .iota).kappa }}`
-	tmpl, err := template.New("t").Parse(tmplText)
-	if err != nil {
-		t.Fatalf("parse: %v", err)
-	}
-	got := collectTopLevelFields(tmpl)
-	want := map[string]bool{
-		"alpha": true,
-		"beta":  true,
-		"gamma": true,
-		"delta": true,
-		// epsilon and zeta — `with` rebinds .. The walker collects fields
-		// from the pipe expression (epsilon) AND from inside the body
-		// (.zeta surfaces as a field too).
-		"epsilon": true,
-		"zeta":    true,
-		"iota":    true,
-		"kappa":   true,
-	}
-	for k := range want {
-		found := false
-		for _, g := range got {
-			if g == k {
-				found = true
-				break
-			}
-		}
-		if !found {
-			t.Errorf("expected field %q in %v", k, got)
-		}
-	}
-}
-
-// TestValidatePathTemplateFields_KnownAndUnknown pins both arms:
-// allowlist-passing template returns nil; off-allowlist field returns
-// ErrPathTemplateInvalidField.
-func TestValidatePathTemplateFields_KnownAndUnknown(t *testing.T) {
-	t.Parallel()
-	allow := map[string]bool{"capability": true, "boundary_name": true}
-	// Known fields only.
-	if err := validatePathTemplateFields("b", `{{ .capability }}-{{ .boundary_name }}`, allow); err != nil {
-		t.Errorf("known fields should pass; got %v", err)
-	}
-	// Unknown field.
-	err := validatePathTemplateFields("b", `{{ .unknown_field }}`, allow)
-	if err == nil || !strings.Contains(err.Error(), "unknown_field") {
-		t.Errorf("unknown field should error; got %v", err)
-	}
-	// Parse failure.
-	err = validatePathTemplateFields("b", `{{ .unclosed `, allow)
-	if err == nil {
-		t.Errorf("parse error should propagate")
-	}
-}
-
 // TestEvalPathTemplate_HappyAndParseError pins the renderer's path-
-// template evaluator: happy path returns the executed body; parse-
-// error returns an OpsError; execute-error also surfaces.
+// template evaluator: happy path returns the executed body; a refused
+// reference and a malformed body both surface as errors.
 func TestEvalPathTemplate_HappyAndParseError(t *testing.T) {
 	t.Parallel()
-	data := map[string]any{"capability": "helm", "boundary_name": "web"}
+	data := PathTemplateContext{Capability: "helm", BoundaryName: "web"}
 	got, err := EvalPathTemplate("t", "directory", "b", `{{ .capability }}-{{ .boundary_name }}`, data)
 	if err != nil {
 		t.Fatalf("happy: %v", err)
@@ -310,12 +250,15 @@ func TestEvalPathTemplate_HappyAndParseError(t *testing.T) {
 	if got != "helm-web" {
 		t.Errorf("happy = %q; want helm-web", got)
 	}
-	// Parse error (validation rejects unknown field).
+	// A variable the context type does not define is refused before execution.
 	_, err = EvalPathTemplate("t", "directory", "b", `{{ .unknown_field }}`, data)
-	if err == nil {
-		t.Errorf("unknown-field validation should fail")
+	if !errors.Is(err, ErrPathTemplateInvalidField) {
+		t.Errorf("unknown field should report ErrPathTemplateInvalidField; got %v", err)
 	}
-	// Malformed template body (parse error after validation).
+	if err == nil || !strings.Contains(err.Error(), "unknown_field") {
+		t.Errorf("diagnostic should name the offending reference; got %v", err)
+	}
+	// Malformed template body.
 	_, err = EvalPathTemplate("t", "directory", "b", `{{ .unclosed `, data)
 	if err == nil {
 		t.Errorf("parse error expected")

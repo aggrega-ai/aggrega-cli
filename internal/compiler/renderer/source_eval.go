@@ -21,8 +21,9 @@ import (
 //   - map[string]any: a structured source (OCI descriptor, etc.); each
 //     string-valued field is template-evaluated, non-string fields pass through.
 //
-// Self-containment rules match EvaluateRecipeLocals: templates may not reference
-// .context.inject or .context.uses. Violations surface as a wrapped error.
+// Self-containment holds by sharing LocalsContext with EvaluateRecipeLocals: the
+// context this surface renders against defines no cross-node pillar, so a
+// .context.inject or .context.uses reference halts before the template executes.
 func EvaluateRecipeSource(
 	source any,
 	nodeID string,
@@ -64,21 +65,13 @@ func EvaluateRecipeSource(
 }
 
 // renderSourceString evaluates a single string field as a template. Empty strings
-// and strings without template actions short-circuit (no parsing cost). The
-// self-containment check reuses the Recipe-locals forbidden-reference regex.
+// and strings without template actions short-circuit (no parsing cost).
 func renderSourceString(tmplText string, ctx LocalsContext, label string) (string, error) {
 	if tmplText == "" {
 		return "", nil
 	}
 	if !strings.Contains(tmplText, "{{") {
 		return tmplText, nil
-	}
-	if err := CheckLocalsSelfContainment(tmplText, label, label); err != nil {
-		// Inner err is already a *CompilerError from CheckLocalsSelfContainment's
-		// rewrap; preserve chain via fmt.Errorf %w so formatter's errors.As
-		// finds the inner categorisation. Double-wrap via cerrors.Wrap would
-		// hide the inner message text from .Error() output.
-		return "", fmt.Errorf("Recipe source %q: %w", label, err)
 	}
 	out, err := EvalTemplate(fmt.Sprintf("recipe-source[%s]", label), tmplText, ctx)
 	if err != nil {

@@ -4,6 +4,7 @@
 package renderer
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -115,8 +116,11 @@ func TestEvaluateRecipeSource_RejectsInjectRef(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected self-containment error")
 	}
-	if !strings.Contains(err.Error(), "self-contained") {
-		t.Errorf("unexpected message: %v", err)
+	if !errors.Is(err, ErrTemplateUnknownRoot) {
+		t.Errorf("expected the unknown-reference halt, got: %v", err)
+	}
+	if !strings.Contains(diagnosticChainText(err), ".context.inject.env.PATH") {
+		t.Errorf("diagnostic does not name the authored path: %s", diagnosticChainText(err))
 	}
 }
 

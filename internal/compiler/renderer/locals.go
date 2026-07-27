@@ -5,35 +5,27 @@ package renderer
 
 import (
 	"fmt"
-	"regexp"
 	"strings"
 
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
-// LocalsContext is the restricted context available during Recipe .locals evaluation.
-// Self-contained data only: instance_id, values, infra, provides (Pass 1 output).
-// Locals templates MUST NOT reference .context.inject or .context.uses.
+// LocalsContext is the restricted context available during Recipe .locals
+// evaluation: node-local data only — the node's own identity, its values and infra
+// pillars, and its own already-resolved provides.
+//
+// Self-containment is a property of this type rather than of a check over template
+// text. Context is a ProvidesContextBlock, which defines instance_id and nothing
+// else, so .context.inject and .context.uses name keys this surface's context does
+// not define and the reference halts before the template executes. Cross-node data
+// is therefore unreachable from a local by construction, which is what keeps locals
+// resolvable without ordering the graph first.
 type LocalsContext struct {
 	Context  ProvidesContextBlock     `json:"context"`
 	Values   types.OrderedMap[any]    `json:"values"`
 	Infra    types.OrderedMap[any]    `json:"infra"`
 	Provides types.OrderedMap[string] `json:"provides"`
-}
-
-// forbiddenLocalsRefs matches template actions referencing cross-node or inject data.
-var forbiddenLocalsRefs = regexp.MustCompile(`\{\{[^}]*\.context\.(inject|uses)[^}]*\}\}`)
-
-// CheckLocalsSelfContainment scans a locals template for forbidden references
-// to .context.inject or .context.uses. Returns an error if found.
-func CheckLocalsSelfContainment(templateText, recipeID, key string) error {
-	if forbiddenLocalsRefs.MatchString(templateText) {
-		return cerrors.New(cerrors.CatalogError, cerrors.SourceLocation{File: recipeID},
-			fmt.Sprintf("Recipe %q locals[%q] references .context.inject or .context.uses — locals must be self-contained", recipeID, key),
-			nil, nil)
-	}
-	return nil
 }
 
 // EvaluateRecipeLocals evaluates each entry in recipe.Spec.Locals as a Go template
@@ -60,9 +52,6 @@ func EvaluateRecipeLocals(
 	}
 
 	for key, tmplText := range recipe.Spec.Locals.All() {
-		if err := CheckLocalsSelfContainment(tmplText, recipe.Metadata.Name, key); err != nil {
-			return types.OrderedMap[string]{}, err
-		}
 		val, err := EvalTemplate(fmt.Sprintf("locals[%q]", key), tmplText, lCtx)
 		if err != nil {
 			return types.OrderedMap[string]{}, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: recipe.Metadata.Name}, fmt.Sprintf("Recipe %q locals[%q]", recipe.Metadata.Name, key))

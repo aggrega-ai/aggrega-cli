@@ -100,8 +100,9 @@ func resolveArtifactEntryText(a types.ArtifactEntry, entityName, artifactName st
 }
 
 // EvaluateFeatureRecipeLocals evaluates fr.Spec.Locals templates against the
-// feature-scoped context and returns the resolved map. Same self-containment
-// rules as Recipe locals: no .context.inject / .context.uses references.
+// feature-scoped context and returns the resolved map. The context is
+// LocalsContext, the same node-local type Recipe locals use, so the two surfaces
+// admit and refuse exactly the same references without either restating the rule.
 // Iteration is in author order (fr.Spec.Locals is an OrderedMap).
 func EvaluateFeatureRecipeLocals(
 	fr *types.FeatureRecipe,
@@ -123,9 +124,6 @@ func EvaluateFeatureRecipeLocals(
 	}
 
 	for key, tmplText := range fr.Spec.Locals.All() {
-		if err := CheckLocalsSelfContainment(tmplText, fr.Metadata.Name, key); err != nil {
-			return types.OrderedMap[string]{}, err
-		}
 		val, err := EvalTemplate(fmt.Sprintf("fr-locals[%q]", key), tmplText, lCtx)
 		if err != nil {
 			return types.OrderedMap[string]{}, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: fr.Metadata.Name}, fmt.Sprintf("FeatureRecipe %q locals[%q]", fr.Metadata.Name, key))

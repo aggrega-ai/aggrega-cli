@@ -5,17 +5,20 @@ package renderer
 
 import (
 	"fmt"
-	"regexp"
 	"sort"
 
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
-// forbiddenSelfInjectRefs matches template actions referencing cross-node data.
-var forbiddenSelfInjectRefs = regexp.MustCompile(`\{\{[^}]*\.context\.(inject|uses)[^}]*\}\}`)
-
-// SelfInjectContext is the restricted template context for self-inject value: evaluation.
+// SelfInjectContext is the restricted template context for self-inject value:
+// evaluation. Its Context block defines the node's own identity, labels and
+// annotations and nothing else, so .context.inject and .context.uses name keys this
+// surface's context does not define: the inject pipe is what this pass is
+// constructing, and a template inside it cannot read from it. The refusal comes
+// from the shape of the type, so no list anywhere names the two pillars it keeps
+// out — a pillar added to or retired from the block moves what the surface admits
+// with no edit at the check.
 type SelfInjectContext struct {
 	Values   types.OrderedMap[any]   `json:"values"`
 	Infra    types.OrderedMap[any]   `json:"infra"`
@@ -367,16 +370,7 @@ func resolveSelfInjectEntry(
 
 	// value: → evaluate as Go template with restricted context
 	if entry.value != "" {
-		// Guard: check for forbidden references
-		if forbiddenSelfInjectRefs.MatchString("{{" + entry.value + "}}") {
-			// Check the actual template text
-		}
-		if forbiddenSelfInjectRefs.MatchString(entry.value) {
-			return "", cerrors.Wrap(ErrSelfInjectForbiddenReference, cerrors.DeveloperError, cerrors.SourceLocation{},
-				fmt.Sprintf("%s[%q] value: template references .context.inject or .context.uses", mechName, key))
-		}
-
-		resolved, err := EvalTemplate(
+		resolved, err := evalSelfInjectValue(
 			fmt.Sprintf("self-inject.%s[%s]", mechName, key),
 			entry.value,
 			siCtx,
@@ -388,4 +382,50 @@ func resolveSelfInjectEntry(
 	}
 
 	return "", nil
+}
+
+// selfInjectScope is the reference set a component-level self-inject value:
+// template is checked against: every root SelfInjectContext defines, with no
+// narrowing declared. The two pillars this surface must keep out are kept out by the
+// context block's own shape rather than by a narrowing, which is why there is
+// nothing here to go stale.
+var selfInjectScope = templateScope{data: SelfInjectContext{}}
+
+// evalSelfInjectValue evaluates one component-level self-inject value: template.
+// It is the value-template surface in every respect but one: every diagnostic it
+// raises is DEVELOPER_ERROR, because a component-level inject: block is authored on
+// the Aggregate. The reference rules, the wording, the sentinel and the
+// missing-key policy are all the shared ones.
+func evalSelfInjectValue(name, tmplText string, siCtx SelfInjectContext) (string, error) {
+	return templateEval{
+		name:       name,
+		text:       tmplText,
+		scope:      selfInjectScope.with(siCtx),
+		missingKey: missingKeyZero,
+		refused: func(v *templateScopeViolation) error {
+			return asDeveloperDomain(templateUnknownRootErr(name, v))
+		},
+		failed: func(stage templateEvalStage, err error) error {
+			return cerrors.Wrap(err, cerrors.DeveloperError, cerrors.SourceLocation{File: name},
+				fmt.Sprintf("template %q %s", name, stage))
+		},
+	}.run()
+}
+
+// asDeveloperDomain re-issues a diagnostic under the developer category, preserving
+// its message, source pointer and wrapped chain.
+//
+// It exists because this surface shares its wording and its sentinels with every
+// other template surface — one wording, one sentinel, stated once — but not the
+// authoring artifact at fault. A self-inject value: template is developer-authored,
+// and the diagnostic chain renders every frame it carries, so a frame tagged for the
+// catalog would send the author to a Recipe that is not at fault.
+func asDeveloperDomain(err error) error {
+	ce, ok := err.(*cerrors.CompilerError)
+	if !ok {
+		return err
+	}
+	out := *ce
+	out.Category = cerrors.DeveloperError
+	return &out
 }

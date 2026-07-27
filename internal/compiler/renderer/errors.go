@@ -27,7 +27,6 @@ var (
 	ErrTemplateUnknownRoot = errors.New("template references a root the render context does not define")
 
 	ErrProvidesEvaluation           = errors.New("provides template evaluation failed")
-	ErrSelfInjectForbiddenReference = errors.New("self-inject value: template references cross-node data")
 	ErrSelfInjectKeyCollision       = errors.New("duplicate delivery key across self-inject and uses-inject")
 	ErrAttachmentInjectKeyCollision = errors.New("duplicate delivery key across attachment-inject and another inject source")
 	ErrUnmappedCustomMechanism      = errors.New("custom inject mechanism has no matching key in injectMapping output; add the mechanism's key to the Recipe injectMapping")
@@ -171,18 +170,26 @@ var (
 	// matching values explicitly. Category: TRANSLATION_ERROR.
 	ErrChartNameMismatch = errors.New("merged-path assembly has conflicting assembly-name annotation values")
 
-	// ErrPathTemplateInvalidField fires at parse time when a path-template
-	// (Release.spec.boundaries[].directory or subDirectory) references a
-	// field outside the documented allowlist. Available fields in
+	// ErrPathTemplateInvalidField fires before a path template
+	// (Release.spec.boundaries[].directory or subDirectory) executes, when it
+	// references a variable outside the documented set. Available fields in
 	// directory: templates are .capability, .boundary_name,
 	// .parameters.<typed_keys>, .parent_boundary.*, .manifest.recipe_name;
-	// subDirectory: additionally permits .component_id. Path templates use
-	// stricter missing-key handling than value templates because silent
-	// path failures produce broken outputs that operators only discover
-	// post-build. Category: OPS_ERROR (operator-authored path template).
+	// subDirectory: additionally permits .component_id. That set is derived from
+	// the path-template context type rather than listed beside the check, and
+	// each of the two surfaces states only which variables it refuses, so a
+	// variable added to or retired from the context reaches both surfaces
+	// without an edit at either. A mistyped key UNDER a defined variable is a
+	// different halt: the variable itself is admitted, so the reference reports
+	// ErrTemplateUnknownRoot instead. Path templates use stricter missing-key
+	// handling than value templates because silent path failures produce broken
+	// outputs that operators only discover post-build. Category: OPS_ERROR
+	// (operator-authored path template).
 	ErrPathTemplateInvalidField = errors.New("path template references a field not in the documented allowlist")
 
-	// ErrFRTemplateInvalidField fires at Recipe load time when a
+	// ErrFRTemplateInvalidField fires when the boundary-scope FeatureRecipe
+	// dispatch validates an FR's templates, before any of them renders — not
+	// at Recipe load, which never parses them. It fires when a
 	// FeatureRecipe with spec.executionScope: boundary references a
 	// per-component-only field in any of its templates (workload,
 	// injectMapping, provides, valuesMapping, artifacts). Boundary-scope

@@ -4,9 +4,7 @@
 package renderer
 
 import (
-	"bytes"
 	"fmt"
-	"text/template"
 )
 
 // AssertionContext is the template data bound to one assertion-evaluation
@@ -24,23 +22,31 @@ import (
 // preserved at the OrderedMap layer but flattened to alphabetical at the
 // template-render boundary; assertion predicates don't depend on key
 // iteration order.
+// The json tags name the keys an assertion body reads, and each one spells the
+// field name exactly. They are declared rather than left to a fallback because
+// the delivered key set is a published authoring contract: catalog assertions are
+// written against these spellings, so the surface states them instead of
+// inheriting whatever a tag-less field would be named.
 type AssertionContext struct {
-	Values   map[string]any
-	Infra    map[string]any
-	Uses     map[string]any
-	Features map[string]any
-	Metadata map[string]any
-	Provides map[string]any
-	Locals   map[string]any
-	Recipe   *AssertionRecipeContext
+	Values   map[string]any          `json:"Values"`
+	Infra    map[string]any          `json:"Infra"`
+	Uses     map[string]any          `json:"Uses"`
+	Features map[string]any          `json:"Features"`
+	Metadata map[string]any          `json:"Metadata"`
+	Provides map[string]any          `json:"Provides"`
+	Locals   map[string]any          `json:"Locals"`
+	Recipe   *AssertionRecipeContext `json:"Recipe"`
 }
 
 // AssertionRecipeContext exposes Recipe-specific surface to Step 5b
 // assertions: metadata for identity (name, version, etc.) plus source
 // for the wrapped chart/module pointer. Nil at Step 4b.
+//
+// The json tags carry the same reason as AssertionContext's: the delivered key
+// set is what assertion bodies are authored against, so it is declared here.
 type AssertionRecipeContext struct {
-	Metadata map[string]any
-	Source   any
+	Metadata map[string]any `json:"Metadata"`
+	Source   any            `json:"Source"`
 }
 
 // EvaluateAssertion runs the named template body against the context. The
@@ -58,20 +64,26 @@ type AssertionRecipeContext struct {
 // template-engine error on parse/execute failures (e.g., missingkey=error
 // halts surface here).
 func EvaluateAssertion(name, body string, ctx AssertionContext) error {
-	funcs := aggregaFuncMap()
-	funcs["fail"] = func(msg string) (string, error) {
-		return "", fmt.Errorf("%w: %s", ErrAssertionFailed, msg)
-	}
-	tmpl, err := template.New(name).
-		Option("missingkey=error").
-		Funcs(funcs).
-		Parse(body)
-	if err != nil {
-		return fmt.Errorf("assertion %q parse: %w", name, err)
-	}
-	var buf bytes.Buffer
-	if err := tmpl.Execute(&buf, ctx); err != nil {
-		return fmt.Errorf("assertion %q: %w", name, err)
-	}
-	return nil
+	// The assertion surface declares no narrowing: every field the context type
+	// defines is readable from an assertion. What it contributes is fail — the one
+	// function that exists only here, because an assertion is the only surface
+	// whose purpose is to halt the build rather than to produce text.
+	_, err := templateEval{
+		name:       name,
+		text:       body,
+		scope:      templateScope{data: ctx},
+		missingKey: missingKeyError,
+		extraFuncs: map[string]any{
+			"fail": func(msg string) (string, error) {
+				return "", fmt.Errorf("%w: %s", ErrAssertionFailed, msg)
+			},
+		},
+		failed: func(stage templateEvalStage, err error) error {
+			if stage == stageParse {
+				return fmt.Errorf("assertion %q parse: %w", name, err)
+			}
+			return fmt.Errorf("assertion %q: %w", name, err)
+		},
+	}.run()
+	return err
 }

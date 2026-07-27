@@ -424,16 +424,15 @@ func TestNormalizeInjectMechanism_SchemaVerbose(t *testing.T) {
 	}
 }
 
-// TestUnmarshalImportableThroughEvalPathTemplate_Truncated pins
-// EvalPathTemplate's execute-time error when the template references a
-// path that exists in the validation allowlist but produces a value
-// missingkey=error rejects.
+// TestEvalPathTemplate_MissingKeyExecuteError pins EvalPathTemplate's
+// execute-time error when the template references a variable the context
+// defines but drills into it for something missingkey=error rejects.
 func TestEvalPathTemplate_MissingKeyExecuteError(t *testing.T) {
 	t.Parallel()
-	// .provider is in the allowlist — validation passes. The template
-	// then drills into a sub-key that doesn't exist; missingkey=error
-	// turns that into an execute-time failure.
-	_, err := EvalPathTemplate("t", "directory", "b", `{{ .capability.unknown }}`, map[string]any{"capability": "helm"})
+	// .capability is defined, so the reference check admits it. The template then
+	// drills into a sub-key of a plain string; missingkey=error turns that into an
+	// execute-time failure.
+	_, err := EvalPathTemplate("t", "directory", "b", `{{ .capability.unknown }}`, PathTemplateContext{Capability: "helm"})
 	if err == nil {
 		t.Errorf("missingkey=error should fail on deep miss")
 	}

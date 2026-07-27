@@ -9,12 +9,107 @@ import (
 	"reflect"
 	"strings"
 	"text/template"
-	"text/template/parse"
-
-	sprig "github.com/Masterminds/sprig/v3"
 
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 )
+
+// templateMissingKey is text/template's missing-key policy for one surface.
+type templateMissingKey string
+
+const (
+	// missingKeyZero lets an absent key under an open root render empty, which is
+	// what keeps a defensively-written optional key working on a value template.
+	missingKeyZero templateMissingKey = "zero"
+	// missingKeyError halts on an absent key. It is the policy for surfaces whose
+	// output is a filesystem path or a predicate, where a silently empty value is
+	// discovered long after the build rather than at it.
+	missingKeyError templateMissingKey = "error"
+)
+
+// templateEvalStage names which half of one evaluation a failure came from, so a
+// surface can say so in its own diagnostic.
+type templateEvalStage string
+
+const (
+	stageParse   templateEvalStage = "parse"
+	stageExecute templateEvalStage = "execute"
+)
+
+// templateEval is one template evaluation. Every template-bearing surface in the
+// renderer runs through it, which is what makes the reference check and the
+// execution unable to disagree: the tree that is walked is the tree that runs,
+// and the context the references are checked against is the context the template
+// is rendered against — both are scope.data, read once.
+//
+// The fields after the text are the only things that differ between surfaces: the
+// delimiter pair, the missing-key policy, any per-surface function, and how a
+// surface names a refused reference or a failed stage with its own published
+// diagnostic. A surface that needs anything else needs a change here, where every
+// surface sees it, rather than a second evaluator.
+type templateEval struct {
+	name string
+	text string
+	// scope carries the render context in .data and this surface's narrowing over
+	// what that context type defines.
+	scope templateScope
+	// leftDelim and rightDelim are passed through to text/template, which reads an
+	// empty delimiter as its own default.
+	leftDelim  string
+	rightDelim string
+	// missingKey is the surface's missing-key policy; empty is missingKeyZero.
+	missingKey templateMissingKey
+	// extraFuncs are functions this surface adds over aggregaFuncMap. The map is
+	// template.FuncMap's own underlying type, so a surface contributing one does
+	// not have to reach for text/template itself.
+	extraFuncs map[string]any
+	// refused names a reference the scope refuses with this surface's own
+	// diagnostic; nil reports ErrTemplateUnknownRoot.
+	refused func(*templateScopeViolation) error
+	// failed names a parse or execute failure with this surface's own diagnostic;
+	// nil returns the underlying error unwrapped.
+	failed func(templateEvalStage, error) error
+}
+
+func (e templateEval) run() (string, error) {
+	missingKey := e.missingKey
+	if missingKey == "" {
+		missingKey = missingKeyZero
+	}
+	funcs := aggregaFuncMap()
+	// Iterating a map is safe here where it usually would not be: the loop only
+	// assigns distinct keys into another map, so the merged function set is the
+	// same whatever order the keys arrive in and no iteration order can reach the
+	// rendered bytes.
+	for name, fn := range e.extraFuncs {
+		funcs[name] = fn
+	}
+	t, err := template.New(e.name).
+		Option("missingkey="+string(missingKey)).
+		Delims(e.leftDelim, e.rightDelim).
+		Funcs(funcs).
+		Parse(e.text)
+	if err != nil {
+		return "", e.wrap(stageParse, err)
+	}
+	if v := e.scope.check(t.Tree.Root); v != nil {
+		if e.refused != nil {
+			return "", e.refused(v)
+		}
+		return "", templateUnknownRootErr(e.name, v)
+	}
+	var buf bytes.Buffer
+	if err := t.Execute(&buf, toLowercaseMap(e.scope.data)); err != nil {
+		return "", e.wrap(stageExecute, err)
+	}
+	return buf.String(), nil
+}
+
+func (e templateEval) wrap(stage templateEvalStage, err error) error {
+	if e.failed == nil {
+		return err
+	}
+	return e.failed(stage, err)
+}
 
 // EvalTemplate evaluates a Go template string with the default `{{ }}`
 // delimiters, Sprig functions, and missingkey=zero. Thin wrapper over
@@ -24,7 +119,7 @@ import (
 //
 // The input struct is walked reflectively and converted to a tree of plain
 // Go values (maps / slices / scalars) with lowercase JSON-tag keys, so
-// template authors write `.context.values.foo` matching the
+// template authors write `.values.foo` matching the
 // template-context-v1alpha1.schema.json contract.
 //
 // OrderedMap values are unwrapped during the walk into plain map[string]any
@@ -54,233 +149,98 @@ func EvalTemplate(name, tmplText string, data any) (string, error) {
 // missingkey=zero, so an optional-key idiom keeps working; what cannot happen is
 // a fallback wrapper turning an unknown ROOT into an empty value.
 func EvalTemplateWithDelims(name, tmplText string, data any, leftDelim, rightDelim string) (string, error) {
-	templateData := toLowercaseMap(data)
-
-	t, err := template.New(name).
-		Option("missingkey=zero").
-		Delims(leftDelim, rightDelim).
-		Funcs(aggregaFuncMap()).
-		Parse(tmplText)
-	if err != nil {
-		return "", cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: name}, fmt.Sprintf("template %q parse", name))
-	}
-	// Root-name validation runs on the tree that is about to execute, so the
-	// walk cannot disagree with the evaluation about what the template says.
-	if err := checkTemplateRoots(name, t.Tree.Root, data); err != nil {
-		return "", err
-	}
-	var buf bytes.Buffer
-	if err := t.Execute(&buf, templateData); err != nil {
-		return "", cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: name}, fmt.Sprintf("template %q execute", name))
-	}
-	return buf.String(), nil
+	// The value-template surface declares no narrowing: every root the context
+	// type defines is reachable from a template rendered against it.
+	return templateEval{
+		name:       name,
+		text:       tmplText,
+		scope:      templateScope{data: data},
+		leftDelim:  leftDelim,
+		rightDelim: rightDelim,
+		missingKey: missingKeyZero,
+		failed: func(stage templateEvalStage, err error) error {
+			return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: name},
+				fmt.Sprintf("template %q %s", name, stage))
+		},
+	}.run()
 }
 
-// pathTemplateAllowlistDirectory is the set of top-level field names a
-// `directory:` path-template may reference. Per-context allowlists differ
-// between `directory:` and `subDirectory:` — `.component_id` is permitted
-// only in subDirectory: templates because component identity is meaningless
-// at the boundary level.
-var pathTemplateAllowlistDirectory = map[string]bool{
-	"capability":      true,
-	"boundary_name":   true,
-	"parameters":      true,
-	"parent_boundary": true,
-	"manifest":        true,
+// pathTemplateDirectoryScope is the reference set a `directory:` path template is
+// checked against. The universe is PathTemplateContext — the type both path
+// templates are evaluated against — so the variables the check admits are derived
+// from that type rather than enumerated here, and a variable added to or retired
+// from the context reaches both surfaces with no edit at either.
+//
+// The surface declares one narrowing, and it is a deliberately kept exclusion:
+// .component_id names a single component, while a `directory:` template is
+// evaluated once for the whole boundary. Admitting it would make the emitted path
+// depend on which component happened to be evaluated first, so the reference is
+// refused rather than resolved to an arbitrary one.
+var pathTemplateDirectoryScope = templateScope{
+	data:    PathTemplateContext{},
+	exclude: []string{"component_id"},
 }
 
-// pathTemplateAllowlistSubDirectory is the set of top-level field names a
-// `subDirectory:` path-template may reference. Identical to the directory:
-// allowlist plus `.component_id`.
-var pathTemplateAllowlistSubDirectory = map[string]bool{
-	"capability":      true,
-	"boundary_name":   true,
-	"parameters":      true,
-	"component_id":    true,
-	"parent_boundary": true,
-	"manifest":        true,
+// pathTemplateSubDirectoryScope is the reference set a `subDirectory:` path
+// template is checked against: the same context type with no narrowing. A
+// subDirectory segment is evaluated once per component, so .component_id names
+// exactly the component being placed.
+var pathTemplateSubDirectoryScope = templateScope{
+	data: PathTemplateContext{},
 }
 
 // EvalPathTemplate evaluates a Release.spec.boundaries[].directory or
-// subDirectory template against the path-template variable allowlist.
-// Differs from EvalTemplate in two load-bearing ways:
+// subDirectory template. Differs from EvalTemplate in two load-bearing ways:
 //
-//   - missingkey=error policy. An in-allowlist field with no value at eval
-//     time produces an explicit error (rather than rendering empty as
-//     EvalTemplate's missingkey=zero would). Path templates use stricter
-//     missing-key handling than value templates because silent path
-//     failures produce broken filesystem layout that operators only
-//     discover post-build.
-//   - Parse-time allowlist validation. Every top-level field reference in
-//     the template AST is verified against the per-context allowlist
-//     (directory: vs subDirectory:); unknown field references produce
-//     ErrPathTemplateInvalidField wrapping the offending field name and
-//     boundary name.
+//   - missingkey=error policy. A defined variable with no value at eval time
+//     produces an explicit error rather than rendering empty as EvalTemplate's
+//     missingkey=zero would. Path templates use stricter missing-key handling
+//     than value templates because a silently empty path segment produces broken
+//     filesystem layout that operators only discover post-build.
+//   - The reference check refuses a variable this surface does not admit before
+//     the template executes, reporting ErrPathTemplateInvalidField with the
+//     offending reference and the boundary name.
 //
-// contextKind selects between the two allowlists: "directory" or
-// "subDirectory". An unknown contextKind value defaults to the directory:
-// allowlist (more restrictive).
+// contextKind selects the surface: "subDirectory" admits .component_id, and any
+// other value — "directory" included — selects the narrower `directory:` scope.
 //
-// boundaryName is included in the error wrapping when an invalid field is
-// detected, so the operator can locate the offending template without
-// re-grepping the Release file.
-func EvalPathTemplate(name, contextKind, boundaryName, tmplText string, data any) (string, error) {
-	allowlist := pathTemplateAllowlistDirectory
+// boundaryName is named in the diagnostic when a reference is refused, so the
+// operator can locate the offending template without searching the Release file.
+func EvalPathTemplate(name, contextKind, boundaryName, tmplText string, data PathTemplateContext) (string, error) {
+	scope := pathTemplateDirectoryScope
 	if contextKind == "subDirectory" {
-		allowlist = pathTemplateAllowlistSubDirectory
+		scope = pathTemplateSubDirectoryScope
 	}
-
-	if err := validatePathTemplateFields(boundaryName, tmplText, allowlist); err != nil {
-		return "", err
-	}
-
-	templateData := toLowercaseMap(data)
-
-	t, err := template.New(name).
-		Option("missingkey=error").
-		Funcs(sprig.FuncMap()).
-		Parse(tmplText)
-	if err != nil {
-		return "", cerrors.Wrap(err, cerrors.OpsError, cerrors.SourceLocation{File: name}, fmt.Sprintf("path template %q parse", name))
-	}
-	var buf bytes.Buffer
-	if err := t.Execute(&buf, templateData); err != nil {
-		return "", cerrors.Wrap(err, cerrors.OpsError, cerrors.SourceLocation{File: name}, fmt.Sprintf("path template %q execute", name))
-	}
-	return buf.String(), nil
+	return templateEval{
+		name:       name,
+		text:       tmplText,
+		scope:      scope.with(data),
+		missingKey: missingKeyError,
+		refused: func(v *templateScopeViolation) error {
+			return pathTemplateRefusedErr(boundaryName, v)
+		},
+		failed: func(stage templateEvalStage, err error) error {
+			return cerrors.Wrap(err, cerrors.OpsError, cerrors.SourceLocation{File: name},
+				fmt.Sprintf("path template %q %s", name, stage))
+		},
+	}.run()
 }
 
-// validatePathTemplateFields walks the template AST, extracts every
-// top-level field reference (e.g., `.parameters.region` → top-level
-// `parameters`), and rejects unknown fields against the allowlist. The
-// walk uses Go's text/template parser to obtain a parse tree without
-// triggering execution.
-func validatePathTemplateFields(boundaryName, tmplText string, allowlist map[string]bool) error {
-	// Parse with no missingkey constraint to get the AST; ignore execute-
-	// time issues — this pass is purely structural.
-	t, err := template.New("path-template-validate").
-		Funcs(sprig.FuncMap()).
-		Parse(tmplText)
-	if err != nil {
-		return cerrors.Wrap(err, cerrors.OpsError, cerrors.SourceLocation{File: boundaryName}, fmt.Sprintf("path template at boundary %q parse", boundaryName))
+// pathTemplateRefusedErr names a refused path-template reference with the
+// diagnostic that describes it. A variable the surface does not admit — one the
+// context type does not define at all, or .component_id in a `directory:`
+// template — reports the path-template halt the language reference documents for
+// this surface. A key refused UNDER a defined variable is the general
+// unknown-reference halt instead, the same one every other template surface
+// reports for a mistyped key, so neither diagnostic tells the author their
+// reference is something it is not.
+func pathTemplateRefusedErr(boundaryName string, v *templateScopeViolation) error {
+	if v.Level == scopeLevelKey {
+		return templateUnknownRootErr(boundaryName, v)
 	}
-
-	for _, refField := range collectTopLevelFields(t) {
-		if !allowlist[refField] {
-			inner := fmt.Errorf("%w: boundary %q references unknown field .%s; allowlist: see aggrega-docs/language-reference/path-template-variables.md",
-				ErrPathTemplateInvalidField, boundaryName, refField)
-			return cerrors.Wrap(inner, cerrors.OpsError, cerrors.SourceLocation{}, inner.Error())
-		}
-	}
-	return nil
-}
-
-// collectTopLevelFields walks every action in the parsed template tree and
-// collects the FIRST identifier of every field-chain reference (e.g.,
-// `.parameters.region` → "parameters", `.parent_boundary.directory` →
-// "parent_boundary"). Returns the deduplicated list.
-//
-// This walker deliberately OVER-collects: it records a field read inside a
-// range or with body even though the dot is rebound there, and it records the
-// trailing field of a chained expression even though that field hangs off the
-// expression's value. Both of its consumers are DENY-lists — the path-template
-// invalid-field check above and the boundary-scope FeatureRecipe rejected-field
-// check — and for a deny-list over-collection is the fail-safe direction: a
-// forbidden field cannot slip past by hiding inside a rebound body or behind a
-// wrapper. TestCollectTopLevelFields_AllNodeKinds pins that behaviour.
-//
-// collectTemplateRootRefs is the counterpart used by the ALLOW-lists, and it
-// under-collects for the same reason reversed: an allow-list that over-collects
-// refuses legitimate authoring. The two walkers are therefore not one walker
-// with a parameter — they have opposite safety directions, and folding them
-// together would quietly turn each consumer's failure mode into the wrong one.
-func collectTopLevelFields(t *template.Template) []string {
-	seen := map[string]bool{}
-	var collected []string
-	for _, ttree := range t.Templates() {
-		if ttree.Tree == nil || ttree.Tree.Root == nil {
-			continue
-		}
-		walkNodeForFields(ttree.Tree.Root, seen, &collected)
-	}
-	return collected
-}
-
-// walkNodeForFields recurses into template AST nodes, recording the first
-// identifier of every FieldNode and ChainNode encountered.
-func walkNodeForFields(node parse.Node, seen map[string]bool, collected *[]string) {
-	switch n := node.(type) {
-	case *parse.ListNode:
-		if n == nil {
-			return
-		}
-		for _, child := range n.Nodes {
-			walkNodeForFields(child, seen, collected)
-		}
-	case *parse.ActionNode:
-		if n.Pipe != nil {
-			for _, cmd := range n.Pipe.Cmds {
-				for _, arg := range cmd.Args {
-					walkNodeForFields(arg, seen, collected)
-				}
-			}
-		}
-	case *parse.PipeNode:
-		for _, cmd := range n.Cmds {
-			for _, arg := range cmd.Args {
-				walkNodeForFields(arg, seen, collected)
-			}
-		}
-	case *parse.IfNode:
-		if n.Pipe != nil {
-			walkNodeForFields(n.Pipe, seen, collected)
-		}
-		if n.List != nil {
-			walkNodeForFields(n.List, seen, collected)
-		}
-		if n.ElseList != nil {
-			walkNodeForFields(n.ElseList, seen, collected)
-		}
-	case *parse.RangeNode:
-		if n.Pipe != nil {
-			walkNodeForFields(n.Pipe, seen, collected)
-		}
-		if n.List != nil {
-			walkNodeForFields(n.List, seen, collected)
-		}
-		if n.ElseList != nil {
-			walkNodeForFields(n.ElseList, seen, collected)
-		}
-	case *parse.WithNode:
-		if n.Pipe != nil {
-			walkNodeForFields(n.Pipe, seen, collected)
-		}
-		if n.List != nil {
-			walkNodeForFields(n.List, seen, collected)
-		}
-		if n.ElseList != nil {
-			walkNodeForFields(n.ElseList, seen, collected)
-		}
-	case *parse.FieldNode:
-		// `.parameters.region` parses as a single FieldNode with Ident = ["parameters", "region"].
-		if len(n.Ident) > 0 {
-			top := n.Ident[0]
-			if !seen[top] {
-				seen[top] = true
-				*collected = append(*collected, top)
-			}
-		}
-	case *parse.ChainNode:
-		// `(...).foo.bar` — recurse into the receiver, then record top of the chain.
-		walkNodeForFields(n.Node, seen, collected)
-		if len(n.Field) > 0 {
-			top := n.Field[0]
-			if !seen[top] {
-				seen[top] = true
-				*collected = append(*collected, top)
-			}
-		}
-	}
+	inner := fmt.Errorf("%w: boundary %q references unknown field %s; allowlist: see aggrega-docs/language-reference/path-template-variables.md",
+		ErrPathTemplateInvalidField, boundaryName, v.Ref.Path)
+	return cerrors.Wrap(inner, cerrors.OpsError, cerrors.SourceLocation{}, inner.Error())
 }
 
 // orderedMapForTemplate is satisfied by types.OrderedMap[V] for every V via
