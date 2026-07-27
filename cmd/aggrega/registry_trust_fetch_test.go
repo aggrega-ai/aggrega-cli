@@ -179,12 +179,11 @@ func TestRegistryAddNoTrustAdvertisedFallsBack(t *testing.T) {
 // notice — rather than hard-failing registration on a network error.
 func TestRegistryAddUnreachableEndpointFallsBack(t *testing.T) {
 	t.Parallel()
-	// Stand up then immediately close a server so its port is unbound: the
-	// fetch fails at connect (a transport error, not a 404). No live DNS.
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
-	client := srv.Client()
-	host := strings.TrimPrefix(srv.URL, "http://")
-	srv.Close()
+	// A loopback address that refuses connections: the fetch fails at connect (a
+	// transport error, not a 404). No live DNS. The client is a real one rather
+	// than a stubbed transport, so the refusal is a genuine dial failure.
+	host := refusingLoopbackAddr(t)
+	client := &http.Client{}
 
 	rw := resolveTempWorkspace(t)
 	var out bytes.Buffer

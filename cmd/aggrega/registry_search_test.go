@@ -122,7 +122,14 @@ func newCatalogRegistry(t *testing.T, ts *httptest.Server) *remote.Registry {
 	if err != nil {
 		t.Fatalf("invalid test http server: %v", err)
 	}
-	reg, err := remote.NewRegistry(uri.Host)
+	return newCatalogRegistryAt(t, uri.Host)
+}
+
+// newCatalogRegistryAt wires the same plain-HTTP registry against an arbitrary
+// authority, for the case where no server is standing at it.
+func newCatalogRegistryAt(t *testing.T, authority string) *remote.Registry {
+	t.Helper()
+	reg, err := remote.NewRegistry(authority)
 	if err != nil {
 		t.Fatalf("NewRegistry() error = %v", err)
 	}
@@ -214,11 +221,9 @@ func TestSearchRegistry_CompliantMultiPagePagesFully(t *testing.T) {
 // invoked) still surfaces as an error rather than a silent empty result — the
 // fallback covers only post-first-page failures.
 func TestSearchRegistry_FirstRequestFailurePropagates(t *testing.T) {
-	// Stand a server up only to reserve a reachable URL, then close it so the
-	// first catalog request fails to connect before any page is delivered.
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
-	reg := newCatalogRegistry(t, ts)
-	ts.Close()
+	// A loopback authority that refuses connections, so the first catalog request
+	// fails to connect before any page is delivered.
+	reg := newCatalogRegistryAt(t, refusingLoopbackAddr(t))
 
 	got, err := searchRegistry(context.Background(), reg, "", catalogSearchScope)
 	if err == nil {
