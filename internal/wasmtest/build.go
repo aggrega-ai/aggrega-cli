@@ -11,21 +11,23 @@
 //
 //   - PDK fixtures at `aggrega-pdk/<lang>/examples/<socket>/`. The
 //     artifact name follows `<socket>-<lang>.wasm` (e.g.,
-//     `mutator-rust.wasm`). The fixture's `build.sh` produces the
-//     artifact under `aggrega-cli/internal/wasm/testdata/`.
+//     `mutator-rust.wasm`), built by the fixture's own `build.sh`.
 //   - Production plugins at `aggrega-cli/plugins/<name>/`. The
-//     artifact name is `<name>.wasm` (no language suffix). The
-//     plugin's own Cargo project produces the artifact under
-//     `aggrega-cli/plugins/<name>/target/wasm32-unknown-unknown/release/<name_with_underscores>.wasm`.
+//     artifact name is `<name>.wasm` (no language suffix), built by the
+//     plugin's own Cargo project.
 //
 // EnsureFixtureBuilt detects the layout from the artifact-name shape
 // and dispatches accordingly. The cache + freshness semantics are
 // identical across both layouts: artifact mtime ≥ newest source
-// mtime under the source directory.
+// mtime under the source directory. Both layouts hand back a path under
+// `aggrega-cli/internal/wasm/testdata/`, written only by this package and
+// only by rename, so a test never reads an artifact another test process
+// is in the middle of writing.
 package wasmtest
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -34,12 +36,71 @@ import (
 	"testing"
 )
 
-// fixtureBuildOnce caches the per-fixture build outcome for the
+// fixtureResults caches the per-fixture build outcome for the
 // lifetime of the `go test` process. The cached value is either the
 // built artifact's path (a string) or the skip reason (an error). A
 // build run that succeeds or skips is not retried by subsequent tests
 // in the same process.
-var fixtureBuildOnce sync.Map
+var fixtureResults sync.Map
+
+// fixtureBuildLocks holds one mutex per artifact name, so at most one
+// builder per artifact runs at a time. Consulting the result cache and
+// building on a miss are two steps rather than one, and acting on an
+// unlocked miss is what lets every caller that missed at the same moment
+// start its own build of the same output path. The lock is per artifact
+// rather than one global lock so unrelated fixtures still build
+// concurrently.
+var fixtureBuildLocks sync.Map
+
+// buildFixtureOnce returns the memoised outcome for artifactName, calling
+// build at most once per artifact across concurrent callers. Callers that
+// arrive while a build is in flight queue on the artifact's lock and then
+// observe the stored result rather than repeating the build. A skip reason
+// is cached and shared, so it is derived once per process rather than once
+// per caller.
+//
+// A build that ends the calling goroutine (t.Fatalf, t.Skipf) stores
+// nothing: a hard failure is the calling test's, not a verdict to serve to
+// every later caller.
+func buildFixtureOnce(artifactName string, build func() (string, error)) (string, error) {
+	if path, skip, ok := loadFixtureResult(artifactName); ok {
+		return path, skip
+	}
+
+	actual, _ := fixtureBuildLocks.LoadOrStore(artifactName, &sync.Mutex{})
+	mu := actual.(*sync.Mutex)
+	mu.Lock()
+	defer mu.Unlock()
+
+	// The unlocked read above is only a fast path. This one is
+	// authoritative: a caller that queued behind the builder ahead of it
+	// finds that builder's result here instead of rebuilding.
+	if path, skip, ok := loadFixtureResult(artifactName); ok {
+		return path, skip
+	}
+
+	path, err := build()
+	if err != nil {
+		fixtureResults.Store(artifactName, err)
+		return "", err
+	}
+	fixtureResults.Store(artifactName, path)
+	return path, nil
+}
+
+func loadFixtureResult(artifactName string) (path string, skip error, ok bool) {
+	cached, found := fixtureResults.Load(artifactName)
+	if !found {
+		return "", nil, false
+	}
+	switch v := cached.(type) {
+	case string:
+		return v, nil, true
+	case error:
+		return "", v, true
+	}
+	return "", nil, false
+}
 
 // EnsureFixtureBuilt resolves a .wasm artifact from its source.
 // Returns the artifact's absolute path after ensuring it exists and
@@ -58,38 +119,35 @@ var fixtureBuildOnce sync.Map
 //
 // The cache lets multiple integration tests share a single build per
 // fixture per test process, and turns the absent-toolchain case into
-// one skip across the run rather than one per test.
+// one skip across the run rather than one per test. Concurrent callers
+// requesting the same fixture are serialised, so parallel tests queue on
+// one build instead of racing several builds onto one output path.
 func EnsureFixtureBuilt(t *testing.T, artifactName string) string {
 	t.Helper()
 
-	if cached, ok := fixtureBuildOnce.Load(artifactName); ok {
-		switch v := cached.(type) {
-		case string:
-			return v
-		case error:
-			t.Skipf("%v", v)
+	path, skip := buildFixtureOnce(artifactName, func() (string, error) {
+		t.Helper()
+
+		umbrellaRoot, err := resolveUmbrellaRoot()
+		if err != nil {
+			return "", fmt.Errorf("cannot resolve umbrella root: %v; run scripts/setup-workspace.sh from the umbrella checkout", err)
 		}
-	}
 
-	umbrellaRoot, err := resolveUmbrellaRoot()
-	if err != nil {
-		skipErr := fmt.Errorf("cannot resolve umbrella root: %v; run scripts/setup-workspace.sh from the umbrella checkout", err)
-		fixtureBuildOnce.Store(artifactName, skipErr)
-		t.Skipf("%v", skipErr)
-	}
+		if socket, lang, ok := parsePDKFixtureName(artifactName); ok {
+			return buildPDKFixture(t, umbrellaRoot, artifactName, socket, lang)
+		}
 
-	if socket, lang, ok := parsePDKFixtureName(artifactName); ok {
-		path := buildPDKFixture(t, umbrellaRoot, artifactName, socket, lang)
-		return path
-	}
+		if name, ok := parsePluginArtifactName(artifactName); ok {
+			return buildPluginArtifact(t, umbrellaRoot, artifactName, name)
+		}
 
-	if name, ok := parsePluginArtifactName(artifactName); ok {
-		path := buildPluginArtifact(t, umbrellaRoot, artifactName, name)
-		return path
+		t.Fatalf("malformed artifact name %q (want <socket>-<lang>.wasm OR <name>.wasm)", artifactName)
+		return "", nil
+	})
+	if skip != nil {
+		t.Skipf("%v", skip)
 	}
-
-	t.Fatalf("malformed artifact name %q (want <socket>-<lang>.wasm OR <name>.wasm)", artifactName)
-	return ""
+	return path
 }
 
 // EnsureFixtureBytes builds the fixture (via EnsureFixtureBuilt) and returns its
@@ -107,16 +165,14 @@ func EnsureFixtureBytes(t *testing.T, artifactName string) []byte {
 	return b
 }
 
-func buildPDKFixture(t *testing.T, umbrellaRoot, artifactName, socket, lang string) string {
+func buildPDKFixture(t *testing.T, umbrellaRoot, artifactName, socket, lang string) (string, error) {
 	testdataDir := filepath.Join(umbrellaRoot, "aggrega-cli", "internal", "wasm", "testdata")
 	artifactPath := filepath.Join(testdataDir, artifactName)
 
 	sourceDir := filepath.Join(umbrellaRoot, "aggrega-pdk", lang, "examples", socket)
 	if _, err := os.Stat(sourceDir); err != nil {
-		skipErr := fmt.Errorf("fixture source %s not present (the %s PDK may not have shipped yet): %v",
+		return "", fmt.Errorf("fixture source %s not present (the %s PDK may not have shipped yet): %v",
 			sourceDir, lang, err)
-		fixtureBuildOnce.Store(artifactName, skipErr)
-		t.Skipf("%v", skipErr)
 	}
 
 	// Freshness watches the example's own source AND the per-language
@@ -126,17 +182,28 @@ func buildPDKFixture(t *testing.T, umbrellaRoot, artifactName, socket, lang stri
 	// rebuild rather than reusing a now-incompatible prebuilt fixture.
 	pdkSrc, abiSrc := pdkDependencySources(umbrellaRoot, lang)
 	if isFresh(artifactPath, sourceDir, pdkSrc, abiSrc) {
-		fixtureBuildOnce.Store(artifactName, artifactPath)
-		return artifactPath
+		return artifactPath, nil
 	}
 
 	if err := os.MkdirAll(testdataDir, 0o755); err != nil {
 		t.Fatalf("mkdir testdata: %v", err)
 	}
 
+	// A fixture build writes its artifact straight to the output path it
+	// is handed, so aiming it at the shared destination would leave that
+	// file readable while it is still being written. Aim it at a private
+	// staging directory instead and publish the finished artifact by
+	// rename.
+	stageDir, err := newStageDir(testdataDir)
+	if err != nil {
+		t.Fatalf("stage fixture build for %s: %v", artifactName, err)
+	}
+	defer os.RemoveAll(stageDir)
+
 	buildScript := filepath.Join(sourceDir, "build.sh")
 	cmd := exec.Command("bash", buildScript)
 	cmd.Dir = sourceDir
+	cmd.Env = append(os.Environ(), "AGGREGA_PDK_WASM_OUT="+stageDir)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		// A non-zero exit splits two ways. If a required build tool is
@@ -146,24 +213,24 @@ func buildPDKFixture(t *testing.T, umbrellaRoot, artifactName, socket, lang stri
 		// that is a genuine failure the gate must surface — fail loudly,
 		// never skip, so a red build cannot read as green.
 		if pdkToolchainAbsent(string(output)) {
-			skipErr := fmt.Errorf("TOOLCHAIN-ABSENT: fixture build for %s skipped — a required build tool is not on PATH; run scripts/setup-workspace.sh to install the toolchain\noutput:\n%s",
+			return "", fmt.Errorf("TOOLCHAIN-ABSENT: fixture build for %s skipped — a required build tool is not on PATH; run scripts/setup-workspace.sh to install the toolchain\noutput:\n%s",
 				artifactName, string(output))
-			fixtureBuildOnce.Store(artifactName, skipErr)
-			t.Skipf("%v", skipErr)
 		}
 		t.Fatalf("fixture build failed for %s (toolchain present, build broke): %v\noutput:\n%s",
 			artifactName, err, string(output))
 	}
 
-	if _, err := os.Stat(artifactPath); err != nil {
-		skipErr := fmt.Errorf("fixture build succeeded but %s is missing afterwards (build.sh OUT_DIR may have been redirected): %v",
-			artifactPath, err)
-		fixtureBuildOnce.Store(artifactName, skipErr)
-		t.Skipf("%v", skipErr)
+	staged := filepath.Join(stageDir, artifactName)
+	if _, err := os.Stat(staged); err != nil {
+		return "", fmt.Errorf("fixture build for %s succeeded but produced nothing in the staging directory %s (the build script may not honour its output-directory override): %v",
+			artifactName, stageDir, err)
 	}
 
-	fixtureBuildOnce.Store(artifactName, artifactPath)
-	return artifactPath
+	if err := publishArtifact(staged, artifactPath); err != nil {
+		t.Fatalf("publish fixture %s: %v", artifactName, err)
+	}
+
+	return artifactPath, nil
 }
 
 // pdkToolchainAbsent reports whether a failed PDK fixture build failed
@@ -208,17 +275,21 @@ func pdkDependencySources(umbrellaRoot, lang string) (pdkSrc, abiSrc string) {
 // aggrega-cli/plugins/<name>/. Missing Cargo.toml is a hard
 // fail (the plugin source is supposed to exist); missing
 // wasm32-unknown-unknown target is a skip with a clear remediation;
-// other cargo failures are FAIL with the cargo error output. Cargo's
-// release-build artifact name uses underscores rather than dashes
-// (e.g., publishing-linter → publishing_linter.wasm).
-func buildPluginArtifact(t *testing.T, umbrellaRoot, artifactName, name string) string {
+// other cargo failures are FAIL with the cargo error output.
+//
+// The path returned is a published copy under the shared testdata
+// directory, not cargo's own release artifact: cargo owns that path and
+// rewrites it in place on every build, so a test that read it directly
+// could catch it mid-write while another test process rebuilt the crate.
+func buildPluginArtifact(t *testing.T, umbrellaRoot, artifactName, name string) (string, error) {
 	pluginDir := filepath.Join(umbrellaRoot, "aggrega-cli", "plugins", name)
 	manifestPath := filepath.Join(pluginDir, "Cargo.toml")
 	if _, err := os.Stat(manifestPath); err != nil {
 		t.Fatalf("plugin source missing at %s: %v (the plugin's Cargo.toml is supposed to ship; absence is a regression)", manifestPath, err)
 	}
 
-	cargoArtifact := filepath.Join(pluginDir, "target", "wasm32-unknown-unknown", "release", strings.ReplaceAll(name, "-", "_")+".wasm")
+	testdataDir := filepath.Join(umbrellaRoot, "aggrega-cli", "internal", "wasm", "testdata")
+	artifactPath := filepath.Join(testdataDir, artifactName)
 
 	// Freshness watches the plugin's own src/ AND the path-dependency
 	// source trees the plugin builds against (the Rust PDK and the
@@ -231,22 +302,39 @@ func buildPluginArtifact(t *testing.T, umbrellaRoot, artifactName, name string) 
 	pdkSrc := filepath.Join(umbrellaRoot, "aggrega-pdk", "rust", "src")
 	abiSrc := filepath.Join(umbrellaRoot, "aggrega-abi", "rust", "src")
 
-	if isFresh(cargoArtifact, srcDir, pdkSrc, abiSrc) {
-		fixtureBuildOnce.Store(artifactName, cargoArtifact)
-		return cargoArtifact
+	if isFresh(artifactPath, srcDir, pdkSrc, abiSrc) {
+		return artifactPath, nil
 	}
 
 	if skipErr := cargoBuildWasm(t, pluginDir, manifestPath, artifactName); skipErr != nil {
-		fixtureBuildOnce.Store(artifactName, skipErr)
-		t.Skipf("%v", skipErr)
+		return "", skipErr
 	}
 
+	return publishPluginArtifact(t, pluginDir, name, artifactPath), nil
+}
+
+// publishPluginArtifact copies cargo's release artifact for the named
+// plugin to artifactPath and returns artifactPath. Cargo's own output path
+// is left untouched so cargo's bookkeeping stays intact.
+func publishPluginArtifact(t *testing.T, pluginDir, name, artifactPath string) string {
+	t.Helper()
+
+	// Cargo's release-build artifact name uses underscores rather than
+	// dashes (e.g., publishing-linter → publishing_linter.wasm).
+	cargoArtifact := filepath.Join(pluginDir, "target", "wasm32-unknown-unknown", "release", strings.ReplaceAll(name, "-", "_")+".wasm")
 	if _, err := os.Stat(cargoArtifact); err != nil {
 		t.Fatalf("cargo build succeeded but %s is missing afterwards: %v", cargoArtifact, err)
 	}
 
-	fixtureBuildOnce.Store(artifactName, cargoArtifact)
-	return cargoArtifact
+	if err := os.MkdirAll(filepath.Dir(artifactPath), 0o755); err != nil {
+		t.Fatalf("mkdir testdata: %v", err)
+	}
+
+	if err := publishArtifactCopy(cargoArtifact, artifactPath); err != nil {
+		t.Fatalf("publish plugin artifact %s: %v", name, err)
+	}
+
+	return artifactPath
 }
 
 // cargoBuildWasm runs `cargo build --release --target
@@ -271,7 +359,7 @@ func cargoBuildWasm(t *testing.T, pluginDir, manifestPath, artifactName string) 
 }
 
 // ForcePluginBuild compiles a production plugin's crate unconditionally,
-// bypassing the mtime freshness cache, and returns the built artifact
+// bypassing the mtime freshness cache, and returns the published artifact
 // path. It exists for the build-gate test: a non-compiling crate must
 // FAIL the gate even if a stale prebuilt artifact would otherwise look
 // fresh. The skip/fatal contract matches buildPluginArtifact — a missing
@@ -294,16 +382,12 @@ func ForcePluginBuild(t *testing.T, name string) string {
 		t.Fatalf("plugin source missing at %s: %v (the plugin's Cargo.toml is supposed to ship; absence is a regression)", manifestPath, err)
 	}
 
-	cargoArtifact := filepath.Join(pluginDir, "target", "wasm32-unknown-unknown", "release", strings.ReplaceAll(name, "-", "_")+".wasm")
-
 	if skipErr := cargoBuildWasm(t, pluginDir, manifestPath, name+".wasm"); skipErr != nil {
 		t.Skipf("%v", skipErr)
 	}
 
-	if _, err := os.Stat(cargoArtifact); err != nil {
-		t.Fatalf("cargo build succeeded but %s is missing afterwards: %v", cargoArtifact, err)
-	}
-	return cargoArtifact
+	artifactPath := filepath.Join(umbrellaRoot, "aggrega-cli", "internal", "wasm", "testdata", name+".wasm")
+	return publishPluginArtifact(t, pluginDir, name, artifactPath)
 }
 
 // ForcePluginTest runs the plugin crate's Rust unit/integration tests
@@ -402,6 +486,71 @@ func resolveUmbrellaRoot() (string, error) {
 		}
 		dir = parent
 	}
+}
+
+// newStageDir creates a private directory for one build to write into,
+// nested inside destDir. Nesting is what makes the staging usable: a
+// finished artifact is published by renaming it to its final name, and a
+// rename is only atomic within a single filesystem, so the staging area has
+// to sit on the same one as the destination. The caller removes the
+// directory when the build is done with it.
+func newStageDir(destDir string) (string, error) {
+	root := filepath.Join(destDir, stageDirName)
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		return "", err
+	}
+	return os.MkdirTemp(root, "build-")
+}
+
+// stageDirName is the staging area's fixed name so it can be ignored by
+// version control in one entry rather than by pattern.
+const stageDirName = ".stage"
+
+// publishArtifact moves a finished artifact from a staging path to the
+// shared path tests read it from.
+//
+// The rename is the half of the fix that reaches across processes. Serialising
+// builders keeps two goroutines in one test binary from writing the same
+// output at once, but every test package is its own process and no in-process
+// lock spans them. A rename swaps the destination name in a single step, so a
+// reader in any process opens either the previous artifact or the new one and
+// never a half-written file — and a reader that already has the old file open
+// keeps reading it intact.
+func publishArtifact(staged, dst string) error {
+	return os.Rename(staged, dst)
+}
+
+// publishArtifactCopy publishes a copy of src, for a source that has to stay
+// where it is because another tool owns it. The copy lands in the staging
+// area first and reaches dst through publishArtifact, so the destination is
+// still only ever written by rename.
+func publishArtifactCopy(src, dst string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+
+	stageDir, err := newStageDir(filepath.Dir(dst))
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(stageDir)
+
+	staged := filepath.Join(stageDir, filepath.Base(dst))
+	out, err := os.OpenFile(staged, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(out, in); err != nil {
+		out.Close()
+		return err
+	}
+	if err := out.Close(); err != nil {
+		return err
+	}
+
+	return publishArtifact(staged, dst)
 }
 
 // isFresh returns true when artifactPath exists and its mtime is at or

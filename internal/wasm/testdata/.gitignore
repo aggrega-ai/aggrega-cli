@@ -1,1 +1,4 @@
 *.wasm
+# Scratch area fixture builds write into before their artifact is renamed
+# into this directory. Present only while a build is running.
+.stage/
