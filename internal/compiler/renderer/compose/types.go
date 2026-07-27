@@ -3,7 +3,13 @@
 
 package compose
 
-import "github.com/aggrega-ai/aggrega-cli/pkg/types"
+import (
+	"fmt"
+
+	"go.yaml.in/yaml/v3"
+
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
+)
 
 // ComposeFile is a Compose Specification document (no `version:` key — the
 // modern compose-spec deprecates it; Compose v2.2+ ignores it). Fragment
@@ -35,7 +41,7 @@ type Service struct {
 	Tmpfs           []string                 `yaml:"tmpfs,omitempty"`
 	Networks        []string                 `yaml:"networks,omitempty"`
 	NetworkMode     string                   `yaml:"network_mode,omitempty"`
-	DependsOn       []string                 `yaml:"depends_on,omitempty"`
+	DependsOn       DependsOn                `yaml:"depends_on,omitempty"`
 	Healthcheck     *Healthcheck             `yaml:"healthcheck,omitempty"`
 	Restart         string                   `yaml:"restart,omitempty"`
 	User            string                   `yaml:"user,omitempty"`
@@ -50,6 +56,156 @@ type Service struct {
 	DNS             []string                 `yaml:"dns,omitempty"`
 	DNSSearch       []string                 `yaml:"dns_search,omitempty"`
 	ExtraHosts      []string                 `yaml:"extra_hosts,omitempty"`
+}
+
+// Compose `depends_on` conditions, as the Compose Specification defines them.
+// conditionStarted is the specification's stated equivalent of the short form;
+// conditionCompletedSuccessfully waits until the dependency has run to
+// successful completion, which is the primitive a run-to-completion init
+// service is waited on with.
+const (
+	conditionStarted               = "service_started"
+	conditionCompletedSuccessfully = "service_completed_successfully"
+)
+
+// DependsOn is a compose service's `depends_on` field — the service's ordering
+// expression. It is the one home for both the merge rule and the emitted shape,
+// so every producer of service ordering agrees on them; the entry list is
+// unexported so no producer can append past this type's Require method and
+// reach the emitted bytes with its own shape or its own ordering.
+//
+// Emitted shape. Compose accepts a short sequence of service names and a long
+// mapping of service name to a body, and the specification requires `condition`
+// on every entry of the long form. So the field emits in one form or the other,
+// never a mix: the short sequence when no entry carries a condition, the long
+// mapping when any entry does — and there, a condition-less entry emits the
+// explicit `service_started`, which the specification defines as the short
+// form's equivalent. The condition-less case, which is every dependency derived
+// from a `uses` edge, therefore stays a readable list.
+//
+// Emitted order is insertion order. Two producers write this field with two
+// different orderings — dependencies inferred from `uses` edges arrive in
+// alphabetical target order, an init-container chain arrives in the order the
+// author wrote the list, because that list is ordered and the ordering is the
+// meaning. Insertion order keeps both intact without this type arbitrating
+// between them: each producer orders its own Require calls, and the field
+// concatenates the contributions in the order they arrive. No map is iterated
+// on the path to the output.
+type DependsOn struct {
+	entries []dependsOnEntry
+}
+
+// dependsOnEntry is one dependency: the service waited on, and the condition
+// that satisfies the wait (empty selects the short form).
+type dependsOnEntry struct {
+	service   string
+	condition string
+}
+
+// Require records that the service owning this field waits on service, gated on
+// condition (empty for an ungated wait). It is the only way to populate the
+// field.
+//
+// Require is idempotent per service name: the first call fixes that service's
+// place in the emitted order, and a later call for the same service supplies a
+// condition only when no condition is recorded yet. So a specific wait survives
+// a subsequent unconditional one, and neither producer can silently reorder or
+// weaken what the other recorded.
+func (d *DependsOn) Require(service, condition string) {
+	for i := range d.entries {
+		if d.entries[i].service != service {
+			continue
+		}
+		if d.entries[i].condition == "" {
+			d.entries[i].condition = condition
+		}
+		return
+	}
+	d.entries = append(d.entries, dependsOnEntry{service: service, condition: condition})
+}
+
+// Len returns the number of recorded dependencies.
+func (d DependsOn) Len() int { return len(d.entries) }
+
+// IsZero reports whether the field records no dependency. yaml.v3 reads it
+// through the yaml.IsZeroer interface to honor the `omitempty` tag — the
+// reflective fallback it would otherwise use skips unexported fields and would
+// judge every DependsOn empty.
+func (d DependsOn) IsZero() bool { return len(d.entries) == 0 }
+
+// MarshalYAML emits the short sequence form when no entry carries a condition
+// and the long mapping form otherwise, both in insertion order.
+//
+// Value receiver so dispatch works when DependsOn is a struct field of a
+// non-addressable map value, matching the OrderedMap fields alongside it.
+func (d DependsOn) MarshalYAML() (any, error) {
+	long := false
+	for _, e := range d.entries {
+		if e.condition != "" {
+			long = true
+			break
+		}
+	}
+
+	if !long {
+		names := make([]string, 0, len(d.entries))
+		for _, e := range d.entries {
+			names = append(names, e.service)
+		}
+		return names, nil
+	}
+
+	out := &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
+	out.Content = make([]*yaml.Node, 0, 2*len(d.entries))
+	for _, e := range d.entries {
+		condition := e.condition
+		if condition == "" {
+			condition = conditionStarted
+		}
+		out.Content = append(out.Content,
+			&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: e.service},
+			&yaml.Node{Kind: yaml.MappingNode, Tag: "!!map", Content: []*yaml.Node{
+				{Kind: yaml.ScalarNode, Tag: "!!str", Value: "condition"},
+				{Kind: yaml.ScalarNode, Tag: "!!str", Value: condition},
+			}},
+		)
+	}
+	return out, nil
+}
+
+// UnmarshalYAML accepts both compose forms, so a fragment this package emitted
+// and a fragment authored by hand both round-trip into the same shape. Mapping
+// entries are read in document order, which is the order they were emitted in.
+func (d *DependsOn) UnmarshalYAML(node *yaml.Node) error {
+	d.entries = nil
+	switch node.Kind {
+	case yaml.SequenceNode:
+		for _, item := range node.Content {
+			var service string
+			if err := item.Decode(&service); err != nil {
+				return fmt.Errorf("depends_on: decoding entry at line %d: %w", item.Line, err)
+			}
+			d.Require(service, "")
+		}
+		return nil
+	case yaml.MappingNode:
+		for i := 0; i+1 < len(node.Content); i += 2 {
+			var service string
+			if err := node.Content[i].Decode(&service); err != nil {
+				return fmt.Errorf("depends_on: decoding key at line %d: %w", node.Content[i].Line, err)
+			}
+			var body struct {
+				Condition string `yaml:"condition"`
+			}
+			if err := node.Content[i+1].Decode(&body); err != nil {
+				return fmt.Errorf("depends_on: decoding entry %q at line %d: %w", service, node.Content[i+1].Line, err)
+			}
+			d.Require(service, body.Condition)
+		}
+		return nil
+	default:
+		return fmt.Errorf("depends_on: expected a sequence or a mapping, got kind %d at line %d", node.Kind, node.Line)
+	}
 }
 
 // Deploy is the compose service deploy block. Only the resources sub-block is

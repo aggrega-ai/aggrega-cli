@@ -28,15 +28,18 @@
 //     free in the current shape, so a collision means the same physical
 //     volume).
 //   - depends_on inference. For each IR edge whose source and target both
-//     contribute services to this dispatch group, add `depends_on:
-//     [<target-service>]` to the source service.
+//     contribute services to this dispatch group, record an ungated
+//     dependency on the target service on the source service. It joins
+//     whatever the fragment already carried — a synthesised init-container
+//     chain — through DependsOn, which owns the merge rule and the emitted
+//     shape.
 //   - Author order. Map-shaped top-level fields (services, volumes,
 //     networks) are alphabetised by yaml.v3 on marshal — the
 //     alphabetical-by-derivation-key principle for synthesised
 //     collections where no author order applies upstream. Within a
-//     service, lists (ports, depends_on, volumes, networks) are kept in
-//     stable order: edges and IR nodes iterate alphabetically; ports
-//     retain the order their fragment carried.
+//     service, per-service collections (ports, depends_on, volumes,
+//     networks) are kept in stable order: edges and IR nodes iterate
+//     alphabetically; ports retain the order their fragment carried.
 
 package compose
 
@@ -288,17 +291,22 @@ func checkServiceCollisions(contribsByService map[string][]serviceContrib) error
 	return cerrors.New(cerrors.TranslationError, cerrors.SourceLocation{}, fmt.Sprintf("compose AssembleBoundary: service-name collisions across contributors: %s", strings.Join(parts, "; ")), nil, nil)
 }
 
-// applyDependsOn projects IR edges onto contributing services and adds
-// `depends_on: [<target-service>]` entries to the source service. Edges
-// whose endpoints are not both contributing-service names are skipped (the
-// edge points at a node served by a different provider). Depends_on entries
-// sorted alphabetically for output stability.
+// applyDependsOn projects IR edges onto contributing services and records an
+// ungated dependency on each edge's target service. Edges whose endpoints are
+// not both contributing-service names are skipped (the edge points at a node
+// served by a different provider).
 //
-// Today's emit shape is the short-form list (just service names); the
-// long-form `{ <target>: { condition: service_healthy } }` shape requires a
-// type-shape extension on Service.DependsOn that is not yet implemented. The
-// short form is honest and works for compose; service_healthy gating becomes
-// available once Service.DependsOn becomes a map.
+// Targets are sorted alphabetically before they are recorded. That sort is this
+// producer's own ordering contract, not the field's: a set of edges carries no
+// author order, so alphabetical is what makes the output stable. DependsOn emits
+// in the order dependencies are recorded, so a service that also waits on an
+// init chain keeps that chain's authored order ahead of these entries rather
+// than interleaving with them.
+//
+// Edge-derived dependencies are recorded without a condition, so a service
+// depending only on edges emits the short-form list. Gating them on the target's
+// health is expressible now that the field carries a condition, and is a
+// separate decision about what a `uses` edge means.
 func applyDependsOn(merged *ComposeFile, edges []rendercore.IREdgeInfo, boundaryByService map[string]string) {
 	addedByService := map[string]map[string]struct{}{}
 	for _, edge := range edges {
@@ -319,7 +327,9 @@ func applyDependsOn(merged *ComposeFile, edges []rendercore.IREdgeInfo, boundary
 			ordered = append(ordered, t)
 		}
 		sort.Strings(ordered)
-		svc.DependsOn = append(svc.DependsOn, ordered...)
+		for _, target := range ordered {
+			svc.DependsOn.Require(target, "")
+		}
 		merged.Services[svcName] = svc
 	}
 }

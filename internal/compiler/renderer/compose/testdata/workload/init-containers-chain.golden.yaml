@@ -1,0 +1,63 @@
+services:
+  platform:
+    image: platform:1.0
+    labels:
+      aggrega.ai/aggregate-name: test-agg
+      aggrega.ai/boundary-path: default
+      aggrega.ai/compiler-version: test
+      aggrega.ai/component-id: platform
+      aggrega.ai/environment: test-env
+    volumes:
+      - type: volume
+        source: platform-data
+        target: /home/node/.n8n
+    depends_on:
+      platform-verify-seed:
+        condition: service_completed_successfully
+  platform-import-seed:
+    image: platform:1.0
+    command:
+      - platform import:workflow --input=/seed/workflow.json
+    entrypoint:
+      - /bin/sh
+      - -c
+    environment:
+      SEED_SOURCE: /seed/workflow.json
+    labels:
+      aggrega.ai/aggregate-name: test-agg
+      aggrega.ai/boundary-path: default
+      aggrega.ai/compiler-version: test
+      aggrega.ai/component-id: platform
+      aggrega.ai/environment: test-env
+    volumes:
+      - type: bind
+        source: workflow-seed
+        target: /seed
+        read_only: true
+      - type: volume
+        source: platform-data
+        target: /home/node/.n8n
+    restart: "no"
+  platform-verify-seed:
+    image: platform:1.0
+    command:
+      - test -f /home/node/.n8n/database.sqlite
+    entrypoint:
+      - /bin/sh
+      - -c
+    labels:
+      aggrega.ai/aggregate-name: test-agg
+      aggrega.ai/boundary-path: default
+      aggrega.ai/compiler-version: test
+      aggrega.ai/component-id: platform
+      aggrega.ai/environment: test-env
+    volumes:
+      - type: volume
+        source: platform-data
+        target: /home/node/.n8n
+    depends_on:
+      platform-import-seed:
+        condition: service_completed_successfully
+    restart: "no"
+volumes:
+  platform-data: {}

@@ -1,0 +1,53 @@
+services:
+  api:
+    image: app:1.0
+    labels:
+      aggrega.ai/aggregate-name: test-agg
+      aggrega.ai/boundary-path: default
+      aggrega.ai/compiler-version: test
+      aggrega.ai/component-id: api
+      aggrega.ai/environment: test-env
+    networks:
+      - default
+    depends_on:
+      api-warm-cache:
+        condition: service_completed_successfully
+      db:
+        condition: service_started
+  api-migrate:
+    image: migrate:1.0
+    labels:
+      aggrega.ai/aggregate-name: test-agg
+      aggrega.ai/boundary-path: default
+      aggrega.ai/compiler-version: test
+      aggrega.ai/component-id: api
+      aggrega.ai/environment: test-env
+    networks:
+      - default
+    restart: "no"
+  api-warm-cache:
+    image: warm:1.0
+    labels:
+      aggrega.ai/aggregate-name: test-agg
+      aggrega.ai/boundary-path: default
+      aggrega.ai/compiler-version: test
+      aggrega.ai/component-id: api
+      aggrega.ai/environment: test-env
+    networks:
+      - default
+    depends_on:
+      api-migrate:
+        condition: service_completed_successfully
+    restart: "no"
+  db:
+    image: postgres:15
+    labels:
+      aggrega.ai/aggregate-name: test-agg
+      aggrega.ai/boundary-path: default
+      aggrega.ai/compiler-version: test
+      aggrega.ai/component-id: db
+      aggrega.ai/environment: test-env
+    networks:
+      - default
+networks:
+  default: {}

@@ -17,7 +17,11 @@
 // `<nodeID>`. Multi-container Workloads → main service `<nodeID>` plus one
 // sidecar service `<nodeID>-<containerName>` per non-main container; sidecars
 // declare `network_mode: "service:<nodeID>"` so they share the main's
-// network namespace (the closest compose primitive to a K8s pod).
+// network namespace (the closest compose primitive to a K8s pod). Each init
+// container adds one more service on the same `<nodeID>-<containerName>` shape,
+// configured to run once and not restart; the init services form a chain in
+// authored order and every long-running service waits for the last of them to
+// complete.
 //
 // Author-order preservation. Containers / Variables / Ports / Secrets /
 // Volumes / Services iterated via OrderedMap.All(). Top-level maps
@@ -85,8 +89,9 @@ func SynthesizeWorkloadCore(
 	// Unsupported-field diagnostics accumulate here in a deterministic order: per
 	// container in author order (each container's runAsNonRoot and dropped
 	// extended resources), then the main container's pod-level drops, then the
-	// per-volume partial-support entries. They ride the render-output ABI back to
-	// the host out-of-band; the rendered fragment bytes are unaffected.
+	// same per-container entries for each init container in authored order, then
+	// the per-volume partial-support entries. They ride the render-output ABI back
+	// to the host out-of-band; the rendered fragment bytes are unaffected.
 	var diags []renderctx.Diagnostic
 
 	frag := ComposeFile{
@@ -109,15 +114,22 @@ func SynthesizeWorkloadCore(
 	mainServiceName := componentID
 	mainContainerName, hasMain := pickMainContainerName(w)
 
+	// appServiceNames collects the long-running services in author order so the
+	// init-container wait is wired without iterating the services map, which
+	// would put Go's map order on the path to the rendered bytes.
+	appServiceNames := make([]string, 0, w.Containers.Len())
+
 	for containerName, c := range w.Containers.All() {
 		isMain := hasMain && containerName == mainContainerName
 
-		serviceName := mainServiceName
-		if !isMain {
-			serviceName = mainServiceName + "-" + sanitizeServiceName(containerName)
+		role := roleSidecar
+		serviceName := mainServiceName + "-" + sanitizeServiceName(containerName)
+		if isMain {
+			role = roleMain
+			serviceName = mainServiceName
 		}
 
-		svc, cdiags, err := translateContainer(c, w, nodeCtx, isMain, mainServiceName)
+		svc, cdiags, err := translateContainer(c, w, nodeCtx, role, mainServiceName)
 		if err != nil {
 			return nil, nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("compose: node %q container %q", nodeCtx.NodeID, containerName))
 		}
@@ -130,7 +142,17 @@ func SynthesizeWorkloadCore(
 		}
 
 		frag.Services[serviceName] = svc
+		appServiceNames = append(appServiceNames, serviceName)
 	}
+
+	// Init containers become run-to-completion services the long-running services
+	// wait on. Synthesised after the containers above so a name a container
+	// already claimed is detected rather than overwritten.
+	initDiags, err := synthesizeInitServices(&frag, w, nodeCtx, mainServiceName, appServiceNames)
+	if err != nil {
+		return nil, nil, err
+	}
+	diags = append(diags, initDiags...)
 
 	// Top-level Volumes: one entry per persistent or persistentTemplate
 	// volume. Author order isn't expressed here — compose volumes are a map.
@@ -193,13 +215,113 @@ func pickMainContainerName(w *types.Workload) (string, bool) {
 	return "", false
 }
 
+// containerRole is the part a container plays in the workload, which the shared
+// container translation cannot read off the ContainerSpec itself. It decides two
+// things: whether the synthesised service shares the main service's network
+// namespace, and whether the service runs to completion.
+type containerRole int
+
+const (
+	// roleMain is the container whose service carries the node's identity, its
+	// published ports, and the workload's pod-level configuration.
+	roleMain containerRole = iota
+	// roleSidecar is a non-main long-running container. Its service shares the
+	// main service's network namespace — the closest compose primitive to the
+	// shared-network model a Kubernetes pod gives co-located containers.
+	roleSidecar
+	// roleInit is a container that runs once and must finish before the
+	// workload's long-running services start. Its service joins the boundary
+	// network in its own right rather than sharing the main service's namespace:
+	// the main service waits on the init service, so a shared namespace — which
+	// is itself a dependency on the main service — would close that wait into a
+	// cycle compose refuses to start.
+	roleInit
+)
+
+// synthesizeInitServices translates each init container into its own
+// run-to-completion service and wires the ordering both ways: each init service
+// after the first waits for its predecessor to complete, and every long-running
+// service named in appServiceNames waits for the last one. That mirrors the
+// authoring contract, where the init containers run to completion in the order
+// they are written and every other container starts after all of them.
+//
+// Init services are named on the same `<component>-<container>` shape as
+// sidecars, so they share one namespace with them; a name already taken halts
+// rather than overwriting the service that claimed it. An unnamed entry falls
+// back to `init-<index>`, the name the authoring contract documents for a
+// positional entry — the same fallback the Kubernetes-shaped targets emit, and
+// it must stay the same on both so one authored workload yields one set of
+// container names everywhere.
+//
+// Pod-level configuration is deliberately not applied. An init service is a
+// non-main service, and this synthesiser applies pod-level fields to the main
+// service only; a third policy would be a new rule with nothing behind it, and
+// re-running the pod-level pass per init container would also repeat every
+// pod-level diagnostic once per init container.
+func synthesizeInitServices(
+	frag *ComposeFile,
+	w *types.Workload,
+	nodeCtx rendercore.NodeRenderContext,
+	mainServiceName string,
+	appServiceNames []string,
+) ([]renderctx.Diagnostic, error) {
+	if len(w.InitContainers) == 0 {
+		return nil, nil
+	}
+
+	var diags []renderctx.Diagnostic
+	var previous string
+
+	for i, c := range w.InitContainers {
+		containerName := c.Name
+		if containerName == "" {
+			containerName = fmt.Sprintf("init-%d", i)
+		}
+		serviceName := mainServiceName + "-" + sanitizeServiceName(containerName)
+
+		if _, taken := frag.Services[serviceName]; taken {
+			return nil, cerrors.New(cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID},
+				fmt.Sprintf("compose: node %q init container %q needs the service name %q, which another container of the same workload already uses; give every entry of containers and initContainers a distinct name",
+					nodeCtx.NodeID, containerName, serviceName),
+				nil, nil)
+		}
+
+		svc, cdiags, err := translateContainer(c, w, nodeCtx, roleInit, mainServiceName)
+		if err != nil {
+			return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("compose: node %q init container %q", nodeCtx.NodeID, containerName))
+		}
+		diags = append(diags, cdiags...)
+
+		if previous != "" {
+			svc.DependsOn.Require(previous, conditionCompletedSuccessfully)
+		}
+
+		frag.Services[serviceName] = svc
+		previous = serviceName
+	}
+
+	// Every long-running service waits on the last init service. Waiting on the
+	// last one is sufficient because the init services form a chain, and it keeps
+	// one dependency per waiter instead of one per init container.
+	for _, name := range appServiceNames {
+		svc := frag.Services[name]
+		svc.DependsOn.Require(previous, conditionCompletedSuccessfully)
+		frag.Services[name] = svc
+	}
+
+	return diags, nil
+}
+
 // translateContainer maps a single Workload ContainerSpec to a compose Service.
 // Author order preserved across env vars / ports / attachments via OrderedMap.All().
+// role carries the part the container plays; every container reaches the same
+// image, command, environment, volume-mount and security translation regardless
+// of it.
 func translateContainer(
 	c types.ContainerSpec,
 	w *types.Workload,
 	nodeCtx rendercore.NodeRenderContext,
-	isMain bool,
+	role containerRole,
 	mainServiceName string,
 ) (Service, []renderctx.Diagnostic, error) {
 	var diags []renderctx.Diagnostic
@@ -346,8 +468,9 @@ func translateContainer(
 		diags = append(diags, applyContainerSecurityContext(&svc, c.SecurityContext)...)
 	}
 
-	// Sidecar services share the main service's network namespace.
-	if !isMain {
+	// Sidecar services share the main service's network namespace. An init
+	// service must not — see roleInit.
+	if role == roleSidecar {
 		svc.NetworkMode = "service:" + mainServiceName
 	}
 
@@ -363,6 +486,14 @@ func translateContainer(
 	case "OnFailure":
 		svc.Restart = "on-failure"
 	case "Never":
+		svc.Restart = "no"
+	}
+
+	// An init service never restarts, whatever restart policy the container
+	// carries: a service that comes back up never reaches the completed state the
+	// services waiting on it are gated on, so a restarting init service would
+	// hold the whole workload at the starting line.
+	if role == roleInit {
 		svc.Restart = "no"
 	}
 
@@ -574,14 +705,16 @@ func applyContainerSecurityContext(svc *Service, sc *types.ContainerSecurityCont
 //     SecurityContext.RunAsUser if set)
 //   - Workload.Scheduling                  → no compose equivalent (single-host)
 //   - Workload.ServiceAccount              → no compose equivalent
-//   - Workload.InitContainers              → no compose equivalent (compose
-//     has no startup ordering primitive beyond depends_on)
 //   - Workload.Replicas                    → no equivalent at the service
 //     level (compose `deploy.replicas` is swarm-only; out of scope for the
 //     current single-host compose target)
 //
+// Workload.InitContainers is honored, and by synthesizeInitServices rather than
+// here: an init container becomes its own run-to-completion service, so it is not
+// a field applied onto an existing service.
+//
 // Every authored pod-level field compose cannot honor — scheduling,
-// serviceAccount, initContainers, replicas, runtimeClassName, priorityClassName,
+// serviceAccount, replicas, runtimeClassName, priorityClassName,
 // imagePullSecrets, dnsPolicy, and dnsConfig.options — is dropped with a
 // unsupported-field warning. Returns one diagnostic per authored-and-dropped field, in
 // a deterministic order.
@@ -614,9 +747,6 @@ func applyPodLevelFieldsToService(svc *Service, w *types.Workload) []renderctx.D
 	}
 	if w.ServiceAccount != "" {
 		diags = append(diags, rendercore.UnsupportedFieldDiagnostic(composeTargetName, "serviceAccount"))
-	}
-	if len(w.InitContainers) > 0 {
-		diags = append(diags, rendercore.UnsupportedFieldDiagnostic(composeTargetName, "initContainers"))
 	}
 	if w.Replicas != nil {
 		diags = append(diags, rendercore.UnsupportedFieldDiagnostic(composeTargetName, "replicas"))

@@ -51,9 +51,6 @@ func TestUnsupportedField_PerAuthoredField(t *testing.T) {
 			w.Scheduling = &types.Scheduling{NodeSelector: map[string]string{"disktype": "ssd"}}
 		}},
 		{"serviceAccount", func(w *types.Workload) { w.ServiceAccount = "deployer" }},
-		{"initContainers", func(w *types.Workload) {
-			w.InitContainers = []types.ContainerSpec{{Image: "init:1.0"}}
-		}},
 		{"replicas", func(w *types.Workload) { w.Replicas = ptrInt(3) }},
 		{"runtimeClassName", func(w *types.Workload) { w.RuntimeClassName = "nvidia" }},
 		{"priorityClassName", func(w *types.Workload) { w.PriorityClassName = "high" }},
