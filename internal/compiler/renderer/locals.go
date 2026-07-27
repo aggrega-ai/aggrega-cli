@@ -275,9 +275,16 @@ func EvaluateRecipeLocals(
 	)
 }
 
-// mergeFeatureLocals returns the merge of base Recipe's evaluated locals and a
-// FeatureRecipe's own locals. FR entries override base entries on key collision.
-// Author order preserved — base first, then FR-only entries.
+// mergeFeatureLocals returns the merge of a base Recipe's resolved locals and a
+// FeatureRecipe's resolved own locals. FR entries override base entries on key
+// collision. Author order preserved — base first, then FR-only entries.
+//
+// BOTH arguments carry resolved values. This is a merge and nothing else — it
+// evaluates no template, so authored template text handed to either side would
+// travel verbatim to whatever reads the result. Every caller resolves the
+// FeatureRecipe's block through EvaluateFeatureRecipeLocals before merging, and
+// merging AFTER that resolution is what keeps a base local unreachable from an
+// attachment local on every surface alike.
 func mergeFeatureLocals(base, frOwn types.OrderedMap[string]) types.OrderedMap[string] {
 	out := types.OrderedMap[string]{}
 	for k, v := range base.All() {

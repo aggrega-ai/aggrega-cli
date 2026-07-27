@@ -28,6 +28,14 @@ type FeatureRecipeRef struct {
 // evaluates each injectMapping template, and deep-merges the output over ctx.Context.Inject.
 // For each FeatureRecipe, .values and .infra are swapped to the attachment's own values/infra.
 //
+// A FeatureRecipe's own .locals resolve against that attachment-scoped view
+// before its injectMapping runs, through the same evaluator the attachment's
+// render path uses, so an attachment's locals resolve identically whichever
+// surface reads them. The resolved entries merge over the base Recipe's
+// evaluated locals, the FeatureRecipe winning on a key collision. A local
+// whose template fails halts the build; it does not reach the delivery pipe as
+// unevaluated text.
+//
 // The authored-mechanism set is collected once from ctx.InjectRaw — the
 // immutable Developer intent populated by BuildInjectPipe. The set is passed
 // into every ParseInjectMappingOutput call so the dangling-reference check
@@ -74,16 +82,25 @@ func ExecutePhaseA(ctx *types.TemplateContext, featureRecipes []FeatureRecipeRef
 			continue
 		}
 
-		// Build feature-scoped context: swap .values/.infra to the feature's own
-		// and overlay FR-own locals over the base Recipe's evaluated locals
-		// (FR wins on collision). The current implementation uses a raw-string
-		// overlay; template-evaluated overlay is a future enhancement.
+		// Build feature-scoped context: swap .values/.infra to the feature's own,
+		// resolve the FeatureRecipe's OWN locals against that scope, and merge the
+		// resolved entries over the base Recipe's evaluated locals (FR wins on
+		// collision). Both sides of the merge are resolved values; what
+		// injectMapping reads through .locals is never authored template text.
 		featureCtx := *ctx // shallow copy
 		if attachment, ok := ctx.Features.Get(ref.InstanceName); ok {
 			featureCtx.Values = attachment.Values
 			featureCtx.Infra = attachment.Infra
 		}
-		featureCtx.Locals = mergeFeatureLocals(ctx.Locals, ref.FeatureRecipe.Spec.Locals)
+		frLocals, err := EvaluateFeatureRecipeLocals(
+			ref.FeatureRecipe, ref.InstanceName, featureCtx.Values, featureCtx.Infra,
+		)
+		if err != nil {
+			return cerrors.Wrap(err, cerrors.CatalogError,
+				cerrors.SourceLocation{File: ref.FeatureRecipe.Metadata.Name},
+				fmt.Sprintf("Phase A: feature %q (recipe %q) locals", ref.InstanceName, ref.FeatureRecipe.Metadata.Name))
+		}
+		featureCtx.Locals = mergeFeatureLocals(ctx.Locals, frLocals)
 
 		// Evaluate injectMapping with the feature-scoped context
 		output, err := EvalTemplate(
