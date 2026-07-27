@@ -42,6 +42,16 @@ func aggregaFuncMap() template.FuncMap {
 //
 // Indexing a nil map returns the zero value with ok=false in Go, so a
 // nil m argument is handled gracefully — the fallback is returned.
+//
+// One bound on the presence check, and it is a property of the template
+// rather than of this function: a value template reads an absent key as
+// nothing, which it does by supplying an empty value at each absent key
+// the template names as a dotted path and reads as a value. So a template
+// that reads one key BOTH through this helper and as such a path —
+// `{{ optional .infra "port" 8080 }}` alongside `{{ .infra.port }}` —
+// finds that key present and empty, and receives the empty value rather
+// than the fallback. Reading a key one way per template keeps the two
+// answers the same.
 func optional(m map[string]any, key string, fallback any) any {
 	if v, ok := m[key]; ok {
 		return v

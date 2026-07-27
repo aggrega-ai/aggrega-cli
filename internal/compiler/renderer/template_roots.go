@@ -17,9 +17,17 @@ import (
 // templateRootRef is one field access a template makes against its context
 // root. Segs holds the path segments with the root first; Path holds the
 // authored dot-path a diagnostic quotes back to the author.
+//
+// Iterated marks a reference the template iterates over — the operand of a range
+// pipeline — rather than reads as a value. Iteration needs a container where a
+// value read needs a scalar, so the two positions cannot be treated alike by
+// anything that supplies something for an absent reference. It is set when ANY
+// occurrence of the path is iterated, not just the first, so the flag does not
+// depend on which occurrence the template happens to write first.
 type templateRootRef struct {
-	Segs []string
-	Path string
+	Segs     []string
+	Path     string
+	Iterated bool
 }
 
 // collectTemplateRootRefs returns every field access a parsed template makes
@@ -73,7 +81,7 @@ type templateRootRef struct {
 // because a caller could then pass the wrong direction.
 func collectTemplateRootRefs(root parse.Node) []templateRootRef {
 	var refs []templateRootRef
-	seen := map[string]bool{}
+	seen := map[string]int{}
 	walkTemplateRoots(root, true, &refs, seen)
 	return refs
 }
@@ -97,7 +105,7 @@ func parseTemplateForRootWalk(text, leftDelim, rightDelim string) (parse.Node, e
 	return tmpl.Tree.Root, nil
 }
 
-func walkTemplateRoots(n parse.Node, dotIsRoot bool, refs *[]templateRootRef, seen map[string]bool) {
+func walkTemplateRoots(n parse.Node, dotIsRoot bool, refs *[]templateRootRef, seen map[string]int) {
 	if n == nil {
 		return
 	}
@@ -110,25 +118,31 @@ func walkTemplateRoots(n parse.Node, dotIsRoot bool, refs *[]templateRootRef, se
 			walkTemplateRoots(child, dotIsRoot, refs, seen)
 		}
 	case *parse.ActionNode:
-		walkTemplateRootsPipe(v.Pipe, dotIsRoot, refs, seen)
+		walkTemplateRootsPipe(v.Pipe, dotIsRoot, false, refs, seen)
 	case *parse.IfNode:
-		walkTemplateRootsPipe(v.Pipe, dotIsRoot, refs, seen)
+		walkTemplateRootsPipe(v.Pipe, dotIsRoot, false, refs, seen)
 		walkTemplateRoots(v.List, dotIsRoot, refs, seen)
 		walkTemplateRoots(v.ElseList, dotIsRoot, refs, seen)
 	case *parse.RangeNode:
-		walkTemplateRootsPipe(v.Pipe, dotIsRoot, refs, seen)
+		// Everything the range pipeline reaches is marked iterated. A reference
+		// nested inside that pipeline — an argument to a function whose result is
+		// what actually gets iterated — is marked too, which over-marks rather
+		// than under-marks: the flag only ever withholds something from an absent
+		// reference, so marking one reference too many costs nothing and missing
+		// one costs a container where the template needed it.
+		walkTemplateRootsPipe(v.Pipe, dotIsRoot, true, refs, seen)
 		walkTemplateRoots(v.List, false, refs, seen)
 		walkTemplateRoots(v.ElseList, dotIsRoot, refs, seen)
 	case *parse.WithNode:
-		walkTemplateRootsPipe(v.Pipe, dotIsRoot, refs, seen)
+		walkTemplateRootsPipe(v.Pipe, dotIsRoot, false, refs, seen)
 		walkTemplateRoots(v.List, false, refs, seen)
 		walkTemplateRoots(v.ElseList, dotIsRoot, refs, seen)
 	case *parse.TemplateNode:
-		walkTemplateRootsPipe(v.Pipe, dotIsRoot, refs, seen)
+		walkTemplateRootsPipe(v.Pipe, dotIsRoot, false, refs, seen)
 	}
 }
 
-func walkTemplateRootsPipe(p *parse.PipeNode, dotIsRoot bool, refs *[]templateRootRef, seen map[string]bool) {
+func walkTemplateRootsPipe(p *parse.PipeNode, dotIsRoot, iterated bool, refs *[]templateRootRef, seen map[string]int) {
 	if p == nil {
 		return
 	}
@@ -137,36 +151,42 @@ func walkTemplateRootsPipe(p *parse.PipeNode, dotIsRoot bool, refs *[]templateRo
 			continue
 		}
 		for _, arg := range cmd.Args {
-			walkTemplateRootsArg(arg, dotIsRoot, refs, seen)
+			walkTemplateRootsArg(arg, dotIsRoot, iterated, refs, seen)
 		}
 	}
 }
 
-func walkTemplateRootsArg(arg parse.Node, dotIsRoot bool, refs *[]templateRootRef, seen map[string]bool) {
+func walkTemplateRootsArg(arg parse.Node, dotIsRoot, iterated bool, refs *[]templateRootRef, seen map[string]int) {
 	switch a := arg.(type) {
 	case *parse.FieldNode:
 		if dotIsRoot {
-			recordTemplateRootRef(refs, seen, a.Ident, "."+strings.Join(a.Ident, "."))
+			recordTemplateRootRef(refs, seen, a.Ident, "."+strings.Join(a.Ident, "."), iterated)
 		}
 	case *parse.VariableNode:
 		if len(a.Ident) > 1 && a.Ident[0] == "$" {
-			recordTemplateRootRef(refs, seen, a.Ident[1:], "$."+strings.Join(a.Ident[1:], "."))
+			recordTemplateRootRef(refs, seen, a.Ident[1:], "$."+strings.Join(a.Ident[1:], "."), iterated)
 		}
 	case *parse.ChainNode:
 		// The chained fields hang off the receiver's value, not off the dot;
 		// only the receiver can reach the context root.
-		walkTemplateRootsArg(a.Node, dotIsRoot, refs, seen)
+		walkTemplateRootsArg(a.Node, dotIsRoot, iterated, refs, seen)
 	case *parse.PipeNode:
-		walkTemplateRootsPipe(a, dotIsRoot, refs, seen)
+		walkTemplateRootsPipe(a, dotIsRoot, iterated, refs, seen)
 	}
 }
 
-func recordTemplateRootRef(refs *[]templateRootRef, seen map[string]bool, segs []string, path string) {
-	if len(segs) == 0 || segs[0] == "" || seen[path] {
+func recordTemplateRootRef(refs *[]templateRootRef, seen map[string]int, segs []string, path string, iterated bool) {
+	if len(segs) == 0 || segs[0] == "" {
 		return
 	}
-	seen[path] = true
-	*refs = append(*refs, templateRootRef{Segs: segs, Path: path})
+	if at, ok := seen[path]; ok {
+		// A path read as a value in one place and iterated in another is iterated:
+		// the position that needs a container is the binding one.
+		(*refs)[at].Iterated = (*refs)[at].Iterated || iterated
+		return
+	}
+	seen[path] = len(*refs)
+	*refs = append(*refs, templateRootRef{Segs: segs, Path: path, Iterated: iterated})
 }
 
 // contextRootField is one root a render context exposes: the name a template
@@ -328,6 +348,11 @@ type templateScopeViolation struct {
 // reference is admitted. References are walked in first-appearance order, so the
 // reference a diagnostic names is the same one on every run.
 //
+// A caller that already holds the reference set — the evaluator, which walks the
+// tree once and shares that one walk between this admission check and the data it
+// prepares for the execution — calls checkRefs instead. Both are the same rule
+// over the same walk; only who performed the walk differs.
+//
 // The comparison is over NAMES taken from the context type, never over the
 // context's runtime contents, because a root can be legitimately defined and
 // still absent from the delivered data: a pillar declared omitempty is dropped
@@ -353,11 +378,15 @@ type templateScopeViolation struct {
 //
 // The comparison looks only at names and never at what any value means.
 func (s templateScope) check(tree parse.Node) *templateScopeViolation {
+	return s.checkRefs(collectTemplateRootRefs(tree))
+}
+
+func (s templateScope) checkRefs(refs []templateRootRef) *templateScopeViolation {
 	roots, ok := s.admittedRoots()
 	if !ok {
 		return nil
 	}
-	for _, ref := range collectTemplateRootRefs(tree) {
+	for _, ref := range refs {
 		if !slices.Contains(roots, ref.Segs[0]) {
 			return &templateScopeViolation{Ref: ref, Admitted: roots, Level: scopeLevelRoot}
 		}
