@@ -130,6 +130,21 @@ type ProviderContract struct {
 // (from `recipe.spec.capability`). Returning an error halts the build.
 // Engines may be cached/singleton'd by the factory; the orchestrator makes no
 // assumption about instance identity.
+//
+// How often the factory is called is not bounded by the provider set. Some
+// callers deliberately resolve each distinct provider once, but the render path
+// calls the factory at every crossing it dispatches — per node, per
+// resource-generating attachment, per boundary-scope FeatureRecipe, per codec
+// selection. So a factory that returns a fresh Engine per call yields one Engine
+// per crossing; a factory that memoizes on the identity it resolves collapses
+// that to one Engine per distinct provider identity.
+//
+// The choice is not cost-neutral, because an Engine that reuses a guest instance
+// across crossings holds that instance for its own lifetime, and nothing releases
+// it when a crossing ends — closing the Engine is what releases it. So a factory
+// that memoizes also exposes a way to close what it memoized, and its caller
+// closes at build end. A factory that neither memoizes nor closes accumulates one
+// such instance per crossing for the whole build.
 type EngineFactory func(providerName string) (Engine, error)
 
 // ProviderVersionResolver reports the resolved provider-rendering plugin version
