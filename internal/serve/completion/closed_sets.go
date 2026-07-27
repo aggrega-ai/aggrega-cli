@@ -99,6 +99,7 @@ var AggregaSchemaExtensions = []string{
 	"x-aggrega-inject",
 	"x-aggrega-narrowed-from",
 	"x-aggrega-selector",
+	"x-aggrega-sensitive",
 	"x-aggrega-source",
 	"x-aggrega-source-chain",
 	"x-aggrega-validate",

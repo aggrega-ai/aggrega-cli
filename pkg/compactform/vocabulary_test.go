@@ -27,6 +27,7 @@ func TestIsAggregaExtensionKey(t *testing.T) {
 		{"x-aggrega-when", true},
 		{"x-aggrega-validateMessage", true},
 		{"x-aggrega-selector", true},
+		{"x-aggrega-sensitive", true},
 		{"x-aggrega-narrowed-from", true}, // future extension; should pass through
 		{"x-aggrega-anything-at-all", true},
 
@@ -68,6 +69,7 @@ func TestIsKnownKeyword_AggregaExtensions(t *testing.T) {
 		"x-aggrega-validate",
 		"x-aggrega-when",
 		"x-aggrega-validateMessage",
+		"x-aggrega-sensitive",
 		"x-aggrega-narrowed-from",
 	} {
 		if !isKnownKeyword(key) {

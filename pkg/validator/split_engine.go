@@ -133,16 +133,24 @@ func GenerateBaseUsesJSONSchema(usesSchema types.OrderedMap[types.UsesSchemaEntr
 // `inject` when the slot declares an allowlist — so a key that is legal
 // on a free attachment stays legal on a slot fill.
 //
-// Extension keyword: `x-aggrega-inject` (when the slot supplies an
-// Inject allowlist) carries the list of permitted mechanism strings
-// on the slot's sub-schema. The inject sub-schema constrains the
-// mechanism NAMES to that allowlist and nothing more — each permitted
-// mechanism's value is left as a bare array, because the delivery-entry
-// shape is the entity schema's contract and restating it here would be
-// a second home for one rule. A slot whose allowlist is empty
-// (Black-Box) emits no `inject` property, so the closed sub-schema
+// Extension keywords, both metadata-only. `x-aggrega-inject` (when the
+// slot supplies an Inject allowlist) carries the list of permitted
+// mechanism strings on the slot's sub-schema. The inject sub-schema
+// constrains the mechanism NAMES to that allowlist and nothing more —
+// each permitted mechanism's value is left as a bare array, because the
+// delivery-entry shape is the entity schema's contract and restating it
+// here would be a second home for one rule. A slot whose allowlist is
+// empty (Black-Box) emits no `inject` property, so the closed sub-schema
 // rejects a fill that dictates delivery for material the Recipe
 // consumes internally.
+//
+// `x-aggrega-sensitive` (when the slot declares Sensitive) carries the
+// slot author's claim that whatever binds this slot handles secret
+// material. It constrains nothing: no fill is accepted or rejected
+// because of it, and it changes no rendered output. Carrying it here
+// makes one declaration readable from the entity's projected schema by
+// inspection and policy tooling, which is the same standing
+// `x-aggrega-inject` has.
 //
 // Author-order from the OrderedMap input drives PropertyOrder.
 func GenerateBaseAttachmentsJSONSchema(featuresSchema types.OrderedMap[types.AttachmentSlot]) *jsonschema.Schema {
@@ -181,6 +189,11 @@ func GenerateBaseAttachmentsJSONSchema(featuresSchema types.OrderedMap[types.Att
 			slotSchema.Required = []string{"type"}
 		}
 
+		extra := map[string]any{}
+		if slot.Sensitive {
+			extra["x-aggrega-sensitive"] = true
+		}
+
 		if len(slot.Inject) > 0 {
 			injectProps := map[string]*jsonschema.Schema{}
 			for _, mech := range slot.Inject {
@@ -192,9 +205,13 @@ func GenerateBaseAttachmentsJSONSchema(featuresSchema types.OrderedMap[types.Att
 				AdditionalProperties: jsonSchemaFalse(),
 			}
 			slotSchema.PropertyOrder = append(slotSchema.PropertyOrder, "inject")
-			slotSchema.Extra = map[string]any{
-				"x-aggrega-inject": append([]string(nil), slot.Inject...),
-			}
+			extra["x-aggrega-inject"] = append([]string(nil), slot.Inject...)
+		}
+
+		// Left nil when the slot declares neither marker, so a slot that
+		// carries no extension keyword marshals without an empty object.
+		if len(extra) > 0 {
+			slotSchema.Extra = extra
 		}
 
 		properties[slotName] = slotSchema

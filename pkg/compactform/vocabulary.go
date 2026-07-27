@@ -59,13 +59,17 @@ var containerKeywords = map[string]bool{
 // emit `x-aggrega-validate:` extension keyword; the validator adapter
 // evaluates the Go-template predicate at validation time. `when` emits
 // JSON Schema if/then/else plus `x-aggrega-when:` extension carrying the
-// template body. `$jsonschema` embeds full JSON Schema YAML at any node.
-// `$mode` provides explicit dispatch override for ambiguous content
-// shapes.
+// template body. `sensitive` emits the `x-aggrega-sensitive:` extension
+// keyword, which marks the leaf as carrying secret material and is read
+// by nothing else in the compiler. `$jsonschema` embeds full JSON Schema
+// YAML at any node. `$mode` provides explicit dispatch override for
+// ambiguous content shapes — including the case where a schema declares a
+// property whose own name collides with one of these keywords.
 var aggregaSpecificKeywords = map[string]bool{
 	"validate":        true,
 	"validateMessage": true,
 	"when":            true,
+	"sensitive":       true,
 	"$jsonschema":     true,
 	"$mode":           true,
 }
@@ -127,7 +131,8 @@ var jsonSchemaReservedKeywords = map[string]bool{
 // annotations (`x-aggrega-source` from cross-document `$ref:` expansion,
 // `x-aggrega-validate` / `x-aggrega-when` / `x-aggrega-validateMessage`
 // from validate-and-when authoring, `x-aggrega-selector` from typed-
-// reference fields) all share this prefix. The pattern recognition lets
+// reference fields, `x-aggrega-sensitive` from a leaf declared
+// `sensitive: true`) all share this prefix. The pattern recognition lets
 // new extension annotations enter the catalog without per-keyword edits
 // to the vocabulary allowlist. The recognition is namespaced to
 // `x-aggrega-*` rather than the broader JSON Schema 2020-12 `x-*`

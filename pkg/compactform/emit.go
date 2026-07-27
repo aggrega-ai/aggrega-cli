@@ -116,6 +116,9 @@ func emitCompactConstraint(node *yaml.Node, path string, ctx *compileCtx) (Schem
 			out["x-aggrega-validateMessage"] = decodeScalar(v)
 		case "when":
 			out["x-aggrega-when"] = decodeScalar(v)
+		case "sensitive":
+			// sensitive: true -> x-aggrega-sensitive marks the leaf
+			out["x-aggrega-sensitive"] = decodeScalar(v)
 		case "then":
 			child, err := compileNode(v, pathJoin(path, "then"), ctx)
 			if err != nil {
@@ -578,6 +581,8 @@ func emitInDocumentReference(node *yaml.Node, path string, ctx *compileCtx) (Sch
 			out["x-aggrega-validateMessage"] = child
 		} else if k.Value == "when" {
 			out["x-aggrega-when"] = child
+		} else if k.Value == "sensitive" {
+			out["x-aggrega-sensitive"] = child
 		} else {
 			out[k.Value] = child
 		}
@@ -894,6 +899,8 @@ func emitComposition(node *yaml.Node, compKey, path string, ctx *compileCtx) (Sc
 			out["x-aggrega-validateMessage"] = child
 		case "when":
 			out["x-aggrega-when"] = child
+		case "sensitive":
+			out["x-aggrega-sensitive"] = child
 		default:
 			out[k] = child
 		}

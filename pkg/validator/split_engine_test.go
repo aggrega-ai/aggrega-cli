@@ -353,6 +353,57 @@ func TestGenerateBaseAttachmentsJSONSchema_OptionalSlotStillConstrainsShape(t *t
 	}
 }
 
+func TestGenerateBaseAttachmentsJSONSchema_SensitiveSlotCarriesTheMarker(t *testing.T) {
+	// A slot declared sensitive carries the marker onto its sub-schema; a slot
+	// that declares nothing carries none. The negative half is what keeps the
+	// marker meaningful — an unconditional one would say every slot in every
+	// catalog handles secret material.
+	schema := types.OrderedMap[types.AttachmentSlot]{}
+	schema.Set("db_password", types.AttachmentSlot{Sensitive: true, Inject: []string{"env"}})
+	schema.Set("blackbox_key", types.AttachmentSlot{Sensitive: true})
+	schema.Set("tuning", types.AttachmentSlot{Inject: []string{"env"}})
+
+	out := GenerateBaseAttachmentsJSONSchema(schema)
+
+	for _, name := range []string{"db_password", "blackbox_key"} {
+		slot := out.Properties[name]
+		if got := slot.Extra["x-aggrega-sensitive"]; got != true {
+			t.Errorf("%s: expected x-aggrega-sensitive=true; got %v (%T) in %v", name, got, got, slot.Extra)
+		}
+	}
+	// A sensitive Black-Box slot still gets the marker and still gets no
+	// inject property — the two declarations are independent.
+	if _, ok := out.Properties["blackbox_key"].Extra["x-aggrega-inject"]; ok {
+		t.Errorf("Black-Box slot must carry no inject allowlist; got %v", out.Properties["blackbox_key"].Extra)
+	}
+	if _, ok := out.Properties["tuning"].Extra["x-aggrega-sensitive"]; ok {
+		t.Errorf("an undeclared slot must carry no marker; got %v", out.Properties["tuning"].Extra)
+	}
+	// A slot declaring neither marker carries no Extra map at all, so the
+	// sub-schema marshals without an empty trailing object.
+	plain := types.OrderedMap[types.AttachmentSlot]{}
+	plain.Set("plain", types.AttachmentSlot{})
+	if extra := GenerateBaseAttachmentsJSONSchema(plain).Properties["plain"].Extra; extra != nil {
+		t.Errorf("a slot declaring no extension keyword should leave Extra nil; got %v", extra)
+	}
+
+	b, err := json.Marshal(out)
+	if err != nil {
+		t.Fatalf("json.Marshal: %v", err)
+	}
+	if !strings.Contains(string(b), `"x-aggrega-sensitive":true`) {
+		t.Errorf("expected the marker in the marshaled projection; got %s", b)
+	}
+	t.Logf("projected slot schema: %s", b)
+
+	// The projection must still compile into a working validator: an
+	// unrecognised extension keyword that broke construction would silently
+	// disable the slot-shape check rather than announce itself.
+	if _, err := jsonvalidator.New(out); err != nil {
+		t.Errorf("projection carrying the marker does not compile into a validator: %v", err)
+	}
+}
+
 func TestGenerateBaseUsesJSONSchema_MarshalsCleanly(t *testing.T) {
 	// The emitted *jsonschema.Schema must marshal to valid JSON for
 	// downstream consumers (the validator adapter, golden tests).

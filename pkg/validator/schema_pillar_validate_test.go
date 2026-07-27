@@ -191,6 +191,25 @@ provides:
 	}
 }
 
+// TestValidateSchemaPillars_AcceptsSensitiveLeafInEveryPillar pins that a
+// leaf declared `sensitive: true` clears the catalog-load gate on all three
+// free-form pillars. Without this the keyword would compile in isolation and
+// still be unauthorable, because this gate compiles each pillar body and a
+// key it does not recognise halts the load.
+func TestValidateSchemaPillars_AcceptsSensitiveLeafInEveryPillar(t *testing.T) {
+	node := parseSchemaBody(t, `values:
+  admin_password: { type: string, sensitive: true }
+infra:
+  backup_token: { type: string, sensitive: true }
+provides:
+  dsn: { type: string, sensitive: true }
+  host: { type: string }
+`)
+	if err := ValidateSchemaPillars("Component", "core/db", "fixtures/db.yaml", node, nil); err != nil {
+		t.Errorf("a leaf declared sensitive should pass the pillar gate; got: %v", err)
+	}
+}
+
 // TestValidateSchemaPillars_RejectsSequenceAtRoot rejects a YAML sequence
 // at spec.schema. Mappings are required; sequences (and any other non-
 // mapping node kind) must surface a shape-check error naming the actual

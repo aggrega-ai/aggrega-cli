@@ -537,7 +537,7 @@ func TestAggregaSchemaExtensionsTableContainsKnownExtensions(t *testing.T) {
 	for _, ext := range AggregaSchemaExtensions {
 		got[ext] = true
 	}
-	for _, want := range []string{"x-aggrega-selector", "x-aggrega-inject", "x-aggrega-narrowed-from", "x-aggrega-validate", "x-aggrega-source-chain"} {
+	for _, want := range []string{"x-aggrega-selector", "x-aggrega-inject", "x-aggrega-narrowed-from", "x-aggrega-validate", "x-aggrega-source-chain", "x-aggrega-sensitive"} {
 		if !got[want] {
 			t.Errorf("aggrega extension %q missing from AggregaSchemaExtensions", want)
 		}

@@ -65,8 +65,11 @@ type AttachmentSlot struct {
 	// own labels; a fill whose labels do not satisfy it halts. Empty declares no
 	// constraint and accepts any fill.
 	Selector string `json:"selector,omitempty" yaml:"selector,omitempty"`
-	// Sensitive declares that the material this slot carries is sensitive. It is
-	// a declaration only: no compiler behavior reads it, so setting it changes
-	// nothing about validation, rendering, or emitted output.
+	// Sensitive declares that whatever binds this slot handles secret material.
+	// It is a marker, not a constraint: it is carried onto the slot's projected
+	// validation sub-schema as the `x-aggrega-sensitive` extension keyword so
+	// the declaration is readable by inspection and policy tooling, and nothing
+	// else reads it. No fill is accepted or rejected because of it and no
+	// rendered output changes.
 	Sensitive bool `json:"sensitive,omitempty" yaml:"sensitive,omitempty"`
 }

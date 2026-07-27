@@ -4,6 +4,7 @@
 package compactform
 
 import (
+	"encoding/json"
 	"errors"
 	"reflect"
 	"strings"
@@ -670,6 +671,96 @@ func TestCompileScalarRootWrapped(t *testing.T) {
 	}
 	if _, ok := out["value"]; !ok {
 		t.Errorf("scalar root should wrap as {value: ...}; got %v", out)
+	}
+}
+
+// TestEmitSensitiveExtensionKeyword verifies a leaf declared
+// `sensitive: true` emits the `x-aggrega-sensitive:` extension keyword,
+// and that a leaf that declares nothing gets no marker. The negative half
+// is the load-bearing one: a marker that appeared unconditionally would
+// make every leaf in every catalog read as secret material.
+func TestEmitSensitiveExtensionKeyword(t *testing.T) {
+	t.Parallel()
+
+	src := `
+db_password:
+  type: string
+  sensitive: true
+db_host:
+  type: string
+`
+	out := mustCompile(t, src)
+	props := out["properties"].(Schema)
+
+	pw := props["db_password"].(Schema)
+	if got := pw["x-aggrega-sensitive"]; got != true {
+		t.Errorf("expected x-aggrega-sensitive=true on the declared leaf; got %v (%T) in %v", got, got, pw)
+	}
+	if _, leaked := pw["sensitive"]; leaked {
+		t.Errorf("the compact-form key must not survive alongside its extension form; got %v", pw)
+	}
+
+	host := props["db_host"].(Schema)
+	if _, ok := host["x-aggrega-sensitive"]; ok {
+		t.Errorf("an undeclared leaf must carry no marker; got %v", host)
+	}
+
+	b, err := json.Marshal(out)
+	if err != nil {
+		t.Fatalf("json.Marshal: %v", err)
+	}
+	t.Logf("compiled schema: %s", b)
+}
+
+// TestEmitSensitiveExtensionKeyword_RefAndCompositionSiblings verifies the
+// marker survives at the two node shapes that do not route through the
+// constraint-leaf emitter — a sibling of an in-document `$ref:` and a
+// sibling of a composition keyword. Both have their own key-to-extension
+// mapping, so a leaf-only implementation would silently emit a raw
+// `sensitive:` key that is neither JSON Schema nor an Aggrega extension.
+func TestEmitSensitiveExtensionKeyword_RefAndCompositionSiblings(t *testing.T) {
+	t.Parallel()
+
+	src := `
+by_ref:
+  $ref: "#/$defs/Credential"
+  sensitive: true
+by_composition:
+  anyOf:
+    - type: string
+    - type: integer
+  sensitive: true
+`
+	out := mustCompile(t, src)
+	props := out["properties"].(Schema)
+
+	for _, name := range []string{"by_ref", "by_composition"} {
+		node := props[name].(Schema)
+		if got := node["x-aggrega-sensitive"]; got != true {
+			t.Errorf("%s: expected x-aggrega-sensitive=true; got %v in %v", name, got, node)
+		}
+		if _, leaked := node["sensitive"]; leaked {
+			t.Errorf("%s: raw `sensitive` key leaked into the emitted schema: %v", name, node)
+		}
+	}
+}
+
+// TestEmitSensitiveExtensionKeyword_BareLeafNoType covers the shape where
+// `sensitive:` is the node's only key — a leaf whose type is left
+// unconstrained. Membership in the compact-form keyword set is what steers
+// this node to the leaf emitter; a node of unrecognised keys is read as an
+// object scope instead, which would turn the marker into a property literally
+// named `sensitive` and emit no marker at all.
+func TestEmitSensitiveExtensionKeyword_BareLeafNoType(t *testing.T) {
+	t.Parallel()
+
+	out := mustCompile(t, "admin_password:\n  sensitive: true\n")
+	node := out["properties"].(Schema)["admin_password"].(Schema)
+	if got := node["x-aggrega-sensitive"]; got != true {
+		t.Errorf("expected x-aggrega-sensitive=true on a type-less leaf; got %v in %v", got, node)
+	}
+	if _, misread := node["properties"]; misread {
+		t.Errorf("the node was read as an object scope rather than a leaf: %v", node)
 	}
 }
 

@@ -14,7 +14,8 @@
 // pattern, format, minLength, maxLength), composition keywords (allOf,
 // anyOf, oneOf, patternProperties, valuesType), container keywords
 // (items, properties, additionalProperties), and Aggrega-specific
-// additions (validate, validateMessage, when, $jsonschema, $mode).
+// additions (validate, validateMessage, when, sensitive, $jsonschema,
+// $mode).
 // Each keyword maps mechanically to JSON Schema 2020-12; the compiler
 // transforms compact form to JSON Schema before any validation runs.
 //
