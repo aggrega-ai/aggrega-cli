@@ -50,7 +50,13 @@ func helmChartWasmFactory(t *testing.T) renderer.EngineFactory {
 		return pluginpath.ResolvedPlugin{Bytes: b, URI: u, Tier: pluginpath.TierEmbed, Limits: &pluginpath.PluginRuntimeLimits{MaxMemoryPages: 4096}}, nil
 	}
 	return func(string) (renderer.Engine, error) {
-		return wasmengine.NewAssembler(lookup, uri, loader), nil
+		assembler := wasmengine.NewAssembler(lookup, uri, loader)
+		// Release the assembler's reused plugin instance when the test ends: a guest
+		// that declares a reusable instance keeps that instance on the engine until
+		// Close, so an unclosed assembler outlives its test and the instances
+		// accumulate for the life of the test binary.
+		t.Cleanup(func() { _ = assembler.Close(context.Background()) })
+		return assembler, nil
 	}
 }
 
