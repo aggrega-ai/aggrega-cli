@@ -9,7 +9,7 @@ import (
 	"github.com/Masterminds/semver/v3"
 )
 
-// ProviderEngineKind returns the bare engine kind of a recipe.spec.provider
+// ProviderEngineKind returns the bare engine kind of a recipe.spec.capability
 // binding, stripping any trailing version segment. A binding may carry a
 // version pin — "helm:1.0.0" (exact), "helm:^1.0.0" (major-compatible range),
 // or "helm" (unversioned) — where the pin selects a specific provider-rendering
