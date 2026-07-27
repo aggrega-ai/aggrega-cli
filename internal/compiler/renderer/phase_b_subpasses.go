@@ -426,7 +426,7 @@ func phaseB6(
 		frCtx := attachmentFRContext(tmplCtx, item.Instance, item.CtxValues, item.CtxInfra)
 
 		frEvaluatedLocals, err := EvaluateFeatureRecipeLocals(
-			fr, item.Instance, frCtx.Values, frCtx.Infra,
+			fr, item.Instance, nodeID, frCtx.Values, frCtx.Infra,
 		)
 		if err != nil {
 			return nil, nil, nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("Step 5 node %q attachment %q locals", nodeID, item.Instance))

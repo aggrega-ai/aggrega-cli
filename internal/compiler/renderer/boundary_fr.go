@@ -607,6 +607,7 @@ func evaluateBoundaryFRTemplates(
 ) error {
 	resolvedLocals, err := evaluateLocalsInOrder(
 		fr.Spec.Locals,
+		boundaryScopeFRScope,
 		func(k string) localsRefSite {
 			return localsRefSite{
 				Where: fmt.Sprintf("boundary-scope FR %q locals[%q]", frInstance, k),

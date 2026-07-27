@@ -147,12 +147,12 @@ func TestExecutePhaseBForFeature_NilAndEmpty(t *testing.T) {
 // happy path with self-containment check.
 func TestEvaluateFeatureRecipeLocals_NilAndEmpty(t *testing.T) {
 	t.Parallel()
-	got, err := EvaluateFeatureRecipeLocals(nil, "i", types.OrderedMap[any]{}, types.OrderedMap[any]{})
+	got, err := EvaluateFeatureRecipeLocals(nil, "i", "api", types.OrderedMap[any]{}, types.OrderedMap[any]{})
 	if err != nil || got.Len() != 0 {
 		t.Errorf("nil fr: (%v, %v)", got, err)
 	}
 	emptyFR := &types.FeatureRecipe{}
-	got, err = EvaluateFeatureRecipeLocals(emptyFR, "i", types.OrderedMap[any]{}, types.OrderedMap[any]{})
+	got, err = EvaluateFeatureRecipeLocals(emptyFR, "i", "api", types.OrderedMap[any]{}, types.OrderedMap[any]{})
 	if err != nil || got.Len() != 0 {
 		t.Errorf("empty locals: (%v, %v)", got, err)
 	}
@@ -162,7 +162,7 @@ func TestEvaluateFeatureRecipeLocals_NilAndEmpty(t *testing.T) {
 	fr.Spec.Locals.Set("k", "{{ .values.value }}")
 	values := types.OrderedMap[any]{}
 	values.Set("value", "v")
-	got, err = EvaluateFeatureRecipeLocals(fr, "i", values, types.OrderedMap[any]{})
+	got, err = EvaluateFeatureRecipeLocals(fr, "i", "api", values, types.OrderedMap[any]{})
 	if err != nil {
 		t.Fatalf("populated: %v", err)
 	}

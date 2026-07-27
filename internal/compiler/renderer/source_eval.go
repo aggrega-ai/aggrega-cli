@@ -25,8 +25,10 @@ import (
 // Self-containment holds by sharing LocalsContext with EvaluateRecipeLocals: the
 // context this surface renders against defines no cross-node pillar, so a
 // .context.inject or .context.uses reference halts before the template executes.
-// Sharing the type also means the two surfaces admit and refuse exactly the same
-// references — including .provides, which neither admits.
+// Sharing the type AND the scope also means the two surfaces admit and refuse
+// exactly the same references — including .provides, which the type does not
+// define, and .attachment_name, which the scope refuses because a Recipe's source
+// resolves for a node rather than for an attachment.
 //
 // locals is the node's RESOLVED locals. A source template is evaluated after the
 // whole block has resolved, so it reads every local rather than a prefix; a
@@ -82,6 +84,10 @@ func EvaluateRecipeSource(
 // template naming a local the block does not declare halts rather than rendering
 // the key away. There is no forward class on this surface: every local is resolved
 // before a source template runs.
+//
+// The surface shares the base Recipe's locals scope, so it refuses
+// .attachment_name for the same reason and by the same declaration: a Recipe's
+// source resolves for a node, not for an attachment.
 func renderSourceString(tmplText string, ctx LocalsContext, label string) (string, error) {
 	if tmplText == "" {
 		return "", nil
@@ -93,7 +99,7 @@ func renderSourceString(tmplText string, ctx LocalsContext, label string) (strin
 	if err := checkLocalsReferenceOrder(tmplText, site, ctx.Locals, ctx.Locals.Keys()); err != nil {
 		return "", err
 	}
-	out, err := EvalTemplate(fmt.Sprintf("recipe-source[%s]", label), tmplText, ctx)
+	out, err := evalValueTemplate(fmt.Sprintf("recipe-source[%s]", label), tmplText, recipeLocalsScope.with(ctx), "{{", "}}")
 	if err != nil {
 		return "", cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: label}, fmt.Sprintf("Recipe source %q", label))
 	}

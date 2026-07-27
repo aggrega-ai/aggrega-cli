@@ -276,7 +276,13 @@ func TestContextRootNames_NarrowSurfacesAdmitLess(t *testing.T) {
 	// declaring it is what lets an entry read an earlier sibling; what the entry
 	// receives through it is a prefix of the block, which is a property of how the
 	// pillar is POPULATED per entry rather than of what this type admits.
-	want := []string{"context", "infra", "locals", "values"}
+	//
+	// attachment_name is declared because a FeatureRecipe's own locals populate it.
+	// The base Recipe locals surface and the Recipe source surface refuse it through
+	// a declared narrowing rather than by the type withholding it — which is the
+	// distinction this assertion is over: the TYPE's universe, not any one surface's
+	// admitted set.
+	want := []string{"attachment_name", "context", "infra", "locals", "values"}
 	if strings.Join(sorted, ",") != strings.Join(want, ",") {
 		t.Fatalf("LocalsContext roots = %v, want %v", sorted, want)
 	}

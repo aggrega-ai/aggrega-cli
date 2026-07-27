@@ -64,11 +64,27 @@ func ResolveAttachmentInject(
 	return nil
 }
 
+// attachmentFRScope is the reference set the attachment FeatureRecipe path's
+// templates are checked against — its own locals entries and then its provides.
+// The universe is ProvidesContext, the type both stages are evaluated against, and
+// the surface declares no narrowing: an attachment IS being resolved here, so
+// .attachment_name names it and .context.instance_id names the host component the
+// attachment is resolving for. One scope covers both stages because they render
+// against one context shape; two would be free to disagree about what the path
+// admits.
+var attachmentFRScope = templateScope{
+	data: ProvidesContext{},
+}
+
 // evalAttachmentFRProvides evaluates the attachment FeatureRecipe's provides
-// against the attachment's own scope (instance_id + values + infra + the FR's
-// own evaluated locals), mirroring the boundary-scope FR provides evaluation.
-// The resolved provides are the source the authored inject's provides-key
-// references resolve against.
+// against the attachment's own scope — the host component's .context.instance_id,
+// the attachment's .attachment_name, its own values and infra, and the FR's own
+// evaluated locals — mirroring the boundary-scope FR provides evaluation. The
+// resolved provides are the source the authored inject's provides-key references
+// resolve against.
+//
+// The two identities are distinct and both are carried: .context.instance_id is
+// the host component, and the attachment travels separately on .attachment_name.
 //
 // The locals resolve first, through evaluateLocalsInOrder — the one home of the
 // locals contract — so an entry may read an earlier sibling and a forward or
@@ -79,6 +95,7 @@ func ResolveAttachmentInject(
 func evalAttachmentFRProvides(fr *types.FeatureRecipe, instanceName, nodeID string, entry types.IRFeatureEntry) (types.OrderedMap[string], error) {
 	resolvedLocals, err := evaluateLocalsInOrder(
 		fr.Spec.Locals,
+		attachmentFRScope,
 		func(key string) localsRefSite {
 			return localsRefSite{
 				Where: fmt.Sprintf("node %q attachment %q locals[%q]", nodeID, instanceName, key),
@@ -108,7 +125,7 @@ func evalAttachmentFRProvides(fr *types.FeatureRecipe, instanceName, nodeID stri
 	}); err != nil {
 		return types.OrderedMap[string]{}, err
 	}
-	scope := ProvidesContext{
+	pCtx := ProvidesContext{
 		Context:        ProvidesContextBlock{InstanceID: nodeID},
 		Values:         entry.Values,
 		Infra:          entry.Infra,
@@ -117,7 +134,7 @@ func evalAttachmentFRProvides(fr *types.FeatureRecipe, instanceName, nodeID stri
 	}
 	provided := types.OrderedMap[string]{}
 	for k, tmplText := range fr.Spec.Provides.All() {
-		out, err := EvalTemplate(fmt.Sprintf("attach-inject-provides[%s.%s]", instanceName, k), tmplText, scope)
+		out, err := evalValueTemplate(fmt.Sprintf("attach-inject-provides[%s.%s]", instanceName, k), tmplText, attachmentFRScope.with(pCtx), "{{", "}}")
 		if err != nil {
 			return types.OrderedMap[string]{}, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: fr.Metadata.Name}, fmt.Sprintf("node %q attachment %q provides[%q]", nodeID, instanceName, k))
 		}

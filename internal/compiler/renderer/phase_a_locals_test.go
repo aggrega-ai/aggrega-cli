@@ -66,22 +66,27 @@ func TestExecutePhaseA_FeatureLocalsAreEvaluated(t *testing.T) {
 	t.Parallel()
 	frLocals := types.OrderedMap[string]{}
 	frLocals.Set("scrape_port", `{{ .values.port }}`)
-	// Reads an EARLIER sibling and the attachment identity.
+	// Reads an EARLIER sibling and the host component's identity — the scrape URL
+	// addresses the component being monitored, not the attachment doing the
+	// monitoring.
 	frLocals.Set("scrape_url", `http://{{ .context.instance_id }}:{{ .locals.scrape_port }}/{{ .values.path_suffix }}`)
 	frLocals.Set("region_tag", `{{ .infra.region }}`)
+	// The attachment's own identity travels on its own name.
+	frLocals.Set("attached_as", `{{ .attachment_name }}`)
 
 	ctx, refs := phaseALocalsFixture(frLocals,
-		`{"env": {"SCRAPE_URL": "{{ .locals.scrape_url }}", "SCRAPE_PORT": "{{ .locals.scrape_port }}", "REGION": "{{ .locals.region_tag }}", "DB_HOST": "{{ .locals.db_host }}"}}`)
+		`{"env": {"SCRAPE_URL": "{{ .locals.scrape_url }}", "SCRAPE_PORT": "{{ .locals.scrape_port }}", "REGION": "{{ .locals.region_tag }}", "DB_HOST": "{{ .locals.db_host }}", "ATTACHED_AS": "{{ .locals.attached_as }}"}}`)
 
 	if err := ExecutePhaseA(ctx, refs); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
 	for _, tc := range []struct{ key, want string }{
-		{"SCRAPE_PORT", "9090"},                   // .values read
-		{"REGION", "eu-west-1"},                   // .infra read
-		{"SCRAPE_URL", "http://mon:9090/metrics"}, // sibling read, in author order
-		{"DB_HOST", "db-base.svc"},                // base local still visible to injectMapping
+		{"SCRAPE_PORT", "9090"},                            // .values read
+		{"REGION", "eu-west-1"},                            // .infra read
+		{"SCRAPE_URL", "http://checkout-api:9090/metrics"}, // sibling read, in author order; the host component
+		{"ATTACHED_AS", "mon"},                             // the attachment instance, on its own name
+		{"DB_HOST", "db-base.svc"},                         // base local still visible to injectMapping
 	} {
 		got, _ := ctx.Context.Inject.Env.Get(tc.key)
 		if got != tc.want {
@@ -135,7 +140,7 @@ func TestExecutePhaseA_FeatureLocalsCannotReadBaseLocal(t *testing.T) {
 	}
 
 	// Same block, the attachment render path: the answer must not differ.
-	_, perr := EvaluateFeatureRecipeLocals(refs[0].FeatureRecipe, "mon",
+	_, perr := EvaluateFeatureRecipeLocals(refs[0].FeatureRecipe, "mon", "checkout-api",
 		types.OrderedMap[any]{}, types.OrderedMap[any]{})
 	if !errors.Is(perr, ErrLocalsUnknownReference) {
 		t.Errorf("the two attachment-locals surfaces disagree: interception halt %v, render path %v", err, perr)
@@ -198,7 +203,7 @@ func TestExecutePhaseA_FeatureLocalsScopeMatchesRenderPath(t *testing.T) {
 			vals.Set("port", 9090)
 			infra := types.OrderedMap[any]{}
 			infra.Set("region", "eu-west-1")
-			_, renderErr := EvaluateFeatureRecipeLocals(refs[0].FeatureRecipe, "mon", vals, infra)
+			_, renderErr := EvaluateFeatureRecipeLocals(refs[0].FeatureRecipe, "mon", "checkout-api", vals, infra)
 			if (renderErr == nil) != (interceptErr == nil) {
 				t.Errorf("the two attachment-locals surfaces disagree on %q: interception err=%v, render err=%v", tc.template, interceptErr, renderErr)
 			}

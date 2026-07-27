@@ -105,7 +105,7 @@ func localsParitySurfaces() []localsParitySurface {
 				fr := &types.FeatureRecipe{}
 				fr.Metadata.Name = "parity-fr"
 				fr.Spec.Locals = locals
-				got, err := EvaluateFeatureRecipeLocals(fr, "mon", types.OrderedMap[any]{}, types.OrderedMap[any]{})
+				got, err := EvaluateFeatureRecipeLocals(fr, "mon", "api", types.OrderedMap[any]{}, types.OrderedMap[any]{})
 				if err != nil {
 					return "", err
 				}

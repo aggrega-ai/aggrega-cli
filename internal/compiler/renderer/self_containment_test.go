@@ -82,7 +82,7 @@ func selfContainedSurfaces(t *testing.T) []struct {
 			return err
 		}},
 		{"FeatureRecipe locals:", cerrors.CatalogError, func(tmpl string) error {
-			_, err := EvaluateFeatureRecipeLocals(localsFeatureRecipe(tmpl), "api", values, infra)
+			_, err := EvaluateFeatureRecipeLocals(localsFeatureRecipe(tmpl), "mon", "api", values, infra)
 			return err
 		}},
 		{"Recipe source:", cerrors.CatalogError, func(tmpl string) error {

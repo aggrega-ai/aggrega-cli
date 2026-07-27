@@ -54,6 +54,50 @@ type LocalsContext struct {
 	// the source surface. It is populated inside the evaluation loop rather than
 	// once beside it, which is what makes a sibling read see a resolved value.
 	Locals types.OrderedMap[string] `json:"locals"`
+	// AttachmentName is the attachment instance name, populated for a
+	// FeatureRecipe's own locals so an attachment local may name the instance it
+	// is resolving for. Empty for a base Recipe's locals and for the Recipe
+	// source surface, whose scope declares this root a narrowing of this type (a
+	// base local or a source template referencing the attachment name halts
+	// rather than rendering empty).
+	//
+	// It is the route to the instance name from a local, and it is the only one:
+	// .context.instance_id is the HOST COMPONENT the attachment is resolving
+	// for, on this surface exactly as on every other, so the two names answer
+	// two different questions and neither stands in for the other.
+	//
+	// The template key mirrors the field name, and every scope that exposes the
+	// attachment name — this one, the provides scope and the render scope —
+	// publishes it under that same key, so a template author reads one name at
+	// all three.
+	AttachmentName string `json:"attachment_name,omitempty"`
+}
+
+// recipeLocalsScope is the reference set a base Recipe's locals entry is checked
+// against. The universe is LocalsContext — the type the entry is evaluated against
+// — so the roots the check admits are derived from that type rather than
+// enumerated here.
+//
+// The surface declares one narrowing, and it is a deliberately kept exclusion:
+// attachment_name. No attachment is being resolved during a base Recipe's locals
+// pass, so the name would render empty. The type carries the field because a
+// FeatureRecipe's own locals populate it, and this surface refuses it because its
+// own pass cannot supply it.
+//
+// The Recipe source surface shares this scope rather than declaring a second one
+// with the same content. Both are the base Recipe's node-local surface, evaluated
+// against the same type with the same reason for the same exclusion, so one
+// declaration is what keeps them from drifting into disagreement.
+var recipeLocalsScope = templateScope{
+	data:    LocalsContext{},
+	exclude: []string{"attachment_name"},
+}
+
+// featureRecipeLocalsScope is the reference set a FeatureRecipe's own locals entry
+// is checked against: the same context type with no narrowing. An attachment IS
+// being resolved during that pass, so .attachment_name names it.
+var featureRecipeLocalsScope = templateScope{
+	data: LocalsContext{},
 }
 
 // localsContextRoot is the context root a template reads a resolved local through.
@@ -91,15 +135,21 @@ type localsRefSite struct {
 //   - The resolved value is the evaluated template with surrounding whitespace
 //     trimmed.
 //
-// Callers supply only what genuinely differs between surfaces: how the surface
-// names a template to the evaluator, how it locates a halt, and how it builds the
-// context that carries the prefix. withPrefix is called once per entry with the
-// resolved-so-far map, and a caller must build its context from that argument
-// rather than capturing an accumulator — an OrderedMap copy shares its backing
-// store but carries its own key order, so a context built once outside the loop
-// would deliver a stale key set.
+// Callers supply only what genuinely differs between surfaces: the scope the
+// surface admits, how it names a template to the evaluator, how it locates a halt,
+// and how it builds the context that carries the prefix. withPrefix is called once
+// per entry with the resolved-so-far map, and a caller must build its context from
+// that argument rather than capturing an accumulator — an OrderedMap copy shares
+// its backing store but carries its own key order, so a context built once outside
+// the loop would deliver a stale key set.
+//
+// scope carries the surface's narrowing and the loop substitutes the per-entry
+// context into it, so a root a surface refuses halts here rather than being left to
+// each caller to guard. Threading the scope is what keeps the narrowing declared
+// once per surface instead of once per surface per pillar it refuses.
 func evaluateLocalsInOrder(
 	locals types.OrderedMap[string],
+	scope templateScope,
 	site func(key string) localsRefSite,
 	name func(key string) string,
 	withPrefix func(resolved types.OrderedMap[string]) any,
@@ -114,7 +164,7 @@ func evaluateLocalsInOrder(
 		if err := checkLocalsReferenceOrder(tmplText, s, resolved, declared); err != nil {
 			return types.OrderedMap[string]{}, err
 		}
-		val, err := EvalTemplate(name(key), tmplText, withPrefix(resolved))
+		val, err := evalValueTemplate(name(key), tmplText, scope.with(withPrefix(resolved)), "{{", "}}")
 		if err != nil {
 			return types.OrderedMap[string]{}, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: s.File}, s.Where)
 		}
@@ -245,6 +295,10 @@ func localsUnknownRefErr(site localsRefSite, path, referenced string, declared [
 // may read an earlier sibling: the evaluation routes through evaluateLocalsInOrder,
 // which publishes the resolved-so-far prefix into the context for each entry and
 // halts on a forward or unknown sibling reference.
+//
+// nodeID is what .context.instance_id resolves to. The surface refuses
+// .attachment_name — no attachment is being resolved here — so a base local
+// reaching for it halts rather than rendering empty.
 func EvaluateRecipeLocals(
 	recipe *types.Recipe,
 	nodeID string,
@@ -256,6 +310,7 @@ func EvaluateRecipeLocals(
 	}
 	return evaluateLocalsInOrder(
 		recipe.Spec.Locals,
+		recipeLocalsScope,
 		func(key string) localsRefSite {
 			return localsRefSite{
 				Where: fmt.Sprintf("Recipe %q locals[%q]", recipe.Metadata.Name, key),

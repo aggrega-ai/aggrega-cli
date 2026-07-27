@@ -162,10 +162,20 @@ func EvalTemplate(name, tmplText string, data any) (string, error) {
 func EvalTemplateWithDelims(name, tmplText string, data any, leftDelim, rightDelim string) (string, error) {
 	// The value-template surface declares no narrowing: every root the context
 	// type defines is reachable from a template rendered against it.
+	return evalValueTemplate(name, tmplText, templateScope{data: data}, leftDelim, rightDelim)
+}
+
+// evalValueTemplate is the value-template evaluation, taking the surface's scope
+// rather than only the data it renders against. It exists for the value surfaces
+// that admit less than their context type defines: a scope-bearing caller states
+// its narrowing and gets the same missing-key policy, the same diagnostic wording
+// and the same category as every other value template, so a narrowing does not
+// cost the surface its own evaluator.
+func evalValueTemplate(name, tmplText string, scope templateScope, leftDelim, rightDelim string) (string, error) {
 	return templateEval{
 		name:       name,
 		text:       tmplText,
-		scope:      templateScope{data: data},
+		scope:      scope,
 		leftDelim:  leftDelim,
 		rightDelim: rightDelim,
 		missingKey: missingKeyZero,

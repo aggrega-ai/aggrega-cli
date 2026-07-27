@@ -387,3 +387,40 @@ func TestExecutePhaseA_FlatMapFallbackUnchanged(t *testing.T) {
 		t.Errorf("DB_URL = %q, want %q", dbURL, "db.svc.cluster.local")
 	}
 }
+
+// TestExecutePhaseA_InjectMappingReadsAttachmentName pins both identities an
+// injectMapping template can name, read straight from the template rather than
+// through a local. The two answer different questions and neither substitutes for
+// the other: .context.instance_id is the host component the attachment resolves
+// for, and .attachment_name is the attachment instance being resolved.
+//
+// HOST is the control. It resolves on this surface independently of the
+// attachment name, so a harness that produced no output at all — an unevaluated
+// template, an unmerged delivery pipe — fails it too, and a green ATTACHMENT
+// cannot be an artifact of a uniformly broken fixture.
+func TestExecutePhaseA_InjectMappingReadsAttachmentName(t *testing.T) {
+	t.Parallel()
+
+	// No locals: the reference under test is a root of the injectMapping
+	// template's own context, not a value routed through a resolved local.
+	ctx, refs := phaseALocalsFixture(types.OrderedMap[string]{},
+		`{"env": {"HOST": "{{ .context.instance_id }}", "ATTACHMENT": "{{ .attachment_name }}"}}`)
+
+	if err := ExecutePhaseA(ctx, refs); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	for _, tc := range []struct{ key, want string }{
+		{"HOST", "checkout-api"}, // the host component, the control
+		{"ATTACHMENT", "mon"},    // the attachment instance being resolved
+	} {
+		got, exists := ctx.Context.Inject.Env.Get(tc.key)
+		if !exists {
+			t.Errorf("%s absent from the delivery pipe", tc.key)
+			continue
+		}
+		if got != tc.want {
+			t.Errorf("%s = %q, want %q", tc.key, got, tc.want)
+		}
+	}
+}

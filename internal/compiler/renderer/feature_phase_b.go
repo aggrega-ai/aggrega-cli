@@ -101,8 +101,21 @@ func resolveArtifactEntryText(a types.ArtifactEntry, entityName, artifactName st
 // EvaluateFeatureRecipeLocals evaluates fr.Spec.Locals templates against the
 // feature-scoped context and returns the resolved map. The context is
 // LocalsContext, the same node-local type Recipe locals use, so the two surfaces
-// admit and refuse exactly the same references — the attachment's own identity,
-// values and infra, and no provides pillar — without either restating the rule.
+// admit and refuse the same references — identity, the attachment's own values and
+// infra, and no provides pillar — without either restating the rule.
+//
+// The two identities the surface exposes answer two different questions, and
+// neither substitutes for the other:
+//
+//   - .context.instance_id is the HOST COMPONENT the attachment is resolving for.
+//     It means that on every surface the compiler evaluates, so an author reads one
+//     denotation whichever entity's block they are writing.
+//   - .attachment_name is the attachment instance being resolved — the slot it
+//     fills, or the free name the author gave it. It is the route from a local to
+//     the instance name, and the only one.
+//
+// nodeID supplies the first and instanceName the second. A base Recipe's locals
+// surface refuses .attachment_name, because no attachment is being resolved there.
 //
 // Iteration is in author order (fr.Spec.Locals is an OrderedMap), and an entry may
 // read an earlier sibling: the evaluation routes through evaluateLocalsInOrder,
@@ -115,7 +128,7 @@ func resolveArtifactEntryText(a types.ArtifactEntry, entityName, artifactName st
 // key reports the unknown-reference halt.
 func EvaluateFeatureRecipeLocals(
 	fr *types.FeatureRecipe,
-	instanceName string,
+	instanceName, nodeID string,
 	values types.OrderedMap[any],
 	infra types.OrderedMap[any],
 ) (types.OrderedMap[string], error) {
@@ -124,6 +137,7 @@ func EvaluateFeatureRecipeLocals(
 	}
 	return evaluateLocalsInOrder(
 		fr.Spec.Locals,
+		featureRecipeLocalsScope,
 		func(key string) localsRefSite {
 			return localsRefSite{
 				Where: fmt.Sprintf("FeatureRecipe %q locals[%q]", fr.Metadata.Name, key),
@@ -134,10 +148,11 @@ func EvaluateFeatureRecipeLocals(
 		func(key string) string { return fmt.Sprintf("fr-locals[%q]", key) },
 		func(resolved types.OrderedMap[string]) any {
 			return LocalsContext{
-				Context: ProvidesContextBlock{InstanceID: instanceName},
-				Values:  values,
-				Infra:   infra,
-				Locals:  resolved,
+				Context:        ProvidesContextBlock{InstanceID: nodeID},
+				Values:         values,
+				Infra:          infra,
+				Locals:         resolved,
+				AttachmentName: instanceName,
 			}
 		},
 	)

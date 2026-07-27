@@ -30,6 +30,9 @@ var templateScopes = map[string]templateScope{
 	"pathTemplateDirectoryScope":    pathTemplateDirectoryScope,
 	"pathTemplateSubDirectoryScope": pathTemplateSubDirectoryScope,
 	"selfInjectScope":               selfInjectScope,
+	"recipeLocalsScope":             recipeLocalsScope,
+	"featureRecipeLocalsScope":      featureRecipeLocalsScope,
+	"attachmentFRScope":             attachmentFRScope,
 }
 
 // scopeSurfaces is every context type a template in this package is evaluated

@@ -26,7 +26,10 @@ type FeatureRecipeRef struct {
 // ExecutePhaseA runs Phase A (Pre-Render Interception) for one node.
 // It iterates FeatureRecipes in the provided order (5-Tier Onion Model from ir.FeatureOrder),
 // evaluates each injectMapping template, and deep-merges the output over ctx.Context.Inject.
-// For each FeatureRecipe, .values and .infra are swapped to the attachment's own values/infra.
+// For each FeatureRecipe, .values and .infra are swapped to the attachment's own
+// values/infra, and .attachment_name names the attachment instance being resolved.
+// .context.instance_id remains the host component throughout, so an injectMapping
+// reads the same two denotations an attachment's locals do.
 //
 // A FeatureRecipe's own .locals resolve against that attachment-scoped view
 // before its injectMapping runs, through the same evaluator the attachment's
@@ -82,18 +85,25 @@ func ExecutePhaseA(ctx *types.TemplateContext, featureRecipes []FeatureRecipeRef
 			continue
 		}
 
-		// Build feature-scoped context: swap .values/.infra to the feature's own,
-		// resolve the FeatureRecipe's OWN locals against that scope, and merge the
-		// resolved entries over the base Recipe's evaluated locals (FR wins on
-		// collision). Both sides of the merge are resolved values; what
-		// injectMapping reads through .locals is never authored template text.
-		featureCtx := *ctx // shallow copy
+		// Build feature-scoped context: name the attachment instance being
+		// resolved, swap .values/.infra to the feature's own, resolve the
+		// FeatureRecipe's OWN locals against that scope, and merge the resolved
+		// entries over the base Recipe's evaluated locals (FR wins on collision).
+		// Both sides of the merge are resolved values; what injectMapping reads
+		// through .locals is never authored template text.
+		//
+		// The instance name is set unconditionally: the attachment being resolved
+		// is known from the ref, whether or not it carries values or infra of its
+		// own. Only the values and infra pillars depend on that lookup, so they
+		// fall back to the host node's when the attachment carries neither.
+		vals, inf := ctx.Values, ctx.Infra
 		if attachment, ok := ctx.Features.Get(ref.InstanceName); ok {
-			featureCtx.Values = attachment.Values
-			featureCtx.Infra = attachment.Infra
+			vals, inf = attachment.Values, attachment.Infra
 		}
+		featureCtx := attachmentFRContext(ctx, ref.InstanceName, vals, inf)
 		frLocals, err := EvaluateFeatureRecipeLocals(
-			ref.FeatureRecipe, ref.InstanceName, featureCtx.Values, featureCtx.Infra,
+			ref.FeatureRecipe, ref.InstanceName, ctx.Context.InstanceID,
+			featureCtx.Values, featureCtx.Infra,
 		)
 		if err != nil {
 			return cerrors.Wrap(err, cerrors.CatalogError,

@@ -11,11 +11,16 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
+// The pillars a FeatureRecipe local reads are the attachment's own values and
+// infra, while the identity it reads through .context.instance_id is the HOST
+// COMPONENT. The instance name and the host id are deliberately different strings
+// here, so a binding that confused the two could not pass.
 func TestEvaluateFeatureRecipeLocals_FeatureScoped(t *testing.T) {
 	t.Parallel()
 	locals := types.OrderedMap[string]{}
 	locals.Set("scrape_target", `{{ .context.instance_id }}:{{ .values.scrape_port }}`)
 	locals.Set("tier", `{{ .values.tier }}`)
+	locals.Set("attached_as", `{{ .attachment_name }}`)
 
 	fr := &types.FeatureRecipe{
 		Metadata: types.FeatureRecipeMetadata{Name: "mon"},
@@ -28,17 +33,21 @@ func TestEvaluateFeatureRecipeLocals_FeatureScoped(t *testing.T) {
 	values.Set("scrape_port", float64(9090))
 	values.Set("tier", "prod")
 
-	got, err := EvaluateFeatureRecipeLocals(fr, "mon", values, types.OrderedMap[any]{})
+	got, err := EvaluateFeatureRecipeLocals(fr, "scrape_target", "api", values, types.OrderedMap[any]{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	scrapeTarget, _ := got.Get("scrape_target")
-	if scrapeTarget != "mon:9090" {
-		t.Errorf("scrape_target: %q", scrapeTarget)
+	if scrapeTarget != "api:9090" {
+		t.Errorf("scrape_target = %q, want %q — .context.instance_id is the host component", scrapeTarget, "api:9090")
 	}
 	tier, _ := got.Get("tier")
 	if tier != "prod" {
 		t.Errorf("tier: %q", tier)
+	}
+	attachedAs, _ := got.Get("attached_as")
+	if attachedAs != "scrape_target" {
+		t.Errorf("attached_as = %q, want %q — .attachment_name is the attachment instance", attachedAs, "scrape_target")
 	}
 }
 
@@ -53,7 +62,7 @@ func TestEvaluateFeatureRecipeLocals_RejectsProvidesRef(t *testing.T) {
 		Metadata: types.FeatureRecipeMetadata{Name: "mon"},
 		Spec:     types.FeatureRecipeSpec{Locals: locals},
 	}
-	_, err := EvaluateFeatureRecipeLocals(fr, "mon", types.OrderedMap[any]{}, types.OrderedMap[any]{})
+	_, err := EvaluateFeatureRecipeLocals(fr, "mon", "api", types.OrderedMap[any]{}, types.OrderedMap[any]{})
 	if err == nil {
 		t.Fatal("expected a halt on the reverse reference, got nil")
 	}
@@ -67,7 +76,7 @@ func TestEvaluateFeatureRecipeLocals_RejectsProvidesRef(t *testing.T) {
 
 func TestEvaluateFeatureRecipeLocals_NilFR(t *testing.T) {
 	t.Parallel()
-	got, err := EvaluateFeatureRecipeLocals(nil, "n", types.OrderedMap[any]{}, types.OrderedMap[any]{})
+	got, err := EvaluateFeatureRecipeLocals(nil, "n", "api", types.OrderedMap[any]{}, types.OrderedMap[any]{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -86,7 +95,7 @@ func TestEvaluateFeatureRecipeLocals_RejectsInjectRef(t *testing.T) {
 			Locals: locals,
 		},
 	}
-	_, err := EvaluateFeatureRecipeLocals(fr, "n", types.OrderedMap[any]{}, types.OrderedMap[any]{})
+	_, err := EvaluateFeatureRecipeLocals(fr, "n", "api", types.OrderedMap[any]{}, types.OrderedMap[any]{})
 	if err == nil {
 		t.Fatal("expected self-containment error")
 	}
