@@ -9,10 +9,6 @@ services:
       aggrega.ai/environment: test-env
     volumes:
       - type: bind
-        source: app-config
-        target: /etc/config
-        read_only: true
-      - type: bind
         source: app-creds
         target: /run/secrets/creds
         read_only: true
@@ -24,6 +20,9 @@ services:
         target: /var/session
     tmpfs:
       - /tmp/scratch
+    configs:
+      - source: app-config
+        target: /etc/config
 volumes:
   store-data: {}
   store-session: {}

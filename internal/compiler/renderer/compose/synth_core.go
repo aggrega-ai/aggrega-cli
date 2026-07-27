@@ -440,13 +440,19 @@ func translateContainer(
 		}
 
 		entry := volumeMountEntry(vm, spec, mainServiceName)
-		// Tmpfs is special: compose's `tmpfs:` is a top-level service field,
-		// not a volumes: entry.
-		if entry.Type == "tmpfs" {
+		switch entry.Type {
+		case volumeRedirectTmpfs:
+			// compose's `tmpfs:` is a top-level service field, not a
+			// volumes: entry.
 			svc.Tmpfs = append(svc.Tmpfs, entry.Target)
-			continue
+		case volumeRedirectConfig:
+			// A configmap is delivered through compose's own configs:
+			// primitive, so the mount becomes a service-level reference to
+			// the config of that name rather than a volumes: entry.
+			svc.Configs = append(svc.Configs, ServiceConfig{Source: entry.Source, Target: entry.Target})
+		default:
+			svc.Volumes = append(svc.Volumes, entry)
 		}
-		svc.Volumes = append(svc.Volumes, entry)
 	}
 
 	// Probes → healthcheck. Compose only supports a single healthcheck per
@@ -529,25 +535,49 @@ func extendedResourceDiagnostics(r *types.ResourceSpec) []renderctx.Diagnostic {
 	return diags
 }
 
+// Redirect markers volumeMountEntry returns in the Type field for the two
+// variants compose expresses through a service-level field rather than a
+// volumes: entry. Neither value is a compose volumes: type, so a marker that
+// reached the emitted bytes would be invalid compose — which is what makes
+// handling them at the call site the only correct handling, and why the marker
+// strings have one home here rather than one per site.
+const (
+	volumeRedirectTmpfs  = "tmpfs"
+	volumeRedirectConfig = "config"
+)
+
 // volumeMountEntry produces the compose ServiceVolume entry for a given
-// (VolumeMount, VolumeSpec) pair. Returns a {Type: "tmpfs", Target} sentinel
-// for ephemeral volumes — the caller redirects to the service-level Tmpfs
-// list since compose tmpfs is not a volumes: entry.
+// (VolumeMount, VolumeSpec) pair. Two variants return a redirect marker in the
+// Type field instead of a volumes: entry, and the caller moves each to the
+// service-level field that expresses it: an ephemeral volume returns
+// volumeRedirectTmpfs (compose tmpfs is a service field, not a volumes: entry),
+// and a configmap volume returns volumeRedirectConfig carrying the configmap
+// name in Source and the mount path in Target.
 func volumeMountEntry(vm types.VolumeMount, spec types.VolumeSpec, nodeID string) ServiceVolume {
 	switch {
 	case spec.Ephemeral != nil:
-		return ServiceVolume{Type: "tmpfs", Target: vm.Path}
+		return ServiceVolume{Type: volumeRedirectTmpfs, Target: vm.Path}
 	case spec.ConfigMap != nil:
-		// Compose has no ConfigMap primitive. Bind-mount from the configmap's
-		// source name (the file emitted via the Recipe's artifacts: input);
-		// read-only.
+		// A configmap is delivered through compose's own configs: primitive,
+		// referenced by the name the configmap volume declares — the same name
+		// the Recipe's artifacts: input declares as a top-level configs: entry.
+		// The name is piped through and nothing reads the config's content, so
+		// the reference here mirrors the ConfigMap reference a Kubernetes target
+		// emits for the same authored volume. The mount's readOnly flag has no
+		// counterpart: a configs: reference carries the config name and the
+		// mount path, and nothing else.
 		return ServiceVolume{
-			Type:     "bind",
-			Source:   spec.ConfigMap.Source,
-			Target:   vm.Path,
-			ReadOnly: true,
+			Type:   volumeRedirectConfig,
+			Source: spec.ConfigMap.Source,
+			Target: vm.Path,
 		}
 	case spec.Secret != nil:
+		// A secret volume stays a host-path bind mount. Delivering it as a
+		// configs: entry would mean writing the secret's value into the emitted
+		// compose file in plaintext, and the compiler never resolves a secret
+		// into plaintext — a secret stays a pointer through every stage of the
+		// build. So the two variants diverge deliberately: the operator makes
+		// the path reachable on the compose host.
 		return ServiceVolume{
 			Type:     "bind",
 			Source:   spec.Secret.Source,

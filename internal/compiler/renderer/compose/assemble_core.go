@@ -27,6 +27,12 @@
 //     group; name collisions silently merge (named volumes are content-
 //     free in the current shape, so a collision means the same physical
 //     volume).
+//   - Top-level configs. Per-node config declarations union the same way.
+//     Every service-level configs: reference must resolve to one of them
+//     once the union is complete, or AssembleBoundaryCore returns
+//     TRANSLATION_ERROR naming each unresolved reference — the union is
+//     what makes the check honest, since one node may reference a config a
+//     different node in the dispatch group declares.
 //   - depends_on inference. For each IR edge whose source and target both
 //     contribute services to this dispatch group, record an ungated
 //     dependency on the target service on the source service. It joins
@@ -153,6 +159,12 @@ func AssembleBoundaryCore(
 
 	// Collision check.
 	if err := checkServiceCollisions(contribsByService); err != nil {
+		return nil, err
+	}
+
+	// Every service-level configs: reference resolves to a declared top-level
+	// configs: entry, or the build halts.
+	if err := checkConfigReferences(merged); err != nil {
 		return nil, err
 	}
 
@@ -289,6 +301,42 @@ func checkServiceCollisions(contribsByService map[string][]serviceContrib) error
 		parts = append(parts, fmt.Sprintf("service %q contributed by [%s]", c.service, strings.Join(c.descriptors, ", ")))
 	}
 	return cerrors.New(cerrors.TranslationError, cerrors.SourceLocation{}, fmt.Sprintf("compose AssembleBoundary: service-name collisions across contributors: %s", strings.Join(parts, "; ")), nil, nil)
+}
+
+// checkConfigReferences walks every service's configs: references and halts when
+// one names a config the assembled output does not declare at the top level. A
+// configmap volume becomes such a reference, and the file behind it comes from a
+// Recipe's artifacts: input, whose compose fragment carries the matching
+// top-level entry — so an unresolved reference means the artifact is missing and
+// the mount would be dangling at run time.
+//
+// The check runs over the fully assembled boundary because that is the only
+// point where both halves are present: a per-node check would reject a
+// reference whose config another node in the same dispatch group declares.
+// Services are walked in alphabetical order and each service's references in
+// their emitted order, so the reported set is deterministic.
+func checkConfigReferences(merged ComposeFile) error {
+	svcNames := make([]string, 0, len(merged.Services))
+	for name := range merged.Services {
+		svcNames = append(svcNames, name)
+	}
+	sort.Strings(svcNames)
+
+	var unresolved []string
+	for _, name := range svcNames {
+		for _, ref := range merged.Services[name].Configs {
+			if _, declared := merged.Configs[ref.Source]; declared {
+				continue
+			}
+			unresolved = append(unresolved, fmt.Sprintf("service %q references config %q mounted at %q", name, ref.Source, ref.Target))
+		}
+	}
+	if len(unresolved) == 0 {
+		return nil
+	}
+	return cerrors.New(cerrors.TranslationError, cerrors.SourceLocation{},
+		fmt.Sprintf("compose AssembleBoundary: %s; declare each one as a top-level configs: entry from the Recipe's artifacts: input", strings.Join(unresolved, "; ")),
+		nil, ErrTranslationConfigMapMissingArtifact)
 }
 
 // applyDependsOn projects IR edges onto contributing services and records an

@@ -30,14 +30,13 @@ services:
       aggrega.ai/component-id: platform
       aggrega.ai/environment: test-env
     volumes:
-      - type: bind
-        source: workflow-seed
-        target: /seed
-        read_only: true
       - type: volume
         source: platform-data
         target: /home/node/.n8n
     restart: "no"
+    configs:
+      - source: workflow-seed
+        target: /seed
   platform-verify-seed:
     image: platform:1.0
     command:

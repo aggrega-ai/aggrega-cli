@@ -1,0 +1,27 @@
+services:
+  api:
+    image: app:1.0
+    labels:
+      aggrega.ai/aggregate-name: test-agg
+      aggrega.ai/boundary-path: default
+      aggrega.ai/compiler-version: test
+      aggrega.ai/component-id: api
+      aggrega.ai/environment: test-env
+    volumes:
+      - type: volume
+        source: api-state
+        target: /var/lib/app
+    networks:
+      - default
+    configs:
+      - source: app-settings
+        target: /etc/app
+volumes:
+  api-state: {}
+networks:
+  default: {}
+configs:
+  app-settings:
+    content: |
+      mode: production
+      region: eu-west-1

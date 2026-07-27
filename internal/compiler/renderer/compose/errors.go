@@ -21,15 +21,18 @@ var ErrTranslationProbeNoPort = errors.New("TRANSLATION_ERROR: probe http: requi
 // defensive at synthesis time.
 var ErrTranslationProbeShape = errors.New("TRANSLATION_ERROR: probe declares no shape (http/tcp/exec)")
 
-// ErrTranslationConfigMapMissingArtifact is emitted when a configmap volume
-// is declared but the Recipe's artifacts input emits no underlying file.
-// Compose has no ConfigMap primitive — a configmap volume becomes a
-// bind-mount from a generated file path; the file MUST exist.
+// ErrTranslationConfigMapMissingArtifact is emitted when a configmap volume's
+// service-level configs: reference resolves to no top-level configs: entry in
+// the assembled boundary. A configmap volume is delivered through compose's own
+// configs: primitive, referenced by the configmap's name; the entry carrying the
+// content comes from a Recipe's artifacts: input, whose compose fragment
+// declares it at the top level. An unresolved reference means that artifact is
+// missing, and the mount would be dangling at run time.
 //
-// Workload synthesis cannot detect this on its own (the artifacts input kind's
-// emission runs in a separate sub-pass); the sentinel is declared here so the
-// synthesizer can wire it once artifacts-input awareness lands. See the
-// configmap-volume comment in workload_synth.go.
+// The check belongs to boundary assembly rather than to workload synthesis: the
+// reference and the declaration reach the output through different input kinds
+// and may come from different nodes of one dispatch group, so the assembled
+// boundary is the first point where both are present.
 var ErrTranslationConfigMapMissingArtifact = errors.New("TRANSLATION_ERROR: configmap volume requires a file emitted via the Recipe's artifacts: input; none found")
 
 // ErrUnsupportedComposeForm is emitted when a Workload declares a controller

@@ -19,8 +19,8 @@ import (
 
 // twoInitContainerWorkload is a single-container workload seeded by two init
 // containers. The first writes a file into a shared volume the main container
-// also mounts; the second reads it. Both mount the same configmap volume, which
-// is what proves the configuration an init container carries survives.
+// also mounts; the second reads it. The first also mounts a configmap volume,
+// which is what proves the configuration an init container carries survives.
 func twoInitContainerWorkload() *types.Workload {
 	w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload"}
 
@@ -78,10 +78,10 @@ func TestSynthesizeWorkload_InitContainersChain(t *testing.T) {
 
 // TestSynthesizeWorkload_InitContainerVolumeMountTranslated reads the emitted
 // bytes back and asserts each init service carries the mounts its container
-// declared, with the configmap mount translated to the same read-only bind the
-// main-container path produces. A dropped mount is the failure this capability
-// exists to remove, so it is asserted on the output rather than inferred from
-// the call.
+// declared, each through the compose primitive its variant translates to — the
+// persistent volume as a volumes: entry, the configmap as a configs: reference.
+// A dropped mount is the failure this capability exists to remove, so it is
+// asserted on the output rather than inferred from the call.
 func TestSynthesizeWorkload_InitContainerVolumeMountTranslated(t *testing.T) {
 	t.Parallel()
 	files, _, err := SynthesizeWorkloadCore(twoInitContainerWorkload(), nodeCtxFor("platform"))
@@ -99,7 +99,6 @@ func TestSynthesizeWorkload_InitContainerVolumeMountTranslated(t *testing.T) {
 		t.Fatalf("no init service for the first init container; services: %v", serviceNames(frag))
 	}
 	wantMounts := []ServiceVolume{
-		{Type: "bind", Source: "workflow-seed", Target: "/seed", ReadOnly: true},
 		{Type: "volume", Source: "platform-data", Target: "/home/node/.n8n"},
 	}
 	if len(seed.Volumes) != len(wantMounts) {
@@ -108,6 +107,20 @@ func TestSynthesizeWorkload_InitContainerVolumeMountTranslated(t *testing.T) {
 	for i := range wantMounts {
 		if seed.Volumes[i] != wantMounts[i] {
 			t.Errorf("mount %d = %+v, want %+v", i, seed.Volumes[i], wantMounts[i])
+		}
+	}
+
+	// The configmap the init container mounts reaches it as a configs:
+	// reference naming the configmap and the path it lands on. Carrying that
+	// configuration to the init step is the reason the capability exists, so
+	// the reference is asserted on the emitted bytes.
+	wantConfigs := []ServiceConfig{{Source: "workflow-seed", Target: "/seed"}}
+	if len(seed.Configs) != len(wantConfigs) {
+		t.Fatalf("init service configs = %+v, want %+v", seed.Configs, wantConfigs)
+	}
+	for i := range wantConfigs {
+		if seed.Configs[i] != wantConfigs[i] {
+			t.Errorf("config %d = %+v, want %+v", i, seed.Configs[i], wantConfigs[i])
 		}
 	}
 
