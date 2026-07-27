@@ -47,7 +47,7 @@ func TestStep5b_RecipeAssertionPasses(t *testing.T) {
 		Spec: types.RecipeSpec{
 			Assertions: omString(t,
 				"replicas-ok",
-				`{{ if lt (.Values.replicas | int) 1 }}{{ fail "..." }}{{ end }}`,
+				`{{ if lt (.values.replicas | int) 1 }}{{ fail "..." }}{{ end }}`,
 			),
 		},
 	}
@@ -72,7 +72,7 @@ func TestStep5b_RecipeAssertionFailsHaltsBuild(t *testing.T) {
 		Spec: types.RecipeSpec{
 			Assertions: omString(t,
 				"replicas-positive",
-				`{{ if lt (.Values.replicas | int) 1 }}{{ fail "chart requires replicas >= 1" }}{{ end }}`,
+				`{{ if lt (.values.replicas | int) 1 }}{{ fail "chart requires replicas >= 1" }}{{ end }}`,
 			),
 		},
 	}
@@ -94,7 +94,7 @@ func TestStep5b_RecipeAssertionFailsHaltsBuild(t *testing.T) {
 }
 
 // TestStep5b_ProvidesAvailableInContext pins the Step 5b-only field
-// availability: assertions can reference .Provides.
+// availability: assertions can reference .provides.
 func TestStep5b_ProvidesAvailableInContext(t *testing.T) {
 	t.Parallel()
 	graph := step5bGraph(t, "web", omAny(t), omAny(t))
@@ -103,7 +103,7 @@ func TestStep5b_ProvidesAvailableInContext(t *testing.T) {
 		Spec: types.RecipeSpec{
 			Assertions: omString(t,
 				"host-set",
-				`{{ if eq .Provides.host "" }}{{ fail "host must be set" }}{{ end }}`,
+				`{{ if eq .provides.host "" }}{{ fail "host must be set" }}{{ end }}`,
 			),
 		},
 	}
@@ -118,11 +118,11 @@ func TestStep5b_ProvidesAvailableInContext(t *testing.T) {
 		provides,
 		NodeLocals{},
 	); err != nil {
-		t.Errorf("expected nil (host populated via .Provides); got %v", err)
+		t.Errorf("expected nil (host populated via .provides); got %v", err)
 	}
 }
 
-// TestStep5b_RecipeMetadataAvailableInContext pins .Recipe access.
+// TestStep5b_RecipeMetadataAvailableInContext pins .recipe access.
 func TestStep5b_RecipeMetadataAvailableInContext(t *testing.T) {
 	t.Parallel()
 	graph := step5bGraph(t, "web", omAny(t), omAny(t))
@@ -131,7 +131,7 @@ func TestStep5b_RecipeMetadataAvailableInContext(t *testing.T) {
 		Spec: types.RecipeSpec{
 			Assertions: omString(t,
 				"recipe-name-set",
-				`{{ if eq .Recipe.Metadata.name "" }}{{ fail "name missing" }}{{ end }}`,
+				`{{ if eq .recipe.metadata.name "" }}{{ fail "name missing" }}{{ end }}`,
 			),
 		},
 	}
@@ -146,7 +146,7 @@ func TestStep5b_RecipeMetadataAvailableInContext(t *testing.T) {
 	}
 }
 
-// TestStep5b_LocalsAvailableInContext pins .Locals access through the whole
+// TestStep5b_LocalsAvailableInContext pins .locals access through the whole
 // chain the values actually travel: the Pass-1 preamble resolves the Recipe's
 // Locals against per-node values + infra, and this pass reads that one
 // evaluation into AssertionContext.Locals rather than re-evaluating the
@@ -162,7 +162,7 @@ func TestStep5b_LocalsAvailableInContext(t *testing.T) {
 			),
 			Assertions: omString(t,
 				"locals-derived",
-				`{{ if ne .Locals.derived_name "app-myapp" }}{{ fail "locals not propagated" }}{{ end }}`,
+				`{{ if ne .locals.derived_name "app-myapp" }}{{ fail "locals not propagated" }}{{ end }}`,
 			),
 		},
 	}
@@ -215,7 +215,7 @@ func TestStep5b_MultiInstanceEvaluatesEachInstance(t *testing.T) {
 		Spec: types.RecipeSpec{
 			Assertions: omString(t,
 				"replicas-positive",
-				`{{ if lt (.Values.replicas | int) 1 }}{{ fail "chart requires replicas >= 1" }}{{ end }}`,
+				`{{ if lt (.values.replicas | int) 1 }}{{ fail "chart requires replicas >= 1" }}{{ end }}`,
 			),
 		},
 	}
@@ -231,7 +231,7 @@ func TestStep5b_MultiInstanceEvaluatesEachInstance(t *testing.T) {
 }
 
 // TestStep5b_RecipeMetadataProviderAvailable pins symmetry with FeatureRecipe:
-// Recipe assertions can reference .Recipe.Metadata.capability just like
+// Recipe assertions can reference .recipe.metadata.capability just like
 // FeatureRecipe assertions.
 func TestStep5b_RecipeMetadataProviderAvailable(t *testing.T) {
 	t.Parallel()
@@ -242,7 +242,7 @@ func TestStep5b_RecipeMetadataProviderAvailable(t *testing.T) {
 			Capability: "helm",
 			Assertions: omString(t,
 				"provider-must-be-helm",
-				`{{ if ne .Recipe.Metadata.capability "helm" }}{{ fail "provider must be helm" }}{{ end }}`,
+				`{{ if ne .recipe.metadata.capability "helm" }}{{ fail "provider must be helm" }}{{ end }}`,
 			),
 		},
 	}
@@ -260,7 +260,7 @@ func TestStep5b_RecipeMetadataProviderAvailable(t *testing.T) {
 // TestStep5b_FeatureRecipeMetadataProviderAvailable pins the
 // FeatureRecipe-side sibling of the Recipe-side
 // TestStep5b_RecipeMetadataProviderAvailable test above. Verifies the
-// FeatureRecipe assertion evaluation surfaces `.Recipe.Metadata.capability`
+// FeatureRecipe assertion evaluation surfaces `.recipe.metadata.capability`
 // from the FeatureRecipe's Spec.Provider — exercising the FR code-path
 // at assertions_step5b.go:109-127 specifically. Pins the FR-side
 // symmetry that was previously implicit: code-side symmetry was
@@ -283,7 +283,7 @@ func TestStep5b_FeatureRecipeMetadataProviderAvailable(t *testing.T) {
 			Capability: "helm",
 			Assertions: omString(t,
 				"provider-must-be-helm",
-				`{{ if ne .Recipe.Metadata.capability "helm" }}{{ fail "provider must be helm" }}{{ end }}`,
+				`{{ if ne .recipe.metadata.capability "helm" }}{{ fail "provider must be helm" }}{{ end }}`,
 			),
 		},
 	}
@@ -318,7 +318,7 @@ func TestStep5b_FeatureRecipeAssertionFailsHaltsBuild(t *testing.T) {
 		Spec: types.FeatureRecipeSpec{
 			Assertions: omString(t,
 				"audit-must-be-on",
-				`{{ if eq .Values.level "off" }}{{ fail "audit chart requires level != off" }}{{ end }}`,
+				`{{ if eq .values.level "off" }}{{ fail "audit chart requires level != off" }}{{ end }}`,
 			),
 		},
 	}

@@ -66,7 +66,7 @@ func TestStep4b_ComponentAssertionPasses(t *testing.T) {
 	comp := types.Component{
 		Spec: types.ComponentSpec{
 			Assertions: omString(t,
-				"replicas-positive", `{{ if lt (.Values.replicas | int) 1 }}{{ fail "replicas must be positive" }}{{ end }}`,
+				"replicas-positive", `{{ if lt (.values.replicas | int) 1 }}{{ fail "replicas must be positive" }}{{ end }}`,
 			),
 		},
 	}
@@ -85,7 +85,7 @@ func TestStep4b_ComponentAssertionFailsHaltsBuild(t *testing.T) {
 	comp := types.Component{
 		Spec: types.ComponentSpec{
 			Assertions: omString(t,
-				"replicas-positive", `{{ if lt (.Values.replicas | int) 1 }}{{ fail "replicas must be positive" }}{{ end }}`,
+				"replicas-positive", `{{ if lt (.values.replicas | int) 1 }}{{ fail "replicas must be positive" }}{{ end }}`,
 			),
 		},
 	}
@@ -121,7 +121,7 @@ func TestStep4b_FeatureAssertionFailsHaltsBuild(t *testing.T) {
 	feat := types.Feature{
 		Spec: types.FeatureSpec{
 			Assertions: omString(t,
-				"audit-must-be-on", `{{ if eq .Values.level "off" }}{{ fail "audit cannot be off in this contract" }}{{ end }}`,
+				"audit-must-be-on", `{{ if eq .values.level "off" }}{{ fail "audit cannot be off in this contract" }}{{ end }}`,
 			),
 		},
 	}
@@ -146,8 +146,8 @@ func TestStep4b_AuthorOrderRespected(t *testing.T) {
 	comp := types.Component{
 		Spec: types.ComponentSpec{
 			Assertions: omString(t,
-				"rule-A", `{{ if lt (.Values.replicas | int) 1 }}{{ fail "A-fail" }}{{ end }}`,
-				"rule-B", `{{ if eq .Values.name "ok" }}{{ fail "B-fail" }}{{ end }}`,
+				"rule-A", `{{ if lt (.values.replicas | int) 1 }}{{ fail "A-fail" }}{{ end }}`,
+				"rule-B", `{{ if eq .values.name "ok" }}{{ fail "B-fail" }}{{ end }}`,
 				"rule-C", `{{ fail "C-should-not-be-reached" }}`,
 			),
 		},
@@ -193,7 +193,7 @@ func TestStep4b_MultiInstanceEvaluatesEachInstance(t *testing.T) {
 	comp := types.Component{
 		Spec: types.ComponentSpec{
 			Assertions: omString(t,
-				"replicas-positive", `{{ if lt (.Values.replicas | int) 1 }}{{ fail "replicas must be positive" }}{{ end }}`,
+				"replicas-positive", `{{ if lt (.values.replicas | int) 1 }}{{ fail "replicas must be positive" }}{{ end }}`,
 			),
 		},
 	}
@@ -216,7 +216,7 @@ func TestStep4b_ReferenceToStep5bFieldProducesMissingKeyError(t *testing.T) {
 	comp := types.Component{
 		Spec: types.ComponentSpec{
 			Assertions: omString(t,
-				"oops", `{{ if eq .Recipe.Metadata.name "" }}{{ fail "..." }}{{ end }}`,
+				"oops", `{{ if eq .recipe.metadata.name "" }}{{ fail "..." }}{{ end }}`,
 			),
 		},
 	}
@@ -250,12 +250,12 @@ func TestStep4b_UsesTargetReferenceWorks(t *testing.T) {
 			FeatureValuesMapping: types.OrderedMap[types.OrderedMap[types.IRFeatureEntry]]{},
 		},
 	}
-	// Assertion references .Uses.primary_db.target — populated by ExtractNodeBaseContext
+	// Assertion references .uses.primary_db.target — populated by ExtractNodeBaseContext
 	comp := types.Component{
 		Spec: types.ComponentSpec{
 			Assertions: omString(t,
 				"primary-db-targets-prod",
-				`{{ if ne (index .Uses.primary_db "target") "db" }}{{ fail "primary_db must target db" }}{{ end }}`,
+				`{{ if ne (index .uses.primary_db "target") "db" }}{{ fail "primary_db must target db" }}{{ end }}`,
 			),
 		},
 	}
@@ -273,7 +273,7 @@ func TestStep4b_UsesTargetReferenceWorks(t *testing.T) {
 }
 
 // TestStep4b_UsesProvidesReferenceFails pins the boundary: a Step 4b
-// assertion referencing .Uses.<socket>.<provides_key> halts with
+// assertion referencing .uses.<socket>.<provides_key> halts with
 // missingkey=error because provides values aren't yet evaluated at Step 4b.
 func TestStep4b_UsesProvidesReferenceFails(t *testing.T) {
 	t.Parallel()
@@ -294,7 +294,7 @@ func TestStep4b_UsesProvidesReferenceFails(t *testing.T) {
 		Spec: types.ComponentSpec{
 			Assertions: omString(t,
 				"db-host",
-				`{{ if eq .Uses.primary_db.host "" }}{{ fail "host required" }}{{ end }}`,
+				`{{ if eq .uses.primary_db.host "" }}{{ fail "host required" }}{{ end }}`,
 			),
 		},
 	}
@@ -308,7 +308,7 @@ func TestStep4b_UsesProvidesReferenceFails(t *testing.T) {
 	}
 	err := EvaluateComponentAndFeatureAssertions(graph, cl)
 	if err == nil {
-		t.Fatal("expected missing-key error on .Uses.<socket>.<provides_key>; got nil")
+		t.Fatal("expected missing-key error on .uses.<socket>.<provides_key>; got nil")
 	}
 	if errors.Is(err, ErrAssertionFailed) {
 		t.Errorf("did not expect ErrAssertionFailed; expected missing-key, got %v", err)

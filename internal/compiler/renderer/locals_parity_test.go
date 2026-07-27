@@ -427,12 +427,12 @@ func TestLocalsContract_ResolvedLocalsReachEveryConsumerByteIdentically(t *testi
 	// assertions: read the pillar under its own key from their own context type, and
 	// under missingkey=error rather than the value surfaces' missingkey=zero.
 	actx := AssertionContext{Locals: locals.TemplateAlphabeticalMap()}
-	if err := EvaluateAssertion("pin", `{{ if ne (printf "%s:%s" .Locals.host .Locals.port) "`+wantBytes+`" }}{{ fail "assertion surface disagrees" }}{{ end }}`, actx); err != nil {
+	if err := EvaluateAssertion("pin", `{{ if ne (printf "%s:%s" .locals.host .locals.port) "`+wantBytes+`" }}{{ fail "assertion surface disagrees" }}{{ end }}`, actx); err != nil {
 		t.Errorf("assertions: %v", err)
 	}
 	// And an undeclared key on that surface halts rather than rendering empty — the
 	// strict missing-key policy is what covers it, not the sibling-order check.
-	if err := EvaluateAssertion("pin-unknown", `{{ .Locals.hsot }}`, actx); err == nil {
+	if err := EvaluateAssertion("pin-unknown", `{{ .locals.hsot }}`, actx); err == nil {
 		t.Error("assertions: an undeclared local must halt, not render empty")
 	} else {
 		t.Logf("%-22s -> halts on an undeclared local: %v", "assertions", err)

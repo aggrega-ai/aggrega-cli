@@ -25,7 +25,7 @@ func TestEvaluateAssertion_PassesOnEmptyTemplate(t *testing.T) {
 func TestEvaluateAssertion_FailsWithCustomMessage(t *testing.T) {
 	t.Parallel()
 	ctx := AssertionContext{Values: map[string]any{"replicas": 0}}
-	err := EvaluateAssertion("min-replicas", `{{- if lt (.Values.replicas | int) 1 -}}{{- fail "replicas must be positive" -}}{{- end -}}`, ctx)
+	err := EvaluateAssertion("min-replicas", `{{- if lt (.values.replicas | int) 1 -}}{{- fail "replicas must be positive" -}}{{- end -}}`, ctx)
 	if err == nil {
 		t.Fatal("expected error; got nil")
 	}
@@ -53,12 +53,12 @@ func TestEvaluateAssertion_PreservesErrAssertionFailedChain(t *testing.T) {
 }
 
 // TestEvaluateAssertion_MissingKeyProducesError pins the new strict-policy
-// behavior. A reference to .Values.typo against a context without that key
+// behavior. A reference to .values.typo against a context without that key
 // halts with a no-such-key diagnostic from template execution.
 func TestEvaluateAssertion_MissingKeyProducesError(t *testing.T) {
 	t.Parallel()
 	ctx := AssertionContext{Values: map[string]any{"port": 8080}}
-	err := EvaluateAssertion("typo-catch", `{{ if .Values.typo }}{{ fail "should not reach" }}{{ end }}`, ctx)
+	err := EvaluateAssertion("typo-catch", `{{ if .values.typo }}{{ fail "should not reach" }}{{ end }}`, ctx)
 	if err == nil {
 		t.Fatal("expected missing-key error; got nil")
 	}
@@ -80,9 +80,9 @@ func TestEvaluateAssertion_MissingKeyProducesError(t *testing.T) {
 func TestEvaluateAssertion_IndexFuncWorksAroundMissingKey(t *testing.T) {
 	t.Parallel()
 	ctx := AssertionContext{Values: map[string]any{"port": 8080}}
-	// .Values.replicas is absent; index returns nil, default 1 supplies the fallback.
+	// .values.replicas is absent; index returns nil, default 1 supplies the fallback.
 	err := EvaluateAssertion("optional",
-		`{{ if lt ((index .Values "replicas") | default 1 | int) 1 }}{{ fail "below 1" }}{{ end }}`, ctx)
+		`{{ if lt ((index .values "replicas") | default 1 | int) 1 }}{{ fail "below 1" }}{{ end }}`, ctx)
 	if err != nil {
 		t.Errorf("expected nil (index+default fallback); got %v", err)
 	}
@@ -94,7 +94,7 @@ func TestEvaluateAssertion_SprigHasKeyWorksAroundMissingKey(t *testing.T) {
 	t.Parallel()
 	ctx := AssertionContext{Values: map[string]any{"port": 8080}}
 	err := EvaluateAssertion("optional-haskey",
-		`{{ if and (hasKey .Values "replicas") (lt (.Values.replicas | int) 1) }}{{ fail "below 1" }}{{ end }}`, ctx)
+		`{{ if and (hasKey .values "replicas") (lt (.values.replicas | int) 1) }}{{ fail "below 1" }}{{ end }}`, ctx)
 	if err != nil {
 		t.Errorf("expected nil (hasKey gate); got %v", err)
 	}
@@ -140,7 +140,7 @@ func TestAssertionContext_DeliveredKeySet(t *testing.T) {
 	if !ok {
 		t.Fatalf("the assertion context must be delivered as a keyed map, got %T", toLowercaseMap(AssertionContext{}))
 	}
-	want := []string{"Values", "Infra", "Uses", "Features", "Metadata", "Provides", "Locals", "Recipe"}
+	want := []string{"values", "infra", "uses", "features", "metadata", "provides", "locals", "recipe"}
 	for _, key := range want {
 		if _, present := delivered[key]; !present {
 			t.Errorf("delivered key set omits %q: %v", key, sortedMapKeys(delivered))
@@ -158,10 +158,10 @@ func TestAssertionContext_DeliveredKeySet(t *testing.T) {
 	if strings.Join(admitted, ",") != strings.Join(want, ",") {
 		t.Errorf("admitted set %v does not match the delivered set %v", admitted, want)
 	}
-	// .Recipe is a struct behind a pointer, so its keys are checked too.
-	keys, gated := (templateScope{data: AssertionContext{}}).admittedKeys("Recipe")
-	if !gated || strings.Join(keys, ",") != "Metadata,Source" {
-		t.Errorf(".Recipe admits %v (gated=%v), want Metadata,Source", keys, gated)
+	// .recipe is a struct behind a pointer, so its keys are checked too.
+	keys, gated := (templateScope{data: AssertionContext{}}).admittedKeys("recipe")
+	if !gated || strings.Join(keys, ",") != "metadata,source" {
+		t.Errorf(".recipe admits %v (gated=%v), want metadata,source", keys, gated)
 	}
 }
 
@@ -180,16 +180,16 @@ func sortedMapKeys(m map[string]any) []string {
 // touched.
 func shippedCatalogAssertions() map[string]string {
 	return map[string]string{
-		"kafka_operator_prerequisite": "{{- if not .Infra.control_plane_present -}}\n" +
+		"kafka_operator_prerequisite": "{{- if not .infra.control_plane_present -}}\n" +
 			`{{- fail "the Strimzi Cluster Operator must be installed in the target cluster before this realization emits its Kafka custom resource; once the operator is present, affirm the prerequisite by setting infra.control_plane_present to true in the Release" -}}` +
 			"\n{{- end -}}",
-		"gateway_control_plane_prerequisite": "{{- if not .Infra.control_plane_present -}}\n" +
+		"gateway_control_plane_prerequisite": "{{- if not .infra.control_plane_present -}}\n" +
 			`{{- fail "the Envoy AI Gateway control plane must be installed in the target cluster before this realization emits its custom resources; once the gateway is present, affirm the prerequisite by setting infra.control_plane_present to true in the Release" -}}` +
 			"\n{{- end -}}",
-		"kserve_control_plane_prerequisite": "{{- if not .Infra.control_plane_present -}}\n" +
+		"kserve_control_plane_prerequisite": "{{- if not .infra.control_plane_present -}}\n" +
 			`{{- fail "the KServe control plane must be installed in the target cluster before this realization emits its InferenceService; once KServe is present, affirm the prerequisite by setting infra.control_plane_present to true in the Release" -}}` +
 			"\n{{- end -}}",
-		"kubeai_control_plane_prerequisite": "{{- if not .Infra.control_plane_present -}}\n" +
+		"kubeai_control_plane_prerequisite": "{{- if not .infra.control_plane_present -}}\n" +
 			`{{- fail "the KubeAI control plane must be installed in the target cluster before this realization emits its Model custom resource; once KubeAI is present, affirm the prerequisite by setting infra.control_plane_present to true in the Release" -}}` +
 			"\n{{- end -}}",
 	}
@@ -233,7 +233,7 @@ func TestEvaluateAssertion_ShippedCatalogBodiesEvaluate(t *testing.T) {
 
 // At the Component / Feature phase Provides, Locals and Recipe carry nothing, and a
 // reference to one halts rather than rendering. The pillars are open maps so the
-// halt comes from the missing-key policy; .Recipe is a struct behind a pointer, so
+// halt comes from the missing-key policy; .recipe is a struct behind a pointer, so
 // a reference under it halts on the nil rather than resolving to a zero struct.
 func TestEvaluateAssertion_NilPhaseReferencesHalt(t *testing.T) {
 	t.Parallel()
@@ -245,9 +245,9 @@ func TestEvaluateAssertion_NilPhaseReferencesHalt(t *testing.T) {
 		Metadata: map[string]any{},
 	}
 	for _, tc := range []struct{ body, names string }{
-		{`{{ if .Provides.host }}{{ end }}`, "host"},
-		{`{{ if .Locals.x }}{{ end }}`, "x"},
-		{`{{ if .Recipe.Metadata }}{{ end }}`, "Metadata"},
+		{`{{ if .provides.host }}{{ end }}`, "host"},
+		{`{{ if .locals.x }}{{ end }}`, "x"},
+		{`{{ if .recipe.metadata }}{{ end }}`, "metadata"},
 	} {
 		err := EvaluateAssertion("nilphase", tc.body, step4b)
 		if err == nil {

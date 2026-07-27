@@ -28,14 +28,14 @@ import (
 // written against these spellings, so the surface states them instead of
 // inheriting whatever a tag-less field would be named.
 type AssertionContext struct {
-	Values   map[string]any          `json:"Values"`
-	Infra    map[string]any          `json:"Infra"`
-	Uses     map[string]any          `json:"Uses"`
-	Features map[string]any          `json:"Features"`
-	Metadata map[string]any          `json:"Metadata"`
-	Provides map[string]any          `json:"Provides"`
-	Locals   map[string]any          `json:"Locals"`
-	Recipe   *AssertionRecipeContext `json:"Recipe"`
+	Values   map[string]any          `json:"values"`
+	Infra    map[string]any          `json:"infra"`
+	Uses     map[string]any          `json:"uses"`
+	Features map[string]any          `json:"features"`
+	Metadata map[string]any          `json:"metadata"`
+	Provides map[string]any          `json:"provides"`
+	Locals   map[string]any          `json:"locals"`
+	Recipe   *AssertionRecipeContext `json:"recipe"`
 }
 
 // AssertionRecipeContext exposes Recipe-specific surface to Step 5b
@@ -45,18 +45,21 @@ type AssertionContext struct {
 // The json tags carry the same reason as AssertionContext's: the delivered key
 // set is what assertion bodies are authored against, so it is declared here.
 type AssertionRecipeContext struct {
-	Metadata map[string]any `json:"Metadata"`
-	Source   any            `json:"Source"`
+	Metadata map[string]any `json:"metadata"`
+	Source   any            `json:"source"`
 }
 
 // EvaluateAssertion runs the named template body against the context. The
 // evaluator uses missingkey=error: any reference to a missing key halts
 // with a no-such-key diagnostic. Authors needing optional-field idioms
-// use hasKey to gate the reference, or index + default to provide a
-// fallback. (Plain Sprig default does NOT work under missingkey=error:
-// the bare reference `.Values.optional` halts before default can fire;
-// index returns nil for missing keys and default can then take effect:
-// `(index .Values "optional") | default <fallback>`.)
+// use hasKey to gate the reference, index + default to provide a
+// fallback, or the optional helper, which takes the map, the key and the
+// fallback and performs the presence check directly:
+// `optional .values "optional" <fallback>`. (Plain Sprig default does NOT
+// work under missingkey=error: the bare reference `.values.optional`
+// halts before default can fire; index returns nil for missing keys and
+// default can then take effect:
+// `(index .values "optional") | default <fallback>`.)
 //
 // Returns nil on pass (template renders to empty/whitespace and no fail
 // call). Returns a non-nil error wrapping ErrAssertionFailed on
