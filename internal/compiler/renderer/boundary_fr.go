@@ -223,7 +223,7 @@ func boundaryScopeFRErr(frName, label string, v *templateScopeViolation) error {
 			ErrFRTemplateInvalidField, frName, v.Ref.Path, label)
 		return cerrors.Wrap(inner, cerrors.CatalogError, cerrors.SourceLocation{}, inner.Error())
 	}
-	return templateUnknownRootErr(fmt.Sprintf("%s %s", frName, label), v)
+	return templateUnknownRootErr(cerrors.CatalogError, fmt.Sprintf("%s %s", frName, label), v)
 }
 
 // dispatchBoundaryScopeFR runs a boundary-scope FeatureRecipe once for a

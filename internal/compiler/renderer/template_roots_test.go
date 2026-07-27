@@ -10,6 +10,7 @@ import (
 	"testing"
 	"text/template/parse"
 
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
@@ -306,7 +307,7 @@ func TestContextRootNames_NonStructIsNotCheckable(t *testing.T) {
 func TestTemplateUnknownRootErr_NamesOffenderAndAvailableRoots(t *testing.T) {
 	t.Parallel()
 	roots, _ := contextRootNames(populatedTemplateContext(t))
-	msg := templateUnknownRootErr("workload[db-recipe]", &templateScopeViolation{
+	msg := templateUnknownRootErr(cerrors.CatalogError, "workload[db-recipe]", &templateScopeViolation{
 		Ref:      templateRootRef{Segs: []string{"staleroot", "key"}, Path: ".staleroot.key"},
 		Admitted: roots,
 		Level:    scopeLevelRoot,

@@ -45,9 +45,15 @@ type jsonRPCNotificationRead struct {
 // aggrega/irGraph request against a workspace with a Release path
 // that resolves but no sibling lockfile produces the
 // lockfile-absent envelope with Data.File pointing at the expected
-// lockfile path. The post-absent-gate flow (resolveReleaseClosure
+// lockfile path and Data.Release naming the Release the request
+// asked for. The post-absent-gate flow (resolveReleaseClosure
 // + verifyDriftAndPublish + pipeline) never fires because the gate
 // blocks.
+//
+// Data.Release is pinned here because the remediating command the
+// envelope suggests is parameterised by the Release: a client reading
+// it out of the prose Message would couple to wording that is free to
+// change, so the Release travels structurally.
 func TestHandleIrGraphLockfileAbsentEmits1003(t *testing.T) {
 	t.Parallel()
 	tmp := t.TempDir()
@@ -71,6 +77,9 @@ func TestHandleIrGraphLockfileAbsentEmits1003(t *testing.T) {
 	wantLockfile := filepath.Join(tmp, "release.lock")
 	if resp.Error.Data.File != wantLockfile {
 		t.Errorf("Data.File: got %q, want %q", resp.Error.Data.File, wantLockfile)
+	}
+	if resp.Error.Data.Release != missing {
+		t.Errorf("Data.Release: got %q, want %q", resp.Error.Data.Release, missing)
 	}
 }
 

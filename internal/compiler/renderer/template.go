@@ -58,6 +58,13 @@ type templateEval struct {
 	rightDelim string
 	// missingKey is the surface's missing-key policy; empty is missingKeyZero.
 	missingKey templateMissingKey
+	// category is the authoring domain a diagnostic raised here is charged to,
+	// which is what decides whether the author is sent to the Recipe or to the
+	// Aggregate. Empty is cerrors.CatalogError, the Recipe-authored default every
+	// surface but a developer-authored one carries. A surface stating its own
+	// diagnostic through refused or failed carries the category in that
+	// diagnostic instead.
+	category cerrors.Category
 	// extraFuncs are functions this surface adds over aggregaFuncMap. The map is
 	// template.FuncMap's own underlying type, so a surface contributing one does
 	// not have to reach for text/template itself.
@@ -74,6 +81,10 @@ func (e templateEval) run() (string, error) {
 	missingKey := e.missingKey
 	if missingKey == "" {
 		missingKey = missingKeyZero
+	}
+	category := e.category
+	if category == "" {
+		category = cerrors.CatalogError
 	}
 	funcs := aggregaFuncMap()
 	// Iterating a map is safe here where it usually would not be: the loop only
@@ -95,7 +106,7 @@ func (e templateEval) run() (string, error) {
 		if e.refused != nil {
 			return "", e.refused(v)
 		}
-		return "", templateUnknownRootErr(e.name, v)
+		return "", templateUnknownRootErr(category, e.name, v)
 	}
 	var buf bytes.Buffer
 	if err := t.Execute(&buf, toLowercaseMap(e.scope.data)); err != nil {
@@ -236,7 +247,7 @@ func EvalPathTemplate(name, contextKind, boundaryName, tmplText string, data Pat
 // reference is something it is not.
 func pathTemplateRefusedErr(boundaryName string, v *templateScopeViolation) error {
 	if v.Level == scopeLevelKey {
-		return templateUnknownRootErr(boundaryName, v)
+		return templateUnknownRootErr(cerrors.CatalogError, boundaryName, v)
 	}
 	inner := fmt.Errorf("%w: boundary %q references unknown field %s; allowlist: see aggrega-docs/language-reference/path-template-variables.md",
 		ErrPathTemplateInvalidField, boundaryName, v.Ref.Path)

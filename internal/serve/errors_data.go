@@ -31,6 +31,11 @@ package serve
 // the scalar-end computation: a multi-line block scalar falls back to
 // omitting them, leaving the diagnostic point-style.
 //
+// Release names the Release the error refers to, spelled the way the
+// request named it — the same value the `--release` flag takes. It is
+// carried structurally so a client can compose the remediating command
+// without parsing it back out of Message.
+//
 // Cumulative shape across consecutive evolutions:
 //
 //	File           — initial shape (envelope's source-file label)
@@ -39,6 +44,7 @@ package serve
 //	CascadeAttempt — added for the release-not-resolved emission path
 //	EndLine        — added for wide diagnostic ranges (1-based, omitempty)
 //	EndColumn      — added for wide diagnostic ranges (1-based, omitempty)
+//	Release        — added for the lockfile-absent emission path
 //
 // All fields are additive and omitempty so older clients ignore
 // new fields and newer clients consume them when present.
@@ -55,6 +61,7 @@ type errorData struct {
 	CascadeAttempt string `json:"cascade_attempt,omitempty"`
 	EndLine        int    `json:"end_line,omitempty"`
 	EndColumn      int    `json:"end_column,omitempty"`
+	Release        string `json:"release,omitempty"`
 }
 
 // newErrorData returns a populated *errorData. Line and column are

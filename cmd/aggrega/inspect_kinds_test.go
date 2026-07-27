@@ -133,7 +133,7 @@ spec:
     apiVersion: aggrega.ai/v1alpha1
     kind: Workload
   provides:
-    endpoint: '{{ .metadata.name }}'
+    endpoint: api-server
 `
 
 const recipeSourcedFixture = `apiVersion: aggrega.ai/v1alpha1

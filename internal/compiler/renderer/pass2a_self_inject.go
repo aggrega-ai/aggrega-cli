@@ -402,30 +402,10 @@ func evalSelfInjectValue(name, tmplText string, siCtx SelfInjectContext) (string
 		text:       tmplText,
 		scope:      selfInjectScope.with(siCtx),
 		missingKey: missingKeyZero,
-		refused: func(v *templateScopeViolation) error {
-			return asDeveloperDomain(templateUnknownRootErr(name, v))
-		},
+		category:   cerrors.DeveloperError,
 		failed: func(stage templateEvalStage, err error) error {
 			return cerrors.Wrap(err, cerrors.DeveloperError, cerrors.SourceLocation{File: name},
 				fmt.Sprintf("template %q %s", name, stage))
 		},
 	}.run()
-}
-
-// asDeveloperDomain re-issues a diagnostic under the developer category, preserving
-// its message, source pointer and wrapped chain.
-//
-// It exists because this surface shares its wording and its sentinels with every
-// other template surface — one wording, one sentinel, stated once — but not the
-// authoring artifact at fault. A self-inject value: template is developer-authored,
-// and the diagnostic chain renders every frame it carries, so a frame tagged for the
-// catalog would send the author to a Recipe that is not at fault.
-func asDeveloperDomain(err error) error {
-	ce, ok := err.(*cerrors.CompilerError)
-	if !ok {
-		return err
-	}
-	out := *ce
-	out.Category = cerrors.DeveloperError
-	return &out
 }

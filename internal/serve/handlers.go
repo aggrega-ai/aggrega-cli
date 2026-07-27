@@ -470,7 +470,7 @@ func (s *Server) handleIrGraph(ctx context.Context, params irGraphParams) (irGra
 			return irGraphResult{}, &jsonRPCError{
 				Code:    errLockfileAbsent,
 				Message: fmt.Sprintf("lockfile %s not found; run `aggrega pull --release %s` to generate", lockfilePath, params.Release),
-				Data:    newErrorData(lockfilePath, 0, 0),
+				Data:    &errorData{File: lockfilePath, Release: params.Release},
 			}
 		}
 		return irGraphResult{}, &jsonRPCError{

@@ -482,7 +482,11 @@ func templateRootsPhrase(prefix string, names []string) string {
 	return strings.Join(out, ", ")
 }
 
-func templateUnknownRootErr(name string, v *templateScopeViolation) error {
+// templateUnknownRootErr states the unknown-reference halt every template surface
+// shares, charged to the authoring domain the calling surface names. One wording
+// and one sentinel across every surface; only the artifact the author is sent to
+// differs.
+func templateUnknownRootErr(category cerrors.Category, name string, v *templateScopeViolation) error {
 	msg := fmt.Sprintf("template %q references %q — the render context defines %s",
 		name, v.Ref.Path, templateRootsPhrase("", v.Admitted))
 	if v.Level == scopeLevelKey {
@@ -490,5 +494,5 @@ func templateUnknownRootErr(name string, v *templateScopeViolation) error {
 		msg = fmt.Sprintf("template %q references %q — %s defines %s",
 			name, v.Ref.Path, root, templateRootsPhrase(root, v.Admitted))
 	}
-	return cerrors.Wrap(ErrTemplateUnknownRoot, cerrors.CatalogError, cerrors.SourceLocation{File: name}, msg)
+	return cerrors.Wrap(ErrTemplateUnknownRoot, category, cerrors.SourceLocation{File: name}, msg)
 }
