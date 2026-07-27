@@ -266,6 +266,12 @@ func TestE9DeterministicBuildAfterFreeze(t *testing.T) {
 // TestE2SourceTamperHaltsBuild proves that corrupting the cached source blob
 // after freeze makes the build halt with a loud ErrFetchIntegrity.
 func TestE2SourceTamperHaltsBuild(t *testing.T) {
+	// Not parallel, and not only because of t.Chdir below: this test needs a
+	// source server that works and is then stopped, so it keeps referencing an
+	// address it has already closed. That is safe only while nothing here runs
+	// in parallel — a concurrent bind on :0 could be handed the freed port and
+	// receive this test's stray requests. Removing the Chdir would not make
+	// this test parallel-safe; the closed-address reuse would still have to go.
 	blob := pinChartTgz(t)
 	srv := serveChart(t, blob)
 	root := t.TempDir()

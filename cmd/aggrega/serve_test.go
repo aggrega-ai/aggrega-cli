@@ -15,33 +15,78 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
 
-// buildServeBinary compiles ./cmd/aggrega into t.TempDir() and returns
-// the binary path. The build runs once per test (parallel-safe — each
-// test invokes its own TempDir).
-func buildServeBinary(t *testing.T) string {
-	t.Helper()
-	dir := t.TempDir()
+// serveBinaryDir holds the directory containing the shared serve binary so the
+// suite can delete it once every test has finished. The directory deliberately
+// does not come from t.TempDir(): that is reclaimed when the requesting test
+// ends, and every later caller would then be handed a path to a deleted file.
+var serveBinaryDir atomic.Pointer[string]
+
+// serveTestDir is the directory the test binary starts in, which for a Go test
+// is the package directory. It is captured at package initialisation rather than
+// read inside the build below, because that build runs lazily at its first
+// caller: a test that changes the process working directory could otherwise be
+// in effect at that moment, and the module root would resolve against the wrong
+// directory. Capturing it here makes the build's correctness independent of
+// which test happens to trigger it.
+var serveTestDir, serveTestDirErr = os.Getwd()
+
+// buildSharedServeBinary compiles ./cmd/aggrega once per test-binary run and
+// caches the resulting path, or the error that prevented it.
+//
+// Every caller asks for the same artifact built from the same source tree, so a
+// per-caller compile repeats identical work, and that compile is the single
+// largest cost in this package. Caching the error alongside the path matters as
+// much as caching the path: a failed build then fails every caller loudly
+// instead of handing out an empty path.
+var buildSharedServeBinary = sync.OnceValues(func() (string, error) {
+	dir, err := os.MkdirTemp("", "aggrega-serve-binary-*")
+	if err != nil {
+		return "", fmt.Errorf("create shared binary directory: %w", err)
+	}
+	serveBinaryDir.Store(&dir)
 	name := "aggrega"
 	if runtime.GOOS == "windows" {
 		name = "aggrega.exe"
 	}
 	binPath := filepath.Join(dir, name)
-	// Resolve the module root for the go build invocation. The test
-	// runs from cmd/aggrega/; the module root is two dirs up.
-	cwd, err := os.Getwd()
-	if err != nil {
-		t.Fatalf("getwd: %v", err)
+	if serveTestDirErr != nil {
+		return "", fmt.Errorf("resolve package directory: %w", serveTestDirErr)
 	}
-	moduleRoot := filepath.Dir(filepath.Dir(cwd))
+	// The test runs from cmd/aggrega/; the module root is two dirs up.
+	moduleRoot := filepath.Dir(filepath.Dir(serveTestDir))
 	cmd := exec.Command("go", "build", "-o", binPath, "./cmd/aggrega")
 	cmd.Dir = moduleRoot
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
-		t.Fatalf("go build: %v", err)
+		return "", fmt.Errorf("go build: %w", err)
+	}
+	return binPath, nil
+})
+
+// removeSharedServeBinary deletes the directory holding the shared serve
+// binary. It is a no-op when no test requested a build.
+func removeSharedServeBinary() {
+	if dir := serveBinaryDir.Load(); dir != nil {
+		os.RemoveAll(*dir)
+	}
+}
+
+// buildServeBinary returns the path to a compiled ./cmd/aggrega binary. The
+// compile happens on first use and the result is shared by every caller, so the
+// helper is cheap after the first call and safe to call from a parallel test.
+// Callers only execute the binary, never modify it, so one artifact serves all
+// of them.
+func buildServeBinary(t *testing.T) string {
+	t.Helper()
+	binPath, err := buildSharedServeBinary()
+	if err != nil {
+		t.Fatalf("build serve binary: %v", err)
 	}
 	return binPath
 }
@@ -134,6 +179,7 @@ func readOneResponse(t *testing.T, r io.Reader, deadline time.Duration) map[stri
 // invalidate → diagnostics-returns-1001 sequence over the subprocess
 // pipe. Pins the state-holds-across-requests contract.
 func TestServeLifecycle(t *testing.T) {
+	// Not parallel: spawns a daemon subprocess; concurrent daemons multiply peak memory past the package budget.
 	bin := buildServeBinary(t)
 	ws := makeWorkspace(t)
 
@@ -214,6 +260,7 @@ func TestServeLifecycle(t *testing.T) {
 // exits cleanly when stdin closes (EOF). This pins the unification: a missing
 // workspace no longer makes the daemon stricter than the CLI.
 func TestServeStartsWithCWDFallbackWhenNoMarker(t *testing.T) {
+	// Not parallel: spawns a daemon subprocess; concurrent daemons multiply peak memory past the package budget.
 	bin := buildServeBinary(t)
 	// The temp dir is under $TMPDIR (Linux: /tmp) with no workspace marker up
 	// to the filesystem root, so discovery falls through to CWD.
@@ -245,6 +292,7 @@ func TestServeStartsWithCWDFallbackWhenNoMarker(t *testing.T) {
 // the round-trip — catalog walk → IR construction → JSON serialisation
 // — is verified end-to-end against a real workspace.
 func TestServeAggregaIrGraphEndToEnd(t *testing.T) {
+	// Not parallel: spawns a daemon subprocess; concurrent daemons multiply peak memory past the package budget.
 	bin := buildServeBinary(t)
 	ws := t.TempDir()
 
@@ -387,6 +435,7 @@ func mapKeys(m map[string]any) []string {
 // full Run-wiring path (workspace-root discovery, parse-cache
 // population, workspace-walk traversal) is now end-to-end pinned.
 func TestServeAggregaResolveEndToEnd(t *testing.T) {
+	// Not parallel: spawns a daemon subprocess; concurrent daemons multiply peak memory past the package budget.
 	bin := buildServeBinary(t)
 	ws := t.TempDir()
 
@@ -483,6 +532,9 @@ func TestValidateWorkspaceRootFlagEmptyTreatedAsUnset(t *testing.T) {
 // returned, since the daemon's downstream logic depends on
 // absolute-path canonical form.
 func TestValidateWorkspaceRootFlagRelativePathResolves(t *testing.T) {
+	// Not parallel: changes the process working directory, which is global. It
+	// uses os.Chdir rather than t.Chdir, so adding t.Parallel() here would not
+	// panic — it would silently resolve other tests' relative paths wrongly.
 	dir := t.TempDir()
 	cwd, err := os.Getwd()
 	if err != nil {

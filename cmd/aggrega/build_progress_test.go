@@ -25,6 +25,7 @@ func withTTY(t *testing.T, tty bool) {
 // --progress and a non-terminal sink, the surface is silent — progress shows
 // only on a TTY.
 func TestProgress_Auto_NonTTY_Silent(t *testing.T) {
+	// Not parallel: mutates the process-global fileTerminal seam other tests read.
 	withTTY(t, false)
 
 	var buf bytes.Buffer
@@ -43,6 +44,7 @@ func TestProgress_Auto_NonTTY_Silent(t *testing.T) {
 // non-terminal sink prints plain static phase lines — no carriage returns, no
 // spinner characters, no cursor movement.
 func TestProgress_ForcedStatic_NonTTY(t *testing.T) {
+	// Not parallel: mutates the process-global fileTerminal seam other tests read.
 	withTTY(t, false)
 
 	var buf bytes.Buffer
@@ -72,6 +74,7 @@ func TestProgress_ForcedStatic_NonTTY(t *testing.T) {
 // multi-line checklist in place, ticking completed phases with a done mark and
 // spinning the active one.
 func TestProgress_TTY_Checklist(t *testing.T) {
+	// Not parallel: mutates the process-global fileTerminal seam other tests read.
 	withTTY(t, true)
 
 	var buf bytes.Buffer
@@ -107,6 +110,7 @@ func TestProgress_TTY_Checklist(t *testing.T) {
 
 // TestProgress_Quiet_Silent pins --quiet: no surface at all, on a TTY or a pipe.
 func TestProgress_Quiet_Silent(t *testing.T) {
+	// Not parallel: mutates the process-global fileTerminal seam other tests read.
 	withTTY(t, true)
 
 	var buf bytes.Buffer
@@ -125,6 +129,7 @@ func TestProgress_Quiet_Silent(t *testing.T) {
 // TestProgress_QuietBeatsProgress pins the precedence: when both --quiet and
 // --progress are set, quiet wins and the surface stays silent.
 func TestProgress_QuietBeatsProgress(t *testing.T) {
+	// Not parallel: mutates the process-global fileTerminal seam other tests read.
 	withTTY(t, false)
 
 	var buf bytes.Buffer
@@ -141,6 +146,7 @@ func TestProgress_QuietBeatsProgress(t *testing.T) {
 // both --debug and --quiet, debug wins — verbose diagnostics still emit with the
 // per-phase timing and the cheap counts.
 func TestProgress_DebugWinsOverQuiet(t *testing.T) {
+	// Not parallel: mutates the process-global fileTerminal seam other tests read.
 	// A TTY sink to prove debug never redraws in place even on a terminal.
 	withTTY(t, true)
 
@@ -173,6 +179,7 @@ func TestProgress_DebugWinsOverQuiet(t *testing.T) {
 // pass observes a guest actually compiling, the "Plugin compilation" step joins
 // the checklist between the pre-render phases and the render phase.
 func TestProgress_RealCompile_ShowsCompileStep(t *testing.T) {
+	// Not parallel: mutates the process-global fileTerminal seam other tests read.
 	withTTY(t, true)
 
 	var buf bytes.Buffer
@@ -197,6 +204,7 @@ func TestProgress_RealCompile_ShowsCompileStep(t *testing.T) {
 // directory-presence gate got wrong — a populated cache directory that lacked the
 // exact guest this build needed.
 func TestProgress_WarmProfileRealCompile_ShowsCompileStep(t *testing.T) {
+	// Not parallel: mutates the process-global fileTerminal seam other tests read.
 	withTTY(t, true)
 
 	var buf bytes.Buffer
@@ -217,6 +225,7 @@ func TestProgress_WarmProfileRealCompile_ShowsCompileStep(t *testing.T) {
 // the eager pass reports guests (a cache-hit warm still fires begin/done) but no
 // compile is observed, so the step never appears.
 func TestProgress_NoCompileObserved_OmitsCompileStep(t *testing.T) {
+	// Not parallel: mutates the process-global fileTerminal seam other tests read.
 	withTTY(t, true)
 
 	var buf bytes.Buffer
@@ -237,6 +246,7 @@ func TestProgress_NoCompileObserved_OmitsCompileStep(t *testing.T) {
 // bar and whole-number percent live on the global progress line — redrawn in
 // place at each node.
 func TestProgress_RenderNode_TTY_Counter(t *testing.T) {
+	// Not parallel: mutates the process-global fileTerminal seam other tests read.
 	withTTY(t, true)
 
 	var buf bytes.Buffer
@@ -292,6 +302,7 @@ func findRow(rows []string, sub string) string {
 // with the "Progress " caption and carries the filled/empty bar plus the NN%
 // percentage but NO elapsed.
 func TestProgress_LayoutA_RenderRowAndProgressLine(t *testing.T) {
+	// Not parallel: mutates the process-global fileTerminal seam other tests read.
 	withTTY(t, true)
 
 	p := newProgressReporter(&bytes.Buffer{}, buildDiagOptions{}, buildProgressSpine(false))
@@ -353,6 +364,7 @@ func TestProgress_LayoutA_RenderRowAndProgressLine(t *testing.T) {
 // completion summary is no longer part of this diagnostic block; it lands on
 // stdout, so no total-build-time row appears here.
 func TestProgress_LayoutA_ElapsedColumnAligned(t *testing.T) {
+	// Not parallel: mutates process-global fileTerminal, spinnerTickInterval seams other tests read.
 	withTTY(t, true)
 
 	orig := spinnerTickInterval
@@ -417,6 +429,7 @@ func visibleRuneWidth(s string) int {
 // pre-render phase, and the compiling-plugins step) keeps the spinner and shows
 // only its elapsed — it never fabricates a percentage bar.
 func TestProgress_UncountedPhase_NoBar(t *testing.T) {
+	// Not parallel: mutates the process-global fileTerminal seam other tests read.
 	withTTY(t, true)
 
 	p := newProgressReporter(&bytes.Buffer{}, buildDiagOptions{}, buildProgressSpine(true))
@@ -443,6 +456,7 @@ func TestProgress_UncountedPhase_NoBar(t *testing.T) {
 // static path emits plain lines for the render phase too — no ANSI escapes, no
 // bar cells, no dim elapsed — so redirected logs stay clean.
 func TestProgress_ForcedStatic_RenderNoEscapesNoBar(t *testing.T) {
+	// Not parallel: mutates the process-global fileTerminal seam other tests read.
 	withTTY(t, false)
 
 	var buf bytes.Buffer
@@ -520,6 +534,7 @@ func TestClampVisibleWidth_NoWrap(t *testing.T) {
 // shape: a large graph emits periodic lines (roughly one per tenth) plus a
 // guaranteed final count — never one line per node — and no carriage returns.
 func TestProgress_RenderNode_ForcedStatic_Throttled(t *testing.T) {
+	// Not parallel: mutates the process-global fileTerminal seam other tests read.
 	withTTY(t, false)
 
 	var buf bytes.Buffer
@@ -556,6 +571,7 @@ func TestProgress_RenderNode_ForcedStatic_Throttled(t *testing.T) {
 // animation is observable without a long wait. finish() stops the ticker and
 // waits for its goroutine to exit, so reading the buffer afterward is race-free.
 func TestProgress_TTY_SpinnerTicker_Animates(t *testing.T) {
+	// Not parallel: mutates process-global fileTerminal, spinnerTickInterval seams other tests read.
 	withTTY(t, true)
 
 	orig := spinnerTickInterval
@@ -599,6 +615,7 @@ func TestProgress_TTY_SpinnerTicker_Animates(t *testing.T) {
 // checklist (interactive TTY) mode only: forced-static, silent, and debug modes
 // never start it, so their output is unchanged by the passage of time.
 func TestProgress_NonChecklist_NoTicker(t *testing.T) {
+	// Not parallel: mutates process-global fileTerminal, spinnerTickInterval seams other tests read.
 	orig := spinnerTickInterval
 	spinnerTickInterval = 2 * time.Millisecond
 	t.Cleanup(func() { spinnerTickInterval = orig })
@@ -641,6 +658,7 @@ func TestProgress_NonChecklist_NoTicker(t *testing.T) {
 // TestProgress_RenderNode_ZeroTotal_NoOp confirms a zero total (no nodes) draws
 // no render counter.
 func TestProgress_RenderNode_ZeroTotal_NoOp(t *testing.T) {
+	// Not parallel: mutates the process-global fileTerminal seam other tests read.
 	withTTY(t, true)
 
 	var buf bytes.Buffer
@@ -656,6 +674,7 @@ func TestProgress_RenderNode_ZeroTotal_NoOp(t *testing.T) {
 // own phases as a checklist and never shows a render counter or a compile step
 // (pull has no render phase).
 func TestProgress_Pull_Checklist_NoCompileStep(t *testing.T) {
+	// Not parallel: mutates the process-global fileTerminal seam other tests read.
 	withTTY(t, true)
 
 	var buf bytes.Buffer
@@ -724,6 +743,7 @@ func parseCursorUp(t *testing.T, s string) int {
 // stdout, not in this block), so the line count is unchanged. A desync here would
 // reprint the block instead of redrawing it in place.
 func TestProgress_Redraw_CursorUpMatchesLineCount(t *testing.T) {
+	// Not parallel: mutates process-global fileTerminal, spinnerTickInterval seams other tests read.
 	withTTY(t, true)
 
 	orig := spinnerTickInterval
@@ -778,6 +798,7 @@ func TestProgress_Redraw_CursorUpMatchesLineCount(t *testing.T) {
 // the stderr diagnostic surface must not duplicate it. The static surface's finish
 // is silent (its render lines already printed inline).
 func TestProgress_StaticFinish_NoSummaryOnDiagSink(t *testing.T) {
+	// Not parallel: mutates the process-global fileTerminal seam other tests read.
 	withTTY(t, false)
 
 	var buf bytes.Buffer
@@ -806,6 +827,7 @@ func TestProgress_StaticFinish_NoSummaryOnDiagSink(t *testing.T) {
 // surface as buildDiagOptions.noColor, the same field the CLI populates from the
 // process-global decision.
 func TestProgress_NoColor_ChecklistDropsDim(t *testing.T) {
+	// Not parallel: mutates process-global fileTerminal, spinnerTickInterval seams other tests read.
 	withTTY(t, true)
 
 	orig := spinnerTickInterval
@@ -850,6 +872,7 @@ func TestProgress_NoColor_ChecklistDropsDim(t *testing.T) {
 // and does no cursor repaint — no carriage returns, no cursor-up sequences, no
 // spinner frames, no color — so screen readers receive stable line output.
 func TestProgress_Plain_ForcesStaticEvenOnTTY(t *testing.T) {
+	// Not parallel: mutates the process-global fileTerminal seam other tests read.
 	withTTY(t, true) // a terminal sink would normally get the animated checklist
 
 	var buf bytes.Buffer
@@ -887,6 +910,7 @@ func TestProgress_Plain_ForcesStaticEvenOnTTY(t *testing.T) {
 // --progress, plain removes animation but adds no output. Only --progress forces
 // static lines onto a non-terminal sink.
 func TestProgress_Plain_NonTTY_StaysSilent(t *testing.T) {
+	// Not parallel: mutates the process-global fileTerminal seam other tests read.
 	withTTY(t, false)
 
 	var buf bytes.Buffer
@@ -919,6 +943,7 @@ func approxEq(a, b float64) bool {
 // and finish snaps it to 100%. The bar is monotonic non-decreasing across the
 // sequence.
 func TestProgress_GlobalBar_WarmCheckpoints(t *testing.T) {
+	// Not parallel: mutates process-global fileTerminal, spinnerTickInterval seams other tests read.
 	withTTY(t, true)
 	orig := spinnerTickInterval
 	spinnerTickInterval = time.Hour // freeze the async ticker for a stable read
@@ -972,6 +997,7 @@ func TestProgress_GlobalBar_WarmCheckpoints(t *testing.T) {
 // lockfile leaves it near 4%, the plugin-compilation step (share 0.85) fills it to
 // ~90%, render carries it to ~93%, and finish snaps it to 100%.
 func TestProgress_GlobalBar_ColdCheckpoints(t *testing.T) {
+	// Not parallel: mutates process-global fileTerminal, spinnerTickInterval seams other tests read.
 	withTTY(t, true)
 	orig := spinnerTickInterval
 	spinnerTickInterval = time.Hour
@@ -1016,6 +1042,7 @@ func TestProgress_GlobalBar_ColdCheckpoints(t *testing.T) {
 // freeze — successive reads show an increasing fraction — yet stay below the
 // share the phase credits only on real completion.
 func TestProgress_EagerCompile_BarAdvancesDuringCompile(t *testing.T) {
+	// Not parallel: mutates process-global fileTerminal, spinnerTickInterval seams other tests read.
 	withTTY(t, true)
 	orig := spinnerTickInterval
 	spinnerTickInterval = time.Hour
@@ -1056,6 +1083,7 @@ func TestProgress_EagerCompile_BarAdvancesDuringCompile(t *testing.T) {
 // during that recompile rather than freeze — successive reads climb — and stay
 // below the share the step credits only on real completion.
 func TestProgress_GlobalBar_WarmProfileCompile_Advances(t *testing.T) {
+	// Not parallel: mutates process-global fileTerminal, spinnerTickInterval seams other tests read.
 	withTTY(t, true)
 	orig := spinnerTickInterval
 	spinnerTickInterval = time.Hour

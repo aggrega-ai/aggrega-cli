@@ -168,6 +168,7 @@ func TestNormalizeVersion(t *testing.T) {
 // TestVersionStampedVLess pins that a v-prefixed ldflags stamp is
 // reported v-less on the JSON wire shape the extension consumes.
 func TestVersionStampedVLess(t *testing.T) {
+	// Not parallel: mutates the process-global version seam other tests read.
 	orig := version
 	version = "v9.9.9"
 	defer func() { version = orig }()

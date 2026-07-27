@@ -16,6 +16,7 @@ import (
 // atom retries a transient certificate-authority failure and succeeds on a
 // later attempt, so a single flaky token mint does not lose the publish.
 func TestSignPushDigestRetriesTransientThenSucceeds(t *testing.T) {
+	// Not parallel: mutates the process-global publishRetryBaseDelay seam other tests read.
 	shrinkRetryDelay(t)
 	attempts := 0
 	fake := &signingtest.FakeSigner{
@@ -46,6 +47,7 @@ func TestSignPushDigestRetriesTransientThenSucceeds(t *testing.T) {
 // failure is not retried and is still wrapped with ErrUnsignedPushRefused so
 // the push is refused with nothing published.
 func TestSignPushDigestTerminalNotRetriedStillRefused(t *testing.T) {
+	// Not parallel: mutates the process-global publishRetryBaseDelay seam other tests read.
 	shrinkRetryDelay(t)
 	fake := &signingtest.FakeSigner{Err: errors.New("permanent signing failure")}
 	_, _, err := signPushDigestWith(context.Background(), fake, "example.com/component/core/api-server", "1.0.0", "sha256:abc")

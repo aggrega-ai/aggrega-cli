@@ -78,6 +78,7 @@ func cliDesc(command, description string) wasm.PluginDescriptor {
 // no-additional-capabilities message, the skip flags, the non-interactive
 // refusal, and the interactive yes/no branches.
 func TestConfirmInstallCapabilities(t *testing.T) {
+	// Not parallel: mutates the process-global isTerminal seam other tests read.
 	t.Run("empty caps message and skip via --yes", func(t *testing.T) {
 		var out bytes.Buffer
 		if err := confirmInstallCapabilities(&out, strings.NewReader(""), "moo", nil, false, true); err != nil {

@@ -131,6 +131,7 @@ func TestCLIErrorHygiene_RuntimeErrorSuppressesUsageAndError(t *testing.T) {
 // detected before the command's RunE runs — still surfaces the Usage block,
 // because the wrap silences usage only once RunE begins.
 func TestCLIErrorHygiene_UsageErrorsShowUsage(t *testing.T) {
+	// Not parallel: mutates the process-global globalDisplay seam other tests read.
 	cases := []struct {
 		name string
 		args []string
@@ -164,6 +165,7 @@ func TestCLIErrorHygiene_UsageErrorsShowUsage(t *testing.T) {
 // command added without coverage fails here, so the wrap is never silently
 // left unproven for a command.
 func TestCLIErrorHygiene_AllRunECommandsCovered(t *testing.T) {
+	// Not parallel: mutates the process-global globalDisplay seam other tests read.
 	covered := map[string]bool{}
 	for _, tc := range runtimeErrorCommands {
 		covered[tc.name] = true

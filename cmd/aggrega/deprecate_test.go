@@ -282,6 +282,7 @@ func TestLookupComponentDeprecation_IndexServedOffline(t *testing.T) {
 // proves the rendered output carries both the component header and the
 // deprecation block.
 func TestInspect_CatalogComponent_SurfacesDeprecation(t *testing.T) {
+	// Not parallel: mutates the process-global lookupComponentDeprecation seam other tests read.
 	const componentName = "core/compute/api-server"
 	prev := lookupComponentDeprecation
 	lookupComponentDeprecation = func(_ *workspaceconfig.ResolvedWorkspace, name string) (deprecationView, bool) {

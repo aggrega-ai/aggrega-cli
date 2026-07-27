@@ -92,6 +92,7 @@ const (
 // fields — most pointedly that --kind plugin matches the capitalized "Plugin"
 // kind the publish path stamps.
 func TestSearchRoundTripQueryAndFacets(t *testing.T) {
+	// Not parallel: mutates process-global registryIndexTarget, searchNow seams other tests read.
 	rw := buildSearchWorkspace(t)
 
 	cases := []struct {
@@ -135,6 +136,7 @@ func TestSearchRoundTripQueryAndFacets(t *testing.T) {
 // expected deterministic stdout and that running the same search twice yields
 // byte-identical stdout.
 func TestSearchOutputFormatsDeterministic(t *testing.T) {
+	// Not parallel: mutates process-global registryIndexTarget, searchNow seams other tests read.
 	rw := buildSearchWorkspace(t)
 
 	t.Run("table", func(t *testing.T) {
@@ -199,6 +201,7 @@ func assertByteIdentical(t *testing.T, rw *workspaceconfig.ResolvedWorkspace, op
 // TestSearchLimitCaps proves --limit caps the result deterministically, keeping
 // the first records in the URI-sorted order.
 func TestSearchLimitCaps(t *testing.T) {
+	// Not parallel: mutates process-global registryIndexTarget, searchNow seams other tests read.
 	rw := buildSearchWorkspace(t)
 	out, _, err := runSearch(t, rw, searchOptions{Output: "names", Limit: 1})
 	if err != nil {
@@ -212,6 +215,7 @@ func TestSearchLimitCaps(t *testing.T) {
 // TestSearchNoMatchesTable proves a zero-match search prints an explicit line
 // rather than a bare blank.
 func TestSearchNoMatchesTable(t *testing.T) {
+	// Not parallel: mutates process-global registryIndexTarget, searchNow seams other tests read.
 	rw := buildSearchWorkspace(t)
 	out, _, err := runSearch(t, rw, searchOptions{Query: "nonesuch", Output: "table"})
 	if err != nil {
@@ -270,6 +274,7 @@ func TestSearchFailsLoudWhenNoIndexAllRegistries(t *testing.T) {
 // stdout still carries the results and no network is contacted. A fresh snapshot
 // draws no advisory.
 func TestSearchStalenessAdvisory(t *testing.T) {
+	// Not parallel: mutates process-global registryIndexTarget, searchNow seams other tests read.
 	rw := buildSearchWorkspace(t)
 
 	// Fresh (fixture pins the clock ~1h after the stamp): no advisory.

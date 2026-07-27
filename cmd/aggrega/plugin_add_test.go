@@ -48,6 +48,7 @@ func withTagLister(t *testing.T, tags []string) {
 // {capability, uri} binding. It asserts only the write — a subsequent provider
 // resolve is not exercised here.
 func TestPluginAddRun_Provider(t *testing.T) {
+	// Not parallel: mutates process-global globalDisplay, newRepoDeprecationLookup seams other tests read.
 	withSearchTarget(t, fakeRepoLister{repos: searchFixtureRepos}, nil)
 	rw := resolvedTestWorkspace(t)
 	var out bytes.Buffer
@@ -82,6 +83,7 @@ func TestPluginAddRun_Provider(t *testing.T) {
 // TestPluginAddRun_ProviderRequiresCapability proves the provider socket halts
 // when --capability is absent rather than writing a capability-less binding.
 func TestPluginAddRun_ProviderRequiresCapability(t *testing.T) {
+	// Not parallel: mutates process-global globalDisplay, newRepoDeprecationLookup seams other tests read.
 	withSearchTarget(t, fakeRepoLister{repos: searchFixtureRepos}, nil)
 	rw := resolvedTestWorkspace(t)
 	err := pluginAddRun(context.Background(), pluginAddConfig{Socket: "provider", Query: "helm", ws: rw, Out: &bytes.Buffer{}})
@@ -94,6 +96,7 @@ func TestPluginAddRun_ProviderRequiresCapability(t *testing.T) {
 // prefix to the bare entity identity, pins the latest non-pre-release published
 // version, and writes a schema-valid plugins.<socket> entry.
 func TestPluginAddRun_ConfigSocket(t *testing.T) {
+	// Not parallel: mutates process-global globalDisplay, newRepoDeprecationLookup seams other tests read.
 	withSearchTarget(t, fakeRepoLister{repos: []string{"plugin/governance/tag-injector"}}, nil)
 	withTagLister(t, []string{"1.0.0", "1.2.0", "2.0.0-rc1"})
 	rw := resolvedTestWorkspace(t)
@@ -130,6 +133,7 @@ func TestPluginAddRun_ConfigSocket(t *testing.T) {
 // resolved plugin repository carries no published version tag, rather than
 // writing an unpinned attachment.
 func TestPluginAddRun_ConfigSocketNoVersion(t *testing.T) {
+	// Not parallel: mutates process-global globalDisplay, newRepoDeprecationLookup seams other tests read.
 	withSearchTarget(t, fakeRepoLister{repos: []string{"plugin/governance/deny-gate"}}, nil)
 	withTagLister(t, []string{"latest"}) // no strict-SemVer tag
 	rw := resolvedTestWorkspace(t)
@@ -142,6 +146,7 @@ func TestPluginAddRun_ConfigSocketNoVersion(t *testing.T) {
 // TestPluginAddRun_UnknownType proves an unrecognized type argument halts
 // with the list of accepted types.
 func TestPluginAddRun_UnknownType(t *testing.T) {
+	// Not parallel: mutates the process-global globalDisplay seam other tests read.
 	rw := resolvedTestWorkspace(t)
 	err := pluginAddRun(context.Background(), pluginAddConfig{Socket: "webhook", Query: "x", ws: rw, Out: &bytes.Buffer{}})
 	if err == nil || !strings.Contains(err.Error(), "unknown type") {
@@ -153,6 +158,7 @@ func TestPluginAddRun_UnknownType(t *testing.T) {
 // plugin without an exact plugin-name hit halts with the candidate list rather
 // than guessing.
 func TestPluginAddRun_AmbiguousQuery(t *testing.T) {
+	// Not parallel: mutates process-global globalDisplay, newRepoDeprecationLookup seams other tests read.
 	withSearchTarget(t, fakeRepoLister{repos: []string{
 		"plugin/governance/tag-injector",
 		"plugin/governance/tag-rewriter",
@@ -219,6 +225,7 @@ func TestPluginAddRun_CLIInstallsViaSearchResolve(t *testing.T) {
 // flags halt with a usage error on a non-cli type rather than being silently
 // ignored, mirroring the provider-only --capability guard.
 func TestPluginAddRun_CapabilityFlagsRejectedOffCLI(t *testing.T) {
+	// Not parallel: mutates the process-global globalDisplay seam other tests read.
 	rw := resolvedTestWorkspace(t)
 	err := pluginAddRun(context.Background(), pluginAddConfig{
 		Socket:    "governance",
@@ -237,6 +244,7 @@ func TestPluginAddRun_CapabilityFlagsRejectedOffCLI(t *testing.T) {
 // local index by default: with a built index carrying the repository, the headline
 // version is resolved from the snapshot and the live tag lister is never consulted.
 func TestResolveLatestPluginVersion_IndexDefault(t *testing.T) {
+	// Not parallel: mutates the process-global pluginRepoTagLister seam other tests read.
 	rw := resolvedTestWorkspace(t)
 	const host = "hub.aggrega.ai"
 	const repoPath = "plugin/governance/tag-injector"
@@ -272,6 +280,7 @@ func TestResolveLatestPluginVersion_IndexDefault(t *testing.T) {
 // no local index entry fails loudly, pointing at 'registry update', rather than
 // silently networking for discovery.
 func TestResolveLatestPluginVersion_OfflineNoIndex(t *testing.T) {
+	// Not parallel: mutates the process-global pluginRepoTagLister seam other tests read.
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, workspaceconfig.ConfigFilename)
 	if err := os.WriteFile(cfgPath, []byte("workspace: {}\ndefault_registry: hub.aggrega.ai\noffline: true\n"), 0o644); err != nil {

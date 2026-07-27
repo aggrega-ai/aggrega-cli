@@ -62,6 +62,8 @@ func TestAuthTokenErrorLeavesStdoutEmpty(t *testing.T) {
 // Not parallel: browser.Stdout is a process-global. The test reads it and
 // saves/restores it around the assertion so it cannot disturb other tests.
 func TestRootCmdDiscardsBrowserOpenerStdout(t *testing.T) {
+	// newRootCmd below also assigns the process-global globalDisplay seam other
+	// tests read, which is a second reason this test cannot run in parallel.
 	saved := browser.Stdout
 	defer func() { browser.Stdout = saved }()
 

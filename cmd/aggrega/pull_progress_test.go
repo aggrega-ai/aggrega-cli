@@ -17,6 +17,7 @@ import (
 // "Pull complete" summary stays on the output sink (stdout). It also confirms
 // stdout carries no progress lines, mirroring the build's stderr-only discipline.
 func TestPull_ProgressSurface_ForcedStatic(t *testing.T) {
+	// Not parallel: mutates the process-global fileTerminal seam other tests read.
 	orig := fileTerminal
 	t.Cleanup(func() { fileTerminal = orig })
 	fileTerminal = func(io.Writer) bool { return false }
@@ -58,6 +59,7 @@ func TestPull_ProgressSurface_ForcedStatic(t *testing.T) {
 // --progress and a non-terminal sink, pull emits no progress surface on stderr,
 // only its diagnostic notices (none here) and the stdout summary.
 func TestPull_ProgressSurface_AutoNonTTYSilent(t *testing.T) {
+	// Not parallel: mutates the process-global fileTerminal seam other tests read.
 	orig := fileTerminal
 	t.Cleanup(func() { fileTerminal = orig })
 	fileTerminal = func(io.Writer) bool { return false }

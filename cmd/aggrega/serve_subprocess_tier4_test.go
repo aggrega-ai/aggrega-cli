@@ -29,6 +29,7 @@ import (
 // pipeline → JSON-RPC envelope → wire-shape diagnostic — against
 // a real spawned daemon.
 func TestServeAggregaTier4ValidateEndToEnd(t *testing.T) {
+	// Not parallel: spawns a daemon subprocess; concurrent daemons multiply peak memory past the package budget.
 	bin := buildServeBinary(t)
 	ws := t.TempDir()
 

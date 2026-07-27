@@ -86,6 +86,7 @@ func withDiscoverable(t *testing.T, fn func(string) bool) {
 // appears in the command tree with its cached help and, when invoked with a
 // matching pin, forwards its argv to the runner and returns exit 0 (no error).
 func TestConfiguredCLIPlugin_ListedAndDispatched(t *testing.T) {
+	// Not parallel: mutates process-global cliPluginRegistrations, globalDisplay seams other tests read.
 	withRegistrationWarnings(t)
 	withCLIRegistrations(t, []cliCommandReg{
 		{name: "moo", short: "make the cow moo", uri: "oci://example/moo:v1", digest: "pinned-digest"},
@@ -138,6 +139,7 @@ func TestConfiguredCLIPlugin_ListedAndDispatched(t *testing.T) {
 // disabled, so the command still exposes the flags for help without cobra ever
 // parsing them.
 func TestConfiguredCLIPlugin_DeclaredFlagsRenderInHelp(t *testing.T) {
+	// Not parallel: mutates process-global cliPluginRegistrations, globalDisplay seams other tests read.
 	withRegistrationWarnings(t)
 	withCLIRegistrations(t, []cliCommandReg{
 		{
@@ -198,6 +200,7 @@ func TestConfiguredCLIPlugin_DeclaredFlagsRenderInHelp(t *testing.T) {
 // the command does not turn cobra into the parser: the raw argument vector,
 // declared flag tokens included, still reaches the guest verbatim.
 func TestConfiguredCLIPlugin_DeclaredFlagsForwardRawArgv(t *testing.T) {
+	// Not parallel: mutates process-global cliPluginRegistrations, globalDisplay seams other tests read.
 	withRegistrationWarnings(t)
 	withCLIRegistrations(t, []cliCommandReg{
 		{
@@ -234,6 +237,7 @@ func TestConfiguredCLIPlugin_DeclaredFlagsForwardRawArgv(t *testing.T) {
 // contributing an already-registered name are all refused registration with an
 // observable diagnostic, and the built-in keeps its own command.
 func TestConfiguredCLIPlugin_BuiltinReservedAndDuplicateRefused(t *testing.T) {
+	// Not parallel: mutates process-global cliPluginRegistrations, globalDisplay seams other tests read.
 	warn := withRegistrationWarnings(t)
 	const sentinel = "SHADOW ATTEMPT — should never win"
 	withCLIRegistrations(t, []cliCommandReg{
@@ -300,6 +304,7 @@ func TestConfiguredCLIPlugin_BuiltinReservedAndDuplicateRefused(t *testing.T) {
 // through executeRoot: a non-zero code becomes the process exit code, and zero
 // exits zero.
 func TestConfiguredCLIPlugin_ExitCodePropagation(t *testing.T) {
+	// Not parallel: mutates process-global cliPluginRegistrations, globalDisplay seams other tests read.
 	withRegistrationWarnings(t)
 	withCLIRegistrations(t, []cliCommandReg{
 		{name: "moo", short: "moo", uri: "oci://example/moo:v1", digest: "pinned"},
@@ -330,6 +335,7 @@ func TestConfiguredCLIPlugin_ExitCodePropagation(t *testing.T) {
 // the install hint only when the name is discoverable, and otherwise leaves
 // cobra's normal error unchanged.
 func TestUnknownCommand_InstallSuggestion(t *testing.T) {
+	// Not parallel: mutates process-global cliPluginRegistrations, globalDisplay seams other tests read.
 	withRegistrationWarnings(t)
 	withCLIRegistrations(t, nil)
 	withDispatcher(t, &fakeDispatcher{})
@@ -368,6 +374,7 @@ func TestUnknownCommand_InstallSuggestion(t *testing.T) {
 // — and the error names the drift and instructs a re-pin. Re-pinning (the config
 // digest now matches the resolved bytes) re-enables the command.
 func TestConfiguredCLIPlugin_DriftHaltsBeforeRun(t *testing.T) {
+	// Not parallel: mutates process-global cliPluginRegistrations, globalDisplay seams other tests read.
 	withRegistrationWarnings(t)
 	withCLIRegistrations(t, []cliCommandReg{
 		{name: "moo", short: "moo", uri: "oci://example/moo:v1", digest: "pinned-digest"},

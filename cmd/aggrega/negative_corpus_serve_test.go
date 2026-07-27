@@ -34,6 +34,7 @@ import (
 // aggrega/publishDiagnostics for the Release file carrying the rendered
 // envelope text.
 func TestNegativeCorpusServe_MalformedAnchoringReleaseDiagnostic(t *testing.T) {
+	// Not parallel: spawns a daemon subprocess; concurrent daemons multiply peak memory past the package budget.
 	bin := buildServeBinary(t)
 	ws := t.TempDir()
 	write := func(name, content string) {
@@ -160,6 +161,7 @@ func diagnosticPublishedFor(msg map[string]any, file, wantText string) bool {
 }
 
 func TestNegativeCorpusServe_EnvelopeDiagnostic(t *testing.T) {
+	// Not parallel: spawns a daemon subprocess; concurrent daemons multiply peak memory past the package budget.
 	bin := buildServeBinary(t)
 	ws := t.TempDir()
 
@@ -402,6 +404,7 @@ spec:
 // envelope diagnostic on its own file. Red today (Tier-4 returns nil for
 // a non-active file → shows clean); green with the per-file leg.
 func TestNegativeCorpusServe_NonAnchoringReleaseGetsDiagnostic(t *testing.T) {
+	// Not parallel: spawns a daemon subprocess; concurrent daemons multiply peak memory past the package budget.
 	badRelease := `apiVersion: aggrega.ai/v1alpha1
 kind: Release
 metadata:
@@ -453,6 +456,7 @@ spec:
 // envelope diagnostic on its file. Red today (catalog entities are never
 // a per-file validate subject); green with the per-file leg.
 func TestNegativeCorpusServe_CatalogComponentGetsDiagnostic(t *testing.T) {
+	// Not parallel: spawns a daemon subprocess; concurrent daemons multiply peak memory past the package budget.
 	comp := `apiVersion: aggrega.ai/v1alpha1
 kind: Component
 metadata:
@@ -477,6 +481,7 @@ spec:
 // produces ZERO envelope diagnostics — the daemon never lint-bombs
 // foreign YAML.
 func TestNegativeCorpusServe_ForeignYAMLNoEnvelopeDiagnostic(t *testing.T) {
+	// Not parallel: spawns a daemon subprocess; concurrent daemons multiply peak memory past the package budget.
 	chartTemplate := `apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -503,6 +508,7 @@ spec:
 // and the Tier-4 diagnostic about the parameter must still surface —
 // proving envelope-clean does not short-circuit Tier-4.
 func TestNegativeCorpusServe_CleanAggregateStillTier4(t *testing.T) {
+	// Not parallel: spawns a daemon subprocess; concurrent daemons multiply peak memory past the package budget.
 	agg := `apiVersion: aggrega.ai/v1alpha1
 kind: Aggregate
 metadata:
@@ -603,6 +609,7 @@ spec:
 // the editor BUFFER. Red before this leg: the classifier skipped it; green
 // now.
 func TestNegativeCorpusServe_ConfigByFilenameGetsDiagnostic(t *testing.T) {
+	// Not parallel: spawns a daemon subprocess; concurrent daemons multiply peak memory past the package budget.
 	badConfigBuffer := "workspace:\noffline: \"notabool\"\n"
 	scan := serveValidateScanBuffer(t, map[string]string{}, ".aggrega-config.yaml", badConfigBuffer)
 	if !strings.Contains(scan, "violates its envelope schema") {
@@ -615,6 +622,7 @@ func TestNegativeCorpusServe_ConfigByFilenameGetsDiagnostic(t *testing.T) {
 // anchored Release. A junk lockfile buffer squiggles live. Red before this
 // leg; green now.
 func TestNegativeCorpusServe_ActiveReleaseLockfileGetsDiagnostic(t *testing.T) {
+	// Not parallel: spawns a daemon subprocess; concurrent daemons multiply peak memory past the package budget.
 	badLockfileBuffer := "version: 1\nrelease: 123\ngenerated_at: \"2026-01-01T00:00:00Z\"\n"
 	scan := serveValidateScanBuffer(t, activeReleaseFixture(), "release.lock", badLockfileBuffer)
 	if !strings.Contains(scan, "violates its envelope schema") {
@@ -628,6 +636,7 @@ func TestNegativeCorpusServe_ActiveReleaseLockfileGetsDiagnostic(t *testing.T) {
 // ecosystem's lockfile) does NOT classify and is never validated against
 // the lockfile schema — zero envelope diagnostics.
 func TestNegativeCorpusServe_ForeignLockNoEnvelopeDiagnostic(t *testing.T) {
+	// Not parallel: spawns a daemon subprocess; concurrent daemons multiply peak memory past the package budget.
 	scan := serveValidateScanBuffer(t, activeReleaseFixture(), "Cargo.lock", "a: 1\n")
 	if strings.Contains(scan, "violates its envelope schema") {
 		t.Fatalf("foreign .lock wrongly produced an envelope diagnostic (the foreign-.lock guard failed):\n%s", scan)

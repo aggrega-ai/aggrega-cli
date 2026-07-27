@@ -198,6 +198,7 @@ func nonInteractive(t *testing.T) {
 // the lockfile, not the config. A re-pull then adopts the new binding into the
 // lockfile.
 func TestProviderBinding_BuildIsInvariantToConfigAfterPull(t *testing.T) {
+	// Not parallel: mutates the process-global isTerminal seam other tests read.
 	nonInteractive(t)
 	root := t.TempDir()
 	releasePath, catalogRoot := providerBindingFixture(t, root, true)
@@ -267,6 +268,7 @@ plugins:
 // plugins serve one target and no binding disambiguates, a non-interactive pull
 // halts loudly with ErrAmbiguousProviderPlugin, naming both candidate plugins.
 func TestProviderBinding_AmbiguousTargetHaltsLoudly(t *testing.T) {
+	// Not parallel: mutates the process-global isTerminal seam other tests read.
 	nonInteractive(t)
 	root := t.TempDir()
 	releasePath, catalogRoot := providerBindingFixture(t, root, true)
@@ -289,6 +291,7 @@ func TestProviderBinding_AmbiguousTargetHaltsLoudly(t *testing.T) {
 // plugins.providers entry, and pull records the resolved binding into the
 // lockfile.
 func TestProviderBinding_UnambiguousTargetNeedsNoBinding(t *testing.T) {
+	// Not parallel: mutates the process-global isTerminal seam other tests read.
 	nonInteractive(t)
 	root := t.TempDir()
 	releasePath, catalogRoot := providerBindingFixture(t, root, false)

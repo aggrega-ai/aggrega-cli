@@ -40,6 +40,7 @@ var errRetryable = errors.New("retryable")
 func alwaysRetryable(err error) bool { return errors.Is(err, errRetryable) }
 
 func TestRetryTransientRetryableThenSuccess(t *testing.T) {
+	// Not parallel: mutates the process-global publishRetryBaseDelay seam other tests read.
 	shrinkRetryDelay(t)
 	calls := 0
 	got, err := retryTransient(context.Background(), func() (string, error) {
@@ -61,6 +62,7 @@ func TestRetryTransientRetryableThenSuccess(t *testing.T) {
 }
 
 func TestRetryTransientExhaustsAttempts(t *testing.T) {
+	// Not parallel: mutates the process-global publishRetryBaseDelay seam other tests read.
 	shrinkRetryDelay(t)
 	calls := 0
 	_, err := retryTransient(context.Background(), func() (string, error) {
@@ -76,6 +78,7 @@ func TestRetryTransientExhaustsAttempts(t *testing.T) {
 }
 
 func TestRetryTransientTerminalFailsFast(t *testing.T) {
+	// Not parallel: mutates the process-global publishRetryBaseDelay seam other tests read.
 	shrinkRetryDelay(t)
 	terminal := errors.New("terminal")
 	calls := 0

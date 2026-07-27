@@ -130,6 +130,7 @@ func TestRegistryAddGlobalCreatesMissingParentDir(t *testing.T) {
 // build-scoped — lands in the workspace config file by default, and the
 // workspace destination is printed.
 func TestPluginAddProviderDefaultsToWorkspace(t *testing.T) {
+	// Not parallel: mutates process-global globalDisplay, newRepoDeprecationLookup seams other tests read.
 	withSearchTarget(t, fakeRepoLister{repos: searchFixtureRepos}, nil)
 	rw := resolvedTestWorkspace(t)
 	var out bytes.Buffer
@@ -156,6 +157,7 @@ func TestPluginAddProviderDefaultsToWorkspace(t *testing.T) {
 // TestPluginAddProviderGlobalOverride proves --global forces a provider binding
 // into the global config file despite its build nature.
 func TestPluginAddProviderGlobalOverride(t *testing.T) {
+	// Not parallel: mutates process-global globalDisplay, newRepoDeprecationLookup seams other tests read.
 	withSearchTarget(t, fakeRepoLister{repos: searchFixtureRepos}, nil)
 	rw := resolvedTestWorkspace(t)
 	global := filepath.Join(t.TempDir(), "aggrega", "config.yaml")
@@ -189,6 +191,7 @@ func TestPluginAddProviderGlobalOverride(t *testing.T) {
 // TestPluginAddConfigSocketDefaultsToWorkspace proves a config-socket attachment
 // — build-scoped — defaults to the workspace config file.
 func TestPluginAddConfigSocketDefaultsToWorkspace(t *testing.T) {
+	// Not parallel: mutates process-global globalDisplay, newRepoDeprecationLookup seams other tests read.
 	withSearchTarget(t, fakeRepoLister{repos: []string{"plugin/governance/tag-injector"}}, nil)
 	withTagLister(t, []string{"1.0.0"})
 	rw := resolvedTestWorkspace(t)
@@ -216,6 +219,7 @@ func TestPluginAddConfigSocketDefaultsToWorkspace(t *testing.T) {
 // TestPluginAddBothFlagsUsageError proves setting both write-target flags on
 // plugin add is a usage error.
 func TestPluginAddBothFlagsUsageError(t *testing.T) {
+	// Not parallel: mutates process-global globalDisplay, newRepoDeprecationLookup seams other tests read.
 	withSearchTarget(t, fakeRepoLister{repos: searchFixtureRepos}, nil)
 	rw := resolvedTestWorkspace(t)
 	err := pluginAddRun(context.Background(), pluginAddConfig{

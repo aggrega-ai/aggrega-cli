@@ -621,6 +621,7 @@ func TestCacheClearWipesAll(t *testing.T) {
 // irreversible cache wipe: --yes bypasses it, a non-interactive stdin without
 // --yes refuses (rather than blocking), and an interactive [y/N] answer decides.
 func TestCacheClearConfirm(t *testing.T) {
+	// Not parallel: mutates the process-global isTerminal seam other tests read.
 	orig := isTerminal
 	t.Cleanup(func() { isTerminal = orig })
 

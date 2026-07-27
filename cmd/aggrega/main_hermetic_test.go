@@ -17,8 +17,15 @@ import (
 // reads from or writes to the developer's real global configuration. The
 // redirect runs before any test resolves a workspace, so a populated global
 // file in the ambient environment cannot leak into the suite.
+//
+// It also owns the teardown of artifacts shared across tests. Anything built
+// once and reused by several tests outlives the test that triggered the build,
+// so it cannot be tied to that test's lifetime and is released here instead,
+// after every test has finished.
 func TestMain(m *testing.M) {
-	os.Exit(hometest.RunHermetic(m))
+	code := hometest.RunHermetic(m)
+	removeSharedServeBinary()
+	os.Exit(code)
 }
 
 // TestConfigHomeIsIsolated is the regression floor for the TestMain redirect. It

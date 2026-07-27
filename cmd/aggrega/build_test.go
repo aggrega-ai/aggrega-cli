@@ -23,6 +23,7 @@ import (
 // Step 5 (Render); this test fails such a regression because the
 // expected sentinel and message stop being present in the chain.
 func TestRunBuild_Step4bAssertionFailureHaltsCLI(t *testing.T) {
+	// Not parallel: mutates process-global catalogDirs, releasePath seams other tests read.
 	root := t.TempDir()
 
 	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1alpha1
@@ -433,6 +434,7 @@ spec:
 // render step with ErrProvidesContractUnfulfilled naming the missing key rather
 // than silently dropping it at inject/render time.
 func TestRunBuild_ProvidesContractUnfulfilledHaltsCLI(t *testing.T) {
+	// Not parallel: mutates process-global catalogDirs, releasePath seams other tests read.
 	root := providesContractFixture(t, `  provides:
     endpoint: "{{ .context.instance_id }}.svc.local"`)
 
@@ -627,6 +629,7 @@ spec:
 // contract. The build must halt at render with ErrProvidesContractUnfulfilled
 // naming the missing key.
 func TestRunBuild_FeatureProvidesContractUnfulfilledHaltsCLI(t *testing.T) {
+	// Not parallel: mutates process-global catalogDirs, releasePath seams other tests read.
 	root := featureProvidesContractFixture(t, `  provides:
     endpoint: "{{ .context.instance_id }}.metrics"`)
 
