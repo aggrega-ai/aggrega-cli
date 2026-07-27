@@ -68,8 +68,9 @@ type AttachmentSlot struct {
 	// Sensitive declares that whatever binds this slot handles secret material.
 	// It is a marker, not a constraint: it is carried onto the slot's projected
 	// validation sub-schema as the `x-aggrega-sensitive` extension keyword so
-	// the declaration is readable by inspection and policy tooling, and nothing
-	// else reads it. No fill is accepted or rejected because of it and no
+	// the declaration is readable by inspection and policy tooling, and it is
+	// read when deriving whether the attachment binding this slot handles
+	// sensitive material. No fill is accepted or rejected because of it and no
 	// rendered output changes.
 	Sensitive bool `json:"sensitive,omitempty" yaml:"sensitive,omitempty"`
 }

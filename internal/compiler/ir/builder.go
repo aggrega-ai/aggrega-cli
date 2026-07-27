@@ -146,28 +146,8 @@ func BuildIRContext(ctx context.Context, cfg BuildIRConfig) (*types.IRGraph, Fea
 		if featureSchemaMiss[featureType] {
 			return nil, false
 		}
-		// Prefer the composed effective schema for an extends-ing Feature, so an
-		// inherited constraint is enforced on the attachment.
-		if cfg.CatalogLookup.EffectiveSchema != nil {
-			if eff, ok := cfg.CatalogLookup.EffectiveSchema(featureType); ok {
-				featureSchemaCache[featureType] = eff
-				return eff, true
-			}
-		}
-		if cfg.CatalogLookup.Feature == nil {
-			return nil, false
-		}
-		feat, ok := cfg.CatalogLookup.Feature(featureType)
-		if !ok || feat.Spec.Schema.Kind == 0 {
-			featureSchemaMiss[featureType] = true
-			return nil, false
-		}
-		var opts []compactform.CompileOption
-		if len(cfg.CatalogLookup.SchemaLibraries) > 0 {
-			opts = append(opts, compactform.WithSchemaLibraries(cfg.CatalogLookup.SchemaLibraries))
-		}
-		compiled, err := compactform.Compile(&feat.Spec.Schema, opts...)
-		if err != nil {
+		compiled, ok := compileFeatureSchema(cfg.CatalogLookup, featureType)
+		if !ok {
 			featureSchemaMiss[featureType] = true
 			return nil, false
 		}

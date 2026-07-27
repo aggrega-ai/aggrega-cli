@@ -383,6 +383,10 @@ func collectNodeFeatures(
 	// IRFeatureEntry from the per-leaf provenance maps.
 	finalizeTopLevelOrigin(result)
 
+	// Derive per-attachment sensitivity and the per-delivery-key marking from
+	// the declarations, over the merged attachments.
+	finalizeDerivedSensitivity(result, topoNode, catalogLookup)
+
 	return result, nil
 }
 
@@ -783,6 +787,116 @@ func deriveTopLevelOrigin(values, infra types.OrderedMap[types.FieldProvenance])
 		return types.OriginAnnotation, firstAnnotation.AnnotationKey, firstAnnotation.AnnotationSource
 	}
 	return types.OriginMixed, "", ""
+}
+
+// finalizeDerivedSensitivity walks every IRFeatureEntry in the per-node result
+// and derives the two sensitivity facts the IR carries, from declarations only.
+//
+// It runs after the whole five-tier cascade has folded, for the same reason the
+// attachment-conformance gate does: both facts are properties of the EFFECTIVE
+// merged attachment, never of a single pre-merge fragment. A later tier can
+// replace the attachment's Feature type and can add or replace inject delivery
+// keys, so a fact computed on first sight would describe a contribution that
+// went on to lose the precedence contest.
+//
+// The two facts:
+//
+//   - Sensitive — true when the merged attachment's Feature declares a sensitive
+//     leaf in values, infra or provides, or when the host Component declares its
+//     attachment slot of the same name sensitive. The slot pairs with the
+//     attachment by NAME: a deployment fills a slot by attaching a Feature under
+//     the slot's name, so the attachment's instance name IS the slot name.
+//   - SensitiveInject — the merged inject delivery keys whose referenced
+//     provides key the Feature declares sensitive.
+//
+// The leaf half reads what the Feature's schema DECLARES, not the subset of
+// sensitive leaves this attachment happened to author a value for. Sensitivity
+// is a property of the catalog entity plus the slot it fills, so a linter, a
+// guest or a policy can reason about the entity in isolation; intersecting with
+// the carried values would make the same field sensitive in one deployment and
+// not another.
+//
+// Every input is a declaration or a mapping the compiler itself built. No value
+// is inspected, and no meaning is read out of a name: the attachment's name is
+// used as an exact key against the declared slot map, nothing more.
+func finalizeDerivedSensitivity(result *featureResult, topoNode *topology.TopologyNode, catalogLookup resolver.CatalogLookup) {
+	if result.Features.Len() == 0 {
+		return
+	}
+
+	var slots types.OrderedMap[types.AttachmentSlot]
+	if topoNode != nil && topoNode.ComponentType != "" && catalogLookup.Component != nil {
+		if comp, found := catalogLookup.Component(topoNode.ComponentType); found {
+			slots = comp.Spec.FeaturesSchema
+		}
+	}
+
+	declaredCache := map[string]resolver.SensitiveLeaves{}
+	declaredFor := func(featureType string) resolver.SensitiveLeaves {
+		if d, cached := declaredCache[featureType]; cached {
+			return d
+		}
+		var declared resolver.SensitiveLeaves
+		if compiled, ok := compileFeatureSchema(catalogLookup, featureType); ok {
+			declared = resolver.DeclaredSensitiveLeaves(compiled)
+		}
+		declaredCache[featureType] = declared
+		return declared
+	}
+
+	for name, entry := range result.Features.All() {
+		declared := declaredFor(entry.Type)
+		slot, slotDeclared := slots.Get(name)
+		sensitive := declared.Any() || (slotDeclared && slot.Sensitive)
+		marked := deriveInjectSensitivity(entry.Inject, declared.Provides)
+		if !sensitive && marked.Len() == 0 {
+			// A marked delivery key implies a sensitive provides declaration,
+			// which implies a sensitive attachment, so the second term guards a
+			// case the derivation above cannot produce rather than a live one.
+			continue
+		}
+		entry.Sensitive = sensitive
+		entry.SensitiveInject = marked
+		result.Features.Set(name, entry)
+	}
+}
+
+// deriveInjectSensitivity selects the delivery keys of one merged attachment's
+// inject whose referenced provides key the attachment's Feature declares
+// sensitive, preserving inject's own mechanism -> delivery key shape and
+// carrying the referenced provides key through as the value.
+//
+// The provides key a delivery key names is read exactly as the delivery pass
+// reads it — the mapping's value, verbatim — so the two cannot disagree about
+// which declaration a delivery key resolves against.
+//
+// A `from:` naming a key the Feature's schema does not declare selects nothing
+// here. This derivation answers only whether a referenced key is declared
+// sensitive, never whether the reference itself is legal; judging the reference
+// belongs to the checks over inject references, and a second judgement here
+// would be a second home for it.
+//
+// An attachment declaring no delivery mechanism — the shape a slot takes when
+// its Recipe consumes the material internally rather than delivering it to the
+// workload — has no delivery key, so the result is empty. That is the honest
+// answer rather than a synthesised key: there is nothing delivered to mark.
+func deriveInjectSensitivity(inject types.OrderedMap[types.OrderedMap[string]], sensitiveProvides map[string]bool) types.OrderedMap[types.OrderedMap[string]] {
+	out := types.OrderedMap[types.OrderedMap[string]]{}
+	if inject.Len() == 0 || len(sensitiveProvides) == 0 {
+		return out
+	}
+	for mechanism, deliveries := range inject.All() {
+		marked := types.OrderedMap[string]{}
+		for deliveryKey, providesKey := range deliveries.All() {
+			if sensitiveProvides[providesKey] {
+				marked.Set(deliveryKey, providesKey)
+			}
+		}
+		if marked.Len() > 0 {
+			out.Set(mechanism, marked)
+		}
+	}
+	return out
 }
 
 // namedFeature pairs an instance name with a FeatureInstance for ordered collection.

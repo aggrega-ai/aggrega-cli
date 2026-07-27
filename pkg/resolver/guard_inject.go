@@ -343,15 +343,7 @@ func invalidInjectKeyMessage(key, targetType string, declared map[string]bool) s
 // empty set.
 func providesKeysFromEffective(eff compactform.Schema) map[string]bool {
 	keys := map[string]bool{}
-	props, ok := eff["properties"].(map[string]any)
-	if !ok {
-		return keys
-	}
-	provides, ok := props["provides"].(map[string]any)
-	if !ok {
-		return keys
-	}
-	providesProps, ok := provides["properties"].(map[string]any)
+	providesProps, ok := pillarProperties(eff, "provides")
 	if !ok {
 		return keys
 	}

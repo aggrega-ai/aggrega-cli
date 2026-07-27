@@ -522,6 +522,27 @@ func pillarSubSchema(compiled compactform.Schema, pillar string) (map[string]any
 	return sub, ok
 }
 
+// pillarProperties returns the compiled property map of one named pillar inside
+// a whole-entity compiled schema, and false when the schema declares no such
+// pillar or the pillar declares no properties.
+//
+// A whole-entity compile nests a pillar one level deeper than a compile of the
+// pillar node alone — properties -> <pillar> -> properties — so a reader holding
+// a whole-entity schema takes one hop more than a reader holding the pillar
+// alone. It layers on pillarSubSchema rather than repeating its navigation, so
+// the two cannot disagree about where a pillar sits.
+func pillarProperties(compiled compactform.Schema, pillar string) (map[string]any, bool) {
+	sub, ok := pillarSubSchema(compiled, pillar)
+	if !ok {
+		return nil, false
+	}
+	props, ok := sub["properties"].(map[string]any)
+	if !ok {
+		return nil, false
+	}
+	return props, true
+}
+
 // newPillarValidator round-trips a compiled schema into the library schema type
 // and constructs the validator.
 func newPillarValidator(schema map[string]any) (jsonvalidator.Validator, error) {

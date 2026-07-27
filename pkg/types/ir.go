@@ -258,6 +258,18 @@ type IREdge struct {
 // pillar per-leaf merge; downstream consumers (inspect, lint) read
 // them to surface per-leaf origin markers and to warn when an explicit
 // contribution suppressed an annotation one.
+//
+// Sensitive and SensitiveInject are derived, not authored. Both are
+// computed at IR-build time from declarations alone — the attached
+// Feature's schema and the host Component's attachment-slot
+// declaration — over the merged attachment, after the whole attachment
+// cascade has folded. Neither inspects a value, and neither infers
+// meaning from a name: the attachment's name locates the slot it binds
+// through an exact lookup against the declared slot map, and nothing
+// is read out of the name itself. Both are absent from the wire when the
+// declarations that would populate them are absent, so an attachment
+// whose Feature and slot declare nothing carries the same bytes it
+// carried before the axis existed.
 type IRFeatureEntry struct {
 	Type             string                         `json:"type"`
 	ResolvedVersion  string                         `json:"resolved_version"`
@@ -269,6 +281,24 @@ type IRFeatureEntry struct {
 	AnnotationSource string                         `json:"annotation_source,omitempty"`
 	ValuesProvenance OrderedMap[FieldProvenance]    `json:"values_provenance,omitempty,omitzero"`
 	InfraProvenance  OrderedMap[FieldProvenance]    `json:"infra_provenance,omitempty,omitzero"`
+	// Sensitive is true when the attachment handles material an author
+	// declared sensitive: either the attached Feature declares a
+	// sensitive leaf in its values, infra or provides pillar, or the
+	// host Component's attachment slot of the same name declares the
+	// material it carries sensitive. The two declarations carry
+	// different claims — a leaf says this datum is secret material, a
+	// slot says whatever binds here handles secret material — and
+	// either one alone makes the attachment sensitive.
+	Sensitive bool `json:"sensitive,omitempty"`
+	// SensitiveInject names the delivery keys of Inject whose
+	// referenced provides key the attached Feature declares sensitive,
+	// in Inject's own shape: mechanism -> delivery key -> the
+	// referenced provides key. It is a subset of Inject, and the value
+	// is retained so a consumer can name the declaration a delivery key
+	// inherited its sensitivity from. An attachment declaring no
+	// delivery mechanism has no delivery key to mark, so the map is
+	// empty for it.
+	SensitiveInject OrderedMap[OrderedMap[string]] `json:"sensitive_inject,omitempty,omitzero"`
 }
 
 // FieldProvenance records the origin of one leaf in an IR feature

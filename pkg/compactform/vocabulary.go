@@ -60,8 +60,9 @@ var containerKeywords = map[string]bool{
 // evaluates the Go-template predicate at validation time. `when` emits
 // JSON Schema if/then/else plus `x-aggrega-when:` extension carrying the
 // template body. `sensitive` emits the `x-aggrega-sensitive:` extension
-// keyword, which marks the leaf as carrying secret material and is read
-// by nothing else in the compiler. `$jsonschema` embeds full JSON Schema
+// keyword, which marks the leaf as carrying secret material; the marker is
+// read when deriving an attachment's sensitivity, and nothing validates or
+// rejects a value because of it. `$jsonschema` embeds full JSON Schema
 // YAML at any node. `$mode` provides explicit dispatch override for
 // ambiguous content shapes — including the case where a schema declares a
 // property whose own name collides with one of these keywords.
