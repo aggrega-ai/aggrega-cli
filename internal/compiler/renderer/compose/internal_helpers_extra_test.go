@@ -131,8 +131,8 @@ func TestInjectAggregaLabelsIntoServices_EveryArm(t *testing.T) {
 	// Service not in origins → preserved untouched.
 	docMixed := map[string]any{
 		"services": map[string]any{
-			"web":          map[string]any{},
-			"author-svc":   map[string]any{"image": "x"},
+			"web":        map[string]any{},
+			"author-svc": map[string]any{"image": "x"},
 		},
 	}
 	injectAggregaLabelsIntoServices(docMixed, map[string]renderer.NodeRenderContext{

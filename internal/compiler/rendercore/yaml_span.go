@@ -29,7 +29,8 @@ type nodeSpan struct {
 //     indented deeper than the construct's parent;
 //   - a plain scalar folded across several lines under the same indentation rule;
 //   - a multi-line double- or single-quoted scalar — its body runs to the
-//     closing quote, honoring \" and '' escapes across line breaks;
+//     closing quote, honoring the backslash-quote and doubled-single-quote
+//     escapes across line breaks;
 //   - a flow (inline) collection whose closing } or ] sits on its own line — its
 //     body runs to the brace/bracket that balances the opener.
 //
@@ -158,9 +159,10 @@ func flowScalarValueEnd(body []byte, start int) int {
 }
 
 // quotedScalarEnd returns the offset just past a quoted scalar's closing quote.
-// body[start] is the opening quote. A double-quoted scalar honors \" escapes; a
-// single-quoted scalar honors the '' doubled-quote escape. The scan crosses line
-// breaks, so a multi-line quoted scalar is covered in full.
+// body[start] is the opening quote. A double-quoted scalar honors the
+// backslash-quote escape; a single-quoted scalar honors the doubled-single-quote
+// escape. The scan crosses line breaks, so a multi-line quoted scalar is covered
+// in full.
 func quotedScalarEnd(body []byte, start int, quote byte) int {
 	i := start + 1
 	for i < len(body) {

@@ -237,26 +237,26 @@ func aggregateCanonicalPath(topoNode *topology.TopologyNode) string {
 // contribution owns a contested leaf". Ownership is decided by four rules,
 // and the ORDER OF THE RULES is the contract:
 //
-//	R1 (origin)  >  R3 (composition authority)  >  R4 (specificity)
+//		R1 (origin)  >  R3 (composition authority)  >  R4 (specificity)
 //
-//   - R1 — ORIGIN. Explicit authoring beats annotation-driven expansion,
-//     independent of the scope either came from. R1 is resolved in
-//     mergeLeaf, which documents its three cases; it outranks every scope
-//     rule below.
-//   - R2 — PILLAR OWNERSHIP. Each authoring domain fills its own pillar —
-//     the Aggregate tiers contribute values, the Release tiers contribute
-//     infra — so the two never contest the same leaf. That is why there is
-//     no developer-versus-operator precedence question to answer.
-//   - R3 — COMPOSITION AUTHORITY. A declaration on the composing Aggregate
-//     outranks one made inside an Aggregate it composes, even when the
-//     composed document declared at the narrower scope. Otherwise a
-//     composed document could defeat its composer simply by choosing a
-//     narrower scope, and composition would stop being authoritative.
-//   - R4 — SPECIFICITY. Within one authoring level and one pillar, the
-//     narrower scope refines the broader one, per leaf: a component-scoped
-//     attachment overrides a subsystem-wide or boundary-wide attachment of
-//     the same instance name leaf by leaf, and the leaves the narrower
-//     scope does not mention keep the broader scope's values.
+//	  - R1 — ORIGIN. Explicit authoring beats annotation-driven expansion,
+//	    independent of the scope either came from. R1 is resolved in
+//	    mergeLeaf, which documents its three cases; it outranks every scope
+//	    rule below.
+//	  - R2 — PILLAR OWNERSHIP. Each authoring domain fills its own pillar —
+//	    the Aggregate tiers contribute values, the Release tiers contribute
+//	    infra — so the two never contest the same leaf. That is why there is
+//	    no developer-versus-operator precedence question to answer.
+//	  - R3 — COMPOSITION AUTHORITY. A declaration on the composing Aggregate
+//	    outranks one made inside an Aggregate it composes, even when the
+//	    composed document declared at the narrower scope. Otherwise a
+//	    composed document could defeat its composer simply by choosing a
+//	    narrower scope, and composition would stop being authoritative.
+//	  - R4 — SPECIFICITY. Within one authoring level and one pillar, the
+//	    narrower scope refines the broader one, per leaf: a component-scoped
+//	    attachment overrides a subsystem-wide or boundary-wide attachment of
+//	    the same instance name leaf by leaf, and the leaves the narrower
+//	    scope does not mention keep the broader scope's values.
 //
 // R3 is compared before R4 deliberately; attachmentScope.outranks is where
 // that rule order lives, as the order in which it compares the two axes.

@@ -23,33 +23,33 @@ type ComposeFile struct {
 // The set of fields here is the currently synthesisable surface. Expansion
 // (e.g., secrets, deploy) lands as needed in future iterations.
 type Service struct {
-	Image       string                   `yaml:"image,omitempty"`
-	PullPolicy  string                   `yaml:"pull_policy,omitempty"`
-	Command     []string                 `yaml:"command,omitempty"`
-	Entrypoint  []string                 `yaml:"entrypoint,omitempty"`
-	Environment types.OrderedMap[string] `yaml:"environment,omitempty"`
-	EnvFile     []string                 `yaml:"env_file,omitempty"`
-	Ports       []string                 `yaml:"ports,omitempty"`
-	Labels      map[string]string        `yaml:"labels,omitempty"`
-	Volumes     []ServiceVolume          `yaml:"volumes,omitempty"`
-	Tmpfs       []string                 `yaml:"tmpfs,omitempty"`
-	Networks    []string                 `yaml:"networks,omitempty"`
-	NetworkMode string                   `yaml:"network_mode,omitempty"`
-	DependsOn   []string                 `yaml:"depends_on,omitempty"`
-	Healthcheck *Healthcheck             `yaml:"healthcheck,omitempty"`
-	Restart     string                   `yaml:"restart,omitempty"`
-	User        string                   `yaml:"user,omitempty"`
-	WorkingDir  string                   `yaml:"working_dir,omitempty"`
-	Privileged  bool                     `yaml:"privileged,omitempty"`
-	ReadOnly    bool                     `yaml:"read_only,omitempty"`
-	CapAdd          []string             `yaml:"cap_add,omitempty"`
-	CapDrop         []string             `yaml:"cap_drop,omitempty"`
-	Configs         []ServiceConfig      `yaml:"configs,omitempty"`
-	Deploy          *Deploy              `yaml:"deploy,omitempty"`
-	StopGracePeriod string               `yaml:"stop_grace_period,omitempty"`
-	DNS             []string             `yaml:"dns,omitempty"`
-	DNSSearch       []string             `yaml:"dns_search,omitempty"`
-	ExtraHosts      []string             `yaml:"extra_hosts,omitempty"`
+	Image           string                   `yaml:"image,omitempty"`
+	PullPolicy      string                   `yaml:"pull_policy,omitempty"`
+	Command         []string                 `yaml:"command,omitempty"`
+	Entrypoint      []string                 `yaml:"entrypoint,omitempty"`
+	Environment     types.OrderedMap[string] `yaml:"environment,omitempty"`
+	EnvFile         []string                 `yaml:"env_file,omitempty"`
+	Ports           []string                 `yaml:"ports,omitempty"`
+	Labels          map[string]string        `yaml:"labels,omitempty"`
+	Volumes         []ServiceVolume          `yaml:"volumes,omitempty"`
+	Tmpfs           []string                 `yaml:"tmpfs,omitempty"`
+	Networks        []string                 `yaml:"networks,omitempty"`
+	NetworkMode     string                   `yaml:"network_mode,omitempty"`
+	DependsOn       []string                 `yaml:"depends_on,omitempty"`
+	Healthcheck     *Healthcheck             `yaml:"healthcheck,omitempty"`
+	Restart         string                   `yaml:"restart,omitempty"`
+	User            string                   `yaml:"user,omitempty"`
+	WorkingDir      string                   `yaml:"working_dir,omitempty"`
+	Privileged      bool                     `yaml:"privileged,omitempty"`
+	ReadOnly        bool                     `yaml:"read_only,omitempty"`
+	CapAdd          []string                 `yaml:"cap_add,omitempty"`
+	CapDrop         []string                 `yaml:"cap_drop,omitempty"`
+	Configs         []ServiceConfig          `yaml:"configs,omitempty"`
+	Deploy          *Deploy                  `yaml:"deploy,omitempty"`
+	StopGracePeriod string                   `yaml:"stop_grace_period,omitempty"`
+	DNS             []string                 `yaml:"dns,omitempty"`
+	DNSSearch       []string                 `yaml:"dns_search,omitempty"`
+	ExtraHosts      []string                 `yaml:"extra_hosts,omitempty"`
 }
 
 // Deploy is the compose service deploy block. Only the resources sub-block is

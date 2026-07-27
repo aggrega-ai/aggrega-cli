@@ -22,8 +22,8 @@ import (
 // the behaviour of a fully wired Lookup composed of *catalog.Catalog
 // + *oci.Client without requiring either to be present.
 type fakeLookup struct {
-	entities     map[string]closure.Resolution
-	plugins      map[string]closure.Resolution
+	entities      map[string]closure.Resolution
+	plugins       map[string]closure.Resolution
 	schemaLibs    map[string]closure.LibraryResolution
 	mappingLibs   map[string]closure.LibraryResolution
 	workloadLibs  map[string]closure.LibraryResolution

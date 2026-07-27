@@ -199,16 +199,20 @@ require (
 	sigs.k8s.io/yaml v1.6.0 // indirect
 )
 
-// TEMPORARY — drop before the final commit. Builds against the local
-// aggrega-schemas working tree until v0.3.0 is tagged. The committed go.mod must
-// require the real v0.3.0 tag with NO replace; run `go mod tidy` after the tag so
-// go.sum carries the published checksum.
+// RELEASE-TIME WORK — this replace, and the two below it, are removed together
+// at release. Each names a sibling submodule in the umbrella whose module path is
+// its publication identity while the local checkout serves the build. At release a
+// fresh tag is cut for each sibling from the same tree the CLI was verified
+// against, the three replaces are removed, and `go mod tidy` then records the
+// published checksums in go.sum. Because the tag is cut from the verified tree,
+// the local checkout and the tagged module are the same content — the replaces
+// mask no drift.
 replace github.com/aggrega-ai/aggrega-schemas => ../aggrega-schemas
 
-// The Go PDK and the portable ABI codec are sibling submodules in the
-// umbrella; their module paths are their publication identity while the local
-// checkouts serve the build. The helm provider guest consumes the PDK's
-// host-function bindings (the pinned external-input fetch channel).
+// Removed at release together with the schemas replace above. The Go PDK and the
+// portable ABI codec are sibling submodules; the helm provider guest consumes the
+// PDK's host-function bindings (the pinned external-input fetch channel).
 replace github.com/aggrega-ai/aggrega-pdk-go => ../aggrega-pdk/go
 
+// Removed at release together with the two replaces above.
 replace github.com/aggrega-ai/aggrega-abi-go => ../aggrega-abi/go

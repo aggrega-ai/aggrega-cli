@@ -313,7 +313,7 @@ func TestFeatureProvenanceLayout_OverriddenAnnotation_Heterogeneous(t *testing.T
 	t.Parallel()
 	suppressed := annotationProvenance("feature.myco/db-pool", "aggregate.yaml", "aggregate")
 	overrideProv := types.FieldProvenance{
-		Origin:              "explicit",
+		Origin:               "explicit",
 		OverriddenAnnotation: &suppressed,
 	}
 	entry := types.IRFeatureEntry{
@@ -346,7 +346,7 @@ func TestPerLeafBracket_OverriddenAnnotation(t *testing.T) {
 	t.Parallel()
 	suppressed := annotationProvenance("feature.myco/db-pool", "aggregate.yaml:subsystems.data.annotations.feature.myco/db-pool", "aggregate")
 	got := perLeafBracket(types.FieldProvenance{
-		Origin:              "explicit",
+		Origin:               "explicit",
 		OverriddenAnnotation: &suppressed,
 	})
 	want := "[explicit; overrides annotation: feature.myco/db-pool from aggregate.yaml:subsystems.data.annotations.feature.myco/db-pool]"

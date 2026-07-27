@@ -165,7 +165,7 @@ func TestResolveComponentExtends_MergesFeaturesSchema(t *testing.T) {
 	child := types.Component{
 		Metadata: types.ComponentMetadata{Name: "core/db/strict", Version: "1.0.0"},
 		Spec: types.ComponentSpec{
-			Extends:       "core/db/base",
+			Extends:        "core/db/base",
 			FeaturesSchema: featuresSchema2,
 		},
 	}

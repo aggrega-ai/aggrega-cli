@@ -495,9 +495,9 @@ func dispatchBuildWithDiag(rw *workspaceconfig.ResolvedWorkspace, releasePath st
 			// stdout stays byte-deterministic. A silent reporter ignores the calls;
 			// when Begin is set, the pipeline runs the eager compile pass so a guest
 			// compilation is attributed rather than buried in the first node's render.
-			PluginCompileBegin:          progress.pluginCompileBegin,
-			PluginCompileGuestDone:      progress.pluginCompileGuestDone,
-			PluginCompileRunning:        progress.pluginCompileRunning,
+			PluginCompileBegin:               progress.pluginCompileBegin,
+			PluginCompileGuestDone:           progress.pluginCompileGuestDone,
+			PluginCompileRunning:             progress.pluginCompileRunning,
 			SuppressUnsupportedFieldWarnings: run.suppressUnsupportedFieldWarnings,
 		},
 	)

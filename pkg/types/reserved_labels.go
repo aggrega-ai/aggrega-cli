@@ -15,6 +15,7 @@ package types
 //     the shape that surface needs, not a bare prefix.
 //   - the Terraform provenance-comment formatter filters on the aggrega.ai/
 //     prefix inline while building an HCL comment, a different consumer.
+//
 // Fold a new plain-prefix HasPrefix consumer onto these constants; leave the
 // regex and comment-filter forms as they are.
 const (

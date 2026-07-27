@@ -162,4 +162,3 @@ func installSignalHandler(scratchDir string) {
 		os.Exit(130)
 	}()
 }
-

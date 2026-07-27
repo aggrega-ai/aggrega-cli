@@ -20,9 +20,9 @@ func TestSurfaceNodeDiagnostics_RoutesUnsupportedFieldClass(t *testing.T) {
 	var warnings []string
 	var unsupportedFields []renderer.Diagnostic
 	nodeCtx := renderer.NodeRenderContext{
-		NodeID:          "api",
-		ProviderName:    "compose",
-		WarningSink:     func(w string) { warnings = append(warnings, w) },
+		NodeID:               "api",
+		ProviderName:         "compose",
+		WarningSink:          func(w string) { warnings = append(warnings, w) },
 		UnsupportedFieldSink: func(d renderer.Diagnostic) { unsupportedFields = append(unsupportedFields, d) },
 	}
 	diags := []renderer.Diagnostic{
@@ -64,9 +64,9 @@ func TestSurfaceNodeDiagnostics_RoutesUnsupportedFieldClass(t *testing.T) {
 func TestSurfaceNodeDiagnostics_ErrorSeverityHalts(t *testing.T) {
 	t.Parallel()
 	nodeCtx := renderer.NodeRenderContext{
-		NodeID:          "api",
-		ProviderName:    "compose",
-		WarningSink:     func(string) {},
+		NodeID:               "api",
+		ProviderName:         "compose",
+		WarningSink:          func(string) {},
 		UnsupportedFieldSink: func(renderer.Diagnostic) {},
 	}
 	diags := []renderer.Diagnostic{{Severity: "error", Message: "boom"}}

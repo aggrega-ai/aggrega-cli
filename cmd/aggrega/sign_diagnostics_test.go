@@ -249,4 +249,3 @@ func TestSignUnverifiedEmailFailureDiagnostic(t *testing.T) {
 		t.Errorf("error %q wrongly suggests expiry for an unverified-email failure", msg)
 	}
 }
-

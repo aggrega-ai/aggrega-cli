@@ -24,11 +24,11 @@ import (
 //     validator.ValidateWorkload + validator.ValidateWorkloadAttachments
 //     succeed. nil before B.2; nil for Recipes that don't declare workload:.
 type TemplateContext struct {
-	Context  ContextBlock                   `json:"context" yaml:"context"`
-	Values   OrderedMap[any]                `json:"values" yaml:"values"`
-	Infra    OrderedMap[any]                `json:"infra" yaml:"infra"`
-	Locals   OrderedMap[string]             `json:"locals" yaml:"locals"`
-	Provides OrderedMap[string]             `json:"provides,omitempty,omitzero" yaml:"provides,omitempty"`
+	Context  ContextBlock       `json:"context" yaml:"context"`
+	Values   OrderedMap[any]    `json:"values" yaml:"values"`
+	Infra    OrderedMap[any]    `json:"infra" yaml:"infra"`
+	Locals   OrderedMap[string] `json:"locals" yaml:"locals"`
+	Provides OrderedMap[string] `json:"provides,omitempty,omitzero" yaml:"provides,omitempty"`
 	// Features is every attachment on the node, keyed by the instance name
 	// the author gave it. One pillar for every attachment family — what
 	// differs between attachments is what they produce, not how a template
