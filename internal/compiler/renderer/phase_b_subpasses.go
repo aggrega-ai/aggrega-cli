@@ -82,9 +82,9 @@ func phaseB0(ctx *types.TemplateContext, state *PhaseBState, localsForNode types
 	// every node reaching B.0 publishes its locals, even an empty map.
 	if state.Trace != nil {
 		if state.Recipe.Spec.Source != nil {
-			_ = state.Trace.Write(trace.PassPhaseB0, state.NodeID, state.BoundaryPath, "", trace.PillarSnapshot(ctx, trace.PassPhaseB0))
+			_ = state.Trace.Write(trace.PassPhaseB0, state.NodeID, state.BoundaryPath, "", trace.PillarSnapshot(ctx, trace.PassPhaseB0, state.Redact))
 		}
-		_ = state.Trace.Write(trace.PassPhaseB0Locals, state.NodeID, state.BoundaryPath, "", trace.PillarSnapshot(ctx, trace.PassPhaseB0Locals))
+		_ = state.Trace.Write(trace.PassPhaseB0Locals, state.NodeID, state.BoundaryPath, "", trace.PillarSnapshot(ctx, trace.PassPhaseB0Locals, state.Redact))
 	}
 
 	state.PhaseReached = 0
@@ -131,7 +131,7 @@ func phaseB1(ctx *types.TemplateContext, state *PhaseBState) error {
 	state.ResolvedValues = values
 	// Trace point: B.1 valuesMapping output (slot 07).
 	if state.Trace != nil {
-		_ = state.Trace.Write(trace.PassPhaseB1, state.NodeID, state.BoundaryPath, "", trace.PillarSnapshot(ctx, trace.PassPhaseB1))
+		_ = state.Trace.Write(trace.PassPhaseB1, state.NodeID, state.BoundaryPath, "", trace.PillarSnapshot(ctx, trace.PassPhaseB1, state.Redact))
 	}
 	state.PhaseReached = 1
 	return nil
@@ -205,7 +205,7 @@ func phaseB2(ctx *types.TemplateContext, state *PhaseBState, slots types.Ordered
 	ctx.Workload = &w
 	// Trace point: B.2 parsed workload (slot 08).
 	if state.Trace != nil {
-		_ = state.Trace.Write(trace.PassPhaseB2, state.NodeID, state.BoundaryPath, "", trace.PillarSnapshot(ctx, trace.PassPhaseB2))
+		_ = state.Trace.Write(trace.PassPhaseB2, state.NodeID, state.BoundaryPath, "", trace.PillarSnapshot(ctx, trace.PassPhaseB2, state.Redact))
 	}
 	state.PhaseReached = 2
 	return nil
@@ -258,7 +258,7 @@ func phaseB3(ctx context.Context, tmplCtx *types.TemplateContext, state *PhaseBS
 			if f.Origin != EmitOriginArtifactsInline && f.Origin != EmitOriginArtifactsImport {
 				continue
 			}
-			_ = state.Trace.Write(trace.PassPhaseB3, state.NodeID, state.BoundaryPath, f.Name, trace.PillarSnapshot(tmplCtx, trace.PassPhaseB3))
+			_ = state.Trace.Write(trace.PassPhaseB3, state.NodeID, state.BoundaryPath, f.Name, trace.PillarSnapshot(tmplCtx, trace.PassPhaseB3, state.Redact))
 		}
 	}
 	state.PhaseReached = 3
@@ -293,7 +293,7 @@ func phaseB4(ctx context.Context, tmplCtx *types.TemplateContext, state *PhaseBS
 			if f.Origin != EmitOriginWorkload && f.Origin != EmitOriginSource {
 				continue
 			}
-			_ = state.Trace.Write(trace.PassPhaseB4, state.NodeID, state.BoundaryPath, f.Name, trace.PillarSnapshot(tmplCtx, trace.PassPhaseB4))
+			_ = state.Trace.Write(trace.PassPhaseB4, state.NodeID, state.BoundaryPath, f.Name, trace.PillarSnapshot(tmplCtx, trace.PassPhaseB4, state.Redact))
 		}
 	}
 	state.PhaseReached = 4

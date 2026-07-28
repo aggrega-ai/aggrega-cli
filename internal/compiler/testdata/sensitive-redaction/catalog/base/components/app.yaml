@@ -1,0 +1,28 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Component
+metadata:
+  name: core/app
+  version: "1.0.0"
+  labels:
+    component.aggrega.ai/type: "server"
+spec:
+  inject: ["env"]
+  featuresSchema:
+    # The slot the credential attachment binds. It carries no `sensitive:` of
+    # its own: this fixture exercises the LEAF axis, so the roll-up must come
+    # from what the attached Feature declares, not from the slot.
+    credentials:
+      required: false
+      inject: ["env"]
+  schema:
+    values:
+      # One declared-sensitive leaf and one plain sibling under the same
+      # pillar. The sibling is what proves redaction discriminates rather than
+      # blanking the pillar.
+      appName: { type: string }
+      dbPassword: { type: string, sensitive: true }
+      tuning:
+        poolSize: { type: integer }
+        adminToken: { type: string, sensitive: true }
+    provides:
+      host: { type: string, required: true }

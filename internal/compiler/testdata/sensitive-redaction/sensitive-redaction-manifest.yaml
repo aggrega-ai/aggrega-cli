@@ -1,0 +1,13 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Manifest
+metadata:
+  name: sensitive-redaction-manifest
+  version: "1.0.0"
+spec:
+  mappings:
+    components:
+      type:
+        core/app: app-recipe:1.0.0
+    features:
+      type:
+        feature.test/db-credential: db-credential-compose:1.0.0

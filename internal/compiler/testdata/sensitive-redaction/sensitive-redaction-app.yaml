@@ -1,0 +1,29 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: sensitive-redaction-app
+  version: "1.0.0"
+spec:
+  components:
+    app:
+      type: core/app
+      values:
+        appName: demo
+        dbPassword: hunter2-plaintext
+        tuning:
+          poolSize: 25
+          adminToken: adm1n-plaintext
+      features:
+        credentials:
+          type: feature.test/db-credential
+          values:
+            secretName: db-creds
+            literalPassword: by-value-plaintext
+          # One delivery key fills from a sensitive provides key and one from a
+          # public locator, so the taint has to discriminate between them.
+          inject:
+            env:
+              - in: DATABASE_PASSWORD
+                from: password
+              - in: DATABASE_NAME
+                from: name

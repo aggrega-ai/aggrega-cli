@@ -1,0 +1,14 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: sensitive-redaction-release
+  environment: local
+  version: "1.0.0"
+spec:
+  aggregate: sensitive-redaction-app
+  manifest: sensitive-redaction-manifest
+  boundaries:
+    cluster:
+      directory: ./dist/cluster
+      components:
+        app: {}

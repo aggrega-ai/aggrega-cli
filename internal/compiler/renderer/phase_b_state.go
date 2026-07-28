@@ -5,6 +5,7 @@ package renderer
 
 import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/trace"
+	"github.com/aggrega-ai/aggrega-cli/internal/redact"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
@@ -89,6 +90,14 @@ type PhaseBState struct {
 	// emit per-pass snapshots; the trace package handles serialization
 	// and async file I/O. The orchestrator owns Close().
 	Trace trace.Writer
+
+	// Redact names the node's declared-sensitive data, assembled once by the
+	// orchestrator — where the catalog and the node's attachments are both in
+	// scope — and read by every sub-pass that captures a trace snapshot.
+	// Carrying the assembled set rather than its inputs is what keeps
+	// sensitivity derived in one place: a sub-pass substitutes a placeholder,
+	// it never decides what is sensitive. The zero value redacts nothing.
+	Redact redact.Keys
 
 	// MappingLibraries is the resolved MappingLibrary set (local catalog plus
 	// lockfile-pinned libraries bridged in at load), keyed by bare name. B.1

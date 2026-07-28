@@ -146,7 +146,7 @@ func BuildIRContext(ctx context.Context, cfg BuildIRConfig) (*types.IRGraph, Fea
 		if featureSchemaMiss[featureType] {
 			return nil, false
 		}
-		compiled, ok := compileFeatureSchema(cfg.CatalogLookup, featureType)
+		compiled, ok := CompileFeatureSchema(cfg.CatalogLookup, featureType)
 		if !ok {
 			featureSchemaMiss[featureType] = true
 			return nil, false

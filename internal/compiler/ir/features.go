@@ -837,7 +837,7 @@ func finalizeDerivedSensitivity(result *featureResult, topoNode *topology.Topolo
 			return d
 		}
 		var declared resolver.SensitiveLeaves
-		if compiled, ok := compileFeatureSchema(catalogLookup, featureType); ok {
+		if compiled, ok := CompileFeatureSchema(catalogLookup, featureType); ok {
 			declared = resolver.DeclaredSensitiveLeaves(compiled)
 		}
 		declaredCache[featureType] = declared

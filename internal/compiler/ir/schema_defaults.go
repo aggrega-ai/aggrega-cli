@@ -21,11 +21,12 @@ func effectiveComponentSchema(lookup resolver.CatalogLookup, componentType strin
 	return lookup.EffectiveSchema(componentType)
 }
 
-// compileFeatureSchema resolves one attachment Feature type to its compiled
-// whole-entity schema. It is the ONE home for that resolution in the IR builder,
-// so every reader of an attachment's declared schema — the pillar-conformance
-// gate and the sensitivity derivation — sees the same schema for the same type
-// and cannot disagree about what the Feature declares.
+// CompileFeatureSchema resolves one attachment Feature type to its compiled
+// whole-entity schema. It is the ONE home for that resolution, so every reader
+// of an attachment's declared schema — the pillar-conformance gate, the
+// sensitivity derivation, and the display surfaces that redact what a Feature
+// declares sensitive — sees the same schema for the same type and cannot
+// disagree about what the Feature declares.
 //
 // The composed effective schema wins for an extends-ing Feature, so an inherited
 // declaration reaches every reader exactly as an inherited constraint does; a
@@ -37,7 +38,7 @@ func effectiveComponentSchema(lookup resolver.CatalogLookup, componentType strin
 //
 // Callers that resolve the same type repeatedly memoise around this function
 // rather than inside it, so the cache's lifetime stays the caller's decision.
-func compileFeatureSchema(lookup resolver.CatalogLookup, featureType string) (compactform.Schema, bool) {
+func CompileFeatureSchema(lookup resolver.CatalogLookup, featureType string) (compactform.Schema, bool) {
 	if lookup.EffectiveSchema != nil {
 		if eff, ok := lookup.EffectiveSchema(featureType); ok {
 			return eff, true

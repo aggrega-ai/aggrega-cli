@@ -23,7 +23,7 @@ import (
 // --output yaml emits the resolved IR graph as YAML (the pipeline result is the
 // resolved subject); the text path honours the --list / default / --detail
 // levels and the --flat boundary-tree collapse.
-func renderReleaseResolved(opts inspectOptions, rel *types.Release, releasePath string, graph *types.IRGraph, rr *resolver.ResolveResult) error {
+func renderReleaseResolved(opts inspectOptions, rel *types.Release, releasePath string, graph *types.IRGraph, rr *resolver.ResolveResult, lookup resolver.CatalogLookup) error {
 	if opts.output == outputYAML {
 		out, err := yaml.Marshal(graph)
 		if err != nil {
@@ -71,7 +71,7 @@ func renderReleaseResolved(opts inspectOptions, rel *types.Release, releasePath 
 			continue
 		}
 		for _, nodeID := range byBoundary[bp] {
-			renderReleaseComponent(opts, nodeID, bp, graph, outgoing, nodeBoundary)
+			renderReleaseComponent(opts, nodeID, bp, graph, outgoing, nodeBoundary, lookup)
 		}
 	}
 	return nil
@@ -155,7 +155,7 @@ func lookupBoundary(rel *types.Release, boundaryPath string) (types.Boundary, bo
 // node ID, its Aggregate component type (with resolved version), its uses-edges
 // (cross-boundary edges marked), and its Feature attachments via the preserved
 // provenance-bracket machinery.
-func renderReleaseComponent(opts inspectOptions, nodeID, boundaryPath string, graph *types.IRGraph, outgoing map[string][]types.IREdge, nodeBoundary map[string]string) {
+func renderReleaseComponent(opts inspectOptions, nodeID, boundaryPath string, graph *types.IRGraph, outgoing map[string][]types.IREdge, nodeBoundary map[string]string, lookup resolver.CatalogLookup) {
 	node, _ := graph.Spec.Nodes.Get(nodeID)
 	typeLabel := node.Component
 	if node.ResolvedVersion != "" && !strings.Contains(typeLabel, ":") {
@@ -181,6 +181,6 @@ func renderReleaseComponent(opts inspectOptions, nodeID, boundaryPath string, gr
 	}
 	fmt.Fprintln(opts.out, "    Features:")
 	for instanceName, entry := range featureMap.All() {
-		renderFeatureAttachment(opts.out, instanceName, entry)
+		renderFeatureAttachment(opts.out, instanceName, entry, declaredFeatureLeaves(lookup, entry.Type))
 	}
 }

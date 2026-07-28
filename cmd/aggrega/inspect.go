@@ -16,6 +16,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/ir"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/topology"
+	"github.com/aggrega-ai/aggrega-cli/internal/redact"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
@@ -484,7 +485,7 @@ func renderReleaseFile(rw *workspaceconfig.ResolvedWorkspace, releasePath string
 			if err != nil {
 				return fmt.Errorf("Step 3 (IR): %w", err)
 			}
-			return renderReleaseResolved(opts, rel, releasePath, graph, resolveResult)
+			return renderReleaseResolved(opts, rel, releasePath, graph, resolveResult, catalogLookup)
 		},
 	)
 }
@@ -497,15 +498,53 @@ func renderReleaseFile(rw *workspaceconfig.ResolvedWorkspace, releasePath string
 // diverges across leaves, the function expands into per-leaf lines —
 // one bracket per leaf the attachment populates — so the rendered
 // output surfaces the divergence that consumers would otherwise miss.
-func renderFeatureAttachment(out io.Writer, instanceName string, entry types.IRFeatureEntry) {
+// declared names which of the attached Feature's leaves its schema declares
+// sensitive; each such leaf prints the redaction placeholder in place of its
+// value while keeping its key, its pillar prefix and its provenance bracket.
+// Only a declared leaf is hidden: the per-attachment sensitivity roll-up says
+// the attachment handles secret material, not which of its leaves do, and
+// hiding all of them would print the placeholder over a referenceable
+// credential's name and key — public locators an author left unmarked.
+func renderFeatureAttachment(out io.Writer, instanceName string, entry types.IRFeatureEntry, declared resolver.SensitiveLeaves) {
 	if featureProvenanceLayout(entry) {
 		fmt.Fprintf(out, "    - %s    %s\n", featureLabel(instanceName, entry), perAttachmentBracket(entry))
 		return
 	}
 	fmt.Fprintf(out, "    - %s\n", featureLabel(instanceName, entry))
 	for _, leaf := range walkLeavesInOrder(entry) {
+		if leafDeclaredSensitive(declared, leaf.path) {
+			fmt.Fprintf(out, "        %s: %s    %s\n", leaf.path, redact.Placeholder(), perLeafBracket(leaf.provenance))
+			continue
+		}
 		fmt.Fprintf(out, "        %s: %v    %s\n", leaf.path, leaf.value, perLeafBracket(leaf.provenance))
 	}
+}
+
+// leafDeclaredSensitive answers the pillar-prefixed question walkLeavesInOrder
+// asks. Its input path carries the `values.` / `infra.` prefix the renderer
+// prints; the declared sets are keyed from each pillar's own root, so the
+// prefix is what selects the set and the remainder is the key.
+func leafDeclaredSensitive(declared resolver.SensitiveLeaves, prefixedPath string) bool {
+	if rest, ok := strings.CutPrefix(prefixedPath, "values."); ok {
+		return declared.Values[rest]
+	}
+	if rest, ok := strings.CutPrefix(prefixedPath, "infra."); ok {
+		return declared.Infra[rest]
+	}
+	return false
+}
+
+// declaredFeatureLeaves reads which leaves an attached Feature's schema
+// declares sensitive, through the same compile-and-read pair the IR's
+// sensitivity derivation uses, so what inspect hides and what the graph marks
+// come from one declaration. An absent Feature, or one declaring no schema,
+// reports nothing sensitive rather than guessing.
+func declaredFeatureLeaves(lookup resolver.CatalogLookup, featureType string) resolver.SensitiveLeaves {
+	compiled, ok := ir.CompileFeatureSchema(lookup, featureType)
+	if !ok {
+		return resolver.SensitiveLeaves{}
+	}
+	return resolver.DeclaredSensitiveLeaves(compiled)
 }
 
 // featureLabel formats the Feature URI line. The IR's Type field

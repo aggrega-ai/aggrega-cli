@@ -12,6 +12,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/parse"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/trace"
+	"github.com/aggrega-ai/aggrega-cli/internal/redact"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
@@ -390,6 +391,30 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		traceWriter = trace.New("")
 	}
 
+	// Declared-sensitive leaf paths per Component type, memoised across the node
+	// walk: the schema compile is uncached and every node of the same type reads
+	// the same answer. The memo's lifetime is this render, so a catalog change
+	// between builds is never carried over.
+	declaredByType := map[string]resolver.SensitiveLeaves{}
+	declaredLeaves := func(componentType string) resolver.SensitiveLeaves {
+		// A catalog-less render — the shape several renderer-level callers use —
+		// supplies a zero-value lookup whose accessors are nil. Nothing is
+		// declared in that world, so the question is answered here rather than
+		// asked of a schema reader that has no catalog to read.
+		if input.CatalogLookup.Component == nil || componentType == "" {
+			return resolver.SensitiveLeaves{}
+		}
+		if d, cached := declaredByType[componentType]; cached {
+			return d
+		}
+		var declared resolver.SensitiveLeaves
+		if compiled, ok := resolver.CompileComponentSchema(input.CatalogLookup, componentType); ok {
+			declared = resolver.DeclaredSensitiveLeaves(compiled)
+		}
+		declaredByType[componentType] = declared
+		return declared
+	}
+
 	// Per-node rendering. nodeIDs is sorted (topology author order for the
 	// deterministic walk); nodeOrder is the host node's position in that order,
 	// the outer A1 replay-ordering key for deferred host PATCHes.
@@ -460,10 +485,17 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		}
 		applyAttachmentProvides(&tmplCtx.Features, attachmentProvides)
 
+		// The node's redaction set, assembled once here where both the catalog
+		// and the node's attachments are in scope, and passed down to every
+		// display capture rather than re-derived at each one: the trace package
+		// sees a set of keys, never a catalog.
+		declared := declaredLeaves(node.Component)
+		redactKeys := redact.NodeKeys(declared.Values, declared.Infra, attachments)
+
 		// Trace points: per-node pre-loop captures.
-		_ = traceWriter.Write(trace.PassPillarsInitial, nodeID, node.BoundaryPath, "", trace.PillarSnapshot(tmplCtx, trace.PassPillarsInitial))
-		_ = traceWriter.Write(trace.PassProvides, nodeID, node.BoundaryPath, "", trace.PillarSnapshot(tmplCtx, trace.PassProvides))
-		_ = traceWriter.Write(trace.PassInject, nodeID, node.BoundaryPath, "", trace.PillarSnapshot(tmplCtx, trace.PassInject))
+		_ = traceWriter.Write(trace.PassPillarsInitial, nodeID, node.BoundaryPath, "", trace.PillarSnapshot(tmplCtx, trace.PassPillarsInitial, redactKeys))
+		_ = traceWriter.Write(trace.PassProvides, nodeID, node.BoundaryPath, "", trace.PillarSnapshot(tmplCtx, trace.PassProvides, redactKeys))
+		_ = traceWriter.Write(trace.PassInject, nodeID, node.BoundaryPath, "", trace.PillarSnapshot(tmplCtx, trace.PassInject, redactKeys))
 
 		// Phase B sub-pass pipeline per chapter 16 §5. State carries cross-
 		// sub-pass accumulators (resolved values, parsed workload, emitted
@@ -473,6 +505,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// improvement: thread the path through the catalog resolver.
 		state := NewPhaseBState(recipe, nodeID, node.BoundaryPath, "")
 		state.Trace = traceWriter
+		state.Redact = redactKeys
 		state.MappingLibraries = input.MappingLibraries
 		state.WorkloadLibraries = input.WorkloadLibraries
 		state.ArtifactsLibraries = input.ArtifactsLibraries
@@ -508,7 +541,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		applyConsumerEnvOverrides(&tmplCtx.Context.Inject, boundaryFRState.ConsumerEnvOverrides[nodeID])
 		// Trace point: Phase A — feature-scoped per-consumer inject pipe
 		// after FR injectMapping rewrites.
-		_ = traceWriter.Write(trace.PassPhaseA, nodeID, node.BoundaryPath, "", trace.PillarSnapshot(tmplCtx, trace.PassPhaseA))
+		_ = traceWriter.Write(trace.PassPhaseA, nodeID, node.BoundaryPath, "", trace.PillarSnapshot(tmplCtx, trace.PassPhaseA, redactKeys))
 
 		// Phase B.1 — valuesMapping → state.ResolvedValues.
 		if err := phaseB1(tmplCtx, state); err != nil {
@@ -938,7 +971,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// snapshot captures the post-B.6 TemplateContext for this node;
 		// boundary-scope FR contributions deduplicated by Phase B.6 surface
 		// in boundaryFRState.Files (post-loop, not per-node here).
-		_ = traceWriter.Write(trace.PassPhaseB6, nodeID, node.BoundaryPath, "", trace.PillarSnapshot(tmplCtx, trace.PassPhaseB6))
+		_ = traceWriter.Write(trace.PassPhaseB6, nodeID, node.BoundaryPath, "", trace.PillarSnapshot(tmplCtx, trace.PassPhaseB6, redactKeys))
 
 		// Drain Phase B's per-node warnings into the build-level result.
 		// Drain position is the end of the per-node Phase B sequence

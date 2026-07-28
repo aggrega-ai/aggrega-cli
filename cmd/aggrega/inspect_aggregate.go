@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/topology"
+	"github.com/aggrega-ai/aggrega-cli/internal/redact"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
@@ -169,7 +170,7 @@ func renderAggregateNodes(opts inspectOptions, topo *topology.TopologyResult, lo
 		}
 		fmt.Fprintf(opts.out, "%s%s  (type: %s)\n", indent, label, opts.colorize.uri(node.ComponentType))
 		body := indent + "  "
-		renderAggregateNodeValues(opts, body, node.Values)
+		renderAggregateNodeValues(opts, body, node.Values, declaredComponentLeaves(lookup, node.ComponentType).Values)
 		renderAggregateNodeUses(opts, body, node.Uses)
 		renderAggregateNodeRequiredAttachments(opts, body, node.ComponentType, lookup)
 	}
@@ -197,15 +198,41 @@ func aggregateTreeLabel(id string) (label, indent string) {
 // renderAggregateNodeValues prints the developer-authored values block for a
 // node, or a `(none)` placeholder. Values are rendered as flat dotted leaves in
 // author order.
-func renderAggregateNodeValues(opts inspectOptions, indent string, values types.OrderedMap[any]) {
+//
+// sensitive names the leaf paths the node's Component schema declares
+// sensitive; each one prints its key and the redaction placeholder instead of
+// its value, so the reader still sees that the leaf is authored and that
+// something was withheld. The two path spellings join by construction: both
+// sides use the flat-dotted chain types.FlattenLeaves produces.
+func renderAggregateNodeValues(opts inspectOptions, indent string, values types.OrderedMap[any], sensitive map[string]bool) {
 	if values.Len() == 0 {
 		fmt.Fprintf(opts.out, "%sValues: (none)\n", indent)
 		return
 	}
 	fmt.Fprintf(opts.out, "%sValues:\n", indent)
 	for _, leaf := range types.FlattenLeaves(values) {
+		if sensitive[leaf.Path] {
+			fmt.Fprintf(opts.out, "%s  %s: %s\n", indent, leaf.Path, redact.Placeholder())
+			continue
+		}
 		fmt.Fprintf(opts.out, "%s  %s: %v\n", indent, leaf.Path, leaf.Value)
 	}
+}
+
+// declaredComponentLeaves reads which leaves a Component type's schema declares
+// sensitive, through the shared compile-and-read pair the build path uses, so
+// what inspect hides and what the trace hides come from one declaration. A
+// component absent from the catalog, or one declaring no schema, reports
+// nothing sensitive rather than guessing.
+func declaredComponentLeaves(lookup resolver.CatalogLookup, componentType string) resolver.SensitiveLeaves {
+	if lookup.Component == nil || componentType == "" {
+		return resolver.SensitiveLeaves{}
+	}
+	compiled, ok := resolver.CompileComponentSchema(lookup, componentType)
+	if !ok {
+		return resolver.SensitiveLeaves{}
+	}
+	return resolver.DeclaredSensitiveLeaves(compiled)
 }
 
 // renderAggregateNodeUses prints the node's uses-edges grouped by socket. Both

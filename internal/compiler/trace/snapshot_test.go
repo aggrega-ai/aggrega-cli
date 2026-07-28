@@ -6,6 +6,7 @@ package trace
 import (
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/redact"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
@@ -36,7 +37,7 @@ func makeCtx() *types.TemplateContext {
 // field at passes where the compiler had no visibility into it.
 func TestPillarSnapshot_PhaseB0_AbsentWorkload(t *testing.T) {
 	t.Parallel()
-	snap := PillarSnapshot(makeCtx(), PassPhaseB0)
+	snap := PillarSnapshot(makeCtx(), PassPhaseB0, redact.Keys{})
 	if _, present := snap["workload"]; present {
 		t.Errorf("Phase B.0 snapshot must NOT contain .workload; got: %v", snap)
 	}
@@ -55,7 +56,7 @@ func TestPillarSnapshot_PhaseB0_AbsentWorkload(t *testing.T) {
 // (set during Phase B.2) and surfaces in the snapshot.
 func TestPillarSnapshot_PhaseB3_PresentWorkload(t *testing.T) {
 	t.Parallel()
-	snap := PillarSnapshot(makeCtx(), PassPhaseB3)
+	snap := PillarSnapshot(makeCtx(), PassPhaseB3, redact.Keys{})
 	if _, present := snap["workload"]; !present {
 		t.Errorf("Phase B.3 snapshot must contain .workload; got keys: %v", keysOf(snap))
 	}
@@ -71,7 +72,7 @@ func TestPillarSnapshot_PhaseB6_BoundaryShape(t *testing.T) {
 		Path:         "cluster/services-net",
 		BoundaryName: "services-net",
 	}
-	snap := PillarSnapshot(ctx, PassPhaseB6)
+	snap := PillarSnapshot(ctx, PassPhaseB6, redact.Keys{})
 	if _, present := snap["boundary"]; !present {
 		t.Errorf("Phase B.6 boundary-scope snapshot must contain .boundary; got keys: %v", keysOf(snap))
 	}
@@ -87,7 +88,7 @@ func TestPillarSnapshot_PhaseB6_BoundaryShape(t *testing.T) {
 // source (B.0), without workload (B.2).
 func TestPillarSnapshot_PhaseProvides_Baseline(t *testing.T) {
 	t.Parallel()
-	snap := PillarSnapshot(makeCtx(), PassProvides)
+	snap := PillarSnapshot(makeCtx(), PassProvides, redact.Keys{})
 	for _, key := range []string{"context.inject", "context.uses", "locals", "source", "workload"} {
 		if _, present := snap[key]; present {
 			t.Errorf("Pass 1 snapshot must NOT contain %q; got keys: %v", key, keysOf(snap))
@@ -100,7 +101,7 @@ func TestPillarSnapshot_PhaseProvides_Baseline(t *testing.T) {
 // context construction).
 func TestPillarSnapshot_NilCtx(t *testing.T) {
 	t.Parallel()
-	snap := PillarSnapshot(nil, PassPhaseB3)
+	snap := PillarSnapshot(nil, PassPhaseB3, redact.Keys{})
 	if len(snap) != 0 {
 		t.Errorf("nil ctx must return empty map; got: %v", snap)
 	}

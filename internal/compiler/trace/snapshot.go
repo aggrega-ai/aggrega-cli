@@ -4,6 +4,7 @@
 package trace
 
 import (
+	"github.com/aggrega-ai/aggrega-cli/internal/redact"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
@@ -11,6 +12,14 @@ import (
 // for the given Pass. Only pillars populated by that pass appear in the
 // returned map; later pillars are absent (not nil), matching the
 // compiler's actual visibility at the failing pass.
+//
+// keys names the declared-sensitive data the projection must withhold. It is
+// computed by the caller — which holds the node's attachments and the catalog
+// — and passed in; this package derives no sensitivity of its own and reads no
+// catalog. The parameter is required rather than optional so a new capture
+// site cannot silently produce an unredacted snapshot: the only way to opt out
+// is to pass an empty set, which is a visible choice. An empty set leaves the
+// projection byte-identical to one taken before the axis existed.
 //
 // The mapping table:
 //
@@ -32,7 +41,7 @@ import (
 //     .infra. .values is empty for boundary-scope FRs.
 //
 // nil ctx returns an empty map.
-func PillarSnapshot(ctx *types.TemplateContext, pass Pass) map[string]any {
+func PillarSnapshot(ctx *types.TemplateContext, pass Pass, keys redact.Keys) map[string]any {
 	if ctx == nil {
 		return map[string]any{}
 	}
@@ -40,10 +49,10 @@ func PillarSnapshot(ctx *types.TemplateContext, pass Pass) map[string]any {
 
 	// Baseline: present at every pass.
 	if ctx.Values.Len() > 0 {
-		out["values"] = ctx.Values
+		out["values"] = redact.Pillar(ctx.Values, keys.Values)
 	}
 	if ctx.Infra.Len() > 0 {
-		out["infra"] = ctx.Infra
+		out["infra"] = redact.Pillar(ctx.Infra, keys.Infra)
 	}
 	if ctx.Context.InstanceID != "" {
 		out["context.instance_id"] = ctx.Context.InstanceID
@@ -60,7 +69,7 @@ func PillarSnapshot(ctx *types.TemplateContext, pass Pass) map[string]any {
 	// Pass 2 onward: the inject pipe is populated.
 	if pass == PassInject || isPhaseAOrLater(pass) {
 		if ctx.Context.Inject.Env.Len() > 0 || ctx.Context.Inject.File.Len() > 0 || ctx.Context.Inject.Arg.Len() > 0 {
-			out["context.inject"] = ctx.Context.Inject
+			out["context.inject"] = redact.InjectPipe(ctx.Context.Inject, keys.Inject)
 		}
 	}
 
