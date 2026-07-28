@@ -297,14 +297,16 @@ func (e *Engine) Render(ctx context.Context, values map[string]any, nodeCtx rend
 	return out.Files, nil
 }
 
-// SynthesizeWorkload projects the evaluated workload and its attachments'
-// resolved provides into a render_node payload and returns the guest's
-// synthesized manifests in emission order. Emission order is deterministic and
-// load-bearing, so the guest's file order is preserved — never re-sorted. The
-// attachment provides are projected from the template context through
-// AttachmentProvidesFromContext, the one host projection every synthesizer
-// surface builds the lookup from, so a workload attachment reference resolves to
-// the same emitted resource identity wherever it is read.
+// SynthesizeWorkload projects the evaluated workload, its attachments' resolved
+// provides, and which of those attachments handle declared-sensitive material
+// into a render_node payload, and returns the guest's synthesized manifests in
+// emission order. Emission order is deterministic and load-bearing, so the
+// guest's file order is preserved — never re-sorted. Both attachment lookups come
+// from AttachmentProjectionFromContext, the one host projection every synthesizer
+// surface builds them from, in a single walk over a single key set: a workload
+// attachment reference therefore resolves to the same emitted resource identity
+// wherever it is read, and the sensitivity lookup cannot name an attachment the
+// provides lookup does not.
 //
 // Each emitted file carries the Intermediate marking classified from the guest's
 // boundary-assembly self-report (renderer.RenderIsIntermediate): a fragment-merging
@@ -321,12 +323,14 @@ func (e *Engine) SynthesizeWorkload(
 		return nil, nil
 	}
 
+	attachmentProvides, attachmentSensitive := renderer.AttachmentProjectionFromContext(tmplCtx, nodeCtx.Attachments)
 	input := renderer.RenderNodeInput{
 		Node:    e.nodeProjection(nodeCtx, types.OrderedMap[any]{}),
 		Context: e.renderContext(nodeCtx),
 		WorkloadProjection: &renderer.WorkloadProjection{
-			Workload:           *w,
-			AttachmentProvides: renderer.AttachmentProvidesFromContext(tmplCtx),
+			Workload:            *w,
+			AttachmentProvides:  attachmentProvides,
+			AttachmentSensitive: attachmentSensitive,
 		},
 	}
 	out, err := e.invoke(ctx, RenderNodeExport, input, "")
@@ -812,13 +816,25 @@ func (e *Engine) LinkResolve(ctx context.Context, in renderer.LinkResolveInput) 
 
 // nodeProjection builds the wire node projection from the host node context —
 // the inverse of the guest's own context reconstruction. It carries the identity
-// and provenance the render core stamps onto every emitted manifest; type,
-// resolved recipe, features, and uses edges are not part of the render surface
-// and are left unset.
+// and provenance the render core stamps onto every emitted manifest, plus the
+// node's attachments in author order: an attachment entry carries the derived
+// sensitivity marking, which is what lets a guest render a target-native
+// sensitivity primitive rather than guess from a value.
+//
+// Type, resolved recipe, and uses edges stay unset, each for its own reason. The
+// component type is opaque metadata rather than a behavior switch, so carrying it
+// would only invite a guest to branch on it. The bound Recipe's identity already
+// reaches the guest as the recipe name and version it stamps into provenance, so
+// the resolved URI adds nothing it renders from. And an outbound edge is
+// consumed before dispatch: the edge's provides are rehydrated into the node's
+// own inject pipe, which the Recipe has already evaluated into the values and
+// workload the guest receives, while a boundary assembler that needs the topology
+// itself gets the edge list on its own input.
 func (e *Engine) nodeProjection(nodeCtx renderer.NodeRenderContext, values types.OrderedMap[any]) renderer.IRNodeProjection {
 	return renderer.IRNodeProjection{
 		ID:               nodeCtx.NodeID,
 		Values:           values,
+		Features:         nodeCtx.Attachments,
 		BoundaryPath:     nodeCtx.BoundaryPath,
 		SyncWave:         nodeCtx.SyncWave,
 		RecipeName:       nodeCtx.RecipeName,

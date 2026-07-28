@@ -83,12 +83,42 @@ func dispatchWorkloadSynthesis(
 // render wire — builds the lookup from one source of truth rather than
 // re-deriving it.
 func AttachmentProvidesFromContext(tmplCtx *types.TemplateContext) map[string]types.OrderedMap[string] {
-	out := map[string]types.OrderedMap[string]{}
+	provides, _ := AttachmentProjectionFromContext(tmplCtx, types.OrderedMap[types.IRFeatureEntry]{})
+	return provides
+}
+
+// AttachmentProjectionFromContext projects the node's attachments into the two
+// per-attachment lookups a workload projection carries: each attachment's
+// resolved provides, and whether it handles material an author declared
+// sensitive. The sensitivity value is the marking the IR attachment entry already
+// carries — derived once at IR-build time from the Feature's and the slot's
+// declarations — so nothing is derived a second time here; attachments supplies
+// those entries, keyed by the same instance names the template context uses.
+//
+// Both maps come out of ONE walk over ONE key set, which is what keeps them from
+// drifting apart: a second walk could produce a sensitivity entry for an
+// attachment the provides map has no key for, and the two maps are read together
+// by whatever resolves an attachment reference. Only a marked attachment gets a
+// sensitivity entry, so an attachment absent from the second map is not declared
+// sensitive and a node with no marked attachment yields an empty map that elides
+// from the wire.
+//
+// A nil context yields two empty lookups. An empty attachments map yields the
+// provides lookup alone, which is how the provides-only callers reach this.
+func AttachmentProjectionFromContext(
+	tmplCtx *types.TemplateContext,
+	attachments types.OrderedMap[types.IRFeatureEntry],
+) (map[string]types.OrderedMap[string], map[string]bool) {
+	provides := map[string]types.OrderedMap[string]{}
+	sensitive := map[string]bool{}
 	if tmplCtx == nil {
-		return out
+		return provides, sensitive
 	}
 	for name, attachment := range tmplCtx.Features.All() {
-		out[name] = attachment.Provides
+		provides[name] = attachment.Provides
+		if entry, ok := attachments.Get(name); ok && entry.Sensitive {
+			sensitive[name] = true
+		}
 	}
-	return out
+	return provides, sensitive
 }

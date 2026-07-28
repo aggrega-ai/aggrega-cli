@@ -3,7 +3,10 @@
 
 package rendercore
 
-import "github.com/aggrega-ai/aggrega-cli/internal/compiler/renderctx"
+import (
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderctx"
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
+)
 
 // IREdgeInfo is the per-edge view passed to a BoundaryAssembler. Decoupled
 // from types.IREdge so the package's BoundaryAssembler input does not depend
@@ -19,6 +22,14 @@ type NodeRenderContext struct {
 	Annotations  map[string]string // merged release annotations
 	BoundaryPath string
 	SyncWave     int // deployment wave from the containing boundary's syncWave (signed integer; default 0)
+	// Attachments is the node's post-cascade attachment set, keyed by the
+	// instance name the author gave each one, exactly as the IR graph carries
+	// it. It is the render surface's one source for an attachment's declared
+	// facts: the per-node projection handed to a provider guest carries these
+	// entries verbatim, including the derived sensitivity marking, so a guest
+	// reads them without a host round-trip and the host derives nothing a
+	// second time. Empty for a node with no attachments.
+	Attachments types.OrderedMap[types.IRFeatureEntry]
 	// Source is what engines actually consume (via loader.Load or
 	// equivalent): the resolved filesystem path for remote sources
 	// (extracted directory under the source-artifact cache slot),

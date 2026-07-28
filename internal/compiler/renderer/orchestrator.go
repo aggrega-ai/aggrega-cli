@@ -1548,11 +1548,13 @@ func buildNodeRenderContext(
 	graph *types.IRGraph,
 	input RendererInput,
 ) NodeRenderContext {
+	attachments, _ := graph.Spec.FeatureValuesMapping.Get(nodeID)
 	nrc := NodeRenderContext{
 		NodeID:       nodeID,
 		Annotations:  flattenOrderedStringMap(node.ReleaseAnnotations),
 		BoundaryPath: node.BoundaryPath,
 		SyncWave:     node.SyncWave,
+		Attachments:  attachments,
 		YAMLIndent:   input.YAMLIndent,
 		Provenance: ProvenanceContext{
 			CompilerVersion:  graph.Spec.Provenance.CompilerVersion,

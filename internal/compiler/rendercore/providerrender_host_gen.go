@@ -46,7 +46,7 @@ type IRNodeProjection struct {
 	ResolvedRecipe string `json:"resolved_recipe" yaml:"resolved_recipe"`
 	// Values The node's rendered values dictionary, an author-ordered key set the guest renders from. Preserves author order so the payload is byte-identical across runs of identical input.
 	Values types.OrderedMap[any] `json:"values,omitempty" yaml:"values,omitempty"`
-	// Features The node's feature attachments keyed by feature alias, carrying the same per-node feature-attachment shape the IR carries. Preserves author order so the payload is byte-identical across runs of identical input. Opaque at this schema layer; the guest reads the feature-entry shape through the IR wire contract.
+	// Features The node's feature attachments keyed by feature alias, carrying the same per-node feature-attachment shape the IR carries. Each entry carries the attachment's values, infra and inject mapping alongside its derived sensitivity marking, so a guest reads whether an attachment handles declared-sensitive material from the payload alone. Preserves author order so the payload is byte-identical across runs of identical input. Opaque at this schema layer; the guest reads the feature-entry shape through the IR wire contract.
 	Features types.OrderedMap[types.IRFeatureEntry] `json:"features,omitempty" yaml:"features,omitempty"`
 	// Uses The node's outbound uses edges keyed by socket alias, each carrying the ordered target node ids bound to that socket. Preserves author order so the payload is byte-identical across runs of identical input.
 	Uses types.OrderedMap[[]string] `json:"uses,omitempty" yaml:"uses,omitempty"`
@@ -204,6 +204,8 @@ type WorkloadProjection struct {
 	Workload types.Workload `json:"workload" yaml:"workload"`
 	// AttachmentProvides Every attachment on the node, projected to its resolved provides and keyed by the attachment instance name a workload attachment reference carries; absent when the node carries no attachments. The host copies the strings through without interpreting them, so the guest reads whichever entries of an attachment's provides it needs to resolve a reference to the resource that attachment produced.
 	AttachmentProvides map[string]types.OrderedMap[string] `json:"attachment_provides,omitempty" yaml:"attachment_provides,omitempty"`
+	// AttachmentSensitive Which of the node's attachments handle material an author declared sensitive, keyed by the same attachment instance name attachment_provides uses. Only a marked attachment appears, so an attachment absent from the map is not declared sensitive and the whole field is absent when none is. The marking is derived from declarations alone — a sensitive leaf declared on the Feature filling the attachment, or a sensitive attachment slot the attachment binds — never from a value's content. The field carries the marking so a guest whose target offers a native sensitivity primitive can mark the value there; a guest whose target offers none ignores it, and the marking changes nothing that guest emits.
+	AttachmentSensitive map[string]bool `json:"attachment_sensitive,omitempty" yaml:"attachment_sensitive,omitempty"`
 }
 
 // ArtifactsProjection The pre-evaluated artifact set the host hands a Provider guest to place into the node's output. The host has already resolved each entry's source (inline content or an imported file it read), evaluated it as a Go template against the render context using the guest's declared artifact-template delimiter pair, and computed the build-provenance label and annotation key sets. The guest owns the format decision, the provenance placement, the on-disk path, and the final bytes. Entries preserve author order so the placed output is byte-identical across runs of identical input.
@@ -2072,6 +2074,35 @@ func (t WorkloadProjection) MarshalJSON() ([]byte, error) {
 			buf.WriteByte('}')
 		}
 	}
+	if len(t.AttachmentSensitive) != 0 {
+		if !first {
+			buf.WriteByte(',')
+		}
+		first = false
+		buf.WriteString("\"attachment_sensitive\":")
+		{
+			keys := make([]string, 0, len(t.AttachmentSensitive))
+			for k := range t.AttachmentSensitive {
+				keys = append(keys, k)
+			}
+			sort.Strings(keys)
+			buf.WriteByte('{')
+			for i, k := range keys {
+				if i > 0 {
+					buf.WriteByte(',')
+				}
+				writeJSONString(&buf, k)
+				buf.WriteByte(':')
+				mv := t.AttachmentSensitive[k]
+				if mv {
+					buf.WriteString("true")
+				} else {
+					buf.WriteString("false")
+				}
+			}
+			buf.WriteByte('}')
+		}
+	}
 	buf.WriteByte('}')
 	return buf.Bytes(), nil
 }
@@ -2121,6 +2152,27 @@ func (t *WorkloadProjection) UnmarshalJSON(data []byte) error {
 					}
 				}
 				t.AttachmentProvides[mk] = mv
+			}
+			if err := expectDelim(dec, '}'); err != nil {
+				return err
+			}
+		case "attachment_sensitive":
+			t.AttachmentSensitive = make(map[string]bool)
+			if err := expectDelim(dec, '{'); err != nil {
+				return err
+			}
+			for dec.More() {
+				mk, err := readKey(dec)
+				if err != nil {
+					return err
+				}
+				var mv bool
+				if v, err := readBool(dec); err != nil {
+					return err
+				} else {
+					mv = v
+				}
+				t.AttachmentSensitive[mk] = mv
 			}
 			if err := expectDelim(dec, '}'); err != nil {
 				return err
