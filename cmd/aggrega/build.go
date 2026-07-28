@@ -65,7 +65,7 @@ const (
 // cannot diverge.
 var helpTraceUnredacted = "Write the declared-sensitive values into the .trace/ files instead of the " +
 	redact.Placeholder() +
-	" text that stands in for them, and stamp every file the trace writes with a header saying so. Requires --trace. It reaches .trace/ and nothing else: rendered artifacts, `aggrega inspect` output and diagnostic text are identical with and without it. Invocation-only — there is no workspace-config setting for it, so it can never be left on for a later build"
+	" text that stands in for them, and stamp every file the trace writes with a header saying so. Requires --trace. It reaches .trace/ and nothing else: rendered artifacts, aggrega inspect output and diagnostic text are identical with and without it. Invocation-only — there is no workspace-config setting for it, so it can never be left on for a later build"
 
 func newBuildCmd() *cobra.Command {
 	c := &cobra.Command{
