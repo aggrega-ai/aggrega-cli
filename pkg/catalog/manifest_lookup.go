@@ -265,28 +265,32 @@ func (c *Catalog) featureTypeToFeatureRecipeWithManifest(manifest *types.Manifes
 }
 
 // RecipeByURI resolves a Manifest mapping value (a Recipe URI) to its catalog
-// Recipe. The catalog is keyed by provider-scoped identity
-// ("provider/name:version"), and the URI may name the recipe at any of three
-// precision levels, tried in order:
+// Recipe. The catalog is keyed by capability-scoped identity
+// ("capability/name:version"), and the URI may name the recipe at any of
+// three precision levels, tried in order:
 //
-//  1. Provider-qualified exact ("terraform/mariadb-rds:1.0.0") — a direct
+//  1. Capability-qualified exact ("terraform/mariadb-rds:1.0.0") — a direct
 //     map get on the identity key.
-//  2. Provider-qualified by scan — the segment before the first "/" is
-//     treated as a provider candidate; within that provider the name (and
-//     version, when given) must match exactly one entity. A versioned URI
-//     whose exact version is absent falls back to a version-blind scan
-//     within the provider, preserving the version-tolerant posture the bare
-//     form has always had.
+//  2. Capability-qualified by scan — the segment before the first "/" is
+//     matched against each Recipe's Spec.Capability; among those the name
+//     (and version, when given) must match exactly one entity. A versioned
+//     URI whose exact version is absent falls back to a version-blind scan
+//     within that capability, keeping the version-tolerant posture the bare
+//     form has.
 //  3. Bare ("mariadb-rds:1.0.0" or "mariadb-rds") — a scan across every
-//     provider, version-exact first, then version-blind; exactly one match
-//     resolves.
+//     capability, version-exact first, then version-blind; exactly one
+//     match resolves.
+//
+// A Recipe URI therefore carries at most two segments: strings.Cut splits on
+// the FIRST "/" only, so any third segment stays inside the name candidate
+// and matches no Metadata.Name.
 //
 // Any level that finds more than one candidate is a miss, never a silent
-// pick — ambiguity surfaces as a loud resolution halt upstream (the same
-// contract the unversioned-ambiguity path has always had, extended to the
-// provider dimension). The "/" split cannot misread a bare reference:
-// recipe names contain no "/" per the catalog naming convention, and a
-// failed provider interpretation falls through to bare resolution anyway.
+// pick — ambiguity surfaces as a loud resolution halt upstream, on the
+// capability dimension exactly as on the unversioned one. The "/" split
+// cannot misread a bare reference: recipe names contain no "/" per the
+// catalog naming convention, and a failed capability interpretation falls
+// through to bare resolution anyway.
 func (c *Catalog) RecipeByURI(uri string) (types.Recipe, bool) {
 	if r, ok := c.Recipes[uri]; ok {
 		return r, true
@@ -315,9 +319,10 @@ func (c *Catalog) RecipeByURI(uri string) (types.Recipe, bool) {
 }
 
 // matchOneRecipe scans the identity map for entities matching the given
-// predicates (empty provider or version = wildcard) and returns the match
-// only when it is unique. Map-iteration order is irrelevant: the result is
-// gated on the count, not the encounter order.
+// predicates and returns the match only when it is unique. The provider
+// parameter is matched against each Recipe's Spec.Capability; an empty
+// provider or version is a wildcard. Map-iteration order is irrelevant: the
+// result is gated on the count, not the encounter order.
 func matchOneRecipe(rs map[string]types.Recipe, provider, name, version string) (types.Recipe, bool) {
 	var match types.Recipe
 	n := 0
