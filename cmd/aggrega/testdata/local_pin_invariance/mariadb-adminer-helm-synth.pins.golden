@@ -11,12 +11,12 @@ entities:
         - release.spec.aggregate
     - uri: core/datastore/mariadb
       resolved_version: 1.0.0
-      digest: sha256:26b0423515fa5b3420751a542bf62e9ea9a5eee4a9e4b996fb120e0bf6e55c4a
+      digest: sha256:7b992398371c4ab3b74adabc4a61c702ff10aaa0354b2de537dc7bea6bf8eff2
       referenced_from:
         - aggregate.spec.subsystems.default.components.db.type
     - uri: core/datastore/mariadb:1.0.0
       resolved_version: 1.0.0
-      digest: sha256:26b0423515fa5b3420751a542bf62e9ea9a5eee4a9e4b996fb120e0bf6e55c4a
+      digest: sha256:7b992398371c4ab3b74adabc4a61c702ff10aaa0354b2de537dc7bea6bf8eff2
       referenced_from:
         - manifest.spec.mappings.components.type.core/datastore/mariadb:1.0.0
     - uri: core/devtool/adminer
