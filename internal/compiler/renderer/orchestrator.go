@@ -497,12 +497,18 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		}
 		applyAttachmentProvides(&tmplCtx.Features, attachmentProvides)
 
-		// The node's redaction set, assembled once here where both the catalog
-		// and the node's attachments are in scope, and passed down to every
-		// display capture rather than re-derived at each one: the trace package
-		// sees a set of keys, never a catalog.
+		// The node's redaction set, assembled once here where the catalog, the
+		// node's attachments and the bound Recipe's authored template text are all
+		// in scope, and passed down to every display capture rather than re-derived
+		// at each one: the trace package sees a set of keys, never a catalog.
+		//
+		// The derived reading is static analysis over authored text, so it needs no
+		// resolved value and has no ordering relationship to the evaluation — which
+		// is why it belongs beside the declarations rather than inside the locals
+		// pass, where the catalog is not in scope.
 		declared := declaredLeaves(node.Component)
-		redactKeys := redact.NodeKeys(declared.Values, declared.Infra, attachments)
+		redactKeys := redact.NodeKeys(declared.Values, declared.Infra, attachments,
+			derivedSensitiveKeys(recipe, declared.Values, declared.Infra))
 
 		// Trace points: per-node pre-loop captures.
 		_ = traceWriter.Write(trace.PassPillarsInitial, nodeID, node.BoundaryPath, "", trace.PillarSnapshot(tmplCtx, trace.PassPillarsInitial, redactKeys))

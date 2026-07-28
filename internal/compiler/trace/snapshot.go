@@ -13,13 +13,24 @@ import (
 // returned map; later pillars are absent (not nil), matching the
 // compiler's actual visibility at the failing pass.
 //
-// keys names the declared-sensitive data the projection must withhold. It is
-// computed by the caller — which holds the node's attachments and the catalog
-// — and passed in; this package derives no sensitivity of its own and reads no
-// catalog. The parameter is required rather than optional so a new capture
-// site cannot silently produce an unredacted snapshot: the only way to opt out
-// is to pass an empty set, which is a visible choice. An empty set leaves the
-// projection byte-identical to one taken before the axis existed.
+// keys names the data the projection must withhold — both what an author
+// declared sensitive and what a template computed from such a declaration. It is
+// computed by the caller — which holds the node's attachments, the catalog and
+// the bound Recipe's authored template text — and passed in; this package derives
+// no sensitivity of its own, reads no catalog and parses no template. The
+// parameter is required rather than optional so a new capture site cannot
+// silently produce an unredacted snapshot: the only way to opt out is to pass an
+// empty set, which is a visible choice. An empty set leaves the projection
+// byte-identical to one taken before the axis existed.
+//
+// Three roots in the table below are displayed verbatim, and for two distinct
+// reasons. .workload is a rendered document whose fields carry no link back to
+// the declaration they came from, so a datum interpolated into it is no longer
+// identifiable by key at all. .context.uses and .boundary are CROSS-NODE
+// projections — a uses edge carries its target's resolved provides, and the
+// boundary view carries the same for every edge in its subtree — and the set
+// passed here describes one node's own declarations, so it does not reach
+// another node's.
 //
 // The mapping table:
 //
@@ -80,12 +91,12 @@ func PillarSnapshot(ctx *types.TemplateContext, pass Pass, keys redact.Keys) map
 
 	// Phase B.0+: locals are populated.
 	if isPhaseB0OrLater(pass) && ctx.Locals.Len() > 0 {
-		out["locals"] = ctx.Locals
+		out["locals"] = redact.Locals(ctx.Locals, keys.Locals)
 	}
 
 	// Phase B.0+: .source is populated (after Recipe.Spec.Source template eval).
 	if isPhaseB0OrLater(pass) && ctx.Source != nil {
-		out["source"] = ctx.Source
+		out["source"] = redact.Source(ctx.Source, keys.Source)
 	}
 
 	// Phase B.3-B.5+: .workload is populated. Phase B.2 has it in progress;

@@ -1,13 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Cognitio S.r.l.
 
-// Tests for the redaction primitive — the placeholder, the two appliers, and
-// the set assembly. Every positive assertion is paired with a discrimination
-// assertion on a non-sensitive sibling, because a blanket replacement passes
-// every positive test on its own.
+// Tests for the redaction primitive — the placeholder, the appliers, and the set
+// assembly. Every positive assertion is paired with a discrimination assertion on
+// a non-sensitive sibling, because a blanket replacement passes every positive
+// test on its own.
 package redact
 
 import (
+	"reflect"
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
@@ -173,7 +174,7 @@ func TestNodeKeys_FoldsAttachmentMarkingAndIgnoresTheRollUp(t *testing.T) {
 		Values:          om("name", "db-creds", "key", "password"),
 	})
 
-	keys := NodeKeys(map[string]bool{"dbPassword": true}, nil, attachments)
+	keys := NodeKeys(map[string]bool{"dbPassword": true}, nil, attachments, Derived{})
 
 	if !keys.Delivery("env", "DATABASE_PASSWORD") {
 		t.Errorf("the attachment's marked delivery key must reach the set; got %v", keys.Inject)
@@ -196,7 +197,127 @@ func TestNodeKeys_NothingDeclaredIsEmpty(t *testing.T) {
 	t.Parallel()
 	attachments := types.OrderedMap[types.IRFeatureEntry]{}
 	attachments.Set("plain", types.IRFeatureEntry{Type: "feature.test/plain"})
-	if keys := NodeKeys(nil, nil, attachments); !keys.Empty() {
+	if keys := NodeKeys(nil, nil, attachments, Derived{}); !keys.Empty() {
 		t.Errorf("a node declaring nothing must produce an empty set; got %+v", keys)
+	}
+}
+
+func TestNodeKeys_CarriesDerivedSetsWithoutMergingThem(t *testing.T) {
+	t.Parallel()
+	keys := NodeKeys(map[string]bool{"dbPassword": true}, nil,
+		types.OrderedMap[types.IRFeatureEntry]{},
+		Derived{
+			Locals: map[string]bool{"dsn": true},
+			Source: map[string]bool{WholeSourceKey: true},
+		})
+
+	if !keys.Locals["dsn"] {
+		t.Errorf("a derived local must reach the set; got %v", keys.Locals)
+	}
+	if keys.Locals["dbPassword"] {
+		t.Errorf("a declared values leaf must not leak into the locals set; got %v", keys.Locals)
+	}
+	if !keys.Source[WholeSourceKey] {
+		t.Errorf("a derived whole-string source must reach the set; got %v", keys.Source)
+	}
+	// The pillar sets stay separate: a local named like a leaf is a different datum.
+	if keys.Leaf("values", "dsn") {
+		t.Errorf("a derived local must not be readable as a declared values leaf")
+	}
+}
+
+func TestEmpty_CountsTheDerivedSets(t *testing.T) {
+	t.Parallel()
+	if (Keys{Locals: map[string]bool{"dsn": true}}).Empty() {
+		t.Error("a set naming only a derived local is not empty; every applier would be skipped")
+	}
+	if (Keys{Source: map[string]bool{WholeSourceKey: true}}).Empty() {
+		t.Error("a set naming only a derived source field is not empty")
+	}
+}
+
+func TestLocals_ReplacesWithheldEntryAndKeepsAuthorOrder(t *testing.T) {
+	t.Parallel()
+	// Authored order is deliberately not alphabetical: a sort creeping in would
+	// reorder the output and this assertion is what catches it.
+	in := types.OrderedMap[string]{}
+	in.Set("zdsn", "postgres://app:hunter2@db/appdb")
+	in.Set("appLabel", "demo-local")
+
+	out := Locals(in, map[string]bool{"zdsn": true})
+
+	if v, _ := out.Get("zdsn"); v != Placeholder() {
+		t.Errorf("the withheld local must show the placeholder; got %q", v)
+	}
+	if v, _ := out.Get("appLabel"); v != "demo-local" {
+		t.Errorf("an untouched local must survive verbatim; got %q", v)
+	}
+	if got := out.Keys(); !reflect.DeepEqual(got, []string{"zdsn", "appLabel"}) {
+		t.Errorf("author order must survive the substitution; got %v", got)
+	}
+	// The input is not mutated: the same map also feeds the render context.
+	if v, _ := in.Get("zdsn"); v != "postgres://app:hunter2@db/appdb" {
+		t.Errorf("the input must not be mutated; got %q", v)
+	}
+}
+
+func TestLocals_EmptySetIsIdentity(t *testing.T) {
+	t.Parallel()
+	in := types.OrderedMap[string]{}
+	in.Set("dsn", "postgres://app:hunter2@db/appdb")
+	out := Locals(in, nil)
+	if v, _ := out.Get("dsn"); v != "postgres://app:hunter2@db/appdb" {
+		t.Errorf("an empty set must leave the block untouched; got %q", v)
+	}
+}
+
+func TestSource_StringShapeIsKeyedByTheWholeSourceKey(t *testing.T) {
+	t.Parallel()
+	if got := Source("oci://ghcr.io/x@sha256:abc", map[string]bool{WholeSourceKey: true}); got != Placeholder() {
+		t.Errorf("a withheld string source must show the placeholder; got %v", got)
+	}
+	// The control: the same shape with nothing withheld survives verbatim.
+	if got := Source("oci://ghcr.io/x@sha256:abc", map[string]bool{"ref": true}); got != "oci://ghcr.io/x@sha256:abc" {
+		t.Errorf("a string source not named by the set must survive verbatim; got %v", got)
+	}
+}
+
+func TestSource_StructuredShapeReplacesOnlyTheNamedField(t *testing.T) {
+	t.Parallel()
+	in := map[string]any{
+		"ref":      "ghcr.io/app:hunter2",
+		"registry": "ghcr.io",
+		"port":     443,
+	}
+	out, ok := Source(in, map[string]bool{"ref": true}).(map[string]any)
+	if !ok {
+		t.Fatalf("a structured source must stay structured; got %T", Source(in, map[string]bool{"ref": true}))
+	}
+	if out["ref"] != Placeholder() {
+		t.Errorf("the withheld field must show the placeholder; got %v", out["ref"])
+	}
+	if out["registry"] != "ghcr.io" {
+		t.Errorf("an untouched sibling field must survive verbatim; got %v", out["registry"])
+	}
+	if out["port"] != 443 {
+		t.Errorf("a non-string field must survive verbatim; got %v", out["port"])
+	}
+	if in["ref"] != "ghcr.io/app:hunter2" {
+		t.Errorf("the input must not be mutated; got %v", in["ref"])
+	}
+}
+
+func TestSource_UnknownShapeAndEmptySetPassThrough(t *testing.T) {
+	t.Parallel()
+	type descriptor struct{ Ref string }
+	d := descriptor{Ref: "ghcr.io/app:hunter2"}
+	if got := Source(d, map[string]bool{WholeSourceKey: true}); got != any(d) {
+		t.Errorf("a shape no template was evaluated against must pass through; got %v", got)
+	}
+	if got := Source("oci://x", nil); got != "oci://x" {
+		t.Errorf("an empty set must leave the source untouched; got %v", got)
+	}
+	if got := Source(nil, map[string]bool{WholeSourceKey: true}); got != nil {
+		t.Errorf("a nil source must stay nil; got %v", got)
 	}
 }

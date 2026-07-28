@@ -1,0 +1,28 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Component
+metadata:
+  name: core/app-locals
+  version: "1.0.0"
+  labels:
+    component.aggrega.ai/type: "server"
+spec:
+  schema:
+    values:
+      # Each declared leaf sits beside an undeclared sibling of the same shape.
+      # The sibling is what proves a computed value is withheld because of what
+      # its template READ, not because everything reachable gets blanked.
+      appName: { type: string }
+      dbPassword: { type: string, sensitive: true }
+      creds:
+        adminUser: { type: string }
+        adminToken: { type: string, sensitive: true }
+      # An object with nothing declared under it, so iterating it is the control
+      # for iterating `creds`.
+      ports:
+        http: { type: integer }
+        admin: { type: integer }
+    infra:
+      region: { type: string }
+      apiKey: { type: string, sensitive: true }
+    provides:
+      host: { type: string, required: true }

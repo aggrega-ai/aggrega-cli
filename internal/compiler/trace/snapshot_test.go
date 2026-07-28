@@ -107,6 +107,66 @@ func TestPillarSnapshot_NilCtx(t *testing.T) {
 	}
 }
 
+// TestPillarSnapshot_WithholdsDerivedLocalsAndSource covers the two projections
+// whose content is a template OUTPUT rather than an authored pillar. The key set
+// arrives already computed — this package reads no template — so the assertion
+// here is that the projection APPLIES it, and applies it discriminately.
+//
+// Each positive assertion is paired with a control on the same surface: an entry
+// the set does not name must survive verbatim, which is what tells a working
+// substitution apart from a blanket one.
+func TestPillarSnapshot_WithholdsDerivedLocalsAndSource(t *testing.T) {
+	t.Parallel()
+	ctx := makeCtx()
+	// Author order is deliberately not alphabetical, so a sort creeping into the
+	// substitution shows up as a reordered key list.
+	locals := types.OrderedMap[string]{}
+	locals.Set("zdsn", "postgres://app:hunter2@db/appdb")
+	locals.Set("appLabel", "demo-local")
+	ctx.Locals = locals
+	ctx.Source = "oci://ghcr.io/app:hunter2"
+
+	snap := PillarSnapshot(ctx, PassPhaseB0, redact.Keys{
+		Locals: map[string]bool{"zdsn": true},
+		Source: map[string]bool{redact.WholeSourceKey: true},
+	})
+
+	shown, ok := snap["locals"].(types.OrderedMap[string])
+	if !ok {
+		t.Fatalf("the locals projection must stay an ordered block; got %T", snap["locals"])
+	}
+	if v, _ := shown.Get("zdsn"); v != redact.Placeholder() {
+		t.Errorf("the withheld local must show the placeholder; got %q", v)
+	}
+	if v, _ := shown.Get("appLabel"); v != "demo-local" {
+		t.Errorf("a local the set does not name must survive verbatim; got %q", v)
+	}
+	if got := shown.Keys(); len(got) != 2 || got[0] != "zdsn" {
+		t.Errorf("author order must survive the substitution; got %v", got)
+	}
+	if snap["source"] != redact.Placeholder() {
+		t.Errorf("the withheld source must show the placeholder; got %v", snap["source"])
+	}
+}
+
+// TestPillarSnapshot_EmptyKeysLeavesDerivedProjectionsVerbatim is the other half
+// of the same boundary: a node with nothing declared must produce the projection
+// a build predating the axis produced, byte for byte.
+func TestPillarSnapshot_EmptyKeysLeavesDerivedProjectionsVerbatim(t *testing.T) {
+	t.Parallel()
+	snap := PillarSnapshot(makeCtx(), PassPhaseB0, redact.Keys{})
+	shown, ok := snap["locals"].(types.OrderedMap[string])
+	if !ok {
+		t.Fatalf("the locals projection must stay an ordered block; got %T", snap["locals"])
+	}
+	if v, _ := shown.Get("primary"); v != "main" {
+		t.Errorf("an empty set must leave the locals projection untouched; got %q", v)
+	}
+	if snap["source"] != "./charts/api" {
+		t.Errorf("an empty set must leave the source projection untouched; got %v", snap["source"])
+	}
+}
+
 func keysOf(m map[string]any) []string {
 	keys := make([]string, 0, len(m))
 	for k := range m {

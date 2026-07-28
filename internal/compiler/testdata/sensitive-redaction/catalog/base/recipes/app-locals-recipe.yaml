@@ -1,0 +1,54 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: app-locals-recipe
+  version: "1.0.0"
+  description: >
+    Exercises the locals block as a channel a declared-sensitive datum travels
+    through. Each entry is one template shape, paired with a sibling of the same
+    shape that reads nothing declared.
+spec:
+  capability: compose
+  implements: core/app-locals
+  provides:
+    host: "{{ .context.instance_id }}"
+  # Author order is deliberately NOT alphabetical: zzDsn is written first and
+  # sorts last, so a sort creeping into the display would move it and the trace
+  # assertion on its position would fail.
+  locals:
+    zzDsn: "postgres://app:{{ .values.dbPassword }}@db:5432/appdb"
+    appLabel: "{{ .values.appName }}-local"
+    infraKeyed: "region={{ .infra.region }} key={{ .infra.apiKey }}"
+    infraPlain: "region={{ .infra.region }}"
+    # Iterating an object reaches every leaf under it, including the declared one.
+    credsCensus: "{{ range $k, $v := .values.creds }}{{ $k }}={{ $v }};{{ end }}"
+    # The sibling object carries nothing declared, so the same shape stays visible.
+    portsCensus: "{{ range $k, $v := .values.ports }}{{ $k }}={{ $v }};{{ end }}"
+    # Inside a rebound body only $ still names the context root.
+    dollarAnchored: "{{ range $i := until 1 }}{{ $.values.creds.adminToken }}{{ end }}"
+    # Reads an entry already withheld above it, so it is withheld in turn.
+    wrapsDsn: "wrapped[{{ .locals.zzDsn }}]"
+    # Reads an entry that is not, so it is not.
+    wrapsLabel: "wrapped[{{ .locals.appLabel }}]"
+  # The rendered artifact carries every computed value in the clear, including
+  # the withheld ones: the artifact is the deployable and is never redacted.
+  workload: |
+    apiVersion: aggrega.ai/v1alpha1
+    kind: Workload
+    containers:
+      main:
+        image: app:1.0
+        variables:
+          APP_DSN: '{{ .locals.zzDsn }}'
+          APP_LABEL: '{{ .locals.appLabel }}'
+          APP_INFRA_KEYED: '{{ .locals.infraKeyed }}'
+          APP_CREDS_CENSUS: '{{ .locals.credsCensus }}'
+          APP_PORTS_CENSUS: '{{ .locals.portsCensus }}'
+          APP_DOLLAR: '{{ .locals.dollarAnchored }}'
+        ports:
+          p: 8080
+    services:
+      app:
+        type: ClusterIP
+        ports:
+          p: 8080

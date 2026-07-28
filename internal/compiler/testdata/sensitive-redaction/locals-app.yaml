@@ -1,0 +1,18 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: sensitive-redaction-locals-app
+  version: "1.0.0"
+spec:
+  components:
+    app:
+      type: core/app-locals
+      values:
+        appName: demoapp
+        dbPassword: derived-secret-plaintext
+        creds:
+          adminUser: rootuser
+          adminToken: derived-token-plaintext
+        ports:
+          http: 8080
+          admin: 9090

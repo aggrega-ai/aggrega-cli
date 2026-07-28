@@ -1,0 +1,17 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: sensitive-redaction-locals-release
+  environment: local
+  version: "1.0.0"
+spec:
+  aggregate: ./locals-app.yaml
+  manifest: ./locals-manifest.yaml
+  boundaries:
+    derived:
+      directory: ./dist/derived
+      components:
+        app:
+          infra:
+            region: eu-west-1
+            apiKey: derived-apikey-plaintext

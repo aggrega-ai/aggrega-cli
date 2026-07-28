@@ -61,8 +61,18 @@ func CollectTemplateFieldAccessesWithDelims(tmplText, leftDelim, rightDelim stri
 	return paths, nil
 }
 
-// collectFromNode walks a parse.Node tree and records any FieldNode / ChainNode
-// it encounters. Dot-qualified paths are joined with "." and prefixed with ".".
+// collectFromNode walks a parse.Node tree and records every field access it
+// encounters, wherever it sits. Dot-qualified paths are joined with "." and
+// prefixed with ".".
+//
+// This walk deliberately OVER-collects, and the direction is load-bearing rather
+// than incidental. It records a field read inside a range or with body, where the
+// dot names an element rather than the context root, and it records both halves
+// of a chained expression. Two consumers want exactly that: a read-set census
+// reports a key hidden inside a rebound body as read, and a check that must
+// withhold something cannot let the thing hide inside a rebound body. Neither
+// consumer may be given the under-collecting direction, and this walk must never
+// grow a flag that would let a caller ask for it.
 func collectFromNode(n parse.Node, seen map[string]bool) {
 	if n == nil {
 		return
@@ -99,21 +109,43 @@ func collectFromPipe(p *parse.PipeNode, seen map[string]bool) {
 		return
 	}
 	for _, cmd := range p.Cmds {
-		for _, arg := range cmd.Args {
-			switch a := arg.(type) {
-			case *parse.FieldNode:
-				if len(a.Ident) > 0 {
-					seen["."+strings.Join(a.Ident, ".")] = true
-				}
-			case *parse.ChainNode:
-				// Chain: .foo.bar syntax on an expression result.
-				if len(a.Field) > 0 {
-					seen["."+strings.Join(a.Field, ".")] = true
-				}
-			case *parse.PipeNode:
-				collectFromPipe(a, seen)
-			}
+		if cmd == nil {
+			continue
 		}
+		for _, arg := range cmd.Args {
+			collectFromArg(arg, seen)
+		}
+	}
+}
+
+func collectFromArg(arg parse.Node, seen map[string]bool) {
+	switch a := arg.(type) {
+	case *parse.FieldNode:
+		if len(a.Ident) > 0 {
+			seen["."+strings.Join(a.Ident, ".")] = true
+		}
+	case *parse.VariableNode:
+		// $ names the context root under any rebinding, so $.values.x is a read of
+		// the same datum .values.x is and is recorded under the same spelling — the
+		// one spelling every consumer of this census compares against. Any other
+		// variable names a value the template itself declared and reaches no
+		// authored key.
+		if len(a.Ident) > 1 && a.Ident[0] == "$" {
+			seen["."+strings.Join(a.Ident[1:], ".")] = true
+		}
+	case *parse.ChainNode:
+		// Both halves are recorded. The trailing fields hang off the receiver's
+		// value rather than off the dot, and the receiver is itself an expression
+		// that can reach an authored key — so a defensive wrapper such as
+		// (default dict .values.tls).ca has read .values.tls, and a census that
+		// recorded only the trailing .ca would report that key unread and would
+		// let it hide from a check that must withhold it.
+		if len(a.Field) > 0 {
+			seen["."+strings.Join(a.Field, ".")] = true
+		}
+		collectFromArg(a.Node, seen)
+	case *parse.PipeNode:
+		collectFromPipe(a, seen)
 	}
 }
 

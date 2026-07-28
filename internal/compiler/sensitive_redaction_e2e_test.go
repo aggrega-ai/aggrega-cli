@@ -183,6 +183,149 @@ func TestSensitiveRedaction_TraceWithholdsTaintedDeliveryKey(t *testing.T) {
 	}
 }
 
+// The derived-withholding fixture is a sibling Release over the same catalog. It
+// exists separately so the fixture above stays byte-identical: a Recipe that
+// computes values from a declared leaf needs its own locals block and its own
+// rendered artifact, and adding either to the fixture above would have moved the
+// artifact this file asserts on.
+const derivedArtifactPath = "dist/derived/compose/docker-compose.yaml"
+
+const (
+	// The plaintext each declared-sensitive datum carries in the derived fixture.
+	// Distinct from the fixture above so no assertion can pass on the wrong one.
+	derivedSecret = "derived-secret-plaintext" // component values.dbPassword
+	derivedAPIKey = "derived-apikey-plaintext" // component infra.apiKey
+	derivedToken  = "derived-token-plaintext"  // component values.creds.adminToken
+)
+
+// derivedLocalsSlots are the trace slots whose projection carries the resolved
+// locals block. The last two also carry the rendered .workload document, which is
+// verbatim by design, so a whole-body plaintext check applies only to the first
+// two — the per-entry assertions below run on all four.
+var derivedLocalsSlots = []string{
+	"06-phaseB-locals.yaml",
+	"08-phaseB-workload.yaml",
+	"09b-phaseB6-boundary-fr.yaml",
+	"10-engine-synthesis/app.compose-fragment.yaml",
+}
+
+var derivedPillarOnlySlots = []string{
+	"06-phaseB-locals.yaml",
+	"08-phaseB-workload.yaml",
+}
+
+func derivedRedactionBuild(t *testing.T) *pipeline.Result {
+	t.Helper()
+	return pipelinetest.Build(t, pipelinetest.Input{
+		ReleasePath:  "testdata/sensitive-redaction/locals-release.yaml",
+		CatalogPaths: []string{"testdata/sensitive-redaction/catalog/base"},
+		IncludeTrace: true,
+	})
+}
+
+func derivedTraceSlot(t *testing.T, result *pipeline.Result, slot string) string {
+	t.Helper()
+	want := "boundaries/derived/app/" + slot
+	body, ok := result.Trace[want]
+	if !ok {
+		paths := make([]string, 0, len(result.Trace))
+		for p := range result.Trace {
+			paths = append(paths, p)
+		}
+		sort.Strings(paths)
+		t.Fatalf("trace slot %q absent; the fixture's trace layout drifted. present: %v", want, paths)
+	}
+	return string(body)
+}
+
+// TestSensitiveRedaction_TraceWithholdsDerivedLocals is the proof that
+// withholding follows the DERIVATION and not just the declared key. Every entry
+// asserted here is a local whose own key nobody declared; what identifies it is
+// the reference its template made.
+//
+// Each withheld entry is paired with a structurally identical sibling that reads
+// nothing declared. Without those pairs a rule that blanked the whole block would
+// satisfy every positive assertion.
+func TestSensitiveRedaction_TraceWithholdsDerivedLocals(t *testing.T) {
+	t.Parallel()
+	result := derivedRedactionBuild(t)
+
+	withheld := []struct {
+		key    string
+		reason string
+	}{
+		{"zzDsn", "interpolates a declared values leaf"},
+		{"infraKeyed", "interpolates a declared infra leaf"},
+		{"credsCensus", "iterates an object holding a declared leaf"},
+		{"dollarAnchored", "reads the root through $ inside a rebound body"},
+		{"wrapsDsn", "reads a local already withheld above it"},
+	}
+	// Each control is the same template shape over a path nothing declares.
+	controls := map[string]string{
+		"appLabel":    "demoapp-local",
+		"infraPlain":  "region=eu-west-1",
+		"portsCensus": "admin=9090;http=8080;",
+		"wrapsLabel":  "wrapped[demoapp-local]",
+	}
+
+	for _, slot := range derivedLocalsSlots {
+		body := derivedTraceSlot(t, result, slot)
+
+		for _, w := range withheld {
+			if !strings.Contains(body, w.key+": "+redact.Placeholder()) {
+				t.Errorf("%s must withhold local %q (%s), keeping its key\n--- slot ---\n%s", slot, w.key, w.reason, body)
+			}
+		}
+		for key, want := range controls {
+			if !strings.Contains(body, key+": "+want) {
+				t.Errorf("%s must keep local %q verbatim as %q\n--- slot ---\n%s", slot, key, want, body)
+			}
+		}
+		// Author order survives the substitution. zzDsn is authored first and
+		// sorts last, so a sort creeping in would move it below appLabel.
+		if first, second := strings.Index(body, "zzDsn:"), strings.Index(body, "appLabel:"); first < 0 || second < 0 || first > second {
+			t.Errorf("%s must show the locals block in author order (zzDsn before appLabel); got indexes %d and %d\n--- slot ---\n%s", slot, first, second, body)
+		}
+	}
+
+	for _, slot := range derivedPillarOnlySlots {
+		body := derivedTraceSlot(t, result, slot)
+		for _, plaintext := range []string{derivedSecret, derivedAPIKey, derivedToken} {
+			if strings.Contains(body, plaintext) {
+				t.Errorf("%s leaked %q through a computed value\n--- slot ---\n%s", slot, plaintext, body)
+			}
+		}
+	}
+}
+
+// TestSensitiveRedaction_DerivedArtifactCarriesPlaintext is the boundary's other
+// half for the derived axis: every computed value reaches the deployable in the
+// clear, including the ones the trace withholds.
+func TestSensitiveRedaction_DerivedArtifactCarriesPlaintext(t *testing.T) {
+	t.Parallel()
+	result := derivedRedactionBuild(t)
+
+	body, ok := result.Artifacts[derivedArtifactPath]
+	if !ok {
+		paths := make([]string, 0, len(result.Artifacts))
+		for p := range result.Artifacts {
+			paths = append(paths, p)
+		}
+		sort.Strings(paths)
+		t.Fatalf("expected the merged compose artifact at %q; got %v", derivedArtifactPath, paths)
+	}
+	artifact := string(body)
+
+	for _, want := range []string{derivedSecret, derivedAPIKey, derivedToken, "demoapp-local"} {
+		if !strings.Contains(artifact, want) {
+			t.Errorf("the rendered artifact must carry %q verbatim; a placeholder there would be an undeployable manifest\n--- artifact ---\n%s", want, artifact)
+		}
+	}
+	if strings.Contains(artifact, redact.Placeholder()) {
+		t.Errorf("the rendered artifact must never contain the redaction placeholder\n--- artifact ---\n%s", artifact)
+	}
+}
+
 // TestSensitiveRedaction_KnownCoverageGaps records, as executable fact, the two
 // things the redaction does NOT reach today. Both are pinned rather than left
 // implicit so the limit is discoverable from the test suite instead of from a

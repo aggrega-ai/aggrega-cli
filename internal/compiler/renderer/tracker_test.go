@@ -73,6 +73,53 @@ func TestCollectTemplateFieldAccesses_Range(t *testing.T) {
 	}
 }
 
+func TestCollectTemplateFieldAccesses_RootVariableRecordsTheRootSpelling(t *testing.T) {
+	t.Parallel()
+	// $ names the context root under any rebinding, so $.values.port is a read of
+	// the same key .values.port is and must be recorded under the same spelling —
+	// otherwise a census consumer comparing against ".values.port" misses it.
+	// $own names a value the template declared and reaches no authored key.
+	tmpl := `{{ range .infra.list }}{{ $.values.port }}{{ end }}{{ $own := 1 }}{{ $own }}`
+	paths, err := CollectTemplateFieldAccesses(tmpl)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	want := []string{".infra.list", ".values.port"}
+	if !reflect.DeepEqual(paths, want) {
+		t.Errorf("paths: got %v, want %v", paths, want)
+	}
+}
+
+func TestCollectTemplateFieldAccesses_ChainRecordsBothHalves(t *testing.T) {
+	t.Parallel()
+	// A defensive wrapper reads the receiver's path as well as the trailing field.
+	// Recording only the trailing key would report the receiver's key unread and
+	// would hide it from any check that must withhold it.
+	paths, err := CollectTemplateFieldAccesses(`{{ (default dict .values.tls).ca }}`)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	want := []string{".ca", ".values.tls"}
+	if !reflect.DeepEqual(paths, want) {
+		t.Errorf("paths: got %v, want %v", paths, want)
+	}
+}
+
+func TestUnreadKeys_RootVariableCountsAsRead(t *testing.T) {
+	t.Parallel()
+	// The census and the read-set share one walk, so a key read only through the
+	// $-anchored form is reported read rather than unused.
+	refs, err := CollectTemplateFieldAccesses(`{{ range .infra.list }}{{ $.values.image }}{{ end }}`)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	data := mkData("image", "myapp:v1", "port", 8080)
+	unread := UnreadKeys(refs, ".values", data)
+	if !reflect.DeepEqual(unread, []string{"port"}) {
+		t.Errorf("only the genuinely unread key should be reported; got %v", unread)
+	}
+}
+
 func TestCollectTemplateFieldAccesses_EmptyTemplate(t *testing.T) {
 	t.Parallel()
 	paths, err := CollectTemplateFieldAccesses("")
