@@ -88,9 +88,24 @@ var ErrProviderBindingUnsatisfied = errors.New("plugins.providers entry names a 
 // chooses a recipe by spec.implements, so an unmapped instance halts regardless
 // of how many recipes implement its type. The diagnostic names the implementing
 // recipes as pin candidates: implements informs the choice, the author makes it,
-// and the Manifest mapping records it. Also fires when a mapping names a recipe
-// absent from the catalog (a dangling mapping).
+// and the Manifest mapping records it. Also fires when a mapping value at an
+// accepted reference shape names a recipe absent from the catalog (a dangling
+// mapping). A mapping value whose shape a reference cannot express is
+// ErrMalformedRecipeReference instead, so the absent-from-the-catalog claim is
+// only made about a reference that could have resolved.
 var ErrNoRecipeResolved = errors.New("no recipe resolved for component/feature instance: add an explicit Manifest mapping for its type")
+
+// ErrMalformedRecipeReference fires when a Manifest mapping value carries more
+// slash-separated segments than a Recipe / FeatureRecipe reference accepts. The
+// verdict comes from the reference string alone, so the diagnostic names the
+// shape the author typed and the shapes a reference accepts, instead of
+// reporting the entity as absent: the recipe may be present in the catalog and
+// correctly named, and only unreachable through the shape written. That is why
+// it is distinct from ErrNoRecipeResolved, whose remedy — add a Manifest mapping
+// for the type — is a step the author of a mis-shaped mapping has already taken.
+// The accepted shape itself has a single home beside the resolution ladder that
+// enforces it; see recipeReferenceMaxSegments.
+var ErrMalformedRecipeReference = errors.New("malformed recipe reference in a Manifest mapping value")
 
 // RecipeMappingURI composes the bare "name:version" URI form that Manifest
 // mapping values and the closure walker use. A versionless entity keys on its
@@ -264,6 +279,31 @@ func (c *Catalog) featureTypeToFeatureRecipeWithManifest(manifest *types.Manifes
 	}
 }
 
+// The shape a Recipe / FeatureRecipe reference accepts has ONE home: these two
+// declarations, sitting beside the resolution ladder that enforces them. The
+// ladder below reads the ceiling, RecipeByURI's godoc points here instead of
+// restating it, and the shape diagnostic quotes the shape statement verbatim.
+// Keeping it single-sourced is load-bearing rather than tidy: a ladder that
+// grows a rung — a reference position beyond the capability one — widens the
+// accepted shape, and a count or a shape list restated anywhere else would go
+// quietly false, because no gate reads prose. Whoever adds the rung edits these
+// two lines and every reader follows.
+const (
+	recipeReferenceMaxSegments = 2
+
+	acceptedRecipeReferenceShapes = `"name", "name:version", "capability/name" or "capability/name:version"`
+)
+
+// recipeReferenceSegments counts the slash-separated segments in a Recipe /
+// FeatureRecipe reference and reports whether that count exceeds what the
+// resolution ladder accepts. It reads the reference string only — no catalog
+// lookup — which is what lets a mis-shaped reference be reported as a shape
+// fault rather than as an entity the catalog does not hold.
+func recipeReferenceSegments(uri string) (int, bool) {
+	n := strings.Count(uri, "/") + 1
+	return n, n > recipeReferenceMaxSegments
+}
+
 // RecipeByURI resolves a Manifest mapping value (a Recipe URI) to its catalog
 // Recipe. The catalog is keyed by capability-scoped identity
 // ("capability/name:version"), and the URI may name the recipe at any of
@@ -281,9 +321,10 @@ func (c *Catalog) featureTypeToFeatureRecipeWithManifest(manifest *types.Manifes
 //     capability, version-exact first, then version-blind; exactly one
 //     match resolves.
 //
-// A Recipe URI therefore carries at most two segments: strings.Cut splits on
-// the FIRST "/" only, so any third segment stays inside the name candidate
-// and matches no Metadata.Name.
+// A Recipe URI therefore carries at most recipeReferenceMaxSegments segments,
+// whose declaration above is the single home for the accepted shape: strings.Cut
+// splits on the FIRST "/" only, so a segment past the ceiling stays inside the
+// name candidate and matches no Metadata.Name.
 //
 // Any level that finds more than one candidate is a miss, never a silent
 // pick — ambiguity surfaces as a loud resolution halt upstream, on the
@@ -753,6 +794,14 @@ func (c *Catalog) resolveComponentRecipeForVerify(manifest *types.Manifest, inst
 	}
 	if ok {
 		if _, found := c.RecipeByURI(uri); !found {
+			// A reference the shape cannot express is reported as a shape fault:
+			// the recipe it names may well be in the catalog, so calling it
+			// absent sends the author looking for the wrong thing. The check
+			// runs only after the lookup misses, so it never changes which
+			// references resolve.
+			if n, tooMany := recipeReferenceSegments(uri); tooMany {
+				return fmt.Errorf("%w: component %q (type %q): the Manifest maps it to %q, which carries %d slash-separated segments; a recipe reference accepts %s; correct the mapping value in the Manifest", ErrMalformedRecipeReference, instanceName, componentType, uri, n, acceptedRecipeReferenceShapes)
+			}
 			return fmt.Errorf("%w: component %q (type %q): the Manifest maps it to recipe %q, which is not in the catalog", ErrNoRecipeResolved, instanceName, componentType, uri)
 		}
 		return nil
@@ -772,6 +821,9 @@ func (c *Catalog) resolveFeatureRecipeForVerify(manifest *types.Manifest, instan
 	}
 	if ok {
 		if _, found := c.FeatureRecipeByURI(uri); !found {
+			if n, tooMany := recipeReferenceSegments(uri); tooMany {
+				return fmt.Errorf("%w: feature %q (type %q): the Manifest maps it to %q, which carries %d slash-separated segments; a feature recipe reference accepts %s; correct the mapping value in the Manifest", ErrMalformedRecipeReference, instanceName, featureType, uri, n, acceptedRecipeReferenceShapes)
+			}
 			return fmt.Errorf("%w: feature %q (type %q): the Manifest maps it to feature recipe %q, which is not in the catalog", ErrNoRecipeResolved, instanceName, featureType, uri)
 		}
 		return nil

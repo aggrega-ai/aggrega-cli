@@ -686,6 +686,98 @@ func TestVerifyRecipeResolution_HaltsLoudly(t *testing.T) {
 	}
 }
 
+// TestVerifyRecipeResolution_ShapeFaultVersusAbsentEntity separates the two
+// mapping failures the pre-render resolution-completeness pass can report. A
+// mapping value carrying more segments than a recipe reference accepts is a
+// SHAPE fault: the recipe it names is in the catalog, so the diagnostic must
+// name the accepted and the typed shape and must NOT claim the entity is
+// missing. A mapping value at an accepted shape that names nothing in the
+// catalog stays the missing-entity halt. Both halves are asserted together
+// because either alone would pass while the discrimination was broken — a shape
+// diagnostic that also fired for a genuinely absent entity would be a
+// regression. Component and feature paths both, since each has its own branch.
+func TestVerifyRecipeResolution_ShapeFaultVersusAbsentEntity(t *testing.T) {
+	t.Parallel()
+	const compType = "app/db"
+	const featType = "sec/db-cred"
+	dir := t.TempDir()
+	writeCatalogEntity(t, dir, "recipe/present.yaml", recipeYAML("present", compType))
+	writeCatalogEntity(t, dir, "feature-recipe/cred.yaml", featureRecipeYAML("cred", featType))
+	c, err := LoadAll("", dir)
+	if err != nil {
+		t.Fatalf("catalog load: %v", err)
+	}
+
+	graph := &types.IRGraph{}
+	graph.Spec.Nodes.Set("db", types.IRNode{Component: compType})
+	feats := types.OrderedMap[types.IRFeatureEntry]{}
+	feats.Set("db-cred", types.IRFeatureEntry{Type: featType})
+	graph.Spec.FeatureValuesMapping.Set("db", feats)
+
+	manifestFor := func(compURI, featURI string) *types.Manifest {
+		comp := &types.MappingTier{}
+		comp.Type.Set(compType, compURI)
+		feat := &types.MappingTier{}
+		feat.Type.Set(featType, featURI)
+		return &types.Manifest{Spec: types.ManifestSpec{Mappings: types.ManifestMappings{
+			Components: comp,
+			Features:   feat,
+		}}}
+	}
+
+	// Fiction-killer: at an accepted shape both references resolve, so the two
+	// failures below are caused by the mapping value and nothing else.
+	if err := c.VerifyRecipeResolution(manifestFor("eval/present:1.0.0", "eval/cred:1.0.0"), graph); err != nil {
+		t.Fatalf("capability-qualified references should resolve cleanly; got %v", err)
+	}
+
+	// Shape fault: one segment past the ceiling, naming a recipe that IS present.
+	shapeErr := c.VerifyRecipeResolution(manifestFor("core/eval/present:1.0.0", "core/eval/cred:1.0.0"), graph)
+	if shapeErr == nil {
+		t.Fatalf("a reference past the segment ceiling must halt")
+	}
+	if !errors.Is(shapeErr, ErrMalformedRecipeReference) {
+		t.Errorf("expected ErrMalformedRecipeReference in chain; got %v", shapeErr)
+	}
+	if errors.Is(shapeErr, ErrNoRecipeResolved) {
+		t.Errorf("a shape fault must not report as no-recipe-resolved; got %v", shapeErr)
+	}
+	if strings.Contains(shapeErr.Error(), "not in the catalog") {
+		t.Errorf("a shape fault must not claim the entity is absent; got %v", shapeErr)
+	}
+	for _, want := range []string{
+		`"core/eval/present:1.0.0"`,   // the shape the author typed
+		"3 slash-separated segments",  // and its segment count
+		acceptedRecipeReferenceShapes, // the shapes a reference accepts
+		"correct the mapping value in the Manifest",
+		`"core/eval/cred:1.0.0"`, // the feature twin fires too
+	} {
+		if !strings.Contains(shapeErr.Error(), want) {
+			t.Errorf("shape diagnostic missing %q; got %v", want, shapeErr)
+		}
+	}
+
+	// Genuinely absent: accepted shape, nothing in the catalog by that name.
+	absentErr := c.VerifyRecipeResolution(manifestFor("no-such-recipe:1.0.0", "no-such-feature-recipe:1.0.0"), graph)
+	if absentErr == nil {
+		t.Fatalf("a mapping to an absent recipe must halt")
+	}
+	if !errors.Is(absentErr, ErrNoRecipeResolved) {
+		t.Errorf("expected ErrNoRecipeResolved in chain; got %v", absentErr)
+	}
+	if errors.Is(absentErr, ErrMalformedRecipeReference) {
+		t.Errorf("an absent entity must not report as a shape fault; got %v", absentErr)
+	}
+	for _, want := range []string{
+		`recipe "no-such-recipe:1.0.0", which is not in the catalog`,
+		`feature recipe "no-such-feature-recipe:1.0.0", which is not in the catalog`,
+	} {
+		if !strings.Contains(absentErr.Error(), want) {
+			t.Errorf("missing-entity diagnostic changed; expected %q in %v", want, absentErr)
+		}
+	}
+}
+
 // TestCatalogImmunity_UnmappedSingleImplementerHalts pins the de-fallback
 // permanently: an instance with NO Manifest mapping halts even when EXACTLY ONE
 // recipe implements its type. Under the removed implements-search fallback the
