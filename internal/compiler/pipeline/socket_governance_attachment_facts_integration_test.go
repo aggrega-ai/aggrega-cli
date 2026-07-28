@@ -23,10 +23,11 @@ import (
 )
 
 // These tests prove the governance socket carries the facts a policy needs to
-// judge an attachment ITSELF: the attachment's verbatim catalog labels, whether
-// it fills a declared slot, and its sensitivity marking. The proof is a real
-// guest run through the real socket, because a payload dump shows only that
-// fields exist — it cannot show that a policy can be written against them.
+// judge an attachment ITSELF: the attachment's verbatim catalog labels, its
+// verbatim catalog annotations, whether it fills a declared slot, and its
+// sensitivity marking. The proof is a real guest run through the real socket,
+// because a payload dump shows only that fields exist — it cannot show that a
+// policy can be written against them.
 //
 // Each deny is paired with a pass over a control fixture that moves exactly one
 // variable, so a halt is attributable. A policy that rejected everything would
@@ -43,6 +44,13 @@ const (
 	// invention. The compiler has no knowledge of the key, so a verdict that
 	// quotes its value could only have read it off the wire.
 	governanceFactsAuthorLabel = "governance.example/rotation"
+
+	// governanceFactsAuthorAnnotation is the annotations-side counterpart, and
+	// is an annotation of the fixture catalog author's own invention for the
+	// same reason: a rule keyed on a reserved-namespace key would keep firing
+	// under a namespace filter, so only a key the host has no reason to know
+	// can show the annotations arrived verbatim.
+	governanceFactsAuthorAnnotation = "governance.example/review-ticket"
 )
 
 // loadGovernanceWire loads one variant of the governance-wire fixture — "both",
@@ -242,6 +250,65 @@ func TestGovernanceSecretKindPassesWithoutTheFamilyLabelE2E(t *testing.T) {
 	}
 }
 
+// TestGovernanceCatalogAnnotationDenyE2E proves a policy can judge an attached
+// FEATURE by its catalog annotations, which is the half of the catalog metadata
+// the wire previously carried for a Component and not for a Feature. The guest
+// reads an annotation in a namespace the compiler has no knowledge of, finds the
+// attachment whose review is outstanding, and denies. The halt names the
+// attachment and the annotation key and value it judged by, so the verdict could
+// not have been emitted without reading them.
+//
+// The other attachment in the same build declares the SAME annotation key with a
+// completed review, so a rule firing on the key's presence rather than on its
+// value would name it too. Its absence from the message is asserted.
+func TestGovernanceCatalogAnnotationDenyE2E(t *testing.T) {
+	ctx := context.Background()
+	inputs, buildLookup, recipeLookup, subAgg := governanceFactsInputs(t, "both", "deny-unreviewed-attachment", analyzer.SeverityDeny)
+
+	_, err := pipeline.RunPipeline(ctx, inputs, buildLookup, recipeLookup, subAgg, pipeline.Options{})
+	if err == nil {
+		t.Fatalf("catalog-annotation deny: expected a halt, got nil")
+	}
+	if !errors.Is(err, analyzer.ErrPolicyViolation) {
+		t.Fatalf("catalog-annotation deny not errors.Is ErrPolicyViolation: %v", err)
+	}
+	msg := err.Error()
+	t.Logf("catalog-annotation verdict halt:\n%s", msg)
+	if !strings.Contains(msg, `attachment "credentials"`) {
+		t.Errorf("catalog-annotation deny does not name the attachment whose review is outstanding:\n%v", msg)
+	}
+	if strings.Contains(msg, `attachment "metrics"`) {
+		t.Errorf("catalog-annotation deny fired on the attachment whose review is complete, so it is keyed on the annotation's presence rather than its value:\n%v", msg)
+	}
+	if !strings.Contains(msg, governanceFactsAuthorAnnotation+"=none") {
+		t.Errorf("catalog-annotation deny did not report the author-declared annotation %q it judged, so the annotations did not reach the guest verbatim:\n%v",
+			governanceFactsAuthorAnnotation, msg)
+	}
+	// The labels-driven half of the same wire is unaffected: every verdict this
+	// suite asserts on also echoes an author-declared LABEL, so a change that
+	// broke the labels carry would show here as well as in its own tests.
+	if !strings.Contains(msg, governanceFactsAuthorLabel+"=quarterly") {
+		t.Errorf("catalog-annotation deny did not echo the author-declared label %q:\n%v", governanceFactsAuthorLabel, msg)
+	}
+}
+
+// TestGovernanceCatalogAnnotationPassesWhenReviewedE2E is the paired control: the
+// same rule over the fixture whose single attachment declares the same annotation
+// key with a completed review. The build completes and renders, so the rule is
+// reading the annotation's value rather than objecting to attachment as such.
+func TestGovernanceCatalogAnnotationPassesWhenReviewedE2E(t *testing.T) {
+	ctx := context.Background()
+	inputs, buildLookup, recipeLookup, subAgg := governanceFactsInputs(t, "only-free", "deny-unreviewed-attachment", analyzer.SeverityDeny)
+
+	res, err := pipeline.RunPipeline(ctx, inputs, buildLookup, recipeLookup, subAgg, pipeline.Options{})
+	if err != nil {
+		t.Fatalf("catalog-annotation control: unexpected halt: %v", err)
+	}
+	if len(res.Artifacts) == 0 {
+		t.Fatalf("catalog-annotation control produced no artifacts")
+	}
+}
+
 // TestGovernanceAttachmentFactsObservedAtTheGuest dumps, from inside the guest,
 // every fact each attachment carried on the wire. It is the payload evidence
 // read at the point of arrival rather than at the point of assembly: an audit
@@ -268,6 +335,15 @@ func TestGovernanceAttachmentFactsObservedAtTheGuest(t *testing.T) {
 		`"feature.aggrega.ai/kind":"secret"`,
 		`"governance.example/rotation":"quarterly"`,
 		`"governance.example/rotation":"never"`,
+		// The guest reports the annotations as the raw wire bytes it received, so
+		// these two assertions pin AUTHOR order end to end rather than merely
+		// arrival: the credential Feature declares review-ticket first and
+		// data-residency second, which is the reverse of sorted order, and the
+		// assertion is on the whole object rather than on each key separately.
+		// A guest that decoded the set into a Go map could not report an order
+		// at all, and a host that sorted the set would produce the other one.
+		`"catalog_annotations":{"governance.example/review-ticket":"none","governance.example/data-residency":"eu-west"}`,
+		`"catalog_annotations":{"governance.example/review-ticket":"OPS-4417"}`,
 		`"sensitive":true`,
 		`"sensitive_inject":{"env":{"DATABASE_PASSWORD":"password"}}`,
 	} {

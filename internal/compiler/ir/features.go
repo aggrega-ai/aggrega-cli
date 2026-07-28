@@ -792,8 +792,9 @@ func deriveTopLevelOrigin(values, infra types.OrderedMap[types.FieldProvenance])
 
 // finalizeAttachmentFacts walks every IRFeatureEntry in the per-node result and
 // completes the facts about the attachment that are properties of declarations
-// rather than of the payload: the attached Feature's catalog labels, which
-// declared slot the attachment fills, and the two derived sensitivity facts.
+// rather than of the payload: the attached Feature's catalog labels and
+// annotations, which declared slot the attachment fills, and the two derived
+// sensitivity facts.
 //
 // It runs after the whole five-tier cascade has folded, for the same reason the
 // attachment-conformance gate does: every one of these facts is a property of
@@ -805,11 +806,13 @@ func deriveTopLevelOrigin(values, infra types.OrderedMap[types.FieldProvenance])
 //
 // The facts:
 //
-//   - Labels — the attached Feature's catalog labels, copied verbatim in the
-//     entity's own declaration order. Nothing here filters, normalises or
-//     rewrites them: a transformed copy would be a second, compiler-shaped
-//     version of labels a catalog author wrote, and a consumer reasoning about
-//     that version would be reasoning about something nobody declared.
+//   - Labels and CatalogAnnotations — the attached Feature's catalog labels and
+//     its catalog annotations, each copied verbatim in the entity's own
+//     declaration order. Nothing here filters, normalises or rewrites either: a
+//     transformed copy would be a second, compiler-shaped version of metadata a
+//     catalog author wrote, and a consumer reasoning about that version would be
+//     reasoning about something nobody declared. Both come from one resolution
+//     of the entity, so the two cannot describe different Features.
 //   - Binding — the declared slot the attachment fills, or
 //     types.AttachmentBindingFree when it fills none. Left empty when the host
 //     Component resolves to no catalog entity, because "fills no declared
@@ -867,7 +870,7 @@ func finalizeAttachmentFacts(result *featureResult, topoNode *topology.TopologyN
 		declared := declaredFor(entry.Type)
 		slot, slotDeclared := slots.Get(name)
 
-		entry.Labels = featureLabels(catalogLookup, entry.Type)
+		entry.Labels, entry.CatalogAnnotations = featureCatalogLabelsAndAnnotations(catalogLookup, entry.Type)
 		if slotsResolved {
 			entry.Binding = types.AttachmentBindingFree
 			if slotDeclared {
@@ -888,29 +891,36 @@ func finalizeAttachmentFacts(result *featureResult, topoNode *topology.TopologyN
 	}
 }
 
-// featureLabels copies the catalog labels of one attached Feature into a fresh
-// OrderedMap, preserving the entity's own declaration order.
+// featureCatalogLabelsAndAnnotations copies the catalog labels and the catalog
+// annotations of one attached Feature into fresh OrderedMaps, each preserving
+// the entity's own declaration order.
+//
+// The two travel together because they come from ONE resolution of ONE entity.
+// Resolving the Feature twice — once per map — would be two lookups of one
+// entity in one build, and the second could in principle answer differently
+// from the first; returning both from one resolution makes "these two maps
+// describe the same Feature" structural rather than incidental.
 //
 // The copy is what keeps the catalog entity immutable from the IR side: an
 // aliased map would let a later write to the IR reach back into the loaded
-// entity. Nothing is added, dropped or rewritten in the copy — the verbatim
-// contract IRFeatureEntry.Labels states is this loop and nothing else.
+// entity. Nothing is added, dropped or rewritten in either copy — the verbatim
+// contract IRFeatureEntry.Labels and IRFeatureEntry.CatalogAnnotations state is
+// these two copies and nothing else. In particular there is no filter, no
+// prefix rule and no normalisation: a key in an author's own namespace arrives
+// exactly as authored, which is the whole point of carrying the metadata rather
+// than a judgement about it.
 //
-// Returns an empty map when the type resolves to no catalog entity, which is
-// the same answer an entity declaring no labels gives.
-func featureLabels(catalogLookup resolver.CatalogLookup, featType string) types.OrderedMap[string] {
-	out := types.OrderedMap[string]{}
+// Returns empty maps when the type resolves to no catalog entity, which is the
+// same answer an entity declaring neither gives.
+func featureCatalogLabelsAndAnnotations(catalogLookup resolver.CatalogLookup, featType string) (labels, annotations types.OrderedMap[string]) {
 	if catalogLookup.Feature == nil || featType == "" {
-		return out
+		return labels, annotations
 	}
 	feat, found := catalogLookup.Feature(featType)
 	if !found {
-		return out
+		return labels, annotations
 	}
-	for k, v := range feat.Metadata.Labels.All() {
-		out.Set(k, v)
-	}
-	return out
+	return copyOrderedStringMap(feat.Metadata.Labels), copyOrderedStringMap(feat.Metadata.Annotations)
 }
 
 // deriveInjectSensitivity selects the delivery keys of one merged attachment's

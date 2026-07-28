@@ -10,6 +10,12 @@ metadata:
     # family value is not available to declare here.
     governance.example/tier: observability
     governance.example/rotation: never
+  annotations:
+    # Carries the same annotation key the credential Feature declares, with a
+    # COMPLETED review rather than an outstanding one, so a rule keyed on the
+    # outstanding value has an attachment in the same build that it must not
+    # fire on. A rule firing on the key's mere presence would fail that.
+    governance.example/review-ticket: OPS-4417
 spec:
   schema:
     values:

@@ -34,6 +34,8 @@ import (
 //	core/nested-values  values.auth.basic.password sensitive (nested)
 //	core/plain          values.level, nothing declared sensitive
 //	core/creds          provides.dsn sensitive · provides.name, provides.key not
+//	core/labelled       catalog labels only, non-alphabetical
+//	core/annotated      catalog labels AND annotations, each non-alphabetical
 func sensitivityCatalog(t *testing.T) resolver.CatalogLookup {
 	t.Helper()
 	slots := types.OrderedMap[types.AttachmentSlot]{}
@@ -89,11 +91,31 @@ func sensitivityCatalog(t *testing.T) resolver.CatalogLookup {
 			case "core/labelled":
 				// Labels declared in deliberately non-alphabetical order, so a
 				// carry that sorted them would be visible rather than harmless.
+				// Declares NO annotations, which is what makes it the control
+				// for the annotations carry: labels and annotations have the
+				// same shape, so only an entity carrying one and not the other
+				// distinguishes a copy of the right map from a copy of either.
 				return types.Feature{
 					Metadata: types.FeatureMetadata{
 						Name:    "core/labelled",
 						Version: "1.0.0",
 						Labels:  labelMap("zeta.example/second", "2", "alpha.example/first", "1"),
+					},
+					Spec: types.FeatureSpec{Schema: schemaNode(t, `values:
+  host: { type: string }
+`)},
+				}, true
+			case "core/annotated":
+				// Both metadata maps declared, each in deliberately
+				// non-alphabetical order and with disjoint keys and values, so a
+				// carry that sorted either, or that filled one from the other,
+				// is visible rather than harmless.
+				return types.Feature{
+					Metadata: types.FeatureMetadata{
+						Name:        "core/annotated",
+						Version:     "1.0.0",
+						Labels:      labelMap("kappa.example/tier", "gold", "beta.example/region", "eu"),
+						Annotations: labelMap("omega.example/reviewed", "no", "delta.example/owner", "platform-team"),
 					},
 					Spec: types.FeatureSpec{Schema: schemaNode(t, `values:
   host: { type: string }

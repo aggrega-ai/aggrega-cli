@@ -244,11 +244,12 @@ type IREdge struct {
 // by-value one carries the material itself. The compiler resolves neither —
 // it carries whichever the author wrote, verbatim.
 //
-// Labels and Binding are what let a consumer judge an attachment for itself
-// rather than reading a judgement the compiler made. Labels are the attached
-// Feature's own catalog labels, carried verbatim; Binding says whether the
-// attachment fills a declared slot. Neither is interpreted here: the compiler
-// evaluates no label and branches on no binding value.
+// Labels, CatalogAnnotations and Binding are what let a consumer judge an
+// attachment for itself rather than reading a judgement the compiler made.
+// Labels and CatalogAnnotations are the attached Feature's own catalog labels
+// and annotations, both carried verbatim; Binding says whether the attachment
+// fills a declared slot. None of the three is interpreted here: the compiler
+// evaluates no label, reads no annotation and branches on no binding value.
 //
 // Origin distinguishes Feature attachments authored in an explicit
 // features: block on the Aggregate, Subsystem, Boundary, or
@@ -301,6 +302,32 @@ type IRFeatureEntry struct {
 	// resolves to no catalog entity — the same condition that leaves
 	// ResolvedVersion empty.
 	Labels OrderedMap[string] `json:"labels,omitempty,omitzero"`
+	// CatalogAnnotations carries the attached Feature's catalog annotations
+	// verbatim, in the order its catalog entity declares them. Verbatim is the
+	// contract, on the same terms as Labels: the annotations are neither
+	// filtered, normalised nor prefix-stripped on the way here, so a consumer
+	// reads exactly what the catalog author wrote rather than a compiler-shaped
+	// view of it. The compiler reads none of them.
+	//
+	// The subject is the attached Feature entity's own metadata.annotations.
+	// That is a different subject from AnnotationKey and AnnotationSource
+	// below, which name and locate the annotation that caused this attachment
+	// to exist at all: those two describe how the attachment came to be, this
+	// one describes the entity the attachment names. The two are independent —
+	// an attachment written in a features: block carries no AnnotationKey and
+	// still carries every annotation its Feature declares, and an
+	// annotation-expanded attachment carries both, about different
+	// declarations.
+	//
+	// The name deliberately matches IRNode.CatalogAnnotations, which carries the
+	// same concept — a catalog entity's own metadata.annotations, verbatim — for
+	// the node's Component. One concept keeps one name and is disambiguated by
+	// which entry it sits on, rather than gaining a second spelling per scope.
+	//
+	// Empty when the attached Feature declares no annotations, and when its
+	// type resolves to no catalog entity — the same condition that leaves
+	// ResolvedVersion empty.
+	CatalogAnnotations OrderedMap[string] `json:"catalog_annotations,omitempty,omitzero"`
 	// Binding names the host Component attachment slot this attachment fills,
 	// or AttachmentBindingFree when it fills none. The slot pairs with the
 	// attachment by NAME — a deployment fills a slot by attaching a Feature
