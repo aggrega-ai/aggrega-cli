@@ -31,12 +31,12 @@ entities:
         - manifest.spec.mappings.components.type.core/devtool/adminer:1.0.0
     - uri: core/secret-provided
       resolved_version: 1.0.0
-      digest: sha256:b743dad6d1459f17d9b9471b8c6bfb24ed63481379969efb2d65f25ba1b6c3be
+      digest: sha256:eab69f74346cd07da0aac7dc36120a63a19f287c23b313b250a8792588011bd3
       referenced_from:
         - aggregate.spec.subsystems.default.components.db.features.user_password.type
     - uri: core/secret-provided:1.0.0
       resolved_version: 1.0.0
-      digest: sha256:b743dad6d1459f17d9b9471b8c6bfb24ed63481379969efb2d65f25ba1b6c3be
+      digest: sha256:eab69f74346cd07da0aac7dc36120a63a19f287c23b313b250a8792588011bd3
       referenced_from:
         - manifest.spec.mappings.features.type.core/secret-provided:1.0.0
     - uri: core/secret-value
