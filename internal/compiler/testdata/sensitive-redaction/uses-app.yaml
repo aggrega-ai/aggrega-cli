@@ -1,0 +1,32 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: sensitive-redaction-uses-app
+  version: "1.0.0"
+spec:
+  components:
+    app:
+      type: core/uses-consumer
+      values:
+        appName: usesdemo
+      # storeEdge points at a target that declares one of its provides keys
+      # sensitive; plainEdge points at one that declares nothing. Both targets
+      # publish the same two key names, so the display's discrimination has to
+      # come from the edge, not from the key.
+      uses:
+        marked:
+          storeEdge:
+            target: store
+            inject:
+              env:
+                - in: STORE_SECRET
+                  from: zzTargetSecret
+                - in: STORE_HOST
+                  from: aaTargetHost
+        unmarked:
+          plainEdge:
+            target: plain
+    store:
+      type: core/uses-target
+    plain:
+      type: core/uses-plain

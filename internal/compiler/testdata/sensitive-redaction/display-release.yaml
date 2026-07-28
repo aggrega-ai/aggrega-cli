@@ -1,0 +1,15 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: sensitive-redaction-display-release
+  environment: local
+  version: "1.0.0"
+spec:
+  aggregate: ./display-app.yaml
+  manifest: ./display-manifest.yaml
+  boundaries:
+    display:
+      directory: ./dist/display
+      components:
+        shape: {}
+        branch: {}

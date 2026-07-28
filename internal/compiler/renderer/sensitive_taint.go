@@ -59,9 +59,19 @@ func derivedSensitiveKeys(recipe *types.Recipe, declaredValues, declaredInfra ma
 		return redact.Derived{}
 	}
 
+	// The reading consults exactly the three pillars a locals-or-source template
+	// can read a DECLARED leaf through. The cross-node and delivery-key sets are
+	// left empty here on purpose: identifying a computed value from those would
+	// take the same reading with a wider set, and widening it is a separate
+	// decision about a separate display rather than a side effect of this one.
+	// withheld is carried by reference, so each entry the loop marks is visible to
+	// the entries after it — which is what makes withholding transitive in one
+	// pass.
 	withheld := map[string]bool{}
+	readable := redact.Keys{Values: declaredValues, Infra: declaredInfra, Locals: withheld}
+
 	for key, tmplText := range recipe.Spec.Locals.All() {
-		if templateReadsWithheld(tmplText, declaredValues, declaredInfra, withheld) {
+		if templateReadsWithheld(tmplText, readable) {
 			withheld[key] = true
 		}
 	}
@@ -74,7 +84,7 @@ func derivedSensitiveKeys(recipe *types.Recipe, declaredValues, declaredInfra ma
 	// this a read of the same classification rather than a second evaluation.
 	source := map[string]bool{}
 	_, _ = mapRecipeSourceTemplates(recipe.Spec.Source, func(field, tmplText string) (string, error) {
-		if templateReadsWithheld(tmplText, declaredValues, declaredInfra, withheld) {
+		if templateReadsWithheld(tmplText, readable) {
 			source[field] = true
 		}
 		return tmplText, nil
@@ -91,17 +101,19 @@ func derivedSensitiveKeys(recipe *types.Recipe, declaredValues, declaredInfra ma
 }
 
 // templateReadsWithheld reports whether one template's references reach anything
-// withheld. The reference set comes from the over-collecting census walk, which
-// is the direction this question needs: a read hidden inside a rebound range or
-// with body, or inside a chained defensive wrapper, has still happened, and a
-// walk that attributed only root-anchored reads would answer "not withheld" for
-// exactly the shapes that most need the conservative answer.
+// the given set withholds. The reference set comes from the over-collecting census
+// walk, which is the direction this question needs: a read hidden inside a rebound
+// range or with body, or inside a chained defensive wrapper, has still happened,
+// and a walk that attributed only root-anchored reads would answer "not withheld"
+// for exactly the shapes that most need the conservative answer.
 //
-// A template with no actions reads nothing and short-circuits before the parse. A
-// template that fails to parse yields no reference set, and the unresolvable case
-// is withheld.
-func templateReadsWithheld(tmplText string, declaredValues, declaredInfra, withheldLocals map[string]bool) bool {
-	if tmplText == "" || !strings.Contains(tmplText, "{{") {
+// A set that withholds nothing readable short-circuits before the parse, which is
+// what lets a capture mode that empties the set turn this reading off without a
+// second switch: nothing is withheld, so nothing can have been read from it. A
+// template with no actions likewise reads nothing. A template that fails to parse
+// yields no reference set, and the unresolvable case is withheld.
+func templateReadsWithheld(tmplText string, keys redact.Keys) bool {
+	if !keys.AnyWithheld() || tmplText == "" || !strings.Contains(tmplText, "{{") {
 		return false
 	}
 	refs, err := CollectTemplateFieldAccesses(tmplText)
@@ -109,32 +121,186 @@ func templateReadsWithheld(tmplText string, declaredValues, declaredInfra, withh
 		return true
 	}
 	for _, ref := range refs {
-		if referenceReachesWithheld(ref, declaredValues, declaredInfra, withheldLocals) {
+		if referenceReachesWithheld(ref, keys) {
 			return true
 		}
 	}
 	return false
 }
 
-// referenceReachesWithheld decides one reference against the withheld sets. The
+// referenceReachesWithheld decides one reference against the withheld set. The
 // reference is the census spelling — a leading "." then the pillar root then the
-// remaining segments — and only the three pillars a locals-or-source surface can
-// read are consulted; every other root names data no declaration covers.
-func referenceReachesWithheld(ref string, declaredValues, declaredInfra, withheldLocals map[string]bool) bool {
+// remaining segments.
+//
+// Every root the set can name is covered, and that completeness is the point: a
+// reading that covered a subset would answer "not withheld" for a template that
+// reads a withheld datum through one of the uncovered roots, which is the
+// under-withholding direction this walk refuses. A root the set cannot name — the
+// node's identity, its labels, its metadata — carries nothing any declaration
+// governs and reports false.
+func referenceReachesWithheld(ref string, keys redact.Keys) bool {
 	root, rest := splitPillarReference(ref)
 	switch root {
 	case "values":
-		return pathReachesWithheld(rest, declaredValues)
+		return pathReachesWithheld(rest, keys.Values)
 	case "infra":
-		return pathReachesWithheld(rest, declaredInfra)
+		return pathReachesWithheld(rest, keys.Infra)
 	case localsContextRoot:
 		if rest == "" {
 			// A read of the whole pillar reaches every entry in it.
-			return len(withheldLocals) > 0
+			return len(keys.Locals) > 0
 		}
-		return withheldLocals[firstPathSegment(rest)]
+		return keys.Locals[firstPathSegment(rest)]
+	case "source":
+		if rest == "" {
+			// A source declared as a single string is withheld under the
+			// whole-source key, so a bare read reaches it as well as reaching
+			// every field of a structured one.
+			return len(keys.Source) > 0
+		}
+		return keys.Source[firstPathSegment(rest)]
+	case "context":
+		return contextReferenceReachesWithheld(rest, keys)
 	}
 	return false
+}
+
+// contextReferenceReachesWithheld decides a reference below the context root,
+// where the two withheld surfaces are the delivery pipe and the uses edges.
+//
+// Both are two levels deep — a mechanism then a delivery key, an alias then a
+// provides key — so a read that stops short of the leaf reaches every leaf beneath
+// it and withholds on that basis. That is the same ancestor rule the pillar paths
+// use, and it is what makes a dynamic lookup such as `index .context.inject.env $k`
+// conservative rather than invisible.
+func contextReferenceReachesWithheld(rest string, keys redact.Keys) bool {
+	surface, below := splitPillarReference("." + rest)
+	switch surface {
+	case "inject":
+		if below == "" {
+			return anyMarked(keys.Inject)
+		}
+		mechanism, key := splitPillarReference("." + below)
+		if key == "" {
+			return len(keys.Inject[mechanism]) > 0
+		}
+		return keys.Inject[mechanism][firstPathSegment(key)]
+	case "uses":
+		if below == "" {
+			return anyMarked(keys.UsesProvides)
+		}
+		alias, edgeField := splitPillarReference("." + below)
+		marked := keys.UsesProvides[alias]
+		if len(marked) == 0 {
+			return false
+		}
+		if edgeField == "" {
+			// A read of the whole edge reaches its provides bag.
+			return true
+		}
+		field, provideKey := splitPillarReference("." + edgeField)
+		if field != "provides" {
+			// Every other field on the edge — its target, socket, labels, and the
+			// per-connection values and infra authored on the edge itself — is not
+			// what the target's provides declaration governs.
+			return false
+		}
+		if provideKey == "" {
+			return true
+		}
+		return marked[firstPathSegment(provideKey)]
+	}
+	return false
+}
+
+func anyMarked(sets map[string]map[string]bool) bool {
+	for _, set := range sets {
+		if len(set) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+// workloadReadsWithheld reports whether a Recipe's workload template reads
+// anything the node's set names — the question that decides whether a display
+// shows the emitted workload document or a re-render of it with that data
+// substituted.
+//
+// A template reading nothing named produces a document carrying nothing the set
+// governs, so the emitted document is shown as it is and no second evaluation
+// happens. That is what keeps the axis free for a node that declares nothing.
+//
+// The reading is the same static one the locals and source withholding uses, over
+// the same reference census — one reading, one rule, a wider set. The set is wider
+// because a workload template reads surfaces a locals template's withholding never
+// had to cover: the delivery pipe, and a consumed node's published provides.
+//
+// It is deliberately a question about the TEMPLATE and not about the rendered
+// document. Asking the document would mean searching its content for a value,
+// which is the meaning-inference the compiler must not do.
+func workloadReadsWithheld(tmplText string, keys redact.Keys) bool {
+	return templateReadsWithheld(tmplText, keys)
+}
+
+// usesWithheld reads, per uses edge, what the edge TARGET's own Component
+// declares sensitive among the values that edge carries into the consuming node's
+// display.
+//
+// It is a lookup, not a derivation: declaredProvides is the same memoised
+// authored-declaration reader the node's own declarations come from, asked about a
+// different Component type. The target's type is read from the edge, which carries
+// it — the enriched edge a consumer's display shows names the target Component.
+//
+// ONE walk produces both halves, because both read the same declaration set over
+// the same edges. The published half is keyed by ALIAS, so two edges to two
+// different targets resolve independently even when they publish the same key name
+// — which is what keeps the withholding attributable to a declaration instead of to
+// a spelling. The delivered half is keyed by MECHANISM and delivery key, because
+// the delivery pipe is one flat merged map per mechanism and carries no alias; the
+// edge's authored `inject` mapping is read exactly as the delivery pass reads it,
+// the mapping's value verbatim, so the two cannot disagree about which declaration
+// a delivery key resolves against.
+//
+// An edge whose target declares nothing contributes to neither half, so a node
+// consuming only undeclared targets produces two nil maps and every applier is a
+// no-op. An edge whose provides come from a boundary-scope FeatureRecipe rather
+// than from the target Component's own Recipe resolves against no Component
+// declaration and is likewise not covered.
+func usesWithheld(
+	uses types.OrderedMap[types.EnrichedEdge],
+	declaredProvides func(componentType string) map[string]bool,
+) redact.CrossNode {
+	var out redact.CrossNode
+	if uses.Len() == 0 || declaredProvides == nil {
+		return out
+	}
+	for alias, edge := range uses.All() {
+		declared := declaredProvides(edge.Component)
+		if len(declared) == 0 {
+			continue
+		}
+		if out.Provides == nil {
+			out.Provides = map[string]map[string]bool{}
+		}
+		out.Provides[alias] = declared
+
+		for mechanism, deliveries := range edge.Inject.All() {
+			for deliveryKey, providesKey := range deliveries.All() {
+				if !declared[providesKey] {
+					continue
+				}
+				if out.Inject == nil {
+					out.Inject = map[string]map[string]bool{}
+				}
+				if out.Inject[mechanism] == nil {
+					out.Inject[mechanism] = map[string]bool{}
+				}
+				out.Inject[mechanism][deliveryKey] = true
+			}
+		}
+	}
+	return out
 }
 
 // splitPillarReference splits a census reference into its pillar root and the

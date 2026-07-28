@@ -164,6 +164,30 @@ func TestWriter_Stats_NoopReturnsZero(t *testing.T) {
 	}
 }
 
+// TestCaptures_DiscriminatesTheNoOpWriter pins the predicate a caller gates
+// capture-only work on. It matters because the work behind it is no longer free —
+// building the display of a projection that is not addressable by key means
+// evaluating a template a second time — and because the obvious test, "do I hold a
+// Writer", answers true for a build with capture switched off.
+//
+// The three real cases are asserted together: no writer, the writer a build with
+// capture off holds, and each writer that actually records.
+func TestCaptures_DiscriminatesTheNoOpWriter(t *testing.T) {
+	t.Parallel()
+	if Captures(nil) {
+		t.Error("no writer captures nothing")
+	}
+	if Captures(New("", Mode{})) {
+		t.Error("the writer a build with capture off holds records nothing, so capture-only work is waste")
+	}
+	if !Captures(New(t.TempDir(), Mode{})) {
+		t.Error("the filesystem writer records")
+	}
+	if !Captures(NewMemory(Mode{})) {
+		t.Error("the in-memory writer records")
+	}
+}
+
 // TestWriter_Write_AfterCloseReturnsNil pins the closed-writer branch of
 // Write. A Write after Close drops silently rather than blocking on the
 // closed channel — the contract is that producers don't need to

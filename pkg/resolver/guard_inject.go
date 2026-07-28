@@ -323,17 +323,6 @@ func invalidInjectKeyMessage(key, targetType string, declared map[string]bool) s
 	return fmt.Sprintf("inject from-key %q is not declared in component type %q provides; declared keys are: %v", key, targetType, keys)
 }
 
-// ComponentProvidesKeys returns the set of declared `provides` keys for a
-// catalog Component — the output contract a realizing Recipe must publish. The
-// keys are the property names of the `provides` pillar in the Component's
-// spec.schema, compiled to JSON Schema 2020-12 via pkg/compactform (the same
-// compile path the provider-base and pillar validators use). A Component with
-// no spec.schema, no `provides` pillar, or a `provides` pillar that compiles to
-// no properties yields an empty set. Mirrors FeatureProvidesKeys; both delegate
-// to providesKeysFromSchema.
-//
-// The schema is read as-authored on the resolved Component; cross-document
-// $ref expansion uses the supplied SchemaLibraries map when present.
 // providesKeysFromEffective extracts the declared provides-key set from an
 // already-composed effective schema (the whole-entity compactform schema), by
 // navigating properties.provides.properties. This is the effective-schema
@@ -353,6 +342,17 @@ func providesKeysFromEffective(eff compactform.Schema) map[string]bool {
 	return keys
 }
 
+// ComponentProvidesKeys returns the set of declared `provides` keys for a
+// catalog Component — the output contract a realizing Recipe must publish. The
+// keys are the property names of the `provides` pillar in the Component's
+// spec.schema, compiled to JSON Schema 2020-12 via pkg/compactform (the same
+// compile path the provider-base and pillar validators use). A Component with
+// no spec.schema, no `provides` pillar, or a `provides` pillar that compiles to
+// no properties yields an empty set. Mirrors FeatureProvidesKeys; both delegate
+// to providesKeysFromSchema.
+//
+// The schema is read as-authored on the resolved Component; cross-document
+// $ref expansion uses the supplied SchemaLibraries map when present.
 func ComponentProvidesKeys(comp types.Component, libraries map[string]types.SchemaLibrary) map[string]bool {
 	return providesKeysFromSchema(comp.Spec.Schema, libraries)
 }

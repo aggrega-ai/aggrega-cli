@@ -1,0 +1,30 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: uses-target-recipe
+  version: "1.0.0"
+  description: >
+    Publishes the two provides keys core/uses-target declares, one of them
+    declared sensitive. The literal is the datum a consumer's display must
+    withhold.
+spec:
+  capability: compose
+  implements: core/uses-target
+  # Author order matches the Component's declaration order: the declared-
+  # sensitive key first, its undeclared sibling second.
+  provides:
+    zzTargetSecret: "wobble-store-plaintext"
+    aaTargetHost: "{{ .context.instance_id }}"
+  workload: |
+    apiVersion: aggrega.ai/v1alpha1
+    kind: Workload
+    containers:
+      main:
+        image: store:1.0
+        ports:
+          p: 5432
+    services:
+      store:
+        type: ClusterIP
+        ports:
+          p: 5432

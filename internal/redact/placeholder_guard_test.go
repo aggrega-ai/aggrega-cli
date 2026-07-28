@@ -24,6 +24,17 @@ const primitiveFile = "internal/redact/redact.go"
 // honest.
 func composedPlaceholder() string { return "<" + "redacted" + ">" }
 
+// composedWithheldLead rebuilds the withholding statement's opening from
+// fragments, for the same reason and with the same seam. The lead is enough to
+// find a second spelling: a surface writing its own statement has to open it.
+func composedWithheldLead() string { return "<" + "withheld: " }
+
+// composedSubstitutedLead rebuilds the re-render announcement's opening the same
+// way. This one matters most of the three: it is the only text that tells a reader
+// the document they are looking at is not the one the build emitted, and a second
+// spelling would let one surface announce a weaker guarantee than another.
+func composedSubstitutedLead() string { return "<" + "re-rendered: " }
+
 // TestPlaceholderLiteralHasOneHome is the chokepoint guard for the redaction
 // replacement. It walks every Go file in the module and requires the
 // placeholder literal to appear in exactly one file, exactly once.
@@ -39,6 +50,46 @@ func composedPlaceholder() string { return "<" + "redacted" + ">" }
 // the rule.
 func TestPlaceholderLiteralHasOneHome(t *testing.T) {
 	t.Parallel()
+	assertLiteralHasOneHome(t, composedPlaceholder(),
+		"the placeholder literal", "redact.Placeholder()")
+}
+
+// TestWithheldProjectionLiteralHasOneHome is the same chokepoint guard for the
+// whole-projection withholding statement, and it exists for a sharper reason than
+// consistency. A reader of a shortened display has exactly one question — was this
+// withheld, or is there simply nothing here — and a second spelling of the
+// statement makes that question unanswerable, because two texts that look alike
+// cannot be told apart from one that means something else.
+func TestWithheldProjectionLiteralHasOneHome(t *testing.T) {
+	t.Parallel()
+	assertLiteralHasOneHome(t, composedWithheldLead(),
+		"the withholding statement", "redact.WithheldProjection()")
+}
+
+// TestSubstitutedProjectionLiteralHasOneHome is the same chokepoint guard for the
+// re-render announcement, and it carries the sharpest version of the reason. A
+// display that shows a re-rendered document without saying so tells the reader
+// something false; two spellings of the saying-so would let one surface's version
+// drift into promising more than the substitution delivers.
+func TestSubstitutedProjectionLiteralHasOneHome(t *testing.T) {
+	t.Parallel()
+	assertLiteralHasOneHome(t, composedSubstitutedLead(),
+		"the re-render announcement", "redact.SubstitutedProjection()")
+}
+
+// assertLiteralHasOneHome is the ONE census walk both guards run. A second copy of
+// the walk would be the very drift the guards exist to catch, one level up.
+//
+// The check is exact on both axes. An extra file means a surface spelled its own
+// copy instead of calling the accessor — the drift this package exists to prevent.
+// A missing or renamed primitive file means the single home moved without the
+// guard following it, which is equally a failure: a guard that silently stops
+// guarding is worse than no guard.
+//
+// Scope is Go source. Golden files and testdata legitimately CONTAIN the rendered
+// text as expected output; they are not a second spelling of the rule.
+func assertLiteralHasOneHome(t *testing.T, needle, subject, accessor string) {
+	t.Helper()
 
 	root, err := filepath.Abs(filepath.Join("..", ".."))
 	if err != nil {
@@ -48,7 +99,6 @@ func TestPlaceholderLiteralHasOneHome(t *testing.T) {
 		t.Fatalf("module root %q does not carry a go.mod; the guard is looking in the wrong place: %v", root, err)
 	}
 
-	needle := composedPlaceholder()
 	counts := map[string]int{}
 
 	err = filepath.WalkDir(root, func(path string, d fs.DirEntry, walkErr error) error {
@@ -83,11 +133,11 @@ func TestPlaceholderLiteralHasOneHome(t *testing.T) {
 		t.Fatalf("walk module: %v", err)
 	}
 
-	// This guard file rebuilds the literal at run time rather than spelling it,
+	// This guard file rebuilds each literal at run time rather than spelling it,
 	// so it must not appear in the census. If it does, the composition seam was
 	// flattened and the guard has started guarding itself.
 	if n, self := counts["internal/redact/placeholder_guard_test.go"]; self {
-		t.Errorf("the guard file spells the placeholder literally (%d occurrence(s)); it must compose it instead", n)
+		t.Errorf("the guard file spells %s literally (%d occurrence(s)); it must compose it instead", subject, n)
 	}
 
 	got := make([]string, 0, len(counts))
@@ -98,9 +148,9 @@ func TestPlaceholderLiteralHasOneHome(t *testing.T) {
 
 	want := []string{primitiveFile}
 	if len(got) != len(want) || (len(got) == 1 && got[0] != want[0]) {
-		t.Fatalf("the placeholder literal must live in exactly one file.\n  want: %v\n  got:  %v\nEvery surface reaches it through redact.Placeholder().", want, got)
+		t.Fatalf("%s must live in exactly one file.\n  want: %v\n  got:  %v\nEvery surface reaches it through %s.", subject, want, got, accessor)
 	}
 	if n := counts[primitiveFile]; n != 1 {
-		t.Errorf("%s must spell the placeholder exactly once; got %d occurrences", primitiveFile, n)
+		t.Errorf("%s must spell %s exactly once; got %d occurrences", primitiveFile, subject, n)
 	}
 }

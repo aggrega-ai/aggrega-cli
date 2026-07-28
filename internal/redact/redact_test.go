@@ -9,6 +9,7 @@ package redact
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
@@ -174,7 +175,7 @@ func TestNodeKeys_FoldsAttachmentMarkingAndIgnoresTheRollUp(t *testing.T) {
 		Values:          om("name", "db-creds", "key", "password"),
 	})
 
-	keys := NodeKeys(map[string]bool{"dbPassword": true}, nil, attachments, Derived{})
+	keys := NodeKeys(map[string]bool{"dbPassword": true}, nil, attachments, CrossNode{}, Derived{})
 
 	if !keys.Delivery("env", "DATABASE_PASSWORD") {
 		t.Errorf("the attachment's marked delivery key must reach the set; got %v", keys.Inject)
@@ -197,7 +198,7 @@ func TestNodeKeys_NothingDeclaredIsEmpty(t *testing.T) {
 	t.Parallel()
 	attachments := types.OrderedMap[types.IRFeatureEntry]{}
 	attachments.Set("plain", types.IRFeatureEntry{Type: "feature.test/plain"})
-	if keys := NodeKeys(nil, nil, attachments, Derived{}); !keys.Empty() {
+	if keys := NodeKeys(nil, nil, attachments, CrossNode{}, Derived{}); !keys.Empty() {
 		t.Errorf("a node declaring nothing must produce an empty set; got %+v", keys)
 	}
 }
@@ -205,7 +206,7 @@ func TestNodeKeys_NothingDeclaredIsEmpty(t *testing.T) {
 func TestNodeKeys_CarriesDerivedSetsWithoutMergingThem(t *testing.T) {
 	t.Parallel()
 	keys := NodeKeys(map[string]bool{"dbPassword": true}, nil,
-		types.OrderedMap[types.IRFeatureEntry]{},
+		types.OrderedMap[types.IRFeatureEntry]{}, CrossNode{},
 		Derived{
 			Locals: map[string]bool{"dsn": true},
 			Source: map[string]bool{WholeSourceKey: true},
@@ -233,6 +234,185 @@ func TestEmpty_CountsTheDerivedSets(t *testing.T) {
 	}
 	if (Keys{Source: map[string]bool{WholeSourceKey: true}}).Empty() {
 		t.Error("a set naming only a derived source field is not empty")
+	}
+	if (Keys{UsesProvides: map[string]map[string]bool{"main": {"dsn": true}}}).Empty() {
+		t.Error("a set naming only a consumed target's provides key is not empty")
+	}
+	for _, decision := range []WorkloadDisplay{WorkloadSubstituted, WorkloadUnavailable} {
+		if (Keys{Workload: decision}).Empty() {
+			t.Errorf("a set that only changes the workload display is not empty; decision %d", decision)
+		}
+	}
+	if !(Keys{Workload: WorkloadVerbatim}).Empty() {
+		t.Error("showing the emitted document is the zero value and changes nothing")
+	}
+}
+
+// TestAnyWithheld_ExcludesTheWorkloadDecision pins the one asymmetry between the
+// two predicates. AnyWithheld is the INPUT side of the whole-projection reading,
+// so including the reading's own result would make it self-referential.
+func TestAnyWithheld_ExcludesTheWorkloadDecision(t *testing.T) {
+	t.Parallel()
+	for _, decision := range []WorkloadDisplay{WorkloadSubstituted, WorkloadUnavailable} {
+		if (Keys{Workload: decision}).AnyWithheld() {
+			t.Errorf("the workload display decision is the reading's output, not an input it may consult; decision %d", decision)
+		}
+	}
+	if !(Keys{UsesProvides: map[string]map[string]bool{"main": {"dsn": true}}}).AnyWithheld() {
+		t.Error("a consumed target's provides key is readable data and must count")
+	}
+	if !(Keys{Inject: map[string]map[string]bool{"env": {"DSN": true}}}).AnyWithheld() {
+		t.Error("a marked delivery key is readable data and must count")
+	}
+	if (Keys{}).AnyWithheld() {
+		t.Error("the empty set names nothing readable")
+	}
+}
+
+// TestNodeKeys_CarriesConsumedTargetDeclarationsPerAlias is the assembly half of
+// the cross-node withholding: a node that declares NOTHING itself still carries a
+// set, because a target it consumes declared something.
+func TestNodeKeys_CarriesConsumedTargetDeclarationsPerAlias(t *testing.T) {
+	t.Parallel()
+	keys := NodeKeys(nil, nil, types.OrderedMap[types.IRFeatureEntry]{},
+		CrossNode{Provides: map[string]map[string]bool{"storeEdge": {"zzTargetSecret": true}}},
+		Derived{})
+
+	if keys.Empty() {
+		t.Error("a consumer whose target declares a provides key must carry a set")
+	}
+	if !keys.UsesProvides["storeEdge"]["zzTargetSecret"] {
+		t.Errorf("the target's declared provides key must reach the set; got %v", keys.UsesProvides)
+	}
+	if keys.UsesProvides["plainEdge"]["zzTargetSecret"] {
+		t.Errorf("an alias nothing was declared for must stay absent; got %v", keys.UsesProvides)
+	}
+	// The consumer declares nothing, and a cross-node set must not be readable as
+	// one: the two answer different questions about different entities.
+	if keys.Leaf("values", "zzTargetSecret") {
+		t.Error("a consumed target's provides key must not read as this node's own leaf")
+	}
+}
+
+// TestNodeKeys_FoldsBothDeliveryKeySourcesIntoOneMarking is the assembly assertion
+// for the delivery pipe, which is fed from two independent wirings — an
+// attachment's inject mapping and a uses edge's — into ONE displayed map.
+//
+// The two are asserted together because the failure mode is a display covering one
+// and not the other: the pipe is flat, so a reader of it cannot tell which wiring
+// filled a key, and a key left unmarked prints in the clear beside one that did not.
+// An unmarked sibling from each source is the control.
+func TestNodeKeys_FoldsBothDeliveryKeySourcesIntoOneMarking(t *testing.T) {
+	t.Parallel()
+	attachmentMarked := types.OrderedMap[types.OrderedMap[string]]{}
+	attachmentMarked.Set("env", sm("DATABASE_PASSWORD", "password"))
+	attachments := types.OrderedMap[types.IRFeatureEntry]{}
+	attachments.Set("credentials", types.IRFeatureEntry{
+		Type:            "feature.test/db-credential",
+		SensitiveInject: attachmentMarked,
+	})
+
+	keys := NodeKeys(nil, nil, attachments,
+		CrossNode{Inject: map[string]map[string]bool{"env": {"STORE_SECRET": true}}},
+		Derived{})
+
+	if !keys.Delivery("env", "DATABASE_PASSWORD") {
+		t.Errorf("the attachment-wired delivery key must reach the set; got %v", keys.Inject)
+	}
+	if !keys.Delivery("env", "STORE_SECRET") {
+		t.Errorf("the edge-wired delivery key must reach the same set; got %v", keys.Inject)
+	}
+	if keys.Delivery("env", "DATABASE_NAME") || keys.Delivery("env", "STORE_HOST") {
+		t.Errorf("an unmarked delivery key from either wiring must stay absent; got %v", keys.Inject)
+	}
+	if keys.Delivery("file", "STORE_SECRET") {
+		t.Errorf("a marking must not cross into another mechanism; got %v", keys.Inject)
+	}
+}
+
+// TestUses_ReplacesTheMarkedProvidesKeyAndKeepsEveryControl is the applier half.
+// Three controls sit beside the one positive assertion, because a blanket
+// replacement over the uses map would satisfy the positive one on its own: the
+// marked edge's own unmarked sibling key, a DIFFERENT edge publishing the SAME key
+// name, and each edge's non-provides fields.
+func TestUses_ReplacesTheMarkedProvidesKeyAndKeepsEveryControl(t *testing.T) {
+	t.Parallel()
+	in := types.OrderedMap[types.EnrichedEdge]{}
+	// Author order is deliberately not alphabetical inside each provides bag.
+	in.Set("storeEdge", types.EnrichedEdge{
+		Target:    "store",
+		Socket:    "marked",
+		Component: "core/uses-target",
+		Provides:  sm("zzTargetSecret", "wobble", "aaTargetHost", "store"),
+		Values:    om("protocol", "grpc"),
+	})
+	in.Set("plainEdge", types.EnrichedEdge{
+		Target:    "plain",
+		Socket:    "unmarked",
+		Component: "core/uses-plain",
+		Provides:  sm("zzTargetSecret", "visible", "aaTargetHost", "plain"),
+	})
+
+	out := Uses(in, map[string]map[string]bool{"storeEdge": {"zzTargetSecret": true}})
+
+	marked, _ := out.Get("storeEdge")
+	if v, _ := marked.Provides.Get("zzTargetSecret"); v != placeholder {
+		t.Errorf("the marked provides key must show the placeholder; got %q", v)
+	}
+	if v, _ := marked.Provides.Get("aaTargetHost"); v != "store" {
+		t.Errorf("an unmarked sibling on the same edge must survive; got %q", v)
+	}
+	if got := marked.Provides.Keys(); len(got) != 2 || got[0] != "zzTargetSecret" {
+		t.Errorf("author order must survive the substitution; got %v", got)
+	}
+	if marked.Target != "store" || marked.Socket != "marked" {
+		t.Errorf("the edge's own fields must survive; got %+v", marked)
+	}
+	if v, _ := marked.Values.Get("protocol"); v != "grpc" {
+		t.Errorf("per-connection values are not what a target's provides declaration governs; got %v", v)
+	}
+
+	plain, _ := out.Get("plainEdge")
+	if v, _ := plain.Provides.Get("zzTargetSecret"); v != "visible" {
+		t.Errorf("the SAME key name on an edge nothing was declared for must survive verbatim; got %q", v)
+	}
+
+	// The input is never mutated: the display copies, so an in-place substitution
+	// would reach the render context these edges are read from.
+	src, _ := in.Get("storeEdge")
+	if v, _ := src.Provides.Get("zzTargetSecret"); v != "wobble" {
+		t.Errorf("Uses must not mutate its input; the source edge now reads %q", v)
+	}
+	if got := out.Keys(); len(got) != 2 || got[0] != "storeEdge" {
+		t.Errorf("alias order must survive; got %v", got)
+	}
+}
+
+func TestUses_EmptySetIsIdentity(t *testing.T) {
+	t.Parallel()
+	in := types.OrderedMap[types.EnrichedEdge]{}
+	in.Set("main", types.EnrichedEdge{Target: "db", Provides: sm("dsn", "postgres://x")})
+	out := Uses(in, nil)
+	edge, _ := out.Get("main")
+	if v, _ := edge.Provides.Get("dsn"); v != "postgres://x" {
+		t.Errorf("an empty set must leave the uses projection untouched; got %q", v)
+	}
+}
+
+// TestWithheldProjection_IsDistinctFromThePlaceholderAndNamesTheEscapeHatch pins
+// the two properties the statement exists for: a reader can tell a withheld whole
+// projection from a withheld single value, and can act on it.
+func TestWithheldProjection_IsDistinctFromThePlaceholderAndNamesTheEscapeHatch(t *testing.T) {
+	t.Parallel()
+	got := WithheldProjection()
+	if got == Placeholder() {
+		t.Error("a withheld whole projection and a withheld single value must be distinguishable")
+	}
+	if !strings.Contains(got, "--trace-unredacted") {
+		t.Errorf("the statement must name the flag that shows the data; got %q", got)
+	}
+	if !strings.Contains(got, "withheld") {
+		t.Errorf("the statement must say the data was withheld rather than merely absent; got %q", got)
 	}
 }
 

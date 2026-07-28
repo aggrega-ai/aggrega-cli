@@ -21,6 +21,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/parse"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderctx"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/trace"
+	"github.com/aggrega-ai/aggrega-cli/internal/redact"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/labels"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
@@ -80,12 +81,10 @@ func phaseB0(ctx *types.TemplateContext, state *PhaseBState, localsForNode types
 	// Slot 05 fires only when Recipe.Spec.Source is non-nil (a sourceless
 	// Recipe has no source-eval to capture); slot 06 fires unconditionally —
 	// every node reaching B.0 publishes its locals, even an empty map.
-	if state.Trace != nil {
-		if state.Recipe.Spec.Source != nil {
-			_ = state.Trace.Write(trace.PassPhaseB0, state.NodeID, state.BoundaryPath, "", trace.PillarSnapshot(ctx, trace.PassPhaseB0, state.Redact))
-		}
-		_ = state.Trace.Write(trace.PassPhaseB0Locals, state.NodeID, state.BoundaryPath, "", trace.PillarSnapshot(ctx, trace.PassPhaseB0Locals, state.Redact))
+	if state.Recipe.Spec.Source != nil {
+		state.capture(trace.PassPhaseB0, "", ctx)
 	}
+	state.capture(trace.PassPhaseB0Locals, "", ctx)
 
 	state.PhaseReached = 0
 	return nil
@@ -130,9 +129,7 @@ func phaseB1(ctx *types.TemplateContext, state *PhaseBState) error {
 	}
 	state.ResolvedValues = values
 	// Trace point: B.1 valuesMapping output (slot 07).
-	if state.Trace != nil {
-		_ = state.Trace.Write(trace.PassPhaseB1, state.NodeID, state.BoundaryPath, "", trace.PillarSnapshot(ctx, trace.PassPhaseB1, state.Redact))
-	}
+	state.capture(trace.PassPhaseB1, "", ctx)
 	state.PhaseReached = 1
 	return nil
 }
@@ -201,12 +198,29 @@ func phaseB2(ctx *types.TemplateContext, state *PhaseBState, slots types.Ordered
 		return err
 	}
 
+	// What a display SHOWS in place of this document is decided HERE, where the
+	// template's text is already resolved. An imported workload's text is not on
+	// the Recipe, so resolving it anywhere upstream to answer the same question
+	// would be two resolutions of one text and two chances to disagree. This
+	// sub-pass runs before the first pass that projects .workload, so the display
+	// is settled before anything could show it.
+	//
+	// The re-render is built against the context as the real evaluation saw it,
+	// which is why it runs before ctx.Workload is set: a template reading
+	// .workload would otherwise see a document the real render did not have.
+	if trace.Captures(state.Trace) && workloadReadsWithheld(workloadText, state.Redact) {
+		if shown, produced := renderWorkloadForDisplay(state.Recipe.Metadata.Name, workloadText, ctx, state.Redact); produced {
+			state.DisplayWorkload = shown
+			state.Redact.Workload = redact.WorkloadSubstituted
+		} else {
+			state.Redact.Workload = redact.WorkloadUnavailable
+		}
+	}
+
 	state.ParsedWorkload = &w
 	ctx.Workload = &w
 	// Trace point: B.2 parsed workload (slot 08).
-	if state.Trace != nil {
-		_ = state.Trace.Write(trace.PassPhaseB2, state.NodeID, state.BoundaryPath, "", trace.PillarSnapshot(ctx, trace.PassPhaseB2, state.Redact))
-	}
+	state.capture(trace.PassPhaseB2, "", ctx)
 	state.PhaseReached = 2
 	return nil
 }
@@ -253,13 +267,11 @@ func phaseB3(ctx context.Context, tmplCtx *types.TemplateContext, state *PhaseBS
 	// emitted by phaseB3, named by the original filename. Only files tagged
 	// with an artifacts origin are captured here; phaseB4 (synthesis) is the
 	// site of slot 10's per-file trace.
-	if state.Trace != nil {
-		for _, f := range files {
-			if f.Origin != EmitOriginArtifactsInline && f.Origin != EmitOriginArtifactsImport {
-				continue
-			}
-			_ = state.Trace.Write(trace.PassPhaseB3, state.NodeID, state.BoundaryPath, f.Name, trace.PillarSnapshot(tmplCtx, trace.PassPhaseB3, state.Redact))
+	for _, f := range files {
+		if f.Origin != EmitOriginArtifactsInline && f.Origin != EmitOriginArtifactsImport {
+			continue
 		}
+		state.capture(trace.PassPhaseB3, f.Name, tmplCtx)
 	}
 	state.PhaseReached = 3
 	return nil
@@ -288,13 +300,11 @@ func phaseB4(ctx context.Context, tmplCtx *types.TemplateContext, state *PhaseBS
 	// emitted by phaseB4, named by the original filename. Filter by origin:
 	// EmitOriginWorkload (workload-mode synthesis) and EmitOriginSource
 	// (rare; sourced-and-workload coexistence) are the slot's contributors.
-	if state.Trace != nil {
-		for _, f := range files {
-			if f.Origin != EmitOriginWorkload && f.Origin != EmitOriginSource {
-				continue
-			}
-			_ = state.Trace.Write(trace.PassPhaseB4, state.NodeID, state.BoundaryPath, f.Name, trace.PillarSnapshot(tmplCtx, trace.PassPhaseB4, state.Redact))
+	for _, f := range files {
+		if f.Origin != EmitOriginWorkload && f.Origin != EmitOriginSource {
+			continue
 		}
+		state.capture(trace.PassPhaseB4, f.Name, tmplCtx)
 	}
 	state.PhaseReached = 4
 	return nil

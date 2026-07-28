@@ -1,0 +1,37 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: display-shape-recipe
+  version: "1.0.0"
+  description: >
+    Interpolates a declared-sensitive leaf inside surrounding literal text and
+    branches on nothing, so the document a display shows differs from the emitted
+    one at exactly one position — the leaf's own — and nowhere else.
+spec:
+  capability: compose
+  implements: core/display-shape
+  provides:
+    host: "{{ .context.instance_id }}"
+  workload: |
+    apiVersion: aggrega.ai/v1alpha1
+    kind: Workload
+    containers:
+      main:
+        image: shape:1.0
+        variables:
+          # The declared leaf sits between a scheme prefix and a host suffix. A
+          # display that replaced the whole line, or that dropped the key, would
+          # lose text no declaration governs.
+          APP_URL: 'postgres://svc:{{ .values.dbPassword }}@db.internal:5432/appdb'
+          # A bare read of the same leaf, so the same datum is checked in both a
+          # surrounded and an unsurrounded position.
+          APP_SECRET: '{{ .values.dbPassword }}'
+          # The undeclared sibling in the same document.
+          APP_NAME: '{{ .values.appName }}'
+        ports:
+          p: 8080
+    services:
+      shape:
+        type: ClusterIP
+        ports:
+          p: 8080

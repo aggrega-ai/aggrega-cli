@@ -1,0 +1,18 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Component
+metadata:
+  name: core/display-branch
+  version: "1.0.0"
+  labels:
+    component.aggrega.ai/type: "server"
+spec:
+  # Same two leaves as core/display-shape, bound to a Recipe whose workload
+  # template branches on the declared leaf's CONTENT. The pair is what makes the
+  # divergence attributable to the template shape rather than to the declaration:
+  # one declaration, two templates, two display outcomes.
+  schema:
+    values:
+      appName: { type: string }
+      dbPassword: { type: string, sensitive: true }
+    provides:
+      host: { type: string, required: true }

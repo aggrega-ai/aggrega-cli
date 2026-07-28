@@ -1,0 +1,23 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Component
+metadata:
+  name: core/uses-target
+  version: "1.0.0"
+  labels:
+    component.aggrega.ai/type: "stateful-server"
+spec:
+  # The target of a uses edge. It declares one of its two published provides
+  # keys sensitive; the consumer that reads them declares nothing at all, so a
+  # withholding on the consumer's display can only come from THIS entity's
+  # declarations.
+  #
+  # Both key names are invented rather than borrowed from a conventional
+  # spelling: a redaction that fired on a name-shaped heuristic instead of on
+  # the declaration would pass a fixture named `password` and fail here.
+  #
+  # Author order is deliberately not alphabetical — zzTargetSecret is written
+  # first and sorts last — so a sort creeping into the display moves it.
+  schema:
+    provides:
+      zzTargetSecret: { type: string, required: true, sensitive: true }
+      aaTargetHost: { type: string, required: true }

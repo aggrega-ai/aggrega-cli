@@ -23,14 +23,35 @@ import (
 // empty set, which is a visible choice. An empty set leaves the projection
 // byte-identical to one taken before the axis existed.
 //
-// Three roots in the table below are displayed verbatim, and for two distinct
-// reasons. .workload is a rendered document whose fields carry no link back to
-// the declaration they came from, so a datum interpolated into it is no longer
-// identifiable by key at all. .context.uses and .boundary are CROSS-NODE
-// projections — a uses edge carries its target's resolved provides, and the
-// boundary view carries the same for every edge in its subtree — and the set
-// passed here describes one node's own declarations, so it does not reach
-// another node's.
+// Two roots withhold differently from the rest, and the difference is worth
+// naming because it changes what a reader sees.
+//
+// .context.uses is a CROSS-NODE projection: a uses edge publishes its target's
+// resolved provides into this node's display, so those values are governed by the
+// target Component's declarations rather than this node's. The set passed here
+// carries them per alias, so a value the target declared sensitive is withheld on
+// the consumer's display even when the consumer declares nothing.
+//
+// .workload is not addressable by key. It is a parsed document: a datum a
+// template interpolated into it lands in a field no author declared, and nothing
+// links that field back to the declaration it came from. So the projection is
+// governed by one display decision the set carries rather than by keys within it,
+// and this package applies that decision without making it — the document it
+// shows arrives on the context already, produced by whoever re-rendered it.
+//
+// Substituted is the ordinary case: a re-render of the same template against a
+// context whose declared-sensitive data reads as the placeholder, so the document
+// keeps its shape and only the substituted datum's position differs. It is
+// announced in a sibling entry, because a reader told nothing would take a
+// re-render for the document the build emitted. Unavailable is the fallback for a
+// re-render that could not be produced, and shows the withholding statement — an
+// absent projection would be a hole the reader cannot see.
+//
+// .boundary is displayed verbatim. It is the boundary-scope view a FeatureRecipe
+// with that execution scope renders against, and it carries every subtree edge's
+// target provides; the set passed here is one component node's, which does not
+// span a boundary subtree. No capture site reaches this branch today, because the
+// boundary-scope render builds its own context and runs without a capture writer.
 //
 // The mapping table:
 //
@@ -86,7 +107,7 @@ func PillarSnapshot(ctx *types.TemplateContext, pass Pass, keys redact.Keys) map
 
 	// Phase A and later: uses edges visible.
 	if isPhaseAOrLater(pass) && ctx.Context.Uses.Len() > 0 {
-		out["context.uses"] = ctx.Context.Uses
+		out["context.uses"] = redact.Uses(ctx.Context.Uses, keys.UsesProvides)
 	}
 
 	// Phase B.0+: locals are populated.
@@ -103,6 +124,20 @@ func PillarSnapshot(ctx *types.TemplateContext, pass Pass, keys redact.Keys) map
 	// not surfaced until B.3 to avoid showing an in-flight state.
 	if isPhaseB3OrLater(pass) && ctx.Workload != nil {
 		out["workload"] = ctx.Workload
+		switch keys.Workload {
+		case redact.WorkloadSubstituted:
+			// The document on the context is the re-render, so the projection's
+			// own work is the announcement. It rides a sibling entry rather than
+			// wrapping the document, because a reader inspecting one field of a
+			// rendered workload must find it at the same path either way.
+			out["workload_note"] = redact.SubstitutedProjection()
+		case redact.WorkloadUnavailable:
+			// The whole document, replaced by a statement that says so. Keeping
+			// the key with a visible statement is what distinguishes "withheld"
+			// from "this Recipe declares no workload", which are different facts
+			// and would otherwise display identically.
+			out["workload"] = redact.WithheldProjection()
+		}
 	}
 
 	// Phase B.6 boundary-scope branch: drop .context.*, surface .boundary.*.

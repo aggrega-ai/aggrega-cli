@@ -1,0 +1,50 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: display-branch-recipe
+  version: "1.0.0"
+  description: >
+    Branches on a declared-sensitive leaf's CONTENT — an equality test and a length
+    test — so the document a display shows takes different branches from the one the
+    build emitted. That divergence is the honest cost the display announces; it is
+    not a defect to be fixed here.
+spec:
+  capability: compose
+  implements: core/display-branch
+  provides:
+    host: "{{ .context.instance_id }}"
+  workload: |
+    apiVersion: aggrega.ai/v1alpha1
+    kind: Workload
+    containers:
+      main:
+        image: branch:1.0
+        variables:
+          # An equality test on the declared leaf. Each branch emits a DIFFERENT
+          # variable name, so the divergence shows up as a change in the document's
+          # key set rather than only in a value.
+          {{ if eq .values.dbPassword "branch-secret-plaintext" }}
+          MATCHED_AUTHORED_VALUE: 'yes'
+          {{ else }}
+          FELL_THROUGH: 'yes'
+          {{ end }}
+          # A length test on the same leaf, emitting the measured length. Nothing
+          # about the leaf's characters reaches the output, only its size — which is
+          # exactly why a re-render against a fixed replacement text reports the
+          # replacement's length instead.
+          AUTHORED_VALUE_LENGTH: '{{ len .values.dbPassword }}'
+          # The control: an equality test on the UNDECLARED sibling. It must take
+          # the same branch in both documents, which is what makes the divergence
+          # above attributable to the declaration.
+          {{ if eq .values.appName "branchdemo" }}
+          MATCHED_UNDECLARED_VALUE: 'yes'
+          {{ else }}
+          UNDECLARED_FELL_THROUGH: 'yes'
+          {{ end }}
+        ports:
+          p: 8080
+    services:
+      branch:
+        type: ClusterIP
+        ports:
+          p: 8080

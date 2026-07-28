@@ -1,0 +1,16 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Component
+metadata:
+  name: core/uses-plain
+  version: "1.0.0"
+  labels:
+    component.aggrega.ai/type: "resource"
+spec:
+  # The control target. Its provides keys are spelled EXACTLY as the sensitive
+  # target's, and neither is declared. A consumer reading both edges therefore
+  # proves the withholding is keyed by the edge whose target declared something
+  # — not by the provides key's name, which is identical on both sides.
+  schema:
+    provides:
+      zzTargetSecret: { type: string, required: true }
+      aaTargetHost: { type: string, required: true }

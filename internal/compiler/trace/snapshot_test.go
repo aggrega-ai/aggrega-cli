@@ -167,6 +167,128 @@ func TestPillarSnapshot_EmptyKeysLeavesDerivedProjectionsVerbatim(t *testing.T) 
 	}
 }
 
+// TestPillarSnapshot_WorkloadProjectionPerDisplayDecision covers the projection
+// that is not addressable by key, across all three of the display decisions a set
+// can carry. Each is asserted beside the other two rather than on its own, because
+// the failure to catch is one decision's branch behaving like another's.
+//
+// Verbatim shows the document. Substituted also shows the document — the
+// substituted one, which arrives on the context — but must ANNOUNCE that, or a
+// reader takes a re-render for what the build emitted. Unavailable replaces the
+// document with the withholding statement and keeps the key, because a projection
+// that merely vanished would read as "this Recipe declares no workload", a
+// different fact about the build.
+func TestPillarSnapshot_WorkloadProjectionPerDisplayDecision(t *testing.T) {
+	t.Parallel()
+	declared := map[string]bool{"port": true}
+
+	verbatim := PillarSnapshot(makeCtx(), PassPhaseB3, redact.Keys{Values: declared})
+	if _, isDoc := verbatim["workload"].(*types.Workload); !isDoc {
+		t.Errorf("the default decision shows the emitted document; got %T", verbatim["workload"])
+	}
+	if note, present := verbatim["workload_note"]; present {
+		t.Errorf("an unsubstituted document must carry no announcement; got %v", note)
+	}
+
+	substituted := PillarSnapshot(makeCtx(), PassPhaseB3, redact.Keys{
+		Values:   declared,
+		Workload: redact.WorkloadSubstituted,
+	})
+	if _, isDoc := substituted["workload"].(*types.Workload); !isDoc {
+		t.Errorf("a substituted display still shows a document; got %T", substituted["workload"])
+	}
+	if got := substituted["workload_note"]; got != redact.SubstitutedProjection() {
+		t.Errorf("a substituted display must announce that it is a re-render; got %v", got)
+	}
+
+	unavailable := PillarSnapshot(makeCtx(), PassPhaseB3, redact.Keys{
+		Values:   declared,
+		Workload: redact.WorkloadUnavailable,
+	})
+	shown, present := unavailable["workload"]
+	if !present {
+		t.Fatalf("the key must survive so the reader can see something was withheld; got keys: %v", keysOf(unavailable))
+	}
+	if shown != redact.WithheldProjection() {
+		t.Errorf("an unavailable projection must show the withholding statement; got %v", shown)
+	}
+	if _, isDoc := shown.(*types.Workload); isDoc {
+		t.Error("the rendered document must not survive the withholding")
+	}
+	if note, present := unavailable["workload_note"]; present {
+		t.Errorf("the withholding statement stands alone; got a second announcement %v", note)
+	}
+}
+
+// TestPillarSnapshot_WithholdsConsumedTargetProvides covers the CROSS-NODE
+// projection: the values withheld here are governed by declarations the displayed
+// node did not make.
+//
+// Three controls sit beside the positive assertion. The marked edge's own unmarked
+// sibling key must survive; a second edge publishing the SAME key name must survive
+// whole, which is what proves the withholding is not name-shaped; and the marked
+// edge's non-provides fields must survive, because a target's provides declaration
+// does not govern the connection's own configuration.
+func TestPillarSnapshot_WithholdsConsumedTargetProvides(t *testing.T) {
+	t.Parallel()
+	ctx := makeCtx()
+	uses := types.OrderedMap[types.EnrichedEdge]{}
+	uses.Set("storeEdge", types.EnrichedEdge{
+		Target:    "store",
+		Component: "core/uses-target",
+		Provides:  edgeProvides("zzTargetSecret", "wobble", "aaTargetHost", "store"),
+		Infra:     om2("pool_size", 50),
+	})
+	uses.Set("plainEdge", types.EnrichedEdge{
+		Target:    "plain",
+		Component: "core/uses-plain",
+		Provides:  edgeProvides("zzTargetSecret", "visible", "aaTargetHost", "plain"),
+	})
+	ctx.Context.Uses = uses
+
+	snap := PillarSnapshot(ctx, PassPhaseA, redact.Keys{
+		UsesProvides: map[string]map[string]bool{"storeEdge": {"zzTargetSecret": true}},
+	})
+
+	shown, ok := snap["context.uses"].(types.OrderedMap[types.EnrichedEdge])
+	if !ok {
+		t.Fatalf("the uses projection must stay an ordered edge map; got %T", snap["context.uses"])
+	}
+	marked, _ := shown.Get("storeEdge")
+	if v, _ := marked.Provides.Get("zzTargetSecret"); v != redact.Placeholder() {
+		t.Errorf("the target's declared provides key must show the placeholder; got %q", v)
+	}
+	if v, _ := marked.Provides.Get("aaTargetHost"); v != "store" {
+		t.Errorf("an undeclared sibling on the same edge must survive; got %q", v)
+	}
+	if v, _ := marked.Infra.Get("pool_size"); v != 50 {
+		t.Errorf("per-connection infra is not what a provides declaration governs; got %v", v)
+	}
+	plain, _ := shown.Get("plainEdge")
+	if v, _ := plain.Provides.Get("zzTargetSecret"); v != "visible" {
+		t.Errorf("the same key name on an undeclared target's edge must survive; got %q", v)
+	}
+	if got := shown.Keys(); len(got) != 2 || got[0] != "storeEdge" {
+		t.Errorf("alias order must survive the substitution; got %v", got)
+	}
+}
+
+func edgeProvides(pairs ...string) types.OrderedMap[string] {
+	m := types.OrderedMap[string]{}
+	for i := 0; i+1 < len(pairs); i += 2 {
+		m.Set(pairs[i], pairs[i+1])
+	}
+	return m
+}
+
+func om2(pairs ...any) types.OrderedMap[any] {
+	m := types.OrderedMap[any]{}
+	for i := 0; i+1 < len(pairs); i += 2 {
+		m.Set(pairs[i].(string), pairs[i+1])
+	}
+	return m
+}
+
 func keysOf(m map[string]any) []string {
 	keys := make([]string, 0, len(m))
 	for k := range m {

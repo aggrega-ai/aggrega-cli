@@ -1,0 +1,12 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Manifest
+metadata:
+  name: sensitive-redaction-uses-manifest
+  version: "1.0.0"
+spec:
+  mappings:
+    components:
+      type:
+        core/uses-consumer: uses-consumer-recipe:1.0.0
+        core/uses-target: uses-target-recipe:1.0.0
+        core/uses-plain: uses-plain-recipe:1.0.0

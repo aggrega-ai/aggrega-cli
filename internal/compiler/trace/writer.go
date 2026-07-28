@@ -121,6 +121,26 @@ type noopWriter struct{}
 func (noopWriter) Write(_ Pass, _, _, _ string, _ any) error { return nil }
 func (noopWriter) Close() error                              { return nil }
 
+// Captures reports whether a Writer records anything a reader will ever see.
+//
+// It exists because work done solely to feed a capture is waste when nothing is
+// captured, and some of that work is no longer cheap: building the substituted
+// display of a projection that is not addressable by key means evaluating a
+// template a second time. A caller gates that work on this rather than on holding
+// a non-nil Writer, because a build with capture off still holds one — the no-op
+// writer, so that every capture site can call Write unconditionally.
+//
+// A nil Writer captures nothing. Every other implementation is assumed to record,
+// which is the direction that fails safe: the cost of a projection nobody reads,
+// rather than a capture that silently records nothing.
+func Captures(w Writer) bool {
+	if w == nil {
+		return false
+	}
+	_, noop := w.(noopWriter)
+	return !noop
+}
+
 // MemoryWriter collects trace events into an in-memory map keyed by the
 // same relative path the filesystem writer would write to. Used by the
 // pipeline package to surface Result.Trace as map[string][]byte without

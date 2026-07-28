@@ -1,0 +1,11 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Manifest
+metadata:
+  name: sensitive-redaction-display-manifest
+  version: "1.0.0"
+spec:
+  mappings:
+    components:
+      type:
+        core/display-shape: display-shape-recipe:1.0.0
+        core/display-branch: display-branch-recipe:1.0.0

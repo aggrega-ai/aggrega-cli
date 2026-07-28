@@ -1,0 +1,24 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: sensitive-redaction-display-app
+  version: "1.0.0"
+spec:
+  components:
+    # shape interpolates its declared leaf INSIDE surrounding literal text, and
+    # branches on nothing. Its display re-render must therefore match the emitted
+    # document key for key, with the placeholder standing in exactly the secret's
+    # own position and the literal text around it unchanged.
+    shape:
+      type: core/display-shape
+      values:
+        appName: shapedemo
+        dbPassword: shape-secret-plaintext
+    # branch reads the same declared leaf inside an `eq` and a length test, which
+    # is the shape whose display DOES diverge from the emitted document. It exists
+    # to make that divergence observable rather than to be fixed.
+    branch:
+      type: core/display-branch
+      values:
+        appName: branchdemo
+        dbPassword: branch-secret-plaintext

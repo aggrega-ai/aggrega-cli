@@ -1,0 +1,16 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: sensitive-redaction-uses-release
+  environment: local
+  version: "1.0.0"
+spec:
+  aggregate: ./uses-app.yaml
+  manifest: ./uses-manifest.yaml
+  boundaries:
+    crossnode:
+      directory: ./dist/crossnode
+      components:
+        app: {}
+        store: {}
+        plain: {}

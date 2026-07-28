@@ -34,6 +34,88 @@ const placeholder = "<redacted>"
 // the hidden datum can be recovered from what is printed.
 func Placeholder() string { return placeholder }
 
+// withheldProjection stands in for a WHOLE projection the display cannot show,
+// rather than for one value inside it. Like placeholder it is declared exactly
+// once in the module — two spellings would make "was this withheld, or simply
+// absent?" unanswerable, which is the one question a reader of a shortened
+// display has to be able to answer.
+//
+// It says what happened and how to see the data anyway. A projection that simply
+// vanished would be a hole the reader cannot see, and a reader who cannot tell an
+// omission from an empty result will read the display as complete.
+// TestWithheldProjectionLiteralHasOneHome enforces the single spelling.
+const withheldProjection = "<withheld: rendered from data an author declared sensitive, and could not be " +
+	"re-rendered with that data substituted; re-run with `aggrega build --trace-unredacted` " +
+	"to capture it in the clear>"
+
+// WithheldProjection returns the fixed text that stands in for a whole
+// projection a human-readable surface cannot show, naming the flag that shows it.
+//
+// It replaces a projection rather than a value because some displayed data is
+// not addressable by key: a rendered document's fields carry no link back to the
+// declarations the template read to produce them, so there is no key to
+// substitute at. The first answer for such a projection is a re-render against a
+// substituted context, which keeps the document's shape; this text is the fallback
+// for the case where that re-render could not be produced at all.
+func WithheldProjection() string { return withheldProjection }
+
+// substitutedProjection announces a projection a display shows as a RE-RENDER
+// rather than as a capture of what the build emitted. Like the two texts above it
+// is declared exactly once — a second spelling would let one surface's
+// announcement gain a qualifier the other's did not, and this text's whole job is
+// to be precise about what the reader is looking at.
+//
+// The announcement is deliberately narrow about its own guarantee. It says which
+// data was substituted (the data a declaration names) and which two ways the
+// re-render can differ from the emitted document (a template that branches on a
+// value's content, and data no declaration names) — never that no sensitive value
+// remains, which is a promise the substitution cannot keep.
+//
+// The replacement text is composed from placeholder rather than spelled again, so
+// the two cannot drift and the single-home census still finds exactly one
+// spelling of each. TestSubstitutedProjectionLiteralHasOneHome enforces this one.
+//
+// It carries no apostrophe, and that is a constraint rather than a style choice.
+// The text is emitted inside a YAML document, where a single-quoted scalar escapes
+// an apostrophe by doubling it — so a reader searching a capture for this exact
+// text would not find it, and neither would a test.
+const substitutedProjection = "<re-rendered: the same template evaluated against a context whose " +
+	"declared-sensitive data reads as `" + placeholder + "`, so this is not the document the build " +
+	"emitted; a template that branches on the content of a value renders differently here, and data " +
+	"no declaration names is carried through unchanged. Re-run with `aggrega build " +
+	"--trace-unredacted` to capture the emitted document.>"
+
+// SubstitutedProjection returns the fixed text a human-readable surface prints
+// beside a projection it shows as a re-render with declared-sensitive data
+// substituted, so a reader is never told that a re-render is the emitted document.
+func SubstitutedProjection() string { return substitutedProjection }
+
+// WorkloadDisplay records what a human-readable surface does with the rendered
+// workload projection. It is the one display decision a Keys set carries, because
+// a rendered workload is the one projection no key-addressed substitution can
+// reach: its fields carry no link back to the declarations the template read to
+// produce them.
+//
+// The zero value shows the document the build emitted, which is what a node
+// declaring nothing gets — and what a capture with its withholding turned off
+// gets, since that mode hands every surface an empty set.
+type WorkloadDisplay uint8
+
+const (
+	// WorkloadVerbatim shows the document the build emitted.
+	WorkloadVerbatim WorkloadDisplay = iota
+
+	// WorkloadSubstituted shows a re-render of the same template against a
+	// context whose declared-sensitive data reads as the placeholder, announced
+	// by SubstitutedProjection so a reader cannot mistake it for the emitted
+	// document.
+	WorkloadSubstituted
+
+	// WorkloadUnavailable shows WithheldProjection, for the case where the
+	// re-render could not be produced.
+	WorkloadUnavailable
+)
+
 // Keys names, for one node, which data a surface must replace. It is a
 // description of declarations and of what was computed from them, assembled by
 // NodeKeys from the upstream facts; it holds no values and answers no question
@@ -51,21 +133,49 @@ func Placeholder() string { return placeholder }
 // than a leaf declaration. Locals is keyed by the local's own name, which is how
 // the resolved block is displayed. Source is keyed by the source field's name,
 // with WholeSourceKey standing for a source declared as a single string.
+//
+// UsesProvides names ANOTHER entity's declarations. A uses edge carries its
+// target's resolved provides into the consuming node's display, so what governs
+// those values is the target Component's schema, not the consumer's. It is keyed
+// by the edge's alias — the consumer's own local name for the connection, which
+// is how the edge is displayed — and then by the target's provides key. Only the
+// provides sub-map is covered; an edge's per-connection values and infra are a
+// different pillar with a different owner.
+//
+// Workload is the one entry that names a whole projection rather than keys
+// within it, and it records what the display DOES with that projection rather
+// than which of its keys are withheld — a rendered workload is a parsed document
+// whose fields carry no link back to the declarations the template read to
+// produce them, so no key-addressed substitution can reach a datum interpolated
+// into it.
 type Keys struct {
-	Values map[string]bool
-	Infra  map[string]bool
-	Inject map[string]map[string]bool
-	Locals map[string]bool
-	Source map[string]bool
+	Values       map[string]bool
+	Infra        map[string]bool
+	Inject       map[string]map[string]bool
+	Locals       map[string]bool
+	Source       map[string]bool
+	UsesProvides map[string]map[string]bool
+	Workload     WorkloadDisplay
 }
 
-// Empty reports whether the set names nothing. A caller holding an empty set
-// can skip every applier: each one returns its input unchanged, so a node with
-// no declared sensitivity produces byte-identical output to a build predating
-// the axis.
+// AnyWithheld reports whether the set names any datum a template could READ. It
+// is the input side of a whole-projection reading — a display re-renders or
+// withholds a document because the document's template referenced something in
+// here — and it is the guard that makes a substituted context worth building.
+//
+// Workload is deliberately excluded. It is the OUTPUT of such a reading, so a
+// reading that consulted it would depend on its own result.
+func (k Keys) AnyWithheld() bool {
+	return len(k.Values) > 0 || len(k.Infra) > 0 || len(k.Inject) > 0 ||
+		len(k.Locals) > 0 || len(k.Source) > 0 || len(k.UsesProvides) > 0
+}
+
+// Empty reports whether the set names nothing and no projection is displayed
+// differently. A caller holding an empty set can skip every applier: each one
+// returns its input unchanged, so a node with no declared sensitivity produces
+// byte-identical output to a build predating the axis.
 func (k Keys) Empty() bool {
-	return len(k.Values) == 0 && len(k.Infra) == 0 && len(k.Inject) == 0 &&
-		len(k.Locals) == 0 && len(k.Source) == 0
+	return !k.AnyWithheld() && k.Workload == WorkloadVerbatim
 }
 
 // WholeSourceKey is the Keys.Source entry that marks a source declared as a
@@ -247,6 +357,81 @@ func Source(in any, keys map[string]bool) any {
 	return in
 }
 
+// Uses returns a copy of a node's enriched uses-edge map with every withheld
+// provides value replaced by the placeholder, preserving alias order, each
+// edge's own field order and every entry that is not withheld.
+//
+// It is the one applier whose input is governed by declarations an entity OTHER
+// than the displayed node made. A uses edge publishes its target's resolved
+// provides into the consumer's display, so a value the target declared sensitive
+// would otherwise print in the clear on a surface belonging to a node that
+// declared nothing. Withholding is keyed by alias, so two edges publishing the
+// same provides key resolve independently — the edge whose target declared it is
+// withheld and the other is not.
+//
+// Only the provides sub-map is touched. An edge's per-connection values and infra
+// are authored on the edge rather than published by the target, so they are not
+// what a target's provides declaration governs.
+//
+// The input is never mutated. When withheld is empty the input is returned as-is.
+func Uses(in types.OrderedMap[types.EnrichedEdge], withheld map[string]map[string]bool) types.OrderedMap[types.EnrichedEdge] {
+	if len(withheld) == 0 || in.Len() == 0 {
+		return in
+	}
+	out := types.OrderedMap[types.EnrichedEdge]{}
+	for alias, edge := range in.All() {
+		keys := withheld[alias]
+		if len(keys) == 0 || edge.Provides.Len() == 0 {
+			out.Set(alias, edge)
+			continue
+		}
+		edge.Provides = replaceFlat(edge.Provides, keys)
+		out.Set(alias, edge)
+	}
+	return out
+}
+
+// TemplateContext returns a copy of a render context with every datum the set
+// NAMES replaced by the placeholder, leaving the context's shape and every
+// datum the set does not name exactly as the render sees them.
+//
+// It is the ONE substituted context in the module, and it is the answer for a
+// projection that is not addressable by key. A rendered document's fields carry
+// no link back to the declarations the template read to produce them, so nothing
+// can be substituted inside the finished document — but the CONTEXT the template
+// read is fully key-addressed, so evaluating the same template again against a
+// substituted context yields a document of the same shape with the placeholder
+// standing where the datum stood. Removing the keys instead would change which
+// branches the template takes and the two documents would diverge structurally;
+// substituting keeps a string where a string was.
+//
+// Two ways a document built this way still differs from the emitted one, both of
+// which the display has to announce rather than paper over: a template that
+// branches on a value's CONTENT — an equality test, a length, a hash — takes a
+// different branch against the placeholder, and a datum reaching the template
+// through a root this set cannot name is carried through unchanged.
+//
+// Every applier it composes returns a copy, so the input is never mutated. That
+// is load-bearing rather than incidental: the context handed here is the live one
+// the artifacts render from, and an in-place substitution would put the
+// placeholder into the deployable.
+//
+// A set naming nothing readable returns the input pointer unchanged, so a node
+// with no declared sensitivity pays nothing.
+func TemplateContext(in *types.TemplateContext, keys Keys) *types.TemplateContext {
+	if in == nil || !keys.AnyWithheld() {
+		return in
+	}
+	out := *in
+	out.Values = Pillar(in.Values, keys.Values)
+	out.Infra = Pillar(in.Infra, keys.Infra)
+	out.Locals = Locals(in.Locals, keys.Locals)
+	out.Source = Source(in.Source, keys.Source)
+	out.Context.Inject = InjectPipe(in.Context.Inject, keys.Inject)
+	out.Context.Uses = Uses(in.Context.Uses, keys.UsesProvides)
+	return &out
+}
+
 // replaceFlat is the ONE substitution over a flat authored-key map, shared by
 // every surface displayed in that shape — a delivery pipe's per-mechanism
 // entries and a resolved locals block. A second copy would let one surface gain
@@ -292,6 +477,28 @@ type Derived struct {
 	Source map[string]bool
 }
 
+// CrossNode names the display data governed by ANOTHER entity's declarations.
+// A uses edge carries its target's resolved provides into the consuming node's
+// display twice over — published under the edge, and delivered onto the
+// consumer's own delivery keys where the edge's `inject` mapping routes it — and
+// both are governed by the target Component's schema rather than the consumer's.
+//
+// Provides is keyed by the edge's alias, the consumer's own local name for the
+// connection, and then by the target's provides key. Inject is keyed by delivery
+// mechanism and then by delivery key, which is the shape the delivery pipe is
+// displayed in and therefore not alias-keyed; a delivery key identifies exactly
+// one entry within its mechanism on a node, because a key another source already
+// set halts the build.
+//
+// The two are grouped rather than passed as two bare maps for the same reason
+// Derived is: they are read from the same edges by the same declaration lookup,
+// and a caller pairing one of them with the wrong pillar would withhold by alias
+// what is displayed by mechanism.
+type CrossNode struct {
+	Provides map[string]map[string]bool
+	Inject   map[string]map[string]bool
+}
+
 // NodeKeys assembles one node's redaction set from the upstream facts, each read
 // from its own home and none of them recomputed here.
 //
@@ -299,22 +506,46 @@ type Derived struct {
 // schema declares sensitive, read through the single authored-declaration
 // reader. attachments supplies the per-delivery-key marking the graph already
 // carries on each attachment, folded across the node's attachments into the
-// mechanism-then-key shape the pipe is displayed in. derived supplies the
-// template outputs computed from a declared-sensitive datum, read from the
-// authored template text by the one walk that performs that reading.
+// mechanism-then-key shape the pipe is displayed in. crossNode supplies what the
+// TARGET of each uses edge declares — read through the same authored-declaration
+// reader, against the target's type rather than the node's — both as published
+// provides and as the consumer delivery keys the edge's `inject` mapping routes
+// them onto. derived supplies the template outputs computed from a
+// declared-sensitive datum, read from the authored template text by the one walk
+// that performs that reading.
+//
+// A node's set therefore spans two owners: its own declarations, and the
+// declarations of every node it consumes across an edge. That is not a widening
+// of who may declare — it follows from the display carrying another node's
+// published values, so the set that governs them has to be that node's.
+//
+// The two delivery-key sources fold into ONE marking, because the pipe is one
+// flat merged map per mechanism and a reader of it cannot tell which source filled
+// a key. An attachment's mapping and a uses edge's mapping are the same policy
+// read from two wirings — a delivery key whose referenced provides key is declared
+// sensitive — so a display that covered one and not the other would print in the
+// clear exactly what it withheld one projection above.
 //
 // The per-attachment sensitivity roll-up is deliberately NOT consulted. It says
 // an attachment handles secret material; it does not say which of its leaves
 // do, and treating it as if it did would print the placeholder over a
 // referenceable credential's name and key — public locators an author left
 // unmarked on purpose.
-func NodeKeys(declaredValues, declaredInfra map[string]bool, attachments types.OrderedMap[types.IRFeatureEntry], derived Derived) Keys {
+func NodeKeys(
+	declaredValues, declaredInfra map[string]bool,
+	attachments types.OrderedMap[types.IRFeatureEntry],
+	crossNode CrossNode,
+	derived Derived,
+) Keys {
 	keys := Keys{}
 	if len(declaredValues) > 0 {
 		keys.Values = declaredValues
 	}
 	if len(declaredInfra) > 0 {
 		keys.Infra = declaredInfra
+	}
+	if len(crossNode.Provides) > 0 {
+		keys.UsesProvides = crossNode.Provides
 	}
 	if len(derived.Locals) > 0 {
 		keys.Locals = derived.Locals
@@ -325,15 +556,32 @@ func NodeKeys(declaredValues, declaredInfra map[string]bool, attachments types.O
 	for _, entry := range attachments.All() {
 		for mechanism, deliveries := range entry.SensitiveInject.All() {
 			for deliveryKey := range deliveries.All() {
-				if keys.Inject == nil {
-					keys.Inject = map[string]map[string]bool{}
-				}
-				if keys.Inject[mechanism] == nil {
-					keys.Inject[mechanism] = map[string]bool{}
-				}
-				keys.Inject[mechanism][deliveryKey] = true
+				keys.markDelivery(mechanism, deliveryKey)
 			}
 		}
 	}
+	for mechanism, deliveries := range crossNode.Inject {
+		for deliveryKey := range deliveries {
+			keys.markDelivery(mechanism, deliveryKey)
+		}
+	}
 	return keys
+}
+
+// markDelivery records one delivery key of one mechanism, allocating as it goes.
+// The set is built rather than aliased so a caller's own map is never captured,
+// and both delivery-key sources reach it through this one method so neither can
+// grow a nesting rule the other does not have.
+//
+// The receiver is a pointer because the maps it allocates have to survive the
+// call; the walks that fill it iterate ordered inputs but the result is only ever
+// read as a lookup, so no iteration order here can reach a displayed byte.
+func (k *Keys) markDelivery(mechanism, deliveryKey string) {
+	if k.Inject == nil {
+		k.Inject = map[string]map[string]bool{}
+	}
+	if k.Inject[mechanism] == nil {
+		k.Inject[mechanism] = map[string]bool{}
+	}
+	k.Inject[mechanism][deliveryKey] = true
 }

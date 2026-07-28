@@ -1,0 +1,28 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: uses-plain-recipe
+  version: "1.0.0"
+  description: >
+    The control target's implementation. Same provides key names as the
+    sensitive target, a distinct literal, and no declaration behind either — so
+    an assertion cannot pass on the wrong one.
+spec:
+  capability: compose
+  implements: core/uses-plain
+  provides:
+    zzTargetSecret: "visible-plain-plaintext"
+    aaTargetHost: "{{ .context.instance_id }}"
+  workload: |
+    apiVersion: aggrega.ai/v1alpha1
+    kind: Workload
+    containers:
+      main:
+        image: plain:1.0
+        ports:
+          p: 6379
+    services:
+      plain:
+        type: ClusterIP
+        ports:
+          p: 6379

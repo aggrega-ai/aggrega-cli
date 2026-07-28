@@ -326,46 +326,106 @@ func TestSensitiveRedaction_DerivedArtifactCarriesPlaintext(t *testing.T) {
 	}
 }
 
-// TestSensitiveRedaction_KnownCoverageGaps records, as executable fact, the two
-// things the redaction does NOT reach today. Both are pinned rather than left
-// implicit so the limit is discoverable from the test suite instead of from a
-// leaked trace, and so the test fails — visibly, as a signal to delete it —
-// when either gap is closed.
+// workloadProjectionSlots are this fixture's trace slots that project the rendered
+// .workload document. Enumerated rather than sampled: a clause that withheld the
+// projection at one pass and not another would leave every other slot passing.
+var workloadProjectionSlots = []string{
+	"09b-phaseB6-boundary-fr.yaml",
+	"10-engine-synthesis/app.compose-fragment.yaml",
+}
+
+// TestSensitiveRedaction_TraceShowsTheWorkloadAsASubstitutedReRender covers the
+// projection that is not addressable by key. .workload is a parsed document: a
+// datum a template interpolated into it lands in a field no author declared, and
+// nothing links that field back to the declaration it came from, so there is no key
+// to substitute AT — but the context the template read is fully key-addressed, so
+// the display shows the same template evaluated again against a substituted context.
 //
-// Gap 1: a DERIVED projection. .workload is a template-rendered document. A
-// sensitive leaf that a template interpolated into it is no longer identifiable
-// by key, and nothing upstream carries a provenance fact linking a rendered
-// field back to the declaration it came from. Recovering it would take either
-// template-level taint propagation or a search of the document's content for
-// the value, and content inspection is precisely what the compiler must not do.
+// The reader therefore keeps the whole document with the replacement text in the
+// secret positions, instead of losing the view exactly where debugging is hardest.
+// What that costs is honesty work: the display must SAY the document is a re-render,
+// because a reader told nothing would take it for what the build emitted.
 //
-// Gap 2: an attachment's OWN declared-sensitive values leaf. The per-node
-// pillar projection carries the host component's pillars, not .features.<name>,
-// so the datum is absent from the trace rather than redacted in it. If the
-// projection ever gains that surface, this assertion turns it into a visible
-// failure instead of a silent leak.
-func TestSensitiveRedaction_KnownCoverageGaps(t *testing.T) {
+// Every assertion below reads the DECODED document rather than the slot's text, so
+// each one names the field it is about — the same values also reach the pillars in
+// the same slot, and a whole-body search could not tell the two apart.
+func TestSensitiveRedaction_TraceShowsTheWorkloadAsASubstitutedReRender(t *testing.T) {
 	t.Parallel()
 	result := sensitiveRedactionBuild(t)
 
-	// Gap 1 — the derived .workload projection at passes B.3 and later.
-	derived := traceSlot(t, result, "09b-phaseB6-boundary-fr.yaml")
-	if !strings.Contains(derived, "workload:") {
-		t.Fatalf("the fixture's B.6 slot no longer carries a .workload projection; this pin is now vacuous\n--- slot ---\n%s", derived)
-	}
-	if !strings.Contains(derived, sensitiveValuesLeaf) || !strings.Contains(derived, sensitiveDelivered) {
-		t.Errorf("the .workload projection no longer carries the plaintext: the derived-projection gap has been closed and this pin must be deleted\n--- slot ---\n%s", derived)
-	}
-	// The pillar projection in the SAME slot is still redacted, so the gap is
-	// scoped to the derived document rather than to the late passes.
-	if strings.Contains(derived, "dbPassword: "+sensitiveValuesLeaf) {
-		t.Errorf("the pillar projection at B.6 must still be redacted\n--- slot ---\n%s", derived)
-	}
+	for _, slot := range workloadProjectionSlots {
+		body := traceSlot(t, result, slot)
 
-	// Gap 2 — the attachment's own by-value declared-sensitive leaf.
+		if !strings.Contains(body, redact.SubstitutedProjection()) {
+			t.Errorf("%s must announce that its document is a re-render and name the flag that shows the emitted one\n--- slot ---\n%s", slot, body)
+		}
+		if strings.Contains(body, redact.WithheldProjection()) {
+			t.Errorf("%s withheld a projection it could have re-rendered\n--- slot ---\n%s", slot, body)
+		}
+
+		leaves := workloadLeaves(t, body)
+		// Each position reading a declared-sensitive datum, substituted. The three
+		// cover the two withholding mechanisms the document can carry: two declared
+		// leaves and one delivery key marked by an attachment's inject mapping.
+		for _, path := range []string{
+			"containers.main.variables.APP_DB_PASSWORD",
+			"containers.main.variables.APP_ADMIN_TOKEN",
+			"containers.main.variables.DATABASE_PASSWORD",
+		} {
+			if got := leaves[path]; got != redact.Placeholder() {
+				t.Errorf("%s: %s must show the replacement text; got %q", slot, path, got)
+			}
+		}
+		// The controls: undeclared siblings in the SAME document survive with their
+		// own values. Without these, a display that blanked every variable would
+		// satisfy every assertion above.
+		for path, want := range map[string]string{
+			"containers.main.variables.APP_NAME":      plainValuesLeaf,
+			"containers.main.variables.APP_POOL_SIZE": plainNestedLeaf,
+			"containers.main.variables.DATABASE_NAME": plainDelivered,
+		} {
+			if got := leaves[path]; got != want {
+				t.Errorf("%s: %s reads nothing declared and must survive as %q; got %q", slot, path, want, got)
+			}
+		}
+		// No declared-sensitive plaintext anywhere in the decoded document.
+		for path, text := range leaves {
+			for _, plaintext := range []string{sensitiveValuesLeaf, sensitiveNestedLeaf, sensitiveDelivered} {
+				if strings.Contains(text, plaintext) {
+					t.Errorf("%s: %s leaked %q", slot, path, plaintext)
+				}
+			}
+		}
+		// The pillar projection in the SAME slot is still withheld per key, so the
+		// document-scale mechanism did not replace the key-addressed one.
+		if !strings.Contains(body, "dbPassword: "+redact.Placeholder()) {
+			t.Errorf("%s must still withhold the declared leaf per key\n--- slot ---\n%s", slot, body)
+		}
+		if !strings.Contains(body, "appName: "+plainValuesLeaf) {
+			t.Errorf("%s must keep an undeclared sibling leaf verbatim\n--- slot ---\n%s", slot, body)
+		}
+	}
+}
+
+// TestSensitiveRedaction_AttachmentOwnLeafIsAKnownGap records, as executable fact,
+// the one thing the withholding does not reach on this fixture.
+//
+// An attachment's OWN declared-sensitive values leaf: the per-node pillar
+// projection carries the host component's pillars, not the per-attachment view, so
+// the datum is absent from the display rather than withheld in it. Absent and
+// withheld are different states, and the difference matters — if the projection
+// ever gains that surface, the datum starts printing with nothing covering it. The
+// pin turns that into a visible failure instead of a silent leak.
+func TestSensitiveRedaction_AttachmentOwnLeafIsAKnownGap(t *testing.T) {
+	t.Parallel()
+	result := sensitiveRedactionBuild(t)
+
+	if len(result.Trace) == 0 {
+		t.Fatal("the build produced no trace; this pin would be vacuous")
+	}
 	for slot := range result.Trace {
 		if strings.Contains(string(result.Trace[slot]), sensitiveByValueLeaf) {
-			t.Errorf("%s carries the attachment's declared-sensitive values leaf %q; the projection gained a surface that needs its own redaction set", slot, sensitiveByValueLeaf)
+			t.Errorf("%s carries the attachment's declared-sensitive values leaf %q; the projection gained a surface that needs its own withholding set", slot, sensitiveByValueLeaf)
 		}
 	}
 }

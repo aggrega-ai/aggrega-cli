@@ -70,6 +70,12 @@ func TestTraceUnredacted_ShowsWithheldValuesAndAnnouncesEveryFile(t *testing.T) 
 		if strings.Contains(body, redact.Placeholder()) {
 			t.Errorf("%s still withholds a value under the unredacted mode\n--- slot ---\n%s", slot, body)
 		}
+		if strings.Contains(body, redact.WithheldProjection()) {
+			t.Errorf("%s still withholds a whole projection under the unredacted mode\n--- slot ---\n%s", slot, body)
+		}
+		if strings.Contains(body, redact.SubstitutedProjection()) {
+			t.Errorf("%s still shows a substituted re-render under the unredacted mode; the mode must show the emitted document\n--- slot ---\n%s", slot, body)
+		}
 	}
 
 	// The declared leaves and the values computed from them are both visible.
@@ -130,6 +136,15 @@ func TestTraceUnredacted_OffIsTheWithholdingControl(t *testing.T) {
 			t.Errorf("%s must withhold something with the mode off\n--- slot ---\n%s", slot, body)
 		}
 	}
+
+	// The substituted re-render is the mode's other half, and it must be present
+	// with the mode off for the positive test's claim about it to mean anything.
+	for _, slot := range []string{"09b-phaseB6-boundary-fr.yaml", "10-engine-synthesis/app.compose-fragment.yaml"} {
+		body := derivedTraceSlot(t, result, slot)
+		if !strings.Contains(body, redact.SubstitutedProjection()) {
+			t.Errorf("%s must show its rendered workload as an announced re-render with the mode off\n--- slot ---\n%s", slot, body)
+		}
+	}
 }
 
 // TestTraceUnredacted_MovesNothingButTheTrace is the boundary assertion, and the
@@ -167,19 +182,25 @@ func TestTraceUnredacted_MovesNothingButTheTrace(t *testing.T) {
 
 // TestTraceUnredacted_DiffersOnlyAtWithheldPositions is the per-line control. It
 // is the assertion that distinguishes "the mode lifted the withholding" from "the
-// mode changed the projection": stripping the header from an unredacted slot must
-// leave a body with the same line count as the withholding one, and every line
-// the withholding body printed in full must appear unchanged.
+// mode changed the projection": every line the withholding body printed in full
+// must appear unchanged, and the two may differ only where something was withheld.
 //
 // A whole-body comparison cannot make that distinction, because the two bodies
 // legitimately differ wherever a value was withheld. Comparing line by line is
 // what isolates those positions.
+//
+// The comparison reaches the rendered document as well as the pillars, and that is
+// a strengthening the substituted re-render made possible: because the display
+// document keeps the emitted one's shape, the two bodies line up line for line
+// throughout. The only structural difference is the announcement the withholding
+// body carries, which is dropped before the walk rather than exempting the slot
+// from it.
 func TestTraceUnredacted_DiffersOnlyAtWithheldPositions(t *testing.T) {
 	t.Parallel()
 	off := derivedRedactionBuild(t)
 	on := unredactedBuild(t)
 
-	checked := 0
+	withheldValues, announcedDocuments := 0, 0
 	for _, slot := range sortedTraceSlots(off.Trace) {
 		offBody := string(off.Trace[slot])
 		onBody, present := on.Trace[slot]
@@ -200,6 +221,18 @@ func TestTraceUnredacted_DiffersOnlyAtWithheldPositions(t *testing.T) {
 		}
 		onLines = onLines[headerLen:]
 
+		if strings.Contains(offBody, redact.WithheldProjection()) {
+			t.Errorf("%s withheld a projection whole; this fixture must exercise the substituted re-render, and the line-for-line comparison below cannot apply to a body of a different shape\n--- with it off ---\n%s", slot, offBody)
+			continue
+		}
+		if strings.Contains(offBody, redact.SubstitutedProjection()) {
+			announcedDocuments++
+			if strings.Contains(string(onBody), redact.SubstitutedProjection()) {
+				t.Errorf("%s still announces a re-render under the mode; the mode shows the emitted document\n--- with it on ---\n%s", slot, onBody)
+			}
+			offLines = dropAnnouncement(offLines)
+		}
+
 		if len(onLines) != len(offLines) {
 			t.Errorf("%s: the mode changed the projection's shape (%d lines with it on, %d with it off)\n--- with it off ---\n%s\n--- with it on ---\n%s", slot, len(onLines), len(offLines), offBody, onBody)
 			continue
@@ -212,7 +245,7 @@ func TestTraceUnredacted_DiffersOnlyAtWithheldPositions(t *testing.T) {
 				if onLines[i] == offLines[i] {
 					t.Errorf("%s line %d was withheld and is unchanged under the mode: %q", slot, i+1, onLines[i])
 				}
-				checked++
+				withheldValues++
 				continue
 			}
 			if onLines[i] != offLines[i] {
@@ -220,7 +253,34 @@ func TestTraceUnredacted_DiffersOnlyAtWithheldPositions(t *testing.T) {
 			}
 		}
 	}
-	if checked == 0 {
-		t.Error("no withheld line was found in the withholding build; the fixture no longer exercises the mode and this test is vacuous")
+	if withheldValues == 0 {
+		t.Error("no withheld line was found in the withholding build; the fixture no longer exercises per-value withholding and that half of this test is vacuous")
 	}
+	if announcedDocuments == 0 {
+		t.Error("no announced re-render was found in the withholding build; the fixture no longer exercises the document-scale display and that half of this test is vacuous")
+	}
+}
+
+// dropAnnouncement removes the re-render announcement entry from a projection's
+// lines. It takes the announcing line plus any folded continuation of it — the text
+// is long, and a serializer is free to wrap a scalar across lines, so matching only
+// the first line would leave the remainder behind and desynchronise the comparison.
+//
+// The announcement sits at the top level of the projection, so its continuation
+// lines are the indented ones that follow it.
+func dropAnnouncement(lines []string) []string {
+	out := make([]string, 0, len(lines))
+	dropping := false
+	for _, line := range lines {
+		switch {
+		case strings.HasPrefix(line, "workload_note:"):
+			dropping = true
+		case dropping && strings.HasPrefix(line, " "):
+			// folded continuation of the announcing scalar
+		default:
+			dropping = false
+			out = append(out, line)
+		}
+	}
+	return out
 }

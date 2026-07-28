@@ -513,14 +513,18 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// reach to the capture: it can empty this set without any other surface
 		// that withholds a declared-sensitive datum being able to observe the
 		// difference.
+		// A uses edge carries its TARGET's resolved provides into this node's
+		// display — published under the edge, and delivered onto this node's own
+		// delivery keys where the edge's inject mapping routes it — so both are
+		// governed by the target's declarations and not this node's. Reading them
+		// costs one more call to the same memoised declaration reader, against the
+		// target Component the edge names.
 		declared := declaredLeaves(node.Component)
+		crossNode := usesWithheld(tmplCtx.Context.Uses, func(componentType string) map[string]bool {
+			return declaredLeaves(componentType).Provides
+		})
 		redactKeys := input.TraceMode.Keys(redact.NodeKeys(declared.Values, declared.Infra, attachments,
-			derivedSensitiveKeys(recipe, declared.Values, declared.Infra)))
-
-		// Trace points: per-node pre-loop captures.
-		_ = traceWriter.Write(trace.PassPillarsInitial, nodeID, node.BoundaryPath, "", trace.PillarSnapshot(tmplCtx, trace.PassPillarsInitial, redactKeys))
-		_ = traceWriter.Write(trace.PassProvides, nodeID, node.BoundaryPath, "", trace.PillarSnapshot(tmplCtx, trace.PassProvides, redactKeys))
-		_ = traceWriter.Write(trace.PassInject, nodeID, node.BoundaryPath, "", trace.PillarSnapshot(tmplCtx, trace.PassInject, redactKeys))
+			crossNode, derivedSensitiveKeys(recipe, declared.Values, declared.Infra)))
 
 		// Phase B sub-pass pipeline per chapter 16 §5. State carries cross-
 		// sub-pass accumulators (resolved values, parsed workload, emitted
@@ -528,9 +532,24 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// not retain the on-disk path on the parsed Recipe; validator errors
 		// surfacing through the sub-passes show "" for the path. Future
 		// improvement: thread the path through the catalog resolver.
+		//
+		// It is constructed ahead of this node's FIRST capture, not at Phase B, so
+		// that every capture for this node routes through the one projection call
+		// the state owns. A capture taking its own route would be free to show the
+		// emitted workload document where the display promised a re-render of it.
 		state := NewPhaseBState(recipe, nodeID, node.BoundaryPath, "")
 		state.Trace = traceWriter
+		// The state's copy is the authoritative set for this node: a Phase B
+		// sub-pass records the workload display decision onto it, and a capture
+		// reading a copy taken earlier would show a document the decision said to
+		// substitute or withhold.
 		state.Redact = redactKeys
+
+		// Trace points: per-node pre-loop captures.
+		state.capture(trace.PassPillarsInitial, "", tmplCtx)
+		state.capture(trace.PassProvides, "", tmplCtx)
+		state.capture(trace.PassInject, "", tmplCtx)
+
 		state.MappingLibraries = input.MappingLibraries
 		state.WorkloadLibraries = input.WorkloadLibraries
 		state.ArtifactsLibraries = input.ArtifactsLibraries
@@ -566,7 +585,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		applyConsumerEnvOverrides(&tmplCtx.Context.Inject, boundaryFRState.ConsumerEnvOverrides[nodeID])
 		// Trace point: Phase A — feature-scoped per-consumer inject pipe
 		// after FR injectMapping rewrites.
-		_ = traceWriter.Write(trace.PassPhaseA, nodeID, node.BoundaryPath, "", trace.PillarSnapshot(tmplCtx, trace.PassPhaseA, redactKeys))
+		state.capture(trace.PassPhaseA, "", tmplCtx)
 
 		// Phase B.1 — valuesMapping → state.ResolvedValues.
 		if err := phaseB1(tmplCtx, state); err != nil {
@@ -1004,7 +1023,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// snapshot captures the post-B.6 TemplateContext for this node;
 		// boundary-scope FR contributions deduplicated by Phase B.6 surface
 		// in boundaryFRState.Files (post-loop, not per-node here).
-		_ = traceWriter.Write(trace.PassPhaseB6, nodeID, node.BoundaryPath, "", trace.PillarSnapshot(tmplCtx, trace.PassPhaseB6, redactKeys))
+		state.capture(trace.PassPhaseB6, "", tmplCtx)
 
 		// Drain Phase B's per-node warnings into the build-level result.
 		// Drain position is the end of the per-node Phase B sequence

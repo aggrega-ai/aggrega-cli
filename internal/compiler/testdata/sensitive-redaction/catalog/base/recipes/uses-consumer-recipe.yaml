@@ -1,0 +1,33 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: uses-consumer-recipe
+  version: "1.0.0"
+  description: >
+    Reads both edges' published provides and the delivery keys the marked
+    edge's inject mapping fills. Every value reaches the rendered artifact in
+    the clear — the artifact is the deployable and is never redacted.
+spec:
+  capability: compose
+  implements: core/uses-consumer
+  provides:
+    host: "{{ .context.instance_id }}"
+  workload: |
+    apiVersion: aggrega.ai/v1alpha1
+    kind: Workload
+    containers:
+      main:
+        image: consumer:1.0
+        variables:
+          APP_NAME: '{{ .values.appName }}'
+          MARKED_SECRET: '{{ .context.uses.storeEdge.provides.zzTargetSecret }}'
+          MARKED_HOST: '{{ .context.uses.storeEdge.provides.aaTargetHost }}'
+          PLAIN_SECRET: '{{ .context.uses.plainEdge.provides.zzTargetSecret }}'
+          STORE_SECRET_ENV: '{{ .context.inject.env.STORE_SECRET }}'
+        ports:
+          p: 8080
+    services:
+      app:
+        type: ClusterIP
+        ports:
+          p: 8080

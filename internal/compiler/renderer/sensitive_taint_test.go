@@ -246,6 +246,220 @@ func TestDerivedSensitiveKeys_SourceStringShape(t *testing.T) {
 	}
 }
 
+// TestWorkloadReadsWithheld_PerRootAndDepth is the matrix for the whole-projection
+// reading. It runs per ROOT and per DEPTH rather than on a representative, because
+// the failure this file exists to catch is a clause dropped from one branch while
+// every other branch keeps passing.
+//
+// Every withheld case sits beside a control of the same shape over a path nothing
+// withholds, so a rule that fired on everything would fail the control half.
+func TestWorkloadReadsWithheld_PerRootAndDepth(t *testing.T) {
+	t.Parallel()
+	keys := redact.Keys{
+		Values:       taintFixtureValues(),
+		Infra:        taintFixtureInfra(),
+		Locals:       map[string]bool{"zzDsn": true},
+		Inject:       map[string]map[string]bool{"env": {"DATABASE_PASSWORD": true}},
+		UsesProvides: map[string]map[string]bool{"storeEdge": {"zzTargetSecret": true}},
+	}
+
+	cases := []struct {
+		name     string
+		withheld string
+		control  string
+	}{
+		{
+			name:     "own values leaf",
+			withheld: `{{ .values.dbPassword }}`,
+			control:  `{{ .values.appName }}`,
+		},
+		{
+			name:     "own withheld local",
+			withheld: `{{ .locals.zzDsn }}`,
+			control:  `{{ .locals.appLabel }}`,
+		},
+		{
+			name:     "delivery key at full depth",
+			withheld: `{{ .context.inject.env.DATABASE_PASSWORD }}`,
+			control:  `{{ .context.inject.env.DATABASE_NAME }}`,
+		},
+		{
+			name:     "delivery mechanism, one level short of the key",
+			withheld: `{{ range $k, $v := .context.inject.env }}{{ $v }}{{ end }}`,
+			control:  `{{ range $k, $v := .context.inject.file }}{{ $v }}{{ end }}`,
+		},
+		{
+			name:     "consumed target's provides key at full depth",
+			withheld: `{{ .context.uses.storeEdge.provides.zzTargetSecret }}`,
+			control:  `{{ .context.uses.plainEdge.provides.zzTargetSecret }}`,
+		},
+		{
+			name:     "consumed target's provides bag, one level short of the key",
+			withheld: `{{ range $k, $v := .context.uses.storeEdge.provides }}{{ $v }}{{ end }}`,
+			control:  `{{ range $k, $v := .context.uses.plainEdge.provides }}{{ $v }}{{ end }}`,
+		},
+		{
+			name:     "the whole edge, two levels short of the key",
+			withheld: `{{ .context.uses.storeEdge }}`,
+			control:  `{{ .context.uses.plainEdge }}`,
+		},
+		{
+			name: "an edge field a provides declaration does not govern",
+			// Per-connection config is authored on the edge, not published by the
+			// target, so the target's provides declaration does not reach it.
+			withheld: `{{ .context.uses.storeEdge.provides.zzTargetSecret }}`,
+			control:  `{{ .context.uses.storeEdge.values.protocol }}`,
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			if !workloadReadsWithheld(c.withheld, keys) {
+				t.Errorf("must be withheld: %s", c.withheld)
+			}
+			if workloadReadsWithheld(c.control, keys) {
+				t.Errorf("must NOT be withheld: %s", c.control)
+			}
+		})
+	}
+}
+
+// TestWorkloadReadsWithheld_DynamicAliasLookupIsConservative pins the deliberate
+// over-withholding, which has no control half because there cannot be one.
+//
+// A lookup through `index` does not attribute the alias: the reference census
+// reports the whole uses pillar, so the read is indistinguishable from a read of
+// every edge — including the marked one. Withholding is the direction that costs a
+// reader one value they must find another way, where the alternative prints a
+// secret. The dotted form above IS attributed, so an author who wants the precise
+// answer has a shape that gives it.
+func TestWorkloadReadsWithheld_DynamicAliasLookupIsConservative(t *testing.T) {
+	t.Parallel()
+	keys := redact.Keys{UsesProvides: map[string]map[string]bool{"storeEdge": {"zzTargetSecret": true}}}
+
+	// Both are withheld, including the one naming only the UNMARKED alias.
+	for _, tmpl := range []string{
+		`{{ (index .context.uses "storeEdge").provides.zzTargetSecret }}`,
+		`{{ (index .context.uses "plainEdge").provides.zzTargetSecret }}`,
+	} {
+		if !workloadReadsWithheld(tmpl, keys) {
+			t.Errorf("a dynamic alias lookup must take the conservative answer: %s", tmpl)
+		}
+	}
+	// The same conservatism does not leak across pillars: a dynamic lookup into a
+	// pillar nothing withholds is still not withheld.
+	if workloadReadsWithheld(`{{ index .context.inject.env "ANY" }}`, keys) {
+		t.Error("a pillar the set names nothing in must not be withheld")
+	}
+}
+
+// TestWorkloadReadsWithheld_EmptySetShortCircuits is the escape hatch's structural
+// half. The capture mode turns withholding off by emptying the set, so a reading
+// that consulted the template rather than the set would keep firing under a mode
+// meant to show everything. It short-circuits before the parse, which is why an
+// unparseable template — withheld under any non-empty set — is not withheld here.
+func TestWorkloadReadsWithheld_EmptySetShortCircuits(t *testing.T) {
+	t.Parallel()
+	for _, tmpl := range []string{
+		`{{ .values.dbPassword }}`,
+		`{{ .context.inject.env.DATABASE_PASSWORD }}`,
+		`{{ .context.uses.storeEdge.provides.zzTargetSecret }}`,
+		`{{ .values.dbPassword`, // unparseable
+	} {
+		if workloadReadsWithheld(tmpl, redact.Keys{}) {
+			t.Errorf("an empty set withholds nothing, so nothing can be read from it: %s", tmpl)
+		}
+	}
+	// The control: the same unparseable text IS withheld once anything is withheld,
+	// because the reference set cannot be recovered and the conservative direction
+	// is to withhold.
+	if !workloadReadsWithheld(`{{ .values.dbPassword`, redact.Keys{Values: taintFixtureValues()}) {
+		t.Error("an unparseable template must be withheld whenever the set names anything")
+	}
+	// A set that carries ONLY the display decision must not feed the reading its
+	// own result.
+	if workloadReadsWithheld(`{{ .values.dbPassword }}`, redact.Keys{Workload: redact.WorkloadSubstituted}) {
+		t.Error("the display decision is the reading's output; a reading that consulted it would be self-referential")
+	}
+}
+
+// TestUsesWithheld_KeysPublishedByAliasAndDeliveredByMechanism covers the one walk
+// that turns a consumed target's declarations into the two sets its two display
+// surfaces need. The control throughout is two edges to two DIFFERENT targets
+// publishing the same key name: only the one whose target declared it may appear.
+func TestUsesWithheld_KeysPublishedByAliasAndDeliveredByMechanism(t *testing.T) {
+	t.Parallel()
+	markedInject := types.OrderedMap[types.OrderedMap[string]]{}
+	markedInject.Set("env", pairs("STORE_SECRET", "zzTargetSecret", "STORE_HOST", "aaTargetHost"))
+	plainInject := types.OrderedMap[types.OrderedMap[string]]{}
+	// The SAME delivery-key-to-provides-key mapping on the edge whose target
+	// declares nothing. A rule keyed on the provides key's name rather than on the
+	// declaring target would mark this one too.
+	plainInject.Set("env", pairs("PLAIN_SECRET", "zzTargetSecret"))
+
+	uses := types.OrderedMap[types.EnrichedEdge]{}
+	uses.Set("storeEdge", types.EnrichedEdge{Target: "store", Component: "core/uses-target", Inject: markedInject})
+	uses.Set("plainEdge", types.EnrichedEdge{Target: "plain", Component: "core/uses-plain", Inject: plainInject})
+
+	declared := map[string]map[string]bool{
+		"core/uses-target": {"zzTargetSecret": true},
+	}
+	got := usesWithheld(uses, func(componentType string) map[string]bool {
+		return declared[componentType]
+	})
+
+	if !got.Provides["storeEdge"]["zzTargetSecret"] {
+		t.Errorf("the declaring target's key must reach the published set under its edge's alias; got %v", got.Provides)
+	}
+	if _, present := got.Provides["plainEdge"]; present {
+		t.Errorf("an alias whose target declares nothing must be omitted, not mapped empty; got %v", got.Provides)
+	}
+	// The delivered half: the delivery key filled FROM the declared provides key is
+	// marked, its sibling filled from an undeclared key is not, and the identically
+	// mapped key on the undeclared target's edge is not.
+	if !got.Inject["env"]["STORE_SECRET"] {
+		t.Errorf("a delivery key filled from the target's declared provides key must be marked; got %v", got.Inject)
+	}
+	if got.Inject["env"]["STORE_HOST"] {
+		t.Errorf("a delivery key filled from an undeclared provides key must not be marked; got %v", got.Inject)
+	}
+	if got.Inject["env"]["PLAIN_SECRET"] {
+		t.Errorf("the same mapping on an undeclared target's edge must not be marked; got %v", got.Inject)
+	}
+	// A node consuming only undeclared targets produces two nil maps, so every
+	// applier is a no-op and its display is byte-identical to one taken before the
+	// axis existed.
+	onlyPlain := types.OrderedMap[types.EnrichedEdge]{}
+	onlyPlain.Set("plainEdge", types.EnrichedEdge{Target: "plain", Component: "core/uses-plain", Inject: plainInject})
+	if got := usesWithheld(onlyPlain, func(string) map[string]bool { return declared["nope"] }); got.Provides != nil || got.Inject != nil {
+		t.Errorf("no declaring target must produce a nil set on both halves; got %+v", got)
+	}
+	if got := usesWithheld(types.OrderedMap[types.EnrichedEdge]{}, nil); got.Provides != nil || got.Inject != nil {
+		t.Errorf("no edges must produce a nil set on both halves; got %+v", got)
+	}
+	// An edge that declares no inject mapping contributes to the published half
+	// only, which is what keeps the delivered half attributable to an authored
+	// mapping rather than to the declaration alone.
+	noInject := types.OrderedMap[types.EnrichedEdge]{}
+	noInject.Set("storeEdge", types.EnrichedEdge{Target: "store", Component: "core/uses-target"})
+	bare := usesWithheld(noInject, func(componentType string) map[string]bool { return declared[componentType] })
+	if !bare.Provides["storeEdge"]["zzTargetSecret"] {
+		t.Errorf("an edge with no inject mapping still publishes; got %v", bare.Provides)
+	}
+	if bare.Inject != nil {
+		t.Errorf("an edge with no inject mapping delivers nothing to mark; got %v", bare.Inject)
+	}
+}
+
+func pairs(kv ...string) types.OrderedMap[string] {
+	m := types.OrderedMap[string]{}
+	for i := 0; i+1 < len(kv); i += 2 {
+		m.Set(kv[i], kv[i+1])
+	}
+	return m
+}
+
 func TestDerivedSensitiveKeys_SourceStructuredShape(t *testing.T) {
 	t.Parallel()
 	r := recipeWithLocals("dsn", `{{ .values.dbPassword }}`)

@@ -1,0 +1,26 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Component
+metadata:
+  name: core/uses-consumer
+  version: "1.0.0"
+  labels:
+    component.aggrega.ai/type: "server"
+spec:
+  inject: ["env"]
+  # Two sockets with different selectors, so the consumer binds one target that
+  # declares a sensitive provides key and one that declares nothing. The pair is
+  # what makes the display's discrimination observable in a single build.
+  usesSchema:
+    marked:
+      selector: "component.aggrega.ai/type=stateful-server"
+      inject: ["env"]
+    unmarked:
+      selector: "component.aggrega.ai/type=resource"
+      inject: ["env"]
+  # The consumer declares NOTHING sensitive. Every withholding on its display
+  # is attributable to a target's declaration reaching it across an edge.
+  schema:
+    values:
+      appName: { type: string }
+    provides:
+      host: { type: string, required: true }

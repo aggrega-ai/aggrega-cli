@@ -50,6 +50,19 @@ type PhaseBState struct {
 	// succeed. nil before B.2 and for Recipes that don't declare workload:.
 	ParsedWorkload *types.Workload
 
+	// DisplayWorkload is the rendered workload a display SHOWS, which is not the
+	// document the build emitted: it is the same workload template evaluated a
+	// second time against a context whose declared-sensitive data reads as the
+	// replacement text. It never reaches an emitted file — the only reader is the
+	// display context the capture is handed.
+	//
+	// nil is the ordinary state, and covers three different situations that need
+	// no re-render: nothing is declared sensitive, no capture is live, or the
+	// workload template reads nothing withheld. It is also nil when the re-render
+	// could not be produced, which Redact.Workload then records as unavailable so
+	// the display says so instead of showing the emitted document.
+	DisplayWorkload *types.Workload
+
 	// EmittedFiles accumulates the per-input-kind file contributions across
 	// B.1 (sourced), B.3 (artifacts; stub today), and B.4 (workload
 	// synthesis). Order is preserved (byte-for-byte deterministic output);
@@ -131,6 +144,44 @@ type PhaseBState struct {
 	// rendered Secret derive from one evaluation (no drift). nil when no
 	// credential attachment resolves a provides bag.
 	AttachmentProvides map[string]types.OrderedMap[string]
+}
+
+// capture writes one per-pass display snapshot for this node.
+//
+// It is the ONE projection call in the renderer, and the singularity is the
+// point rather than tidiness: the projection is handed a context whose
+// non-key-addressable data has ALREADY been substituted, never a live context
+// plus a decision about it. A second call site would be free to pass the live
+// context and show a reader the document the build emitted where the display
+// promised a re-render — and a projection added later for another parsed
+// document would acquire its own parallel path instead of routing through this
+// one. TestPillarSnapshotHasOneCallSite holds it.
+//
+// A build with no live capture returns before the projection is built, so its
+// cost is paid only where something reads it.
+func (s *PhaseBState) capture(pass trace.Pass, fileSuffix string, ctx *types.TemplateContext) {
+	if !trace.Captures(s.Trace) {
+		return
+	}
+	_ = s.Trace.Write(pass, s.NodeID, s.BoundaryPath, fileSuffix,
+		trace.PillarSnapshot(s.displayContext(ctx), pass, s.Redact))
+}
+
+// displayContext returns the context the projection is handed: the live one when
+// no projection inside it was replaced, and a shallow copy carrying the display
+// re-render otherwise.
+//
+// The copy is what keeps the substitution on the display side of the boundary.
+// The context this reads is the one the artifacts render from, so swapping the
+// field in place would put a re-rendered document where the emitted one belongs.
+// Deriving a context by shallow copy is the established shape in this package.
+func (s *PhaseBState) displayContext(ctx *types.TemplateContext) *types.TemplateContext {
+	if ctx == nil || s.DisplayWorkload == nil {
+		return ctx
+	}
+	shown := *ctx
+	shown.Workload = s.DisplayWorkload
+	return &shown
 }
 
 // NewPhaseBState constructs a fresh accumulator for one node's Phase B run.
