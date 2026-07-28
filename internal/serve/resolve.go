@@ -8,23 +8,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"go.yaml.in/yaml/v3"
 
+	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/yamlpos"
 )
-
-// splitVersionedURI separates a URI of the form "<name>:<version>" via
-// LastIndex(":") — URIs may carry colons in their authority portion
-// (e.g., oci://host:port/path:1.0.0), so only the trailing colon is
-// the name/version boundary. Unversioned input returns (input, "").
-func splitVersionedURI(s string) (name, version string) {
-	if idx := strings.LastIndex(s, ":"); idx >= 0 {
-		return s[:idx], s[idx+1:]
-	}
-	return s, ""
-}
 
 // resolveDefinitionSite returns the Location of the entity referenced
 // at the cursor in uri. The cursor is classified via yamlpos.Classify;
@@ -71,7 +60,7 @@ func (s *Server) resolveDefinitionSite(reqCtx context.Context, uri string, pos y
 		if ctx.Value == "" {
 			return nil, nil
 		}
-		name, version := splitVersionedURI(ctx.Value)
+		name, version, _ := catalog.SplitVersionedURI(ctx.Value)
 		return s.findDefinitionByURI(reqCtx, name, version)
 	case yamlpos.ContextKindUsesTarget:
 		// Intra-document local-component reference. Walk the source
@@ -384,13 +373,13 @@ func (s *Server) findImplementationsAcrossWorkspace(reqCtx context.Context, uri 
 		extendsVal := scalarAtPath(root, []string{"spec", "extends"})
 		var hit bool
 		if implementsVal != nil {
-			implName, _ := splitVersionedURI(implementsVal.Value)
+			implName, _, _ := catalog.SplitVersionedURI(implementsVal.Value)
 			if implName == target {
 				hit = true
 			}
 		}
 		if extendsVal != nil {
-			extName, _ := splitVersionedURI(extendsVal.Value)
+			extName, _, _ := catalog.SplitVersionedURI(extendsVal.Value)
 			if extName == target {
 				hit = true
 			}
@@ -457,7 +446,7 @@ func collectReferences(n *yaml.Node, idx yamlpos.LineIndex, fileURI, target stri
 				// Scanned value may carry a "<name>:<version>" suffix
 				// while the target carries the bare name. Split before
 				// comparing.
-				scannedName, _ := splitVersionedURI(valNode.Value)
+				scannedName, _, _ := catalog.SplitVersionedURI(valNode.Value)
 				if scannedName == target && isReferenceShape(childPath) {
 					*out = append(*out, nodeToLocation(fileURI, idx, valNode))
 				}

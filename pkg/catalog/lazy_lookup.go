@@ -1441,7 +1441,7 @@ func (l *LazyLookup) PluginFromCacheByURI(uri string) (types.Plugin, string, boo
 	if l.cacheDir == "" {
 		return types.Plugin{}, "", false, nil
 	}
-	_, version, hasV := splitVersionedURI(uri)
+	_, version, hasV := SplitVersionedURI(uri)
 	if !hasV || version == "" {
 		return types.Plugin{}, "", false, nil
 	}
@@ -1988,7 +1988,7 @@ func (l *LazyLookup) resolveFeatureForClosure(uri string, puller OCIPuller) (clo
 // tag matches the eager path's vocabulary so a drift compare never differs on it.
 func (l *LazyLookup) closureResolution(kind, name, metaVersion, uri, path string) closure.Resolution {
 	resolved := metaVersion
-	if _, v, hasV := splitVersionedURI(uri); hasV && v != "" {
+	if _, v, hasV := SplitVersionedURI(uri); hasV && v != "" {
 		resolved = v
 	}
 	return closure.Resolution{

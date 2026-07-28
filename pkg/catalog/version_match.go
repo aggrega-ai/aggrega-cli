@@ -21,14 +21,21 @@ import (
 // halt.
 var ErrUnsatisfiableEntityVersion = errors.New("no catalog version satisfies the referenced version constraint")
 
-// splitVersionedURI splits a URI like "core/api-server:1.0.0" into its base
+// SplitVersionedURI splits a URI like "core/api-server:1.0.0" into its base
 // (before the last colon) and version (after the last colon) segments. The
 // last colon is the separator because version segments do not contain colons
 // while base segments may carry registry-style separators ("hub.aggrega.ai/component/core/api-server:1.0.0").
 //
+// It is the single home for this split — the decomposing counterpart to
+// RecipeMappingURI's composition — so every caller applies the same separator
+// rule.
+//
 // Returns the bare URI as base, "" as version, and false as hasVersion when
-// the URI carries no colon.
-func splitVersionedURI(uri string) (base, version string, hasVersion bool) {
+// the URI carries no colon. hasVersion is what separates that case from a
+// trailing colon with an empty version: "core/x" yields ("core/x", "", false)
+// while "core/x:" yields ("core/x", "", true). The two agree on base and on
+// version, so only hasVersion tells them apart.
+func SplitVersionedURI(uri string) (base, version string, hasVersion bool) {
 	idx := strings.LastIndex(uri, ":")
 	if idx < 0 {
 		return uri, "", false
@@ -70,7 +77,7 @@ func splitVersionedURI(uri string) (base, version string, hasVersion bool) {
 // version-less fallback set) break on the lexically-smallest index key, never on
 // map-iteration order.
 func selectEntityVersion[V any](index map[string]V, callerURI string, meta func(V) (name, version string)) (string, bool, error) {
-	base, verSeg, hasVer := splitVersionedURI(callerURI)
+	base, verSeg, hasVer := SplitVersionedURI(callerURI)
 	caret := hasVer && strings.HasPrefix(verSeg, "^")
 
 	var constraint *semver.Constraints

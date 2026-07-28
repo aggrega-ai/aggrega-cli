@@ -117,14 +117,18 @@ func TestSplitVersionedURI(t *testing.T) {
 		{"core/api-server:1.0.0", "core/api-server", "1.0.0", true},
 		{"core/api-server:^1.0.0", "core/api-server", "^1.0.0", true},
 		{"core/api-server", "core/api-server", "", false},
+		// This pair differs ONLY in hasVersion: a trailing colon is a present
+		// but empty version, an absent colon is no version at all. A caller
+		// reading base and version alone cannot tell them apart.
+		{"core/api-server:", "core/api-server", "", true},
 		{"hub.aggrega.ai/component/core/api-server:1.0.0", "hub.aggrega.ai/component/core/api-server", "1.0.0", true},
 		{"hub.aggrega.ai/component/core/api-server", "hub.aggrega.ai/component/core/api-server", "", false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.uri, func(t *testing.T) {
-			base, version, hasVer := splitVersionedURI(tc.uri)
+			base, version, hasVer := SplitVersionedURI(tc.uri)
 			if base != tc.wantBase || version != tc.wantVersion || hasVer != tc.wantHasVer {
-				t.Errorf("splitVersionedURI(%q) = (%q, %q, %v); want (%q, %q, %v)",
+				t.Errorf("SplitVersionedURI(%q) = (%q, %q, %v); want (%q, %q, %v)",
 					tc.uri, base, version, hasVer, tc.wantBase, tc.wantVersion, tc.wantHasVer)
 			}
 		})

@@ -142,7 +142,7 @@ func (p *pinCacheCountingPuller) Pull(context.Context, string, string) (*oci.Pul
 // returned ResolvedVersion to address it.
 func writePinnedSlot(t *testing.T, ws, cacheDir, slotURI, mediaType string, blob []byte) Pin {
 	t.Helper()
-	_, version, _ := splitVersionedURI(slotURI)
+	_, version, _ := SplitVersionedURI(slotURI)
 	mb, md := manifestBytesFor(t, mediaType, blob)
 	if err := writeEntityToCacheSlot(ws, cacheDir, slotURI, version, &oci.PullResult{MediaType: mediaType, Bytes: blob, ManifestBytes: mb, Digest: md}); err != nil {
 		t.Fatalf("write cache slot %s: %v", slotURI, err)

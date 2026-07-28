@@ -12,6 +12,7 @@ import (
 	"go.yaml.in/yaml/v3"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/serve/hover"
+	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/yamlpos"
 )
 
@@ -66,7 +67,7 @@ func (s *Server) handleHover(params hoverParams) (*MarkupContent, *jsonRPCError)
 		if ctx.Value == "" {
 			return nil, nil
 		}
-		name, _ := splitVersionedURI(ctx.Value)
+		name, _, _ := catalog.SplitVersionedURI(ctx.Value)
 		return s.hoverByURI(name), nil
 	}
 

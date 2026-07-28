@@ -337,7 +337,7 @@ func (c *Catalog) RecipeByURI(uri string) (types.Recipe, bool) {
 		return r, true
 	}
 	if provider, rest, found := strings.Cut(uri, "/"); found {
-		name, version, _ := splitVersionedURI(rest)
+		name, version, _ := SplitVersionedURI(rest)
 		if r, ok := matchOneRecipe(c.Recipes, provider, name, version); ok {
 			return r, true
 		}
@@ -347,7 +347,7 @@ func (c *Catalog) RecipeByURI(uri string) (types.Recipe, bool) {
 			}
 		}
 	}
-	name, version, _ := splitVersionedURI(uri)
+	name, version, _ := SplitVersionedURI(uri)
 	if r, ok := matchOneRecipe(c.Recipes, "", name, version); ok {
 		return r, true
 	}
@@ -390,7 +390,7 @@ func (c *Catalog) FeatureRecipeByURI(uri string) (types.FeatureRecipe, bool) {
 		return fr, true
 	}
 	if provider, rest, found := strings.Cut(uri, "/"); found {
-		name, version, _ := splitVersionedURI(rest)
+		name, version, _ := SplitVersionedURI(rest)
 		if fr, ok := matchOneFeatureRecipe(c.FeatureRecipes, provider, name, version); ok {
 			return fr, true
 		}
@@ -400,7 +400,7 @@ func (c *Catalog) FeatureRecipeByURI(uri string) (types.FeatureRecipe, bool) {
 			}
 		}
 	}
-	name, version, _ := splitVersionedURI(uri)
+	name, version, _ := SplitVersionedURI(uri)
 	if fr, ok := matchOneFeatureRecipe(c.FeatureRecipes, "", name, version); ok {
 		return fr, true
 	}
@@ -523,7 +523,7 @@ func (c *Catalog) PluginByURI(uri string) (types.Plugin, bool) {
 // set through the recipeCatalog() *Catalog shell, so its ProviderPluginForTarget
 // delegates here against the same matcher (no per-backing reimplementation).
 func (c *Catalog) ProviderPluginForTarget(ref string, bindings map[string]string) (types.Plugin, bool, error) {
-	capability, verSeg, hasVer := splitVersionedURI(ref)
+	capability, verSeg, hasVer := SplitVersionedURI(ref)
 	return c.pluginForCapability("provider", capability, verSeg, hasVer, bindings, providerCapabilityDiag)
 }
 
@@ -713,11 +713,11 @@ func implementsSatisfies(impl, componentType string) bool {
 	if impl == componentType {
 		return true
 	}
-	cBase, cVer, cHasVer := splitVersionedURI(componentType)
+	cBase, cVer, cHasVer := SplitVersionedURI(componentType)
 	if !cHasVer {
 		return false
 	}
-	iBase, iVer, iHasVer := splitVersionedURI(impl)
+	iBase, iVer, iHasVer := SplitVersionedURI(impl)
 	if iHasVer && iBase == cBase && strings.HasPrefix(iVer, "^") {
 		if cv, err := semver.NewVersion(cVer); err == nil {
 			if con, cerr := semver.NewConstraint(iVer); cerr == nil && con.Check(cv) {
@@ -746,7 +746,7 @@ func manifestMappingConsistent(impl, key string) bool {
 	if implementsSatisfies(impl, key) {
 		return true
 	}
-	if _, _, keyHasVer := splitVersionedURI(key); !keyHasVer {
+	if _, _, keyHasVer := SplitVersionedURI(key); !keyHasVer {
 		return stripVersion(impl) == key
 	}
 	return false
@@ -1058,6 +1058,6 @@ func legacyFeatureURI(manifest *types.Manifest, instanceName, featureType string
 // base. Used by the consistency check to compare base-URI portions
 // independent of version form.
 func stripVersion(uri string) string {
-	base, _, _ := splitVersionedURI(uri)
+	base, _, _ := SplitVersionedURI(uri)
 	return base
 }

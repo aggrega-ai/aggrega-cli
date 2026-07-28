@@ -236,7 +236,7 @@ func BindEntityLocation(registry, kindHint, uri string) (location string, ok boo
 	if kind == "" {
 		return "", false
 	}
-	identity, _, _ := splitVersionedURI(uri)
+	identity, _, _ := SplitVersionedURI(uri)
 	ref, err := entityReference(registry, kind, identity)
 	if err != nil {
 		return "", false
