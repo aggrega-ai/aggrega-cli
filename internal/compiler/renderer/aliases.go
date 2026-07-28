@@ -16,6 +16,21 @@ import rendercore "github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercor
 // display consumers match the class by the single definition in rendercore.
 const UnsupportedFieldCode = rendercore.UnsupportedFieldCode
 
+// SensitiveByValueCode re-exports the stable code carried by every
+// sensitive-by-value advisory, so the render orchestration package and its
+// display consumers match the class by the single definition in rendercore.
+const SensitiveByValueCode = rendercore.SensitiveByValueCode
+
+// SensitiveByValueDiagnostic re-exports the constructor for the
+// sensitive-by-value advisory so the render orchestration package builds it
+// from the single definition in rendercore.
+var SensitiveByValueDiagnostic = rendercore.SensitiveByValueDiagnostic
+
+// RenderDiagnosticText re-exports the one formatter for a structured render
+// diagnostic's user-facing line, so every display surface renders the class
+// identically.
+var RenderDiagnosticText = rendercore.RenderDiagnosticText
+
 // Wire types of the provider-render socket.
 type (
 	ArtifactProjectionEntry    = rendercore.ArtifactProjectionEntry

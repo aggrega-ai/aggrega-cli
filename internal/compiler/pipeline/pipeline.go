@@ -198,32 +198,31 @@ type Options struct {
 
 	// SuppressUnsupportedFieldWarnings, when true, silences the unsupported-field
 	// warning class on the render-warning surface — the per-authored-field notices
-	// a lower-fidelity target emits for fields it cannot honor. Other render
-	// warnings still surface. It is a pure display filter over structured
+	// a lower-fidelity target emits for fields it cannot honor. It matches on that
+	// class's own code, so other render warnings and the other coded diagnostic
+	// classes still surface. It is a pure display filter over structured
 	// diagnostics carried out-of-band; it never re-renders and never changes the
 	// emitted bytes. Left false — the default — the class surfaces.
 	SuppressUnsupportedFieldWarnings bool
 }
 
 // emitRenderWarnings writes the render step's advisory warnings to w: first the
-// free-form warning stream, then — unless suppressUnsupportedFields is set — the
-// structured unsupported-field class, each entry attributed to its
-// node and provider from its location. Suppression drops that class
-// alone; the free-form warnings always surface. This is a pure display pass over
-// out-of-band diagnostics and never touches the rendered bytes.
+// free-form warning stream, then the structured coded diagnostics, each entry
+// attributed to its node and provider from its location. Suppression is keyed on
+// the diagnostic's own code and drops the unsupported-field class alone — the
+// free-form warnings and every other coded class still surface, which is what
+// keeps a target-fidelity preference from silencing an unrelated advisory. This
+// is a pure display pass over out-of-band diagnostics and never touches the
+// rendered bytes.
 func emitRenderWarnings(w io.Writer, result *renderer.RenderResult, suppressUnsupportedFields bool) {
 	for _, warning := range result.Warnings {
 		fmt.Fprintf(w, "  warning: %s\n", warning)
 	}
-	if suppressUnsupportedFields {
-		return
-	}
-	for _, d := range result.UnsupportedFieldWarnings {
-		msg := d.Message
-		if d.Location != nil && d.Location.URI != "" {
-			msg = fmt.Sprintf("node %q (provider %q): %s", d.Location.URI, d.Location.Kind, d.Message)
+	for _, d := range result.Diagnostics {
+		if suppressUnsupportedFields && d.Code == renderer.UnsupportedFieldCode {
+			continue
 		}
-		fmt.Fprintf(w, "  warning: %s\n", msg)
+		fmt.Fprintf(w, "  warning: %s\n", renderer.RenderDiagnosticText(d))
 	}
 }
 
@@ -244,6 +243,13 @@ type Result struct {
 	Artifacts map[string][]byte
 	IRGraph   *types.IRGraph
 	Trace     map[string][]byte
+	// RenderDiagnostics carries the render's structured, coded advisories so a
+	// caller that does not read the terminal can surface them itself — the daemon
+	// turns them into editor problems. The terminal display already happened by
+	// the time this returns; carrying them here is what stops that display from
+	// being the only place they exist. Empty when the render was skipped, and
+	// out-of-band in every case: no entry affects Artifacts.
+	RenderDiagnostics []renderer.Diagnostic
 }
 
 // Tier4Result carries the outputs of Steps 1-4 of the compiler pipeline,
@@ -945,8 +951,9 @@ func RunPipeline(
 		}
 
 		result = &Result{
-			Artifacts: renderResult.FileBytes(),
-			IRGraph:   graph,
+			Artifacts:         renderResult.FileBytes(),
+			IRGraph:           graph,
+			RenderDiagnostics: renderResult.Diagnostics,
 		}
 		if memWriter != nil {
 			result.Trace = memWriter.Entries()

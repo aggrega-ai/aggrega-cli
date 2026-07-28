@@ -304,6 +304,15 @@ type Server struct {
 	diagMu      sync.Mutex
 	diagnostics map[string][]Diagnostic
 
+	// renderDiags is the second diagnostic layer, guarded by the same diagMu:
+	// the coded advisories the render step raises, keyed by the file they are
+	// attributed to. It is kept apart from diagnostics rather than merged into it
+	// because the two layers refresh on different events — the semantic layer on
+	// every buffer validation, the render layer only when an inspection actually
+	// renders — so one overwriting the other would make each request erase the
+	// other's findings. Reads compose the two; writes only ever touch one.
+	renderDiags map[string][]Diagnostic
+
 	in     *bufio.Reader
 	out    io.Writer
 	stderr io.Writer
@@ -372,30 +381,73 @@ func (s *Server) dropDiagnostics(file string) {
 	delete(s.diagnostics, file)
 }
 
-// snapshotDiagnostics returns a copy of file's diagnostics slice taken
-// under diagMu. The copy is what callers marshal or return on the wire,
-// so the marshal runs off the lock and never races a concurrent
-// writer's whole-slice reassignment. A missing entry returns nil.
+// snapshotDiagnostics returns a copy of file's composed diagnostics taken under
+// diagMu: the semantic layer first, then the render layer. The copy is what
+// callers marshal or return on the wire, so the marshal runs off the lock and
+// never races a concurrent writer's whole-slice reassignment. Composition
+// happens here, at the single read entry point, so no caller can publish one
+// layer and silently drop the other. Both layers empty returns nil.
 func (s *Server) snapshotDiagnostics(file string) []Diagnostic {
 	s.diagMu.Lock()
 	defer s.diagMu.Unlock()
-	diags, ok := s.diagnostics[file]
-	if !ok || len(diags) == 0 {
+	semantic := s.diagnostics[file]
+	render := s.renderDiags[file]
+	if len(semantic)+len(render) == 0 {
 		return nil
 	}
-	out := make([]Diagnostic, len(diags))
-	copy(out, diags)
+	out := make([]Diagnostic, 0, len(semantic)+len(render))
+	out = append(out, semantic...)
+	out = append(out, render...)
 	return out
 }
 
-// diagnosticsFiles returns the diagnostics map's keys, sorted, under
-// diagMu. Used by the initialize startup-flush so the whole-map range
-// does not race a concurrent writer.
+// setRenderDiagnostics replaces the whole render layer with byFile and returns
+// the sorted set of files whose entry the replacement touched — the union of the
+// files that had render diagnostics and the files that now do — so the caller
+// republishes exactly the files whose composed state changed, clearing a stale
+// advisory as reliably as it publishes a new one. Whole-layer replacement is
+// what a whole-closure render calls for: a per-file merge would strand an
+// advisory on a file that stopped raising one.
+func (s *Server) setRenderDiagnostics(byFile map[string][]Diagnostic) []string {
+	s.diagMu.Lock()
+	defer s.diagMu.Unlock()
+	touched := map[string]bool{}
+	for f := range s.renderDiags {
+		touched[f] = true
+	}
+	next := make(map[string][]Diagnostic, len(byFile))
+	for f, d := range byFile {
+		if len(d) == 0 {
+			continue
+		}
+		next[f] = d
+		touched[f] = true
+	}
+	s.renderDiags = next
+	files := make([]string, 0, len(touched))
+	for f := range touched {
+		files = append(files, f)
+	}
+	sort.Strings(files)
+	return files
+}
+
+// diagnosticsFiles returns the keys of both diagnostic layers, deduplicated and
+// sorted, under diagMu. Used by the initialize startup-flush so the whole-map
+// range does not race a concurrent writer. Both layers are walked so a file
+// carrying only render advisories is flushed like any other.
 func (s *Server) diagnosticsFiles() []string {
 	s.diagMu.Lock()
 	defer s.diagMu.Unlock()
-	files := make([]string, 0, len(s.diagnostics))
+	seen := make(map[string]bool, len(s.diagnostics)+len(s.renderDiags))
 	for f := range s.diagnostics {
+		seen[f] = true
+	}
+	for f := range s.renderDiags {
+		seen[f] = true
+	}
+	files := make([]string, 0, len(seen))
+	for f := range seen {
 		files = append(files, f)
 	}
 	sort.Strings(files)
@@ -479,6 +531,7 @@ func Run(cfg RunConfig) error {
 		lazyCatalog:       lazyCatalog,
 		parseCache:        newCache(wsCfg.ParseCache.MaxEntries, wsCfg.ParseCache.MaxBytes),
 		diagnostics:       map[string][]Diagnostic{},
+		renderDiags:       map[string][]Diagnostic{},
 		in:                bufio.NewReader(cfg.Stdin),
 		out:               cfg.Stdout,
 		stderr:            stderr,

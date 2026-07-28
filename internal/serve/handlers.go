@@ -289,7 +289,10 @@ func (s *Server) handleValidate(ctx context.Context, params validateParams) (val
 		return validateResult{Diagnostics: diags}, nil
 	}
 	s.setDiagnostics(params.File, diags)
-	return validateResult{Diagnostics: diags}, nil
+	// The response carries the composed view, not the semantic layer alone: the
+	// client replaces its whole per-file collection from this reply, so returning
+	// one layer would erase any render advisory standing on the same file.
+	return validateResult{Diagnostics: s.snapshotDiagnostics(params.File)}, nil
 }
 
 // publishCascadeFailureDiagnostics surfaces every found-but-invalid
@@ -553,6 +556,16 @@ func (s *Server) handleIrGraph(ctx context.Context, params irGraphParams) (irGra
 			Message: fmt.Sprintf("pipeline: %v", err),
 		}
 	}
+
+	// 6. Render advisories to the Problems panel. The render step's coded
+	//    diagnostics — a target that cannot honor an authored field, an
+	//    attachment delivering a declared-sensitive datum as a literal — reach
+	//    the terminal on a CLI build and would otherwise reach nothing here, so
+	//    they are published on the file the daemon attributes semantic findings
+	//    to. Non-blocking, like drift: the graph is returned regardless. The
+	//    render only runs when the render-diagnostics dial is on, so with it off
+	//    this replaces an empty layer with an empty layer.
+	s.publishRenderDiagnostics(ctx, resolved.AggregatePath, result.RenderDiagnostics)
 
 	graphBytes, err := json.Marshal(result.IRGraph)
 	if err != nil {

@@ -30,11 +30,20 @@ import (
 // FeatureRecipe injectMapping interception in Phase A is a later, last-wins
 // overlay and is intentionally not a collision. Attachments are processed in
 // IR (author) order for deterministic emission.
+//
+// onSensitiveByValue, when non-nil, is called once for each delivery key that
+// actually received a value the attachment's schema declares sensitive. This is
+// the by-value channel by construction — the resolved scalar is copied into the
+// pipe as a literal — so reporting from the delivery site is what keeps the
+// advisory tied to a delivery that really happened. The callback receives the
+// attachment instance, the delivery mechanism and the delivery key; it never
+// sees the value.
 func ResolveAttachmentInject(
 	inject *types.InjectPipe,
 	graph *types.IRGraph,
 	nodeID string,
 	recipeLookup RecipeLookup,
+	onSensitiveByValue func(attachment, mechanism, deliveryKey string),
 ) error {
 	if recipeLookup.FeatureRecipe == nil {
 		return nil
@@ -56,7 +65,7 @@ func ResolveAttachmentInject(
 		if err != nil {
 			return err
 		}
-		if err := deliverAttachmentInjectKeys(inject, instanceName, entry.Inject, provided, nodeID); err != nil {
+		if err := deliverAttachmentInjectKeys(inject, instanceName, entry.Inject, provided, nodeID, entry.SensitiveInject, onSensitiveByValue); err != nil {
 			return err
 		}
 	}
@@ -230,7 +239,27 @@ func ResolveAttachmentProvides(attachments types.OrderedMap[types.IRFeatureEntry
 // attachment's provides) delivers nothing (missingkey=zero semantics).
 // Mechanisms are processed env, file, arg, then custom mechanisms in sorted
 // order for deterministic emission.
-func deliverAttachmentInjectKeys(inject *types.InjectPipe, instanceName string, entryInject types.OrderedMap[types.OrderedMap[string]], provided types.OrderedMap[string], nodeID string) error {
+//
+// sensitiveInject is the attachment's derived per-delivery-key marking, in the
+// same mechanism-then-delivery-key shape as entryInject. It is read, never
+// recomputed: whether a delivery key carries declared-sensitive material is
+// decided once where the attachment is merged, so a second decision here could
+// disagree with the first. onSensitiveByValue, when non-nil, is called for each
+// marked key whose value the pipe actually received; a key whose referenced
+// provides key resolved to nothing delivers no literal and reports nothing.
+func deliverAttachmentInjectKeys(inject *types.InjectPipe, instanceName string, entryInject types.OrderedMap[types.OrderedMap[string]], provided types.OrderedMap[string], nodeID string, sensitiveInject types.OrderedMap[types.OrderedMap[string]], onSensitiveByValue func(attachment, mechanism, deliveryKey string)) error {
+	reportSensitive := func(mech, localKey string) {
+		if onSensitiveByValue == nil {
+			return
+		}
+		marked, ok := sensitiveInject.Get(mech)
+		if !ok {
+			return
+		}
+		if _, isMarked := marked.Get(localKey); isMarked {
+			onSensitiveByValue(instanceName, mech, localKey)
+		}
+	}
 	set := func(dest *types.OrderedMap[string], mech, localKey, providesKey string) error {
 		if _, exists := dest.Get(localKey); exists {
 			return cerrors.Wrap(
@@ -243,6 +272,7 @@ func deliverAttachmentInjectKeys(inject *types.InjectPipe, instanceName string, 
 			return nil
 		}
 		dest.Set(localKey, val)
+		reportSensitive(mech, localKey)
 		return nil
 	}
 	for _, mt := range []struct {

@@ -29,14 +29,16 @@ import (
 type RenderResult struct {
 	Files    map[string]AssembledFile // boundary-relative path → content + producer-declared format
 	Warnings []string
-	// UnsupportedFieldWarnings carries the structured unsupported-field diagnostics
-	// raised during render — one per authored field a lower-fidelity target could
-	// not honor — separately from the free-form Warnings stream. Each entry keeps
-	// its stable code and names the node and provider via its Location, so a
-	// display surface can suppress the whole class by code while other render
-	// warnings still surface, and so downstream consumers can match them
-	// structurally. Out-of-band: never part of the emitted bytes.
-	UnsupportedFieldWarnings []Diagnostic
+	// Diagnostics carries the structured, coded advisories raised during render,
+	// separately from the free-form Warnings stream: the unsupported-field
+	// notices a lower-fidelity target emits for an authored field it cannot
+	// honor, and the sensitive-by-value notices attachment delivery raises for a
+	// declared-sensitive datum travelling as a literal. Each entry keeps its
+	// stable code and names the node and provider via its Location, so a display
+	// surface can filter one class by code while the others still surface, and so
+	// downstream consumers can match them structurally. Out-of-band: never part
+	// of the emitted bytes.
+	Diagnostics []Diagnostic
 }
 
 // FileBytes projects Files into a path→content map, dropping the per-file format
@@ -461,7 +463,17 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// authored delivery key's provides-key reference against the attachment's
 		// own resolved provides and deliver into .context.inject, before Phase A's
 		// FeatureRecipe injectMapping last-wins overlay.
-		if err := ResolveAttachmentInject(&inject, graph, nodeID, recipeLookup); err != nil {
+		//
+		// Delivery is also where the sensitive-by-value advisories are collected:
+		// the delivery site is the only place that knows a marked key actually
+		// received a literal. They are held unattributed until the node's target
+		// is resolved below, then located and handed to the same out-of-band
+		// stream the render diagnostics use.
+		var sensitiveByValue []Diagnostic
+		if err := ResolveAttachmentInject(&inject, graph, nodeID, recipeLookup,
+			func(attachment, mechanism, deliveryKey string) {
+				sensitiveByValue = append(sensitiveByValue, SensitiveByValueDiagnostic(attachment, mechanism, deliveryKey))
+			}); err != nil {
 			return nil, cerrors.Wrap(err, cerrors.DeveloperError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("Step 5 node %q attachment inject", nodeID))
 		}
 
@@ -581,6 +593,14 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 			providerRef = recipe.Spec.Capability
 			providerName = ProviderEngineKind(recipe.Spec.Capability)
 		}
+		// The node's target is known now, so the by-value advisories collected at
+		// attachment delivery can be located and joined to the per-node diagnostic
+		// accumulator. Collection order is the delivery order, which is itself
+		// deterministic, so the stream is byte-stable across runs.
+		for i := range sensitiveByValue {
+			sensitiveByValue[i].Location = &DiagnosticLocation{URI: nodeID, Kind: providerName}
+		}
+		state.Diagnostics = append(state.Diagnostics, sensitiveByValue...)
 		// Resolved provider-rendering plugin version behind this binding, shared
 		// with the engine the factory returns for it. Empty for a binding that
 		// renders through the in-tree engine (no resolved plugin version). Stamped
@@ -634,7 +654,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		nodeCtx.WarningSink = func(w string) { state.Warnings = append(state.Warnings, w) }
 		// Structured unsupported-field diagnostics route here, kept apart from the
 		// free-form warnings so the class stays suppressible by its stable code.
-		nodeCtx.UnsupportedFieldSink = func(d Diagnostic) { state.UnsupportedFieldDiags = append(state.UnsupportedFieldDiags, d) }
+		nodeCtx.UnsupportedFieldSink = func(d Diagnostic) { state.Diagnostics = append(state.Diagnostics, d) }
 		if err := resolveSourceForNode(input, recipe, &nodeCtx); err != nil {
 			return nil, wrapSourceResolutionError(err, nodeID,
 				fmt.Sprintf("Step 5 node %q source resolution", nodeID))
@@ -979,7 +999,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// to state.Warnings reaches result.Warnings, not just B.3's
 		// helm-chart provenance-skip notice today.
 		result.Warnings = append(result.Warnings, state.Warnings...)
-		result.UnsupportedFieldWarnings = append(result.UnsupportedFieldWarnings, state.UnsupportedFieldDiags...)
+		result.Diagnostics = append(result.Diagnostics, state.Diagnostics...)
 
 		// Trace point: per-node emission log (slot 11). Captures the
 		// post-Phase-B node summary — the warnings accumulated during the
