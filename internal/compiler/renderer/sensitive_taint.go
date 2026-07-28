@@ -66,25 +66,19 @@ func derivedSensitiveKeys(recipe *types.Recipe, declaredValues, declaredInfra ma
 		}
 	}
 
+	// Which parts of the source carry a template is asked of the one walk that
+	// classifies a source's shape — the same walk the evaluation goes through — so
+	// a shape the evaluator learns to evaluate is a shape this reading covers
+	// without a second edit. Nothing is replaced here: the walk's rebuilt value is
+	// discarded and each template's text is returned unchanged, which is what makes
+	// this a read of the same classification rather than a second evaluation.
 	source := map[string]bool{}
-	switch s := recipe.Spec.Source.(type) {
-	case string:
-		if templateReadsWithheld(s, declaredValues, declaredInfra, withheld) {
-			source[redact.WholeSourceKey] = true
+	_, _ = mapRecipeSourceTemplates(recipe.Spec.Source, func(field, tmplText string) (string, error) {
+		if templateReadsWithheld(tmplText, declaredValues, declaredInfra, withheld) {
+			source[field] = true
 		}
-	case map[string]any:
-		// Only the string-valued fields are evaluated as templates, so only they
-		// can carry a computed value; every other field travels verbatim.
-		for k, v := range s {
-			str, ok := v.(string)
-			if !ok {
-				continue
-			}
-			if templateReadsWithheld(str, declaredValues, declaredInfra, withheld) {
-				source[k] = true
-			}
-		}
-	}
+		return tmplText, nil
+	})
 
 	derived := redact.Derived{}
 	if len(withheld) > 0 {

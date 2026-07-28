@@ -58,10 +58,10 @@ type templateRootRef struct {
 //
 // This is the only walk any reference check uses, and every surface that checks
 // references shares it through templateScope, differing only in the scope it
-// compares against. The read-set census in tracker.go is a separate walk with a
-// separate purpose — it reports which authored keys a template consumed, not
-// whether a reference is admitted — and it deliberately over-collects; see the
-// polarity note below for why that direction must never reach a reference check.
+// compares against. The walk in tracker.go is a separate one with separate
+// purposes and the opposite polarity, and it deliberately over-collects; see the
+// polarity note below for which questions each direction answers, and why a
+// caller must never be able to choose.
 //
 // Polarity is why there is one walk rather than two, and it is worth stating
 // because the two directions are not interchangeable. Under-collecting is the
@@ -73,12 +73,19 @@ type templateRootRef struct {
 // DENY-list, where a forbidden name must not slip past by hiding inside a rebound
 // body. Every reference check is an allow-list over what a context type defines,
 // so no reference check has any use for the over-collecting direction, and no
-// over-collecting walk remains behind one. The census in tracker.go still
-// over-collects, correctly: a key hidden inside a rebound body was still read,
-// and a read-set that under-reported would report a consumed key as unread. That
-// walk feeds no admission decision, which is what keeps the two directions from
-// meeting. Adding a polarity parameter to this walk would let them meet again,
-// because a caller could then pass the wrong direction.
+// over-collecting walk remains behind one.
+//
+// The walk in tracker.go over-collects, correctly, and each of its questions is
+// on the other side of that line. A read-set census must report a key hidden
+// inside a rebound body as read, because a read-set that under-reported would
+// call a consumed key unread. A check that must WITHHOLD a value, or that refuses
+// a reference to a pillar the Recipe never declared, is a deny-list, and a name it
+// failed to attribute is a name that slipped past. So the two walks are not one
+// admitting walk and one merely-reporting walk: they are an allow-list walk and a
+// deny-list walk, and what keeps their directions from meeting is that each
+// consumer sits on exactly one side. Neither walk may grow a polarity parameter,
+// for the same reason in both files — a caller could then pass the wrong
+// direction, and the failure would be silent in whichever direction it went.
 func collectTemplateRootRefs(root parse.Node) []templateRootRef {
 	var refs []templateRootRef
 	seen := map[string]int{}

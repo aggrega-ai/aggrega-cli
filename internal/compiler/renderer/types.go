@@ -61,6 +61,17 @@ type RendererInput struct {
 	// field is unset).
 	Trace trace.Writer
 
+	// TraceMode decides whether the per-pass capture withholds the data an
+	// author declared sensitive. The zero value withholds, so a caller that does
+	// not set it gets the safe direction. It is the same value the Trace writer
+	// carries, which is what keeps the withholding and the header the writer
+	// stamps from disagreeing.
+	//
+	// It governs the capture surface and nothing else: the key set it decides is
+	// read only by the per-pass projection, never by the `inspect` layouts or the
+	// diagnostic bodies, each of which reaches the replacement text directly.
+	TraceMode trace.Mode
+
 	// YAMLIndent is the indentation width for every rendered YAML artifact.
 	// The orchestrator forwards it onto each NodeRenderContext and
 	// BoundaryInfo so the marshal sites apply one configured width. Clamped

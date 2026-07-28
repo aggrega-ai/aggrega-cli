@@ -16,7 +16,7 @@ import (
 func TestWriter_Stats_RecordsTotalWrites(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
-	w := New(root)
+	w := New(root, Mode{})
 	const numWrites = 100
 	for i := 0; i < numWrites; i++ {
 		if err := w.Write(PassPhaseA, "api", "default", "", map[string]any{"i": i}); err != nil {
@@ -40,7 +40,7 @@ func TestWriter_Stats_RecordsTotalWrites(t *testing.T) {
 func TestWriter_Stats_MaxLatencyIsNonZero(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
-	w := New(root)
+	w := New(root, Mode{})
 	if err := w.Write(PassPhaseA, "api", "default", "", map[string]any{"k": "v"}); err != nil {
 		t.Fatalf("Write: %v", err)
 	}
@@ -85,12 +85,12 @@ func TestWriter_Stats_DroppedCount(t *testing.T) {
 	}
 }
 
-// TestWriter_NoOp_FlagOff verifies that New("") returns a writer whose
+// TestWriter_NoOp_FlagOff verifies that New("", Mode{}) returns a writer whose
 // Write is a no-op and produces no filesystem output. This is the
 // `--trace` off path: no `.trace/` directory should appear.
 func TestWriter_NoOp_FlagOff(t *testing.T) {
 	t.Parallel()
-	w := New("")
+	w := New("", Mode{})
 	if err := w.Write(PassPhaseA, "api", "default", "", map[string]any{"sample": 1}); err != nil {
 		t.Errorf("noop Write returned error: %v", err)
 	}
@@ -105,7 +105,7 @@ func TestWriter_NoOp_FlagOff(t *testing.T) {
 func TestWriter_Fs_WritesUnderRoot(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
-	w := New(root)
+	w := New(root, Mode{})
 
 	if err := w.Write(PassPhaseA, "api", "default", "", map[string]any{"sample": 1}); err != nil {
 		t.Fatalf("Write PassPhaseA: %v", err)
@@ -136,7 +136,7 @@ func TestWriter_Fs_WritesUnderRoot(t *testing.T) {
 func TestWriter_Fs_FileSuffixForPerArtifact(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
-	w := New(root)
+	w := New(root, Mode{})
 	if err := w.Write(PassPhaseB4, "api", "default", "deployment.yaml", map[string]any{"kind": "Deployment"}); err != nil {
 		t.Fatalf("Write PassPhaseB4: %v", err)
 	}
@@ -154,7 +154,7 @@ func TestWriter_Fs_FileSuffixForPerArtifact(t *testing.T) {
 // value rather than panic on the type assertion miss.
 func TestWriter_Stats_NoopReturnsZero(t *testing.T) {
 	t.Parallel()
-	w := New("")
+	w := New("", Mode{})
 	if err := w.Write(PassPhaseA, "x", "y", "", map[string]any{"k": "v"}); err != nil {
 		t.Fatalf("noop Write: %v", err)
 	}
@@ -171,7 +171,7 @@ func TestWriter_Stats_NoopReturnsZero(t *testing.T) {
 func TestWriter_Write_AfterCloseReturnsNil(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
-	w := New(root)
+	w := New(root, Mode{})
 	if err := w.Close(); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
@@ -186,7 +186,7 @@ func TestWriter_Write_AfterCloseReturnsNil(t *testing.T) {
 func TestWriter_Close_IsIdempotent(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
-	w := New(root)
+	w := New(root, Mode{})
 	if err := w.Close(); err != nil {
 		t.Fatalf("first Close: %v", err)
 	}
@@ -211,7 +211,7 @@ func TestWriter_Close_SurfacesConsumerError(t *testing.T) {
 	if err := os.WriteFile(blockerFile, []byte("not a dir"), 0o644); err != nil {
 		t.Fatalf("setup blocker file: %v", err)
 	}
-	w := New(root)
+	w := New(root, Mode{})
 	if err := w.Write(PassPhaseA, "x", "y", "", map[string]any{"k": "v"}); err != nil {
 		t.Fatalf("Write: %v", err)
 	}
@@ -272,7 +272,7 @@ func TestIsPhaseB0OrLater_DiscriminatesPasses(t *testing.T) {
 // collected map to .trace/ from the CLI wrapper.
 func TestMemoryWriter_CollectsEntriesUnderRelativePaths(t *testing.T) {
 	t.Parallel()
-	w := NewMemory()
+	w := NewMemory(Mode{})
 	if err := w.Write(PassPhaseA, "api", "default", "", map[string]any{"k": "v"}); err != nil {
 		t.Fatalf("Write PassPhaseA: %v", err)
 	}
@@ -306,7 +306,7 @@ func TestMemoryWriter_CollectsEntriesUnderRelativePaths(t *testing.T) {
 // calls should NOT mutate a previously-returned Entries() snapshot.
 func TestMemoryWriter_EntriesReturnsIndependentCopy(t *testing.T) {
 	t.Parallel()
-	w := NewMemory()
+	w := NewMemory(Mode{})
 	if err := w.Write(PassPhaseA, "api", "default", "", "a"); err != nil {
 		t.Fatalf("Write: %v", err)
 	}

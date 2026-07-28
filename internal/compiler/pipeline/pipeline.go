@@ -139,6 +139,18 @@ type Inputs struct {
 type Options struct {
 	IncludeTrace bool
 
+	// TraceUnredacted turns off the per-pass capture's withholding of
+	// declared-sensitive data, and stamps every captured file with a header
+	// announcing that. It is meaningful only alongside IncludeTrace: with the
+	// capture off there is nothing to withhold from. Left false — the default —
+	// declared-sensitive data is withheld.
+	//
+	// It reaches ONLY the capture surface. The key set it empties is consumed by
+	// the per-pass projection and by nothing else, so the `inspect` layouts and
+	// the diagnostic bodies — which reach the replacement text on their own,
+	// without a key set — are unaffected in either state.
+	TraceUnredacted bool
+
 	// SkipRender, when true, stops the pipeline after Step 4b (once the IR
 	// graph is finalised and Component/Feature assertions have run) and
 	// returns the graph with no Artifacts. Step 5 render — the sole path that
@@ -837,13 +849,17 @@ func RunPipeline(
 		// run as this continuation unwinds — trace first (deferred here), purge
 		// after (owned by resolver.ResolveAndUse), so render reads live
 		// parameters exactly as before.
+		// The capture mode is constructed once and handed to both the writer that
+		// stamps the header and the renderer that empties the withheld-key set, so
+		// the announcement and the withholding cannot disagree.
+		traceMode := trace.Mode{Unredacted: opts.TraceUnredacted}
 		var memWriter trace.MemoryWriter
 		var traceWriter trace.Writer
 		if opts.IncludeTrace {
-			memWriter = trace.NewMemory()
+			memWriter = trace.NewMemory(traceMode)
 			traceWriter = memWriter
 		} else {
-			traceWriter = trace.New("")
+			traceWriter = trace.New("", traceMode)
 		}
 		defer func() {
 			if cerr := traceWriter.Close(); cerr != nil {
@@ -860,6 +876,7 @@ func RunPipeline(
 			WorkloadLibraries:  inputs.WorkloadLibraries,
 			ArtifactsLibraries: inputs.ArtifactsLibraries,
 			Trace:              traceWriter,
+			TraceMode:          traceMode,
 			YAMLIndent:         inputs.WorkspaceConfig.Build.YAMLIndent,
 			// Bind the entity-fronted plugin-resolution path so a Recipe /
 			// FeatureRecipe pipeline step's plugin URI — a Plugin entity URI —

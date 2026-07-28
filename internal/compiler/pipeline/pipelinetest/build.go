@@ -54,6 +54,12 @@ type Input struct {
 	CatalogPaths []string
 	IncludeTrace bool
 
+	// TraceUnredacted turns off the trace's withholding of declared-sensitive
+	// data and stamps each collected entry with the announcing header, matching
+	// what `aggrega build --trace --trace-unredacted` writes. Meaningful only
+	// alongside IncludeTrace. Off by default, which is the withholding shape.
+	TraceUnredacted bool
+
 	// PluginPathLookup, when set, overrides the build's pipeline plugin-path
 	// resolver entirely, bypassing the production entity-front. Reserved for a
 	// negative-path test that needs to inject a canned resolver; an entity-aware
@@ -158,6 +164,7 @@ func compile(in Input) (*pipeline.Result, error) {
 			// exactly as cmd/aggrega/build.go runs it.
 			RecipeResolutionVerifier: cat.VerifyRecipeResolution,
 			IncludeTrace:             in.IncludeTrace,
+			TraceUnredacted:          in.TraceUnredacted,
 		},
 	)
 	if err != nil {

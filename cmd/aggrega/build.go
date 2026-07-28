@@ -15,6 +15,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline"
 	"github.com/aggrega-ai/aggrega-cli/internal/compilerops"
+	"github.com/aggrega-ai/aggrega-cli/internal/redact"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
@@ -37,6 +38,7 @@ var (
 	releasePath             string
 	catalogDirs             []string
 	traceEnabled            bool
+	traceUnredacted         bool
 	buildDetail             bool
 	buildQuiet              bool
 	buildProgress           bool
@@ -58,6 +60,13 @@ const (
 	helpNoUnsupportedFieldWarnings = "Silence the unsupported-field warning class: the per-field notices a lower-fidelity target (such as compose) emits for authored Workload fields it cannot honor. Other render warnings still surface. Display-only; does not change the rendered output"
 )
 
+// helpTraceUnredacted names the replacement text by calling for it rather than
+// spelling it, so the help a user reads and the text the trace actually writes
+// cannot diverge.
+var helpTraceUnredacted = "Write the declared-sensitive values into the .trace/ files instead of the " +
+	redact.Placeholder() +
+	" text that stands in for them, and stamp every file the trace writes with a header saying so. Requires --trace. It reaches .trace/ and nothing else: rendered artifacts, `aggrega inspect` output and diagnostic text are identical with and without it. Invocation-only — there is no workspace-config setting for it, so it can never be left on for a later build"
+
 func newBuildCmd() *cobra.Command {
 	c := &cobra.Command{
 		Use:   "build",
@@ -67,6 +76,7 @@ func newBuildCmd() *cobra.Command {
 	c.Flags().StringVar(&releasePath, "release", "", "Path to Release YAML file (required)")
 	c.Flags().StringArrayVar(&catalogDirs, "catalog", nil, "Catalog directory; repeatable. Each --catalog is prepended to the workspace catalog_dirs search stack (first match wins). Defaults to the current directory.")
 	c.Flags().BoolVar(&traceEnabled, "trace", false, "write per-node intermediate files to .trace/ (sibling to dist/) for post-mortem inspection")
+	c.Flags().BoolVar(&traceUnredacted, "trace-unredacted", false, helpTraceUnredacted)
 	c.Flags().BoolVar(&buildDetail, "detail", false, "Build is read-only by default and prints no resolution detail. When workspace auto_pull is enabled and no lockfile is present, build fills the lockfile in-process; this flag then prints per resolved entity what that fill did — fetched fresh from a registry, reused a cache slot, found in a local catalog, or external. Stdout only; not persisted. No-op when a lockfile already exists (no fill this build)")
 	c.Flags().BoolVar(&buildQuiet, "quiet", false, "Silence the build-progress surface on stderr. Does not affect stdout. Takes precedence over --progress")
 	c.Flags().BoolVar(&buildProgress, "progress", false, "Force the build-progress surface on even when stderr is not a terminal, printing plain static phase lines. The default is auto: the interactive phase checklist is shown only when stderr is a terminal. --quiet and --debug both override --progress")
@@ -102,7 +112,7 @@ func runBuild(cmd *cobra.Command, args []string) error {
 	}
 	return dispatchBuildWithDiag(rw, releasePath, catalogDirs, traceEnabled,
 		buildDiagOptions{quiet: buildQuiet, debug: buildDebug, progress: buildProgress, noColor: globalDisplay.colorOff, plain: globalDisplay.plain},
-		buildRunOptions{noAcquireInputs: noAcquireInputs, disablePluginCache: disablePluginCache, verifyDeterminism: verifyDeterminism, autoPull: buildAutoPull, upgrade: buildUpgrade, suppressUnsupportedFieldWarnings: noUnsupportedFieldWarns}, os.Stderr, os.Stdout)
+		buildRunOptions{noAcquireInputs: noAcquireInputs, disablePluginCache: disablePluginCache, verifyDeterminism: verifyDeterminism, autoPull: buildAutoPull, upgrade: buildUpgrade, suppressUnsupportedFieldWarnings: noUnsupportedFieldWarns, traceUnredacted: traceUnredacted}, os.Stderr, os.Stdout)
 }
 
 // buildRunOptions carries the build-dispatch knobs that are not stderr
@@ -132,6 +142,14 @@ type buildRunOptions struct {
 	// auto-pull step — requesting it turns the pull step on when neither the flag
 	// nor workspace auto_pull is set.
 	upgrade bool
+	// traceUnredacted writes the declared-sensitive values into the trace files
+	// rather than the text that stands in for them, and stamps each of those
+	// files with a header saying so. It is meaningful only alongside the trace
+	// itself: requesting it without the trace halts, because a security-relevant
+	// switch that quietly does nothing is the worst of the available outcomes.
+	// It reaches the trace and nothing else — the inspect layouts and the
+	// diagnostic bodies are identical in both states.
+	traceUnredacted bool
 	// suppressUnsupportedFieldWarnings silences the unsupported-field warning class on
 	// the render-warning surface — the per-field notices a lower-fidelity target
 	// emits for authored fields it cannot honor. Display-only; other render
@@ -178,6 +196,16 @@ func dispatchBuild(rw *workspaceconfig.ResolvedWorkspace, releasePath string, ca
 // switch, the output-directory override, and the acquired-pin callback the
 // acquire command reports through. The zero value is the plain build shape.
 func dispatchBuildWithDiag(rw *workspaceconfig.ResolvedWorkspace, releasePath string, catalogFlagDirs []string, traceEnabled bool, diag buildDiagOptions, run buildRunOptions, diagOut, out io.Writer) error {
+	// Flag-pairing halt, before any work: an unredacted trace with no trace to
+	// write is a no-op, and a no-op is the one outcome a switch about withheld
+	// values must not have — an operator who asked for the values and got a build
+	// that silently ignored them has no signal that they are still withheld. The
+	// check sits here rather than in the cobra entry point so it covers every
+	// caller of this dispatch, not only the command line.
+	if run.traceUnredacted && !traceEnabled {
+		return fmt.Errorf("aggrega build: --trace-unredacted needs --trace; there is no trace to write without it. Pass both to write an unredacted trace, or neither")
+	}
+
 	// Wall-clock start of the whole build run, sourced independently of the
 	// progress reporter (whose clock is unset in silent mode and only spans the
 	// progress phases) so the summary's "Build time" spans the entire dispatch.
@@ -481,6 +509,7 @@ func dispatchBuildWithDiag(rw *workspaceconfig.ResolvedWorkspace, releasePath st
 		lazyView.SubAggregateLoader(),
 		pipeline.Options{
 			IncludeTrace:             traceEnabled,
+			TraceUnredacted:          run.traceUnredacted,
 			RecipeResolutionVerifier: lazyView.VerifyRecipeResolution,
 			// Per-node render progress. The callback writes only to the progress
 			// reporter's diagnostic sink (stderr); stdout carries only the final

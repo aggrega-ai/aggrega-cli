@@ -12,7 +12,71 @@ import (
 	"time"
 
 	"go.yaml.in/yaml/v3"
+
+	"github.com/aggrega-ai/aggrega-cli/internal/redact"
 )
+
+// Mode carries the one choice this surface offers an operator: whether a capture
+// withholds the data an author declared sensitive, or shows all of it verbatim.
+//
+// It is a single value rather than two independent switches because the two
+// consequences of that choice are inseparable. A capture that shows a withheld
+// datum must announce that it does, or a file found later in a bug report or a
+// shared directory reads as an ordinary capture; and a file carrying that
+// announcement must actually be unredacted, or the announcement is false. Both
+// consequences are read from this one value — Keys decides what a capture
+// withholds and the writers stamp the header — so neither can be turned on
+// without the other.
+//
+// The zero value withholds, so a caller that constructs a writer without
+// considering this gets the safe direction.
+type Mode struct {
+	// Unredacted shows every captured datum verbatim, including data an author
+	// declared sensitive, and stamps a header on every file the capture writes
+	// saying so. It is an invocation-time choice and is deliberately not
+	// readable from workspace configuration: a setting left on after one
+	// debugging session would silently widen what every later build writes.
+	Unredacted bool
+}
+
+// Keys returns the set of keys a capture under this mode withholds. Withholding
+// — the default — returns the caller's set unchanged. Unredacted returns the
+// empty set, which every applier treats as "substitute nothing", so the
+// projection is byte-for-byte the one a build predating the sensitivity axis
+// produced, under the header.
+func (m Mode) Keys(k redact.Keys) redact.Keys {
+	if m.Unredacted {
+		return redact.Keys{}
+	}
+	return k
+}
+
+// unredactedHeader prefixes every file an unredacted capture writes. It is a
+// YAML comment, which every slot accepts: each payload this package writes is
+// YAML-marshalled whatever extension its slot carries.
+//
+// It names the flag rather than describing the mode abstractly, because the
+// reader who most needs it is someone who did not run the build and has only the
+// file.
+const unredactedHeader = "# WARNING: written with `aggrega build --trace-unredacted`.\n" +
+	"# Values an author declared sensitive appear below in the clear.\n" +
+	"# Handle this file as you would the secrets it carries.\n"
+
+// marshalEvent is the ONE serialization of a trace payload in this package, and
+// therefore the one place the unredacted-capture header is stamped. Both writers
+// route through it. A second marshal site would be free to emit a body with no
+// header, and an unannounced unredacted file is exactly the failure whoever
+// finds it later cannot detect.
+func marshalEvent(mode Mode, boundaryPath, nodeID string, data any) ([]byte, error) {
+	body, err := yaml.Marshal(data)
+	if err != nil {
+		return nil, fmt.Errorf("trace: marshal %s/%s: %w", boundaryPath, nodeID, err)
+	}
+	if !mode.Unredacted {
+		return body, nil
+	}
+	return append([]byte(unredactedHeader), body...), nil
+}
 
 // Writer captures per-pass intermediate state for one node. Implementations:
 // the no-op writer when --trace is off, and the asynchronous filesystem
@@ -33,12 +97,17 @@ type Writer interface {
 // New returns a Writer for the given root directory. When root is empty,
 // returns a no-op writer (trace disabled). Otherwise returns an async
 // filesystem writer rooted at the given path.
-func New(root string) Writer {
+//
+// mode is required rather than optional so a new capture site cannot construct a
+// writer without deciding whether it withholds declared-sensitive data; the zero
+// value withholds.
+func New(root string, mode Mode) Writer {
 	if root == "" {
 		return noopWriter{}
 	}
 	w := &fsWriter{
 		root: root,
+		mode: mode,
 		ch:   make(chan event, 1024),
 		done: make(chan struct{}),
 	}
@@ -67,6 +136,7 @@ type MemoryWriter interface {
 
 type memoryWriter struct {
 	mu      sync.Mutex
+	mode    Mode
 	entries map[string][]byte
 	closed  bool
 }
@@ -74,14 +144,18 @@ type memoryWriter struct {
 // NewMemory returns a Writer that collects per-event YAML payloads into
 // an in-memory map. Callers retrieve the map via Entries() after the
 // renderer finishes; Close is a no-op because there is no I/O to drain.
-func NewMemory() MemoryWriter {
-	return &memoryWriter{entries: map[string][]byte{}}
+//
+// mode is required for the same reason New requires it: the writer that
+// serializes a payload is the writer that must announce an unredacted one, and
+// the zero value withholds.
+func NewMemory(mode Mode) MemoryWriter {
+	return &memoryWriter{mode: mode, entries: map[string][]byte{}}
 }
 
 func (m *memoryWriter) Write(pass Pass, nodeID, boundaryPath, fileSuffix string, data any) error {
-	body, err := yaml.Marshal(data)
+	body, err := marshalEvent(m.mode, boundaryPath, nodeID, data)
 	if err != nil {
-		return fmt.Errorf("trace: marshal %s/%s: %w", boundaryPath, nodeID, err)
+		return err
 	}
 	rel := eventPath(event{
 		pass:         pass,
@@ -125,6 +199,7 @@ type event struct {
 
 type fsWriter struct {
 	root     string
+	mode     Mode
 	ch       chan event
 	done     chan struct{}
 	wg       sync.WaitGroup
@@ -209,9 +284,9 @@ func (w *fsWriter) Write(pass Pass, nodeID, boundaryPath, fileSuffix string, dat
 		w.recordMaxLatency(time.Since(t0).Nanoseconds())
 	}()
 
-	body, err := yaml.Marshal(data)
+	body, err := marshalEvent(w.mode, boundaryPath, nodeID, data)
 	if err != nil {
-		return fmt.Errorf("trace: marshal %s/%s: %w", boundaryPath, nodeID, err)
+		return err
 	}
 	w.closeMu.Lock()
 	closed := w.closed

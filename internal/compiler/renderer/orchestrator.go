@@ -390,7 +390,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 	// in a follow-up.
 	traceWriter := input.Trace
 	if traceWriter == nil {
-		traceWriter = trace.New("")
+		traceWriter = trace.New("", input.TraceMode)
 	}
 
 	// Declared-sensitive leaf paths per Component type, memoised across the node
@@ -506,9 +506,16 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// resolved value and has no ordering relationship to the evaluation — which
 		// is why it belongs beside the declarations rather than inside the locals
 		// pass, where the catalog is not in scope.
+		//
+		// This set is consumed by the per-pass capture and by nothing else — every
+		// read of it below, and every read of the copy on the Phase B state, is an
+		// argument to a capture projection. That is what bounds the capture mode's
+		// reach to the capture: it can empty this set without any other surface
+		// that withholds a declared-sensitive datum being able to observe the
+		// difference.
 		declared := declaredLeaves(node.Component)
-		redactKeys := redact.NodeKeys(declared.Values, declared.Infra, attachments,
-			derivedSensitiveKeys(recipe, declared.Values, declared.Infra))
+		redactKeys := input.TraceMode.Keys(redact.NodeKeys(declared.Values, declared.Infra, attachments,
+			derivedSensitiveKeys(recipe, declared.Values, declared.Infra)))
 
 		// Trace points: per-node pre-loop captures.
 		_ = traceWriter.Write(trace.PassPillarsInitial, nodeID, node.BoundaryPath, "", trace.PillarSnapshot(tmplCtx, trace.PassPillarsInitial, redactKeys))

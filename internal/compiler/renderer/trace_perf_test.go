@@ -78,7 +78,7 @@ func TestTrace_NonBlockingContract_50Nodes(t *testing.T) {
 	}
 
 	traceRoot := t.TempDir()
-	traceWriter := trace.New(traceRoot)
+	traceWriter := trace.New(traceRoot, trace.Mode{})
 	// Note: do NOT defer Close() — assertion #3 needs explicit timing.
 
 	input := renderer.RendererInput{
