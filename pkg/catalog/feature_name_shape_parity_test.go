@@ -4,6 +4,7 @@
 package catalog
 
 import (
+	"regexp"
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
@@ -26,7 +27,9 @@ import (
 // against a shared fixture set, so adding a case on either side without the
 // other cannot pass unnoticed — a divergence at the edges (the malformed
 // inputs a shape check exists to catch) is exactly the failure two agreeing
-// copies would otherwise hide.
+// copies would otherwise hide. This package declares its patterns as strings
+// only, so the fixture run compiles its side here; pkg/types keeps a compiled
+// form because the compiler matches against it on every build.
 func TestFeatureNameShapeParity(t *testing.T) {
 	t.Parallel()
 
@@ -34,6 +37,8 @@ func TestFeatureNameShapeParity(t *testing.T) {
 		t.Fatalf("Feature-name pattern diverged:\n  pkg/types:   %q\n  pkg/catalog: %q",
 			types.FeatureNameShape, FeatureNameShape)
 	}
+
+	catalogRe := regexp.MustCompile(FeatureNameShape)
 
 	fixtures := []struct {
 		in    string
@@ -57,7 +62,7 @@ func TestFeatureNameShapeParity(t *testing.T) {
 	}
 	for _, f := range fixtures {
 		gotTypes := types.FeatureNameShapeRe.MatchString(f.in)
-		gotCatalog := FeatureNameShapeRe.MatchString(f.in)
+		gotCatalog := catalogRe.MatchString(f.in)
 		if gotTypes != f.match {
 			t.Errorf("pkg/types match(%q) = %v; want %v", f.in, gotTypes, f.match)
 		}

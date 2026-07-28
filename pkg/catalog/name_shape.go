@@ -1,75 +1,36 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Cognitio S.r.l.
 
-// This file owns the regex source-of-truth for catalog-entity name
-// patterns and the reserved annotation/label prefixes. Two consumers
-// depend on these patterns:
+// This file owns the regex source-of-truth strings for catalog-entity
+// metadata.name shapes. It declares patterns only; no Go code in this
+// module matches against them. The name-shape rule itself runs in the
+// publishing linter, whose Rust implementation carries its own copy of
+// each pattern and reports a finding when an author runs aggrega lint.
 //
-//  1. The build-time validator at pkg/validator/ consumes the compiled
-//     *regexp.Regexp values directly (in-process Go).
-//  2. The publishing-linter Wasm plugin consumes the string constants,
-//     re-compiles them in its own runtime, and enforces the same
-//     patterns at aggrega push time.
+// Exactly one consumer relationship exists, and it is cross-language:
+// the publishing linter's symmetry test
+// (plugins/publishing-linter/tests/name_shape_symmetry_test.rs) reads
+// this file as SOURCE TEXT. It greps for the literal prefix
+// "const <Name> = " followed by a backtick-quoted string, extracts the
+// seven per-kind patterns, and compares each to the corresponding
+// Rust constant in plugins/publishing-linter/src/rules/name_shape.rs,
+// re-compiling in its own regex engine.
 //
-// The exported strings and *Re variables MUST produce identical match
-// behavior. The accompanying name_shape_test.go exercises this parity
-// within the Go runtime; cross-runtime parity (Go vs the publishing-
-// linter plugin's regex engine) is exercised by the publishing-linter
-// plugin's own test surface, not here.
+// The literal declaration form is therefore load-bearing. Each pattern
+// MUST stay on one line as `const <Name> = ` plus a backtick-quoted
+// string. Grouping the declarations into a const block, reflowing them
+// across lines, switching to double quotes, or turning one into a
+// reference to another package's constant all break the extraction
+// silently. The symmetry test skips gracefully when this file is
+// unreachable from a standalone plugin checkout, and fails hard rather
+// than skipping when UMBRELLA_CHECKOUT is set.
 //
 // Per-entity-kind name shapes are documented at
 // aggrega-docs/language-reference/02-naming-conventions.md "Catalog
 // Entity Naming" and detailed in the per-entity reference pages under
-// aggrega-docs/language-reference/entities/. The annotation/label
-// reserved-prefix family ("aggrega.ai/", "feature.aggrega.ai/", and
-// the future per-entity-kind sub-prefixes) is documented at
-// aggrega-docs/language-reference/vocabulary/social-contracts.md.
+// aggrega-docs/language-reference/entities/.
 
 package catalog
-
-import "regexp"
-
-// --- Reserved annotation/label prefixes ---
-//
-// Catalog content MUST NOT bind annotation or label keys under these
-// reserved prefixes without authority. The publishing-linter rejects
-// catalog content that does; the build-time linter emits a warning.
-
-// ReservedAggregaAIPrefix matches the bare "aggrega.ai/" annotation
-// prefix. This prefix is reserved for platform-native annotation keys
-// declared by Aggrega itself; catalog content carrying a key with this
-// prefix triggers the publishing-linter's reserved-prefix rule.
-const ReservedAggregaAIPrefix = `^aggrega\.ai/`
-
-// ReservedFeatureAggregaAIPrefix matches the "feature.aggrega.ai/"
-// sub-prefix. This sub-namespace is reserved for Feature-scoped
-// catalog conventions (well-known Feature-entity annotations). Catalog
-// content carrying a key with this prefix outside a Feature-authoring
-// context triggers the publishing-linter's reserved-sub-prefix rule.
-const ReservedFeatureAggregaAIPrefix = `^feature\.aggrega\.ai/`
-
-// ReservedAggregaAIPrefixRe is the compiled form of
-// ReservedAggregaAIPrefix.
-var ReservedAggregaAIPrefixRe = regexp.MustCompile(ReservedAggregaAIPrefix)
-
-// ReservedFeatureAggregaAIPrefixRe is the compiled form of
-// ReservedFeatureAggregaAIPrefix.
-var ReservedFeatureAggregaAIPrefixRe = regexp.MustCompile(ReservedFeatureAggregaAIPrefix)
-
-// TODO: per-entity-kind reserved sub-prefix authority (e.g.,
-// "component.aggrega.ai/", "recipe.aggrega.ai/") is deferred until the
-// per-entity-kind label/annotation expansion lands. The reserved-prefix
-// social contract at
-// aggrega-docs/language-reference/vocabulary/social-contracts.md names
-// the families that exist today; the per-entity-kind families ship as
-// follow-on work.
-//
-// TODO: the well-known annotation exemption list (predefined keys
-// allowed under the reserved prefix) lives at
-// aggrega-docs/language-reference/providers/well-known-annotations.md.
-// The publishing-linter rule that consumes this list embeds it at
-// rule-implementation time; the source-of-truth in this file is regex
-// only, not data lists.
 
 // --- Per-entity-kind name shapes ---
 //
@@ -85,12 +46,20 @@ const ComponentNameShape = `^[a-z][a-z0-9-]*/[a-z][a-z0-9-]*/[a-z][a-z0-9-]*$`
 // FeatureNameShape matches two kebab-case segments separated by "/".
 // Example matches: "core/cryptographic-signature",
 // "core/human-approval-gate".
+//
+// A second spelling of this pattern lives in pkg/types, which is the
+// one the compiler consults when it validates a required-attachment
+// type value. Neither can be folded into the other: this spelling is
+// pinned by path and literal form by the cross-language symmetry check
+// described in the file comment above, and pkg/catalog sits above the
+// compiler in the import graph, so a compiler pass importing it would
+// make an earlier pipeline stage depend on a later one. The pair is
+// held byte-identical by TestFeatureNameShapeParity.
 const FeatureNameShape = `^[a-z][a-z0-9-]*/[a-z][a-z0-9-]*$`
 
 // RecipeNameShape matches a single kebab-case leaf. The canonical
-// reference URI combining provider directory + leaf is constructed at
-// catalog load from filesystem path segments. Example matches:
-// "mariadb", "mariadb-bitnami", "mariadb-rds".
+// reference URI combining capability + leaf is constructed at catalog
+// load. Example matches: "mariadb", "mariadb-bitnami", "mariadb-rds".
 const RecipeNameShape = `^[a-z][a-z0-9-]*$`
 
 // FeatureRecipeNameShape matches a single kebab-case leaf, symmetric
@@ -114,24 +83,3 @@ const SchemaLibraryNameShape = `^[A-Z][A-Za-z0-9]*$`
 // MappingLibraryNameShape matches the same PascalCase shape as
 // SchemaLibraryNameShape; same JSON Schema envelope enforcement.
 const MappingLibraryNameShape = `^[A-Z][A-Za-z0-9]*$`
-
-// ComponentNameShapeRe is the compiled form of ComponentNameShape.
-var ComponentNameShapeRe = regexp.MustCompile(ComponentNameShape)
-
-// FeatureNameShapeRe is the compiled form of FeatureNameShape.
-var FeatureNameShapeRe = regexp.MustCompile(FeatureNameShape)
-
-// RecipeNameShapeRe is the compiled form of RecipeNameShape.
-var RecipeNameShapeRe = regexp.MustCompile(RecipeNameShape)
-
-// FeatureRecipeNameShapeRe is the compiled form of FeatureRecipeNameShape.
-var FeatureRecipeNameShapeRe = regexp.MustCompile(FeatureRecipeNameShape)
-
-// AggregateNameShapeRe is the compiled form of AggregateNameShape.
-var AggregateNameShapeRe = regexp.MustCompile(AggregateNameShape)
-
-// SchemaLibraryNameShapeRe is the compiled form of SchemaLibraryNameShape.
-var SchemaLibraryNameShapeRe = regexp.MustCompile(SchemaLibraryNameShape)
-
-// MappingLibraryNameShapeRe is the compiled form of MappingLibraryNameShape.
-var MappingLibraryNameShapeRe = regexp.MustCompile(MappingLibraryNameShape)

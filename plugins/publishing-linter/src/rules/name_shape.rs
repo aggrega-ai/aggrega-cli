@@ -4,20 +4,20 @@
 //! Per-entity-kind `metadata.name` shape enforcement.
 //!
 //! Each catalog entity kind has a documented name pattern. The Go-side
-//! source-of-truth lives at `aggrega-cli/pkg/catalog/name_shape.go`
-//! and exports both the regex string constants AND the compiled
-//! forms. The compiled forms are consumed by the build-time
-//! `linter.wasm` warning path; the string constants are mirrored
-//! here in the publishing-linter for the publish-time error path.
+//! source-of-truth lives at `aggrega-cli/pkg/catalog/name_shape.go`,
+//! which declares the regex strings and nothing else — no Go code
+//! matches against them. This rule is the only place the patterns are
+//! applied.
 //!
-//! The Rust constants below are byte-identical to the Go-exported
-//! strings; a symmetry test in the plugin's `tests/` directory
-//! reads the Go file and asserts byte-identity. Drift between the
-//! two surfaces surfaces at unit-test time.
+//! The Rust constants below are byte-identical to the Go-declared
+//! strings; a symmetry test in the plugin's `tests/` directory reads
+//! the Go file as source text and asserts byte-identity. Drift between
+//! the two surfaces surfaces at unit-test time.
 //!
 //! Per-workspace opt-out: `policies.allow_nonstandard_names == true`
-//! suppresses the rule entirely (matches the workspace-config flag
-//! that the build-time `linter.wasm` warning path also honours).
+//! suppresses the rule entirely. The host fills that policy field from
+//! the workspace's `lint.publishing_discipline.allow_nonstandard_names`
+//! key, or from the equivalent flag on the lint invocation.
 
 use aggrega_pdk_rust::{Diagnostic, LinterInput};
 use regex::Regex;
