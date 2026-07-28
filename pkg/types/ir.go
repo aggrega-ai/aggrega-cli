@@ -34,6 +34,17 @@ const (
 	OriginMixed AttachmentOrigin = "mixed"
 )
 
+// AttachmentBindingFree is the value [IRFeatureEntry.Binding] carries when an
+// attachment fills no declared attachment slot on its host Component — a free
+// attachment. It is spelled once here so the IR builder, a consumer comparing
+// against it, and the ir-v1alpha1 contract that documents it cannot diverge on
+// the literal.
+//
+// A slot whose declared name is this same string is indistinguishable from a
+// free attachment on the wire; the value set is a slot name OR this sentinel,
+// and nothing reserves the sentinel against the slot namespace.
+const AttachmentBindingFree = "free"
+
 // IRGraph is the in-memory, provider-agnostic intermediate representation emitted by the
 // topology builder. It strictly mirrors ir-v1alpha1.schema.json.
 type IRGraph struct {
@@ -227,10 +238,17 @@ type IREdge struct {
 // projection than another: a credential Feature reads .infra and per-leaf
 // provenance exactly as an operational Feature does. Type and ResolvedVersion
 // are always serialised; ResolvedVersion is the ATTACHMENT's own resolved
-// catalog version, not the host component's. For a credential attachment
-// Values holds pointers into a secret store — no plaintext is implied, and
-// infra / origin / provenance are structural metadata the compiler never
-// resolves into material.
+// catalog version, not the host component's. What a credential attachment's
+// Values carries is the author's choice, not a property of this shape: a
+// by-reference credential carries a pointer into a secret store, and a
+// by-value one carries the material itself. The compiler resolves neither —
+// it carries whichever the author wrote, verbatim.
+//
+// Labels and Binding are what let a consumer judge an attachment for itself
+// rather than reading a judgement the compiler made. Labels are the attached
+// Feature's own catalog labels, carried verbatim; Binding says whether the
+// attachment fills a declared slot. Neither is interpreted here: the compiler
+// evaluates no label and branches on no binding value.
 //
 // Origin distinguishes Feature attachments authored in an explicit
 // features: block on the Aggregate, Subsystem, Boundary, or
@@ -271,8 +289,41 @@ type IREdge struct {
 // whose Feature and slot declare nothing carries the same bytes it
 // carried before the axis existed.
 type IRFeatureEntry struct {
-	Type             string                         `json:"type"`
-	ResolvedVersion  string                         `json:"resolved_version"`
+	Type            string `json:"type"`
+	ResolvedVersion string `json:"resolved_version"`
+	// Labels carries the attached Feature's catalog labels verbatim, in the
+	// order its catalog entity declares them. Verbatim is the contract: the
+	// labels are neither filtered, normalised nor prefix-stripped on the way
+	// here, so a consumer reads exactly what the catalog author wrote rather
+	// than a compiler-shaped view of it. The compiler reads none of them.
+	//
+	// Empty when the attached Feature declares no labels, and when its type
+	// resolves to no catalog entity — the same condition that leaves
+	// ResolvedVersion empty.
+	Labels OrderedMap[string] `json:"labels,omitempty,omitzero"`
+	// Binding names the host Component attachment slot this attachment fills,
+	// or AttachmentBindingFree when it fills none. The slot pairs with the
+	// attachment by NAME — a deployment fills a slot by attaching a Feature
+	// under the slot's name — so the value is an exact key from the resolved
+	// Component's declared slot set, never anything read out of the name
+	// itself.
+	//
+	// The slot name is carried rather than a bare boolean because which slot
+	// was filled is the more useful half of the answer: a consumer that wants
+	// only the yes/no compares against AttachmentBindingFree.
+	//
+	// Empty when the host Component's declared slot set could not be resolved.
+	// That is distinct from AttachmentBindingFree: free is the positive
+	// finding that the resolved Component declares no slot of this name, and
+	// empty is the absence of a finding.
+	//
+	// Binding answers the question for an ATTACHMENT only. A similarly shaped
+	// question — whether the socket an edge is wired into was declared by the
+	// catalog — has a different subject, a different construction site and a
+	// different consumer, so it does not belong on this field. One field
+	// answering for both subjects would report on two unrelated declarations
+	// under one name.
+	Binding          string                         `json:"binding,omitempty"`
 	Values           OrderedMap[any]                `json:"values,omitempty,omitzero"`
 	Infra            OrderedMap[any]                `json:"infra,omitempty,omitzero"`
 	Inject           OrderedMap[OrderedMap[string]] `json:"inject,omitempty,omitzero"`

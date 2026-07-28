@@ -1,0 +1,28 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: gov-app-recipe
+  version: "1.0.0"
+spec:
+  capability: compose
+  implements: gov/app
+  provides:
+    host: "{{ .context.instance_id }}"
+  workload: |
+    apiVersion: aggrega.ai/v1alpha1
+    kind: Workload
+    containers:
+      main:
+        image: app:1.0
+        variables:
+          APP_NAME: '{{ .values.appName }}'
+          {{- if and .context.inject .context.inject.env }}
+          DATABASE_PASSWORD: '{{ .context.inject.env.DATABASE_PASSWORD }}'
+          {{- end }}
+        ports:
+          p: 8080
+    services:
+      app:
+        type: ClusterIP
+        ports:
+          p: 8080

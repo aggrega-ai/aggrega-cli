@@ -383,9 +383,10 @@ func collectNodeFeatures(
 	// IRFeatureEntry from the per-leaf provenance maps.
 	finalizeTopLevelOrigin(result)
 
-	// Derive per-attachment sensitivity and the per-delivery-key marking from
-	// the declarations, over the merged attachments.
-	finalizeDerivedSensitivity(result, topoNode, catalogLookup)
+	// Complete the declaration-derived per-attachment facts — the attached
+	// Feature's labels, the declared slot the attachment fills, and the two
+	// sensitivity facts — over the merged attachments.
+	finalizeAttachmentFacts(result, topoNode, catalogLookup)
 
 	return result, nil
 }
@@ -789,45 +790,63 @@ func deriveTopLevelOrigin(values, infra types.OrderedMap[types.FieldProvenance])
 	return types.OriginMixed, "", ""
 }
 
-// finalizeDerivedSensitivity walks every IRFeatureEntry in the per-node result
-// and derives the two sensitivity facts the IR carries, from declarations only.
+// finalizeAttachmentFacts walks every IRFeatureEntry in the per-node result and
+// completes the facts about the attachment that are properties of declarations
+// rather than of the payload: the attached Feature's catalog labels, which
+// declared slot the attachment fills, and the two derived sensitivity facts.
 //
 // It runs after the whole five-tier cascade has folded, for the same reason the
-// attachment-conformance gate does: both facts are properties of the EFFECTIVE
-// merged attachment, never of a single pre-merge fragment. A later tier can
-// replace the attachment's Feature type and can add or replace inject delivery
-// keys, so a fact computed on first sight would describe a contribution that
-// went on to lose the precedence contest.
+// attachment-conformance gate does: every one of these facts is a property of
+// the EFFECTIVE merged attachment, never of a single pre-merge fragment. A
+// later tier can replace the attachment's Feature type and can add or replace
+// inject delivery keys, so a fact computed on first sight would describe a
+// contribution that went on to lose the precedence contest — it would report
+// the labels of a Feature the merged attachment no longer names.
 //
-// The two facts:
+// The facts:
 //
+//   - Labels — the attached Feature's catalog labels, copied verbatim in the
+//     entity's own declaration order. Nothing here filters, normalises or
+//     rewrites them: a transformed copy would be a second, compiler-shaped
+//     version of labels a catalog author wrote, and a consumer reasoning about
+//     that version would be reasoning about something nobody declared.
+//   - Binding — the declared slot the attachment fills, or
+//     types.AttachmentBindingFree when it fills none. Left empty when the host
+//     Component resolves to no catalog entity, because "fills no declared
+//     slot" and "the declared slot set is unknown" are different answers.
 //   - Sensitive — true when the merged attachment's Feature declares a sensitive
 //     leaf in values, infra or provides, or when the host Component declares its
-//     attachment slot of the same name sensitive. The slot pairs with the
-//     attachment by NAME: a deployment fills a slot by attaching a Feature under
-//     the slot's name, so the attachment's instance name IS the slot name.
+//     attachment slot of the same name sensitive.
 //   - SensitiveInject — the merged inject delivery keys whose referenced
 //     provides key the Feature declares sensitive.
 //
-// The leaf half reads what the Feature's schema DECLARES, not the subset of
-// sensitive leaves this attachment happened to author a value for. Sensitivity
-// is a property of the catalog entity plus the slot it fills, so a linter, a
-// guest or a policy can reason about the entity in isolation; intersecting with
-// the carried values would make the same field sensitive in one deployment and
-// not another.
+// The slot pairs with the attachment by NAME for both Binding and the slot half
+// of Sensitive: a deployment fills a slot by attaching a Feature under the
+// slot's name, so the attachment's instance name IS the slot name. The slot set
+// belongs to the NODE's Component, so it is the same set whichever cascade tier
+// contributed the attachment.
+//
+// The leaf half of Sensitive reads what the Feature's schema DECLARES, not the
+// subset of sensitive leaves this attachment happened to author a value for.
+// Sensitivity is a property of the catalog entity plus the slot it fills, so a
+// linter, a guest or a policy can reason about the entity in isolation;
+// intersecting with the carried values would make the same field sensitive in
+// one deployment and not another.
 //
 // Every input is a declaration or a mapping the compiler itself built. No value
 // is inspected, and no meaning is read out of a name: the attachment's name is
 // used as an exact key against the declared slot map, nothing more.
-func finalizeDerivedSensitivity(result *featureResult, topoNode *topology.TopologyNode, catalogLookup resolver.CatalogLookup) {
+func finalizeAttachmentFacts(result *featureResult, topoNode *topology.TopologyNode, catalogLookup resolver.CatalogLookup) {
 	if result.Features.Len() == 0 {
 		return
 	}
 
 	var slots types.OrderedMap[types.AttachmentSlot]
+	slotsResolved := false
 	if topoNode != nil && topoNode.ComponentType != "" && catalogLookup.Component != nil {
 		if comp, found := catalogLookup.Component(topoNode.ComponentType); found {
 			slots = comp.Spec.FeaturesSchema
+			slotsResolved = true
 		}
 	}
 
@@ -847,18 +866,51 @@ func finalizeDerivedSensitivity(result *featureResult, topoNode *topology.Topolo
 	for name, entry := range result.Features.All() {
 		declared := declaredFor(entry.Type)
 		slot, slotDeclared := slots.Get(name)
+
+		entry.Labels = featureLabels(catalogLookup, entry.Type)
+		if slotsResolved {
+			entry.Binding = types.AttachmentBindingFree
+			if slotDeclared {
+				entry.Binding = name
+			}
+		}
+
 		sensitive := declared.Any() || (slotDeclared && slot.Sensitive)
 		marked := deriveInjectSensitivity(entry.Inject, declared.Provides)
-		if !sensitive && marked.Len() == 0 {
+		if sensitive || marked.Len() > 0 {
 			// A marked delivery key implies a sensitive provides declaration,
 			// which implies a sensitive attachment, so the second term guards a
 			// case the derivation above cannot produce rather than a live one.
-			continue
+			entry.Sensitive = sensitive
+			entry.SensitiveInject = marked
 		}
-		entry.Sensitive = sensitive
-		entry.SensitiveInject = marked
 		result.Features.Set(name, entry)
 	}
+}
+
+// featureLabels copies the catalog labels of one attached Feature into a fresh
+// OrderedMap, preserving the entity's own declaration order.
+//
+// The copy is what keeps the catalog entity immutable from the IR side: an
+// aliased map would let a later write to the IR reach back into the loaded
+// entity. Nothing is added, dropped or rewritten in the copy — the verbatim
+// contract IRFeatureEntry.Labels states is this loop and nothing else.
+//
+// Returns an empty map when the type resolves to no catalog entity, which is
+// the same answer an entity declaring no labels gives.
+func featureLabels(catalogLookup resolver.CatalogLookup, featType string) types.OrderedMap[string] {
+	out := types.OrderedMap[string]{}
+	if catalogLookup.Feature == nil || featType == "" {
+		return out
+	}
+	feat, found := catalogLookup.Feature(featType)
+	if !found {
+		return out
+	}
+	for k, v := range feat.Metadata.Labels.All() {
+		out.Set(k, v)
+	}
+	return out
 }
 
 // deriveInjectSensitivity selects the delivery keys of one merged attachment's

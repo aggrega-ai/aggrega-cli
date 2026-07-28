@@ -1,0 +1,13 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: FeatureRecipe
+metadata:
+  name: gov-telemetry-compose
+  version: "1.0.0"
+  description: >
+    Compose implementation of feature.gov/telemetry. Pure wiring: it renders no
+    resource and only fulfils the Feature's provides contract.
+spec:
+  capability: compose
+  implements: feature.gov/telemetry
+  provides:
+    endpoint_url: "{{ .values.endpoint }}"

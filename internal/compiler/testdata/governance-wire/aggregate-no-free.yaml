@@ -1,0 +1,25 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: governance-wire-no-free
+  version: "1.0.0"
+spec:
+  components:
+    app:
+      type: gov/app
+      values:
+        appName: demo
+      features:
+        # Byte-identical to the same attachment in aggregate-both.yaml. The ONE
+        # difference between the two documents is the absence of the free
+        # `metrics` attachment below, so a free-attachment policy's pass here
+        # and deny there differ by exactly that one variable.
+        credentials:
+          type: feature.gov/db-credential
+          values:
+            secretName: db-creds
+            literalPassword: by-value-plaintext
+          inject:
+            env:
+              - in: DATABASE_PASSWORD
+                from: password

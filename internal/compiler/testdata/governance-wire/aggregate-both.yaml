@@ -1,0 +1,29 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: governance-wire-both
+  version: "1.0.0"
+spec:
+  components:
+    app:
+      type: gov/app
+      values:
+        appName: demo
+      features:
+        # Fills the declared `credentials` slot, so its binding names that slot.
+        # Its delivery key fills from a declared-sensitive provides key, so the
+        # per-delivery-key marking is populated.
+        credentials:
+          type: feature.gov/db-credential
+          values:
+            secretName: db-creds
+            literalPassword: by-value-plaintext
+          inject:
+            env:
+              - in: DATABASE_PASSWORD
+                from: password
+        # Fills no declared slot, so its binding is free.
+        metrics:
+          type: feature.gov/telemetry
+          values:
+            endpoint: "http://collector:4318"

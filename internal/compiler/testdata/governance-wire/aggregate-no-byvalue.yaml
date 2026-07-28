@@ -1,0 +1,31 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: governance-wire-no-byvalue
+  version: "1.0.0"
+spec:
+  components:
+    app:
+      type: gov/app
+      values:
+        appName: demo
+      features:
+        credentials:
+          type: feature.gov/db-credential
+          values:
+            secretName: db-creds
+            literalPassword: by-value-plaintext
+          inject:
+            env:
+              # The ONE difference from aggregate-both.yaml: this delivery key
+              # fills from the public locator `name` rather than from the
+              # declared-sensitive `password`, so no delivery key is marked. The
+              # delivery key's own name is left unchanged on purpose — moving it
+              # too would put two variables between the two documents and a
+              # by-value policy's pass here would no longer isolate the cause.
+              - in: DATABASE_PASSWORD
+                from: name
+        metrics:
+          type: feature.gov/telemetry
+          values:
+            endpoint: "http://collector:4318"

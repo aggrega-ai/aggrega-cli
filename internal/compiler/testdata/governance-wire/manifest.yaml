@@ -1,0 +1,14 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Manifest
+metadata:
+  name: governance-wire-manifest
+  version: "1.0.0"
+spec:
+  mappings:
+    components:
+      type:
+        gov/app: gov-app-recipe:1.0.0
+    features:
+      type:
+        feature.gov/db-credential: gov-db-credential-compose:1.0.0
+        feature.gov/telemetry: gov-telemetry-compose:1.0.0

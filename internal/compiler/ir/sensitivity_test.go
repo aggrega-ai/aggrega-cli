@@ -86,6 +86,19 @@ func sensitivityCatalog(t *testing.T) resolver.CatalogLookup {
   key: { type: string }
 `)},
 				}, true
+			case "core/labelled":
+				// Labels declared in deliberately non-alphabetical order, so a
+				// carry that sorted them would be visible rather than harmless.
+				return types.Feature{
+					Metadata: types.FeatureMetadata{
+						Name:    "core/labelled",
+						Version: "1.0.0",
+						Labels:  labelMap("zeta.example/second", "2", "alpha.example/first", "1"),
+					},
+					Spec: types.FeatureSpec{Schema: schemaNode(t, `values:
+  host: { type: string }
+`)},
+				}, true
 			default:
 				return types.Feature{}, false
 			}
@@ -376,9 +389,15 @@ func TestDerivedSensitivity_MarkingReadsTheMergedInject(t *testing.T) {
 	}
 }
 
-// With nothing declared sensitive, neither field reaches the wire — so an
-// attachment whose Feature and slot declare nothing marshals to the same bytes
-// it marshalled to before the axis existed.
+// With nothing declared sensitive, neither sensitivity field reaches the wire.
+//
+// The exact-bytes assertion below pins the whole emitted entry, so it also
+// records which OTHER per-attachment facts are unconditional. The declaration-
+// origin marker is one: every attachment on a node whose Component resolves
+// carries it, because "fills no declared slot" is a positive finding a consumer
+// acts on and omitting it would make that finding indistinguishable from an
+// unresolved slot set. The sensitivity fields are the opposite — they are a
+// marking, absent when no declaration produces one.
 func TestDerivedSensitivity_UndeclaredAttachmentCarriesNeitherKey(t *testing.T) {
 	t.Parallel()
 	attachments := buildSensitivity(t, []topology.FeatureAttachment{
@@ -397,7 +416,7 @@ func TestDerivedSensitivity_UndeclaredAttachmentCarriesNeitherKey(t *testing.T) 
 			t.Errorf("an undeclared attachment must not emit %q; got %s", key, raw)
 		}
 	}
-	if want := `{"type":"core/plain","resolved_version":"1.0.0","values":{"level":"info"},"origin":"explicit","values_provenance":{"level":{"origin":"explicit"}}}`; string(raw) != want {
+	if want := `{"type":"core/plain","resolved_version":"1.0.0","binding":"plain","values":{"level":"info"},"origin":"explicit","values_provenance":{"level":{"origin":"explicit"}}}`; string(raw) != want {
 		t.Errorf("emitted bytes changed:\n got %s\nwant %s", raw, want)
 	}
 }

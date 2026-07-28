@@ -1,0 +1,22 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Component
+metadata:
+  name: gov/app
+  version: "1.0.0"
+  labels:
+    component.aggrega.ai/type: "server"
+spec:
+  inject: ["env"]
+  featuresSchema:
+    # The one declared slot in this fixture. An attachment under this name
+    # fills it; an attachment under any other name is free, which is the
+    # distinction a declaration-origin policy reads.
+    credentials:
+      required: false
+      inject: ["env"]
+      description: "The credential this application reads its database password from."
+  schema:
+    values:
+      appName: { type: string }
+    provides:
+      host: { type: string, required: true }

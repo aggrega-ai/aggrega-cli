@@ -1,0 +1,20 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: governance-wire-only-free
+  version: "1.0.0"
+spec:
+  components:
+    app:
+      type: gov/app
+      values:
+        appName: demo
+      features:
+        # The only attachment: free, and its Feature declares no credential
+        # family label and nothing sensitive. A labels-only credential rule must
+        # find nothing here, which is what distinguishes reading the label from
+        # firing on any attachment at all.
+        metrics:
+          type: feature.gov/telemetry
+          values:
+            endpoint: "http://collector:4318"

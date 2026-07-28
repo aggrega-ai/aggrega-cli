@@ -1,0 +1,18 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Feature
+metadata:
+  name: feature.gov/telemetry
+  version: "1.0.0"
+  labels:
+    # Deliberately carries NO feature.aggrega.ai/kind label, so a labels-only
+    # credential rule has something it must not fire on. The reserved key's
+    # value set is constrained by the Feature envelope schema, so a second
+    # family value is not available to declare here.
+    governance.example/tier: observability
+    governance.example/rotation: never
+spec:
+  schema:
+    values:
+      endpoint: { type: string }
+    provides:
+      endpoint_url: { type: string, required: true }
