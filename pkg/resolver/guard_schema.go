@@ -11,6 +11,7 @@ import (
 	libschema "github.com/google/jsonschema-go/jsonschema"
 	"go.yaml.in/yaml/v3"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/redact"
 	"github.com/aggrega-ai/aggrega-cli/pkg/compactform"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	jsonvalidator "github.com/aggrega-ai/aggrega-cli/pkg/validator/jsonschema"
@@ -26,7 +27,9 @@ import (
 // A pillar instance that does not conform (wrong type, out of range, missing
 // required-non-defaulted field, or a property the schema forbids) produces a
 // ResolverError wrapping ErrSchemaConformance, naming the component, the pillar,
-// the offending field path, and the constraint that failed.
+// the offending field path, and the constraint that failed. On a leaf the schema
+// declares sensitive the constraint detail is withheld — see
+// [ValidatePillarConformance], through which this gate reports.
 //
 // The gate is default-aware: schema-declared defaults are merged into the
 // instance before validation (the same defaults the IR materialises later), so
@@ -276,6 +279,13 @@ func CompileSocketPillarSchema(catalog CatalogLookup, compType, socket, pillar s
 // *ResolverError wrapping ErrSchemaConformance, its Field rooted at
 // fieldPrefix + "." + <pillar>.<path>, its Message naming schemaLabel.
 //
+// A violation on a leaf the schema declares sensitive carries a fixed
+// placeholder where the constraint detail would go, because that detail quotes
+// the offending value and a diagnostic is read by anyone watching the build.
+// The Entity, the Field, the pillar, the contract name and the failing keyword
+// are all retained, so a reader still learns which leaf failed — only the text
+// that would reproduce the withheld value is dropped.
+//
 // Returns nil when compiled declares no such pillar (nothing to validate), when
 // the instance does not marshal, or when the instance conforms. The returned
 // slice is NOT sorted — callers that aggregate across multiple instances
@@ -401,6 +411,12 @@ func validateInfraConformance(
 // resolves. schemaLabel names the contract in the error message (e.g. "the
 // Component schema"). Returns nil when the wrapper does not compile or the
 // instance conforms.
+//
+// This is the one site holding both a finding's value-bearing text and the
+// schema that says whether the leaf it failed on is sensitive; downstream every
+// consumer sees an opaque string with that fact already gone. So the
+// substitution happens here, and the authored declarations are read through
+// their single home rather than recomputed.
 func pillarConformanceErrors(
 	pillar string,
 	pillarSchema map[string]any,
@@ -442,6 +458,8 @@ func pillarConformanceErrors(
 	// distinct.
 	leaves := leafmostFindings(rpt.Findings)
 
+	declared := DeclaredSensitiveLeaves(compiled)
+
 	errs := make([]*ResolverError, 0, len(leaves))
 	for _, f := range leaves {
 		field := componentField
@@ -449,8 +467,11 @@ func pillarConformanceErrors(
 			field = componentField + "." + f.FieldPath
 		}
 		msg := f.Message
+		if findingOnSensitiveLeaf(declared, pillar, f.FieldPath) {
+			msg = redact.Placeholder()
+		}
 		if f.Keyword != "" {
-			msg = fmt.Sprintf("%s (%s)", f.Message, f.Keyword)
+			msg = fmt.Sprintf("%s (%s)", msg, f.Keyword)
 		}
 		errs = append(errs, &ResolverError{
 			Entity:  entity,
@@ -460,6 +481,52 @@ func pillarConformanceErrors(
 		})
 	}
 	return errs
+}
+
+// findingOnSensitiveLeaf reports whether a validator finding landed on a leaf
+// the entity's schema declares sensitive, or anywhere inside an object it
+// declares sensitive. fieldPath is the instance path the finding carries, which
+// leads with the pillar name; a path naming no leaf inside the pillar — the
+// pillar root, or the instance root — reports false. Only values and infra are
+// validated through this entry, and an unrecognised pillar reports false rather
+// than guessing.
+//
+// The walk up the containing objects matters as much as the leaf itself: a
+// declaration on an object withholds everything beneath it, so without the walk
+// a constraint failing two levels down would print material an author asked to
+// be withheld. Nothing about the value is examined — a path is sensitive
+// because the schema says so.
+func findingOnSensitiveLeaf(declared SensitiveLeaves, pillar, fieldPath string) bool {
+	var paths map[string]bool
+	switch pillar {
+	case "values":
+		paths = declared.Values
+	case "infra":
+		paths = declared.Infra
+	}
+	if len(paths) == 0 {
+		return false
+	}
+	prefix := pillar + "."
+	if !strings.HasPrefix(fieldPath, prefix) {
+		return false
+	}
+	for leaf := strings.TrimPrefix(fieldPath, prefix); leaf != ""; leaf = containingLeafPath(leaf) {
+		if paths[leaf] {
+			return true
+		}
+	}
+	return false
+}
+
+// containingLeafPath returns the dotted path of the object containing the named
+// leaf, and the empty string when the leaf sits at the pillar root.
+func containingLeafPath(path string) string {
+	i := strings.LastIndex(path, ".")
+	if i < 0 {
+		return ""
+	}
+	return path[:i]
 }
 
 // leafmostFindings returns the findings whose FieldPath is NOT a strict
