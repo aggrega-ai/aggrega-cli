@@ -17,7 +17,7 @@ Boundary: frontend-ns
     Uses:
       my-api → backend  [cross-boundary]
     Features:
-    - cross-namespace-routing (core/k8s-dns-resolver:1.0.0)    [explicit]
+    - cross-namespace-routing (core/k8s-dns-resolver:1.0.0)    [free]    [explicit]
 
 Boundary: data-ns
   Directory: ./dist/data

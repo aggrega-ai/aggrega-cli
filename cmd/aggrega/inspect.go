@@ -505,12 +505,23 @@ func renderReleaseFile(rw *workspaceconfig.ResolvedWorkspace, releasePath string
 // the attachment handles secret material, not which of its leaves do, and
 // hiding all of them would print the placeholder over a referenceable
 // credential's name and key — public locators an author left unmarked.
+//
+// Both layouts carry the attachment-level facts clause on the attachment's own
+// line, so which slot an attachment fills and whether it handles declared
+// secret material read the same whichever layout the provenance selects.
 func renderFeatureAttachment(out io.Writer, instanceName string, entry types.IRFeatureEntry, declared resolver.SensitiveLeaves) {
+	// Formatted once, ahead of the layout branch: the clause describes the
+	// attachment rather than a leaf, so both layouts print it in the same
+	// position and neither can be edited into dropping it alone.
+	facts := attachmentFactsBracket(entry)
+	if facts != "" {
+		facts = "    " + facts
+	}
 	if featureProvenanceLayout(entry) {
-		fmt.Fprintf(out, "    - %s    %s\n", featureLabel(instanceName, entry), perAttachmentBracket(entry))
+		fmt.Fprintf(out, "    - %s%s    %s\n", featureLabel(instanceName, entry), facts, perAttachmentBracket(entry))
 		return
 	}
-	fmt.Fprintf(out, "    - %s\n", featureLabel(instanceName, entry))
+	fmt.Fprintf(out, "    - %s%s\n", featureLabel(instanceName, entry), facts)
 	for _, leaf := range walkLeavesInOrder(entry) {
 		if leafDeclaredSensitive(declared, leaf.path) {
 			fmt.Fprintf(out, "        %s: %s    %s\n", leaf.path, redact.Placeholder(), perLeafBracket(leaf.provenance))
@@ -559,6 +570,48 @@ func featureLabel(instanceName string, entry types.IRFeatureEntry) string {
 		label = instanceName + " (" + label + ")"
 	}
 	return label
+}
+
+// attachmentFactsBracket formats the clause carrying the two per-attachment
+// facts the IR builder derives about an attachment itself rather than about one
+// of its leaves: the attachment slot it fills, and whether it handles material
+// an author declared sensitive. Both are read from the entry; neither is
+// recomputed here, so what inspect prints and what the IR carries cannot
+// disagree.
+//
+// The slot half distinguishes three states, not two:
+//
+//   - a slot name prints as "slot: <name>";
+//   - [types.AttachmentBindingFree] prints as that bare word — the positive
+//     finding that the resolved Component declares no slot of this name;
+//   - an empty binding prints no clause at all. Empty is the absence of a
+//     finding, because the host Component's declared slot set did not resolve,
+//     and printing the free sentinel for it would report a finding the
+//     compiler never made.
+//
+// The sensitivity half appears only for a marked attachment. Its absence
+// records that no declaration marked the attachment, which is a narrower
+// statement than the attachment being free of secret material.
+//
+// Returns the empty string when the entry carries neither fact, so an
+// attachment on a node whose Component does not resolve and whose declarations
+// mark nothing prints the line it printed before either fact existed.
+func attachmentFactsBracket(entry types.IRFeatureEntry) string {
+	var parts []string
+	switch entry.Binding {
+	case "":
+	case types.AttachmentBindingFree:
+		parts = append(parts, types.AttachmentBindingFree)
+	default:
+		parts = append(parts, "slot: "+entry.Binding)
+	}
+	if entry.Sensitive {
+		parts = append(parts, "sensitive")
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return "[" + strings.Join(parts, ", ") + "]"
 }
 
 // perAttachmentBracket formats the trailing [explicit] /
