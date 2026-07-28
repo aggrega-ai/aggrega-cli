@@ -229,3 +229,89 @@ func TestUnsupportedField_PersistentTemplatePartial(t *testing.T) {
 		t.Fatalf("no persistentTemplate diagnostic (all: %+v)", diags)
 	}
 }
+
+// TestUnsupportedField_AttachmentAsEnvPartial proves an `as: env` attachment
+// entry is announced rather than silently emitted as an empty variable: one
+// partial-support warning per env entry, at that entry's authored coordinate,
+// and none for the `as: file` entry beside it, which compose renders as a real
+// bind-mount.
+//
+// The fixture is deliberately hostile to the mechanism. Two attachments sit on
+// one container with different keys and different delivery modes, a second
+// container carries its own env entry, and an init container carries one more.
+// A warn-on-every-attachment bug, a warn-once-per-container bug, a
+// wrong-coordinate bug, and a collection-prefix bug each fail here; a
+// single-attachment fixture would detect none of them.
+func TestUnsupportedField_AttachmentAsEnvPartial(t *testing.T) {
+	t.Parallel()
+	w := baseDegradeWorkload()
+
+	withMainContainer(w, func(c *types.ContainerSpec) {
+		c.Attachments.Set("DB_PASSWORD", types.AttachmentRef{From: "password", As: "env"})
+		c.Attachments.Set("tls-cert", types.AttachmentRef{From: "tls", As: "file", Path: "/etc/tls/server.crt"})
+	})
+
+	agent := types.ContainerSpec{Image: "agent:1.0"}
+	agent.Attachments.Set("SIDECAR_TOKEN", types.AttachmentRef{From: "password", As: "env"})
+	w.Containers.Set("agent", agent)
+
+	// Deliberately unnamed: a positional init entry need not carry a name, so a
+	// coordinate read off ContainerSpec.Name would be hollow here. The index is.
+	migrate := types.ContainerSpec{Image: "migrate:1.0"}
+	migrate.Attachments.Set("MIGRATE_PASSWORD", types.AttachmentRef{From: "password", As: "env"})
+	w.InitContainers = append(w.InitContainers, migrate)
+
+	files, diags, err := SynthesizeWorkloadCore(w, nodeCtxFor("api"))
+	if err != nil {
+		t.Fatalf("synth: %v", err)
+	}
+
+	// Exact sequence, not set membership: the order is the containers in author
+	// order followed by the init containers, so an ordering regression fails too.
+	// The init entry is located by list index, not by name, matching the field
+	// paths the Workload attachment validator reports — an unnamed positional
+	// entry has no author-typed name, so an index is the only coordinate that is
+	// correct in every case.
+	want := []string{
+		"containers.main.attachments.DB_PASSWORD",
+		"containers.agent.attachments.SIDECAR_TOKEN",
+		"initContainers[0].attachments.MIGRATE_PASSWORD",
+	}
+	got := make([]string, 0, len(diags))
+	for _, d := range diags {
+		got = append(got, d.SourceRef)
+	}
+	if len(got) != len(want) {
+		t.Fatalf("got %d diagnostics, want %d (all: %+v)", len(got), len(want), diags)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("diagnostic %d source ref = %q, want %q (all: %+v)", i, got[i], want[i], diags)
+		}
+	}
+
+	for _, d := range diags {
+		if d.Severity != "warning" {
+			t.Errorf("%s: severity = %q, want warning", d.SourceRef, d.Severity)
+		}
+		if d.Code != rendercore.UnsupportedFieldCode {
+			t.Errorf("%s: code = %q, want %q", d.SourceRef, d.Code, rendercore.UnsupportedFieldCode)
+		}
+		if !strings.Contains(d.Message, d.SourceRef) {
+			t.Errorf("%s: message %q does not name the authored coordinate", d.SourceRef, d.Message)
+		}
+		if !strings.Contains(d.Message, "does not fully support") {
+			t.Errorf("%s: message %q missing the partial-support wording", d.SourceRef, d.Message)
+		}
+		if !strings.Contains(d.Message, "empty value") {
+			t.Errorf("%s: message %q does not say the variable is emitted empty", d.SourceRef, d.Message)
+		}
+	}
+
+	// The placeholder is kept: the advisory announces the empty variable, it does
+	// not replace it. A rendered fragment that dropped the variable would leave
+	// the author with nothing to debug from.
+	if !bytes.Contains(files[0].Body, []byte(`DB_PASSWORD: ""`)) {
+		t.Errorf("rendered fragment lost the empty placeholder variable:\n%s", files[0].Body)
+	}
+}

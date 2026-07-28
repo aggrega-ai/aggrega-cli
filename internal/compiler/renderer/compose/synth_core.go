@@ -23,7 +23,7 @@
 // authored order and every long-running service waits for the last of them to
 // complete.
 //
-// Author-order preservation. Containers / Variables / Ports / Secrets /
+// Author-order preservation. Containers / Variables / Ports / Attachments /
 // Volumes / Services iterated via OrderedMap.All(). Top-level maps
 // (Services, Volumes) inside ComposeFile are Go map[string]X — yaml.v3
 // sorts keys alphabetically on marshal, which is the
@@ -52,11 +52,12 @@ const composeTargetName = "compose"
 // (AssembleBoundaryCore) consumes fragments to produce the single
 // docker-compose.yaml at the dispatch path.
 //
-// Compose's synthesis reads no per-slot secret provides: an `as: env` secret
-// entry emits the env-var name with an empty value (compose has no
-// env-from-secret primitive) and an `as: file` entry bind-mounts from the slot
-// name — neither consumes the resolved Secret identity the helm core reads. The
-// core therefore takes only the Workload and the node context.
+// Compose's synthesis reads no per-slot attachment provides: an `as: env`
+// attachment entry emits the env-var name with an empty value and raises a
+// partial-support advisory naming that entry, and an `as: file` entry
+// bind-mounts from the slot name — neither consumes the resolved Secret
+// identity the helm core reads. The core therefore takes only the Workload and
+// the node context.
 func SynthesizeWorkloadCore(
 	w *types.Workload,
 	nodeCtx rendercore.NodeRenderContext,
@@ -87,11 +88,12 @@ func SynthesizeWorkloadCore(
 	}
 
 	// Unsupported-field diagnostics accumulate here in a deterministic order: per
-	// container in author order (each container's runAsNonRoot and dropped
-	// extended resources), then the main container's pod-level drops, then the
-	// same per-container entries for each init container in authored order, then
-	// the per-volume partial-support entries. They ride the render-output ABI back
-	// to the host out-of-band; the rendered fragment bytes are unaffected.
+	// container in author order (that container's dropped extended resources,
+	// then its `as: env` attachment placeholders, then its runAsNonRoot), then
+	// the main container's pod-level drops, then the same per-container entries
+	// for each init container in authored order, then the per-volume
+	// partial-support entries. They ride the render-output ABI back to the host
+	// out-of-band; the rendered fragment bytes are unaffected.
 	var diags []renderctx.Diagnostic
 
 	frag := ComposeFile{
@@ -129,7 +131,7 @@ func SynthesizeWorkloadCore(
 			serviceName = mainServiceName
 		}
 
-		svc, cdiags, err := translateContainer(c, w, nodeCtx, role, mainServiceName)
+		svc, cdiags, err := translateContainer(c, "containers."+containerName, w, nodeCtx, role, mainServiceName)
 		if err != nil {
 			return nil, nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("compose: node %q container %q", nodeCtx.NodeID, containerName))
 		}
@@ -286,7 +288,7 @@ func synthesizeInitServices(
 				nil, nil)
 		}
 
-		svc, cdiags, err := translateContainer(c, w, nodeCtx, roleInit, mainServiceName)
+		svc, cdiags, err := translateContainer(c, fmt.Sprintf("initContainers[%d]", i), w, nodeCtx, roleInit, mainServiceName)
 		if err != nil {
 			return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("compose: node %q init container %q", nodeCtx.NodeID, containerName))
 		}
@@ -317,8 +319,23 @@ func synthesizeInitServices(
 // role carries the part the container plays; every container reaches the same
 // image, command, environment, volume-mount and security translation regardless
 // of it.
+//
+// containerPath is the authored path to this container within the Workload —
+// `containers.<name>` for a named container, `initContainers[<i>]` for a
+// positional init entry. The caller that iterated the collection supplies it
+// rather than this function deriving it, because a named container's name is the
+// collection key rather than a field of ContainerSpec, and an init entry's
+// coordinate is its list index rather than any name. The two spellings mirror
+// the container-path prefixes the Workload attachment validator builds its
+// finding paths from (that surface prefixes them with a `.` separator), so one
+// authored entry is located the same way whether a build rejects it or degrades
+// it.
+//
+// containerPath reaches the diagnostics raised here and nothing else, so it
+// never affects the rendered bytes.
 func translateContainer(
 	c types.ContainerSpec,
+	containerPath string,
 	w *types.Workload,
 	nodeCtx rendercore.NodeRenderContext,
 	role containerRole,
@@ -400,18 +417,23 @@ func translateContainer(
 
 	// Container attachments:
 	//   - as: env  → add an Environment entry keyed by the attachment key with
-	//     an empty value. Value-from-reference env syntax is Kubernetes-only,
-	//     and compose has no env-from-secret primitive, so the name is emitted
-	//     and the value left empty; populating it from the attachment's
-	//     resolved material is not yet implemented.
+	//     an empty value, and raise a partial-support advisory naming the entry.
+	//     Value-from-reference env syntax is Kubernetes-only, and compose cannot
+	//     source an environment variable from an attachment, so the name is
+	//     emitted and the value left empty; populating it from the attachment's
+	//     resolved material through a compose env-file is not yet implemented.
 	//   - as: file → bind-mount the slot name at the entry's path, read-only.
 	for slotKey, ref := range c.Attachments.All() {
 		switch ref.As {
 		case "env":
-			// Compose has no native env-from-secret, so the env var name is
-			// emitted with an empty value. Sourcing the value is not yet
-			// implemented.
+			// The placeholder is deliberately kept rather than dropped, and the
+			// advisory is what makes it honest: an empty variable the author is
+			// told about is debuggable, whereas a variable that simply never
+			// appears leaves nothing to debug from.
 			svc.Environment.Set(slotKey, "")
+			diags = append(diags, rendercore.PartialSupportDiagnostic(composeTargetName,
+				containerPath+".attachments."+slotKey,
+				"compose cannot source an environment variable from an attachment, so the variable is emitted with an empty value"))
 		case "file":
 			svc.Volumes = append(svc.Volumes, ServiceVolume{
 				Type:     "bind",
