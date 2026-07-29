@@ -20,6 +20,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
 	"github.com/aggrega-ai/aggrega-cli/pkg/egress"
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/externalinputs"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
@@ -690,10 +691,15 @@ func acquireLockfile(rw *workspaceconfig.ResolvedWorkspace, releasePath string, 
 }
 
 // withSkipContext annotates an in-closure resolution / validation failure with
-// the catalog files the TOLERANT Pass-1 load skipped, so a tolerated skip never
-// hides WHY an entity the Release reaches went missing. A skipped file whose
-// header named the kind+name is reported with that identity; a file too malformed
-// to peek is reported by path. No-op when nothing was skipped or err is nil.
+// the catalog files the load refused, so a tolerated skip never hides WHY an
+// entity the Release reaches went missing. A skipped file whose header named the
+// kind+name is reported with that identity; a file too malformed to peek is
+// reported by path. No-op when nothing was skipped or err is nil.
+//
+// Each reason is rendered as its whole cause chain, not just its outermost
+// frame: the outermost frame typically says only which step refused the file
+// ("unmarshal Component"), while the frame beneath it is the one naming the
+// constraint the file violated — the only part an author can act on.
 func withSkipContext(err error, skipped []catalog.SkippedEntity) error {
 	if err == nil || len(skipped) == 0 {
 		return err
@@ -702,11 +708,12 @@ func withSkipContext(err error, skipped []catalog.SkippedEntity) error {
 	b.WriteString(err.Error())
 	b.WriteString("\n  note: catalog files skipped at load (one may be the unresolved in-closure entity):")
 	for _, s := range skipped {
+		reason := cerrors.CauseChain(s.Err)
 		switch {
 		case s.Kind != "" && s.Name != "":
-			fmt.Fprintf(&b, "\n    - %s %q (%s): %s", s.Kind, s.Name, s.Path, s.Err)
+			fmt.Fprintf(&b, "\n    - %s %q (%s): %s", s.Kind, s.Name, s.Path, reason)
 		default:
-			fmt.Fprintf(&b, "\n    - %s: %s", s.Path, s.Err)
+			fmt.Fprintf(&b, "\n    - %s: %s", s.Path, reason)
 		}
 	}
 	return fmt.Errorf("%s", b.String())

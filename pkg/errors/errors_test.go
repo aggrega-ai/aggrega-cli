@@ -99,3 +99,49 @@ func TestCompilerError_Nil_Safe(t *testing.T) {
 		t.Errorf("nil CompilerError.Unwrap() = %v; want nil", got)
 	}
 }
+
+// TestCauseChain_CarriesEveryFrame pins the property the single-line contexts
+// depend on: a wrap chain whose outermost frame describes only the step that
+// failed still yields the inner frame that names WHAT failed. Error() on a
+// CompilerError deliberately renders one frame, so a caller that used it alone
+// would report "unmarshal Component" and lose the constraint underneath.
+func TestCauseChain_CarriesEveryFrame(t *testing.T) {
+	t.Parallel()
+	inner := stderrors.New("const: something does not equal inherited")
+	middle := cerrors.Wrap(inner, cerrors.CatalogError, cerrors.SourceLocation{File: "c.yaml"}, "envelope refused the document")
+	outer := cerrors.Wrap(middle, cerrors.CatalogError, cerrors.SourceLocation{File: "c.yaml"}, "unmarshal Component")
+
+	if got := outer.Error(); strings.Contains(got, "does not equal inherited") {
+		t.Fatalf("precondition: Error() must render one frame only; got %q", got)
+	}
+	got := cerrors.CauseChain(outer)
+	for _, want := range []string{"unmarshal Component", "envelope refused the document", "does not equal inherited"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("CauseChain dropped %q:\n%s", want, got)
+		}
+	}
+}
+
+// TestCauseChain_DropsRedundantFrames pins that a frame merely re-stating its
+// cause is not said twice — the common shape where a wrap sets its message to
+// the inner error's own text.
+func TestCauseChain_DropsRedundantFrames(t *testing.T) {
+	t.Parallel()
+	inner := stderrors.New("the specific fault")
+	outer := cerrors.Wrap(inner, cerrors.CatalogError, cerrors.SourceLocation{}, inner.Error())
+	got := cerrors.CauseChain(outer)
+	if n := strings.Count(got, "the specific fault"); n != 1 {
+		t.Errorf("CauseChain stated the same text %d times; want 1:\n%s", n, got)
+	}
+}
+
+func TestCauseChain_NilAndSingleFrame(t *testing.T) {
+	t.Parallel()
+	if got := cerrors.CauseChain(nil); got != "" {
+		t.Errorf("CauseChain(nil) = %q; want empty", got)
+	}
+	lone := stderrors.New("only frame")
+	if got := cerrors.CauseChain(lone); got != "only frame" {
+		t.Errorf("CauseChain(single) = %q; want %q", got, "only frame")
+	}
+}

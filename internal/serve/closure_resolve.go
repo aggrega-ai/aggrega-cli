@@ -11,6 +11,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compilerops"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
@@ -139,6 +140,10 @@ func reconstructClosureAxes(view *catalog.LazyLookup, resolved *compilerops.Reso
 // same view whose enumeration produced the unresolved-URI failure, so the skips
 // reported are exactly the ones that could explain it (not a session catalog's
 // possibly-stale skip set).
+//
+// Each reason is rendered as its whole cause chain: the outermost frame names
+// only which step refused the file, and the frame beneath it is the one naming
+// the constraint the file violated.
 func (s *Server) skipContext(view *catalog.LazyLookup, msg string) string {
 	skips := view.Skips()
 	if len(skips) == 0 {
@@ -153,7 +158,7 @@ func (s *Server) skipContext(view *catalog.LazyLookup, msg string) string {
 	b.WriteString(msg)
 	b.WriteString("; note: catalog files skipped at load (one may be the unresolved in-closure entity):")
 	for _, p := range paths {
-		fmt.Fprintf(&b, " %s: %v;", p, skips[p])
+		fmt.Fprintf(&b, " %s: %s;", p, cerrors.CauseChain(skips[p]))
 	}
 	return b.String()
 }

@@ -3,7 +3,11 @@
 
 package errors
 
-import "fmt"
+import (
+	stderrors "errors"
+	"fmt"
+	"strings"
+)
 
 // Category names which authoring artifact is at fault for a given
 // CompilerError. The six values partition the compiler's error surface
@@ -96,6 +100,41 @@ func (e *CompilerError) Error() string {
 		return fmt.Sprintf("[%s] %s", e.Category, e.Message)
 	}
 	return fmt.Sprintf("[%s] %s: %s", e.Category, src, e.Message)
+}
+
+// CauseChain renders err together with every cause beneath it as ONE line,
+// each segment joined by ": ". It exists because Error above deliberately
+// renders a single frame: that keeps the rich multi-line CLI rendering
+// readable, but it means a caller composing a one-line note out of err.Error()
+// alone reports the outermost description and silently drops the specific
+// diagnostic underneath — the frame that names the file's actual fault.
+// CauseChain is the flattened form for those single-line contexts.
+//
+// A segment whose text the accumulated output already contains is skipped, so
+// a frame that only re-states its cause is not said twice. Returns the empty
+// string for a nil error.
+func CauseChain(err error) string {
+	if err == nil {
+		return ""
+	}
+	var segments []string
+	for cur := err; cur != nil; cur = stderrors.Unwrap(cur) {
+		txt := cur.Error()
+		if txt == "" {
+			continue
+		}
+		redundant := false
+		for _, prior := range segments {
+			if strings.Contains(prior, txt) {
+				redundant = true
+				break
+			}
+		}
+		if !redundant {
+			segments = append(segments, txt)
+		}
+	}
+	return strings.Join(segments, ": ")
 }
 
 // Unwrap returns the wrapped inner error so errors.Is and errors.As

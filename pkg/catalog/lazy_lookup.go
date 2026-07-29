@@ -457,8 +457,13 @@ type LazyLookup struct {
 	artifactsLibraries map[string]types.ArtifactsLibrary
 	plugins            map[string]types.Plugin // keyed by identity (metadata.name:version), like the eager catalog
 	aggregateSources   map[string]string
-	recipeSkips        map[string]error // skipped recipe/FR/aggregate/maplib/plugin file path -> reason
-	recipeIndexBuilt   bool
+	// recipeSkips records every catalog file this backing could not index, keyed
+	// by file path, with the reason. It spans more kinds than its name suggests:
+	// recipe, FeatureRecipe, Aggregate, mapping / workload / artifacts / schema
+	// library, plugin, and — recorded on a per-URI cascade read rather than an
+	// enumeration walk — Component and Feature.
+	recipeSkips      map[string]error
+	recipeIndexBuilt bool
 
 	// localEntityPaths maps entityBytesKey(kind, identityKey) to the writable
 	// filesystem path a Recipe / FeatureRecipe was authored in, for Tier-1
@@ -844,13 +849,20 @@ func (l *LazyLookup) tier1ReadComponent(uri string) (types.Component, bool) {
 	}
 	comp, perr := parseComponentEntity(data, path)
 	if perr != nil {
+		// The rejection is RECORDED, not discarded. A rejected file makes the
+		// cascade report a miss, and a miss surfaces downstream as an
+		// unresolvable entity — a symptom that names nothing an author can fix.
+		// Keeping the reason means the surfaces that report the miss can say
+		// which file was refused and why.
+		l.recipeSkips[path] = perr
 		return types.Component{}, false
 	}
 	l.entityBytes[entityBytesKey("Component", comp.Metadata.Name)] = data
 	return comp, true
 }
 
-// tier1ReadFeature mirrors tier1ReadComponent for the Feature surface.
+// tier1ReadFeature mirrors tier1ReadComponent for the Feature surface,
+// recording a rejection for the same reason.
 func (l *LazyLookup) tier1ReadFeature(uri string) (types.Feature, bool) {
 	l.buildFeatureIndex()
 	lookupName := lookupNameFromURI(uri)
@@ -864,6 +876,7 @@ func (l *LazyLookup) tier1ReadFeature(uri string) (types.Feature, bool) {
 	}
 	feat, perr := parseFeatureEntity(data, path)
 	if perr != nil {
+		l.recipeSkips[path] = perr
 		return types.Feature{}, false
 	}
 	l.entityBytes[entityBytesKey("Feature", feat.Metadata.Name)] = data
@@ -1604,7 +1617,11 @@ func (l *LazyLookup) ArtifactsLibrary(uri string) (types.ArtifactsLibrary, bool)
 // Skips returns the tolerant-enumeration skip reasons keyed by file path — every
 // catalog file the lazy enumeration could not index (a recipe/FR/aggregate/
 // provider/mapping-library that failed to parse, a duplicate identity, or a
-// schema library that failed its forbidden-keyword / template-body checks). The
+// schema library that failed its forbidden-keyword / template-body checks), plus
+// every Component or Feature file a cascade read has refused so far. A refused
+// Component or Feature is recorded when its URI is read rather than during an
+// enumeration walk, so it appears once the resolution that needed it has been
+// attempted — which is exactly when a caller reports the resulting miss. The
 // daemon surfaces these as a closure-level diagnostic so an in-closure entity
 // that went missing because it was skipped is explained, not silently absent.
 func (l *LazyLookup) Skips() map[string]error {
@@ -1613,6 +1630,29 @@ func (l *LazyLookup) Skips() map[string]error {
 	l.buildRecipeIndex()
 	_ = l.buildSchemaLibraries()
 	return l.recipeSkips
+}
+
+// SkippedEntities returns the same record Skips reports, in the shape the
+// eager tolerant load reports it — so one annotator can render the skips from
+// either catalog backing rather than each backing growing its own. Ordered by
+// path, so a rendered note is deterministic. Kind and Name are left empty: this
+// backing records a refusal by the path it read, without re-reading the file to
+// recover a header it already refused to trust.
+func (l *LazyLookup) SkippedEntities() []SkippedEntity {
+	skips := l.Skips()
+	if len(skips) == 0 {
+		return nil
+	}
+	paths := make([]string, 0, len(skips))
+	for p := range skips {
+		paths = append(paths, p)
+	}
+	sort.Strings(paths)
+	out := make([]SkippedEntity, 0, len(paths))
+	for _, p := range paths {
+		out = append(out, SkippedEntity{Path: p, Err: skips[p]})
+	}
+	return out
 }
 
 // ValidateClosureScopedPillars runs closure-scoped Pass-2 over the LAZY backing:

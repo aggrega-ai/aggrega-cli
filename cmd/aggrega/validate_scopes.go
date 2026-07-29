@@ -134,7 +134,13 @@ func validateRelease(rw *workspaceconfig.ResolvedWorkspace, releasePath string, 
 		Augment:         false,
 	})
 	if cerr != nil {
-		return cerr
+		// A file the catalog read refused makes its entity unresolvable, and an
+		// unresolvable entity is all this failure can say on its own — it names
+		// the reference, never the file behind it. Replaying the refusals the
+		// view recorded turns that into the constraint the author has to fix.
+		// This is the same annotation the build applies, over the same record,
+		// through the same renderer.
+		return withSkipContext(cerr, lazyView.SkippedEntities())
 	}
 
 	vr := compilerops.Validate(context.Background(), compilerops.ValidateInputs{
