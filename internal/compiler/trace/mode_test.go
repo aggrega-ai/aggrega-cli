@@ -41,13 +41,20 @@ func modePayload() map[string]any {
 func TestModeKeysWithholdsByDefaultAndEmptiesWhenUnredacted(t *testing.T) {
 	t.Parallel()
 
-	in := redact.Keys{
-		Values: map[string]bool{"dbPassword": true},
-		Infra:  map[string]bool{"apiKey": true},
-		Inject: map[string]map[string]bool{"env": {"DATABASE_PASSWORD": true}},
-		Locals: map[string]bool{"dsn": true},
-		Source: map[string]bool{redact.WholeSourceKey: true},
-	}
+	// Assembled through the one assembler rather than as a struct literal: the
+	// delivery marking is unreachable from outside its own package, so a set
+	// carrying one can only come from there.
+	in := redact.NodeKeys(
+		map[string]bool{"dbPassword": true},
+		map[string]bool{"apiKey": true},
+		types.OrderedMap[types.IRFeatureEntry]{},
+		redact.CrossNode{},
+		redact.DeliveryKeys{"env": {"DATABASE_PASSWORD": true}},
+		nil,
+		redact.Derived{
+			Locals: map[string]bool{"dsn": true},
+			Source: map[string]bool{redact.WholeSourceKey: true},
+		})
 
 	kept := Mode{}.Keys(in)
 	if kept.Empty() {

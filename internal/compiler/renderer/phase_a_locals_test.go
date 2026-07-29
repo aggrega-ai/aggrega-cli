@@ -77,7 +77,7 @@ func TestExecutePhaseA_FeatureLocalsAreEvaluated(t *testing.T) {
 	ctx, refs := phaseALocalsFixture(frLocals,
 		`{"env": {"SCRAPE_URL": "{{ .locals.scrape_url }}", "SCRAPE_PORT": "{{ .locals.scrape_port }}", "REGION": "{{ .locals.region_tag }}", "DB_HOST": "{{ .locals.db_host }}", "ATTACHED_AS": "{{ .locals.attached_as }}"}}`)
 
-	if err := ExecutePhaseA(ctx, refs); err != nil {
+	if _, err := ExecutePhaseA(ctx, refs); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -106,7 +106,7 @@ func TestExecutePhaseA_FeatureLocalsForwardReferenceHalts(t *testing.T) {
 
 	ctx, refs := phaseALocalsFixture(frLocals, `{"env": {"X": "{{ .locals.reader }}"}}`)
 
-	err := ExecutePhaseA(ctx, refs)
+	_, err := ExecutePhaseA(ctx, refs)
 	if err == nil {
 		t.Fatal("expected a halt on a forward sibling reference, got nil")
 	}
@@ -131,7 +131,7 @@ func TestExecutePhaseA_FeatureLocalsCannotReadBaseLocal(t *testing.T) {
 
 	ctx, refs := phaseALocalsFixture(frLocals, `{"env": {"MIRROR": "{{ .locals.mirror }}"}}`)
 
-	err := ExecutePhaseA(ctx, refs)
+	_, err := ExecutePhaseA(ctx, refs)
 	if err == nil {
 		t.Fatal("expected a halt reading a base Recipe local from an attachment local, got nil")
 	}
@@ -157,7 +157,7 @@ func TestExecutePhaseA_FeatureLocalsBrokenTemplateHalts(t *testing.T) {
 
 	ctx, refs := phaseALocalsFixture(frLocals, `{"env": {"SCRAPE_PORT": "{{ .locals.scrape_port }}"}}`)
 
-	err := ExecutePhaseA(ctx, refs)
+	_, err := ExecutePhaseA(ctx, refs)
 	if err == nil {
 		t.Fatal("expected a halt on an unevaluable local, got nil")
 	}
@@ -194,7 +194,7 @@ func TestExecutePhaseA_FeatureLocalsScopeMatchesRenderPath(t *testing.T) {
 			frLocals.Set("probe", tc.template)
 
 			ctx, refs := phaseALocalsFixture(frLocals, `{"env": {"P": "{{ .locals.probe }}"}}`)
-			interceptErr := ExecutePhaseA(ctx, refs)
+			_, interceptErr := ExecutePhaseA(ctx, refs)
 			if (interceptErr == nil) != tc.admitted {
 				t.Errorf("interception surface: admitted=%v, want %v (err: %v)", interceptErr == nil, tc.admitted, interceptErr)
 			}

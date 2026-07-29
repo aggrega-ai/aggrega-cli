@@ -116,6 +116,12 @@ const (
 	WorkloadUnavailable
 )
 
+// DeliveryKeys names delivery keys by mechanism and then by delivery key. It is
+// the shape every delivery route reports in and the shape the delivery pipe is
+// displayed in, so a route's marking and the pipe it covers join by key without
+// either side reshaping the other.
+type DeliveryKeys map[string]map[string]bool
+
 // Keys names, for one node, which data a surface must replace. It is a
 // description of declarations and of what was computed from them, assembled by
 // NodeKeys from the upstream facts; it holds no values and answers no question
@@ -123,9 +129,20 @@ const (
 //
 // Values and Infra are keyed by the flat-dotted property path from the pillar
 // root — the spelling types.FlattenLeaves produces and the authored leaf
-// declarations use, so the two join by key. Inject is keyed by delivery
-// mechanism and then by delivery key, which is the shape the attachment's
-// marking and the delivery pipe both carry.
+// declarations use, so the two join by key. The delivery marking is keyed by
+// mechanism and then by delivery key, which is the shape every delivery route
+// reports in and the shape the delivery pipe is displayed in.
+//
+// The delivery marking is deliberately UNEXPORTED, and that is the boundary the
+// whole package sits on rather than a style choice. Three withholding gaps of one
+// family have been found by probing, each the same shape — a route that puts
+// material on a node's delivery pipe and that the assembly did not read — so the
+// marking has to be unreachable except through NodeKeys. Unexporting it makes the
+// compiler, rather than a comment, the thing that stops a second assembler from
+// existing: no package outside this one can mark a delivery key at all, so a
+// route added later has to arrive as an argument to the one constructor. What that
+// cannot force is the plumbing of a route into that constructor in the first
+// place; the untraced argument is what covers a key no route accounted for.
 //
 // Locals and Source name DERIVED withholding rather than declared: a template
 // output computed from a declared-sensitive datum lands under a key nobody
@@ -151,11 +168,14 @@ const (
 type Keys struct {
 	Values       map[string]bool
 	Infra        map[string]bool
-	Inject       map[string]map[string]bool
 	Locals       map[string]bool
 	Source       map[string]bool
 	UsesProvides map[string]map[string]bool
 	Workload     WorkloadDisplay
+
+	// inject is the delivery marking. See the type's own documentation for why
+	// it is not exported.
+	inject DeliveryKeys
 }
 
 // AnyWithheld reports whether the set names any datum a template could READ. It
@@ -166,7 +186,7 @@ type Keys struct {
 // Workload is deliberately excluded. It is the OUTPUT of such a reading, so a
 // reading that consulted it would depend on its own result.
 func (k Keys) AnyWithheld() bool {
-	return len(k.Values) > 0 || len(k.Infra) > 0 || len(k.Inject) > 0 ||
+	return len(k.Values) > 0 || len(k.Infra) > 0 || len(k.inject) > 0 ||
 		len(k.Locals) > 0 || len(k.Source) > 0 || len(k.UsesProvides) > 0
 }
 
@@ -205,7 +225,34 @@ func (k Keys) Leaf(pillar, path string) bool {
 // Delivery reports whether the named delivery key of the named mechanism
 // carries material inherited from a sensitive declaration.
 func (k Keys) Delivery(mechanism, key string) bool {
-	return k.Inject[mechanism][key]
+	return k.inject[mechanism][key]
+}
+
+// AnyDelivery reports whether any delivery key of any mechanism is withheld. It
+// is what a read of the whole delivery pipe reaches, so a template referencing
+// the pipe without naming a mechanism is answered by this.
+func (k Keys) AnyDelivery() bool {
+	for _, deliveries := range k.inject {
+		if len(deliveries) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+// AnyDeliveryIn reports whether any delivery key of the named mechanism is
+// withheld — what a read of one mechanism without naming a key reaches.
+func (k Keys) AnyDeliveryIn(mechanism string) bool {
+	return len(k.inject[mechanism]) > 0
+}
+
+// InjectPipe returns a copy of a delivery pipe with every delivery key this set
+// marks replaced by the placeholder. It is a method rather than a free function
+// because the marking it reads is not reachable from outside this package: the
+// applier and the set that governs it travel together, so no surface can display
+// the pipe against a marking it assembled itself.
+func (k Keys) InjectPipe(in types.InjectPipe) types.InjectPipe {
+	return injectPipe(in, k.inject)
 }
 
 // Pillar returns a copy of a values-or-infra pillar with every declared
@@ -264,7 +311,7 @@ func replacePillar(prefix string, in types.OrderedMap[any], paths map[string]boo
 	return out
 }
 
-// InjectPipe returns a copy of a delivery pipe with every marked delivery key's
+// injectPipe returns a copy of a delivery pipe with every marked delivery key's
 // value replaced by the placeholder, preserving mechanism order, key order and
 // every unmarked entry.
 //
@@ -276,7 +323,7 @@ func replacePillar(prefix string, in types.OrderedMap[any], paths map[string]boo
 //
 // The input is never mutated. When marked is empty the input is returned
 // as-is.
-func InjectPipe(in types.InjectPipe, marked map[string]map[string]bool) types.InjectPipe {
+func injectPipe(in types.InjectPipe, marked DeliveryKeys) types.InjectPipe {
 	if len(marked) == 0 {
 		return in
 	}
@@ -427,7 +474,7 @@ func TemplateContext(in *types.TemplateContext, keys Keys) *types.TemplateContex
 	out.Infra = Pillar(in.Infra, keys.Infra)
 	out.Locals = Locals(in.Locals, keys.Locals)
 	out.Source = Source(in.Source, keys.Source)
-	out.Context.Inject = InjectPipe(in.Context.Inject, keys.Inject)
+	out.Context.Inject = keys.InjectPipe(in.Context.Inject)
 	out.Context.Uses = Uses(in.Context.Uses, keys.UsesProvides)
 	return &out
 }
@@ -451,7 +498,7 @@ func replaceFlat(in types.OrderedMap[string], keys map[string]bool) types.Ordere
 	return out
 }
 
-func unionMarked(marked map[string]map[string]bool) map[string]bool {
+func unionMarked(marked DeliveryKeys) map[string]bool {
 	union := map[string]bool{}
 	for _, deliveries := range marked {
 		for key := range deliveries {
@@ -496,45 +543,70 @@ type Derived struct {
 // what is displayed by mechanism.
 type CrossNode struct {
 	Provides map[string]map[string]bool
-	Inject   map[string]map[string]bool
+	Inject   DeliveryKeys
 }
 
 // NodeKeys assembles one node's redaction set from the upstream facts, each read
-// from its own home and none of them recomputed here.
+// from its own home and none of them recomputed here. It is the ONE assembler:
+// the set's delivery marking is unreachable from any other package, so every
+// route that can put material on a node's delivery pipe arrives here as an
+// argument of its own.
 //
 // declaredValues and declaredInfra are the leaf paths the host Component's
 // schema declares sensitive, read through the single authored-declaration
-// reader. attachments supplies the per-delivery-key marking the graph already
-// carries on each attachment, folded across the node's attachments into the
-// mechanism-then-key shape the pipe is displayed in. crossNode supplies what the
-// TARGET of each uses edge declares — read through the same authored-declaration
-// reader, against the target's type rather than the node's — both as published
-// provides and as the consumer delivery keys the edge's `inject` mapping routes
-// them onto. derived supplies the template outputs computed from a
+// reader. derived supplies the template outputs computed from a
 // declared-sensitive datum, read from the authored template text by the one walk
 // that performs that reading.
+//
+// FOUR arguments carry delivery routes, one per route, and that is why they are
+// separate parameters rather than fields of one struct: a route left out of this
+// signature is a compile error at the call site, where a field left unset on a
+// struct would be an empty map nobody notices — which is the exact shape of every
+// withholding gap this assembly has had.
+//
+//   - attachments supplies the per-delivery-key marking the graph already carries
+//     on each attachment, from the attachment's own `inject` mapping, folded
+//     across the node's attachments.
+//   - crossNode supplies what the TARGET of each uses edge declares — read
+//     through the same authored-declaration reader, against the target's type
+//     rather than the node's — both as published provides and as the consumer
+//     delivery keys the edge's `inject` mapping routes them onto.
+//   - injectMapping supplies the delivery keys a FeatureRecipe's own
+//     `injectMapping` put on the pipe on behalf of a slot that declares no
+//     delivery of its own. Such a slot has no `inject` mapping to read, so the
+//     attachment route is structurally blind to it and this one is what covers it.
+//   - untraced supplies delivery keys no route could account for. They are
+//     withheld, which is the same direction the reading of a template takes when a
+//     reference cannot be resolved: over-withholding costs a reader one value they
+//     must find another way, while under-withholding prints a secret. It is the
+//     assembly's fail-safe for a route nobody wired, since no compiler mechanism
+//     can force a route that exists in the pipeline to be plumbed to this call.
 //
 // A node's set therefore spans two owners: its own declarations, and the
 // declarations of every node it consumes across an edge. That is not a widening
 // of who may declare — it follows from the display carrying another node's
 // published values, so the set that governs them has to be that node's.
 //
-// The two delivery-key sources fold into ONE marking, because the pipe is one
-// flat merged map per mechanism and a reader of it cannot tell which source filled
-// a key. An attachment's mapping and a uses edge's mapping are the same policy
-// read from two wirings — a delivery key whose referenced provides key is declared
-// sensitive — so a display that covered one and not the other would print in the
-// clear exactly what it withheld one projection above.
+// Every delivery-key source folds into ONE marking, because the pipe is one flat
+// merged map per mechanism and a reader of it cannot tell which source filled a
+// key. An attachment's mapping, a uses edge's mapping and a FeatureRecipe's
+// injectMapping are the same policy read from three wirings — a delivery key
+// carrying material a declaration governs — so a display that covered one and not
+// the others would print in the clear exactly what it withheld one projection
+// above.
 //
 // The per-attachment sensitivity roll-up is deliberately NOT consulted. It says
 // an attachment handles secret material; it does not say which of its leaves
 // do, and treating it as if it did would print the placeholder over a
 // referenceable credential's name and key — public locators an author left
-// unmarked on purpose.
+// unmarked on purpose. Where a route is hard to trace the untraced argument is the
+// sanctioned conservatism, and it is per-key.
 func NodeKeys(
 	declaredValues, declaredInfra map[string]bool,
 	attachments types.OrderedMap[types.IRFeatureEntry],
 	crossNode CrossNode,
+	injectMapping DeliveryKeys,
+	untraced DeliveryKeys,
 	derived Derived,
 ) Keys {
 	keys := Keys{}
@@ -560,9 +632,11 @@ func NodeKeys(
 			}
 		}
 	}
-	for mechanism, deliveries := range crossNode.Inject {
-		for deliveryKey := range deliveries {
-			keys.markDelivery(mechanism, deliveryKey)
+	for _, route := range []DeliveryKeys{crossNode.Inject, injectMapping, untraced} {
+		for mechanism, deliveries := range route {
+			for deliveryKey := range deliveries {
+				keys.markDelivery(mechanism, deliveryKey)
+			}
 		}
 	}
 	return keys
@@ -570,18 +644,18 @@ func NodeKeys(
 
 // markDelivery records one delivery key of one mechanism, allocating as it goes.
 // The set is built rather than aliased so a caller's own map is never captured,
-// and both delivery-key sources reach it through this one method so neither can
-// grow a nesting rule the other does not have.
+// and every delivery-key source reaches it through this one method so none can
+// grow a nesting rule the others do not have.
 //
 // The receiver is a pointer because the maps it allocates have to survive the
 // call; the walks that fill it iterate ordered inputs but the result is only ever
 // read as a lookup, so no iteration order here can reach a displayed byte.
 func (k *Keys) markDelivery(mechanism, deliveryKey string) {
-	if k.Inject == nil {
-		k.Inject = map[string]map[string]bool{}
+	if k.inject == nil {
+		k.inject = DeliveryKeys{}
 	}
-	if k.Inject[mechanism] == nil {
-		k.Inject[mechanism] = map[string]bool{}
+	if k.inject[mechanism] == nil {
+		k.inject[mechanism] = map[string]bool{}
 	}
-	k.Inject[mechanism][deliveryKey] = true
+	k.inject[mechanism][deliveryKey] = true
 }

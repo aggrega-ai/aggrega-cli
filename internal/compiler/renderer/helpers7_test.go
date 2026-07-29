@@ -187,7 +187,7 @@ func TestBuildInjectAll_AggregatesEnvFileArg(t *testing.T) {
 func TestExecutePhaseA_EmptyContext(t *testing.T) {
 	t.Parallel()
 	ctx := &types.TemplateContext{}
-	if err := ExecutePhaseA(ctx, nil); err != nil {
+	if _, err := ExecutePhaseA(ctx, nil); err != nil {
 		t.Errorf("empty context + nil FRs should not error: %v", err)
 	}
 }

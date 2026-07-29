@@ -453,7 +453,7 @@ func TestCheckSelfInjectCollisions_FRInterceptionStructuralSeparation(t *testing
 			},
 		},
 	}
-	if err := ExecutePhaseA(ctx, refs); err != nil {
+	if _, err := ExecutePhaseA(ctx, refs); err != nil {
 		t.Fatalf("ExecutePhaseA error: %v", err)
 	}
 

@@ -101,7 +101,7 @@ func PillarSnapshot(ctx *types.TemplateContext, pass Pass, keys redact.Keys) map
 	// Pass 2 onward: the inject pipe is populated.
 	if pass == PassInject || isPhaseAOrLater(pass) {
 		if ctx.Context.Inject.Env.Len() > 0 || ctx.Context.Inject.File.Len() > 0 || ctx.Context.Inject.Arg.Len() > 0 {
-			out["context.inject"] = redact.InjectPipe(ctx.Context.Inject, keys.Inject)
+			out["context.inject"] = keys.InjectPipe(ctx.Context.Inject)
 		}
 	}
 

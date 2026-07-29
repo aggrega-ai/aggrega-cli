@@ -255,13 +255,17 @@ func TestDerivedSensitiveKeys_SourceStringShape(t *testing.T) {
 // withholds, so a rule that fired on everything would fail the control half.
 func TestWorkloadReadsWithheld_PerRootAndDepth(t *testing.T) {
 	t.Parallel()
-	keys := redact.Keys{
-		Values:       taintFixtureValues(),
-		Infra:        taintFixtureInfra(),
-		Locals:       map[string]bool{"zzDsn": true},
-		Inject:       map[string]map[string]bool{"env": {"DATABASE_PASSWORD": true}},
-		UsesProvides: map[string]map[string]bool{"storeEdge": {"zzTargetSecret": true}},
-	}
+	// Assembled through the one assembler rather than as a struct literal: the
+	// delivery marking is unreachable from outside its own package, so a set
+	// carrying one can only come from there.
+	keys := redact.NodeKeys(
+		taintFixtureValues(),
+		taintFixtureInfra(),
+		types.OrderedMap[types.IRFeatureEntry]{},
+		redact.CrossNode{Provides: map[string]map[string]bool{"storeEdge": {"zzTargetSecret": true}}},
+		nil,
+		redact.DeliveryKeys{"env": {"DATABASE_PASSWORD": true}},
+		redact.Derived{Locals: map[string]bool{"zzDsn": true}})
 
 	cases := []struct {
 		name     string

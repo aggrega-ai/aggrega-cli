@@ -71,9 +71,20 @@ type templateRootRef struct {
 // trailing key of a chained fallback, is not a root reference and must not be
 // treated as one. Over-collecting is fail-safe in the opposite direction, for a
 // DENY-list, where a forbidden name must not slip past by hiding inside a rebound
-// body. Every reference check is an allow-list over what a context type defines,
-// so no reference check has any use for the over-collecting direction, and no
-// over-collecting walk remains behind one.
+// body. Every reference check that ADMITS OR REFUSES AUTHORING is an allow-list
+// over what a context type defines, and that class has no use for the
+// over-collecting direction; this walk is the only one behind it.
+//
+// The scope of that statement is worth being exact about, because an earlier and
+// wider version of it — that NO reference check has any use for the
+// over-collecting direction — is false, and reading it as a universal would send a
+// consumer to the wrong walk. A reading whose job is to WITHHOLD something is also
+// a check over references, and it needs the opposite direction: it must catch every
+// read, including one hidden inside a rebound body or behind a chained defensive
+// wrapper, because a read it fails to attribute prints a value an author asked to
+// have hidden. Which side a consumer sits on is decided by what a MISSED reference
+// costs — refused authoring on one side, a printed secret on the other — not by
+// whether the consumer is described as a check.
 //
 // The walk in tracker.go over-collects, correctly, and each of its questions is
 // on the other side of that line. A read-set census must report a key hidden

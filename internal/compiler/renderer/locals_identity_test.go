@@ -118,7 +118,7 @@ func TestLocalsIdentity_PhaseAPath(t *testing.T) {
 		Locals:   types.OrderedMap[string]{},
 		Features: features,
 	}
-	if err := ExecutePhaseA(ctx, []FeatureRecipeRef{
+	if _, err := ExecutePhaseA(ctx, []FeatureRecipeRef{
 		{InstanceName: identityInstanceName, FeatureRecipe: fr},
 	}); err != nil {
 		t.Fatalf("Phase A must resolve the attachment's locals: %v", err)
@@ -176,7 +176,7 @@ func TestLocalsIdentity_BothPathsAgreeOnOneBlock(t *testing.T) {
 		Locals:   types.OrderedMap[string]{},
 		Features: features,
 	}
-	if err := ExecutePhaseA(ctx, []FeatureRecipeRef{
+	if _, err := ExecutePhaseA(ctx, []FeatureRecipeRef{
 		{InstanceName: identityInstanceName, FeatureRecipe: fr},
 	}); err != nil {
 		t.Fatalf("Phase A path: %v", err)

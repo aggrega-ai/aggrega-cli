@@ -83,7 +83,7 @@ func TestExecutePhaseA_CredentialScopedInjectReachesComponentPipe(t *testing.T) 
 		},
 	}
 
-	if err := ExecutePhaseA(ctx, refs); err != nil {
+	if _, err := ExecutePhaseA(ctx, refs); err != nil {
 		t.Fatalf("ExecutePhaseA: %v", err)
 	}
 
@@ -189,7 +189,7 @@ func TestExecutePhaseA_DualModeCredentialFRMergesInject(t *testing.T) {
 		},
 	}
 
-	if err := ExecutePhaseA(ctx, refs); err != nil {
+	if _, err := ExecutePhaseA(ctx, refs); err != nil {
 		t.Fatalf("ExecutePhaseA: %v", err)
 	}
 	if v, _ := ctx.Context.Inject.Env.Get("MARIADB_ROOT_PASSWORD"); v != "dev-root-pw-change-me" {

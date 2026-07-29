@@ -6,6 +6,7 @@ package renderer
 import (
 	"fmt"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/redact"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
@@ -21,6 +22,27 @@ import (
 type FeatureRecipeRef struct {
 	InstanceName  string
 	FeatureRecipe *types.FeatureRecipe
+}
+
+// InjectMappingDelivery records what one attachment's FeatureRecipe injectMapping
+// put on the host node's delivery pipe: the attachment it was resolved for, the
+// mapping's authored text, and the delivery keys the RENDERED overlay produced.
+//
+// It carries the authored text and the rendered keys TOGETHER because neither
+// answers the question alone. A mapping's delivery key is itself a template, so
+// only the rendered overlay names the key; what the mapping READ is only in the
+// authored text, and no inspection of a rendered value could recover it. A caller
+// deciding whether a delivered key carries material a declaration governs needs
+// both halves of the same evaluation, and pairing them here is what stops the two
+// from being fetched separately and mismatched.
+//
+// Reporting is deliberately a return value rather than an optional collector: a
+// route that delivers without reporting is the shape every withholding gap on this
+// pipe has had, and a value the caller must receive cannot be forgotten silently.
+type InjectMappingDelivery struct {
+	InstanceName string
+	Mapping      string
+	Keys         redact.DeliveryKeys
 }
 
 // ExecutePhaseA runs Phase A (Pre-Render Interception) for one node.
@@ -48,12 +70,19 @@ type FeatureRecipeRef struct {
 // the field's contract; any other concrete type indicates a contract
 // violation upstream and produces a loud halt rather than silently skipping
 // the dangling-reference check.
-func ExecutePhaseA(ctx *types.TemplateContext, featureRecipes []FeatureRecipeRef) error {
+//
+// It returns one InjectMappingDelivery per attachment whose mapping produced an
+// overlay, in the order the attachments were resolved. That report is what lets a
+// caller decide which of the delivered keys carry material a declaration governs:
+// a mapping's delivery key is itself a template, so the key is knowable only from
+// the rendered overlay while what the mapping READ is knowable only from its
+// authored text, and this is the one point where both are in scope.
+func ExecutePhaseA(ctx *types.TemplateContext, featureRecipes []FeatureRecipeRef) ([]InjectMappingDelivery, error) {
 	var authored []string
 	if ctx.InjectRaw != nil {
 		rawBlock, ok := ctx.InjectRaw.(*types.InjectBlock)
 		if !ok {
-			return cerrors.Wrap(
+			return nil, cerrors.Wrap(
 				fmt.Errorf("phase A: unexpected InjectRaw type %T (expected *types.InjectBlock)", ctx.InjectRaw),
 				cerrors.TranslationError,
 				cerrors.SourceLocation{},
@@ -76,6 +105,7 @@ func ExecutePhaseA(ctx *types.TemplateContext, featureRecipes []FeatureRecipeRef
 		}
 	}
 
+	var delivered []InjectMappingDelivery
 	for _, ref := range featureRecipes {
 		if ref.FeatureRecipe == nil {
 			continue
@@ -106,7 +136,7 @@ func ExecutePhaseA(ctx *types.TemplateContext, featureRecipes []FeatureRecipeRef
 			featureCtx.Values, featureCtx.Infra,
 		)
 		if err != nil {
-			return cerrors.Wrap(err, cerrors.CatalogError,
+			return nil, cerrors.Wrap(err, cerrors.CatalogError,
 				cerrors.SourceLocation{File: ref.FeatureRecipe.Metadata.Name},
 				fmt.Sprintf("Phase A: feature %q (recipe %q) locals", ref.InstanceName, ref.FeatureRecipe.Metadata.Name))
 		}
@@ -119,7 +149,7 @@ func ExecutePhaseA(ctx *types.TemplateContext, featureRecipes []FeatureRecipeRef
 			&featureCtx,
 		)
 		if err != nil {
-			return cerrors.Wrap(err, cerrors.CatalogError,
+			return nil, cerrors.Wrap(err, cerrors.CatalogError,
 				cerrors.SourceLocation{File: ref.FeatureRecipe.Metadata.Name},
 				fmt.Sprintf("Phase A: feature %q (recipe %q) injectMapping", ref.InstanceName, ref.FeatureRecipe.Metadata.Name))
 		}
@@ -127,15 +157,55 @@ func ExecutePhaseA(ctx *types.TemplateContext, featureRecipes []FeatureRecipeRef
 		// Parse the output and deep-merge over the inject pipe
 		overlay, err := ParseInjectMappingOutput(output, authored)
 		if err != nil {
-			return cerrors.Wrap(err, cerrors.CatalogError,
+			return nil, cerrors.Wrap(err, cerrors.CatalogError,
 				cerrors.SourceLocation{File: ref.FeatureRecipe.Metadata.Name},
 				fmt.Sprintf("Phase A: feature %q (recipe %q) injectMapping output parse", ref.InstanceName, ref.FeatureRecipe.Metadata.Name))
 		}
 
 		if overlay != nil {
 			DeepMergeInjectStructured(&ctx.Context.Inject, overlay)
+			// Reported from the same overlay the merge applies, so what the report
+			// names and what the pipe received cannot disagree.
+			delivered = append(delivered, InjectMappingDelivery{
+				InstanceName: ref.InstanceName,
+				Mapping:      tmplText,
+				Keys:         overlayDeliveryKeys(overlay),
+			})
 		}
 	}
 
-	return nil
+	return delivered, nil
+}
+
+// overlayDeliveryKeys names the delivery keys one parsed injectMapping overlay
+// puts on a node's pipe, by mechanism and then by key.
+//
+// It walks exactly the mechanisms the merge applies — the three typed ones and any
+// custom mechanism — so a key the report names is a key the pipe received. The
+// union view is deliberately not walked: it is rebuilt from the typed mechanisms
+// after the merge rather than merged from the overlay, so a marking on a typed
+// mechanism already covers the same datum where the union displays it.
+func overlayDeliveryKeys(overlay *types.InjectPipe) redact.DeliveryKeys {
+	if overlay == nil {
+		return nil
+	}
+	var out redact.DeliveryKeys
+	record := func(mechanism string, deliveries types.OrderedMap[string]) {
+		for key := range deliveries.All() {
+			if out == nil {
+				out = redact.DeliveryKeys{}
+			}
+			if out[mechanism] == nil {
+				out[mechanism] = map[string]bool{}
+			}
+			out[mechanism][key] = true
+		}
+	}
+	record("env", overlay.Env)
+	record("file", overlay.File)
+	record("arg", overlay.Arg)
+	for mechanism, deliveries := range overlay.Additional.All() {
+		record(mechanism, deliveries)
+	}
+	return out
 }

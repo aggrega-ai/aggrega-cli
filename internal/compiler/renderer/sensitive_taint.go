@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/redact"
+	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
@@ -178,13 +179,13 @@ func contextReferenceReachesWithheld(rest string, keys redact.Keys) bool {
 	switch surface {
 	case "inject":
 		if below == "" {
-			return anyMarked(keys.Inject)
+			return keys.AnyDelivery()
 		}
 		mechanism, key := splitPillarReference("." + below)
 		if key == "" {
-			return len(keys.Inject[mechanism]) > 0
+			return keys.AnyDeliveryIn(mechanism)
 		}
-		return keys.Inject[mechanism][firstPathSegment(key)]
+		return keys.Delivery(mechanism, firstPathSegment(key))
 	case "uses":
 		if below == "" {
 			return anyMarked(keys.UsesProvides)
@@ -291,12 +292,89 @@ func usesWithheld(
 					continue
 				}
 				if out.Inject == nil {
-					out.Inject = map[string]map[string]bool{}
+					out.Inject = redact.DeliveryKeys{}
 				}
 				if out.Inject[mechanism] == nil {
 					out.Inject[mechanism] = map[string]bool{}
 				}
 				out.Inject[mechanism][deliveryKey] = true
+			}
+		}
+	}
+	return out
+}
+
+// injectMappingWithheld reads which of the delivery keys a FeatureRecipe's own
+// injectMapping put on a node's pipe carry material the attachment's Feature
+// declares sensitive.
+//
+// It exists because a `featuresSchema` slot may declare no delivery of its own,
+// in which case the FeatureRecipe controls delivery: the attachment carries no
+// `inject` mapping, so the reading that walks that mapping has nothing to walk and
+// the delivered key is never marked. The material still reaches the node's display
+// through the pipe. This is the reading that covers that route.
+//
+// The DELIVERY KEY IS ITSELF A TEMPLATE, and that constraint shapes the whole
+// derivation. A mapping such as
+//
+//	env:
+//	  {{ .values.key }}: "{{ .values.origin }}"
+//
+// names neither its delivery key nor its value until it has been evaluated, so
+// nothing can be attributed per authored key before the evaluation. Attribution
+// therefore runs over the RENDERED overlay's keys, and the rule is per attachment
+// rather than per key: when the mapping's authored text references ANY leaf the
+// attachment's Feature declares sensitive, every delivery key that attachment's
+// overlay produced is withheld.
+//
+// That OVER-collects by design, and the cost is worth naming rather than leaving
+// implicit: a mapping that delivers a public locator alongside the credential puts
+// a placeholder over the locator too. It is the fail-safe direction — a reader
+// loses one value they can find another way, where the other direction prints a
+// secret — and the alternative that would attribute per key is in the decision
+// record with the reason it was refused.
+//
+// The reading is STATIC: the authored mapping text plus the Feature's declared
+// leaf paths. It evaluates nothing and inspects no value, and it goes through the
+// same reference reading every other withholding question uses, over the
+// over-collecting reference census — the direction a must-catch-everything
+// question needs, because a read hidden inside a rebound range or with body has
+// still happened.
+//
+// The pillars it compares against are the ATTACHMENT's, not the host node's: an
+// injectMapping is evaluated against a context whose values and infra are the
+// attachment's own, so the declarations that govern what it can read are the
+// Feature's. declared answers that per attachment instance name; an attachment it
+// cannot answer for contributes nothing, which is the same answer a Feature
+// declaring nothing gives.
+func injectMappingWithheld(
+	delivered []InjectMappingDelivery,
+	declared func(instanceName string) resolver.SensitiveLeaves,
+) redact.DeliveryKeys {
+	if len(delivered) == 0 || declared == nil {
+		return nil
+	}
+	var out redact.DeliveryKeys
+	for _, entry := range delivered {
+		if len(entry.Keys) == 0 {
+			continue
+		}
+		leaves := declared(entry.InstanceName)
+		if len(leaves.Values) == 0 && len(leaves.Infra) == 0 {
+			continue
+		}
+		if !templateReadsWithheld(entry.Mapping, redact.Keys{Values: leaves.Values, Infra: leaves.Infra}) {
+			continue
+		}
+		for mechanism, keys := range entry.Keys {
+			for key := range keys {
+				if out == nil {
+					out = redact.DeliveryKeys{}
+				}
+				if out[mechanism] == nil {
+					out[mechanism] = map[string]bool{}
+				}
+				out[mechanism][key] = true
 			}
 		}
 	}

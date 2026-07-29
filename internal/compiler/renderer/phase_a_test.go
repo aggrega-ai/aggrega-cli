@@ -51,7 +51,7 @@ func TestExecutePhaseA_SimpleInjectMapping(t *testing.T) {
 		},
 	}
 
-	err := ExecutePhaseA(ctx, refs)
+	_, err := ExecutePhaseA(ctx, refs)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -94,7 +94,7 @@ func TestExecutePhaseA_NoInjectMapping(t *testing.T) {
 		},
 	}
 
-	err := ExecutePhaseA(ctx, refs)
+	_, err := ExecutePhaseA(ctx, refs)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -134,7 +134,7 @@ func TestExecutePhaseA_LastWins(t *testing.T) {
 		},
 	}
 
-	err := ExecutePhaseA(ctx, refs)
+	_, err := ExecutePhaseA(ctx, refs)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -183,7 +183,7 @@ func TestExecutePhaseA_FeatureLocalsOverlay(t *testing.T) {
 		},
 	}
 
-	if err := ExecutePhaseA(ctx, refs); err != nil {
+	if _, err := ExecutePhaseA(ctx, refs); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -213,7 +213,7 @@ func TestExecutePhaseA_NilRecipe(t *testing.T) {
 		},
 	}
 
-	err := ExecutePhaseA(ctx, []FeatureRecipeRef{{InstanceName: "nil", FeatureRecipe: nil}})
+	_, err := ExecutePhaseA(ctx, []FeatureRecipeRef{{InstanceName: "nil", FeatureRecipe: nil}})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -261,7 +261,7 @@ func TestExecutePhaseA_CustomMechanismFlowsToAdditional(t *testing.T) {
 		},
 	}
 
-	if err := ExecutePhaseA(ctx, refs); err != nil {
+	if _, err := ExecutePhaseA(ctx, refs); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -312,7 +312,7 @@ func TestExecutePhaseA_UnmappedCustomMechanismHalts(t *testing.T) {
 		},
 	}
 
-	err := ExecutePhaseA(ctx, refs)
+	_, err := ExecutePhaseA(ctx, refs)
 	if err == nil {
 		t.Fatalf("expected ErrUnmappedCustomMechanism, got nil")
 	}
@@ -379,7 +379,7 @@ func TestExecutePhaseA_FlatMapFallbackUnchanged(t *testing.T) {
 		},
 	}
 
-	if err := ExecutePhaseA(ctx, refs); err != nil {
+	if _, err := ExecutePhaseA(ctx, refs); err != nil {
 		t.Fatalf("unexpected error from flat-map fallback path: %v", err)
 	}
 	dbURL, _ := ctx.Context.Inject.Env.Get("DB_URL")
@@ -406,7 +406,7 @@ func TestExecutePhaseA_InjectMappingReadsAttachmentName(t *testing.T) {
 	ctx, refs := phaseALocalsFixture(types.OrderedMap[string]{},
 		`{"env": {"HOST": "{{ .context.instance_id }}", "ATTACHMENT": "{{ .attachment_name }}"}}`)
 
-	if err := ExecutePhaseA(ctx, refs); err != nil {
+	if _, err := ExecutePhaseA(ctx, refs); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 

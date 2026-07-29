@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/ir"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/parse"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/trace"
 	"github.com/aggrega-ai/aggrega-cli/internal/redact"
@@ -417,6 +418,26 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		return declared
 	}
 
+	// Declared-sensitive leaf paths per attachment Feature type, memoised the same
+	// way and for the same reason as the Component reader above. The resolution goes
+	// through the one home for compiling an attachment's schema, so this reader and
+	// the pillar-conformance gate cannot disagree about what a Feature declares.
+	declaredByFeature := map[string]resolver.SensitiveLeaves{}
+	declaredFeatureLeaves := func(featureType string) resolver.SensitiveLeaves {
+		if featureType == "" {
+			return resolver.SensitiveLeaves{}
+		}
+		if d, cached := declaredByFeature[featureType]; cached {
+			return d
+		}
+		var declared resolver.SensitiveLeaves
+		if compiled, ok := ir.CompileFeatureSchema(input.CatalogLookup, featureType); ok {
+			declared = resolver.DeclaredSensitiveLeaves(compiled)
+		}
+		declaredByFeature[featureType] = declared
+		return declared
+	}
+
 	// Per-node rendering. nodeIDs is sorted (topology author order for the
 	// deterministic walk); nodeOrder is the host node's position in that order,
 	// the outer A1 replay-ordering key for deferred host PATCHes.
@@ -523,8 +544,30 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		crossNode := usesWithheld(tmplCtx.Context.Uses, func(componentType string) map[string]bool {
 			return declaredLeaves(componentType).Provides
 		})
-		redactKeys := input.TraceMode.Keys(redact.NodeKeys(declared.Values, declared.Infra, attachments,
-			crossNode, derivedSensitiveKeys(recipe, declared.Values, declared.Infra)))
+		// Read from the bound Recipe as the catalog holds it, BEFORE Phase B.0
+		// replaces the local copy's source with the resolved value: the reading is
+		// over authored template text, and resolved text carries no reference to read.
+		derived := derivedSensitiveKeys(recipe, declared.Values, declared.Infra)
+		// ONE assembly site for this node, reached twice. The FeatureRecipe route
+		// cannot be read until Phase A has rendered the mappings — a mapping's
+		// delivery key is itself a template — so the set is assembled once for the
+		// captures that run before Phase A, where those keys are not on the pipe yet,
+		// and once after with that route folded in. Both go through the same call, so
+		// neither can carry a route the other does not.
+		nodeRedactKeys := func(injectMapping redact.DeliveryKeys) redact.Keys {
+			return input.TraceMode.Keys(redact.NodeKeys(
+				declared.Values, declared.Infra,
+				attachments,
+				crossNode,
+				injectMapping,
+				// No census of the pipe's own delivery keys is taken here, so no key
+				// arrives without a route and this stays empty. It is passed
+				// explicitly rather than omitted because the argument is what makes
+				// the absence of that census visible at the call site.
+				nil,
+				derived))
+		}
+		redactKeys := nodeRedactKeys(nil)
 
 		// Phase B sub-pass pipeline per chapter 16 §5. State carries cross-
 		// sub-pass accumulators (resolved values, parsed workload, emitted
@@ -575,9 +618,24 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// The Phase A deep-merge is last-writer-wins per delivery key, so on a
 		// collision the later attachment in that one order wins.
 		featureRefs := resolveFeatureRecipes(nodeID, input.FeatureOrder, graph, recipeLookup)
-		if err := ExecutePhaseA(tmplCtx, featureRefs); err != nil {
+		mappedDelivery, err := ExecutePhaseA(tmplCtx, featureRefs)
+		if err != nil {
 			return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("Step 5 node %q", nodeID))
 		}
+		// The FeatureRecipe route is readable only now. A slot declaring no delivery
+		// of its own hands delivery to the FeatureRecipe, whose injectMapping names
+		// its delivery key with a template — so the key exists only in the rendered
+		// overlay, and the marking has to be folded in after the render rather than
+		// beside the node's declarations. Every capture from Phase A onward reads the
+		// state's copy, which is what this replaces.
+		state.Redact = nodeRedactKeys(injectMappingWithheld(mappedDelivery,
+			func(instanceName string) resolver.SensitiveLeaves {
+				entry, ok := attachments.Get(instanceName)
+				if !ok {
+					return resolver.SensitiveLeaves{}
+				}
+				return declaredFeatureLeaves(entry.Type)
+			}))
 		// Boundary->component env channel: apply any per-consumer env overrides
 		// a boundary-scope FR emitted (computed in the pre-loop) over this
 		// consumer's injected env. Gated on map membership, so non-named
