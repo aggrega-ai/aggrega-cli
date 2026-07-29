@@ -11,12 +11,11 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/redact"
 	"github.com/aggrega-ai/aggrega-cli/pkg/compactform"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
+	"github.com/aggrega-ai/aggrega-cli/pkg/validator"
 	"go.yaml.in/yaml/v3"
 )
 
-// compileTestSchema compiles a compact pillar schema to a compactform.Schema,
-// standing in for the composed effective schema the catalog produces for an
-// extends-ing entity.
+// compileTestSchema compiles a compact pillar schema to a compactform.Schema.
 func compileTestSchema(t *testing.T, schemaYAML string) compactform.Schema {
 	t.Helper()
 	var node yaml.Node
@@ -30,43 +29,75 @@ func compileTestSchema(t *testing.T, schemaYAML string) compactform.Schema {
 	return compiled
 }
 
+// catalogFromExtendsChain builds a CatalogLookup whose Component
+// "app/svc:1.0.0" is the RESOLVED child of a base that authored the supplied
+// pillar schema. The child declares extends and the inheritance marker, exactly
+// as an author writes it, and the returned entity is what the real merge
+// produces — so a test using this fixture exercises inheritance rather than
+// asserting against a hand-built stand-in for it.
+func catalogFromExtendsChain(t *testing.T, baseSchemaYAML string) CatalogLookup {
+	t.Helper()
+	var baseNode, markerNode yaml.Node
+	if err := yaml.Unmarshal([]byte(baseSchemaYAML), &baseNode); err != nil {
+		t.Fatalf("base schema fixture parse: %v", err)
+	}
+	if err := yaml.Unmarshal([]byte(validator.InheritedSchemaMarker), &markerNode); err != nil {
+		t.Fatalf("marker parse: %v", err)
+	}
+	base := types.Component{
+		Metadata: types.ComponentMetadata{Name: "app/base", Version: "1.0.0"},
+		Spec:     types.ComponentSpec{Schema: baseNode},
+	}
+	child := types.Component{
+		Metadata: types.ComponentMetadata{Name: "app/svc", Version: "1.0.0"},
+		Spec:     types.ComponentSpec{Extends: "app/base", Schema: markerNode},
+	}
+	resolved, errs := validator.ResolveComponentExtends(child, func(uri string) (types.Component, bool) {
+		if uri == "app/base" {
+			return base, true
+		}
+		return types.Component{}, false
+	})
+	if len(errs) > 0 {
+		t.Fatalf("ResolveComponentExtends: %v", errs)
+	}
+	return CatalogLookup{
+		Component: func(typeURI string) (types.Component, bool) {
+			if typeURI == "app/svc:1.0.0" {
+				return resolved, true
+			}
+			if typeURI == "app/base:1.0.0" {
+				return base, true
+			}
+			return types.Component{}, false
+		},
+	}
+}
+
 // TestGuardSchemaConformance_InheritedConstraintEnforced is the extends proof
-// case: the gate validates an extends-ing Component against its EFFECTIVE
-// (composed) schema, so a parent-declared constraint the child's own schema
-// omits is enforced on the child's instance. The authored Component schema here
-// requires only `name`; the effective schema additionally requires the inherited
-// `tls_enabled`, so an instance omitting it halts — proving the gate prefers the
-// effective schema over the authored slice.
+// case: a constraint the BASE declared and the extending Component never
+// authored is enforced on the extending Component's instance, because the merge
+// copied the base's pillar block onto it. The base requires both `name` and
+// `tls_enabled`; the instance supplies only `name`, so it halts. Nothing here
+// consults a second, composed view of the Component's schema — there is none.
 func TestGuardSchemaConformance_InheritedConstraintEnforced(t *testing.T) {
 	t.Parallel()
-	cl := catalogFromComponentSchema(t, "values:\n  name: { type: string, required: true }\n")
-	cl.EffectiveSchema = func(typeURI string) (compactform.Schema, bool) {
-		if typeURI == "app/svc:1.0.0" {
-			return compileTestSchema(t, "values:\n  name: { type: string, required: true }\n  tls_enabled: { type: boolean, required: true }\n"), true
-		}
-		return nil, false
-	}
+	cl := catalogFromExtendsChain(t, "values:\n  name: { type: string, required: true }\n  tls_enabled: { type: boolean, required: true }\n")
 	// name supplied, tls_enabled (inherited, required, no default) omitted.
 	errs := guardSchemaConformance(normalized(t, aggWithValues("name", "api")), cl, nil, nil)
 	requireConformance(t, errs, 1, ".spec.components[\"svc\"].values")
 }
 
 // TestGuardSchemaConformance_ExtendsPredicateReadsParameter confirms the
-// resolved parameter map reaches predicates evaluated against the composed
-// (effective) schema — i.e. .parameters-in-predicates is honored on the extends
-// surface, not just the authored-schema surface.
+// resolved parameter map reaches predicates carried on an INHERITED schema —
+// i.e. .parameters-in-predicates is honored on the extends surface, not just
+// where the Component authored the predicate itself.
 func TestGuardSchemaConformance_ExtendsPredicateReadsParameter(t *testing.T) {
 	t.Parallel()
-	cl := catalogFromComponentSchema(t, "values:\n  name: { type: string, required: true }\n")
-	cl.EffectiveSchema = func(typeURI string) (compactform.Schema, bool) {
-		if typeURI == "app/svc:1.0.0" {
-			return compileTestSchema(t, "values:\n  tier:\n    type: string\n    validate: '{{ eq . (param \"allowedTier\") }}'\n    validateMessage: \"tier must equal allowedTier\"\n"), true
-		}
-		return nil, false
-	}
+	cl := catalogFromExtendsChain(t, "values:\n  tier:\n    type: string\n    validate: '{{ eq . (param \"allowedTier\") }}'\n    validateMessage: \"tier must equal allowedTier\"\n")
 	agg := aggWithValues("tier", "gold")
 	if errs := guardSchemaConformance(normalized(t, agg), cl, nil, map[string]any{"allowedTier": "gold"}); len(errs) != 0 {
-		t.Fatalf("tier=gold under allowedTier=gold should pass on the effective schema; got %v", errs)
+		t.Fatalf("tier=gold under allowedTier=gold should pass on the inherited schema; got %v", errs)
 	}
 	errs := guardSchemaConformance(normalized(t, agg), cl, nil, map[string]any{"allowedTier": "silver"})
 	requireConformance(t, errs, 1, ".spec.components[\"svc\"].values.tier")

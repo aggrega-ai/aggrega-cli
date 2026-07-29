@@ -31,7 +31,7 @@ func parseSchemaBody(t *testing.T, src string) *yaml.Node {
 // TestValidateSchemaPillars_NilNode covers the nil-pointer boundary —
 // the function must not panic when called with a nil node.
 func TestValidateSchemaPillars_NilNode(t *testing.T) {
-	if err := ValidateSchemaPillars("Component", "core/x", "fixtures/x.yaml", nil, nil); err != nil {
+	if err := ValidateSchemaPillars("Component", "core/x", "fixtures/x.yaml", "", nil, nil); err != nil {
 		t.Fatalf("nil node should pass; got %v", err)
 	}
 }
@@ -41,7 +41,7 @@ func TestValidateSchemaPillars_NilNode(t *testing.T) {
 // the validator must skip without error.
 func TestValidateSchemaPillars_SchemaLess(t *testing.T) {
 	var n yaml.Node // Kind == 0
-	if err := ValidateSchemaPillars("Component", "core/x", "fixtures/x.yaml", &n, nil); err != nil {
+	if err := ValidateSchemaPillars("Component", "core/x", "fixtures/x.yaml", "", &n, nil); err != nil {
 		t.Fatalf("schema-less entity should pass; got %v", err)
 	}
 }
@@ -57,7 +57,7 @@ func TestValidateSchemaPillars_RejectsBlockScalarString(t *testing.T) {
 		Value: "values: { port: int, default: 8080 }",
 		Line:  10,
 	}
-	err := ValidateSchemaPillars("Component", "core/scalar-schema", "fixtures/scalar.yaml", scalar, nil)
+	err := ValidateSchemaPillars("Component", "core/scalar-schema", "fixtures/scalar.yaml", "", scalar, nil)
 	if err == nil {
 		t.Fatal("expected rejection for scalar schema; got nil")
 	}
@@ -82,7 +82,7 @@ func TestValidateSchemaPillars_RejectsUnknownPillarKey(t *testing.T) {
 	node := parseSchemaBody(t, `parameter:
   scrapePath: { type: string, default: "/metrics" }
 `)
-	err := ValidateSchemaPillars("Feature", "core/prom-exporter", "fixtures/prom.yaml", node, nil)
+	err := ValidateSchemaPillars("Feature", "core/prom-exporter", "fixtures/prom.yaml", "", node, nil)
 	if err == nil {
 		t.Fatal("expected rejection for unknown pillar key 'parameter'; got nil")
 	}
@@ -108,7 +108,7 @@ func TestValidateSchemaPillars_RejectsPropertiesAtTopLevel(t *testing.T) {
 	node := parseSchemaBody(t, `properties:
   port: { type: integer }
 `)
-	err := ValidateSchemaPillars("Component", "core/wrong", "fixtures/wrong.yaml", node, nil)
+	err := ValidateSchemaPillars("Component", "core/wrong", "fixtures/wrong.yaml", "", node, nil)
 	if err == nil {
 		t.Fatal("expected rejection for 'properties' at top level; got nil")
 	}
@@ -128,7 +128,7 @@ func TestValidateSchemaPillars_RejectsCompactformError(t *testing.T) {
 	node := parseSchemaBody(t, `values:
   port: { type: object, min: 5 }
 `)
-	err := ValidateSchemaPillars("Component", "core/bad-body", "fixtures/bad-body.yaml", node, nil)
+	err := ValidateSchemaPillars("Component", "core/bad-body", "fixtures/bad-body.yaml", "", node, nil)
 	if err == nil {
 		t.Fatal("expected rejection for 'min' on type: object; got nil")
 	}
@@ -154,7 +154,7 @@ provides:
   host: { type: string, required: true }
   service_port: { type: string, required: true }
 `)
-	if err := ValidateSchemaPillars("Component", "core/api", "fixtures/api.yaml", node, nil); err != nil {
+	if err := ValidateSchemaPillars("Component", "core/api", "fixtures/api.yaml", "", node, nil); err != nil {
 		t.Errorf("valid inferred-form schema should pass; got: %v", err)
 	}
 }
@@ -170,7 +170,7 @@ func TestValidateSchemaPillars_AcceptsExplicitForm(t *testing.T) {
     port: { type: integer, default: 8080 }
   additionalProperties: false
 `)
-	if err := ValidateSchemaPillars("Feature", "core/x", "fixtures/x.yaml", node, nil); err != nil {
+	if err := ValidateSchemaPillars("Feature", "core/x", "fixtures/x.yaml", "", node, nil); err != nil {
 		t.Errorf("valid explicit-form schema should pass; got: %v", err)
 	}
 }
@@ -186,7 +186,7 @@ infra:
 provides:
   host: { type: string, required: true }
 `)
-	if err := ValidateSchemaPillars("Component", "core/db", "fixtures/db.yaml", node, nil); err != nil {
+	if err := ValidateSchemaPillars("Component", "core/db", "fixtures/db.yaml", "", node, nil); err != nil {
 		t.Errorf("three-pillar schema should pass; got: %v", err)
 	}
 }
@@ -205,7 +205,7 @@ provides:
   dsn: { type: string, sensitive: true }
   host: { type: string }
 `)
-	if err := ValidateSchemaPillars("Component", "core/db", "fixtures/db.yaml", node, nil); err != nil {
+	if err := ValidateSchemaPillars("Component", "core/db", "fixtures/db.yaml", "", node, nil); err != nil {
 		t.Errorf("a leaf declared sensitive should pass the pillar gate; got: %v", err)
 	}
 }
@@ -218,7 +218,7 @@ func TestValidateSchemaPillars_RejectsSequenceAtRoot(t *testing.T) {
 	node := parseSchemaBody(t, `- values
 - provides
 `)
-	err := ValidateSchemaPillars("Component", "core/x", "fixtures/x.yaml", node, nil)
+	err := ValidateSchemaPillars("Component", "core/x", "fixtures/x.yaml", "", node, nil)
 	if err == nil {
 		t.Fatal("expected rejection for sequence at root; got nil")
 	}

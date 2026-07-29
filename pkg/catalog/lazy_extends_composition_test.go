@@ -15,8 +15,8 @@ import (
 )
 
 // Parent contributes values.replicas (maximum 3, default 1) and a provides key;
-// the child extends it and adds values.name without redeclaring replicas — so
-// replicas, its constraint, its default, and the provides key are all INHERITED.
+// the child extends it and authors no pillar content, so replicas, its
+// constraint, its default, and the provides key are all INHERITED verbatim.
 const extendsParentCompYAML = `apiVersion: aggrega.ai/v1alpha1
 kind: Component
 metadata:
@@ -41,9 +41,7 @@ metadata:
     component.aggrega.ai/type: server
 spec:
   extends: core/test/parent-comp
-  schema:
-    values:
-      name: { type: string }
+  schema: inherited
 `
 
 const extendsParentFeatYAML = `apiVersion: aggrega.ai/v1alpha1
@@ -81,15 +79,22 @@ func pillarProps(t *testing.T, eff compactform.Schema, pillar string) map[string
 	return pp
 }
 
-// TestLazyLookup_ExtendsComposition_BuildPathServesComposedSchema is the
-// end-to-end proof that the build path validates extends entities against the
-// COMPOSED schema (the fidelity fix), exercised through the real build primitives:
-// ResolveClosureExtends populates EffectiveSchema; AsCatalogLookup serves it for
-// component AND feature; CompileComponentSchema (the guard's entry) returns the
-// composed schema; and a value valid under the inherited constraint conforms while
-// an over-limit one is rejected for the RIGHT reason — the gap the structural
-// child-only schema could not close.
-func TestLazyLookup_ExtendsComposition_BuildPathServesComposedSchema(t *testing.T) {
+// TestLazyLookup_ExtendsComposition_BuildPathServesInheritedSchema is the
+// end-to-end proof that the build path validates an extending entity against the
+// schema it inherits, exercised through the real build primitives — and that the
+// two kinds reach that outcome by different routes.
+//
+// A Component inherits its base's pillar block verbatim, so there is nothing to
+// compose and no second view to serve: the accessor holds no Component entry,
+// and CompileComponentSchema (the guard's entry) reads the authored node, which
+// after resolution IS the base's. A value valid under the inherited constraint
+// conforms; an over-limit one is rejected for the RIGHT reason rather than as an
+// unknown property.
+//
+// A Feature still composes its chain's pillars, so the accessor serves an
+// extending Feature's composed schema — the one kind the composition tier still
+// has a reason to exist for.
+func TestLazyLookup_ExtendsComposition_BuildPathServesInheritedSchema(t *testing.T) {
 	ws := t.TempDir()
 	cd := filepath.Join(ws, "catalog")
 	writeCatalogFile(t, cd, "parent-comp.yaml", extendsParentCompYAML)
@@ -107,39 +112,37 @@ func TestLazyLookup_ExtendsComposition_BuildPathServesComposedSchema(t *testing.
 	}
 	lookup := lazy.AsCatalogLookup()
 
-	// COMPONENT: the composed effective schema is served and carries the inherited
-	// values.replicas (+ its default) and the inherited provides.endpoint key,
-	// alongside the child's values.name.
-	eff, ok := lookup.EffectiveSchema("core/test/child-comp:1.0.0")
-	if !ok {
-		t.Fatal("no composed effective schema for the extends-ing component")
-	}
-	vprops := pillarProps(t, eff, "values")
-	if _, ok := vprops["replicas"]; !ok {
-		t.Errorf("composed values pillar missing INHERITED replicas; got keys %v", propKeys(vprops))
-	}
-	if _, ok := vprops["name"]; !ok {
-		t.Errorf("composed values pillar missing child name; got keys %v", propKeys(vprops))
-	}
-	if pprops := pillarProps(t, eff, "provides"); pprops["endpoint"] == nil {
-		t.Errorf("composed provides pillar missing INHERITED endpoint key; got keys %v", propKeys(pprops))
-	}
-	if rep, _ := vprops["replicas"].(map[string]any); rep["default"] == nil {
-		t.Errorf("inherited replicas lost its parent default; got %v", rep)
+	// COMPONENT: no second, composed view exists for a Component — the authored
+	// node is the whole answer.
+	if _, ok := lookup.EffectiveSchema("core/test/child-comp:1.0.0"); ok {
+		t.Error("an extending Component must have no composed schema view beside its authored one")
 	}
 
-	// Value conformance through the build's real entry (CompileComponentSchema
-	// prefers EffectiveSchema). replicas=2 is valid under the inherited maximum 3
-	// (a child-only structural schema would reject it as an unknown property);
-	// replicas=99 is rejected — and NOT for the unknown-property reason.
+	// The schema the build's real entry compiles carries the inherited
+	// values.replicas (with its base default) and the inherited provides.endpoint
+	// key, because the merge copied the base's block onto the child.
 	compiled, ok := resolver.CompileComponentSchema(lookup, "core/test/child-comp:1.0.0")
 	if !ok {
 		t.Fatal("CompileComponentSchema returned no schema")
 	}
+	vprops := pillarProps(t, compiled, "values")
+	if _, ok := vprops["replicas"]; !ok {
+		t.Errorf("compiled values pillar missing INHERITED replicas; got keys %v", propKeys(vprops))
+	}
+	if pprops := pillarProps(t, compiled, "provides"); pprops["endpoint"] == nil {
+		t.Errorf("compiled provides pillar missing INHERITED endpoint key; got keys %v", propKeys(pprops))
+	}
+	if rep, _ := vprops["replicas"].(map[string]any); rep["default"] == nil {
+		t.Errorf("inherited replicas lost its base default; got %v", rep)
+	}
+
+	// Value conformance through the same entry. replicas=2 is valid under the
+	// inherited maximum 3 (a child-only schema would reject it as an unknown
+	// property); replicas=99 is rejected — and NOT for the unknown-property
+	// reason.
 	conform := func(replicas int) []*resolver.ResolverError {
 		inst := types.OrderedMap[any]{}
 		inst.Set("replicas", replicas)
-		inst.Set("name", "x")
 		return resolver.ValidatePillarConformance(compiled, "values", inst, nil, "child", "", "schema.values")
 	}
 	if errs := conform(2); len(errs) != 0 {
@@ -157,8 +160,8 @@ func TestLazyLookup_ExtendsComposition_BuildPathServesComposedSchema(t *testing.
 		t.Errorf("replicas=99 rejected for the WRONG reason (unknown-property closed-schema, not exceeds-maximum): %s", joined.String())
 	}
 
-	// FEATURE: the accessor resolves feature keys too (the eager-parity fix) — an
-	// extends-ing feature's composed schema is served.
+	// FEATURE: the accessor resolves feature keys — an extending Feature's chain
+	// still composes, and its composed schema is what the accessor serves.
 	feff, ok := lookup.EffectiveSchema("core/test/child-feat:1.0.0")
 	if !ok {
 		t.Fatal("no composed effective schema for the extends-ing feature (accessor must resolve feature keys)")

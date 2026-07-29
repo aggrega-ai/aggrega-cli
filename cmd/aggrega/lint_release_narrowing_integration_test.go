@@ -15,13 +15,20 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compilerops"
 )
 
-// TestIntegration_LintRelease_NarrowingAdvisory proves `aggrega lint --release`
-// surfaces the closure narrowing advisory (a child widening an inherited
-// constraint) as informational output, and that narrowing NEVER changes the exit
-// code (Invariant 1 — the compiler does not police narrow-vs-relax). A synthetic
-// local catalog supplies an extends-ing component that widens its parent; the
-// standard catalog supplies the compose provider the recipe targets.
-func TestIntegration_LintRelease_NarrowingAdvisory(t *testing.T) {
+// TestIntegration_LintRelease_ExtendsInheritsBaseConstraint proves, at the
+// altitude of the real command and through the closure path a Release lint
+// actually walks, that a constraint declared on a base Component is enforced on
+// an extending Component's instance. The extending Component authors no pillar
+// content, so nothing but inheritance can make this halt: a synthetic local
+// catalog supplies a base carrying the constraint plus a child that declares only
+// the inheritance marker, and the standard catalog supplies the compose provider
+// the recipe targets.
+//
+// This test previously proved the opposite shape — a child REDECLARING its base's
+// constraint more loosely, surfaced as an advisory notice. That shape is no longer
+// authorable, because an extending Component cannot declare a pillar block at all,
+// so the advisory has no Component-side producer left to exercise.
+func TestIntegration_LintRelease_ExtendsInheritsBaseConstraint(t *testing.T) {
 	std := standardCatalogDir(t)
 	ws := t.TempDir()
 	cd := filepath.Join(ws, "catalog")
@@ -38,7 +45,8 @@ spec:
     values:
       x: { type: integer, minimum: 5 }
 `)
-	// Child widens the inherited minimum (1 < 5) → a narrowing advisory.
+	// The child extends the parent and authors no pillar content, so the parent's
+	// x and its minimum are the child's contract.
 	writeFixture(t, filepath.Join(cd, "child.yaml"), `apiVersion: aggrega.ai/v1alpha1
 kind: Component
 metadata:
@@ -48,9 +56,7 @@ metadata:
     component.aggrega.ai/type: server
 spec:
   extends: test/lint-parent
-  schema:
-    values:
-      x: { type: integer, minimum: 1 }
+  schema: inherited
 `)
 	writeFixture(t, filepath.Join(cd, "recipe.yaml"), `apiVersion: aggrega.ai/v1alpha1
 kind: Recipe
@@ -79,6 +85,8 @@ spec:
       values:
         x: 3
 `)
+	// x=3 violates the parent's minimum 5, and the child never authored x — so the
+	// only way this halts is if the child inherited the parent's constraint.
 	writeFixture(t, filepath.Join(ws, "manifest.yaml"), `apiVersion: aggrega.ai/v1alpha1
 kind: Manifest
 metadata:
@@ -116,13 +124,18 @@ spec:
 	err := validateRelease(nil, "release.yaml", nil, compilerops.VerbosityDetailed, &buf, io.Discard)
 	out := buf.String()
 
-	// Invariant 1 / exit invariance: narrowing is advisory — lint --release still
-	// passes (the value x=3 conforms to the composed minimum 1).
-	if err != nil {
-		t.Fatalf("narrowing is advisory and the value conforms; lint --release must pass (exit 0); got %v", err)
+	if err == nil {
+		t.Fatalf("x=3 violates the base's minimum 5, inherited by the child; lint --release must halt. diagnostics:\n%s", out)
 	}
-	// The narrowing advisory is surfaced, naming the widening child.
-	if !strings.Contains(out, "test/lint-child") || !strings.Contains(out, "notice:") {
-		t.Errorf("expected a narrowing notice naming the widening child; got diagnostics:\n%s", out)
+	if !strings.Contains(out, "does not conform to the Component schema") {
+		t.Errorf("expected a values-conformance diagnostic; got:\n%s", out)
+	}
+	if !strings.Contains(out, "is less than 5") {
+		t.Errorf("expected the diagnostic to name the inherited minimum; got:\n%s", out)
+	}
+	// The base's own name must not appear as the offending entity — the constraint
+	// is enforced on the child's instance, at the child's path.
+	if !strings.Contains(out, `.spec.components["app"].values.x`) {
+		t.Errorf("expected the diagnostic at the child instance's own values path; got:\n%s", out)
 	}
 }

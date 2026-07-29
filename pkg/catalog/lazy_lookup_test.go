@@ -303,6 +303,7 @@ metadata:
     child-key: child-value
 spec:
   extends: test/base
+  schema: inherited
 `
 	if err := os.WriteFile(filepath.Join(componentDir, "base.yaml"), []byte(parent), 0o644); err != nil {
 		t.Fatalf("write parent: %v", err)

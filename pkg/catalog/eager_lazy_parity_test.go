@@ -68,11 +68,7 @@ metadata:
     component.aggrega.ai/type: server
 spec:
   extends: core/base
-  schema:
-    values:
-      own:
-        type: string
-        default: mine
+  schema: inherited
 `)
 	writeFixture(t, dir, "consumer.yaml", `apiVersion: aggrega.ai/v1alpha1
 kind: Component

@@ -20,11 +20,10 @@ type FeatureLookup func(uri string) (types.Feature, bool)
 // merged (child entry overrides parent on the same socket name). Returns the
 // original component unchanged when Spec.Extends == "".
 //
-// Spec.Schema is left as-authored on the merged component. JSON Schema
-// composition across the extends chain runs through the JSON-Schema-merge
-// phase in ResolveInheritance when CatalogEntry.JSONSchema is populated; the
-// schema-authoring migration leaves Schema content authored verbatim on each
-// entry and lets the merger phase unify them.
+// Spec.Schema on the merged component is the chain root's node, copied down
+// verbatim rather than composed — an extending Component authors no pillar
+// content, so there is nothing to compose. See mergeComponent for why the copy
+// is a node assignment rather than a one-element union.
 func ResolveComponentExtends(comp types.Component, lookup ComponentLookup) (types.Component, []*ValidationError) {
 	if comp.Spec.Extends == "" {
 		return comp, nil
@@ -154,11 +153,23 @@ func collectFeatureChain(child types.Feature, lookup FeatureLookup) ([]types.Fea
 // the child's identity (Name, Version, Extends) but carries merged Metadata and
 // Spec. Scalar Spec fields keep the child value if non-empty. Maps merge with
 // child wins; slices concatenate and dedupe.
+//
+// Spec.Schema is the exception: it is not merged but replaced, taking the
+// parent's node exactly as the parent authored it. An extending Component
+// authors no pillar content — its own Spec.Schema carries the inheritance
+// marker — so there is nothing of the child's to compose, and the assignment
+// is a plain node copy rather than a run through the union primitive. The
+// distinction is observable: the union primitive tags every node it emits with
+// its origin, so a one-element run through it would leave provenance keys on
+// what the language calls a verbatim inheritance. A chain therefore carries the
+// root's schema at every level, and the authored schema of a resolved Component
+// is the same object every enforcement path reads.
 func mergeComponent(parent, child types.Component) types.Component {
 	out := child
 	out.Metadata.Labels = mergeStringMap(parent.Metadata.Labels, child.Metadata.Labels)
 	out.Metadata.Annotations = mergeStringMap(parent.Metadata.Annotations, child.Metadata.Annotations)
 
+	out.Spec.Schema = parent.Spec.Schema
 	out.Spec.FeaturesSchema = mergeFeaturesSchema(parent.Spec.FeaturesSchema, child.Spec.FeaturesSchema)
 	out.Spec.Inject = concatDedupeString(parent.Spec.Inject, child.Spec.Inject)
 	out.Spec.UsesSchema = mergeUsesSchema(parent.Spec.UsesSchema, child.Spec.UsesSchema)

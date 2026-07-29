@@ -11,16 +11,21 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
 )
 
+// The narrowing advisory rides on the pillar composition an extends chain
+// performs, and after the Component reduction only a Feature chain composes: an
+// extending Component authors no pillar content, so it has nothing to redeclare
+// and cannot widen anything. These fixtures are therefore Features.
+//
 // Parent constrains values.x and values.y (minimum 5). The children extend it and
 // REDECLARE those properties with a lower minimum (1 < 5) — widening an inherited
 // constraint, which the merger flags as a non-halting narrowing notice.
 const narrowParentYAML = `apiVersion: aggrega.ai/v1alpha1
-kind: Component
+kind: Feature
 metadata:
   name: test/narrow-parent
   version: "1.0.0"
   labels:
-    component.aggrega.ai/type: server
+    feature.aggrega.ai/type: policy
 spec:
   schema:
     values:
@@ -30,12 +35,12 @@ spec:
 
 // aaa-narrow widens one inherited constraint (x); zzz-narrow widens two (x, y).
 const narrowChildAYAML = `apiVersion: aggrega.ai/v1alpha1
-kind: Component
+kind: Feature
 metadata:
   name: test/aaa-narrow
   version: "1.0.0"
   labels:
-    component.aggrega.ai/type: server
+    feature.aggrega.ai/type: policy
 spec:
   extends: test/narrow-parent
   schema:
@@ -44,12 +49,12 @@ spec:
 `
 
 const narrowChildZYAML = `apiVersion: aggrega.ai/v1alpha1
-kind: Component
+kind: Feature
 metadata:
   name: test/zzz-narrow
   version: "1.0.0"
   labels:
-    component.aggrega.ai/type: server
+    feature.aggrega.ai/type: policy
 spec:
   extends: test/narrow-parent
   schema:
@@ -60,12 +65,12 @@ spec:
 
 // A child that redeclares x at the SAME minimum — no widening, no narrowing.
 const narrowChildCleanYAML = `apiVersion: aggrega.ai/v1alpha1
-kind: Component
+kind: Feature
 metadata:
   name: test/clean-narrow
   version: "1.0.0"
   labels:
-    component.aggrega.ai/type: server
+    feature.aggrega.ai/type: policy
 spec:
   extends: test/narrow-parent
   schema:

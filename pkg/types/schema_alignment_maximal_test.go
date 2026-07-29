@@ -11,6 +11,7 @@ package types_test
 
 import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
+	"github.com/aggrega-ai/aggrega-cli/pkg/validator"
 
 	"go.yaml.in/yaml/v3"
 )
@@ -65,7 +66,12 @@ func maximalComponent() types.Component {
 				ValueSchema: mustNode("protocol: { type: string }"),
 				InfraSchema: mustNode("pool_size: { type: integer }"),
 			}),
-			Schema:     mustNode("values:\n  port: { type: integer }\ninfra:\n  replicas: { type: integer }\nprovides:\n  host: { type: string }"),
+			// extends and authored pillar content are mutually exclusive on a
+			// Component: an extending one receives its base's pillar block and
+			// writes the inheritance marker instead. Both fields stay populated
+			// here — Extends above, Schema as the marker — so neither loses its
+			// admit-the-Go-field coverage.
+			Schema:     mustNode(validator.InheritedSchemaMarker),
 			Assertions: om[string]("rule", "{{ if lt .values.port 1024 }}{{ fail \"low\" }}{{ end }}"),
 		},
 	}

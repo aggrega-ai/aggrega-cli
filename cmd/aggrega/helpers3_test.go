@@ -185,9 +185,7 @@ metadata:
     component.aggrega.ai/type: server
 spec:
   extends: nonexistent-parent
-  schema:
-    values:
-      x: { type: string }
+  schema: inherited
 `)
 	writeFixture(t, filepath.Join(catalogRoot, "providers", "helm.yaml"), `apiVersion: aggrega.ai/v1alpha1
 kind: Provider

@@ -545,9 +545,7 @@ metadata:
     tier: prod
 spec:
   extends: core/compute/server
-  schema:
-    values:
-      port: { type: integer, maximum: 65535 }
+  schema: inherited
 `), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -557,9 +555,15 @@ spec:
 		t.Fatalf("load: %v", err)
 	}
 
-	// Before resolution: child has its own Schema populated.
-	if before, _ := cat.CatalogLookup().Component("core/compute/api"); before.Spec.Schema.Kind == 0 {
-		t.Fatal("child component missing schema before resolution")
+	// Before resolution: the child's Spec.Schema is the inheritance marker as
+	// authored on disk, not the parent's pillar block.
+	before, _ := cat.CatalogLookup().Component("core/compute/api")
+	beforeText, err := yaml.Marshal(&before.Spec.Schema)
+	if err != nil {
+		t.Fatalf("marshal pre-resolution Schema: %v", err)
+	}
+	if strings.TrimSpace(string(beforeText)) != "inherited" {
+		t.Fatalf("child should carry the inheritance marker before resolution, got %q", string(beforeText))
 	}
 
 	errs := cat.ResolveAllExtends()
@@ -576,16 +580,18 @@ spec:
 	if tierLabel != "prod" {
 		t.Errorf("child tier label lost, got %v", resolved.Metadata.Labels.Keys())
 	}
-	// Child's authored Schema is preserved as-is. JSON Schema composition
-	// across the extends chain runs through the validator/merger package
-	// against the structured Schema content; this test pins that the
-	// child's own constraint survives the merge.
+	// After resolution the child's Spec.Schema IS the parent's pillar block,
+	// copied down verbatim — the marker is gone and the parent's constraint is
+	// what every enforcement path now reads off the child.
 	schemaText, err := yaml.Marshal(&resolved.Spec.Schema)
 	if err != nil {
 		t.Fatalf("marshal Schema: %v", err)
 	}
-	if !strings.Contains(string(schemaText), "65535") {
-		t.Errorf("child's authored Schema lost:\n%s", string(schemaText))
+	if !strings.Contains(string(schemaText), "1024") {
+		t.Errorf("parent's pillar block not inherited onto the child:\n%s", string(schemaText))
+	}
+	if strings.Contains(string(schemaText), "inherited") {
+		t.Errorf("resolved Schema still carries the inheritance marker:\n%s", string(schemaText))
 	}
 }
 

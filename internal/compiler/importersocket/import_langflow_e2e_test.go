@@ -391,7 +391,7 @@ func TestImportLangflow_DraftedYAMLValidates(t *testing.T) {
 				t.Errorf("drafted component %q did not unmarshal: %v", e.Name, uerr)
 				continue
 			}
-			if perr := validator.ValidateSchemaPillars("Component", comp.Metadata.Name, "drafted-"+e.Name, &comp.Spec.Schema, nil); perr != nil {
+			if perr := validator.ValidateSchemaPillars("Component", comp.Metadata.Name, "drafted-"+e.Name, comp.Spec.Extends, &comp.Spec.Schema, nil); perr != nil {
 				t.Errorf("drafted component %q failed pillar validation:\n%s\nerr: %v", e.Name, e.Body, perr)
 			}
 		}

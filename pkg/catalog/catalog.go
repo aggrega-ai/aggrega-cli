@@ -87,14 +87,18 @@ type Catalog struct {
 	lintWarnings []string
 
 	// effectiveSchemas holds the composed (parent+child) schema for each
-	// entity that declares extends:, keyed by metadata.name, in compactform
+	// FEATURE that declares extends:, keyed by metadata.name, in compactform
 	// map form. Populated by ResolveAllExtends from the inheritance JSON-Schema
-	// merge and exposed via resolver.CatalogLookup.EffectiveSchema so the
-	// schema-conformance gate, defaults materialisation, and inject-key
-	// provides extraction validate an extends-ing entity against its inherited
-	// schema rather than its own authored slice. Absent for non-extends
-	// entities — those consumers fall back to compiling the authored schema, so
-	// the non-extends path is unchanged.
+	// merge and exposed via resolver.CatalogLookup.EffectiveSchema so
+	// Feature-schema consumers (defaults materialisation, annotation expansion,
+	// annotation-binding target validation) read a Feature's inherited schema
+	// rather than its own authored slice. Absent for non-extends Features —
+	// those consumers fall back to compiling the authored schema.
+	//
+	// Components are deliberately absent. An extending Component authors no
+	// pillar content and receives its base's block verbatim on the merge, so
+	// its authored schema IS its inherited schema and a second view would be a
+	// second, divergent answer to one question.
 	effectiveSchemas map[string]compactform.Schema
 
 	// entityBytes records the raw YAML bytes each entity was loaded
@@ -599,6 +603,7 @@ func (c *Catalog) validateSchemaPillarsPass() error {
 			"Component",
 			name,
 			c.componentSources[name],
+			comp.Spec.Extends,
 			&comp.Spec.Schema,
 			c.SchemaLibraries,
 		); err != nil {
@@ -623,6 +628,7 @@ func (c *Catalog) validateSchemaPillarsPass() error {
 			"Feature",
 			name,
 			c.featureSources[name],
+			feat.Spec.Extends,
 			&feat.Spec.Schema,
 			c.SchemaLibraries,
 		); err != nil {
@@ -709,7 +715,7 @@ func ValidateClosurePillars(
 	for _, name := range compNames {
 		comp := components[name]
 		if err := validator.ValidateSchemaPillars(
-			"Component", name, componentSources[name], &comp.Spec.Schema, libs,
+			"Component", name, componentSources[name], comp.Spec.Extends, &comp.Spec.Schema, libs,
 		); err != nil {
 			validationErrors = append(validationErrors, err)
 		}
@@ -723,7 +729,7 @@ func ValidateClosurePillars(
 	for _, name := range featNames {
 		feat := features[name]
 		if err := validator.ValidateSchemaPillars(
-			"Feature", name, featureSources[name], &feat.Spec.Schema, libs,
+			"Feature", name, featureSources[name], feat.Spec.Extends, &feat.Spec.Schema, libs,
 		); err != nil {
 			validationErrors = append(validationErrors, err)
 		}
@@ -1257,15 +1263,18 @@ func (c *Catalog) DeprecationWarnings() []string {
 
 // ResolveAllExtends walks every Component and Feature in the catalog and
 // resolves its extends chain in-place via the validator package's
-// ResolveComponentExtends / ResolveFeatureExtends. The merge follows the
-// two-tiered inheritance pattern: deep-merge the YAML envelope, compose
-// the Schema with parent under JSON Schema composition. The merge DETECTS
-// a child that widens a parent's constraint and reports it as a non-halting
-// side-band signal (merger.NarrowingViolation); it does not enforce a
-// narrow-only rule. Whether a child may narrow but not relax a parent
-// constraint is opt-in policy enforced by the publishing-discipline plugin
-// at publish time, not a compiler check. Cycles are detected by the
-// validator and surface as errors rather than infinite loops.
+// ResolveComponentExtends / ResolveFeatureExtends. Both kinds deep-merge the
+// YAML envelope; the two kinds part company on the pillar block. An extending
+// Component authors no pillar content and receives its base's block verbatim,
+// so its chain composes nothing and stores no second view. An extending
+// Feature's chain still composes its pillars under JSON Schema composition,
+// and that composition DETECTS a child widening a parent's constraint and
+// reports it as a non-halting side-band signal (merger.NarrowingViolation);
+// it does not enforce a narrow-only rule. Whether a child may narrow but not
+// relax a parent constraint is opt-in policy enforced by the
+// publishing-discipline plugin at publish time, not a compiler check. Cycles
+// are detected by the validator for both kinds and surface as errors rather
+// than infinite loops.
 //
 // Precondition. Must be called after Load / LoadAll and before any
 // downstream consumer reads from the catalog (CatalogLookup, RecipeLookup,
@@ -1310,20 +1319,11 @@ func (c *Catalog) ResolveAllExtends() []*validator.ValidationError {
 		return c.Features[key], true
 	}
 
-	// CatalogEntry chain lookups that compile each chain entry's authored
+	// CatalogEntry chain lookup that compiles each chain entry's authored
 	// schema into the JSON-Schema-merge input, so the inheritance merge phase
-	// composes the chain's pillars into one effective schema.
-	compEntryLookup := func(uri string) (validator.CatalogEntry, bool) {
-		comp, ok := compLookup(uri)
-		if !ok {
-			return validator.CatalogEntry{}, false
-		}
-		return validator.CatalogEntry{
-			URI:        comp.Metadata.Name,
-			Extends:    comp.Spec.Extends,
-			JSONSchema: validator.CompileSchemaForMerge(comp.Spec.Schema, c.SchemaLibraries),
-		}, true
-	}
+	// composes the chain's pillars into one effective schema. Features only:
+	// an extending Component inherits its base's pillar block verbatim, so its
+	// chain has nothing to compose.
 	featEntryLookup := func(uri string) (validator.CatalogEntry, bool) {
 		feat, ok := featLookup(uri)
 		if !ok {
@@ -1372,23 +1372,11 @@ func (c *Catalog) ResolveAllExtends() []*validator.ValidationError {
 			errs = append(errs, vErrs...)
 			continue
 		}
+		// The resolved Component's Spec.Schema is the chain root's node, copied
+		// down verbatim by the merge — an extending Component authors no pillar
+		// content, so there is nothing to compose and no second view to store.
+		// Every Component-schema consumer reads the authored node.
 		c.Components[name] = resolved
-
-		// Compose the chain's JSON Schemas into the effective schema. The
-		// metadata resolution above already validated cycle/depth/missing-parent,
-		// so the only new error here is a structural JSON-Schema merge failure
-		// (ErrInheritanceMerge); narrowing is signal-only.
-		rootEntry := validator.CatalogEntry{
-			URI:        comp.Metadata.Name,
-			Extends:    comp.Spec.Extends,
-			JSONSchema: validator.CompileSchemaForMerge(comp.Spec.Schema, c.SchemaLibraries),
-		}
-		inh := validator.ResolveInheritance(rootEntry, compEntryLookup)
-		if len(inh.Errors) > 0 {
-			errs = append(errs, inh.Errors...)
-			continue
-		}
-		storeEffective(name, validator.CompositionFromResult(comp.Metadata.Name, inh))
 	}
 
 	featKeys := make([]string, 0, len(c.Features))

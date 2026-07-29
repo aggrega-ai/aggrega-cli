@@ -68,17 +68,13 @@ func guardInjectKeys(na types.NormalizedAggregate, catalog CatalogLookup) []*Res
 		if keys, seen := providesCache[compType]; seen {
 			return keys, resolvedType[compType]
 		}
-		// Prefer the composed effective schema for an extends-ing Component, so
-		// the legal provides-key set includes keys inherited from a parent; fall
-		// back to the authored schema for a non-extends Component.
-		if catalog.EffectiveSchema != nil {
-			if eff, ok := catalog.EffectiveSchema(compType); ok {
-				keys := providesKeysFromEffective(eff)
-				providesCache[compType] = keys
-				resolvedType[compType] = true
-				return keys, true
-			}
-		}
+		// One reader: a Component's authored schema. An extending Component
+		// receives its base's pillar block exactly as the base authored it, so
+		// the authored set already carries every inherited provides key and
+		// there is no second, composed view to prefer over it. Do not
+		// reintroduce one — a Component whose authored and enforced pillar sets
+		// could differ is how an extending Component came to accept a provides
+		// key its standalone twin rejected.
 		catComp, found := catalog.Component(compType)
 		if !found {
 			// providesFor's bool return cannot carry a halt; record a view
@@ -321,25 +317,6 @@ func invalidInjectKeyMessage(key, targetType string, declared map[string]bool) s
 	}
 	sort.Strings(keys)
 	return fmt.Sprintf("inject from-key %q is not declared in component type %q provides; declared keys are: %v", key, targetType, keys)
-}
-
-// providesKeysFromEffective extracts the declared provides-key set from an
-// already-composed effective schema (the whole-entity compactform schema), by
-// navigating properties.provides.properties. This is the effective-schema
-// analogue of ComponentProvidesKeys (which compiles the authored provides
-// sub-node directly): the merged schema nests the provides pillar one level
-// deeper under the entity's properties. An absent provides pillar yields the
-// empty set.
-func providesKeysFromEffective(eff compactform.Schema) map[string]bool {
-	keys := map[string]bool{}
-	providesProps, ok := pillarProperties(eff, "provides")
-	if !ok {
-		return keys
-	}
-	for k := range providesProps {
-		keys[k] = true
-	}
-	return keys
 }
 
 // ComponentProvidesKeys returns the set of declared `provides` keys for a

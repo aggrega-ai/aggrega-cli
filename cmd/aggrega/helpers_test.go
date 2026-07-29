@@ -245,9 +245,7 @@ metadata:
     component.aggrega.ai/type: server
 spec:
   extends: parent
-  schema:
-    values:
-      x: { type: string }
+  schema: inherited
 `)
 	if err := renderComponentFile(nil, "/some/file.yaml", src, nil, testInspectOptions(io.Discard)); err != nil {
 		t.Errorf("extends: %v", err)

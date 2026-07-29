@@ -22,6 +22,15 @@ var allowedSchemaPillars = map[string]bool{
 	"provides": true,
 }
 
+// InheritedSchemaMarker is the value spec.schema carries on an entity that
+// declares spec.extends: the entity's pillars are its base's, as the base
+// authored them, and the entity authors none of its own. It is the fourth
+// content-shape mode of spec.schema documented on
+// component-v1alpha1.schema.json, beside inline content, {$import: <path>}
+// and {$ref: <Library>#/schemas/<name>} — a scalar where those three are
+// maps.
+const InheritedSchemaMarker = "inherited"
+
 // ValidateSchemaPillars enforces the structural contract on a Component or
 // Feature's spec.schema field at catalog load time. The node must be a YAML
 // mapping whose top-level keys are a subset of {values, infra, provides};
@@ -30,6 +39,16 @@ var allowedSchemaPillars = map[string]bool{
 // expansion. A schema-less entity (the field absent on disk, surfaced as
 // a zero-value yaml.Node with Kind == 0) passes without inspection — Feature
 // and Component entities that omit spec.schema entirely are legitimate.
+//
+// The extends argument is the entity's authored spec.extends URI. An entity
+// that declares one may write the InheritedSchemaMarker scalar in place of a
+// pillar mapping, and only that scalar: the marker states that the pillars
+// are the base entity's, so there is no mapping to inspect here. Every other
+// non-mapping node — on an extending entity or not — is rejected with the
+// mapping-node diagnostic below. Which of the three outcomes an extending
+// entity's spec.schema may carry (the marker, an authored mapping, or
+// nothing) is settled by the published entity schema at load; this function
+// admits the marker rather than restating that rule.
 //
 // Errors are cerrors.CatalogError-categorised CompilerError values carrying
 // the source file path and offending line so authors locate the fragment
@@ -43,7 +62,7 @@ var allowedSchemaPillars = map[string]bool{
 // would be unresolvable when a Feature precedes its SchemaLibrary in
 // filesystem walk order.
 func ValidateSchemaPillars(
-	entityKind, entityName, filePath string,
+	entityKind, entityName, filePath, extends string,
 	schemaNode *yaml.Node,
 	libraries map[string]types.SchemaLibrary,
 ) error {
@@ -54,6 +73,10 @@ func ValidateSchemaPillars(
 	node := schemaNode
 	if node.Kind == yaml.DocumentNode && len(node.Content) > 0 {
 		node = node.Content[0]
+	}
+
+	if extends != "" && node.Kind == yaml.ScalarNode && node.Value == InheritedSchemaMarker {
+		return nil
 	}
 
 	if node.Kind != yaml.MappingNode {

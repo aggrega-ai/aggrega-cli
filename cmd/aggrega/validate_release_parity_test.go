@@ -123,12 +123,7 @@ metadata:
 spec:
   extends: local/non-existent-base:1.0.0
   inject: ["env"]
-  schema:
-    infra:
-      port: { type: integer, default: 8080 }
-    provides:
-      host: { type: string, required: true }
-      service_port: { type: string, required: true }
+  schema: inherited
 `
 
 const cliPillarOverlayComponent = `apiVersion: aggrega.ai/v1alpha1

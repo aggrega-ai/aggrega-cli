@@ -319,18 +319,17 @@ func ValidatePillarConformanceStructural(
 }
 
 // CompileComponentSchema compiles a Component type's declared schema for
-// conformance validation, preferring the composed effective schema for an
-// extends-ing Component (so an inherited constraint is enforced on the child)
-// and falling back to compiling the authored schema for a non-extends
-// Component. Returns (nil, false) when the catalog has no such component, the
-// component declares no schema, or compilation fails. Uncached — callers that
-// validate many instances of the same type should memoise.
+// conformance validation. Returns (nil, false) when the catalog has no such
+// component, the component declares no schema, or compilation fails. Uncached —
+// callers that validate many instances of the same type should memoise.
+//
+// A Component's authored schema is the only schema there is to compile, on an
+// extending Component as much as a standalone one: extending copies the base's
+// pillar block down verbatim, so an inherited constraint is already present in
+// the authored node. Do not add a second, composed view for the extending case
+// — two views of one Component's contract is how an inherited constraint came
+// to be enforced on one path and not another.
 func CompileComponentSchema(catalog CatalogLookup, compType string) (compactform.Schema, bool) {
-	if catalog.EffectiveSchema != nil {
-		if eff, ok := catalog.EffectiveSchema(compType); ok {
-			return eff, true
-		}
-	}
 	catComp, found := catalog.Component(compType)
 	if !found || catComp.Spec.Schema.Kind == 0 {
 		return nil, false

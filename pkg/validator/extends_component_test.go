@@ -93,9 +93,9 @@ func TestResolveComponentExtends_MergesLabelsAndListFields(t *testing.T) {
 			Extends:    "core/compute/server",
 			Inject:     []string{"env", "file"},
 			UsesSchema: usesSchema2,
-			Schema: mustParseSchema(t, `values:
-  name: { type: string }
-`),
+			// An extending Component authors no pillar content; its Spec.Schema
+			// carries the inheritance marker on disk.
+			Schema: mustParseSchema(t, InheritedSchemaMarker),
 		},
 	}
 
@@ -134,12 +134,14 @@ func TestResolveComponentExtends_MergesLabelsAndListFields(t *testing.T) {
 		t.Error("expected child 'caches' socket")
 	}
 
-	// Schema carries the child's as-authored content. JSON Schema
-	// composition across the extends chain runs through the merger
-	// package against the structured Schema payloads (Spec.JSONSchema);
-	// the mergeComponent step preserves the child's Spec.Schema as-is.
-	if !schemaContains(t, got.Spec.Schema, "name") {
-		t.Errorf("expected child's authored Schema preserved")
+	// Schema is the parent's node, copied down verbatim: the child's own
+	// marker is replaced, so the resolved Component's authored schema IS the
+	// schema every enforcement path reads.
+	if !schemaContains(t, got.Spec.Schema, "port") {
+		t.Errorf("expected the parent's pillar block on the merged Component, got %#v", got.Spec.Schema)
+	}
+	if got.Spec.Schema.Kind == yaml.ScalarNode {
+		t.Errorf("merged Spec.Schema must not still carry the inheritance marker")
 	}
 
 	// Identity stays child's

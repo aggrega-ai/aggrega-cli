@@ -156,9 +156,12 @@ func (l *LazyLookup) AsCatalogLookup() resolver.CatalogLookup {
 		Feature:         l.Feature,
 		SchemaLibraries: l.schemaLibraries,
 		// EffectiveSchema serves the composed (parent+child) schema for an
-		// extends-ing Component OR Feature, keyed by metadata.name — populated by
-		// ResolveClosureExtends. Returns (_, false) for a non-extends or
-		// not-yet-resolved type, so consumers fall back to the authored schema.
+		// extends-ing FEATURE, keyed by metadata.name — populated by
+		// ResolveClosureExtends. Returns (_, false) for a non-extends Feature, a
+		// Component of any kind, or a not-yet-resolved type, so consumers fall
+		// back to the authored schema. Components are absent by construction:
+		// extending copies the base's pillar block down verbatim, so a Component's
+		// authored schema already is its inherited one.
 		EffectiveSchema: l.effectiveSchema,
 		// Plugin serves the Plugin entity by URI over the lazily-walked
 		// set, so the build-load pipeline socket fronts the artifact cascade with
@@ -224,9 +227,10 @@ func (l *LazyLookup) pluginColocatedDirs() map[string]string {
 }
 
 // effectiveSchema serves the composed (parent+child) schema for an
-// extends-ing Component or Feature, keyed by metadata.name — populated
-// by ResolveClosureExtends. Returns (_, false) for a non-extends or
-// not-yet-resolved type, so consumers fall back to the authored schema.
+// extends-ing Feature, keyed by metadata.name — populated by
+// ResolveClosureExtends. Returns (_, false) for a non-extends Feature, a
+// Component of any kind, or a not-yet-resolved type, so consumers fall
+// back to the authored schema.
 // It is handed out through AsCatalogLookup and invoked by the pipeline
 // outside any LazyLookup method, so it takes the lock itself to read
 // the effectiveSchemas map race-free against a concurrent
@@ -392,13 +396,16 @@ type LazyLookup struct {
 	schemaLibrariesBuilt bool
 
 	// effectiveSchemas holds the composed (parent+child) schema for each
-	// extends-ing closure Component/Feature, keyed by metadata.name — the
-	// build-path counterpart to the eager catalog's effectiveSchemas. Populated
-	// by ResolveClosureExtends via the same ResolveInheritance merge the eager
-	// whole-catalog path uses; served through AsCatalogLookup so value
-	// conformance and schema-defaults validate extends entities against the
-	// composed schema, not the child-only structural one. Empty for a closure
-	// with no extends-ing entity.
+	// extends-ing closure FEATURE, keyed by metadata.name — the build-path
+	// counterpart to the eager catalog's effectiveSchemas. Populated by
+	// ResolveClosureExtends via the same ResolveInheritance merge the eager
+	// whole-catalog path uses; served through AsCatalogLookup so Feature-schema
+	// consumers read an extending Feature's composed schema, not the child-only
+	// structural one. Empty for a closure with no extends-ing Feature.
+	//
+	// Components are deliberately absent: extending copies the base's pillar
+	// block down verbatim onto the child, so a Component's authored schema is
+	// its inherited schema and a second view would be a second answer.
 	effectiveSchemas map[string]compactform.Schema
 
 	// closureNarrowings holds the narrowing-on-extend advisory notices (a child
@@ -1696,21 +1703,11 @@ func (l *LazyLookup) ResolveClosureExtends(cl closure.Closure) []error {
 	compLookup := func(uri string) (types.Component, bool) { return l.resolveComponent(uri) }
 	featLookup := func(uri string) (types.Feature, bool) { return l.resolveFeature(uri) }
 
-	// CatalogEntry chain lookups that compile each chain entry's authored schema
+	// CatalogEntry chain lookup that compiles each chain entry's authored schema
 	// into the JSON-Schema-merge input — identical to the eager ResolveAllExtends,
 	// so both surfaces compose through the same ResolveInheritance merge phase (no
-	// second merge implementation).
-	compEntryLookup := func(uri string) (validator.CatalogEntry, bool) {
-		comp, ok := compLookup(uri)
-		if !ok {
-			return validator.CatalogEntry{}, false
-		}
-		return validator.CatalogEntry{
-			URI:        comp.Metadata.Name,
-			Extends:    comp.Spec.Extends,
-			JSONSchema: validator.CompileSchemaForMerge(comp.Spec.Schema, l.schemaLibraries),
-		}, true
-	}
+	// second merge implementation). Features only: an extending Component inherits
+	// its base's pillar block verbatim, so its chain has nothing to compose.
 	featEntryLookup := func(uri string) (validator.CatalogEntry, bool) {
 		feat, ok := featLookup(uri)
 		if !ok {
@@ -1761,30 +1758,17 @@ func (l *LazyLookup) ResolveClosureExtends(cl closure.Closure) []error {
 			if comp.Spec.Extends == "" {
 				continue
 			}
-			// Structural merge (metadata, secrets, uses, inject) — leaves
-			// Spec.Schema as-authored on the child.
+			// Structural merge (metadata, secrets, uses, inject), plus the base's
+			// pillar block copied down verbatim onto Spec.Schema. An extending
+			// Component authors no pillar content, so there is nothing to compose
+			// afterwards and no second view to store — every Component-schema
+			// consumer reads the authored node.
 			if _, vErrs := validator.ResolveComponentExtends(comp, compLookup); len(vErrs) > 0 {
 				for _, ve := range vErrs {
 					errs = append(errs, ve)
 				}
 				continue
 			}
-			// Schema composition (values+infra+provides pillars the structural
-			// merge drops) — the composed EffectiveSchema value conformance and
-			// schema-defaults validate against.
-			rootEntry := validator.CatalogEntry{
-				URI:        comp.Metadata.Name,
-				Extends:    comp.Spec.Extends,
-				JSONSchema: validator.CompileSchemaForMerge(comp.Spec.Schema, l.schemaLibraries),
-			}
-			inh := validator.ResolveInheritance(rootEntry, compEntryLookup)
-			if len(inh.Errors) > 0 {
-				for _, ie := range inh.Errors {
-					errs = append(errs, ie)
-				}
-				continue
-			}
-			storeEffective(comp.Metadata.Name, validator.CompositionFromResult(comp.Metadata.Name, inh))
 			continue
 		}
 		if feat, ok := l.resolveFeature(uri); ok {

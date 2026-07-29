@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/aggrega-ai/aggrega-cli/pkg/compactform"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
+	"github.com/aggrega-ai/aggrega-cli/pkg/validator"
 	"go.yaml.in/yaml/v3"
 )
 
@@ -141,11 +141,14 @@ func TestGuardInjectKeys_SelfInjectValidFromPasses(t *testing.T) {
 	}
 }
 
-// TestGuardInjectKeys_InheritedProvidesAccepted is the extends-composed-provides
-// proof: the legal provides-key set for an
-// extends-ing Component is drawn from its EFFECTIVE (composed) schema, so a
-// from: reference to a provides key declared on the PARENT — absent from the
-// child's own authored schema — resolves rather than halting.
+// TestGuardInjectKeys_InheritedProvidesAccepted is the extends-inheritance proof:
+// a from: reference to a provides key the BASE declared, which the extending
+// Component never authored, resolves rather than halting — because the merge
+// copied the base's pillar block onto the extending Component, so its authored
+// provides set already carries the inherited key.
+//
+// The fixture runs the real merge rather than stubbing a second view of the
+// Component's schema. A stub would pass whether or not inheritance works.
 func TestGuardInjectKeys_InheritedProvidesAccepted(t *testing.T) {
 	t.Parallel()
 
@@ -158,22 +161,34 @@ func TestGuardInjectKeys_InheritedProvidesAccepted(t *testing.T) {
 	}
 	agg.Spec.Components.Set("db", inst)
 
+	// The base declares both provides keys; the extending Component declares the
+	// marker and nothing else.
+	base := componentWithProvides(t, "host", "inherited_host")
+	base.Metadata.Name = "core/db-base"
+	var marker yaml.Node
+	if err := yaml.Unmarshal([]byte(validator.InheritedSchemaMarker), &marker); err != nil {
+		t.Fatalf("marker parse: %v", err)
+	}
+	child := types.Component{
+		Metadata: types.ComponentMetadata{Name: "core/db", Version: "1.0.0"},
+		Spec:     types.ComponentSpec{Extends: "core/db-base", Schema: marker},
+	}
+	resolved, rerrs := validator.ResolveComponentExtends(child, func(uri string) (types.Component, bool) {
+		if uri == "core/db-base" {
+			return base, true
+		}
+		return types.Component{}, false
+	})
+	if len(rerrs) > 0 {
+		t.Fatalf("ResolveComponentExtends: %v", rerrs)
+	}
+
 	catalog := CatalogLookup{
-		// Authored schema provides only "host" — inherited_host is NOT here.
-		Component: func(string) (types.Component, bool) {
-			return componentWithProvides(t, "host"), true
-		},
-		// Composed effective schema additionally carries the inherited key.
-		EffectiveSchema: func(typeURI string) (compactform.Schema, bool) {
-			if typeURI == "core/db:1.0.0" {
-				return compileTestSchema(t, "provides:\n  host: { type: string }\n  inherited_host: { type: string }\n"), true
-			}
-			return nil, false
-		},
+		Component: func(string) (types.Component, bool) { return resolved, true },
 	}
 
 	if errs := guardInjectKeys(normalized(t, agg), catalog); errs != nil {
-		t.Errorf("inherited provides key must resolve via the effective schema; got %v", errs)
+		t.Errorf("inherited provides key must resolve off the extending Component's schema; got %v", errs)
 	}
 }
 

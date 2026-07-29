@@ -171,7 +171,7 @@ func validateComponentEntity(res *EntityResult, wsRoot, cacheDir string, dirs []
 	if err != nil {
 		return err
 	}
-	if err := validator.ValidateSchemaPillars("Component", comp.Metadata.Name, path, &comp.Spec.Schema, cat.SchemaLibraries); err != nil {
+	if err := validator.ValidateSchemaPillars("Component", comp.Metadata.Name, path, comp.Spec.Extends, &comp.Spec.Schema, cat.SchemaLibraries); err != nil {
 		return fmt.Errorf("pillars: %w", err)
 	}
 	res.Diagnostics = append(res.Diagnostics, "Pillars: valid")
@@ -193,7 +193,7 @@ func validateFeatureEntity(res *EntityResult, wsRoot, cacheDir string, dirs []st
 	if err != nil {
 		return err
 	}
-	if err := validator.ValidateSchemaPillars("Feature", feat.Metadata.Name, path, &feat.Spec.Schema, cat.SchemaLibraries); err != nil {
+	if err := validator.ValidateSchemaPillars("Feature", feat.Metadata.Name, path, feat.Spec.Extends, &feat.Spec.Schema, cat.SchemaLibraries); err != nil {
 		return fmt.Errorf("pillars: %w", err)
 	}
 	res.Diagnostics = append(res.Diagnostics, "Pillars: valid")

@@ -54,10 +54,10 @@ spec:
 `
 
 // TestIntegration_LintRelease_ValueConformance proves `aggrega lint --release`
-// validates the Release's authored values against the closure's composed schemas
-// (the build's Step-1 conformance, reused — no fork): conforming passes, a
-// violation errors (non-zero exit), an inherited-pillar value is checked against
-// the COMPOSED (extends) schema, and a `{{ .parameters.* }}` value is validated
+// validates the Release's authored values against the closure's schemas (the
+// build's Step-1 conformance, reused — no fork): conforming passes, a violation
+// errors (non-zero exit), a value governed by an INHERITED constraint is checked
+// against the base's contract, and a `{{ .parameters.* }}` value is validated
 // POST-resolution.
 func TestIntegration_LintRelease_ValueConformance(t *testing.T) {
 	std := standardCatalogDir(t)
@@ -91,16 +91,28 @@ func TestIntegration_LintRelease_ValueConformance(t *testing.T) {
 			wantErr:   true,
 		},
 		{
-			name: "extends_inherited_pillar_value_checked_against_composed_schema",
+			name: "extends_inherited_pillar_value_checked_against_the_base_contract",
 			catalog: map[string]string{
-				// Parent constrains x (minimum 5); child extends, does NOT redeclare x.
+				// The base constrains x (minimum 5); the child extends it and authors
+				// no pillar content, so x and its constraint are inherited verbatim.
 				"parent.yaml": confComp("test/conf-parent", "    values:\n      x: { type: integer, minimum: 5 }\n"),
-				"child.yaml":  confChild("test/conf-child", "test/conf-parent", "    values:\n      name: { type: string }\n"),
+				"child.yaml":  confChild("test/conf-child", "test/conf-parent"),
 				"recipe.yaml": composeRecipe("conf-child", "test/conf-child"),
 			},
 			manifest:  confManifest("test/conf-child:1.0.0", "compose/conf-child:1.0.0"),
-			aggregate: confAggregate("test/conf-child", "        x: 3\n        name: a"), // x=3 violates the INHERITED minimum 5
+			aggregate: confAggregate("test/conf-child", "        x: 3"), // x=3 violates the INHERITED minimum 5
 			wantErr:   true,
+		},
+		{
+			name: "extends_inherited_pillar_conforming_value_passes",
+			catalog: map[string]string{
+				"parent.yaml": confComp("test/conf-parent", "    values:\n      x: { type: integer, minimum: 5 }\n"),
+				"child.yaml":  confChild("test/conf-child", "test/conf-parent"),
+				"recipe.yaml": composeRecipe("conf-child", "test/conf-child"),
+			},
+			manifest:  confManifest("test/conf-child:1.0.0", "compose/conf-child:1.0.0"),
+			aggregate: confAggregate("test/conf-child", "        x: 7"),
+			wantErr:   false,
 		},
 		{
 			name: "templated_value_validated_post_resolution",
@@ -199,7 +211,10 @@ spec:
 ` + schemaBody
 }
 
-func confChild(name, extends, schemaBody string) string {
+// confChild returns an extending Component. It takes no schema body: an
+// extending Component authors no pillar content and declares the inheritance
+// marker, receiving its base's pillars exactly as the base authored them.
+func confChild(name, extends string) string {
 	return `apiVersion: aggrega.ai/v1alpha1
 kind: Component
 metadata:
@@ -209,8 +224,8 @@ metadata:
     component.aggrega.ai/type: server
 spec:
   extends: ` + extends + `
-  schema:
-` + schemaBody
+  schema: inherited
+`
 }
 
 func confManifest(typeURI, recipeURI string) string {

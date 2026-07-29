@@ -7,6 +7,4 @@ metadata:
     component.aggrega.ai/type: "server"
 spec:
   extends: local/non-existent-base:1.0.0
-  schema:
-    infra:
-      port: { type: integer, default: 8080 }
+  schema: inherited
