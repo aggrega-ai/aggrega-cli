@@ -12,10 +12,11 @@ import (
 
 // Sentinel errors for errors.Is matching.
 var (
-	ErrSchemaValidation      = errors.New("schema validation failed: correct the flagged field to satisfy its declared schema")
-	ErrInheritanceMerge      = errors.New("inheritance merge failed: resolve the conflicting field definitions across the extends chain")
-	ErrCyclicExtension       = errors.New("cyclic extends chain")
-	ErrUsesSchemaUnification = errors.New("usesSchema unification failed: reconcile the conflicting socket definitions across the extends chain")
+	ErrSchemaValidation       = errors.New("schema validation failed: correct the flagged field to satisfy its declared schema")
+	ErrInheritanceMerge       = errors.New("inheritance merge failed: resolve the conflicting field definitions across the extends chain")
+	ErrCyclicExtension        = errors.New("cyclic extends chain")
+	ErrUsesSchemaUnification  = errors.New("usesSchema unification failed: reconcile the conflicting socket definitions across the extends chain")
+	ErrAssertionNameCollision = errors.New("assertion name declared twice across the extends chain: rename the extending entity's assertion, whose assertions add to the base's and never replace one")
 )
 
 // ValidationError is a structured validation failure with entity context, field path,
@@ -27,7 +28,7 @@ type ValidationError struct {
 	Constraint string // e.g. "must be >= 1024"
 	Actual     string // e.g. "80"
 	Suggestion string // e.g. "Use a port number >= 1024"
-	Err        error  // sentinel (ErrSchemaValidation | ErrInheritanceMerge | ErrUsesSchemaUnification)
+	Err        error  // sentinel (ErrSchemaValidation | ErrInheritanceMerge | ErrUsesSchemaUnification | ErrAssertionNameCollision)
 }
 
 // Error returns a formatted human-readable message. Never contains raw validator-library output.

@@ -420,3 +420,231 @@ func componentNames(comps []types.Component) []string {
 	}
 	return names
 }
+
+// omAssertions builds an OrderedMap of named assertions from name/body pairs,
+// preserving author order.
+func omAssertions(t *testing.T, pairs ...string) types.OrderedMap[string] {
+	t.Helper()
+	if len(pairs)%2 != 0 {
+		t.Fatalf("omAssertions needs name/body pairs, got %d args", len(pairs))
+	}
+	out := types.OrderedMap[string]{}
+	for i := 0; i < len(pairs); i += 2 {
+		out.Set(pairs[i], pairs[i+1])
+	}
+	return out
+}
+
+// TestResolveComponentExtends_AssertionsAccumulateBaseFirst pins the additive
+// merge and its order: the base's rules survive alongside the extending
+// Component's own, and the base's come first, because evaluation halts on the
+// first failure and a base's invariant is the more fundamental contract.
+func TestResolveComponentExtends_AssertionsAccumulateBaseFirst(t *testing.T) {
+	t.Parallel()
+	base := types.Component{
+		Metadata: types.ComponentMetadata{Name: "core/base", Version: "1.0.0"},
+		Spec: types.ComponentSpec{
+			Assertions: omAssertions(t, "tls-required", `{{ if not .values.tls }}{{ fail "tls" }}{{ end }}`),
+		},
+	}
+	child := types.Component{
+		Metadata: types.ComponentMetadata{Name: "core/gateway", Version: "1.0.0"},
+		Spec: types.ComponentSpec{
+			Extends:    "core/base",
+			Assertions: omAssertions(t, "timeout-budget", `{{ if gt (int .values.t) 2000 }}{{ fail "t" }}{{ end }}`),
+		},
+	}
+	lookup := func(uri string) (types.Component, bool) {
+		if uri == "core/base" {
+			return base, true
+		}
+		return types.Component{}, false
+	}
+	got, errs := ResolveComponentExtends(child, lookup)
+	if len(errs) != 0 {
+		t.Fatalf("unexpected errors: %v", errs)
+	}
+	if want := []string{"tls-required", "timeout-budget"}; !equalStrings(got.Spec.Assertions.Keys(), want) {
+		t.Errorf("assertion order: got %v, want %v", got.Spec.Assertions.Keys(), want)
+	}
+	body, _ := got.Spec.Assertions.Get("tls-required")
+	if body != `{{ if not .values.tls }}{{ fail "tls" }}{{ end }}` {
+		t.Errorf("inherited assertion body altered: %q", body)
+	}
+}
+
+// TestResolveComponentExtends_AssertionsAccumulateRootFirstOverChain pins the
+// multi-level direction: a three-deep chain carries every level's rules with the
+// chain root's first and the leaf's last.
+func TestResolveComponentExtends_AssertionsAccumulateRootFirstOverChain(t *testing.T) {
+	t.Parallel()
+	root := types.Component{
+		Metadata: types.ComponentMetadata{Name: "core/root", Version: "1.0.0"},
+		Spec:     types.ComponentSpec{Assertions: omAssertions(t, "root-rule", "R")},
+	}
+	mid := types.Component{
+		Metadata: types.ComponentMetadata{Name: "core/mid", Version: "1.0.0"},
+		Spec: types.ComponentSpec{
+			Extends:    "core/root",
+			Assertions: omAssertions(t, "mid-rule", "M"),
+		},
+	}
+	leaf := types.Component{
+		Metadata: types.ComponentMetadata{Name: "core/leaf", Version: "1.0.0"},
+		Spec: types.ComponentSpec{
+			Extends:    "core/mid",
+			Assertions: omAssertions(t, "leaf-rule", "L"),
+		},
+	}
+	lookup := func(uri string) (types.Component, bool) {
+		switch uri {
+		case "core/root":
+			return root, true
+		case "core/mid":
+			return mid, true
+		}
+		return types.Component{}, false
+	}
+	got, errs := ResolveComponentExtends(leaf, lookup)
+	if len(errs) != 0 {
+		t.Fatalf("unexpected errors: %v", errs)
+	}
+	if want := []string{"root-rule", "mid-rule", "leaf-rule"}; !equalStrings(got.Spec.Assertions.Keys(), want) {
+		t.Errorf("chain assertion order: got %v, want %v", got.Spec.Assertions.Keys(), want)
+	}
+}
+
+// TestResolveComponentExtends_AssertionNameCollisionHalts pins the refusal: an
+// extending Component reusing an inherited assertion name for a different rule
+// is rejected rather than allowed to replace it, and the diagnostic names both
+// entities and the colliding name so the author can rename without guessing.
+func TestResolveComponentExtends_AssertionNameCollisionHalts(t *testing.T) {
+	t.Parallel()
+	base := types.Component{
+		Metadata: types.ComponentMetadata{Name: "core/base", Version: "1.0.0"},
+		Spec:     types.ComponentSpec{Assertions: omAssertions(t, "tls-required", "BASE-RULE")},
+	}
+	child := types.Component{
+		Metadata: types.ComponentMetadata{Name: "core/gateway", Version: "1.0.0"},
+		Spec: types.ComponentSpec{
+			Extends:    "core/base",
+			Assertions: omAssertions(t, "tls-required", "CHILD-RULE"),
+		},
+	}
+	lookup := func(uri string) (types.Component, bool) {
+		if uri == "core/base" {
+			return base, true
+		}
+		return types.Component{}, false
+	}
+	got, errs := ResolveComponentExtends(child, lookup)
+	if len(errs) != 1 {
+		t.Fatalf("expected exactly one collision error, got %d: %v", len(errs), errs)
+	}
+	if !errors.Is(errs[0], ErrAssertionNameCollision) {
+		t.Errorf("expected ErrAssertionNameCollision, got %v", errs[0].Err)
+	}
+	msg := errs[0].Error()
+	for _, want := range []string{"core/gateway", "core/base", "tls-required", ".spec.assertions.tls-required"} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("diagnostic missing %q: %s", want, msg)
+		}
+	}
+	// A refused merge returns the entity unresolved, matching the chain-walk
+	// failure paths, so no partially-merged entity reaches a consumer.
+	if got.Spec.Assertions.Len() != 1 {
+		t.Errorf("expected the unresolved child back, got %v", got.Spec.Assertions.Keys())
+	}
+	if body, _ := got.Spec.Assertions.Get("tls-required"); body != "CHILD-RULE" {
+		t.Errorf("expected the unresolved child back, got body %q", body)
+	}
+}
+
+// TestResolveComponentExtends_AssertionsIdempotentOnReMerge pins the property the
+// catalog's resolution order depends on: resolving a chain whose middle tier has
+// ALREADY had its own chain folded in must not report the middle tier's inherited
+// rules as collisions against the base that declared them. Every other field's
+// merge is idempotent by shape; this one is idempotent because a byte-identical
+// body under a shared name is a restatement rather than a replacement.
+func TestResolveComponentExtends_AssertionsIdempotentOnReMerge(t *testing.T) {
+	t.Parallel()
+	root := types.Component{
+		Metadata: types.ComponentMetadata{Name: "core/root", Version: "1.0.0"},
+		Spec:     types.ComponentSpec{Assertions: omAssertions(t, "root-rule", "R")},
+	}
+	// midResolved is what the catalog holds after mid's own chain resolved: it
+	// carries the root's rule as well as its own.
+	midResolved := types.Component{
+		Metadata: types.ComponentMetadata{Name: "core/mid", Version: "1.0.0"},
+		Spec: types.ComponentSpec{
+			Extends:    "core/root",
+			Assertions: omAssertions(t, "root-rule", "R", "mid-rule", "M"),
+		},
+	}
+	leaf := types.Component{
+		Metadata: types.ComponentMetadata{Name: "core/leaf", Version: "1.0.0"},
+		Spec: types.ComponentSpec{
+			Extends:    "core/mid",
+			Assertions: omAssertions(t, "leaf-rule", "L"),
+		},
+	}
+	lookup := func(uri string) (types.Component, bool) {
+		switch uri {
+		case "core/root":
+			return root, true
+		case "core/mid":
+			return midResolved, true
+		}
+		return types.Component{}, false
+	}
+	got, errs := ResolveComponentExtends(leaf, lookup)
+	if len(errs) != 0 {
+		t.Fatalf("re-merging an already-resolved ancestor must not collide: %v", errs)
+	}
+	if want := []string{"root-rule", "mid-rule", "leaf-rule"}; !equalStrings(got.Spec.Assertions.Keys(), want) {
+		t.Errorf("re-merge order: got %v, want %v", got.Spec.Assertions.Keys(), want)
+	}
+}
+
+// TestResolveFeatureExtends_AssertionsUnchanged pins that the Component-scoped
+// additive merge did not reach the Feature surface: a Feature's assertions are
+// still its own, with the base's not carried onto it.
+func TestResolveFeatureExtends_AssertionsUnchanged(t *testing.T) {
+	t.Parallel()
+	base := types.Feature{
+		Metadata: types.FeatureMetadata{Name: "core/f/base", Version: "1.0.0"},
+		Spec:     types.FeatureSpec{Assertions: omAssertions(t, "base-rule", "B")},
+	}
+	child := types.Feature{
+		Metadata: types.FeatureMetadata{Name: "core/f/child", Version: "1.0.0"},
+		Spec: types.FeatureSpec{
+			Extends:    "core/f/base",
+			Assertions: omAssertions(t, "child-rule", "C"),
+		},
+	}
+	lookup := func(uri string) (types.Feature, bool) {
+		if uri == "core/f/base" {
+			return base, true
+		}
+		return types.Feature{}, false
+	}
+	got, errs := ResolveFeatureExtends(child, lookup)
+	if len(errs) != 0 {
+		t.Fatalf("unexpected errors: %v", errs)
+	}
+	if want := []string{"child-rule"}; !equalStrings(got.Spec.Assertions.Keys(), want) {
+		t.Errorf("Feature assertions changed: got %v, want %v", got.Spec.Assertions.Keys(), want)
+	}
+}
+
+func equalStrings(got, want []string) bool {
+	if len(got) != len(want) {
+		return false
+	}
+	for i := range got {
+		if got[i] != want[i] {
+			return false
+		}
+	}
+	return true
+}

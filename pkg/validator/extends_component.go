@@ -4,6 +4,8 @@
 package validator
 
 import (
+	"fmt"
+
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
@@ -17,13 +19,22 @@ type FeatureLookup func(uri string) (types.Feature, bool)
 // ResolveComponentExtends returns a fully-merged Component after walking the
 // extends chain. Labels/Annotations maps are deep-merged (child wins per key),
 // the Inject list is concatenated and deduplicated, UsesSchema entries are
-// merged (child entry overrides parent on the same socket name). Returns the
+// merged (child entry overrides parent on the same socket name), and
+// Assertions accumulate root-first with no per-name override. Returns the
 // original component unchanged when Spec.Extends == "".
 //
 // Spec.Schema on the merged component is the chain root's node, copied down
 // verbatim rather than composed — an extending Component authors no pillar
 // content, so there is nothing to compose. See mergeComponent for why the copy
 // is a node assignment rather than a one-element union.
+//
+// The merge can fail: an extending Component reusing an inherited assertion
+// name to declare a different rule yields ErrAssertionNameCollision (a
+// byte-identical restatement under the same name merges as a no-op — see
+// mergeAssertions). Every collision along the chain is reported rather than only
+// the first, so one rename pass clears the entity. The original component is
+// returned unchanged alongside a non-empty error slice, matching the chain-walk
+// failure paths.
 func ResolveComponentExtends(comp types.Component, lookup ComponentLookup) (types.Component, []*ValidationError) {
 	if comp.Spec.Extends == "" {
 		return comp, nil
@@ -50,8 +61,14 @@ func ResolveComponentExtends(comp types.Component, lookup ComponentLookup) (type
 	}
 
 	merged := chain[len(chain)-1] // root ancestor
+	var mergeErrs []*ValidationError
 	for i := len(chain) - 2; i >= 0; i-- {
-		merged = mergeComponent(merged, chain[i])
+		var errs []*ValidationError
+		merged, errs = mergeComponent(merged, chain[i])
+		mergeErrs = append(mergeErrs, errs...)
+	}
+	if len(mergeErrs) > 0 {
+		return comp, mergeErrs
 	}
 	return merged, nil
 }
@@ -182,7 +199,11 @@ func collectFeatureChain(child types.Feature, lookup FeatureLookup) ([]types.Fea
 // what the language calls a verbatim inheritance. A chain therefore carries the
 // root's schema at every level, and the authored schema of a resolved Component
 // is the same object every enforcement path reads.
-func mergeComponent(parent, child types.Component) types.Component {
+//
+// Spec.Assertions is the one surface whose merge can fail — see mergeAssertions
+// for why a shared name is refused rather than overridden. The returned slice is
+// empty on success.
+func mergeComponent(parent, child types.Component) (types.Component, []*ValidationError) {
 	out := child
 	out.Metadata.Labels = mergeStringMap(parent.Metadata.Labels, child.Metadata.Labels)
 	out.Metadata.Annotations = mergeStringMap(parent.Metadata.Annotations, child.Metadata.Annotations)
@@ -191,7 +212,11 @@ func mergeComponent(parent, child types.Component) types.Component {
 	out.Spec.FeaturesSchema = mergeFeaturesSchema(parent.Spec.FeaturesSchema, child.Spec.FeaturesSchema)
 	out.Spec.Inject = concatDedupeString(parent.Spec.Inject, child.Spec.Inject)
 	out.Spec.UsesSchema = mergeUsesSchema(parent.Spec.UsesSchema, child.Spec.UsesSchema)
-	return out
+
+	assertions, errs := mergeAssertions(parent.Metadata.Name, child.Metadata.Name,
+		parent.Spec.Assertions, child.Spec.Assertions)
+	out.Spec.Assertions = assertions
+	return out, errs
 }
 
 func mergeFeature(parent, child types.Feature) types.Feature {
@@ -216,6 +241,61 @@ func mergeStringMap(parent, child types.OrderedMap[string]) types.OrderedMap[str
 		out.Set(k, v)
 	}
 	return out
+}
+
+// mergeAssertions accumulates the parent's named assertions and the child's,
+// parent entries first in author order, and refuses a name the child reuses to
+// declare a different rule.
+//
+// Two rules, two functions — deliberately not folded into mergeStringMap. That
+// helper serves labels and annotations, where the child's value replacing the
+// parent's on a shared key is the correct semantic. Here it would be wrong: an
+// extending Component's assertions ADD to the ones it inherits and never replace
+// one, so per-name override would silently drop a base's architectural invariant
+// at exactly the moment a wrapper is introduced. The alternative to refusing —
+// keeping both rules under disambiguated names — is worse, because the assertion
+// name is a stable rule identifier the failure diagnostic reports, and renaming
+// one behind the author's back destroys the one property that identifier has. A
+// refusal costs the author one rename. Anyone unifying this with mergeStringMap
+// re-admits the silent drop.
+//
+// A shared name carrying a byte-identical body is a no-op restatement, not a
+// replacement — the rule that survives is the same rule — so it merges without
+// complaint, and only a differing body halts. That distinction is also what
+// makes this merge idempotent, which is a requirement and not a nicety: the
+// chain walk resolves each entity independently and can therefore reach an
+// ancestor that has already had its own chain folded in, so it re-applies an
+// ancestor's entries to a descendant that already carries them. Every other
+// field's merge is idempotent by shape (replace, child-wins, concat-dedupe);
+// this one has to be idempotent on purpose. Refusing on the bare name would
+// turn a three-deep chain into a self-collision against its own middle tier.
+//
+// Order is the contract, not incidental: evaluation walks the merged map in
+// order and the first failing assertion halts, so a base's invariant reports
+// before a descendant's. Along a chain the fold accumulates root-first.
+func mergeAssertions(parentEntity, childEntity string, parent, child types.OrderedMap[string]) (types.OrderedMap[string], []*ValidationError) {
+	out := types.OrderedMap[string]{}
+	for k, v := range parent.All() {
+		out.Set(k, v)
+	}
+	var errs []*ValidationError
+	for k, v := range child.All() {
+		if taken, exists := out.Get(k); exists {
+			if taken == v {
+				continue
+			}
+			errs = append(errs, &ValidationError{
+				Entity:     "Component " + childEntity,
+				FieldPath:  ".spec.assertions." + k,
+				Constraint: fmt.Sprintf("assertion %q is already present on the base Component %q, declaring a different rule", k, parentEntity),
+				Suggestion: "Rename this assertion; an extending Component's assertions add to the base's and never replace one.",
+				Err:        ErrAssertionNameCollision,
+			})
+			continue
+		}
+		out.Set(k, v)
+	}
+	return out, errs
 }
 
 // concatDedupeString preserves order (parent first, then child), dropping duplicates.
