@@ -98,14 +98,18 @@ type ResolveResult struct {
 	AnnotationProvenance map[string]AnnotationProvenance
 
 	// LintAdvisories carries the exit-code-neutral advisory findings the
-	// catalog-aware checks produced alongside the halting guards — findings
+	// advisory checks produced alongside the halting guards — findings
 	// whose subject is legal authoring that is probably not what the author
 	// meant. They share the ResolverError shape (entity, field locator,
 	// message) so one position-recovery path serves both classes, but they
 	// never contribute to a verdict: a consumer renders them and proceeds.
 	//
-	// Filled by the caller that runs the checks, which is also the caller
-	// holding the catalog view the checks need; empty on a catalog-less path.
+	// Two producers fill it, and each APPENDS rather than assigns, so neither
+	// can drop the other's findings: a check reading only the resolved
+	// Aggregate runs while the resolve itself holds the inputs it needs and
+	// arrives here already populated, and a check needing the catalog view is
+	// run by the caller that holds that view and extends the slice. A
+	// catalog-less path therefore still carries the first producer's findings.
 	LintAdvisories []*ResolverError
 }
 
@@ -237,6 +241,14 @@ func resolveFromInputs(ctx context.Context, in ResolveInputs) (*ResolveResult, e
 	na := types.Normalize(&agg)
 	agg = *na.Aggregate()
 
+	// Advisory reading of the declared parameters against the references the
+	// Aggregate's own text makes. It runs here because this is the one point
+	// holding both halves it needs — the contract shallow-loaded above, and the
+	// raw text still carrying its reference expressions, which interpolation
+	// consumed on the way to the parsed aggregate. The aggregate is parsed by now
+	// only so the finding can name it.
+	advisories := LintUnreadParameters(in.AggregateRawBytes, contract, agg.Metadata.Name)
+
 	// Validate instance names
 	nameErrs := ValidateInstanceNames(na)
 	if len(nameErrs) > 0 {
@@ -263,5 +275,6 @@ func resolveFromInputs(ctx context.Context, in ResolveInputs) (*ResolveResult, e
 		AggregatePath:        in.AggregatePath,
 		ReleasePath:          in.ReleasePath,
 		AnnotationProvenance: map[string]AnnotationProvenance{},
+		LintAdvisories:       advisories,
 	}, nil
 }

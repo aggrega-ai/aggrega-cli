@@ -465,13 +465,18 @@ func ResolveAndValidate(
 
 		normalized := types.Normalize(resolveResult.Aggregate)
 
-		// Advisory checks run in the same scope as the halting guards and read
-		// the same normalized aggregate and catalog view, so this is the single
-		// producer both front ends consume: the build renders them to stderr
-		// below, the daemon maps them to editor warnings off Tier4Result. They
-		// are computed before the guard verdict so an advisory is not lost when
-		// an unrelated guard halts.
-		resolveResult.LintAdvisories = resolver.LintAttachmentSlotNearMiss(normalized, catalogLookup)
+		// The catalog-aware advisory checks run in the same scope as the halting
+		// guards and read the same normalized aggregate and catalog view. This is
+		// the single DRAIN both front ends consume: the build renders every
+		// advisory to stderr below, the daemon maps them to editor warnings off
+		// Tier4Result. They are computed before the guard verdict so an advisory is
+		// not lost when an unrelated guard halts.
+		//
+		// APPEND, never assign: the resolve arrives already carrying the advisories
+		// from the checks that needed only the Aggregate, and assigning here would
+		// silently drop them.
+		resolveResult.LintAdvisories = append(resolveResult.LintAdvisories,
+			resolver.LintAttachmentSlotNearMiss(normalized, catalogLookup)...)
 		for _, a := range resolveResult.LintAdvisories {
 			fmt.Fprintf(os.Stderr, "  lint: %s\n", a)
 		}

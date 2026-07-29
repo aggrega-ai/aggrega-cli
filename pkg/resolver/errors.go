@@ -88,6 +88,14 @@ var (
 	// warning.
 	ErrAttachmentSlotNearMiss = errors.New("attachment name is a near miss for a declared slot")
 
+	// ErrUnreadParameter marks an ADVISORY finding, not a halt: a parameter the
+	// Aggregate declares that no reference in the Aggregate's own text reads.
+	// Declaring a parameter nothing reads is legal — the compiler does not police
+	// which knobs an author exposes — so this sentinel never reaches a build's
+	// verdict; it exists so a front end can recognise the advisory class and
+	// render it as a warning.
+	ErrUnreadParameter = errors.New("declared parameter is read by no reference in the Aggregate")
+
 	// ErrGuardEntityViewInconsistency wraps an internal-consistency failure: a
 	// guard needs a catalog entity for a type that resolution resolved AS A
 	// CATALOG REFERENCE (a bare-token identity, not a Tier-1 relative-path file),
