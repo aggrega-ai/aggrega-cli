@@ -651,11 +651,12 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		}
 		values := state.ResolvedValues
 
-		// Ghost Infrastructure: authored values and infra keys the Recipe's
-		// valuesMapping never reads, so a catalog author notices a knob nothing
-		// consumes. See unreadValueWarnings for what the reading covers.
+		// Ghost Infrastructure: authored values, infra and per-connection uses
+		// keys the Recipe's valuesMapping never reads, so a catalog author
+		// notices a knob nothing consumes. See unreadValueWarnings for what the
+		// reading covers.
 		result.Warnings = append(result.Warnings,
-			unreadValueWarnings(nodeID, recipe, tmplCtx.Values, tmplCtx.Infra)...)
+			unreadValueWarnings(nodeID, recipe, tmplCtx.Values, tmplCtx.Infra, tmplCtx.Context.Uses)...)
 
 		hasWorkload := recipe != nil && !recipe.Spec.Workload.IsEmpty()
 

@@ -224,8 +224,9 @@ type IREdge struct {
 	// the edge's source — declares on the socket (valueSchema for Values,
 	// infraSchema for Infra), and both carry that contract's declared defaults
 	// for keys the author omitted (an authored value wins). Both project into
-	// the consuming node's render context at .uses.<alias>.values / .infra
-	// (the uses map is alias-keyed). Opaque to the core.
+	// the consuming node's render context at .context.uses.<alias>.values /
+	// .context.uses.<alias>.infra (the uses map is alias-keyed). Opaque to the
+	// core.
 	Values OrderedMap[any]                `json:"values,omitempty,omitzero"`
 	Infra  OrderedMap[any]                `json:"infra,omitempty,omitzero"`
 	Inject OrderedMap[OrderedMap[string]] `json:"inject,omitempty,omitzero"`
