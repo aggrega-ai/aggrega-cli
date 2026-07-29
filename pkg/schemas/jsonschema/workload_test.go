@@ -18,7 +18,7 @@ import (
 func TestWorkloadJSONSchemaEmbedded(t *testing.T) {
 	t.Parallel()
 	if WorkloadJSONSchema == "" {
-		t.Fatal("WorkloadJSONSchema is empty; the //go:embed directive did not pick up workload.json")
+		t.Fatal("WorkloadJSONSchema is empty; the canonical source rebound from the aggrega-schemas module carries no bytes")
 	}
 	if !strings.Contains(WorkloadJSONSchema, `"$schema"`) {
 		t.Errorf("expected $schema header in embedded source; got first 200 chars: %s", WorkloadJSONSchema[:200])
