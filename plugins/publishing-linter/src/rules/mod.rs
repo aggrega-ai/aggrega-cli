@@ -16,7 +16,6 @@ pub mod category_vs_directory;
 pub mod dynamic_refs;
 pub mod id_overrides;
 pub mod name_shape;
-pub mod narrowing;
 pub mod plugin_default_limits;
 pub mod schema_library_walker;
 pub mod secret_slot_declares_sensitive;

@@ -62,7 +62,7 @@ func (s Source) String() string {
 const EnvConfigOverride = "AGGREGA_CONFIG"
 
 // appendSlices captures the per-layer slices deferred to the post-overlay
-// concatenation pass: the seven `_append` companions, plus the CLI base list.
+// concatenation pass: the five `_append` companions, plus the CLI base list.
 // The `_append` companions defer concatenation until after the base overlay
 // completes, so the `_append` semantic composes correctly across layers (each
 // layer's `_append` extends the final merged base in precedence order). The CLI
@@ -70,33 +70,31 @@ const EnvConfigOverride = "AGGREGA_CONFIG"
 // overlaid base — because the CLI list composes across the cascade rather than
 // whole-replacing, so global and workspace CLI plugins both register.
 type appendSlices struct {
-	CatalogDirs         []string
-	NarrowingExemptions []NarrowingExemption
-	Governance          []PluginRef
-	Linter              []PluginRef
-	Importer            []PluginRef
-	Providers           []PluginRef
-	CLI                 []CLIPluginRef
+	CatalogDirs []string
+	Governance  []PluginRef
+	Linter      []PluginRef
+	Importer    []PluginRef
+	Providers   []PluginRef
+	CLI         []CLIPluginRef
 }
 
 // captureAppends extracts the deferred slices from a freshly-loaded layer
-// Config: the seven `_append` companions and the CLI base list (which composes
+// Config: the five `_append` companions and the CLI base list (which composes
 // rather than whole-replaces). The captured slices share storage with the
 // source Config; callers that subsequently mutate cfg should not also retain the
 // captured value.
 func captureAppends(cfg Config) appendSlices {
 	return appendSlices{
-		CatalogDirs:         cfg.Workspace.CatalogDirsAppend,
-		NarrowingExemptions: cfg.Lint.PublishingDiscipline.NarrowingExemptionsAppend,
-		Governance:          cfg.Plugins.GovernanceAppend,
-		Linter:              cfg.Plugins.LinterAppend,
-		Importer:            cfg.Plugins.ImporterAppend,
-		Providers:           cfg.Plugins.ProvidersAppend,
-		CLI:                 cfg.Plugins.CLI,
+		CatalogDirs: cfg.Workspace.CatalogDirsAppend,
+		Governance:  cfg.Plugins.GovernanceAppend,
+		Linter:      cfg.Plugins.LinterAppend,
+		Importer:    cfg.Plugins.ImporterAppend,
+		Providers:   cfg.Plugins.ProvidersAppend,
+		CLI:         cfg.Plugins.CLI,
 	}
 }
 
-// stripAppends zeroes the deferred fields on cfg: the seven `_append`
+// stripAppends zeroes the deferred fields on cfg: the five `_append`
 // companions and the CLI base list. Called on every layer's Config before
 // promoting it to merged (so the overlay pass does not carry these through) and
 // on the final merged Config. The CLI base is stripped here because its entries
@@ -104,7 +102,6 @@ func captureAppends(cfg Config) appendSlices {
 // base in place would let the nearest layer's `cli` whole-replace the rest.
 func stripAppends(cfg *Config) {
 	cfg.Workspace.CatalogDirsAppend = nil
-	cfg.Lint.PublishingDiscipline.NarrowingExemptionsAppend = nil
 	cfg.Plugins.GovernanceAppend = nil
 	cfg.Plugins.LinterAppend = nil
 	cfg.Plugins.ImporterAppend = nil
@@ -121,7 +118,6 @@ func stripAppends(cfg *Config) {
 func applyAppends(merged *Config, layers ...appendSlices) {
 	for _, layer := range layers {
 		merged.Workspace.CatalogDirs = append(merged.Workspace.CatalogDirs, layer.CatalogDirs...)
-		merged.Lint.PublishingDiscipline.NarrowingExemptions = append(merged.Lint.PublishingDiscipline.NarrowingExemptions, layer.NarrowingExemptions...)
 		merged.Plugins.Governance = append(merged.Plugins.Governance, layer.Governance...)
 		merged.Plugins.Linter = append(merged.Plugins.Linter, layer.Linter...)
 		merged.Plugins.Importer = append(merged.Plugins.Importer, layer.Importer...)
@@ -135,7 +131,7 @@ func applyAppends(merged *Config, layers ...appendSlices) {
 // per-layer rule for the two org-policy fields: `required` OR-folds (any layer
 // true wins, and no layer can turn it off) and `kinds` unions (a layer can
 // widen the scope, never shrink it). It is intentionally separate from
-// applyAppends, which owns the list-only contract of the seven `_append`
+// applyAppends, which owns the list-only contract of the five `_append`
 // fields — the signing policy is not an `_append` field and does not share that
 // path.
 //

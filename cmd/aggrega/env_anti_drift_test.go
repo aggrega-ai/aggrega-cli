@@ -58,7 +58,6 @@ var tier3Flags = []string{
 	"allow-aggrega-ai-prefix",
 	"allow-nonstandard-names",
 	"allow-category-mismatches",
-	"enforce-monotonic-narrowing",
 	"enforce-immutability",
 }
 

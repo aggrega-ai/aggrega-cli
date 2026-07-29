@@ -370,12 +370,11 @@ func TestResolvePluginSourcePaths(t *testing.T) {
 	}
 }
 
-// appendLens reports the length of each of the six `_append`-target fields, so
+// appendLens reports the length of each of the five `_append`-target fields, so
 // a per-field test can assert an append landed in exactly the right field.
 func appendLens(c workspaceconfig.Config) map[string]int {
 	return map[string]int{
 		"catalog_dirs": len(c.Workspace.CatalogDirs),
-		"narrowing":    len(c.Lint.PublishingDiscipline.NarrowingExemptions),
 		"governance":   len(c.Plugins.Governance),
 		"linter":       len(c.Plugins.Linter),
 		"importer":     len(c.Plugins.Importer),
@@ -383,8 +382,9 @@ func appendLens(c workspaceconfig.Config) map[string]int {
 	}
 }
 
-// TestResolveAppendPerField exercises each of the six `_append` fields
-// independently. applyAppends is six hand-written append statements, not a
+// TestResolveAppendPerField exercises each of the five `_append` fields
+// independently. applyAppends is six hand-written append statements (the five
+// `_append` targets plus the composing CLI base list), not a
 // generic loop, so a cross-wired statement (e.g. linter appending the governance
 // slice) is only caught by a per-field assertion. Each case sets exactly one
 // `_append` field with one entry and asserts that field grew by one while every
@@ -404,7 +404,6 @@ func TestResolveAppendPerField(t *testing.T) {
 		config string
 	}{
 		{"catalog_dirs", "workspace:\n  catalog_dirs_append: [\"x\"]\n"},
-		{"narrowing", "workspace: {}\nlint:\n  publishing_discipline:\n    narrowing_exemptions_append:\n      - entity: e\n        paths: [p]\n        reason: r\n"},
 		{"governance", "workspace: {}\nplugins:\n  governance_append:\n    - uri: oci://x@v1\n      role: ir-verdict\n"},
 		{"linter", "workspace: {}\nplugins:\n  linter_append:\n    - uri: oci://x@v1\n"},
 		{"importer", "workspace: {}\nplugins:\n  importer_append:\n    - uri: oci://x@v1\n"},

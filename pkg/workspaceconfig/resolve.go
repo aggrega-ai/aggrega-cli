@@ -27,8 +27,8 @@ const ConfigFilename = ".aggrega-config.yaml"
 // without ever touching the developer's hand-authored base config.
 //
 // The overlay is additive-only and validates against the same
-// aggrega-config-v1alpha1 schema as the base file. For each of the six
-// list-valued fields (catalog_dirs, narrowing_exemptions, the three plugin
+// aggrega-config-v1alpha1 schema as the base file. For each of the five
+// list-valued fields (catalog_dirs, the three plugin
 // sockets governance/linter/importer, and the provider bindings) its
 // entries — both the base list and any `_append` companion — are concatenated
 // onto the resolved list in cascade order. It cannot remove or scalar-override anything the base declares: a
@@ -369,7 +369,7 @@ func resolve(start, flagRoot string, lookup func(string) string, skipGlobal bool
 	// overlay. This is a scoped exception to the whole-replace-per-layer rule:
 	// `required` OR-folds and `kinds` unions, so a lower-precedence layer cannot
 	// shadow a higher one and the policy cannot be removed by an ordinary config
-	// edit. Kept separate from applyAppends, which owns the seven list fields.
+	// edit. Kept separate from applyAppends, which owns the six list fields.
 	signingPolicy.composeInto(&merged)
 
 	return &ResolvedWorkspace{

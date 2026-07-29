@@ -87,7 +87,7 @@ var ErrAmbiguousRegistryAlias = errors.New("workspaceconfig: registry alias matc
 // .aggrega-config.yaml gets Default() (the documented defaults
 // — hub.aggrega.ai for the registry, .aggrega for the cache,
 // "error" for halt_on_deprecated_severity, true for
-// enforce_monotonic_narrowing). Callers don't need to pre-check
+// enforce_immutability). Callers don't need to pre-check
 // for the file.
 //
 // Validation runs BEFORE typed unmarshalling: an invalid file

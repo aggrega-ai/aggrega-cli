@@ -4,7 +4,7 @@
 //! Shared parse of the wire `RawValue` input fields into owned
 //! `serde_json::Value` trees.
 //!
-//! The linter input carries `proposed`, `previous`, and `parent` as
+//! The linter input carries `proposed` and `previous` as
 //! `Box<RawValue>` — the verbatim JSON text the host serialised, kept
 //! unparsed at the ABI boundary (mirroring the Go host's
 //! `json.RawMessage`). Rules that inspect entity structure need an

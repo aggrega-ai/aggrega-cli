@@ -16,7 +16,7 @@ import (
 // typed Config together with the wire paths of any non-additive keys it
 // declared. Those keys carry no additive meaning, so the caller ignores them
 // and surfaces them as resolution warnings rather than applying them — the
-// overlay can only add to the seven list-valued fields, never scalar-override
+// overlay can only add to the six list-valued fields, never scalar-override
 // the base.
 func loadCIOverlay(path string) (cfg Config, ignored []string, err error) {
 	data, rerr := os.ReadFile(path)
@@ -36,21 +36,19 @@ func loadCIOverlay(path string) (cfg Config, ignored []string, err error) {
 	return cfg, ciNonAdditiveKeys(data), nil
 }
 
-// foldCIAdditive collapses a CI overlay's seven list-valued fields into one
+// foldCIAdditive collapses a CI overlay's six list-valued fields into one
 // append layer, folding BOTH each base list and its `_append` companion, so a
 // CI author writing either form adds to the resolved list. Scalar and map
 // fields on cfg are not read here — the overlay is additive-only and those
 // fields are reported by ciNonAdditiveKeys instead.
 func foldCIAdditive(cfg Config) appendSlices {
-	pd := cfg.Lint.PublishingDiscipline
 	return appendSlices{
-		CatalogDirs:         concat(cfg.Workspace.CatalogDirs, cfg.Workspace.CatalogDirsAppend),
-		NarrowingExemptions: concat(pd.NarrowingExemptions, pd.NarrowingExemptionsAppend),
-		Governance:          concat(cfg.Plugins.Governance, cfg.Plugins.GovernanceAppend),
-		Linter:              concat(cfg.Plugins.Linter, cfg.Plugins.LinterAppend),
-		Importer:            concat(cfg.Plugins.Importer, cfg.Plugins.ImporterAppend),
-		Providers:           concat(cfg.Plugins.Providers, cfg.Plugins.ProvidersAppend),
-		CLI:                 concat(cfg.Plugins.CLI, nil),
+		CatalogDirs: concat(cfg.Workspace.CatalogDirs, cfg.Workspace.CatalogDirsAppend),
+		Governance:  concat(cfg.Plugins.Governance, cfg.Plugins.GovernanceAppend),
+		Linter:      concat(cfg.Plugins.Linter, cfg.Plugins.LinterAppend),
+		Importer:    concat(cfg.Plugins.Importer, cfg.Plugins.ImporterAppend),
+		Providers:   concat(cfg.Plugins.Providers, cfg.Plugins.ProvidersAppend),
+		CLI:         concat(cfg.Plugins.CLI, nil),
 	}
 }
 
@@ -66,10 +64,9 @@ func concat[T any](a, b []T) []T {
 
 // ciNonAdditiveKeys reports the wire paths of every key in a CI overlay that
 // carries no additive semantic, in a stable (sorted) order for deterministic
-// diagnostics. Additive keys are the seven list-valued fields — the whole
+// diagnostics. Additive keys are the six list-valued fields — the whole
 // `plugins` block (the four sockets, the provider bindings, and their `_append`
-// companions), `workspace.catalog_dirs` (+ `_append`), and
-// `lint.publishing_discipline.narrowing_exemptions` (+ `_append`) — plus the
+// companions) and `workspace.catalog_dirs` (+ `_append`) — plus the
 // org signing policy `signing.required` and `signing.kinds`, which compose
 // monotonically across the cascade. Every other key — top-level scalars and
 // maps, the workspace catalog-unrelated keys, the lint enforcement gates, and
@@ -125,9 +122,9 @@ func ignoredSubKeys(parent string, node any, allowed ...string) []string {
 }
 
 // ignoredLintKeys reports the non-additive keys under a CI overlay's `lint`
-// block. Only lint.publishing_discipline.narrowing_exemptions and its
-// `_append` companion are additive; every other lint key (the enforcement
-// gates and discouragement toggles) is reported.
+// block. No lint key carries an additive semantic — the block holds only
+// scalar enforcement gates and discouragement toggles — so every key is
+// reported, at its full wire path.
 func ignoredLintKeys(node any) []string {
 	m, ok := node.(map[string]any)
 	if !ok {
@@ -139,7 +136,7 @@ func ignoredLintKeys(node any) []string {
 			out = append(out, "lint."+k)
 			continue
 		}
-		out = append(out, ignoredSubKeys("lint.publishing_discipline", m[k], "narrowing_exemptions", "narrowing_exemptions_append")...)
+		out = append(out, ignoredSubKeys("lint.publishing_discipline", m[k])...)
 	}
 	return out
 }

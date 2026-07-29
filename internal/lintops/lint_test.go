@@ -382,7 +382,7 @@ func TestLooksLikeOCIURI(t *testing.T) {
 }
 
 // TestEffectivePolicies pins effectivePolicies' consumption of the policy
-// resolver across all 8 workspace flags (6 allow_* + 2 enforce_*). Per flag: the
+// resolver across all 7 workspace flags (6 allow_* + 1 enforce_*). Per flag: the
 // workspace value passes through when the resolver echoes it, a resolver forcing
 // false emits false, and a resolver forcing true emits true. The resolver's own
 // tri-state precedence (the cobra --X/--no-X flag pairs) is covered separately at
@@ -399,7 +399,6 @@ func TestEffectivePolicies(t *testing.T) {
 		{"allow-aggrega-ai-prefix", func(c *workspaceconfig.PublishingDisciplineConfig, v bool) { c.AllowAggregaAIPrefix = v }, "allow_aggrega_ai_prefix"},
 		{"allow-nonstandard-names", func(c *workspaceconfig.PublishingDisciplineConfig, v bool) { c.AllowNonstandardNames = v }, "allow_nonstandard_names"},
 		{"allow-category-mismatches", func(c *workspaceconfig.PublishingDisciplineConfig, v bool) { c.AllowCategoryMismatches = v }, "allow_category_mismatches"},
-		{"enforce-monotonic-narrowing", func(c *workspaceconfig.PublishingDisciplineConfig, v bool) { c.EnforceMonotonicNarrowing = v }, "enforce_monotonic_narrowing"},
 		{"enforce-immutability", func(c *workspaceconfig.PublishingDisciplineConfig, v bool) { c.EnforceImmutability = v }, "enforce_immutability"},
 	}
 	for _, tc := range flagBases {
@@ -493,7 +492,7 @@ func TestDefaultRuleIDs(t *testing.T) {
 	defaultRules := defaultRuleIDs(false)
 	prePublishRules := defaultRuleIDs(true)
 
-	wantDefault := []string{"annotation-prefix", "name-shape", "narrowing", "dynamic-refs", "id-overrides", "category-matches-directory", "x-aggrega-discouragement", "plugin-default-limits", "secret-slot-declares-sensitive"}
+	wantDefault := []string{"annotation-prefix", "name-shape", "dynamic-refs", "id-overrides", "category-matches-directory", "x-aggrega-discouragement", "plugin-default-limits", "secret-slot-declares-sensitive"}
 	if len(defaultRules) != len(wantDefault) {
 		t.Fatalf("default mode rule count: got %d; want %d", len(defaultRules), len(wantDefault))
 	}

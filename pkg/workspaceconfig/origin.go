@@ -211,9 +211,6 @@ func originFields() []originField {
 		sc("build.halt_on_deprecated", func(c Config) string { return strconv.FormatBool(c.Build.HaltOnDeprecated) }),
 		sc("build.halt_on_deprecated_severity", func(c Config) string { return c.Build.HaltOnDeprecatedSeverity }),
 		sc("build.yaml_indent", func(c Config) string { return strconv.Itoa(c.Build.YAMLIndent) }),
-		sc("lint.publishing_discipline.enforce_monotonic_narrowing", func(c Config) string {
-			return strconv.FormatBool(c.Lint.PublishingDiscipline.EnforceMonotonicNarrowing)
-		}),
 		sc("lint.publishing_discipline.enforce_immutability", func(c Config) string {
 			return strconv.FormatBool(c.Lint.PublishingDiscipline.EnforceImmutability)
 		}),
@@ -275,11 +272,6 @@ func originFields() []originField {
 		ls("plugins.cli",
 			func(c Config) string { return joinCLIRefs(c.Plugins.CLI) },
 			func(c Config) string { return joinCLIRefs(c.Plugins.CLI) }),
-		ls("lint.publishing_discipline.narrowing_exemptions",
-			func(c Config) string { return joinExemptions(c.Lint.PublishingDiscipline.NarrowingExemptions) },
-			func(c Config) string {
-				return joinExemptions(c.Lint.PublishingDiscipline.NarrowingExemptions) + originAppendSep + joinExemptions(c.Lint.PublishingDiscipline.NarrowingExemptionsAppend)
-			}),
 		ls("registries",
 			func(c Config) string { return joinRegistries(c.Registries) },
 			func(c Config) string { return joinRegistries(c.Registries) }),
@@ -334,19 +326,6 @@ func joinRegistries(regs []RegistryConfig) string {
 	parts := make([]string, 0, len(regs))
 	for _, r := range regs {
 		parts = append(parts, r.Host)
-	}
-	return "[" + strings.Join(parts, ", ") + "]"
-}
-
-// joinExemptions renders a narrowing-exemption list by each entry's entity,
-// preserving list order.
-func joinExemptions(ex []NarrowingExemption) string {
-	if len(ex) == 0 {
-		return "[]"
-	}
-	parts := make([]string, 0, len(ex))
-	for _, e := range ex {
-		parts = append(parts, e.Entity)
 	}
 	return "[" + strings.Join(parts, ", ") + "]"
 }

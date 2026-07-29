@@ -166,8 +166,6 @@ func TestRuleParticipation(t *testing.T) {
 	cases := []participationCase{
 		{ruleID: "annotation-prefix", fixtureFile: "annotation_prefix.yaml"},
 		{ruleID: "name-shape", fixtureFile: "name_shape.yaml"},
-		{ruleID: "narrowing", fixtureFile: "narrowing_child.yaml",
-			policyOverride: map[string]bool{"enforce-monotonic-narrowing": true}},
 		{ruleID: "dynamic-refs", fixtureFile: "dynamic_refs.yaml"},
 		{ruleID: "id-overrides", fixtureFile: "id_overrides.yaml"},
 		{ruleID: "category-matches-directory", fixtureFile: "category_mismatch.yaml"},
@@ -213,16 +211,6 @@ func dispatchAndCheckRule(t *testing.T, pluginPath string, c participationCase) 
 	if c.ruleID == "category-matches-directory" {
 		input.SourcePath = "aggrega-hub/aggrega-catalog/component/" + header.Metadata.Name + ".yaml"
 	}
-	// Provide parent bytes for narrowing.
-	if c.ruleID == "narrowing" {
-		parentYAML := readFixture(t, "participation", "narrowing_parent.yaml")
-		parentJSON, _, err := yamlToLinterJSON(parentYAML)
-		if err != nil {
-			t.Fatalf("parent yaml→json: %v", err)
-		}
-		input.Parent = parentJSON
-	}
-
 	pluginBytes, err := os.ReadFile(pluginPath)
 	if err != nil {
 		t.Fatalf("read plugin %s: %v", pluginPath, err)
@@ -244,9 +232,7 @@ func dispatchAndCheckRule(t *testing.T, pluginPath string, c participationCase) 
 // at defaults.
 func buildParticipationPolicies(overrides map[string]bool) json.RawMessage {
 	policies := map[string]any{
-		"enforce_monotonic_narrowing":       false,
 		"enforce_immutability":              false,
-		"narrowing_exemptions":              []any{},
 		"allow_dynamic_refs":                false,
 		"allow_id_overrides":                false,
 		"allow_direct_x_aggrega_extensions": false,
@@ -256,8 +242,6 @@ func buildParticipationPolicies(overrides map[string]bool) json.RawMessage {
 	}
 	for k, v := range overrides {
 		switch k {
-		case "enforce-monotonic-narrowing":
-			policies["enforce_monotonic_narrowing"] = v
 		case "enforce-immutability":
 			policies["enforce_immutability"] = v
 		}
@@ -474,7 +458,6 @@ func TestRuleParticipationCoversAllDispatchedRules(t *testing.T) {
 		"schema-evolution", // covered by the matrix test
 		"annotation-prefix",
 		"name-shape",
-		"narrowing",
 		"dynamic-refs",
 		"id-overrides",
 		"category-matches-directory",

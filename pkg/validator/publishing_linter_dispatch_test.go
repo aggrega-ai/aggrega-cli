@@ -216,11 +216,7 @@ func TestPoliciesRoundTripThroughSchema(t *testing.T) {
 	// field. This mirrors workspaceconfig.PublishingDisciplineConfig's
 	// shape exactly per the schema's Policies $def.
 	policies := json.RawMessage(`{
-		"enforce_monotonic_narrowing": true,
 		"enforce_immutability": true,
-		"narrowing_exemptions": [
-			{"entity": "core/legacy", "paths": ["spec.schema.values.timeout"], "reason": "deferred refactor"}
-		],
 		"allow_dynamic_refs": true,
 		"allow_id_overrides": true,
 		"allow_direct_x_aggrega_extensions": true,
@@ -368,46 +364,6 @@ func TestDispatchIdOverridesViolation(t *testing.T) {
 	}
 	if findings[0].RuleID != "id-overrides" {
 		t.Errorf("rule_id: got %q; want id-overrides", findings[0].RuleID)
-	}
-}
-
-// TestDispatchNarrowingViolation pins the narrowing rule
-// end-to-end. Default Policies has enforce_monotonic_narrowing
-// false, so the rule passes silently; the test explicitly enables
-// enforcement via Policies, supplies a parent, and asserts the
-// broadening child produces a narrowing finding. Pins the
-// LinterInput.Parent field's end-to-end wiring.
-func TestDispatchNarrowingViolation(t *testing.T) {
-	pluginBytes := wasmtest.EnsureFixtureBytes(t, "publishing-linter.wasm")
-	proposed := json.RawMessage(`{
-		"kind": "Component",
-		"metadata": {"name": "x"},
-		"spec": {"schema": {"values": {"a": 1, "b": 2}}, "extends": "base"}
-	}`)
-	parent := json.RawMessage(`{
-		"kind": "Component",
-		"metadata": {"name": "base"},
-		"spec": {"schema": {"values": {"a": 1}}}
-	}`)
-	policies := json.RawMessage(`{"enforce_monotonic_narrowing": true}`)
-	findings, err := validator.DispatchPublishingLinter(linterSpec(pluginBytes), "", validator.LinterInput{
-		RuleID:     "narrowing",
-		EntityKind: "Component",
-		Proposed:   proposed,
-		Parent:     parent,
-		Policies:   policies,
-	})
-	if err != nil {
-		t.Fatalf("DispatchPublishingLinter: %v", err)
-	}
-	if len(findings) != 1 {
-		t.Fatalf("expected 1 finding; got %d", len(findings))
-	}
-	if findings[0].RuleID != "narrowing" {
-		t.Errorf("rule_id: got %q; want narrowing", findings[0].RuleID)
-	}
-	if !strings.Contains(findings[0].Message, "narrowing violation") {
-		t.Errorf("message should describe a narrowing violation; got %q", findings[0].Message)
 	}
 }
 

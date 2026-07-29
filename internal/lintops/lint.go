@@ -9,9 +9,7 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"slices"
-	"strings"
 
 	"github.com/Masterminds/semver/v3"
 	"go.yaml.in/yaml/v3"
@@ -52,7 +50,7 @@ type Config struct {
 	Workspace *workspaceconfig.ResolvedWorkspace
 
 	// DiagOut is the sink for lint's diagnostic output (the first-publication
-	// note, the pre-release-only warning, the not-resolvable-parent note, and the
+	// note, the pre-release-only warning, and the
 	// findings report). Nil defaults to os.Stderr at the top of RunEntity;
 	// callers pass a buffer to capture diagnostics without mutating a process
 	// global.
@@ -77,10 +75,9 @@ func workspaceOrResolve(ws *workspaceconfig.ResolvedWorkspace) (*workspaceconfig
 }
 
 // lintEntityHeader is the minimum YAML envelope lint parses out of the proposed
-// entity file: kind, metadata.name, metadata.version, metadata.labels,
-// spec.extends, and spec.capability. It extends the publishable-entity header
-// shape for narrowing-rule parent resolution and the core-plugin evolution-gate
-// exemption.
+// entity file: kind, metadata.name, metadata.version, metadata.labels, and
+// spec.capability. It extends the publishable-entity header shape for the
+// core-plugin evolution-gate exemption.
 type lintEntityHeader struct {
 	Kind     string `yaml:"kind"`
 	Metadata struct {
@@ -90,7 +87,6 @@ type lintEntityHeader struct {
 		Labels     map[string]string `yaml:"labels"`
 	} `yaml:"metadata"`
 	Spec struct {
-		Extends    string `yaml:"extends"`
 		Capability string `yaml:"capability"`
 	} `yaml:"spec"`
 }
@@ -108,7 +104,6 @@ func defaultRuleIDs(prePublish bool) []string {
 	rules := []string{
 		"annotation-prefix",
 		"name-shape",
-		"narrowing",
 		"dynamic-refs",
 		"id-overrides",
 		"category-matches-directory",
@@ -232,9 +227,7 @@ func RunEntity(cfg Config) error {
 		firstPublication = previousVersion == ""
 	}
 
-	parentJSON, _ := resolveParent(header, wsCfg, cfg.EntityPath, cfg.DiagOut)
-
-	inputs := buildRuleInputs(header.Kind, proposedJSON, previousJSON, parentJSON, policies, cfg.EntityPath, prePublish)
+	inputs := buildRuleInputs(header.Kind, proposedJSON, previousJSON, policies, cfg.EntityPath, prePublish)
 	export := ""
 	if len(wsCfg.Plugins.Linter) > 0 {
 		export = wsCfg.Plugins.Linter[0].Function
@@ -503,14 +496,8 @@ func convertYAMLMaps(v interface{}) interface{} {
 // effectivePolicies merges workspace policy values with CLI tri-state overrides.
 // resolve is called per flag-base name to determine the effective value.
 func effectivePolicies(ws workspaceconfig.PublishingDisciplineConfig, resolve func(string, bool) bool) json.RawMessage {
-	exemptions := ws.NarrowingExemptions
-	if exemptions == nil {
-		exemptions = []workspaceconfig.NarrowingExemption{}
-	}
 	policies := map[string]any{
-		"enforce_monotonic_narrowing":       resolve("enforce-monotonic-narrowing", ws.EnforceMonotonicNarrowing),
 		"enforce_immutability":              resolve("enforce-immutability", ws.EnforceImmutability),
-		"narrowing_exemptions":              exemptions,
 		"allow_dynamic_refs":                resolve("allow-dynamic-refs", ws.AllowDynamicRefs),
 		"allow_id_overrides":                resolve("allow-id-overrides", ws.AllowIDOverrides),
 		"allow_direct_x_aggrega_extensions": resolve("allow-direct-x-aggrega-extensions", ws.AllowDirectXAggregaExtensions),
@@ -599,54 +586,13 @@ func fetchPreviousRegistryVersion(
 	return previousJSON, latest, nil
 }
 
-// resolveParent walks workspace catalog_dirs to find the parent entity named in
-// header.Spec.Extends. Only catalog-dir resolution is performed today; OCI parent
-// fetch is not yet implemented. Returns nil silently when extends is empty or the
-// parent isn't locally resolvable — the narrowing rule short-circuits on nil
-// parent. The not-locally-resolvable note is written to diagOut (os.Stderr in
-// production).
-func resolveParent(header lintEntityHeader, wsCfg workspaceconfig.Config, entityPath string, diagOut io.Writer) (json.RawMessage, error) {
-	if header.Spec.Extends == "" {
-		return nil, nil
-	}
-	candidates := wsCfg.Workspace.CatalogDirs
-	if len(candidates) == 0 {
-		// No catalog dirs configured; fall back to the entity file's
-		// own directory (development convenience for testing).
-		candidates = []string{filepath.Dir(entityPath)}
-	}
-	// Strip any version suffix from the extends URI; resolution is
-	// path-based, not version-pinned at this layer.
-	name := header.Spec.Extends
-	if idx := strings.LastIndex(name, ":"); idx >= 0 {
-		// Only strip if the bit after the colon looks like a version.
-		if _, err := semver.NewVersion(name[idx+1:]); err == nil {
-			name = name[:idx]
-		}
-	}
-	kindLower := strings.ToLower(header.Kind)
-	for _, dir := range candidates {
-		candidate := filepath.Join(dir, kindLower, name+".yaml")
-		bytes, err := os.ReadFile(candidate)
-		if err == nil {
-			parentJSON, _, err := yamlToLinterJSON(bytes)
-			if err != nil {
-				return nil, fmt.Errorf("parse parent %s: %w", candidate, err)
-			}
-			return parentJSON, nil
-		}
-	}
-	fmt.Fprintf(diagOut, "narrowing rule: parent %q not locally resolvable; rule skipped\n", header.Spec.Extends)
-	return nil, nil
-}
-
 // buildRuleInputs builds one LinterInput per rule the host dispatches to. The
-// schema-evolution rule (only in --pre-publish) gets the previous bytes; the
-// narrowing rule gets parent; category-matches-directory gets source_path. Other
-// rules get the same shared proposed bytes + policies.
+// schema-evolution rule (only in --pre-publish) gets the previous bytes;
+// category-matches-directory gets source_path. Other rules get the same shared
+// proposed bytes + policies.
 func buildRuleInputs(
 	kind string,
-	proposed, previous, parent, policies json.RawMessage,
+	proposed, previous, policies json.RawMessage,
 	entityPath string,
 	prePublish bool,
 ) []validator.LinterInput {
@@ -662,8 +608,6 @@ func buildRuleInputs(
 		switch r {
 		case "schema-evolution":
 			input.Previous = previous
-		case "narrowing":
-			input.Parent = parent
 		case "category-matches-directory":
 			input.SourcePath = entityPath
 		}

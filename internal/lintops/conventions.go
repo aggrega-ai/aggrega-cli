@@ -138,8 +138,7 @@ func lintConventionsFiles(rw *workspaceconfig.ResolvedWorkspace, catalogFlagDirs
 		if err != nil {
 			return fmt.Errorf("aggrega lint: parse %s: %w", path, err)
 		}
-		parentJSON, _ := resolveParent(header, wsCfg, path, diagOut)
-		inputs := buildRuleInputs(header.Kind, proposedJSON, nil, parentJSON, policies, path, false)
+		inputs := buildRuleInputs(header.Kind, proposedJSON, nil, policies, path, false)
 		rawFindings, err := validator.DispatchPublishingLinterBatch(pluginSpec, export, inputs)
 		if err != nil {
 			return fmt.Errorf("aggrega lint: dispatch %s: %w", path, err)

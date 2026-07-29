@@ -54,14 +54,7 @@ plugins:
 
 lint:
   publishing_discipline:
-    enforce_monotonic_narrowing: false
     enforce_immutability: false
-    narrowing_exemptions:
-      - entity: my-team/datastore/mariadb-eu
-        paths:
-          - spec.schema.values.primary.replicaCount
-          - spec.schema.values.secondary.replicaCount
-        reason: "Single-region deployment; secondary replicas not provisioned."
     allow_dynamic_refs: true
     allow_id_overrides: true
     allow_direct_x_aggrega_extensions: true
@@ -113,24 +106,8 @@ lint:
 	}
 
 	pd := got.Lint.PublishingDiscipline
-	if pd.EnforceMonotonicNarrowing {
-		t.Errorf("EnforceMonotonicNarrowing should be false (file opt-out)")
-	}
 	if pd.EnforceImmutability {
 		t.Errorf("EnforceImmutability should be false (file opt-out)")
-	}
-	if len(pd.NarrowingExemptions) != 1 {
-		t.Fatalf("NarrowingExemptions len: %d", len(pd.NarrowingExemptions))
-	}
-	ex := pd.NarrowingExemptions[0]
-	if ex.Entity != "my-team/datastore/mariadb-eu" {
-		t.Errorf("exemption.Entity: %q", ex.Entity)
-	}
-	if len(ex.Paths) != 2 {
-		t.Errorf("exemption.Paths len: %d", len(ex.Paths))
-	}
-	if ex.Reason == "" {
-		t.Errorf("exemption.Reason should be non-empty")
 	}
 	if !pd.AllowDynamicRefs || !pd.AllowIDOverrides ||
 		!pd.AllowDirectXAggregaExtensions || !pd.AllowNonstandardNames ||
@@ -144,8 +121,8 @@ func TestLoadOverlaysDefaultsForOmittedFields(t *testing.T) {
 	// Fixture sets workspace.offline only; every other field omitted.
 	// The overlay-on-Default pattern preserves the documented defaults
 	// for absent keys: DefaultRegistry, CacheDir,
-	// HaltOnDeprecatedSeverity, EnforceMonotonicNarrowing, and
-	// EnforceImmutability. AutoPull is the Go zero-value (false).
+	// HaltOnDeprecatedSeverity, and EnforceImmutability. AutoPull is the
+	// Go zero-value (false).
 	content := `
 offline: true
 `
@@ -172,9 +149,6 @@ offline: true
 	if got.Build.HaltOnDeprecatedSeverity != "error" {
 		t.Errorf("Build.HaltOnDeprecatedSeverity: want %q (Default); got %q",
 			"error", got.Build.HaltOnDeprecatedSeverity)
-	}
-	if !got.Lint.PublishingDiscipline.EnforceMonotonicNarrowing {
-		t.Errorf("Lint.PublishingDiscipline.EnforceMonotonicNarrowing: want true (Default); got false")
 	}
 	if !got.Lint.PublishingDiscipline.EnforceImmutability {
 		t.Errorf("Lint.PublishingDiscipline.EnforceImmutability: want true (Default); got false")
@@ -239,48 +213,45 @@ func TestLoadHandlesFileAbsenceAsDefault(t *testing.T) {
 
 func TestLoadHaltsOnMalformedField(t *testing.T) {
 	t.Parallel()
-	// narrowing_exemptions declared as a scalar string violates the
-	// schema's `type: array` constraint at that field.
+	// governance declared as a scalar string violates the schema's
+	// `type: array` constraint at that field.
 	content := `
-lint:
-  publishing_discipline:
-    narrowing_exemptions: "not-a-list"
+plugins:
+  governance: "not-a-list"
 `
 	path := writeFixture(t, content)
 	_, err := load(path)
 	if err == nil {
-		t.Fatal("expected validation error for non-list narrowing_exemptions; got nil")
+		t.Fatal("expected validation error for non-list governance; got nil")
 	}
 	if !errors.Is(err, ErrConfigInvalid) {
 		t.Errorf("error should wrap ErrConfigInvalid; got %v", err)
 	}
-	if !strings.Contains(err.Error(), "narrowing_exemptions") {
+	if !strings.Contains(err.Error(), "governance") {
 		t.Errorf("error should name the offending field; got: %v", err)
 	}
 }
 
 func TestLoadHaltsOnNonObjectListEntry(t *testing.T) {
 	t.Parallel()
-	// narrowing_exemptions is a list-of-objects per the schema; a
-	// scalar or wrong-typed entry violates the item schema.
+	// governance is a list-of-objects per the schema; a scalar or
+	// wrong-typed entry violates the item schema.
 	content := `
-lint:
-  publishing_discipline:
-    narrowing_exemptions:
-      - 42
-      - entity: my-team/foo
-        paths: ["spec.x"]
-        reason: ok
+plugins:
+  governance:
+    - 42
+    - uri: oci://hub.aggrega.ai/aggrega-team/policy-bundle@v1
+      role: ir-verdict
 `
 	path := writeFixture(t, content)
 	_, err := load(path)
 	if err == nil {
-		t.Fatal("expected validation error for non-object entry in narrowing_exemptions; got nil")
+		t.Fatal("expected validation error for non-object entry in governance; got nil")
 	}
 	if !errors.Is(err, ErrConfigInvalid) {
 		t.Errorf("error should wrap ErrConfigInvalid; got %v", err)
 	}
-	if !strings.Contains(err.Error(), "narrowing_exemptions") {
+	if !strings.Contains(err.Error(), "governance") {
 		t.Errorf("error should name the offending field path; got: %v", err)
 	}
 }
@@ -307,9 +278,6 @@ func TestDefaultReturnsDocumentedDefaults(t *testing.T) {
 		t.Errorf("Default().Build.HaltOnDeprecatedSeverity: %q", d.Build.HaltOnDeprecatedSeverity)
 	}
 	pd := d.Lint.PublishingDiscipline
-	if !pd.EnforceMonotonicNarrowing {
-		t.Errorf("Default().Lint.PublishingDiscipline.EnforceMonotonicNarrowing should be true")
-	}
 	if !pd.EnforceImmutability {
 		t.Errorf("Default().Lint.PublishingDiscipline.EnforceImmutability should be true")
 	}
@@ -317,9 +285,6 @@ func TestDefaultReturnsDocumentedDefaults(t *testing.T) {
 		pd.AllowDirectXAggregaExtensions || pd.AllowNonstandardNames ||
 		pd.AllowCategoryMismatches {
 		t.Errorf("Default() allow_* flags must all be false; got %+v", pd)
-	}
-	if len(pd.NarrowingExemptions) != 0 {
-		t.Errorf("Default().Lint.PublishingDiscipline.NarrowingExemptions must be empty; got %v", pd.NarrowingExemptions)
 	}
 }
 
@@ -420,9 +385,6 @@ lint: {}
 	if got.Build.HaltOnDeprecatedSeverity != "error" {
 		t.Errorf("Build.HaltOnDeprecatedSeverity: want %q (Default preserved); got %q",
 			"error", got.Build.HaltOnDeprecatedSeverity)
-	}
-	if !got.Lint.PublishingDiscipline.EnforceMonotonicNarrowing {
-		t.Errorf("Lint.PublishingDiscipline.EnforceMonotonicNarrowing: want true (Default preserved); got false")
 	}
 	if !got.Lint.PublishingDiscipline.EnforceImmutability {
 		t.Errorf("Lint.PublishingDiscipline.EnforceImmutability: want true (Default preserved); got false")

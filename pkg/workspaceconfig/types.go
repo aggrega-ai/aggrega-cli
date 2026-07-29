@@ -22,16 +22,16 @@
 // Several documented defaults are NOT the Go zero-value:
 // default_registry = "hub.aggrega.ai", artifact_cache_dir =
 // ".aggrega/cache", halt_on_deprecated_severity = "error",
-// enforce_monotonic_narrowing = true, enforce_immutability = true,
+// enforce_immutability = true,
 // parse_cache.max_entries = 1000, and parse_cache.max_bytes =
 // 100_000_000. Callers obtain a Config seeded with those defaults via
 // Default(); the loader's overlay pattern (Load reads file → schema
 // validates → yaml.Unmarshal into a Default()-initialised value)
 // preserves the documented defaults when the file omits a key.
 //
-// List-append escape hatches: six list-valued fields (catalog_dirs,
-// narrowing_exemptions, the three plugin sockets governance/linter/
-// importer, and the provider bindings) carry a sibling `<field>_append`
+// List-append escape hatches: five list-valued fields (catalog_dirs,
+// the three plugin sockets governance/linter/importer, and the provider
+// bindings) carry a sibling `<field>_append`
 // companion. At
 // each precedence layer, any entries in the `_append` companion are
 // concatenated onto the resolved base list — letting workspace and
@@ -47,7 +47,7 @@
 // `.aggrega-config-append-ci.yaml` gives an automated pipeline a file
 // it owns and may overwrite wholesale without touching the developer's
 // base config. It validates against the same schema and folds
-// additively: for each of the seven list-valued fields, both its base
+// additively: for each of the six list-valued fields, both its base
 // list and its `_append` companion concatenate onto the resolved list
 // in cascade order. The overlay is additive-only — it cannot remove or
 // scalar-override anything the base declares, so a scalar or map field
@@ -635,16 +635,9 @@ type LintConfig struct {
 }
 
 // PublishingDisciplineConfig carries workspace-wide gates for the
-// publishing-linter's rule set. EnforceMonotonicNarrowing and
-// EnforceImmutability are workspace-wide rule gates (both default
-// true). NarrowingExemptions carries per-entity escape hatches for
-// legitimate narrowing cases. The remaining flags relax individual
-// discouragement checks.
-//
-// NarrowingExemptionsAppend is the merge-time companion for
-// NarrowingExemptions: at each precedence layer the entries here are
-// concatenated onto the resolved exemption list. LoadWithGlobal
-// zeroes this field on the returned Config.
+// publishing-linter's rule set. EnforceImmutability is a
+// workspace-wide rule gate (default true). The remaining flags relax
+// individual discouragement checks.
 //
 // JSON marshalling matches the schema's Policies $def in
 // aggrega-schemas/json/wasm-linter-v1alpha1.schema.json.
@@ -654,27 +647,13 @@ type LintConfig struct {
 // renaming a field here requires a coordinated update to the schema
 // and to the plugin's policies.rs mirror.
 type PublishingDisciplineConfig struct {
-	EnforceMonotonicNarrowing     bool                 `yaml:"enforce_monotonic_narrowing"`
-	EnforceImmutability           bool                 `yaml:"enforce_immutability"`
-	NarrowingExemptions           []NarrowingExemption `yaml:"narrowing_exemptions"`
-	NarrowingExemptionsAppend     []NarrowingExemption `yaml:"narrowing_exemptions_append"`
-	AllowDynamicRefs              bool                 `yaml:"allow_dynamic_refs"`
-	AllowIDOverrides              bool                 `yaml:"allow_id_overrides"`
-	AllowDirectXAggregaExtensions bool                 `yaml:"allow_direct_x_aggrega_extensions"`
-	AllowAggregaAIPrefix          bool                 `yaml:"allow_aggrega_ai_prefix"`
-	AllowNonstandardNames         bool                 `yaml:"allow_nonstandard_names"`
-	AllowCategoryMismatches       bool                 `yaml:"allow_category_mismatches"`
-}
-
-// NarrowingExemption documents a per-entity exemption from the
-// narrowing-violation rule. Entity names the catalog entity; Paths
-// enumerate the specific schema paths exempted (e.g.
-// "spec.schema.values.primary.replicaCount"); Reason is the
-// human-readable justification surfaced to reviewers.
-type NarrowingExemption struct {
-	Entity string   `yaml:"entity"`
-	Paths  []string `yaml:"paths"`
-	Reason string   `yaml:"reason"`
+	EnforceImmutability           bool `yaml:"enforce_immutability"`
+	AllowDynamicRefs              bool `yaml:"allow_dynamic_refs"`
+	AllowIDOverrides              bool `yaml:"allow_id_overrides"`
+	AllowDirectXAggregaExtensions bool `yaml:"allow_direct_x_aggrega_extensions"`
+	AllowAggregaAIPrefix          bool `yaml:"allow_aggrega_ai_prefix"`
+	AllowNonstandardNames         bool `yaml:"allow_nonstandard_names"`
+	AllowCategoryMismatches       bool `yaml:"allow_category_mismatches"`
 }
 
 // ParseCacheConfig carries the daemon's parse-cache eviction caps. Both
@@ -726,8 +705,7 @@ type ServeConfig struct {
 // Eight documented defaults are NOT the Go zero-value and are seeded
 // explicitly: DefaultRegistry = "hub.aggrega.ai",
 // ArtifactCacheDir = ".aggrega/cache",
-// Build.HaltOnDeprecatedSeverity = "error",
-// Lint.PublishingDiscipline.EnforceMonotonicNarrowing = true,
+// Build.HaltOnDeprecatedSeverity = "error", Build.YAMLIndent = 2,
 // Lint.PublishingDiscipline.EnforceImmutability = true,
 // ParseCache.MaxEntries = 1000, ParseCache.MaxBytes = 100_000_000,
 // and Concurrency.PoolSize = 4. Remaining fields stay at Go's
@@ -748,8 +726,7 @@ func Default() Config {
 		},
 		Lint: LintConfig{
 			PublishingDiscipline: PublishingDisciplineConfig{
-				EnforceMonotonicNarrowing: true,
-				EnforceImmutability:       true,
+				EnforceImmutability: true,
 			},
 		},
 		ParseCache: ParseCacheConfig{

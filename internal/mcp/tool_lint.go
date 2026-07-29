@@ -53,7 +53,7 @@ var lintToolSpec = toolSpec{
 	kinds: []string{"aggregate", "component", "feature", "featurerecipe", "manifest", "mappinglibrary", "plugin", "recipe", "release", "schemalibrary"},
 	description: "Run the publishing-discipline linter over a catalog entity, or validate a Release's resolved " +
 		"dependency closure, driving the compiler's own lint operation. Two modes: pass `entity` (a catalog entity YAML " +
-		"path) to run the publishing rules — naming shape, category-matches-directory, monotonic narrowing on extend, " +
+		"path) to run the publishing rules — naming shape, category-matches-directory, " +
 		"annotation-prefix discipline, and the like — which report at warning severity over local content without " +
 		"consulting any registry; or pass `release` (a Release YAML path) to validate every catalog entity the Release " +
 		"reaches against its composed schemas. With `pre_publish` (entity mode only) the previous published version is " +

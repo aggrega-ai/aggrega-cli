@@ -39,8 +39,6 @@ var (
 	lintNoAllowNonstandardNames   bool
 	lintAllowCategoryMismatches   bool
 	lintNoAllowCategoryMismatches bool
-	lintEnforceMonotonicNarrowing bool
-	lintNoEnforceMonotonic        bool
 	lintEnforceImmutability       bool
 	lintNoEnforceImmutability     bool
 )
@@ -141,8 +139,6 @@ can be overridden per invocation via the --allow-*/--no-allow-* and
 	c.Flags().BoolVar(&lintNoAllowCategoryMismatches, "no-allow-category-mismatches", false, "Force allow_category_mismatches=false")
 
 	// Tri-state enforce_* flags
-	c.Flags().BoolVar(&lintEnforceMonotonicNarrowing, "enforce-monotonic-narrowing", false, "Force enforce_monotonic_narrowing=true")
-	c.Flags().BoolVar(&lintNoEnforceMonotonic, "no-enforce-monotonic-narrowing", false, "Force enforce_monotonic_narrowing=false")
 	c.Flags().BoolVar(&lintEnforceImmutability, "enforce-immutability", false, "Force enforce_immutability=true")
 	c.Flags().BoolVar(&lintNoEnforceImmutability, "no-enforce-immutability", false, "Force enforce_immutability=false")
 

@@ -31,27 +31,7 @@ pub fn fixture(
         entity_kind: entity_kind.to_string(),
         proposed: to_raw_value(&proposed).expect("encode proposed"),
         previous: previous.map(|v| to_raw_value(&v).expect("encode previous")),
-        parent: None,
         source_path: source_path.into().unwrap_or_default(),
-        policies: policies.unwrap_or_default(),
-    }
-}
-
-/// `fixture_with_parent` is `fixture` plus a populated `parent` slot —
-/// the convenience form for narrowing-rule tests.
-pub fn fixture_with_parent(
-    entity_kind: &str,
-    proposed: Value,
-    parent: Value,
-    policies: Option<Policies>,
-) -> LinterInput {
-    LinterInput {
-        rule_id: String::new(),
-        entity_kind: entity_kind.to_string(),
-        proposed: to_raw_value(&proposed).expect("encode proposed"),
-        previous: None,
-        parent: Some(to_raw_value(&parent).expect("encode parent")),
-        source_path: String::new(),
         policies: policies.unwrap_or_default(),
     }
 }
