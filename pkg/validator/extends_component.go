@@ -87,6 +87,24 @@ func ResolveFeatureExtends(feat types.Feature, lookup FeatureLookup) (types.Feat
 	return merged, nil
 }
 
+// ComponentAncestry returns the base Components comp descends from through
+// extends, nearest parent first, resolved through lookup. The slice excludes
+// comp itself, so a Component declaring no extends has an empty ancestry.
+//
+// It is a read-only view of the very chain walk the inheritance merge performs,
+// exposed so a consumer that needs only "what does this descend from" answers
+// the question with the merge's own safeguards instead of walking Spec.Extends
+// again: a circular chain yields ErrCyclicExtension and an unresolvable parent
+// yields ErrInheritanceMerge, in both cases rather than looping. A second walk
+// could disagree with this one; there is no second walk.
+func ComponentAncestry(comp types.Component, lookup ComponentLookup) ([]types.Component, []*ValidationError) {
+	chain, errs := collectComponentChain(comp, lookup)
+	if len(errs) > 0 {
+		return nil, errs
+	}
+	return chain[1:], nil
+}
+
 // collectComponentChain returns the chain [child, parent, grandparent, ...].
 // Relies on ResolveInheritance having already validated cycles/depth/missing-parent,
 // so errors here shouldn't normally occur — they're a safety net for concurrent edits.

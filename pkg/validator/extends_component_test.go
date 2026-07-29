@@ -306,3 +306,117 @@ func TestResolveFeatureExtends_Basic(t *testing.T) {
 		t.Errorf("child constraint missing in resolved schema")
 	}
 }
+
+// TestComponentAncestry_MultiLevelChain pins that the accessor reports every
+// base in a chain, nearest parent first, and excludes the entity itself — the
+// property a consumer asking "does this descend from that" relies on to answer
+// through a grandparent, not merely one level up.
+func TestComponentAncestry_MultiLevelChain(t *testing.T) {
+	t.Parallel()
+	root := types.Component{Metadata: types.ComponentMetadata{Name: "core/root", Version: "1.0.0"}}
+	mid := types.Component{
+		Metadata: types.ComponentMetadata{Name: "core/mid", Version: "1.0.0"},
+		Spec:     types.ComponentSpec{Extends: "core/root"},
+	}
+	leaf := types.Component{
+		Metadata: types.ComponentMetadata{Name: "core/leaf", Version: "1.0.0"},
+		Spec:     types.ComponentSpec{Extends: "core/mid"},
+	}
+	lookup := func(uri string) (types.Component, bool) {
+		switch uri {
+		case "core/root":
+			return root, true
+		case "core/mid":
+			return mid, true
+		}
+		return types.Component{}, false
+	}
+
+	got, errs := ComponentAncestry(leaf, lookup)
+	if len(errs) != 0 {
+		t.Fatalf("unexpected errors: %v", errs)
+	}
+	if len(got) != 2 || got[0].Metadata.Name != "core/mid" || got[1].Metadata.Name != "core/root" {
+		t.Fatalf("expected [core/mid core/root] nearest-first; got %v", componentNames(got))
+	}
+}
+
+// TestComponentAncestry_NoExtends pins the empty answer: an entity that declares
+// no extends descends from nothing and is not itself part of its own ancestry.
+func TestComponentAncestry_NoExtends(t *testing.T) {
+	t.Parallel()
+	solo := types.Component{Metadata: types.ComponentMetadata{Name: "app/solo", Version: "1.0.0"}}
+	got, errs := ComponentAncestry(solo, func(string) (types.Component, bool) {
+		t.Fatal("lookup must not be consulted for an entity with no extends")
+		return types.Component{}, false
+	})
+	if len(errs) != 0 {
+		t.Fatalf("unexpected errors: %v", errs)
+	}
+	if len(got) != 0 {
+		t.Fatalf("expected empty ancestry; got %v", componentNames(got))
+	}
+}
+
+// TestComponentAncestry_CyclicChain pins that a circular chain terminates on the
+// walk's visited set and reports ErrCyclicExtension. A consumer walking ancestry
+// on untrusted content depends on this to report the chain fault rather than
+// loop.
+func TestComponentAncestry_CyclicChain(t *testing.T) {
+	t.Parallel()
+	a := types.Component{
+		Metadata: types.ComponentMetadata{Name: "core/a", Version: "1.0.0"},
+		Spec:     types.ComponentSpec{Extends: "core/b"},
+	}
+	b := types.Component{
+		Metadata: types.ComponentMetadata{Name: "core/b", Version: "1.0.0"},
+		Spec:     types.ComponentSpec{Extends: "core/a"},
+	}
+	lookup := func(uri string) (types.Component, bool) {
+		switch uri {
+		case "core/a":
+			return a, true
+		case "core/b":
+			return b, true
+		}
+		return types.Component{}, false
+	}
+
+	got, errs := ComponentAncestry(a, lookup)
+	if len(errs) == 0 {
+		t.Fatalf("expected a cycle error; got ancestry %v", componentNames(got))
+	}
+	if !errors.Is(errs[0], ErrCyclicExtension) {
+		t.Errorf("expected ErrCyclicExtension; got %v", errs[0])
+	}
+	if got != nil {
+		t.Errorf("a failed walk must return no ancestry; got %v", componentNames(got))
+	}
+}
+
+// TestComponentAncestry_MissingParent pins the unresolvable-parent fault, which
+// is distinct from a cycle and carries its own sentinel.
+func TestComponentAncestry_MissingParent(t *testing.T) {
+	t.Parallel()
+	child := types.Component{
+		Metadata: types.ComponentMetadata{Name: "core/child", Version: "1.0.0"},
+		Spec:     types.ComponentSpec{Extends: "core/absent"},
+	}
+	_, errs := ComponentAncestry(child, func(string) (types.Component, bool) {
+		return types.Component{}, false
+	})
+	if len(errs) == 0 {
+		t.Fatal("expected an unresolvable-parent error")
+	}
+	if !errors.Is(errs[0], ErrInheritanceMerge) {
+		t.Errorf("expected ErrInheritanceMerge; got %v", errs[0])
+	}
+}
+
+func componentNames(comps []types.Component) []string {
+	names := make([]string, 0, len(comps))
+	for _, c := range comps {
+		names = append(names, c.Metadata.Name)
+	}
+	return names
+}

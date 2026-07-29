@@ -331,7 +331,7 @@ func pullRun(cfg pullConfig) error {
 	// Verify the Manifest's mapping table is consistent before the closure walk,
 	// so pull halts on a mismatched mapping with the same Loud Guardrail the
 	// build does (lock/build parity).
-	if err := cat.AssertManifestImplementsConsistency(manifest, manRes.Path); err != nil {
+	if err := cat.AssertManifestImplementsConsistency(manifest, manRes.Path, cat.ComponentAncestry); err != nil {
 		return err
 	}
 

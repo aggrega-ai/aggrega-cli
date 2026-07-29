@@ -287,7 +287,7 @@ func TestVerifyManifestImplementsConsistency_EveryArm(t *testing.T) {
 	mtF.Type.Set("feature/match", "myco/fr-match")
 	manifest.Spec.Mappings.Features = mtF
 
-	errs := c.VerifyManifestImplementsConsistency(manifest, "manifest.yaml")
+	errs := c.VerifyManifestImplementsConsistency(manifest, "manifest.yaml", c.ComponentAncestry)
 	if len(errs) != 2 {
 		t.Errorf("expected 2 violations (2 mismatched; the 2 missing are skipped for the resolution path); got %d: %v", len(errs), errs)
 	}

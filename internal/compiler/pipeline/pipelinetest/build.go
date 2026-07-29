@@ -123,7 +123,7 @@ func compile(in Input) (*pipeline.Result, error) {
 	// Gate on Manifest mapping-table consistency exactly as cmd/aggrega/build.go
 	// does — same method, same join-and-halt — so a build-faithful test halts
 	// wherever a real build would.
-	if err := cat.AssertManifestImplementsConsistency(manifest, manRes.Path); err != nil {
+	if err := cat.AssertManifestImplementsConsistency(manifest, manRes.Path, cat.ComponentAncestry); err != nil {
 		return nil, err
 	}
 	aggRes, err := resolver.ResolveAggregate(releaseDir, rel.Spec.Aggregate, cat.AggregateLookup(), nil)

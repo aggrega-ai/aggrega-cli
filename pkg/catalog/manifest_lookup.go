@@ -16,6 +16,7 @@ import (
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/ociref"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
+	"github.com/aggrega-ai/aggrega-cli/pkg/validator"
 )
 
 // ErrManifestImplementsMismatch fires when a Manifest mapping entry's
@@ -752,11 +753,88 @@ func manifestMappingConsistent(impl, key string) bool {
 	return false
 }
 
+// ComponentAncestryResolver reports the extends ancestry of a component type:
+// the Manifest-key form of every base type it descends from, nearest parent
+// first. It is the seam through which a Component index reaches the
+// mapping-consistency gate, which holds recipes but not necessarily Components.
+//
+// A type the resolver cannot find has no ancestry and no error — "the mapped
+// type is absent from the catalog" belongs to the resolution path's diagnostics,
+// not to a consistency judgement. A malformed chain returns the chain's own
+// fault so a caller reports the chain rather than a mapping mismatch.
+type ComponentAncestryResolver func(componentType string) ([]string, error)
+
+// componentAncestryOver is the single home for the ancestry both catalog
+// backings expose: the eagerly-loaded Component index and the lazy
+// Tier-1/2/3 cascade differ only in the lookup they hand it. Each ancestor is
+// rendered as the mapping key an author would write for that base type so the
+// satisfaction matcher receives ancestry in exactly the form it receives the
+// mapped key itself.
+func componentAncestryOver(componentType string, lookup validator.ComponentLookup) ([]string, error) {
+	comp, ok := lookup(componentType)
+	if !ok {
+		return nil, nil
+	}
+	chain, vErrs := validator.ComponentAncestry(comp, lookup)
+	if len(vErrs) > 0 {
+		return nil, vErrs[0]
+	}
+	keys := make([]string, 0, len(chain))
+	for _, anc := range chain {
+		// versionedSlotURI is the existing single home for the
+		// bare-name-plus-version join, including its double-append guard.
+		keys = append(keys, versionedSlotURI(anc.Metadata.Name, anc.Metadata.Version))
+	}
+	return keys, nil
+}
+
+// ComponentAncestry resolves componentType's extends ancestry over this
+// catalog's OWN Component index. It is the ComponentAncestryResolver an
+// eagerly-loaded catalog passes to its own consistency gate.
+//
+// A catalog shell assembled over a different backing — one whose Components
+// index is empty by construction — must pass that backing's resolver instead.
+// Passing this method from such a shell resolves no ancestry at all and the gate
+// then refuses every mapping that relies on it, which is why the resolver is an
+// argument of the gate rather than a field read off the receiver.
+func (c *Catalog) ComponentAncestry(componentType string) ([]string, error) {
+	return componentAncestryOver(componentType, func(uri string) (types.Component, bool) {
+		key, ok, _ := c.resolveComponentKey(uri)
+		if !ok {
+			return types.Component{}, false
+		}
+		return c.Components[key], true
+	})
+}
+
+// manifestMappingSatisfiedByAncestry reports whether the mapped recipe's
+// spec.implements satisfies any base the mapped type extends. Ancestry enters as
+// additional INPUTS to manifestMappingConsistent — each base is offered exactly
+// as the mapped key itself is — never as a second matching rule, so one
+// satisfaction rule keeps answering for every caller while a Recipe written
+// against a base serves everything that extends it.
+func manifestMappingSatisfiedByAncestry(impl string, ancestry []string) bool {
+	for _, base := range ancestry {
+		if manifestMappingConsistent(impl, base) {
+			return true
+		}
+	}
+	return false
+}
+
 // recipesImplementing returns the sorted, provider-qualified identity keys of
 // every catalog recipe whose spec.implements satisfies componentType. It is a
 // SUGGESTION provider only — resolution is mapping-only and never consults it.
 // Its readers are the no-mapping diagnostic (pin candidates) and the Manifest
 // recipe-reference completion (implements-aware ranking).
+//
+// Deliberately ancestry-blind, unlike the mapping-consistency check: extends
+// ancestry is handled in that check's outer layer rather than inside
+// implementsSatisfies, so it reaches only the caller that resolves it. Widening
+// the suggestion set to recipes implementing a base of the requested type would
+// change which candidates a diagnostic lists and how completion ranks them —
+// user-visible output whose shape is a separate choice from whether an
+// operator-written mapping is judged consistent.
 func recipesImplementing(recipes map[string]types.Recipe, componentType string) []string {
 	var ids []string
 	for _, r := range recipes {
@@ -768,7 +846,11 @@ func recipesImplementing(recipes map[string]types.Recipe, componentType string) 
 	return ids
 }
 
-// featureRecipesImplementing is the FeatureRecipe analogue of recipesImplementing.
+// featureRecipesImplementing is the FeatureRecipe analogue of
+// recipesImplementing, ancestry-blind for the same reason: it provides
+// suggestions, and extends ancestry reaches only the mapping-consistency check
+// that resolves it. Feature extends carries its own composition semantics, which
+// this surface takes no position on.
 func featureRecipesImplementing(frs map[string]types.FeatureRecipe, featureType string) []string {
 	var ids []string
 	for _, fr := range frs {
@@ -890,6 +972,25 @@ func (c *Catalog) VerifyRecipeResolution(manifest *types.Manifest, graph *types.
 // wrapped with file:line provenance on both sides; the function
 // collects all violations rather than short-circuiting on the first.
 //
+// A component mapping is also consistent when the recipe implements a base the
+// mapped type extends, at any depth of the chain: a Recipe written against a base
+// serves everything extending that base, so a specialization needs a mapping
+// entry but no Recipe of its own. The ancestry arrives through the
+// ComponentAncestryResolver argument, which each backing supplies over the index
+// its own Components live in — this catalog's own index via
+// (*Catalog).ComponentAncestry, or the entity cascade a lazily-enumerated view
+// reads. A nil resolver declares that the caller's catalog resolves no ancestry,
+// which is honest for a surface holding no Components and wrong for one that
+// does. Ancestry is resolved only after the direct comparison fails, so a
+// mapping that matches outright costs no component lookup, and a chain that
+// cannot be walked is reported as the chain fault it is rather than as a mapping
+// mismatch.
+//
+// Feature mappings are judged on the direct comparison alone. Feature extends
+// composes its pillars rather than inheriting them, so whether a FeatureRecipe
+// written against a base serves an extending Feature is a separate question this
+// surface does not answer.
+//
 // A mapping whose recipe URI does not resolve in the catalog is skipped here,
 // not reported: a missing/unresolvable recipe is a resolution concern owned by
 // the recipe-resolution path (VerifyRecipeResolution and the catalog lookup),
@@ -903,9 +1004,12 @@ func (c *Catalog) VerifyRecipeResolution(manifest *types.Manifest, graph *types.
 // are not consistency-checked at this surface — they keep pre-migration
 // semantics (Recipe lookup via spec.implements walking) where the consistency
 // is implicit in the matching rule.
-func (c *Catalog) VerifyManifestImplementsConsistency(manifest *types.Manifest, manifestPath string) []error {
+func (c *Catalog) VerifyManifestImplementsConsistency(manifest *types.Manifest, manifestPath string, ancestry ComponentAncestryResolver) []error {
 	if manifest == nil {
 		return nil
+	}
+	if ancestry == nil {
+		ancestry = func(string) ([]string, error) { return nil, nil }
 	}
 	var errs []error
 	// Component mappings.
@@ -915,8 +1019,16 @@ func (c *Catalog) VerifyManifestImplementsConsistency(manifest *types.Manifest, 
 			if !ok {
 				continue // missing recipe → resolution path's concern, not a consistency violation
 			}
-			if !manifestMappingConsistent(r.Spec.Implements, compType) {
-				errs = append(errs, cerrors.Wrap(ErrManifestImplementsMismatch, cerrors.CatalogError, cerrors.SourceLocation{File: manifestPath}, fmt.Sprintf("manifest mapping %q -> %q: recipe spec.implements is %q (expected %q)", compType, recipeURI, r.Spec.Implements, compType)))
+			if manifestMappingConsistent(r.Spec.Implements, compType) {
+				continue
+			}
+			bases, aerr := ancestry(compType)
+			if aerr != nil {
+				errs = append(errs, cerrors.Wrap(aerr, cerrors.CatalogError, cerrors.SourceLocation{File: manifestPath}, fmt.Sprintf("manifest mapping %q -> %q: the mapped component type's extends chain cannot be walked, so the mapping cannot be judged", compType, recipeURI)))
+				continue
+			}
+			if !manifestMappingSatisfiedByAncestry(r.Spec.Implements, bases) {
+				errs = append(errs, cerrors.Wrap(ErrManifestImplementsMismatch, cerrors.CatalogError, cerrors.SourceLocation{File: manifestPath}, fmt.Sprintf("manifest mapping %q -> %q: recipe spec.implements is %q (expected %q, or a type %q extends)", compType, recipeURI, r.Spec.Implements, compType, compType)))
 			}
 		}
 	}
@@ -943,8 +1055,13 @@ func (c *Catalog) VerifyManifestImplementsConsistency(manifest *types.Manifest, 
 // The check is mapping-table-level (mapped type vs the resolved recipe's
 // spec.implements) and runs before IR construction, complementing the post-IR
 // per-node VerifyRecipeResolution.
-func (c *Catalog) AssertManifestImplementsConsistency(manifest *types.Manifest, manifestPath string) error {
-	errs := c.VerifyManifestImplementsConsistency(manifest, manifestPath)
+//
+// ancestry carries the same contract it carries on
+// VerifyManifestImplementsConsistency: it is the caller's Component index, and a
+// caller whose catalog holds Components passes one so a mapping onto a base's
+// Recipe is judged consistent.
+func (c *Catalog) AssertManifestImplementsConsistency(manifest *types.Manifest, manifestPath string, ancestry ComponentAncestryResolver) error {
+	errs := c.VerifyManifestImplementsConsistency(manifest, manifestPath, ancestry)
 	if len(errs) == 0 {
 		return nil
 	}

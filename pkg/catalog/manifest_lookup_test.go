@@ -249,7 +249,7 @@ func TestVerifyManifestImplementsConsistency_PassOnMatch(t *testing.T) {
 			Mappings: types.ManifestMappings{Components: flatComponents},
 		},
 	}
-	errs := c.VerifyManifestImplementsConsistency(manifest, "manifest.yaml")
+	errs := c.VerifyManifestImplementsConsistency(manifest, "manifest.yaml", c.ComponentAncestry)
 	if len(errs) != 0 {
 		t.Errorf("expected no consistency errors; got %v", errs)
 	}
@@ -270,7 +270,7 @@ func TestVerifyManifestImplementsConsistency_FailOnMismatch(t *testing.T) {
 			Mappings: types.ManifestMappings{Components: flatComponents},
 		},
 	}
-	errs := c.VerifyManifestImplementsConsistency(manifest, "manifest.yaml")
+	errs := c.VerifyManifestImplementsConsistency(manifest, "manifest.yaml", c.ComponentAncestry)
 	if len(errs) == 0 {
 		t.Fatal("expected ErrManifestImplementsMismatch")
 	}
@@ -294,7 +294,7 @@ func TestVerifyManifestImplementsConsistency_CaretAware(t *testing.T) {
 	passManifest := &types.Manifest{
 		Spec: types.ManifestSpec{Mappings: types.ManifestMappings{Components: passComponents}},
 	}
-	if errs := cPass.VerifyManifestImplementsConsistency(passManifest, "manifest.yaml"); len(errs) != 0 {
+	if errs := cPass.VerifyManifestImplementsConsistency(passManifest, "manifest.yaml", cPass.ComponentAncestry); len(errs) != 0 {
 		t.Errorf("caret in range should validate; got %v", errs)
 	}
 
@@ -306,7 +306,7 @@ func TestVerifyManifestImplementsConsistency_CaretAware(t *testing.T) {
 	failManifest := &types.Manifest{
 		Spec: types.ManifestSpec{Mappings: types.ManifestMappings{Components: failComponents}},
 	}
-	errs := cFail.VerifyManifestImplementsConsistency(failManifest, "manifest.yaml")
+	errs := cFail.VerifyManifestImplementsConsistency(failManifest, "manifest.yaml", cFail.ComponentAncestry)
 	if len(errs) == 0 {
 		t.Fatal("caret out of range should fail with ErrManifestImplementsMismatch")
 	}
@@ -366,7 +366,7 @@ func TestVerifyManifestImplementsConsistency_BareKeyVersionedImpl(t *testing.T) 
 			Mappings: types.ManifestMappings{Components: flatComponents},
 		},
 	}
-	if errs := c.VerifyManifestImplementsConsistency(manifest, "manifest.yaml"); len(errs) != 0 {
+	if errs := c.VerifyManifestImplementsConsistency(manifest, "manifest.yaml", c.ComponentAncestry); len(errs) != 0 {
 		t.Errorf("bare key against versioned implements should be consistent; got %v", errs)
 	}
 }
@@ -376,7 +376,7 @@ func TestVerifyManifestImplementsConsistency_BareKeyVersionedImpl(t *testing.T) 
 func TestVerifyManifestImplementsConsistency_NilManifest(t *testing.T) {
 	t.Parallel()
 	c := fakeCatalog()
-	if errs := c.VerifyManifestImplementsConsistency(nil, ""); errs != nil {
+	if errs := c.VerifyManifestImplementsConsistency(nil, "", c.ComponentAncestry); errs != nil {
 		t.Errorf("expected nil on nil manifest; got %v", errs)
 	}
 }

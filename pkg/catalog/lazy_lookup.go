@@ -1387,12 +1387,37 @@ func (l *LazyLookup) AggregateLookup() resolver.AggregateLookup {
 
 // AssertManifestImplementsConsistency runs the catalog's manifest-implements
 // consistency gate (each mapped type resolves to a recipe whose spec.implements
-// matches) over the lazily-enumerated recipe set — the build's earliest loud
-// guardrail, now reading the closure rather than the bridged eager catalog.
+// matches, directly or through a base the mapped type extends) over the
+// lazily-enumerated recipe set — the build's earliest loud guardrail, reading the
+// closure rather than a bridged eager catalog.
+//
+// The ancestry resolver is this view's own, NOT the recipe shell's. The shell
+// carries recipes and libraries but no Component index, so the shell's own
+// resolver would find no ancestry and the gate would refuse every mapping onto a
+// base's Recipe — silently, and only on this path.
 func (l *LazyLookup) AssertManifestImplementsConsistency(manifest *types.Manifest, manifestPath string) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	return l.recipeCatalog().AssertManifestImplementsConsistency(manifest, manifestPath)
+	return l.recipeCatalog().AssertManifestImplementsConsistency(manifest, manifestPath, l.componentAncestry)
+}
+
+// componentAncestry is this view's ComponentAncestryResolver: it walks the
+// extends chain over the Tier-1/2/3 entity cascade, which is where this
+// backing's Components live.
+//
+// The walk reads the RAW cascade rather than the extends-merged accessor, for two
+// reasons. Ancestry is a property of the authored extends links, and the merge
+// preserves those unchanged, so the raw entity answers the question exactly as
+// the merged one would. And the merged accessor resolves each ancestor by running
+// the merge on it, so a circular chain would recurse back through the merge
+// instead of terminating on the chain walk's own visited set — this surface runs
+// before graph construction, early enough to be the first reader of a malformed
+// chain, so it reports the cycle rather than exhausting the stack on it.
+//
+// Lock-free by contract, like the other internal cascade readers: the exported
+// consistency gate above already holds l.mu when it hands this method over.
+func (l *LazyLookup) componentAncestry(componentType string) ([]string, error) {
+	return componentAncestryOver(componentType, l.resolveComponent)
 }
 
 // VerifyRecipeResolution exposes the build-side resolution-completeness halt (the
