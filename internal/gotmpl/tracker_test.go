@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Cognitio S.r.l.
 
-package renderer
+package gotmpl
 
 import (
 	"reflect"
 	"testing"
+	"text/template/parse"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
@@ -202,5 +203,39 @@ func TestUnreadKeys_EmptyData(t *testing.T) {
 	unread := UnreadKeys([]string{".values.x"}, ".values", types.OrderedMap[any]{})
 	if unread != nil {
 		t.Errorf("expected nil for empty data, got %v", unread)
+	}
+}
+
+// TestCollectFromNode_AllNodeKinds pins the parse-AST walker by
+// constructing a template that exercises every dispatch arm.
+func TestCollectFromNode_AllNodeKinds(t *testing.T) {
+	t.Parallel()
+	src := `{{ .alpha }} {{ if .beta }}{{ .gamma }}{{ else }}{{ .delta }}{{ end }} {{ range .epsilon }}{{ . }}{{ end }} {{ with .zeta }}{{ .eta }}{{ end }} {{ template "tpl" . }}`
+	// We need a *parse.ListNode root to feed collectFromNode.
+	trees, err := parse.Parse("t", src, "{{", "}}")
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	seen := map[string]bool{}
+	root := trees["t"].Root
+	collectFromNode(root, seen)
+	for _, k := range []string{".alpha", ".beta", ".gamma", ".delta", ".epsilon", ".zeta", ".eta"} {
+		if !seen[k] {
+			t.Errorf("expected %q in seen; got %v", k, seen)
+		}
+	}
+	// Nil ListNode.
+	collectFromNode((*parse.ListNode)(nil), seen)
+	// Nil node.
+	collectFromNode(nil, seen)
+}
+
+// TestCollectFromPipe_NilGuard pins the pipe-walker's nil-guard.
+func TestCollectFromPipe_NilGuard(t *testing.T) {
+	t.Parallel()
+	seen := map[string]bool{}
+	collectFromPipe(nil, seen)
+	if len(seen) != 0 {
+		t.Errorf("nil pipe should leave seen empty; got %v", seen)
 	}
 }

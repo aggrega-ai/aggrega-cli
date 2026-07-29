@@ -10,6 +10,7 @@ import (
 	"testing"
 	"text/template/parse"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/gotmpl"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
@@ -385,7 +386,7 @@ func TestEvalTemplateWithDelims_DownstreamSyntaxIsNotAnAggregaRoot(t *testing.T)
 
 func mustParseForRoots(t *testing.T, text string) parse.Node {
 	t.Helper()
-	tree, err := parseTemplateForRootWalk(text, "{{", "}}")
+	tree, err := gotmpl.ParseTree(text, "{{", "}}")
 	if err != nil {
 		t.Fatalf("parse %q: %v", text, err)
 	}

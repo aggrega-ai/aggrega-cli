@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/gotmpl"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
@@ -200,7 +201,7 @@ func checkLocalsReferenceOrder(tmplText string, site localsRefSite, resolved typ
 	if tmplText == "" {
 		return nil
 	}
-	tree, err := parseTemplateForRootWalk(tmplText, "{{", "}}")
+	tree, err := gotmpl.ParseTree(tmplText, "{{", "}}")
 	if err != nil {
 		return nil
 	}

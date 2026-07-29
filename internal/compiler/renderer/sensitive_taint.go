@@ -6,6 +6,7 @@ package renderer
 import (
 	"strings"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/gotmpl"
 	"github.com/aggrega-ai/aggrega-cli/internal/redact"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
@@ -117,7 +118,7 @@ func templateReadsWithheld(tmplText string, keys redact.Keys) bool {
 	if !keys.AnyWithheld() || tmplText == "" || !strings.Contains(tmplText, "{{") {
 		return false
 	}
-	refs, err := CollectTemplateFieldAccesses(tmplText)
+	refs, err := gotmpl.CollectTemplateFieldAccesses(tmplText)
 	if err != nil {
 		return true
 	}

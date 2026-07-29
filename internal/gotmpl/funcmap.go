@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Cognitio S.r.l.
 
-package renderer
+package gotmpl
 
 import (
 	"text/template"
@@ -9,15 +9,15 @@ import (
 	sprig "github.com/Masterminds/sprig/v3"
 )
 
-// aggregaFuncMap returns the template-function set used by Aggrega's
-// renderer surfaces: Sprig v3's FuncMap augmented with Aggrega-specific
+// FuncMap returns the template-function set used by Aggrega's template
+// surfaces: Sprig v3's FuncMap augmented with Aggrega-specific
 // helpers. A fresh map is returned on each call so callers can add
 // per-site functions (e.g., the assertion evaluator's `fail` override)
 // without mutating other callers' maps.
 //
 // Currently the only Aggrega-specific helper is [optional]; the helper
 // surface grows additively as catalog-authoring needs surface.
-func aggregaFuncMap() template.FuncMap {
+func FuncMap() template.FuncMap {
 	funcs := sprig.FuncMap()
 	funcs["optional"] = optional
 	return funcs

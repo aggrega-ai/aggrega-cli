@@ -21,6 +21,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/gotmpl"
 	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/recipepin"
@@ -205,7 +206,7 @@ func buildArtifactsProjection(
 // `{{ ... }}` blocks become opaque text and don't surface as parse errors
 // or as field-access entries.
 func preCheckArtifactPillars(state *PhaseBState, filename, tmplText, leftDelim, rightDelim string) error {
-	refs, err := CollectTemplateFieldAccessesWithDelims(tmplText, leftDelim, rightDelim)
+	refs, err := gotmpl.CollectTemplateFieldAccessesWithDelims(tmplText, leftDelim, rightDelim)
 	if err != nil {
 		return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: filename}, fmt.Sprintf("artifact %q template parse", filename))
 	}

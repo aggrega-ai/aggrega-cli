@@ -651,25 +651,11 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		}
 		values := state.ResolvedValues
 
-		// Ghost Infrastructure: compare valuesMapping template references against
-		// the keys actually in .values / .infra — unused keys emit a warning so
-		// catalog authors notice when a Release infra knob is never consumed.
-		// Inline-mode templates only; file / library imports defer (the
-		// template text is disk-resident or OCI-resolved at render time).
-		if recipe != nil && recipe.Spec.ValuesMapping.Inline != "" {
-			if refs, parseErr := CollectTemplateFieldAccesses(recipe.Spec.ValuesMapping.Inline); parseErr == nil {
-				for _, k := range UnreadKeys(refs, ".values", tmplCtx.Values) {
-					result.Warnings = append(result.Warnings,
-						fmt.Sprintf("node %q: unused .values key %q (not referenced by valuesMapping of recipe %q)",
-							nodeID, k, recipe.Metadata.Name))
-				}
-				for _, k := range UnreadKeys(refs, ".infra", tmplCtx.Infra) {
-					result.Warnings = append(result.Warnings,
-						fmt.Sprintf("node %q: unused .infra key %q (not referenced by valuesMapping of recipe %q)",
-							nodeID, k, recipe.Metadata.Name))
-				}
-			}
-		}
+		// Ghost Infrastructure: authored values and infra keys the Recipe's
+		// valuesMapping never reads, so a catalog author notices a knob nothing
+		// consumes. See unreadValueWarnings for what the reading covers.
+		result.Warnings = append(result.Warnings,
+			unreadValueWarnings(nodeID, recipe, tmplCtx.Values, tmplCtx.Infra)...)
 
 		hasWorkload := recipe != nil && !recipe.Spec.Workload.IsEmpty()
 

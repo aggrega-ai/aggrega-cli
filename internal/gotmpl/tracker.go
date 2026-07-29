@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Cognitio S.r.l.
 
-package renderer
+package gotmpl
 
 import (
 	"sort"
@@ -29,7 +29,7 @@ func CollectTemplateFieldAccesses(tmplText string) ([]string, error) {
 
 // CollectTemplateFieldAccessesWithDelims parses a Go template with
 // caller-controlled delimiters and returns the dot-qualified field-access
-// set. Used by Phase B.3's pre-check when an external-handler engine
+// set. Used by the artifact pre-check when an external-handler engine
 // (today: helm-chart) declares non-default delimiters via
 // ArtifactsTemplateDelims — the pre-check must parse with the same
 // delimiters Aggrega's pre-templating uses, so downstream-template syntax
@@ -47,7 +47,7 @@ func CollectTemplateFieldAccessesWithDelims(tmplText, leftDelim, rightDelim stri
 	// funcmap would reject templates the evaluator accepts — which is why the parse
 	// has one home rather than one copy per surface. The funcmap only affects
 	// whether Parse succeeds; the FieldNode/ChainNode walk below is unchanged.
-	root, err := parseTemplateForRootWalk(tmplText, leftDelim, rightDelim)
+	root, err := ParseTree(tmplText, leftDelim, rightDelim)
 	if err != nil {
 		return nil, err
 	}

@@ -46,6 +46,7 @@ import (
 	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderctx"
+	"github.com/aggrega-ai/aggrega-cli/internal/gotmpl"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/labels"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
@@ -199,7 +200,7 @@ func validateBoundaryScopeFRTemplate(fr *types.FeatureRecipe) error {
 		}
 	}
 	for _, t := range tmpls {
-		tree, err := parseTemplateForRootWalk(t.text, "{{", "}}")
+		tree, err := gotmpl.ParseTree(t.text, "{{", "}}")
 		if err != nil {
 			return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: frName},
 				fmt.Sprintf("FeatureRecipe %q %s template failed to parse", frName, t.label))

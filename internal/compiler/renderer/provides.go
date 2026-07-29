@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/parse"
+	"github.com/aggrega-ai/aggrega-cli/internal/gotmpl"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
@@ -68,7 +69,7 @@ func CheckProvidesSelfContainment(templateText, recipeID string) error {
 	if templateText == "" {
 		return nil
 	}
-	tree, err := parseTemplateForRootWalk(templateText, "{{", "}}")
+	tree, err := gotmpl.ParseTree(templateText, "{{", "}}")
 	if err != nil {
 		// Malformed template: let provides evaluation report the parse error.
 		return nil

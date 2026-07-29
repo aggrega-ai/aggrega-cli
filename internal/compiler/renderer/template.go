@@ -10,6 +10,7 @@ import (
 	"strings"
 	"text/template"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/gotmpl"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 )
 
@@ -65,9 +66,9 @@ type templateEval struct {
 	// diagnostic through refused or failed carries the category in that
 	// diagnostic instead.
 	category cerrors.Category
-	// extraFuncs are functions this surface adds over aggregaFuncMap. The map is
-	// template.FuncMap's own underlying type, so a surface contributing one does
-	// not have to reach for text/template itself.
+	// extraFuncs are functions this surface adds over the shared function set. The
+	// map is template.FuncMap's own underlying type, so a surface contributing one
+	// does not have to reach for text/template itself.
 	extraFuncs map[string]any
 	// refused names a reference the scope refuses with this surface's own
 	// diagnostic; nil reports ErrTemplateUnknownRoot.
@@ -86,7 +87,7 @@ func (e templateEval) run() (string, error) {
 	if category == "" {
 		category = cerrors.CatalogError
 	}
-	funcs := aggregaFuncMap()
+	funcs := gotmpl.FuncMap()
 	// Iterating a map is safe here where it usually would not be: the loop only
 	// assigns distinct keys into another map, so the merged function set is the
 	// same whatever order the keys arrive in and no iteration order can reach the

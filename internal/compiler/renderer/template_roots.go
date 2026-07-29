@@ -8,7 +8,6 @@ import (
 	"reflect"
 	"slices"
 	"strings"
-	"text/template"
 	"text/template/parse"
 
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
@@ -58,10 +57,10 @@ type templateRootRef struct {
 //
 // This is the only walk any reference check uses, and every surface that checks
 // references shares it through templateScope, differing only in the scope it
-// compares against. The walk in tracker.go is a separate one with separate
-// purposes and the opposite polarity, and it deliberately over-collects; see the
-// polarity note below for which questions each direction answers, and why a
-// caller must never be able to choose.
+// compares against. The field-access census in package gotmpl is a separate walk
+// with separate purposes and the opposite polarity, and it deliberately
+// over-collects; see the polarity note below for which questions each direction
+// answers, and why a caller must never be able to choose.
 //
 // Polarity is why there is one walk rather than two, and it is worth stating
 // because the two directions are not interchangeable. Under-collecting is the
@@ -86,41 +85,22 @@ type templateRootRef struct {
 // costs — refused authoring on one side, a printed secret on the other — not by
 // whether the consumer is described as a check.
 //
-// The walk in tracker.go over-collects, correctly, and each of its questions is
-// on the other side of that line. A read-set census must report a key hidden
-// inside a rebound body as read, because a read-set that under-reported would
-// call a consumed key unread. A check that must WITHHOLD a value, or that refuses
-// a reference to a pillar the Recipe never declared, is a deny-list, and a name it
-// failed to attribute is a name that slipped past. So the two walks are not one
-// admitting walk and one merely-reporting walk: they are an allow-list walk and a
-// deny-list walk, and what keeps their directions from meeting is that each
+// The census walk in package gotmpl over-collects, correctly, and each of its
+// questions is on the other side of that line. A read-set census must report a
+// key hidden inside a rebound body as read, because a read-set that under-reported
+// would call a consumed key unread. A check that must WITHHOLD a value, or that
+// refuses a reference to a pillar the Recipe never declared, is a deny-list, and a
+// name it failed to attribute is a name that slipped past. So the two walks are not
+// one admitting walk and one merely-reporting walk: they are an allow-list walk and
+// a deny-list walk, and what keeps their directions from meeting is that each
 // consumer sits on exactly one side. Neither walk may grow a polarity parameter,
-// for the same reason in both files — a caller could then pass the wrong
+// for the same reason in both places — a caller could then pass the wrong
 // direction, and the failure would be silent in whichever direction it went.
 func collectTemplateRootRefs(root parse.Node) []templateRootRef {
 	var refs []templateRootRef
 	seen := map[string]int{}
 	walkTemplateRoots(root, true, &refs, seen)
 	return refs
-}
-
-// parseTemplateForRootWalk parses template text with the evaluator's funcmap and
-// delimiters and returns the tree's root node. It exists for the surfaces that
-// walk authored text rather than a tree they already hold — a pre-check that runs
-// before the template is dispatched, and the field-access census — while the
-// evaluator walks the tree it is about to execute and never re-parses. Sharing
-// the funcmap is what keeps every one of them agreeing with the evaluation about
-// which templates parse at all.
-func parseTemplateForRootWalk(text, leftDelim, rightDelim string) (parse.Node, error) {
-	tmpl, err := template.New("root-walk").
-		Option("missingkey=zero").
-		Delims(leftDelim, rightDelim).
-		Funcs(aggregaFuncMap()).
-		Parse(text)
-	if err != nil {
-		return nil, err
-	}
-	return tmpl.Tree.Root, nil
 }
 
 func walkTemplateRoots(n parse.Node, dotIsRoot bool, refs *[]templateRootRef, seen map[string]int) {
