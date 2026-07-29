@@ -12,6 +12,8 @@ package main
 import (
 	stderrors "errors"
 	"fmt"
+	"io"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -210,6 +212,152 @@ func TestFormatCompilerError_DepthComposition(t *testing.T) {
 			t.Errorf("depth composition missing %q\n--- got ---\n%s", want, got)
 		}
 	}
+}
+
+// TestFormatCompilerError_AssertionFailureReachesTerminal drives a real
+// build whose Component carries a failing assertion and pins that what
+// the formatter hands the terminal names the assertion and carries the
+// fail-call message.
+//
+// The chain a failing assertion produces carries its identity on
+// fmt-wrapped links rather than on envelope frames: the assertion name on
+// one, the fail-call message on the next, and a bare sentinel at the end.
+// A walk that rendered only the chain's terminal would print the
+// sentinel's generic text and discard both, leaving the author no way to
+// tell which assertion fired or why. The formatter's return value is what
+// the command's error path writes to stderr, so this asserts over the
+// bytes a user actually reads.
+func TestFormatCompilerError_AssertionFailureReachesTerminal(t *testing.T) {
+	// Not parallel: mutates the process-global releasePath, catalogDirs seams.
+	root := t.TempDir()
+	writeAssertionFailureFixture(t, root)
+
+	prevRelease, prevCatalog, prevTrace := releasePath, catalogDirs, traceEnabled
+	t.Cleanup(func() {
+		releasePath, catalogDirs, traceEnabled = prevRelease, prevCatalog, prevTrace
+	})
+	releasePath = filepath.Join(root, "release.yaml")
+	catalogDirs = []string{filepath.Join(root, "catalog")}
+	traceEnabled = false
+
+	ws := resolveTempWorkspace(t)
+	if err := pullRun(pullConfig{ReleasePath: releasePath, CatalogDirs: catalogDirs, ws: ws}); err != nil {
+		t.Fatalf("prime lockfile via pull: %v", err)
+	}
+	err := dispatchBuild(ws, releasePath, catalogDirs, traceEnabled, io.Discard, io.Discard)
+	if err == nil {
+		t.Fatal("build returned nil; expected an assertion failure")
+	}
+
+	got := formatCompilerError(err)
+	t.Logf("formatter output for a failing assertion:\n%s", got)
+	for _, want := range []string{
+		"port-must-be-privileged",              // which assertion fired
+		"PROBEMSG-port-8080-is-not-privileged", // the fail-call message
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("assertion diagnostic missing %q\n--- got ---\n%s", want, got)
+		}
+	}
+	// The tail is flattened into the frame that carries it, so the sentinel's
+	// own text appears once rather than on a line of its own.
+	if n := strings.Count(got, "assertion failed"); n != 1 {
+		t.Errorf("sentinel text should appear exactly once, got %d\n--- got ---\n%s", n, got)
+	}
+}
+
+// writeAssertionFailureFixture writes a complete build workspace whose
+// core/server Component carries an always-firing failing assertion, so a
+// build over it halts before render with the assertion's chain intact.
+func writeAssertionFailureFixture(t *testing.T, root string) {
+	t.Helper()
+	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: assert-diag
+  version: "1.0.0"
+spec:
+  components:
+    only:
+      type: core/server
+      values:
+        port: 8080
+`)
+	writeFixture(t, filepath.Join(root, "release.yaml"), `apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: assert-diag-release
+  environment: testing
+  version: "1.0.0"
+spec:
+  aggregate: ./aggregate.yaml
+  manifest: ./manifest.yaml
+  boundaries:
+    main:
+      directory: ./dist/main
+      components:
+        only:
+          infra:
+            replicas: 1
+`)
+	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1alpha1
+kind: Manifest
+metadata:
+  name: assert-diag-manifest
+  version: "1.0.0"
+spec:
+  mappings:
+    components:
+      type:
+        core/server: server-recipe:1.0.0
+`)
+	catalogRoot := filepath.Join(root, "catalog")
+	writeFixture(t, filepath.Join(catalogRoot, "base", "components", "server.yaml"), `apiVersion: aggrega.ai/v1alpha1
+kind: Component
+metadata:
+  name: core/server
+  version: "1.0.0"
+  labels:
+    component.aggrega.ai/type: "server"
+spec:
+  schema:
+    values:
+      port: { type: integer, default: 8080 }
+  assertions:
+    port-must-be-privileged: '{{ fail "PROBEMSG-port-8080-is-not-privileged" }}'
+`)
+	writeFixture(t, filepath.Join(catalogRoot, "base", "providers", "helm.yaml"), `apiVersion: aggrega.ai/v1alpha1
+kind: Provider
+metadata:
+  name: helm
+  version: "1.0.0"
+spec:
+  plugin: "builtin:helm"
+`)
+	writeHelmRendererPlugin(t, filepath.Join(catalogRoot, "base", "providers"))
+	writeFixture(t, filepath.Join(catalogRoot, "recipes", "helm", "server.yaml"), `apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: server-recipe
+  version: "1.0.0"
+spec:
+  capability: helm
+  implements: core/server
+  workload: |
+    apiVersion: aggrega.ai/v1alpha1
+    kind: Workload
+    replicas: {{ .infra.replicas | default 1 }}
+    containers:
+      server:
+        image: test-server:latest
+        ports:
+          web: {{ .values.port }}
+    services:
+      svc:
+        type: ClusterIP
+        ports:
+          web: {{ .values.port }}
+`)
 }
 
 // TestFormatCompilerError_FmtLinkBetweenFrames pins that a fmt-wrapped

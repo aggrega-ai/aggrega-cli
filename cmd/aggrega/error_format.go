@@ -102,11 +102,17 @@ func formatCompilerError(err error) string {
 //   - A nested envelope adding nothing beyond the previously rendered
 //     frame (same category, same source, message equal to or contained
 //     in the previous frame's message) is deduplicated, not repeated.
-//   - Non-envelope links (fmt wraps) are traversed without rendering;
-//     the chain's TERMINAL non-envelope error renders as a final
-//     continuation only when its text is not already part of the
-//     output (a sentinel's explanation must not vanish when the frames
-//     don't carry it).
+//   - A non-envelope link (an fmt wrap) is traversed without rendering
+//     for as long as the chain beneath it still reaches a frame this walk
+//     renders on its own terms — another envelope, or a multi-error fork.
+//     Once it does not, that link is the OUTERMOST non-envelope frame and
+//     it renders as a final continuation, because fmt wrapping means its
+//     Error() already carries the whole flattened tail beneath it in one
+//     string. Rendering it recovers every wrap frame's contribution — an
+//     assertion's name, a fail message, the sentinel's own explanation —
+//     without repeating the tail once per level. It renders only when its
+//     text is not already part of the output, so a frame the envelopes
+//     above already stated is not said twice.
 //   - A multi-error link (errors.Join nested under an envelope) renders
 //     every joined sub-error: a "caused by (N):" header, then each
 //     sub-error through the full formatCompilerError recursion (its own
@@ -161,7 +167,7 @@ func renderCompilerErrorChain(head *cerrors.CompilerError) string {
 			continue
 		}
 		next := stderrors.Unwrap(link)
-		if next == nil {
+		if !hasRenderableFrame(next) {
 			if txt := link.Error(); txt != "" && !strings.Contains(b.String(), txt) {
 				b.WriteString(indentCausedBy(txt, depth+1))
 			}
@@ -170,6 +176,30 @@ func renderCompilerErrorChain(head *cerrors.CompilerError) string {
 		link = next
 	}
 	return b.String()
+}
+
+// hasRenderableFrame reports whether the chain rooted at err still reaches
+// a frame the chain walk renders on its own terms: a *CompilerError
+// envelope, or a multi-error fork. It decides whether a non-envelope link
+// may be traversed silently. While the answer is yes, traversing loses
+// nothing — a frame further down will speak. Once it is no, the current
+// link is the last thing carrying information and must render, since
+// nothing beneath it will.
+//
+// The scan follows single-Unwrap links only, deliberately mirroring the
+// spine renderCompilerErrorChain itself walks. It is not errors.As, which
+// searches the whole error tree including multi-error branches and so would
+// answer a different question than "will this walk reach another frame".
+func hasRenderableFrame(err error) bool {
+	for cur := err; cur != nil; cur = stderrors.Unwrap(cur) {
+		if _, ok := cur.(*cerrors.CompilerError); ok {
+			return true
+		}
+		if _, ok := cur.(interface{ Unwrap() []error }); ok {
+			return true
+		}
+	}
+	return false
 }
 
 // frameRedundant reports whether a nested envelope adds no information
