@@ -77,14 +77,24 @@ type Catalog struct {
 	// this field.
 	workspaceRoot string
 
-	// lintWarnings accumulates non-fatal advisory diagnostics raised
-	// during catalog load — currently the schema-pillar-overlap
-	// lint, which warns when a Component or Feature declares the
-	// same property name in both values: and infra: pillars at the
-	// same nesting depth. Build callers retrieve these via
-	// LintWarnings() and print them to stderr alongside
-	// DeprecationWarnings.
-	lintWarnings []string
+	// pillarLintWarnings holds the schema-pillar-overlap advisories, which
+	// warn when a Component or Feature declares the same property name in
+	// both values: and infra: pillars at the same nesting depth. Owned
+	// exclusively by validateSchemaPillarsPass, which clears it on entry.
+	//
+	// narrowingWarnings holds the narrowing-on-extend advisories a chain's
+	// pillar composition produces. Owned exclusively by ResolveAllExtends,
+	// which clears it on entry.
+	//
+	// They are two fields rather than one accumulator BECAUSE each is owned by
+	// a different pass. A pass that may run twice on one catalog has to clear
+	// what it contributed, or its second run reports every advisory twice; and
+	// a single shared slice cannot be cleared by either pass without erasing
+	// the other's contribution. Splitting is what makes "clear on entry"
+	// correct rather than a new defect. LintWarnings() serves the two in the
+	// order the passes run.
+	pillarLintWarnings []string
+	narrowingWarnings  []string
 
 	// effectiveSchemas holds the composed (parent+child) schema for each
 	// FEATURE that declares extends:, keyed by metadata.name, in compactform
@@ -590,6 +600,9 @@ func newSkippedEntity(path string, data []byte, err error) SkippedEntity {
 // the ambiguity halts at the point of use (pull resolution / build render) when no
 // plugins.providers entry selects one.
 func (c *Catalog) validateSchemaPillarsPass() error {
+	// Clear what this pass contributed on the last run. A second run over the
+	// same catalog would otherwise report every pillar-overlap advisory twice.
+	c.pillarLintWarnings = nil
 	var validationErrors []error
 
 	componentNames := make([]string, 0, len(c.Components))
@@ -609,7 +622,7 @@ func (c *Catalog) validateSchemaPillarsPass() error {
 		); err != nil {
 			validationErrors = append(validationErrors, err)
 		}
-		c.lintWarnings = append(c.lintWarnings, validator.ValidateSchemaPillarOverlap(
+		c.pillarLintWarnings = append(c.pillarLintWarnings, validator.ValidateSchemaPillarOverlap(
 			"Component",
 			name,
 			c.componentSources[name],
@@ -634,7 +647,7 @@ func (c *Catalog) validateSchemaPillarsPass() error {
 		); err != nil {
 			validationErrors = append(validationErrors, err)
 		}
-		c.lintWarnings = append(c.lintWarnings, validator.ValidateSchemaPillarOverlap(
+		c.pillarLintWarnings = append(c.pillarLintWarnings, validator.ValidateSchemaPillarOverlap(
 			"Feature",
 			name,
 			c.featureSources[name],
@@ -1247,14 +1260,28 @@ func parsePluginEntity(data []byte, path string) (types.Plugin, error) {
 // where reads and template authors face "which pillar holds the foo
 // I'm reading?" friction.
 //
+// The narrowing-on-extend advisories a chain's pillar composition produces are
+// served here too, after the pillar-overlap lines, which is the order the two
+// producing passes run in.
+//
 // Returns nil when no lint warnings fired. Build callers range the
 // returned slice and print each line to stderr alongside the existing
 // DeprecationWarnings output.
+//
+// Deliberately NOT de-duplicating: two identical lines from two different
+// entities are two findings, and collapsing them here would hide the second
+// while also hiding the accumulator bug the per-pass clears exist to prevent.
 func (c *Catalog) LintWarnings() []string {
 	if c == nil {
 		return nil
 	}
-	return c.lintWarnings
+	if len(c.narrowingWarnings) == 0 {
+		return c.pillarLintWarnings
+	}
+	out := make([]string, 0, len(c.pillarLintWarnings)+len(c.narrowingWarnings))
+	out = append(out, c.pillarLintWarnings...)
+	out = append(out, c.narrowingWarnings...)
+	return out
 }
 
 func (c *Catalog) DeprecationWarnings() []string {
@@ -1302,6 +1329,11 @@ func (c *Catalog) DeprecationWarnings() []string {
 // (cmd/aggrega/build.go, cmd/aggrega/inspect.go) print every error and
 // exit non-zero when the slice is non-empty.
 func (c *Catalog) ResolveAllExtends() []*validator.ValidationError {
+	// Clear what this pass contributed on the last run. Nothing stops a caller
+	// resolving one catalog's chains twice, and without this every narrowing
+	// advisory would be reported once per run.
+	c.narrowingWarnings = nil
+
 	var errs []*validator.ValidationError
 
 	compLookup := func(uri string) (types.Component, bool) {
@@ -1345,7 +1377,7 @@ func (c *Catalog) ResolveAllExtends() []*validator.ValidationError {
 			}
 			c.effectiveSchemas[uri] = composition.EffectiveSchema
 		}
-		c.lintWarnings = append(c.lintWarnings, composition.Narrowings...)
+		c.narrowingWarnings = append(c.narrowingWarnings, composition.Narrowings...)
 	}
 
 	compKeys := make([]string, 0, len(c.Components))

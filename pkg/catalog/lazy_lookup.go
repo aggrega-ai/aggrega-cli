@@ -1760,6 +1760,12 @@ func (l *LazyLookup) ClosureNarrowingWarnings() []string {
 func (l *LazyLookup) ResolveClosureExtends(cl closure.Closure) []error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
+	// Clear what this pass contributed on the last run. The daemon is long-lived
+	// and resolves a closure's chains on each inspection, so without this every
+	// narrowing advisory would be reported once per inspection since the last
+	// reset. This pass is the field's only producer, so clearing the whole slice
+	// erases nothing another pass owns.
+	l.closureNarrowings = nil
 	// The closure's library set is the cross-document $ref context the schema
 	// merge composes against — the same set the eager whole-catalog path feeds
 	// CompileSchemaForMerge.

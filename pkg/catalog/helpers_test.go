@@ -11,18 +11,24 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
-// TestLintWarnings_NilReceiverAndPopulated pins both arms: a nil
-// Catalog returns nil; a populated lintWarnings slice round-trips.
+// TestLintWarnings_NilReceiverAndPopulated pins three arms: a nil Catalog
+// returns nil; each producing pass's advisories round-trip; and the two are
+// served in the order the passes run, pillar-overlap before narrowing.
 func TestLintWarnings_NilReceiverAndPopulated(t *testing.T) {
 	t.Parallel()
 	var nilC *Catalog
 	if got := nilC.LintWarnings(); got != nil {
 		t.Errorf("nil receiver should return nil; got %v", got)
 	}
-	c := &Catalog{lintWarnings: []string{"warn-a", "warn-b"}}
+	c := &Catalog{pillarLintWarnings: []string{"warn-a", "warn-b"}}
 	got := c.LintWarnings()
 	if len(got) != 2 || got[0] != "warn-a" {
 		t.Errorf("populated should round-trip; got %v", got)
+	}
+	c.narrowingWarnings = []string{"narrow-a"}
+	got = c.LintWarnings()
+	if len(got) != 3 || got[0] != "warn-a" || got[2] != "narrow-a" {
+		t.Errorf("both producers should be served, pillar first; got %v", got)
 	}
 }
 
