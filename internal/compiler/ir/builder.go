@@ -187,6 +187,10 @@ func BuildIRContext(ctx context.Context, cfg BuildIRConfig) (*types.IRGraph, Fea
 			CatalogMetadata:      buildCatalogMetadata(topoNode.ComponentType, cfg.CatalogLookup),
 			SelfInject:           topoNode.SelfInject,
 			SourceFile:           topoNode.SourceFile,
+			// The authored block, carried verbatim rather than reconstructed from
+			// the edges below: normalisation drops a socket that produced no edge,
+			// so reconstruction could not recover which sockets the author filled.
+			Uses: topoNode.Uses,
 		}
 
 		// Resolved version + schema-declared pillar defaults from catalog.

@@ -186,6 +186,20 @@ type IRNode struct {
 	// entries whose SourceFile points to a different file from the
 	// validated one.
 	SourceFile string `json:"source_file,omitempty"`
+
+	// Uses is the node's `uses` block exactly as authored, in the order the
+	// author declared each socket and each entry within it.
+	//
+	// It is a DIFFERENT fact from [IRSpec.Edges], not a second copy of one, and
+	// the difference is the reason it is carried: an edge exists only where an
+	// entry resolved to a target, so a socket the author populated but that
+	// produced no edge is invisible in Edges and visible here. A reader
+	// distinguishing "the author filled this socket" from "this socket reaches a
+	// target" needs both, and can derive neither from the other.
+	//
+	// Empty for a node that authored no `uses` block, and omitted from the wire
+	// in that case.
+	Uses OrderedMap[UsesSocketValue] `json:"uses,omitempty,omitzero"`
 }
 
 // CatalogMetadata is the Enterprise Metadata Suite extracted from a catalog entity.
