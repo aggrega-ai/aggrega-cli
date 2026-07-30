@@ -39,11 +39,24 @@ func jsonSchemaFalse() *jsonschema.Schema {
 // the extension keyword is metadata-only for inspection + policy
 // tooling.
 //
-// Closed-struct discipline: the parent `uses` schema rejects
-// socket names not declared in usesSchema via
-// additionalProperties: false (Schema-form: Not of empty). Author-
-// order from the OrderedMap input drives PropertyOrder on the
+// Closed-struct discipline: the parent `uses` schema it emits carries
+// additionalProperties: false (Schema-form: Not of empty), so a socket
+// name absent from usesSchema does not satisfy the emitted document.
+// Author-order from the OrderedMap input drives PropertyOrder on the
 // emitted schema, preserving the author's declared sequence.
+//
+// What that closure does and does not amount to is worth being exact
+// about, because the two are easy to read as one. This function has no
+// caller outside its own tests: nothing builds a validator from the
+// document it returns, so no build is refused on the strength of the
+// closure above. The socket-name check that actually runs is
+// ValidateUsesAgainstSchema in package resolver, which compares each
+// authored socket name against the catalog entity's usesSchema directly
+// and never consults a projected JSON Schema. So the closure describes
+// the shape this generator emits, not a gate an authored uses block
+// passes through — a distinction the sibling
+// [GenerateBaseAttachmentsJSONSchema] does not share, since that one is
+// wired to a resolver guard that validates against its output.
 func GenerateBaseUsesJSONSchema(usesSchema types.OrderedMap[types.UsesSchemaEntry]) *jsonschema.Schema {
 	if usesSchema.Len() == 0 {
 		return nil
