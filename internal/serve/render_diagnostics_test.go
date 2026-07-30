@@ -4,7 +4,9 @@
 package serve
 
 import (
+	"encoding/json"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -111,5 +113,53 @@ func TestDiagnosticsFiles_WalksBothLayers(t *testing.T) {
 	})
 	if got, want := s.diagnosticsFiles(), []string{"/w/a.yaml", "/w/b.yaml"}; !reflect.DeepEqual(got, want) {
 		t.Errorf("diagnosticsFiles = %v, want %v", got, want)
+	}
+}
+
+// TestDiagnosticSource_BothLayersInOnePayload is the acceptance for the layer
+// channel on the wire: one published payload for one file must carry an entry
+// from each layer, each naming its own source. One layer carrying the field and
+// the other not is the failure mode — a client then cannot tell "no source" from
+// "the other layer" and silently mis-buckets — so the assertion is on both
+// values in the same marshalled payload, not on either alone.
+//
+// The values are asserted as literals rather than against the constants: a
+// comparison against the constants would pass for whatever they happened to
+// hold, and the wire shape is a contract with a client that ships separately.
+func TestDiagnosticSource_BothLayersInOnePayload(t *testing.T) {
+	t.Parallel()
+	s := layeredServer()
+	const file = "/w/aggregate.yaml"
+
+	s.setDiagnostics(file, []Diagnostic{{Line: 3, Column: 5, Severity: "error", Message: "semantic"}})
+	s.setRenderDiagnostics(map[string][]Diagnostic{
+		file: {{Line: 1, Column: 1, Severity: "warning", Message: "render"}},
+	})
+
+	composed := s.snapshotDiagnostics(file)
+	if len(composed) != 2 {
+		t.Fatalf("composed snapshot carries %d entries, want 2 (one per layer)", len(composed))
+	}
+	raw, err := json.Marshal(publishDiagnosticsParams{File: file, Diagnostics: composed})
+	if err != nil {
+		t.Fatalf("marshal payload: %v", err)
+	}
+	payload := string(raw)
+	for _, want := range []string{`"message":"semantic","source":"aggrega"`, `"message":"render","source":"aggrega-build"`} {
+		if !strings.Contains(payload, want) {
+			t.Errorf("payload does not carry %s\npayload: %s", want, payload)
+		}
+	}
+
+	// The layer is authoritative: an entry constructed with some other source is
+	// overwritten by the layer that publishes it, so a construction site cannot
+	// mislabel which layer a finding came from.
+	s.setRenderDiagnostics(map[string][]Diagnostic{
+		file: {{Line: 1, Column: 1, Severity: "warning", Message: "render", Source: "something-else"}},
+	})
+	for _, d := range s.snapshotDiagnostics(file) {
+		if d.Message == "render" && d.Source != "aggrega-build" {
+			t.Errorf("render-layer source = %q, want aggrega-build (the layer overrides)", d.Source)
+		}
 	}
 }

@@ -242,10 +242,13 @@ func (s *Server) handleValidate(ctx context.Context, params validateParams) (val
 
 	var doc yaml.Node
 	if err := yaml.Unmarshal([]byte(params.Content), &doc); err != nil {
-		diag := yamlErrorToDiagnostic(err)
-		s.setDiagnostics(params.File, []Diagnostic{diag})
+		// One slice for both the store and the response, so the source the
+		// store stamps is the source the caller receives. Two slices built
+		// from the same value would leave the returned one unstamped.
+		diags := []Diagnostic{yamlErrorToDiagnostic(err)}
+		s.setDiagnostics(params.File, diags)
 		s.parseCache.Drop(params.File)
-		return validateResult{Diagnostics: []Diagnostic{diag}}, nil
+		return validateResult{Diagnostics: diags}, nil
 	}
 	s.parseCache.Put(params.File, &doc, []byte(params.Content))
 	// Per-file document-envelope validation on the buffer: any classifiable
@@ -285,8 +288,10 @@ func (s *Server) handleValidate(ctx context.Context, params validateParams) (val
 	diags := s.runTier4Validation(ctx, params.File, []byte(params.Content), &doc)
 	if ctx.Err() != nil {
 		// Cancelled mid-pipeline. Leave the prior diagnostic cache
-		// entry intact and return without overwriting it.
-		return validateResult{Diagnostics: diags}, nil
+		// entry intact and return without overwriting it — which means
+		// stamping the layer's source here, since the store is what
+		// normally stamps it.
+		return validateResult{Diagnostics: stampSource(diags, DiagnosticSourceSemantic)}, nil
 	}
 	s.setDiagnostics(params.File, diags)
 	// The response carries the composed view, not the semantic layer alone: the

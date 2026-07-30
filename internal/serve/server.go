@@ -105,13 +105,43 @@ func resolveRenderDiagnostics(flag *bool, cfgValue bool) bool {
 // keeps the wire backward compatible — pre-end-position clients ignore
 // the fields and post-end-position clients consuming an envelope
 // without them fall through to point-style.
+// Source names which of the daemon's two diagnostic layers raised the entry, so
+// a client can group them instead of showing one undifferentiated list. It is
+// always present: a client must never have to tell "no source" apart from "the
+// other layer", which is why it is stamped at each layer's own boundary rather
+// than at the construction sites.
 type Diagnostic struct {
 	Line      int    `json:"line"`
 	Column    int    `json:"column"`
 	Severity  string `json:"severity"`
 	Message   string `json:"message"`
+	Source    string `json:"source"`
 	EndLine   int    `json:"end_line,omitempty"`
 	EndColumn int    `json:"end_column,omitempty"`
+}
+
+// The two layer sources. DiagnosticSourceSemantic covers everything the
+// resolution and analysis stages report about the authored documents;
+// DiagnosticSourceBuild covers the advisories a render raises, which are the
+// findings `aggrega build` prints — so the value names the command whose output
+// they are rather than an internal stage.
+const (
+	DiagnosticSourceSemantic = "aggrega"
+	DiagnosticSourceBuild    = "aggrega-build"
+)
+
+// stampSource sets src on every entry in diags and returns diags.
+//
+// It mutates in place, which is deliberate: a caller that both stores a slice
+// and returns it on the same request stamps both with one call. The layer is
+// authoritative — an entry arriving with some other source is overwritten
+// rather than preserved, because a diagnostic's source is a fact about which
+// layer published it and no construction site is entitled to claim otherwise.
+func stampSource(diags []Diagnostic, src string) []Diagnostic {
+	for i := range diags {
+		diags[i].Source = src
+	}
+	return diags
 }
 
 // Server holds the daemon's per-session state. Constructed once in Run
@@ -366,8 +396,10 @@ func (s *Server) setPositionEncoding(enc yamlpos.PositionEncoding) {
 // A nil slice is stored verbatim (it reads back as an empty result).
 // This is the single write entry point for the diagnostics map; all
 // handler write sites route through it so the locking discipline has
-// one home.
+// one home — which is also why the semantic layer's source is stamped
+// here rather than at each construction site.
 func (s *Server) setDiagnostics(file string, diags []Diagnostic) {
+	stampSource(diags, DiagnosticSourceSemantic)
 	s.diagMu.Lock()
 	defer s.diagMu.Unlock()
 	s.diagnostics[file] = diags
@@ -420,7 +452,7 @@ func (s *Server) setRenderDiagnostics(byFile map[string][]Diagnostic) []string {
 		if len(d) == 0 {
 			continue
 		}
-		next[f] = d
+		next[f] = stampSource(d, DiagnosticSourceBuild)
 		touched[f] = true
 	}
 	s.renderDiags = next
