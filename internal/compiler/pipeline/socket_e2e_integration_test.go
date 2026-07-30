@@ -374,7 +374,7 @@ func TestVerdictRoleConfinesMutateOnlyGuestE2E(t *testing.T) {
 	// The halt is the verdict step demanding its validate export — the guest's
 	// mutate never ran, and no patch was applied — so the failure surfaces at the
 	// IR-verdict step and names the offending attachment.
-	if !strings.Contains(err.Error(), "Step 4") || !strings.Contains(err.Error(), "proof://mutate-only-at-verdict") {
+	if !strings.Contains(err.Error(), "ir-verdict") || !strings.Contains(err.Error(), "proof://mutate-only-at-verdict") {
 		t.Errorf("verdict-role confinement halt should surface at the IR-verdict step and name the attachment:\n%v", err)
 	}
 }

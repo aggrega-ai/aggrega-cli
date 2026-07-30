@@ -163,7 +163,7 @@ func CheckSelfInjectCollisions(selfKeys map[string]map[string]string, usesEdges 
 			ErrSelfInjectKeyCollision, first.deliveryKey, first.mechanism, first.usesSocket),
 		cerrors.DeveloperError,
 		cerrors.SourceLocation{File: nodeID},
-		fmt.Sprintf("node %q Pass 2 self-inject vs uses-inject collision", nodeID),
+		fmt.Sprintf("node %q self-inject vs uses-inject collision", nodeID),
 	)
 }
 

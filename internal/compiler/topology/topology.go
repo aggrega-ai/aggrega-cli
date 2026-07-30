@@ -615,7 +615,7 @@ func BuildContext(ctx context.Context, cfg BuildConfig) (*TopologyResult, error)
 			// discard the result, so the non-nil graph never leaks into a
 			// halt path.
 			return result, &resolver.MultiResolverError{
-				Entity:     "Step 2 (sub-aggregate conformance)",
+				Entity:     "sub-aggregate conformance",
 				Summary:    fmt.Sprintf("%d sub-aggregate guard violation(s)", len(subErrs)),
 				Violations: subErrs,
 			}

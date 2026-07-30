@@ -138,7 +138,7 @@ func ExecutePhaseA(ctx *types.TemplateContext, featureRecipes []FeatureRecipeRef
 		if err != nil {
 			return nil, cerrors.Wrap(err, cerrors.CatalogError,
 				cerrors.SourceLocation{File: ref.FeatureRecipe.Metadata.Name},
-				fmt.Sprintf("Phase A: feature %q (recipe %q) locals", ref.InstanceName, ref.FeatureRecipe.Metadata.Name))
+				fmt.Sprintf("feature %q (recipe %q) locals", ref.InstanceName, ref.FeatureRecipe.Metadata.Name))
 		}
 		featureCtx.Locals = mergeFeatureLocals(ctx.Locals, frLocals)
 
@@ -151,7 +151,7 @@ func ExecutePhaseA(ctx *types.TemplateContext, featureRecipes []FeatureRecipeRef
 		if err != nil {
 			return nil, cerrors.Wrap(err, cerrors.CatalogError,
 				cerrors.SourceLocation{File: ref.FeatureRecipe.Metadata.Name},
-				fmt.Sprintf("Phase A: feature %q (recipe %q) injectMapping", ref.InstanceName, ref.FeatureRecipe.Metadata.Name))
+				fmt.Sprintf("feature %q (recipe %q) injectMapping", ref.InstanceName, ref.FeatureRecipe.Metadata.Name))
 		}
 
 		// Parse the output and deep-merge over the inject pipe
@@ -159,7 +159,7 @@ func ExecutePhaseA(ctx *types.TemplateContext, featureRecipes []FeatureRecipeRef
 		if err != nil {
 			return nil, cerrors.Wrap(err, cerrors.CatalogError,
 				cerrors.SourceLocation{File: ref.FeatureRecipe.Metadata.Name},
-				fmt.Sprintf("Phase A: feature %q (recipe %q) injectMapping output parse", ref.InstanceName, ref.FeatureRecipe.Metadata.Name))
+				fmt.Sprintf("feature %q (recipe %q) injectMapping output parse", ref.InstanceName, ref.FeatureRecipe.Metadata.Name))
 		}
 
 		if overlay != nil {

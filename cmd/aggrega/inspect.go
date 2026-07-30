@@ -483,7 +483,7 @@ func renderReleaseFile(rw *workspaceconfig.ResolvedWorkspace, releasePath string
 				CompilerVersion: provenanceCompilerVersion(),
 			})
 			if err != nil {
-				return fmt.Errorf("Step 3 (IR): %w", err)
+				return fmt.Errorf("IR graph construction: %w", err)
 			}
 			return renderReleaseResolved(opts, rel, releasePath, graph, resolveResult, catalogLookup)
 		},

@@ -66,7 +66,7 @@ func phaseB0(ctx *types.TemplateContext, state *PhaseBState, localsForNode types
 			state.Recipe.Spec.Source, state.NodeID, ctx.Values, ctx.Infra, ctx.Locals,
 		)
 		if err != nil {
-			return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: state.RecipePath}, fmt.Sprintf("Phase B.0 node %q source", state.NodeID))
+			return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: state.RecipePath}, fmt.Sprintf("node %q source", state.NodeID))
 		}
 		// Replace state.Recipe with a local copy carrying the resolved
 		// source; engines later read state.Recipe.Spec.Source for the
@@ -120,12 +120,12 @@ func phaseB1(ctx *types.TemplateContext, state *PhaseBState) error {
 		ctx,
 	)
 	if err != nil {
-		return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: state.RecipePath}, fmt.Sprintf("Phase B.1: recipe %q valuesMapping", state.Recipe.Metadata.Name))
+		return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: state.RecipePath}, fmt.Sprintf("recipe %q valuesMapping", state.Recipe.Metadata.Name))
 	}
 
 	var values map[string]any
 	if err := parse.TemplateOutput([]byte(output), &values); err != nil {
-		return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: state.RecipePath}, fmt.Sprintf("Phase B.1: recipe %q valuesMapping output is not valid YAML", state.Recipe.Metadata.Name))
+		return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: state.RecipePath}, fmt.Sprintf("recipe %q valuesMapping output is not valid YAML", state.Recipe.Metadata.Name))
 	}
 	state.ResolvedValues = values
 	// Trace point: B.1 valuesMapping output (slot 07).
@@ -176,12 +176,12 @@ func phaseB2(ctx *types.TemplateContext, state *PhaseBState, slots types.Ordered
 		ctx,
 	)
 	if err != nil {
-		return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: state.RecipePath}, fmt.Sprintf("Phase B.2: recipe %q workload template", state.Recipe.Metadata.Name))
+		return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: state.RecipePath}, fmt.Sprintf("recipe %q workload template", state.Recipe.Metadata.Name))
 	}
 
 	var w types.Workload
 	if err := parse.TemplateOutput([]byte(output), &w); err != nil {
-		return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: state.RecipePath}, fmt.Sprintf("Phase B.2: recipe %q workload yaml.Unmarshal", state.Recipe.Metadata.Name))
+		return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: state.RecipePath}, fmt.Sprintf("recipe %q workload template output is not valid YAML", state.Recipe.Metadata.Name))
 	}
 
 	if err := validator.ValidateWorkload(&w, state.RecipePath, state.RecipeName, state.RecipeVersion); err != nil {
@@ -293,7 +293,7 @@ func phaseB4(ctx context.Context, tmplCtx *types.TemplateContext, state *PhaseBS
 	}
 	files, err := dispatchWorkloadSynthesis(ctx, engine, tmplCtx, state.ParsedWorkload, nodeCtx, providerName)
 	if err != nil {
-		return cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: state.RecipePath}, fmt.Sprintf("Phase B.4 node %q", state.NodeID))
+		return cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: state.RecipePath}, fmt.Sprintf("node %q workload synthesis", state.NodeID))
 	}
 	state.EmittedFiles = append(state.EmittedFiles, files...)
 	// Trace point: per-synthesised-file (slot 10). One trace event per file
@@ -428,7 +428,7 @@ func phaseB6(
 				ctx, fr, item.Instance, key, state, boundaryFRState,
 				nodeCtx, engineFactory, graph, release, boundaryAnnotations, allProvides, input,
 			); err != nil {
-				return nil, nil, nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("Step 5 node %q boundary-scope attachment %q", nodeID, item.Instance))
+				return nil, nil, nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("node %q boundary-scope attachment %q", nodeID, item.Instance))
 			}
 			continue
 		}
@@ -439,7 +439,7 @@ func phaseB6(
 			fr, item.Instance, nodeID, frCtx.Values, frCtx.Infra,
 		)
 		if err != nil {
-			return nil, nil, nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("Step 5 node %q attachment %q locals", nodeID, item.Instance))
+			return nil, nil, nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("node %q attachment %q locals", nodeID, item.Instance))
 		}
 		frCtx.Locals = mergeFeatureLocals(tmplCtx.Locals, frEvaluatedLocals)
 		// The delivery pipe and the resolved-fill provides are populated only
@@ -454,19 +454,19 @@ func phaseB6(
 
 		frValues, err := ExecutePhaseBForFeature(&frCtx, fr, input.MappingLibraries)
 		if err != nil {
-			return nil, nil, nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("Step 5 node %q attachment %q", nodeID, item.Instance))
+			return nil, nil, nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("node %q attachment %q", nodeID, item.Instance))
 		}
 
 		frEngine, err := engineFactory(fr.Spec.Capability)
 		if err != nil {
-			return nil, nil, nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("Step 5 node %q attachment %q engine factory", nodeID, item.Instance))
+			return nil, nil, nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("node %q attachment %q engine factory", nodeID, item.Instance))
 		}
 
 		frNodeCtx := nodeCtx
 		frNodeCtx.OriginalSource = fr.Spec.Source
 		resolvedSrc, err := resolveEntitySource(input, fr.Spec.Source, fr.Spec.Locals, frSourceURI(fr), item.OwnValues, item.OwnInfra, fr.Spec.SourceDigests)
 		if err != nil {
-			return nil, nil, nil, wrapSourceResolutionError(err, nodeID, fmt.Sprintf("Step 5 node %q attachment %q source resolution", nodeID, item.Instance))
+			return nil, nil, nil, wrapSourceResolutionError(err, nodeID, fmt.Sprintf("node %q attachment %q source resolution", nodeID, item.Instance))
 		}
 		frNodeCtx.Source = resolvedSrc
 

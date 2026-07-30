@@ -189,12 +189,12 @@ func ExecutePhaseBForFeature(ctx *types.TemplateContext, fr *types.FeatureRecipe
 		ctx,
 	)
 	if err != nil {
-		return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: fr.Metadata.Name}, fmt.Sprintf("Phase B (feature): FeatureRecipe %q valuesMapping", fr.Metadata.Name))
+		return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: fr.Metadata.Name}, fmt.Sprintf("FeatureRecipe %q valuesMapping", fr.Metadata.Name))
 	}
 
 	var values map[string]any
 	if err := parse.TemplateOutput([]byte(output), &values); err != nil {
-		return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: fr.Metadata.Name}, fmt.Sprintf("Phase B (feature): FeatureRecipe %q valuesMapping output is not valid YAML", fr.Metadata.Name))
+		return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: fr.Metadata.Name}, fmt.Sprintf("FeatureRecipe %q valuesMapping output is not valid YAML", fr.Metadata.Name))
 	}
 
 	return values, nil

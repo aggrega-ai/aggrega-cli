@@ -55,7 +55,7 @@ func runAnnotationSocket(ctx context.Context, inputs Inputs, catalogLookup resol
 		}
 		resolved, err := lookup(ref.URI)
 		if err != nil {
-			return fmt.Errorf("Step 1 (annotation transform): resolve plugin %q: %w", ref.URI, err)
+			return fmt.Errorf("annotation-transform: resolve plugin %q: %w", ref.URI, err)
 		}
 		targets, targetSet := annotationTargets(rr.Release)
 		in := AnnotationTransformInput{
@@ -66,23 +66,23 @@ func runAnnotationSocket(ctx context.Context, inputs Inputs, catalogLookup resol
 		}
 		payload, err := json.Marshal(in)
 		if err != nil {
-			return fmt.Errorf("Step 1 (annotation transform): marshal input for plugin %q: %w", ref.URI, err)
+			return fmt.Errorf("annotation-transform: marshal input for plugin %q: %w", ref.URI, err)
 		}
 		spec := resolver.PluginSpec(pluginRefName(ref.URI), resolved)
 		spec.PluginType = wasm.PluginTypeGovernance
 		out, err := invokeSocketPlugin(ctx, spec, export, payload)
 		if err != nil {
-			return fmt.Errorf("Step 1 (annotation transform): plugin %q: %w", ref.URI, err)
+			return fmt.Errorf("annotation-transform: plugin %q: %w", ref.URI, err)
 		}
 		var ao AnnotationTransformOutput
 		if err := json.Unmarshal(out, &ao); err != nil {
-			return fmt.Errorf("Step 1 (annotation transform): plugin %q output: %w", ref.URI, err)
+			return fmt.Errorf("annotation-transform: plugin %q output: %w", ref.URI, err)
 		}
 		if err := wasm.GuestReturnedError(export, ao.Error); err != nil {
-			return fmt.Errorf("Step 1 (annotation transform): plugin %q: %w", ref.URI, err)
+			return fmt.Errorf("annotation-transform: plugin %q: %w", ref.URI, err)
 		}
 		if err := applyAnnotationInjections(rr, ao, targetSet, ref.URI); err != nil {
-			return fmt.Errorf("Step 1 (annotation transform): plugin %q: %w", ref.URI, err)
+			return fmt.Errorf("annotation-transform: plugin %q: %w", ref.URI, err)
 		}
 	}
 	return nil

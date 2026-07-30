@@ -360,7 +360,7 @@ func runStepsOneToFour(
 			CompilerVersion: inputs.CompilerVersion,
 		})
 		if err != nil {
-			return fmt.Errorf("Step 3 (IR): %w", err)
+			return fmt.Errorf("IR graph construction: %w", err)
 		}
 		out.IRGraph = graph
 		out.FeatureOrder = featureOrder
@@ -454,13 +454,13 @@ func ResolveAndValidate(
 			return err
 		}
 		if err := resolver.ValidateAnnotationBindingTargets(resolveResult.Manifest, catalogLookup); err != nil {
-			return fmt.Errorf("Step 1 (annotation binding validation): %w", err)
+			return fmt.Errorf("annotation binding validation: %w", err)
 		}
 		for _, w := range resolver.LintAnnotationBindingMaps(resolveResult.Manifest) {
 			fmt.Fprintf(os.Stderr, "  %s\n", w)
 		}
 		if err := resolver.ExpandAnnotations(resolveResult, catalogLookup); err != nil {
-			return fmt.Errorf("Step 1 (annotation expansion): %w", err)
+			return fmt.Errorf("annotation expansion: %w", err)
 		}
 
 		normalized := types.Normalize(resolveResult.Aggregate)
@@ -498,10 +498,10 @@ func ResolveAndValidate(
 			// Carry the per-violation slice on the returned error so a caller can
 			// errors.Is the specific guard sentinel at the pipeline boundary
 			// (parity with the analyzer path, which joins). The summary text is
-			// unchanged: MultiResolverError.Error() renders "Step 1: N guard
+			// unchanged: the rendered summary reads "resolution: N guard
 			// violation(s)".
 			return &resolver.MultiResolverError{
-				Entity:     "Step 1",
+				Entity:     "resolution",
 				Summary:    fmt.Sprintf("%d guard violation(s)", len(guardErrs)),
 				Violations: guardErrs,
 			}
@@ -563,7 +563,7 @@ func ResolveAndFlatten(
 					return use(resolveResult, topoResult)
 				}
 			}
-			return fmt.Errorf("Step 2 (topology): %w", err)
+			return fmt.Errorf("topology construction: %w", err)
 		}
 
 		return use(resolveResult, topoResult)
@@ -826,7 +826,7 @@ func RunPipeline(
 
 		// Step 4b: Component / Feature assertions.
 		if err := renderer.EvaluateComponentAndFeatureAssertions(graph, catalogLookup); err != nil {
-			return cerrors.Wrap(err, cerrors.DeveloperError, cerrors.SourceLocation{}, "Step 4b (Component/Feature assertions)")
+			return cerrors.Wrap(err, cerrors.DeveloperError, cerrors.SourceLocation{}, "Component/Feature assertions")
 		}
 
 		// Step 4c: resolution-completeness — every component/feature instance must
@@ -942,12 +942,12 @@ func RunPipeline(
 		if opts.PluginCompileBegin != nil {
 			warmers, werr := collectProviderGuestWarmers(graph, recipeLookup, hybrid)
 			if werr != nil {
-				return fmt.Errorf("Step 5 (plugin compilation): %w", werr)
+				return fmt.Errorf("plugin compilation: %w", werr)
 			}
 			opts.PluginCompileBegin(len(warmers))
 			for i, w := range warmers {
 				if err := warmProviderGuest(ctx, w, opts.PluginCompileRunning); err != nil {
-					return fmt.Errorf("Step 5 (plugin compilation): %w", err)
+					return fmt.Errorf("plugin compilation: %w", err)
 				}
 				if opts.PluginCompileGuestDone != nil {
 					opts.PluginCompileGuestDone(i + 1)
@@ -957,7 +957,7 @@ func RunPipeline(
 
 		renderResult, rerr := renderer.RenderAll(ctx, rendererInput, recipeLookup, hybrid)
 		if rerr != nil {
-			return fmt.Errorf("Step 5 (render): %w", rerr)
+			return fmt.Errorf("rendering: %w", rerr)
 		}
 
 		emitRenderWarnings(os.Stderr, renderResult, opts.SuppressUnsupportedFieldWarnings)

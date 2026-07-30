@@ -150,31 +150,31 @@ func runMutatorSocket(ctx context.Context, inputs Inputs, catalogLookup resolver
 		}
 		resolved, err := lookup(ref.URI)
 		if err != nil {
-			return fmt.Errorf("Step 2 (mutator): resolve plugin %q: %w", ref.URI, err)
+			return fmt.Errorf("label-transform: resolve plugin %q: %w", ref.URI, err)
 		}
 		mi, err := topology.AssembleMutatorInput(topo, catalogLookup, cc, mutatorSources(ref), attachmentSettings(ref))
 		if err != nil {
-			return fmt.Errorf("Step 2 (mutator): assemble input for plugin %q: %w", ref.URI, err)
+			return fmt.Errorf("label-transform: assemble input for plugin %q: %w", ref.URI, err)
 		}
 		payload, err := json.Marshal(mi)
 		if err != nil {
-			return fmt.Errorf("Step 2 (mutator): marshal input for plugin %q: %w", ref.URI, err)
+			return fmt.Errorf("label-transform: marshal input for plugin %q: %w", ref.URI, err)
 		}
 		spec := resolver.PluginSpec(pluginRefName(ref.URI), resolved)
 		spec.PluginType = wasm.PluginTypeGovernance
 		out, err := invokeSocketPlugin(ctx, spec, export, payload)
 		if err != nil {
-			return fmt.Errorf("Step 2 (mutator): plugin %q: %w", ref.URI, err)
+			return fmt.Errorf("label-transform: plugin %q: %w", ref.URI, err)
 		}
 		var mo topology.MutatorOutput
 		if err := json.Unmarshal(out, &mo); err != nil {
-			return fmt.Errorf("Step 2 (mutator): plugin %q output: %w", ref.URI, err)
+			return fmt.Errorf("label-transform: plugin %q output: %w", ref.URI, err)
 		}
 		if err := wasm.GuestReturnedError(export, mo.Error); err != nil {
-			return fmt.Errorf("Step 2 (mutator): plugin %q: %w", ref.URI, err)
+			return fmt.Errorf("label-transform: plugin %q: %w", ref.URI, err)
 		}
 		if err := topology.ApplyMutatorPatches(topo, mo); err != nil {
-			return fmt.Errorf("Step 2 (mutator): plugin %q: %w", ref.URI, err)
+			return fmt.Errorf("label-transform: plugin %q: %w", ref.URI, err)
 		}
 	}
 	return nil
@@ -206,11 +206,11 @@ func runPolicySocket(ctx context.Context, inputs Inputs, catalogLookup resolver.
 		export := policyExport(ref)
 		resolved, err := lookup(ref.URI)
 		if err != nil {
-			return fmt.Errorf("Step 4 (policy): resolve plugin %q: %w", ref.URI, err)
+			return fmt.Errorf("ir-verdict: resolve plugin %q: %w", ref.URI, err)
 		}
 		sources, err := readPolicySources(ref)
 		if err != nil {
-			return fmt.Errorf("Step 4 (policy): plugin %q: %w", ref.URI, err)
+			return fmt.Errorf("ir-verdict: plugin %q: %w", ref.URI, err)
 		}
 		// Per-ref payload: the shared graph and paths plus this attachment's own
 		// sources and settings. The graph fields are shared references (a shallow
@@ -220,20 +220,20 @@ func runPolicySocket(ctx context.Context, inputs Inputs, catalogLookup resolver.
 		in.Settings = attachmentSettings(ref)
 		payload, err := json.Marshal(in)
 		if err != nil {
-			return fmt.Errorf("Step 4 (policy): marshal input for plugin %q: %w", ref.URI, err)
+			return fmt.Errorf("ir-verdict: marshal input for plugin %q: %w", ref.URI, err)
 		}
 		spec := resolver.PluginSpec(pluginRefName(ref.URI), resolved)
 		spec.PluginType = wasm.PluginTypeGovernance
 		out, err := invokeVerdictPlugin(ctx, spec, export, payload, in.Settings)
 		if err != nil {
-			return fmt.Errorf("Step 4 (policy): plugin %q: %w", ref.URI, err)
+			return fmt.Errorf("ir-verdict: plugin %q: %w", ref.URI, err)
 		}
 		var po analyzer.PolicyOutput
 		if err := json.Unmarshal(out, &po); err != nil {
-			return fmt.Errorf("Step 4 (policy): plugin %q output: %w", ref.URI, err)
+			return fmt.Errorf("ir-verdict: plugin %q output: %w", ref.URI, err)
 		}
 		if err := wasm.GuestReturnedError(export, po.Error); err != nil {
-			return fmt.Errorf("Step 4 (policy): plugin %q: %w", ref.URI, err)
+			return fmt.Errorf("ir-verdict: plugin %q: %w", ref.URI, err)
 		}
 		analysis.Errors = append(analysis.Errors, policyVerdictErrors(ref.URI, po)...)
 		for _, r := range po.Results {
@@ -268,7 +268,7 @@ func runRenderPolicySocket(ctx context.Context, inputs Inputs, catalogLookup res
 	lookup := resolveSocketLookup(inputs, catalogLookup, workspaceconfig.SocketTierVerdict)
 	artifacts, err := sortedRenderedArtifacts(ctx, inputs, catalogLookup, files)
 	if err != nil {
-		return fmt.Errorf("Step 5 (render policy): %w", err)
+		return fmt.Errorf("render-verdict: %w", err)
 	}
 
 	var denyErrs []analyzer.AnalysisError
@@ -276,11 +276,11 @@ func runRenderPolicySocket(ctx context.Context, inputs Inputs, catalogLookup res
 		export := policyExport(ref)
 		resolved, err := lookup(ref.URI)
 		if err != nil {
-			return fmt.Errorf("Step 5 (render policy): resolve plugin %q: %w", ref.URI, err)
+			return fmt.Errorf("render-verdict: resolve plugin %q: %w", ref.URI, err)
 		}
 		sources, err := readPolicySources(ref)
 		if err != nil {
-			return fmt.Errorf("Step 5 (render policy): plugin %q: %w", ref.URI, err)
+			return fmt.Errorf("render-verdict: plugin %q: %w", ref.URI, err)
 		}
 		settings := attachmentSettings(ref)
 		payload, err := json.Marshal(analyzer.RenderPolicyInput{
@@ -289,20 +289,20 @@ func runRenderPolicySocket(ctx context.Context, inputs Inputs, catalogLookup res
 			Settings:  settings,
 		})
 		if err != nil {
-			return fmt.Errorf("Step 5 (render policy): marshal input for plugin %q: %w", ref.URI, err)
+			return fmt.Errorf("render-verdict: marshal input for plugin %q: %w", ref.URI, err)
 		}
 		spec := resolver.PluginSpec(pluginRefName(ref.URI), resolved)
 		spec.PluginType = wasm.PluginTypeGovernance
 		out, err := invokeVerdictPlugin(ctx, spec, export, payload, settings)
 		if err != nil {
-			return fmt.Errorf("Step 5 (render policy): plugin %q: %w", ref.URI, err)
+			return fmt.Errorf("render-verdict: plugin %q: %w", ref.URI, err)
 		}
 		var po analyzer.PolicyOutput
 		if err := json.Unmarshal(out, &po); err != nil {
-			return fmt.Errorf("Step 5 (render policy): plugin %q output: %w", ref.URI, err)
+			return fmt.Errorf("render-verdict: plugin %q output: %w", ref.URI, err)
 		}
 		if err := wasm.GuestReturnedError(export, po.Error); err != nil {
-			return fmt.Errorf("Step 5 (render policy): plugin %q: %w", ref.URI, err)
+			return fmt.Errorf("render-verdict: plugin %q: %w", ref.URI, err)
 		}
 		denyErrs = append(denyErrs, policyVerdictErrors(ref.URI, po)...)
 		for _, r := range po.Results {

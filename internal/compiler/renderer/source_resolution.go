@@ -27,7 +27,7 @@ func frSourceURI(fr *types.FeatureRecipe) string {
 // route to FETCH_ERROR with an appended remediation pointer (unless the chain already
 // carries one); everything else routes to TRANSLATION_ERROR. Shared by the component
 // node loop and the FeatureRecipe render sites so both surface source-fetch failures
-// identically. label is the leading "Step 5 node %q ... source resolution" message.
+// identically. label is the leading "node %q ... source resolution" message.
 func wrapSourceResolutionError(err error, nodeID, label string) error {
 	category := cerrors.TranslationError
 	message := label
