@@ -706,59 +706,87 @@ func TestFindingOnSensitiveLeaf_PathShapes(t *testing.T) {
 	}
 }
 
-// TestPillarConformance_WithholdingFollowsTheDeclarationReader pins the two
-// shapes the withholding does NOT reach, so the gap is an executable fact rather
-// than a discovery. It is deliberately an assertion that the leak EXISTS: the
-// day the declaration reader learns to descend through composition, this test
-// fails and whoever closes that gap is told the diagnostic surface follows for
-// free.
+// TestPillarConformance_WithholdingFollowsTheDeclarationReader pins that this
+// diagnostic surface withholds exactly what the declaration reader collects, and
+// does so for free — there is no second walk here, so a declaration the reader
+// learns to see is withheld here the same day.
 //
-// Neither shape is a hole in the withholding itself. Sensitivity is read from
-// one home, and that reader collects a declaration beside a reference but not
-// one inside the reference target — so in both shapes below nothing is declared
-// as far as any consumer can tell, and the trace and inspect surfaces have the
-// same blind spot for the same reason. The fix belongs to the reader, once, not
-// to a second walk grown here.
+// A declaration inside a reference TARGET is one such case: the reader resolves
+// the reference, so the value that once reached this diagnostic in plaintext is
+// now replaced. The test asserts the replacement rather than the leak, and it
+// asserts the key survives, because a diagnostic that dropped the failing locus
+// would be worse than one that printed it.
 func TestPillarConformance_WithholdingFollowsTheDeclarationReader(t *testing.T) {
 	t.Parallel()
-	const insideRefTarget = `$defs:
+	compiled := compileTestSchema(t, `$defs:
   MarkedCred: { type: string, minLength: 40, sensitive: true }
 values:
   cred:
     $ref: "#/$defs/MarkedCred"
-`
-	const wholePillarRef = `$defs:
+`)
+	if !DeclaredSensitiveLeaves(compiled).Values["cred"] {
+		t.Fatalf("a declaration inside the reference target must be collected at the referring path; got %v",
+			DeclaredSensitiveLeaves(compiled).Values)
+	}
+	instance := types.OrderedMap[any]{}
+	instance.Set("cred", "INSIDE-REF-PLAINTEXT")
+	errs := ValidatePillarConformance(compiled, "values", instance, nil,
+		"Aggregate demo", `.spec.components["svc"]`, "the Component schema")
+	if len(errs) == 0 {
+		t.Fatalf("the fixture must violate its schema; it produced no finding")
+	}
+	var withheld bool
+	for _, e := range errs {
+		if strings.Contains(e.Message, "INSIDE-REF-PLAINTEXT") {
+			t.Errorf("the declared value still reaches the diagnostic in plaintext: %v", e)
+		}
+		if strings.Contains(e.Message, redact.Placeholder()) {
+			withheld = true
+		}
+	}
+	if !withheld {
+		t.Errorf("no finding carries the replacement text; got %v", errs)
+	}
+}
+
+// TestPillarConformance_WholePillarBehindAReferenceStillEscapes pins the ONE
+// shape the declaration reader still does not reach: a pillar whose own node is a
+// reference, with no `properties` of its own. The reader locates a pillar's
+// declarations through the property map that pillar exposes, so a pillar that
+// exposes none has nothing to walk and the declaration inside the target is never
+// seen.
+//
+// It is deliberately an assertion that the leak EXISTS, so the gap is an
+// executable fact rather than a rediscovery. The day the reader learns to resolve
+// a reference on the pillar node itself, this test fails and whoever closes that
+// gap is told this diagnostic surface follows for free. The fix belongs to the
+// reader, once, not to a second walk grown here.
+func TestPillarConformance_WholePillarBehindAReferenceStillEscapes(t *testing.T) {
+	t.Parallel()
+	compiled := compileTestSchema(t, `$defs:
   Creds:
     marked: { type: string, minLength: 40, sensitive: true }
 values:
   $ref: "#/$defs/Creds"
-`
-	for _, tc := range []struct {
-		name, schema, key, value string
-	}{
-		{"declaration inside the reference target", insideRefTarget, "cred", "INSIDE-REF-PLAINTEXT"},
-		{"whole pillar behind a reference", wholePillarRef, "marked", "WHOLE-PILLAR-PLAINTEXT"},
-	} {
-		compiled := compileTestSchema(t, tc.schema)
-		if DeclaredSensitiveLeaves(compiled).Any() {
-			t.Fatalf("%s: the declaration reader now descends through composition. Re-point this test at the shape that still escapes it, or delete it — the withholding below follows the reader and needs no separate change.", tc.name)
+`)
+	if DeclaredSensitiveLeaves(compiled).Any() {
+		t.Fatalf("the declaration reader now resolves a reference on the pillar node. Re-point this test at the shape that still escapes it, or delete it — the withholding below follows the reader and needs no separate change.")
+	}
+	instance := types.OrderedMap[any]{}
+	instance.Set("marked", "WHOLE-PILLAR-PLAINTEXT")
+	errs := ValidatePillarConformance(compiled, "values", instance, nil,
+		"Aggregate demo", `.spec.components["svc"]`, "the Component schema")
+	if len(errs) == 0 {
+		t.Fatalf("the fixture must violate its schema; it produced no finding")
+	}
+	var carried bool
+	for _, e := range errs {
+		if strings.Contains(e.Message, "WHOLE-PILLAR-PLAINTEXT") {
+			carried = true
 		}
-		instance := types.OrderedMap[any]{}
-		instance.Set(tc.key, tc.value)
-		errs := ValidatePillarConformance(compiled, "values", instance, nil,
-			"Aggregate demo", `.spec.components["svc"]`, "the Component schema")
-		if len(errs) == 0 {
-			t.Fatalf("%s: the fixture must violate its schema; it produced no finding", tc.name)
-		}
-		var carried bool
-		for _, e := range errs {
-			if strings.Contains(e.Message, tc.value) {
-				carried = true
-			}
-		}
-		if !carried {
-			t.Errorf("%s: the value no longer reaches the diagnostic. If the reader was widened, update this test; if a second walk was grown here instead, remove it — sensitivity has one home.", tc.name)
-		}
+	}
+	if !carried {
+		t.Errorf("the value no longer reaches the diagnostic. If the reader was widened, update this test; if a second walk was grown here instead, remove it — sensitivity has one home.")
 	}
 }
 

@@ -98,7 +98,7 @@ func sameSet(got map[string]bool, want []string) bool {
 func TestSensitivityLeafParityAgainstSharedFixture(t *testing.T) {
 	t.Parallel()
 	cases := loadSensitivityParityCases(t)
-	if len(cases.LeafCases) < 20 {
+	if len(cases.LeafCases) < 30 {
 		t.Fatalf("the shared fixture lost cases (%d left); it is the only source of cases for both sides", len(cases.LeafCases))
 	}
 
@@ -203,9 +203,30 @@ func TestSensitivityParityFixtureCoversEveryDivergenceShape(t *testing.T) {
 		"escape-mapping-body-nested-leaf-declares",
 		// The one declared divergence: a body only a YAML parser can open.
 		"escape-text-body-is-unreadable-in-the-guest",
+		// A declaration INSIDE a composing branch, which lands on the
+		// composing node rather than below the branch — one case per branch
+		// shape, because the list-valued and single-schema keywords are two
+		// separate keyword sets and a reader can descend one and miss the
+		// other.
+		"composition-branch-leaf-declares-on-the-composing-node",
+		"composition-branch-properties-declare-below-the-composing-node",
+		"conditional-branch-properties-declare-below-the-carrying-node",
+		"negated-branch-leaf-declares-on-the-carrying-node",
+		// A declaration INSIDE a reference target, which lands at the
+		// referring path — from a definitions block at each of the two scopes
+		// a pointer can resolve against.
+		"reference-target-declares-at-the-referring-path",
+		"reference-target-at-the-document-root-resolves-too",
+		// The two halves of the cycle rule, which are opposite failures: a
+		// recursive target that declares withholds its tail, one that declares
+		// nothing stays readable.
+		"recursive-reference-declaring-terminates-and-withholds-the-tail",
+		"recursive-reference-declaring-nothing-stays-readable",
+		// A pointer nothing resolves, where withholding the referring path is
+		// the only reading that cannot under-report.
+		"unresolvable-reference-collects-the-referring-path",
 		// The shapes the walk deliberately does not descend into.
-		"composition-branch-declares-nothing",
-		"reference-sibling-properties-are-not-walked",
+		"composition-sibling-properties-are-not-walked",
 		"array-items-are-not-walked",
 	} {
 		if !present[required] {

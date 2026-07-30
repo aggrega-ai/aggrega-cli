@@ -118,21 +118,139 @@
       "expect": { "values": ["c"] }
     },
     {
-      "name": "composition-branch-declares-nothing",
-      "why": "A marker inside a composing branch is not a declaration on the composing node.",
+      "name": "composition-branch-leaf-declares-on-the-composing-node",
+      "why": "A branch composes onto the object carrying it, so a marker on the branch itself declares the carrying property.",
       "schema": {
         "values": { "c": { "anyOf": [{ "type": "string", "sensitive": true }] } }
+      },
+      "expect": { "values": ["c"] }
+    },
+    {
+      "name": "composition-branch-properties-declare-below-the-composing-node",
+      "why": "A branch's own property map contributes below the carrying property's path, never below the branch.",
+      "schema": {
+        "values": {
+          "c": {
+            "allOf": [
+              {
+                "properties": {
+                  "pw": { "type": "string", "sensitive": true },
+                  "host": { "type": "string" }
+                }
+              }
+            ]
+          }
+        }
+      },
+      "expect": { "values": ["c.pw"] }
+    },
+    {
+      "name": "conditional-branch-properties-declare-below-the-carrying-node",
+      "why": "The single-schema composition keywords compose the same way as the list-valued ones, so a marker under one of them declares too.",
+      "schema": {
+        "values": {
+          "c": {
+            "if": { "type": "object" },
+            "then": { "properties": { "pw": { "type": "string", "sensitive": true } } }
+          }
+        }
+      },
+      "expect": { "values": ["c.pw"] }
+    },
+    {
+      "name": "negated-branch-leaf-declares-on-the-carrying-node",
+      "why": "A negated branch describes a shape an instance must avoid, so reading a marker there can only withhold a datum that could never validate.",
+      "schema": {
+        "values": { "c": { "not": { "type": "string", "sensitive": true } } }
+      },
+      "expect": { "values": ["c"] }
+    },
+    {
+      "name": "reference-target-declares-at-the-referring-path",
+      "why": "A definitions block authored beside the properties that use it resolves there, and the declaration lands at the referring property's path plus its own chain — no authored datum lives inside the definition.",
+      "schema": {
+        "values": {
+          "$defs": {
+            "Credential": {
+              "properties": {
+                "secret": { "type": "string", "sensitive": true },
+                "locator": { "type": "string" }
+              }
+            }
+          },
+          "cred": { "$ref": "#/$defs/Credential" }
+        }
+      },
+      "expect": { "values": ["cred.secret"] }
+    },
+    {
+      "name": "reference-target-at-the-document-root-resolves-too",
+      "why": "A definitions block authored at the document root is a reference scope as well, so the same pointer resolves from an outer scope.",
+      "schema": {
+        "$defs": {
+          "Credential": { "properties": { "secret": { "type": "string", "sensitive": true } } }
+        },
+        "values": { "cred": { "$ref": "#/$defs/Credential" } }
+      },
+      "expect": { "values": ["cred.secret"] }
+    },
+    {
+      "name": "recursive-reference-declaring-terminates-and-withholds-the-tail",
+      "why": "A target that reaches itself cannot be enumerated further, so the referring path is collected when the recursion carries a declaration anywhere.",
+      "schema": {
+        "values": {
+          "$defs": {
+            "Node": {
+              "properties": {
+                "secret": { "type": "string", "sensitive": true },
+                "child": { "$ref": "#/$defs/Node" }
+              }
+            }
+          },
+          "root": { "$ref": "#/$defs/Node" }
+        }
+      },
+      "expect": { "values": ["root.child", "root.secret"] }
+    },
+    {
+      "name": "recursive-reference-declaring-nothing-stays-readable",
+      "why": "A path is sensitive only when an author said so, so a recursive schema carrying no marker must not be withheld by the cycle rule alone.",
+      "schema": {
+        "values": {
+          "$defs": {
+            "Node": {
+              "properties": {
+                "name": { "type": "string" },
+                "child": { "$ref": "#/$defs/Node" }
+              }
+            }
+          },
+          "root": { "$ref": "#/$defs/Node" }
+        }
       },
       "expect": {}
     },
     {
-      "name": "reference-sibling-properties-are-not-walked",
-      "why": "A property map beside a reference yields no reachable leaf on either side.",
+      "name": "unresolvable-reference-collects-the-referring-path",
+      "why": "What an unresolvable target declares is unknown, so naming the referring property is the most precise declaration available and the only one that cannot under-report. The property map beside the reference still yields no reachable leaf on either side.",
       "schema": {
         "values": {
           "c": {
             "$ref": "#/$defs/Credential",
             "properties": { "inner": { "type": "string", "sensitive": true } }
+          }
+        }
+      },
+      "expect": { "values": ["c"] }
+    },
+    {
+      "name": "composition-sibling-properties-are-not-walked",
+      "why": "A property map beside a composition keyword yields no reachable leaf on either side.",
+      "schema": {
+        "values": {
+          "c": {
+            "allOf": [{ "type": "object" }],
+            "properties": { "pw": { "type": "string", "sensitive": true } }
           }
         }
       },

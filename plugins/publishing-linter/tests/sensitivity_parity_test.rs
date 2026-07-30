@@ -38,7 +38,8 @@ use std::path::PathBuf;
 
 use publishing_linter::rules::secret_slot_declares_sensitive as slot_rule;
 use publishing_linter::sensitivity::{
-    self, DeclaredSensitiveLeaves, COMPACT_KEYWORDS, SCHEMA_CONTAINER_KEYWORDS, SENSITIVE_PILLARS,
+    self, DeclaredSensitiveLeaves, BRANCH_LIST_KEYWORDS, BRANCH_NODE_KEYWORDS, COMPACT_KEYWORDS,
+    SCHEMA_CONTAINER_KEYWORDS, SENSITIVE_PILLARS,
 };
 use serde_json::Value;
 
@@ -101,7 +102,7 @@ fn leaf_cases_match_the_shared_expectation() {
         .and_then(Value::as_array)
         .expect("leafCases is an array");
     assert!(
-        cases.len() >= 20,
+        cases.len() >= 30,
         "the shared fixture lost cases ({} left); it is the only source of cases for \
          both sides, so a deletion here silently narrows both",
         cases.len()
@@ -336,6 +337,46 @@ fn schema_container_keyword_vocabulary_matches_the_source_of_truth() {
         upstream.difference(&ours).collect::<Vec<_>>(),
         ours.difference(&upstream).collect::<Vec<_>>(),
     );
+}
+
+/// The composition keywords each reader descends. Both sets are pinned,
+/// and separately: one side descending the list-valued keywords and not
+/// the single-schema ones would pass a pin over their union while
+/// collecting a different set of declarations. The compiler side carries
+/// the mirror of this test, which is what catches drift for anyone running
+/// the compiler's suite rather than this crate's.
+#[test]
+fn composition_keyword_sets_match_the_source_of_truth() {
+    let Some(reader) = read_compiler_source(
+        &["pkg", "resolver", "sensitive_leaves.go"],
+        "composition_keyword_sets_match_the_source_of_truth",
+    ) else {
+        return;
+    };
+
+    for (needle, ours) in [
+        ("branchListKeywords = []string{", BRANCH_LIST_KEYWORDS),
+        ("branchNodeKeywords = []string{", BRANCH_NODE_KEYWORDS),
+    ] {
+        let body = delimited_block(&reader, needle).unwrap_or_else(|| {
+            panic!("the keyword set {needle:?} was not found; the reader's declaration shape moved and this pin needs re-aiming rather than passing vacuously")
+        });
+        let upstream = quoted_literals(&body);
+        assert!(
+            !upstream.is_empty(),
+            "{needle:?} parsed empty upstream; a pin over an empty set holds no matter what this \
+             reader descends"
+        );
+        let mine: BTreeSet<String> = ours.iter().map(|s| s.to_string()).collect();
+        assert_eq!(
+            mine, upstream,
+            "the composition-keyword set {needle:?} drifted. Missing from the plugin: {:?}. \
+             Extra in the plugin: {:?}. A keyword one side descends and the other does not leaves \
+             a declaration collected on one side only.",
+            upstream.difference(&mine).collect::<Vec<_>>(),
+            mine.difference(&upstream).collect::<Vec<_>>(),
+        );
+    }
 }
 
 #[test]

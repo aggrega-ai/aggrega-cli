@@ -34,12 +34,21 @@
 //! Do not "unify" this module into a direct call — none can exist — and
 //! do not trust it without that test.
 //!
-//! ## What is deliberately not read
+//! ## What the walk follows, and what it deliberately does not
 //!
-//! The walk descends only through property maps, so a declaration
-//! reached only through a reference target, a composing branch, or an
-//! array's element type is not collected. That is the same line the
-//! compiler's reader draws.
+//! A declaration reaches a datum by four routes, and all four are
+//! followed: a property map, a composing branch, a reference target, and
+//! a marker sitting beside a reference or a composition keyword. A branch
+//! and a reference target both compose onto the property carrying them,
+//! so a declaration found through either is collected at that property's
+//! own path rather than at a path inside the branch or the definition.
+//!
+//! Two shapes are deliberately not followed, and both are the same line
+//! the compiler's reader draws. An array's element type is not a property
+//! of the enclosing object, so a marker there has no path any consumer
+//! could look up. A pillar's own node is entered at the property map it
+//! exposes, so a composition or a reference written on the pillar node
+//! itself is not followed on either side.
 //!
 //! One divergence is real and reported rather than hidden: an escaped
 //! JSON Schema body authored as a YAML text block needs a YAML parser to
@@ -99,6 +108,18 @@ pub const SCHEMA_CONTAINER_KEYWORDS: &[&str] = &[
     "unevaluatedItems",
     "unevaluatedProperties",
 ];
+
+/// The composition keywords whose value is an ARRAY of schemas. Mirrors
+/// `branchListKeywords` in `pkg/resolver/sensitive_leaves.go`, and pinned
+/// against it by `tests/sensitivity_parity_test.rs`: a keyword the
+/// compiler descends and this reader does not leaves a declaration
+/// uncollected on this side only.
+pub const BRANCH_LIST_KEYWORDS: &[&str] = &["allOf", "anyOf", "oneOf"];
+
+/// The composition keywords whose value is a SINGLE schema. Mirrors
+/// `branchNodeKeywords` in `pkg/resolver/sensitive_leaves.go`, pinned by
+/// the same test and for the same reason.
+pub const BRANCH_NODE_KEYWORDS: &[&str] = &["if", "then", "else", "not"];
 
 /// The authored key a schema leaf and an attachment slot both declare
 /// sensitivity with.
@@ -181,7 +202,11 @@ pub fn declared_sensitive_leaves(schema: &Value) -> DeclaredSensitiveLeaves {
         // properties it exposes, and reads no marker on the pillar itself.
         let mut collected = BTreeSet::new();
         let mut blocked = BTreeSet::new();
-        walk_scope(node, "", &mut collected, &mut blocked);
+        // The document root and the pillar's own node are both reference
+        // scopes: a definitions block authored at either place stays where it
+        // was authored, so a pointer written beneath it resolves only when the
+        // node it sits on is in scope.
+        walk_scope(node, "", &[schema], &[], &mut collected, &mut blocked);
         if let Some(dest) = out.pillar_mut(pillar) {
             dest.extend(collected);
         }
@@ -211,11 +236,9 @@ pub fn slot_declares_sensitive(slot: &Value) -> bool {
 enum Shape {
     /// An escaped JSON Schema body replaces this node.
     Escape,
-    /// A reference; a marker beside it lands on the referring node, and
-    /// the target is not walked.
+    /// A reference; a marker beside it lands on the referring node.
     Reference,
-    /// A composition; a marker beside it lands on the composing node,
-    /// and the branches are not walked.
+    /// A composition; a marker beside it lands on the composing node.
     Composition,
     /// A constraint leaf, which may still carry a property map.
     CompactConstraint,
@@ -278,13 +301,37 @@ fn declares_marker(obj: &Map<String, Value>, shape: Shape) -> bool {
     }
 }
 
-/// Walks one object scope, recording the dotted path of every node
-/// declaring the marker and recursing into the property maps the
-/// compiler's own walk follows. `prefix` is empty at a pillar root,
-/// where no marker is read.
-fn walk_scope(
-    node: &Value,
+/// `push_scope` returns a new scope stack with `node` appended, copying
+/// rather than extending in place. The copy is load-bearing: sibling
+/// branches of one node each extend the same stack, and an in-place
+/// append would let one branch's entry land in the slot another branch is
+/// about to write.
+fn push_scope<'a>(scopes: &[&'a Value], node: &'a Value) -> Vec<&'a Value> {
+    let mut out = scopes.to_vec();
+    out.push(node);
+    out
+}
+
+/// Walks one object scope, recording the dotted path of every node whose
+/// declaration reaches the datum at `prefix`, by every route the
+/// compiler's own walk follows: nested properties, each composition
+/// branch, and the target of a reference. A properties descent extends
+/// the path; a branch or reference descent keeps it, because both compose
+/// onto the object carrying them.
+///
+/// `prefix` is empty at a pillar root, where no marker is read and where
+/// neither a composition nor a reference on the pillar node itself is
+/// followed — the compiler enters a pillar at the property map it exposes,
+/// so a pillar node's own composition or reference is unreached on both
+/// sides.
+///
+/// `refs` is the stack of pointers in flight. A pointer that revisits a
+/// target already in flight stops rather than recursing forever.
+fn walk_scope<'a>(
+    node: &'a Value,
     prefix: &str,
+    scopes: &[&'a Value],
+    refs: &[String],
     out: &mut BTreeSet<String>,
     blocked: &mut BTreeSet<String>,
 ) {
@@ -296,21 +343,25 @@ fn walk_scope(
     // An escaped body replaces the node it sits on. A body authored as a
     // mapping is read on; a body authored as YAML text cannot be opened
     // here, and that is reported rather than read as an absence.
-    let (obj, shape) = match shape {
+    let (obj, shape, scope_node) = match shape {
         Shape::Escape => match obj.get("$jsonschema") {
-            Some(Value::Object(body)) => (body, Shape::Passthrough),
+            Some(body @ Value::Object(body_obj)) => (body_obj, Shape::Passthrough, body),
             Some(Value::String(_)) => {
                 blocked.insert(prefix.to_string());
                 return;
             }
             _ => return,
         },
-        other => (obj, other),
+        other => (obj, other, node),
     };
 
     if !prefix.is_empty() && declares_marker(obj, shape) {
         out.insert(prefix.to_string());
     }
+
+    // The node joins the scope stack before any descent so a definitions
+    // block it carries is visible to the pointers written beneath it.
+    let inner = push_scope(scopes, scope_node);
 
     for (name, child) in child_properties(obj, shape) {
         let path = if prefix.is_empty() {
@@ -318,14 +369,181 @@ fn walk_scope(
         } else {
             format!("{prefix}.{name}")
         };
-        walk_scope(child, &path, out, blocked);
+        walk_scope(child, &path, &inner, refs, out, blocked);
     }
+
+    if prefix.is_empty() {
+        return;
+    }
+
+    for keyword in BRANCH_LIST_KEYWORDS {
+        if let Some(branches) = obj.get(*keyword).and_then(Value::as_array) {
+            for branch in branches {
+                walk_scope(branch, prefix, &inner, refs, out, blocked);
+            }
+        }
+    }
+    for keyword in BRANCH_NODE_KEYWORDS {
+        if let Some(branch) = obj.get(*keyword) {
+            walk_scope(branch, prefix, &inner, refs, out, blocked);
+        }
+    }
+
+    let Some(Value::String(reference)) = obj.get("$ref") else {
+        return;
+    };
+    // The in-flight key is the pointer as written. Two scopes resolving the
+    // same spelling to different targets therefore read as one revisit,
+    // which stops a descent that could have continued — the same direction
+    // as an unresolvable pointer, so it withholds rather than leaks.
+    if in_flight(refs, reference) {
+        if ref_target_declares_sensitive(reference, &inner, &[]) {
+            out.insert(prefix.to_string());
+        }
+        return;
+    }
+    let Some(target) = resolve_pointer(reference, &inner) else {
+        // What the target declares is unknown, so naming the referring
+        // property is the most precise declaration available and the only
+        // one that cannot under-report.
+        out.insert(prefix.to_string());
+        return;
+    };
+    let mut next = refs.to_vec();
+    next.push(reference.clone());
+    walk_scope(target, prefix, &inner, &next, out, blocked);
+}
+
+/// `in_flight` reports whether a pointer is already being expanded.
+/// Mirrors the shared cycle guard the compiler threads through the same
+/// walk: a key already in flight is a cycle.
+fn in_flight(refs: &[String], reference: &str) -> bool {
+    refs.iter().any(|r| r == reference)
+}
+
+/// Splits a JSON Pointer reference into its unescaped segments, or `None`
+/// for a reference this reader cannot follow. A reference naming another
+/// document is never followable here: a cross-document reference is merged
+/// into the consumer's own schema before either reader sees it, so one that
+/// survived is a reference neither can resolve.
+fn pointer_segments(reference: &str) -> Option<Vec<String>> {
+    let pointer = reference.strip_prefix('#')?;
+    if pointer.is_empty() {
+        return Some(Vec::new());
+    }
+    let body = pointer.strip_prefix('/')?;
+    Some(
+        body.split('/')
+            // Unescape in the order the JSON Pointer grammar requires:
+            // "~1" first, so an escaped tilde cannot be re-read as a
+            // separator.
+            .map(|segment| segment.replace("~1", "/").replace("~0", "~"))
+            .collect(),
+    )
+}
+
+/// Resolves an in-document reference against a stack of enclosing scopes,
+/// nearest first, and returns `None` when no scope holds the pointed-to
+/// node.
+///
+/// Nearest-first matters because a definitions block is authored on the
+/// node whose properties use it rather than hoisted to the document root,
+/// so the innermost scope holding the pointer's own first segment is the
+/// one an author wrote it against.
+fn resolve_pointer<'a>(reference: &str, scopes: &[&'a Value]) -> Option<&'a Value> {
+    let segments = pointer_segments(reference)?;
+    for scope in scopes.iter().rev() {
+        if let Some(node) = walk_pointer(scope, &segments) {
+            return Some(node);
+        }
+    }
+    None
+}
+
+fn walk_pointer<'a>(scope: &'a Value, segments: &[String]) -> Option<&'a Value> {
+    let mut node = scope;
+    for segment in segments {
+        node = node.as_object()?.get(segment)?;
+        if !node.is_object() {
+            return None;
+        }
+    }
+    Some(node)
+}
+
+/// `ref_target_declares_sensitive` answers one narrower question than the
+/// path walk above: does anything reachable from this reference declare
+/// sensitivity at all, regardless of where. It exists because a reference
+/// that revisits a target already in flight cannot be enumerated further,
+/// and the two answers available there are opposite failures — stopping
+/// silently leaves a recursive tail readable, while withholding
+/// unconditionally invents sensitivity on a recursive schema whose author
+/// declared none. This predicate separates the two cases, so the tail is
+/// withheld exactly when the recursion carries a declaration.
+///
+/// It is deliberately a second, simpler walk rather than a reuse of the
+/// path walk: it collects no paths and never withholds on a revisit, which
+/// is sound for a question about mere reachability — a marker anywhere in
+/// the reachable graph sits on some node reached by a non-repeating chain.
+/// Folding the two together would make the path walk's revisit rule depend
+/// on its own result.
+///
+/// It does not open an escaped body, so a declaration reachable only
+/// through a YAML text block inside a recursive target is invisible to it
+/// on this side.
+fn ref_target_declares_sensitive(reference: &str, scopes: &[&Value], refs: &[String]) -> bool {
+    if in_flight(refs, reference) {
+        return false;
+    }
+    let Some(target) = resolve_pointer(reference, scopes) else {
+        return true;
+    };
+    let inner = push_scope(scopes, target);
+    let mut next = refs.to_vec();
+    next.push(reference.to_string());
+    node_declares_sensitive(target, &inner, &next)
+}
+
+fn node_declares_sensitive(node: &Value, scopes: &[&Value], refs: &[String]) -> bool {
+    let Some(obj) = node.as_object() else {
+        return false;
+    };
+    let shape = shape_of(obj);
+    if declares_marker(obj, shape) {
+        return true;
+    }
+    for (_, child) in child_properties(obj, shape) {
+        if node_declares_sensitive(child, &push_scope(scopes, child), refs) {
+            return true;
+        }
+    }
+    for keyword in BRANCH_LIST_KEYWORDS {
+        if let Some(branches) = obj.get(*keyword).and_then(Value::as_array) {
+            for branch in branches {
+                if node_declares_sensitive(branch, &push_scope(scopes, branch), refs) {
+                    return true;
+                }
+            }
+        }
+    }
+    for keyword in BRANCH_NODE_KEYWORDS {
+        if let Some(branch) = obj.get(*keyword) {
+            if node_declares_sensitive(branch, &push_scope(scopes, branch), refs) {
+                return true;
+            }
+        }
+    }
+    if let Some(Value::String(reference)) = obj.get("$ref") {
+        return ref_target_declares_sensitive(reference, scopes, refs);
+    }
+    false
 }
 
 /// The property entries the walk descends into: the ones that become the
-/// node's compiled property map. A reference's target, a composition's
-/// branches, and an array's element type are not property maps and are
-/// not walked.
+/// node's compiled property map, each contributing its own name to the
+/// path. A reference's target and a composition's branches are reached
+/// separately, at the carrying property's path rather than below it, and
+/// an array's element type is reached by neither reader.
 fn child_properties(obj: &Map<String, Value>, shape: Shape) -> Vec<(&String, &Value)> {
     match shape {
         Shape::CompactConstraint | Shape::Passthrough => obj
@@ -334,7 +552,8 @@ fn child_properties(obj: &Map<String, Value>, shape: Shape) -> Vec<(&String, &Va
             .map(|props| props.iter().collect())
             .unwrap_or_default(),
         // Every key of an object scope is a property name, except the two
-        // definition maps, which the compiler lifts to the schema root.
+        // definition maps: those name reference targets rather than data,
+        // so they are reference scopes and never path segments.
         Shape::ImplicitObject => obj
             .iter()
             .filter(|(k, _)| k.as_str() != "$defs" && k.as_str() != "definitions")

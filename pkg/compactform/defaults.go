@@ -39,6 +39,23 @@ func PillarDefaults(compiled Schema, pillar string) types.OrderedMap[any] {
 // default subtree (recursion). A `$ref`-valued property contributes nothing —
 // defaults reached through composition ($ref or allOf/oneOf/anyOf) are not
 // materialised here; composition-aware resolution is a deferred follow-on.
+//
+// The sensitivity reader walks the same compiled schema and deliberately draws a
+// WIDER line, following a reference and every composition branch. That is not a
+// copy of this walk that drifted, and unifying the two would be a defect, for two
+// independent reasons.
+//
+// They feed different sides of the build. This walk materialises authored values
+// into the render context, so widening it would put defaults into rendered
+// artifacts that are not there today. The sensitivity reader feeds what
+// human-readable surfaces withhold, where collecting more never changes a rendered
+// byte.
+//
+// They have opposite fail-safe directions. Materialising a default must follow
+// what an author wrote, so a default reached through a branch an instance does not
+// satisfy would invent a value nobody declared. Reading sensitivity must catch
+// everything, so a path collected that need not have been only withholds a datum
+// an author left readable.
 func SchemaDefaults(props map[string]any) types.OrderedMap[any] {
 	out := types.OrderedMap[any]{}
 	keys := make([]string, 0, len(props))
