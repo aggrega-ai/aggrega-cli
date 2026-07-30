@@ -262,7 +262,7 @@ func placeArtifactsFromInput(in rendercore.RenderNodeInput) (rendercore.RenderNo
 			return rendercore.RenderNodeOutput{}, err
 		}
 		if warning != "" {
-			out.Diagnostics = append(out.Diagnostics, renderctx.Diagnostic{Severity: "warning", Code: "artifact_provenance_skipped", Message: warning})
+			out.Diagnostics = append(out.Diagnostics, rendercore.ArtifactProvenanceSkippedDiagnostic(warning))
 		}
 		out.Files = append(out.Files, rendercore.RenderedFile{Path: ent.Name, Content: body})
 	}

@@ -266,6 +266,10 @@ func validateTerraformModule(proj *aggrega.SourceProjection) []renderctx.Diagnos
 // HCL diagnostic becomes a warning. The summary and detail are joined into the
 // human-readable message, and the file position — when HCL pins one — travels in
 // the diagnostic location so the halt names the offending file and line.
+// terraformHCLParseCode is the machine-matchable code every diagnostic derived
+// from an HCL parse finding carries, whichever severity that finding maps to.
+const terraformHCLParseCode = "terraform-hcl-parse"
+
 func convertHCLDiagnostics(hd hcl.Diagnostics) []renderctx.Diagnostic {
 	if len(hd) == 0 {
 		return nil
@@ -282,7 +286,7 @@ func convertHCLDiagnostics(hd hcl.Diagnostics) []renderctx.Diagnostic {
 		}
 		diag := renderctx.Diagnostic{
 			Severity: severity,
-			Code:     "terraform_hcl_parse",
+			Code:     terraformHCLParseCode,
 			Message:  msg,
 		}
 		if d.Subject != nil {

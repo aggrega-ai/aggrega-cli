@@ -17,6 +17,10 @@ import (
 	"go.yaml.in/yaml/v3"
 )
 
+// stepSkippedCode is the machine-matchable code the advisory carries when an
+// optional pipeline step failed and the walk continued without it.
+const stepSkippedCode = "pipeline-step-skipped"
+
 // StepInvoker invokes one pipeline step's guest export with the marshalled
 // [FRPStepInput] payload and returns the raw [FRPStepOutput] bytes. The
 // caller binds this to the shared describe() gate's InvokeExport (resolving
@@ -172,7 +176,7 @@ func Walk(
 			if step.Optional && !errors.Is(err, ErrPipelineContractViolation) {
 				warnings = append(warnings, renderctx.Diagnostic{
 					Severity: "warning",
-					Code:     "pipeline_step_skipped",
+					Code:     stepSkippedCode,
 					Message:  fmt.Sprintf("optional pipeline step %q skipped: %v", step.ID, err),
 				})
 				continue

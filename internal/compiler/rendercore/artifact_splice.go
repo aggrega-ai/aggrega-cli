@@ -7,8 +7,29 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderctx"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 )
+
+// ArtifactProvenanceSkippedCode is the stable, machine-matchable code carried by
+// the diagnostic a provider guest emits when it could not stamp build provenance
+// into a rendered artifact and emitted the artifact's bytes unchanged instead.
+// Every guest that splices provenance reports the class under this one code, so a
+// consumer matches the class rather than the message text.
+const ArtifactProvenanceSkippedCode = "artifact-provenance-skipped"
+
+// ArtifactProvenanceSkippedDiagnostic wraps the advisory warning
+// [SpliceArtifactProvenance] returns into the diagnostic a guest raises for it.
+// It sits beside the function that produces the warning text so the class's code
+// and severity have one home rather than one copy per guest: a guest passes the
+// non-empty warning straight through and never names the code itself.
+func ArtifactProvenanceSkippedDiagnostic(warning string) renderctx.Diagnostic {
+	return renderctx.Diagnostic{
+		Severity: "warning",
+		Code:     ArtifactProvenanceSkippedCode,
+		Message:  warning,
+	}
+}
 
 // SpliceArtifactProvenance stamps the supplied build-provenance label and
 // annotation sets into a rendered Kubernetes-YAML artifact's metadata and returns

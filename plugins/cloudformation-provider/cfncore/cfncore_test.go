@@ -272,8 +272,11 @@ func TestValidateSourcedMalformedHalts(t *testing.T) {
 	if diags[0].Severity != "error" {
 		t.Fatalf("diagnostic severity = %q, want error", diags[0].Severity)
 	}
-	if diags[0].Code != "cloudformation_template_parse" {
-		t.Fatalf("diagnostic code = %q, want cloudformation_template_parse", diags[0].Code)
+	// Asserted as a literal on purpose. Comparing against templateParseCode would
+	// pass for any value that constant happened to hold, which is exactly the
+	// change this assertion exists to catch.
+	if diags[0].Code != "cloudformation-template-parse" {
+		t.Fatalf("diagnostic code = %q, want cloudformation-template-parse", diags[0].Code)
 	}
 	if !strings.Contains(diags[0].Message, "broken.yaml") {
 		t.Fatalf("diagnostic message does not name the offending file: %q", diags[0].Message)
