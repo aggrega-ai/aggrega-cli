@@ -262,8 +262,8 @@ func runStep(
 		return nil, nil, nil, types.OrderedMap[any]{}, fmt.Errorf("%w: step %q (index %d) unmarshal output: %w", ErrPipelineStepFailed, step.ID, index, err)
 	}
 
-	if out.Error != "" {
-		return nil, nil, nil, types.OrderedMap[any]{}, fmt.Errorf("%w: step %q (index %d): %w: %s", ErrPipelineStepFailed, step.ID, index, wasm.ErrWasmGuestError, out.Error)
+	if gerr := wasm.GuestReturnedError(step.Function, out.Error); gerr != nil {
+		return nil, nil, nil, types.OrderedMap[any]{}, fmt.Errorf("%w: step %q (index %d): %w", ErrPipelineStepFailed, step.ID, index, gerr)
 	}
 
 	for _, d := range out.Diagnostics {

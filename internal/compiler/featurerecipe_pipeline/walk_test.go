@@ -8,10 +8,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/jsonpatch"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderctx"
+	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
@@ -371,5 +373,31 @@ func TestWalk_FailedTestOpMatchesEngineSentinel(t *testing.T) {
 	}
 	if !errors.Is(err, ErrPipelineStepFailed) {
 		t.Errorf("err = %v, want it to also match ErrPipelineStepFailed", err)
+	}
+}
+
+// TestWalk_GuestReportedErrorMatchesHostTaxonomy confirms a step whose guest
+// ran to completion but reported a failure on its output envelope halts
+// through the shared host taxonomy: reachable both as a guest error and as a
+// step failure, naming the export the step declared and carrying the guest's
+// own reason.
+func TestWalk_GuestReportedErrorMatchesHostTaxonomy(t *testing.T) {
+	docs := DocumentSet{Own: rawMap("a.yaml", `{"x":"0"}`)}
+	inv := newScripted()
+	inv.outputs["s1"] = FRPStepOutput{Error: "could not resolve the chart"}
+
+	_, err := Walk(context.Background(), docs, []types.PipelineStep{{ID: "s1", Plugin: "p", Function: "render_chart"}},
+		inv.invoke, &types.TemplateContext{}, renderctx.RenderContext{}, noEval)
+	if !errors.Is(err, wasm.ErrWasmGuestError) {
+		t.Fatalf("err = %v, want it to wrap the guest-error sentinel", err)
+	}
+	if !errors.Is(err, ErrPipelineStepFailed) {
+		t.Errorf("err = %v, want it to also match ErrPipelineStepFailed", err)
+	}
+	if !strings.Contains(err.Error(), `"render_chart"`) {
+		t.Errorf("err = %v, want the message to name the step's export", err)
+	}
+	if !strings.Contains(err.Error(), "could not resolve the chart") {
+		t.Errorf("err = %v, want the message to carry the guest's own reason", err)
 	}
 }
