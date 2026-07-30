@@ -364,15 +364,13 @@ func pullRun(cfg pullConfig) error {
 	aggregate := aggRes.Aggregate
 
 	lockfilePath := lockfile.PathFor(cfg.ReleasePath)
-	// A targeted upgrade names specific entities and holds the rest, so it must
-	// keep the prior lockfile (that is what preserves the other pins and the
-	// recorded external inputs); only the bare full-refresh upgrade discards it.
+	// A targeted upgrade names specific entities and holds the rest, so it reads
+	// the prior lockfile (that is what preserves the other pins and the recorded
+	// external inputs). A bare upgrade is a full refresh: it re-resolves every
+	// entity from current registry state and so reads nothing forward from the
+	// previous pin set.
 	targeted := cfg.Upgrade && len(cfg.UpgradeTargets) > 0
-	if cfg.Upgrade && !targeted {
-		if err := os.Remove(lockfilePath); err != nil && !errors.Is(err, os.ErrNotExist) {
-			return fmt.Errorf("upgrade: remove existing lockfile: %w", err)
-		}
-	}
+	fullRefresh := cfg.Upgrade && !targeted
 	if cfg.Verify {
 		// Verify-only: a missing lockfile is fatal — the flag
 		// presumes one exists. The no-lockfile case is what the
@@ -396,25 +394,42 @@ func pullRun(cfg pullConfig) error {
 	} else {
 		externals = lockfile.ExternalEntitiesFromBytes(rel, aggRes.Bytes, manRes.Bytes)
 	}
+	// The prior lockfile is read exactly once, here, and every later consumer
+	// reads this value rather than the file: the reuse-check just below, and the
+	// deprecation and external-input carry-forwards at the end of the pull. A full
+	// refresh reads nothing — floating every pin and carrying forward neither the
+	// recorded deprecations nor the external inputs IS what a bare --upgrade
+	// means, and expressing that as one decision here is what keeps the three
+	// consumers from disagreeing about it.
+	//
+	// The file on disk is left untouched either way. It is replaced only by the
+	// single write at the end of a successful pull, so a refresh that cannot
+	// complete leaves the previous pins in place rather than destroying pins it
+	// never replaced.
+	var prior *lockfile.Lockfile
+	if !fullRefresh {
+		if lf, _, lerr := lockfile.LoadLockfile(lockfilePath); lerr == nil {
+			prior = lf
+		}
+	}
+
 	// Re-pull reuse-check: when a prior lockfile exists, verify reused
 	// cache slots against its pins so a slot that has drifted from its
 	// pin is re-fetched and re-pinned from authoritative registry bytes
 	// rather than laundered into the new lockfile. Skipped under
 	// --verify (read-only — lockfile.Verify covers drift below) and when
-	// no prior lockfile is present (first pull, or --upgrade removed
-	// it above): there both establish pins from scratch, with nothing to
-	// verify against.
+	// there is no prior pin set to honor (first pull, or a full refresh):
+	// there both establish pins from scratch, with nothing to verify against.
 	var reuse *catalog.ReuseVerification
 	if !cfg.Verify {
-		prior, _, lerr := lockfile.LoadLockfile(lockfilePath)
 		if targeted {
 			// Targeted upgrade holds every non-named pin, so a prior lockfile is
 			// required — there must be a pin set to hold. Reducing that set (dropping
 			// the named pins) is the whole mechanism: a URI absent from PriorPins
 			// floats to its highest-satisfying version, every URI still present is
-			// honored, and the untouched lockfile file carries the external inputs
-			// forward.
-			if lerr != nil || prior == nil {
+			// honored, and the prior lockfile's recorded external inputs are carried
+			// forward below.
+			if prior == nil {
 				return fmt.Errorf("no lockfile to upgrade at %s; run `aggrega pull` first to create one", lockfilePath)
 			}
 			pins := catalog.PinsFromLockfile(prior)
@@ -428,7 +443,7 @@ func pullRun(cfg pullConfig) error {
 				PriorPins: pins,
 				Warn:      func(notice string) { fmt.Fprintf(cfg.DiagOut, "  reuse: %s\n", notice) },
 			}
-		} else if lerr == nil && prior != nil {
+		} else if prior != nil {
 			reuse = &catalog.ReuseVerification{
 				PriorPins: catalog.PinsFromLockfile(prior),
 				Warn:      func(notice string) { fmt.Fprintf(cfg.DiagOut, "  reuse: %s\n", notice) },
@@ -731,14 +746,15 @@ func pullRun(cfg pullConfig) error {
 			// re-discovery below overwrites it with a fresh finding. Without this, a
 			// build's honoring auto-pull would silently drop a recorded deprecation
 			// and mask a deprecated dependency.
-			carryForwardDeprecation(lf, lockfilePath)
+			carryForwardDeprecation(lf, prior)
 			// Carry forward the prior lockfile's external-input pins. These are
 			// render-time remote-input pins recorded by build and acquire, not
 			// part of the catalog closure buildLockfile materialises, so a pull
 			// would otherwise rewrite the lockfile with an empty list and force
-			// the next build to re-acquire from the network. A --upgrade pull
-			// removes the prior lockfile up front, so this refreshes the pins.
-			carryForwardExternalInputs(lf, lockfilePath)
+			// the next build to re-acquire from the network. A bare --upgrade is a
+			// full refresh and reads no prior lockfile, so this carries nothing and
+			// the pins refresh on the next build.
+			carryForwardExternalInputs(lf, prior)
 			// Lock-time signature verification: verify each registry-resolved
 			// entity's signature against the registry's trust policy, record
 			// the verified fact, and cache the bundle for air-gapped re-verify.

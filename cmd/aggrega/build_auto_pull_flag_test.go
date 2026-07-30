@@ -179,10 +179,10 @@ func TestBuildAutoPullIncrementalPreservesExternalInputs(t *testing.T) {
 }
 
 // TestBuildAutoPullUpgradeDiscardsExternalInputs proves that --auto-pull
-// --upgrade is a full refresh: the pull step discards the existing lockfile
-// before rebuilding, so a prior render-time external-input pin is dropped rather
-// than carried forward. Contrasts with the incremental case above and confirms
-// --upgrade is threaded through to the pull step's full-refresh path.
+// --upgrade is a full refresh: the pull step discards the existing pin set, so a
+// prior render-time external-input pin is dropped rather than carried forward.
+// Contrasts with the incremental case above and confirms --upgrade is threaded
+// through to the pull step's full-refresh path.
 func TestBuildAutoPullUpgradeDiscardsExternalInputs(t *testing.T) {
 	root := t.TempDir()
 	t.Chdir(root)

@@ -138,7 +138,7 @@ type buildRunOptions struct {
 	// Effective when this flag OR workspace auto_pull is set.
 	autoPull bool
 	// upgrade makes the auto-pull step a full refresh: the pull discards the
-	// existing lockfile and re-resolves every dependency, floating each to the
+	// existing pin set and re-resolves every dependency, floating each to the
 	// highest available version rather than honoring existing pins. It implies the
 	// auto-pull step — requesting it turns the pull step on when neither the flag
 	// nor workspace auto_pull is set.
@@ -664,7 +664,7 @@ func acquireLockfile(rw *workspaceconfig.ResolvedWorkspace, releasePath string, 
 	// refills an empty cache by pin, and prunes stale pins; on a complete,
 	// cache-populated lockfile it is a no-op with NO network (every pin a Tier-2 hit),
 	// so the build stays hermetic given a complete lockfile. With upgrade the fill
-	// is a full refresh: it discards the existing lockfile and re-resolves every
+	// is a full refresh: it discards the existing pin set and re-resolves every
 	// dependency, floating each to the highest satisfying version. There is no
 	// absent-vs-partial special case: any incomplete/empty state runs the same fill,
 	// and lockfile.Verify (in dispatchBuild) is the post-condition. The build's own

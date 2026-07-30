@@ -422,6 +422,56 @@ func TestPullUpgradeDiscardsExistingLockfile(t *testing.T) {
 	}
 }
 
+// TestPullUpgradeFailureLeavesPriorLockfileIntact proves a bare --upgrade that
+// cannot complete leaves the previous lockfile byte-identical on disk and still
+// fails. A full refresh discards the previous pin set in memory; the file itself
+// is replaced only by the single write at the end of a pull that got that far,
+// so a resolution failure costs the caller nothing it cannot recover.
+//
+// The bytes are compared, not the file's existence: a refresh that truncated or
+// rewrote the lockfile before failing would satisfy an existence check while
+// still having destroyed the pins.
+func TestPullUpgradeFailureLeavesPriorLockfileIntact(t *testing.T) {
+	root := t.TempDir()
+	t.Chdir(root)
+	releasePath := authoringFixture(t, root)
+	catalogDir := filepath.Join(root, "catalog")
+	lockfilePath := filepath.Join(root, "release.lock")
+
+	if err := pullRun(pullConfig{ReleasePath: releasePath, CatalogDirs: []string{catalogDir}}); err != nil {
+		t.Fatalf("seed pull: %v", err)
+	}
+	before, err := os.ReadFile(lockfilePath)
+	if err != nil {
+		t.Fatalf("read seeded lockfile: %v", err)
+	}
+
+	// Break the closure the upgrade must re-resolve: the Recipe the Manifest maps
+	// `server` to is no longer in the catalog. The walk is the first step that can
+	// fail after the refresh decision is made, which is the window under test.
+	if err := os.Remove(filepath.Join(catalogDir, "recipes", "server.yaml")); err != nil {
+		t.Fatalf("remove recipe to break the closure: %v", err)
+	}
+
+	upgradeErr := pullRun(pullConfig{
+		ReleasePath: releasePath,
+		CatalogDirs: []string{catalogDir},
+		Upgrade:     true,
+	})
+	if upgradeErr == nil {
+		t.Fatal("upgrade over an unresolvable closure returned nil; the resolution failure must surface")
+	}
+
+	after, readErr := os.ReadFile(lockfilePath)
+	if readErr != nil {
+		t.Fatalf("prior lockfile is gone after a failed upgrade (%v); the refresh destroyed pins it never replaced", readErr)
+	}
+	if !bytes.Equal(before, after) {
+		t.Errorf("failed upgrade did not leave the prior lockfile byte-identical\n--- before (%d bytes) ---\n%s\n--- after (%d bytes) ---\n%s",
+			len(before), before, len(after), after)
+	}
+}
+
 // seedExternalInput loads the lockfile at path, records one external-input pin,
 // and rewrites it — simulating a pin a prior build or acquire wrote. External
 // inputs are not part of the catalog closure, so a plain pull never produces
@@ -483,10 +533,10 @@ func TestPullPreservesExternalInputsWarm(t *testing.T) {
 	}
 }
 
-// TestPullUpgradeDropsExternalInputs proves --upgrade refreshes the pins:
-// it removes the prior lockfile up front, so the carry-forward finds nothing and
-// the rewritten lockfile carries an empty external_inputs list. This is the
-// intended "re-acquire from scratch" behavior.
+// TestPullUpgradeDropsExternalInputs proves --upgrade refreshes the pins: a full
+// refresh reads no prior pin set, so the carry-forward finds nothing and the
+// rewritten lockfile carries an empty external_inputs list. This is the intended
+// "re-acquire from scratch" behavior.
 func TestPullUpgradeDropsExternalInputs(t *testing.T) {
 	root := t.TempDir()
 	t.Chdir(root)

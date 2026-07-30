@@ -108,17 +108,18 @@ func discoverClosureDeprecations(
 }
 
 // carryForwardDeprecation copies each unchanged pin's deprecation record from
-// the prior lockfile at lockfilePath into lf, so a warm-cache (Tier-2) re-pull
-// that does not re-touch the registry preserves a deprecation discovered on an
-// earlier registry-touching pull. A record is carried forward only when the new
-// row already carries none (a fresh Tier-3 re-discovery wins) and the prior and
-// new rows share the same content digest (an unchanged pin — a changed pin is a
+// the prior lockfile into lf, so a warm-cache (Tier-2) re-pull that does not
+// re-touch the registry preserves a deprecation discovered on an earlier
+// registry-touching pull. A record is carried forward only when the new row
+// already carries none (a fresh Tier-3 re-discovery wins) and the prior and new
+// rows share the same content digest (an unchanged pin — a changed pin is a
 // different artifact whose deprecation status must be re-discovered, not
-// inherited). A missing or unreadable prior lockfile is a no-op: the first pull
-// has nothing to carry forward.
-func carryForwardDeprecation(lf *lockfile.Lockfile, lockfilePath string) {
-	prior, _, err := lockfile.LoadLockfile(lockfilePath)
-	if err != nil || prior == nil {
+// inherited).
+//
+// A nil prior is a no-op: the first pull has nothing to carry forward, and
+// neither does a full refresh, which deliberately reads no prior pin set.
+func carryForwardDeprecation(lf *lockfile.Lockfile, prior *lockfile.Lockfile) {
+	if prior == nil {
 		return
 	}
 	type priorPin struct {
@@ -151,20 +152,20 @@ func carryForwardDeprecation(lf *lockfile.Lockfile, lockfilePath string) {
 }
 
 // carryForwardExternalInputs copies the prior lockfile's recorded external-input
-// pins at lockfilePath into lf. External inputs are render-time remote-input pins
-// written by build (after render) and by acquire — they are not part of the
-// catalog closure, so buildLockfile produces none. Without this carry-forward a
-// pull would rewrite the lockfile with an empty external-inputs list, wiping the
-// pins a prior build or acquire recorded and forcing the next build to
-// re-acquire from the network. The list is copied wholesale (buildLockfile
-// leaves it empty) with each entry's RequiredBy slice deep-copied so lf never
-// aliases the prior lockfile's backing arrays. A missing or unreadable prior
-// lockfile is a no-op: the first pull has nothing to carry forward, and a
-// --upgrade pull (which removes the prior lockfile up front) naturally
-// carries nothing, refreshing the pins on the next build.
-func carryForwardExternalInputs(lf *lockfile.Lockfile, lockfilePath string) {
-	prior, _, err := lockfile.LoadLockfile(lockfilePath)
-	if err != nil || prior == nil {
+// pins into lf. External inputs are render-time remote-input pins written by
+// build (after render) and by acquire — they are not part of the catalog
+// closure, so buildLockfile produces none. Without this carry-forward a pull
+// would rewrite the lockfile with an empty external-inputs list, wiping the pins
+// a prior build or acquire recorded and forcing the next build to re-acquire
+// from the network. The list is copied wholesale (buildLockfile leaves it empty)
+// with each entry's RequiredBy slice deep-copied so lf never aliases the prior
+// lockfile's backing arrays.
+//
+// A nil prior is a no-op: the first pull has nothing to carry forward, and a
+// bare --upgrade is a full refresh that reads no prior pin set, so it carries
+// nothing and the pins refresh on the next build.
+func carryForwardExternalInputs(lf *lockfile.Lockfile, prior *lockfile.Lockfile) {
+	if prior == nil {
 		return
 	}
 	if len(prior.ExternalInputs) == 0 {

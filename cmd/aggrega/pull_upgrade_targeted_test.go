@@ -120,11 +120,11 @@ func entityByURI(t *testing.T, lockfilePath, uri string) (lockfile.Entity, bool)
 }
 
 // TestPullTargetedUpgradePreservesLockfileAndHolds proves the targeted-upgrade
-// path does NOT discard the prior lockfile: a named-target upgrade holds every
+// path does NOT discard the prior pin set: a named-target upgrade holds every
 // other pin and carries forward the recorded external inputs (in contrast to the
-// bare full-refresh upgrade, which removes the lockfile and drops them). The
-// distinguishing behavior is that the lockfile file survives, so the
-// carry-forward finds the prior external-input pin.
+// bare full-refresh upgrade, which drops both). The distinguishing behavior is
+// that the targeted path reads the prior lockfile, so the carry-forward finds the
+// prior external-input pin.
 func TestPullTargetedUpgradePreservesLockfileAndHolds(t *testing.T) {
 	root := t.TempDir()
 	t.Chdir(root)
