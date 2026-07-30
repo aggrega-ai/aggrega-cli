@@ -13,6 +13,8 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"math"
+	"sort"
 	"strconv"
 	"unicode/utf8"
 )
@@ -20,129 +22,129 @@ import (
 // PluginDescriptor A plugin's complete self-declaration, returned from describe() and read once at load. It carries the ABI-compatibility handshake, the plugin type, the offered exports, and the optional per-type surfaces (a provider's render-behavior contract, a CLI plugin's commands, a settings schema, authorship metadata).
 type PluginDescriptor struct {
 	// AbiVersion The plugin ABI the guest binds against. The host accepts exactly this version; a guest built against any other ABI is refused at load rather than mis-invoked at dispatch.
-	AbiVersion string `json:"abi_version" yaml:"abi_version"`
+	AbiVersion string `json:"abi_version" yaml:"abi_version" cbor:"abi_version"`
 	// PluginType The plugin's kind. It selects the minimum-export rule the host validates and, together with the export name, the default input-delivery pattern. A governance plugin serves the build-pipeline transform and verdict roles; the role it is attached at — not its kind — fixes what it may emit.
-	PluginType string `json:"plugin_type" yaml:"plugin_type"`
+	PluginType string `json:"plugin_type" yaml:"plugin_type" cbor:"plugin_type"`
 	// Capabilities What the plugin serves, interpreted per plugin type: for a provider, the render-engine capability names (such as helm or compose) whose output shape it renders; for a feature-recipe-pipeline step, the provider capabilities its step is compatible with. The cross-cutting sockets leave it empty. Entries are in declared order and are an explicit, tested-compatibility claim. An absent or empty list declares no capability claim.
-	Capabilities []string `json:"capabilities,omitempty" yaml:"capabilities,omitempty"`
+	Capabilities []string `json:"capabilities,omitempty" yaml:"capabilities,omitempty" cbor:"capabilities,omitempty"`
 	// Exports The exports the plugin offers, in declared order. The host validates that the per-type minimum export is present and binds the per-export host surface before invoking each export.
-	Exports []PluginExport `json:"exports" yaml:"exports"`
+	Exports []PluginExport `json:"exports" yaml:"exports" cbor:"exports"`
 	// Contract The provider's render-behavior self-report — the input kinds it renders, how it assembles a dispatch group's per-node output, the artifact-template delimiter pair it applies, and any source-file restriction. It describes the provider as a whole rather than any one export. Absent for a plugin that declares no render-behavior contract.
-	Contract *ProviderContract `json:"contract,omitempty" yaml:"contract,omitempty"`
+	Contract *ProviderContract `json:"contract,omitempty" yaml:"contract,omitempty" cbor:"contract,omitempty"`
 	// Description The plugin's own one-line human-readable description of what it does, distinct from a per-export description and from the entity's metadata description. It is informational; the host neither validates nor acts on it.
-	Description string `json:"description,omitempty" yaml:"description,omitempty"`
+	Description string `json:"description,omitempty" yaml:"description,omitempty" cbor:"description,omitempty"`
 	// Commands The top-level aggrega command verbs a CLI plugin contributes, each with its own short-help line. One CLI plugin may contribute several commands; the host registers one command per entry and routes the resolved command name to the guest at invocation. A non-CLI plugin leaves it empty.
-	Commands []PluginCLICommand `json:"commands,omitempty" yaml:"commands,omitempty"`
+	Commands []PluginCLICommand `json:"commands,omitempty" yaml:"commands,omitempty" cbor:"commands,omitempty"`
 	// SettingsSchema An optional JSON Schema document a plugin declares to type the operator-supplied settings its attachment carries. When present, the host compiles it at load and validates the attachment's settings against it at dispatch before invoking the plugin; settings that do not conform halt the build. When absent, the plugin declares no shape and settings pass through verbatim. The schema is the plugin's own free-form declaration; the host runs generic JSON Schema validation against it and does not interpret the settings' meaning.
-	SettingsSchema json.RawMessage `json:"settings_schema,omitempty" yaml:"settings_schema,omitempty"`
+	SettingsSchema json.RawMessage `json:"settings_schema,omitempty" yaml:"settings_schema,omitempty" cbor:"settings_schema,omitempty"`
 	// Metadata Optional authorship and build-provenance information. It carries no behavioral contract — the host neither validates nor acts on it.
-	Metadata *PluginDescriptorMeta `json:"metadata,omitempty" yaml:"metadata,omitempty"`
+	Metadata *PluginDescriptorMeta `json:"metadata,omitempty" yaml:"metadata,omitempty" cbor:"metadata,omitempty"`
 }
 
 // PluginExport One export a plugin offers, as declared in describe(). The host dispatches to the export by its name and binds the least-privilege host surface the export's declared host functions require.
 type PluginExport struct {
 	// Name The export's ABI name — for example render_node, assemble_boundary, lint_rules, or step. The host dispatches to the export by this name.
-	Name string `json:"name" yaml:"name"`
+	Name string `json:"name" yaml:"name" cbor:"name"`
 	// InputPattern How the host delivers the export's input: b delivers the full payload inline so the guest renders from the payload alone; a delivers a small payload the guest enriches via host functions. An export that omits this field takes its plugin-type and name default.
-	InputPattern string `json:"input_pattern,omitempty" yaml:"input_pattern,omitempty"`
+	InputPattern string `json:"input_pattern,omitempty" yaml:"input_pattern,omitempty" cbor:"input_pattern,omitempty"`
 	// HostFunctions The host function names this export imports. Every name must be in the host-function allowlist. The declaration is authoritative and is cross-checked at load against the functions the guest actually imports from its module, so it cannot drift from the functions the guest really calls.
-	HostFunctions []string `json:"host_functions,omitempty" yaml:"host_functions,omitempty"`
+	HostFunctions []string `json:"host_functions,omitempty" yaml:"host_functions,omitempty" cbor:"host_functions,omitempty"`
 	// Description Optional human-readable text describing the export. It is documentation for catalog readers; the host neither validates nor acts on it.
-	Description string `json:"description,omitempty" yaml:"description,omitempty"`
+	Description string `json:"description,omitempty" yaml:"description,omitempty" cbor:"description,omitempty"`
 	// Stability The export's stability level. An omitted value carries no stability claim.
-	Stability string `json:"stability,omitempty" yaml:"stability,omitempty"`
+	Stability string `json:"stability,omitempty" yaml:"stability,omitempty" cbor:"stability,omitempty"`
 	// Operates The pipeline operation this export performs: patch modifies an existing rendered document, emit adds a new document. The value is shape-checked at load; the runtime reads it when dispatching the step.
-	Operates string `json:"operates,omitempty" yaml:"operates,omitempty"`
+	Operates string `json:"operates,omitempty" yaml:"operates,omitempty" cbor:"operates,omitempty"`
 	// Scope The document root this export operates on: own is the node's own rendered documents, host is the documents of the component a component-scope feature recipe is attached to. The value is shape-checked at load; the runtime resolves the scope's documents when dispatching.
-	Scope string `json:"scope,omitempty" yaml:"scope,omitempty"`
+	Scope string `json:"scope,omitempty" yaml:"scope,omitempty" cbor:"scope,omitempty"`
 	// Selector A free-form, human-readable description of what the export acts on. It is documentation for catalog readers; the host neither validates its content nor acts on it.
-	Selector string `json:"selector,omitempty" yaml:"selector,omitempty"`
+	Selector string `json:"selector,omitempty" yaml:"selector,omitempty" cbor:"selector,omitempty"`
 	// Input An optional JSON Schema document a step export declares to type the step-local input a pipeline entry supplies through its with block. When present, it describes the shape a step's with input satisfies; when absent, the export declares no input contract. The schema is the export's own free-form declaration of the input surface a pipeline author targets for this export.
-	Input json.RawMessage `json:"input,omitempty" yaml:"input,omitempty"`
+	Input json.RawMessage `json:"input,omitempty" yaml:"input,omitempty" cbor:"input,omitempty"`
 	// Output An optional JSON Schema document a step export declares to type the outputs it returns for one step — the shape of the addressable outputs a step contributes for a later step or a template to read. When present, it describes the shape of those returned outputs; when absent, the export declares no output contract. The schema is the export's own free-form declaration of the output surface this export produces.
-	Output json.RawMessage `json:"output,omitempty" yaml:"output,omitempty"`
+	Output json.RawMessage `json:"output,omitempty" yaml:"output,omitempty" cbor:"output,omitempty"`
 }
 
 // PluginCLICommand One top-level aggrega command verb a CLI plugin contributes, as declared in describe(). The host registers one command per entry and routes the resolved command name back to the guest at invocation, so a single guest may back several commands and select its behavior on the name.
 type PluginCLICommand struct {
 	// Name The command verb the host registers — the aggrega token an operator invokes and the discriminator the host hands the guest so it can route on which command was called. Every declared command must name it.
-	Name string `json:"name" yaml:"name"`
+	Name string `json:"name" yaml:"name" cbor:"name"`
 	// Description The command's one-line short-help text, shown in the command listing and help output. It is optional documentation; the host neither validates nor acts on it.
-	Description string `json:"description,omitempty" yaml:"description,omitempty"`
+	Description string `json:"description,omitempty" yaml:"description,omitempty" cbor:"description,omitempty"`
 	// Flags The command's flags, in declared order. Each entry contributes one flag the host registers on the command so aggrega help <command> renders it like a core command's flag. A command with no flags leaves it empty.
-	Flags []PluginCommandFlag `json:"flags,omitempty" yaml:"flags,omitempty"`
+	Flags []PluginCommandFlag `json:"flags,omitempty" yaml:"flags,omitempty" cbor:"flags,omitempty"`
 }
 
 // PluginCommandFlag One flag a CLI plugin declares on a command, as reported in describe(). The host registers it on the command so aggrega help <command> lists it alongside a core command's flags.
 type PluginCommandFlag struct {
 	// Name The flag's long name — the --name token an operator passes on the command line. Every declared flag must name it.
-	Name string `json:"name" yaml:"name"`
+	Name string `json:"name" yaml:"name" cbor:"name"`
 	// Shorthand The flag's optional single-character short alias — the -x form an operator may pass instead of the long name. Absent means the flag has no short alias.
-	Shorthand string `json:"shorthand,omitempty" yaml:"shorthand,omitempty"`
+	Shorthand string `json:"shorthand,omitempty" yaml:"shorthand,omitempty" cbor:"shorthand,omitempty"`
 	// Description The flag's one-line help text, shown in the command's help output. It is optional documentation; the host neither validates nor acts on it.
-	Description string `json:"description,omitempty" yaml:"description,omitempty"`
+	Description string `json:"description,omitempty" yaml:"description,omitempty" cbor:"description,omitempty"`
 	// Type The flag's value type — for example string, bool, or int. Absent carries no type claim.
-	Type string `json:"type,omitempty" yaml:"type,omitempty"`
+	Type string `json:"type,omitempty" yaml:"type,omitempty" cbor:"type,omitempty"`
 	// Default The flag's default value when the operator does not pass it, expressed as a string. Absent means the flag declares no default.
-	Default string `json:"default,omitempty" yaml:"default,omitempty"`
+	Default string `json:"default,omitempty" yaml:"default,omitempty" cbor:"default,omitempty"`
 }
 
 // PluginDescriptorMeta Optional authorship and build-provenance metadata a plugin declares in describe(). It is informational; the host does not validate or act on it. The version and commit fields are build-provenance stamped into the guest at build time; an unstamped build omits them.
 type PluginDescriptorMeta struct {
 	// Author The plugin's author.
-	Author string `json:"author,omitempty" yaml:"author,omitempty"`
+	Author string `json:"author,omitempty" yaml:"author,omitempty" cbor:"author,omitempty"`
 	// Repository The plugin's source repository.
-	Repository string `json:"repository,omitempty" yaml:"repository,omitempty"`
+	Repository string `json:"repository,omitempty" yaml:"repository,omitempty" cbor:"repository,omitempty"`
 	// License The plugin's license identifier.
-	License string `json:"license,omitempty" yaml:"license,omitempty"`
+	License string `json:"license,omitempty" yaml:"license,omitempty" cbor:"license,omitempty"`
 	// Version The build-provenance version stamped into the guest at build time. Omitted by an unstamped build.
-	Version string `json:"version,omitempty" yaml:"version,omitempty"`
+	Version string `json:"version,omitempty" yaml:"version,omitempty" cbor:"version,omitempty"`
 	// Commit The build-provenance short commit the guest was built from. Omitted by an unstamped build.
-	Commit string `json:"commit,omitempty" yaml:"commit,omitempty"`
+	Commit string `json:"commit,omitempty" yaml:"commit,omitempty" cbor:"commit,omitempty"`
 }
 
 // ProviderContract A provider's self-declaration of the compile-time render behaviors it performs across the nodes it renders — the input kinds it accepts, whether and how it assembles a dispatch group's per-node output into a single artifact, the Go-template delimiter pair it applies to imported artifact files, and any restriction on which source files it consumes. It describes the provider as a whole, not any one export. The load gate cross-checks it against the entity's authored claim.
 type ProviderContract struct {
 	// InputKinds Which of the three Recipe input kinds the plugin renders: a sourced file set, a synthesized workload, and a standalone artifacts-only node.
-	InputKinds InputKinds `json:"input_kinds" yaml:"input_kinds"`
+	InputKinds InputKinds `json:"input_kinds" yaml:"input_kinds" cbor:"input_kinds"`
 	// BoundaryAssembly How the plugin combines a dispatch group's per-node render output: none writes each node's output directly at the dispatch path, merge folds the per-node fragments into one document, and nest places each node's output under its own position in an umbrella structure. An empty value carries no assembly claim.
-	BoundaryAssembly string `json:"boundary_assembly" yaml:"boundary_assembly"`
+	BoundaryAssembly string `json:"boundary_assembly" yaml:"boundary_assembly" cbor:"boundary_assembly"`
 	// ArtifactDelimiters The Go-template delimiter pair the plugin applies to imported artifact files. Absent means the default open/close pair; a plugin whose target syntax collides with that pair reports an alternate pair here.
-	ArtifactDelimiters *ArtifactDelimiters `json:"artifact_delimiters,omitempty" yaml:"artifact_delimiters,omitempty"`
+	ArtifactDelimiters *ArtifactDelimiters `json:"artifact_delimiters,omitempty" yaml:"artifact_delimiters,omitempty" cbor:"artifact_delimiters,omitempty"`
 	// SourceFilter The source-file paths the plugin consumes when a node supplies a file set. Absent means the plugin consumes every file in the set.
-	SourceFilter []string `json:"source_filter,omitempty" yaml:"source_filter,omitempty"`
+	SourceFilter []string `json:"source_filter,omitempty" yaml:"source_filter,omitempty" cbor:"source_filter,omitempty"`
 	// AssemblyNameAnnotation A boundary annotation whose resolved value names the artifact the plugin assembles from a dispatch group. Absent means the plugin names its assembly from the dispatch path alone.
-	AssemblyNameAnnotation *AssemblyNameAnnotation `json:"assembly_name_annotation,omitempty" yaml:"assembly_name_annotation,omitempty"`
+	AssemblyNameAnnotation *AssemblyNameAnnotation `json:"assembly_name_annotation,omitempty" yaml:"assembly_name_annotation,omitempty" cbor:"assembly_name_annotation,omitempty"`
 	// ReusableInstance Whether one loaded plugin instance may serve every render, assemble, and validate crossing of the build rather than a fresh instance per crossing. A plugin declares it true only when it holds no state across crossings. Absent (false) is the safe default: the host loads a fresh instance per crossing.
-	ReusableInstance bool `json:"reusable_instance,omitempty" yaml:"reusable_instance,omitempty"`
+	ReusableInstance bool `json:"reusable_instance,omitempty" yaml:"reusable_instance,omitempty" cbor:"reusable_instance,omitempty"`
 	// CrossBoundaryLinking Whether the plugin wires cross-boundary uses edges — edges whose consuming and consumed ends assemble into different dispatch groups — by producing provider-native cross-reference wiring through its link_publish and link_resolve exports. A plugin declares it true only when it exports both. Absent (false) is the safe default: the plugin wires no cross-boundary edges.
-	CrossBoundaryLinking bool `json:"cross_boundary_linking,omitempty" yaml:"cross_boundary_linking,omitempty"`
+	CrossBoundaryLinking bool `json:"cross_boundary_linking,omitempty" yaml:"cross_boundary_linking,omitempty" cbor:"cross_boundary_linking,omitempty"`
 }
 
 // InputKinds Which Recipe input kinds a plugin renders. Each field is an independent claim; a plugin may report any combination.
 type InputKinds struct {
 	// Sourced Whether the plugin renders a sourced file set (a chart, a module, a compose file).
-	Sourced bool `json:"sourced" yaml:"sourced"`
+	Sourced bool `json:"sourced" yaml:"sourced" cbor:"sourced"`
 	// Synthesized Whether the plugin renders a synthesized workload.
-	Synthesized bool `json:"synthesized" yaml:"synthesized"`
+	Synthesized bool `json:"synthesized" yaml:"synthesized" cbor:"synthesized"`
 	// ArtifactsStandalone Whether the plugin renders a standalone artifacts-only node — one carrying imported artifact documents and no source or workload.
-	ArtifactsStandalone bool `json:"artifacts_standalone" yaml:"artifacts_standalone"`
+	ArtifactsStandalone bool `json:"artifacts_standalone" yaml:"artifacts_standalone" cbor:"artifacts_standalone"`
 }
 
 // ArtifactDelimiters The Go-template delimiter pair a plugin applies to imported artifact files, reported when it differs from the default pair.
 type ArtifactDelimiters struct {
 	// Left The opening delimiter.
-	Left string `json:"left" yaml:"left"`
+	Left string `json:"left" yaml:"left" cbor:"left"`
 	// Right The closing delimiter.
-	Right string `json:"right" yaml:"right"`
+	Right string `json:"right" yaml:"right" cbor:"right"`
 }
 
 // AssemblyNameAnnotation The boundary annotation whose resolved value names a plugin's assembled artifact, reported when the plugin folds a dispatch group's contributing boundaries into one named assembly.
 type AssemblyNameAnnotation struct {
 	// Annotation The boundary annotation key the plugin reads the assembled artifact's name from.
-	Annotation string `json:"annotation" yaml:"annotation"`
+	Annotation string `json:"annotation" yaml:"annotation" cbor:"annotation"`
 	// RequireUnique Whether every boundary contributing to one dispatch group must agree on the annotation's resolved value. When true, a group whose contributing boundaries resolve the annotation to different values halts the build; when false, the plugin accepts the first resolved value.
-	RequireUnique bool `json:"require_unique,omitempty" yaml:"require_unique,omitempty"`
+	RequireUnique bool `json:"require_unique,omitempty" yaml:"require_unique,omitempty" cbor:"require_unique,omitempty"`
 }
 
 // MarshalJSON encodes PluginDescriptor in field-declaration order, omitting
@@ -1279,6 +1281,1035 @@ func (t *AssemblyNameAnnotation) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// EncodeCBOR encodes PluginDescriptor as canonical CBOR (RFC 8949 §4.2.1; floats per
+// CBOR CDE §4.2), dispatch-free.
+func (t PluginDescriptor) EncodeCBOR() ([]byte, error) {
+	return t.appendCBOR(nil)
+}
+
+// appendCBOR appends PluginDescriptor's canonical CBOR encoding to dst. Fields emit in
+// canonical key order (fixed at generation time), omitting empty
+// non-required fields so the map head's pair count matches.
+func (t PluginDescriptor) appendCBOR(dst []byte) ([]byte, error) {
+	n := 3
+	if len(t.Commands) != 0 {
+		n++
+	}
+	if t.Contract != nil {
+		n++
+	}
+	if t.Metadata != nil {
+		n++
+	}
+	if t.Description != "" {
+		n++
+	}
+	if len(t.Capabilities) != 0 {
+		n++
+	}
+	if len(t.SettingsSchema) != 0 {
+		n++
+	}
+	dst = appendCBORHead(dst, 5, uint64(n))
+	var err error
+	dst = appendCBORTextString(dst, "exports")
+	dst = appendCBORHead(dst, 4, uint64(len(t.Exports)))
+	for i := range t.Exports {
+		ev := t.Exports[i]
+		if dst, err = ev.appendCBOR(dst); err != nil {
+			return nil, err
+		}
+	}
+	if len(t.Commands) != 0 {
+		dst = appendCBORTextString(dst, "commands")
+		dst = appendCBORHead(dst, 4, uint64(len(t.Commands)))
+		for i := range t.Commands {
+			ev := t.Commands[i]
+			if dst, err = ev.appendCBOR(dst); err != nil {
+				return nil, err
+			}
+		}
+	}
+	if t.Contract != nil {
+		dst = appendCBORTextString(dst, "contract")
+		if t.Contract == nil {
+			dst = append(dst, 0xf6)
+		} else if dst, err = t.Contract.appendCBOR(dst); err != nil {
+			return nil, err
+		}
+	}
+	if t.Metadata != nil {
+		dst = appendCBORTextString(dst, "metadata")
+		if t.Metadata == nil {
+			dst = append(dst, 0xf6)
+		} else if dst, err = t.Metadata.appendCBOR(dst); err != nil {
+			return nil, err
+		}
+	}
+	dst = appendCBORTextString(dst, "abi_version")
+	dst = appendCBORTextString(dst, t.AbiVersion)
+	if t.Description != "" {
+		dst = appendCBORTextString(dst, "description")
+		dst = appendCBORTextString(dst, t.Description)
+	}
+	dst = appendCBORTextString(dst, "plugin_type")
+	dst = appendCBORTextString(dst, t.PluginType)
+	if len(t.Capabilities) != 0 {
+		dst = appendCBORTextString(dst, "capabilities")
+		dst = appendCBORHead(dst, 4, uint64(len(t.Capabilities)))
+		for i := range t.Capabilities {
+			ev := t.Capabilities[i]
+			dst = appendCBORTextString(dst, ev)
+		}
+	}
+	if len(t.SettingsSchema) != 0 {
+		dst = appendCBORTextString(dst, "settings_schema")
+		dst = appendCBORByteString(dst, t.SettingsSchema)
+	}
+	return dst, nil
+}
+
+// DecodeCBOR decodes PluginDescriptor from canonical CBOR, dispatch-free. Unknown keys
+// are skipped.
+func (t *PluginDescriptor) DecodeCBOR(data []byte) error {
+	dec := &cborDec{data: data}
+	return t.decodeCBOR(dec)
+}
+
+func (t *PluginDescriptor) decodeCBOR(dec *cborDec) error {
+	n, err := dec.readMapHeader()
+	if err != nil {
+		return err
+	}
+	for i := 0; i < n; i++ {
+		key, err := dec.readTextString()
+		if err != nil {
+			return err
+		}
+		switch key {
+		case "abi_version":
+			if s, err := dec.readTextString(); err != nil {
+				return err
+			} else {
+				t.AbiVersion = s
+			}
+		case "plugin_type":
+			if s, err := dec.readTextString(); err != nil {
+				return err
+			} else {
+				t.PluginType = s
+			}
+		case "capabilities":
+			{
+				sn, err := dec.readArrayHeader()
+				if err != nil {
+					return err
+				}
+				s := make([]string, 0, sn)
+				for si := 0; si < sn; si++ {
+					var ev string
+					if s, err := dec.readTextString(); err != nil {
+						return err
+					} else {
+						ev = s
+					}
+					s = append(s, ev)
+				}
+				t.Capabilities = s
+			}
+		case "exports":
+			{
+				sn, err := dec.readArrayHeader()
+				if err != nil {
+					return err
+				}
+				s := make([]PluginExport, 0, sn)
+				for si := 0; si < sn; si++ {
+					var ev PluginExport
+					if err := (&ev).decodeCBOR(dec); err != nil {
+						return err
+					}
+					s = append(s, ev)
+				}
+				t.Exports = s
+			}
+		case "contract":
+			{
+				v := new(ProviderContract)
+				if err := v.decodeCBOR(dec); err != nil {
+					return err
+				}
+				t.Contract = v
+			}
+		case "description":
+			if s, err := dec.readTextString(); err != nil {
+				return err
+			} else {
+				t.Description = s
+			}
+		case "commands":
+			{
+				sn, err := dec.readArrayHeader()
+				if err != nil {
+					return err
+				}
+				s := make([]PluginCLICommand, 0, sn)
+				for si := 0; si < sn; si++ {
+					var ev PluginCLICommand
+					if err := (&ev).decodeCBOR(dec); err != nil {
+						return err
+					}
+					s = append(s, ev)
+				}
+				t.Commands = s
+			}
+		case "settings_schema":
+			if v, err := dec.readByteString(); err != nil {
+				return err
+			} else {
+				t.SettingsSchema = json.RawMessage(v)
+			}
+		case "metadata":
+			{
+				v := new(PluginDescriptorMeta)
+				if err := v.decodeCBOR(dec); err != nil {
+					return err
+				}
+				t.Metadata = v
+			}
+		default:
+			if err := dec.skip(); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// EncodeCBOR encodes PluginExport as canonical CBOR (RFC 8949 §4.2.1; floats per
+// CBOR CDE §4.2), dispatch-free.
+func (t PluginExport) EncodeCBOR() ([]byte, error) {
+	return t.appendCBOR(nil)
+}
+
+// appendCBOR appends PluginExport's canonical CBOR encoding to dst. Fields emit in
+// canonical key order (fixed at generation time), omitting empty
+// non-required fields so the map head's pair count matches.
+func (t PluginExport) appendCBOR(dst []byte) ([]byte, error) {
+	n := 1
+	if len(t.Input) != 0 {
+		n++
+	}
+	if t.Scope != "" {
+		n++
+	}
+	if len(t.Output) != 0 {
+		n++
+	}
+	if t.Operates != "" {
+		n++
+	}
+	if t.Selector != "" {
+		n++
+	}
+	if t.Stability != "" {
+		n++
+	}
+	if t.Description != "" {
+		n++
+	}
+	if t.InputPattern != "" {
+		n++
+	}
+	if len(t.HostFunctions) != 0 {
+		n++
+	}
+	dst = appendCBORHead(dst, 5, uint64(n))
+	dst = appendCBORTextString(dst, "name")
+	dst = appendCBORTextString(dst, t.Name)
+	if len(t.Input) != 0 {
+		dst = appendCBORTextString(dst, "input")
+		dst = appendCBORByteString(dst, t.Input)
+	}
+	if t.Scope != "" {
+		dst = appendCBORTextString(dst, "scope")
+		dst = appendCBORTextString(dst, t.Scope)
+	}
+	if len(t.Output) != 0 {
+		dst = appendCBORTextString(dst, "output")
+		dst = appendCBORByteString(dst, t.Output)
+	}
+	if t.Operates != "" {
+		dst = appendCBORTextString(dst, "operates")
+		dst = appendCBORTextString(dst, t.Operates)
+	}
+	if t.Selector != "" {
+		dst = appendCBORTextString(dst, "selector")
+		dst = appendCBORTextString(dst, t.Selector)
+	}
+	if t.Stability != "" {
+		dst = appendCBORTextString(dst, "stability")
+		dst = appendCBORTextString(dst, t.Stability)
+	}
+	if t.Description != "" {
+		dst = appendCBORTextString(dst, "description")
+		dst = appendCBORTextString(dst, t.Description)
+	}
+	if t.InputPattern != "" {
+		dst = appendCBORTextString(dst, "input_pattern")
+		dst = appendCBORTextString(dst, t.InputPattern)
+	}
+	if len(t.HostFunctions) != 0 {
+		dst = appendCBORTextString(dst, "host_functions")
+		dst = appendCBORHead(dst, 4, uint64(len(t.HostFunctions)))
+		for i := range t.HostFunctions {
+			ev := t.HostFunctions[i]
+			dst = appendCBORTextString(dst, ev)
+		}
+	}
+	return dst, nil
+}
+
+// DecodeCBOR decodes PluginExport from canonical CBOR, dispatch-free. Unknown keys
+// are skipped.
+func (t *PluginExport) DecodeCBOR(data []byte) error {
+	dec := &cborDec{data: data}
+	return t.decodeCBOR(dec)
+}
+
+func (t *PluginExport) decodeCBOR(dec *cborDec) error {
+	n, err := dec.readMapHeader()
+	if err != nil {
+		return err
+	}
+	for i := 0; i < n; i++ {
+		key, err := dec.readTextString()
+		if err != nil {
+			return err
+		}
+		switch key {
+		case "name":
+			if s, err := dec.readTextString(); err != nil {
+				return err
+			} else {
+				t.Name = s
+			}
+		case "input_pattern":
+			if s, err := dec.readTextString(); err != nil {
+				return err
+			} else {
+				t.InputPattern = s
+			}
+		case "host_functions":
+			{
+				sn, err := dec.readArrayHeader()
+				if err != nil {
+					return err
+				}
+				s := make([]string, 0, sn)
+				for si := 0; si < sn; si++ {
+					var ev string
+					if s, err := dec.readTextString(); err != nil {
+						return err
+					} else {
+						ev = s
+					}
+					s = append(s, ev)
+				}
+				t.HostFunctions = s
+			}
+		case "description":
+			if s, err := dec.readTextString(); err != nil {
+				return err
+			} else {
+				t.Description = s
+			}
+		case "stability":
+			if s, err := dec.readTextString(); err != nil {
+				return err
+			} else {
+				t.Stability = s
+			}
+		case "operates":
+			if s, err := dec.readTextString(); err != nil {
+				return err
+			} else {
+				t.Operates = s
+			}
+		case "scope":
+			if s, err := dec.readTextString(); err != nil {
+				return err
+			} else {
+				t.Scope = s
+			}
+		case "selector":
+			if s, err := dec.readTextString(); err != nil {
+				return err
+			} else {
+				t.Selector = s
+			}
+		case "input":
+			if v, err := dec.readByteString(); err != nil {
+				return err
+			} else {
+				t.Input = json.RawMessage(v)
+			}
+		case "output":
+			if v, err := dec.readByteString(); err != nil {
+				return err
+			} else {
+				t.Output = json.RawMessage(v)
+			}
+		default:
+			if err := dec.skip(); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// EncodeCBOR encodes PluginCLICommand as canonical CBOR (RFC 8949 §4.2.1; floats per
+// CBOR CDE §4.2), dispatch-free.
+func (t PluginCLICommand) EncodeCBOR() ([]byte, error) {
+	return t.appendCBOR(nil)
+}
+
+// appendCBOR appends PluginCLICommand's canonical CBOR encoding to dst. Fields emit in
+// canonical key order (fixed at generation time), omitting empty
+// non-required fields so the map head's pair count matches.
+func (t PluginCLICommand) appendCBOR(dst []byte) ([]byte, error) {
+	n := 1
+	if len(t.Flags) != 0 {
+		n++
+	}
+	if t.Description != "" {
+		n++
+	}
+	dst = appendCBORHead(dst, 5, uint64(n))
+	var err error
+	dst = appendCBORTextString(dst, "name")
+	dst = appendCBORTextString(dst, t.Name)
+	if len(t.Flags) != 0 {
+		dst = appendCBORTextString(dst, "flags")
+		dst = appendCBORHead(dst, 4, uint64(len(t.Flags)))
+		for i := range t.Flags {
+			ev := t.Flags[i]
+			if dst, err = ev.appendCBOR(dst); err != nil {
+				return nil, err
+			}
+		}
+	}
+	if t.Description != "" {
+		dst = appendCBORTextString(dst, "description")
+		dst = appendCBORTextString(dst, t.Description)
+	}
+	return dst, nil
+}
+
+// DecodeCBOR decodes PluginCLICommand from canonical CBOR, dispatch-free. Unknown keys
+// are skipped.
+func (t *PluginCLICommand) DecodeCBOR(data []byte) error {
+	dec := &cborDec{data: data}
+	return t.decodeCBOR(dec)
+}
+
+func (t *PluginCLICommand) decodeCBOR(dec *cborDec) error {
+	n, err := dec.readMapHeader()
+	if err != nil {
+		return err
+	}
+	for i := 0; i < n; i++ {
+		key, err := dec.readTextString()
+		if err != nil {
+			return err
+		}
+		switch key {
+		case "name":
+			if s, err := dec.readTextString(); err != nil {
+				return err
+			} else {
+				t.Name = s
+			}
+		case "description":
+			if s, err := dec.readTextString(); err != nil {
+				return err
+			} else {
+				t.Description = s
+			}
+		case "flags":
+			{
+				sn, err := dec.readArrayHeader()
+				if err != nil {
+					return err
+				}
+				s := make([]PluginCommandFlag, 0, sn)
+				for si := 0; si < sn; si++ {
+					var ev PluginCommandFlag
+					if err := (&ev).decodeCBOR(dec); err != nil {
+						return err
+					}
+					s = append(s, ev)
+				}
+				t.Flags = s
+			}
+		default:
+			if err := dec.skip(); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// EncodeCBOR encodes PluginCommandFlag as canonical CBOR (RFC 8949 §4.2.1; floats per
+// CBOR CDE §4.2), dispatch-free.
+func (t PluginCommandFlag) EncodeCBOR() ([]byte, error) {
+	return t.appendCBOR(nil)
+}
+
+// appendCBOR appends PluginCommandFlag's canonical CBOR encoding to dst. Fields emit in
+// canonical key order (fixed at generation time), omitting empty
+// non-required fields so the map head's pair count matches.
+func (t PluginCommandFlag) appendCBOR(dst []byte) ([]byte, error) {
+	n := 1
+	if t.Type != "" {
+		n++
+	}
+	if t.Default != "" {
+		n++
+	}
+	if t.Shorthand != "" {
+		n++
+	}
+	if t.Description != "" {
+		n++
+	}
+	dst = appendCBORHead(dst, 5, uint64(n))
+	dst = appendCBORTextString(dst, "name")
+	dst = appendCBORTextString(dst, t.Name)
+	if t.Type != "" {
+		dst = appendCBORTextString(dst, "type")
+		dst = appendCBORTextString(dst, t.Type)
+	}
+	if t.Default != "" {
+		dst = appendCBORTextString(dst, "default")
+		dst = appendCBORTextString(dst, t.Default)
+	}
+	if t.Shorthand != "" {
+		dst = appendCBORTextString(dst, "shorthand")
+		dst = appendCBORTextString(dst, t.Shorthand)
+	}
+	if t.Description != "" {
+		dst = appendCBORTextString(dst, "description")
+		dst = appendCBORTextString(dst, t.Description)
+	}
+	return dst, nil
+}
+
+// DecodeCBOR decodes PluginCommandFlag from canonical CBOR, dispatch-free. Unknown keys
+// are skipped.
+func (t *PluginCommandFlag) DecodeCBOR(data []byte) error {
+	dec := &cborDec{data: data}
+	return t.decodeCBOR(dec)
+}
+
+func (t *PluginCommandFlag) decodeCBOR(dec *cborDec) error {
+	n, err := dec.readMapHeader()
+	if err != nil {
+		return err
+	}
+	for i := 0; i < n; i++ {
+		key, err := dec.readTextString()
+		if err != nil {
+			return err
+		}
+		switch key {
+		case "name":
+			if s, err := dec.readTextString(); err != nil {
+				return err
+			} else {
+				t.Name = s
+			}
+		case "shorthand":
+			if s, err := dec.readTextString(); err != nil {
+				return err
+			} else {
+				t.Shorthand = s
+			}
+		case "description":
+			if s, err := dec.readTextString(); err != nil {
+				return err
+			} else {
+				t.Description = s
+			}
+		case "type":
+			if s, err := dec.readTextString(); err != nil {
+				return err
+			} else {
+				t.Type = s
+			}
+		case "default":
+			if s, err := dec.readTextString(); err != nil {
+				return err
+			} else {
+				t.Default = s
+			}
+		default:
+			if err := dec.skip(); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// EncodeCBOR encodes PluginDescriptorMeta as canonical CBOR (RFC 8949 §4.2.1; floats per
+// CBOR CDE §4.2), dispatch-free.
+func (t PluginDescriptorMeta) EncodeCBOR() ([]byte, error) {
+	return t.appendCBOR(nil)
+}
+
+// appendCBOR appends PluginDescriptorMeta's canonical CBOR encoding to dst. Fields emit in
+// canonical key order (fixed at generation time), omitting empty
+// non-required fields so the map head's pair count matches.
+func (t PluginDescriptorMeta) appendCBOR(dst []byte) ([]byte, error) {
+	n := 0
+	if t.Author != "" {
+		n++
+	}
+	if t.Commit != "" {
+		n++
+	}
+	if t.License != "" {
+		n++
+	}
+	if t.Version != "" {
+		n++
+	}
+	if t.Repository != "" {
+		n++
+	}
+	dst = appendCBORHead(dst, 5, uint64(n))
+	if t.Author != "" {
+		dst = appendCBORTextString(dst, "author")
+		dst = appendCBORTextString(dst, t.Author)
+	}
+	if t.Commit != "" {
+		dst = appendCBORTextString(dst, "commit")
+		dst = appendCBORTextString(dst, t.Commit)
+	}
+	if t.License != "" {
+		dst = appendCBORTextString(dst, "license")
+		dst = appendCBORTextString(dst, t.License)
+	}
+	if t.Version != "" {
+		dst = appendCBORTextString(dst, "version")
+		dst = appendCBORTextString(dst, t.Version)
+	}
+	if t.Repository != "" {
+		dst = appendCBORTextString(dst, "repository")
+		dst = appendCBORTextString(dst, t.Repository)
+	}
+	return dst, nil
+}
+
+// DecodeCBOR decodes PluginDescriptorMeta from canonical CBOR, dispatch-free. Unknown keys
+// are skipped.
+func (t *PluginDescriptorMeta) DecodeCBOR(data []byte) error {
+	dec := &cborDec{data: data}
+	return t.decodeCBOR(dec)
+}
+
+func (t *PluginDescriptorMeta) decodeCBOR(dec *cborDec) error {
+	n, err := dec.readMapHeader()
+	if err != nil {
+		return err
+	}
+	for i := 0; i < n; i++ {
+		key, err := dec.readTextString()
+		if err != nil {
+			return err
+		}
+		switch key {
+		case "author":
+			if s, err := dec.readTextString(); err != nil {
+				return err
+			} else {
+				t.Author = s
+			}
+		case "repository":
+			if s, err := dec.readTextString(); err != nil {
+				return err
+			} else {
+				t.Repository = s
+			}
+		case "license":
+			if s, err := dec.readTextString(); err != nil {
+				return err
+			} else {
+				t.License = s
+			}
+		case "version":
+			if s, err := dec.readTextString(); err != nil {
+				return err
+			} else {
+				t.Version = s
+			}
+		case "commit":
+			if s, err := dec.readTextString(); err != nil {
+				return err
+			} else {
+				t.Commit = s
+			}
+		default:
+			if err := dec.skip(); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// EncodeCBOR encodes ProviderContract as canonical CBOR (RFC 8949 §4.2.1; floats per
+// CBOR CDE §4.2), dispatch-free.
+func (t ProviderContract) EncodeCBOR() ([]byte, error) {
+	return t.appendCBOR(nil)
+}
+
+// appendCBOR appends ProviderContract's canonical CBOR encoding to dst. Fields emit in
+// canonical key order (fixed at generation time), omitting empty
+// non-required fields so the map head's pair count matches.
+func (t ProviderContract) appendCBOR(dst []byte) ([]byte, error) {
+	n := 2
+	if len(t.SourceFilter) != 0 {
+		n++
+	}
+	if t.ReusableInstance != false {
+		n++
+	}
+	if t.ArtifactDelimiters != nil {
+		n++
+	}
+	if t.CrossBoundaryLinking != false {
+		n++
+	}
+	if t.AssemblyNameAnnotation != nil {
+		n++
+	}
+	dst = appendCBORHead(dst, 5, uint64(n))
+	var err error
+	dst = appendCBORTextString(dst, "input_kinds")
+	if dst, err = t.InputKinds.appendCBOR(dst); err != nil {
+		return nil, err
+	}
+	if len(t.SourceFilter) != 0 {
+		dst = appendCBORTextString(dst, "source_filter")
+		dst = appendCBORHead(dst, 4, uint64(len(t.SourceFilter)))
+		for i := range t.SourceFilter {
+			ev := t.SourceFilter[i]
+			dst = appendCBORTextString(dst, ev)
+		}
+	}
+	dst = appendCBORTextString(dst, "boundary_assembly")
+	dst = appendCBORTextString(dst, t.BoundaryAssembly)
+	if t.ReusableInstance != false {
+		dst = appendCBORTextString(dst, "reusable_instance")
+		dst = appendCBORBool(dst, t.ReusableInstance)
+	}
+	if t.ArtifactDelimiters != nil {
+		dst = appendCBORTextString(dst, "artifact_delimiters")
+		if t.ArtifactDelimiters == nil {
+			dst = append(dst, 0xf6)
+		} else if dst, err = t.ArtifactDelimiters.appendCBOR(dst); err != nil {
+			return nil, err
+		}
+	}
+	if t.CrossBoundaryLinking != false {
+		dst = appendCBORTextString(dst, "cross_boundary_linking")
+		dst = appendCBORBool(dst, t.CrossBoundaryLinking)
+	}
+	if t.AssemblyNameAnnotation != nil {
+		dst = appendCBORTextString(dst, "assembly_name_annotation")
+		if t.AssemblyNameAnnotation == nil {
+			dst = append(dst, 0xf6)
+		} else if dst, err = t.AssemblyNameAnnotation.appendCBOR(dst); err != nil {
+			return nil, err
+		}
+	}
+	return dst, nil
+}
+
+// DecodeCBOR decodes ProviderContract from canonical CBOR, dispatch-free. Unknown keys
+// are skipped.
+func (t *ProviderContract) DecodeCBOR(data []byte) error {
+	dec := &cborDec{data: data}
+	return t.decodeCBOR(dec)
+}
+
+func (t *ProviderContract) decodeCBOR(dec *cborDec) error {
+	n, err := dec.readMapHeader()
+	if err != nil {
+		return err
+	}
+	for i := 0; i < n; i++ {
+		key, err := dec.readTextString()
+		if err != nil {
+			return err
+		}
+		switch key {
+		case "input_kinds":
+			if err := (&t.InputKinds).decodeCBOR(dec); err != nil {
+				return err
+			}
+		case "boundary_assembly":
+			if s, err := dec.readTextString(); err != nil {
+				return err
+			} else {
+				t.BoundaryAssembly = s
+			}
+		case "artifact_delimiters":
+			{
+				v := new(ArtifactDelimiters)
+				if err := v.decodeCBOR(dec); err != nil {
+					return err
+				}
+				t.ArtifactDelimiters = v
+			}
+		case "source_filter":
+			{
+				sn, err := dec.readArrayHeader()
+				if err != nil {
+					return err
+				}
+				s := make([]string, 0, sn)
+				for si := 0; si < sn; si++ {
+					var ev string
+					if s, err := dec.readTextString(); err != nil {
+						return err
+					} else {
+						ev = s
+					}
+					s = append(s, ev)
+				}
+				t.SourceFilter = s
+			}
+		case "assembly_name_annotation":
+			{
+				v := new(AssemblyNameAnnotation)
+				if err := v.decodeCBOR(dec); err != nil {
+					return err
+				}
+				t.AssemblyNameAnnotation = v
+			}
+		case "reusable_instance":
+			if v, err := dec.readBool(); err != nil {
+				return err
+			} else {
+				t.ReusableInstance = v
+			}
+		case "cross_boundary_linking":
+			if v, err := dec.readBool(); err != nil {
+				return err
+			} else {
+				t.CrossBoundaryLinking = v
+			}
+		default:
+			if err := dec.skip(); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// EncodeCBOR encodes InputKinds as canonical CBOR (RFC 8949 §4.2.1; floats per
+// CBOR CDE §4.2), dispatch-free.
+func (t InputKinds) EncodeCBOR() ([]byte, error) {
+	return t.appendCBOR(nil)
+}
+
+// appendCBOR appends InputKinds's canonical CBOR encoding to dst. Fields emit in
+// canonical key order (fixed at generation time), omitting empty
+// non-required fields so the map head's pair count matches.
+func (t InputKinds) appendCBOR(dst []byte) ([]byte, error) {
+	n := 3
+	dst = appendCBORHead(dst, 5, uint64(n))
+	dst = appendCBORTextString(dst, "sourced")
+	dst = appendCBORBool(dst, t.Sourced)
+	dst = appendCBORTextString(dst, "synthesized")
+	dst = appendCBORBool(dst, t.Synthesized)
+	dst = appendCBORTextString(dst, "artifacts_standalone")
+	dst = appendCBORBool(dst, t.ArtifactsStandalone)
+	return dst, nil
+}
+
+// DecodeCBOR decodes InputKinds from canonical CBOR, dispatch-free. Unknown keys
+// are skipped.
+func (t *InputKinds) DecodeCBOR(data []byte) error {
+	dec := &cborDec{data: data}
+	return t.decodeCBOR(dec)
+}
+
+func (t *InputKinds) decodeCBOR(dec *cborDec) error {
+	n, err := dec.readMapHeader()
+	if err != nil {
+		return err
+	}
+	for i := 0; i < n; i++ {
+		key, err := dec.readTextString()
+		if err != nil {
+			return err
+		}
+		switch key {
+		case "sourced":
+			if v, err := dec.readBool(); err != nil {
+				return err
+			} else {
+				t.Sourced = v
+			}
+		case "synthesized":
+			if v, err := dec.readBool(); err != nil {
+				return err
+			} else {
+				t.Synthesized = v
+			}
+		case "artifacts_standalone":
+			if v, err := dec.readBool(); err != nil {
+				return err
+			} else {
+				t.ArtifactsStandalone = v
+			}
+		default:
+			if err := dec.skip(); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// EncodeCBOR encodes ArtifactDelimiters as canonical CBOR (RFC 8949 §4.2.1; floats per
+// CBOR CDE §4.2), dispatch-free.
+func (t ArtifactDelimiters) EncodeCBOR() ([]byte, error) {
+	return t.appendCBOR(nil)
+}
+
+// appendCBOR appends ArtifactDelimiters's canonical CBOR encoding to dst. Fields emit in
+// canonical key order (fixed at generation time), omitting empty
+// non-required fields so the map head's pair count matches.
+func (t ArtifactDelimiters) appendCBOR(dst []byte) ([]byte, error) {
+	n := 2
+	dst = appendCBORHead(dst, 5, uint64(n))
+	dst = appendCBORTextString(dst, "left")
+	dst = appendCBORTextString(dst, t.Left)
+	dst = appendCBORTextString(dst, "right")
+	dst = appendCBORTextString(dst, t.Right)
+	return dst, nil
+}
+
+// DecodeCBOR decodes ArtifactDelimiters from canonical CBOR, dispatch-free. Unknown keys
+// are skipped.
+func (t *ArtifactDelimiters) DecodeCBOR(data []byte) error {
+	dec := &cborDec{data: data}
+	return t.decodeCBOR(dec)
+}
+
+func (t *ArtifactDelimiters) decodeCBOR(dec *cborDec) error {
+	n, err := dec.readMapHeader()
+	if err != nil {
+		return err
+	}
+	for i := 0; i < n; i++ {
+		key, err := dec.readTextString()
+		if err != nil {
+			return err
+		}
+		switch key {
+		case "left":
+			if s, err := dec.readTextString(); err != nil {
+				return err
+			} else {
+				t.Left = s
+			}
+		case "right":
+			if s, err := dec.readTextString(); err != nil {
+				return err
+			} else {
+				t.Right = s
+			}
+		default:
+			if err := dec.skip(); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// EncodeCBOR encodes AssemblyNameAnnotation as canonical CBOR (RFC 8949 §4.2.1; floats per
+// CBOR CDE §4.2), dispatch-free.
+func (t AssemblyNameAnnotation) EncodeCBOR() ([]byte, error) {
+	return t.appendCBOR(nil)
+}
+
+// appendCBOR appends AssemblyNameAnnotation's canonical CBOR encoding to dst. Fields emit in
+// canonical key order (fixed at generation time), omitting empty
+// non-required fields so the map head's pair count matches.
+func (t AssemblyNameAnnotation) appendCBOR(dst []byte) ([]byte, error) {
+	n := 1
+	if t.RequireUnique != false {
+		n++
+	}
+	dst = appendCBORHead(dst, 5, uint64(n))
+	dst = appendCBORTextString(dst, "annotation")
+	dst = appendCBORTextString(dst, t.Annotation)
+	if t.RequireUnique != false {
+		dst = appendCBORTextString(dst, "require_unique")
+		dst = appendCBORBool(dst, t.RequireUnique)
+	}
+	return dst, nil
+}
+
+// DecodeCBOR decodes AssemblyNameAnnotation from canonical CBOR, dispatch-free. Unknown keys
+// are skipped.
+func (t *AssemblyNameAnnotation) DecodeCBOR(data []byte) error {
+	dec := &cborDec{data: data}
+	return t.decodeCBOR(dec)
+}
+
+func (t *AssemblyNameAnnotation) decodeCBOR(dec *cborDec) error {
+	n, err := dec.readMapHeader()
+	if err != nil {
+		return err
+	}
+	for i := 0; i < n; i++ {
+		key, err := dec.readTextString()
+		if err != nil {
+			return err
+		}
+		switch key {
+		case "annotation":
+			if s, err := dec.readTextString(); err != nil {
+				return err
+			} else {
+				t.Annotation = s
+			}
+		case "require_unique":
+			if v, err := dec.readBool(); err != nil {
+				return err
+			} else {
+				t.RequireUnique = v
+			}
+		default:
+			if err := dec.skip(); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
 // expectDelim reads the next token and asserts it is the given delimiter.
 func expectDelim(dec *json.Decoder, want json.Delim) error {
 	tok, err := dec.Token()
@@ -1493,4 +2524,379 @@ func writeJSONBytes(buf *bytes.Buffer, b []byte) {
 	buf.WriteByte('"')
 	buf.WriteString(base64.StdEncoding.EncodeToString(b))
 	buf.WriteByte('"')
+}
+
+// appendCBORHead appends a CBOR head: the major type in the top three bits and
+// the shortest length/argument encoding.
+func appendCBORHead(dst []byte, major byte, arg uint64) []byte {
+	mb := major << 5
+	switch {
+	case arg < 24:
+		return append(dst, mb|byte(arg))
+	case arg < 0x100:
+		return append(dst, mb|24, byte(arg))
+	case arg < 0x10000:
+		return append(dst, mb|25, byte(arg>>8), byte(arg))
+	case arg < 0x100000000:
+		return append(dst, mb|26, byte(arg>>24), byte(arg>>16), byte(arg>>8), byte(arg))
+	default:
+		return append(dst, mb|27,
+			byte(arg>>56), byte(arg>>48), byte(arg>>40), byte(arg>>32),
+			byte(arg>>24), byte(arg>>16), byte(arg>>8), byte(arg))
+	}
+}
+
+// appendCBORInt appends a signed integer as CBOR major type 0 (non-negative) or
+// 1 (negative), shortest head.
+func appendCBORInt(dst []byte, i int64) []byte {
+	if i < 0 {
+		return appendCBORHead(dst, 1, uint64(-1-i))
+	}
+	return appendCBORHead(dst, 0, uint64(i))
+}
+
+// appendCBORTextString appends s as a CBOR text string (major 3): shortest
+// length head then the UTF-8 bytes verbatim.
+func appendCBORTextString(dst []byte, s string) []byte {
+	dst = appendCBORHead(dst, 3, uint64(len(s)))
+	return append(dst, s...)
+}
+
+// appendCBORByteString appends b as a CBOR byte string (major 2): shortest
+// length head then the bytes verbatim.
+func appendCBORByteString(dst, b []byte) []byte {
+	dst = appendCBORHead(dst, 2, uint64(len(b)))
+	return append(dst, b...)
+}
+
+// appendCBORBool appends the fixed single-byte CBOR bool.
+func appendCBORBool(dst []byte, v bool) []byte {
+	if v {
+		return append(dst, 0xf5)
+	}
+	return append(dst, 0xf4)
+}
+
+// appendCBORFloat appends f as a canonical CBOR float per CBOR CDE §4.2: the
+// shortest of float16/float32/float64 that round-trips to the exact value, with
+// NaN canonicalized to 0xf97e00, ±Inf to the float16 infinities, and ±0
+// preserved by sign. No numeric reduction: an integer-valued float stays a
+// float.
+func appendCBORFloat(dst []byte, f float64) []byte {
+	switch {
+	case math.IsNaN(f):
+		return append(dst, 0xf9, 0x7e, 0x00)
+	case math.IsInf(f, 1):
+		return append(dst, 0xf9, 0x7c, 0x00)
+	case math.IsInf(f, -1):
+		return append(dst, 0xf9, 0xfc, 0x00)
+	}
+	f32 := float32(f)
+	if float64(f32) == f {
+		if h, ok := f32ToF16Exact(math.Float32bits(f32)); ok {
+			return append(dst, 0xf9, byte(h>>8), byte(h))
+		}
+		bits := math.Float32bits(f32)
+		return append(dst, 0xfa, byte(bits>>24), byte(bits>>16), byte(bits>>8), byte(bits))
+	}
+	bits := math.Float64bits(f)
+	return append(dst, 0xfb,
+		byte(bits>>56), byte(bits>>48), byte(bits>>40), byte(bits>>32),
+		byte(bits>>24), byte(bits>>16), byte(bits>>8), byte(bits))
+}
+
+// f32ToF16Exact converts float32 bits to a float16 if the value is EXACTLY
+// representable (no rounding), returning the 16-bit encoding and true. It is
+// used only to select the shortest float that round-trips, so a lossy
+// conversion returns false and the caller keeps the wider width. ±0 preserves
+// its sign; Inf/NaN are handled by the caller.
+func f32ToF16Exact(b uint32) (uint16, bool) {
+	sign := uint16((b >> 16) & 0x8000)
+	exp := int32((b >> 23) & 0xff)
+	mant := b & 0x7fffff
+	if exp == 0 {
+		if mant == 0 {
+			return sign, true // ±0
+		}
+		return 0, false // float32 subnormal: not float16-exact
+	}
+	if exp == 0xff {
+		return 0, false // Inf/NaN: handled by the caller
+	}
+	e := exp - 127
+	switch {
+	case e >= -14 && e <= 15:
+		if mant&0x1fff != 0 {
+			return 0, false // low mantissa bits would be lost
+		}
+		return sign | uint16((e+15)<<10) | uint16(mant>>13), true
+	case e >= -24 && e <= -15:
+		full := mant | 0x800000 // add the implicit leading 1
+		shift := uint32(-(e + 1))
+		if full&((1<<shift)-1) != 0 {
+			return 0, false // low bits would be lost
+		}
+		hm := full >> shift
+		if hm == 0 || hm > 0x3ff {
+			return 0, false
+		}
+		return sign | uint16(hm), true
+	default:
+		return 0, false
+	}
+}
+
+// float16ToFloat64 expands a CBOR half-precision float to float64.
+func float16ToFloat64(h uint16) float64 {
+	sign := uint32(h&0x8000) << 16
+	exp := uint32(h>>10) & 0x1f
+	mant := uint32(h & 0x3ff)
+	switch exp {
+	case 0:
+		if mant == 0 {
+			return float64(math.Float32frombits(sign)) // ±0
+		}
+		e := uint32(0)
+		for mant&0x400 == 0 {
+			mant <<= 1
+			e++
+		}
+		mant &= 0x3ff
+		exp32 := uint32(127 - 15 - e + 1)
+		return float64(math.Float32frombits(sign | (exp32 << 23) | (mant << 13)))
+	case 0x1f:
+		if mant == 0 {
+			return float64(math.Float32frombits(sign | 0x7f800000)) // ±Inf
+		}
+		return float64(math.Float32frombits(sign | 0x7f800000 | (mant << 13))) // NaN
+	default:
+		exp32 := exp - 15 + 127
+		return float64(math.Float32frombits(sign | (exp32 << 23) | (mant << 13)))
+	}
+}
+
+// sortCBORKeys sorts map keys into canonical CBOR order: by the bytewise order
+// of their encoded text-key bytes (length head first, then UTF-8 content).
+func sortCBORKeys(keys []string) {
+	sort.Slice(keys, func(i, j int) bool { return cborLessKey(keys[i], keys[j]) })
+}
+
+// cborLessKey is the runtime twin of the generator's key comparator.
+func cborLessKey(a, b string) bool {
+	if len(a) != len(b) {
+		ha := cborStrHeadBytes(len(a))
+		hb := cborStrHeadBytes(len(b))
+		return bytes.Compare(ha, hb) < 0
+	}
+	return a < b
+}
+
+// cborStrHeadBytes returns the CBOR text-string length head for a string of the
+// given byte length.
+func cborStrHeadBytes(n int) []byte {
+	switch {
+	case n < 24:
+		return []byte{0x60 | byte(n)}
+	case n < 0x100:
+		return []byte{0x78, byte(n)}
+	case n < 0x10000:
+		return []byte{0x79, byte(n >> 8), byte(n)}
+	default:
+		return []byte{0x7a, byte(n >> 24), byte(n >> 16), byte(n >> 8), byte(n)}
+	}
+}
+
+// cborDec is a minimal canonical-CBOR reader over a byte slice. It reads only
+// the definite-length items the codec produces; indefinite lengths and
+// unsupported majors are rejected loudly.
+type cborDec struct {
+	data []byte
+	pos  int
+}
+
+// readHead reads one item head, returning the major type, the additional-info
+// nibble, and the decoded argument (the immediate for ai < 24, else the
+// big-endian follow bytes).
+func (d *cborDec) readHead() (byte, byte, uint64, error) {
+	if d.pos >= len(d.data) {
+		return 0, 0, 0, fmt.Errorf("abi: cbor: unexpected end of input")
+	}
+	ib := d.data[d.pos]
+	d.pos++
+	major := ib >> 5
+	ai := ib & 0x1f
+	switch {
+	case ai < 24:
+		return major, ai, uint64(ai), nil
+	case ai == 24:
+		if d.pos+1 > len(d.data) {
+			return 0, 0, 0, fmt.Errorf("abi: cbor: truncated 1-byte argument")
+		}
+		v := uint64(d.data[d.pos])
+		d.pos++
+		return major, ai, v, nil
+	case ai == 25:
+		if d.pos+2 > len(d.data) {
+			return 0, 0, 0, fmt.Errorf("abi: cbor: truncated 2-byte argument")
+		}
+		v := uint64(d.data[d.pos])<<8 | uint64(d.data[d.pos+1])
+		d.pos += 2
+		return major, ai, v, nil
+	case ai == 26:
+		if d.pos+4 > len(d.data) {
+			return 0, 0, 0, fmt.Errorf("abi: cbor: truncated 4-byte argument")
+		}
+		v := uint64(d.data[d.pos])<<24 | uint64(d.data[d.pos+1])<<16 | uint64(d.data[d.pos+2])<<8 | uint64(d.data[d.pos+3])
+		d.pos += 4
+		return major, ai, v, nil
+	case ai == 27:
+		if d.pos+8 > len(d.data) {
+			return 0, 0, 0, fmt.Errorf("abi: cbor: truncated 8-byte argument")
+		}
+		var v uint64
+		for k := 0; k < 8; k++ {
+			v = v<<8 | uint64(d.data[d.pos+k])
+		}
+		d.pos += 8
+		return major, ai, v, nil
+	default:
+		return 0, 0, 0, fmt.Errorf("abi: cbor: reserved additional info %d", ai)
+	}
+}
+
+func (d *cborDec) readMapHeader() (int, error) {
+	major, _, arg, err := d.readHead()
+	if err != nil {
+		return 0, err
+	}
+	if major != 5 {
+		return 0, fmt.Errorf("abi: cbor: expected map, got major %d", major)
+	}
+	return int(arg), nil
+}
+
+func (d *cborDec) readArrayHeader() (int, error) {
+	major, _, arg, err := d.readHead()
+	if err != nil {
+		return 0, err
+	}
+	if major != 4 {
+		return 0, fmt.Errorf("abi: cbor: expected array, got major %d", major)
+	}
+	return int(arg), nil
+}
+
+func (d *cborDec) readTextString() (string, error) {
+	major, _, arg, err := d.readHead()
+	if err != nil {
+		return "", err
+	}
+	if major != 3 {
+		return "", fmt.Errorf("abi: cbor: expected text string, got major %d", major)
+	}
+	if d.pos+int(arg) > len(d.data) {
+		return "", fmt.Errorf("abi: cbor: truncated text string")
+	}
+	s := string(d.data[d.pos : d.pos+int(arg)])
+	d.pos += int(arg)
+	return s, nil
+}
+
+func (d *cborDec) readByteString() ([]byte, error) {
+	major, _, arg, err := d.readHead()
+	if err != nil {
+		return nil, err
+	}
+	if major != 2 {
+		return nil, fmt.Errorf("abi: cbor: expected byte string, got major %d", major)
+	}
+	if d.pos+int(arg) > len(d.data) {
+		return nil, fmt.Errorf("abi: cbor: truncated byte string")
+	}
+	out := make([]byte, arg)
+	copy(out, d.data[d.pos:d.pos+int(arg)])
+	d.pos += int(arg)
+	return out, nil
+}
+
+func (d *cborDec) readInt() (int64, error) {
+	major, _, arg, err := d.readHead()
+	if err != nil {
+		return 0, err
+	}
+	switch major {
+	case 0:
+		return int64(arg), nil
+	case 1:
+		return -1 - int64(arg), nil
+	default:
+		return 0, fmt.Errorf("abi: cbor: expected integer, got major %d", major)
+	}
+}
+
+func (d *cborDec) readFloat() (float64, error) {
+	major, ai, arg, err := d.readHead()
+	if err != nil {
+		return 0, err
+	}
+	if major != 7 {
+		return 0, fmt.Errorf("abi: cbor: expected float, got major %d", major)
+	}
+	switch ai {
+	case 25:
+		return float16ToFloat64(uint16(arg)), nil
+	case 26:
+		return float64(math.Float32frombits(uint32(arg))), nil
+	case 27:
+		return math.Float64frombits(arg), nil
+	default:
+		return 0, fmt.Errorf("abi: cbor: expected float, got additional info %d", ai)
+	}
+}
+
+func (d *cborDec) readBool() (bool, error) {
+	major, ai, _, err := d.readHead()
+	if err != nil {
+		return false, err
+	}
+	if major != 7 || (ai != 20 && ai != 21) {
+		return false, fmt.Errorf("abi: cbor: expected bool")
+	}
+	return ai == 21, nil
+}
+
+// skip consumes exactly one CBOR item (recursively for arrays and maps),
+// discarding it — used for an unknown map key's value.
+func (d *cborDec) skip() error {
+	major, ai, arg, err := d.readHead()
+	if err != nil {
+		return err
+	}
+	switch major {
+	case 0, 1, 7:
+		return nil // argument already consumed by readHead
+	case 2, 3:
+		if d.pos+int(arg) > len(d.data) {
+			return fmt.Errorf("abi: cbor: truncated string")
+		}
+		d.pos += int(arg)
+		return nil
+	case 4:
+		for k := 0; k < int(arg); k++ {
+			if err := d.skip(); err != nil {
+				return err
+			}
+		}
+		return nil
+	case 5:
+		for k := 0; k < int(arg)*2; k++ {
+			if err := d.skip(); err != nil {
+				return err
+			}
+		}
+		return nil
+	default:
+		_ = ai
+		return fmt.Errorf("abi: cbor: cannot skip major %d", major)
+	}
 }

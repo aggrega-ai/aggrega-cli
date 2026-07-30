@@ -16,6 +16,7 @@ import (
 	frp "github.com/aggrega-ai/aggrega-cli/internal/compiler/featurerecipe_pipeline"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderctx"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
+	"math"
 	"sort"
 	"strconv"
 	"unicode/utf8"
@@ -23,389 +24,389 @@ import (
 
 // RenderNodeInput The payload a Provider guest receives on its render_node export: the per-node IR projection the guest renders, the render-time context, and an optional pre-packaged catalog projection. When the catalog projection is present the guest renders from the payload alone and needs no host round-trips for catalog content; when it is omitted the guest fetches catalog entries through the read-only host functions bound at load time.
 type RenderNodeInput struct {
-	Node IRNodeProjection `json:"node" yaml:"node"`
+	Node IRNodeProjection `json:"node" yaml:"node" cbor:"node"`
 	// Context The render-time context the host hands the guest. The guest reads it to resolve parameters, annotations, and boundary metadata; the schema does not interpret its internal shape (an opaque passthrough), so the provider socket schema does not rebind the cross-boundary render-context shape. The render context's own contract is the render-context wire shape; a guest that reads it consults that contract.
-	Context renderctx.RenderContext `json:"context" yaml:"context"`
+	Context renderctx.RenderContext `json:"context" yaml:"context" cbor:"context"`
 	// CatalogProjection The pre-packaged catalog content the guest renders against when the host supplies catalog entries in the payload rather than behind host functions. Absent when the guest fetches catalog entries through the read-only host functions instead.
-	CatalogProjection *CatalogProjection `json:"catalog_projection,omitempty" yaml:"catalog_projection,omitempty"`
+	CatalogProjection *CatalogProjection `json:"catalog_projection,omitempty" yaml:"catalog_projection,omitempty" cbor:"catalog_projection,omitempty"`
 	// SourceListing The generic enumeration of the acquired source the host hands the guest for a sourced provider: the source root, whether that root is a directory, and the sorted root-relative entries under it. The host reads no file content here — it lists names only. The guest applies its own resolution logic over the listing and asks the host to pack a chosen selection through the pack-source host function, so all per-provider source-resolution intelligence lives in the guest. Present for sourced providers; absent otherwise.
-	SourceListing *SourceListing `json:"source_listing,omitempty" yaml:"source_listing,omitempty"`
+	SourceListing *SourceListing `json:"source_listing,omitempty" yaml:"source_listing,omitempty" cbor:"source_listing,omitempty"`
 	// WorkloadProjection The pre-evaluated workload the host hands the guest to synthesize provider-native manifests from; present when the bound Recipe declares a workload rather than a chart source, absent otherwise.
-	WorkloadProjection *WorkloadProjection `json:"workload_projection,omitempty" yaml:"workload_projection,omitempty"`
+	WorkloadProjection *WorkloadProjection `json:"workload_projection,omitempty" yaml:"workload_projection,omitempty" cbor:"workload_projection,omitempty"`
 	// ArtifactsProjection The pre-evaluated artifact set the host hands the guest to place into the node's output, present when the bound Recipe declares artifacts. The host has already read each entry's source, evaluated it as a Go template against the render context, and computed the build-provenance key sets; the guest decides the output format, the provenance placement, the on-disk path, and the final bytes. Absent when the node declares no artifacts.
-	ArtifactsProjection *ArtifactsProjection `json:"artifacts_projection,omitempty" yaml:"artifacts_projection,omitempty"`
+	ArtifactsProjection *ArtifactsProjection `json:"artifacts_projection,omitempty" yaml:"artifacts_projection,omitempty" cbor:"artifacts_projection,omitempty"`
 }
 
 // IRNodeProjection The per-node IR data a Provider guest renders — a bounded projection of the full IR node carrying the per-node identity and the provenance the guest stamps onto every emitted manifest: its id, type, resolved recipe, values, feature attachments, outbound uses edges, boundary path, deployment wave, Recipe identity, component-id override, and build provenance. Source-file content is not carried here; it travels separately in the source projection. Values, features, and uses preserve author order so the wire payload is byte-identical across runs of identical input.
 type IRNodeProjection struct {
 	// ID The node's absolute id within the topology graph.
-	ID string `json:"id" yaml:"id"`
+	ID string `json:"id" yaml:"id" cbor:"id"`
 	// Type The node's component-type label — opaque metadata for the guest, not a behavior switch.
-	Type string `json:"type" yaml:"type"`
+	Type string `json:"type" yaml:"type" cbor:"type"`
 	// ResolvedRecipe The Universal URI of the Recipe the resolver pinned for this node.
-	ResolvedRecipe string `json:"resolved_recipe" yaml:"resolved_recipe"`
+	ResolvedRecipe string `json:"resolved_recipe" yaml:"resolved_recipe" cbor:"resolved_recipe"`
 	// Values The node's rendered values dictionary, an author-ordered key set the guest renders from. Preserves author order so the payload is byte-identical across runs of identical input.
-	Values types.OrderedMap[any] `json:"values,omitempty" yaml:"values,omitempty"`
+	Values types.OrderedMap[any] `json:"values,omitempty" yaml:"values,omitempty" cbor:"values,omitempty"`
 	// Features The node's feature attachments keyed by feature alias, carrying the same per-node feature-attachment shape the IR carries. Each entry carries the attachment's values, infra and inject mapping alongside its derived sensitivity marking, so a guest reads whether an attachment handles declared-sensitive material from the payload alone. Preserves author order so the payload is byte-identical across runs of identical input. Opaque at this schema layer; the guest reads the feature-entry shape through the IR wire contract.
-	Features types.OrderedMap[types.IRFeatureEntry] `json:"features,omitempty" yaml:"features,omitempty"`
+	Features types.OrderedMap[types.IRFeatureEntry] `json:"features,omitempty" yaml:"features,omitempty" cbor:"features,omitempty"`
 	// Uses The node's outbound uses edges keyed by socket alias, each carrying the ordered target node ids bound to that socket. Preserves author order so the payload is byte-identical across runs of identical input.
-	Uses types.OrderedMap[[]string] `json:"uses,omitempty" yaml:"uses,omitempty"`
+	Uses types.OrderedMap[[]string] `json:"uses,omitempty" yaml:"uses,omitempty" cbor:"uses,omitempty"`
 	// BoundaryPath The node's boundary path, stamped as the aggrega.ai/boundary-path annotation on every emitted manifest that carries a metadata block.
-	BoundaryPath string `json:"boundary_path,omitempty" yaml:"boundary_path,omitempty"`
+	BoundaryPath string `json:"boundary_path,omitempty" yaml:"boundary_path,omitempty" cbor:"boundary_path,omitempty"`
 	// SyncWave The node's deployment wave, stamped as the aggrega.ai/sync-wave and argocd.argoproj.io/sync-wave annotations when non-zero. This is the per-node render-input carrier of the wave, distinct from the boundary context's sync wave that feeds the assemble export.
-	SyncWave int `json:"sync_wave,omitempty" yaml:"sync_wave,omitempty"`
+	SyncWave int `json:"sync_wave,omitempty" yaml:"sync_wave,omitempty" cbor:"sync_wave,omitempty"`
 	// RecipeName The bound Recipe's name, paired with recipe_version to form the aggrega.ai/recipe-uri annotation; when either half is empty the annotation is not stamped.
-	RecipeName string `json:"recipe_name,omitempty" yaml:"recipe_name,omitempty"`
+	RecipeName string `json:"recipe_name,omitempty" yaml:"recipe_name,omitempty" cbor:"recipe_name,omitempty"`
 	// RecipeVersion The bound Recipe's version, paired with recipe_name to form the aggrega.ai/recipe-uri annotation; when either half is empty the annotation is not stamped.
-	RecipeVersion string `json:"recipe_version,omitempty" yaml:"recipe_version,omitempty"`
+	RecipeVersion string `json:"recipe_version,omitempty" yaml:"recipe_version,omitempty" cbor:"recipe_version,omitempty"`
 	// LabelComponentID The Kubernetes-safe component identity. When non-empty it overrides the node id as the app.kubernetes.io/name and aggrega.ai/component-id label value, for resources whose node id carries marker syntax that needs sanitization; empty means the node id is already label-valid and is used directly.
-	LabelComponentID string `json:"label_component_id,omitempty" yaml:"label_component_id,omitempty"`
+	LabelComponentID string `json:"label_component_id,omitempty" yaml:"label_component_id,omitempty" cbor:"label_component_id,omitempty"`
 	// OutputLabels The recipe-author-declared output labels (recipe.spec.outputLabels) the guest stamps onto every emitted manifest alongside the build-identity provenance, keyed by label name. Disjoint from the provenance keyspace by load-time validation (no aggrega.ai/ or app.kubernetes.io/ key), so stamping never collides with a provenance label. A guest whose output is not Kubernetes YAML translates them onto its own label surface (Compose service labels) or ignores them.
-	OutputLabels map[string]string `json:"output_labels,omitempty" yaml:"output_labels,omitempty"`
+	OutputLabels map[string]string `json:"output_labels,omitempty" yaml:"output_labels,omitempty" cbor:"output_labels,omitempty"`
 	// Provenance The build-identity provenance the guest stamps onto every emitted manifest as aggrega.ai labels.
-	Provenance NodeProvenance `json:"provenance" yaml:"provenance"`
+	Provenance NodeProvenance `json:"provenance" yaml:"provenance" cbor:"provenance"`
 }
 
 // NodeProvenance The build-identity provenance for one node — the compiler, aggregate, and environment identity the guest stamps onto every emitted manifest as aggrega.ai labels. Each field elides when empty, so a partial identity stamps only the labels it carries.
 type NodeProvenance struct {
 	// CompilerVersion The compiler version, stamped as the aggrega.ai/compiler-version label when non-empty.
-	CompilerVersion string `json:"compiler_version,omitempty" yaml:"compiler_version,omitempty"`
+	CompilerVersion string `json:"compiler_version,omitempty" yaml:"compiler_version,omitempty" cbor:"compiler_version,omitempty"`
 	// AggregateName The aggregate name, stamped as the aggrega.ai/aggregate-name label when non-empty.
-	AggregateName string `json:"aggregate_name,omitempty" yaml:"aggregate_name,omitempty"`
+	AggregateName string `json:"aggregate_name,omitempty" yaml:"aggregate_name,omitempty" cbor:"aggregate_name,omitempty"`
 	// Environment The environment name, stamped as the aggrega.ai/environment label when non-empty.
-	Environment string `json:"environment,omitempty" yaml:"environment,omitempty"`
+	Environment string `json:"environment,omitempty" yaml:"environment,omitempty" cbor:"environment,omitempty"`
 	// ProviderName The bare provider engine kind, stamped as the aggrega.ai/provider label when non-empty.
-	ProviderName string `json:"provider_name,omitempty" yaml:"provider_name,omitempty"`
+	ProviderName string `json:"provider_name,omitempty" yaml:"provider_name,omitempty" cbor:"provider_name,omitempty"`
 	// ProviderVersion The resolved provider-rendering plugin version, stamped as the aggrega.ai/provider-version label when non-empty.
-	ProviderVersion string `json:"provider_version,omitempty" yaml:"provider_version,omitempty"`
+	ProviderVersion string `json:"provider_version,omitempty" yaml:"provider_version,omitempty" cbor:"provider_version,omitempty"`
 }
 
 // CatalogProjection The pre-packaged catalog content a Provider guest renders against when the host supplies catalog entries in the payload rather than behind host functions. It is a closure walk outward from the IR node: only the catalog entries transitively referenced by the node being rendered are included, not the whole catalog. Each map is keyed by catalog URI and preserves key order so the payload is byte-identical across runs of identical input. Opaque at this schema layer; the guest reads each entry through the catalog entity's own wire contract.
 type CatalogProjection struct {
 	// Components The Component entries the node transitively references, keyed by catalog URI.
-	Components types.OrderedMap[types.Component] `json:"components,omitempty" yaml:"components,omitempty"`
+	Components types.OrderedMap[types.Component] `json:"components,omitempty" yaml:"components,omitempty" cbor:"components,omitempty"`
 	// Features The Feature entries the node transitively references, keyed by catalog URI.
-	Features types.OrderedMap[types.Feature] `json:"features,omitempty" yaml:"features,omitempty"`
+	Features types.OrderedMap[types.Feature] `json:"features,omitempty" yaml:"features,omitempty" cbor:"features,omitempty"`
 	// Recipes The Recipe entries the node transitively references, keyed by catalog URI.
-	Recipes types.OrderedMap[types.Recipe] `json:"recipes,omitempty" yaml:"recipes,omitempty"`
+	Recipes types.OrderedMap[types.Recipe] `json:"recipes,omitempty" yaml:"recipes,omitempty" cbor:"recipes,omitempty"`
 	// FeatureRecipes The FeatureRecipe entries the node transitively references, keyed by catalog URI.
-	FeatureRecipes types.OrderedMap[types.FeatureRecipe] `json:"feature_recipes,omitempty" yaml:"feature_recipes,omitempty"`
+	FeatureRecipes types.OrderedMap[types.FeatureRecipe] `json:"feature_recipes,omitempty" yaml:"feature_recipes,omitempty" cbor:"feature_recipes,omitempty"`
 	// MappingLibraries The MappingLibrary entries the node transitively references, keyed by catalog URI.
-	MappingLibraries types.OrderedMap[types.MappingLibrary] `json:"mapping_libraries,omitempty" yaml:"mapping_libraries,omitempty"`
+	MappingLibraries types.OrderedMap[types.MappingLibrary] `json:"mapping_libraries,omitempty" yaml:"mapping_libraries,omitempty" cbor:"mapping_libraries,omitempty"`
 }
 
 // RenderNodeOutput The payload a Provider guest returns from its render_node export: the serialized bytes of each output file the guest emitted, and any diagnostics the guest raised while rendering. The guest returns each file's serialized bytes; the host writes them verbatim and runs no serializer. Determinism is the guest's responsibility: identical input must produce identical bytes.
 type RenderNodeOutput struct {
 	// Files The output files the guest emitted, in emission order. Each names its on-disk path and carries the serialized bytes the host writes verbatim.
-	Files []RenderedFile `json:"files" yaml:"files"`
+	Files []RenderedFile `json:"files" yaml:"files" cbor:"files"`
 	// Diagnostics Diagnostics the guest raised while rendering. Each element is the shared Wasm-plugin diagnostic shape.
-	Diagnostics []renderctx.Diagnostic `json:"diagnostics,omitempty" yaml:"diagnostics,omitempty"`
+	Diagnostics []renderctx.Diagnostic `json:"diagnostics,omitempty" yaml:"diagnostics,omitempty" cbor:"diagnostics,omitempty"`
 	// Error A failure message set when the guest ran but could not complete the operation; absent on success. It is distinct from any diagnostics the output carries: diagnostics report issues found during a run that still produced a result, while error reports that the operation itself did not complete. The host surfaces a present error as a failed plugin invocation.
-	Error string `json:"error,omitempty" yaml:"error,omitempty"`
+	Error string `json:"error,omitempty" yaml:"error,omitempty" cbor:"error,omitempty"`
 }
 
 // ValidateNodeOutput The payload a Provider guest returns from its optional validate_node_input export: the diagnostics raised by a structural check of the node's resolved input. The export consumes the same RenderNodeInput projection render_node receives and emits no files — it only reports diagnostics. An error-severity diagnostic halts the build loudly, naming the node and provider; a warning or info diagnostic surfaces to the build result without changing rendered output. An empty diagnostics list means the input passed the structural check.
 type ValidateNodeOutput struct {
 	// Diagnostics Diagnostics the guest raised while validating the node's input. Each element is the shared Wasm-plugin diagnostic shape. Empty when the input passed the structural check.
-	Diagnostics []renderctx.Diagnostic `json:"diagnostics,omitempty" yaml:"diagnostics,omitempty"`
+	Diagnostics []renderctx.Diagnostic `json:"diagnostics,omitempty" yaml:"diagnostics,omitempty" cbor:"diagnostics,omitempty"`
 	// Error A failure message set when the guest ran but could not complete the operation; absent on success. It is distinct from any diagnostics the output carries: diagnostics report issues found during a run that still produced a result, while error reports that the operation itself did not complete. The host surfaces a present error as a failed plugin invocation.
-	Error string `json:"error,omitempty" yaml:"error,omitempty"`
+	Error string `json:"error,omitempty" yaml:"error,omitempty" cbor:"error,omitempty"`
 }
 
 // RenderedFile One output file a Provider guest emitted: its on-disk path relative to the node's output root, and its serialized bytes exactly as the guest produced them. The host writes these bytes verbatim and runs no serializer, so the on-disk output is byte-identical to what the guest emitted.
 type RenderedFile struct {
 	// Path The output file's path relative to the node's output root (for example Chart.yaml or templates/deployment.yaml).
-	Path string `json:"path" yaml:"path"`
+	Path string `json:"path" yaml:"path" cbor:"path"`
 	// Content The file's serialized bytes exactly as the guest produced them; the host writes these bytes verbatim and runs no serializer, so output is byte-identical to what the guest emitted (base64 on the JSON wire).
-	Content []byte `json:"content" yaml:"content"`
+	Content []byte `json:"content" yaml:"content" cbor:"content"`
 	// Format The format the guest declares the emitted file was rendered in, so the host can route the file to a matching parser. Absent when the guest declares no format, in which case the host infers the format from the file extension.
-	Format string `json:"format,omitempty" yaml:"format,omitempty"`
+	Format string `json:"format,omitempty" yaml:"format,omitempty" cbor:"format,omitempty"`
 }
 
 // SourceFile One file of a pre-packaged source projection: its chart-root-relative path and its raw bytes, exactly as the host read them from the local source at compile time.
 type SourceFile struct {
 	// Path The file's path relative to the source root (for example Chart.yaml or templates/deployment.yaml).
-	Path string `json:"path" yaml:"path"`
+	Path string `json:"path" yaml:"path" cbor:"path"`
 	// Content The file's raw bytes exactly as the host read them from the local source (base64 on the JSON wire).
-	Content []byte `json:"content" yaml:"content"`
+	Content []byte `json:"content" yaml:"content" cbor:"content"`
 }
 
 // SourceProjection The packed source content (e.g. a Helm chart's files, keyed by source-root-relative path, in walk order) the host reads and returns to the guest in response to a pack-source request, so the guest reconstructs the selected source in memory and touches no filesystem. It is the pack-source host function's success payload.
 type SourceProjection struct {
 	// Files The source files, keyed by source-root-relative path, in the host's deterministic walk order.
-	Files []SourceFile `json:"files" yaml:"files"`
+	Files []SourceFile `json:"files" yaml:"files" cbor:"files"`
 }
 
 // SourceEntry One entry of a source listing: its path relative to the source root, and whether it is a directory. The host lists names only and reads no content, so an entry carries no bytes.
 type SourceEntry struct {
 	// Path The entry's path relative to the source root, slash-separated (for example Chart.yaml or templates/deployment.yaml).
-	Path string `json:"path" yaml:"path"`
+	Path string `json:"path" yaml:"path" cbor:"path"`
 	// IsDir Whether the entry is a directory. A guest that resolves a chart root or a single source file among the listing reads this to distinguish directories from files without touching the filesystem.
-	IsDir bool `json:"is_dir" yaml:"is_dir"`
+	IsDir bool `json:"is_dir" yaml:"is_dir" cbor:"is_dir"`
 }
 
 // SourceListing The generic enumeration of an acquired source the host hands a sourced provider guest: the source root, whether that root is a directory, and the sorted root-relative entries under it. The host walks the acquired source with no domain knowledge and reads no file content — it lists names only. The guest applies its own resolution logic over the listing (locating a chart root, selecting a single compose document, vendoring a module tree) and asks the host to pack a chosen selection through the pack-source host function. Entries are sorted by path so the listing is byte-identical across runs of identical input.
 type SourceListing struct {
 	// Root The acquired source location the host enumerated. The guest carries it into its own diagnostics when it cannot resolve the source, so a resolution halt names the source the author supplied.
-	Root string `json:"root" yaml:"root"`
+	Root string `json:"root" yaml:"root" cbor:"root"`
 	// RootIsDir Whether the acquired source root is a directory. False for a single-file source (a lone compose document, a single module file, an archive), in which case entries is empty and the guest packs the root itself.
-	RootIsDir bool `json:"root_is_dir,omitempty" yaml:"root_is_dir,omitempty"`
+	RootIsDir bool `json:"root_is_dir,omitempty" yaml:"root_is_dir,omitempty" cbor:"root_is_dir,omitempty"`
 	// Entries The root-relative entries under a directory source root, sorted by path. Empty for a single-file source root.
-	Entries []SourceEntry `json:"entries" yaml:"entries"`
+	Entries []SourceEntry `json:"entries" yaml:"entries" cbor:"entries"`
 }
 
 // SourcePackRequest The selection a guest asks the host to pack from the acquired source through the pack-source host function. The op names the shape of the selection and the path names it relative to the source root; the host resolves the path under the source root, rejecting any escape above it, and returns the packed bytes as a SourceProjection.
 type SourcePackRequest struct {
 	// Op The selection shape: file packs the single file at path; dir packs the immediate files of the directory at path; tree packs the whole subtree rooted at path, recursively, in the host's deterministic walk order.
-	Op string `json:"op" yaml:"op"`
+	Op string `json:"op" yaml:"op" cbor:"op"`
 	// Path The selection location relative to the source root, slash-separated. The empty string (or ".") names the source root itself, so a single-file source is packed with an empty path.
-	Path string `json:"path" yaml:"path"`
+	Path string `json:"path" yaml:"path" cbor:"path"`
 }
 
 // SourcePackResponse The pack-source host function's reply: on success the packed source, on failure an error message. Exactly one of the two fields is populated. Failure is delivered in-band rather than by trapping, so a guest carries a sandbox rejection or a read failure into its own diagnostics as a deterministic render failure.
 type SourcePackResponse struct {
 	// SourceProjection The packed source on success; absent on failure.
-	SourceProjection *SourceProjection `json:"source_projection,omitempty" yaml:"source_projection,omitempty"`
+	SourceProjection *SourceProjection `json:"source_projection,omitempty" yaml:"source_projection,omitempty" cbor:"source_projection,omitempty"`
 	// Error The failure message on failure, naming the selection and the reason; absent on success.
-	Error string `json:"error,omitempty" yaml:"error,omitempty"`
+	Error string `json:"error,omitempty" yaml:"error,omitempty" cbor:"error,omitempty"`
 	// ErrorCode The machine-matchable failure identity on failure, from the closed host-function error-code catalog, set beside the human error message; absent on success. A guest branches on this code without parsing the message, tolerating an absent code (older host) or an unrecognized one (newer host) by falling back to the message.
-	ErrorCode string `json:"error_code,omitempty" yaml:"error_code,omitempty"`
+	ErrorCode string `json:"error_code,omitempty" yaml:"error_code,omitempty" cbor:"error_code,omitempty"`
 }
 
 // SourceFileRequest The single-file content read a guest asks the host to perform through the read-source-file host function, for a guest whose resolution logic must inspect a file's content before choosing what to pack. The host resolves the path under the source root, rejecting any escape above it, and returns the file's bytes.
 type SourceFileRequest struct {
 	// Path The file location relative to the source root, slash-separated.
-	Path string `json:"path" yaml:"path"`
+	Path string `json:"path" yaml:"path" cbor:"path"`
 }
 
 // SourceFileResponse The read-source-file host function's reply: on success the file's bytes, on failure an error message. Exactly one of the two fields is populated. Failure is delivered in-band rather than by trapping, so a guest carries a sandbox rejection or a read failure into its own diagnostics as a deterministic render failure.
 type SourceFileResponse struct {
 	// Content The file's raw bytes on success; absent on failure (base64 on the JSON wire).
-	Content []byte `json:"content,omitempty" yaml:"content,omitempty"`
+	Content []byte `json:"content,omitempty" yaml:"content,omitempty" cbor:"content,omitempty"`
 	// Error The failure message on failure, naming the file and the reason; absent on success.
-	Error string `json:"error,omitempty" yaml:"error,omitempty"`
+	Error string `json:"error,omitempty" yaml:"error,omitempty" cbor:"error,omitempty"`
 	// ErrorCode The machine-matchable failure identity on failure, from the closed host-function error-code catalog, set beside the human error message; absent on success. A guest branches on this code without parsing the message, tolerating an absent code (older host) or an unrecognized one (newer host) by falling back to the message.
-	ErrorCode string `json:"error_code,omitempty" yaml:"error_code,omitempty"`
+	ErrorCode string `json:"error_code,omitempty" yaml:"error_code,omitempty" cbor:"error_code,omitempty"`
 }
 
 // FetchExternalInputResponse The fetch-external-input host function's reply: on success the fetched content, on failure an error message. Exactly one of content or error is populated. Failure is delivered in-band rather than by trapping, so a guest carries an unresolvable URL or a fetch failure into its own diagnostics as a deterministic render failure. The request is a bare URL string rather than a JSON payload, so only the reply has a wire shape.
 type FetchExternalInputResponse struct {
 	// Content The fetched content on success (base64 on the JSON wire); absent on failure. A pointer so a zero-length payload still emits the content key and stays distinguishable from a failure.
-	Content *string `json:"content,omitempty" yaml:"content,omitempty"`
+	Content *string `json:"content,omitempty" yaml:"content,omitempty" cbor:"content,omitempty"`
 	// Error The failure message on failure, naming the URL and the remedy; absent on success.
-	Error string `json:"error,omitempty" yaml:"error,omitempty"`
+	Error string `json:"error,omitempty" yaml:"error,omitempty" cbor:"error,omitempty"`
 	// ErrorCode The machine-matchable failure identity on failure, from the closed host-function error-code catalog, set beside the human error message; absent on success. A guest branches on this code without parsing the message, tolerating an absent code (older host) or an unrecognized one (newer host) by falling back to the message.
-	ErrorCode string `json:"error_code,omitempty" yaml:"error_code,omitempty"`
+	ErrorCode string `json:"error_code,omitempty" yaml:"error_code,omitempty" cbor:"error_code,omitempty"`
 }
 
 // WorkloadProjection The pre-evaluated workload content the host hands a Provider guest so the guest synthesizes provider-native manifests from it in memory, present when the bound Recipe declares a workload rather than a chart source. Determinism is the guest's responsibility: identical input must produce identical bytes.
 type WorkloadProjection struct {
 	// Workload The host-evaluated, post-validation Workload the guest synthesizes; opaque at this schema layer so the socket schema does not rebind the Workload entity contract.
-	Workload types.Workload `json:"workload" yaml:"workload"`
+	Workload types.Workload `json:"workload" yaml:"workload" cbor:"workload"`
 	// AttachmentProvides Every attachment on the node, projected to its resolved provides and keyed by the attachment instance name a workload attachment reference carries; absent when the node carries no attachments. The host copies the strings through without interpreting them, so the guest reads whichever entries of an attachment's provides it needs to resolve a reference to the resource that attachment produced.
-	AttachmentProvides map[string]types.OrderedMap[string] `json:"attachment_provides,omitempty" yaml:"attachment_provides,omitempty"`
+	AttachmentProvides map[string]types.OrderedMap[string] `json:"attachment_provides,omitempty" yaml:"attachment_provides,omitempty" cbor:"attachment_provides,omitempty"`
 	// AttachmentSensitive Which of the node's attachments handle material an author declared sensitive, keyed by the same attachment instance name attachment_provides uses. Only a marked attachment appears, so an attachment absent from the map is not declared sensitive and the whole field is absent when none is. The marking is derived from declarations alone — a sensitive leaf declared on the Feature filling the attachment, or a sensitive attachment slot the attachment binds — never from a value's content. The field carries the marking so a guest whose target offers a native sensitivity primitive can mark the value there; a guest whose target offers none ignores it, and the marking changes nothing that guest emits.
-	AttachmentSensitive map[string]bool `json:"attachment_sensitive,omitempty" yaml:"attachment_sensitive,omitempty"`
+	AttachmentSensitive map[string]bool `json:"attachment_sensitive,omitempty" yaml:"attachment_sensitive,omitempty" cbor:"attachment_sensitive,omitempty"`
 }
 
 // ArtifactsProjection The pre-evaluated artifact set the host hands a Provider guest to place into the node's output. The host has already resolved each entry's source (inline content or an imported file it read), evaluated it as a Go template against the render context using the guest's declared artifact-template delimiter pair, and computed the build-provenance label and annotation key sets. The guest owns the format decision, the provenance placement, the on-disk path, and the final bytes. Entries preserve author order so the placed output is byte-identical across runs of identical input.
 type ArtifactsProjection struct {
 	// Entries The artifact entries the guest places, in author order.
-	Entries []ArtifactProjectionEntry `json:"entries" yaml:"entries"`
+	Entries []ArtifactProjectionEntry `json:"entries" yaml:"entries" cbor:"entries"`
 }
 
 // ArtifactProjectionEntry One pre-evaluated artifact entry the host hands a Provider guest to place: its host-resolved output base name, its origin, the already-template-evaluated content bytes, and the build-provenance label and annotation key sets the host computed for the node. The guest decides how to place the provenance (splicing it into a manifest's metadata, prepending it as a comment, or emitting a companion file) and where the file lands.
 type ArtifactProjectionEntry struct {
 	// Name The host-resolved output base name for the entry: the author-declared map key for an inline entry, or the imported file's base name for an imported entry. The guest places the entry at this name or under a provider-specific sub-path derived from it.
-	Name string `json:"name" yaml:"name"`
+	Name string `json:"name" yaml:"name" cbor:"name"`
 	// Origin Whether the entry was authored as inline content or as an imported file. A guest that rejects one form (an umbrella-chart provider rejects inline content) reads this to halt loudly.
-	Origin string `json:"origin" yaml:"origin"`
+	Origin string `json:"origin" yaml:"origin" cbor:"origin"`
 	// Content The already-template-evaluated content bytes the host produced from the entry's inline content or imported file, evaluated against the render context using the guest's declared artifact-template delimiter pair (base64 on the JSON wire).
-	Content []byte `json:"content" yaml:"content"`
+	Content []byte `json:"content" yaml:"content" cbor:"content"`
 	// Labels The Kubernetes-label-safe build-provenance key set the host computed for the node, keyed by label name. A guest that stamps provenance into a manifest's metadata.labels splices these; a guest whose output is not Kubernetes YAML ignores them.
-	Labels map[string]string `json:"labels,omitempty" yaml:"labels,omitempty"`
+	Labels map[string]string `json:"labels,omitempty" yaml:"labels,omitempty" cbor:"labels,omitempty"`
 	// Annotations The build-provenance key set the host computed for the node that a Kubernetes label cannot represent, keyed by annotation name. A guest that stamps provenance into a manifest's metadata.annotations splices these; a guest whose output is not Kubernetes YAML ignores them.
-	Annotations map[string]string `json:"annotations,omitempty" yaml:"annotations,omitempty"`
+	Annotations map[string]string `json:"annotations,omitempty" yaml:"annotations,omitempty" cbor:"annotations,omitempty"`
 }
 
 // AssembleBoundaryInput The payload a Provider guest receives on its assemble_boundary export — the export that merges the per-node render outputs at one dispatch group into a single assembled artifact (an umbrella chart, a merged compose file). It carries the per-node render outputs and their merged annotations, the dispatch-group output path the assembled artifact lands at, the graph's uses edges for per-service dependency inference, and the render-time context. Not every provider declares the export: providers that emit only flat per-node output omit it.
 type AssembleBoundaryInput struct {
 	// Boundary Optional per-render boundary metadata a guest may consult. A dispatch group can merge contributors from multiple boundaries, so there is no single boundary; the field is carry-only-consumed and absent when the host merges across boundaries. Opaque at this schema layer; the guest reads the boundary-context shape through the render-context wire contract.
-	Boundary renderctx.BoundaryContext `json:"boundary,omitempty" yaml:"boundary,omitempty"`
+	Boundary renderctx.BoundaryContext `json:"boundary,omitempty" yaml:"boundary,omitempty" cbor:"boundary,omitempty"`
 	// RenderedNodes The per-node render outputs that fed this dispatch group, in node order.
-	RenderedNodes []RenderedNode `json:"rendered_nodes" yaml:"rendered_nodes"`
+	RenderedNodes []RenderedNode `json:"rendered_nodes" yaml:"rendered_nodes" cbor:"rendered_nodes"`
 	// Context The render-time context the host hands the guest, the same opaque render-context passthrough the render_node export receives.
-	Context renderctx.RenderContext `json:"context" yaml:"context"`
+	Context renderctx.RenderContext `json:"context" yaml:"context" cbor:"context"`
 	// BoundaryPath The evaluated dispatch-group output path the assembled artifact lands at; a boundary assembler uses it as the boundary-level fallback identity (e.g. the compose network name for a node carrying no namespace annotation).
-	BoundaryPath string `json:"boundary_path" yaml:"boundary_path"`
+	BoundaryPath string `json:"boundary_path" yaml:"boundary_path" cbor:"boundary_path"`
 	// Edges The graph's directed uses edges, so a boundary assembler can infer per-service ordering/dependencies across the dispatch group's contributors (e.g. compose depends_on).
-	Edges []RenderEdge `json:"edges,omitempty" yaml:"edges,omitempty"`
+	Edges []RenderEdge `json:"edges,omitempty" yaml:"edges,omitempty" cbor:"edges,omitempty"`
 	// SubCharts The per-sub-chart payload an umbrella-chart assembler consumes to emit one dependency and one values scope per contributor. Each entry carries the sub-chart's identity, per-instance values, and, for a sub-chart vendored from a chart source, the pristine bytes of that chart's Chart.yaml file. Present for umbrella-chart assembly; a flat-merging assembler omits it.
-	SubCharts []SubChart `json:"sub_charts,omitempty" yaml:"sub_charts,omitempty"`
+	SubCharts []SubChart `json:"sub_charts,omitempty" yaml:"sub_charts,omitempty" cbor:"sub_charts,omitempty"`
 	// ChartName The chart name an umbrella-chart assembler uses for the assembled chart when a name is supplied for the dispatch group; empty when the assembler derives the name from the dispatch-group output path.
-	ChartName string `json:"chart_name,omitempty" yaml:"chart_name,omitempty"`
+	ChartName string `json:"chart_name,omitempty" yaml:"chart_name,omitempty" cbor:"chart_name,omitempty"`
 	// AggregateName The top-level aggregate name an umbrella-chart assembler folds into the assembled chart's derived name; empty when no aggregate identity contributes to the name.
-	AggregateName string `json:"aggregate_name,omitempty" yaml:"aggregate_name,omitempty"`
+	AggregateName string `json:"aggregate_name,omitempty" yaml:"aggregate_name,omitempty" cbor:"aggregate_name,omitempty"`
 }
 
 // RenderedNode One node's render output as it appears in an assemble_boundary input: the node id, its type, its merged annotations, and the render output the render_node export produced for it.
 type RenderedNode struct {
 	// ID The node's absolute id within the topology graph.
-	ID string `json:"id" yaml:"id"`
+	ID string `json:"id" yaml:"id" cbor:"id"`
 	// Type The node's component-type label.
-	Type     string           `json:"type" yaml:"type"`
-	Rendered RenderNodeOutput `json:"rendered" yaml:"rendered"`
+	Type     string           `json:"type" yaml:"type" cbor:"type"`
+	Rendered RenderNodeOutput `json:"rendered" yaml:"rendered" cbor:"rendered"`
 	// Annotations The node's merged annotations, so a boundary assembler can attribute per-node placement (e.g. the compose network derived from the aggrega.ai/namespace annotation).
-	Annotations types.OrderedMap[string] `json:"annotations,omitempty" yaml:"annotations,omitempty"`
+	Annotations types.OrderedMap[string] `json:"annotations,omitempty" yaml:"annotations,omitempty" cbor:"annotations,omitempty"`
 }
 
 type RenderEdge struct {
 	// Source The consuming node's id — the source end of a directed uses edge.
-	Source string `json:"source" yaml:"source"`
+	Source string `json:"source" yaml:"source" cbor:"source"`
 	// Target The consumed node's id — the target end a directed uses edge points at.
-	Target string `json:"target" yaml:"target"`
+	Target string `json:"target" yaml:"target" cbor:"target"`
 }
 
 // SubChart One sub-chart contributing to an umbrella chart: its instance identity, the version the umbrella pins, the per-instance values the umbrella scopes under the sub-chart's alias, and, for a sub-chart vendored from a chart source, the pristine bytes of that chart's Chart.yaml file. An umbrella-chart assembler builds the umbrella's dependencies and values file from these pure-data views alone and touches no filesystem.
 type SubChart struct {
 	// InstanceID The sub-chart's instance identity within the dispatch group; the umbrella scopes the sub-chart's dependency alias and its values under it, so multiple instances of one source chart stay distinct.
-	InstanceID string `json:"instance_id" yaml:"instance_id"`
+	InstanceID string `json:"instance_id" yaml:"instance_id" cbor:"instance_id"`
 	// Version The version the umbrella pins for the sub-chart. A sub-chart vendored from a chart source instead draws its dependency name and version from that chart's Chart.yaml file so the dependency binds; this value applies to a generative sub-chart that carries no vendored chart.
-	Version string `json:"version,omitempty" yaml:"version,omitempty"`
+	Version string `json:"version,omitempty" yaml:"version,omitempty" cbor:"version,omitempty"`
 	// Values The per-instance values the umbrella scopes under the sub-chart's alias in the umbrella values.yaml, an author-ordered key set. Preserves author order so the payload is byte-identical across runs of identical input.
-	Values types.OrderedMap[any] `json:"values,omitempty" yaml:"values,omitempty"`
+	Values types.OrderedMap[any] `json:"values,omitempty" yaml:"values,omitempty" cbor:"values,omitempty"`
 	// ChartYaml The pristine bytes of the vendored chart's Chart.yaml, read from the local source at compile time, from which the umbrella draws the sub-chart dependency's name and version. Empty for a generative sub-chart that carries no vendored chart (base64 on the JSON wire).
-	ChartYaml []byte `json:"chart_yaml,omitempty" yaml:"chart_yaml,omitempty"`
+	ChartYaml []byte `json:"chart_yaml,omitempty" yaml:"chart_yaml,omitempty" cbor:"chart_yaml,omitempty"`
 }
 
 // AssembleBoundaryOutput The payload a Provider guest returns from its assemble_boundary export: the serialized bytes of each assembled file, any diagnostics the guest raised while assembling, and whether the orchestrator nests each contributor's per-node files under a per-node sub-directory. The guest returns each file's serialized bytes; the host writes them verbatim and runs no serializer. Determinism is the guest's responsibility: identical input must produce identical bytes.
 type AssembleBoundaryOutput struct {
 	// Files The assembled output files the guest emitted, in emission order. Each names its on-disk path and carries the serialized bytes the host writes verbatim.
-	Files []RenderedFile `json:"files" yaml:"files"`
+	Files []RenderedFile `json:"files" yaml:"files" cbor:"files"`
 	// Diagnostics Diagnostics the guest raised while assembling. Each element is the shared Wasm-plugin diagnostic shape.
-	Diagnostics []renderctx.Diagnostic `json:"diagnostics,omitempty" yaml:"diagnostics,omitempty"`
+	Diagnostics []renderctx.Diagnostic `json:"diagnostics,omitempty" yaml:"diagnostics,omitempty" cbor:"diagnostics,omitempty"`
 	// NestPerNode Whether the orchestrator nests each contributor's per-node files under charts/<nodeID>/ rather than emitting them flat; the assembler signals this per provider (compose emits flat, so false; an umbrella-chart assembler nests, so true).
-	NestPerNode bool `json:"nest_per_node,omitempty" yaml:"nest_per_node,omitempty"`
+	NestPerNode bool `json:"nest_per_node,omitempty" yaml:"nest_per_node,omitempty" cbor:"nest_per_node,omitempty"`
 	// Error A failure message set when the guest ran but could not complete the operation; absent on success. It is distinct from any diagnostics the output carries: diagnostics report issues found during a run that still produced a result, while error reports that the operation itself did not complete. The host surfaces a present error as a failed plugin invocation.
-	Error string `json:"error,omitempty" yaml:"error,omitempty"`
+	Error string `json:"error,omitempty" yaml:"error,omitempty" cbor:"error,omitempty"`
 }
 
 // CarveInput The payload a Provider guest receives on its optional carve export: one named output file the pipeline carves into addressable units before a FeatureRecipe step edits some of them. A provider whose output shape the stock YAML codec cannot carve directly (a templated chart, for instance) advertises carve and reassemble so its own output-shape knowledge lives in the guest; a provider that omits the exports borrows the host's stock YAML codec.
 type CarveInput struct {
 	// Name The output file's name, so the codec can apply any name-scoped carving rule.
-	Name string `json:"name" yaml:"name"`
+	Name string `json:"name" yaml:"name" cbor:"name"`
 	// Body The output file's bytes to carve into addressable units (base64 on the JSON wire).
-	Body []byte `json:"body" yaml:"body"`
+	Body []byte `json:"body" yaml:"body" cbor:"body"`
 	// YamlIndent The indentation width the codec uses when it must synthesize new structured text; carried so the guest's carving matches the render-wide indentation.
-	YamlIndent int `json:"yaml_indent,omitempty" yaml:"yaml_indent,omitempty"`
+	YamlIndent int `json:"yaml_indent,omitempty" yaml:"yaml_indent,omitempty" cbor:"yaml_indent,omitempty"`
 }
 
 // CarveOutput The payload a Provider guest returns from its carve export: the ordered addressable units it carved the file into. A structured unit carries a tree (a PATCH target); an opaque unit carries only its media type and bytes.
 type CarveOutput struct {
 	// Units The ordered addressable units the guest carved the file into.
-	Units []frp.Unit `json:"units" yaml:"units"`
+	Units []frp.Unit `json:"units" yaml:"units" cbor:"units"`
 }
 
 // ReassembleInput The payload a Provider guest receives on its optional reassemble export: the original file plus its carved units and the patched units a pipeline step produced, so the guest splices the changes back into the original bytes surgically. A token absent from the patched set is re-joined from its original bytes verbatim; a patched token has only its addressed byte-spans edited.
 type ReassembleInput struct {
 	// Name The output file's name, matching the name the same file was carved under.
-	Name string `json:"name" yaml:"name"`
+	Name string `json:"name" yaml:"name" cbor:"name"`
 	// Body The original file bytes the reassembly splices the patched units back into (base64 on the JSON wire).
-	Body []byte `json:"body" yaml:"body"`
+	Body []byte `json:"body" yaml:"body" cbor:"body"`
 	// Segs The units the file was carved into, as carve returned them.
-	Segs []frp.Unit `json:"segs,omitempty" yaml:"segs,omitempty"`
+	Segs []frp.Unit `json:"segs,omitempty" yaml:"segs,omitempty" cbor:"segs,omitempty"`
 	// Patched The units a pipeline step changed, each carrying its token, patched tree, and the ops that produced the change.
-	Patched []frp.PatchedUnit `json:"patched,omitempty" yaml:"patched,omitempty"`
+	Patched []frp.PatchedUnit `json:"patched,omitempty" yaml:"patched,omitempty" cbor:"patched,omitempty"`
 	// YamlIndent The indentation width the codec uses when an op must synthesize new structured text; carried so the reassembly matches the render-wide indentation.
-	YamlIndent int `json:"yaml_indent,omitempty" yaml:"yaml_indent,omitempty"`
+	YamlIndent int `json:"yaml_indent,omitempty" yaml:"yaml_indent,omitempty" cbor:"yaml_indent,omitempty"`
 }
 
 // ReassembleOutput The payload a Provider guest returns from its reassemble export: the file's bytes with the patched units spliced back in. Reassembly is byte-faithful — every byte the ops did not touch survives verbatim.
 type ReassembleOutput struct {
 	// Body The reassembled file bytes the host writes verbatim (base64 on the JSON wire).
-	Body []byte `json:"body" yaml:"body"`
+	Body []byte `json:"body" yaml:"body" cbor:"body"`
 }
 
 // BoundaryEnvOverridesInput The payload a Provider guest receives on its optional boundary_env_overrides export: a boundary's internal uses edges and the driving feature's resolved infra, from which the guest computes per-consumer environment overrides for the boundary-to-consumer env channel. A guest whose provider drives that channel (a compose guest bridging cross-network endpoints) advertises the export; a provider that drives no such channel omits it, and the host applies no overrides for it. The edges and infra are opaque at this schema layer — the guest reads their shapes through the template-context wire contract; the schema does not interpret them.
 type BoundaryEnvOverridesInput struct {
 	// InternalUsesEdges The boundary's internal uses edges — the directed edges whose endpoints both live inside the boundary's subtree, each enriched with the producer's provides and the consumer's inject mapping. The guest reads them to decide which consumers need an env override and what value to write. Opaque at this schema layer; the guest reads the enriched-edge shape through the template-context wire contract.
-	InternalUsesEdges []types.EnrichedEdge `json:"internal_uses_edges,omitempty" yaml:"internal_uses_edges,omitempty"`
+	InternalUsesEdges []types.EnrichedEdge `json:"internal_uses_edges,omitempty" yaml:"internal_uses_edges,omitempty" cbor:"internal_uses_edges,omitempty"`
 	// Infra The driving feature's resolved infra, an author-ordered key set the guest reads for the channel's tunables (for a compose bridge, the listen-port base and the upstream host provides-field selector). Preserves author order so the payload is byte-identical across runs of identical input.
-	Infra types.OrderedMap[any] `json:"infra,omitempty" yaml:"infra,omitempty"`
+	Infra types.OrderedMap[any] `json:"infra,omitempty" yaml:"infra,omitempty" cbor:"infra,omitempty"`
 }
 
 // BoundaryEnvOverridesOutput The payload a Provider guest returns from its boundary_env_overrides export: the per-consumer environment overrides the host applies to each named consumer's injected env after the per-node render pass. The values are opaque strings the host carries without interpretation; a consumer absent from the map is left untouched.
 type BoundaryEnvOverridesOutput struct {
 	// Overrides The per-consumer environment overrides, keyed by consumer node id to a map of environment-variable name to override value. An empty or absent map means the guest computed no overrides.
-	Overrides map[string]map[string]string `json:"overrides,omitempty" yaml:"overrides,omitempty"`
+	Overrides map[string]map[string]string `json:"overrides,omitempty" yaml:"overrides,omitempty" cbor:"overrides,omitempty"`
 }
 
 // LinkEndpoint One endpoint of a cross-boundary link: the node, the boundary path its rendered output assembles into, and the provider that rendered it. The two endpoints of a link name the consuming and consumed ends of a uses edge whose ends assemble into different dispatch groups.
 type LinkEndpoint struct {
 	// Node The endpoint node's absolute id within the topology graph.
-	Node string `json:"node" yaml:"node"`
+	Node string `json:"node" yaml:"node" cbor:"node"`
 	// Boundary The endpoint's boundary path — the dispatch group its rendered output assembles into.
-	Boundary string `json:"boundary" yaml:"boundary"`
+	Boundary string `json:"boundary" yaml:"boundary" cbor:"boundary"`
 	// Provider The provider that rendered the endpoint (the provider engine name). Both endpoints of a wired link name the same provider; the host does not route a link whose endpoints name different providers.
-	Provider string `json:"provider" yaml:"provider"`
+	Provider string `json:"provider" yaml:"provider" cbor:"provider"`
 	// Deployment The deployment identity the endpoint's rendered output belongs to — the scope its assembled artifacts are named within. The host assembles it from the build's deployment identity and passes it verbatim; it infers no meaning from the value. A provider reads it to scope a cross-reference name to the deployment. An absent value is the empty string, which a provider treats as an unscoped name.
-	Deployment string `json:"deployment,omitempty" yaml:"deployment,omitempty"`
+	Deployment string `json:"deployment,omitempty" yaml:"deployment,omitempty" cbor:"deployment,omitempty"`
 }
 
 // LinkEdge The generalized, domain-blind per-edge payload the host assembles for a uses edge whose consuming and consumed ends assemble into different dispatch groups. It carries both endpoints, both endpoints' placement annotations as opaque scalar maps the host does not interpret, the consumed endpoint's provides output, and the socket and inject mapping the edge wires. A provider reads it to produce the provider-native cross-reference wiring the two ends need; the host assembles it and passes the annotation map as opaque scalars, inferring no meaning from any value.
 type LinkEdge struct {
 	// Source The consuming endpoint — the source end of the directed uses edge, whose assembled output the consumer-side wiring is injected into.
-	Source LinkEndpoint `json:"source" yaml:"source"`
+	Source LinkEndpoint `json:"source" yaml:"source" cbor:"source"`
 	// Target The consumed endpoint — the target end the uses edge points at, whose assembled output the producer-side wiring publishes.
-	Target LinkEndpoint `json:"target" yaml:"target"`
+	Target LinkEndpoint `json:"target" yaml:"target" cbor:"target"`
 	// TargetAnnotations The consumed (target) endpoint's placement annotations as an opaque scalar map, keyed by annotation name. The host assembles them from the target's resolved annotations and passes them verbatim; it infers no meaning from any value. A provider reads them to decide how to shape a cross-reference (for example whether the two ends share a placement or need a cross-placement reference). Keys serialize in sorted order so the payload is byte-identical across runs of identical input.
-	TargetAnnotations map[string]string `json:"target_annotations,omitempty" yaml:"target_annotations,omitempty"`
+	TargetAnnotations map[string]string `json:"target_annotations,omitempty" yaml:"target_annotations,omitempty" cbor:"target_annotations,omitempty"`
 	// SourceAnnotations The consuming (source) endpoint's placement annotations as an opaque scalar map, keyed by annotation name. The host assembles them from the source's resolved annotations and passes them verbatim; it infers no meaning from any value. A provider reads them to compare the two ends' placement — for example whether the source and target share a placement or sit in different ones. Keys serialize in sorted order so the payload is byte-identical across runs of identical input.
-	SourceAnnotations map[string]string `json:"source_annotations,omitempty" yaml:"source_annotations,omitempty"`
+	SourceAnnotations map[string]string `json:"source_annotations,omitempty" yaml:"source_annotations,omitempty" cbor:"source_annotations,omitempty"`
 	// Socket The socket alias the uses edge is bound under.
-	Socket string `json:"socket" yaml:"socket"`
+	Socket string `json:"socket" yaml:"socket" cbor:"socket"`
 	// Provides The consumed endpoint's provides output, an author-ordered key set exposing the target's declared outputs. Preserves author order so the payload is byte-identical across runs of identical input.
-	Provides types.OrderedMap[string] `json:"provides" yaml:"provides"`
+	Provides types.OrderedMap[string] `json:"provides" yaml:"provides" cbor:"provides"`
 	// Inject The consuming endpoint's inject mapping, keyed by delivery mechanism to an author-ordered key set, describing how the consuming end receives the consumed endpoint's output. Preserves author order so the payload is byte-identical across runs of identical input.
-	Inject types.OrderedMap[types.OrderedMap[string]] `json:"inject" yaml:"inject"`
+	Inject types.OrderedMap[types.OrderedMap[string]] `json:"inject" yaml:"inject" cbor:"inject"`
 }
 
 // LinkPatch One per-file structural patch a provider returns as artifact wiring: the output file and the ordered structural operations to apply to it. A later host pass carves the named file, applies the operations, and reassembles it byte-faithfully. The operation shape is the shared pipeline patch-operation vocabulary; it is opaque at this schema layer, so a guest carries each operation verbatim while the host realizes the typed operation its pipeline applies.
 type LinkPatch struct {
 	// File The output file the operations apply to, named as the provider emitted it.
-	File string `json:"file" yaml:"file"`
+	File string `json:"file" yaml:"file" cbor:"file"`
 	// Ops The ordered structural operations to apply to the file, in application order.
-	Ops []frp.JSONPatchOp `json:"ops" yaml:"ops"`
+	Ops []frp.JSONPatchOp `json:"ops" yaml:"ops" cbor:"ops"`
 }
 
 // LinkPublishInput The payload a provider receives on its link_publish export: one cross-boundary link whose consumed endpoint's output is referenced across a boundary. The export returns the published identity the consumer resolves against and any producer-side artifact wiring the consumed endpoint's output needs.
 type LinkPublishInput struct {
 	// Edge The cross-boundary link being published, read from the consumed (target) endpoint's side.
-	Edge LinkEdge `json:"edge" yaml:"edge"`
+	Edge LinkEdge `json:"edge" yaml:"edge" cbor:"edge"`
 }
 
 // LinkPublishOutput The payload a provider returns from its link_publish export: the published identity handle the consumer resolves against, and the producer-side artifact wiring to apply to the consumed endpoint's assembled output.
 type LinkPublishOutput struct {
 	// Handle The published identity the consumed endpoint exposes for the consumer to resolve against, an opaque deterministic-pointer string map keyed by field name (for example an export name, a stack name, a region, a role reference). The values are deterministic pointer strings the compiler pipes and never resolves; the runtime environment resolves them at deploy time. Keys serialize in sorted order so the payload is byte-identical across runs of identical input.
-	Handle map[string]string `json:"handle" yaml:"handle"`
+	Handle map[string]string `json:"handle" yaml:"handle" cbor:"handle"`
 	// Patches The producer-side artifact wiring, one structural patch per consumed-endpoint output file the publish must edit. Empty when the consumed endpoint's output needs no change for the link.
-	Patches []LinkPatch `json:"patches,omitempty" yaml:"patches,omitempty"`
+	Patches []LinkPatch `json:"patches,omitempty" yaml:"patches,omitempty" cbor:"patches,omitempty"`
 }
 
 // LinkResolveInput The payload a provider receives on its link_resolve export: one cross-boundary link, the published identity handle its consumed endpoint exposed, and the consuming endpoint's assembled files. The export returns the consumer-side artifact wiring that injects the reference into the consuming endpoint's assembled output.
 type LinkResolveInput struct {
 	// Edge The cross-boundary link being resolved, read from the consuming (source) endpoint's side.
-	Edge LinkEdge `json:"edge" yaml:"edge"`
+	Edge LinkEdge `json:"edge" yaml:"edge" cbor:"edge"`
 	// Handle The published identity handle the consumed endpoint's link_publish returned, which the consumer resolves its reference against. Opaque deterministic-pointer strings keyed by field name; the compiler pipes them and never resolves them. Keys serialize in sorted order so the payload is byte-identical across runs of identical input.
-	Handle map[string]string `json:"handle" yaml:"handle"`
+	Handle map[string]string `json:"handle" yaml:"handle" cbor:"handle"`
 	// ConsumerFiles The consuming endpoint's assembled files, so the provider can locate the placeholder the host stamped into the consuming output and author its replacement at the placeholder's real path. Each names its on-disk path and carries the assembled bytes. Absent when the host has no assembled consumer output to hand the resolve; a provider that needs no document to author its wiring ignores it.
-	ConsumerFiles []RenderedFile `json:"consumer_files,omitempty" yaml:"consumer_files,omitempty"`
+	ConsumerFiles []RenderedFile `json:"consumer_files,omitempty" yaml:"consumer_files,omitempty" cbor:"consumer_files,omitempty"`
 }
 
 // LinkResolveOutput The payload a provider returns from its link_resolve export: the consumer-side artifact wiring to apply to the consuming endpoint's assembled output, injecting the reference to the consumed endpoint's published identity.
 type LinkResolveOutput struct {
 	// Patches The consumer-side artifact wiring, one structural patch per consuming-endpoint output file the resolve must edit.
-	Patches []LinkPatch `json:"patches" yaml:"patches"`
+	Patches []LinkPatch `json:"patches" yaml:"patches" cbor:"patches"`
 }
 
 // MarshalJSON encodes RenderNodeInput in field-declaration order, omitting
@@ -4382,6 +4383,4018 @@ func (t *LinkResolveOutput) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// EncodeCBOR encodes RenderNodeInput as canonical CBOR (RFC 8949 §4.2.1; floats per
+// CBOR CDE §4.2), dispatch-free.
+func (t RenderNodeInput) EncodeCBOR() ([]byte, error) {
+	return t.appendCBOR(nil)
+}
+
+// appendCBOR appends RenderNodeInput's canonical CBOR encoding to dst. Fields emit in
+// canonical key order (fixed at generation time), omitting empty
+// non-required fields so the map head's pair count matches.
+func (t RenderNodeInput) appendCBOR(dst []byte) ([]byte, error) {
+	n := 2
+	if t.SourceListing != nil {
+		n++
+	}
+	if t.CatalogProjection != nil {
+		n++
+	}
+	if t.WorkloadProjection != nil {
+		n++
+	}
+	if t.ArtifactsProjection != nil {
+		n++
+	}
+	dst = appendCBORHead(dst, 5, uint64(n))
+	var err error
+	dst = appendCBORTextString(dst, "node")
+	if dst, err = t.Node.appendCBOR(dst); err != nil {
+		return nil, err
+	}
+	dst = appendCBORTextString(dst, "context")
+	if raw, mErr := json.Marshal(t.Context); mErr != nil {
+		return nil, mErr
+	} else {
+		dst = appendCBORByteString(dst, raw)
+	}
+	if t.SourceListing != nil {
+		dst = appendCBORTextString(dst, "source_listing")
+		if t.SourceListing == nil {
+			dst = append(dst, 0xf6)
+		} else if dst, err = t.SourceListing.appendCBOR(dst); err != nil {
+			return nil, err
+		}
+	}
+	if t.CatalogProjection != nil {
+		dst = appendCBORTextString(dst, "catalog_projection")
+		if t.CatalogProjection == nil {
+			dst = append(dst, 0xf6)
+		} else if dst, err = t.CatalogProjection.appendCBOR(dst); err != nil {
+			return nil, err
+		}
+	}
+	if t.WorkloadProjection != nil {
+		dst = appendCBORTextString(dst, "workload_projection")
+		if t.WorkloadProjection == nil {
+			dst = append(dst, 0xf6)
+		} else if dst, err = t.WorkloadProjection.appendCBOR(dst); err != nil {
+			return nil, err
+		}
+	}
+	if t.ArtifactsProjection != nil {
+		dst = appendCBORTextString(dst, "artifacts_projection")
+		if t.ArtifactsProjection == nil {
+			dst = append(dst, 0xf6)
+		} else if dst, err = t.ArtifactsProjection.appendCBOR(dst); err != nil {
+			return nil, err
+		}
+	}
+	return dst, nil
+}
+
+// DecodeCBOR decodes RenderNodeInput from canonical CBOR, dispatch-free. Unknown keys
+// are skipped.
+func (t *RenderNodeInput) DecodeCBOR(data []byte) error {
+	dec := &cborDec{data: data}
+	return t.decodeCBOR(dec)
+}
+
+func (t *RenderNodeInput) decodeCBOR(dec *cborDec) error {
+	n, err := dec.readMapHeader()
+	if err != nil {
+		return err
+	}
+	for i := 0; i < n; i++ {
+		key, err := dec.readTextString()
+		if err != nil {
+			return err
+		}
+		switch key {
+		case "node":
+			if err := (&t.Node).decodeCBOR(dec); err != nil {
+				return err
+			}
+		case "context":
+			if raw, err := dec.readByteString(); err != nil {
+				return err
+			} else {
+				d2 := json.NewDecoder(bytes.NewReader(raw))
+				d2.UseNumber()
+				if err := d2.Decode(&t.Context); err != nil {
+					return err
+				}
+			}
+		case "catalog_projection":
+			{
+				v := new(CatalogProjection)
+				if err := v.decodeCBOR(dec); err != nil {
+					return err
+				}
+				t.CatalogProjection = v
+			}
+		case "source_listing":
+			{
+				v := new(SourceListing)
+				if err := v.decodeCBOR(dec); err != nil {
+					return err
+				}
+				t.SourceListing = v
+			}
+		case "workload_projection":
+			{
+				v := new(WorkloadProjection)
+				if err := v.decodeCBOR(dec); err != nil {
+					return err
+				}
+				t.WorkloadProjection = v
+			}
+		case "artifacts_projection":
+			{
+				v := new(ArtifactsProjection)
+				if err := v.decodeCBOR(dec); err != nil {
+					return err
+				}
+				t.ArtifactsProjection = v
+			}
+		default:
+			if err := dec.skip(); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// EncodeCBOR encodes IRNodeProjection as canonical CBOR (RFC 8949 §4.2.1; floats per
+// CBOR CDE §4.2), dispatch-free.
+func (t IRNodeProjection) EncodeCBOR() ([]byte, error) {
+	return t.appendCBOR(nil)
+}
+
+// appendCBOR appends IRNodeProjection's canonical CBOR encoding to dst. Fields emit in
+// canonical key order (fixed at generation time), omitting empty
+// non-required fields so the map head's pair count matches.
+func (t IRNodeProjection) appendCBOR(dst []byte) ([]byte, error) {
+	n := 7
+	if t.SyncWave != 0 {
+		n++
+	}
+	if t.RecipeName != "" {
+		n++
+	}
+	if t.BoundaryPath != "" {
+		n++
+	}
+	if len(t.OutputLabels) != 0 {
+		n++
+	}
+	if t.RecipeVersion != "" {
+		n++
+	}
+	if t.LabelComponentID != "" {
+		n++
+	}
+	dst = appendCBORHead(dst, 5, uint64(n))
+	var err error
+	dst = appendCBORTextString(dst, "id")
+	dst = appendCBORTextString(dst, t.ID)
+	dst = appendCBORTextString(dst, "type")
+	dst = appendCBORTextString(dst, t.Type)
+	dst = appendCBORTextString(dst, "uses")
+	{
+		keys := t.Uses.Keys()
+		sortCBORKeys(keys)
+		dst = appendCBORHead(dst, 5, uint64(len(keys)))
+		for _, k := range keys {
+			dst = appendCBORTextString(dst, k)
+			mv, _ := t.Uses.Get(k)
+			dst = appendCBORHead(dst, 4, uint64(len(mv)))
+			for i := range mv {
+				ev := mv[i]
+				dst = appendCBORTextString(dst, ev)
+			}
+		}
+	}
+	dst = appendCBORTextString(dst, "values")
+	{
+		keys := t.Values.Keys()
+		sortCBORKeys(keys)
+		dst = appendCBORHead(dst, 5, uint64(len(keys)))
+		for _, k := range keys {
+			dst = appendCBORTextString(dst, k)
+			mv, _ := t.Values.Get(k)
+			if raw, mErr := json.Marshal(mv); mErr != nil {
+				return nil, mErr
+			} else {
+				dst = appendCBORByteString(dst, raw)
+			}
+		}
+	}
+	dst = appendCBORTextString(dst, "features")
+	{
+		keys := t.Features.Keys()
+		sortCBORKeys(keys)
+		dst = appendCBORHead(dst, 5, uint64(len(keys)))
+		for _, k := range keys {
+			dst = appendCBORTextString(dst, k)
+			mv, _ := t.Features.Get(k)
+			if raw, mErr := json.Marshal(mv); mErr != nil {
+				return nil, mErr
+			} else {
+				dst = appendCBORByteString(dst, raw)
+			}
+		}
+	}
+	if t.SyncWave != 0 {
+		dst = appendCBORTextString(dst, "sync_wave")
+		dst = appendCBORInt(dst, int64(t.SyncWave))
+	}
+	dst = appendCBORTextString(dst, "provenance")
+	if dst, err = t.Provenance.appendCBOR(dst); err != nil {
+		return nil, err
+	}
+	if t.RecipeName != "" {
+		dst = appendCBORTextString(dst, "recipe_name")
+		dst = appendCBORTextString(dst, t.RecipeName)
+	}
+	if t.BoundaryPath != "" {
+		dst = appendCBORTextString(dst, "boundary_path")
+		dst = appendCBORTextString(dst, t.BoundaryPath)
+	}
+	if len(t.OutputLabels) != 0 {
+		dst = appendCBORTextString(dst, "output_labels")
+		{
+			keys := make([]string, 0, len(t.OutputLabels))
+			for k := range t.OutputLabels {
+				keys = append(keys, k)
+			}
+			sortCBORKeys(keys)
+			dst = appendCBORHead(dst, 5, uint64(len(keys)))
+			for _, k := range keys {
+				dst = appendCBORTextString(dst, k)
+				mv := t.OutputLabels[k]
+				dst = appendCBORTextString(dst, mv)
+			}
+		}
+	}
+	if t.RecipeVersion != "" {
+		dst = appendCBORTextString(dst, "recipe_version")
+		dst = appendCBORTextString(dst, t.RecipeVersion)
+	}
+	dst = appendCBORTextString(dst, "resolved_recipe")
+	dst = appendCBORTextString(dst, t.ResolvedRecipe)
+	if t.LabelComponentID != "" {
+		dst = appendCBORTextString(dst, "label_component_id")
+		dst = appendCBORTextString(dst, t.LabelComponentID)
+	}
+	return dst, nil
+}
+
+// DecodeCBOR decodes IRNodeProjection from canonical CBOR, dispatch-free. Unknown keys
+// are skipped.
+func (t *IRNodeProjection) DecodeCBOR(data []byte) error {
+	dec := &cborDec{data: data}
+	return t.decodeCBOR(dec)
+}
+
+func (t *IRNodeProjection) decodeCBOR(dec *cborDec) error {
+	n, err := dec.readMapHeader()
+	if err != nil {
+		return err
+	}
+	for i := 0; i < n; i++ {
+		key, err := dec.readTextString()
+		if err != nil {
+			return err
+		}
+		switch key {
+		case "id":
+			if s, err := dec.readTextString(); err != nil {
+				return err
+			} else {
+				t.ID = s
+			}
+		case "type":
+			if s, err := dec.readTextString(); err != nil {
+				return err
+			} else {
+				t.Type = s
+			}
+		case "resolved_recipe":
+			if s, err := dec.readTextString(); err != nil {
+				return err
+			} else {
+				t.ResolvedRecipe = s
+			}
+		case "values":
+			{
+				mn, err := dec.readMapHeader()
+				if err != nil {
+					return err
+				}
+				var om types.OrderedMap[any]
+				for mi := 0; mi < mn; mi++ {
+					mk, err := dec.readTextString()
+					if err != nil {
+						return err
+					}
+					var mv any
+					if raw, err := dec.readByteString(); err != nil {
+						return err
+					} else {
+						d2 := json.NewDecoder(bytes.NewReader(raw))
+						d2.UseNumber()
+						if err := d2.Decode(&mv); err != nil {
+							return err
+						}
+					}
+					om.Set(mk, mv)
+				}
+				t.Values = om
+			}
+		case "features":
+			{
+				mn, err := dec.readMapHeader()
+				if err != nil {
+					return err
+				}
+				var om types.OrderedMap[types.IRFeatureEntry]
+				for mi := 0; mi < mn; mi++ {
+					mk, err := dec.readTextString()
+					if err != nil {
+						return err
+					}
+					var mv types.IRFeatureEntry
+					if raw, err := dec.readByteString(); err != nil {
+						return err
+					} else {
+						d2 := json.NewDecoder(bytes.NewReader(raw))
+						d2.UseNumber()
+						if err := d2.Decode(&mv); err != nil {
+							return err
+						}
+					}
+					om.Set(mk, mv)
+				}
+				t.Features = om
+			}
+		case "uses":
+			{
+				mn, err := dec.readMapHeader()
+				if err != nil {
+					return err
+				}
+				var om types.OrderedMap[[]string]
+				for mi := 0; mi < mn; mi++ {
+					mk, err := dec.readTextString()
+					if err != nil {
+						return err
+					}
+					var mv []string
+					{
+						sn, err := dec.readArrayHeader()
+						if err != nil {
+							return err
+						}
+						s := make([]string, 0, sn)
+						for si := 0; si < sn; si++ {
+							var ev string
+							if s, err := dec.readTextString(); err != nil {
+								return err
+							} else {
+								ev = s
+							}
+							s = append(s, ev)
+						}
+						mv = s
+					}
+					om.Set(mk, mv)
+				}
+				t.Uses = om
+			}
+		case "boundary_path":
+			if s, err := dec.readTextString(); err != nil {
+				return err
+			} else {
+				t.BoundaryPath = s
+			}
+		case "sync_wave":
+			if v, err := dec.readInt(); err != nil {
+				return err
+			} else {
+				t.SyncWave = int(v)
+			}
+		case "recipe_name":
+			if s, err := dec.readTextString(); err != nil {
+				return err
+			} else {
+				t.RecipeName = s
+			}
+		case "recipe_version":
+			if s, err := dec.readTextString(); err != nil {
+				return err
+			} else {
+				t.RecipeVersion = s
+			}
+		case "label_component_id":
+			if s, err := dec.readTextString(); err != nil {
+				return err
+			} else {
+				t.LabelComponentID = s
+			}
+		case "output_labels":
+			{
+				mn, err := dec.readMapHeader()
+				if err != nil {
+					return err
+				}
+				m := make(map[string]string, mn)
+				for mi := 0; mi < mn; mi++ {
+					mk, err := dec.readTextString()
+					if err != nil {
+						return err
+					}
+					var mv string
+					if s, err := dec.readTextString(); err != nil {
+						return err
+					} else {
+						mv = s
+					}
+					m[mk] = mv
+				}
+				t.OutputLabels = m
+			}
+		case "provenance":
+			if err := (&t.Provenance).decodeCBOR(dec); err != nil {
+				return err
+			}
+		default:
+			if err := dec.skip(); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// EncodeCBOR encodes NodeProvenance as canonical CBOR (RFC 8949 §4.2.1; floats per
+// CBOR CDE §4.2), dispatch-free.
+func (t NodeProvenance) EncodeCBOR() ([]byte, error) {
+	return t.appendCBOR(nil)
+}
+
+// appendCBOR appends NodeProvenance's canonical CBOR encoding to dst. Fields emit in
+// canonical key order (fixed at generation time), omitting empty
+// non-required fields so the map head's pair count matches.
+func (t NodeProvenance) appendCBOR(dst []byte) ([]byte, error) {
+	n := 0
+	if t.Environment != "" {
+		n++
+	}
+	if t.ProviderName != "" {
+		n++
+	}
+	if t.AggregateName != "" {
+		n++
+	}
+	if t.CompilerVersion != "" {
+		n++
+	}
+	if t.ProviderVersion != "" {
+		n++
+	}
+	dst = appendCBORHead(dst, 5, uint64(n))
+	if t.Environment != "" {
+		dst = appendCBORTextString(dst, "environment")
+		dst = appendCBORTextString(dst, t.Environment)
+	}
+	if t.ProviderName != "" {
+		dst = appendCBORTextString(dst, "provider_name")
+		dst = appendCBORTextString(dst, t.ProviderName)
+	}
+	if t.AggregateName != "" {
+		dst = appendCBORTextString(dst, "aggregate_name")
+		dst = appendCBORTextString(dst, t.AggregateName)
+	}
+	if t.CompilerVersion != "" {
+		dst = appendCBORTextString(dst, "compiler_version")
+		dst = appendCBORTextString(dst, t.CompilerVersion)
+	}
+	if t.ProviderVersion != "" {
+		dst = appendCBORTextString(dst, "provider_version")
+		dst = appendCBORTextString(dst, t.ProviderVersion)
+	}
+	return dst, nil
+}
+
+// DecodeCBOR decodes NodeProvenance from canonical CBOR, dispatch-free. Unknown keys
+// are skipped.
+func (t *NodeProvenance) DecodeCBOR(data []byte) error {
+	dec := &cborDec{data: data}
+	return t.decodeCBOR(dec)
+}
+
+func (t *NodeProvenance) decodeCBOR(dec *cborDec) error {
+	n, err := dec.readMapHeader()
+	if err != nil {
+		return err
+	}
+	for i := 0; i < n; i++ {
+		key, err := dec.readTextString()
+		if err != nil {
+			return err
+		}
+		switch key {
+		case "compiler_version":
+			if s, err := dec.readTextString(); err != nil {
+				return err
+			} else {
+				t.CompilerVersion = s
+			}
+		case "aggregate_name":
+			if s, err := dec.readTextString(); err != nil {
+				return err
+			} else {
+				t.AggregateName = s
+			}
+		case "environment":
+			if s, err := dec.readTextString(); err != nil {
+				return err
+			} else {
+				t.Environment = s
+			}
+		case "provider_name":
+			if s, err := dec.readTextString(); err != nil {
+				return err
+			} else {
+				t.ProviderName = s
+			}
+		case "provider_version":
+			if s, err := dec.readTextString(); err != nil {
+				return err
+			} else {
+				t.ProviderVersion = s
+			}
+		default:
+			if err := dec.skip(); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// EncodeCBOR encodes CatalogProjection as canonical CBOR (RFC 8949 §4.2.1; floats per
+// CBOR CDE §4.2), dispatch-free.
+func (t CatalogProjection) EncodeCBOR() ([]byte, error) {
+	return t.appendCBOR(nil)
+}
+
+// appendCBOR appends CatalogProjection's canonical CBOR encoding to dst. Fields emit in
+// canonical key order (fixed at generation time), omitting empty
+// non-required fields so the map head's pair count matches.
+func (t CatalogProjection) appendCBOR(dst []byte) ([]byte, error) {
+	n := 5
+	dst = appendCBORHead(dst, 5, uint64(n))
+	dst = appendCBORTextString(dst, "recipes")
+	{
+		keys := t.Recipes.Keys()
+		sortCBORKeys(keys)
+		dst = appendCBORHead(dst, 5, uint64(len(keys)))
+		for _, k := range keys {
+			dst = appendCBORTextString(dst, k)
+			mv, _ := t.Recipes.Get(k)
+			if raw, mErr := json.Marshal(mv); mErr != nil {
+				return nil, mErr
+			} else {
+				dst = appendCBORByteString(dst, raw)
+			}
+		}
+	}
+	dst = appendCBORTextString(dst, "features")
+	{
+		keys := t.Features.Keys()
+		sortCBORKeys(keys)
+		dst = appendCBORHead(dst, 5, uint64(len(keys)))
+		for _, k := range keys {
+			dst = appendCBORTextString(dst, k)
+			mv, _ := t.Features.Get(k)
+			if raw, mErr := json.Marshal(mv); mErr != nil {
+				return nil, mErr
+			} else {
+				dst = appendCBORByteString(dst, raw)
+			}
+		}
+	}
+	dst = appendCBORTextString(dst, "components")
+	{
+		keys := t.Components.Keys()
+		sortCBORKeys(keys)
+		dst = appendCBORHead(dst, 5, uint64(len(keys)))
+		for _, k := range keys {
+			dst = appendCBORTextString(dst, k)
+			mv, _ := t.Components.Get(k)
+			if raw, mErr := json.Marshal(mv); mErr != nil {
+				return nil, mErr
+			} else {
+				dst = appendCBORByteString(dst, raw)
+			}
+		}
+	}
+	dst = appendCBORTextString(dst, "feature_recipes")
+	{
+		keys := t.FeatureRecipes.Keys()
+		sortCBORKeys(keys)
+		dst = appendCBORHead(dst, 5, uint64(len(keys)))
+		for _, k := range keys {
+			dst = appendCBORTextString(dst, k)
+			mv, _ := t.FeatureRecipes.Get(k)
+			if raw, mErr := json.Marshal(mv); mErr != nil {
+				return nil, mErr
+			} else {
+				dst = appendCBORByteString(dst, raw)
+			}
+		}
+	}
+	dst = appendCBORTextString(dst, "mapping_libraries")
+	{
+		keys := t.MappingLibraries.Keys()
+		sortCBORKeys(keys)
+		dst = appendCBORHead(dst, 5, uint64(len(keys)))
+		for _, k := range keys {
+			dst = appendCBORTextString(dst, k)
+			mv, _ := t.MappingLibraries.Get(k)
+			if raw, mErr := json.Marshal(mv); mErr != nil {
+				return nil, mErr
+			} else {
+				dst = appendCBORByteString(dst, raw)
+			}
+		}
+	}
+	return dst, nil
+}
+
+// DecodeCBOR decodes CatalogProjection from canonical CBOR, dispatch-free. Unknown keys
+// are skipped.
+func (t *CatalogProjection) DecodeCBOR(data []byte) error {
+	dec := &cborDec{data: data}
+	return t.decodeCBOR(dec)
+}
+
+func (t *CatalogProjection) decodeCBOR(dec *cborDec) error {
+	n, err := dec.readMapHeader()
+	if err != nil {
+		return err
+	}
+	for i := 0; i < n; i++ {
+		key, err := dec.readTextString()
+		if err != nil {
+			return err
+		}
+		switch key {
+		case "components":
+			{
+				mn, err := dec.readMapHeader()
+				if err != nil {
+					return err
+				}
+				var om types.OrderedMap[types.Component]
+				for mi := 0; mi < mn; mi++ {
+					mk, err := dec.readTextString()
+					if err != nil {
+						return err
+					}
+					var mv types.Component
+					if raw, err := dec.readByteString(); err != nil {
+						return err
+					} else {
+						d2 := json.NewDecoder(bytes.NewReader(raw))
+						d2.UseNumber()
+						if err := d2.Decode(&mv); err != nil {
+							return err
+						}
+					}
+					om.Set(mk, mv)
+				}
+				t.Components = om
+			}
+		case "features":
+			{
+				mn, err := dec.readMapHeader()
+				if err != nil {
+					return err
+				}
+				var om types.OrderedMap[types.Feature]
+				for mi := 0; mi < mn; mi++ {
+					mk, err := dec.readTextString()
+					if err != nil {
+						return err
+					}
+					var mv types.Feature
+					if raw, err := dec.readByteString(); err != nil {
+						return err
+					} else {
+						d2 := json.NewDecoder(bytes.NewReader(raw))
+						d2.UseNumber()
+						if err := d2.Decode(&mv); err != nil {
+							return err
+						}
+					}
+					om.Set(mk, mv)
+				}
+				t.Features = om
+			}
+		case "recipes":
+			{
+				mn, err := dec.readMapHeader()
+				if err != nil {
+					return err
+				}
+				var om types.OrderedMap[types.Recipe]
+				for mi := 0; mi < mn; mi++ {
+					mk, err := dec.readTextString()
+					if err != nil {
+						return err
+					}
+					var mv types.Recipe
+					if raw, err := dec.readByteString(); err != nil {
+						return err
+					} else {
+						d2 := json.NewDecoder(bytes.NewReader(raw))
+						d2.UseNumber()
+						if err := d2.Decode(&mv); err != nil {
+							return err
+						}
+					}
+					om.Set(mk, mv)
+				}
+				t.Recipes = om
+			}
+		case "feature_recipes":
+			{
+				mn, err := dec.readMapHeader()
+				if err != nil {
+					return err
+				}
+				var om types.OrderedMap[types.FeatureRecipe]
+				for mi := 0; mi < mn; mi++ {
+					mk, err := dec.readTextString()
+					if err != nil {
+						return err
+					}
+					var mv types.FeatureRecipe
+					if raw, err := dec.readByteString(); err != nil {
+						return err
+					} else {
+						d2 := json.NewDecoder(bytes.NewReader(raw))
+						d2.UseNumber()
+						if err := d2.Decode(&mv); err != nil {
+							return err
+						}
+					}
+					om.Set(mk, mv)
+				}
+				t.FeatureRecipes = om
+			}
+		case "mapping_libraries":
+			{
+				mn, err := dec.readMapHeader()
+				if err != nil {
+					return err
+				}
+				var om types.OrderedMap[types.MappingLibrary]
+				for mi := 0; mi < mn; mi++ {
+					mk, err := dec.readTextString()
+					if err != nil {
+						return err
+					}
+					var mv types.MappingLibrary
+					if raw, err := dec.readByteString(); err != nil {
+						return err
+					} else {
+						d2 := json.NewDecoder(bytes.NewReader(raw))
+						d2.UseNumber()
+						if err := d2.Decode(&mv); err != nil {
+							return err
+						}
+					}
+					om.Set(mk, mv)
+				}
+				t.MappingLibraries = om
+			}
+		default:
+			if err := dec.skip(); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// EncodeCBOR encodes RenderNodeOutput as canonical CBOR (RFC 8949 §4.2.1; floats per
+// CBOR CDE §4.2), dispatch-free.
+func (t RenderNodeOutput) EncodeCBOR() ([]byte, error) {
+	return t.appendCBOR(nil)
+}
+
+// appendCBOR appends RenderNodeOutput's canonical CBOR encoding to dst. Fields emit in
+// canonical key order (fixed at generation time), omitting empty
+// non-required fields so the map head's pair count matches.
+func (t RenderNodeOutput) appendCBOR(dst []byte) ([]byte, error) {
+	n := 1
+	if t.Error != "" {
+		n++
+	}
+	if len(t.Diagnostics) != 0 {
+		n++
+	}
+	dst = appendCBORHead(dst, 5, uint64(n))
+	var err error
+	if t.Error != "" {
+		dst = appendCBORTextString(dst, "error")
+		dst = appendCBORTextString(dst, t.Error)
+	}
+	dst = appendCBORTextString(dst, "files")
+	dst = appendCBORHead(dst, 4, uint64(len(t.Files)))
+	for i := range t.Files {
+		ev := t.Files[i]
+		if dst, err = ev.appendCBOR(dst); err != nil {
+			return nil, err
+		}
+	}
+	if len(t.Diagnostics) != 0 {
+		dst = appendCBORTextString(dst, "diagnostics")
+		dst = appendCBORHead(dst, 4, uint64(len(t.Diagnostics)))
+		for i := range t.Diagnostics {
+			ev := t.Diagnostics[i]
+			if raw, mErr := json.Marshal(ev); mErr != nil {
+				return nil, mErr
+			} else {
+				dst = appendCBORByteString(dst, raw)
+			}
+		}
+	}
+	return dst, nil
+}
+
+// DecodeCBOR decodes RenderNodeOutput from canonical CBOR, dispatch-free. Unknown keys
+// are skipped.
+func (t *RenderNodeOutput) DecodeCBOR(data []byte) error {
+	dec := &cborDec{data: data}
+	return t.decodeCBOR(dec)
+}
+
+func (t *RenderNodeOutput) decodeCBOR(dec *cborDec) error {
+	n, err := dec.readMapHeader()
+	if err != nil {
+		return err
+	}
+	for i := 0; i < n; i++ {
+		key, err := dec.readTextString()
+		if err != nil {
+			return err
+		}
+		switch key {
+		case "files":
+			{
+				sn, err := dec.readArrayHeader()
+				if err != nil {
+					return err
+				}
+				s := make([]RenderedFile, 0, sn)
+				for si := 0; si < sn; si++ {
+					var ev RenderedFile
+					if err := (&ev).decodeCBOR(dec); err != nil {
+						return err
+					}
+					s = append(s, ev)
+				}
+				t.Files = s
+			}
+		case "diagnostics":
+			{
+				sn, err := dec.readArrayHeader()
+				if err != nil {
+					return err
+				}
+				s := make([]renderctx.Diagnostic, 0, sn)
+				for si := 0; si < sn; si++ {
+					var ev renderctx.Diagnostic
+					if raw, err := dec.readByteString(); err != nil {
+						return err
+					} else {
+						d2 := json.NewDecoder(bytes.NewReader(raw))
+						d2.UseNumber()
+						if err := d2.Decode(&ev); err != nil {
+							return err
+						}
+					}
+					s = append(s, ev)
+				}
+				t.Diagnostics = s
+			}
+		case "error":
+			if s, err := dec.readTextString(); err != nil {
+				return err
+			} else {
+				t.Error = s
+			}
+		default:
+			if err := dec.skip(); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// EncodeCBOR encodes ValidateNodeOutput as canonical CBOR (RFC 8949 §4.2.1; floats per
+// CBOR CDE §4.2), dispatch-free.
+func (t ValidateNodeOutput) EncodeCBOR() ([]byte, error) {
+	return t.appendCBOR(nil)
+}
+
+// appendCBOR appends ValidateNodeOutput's canonical CBOR encoding to dst. Fields emit in
+// canonical key order (fixed at generation time), omitting empty
+// non-required fields so the map head's pair count matches.
+func (t ValidateNodeOutput) appendCBOR(dst []byte) ([]byte, error) {
+	n := 0
+	if t.Error != "" {
+		n++
+	}
+	if len(t.Diagnostics) != 0 {
+		n++
+	}
+	dst = appendCBORHead(dst, 5, uint64(n))
+	if t.Error != "" {
+		dst = appendCBORTextString(dst, "error")
+		dst = appendCBORTextString(dst, t.Error)
+	}
+	if len(t.Diagnostics) != 0 {
+		dst = appendCBORTextString(dst, "diagnostics")
+		dst = appendCBORHead(dst, 4, uint64(len(t.Diagnostics)))
+		for i := range t.Diagnostics {
+			ev := t.Diagnostics[i]
+			if raw, mErr := json.Marshal(ev); mErr != nil {
+				return nil, mErr
+			} else {
+				dst = appendCBORByteString(dst, raw)
+			}
+		}
+	}
+	return dst, nil
+}
+
+// DecodeCBOR decodes ValidateNodeOutput from canonical CBOR, dispatch-free. Unknown keys
+// are skipped.
+func (t *ValidateNodeOutput) DecodeCBOR(data []byte) error {
+	dec := &cborDec{data: data}
+	return t.decodeCBOR(dec)
+}
+
+func (t *ValidateNodeOutput) decodeCBOR(dec *cborDec) error {
+	n, err := dec.readMapHeader()
+	if err != nil {
+		return err
+	}
+	for i := 0; i < n; i++ {
+		key, err := dec.readTextString()
+		if err != nil {
+			return err
+		}
+		switch key {
+		case "diagnostics":
+			{
+				sn, err := dec.readArrayHeader()
+				if err != nil {
+					return err
+				}
+				s := make([]renderctx.Diagnostic, 0, sn)
+				for si := 0; si < sn; si++ {
+					var ev renderctx.Diagnostic
+					if raw, err := dec.readByteString(); err != nil {
+						return err
+					} else {
+						d2 := json.NewDecoder(bytes.NewReader(raw))
+						d2.UseNumber()
+						if err := d2.Decode(&ev); err != nil {
+							return err
+						}
+					}
+					s = append(s, ev)
+				}
+				t.Diagnostics = s
+			}
+		case "error":
+			if s, err := dec.readTextString(); err != nil {
+				return err
+			} else {
+				t.Error = s
+			}
+		default:
+			if err := dec.skip(); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// EncodeCBOR encodes RenderedFile as canonical CBOR (RFC 8949 §4.2.1; floats per
+// CBOR CDE §4.2), dispatch-free.
+func (t RenderedFile) EncodeCBOR() ([]byte, error) {
+	return t.appendCBOR(nil)
+}
+
+// appendCBOR appends RenderedFile's canonical CBOR encoding to dst. Fields emit in
+// canonical key order (fixed at generation time), omitting empty
+// non-required fields so the map head's pair count matches.
+func (t RenderedFile) appendCBOR(dst []byte) ([]byte, error) {
+	n := 2
+	if t.Format != "" {
+		n++
+	}
+	dst = appendCBORHead(dst, 5, uint64(n))
+	dst = appendCBORTextString(dst, "path")
+	dst = appendCBORTextString(dst, t.Path)
+	if t.Format != "" {
+		dst = appendCBORTextString(dst, "format")
+		dst = appendCBORTextString(dst, t.Format)
+	}
+	dst = appendCBORTextString(dst, "content")
+	dst = appendCBORByteString(dst, t.Content)
+	return dst, nil
+}
+
+// DecodeCBOR decodes RenderedFile from canonical CBOR, dispatch-free. Unknown keys
+// are skipped.
+func (t *RenderedFile) DecodeCBOR(data []byte) error {
+	dec := &cborDec{data: data}
+	return t.decodeCBOR(dec)
+}
+
+func (t *RenderedFile) decodeCBOR(dec *cborDec) error {
+	n, err := dec.readMapHeader()
+	if err != nil {
+		return err
+	}
+	for i := 0; i < n; i++ {
+		key, err := dec.readTextString()
+		if err != nil {
+			return err
+		}
+		switch key {
+		case "path":
+			if s, err := dec.readTextString(); err != nil {
+				return err
+			} else {
+				t.Path = s
+			}
+		case "content":
+			if v, err := dec.readByteString(); err != nil {
+				return err
+			} else {
+				t.Content = v
+			}
+		case "format":
+			if s, err := dec.readTextString(); err != nil {
+				return err
+			} else {
+				t.Format = s
+			}
+		default:
+			if err := dec.skip(); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// EncodeCBOR encodes SourceFile as canonical CBOR (RFC 8949 §4.2.1; floats per
+// CBOR CDE §4.2), dispatch-free.
+func (t SourceFile) EncodeCBOR() ([]byte, error) {
+	return t.appendCBOR(nil)
+}
+
+// appendCBOR appends SourceFile's canonical CBOR encoding to dst. Fields emit in
+// canonical key order (fixed at generation time), omitting empty
+// non-required fields so the map head's pair count matches.
+func (t SourceFile) appendCBOR(dst []byte) ([]byte, error) {
+	n := 2
+	dst = appendCBORHead(dst, 5, uint64(n))
+	dst = appendCBORTextString(dst, "path")
+	dst = appendCBORTextString(dst, t.Path)
+	dst = appendCBORTextString(dst, "content")
+	dst = appendCBORByteString(dst, t.Content)
+	return dst, nil
+}
+
+// DecodeCBOR decodes SourceFile from canonical CBOR, dispatch-free. Unknown keys
+// are skipped.
+func (t *SourceFile) DecodeCBOR(data []byte) error {
+	dec := &cborDec{data: data}
+	return t.decodeCBOR(dec)
+}
+
+func (t *SourceFile) decodeCBOR(dec *cborDec) error {
+	n, err := dec.readMapHeader()
+	if err != nil {
+		return err
+	}
+	for i := 0; i < n; i++ {
+		key, err := dec.readTextString()
+		if err != nil {
+			return err
+		}
+		switch key {
+		case "path":
+			if s, err := dec.readTextString(); err != nil {
+				return err
+			} else {
+				t.Path = s
+			}
+		case "content":
+			if v, err := dec.readByteString(); err != nil {
+				return err
+			} else {
+				t.Content = v
+			}
+		default:
+			if err := dec.skip(); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// EncodeCBOR encodes SourceProjection as canonical CBOR (RFC 8949 §4.2.1; floats per
+// CBOR CDE §4.2), dispatch-free.
+func (t SourceProjection) EncodeCBOR() ([]byte, error) {
+	return t.appendCBOR(nil)
+}
+
+// appendCBOR appends SourceProjection's canonical CBOR encoding to dst. Fields emit in
+// canonical key order (fixed at generation time), omitting empty
+// non-required fields so the map head's pair count matches.
+func (t SourceProjection) appendCBOR(dst []byte) ([]byte, error) {
+	n := 1
+	dst = appendCBORHead(dst, 5, uint64(n))
+	var err error
+	dst = appendCBORTextString(dst, "files")
+	dst = appendCBORHead(dst, 4, uint64(len(t.Files)))
+	for i := range t.Files {
+		ev := t.Files[i]
+		if dst, err = ev.appendCBOR(dst); err != nil {
+			return nil, err
+		}
+	}
+	return dst, nil
+}
+
+// DecodeCBOR decodes SourceProjection from canonical CBOR, dispatch-free. Unknown keys
+// are skipped.
+func (t *SourceProjection) DecodeCBOR(data []byte) error {
+	dec := &cborDec{data: data}
+	return t.decodeCBOR(dec)
+}
+
+func (t *SourceProjection) decodeCBOR(dec *cborDec) error {
+	n, err := dec.readMapHeader()
+	if err != nil {
+		return err
+	}
+	for i := 0; i < n; i++ {
+		key, err := dec.readTextString()
+		if err != nil {
+			return err
+		}
+		switch key {
+		case "files":
+			{
+				sn, err := dec.readArrayHeader()
+				if err != nil {
+					return err
+				}
+				s := make([]SourceFile, 0, sn)
+				for si := 0; si < sn; si++ {
+					var ev SourceFile
+					if err := (&ev).decodeCBOR(dec); err != nil {
+						return err
+					}
+					s = append(s, ev)
+				}
+				t.Files = s
+			}
+		default:
+			if err := dec.skip(); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// EncodeCBOR encodes SourceEntry as canonical CBOR (RFC 8949 §4.2.1; floats per
+// CBOR CDE §4.2), dispatch-free.
+func (t SourceEntry) EncodeCBOR() ([]byte, error) {
+	return t.appendCBOR(nil)
+}
+
+// appendCBOR appends SourceEntry's canonical CBOR encoding to dst. Fields emit in
+// canonical key order (fixed at generation time), omitting empty
+// non-required fields so the map head's pair count matches.
+func (t SourceEntry) appendCBOR(dst []byte) ([]byte, error) {
+	n := 2
+	dst = appendCBORHead(dst, 5, uint64(n))
+	dst = appendCBORTextString(dst, "path")
+	dst = appendCBORTextString(dst, t.Path)
+	dst = appendCBORTextString(dst, "is_dir")
+	dst = appendCBORBool(dst, t.IsDir)
+	return dst, nil
+}
+
+// DecodeCBOR decodes SourceEntry from canonical CBOR, dispatch-free. Unknown keys
+// are skipped.
+func (t *SourceEntry) DecodeCBOR(data []byte) error {
+	dec := &cborDec{data: data}
+	return t.decodeCBOR(dec)
+}
+
+func (t *SourceEntry) decodeCBOR(dec *cborDec) error {
+	n, err := dec.readMapHeader()
+	if err != nil {
+		return err
+	}
+	for i := 0; i < n; i++ {
+		key, err := dec.readTextString()
+		if err != nil {
+			return err
+		}
+		switch key {
+		case "path":
+			if s, err := dec.readTextString(); err != nil {
+				return err
+			} else {
+				t.Path = s
+			}
+		case "is_dir":
+			if v, err := dec.readBool(); err != nil {
+				return err
+			} else {
+				t.IsDir = v
+			}
+		default:
+			if err := dec.skip(); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// EncodeCBOR encodes SourceListing as canonical CBOR (RFC 8949 §4.2.1; floats per
+// CBOR CDE §4.2), dispatch-free.
+func (t SourceListing) EncodeCBOR() ([]byte, error) {
+	return t.appendCBOR(nil)
+}
+
+// appendCBOR appends SourceListing's canonical CBOR encoding to dst. Fields emit in
+// canonical key order (fixed at generation time), omitting empty
+// non-required fields so the map head's pair count matches.
+func (t SourceListing) appendCBOR(dst []byte) ([]byte, error) {
+	n := 2
+	if t.RootIsDir != false {
+		n++
+	}
+	dst = appendCBORHead(dst, 5, uint64(n))
+	var err error
+	dst = appendCBORTextString(dst, "root")
+	dst = appendCBORTextString(dst, t.Root)
+	dst = appendCBORTextString(dst, "entries")
+	dst = appendCBORHead(dst, 4, uint64(len(t.Entries)))
+	for i := range t.Entries {
+		ev := t.Entries[i]
+		if dst, err = ev.appendCBOR(dst); err != nil {
+			return nil, err
+		}
+	}
+	if t.RootIsDir != false {
+		dst = appendCBORTextString(dst, "root_is_dir")
+		dst = appendCBORBool(dst, t.RootIsDir)
+	}
+	return dst, nil
+}
+
+// DecodeCBOR decodes SourceListing from canonical CBOR, dispatch-free. Unknown keys
+// are skipped.
+func (t *SourceListing) DecodeCBOR(data []byte) error {
+	dec := &cborDec{data: data}
+	return t.decodeCBOR(dec)
+}
+
+func (t *SourceListing) decodeCBOR(dec *cborDec) error {
+	n, err := dec.readMapHeader()
+	if err != nil {
+		return err
+	}
+	for i := 0; i < n; i++ {
+		key, err := dec.readTextString()
+		if err != nil {
+			return err
+		}
+		switch key {
+		case "root":
+			if s, err := dec.readTextString(); err != nil {
+				return err
+			} else {
+				t.Root = s
+			}
+		case "root_is_dir":
+			if v, err := dec.readBool(); err != nil {
+				return err
+			} else {
+				t.RootIsDir = v
+			}
+		case "entries":
+			{
+				sn, err := dec.readArrayHeader()
+				if err != nil {
+					return err
+				}
+				s := make([]SourceEntry, 0, sn)
+				for si := 0; si < sn; si++ {
+					var ev SourceEntry
+					if err := (&ev).decodeCBOR(dec); err != nil {
+						return err
+					}
+					s = append(s, ev)
+				}
+				t.Entries = s
+			}
+		default:
+			if err := dec.skip(); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// EncodeCBOR encodes SourcePackRequest as canonical CBOR (RFC 8949 §4.2.1; floats per
+// CBOR CDE §4.2), dispatch-free.
+func (t SourcePackRequest) EncodeCBOR() ([]byte, error) {
+	return t.appendCBOR(nil)
+}
+
+// appendCBOR appends SourcePackRequest's canonical CBOR encoding to dst. Fields emit in
+// canonical key order (fixed at generation time), omitting empty
+// non-required fields so the map head's pair count matches.
+func (t SourcePackRequest) appendCBOR(dst []byte) ([]byte, error) {
+	n := 2
+	dst = appendCBORHead(dst, 5, uint64(n))
+	dst = appendCBORTextString(dst, "op")
+	dst = appendCBORTextString(dst, t.Op)
+	dst = appendCBORTextString(dst, "path")
+	dst = appendCBORTextString(dst, t.Path)
+	return dst, nil
+}
+
+// DecodeCBOR decodes SourcePackRequest from canonical CBOR, dispatch-free. Unknown keys
+// are skipped.
+func (t *SourcePackRequest) DecodeCBOR(data []byte) error {
+	dec := &cborDec{data: data}
+	return t.decodeCBOR(dec)
+}
+
+func (t *SourcePackRequest) decodeCBOR(dec *cborDec) error {
+	n, err := dec.readMapHeader()
+	if err != nil {
+		return err
+	}
+	for i := 0; i < n; i++ {
+		key, err := dec.readTextString()
+		if err != nil {
+			return err
+		}
+		switch key {
+		case "op":
+			if s, err := dec.readTextString(); err != nil {
+				return err
+			} else {
+				t.Op = s
+			}
+		case "path":
+			if s, err := dec.readTextString(); err != nil {
+				return err
+			} else {
+				t.Path = s
+			}
+		default:
+			if err := dec.skip(); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// EncodeCBOR encodes SourcePackResponse as canonical CBOR (RFC 8949 §4.2.1; floats per
+// CBOR CDE §4.2), dispatch-free.
+func (t SourcePackResponse) EncodeCBOR() ([]byte, error) {
+	return t.appendCBOR(nil)
+}
+
+// appendCBOR appends SourcePackResponse's canonical CBOR encoding to dst. Fields emit in
+// canonical key order (fixed at generation time), omitting empty
+// non-required fields so the map head's pair count matches.
+func (t SourcePackResponse) appendCBOR(dst []byte) ([]byte, error) {
+	n := 0
+	if t.Error != "" {
+		n++
+	}
+	if t.ErrorCode != "" {
+		n++
+	}
+	if t.SourceProjection != nil {
+		n++
+	}
+	dst = appendCBORHead(dst, 5, uint64(n))
+	var err error
+	if t.Error != "" {
+		dst = appendCBORTextString(dst, "error")
+		dst = appendCBORTextString(dst, t.Error)
+	}
+	if t.ErrorCode != "" {
+		dst = appendCBORTextString(dst, "error_code")
+		dst = appendCBORTextString(dst, t.ErrorCode)
+	}
+	if t.SourceProjection != nil {
+		dst = appendCBORTextString(dst, "source_projection")
+		if t.SourceProjection == nil {
+			dst = append(dst, 0xf6)
+		} else if dst, err = t.SourceProjection.appendCBOR(dst); err != nil {
+			return nil, err
+		}
+	}
+	return dst, nil
+}
+
+// DecodeCBOR decodes SourcePackResponse from canonical CBOR, dispatch-free. Unknown keys
+// are skipped.
+func (t *SourcePackResponse) DecodeCBOR(data []byte) error {
+	dec := &cborDec{data: data}
+	return t.decodeCBOR(dec)
+}
+
+func (t *SourcePackResponse) decodeCBOR(dec *cborDec) error {
+	n, err := dec.readMapHeader()
+	if err != nil {
+		return err
+	}
+	for i := 0; i < n; i++ {
+		key, err := dec.readTextString()
+		if err != nil {
+			return err
+		}
+		switch key {
+		case "source_projection":
+			{
+				v := new(SourceProjection)
+				if err := v.decodeCBOR(dec); err != nil {
+					return err
+				}
+				t.SourceProjection = v
+			}
+		case "error":
+			if s, err := dec.readTextString(); err != nil {
+				return err
+			} else {
+				t.Error = s
+			}
+		case "error_code":
+			if s, err := dec.readTextString(); err != nil {
+				return err
+			} else {
+				t.ErrorCode = s
+			}
+		default:
+			if err := dec.skip(); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// EncodeCBOR encodes SourceFileRequest as canonical CBOR (RFC 8949 §4.2.1; floats per
+// CBOR CDE §4.2), dispatch-free.
+func (t SourceFileRequest) EncodeCBOR() ([]byte, error) {
+	return t.appendCBOR(nil)
+}
+
+// appendCBOR appends SourceFileRequest's canonical CBOR encoding to dst. Fields emit in
+// canonical key order (fixed at generation time), omitting empty
+// non-required fields so the map head's pair count matches.
+func (t SourceFileRequest) appendCBOR(dst []byte) ([]byte, error) {
+	n := 1
+	dst = appendCBORHead(dst, 5, uint64(n))
+	dst = appendCBORTextString(dst, "path")
+	dst = appendCBORTextString(dst, t.Path)
+	return dst, nil
+}
+
+// DecodeCBOR decodes SourceFileRequest from canonical CBOR, dispatch-free. Unknown keys
+// are skipped.
+func (t *SourceFileRequest) DecodeCBOR(data []byte) error {
+	dec := &cborDec{data: data}
+	return t.decodeCBOR(dec)
+}
+
+func (t *SourceFileRequest) decodeCBOR(dec *cborDec) error {
+	n, err := dec.readMapHeader()
+	if err != nil {
+		return err
+	}
+	for i := 0; i < n; i++ {
+		key, err := dec.readTextString()
+		if err != nil {
+			return err
+		}
+		switch key {
+		case "path":
+			if s, err := dec.readTextString(); err != nil {
+				return err
+			} else {
+				t.Path = s
+			}
+		default:
+			if err := dec.skip(); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// EncodeCBOR encodes SourceFileResponse as canonical CBOR (RFC 8949 §4.2.1; floats per
+// CBOR CDE §4.2), dispatch-free.
+func (t SourceFileResponse) EncodeCBOR() ([]byte, error) {
+	return t.appendCBOR(nil)
+}
+
+// appendCBOR appends SourceFileResponse's canonical CBOR encoding to dst. Fields emit in
+// canonical key order (fixed at generation time), omitting empty
+// non-required fields so the map head's pair count matches.
+func (t SourceFileResponse) appendCBOR(dst []byte) ([]byte, error) {
+	n := 0
+	if t.Error != "" {
+		n++
+	}
+	if len(t.Content) != 0 {
+		n++
+	}
+	if t.ErrorCode != "" {
+		n++
+	}
+	dst = appendCBORHead(dst, 5, uint64(n))
+	if t.Error != "" {
+		dst = appendCBORTextString(dst, "error")
+		dst = appendCBORTextString(dst, t.Error)
+	}
+	if len(t.Content) != 0 {
+		dst = appendCBORTextString(dst, "content")
+		dst = appendCBORByteString(dst, t.Content)
+	}
+	if t.ErrorCode != "" {
+		dst = appendCBORTextString(dst, "error_code")
+		dst = appendCBORTextString(dst, t.ErrorCode)
+	}
+	return dst, nil
+}
+
+// DecodeCBOR decodes SourceFileResponse from canonical CBOR, dispatch-free. Unknown keys
+// are skipped.
+func (t *SourceFileResponse) DecodeCBOR(data []byte) error {
+	dec := &cborDec{data: data}
+	return t.decodeCBOR(dec)
+}
+
+func (t *SourceFileResponse) decodeCBOR(dec *cborDec) error {
+	n, err := dec.readMapHeader()
+	if err != nil {
+		return err
+	}
+	for i := 0; i < n; i++ {
+		key, err := dec.readTextString()
+		if err != nil {
+			return err
+		}
+		switch key {
+		case "content":
+			if v, err := dec.readByteString(); err != nil {
+				return err
+			} else {
+				t.Content = v
+			}
+		case "error":
+			if s, err := dec.readTextString(); err != nil {
+				return err
+			} else {
+				t.Error = s
+			}
+		case "error_code":
+			if s, err := dec.readTextString(); err != nil {
+				return err
+			} else {
+				t.ErrorCode = s
+			}
+		default:
+			if err := dec.skip(); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// EncodeCBOR encodes FetchExternalInputResponse as canonical CBOR (RFC 8949 §4.2.1; floats per
+// CBOR CDE §4.2), dispatch-free.
+func (t FetchExternalInputResponse) EncodeCBOR() ([]byte, error) {
+	return t.appendCBOR(nil)
+}
+
+// appendCBOR appends FetchExternalInputResponse's canonical CBOR encoding to dst. Fields emit in
+// canonical key order (fixed at generation time), omitting empty
+// non-required fields so the map head's pair count matches.
+func (t FetchExternalInputResponse) appendCBOR(dst []byte) ([]byte, error) {
+	n := 0
+	if t.Error != "" {
+		n++
+	}
+	if t.Content != nil {
+		n++
+	}
+	if t.ErrorCode != "" {
+		n++
+	}
+	dst = appendCBORHead(dst, 5, uint64(n))
+	if t.Error != "" {
+		dst = appendCBORTextString(dst, "error")
+		dst = appendCBORTextString(dst, t.Error)
+	}
+	if t.Content != nil {
+		dst = appendCBORTextString(dst, "content")
+		dst = appendCBORTextString(dst, (*t.Content))
+	}
+	if t.ErrorCode != "" {
+		dst = appendCBORTextString(dst, "error_code")
+		dst = appendCBORTextString(dst, t.ErrorCode)
+	}
+	return dst, nil
+}
+
+// DecodeCBOR decodes FetchExternalInputResponse from canonical CBOR, dispatch-free. Unknown keys
+// are skipped.
+func (t *FetchExternalInputResponse) DecodeCBOR(data []byte) error {
+	dec := &cborDec{data: data}
+	return t.decodeCBOR(dec)
+}
+
+func (t *FetchExternalInputResponse) decodeCBOR(dec *cborDec) error {
+	n, err := dec.readMapHeader()
+	if err != nil {
+		return err
+	}
+	for i := 0; i < n; i++ {
+		key, err := dec.readTextString()
+		if err != nil {
+			return err
+		}
+		switch key {
+		case "content":
+			{
+				var sv string
+				if s, err := dec.readTextString(); err != nil {
+					return err
+				} else {
+					sv = s
+				}
+				t.Content = &sv
+			}
+		case "error":
+			if s, err := dec.readTextString(); err != nil {
+				return err
+			} else {
+				t.Error = s
+			}
+		case "error_code":
+			if s, err := dec.readTextString(); err != nil {
+				return err
+			} else {
+				t.ErrorCode = s
+			}
+		default:
+			if err := dec.skip(); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// EncodeCBOR encodes WorkloadProjection as canonical CBOR (RFC 8949 §4.2.1; floats per
+// CBOR CDE §4.2), dispatch-free.
+func (t WorkloadProjection) EncodeCBOR() ([]byte, error) {
+	return t.appendCBOR(nil)
+}
+
+// appendCBOR appends WorkloadProjection's canonical CBOR encoding to dst. Fields emit in
+// canonical key order (fixed at generation time), omitting empty
+// non-required fields so the map head's pair count matches.
+func (t WorkloadProjection) appendCBOR(dst []byte) ([]byte, error) {
+	n := 1
+	if len(t.AttachmentProvides) != 0 {
+		n++
+	}
+	if len(t.AttachmentSensitive) != 0 {
+		n++
+	}
+	dst = appendCBORHead(dst, 5, uint64(n))
+	dst = appendCBORTextString(dst, "workload")
+	if raw, mErr := json.Marshal(t.Workload); mErr != nil {
+		return nil, mErr
+	} else {
+		dst = appendCBORByteString(dst, raw)
+	}
+	if len(t.AttachmentProvides) != 0 {
+		dst = appendCBORTextString(dst, "attachment_provides")
+		{
+			keys := make([]string, 0, len(t.AttachmentProvides))
+			for k := range t.AttachmentProvides {
+				keys = append(keys, k)
+			}
+			sortCBORKeys(keys)
+			dst = appendCBORHead(dst, 5, uint64(len(keys)))
+			for _, k := range keys {
+				dst = appendCBORTextString(dst, k)
+				mv := t.AttachmentProvides[k]
+				{
+					keys := mv.Keys()
+					sortCBORKeys(keys)
+					dst = appendCBORHead(dst, 5, uint64(len(keys)))
+					for _, k := range keys {
+						dst = appendCBORTextString(dst, k)
+						mv, _ := mv.Get(k)
+						dst = appendCBORTextString(dst, mv)
+					}
+				}
+			}
+		}
+	}
+	if len(t.AttachmentSensitive) != 0 {
+		dst = appendCBORTextString(dst, "attachment_sensitive")
+		{
+			keys := make([]string, 0, len(t.AttachmentSensitive))
+			for k := range t.AttachmentSensitive {
+				keys = append(keys, k)
+			}
+			sortCBORKeys(keys)
+			dst = appendCBORHead(dst, 5, uint64(len(keys)))
+			for _, k := range keys {
+				dst = appendCBORTextString(dst, k)
+				mv := t.AttachmentSensitive[k]
+				dst = appendCBORBool(dst, mv)
+			}
+		}
+	}
+	return dst, nil
+}
+
+// DecodeCBOR decodes WorkloadProjection from canonical CBOR, dispatch-free. Unknown keys
+// are skipped.
+func (t *WorkloadProjection) DecodeCBOR(data []byte) error {
+	dec := &cborDec{data: data}
+	return t.decodeCBOR(dec)
+}
+
+func (t *WorkloadProjection) decodeCBOR(dec *cborDec) error {
+	n, err := dec.readMapHeader()
+	if err != nil {
+		return err
+	}
+	for i := 0; i < n; i++ {
+		key, err := dec.readTextString()
+		if err != nil {
+			return err
+		}
+		switch key {
+		case "workload":
+			if raw, err := dec.readByteString(); err != nil {
+				return err
+			} else {
+				d2 := json.NewDecoder(bytes.NewReader(raw))
+				d2.UseNumber()
+				if err := d2.Decode(&t.Workload); err != nil {
+					return err
+				}
+			}
+		case "attachment_provides":
+			{
+				mn, err := dec.readMapHeader()
+				if err != nil {
+					return err
+				}
+				m := make(map[string]types.OrderedMap[string], mn)
+				for mi := 0; mi < mn; mi++ {
+					mk, err := dec.readTextString()
+					if err != nil {
+						return err
+					}
+					var mv types.OrderedMap[string]
+					{
+						mn, err := dec.readMapHeader()
+						if err != nil {
+							return err
+						}
+						var om types.OrderedMap[string]
+						for mi := 0; mi < mn; mi++ {
+							mk, err := dec.readTextString()
+							if err != nil {
+								return err
+							}
+							var mv string
+							if s, err := dec.readTextString(); err != nil {
+								return err
+							} else {
+								mv = s
+							}
+							om.Set(mk, mv)
+						}
+						mv = om
+					}
+					m[mk] = mv
+				}
+				t.AttachmentProvides = m
+			}
+		case "attachment_sensitive":
+			{
+				mn, err := dec.readMapHeader()
+				if err != nil {
+					return err
+				}
+				m := make(map[string]bool, mn)
+				for mi := 0; mi < mn; mi++ {
+					mk, err := dec.readTextString()
+					if err != nil {
+						return err
+					}
+					var mv bool
+					if v, err := dec.readBool(); err != nil {
+						return err
+					} else {
+						mv = v
+					}
+					m[mk] = mv
+				}
+				t.AttachmentSensitive = m
+			}
+		default:
+			if err := dec.skip(); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// EncodeCBOR encodes ArtifactsProjection as canonical CBOR (RFC 8949 §4.2.1; floats per
+// CBOR CDE §4.2), dispatch-free.
+func (t ArtifactsProjection) EncodeCBOR() ([]byte, error) {
+	return t.appendCBOR(nil)
+}
+
+// appendCBOR appends ArtifactsProjection's canonical CBOR encoding to dst. Fields emit in
+// canonical key order (fixed at generation time), omitting empty
+// non-required fields so the map head's pair count matches.
+func (t ArtifactsProjection) appendCBOR(dst []byte) ([]byte, error) {
+	n := 1
+	dst = appendCBORHead(dst, 5, uint64(n))
+	var err error
+	dst = appendCBORTextString(dst, "entries")
+	dst = appendCBORHead(dst, 4, uint64(len(t.Entries)))
+	for i := range t.Entries {
+		ev := t.Entries[i]
+		if dst, err = ev.appendCBOR(dst); err != nil {
+			return nil, err
+		}
+	}
+	return dst, nil
+}
+
+// DecodeCBOR decodes ArtifactsProjection from canonical CBOR, dispatch-free. Unknown keys
+// are skipped.
+func (t *ArtifactsProjection) DecodeCBOR(data []byte) error {
+	dec := &cborDec{data: data}
+	return t.decodeCBOR(dec)
+}
+
+func (t *ArtifactsProjection) decodeCBOR(dec *cborDec) error {
+	n, err := dec.readMapHeader()
+	if err != nil {
+		return err
+	}
+	for i := 0; i < n; i++ {
+		key, err := dec.readTextString()
+		if err != nil {
+			return err
+		}
+		switch key {
+		case "entries":
+			{
+				sn, err := dec.readArrayHeader()
+				if err != nil {
+					return err
+				}
+				s := make([]ArtifactProjectionEntry, 0, sn)
+				for si := 0; si < sn; si++ {
+					var ev ArtifactProjectionEntry
+					if err := (&ev).decodeCBOR(dec); err != nil {
+						return err
+					}
+					s = append(s, ev)
+				}
+				t.Entries = s
+			}
+		default:
+			if err := dec.skip(); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// EncodeCBOR encodes ArtifactProjectionEntry as canonical CBOR (RFC 8949 §4.2.1; floats per
+// CBOR CDE §4.2), dispatch-free.
+func (t ArtifactProjectionEntry) EncodeCBOR() ([]byte, error) {
+	return t.appendCBOR(nil)
+}
+
+// appendCBOR appends ArtifactProjectionEntry's canonical CBOR encoding to dst. Fields emit in
+// canonical key order (fixed at generation time), omitting empty
+// non-required fields so the map head's pair count matches.
+func (t ArtifactProjectionEntry) appendCBOR(dst []byte) ([]byte, error) {
+	n := 3
+	if len(t.Labels) != 0 {
+		n++
+	}
+	if len(t.Annotations) != 0 {
+		n++
+	}
+	dst = appendCBORHead(dst, 5, uint64(n))
+	dst = appendCBORTextString(dst, "name")
+	dst = appendCBORTextString(dst, t.Name)
+	if len(t.Labels) != 0 {
+		dst = appendCBORTextString(dst, "labels")
+		{
+			keys := make([]string, 0, len(t.Labels))
+			for k := range t.Labels {
+				keys = append(keys, k)
+			}
+			sortCBORKeys(keys)
+			dst = appendCBORHead(dst, 5, uint64(len(keys)))
+			for _, k := range keys {
+				dst = appendCBORTextString(dst, k)
+				mv := t.Labels[k]
+				dst = appendCBORTextString(dst, mv)
+			}
+		}
+	}
+	dst = appendCBORTextString(dst, "origin")
+	dst = appendCBORTextString(dst, t.Origin)
+	dst = appendCBORTextString(dst, "content")
+	dst = appendCBORByteString(dst, t.Content)
+	if len(t.Annotations) != 0 {
+		dst = appendCBORTextString(dst, "annotations")
+		{
+			keys := make([]string, 0, len(t.Annotations))
+			for k := range t.Annotations {
+				keys = append(keys, k)
+			}
+			sortCBORKeys(keys)
+			dst = appendCBORHead(dst, 5, uint64(len(keys)))
+			for _, k := range keys {
+				dst = appendCBORTextString(dst, k)
+				mv := t.Annotations[k]
+				dst = appendCBORTextString(dst, mv)
+			}
+		}
+	}
+	return dst, nil
+}
+
+// DecodeCBOR decodes ArtifactProjectionEntry from canonical CBOR, dispatch-free. Unknown keys
+// are skipped.
+func (t *ArtifactProjectionEntry) DecodeCBOR(data []byte) error {
+	dec := &cborDec{data: data}
+	return t.decodeCBOR(dec)
+}
+
+func (t *ArtifactProjectionEntry) decodeCBOR(dec *cborDec) error {
+	n, err := dec.readMapHeader()
+	if err != nil {
+		return err
+	}
+	for i := 0; i < n; i++ {
+		key, err := dec.readTextString()
+		if err != nil {
+			return err
+		}
+		switch key {
+		case "name":
+			if s, err := dec.readTextString(); err != nil {
+				return err
+			} else {
+				t.Name = s
+			}
+		case "origin":
+			if s, err := dec.readTextString(); err != nil {
+				return err
+			} else {
+				t.Origin = s
+			}
+		case "content":
+			if v, err := dec.readByteString(); err != nil {
+				return err
+			} else {
+				t.Content = v
+			}
+		case "labels":
+			{
+				mn, err := dec.readMapHeader()
+				if err != nil {
+					return err
+				}
+				m := make(map[string]string, mn)
+				for mi := 0; mi < mn; mi++ {
+					mk, err := dec.readTextString()
+					if err != nil {
+						return err
+					}
+					var mv string
+					if s, err := dec.readTextString(); err != nil {
+						return err
+					} else {
+						mv = s
+					}
+					m[mk] = mv
+				}
+				t.Labels = m
+			}
+		case "annotations":
+			{
+				mn, err := dec.readMapHeader()
+				if err != nil {
+					return err
+				}
+				m := make(map[string]string, mn)
+				for mi := 0; mi < mn; mi++ {
+					mk, err := dec.readTextString()
+					if err != nil {
+						return err
+					}
+					var mv string
+					if s, err := dec.readTextString(); err != nil {
+						return err
+					} else {
+						mv = s
+					}
+					m[mk] = mv
+				}
+				t.Annotations = m
+			}
+		default:
+			if err := dec.skip(); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// EncodeCBOR encodes AssembleBoundaryInput as canonical CBOR (RFC 8949 §4.2.1; floats per
+// CBOR CDE §4.2), dispatch-free.
+func (t AssembleBoundaryInput) EncodeCBOR() ([]byte, error) {
+	return t.appendCBOR(nil)
+}
+
+// appendCBOR appends AssembleBoundaryInput's canonical CBOR encoding to dst. Fields emit in
+// canonical key order (fixed at generation time), omitting empty
+// non-required fields so the map head's pair count matches.
+func (t AssembleBoundaryInput) appendCBOR(dst []byte) ([]byte, error) {
+	n := 4
+	if len(t.Edges) != 0 {
+		n++
+	}
+	if t.ChartName != "" {
+		n++
+	}
+	if len(t.SubCharts) != 0 {
+		n++
+	}
+	if t.AggregateName != "" {
+		n++
+	}
+	dst = appendCBORHead(dst, 5, uint64(n))
+	var err error
+	if len(t.Edges) != 0 {
+		dst = appendCBORTextString(dst, "edges")
+		dst = appendCBORHead(dst, 4, uint64(len(t.Edges)))
+		for i := range t.Edges {
+			ev := t.Edges[i]
+			if dst, err = ev.appendCBOR(dst); err != nil {
+				return nil, err
+			}
+		}
+	}
+	dst = appendCBORTextString(dst, "context")
+	if raw, mErr := json.Marshal(t.Context); mErr != nil {
+		return nil, mErr
+	} else {
+		dst = appendCBORByteString(dst, raw)
+	}
+	dst = appendCBORTextString(dst, "boundary")
+	if raw, mErr := json.Marshal(t.Boundary); mErr != nil {
+		return nil, mErr
+	} else {
+		dst = appendCBORByteString(dst, raw)
+	}
+	if t.ChartName != "" {
+		dst = appendCBORTextString(dst, "chart_name")
+		dst = appendCBORTextString(dst, t.ChartName)
+	}
+	if len(t.SubCharts) != 0 {
+		dst = appendCBORTextString(dst, "sub_charts")
+		dst = appendCBORHead(dst, 4, uint64(len(t.SubCharts)))
+		for i := range t.SubCharts {
+			ev := t.SubCharts[i]
+			if dst, err = ev.appendCBOR(dst); err != nil {
+				return nil, err
+			}
+		}
+	}
+	dst = appendCBORTextString(dst, "boundary_path")
+	dst = appendCBORTextString(dst, t.BoundaryPath)
+	if t.AggregateName != "" {
+		dst = appendCBORTextString(dst, "aggregate_name")
+		dst = appendCBORTextString(dst, t.AggregateName)
+	}
+	dst = appendCBORTextString(dst, "rendered_nodes")
+	dst = appendCBORHead(dst, 4, uint64(len(t.RenderedNodes)))
+	for i := range t.RenderedNodes {
+		ev := t.RenderedNodes[i]
+		if dst, err = ev.appendCBOR(dst); err != nil {
+			return nil, err
+		}
+	}
+	return dst, nil
+}
+
+// DecodeCBOR decodes AssembleBoundaryInput from canonical CBOR, dispatch-free. Unknown keys
+// are skipped.
+func (t *AssembleBoundaryInput) DecodeCBOR(data []byte) error {
+	dec := &cborDec{data: data}
+	return t.decodeCBOR(dec)
+}
+
+func (t *AssembleBoundaryInput) decodeCBOR(dec *cborDec) error {
+	n, err := dec.readMapHeader()
+	if err != nil {
+		return err
+	}
+	for i := 0; i < n; i++ {
+		key, err := dec.readTextString()
+		if err != nil {
+			return err
+		}
+		switch key {
+		case "boundary":
+			if raw, err := dec.readByteString(); err != nil {
+				return err
+			} else {
+				d2 := json.NewDecoder(bytes.NewReader(raw))
+				d2.UseNumber()
+				if err := d2.Decode(&t.Boundary); err != nil {
+					return err
+				}
+			}
+		case "rendered_nodes":
+			{
+				sn, err := dec.readArrayHeader()
+				if err != nil {
+					return err
+				}
+				s := make([]RenderedNode, 0, sn)
+				for si := 0; si < sn; si++ {
+					var ev RenderedNode
+					if err := (&ev).decodeCBOR(dec); err != nil {
+						return err
+					}
+					s = append(s, ev)
+				}
+				t.RenderedNodes = s
+			}
+		case "context":
+			if raw, err := dec.readByteString(); err != nil {
+				return err
+			} else {
+				d2 := json.NewDecoder(bytes.NewReader(raw))
+				d2.UseNumber()
+				if err := d2.Decode(&t.Context); err != nil {
+					return err
+				}
+			}
+		case "boundary_path":
+			if s, err := dec.readTextString(); err != nil {
+				return err
+			} else {
+				t.BoundaryPath = s
+			}
+		case "edges":
+			{
+				sn, err := dec.readArrayHeader()
+				if err != nil {
+					return err
+				}
+				s := make([]RenderEdge, 0, sn)
+				for si := 0; si < sn; si++ {
+					var ev RenderEdge
+					if err := (&ev).decodeCBOR(dec); err != nil {
+						return err
+					}
+					s = append(s, ev)
+				}
+				t.Edges = s
+			}
+		case "sub_charts":
+			{
+				sn, err := dec.readArrayHeader()
+				if err != nil {
+					return err
+				}
+				s := make([]SubChart, 0, sn)
+				for si := 0; si < sn; si++ {
+					var ev SubChart
+					if err := (&ev).decodeCBOR(dec); err != nil {
+						return err
+					}
+					s = append(s, ev)
+				}
+				t.SubCharts = s
+			}
+		case "chart_name":
+			if s, err := dec.readTextString(); err != nil {
+				return err
+			} else {
+				t.ChartName = s
+			}
+		case "aggregate_name":
+			if s, err := dec.readTextString(); err != nil {
+				return err
+			} else {
+				t.AggregateName = s
+			}
+		default:
+			if err := dec.skip(); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// EncodeCBOR encodes RenderedNode as canonical CBOR (RFC 8949 §4.2.1; floats per
+// CBOR CDE §4.2), dispatch-free.
+func (t RenderedNode) EncodeCBOR() ([]byte, error) {
+	return t.appendCBOR(nil)
+}
+
+// appendCBOR appends RenderedNode's canonical CBOR encoding to dst. Fields emit in
+// canonical key order (fixed at generation time), omitting empty
+// non-required fields so the map head's pair count matches.
+func (t RenderedNode) appendCBOR(dst []byte) ([]byte, error) {
+	n := 4
+	dst = appendCBORHead(dst, 5, uint64(n))
+	var err error
+	dst = appendCBORTextString(dst, "id")
+	dst = appendCBORTextString(dst, t.ID)
+	dst = appendCBORTextString(dst, "type")
+	dst = appendCBORTextString(dst, t.Type)
+	dst = appendCBORTextString(dst, "rendered")
+	if dst, err = t.Rendered.appendCBOR(dst); err != nil {
+		return nil, err
+	}
+	dst = appendCBORTextString(dst, "annotations")
+	{
+		keys := t.Annotations.Keys()
+		sortCBORKeys(keys)
+		dst = appendCBORHead(dst, 5, uint64(len(keys)))
+		for _, k := range keys {
+			dst = appendCBORTextString(dst, k)
+			mv, _ := t.Annotations.Get(k)
+			dst = appendCBORTextString(dst, mv)
+		}
+	}
+	return dst, nil
+}
+
+// DecodeCBOR decodes RenderedNode from canonical CBOR, dispatch-free. Unknown keys
+// are skipped.
+func (t *RenderedNode) DecodeCBOR(data []byte) error {
+	dec := &cborDec{data: data}
+	return t.decodeCBOR(dec)
+}
+
+func (t *RenderedNode) decodeCBOR(dec *cborDec) error {
+	n, err := dec.readMapHeader()
+	if err != nil {
+		return err
+	}
+	for i := 0; i < n; i++ {
+		key, err := dec.readTextString()
+		if err != nil {
+			return err
+		}
+		switch key {
+		case "id":
+			if s, err := dec.readTextString(); err != nil {
+				return err
+			} else {
+				t.ID = s
+			}
+		case "type":
+			if s, err := dec.readTextString(); err != nil {
+				return err
+			} else {
+				t.Type = s
+			}
+		case "rendered":
+			if err := (&t.Rendered).decodeCBOR(dec); err != nil {
+				return err
+			}
+		case "annotations":
+			{
+				mn, err := dec.readMapHeader()
+				if err != nil {
+					return err
+				}
+				var om types.OrderedMap[string]
+				for mi := 0; mi < mn; mi++ {
+					mk, err := dec.readTextString()
+					if err != nil {
+						return err
+					}
+					var mv string
+					if s, err := dec.readTextString(); err != nil {
+						return err
+					} else {
+						mv = s
+					}
+					om.Set(mk, mv)
+				}
+				t.Annotations = om
+			}
+		default:
+			if err := dec.skip(); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// EncodeCBOR encodes RenderEdge as canonical CBOR (RFC 8949 §4.2.1; floats per
+// CBOR CDE §4.2), dispatch-free.
+func (t RenderEdge) EncodeCBOR() ([]byte, error) {
+	return t.appendCBOR(nil)
+}
+
+// appendCBOR appends RenderEdge's canonical CBOR encoding to dst. Fields emit in
+// canonical key order (fixed at generation time), omitting empty
+// non-required fields so the map head's pair count matches.
+func (t RenderEdge) appendCBOR(dst []byte) ([]byte, error) {
+	n := 2
+	dst = appendCBORHead(dst, 5, uint64(n))
+	dst = appendCBORTextString(dst, "source")
+	dst = appendCBORTextString(dst, t.Source)
+	dst = appendCBORTextString(dst, "target")
+	dst = appendCBORTextString(dst, t.Target)
+	return dst, nil
+}
+
+// DecodeCBOR decodes RenderEdge from canonical CBOR, dispatch-free. Unknown keys
+// are skipped.
+func (t *RenderEdge) DecodeCBOR(data []byte) error {
+	dec := &cborDec{data: data}
+	return t.decodeCBOR(dec)
+}
+
+func (t *RenderEdge) decodeCBOR(dec *cborDec) error {
+	n, err := dec.readMapHeader()
+	if err != nil {
+		return err
+	}
+	for i := 0; i < n; i++ {
+		key, err := dec.readTextString()
+		if err != nil {
+			return err
+		}
+		switch key {
+		case "source":
+			if s, err := dec.readTextString(); err != nil {
+				return err
+			} else {
+				t.Source = s
+			}
+		case "target":
+			if s, err := dec.readTextString(); err != nil {
+				return err
+			} else {
+				t.Target = s
+			}
+		default:
+			if err := dec.skip(); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// EncodeCBOR encodes SubChart as canonical CBOR (RFC 8949 §4.2.1; floats per
+// CBOR CDE §4.2), dispatch-free.
+func (t SubChart) EncodeCBOR() ([]byte, error) {
+	return t.appendCBOR(nil)
+}
+
+// appendCBOR appends SubChart's canonical CBOR encoding to dst. Fields emit in
+// canonical key order (fixed at generation time), omitting empty
+// non-required fields so the map head's pair count matches.
+func (t SubChart) appendCBOR(dst []byte) ([]byte, error) {
+	n := 2
+	if t.Version != "" {
+		n++
+	}
+	if len(t.ChartYaml) != 0 {
+		n++
+	}
+	dst = appendCBORHead(dst, 5, uint64(n))
+	dst = appendCBORTextString(dst, "values")
+	{
+		keys := t.Values.Keys()
+		sortCBORKeys(keys)
+		dst = appendCBORHead(dst, 5, uint64(len(keys)))
+		for _, k := range keys {
+			dst = appendCBORTextString(dst, k)
+			mv, _ := t.Values.Get(k)
+			if raw, mErr := json.Marshal(mv); mErr != nil {
+				return nil, mErr
+			} else {
+				dst = appendCBORByteString(dst, raw)
+			}
+		}
+	}
+	if t.Version != "" {
+		dst = appendCBORTextString(dst, "version")
+		dst = appendCBORTextString(dst, t.Version)
+	}
+	if len(t.ChartYaml) != 0 {
+		dst = appendCBORTextString(dst, "chart_yaml")
+		dst = appendCBORByteString(dst, t.ChartYaml)
+	}
+	dst = appendCBORTextString(dst, "instance_id")
+	dst = appendCBORTextString(dst, t.InstanceID)
+	return dst, nil
+}
+
+// DecodeCBOR decodes SubChart from canonical CBOR, dispatch-free. Unknown keys
+// are skipped.
+func (t *SubChart) DecodeCBOR(data []byte) error {
+	dec := &cborDec{data: data}
+	return t.decodeCBOR(dec)
+}
+
+func (t *SubChart) decodeCBOR(dec *cborDec) error {
+	n, err := dec.readMapHeader()
+	if err != nil {
+		return err
+	}
+	for i := 0; i < n; i++ {
+		key, err := dec.readTextString()
+		if err != nil {
+			return err
+		}
+		switch key {
+		case "instance_id":
+			if s, err := dec.readTextString(); err != nil {
+				return err
+			} else {
+				t.InstanceID = s
+			}
+		case "version":
+			if s, err := dec.readTextString(); err != nil {
+				return err
+			} else {
+				t.Version = s
+			}
+		case "values":
+			{
+				mn, err := dec.readMapHeader()
+				if err != nil {
+					return err
+				}
+				var om types.OrderedMap[any]
+				for mi := 0; mi < mn; mi++ {
+					mk, err := dec.readTextString()
+					if err != nil {
+						return err
+					}
+					var mv any
+					if raw, err := dec.readByteString(); err != nil {
+						return err
+					} else {
+						d2 := json.NewDecoder(bytes.NewReader(raw))
+						d2.UseNumber()
+						if err := d2.Decode(&mv); err != nil {
+							return err
+						}
+					}
+					om.Set(mk, mv)
+				}
+				t.Values = om
+			}
+		case "chart_yaml":
+			if v, err := dec.readByteString(); err != nil {
+				return err
+			} else {
+				t.ChartYaml = v
+			}
+		default:
+			if err := dec.skip(); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// EncodeCBOR encodes AssembleBoundaryOutput as canonical CBOR (RFC 8949 §4.2.1; floats per
+// CBOR CDE §4.2), dispatch-free.
+func (t AssembleBoundaryOutput) EncodeCBOR() ([]byte, error) {
+	return t.appendCBOR(nil)
+}
+
+// appendCBOR appends AssembleBoundaryOutput's canonical CBOR encoding to dst. Fields emit in
+// canonical key order (fixed at generation time), omitting empty
+// non-required fields so the map head's pair count matches.
+func (t AssembleBoundaryOutput) appendCBOR(dst []byte) ([]byte, error) {
+	n := 1
+	if t.Error != "" {
+		n++
+	}
+	if len(t.Diagnostics) != 0 {
+		n++
+	}
+	if t.NestPerNode != false {
+		n++
+	}
+	dst = appendCBORHead(dst, 5, uint64(n))
+	var err error
+	if t.Error != "" {
+		dst = appendCBORTextString(dst, "error")
+		dst = appendCBORTextString(dst, t.Error)
+	}
+	dst = appendCBORTextString(dst, "files")
+	dst = appendCBORHead(dst, 4, uint64(len(t.Files)))
+	for i := range t.Files {
+		ev := t.Files[i]
+		if dst, err = ev.appendCBOR(dst); err != nil {
+			return nil, err
+		}
+	}
+	if len(t.Diagnostics) != 0 {
+		dst = appendCBORTextString(dst, "diagnostics")
+		dst = appendCBORHead(dst, 4, uint64(len(t.Diagnostics)))
+		for i := range t.Diagnostics {
+			ev := t.Diagnostics[i]
+			if raw, mErr := json.Marshal(ev); mErr != nil {
+				return nil, mErr
+			} else {
+				dst = appendCBORByteString(dst, raw)
+			}
+		}
+	}
+	if t.NestPerNode != false {
+		dst = appendCBORTextString(dst, "nest_per_node")
+		dst = appendCBORBool(dst, t.NestPerNode)
+	}
+	return dst, nil
+}
+
+// DecodeCBOR decodes AssembleBoundaryOutput from canonical CBOR, dispatch-free. Unknown keys
+// are skipped.
+func (t *AssembleBoundaryOutput) DecodeCBOR(data []byte) error {
+	dec := &cborDec{data: data}
+	return t.decodeCBOR(dec)
+}
+
+func (t *AssembleBoundaryOutput) decodeCBOR(dec *cborDec) error {
+	n, err := dec.readMapHeader()
+	if err != nil {
+		return err
+	}
+	for i := 0; i < n; i++ {
+		key, err := dec.readTextString()
+		if err != nil {
+			return err
+		}
+		switch key {
+		case "files":
+			{
+				sn, err := dec.readArrayHeader()
+				if err != nil {
+					return err
+				}
+				s := make([]RenderedFile, 0, sn)
+				for si := 0; si < sn; si++ {
+					var ev RenderedFile
+					if err := (&ev).decodeCBOR(dec); err != nil {
+						return err
+					}
+					s = append(s, ev)
+				}
+				t.Files = s
+			}
+		case "diagnostics":
+			{
+				sn, err := dec.readArrayHeader()
+				if err != nil {
+					return err
+				}
+				s := make([]renderctx.Diagnostic, 0, sn)
+				for si := 0; si < sn; si++ {
+					var ev renderctx.Diagnostic
+					if raw, err := dec.readByteString(); err != nil {
+						return err
+					} else {
+						d2 := json.NewDecoder(bytes.NewReader(raw))
+						d2.UseNumber()
+						if err := d2.Decode(&ev); err != nil {
+							return err
+						}
+					}
+					s = append(s, ev)
+				}
+				t.Diagnostics = s
+			}
+		case "nest_per_node":
+			if v, err := dec.readBool(); err != nil {
+				return err
+			} else {
+				t.NestPerNode = v
+			}
+		case "error":
+			if s, err := dec.readTextString(); err != nil {
+				return err
+			} else {
+				t.Error = s
+			}
+		default:
+			if err := dec.skip(); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// EncodeCBOR encodes CarveInput as canonical CBOR (RFC 8949 §4.2.1; floats per
+// CBOR CDE §4.2), dispatch-free.
+func (t CarveInput) EncodeCBOR() ([]byte, error) {
+	return t.appendCBOR(nil)
+}
+
+// appendCBOR appends CarveInput's canonical CBOR encoding to dst. Fields emit in
+// canonical key order (fixed at generation time), omitting empty
+// non-required fields so the map head's pair count matches.
+func (t CarveInput) appendCBOR(dst []byte) ([]byte, error) {
+	n := 2
+	if t.YamlIndent != 0 {
+		n++
+	}
+	dst = appendCBORHead(dst, 5, uint64(n))
+	dst = appendCBORTextString(dst, "body")
+	dst = appendCBORByteString(dst, t.Body)
+	dst = appendCBORTextString(dst, "name")
+	dst = appendCBORTextString(dst, t.Name)
+	if t.YamlIndent != 0 {
+		dst = appendCBORTextString(dst, "yaml_indent")
+		dst = appendCBORInt(dst, int64(t.YamlIndent))
+	}
+	return dst, nil
+}
+
+// DecodeCBOR decodes CarveInput from canonical CBOR, dispatch-free. Unknown keys
+// are skipped.
+func (t *CarveInput) DecodeCBOR(data []byte) error {
+	dec := &cborDec{data: data}
+	return t.decodeCBOR(dec)
+}
+
+func (t *CarveInput) decodeCBOR(dec *cborDec) error {
+	n, err := dec.readMapHeader()
+	if err != nil {
+		return err
+	}
+	for i := 0; i < n; i++ {
+		key, err := dec.readTextString()
+		if err != nil {
+			return err
+		}
+		switch key {
+		case "name":
+			if s, err := dec.readTextString(); err != nil {
+				return err
+			} else {
+				t.Name = s
+			}
+		case "body":
+			if v, err := dec.readByteString(); err != nil {
+				return err
+			} else {
+				t.Body = v
+			}
+		case "yaml_indent":
+			if v, err := dec.readInt(); err != nil {
+				return err
+			} else {
+				t.YamlIndent = int(v)
+			}
+		default:
+			if err := dec.skip(); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// EncodeCBOR encodes CarveOutput as canonical CBOR (RFC 8949 §4.2.1; floats per
+// CBOR CDE §4.2), dispatch-free.
+func (t CarveOutput) EncodeCBOR() ([]byte, error) {
+	return t.appendCBOR(nil)
+}
+
+// appendCBOR appends CarveOutput's canonical CBOR encoding to dst. Fields emit in
+// canonical key order (fixed at generation time), omitting empty
+// non-required fields so the map head's pair count matches.
+func (t CarveOutput) appendCBOR(dst []byte) ([]byte, error) {
+	n := 1
+	dst = appendCBORHead(dst, 5, uint64(n))
+	dst = appendCBORTextString(dst, "units")
+	dst = appendCBORHead(dst, 4, uint64(len(t.Units)))
+	for i := range t.Units {
+		ev := t.Units[i]
+		if raw, mErr := json.Marshal(ev); mErr != nil {
+			return nil, mErr
+		} else {
+			dst = appendCBORByteString(dst, raw)
+		}
+	}
+	return dst, nil
+}
+
+// DecodeCBOR decodes CarveOutput from canonical CBOR, dispatch-free. Unknown keys
+// are skipped.
+func (t *CarveOutput) DecodeCBOR(data []byte) error {
+	dec := &cborDec{data: data}
+	return t.decodeCBOR(dec)
+}
+
+func (t *CarveOutput) decodeCBOR(dec *cborDec) error {
+	n, err := dec.readMapHeader()
+	if err != nil {
+		return err
+	}
+	for i := 0; i < n; i++ {
+		key, err := dec.readTextString()
+		if err != nil {
+			return err
+		}
+		switch key {
+		case "units":
+			{
+				sn, err := dec.readArrayHeader()
+				if err != nil {
+					return err
+				}
+				s := make([]frp.Unit, 0, sn)
+				for si := 0; si < sn; si++ {
+					var ev frp.Unit
+					if raw, err := dec.readByteString(); err != nil {
+						return err
+					} else {
+						d2 := json.NewDecoder(bytes.NewReader(raw))
+						d2.UseNumber()
+						if err := d2.Decode(&ev); err != nil {
+							return err
+						}
+					}
+					s = append(s, ev)
+				}
+				t.Units = s
+			}
+		default:
+			if err := dec.skip(); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// EncodeCBOR encodes ReassembleInput as canonical CBOR (RFC 8949 §4.2.1; floats per
+// CBOR CDE §4.2), dispatch-free.
+func (t ReassembleInput) EncodeCBOR() ([]byte, error) {
+	return t.appendCBOR(nil)
+}
+
+// appendCBOR appends ReassembleInput's canonical CBOR encoding to dst. Fields emit in
+// canonical key order (fixed at generation time), omitting empty
+// non-required fields so the map head's pair count matches.
+func (t ReassembleInput) appendCBOR(dst []byte) ([]byte, error) {
+	n := 2
+	if len(t.Segs) != 0 {
+		n++
+	}
+	if len(t.Patched) != 0 {
+		n++
+	}
+	if t.YamlIndent != 0 {
+		n++
+	}
+	dst = appendCBORHead(dst, 5, uint64(n))
+	dst = appendCBORTextString(dst, "body")
+	dst = appendCBORByteString(dst, t.Body)
+	dst = appendCBORTextString(dst, "name")
+	dst = appendCBORTextString(dst, t.Name)
+	if len(t.Segs) != 0 {
+		dst = appendCBORTextString(dst, "segs")
+		dst = appendCBORHead(dst, 4, uint64(len(t.Segs)))
+		for i := range t.Segs {
+			ev := t.Segs[i]
+			if raw, mErr := json.Marshal(ev); mErr != nil {
+				return nil, mErr
+			} else {
+				dst = appendCBORByteString(dst, raw)
+			}
+		}
+	}
+	if len(t.Patched) != 0 {
+		dst = appendCBORTextString(dst, "patched")
+		dst = appendCBORHead(dst, 4, uint64(len(t.Patched)))
+		for i := range t.Patched {
+			ev := t.Patched[i]
+			if raw, mErr := json.Marshal(ev); mErr != nil {
+				return nil, mErr
+			} else {
+				dst = appendCBORByteString(dst, raw)
+			}
+		}
+	}
+	if t.YamlIndent != 0 {
+		dst = appendCBORTextString(dst, "yaml_indent")
+		dst = appendCBORInt(dst, int64(t.YamlIndent))
+	}
+	return dst, nil
+}
+
+// DecodeCBOR decodes ReassembleInput from canonical CBOR, dispatch-free. Unknown keys
+// are skipped.
+func (t *ReassembleInput) DecodeCBOR(data []byte) error {
+	dec := &cborDec{data: data}
+	return t.decodeCBOR(dec)
+}
+
+func (t *ReassembleInput) decodeCBOR(dec *cborDec) error {
+	n, err := dec.readMapHeader()
+	if err != nil {
+		return err
+	}
+	for i := 0; i < n; i++ {
+		key, err := dec.readTextString()
+		if err != nil {
+			return err
+		}
+		switch key {
+		case "name":
+			if s, err := dec.readTextString(); err != nil {
+				return err
+			} else {
+				t.Name = s
+			}
+		case "body":
+			if v, err := dec.readByteString(); err != nil {
+				return err
+			} else {
+				t.Body = v
+			}
+		case "segs":
+			{
+				sn, err := dec.readArrayHeader()
+				if err != nil {
+					return err
+				}
+				s := make([]frp.Unit, 0, sn)
+				for si := 0; si < sn; si++ {
+					var ev frp.Unit
+					if raw, err := dec.readByteString(); err != nil {
+						return err
+					} else {
+						d2 := json.NewDecoder(bytes.NewReader(raw))
+						d2.UseNumber()
+						if err := d2.Decode(&ev); err != nil {
+							return err
+						}
+					}
+					s = append(s, ev)
+				}
+				t.Segs = s
+			}
+		case "patched":
+			{
+				sn, err := dec.readArrayHeader()
+				if err != nil {
+					return err
+				}
+				s := make([]frp.PatchedUnit, 0, sn)
+				for si := 0; si < sn; si++ {
+					var ev frp.PatchedUnit
+					if raw, err := dec.readByteString(); err != nil {
+						return err
+					} else {
+						d2 := json.NewDecoder(bytes.NewReader(raw))
+						d2.UseNumber()
+						if err := d2.Decode(&ev); err != nil {
+							return err
+						}
+					}
+					s = append(s, ev)
+				}
+				t.Patched = s
+			}
+		case "yaml_indent":
+			if v, err := dec.readInt(); err != nil {
+				return err
+			} else {
+				t.YamlIndent = int(v)
+			}
+		default:
+			if err := dec.skip(); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// EncodeCBOR encodes ReassembleOutput as canonical CBOR (RFC 8949 §4.2.1; floats per
+// CBOR CDE §4.2), dispatch-free.
+func (t ReassembleOutput) EncodeCBOR() ([]byte, error) {
+	return t.appendCBOR(nil)
+}
+
+// appendCBOR appends ReassembleOutput's canonical CBOR encoding to dst. Fields emit in
+// canonical key order (fixed at generation time), omitting empty
+// non-required fields so the map head's pair count matches.
+func (t ReassembleOutput) appendCBOR(dst []byte) ([]byte, error) {
+	n := 1
+	dst = appendCBORHead(dst, 5, uint64(n))
+	dst = appendCBORTextString(dst, "body")
+	dst = appendCBORByteString(dst, t.Body)
+	return dst, nil
+}
+
+// DecodeCBOR decodes ReassembleOutput from canonical CBOR, dispatch-free. Unknown keys
+// are skipped.
+func (t *ReassembleOutput) DecodeCBOR(data []byte) error {
+	dec := &cborDec{data: data}
+	return t.decodeCBOR(dec)
+}
+
+func (t *ReassembleOutput) decodeCBOR(dec *cborDec) error {
+	n, err := dec.readMapHeader()
+	if err != nil {
+		return err
+	}
+	for i := 0; i < n; i++ {
+		key, err := dec.readTextString()
+		if err != nil {
+			return err
+		}
+		switch key {
+		case "body":
+			if v, err := dec.readByteString(); err != nil {
+				return err
+			} else {
+				t.Body = v
+			}
+		default:
+			if err := dec.skip(); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// EncodeCBOR encodes BoundaryEnvOverridesInput as canonical CBOR (RFC 8949 §4.2.1; floats per
+// CBOR CDE §4.2), dispatch-free.
+func (t BoundaryEnvOverridesInput) EncodeCBOR() ([]byte, error) {
+	return t.appendCBOR(nil)
+}
+
+// appendCBOR appends BoundaryEnvOverridesInput's canonical CBOR encoding to dst. Fields emit in
+// canonical key order (fixed at generation time), omitting empty
+// non-required fields so the map head's pair count matches.
+func (t BoundaryEnvOverridesInput) appendCBOR(dst []byte) ([]byte, error) {
+	n := 1
+	if len(t.InternalUsesEdges) != 0 {
+		n++
+	}
+	dst = appendCBORHead(dst, 5, uint64(n))
+	dst = appendCBORTextString(dst, "infra")
+	{
+		keys := t.Infra.Keys()
+		sortCBORKeys(keys)
+		dst = appendCBORHead(dst, 5, uint64(len(keys)))
+		for _, k := range keys {
+			dst = appendCBORTextString(dst, k)
+			mv, _ := t.Infra.Get(k)
+			if raw, mErr := json.Marshal(mv); mErr != nil {
+				return nil, mErr
+			} else {
+				dst = appendCBORByteString(dst, raw)
+			}
+		}
+	}
+	if len(t.InternalUsesEdges) != 0 {
+		dst = appendCBORTextString(dst, "internal_uses_edges")
+		dst = appendCBORHead(dst, 4, uint64(len(t.InternalUsesEdges)))
+		for i := range t.InternalUsesEdges {
+			ev := t.InternalUsesEdges[i]
+			if raw, mErr := json.Marshal(ev); mErr != nil {
+				return nil, mErr
+			} else {
+				dst = appendCBORByteString(dst, raw)
+			}
+		}
+	}
+	return dst, nil
+}
+
+// DecodeCBOR decodes BoundaryEnvOverridesInput from canonical CBOR, dispatch-free. Unknown keys
+// are skipped.
+func (t *BoundaryEnvOverridesInput) DecodeCBOR(data []byte) error {
+	dec := &cborDec{data: data}
+	return t.decodeCBOR(dec)
+}
+
+func (t *BoundaryEnvOverridesInput) decodeCBOR(dec *cborDec) error {
+	n, err := dec.readMapHeader()
+	if err != nil {
+		return err
+	}
+	for i := 0; i < n; i++ {
+		key, err := dec.readTextString()
+		if err != nil {
+			return err
+		}
+		switch key {
+		case "internal_uses_edges":
+			{
+				sn, err := dec.readArrayHeader()
+				if err != nil {
+					return err
+				}
+				s := make([]types.EnrichedEdge, 0, sn)
+				for si := 0; si < sn; si++ {
+					var ev types.EnrichedEdge
+					if raw, err := dec.readByteString(); err != nil {
+						return err
+					} else {
+						d2 := json.NewDecoder(bytes.NewReader(raw))
+						d2.UseNumber()
+						if err := d2.Decode(&ev); err != nil {
+							return err
+						}
+					}
+					s = append(s, ev)
+				}
+				t.InternalUsesEdges = s
+			}
+		case "infra":
+			{
+				mn, err := dec.readMapHeader()
+				if err != nil {
+					return err
+				}
+				var om types.OrderedMap[any]
+				for mi := 0; mi < mn; mi++ {
+					mk, err := dec.readTextString()
+					if err != nil {
+						return err
+					}
+					var mv any
+					if raw, err := dec.readByteString(); err != nil {
+						return err
+					} else {
+						d2 := json.NewDecoder(bytes.NewReader(raw))
+						d2.UseNumber()
+						if err := d2.Decode(&mv); err != nil {
+							return err
+						}
+					}
+					om.Set(mk, mv)
+				}
+				t.Infra = om
+			}
+		default:
+			if err := dec.skip(); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// EncodeCBOR encodes BoundaryEnvOverridesOutput as canonical CBOR (RFC 8949 §4.2.1; floats per
+// CBOR CDE §4.2), dispatch-free.
+func (t BoundaryEnvOverridesOutput) EncodeCBOR() ([]byte, error) {
+	return t.appendCBOR(nil)
+}
+
+// appendCBOR appends BoundaryEnvOverridesOutput's canonical CBOR encoding to dst. Fields emit in
+// canonical key order (fixed at generation time), omitting empty
+// non-required fields so the map head's pair count matches.
+func (t BoundaryEnvOverridesOutput) appendCBOR(dst []byte) ([]byte, error) {
+	n := 0
+	if len(t.Overrides) != 0 {
+		n++
+	}
+	dst = appendCBORHead(dst, 5, uint64(n))
+	if len(t.Overrides) != 0 {
+		dst = appendCBORTextString(dst, "overrides")
+		{
+			keys := make([]string, 0, len(t.Overrides))
+			for k := range t.Overrides {
+				keys = append(keys, k)
+			}
+			sortCBORKeys(keys)
+			dst = appendCBORHead(dst, 5, uint64(len(keys)))
+			for _, k := range keys {
+				dst = appendCBORTextString(dst, k)
+				mv := t.Overrides[k]
+				{
+					keys := make([]string, 0, len(mv))
+					for k := range mv {
+						keys = append(keys, k)
+					}
+					sortCBORKeys(keys)
+					dst = appendCBORHead(dst, 5, uint64(len(keys)))
+					for _, k := range keys {
+						dst = appendCBORTextString(dst, k)
+						mv := mv[k]
+						dst = appendCBORTextString(dst, mv)
+					}
+				}
+			}
+		}
+	}
+	return dst, nil
+}
+
+// DecodeCBOR decodes BoundaryEnvOverridesOutput from canonical CBOR, dispatch-free. Unknown keys
+// are skipped.
+func (t *BoundaryEnvOverridesOutput) DecodeCBOR(data []byte) error {
+	dec := &cborDec{data: data}
+	return t.decodeCBOR(dec)
+}
+
+func (t *BoundaryEnvOverridesOutput) decodeCBOR(dec *cborDec) error {
+	n, err := dec.readMapHeader()
+	if err != nil {
+		return err
+	}
+	for i := 0; i < n; i++ {
+		key, err := dec.readTextString()
+		if err != nil {
+			return err
+		}
+		switch key {
+		case "overrides":
+			{
+				mn, err := dec.readMapHeader()
+				if err != nil {
+					return err
+				}
+				m := make(map[string]map[string]string, mn)
+				for mi := 0; mi < mn; mi++ {
+					mk, err := dec.readTextString()
+					if err != nil {
+						return err
+					}
+					var mv map[string]string
+					{
+						mn, err := dec.readMapHeader()
+						if err != nil {
+							return err
+						}
+						m := make(map[string]string, mn)
+						for mi := 0; mi < mn; mi++ {
+							mk, err := dec.readTextString()
+							if err != nil {
+								return err
+							}
+							var mv string
+							if s, err := dec.readTextString(); err != nil {
+								return err
+							} else {
+								mv = s
+							}
+							m[mk] = mv
+						}
+						mv = m
+					}
+					m[mk] = mv
+				}
+				t.Overrides = m
+			}
+		default:
+			if err := dec.skip(); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// EncodeCBOR encodes LinkEndpoint as canonical CBOR (RFC 8949 §4.2.1; floats per
+// CBOR CDE §4.2), dispatch-free.
+func (t LinkEndpoint) EncodeCBOR() ([]byte, error) {
+	return t.appendCBOR(nil)
+}
+
+// appendCBOR appends LinkEndpoint's canonical CBOR encoding to dst. Fields emit in
+// canonical key order (fixed at generation time), omitting empty
+// non-required fields so the map head's pair count matches.
+func (t LinkEndpoint) appendCBOR(dst []byte) ([]byte, error) {
+	n := 3
+	if t.Deployment != "" {
+		n++
+	}
+	dst = appendCBORHead(dst, 5, uint64(n))
+	dst = appendCBORTextString(dst, "node")
+	dst = appendCBORTextString(dst, t.Node)
+	dst = appendCBORTextString(dst, "boundary")
+	dst = appendCBORTextString(dst, t.Boundary)
+	dst = appendCBORTextString(dst, "provider")
+	dst = appendCBORTextString(dst, t.Provider)
+	if t.Deployment != "" {
+		dst = appendCBORTextString(dst, "deployment")
+		dst = appendCBORTextString(dst, t.Deployment)
+	}
+	return dst, nil
+}
+
+// DecodeCBOR decodes LinkEndpoint from canonical CBOR, dispatch-free. Unknown keys
+// are skipped.
+func (t *LinkEndpoint) DecodeCBOR(data []byte) error {
+	dec := &cborDec{data: data}
+	return t.decodeCBOR(dec)
+}
+
+func (t *LinkEndpoint) decodeCBOR(dec *cborDec) error {
+	n, err := dec.readMapHeader()
+	if err != nil {
+		return err
+	}
+	for i := 0; i < n; i++ {
+		key, err := dec.readTextString()
+		if err != nil {
+			return err
+		}
+		switch key {
+		case "node":
+			if s, err := dec.readTextString(); err != nil {
+				return err
+			} else {
+				t.Node = s
+			}
+		case "boundary":
+			if s, err := dec.readTextString(); err != nil {
+				return err
+			} else {
+				t.Boundary = s
+			}
+		case "provider":
+			if s, err := dec.readTextString(); err != nil {
+				return err
+			} else {
+				t.Provider = s
+			}
+		case "deployment":
+			if s, err := dec.readTextString(); err != nil {
+				return err
+			} else {
+				t.Deployment = s
+			}
+		default:
+			if err := dec.skip(); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// EncodeCBOR encodes LinkEdge as canonical CBOR (RFC 8949 §4.2.1; floats per
+// CBOR CDE §4.2), dispatch-free.
+func (t LinkEdge) EncodeCBOR() ([]byte, error) {
+	return t.appendCBOR(nil)
+}
+
+// appendCBOR appends LinkEdge's canonical CBOR encoding to dst. Fields emit in
+// canonical key order (fixed at generation time), omitting empty
+// non-required fields so the map head's pair count matches.
+func (t LinkEdge) appendCBOR(dst []byte) ([]byte, error) {
+	n := 5
+	if len(t.SourceAnnotations) != 0 {
+		n++
+	}
+	if len(t.TargetAnnotations) != 0 {
+		n++
+	}
+	dst = appendCBORHead(dst, 5, uint64(n))
+	var err error
+	dst = appendCBORTextString(dst, "inject")
+	{
+		keys := t.Inject.Keys()
+		sortCBORKeys(keys)
+		dst = appendCBORHead(dst, 5, uint64(len(keys)))
+		for _, k := range keys {
+			dst = appendCBORTextString(dst, k)
+			mv, _ := t.Inject.Get(k)
+			{
+				keys := mv.Keys()
+				sortCBORKeys(keys)
+				dst = appendCBORHead(dst, 5, uint64(len(keys)))
+				for _, k := range keys {
+					dst = appendCBORTextString(dst, k)
+					mv, _ := mv.Get(k)
+					dst = appendCBORTextString(dst, mv)
+				}
+			}
+		}
+	}
+	dst = appendCBORTextString(dst, "socket")
+	dst = appendCBORTextString(dst, t.Socket)
+	dst = appendCBORTextString(dst, "source")
+	if dst, err = t.Source.appendCBOR(dst); err != nil {
+		return nil, err
+	}
+	dst = appendCBORTextString(dst, "target")
+	if dst, err = t.Target.appendCBOR(dst); err != nil {
+		return nil, err
+	}
+	dst = appendCBORTextString(dst, "provides")
+	{
+		keys := t.Provides.Keys()
+		sortCBORKeys(keys)
+		dst = appendCBORHead(dst, 5, uint64(len(keys)))
+		for _, k := range keys {
+			dst = appendCBORTextString(dst, k)
+			mv, _ := t.Provides.Get(k)
+			dst = appendCBORTextString(dst, mv)
+		}
+	}
+	if len(t.SourceAnnotations) != 0 {
+		dst = appendCBORTextString(dst, "source_annotations")
+		{
+			keys := make([]string, 0, len(t.SourceAnnotations))
+			for k := range t.SourceAnnotations {
+				keys = append(keys, k)
+			}
+			sortCBORKeys(keys)
+			dst = appendCBORHead(dst, 5, uint64(len(keys)))
+			for _, k := range keys {
+				dst = appendCBORTextString(dst, k)
+				mv := t.SourceAnnotations[k]
+				dst = appendCBORTextString(dst, mv)
+			}
+		}
+	}
+	if len(t.TargetAnnotations) != 0 {
+		dst = appendCBORTextString(dst, "target_annotations")
+		{
+			keys := make([]string, 0, len(t.TargetAnnotations))
+			for k := range t.TargetAnnotations {
+				keys = append(keys, k)
+			}
+			sortCBORKeys(keys)
+			dst = appendCBORHead(dst, 5, uint64(len(keys)))
+			for _, k := range keys {
+				dst = appendCBORTextString(dst, k)
+				mv := t.TargetAnnotations[k]
+				dst = appendCBORTextString(dst, mv)
+			}
+		}
+	}
+	return dst, nil
+}
+
+// DecodeCBOR decodes LinkEdge from canonical CBOR, dispatch-free. Unknown keys
+// are skipped.
+func (t *LinkEdge) DecodeCBOR(data []byte) error {
+	dec := &cborDec{data: data}
+	return t.decodeCBOR(dec)
+}
+
+func (t *LinkEdge) decodeCBOR(dec *cborDec) error {
+	n, err := dec.readMapHeader()
+	if err != nil {
+		return err
+	}
+	for i := 0; i < n; i++ {
+		key, err := dec.readTextString()
+		if err != nil {
+			return err
+		}
+		switch key {
+		case "source":
+			if err := (&t.Source).decodeCBOR(dec); err != nil {
+				return err
+			}
+		case "target":
+			if err := (&t.Target).decodeCBOR(dec); err != nil {
+				return err
+			}
+		case "target_annotations":
+			{
+				mn, err := dec.readMapHeader()
+				if err != nil {
+					return err
+				}
+				m := make(map[string]string, mn)
+				for mi := 0; mi < mn; mi++ {
+					mk, err := dec.readTextString()
+					if err != nil {
+						return err
+					}
+					var mv string
+					if s, err := dec.readTextString(); err != nil {
+						return err
+					} else {
+						mv = s
+					}
+					m[mk] = mv
+				}
+				t.TargetAnnotations = m
+			}
+		case "source_annotations":
+			{
+				mn, err := dec.readMapHeader()
+				if err != nil {
+					return err
+				}
+				m := make(map[string]string, mn)
+				for mi := 0; mi < mn; mi++ {
+					mk, err := dec.readTextString()
+					if err != nil {
+						return err
+					}
+					var mv string
+					if s, err := dec.readTextString(); err != nil {
+						return err
+					} else {
+						mv = s
+					}
+					m[mk] = mv
+				}
+				t.SourceAnnotations = m
+			}
+		case "socket":
+			if s, err := dec.readTextString(); err != nil {
+				return err
+			} else {
+				t.Socket = s
+			}
+		case "provides":
+			{
+				mn, err := dec.readMapHeader()
+				if err != nil {
+					return err
+				}
+				var om types.OrderedMap[string]
+				for mi := 0; mi < mn; mi++ {
+					mk, err := dec.readTextString()
+					if err != nil {
+						return err
+					}
+					var mv string
+					if s, err := dec.readTextString(); err != nil {
+						return err
+					} else {
+						mv = s
+					}
+					om.Set(mk, mv)
+				}
+				t.Provides = om
+			}
+		case "inject":
+			{
+				mn, err := dec.readMapHeader()
+				if err != nil {
+					return err
+				}
+				var om types.OrderedMap[types.OrderedMap[string]]
+				for mi := 0; mi < mn; mi++ {
+					mk, err := dec.readTextString()
+					if err != nil {
+						return err
+					}
+					var mv types.OrderedMap[string]
+					{
+						mn, err := dec.readMapHeader()
+						if err != nil {
+							return err
+						}
+						var om types.OrderedMap[string]
+						for mi := 0; mi < mn; mi++ {
+							mk, err := dec.readTextString()
+							if err != nil {
+								return err
+							}
+							var mv string
+							if s, err := dec.readTextString(); err != nil {
+								return err
+							} else {
+								mv = s
+							}
+							om.Set(mk, mv)
+						}
+						mv = om
+					}
+					om.Set(mk, mv)
+				}
+				t.Inject = om
+			}
+		default:
+			if err := dec.skip(); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// EncodeCBOR encodes LinkPatch as canonical CBOR (RFC 8949 §4.2.1; floats per
+// CBOR CDE §4.2), dispatch-free.
+func (t LinkPatch) EncodeCBOR() ([]byte, error) {
+	return t.appendCBOR(nil)
+}
+
+// appendCBOR appends LinkPatch's canonical CBOR encoding to dst. Fields emit in
+// canonical key order (fixed at generation time), omitting empty
+// non-required fields so the map head's pair count matches.
+func (t LinkPatch) appendCBOR(dst []byte) ([]byte, error) {
+	n := 2
+	dst = appendCBORHead(dst, 5, uint64(n))
+	dst = appendCBORTextString(dst, "ops")
+	dst = appendCBORHead(dst, 4, uint64(len(t.Ops)))
+	for i := range t.Ops {
+		ev := t.Ops[i]
+		if raw, mErr := json.Marshal(ev); mErr != nil {
+			return nil, mErr
+		} else {
+			dst = appendCBORByteString(dst, raw)
+		}
+	}
+	dst = appendCBORTextString(dst, "file")
+	dst = appendCBORTextString(dst, t.File)
+	return dst, nil
+}
+
+// DecodeCBOR decodes LinkPatch from canonical CBOR, dispatch-free. Unknown keys
+// are skipped.
+func (t *LinkPatch) DecodeCBOR(data []byte) error {
+	dec := &cborDec{data: data}
+	return t.decodeCBOR(dec)
+}
+
+func (t *LinkPatch) decodeCBOR(dec *cborDec) error {
+	n, err := dec.readMapHeader()
+	if err != nil {
+		return err
+	}
+	for i := 0; i < n; i++ {
+		key, err := dec.readTextString()
+		if err != nil {
+			return err
+		}
+		switch key {
+		case "file":
+			if s, err := dec.readTextString(); err != nil {
+				return err
+			} else {
+				t.File = s
+			}
+		case "ops":
+			{
+				sn, err := dec.readArrayHeader()
+				if err != nil {
+					return err
+				}
+				s := make([]frp.JSONPatchOp, 0, sn)
+				for si := 0; si < sn; si++ {
+					var ev frp.JSONPatchOp
+					if raw, err := dec.readByteString(); err != nil {
+						return err
+					} else {
+						d2 := json.NewDecoder(bytes.NewReader(raw))
+						d2.UseNumber()
+						if err := d2.Decode(&ev); err != nil {
+							return err
+						}
+					}
+					s = append(s, ev)
+				}
+				t.Ops = s
+			}
+		default:
+			if err := dec.skip(); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// EncodeCBOR encodes LinkPublishInput as canonical CBOR (RFC 8949 §4.2.1; floats per
+// CBOR CDE §4.2), dispatch-free.
+func (t LinkPublishInput) EncodeCBOR() ([]byte, error) {
+	return t.appendCBOR(nil)
+}
+
+// appendCBOR appends LinkPublishInput's canonical CBOR encoding to dst. Fields emit in
+// canonical key order (fixed at generation time), omitting empty
+// non-required fields so the map head's pair count matches.
+func (t LinkPublishInput) appendCBOR(dst []byte) ([]byte, error) {
+	n := 1
+	dst = appendCBORHead(dst, 5, uint64(n))
+	var err error
+	dst = appendCBORTextString(dst, "edge")
+	if dst, err = t.Edge.appendCBOR(dst); err != nil {
+		return nil, err
+	}
+	return dst, nil
+}
+
+// DecodeCBOR decodes LinkPublishInput from canonical CBOR, dispatch-free. Unknown keys
+// are skipped.
+func (t *LinkPublishInput) DecodeCBOR(data []byte) error {
+	dec := &cborDec{data: data}
+	return t.decodeCBOR(dec)
+}
+
+func (t *LinkPublishInput) decodeCBOR(dec *cborDec) error {
+	n, err := dec.readMapHeader()
+	if err != nil {
+		return err
+	}
+	for i := 0; i < n; i++ {
+		key, err := dec.readTextString()
+		if err != nil {
+			return err
+		}
+		switch key {
+		case "edge":
+			if err := (&t.Edge).decodeCBOR(dec); err != nil {
+				return err
+			}
+		default:
+			if err := dec.skip(); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// EncodeCBOR encodes LinkPublishOutput as canonical CBOR (RFC 8949 §4.2.1; floats per
+// CBOR CDE §4.2), dispatch-free.
+func (t LinkPublishOutput) EncodeCBOR() ([]byte, error) {
+	return t.appendCBOR(nil)
+}
+
+// appendCBOR appends LinkPublishOutput's canonical CBOR encoding to dst. Fields emit in
+// canonical key order (fixed at generation time), omitting empty
+// non-required fields so the map head's pair count matches.
+func (t LinkPublishOutput) appendCBOR(dst []byte) ([]byte, error) {
+	n := 1
+	if len(t.Patches) != 0 {
+		n++
+	}
+	dst = appendCBORHead(dst, 5, uint64(n))
+	var err error
+	dst = appendCBORTextString(dst, "handle")
+	{
+		keys := make([]string, 0, len(t.Handle))
+		for k := range t.Handle {
+			keys = append(keys, k)
+		}
+		sortCBORKeys(keys)
+		dst = appendCBORHead(dst, 5, uint64(len(keys)))
+		for _, k := range keys {
+			dst = appendCBORTextString(dst, k)
+			mv := t.Handle[k]
+			dst = appendCBORTextString(dst, mv)
+		}
+	}
+	if len(t.Patches) != 0 {
+		dst = appendCBORTextString(dst, "patches")
+		dst = appendCBORHead(dst, 4, uint64(len(t.Patches)))
+		for i := range t.Patches {
+			ev := t.Patches[i]
+			if dst, err = ev.appendCBOR(dst); err != nil {
+				return nil, err
+			}
+		}
+	}
+	return dst, nil
+}
+
+// DecodeCBOR decodes LinkPublishOutput from canonical CBOR, dispatch-free. Unknown keys
+// are skipped.
+func (t *LinkPublishOutput) DecodeCBOR(data []byte) error {
+	dec := &cborDec{data: data}
+	return t.decodeCBOR(dec)
+}
+
+func (t *LinkPublishOutput) decodeCBOR(dec *cborDec) error {
+	n, err := dec.readMapHeader()
+	if err != nil {
+		return err
+	}
+	for i := 0; i < n; i++ {
+		key, err := dec.readTextString()
+		if err != nil {
+			return err
+		}
+		switch key {
+		case "handle":
+			{
+				mn, err := dec.readMapHeader()
+				if err != nil {
+					return err
+				}
+				m := make(map[string]string, mn)
+				for mi := 0; mi < mn; mi++ {
+					mk, err := dec.readTextString()
+					if err != nil {
+						return err
+					}
+					var mv string
+					if s, err := dec.readTextString(); err != nil {
+						return err
+					} else {
+						mv = s
+					}
+					m[mk] = mv
+				}
+				t.Handle = m
+			}
+		case "patches":
+			{
+				sn, err := dec.readArrayHeader()
+				if err != nil {
+					return err
+				}
+				s := make([]LinkPatch, 0, sn)
+				for si := 0; si < sn; si++ {
+					var ev LinkPatch
+					if err := (&ev).decodeCBOR(dec); err != nil {
+						return err
+					}
+					s = append(s, ev)
+				}
+				t.Patches = s
+			}
+		default:
+			if err := dec.skip(); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// EncodeCBOR encodes LinkResolveInput as canonical CBOR (RFC 8949 §4.2.1; floats per
+// CBOR CDE §4.2), dispatch-free.
+func (t LinkResolveInput) EncodeCBOR() ([]byte, error) {
+	return t.appendCBOR(nil)
+}
+
+// appendCBOR appends LinkResolveInput's canonical CBOR encoding to dst. Fields emit in
+// canonical key order (fixed at generation time), omitting empty
+// non-required fields so the map head's pair count matches.
+func (t LinkResolveInput) appendCBOR(dst []byte) ([]byte, error) {
+	n := 2
+	if len(t.ConsumerFiles) != 0 {
+		n++
+	}
+	dst = appendCBORHead(dst, 5, uint64(n))
+	var err error
+	dst = appendCBORTextString(dst, "edge")
+	if dst, err = t.Edge.appendCBOR(dst); err != nil {
+		return nil, err
+	}
+	dst = appendCBORTextString(dst, "handle")
+	{
+		keys := make([]string, 0, len(t.Handle))
+		for k := range t.Handle {
+			keys = append(keys, k)
+		}
+		sortCBORKeys(keys)
+		dst = appendCBORHead(dst, 5, uint64(len(keys)))
+		for _, k := range keys {
+			dst = appendCBORTextString(dst, k)
+			mv := t.Handle[k]
+			dst = appendCBORTextString(dst, mv)
+		}
+	}
+	if len(t.ConsumerFiles) != 0 {
+		dst = appendCBORTextString(dst, "consumer_files")
+		dst = appendCBORHead(dst, 4, uint64(len(t.ConsumerFiles)))
+		for i := range t.ConsumerFiles {
+			ev := t.ConsumerFiles[i]
+			if dst, err = ev.appendCBOR(dst); err != nil {
+				return nil, err
+			}
+		}
+	}
+	return dst, nil
+}
+
+// DecodeCBOR decodes LinkResolveInput from canonical CBOR, dispatch-free. Unknown keys
+// are skipped.
+func (t *LinkResolveInput) DecodeCBOR(data []byte) error {
+	dec := &cborDec{data: data}
+	return t.decodeCBOR(dec)
+}
+
+func (t *LinkResolveInput) decodeCBOR(dec *cborDec) error {
+	n, err := dec.readMapHeader()
+	if err != nil {
+		return err
+	}
+	for i := 0; i < n; i++ {
+		key, err := dec.readTextString()
+		if err != nil {
+			return err
+		}
+		switch key {
+		case "edge":
+			if err := (&t.Edge).decodeCBOR(dec); err != nil {
+				return err
+			}
+		case "handle":
+			{
+				mn, err := dec.readMapHeader()
+				if err != nil {
+					return err
+				}
+				m := make(map[string]string, mn)
+				for mi := 0; mi < mn; mi++ {
+					mk, err := dec.readTextString()
+					if err != nil {
+						return err
+					}
+					var mv string
+					if s, err := dec.readTextString(); err != nil {
+						return err
+					} else {
+						mv = s
+					}
+					m[mk] = mv
+				}
+				t.Handle = m
+			}
+		case "consumer_files":
+			{
+				sn, err := dec.readArrayHeader()
+				if err != nil {
+					return err
+				}
+				s := make([]RenderedFile, 0, sn)
+				for si := 0; si < sn; si++ {
+					var ev RenderedFile
+					if err := (&ev).decodeCBOR(dec); err != nil {
+						return err
+					}
+					s = append(s, ev)
+				}
+				t.ConsumerFiles = s
+			}
+		default:
+			if err := dec.skip(); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// EncodeCBOR encodes LinkResolveOutput as canonical CBOR (RFC 8949 §4.2.1; floats per
+// CBOR CDE §4.2), dispatch-free.
+func (t LinkResolveOutput) EncodeCBOR() ([]byte, error) {
+	return t.appendCBOR(nil)
+}
+
+// appendCBOR appends LinkResolveOutput's canonical CBOR encoding to dst. Fields emit in
+// canonical key order (fixed at generation time), omitting empty
+// non-required fields so the map head's pair count matches.
+func (t LinkResolveOutput) appendCBOR(dst []byte) ([]byte, error) {
+	n := 1
+	dst = appendCBORHead(dst, 5, uint64(n))
+	var err error
+	dst = appendCBORTextString(dst, "patches")
+	dst = appendCBORHead(dst, 4, uint64(len(t.Patches)))
+	for i := range t.Patches {
+		ev := t.Patches[i]
+		if dst, err = ev.appendCBOR(dst); err != nil {
+			return nil, err
+		}
+	}
+	return dst, nil
+}
+
+// DecodeCBOR decodes LinkResolveOutput from canonical CBOR, dispatch-free. Unknown keys
+// are skipped.
+func (t *LinkResolveOutput) DecodeCBOR(data []byte) error {
+	dec := &cborDec{data: data}
+	return t.decodeCBOR(dec)
+}
+
+func (t *LinkResolveOutput) decodeCBOR(dec *cborDec) error {
+	n, err := dec.readMapHeader()
+	if err != nil {
+		return err
+	}
+	for i := 0; i < n; i++ {
+		key, err := dec.readTextString()
+		if err != nil {
+			return err
+		}
+		switch key {
+		case "patches":
+			{
+				sn, err := dec.readArrayHeader()
+				if err != nil {
+					return err
+				}
+				s := make([]LinkPatch, 0, sn)
+				for si := 0; si < sn; si++ {
+					var ev LinkPatch
+					if err := (&ev).decodeCBOR(dec); err != nil {
+						return err
+					}
+					s = append(s, ev)
+				}
+				t.Patches = s
+			}
+		default:
+			if err := dec.skip(); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
 // expectDelim reads the next token and asserts it is the given delimiter.
 func expectDelim(dec *json.Decoder, want json.Delim) error {
 	tok, err := dec.Token()
@@ -4596,4 +8609,379 @@ func writeJSONBytes(buf *bytes.Buffer, b []byte) {
 	buf.WriteByte('"')
 	buf.WriteString(base64.StdEncoding.EncodeToString(b))
 	buf.WriteByte('"')
+}
+
+// appendCBORHead appends a CBOR head: the major type in the top three bits and
+// the shortest length/argument encoding.
+func appendCBORHead(dst []byte, major byte, arg uint64) []byte {
+	mb := major << 5
+	switch {
+	case arg < 24:
+		return append(dst, mb|byte(arg))
+	case arg < 0x100:
+		return append(dst, mb|24, byte(arg))
+	case arg < 0x10000:
+		return append(dst, mb|25, byte(arg>>8), byte(arg))
+	case arg < 0x100000000:
+		return append(dst, mb|26, byte(arg>>24), byte(arg>>16), byte(arg>>8), byte(arg))
+	default:
+		return append(dst, mb|27,
+			byte(arg>>56), byte(arg>>48), byte(arg>>40), byte(arg>>32),
+			byte(arg>>24), byte(arg>>16), byte(arg>>8), byte(arg))
+	}
+}
+
+// appendCBORInt appends a signed integer as CBOR major type 0 (non-negative) or
+// 1 (negative), shortest head.
+func appendCBORInt(dst []byte, i int64) []byte {
+	if i < 0 {
+		return appendCBORHead(dst, 1, uint64(-1-i))
+	}
+	return appendCBORHead(dst, 0, uint64(i))
+}
+
+// appendCBORTextString appends s as a CBOR text string (major 3): shortest
+// length head then the UTF-8 bytes verbatim.
+func appendCBORTextString(dst []byte, s string) []byte {
+	dst = appendCBORHead(dst, 3, uint64(len(s)))
+	return append(dst, s...)
+}
+
+// appendCBORByteString appends b as a CBOR byte string (major 2): shortest
+// length head then the bytes verbatim.
+func appendCBORByteString(dst, b []byte) []byte {
+	dst = appendCBORHead(dst, 2, uint64(len(b)))
+	return append(dst, b...)
+}
+
+// appendCBORBool appends the fixed single-byte CBOR bool.
+func appendCBORBool(dst []byte, v bool) []byte {
+	if v {
+		return append(dst, 0xf5)
+	}
+	return append(dst, 0xf4)
+}
+
+// appendCBORFloat appends f as a canonical CBOR float per CBOR CDE §4.2: the
+// shortest of float16/float32/float64 that round-trips to the exact value, with
+// NaN canonicalized to 0xf97e00, ±Inf to the float16 infinities, and ±0
+// preserved by sign. No numeric reduction: an integer-valued float stays a
+// float.
+func appendCBORFloat(dst []byte, f float64) []byte {
+	switch {
+	case math.IsNaN(f):
+		return append(dst, 0xf9, 0x7e, 0x00)
+	case math.IsInf(f, 1):
+		return append(dst, 0xf9, 0x7c, 0x00)
+	case math.IsInf(f, -1):
+		return append(dst, 0xf9, 0xfc, 0x00)
+	}
+	f32 := float32(f)
+	if float64(f32) == f {
+		if h, ok := f32ToF16Exact(math.Float32bits(f32)); ok {
+			return append(dst, 0xf9, byte(h>>8), byte(h))
+		}
+		bits := math.Float32bits(f32)
+		return append(dst, 0xfa, byte(bits>>24), byte(bits>>16), byte(bits>>8), byte(bits))
+	}
+	bits := math.Float64bits(f)
+	return append(dst, 0xfb,
+		byte(bits>>56), byte(bits>>48), byte(bits>>40), byte(bits>>32),
+		byte(bits>>24), byte(bits>>16), byte(bits>>8), byte(bits))
+}
+
+// f32ToF16Exact converts float32 bits to a float16 if the value is EXACTLY
+// representable (no rounding), returning the 16-bit encoding and true. It is
+// used only to select the shortest float that round-trips, so a lossy
+// conversion returns false and the caller keeps the wider width. ±0 preserves
+// its sign; Inf/NaN are handled by the caller.
+func f32ToF16Exact(b uint32) (uint16, bool) {
+	sign := uint16((b >> 16) & 0x8000)
+	exp := int32((b >> 23) & 0xff)
+	mant := b & 0x7fffff
+	if exp == 0 {
+		if mant == 0 {
+			return sign, true // ±0
+		}
+		return 0, false // float32 subnormal: not float16-exact
+	}
+	if exp == 0xff {
+		return 0, false // Inf/NaN: handled by the caller
+	}
+	e := exp - 127
+	switch {
+	case e >= -14 && e <= 15:
+		if mant&0x1fff != 0 {
+			return 0, false // low mantissa bits would be lost
+		}
+		return sign | uint16((e+15)<<10) | uint16(mant>>13), true
+	case e >= -24 && e <= -15:
+		full := mant | 0x800000 // add the implicit leading 1
+		shift := uint32(-(e + 1))
+		if full&((1<<shift)-1) != 0 {
+			return 0, false // low bits would be lost
+		}
+		hm := full >> shift
+		if hm == 0 || hm > 0x3ff {
+			return 0, false
+		}
+		return sign | uint16(hm), true
+	default:
+		return 0, false
+	}
+}
+
+// float16ToFloat64 expands a CBOR half-precision float to float64.
+func float16ToFloat64(h uint16) float64 {
+	sign := uint32(h&0x8000) << 16
+	exp := uint32(h>>10) & 0x1f
+	mant := uint32(h & 0x3ff)
+	switch exp {
+	case 0:
+		if mant == 0 {
+			return float64(math.Float32frombits(sign)) // ±0
+		}
+		e := uint32(0)
+		for mant&0x400 == 0 {
+			mant <<= 1
+			e++
+		}
+		mant &= 0x3ff
+		exp32 := uint32(127 - 15 - e + 1)
+		return float64(math.Float32frombits(sign | (exp32 << 23) | (mant << 13)))
+	case 0x1f:
+		if mant == 0 {
+			return float64(math.Float32frombits(sign | 0x7f800000)) // ±Inf
+		}
+		return float64(math.Float32frombits(sign | 0x7f800000 | (mant << 13))) // NaN
+	default:
+		exp32 := exp - 15 + 127
+		return float64(math.Float32frombits(sign | (exp32 << 23) | (mant << 13)))
+	}
+}
+
+// sortCBORKeys sorts map keys into canonical CBOR order: by the bytewise order
+// of their encoded text-key bytes (length head first, then UTF-8 content).
+func sortCBORKeys(keys []string) {
+	sort.Slice(keys, func(i, j int) bool { return cborLessKey(keys[i], keys[j]) })
+}
+
+// cborLessKey is the runtime twin of the generator's key comparator.
+func cborLessKey(a, b string) bool {
+	if len(a) != len(b) {
+		ha := cborStrHeadBytes(len(a))
+		hb := cborStrHeadBytes(len(b))
+		return bytes.Compare(ha, hb) < 0
+	}
+	return a < b
+}
+
+// cborStrHeadBytes returns the CBOR text-string length head for a string of the
+// given byte length.
+func cborStrHeadBytes(n int) []byte {
+	switch {
+	case n < 24:
+		return []byte{0x60 | byte(n)}
+	case n < 0x100:
+		return []byte{0x78, byte(n)}
+	case n < 0x10000:
+		return []byte{0x79, byte(n >> 8), byte(n)}
+	default:
+		return []byte{0x7a, byte(n >> 24), byte(n >> 16), byte(n >> 8), byte(n)}
+	}
+}
+
+// cborDec is a minimal canonical-CBOR reader over a byte slice. It reads only
+// the definite-length items the codec produces; indefinite lengths and
+// unsupported majors are rejected loudly.
+type cborDec struct {
+	data []byte
+	pos  int
+}
+
+// readHead reads one item head, returning the major type, the additional-info
+// nibble, and the decoded argument (the immediate for ai < 24, else the
+// big-endian follow bytes).
+func (d *cborDec) readHead() (byte, byte, uint64, error) {
+	if d.pos >= len(d.data) {
+		return 0, 0, 0, fmt.Errorf("abi: cbor: unexpected end of input")
+	}
+	ib := d.data[d.pos]
+	d.pos++
+	major := ib >> 5
+	ai := ib & 0x1f
+	switch {
+	case ai < 24:
+		return major, ai, uint64(ai), nil
+	case ai == 24:
+		if d.pos+1 > len(d.data) {
+			return 0, 0, 0, fmt.Errorf("abi: cbor: truncated 1-byte argument")
+		}
+		v := uint64(d.data[d.pos])
+		d.pos++
+		return major, ai, v, nil
+	case ai == 25:
+		if d.pos+2 > len(d.data) {
+			return 0, 0, 0, fmt.Errorf("abi: cbor: truncated 2-byte argument")
+		}
+		v := uint64(d.data[d.pos])<<8 | uint64(d.data[d.pos+1])
+		d.pos += 2
+		return major, ai, v, nil
+	case ai == 26:
+		if d.pos+4 > len(d.data) {
+			return 0, 0, 0, fmt.Errorf("abi: cbor: truncated 4-byte argument")
+		}
+		v := uint64(d.data[d.pos])<<24 | uint64(d.data[d.pos+1])<<16 | uint64(d.data[d.pos+2])<<8 | uint64(d.data[d.pos+3])
+		d.pos += 4
+		return major, ai, v, nil
+	case ai == 27:
+		if d.pos+8 > len(d.data) {
+			return 0, 0, 0, fmt.Errorf("abi: cbor: truncated 8-byte argument")
+		}
+		var v uint64
+		for k := 0; k < 8; k++ {
+			v = v<<8 | uint64(d.data[d.pos+k])
+		}
+		d.pos += 8
+		return major, ai, v, nil
+	default:
+		return 0, 0, 0, fmt.Errorf("abi: cbor: reserved additional info %d", ai)
+	}
+}
+
+func (d *cborDec) readMapHeader() (int, error) {
+	major, _, arg, err := d.readHead()
+	if err != nil {
+		return 0, err
+	}
+	if major != 5 {
+		return 0, fmt.Errorf("abi: cbor: expected map, got major %d", major)
+	}
+	return int(arg), nil
+}
+
+func (d *cborDec) readArrayHeader() (int, error) {
+	major, _, arg, err := d.readHead()
+	if err != nil {
+		return 0, err
+	}
+	if major != 4 {
+		return 0, fmt.Errorf("abi: cbor: expected array, got major %d", major)
+	}
+	return int(arg), nil
+}
+
+func (d *cborDec) readTextString() (string, error) {
+	major, _, arg, err := d.readHead()
+	if err != nil {
+		return "", err
+	}
+	if major != 3 {
+		return "", fmt.Errorf("abi: cbor: expected text string, got major %d", major)
+	}
+	if d.pos+int(arg) > len(d.data) {
+		return "", fmt.Errorf("abi: cbor: truncated text string")
+	}
+	s := string(d.data[d.pos : d.pos+int(arg)])
+	d.pos += int(arg)
+	return s, nil
+}
+
+func (d *cborDec) readByteString() ([]byte, error) {
+	major, _, arg, err := d.readHead()
+	if err != nil {
+		return nil, err
+	}
+	if major != 2 {
+		return nil, fmt.Errorf("abi: cbor: expected byte string, got major %d", major)
+	}
+	if d.pos+int(arg) > len(d.data) {
+		return nil, fmt.Errorf("abi: cbor: truncated byte string")
+	}
+	out := make([]byte, arg)
+	copy(out, d.data[d.pos:d.pos+int(arg)])
+	d.pos += int(arg)
+	return out, nil
+}
+
+func (d *cborDec) readInt() (int64, error) {
+	major, _, arg, err := d.readHead()
+	if err != nil {
+		return 0, err
+	}
+	switch major {
+	case 0:
+		return int64(arg), nil
+	case 1:
+		return -1 - int64(arg), nil
+	default:
+		return 0, fmt.Errorf("abi: cbor: expected integer, got major %d", major)
+	}
+}
+
+func (d *cborDec) readFloat() (float64, error) {
+	major, ai, arg, err := d.readHead()
+	if err != nil {
+		return 0, err
+	}
+	if major != 7 {
+		return 0, fmt.Errorf("abi: cbor: expected float, got major %d", major)
+	}
+	switch ai {
+	case 25:
+		return float16ToFloat64(uint16(arg)), nil
+	case 26:
+		return float64(math.Float32frombits(uint32(arg))), nil
+	case 27:
+		return math.Float64frombits(arg), nil
+	default:
+		return 0, fmt.Errorf("abi: cbor: expected float, got additional info %d", ai)
+	}
+}
+
+func (d *cborDec) readBool() (bool, error) {
+	major, ai, _, err := d.readHead()
+	if err != nil {
+		return false, err
+	}
+	if major != 7 || (ai != 20 && ai != 21) {
+		return false, fmt.Errorf("abi: cbor: expected bool")
+	}
+	return ai == 21, nil
+}
+
+// skip consumes exactly one CBOR item (recursively for arrays and maps),
+// discarding it — used for an unknown map key's value.
+func (d *cborDec) skip() error {
+	major, ai, arg, err := d.readHead()
+	if err != nil {
+		return err
+	}
+	switch major {
+	case 0, 1, 7:
+		return nil // argument already consumed by readHead
+	case 2, 3:
+		if d.pos+int(arg) > len(d.data) {
+			return fmt.Errorf("abi: cbor: truncated string")
+		}
+		d.pos += int(arg)
+		return nil
+	case 4:
+		for k := 0; k < int(arg); k++ {
+			if err := d.skip(); err != nil {
+				return err
+			}
+		}
+		return nil
+	case 5:
+		for k := 0; k < int(arg)*2; k++ {
+			if err := d.skip(); err != nil {
+				return err
+			}
+		}
+		return nil
+	default:
+		_ = ai
+		return fmt.Errorf("abi: cbor: cannot skip major %d", major)
+	}
 }

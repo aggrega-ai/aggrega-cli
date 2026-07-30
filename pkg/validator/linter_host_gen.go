@@ -14,6 +14,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
+	"math"
+	"sort"
 	"strconv"
 	"unicode/utf8"
 )
@@ -21,43 +23,43 @@ import (
 // LinterInput The payload the host hands the publishing-linter plugin on each invocation. rule_id selects which rule the plugin dispatches to. entity_kind identifies the entity kind being linted (Component, Feature, Recipe, FeatureRecipe, SchemaLibrary, MappingLibrary, Aggregate). proposed carries the parsed entity structure being classified (the host parses YAML to JSON before sending; the plugin never sees raw bytes). previous carries the parsed previous-version entity for the schema-evolution rule; omitted when not applicable. policies carries the per-workspace publishing-discipline configuration the rule consults.
 type LinterInput struct {
 	// RuleID The rule the plugin should dispatch to. At v0.1.0 the only recognised value is 'schema-evolution'; the recognised set expands as further rules ship. Unknown rule_ids produce an 'unknown_rule' finding in the output.
-	RuleID string `json:"rule_id" yaml:"rule_id"`
+	RuleID string `json:"rule_id" yaml:"rule_id" cbor:"rule_id"`
 	// EntityKind The entity kind the proposed/previous values encode. The schema-evolution rule's classification varies per kind; structural rules scope to specific kinds.
-	EntityKind string `json:"entity_kind" yaml:"entity_kind"`
+	EntityKind string `json:"entity_kind" yaml:"entity_kind" cbor:"entity_kind"`
 	// Proposed Parsed structure of the entity being classified. YAML → JSON conversion happens host-side; the plugin consumes the structured value via serde_json.
-	Proposed json.RawMessage `json:"proposed" yaml:"proposed"`
+	Proposed json.RawMessage `json:"proposed" yaml:"proposed" cbor:"proposed"`
 	// Previous Parsed structure of the previous-version entity, for rules that perform pairwise comparison (schema-evolution). Omitted when the rule does not need a previous-version reference (e.g., first publication, structural-only rules).
-	Previous json.RawMessage `json:"previous,omitempty" yaml:"previous,omitempty"`
+	Previous json.RawMessage `json:"previous,omitempty" yaml:"previous,omitempty" cbor:"previous,omitempty"`
 	// SourcePath Filesystem path the entity was loaded from. Populated by host callers walking the catalog filesystem; consumed by path-aware rules (e.g., category-matches-directory). Omitted when the caller has no path context.
-	SourcePath string `json:"source_path,omitempty" yaml:"source_path,omitempty"`
+	SourcePath string `json:"source_path,omitempty" yaml:"source_path,omitempty" cbor:"source_path,omitempty"`
 	// Policies The per-workspace publishing-discipline configuration the rule consults. The guest realizes it as the typed Policies object; the host pipes it through as an opaque payload it assembles from the workspace config and CLI overrides.
-	Policies json.RawMessage `json:"policies,omitempty" yaml:"policies,omitempty"`
+	Policies json.RawMessage `json:"policies,omitempty" yaml:"policies,omitempty" cbor:"policies,omitempty"`
 }
 
 // LinterOutput The response shape the publishing-linter plugin emits. findings carries one entry per rule invocation that produced a result. The schema-evolution rule emits exactly one finding (the classification verdict); structural rules may emit zero (no violations) or many (one per offence).
 type LinterOutput struct {
 	// Findings Per-rule findings produced by the plugin invocation, in plugin emit order.
-	Findings []abi.Diagnostic `json:"findings" yaml:"findings"`
+	Findings []abi.Diagnostic `json:"findings" yaml:"findings" cbor:"findings"`
 	// Error A failure message set when the guest ran but could not complete the operation; absent on success. It is distinct from any diagnostics the output carries: diagnostics report issues found during a run that still produced a result, while error reports that the operation itself did not complete. The host surfaces a present error as a failed plugin invocation.
-	Error string `json:"error,omitempty" yaml:"error,omitempty"`
+	Error string `json:"error,omitempty" yaml:"error,omitempty" cbor:"error,omitempty"`
 }
 
 // Policies Per-workspace publishing-discipline configuration the rule set consults. Mirrors workspaceconfig.PublishingDisciplineConfig field-for-field. Schema is the contract: both the Go workspaceconfig struct's godoc AND the Rust policies.rs struct doc cross-reference this $def. Field omission defaults each flag to false; the host's serialiser writes only fields with non-default values.
 type Policies struct {
 	// EnforceImmutability When true, published artefacts are immutable at the registry path; re-publishing the same version is rejected. When false, the rule is suppressed (development-only).
-	EnforceImmutability bool `json:"enforce_immutability,omitempty" yaml:"enforce_immutability,omitempty"`
+	EnforceImmutability bool `json:"enforce_immutability,omitempty" yaml:"enforce_immutability,omitempty" cbor:"enforce_immutability,omitempty"`
 	// AllowDynamicRefs When true, $dynamicAnchor / $dynamicRef usage in SchemaLibrary entries is permitted (suppresses the dynamic_refs rule). Default false.
-	AllowDynamicRefs bool `json:"allow_dynamic_refs,omitempty" yaml:"allow_dynamic_refs,omitempty"`
+	AllowDynamicRefs bool `json:"allow_dynamic_refs,omitempty" yaml:"allow_dynamic_refs,omitempty" cbor:"allow_dynamic_refs,omitempty"`
 	// AllowIDOverrides When true, $id overrides in SchemaLibrary entries are permitted (suppresses the id_overrides rule). Default false.
-	AllowIDOverrides bool `json:"allow_id_overrides,omitempty" yaml:"allow_id_overrides,omitempty"`
+	AllowIDOverrides bool `json:"allow_id_overrides,omitempty" yaml:"allow_id_overrides,omitempty" cbor:"allow_id_overrides,omitempty"`
 	// AllowDirectXAggregaExtensions When true, direct x-aggrega-selector / x-aggrega-inject authoring is permitted (suppresses the x_aggrega_discouragement rule). Default false.
-	AllowDirectXAggregaExtensions bool `json:"allow_direct_x_aggrega_extensions,omitempty" yaml:"allow_direct_x_aggrega_extensions,omitempty"`
+	AllowDirectXAggregaExtensions bool `json:"allow_direct_x_aggrega_extensions,omitempty" yaml:"allow_direct_x_aggrega_extensions,omitempty" cbor:"allow_direct_x_aggrega_extensions,omitempty"`
 	// AllowAggregaAiPrefix When true, the annotation-prefix rule is suppressed entirely (both the bare aggrega.ai/ check and the feature.aggrega.ai/ kind-conditional check). Default false. Mirrors workspaceconfig.PublishingDisciplineConfig.AllowAggregaAIPrefix; the host serialises the field through the LinterInput.policies passthrough.
-	AllowAggregaAiPrefix bool `json:"allow_aggrega_ai_prefix,omitempty" yaml:"allow_aggrega_ai_prefix,omitempty"`
+	AllowAggregaAiPrefix bool `json:"allow_aggrega_ai_prefix,omitempty" yaml:"allow_aggrega_ai_prefix,omitempty" cbor:"allow_aggrega_ai_prefix,omitempty"`
 	// AllowNonstandardNames When true, name-shape violations are permitted (suppresses the name_shape rule). Default false.
-	AllowNonstandardNames bool `json:"allow_nonstandard_names,omitempty" yaml:"allow_nonstandard_names,omitempty"`
+	AllowNonstandardNames bool `json:"allow_nonstandard_names,omitempty" yaml:"allow_nonstandard_names,omitempty" cbor:"allow_nonstandard_names,omitempty"`
 	// AllowCategoryMismatches When true, suppress the category-matches-directory rule's findings. The standard-catalog convention requires Components under core/<category>/ to declare component.aggrega.ai/category={category} matching the directory segment, where {category} is one of the 15 closed-set values. Workspaces with legitimate persistent exceptions opt out here. Default false.
-	AllowCategoryMismatches bool `json:"allow_category_mismatches,omitempty" yaml:"allow_category_mismatches,omitempty"`
+	AllowCategoryMismatches bool `json:"allow_category_mismatches,omitempty" yaml:"allow_category_mismatches,omitempty" cbor:"allow_category_mismatches,omitempty"`
 }
 
 // MarshalJSON encodes LinterInput in field-declaration order, omitting
@@ -425,6 +427,331 @@ func (t *Policies) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// EncodeCBOR encodes LinterInput as canonical CBOR (RFC 8949 §4.2.1; floats per
+// CBOR CDE §4.2), dispatch-free.
+func (t LinterInput) EncodeCBOR() ([]byte, error) {
+	return t.appendCBOR(nil)
+}
+
+// appendCBOR appends LinterInput's canonical CBOR encoding to dst. Fields emit in
+// canonical key order (fixed at generation time), omitting empty
+// non-required fields so the map head's pair count matches.
+func (t LinterInput) appendCBOR(dst []byte) ([]byte, error) {
+	n := 3
+	if len(t.Policies) != 0 {
+		n++
+	}
+	if len(t.Previous) != 0 {
+		n++
+	}
+	if t.SourcePath != "" {
+		n++
+	}
+	dst = appendCBORHead(dst, 5, uint64(n))
+	dst = appendCBORTextString(dst, "rule_id")
+	dst = appendCBORTextString(dst, t.RuleID)
+	if len(t.Policies) != 0 {
+		dst = appendCBORTextString(dst, "policies")
+		dst = appendCBORByteString(dst, t.Policies)
+	}
+	if len(t.Previous) != 0 {
+		dst = appendCBORTextString(dst, "previous")
+		dst = appendCBORByteString(dst, t.Previous)
+	}
+	dst = appendCBORTextString(dst, "proposed")
+	dst = appendCBORByteString(dst, t.Proposed)
+	dst = appendCBORTextString(dst, "entity_kind")
+	dst = appendCBORTextString(dst, t.EntityKind)
+	if t.SourcePath != "" {
+		dst = appendCBORTextString(dst, "source_path")
+		dst = appendCBORTextString(dst, t.SourcePath)
+	}
+	return dst, nil
+}
+
+// DecodeCBOR decodes LinterInput from canonical CBOR, dispatch-free. Unknown keys
+// are skipped.
+func (t *LinterInput) DecodeCBOR(data []byte) error {
+	dec := &cborDec{data: data}
+	return t.decodeCBOR(dec)
+}
+
+func (t *LinterInput) decodeCBOR(dec *cborDec) error {
+	n, err := dec.readMapHeader()
+	if err != nil {
+		return err
+	}
+	for i := 0; i < n; i++ {
+		key, err := dec.readTextString()
+		if err != nil {
+			return err
+		}
+		switch key {
+		case "rule_id":
+			if s, err := dec.readTextString(); err != nil {
+				return err
+			} else {
+				t.RuleID = s
+			}
+		case "entity_kind":
+			if s, err := dec.readTextString(); err != nil {
+				return err
+			} else {
+				t.EntityKind = s
+			}
+		case "proposed":
+			if v, err := dec.readByteString(); err != nil {
+				return err
+			} else {
+				t.Proposed = json.RawMessage(v)
+			}
+		case "previous":
+			if v, err := dec.readByteString(); err != nil {
+				return err
+			} else {
+				t.Previous = json.RawMessage(v)
+			}
+		case "source_path":
+			if s, err := dec.readTextString(); err != nil {
+				return err
+			} else {
+				t.SourcePath = s
+			}
+		case "policies":
+			if v, err := dec.readByteString(); err != nil {
+				return err
+			} else {
+				t.Policies = json.RawMessage(v)
+			}
+		default:
+			if err := dec.skip(); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// EncodeCBOR encodes LinterOutput as canonical CBOR (RFC 8949 §4.2.1; floats per
+// CBOR CDE §4.2), dispatch-free.
+func (t LinterOutput) EncodeCBOR() ([]byte, error) {
+	return t.appendCBOR(nil)
+}
+
+// appendCBOR appends LinterOutput's canonical CBOR encoding to dst. Fields emit in
+// canonical key order (fixed at generation time), omitting empty
+// non-required fields so the map head's pair count matches.
+func (t LinterOutput) appendCBOR(dst []byte) ([]byte, error) {
+	n := 1
+	if t.Error != "" {
+		n++
+	}
+	dst = appendCBORHead(dst, 5, uint64(n))
+	if t.Error != "" {
+		dst = appendCBORTextString(dst, "error")
+		dst = appendCBORTextString(dst, t.Error)
+	}
+	dst = appendCBORTextString(dst, "findings")
+	dst = appendCBORHead(dst, 4, uint64(len(t.Findings)))
+	for i := range t.Findings {
+		ev := t.Findings[i]
+		if raw, mErr := json.Marshal(ev); mErr != nil {
+			return nil, mErr
+		} else {
+			dst = appendCBORByteString(dst, raw)
+		}
+	}
+	return dst, nil
+}
+
+// DecodeCBOR decodes LinterOutput from canonical CBOR, dispatch-free. Unknown keys
+// are skipped.
+func (t *LinterOutput) DecodeCBOR(data []byte) error {
+	dec := &cborDec{data: data}
+	return t.decodeCBOR(dec)
+}
+
+func (t *LinterOutput) decodeCBOR(dec *cborDec) error {
+	n, err := dec.readMapHeader()
+	if err != nil {
+		return err
+	}
+	for i := 0; i < n; i++ {
+		key, err := dec.readTextString()
+		if err != nil {
+			return err
+		}
+		switch key {
+		case "findings":
+			{
+				sn, err := dec.readArrayHeader()
+				if err != nil {
+					return err
+				}
+				s := make([]abi.Diagnostic, 0, sn)
+				for si := 0; si < sn; si++ {
+					var ev abi.Diagnostic
+					if raw, err := dec.readByteString(); err != nil {
+						return err
+					} else {
+						d2 := json.NewDecoder(bytes.NewReader(raw))
+						d2.UseNumber()
+						if err := d2.Decode(&ev); err != nil {
+							return err
+						}
+					}
+					s = append(s, ev)
+				}
+				t.Findings = s
+			}
+		case "error":
+			if s, err := dec.readTextString(); err != nil {
+				return err
+			} else {
+				t.Error = s
+			}
+		default:
+			if err := dec.skip(); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// EncodeCBOR encodes Policies as canonical CBOR (RFC 8949 §4.2.1; floats per
+// CBOR CDE §4.2), dispatch-free.
+func (t Policies) EncodeCBOR() ([]byte, error) {
+	return t.appendCBOR(nil)
+}
+
+// appendCBOR appends Policies's canonical CBOR encoding to dst. Fields emit in
+// canonical key order (fixed at generation time), omitting empty
+// non-required fields so the map head's pair count matches.
+func (t Policies) appendCBOR(dst []byte) ([]byte, error) {
+	n := 0
+	if t.AllowDynamicRefs != false {
+		n++
+	}
+	if t.AllowIDOverrides != false {
+		n++
+	}
+	if t.EnforceImmutability != false {
+		n++
+	}
+	if t.AllowAggregaAiPrefix != false {
+		n++
+	}
+	if t.AllowNonstandardNames != false {
+		n++
+	}
+	if t.AllowCategoryMismatches != false {
+		n++
+	}
+	if t.AllowDirectXAggregaExtensions != false {
+		n++
+	}
+	dst = appendCBORHead(dst, 5, uint64(n))
+	if t.AllowDynamicRefs != false {
+		dst = appendCBORTextString(dst, "allow_dynamic_refs")
+		dst = appendCBORBool(dst, t.AllowDynamicRefs)
+	}
+	if t.AllowIDOverrides != false {
+		dst = appendCBORTextString(dst, "allow_id_overrides")
+		dst = appendCBORBool(dst, t.AllowIDOverrides)
+	}
+	if t.EnforceImmutability != false {
+		dst = appendCBORTextString(dst, "enforce_immutability")
+		dst = appendCBORBool(dst, t.EnforceImmutability)
+	}
+	if t.AllowAggregaAiPrefix != false {
+		dst = appendCBORTextString(dst, "allow_aggrega_ai_prefix")
+		dst = appendCBORBool(dst, t.AllowAggregaAiPrefix)
+	}
+	if t.AllowNonstandardNames != false {
+		dst = appendCBORTextString(dst, "allow_nonstandard_names")
+		dst = appendCBORBool(dst, t.AllowNonstandardNames)
+	}
+	if t.AllowCategoryMismatches != false {
+		dst = appendCBORTextString(dst, "allow_category_mismatches")
+		dst = appendCBORBool(dst, t.AllowCategoryMismatches)
+	}
+	if t.AllowDirectXAggregaExtensions != false {
+		dst = appendCBORTextString(dst, "allow_direct_x_aggrega_extensions")
+		dst = appendCBORBool(dst, t.AllowDirectXAggregaExtensions)
+	}
+	return dst, nil
+}
+
+// DecodeCBOR decodes Policies from canonical CBOR, dispatch-free. Unknown keys
+// are skipped.
+func (t *Policies) DecodeCBOR(data []byte) error {
+	dec := &cborDec{data: data}
+	return t.decodeCBOR(dec)
+}
+
+func (t *Policies) decodeCBOR(dec *cborDec) error {
+	n, err := dec.readMapHeader()
+	if err != nil {
+		return err
+	}
+	for i := 0; i < n; i++ {
+		key, err := dec.readTextString()
+		if err != nil {
+			return err
+		}
+		switch key {
+		case "enforce_immutability":
+			if v, err := dec.readBool(); err != nil {
+				return err
+			} else {
+				t.EnforceImmutability = v
+			}
+		case "allow_dynamic_refs":
+			if v, err := dec.readBool(); err != nil {
+				return err
+			} else {
+				t.AllowDynamicRefs = v
+			}
+		case "allow_id_overrides":
+			if v, err := dec.readBool(); err != nil {
+				return err
+			} else {
+				t.AllowIDOverrides = v
+			}
+		case "allow_direct_x_aggrega_extensions":
+			if v, err := dec.readBool(); err != nil {
+				return err
+			} else {
+				t.AllowDirectXAggregaExtensions = v
+			}
+		case "allow_aggrega_ai_prefix":
+			if v, err := dec.readBool(); err != nil {
+				return err
+			} else {
+				t.AllowAggregaAiPrefix = v
+			}
+		case "allow_nonstandard_names":
+			if v, err := dec.readBool(); err != nil {
+				return err
+			} else {
+				t.AllowNonstandardNames = v
+			}
+		case "allow_category_mismatches":
+			if v, err := dec.readBool(); err != nil {
+				return err
+			} else {
+				t.AllowCategoryMismatches = v
+			}
+		default:
+			if err := dec.skip(); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
 // expectDelim reads the next token and asserts it is the given delimiter.
 func expectDelim(dec *json.Decoder, want json.Delim) error {
 	tok, err := dec.Token()
@@ -639,4 +966,379 @@ func writeJSONBytes(buf *bytes.Buffer, b []byte) {
 	buf.WriteByte('"')
 	buf.WriteString(base64.StdEncoding.EncodeToString(b))
 	buf.WriteByte('"')
+}
+
+// appendCBORHead appends a CBOR head: the major type in the top three bits and
+// the shortest length/argument encoding.
+func appendCBORHead(dst []byte, major byte, arg uint64) []byte {
+	mb := major << 5
+	switch {
+	case arg < 24:
+		return append(dst, mb|byte(arg))
+	case arg < 0x100:
+		return append(dst, mb|24, byte(arg))
+	case arg < 0x10000:
+		return append(dst, mb|25, byte(arg>>8), byte(arg))
+	case arg < 0x100000000:
+		return append(dst, mb|26, byte(arg>>24), byte(arg>>16), byte(arg>>8), byte(arg))
+	default:
+		return append(dst, mb|27,
+			byte(arg>>56), byte(arg>>48), byte(arg>>40), byte(arg>>32),
+			byte(arg>>24), byte(arg>>16), byte(arg>>8), byte(arg))
+	}
+}
+
+// appendCBORInt appends a signed integer as CBOR major type 0 (non-negative) or
+// 1 (negative), shortest head.
+func appendCBORInt(dst []byte, i int64) []byte {
+	if i < 0 {
+		return appendCBORHead(dst, 1, uint64(-1-i))
+	}
+	return appendCBORHead(dst, 0, uint64(i))
+}
+
+// appendCBORTextString appends s as a CBOR text string (major 3): shortest
+// length head then the UTF-8 bytes verbatim.
+func appendCBORTextString(dst []byte, s string) []byte {
+	dst = appendCBORHead(dst, 3, uint64(len(s)))
+	return append(dst, s...)
+}
+
+// appendCBORByteString appends b as a CBOR byte string (major 2): shortest
+// length head then the bytes verbatim.
+func appendCBORByteString(dst, b []byte) []byte {
+	dst = appendCBORHead(dst, 2, uint64(len(b)))
+	return append(dst, b...)
+}
+
+// appendCBORBool appends the fixed single-byte CBOR bool.
+func appendCBORBool(dst []byte, v bool) []byte {
+	if v {
+		return append(dst, 0xf5)
+	}
+	return append(dst, 0xf4)
+}
+
+// appendCBORFloat appends f as a canonical CBOR float per CBOR CDE §4.2: the
+// shortest of float16/float32/float64 that round-trips to the exact value, with
+// NaN canonicalized to 0xf97e00, ±Inf to the float16 infinities, and ±0
+// preserved by sign. No numeric reduction: an integer-valued float stays a
+// float.
+func appendCBORFloat(dst []byte, f float64) []byte {
+	switch {
+	case math.IsNaN(f):
+		return append(dst, 0xf9, 0x7e, 0x00)
+	case math.IsInf(f, 1):
+		return append(dst, 0xf9, 0x7c, 0x00)
+	case math.IsInf(f, -1):
+		return append(dst, 0xf9, 0xfc, 0x00)
+	}
+	f32 := float32(f)
+	if float64(f32) == f {
+		if h, ok := f32ToF16Exact(math.Float32bits(f32)); ok {
+			return append(dst, 0xf9, byte(h>>8), byte(h))
+		}
+		bits := math.Float32bits(f32)
+		return append(dst, 0xfa, byte(bits>>24), byte(bits>>16), byte(bits>>8), byte(bits))
+	}
+	bits := math.Float64bits(f)
+	return append(dst, 0xfb,
+		byte(bits>>56), byte(bits>>48), byte(bits>>40), byte(bits>>32),
+		byte(bits>>24), byte(bits>>16), byte(bits>>8), byte(bits))
+}
+
+// f32ToF16Exact converts float32 bits to a float16 if the value is EXACTLY
+// representable (no rounding), returning the 16-bit encoding and true. It is
+// used only to select the shortest float that round-trips, so a lossy
+// conversion returns false and the caller keeps the wider width. ±0 preserves
+// its sign; Inf/NaN are handled by the caller.
+func f32ToF16Exact(b uint32) (uint16, bool) {
+	sign := uint16((b >> 16) & 0x8000)
+	exp := int32((b >> 23) & 0xff)
+	mant := b & 0x7fffff
+	if exp == 0 {
+		if mant == 0 {
+			return sign, true // ±0
+		}
+		return 0, false // float32 subnormal: not float16-exact
+	}
+	if exp == 0xff {
+		return 0, false // Inf/NaN: handled by the caller
+	}
+	e := exp - 127
+	switch {
+	case e >= -14 && e <= 15:
+		if mant&0x1fff != 0 {
+			return 0, false // low mantissa bits would be lost
+		}
+		return sign | uint16((e+15)<<10) | uint16(mant>>13), true
+	case e >= -24 && e <= -15:
+		full := mant | 0x800000 // add the implicit leading 1
+		shift := uint32(-(e + 1))
+		if full&((1<<shift)-1) != 0 {
+			return 0, false // low bits would be lost
+		}
+		hm := full >> shift
+		if hm == 0 || hm > 0x3ff {
+			return 0, false
+		}
+		return sign | uint16(hm), true
+	default:
+		return 0, false
+	}
+}
+
+// float16ToFloat64 expands a CBOR half-precision float to float64.
+func float16ToFloat64(h uint16) float64 {
+	sign := uint32(h&0x8000) << 16
+	exp := uint32(h>>10) & 0x1f
+	mant := uint32(h & 0x3ff)
+	switch exp {
+	case 0:
+		if mant == 0 {
+			return float64(math.Float32frombits(sign)) // ±0
+		}
+		e := uint32(0)
+		for mant&0x400 == 0 {
+			mant <<= 1
+			e++
+		}
+		mant &= 0x3ff
+		exp32 := uint32(127 - 15 - e + 1)
+		return float64(math.Float32frombits(sign | (exp32 << 23) | (mant << 13)))
+	case 0x1f:
+		if mant == 0 {
+			return float64(math.Float32frombits(sign | 0x7f800000)) // ±Inf
+		}
+		return float64(math.Float32frombits(sign | 0x7f800000 | (mant << 13))) // NaN
+	default:
+		exp32 := exp - 15 + 127
+		return float64(math.Float32frombits(sign | (exp32 << 23) | (mant << 13)))
+	}
+}
+
+// sortCBORKeys sorts map keys into canonical CBOR order: by the bytewise order
+// of their encoded text-key bytes (length head first, then UTF-8 content).
+func sortCBORKeys(keys []string) {
+	sort.Slice(keys, func(i, j int) bool { return cborLessKey(keys[i], keys[j]) })
+}
+
+// cborLessKey is the runtime twin of the generator's key comparator.
+func cborLessKey(a, b string) bool {
+	if len(a) != len(b) {
+		ha := cborStrHeadBytes(len(a))
+		hb := cborStrHeadBytes(len(b))
+		return bytes.Compare(ha, hb) < 0
+	}
+	return a < b
+}
+
+// cborStrHeadBytes returns the CBOR text-string length head for a string of the
+// given byte length.
+func cborStrHeadBytes(n int) []byte {
+	switch {
+	case n < 24:
+		return []byte{0x60 | byte(n)}
+	case n < 0x100:
+		return []byte{0x78, byte(n)}
+	case n < 0x10000:
+		return []byte{0x79, byte(n >> 8), byte(n)}
+	default:
+		return []byte{0x7a, byte(n >> 24), byte(n >> 16), byte(n >> 8), byte(n)}
+	}
+}
+
+// cborDec is a minimal canonical-CBOR reader over a byte slice. It reads only
+// the definite-length items the codec produces; indefinite lengths and
+// unsupported majors are rejected loudly.
+type cborDec struct {
+	data []byte
+	pos  int
+}
+
+// readHead reads one item head, returning the major type, the additional-info
+// nibble, and the decoded argument (the immediate for ai < 24, else the
+// big-endian follow bytes).
+func (d *cborDec) readHead() (byte, byte, uint64, error) {
+	if d.pos >= len(d.data) {
+		return 0, 0, 0, fmt.Errorf("abi: cbor: unexpected end of input")
+	}
+	ib := d.data[d.pos]
+	d.pos++
+	major := ib >> 5
+	ai := ib & 0x1f
+	switch {
+	case ai < 24:
+		return major, ai, uint64(ai), nil
+	case ai == 24:
+		if d.pos+1 > len(d.data) {
+			return 0, 0, 0, fmt.Errorf("abi: cbor: truncated 1-byte argument")
+		}
+		v := uint64(d.data[d.pos])
+		d.pos++
+		return major, ai, v, nil
+	case ai == 25:
+		if d.pos+2 > len(d.data) {
+			return 0, 0, 0, fmt.Errorf("abi: cbor: truncated 2-byte argument")
+		}
+		v := uint64(d.data[d.pos])<<8 | uint64(d.data[d.pos+1])
+		d.pos += 2
+		return major, ai, v, nil
+	case ai == 26:
+		if d.pos+4 > len(d.data) {
+			return 0, 0, 0, fmt.Errorf("abi: cbor: truncated 4-byte argument")
+		}
+		v := uint64(d.data[d.pos])<<24 | uint64(d.data[d.pos+1])<<16 | uint64(d.data[d.pos+2])<<8 | uint64(d.data[d.pos+3])
+		d.pos += 4
+		return major, ai, v, nil
+	case ai == 27:
+		if d.pos+8 > len(d.data) {
+			return 0, 0, 0, fmt.Errorf("abi: cbor: truncated 8-byte argument")
+		}
+		var v uint64
+		for k := 0; k < 8; k++ {
+			v = v<<8 | uint64(d.data[d.pos+k])
+		}
+		d.pos += 8
+		return major, ai, v, nil
+	default:
+		return 0, 0, 0, fmt.Errorf("abi: cbor: reserved additional info %d", ai)
+	}
+}
+
+func (d *cborDec) readMapHeader() (int, error) {
+	major, _, arg, err := d.readHead()
+	if err != nil {
+		return 0, err
+	}
+	if major != 5 {
+		return 0, fmt.Errorf("abi: cbor: expected map, got major %d", major)
+	}
+	return int(arg), nil
+}
+
+func (d *cborDec) readArrayHeader() (int, error) {
+	major, _, arg, err := d.readHead()
+	if err != nil {
+		return 0, err
+	}
+	if major != 4 {
+		return 0, fmt.Errorf("abi: cbor: expected array, got major %d", major)
+	}
+	return int(arg), nil
+}
+
+func (d *cborDec) readTextString() (string, error) {
+	major, _, arg, err := d.readHead()
+	if err != nil {
+		return "", err
+	}
+	if major != 3 {
+		return "", fmt.Errorf("abi: cbor: expected text string, got major %d", major)
+	}
+	if d.pos+int(arg) > len(d.data) {
+		return "", fmt.Errorf("abi: cbor: truncated text string")
+	}
+	s := string(d.data[d.pos : d.pos+int(arg)])
+	d.pos += int(arg)
+	return s, nil
+}
+
+func (d *cborDec) readByteString() ([]byte, error) {
+	major, _, arg, err := d.readHead()
+	if err != nil {
+		return nil, err
+	}
+	if major != 2 {
+		return nil, fmt.Errorf("abi: cbor: expected byte string, got major %d", major)
+	}
+	if d.pos+int(arg) > len(d.data) {
+		return nil, fmt.Errorf("abi: cbor: truncated byte string")
+	}
+	out := make([]byte, arg)
+	copy(out, d.data[d.pos:d.pos+int(arg)])
+	d.pos += int(arg)
+	return out, nil
+}
+
+func (d *cborDec) readInt() (int64, error) {
+	major, _, arg, err := d.readHead()
+	if err != nil {
+		return 0, err
+	}
+	switch major {
+	case 0:
+		return int64(arg), nil
+	case 1:
+		return -1 - int64(arg), nil
+	default:
+		return 0, fmt.Errorf("abi: cbor: expected integer, got major %d", major)
+	}
+}
+
+func (d *cborDec) readFloat() (float64, error) {
+	major, ai, arg, err := d.readHead()
+	if err != nil {
+		return 0, err
+	}
+	if major != 7 {
+		return 0, fmt.Errorf("abi: cbor: expected float, got major %d", major)
+	}
+	switch ai {
+	case 25:
+		return float16ToFloat64(uint16(arg)), nil
+	case 26:
+		return float64(math.Float32frombits(uint32(arg))), nil
+	case 27:
+		return math.Float64frombits(arg), nil
+	default:
+		return 0, fmt.Errorf("abi: cbor: expected float, got additional info %d", ai)
+	}
+}
+
+func (d *cborDec) readBool() (bool, error) {
+	major, ai, _, err := d.readHead()
+	if err != nil {
+		return false, err
+	}
+	if major != 7 || (ai != 20 && ai != 21) {
+		return false, fmt.Errorf("abi: cbor: expected bool")
+	}
+	return ai == 21, nil
+}
+
+// skip consumes exactly one CBOR item (recursively for arrays and maps),
+// discarding it — used for an unknown map key's value.
+func (d *cborDec) skip() error {
+	major, ai, arg, err := d.readHead()
+	if err != nil {
+		return err
+	}
+	switch major {
+	case 0, 1, 7:
+		return nil // argument already consumed by readHead
+	case 2, 3:
+		if d.pos+int(arg) > len(d.data) {
+			return fmt.Errorf("abi: cbor: truncated string")
+		}
+		d.pos += int(arg)
+		return nil
+	case 4:
+		for k := 0; k < int(arg); k++ {
+			if err := d.skip(); err != nil {
+				return err
+			}
+		}
+		return nil
+	case 5:
+		for k := 0; k < int(arg)*2; k++ {
+			if err := d.skip(); err != nil {
+				return err
+			}
+		}
+		return nil
+	default:
+		_ = ai
+		return fmt.Errorf("abi: cbor: cannot skip major %d", major)
+	}
 }

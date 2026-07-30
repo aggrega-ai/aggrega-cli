@@ -74,6 +74,33 @@ func cborKeyLess(a, b string) bool {
 	return a < b
 }
 
+// orderedMapValueType reports whether goType is an order-preserving ordered-map
+// spelling and, when it is, returns its value type. Bracket matching is balanced
+// so a nested ordered map (an ordered map of ordered maps) yields the inner
+// ordered map rather than a truncated prefix.
+func orderedMapValueType(goType string) (string, bool) {
+	const prefix = "types.OrderedMap["
+	if !strings.HasPrefix(goType, prefix) || !strings.HasSuffix(goType, "]") {
+		return "", false
+	}
+	depth := 0
+	for i := len(prefix) - 1; i < len(goType); i++ {
+		switch goType[i] {
+		case '[':
+			depth++
+		case ']':
+			depth--
+			if depth == 0 {
+				if i != len(goType)-1 {
+					return "", false
+				}
+				return goType[len(prefix):i], true
+			}
+		}
+	}
+	return "", false
+}
+
 // cborStrHead returns the CBOR major-type-3 (text string) length head for a
 // string of the given byte length, so the key comparator can order by encoded
 // head bytes.
@@ -152,6 +179,7 @@ func emitCBOREncodeKV(b *strings.Builder, f codecField, indent string, defTypes 
 // emitCBOREncodeValue appends the canonical CBOR encoding of the lvalue src of
 // the given resolved Go type to dst.
 func emitCBOREncodeValue(b *strings.Builder, src, goType, indent string, defTypes map[string]bool) {
+	omVal, isOrderedMap := orderedMapValueType(goType)
 	switch {
 	case goType == "string":
 		fmt.Fprintf(b, "%sdst = appendCBORTextString(dst, %s)\n", indent, src)
@@ -182,6 +210,8 @@ func emitCBOREncodeValue(b *strings.Builder, src, goType, indent string, defType
 		}
 	case defTypes[goType]:
 		fmt.Fprintf(b, "%sif dst, err = %s.appendCBOR(dst); err != nil {\n%s\treturn nil, err\n%s}\n", indent, src, indent, indent)
+	case isOrderedMap:
+		emitCBOREncodeOrderedMap(b, src, omVal, indent, defTypes)
 	case strings.HasPrefix(goType, "map["):
 		valType := goType[strings.IndexByte(goType, ']')+1:]
 		emitCBOREncodeMap(b, src, valType, indent, defTypes)
@@ -218,6 +248,33 @@ func emitCBOREncodeMap(b *strings.Builder, src, valType, indent string, defTypes
 	fmt.Fprintf(b, "%s}\n", indent)
 }
 
+// emitCBOREncodeOrderedMap appends an order-preserving ordered map as a
+// canonical CBOR map: the same sorted-key map a plain string-keyed map encodes
+// to, so the wire shape a socket field carries does not depend on which side
+// holds the order-preserving container.
+//
+// Author order is deliberately NOT carried by the key sequence here. The wire
+// counterpart of every ordered-map field on a socket payload is a plain
+// string-keyed map, whose canonical CBOR is a sorted map; emitting an
+// order-preserving array instead would produce bytes the counterpart cannot
+// decode. Where a field's content genuinely must keep author order, it travels
+// as an opaque byte-string of its own verbatim encoding, and the order lives
+// inside those bytes rather than in this map's key sequence. A field whose
+// counterpart becomes order-preserving in its own right needs an array form
+// added here, and both sides must move together.
+func emitCBOREncodeOrderedMap(b *strings.Builder, src, valType, indent string, defTypes map[string]bool) {
+	fmt.Fprintf(b, "%s{\n", indent)
+	fmt.Fprintf(b, "%s\tkeys := %s.Keys()\n", indent, src)
+	fmt.Fprintf(b, "%s\tsortCBORKeys(keys)\n", indent)
+	fmt.Fprintf(b, "%s\tdst = appendCBORHead(dst, 5, uint64(len(keys)))\n", indent)
+	fmt.Fprintf(b, "%s\tfor _, k := range keys {\n", indent)
+	fmt.Fprintf(b, "%s\t\tdst = appendCBORTextString(dst, k)\n", indent)
+	fmt.Fprintf(b, "%s\t\tmv, _ := %s.Get(k)\n", indent, src)
+	emitCBOREncodeValue(b, "mv", valType, indent+"\t\t", defTypes)
+	fmt.Fprintf(b, "%s\t}\n", indent)
+	fmt.Fprintf(b, "%s}\n", indent)
+}
+
 // emitCBOREncodeSlice appends a slice as a canonical CBOR array in element
 // order.
 func emitCBOREncodeSlice(b *strings.Builder, src, elemType, indent string, defTypes map[string]bool) {
@@ -235,6 +292,9 @@ func emitCBOREncodeSlice(b *strings.Builder, src, elemType, indent string, defTy
 // but it uses its own locally-scoped error variable, so it does NOT require the
 // shared `err`.
 func cborFieldUsesErr(goType string, defTypes map[string]bool) bool {
+	if valType, ok := orderedMapValueType(goType); ok {
+		return cborFieldUsesErr(valType, defTypes)
+	}
 	switch {
 	case strings.HasPrefix(goType, "*"):
 		return defTypes[goType[1:]]
@@ -285,6 +345,7 @@ func emitCBORDecodeField(b *strings.Builder, f codecField, indent string, defTyp
 // collection and assigns it to dst, so a nested composite (a map of maps, a slice
 // of maps) decodes correctly rather than falling through to the opaque path.
 func emitCBORDecodeValue(b *strings.Builder, dst, goType, indent string, defTypes map[string]bool) {
+	omVal, isOrderedMap := orderedMapValueType(goType)
 	switch {
 	case goType == "string":
 		fmt.Fprintf(b, "%sif s, err := dec.readTextString(); err != nil {\n%s\treturn err\n%s} else {\n%s\t%s = s\n%s}\n", indent, indent, indent, indent, dst, indent)
@@ -314,6 +375,18 @@ func emitCBORDecodeValue(b *strings.Builder, dst, goType, indent string, defType
 		}
 	case defTypes[goType]:
 		fmt.Fprintf(b, "%sif err := (&%s).decodeCBOR(dec); err != nil {\n%s\treturn err\n%s}\n", indent, dst, indent, indent)
+	case isOrderedMap:
+		fmt.Fprintf(b, "%s{\n", indent)
+		fmt.Fprintf(b, "%s\tmn, err := dec.readMapHeader()\n%s\tif err != nil {\n%s\t\treturn err\n%s\t}\n", indent, indent, indent, indent)
+		fmt.Fprintf(b, "%s\tvar om %s\n", indent, goType)
+		fmt.Fprintf(b, "%s\tfor mi := 0; mi < mn; mi++ {\n", indent)
+		fmt.Fprintf(b, "%s\t\tmk, err := dec.readTextString()\n%s\t\tif err != nil {\n%s\t\t\treturn err\n%s\t\t}\n", indent, indent, indent, indent)
+		fmt.Fprintf(b, "%s\t\tvar mv %s\n", indent, omVal)
+		emitCBORDecodeValue(b, "mv", omVal, indent+"\t\t", defTypes)
+		fmt.Fprintf(b, "%s\t\tom.Set(mk, mv)\n", indent)
+		fmt.Fprintf(b, "%s\t}\n", indent)
+		fmt.Fprintf(b, "%s\t%s = om\n", indent, dst)
+		fmt.Fprintf(b, "%s}\n", indent)
 	case strings.HasPrefix(goType, "map["):
 		valType := goType[strings.IndexByte(goType, ']')+1:]
 		fmt.Fprintf(b, "%s{\n", indent)
