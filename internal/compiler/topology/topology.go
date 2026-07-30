@@ -252,7 +252,9 @@ type FeatureAttachment struct {
 // pkg/catalog/catalog.go for the adapter pattern documentation).
 type SubAggregateLoader func(typeName string, parentParams map[string]any) (*types.Aggregate, string, map[string]any, error)
 
-// BuildConfig is the input bundle for Build. Three fields, all required:
+// BuildConfig is the input bundle for Build. Four fields: ResolveResult and
+// CatalogLookup are required; LoadSubAggregate and RootAggregateFile each have
+// a defined empty behaviour, documented below and on the field respectively.
 //
 //   - ResolveResult is the Step 1 output. Build reads its Aggregate (the
 //     authoring root passed to flattenAggregate) and BoundaryInfra
