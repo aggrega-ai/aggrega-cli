@@ -456,12 +456,12 @@ func (s *Server) dispatchIrGraph(ctx context.Context, req *jsonRPCRequest) error
 // the pipeline.RunPipeline call is covered by pipeline's own tests.
 // irGraphPipelineOptions builds the pipeline options for the irGraph
 // inspection path. Render-skip is the default: irGraph reads only the IR
-// graph and discards render output, so unless render-time diagnostics are
-// explicitly requested (the render-diagnostics dial) the pipeline stops
+// graph and discards render output, so unless the build's findings are
+// explicitly requested (the build-on-inspect dial) the pipeline stops
 // after the IR graph is finalised and never loads rendering plugins. The
 // returned graph is byte-identical either way — render never mutates it.
 func (s *Server) irGraphPipelineOptions() pipeline.Options {
-	return pipeline.Options{IncludeTrace: false, SkipRender: !s.renderDiagnostics}
+	return pipeline.Options{IncludeTrace: false, SkipRender: !s.buildOnInspect}
 }
 
 func (s *Server) handleIrGraph(ctx context.Context, params irGraphParams) (irGraphResult, *jsonRPCError) {
@@ -568,7 +568,7 @@ func (s *Server) handleIrGraph(ctx context.Context, params irGraphParams) (irGra
 	//    the terminal on a CLI build and would otherwise reach nothing here, so
 	//    they are published on the file the daemon attributes semantic findings
 	//    to. Non-blocking, like drift: the graph is returned regardless. The
-	//    render only runs when the render-diagnostics dial is on, so with it off
+	//    render only runs when the build-on-inspect dial is on, so with it off
 	//    this replaces an empty layer with an empty layer.
 	s.publishRenderDiagnostics(ctx, resolved.AggregatePath, result.RenderDiagnostics)
 

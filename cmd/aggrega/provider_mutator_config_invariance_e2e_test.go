@@ -12,7 +12,7 @@
 // adopt it).
 //
 // The SERVE render path (the compilerops ResolveClosure + BuildToBuffer the
-// daemon drives under render-diagnostics) reconstructs both sockets from the
+// daemon drives under build-on-inspect) reconstructs both sockets from the
 // lockfile: a proof flips the live config to a binding/function that WOULD move
 // (or break) output if read live, renders WITHOUT a re-pull, and asserts the
 // output is unchanged; a control render with a nil lockfile confirms the flipped
@@ -52,7 +52,7 @@ import (
 )
 
 // serveRenderArtifacts drives the compilerops render path — the one the serve
-// daemon runs under render-diagnostics — over the workspace at ws and returns
+// daemon runs under build-on-inspect — over the workspace at ws and returns
 // the rendered artifact buffers. withLockfile selects whether BuildToBuffer
 // reconstructs the byte-determining plugin selections from the lockfile (true,
 // the serve/build default) or reads them live from the workspace config (false,

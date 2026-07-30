@@ -73,20 +73,21 @@ type RunConfig struct {
 	// value stamps an empty compiler-version.
 	CompilerVersion string
 
-	// RenderDiagnostics, when non-nil, overrides the serve.render_diagnostics
+	// BuildOnInspect, when non-nil, overrides the serve.build_on_inspect
 	// config-file key for this daemon invocation: the command layer sets it
-	// from the --render-diagnostics flag only when the operator passed the
+	// from the --build-on-inspect flag only when the operator passed the
 	// flag, so an unset flag (nil) leaves the config-file value in force. It
-	// controls whether the IR-graph inspection request runs the render pass —
-	// true produces render-time warnings at the cost of loading rendering
-	// plugins; false (the default) returns the graph without rendering.
-	RenderDiagnostics *bool
+	// controls whether the IR-graph inspection request runs the build's
+	// analysis — true publishes the build's findings as an additional
+	// diagnostic layer; false (the default) returns the graph without running
+	// that stage. Nothing is written to disk under either value.
+	BuildOnInspect *bool
 }
 
-// resolveRenderDiagnostics applies the render-diagnostics precedence: an
-// explicit flag (flag non-nil, set from --render-diagnostics) wins over the
-// config-file key; absent the flag, the config-file value applies.
-func resolveRenderDiagnostics(flag *bool, cfgValue bool) bool {
+// resolveBuildOnInspect applies the build-on-inspect precedence: an explicit
+// flag (flag non-nil, set from --build-on-inspect) wins over the config-file
+// key; absent the flag, the config-file value applies.
+func resolveBuildOnInspect(flag *bool, cfgValue bool) bool {
 	if flag != nil {
 		return *flag
 	}
@@ -105,6 +106,7 @@ func resolveRenderDiagnostics(flag *bool, cfgValue bool) bool {
 // keeps the wire backward compatible — pre-end-position clients ignore
 // the fields and post-end-position clients consuming an envelope
 // without them fall through to point-style.
+//
 // Source names which of the daemon's two diagnostic layers raised the entry, so
 // a client can group them instead of showing one undifferentiated list. It is
 // always present: a client must never have to tell "no source" apart from "the
@@ -213,13 +215,14 @@ type Server struct {
 	// String() wire token.
 	workspaceMarker workspaceconfig.Marker
 	wsConfig        workspaceconfig.Config
-	// renderDiagnostics is the resolved serve render-diagnostics dial (the
-	// --render-diagnostics flag overriding the serve.render_diagnostics config
-	// key). When false (the default), handleIrGraph skips the render pass and
-	// returns the IR graph without loading rendering plugins; when true, render
-	// runs so render-time warnings surface. Written once at construction, then
-	// only read during handler execution — an immutable snapshot needing no lock.
-	renderDiagnostics bool
+	// buildOnInspect is the resolved serve build-on-inspect dial (the
+	// --build-on-inspect flag overriding the serve.build_on_inspect config
+	// key). When false (the default), handleIrGraph returns the IR graph
+	// without running the build's analysis; when true that stage runs, so the
+	// build's findings surface as an additional diagnostic layer. Written once
+	// at construction, then only read during handler execution — an immutable
+	// snapshot needing no lock.
+	buildOnInspect bool
 
 	// shuttingDown is set at the dispatch loop's acceptance of the first
 	// aggrega/shutdown message — on the single-threaded main loop, so
@@ -554,19 +557,19 @@ func Run(cfg RunConfig) error {
 	// the worker pool. It is a process-lifetime singleton the daemon neither
 	// creates, injects, nor closes — it is reclaimed at process exit.
 	srv := &Server{
-		workspaceRoot:     root,
-		configSource:      source.String(),
-		compilerVersion:   cfg.CompilerVersion,
-		workspaceMarker:   marker,
-		wsConfig:          wsCfg,
-		renderDiagnostics: resolveRenderDiagnostics(cfg.RenderDiagnostics, wsCfg.Serve.RenderDiagnostics),
-		lazyCatalog:       lazyCatalog,
-		parseCache:        newCache(wsCfg.ParseCache.MaxEntries, wsCfg.ParseCache.MaxBytes),
-		diagnostics:       map[string][]Diagnostic{},
-		renderDiags:       map[string][]Diagnostic{},
-		in:                bufio.NewReader(cfg.Stdin),
-		out:               cfg.Stdout,
-		stderr:            stderr,
+		workspaceRoot:   root,
+		configSource:    source.String(),
+		compilerVersion: cfg.CompilerVersion,
+		workspaceMarker: marker,
+		wsConfig:        wsCfg,
+		buildOnInspect:  resolveBuildOnInspect(cfg.BuildOnInspect, wsCfg.Serve.BuildOnInspect),
+		lazyCatalog:     lazyCatalog,
+		parseCache:      newCache(wsCfg.ParseCache.MaxEntries, wsCfg.ParseCache.MaxBytes),
+		diagnostics:     map[string][]Diagnostic{},
+		renderDiags:     map[string][]Diagnostic{},
+		in:              bufio.NewReader(cfg.Stdin),
+		out:             cfg.Stdout,
+		stderr:          stderr,
 	}
 	srv.setPositionEncoding(yamlpos.PositionEncodingUTF16)
 

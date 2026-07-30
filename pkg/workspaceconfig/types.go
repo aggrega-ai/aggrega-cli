@@ -687,18 +687,15 @@ type ConcurrencyConfig struct {
 // ServeConfig carries behavior settings for the daemon (`aggrega serve`),
 // the compiler-as-service consumed by IDE integrations.
 type ServeConfig struct {
-	// RenderDiagnostics selects whether the IR-graph inspection request runs
-	// the render pass. The default (false) skips render: the daemon returns
-	// the intermediate graph without loading rendering plugins, which is
-	// faster and drops only render-stage advisory warnings — those warnings
-	// are written to the daemon's diagnostic stream, not part of the
-	// client-facing diagnostics, which come from the earlier resolution and
-	// analysis stages. The returned graph is identical whether render runs or
-	// not (render never mutates the graph). Set true to run render on the
-	// inspection path so render-time warnings are produced, at the cost of
-	// loading rendering plugins and the extra work. A serve --render-diagnostics
-	// flag overrides this key for one daemon invocation.
-	RenderDiagnostics bool `yaml:"render_diagnostics"`
+	// BuildOnInspect selects whether the IR-graph inspection request runs the
+	// build's analysis, so the findings `aggrega build` reports also reach the
+	// editor as a second diagnostic layer. The default (false) skips that
+	// stage, matching `aggrega inspect`, which does not run it either. Nothing
+	// is written to disk under either value — no rendered artifacts, no output
+	// directory, no lockfile — and the returned graph is identical whether the
+	// analysis runs or not; only the additional findings differ. A serve
+	// --build-on-inspect flag overrides this key for one daemon invocation.
+	BuildOnInspect bool `yaml:"build_on_inspect"`
 }
 
 // Default returns a Config populated with the documented defaults.

@@ -489,7 +489,7 @@ func TestServeMultiProviderResolvesFromLockfileBinding(t *testing.T) {
 		t.Fatal("precondition: by-name provider lookup over a two-provider catalog should be ambiguous")
 	}
 
-	// The serve render path (render-diagnostics on, so render actually runs and the
+	// The serve render path (build-on-inspect on, so render actually runs and the
 	// provider is resolved) must NOT halt on ambiguity — the lockfile binding wins.
 	graph := irGraphWithDial(t, ws, rel, true)
 	if graph == nil {

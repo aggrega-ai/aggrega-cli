@@ -6,7 +6,11 @@ package serve
 import (
 	"bufio"
 	"bytes"
+	"crypto/sha256"
 	"encoding/json"
+	"fmt"
+	"io/fs"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -138,10 +142,10 @@ spec:
 	return ws, filepath.Base(relPath)
 }
 
-// TestResolveRenderDiagnosticsPrecedence pins the flag-over-config
+// TestResolveBuildOnInspectPrecedence pins the flag-over-config
 // precedence: an explicit flag (non-nil) wins over the config-file key;
 // an unset flag (nil) falls through to the config value.
-func TestResolveRenderDiagnosticsPrecedence(t *testing.T) {
+func TestResolveBuildOnInspectPrecedence(t *testing.T) {
 	t.Parallel()
 	tru := true
 	fls := false
@@ -160,21 +164,21 @@ func TestResolveRenderDiagnosticsPrecedence(t *testing.T) {
 		c := c
 		t.Run(c.name, func(t *testing.T) {
 			t.Parallel()
-			if got := resolveRenderDiagnostics(c.flag, c.cfgValue); got != c.want {
-				t.Errorf("resolveRenderDiagnostics(%v, %v) = %v, want %v", c.flag, c.cfgValue, got, c.want)
+			if got := resolveBuildOnInspect(c.flag, c.cfgValue); got != c.want {
+				t.Errorf("resolveBuildOnInspect(%v, %v) = %v, want %v", c.flag, c.cfgValue, got, c.want)
 			}
 		})
 	}
 }
 
 // irGraphWithDial drives one irGraph request to completion at pool=1 with
-// the render-diagnostics dial set to renderDiag, returning the response's
+// the build-on-inspect dial set to buildOnInspect, returning the response's
 // graph JSON. Fails the test if the response carries an error envelope.
-func irGraphWithDial(t *testing.T, ws, releaseRel string, renderDiag bool) json.RawMessage {
+func irGraphWithDial(t *testing.T, ws, releaseRel string, buildOnInspect bool) json.RawMessage {
 	t.Helper()
 	var in, out bytes.Buffer
 	srv := newPinIsolationServer(t, ws, &in, &out, 1)
-	srv.renderDiagnostics = renderDiag
+	srv.buildOnInspect = buildOnInspect
 	in.Write(framedRequest(1, "aggrega/irGraph", irGraphParams{Release: releaseRel}))
 	srv.in = bufio.NewReader(&in)
 	srv.out = &out
@@ -189,13 +193,13 @@ func irGraphWithDial(t *testing.T, ws, releaseRel string, renderDiag bool) json.
 	driveHandle(t, srv, &req, &out)
 	graph := extractGraph(t, &out)
 	if graph == nil {
-		t.Fatalf("irGraph (renderDiagnostics=%v) produced no graph", renderDiag)
+		t.Fatalf("irGraph (buildOnInspect=%v) produced no graph", buildOnInspect)
 	}
 	return graph
 }
 
 // TestServeIrGraphByteIdenticalRenderDialOnVsOff proves the irGraph
-// response graph is byte-identical whether the render-diagnostics dial is
+// response graph is byte-identical whether the build-on-inspect dial is
 // off (render skipped) or on (render runs). Render never mutates the IR
 // graph, so the dial changes only whether render runs — never the answer.
 func TestServeIrGraphByteIdenticalRenderDialOnVsOff(t *testing.T) {
@@ -211,7 +215,7 @@ func TestServeIrGraphByteIdenticalRenderDialOnVsOff(t *testing.T) {
 }
 
 // TestServeIrGraphPipelineOptionsReflectsDial proves the handler maps the
-// resolved render-diagnostics dial onto the pipeline's SkipRender option:
+// resolved build-on-inspect dial onto the pipeline's SkipRender option:
 // dial off (the default) requests render-skip; dial on requests render. The
 // pipeline-level proof (that SkipRender skips render and loads no rendering
 // plugin) closes the chain: dial off => SkipRender true => no render/no
@@ -220,13 +224,81 @@ func TestServeIrGraphPipelineOptionsReflectsDial(t *testing.T) {
 	t.Parallel()
 	srv := &Server{}
 
-	srv.renderDiagnostics = false
+	srv.buildOnInspect = false
 	if opts := srv.irGraphPipelineOptions(); !opts.SkipRender {
 		t.Error("dial off (default): SkipRender should be true so render is skipped")
 	}
 
-	srv.renderDiagnostics = true
+	srv.buildOnInspect = true
 	if opts := srv.irGraphPipelineOptions(); opts.SkipRender {
 		t.Error("dial on: SkipRender should be false so render runs on the irGraph path")
+	}
+}
+
+// treeSnapshot maps every regular file under root to the SHA-256 of its bytes,
+// keyed by root-relative path. Two snapshots comparing equal prove no file was
+// added, removed, or rewritten between them.
+func treeSnapshot(t *testing.T, root string) map[string]string {
+	t.Helper()
+	out := map[string]string{}
+	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			return nil
+		}
+		body, rerr := os.ReadFile(path)
+		if rerr != nil {
+			return rerr
+		}
+		rel, rerr := filepath.Rel(root, path)
+		if rerr != nil {
+			return rerr
+		}
+		out[rel] = fmt.Sprintf("%x", sha256.Sum256(body))
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("snapshot %s: %v", root, err)
+	}
+	return out
+}
+
+// TestServeIrGraphWritesNothingToDisk pins the half of the dial's contract that
+// its name invites a reader to doubt: turning it on runs the build's analysis,
+// not the build's output. The dial's help text and its config-schema description
+// both state that nothing is written to disk — no rendered artifacts, no output
+// directory, no lockfile — so the claim is asserted here rather than left to the
+// reader's trust. The Release declares a boundary directory (./dist/app), which
+// is exactly where a render that wrote its artifacts would land them.
+func TestServeIrGraphWritesNothingToDisk(t *testing.T) {
+	t.Parallel()
+	ws, rel := renderDialWorkspace(t)
+
+	before := treeSnapshot(t, ws)
+	// An empty snapshot would make every comparison below vacuous, so the
+	// instrument is checked before its reading is trusted.
+	if len(before) == 0 {
+		t.Fatal("precondition: the workspace snapshot is empty, so a write could not be observed")
+	}
+	if graph := irGraphWithDial(t, ws, rel, true); graph == nil {
+		t.Fatal("precondition: the dial-on inspection produced no graph, so it proves nothing about writes")
+	}
+	after := treeSnapshot(t, ws)
+
+	for path, sum := range after {
+		prev, ok := before[path]
+		switch {
+		case !ok:
+			t.Errorf("inspection created %s; the dial runs the build's analysis, never its output", path)
+		case prev != sum:
+			t.Errorf("inspection rewrote %s (%s -> %s)", path, prev, sum)
+		}
+	}
+	for path := range before {
+		if _, ok := after[path]; !ok {
+			t.Errorf("inspection removed %s", path)
+		}
 	}
 }
