@@ -127,10 +127,6 @@ var (
 	// inject source for the same component.
 	ErrInjectKeyCollision = errors.New("duplicate delivery key across inject sources")
 
-	// ErrSchemaValidation wraps a pillar validation failure (.values
-	// from the Aggregate, .infra from the Release boundary).
-	ErrSchemaValidation = errors.New("schema validation failed: correct the flagged field to satisfy its declared schema")
-
 	// ErrMissingRequiredSocket wraps a uses-socket marked required in the
 	// Component's usesSchema that no instance populates.
 	ErrMissingRequiredSocket = errors.New("required uses socket not populated")
@@ -255,7 +251,7 @@ func (e *MultiResolverError) Unwrap() []error {
 // specific authoring locator available, file path or JSON path."
 //
 // The inner error chain is preserved via cerrors.Wrap, so errors.Is
-// against the resolver's sentinel errors (ErrYAMLLoad, ErrSchemaValidation,
+// against the resolver's sentinel errors (ErrYAMLLoad, ErrSchemaConformance,
 // etc.) continues to match through the converted CompilerError.
 func (e *ResolverError) ToCompilerError() *cerrors.CompilerError {
 	cat := cerrors.ClassifyEntityCategory(e.Entity)

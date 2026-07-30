@@ -84,7 +84,7 @@ func TestValidationError_ToCompilerError_ComponentRoutesToCatalog(t *testing.T) 
 		Constraint: "must be >= 1024",
 		Actual:     "80",
 		Suggestion: "Use a port number >= 1024",
-		Err:        validator.ErrSchemaValidation,
+		Err:        validator.ErrInheritanceMerge,
 	}
 	ce := ve.ToCompilerError()
 	if ce.Category != cerrors.CatalogError {
@@ -102,8 +102,8 @@ func TestValidationError_ToCompilerError_ComponentRoutesToCatalog(t *testing.T) 
 	if !strings.Contains(ce.Message, "Use a port number >= 1024") {
 		t.Errorf("Message missing Suggestion: %q", ce.Message)
 	}
-	if !stderrors.Is(ce, validator.ErrSchemaValidation) {
-		t.Errorf("errors.Is(ce, ErrSchemaValidation) = false, want true")
+	if !stderrors.Is(ce, validator.ErrInheritanceMerge) {
+		t.Errorf("errors.Is(ce, ErrInheritanceMerge) = false, want true")
 	}
 }
 
@@ -114,7 +114,7 @@ func TestValidationError_ToCompilerError_AggregateRoutesToDeveloper(t *testing.T
 	ve := &validator.ValidationError{
 		Entity:    "Aggregate my-app",
 		FieldPath: ".values.replicas",
-		Err:       validator.ErrSchemaValidation,
+		Err:       validator.ErrInheritanceMerge,
 	}
 	ce := ve.ToCompilerError()
 	if ce.Category != cerrors.DeveloperError {
