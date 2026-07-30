@@ -39,8 +39,8 @@ func TestFlatten_ActivePresentVsPruned(t *testing.T) {
 	if res.Nodes.Len() != 2 {
 		t.Fatalf("expected 2 nodes present, got %d", res.Nodes.Len())
 	}
-	if len(res.Pruned) != 0 {
-		t.Fatalf("expected no pruned nodes, got %v", res.Pruned)
+	if res.Pruned.Len() != 0 {
+		t.Fatalf("expected no pruned nodes, got %v", res.Pruned.Keys())
 	}
 
 	// active resolved to false → pruned, recorded in Pruned, absent from Nodes.
@@ -55,8 +55,8 @@ func TestFlatten_ActivePresentVsPruned(t *testing.T) {
 	if _, ok := res2.Nodes.Get("cache"); ok {
 		t.Error("pruned cache must be absent from Nodes")
 	}
-	if !res2.Pruned["cache"] {
-		t.Errorf("expected cache in Pruned, got %v", res2.Pruned)
+	if _, ok := res2.Pruned.Get("cache"); !ok {
+		t.Errorf("expected cache in Pruned, got %v", res2.Pruned.Keys())
 	}
 }
 
@@ -96,8 +96,8 @@ func TestFlatten_ActiveOmittedIsPresent(t *testing.T) {
 		if err != nil {
 			t.Fatalf("active=%q: unexpected error: %v", v, err)
 		}
-		if res.Nodes.Len() != 1 || len(res.Pruned) != 0 {
-			t.Errorf("active=%q: expected 1 node and no prune, got %d nodes / pruned %v", v, res.Nodes.Len(), res.Pruned)
+		if res.Nodes.Len() != 1 || res.Pruned.Len() != 0 {
+			t.Errorf("active=%q: expected 1 node and no prune, got %d nodes / pruned %v", v, res.Nodes.Len(), res.Pruned.Keys())
 		}
 	}
 }
@@ -219,10 +219,10 @@ func TestBuild_PrunedExportedComponentDropped(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if _, ok := res.ExportedComponents["mod.public-gone"]; ok {
-		t.Errorf("export alias of a pruned component must be dropped: %v", res.ExportedComponents)
+	if _, ok := res.ExportedComponents.Get("mod.public-gone"); ok {
+		t.Errorf("export alias of a pruned component must be dropped: %v", res.ExportedComponents.Keys())
 	}
-	if got := res.ExportedComponents["mod.public-kept"]; got != "mod.kept" {
-		t.Errorf("surviving export alias lost: %v", res.ExportedComponents)
+	if got, _ := res.ExportedComponents.Get("mod.public-kept"); got != "mod.kept" {
+		t.Errorf("surviving export alias lost: %v", res.ExportedComponents.Keys())
 	}
 }

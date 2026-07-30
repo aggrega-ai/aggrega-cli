@@ -170,6 +170,59 @@ func collectInjectMechanisms(inject *types.InjectBlock) []string {
 	return mechs
 }
 
+// appendInjectDeliveryKeys appends the delivery-key names carried by one
+// mechanism payload onto result[mech]. It is the single place either
+// delivery-key collector knows the payload shapes a mechanism value can arrive
+// in, so the two cannot recognise different shapes: a payload shape one
+// collector walks is a shape both walk. That matters because the collectors
+// feed a collision check, and a collector that returns no keys for a shape it
+// does not recognise makes the check approve a declaration it never examined —
+// indistinguishable, from the outside, from a check that examined it and found
+// nothing wrong.
+//
+// The recognised shapes are the ordered mapping form (which preserves author
+// order), the two plain-map forms, and the array form whose elements carry the
+// delivery key under `in`. An unrecognised shape contributes nothing. Does not
+// mutate the payload.
+func appendInjectDeliveryKeys(result map[string][]string, mech string, raw any) {
+	if raw == nil {
+		return
+	}
+	switch v := raw.(type) {
+	case *types.OrderedMap[any]:
+		if v == nil {
+			return
+		}
+		for k := range v.All() {
+			result[mech] = append(result[mech], k)
+		}
+	case map[string]any:
+		for k := range v {
+			result[mech] = append(result[mech], k)
+		}
+	case map[string]string:
+		for k := range v {
+			result[mech] = append(result[mech], k)
+		}
+	case []any:
+		for _, entry := range v {
+			in, _, _, _, _, ok := types.DecodeVerboseInjectEntry(entry)
+			if !ok {
+				continue
+			}
+			result[mech] = append(result[mech], in)
+		}
+	}
+}
+
+// sortDeliveryKeys sorts each mechanism's key slice so downstream walks over
+// the collected keys iterate deterministically.
+func sortDeliveryKeys(result map[string][]string) {
+	for mech := range result {
+		sort.Strings(result[mech])
+	}
+}
+
 // collectInjectDeliveryKeys returns delivery-key names indexed by mechanism
 // name. The outer iteration walks core mechanisms (env, file, arg) followed
 // by custom mechanisms from Additional in author order via OrderedMap.All();
@@ -182,39 +235,13 @@ func collectInjectDeliveryKeys(inject *types.InjectBlock) map[string][]string {
 	if inject == nil {
 		return result
 	}
-	extractKeys := func(mech string, raw any) {
-		if raw == nil {
-			return
-		}
-		switch v := raw.(type) {
-		case map[string]any:
-			for k := range v {
-				result[mech] = append(result[mech], k)
-			}
-		case map[string]string:
-			for k := range v {
-				result[mech] = append(result[mech], k)
-			}
-		case []any:
-			for _, entry := range v {
-				in, _, _, _, _, ok := types.DecodeVerboseInjectEntry(entry)
-				if !ok {
-					continue
-				}
-				result[mech] = append(result[mech], in)
-			}
-		}
-	}
-	extractKeys("env", inject.Env)
-	extractKeys("file", inject.File)
-	extractKeys("arg", inject.Arg)
+	appendInjectDeliveryKeys(result, "env", inject.Env)
+	appendInjectDeliveryKeys(result, "file", inject.File)
+	appendInjectDeliveryKeys(result, "arg", inject.Arg)
 	for k, v := range inject.Additional.All() {
-		extractKeys(k, v)
+		appendInjectDeliveryKeys(result, k, v)
 	}
-	// Sort each mechanism's keys
-	for mech := range result {
-		sort.Strings(result[mech])
-	}
+	sortDeliveryKeys(result)
 	return result
 }
 
@@ -234,36 +261,6 @@ func collectUsesInjectDeliveryKeys(uses types.OrderedMap[types.UsesSocketValue])
 	if uses.Len() == 0 {
 		return result
 	}
-	extractKeys := func(mech string, raw any) {
-		if raw == nil {
-			return
-		}
-		switch v := raw.(type) {
-		case *types.OrderedMap[any]:
-			if v == nil {
-				return
-			}
-			for k := range v.All() {
-				result[mech] = append(result[mech], k)
-			}
-		case map[string]any:
-			for k := range v {
-				result[mech] = append(result[mech], k)
-			}
-		case map[string]string:
-			for k := range v {
-				result[mech] = append(result[mech], k)
-			}
-		case []any:
-			for _, entry := range v {
-				in, _, _, _, _, ok := types.DecodeVerboseInjectEntry(entry)
-				if !ok {
-					continue
-				}
-				result[mech] = append(result[mech], in)
-			}
-		}
-	}
 	for _, val := range uses.All() {
 		if val.Verbose.Len() == 0 {
 			continue
@@ -272,17 +269,15 @@ func collectUsesInjectDeliveryKeys(uses types.OrderedMap[types.UsesSocketValue])
 			if entry.Inject == nil {
 				continue
 			}
-			extractKeys("env", entry.Inject.Env)
-			extractKeys("file", entry.Inject.File)
-			extractKeys("arg", entry.Inject.Arg)
+			appendInjectDeliveryKeys(result, "env", entry.Inject.Env)
+			appendInjectDeliveryKeys(result, "file", entry.Inject.File)
+			appendInjectDeliveryKeys(result, "arg", entry.Inject.Arg)
 			for mech, mechRaw := range entry.Inject.Additional.All() {
-				extractKeys(mech, mechRaw)
+				appendInjectDeliveryKeys(result, mech, mechRaw)
 			}
 		}
 	}
-	for mech := range result {
-		sort.Strings(result[mech])
-	}
+	sortDeliveryKeys(result)
 	return result
 }
 

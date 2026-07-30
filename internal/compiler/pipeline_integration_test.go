@@ -283,8 +283,8 @@ func TestPipeline_SubAggregateFlattening(t *testing.T) {
 	if !ok || childDB == nil {
 		t.Fatal("expected data-mod.child-db node")
 	}
-	if topoResult.ExportedComponents["data-mod.db"] != "data-mod.child-db" {
-		t.Errorf("exported: %v", topoResult.ExportedComponents)
+	if got, _ := topoResult.ExportedComponents.Get("data-mod.db"); got != "data-mod.child-db" {
+		t.Errorf("exported: %v", topoResult.ExportedComponents.Keys())
 	}
 }
 

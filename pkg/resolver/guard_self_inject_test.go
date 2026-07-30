@@ -316,3 +316,106 @@ func TestCollectInjectDeliveryKeys_VerboseArrayForm(t *testing.T) {
 		t.Errorf("malformed entries should skip; got env=%v want [GOOD]", got)
 	}
 }
+
+// orderedAny builds an ordered mapping payload of the shape an inject block
+// carries when its mechanism value is reached through an order-preserving
+// any-typed decode rather than a plain map decode.
+func orderedAny(pairs ...string) *types.OrderedMap[any] {
+	m := types.NewOrderedMap[any]()
+	for i := 0; i+1 < len(pairs); i += 2 {
+		m.Set(pairs[i], pairs[i+1])
+	}
+	return m
+}
+
+// TestGuardSelfInject_SelfInjectOrderedMapShape_KeyCollision pins that a
+// component-level inject block whose mechanism payload arrives in the
+// order-preserving mapping shape is still walked for delivery keys, so a
+// collision against the same key in uses-inject halts. A key-collection walk
+// that recognises only the plain-map and array shapes returns no keys for this
+// payload, which makes the collision check approve a component it never
+// examined — the failure mode a collision check exists to prevent.
+func TestGuardSelfInject_SelfInjectOrderedMapShape_KeyCollision(t *testing.T) {
+	t.Parallel()
+
+	usesInject := &types.InjectBlock{Env: map[string]any{"DB_URL": "host"}}
+	verbose := types.OrderedMap[types.VerboseUsesEntry]{}
+	verbose.Set("db", types.VerboseUsesEntry{Target: "my-db", Inject: usesInject})
+	uses := types.OrderedMap[types.UsesSocketValue]{}
+	uses.Set("databases", types.UsesSocketValue{Verbose: verbose})
+
+	selfInject := &types.InjectBlock{Env: orderedAny("DB_URL", "localhost")}
+
+	components := types.OrderedMap[types.ComponentInstance]{}
+	components.Set("api", types.ComponentInstance{
+		Type:   "core/web-server",
+		Inject: selfInject,
+		Uses:   uses,
+	})
+	agg := &types.Aggregate{
+		Metadata: types.AggregateMetadata{Name: "test"},
+		Spec:     types.AggregateSpec{Components: components},
+	}
+
+	errs := guardSelfInject(normalized(t, agg), selfInjectCatalog())
+	found := false
+	for _, e := range errs {
+		if errors.Is(e, ErrInjectKeyCollision) {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected ErrInjectKeyCollision for an ordered-map-shaped self-inject colliding with uses-inject; got %d errors: %v", len(errs), errs)
+	}
+}
+
+// TestCollectInjectDeliveryKeys_OrderedMapShapeParity holds the two
+// delivery-key collectors to the same shape union. They read the same payload
+// type from the same authoring surface — one from the component's own inject
+// block, one from the inject block on a uses entry — so a shape either collector
+// recognises must be a shape both recognise. Divergence here is not a style
+// difference: whichever collector is narrower reports no keys, and a collision
+// check fed no keys passes silently.
+//
+// The two collectors share one shape-union walk, so this test cannot fail while
+// that stays true. It is kept deliberately rather than removed as redundant: it
+// asserts the collectors' observable behaviour, not the walk's, so it is what
+// fires if either collector ever grows a payload walk of its own again.
+func TestCollectInjectDeliveryKeys_OrderedMapShapeParity(t *testing.T) {
+	t.Parallel()
+
+	selfInject := &types.InjectBlock{Env: orderedAny("DB_URL", "host")}
+	selfInject.Additional.Set("ssm_param", orderedAny("SECRET", "secret.arn"))
+
+	selfKeys := collectInjectDeliveryKeys(selfInject)
+	if got := selfKeys["env"]; len(got) != 1 || got[0] != "DB_URL" {
+		t.Errorf("self collector env keys = %v, want [DB_URL]", got)
+	}
+	if got := selfKeys["ssm_param"]; len(got) != 1 || got[0] != "SECRET" {
+		t.Errorf("self collector ssm_param keys = %v, want [SECRET]", got)
+	}
+	if len(selfKeys) == 0 {
+		t.Errorf("self collector on ordered-map shape: got %v, want keys under %q and %q", selfKeys, "env", "ssm_param")
+	}
+
+	// The same payload read through the uses-side collector, which already
+	// recognises the shape. Both sides must agree.
+	verbose := types.OrderedMap[types.VerboseUsesEntry]{}
+	verbose.Set("db", types.VerboseUsesEntry{Target: "my-db", Inject: selfInject})
+	uses := types.OrderedMap[types.UsesSocketValue]{}
+	uses.Set("databases", types.UsesSocketValue{Verbose: verbose})
+
+	usesKeys := collectUsesInjectDeliveryKeys(uses)
+	for mech, want := range usesKeys {
+		got := selfKeys[mech]
+		if len(got) != len(want) {
+			t.Errorf("shape-union parity broken: uses collector sees %v for the same payload the self collector reads as %v", usesKeys, selfKeys)
+			break
+		}
+		for i := range want {
+			if got[i] != want[i] {
+				t.Errorf("shape-union parity broken on mechanism %q: self=%v uses=%v", mech, got, want)
+			}
+		}
+	}
+}

@@ -24,13 +24,25 @@ const maxSubAggregateDepth = 10
 type flattenResult struct {
 	Nodes              types.OrderedMap[*TopologyNode]
 	FeatureAttachments map[string][]FeatureAttachment
-	ExportedComponents map[string]string
+	// ExportedComponents maps the alias an Aggregate publishes to the
+	// dot-notation ID that alias resolves to after flattening. Ordered because
+	// the table is read downstream to rewrite edge targets, which is in the
+	// byte-identical-output path; the order is the order the authoring surface
+	// declares the aliases in.
+	ExportedComponents types.OrderedMap[string]
 	// Pruned is the set of flattened node IDs a false `active` toggle removed
 	// from the topology. Pruned nodes are absent from Nodes (so their own edges
 	// and attachments never materialize); the set is retained so the
 	// dangling-target sweep can tell a survivor's edge into a deliberately
 	// pruned target apart from an edge into a target that never existed.
-	Pruned map[string]bool
+	//
+	// Only ever stores true, so presence is membership. Ordered rather than a
+	// plain map because the set is carried onward to a consumer downstream of
+	// flattening: an unordered set placed in the pipeline's own products has no
+	// iteration order, which the byte-identical-output contract forbids. The
+	// order is the order in which flattening encountered each pruned node, which
+	// is author order at every level.
+	Pruned types.OrderedMap[bool]
 }
 
 // evalActive interprets a component's or module's resolved `active` toggle.
@@ -126,8 +138,8 @@ func flattenAggregate(
 	result := &flattenResult{
 		Nodes:              types.OrderedMap[*TopologyNode]{},
 		FeatureAttachments: make(map[string][]FeatureAttachment),
-		ExportedComponents: make(map[string]string),
-		Pruned:             make(map[string]bool),
+		ExportedComponents: types.OrderedMap[string]{},
+		Pruned:             types.OrderedMap[bool]{},
 	}
 
 	// Walk top-level components in author order
@@ -140,7 +152,7 @@ func flattenAggregate(
 		if !keep {
 			// Pruned: skip node creation and attachments; record the ID so the
 			// dangling sweep can classify a survivor's edge into it.
-			result.Pruned[nodeID] = true
+			result.Pruned.Set(nodeID, true)
 			continue
 		}
 		if existing, exists := result.Nodes.Get(nodeID); exists {
@@ -211,8 +223,11 @@ func flattenAggregate(
 			for id, feats := range childResult.FeatureAttachments {
 				result.FeatureAttachments[id] = append(result.FeatureAttachments[id], feats...)
 			}
-			for id := range childResult.Pruned {
-				result.Pruned[id] = true
+			// Walk the child's own encounter order rather than a plain-map range,
+			// so the merged set's order stays derived from authoring rather than
+			// from Go's map iteration.
+			for id := range childResult.Pruned.All() {
+				result.Pruned.Set(id, true)
 			}
 
 			// Rewire exported_components: alias scoped to sub-aggregate prefix.
@@ -228,7 +243,7 @@ func flattenAggregate(
 					if err != nil {
 						return nil, err
 					}
-					result.ExportedComponents[qualifiedID(childPrefix, exportAlias)] = resolved
+					result.ExportedComponents.Set(qualifiedID(childPrefix, exportAlias), resolved)
 				}
 			}
 		}
@@ -284,7 +299,7 @@ func flattenSubsystem(result *flattenResult, prefix, subsystemPath, sourceFile s
 			return err
 		}
 		if !keep {
-			result.Pruned[nodeID] = true
+			result.Pruned.Set(nodeID, true)
 			continue
 		}
 		if existing, exists := result.Nodes.Get(nodeID); exists {
@@ -359,7 +374,7 @@ func collectAttachments(result *flattenResult, nodeID string, comp types.Compone
 // follow-chain increases dotted-ID depth and terminates on well-formed input;
 // the visited-set is a backstop against a malformed alias table rather than a
 // shape reachable through the acyclic inclusion tree.
-func resolveExportTarget(candidate string, nodes types.OrderedMap[*TopologyNode], childExports map[string]string) (string, error) {
+func resolveExportTarget(candidate string, nodes types.OrderedMap[*TopologyNode], childExports types.OrderedMap[string]) (string, error) {
 	visited := make(map[string]bool)
 	var chain []string
 	cur := candidate
@@ -367,7 +382,7 @@ func resolveExportTarget(candidate string, nodes types.OrderedMap[*TopologyNode]
 		if _, isNode := nodes.Get(cur); isNode {
 			return cur, nil
 		}
-		next, isAlias := childExports[cur]
+		next, isAlias := childExports.Get(cur)
 		if !isAlias {
 			return cur, nil
 		}

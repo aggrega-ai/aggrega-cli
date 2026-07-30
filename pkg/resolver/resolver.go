@@ -81,6 +81,21 @@ type ResolveResult struct {
 	AggregatePath string         // Aggregate file path; carried so downstream phases (annotation expansion, inspect) can construct source-location strings for Aggregate-authored annotations without re-discovering it
 	ReleasePath   string         // Release file path; carried so downstream phases (annotation expansion, inspect) can construct source-location strings without re-discovering it
 
+	// AggregateInterpolatedBytes is the Aggregate's text after parameter
+	// interpolation — the final authored shape, the bytes whose envelope was
+	// validated and which produced the resolved Aggregate. Carried so a
+	// downstream consumer can read the document the resolve actually parsed
+	// rather than re-running interpolation to reconstruct it.
+	//
+	// This is a DIFFERENT document from the raw pre-interpolation text the
+	// caller supplied, and the two are not interchangeable. Interpolation
+	// consumes every parameter reference expression, so a reader that needs to
+	// see which parameters the Aggregate's own text referenced must read the raw
+	// bytes; a reader that needs the shape the compiler resolved must read these.
+	// The unread-parameter advisory depends on that distinction and reads the raw
+	// text deliberately.
+	AggregateInterpolatedBytes []byte
+
 	// AnnotationProvenance records, for every synthetic Feature
 	// attachment produced by ExpandAnnotations, the annotation key
 	// that triggered the expansion and the source location where
@@ -266,15 +281,16 @@ func resolveFromInputs(ctx context.Context, in ResolveInputs) (*ResolveResult, e
 	// callback returns, so every resolve path inherits one purge contract and
 	// no caller carries a purge defer of its own.
 	return &ResolveResult{
-		Aggregate:            &agg,
-		Release:              release,
-		Manifest:             manifest,
-		BoundaryInfra:        boundaryInfra,
-		BoundaryAnnotations:  boundaryAnnotations,
-		Parameters:           params,
-		AggregatePath:        in.AggregatePath,
-		ReleasePath:          in.ReleasePath,
-		AnnotationProvenance: map[string]AnnotationProvenance{},
-		LintAdvisories:       advisories,
+		Aggregate:                  &agg,
+		Release:                    release,
+		Manifest:                   manifest,
+		BoundaryInfra:              boundaryInfra,
+		BoundaryAnnotations:        boundaryAnnotations,
+		Parameters:                 params,
+		AggregatePath:              in.AggregatePath,
+		ReleasePath:                in.ReleasePath,
+		AggregateInterpolatedBytes: interpolated,
+		AnnotationProvenance:       map[string]AnnotationProvenance{},
+		LintAdvisories:             advisories,
 	}, nil
 }

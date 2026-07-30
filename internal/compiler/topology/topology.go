@@ -12,8 +12,8 @@ import (
 )
 
 // TopologyResult is the output of Build — the upstream input to the IR
-// builder (Step 3). Five fields, all carrying author-declared ordering
-// disciplines that flow from the Aggregate's authoring sequence:
+// builder (Step 3). Every field carries an author-declared ordering discipline
+// that flows from the Aggregate's authoring sequence:
 //
 //   - Nodes carries the Aggregate's component order (and recursively the
 //     order of components in any sub-aggregate it imports) through
@@ -48,7 +48,22 @@ type TopologyResult struct {
 	Nodes              types.OrderedMap[*TopologyNode]
 	Edges              []NormalizedEdge
 	FeatureAttachments map[string][]FeatureAttachment
-	ExportedComponents map[string]string // alias → resolved dot-notation ID
+	// ExportedComponents is the live export-alias table: alias → resolved
+	// dot-notation ID, carrying only aliases whose target survived pruning.
+	ExportedComponents types.OrderedMap[string]
+	// ExportedComponentsDeclared is every export alias the Aggregate tree
+	// published, including aliases dropped because their target was pruned.
+	// It is a snapshot taken before the drop, so a consumer distinguishing "this
+	// alias was never declared" from "this alias was declared and its target
+	// pruned" reads the two tables against each other rather than depending on
+	// the order in which it observes one being mutated.
+	ExportedComponentsDeclared types.OrderedMap[string]
+	// Pruned is every flattened node ID a false `active` toggle removed from the
+	// topology, in the order flattening encountered them. Only ever stores true,
+	// so presence is membership. A node here is absent from Nodes, which is what
+	// lets a consumer tell a reference to a deliberately-removed component apart
+	// from a reference to one that never existed.
+	Pruned types.OrderedMap[bool]
 }
 
 // TopologyNode is one flattened node in the topology graph. Fields are
@@ -539,14 +554,27 @@ func BuildContext(ctx context.Context, cfg BuildConfig) (*TopologyResult, error)
 		}
 	}
 
+	// Snapshot the declared alias table before the drop below removes entries
+	// from it, so what the Aggregate tree published stays legible afterwards.
+	declaredExports := types.OrderedMap[string]{}
+	for alias, target := range flat.ExportedComponents.All() {
+		declaredExports.Set(alias, target)
+	}
+
 	// Drop exported-component aliases whose resolved target was pruned. A pruned
 	// component must not be published as part of the module's public interface;
 	// dropping the alias before the dangling sweep keeps a stale export from
-	// pointing at a component that no longer exists.
-	for alias, target := range flat.ExportedComponents {
-		if flat.Pruned[target] {
-			delete(flat.ExportedComponents, alias)
+	// pointing at a component that no longer exists. The aliases are collected
+	// first and deleted after the walk: deleting during iteration would mutate
+	// the key order the walk is reading.
+	var prunedAliases []string
+	for alias, target := range flat.ExportedComponents.All() {
+		if _, gone := flat.Pruned.Get(target); gone {
+			prunedAliases = append(prunedAliases, alias)
 		}
+	}
+	for _, alias := range prunedAliases {
+		flat.ExportedComponents.Delete(alias)
 	}
 
 	// Resolve export-alias edge targets to their internal node IDs. A sub-aggregate
@@ -565,7 +593,7 @@ func BuildContext(ctx context.Context, cfg BuildConfig) (*TopologyResult, error)
 		if _, isNode := flat.Nodes.Get(edges[i].Target); isNode {
 			continue
 		}
-		if resolved, isAlias := flat.ExportedComponents[edges[i].Target]; isAlias {
+		if resolved, isAlias := flat.ExportedComponents.Get(edges[i].Target); isAlias {
 			edges[i].Target = resolved
 		}
 	}
@@ -580,7 +608,7 @@ func BuildContext(ctx context.Context, cfg BuildConfig) (*TopologyResult, error)
 	// existed, so the author sees why the target is missing.
 	for _, e := range edges {
 		if _, exists := flat.Nodes.Get(e.Target); !exists {
-			if flat.Pruned[e.Target] {
+			if _, gone := flat.Pruned.Get(e.Target); gone {
 				return nil, fmt.Errorf(
 					"uses edge %s/%s/%s targets %q, which was pruned from the topology because its active toggle resolved to false: %w",
 					e.Source, e.Socket, e.Alias, e.Target, ErrUsesPrunedComponent)
@@ -600,10 +628,12 @@ func BuildContext(ctx context.Context, cfg BuildConfig) (*TopologyResult, error)
 	// resolved, so only context-independent structural constraints are checked
 	// (conditional x-aggrega predicates are validated where the context exists).
 	result := &TopologyResult{
-		Nodes:              flat.Nodes,
-		Edges:              edges,
-		FeatureAttachments: flat.FeatureAttachments,
-		ExportedComponents: flat.ExportedComponents,
+		Nodes:                      flat.Nodes,
+		Edges:                      edges,
+		FeatureAttachments:         flat.FeatureAttachments,
+		ExportedComponents:         flat.ExportedComponents,
+		ExportedComponentsDeclared: declaredExports,
+		Pruned:                     flat.Pruned,
 	}
 
 	if cfg.ResolveResult != nil {

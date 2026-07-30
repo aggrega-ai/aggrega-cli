@@ -748,7 +748,9 @@ func TestBuild_TransitiveReexportDanglingHalts(t *testing.T) {
 // every hop); the direct call exercises the visited-set guard regardless.
 func TestResolveExportTarget_CycleHalts(t *testing.T) {
 	t.Parallel()
-	childExports := map[string]string{"a": "b", "b": "a"}
+	childExports := types.OrderedMap[string]{}
+	childExports.Set("a", "b")
+	childExports.Set("b", "a")
 	nodes := types.OrderedMap[*TopologyNode]{} // contains neither a nor b
 
 	type outcome struct {

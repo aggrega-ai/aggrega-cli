@@ -172,8 +172,8 @@ func TestFlattenAggregate_SubAggregate(t *testing.T) {
 	if !ok || childDB == nil {
 		t.Fatal("expected data-module.child-db node with dot-notation ID")
 	}
-	if result.ExportedComponents["data-module.db"] != "data-module.child-db" {
-		t.Errorf("exported: %v", result.ExportedComponents)
+	if got, _ := result.ExportedComponents.Get("data-module.db"); got != "data-module.child-db" {
+		t.Errorf("exported: %v", result.ExportedComponents.Keys())
 	}
 }
 
