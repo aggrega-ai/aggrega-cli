@@ -71,7 +71,7 @@ func TestGuardInjectKeys_ResolvedCatalogRefAbsentHalts(t *testing.T) {
 func TestGuardRequiredUsesSockets_ResolvedCatalogRefAbsentHalts(t *testing.T) {
 	t.Parallel()
 	agg := oneBareComponent("core/absent:1.0.0", nil)
-	requireViewInconsistency(t, guardRequiredUsesSockets(normalized(t, agg), notFoundCatalog()))
+	requireViewInconsistency(t, guardRequiredUsesSockets(normalized(t, agg), nil, notFoundCatalog()))
 }
 
 func TestGuardSchemaConformance_ResolvedCatalogRefAbsentHalts(t *testing.T) {

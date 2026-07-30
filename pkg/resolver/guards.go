@@ -92,7 +92,8 @@ type CatalogLookup struct {
 //  2. Self-inject validation — allowlist membership and delivery-key collision.
 //  3. Inject key validation — inject from-keys must reference target's provides.
 //  4. Release feature merge — type agreement on dual-declared features.
-//  5. Required uses-socket population — usesSchema.required enforcement.
+//  5. Required uses-socket population — usesSchema.required enforcement, read
+//     across the Aggregate's and the Release's edge surfaces together.
 //  6. Schema conformance — authored values/infra pillars match the declared schema.
 //  7. Release uses-socket validation — Release per-edge sockets exist in usesSchema.
 //  8. Per-edge conformance — per-edge values/infra match the socket's per-edge schema.
@@ -106,6 +107,15 @@ type CatalogLookup struct {
 // evaluated over the finalised graph rather than over the pre-flatten
 // Aggregate. What IS checked here is the shape of what the author wrote, which
 // is a question about the authored document and belongs at its authoring site.
+//
+// The required uses-socket rule (5) is the deliberate contrast, not an
+// inconsistency: it has no cascade to wait for. Exactly two surfaces can
+// populate a socket declared in a Component's usesSchema — that component's own
+// `uses` block and the Release's per-edge `uses` — and both are authored
+// documents already in scope here, so this is the earliest stage at which the
+// rule's inputs are complete. A Feature attachment's `uses` names sockets on
+// the FEATURE, a separate socket set, so no attachment can satisfy a
+// Component's socket and no merged set has to be approximated.
 //
 // All violations are collected; no guard short-circuits the others. Within a
 // guard, errors sort by (Entity, Field) for byte-identical output across
@@ -121,7 +131,7 @@ func RunGuards(na types.NormalizedAggregate, release *types.Release, catalog Cat
 	errs = append(errs, guardSelfInject(na, catalog)...)
 	errs = append(errs, guardInjectKeys(na, catalog)...)
 	errs = append(errs, guardFeatureMerge(na, release)...)
-	errs = append(errs, guardRequiredUsesSockets(na, catalog)...)
+	errs = append(errs, guardRequiredUsesSockets(na, release, catalog)...)
 	errs = append(errs, guardSchemaConformance(na, catalog, boundaryInfra, parameters)...)
 	errs = append(errs, guardEdgeConformance(na, release, catalog, parameters)...)
 	errs = append(errs, guardAttachmentSlotShape(na, catalog)...)

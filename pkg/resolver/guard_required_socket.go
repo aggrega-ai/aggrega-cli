@@ -9,15 +9,32 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
-// guardRequiredUsesSockets enforces that every ComponentInstance in the Aggregate
-// populates each `required: true` socket declared by its Component's usesSchema.
-// Emits ErrMissingRequiredSocket per missing or empty socket. Walks the Aggregate
-// top-level components plus all ComponentInstances reachable through Subsystems.
-func guardRequiredUsesSockets(na types.NormalizedAggregate, catalog CatalogLookup) []*ResolverError {
+// guardRequiredUsesSockets enforces that each `required: true` socket declared
+// by a Component's usesSchema is populated for every ComponentInstance of that
+// Component. Emits ErrMissingRequiredSocket per missing or empty socket. Walks
+// the Aggregate top-level components plus all ComponentInstances reachable
+// through Subsystems.
+//
+// Population is read from BOTH authoring documents, because both can bind such a
+// socket: the Aggregate's own `uses` block, and the Release's per-edge `uses`
+// surface, which may wire a declared-but-unbound socket to an existing
+// component. A socket only the Release binds is populated in the graph that
+// gets rendered, so reading the Aggregate alone would reject a document the
+// operator edge surface expressly permits.
+//
+// No other surface can populate one of these sockets. A Feature attachment's
+// `uses` sockets are the FEATURE's declared sockets, a separate socket set on a
+// separate catalog entity, and a Feature-contributed edge is deliberately kept
+// out of the consuming Component's apparent edge set — so an attachment cannot
+// satisfy a Component's socket, and the rule's inputs are complete once both
+// documents are parsed.
+func guardRequiredUsesSockets(na types.NormalizedAggregate, release *types.Release, catalog CatalogLookup) []*ResolverError {
 	agg := na.Aggregate()
 	if agg == nil || catalog.Component == nil {
 		return nil
 	}
+
+	releaseBound := releaseBoundSockets(release)
 
 	var errs []*ResolverError
 	instances := collectComponentInstances(na)
@@ -48,6 +65,9 @@ func guardRequiredUsesSockets(na types.NormalizedAggregate, catalog CatalogLooku
 			if socketIsPopulated(pair.inst.Uses, socketName) {
 				continue
 			}
+			if _, bound := releaseBound[releaseSocketKey{node: pair.name, socket: socketName}]; bound {
+				continue
+			}
 			errs = append(errs, &ResolverError{
 				Entity:  fmt.Sprintf("Component %q (instance %q)", comp.Metadata.Name, pair.name),
 				Field:   fmt.Sprintf("%s.uses[%q]", componentFieldPath(pair.subsystemPath, pair.name, pair.synthesized), socketName),
@@ -57,6 +77,47 @@ func guardRequiredUsesSockets(na types.NormalizedAggregate, catalog CatalogLooku
 		}
 	}
 	return errs
+}
+
+// releaseSocketKey identifies one socket on one consuming node, so a
+// Release-side binding can be looked up per (node, socket) rather than
+// per-node — a Release wiring one socket says nothing about a sibling socket on
+// the same component.
+type releaseSocketKey struct {
+	node   string
+	socket string
+}
+
+// releaseBoundSockets returns the set of sockets a Release binds by CREATING an
+// edge. Only an entry naming a target creates one: a targetless entry
+// configures an edge that must already exist, so it cannot populate a socket
+// nothing else bound.
+//
+// The shared [collectReleaseEdgeEntries] walk supplies the entries, but the
+// target-presence test itself is a SECOND statement of the rule the graph-build
+// pass applies when it decides whether to draw an edge. The two agree by
+// construction rather than by sharing a predicate, so they have to change
+// together: were they to diverge, a socket omitted from this set is one the
+// required-socket rule rejects even though an edge does get drawn for it.
+//
+// Node identity is the consuming node ID as the Release authored it, matched
+// against the resolver-visible instance name — the convention every Step-1
+// guard that reads the Release edge surface already uses, via the shared
+// [collectReleaseEdgeEntries] walk. A node the resolver cannot see is therefore
+// invisible here exactly as it is to the socket-allowlist and per-edge
+// conformance gates that validate the very same entries.
+func releaseBoundSockets(release *types.Release) map[releaseSocketKey]struct{} {
+	if release == nil {
+		return nil
+	}
+	bound := map[releaseSocketKey]struct{}{}
+	for _, ref := range collectReleaseEdgeEntries(release) {
+		if ref.entry.Target == "" {
+			continue
+		}
+		bound[releaseSocketKey{node: ref.nodeID, socket: ref.socket}] = struct{}{}
+	}
+	return bound
 }
 
 // socketIsPopulated returns true when the Aggregate's uses block has at
