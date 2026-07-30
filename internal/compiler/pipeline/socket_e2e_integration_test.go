@@ -6,11 +6,9 @@
 package pipeline_test
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -411,31 +409,6 @@ func TestSocketsEmptyConfigNoOp(t *testing.T) {
 			t.Errorf("node %q carries the mutator proof label under empty config (socket ran when it should not have)", nodeID)
 		}
 	}
-}
-
-// captureStderr redirects os.Stderr for the duration of fn and returns
-// everything written to it. The socket runners emit warn / audit diagnostics to
-// os.Stderr, so a proof that a warn "flags" or an audit "records" reads the
-// captured text. It mutates a process global, so its callers do not run in
-// parallel.
-func captureStderr(t *testing.T, fn func()) string {
-	t.Helper()
-	orig := os.Stderr
-	r, w, err := os.Pipe()
-	if err != nil {
-		t.Fatalf("pipe: %v", err)
-	}
-	os.Stderr = w
-	done := make(chan string, 1)
-	go func() {
-		var buf bytes.Buffer
-		_, _ = io.Copy(&buf, r)
-		done <- buf.String()
-	}()
-	fn()
-	_ = w.Close()
-	os.Stderr = orig
-	return <-done
 }
 
 // observePolicyInputs clones the fullstack inputs and attaches the observing

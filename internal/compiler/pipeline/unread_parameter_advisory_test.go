@@ -6,7 +6,6 @@ package pipeline_test
 import (
 	"bytes"
 	"context"
-	"io"
 	"os"
 	"strings"
 	"testing"
@@ -35,32 +34,6 @@ func declareUnreadParameter(t *testing.T, aggBytes []byte) []byte {
 	if bytes.Equal(out, aggBytes) {
 		t.Fatal("splice changed nothing; the probe parameter would not be declared")
 	}
-	return out
-}
-
-// captureStderr runs fn with os.Stderr redirected and returns what was written.
-func captureStderr(t *testing.T, fn func()) string {
-	t.Helper()
-	r, w, err := os.Pipe()
-	if err != nil {
-		t.Fatalf("pipe: %v", err)
-	}
-	saved := os.Stderr
-	os.Stderr = w
-
-	done := make(chan string, 1)
-	go func() {
-		var buf bytes.Buffer
-		_, _ = io.Copy(&buf, r)
-		done <- buf.String()
-	}()
-
-	fn()
-
-	os.Stderr = saved
-	_ = w.Close()
-	out := <-done
-	_ = r.Close()
 	return out
 }
 
