@@ -24,34 +24,40 @@ import (
 // them to disk asynchronously. This test runs a 50-node compile against an
 // fsWriter and asserts:
 //
-//  1. Per-Write() latency stays in microseconds (not milliseconds), proving
-//     no Write() call blocked on disk I/O. The channel-send path is a
-//     memory-only operation; if a Write() takes ~1ms+, it means the writer
-//     synchronously hit disk somewhere — design contract violated.
-//
-//  2. Zero events were dropped due to channel saturation. With ~9 events
+//  1. Zero events were dropped due to channel saturation. With ~9 events
 //     per node from a 50-node workload-mode-only graph (~450 events) and a
 //     1024-event channel buffer, saturation is impossible at this scale;
 //     non-zero drops indicate either the consumer goroutine isn't draining
 //     or the buffer was reduced without updating this test.
 //
-//  3. Close() returns within a finite, generous bound (5 seconds). The
+//  2. Close() returns within a finite, generous bound (5 seconds). The
 //     consumer goroutine must finish processing buffered events when told
 //     to stop; an unbounded Close() means a leaked goroutine or a stuck
-//     channel.
+//     channel. This is a liveness ceiling, not a performance measurement:
+//     it separates "returns" from "hangs forever", which no amount of
+//     machine contention can blur.
 //
-//  4. The trace directory is fully populated after Close() — every node
+//  3. The trace directory is fully populated after Close() — every node
 //     has its expected per-pass files. Proves async writes actually
 //     completed before Close() returned.
 //
-// This is a structural test of the design contract, not a wall-clock perf
-// test. Wall-clock-based perf measurements are unsuitable for CI (GC, OS
-// scheduling, FS caching, and CPU contention dominate single-sample timing
-// at sub-100ms scales). Structural assertions on the writer's internal
-// counters are deterministic and runner-independent: per-Write() latency
-// captured inside the writer is microseconds for non-blocking sends and
-// milliseconds for blocking sends — a 1000x signal-to-noise ratio robust
-// against any runner-speed variation.
+// The non-blocking half of the contract is asserted where it can be asserted
+// without a clock, in the trace package's own saturation test: that test
+// drives a writer whose channel has one slot and no consumer, and requires
+// the subsequent Write() calls to return reporting a drop. A blocking send
+// could not do that — it would deadlock the test rather than fail it — so the
+// assertion discriminates the two designs structurally, at any machine speed.
+// The same package confirms the other half by construction: the only call
+// site that touches the filesystem is reached from the consumer goroutine, so
+// no Write() can reach disk on the caller's goroutine.
+//
+// Peak Write() latency is logged at the end of this test and deliberately not
+// asserted on. A wall-clock bound here would measure the machine's spare CPU
+// rather than the writer, because Write() serialises the pillar snapshot on
+// the calling goroutine before the send, and that serialisation is
+// CPU-bound — so under a fully parallel battery the number reflects
+// contention from unrelated packages. Widening such a bound to absorb the
+// contention only makes it measure less; it was already widened once.
 //
 // The test uses helm-workload-mode Recipes (no source:) for test-
 // infrastructure reuse via testHelmFactory(t); compose-workload-mode would
@@ -79,7 +85,7 @@ func TestTrace_NonBlockingContract_50Nodes(t *testing.T) {
 
 	traceRoot := t.TempDir()
 	traceWriter := trace.New(traceRoot, trace.Mode{})
-	// Note: do NOT defer Close() — assertion #3 needs explicit timing.
+	// Note: do NOT defer Close() — assertion #2 needs explicit timing.
 
 	input := renderer.RendererInput{
 		Graph: &types.IRGraph{
@@ -141,28 +147,7 @@ containers:
 
 	stats := trace.Stats(traceWriter)
 
-	// === Assertion 1: per-Write() latency stays well below disk-I/O scale ===
-	// A non-blocking channel send + struct copy is hundreds of nanoseconds
-	// in isolation; under parallel-test CPU contention the yaml.Marshal call
-	// inside Write() (which serialises the pillar snapshot before the
-	// channel send) can spike to several milliseconds on a contended runner.
-	// Threshold is set to 50ms — 100× the cleanest-case ~471µs Write() per
-	// the project testing-mandate's 100× margin rule for parallel-CPU-
-	// contention-bound timings. The structural contract under test is
-	// "no disk-I/O blocking"; disk-I/O blocking would be 50ms+ steady-state,
-	// so the threshold still detects that regression while absorbing
-	// transient yaml.Marshal spikes from cross-suite parallel pressure
-	// (race detector + many parallel sub-tests). Future tightening: move
-	// the yaml.Marshal off the renderer goroutine (channel carries raw
-	// data any, consumer marshals on dequeue) to drop the Write()
-	// path to pure channel send; the threshold can then return to ~1ms.
-	const maxAcceptableWriteLatency = 50 * time.Millisecond
-	if stats.MaxWriteLatency > maxAcceptableWriteLatency {
-		t.Errorf("Write() max latency = %v, exceeds %v threshold; design contract violated (writer blocking on I/O?)",
-			stats.MaxWriteLatency, maxAcceptableWriteLatency)
-	}
-
-	// === Assertion 2: zero saturation drops ===
+	// === Assertion 1: zero saturation drops ===
 	// 50 nodes × ~9 events per node ≈ 450 events; channel buffer is 1024.
 	// Drops at this scale indicate the consumer goroutine isn't draining
 	// (deadlock, missing goroutine, or producer-faster-than-consumer in a
@@ -172,14 +157,14 @@ containers:
 			stats.DroppedWrites)
 	}
 
-	// === Assertion 3: Close() returns within a generous bound ===
+	// === Assertion 2: Close() returns within a generous bound ===
 	const maxCloseDuration = 5 * time.Second
 	if closeElapsed > maxCloseDuration {
 		t.Errorf("Close() took %v, exceeds %v bound; consumer goroutine may have leaked or stalled",
 			closeElapsed, maxCloseDuration)
 	}
 
-	// === Assertion 4: trace directory is fully populated ===
+	// === Assertion 3: trace directory is fully populated ===
 	// Validates that async writes completed before Close() returned.
 	// Slots present for sourceless+workload helm:
 	expectedFiles := []string{
@@ -215,8 +200,9 @@ containers:
 		}
 	}
 
-	// Diagnostic logging on success — recorded in test-report for posterity
-	// and future tightening of the bounds (1ms → tighter, 5s → tighter).
+	// Diagnostic logging on success. The peak Write() latency here is
+	// observation only — nothing asserts on it, so a slow number on a loaded
+	// machine is information rather than a verdict.
 	t.Logf("trace stats: total writes=%d, dropped=%d, max Write() latency=%v, Close() duration=%v",
 		stats.TotalWrites, stats.DroppedWrites, stats.MaxWriteLatency, closeElapsed)
 }
