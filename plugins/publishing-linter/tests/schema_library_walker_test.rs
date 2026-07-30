@@ -48,7 +48,7 @@ fn walker_visits_nested_anyof_oneof_allof() {
 }
 
 #[test]
-fn walker_visits_nested_properties_patternProperties_defs() {
+fn walker_visits_nested_properties_pattern_properties_defs() {
     let input = schemalibrary_input(json!({
         "Probe": {
             "type": "object",
