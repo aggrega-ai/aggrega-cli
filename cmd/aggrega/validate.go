@@ -105,7 +105,12 @@ func newValidateCmd() *cobra.Command {
 	c.Flags().StringVar(&releasePath, "release", "", "Path to a Release YAML to validate over its resolved dependency closure (mutually exclusive with an entity argument)")
 	c.Flags().StringVar(&pluginPath, "plugin", "", "Path to a raw .wasm to validate against its describe() self-report — the pre-publish authoring check. Alone it needs --type; with a Plugin entity argument it cross-checks the binary against the entity's declared type, capability claim, command mirror, and host-function record.")
 	c.Flags().StringVar(&pluginType, "type", "", "Plugin type for a binary-only --plugin check, verified against the binary's self-reported type. Only meaningful with --plugin; when a Plugin entity supplies the type, omit it (a disagreeing value halts).")
-	c.Flags().StringVar(&responseFormat, "response-format", compilerops.VerbosityDetailed, "Output volume for the --release scope: `detailed` (default) reports every diagnostic plus advisory lines; `concise` reports the diagnostic count and the first diagnostic only. The verdict and exit code are identical for both.")
+	// No back-quoted token in the usage text: pflag reads the first one as the
+	// flag's value placeholder and strips its quotes, so a quoted value name here
+	// would render "--response-format detailed" as the placeholder and leave any
+	// later quoted name showing its literal quotes. The two accepted values are
+	// named in prose instead, and the placeholder stays the type.
+	c.Flags().StringVar(&responseFormat, "response-format", compilerops.VerbosityDetailed, "Output volume for the --release scope: detailed (default) reports every diagnostic plus advisory lines; concise reports the diagnostic count and the first diagnostic only. The verdict and exit code are identical for both.")
 	c.Flags().BoolVar(&noUnsupportedFieldWarnings, flagNoUnsupportedFieldWarnings, false, helpNoUnsupportedFieldWarnings+". Applies to the entity scope, the one scope that renders")
 	return c
 }

@@ -64,9 +64,11 @@ type IRMetadata struct {
 //
 //   - Nodes / Edges — the topological graph (nodes keyed by node ID,
 //     edges as a slice of directed source/target pairs).
-//   - FeatureMarkers — the marker labels collected from feature
-//     attachments, used by analyzer's policy-input assembly and by
-//     downstream selector enforcement.
+//   - FeatureMarkers — the de-duplicated, lexicographically sorted set of
+//     Feature type strings, one entry per distinct Feature type attached
+//     anywhere in the graph (for example "core/logging"), whatever declared
+//     the attachment. Sorting is what makes the set byte-identical across
+//     runs of the same input.
 //   - ValuesMapping / InfraMapping — per-node opaque developer payloads
 //     keyed by node ID, carried as json.RawMessage so the renderer
 //     hands them through to provider engines without re-marshalling.
