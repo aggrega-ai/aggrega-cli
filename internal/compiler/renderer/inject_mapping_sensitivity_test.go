@@ -274,7 +274,7 @@ func TestPhaseA_ReportedDeliveryReachesTheNodeKeySet(t *testing.T) {
 		}
 		return redact.NodeKeys(nil, nil, types.OrderedMap[types.IRFeatureEntry]{}, redact.CrossNode{},
 			injectMappingWithheld(delivered, leavesFor(map[string]resolver.SensitiveLeaves{"root-password": leaves})),
-			nil, redact.Derived{})
+			nil, nil, redact.Derived{})
 	}
 
 	if !assemble(secretValueLeaves()).Delivery("env", "MARIADB_ROOT_PASSWORD") {

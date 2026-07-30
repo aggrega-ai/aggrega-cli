@@ -175,7 +175,7 @@ func TestNodeKeys_FoldsAttachmentMarkingAndIgnoresTheRollUp(t *testing.T) {
 		Values:          om("name", "db-creds", "key", "password"),
 	})
 
-	keys := NodeKeys(map[string]bool{"dbPassword": true}, nil, attachments, CrossNode{}, nil, nil, Derived{})
+	keys := NodeKeys(map[string]bool{"dbPassword": true}, nil, attachments, CrossNode{}, nil, nil, nil, Derived{})
 
 	if !keys.Delivery("env", "DATABASE_PASSWORD") {
 		t.Errorf("the attachment's marked delivery key must reach the set; got %v", keys)
@@ -198,7 +198,7 @@ func TestNodeKeys_NothingDeclaredIsEmpty(t *testing.T) {
 	t.Parallel()
 	attachments := types.OrderedMap[types.IRFeatureEntry]{}
 	attachments.Set("plain", types.IRFeatureEntry{Type: "feature.test/plain"})
-	if keys := NodeKeys(nil, nil, attachments, CrossNode{}, nil, nil, Derived{}); !keys.Empty() {
+	if keys := NodeKeys(nil, nil, attachments, CrossNode{}, nil, nil, nil, Derived{}); !keys.Empty() {
 		t.Errorf("a node declaring nothing must produce an empty set; got %+v", keys)
 	}
 }
@@ -206,7 +206,7 @@ func TestNodeKeys_NothingDeclaredIsEmpty(t *testing.T) {
 func TestNodeKeys_CarriesDerivedSetsWithoutMergingThem(t *testing.T) {
 	t.Parallel()
 	keys := NodeKeys(map[string]bool{"dbPassword": true}, nil,
-		types.OrderedMap[types.IRFeatureEntry]{}, CrossNode{}, nil, nil,
+		types.OrderedMap[types.IRFeatureEntry]{}, CrossNode{}, nil, nil, nil,
 		Derived{
 			Locals: map[string]bool{"dsn": true},
 			Source: map[string]bool{WholeSourceKey: true},
@@ -276,7 +276,7 @@ func TestNodeKeys_CarriesConsumedTargetDeclarationsPerAlias(t *testing.T) {
 	t.Parallel()
 	keys := NodeKeys(nil, nil, types.OrderedMap[types.IRFeatureEntry]{},
 		CrossNode{Provides: map[string]map[string]bool{"storeEdge": {"zzTargetSecret": true}}},
-		nil, nil, Derived{})
+		nil, nil, nil, Derived{})
 
 	if keys.Empty() {
 		t.Error("a consumer whose target declares a provides key must carry a set")
@@ -295,16 +295,17 @@ func TestNodeKeys_CarriesConsumedTargetDeclarationsPerAlias(t *testing.T) {
 }
 
 // TestNodeKeys_FoldsEveryDeliveryRouteIntoOneMarking is the assembly assertion for
-// the delivery pipe, which is fed from four independent routes — an attachment's
-// own inject mapping, a uses edge's, a FeatureRecipe's injectMapping, and the
-// fail-safe for a key no route accounted for — into ONE displayed map.
+// the delivery pipe, which is fed from five independent routes — an attachment's
+// own inject mapping, a uses edge's, a FeatureRecipe's injectMapping, the node's own
+// component-level self-inject, and the fail-safe for a key whose provenance cannot
+// be traced — into ONE displayed map.
 //
 // Every route is asserted in one test because the failure mode is a display
 // covering some and not the others: the pipe is flat, so a reader of it cannot tell
 // which route filled a key, and a key left unmarked prints in the clear beside one
-// that did not. Three of the four gaps in this family were exactly that. An
-// unmarked sibling from each route is the control, so a marking that fired on
-// everything fails the control half.
+// that did not. Every gap in this family was exactly that. An unmarked sibling from
+// each route is the control, so a marking that fired on everything fails the
+// control half.
 func TestNodeKeys_FoldsEveryDeliveryRouteIntoOneMarking(t *testing.T) {
 	t.Parallel()
 	attachmentMarked := types.OrderedMap[types.OrderedMap[string]]{}
@@ -318,20 +319,22 @@ func TestNodeKeys_FoldsEveryDeliveryRouteIntoOneMarking(t *testing.T) {
 	keys := NodeKeys(nil, nil, attachments,
 		CrossNode{Inject: DeliveryKeys{"env": {"STORE_SECRET": true}}},
 		DeliveryKeys{"env": {"MAPPED_SECRET": true}},
+		DeliveryKeys{"env": {"SELF_INJECTED_SECRET": true}},
 		DeliveryKeys{"env": {"UNTRACED_KEY": true}},
 		Derived{})
 
 	for route, key := range map[string]string{
-		"attachment inject mapping":    "DATABASE_PASSWORD",
-		"uses edge":                    "STORE_SECRET",
-		"FeatureRecipe injectMapping":  "MAPPED_SECRET",
-		"a key no route accounted for": "UNTRACED_KEY",
+		"attachment inject mapping":     "DATABASE_PASSWORD",
+		"uses edge":                     "STORE_SECRET",
+		"FeatureRecipe injectMapping":   "MAPPED_SECRET",
+		"the node's own self-inject":    "SELF_INJECTED_SECRET",
+		"a key whose route is untraced": "UNTRACED_KEY",
 	} {
 		if !keys.Delivery("env", key) {
 			t.Errorf("the delivery key routed by %s must reach the set; got %v", route, keys)
 		}
 	}
-	for _, key := range []string{"DATABASE_NAME", "STORE_HOST", "MAPPED_LOCATOR", "TRACED_PLAIN"} {
+	for _, key := range []string{"DATABASE_NAME", "STORE_HOST", "MAPPED_LOCATOR", "SELF_INJECTED_PLAIN", "TRACED_PLAIN"} {
 		if keys.Delivery("env", key) {
 			t.Errorf("an unmarked delivery key %q must stay absent; got %v", key, keys)
 		}
@@ -352,6 +355,7 @@ func TestNodeKeys_FoldsEveryDeliveryRouteIntoOneMarking(t *testing.T) {
 func TestNodeKeys_UntracedDeliveryKeyIsWithheld(t *testing.T) {
 	t.Parallel()
 	keys := NodeKeys(nil, nil, types.OrderedMap[types.IRFeatureEntry]{}, CrossNode{},
+		nil,
 		nil,
 		DeliveryKeys{"env": {"NO_TRACED_ROUTE": true}, "vault": {"TOKEN": true}},
 		Derived{})
@@ -375,7 +379,7 @@ func TestNodeKeys_UntracedDeliveryKeyIsWithheld(t *testing.T) {
 // than a struct literal, because the marking is unreachable from outside this
 // package and a test that reached around that would not be testing what ships.
 func deliveryOnly(marked DeliveryKeys) Keys {
-	return NodeKeys(nil, nil, types.OrderedMap[types.IRFeatureEntry]{}, CrossNode{}, nil, marked, Derived{})
+	return NodeKeys(nil, nil, types.OrderedMap[types.IRFeatureEntry]{}, CrossNode{}, nil, nil, marked, Derived{})
 }
 
 // TestUses_ReplacesTheMarkedProvidesKeyAndKeepsEveryControl is the applier half.

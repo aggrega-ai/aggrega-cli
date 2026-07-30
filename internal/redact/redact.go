@@ -548,9 +548,15 @@ type CrossNode struct {
 
 // NodeKeys assembles one node's redaction set from the upstream facts, each read
 // from its own home and none of them recomputed here. It is the ONE assembler:
-// the set's delivery marking is unreachable from any other package, so every
-// route that can put material on a node's delivery pipe arrives here as an
-// argument of its own.
+// the set's delivery marking is unreachable from any other package, so a surface
+// cannot apply a marking it assembled itself, and every route this assembly knows
+// about arrives as an argument of its own.
+//
+// What the compiler enforces is that no argument may be silently dropped, not that
+// every route in the pipeline is wired to one: a route added upstream and never
+// plumbed here compiles cleanly, which is how the routes now named below were each
+// found by probing rather than by a gate. The untraced argument is the standing
+// answer to that residual — see its bullet.
 //
 // declaredValues and declaredInfra are the leaf paths the host Component's
 // schema declares sensitive, read through the single authored-declaration
@@ -558,7 +564,7 @@ type CrossNode struct {
 // declared-sensitive datum, read from the authored template text by the one walk
 // that performs that reading.
 //
-// FOUR arguments carry delivery routes, one per route, and that is why they are
+// FIVE arguments carry delivery routes, one per route, and that is why they are
 // separate parameters rather than fields of one struct: a route left out of this
 // signature is a compile error at the call site, where a field left unset on a
 // struct would be an empty map nobody notices — which is the exact shape of every
@@ -575,12 +581,18 @@ type CrossNode struct {
 //     `injectMapping` put on the pipe on behalf of a slot that declares no
 //     delivery of its own. Such a slot has no `inject` mapping to read, so the
 //     attachment route is structurally blind to it and this one is what covers it.
+//   - selfInject supplies the delivery keys a node's own component-level
+//     self-inject put on its own pipe. It is the one route where the material and
+//     the declaration that governs it belong to the SAME node, which is why a
+//     reading that only looked outward across edges and attachments left it in the
+//     clear.
 //   - untraced supplies delivery keys no route could account for. They are
 //     withheld, which is the same direction the reading of a template takes when a
 //     reference cannot be resolved: over-withholding costs a reader one value they
 //     must find another way, while under-withholding prints a secret. It is the
-//     assembly's fail-safe for a route nobody wired, since no compiler mechanism
-//     can force a route that exists in the pipeline to be plumbed to this call.
+//     assembly's fail-safe for a route whose provenance the host cannot see, since
+//     no compiler mechanism can force a route that exists in the pipeline to be
+//     plumbed to this call.
 //
 // A node's set therefore spans two owners: its own declarations, and the
 // declarations of every node it consumes across an edge. That is not a widening
@@ -606,6 +618,7 @@ func NodeKeys(
 	attachments types.OrderedMap[types.IRFeatureEntry],
 	crossNode CrossNode,
 	injectMapping DeliveryKeys,
+	selfInject DeliveryKeys,
 	untraced DeliveryKeys,
 	derived Derived,
 ) Keys {
@@ -632,7 +645,7 @@ func NodeKeys(
 			}
 		}
 	}
-	for _, route := range []DeliveryKeys{crossNode.Inject, injectMapping, untraced} {
+	for _, route := range []DeliveryKeys{crossNode.Inject, injectMapping, selfInject, untraced} {
 		for mechanism, deliveries := range route {
 			for deliveryKey := range deliveries {
 				keys.markDelivery(mechanism, deliveryKey)

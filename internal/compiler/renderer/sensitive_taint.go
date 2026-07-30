@@ -305,6 +305,120 @@ func usesWithheld(
 	return out
 }
 
+// selfInjectWithheld reads which of the delivery keys a node's OWN
+// component-level self-inject put on its pipe carry material that node's
+// Component declares sensitive.
+//
+// It exists because every other reading of the delivery pipe asks about material
+// arriving from somewhere else — an attachment's mapping, an edge target's
+// provides, a FeatureRecipe's mapping. Self-inject is the one route where a node
+// puts its own declared-sensitive datum onto its own delivery keys, so a reading
+// that only ever looked outward left it in the clear.
+//
+// The two authored halves resolve against DIFFERENT declarations, and that is the
+// whole content of this reading:
+//
+//   - `from:` names one of the node's own `provides` keys, so the declaration that
+//     governs it is the Component's `provides` schema. The comparison is on the
+//     authored key exactly as the delivery pass resolves it, so the two cannot
+//     disagree about which declaration a delivery key answers to.
+//   - `value:` is a template evaluated against a context that scopes the node's own
+//     `values` and `infra` — and carries no parameters field at all, so the
+//     pillars a declared-sensitive leaf lives in are precisely what is in scope.
+//     The reading is therefore the same reference census every other withholding
+//     question uses, over the over-collecting walk, against the node's `values`
+//     and `infra` declarations.
+//
+// A compact-form entry is an authored literal: the author typed the delivered
+// string, no declaration stands between them and it, so it contributes nothing.
+// Mechanisms outside env, file and arg contribute nothing either, because the
+// self-inject pass delivers those three and a key never placed on the pipe has
+// nothing to withhold.
+//
+// The reading is STATIC: authored entries plus declared leaf paths. It resolves no
+// `from:` and evaluates no template, and it never inspects a delivered value.
+func selfInjectWithheld(
+	selfInject *types.InjectBlock,
+	declaredProvides map[string]bool,
+	declaredValues, declaredInfra map[string]bool,
+) redact.DeliveryKeys {
+	if selfInject == nil {
+		return nil
+	}
+	if len(declaredProvides) == 0 && len(declaredValues) == 0 && len(declaredInfra) == 0 {
+		return nil
+	}
+	templateKeys := redact.Keys{Values: declaredValues, Infra: declaredInfra}
+	var out redact.DeliveryKeys
+	for _, mechanism := range []struct {
+		name string
+		raw  any
+	}{
+		{"env", selfInject.Env},
+		{"file", selfInject.File},
+		{"arg", selfInject.Arg},
+	} {
+		entries, err := normalizeSelfInjectEntries(mechanism.raw)
+		if err != nil {
+			// An entry shape this reading cannot open is a shape the delivery pass
+			// cannot open either, so it puts nothing on the pipe. The pass reports
+			// the refusal; withholding is not the surface that should.
+			continue
+		}
+		for deliveryKey, entry := range entries {
+			if entry.isLiteral {
+				continue
+			}
+			withheld := false
+			switch {
+			case entry.from != "":
+				withheld = declaredProvides[entry.from]
+			case entry.value != "":
+				withheld = templateReadsWithheld(entry.value, templateKeys)
+			}
+			if !withheld {
+				continue
+			}
+			if out == nil {
+				out = redact.DeliveryKeys{}
+			}
+			if out[mechanism.name] == nil {
+				out[mechanism.name] = map[string]bool{}
+			}
+			out[mechanism.name][deliveryKey] = true
+		}
+	}
+	return out
+}
+
+// boundaryEnvUntraced names the env delivery keys a boundary-scope FeatureRecipe
+// put on one consumer's pipe, as keys whose provenance cannot be traced.
+//
+// The channel's values are computed inside a provider guest from the boundary's
+// internal edges and the driving Feature's resolved infra, and the host carries
+// them without interpretation. So the host can see WHICH keys arrived and cannot
+// see what any of them was computed from: a guest free to interpolate a
+// declared-sensitive infra leaf into one override value leaves nothing on the host
+// side that could attribute it to a declaration.
+//
+// That is not a gap in this reading — it is the shape the channel has, and it is
+// exactly the condition the untraced route exists for. Every override key on the
+// consumer's pipe is therefore withheld, which over-withholds a public locator
+// delivered through the same channel and under-withholds nothing. The alternative
+// readings — attributing per key, or reading the guest's output — would require
+// either a provenance the boundary does not carry or an inspection of a rendered
+// value, which is the meaning-inference the compiler must not perform.
+func boundaryEnvUntraced(overrides map[string]string) redact.DeliveryKeys {
+	if len(overrides) == 0 {
+		return nil
+	}
+	keys := make(map[string]bool, len(overrides))
+	for key := range overrides {
+		keys[key] = true
+	}
+	return redact.DeliveryKeys{"env": keys}
+}
+
 // injectMappingWithheld reads which of the delivery keys a FeatureRecipe's own
 // injectMapping put on a node's pipe carry material the attachment's Feature
 // declares sensitive.

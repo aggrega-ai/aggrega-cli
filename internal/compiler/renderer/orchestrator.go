@@ -554,17 +554,24 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// captures that run before Phase A, where those keys are not on the pipe yet,
 		// and once after with that route folded in. Both go through the same call, so
 		// neither can carry a route the other does not.
+		// The node's own component-level self-inject is the one route whose material
+		// and governing declaration belong to the same node, so it is read against
+		// this node's declarations rather than a target's or an attachment's.
+		selfInjectKeys := selfInjectWithheld(node.SelfInject, declared.Provides, declared.Values, declared.Infra)
+		// The boundary consumer-env channel's values are computed inside a provider
+		// guest and carried here uninterpreted, so the host can see which keys
+		// arrived and not what any of them was computed from. That is the untraced
+		// condition itself rather than an unwired route, so the keys feed the
+		// fail-safe argument rather than a reading that could not exist.
+		untracedKeys := boundaryEnvUntraced(boundaryFRState.ConsumerEnvOverrides[nodeID])
 		nodeRedactKeys := func(injectMapping redact.DeliveryKeys) redact.Keys {
 			return input.TraceMode.Keys(redact.NodeKeys(
 				declared.Values, declared.Infra,
 				attachments,
 				crossNode,
 				injectMapping,
-				// No census of the pipe's own delivery keys is taken here, so no key
-				// arrives without a route and this stays empty. It is passed
-				// explicitly rather than omitted because the argument is what makes
-				// the absence of that census visible at the call site.
-				nil,
+				selfInjectKeys,
+				untracedKeys,
 				derived))
 		}
 		redactKeys := nodeRedactKeys(nil)
