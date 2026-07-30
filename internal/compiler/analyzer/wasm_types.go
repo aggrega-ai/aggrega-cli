@@ -46,32 +46,9 @@ type PolicySource struct {
 	Content string `json:"content"`
 }
 
-// PolicyOutput is the JSON response shape the policy plugin's guest emits.
-// Results carries the verdicts that fired
-// during evaluation, one [PolicyResult] each; an allowing rule emits nothing,
-// so an empty Results slice means no verdict fired. The policy socket
-// unmarshals this shape from the policy plugin and turns each fired verdict
-// into a build diagnostic. Error, when present, reports that the guest ran but
-// could not complete the evaluation; the socket surfaces it as a failed plugin
-// invocation rather than as a verdict.
-type PolicyOutput struct {
-	Results []PolicyResult `json:"results"`
-	Error   string         `json:"error,omitempty"`
-}
-
-// PolicyResult is one fired policy verdict: its Severity and a human-readable
-// Message. Only fired verdicts appear in the output. Severity governs the build
-// outcome: [SeverityDeny] halts the build, [SeverityWarn] flags the verdict and
-// lets the build proceed, [SeverityAudit] records the verdict without affecting
-// the outcome.
-type PolicyResult struct {
-	Severity string `json:"severity"`
-	Message  string `json:"message"`
-}
-
 // SeverityDeny, SeverityWarn, and SeverityAudit are the three verdict
-// severities a [PolicyResult] may carry: deny halts the build, warn flags the
-// verdict and lets the build proceed, audit records the verdict without
+// severities a fired policy verdict may carry: deny halts the build, warn flags
+// the verdict and lets the build proceed, audit records the verdict without
 // affecting the build outcome.
 const (
 	SeverityDeny  = "deny"

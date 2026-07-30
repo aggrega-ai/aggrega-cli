@@ -11,7 +11,10 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
+
+	"github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/analyzer"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/parsersocket"
@@ -228,7 +231,7 @@ func runPolicySocket(ctx context.Context, inputs Inputs, catalogLookup resolver.
 		if err != nil {
 			return fmt.Errorf("ir-verdict: plugin %q: %w", ref.URI, err)
 		}
-		var po analyzer.PolicyOutput
+		var po abi.PolicyOutput
 		if err := json.Unmarshal(out, &po); err != nil {
 			return fmt.Errorf("ir-verdict: plugin %q output: %w", ref.URI, err)
 		}
@@ -297,7 +300,7 @@ func runRenderPolicySocket(ctx context.Context, inputs Inputs, catalogLookup res
 		if err != nil {
 			return fmt.Errorf("render-verdict: plugin %q: %w", ref.URI, err)
 		}
-		var po analyzer.PolicyOutput
+		var po abi.PolicyOutput
 		if err := json.Unmarshal(out, &po); err != nil {
 			return fmt.Errorf("render-verdict: plugin %q output: %w", ref.URI, err)
 		}
@@ -515,11 +518,12 @@ func parserSeam(inputs Inputs, catalogLookup resolver.CatalogLookup) (parsersock
 // no deny verdict adds nothing and the build proceeds. Each error carries the
 // AnalysisErrorPolicy kind (so its message renders verbatim) and the
 // ErrPolicyViolation sentinel (so the build error is errors.Is-recoverable), and
-// its message names the rejecting plugin and the plugin-supplied verdict message.
+// its message names the rejecting plugin, the plugin-supplied verdict message,
+// and whatever optional detail the verdict carried.
 // It is the single conversion both stages use: the IR-stage gate appends its
 // result to analysis.Errors, and the render-stage runner turns its result into a
 // joined ToCompilerError halt.
-func policyVerdictErrors(pluginURI string, po analyzer.PolicyOutput) []analyzer.AnalysisError {
+func policyVerdictErrors(pluginURI string, po abi.PolicyOutput) []analyzer.AnalysisError {
 	var errs []analyzer.AnalysisError
 	for _, r := range po.Results {
 		if r.Severity != analyzer.SeverityDeny {
@@ -527,7 +531,7 @@ func policyVerdictErrors(pluginURI string, po analyzer.PolicyOutput) []analyzer.
 		}
 		errs = append(errs, analyzer.AnalysisError{
 			Kind:     analyzer.AnalysisErrorPolicy,
-			Message:  fmt.Sprintf("policy plugin %q rejected the build: %s", pluginRefName(pluginURI), r.Message),
+			Message:  fmt.Sprintf("policy plugin %q rejected the build: %s%s", pluginRefName(pluginURI), r.Message, policyVerdictDetail(r)),
 			Sentinel: analyzer.ErrPolicyViolation,
 		})
 	}
@@ -535,16 +539,81 @@ func policyVerdictErrors(pluginURI string, po analyzer.PolicyOutput) []analyzer.
 }
 
 // policyWarnMessage formats a warn verdict for the diagnostic sink, naming the
-// flagging plugin and carrying the plugin-supplied message.
-func policyWarnMessage(pluginURI string, r analyzer.PolicyResult) string {
-	return fmt.Sprintf("policy plugin %q warning: %s", pluginRefName(pluginURI), r.Message)
+// flagging plugin and carrying the plugin-supplied message and detail.
+func policyWarnMessage(pluginURI string, r abi.Diagnostic) string {
+	return fmt.Sprintf("policy plugin %q warning: %s%s", pluginRefName(pluginURI), r.Message, policyVerdictDetail(r))
 }
 
 // emitPolicyAudit records an audit verdict to the diagnostic sink under a
 // distinct "audit:" label, in plugin-emitted order, with zero effect on the
 // build outcome.
-func emitPolicyAudit(pluginURI string, r analyzer.PolicyResult) {
-	fmt.Fprintf(os.Stderr, "  audit: policy plugin %q: %s\n", pluginRefName(pluginURI), r.Message)
+func emitPolicyAudit(pluginURI string, r abi.Diagnostic) {
+	fmt.Fprintf(os.Stderr, "  audit: policy plugin %q: %s%s\n", pluginRefName(pluginURI), r.Message, policyVerdictDetail(r))
+}
+
+// policyVerdictDetail renders the optional fields a fired verdict carried beside
+// its severity and message, as a bracketed suffix appended to the rendered
+// verdict — empty when the verdict carried none, so a verdict that sets only
+// severity and message renders exactly as it always has.
+//
+// It is the single detail renderer all three verdict surfaces share (the deny
+// halt, the warn diagnostic, and the audit record), so a verdict's detail reads
+// identically whichever severity routed it. Fields emit in a fixed order and are
+// labelled by the wire key that carried them, so the rendering is deterministic
+// and a reader can trace each value back to the field the plugin populated. A
+// location renders its most specific available locator: the source-byte span
+// when the plugin pinned one, else the structured document position.
+func policyVerdictDetail(d abi.Diagnostic) string {
+	var parts []string
+	if d.Code != "" {
+		parts = append(parts, "code="+d.Code)
+	}
+	if d.RuleID != "" {
+		parts = append(parts, "rule_id="+d.RuleID)
+	}
+	if d.Classification != "" {
+		parts = append(parts, "classification="+d.Classification)
+	}
+	if d.SourceRef != "" {
+		parts = append(parts, "source_ref="+d.SourceRef)
+	}
+	if loc := policyVerdictLocation(d.Location); loc != "" {
+		parts = append(parts, "location="+loc)
+	}
+	if d.Suggest != "" {
+		parts = append(parts, "suggest="+d.Suggest)
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return " [" + strings.Join(parts, "; ") + "]"
+}
+
+// policyVerdictLocation renders a verdict's location as one locator string, or
+// empty when the verdict carried no location or an empty one. The span wins when
+// present because it is the byte-exact position; otherwise the structured
+// document coordinates render, each omitted when the plugin left it unset.
+func policyVerdictLocation(loc *abi.Location) string {
+	if loc == nil {
+		return ""
+	}
+	if s := loc.Span; s != nil {
+		return fmt.Sprintf("%d:%d-%d:%d", s.StartLine, s.StartColumn, s.EndLine, s.EndColumn)
+	}
+	var parts []string
+	if loc.URI != "" {
+		parts = append(parts, loc.URI)
+	}
+	if loc.KeyPath != "" {
+		parts = append(parts, loc.KeyPath)
+	}
+	if loc.Line != 0 {
+		parts = append(parts, "line "+strconv.Itoa(loc.Line))
+	}
+	if loc.Kind != "" {
+		parts = append(parts, loc.Kind)
+	}
+	return strings.Join(parts, " ")
 }
 
 // mutatorCompilationContext builds the release-level context the mutator reads

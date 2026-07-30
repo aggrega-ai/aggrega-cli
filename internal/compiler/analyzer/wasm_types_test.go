@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
 	schemas "github.com/aggrega-ai/aggrega-schemas"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/analyzer"
@@ -80,12 +81,25 @@ func TestPolicyInput_RoundTrip(t *testing.T) {
 // cross-language in aggrega-abi (the policy schema references ir-v1alpha1 — a
 // cross-file $ref the host validator does not resolve without a loader), so the
 // host test exercises marshal / unmarshal equality.
+//
+// One verdict fills every optional field the shared diagnostic carries, so the
+// round-trip covers the whole shape rather than the two fields a verdict is most
+// likely to set.
 func TestPolicyOutput_RoundTrip(t *testing.T) {
 	t.Parallel()
 
-	fixture := analyzer.PolicyOutput{
-		Results: []analyzer.PolicyResult{
-			{Severity: analyzer.SeverityDeny, Message: "version-floor: payments-db must run resolved_version >= 15.0.0; got 14.9.0"},
+	fixture := abi.PolicyOutput{
+		Results: []abi.Diagnostic{
+			{
+				Severity:       analyzer.SeverityDeny,
+				Message:        "version-floor: payments-db must run resolved_version >= 15.0.0; got 14.9.0",
+				Code:           "VER-001",
+				RuleID:         "version-floor",
+				Classification: "MAJOR",
+				SourceRef:      "payments-db",
+				Location:       &abi.Location{KeyPath: "spec.version", URI: "payments-db/values.yaml", Line: 12, Kind: "rendered-artifact"},
+				Suggest:        "raise the pinned version to 15.0.0 or later",
+			},
 			{Severity: analyzer.SeverityAudit, Message: "soc2-required-labels: payments tier carries soc2 annotation"},
 		},
 	}
@@ -94,7 +108,7 @@ func TestPolicyOutput_RoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("json.Marshal: %v", err)
 	}
-	var round analyzer.PolicyOutput
+	var round abi.PolicyOutput
 	if err := json.Unmarshal(raw, &round); err != nil {
 		t.Fatalf("json.Unmarshal: %v", err)
 	}
@@ -151,14 +165,17 @@ func TestPolicyTypes_JSONSchemaFieldCoverage(t *testing.T) {
 	// ir-v1alpha1's IRGraph (not a local projection), so it has no local $def to
 	// field-cover here — the IR graph's field coverage is the IR schema's concern.
 	assertGoStructPropertiesIn(t, reflect.TypeOf(analyzer.PolicyInput{}), "PolicyInput")
-	assertGoStructPropertiesIn(t, reflect.TypeOf(analyzer.PolicyOutput{}), "PolicyOutput")
+	assertGoStructPropertiesIn(t, reflect.TypeOf(abi.PolicyOutput{}), "PolicyOutput")
 	assertGoStructPropertiesIn(t, reflect.TypeOf(analyzer.PrecalculatedPath{}), "PrecalculatedPath")
 	assertGoStructPropertiesIn(t, reflect.TypeOf(analyzer.RenderPolicyInput{}), "RenderPolicyInput")
 	assertGoStructPropertiesIn(t, reflect.TypeOf(analyzer.RenderedArtifact{}), "RenderedArtifact")
 
 	// A fired verdict is one entry of the shared diagnostic shape, defined in the
-	// wasm-diagnostic schema rather than the policy schema. Assert the lean host
-	// verdict type's fields are all present in that shared def.
+	// wasm-diagnostic schema rather than the policy schema. The check runs BOTH
+	// ways. A Go-field-to-schema-property walk alone passes whenever the Go type
+	// declares a subset — so a verdict type carrying fewer fields than the wire
+	// shape reads clean while every field it omits is silently discarded at the
+	// decode boundary. The reverse walk is what refuses a subset.
 	var diagRaw map[string]any
 	if err := json.Unmarshal([]byte(schemas.WasmDiagnosticV1alpha1), &diagRaw); err != nil {
 		t.Fatalf("unmarshal diagnostic schema: %v", err)
@@ -175,9 +192,10 @@ func TestPolicyTypes_JSONSchemaFieldCoverage(t *testing.T) {
 	if !ok {
 		t.Fatalf("diagnostic schema $defs.Diagnostic.properties missing or not an object")
 	}
-	prType := reflect.TypeOf(analyzer.PolicyResult{})
-	for i := 0; i < prType.NumField(); i++ {
-		f := prType.Field(i)
+	verdictType := reflect.TypeOf(abi.Diagnostic{})
+	goFields := map[string]string{}
+	for i := 0; i < verdictType.NumField(); i++ {
+		f := verdictType.Field(i)
 		if !f.IsExported() {
 			continue
 		}
@@ -185,8 +203,14 @@ func TestPolicyTypes_JSONSchemaFieldCoverage(t *testing.T) {
 		if name == "" {
 			name = f.Name
 		}
+		goFields[name] = f.Name
 		if _, present := diagProps[name]; !present {
-			t.Errorf("diagnostic schema $defs.Diagnostic.properties missing %q (Go field PolicyResult.%s)", name, f.Name)
+			t.Errorf("diagnostic schema $defs.Diagnostic.properties missing %q (Go field Diagnostic.%s)", name, f.Name)
+		}
+	}
+	for name := range diagProps {
+		if _, present := goFields[name]; !present {
+			t.Errorf("the verdict type has no Go field for diagnostic schema property %q, so a plugin that sets it has the value discarded at the decode boundary", name)
 		}
 	}
 }
