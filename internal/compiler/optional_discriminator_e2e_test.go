@@ -24,7 +24,7 @@ import (
 // `.infra.replicas | default 1`. The discriminator behavior is what the helper
 // exists for; this test pins it end-to-end through the build-faithful harness
 // (pipelinetest.Build) — the real pipeline with the CLI build's Options,
-// including Step 4c resolution-completeness.
+// including resolution-completeness.
 func TestOptionalDiscriminator_E2E(t *testing.T) {
 	t.Parallel()
 

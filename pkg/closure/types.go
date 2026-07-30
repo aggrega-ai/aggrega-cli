@@ -334,11 +334,16 @@ type LibraryResolution struct {
 // versions, and the consumer chain.
 var ErrMVSConflict = errors.New("resolve: minimum version selection conflict — incompatible library version requirements")
 
-// ErrUnresolvableURI wraps a Lookup NotFound return that the
-// walker cannot proceed past (a missing catalog entity inside the
-// Release's closure halts the walk). The wrapped error names the
-// offending URI and the referenced_from path that led to it.
-var ErrUnresolvableURI = errors.New("resolve: URI not resolvable via Lookup")
+// ErrUnresolvableURI reports a URI in the Release's closure that names
+// no entity the catalog holds, which the walker cannot proceed past. The
+// wrapped error names the offending URI and the referenced_from path that
+// led to it.
+//
+// The claim is now true in every case it makes: a Manifest mapping value
+// whose shape a recipe reference cannot express is judged before the walk
+// runs, so a mis-shaped reference no longer arrives here to be reported as
+// an entity the catalog does not hold.
+var ErrUnresolvableURI = errors.New("resolve: no entity in the catalog matches this URI")
 
 // ErrInvalidLibraryRef surfaces when a $ref: or $import: value
 // does not match the canonical library-reference URI shape per

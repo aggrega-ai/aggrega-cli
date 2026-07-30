@@ -26,7 +26,7 @@ import (
 // boundary_fr_proof_test.go does not cover.
 //
 // It compiles through the build-faithful harness (pipelinetest.Build), so it
-// runs the real pipeline with the CLI build's Options — including Step 4c
+// runs the real pipeline with the CLI build's Options — including
 // resolution-completeness. The bridge feature `core/compose-bridge` therefore
 // resolves to its real shipped FeatureRecipe (loaded from aggrega-hub below),
 // which renders the gateway service and rewrites the consumer's DB_HOST — the

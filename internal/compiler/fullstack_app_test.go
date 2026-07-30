@@ -75,7 +75,7 @@ func runFullstackApp(t *testing.T, variant string) *fullstackAppResult {
 
 // runFullstackAppVariant compiles a per-variant fixture through the build-
 // faithful harness (pipelinetest.Build) — the real pipeline with the CLI
-// build's Options, including Step 4c resolution-completeness. The Release path
+// build's Options, including resolution-completeness. The Release path
 // defaults to the fullstack-app root Release when empty; the variant's recipe
 // layer is selected by loading catalog/recipes/<name>. The Aggregate and
 // Manifest are derived from the Release's spec pointers, exactly as a real

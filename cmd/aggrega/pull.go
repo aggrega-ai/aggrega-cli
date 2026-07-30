@@ -437,6 +437,14 @@ func pullRun(cfg pullConfig) error {
 	}
 	lookup := cat.ClosureLookupWithReuse(puller, workspaceRoot, cacheDir, externals, registrySeeds, reuse)
 	progress.phase(pullPhaseClosure)
+	// Reference shape is judged before the walk, for the same reason the shared
+	// closure resolver judges it: a mapping value the reference grammar cannot
+	// express matches no entity, so the walk would report a recipe that is in the
+	// catalog as absent. This path computes its own closure rather than going
+	// through the shared resolver, so it carries the check itself.
+	if faults := catalog.ManifestRecipeReferenceFaults(manifest); len(faults) > 0 {
+		return withSkipContext(faults[0], skipped)
+	}
 	cl, err := closure.ComputeClosure(rel, manifest, aggregate, wsCfg, lookup)
 	if err != nil {
 		return withSkipContext(fmt.Errorf("resolve: %w", err), skipped)

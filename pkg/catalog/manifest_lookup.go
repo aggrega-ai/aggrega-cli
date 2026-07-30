@@ -881,6 +881,15 @@ func (c *Catalog) resolveComponentRecipeForVerify(manifest *types.Manifest, inst
 			// absent sends the author looking for the wrong thing. The check
 			// runs only after the lookup misses, so it never changes which
 			// references resolve.
+			//
+			// DELIBERATE second reading, not a leftover: ManifestRecipeReferenceFaults
+			// judges the same shape earlier, before any closure walk, and halts on the
+			// first fault. This pass is the RESILIENT surface — the one an editor maps
+			// to diagnostics — and it enumerates every fault rather than stopping at
+			// one, so removing it would cost an author authoring several mis-shaped
+			// mappings all but the first squiggle. Do not "unify" the two: the grammar
+			// itself is single-sourced in the constant pair above, which is what keeps
+			// them from disagreeing.
 			if n, tooMany := recipeReferenceSegments(uri); tooMany {
 				return fmt.Errorf("%w: component %q (type %q): the Manifest maps it to %q, which carries %d slash-separated segments; a recipe reference accepts %s; correct the mapping value in the Manifest", ErrMalformedRecipeReference, instanceName, componentType, uri, n, acceptedRecipeReferenceShapes)
 			}
@@ -903,6 +912,9 @@ func (c *Catalog) resolveFeatureRecipeForVerify(manifest *types.Manifest, instan
 	}
 	if ok {
 		if _, found := c.FeatureRecipeByURI(uri); !found {
+			// Deliberate second reading for the same reason the component branch
+			// records: this pass enumerates every fault where the load-time check
+			// halts on the first, and the grammar is single-sourced either way.
 			if n, tooMany := recipeReferenceSegments(uri); tooMany {
 				return fmt.Errorf("%w: feature %q (type %q): the Manifest maps it to %q, which carries %d slash-separated segments; a feature recipe reference accepts %s; correct the mapping value in the Manifest", ErrMalformedRecipeReference, instanceName, featureType, uri, n, acceptedRecipeReferenceShapes)
 			}

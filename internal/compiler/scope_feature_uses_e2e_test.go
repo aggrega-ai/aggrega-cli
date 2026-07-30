@@ -21,7 +21,7 @@ import (
 // api's DB_HOST environment variable carries db's host.
 //
 // It compiles through the build-faithful harness (pipelinetest.Build), so it
-// runs the real pipeline with the CLI build's Options — including Step 4c
+// runs the real pipeline with the CLI build's Options — including
 // resolution-completeness. That means every feature instance, the scope feature
 // `core/shared-backend` included, must resolve to a FeatureRecipe; shared-backend
 // resolves to its no-op FR (a pure-wiring feature still resolves, uniformly).

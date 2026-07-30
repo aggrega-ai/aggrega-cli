@@ -4,7 +4,7 @@
 // Package pipelinetest is the single sanctioned way an example/end-to-end test
 // compiles a workspace. It runs the real compilation spine
 // (pipeline.RunPipeline) with the SAME Options the CLI build uses — crucially
-// the recipe-resolution verifier (resolution-completeness, "Step 4c") — and the
+// the recipe-resolution verifier (resolution-completeness) — and the
 // SAME catalog-driven Wasm provider dispatch. A test built through this harness
 // renders the way `aggrega build` renders and is gated the way a real build is
 // gated, so it cannot pass on input a real build would reject.
@@ -85,9 +85,9 @@ func Build(t *testing.T, in Input) *pipeline.Result {
 }
 
 // BuildE is the error-returning sibling of Build: it runs the identical
-// build-faithful pipeline (Step 4c on) but returns the first error instead of
+// build-faithful pipeline (resolution-completeness on) but returns the first error instead of
 // failing the test. A negative-path test uses BuildE to assert on the error a
-// real build produces — at catalog load, resolution, Step 4c, or render — via
+// real build produces — at catalog load, resolution, resolution-completeness, or render — via
 // errors.Is/message inspection, rather than treating any failure as a test
 // fault. It is build-faithful, not a bypass: the full pipeline runs, so the
 // same error surfaces in the same place a real build would surface it.
@@ -160,7 +160,7 @@ func compile(in Input) (*pipeline.Result, error) {
 		cat.RecipeLookupWithManifest(manifest),
 		cat.SubAggregateLoader(),
 		pipeline.Options{
-			// The build-faithful bit: Step 4c (resolution-completeness) ON,
+			// The build-faithful bit: resolution-completeness ON,
 			// exactly as cmd/aggrega/build.go runs it.
 			RecipeResolutionVerifier: cat.VerifyRecipeResolution,
 			IncludeTrace:             in.IncludeTrace,

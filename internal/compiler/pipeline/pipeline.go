@@ -829,12 +829,12 @@ func RunPipeline(
 			return cerrors.Wrap(err, cerrors.DeveloperError, cerrors.SourceLocation{}, "Component/Feature assertions")
 		}
 
-		// Step 4c: resolution-completeness — every component/feature instance must
-		// resolve to exactly one recipe before render. Skipped when the caller does
-		// not supply a verifier (IR-inspection paths that do not render).
+		// Resolution-completeness — every component/feature instance must resolve
+		// to exactly one recipe before render. Skipped when the caller does not
+		// supply a verifier (IR-inspection paths that do not render).
 		if opts.RecipeResolutionVerifier != nil {
 			if err := opts.RecipeResolutionVerifier(inputs.Manifest, graph); err != nil {
-				return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{}, "Step 4c (recipe resolution)")
+				return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{}, "recipe resolution")
 			}
 		}
 

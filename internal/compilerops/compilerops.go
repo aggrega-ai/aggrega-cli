@@ -106,6 +106,11 @@ const (
 	ClosureStageLoadAggregate
 	// ClosureStageComputeClosure marks a failure walking the catalog closure.
 	ClosureStageComputeClosure
+	// ClosureStageManifestReferenceShape marks a Manifest mapping value whose
+	// shape a recipe reference cannot express. It is its own stage because the
+	// fault belongs to the Manifest and is decided before any lookup runs, so a
+	// caller attributing it to the closure walk would name the wrong document.
+	ClosureStageManifestReferenceShape
 )
 
 // ClosureError reports a ResolveClosure failure. Stage names which step failed;
@@ -178,6 +183,20 @@ func ResolveClosure(in ClosureInputs) (*ResolvedClosure, *ClosureError) {
 				msg:   herr.Error(),
 				err:   herr,
 			}
+		}
+	}
+	// Reference shape is judged here, on the composed Manifest, before anything
+	// looks a mapping value up. It is unconditional rather than a per-caller
+	// opt-in: the verdict is syntactic, every front end that computes a closure
+	// needs it, and hanging it off the AfterManifest hook would cover the one
+	// caller that wires that hook and leave the rest reporting a present recipe
+	// as absent. Only the first fault is reported, because the closure walk that
+	// follows would halt on it anyway.
+	if faults := catalog.ManifestRecipeReferenceFaults(manifest); len(faults) > 0 {
+		return nil, &ClosureError{
+			Stage: ClosureStageManifestReferenceShape,
+			msg:   faults[0].Error(),
+			err:   faults[0],
 		}
 	}
 	aggRes, err := resolver.ResolveAggregate(releaseDir, rel.Spec.Aggregate, in.View.AggregateLookup(), nil)

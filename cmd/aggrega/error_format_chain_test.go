@@ -148,12 +148,12 @@ func TestFormatCompilerError_JoinOfNestedChains(t *testing.T) {
 	}
 }
 
-// TestFormatCompilerError_MultiErrorLink_Step4cShape mirrors the
-// production shape exactly: the Step 4c envelope around the
+// TestFormatCompilerError_MultiErrorLink_ResolutionShape mirrors the
+// production shape exactly: the recipe-resolution envelope around the
 // resolution-completeness verifier's errors.Join, whose sub-errors are
 // fmt-wrapped sentinels. Every joined sub-error must render beneath the
 // enclosing frame with a count header; errors.Is keeps traversing.
-func TestFormatCompilerError_MultiErrorLink_Step4cShape(t *testing.T) {
+func TestFormatCompilerError_MultiErrorLink_ResolutionShape(t *testing.T) {
 	t.Parallel()
 	unmapped := fmt.Errorf(
 		"%w: component %q (type %q); recipes implementing it: [cloudformation/mariadb-rds:1.0.0 terraform/mariadb-rds:1.0.0]; pin one in the Manifest",
@@ -163,18 +163,18 @@ func TestFormatCompilerError_MultiErrorLink_Step4cShape(t *testing.T) {
 		catalog.ErrNoRecipeResolved, "metrics", "core/metrics:1.0.0")
 	join := stderrors.Join(unmapped, noRecipe)
 	head := cerrors.Wrap(join, cerrors.CatalogError,
-		cerrors.SourceLocation{}, "Step 4c (recipe resolution)")
+		cerrors.SourceLocation{}, "recipe resolution")
 
 	got := formatCompilerError(head)
 	for _, want := range []string{
-		"Step 4c (recipe resolution)",
+		"recipe resolution",
 		"caused by (2):",
 		"cloudformation/mariadb-rds:1.0.0 terraform/mariadb-rds:1.0.0",
 		"pin one in the Manifest",
 		"no Manifest mapping and no feature recipe implements it",
 	} {
 		if !strings.Contains(got, want) {
-			t.Errorf("Step-4c shape missing %q\n--- got ---\n%s", want, got)
+			t.Errorf("recipe-resolution shape missing %q\n--- got ---\n%s", want, got)
 		}
 	}
 	if !stderrors.Is(head, catalog.ErrNoRecipeResolved) {

@@ -505,7 +505,8 @@ func renderCatalogText(p validateResultPayload) string {
 // documentation a failure at that stage points at.
 func closureStageKind(stage compilerops.ClosureStage) string {
 	switch stage {
-	case compilerops.ClosureStageResolveManifest, compilerops.ClosureStageComposeManifest:
+	case compilerops.ClosureStageResolveManifest, compilerops.ClosureStageComposeManifest,
+		compilerops.ClosureStageManifestReferenceShape:
 		return "manifest"
 	case compilerops.ClosureStageLoadAggregate:
 		return "aggregate"
