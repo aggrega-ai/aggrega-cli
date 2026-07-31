@@ -77,7 +77,7 @@ func TestMariaDBRecipes_LoadCleanly(t *testing.T) {
 // runs RenderAll with the compose engine, and asserts the rendered
 // docker-compose.yaml carries the mariadb service body the Recipe's
 // Workload describes (image, env vars, persistent volume mount,
-// healthcheck-style probes).
+// healthcheck).
 //
 // IR-level direct construction (matching boundary_fr_proof_test.go pattern)
 // because this test focuses on Recipe authoring correctness, not on full
@@ -183,9 +183,27 @@ func TestMariaDBComposeRecipe_WorkloadSynthesis(t *testing.T) {
 		t.Errorf("expected named volume 'db-data' (workload volume 'data' on node 'db') in rendered compose:\n%s", merged)
 	}
 
-	// Healthcheck assertions are deferred: the compose Workload synthesizer's
-	// probe→healthcheck translation is not yet exercised by this test surface
-	// (the existing compose tests do not declare probes; whether
-	// mysqladmin / tcp probes round-trip into a compose healthcheck block is
-	// a separate verification scope tracked in the end-to-end proof matrix).
+	// Healthcheck: the Recipe's container health block reaches the rendered
+	// service. The exec probe becomes a CMD-form test; interval carries
+	// periodSeconds and timeout carries timeoutSeconds. Asserted as one exact
+	// block rather than as scattered substrings, because the shape and the
+	// indentation are both part of what a compose runtime consumes.
+	const wantHealthcheck = "    healthcheck:\n" +
+		"      test:\n" +
+		"        - CMD\n" +
+		"        - mysqladmin\n" +
+		"        - ping\n" +
+		"      interval: 10s\n" +
+		"      timeout: 5s\n"
+	if !strings.Contains(merged, wantHealthcheck) {
+		t.Errorf("expected healthcheck block\n%s\nin rendered compose:\n%s", wantHealthcheck, merged)
+	}
+
+	// Compose carries a single healthcheck per service, so the container's
+	// readiness probe collapses away in favour of the liveness one. Asserting
+	// its absence keeps the collapse a stated property of the rendered output
+	// rather than a silent one.
+	if strings.Contains(merged, "nc -z localhost 3306") {
+		t.Errorf("expected the tcp readiness probe to collapse away (compose carries one healthcheck per service), but its translation is present in rendered compose:\n%s", merged)
+	}
 }

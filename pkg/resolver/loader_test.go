@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/aggrega-ai/aggrega-cli/pkg/validator/envelope"
 )
 
 func TestLoadAggregate_ValidYAML(t *testing.T) {
@@ -73,8 +75,15 @@ func TestLoadAggregate_InvalidYAML(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for invalid YAML")
 	}
-	if !errors.Is(err, ErrYAMLLoad) {
-		t.Errorf("expected ErrYAMLLoad, got %v", err)
+	// A malformed document is caught by the envelope gate, which runs before the
+	// typed unmarshal and reports every failure under its own sentinel. The
+	// assertion pairs the sentinel with the message so a future change cannot
+	// keep the sentinel while losing the parser's account of what is wrong.
+	if !errors.Is(err, envelope.ErrEntityEnvelope) {
+		t.Errorf("expected ErrEntityEnvelope, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "found character that cannot start any token") {
+		t.Errorf("error should carry the parser's account of the fault; got %v", err)
 	}
 }
 

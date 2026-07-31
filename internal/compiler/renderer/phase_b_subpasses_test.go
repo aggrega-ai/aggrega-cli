@@ -213,6 +213,72 @@ services:
 	}
 }
 
+// TestPhaseB2_WorkloadTemplateStrayTopLevelKeyFails pins that the rendered
+// workload document is checked as the bytes the template produced. The Workload
+// schema closes the document to its declared top-level keys, so a stray or
+// misspelled one is a violation — but a decode into the typed model discards
+// any key the model does not name, which makes the violation unobservable from
+// the decoded value alone. The stray key here is the whole point of the test:
+// remove it and nothing distinguishes this case from a valid workload.
+func TestPhaseB2_WorkloadTemplateStrayTopLevelKeyFails(t *testing.T) {
+	t.Parallel()
+	ctx := minimalCtx()
+	r := minimalRecipe("test")
+	r.Spec.Workload = types.WorkloadTemplate{Inline: `apiVersion: aggrega.ai/v1alpha1
+kind: Workload
+replicaz: 3
+containers:
+  main:
+    image: app:1.0
+`}
+	state := NewPhaseBState(r, "test", "default", "recipe.yaml")
+	emptySlots := types.OrderedMap[types.AttachmentSlot]{}
+
+	emptyLocals := types.OrderedMap[string]{}
+	_ = phaseB0(ctx, state, emptyLocals)
+	_ = phaseB1(ctx, state)
+
+	err := phaseB2(ctx, state, emptySlots)
+	if !errors.Is(err, validator.ErrWorkloadValidation) {
+		t.Fatalf("expected ErrWorkloadValidation for a stray top-level key, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "replicaz") {
+		t.Errorf("error must name the offending key; got %v", err)
+	}
+}
+
+// TestPhaseB2_WorkloadTemplateEmptyRequiredValueFails pins the complementary
+// direction: a value the document carries as an explicit empty string satisfies
+// the schema in the document and vanishes when the document is decoded into the
+// typed model, where the schema then reports it missing. So the render path runs
+// both checks deliberately — neither one subsumes the other, and deleting
+// either loses a rejection class the remaining one cannot see.
+func TestPhaseB2_WorkloadTemplateEmptyRequiredValueFails(t *testing.T) {
+	t.Parallel()
+	ctx := minimalCtx()
+	r := minimalRecipe("test")
+	r.Spec.Workload = types.WorkloadTemplate{Inline: `apiVersion: aggrega.ai/v1alpha1
+kind: Workload
+containers:
+  main:
+    image: ""
+`}
+	state := NewPhaseBState(r, "test", "default", "recipe.yaml")
+	emptySlots := types.OrderedMap[types.AttachmentSlot]{}
+
+	emptyLocals := types.OrderedMap[string]{}
+	_ = phaseB0(ctx, state, emptyLocals)
+	_ = phaseB1(ctx, state)
+
+	err := phaseB2(ctx, state, emptySlots)
+	if !errors.Is(err, validator.ErrWorkloadValidation) {
+		t.Fatalf("expected ErrWorkloadValidation for an empty required value, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "image") {
+		t.Errorf("error must name the missing property; got %v", err)
+	}
+}
+
 func TestPhaseB2_WorkloadValidationFlow_FeaturesSchemaFails(t *testing.T) {
 	t.Parallel()
 	ctx := minimalCtx()

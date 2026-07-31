@@ -184,6 +184,16 @@ func phaseB2(ctx *types.TemplateContext, state *PhaseBState, slots types.Ordered
 		return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: state.RecipePath}, fmt.Sprintf("recipe %q workload template output is not valid YAML", state.Recipe.Metadata.Name))
 	}
 
+	// Both checks run, and the near-duplicate is deliberate: they validate two
+	// different instances against one schema and reject disjoint classes. The
+	// rendered bytes carry keys the typed model does not name, which the decode
+	// discards, so only the bytes check can see a stray or misspelled key. The
+	// decoded value elides a field whose value is the zero value, so only the
+	// typed check can see a schema-required field the document supplied empty.
+	// Deleting either loses a rejection class the other cannot observe.
+	if err := validator.ValidateWorkloadBytes([]byte(output), state.RecipePath, state.RecipeName, state.RecipeVersion); err != nil {
+		return err
+	}
 	if err := validator.ValidateWorkload(&w, state.RecipePath, state.RecipeName, state.RecipeVersion); err != nil {
 		return err
 	}

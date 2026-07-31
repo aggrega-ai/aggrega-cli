@@ -144,11 +144,37 @@ func (e *Error) Error() string {
 
 func (e *Error) Unwrap() error { return ErrEntityEnvelope }
 
+// envelopeFailure attaches ErrEntityEnvelope to a validation failure that has
+// no per-field findings to report — a document that will not parse, or an
+// engine that could not run. It reports the underlying failure's message
+// unchanged, because ErrEntityEnvelope's own text advises correcting the
+// document: sound advice for a malformed document and wrong for an engine
+// failure, where the document may be perfectly well-formed. So the sentinel
+// serves as a matcher on these paths and never as text a reader is shown.
+type envelopeFailure struct {
+	cause error
+}
+
+func (e *envelopeFailure) Error() string { return e.cause.Error() }
+
+// Unwrap reports the cause and the sentinel together, so a caller matching
+// either the specific cause or ErrEntityEnvelope succeeds.
+func (e *envelopeFailure) Unwrap() []error { return []error{e.cause, ErrEntityEnvelope} }
+
 // ValidateBytes parses raw YAML document bytes, validates the
 // document against kind's embedded schema, and returns the parsed,
-// normalised generic instance for caller reuse. A schema violation
-// returns *Error (wrapping ErrEntityEnvelope); parse and engine
-// failures return their own errors.
+// normalised generic instance for caller reuse.
+//
+// Every error it returns wraps ErrEntityEnvelope. A caller may therefore
+// gate on that one sentinel and cannot fall past a failure class by
+// omission — which matters most where the document is well-formed and the
+// engine is what failed, since the caller's own typed decode of those same
+// bytes then succeeds and would carry the build forward with this check
+// never having run.
+//
+// A schema violation returns *Error, carrying one finding per violation. A
+// parse failure and an engine failure have no per-field findings and report
+// their own message unchanged.
 func ValidateBytes(kind Kind, data []byte, path string) (any, error) {
 	var instance any
 	if err := yaml.Unmarshal(data, &instance); err != nil {
@@ -159,7 +185,7 @@ func ValidateBytes(kind Kind, data []byte, path string) (any, error) {
 		// and stringify complex keys so the document still validates.
 		var node yaml.Node
 		if nerr := yaml.Unmarshal(data, &node); nerr != nil {
-			return nil, fmt.Errorf("envelope: parse %s: %w", path, err)
+			return nil, &envelopeFailure{cause: fmt.Errorf("envelope: parse %s: %w", path, err)}
 		}
 		instance = nodeToAny(&node)
 	}
@@ -169,7 +195,7 @@ func ValidateBytes(kind Kind, data []byte, path string) (any, error) {
 	instance = NormaliseYAML(instance)
 	findings, err := ValidateInstance(kind, instance)
 	if err != nil {
-		return instance, err
+		return instance, &envelopeFailure{cause: err}
 	}
 	if len(findings) > 0 {
 		return instance, &Error{Kind: kind, Path: path, Findings: findings}
