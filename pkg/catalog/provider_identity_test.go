@@ -183,10 +183,37 @@ func TestLazy_TwoProvidersCoexist_SameProviderShadows(t *testing.T) {
 	}
 }
 
-// TestRecipeByURI_BareSingleProvider pins bare-reference resolution when
-// exactly one provider carries the name (versioned, version-tolerant, and
-// unversioned forms), plus version-exact preference when one provider holds
-// multiple versions.
+// TestRecipeByURI_BareSingleProvider pins bare-reference resolution when exactly
+// one capability carries the name: an exact pin resolves that version, a caret
+// pin the highest version in range, an unversioned reference the highest
+// available, and a pin the catalog cannot satisfy a miss rather than a quiet
+// substitution.
+//
+// Two assertions below REVERSE behaviours this test previously pinned. Both old
+// behaviours were deliberate — each was stated as a contract in the lookup's own
+// documentation and asserted here — so the reversals are recorded rather than
+// dropped: a tested behaviour that vanishes without a trace leaves the next reader
+// to re-derive the question.
+//
+// A version pin the catalog could not satisfy used to resolve to whatever single
+// recipe carried the name. That tolerance was designed, not stumbled into: a
+// versioned reference whose exact version was absent fell back to a version-blind
+// scan so a versioned reference behaved like a bare one. It is a miss now, because
+// a version pin is a request and answering it with a version the author did not
+// write is a silent substitution — the identical typo on a component type has
+// always halted, and one version rule across every entity kind is worth more than
+// the tolerance it costs. The miss is not silent either: it reaches the operator as
+// a loud resolution halt naming the mapping value.
+//
+// An unversioned reference across two versions of one recipe used to miss as
+// ambiguous, on the reading that any rung finding more than one candidate must
+// refuse rather than guess. It resolves to the highest version now, because
+// choosing among the versions of ONE recipe is precisely what a version rule
+// decides and involves no guess: highest-satisfying is the answer an unversioned
+// component, feature, aggregate or plugin reference has always received. The
+// refusal survives where it still answers a real ambiguity — across CAPABILITIES,
+// where nothing in the reference selects one, pinned by
+// TestLoad_TwoProvidersSameRecipeName.
 func TestRecipeByURI_BareSingleProvider(t *testing.T) {
 	t.Parallel()
 	v2 := types.Recipe{
@@ -200,24 +227,90 @@ func TestRecipeByURI_BareSingleProvider(t *testing.T) {
 
 	one := fakeCatalog(v1)
 	if r, ok := one.RecipeByURI("mariadb-rds:1.0.0"); !ok || r.Metadata.Version != "1.0.0" {
-		t.Errorf("bare versioned single-provider: ok=%v", ok)
+		t.Errorf("bare versioned single-carrier: ok=%v", ok)
 	}
 	if r, ok := one.RecipeByURI("mariadb-rds"); !ok || r.Metadata.Version != "1.0.0" {
-		t.Errorf("bare unversioned single-provider: ok=%v", ok)
+		t.Errorf("bare unversioned single-carrier: ok=%v", ok)
 	}
-	if _, ok := one.RecipeByURI("mariadb-rds:9.9.9"); !ok {
-		t.Error("version-tolerant fallback (single carrier) should resolve")
+	// Reversed: see this test's own note on the retired version-blind fallback.
+	if r, ok := one.RecipeByURI("mariadb-rds:9.9.9"); ok {
+		t.Errorf("an unsatisfiable version pin must miss, not substitute another version; resolved %q", r.Metadata.Version)
 	}
 
 	two := fakeCatalog(v1, v2)
 	if r, ok := two.RecipeByURI("mariadb-rds:2.0.0"); !ok || r.Metadata.Version != "2.0.0" {
 		t.Errorf("version-exact across two versions: ok=%v", ok)
 	}
-	if _, ok := two.RecipeByURI("mariadb-rds"); ok {
-		t.Error("unversioned across two versions should miss (ambiguous)")
+	// Picking the highest must not swallow an exact pin on the LOWER version;
+	// without this, "resolves the highest" would pass on an implementation that
+	// ignored the pin entirely.
+	if r, ok := two.RecipeByURI("mariadb-rds:1.0.0"); !ok || r.Metadata.Version != "1.0.0" {
+		t.Errorf("exact pin on the lower of two versions: ok=%v version=%q", ok, r.Metadata.Version)
+	}
+	// Reversed: see this test's own note on the retired version-axis ambiguity
+	// refusal.
+	if r, ok := two.RecipeByURI("mariadb-rds"); !ok || r.Metadata.Version != "2.0.0" {
+		t.Errorf("unversioned across two versions resolves the highest: ok=%v version=%q", ok, r.Metadata.Version)
 	}
 	if r, ok := two.RecipeByURI("terraform/mariadb-rds:2.0.0"); !ok || r.Metadata.Version != "2.0.0" {
 		t.Errorf("qualified exact across two versions: ok=%v", ok)
+	}
+	// The caret form is now honoured on the recipe path rather than compared as a
+	// literal version string: ^1.0.0 admits 1.0.0 and excludes 2.0.0.
+	if r, ok := two.RecipeByURI("terraform/mariadb-rds:^1.0.0"); !ok || r.Metadata.Version != "1.0.0" {
+		t.Errorf("qualified caret pins the major: ok=%v version=%q", ok, r.Metadata.Version)
+	}
+	if r, ok := two.RecipeByURI("terraform/mariadb-rds:^2.0.0"); !ok || r.Metadata.Version != "2.0.0" {
+		t.Errorf("qualified caret at the higher major: ok=%v version=%q", ok, r.Metadata.Version)
+	}
+	// A named capability that holds the recipe but not the pinned version misses on
+	// the pin; it does not fall through to a version-blind reading of the same name.
+	if r, ok := two.RecipeByURI("terraform/mariadb-rds:9.9.9"); ok {
+		t.Errorf("qualified unsatisfiable pin must miss; resolved %q", r.Metadata.Version)
+	}
+}
+
+// TestFeatureRecipeByURI_CapabilityScopedVersion guards the FeatureRecipe side of
+// the shared resolution ladder. Recipe and FeatureRecipe resolve through one
+// implementation reached by two per-type adapters, so the algorithm itself is
+// covered once (above) — but an adapter that read the wrong field, or read the
+// capability and the name in the wrong order, would be invisible to a test whose
+// fixtures leave the capability empty. These cases exercise the capability segment
+// and the version segment together on the FeatureRecipe adapter specifically.
+func TestFeatureRecipeByURI_CapabilityScopedVersion(t *testing.T) {
+	t.Parallel()
+	mk := func(capability, name, version string) types.FeatureRecipe {
+		var fr types.FeatureRecipe
+		fr.Metadata.Name = name
+		fr.Metadata.Version = version
+		fr.Spec.Capability = capability
+		return fr
+	}
+	c := &Catalog{FeatureRecipes: map[string]types.FeatureRecipe{}}
+	for _, fr := range []types.FeatureRecipe{
+		mk("helm", "rewrite-host", "1.0.0"),
+		mk("helm", "rewrite-host", "2.0.0"),
+		mk("compose", "rewrite-host", "1.0.0"),
+	} {
+		c.FeatureRecipes[recipeIdentityKey(fr.Spec.Capability, fr.Metadata.Name, fr.Metadata.Version)] = fr
+	}
+
+	if fr, ok := c.FeatureRecipeByURI("helm/rewrite-host"); !ok || fr.Metadata.Version != "2.0.0" {
+		t.Errorf("qualified unversioned resolves the highest in that capability: ok=%v version=%q", ok, fr.Metadata.Version)
+	}
+	if fr, ok := c.FeatureRecipeByURI("compose/rewrite-host"); !ok || fr.Spec.Capability != "compose" {
+		t.Errorf("the capability segment selects the capability, not the name: ok=%v capability=%q", ok, fr.Spec.Capability)
+	}
+	if fr, ok := c.FeatureRecipeByURI("helm/rewrite-host:1.0.0"); !ok || fr.Metadata.Version != "1.0.0" {
+		t.Errorf("qualified exact: ok=%v version=%q", ok, fr.Metadata.Version)
+	}
+	if fr, ok := c.FeatureRecipeByURI("helm/rewrite-host:9.9.9"); ok {
+		t.Errorf("qualified unsatisfiable pin must miss; resolved %q", fr.Metadata.Version)
+	}
+	// Two capabilities offer the name, so a bare reference selects neither — the
+	// refusal that survives on the capability axis.
+	if fr, ok := c.FeatureRecipeByURI("rewrite-host"); ok {
+		t.Errorf("bare reference across two capabilities must miss; resolved %q/%q", fr.Spec.Capability, fr.Metadata.Version)
 	}
 }
 

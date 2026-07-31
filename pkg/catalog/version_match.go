@@ -12,13 +12,19 @@ import (
 )
 
 // ErrUnsatisfiableEntityVersion is a recoverable sentinel: a catalog reference
-// names a base entity (Component / Feature / Aggregate) that exists in
-// the catalog, but no available version satisfies the reference's version
-// constraint — an exact version that is absent, or a caret range that matches
-// nothing. It is distinct from a plain miss (the base name itself is absent),
-// which the lookups report as not-found. Recoverable so the serve daemon can
-// surface it as a diagnostic without aborting; the CLI build joins it into a loud
-// halt.
+// names a base entity (Component, Feature, Aggregate, Plugin, Recipe or
+// FeatureRecipe) that exists in the catalog, but no available version satisfies
+// the reference's version constraint — an exact version that is absent, or a
+// caret range that matches nothing. It is distinct from a plain miss (the base
+// name itself is absent), which the lookups report as not-found. Recoverable so
+// the serve daemon can surface it as a diagnostic without aborting; the CLI build
+// joins it into a loud halt.
+//
+// Every kind reaches it through the same selection, so an unsatisfiable version
+// pin behaves alike wherever it is written: a version typo on a Manifest recipe
+// mapping halts exactly as the same typo on a component type does. The accessors
+// whose shape carries no error channel report it as a miss, and the build's
+// resolution-completeness pass turns that miss into the loud halt.
 var ErrUnsatisfiableEntityVersion = errors.New("no catalog version satisfies the referenced version constraint")
 
 // SplitVersionedURI splits a URI like "core/api-server:1.0.0" into its base
@@ -145,6 +151,110 @@ func selectEntityVersion[V any](index map[string]V, callerURI string, meta func(
 		}
 	}
 	return cands[fallback].key, true, nil
+}
+
+// selectCapabilityScopedVersion resolves a capability-scoped catalog reference to
+// the index KEY of the entity that best satisfies it. It is the resolution ladder
+// for the kinds whose identity carries a capability segment
+// ("capability/name:version"); every version decision on that ladder delegates to
+// selectEntityVersion, so a capability-scoped reference and a plain by-name one
+// apply one version rule rather than two.
+//
+// The reference may name the entity at three precision levels, tried in order:
+//
+//  1. Capability-qualified exact ("terraform/mariadb-rds:1.0.0") — a direct map
+//     get on the identity key.
+//  2. Capability-qualified ("terraform/mariadb-rds", "terraform/mariadb-rds:^1.0.0")
+//     — the segment before the first "/" is matched against each entity's
+//     capability, and the version is selected among that capability's entries.
+//  3. Bare ("mariadb-rds", "mariadb-rds:1.0.0") — a scan across every capability,
+//     with the version selected WITHIN each one.
+//
+// The two ambiguity axes are deliberately answered differently, and the
+// distinction is the contract rather than an implementation detail. Choosing among
+// the VERSIONS one capability offers is a version decision, so it goes to
+// selectEntityVersion and yields the highest satisfying version. Choosing among
+// the CAPABILITIES that offer one name is not a version decision at all — a bare
+// reference two capabilities can both answer carries nothing that selects either,
+// so it resolves to neither. Qualify the reference with its capability to select
+// one.
+//
+// Returns the same three-way contract selectEntityVersion does:
+//   - (key, true, nil) on a satisfying match;
+//   - ("", false, nil) on a miss — the name is absent, or two capabilities offer it;
+//   - ("", false, ErrUnsatisfiableEntityVersion) when the entity exists but no
+//     available version satisfies an exact or caret pin.
+//
+// Resolution scans the index VALUES via meta, so like selectEntityVersion it is
+// independent of the key format and serves both a fully-keyed catalog and a
+// value-populated shell whose keys are bare.
+//
+// Determinism: capabilities are visited in sorted order and selectEntityVersion
+// sorts its own candidates by key, so no outcome depends on map-iteration order.
+func selectCapabilityScopedVersion[V any](index map[string]V, uri string, meta func(V) (capability, name, version string)) (string, bool, error) {
+	if _, ok := index[uri]; ok {
+		return uri, true, nil
+	}
+
+	byName := func(v V) (string, string) {
+		_, name, version := meta(v)
+		return name, version
+	}
+
+	if capability, rest, qualified := strings.Cut(uri, "/"); qualified {
+		scoped := map[string]V{}
+		for k, v := range index {
+			if c, _, _ := meta(v); c == capability {
+				scoped[k] = v
+			}
+		}
+		if key, ok, err := selectEntityVersion(scoped, rest, byName); ok {
+			return key, true, nil
+		} else if err != nil {
+			// A capability the reference named explicitly, holding the entity but
+			// not the pinned version, halts here rather than falling through. The
+			// bare reading below could not resolve it anyway: an entity name carries
+			// no "/", so the bare candidate would still hold the capability segment
+			// and match nothing.
+			return "", false, err
+		}
+	}
+
+	byCapability := map[string]map[string]V{}
+	for k, v := range index {
+		c, _, _ := meta(v)
+		if byCapability[c] == nil {
+			byCapability[c] = map[string]V{}
+		}
+		byCapability[c][k] = v
+	}
+	capabilities := make([]string, 0, len(byCapability))
+	for c := range byCapability {
+		capabilities = append(capabilities, c)
+	}
+	sort.Strings(capabilities)
+
+	var hit string
+	var unsatisfiable error
+	found := 0
+	for _, c := range capabilities {
+		key, ok, err := selectEntityVersion(byCapability[c], uri, byName)
+		switch {
+		case ok:
+			hit = key
+			found++
+		case err != nil && unsatisfiable == nil:
+			unsatisfiable = err
+		}
+	}
+	switch {
+	case found == 1:
+		return hit, true, nil
+	case found > 1:
+		return "", false, nil
+	default:
+		return "", false, unsatisfiable
+	}
 }
 
 // versionCandidate is one catalog entry sharing the looked-up base name, paired

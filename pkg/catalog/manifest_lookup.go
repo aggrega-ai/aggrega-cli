@@ -60,8 +60,10 @@ var ErrDuplicateRecipeIdentity = ErrDuplicateEntityIdentity
 // and rendering through whatever plugin version happens to serve the provider.
 // The wrapped message names the provider and the pinned version so each provider
 // yields a specific diagnostic. It is distinct
-// from ErrUnsatisfiableEntityVersion, which covers Component / Feature / Aggregate
-// version references, not provider-engine selection.
+// from ErrUnsatisfiableEntityVersion, which covers a catalog ENTITY reference's
+// version constraint — a Component, Feature, Aggregate, Plugin, Recipe or
+// FeatureRecipe named at a version the catalog does not hold — rather than the
+// selection of a render engine for a capability.
 var ErrProviderVersionUnsatisfiable = errors.New("no provider-rendering plugin version satisfies the recipe's provider version pin")
 
 // ErrAmbiguousProviderPlugin fires at resolution when a capability is served
@@ -91,7 +93,10 @@ var ErrProviderBindingUnsatisfied = errors.New("plugins.providers entry names a 
 // recipes as pin candidates: implements informs the choice, the author makes it,
 // and the Manifest mapping records it. Also fires when a mapping value at an
 // accepted reference shape names a recipe absent from the catalog (a dangling
-// mapping). A mapping value whose shape a reference cannot express is
+// mapping) — including a recipe present under a different version than the one
+// the value pins, and one whose bare name two capabilities both offer, since
+// neither resolves to a recipe the author can be said to have chosen. A mapping
+// value whose shape a reference cannot express is
 // ErrMalformedRecipeReference instead, so the absent-from-the-catalog claim is
 // only made about a reference that could have resolved.
 var ErrNoRecipeResolved = errors.New("no recipe resolved for component/feature instance: add an explicit Manifest mapping for its type")
@@ -312,125 +317,57 @@ func recipeReferenceSegments(uri string) (int, bool) {
 //
 //  1. Capability-qualified exact ("terraform/mariadb-rds:1.0.0") — a direct
 //     map get on the identity key.
-//  2. Capability-qualified by scan — the segment before the first "/" is
-//     matched against each Recipe's Spec.Capability; among those the name
-//     (and version, when given) must match exactly one entity. A versioned
-//     URI whose exact version is absent falls back to a version-blind scan
-//     within that capability, keeping the version-tolerant posture the bare
-//     form has.
+//  2. Capability-qualified ("terraform/mariadb-rds:^1.0.0",
+//     "terraform/mariadb-rds") — the segment before the first "/" is matched
+//     against each Recipe's Spec.Capability, and the version is selected among
+//     that capability's recipes of that name.
 //  3. Bare ("mariadb-rds:1.0.0" or "mariadb-rds") — a scan across every
-//     capability, version-exact first, then version-blind; exactly one
-//     match resolves.
+//     capability, with the version selected within each one.
 //
 // A Recipe URI therefore carries at most recipeReferenceMaxSegments segments,
 // whose declaration above is the single home for the accepted shape: strings.Cut
 // splits on the FIRST "/" only, so a segment past the ceiling stays inside the
 // name candidate and matches no Metadata.Name.
 //
-// Any level that finds more than one candidate is a miss, never a silent
-// pick — ambiguity surfaces as a loud resolution halt upstream, on the
-// capability dimension exactly as on the unversioned one. The "/" split
-// cannot misread a bare reference: recipe names contain no "/" per the
-// catalog naming convention, and a failed capability interpretation falls
-// through to bare resolution anyway.
+// Version selection is the shared three-form rule every by-name catalog lookup
+// applies: an exact pin resolves that version, a caret pin the highest in range,
+// an unversioned reference the highest available. A pin the catalog cannot satisfy
+// is a miss here — it is never quietly widened to a version the author did not
+// ask for — and the build's resolution-completeness pass turns that miss into a
+// loud halt naming the mapping value, exactly as it does for a component type
+// pinned at an absent version.
+//
+// Ambiguity across CAPABILITIES is a miss, never a silent pick: a bare reference
+// two capabilities can both answer carries nothing that selects either, so it
+// resolves to neither and surfaces as a loud resolution halt upstream. Qualify
+// the reference with its capability to select one. The "/" split cannot misread a
+// bare reference: recipe names contain no "/" per the catalog naming convention,
+// and a failed capability interpretation falls through to bare resolution anyway.
 func (c *Catalog) RecipeByURI(uri string) (types.Recipe, bool) {
-	if r, ok := c.Recipes[uri]; ok {
-		return r, true
+	// The unsatisfiable-version sentinel is dropped rather than surfaced: this
+	// accessor's (entity, found) shape is the one every consumer of the recipe
+	// lookup shares, and an unsatisfied pin is a miss to all of them. The loud
+	// halt is the resolution-completeness pass's, which names the mapping value.
+	key, ok, _ := selectCapabilityScopedVersion(c.Recipes, uri, func(r types.Recipe) (string, string, string) {
+		return r.Spec.Capability, r.Metadata.Name, r.Metadata.Version
+	})
+	if !ok {
+		return types.Recipe{}, false
 	}
-	if provider, rest, found := strings.Cut(uri, "/"); found {
-		name, version, _ := SplitVersionedURI(rest)
-		if r, ok := matchOneRecipe(c.Recipes, provider, name, version); ok {
-			return r, true
-		}
-		if version != "" {
-			if r, ok := matchOneRecipe(c.Recipes, provider, name, ""); ok {
-				return r, true
-			}
-		}
-	}
-	name, version, _ := SplitVersionedURI(uri)
-	if r, ok := matchOneRecipe(c.Recipes, "", name, version); ok {
-		return r, true
-	}
-	if version != "" {
-		if r, ok := matchOneRecipe(c.Recipes, "", name, ""); ok {
-			return r, true
-		}
-	}
-	return types.Recipe{}, false
-}
-
-// matchOneRecipe scans the identity map for entities matching the given
-// predicates and returns the match only when it is unique. The provider
-// parameter is matched against each Recipe's Spec.Capability; an empty
-// provider or version is a wildcard. Map-iteration order is irrelevant: the
-// result is gated on the count, not the encounter order.
-func matchOneRecipe(rs map[string]types.Recipe, provider, name, version string) (types.Recipe, bool) {
-	var match types.Recipe
-	n := 0
-	for _, r := range rs {
-		if provider != "" && r.Spec.Capability != provider {
-			continue
-		}
-		if r.Metadata.Name != name {
-			continue
-		}
-		if version != "" && r.Metadata.Version != version {
-			continue
-		}
-		match = r
-		n++
-	}
-	return match, n == 1
+	return c.Recipes[key], true
 }
 
 // FeatureRecipeByURI is the FeatureRecipe analogue of RecipeByURI; the
-// resolution ladder is identical.
+// resolution ladder, the version rule and the capability-ambiguity refusal are
+// identical, over the FeatureRecipe index.
 func (c *Catalog) FeatureRecipeByURI(uri string) (types.FeatureRecipe, bool) {
-	if fr, ok := c.FeatureRecipes[uri]; ok {
-		return fr, true
+	key, ok, _ := selectCapabilityScopedVersion(c.FeatureRecipes, uri, func(fr types.FeatureRecipe) (string, string, string) {
+		return fr.Spec.Capability, fr.Metadata.Name, fr.Metadata.Version
+	})
+	if !ok {
+		return types.FeatureRecipe{}, false
 	}
-	if provider, rest, found := strings.Cut(uri, "/"); found {
-		name, version, _ := SplitVersionedURI(rest)
-		if fr, ok := matchOneFeatureRecipe(c.FeatureRecipes, provider, name, version); ok {
-			return fr, true
-		}
-		if version != "" {
-			if fr, ok := matchOneFeatureRecipe(c.FeatureRecipes, provider, name, ""); ok {
-				return fr, true
-			}
-		}
-	}
-	name, version, _ := SplitVersionedURI(uri)
-	if fr, ok := matchOneFeatureRecipe(c.FeatureRecipes, "", name, version); ok {
-		return fr, true
-	}
-	if version != "" {
-		if fr, ok := matchOneFeatureRecipe(c.FeatureRecipes, "", name, ""); ok {
-			return fr, true
-		}
-	}
-	return types.FeatureRecipe{}, false
-}
-
-// matchOneFeatureRecipe is the FeatureRecipe twin of matchOneRecipe.
-func matchOneFeatureRecipe(frs map[string]types.FeatureRecipe, provider, name, version string) (types.FeatureRecipe, bool) {
-	var match types.FeatureRecipe
-	n := 0
-	for _, fr := range frs {
-		if provider != "" && fr.Spec.Capability != provider {
-			continue
-		}
-		if fr.Metadata.Name != name {
-			continue
-		}
-		if version != "" && fr.Metadata.Version != version {
-			continue
-		}
-		match = fr
-		n++
-	}
-	return match, n == 1
+	return c.FeatureRecipes[key], true
 }
 
 // PluginByURI returns the Plugin entity whose identity matches uri, plus
