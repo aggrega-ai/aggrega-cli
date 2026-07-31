@@ -6,7 +6,10 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+
+	schemas "github.com/aggrega-ai/aggrega-schemas"
 )
 
 // TestRegenClean is the regen-drift gate: for every registered kind, the
@@ -172,5 +175,182 @@ func TestRegenClean_Codec(t *testing.T) {
 					"Run `go generate ./internal/tools/typegen/...` and commit the result.", outFile)
 			}
 		})
+	}
+}
+
+// subjectSchemaKind reports whether a schema kind token names a contract a Wasm
+// guest speaks, and so owes a generated type in every binding language. Two
+// shapes qualify: a socket payload, whose kind token is prefixed "wasm-", and
+// the IR graph, whose kind token is "ir". Every other embedded schema describes
+// an authoring surface only the host reads — a Component, a Release, the
+// lockfile — so no guest binding is owed for it.
+func subjectSchemaKind(kind string) bool {
+	return strings.HasPrefix(kind, "wasm-") || kind == "ir"
+}
+
+// bindingLanguageByExt names the three languages a plugin development kit ships,
+// keyed by the file extension the generator emits for each. A subject schema
+// owes a target in all three: a socket contract bound in Go alone leaves the
+// Rust and TypeScript kits without the type, and a guest author hand-rolling
+// JSON against a wire format nothing generates for them.
+var bindingLanguageByExt = map[string]string{
+	".go": "Go",
+	".rs": "Rust",
+	".ts": "TypeScript",
+}
+
+// bindingLanguages lists those languages in a fixed order, so a failure reports
+// the missing set deterministically rather than in map order.
+var bindingLanguages = []string{"Go", "Rust", "TypeScript"}
+
+// generatorTables names the tables searched for a subject schema's targets, in a
+// fixed order for the same reason. Both are searched because the property is a
+// union over them: a schema's three bindings may arrive as codecs, as string-enum
+// constant emissions, or as a mix, and which of those a payload gets is a choice
+// about its shape rather than a statement about whether the guest is served.
+var generatorTables = []string{"codecTargets", "enumSources"}
+
+// goOnlySubjectKinds names any subject schema deliberately bound in Go alone,
+// mapped to the reason it is exempt. A member must be a payload no guest ever
+// encodes or decodes; "not bound yet" does not qualify, because that is exactly
+// the state the assertion below exists to report. It is empty: every subject
+// schema shipped today carries all three bindings.
+var goOnlySubjectKinds = map[string]string{}
+
+// TestBindingsCoverEverySubjectSchema closes the hole the regen-drift gates
+// above leave open. Each of those walks a generator table and byte-compares what
+// is declared, so all of them are structurally blind to a schema with no target
+// at all: a socket payload could ship bound in Go only, and TestRegenClean_Codec
+// and TestRegenClean_Enums would both stay green. This asserts the property they
+// cannot see — every socket payload and the IR graph carry a Go, a Rust and a
+// TypeScript target — and asserts it over both tables at once, because the two
+// hold different halves of one guarantee.
+//
+// The schema population is read from the embedded schema tree, so a schema added
+// to the distribution enters this assertion without anyone remembering to add it
+// here. Enumerating from a second hand list would make the assertion
+// self-referential and it would prove nothing.
+func TestBindingsCoverEverySubjectSchema(t *testing.T) {
+	// A target is attributed to a schema by the bytes it is generated from
+	// rather than by the file name recorded beside them. The bytes are the real
+	// dependency, and reading them needs no second copy of the schema-file
+	// naming convention, whose sole home is the schema package. The shared
+	// CBOR-helper targets are generated from no schema at all, so their empty
+	// bytes match no kind and they fall out here instead of faulting.
+	kindBySchema := map[string]string{}
+	for _, kind := range schemas.Kinds() {
+		body, ok := schemas.SchemaByKind(kind)
+		if !ok {
+			t.Fatalf("kind %q is enumerated but its schema does not resolve", kind)
+		}
+		if prior, dup := kindBySchema[body]; dup {
+			t.Fatalf("kinds %q and %q hold byte-identical schemas, so a generator "+
+				"target cannot be attributed to either", prior, kind)
+		}
+		kindBySchema[body] = kind
+	}
+
+	type binding struct {
+		langs  map[string]bool
+		tables map[string]bool
+	}
+	found := map[string]*binding{}
+	record := func(table, outFile, schemaBody string) {
+		kind, ok := kindBySchema[schemaBody]
+		if !ok {
+			return
+		}
+		b := found[kind]
+		if b == nil {
+			b = &binding{langs: map[string]bool{}, tables: map[string]bool{}}
+			found[kind] = b
+		}
+		b.tables[table] = true
+		if lang, ok := bindingLanguageByExt[filepath.Ext(outFile)]; ok {
+			b.langs[lang] = true
+		}
+	}
+	for outFile, tgt := range codecTargets {
+		record("codecTargets", outFile, tgt.schema)
+	}
+	for outFile, src := range enumSources {
+		record("enumSources", outFile, src.schema)
+	}
+
+	missingLangs := func(b *binding) []string {
+		var missing []string
+		for _, lang := range bindingLanguages {
+			if b == nil || !b.langs[lang] {
+				missing = append(missing, lang)
+			}
+		}
+		return missing
+	}
+	// The table names go into the failure message so it points at where to look:
+	// a schema short one language is fixed in whichever table already holds its
+	// other targets, and a schema found in neither table is a different problem
+	// from one found in a table but bound in fewer languages.
+	tablesHolding := func(b *binding) string {
+		if b == nil || len(b.tables) == 0 {
+			return "neither generator table"
+		}
+		var names []string
+		for _, table := range generatorTables {
+			if b.tables[table] {
+				names = append(names, table)
+			}
+		}
+		return strings.Join(names, " and ")
+	}
+
+	var subjectKinds []string
+	for _, kind := range schemas.Kinds() {
+		if subjectSchemaKind(kind) {
+			subjectKinds = append(subjectKinds, kind)
+		}
+	}
+	// A pass over an empty population certifies nothing, so it is a failure
+	// rather than a green: an embed that stopped resolving, or a criterion that
+	// stopped matching, must not read as "every subject schema is bound".
+	if len(subjectKinds) == 0 {
+		t.Fatalf("no subject schema was enumerated out of %d embedded kinds, so this "+
+			"assertion checked nothing: either the embedded schema tree is empty or "+
+			"subjectSchemaKind no longer matches any shipped kind", len(kindBySchema))
+	}
+	isSubject := make(map[string]bool, len(subjectKinds))
+	for _, kind := range subjectKinds {
+		isSubject[kind] = true
+	}
+
+	for _, kind := range subjectKinds {
+		if _, exempt := goOnlySubjectKinds[kind]; exempt {
+			continue
+		}
+		missing := missingLangs(found[kind])
+		if len(missing) == 0 {
+			continue
+		}
+		t.Errorf("schema %q has no %s target, so a plugin development kit in %s ships "+
+			"without its type; the targets it does have are registered in %s. Register "+
+			"a target per missing language in codecTargets or enumSources, or, if no "+
+			"guest ever encodes or decodes this payload, name the schema in "+
+			"goOnlySubjectKinds with the reason.",
+			kind, strings.Join(missing, "/"), strings.Join(missing, " and "), tablesHolding(found[kind]))
+	}
+
+	// The exemption set is walked in the reverse direction too, so it cannot rot
+	// unnoticed: a member naming a schema that no longer ships silently exempts
+	// nothing, and a member that in fact carries every binding misdescribes the
+	// tree it is meant to explain.
+	for kind, reason := range goOnlySubjectKinds {
+		if !isSubject[kind] {
+			t.Errorf("goOnlySubjectKinds names %q (%s), which is not an enumerated "+
+				"subject schema, so the exemption is stale and exempts nothing", kind, reason)
+			continue
+		}
+		if len(missingLangs(found[kind])) == 0 {
+			t.Errorf("goOnlySubjectKinds names %q (%s), but it carries every binding "+
+				"language, so the exemption misdescribes the tree and should be removed", kind, reason)
+		}
 	}
 }
