@@ -4,6 +4,7 @@
 package constraint
 
 import (
+	"fmt"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -134,7 +135,13 @@ func TestEveryDerivedSubjectKindHasASealedSubjectTypeAndEveryPullKindATraversal(
 			continue
 		}
 
-		embedsSubject, markers := interfaceShape(iface)
+		// The seal asserted directly rather than through a proxy: the kind embeds
+		// Subject, and it declares exactly one unexported method, uniquely its
+		// own. Exported methods are admitted without limit — they are the
+		// coordinates the kind carries, and they cannot be declared by a type
+		// outside this package in a way that satisfies the kind, because the
+		// unexported marker is still out of that type's reach.
+		embedsSubject, markers, exportedMethods := interfaceShape(iface)
 		if !embedsSubject {
 			t.Errorf("%s does not embed Subject, so it is not a subject kind: it carries no provenance "+
 				"and cannot raise", name)
@@ -142,10 +149,6 @@ func TestEveryDerivedSubjectKindHasASealedSubjectTypeAndEveryPullKindATraversal(
 		switch len(markers) {
 		case 1:
 			marker := markers[0]
-			if marker != strings.ToLower(marker[:1])+marker[1:] {
-				t.Errorf("%s's marker method %s is exported, so a type outside this package could "+
-					"declare it and satisfy the kind", name, marker)
-			}
 			if owner, taken := markerOwners[marker]; taken {
 				t.Errorf("%s and %s both use the marker method %s, so the two kinds are the same type "+
 					"to the compiler and a check declaring one can be handed the other", owner, name, marker)
@@ -153,12 +156,24 @@ func TestEveryDerivedSubjectKindHasASealedSubjectTypeAndEveryPullKindATraversal(
 			}
 			markerOwners[marker] = name
 		case 0:
-			t.Errorf("%s adds no marker method of its own, so any other subject kind satisfies it and "+
-				"the kinds are not distinct", name)
+			sort.Strings(exportedMethods)
+			declares := "declares no method of its own"
+			if len(exportedMethods) > 0 {
+				declares = fmt.Sprintf("declares only exported methods (%s)", strings.Join(exportedMethods, ", "))
+			}
+			t.Errorf("%s %s, so it has no unexported marker and the seal is open: any other subject "+
+				"kind satisfies it, and a type declared outside this package can satisfy it too by "+
+				"declaring the same exported methods.\n"+
+				"INVARIANT: a kind is sealed by one unexported method, because an unexported method name "+
+				"is qualified by the package declaring it and so cannot be declared from outside.\n"+
+				"CONSEQUENCE: an exported method cannot carry the seal. Add an unexported marker; keep "+
+				"the exported methods, which are the kind's coordinates.", name, declares)
 		default:
 			sort.Strings(markers)
-			t.Errorf("%s adds %d marker methods (%s); want exactly one, so that the seal is one fact "+
-				"rather than a set to keep in step", name, len(markers), strings.Join(markers, ", "))
+			t.Errorf("%s declares %d unexported methods (%s); want exactly one, so that the seal is one "+
+				"fact rather than a set to keep in step. Exported methods are not counted here and are "+
+				"not limited — the kind's coordinates are exported.",
+				name, len(markers), strings.Join(markers, ", "))
 		}
 	}
 
@@ -541,9 +556,24 @@ func packageInterfaceDecls(t *testing.T) map[string]*ast.InterfaceType {
 	return out
 }
 
-// interfaceShape reports whether an interface embeds the subject contract, and
-// the names of the methods it declares itself.
-func interfaceShape(iface *ast.InterfaceType) (embedsSubject bool, markers []string) {
+// interfaceShape reports whether an interface embeds the subject contract, the
+// unexported methods it declares itself — its markers — and the exported ones.
+//
+// The split is the seal's actual shape rather than a convenience. Forgery is
+// prevented by a marker being unexported: an unexported method name is
+// qualified by the package that declares it, so a type declared elsewhere
+// cannot declare that method and cannot satisfy the kind, however many exported
+// methods the kind also carries. The count that seals a kind is therefore the
+// count of *unexported* markers, and exported methods are admitted — they are
+// the coordinates the kind carries, which a check needs in order to key a fact
+// accessor to the instance it was invoked for.
+//
+// Reporting them separately rather than counting every named method together is
+// what lets the caller assert the property instead of a proxy for it. A count
+// over all named methods stands in for the seal only while a kind carries
+// nothing but its marker, and it forbids coordinates while protecting nothing
+// extra.
+func interfaceShape(iface *ast.InterfaceType) (embedsSubject bool, markers, exported []string) {
 	for _, method := range iface.Methods.List {
 		if len(method.Names) == 0 {
 			if id, ok := method.Type.(*ast.Ident); ok && id.Name == "Subject" {
@@ -552,8 +582,12 @@ func interfaceShape(iface *ast.InterfaceType) (embedsSubject bool, markers []str
 			continue
 		}
 		for _, name := range method.Names {
+			if token.IsExported(name.Name) {
+				exported = append(exported, name.Name)
+				continue
+			}
 			markers = append(markers, name.Name)
 		}
 	}
-	return embedsSubject, markers
+	return embedsSubject, markers, exported
 }

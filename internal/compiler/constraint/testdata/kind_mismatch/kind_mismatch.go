@@ -39,5 +39,5 @@ var NodeRule = constraint.Check[view, constraint.NoHostPowers, constraint.NodeSu
 
 // Run hands the node-kind check to the document entry.
 func Run(sourceFile string, names []string) []constraint.Objection {
-	return constraint.RunOnDocument(sourceFile, view{names: names}, NodeRule.Run)
+	return constraint.RunOnDocument(sourceFile, view{names: names}, NodeRule)
 }

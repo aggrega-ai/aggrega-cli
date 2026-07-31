@@ -94,7 +94,7 @@ func TestCheckDeclaredOverTheDocumentKindRunsThroughThePushEntry(t *testing.T) {
 		},
 	}
 
-	got := RunOnDocument("catalog/aggregate.yaml", view{declaredParameters: []string{"db_size"}}, unread.Run)
+	got := RunOnDocument("catalog/aggregate.yaml", view{declaredParameters: []string{"db_size"}}, unread)
 
 	if len(got) != 1 {
 		t.Fatalf("objections = %d; want 1", len(got))

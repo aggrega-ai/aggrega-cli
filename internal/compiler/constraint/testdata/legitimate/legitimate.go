@@ -28,12 +28,16 @@ type view struct{ names []string }
 // exported accessor on the objection so a signature change breaks this program.
 func Run(sourceFile string, names []string) []string {
 	objections := constraint.RunOnDocument(sourceFile, view{names: names},
-		func(v view, s constraint.DocumentSubject) []constraint.Objection {
-			var out []constraint.Objection
-			for _, n := range v.names {
-				out = append(out, s.Raise(ErrUnreadParameter, n))
-			}
-			return out
+		constraint.Check[view, constraint.NoHostPowers, constraint.DocumentSubject]{
+			Sentinel: ErrUnreadParameter,
+			Severity: constraint.SeverityWarning,
+			Run: func(v view, s constraint.DocumentSubject) []constraint.Objection {
+				var out []constraint.Objection
+				for _, n := range v.names {
+					out = append(out, s.Raise(ErrUnreadParameter, n))
+				}
+				return out
+			},
 		})
 
 	var rendered []string

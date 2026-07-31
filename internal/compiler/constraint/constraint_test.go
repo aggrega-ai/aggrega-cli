@@ -14,6 +14,10 @@ var errRuleBroken = errors.New("rule broken")
 // the caller presents one document, the check runs exactly once, and the
 // subject it is handed carries that document's provenance. Nothing enumerates
 // a document set, and no set is materialised for the check to be invoked over.
+//
+// The check reaches the entry as a [Check] value, which is the push side of the
+// property every pull traversal holds: the invocation site takes declarations
+// and not bare predicates.
 func TestRunOnDocumentRunsOnceAgainstThePresentedDocument(t *testing.T) {
 	t.Parallel()
 
@@ -24,12 +28,16 @@ func TestRunOnDocumentRunsOnceAgainstThePresentedDocument(t *testing.T) {
 	var seenFile, seenLocator string
 
 	got := RunOnDocument("catalog/aggregate.yaml", view{paramNames: []string{"db_size"}},
-		func(v view, s DocumentSubject) []Objection {
-			invocations++
-			seenView = v
-			seenFile = s.SourceFile()
-			seenLocator = s.Locator()
-			return []Objection{s.Raise(errRuleBroken, "db_size")}
+		Check[view, NoHostPowers, DocumentSubject]{
+			Sentinel: errRuleBroken,
+			Severity: SeverityFatal,
+			Run: func(v view, s DocumentSubject) []Objection {
+				invocations++
+				seenView = v
+				seenFile = s.SourceFile()
+				seenLocator = s.Locator()
+				return []Objection{s.Raise(errRuleBroken, "db_size")}
+			},
 		})
 
 	if invocations != 1 {
@@ -67,7 +75,11 @@ func TestRunOnDocumentReturnsNilWhenTheCheckRaisesNothing(t *testing.T) {
 	t.Parallel()
 
 	got := RunOnDocument("aggregate.yaml", struct{}{},
-		func(struct{}, DocumentSubject) []Objection { return nil })
+		Check[struct{}, NoHostPowers, DocumentSubject]{
+			Sentinel: errRuleBroken,
+			Severity: SeverityWarning,
+			Run:      func(struct{}, DocumentSubject) []Objection { return nil },
+		})
 	if got != nil {
 		t.Errorf("objections = %v; want nil", got)
 	}

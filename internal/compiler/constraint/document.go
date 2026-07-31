@@ -35,9 +35,18 @@ func newDocumentSubject(sourceFile string) DocumentSubject {
 // framework to walk. The caller reading a document presents it as it arrives;
 // the check runs exactly once, against that document.
 //
+// It takes a [Check] value rather than a bare predicate, exactly as every
+// pull-model traversal does. A predicate reaching this entry has therefore
+// declared the rule it enforces and what a violation does to the build, and V
+// is constrained to [View] so the facts it reads are a declared view rather
+// than any type at all. Both halves matter for one reason: the invocation site
+// admits declarations only, so there is no route through the framework for a
+// check carrying no sentinel and no severity, and the push side holds that
+// property on the same terms as the pull side rather than nearly.
+//
 // view carries the facts the check declared. sourceFile is the document's
 // workspace-relative path, and is the whole of the document subject's
 // provenance.
-func RunOnDocument[V any](sourceFile string, view V, run func(V, DocumentSubject) []Objection) []Objection {
-	return run(view, newDocumentSubject(sourceFile))
+func RunOnDocument[V View, C any](sourceFile string, view V, check Check[V, C, DocumentSubject]) []Objection {
+	return check.Run(view, newDocumentSubject(sourceFile))
 }

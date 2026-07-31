@@ -38,5 +38,5 @@ var UnreadParameter = constraint.Check[view, constraint.NoHostPowers, constraint
 
 // Run presents one document to the check and returns what it raised.
 func Run(sourceFile string, names []string) []constraint.Objection {
-	return constraint.RunOnDocument(sourceFile, view{names: names}, UnreadParameter.Run)
+	return constraint.RunOnDocument(sourceFile, view{names: names}, UnreadParameter)
 }
