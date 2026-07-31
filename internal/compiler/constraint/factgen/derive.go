@@ -58,10 +58,13 @@ func (k kind) Traversal() string {
 // key.
 //
 // A share is not proof of duplication and the generator does not treat it as
-// one. Same-name duplication is closed by the Go compiler, which will not accept
-// two same-named methods on one interface. Same semantics under two different
-// names is not closed and there is no mechanism for it; printing the shares is a
-// mitigation that turns an invisible risk into a reviewable list.
+// one. Same-name duplication is closed, but by two mechanisms rather than one:
+// the language rejects two declarations of a name at one rung, or at two rungs
+// with differing signatures, while the case it admits — two rungs and an
+// identical signature, which a method set may carry through embedding — is
+// refused by validateFacts. Same semantics under two different names is not
+// closed and there is no mechanism for it; printing the shares is a mitigation
+// that turns an invisible risk into a reviewable list.
 type tupleShare struct {
 	Rung        string
 	SourceField string
