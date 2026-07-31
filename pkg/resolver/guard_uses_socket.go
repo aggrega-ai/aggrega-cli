@@ -122,12 +122,21 @@ func collectReleaseEdgeEntries(release *types.Release) []releaseEdgeEntry {
 	return out
 }
 
-// guardReleaseUsesSocket is the Release-side mirror of guardUsesSocket: it
-// validates that every socket a Release per-edge `uses` entry names exists in
-// the consuming component's catalog usesSchema, firing ErrUnknownUsesSocket per
-// undeclared socket. The check shifts left to Step 1 — where the resolver owns
-// the socket-allowlist machinery and the catalog — so a Release wiring an edge
+// guardReleaseUsesSocket validates that every socket a Release per-edge `uses`
+// entry names exists in the consuming component's catalog usesSchema, firing
+// ErrUnknownUsesSocket per undeclared socket. The check sits with the resolver,
+// which owns the socket machinery and the catalog, so a Release wiring an edge
 // into a non-existent socket halts before topology draws it.
+//
+// This halt survives the relaxation on the component's own `uses` surface, and its
+// survival is deliberate rather than an oversight. The Release surface may wire and
+// configure an edge within a socket the architecture declares; it may not invent
+// the socket. Letting it do so would let the operator surface introduce topology
+// the Aggregate never declared, which is a much stronger claim than letting the
+// Aggregate author name a socket for their own component. This function is not a
+// second copy of [ValidateUsesAgainstSchema]'s rule — it enforces a
+// same-shaped condition on a different surface with different authority, so the two
+// are kept apart on purpose and must not be unified.
 //
 // The consuming node's component type is resolved from the Aggregate's
 // resolver-visible instances (top-level + subsystem). A Release edge on a node
@@ -274,18 +283,26 @@ func collectReleaseScopeAttachments(release *types.Release) []scopeAttachment {
 	return out
 }
 
-// guardUsesSocket validates that every socket name in uses blocks exists as a key
-// in the source catalog entity's usesSchema. Components without usesSchema cannot
-// accept uses declarations. This guarantees that every edge drawn in Step 2 has a
-// corresponding usesSchema entry with a selector for Step 4 validation.
+// guardUsesSocket walks every surface that can author a `uses` block and applies
+// each surface's socket rule to it. The rule is not the same on every surface, and
+// the difference is the point: an Aggregate author owns the application's topology
+// and may name a socket the catalog did not declare, while an attachment may only
+// name a socket the Feature it attaches declares.
 //
-// Every surface that can author a `uses` block is walked, not only the component
-// instance's own: an attachment declared at a subsystem, at a Release boundary, or
-// on a Release boundary component names sockets on the same Feature entity and is
-// validated against the same usesSchema. Where the attachment is declared changes
-// which components its edge is contributed from; it does not change what a valid
-// socket name is, so a single rule covers all four surfaces and the coverage of
-// the rule does not depend on the author's choice of scope.
+// Component-own `uses` goes to [ValidateUsesAgainstSchema], which no longer
+// requires the socket to appear in the Component's usesSchema — an author-named
+// socket is accepted, and the IR edge records that the socket was not
+// catalog-declared so a governance policy can refuse it. Attachment `uses` goes to
+// [validateFeatureUsesAgainstSchema], which still halts on a socket the Feature
+// does not declare.
+//
+// Every attachment surface is walked, not only the component instance's own: an
+// attachment declared at a subsystem, at a Release boundary, or on a Release
+// boundary component names sockets on the same Feature entity and is validated
+// against the same usesSchema. Where the attachment is declared changes which
+// components its edge is contributed from; it does not change what a valid socket
+// name is, so one rule covers all four attachment surfaces and its coverage does
+// not depend on the author's choice of scope.
 func guardUsesSocket(na types.NormalizedAggregate, release *types.Release, catalog CatalogLookup) []*ResolverError {
 	agg := na.Aggregate()
 	if agg == nil {
@@ -347,66 +364,64 @@ func guardUsesSocket(na types.NormalizedAggregate, release *types.Release, catal
 	return errs
 }
 
-// ValidateUsesAgainstSchema validates a component instance's uses block
-// against the catalog Component's usesSchema. Two failure modes:
+// ValidateUsesAgainstSchema inspects a component instance's uses block for the
+// one surface where an Aggregate author owns the topology: the component's own
+// `uses:`, whether the component sits in the Aggregate or in a flattened
+// sub-aggregate.
 //
-//   - The catalog Component declares no usesSchema (empty). Any uses
-//     declaration on its instances is rejected — the component has no
-//     defined sockets, so nothing can be connected to it. Emits one
-//     ErrUnknownUsesSocket per declared socket name.
-//   - The catalog Component declares a non-empty usesSchema, but the
-//     instance names a socket not present in the schema. Emits
-//     ErrUnknownUsesSocket per offending socket, with the valid socket
-//     names (in usesSchema author order) attached to the message.
+// It does NOT require the socket name to appear in the catalog Component's
+// usesSchema. An author may name a socket the catalog did not declare, and the
+// edge is built and delivered — a catalog that declares no entry for a socket has
+// not anticipated the connection, which is not the same as forbidding it. What the
+// edge may carry is unchanged: every key it injects must still name a key the
+// target's provides declares, and the target must still exist. The IR edge records
+// which of the two cases it is (see types.IREdge.SocketDeclaration), so a
+// governance policy can refuse a free-form connection outright without the
+// compiler taking a position on it.
 //
-// Silently returns nil when the component type is not in the catalog —
-// unknown-type reporting belongs to other guards.
+// Declaring the socket in the catalog remains the better path and stays what the
+// standard-library catalog does: a declared socket carries a selector, which
+// constrains which targets the connection may reach, and an ad-hoc socket has no
+// selector to carry.
+//
+// The relaxation is scoped to this surface alone. A Release may still only wire
+// within a socket the consuming component declares ([guardReleaseUsesSocket]), and
+// a Feature attachment may still only name a socket the Feature declares
+// ([validateFeatureUsesAgainstSchema]) — separate functions with their own inline
+// checks, so those halts hold structurally rather than by care. The asymmetry is
+// deliberate: the Aggregate author owns the application's topology, while the
+// operator surface configures and wires within an architecture it did not author.
+//
+// What remains here is the catalog-view classification: a resolved bare-token
+// catalog reference absent from the guard's view is a loud inconsistency, while a
+// relative-path type legitimately has no catalog entity.
 func ValidateUsesAgainstSchema(entity, fieldPath string, uses types.OrderedMap[types.UsesSocketValue], compType string, catalog CatalogLookup) []*ResolverError {
-	catComp, found := catalog.Component(compType)
-	if !found {
-		// A resolved bare-token catalog ref absent here is a loud view
-		// inconsistency; a Tier-1 relative-path type legitimately has no entity.
+	if uses.Len() == 0 {
+		return nil
+	}
+	if _, found := catalog.Component(compType); !found {
 		if verr := guardEntityViewInconsistency(entity, fieldPath, compType); verr != nil {
 			return []*ResolverError{verr}
 		}
-		return nil
 	}
-
-	if catComp.Spec.UsesSchema.Len() == 0 {
-		// Component has no usesSchema — uses is not allowed
-		var errs []*ResolverError
-		for socket := range uses.All() {
-			errs = append(errs, &ResolverError{
-				Entity:  entity,
-				Field:   fmt.Sprintf("%s[%q]", fieldPath, socket),
-				Message: fmt.Sprintf("component type %q has no usesSchema — uses declarations are not allowed", compType),
-				Err:     ErrUnknownUsesSocket,
-			})
-		}
-		return errs
-	}
-
-	// Validate each socket name exists in usesSchema
-	var errs []*ResolverError
-	for socket := range uses.All() {
-		if _, ok := catComp.Spec.UsesSchema.Get(socket); !ok {
-			errs = append(errs, &ResolverError{
-				Entity:  entity,
-				Field:   fmt.Sprintf("%s[%q]", fieldPath, socket),
-				Message: fmt.Sprintf("socket %q not defined in component type %q usesSchema (valid: %v)", socket, compType, catComp.Spec.UsesSchema.Keys()),
-				Err:     ErrUnknownUsesSocket,
-			})
-		}
-	}
-	return errs
+	return nil
 }
 
-// validateFeatureUsesAgainstSchema is the Feature-side mirror of
-// ValidateUsesAgainstSchema. Same two failure modes (no usesSchema =
-// declarations rejected; non-empty usesSchema = each socket must exist
-// as a key) and same silent-skip on unknown catalog Feature type. Used for
-// every attachment on the one `features` surface, whatever the attachment
-// produces — they all resolve through the Feature catalog kind.
+// validateFeatureUsesAgainstSchema validates an attachment's `uses` block against
+// the attached catalog Feature's usesSchema. Two failure modes — the Feature
+// declares no usesSchema, so no socket may be named; or it declares one and the
+// attachment names a socket absent from it — and a silent skip on an unknown
+// catalog Feature type. Used for every attachment on the one `features` surface,
+// whatever the attachment produces: they all resolve through the Feature catalog
+// kind.
+//
+// Both halts survive the relaxation on the component's own `uses` surface, and
+// their survival is deliberate. An attachment does not author the application's
+// topology; it participates in the topology the attached Feature declares, so the
+// Feature's usesSchema is the whole of what its sockets may be. This function
+// therefore is not a stale twin of [ValidateUsesAgainstSchema] left un-relaxed by
+// accident — the two enforce a same-shaped condition on surfaces with different
+// authority, and separating them is what lets one relax without the other.
 func validateFeatureUsesAgainstSchema(entity, fieldPath string, uses types.OrderedMap[types.UsesSocketValue], featType string, catalog CatalogLookup) []*ResolverError {
 	catFeat, found := catalog.Feature(featType)
 	if !found {

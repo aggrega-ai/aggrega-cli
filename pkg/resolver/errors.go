@@ -115,9 +115,14 @@ var (
 	// attachment merging (e.g., divergent values on the same Feature key).
 	ErrFeatureMergeConflict = errors.New("feature merge conflict: reconcile the Aggregate and Release declarations for the feature")
 
-	// ErrUnknownUsesSocket wraps a uses-block socket name that does not
-	// exist in the catalog Component's usesSchema.
-	ErrUnknownUsesSocket = errors.New("unknown uses socket: declare the socket in the component type's usesSchema, or use a socket it already declares")
+	// ErrUnknownUsesSocket wraps a socket name that the entity owning the surface
+	// does not declare in its usesSchema, on a surface that may only name a
+	// declared socket: a Feature attachment's uses (the socket must be on the
+	// attached Feature) and a Release per-edge uses (the socket must be on the
+	// consuming component). A component's own uses block is NOT one of those
+	// surfaces — an Aggregate author may name a socket the catalog did not
+	// declare — so this sentinel no longer fires for it.
+	ErrUnknownUsesSocket = errors.New("unknown uses socket: name a socket the entity declares in its usesSchema — only a component's own uses block may name one the catalog did not declare")
 
 	// ErrSelfInjectForbidden wraps a self-inject declaration on a component
 	// whose catalog type does not declare a spec.inject allowlist.

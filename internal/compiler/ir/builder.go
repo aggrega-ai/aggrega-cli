@@ -293,16 +293,32 @@ func BuildIRContext(ctx context.Context, cfg BuildIRConfig) (*types.IRGraph, Fea
 		}
 		return defs
 	}
+	// Keyed by the DECLARING entity's identity as well as the socket: a
+	// Feature-authored edge's socket is declared on the Feature, not on the
+	// consuming Component, so a key carrying only the component type would serve
+	// one surface's answer for the other.
+	declarations := map[string]string{}
+	declarationFor := func(componentType, originFeature, socket string) string {
+		key := componentType + "\x00" + originFeature + "\x00" + socket
+		d, cached := declarations[key]
+		if !cached {
+			d = socketDeclaration(cfg.CatalogLookup, componentType, originFeature, socket)
+			declarations[key] = d
+		}
+		return d
+	}
 	for _, e := range topo.Edges {
 		edgeValues, edgeInfra := e.Values, e.Infra
-		if cfg.CatalogLookup.Component != nil {
-			if src, ok := topo.Nodes.Get(e.Source); ok && src != nil {
-				if defs := defaultsFor(src.ComponentType, e.Socket, "values"); defs.Len() > 0 {
-					edgeValues = mergeSchemaDefaults(e.Values, defs)
-				}
-				if defs := defaultsFor(src.ComponentType, e.Socket, "infra"); defs.Len() > 0 {
-					edgeInfra = mergeSchemaDefaults(e.Infra, defs)
-				}
+		var sourceComponentType string
+		if src, ok := topo.Nodes.Get(e.Source); ok && src != nil {
+			sourceComponentType = src.ComponentType
+		}
+		if cfg.CatalogLookup.Component != nil && sourceComponentType != "" {
+			if defs := defaultsFor(sourceComponentType, e.Socket, "values"); defs.Len() > 0 {
+				edgeValues = mergeSchemaDefaults(e.Values, defs)
+			}
+			if defs := defaultsFor(sourceComponentType, e.Socket, "infra"); defs.Len() > 0 {
+				edgeInfra = mergeSchemaDefaults(e.Infra, defs)
 			}
 		}
 		irEdge := types.IREdge{
@@ -310,6 +326,7 @@ func BuildIRContext(ctx context.Context, cfg BuildIRConfig) (*types.IRGraph, Fea
 			Target:                e.Target,
 			Socket:                e.Socket,
 			Alias:                 e.Alias,
+			SocketDeclaration:     declarationFor(sourceComponentType, e.OriginFeature, e.Socket),
 			OriginFeature:         e.OriginFeature,
 			OriginFeatureInstance: e.OriginFeatureInstance,
 			OriginRelease:         e.OriginRelease,

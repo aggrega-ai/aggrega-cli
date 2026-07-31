@@ -5,13 +5,20 @@ metadata:
   version: "1.0.0"
 spec:
   components:
-    # `bad` authors a socket the core/api usesSchema does not declare
-    # (valid sockets are databases / caches). The target exists (store2),
-    # so the dangling sweep passes and the undeclared-socket guard is what
-    # fires — proving the socket allowlist now covers sub-aggregate components.
+    # `bad` authors two edges from the same component so one graph carries both
+    # declaration values. `databases` is declared by the core/api usesSchema, so
+    # its edge is marked declared and its selector is evaluated as before.
+    # `nonexistent` is not declared anywhere, so its edge is marked ad-hoc and
+    # there is no selector to evaluate. The target exists in both cases, so the
+    # dangling sweep stays quiet and the marker is what the build is being read
+    # for — on a flattened sub-aggregate component, which is where the socket
+    # guards previously had a coverage gap.
     bad:
       type: core/api
       uses:
+        databases:
+          main:
+            target: store2
         nonexistent:
           x:
             target: store2

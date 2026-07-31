@@ -26,11 +26,23 @@ import (
 // the originating Feature's usesSchema, not the consuming Component's.
 //
 // Skip cases. A usesSchema entry without a selector string is
-// vacuously satisfied. Catalog-lookup misses, target-node misses, and
-// missing-socket cases all silently continue: Step 1's resolver
-// guards reject unknown uses-sockets and validate every component and
-// feature reference, so analyzer-phase misses reflect internal
-// invariants rather than authoring errors (see [ErrCatalogLookup]).
+// vacuously satisfied, and so is a socket with no usesSchema entry at
+// all: an author may name a socket the catalog did not declare, and
+// such a socket has no catalog entry to carry a selector, so there is
+// nothing to evaluate and nothing missing. That is a legitimate
+// authoring shape, not a gap — which is why the condition below is
+// selector presence and not the edge's declaration marker. Selector
+// presence is the question this pass actually asks; keying on the
+// marker instead would put a second condition on one question and the
+// two could then disagree. Catalog-lookup misses and target-node misses
+// also silently continue: the resolver guards validate every component
+// and feature reference, so those misses reflect internal invariants
+// rather than authoring errors (see [ErrCatalogLookup]).
+//
+// Coverage, stated plainly because it changed: this check is exhaustive
+// over DECLARED sockets. An edge on a socket the catalog did not declare
+// is not label-constrained by anything, and what it may carry is bounded
+// by the target's declared provides instead.
 //
 // Output. One [AnalysisError] per violation. Parse errors carry
 // "selector parse error" framing; no-match errors carry target /

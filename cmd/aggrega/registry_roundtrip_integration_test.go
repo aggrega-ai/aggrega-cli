@@ -402,10 +402,28 @@ func TestIntegration_RegistryBuild_GuardNegatives(t *testing.T) {
 			wantErr: resolver.ErrSchemaConformance,
 		},
 		{
-			name: "unknown_uses_socket",
+			// This case drives the OPERATOR edge surface rather than the Aggregate's
+			// own uses block, and the asymmetry is the point rather than fixture
+			// convenience. A component's own `uses:` may name a socket its catalog
+			// Component does not declare: the edge is built and delivered, and the IR
+			// edge records that the socket was author-named rather than
+			// catalog-declared, so a governance policy can refuse the connection
+			// outright without the compiler taking a position on it. A typo'd socket
+			// name in the Aggregate therefore builds cleanly and is not a guard
+			// negative — do not re-point this case at aggregate.yaml.
+			//
+			// The Release is where an undeclared socket still halts: it may wire and
+			// configure an edge within a socket the consuming component declares, but
+			// it may not invent the socket, since that would introduce topology the
+			// Aggregate never declared.
+			name: "release_unknown_uses_socket",
 			mutate: func(t *testing.T, ws string) {
-				// adminer declares a `databases` socket; `databases-typo` is undeclared.
-				mutateFile(t, ws, "aggregate.yaml", "        databases:\n", "        databases-typo:\n")
+				// web is core/devtool/adminer, whose usesSchema declares `databases`;
+				// `databases-typo` is undeclared, so the Release wires an edge into a
+				// socket that does not exist on the consuming component.
+				mutateFile(t, ws, "release.yaml",
+					"      infra:\n        port: 8080\n",
+					"      uses:\n        databases-typo:\n          db:\n            target: db\n      infra:\n        port: 8080\n")
 			},
 			wantErr: resolver.ErrUnknownUsesSocket,
 		},

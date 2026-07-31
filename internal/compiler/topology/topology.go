@@ -731,7 +731,10 @@ func guardSubAggregateNodes(flat *flattenResult, edges []NormalizedEdge, cfg Bui
 			continue
 		}
 
-		// Socket allowlist: every uses socket must exist in the component's usesSchema.
+		// Component-own uses. A socket the catalog did not declare is accepted here
+		// exactly as it is for a root component: the flattened sub-aggregate surface
+		// must not be stricter than the surface it was flattened from, or a module
+		// would lose a capability merely by being composed.
 		if node.Uses.Len() > 0 {
 			errs = append(errs, resolver.ValidateUsesAgainstSchema(
 				entity, fmt.Sprintf(".%s.uses", nodeID), node.Uses, node.ComponentType, catalog)...)

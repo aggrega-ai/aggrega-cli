@@ -1,0 +1,17 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: adhocdangle-submodule
+  version: "1.0.0"
+spec:
+  components:
+    # An author-named socket carries no catalog entry, so nothing constrains
+    # WHICH target it may reach. It must still name a target that EXISTS: the
+    # dangling sweep is origin-agnostic and does not read the declaration marker,
+    # so an author-named socket is not a way to smuggle a non-existent endpoint in.
+    svc:
+      type: core/api
+      uses:
+        freeform:
+          main:
+            target: ghost

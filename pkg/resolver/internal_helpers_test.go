@@ -1024,23 +1024,29 @@ func FuzzSplitAggregatePath(f *testing.F) {
 }
 
 // TestGuardUsesSocket_SubsystemRecursionWithSocketViolations pins the
-// guardUsesSocketSubsystem path — a subsystem containing a component
-// whose `uses` references an undeclared socket surfaces an error at
-// the subsystem-scoped path. Recursion through nested subsystems
-// surfaces nested errors with the correct dotted path.
+// subsystem recursion path — a subsystem containing a component whose
+// attachment references a socket the attached Feature does not declare
+// surfaces an error at the subsystem-scoped path. Recursion through
+// nested subsystems surfaces nested errors with the correct dotted path.
+//
+// The violation is on an attachment rather than on the component's own
+// `uses` because a component's own uses block may name a socket the
+// catalog did not declare, so it yields nothing to locate.
 func TestGuardUsesSocket_SubsystemRecursionWithSocketViolations(t *testing.T) {
 	t.Parallel()
-	// Component with a uses edge to a socket the catalog doesn't declare.
+	// Attachment naming a socket the attached Feature doesn't declare.
 	uses := types.OrderedMap[types.UsesSocketValue]{}
 	uses.Set("undeclared_socket", types.UsesSocketValue{})
-	innerComp := types.ComponentInstance{Type: "core/server", Uses: uses}
+	features := types.OrderedMap[types.FeatureInstance]{}
+	features.Set("log", types.FeatureInstance{Type: "core/logging", Uses: uses})
+	innerComp := types.ComponentInstance{Type: "core/server", Features: features}
 	innerComps := types.OrderedMap[types.ComponentInstance]{}
 	innerComps.Set("api", innerComp)
 	innerSub := types.Subsystem{Components: innerComps}
 	outerSubs := types.OrderedMap[types.Subsystem]{}
 	outerSubs.Set("nested", innerSub)
 	outerSub := types.Subsystem{Subsystems: outerSubs}
-	// Catalog that declares the Component but with no usesSchema entries.
+	// Catalog that declares both entities but with no usesSchema entries.
 	catalog := CatalogLookup{
 		Component: func(typeURI string) (types.Component, bool) {
 			if typeURI == "core/server" {
@@ -1051,6 +1057,16 @@ func TestGuardUsesSocket_SubsystemRecursionWithSocketViolations(t *testing.T) {
 				}, true
 			}
 			return types.Component{}, false
+		},
+		Feature: func(typeURI string) (types.Feature, bool) {
+			if typeURI == "core/logging" {
+				return types.Feature{
+					Spec: types.FeatureSpec{
+						UsesSchema: types.OrderedMap[types.UsesSchemaEntry]{},
+					},
+				}, true
+			}
+			return types.Feature{}, false
 		},
 	}
 	rootSubs := types.OrderedMap[types.Subsystem]{}

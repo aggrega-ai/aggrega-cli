@@ -35,6 +35,21 @@ const (
 	OriginMixed AttachmentOrigin = "mixed"
 )
 
+const (
+	// SocketDeclarationDeclared is the [IREdge.SocketDeclaration] value for an edge
+	// wired into a socket the owning catalog entity lists in its usesSchema — the
+	// consuming Component, or the originating Feature for a Feature-authored edge.
+	// Such a socket carries its usesSchema entry, including the selector that
+	// constrains which targets the edge may reach.
+	SocketDeclarationDeclared = "declared"
+	// SocketDeclarationAdHoc is the [IREdge.SocketDeclaration] value for an edge
+	// wired into a socket the Aggregate author named and the catalog did not
+	// declare. There is no usesSchema entry, so there is no selector to evaluate
+	// and no target constraint; what the edge may carry is bounded by the target's
+	// declared provides alone.
+	SocketDeclarationAdHoc = "ad-hoc"
+)
+
 // AttachmentBindingFree is the value [IRFeatureEntry.Binding] carries when an
 // attachment fills no declared attachment slot on its host Component — a free
 // attachment. It is spelled once here so the IR builder, a consumer comparing
@@ -221,6 +236,31 @@ type IREdge struct {
 	Target string `json:"target"`
 	Socket string `json:"socket,omitempty"`
 	Alias  string `json:"alias,omitempty"`
+	// SocketDeclaration records where the socket came from:
+	// [SocketDeclarationDeclared] when the catalog entity that owns the socket
+	// lists it in usesSchema, [SocketDeclarationAdHoc] when the Aggregate author
+	// named a socket the catalog did not declare.
+	//
+	// It is a THIRD axis, independent of the two authorship fields below. Those
+	// say who drew the edge; this says where the socket came from. A
+	// Release-authored edge into a declared socket and an Aggregate-authored edge
+	// into an ad-hoc socket differ on the two axes independently, so this fact is
+	// never derivable from OriginFeature or OriginRelease — nor from Socket being
+	// empty, since an ad-hoc edge has a socket NAME, it just has no usesSchema
+	// entry behind it.
+	//
+	// The value is always serialised, never omitted. A consumer must never have to
+	// read an absent value as "declared": that would make a construction path that
+	// forgets to populate the field indistinguishable from a constrained edge, and
+	// the whole point of the field is to make an unconstrained edge legible. The
+	// schema declares it required with a two-value enum, so an unpopulated field
+	// fails conformance rather than passing as declared.
+	//
+	// Not the same mechanic as an attachment's binding marker. Same shape of
+	// question — did the catalog declare this? — on a different subject, with a
+	// different construction site. They are deliberately separate fields and must
+	// not be collapsed into a shared enum.
+	SocketDeclaration string `json:"socket_declaration"`
 	// OriginFeature is the catalog Feature type URI when the edge originated
 	// from a Feature's own uses block (empty for Component-own edges).
 	OriginFeature string `json:"origin_feature,omitempty"`

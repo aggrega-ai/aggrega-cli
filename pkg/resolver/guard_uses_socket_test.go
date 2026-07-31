@@ -125,26 +125,30 @@ func TestGuardUsesSocket(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name: "unknown socket fails",
+			// An author may name a socket the component's catalog type does not
+			// declare. The edge is built; the IR records the socket as not
+			// catalog-declared so a policy can refuse it.
+			name: "socket absent from a declared usesSchema passes",
 			agg: &types.Aggregate{
 				Metadata: types.AggregateMetadata{Name: "test-app"},
 				Spec: types.AggregateSpec{
 					Components: components2,
 				},
 			},
-			wantErr: true,
-			errSent: ErrUnknownUsesSocket,
+			wantErr: false,
 		},
 		{
-			name: "no usesSchema with uses fails",
+			// Catalog silence means the connection was not anticipated, not that it
+			// is forbidden — so a component type declaring no usesSchema at all can
+			// still host an author-named socket.
+			name: "component with no usesSchema at all passes",
 			agg: &types.Aggregate{
 				Metadata: types.AggregateMetadata{Name: "test-app"},
 				Spec: types.AggregateSpec{
 					Components: components3,
 				},
 			},
-			wantErr: true,
-			errSent: ErrUnknownUsesSocket,
+			wantErr: false,
 		},
 		{
 			name: "no uses passes silently",
@@ -222,24 +226,33 @@ func TestGuardUsesSocket_DeterministicOrder(t *testing.T) {
 		Metadata: types.ComponentMetadata{Name: "core/db", Version: "1.0.0"},
 		Spec:     types.ComponentSpec{},
 	}
+	// Attachment sockets, not component-own sockets: a component's own uses block
+	// may name a socket the catalog did not declare, so it produces no diagnostic
+	// to order. An attachment's socket must exist on the attached Feature, which is
+	// what still yields one diagnostic per offending socket here.
+	noUsesFeat := types.Feature{
+		Metadata: types.FeatureMetadata{Name: "core/logging", Version: "1.0.0"},
+		Spec:     types.FeatureSpec{},
+	}
 	catalog := CatalogLookup{
 		Component: func(typeURI string) (types.Component, bool) {
 			return noUsesComp, true
 		},
 		Feature: func(typeURI string) (types.Feature, bool) {
-			return types.Feature{}, false
+			return noUsesFeat, true
 		},
 	}
-	usesA := types.OrderedMap[types.UsesSocketValue]{}
-	usesA.Set("a", types.UsesSocketValue{Compact: []string{"x"}})
-	usesB := types.OrderedMap[types.UsesSocketValue]{}
-	usesB.Set("b", types.UsesSocketValue{Compact: []string{"x"}})
-	usesC := types.OrderedMap[types.UsesSocketValue]{}
-	usesC.Set("c", types.UsesSocketValue{Compact: []string{"x"}})
+	attach := func(socket string) types.OrderedMap[types.FeatureInstance] {
+		uses := types.OrderedMap[types.UsesSocketValue]{}
+		uses.Set(socket, types.UsesSocketValue{Compact: []string{"x"}})
+		features := types.OrderedMap[types.FeatureInstance]{}
+		features.Set("log", types.FeatureInstance{Type: "core/logging", Uses: uses})
+		return features
+	}
 	components := types.OrderedMap[types.ComponentInstance]{}
-	components.Set("zebra", types.ComponentInstance{Type: "core/db", Uses: usesA})
-	components.Set("alpha", types.ComponentInstance{Type: "core/db", Uses: usesB})
-	components.Set("mid", types.ComponentInstance{Type: "core/db", Uses: usesC})
+	components.Set("zebra", types.ComponentInstance{Type: "core/db", Features: attach("a")})
+	components.Set("alpha", types.ComponentInstance{Type: "core/db", Features: attach("b")})
+	components.Set("mid", types.ComponentInstance{Type: "core/db", Features: attach("c")})
 	agg := &types.Aggregate{
 		Metadata: types.AggregateMetadata{Name: "test"},
 		Spec: types.AggregateSpec{

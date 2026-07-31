@@ -49,14 +49,14 @@ func jsonSchemaFalse() *jsonschema.Schema {
 // about, because the two are easy to read as one. This function has no
 // caller outside its own tests: nothing builds a validator from the
 // document it returns, so no build is refused on the strength of the
-// closure above. The socket-name check that actually runs is
-// ValidateUsesAgainstSchema in package resolver, which compares each
-// authored socket name against the catalog entity's usesSchema directly
-// and never consults a projected JSON Schema. So the closure describes
-// the shape this generator emits, not a gate an authored uses block
-// passes through — a distinction the sibling
-// [GenerateBaseAttachmentsJSONSchema] does not share, since that one is
-// wired to a resolver guard that validates against its output.
+// closure above. Nor does any other check stand behind it for a
+// component's own uses block — an author may name a socket the catalog
+// did not declare, and the resolver accepts it. So the closure describes
+// the shape this generator emits and nothing more: it is not a gate an
+// authored uses block passes through, and it does not describe what the
+// compiler accepts. The sibling [GenerateBaseAttachmentsJSONSchema] does
+// not share that gap, since it is wired to a resolver guard that
+// validates against its output.
 func GenerateBaseUsesJSONSchema(usesSchema types.OrderedMap[types.UsesSchemaEntry]) *jsonschema.Schema {
 	if usesSchema.Len() == 0 {
 		return nil

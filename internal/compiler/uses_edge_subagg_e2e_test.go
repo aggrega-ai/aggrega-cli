@@ -11,6 +11,7 @@ package compiler_test
 
 import (
 	"errors"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -18,6 +19,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline/pipelinetest"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/topology"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
 const subaggCatalog = "testdata/uses-edge-config/catalog/base"
@@ -103,18 +105,46 @@ func TestUsesEdgeSubagg_NonConformingInfraHalts(t *testing.T) {
 	}
 }
 
-// TestUsesEdgeSubagg_UndeclaredSocketHalts pins socket-allowlist coverage for
-// sub-aggregate components: a component inside a sub-aggregate authoring a
-// socket its type's usesSchema does not declare halts with ErrUnknownUsesSocket
-// (the target exists, so this is the socket guard, not the dangling sweep).
-func TestUsesEdgeSubagg_UndeclaredSocketHalts(t *testing.T) {
+// TestUsesEdgeSubagg_SocketDeclarationMarked pins the declaration marker on a
+// FLATTENED SUB-AGGREGATE component, which is where the socket guards previously
+// had a coverage gap and therefore where a marker hole would most plausibly open.
+// One component authors two edges: one on a socket its type declares, one on a
+// socket nothing declares. Both build, both reach the IR, and they carry the two
+// contrasting marker values in a single graph.
+func TestUsesEdgeSubagg_SocketDeclarationMarked(t *testing.T) {
 	t.Parallel()
-	_, err := pipelinetest.BuildE(t, pipelinetest.Input{
+	result := pipelinetest.Build(t, pipelinetest.Input{
 		ReleasePath:  "testdata/uses-edge-subagg/release-badsocket.yaml",
 		CatalogPaths: []string{subaggCatalog, subaggLocalCatalog},
 	})
-	if !errors.Is(err, resolver.ErrUnknownUsesSocket) {
-		t.Fatalf("want ErrUnknownUsesSocket for an undeclared socket on a sub-aggregate component; got %v", err)
+	want := map[string]string{
+		"databases":   types.SocketDeclarationDeclared,
+		"nonexistent": types.SocketDeclarationAdHoc,
+	}
+	seen := map[string]string{}
+	for _, e := range result.IRGraph.Spec.Edges {
+		if e.Source != "mod.bad" {
+			continue
+		}
+		seen[e.Socket] = e.SocketDeclaration
+	}
+	if !reflect.DeepEqual(seen, want) {
+		t.Fatalf("socket declaration markers on mod.bad = %v, want %v (edges: %+v)",
+			seen, want, result.IRGraph.Spec.Edges)
+	}
+}
+
+// TestUsesEdgeSubagg_AdHocSocketDanglingTargetStillHalts pins that an author-named
+// socket is not a way to smuggle a non-existent target past the dangling sweep:
+// the sweep is origin-agnostic and does not consult the declaration marker.
+func TestUsesEdgeSubagg_AdHocSocketDanglingTargetStillHalts(t *testing.T) {
+	t.Parallel()
+	_, err := pipelinetest.BuildE(t, pipelinetest.Input{
+		ReleasePath:  "testdata/uses-edge-subagg/release-adhoc-dangle.yaml",
+		CatalogPaths: []string{subaggCatalog, subaggLocalCatalog},
+	})
+	if !errors.Is(err, topology.ErrDanglingUsesTarget) {
+		t.Fatalf("want ErrDanglingUsesTarget for an ad-hoc socket pointing at a non-existent target; got %v", err)
 	}
 }
 
@@ -135,6 +165,15 @@ func TestUsesEdgeSubagg_SubsystemWideFeatureProjects(t *testing.T) {
 			found = true
 			if e.Target != "data.store3" {
 				t.Errorf("subsystem-wide feature edge target = %q, want %q (childPrefix-namespaced)", e.Target, "data.store3")
+			}
+			// The `peer` socket is declared on the FEATURE's usesSchema, not on the
+			// consuming component's — so this also pins that the declaration marker
+			// reads the originating Feature for a Feature-authored edge. Reading the
+			// consuming Component instead would mark every such edge ad-hoc, which
+			// is the silently-wrong marker rather than a visibly-missing one.
+			if e.SocketDeclaration != types.SocketDeclarationDeclared {
+				t.Errorf("Feature-authored edge on a Feature-declared socket: SocketDeclaration = %q, want %q",
+					e.SocketDeclaration, types.SocketDeclarationDeclared)
 			}
 		}
 	}

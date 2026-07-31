@@ -34,6 +34,7 @@ func TestEmittedIRConformsToSchema(t *testing.T) {
 		{"uses-edge-config", "testdata/uses-edge-config/release.yaml", []string{"testdata/uses-edge-config/catalog/base"}},
 		{"uses-edge-defaults", "testdata/uses-edge-config/release-edge-defaults.yaml", []string{"testdata/uses-edge-config/catalog/base"}},
 		{"uses-edge-subagg", "testdata/uses-edge-subagg/release.yaml", []string{"testdata/uses-edge-config/catalog/base", "testdata/uses-edge-subagg/catalog/base"}},
+		{"uses-edge-subagg-adhoc-socket", "testdata/uses-edge-subagg/release-badsocket.yaml", []string{"testdata/uses-edge-config/catalog/base", "testdata/uses-edge-subagg/catalog/base"}},
 		{"compose-bridge", "testdata/compose-bridge/release.yaml", []string{
 			"testdata/compose-bridge/catalog/base",
 			"../../../aggrega-hub/aggrega-catalog/feature/core/compose-bridge/1.0.0/feature.yaml",
