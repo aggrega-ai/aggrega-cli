@@ -103,7 +103,12 @@ func DescendSubAggregates(c *Closure, loader AggregateLoader, lookup Lookup) err
 		}
 
 		sub := newWalkState()
-		sub.walkAggregate(agg, fmt.Sprintf("aggregate(%s)", f.uri))
+		// The loader's contract is a parsed *types.Aggregate; the walk's is a
+		// normalized one. Normalizing here is where the two meet — the walk cannot
+		// be entered without the guarantee, and a loader that already normalized
+		// (every production one loads through the parse core, which does) hands back
+		// the identical value.
+		sub.walkAggregate(types.Normalize(agg), fmt.Sprintf("aggregate(%s)", f.uri))
 		if err := sub.resolveEntities(lookup); err != nil {
 			return err
 		}

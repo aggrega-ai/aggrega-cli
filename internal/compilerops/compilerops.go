@@ -220,7 +220,7 @@ func ResolveClosure(in ClosureInputs) (*ResolvedClosure, *ClosureError) {
 	externals := lockfile.ExternalEntitiesFromBytes(rel, aggExternal, manRes.Bytes)
 	cacheDir := in.WorkspaceConfig.ResolvedArtifactCacheDir()
 	lookup := in.View.ClosureLookup(nil, in.WorkspaceRoot, cacheDir, externals)
-	cl, err := closure.ComputeClosure(rel, manifest, aggregate, in.WorkspaceConfig, lookup)
+	cl, err := closure.ComputeClosure(rel, manifest, types.Normalize(aggregate), in.WorkspaceConfig, lookup)
 	if err != nil {
 		return nil, &ClosureError{
 			Stage: ClosureStageComputeClosure,

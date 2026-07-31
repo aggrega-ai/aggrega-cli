@@ -33,7 +33,7 @@ func TestComputeClosureIsBlindToProviderSocket(t *testing.T) {
 		},
 	}
 
-	c, err := closure.ComputeClosure(&types.Release{}, nil, nil, cfg, lookup)
+	c, err := closure.ComputeClosure(&types.Release{}, nil, types.NormalizedAggregate{}, cfg, lookup)
 	if err != nil {
 		t.Fatalf("ComputeClosure: %v", err)
 	}

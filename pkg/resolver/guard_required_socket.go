@@ -12,8 +12,8 @@ import (
 // guardRequiredUsesSockets enforces that each `required: true` socket declared
 // by a Component's usesSchema is populated for every ComponentInstance of that
 // Component. Emits ErrMissingRequiredSocket per missing or empty socket. Walks
-// the Aggregate top-level components plus all ComponentInstances reachable
-// through Subsystems.
+// every ComponentInstance reachable through the Aggregate's Subsystems, which is
+// all of them.
 //
 // Population is read from BOTH authoring documents, because both can bind such a
 // socket: the Aggregate's own `uses` block, and the Release's per-edge `uses`

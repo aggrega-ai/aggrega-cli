@@ -33,10 +33,13 @@ var instanceNamePattern = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
 var targetRefPattern = regexp.MustCompile(`^[a-zA-Z0-9_-]+(\.[a-zA-Z0-9_-]+)*$`)
 
 // ValidateInstanceNames walks every user-authored dictionary key in the
-// Aggregate (top-level components, top-level aggregates, top-level
-// subsystems, then recursively into each subsystem's components, features,
-// secrets, and nested subsystems) and checks each against
-// instanceNamePattern. Returns every violation found.
+// Aggregate (top-level aggregates, top-level subsystems, then recursively into
+// each subsystem's components, features, secrets, and nested subsystems) and
+// checks each against instanceNamePattern. Returns every violation found.
+//
+// Components authored at the top-level `.spec.components` surface are reached
+// through the synthesized default subsystem, whose components validate at the
+// root field shape the author typed.
 //
 // Returned errors are sorted by (Entity, Field) for byte-identical output
 // across runs of the same input.
@@ -53,20 +56,6 @@ func ValidateInstanceNames(na types.NormalizedAggregate) []*ResolverError {
 	}
 	entity := fmt.Sprintf("Aggregate %s", agg.Metadata.Name)
 	var errs []*ResolverError
-
-	// Top-level components
-	for name, comp := range agg.Spec.Components.All() {
-		if !instanceNamePattern.MatchString(name) {
-			errs = append(errs, &ResolverError{
-				Entity:  entity,
-				Field:   fmt.Sprintf(".spec.components[%q]", name),
-				Message: fmt.Sprintf("instance name %q is invalid: must match %s (dots are not allowed)", name, instanceNamePattern.String()),
-				Err:     ErrInvalidInstanceName,
-			})
-		}
-		// Validate feature and secret names within the component
-		errs = append(errs, validateComponentInstanceNames(entity, name, comp)...)
-	}
 
 	// Top-level aggregates (nested modules)
 	for name := range agg.Spec.Aggregates.All() {

@@ -11,20 +11,19 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
-// instancePair pairs a developer-chosen instance name with the authored
-// instance and its authoring location. It is the single unit yielded by
-// [collectComponentInstances], the one complete iterator over an Aggregate's
-// component instances — every instance reachable from the top-level components
-// plus all (recursive) subsystems. Consumers that previously walked
-// `agg.Spec.Components` directly route through the walker so no consumer —
-// present or future — can miss subsystem components.
+// instancePair is this package's diagnostic-facing view of one component
+// instance: the developer-chosen instance name, the authored instance, and the
+// enclosing subsystem's provenance. It is the unit yielded by
+// [collectComponentInstances], which is a name-sorted projection of
+// [types.NormalizedAggregate.ComponentInstances] — the iteration itself lives on
+// the type, so a guard in this package cannot assemble a partial walk that
+// misses subsystem components.
 //
-// SubsystemPath is the dotted path of the enclosing subsystem ("" for a
-// top-level component, "a" for `subsystems.a`, "a.b" for a nested
-// `subsystems.a.subsystems.b`). [componentFieldPath] renders it into the
-// authoring field locator used in diagnostics, so an error against a subsystem
-// component points at `.spec.subsystems.<…>.components[…]`, not a flattened
-// `.spec.components[…]`.
+// SubsystemPath is the dotted path of the enclosing subsystem ("a" for
+// `subsystems.a`, "a.b" for a nested `subsystems.a.subsystems.b`).
+// [componentFieldPath] renders it into the authoring field locator used in
+// diagnostics, so an error against a subsystem component points at
+// `.spec.subsystems.<…>.components[…]`, not a flattened `.spec.components[…]`.
 //
 // Synthesized is true when the enclosing subsystem is the compiler-synthesized
 // default scope — i.e. the component was authored at the top-level
@@ -56,36 +55,29 @@ func componentFieldPath(subsystemPath, name string, synthesized bool) string {
 	return fmt.Sprintf(".spec.subsystems.%s.components[%q]", strings.ReplaceAll(subsystemPath, ".", ".subsystems."), name)
 }
 
-// collectComponentInstances flattens Aggregate.Spec.Components plus all
-// ComponentInstances reachable through Subsystems (recursive), each tagged with
-// its dotted subsystem path. Sorted by name for deterministic error ordering
-// across runs of the same input (instance names are unique within an Aggregate's
-// tree, so the node ID — qualifiedID(prefix, name), not subsystem-scoped — and
-// the sort key are unambiguous).
+// collectComponentInstances projects [types.NormalizedAggregate.ComponentInstances]
+// into this package's instancePair and sorts by instance name.
+//
+// The sort is this package's own concern, not the walk's: resolver guards emit
+// diagnostics in instance-name order so the same input yields byte-identical
+// error output across runs. Instance names are unique within an Aggregate's
+// tree, so the sort key is unambiguous. The walk itself preserves author order
+// for the byte-identical-output paths that need it, which is why the sort lives
+// here and not on the type.
 func collectComponentInstances(na types.NormalizedAggregate) []instancePair {
-	agg := na.Aggregate()
-	if agg == nil {
+	refs := na.ComponentInstances()
+	if len(refs) == 0 {
 		return nil
 	}
-	var out []instancePair
-	// Subsystems-only: a top-level components surface has been folded into the
-	// synthesized `default` subsystem by [types.Normalize], so iterating
-	// subsystems is complete — the defensive root pass is gone. The
-	// NormalizedAggregate newtype is what licenses this collapse.
-	collectFromSubsystems("", agg.Spec.Subsystems, &out)
+	out := make([]instancePair, 0, len(refs))
+	for _, r := range refs {
+		out = append(out, instancePair{
+			name:          r.Name,
+			inst:          r.Instance,
+			subsystemPath: r.SubsystemPath,
+			synthesized:   r.Synthesized,
+		})
+	}
 	sort.Slice(out, func(i, j int) bool { return out[i].name < out[j].name })
 	return out
-}
-
-func collectFromSubsystems(parentPath string, subs types.OrderedMap[types.Subsystem], out *[]instancePair) {
-	for subName, sub := range subs.All() {
-		path := subName
-		if parentPath != "" {
-			path = parentPath + "." + subName
-		}
-		for name, inst := range sub.Components.All() {
-			*out = append(*out, instancePair{name: name, inst: inst, subsystemPath: path, synthesized: sub.Synthesized})
-		}
-		collectFromSubsystems(path, sub.Subsystems, out)
-	}
 }

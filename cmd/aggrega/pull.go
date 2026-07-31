@@ -460,7 +460,7 @@ func pullRun(cfg pullConfig) error {
 	if faults := catalog.ManifestRecipeReferenceFaults(manifest); len(faults) > 0 {
 		return withSkipContext(faults[0], skipped)
 	}
-	cl, err := closure.ComputeClosure(rel, manifest, aggregate, wsCfg, lookup)
+	cl, err := closure.ComputeClosure(rel, manifest, types.Normalize(aggregate), wsCfg, lookup)
 	if err != nil {
 		return withSkipContext(fmt.Errorf("resolve: %w", err), skipped)
 	}

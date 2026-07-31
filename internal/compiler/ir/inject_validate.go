@@ -95,13 +95,16 @@ func ValidateInjectBlock(b *types.InjectBlock, pathPrefix string) error {
 // per-edge / per-node consumer-site work begins and halts the build via
 // the existing IR-build error-return path if any violation surfaces.
 //
-// Aggregate-side surfaces walked:
+// Aggregate-side surfaces walked, over the subsystem tree recursively — a
+// component authored at the top-level `.spec.components` surface is reached
+// through the synthesized default subsystem, and its diagnostics render at the
+// root field shape the author typed:
 //
-//   - Aggregate.Spec.Components[*].Inject (component self-inject)
-//   - Aggregate.Spec.Components[*].Features[*].Inject (attachment inject)
-//   - Aggregate.Spec.Components[*].Uses[*].Verbose[*].Inject (uses[].inject)
-//   - Aggregate.Spec.Subsystems[*].{Components[*].(same three), Features[*].Inject,
-//     Subsystems[*]...} recursively
+//   - Subsystems[*].Components[*].Inject (component self-inject)
+//   - Subsystems[*].Components[*].Features[*].Inject (attachment inject)
+//   - Subsystems[*].Components[*].Uses[*].Verbose[*].Inject (uses[].inject)
+//   - Subsystems[*].Features[*].Inject, and Subsystems[*].Subsystems[*]...
+//     recursively
 //
 // Release-side surfaces walked: the resolved Release.Spec.Boundaries tree
 // is structurally walked for symmetry with the operator's stated scope.
@@ -125,9 +128,6 @@ func ValidateInjectBlocks(na types.NormalizedAggregate, _ *types.Release) error 
 		return nil
 	}
 	var errs []error
-	for name, comp := range agg.Spec.Components.All() {
-		errs = append(errs, validateComponentInstance(comp, fmt.Sprintf(".spec.components[%q]", name))...)
-	}
 	for name, sub := range agg.Spec.Subsystems.All() {
 		// The synthesized default holds components authored at the top-level
 		// surface; render their inject diagnostics at the root shape rather

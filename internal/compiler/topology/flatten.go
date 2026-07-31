@@ -74,16 +74,22 @@ func evalActive(active types.ActiveFlag, nodeID string) (bool, error) {
 // `aggregates`) are YAML maps keyed by user-authored instance names so
 // the parser preserves declaration order.
 //
-// Walk order — three passes over the current Aggregate level, each in
+// Walk order — two passes over the current Aggregate level, each in
 // author order:
 //
-//  1. Top-level components (agg.Spec.Components). Each becomes a node
-//     with the current `prefix` and `subsystemPath`; collectAttachments
-//     records its features and secrets.
-//  2. Subsystems (agg.Spec.Subsystems). flattenSubsystem walks each
+//  1. Subsystems (agg.Spec.Subsystems). flattenSubsystem walks each
 //     subsystem's components and nested sub-subsystems, accumulating
-//     dotted subsystemPath segments.
-//  3. Sub-aggregate imports (agg.Spec.Aggregates). For each, the loader
+//     dotted subsystemPath segments. A component authored at the top-level
+//     `.spec.components` surface is reached here, inside the synthesized
+//     default subsystem: the parameter is a [types.NormalizedAggregate],
+//     obtainable only from [types.Normalize], which folds that surface into
+//     the default and empties the root map — and the authoring shape
+//     declaring both a root components map and subsystems is rejected at the
+//     document-envelope gate before any Aggregate is parsed. The type and
+//     that gate together are what make a subsystems-only pass complete, so
+//     there is no root-components pass; reintroducing one would tell a reader
+//     the shape is reachable when it is not.
+//  2. Sub-aggregate imports (agg.Spec.Aggregates). For each, the loader
 //     resolves the type URI to a child Aggregate; the recursive call
 //     uses the imported Aggregate's name as the new prefix and merges
 //     the child's flattened nodes / attachments / exported components
@@ -122,7 +128,7 @@ func plainParams(m types.OrderedMap[any]) map[string]any {
 }
 
 func flattenAggregate(
-	agg *types.Aggregate,
+	na types.NormalizedAggregate,
 	prefix string,
 	subsystemPath string,
 	sourceFile string,
@@ -142,35 +148,7 @@ func flattenAggregate(
 		Pruned:             types.OrderedMap[bool]{},
 	}
 
-	// Walk top-level components in author order
-	for name, comp := range agg.Spec.Components.All() {
-		nodeID := qualifiedID(prefix, name)
-		keep, err := evalActive(comp.Active, nodeID)
-		if err != nil {
-			return nil, err
-		}
-		if !keep {
-			// Pruned: skip node creation and attachments; record the ID so the
-			// dangling sweep can classify a survivor's edge into it.
-			result.Pruned.Set(nodeID, true)
-			continue
-		}
-		if existing, exists := result.Nodes.Get(nodeID); exists {
-			return nil, cerrors.Wrap(ErrSubAggregateNameCollision, cerrors.DeveloperError, cerrors.SourceLocation{File: prefix}, fmt.Sprintf("id %q (path %q) collides with existing entry from %q", nodeID, prefix, existing.SourceAggregate))
-		}
-		result.Nodes.Set(nodeID, &TopologyNode{
-			InstanceID:         nodeID,
-			ComponentType:      comp.Type,
-			Values:             comp.Values,
-			SelfInject:         comp.Inject,
-			Uses:               comp.Uses,
-			ResolvedParameters: params,
-			SubsystemPath:      subsystemPath,
-			SourceAggregate:    prefix,
-			SourceFile:         sourceFile,
-		})
-		collectAttachments(result, nodeID, comp, 0)
-	}
+	agg := na.Aggregate()
 
 	// Walk subsystems in author order (recursive)
 	for subName, sub := range agg.Spec.Subsystems.All() {
@@ -208,7 +186,12 @@ func flattenAggregate(
 			childVisited := copyVisited(visited)
 			childVisited[subAgg.Type] = true
 
-			childResult, err := flattenAggregate(childAgg, childPrefix, "", childSourceFile, loader, childVisited, depth+1, childParams)
+			// The loader's contract is a parsed *types.Aggregate; flatten's is a
+			// normalized one. Normalizing here is where the two meet, so the
+			// recursion cannot be entered without the guarantee. A loader that
+			// already normalized — every production one loads through the parse
+			// core, which does — hands back the identical value.
+			childResult, err := flattenAggregate(types.Normalize(childAgg), childPrefix, "", childSourceFile, loader, childVisited, depth+1, childParams)
 			if err != nil {
 				return nil, err
 			}

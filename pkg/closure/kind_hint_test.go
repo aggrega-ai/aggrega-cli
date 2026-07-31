@@ -140,7 +140,7 @@ spec:
 		plugins: map[string]closure.Resolution{},
 	}
 
-	c, err := closure.ComputeClosure(rel, man, nil, cfg, lookup)
+	c, err := closure.ComputeClosure(rel, man, types.NormalizedAggregate{}, cfg, lookup)
 	if err != nil {
 		t.Fatalf("ComputeClosure: %v", err)
 	}

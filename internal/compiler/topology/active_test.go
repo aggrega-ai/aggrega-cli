@@ -32,7 +32,7 @@ func TestFlatten_ActivePresentVsPruned(t *testing.T) {
 
 	// active resolved to true → present.
 	on := &types.Aggregate{Spec: types.AggregateSpec{Components: comps([2]string{"api", "true"}, [2]string{"cache", ""})}}
-	res, err := flattenAggregate(on, "", "", "", nil, map[string]bool{}, 0, nil)
+	res, err := flattenAggregate(types.Normalize(on), "", "", "", nil, map[string]bool{}, 0, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -45,7 +45,7 @@ func TestFlatten_ActivePresentVsPruned(t *testing.T) {
 
 	// active resolved to false → pruned, recorded in Pruned, absent from Nodes.
 	off := &types.Aggregate{Spec: types.AggregateSpec{Components: comps([2]string{"api", "true"}, [2]string{"cache", "false"})}}
-	res2, err := flattenAggregate(off, "", "", "", nil, map[string]bool{}, 0, nil)
+	res2, err := flattenAggregate(types.Normalize(off), "", "", "", nil, map[string]bool{}, 0, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -65,7 +65,7 @@ func TestFlatten_ActiveDeterministic(t *testing.T) {
 	build := func() []string {
 		agg := &types.Aggregate{Spec: types.AggregateSpec{Components: comps(
 			[2]string{"a", "true"}, [2]string{"b", "false"}, [2]string{"c", ""}, [2]string{"d", "false"})}}
-		res, err := flattenAggregate(agg, "", "", "", nil, map[string]bool{}, 0, nil)
+		res, err := flattenAggregate(types.Normalize(agg), "", "", "", nil, map[string]bool{}, 0, nil)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -92,7 +92,7 @@ func TestFlatten_ActiveOmittedIsPresent(t *testing.T) {
 	// nothing pruned — the additive no-op default.
 	for _, v := range []string{"", "true"} {
 		agg := &types.Aggregate{Spec: types.AggregateSpec{Components: comps([2]string{"api", v})}}
-		res, err := flattenAggregate(agg, "", "", "", nil, map[string]bool{}, 0, nil)
+		res, err := flattenAggregate(types.Normalize(agg), "", "", "", nil, map[string]bool{}, 0, nil)
 		if err != nil {
 			t.Fatalf("active=%q: unexpected error: %v", v, err)
 		}
@@ -108,7 +108,7 @@ func TestFlatten_ActiveNonBooleanHalts(t *testing.T) {
 	// "<no value>" a template over a missing key renders — is a Loud Guardrail.
 	for _, bad := range []string{"<no value>", "yes", "maybe"} {
 		agg := &types.Aggregate{Spec: types.AggregateSpec{Components: comps([2]string{"api", bad})}}
-		_, err := flattenAggregate(agg, "", "", "", nil, map[string]bool{}, 0, nil)
+		_, err := flattenAggregate(types.Normalize(agg), "", "", "", nil, map[string]bool{}, 0, nil)
 		if !errors.Is(err, ErrInvalidActive) {
 			t.Errorf("active=%q: expected ErrInvalidActive, got %v", bad, err)
 		}
@@ -134,7 +134,7 @@ func TestFlatten_SubAggregateActiveFalsePrunesModule(t *testing.T) {
 		Aggregates: aggregates,
 	}}
 
-	res, err := flattenAggregate(root, "", "", "", loader, map[string]bool{}, 0, nil)
+	res, err := flattenAggregate(types.Normalize(root), "", "", "", loader, map[string]bool{}, 0, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

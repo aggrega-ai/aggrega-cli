@@ -890,13 +890,18 @@ spec:
               - pool
 `
 
+// loadTestAggregate parses an Aggregate and normalizes it, so a fixture written
+// at the top-level `.spec.components` surface reaches the expansion pass in the
+// same shape every production load path produces: folded into the synthesized
+// default subsystem. Skipping the normalization here would exercise a shape the
+// product never builds.
 func loadTestAggregate(t *testing.T, src string) *types.Aggregate {
 	t.Helper()
 	var a types.Aggregate
 	if err := yaml.Unmarshal([]byte(src), &a); err != nil {
 		t.Fatalf("aggregate unmarshal: %v", err)
 	}
-	return &a
+	return types.Normalize(&a).Aggregate()
 }
 
 func loadValuesManifest(t *testing.T) *types.Manifest {
@@ -1092,7 +1097,8 @@ spec:
 	if err := ExpandAnnotations(rr, CatalogLookup{}); err != nil {
 		t.Fatalf("ExpandAnnotations: %v", err)
 	}
-	api, _ := rr.Aggregate.Spec.Components.Get("api")
+	def, _ := rr.Aggregate.Spec.Subsystems.Get("default")
+	api, _ := def.Components.Get("api")
 	feat, ok := api.Features.Get("feature.myco/host")
 	if !ok {
 		t.Fatalf("api missing synthetic Feature attachment")
@@ -1208,10 +1214,11 @@ spec:
 
 func TestExpand_AggregateSide_TopLevelComponent(t *testing.T) {
 	t.Parallel()
-	// Top-level component (no enclosing subsystem) carrying its own
-	// annotation: expansion routes the value directly onto the
-	// component's Features map. The canonical component path used in
-	// the provenance side-table is "components.<name>".
+	// A component authored at the top-level `.spec.components` surface carrying
+	// its own annotation. Normalization folds that surface into the synthesized
+	// default subsystem, so expansion reaches the component there and the
+	// canonical component path in the provenance side-table is
+	// "subsystems.default.components.<name>".
 	aggSrc := `
 apiVersion: aggrega.ai/v1alpha1
 kind: Aggregate
@@ -1234,7 +1241,8 @@ spec:
 	if err := ExpandAnnotations(rr, CatalogLookup{}); err != nil {
 		t.Fatalf("ExpandAnnotations: %v", err)
 	}
-	api, _ := rr.Aggregate.Spec.Components.Get("api")
+	def, _ := rr.Aggregate.Spec.Subsystems.Get("default")
+	api, _ := def.Components.Get("api")
 	feat, ok := api.Features.Get("feature.myco/db-pool")
 	if !ok {
 		t.Fatalf("top-level api missing synthetic Feature attachment")
@@ -1243,12 +1251,16 @@ spec:
 	if pool != "top-level-pool" {
 		t.Errorf("pool = %v, want top-level-pool", pool)
 	}
-	provKey := AnnotationProvenanceKey("components.api", "", "feature.myco/db-pool")
+	provKey := AnnotationProvenanceKey("subsystems.default.components.api", "", "feature.myco/db-pool")
 	prov, ok := rr.AnnotationProvenance[provKey]
 	if !ok {
 		t.Fatalf("provenance entry missing at key %q; got keys: %v", provKey, keysOf(rr.AnnotationProvenance))
 	}
-	if prov.AnnotationSource != "aggregate.yaml:components.api.annotations.feature.myco/db-pool" {
+	// The source string carries the synthesized default scope. Recorded here as
+	// what the pass actually emits for a component authored at the top-level
+	// surface — every other diagnostic surface elides the generated scope name and
+	// renders the shape the author typed, so this one is out of step with them.
+	if prov.AnnotationSource != "aggregate.yaml:subsystems.default.components.api.annotations.feature.myco/db-pool" {
 		t.Errorf("provenance source = %q, want canonical aggregate.yaml-rooted path", prov.AnnotationSource)
 	}
 }

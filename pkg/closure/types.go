@@ -358,7 +358,7 @@ var ErrInvalidLibraryRef = errors.New("resolve: invalid library reference URI")
 type inputs struct {
 	release      *types.Release
 	manifest     *types.Manifest
-	aggregate    *types.Aggregate
+	aggregate    types.NormalizedAggregate
 	workspaceCfg workspaceconfig.Config
 	lookup       Lookup
 }

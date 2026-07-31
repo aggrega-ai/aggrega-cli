@@ -33,10 +33,16 @@ import (
 // ReferencedFrom slices sort lexicographically. Two independent
 // walks of the same input produce structurally-identical Closure
 // values.
+//
+// The aggregate arrives as a [types.NormalizedAggregate] so the walk's
+// completeness is a compile-time fact rather than a convention inherited from
+// callers: components live under subsystems, the descent is subsystems-only, and
+// no caller can hand this package a shape whose components the walk would miss.
+// The zero value stands for "no aggregate" and is walked as a no-op.
 func ComputeClosure(
 	release *types.Release,
 	manifest *types.Manifest,
-	aggregate *types.Aggregate,
+	aggregate types.NormalizedAggregate,
 	workspaceCfg workspaceconfig.Config,
 	lookup Lookup,
 ) (Closure, error) {
@@ -121,9 +127,7 @@ func (s *walkState) walk(in inputs) error {
 		s.addEntity(in.release.Spec.Manifest, "release.spec.manifest")
 	}
 
-	if in.aggregate != nil {
-		s.walkAggregate(in.aggregate, "aggregate")
-	}
+	s.walkAggregate(in.aggregate, "aggregate")
 
 	if in.manifest != nil {
 		s.walkManifest(in.manifest)
@@ -135,18 +139,22 @@ func (s *walkState) walk(in inputs) error {
 	return nil
 }
 
-// walkAggregate descends Aggregate.Spec.{Components, Subsystems,
-// Aggregates} recursively, recording every type URI it touches.
-func (s *walkState) walkAggregate(agg *types.Aggregate, path string) {
+// walkAggregate descends Aggregate.Spec.{Subsystems, Aggregates} recursively,
+// recording every type URI it touches.
+//
+// There is no root-components pass. A component authored at the top-level
+// `.spec.components` surface reaches this walk inside the synthesized default
+// subsystem, because the parameter is a [types.NormalizedAggregate] — a value
+// obtainable only from [types.Normalize], which folds that surface into the
+// default and empties the root map — and the authoring shape that declares both
+// a root components map and subsystems is rejected at the document-envelope gate
+// before any Aggregate is parsed. The type and that gate together are what make
+// a subsystems-only descent complete; do not reintroduce a root pass, which
+// would imply to a reader that the shape is reachable.
+func (s *walkState) walkAggregate(na types.NormalizedAggregate, path string) {
+	agg := na.Aggregate()
 	if agg == nil {
 		return
-	}
-	for name, ci := range agg.Spec.Components.All() {
-		instancePath := fmt.Sprintf("%s.spec.components.%s.type", path, name)
-		if ci.Type != "" {
-			s.addEntityKind(ci.Type, instancePath, "component")
-		}
-		s.walkComponentInstanceFeatures(ci, fmt.Sprintf("%s.spec.components.%s", path, name))
 	}
 	for name, sub := range agg.Spec.Aggregates.All() {
 		subPath := fmt.Sprintf("%s.spec.aggregates.%s.type", path, name)

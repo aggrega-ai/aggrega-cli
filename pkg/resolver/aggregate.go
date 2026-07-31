@@ -18,9 +18,12 @@ import (
 // resolved OrderedMap[string]. Canonical component paths use dotted
 // notation reflecting the authoring tree structure:
 //
-//   - Top-level component:               components.<name>
 //   - Subsystem-contained component:     subsystems.<sub>.components.<name>
 //   - Nested-subsystem component:        subsystems.<outer>.subsystems.<inner>.components.<name>
+//
+// A component authored at the top-level `.spec.components` surface is reached
+// through the synthesized default subsystem and keys at
+// subsystems.default.components.<name>.
 //
 // The returned map values are the renderer-facing Scalar-projection of
 // the post-flatten cascade: only scalar entries surface in the
@@ -37,14 +40,6 @@ func WireAggregateAnnotations(na types.NormalizedAggregate) map[string]types.Ord
 		return nil
 	}
 	perComponent := map[string]types.OrderedMap[string]{}
-
-	// Top-level components carry no enclosing subsystem; the parent
-	// annotation set entering this scope is empty. Component paths are
-	// rooted at the canonical "components." prefix.
-	for compName, comp := range agg.Spec.Components.All() {
-		merged := mergeAnnotationValueMaps(types.OrderedMap[*types.AnnotationValue]{}, comp.Annotations)
-		perComponent["components."+compName] = types.ScalarOnly(merged)
-	}
 
 	// Top-level subsystems carry their own annotations plus a per-
 	// subsystem subtree. Each subsystem's recursion roots at the

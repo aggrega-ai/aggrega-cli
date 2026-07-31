@@ -143,8 +143,8 @@ func guardUsesSocket(na types.NormalizedAggregate, catalog CatalogLookup) []*Res
 	entity := fmt.Sprintf("Aggregate %s", agg.Metadata.Name)
 	var errs []*ResolverError
 
-	// One complete walk (root + all subsystems) via the shared instance
-	// walker; the authoring path comes from componentFieldPath so a subsystem
+	// One complete walk of the subsystem tree via the shared instance walker;
+	// the authoring path comes from componentFieldPath so a subsystem
 	// component's diagnostics point at .spec.subsystems.<…>.components[…].
 	for _, p := range collectComponentInstances(na) {
 		comp := p.inst

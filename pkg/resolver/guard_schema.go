@@ -144,10 +144,15 @@ func guardEdgeConformance(na types.NormalizedAggregate, release *types.Release, 
 	}
 	var errs []*ResolverError
 
+	// One walk of the subsystem tree serves both halves below. The Aggregate is
+	// immutable across this gate, so a second walk would re-descend and re-sort to
+	// the same slice.
+	instances := collectComponentInstances(na)
+
 	// Developer per-edge values: walk every component instance's verbose uses
-	// entries (top-level + subsystem) in author order.
+	// entries in author order.
 	aggEntity := fmt.Sprintf("Aggregate %s", agg.Metadata.Name)
-	for _, p := range collectComponentInstances(na) {
+	for _, p := range instances {
 		if p.inst.Uses.Len() == 0 {
 			continue
 		}
@@ -182,7 +187,7 @@ func guardEdgeConformance(na types.NormalizedAggregate, release *types.Release, 
 	if release != nil {
 		relEntity := fmt.Sprintf("Release %s", release.Metadata.Name)
 		typeOf := map[string]string{}
-		for _, p := range collectComponentInstances(na) {
+		for _, p := range instances {
 			typeOf[p.name] = p.inst.Type
 		}
 		for _, ref := range collectReleaseEdgeEntries(release) {

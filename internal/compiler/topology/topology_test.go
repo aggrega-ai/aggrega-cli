@@ -197,10 +197,17 @@ func scopeUsesEdges(edges []NormalizedEdge, target, originFeature, originInstanc
 // Aggregate YAML, that a feature attached subsystem-wide carrying a uses
 // block contributes that uses-edge from every component in the subsystem.
 // A subsystem `tier` holds components x and y plus a subsystem-wide
-// telemetry feature whose uses targets the shared-cache component; the
-// build must emit x→shared-cache and y→shared-cache, each stamped with the
-// feature as origin. Reverting the scope projection drops both edges (the
-// only edges in this graph), so the green is non-vacuous.
+// telemetry feature whose uses targets the shared-cache component, which
+// lives in a sibling subsystem; the build must emit x→shared-cache and
+// y→shared-cache, each stamped with the feature as origin. Reverting the
+// scope projection drops both edges (the only edges in this graph), so the
+// green is non-vacuous.
+//
+// shared-cache sits in its own subsystem rather than at the top-level
+// `.spec.components` surface because top-level components and subsystems are
+// mutually exclusive in an Aggregate — a document declaring both is rejected
+// before it is parsed, so a fixture declaring both would exercise a shape the
+// product never builds.
 func TestBuild_SubsystemFeatureUsesProjectsPerComponent(t *testing.T) {
 	t.Parallel()
 	const aggYAML = `
@@ -210,10 +217,11 @@ metadata:
   name: test-app
   version: 1.0.0
 spec:
-  components:
-    shared-cache:
-      type: core/redis
   subsystems:
+    cache:
+      components:
+        shared-cache:
+          type: core/redis
     tier:
       features:
         telemetry:

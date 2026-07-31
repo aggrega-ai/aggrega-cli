@@ -1061,6 +1061,14 @@ func collectBoundaryWideFeatures(boundaries types.OrderedMap[types.Boundary], bo
 // of them contribute. As with the boundary-wide level, Features-instance
 // payloads here arrive as the same opaque BoundaryFeature shape and
 // contribute infra only.
+//
+// The resolver's Aggregate-versus-Release type-agreement guard runs the same
+// descent over the same surface and is deliberately not shared with this one.
+// Every occurrence is kept here, in encounter order, because they are merged in
+// sequence and the order determines the resulting bytes; that guard folds to a
+// name-keyed map because its question is per-name and single-valued. If the two
+// are ever unified, the traversal is the part to share — each caller keeps its
+// own fold, since collapsing them would change this cascade's output.
 func collectReleaseComponentFeatures(boundaries types.OrderedMap[types.Boundary], nodeID string) []namedBoundaryFeature {
 	var result []namedBoundaryFeature
 	collectCompFeaturesRecursive(boundaries, nodeID, &result)

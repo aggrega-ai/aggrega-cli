@@ -64,7 +64,19 @@ func guardFeatureMerge(na types.NormalizedAggregate, release *types.Release) []*
 // named component across every boundary that contains it. The walk is
 // depth-first over the OrderedMap; on duplicate feature names across
 // nested boundaries (the same feature attached at more than one boundary
-// level), the deepest write wins.
+// level), the last write in that depth-first order wins.
+//
+// The IR feature cascade runs the same descent over the same authoring surface
+// and is DELIBERATELY not shared with it: the two differ in what they return,
+// not in how they traverse. This one folds to a name-keyed map, because type
+// agreement is a per-name question and a component's effective attachment for a
+// name is single-valued. The cascade keeps every occurrence in encounter order,
+// because it merges them in sequence and the order is load-bearing for the
+// resulting bytes. Folding one into the other would either lose the order the
+// cascade needs or hand this guard duplicate names to re-fold. If they are ever
+// unified, the unification belongs to the traversal alone, with each caller
+// keeping its own fold — collapsing the folds would silently change the
+// cascade's output.
 func collectReleaseBoundaryFeaturesForComponent(boundaries types.OrderedMap[types.Boundary], compName string) map[string]types.BoundaryFeature {
 	result := map[string]types.BoundaryFeature{}
 	for _, boundary := range boundaries.All() {

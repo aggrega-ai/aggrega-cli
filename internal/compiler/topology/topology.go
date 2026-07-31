@@ -291,8 +291,8 @@ type BuildConfig struct {
 //
 // Five phases, in order:
 //
-//  1. Flatten the Aggregate tree. flattenAggregate walks components,
-//     subsystems, and sub-aggregate imports recursively in author order.
+//  1. Flatten the Aggregate tree. flattenAggregate walks subsystems and
+//     sub-aggregate imports recursively in author order.
 //     The map-based authoring shape (root-topology blocks are YAML maps
 //     keyed by user-authored instance names) gives stable per-block
 //     instance IDs; dot-notation IDs flow from sub-aggregate flattening;
@@ -363,8 +363,11 @@ func BuildContext(ctx context.Context, cfg BuildConfig) (*TopologyResult, error)
 		return nil, err
 	}
 
-	// 1. Flatten
-	flat, err := flattenAggregate(agg, "", "", cfg.RootAggregateFile, cfg.LoadSubAggregate, map[string]bool{}, 0, nil)
+	// 1. Flatten. The flattener takes a normalized Aggregate, so the guarantee it
+	// relies on — components live under subsystems — is carried by the value
+	// rather than assumed of the caller. Normalize is idempotent, so an Aggregate
+	// that already came through the parse core is passed through unchanged.
+	flat, err := flattenAggregate(types.Normalize(agg), "", "", cfg.RootAggregateFile, cfg.LoadSubAggregate, map[string]bool{}, 0, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -787,10 +790,22 @@ func boundaryFeatureUses(boundaries types.OrderedMap[types.Boundary], boundaryPa
 
 // releaseComponentUses walks the Release boundary chain named by boundaryPath
 // (the same walk boundaryFeatureUses uses) and returns the per-edge uses
-// surface the Release authored on the BoundaryComponent for nodeID, if any. A
-// component is declared in exactly one boundary along its chain, so the first
-// level whose Components carry a non-empty Uses for nodeID wins. Returns false
-// when no Release component-edge surface applies to the node.
+// surface the Release authored on the BoundaryComponent for nodeID, if any. The
+// outermost level whose Components carry a non-empty Uses for nodeID wins.
+// Returns false when no Release component-edge surface applies to the node.
+//
+// Declaring one component at two levels of a single chain is a shape nothing
+// rejects: the Release schema constrains no such uniqueness and no load-time or
+// resolve-time check reads it, so single-level declaration is a convention
+// operators follow rather than a guarantee. Under that shape this reader and the
+// boundary-context walk that produced boundaryPath resolve to different
+// declarations — the boundary context comes from the innermost declaration (a
+// per-component last-write-wins over a depth-first descent) while the per-edge
+// surface here comes from the outermost — so a component's boundary context and
+// its per-edge infra can originate at different levels. Reconciling the two
+// readers, or rejecting the shape outright, is an open question; the outermost
+// rule is stated here so a reader does not infer a uniqueness guarantee that is
+// not enforced anywhere.
 func releaseComponentUses(boundaries types.OrderedMap[types.Boundary], boundaryPath, nodeID string) (types.OrderedMap[types.OrderedMap[types.ReleaseUsesEntry]], bool) {
 	parts := splitScopePath(boundaryPath)
 	current := boundaries

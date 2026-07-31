@@ -110,7 +110,7 @@ func TestComputeClosureLocalPluginSocketDoesNotHalt(t *testing.T) {
 		{URI: "governance/baseline:1.0.0", Role: plugintype.RoleLabelTransform},
 	}
 
-	cl, err := closure.ComputeClosure(rel, nil, nil, cfg, lookup)
+	cl, err := closure.ComputeClosure(rel, nil, types.NormalizedAggregate{}, cfg, lookup)
 	if err != nil {
 		if errors.Is(err, closure.ErrUnresolvableURI) {
 			t.Fatalf("ComputeClosure halted on a LOCAL Plugin socket (the closed gap): %v", err)

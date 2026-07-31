@@ -54,7 +54,7 @@ func TestFlattenAggregate_SimpleComponents(t *testing.T) {
 		},
 	}
 
-	result, err := flattenAggregate(agg, "", "", "", nil, map[string]bool{}, 0, nil)
+	result, err := flattenAggregate(types.Normalize(agg), "", "", "", nil, map[string]bool{}, 0, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -85,7 +85,7 @@ func TestFlattenAggregate_SubsystemComponents(t *testing.T) {
 		},
 	}
 
-	result, err := flattenAggregate(agg, "", "", "", nil, map[string]bool{}, 0, nil)
+	result, err := flattenAggregate(types.Normalize(agg), "", "", "", nil, map[string]bool{}, 0, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -114,7 +114,7 @@ func TestFlattenAggregate_NestedSubsystems(t *testing.T) {
 		},
 	}
 
-	result, err := flattenAggregate(agg, "", "", "", nil, map[string]bool{}, 0, nil)
+	result, err := flattenAggregate(types.Normalize(agg), "", "", "", nil, map[string]bool{}, 0, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -161,7 +161,7 @@ func TestFlattenAggregate_SubAggregate(t *testing.T) {
 		return nil, "", nil, fmt.Errorf("unknown: %s", typeName)
 	}
 
-	result, err := flattenAggregate(agg, "", "", "", loader, map[string]bool{}, 0, nil)
+	result, err := flattenAggregate(types.Normalize(agg), "", "", "", loader, map[string]bool{}, 0, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -200,7 +200,7 @@ func TestFlattenAggregate_CircularSubAggregate(t *testing.T) {
 		},
 	}
 
-	_, err := flattenAggregate(agg, "", "", "", loader, map[string]bool{}, 0, nil)
+	_, err := flattenAggregate(types.Normalize(agg), "", "", "", loader, map[string]bool{}, 0, nil)
 	if err == nil {
 		t.Fatal("expected error for circular sub-aggregate")
 	}
@@ -212,7 +212,7 @@ func TestFlattenAggregate_CircularSubAggregate(t *testing.T) {
 func TestFlattenAggregate_MaxDepth(t *testing.T) {
 	t.Parallel()
 
-	_, err := flattenAggregate(&types.Aggregate{}, "", "", "", nil, map[string]bool{}, maxSubAggregateDepth+1, nil)
+	_, err := flattenAggregate(types.Normalize(&types.Aggregate{}), "", "", "", nil, map[string]bool{}, maxSubAggregateDepth+1, nil)
 	if err == nil {
 		t.Fatal("expected error for max depth")
 	}
@@ -236,7 +236,7 @@ func TestFlattenAggregate_FeatureAttachments(t *testing.T) {
 		},
 	}
 
-	result, err := flattenAggregate(agg, "", "", "", nil, map[string]bool{}, 0, nil)
+	result, err := flattenAggregate(types.Normalize(agg), "", "", "", nil, map[string]bool{}, 0, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

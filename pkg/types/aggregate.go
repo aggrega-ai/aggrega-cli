@@ -170,8 +170,9 @@ type ComponentInstance struct {
 // this type; they read the underlying value via [NormalizedAggregate.Aggregate].
 //
 // The symmetric Release-side posture is the single Release parse core; the
-// Aggregate carries the stronger newtype because it has many more
-// component-iterating consumers.
+// Aggregate carries the stronger guarantee — a distinct type that only
+// normalization can produce — because it has many more component-iterating
+// consumers.
 type NormalizedAggregate struct {
 	agg *Aggregate
 }
@@ -211,3 +212,66 @@ func Normalize(agg *Aggregate) NormalizedAggregate {
 // returned pointer is the normalized value (root folded into `default`); it is
 // exposed for field reads, not for re-wrapping a mutated copy as normalized.
 func (n NormalizedAggregate) Aggregate() *Aggregate { return n.agg }
+
+// ComponentInstanceRef is one component instance yielded by
+// [NormalizedAggregate.ComponentInstances]: the developer-chosen instance name,
+// the authored instance, and the provenance of the subsystem enclosing it.
+//
+// SubsystemPath is the dotted path of the enclosing subsystem — "a" for
+// `subsystems.a`, "a.b" for a nested `subsystems.a.subsystems.b`. Every
+// component instance carries one, because a normalized Aggregate holds no
+// components outside a subsystem.
+//
+// Synthesized is true when the enclosing subsystem is the compiler-synthesized
+// default scope, i.e. the component was authored at the top-level
+// `.spec.components` surface. A consumer that renders an authoring locator uses
+// it to point at the shape the author typed rather than at the generated scope
+// name.
+type ComponentInstanceRef struct {
+	Name          string
+	Instance      ComponentInstance
+	SubsystemPath string
+	Synthesized   bool
+}
+
+// ComponentInstances iterates every component instance in the Aggregate: all
+// components of every subsystem, recursively, in author order at each level.
+//
+// It is a method on [NormalizedAggregate] rather than a function over
+// *[Aggregate] so the iteration cannot be obtained without the normalization
+// guarantee. A normalized Aggregate holds an empty root component map, so a
+// subsystem-only descent is complete; a consumer reaching for the walk gets the
+// complete one by construction and cannot assemble a partial one that misses
+// subsystem components.
+//
+// Author order is preserved and no sort is applied — the result feeds
+// byte-identical output paths. A consumer needing a different order sorts the
+// returned slice itself.
+//
+// Returns nil when the wrapped Aggregate is nil.
+func (n NormalizedAggregate) ComponentInstances() []ComponentInstanceRef {
+	if n.agg == nil {
+		return nil
+	}
+	var out []ComponentInstanceRef
+	appendSubsystemComponents("", n.agg.Spec.Subsystems, &out)
+	return out
+}
+
+func appendSubsystemComponents(parentPath string, subs OrderedMap[Subsystem], out *[]ComponentInstanceRef) {
+	for subName, sub := range subs.All() {
+		path := subName
+		if parentPath != "" {
+			path = parentPath + "." + subName
+		}
+		for name, inst := range sub.Components.All() {
+			*out = append(*out, ComponentInstanceRef{
+				Name:          name,
+				Instance:      inst,
+				SubsystemPath: path,
+				Synthesized:   sub.Synthesized,
+			})
+		}
+		appendSubsystemComponents(path, sub.Subsystems, out)
+	}
+}

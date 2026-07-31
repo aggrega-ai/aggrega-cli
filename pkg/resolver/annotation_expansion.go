@@ -209,12 +209,23 @@ func ExpandAnnotations(rr *ResolveResult, catalogLookup CatalogLookup) error {
 	}
 
 	if rr.Aggregate != nil {
-		for compName, comp := range rr.Aggregate.Spec.Components.All() {
-			if err := expandAggregateTopLevelComponent(compName, comp, registry, catalogLookup, cache, rr); err != nil {
-				return err
-			}
-		}
-		for subName, sub := range rr.Aggregate.Spec.Subsystems.All() {
+		// The subsystem descent is complete on its own: a component authored at the
+		// top-level `.spec.components` surface reaches it inside the synthesized
+		// default subsystem, because the value walked is a normalized Aggregate —
+		// obtainable only from types.Normalize, which folds that surface into the
+		// default and empties the root map — and the authoring shape declaring both
+		// a root components map and subsystems is rejected at the document-envelope
+		// gate before any Aggregate is parsed. So there is no root-components pass;
+		// adding one back would tell a reader the shape is reachable.
+		//
+		// The normalized value is stored back onto rr before the descent, because
+		// this pass MUTATES the Aggregate (it writes synthesized attachments into
+		// each component's Features) and the writer reads rr.Aggregate afresh per
+		// component. Normalizing without storing would let the writes land in a
+		// value the caller never sees.
+		na := types.Normalize(rr.Aggregate)
+		rr.Aggregate = na.Aggregate()
+		for subName, sub := range na.Aggregate().Spec.Subsystems.All() {
 			if err := expandAggregateSubsystem(subName, "subsystems", sub, types.OrderedMap[*types.AnnotationValue]{}, map[string]string{}, registry, catalogLookup, cache, rr); err != nil {
 				return err
 			}
@@ -734,37 +745,6 @@ func allowedPillarFor(side string) string {
 	return "infra"
 }
 
-// expandAggregateTopLevelComponent processes one top-level Aggregate
-// component (no enclosing subsystem). Top-level components carry no
-// inherited cascade scope; the only effective annotations are those
-// declared directly on the component. The canonical path is
-// "components.<name>". The function mirrors the per-component body of
-// expandAggregateSubsystem.
-func expandAggregateTopLevelComponent(name string, comp types.ComponentInstance, registry *AnnotationRegistry, catalogLookup CatalogLookup, cache *featureSchemaCache, rr *ResolveResult) error {
-	componentPath := "components." + name
-	for key, value := range comp.Annotations.All() {
-		if value.IsEmpty() {
-			continue
-		}
-		binding, ok := registry.Lookup(key)
-		if !ok {
-			continue
-		}
-		if _, already := comp.Features.Get(key); already {
-			continue
-		}
-		sourceLoc := aggregateAnnotationSourcePath(rr.AggregatePath, componentPath, key)
-		feature, errs := synthesizeAggregateFeatureFromAnnotation(key, *value, binding, lookupFeature(catalogLookup, binding.Feature), cache, sourceLoc)
-		if len(errs) > 0 {
-			return wrapAggregateAnnotationOpsError(componentPath, key, "expansion", errors.Join(errs...))
-		}
-		comp.Features.Set(key, feature)
-		recordAnnotationProvenance(rr, AnnotationProvenanceKey(componentPath, "", key), key, sourceLoc)
-	}
-	writeAggregateComponent(rr.Aggregate, componentPath, comp)
-	return nil
-}
-
 // recordAnnotationProvenance writes the side-table entry for a synthetic Feature
 // attachment, preserving a host pre-seeded InjectedByPlugin. The
 // annotation-transform role runs before expansion and pre-seeds the side-table
@@ -881,19 +861,19 @@ func aggregateAnnotationSourcePath(aggregatePath, componentPath, key string) str
 }
 
 // writeAggregateComponent persists a mutated ComponentInstance back
-// into its containing parent (either Aggregate.Spec.Components for a
-// top-level component, or a nested Subsystem's Components for a
-// subsystem-contained component) in the Aggregate tree. OrderedMap
+// into the Subsystem that contains it in the Aggregate tree. OrderedMap
 // returns values by value, so the cascade walker holds a local copy of
 // each component; this helper reads the subsystem chain fresh from the
 // Aggregate (picking up any prior component writes within the same
 // subsystem), Sets the mutated component at the leaf, and writes the
 // chain back up to the Aggregate root.
 //
-// The canonical path is one of:
-//   - "components.<name>" — top-level component.
-//   - "subsystems.<s1>.[subsystems.<s2>.]*components.<name>" — subsystem-
-//     contained or nested-subsystem-contained component.
+// The canonical path is
+// "subsystems.<s1>.[subsystems.<s2>.]*components.<name>". A component
+// authored at the top-level `.spec.components` surface has been folded into
+// the synthesized default subsystem before the walk, so it arrives here under
+// "subsystems.default.components.<name>" like any other; there is no
+// root-components write path.
 //
 // Paths that do not match the canonical shape are silently skipped; the
 // walker never produces such a path, so a non-match indicates a caller
@@ -904,10 +884,6 @@ func writeAggregateComponent(agg *types.Aggregate, path string, comp types.Compo
 	}
 	segments := splitAggregatePath(path)
 	if len(segments) < 2 {
-		return
-	}
-	if segments[0] == "components" && len(segments) == 2 {
-		agg.Spec.Components.Set(segments[1], comp)
 		return
 	}
 	if segments[0] != "subsystems" {

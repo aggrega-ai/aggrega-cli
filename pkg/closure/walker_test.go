@@ -224,7 +224,7 @@ func TestComputeClosureEnumeratesEveryReferenceSite(t *testing.T) {
 		},
 	}
 
-	c, err := closure.ComputeClosure(rel, man, agg, cfg, lookup)
+	c, err := closure.ComputeClosure(rel, man, types.Normalize(agg), cfg, lookup)
 	if err != nil {
 		t.Fatalf("ComputeClosure: %v", err)
 	}
@@ -423,7 +423,7 @@ func TestEmptyReleaseProducesEmptyClosure(t *testing.T) {
 		plugins:  map[string]closure.Resolution{},
 	}
 
-	c, err := closure.ComputeClosure(rel, nil, nil, cfg, lookup)
+	c, err := closure.ComputeClosure(rel, nil, types.NormalizedAggregate{}, cfg, lookup)
 	if err != nil {
 		t.Fatalf("ComputeClosure: %v", err)
 	}
@@ -446,7 +446,7 @@ func TestUnresolvableCatalogEntityHaltsWithWrappedError(t *testing.T) {
 	lookup := newBaseLookup()
 	delete(lookup.entities, "hub.aggrega.ai/component/core/api-server")
 
-	_, err := closure.ComputeClosure(rel, man, agg, cfg, lookup)
+	_, err := closure.ComputeClosure(rel, man, types.Normalize(agg), cfg, lookup)
 	if err == nil {
 		t.Fatal("expected ErrUnresolvableURI; got nil")
 	}
@@ -466,11 +466,11 @@ func TestDeterministicURIOrdering(t *testing.T) {
 	cfg := workspaceconfig.Default()
 	lookup := newBaseLookup()
 
-	c1, err := closure.ComputeClosure(rel, man, agg, cfg, lookup)
+	c1, err := closure.ComputeClosure(rel, man, types.Normalize(agg), cfg, lookup)
 	if err != nil {
 		t.Fatalf("walk 1: %v", err)
 	}
-	c2, err := closure.ComputeClosure(rel, man, agg, cfg, lookup)
+	c2, err := closure.ComputeClosure(rel, man, types.Normalize(agg), cfg, lookup)
 	if err != nil {
 		t.Fatalf("walk 2: %v", err)
 	}
