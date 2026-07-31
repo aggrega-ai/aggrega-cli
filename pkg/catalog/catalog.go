@@ -877,66 +877,70 @@ func (c *Catalog) indexFile(data []byte, path string) error {
 		c.SchemaLibraries[e.Metadata.Name] = e
 		c.entityBytes[entityBytesKey("SchemaLibrary", e.Metadata.Name)] = data
 	case "MappingLibrary":
-		if _, eerr := envelope.ValidateBytes(envelope.KindMappingLibrary, data, path); eerr != nil {
-			return cerrors.Wrap(eerr, cerrors.CatalogError, cerrors.SourceLocation{File: path}, eerr.Error())
-		}
-		var e types.MappingLibrary
-		if err := yaml.Unmarshal(data, &e); err != nil {
-			return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, "unmarshal MappingLibrary")
-		}
+		// parseMappingLibraryEntity is the shared per-entity resolve so the eager
+		// and lazy backings cannot drift. It self-wraps its failures into the final
+		// CATALOG_ERROR shape, so the bare return preserves the diagnostics.
+		//
 		// No template-body content validation analogous to SchemaLibrary's
 		// $dynamicAnchor / $dynamicRef scan — MappingLibrary entries are
 		// opaque Go template strings; the compiler does not parse them
 		// at entity load. Content semantics (including any cross-library
 		// $import: references) resolve at Recipe / FeatureRecipe render
 		// time via the Go template engine.
+		e, err := parseMappingLibraryEntity(data, path)
+		if err != nil {
+			return err
+		}
 		if err := c.claimIdentity("MappingLibrary:"+e.Metadata.Name, fmt.Sprintf("MappingLibrary identity %q", e.Metadata.Name), path); err != nil {
 			return err
 		}
 		c.MappingLibraries[e.Metadata.Name] = e
 		c.entityBytes[entityBytesKey("MappingLibrary", e.Metadata.Name)] = data
 	case "WorkloadLibrary":
-		if _, eerr := envelope.ValidateBytes(envelope.KindWorkloadLibrary, data, path); eerr != nil {
-			return cerrors.Wrap(eerr, cerrors.CatalogError, cerrors.SourceLocation{File: path}, eerr.Error())
-		}
-		var e types.WorkloadLibrary
-		if err := yaml.Unmarshal(data, &e); err != nil {
-			return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, "unmarshal WorkloadLibrary")
-		}
+		// parseWorkloadLibraryEntity is the shared per-entity resolve so the eager
+		// and lazy backings cannot drift; it self-wraps its failures, so the bare
+		// return preserves the diagnostics.
+		//
 		// No template-body content validation: WorkloadLibrary entries are
 		// opaque Go template strings; the compiler does not parse them at
 		// entity load. Content semantics (including any cross-library
 		// $import: references) resolve at Recipe render time via the Go
 		// template engine.
+		e, err := parseWorkloadLibraryEntity(data, path)
+		if err != nil {
+			return err
+		}
 		if err := c.claimIdentity("WorkloadLibrary:"+e.Metadata.Name, fmt.Sprintf("WorkloadLibrary identity %q", e.Metadata.Name), path); err != nil {
 			return err
 		}
 		c.WorkloadLibraries[e.Metadata.Name] = e
 		c.entityBytes[entityBytesKey("WorkloadLibrary", e.Metadata.Name)] = data
 	case "ArtifactsLibrary":
-		if _, eerr := envelope.ValidateBytes(envelope.KindArtifactsLibrary, data, path); eerr != nil {
-			return cerrors.Wrap(eerr, cerrors.CatalogError, cerrors.SourceLocation{File: path}, eerr.Error())
-		}
-		var e types.ArtifactsLibrary
-		if err := yaml.Unmarshal(data, &e); err != nil {
-			return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, "unmarshal ArtifactsLibrary")
-		}
+		// parseArtifactsLibraryEntity is the shared per-entity resolve so the eager
+		// and lazy backings cannot drift; it self-wraps its failures, so the bare
+		// return preserves the diagnostics.
+		//
 		// No template-body content validation: ArtifactsLibrary bundle files are
 		// opaque Go template strings; the compiler does not parse them at entity
 		// load. Content semantics (including any cross-library $import: references)
 		// resolve at Recipe / FeatureRecipe render time via the Go template engine.
+		e, err := parseArtifactsLibraryEntity(data, path)
+		if err != nil {
+			return err
+		}
 		if err := c.claimIdentity("ArtifactsLibrary:"+e.Metadata.Name, fmt.Sprintf("ArtifactsLibrary identity %q", e.Metadata.Name), path); err != nil {
 			return err
 		}
 		c.ArtifactsLibraries[e.Metadata.Name] = e
 		c.entityBytes[entityBytesKey("ArtifactsLibrary", e.Metadata.Name)] = data
 	case "Plugin":
-		if _, eerr := envelope.ValidateBytes(envelope.KindPlugin, data, path); eerr != nil {
-			return cerrors.Wrap(eerr, cerrors.CatalogError, cerrors.SourceLocation{File: path}, eerr.Error())
-		}
-		var e types.Plugin
-		if err := yaml.Unmarshal(data, &e); err != nil {
-			return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, "unmarshal Plugin")
+		// parsePluginEntity is the shared per-entity resolve so the eager and lazy
+		// backings cannot drift. Sharing the scan is what gives the lazy backing
+		// reject-parity for plugins; it self-wraps its failures, so the bare return
+		// preserves the diagnostics.
+		e, err := parsePluginEntity(data, path)
+		if err != nil {
+			return err
 		}
 		wkey := entityIndexKey(e.Coordinate(), e.Metadata.Version)
 		if err := c.claimIdentity("Plugin:"+wkey, fmt.Sprintf("Plugin identity %q", wkey), path); err != nil {
@@ -1165,13 +1169,18 @@ func parseSchemaLibraryEntity(data []byte, path string) (types.SchemaLibrary, er
 // load (their content, including any cross-library `$import:`, resolves at
 // Recipe / FeatureRecipe render time). Used by the build-side bridge so a
 // lockfile-pinned remote MappingLibrary is parsed identically to a local one.
+//
+// Like parseRecipeEntity, this self-wraps every failure into its final
+// CATALOG_ERROR shape (the envelope rejection and the unmarshal failure each
+// carry a distinct message) so a single `return err` at the indexing caller
+// preserves byte-identical diagnostics.
 func parseMappingLibraryEntity(data []byte, path string) (types.MappingLibrary, error) {
 	if _, err := envelope.ValidateBytes(envelope.KindMappingLibrary, data, path); err != nil {
 		return types.MappingLibrary{}, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, err.Error())
 	}
 	var e types.MappingLibrary
 	if err := yaml.Unmarshal(data, &e); err != nil {
-		return types.MappingLibrary{}, err
+		return types.MappingLibrary{}, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, "unmarshal MappingLibrary")
 	}
 	if e.Kind != "MappingLibrary" {
 		return types.MappingLibrary{}, fmt.Errorf("expected kind MappingLibrary, got %q", e.Kind)
@@ -1180,7 +1189,8 @@ func parseMappingLibraryEntity(data []byte, path string) (types.MappingLibrary, 
 }
 
 // parseWorkloadLibraryEntity is the single per-entity WorkloadLibrary resolution,
-// mirroring parseMappingLibraryEntity: full unmarshal + kind-check. There is no
+// mirroring parseMappingLibraryEntity: full unmarshal + kind-check, self-wrapping
+// every failure into its final CATALOG_ERROR shape. There is no
 // forbidden-keyword / template-body scan — WorkloadLibrary entries are opaque Go
 // template strings the compiler does not parse at entity load (their content,
 // including any cross-library `$import:`, resolves at Recipe render time).
@@ -1190,7 +1200,7 @@ func parseWorkloadLibraryEntity(data []byte, path string) (types.WorkloadLibrary
 	}
 	var e types.WorkloadLibrary
 	if err := yaml.Unmarshal(data, &e); err != nil {
-		return types.WorkloadLibrary{}, err
+		return types.WorkloadLibrary{}, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, "unmarshal WorkloadLibrary")
 	}
 	if e.Kind != "WorkloadLibrary" {
 		return types.WorkloadLibrary{}, fmt.Errorf("expected kind WorkloadLibrary, got %q", e.Kind)
@@ -1199,7 +1209,8 @@ func parseWorkloadLibraryEntity(data []byte, path string) (types.WorkloadLibrary
 }
 
 // parseArtifactsLibraryEntity is the single per-entity ArtifactsLibrary resolution,
-// mirroring parseWorkloadLibraryEntity: full unmarshal + kind-check. There is no
+// mirroring parseWorkloadLibraryEntity: full unmarshal + kind-check, self-wrapping
+// every failure into its final CATALOG_ERROR shape. There is no
 // forbidden-keyword / template-body scan — ArtifactsLibrary bundle files are opaque
 // Go template strings the compiler does not parse at entity load (their content,
 // including any cross-library `$import:`, resolves at Recipe / FeatureRecipe render
@@ -1211,7 +1222,7 @@ func parseArtifactsLibraryEntity(data []byte, path string) (types.ArtifactsLibra
 	}
 	var e types.ArtifactsLibrary
 	if err := yaml.Unmarshal(data, &e); err != nil {
-		return types.ArtifactsLibrary{}, err
+		return types.ArtifactsLibrary{}, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, "unmarshal ArtifactsLibrary")
 	}
 	if e.Kind != "ArtifactsLibrary" {
 		return types.ArtifactsLibrary{}, fmt.Errorf("expected kind ArtifactsLibrary, got %q", e.Kind)
@@ -1220,16 +1231,22 @@ func parseArtifactsLibraryEntity(data []byte, path string) (types.ArtifactsLibra
 }
 
 // parsePluginEntity validates a Plugin entity's YAML against the plugin envelope
-// and unmarshals it. It is the single Plugin-parse home the recipe-shell index
-// fold and the cache-by-URI verdict-socket resolution both call, so a plugin
-// entity is validated and decoded identically wherever it is read from the cache.
+// and unmarshals it. It is the single Plugin-parse home the eager index arm, the
+// recipe-shell index fold and the cache-by-URI verdict-socket resolution all
+// call, so a plugin entity is validated and decoded identically wherever it is
+// read from.
+//
+// Like parseRecipeEntity, this self-wraps every failure into its final
+// CATALOG_ERROR shape so a single `return err` at the indexing caller preserves
+// byte-identical diagnostics. The wrapping preserves the error chain, so a
+// caller matching on the envelope sentinel still matches.
 func parsePluginEntity(data []byte, path string) (types.Plugin, error) {
 	if _, err := envelope.ValidateBytes(envelope.KindPlugin, data, path); err != nil {
-		return types.Plugin{}, err
+		return types.Plugin{}, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, err.Error())
 	}
 	var e types.Plugin
 	if err := yaml.Unmarshal(data, &e); err != nil {
-		return types.Plugin{}, err
+		return types.Plugin{}, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, "unmarshal Plugin")
 	}
 	return e, nil
 }
