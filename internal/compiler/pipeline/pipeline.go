@@ -515,6 +515,8 @@ func ResolveAndValidate(
 		// silently drop them.
 		resolveResult.LintAdvisories = append(resolveResult.LintAdvisories,
 			resolver.LintAttachmentSlotNearMiss(normalized, catalogLookup)...)
+		resolveResult.LintAdvisories = append(resolveResult.LintAdvisories,
+			resolver.LintUsesSocketNearMiss(normalized, catalogLookup)...)
 		for _, a := range resolveResult.LintAdvisories {
 			fmt.Fprintf(os.Stderr, "  lint: %s\n", a)
 		}

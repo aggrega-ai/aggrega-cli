@@ -88,6 +88,16 @@ var (
 	// warning.
 	ErrAttachmentSlotNearMiss = errors.New("attachment name is a near miss for a declared slot")
 
+	// ErrUsesSocketNearMiss marks an ADVISORY finding, not a halt: a socket
+	// named on a component's own uses block that its Component type does not
+	// declare in usesSchema but is within a small edit distance of one — the
+	// shape a socket-name typo takes. A socket name matching no declared socket
+	// is legal on that surface (the Aggregate author owns the topology and may
+	// name a socket the catalog did not anticipate), so this sentinel never
+	// reaches a build's verdict; it exists so a front end can recognise the
+	// advisory class and render it as a warning.
+	ErrUsesSocketNearMiss = errors.New("uses socket name is a near miss for a declared socket")
+
 	// ErrUnreadParameter marks an ADVISORY finding, not a halt: a parameter the
 	// Aggregate declares that no reference in the Aggregate's own text reads.
 	// Declaring a parameter nothing reads is legal — the compiler does not police
