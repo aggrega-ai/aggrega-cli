@@ -53,6 +53,14 @@ func (p provenance) SourceFile() string { return p.file }
 
 func (p provenance) Locator() string { return p.locator }
 
+// newProvenance is the one place a subject's attribution is assembled: a source
+// file, and the segments the author typed joined into the locator dialect. Every
+// subject kind's constructor goes through it, so a traversal supplies segments
+// and never a format.
+func newProvenance(sourceFile string, segments ...string) provenance {
+	return provenance{file: sourceFile, locator: authoredLocator(segments...)}
+}
+
 func (p provenance) Raise(sentinel error, detail ...string) Objection {
 	o := Objection{sentinel: sentinel, file: p.file, locator: p.locator}
 	if len(detail) > 0 {

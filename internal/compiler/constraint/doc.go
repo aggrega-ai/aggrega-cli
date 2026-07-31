@@ -2,8 +2,37 @@
 // Copyright 2026 Cognitio S.r.l.
 
 // Package constraint carries the mechanism a constraint check is written
-// against: what a check hands back when an input violates a rule, and what
-// that objection is attributed to.
+// against: what a check declares, what it hands back when an input violates a
+// rule, and what that objection is attributed to.
+//
+// # A check is a value, and its declaration is the whole of it
+//
+// A check is a [Check] value naming three things: the facts it reads, the host
+// powers it needs, and what it is invoked once per. It carries the sentinel of
+// the rule it enforces and what a violation does to the build, and it carries
+// no stage, no caller list and no traversal.
+//
+// That absence is the mechanism. Where a check runs follows from the facts it
+// declared, because a view exposes exactly the facts complete at one point in
+// the compilation and the views embed one another; which callers exercise it
+// follows from that same point; and what it iterates follows from its subject.
+// A field asserting any of the three could disagree with the value derived from
+// the declaration, and the disagreement would be visible to nobody.
+//
+// # One sealed subject type per derived kind
+//
+// The set of subject kinds is derived rather than chosen: a kind exists if and
+// only if some declared fact is keyed by it, so the set moves when the facts
+// move. [SubjectKinds] is that set, generated from the fact registry, and every
+// entry in it has a distinct subject type in this package. The distinctness is
+// a compile-time fact — each kind adds its own unexported marker — so a check
+// declaring one kind cannot be handed another, and a check invoked once per
+// socket cannot silently be invoked once per node instead.
+//
+// Coordinates nest and kinds do not. A kind keyed by a node and a socket is
+// reached within a node, and its coordinates record that; its type embeds
+// [Subject] rather than the node kind's type, because a type satisfying two
+// kinds is two kinds the compiler cannot tell apart.
 //
 // # A check raises an objection, never a diagnostic
 //

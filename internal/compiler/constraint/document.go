@@ -19,6 +19,13 @@ type docSubject struct{ provenance }
 
 func (docSubject) document() {}
 
+// newDocumentSubject takes no segments, unlike every other kind's constructor:
+// a document has no authored element inside it for a locator to name, so its
+// provenance is the file and nothing else.
+func newDocumentSubject(sourceFile string) DocumentSubject {
+	return docSubject{newProvenance(sourceFile)}
+}
+
 // RunOnDocument runs a check against the single document the caller is holding,
 // and returns whatever the check raised.
 //
@@ -32,8 +39,5 @@ func (docSubject) document() {}
 // workspace-relative path, and is the whole of the document subject's
 // provenance.
 func RunOnDocument[V any](sourceFile string, view V, run func(V, DocumentSubject) []Objection) []Objection {
-	return run(view, docSubject{provenance{
-		file:    sourceFile,
-		locator: authoredLocator(),
-	}})
+	return run(view, newDocumentSubject(sourceFile))
 }
