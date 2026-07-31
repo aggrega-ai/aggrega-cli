@@ -18,10 +18,12 @@ import (
 )
 
 // entityKindByName maps an authored aggrega entity kind string to its
-// envelope.Kind. Only the ten editor-authored entity kinds appear here;
-// AggregaConfig / Lockfile / Workload / IR are deliberately absent — the
-// first two carry no apiVersion+kind envelope to classify on (they are
-// flat-top-level documents, so this apiVersion+kind mechanism
+// envelope.Kind. All twelve editor-authored entity kinds appear here, and
+// the set matches completion.EntityKinds exactly — a kind the daemon
+// offers as a `kind:` completion is a kind whose documents it also
+// validates. AggregaConfig / Lockfile / Workload / IR are deliberately
+// absent — the first two carry no apiVersion+kind envelope to classify on
+// (they are flat-top-level documents, so this apiVersion+kind mechanism
 // structurally cannot reach them — those two are classified by filename
 // instead, see classifyByFilename), and Workload/IR are not
 // editor-authored standalone documents.
@@ -30,6 +32,7 @@ var entityKindByName = map[string]envelope.Kind{
 	"Feature":          envelope.KindFeature,
 	"Recipe":           envelope.KindRecipe,
 	"FeatureRecipe":    envelope.KindFeatureRecipe,
+	"Plugin":           envelope.KindPlugin,
 	"SchemaLibrary":    envelope.KindSchemaLibrary,
 	"MappingLibrary":   envelope.KindMappingLibrary,
 	"WorkloadLibrary":  envelope.KindWorkloadLibrary,
@@ -111,7 +114,7 @@ func (s *Server) classifyByFilename(file string) (envelope.Kind, bool) {
 // its findings as per-file diagnostics. Classification is by filename
 // first (the workspace config and the active Release's lockfile, which
 // carry no apiVersion+kind envelope) and then by the document's
-// apiVersion+kind (the ten authored entity kinds). The second return is
+// apiVersion+kind (the twelve authored entity kinds). The second return is
 // true only when the document classifies AND the envelope rejected it —
 // the signal the caller uses to early-return (which short-circuits Tier-4
 // for the active Aggregate and is the coverage for every other file).

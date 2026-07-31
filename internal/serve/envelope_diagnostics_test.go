@@ -8,6 +8,8 @@ import (
 	"testing"
 
 	"go.yaml.in/yaml/v3"
+
+	"github.com/aggrega-ai/aggrega-cli/internal/serve/completion"
 )
 
 func parseDoc(t *testing.T, s string) *yaml.Node {
@@ -226,5 +228,75 @@ func TestClassifyByFilename_NoActiveRelease(t *testing.T) {
 	}
 	if k, ok := srv.classifyByFilename(".aggrega-config.yaml"); !ok || k != "AggregaConfig" {
 		t.Errorf("config must still classify without an active Release; got (%q, %v)", k, ok)
+	}
+}
+
+// TestEnvelopeDiagnosticsForBuffer_EveryClassifiedKindIsCovered pins that a
+// schema-invalid buffer produces envelope diagnostics for EVERY kind the
+// apiVersion+kind classification recognizes — so the editor's verdict on an
+// authored document does not depend on which kind it is. A kind the
+// classification omits silently produces no diagnostics at all while the CLI
+// rejects the same bytes, which is a divergence an author experiences as the
+// editor calling a file clean.
+//
+// The Component case is the calibration: it must produce diagnostics under the
+// same harness, so a kind that produces none is a real gap rather than a broken
+// instrument.
+func TestEnvelopeDiagnosticsForBuffer_EveryClassifiedKindIsCovered(t *testing.T) {
+	t.Parallel()
+
+	// Each fixture is YAML-valid (so it parses and classifies) and
+	// schema-invalid (so the envelope has something to report).
+	cases := map[string]string{
+		"Component": `apiVersion: aggrega.ai/v1alpha1
+kind: Component
+metadata:
+  name: c
+  version: 1.0.0
+spec:
+  notAComponentField: true
+`,
+		"Plugin": `apiVersion: aggrega.ai/v1alpha1
+kind: Plugin
+metadata:
+  name: broken
+  pluginType: linter
+  version: 1.0.0
+spec:
+  abiVersion: v0
+`,
+	}
+	for name, content := range cases {
+		name, content := name, content
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			srv := newTestServer(t, t.TempDir(), nil, nil)
+			diags, has := srv.envelopeDiagnosticsForBuffer("entity.yaml", []byte(content), parseDoc(t, content))
+			if !has || len(diags) == 0 {
+				t.Fatalf("a schema-invalid %s buffer must produce envelope diagnostics; has=%v diags=%d", name, has, len(diags))
+			}
+			if !strings.Contains(diags[0].Message, "violates its envelope schema") {
+				t.Errorf("%s diagnostic must carry the envelope framing; got %q", name, diags[0].Message)
+			}
+		})
+	}
+}
+
+// TestEntityKindByNameCoversEveryCompletedKind pins the two editor registries
+// against each other: every entity kind the daemon offers as a `kind:`
+// completion must also be classifiable for the per-file envelope leg. Offering
+// a kind and then declining to validate documents of it is the divergence this
+// guards — it is invisible in either registry read alone, and it is what
+// dropping a kind from one side leaves behind.
+func TestEntityKindByNameCoversEveryCompletedKind(t *testing.T) {
+	t.Parallel()
+	for _, kind := range completion.EntityKinds {
+		if _, ok := entityKindByName[kind]; !ok {
+			t.Errorf("kind %q is offered as a completion but is not envelope-classifiable", kind)
+		}
+	}
+	if len(entityKindByName) != len(completion.EntityKinds) {
+		t.Errorf("the two registries must enumerate the same kinds; envelope-classifiable=%d, completion-offered=%d",
+			len(entityKindByName), len(completion.EntityKinds))
 	}
 }
