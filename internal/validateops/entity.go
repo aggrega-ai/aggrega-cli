@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"sort"
+	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
@@ -33,14 +34,16 @@ type RenderedArtifact struct {
 // EntityResult is the structured outcome of single-entity validation.
 //
 // Diagnostics is the ordered set of report lines — the identity header, the
-// per-tier status lines (schema, pillars/shape, resolution, render), and the
-// render-failure explanation when the isolated render did not complete — each
-// verbatim and newline-free (a renderer emits one per line). Artifacts carries
-// the rendered output of a render-bearing Recipe, ordered by key, so a caller
-// can print the bytes or summarize a count. Notes carries advisory lines a
-// caller routes to a diagnostic stream rather than the primary report. Kind is
-// the resolved entity kind, empty when the input never resolved to a known kind
-// (in which case the returned error explains why and Diagnostics is empty).
+// per-tier status lines (schema, pillars/shape, resolution, render), the
+// declined-check line naming any required uses sockets a single-entity run
+// could not cover, and the render-failure explanation when the isolated render
+// did not complete — each verbatim and newline-free (a renderer emits one per
+// line). Artifacts carries the rendered output of a render-bearing Recipe,
+// ordered by key, so a caller can print the bytes or summarize a count. Notes
+// carries advisory lines a caller routes to a diagnostic stream rather than the
+// primary report. Kind is the resolved entity kind, empty when the input never
+// resolved to a known kind (in which case the returned error explains why and
+// Diagnostics is empty).
 type EntityResult struct {
 	Path        string
 	Kind        string
@@ -222,6 +225,14 @@ func validateWorkloadEntity(res *EntityResult, path string, data []byte) error {
 // minimal deployment around a single instance of that Component bound to the
 // Recipe under test, and drives the real pipeline — first resolution and guards
 // (render skipped), then a real isolated render.
+//
+// One check of a real deployment is out of reach here and is declined rather
+// than failed: whether the Component's `required: true` uses sockets are
+// populated. The synthesized deployment holds a single instance, so it contains
+// no second component an edge could target, and no authoring of the synthesized
+// documents can change that. The declined sockets are named in Diagnostics, so
+// the report states which surface it did not cover instead of leaving a silent
+// difference between what validate checks and what a build checks.
 func validateRecipeEntity(res *EntityResult, wsRoot, cacheDir string, dirs []string, path string, data []byte, suppressUnsupportedFieldWarnings bool) error {
 	var rec types.Recipe
 	if err := yaml.Unmarshal(data, &rec); err != nil {
@@ -260,6 +271,23 @@ func validateRecipeEntity(res *EntityResult, wsRoot, cacheDir string, dirs []str
 	if err != nil {
 		return err
 	}
+
+	// Decline the required-socket check for this run and say so, rather than
+	// report the author's own valid Recipe as broken. The narrowing is applied
+	// to the catalog view THIS harness hands the pipeline and to nothing else,
+	// so the rule itself is untouched: a build asks it about the Component
+	// exactly as authored.
+	tierLookup := lookup
+	if declined := declaredRequiredSockets(&comp); len(declined) > 0 {
+		tierLookup = lookupWithSocketsOptional(lookup, rec.Spec.Implements, declined)
+		res.Diagnostics = append(res.Diagnostics,
+			fmt.Sprintf("Sockets: required uses sockets not checked (%s)", strings.Join(declined, ", ")),
+			"  Validating a Recipe on its own places its Component in a deployment of one,",
+			"  so no other component exists for a required socket to be wired to. Whether",
+			"  each of these sockets is populated is checked when the Component is deployed",
+			"  in an Aggregate.")
+	}
+
 	recipeLookup := renderer.RecipeLookup{
 		// The synthesized deployment carries a single component instance, so the
 		// Recipe under test is the recipe for every node — return it directly
@@ -267,7 +295,72 @@ func validateRecipeEntity(res *EntityResult, wsRoot, cacheDir string, dirs []str
 		// (possibly not-yet-published or edited-in-place) file drive the render.
 		Recipe: func(string, string) (*types.Recipe, bool) { return &rec, true },
 	}
-	return runRenderTiers(res, harness, lookup, recipeLookup, cat.SubAggregateLoader(), suppressUnsupportedFieldWarnings)
+	return runRenderTiers(res, harness, tierLookup, recipeLookup, cat.SubAggregateLoader(), suppressUnsupportedFieldWarnings)
+}
+
+// declaredRequiredSockets returns the names of every uses socket the Component
+// declares `required: true`, in the entity's author order.
+//
+// The synthesized deployment carries a single component instance: it authors no
+// `uses` entry and its Release wires no edge, because there is no second node
+// for an edge to target. Every required socket is therefore one this harness
+// cannot populate, which is why the declared set and the out-of-reach set
+// coincide here and no population state is consulted.
+//
+// This reads a declared flag to build the report and the harness view; it
+// decides nothing. Whether an unpopulated required socket is an error stays the
+// resolver's rule, asked in one place, and a build asks it about the Component
+// as authored.
+func declaredRequiredSockets(comp *types.Component) []string {
+	var out []string
+	for name, entry := range comp.Spec.UsesSchema.All() {
+		if entry.Required {
+			out = append(out, name)
+		}
+	}
+	return out
+}
+
+// lookupWithSocketsOptional returns a copy of lookup whose Component accessor
+// reports typeURI's named uses sockets as optional. Every other type, and every
+// other accessor, passes through untouched.
+//
+// The copy is what the single-entity render tiers read, so the narrowing reaches
+// only this in-memory validation run — the catalog itself is never modified, and
+// no other command shares the view. The socket entries survive intact apart from
+// the flag, so the checks that read a socket's name or its per-edge schema still
+// see exactly what the author declared, and the entries are rebuilt in author
+// order so the run stays byte-identical across invocations.
+func lookupWithSocketsOptional(lookup resolver.CatalogLookup, typeURI string, sockets []string) resolver.CatalogLookup {
+	if lookup.Component == nil || len(sockets) == 0 {
+		return lookup
+	}
+	optional := make(map[string]bool, len(sockets))
+	for _, s := range sockets {
+		optional[s] = true
+	}
+
+	inner := lookup.Component
+	narrowed := lookup
+	narrowed.Component = func(t string) (types.Component, bool) {
+		comp, found := inner(t)
+		if !found || t != typeURI {
+			return comp, found
+		}
+		// A fresh map, not a struct copy: OrderedMap holds its entries behind a
+		// shared backing map, so writing through a copy would reach the catalog's
+		// own component.
+		relaxed := types.OrderedMap[types.UsesSchemaEntry]{}
+		for name, entry := range comp.Spec.UsesSchema.All() {
+			if optional[name] {
+				entry.Required = false
+			}
+			relaxed.Set(name, entry)
+		}
+		comp.Spec.UsesSchema = relaxed
+		return comp, true
+	}
+	return narrowed
 }
 
 // validateFeatureRecipeEntity runs the FeatureRecipe shape check. The render
