@@ -152,6 +152,12 @@ func TestPluginDescriptorValidateABIHandshake(t *testing.T) {
 	}
 }
 
+// TestPluginDescriptorValidateUnknownPluginType pins the rejection a descriptor
+// gets when its plugin_type is not one the registry recognizes: the wrapped
+// sentinel and the exact message text, both of which reach a user's terminal.
+// The message is asserted in full rather than probed for a substring, because the
+// plugin-type check reads its type set from the registry and the identity of that
+// rejection must not drift with the registry's internals.
 func TestPluginDescriptorValidateUnknownPluginType(t *testing.T) {
 	t.Parallel()
 
@@ -163,6 +169,11 @@ func TestPluginDescriptorValidateUnknownPluginType(t *testing.T) {
 	err := d.Validate("acme/mystery")
 	if !errors.Is(err, ErrWasmManifestRejected) {
 		t.Fatalf("unknown plugin_type: want ErrWasmManifestRejected, got %v", err)
+	}
+	const want = `plugin "acme/mystery" declares unknown plugin_type "transmogrifier": ` +
+		"wasm: plugin rejected by the sandbox"
+	if got := err.Error(); got != want {
+		t.Fatalf("unknown plugin_type message:\n got: %s\nwant: %s", got, want)
 	}
 }
 

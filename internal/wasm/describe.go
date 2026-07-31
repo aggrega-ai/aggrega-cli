@@ -292,10 +292,15 @@ func (d PluginDescriptor) Validate(pluginIdentity string) error {
 			pluginIdentity, d.AbiVersion, ABIVersionV1Alpha1, ErrWasmManifestRejected)
 	}
 
-	switch PluginType(d.PluginType) {
-	case PluginTypeProvider, PluginTypeLinter, PluginTypeFRPStep, PluginTypeGovernance, PluginTypeCLI, PluginTypeParser, PluginTypeImporter:
-		// recognized
-	default:
+	// Membership is asked of the canonical plugin-type registry rather than
+	// re-listed here, so the gate and the registry cannot disagree about what the
+	// type set is. A reserved entry is refused alongside an absent one, because
+	// recognized means more than declared: a reserved entry names a socket with no
+	// realized plugin type — no minimum-export rule, no dispatcher — and the
+	// published plugin_type vocabulary omits it, so a descriptor naming one
+	// declares a type no author can write and the host could never dispatch.
+	entry, ok := plugintype.Lookup(PluginType(d.PluginType))
+	if !ok || entry.Reserved {
 		return fmt.Errorf("plugin %q declares unknown plugin_type %q: %w",
 			pluginIdentity, d.PluginType, ErrWasmManifestRejected)
 	}
