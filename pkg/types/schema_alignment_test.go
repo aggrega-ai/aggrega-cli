@@ -2,12 +2,24 @@
 // Copyright 2026 Cognitio S.r.l.
 
 // Bidirectional schema↔struct alignment suite — the generalization of
-// the single-struct TestPoliciesRoundTripThroughSchema precedent to
-// every entity kind. Two directions:
+// the single-struct TestPoliciesRoundTripThroughSchema precedent across
+// document kinds.
 //
-//   - Direction 1 (Go → schema): a maximally-populated instance of each
-//     entity struct marshals and validates against its kind's embedded
-//     schema, catching Go fields the schema does not admit.
+// Coverage of the kind population is asserted rather than assumed: the cases
+// below are hand-listed, so every kind the envelope package declares must
+// either appear here or be named, with its reason, in the exclusion set that
+// TestAlignmentSuiteCoversEveryEnvelopeKind walks. A kind added and forgotten
+// fails there instead of being checked by nothing. Not every covered kind is an
+// entity — the pin record and the workspace configuration file carry no
+// envelope and are walked from their own root types.
+//
+// Two directions:
+//
+//   - Direction 1 (Go → schema): a maximally-populated instance of each kind's
+//     struct marshals and validates against its kind's embedded schema,
+//     catching Go fields the schema does not admit. A kind whose schema makes
+//     two field groups mutually exclusive at the document root contributes one
+//     instance per arm, since no single instance can carry both.
 //   - Direction 2 (schema → Go): a reflection walk of each schema's full
 //     property surface ($defs included) against the struct's yaml tags,
 //     catching schema properties the Go type would silently drop — the
@@ -31,8 +43,11 @@ import (
 
 	schemas "github.com/aggrega-ai/aggrega-schemas"
 
+	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
+	clischemas "github.com/aggrega-ai/aggrega-cli/pkg/schemas/jsonschema"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator/envelope"
+	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 
 	"go.yaml.in/yaml/v3"
 )
@@ -137,8 +152,12 @@ type alignmentCase struct {
 	// tag — a genuinely non-mechanical position. Each must still be
 	// reported missing by the walk, or the staleness guard fails.
 	exceptions map[string]string
-	// maximal is a fully-populated instance for Direction-1.
-	maximal any
+	// maximals are the fully-populated instances for Direction-1. Most kinds
+	// need exactly one. A kind whose schema makes two field groups mutually
+	// exclusive at the document root needs one instance per arm, because no
+	// single instance can populate the whole Go surface and still validate —
+	// populating one arm makes the other arm's fields forbidden.
+	maximals []any
 }
 
 // labelKeyException documents the well-known-label-key class: catalog
@@ -168,7 +187,7 @@ func alignmentCases() []alignmentCase {
 			exceptions: map[string]string{
 				"component.aggrega.ai/type": labelKeyException,
 			},
-			maximal: maximalComponent(),
+			maximals: []any{maximalComponent()},
 		},
 		{
 			kind:   envelope.KindFeature,
@@ -177,49 +196,49 @@ func alignmentCases() []alignmentCase {
 			exceptions: map[string]string{
 				"feature.aggrega.ai/kind": labelKeyException,
 			},
-			maximal: maximalFeature(),
+			maximals: []any{maximalFeature()},
 		},
 		{
 			kind:       envelope.KindRecipe,
 			schema:     schemas.RecipeV1alpha1,
 			roots:      []reflect.Type{reflect.TypeOf(types.Recipe{})},
 			exceptions: map[string]string{"$import": importException},
-			maximal:    maximalRecipe(),
+			maximals:   []any{maximalRecipe()},
 		},
 		{
 			kind:       envelope.KindFeatureRecipe,
 			schema:     schemas.FeatureRecipeV1alpha1,
 			roots:      []reflect.Type{reflect.TypeOf(types.FeatureRecipe{})},
 			exceptions: map[string]string{"$import": importException},
-			maximal:    maximalFeatureRecipe(),
+			maximals:   []any{maximalFeatureRecipe()},
 		},
 		{
 			kind:       envelope.KindPlugin,
 			schema:     schemas.PluginV1alpha1,
 			roots:      []reflect.Type{reflect.TypeOf(types.Plugin{})},
 			exceptions: map[string]string{},
-			maximal:    maximalPlugin(),
+			maximals:   []any{maximalPlugin()},
 		},
 		{
 			kind:       envelope.KindSchemaLibrary,
 			schema:     schemas.SchemaLibraryV1alpha1,
 			roots:      []reflect.Type{reflect.TypeOf(types.SchemaLibrary{})},
 			exceptions: map[string]string{},
-			maximal:    maximalSchemaLibrary(),
+			maximals:   []any{maximalSchemaLibrary()},
 		},
 		{
 			kind:       envelope.KindMappingLibrary,
 			schema:     schemas.MappingLibraryV1alpha1,
 			roots:      []reflect.Type{reflect.TypeOf(types.MappingLibrary{})},
 			exceptions: map[string]string{},
-			maximal:    maximalMappingLibrary(),
+			maximals:   []any{maximalMappingLibrary()},
 		},
 		{
 			kind:       envelope.KindWorkloadLibrary,
 			schema:     schemas.WorkloadLibraryV1alpha1,
 			roots:      []reflect.Type{reflect.TypeOf(types.WorkloadLibrary{})},
 			exceptions: map[string]string{},
-			maximal:    maximalWorkloadLibrary(),
+			maximals:   []any{maximalWorkloadLibrary()},
 		},
 		{
 			kind:   envelope.KindAggregate,
@@ -236,14 +255,14 @@ func alignmentCases() []alignmentCase {
 				"from":  injectDeliveryException,
 				"value": injectDeliveryException,
 			},
-			maximal: maximalAggregate(),
+			maximals: []any{maximalAggregate()},
 		},
 		{
 			kind:       envelope.KindManifest,
 			schema:     schemas.ManifestV1alpha1,
 			roots:      []reflect.Type{reflect.TypeOf(types.Manifest{})},
 			exceptions: map[string]string{},
-			maximal:    maximalManifest(),
+			maximals:   []any{maximalManifest()},
 		},
 		{
 			kind:   envelope.KindRelease,
@@ -255,7 +274,41 @@ func alignmentCases() []alignmentCase {
 				"from":    injectDeliveryException,
 				"value":   injectDeliveryException,
 			},
-			maximal: maximalRelease(),
+			maximals: []any{maximalRelease()},
+		},
+		{
+			// The pin record is hand-written rather than generated from its
+			// schema, and its typed decode does not reject unknown fields, so a
+			// schema property with no Go field would validate, be dropped by the
+			// decode, and be reported by nothing. Since the pins are what make a
+			// build reproducible, a dropped pin field reads as a clean build —
+			// which is why this kind is aligned here rather than trusted.
+			kind:       envelope.KindLockfile,
+			schema:     schemas.LockfileV1alpha1,
+			roots:      []reflect.Type{reflect.TypeOf(lockfile.Lockfile{})},
+			exceptions: map[string]string{},
+			maximals:   []any{maximalLockfile()},
+		},
+		{
+			// The workspace configuration file carries no envelope — it is flat
+			// top-level keys — so its walk root is the configuration root type
+			// rather than an entity struct.
+			kind:       envelope.KindAggregaConfig,
+			schema:     schemas.AggregaConfigV1alpha1,
+			roots:      []reflect.Type{reflect.TypeOf(workspaceconfig.Config{})},
+			exceptions: map[string]string{},
+			maximals:   []any{maximalAggregaConfig()},
+		},
+		{
+			// Two maximal instances, because the workload schema makes the
+			// compute fields and the reference fields mutually exclusive at the
+			// document root: declaring either group forbids the other, so no
+			// single instance can carry the whole Go surface.
+			kind:       envelope.KindWorkload,
+			schema:     clischemas.WorkloadJSONSchema,
+			roots:      []reflect.Type{reflect.TypeOf(types.Workload{})},
+			exceptions: map[string]string{},
+			maximals:   []any{maximalWorkloadCompute(), maximalWorkloadReference()},
 		},
 	}
 }
@@ -316,12 +369,17 @@ func TestSchemaStructAlignment_Direction2_SchemaToGo(t *testing.T) {
 func TestSchemaStructAlignment_Direction1_GoToSchema(t *testing.T) {
 	for _, c := range alignmentCases() {
 		t.Run(string(c.kind), func(t *testing.T) {
-			data, err := yaml.Marshal(c.maximal)
-			if err != nil {
-				t.Fatalf("marshal maximal %s: %v", c.kind, err)
+			if len(c.maximals) == 0 {
+				t.Fatalf("%s carries no maximal instance, so this direction checks nothing for it", c.kind)
 			}
-			if _, err := envelope.ValidateBytes(c.kind, data, "maximal-"+string(c.kind)); err != nil {
-				t.Errorf("maximal %s instance fails its own envelope schema — a Go field the schema does not admit:\n%v\n--- marshalled ---\n%s", c.kind, err, data)
+			for i, m := range c.maximals {
+				data, err := yaml.Marshal(m)
+				if err != nil {
+					t.Fatalf("marshal maximal %s (instance %d): %v", c.kind, i, err)
+				}
+				if _, err := envelope.ValidateBytes(c.kind, data, "maximal-"+string(c.kind)); err != nil {
+					t.Errorf("maximal %s instance %d fails its own envelope schema — a Go field the schema does not admit:\n%v\n--- marshalled ---\n%s", c.kind, i, err, data)
+				}
 			}
 		})
 	}
