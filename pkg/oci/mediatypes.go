@@ -19,6 +19,8 @@
 // implementation.
 package oci
 
+import "sort"
+
 // Canonical OCI mediatypes for Aggrega catalog entities.
 //
 // An Aggregate is publishable: it is a reusable module, resolvable as
@@ -81,4 +83,27 @@ func MediaTypeForKind(kind string) (string, error) {
 		return mt, nil
 	}
 	return "", ErrUnknownEntityKind
+}
+
+// MediaTypeKinds returns every entity kind MediaTypeForKind resolves, in
+// lexical order. The returned slice is freshly allocated, so a caller may not
+// mutate the mediatype table through it.
+//
+// This is the enumeration counterpart to MediaTypeForKind's lookup: it exists so
+// a caller that must reason about the whole kind set — deciding which kinds to
+// walk, or checking that its own handling accounts for all of them — reads that
+// set from here rather than restating it. A restated copy agrees on the day it
+// is written and silently disagrees the day a kind is added.
+//
+// The set is authoritative for mediatype resolution and nothing more. A kind it
+// contains is not necessarily one Bundle can bundle, so a caller that both
+// enumerates and bundles must handle, or explicitly exclude, each kind it takes
+// from here.
+func MediaTypeKinds() []string {
+	out := make([]string, 0, len(kindMediaTypes))
+	for kind := range kindMediaTypes {
+		out = append(out, kind)
+	}
+	sort.Strings(out)
+	return out
 }

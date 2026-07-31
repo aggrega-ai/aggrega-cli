@@ -130,16 +130,79 @@ func startRegistry(t *testing.T, handlerWrap func(http.Handler) http.Handler) st
 	return strings.TrimPrefix(srv.URL, "http://")
 }
 
-// publishableKinds is the seven kinds aggrega push publishes; mirrors
-// push-all.sh's is_publishable filter.
-var publishableKinds = map[string]bool{
-	"Component": true, "Feature": true, "Recipe": true, "FeatureRecipe": true,
-	"SchemaLibrary": true, "MappingLibrary": true, "Aggregate": true,
+// nonRoundTripKinds names each kind the OCI transport resolves a mediatype for
+// that this round-trip nonetheless does not push, mapped to the reason it does
+// not. It is the only way a kind leaves the walk below, so every narrowing of
+// that walk is a named entry here with a reason attached — and the reason is
+// carried in the value rather than in a comment so the check below can require
+// one to exist.
+var nonRoundTripKinds = map[string]string{
+	"Plugin": "the catalog walk publishes entity YAML only; a Plugin's .wasm " +
+		"artifact is a separate push with its own mediatype",
+	"ArtifactsLibrary": "no catalog entity declares this kind, and whether it is " +
+		"published at all is unsettled, so a push here would assert a decision " +
+		"nothing has made",
 }
 
-// pushCatalog walks catalogDir and pushes every publishable entity to host via
-// the real push path (the programmatic equal of push-all.sh). Returns the count
-// pushed per kind so the test can assert coverage.
+// publishableKinds is the kinds this round-trip pushes: every kind the OCI
+// transport resolves a mediatype for, minus the exclusions named in
+// nonRoundTripKinds. It is derived rather than hand-listed so that a kind added
+// to the transport is either pushed here or explicitly excluded — a hand-listed
+// copy agrees on the day it is written and then diverges in silence.
+var publishableKinds = func() map[string]bool {
+	m := map[string]bool{}
+	for _, kind := range oci.MediaTypeKinds() {
+		if _, excluded := nonRoundTripKinds[kind]; !excluded {
+			m[kind] = true
+		}
+	}
+	return m
+}()
+
+// TestPublishableKindsDerivation checks the half of the derivation above that is
+// not structural.
+//
+// Two directions matter, and only one of them needs a test. That the walk covers
+// every kind the transport resolves is guaranteed by construction — the set is
+// the transport's own kinds minus the exclusions, so it cannot omit a kind, and
+// an assertion to that effect could never fail. The other direction is not
+// guaranteed: an exclusion is a hand-written key, so it can name a kind the
+// transport stopped resolving (or never resolved, on a typo), and it can be added
+// with no reason recorded. Either way the walk would quietly narrow and the
+// derivation's whole point — that a kind is skipped only deliberately — would be
+// lost. That is what this checks.
+//
+// The non-emptiness checks are the instrument's calibration: an empty transport
+// set or an empty walk set would make every assertion here vacuous, and a vacuous
+// pass reads exactly like a real one.
+func TestPublishableKindsDerivation(t *testing.T) {
+	kinds := oci.MediaTypeKinds()
+	if len(kinds) == 0 {
+		t.Fatal("the transport resolves no kinds at all, so the checks below assert nothing")
+	}
+	if len(publishableKinds) == 0 {
+		t.Fatal("the walk pushes no kinds at all — the exclusions have swallowed the whole set")
+	}
+	resolved := map[string]bool{}
+	for _, kind := range kinds {
+		resolved[kind] = true
+	}
+	for kind, reason := range nonRoundTripKinds {
+		if !resolved[kind] {
+			t.Errorf("kind %q is named as excluded from this round-trip, but the transport "+
+				"resolves no mediatype for it — the exclusion is stale or misspelled, and it "+
+				"is silently excluding nothing", kind)
+		}
+		if reason == "" {
+			t.Errorf("kind %q is excluded with no reason recorded", kind)
+		}
+	}
+}
+
+// pushCatalog walks catalogDir and pushes every entity in publishableKinds to
+// host through the real push path, which is what a bulk catalog publisher does
+// one file at a time. Returns the count pushed per kind so the test can assert
+// coverage.
 func pushCatalog(t *testing.T, host, catalogDir string) map[string]int {
 	t.Helper()
 	counts := map[string]int{}
