@@ -1,0 +1,22 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: cov-mod-bad-slot-shape
+  version: "1.0.0"
+spec:
+  components:
+    consumer:
+      type: cov/consumer
+      uses:
+        databases:
+          main:
+            target: store
+      features:
+        root_password:
+          type: cov/secret-value
+          inject:
+            env:
+              - in: PW
+                from: value
+    store:
+      type: cov/store

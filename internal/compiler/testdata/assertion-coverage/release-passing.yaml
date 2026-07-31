@@ -1,0 +1,14 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: assertion-coverage-ok-release
+  environment: local
+  version: "1.0.0"
+spec:
+  aggregate: assertion-coverage-ok-app
+  manifest: assertion-coverage-manifest
+  boundaries:
+    cluster:
+      directory: ./dist/cluster
+      components:
+        svc: {}

@@ -88,7 +88,11 @@ type CatalogLookup struct {
 // slice; RunGuards appends them in call order without re-sorting, so the
 // returned violations are grouped by guard:
 //
-//  1. Uses-socket validation — socket names must exist in usesSchema.
+//  1. Uses-socket validation — socket names must exist in usesSchema, across
+//     every surface that can author a `uses` block: a component instance's own,
+//     a per-component attachment's, a subsystem-wide attachment's, a Release
+//     boundary-wide attachment's, and a Release boundary-component
+//     attachment's.
 //  2. Self-inject validation — allowlist membership and delivery-key collision.
 //  3. Inject key validation — inject from-keys must reference target's provides.
 //  4. Release feature merge — type agreement on dual-declared features.
@@ -126,7 +130,7 @@ type CatalogLookup struct {
 // required CatalogLookup function is nil.
 func RunGuards(na types.NormalizedAggregate, release *types.Release, catalog CatalogLookup, boundaryInfra map[string]*BoundaryInfra, parameters map[string]any) []*ResolverError {
 	var errs []*ResolverError
-	errs = append(errs, guardUsesSocket(na, catalog)...)
+	errs = append(errs, guardUsesSocket(na, release, catalog)...)
 	errs = append(errs, guardReleaseUsesSocket(na, release, catalog)...)
 	errs = append(errs, guardSelfInject(na, catalog)...)
 	errs = append(errs, guardInjectKeys(na, catalog)...)

@@ -12,8 +12,9 @@ import (
 // boundary context by component instance name; the keying contract is enforced
 // by WireBoundaryInfra returning a map keyed by the leaf component name.
 //
-// A component name appearing in more than one boundary subtree resolves to
-// last-write-wins under the OrderedMap iteration order of Release.spec.boundaries.
+// A component belongs to exactly one boundary — a name declared in more than one
+// is rejected at Release load — so the keying is unambiguous by construction and
+// no per-name arbitration happens here.
 //
 // Annotations carry the full cascaded result: parent boundary annotations
 // merged with the current boundary's own annotations, then merged with the
@@ -82,10 +83,9 @@ type BoundaryInfra struct {
 //   - Nested boundaries are recursed with the cascaded annotations as the
 //     inherited input.
 //
-// Components may appear at any depth in the boundary tree. A component name
-// that appears at more than one boundary resolves to last-write-wins under
-// the OrderedMap iteration order of the parent boundary's components map and
-// the recursive descent order.
+// Components may appear at any depth in the boundary tree, but each name appears
+// at exactly one boundary: a name declared in more than one is rejected at
+// Release load, so the walk never overwrites a perComponent entry.
 //
 // Returns (nil, nil) when release is nil.
 func WireBoundaryInfra(nr types.NormalizedRelease) (map[string]*BoundaryInfra, map[string]types.OrderedMap[string]) {

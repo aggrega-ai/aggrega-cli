@@ -1,0 +1,24 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: cov-app-contrib-subsystem
+  version: "1.0.0"
+spec:
+  subsystems:
+    svc:
+      features:
+        subsysfeat:
+          type: cov/secret-value
+          uses:
+            bogus-subsystem-socket:
+              link:
+                target: store
+      components:
+        consumer:
+          type: cov/consumer
+          uses:
+            databases:
+              main:
+                target: store
+        store:
+          type: cov/store

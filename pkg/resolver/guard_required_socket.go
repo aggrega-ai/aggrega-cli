@@ -57,24 +57,55 @@ func guardRequiredUsesSockets(na types.NormalizedAggregate, release *types.Relea
 			continue
 		}
 
-		// Iterate in author order from the catalog entity (UsesSchema is OrderedMap).
-		for socketName, entry := range comp.Spec.UsesSchema.All() {
-			if !entry.Required {
-				continue
-			}
+		populated := map[string]bool{}
+		for socketName := range comp.Spec.UsesSchema.All() {
 			if socketIsPopulated(pair.inst.Uses, socketName) {
+				populated[socketName] = true
 				continue
 			}
 			if _, bound := releaseBound[releaseSocketKey{node: pair.name, socket: socketName}]; bound {
-				continue
+				populated[socketName] = true
 			}
-			errs = append(errs, &ResolverError{
-				Entity:  fmt.Sprintf("Component %q (instance %q)", comp.Metadata.Name, pair.name),
-				Field:   fmt.Sprintf("%s.uses[%q]", componentFieldPath(pair.subsystemPath, pair.name, pair.synthesized), socketName),
-				Message: fmt.Sprintf("required uses socket %q has no entries in component %q", socketName, pair.name),
-				Err:     ErrMissingRequiredSocket,
-			})
 		}
+		errs = append(errs, ValidateRequiredSockets(
+			comp, pair.name,
+			componentFieldPath(pair.subsystemPath, pair.name, pair.synthesized),
+			populated,
+		)...)
+	}
+	return errs
+}
+
+// ValidateRequiredSockets reports every socket comp's usesSchema declares
+// `required: true` that populated does not mark as bound, one
+// ErrMissingRequiredSocket per unbound socket. instanceName identifies the
+// instance in the diagnostic and componentField is its authoring locator.
+//
+// The rule is the same wherever it is asked; only the evidence for "bound"
+// differs by the stage that asks. Before flattening, the evidence is the two
+// authored surfaces that can bind a socket — the component's own `uses` and the
+// Release's per-edge `uses`. After flattening, for a component that exists only
+// then, the evidence is the resolved edge set, which is the same answer arrived at
+// downstream. Exported so both stages ask through one implementation rather than
+// two that agree until one is edited.
+//
+// Iteration is the catalog entity's author order (usesSchema is ordered), so the
+// emitted set is byte-identical across runs of the same input.
+func ValidateRequiredSockets(comp types.Component, instanceName, componentField string, populated map[string]bool) []*ResolverError {
+	if comp.Spec.UsesSchema.Len() == 0 {
+		return nil
+	}
+	var errs []*ResolverError
+	for socketName, entry := range comp.Spec.UsesSchema.All() {
+		if !entry.Required || populated[socketName] {
+			continue
+		}
+		errs = append(errs, &ResolverError{
+			Entity:  fmt.Sprintf("Component %q (instance %q)", comp.Metadata.Name, instanceName),
+			Field:   fmt.Sprintf("%s.uses[%q]", componentField, socketName),
+			Message: fmt.Sprintf("required uses socket %q has no entries in component %q", socketName, instanceName),
+			Err:     ErrMissingRequiredSocket,
+		})
 	}
 	return errs
 }

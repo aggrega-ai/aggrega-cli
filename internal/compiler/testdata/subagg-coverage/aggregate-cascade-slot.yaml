@@ -1,0 +1,31 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: cov-app-cascade-slot
+  version: "1.0.0"
+spec:
+  subsystems:
+    svc:
+      features:
+        # One attachment contributed at the subsystem scope, landing on both
+        # components below. Under `cov/consumer` the name `root_password` binds a
+        # declared slot whose empty inject allowlist reserves delivery to the
+        # Recipe; under `cov/store`, which declares no featuresSchema, the same
+        # name is a free attachment and the same inject block is legal. The shape
+        # of a contributed fill is therefore a question about the pair of the fill
+        # and the consumer, not about the block on its own.
+        root_password:
+          type: cov/secret-value
+          inject:
+            env:
+              - in: PW
+                from: value
+      components:
+        consumer:
+          type: cov/consumer
+          uses:
+            databases:
+              main:
+                target: store
+        store:
+          type: cov/store

@@ -143,6 +143,18 @@ var (
 	// Surfaced at Step 1a.
 	ErrParameterContractViolation = errors.New("parameter contract violated")
 
+	// ErrDuplicateBoundaryComponent wraps a Release that declares the same
+	// component name in more than one boundary of its boundary tree. The two
+	// declarations are not merged and not ranked: a component's boundary context
+	// (output directory, sub-directory, sync wave, annotations, boundary infra)
+	// and its per-edge `uses` surface are read by separate walks that resolve a
+	// duplicated name to different declarations, so one node would take its
+	// output location from one declaration and its per-edge configuration from
+	// another. Rejected at Release load rather than resolved silently — the
+	// diagnostic names both declaration sites so the author can delete the one
+	// they did not mean.
+	ErrDuplicateBoundaryComponent = errors.New("component declared in more than one boundary: declare each component in exactly one boundary")
+
 	// ErrUnnormalizedRelease fires at the resolve entry when a Release arrives
 	// with a non-empty top-level components surface AND a synthesized `default`
 	// boundary — an impossible state for a Release born through the normalization

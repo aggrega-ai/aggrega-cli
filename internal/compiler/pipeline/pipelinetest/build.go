@@ -32,9 +32,12 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/topology"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
@@ -96,12 +99,45 @@ func BuildE(t *testing.T, in Input) (*pipeline.Result, error) {
 	return compile(in)
 }
 
-// compile is the shared core of Build and BuildE. It loads the catalog,
-// derives the Aggregate and Manifest from the Release's spec pointers (exactly
-// as the CLI build does), and runs the real pipeline with the recipe-
-// resolution verifier on. Returns the first error encountered; the two
-// exported entry points choose whether to fail the test or surface it.
-func compile(in Input) (*pipeline.Result, error) {
+// Tier4E runs Steps 1-4 over the same workspace and the same loaded inputs Build
+// compiles, through pipeline.RunTier4Pipeline — the entry point the validation
+// surfaces use (`aggrega validate --release`, the machine-readable tool surface,
+// and the editor daemon all reach it through one semantic-validation core). It is
+// the sibling of BuildE for caller-coverage tests: a check whose inputs are
+// complete by Step 4 must produce the same verdict on both entry points, and the
+// only way to assert that is to run one fixture through both.
+//
+// It deliberately shares loadInputs with the build path, so the two verdicts
+// cannot differ because the harness fed them different documents.
+func Tier4E(t *testing.T, in Input) (*pipeline.Tier4Result, error) {
+	t.Helper()
+	loaded, err := loadInputs(in)
+	if err != nil {
+		return nil, err
+	}
+	return pipeline.RunTier4Pipeline(
+		context.Background(),
+		loaded.inputs,
+		loaded.catalogLookup,
+		loaded.subAggregateLoader,
+	)
+}
+
+// loadedWorkspace bundles what both entry points need from one workspace load.
+type loadedWorkspace struct {
+	inputs             pipeline.Inputs
+	catalogLookup      resolver.CatalogLookup
+	recipeLookup       renderer.RecipeLookup
+	subAggregateLoader topology.SubAggregateLoader
+	recipeVerifier     func(*types.Manifest, *types.IRGraph) error
+}
+
+// loadInputs loads the catalog and derives the Aggregate and Manifest from the
+// Release's spec pointers, exactly as the CLI build does, and assembles the
+// pipeline inputs. Shared by every entry point in this package so a build-path
+// and a validation-path run over one fixture are guaranteed to see identical
+// documents.
+func loadInputs(in Input) (*loadedWorkspace, error) {
 	cat, err := catalog.LoadAll("", in.CatalogPaths...)
 	if err != nil {
 		return nil, fmt.Errorf("catalog load: %w", err)
@@ -130,15 +166,12 @@ func compile(in Input) (*pipeline.Result, error) {
 	if err != nil {
 		return nil, fmt.Errorf("load aggregate: %w", err)
 	}
-	aggBytes := aggRes.Bytes
 
-	buildLookup := cat.CatalogLookup()
-	result, err := pipeline.RunPipeline(
-		context.Background(),
-		pipeline.Inputs{
+	return &loadedWorkspace{
+		inputs: pipeline.Inputs{
 			Release:            rel,
 			Manifest:           manifest,
-			AggregateRawBytes:  aggBytes,
+			AggregateRawBytes:  aggRes.Bytes,
 			AggregatePath:      aggRes.Path,
 			MappingLibraries:   cat.MappingLibraries,
 			WorkloadLibraries:  cat.WorkloadLibraries,
@@ -156,13 +189,32 @@ func compile(in Input) (*pipeline.Result, error) {
 			PluginPathLookup: in.PluginPathLookup,
 			WorkspaceConfig:  workspaceconfig.Default(),
 		},
-		buildLookup,
-		cat.RecipeLookupWithManifest(manifest),
-		cat.SubAggregateLoader(),
+		catalogLookup:      cat.CatalogLookup(),
+		recipeLookup:       cat.RecipeLookupWithManifest(manifest),
+		subAggregateLoader: cat.SubAggregateLoader(),
+		recipeVerifier:     cat.VerifyRecipeResolution,
+	}, nil
+}
+
+// compile is the shared core of Build and BuildE. It loads the workspace through
+// loadInputs and runs the real pipeline with the recipe-resolution verifier on.
+// Returns the first error encountered; the two exported entry points choose
+// whether to fail the test or surface it.
+func compile(in Input) (*pipeline.Result, error) {
+	loaded, err := loadInputs(in)
+	if err != nil {
+		return nil, err
+	}
+	result, err := pipeline.RunPipeline(
+		context.Background(),
+		loaded.inputs,
+		loaded.catalogLookup,
+		loaded.recipeLookup,
+		loaded.subAggregateLoader,
 		pipeline.Options{
 			// The build-faithful bit: resolution-completeness ON,
 			// exactly as cmd/aggrega/build.go runs it.
-			RecipeResolutionVerifier: cat.VerifyRecipeResolution,
+			RecipeResolutionVerifier: loaded.recipeVerifier,
 			IncludeTrace:             in.IncludeTrace,
 			TraceUnredacted:          in.TraceUnredacted,
 		},

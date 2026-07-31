@@ -306,21 +306,38 @@ type stepsOneToFourOutput struct {
 	IRGraph       *types.IRGraph
 	FeatureOrder  ir.FeatureOrder
 	Analysis      *analyzer.AnalysisResult
+
+	// AssertionErr carries the first failing Component or Feature assertion, or
+	// nil when every assertion passed. It is produced inside runStepsOneToFour
+	// rather than by each consumer, because the rule's inputs — the finalised IR
+	// graph and the catalog — are complete once the graph is built, so every
+	// caller of Steps 1-4 is entitled to the verdict. What differs per caller is
+	// only how the failure is surfaced: the render path wraps it as a fatal halt,
+	// the validation path returns it as the run error alongside the graph it
+	// already captured.
+	AssertionErr error
 }
 
-// runStepsOneToFour executes Steps 1-4 of the compiler pipeline (resolve,
-// topology, IR finalisation, analyse) and invokes use with the phase outputs
-// while still inside the resolve scope. It routes through ResolveAndFlatten →
+// runStepsOneToFour executes the pre-render phases of the compiler pipeline
+// (resolve, topology, IR finalisation, analyse, and Component / Feature
+// assertion evaluation) and invokes use with the phase outputs while still
+// inside the resolve scope. It routes through ResolveAndFlatten →
 // resolver.ResolveAndUse, so the parameter purge is guaranteed by construction
 // and use runs while the parameter map is live. Used by both RunTier4Pipeline
-// (which discards Step 5) and RunPipeline (which renders from the same outputs).
+// (which renders nothing) and RunPipeline (which renders from the same outputs).
 //
-// Behavior on phase failure: a Step 1-3 failure returns the error without
-// invoking use. A Step 4 (analyzer) error is non-fatal — the structured
+// Every check whose inputs are complete before render lives here rather than on
+// one consumer's path. That is what makes the two entry points agree: a rule
+// placed on the render path alone would let a validation surface report a clean
+// verdict on a document a build rejects.
+//
+// Behavior on phase failure: a resolve, topology or IR failure returns the error
+// without invoking use. An analyzer error is non-fatal — the structured
 // AnalysisResult.Errors slice rides on out.Analysis and use IS invoked, so
 // callers decide whether to treat analyzer errors as fatal (RunPipeline joins
 // them) or as diagnostics (RunTier4Pipeline). This preserves the daemon's
-// Tier-4 contract.
+// Tier-4 contract. An assertion failure likewise rides on out.AssertionErr
+// rather than aborting the callback, so a caller still receives the graph.
 func runStepsOneToFour(
 	ctx context.Context,
 	inputs Inputs,
@@ -391,11 +408,32 @@ func runStepsOneToFour(
 			return err
 		}
 
+		// Component / Feature assertions. The rule reads the finalised IR graph and
+		// the catalog and nothing else, so it belongs here — shared by every caller
+		// of Steps 1-4 — rather than on one consumer's path, where a validation
+		// surface would report a clean verdict on a document the render path
+		// rejects. Skipped when an earlier violation already exists, so the
+		// reported set is the earliest failing class rather than a mixture.
+		if len(analysis.Errors) == 0 {
+			out.AssertionErr = renderer.EvaluateComponentAndFeatureAssertions(graph, catalogLookup)
+		}
+
 		for _, w := range analysis.Warnings {
 			fmt.Fprintf(os.Stderr, "  %s\n", w)
 		}
 		return use(out)
 	})
+}
+
+// wrapAssertionErr gives a Component / Feature assertion failure its user-facing
+// shape. Single-sourced so the render path and the validation path present one
+// failure identically — a diagnostic that reads differently depending on which
+// command surfaced it would suggest two different rules.
+func wrapAssertionErr(err error) error {
+	if err == nil {
+		return nil
+	}
+	return cerrors.Wrap(err, cerrors.DeveloperError, cerrors.SourceLocation{}, "Component/Feature assertions")
 }
 
 // dropCatalogViewInconsistencies returns the guard-violation slice with every
@@ -570,12 +608,16 @@ func ResolveAndFlatten(
 	})
 }
 
-// RunTier4Pipeline executes Steps 1-4 of the compiler pipeline (resolve,
-// topology, IR finalisation, analyse) against caller-supplied inputs.
-// The daemon's runTier4Validation consumes this to surface structured
-// per-violation diagnostics through aggrega/validate without running
-// Step 5 (render), which is expensive and not needed for semantic
-// validation.
+// RunTier4Pipeline executes the pre-render phases of the compiler pipeline
+// (resolve, topology, IR finalisation, analyse, Component / Feature assertions)
+// against caller-supplied inputs. The daemon's runTier4Validation consumes this
+// to surface structured per-violation diagnostics through aggrega/validate
+// without rendering, which is expensive and not needed for semantic validation.
+//
+// It runs every pre-render check the render path runs, because both entry points
+// share one implementation of those phases. A rule reachable from one and not the
+// other would make "this document validates" mean something different from "this
+// document builds".
 //
 // Unlike RunPipeline's first-error-fatal semantic for terminal phases,
 // the returned Tier4Result carries whichever phases completed even when
@@ -592,6 +634,7 @@ func RunTier4Pipeline(
 	subAggregateLoader topology.SubAggregateLoader,
 ) (*Tier4Result, error) {
 	out := &Tier4Result{}
+	var assertionErr error
 	err := runStepsOneToFour(ctx, inputs, catalogLookup, subAggregateLoader, func(stepsOut *stepsOneToFourOutput) error {
 		// Capture the phase outputs inside the resolve scope; the parameter
 		// purge is owned by resolver.ResolveAndUse and fires after this returns.
@@ -599,11 +642,22 @@ func RunTier4Pipeline(
 		// Analysis.Errors, consumed below.
 		out.IRGraph = stepsOut.IRGraph
 		out.Analysis = stepsOut.Analysis
+		assertionErr = stepsOut.AssertionErr
 		if stepsOut.ResolveResult != nil {
 			out.LintAdvisories = stepsOut.ResolveResult.LintAdvisories
 		}
 		return nil
 	})
+
+	// A failing Component or Feature assertion is a fatal verdict on this
+	// document, so it surfaces here as the run error — the same class the render
+	// path halts on, reported by a surface that never renders. The captured
+	// IRGraph and Analysis stay populated: this function's contract is that the
+	// phases which completed are returned even when a later one failed, and the
+	// graph is final before assertions evaluate.
+	if err == nil {
+		err = wrapAssertionErr(assertionErr)
+	}
 
 	// Extract the structured per-violation slice into a uniform shape so
 	// downstream consumers iterate ResolveDiagnostics with one code path
@@ -824,9 +878,9 @@ func RunPipeline(
 			return err
 		}
 
-		// Step 4b: Component / Feature assertions.
-		if err := renderer.EvaluateComponentAndFeatureAssertions(graph, catalogLookup); err != nil {
-			return cerrors.Wrap(err, cerrors.DeveloperError, cerrors.SourceLocation{}, "Component/Feature assertions")
+		// Component / Feature assertions, evaluated in the shared Steps 1-4 core.
+		if err := wrapAssertionErr(stepsOut.AssertionErr); err != nil {
+			return err
 		}
 
 		// Resolution-completeness — every component/feature instance must resolve

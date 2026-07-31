@@ -1,0 +1,15 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: cov-release-unbound-required
+  environment: local
+  version: "1.0.0"
+spec:
+  aggregate: cov-app-unbound-required
+  manifest: cov-manifest
+  boundaries:
+    cluster:
+      directory: ./dist/cluster
+      components:
+        data.consumer: {}
+        data.store: {}

@@ -198,7 +198,7 @@ func TestGuardUsesSocket(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			errs := guardUsesSocket(normalized(t, tt.agg), catalog)
+			errs := guardUsesSocket(normalized(t, tt.agg), nil, catalog)
 			if tt.wantErr {
 				if len(errs) == 0 {
 					t.Fatal("expected errors, got none")
@@ -249,7 +249,7 @@ func TestGuardUsesSocket_DeterministicOrder(t *testing.T) {
 
 	var firstFields []string
 	for i := 0; i < 10; i++ {
-		errs := guardUsesSocket(normalized(t, agg), catalog)
+		errs := guardUsesSocket(normalized(t, agg), nil, catalog)
 		if len(errs) != 3 {
 			t.Fatalf("expected 3 errors, got %d", len(errs))
 		}

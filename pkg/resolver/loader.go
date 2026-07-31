@@ -100,7 +100,76 @@ func LoadReleaseFromBytes(data []byte, path string) (*types.Release, error) {
 	// synthesized `default` boundary at birth, so every downstream consumer sees
 	// the uniform boundary-bearing shape. NormalizeRelease is non-mutating;
 	// return the normalized value it produced.
-	return types.NormalizeRelease(&rel).Release(), nil
+	normalized := types.NormalizeRelease(&rel).Release()
+	if err := rejectDuplicateBoundaryComponents(normalized, path); err != nil {
+		return nil, err
+	}
+	return normalized, nil
+}
+
+// rejectDuplicateBoundaryComponents walks the Release boundary tree and rejects
+// a component name declared at more than one boundary. The rule's inputs are
+// complete the moment the document is parsed — it reads nothing but the Release
+// — so it is enforced here, at load, where every consumer of a Release sits
+// behind it.
+//
+// It exists because the shape has no single meaning. A component's boundary
+// context and its per-edge `uses` surface are read by two separate walks of the
+// same tree, and a duplicated name resolves to a different declaration in each,
+// so a node's output location can come from one declaration while its per-edge
+// configuration comes from another. Halting is what makes that unreachable;
+// ranking the declarations would only pick a winner nobody asked for.
+//
+// The diagnostic names BOTH declaration sites: which one to keep is the author's
+// call, and a message that named only the second would send them hunting through
+// the tree for the first. Walk order is author order, own components before
+// nested boundaries, so "first" and "second" are stable across runs and the
+// message is byte-identical for the same input. First-violation-halt matches the
+// document-shape rejections on the Manifest load path.
+func rejectDuplicateBoundaryComponents(rel *types.Release, path string) error {
+	if rel == nil {
+		return nil
+	}
+	entity := "Release"
+	if rel.Metadata.Name != "" {
+		entity = fmt.Sprintf("Release %s", rel.Metadata.Name)
+	}
+	// firstDeclaredAt maps a component name to the boundary path that declared
+	// it first, so the second declaration can name both sites.
+	firstDeclaredAt := map[string]string{}
+	var walk func(boundaryPath string, b types.Boundary) error
+	walk = func(boundaryPath string, b types.Boundary) error {
+		for name := range b.Components.All() {
+			if prior, dup := firstDeclaredAt[name]; dup {
+				return &ResolverError{
+					Entity: entity,
+					Field:  releaseComponentFieldPath(boundaryPath, name, b.Synthesized),
+					Message: fmt.Sprintf(
+						"component %q is declared in boundary %q and again in boundary %q (source %s); a component belongs to exactly one boundary — remove whichever declaration is not intended",
+						name, prior, boundaryPath, path,
+					),
+					Err: ErrDuplicateBoundaryComponent,
+				}
+			}
+			firstDeclaredAt[name] = boundaryPath
+		}
+		for childName, child := range b.Boundaries.All() {
+			childPath := childName
+			if boundaryPath != "" {
+				childPath = boundaryPath + "/" + childName
+			}
+			if err := walk(childPath, child); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	for name, b := range rel.Spec.Boundaries.All() {
+		if err := walk(name, b); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // LoadManifest reads and unmarshals a Manifest YAML file. The loader

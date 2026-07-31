@@ -1,0 +1,23 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: cov-consumer-recipe
+  version: "1.0.0"
+spec:
+  capability: compose
+  implements: cov/consumer
+  provides:
+    host: "{{ .context.instance_id }}"
+  workload: |
+    apiVersion: aggrega.ai/v1alpha1
+    kind: Workload
+    containers:
+      main:
+        image: consumer:1.0
+        ports:
+          p: 8080
+    services:
+      consumer:
+        type: ClusterIP
+        ports:
+          p: 8080

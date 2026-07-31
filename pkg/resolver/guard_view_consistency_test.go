@@ -86,7 +86,7 @@ func TestGuardUsesSocket_ResolvedCatalogRefAbsentHalts(t *testing.T) {
 	// socket — guardUsesSocket reaches ValidateUsesAgainstSchema, which on a
 	// missing catalog entity now halts for a bare ref.
 	agg := aggWithEdge("databases", "main", types.OrderedMap[any]{})
-	requireViewInconsistency(t, guardUsesSocket(normalized(t, agg), notFoundCatalog()))
+	requireViewInconsistency(t, guardUsesSocket(normalized(t, agg), nil, notFoundCatalog()))
 }
 
 func TestGuardReleaseUsesSocket_ResolvedCatalogRefAbsentHalts(t *testing.T) {

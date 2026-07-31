@@ -1,0 +1,14 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Manifest
+metadata:
+  name: cov-manifest
+  version: "1.0.0"
+spec:
+  mappings:
+    components:
+      type:
+        cov/consumer: cov-consumer-recipe:1.0.0
+        cov/store: cov-store-recipe:1.0.0
+    features:
+      type:
+        cov/secret-value: cov-secret-value-fr:1.0.0

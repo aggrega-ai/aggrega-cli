@@ -1,0 +1,19 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: cov-release-relsocket
+  environment: local
+  version: "1.0.0"
+spec:
+  aggregate: cov-app-relsocket
+  manifest: cov-manifest
+  boundaries:
+    cluster:
+      directory: ./dist/cluster
+      components:
+        data.consumer:
+          uses:
+            nonexistent-socket:
+              link:
+                target: data.store
+        data.store: {}

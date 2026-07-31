@@ -1,0 +1,12 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: assertion-coverage-ok-app
+  version: "1.0.0"
+spec:
+  components:
+    # tier "gold" satisfies the Component's `tier-must-be-gold` assertion.
+    svc:
+      type: core/asserted
+      values:
+        tier: gold

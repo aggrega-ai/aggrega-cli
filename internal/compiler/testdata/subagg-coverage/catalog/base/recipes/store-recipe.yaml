@@ -1,0 +1,24 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: cov-store-recipe
+  version: "1.0.0"
+spec:
+  capability: compose
+  implements: cov/store
+  provides:
+    host: "{{ .context.instance_id }}"
+    port: 5432
+  workload: |
+    apiVersion: aggrega.ai/v1alpha1
+    kind: Workload
+    containers:
+      main:
+        image: store:1.0
+        ports:
+          p: 5432
+    services:
+      store:
+        type: ClusterIP
+        ports:
+          p: 5432

@@ -670,6 +670,12 @@ func BuildContext(ctx context.Context, cfg BuildConfig) (*TopologyResult, error)
 // sub-aggregate's parameter context, the same as root components evaluate
 // against theirs. Returns violations in flat.Nodes author order then edge
 // order — deterministic.
+//
+// The rules asked here are the SAME rules Step 1 asks, reached through the
+// resolver's exported validators rather than restated, because the only thing
+// that differs for a sub-aggregate component is where its declaration is read
+// from. A rule asked of root components and not of these would make the coverage
+// of a check depend on how deep the author nested the component.
 func guardSubAggregateNodes(flat *flattenResult, edges []NormalizedEdge, cfg BuildConfig) []*resolver.ResolverError {
 	catalog := cfg.CatalogLookup
 	if catalog.Component == nil {
@@ -678,6 +684,28 @@ func guardSubAggregateNodes(flat *flattenResult, edges []NormalizedEdge, cfg Bui
 	entity := "Aggregate"
 	if cfg.ResolveResult != nil && cfg.ResolveResult.Aggregate != nil {
 		entity = fmt.Sprintf("Aggregate %s", cfg.ResolveResult.Aggregate.Metadata.Name)
+	}
+	var release *types.Release
+	if cfg.ResolveResult != nil {
+		release = cfg.ResolveResult.Release
+	}
+
+	// Sockets each node ends up with an edge on, keyed (node, socket). Read from
+	// the resolved edge set, which is the authoritative answer to "is this socket
+	// bound" after the Aggregate's own wiring, the Release's edge creation and
+	// module flattening have all been applied. Feature-projected edges are
+	// excluded: their socket names belong to the FEATURE's socket set, a separate
+	// set on a separate entity, so an attachment can never satisfy a Component's
+	// socket.
+	boundSockets := map[string]map[string]bool{}
+	for _, e := range edges {
+		if e.OriginFeature != "" {
+			continue
+		}
+		if boundSockets[e.Source] == nil {
+			boundSockets[e.Source] = map[string]bool{}
+		}
+		boundSockets[e.Source][e.Socket] = true
 	}
 
 	var errs []*resolver.ResolverError
@@ -695,7 +723,8 @@ func guardSubAggregateNodes(flat *flattenResult, edges []NormalizedEdge, cfg Bui
 		// relative-path type (a local file with no catalog entity) is a legitimate
 		// skip (classifier returns nil). A resilient-inspection caller (serve)
 		// tolerates the finding via the Step-1 sentinel filter; the build halts.
-		if _, found := catalog.Component(node.ComponentType); !found {
+		catComp, found := catalog.Component(node.ComponentType)
+		if !found {
 			if verr := resolver.GuardEntityViewInconsistency(entity, fmt.Sprintf(".%s", nodeID), node.ComponentType); verr != nil {
 				errs = append(errs, verr)
 			}
@@ -706,6 +735,22 @@ func guardSubAggregateNodes(flat *flattenResult, edges []NormalizedEdge, cfg Bui
 		if node.Uses.Len() > 0 {
 			errs = append(errs, resolver.ValidateUsesAgainstSchema(
 				entity, fmt.Sprintf(".%s.uses", nodeID), node.Uses, node.ComponentType, catalog)...)
+		}
+
+		// Required-socket population, read from the resolved edge set. A socket the
+		// module leaves unbound and no Release wires is a missing required socket
+		// exactly as it is for a root component.
+		errs = append(errs, resolver.ValidateRequiredSockets(
+			catComp, nodeID, fmt.Sprintf(".%s", nodeID), boundSockets[nodeID])...)
+
+		// Attachment slot shape over the block the module's component authored.
+		// The attachments live on the per-node slice flattening collected, not on
+		// the node, so they are re-projected into the authored map shape the
+		// validator reads.
+		if shape, ok := resolver.CompileAttachmentSlotShape(catComp); ok {
+			errs = append(errs, shape.Validate(
+				authoredAttachments(flat.FeatureAttachments[nodeID]),
+				entity, fmt.Sprintf(".%s", nodeID))...)
 		}
 
 		// Component values — validated against the sub-aggregate's own resolved
@@ -747,6 +792,97 @@ func guardSubAggregateNodes(flat *flattenResult, edges []NormalizedEdge, cfg Bui
 			errs = append(errs, resolver.ValidatePillarConformance(
 				compiled, "infra", e.Infra, src.ResolvedParameters, entity,
 				fmt.Sprintf(".%s.uses[%q][%q]", e.Source, e.Socket, e.Alias), "the socket infraSchema")...)
+		}
+	}
+
+	errs = append(errs, guardSubAggregateReleaseEdges(flat, edges, release, catalog)...)
+	return errs
+}
+
+// authoredAttachments re-projects the per-node attachment slice flattening
+// collected back into the author-ordered map shape the slot-shape validator
+// reads. Flattening splits a component's `features` block into a slice so the IR
+// cascade can walk tiers; the shape rule is asked of the block as authored, so it
+// is reassembled here rather than the validator being taught a second input
+// shape.
+func authoredAttachments(attachments []FeatureAttachment) types.OrderedMap[types.FeatureInstance] {
+	out := types.OrderedMap[types.FeatureInstance]{}
+	for _, a := range attachments {
+		out.Set(a.InstanceName, a.Feature)
+	}
+	return out
+}
+
+// guardSubAggregateReleaseEdges validates the Release's per-edge `uses` surface
+// for consuming nodes that exist only after sub-aggregate flattening. Step 1
+// validates the same surface for every node whose component type the resolver can
+// see, and skips these — the type is not knowable before the module is loaded — so
+// without this pass a Release could name a socket no usesSchema declares, or set
+// out-of-range per-edge infra, on a sub-aggregate node and be accepted in silence.
+//
+// Two rules, matching the two Step-1 guards this closes the coverage boundary of:
+//
+//   - the socket must exist in the consuming component's usesSchema;
+//   - `infra` must conform to that socket's infraSchema.
+//
+// The infra rule is applied only to an entry that reached NO edge. An entry that
+// did reach one had its infra merged onto that edge, and the merged result is
+// validated by the per-edge walk above — validating both would report one
+// authoring mistake twice. The match predicate below is the same
+// (source, socket, alias) triple the Release edge pass keys its merge on; the two
+// are a deliberate near-duplicate because unifying them would mean handing the
+// merge pass a validation concern, and they must change together — a divergence
+// would either double-report an entry or leave one unvalidated.
+//
+// Walk order is the shared Release-boundary walk's, so violations are
+// deterministic across runs.
+func guardSubAggregateReleaseEdges(
+	flat *flattenResult,
+	edges []NormalizedEdge,
+	release *types.Release,
+	catalog resolver.CatalogLookup,
+) []*resolver.ResolverError {
+	if release == nil {
+		return nil
+	}
+	entity := fmt.Sprintf("Release %s", release.Metadata.Name)
+	reachedEdge := func(nodeID, socket, alias string) bool {
+		for i := range edges {
+			if edges[i].Source == nodeID && edges[i].Socket == socket && edges[i].Alias == alias {
+				return true
+			}
+		}
+		return false
+	}
+
+	var errs []*resolver.ResolverError
+	for _, ref := range resolver.ReleaseEdgeEntries(release) {
+		node, isNode := flat.Nodes.Get(ref.NodeID)
+		if !isNode || node.SourceAggregate == "" {
+			continue // absent, or a root/subsystem node Step 1 already validated
+		}
+		catComp, found := catalog.Component(node.ComponentType)
+		if !found {
+			continue // classified once by the per-node view-inconsistency check
+		}
+		field := fmt.Sprintf(".%s.uses[%q][%q]", ref.NodeID, ref.Socket, ref.Alias)
+		if _, declared := catComp.Spec.UsesSchema.Get(ref.Socket); !declared {
+			errs = append(errs, &resolver.ResolverError{
+				Entity: entity,
+				Field:  field,
+				Message: fmt.Sprintf("socket %q not defined in component type %q usesSchema (valid: %v)",
+					ref.Socket, node.ComponentType, catComp.Spec.UsesSchema.Keys()),
+				Err: resolver.ErrUnknownUsesSocket,
+			})
+			continue
+		}
+		if ref.Entry.Infra.Len() == 0 || reachedEdge(ref.NodeID, ref.Socket, ref.Alias) {
+			continue
+		}
+		if compiled, ok := resolver.CompileSocketPillarSchema(catalog, node.ComponentType, ref.Socket, "infra"); ok {
+			errs = append(errs, resolver.ValidatePillarConformance(
+				compiled, "infra", ref.Entry.Infra, node.ResolvedParameters, entity,
+				field, "the socket infraSchema")...)
 		}
 	}
 	return errs
@@ -794,18 +930,17 @@ func boundaryFeatureUses(boundaries types.OrderedMap[types.Boundary], boundaryPa
 // outermost level whose Components carry a non-empty Uses for nodeID wins.
 // Returns false when no Release component-edge surface applies to the node.
 //
-// Declaring one component at two levels of a single chain is a shape nothing
-// rejects: the Release schema constrains no such uniqueness and no load-time or
-// resolve-time check reads it, so single-level declaration is a convention
-// operators follow rather than a guarantee. Under that shape this reader and the
-// boundary-context walk that produced boundaryPath resolve to different
-// declarations — the boundary context comes from the innermost declaration (a
-// per-component last-write-wins over a depth-first descent) while the per-edge
-// surface here comes from the outermost — so a component's boundary context and
-// its per-edge infra can originate at different levels. Reconciling the two
-// readers, or rejecting the shape outright, is an open question; the outermost
-// rule is stated here so a reader does not infer a uniqueness guarantee that is
-// not enforced anywhere.
+// A component belongs to exactly one boundary, so at most one level of the chain
+// can declare nodeID at all and the outermost rule never has to arbitrate. That
+// is enforced at Release load, which rejects a name declared in more than one
+// boundary — and the enforcement is what this reader relies on. Were the shape
+// admitted, this walk and the boundary-context walk that produced boundaryPath
+// would resolve one node to different declarations: the boundary context takes
+// the innermost declaration (a per-component last-write-wins over a depth-first
+// descent) while the per-edge surface here takes the outermost that carries a
+// non-empty uses, so a node's output location and its per-edge infra could
+// originate at different levels. Do not relax the load-time rejection without
+// reconciling the two walks first.
 func releaseComponentUses(boundaries types.OrderedMap[types.Boundary], boundaryPath, nodeID string) (types.OrderedMap[types.OrderedMap[types.ReleaseUsesEntry]], bool) {
 	parts := splitScopePath(boundaryPath)
 	current := boundaries

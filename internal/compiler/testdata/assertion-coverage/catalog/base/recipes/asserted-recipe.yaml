@@ -1,0 +1,25 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: asserted-recipe
+  version: "1.0.0"
+spec:
+  capability: compose
+  implements: core/asserted
+  provides:
+    host: "{{ .context.instance_id }}"
+  workload: |
+    apiVersion: aggrega.ai/v1alpha1
+    kind: Workload
+    containers:
+      main:
+        image: asserted:1.0
+        variables:
+          TIER: '{{ .values.tier }}'
+        ports:
+          p: 8080
+    services:
+      asserted:
+        type: ClusterIP
+        ports:
+          p: 8080

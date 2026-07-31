@@ -1,0 +1,37 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: uses-edge-config-dup-boundary-release
+  environment: local
+  version: "1.0.0"
+spec:
+  aggregate: uses-edge-config-app
+  manifest: uses-edge-config-manifest
+  boundaries:
+    cluster:
+      directory: ./dist/outer
+      components:
+        # `api` is declared here AND again in the nested `inner` boundary below.
+        # The two declarations carry different output directories and different
+        # per-edge `infra`, so the two consumers of this shape resolve to
+        # different declarations for one node.
+        api:
+          uses:
+            databases:
+              main:
+                infra:
+                  pool_size: 50
+                  tls_mode: mutual
+        db: {}
+        redis: {}
+      boundaries:
+        inner:
+          directory: ./dist/inner
+          components:
+            api:
+              uses:
+                databases:
+                  main:
+                    infra:
+                      pool_size: 77
+                      tls_mode: disable

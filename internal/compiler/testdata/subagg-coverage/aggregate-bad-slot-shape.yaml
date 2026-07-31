@@ -1,0 +1,9 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: cov-app-bad-slot-shape
+  version: "1.0.0"
+spec:
+  aggregates:
+    data:
+      type: cov-mod-bad-slot-shape

@@ -1,0 +1,20 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: cov-release-relinfra
+  environment: local
+  version: "1.0.0"
+spec:
+  aggregate: cov-app-relinfra
+  manifest: cov-manifest
+  boundaries:
+    cluster:
+      directory: ./dist/cluster
+      components:
+        data.consumer:
+          uses:
+            caches:
+              spare:
+                infra:
+                  pool_size: 9999
+        data.store: {}

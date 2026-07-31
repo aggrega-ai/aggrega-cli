@@ -68,15 +68,15 @@ func guardAttachmentSlotShape(na types.NormalizedAggregate, catalog CatalogLooku
 	// validator built from the other's slot set. Mirrors the compiled-schema
 	// cache in the sibling conformance guard.
 	type cached struct {
-		v  jsonvalidator.Validator
+		v  AttachmentSlotShape
 		ok bool
 	}
 	validators := map[string]cached{}
-	validatorFor := func(typeURI string, comp types.Component) (jsonvalidator.Validator, bool) {
+	validatorFor := func(typeURI string, comp types.Component) (AttachmentSlotShape, bool) {
 		if c, seen := validators[typeURI]; seen {
 			return c.v, c.ok
 		}
-		v, ok := slotShapeValidator(comp.Spec.FeaturesSchema)
+		v, ok := CompileAttachmentSlotShape(comp)
 		validators[typeURI] = cached{v: v, ok: ok}
 		return v, ok
 	}
@@ -101,16 +101,29 @@ func guardAttachmentSlotShape(na types.NormalizedAggregate, catalog CatalogLooku
 		if !ok {
 			continue
 		}
-		errs = append(errs, attachmentShapeErrors(v, p.inst.Features, entity, componentField)...)
+		errs = append(errs, v.Validate(p.inst.Features, entity, componentField)...)
 	}
 	sortResolverErrors(errs)
 	return errs
 }
 
-// slotShapeValidator compiles a validator for one entity's slot declarations,
-// wrapping the projected schema one level deep under the authored keyword so
-// findings' field paths lead with it. Returns ok=false when the entity declares
-// no slots, or when the projection does not compile.
+// AttachmentSlotShape is a compiled validator for one Component's attachment-slot
+// declarations. Construct it with [CompileAttachmentSlotShape] and apply it with
+// [AttachmentSlotShape.Validate].
+//
+// It is a value, not a function, because construction resolves the whole
+// projected schema eagerly while many component instances share one type — so a
+// caller walking instances memoises the value per type string rather than
+// recompiling. The compiled validator is immutable and safe to reuse across
+// instances.
+type AttachmentSlotShape struct {
+	v jsonvalidator.Validator
+}
+
+// CompileAttachmentSlotShape compiles the shape comp's featuresSchema projects,
+// wrapping it one level deep under the authored keyword so findings' field paths
+// lead with it. Returns ok=false when the entity declares no slots, or when the
+// projection does not compile.
 //
 // A projection that cannot compile is an internal defect in the generator, not
 // an authoring error, so it must not be reported against the author's document —
@@ -118,10 +131,16 @@ func guardAttachmentSlotShape(na types.NormalizedAggregate, catalog CatalogLooku
 // than announcing itself. The projection's compilability is therefore pinned by
 // a test beside the generator, which is where a regression can be caught before
 // it reaches a build.
-func slotShapeValidator(slots types.OrderedMap[types.AttachmentSlot]) (jsonvalidator.Validator, bool) {
-	projected := validator.GenerateBaseAttachmentsJSONSchema(slots)
+//
+// Exported so the shape of an authored attachment block is validated through one
+// implementation wherever the block is found: on a component instance the
+// Aggregate declares, and on a component that exists only after sub-aggregate
+// flattening. The question is identical; only where the block is read from
+// differs.
+func CompileAttachmentSlotShape(comp types.Component) (AttachmentSlotShape, bool) {
+	projected := validator.GenerateBaseAttachmentsJSONSchema(comp.Spec.FeaturesSchema)
 	if projected == nil {
-		return nil, false
+		return AttachmentSlotShape{}, false
 	}
 	wrapper := &libschema.Schema{
 		Type:       "object",
@@ -129,9 +148,27 @@ func slotShapeValidator(slots types.OrderedMap[types.AttachmentSlot]) (jsonvalid
 	}
 	v, err := jsonvalidator.New(wrapper)
 	if err != nil {
-		return nil, false
+		return AttachmentSlotShape{}, false
 	}
-	return v, true
+	return AttachmentSlotShape{v: v}, true
+}
+
+// Validate checks one authored attachment block against the compiled slot shape,
+// emitting one ErrAttachmentSlotShape per violation. entity and componentField
+// attribute each finding; componentField leads the field locator so a diagnostic
+// reads as the authoring site.
+//
+// PRESENCE IS NOT THIS VALIDATOR'S QUESTION — whether a slot declared
+// `required: true` ends up bound is asked of a node's post-cascade attachment
+// set, never of an authored block.
+func (s AttachmentSlotShape) Validate(
+	authored types.OrderedMap[types.FeatureInstance],
+	entity, componentField string,
+) []*ResolverError {
+	if s.v == nil || authored.Len() == 0 {
+		return nil
+	}
+	return attachmentShapeErrors(s.v, authored, entity, componentField)
 }
 
 // attachmentShapeErrors validates one authored attachment block and maps the
