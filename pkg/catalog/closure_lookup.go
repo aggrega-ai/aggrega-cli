@@ -1003,7 +1003,7 @@ func tier2ReadVerified(workspaceRoot, cacheDir, uri, expectedDigest, expectedMan
 	}
 	bytes, res, ok := tier2ReadSlotUnverified(workspaceRoot, cacheDir, uri)
 	if !ok {
-		return nil, fmt.Errorf("catalog: %s not present in the content cache; run `aggrega pull` first: %w", uri, oci.ErrFetchNotFound)
+		return nil, fmt.Errorf("catalog: %s not present in the content cache; run `aggrega pull --release <release>` first: %w", uri, oci.ErrFetchNotFound)
 	}
 	// Manifest authority. Every registry pull persists the OCI manifest beside the
 	// content; it is the root the content is verified against. Verify the manifest
@@ -1036,7 +1036,7 @@ func tier2ReadVerified(workspaceRoot, cacheDir, uri, expectedDigest, expectedMan
 			return nil, fmt.Errorf("catalog: cached %s: %w", uri, err)
 		}
 	case errors.Is(mrerr, oci.ErrFetchNotFound):
-		return nil, fmt.Errorf("catalog: %s cached without its OCI manifest; run `aggrega pull` first: %w", uri, oci.ErrFetchNotFound)
+		return nil, fmt.Errorf("catalog: %s cached without its OCI manifest; run `aggrega pull --release <release>` first: %w", uri, oci.ErrFetchNotFound)
 	default:
 		return nil, fmt.Errorf("catalog: read cached manifest for %s: %w", uri, mrerr)
 	}

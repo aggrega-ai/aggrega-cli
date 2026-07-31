@@ -45,7 +45,7 @@ import (
 // It belongs to the fetch-error family: the source-resolution error classifier
 // routes it into the same category as a remote-acquisition fault, since an
 // offline refusal is, from the user's perspective, an inability to fetch.
-var ErrOfflineEgress = errors.New("egress: network access refused because the workspace is offline; remediation: unset workspace.offline (or AGGREGA_OFFLINE) or run `aggrega pull` from a connected environment to populate the cache")
+var ErrOfflineEgress = errors.New("egress: network access refused because the workspace is offline; remediation: unset workspace.offline (or AGGREGA_OFFLINE) or run `aggrega pull --release <release>` from a connected environment to populate the cache")
 
 // RoundTripper returns the HTTP transport for network egress, derived from the
 // resolved workspace configuration. When the configuration is offline it returns

@@ -50,7 +50,7 @@ func ResolveVerdictPluginFromCache(sources VerdictPluginTierSources, pluginFromC
 	}
 	if !ok {
 		return pluginpath.ResolvedPlugin{}, fmt.Errorf("resolve verdict-socket plugin %q: %s: %w",
-			uri, "not present in the content cache; run `aggrega pull` first", oci.ErrFetchNotFound)
+			uri, "not present in the content cache; run `aggrega pull --release <release>` first", oci.ErrFetchNotFound)
 	}
 	artifactRef := entity.ArtifactReference()
 	// A fresh resolver keyed only by the manifest-derived .wasm digest: the pin

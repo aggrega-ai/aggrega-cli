@@ -141,7 +141,7 @@ func LookupAndExtract(lf *lockfile.Lockfile, kind, url, chart, version, workspac
 		}
 	case os.IsNotExist(mrerr):
 		if kindExpectsManifest(kind) {
-			return "", fmt.Errorf("sourcecache: %s cached without its OCI manifest; run `aggrega pull` first: %w", blobPath, ErrFetchNotFound)
+			return "", fmt.Errorf("sourcecache: %s cached without its OCI manifest; run `aggrega pull --release <release>` first: %w", blobPath, ErrFetchNotFound)
 		}
 	default:
 		return "", fmt.Errorf("sourcecache: read manifest for %s: %w", blobPath, mrerr)

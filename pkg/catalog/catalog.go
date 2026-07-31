@@ -1656,7 +1656,7 @@ func (c *Catalog) SubAggregateLoader() topology.SubAggregateLoader {
 	return func(typeName string, parentParams map[string]any) (*types.Aggregate, string, map[string]any, error) {
 		key, ok, _ := c.resolveAggregateKey(typeName)
 		if !ok {
-			return nil, "", nil, cerrors.New(cerrors.CatalogError, cerrors.SourceLocation{}, fmt.Sprintf("sub-aggregate %q not found in catalog (check the aggregates-block reference names a known Aggregate type, or run `aggrega pull` if it must be fetched)", typeName), nil, nil)
+			return nil, "", nil, cerrors.New(cerrors.CatalogError, cerrors.SourceLocation{}, fmt.Sprintf("sub-aggregate %q not found in catalog (check the aggregates-block reference names a known Aggregate type, or run `aggrega pull --release <release>` if it must be fetched)", typeName), nil, nil)
 		}
 		agg := c.Aggregates[key]
 		// The return path (TopologyNode provenance) always comes from

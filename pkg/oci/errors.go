@@ -120,9 +120,9 @@ func RemediationFor(sentinel error, registryHost string) string {
 	}
 	switch {
 	case errors.Is(sentinel, ErrFetchNotFound):
-		return "remediation: verify the URL and version are correct; for cache misses with offline mode set, disable offline or rerun aggrega pull"
+		return "remediation: verify the URL and version are correct; for cache misses with offline mode set, disable offline or rerun aggrega pull --release <release>"
 	case errors.Is(sentinel, ErrFetchUnauthorized):
-		return "remediation: docker login " + host + " (or helm registry login " + host + " for Helm-specific OCI) before re-running aggrega pull"
+		return "remediation: docker login " + host + " (or helm registry login " + host + " for Helm-specific OCI) before re-running aggrega pull --release <release>"
 	case errors.Is(sentinel, ErrFetchNetworkUnreachable):
 		return "remediation: check network connectivity to " + host + "; corporate proxies typically need HTTPS_PROXY exported"
 	case errors.Is(sentinel, ErrFetchIntegrity), errors.Is(sentinel, ErrCachedManifestIntegrity):

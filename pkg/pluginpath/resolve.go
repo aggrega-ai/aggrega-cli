@@ -319,7 +319,7 @@ type Puller interface {
 // puller is wired (the hermetic build path) so the message points at the fix —
 // pull first, or point a local path at the artifact — rather than
 // reading as an unexplained miss.
-const ociNotWiredHint = "an OCI plugin URI requires a prior `aggrega pull` (so its bytes are cached) " +
+const ociNotWiredHint = "an OCI plugin URI requires a prior `aggrega pull --release <release>` (so its bytes are cached) " +
 	"or an explicit local path; the hermetic build does not fetch from a registry"
 
 // unsetMsg is the single-sourced diagnostic for the no-URI / no-override case.

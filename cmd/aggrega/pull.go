@@ -430,7 +430,7 @@ func pullRun(cfg pullConfig) error {
 			// honored, and the prior lockfile's recorded external inputs are carried
 			// forward below.
 			if prior == nil {
-				return fmt.Errorf("no lockfile to upgrade at %s; run `aggrega pull` first to create one", lockfilePath)
+				return fmt.Errorf("no lockfile to upgrade at %s; run `aggrega pull --release %s` first to create one", lockfilePath, cfg.ReleasePath)
 			}
 			pins := catalog.PinsFromLockfile(prior)
 			for _, target := range cfg.UpgradeTargets {
