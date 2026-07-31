@@ -28,11 +28,21 @@ import (
 // expects would pass a set that grew one more, which is exactly the case it
 // exists to catch.
 
-// TestEveryDerivedSubjectKindHasASealedSubjectType is that assertion. It walks
-// the generated kind set and requires, for each kind, a type of the name the
-// kind's own coordinates derive, embedding the subject contract and carrying one
-// unexported marker of its own.
-func TestEveryDerivedSubjectKindHasASealedSubjectType(t *testing.T) {
+// The same reasoning covers the traversal, which is why this assertion carries
+// both halves rather than sitting beside a second one. A kind is realised when a
+// check can declare it AND the framework can invoke a check over it; a kind with a
+// type and no traversal is a kind a check can declare and nothing will ever run,
+// which reads exactly like a kind that works. So the requirement is read off the
+// generated set's own traversal model: an enumerated kind owes a traversal, and a
+// kind the caller presents does not.
+
+// TestEveryDerivedSubjectKindHasASealedSubjectTypeAndEveryPullKindATraversal is
+// that assertion. It walks the generated kind set and requires, for each kind, a
+// type of the name the kind's own coordinates derive, embedding the subject
+// contract and carrying one unexported marker of its own — and, for each kind the
+// framework enumerates, exactly one function taking a check declared over that
+// type.
+func TestEveryDerivedSubjectKindHasASealedSubjectTypeAndEveryPullKindATraversal(t *testing.T) {
 	t.Parallel()
 
 	if len(SubjectKinds) == 0 {
@@ -40,6 +50,21 @@ func TestEveryDerivedSubjectKindHasASealedSubjectType(t *testing.T) {
 	}
 
 	declared := packageInterfaceDecls(t)
+	traversals := packageTraversalsBySubjectType(t)
+
+	// Calibration for the traversal half, on the same principle as the parse
+	// calibration below: a discovery that found nothing would report every
+	// enumerated kind as untraversed, and one that matched anything would report
+	// every kind as traversed.
+	if len(traversals["NodeSubject"]) == 0 {
+		t.Fatalf("the traversal discovery does not see a function taking a check over NodeSubject, and "+
+			"one is declared, so it is not a working instrument and its verdict on the other kinds means "+
+			"nothing (saw %d subject type(s) with a traversal)", len(traversals))
+	}
+	if len(traversals["NoSuchDerivedKindSubject"]) != 0 {
+		t.Fatalf("the traversal discovery claims a traversal over NoSuchDerivedKindSubject, which is " +
+			"declared nowhere, so it would report every kind as traversed")
+	}
 
 	// Calibration. A parse that silently found nothing would report every kind
 	// as missing; a name-derivation that matched anything would report every
@@ -72,6 +97,27 @@ func TestEveryDerivedSubjectKindHasASealedSubjectType(t *testing.T) {
 			continue
 		}
 		expected[name] = info.Kind
+
+		if info.Traversal == TraversalPull {
+			switch runners := traversals[name]; len(runners) {
+			case 1:
+			case 0:
+				t.Errorf("the derived subject kind %s has no traversal. Declare one taking a "+
+					"Check[V, C, %s]: it enumerates the kind's coordinates, assembles each instance's "+
+					"provenance, and invokes the check once per instance.\n"+
+					"INVARIANT: the framework owns traversal, so every kind it enumerates has exactly one "+
+					"traversal and a check never writes the loop.\n"+
+					"CONSEQUENCE: a kind with a type and no traversal is a kind a check can declare and "+
+					"nothing will ever invoke. It reads as complete — the type exists, the check compiles "+
+					"— and the rule is simply never evaluated, which is indistinguishable from a rule that "+
+					"ran and found nothing.", info.Kind, name)
+			default:
+				sort.Strings(runners)
+				t.Errorf("%s has %d traversals (%s); want exactly one. Two traversals over one kind are "+
+					"two definitions of what \"once per instance\" means for it, and a check declaring the "+
+					"kind cannot say which it wanted.", name, len(runners), strings.Join(runners, ", "))
+			}
+		}
 
 		iface := declared[name]
 		if iface == nil {
@@ -135,8 +181,91 @@ func TestEveryDerivedSubjectKindHasASealedSubjectType(t *testing.T) {
 			"invoked.", strings.Join(orphans, ", "))
 	}
 
-	t.Logf("kind coverage: %d derived kinds, %d subject types matched, %d distinct markers",
-		len(SubjectKinds), len(expected), len(markerOwners))
+	// And the same direction for the traversals: one left behind after its kind
+	// was removed enumerates something the facts no longer key anything by.
+	var strandedTraversals []string
+	for name, runners := range traversals {
+		if _, ok := expected[name]; !ok {
+			sort.Strings(runners)
+			strandedTraversals = append(strandedTraversals, strings.Join(runners, ", ")+" over "+name)
+		}
+	}
+	if len(strandedTraversals) > 0 {
+		sort.Strings(strandedTraversals)
+		t.Errorf("%s traverse(s) a subject type for no derived kind, so the framework enumerates "+
+			"something no declared fact is keyed by.", strings.Join(strandedTraversals, "; "))
+	}
+
+	pull, traversed := 0, 0
+	for _, info := range SubjectKinds {
+		if info.Traversal != TraversalPull {
+			continue
+		}
+		pull++
+		if len(traversals[subjectTypeNameFor(info.Coordinates)]) == 1 {
+			traversed++
+		}
+	}
+	t.Logf("kind coverage: %d derived kinds, %d subject types matched, %d distinct markers; "+
+		"%d enumerated kinds, %d with exactly one traversal",
+		len(SubjectKinds), len(expected), len(markerOwners), pull, traversed)
+}
+
+// packageTraversalsBySubjectType returns, per subject type name, the exported
+// functions in this package that take a check declared over it.
+//
+// Taking a Check is the criterion rather than a naming convention, because it is
+// the property that matters: a function reaching a check's predicate through the
+// declaration is a traversal, and one named like a traversal that takes a bare
+// predicate is not. It reads the non-test sources, so a traversal declared only in
+// a test cannot satisfy the assertion.
+func packageTraversalsBySubjectType(t *testing.T) map[string][]string {
+	t.Helper()
+
+	fset := token.NewFileSet()
+	pkgs, err := parser.ParseDir(fset, ".", func(fi fs.FileInfo) bool {
+		return !strings.HasSuffix(fi.Name(), "_test.go")
+	}, 0)
+	if err != nil {
+		t.Fatalf("parse this package's sources: %v", err)
+	}
+
+	out := map[string][]string{}
+	for _, pkg := range pkgs {
+		for _, file := range pkg.Files {
+			for _, decl := range file.Decls {
+				fn, ok := decl.(*ast.FuncDecl)
+				if !ok || fn.Recv != nil || !fn.Name.IsExported() || fn.Type.Params == nil {
+					continue
+				}
+				for _, param := range fn.Type.Params.List {
+					subject, ok := checkSubjectTypeArgument(param.Type)
+					if !ok {
+						continue
+					}
+					out[subject] = append(out[subject], fn.Name.Name)
+				}
+			}
+		}
+	}
+	return out
+}
+
+// checkSubjectTypeArgument reports the subject type a Check instantiation names,
+// which is its third type argument.
+func checkSubjectTypeArgument(expr ast.Expr) (string, bool) {
+	instantiation, ok := expr.(*ast.IndexListExpr)
+	if !ok || len(instantiation.Indices) != 3 {
+		return "", false
+	}
+	if base, ok := instantiation.X.(*ast.Ident); !ok || base.Name != "Check" {
+		return "", false
+	}
+	subject, ok := instantiation.Indices[2].(*ast.Ident)
+	if !ok {
+		return "", false
+	}
+	return subject.Name, true
 }
 
 // subjectKindBindings binds each derived kind to its interface type and a call of
