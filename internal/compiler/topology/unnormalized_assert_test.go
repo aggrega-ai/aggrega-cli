@@ -16,7 +16,7 @@ import (
 // subsystem is a normalization bypass (impossible through types.Normalize, and
 // the authored-both shape is envelope-rejected), so topology fails loud with
 // ErrUnnormalizedAggregate rather than silently flattening a half-normalized
-// graph. Defense-in-depth behind the NormalizedAggregate newtype.
+// graph. Defense-in-depth behind the NormalizedAggregate type.
 func TestBuild_UnnormalizedAggregateFailsLoud(t *testing.T) {
 	t.Parallel()
 	agg := &types.Aggregate{}

@@ -65,7 +65,7 @@ var (
 	// default and clears it). It signals a bypass: a hand-built `types.Aggregate`
 	// literal or a load path that skipped the parse core. This is an
 	// internal-invariant breach, not an authoring error — a Loud Guardrail
-	// (Invariant 4) backstopping the NormalizedAggregate newtype rather than
+	// (Invariant 4) backstopping the NormalizedAggregate type rather than
 	// silently flattening a half-normalized graph.
 	ErrUnnormalizedAggregate = errors.New("aggregate reached topology un-normalized (non-empty root components alongside a synthesized default subsystem)")
 

@@ -14,10 +14,11 @@ const IRKind = "IR"
 // AttachmentOrigin is the provenance of a Feature attachment (or of one leaf in
 // its values/infra payload): whether it was authored explicitly, contributed by
 // the annotation-driven expansion pass, or — at the attachment top level — a mix
-// of both. It is a string newtype so the wire shape is unchanged (a plain JSON
-// string) while the value set is single-sourced here rather than re-spelled as
-// string literals across the IR builder. The ir-v1alpha1 attachment_entry.origin
-// enum is the cross-language contract for the same value set.
+// of both. It is a distinct string type so the wire shape is unchanged (a plain
+// JSON string) while the value set is single-sourced here rather than re-spelled
+// as string literals across the IR builder. The ir-v1alpha1
+// attachment_entry.origin enum is the cross-language contract for the same
+// value set.
 type AttachmentOrigin string
 
 const (

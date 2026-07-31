@@ -162,7 +162,7 @@ var (
 	// it), and the authored-both shape is envelope-rejected. It signals a bypass:
 	// a hand-built `types.Release` literal or a load path that skipped the parse
 	// core. An internal-invariant breach (a Loud Guardrail, Invariant 4)
-	// backstopping the `NormalizedRelease` newtype. Asserted at resolveFromInputs
+	// backstopping the `NormalizedRelease` type. Asserted at resolveFromInputs
 	// entry — the earliest point every boundary consumer (WireBoundaryInfra, the
 	// release guards, the renderer via rr.Release) sits behind — so one check
 	// protects the whole pipeline, not just the renderer.
