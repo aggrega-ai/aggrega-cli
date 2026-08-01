@@ -219,11 +219,11 @@ func normalizeSelfInjectEntries(raw any) (map[string]selfInjectEntry, error) {
 
 	switch v := raw.(type) {
 	case *types.OrderedMap[any]:
-		// Post-round-trip-fidelity shape: nested mappings inside an
-		// any-typed InjectBlock field decode as *types.OrderedMap[any]
-		// when reached via an OrderedMap[any]-routed authoring path.
-		// Iteration via .All() preserves author order so emitted
-		// self-inject entries follow YAML authoring sequence.
+		// A defensive arm that no authored document reaches: every delivery
+		// mechanism is authored as an array of entries, so a mechanism
+		// carrying a mapping is refused before resolution begins. The arm
+		// walks the payload in author order rather than assuming an order,
+		// which is what keeps it correct for whatever does reach it.
 		if v == nil {
 			return result, nil
 		}

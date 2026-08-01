@@ -173,14 +173,16 @@ func mergeSorted(dest *types.OrderedMap[string], src types.OrderedMap[string]) {
 
 // normalizeInjectMechanism converts the polymorphic inject mechanism value
 // (map[string]string, map[string]any, *types.OrderedMap[any], or []any
-// schema-verbose-form entries) to OrderedMap[string]. The
-// *types.OrderedMap[any] shape arrives from round-trip-fidelity decoding
-// when the inject block is reached via an OrderedMap[any]-routed authoring
-// path; iteration via .All() preserves author order. Unsorted plain-map
-// shapes lose authoring order at decode and are sorted alphabetically here
-// for stability. The schema-verbose-form []any (elements
-// {in, from?, value?}) iterates in source order; value: wins over from: if
-// both are present at an entry.
+// entries) to OrderedMap[string].
+//
+// The []any arm is the authored one: every delivery mechanism is authored as
+// an array of {in, from?, value?} entries, which iterates in source order,
+// and value: wins over from: where an entry carries both. The two plain-map
+// arms lose authoring order at decode and are sorted alphabetically here for
+// stability. The *types.OrderedMap[any] arm is defensive and no authored
+// document reaches it, because a mechanism carrying a mapping rather than an
+// array is refused before resolution begins; it walks the payload in author
+// order rather than assuming an order.
 func normalizeInjectMechanism(raw any) types.OrderedMap[string] {
 	out := types.OrderedMap[string]{}
 	if raw == nil {
