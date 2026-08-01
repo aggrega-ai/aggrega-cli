@@ -63,7 +63,14 @@ func TestComponentLocatorTurnsOnProvenanceAndNotOnTheName(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			subject := newComponentNodeSubject(sourceFile, tc.componentName, tc.subsystemPath, tc.synthesizedSubsystem)
+			// The identifier is deliberately not the authored name, so a constructor
+			// that supplied one value for both would be visible here rather than
+			// agreeing by coincidence.
+			nodeID := "billing." + tc.componentName
+
+			subject := newComponentNodeSubject(
+				sourceFile, nodeID, tc.componentName, tc.subsystemPath, tc.synthesizedSubsystem,
+			)
 			if got := subject.Locator(); got != tc.want {
 				t.Errorf("locator for component %q under subsystem %q (synthesized=%t) = %q; want %q",
 					tc.componentName, tc.subsystemPath, tc.synthesizedSubsystem, got, tc.want)
@@ -71,6 +78,11 @@ func TestComponentLocatorTurnsOnProvenanceAndNotOnTheName(t *testing.T) {
 			if got := subject.SourceFile(); got != sourceFile {
 				t.Errorf("source file = %q; want %q — an empty locator is still attributed to its file",
 					got, sourceFile)
+			}
+			if got := subject.NodeID(); got != nodeID {
+				t.Errorf("node identifier = %q; want %q — the identifier the keyed facts take travels "+
+					"independently of the locator, so a kind with no locator at all still carries it",
+					got, nodeID)
 			}
 		})
 	}
@@ -83,7 +95,7 @@ func TestComponentLocatorComposesThroughTheSharedLocatorAssembly(t *testing.T) {
 	t.Parallel()
 
 	segments := componentAuthoredSegments("web", "default", true)
-	if want := authoredLocator(segments...); newComponentNodeSubject("a.yaml", "web", "default", true).Locator() != want {
+	if want := authoredLocator(segments...); newComponentNodeSubject("a.yaml", "web", "web", "default", true).Locator() != want {
 		t.Errorf("the component subject's locator is not what the shared assembly makes of its segments; "+
 			"want %q", want)
 	}
@@ -102,7 +114,7 @@ func TestComponentLocatorComposesThroughTheSharedLocatorAssembly(t *testing.T) {
 func TestComponentLocatorNamesTheContainerWhenTheNameIsMissing(t *testing.T) {
 	t.Parallel()
 
-	if got, want := newComponentNodeSubject("a.yaml", "", "", false).Locator(), ".spec.components"; got != want {
+	if got, want := newComponentNodeSubject("a.yaml", "unnamed", "", "", false).Locator(), ".spec.components"; got != want {
 		t.Errorf("locator with no component name = %q; want %q", got, want)
 	}
 }

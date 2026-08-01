@@ -43,6 +43,20 @@ func componentAuthoredSegments(componentName, subsystemPath string, synthesizedS
 // provenance rule in [componentAuthoredSegments] applied. It composes rather
 // than formats: the segments go through the same constructor and the same
 // locator assembly every other kind uses.
-func newComponentNodeSubject(sourceFile, componentName, subsystemPath string, synthesizedSubsystem bool) NodeSubject {
-	return newNodeSubject(sourceFile, componentAuthoredSegments(componentName, subsystemPath, synthesizedSubsystem)...)
+//
+// node and componentName are both taken and neither is derived from the other,
+// which is the same distinction [NodeInstance] draws: node is the identifier
+// every keyed fact takes and records how the instance was reached, while
+// componentName is what the author typed and is what a locator may name. A
+// coordinate and a locator segment answer different questions here, so supplying
+// one value for both would make a check reading its own identifier disagree with
+// the facts.
+func newComponentNodeSubject(
+	sourceFile, node, componentName, subsystemPath string,
+	synthesizedSubsystem bool,
+) NodeSubject {
+	return newNodeSubject(
+		sourceFile, node,
+		componentAuthoredSegments(componentName, subsystemPath, synthesizedSubsystem)...,
+	)
 }

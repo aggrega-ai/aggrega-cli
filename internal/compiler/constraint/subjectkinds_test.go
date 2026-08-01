@@ -256,10 +256,13 @@ func TestEveryDerivedSubjectKindHasASealedSubjectTypeAndEveryPullKindATraversal(
 // behaviourally, per kind, by the traversal tests.
 //
 // It says nothing about a kind exposing no accessor at all: a coordinate the
-// generated set declares and no accessor returns is outside its reach. That is
-// the residual rather than a clean corner, so the census logged below reports how
-// many enumerated kinds are in that state instead of leaving a reader to assume
-// none are.
+// generated set declares and no accessor returns is outside its reach, because
+// this is a pairing property and a kind exposing nothing pairs vacuously. That
+// gap is not a residual any more — it is gated by
+// [TestEveryDeclaredCoordinateHasAnAccessor], which derives the accessor set each
+// kind owes from the generated coordinates. The two are deliberately separate
+// assertions: this one asks whether every accessor can be filled, that one asks
+// whether every coordinate has an accessor, and neither implies the other.
 //
 // It inspects only the constructor whose name the kind's type name derives. A kind
 // may declare a second one taking provenance inputs — how the instance was
@@ -295,7 +298,7 @@ func TestEveryCoordinateAccessorHasAConstructorParameterToFillIt(t *testing.T) {
 			got, want)
 	}
 
-	exposing, bare := 0, 0
+	paired, accessorTotal := 0, 0
 	for _, info := range SubjectKinds {
 		name := subjectTypeNameFor(info.Coordinates)
 		iface, ctor := declared[name], funcs["new"+name]
@@ -307,13 +310,8 @@ func TestEveryCoordinateAccessorHasAConstructorParameterToFillIt(t *testing.T) {
 		}
 
 		_, _, accessors := interfaceShape(iface)
-		if info.Traversal == TraversalPull {
-			if len(accessors) > 0 {
-				exposing++
-			} else {
-				bare++
-			}
-		}
+		paired++
+		accessorTotal += len(accessors)
 
 		if got, want := nonVariadicParams(ctor)-1, len(accessors); got != want {
 			sort.Strings(accessors)
@@ -329,10 +327,256 @@ func TestEveryCoordinateAccessorHasAConstructorParameterToFillIt(t *testing.T) {
 		}
 	}
 
-	t.Logf("coordinate supply: %d of %d enumerated kinds expose at least one coordinate accessor; %d expose "+
-		"none, so a check declaring one of those cannot name the instance it was invoked for — a residual "+
-		"this assertion neither fails on nor can see",
-		exposing, exposing+bare, bare)
+	// The census reports what was compared and claims no residual, because the one
+	// this line used to name — kinds exposing no accessor at all — is now gated by
+	// [TestEveryDeclaredCoordinateHasAnAccessor]. What this assertion still cannot
+	// see is stated in its own documentation above: it reads a parameter count, so a
+	// constructor taking a coordinate and storing nothing satisfies it.
+	t.Logf("coordinate pairing: %d kind(s) compared, %d accessor(s) each paired with a constructor parameter",
+		paired, accessorTotal)
+}
+
+// coordinateAccessors maps a coordinate name to the accessor name or names that
+// return it. It is the one place that mapping lives.
+//
+// It is keyed by coordinate name and deliberately NOT by kind. A coordinate name
+// is the vocabulary of the derived kind set itself — nineteen names across
+// nineteen kinds, each name meaning one thing wherever it appears — whereas a
+// per-kind table would be a hand-written second copy of a set the fact
+// declarations already derive, which is exactly the arrangement that reads as
+// current while lagging.
+//
+// The mapping is a judgement rather than a transform, and the shipped names are
+// what prove no transform exists: a node yields NodeID, a socket yields
+// SocketName, and an emitted path yields EmittedPath, which does not name its
+// coordinate at all. Four coordinates are written with a hyphen and could not be
+// Go identifiers however they were spelled mechanically.
+//
+// Two entries are not one-to-one, and both are named rows here rather than
+// special cases buried in the assertion:
+//
+//   - edge maps to the pair NodeID and SocketName. An edge's identity is the node
+//     and the socket taken together, which is what a fact keyed by an edge takes
+//     as its key, and the edge itself names no scalar a check could use. So one
+//     coordinate legitimately carries two accessors.
+//   - document maps to SourceFile, which the subject contract already supplies. A
+//     document is the whole file, so the coordinate and the provenance are the
+//     same string, and the kind owes no accessor of its own for it.
+var coordinateAccessors = map[string][]string{
+	"document":      {"SourceFile"},
+	"parameter":     {"ParameterName"},
+	"assertion":     {"AssertionName"},
+	"node":          {"NodeID"},
+	"socket":        {"SocketName"},
+	"edge":          {"NodeID", "SocketName"},
+	"attachment":    {"AttachmentName"},
+	"slot":          {"SlotName"},
+	"mechanism":     {"MechanismName"},
+	"delivery-key":  {"DeliveryKey"},
+	"pillar":        {"PillarName"},
+	"leaf":          {"LeafName"},
+	"locals-key":    {"LocalsKey"},
+	"provides-key":  {"ProvidesKey"},
+	"pipeline-step": {"StepID"},
+	"boundary":      {"BoundaryName"},
+	"provider":      {"ProviderName"},
+	"path":          {"EmittedPath"},
+	"artifact":      {"ArtifactName"},
+}
+
+// subjectContractAccessors names the accessors [Subject] itself supplies, so a
+// coordinate mapping onto one of them adds no method to the kind's own interface.
+//
+// It exists because the completeness comparison is against the methods a kind
+// declares itself: an embedded contract's methods are not among them, so an
+// expectation naming one would be unsatisfiable by construction.
+var subjectContractAccessors = map[string]bool{"SourceFile": true}
+
+// TestEveryDeclaredCoordinateHasAnAccessor is the completeness assertion, and it
+// is the half [TestEveryCoordinateAccessorHasAConstructorParameterToFillIt]
+// cannot reach.
+//
+// # The property
+//
+// For each derived kind, the set of accessors its own interface declares equals
+// the set derived by mapping each of its declared coordinates through
+// [coordinateAccessors], minus whatever the subject contract already supplies.
+//
+// # Why it keys on the coordinate set and never on a count
+//
+// The declared coordinate count is provably not the accessor count: the edge kind
+// declares one coordinate and carries two accessors, and the document kind
+// declares one and carries none of its own. A criterion comparing two numbers
+// reds both of those, and a criterion a correct kind reds is not a criterion. So
+// the comparison is between sets of names, derived through one mapping, and no
+// count enters it.
+//
+// # An unmapped coordinate is a refusal
+//
+// A coordinate name with no row in the mapping fails this assertion saying so,
+// rather than being passed over. That is what keeps the mapping complete as the
+// fact declarations grow a coordinate, without a second instrument watching it —
+// and a table that silently ignores what it does not know is the blind instrument
+// this framework exists to remove.
+//
+// # What it cannot see, and no assertion at this layer can
+//
+// It compares declared interface methods against a derived expectation. It never
+// calls an accessor, so it cannot check that one returns the RIGHT value — that
+// SocketName returns the socket rather than the node, or returns anything at all
+// rather than the zero value. A kind can satisfy this assertion completely while
+// every accessor on it returns the empty string. That property is proved
+// separately and behaviourally, per kind, by
+// [TestCoordinateAccessorsCarryTheEnumeratedCoordinateValues].
+func TestEveryDeclaredCoordinateHasAnAccessor(t *testing.T) {
+	t.Parallel()
+
+	if len(SubjectKinds) == 0 {
+		t.Fatalf("the generated kind set is empty, so a clean result here certifies nothing")
+	}
+	if len(coordinateAccessors) == 0 {
+		t.Fatalf("the coordinate mapping is empty, so every kind would be reported as unmapped")
+	}
+
+	declared := packageInterfaceDecls(t)
+
+	// Calibration, on the same principle as every other assertion over this corpus:
+	// an instrument that saw nothing would report every kind as missing every
+	// accessor, and one that matched anything would report every kind as complete.
+	if declared["NodeSocketSubject"] == nil {
+		t.Fatalf("the package parse does not see NodeSocketSubject, which is declared, so it is not a "+
+			"working instrument and its verdict on the other kinds means nothing (saw %d interfaces)",
+			len(declared))
+	}
+	if _, _, exported := interfaceShape(declared["NodeSocketSubject"]); len(exported) != 2 {
+		t.Fatalf("the accessor reader sees %d exported method(s) on NodeSocketSubject; want 2 — it is the "+
+			"shipped two-coordinate kind, so a reader disagreeing here would misjudge every kind",
+			len(exported))
+	}
+
+	unmappedSeen := map[string]bool{}
+	usedCoordinates := map[string]bool{}
+	compared := 0
+
+	for _, info := range SubjectKinds {
+		name := subjectTypeNameFor(info.Coordinates)
+		iface := declared[name]
+		if iface == nil {
+			// The missing type belongs to the completeness assertion over the kind
+			// set, which reports it with its own consequence.
+			continue
+		}
+
+		// Built in the generated coordinate order so a failure reads in the order the
+		// kind nests, and so two runs report identically.
+		owed := make([]string, 0, len(info.Coordinates))
+		owedBy := map[string]string{}
+		unmapped := false
+		for _, coordinate := range info.Coordinates {
+			accessors, mapped := coordinateAccessors[coordinate]
+			if !mapped {
+				unmapped = true
+				if !unmappedSeen[coordinate] {
+					unmappedSeen[coordinate] = true
+					t.Errorf("the coordinate %q, declared by the kind %s, has no entry in the coordinate "+
+						"mapping, so this assertion cannot say what accessor it owes.\n"+
+						"INVARIANT: every coordinate name a derived kind carries maps to the accessor name "+
+						"returning it, through one mapping keyed by coordinate name.\n"+
+						"CONSEQUENCE: an unmapped coordinate is refused rather than skipped. Were it skipped, "+
+						"a coordinate could be declared, carry no accessor, and pass — the check would be "+
+						"invoked once per instance of it and be unable to name which instance, while this "+
+						"assertion reported the kind complete.\n"+
+						"Add a row for %q naming the accessor that returns it, or the accessor the subject "+
+						"contract already supplies for it.", coordinate, info.Kind, coordinate)
+				}
+				continue
+			}
+			usedCoordinates[coordinate] = true
+			for _, accessor := range accessors {
+				if subjectContractAccessors[accessor] {
+					continue
+				}
+				if _, already := owedBy[accessor]; already {
+					continue
+				}
+				owedBy[accessor] = coordinate
+				owed = append(owed, accessor)
+			}
+		}
+		if unmapped {
+			// Comparing against a partial expectation would report accessors as
+			// unexpected merely because their coordinate had no row.
+			continue
+		}
+
+		_, _, got := interfaceShape(iface)
+		compared++
+
+		declaredSet := map[string]bool{}
+		for _, accessor := range got {
+			declaredSet[accessor] = true
+		}
+
+		for _, accessor := range owed {
+			if declaredSet[accessor] {
+				continue
+			}
+			t.Errorf("%s declares no %s(), which the coordinate %q it carries owes.\n"+
+				"INVARIANT: a kind exposes one accessor per coordinate it carries, so a check invoked once "+
+				"per instance can name the instance it was invoked for.\n"+
+				"CONSEQUENCE: every fact is keyed. A coordinate with no accessor is a coordinate the check "+
+				"cannot read, so it cannot key a fact to its own instance and cannot name it in what it "+
+				"raises — the rule runs the right number of times and decides on evidence belonging to no "+
+				"instance in particular.\n"+
+				"Declare %s() string on %s and add the parameter filling it to new%s, which the pairing "+
+				"assertion requires in the same edit.", name, accessor, owedBy[accessor], accessor, name, name)
+		}
+
+		owedSet := map[string]bool{}
+		for _, accessor := range owed {
+			owedSet[accessor] = true
+		}
+		var unexpected []string
+		for _, accessor := range got {
+			if !owedSet[accessor] {
+				unexpected = append(unexpected, accessor)
+			}
+		}
+		if len(unexpected) > 0 {
+			sort.Strings(unexpected)
+			t.Errorf("%s declares %s, which no coordinate it carries (%s) owes.\n"+
+				"INVARIANT: an accessor exists because the kind carries that coordinate, and for no other "+
+				"reason — never because a predicate would find the value convenient.\n"+
+				"CONSEQUENCE: a value that is a projection of a coordinate rather than a coordinate itself "+
+				"is read as the declared fact keyed by that coordinate. Reading it from the subject instead "+
+				"hides a real dependency from the point where a check's placement is worked out, because a "+
+				"fact carries the point it completes at and a subject carries none.",
+				name, strings.Join(unexpected, ", "), strings.Join(info.Coordinates, ", "))
+		}
+	}
+
+	// The mirror of the refusal above: a row for a coordinate no kind declares. It
+	// is dead vocabulary, and left alone it accumulates until the mapping stops
+	// describing the derived set.
+	var orphanRows []string
+	for coordinate := range coordinateAccessors {
+		if !usedCoordinates[coordinate] {
+			orphanRows = append(orphanRows, coordinate)
+		}
+	}
+	if len(orphanRows) > 0 {
+		sort.Strings(orphanRows)
+		t.Errorf("the coordinate mapping has row(s) for %s, which no derived kind declares. A coordinate "+
+			"exists because a declared fact is keyed by it, so a row for one that no kind carries names "+
+			"vocabulary the facts have dropped.", strings.Join(orphanRows, ", "))
+	}
+
+	if compared == 0 {
+		t.Fatalf("no kind was compared, so a clean result certifies nothing")
+	}
+	t.Logf("coordinate completeness: %d kind(s) compared against the mapping, %d coordinate name(s) used "+
+		"of %d rows; this assertion reads declarations only and never calls an accessor",
+		compared, len(usedCoordinates), len(coordinateAccessors))
 }
 
 // The instance-binding assertion, which is a floor and is named as one.
@@ -616,15 +860,19 @@ var subjectKindBindings = map[SubjectKind]struct {
 	},
 	SubjectDocumentParameter: {
 		iface: reflect.TypeOf((*DocumentParameterSubject)(nil)).Elem(),
-		make:  func(f string) Subject { return newDocumentParameterSubject(f, "spec", "parameters", "db_size") },
+		make: func(f string) Subject {
+			return newDocumentParameterSubject(f, "db_size", "spec", "parameters", "db_size")
+		},
 	},
 	SubjectDocumentAssertion: {
 		iface: reflect.TypeOf((*DocumentAssertionSubject)(nil)).Elem(),
-		make:  func(f string) Subject { return newDocumentAssertionSubject(f, "spec", "assertions", "port-set") },
+		make: func(f string) Subject {
+			return newDocumentAssertionSubject(f, "port-set", "spec", "assertions", "port-set")
+		},
 	},
 	SubjectNode: {
 		iface: reflect.TypeOf((*NodeSubject)(nil)).Elem(),
-		make:  func(f string) Subject { return newNodeSubject(f, "spec", "components", "web") },
+		make:  func(f string) Subject { return newNodeSubject(f, "web", "spec", "components", "web") },
 	},
 	SubjectNodeSocket: {
 		iface: reflect.TypeOf((*NodeSocketSubject)(nil)).Elem(),
@@ -641,62 +889,72 @@ var subjectKindBindings = map[SubjectKind]struct {
 	SubjectNodeAttachment: {
 		iface: reflect.TypeOf((*NodeAttachmentSubject)(nil)).Elem(),
 		make: func(f string) Subject {
-			return newNodeAttachmentSubject(f, "spec", "components", "web", "features", "tls")
+			return newNodeAttachmentSubject(f, "web", "tls", "spec", "components", "web", "features", "tls")
 		},
 	},
 	SubjectNodeAttachmentSocket: {
 		iface: reflect.TypeOf((*NodeAttachmentSocketSubject)(nil)).Elem(),
 		make: func(f string) Subject {
-			return newNodeAttachmentSocketSubject(f, "spec", "components", "web", "features", "tls", "uses", "issuer")
+			return newNodeAttachmentSocketSubject(f, "web", "tls", "issuer",
+				"spec", "components", "web", "features", "tls", "uses", "issuer")
 		},
 	},
 	SubjectNodeSlot: {
 		iface: reflect.TypeOf((*NodeSlotSubject)(nil)).Elem(),
 		make: func(f string) Subject {
-			return newNodeSlotSubject(f, "spec", "components", "web", "features", "sidecar")
+			return newNodeSlotSubject(f, "web", "sidecar", "spec", "components", "web", "features", "sidecar")
 		},
 	},
 	SubjectNodeMechanism: {
 		iface: reflect.TypeOf((*NodeMechanismSubject)(nil)).Elem(),
 		make: func(f string) Subject {
-			return newNodeMechanismSubject(f, "spec", "components", "web", "inject", "env")
+			return newNodeMechanismSubject(f, "web", "env", "spec", "components", "web", "inject", "env")
 		},
 	},
 	SubjectNodeMechanismDeliveryKey: {
 		iface: reflect.TypeOf((*NodeMechanismDeliveryKeySubject)(nil)).Elem(),
 		make: func(f string) Subject {
-			return newNodeMechanismDeliveryKeySubject(f, "spec", "components", "web", "inject", "env", "DB_HOST")
+			return newNodeMechanismDeliveryKeySubject(f, "web", "env", "DB_HOST",
+				"spec", "components", "web", "inject", "env", "DB_HOST")
 		},
 	},
 	SubjectNodePillarLeaf: {
 		iface: reflect.TypeOf((*NodePillarLeafSubject)(nil)).Elem(),
 		make: func(f string) Subject {
-			return newNodePillarLeafSubject(f, "spec", "components", "web", "values", "app", "replicas")
+			return newNodePillarLeafSubject(f, "web", "app", "replicas",
+				"spec", "components", "web", "values", "app", "replicas")
 		},
 	},
 	SubjectNodeParameter: {
 		iface: reflect.TypeOf((*NodeParameterSubject)(nil)).Elem(),
 		make: func(f string) Subject {
-			return newNodeParameterSubject(f, "spec", "components", "web", "parameters", "db_size")
+			return newNodeParameterSubject(f, "web", "db_size", "spec", "components", "web", "parameters", "db_size")
 		},
 	},
 	SubjectNodeAttachmentPillarLeaf: {
 		iface: reflect.TypeOf((*NodeAttachmentPillarLeafSubject)(nil)).Elem(),
 		make: func(f string) Subject {
-			return newNodeAttachmentPillarLeafSubject(f, "spec", "components", "web", "features", "tls", "values", "app", "issuer")
+			return newNodeAttachmentPillarLeafSubject(f, "web", "tls", "app", "issuer",
+				"spec", "components", "web", "features", "tls", "values", "app", "issuer")
 		},
 	},
 	SubjectNodeLocalsKey: {
 		iface: reflect.TypeOf((*NodeLocalsKeySubject)(nil)).Elem(),
-		make:  func(f string) Subject { return newNodeLocalsKeySubject(f, "spec", "locals", "fullname") },
+		make: func(f string) Subject {
+			return newNodeLocalsKeySubject(f, "web", "fullname", "spec", "locals", "fullname")
+		},
 	},
 	SubjectNodeProvidesKey: {
 		iface: reflect.TypeOf((*NodeProvidesKeySubject)(nil)).Elem(),
-		make:  func(f string) Subject { return newNodeProvidesKeySubject(f, "spec", "provides", "host") },
+		make: func(f string) Subject {
+			return newNodeProvidesKeySubject(f, "web", "host", "spec", "provides", "host")
+		},
 	},
 	SubjectNodePipelineStep: {
 		iface: reflect.TypeOf((*NodePipelineStepSubject)(nil)).Elem(),
-		make:  func(f string) Subject { return newNodePipelineStepSubject(f, "spec", "pipeline", "render") },
+		make: func(f string) Subject {
+			return newNodePipelineStepSubject(f, "web", "render", "spec", "pipeline", "render")
+		},
 	},
 	SubjectBoundaryProviderPath: {
 		iface: reflect.TypeOf((*BoundaryProviderPathSubject)(nil)).Elem(),
@@ -706,7 +964,9 @@ var subjectKindBindings = map[SubjectKind]struct {
 	},
 	SubjectNodeArtifact: {
 		iface: reflect.TypeOf((*NodeArtifactSubject)(nil)).Elem(),
-		make:  func(f string) Subject { return newNodeArtifactSubject(f, "spec", "artifacts", "values-yaml") },
+		make: func(f string) Subject {
+			return newNodeArtifactSubject(f, "web", "values-yaml", "spec", "artifacts", "values-yaml")
+		},
 	},
 }
 

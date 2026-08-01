@@ -518,83 +518,398 @@ func TestATraversalInvokesOncePerInstanceInEnumeratorOrderWithFrameworkProvenanc
 // for the wrong instance, or for no instance, and the provenance assertion cannot
 // see that: it passes on an empty locator, because for that node an empty locator
 // is the correct answer.
+// # Every kind, and why the coverage is asserted rather than assumed
+//
+// The completeness assertion over the declarations cannot call an accessor, so
+// this is the only place a coordinate is shown to actually arrive. A table of
+// kinds beside a generated set of kinds is the arrangement that reads as complete
+// while missing one, so the table is checked against the generated set by
+// [TestEveryKindsCoordinateReadbackIsExercised] rather than trusted.
+//
+// # The two seams, named rather than blurred
+//
+// Most kinds are read through their real traversal — the exported entry a consumer
+// calls, driven by the enumerator fixture. Two are read through their constructor
+// instead: the parameter and assertion kinds of a presented document are
+// push-model and no push entry exists for either yet, so the constructor is the
+// nearest reachable seam. Each case records which seam it used and the census
+// reports the split, because a proof through a constructor establishes the wiring
+// from the constructor inward and nothing about a caller, and it must not be
+// counted as the same fact as a traversal-driven one.
 func TestCoordinateAccessorsCarryTheEnumeratedCoordinateValues(t *testing.T) {
 	t.Parallel()
 
 	fixture := newTraversalFixture()
 
-	assert := func(t *testing.T, got, want []string) {
-		t.Helper()
+	for _, tc := range coordinateFlowCases() {
+		t.Run(string(tc.kind), func(t *testing.T) {
+			t.Parallel()
 
-		if len(got) != len(want) {
-			t.Fatalf("the check was invoked %d time(s); want %d\ngot:  %v\nwant: %v",
-				len(got), len(want), got, want)
-		}
-		for i := range got {
-			if got[i] != want[i] {
-				t.Errorf("invocation %d read coordinates %q; want %q.\n"+
-					"INVARIANT: a subject carries the coordinate values of the instance the check was "+
-					"invoked for.\n"+
-					"CONSEQUENCE: every fact is keyed, so a check reads facts through these values. Wrong "+
-					"or empty ones read a different instance's facts, or none, and the predicate then "+
-					"decides on evidence belonging to something else.", i, got[i], want[i])
+			got := tc.read(fixture)
+
+			if len(got) != len(tc.want) {
+				t.Fatalf("the check was invoked %d time(s); want %d\ngot:  %v\nwant: %v",
+					len(got), len(tc.want), got, tc.want)
 			}
+			for i := range got {
+				if got[i] != tc.want[i] {
+					t.Errorf("invocation %d read coordinates %q; want %q.\n"+
+						"INVARIANT: a subject carries the coordinate values of the instance the check was "+
+						"invoked for.\n"+
+						"CONSEQUENCE: every fact is keyed, so a check reads facts through these values. Wrong "+
+						"or empty ones read a different instance's facts, or none, and the predicate then "+
+						"decides on evidence belonging to something else.", i, got[i], tc.want[i])
+				}
+			}
+
+			// The record's arity against the accessor set the kind's coordinates owe.
+			// Without it an accessor could be added, paired with its constructor
+			// parameter, and never read here — which is the state this assertion exists
+			// to make impossible.
+			owed := 0
+			for _, coordinate := range coordinatesOf(t, tc.kind) {
+				owed += len(coordinateAccessors[coordinate])
+			}
+			if len(got) > 0 {
+				if fields := len(strings.Split(got[0], "|")); fields != owed {
+					t.Errorf("the readback records %d coordinate value(s) per invocation against %d accessor(s) "+
+						"the kind's coordinates owe. Read every accessor the kind declares, or one of them is "+
+						"proved by nothing here while every declaration assertion stays green.", fields, owed)
+				}
+			}
+		})
+	}
+}
+
+// coordinatesOf returns the generated coordinates of one kind, failing rather
+// than returning an empty set for a kind the generated table does not carry —
+// which would make the arity check above pass by comparing zero against zero.
+func coordinatesOf(t *testing.T, kind SubjectKind) []string {
+	t.Helper()
+
+	for _, info := range SubjectKinds {
+		if info.Kind == kind {
+			return info.Coordinates
+		}
+	}
+	t.Fatalf("the generated kind set does not carry %s, so its owed accessor count cannot be derived", kind)
+	return nil
+}
+
+// The two seams a coordinate readback can go through. A traversal is the real
+// path; a constructor is the fallback for a push kind with no entry point.
+const (
+	seamTraversal   = "traversal"
+	seamConstructor = "constructor"
+)
+
+// coordinateFlowCase is one kind's coordinate readback: how to obtain one record
+// of the coordinate values per invocation, and the records expected over the
+// fixture in invocation order.
+type coordinateFlowCase struct {
+	kind SubjectKind
+	seam string
+	read func(traversalFixture) []string
+	want []string
+}
+
+// readback collects one record per invocation from a check declared over S,
+// joining the coordinate values its accessors return.
+func readback[S Subject](
+	run func(Check[traversalView, NoHostPowers, S]) []Objection,
+	of func(S) string,
+) []string {
+	var got []string
+	_ = run(Check[traversalView, NoHostPowers, S]{
+		Sentinel: errRuleBroken,
+		Severity: SeverityFatal,
+		Run: func(_ traversalView, s S) []Objection {
+			got = append(got, of(s))
+			return nil
+		},
+	})
+	return got
+}
+
+func coordinateFlowCases() []coordinateFlowCase {
+	const documentFile = "catalog/component.yaml"
+
+	return []coordinateFlowCase{
+		{
+			kind: SubjectDocument,
+			seam: seamTraversal,
+			read: func(_ traversalFixture) []string {
+				return readback(func(c Check[traversalView, NoHostPowers, DocumentSubject]) []Objection {
+					return RunOnDocument(documentFile, traversalView{}, c)
+				}, func(s DocumentSubject) string { return s.SourceFile() })
+			},
+			want: []string{documentFile},
+		},
+
+		// The document's parameter and assertion kinds. No push entry exists for
+		// either, so the readback goes through the constructor: it proves the
+		// coordinate reaches the accessor, and it cannot prove a caller supplies it
+		// because there is no caller to exercise.
+		{
+			kind: SubjectDocumentParameter,
+			seam: seamConstructor,
+			read: func(_ traversalFixture) []string {
+				s := newDocumentParameterSubject(documentFile, "db_size", "spec", "parameters", "db_size")
+				return []string{s.SourceFile() + "|" + s.ParameterName()}
+			},
+			want: []string{documentFile + "|db_size"},
+		},
+		{
+			kind: SubjectDocumentAssertion,
+			seam: seamConstructor,
+			read: func(_ traversalFixture) []string {
+				s := newDocumentAssertionSubject(documentFile, "port-set", "spec", "assertions", "port-set")
+				return []string{s.SourceFile() + "|" + s.AssertionName()}
+			},
+			want: []string{documentFile + "|port-set"},
+		},
+
+		// The node kind reads its identifier and never its authored name, and the
+		// fixture makes the difference visible: the second node's identifier is
+		// qualified by the container it was reached through while its authored name is
+		// not, so a constructor handed the wrong one of the two is caught here.
+		{
+			kind: SubjectNode,
+			seam: seamTraversal,
+			read: func(f traversalFixture) []string {
+				return readback(func(c Check[traversalView, NoHostPowers, NodeSubject]) []Objection {
+					return RunOnNodes(f, traversalView{}, c)
+				}, func(s NodeSubject) string { return s.NodeID() })
+			},
+			want: []string{"web", "billing.api"},
+		},
+		{
+			kind: SubjectNodeAttachment,
+			seam: seamTraversal,
+			read: func(f traversalFixture) []string {
+				return readback(func(c Check[traversalView, NoHostPowers, NodeAttachmentSubject]) []Objection {
+					return RunOnNodeAttachments(f, f, traversalView{}, c)
+				}, func(s NodeAttachmentSubject) string { return s.NodeID() + "|" + s.AttachmentName() })
+			},
+			want: []string{"web|tls", "web|logging"},
+		},
+		{
+			kind: SubjectNodeAttachmentSocket,
+			seam: seamTraversal,
+			read: func(f traversalFixture) []string {
+				return readback(func(c Check[traversalView, NoHostPowers, NodeAttachmentSocketSubject]) []Objection {
+					return RunOnNodeAttachmentSockets(f, f, f, traversalView{}, c)
+				}, func(s NodeAttachmentSocketSubject) string {
+					return s.NodeID() + "|" + s.AttachmentName() + "|" + s.SocketName()
+				})
+			},
+			want: []string{"web|tls|issuer"},
+		},
+		{
+			kind: SubjectNodeSlot,
+			seam: seamTraversal,
+			read: func(f traversalFixture) []string {
+				return readback(func(c Check[traversalView, NoHostPowers, NodeSlotSubject]) []Objection {
+					return RunOnNodeSlots(f, f, traversalView{}, c)
+				}, func(s NodeSlotSubject) string { return s.NodeID() + "|" + s.SlotName() })
+			},
+			want: []string{"web|sidecar"},
+		},
+		{
+			kind: SubjectNodeMechanism,
+			seam: seamTraversal,
+			read: func(f traversalFixture) []string {
+				return readback(func(c Check[traversalView, NoHostPowers, NodeMechanismSubject]) []Objection {
+					return RunOnNodeMechanisms(f, f, traversalView{}, c)
+				}, func(s NodeMechanismSubject) string { return s.NodeID() + "|" + s.MechanismName() })
+			},
+			want: []string{"web|env", "web|file"},
+		},
+		{
+			kind: SubjectNodeMechanismDeliveryKey,
+			seam: seamTraversal,
+			read: func(f traversalFixture) []string {
+				return readback(func(c Check[traversalView, NoHostPowers, NodeMechanismDeliveryKeySubject]) []Objection {
+					return RunOnNodeMechanismDeliveryKeys(f, f, f, traversalView{}, c)
+				}, func(s NodeMechanismDeliveryKeySubject) string {
+					return s.NodeID() + "|" + s.MechanismName() + "|" + s.DeliveryKey()
+				})
+			},
+			want: []string{"web|env|DB_HOST", "web|env|DB_PORT"},
+		},
+		{
+			kind: SubjectNodePillarLeaf,
+			seam: seamTraversal,
+			read: func(f traversalFixture) []string {
+				return readback(func(c Check[traversalView, NoHostPowers, NodePillarLeafSubject]) []Objection {
+					return RunOnNodePillarLeaves(f, f, f, traversalView{}, c)
+				}, func(s NodePillarLeafSubject) string {
+					return s.NodeID() + "|" + s.PillarName() + "|" + s.LeafName()
+				})
+			},
+			want: []string{"web|app|replicas", "web|app|image"},
+		},
+		{
+			kind: SubjectNodeParameter,
+			seam: seamTraversal,
+			read: func(f traversalFixture) []string {
+				return readback(func(c Check[traversalView, NoHostPowers, NodeParameterSubject]) []Objection {
+					return RunOnNodeParameters(f, f, traversalView{}, c)
+				}, func(s NodeParameterSubject) string { return s.NodeID() + "|" + s.ParameterName() })
+			},
+			want: []string{"web|db_size", "billing.api|region"},
+		},
+		{
+			kind: SubjectNodeAttachmentPillarLeaf,
+			seam: seamTraversal,
+			read: func(f traversalFixture) []string {
+				return readback(func(c Check[traversalView, NoHostPowers, NodeAttachmentPillarLeafSubject]) []Objection {
+					return RunOnNodeAttachmentPillarLeaves(f, f, f, f, traversalView{}, c)
+				}, func(s NodeAttachmentPillarLeafSubject) string {
+					return s.NodeID() + "|" + s.AttachmentName() + "|" + s.PillarName() + "|" + s.LeafName()
+				})
+			},
+			want: []string{"web|tls|app|issuer"},
+		},
+
+		// The Recipe-authored kinds are the ones whose identifier and whose source
+		// file come from different places — the identifier from the node, the key and
+		// the file from the enumerated entry. A readback that took the entry's value
+		// as the identifier is visible here, and one that took the node's file is
+		// visible in the provenance transcript.
+		{
+			kind: SubjectNodeLocalsKey,
+			seam: seamTraversal,
+			read: func(f traversalFixture) []string {
+				return readback(func(c Check[traversalView, NoHostPowers, NodeLocalsKeySubject]) []Objection {
+					return RunOnNodeLocalsKeys(f, f, traversalView{}, c)
+				}, func(s NodeLocalsKeySubject) string { return s.NodeID() + "|" + s.LocalsKey() })
+			},
+			want: []string{"web|fullname", "billing.api|prefix"},
+		},
+		{
+			kind: SubjectNodeProvidesKey,
+			seam: seamTraversal,
+			read: func(f traversalFixture) []string {
+				return readback(func(c Check[traversalView, NoHostPowers, NodeProvidesKeySubject]) []Objection {
+					return RunOnNodeProvidesKeys(f, f, traversalView{}, c)
+				}, func(s NodeProvidesKeySubject) string { return s.NodeID() + "|" + s.ProvidesKey() })
+			},
+			want: []string{"web|host"},
+		},
+		{
+			kind: SubjectNodePipelineStep,
+			seam: seamTraversal,
+			read: func(f traversalFixture) []string {
+				return readback(func(c Check[traversalView, NoHostPowers, NodePipelineStepSubject]) []Objection {
+					return RunOnNodePipelineSteps(f, f, traversalView{}, c)
+				}, func(s NodePipelineStepSubject) string { return s.NodeID() + "|" + s.StepID() })
+			},
+			want: []string{"web|render"},
+		},
+		{
+			kind: SubjectNodeArtifact,
+			seam: seamTraversal,
+			read: func(f traversalFixture) []string {
+				return readback(func(c Check[traversalView, NoHostPowers, NodeArtifactSubject]) []Objection {
+					return RunOnNodeArtifacts(f, f, traversalView{}, c)
+				}, func(s NodeArtifactSubject) string { return s.NodeID() + "|" + s.ArtifactName() })
+			},
+			want: []string{"web|values-yaml"},
+		},
+		{
+			kind: SubjectNodeSocket,
+			seam: seamTraversal,
+			read: func(f traversalFixture) []string {
+				return readback(func(c Check[traversalView, NoHostPowers, NodeSocketSubject]) []Objection {
+					return RunOnNodeSockets(f, f, traversalView{}, c)
+				}, func(s NodeSocketSubject) string { return s.NodeID() + "|" + s.SocketName() })
+			},
+			want: []string{"web|zebra", "web|alpha", "billing.api|db"},
+		},
+		{
+			kind: SubjectEdge,
+			seam: seamTraversal,
+			read: func(f traversalFixture) []string {
+				return readback(func(c Check[traversalView, NoHostPowers, EdgeSubject]) []Objection {
+					return RunOnEdges(f, traversalView{}, c)
+				}, func(s EdgeSubject) string { return s.NodeID() + "|" + s.SocketName() })
+			},
+			want: []string{"web|zebra", "billing.api|db"},
+		},
+
+		// The kind whose innermost coordinate contributes no locator segment, which is
+		// exactly why it needs this assertion rather than the provenance transcript:
+		// all three of its invocations carry one identical locator, so nothing in that
+		// transcript distinguishes them and a traversal that discarded the path would
+		// read as correct there.
+		{
+			kind: SubjectBoundaryProviderPath,
+			seam: seamTraversal,
+			read: func(f traversalFixture) []string {
+				return readback(func(c Check[traversalView, NoHostPowers, BoundaryProviderPathSubject]) []Objection {
+					return RunOnBoundaryProviderPaths(f, f, f, traversalView{}, c)
+				}, func(s BoundaryProviderPathSubject) string {
+					return s.BoundaryName() + "|" + s.ProviderName() + "|" + s.EmittedPath()
+				})
+			},
+			want: []string{"prod|helm|a.yaml", "prod|helm|b.yaml", "prod|terraform|main.tf.json"},
+		},
+	}
+}
+
+// TestEveryKindsCoordinateReadbackIsExercised keeps the readback table honest
+// against the generated kind set, which is the guard the traversal table carries
+// and for the same reason: a hand-written table of nineteen entries beside a
+// generated set of nineteen kinds reads as complete while missing one, and the one
+// it misses is a kind whose coordinates are proved by nothing.
+func TestEveryKindsCoordinateReadbackIsExercised(t *testing.T) {
+	t.Parallel()
+
+	if len(SubjectKinds) == 0 {
+		t.Fatalf("the generated kind set is empty, so a clean result here certifies nothing")
+	}
+
+	cases := coordinateFlowCases()
+
+	covered := map[SubjectKind]string{}
+	for _, tc := range cases {
+		if seam, duplicate := covered[tc.kind]; duplicate {
+			t.Errorf("%s has two readback cases (seams %s and %s); one kind's coordinates have one answer",
+				tc.kind, seam, tc.seam)
+		}
+		covered[tc.kind] = tc.seam
+	}
+
+	declaredKinds := map[SubjectKind]bool{}
+	var missing []string
+	for _, info := range SubjectKinds {
+		declaredKinds[info.Kind] = true
+		if _, ok := covered[info.Kind]; !ok {
+			missing = append(missing, string(info.Kind))
+		}
+	}
+	if len(missing) > 0 {
+		t.Errorf("no coordinate readback for the derived kind(s) %s.\n"+
+			"INVARIANT: a coordinate a kind declares reaches the check that declared the kind.\n"+
+			"CONSEQUENCE: the declaration assertions compare names and never call an accessor, so a kind "+
+			"absent from this table can carry a full accessor set where every one of them returns the empty "+
+			"string, with every assertion green.", strings.Join(missing, ", "))
+	}
+	for _, tc := range cases {
+		if !declaredKinds[tc.kind] {
+			t.Errorf("the readback table carries %s, which the generated kind set does not declare", tc.kind)
 		}
 	}
 
-	t.Run(string(SubjectNodeSocket), func(t *testing.T) {
-		t.Parallel()
-
-		var got []string
-		_ = RunOnNodeSockets(fixture, fixture, traversalView{}, Check[traversalView, NoHostPowers, NodeSocketSubject]{
-			Sentinel: errRuleBroken,
-			Severity: SeverityFatal,
-			Run: func(_ traversalView, s NodeSocketSubject) []Objection {
-				got = append(got, s.NodeID()+"|"+s.SocketName())
-				return nil
-			},
-		})
-
-		assert(t, got, []string{"web|zebra", "web|alpha", "billing.api|db"})
-	})
-
-	t.Run(string(SubjectEdge), func(t *testing.T) {
-		t.Parallel()
-
-		var got []string
-		_ = RunOnEdges(fixture, traversalView{}, Check[traversalView, NoHostPowers, EdgeSubject]{
-			Sentinel: errRuleBroken,
-			Severity: SeverityFatal,
-			Run: func(_ traversalView, s EdgeSubject) []Objection {
-				got = append(got, s.NodeID()+"|"+s.SocketName())
-				return nil
-			},
-		})
-
-		assert(t, got, []string{"web|zebra", "billing.api|db"})
-	})
-
-	// The kind whose innermost coordinate contributes no locator segment, which is
-	// exactly why it needs this assertion rather than the provenance transcript:
-	// all three of its invocations carry one identical locator, so nothing in that
-	// transcript distinguishes them and a traversal that discarded the path would
-	// read as correct there.
-	t.Run(string(SubjectBoundaryProviderPath), func(t *testing.T) {
-		t.Parallel()
-
-		var got []string
-		_ = RunOnBoundaryProviderPaths(fixture, fixture, fixture, traversalView{},
-			Check[traversalView, NoHostPowers, BoundaryProviderPathSubject]{
-				Sentinel: errRuleBroken,
-				Severity: SeverityFatal,
-				Run: func(_ traversalView, s BoundaryProviderPathSubject) []Objection {
-					got = append(got, s.BoundaryName()+"|"+s.ProviderName()+"|"+s.EmittedPath())
-					return nil
-				},
-			})
-
-		assert(t, got, []string{"prod|helm|a.yaml", "prod|helm|b.yaml", "prod|terraform|main.tf.json"})
-	})
+	traversalSeams := 0
+	for _, seam := range covered {
+		if seam == seamTraversal {
+			traversalSeams++
+		}
+	}
+	t.Logf("coordinate readback: %d of %d derived kind(s) covered, %d through a traversal and %d through a "+
+		"constructor", len(covered), len(SubjectKinds), traversalSeams, len(covered)-traversalSeams)
 }
 
 // TestATraversalOverNoInstancesInvokesNothing pins the empty case explicitly

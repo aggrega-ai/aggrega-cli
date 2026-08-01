@@ -127,7 +127,7 @@ func RunOnNodes[V View, C any](
 ) []Objection {
 	return runOverNodes(nodes, view, check.Run, func(node NodeInstance) []NodeSubject {
 		return []NodeSubject{newComponentNodeSubject(
-			node.SourceFile, node.AuthoredName, node.SubsystemPath, node.SynthesizedSubsystem,
+			node.SourceFile, node.ID, node.AuthoredName, node.SubsystemPath, node.SynthesizedSubsystem,
 		)}
 	})
 }
@@ -196,7 +196,8 @@ func RunOnNodeAttachments[V View, C any](
 		out := make([]NodeAttachmentSubject, 0, len(names))
 		for _, attachment := range names {
 			out = append(out, newNodeAttachmentSubject(
-				node.SourceFile, componentInnerSegments(node, authoredKeyFeatures, attachment)...,
+				node.SourceFile, node.ID, attachment,
+				componentInnerSegments(node, authoredKeyFeatures, attachment)...,
 			))
 		}
 		return out
@@ -221,9 +222,12 @@ func RunOnNodeAttachmentSockets[V View, C any](
 		var out []NodeAttachmentSocketSubject
 		for _, attachment := range attachments.Attachments(node.ID) {
 			for _, socket := range sockets.AttachmentSockets(node.ID, attachment) {
-				out = append(out, newNodeAttachmentSocketSubject(node.SourceFile, componentInnerSegments(
-					node, authoredKeyFeatures, attachment, authoredKeyUses, socket,
-				)...))
+				out = append(out, newNodeAttachmentSocketSubject(
+					node.SourceFile, node.ID, attachment, socket,
+					componentInnerSegments(
+						node, authoredKeyFeatures, attachment, authoredKeyUses, socket,
+					)...,
+				))
 			}
 		}
 		return out
@@ -247,7 +251,8 @@ func RunOnNodeSlots[V View, C any](
 		out := make([]NodeSlotSubject, 0, len(names))
 		for _, slot := range names {
 			out = append(out, newNodeSlotSubject(
-				node.SourceFile, componentInnerSegments(node, authoredKeyFeatures, slot)...,
+				node.SourceFile, node.ID, slot,
+				componentInnerSegments(node, authoredKeyFeatures, slot)...,
 			))
 		}
 		return out
@@ -269,7 +274,8 @@ func RunOnNodeMechanisms[V View, C any](
 		out := make([]NodeMechanismSubject, 0, len(names))
 		for _, mechanism := range names {
 			out = append(out, newNodeMechanismSubject(
-				node.SourceFile, componentInnerSegments(node, authoredKeyInject, mechanism)...,
+				node.SourceFile, node.ID, mechanism,
+				componentInnerSegments(node, authoredKeyInject, mechanism)...,
 			))
 		}
 		return out
@@ -292,9 +298,12 @@ func RunOnNodeMechanismDeliveryKeys[V View, C any](
 		var out []NodeMechanismDeliveryKeySubject
 		for _, mechanism := range mechanisms.Mechanisms(node.ID) {
 			for _, key := range keys.DeliveryKeys(node.ID, mechanism) {
-				out = append(out, newNodeMechanismDeliveryKeySubject(node.SourceFile, componentInnerSegments(
-					node, authoredKeyInject, mechanism, key,
-				)...))
+				out = append(out, newNodeMechanismDeliveryKeySubject(
+					node.SourceFile, node.ID, mechanism, key,
+					componentInnerSegments(
+						node, authoredKeyInject, mechanism, key,
+					)...,
+				))
 			}
 		}
 		return out
@@ -316,9 +325,12 @@ func RunOnNodePillarLeaves[V View, C any](
 		var out []NodePillarLeafSubject
 		for _, pillar := range pillars.NodePillars(node.ID) {
 			for _, leaf := range leaves.NodePillarLeaves(node.ID, pillar) {
-				out = append(out, newNodePillarLeafSubject(node.SourceFile, componentInnerSegments(
-					node, authoredKeyValues, pillar, leaf,
-				)...))
+				out = append(out, newNodePillarLeafSubject(
+					node.SourceFile, node.ID, pillar, leaf,
+					componentInnerSegments(
+						node, authoredKeyValues, pillar, leaf,
+					)...,
+				))
 			}
 		}
 		return out
@@ -345,7 +357,8 @@ func RunOnNodeParameters[V View, C any](
 		out := make([]NodeParameterSubject, 0, len(names))
 		for _, name := range names {
 			out = append(out, newNodeParameterSubject(
-				node.SourceFile, documentSpecSegments(authoredKeyParameters, name)...,
+				node.SourceFile, node.ID, name,
+				documentSpecSegments(authoredKeyParameters, name)...,
 			))
 		}
 		return out
@@ -373,9 +386,12 @@ func RunOnNodeAttachmentPillarLeaves[V View, C any](
 		for _, attachment := range attachments.Attachments(node.ID) {
 			for _, pillar := range pillars.AttachmentPillars(node.ID, attachment) {
 				for _, leaf := range leaves.AttachmentPillarLeaves(node.ID, attachment, pillar) {
-					out = append(out, newNodeAttachmentPillarLeafSubject(node.SourceFile, componentInnerSegments(
-						node, authoredKeyFeatures, attachment, authoredKeyValues, pillar, leaf,
-					)...))
+					out = append(out, newNodeAttachmentPillarLeafSubject(
+						node.SourceFile, node.ID, attachment, pillar, leaf,
+						componentInnerSegments(
+							node, authoredKeyFeatures, attachment, authoredKeyValues, pillar, leaf,
+						)...,
+					))
 				}
 			}
 		}
@@ -404,7 +420,8 @@ func RunOnNodeLocalsKeys[V View, C any](
 		out := make([]NodeLocalsKeySubject, 0, len(entries))
 		for _, entry := range entries {
 			out = append(out, newNodeLocalsKeySubject(
-				entry.SourceFile, documentSpecSegments(authoredKeyLocals, entry.Value)...,
+				entry.SourceFile, node.ID, entry.Value,
+				documentSpecSegments(authoredKeyLocals, entry.Value)...,
 			))
 		}
 		return out
@@ -426,7 +443,8 @@ func RunOnNodeProvidesKeys[V View, C any](
 		out := make([]NodeProvidesKeySubject, 0, len(entries))
 		for _, entry := range entries {
 			out = append(out, newNodeProvidesKeySubject(
-				entry.SourceFile, documentSpecSegments(authoredKeyProvides, entry.Value)...,
+				entry.SourceFile, node.ID, entry.Value,
+				documentSpecSegments(authoredKeyProvides, entry.Value)...,
 			))
 		}
 		return out
@@ -451,7 +469,8 @@ func RunOnNodePipelineSteps[V View, C any](
 		out := make([]NodePipelineStepSubject, 0, len(entries))
 		for _, entry := range entries {
 			out = append(out, newNodePipelineStepSubject(
-				entry.SourceFile, documentSpecSegments(authoredKeyPipeline, entry.Value)...,
+				entry.SourceFile, node.ID, entry.Value,
+				documentSpecSegments(authoredKeyPipeline, entry.Value)...,
 			))
 		}
 		return out
@@ -474,7 +493,8 @@ func RunOnNodeArtifacts[V View, C any](
 		out := make([]NodeArtifactSubject, 0, len(entries))
 		for _, entry := range entries {
 			out = append(out, newNodeArtifactSubject(
-				entry.SourceFile, documentSpecSegments(authoredKeyArtifacts, entry.Value)...,
+				entry.SourceFile, node.ID, entry.Value,
+				documentSpecSegments(authoredKeyArtifacts, entry.Value)...,
 			))
 		}
 		return out

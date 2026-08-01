@@ -45,8 +45,20 @@ package constraint
 // a real dependency from the point where a check's placement is worked out.
 //
 // The accessor name is the coordinate's name plus a suffix naming what the value
-// is — an identifier, a name — rather than the bare coordinate, so a signature
-// reads as the thing it returns.
+// is — an identifier, a name, a key — rather than the bare coordinate, so a
+// signature reads as the thing it returns. The suffix is a judgement and not a
+// transform: an emitted path is not named for its coordinate at all, and four
+// coordinates are written with a hyphen and could not be Go identifiers even
+// spelled mechanically. So the choice is made once per coordinate *name* — never
+// per kind, which would be a second copy of a derived set — and a test derives
+// each kind's expected accessor set from the generated coordinates through that
+// one mapping, refusing a coordinate the mapping has no entry for rather than
+// passing over it.
+//
+// One accessor name means one thing wherever it appears, and which coordinate
+// set a value came from is said by the kind that carries it rather than by the
+// name: the socket of an attachment and the socket of a component are both
+// SocketName, on two kinds a check cannot confuse.
 //
 // Adding one does not weaken the seal. Forgery is prevented by the unexported
 // marker, which a type declared outside this package cannot declare however many
@@ -61,30 +73,56 @@ package constraint
 // subject names only the file.
 type DocumentParameterSubject interface {
 	Subject
+
+	// ParameterName is the declared parameter the check was invoked for. The
+	// document itself is the other coordinate, and SourceFile names it.
+	ParameterName() string
+
 	documentParameter()
 }
 
-type documentParameterSubject struct{ provenance }
+type documentParameterSubject struct {
+	provenance
+	parameter string
+}
 
 func (documentParameterSubject) documentParameter() {}
 
-func newDocumentParameterSubject(sourceFile string, segments ...string) DocumentParameterSubject {
-	return documentParameterSubject{newProvenance(sourceFile, segments...)}
+func (s documentParameterSubject) ParameterName() string { return s.parameter }
+
+func newDocumentParameterSubject(sourceFile, parameter string, segments ...string) DocumentParameterSubject {
+	return documentParameterSubject{
+		provenance: newProvenance(sourceFile, segments...),
+		parameter:  parameter,
+	}
 }
 
 // DocumentAssertionSubject is the subject of a check invoked once per assertion
 // an entity declares across its resolved inheritance chain.
 type DocumentAssertionSubject interface {
 	Subject
+
+	// AssertionName is the declared assertion the check was invoked for. The
+	// document itself is the other coordinate, and SourceFile names it.
+	AssertionName() string
+
 	documentAssertion()
 }
 
-type documentAssertionSubject struct{ provenance }
+type documentAssertionSubject struct {
+	provenance
+	assertion string
+}
 
 func (documentAssertionSubject) documentAssertion() {}
 
-func newDocumentAssertionSubject(sourceFile string, segments ...string) DocumentAssertionSubject {
-	return documentAssertionSubject{newProvenance(sourceFile, segments...)}
+func (s documentAssertionSubject) AssertionName() string { return s.assertion }
+
+func newDocumentAssertionSubject(sourceFile, assertion string, segments ...string) DocumentAssertionSubject {
+	return documentAssertionSubject{
+		provenance: newProvenance(sourceFile, segments...),
+		assertion:  assertion,
+	}
 }
 
 // NodeSubject is the subject of a check invoked once per node: one component
@@ -95,15 +133,34 @@ func newDocumentAssertionSubject(sourceFile string, segments ...string) Document
 // it was reached. See [newComponentNodeSubject].
 type NodeSubject interface {
 	Subject
+
+	// NodeID identifies the node the check was invoked for, as every keyed fact
+	// takes it. It is the identifier the facts are keyed by and not the name the
+	// author wrote: a node flattened out of a sub-aggregate carries a qualified
+	// identifier, and the authored name is what the locator is built from.
+	NodeID() string
+
 	node()
 }
 
-type nodeSubject struct{ provenance }
+// The coordinate field is nodeID rather than node because the marker method of
+// this kind is node(), and a struct cannot carry a field and a method of one
+// name. Every other node-rooted kind's marker is named for its innermost
+// coordinate, so this is the one kind where the collision arises.
+type nodeSubject struct {
+	provenance
+	nodeID string
+}
 
 func (nodeSubject) node() {}
 
-func newNodeSubject(sourceFile string, segments ...string) NodeSubject {
-	return nodeSubject{newProvenance(sourceFile, segments...)}
+func (s nodeSubject) NodeID() string { return s.nodeID }
+
+func newNodeSubject(sourceFile, node string, segments ...string) NodeSubject {
+	return nodeSubject{
+		provenance: newProvenance(sourceFile, segments...),
+		nodeID:     node,
+	}
 }
 
 // NodeSocketSubject is the subject of a check invoked once per dependency
@@ -185,15 +242,35 @@ func newEdgeSubject(sourceFile, node, socket string, segments ...string) EdgeSub
 // node carries.
 type NodeAttachmentSubject interface {
 	Subject
+
+	// NodeID identifies the node carrying the attachment, as every keyed fact
+	// takes it.
+	NodeID() string
+
+	// AttachmentName is the attachment the check was invoked for.
+	AttachmentName() string
+
 	nodeAttachment()
 }
 
-type nodeAttachmentSubject struct{ provenance }
+type nodeAttachmentSubject struct {
+	provenance
+	node       string
+	attachment string
+}
 
 func (nodeAttachmentSubject) nodeAttachment() {}
 
-func newNodeAttachmentSubject(sourceFile string, segments ...string) NodeAttachmentSubject {
-	return nodeAttachmentSubject{newProvenance(sourceFile, segments...)}
+func (s nodeAttachmentSubject) NodeID() string { return s.node }
+
+func (s nodeAttachmentSubject) AttachmentName() string { return s.attachment }
+
+func newNodeAttachmentSubject(sourceFile, node, attachment string, segments ...string) NodeAttachmentSubject {
+	return nodeAttachmentSubject{
+		provenance: newProvenance(sourceFile, segments...),
+		node:       node,
+		attachment: attachment,
+	}
 }
 
 // NodeAttachmentSocketSubject is the subject of a check invoked once per socket
@@ -204,15 +281,48 @@ func newNodeAttachmentSubject(sourceFile string, segments ...string) NodeAttachm
 // attachment as well as per node.
 type NodeAttachmentSocketSubject interface {
 	Subject
+
+	// NodeID identifies the node carrying the attachment, as every keyed fact
+	// takes it.
+	NodeID() string
+
+	// AttachmentName is the attachment whose own dependency block declares the
+	// socket.
+	AttachmentName() string
+
+	// SocketName is the socket the check was invoked for. It is declared on the
+	// attached Feature, so it is not one of the component's own sockets — which
+	// coordinate set it belongs to is said by the kind it is reached within.
+	SocketName() string
+
 	nodeAttachmentSocket()
 }
 
-type nodeAttachmentSocketSubject struct{ provenance }
+type nodeAttachmentSocketSubject struct {
+	provenance
+	node       string
+	attachment string
+	socket     string
+}
 
 func (nodeAttachmentSocketSubject) nodeAttachmentSocket() {}
 
-func newNodeAttachmentSocketSubject(sourceFile string, segments ...string) NodeAttachmentSocketSubject {
-	return nodeAttachmentSocketSubject{newProvenance(sourceFile, segments...)}
+func (s nodeAttachmentSocketSubject) NodeID() string { return s.node }
+
+func (s nodeAttachmentSocketSubject) AttachmentName() string { return s.attachment }
+
+func (s nodeAttachmentSocketSubject) SocketName() string { return s.socket }
+
+func newNodeAttachmentSocketSubject(
+	sourceFile, node, attachment, socket string,
+	segments ...string,
+) NodeAttachmentSocketSubject {
+	return nodeAttachmentSocketSubject{
+		provenance: newProvenance(sourceFile, segments...),
+		node:       node,
+		attachment: attachment,
+		socket:     socket,
+	}
 }
 
 // NodeSlotSubject is the subject of a check invoked once per attachment slot a
@@ -223,75 +333,195 @@ func newNodeAttachmentSocketSubject(sourceFile string, segments ...string) NodeA
 // Collapsing them would flatten a distinction the author writes.
 type NodeSlotSubject interface {
 	Subject
+
+	// NodeID identifies the node whose component type declares the slot, as every
+	// keyed fact takes it.
+	NodeID() string
+
+	// SlotName is the attachment slot the check was invoked for.
+	SlotName() string
+
 	nodeSlot()
 }
 
-type nodeSlotSubject struct{ provenance }
+type nodeSlotSubject struct {
+	provenance
+	node string
+	slot string
+}
 
 func (nodeSlotSubject) nodeSlot() {}
 
-func newNodeSlotSubject(sourceFile string, segments ...string) NodeSlotSubject {
-	return nodeSlotSubject{newProvenance(sourceFile, segments...)}
+func (s nodeSlotSubject) NodeID() string { return s.node }
+
+func (s nodeSlotSubject) SlotName() string { return s.slot }
+
+func newNodeSlotSubject(sourceFile, node, slot string, segments ...string) NodeSlotSubject {
+	return nodeSlotSubject{
+		provenance: newProvenance(sourceFile, segments...),
+		node:       node,
+		slot:       slot,
+	}
 }
 
 // NodeMechanismSubject is the subject of a check invoked once per delivery
 // mechanism a node's injection block declares.
 type NodeMechanismSubject interface {
 	Subject
+
+	// NodeID identifies the node whose injection block declares the mechanism, as
+	// every keyed fact takes it.
+	NodeID() string
+
+	// MechanismName is the delivery mechanism the check was invoked for.
+	MechanismName() string
+
 	nodeMechanism()
 }
 
-type nodeMechanismSubject struct{ provenance }
+type nodeMechanismSubject struct {
+	provenance
+	node      string
+	mechanism string
+}
 
 func (nodeMechanismSubject) nodeMechanism() {}
 
-func newNodeMechanismSubject(sourceFile string, segments ...string) NodeMechanismSubject {
-	return nodeMechanismSubject{newProvenance(sourceFile, segments...)}
+func (s nodeMechanismSubject) NodeID() string { return s.node }
+
+func (s nodeMechanismSubject) MechanismName() string { return s.mechanism }
+
+func newNodeMechanismSubject(sourceFile, node, mechanism string, segments ...string) NodeMechanismSubject {
+	return nodeMechanismSubject{
+		provenance: newProvenance(sourceFile, segments...),
+		node:       node,
+		mechanism:  mechanism,
+	}
 }
 
 // NodeMechanismDeliveryKeySubject is the subject of a check invoked once per key
 // a node delivers through one injection mechanism.
 type NodeMechanismDeliveryKeySubject interface {
 	Subject
+
+	// NodeID identifies the node delivering the key, as every keyed fact takes it.
+	NodeID() string
+
+	// MechanismName is the injection mechanism the key is delivered through.
+	MechanismName() string
+
+	// DeliveryKey is the key the check was invoked for: the name the value is
+	// delivered under, which is what the consumer reads it by.
+	DeliveryKey() string
+
 	nodeMechanismDeliveryKey()
 }
 
-type nodeMechanismDeliveryKeySubject struct{ provenance }
+type nodeMechanismDeliveryKeySubject struct {
+	provenance
+	node      string
+	mechanism string
+	key       string
+}
 
 func (nodeMechanismDeliveryKeySubject) nodeMechanismDeliveryKey() {}
 
-func newNodeMechanismDeliveryKeySubject(sourceFile string, segments ...string) NodeMechanismDeliveryKeySubject {
-	return nodeMechanismDeliveryKeySubject{newProvenance(sourceFile, segments...)}
+func (s nodeMechanismDeliveryKeySubject) NodeID() string { return s.node }
+
+func (s nodeMechanismDeliveryKeySubject) MechanismName() string { return s.mechanism }
+
+func (s nodeMechanismDeliveryKeySubject) DeliveryKey() string { return s.key }
+
+func newNodeMechanismDeliveryKeySubject(
+	sourceFile, node, mechanism, key string,
+	segments ...string,
+) NodeMechanismDeliveryKeySubject {
+	return nodeMechanismDeliveryKeySubject{
+		provenance: newProvenance(sourceFile, segments...),
+		node:       node,
+		mechanism:  mechanism,
+		key:        key,
+	}
 }
 
 // NodePillarLeafSubject is the subject of a check invoked once per leaf of one
 // configuration pillar a node's author wrote.
 type NodePillarLeafSubject interface {
 	Subject
+
+	// NodeID identifies the node whose author wrote the pillar, as every keyed
+	// fact takes it.
+	NodeID() string
+
+	// PillarName is the configuration pillar the leaf sits in.
+	PillarName() string
+
+	// LeafName is the leaf the check was invoked for.
+	LeafName() string
+
 	nodePillarLeaf()
 }
 
-type nodePillarLeafSubject struct{ provenance }
+type nodePillarLeafSubject struct {
+	provenance
+	node   string
+	pillar string
+	leaf   string
+}
 
 func (nodePillarLeafSubject) nodePillarLeaf() {}
 
-func newNodePillarLeafSubject(sourceFile string, segments ...string) NodePillarLeafSubject {
-	return nodePillarLeafSubject{newProvenance(sourceFile, segments...)}
+func (s nodePillarLeafSubject) NodeID() string { return s.node }
+
+func (s nodePillarLeafSubject) PillarName() string { return s.pillar }
+
+func (s nodePillarLeafSubject) LeafName() string { return s.leaf }
+
+func newNodePillarLeafSubject(
+	sourceFile, node, pillar, leaf string,
+	segments ...string,
+) NodePillarLeafSubject {
+	return nodePillarLeafSubject{
+		provenance: newProvenance(sourceFile, segments...),
+		node:       node,
+		pillar:     pillar,
+		leaf:       leaf,
+	}
 }
 
 // NodeParameterSubject is the subject of a check invoked once per parameter a
 // node resolved.
 type NodeParameterSubject interface {
 	Subject
+
+	// NodeID identifies the node that resolved the parameter, as every keyed fact
+	// takes it.
+	NodeID() string
+
+	// ParameterName is the resolved parameter the check was invoked for.
+	ParameterName() string
+
 	nodeParameter()
 }
 
-type nodeParameterSubject struct{ provenance }
+type nodeParameterSubject struct {
+	provenance
+	node      string
+	parameter string
+}
 
 func (nodeParameterSubject) nodeParameter() {}
 
-func newNodeParameterSubject(sourceFile string, segments ...string) NodeParameterSubject {
-	return nodeParameterSubject{newProvenance(sourceFile, segments...)}
+func (s nodeParameterSubject) NodeID() string { return s.node }
+
+func (s nodeParameterSubject) ParameterName() string { return s.parameter }
+
+func newNodeParameterSubject(sourceFile, node, parameter string, segments ...string) NodeParameterSubject {
+	return nodeParameterSubject{
+		provenance: newProvenance(sourceFile, segments...),
+		node:       node,
+		parameter:  parameter,
+	}
 }
 
 // NodeAttachmentPillarLeafSubject is the subject of a check invoked once per
@@ -301,15 +531,52 @@ func newNodeParameterSubject(sourceFile string, segments ...string) NodeParamete
 // its own right elsewhere: the two are not the same axis.
 type NodeAttachmentPillarLeafSubject interface {
 	Subject
+
+	// NodeID identifies the node carrying the attachment, as every keyed fact
+	// takes it.
+	NodeID() string
+
+	// AttachmentName is the attachment whose configuration holds the pillar.
+	AttachmentName() string
+
+	// PillarName is the configuration pillar the leaf sits in.
+	PillarName() string
+
+	// LeafName is the leaf the check was invoked for.
+	LeafName() string
+
 	nodeAttachmentPillarLeaf()
 }
 
-type nodeAttachmentPillarLeafSubject struct{ provenance }
+type nodeAttachmentPillarLeafSubject struct {
+	provenance
+	node       string
+	attachment string
+	pillar     string
+	leaf       string
+}
 
 func (nodeAttachmentPillarLeafSubject) nodeAttachmentPillarLeaf() {}
 
-func newNodeAttachmentPillarLeafSubject(sourceFile string, segments ...string) NodeAttachmentPillarLeafSubject {
-	return nodeAttachmentPillarLeafSubject{newProvenance(sourceFile, segments...)}
+func (s nodeAttachmentPillarLeafSubject) NodeID() string { return s.node }
+
+func (s nodeAttachmentPillarLeafSubject) AttachmentName() string { return s.attachment }
+
+func (s nodeAttachmentPillarLeafSubject) PillarName() string { return s.pillar }
+
+func (s nodeAttachmentPillarLeafSubject) LeafName() string { return s.leaf }
+
+func newNodeAttachmentPillarLeafSubject(
+	sourceFile, node, attachment, pillar, leaf string,
+	segments ...string,
+) NodeAttachmentPillarLeafSubject {
+	return nodeAttachmentPillarLeafSubject{
+		provenance: newProvenance(sourceFile, segments...),
+		node:       node,
+		attachment: attachment,
+		pillar:     pillar,
+		leaf:       leaf,
+	}
 }
 
 // NodeLocalsKeySubject is the subject of a check invoked once per local a node's
@@ -320,45 +587,109 @@ func newNodeAttachmentPillarLeafSubject(sourceFile string, segments ...string) N
 // about it.
 type NodeLocalsKeySubject interface {
 	Subject
+
+	// NodeID identifies the node whose Recipe declares the local, as every keyed
+	// fact takes it.
+	NodeID() string
+
+	// LocalsKey is the declared local the check was invoked for: the key the
+	// author wrote, which a later local references it by.
+	LocalsKey() string
+
 	nodeLocalsKey()
 }
 
-type nodeLocalsKeySubject struct{ provenance }
+type nodeLocalsKeySubject struct {
+	provenance
+	node string
+	key  string
+}
 
 func (nodeLocalsKeySubject) nodeLocalsKey() {}
 
-func newNodeLocalsKeySubject(sourceFile string, segments ...string) NodeLocalsKeySubject {
-	return nodeLocalsKeySubject{newProvenance(sourceFile, segments...)}
+func (s nodeLocalsKeySubject) NodeID() string { return s.node }
+
+func (s nodeLocalsKeySubject) LocalsKey() string { return s.key }
+
+func newNodeLocalsKeySubject(sourceFile, node, key string, segments ...string) NodeLocalsKeySubject {
+	return nodeLocalsKeySubject{
+		provenance: newProvenance(sourceFile, segments...),
+		node:       node,
+		key:        key,
+	}
 }
 
 // NodeProvidesKeySubject is the subject of a check invoked once per key a node's
 // Recipe provides.
 type NodeProvidesKeySubject interface {
 	Subject
+
+	// NodeID identifies the node whose Recipe provides the key, as every keyed
+	// fact takes it.
+	NodeID() string
+
+	// ProvidesKey is the provided key the check was invoked for: the name a
+	// consumer of this node reads the value under.
+	ProvidesKey() string
+
 	nodeProvidesKey()
 }
 
-type nodeProvidesKeySubject struct{ provenance }
+type nodeProvidesKeySubject struct {
+	provenance
+	node string
+	key  string
+}
 
 func (nodeProvidesKeySubject) nodeProvidesKey() {}
 
-func newNodeProvidesKeySubject(sourceFile string, segments ...string) NodeProvidesKeySubject {
-	return nodeProvidesKeySubject{newProvenance(sourceFile, segments...)}
+func (s nodeProvidesKeySubject) NodeID() string { return s.node }
+
+func (s nodeProvidesKeySubject) ProvidesKey() string { return s.key }
+
+func newNodeProvidesKeySubject(sourceFile, node, key string, segments ...string) NodeProvidesKeySubject {
+	return nodeProvidesKeySubject{
+		provenance: newProvenance(sourceFile, segments...),
+		node:       node,
+		key:        key,
+	}
 }
 
 // NodePipelineStepSubject is the subject of a check invoked once per step of a
 // node's Recipe pipeline.
 type NodePipelineStepSubject interface {
 	Subject
+
+	// NodeID identifies the node whose Recipe declares the pipeline, as every
+	// keyed fact takes it.
+	NodeID() string
+
+	// StepID is the step the check was invoked for. The pipeline is an ordered
+	// list whose entries carry an identifier, and this is that identifier rather
+	// than a position: a position moves when a step is inserted above it.
+	StepID() string
+
 	nodePipelineStep()
 }
 
-type nodePipelineStepSubject struct{ provenance }
+type nodePipelineStepSubject struct {
+	provenance
+	node   string
+	stepID string
+}
 
 func (nodePipelineStepSubject) nodePipelineStep() {}
 
-func newNodePipelineStepSubject(sourceFile string, segments ...string) NodePipelineStepSubject {
-	return nodePipelineStepSubject{newProvenance(sourceFile, segments...)}
+func (s nodePipelineStepSubject) NodeID() string { return s.node }
+
+func (s nodePipelineStepSubject) StepID() string { return s.stepID }
+
+func newNodePipelineStepSubject(sourceFile, node, step string, segments ...string) NodePipelineStepSubject {
+	return nodePipelineStepSubject{
+		provenance: newProvenance(sourceFile, segments...),
+		node:       node,
+		stepID:     step,
+	}
 }
 
 // BoundaryProviderPathSubject is the subject of a check invoked once per output
@@ -417,13 +748,34 @@ func newBoundaryProviderPathSubject(
 // projects.
 type NodeArtifactSubject interface {
 	Subject
+
+	// NodeID identifies the node projecting the artifact, as every keyed fact
+	// takes it.
+	NodeID() string
+
+	// ArtifactName is the artifact the check was invoked for: the authored key,
+	// which is the output filename.
+	ArtifactName() string
+
 	nodeArtifact()
 }
 
-type nodeArtifactSubject struct{ provenance }
+type nodeArtifactSubject struct {
+	provenance
+	node     string
+	artifact string
+}
 
 func (nodeArtifactSubject) nodeArtifact() {}
 
-func newNodeArtifactSubject(sourceFile string, segments ...string) NodeArtifactSubject {
-	return nodeArtifactSubject{newProvenance(sourceFile, segments...)}
+func (s nodeArtifactSubject) NodeID() string { return s.node }
+
+func (s nodeArtifactSubject) ArtifactName() string { return s.artifact }
+
+func newNodeArtifactSubject(sourceFile, node, artifact string, segments ...string) NodeArtifactSubject {
+	return nodeArtifactSubject{
+		provenance: newProvenance(sourceFile, segments...),
+		node:       node,
+		artifact:   artifact,
+	}
 }
