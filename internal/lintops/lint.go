@@ -61,6 +61,11 @@ type Config struct {
 	// Nil defaults to os.Stdout at the top of RunEntity; callers pass a buffer to
 	// capture the confirmation.
 	Out io.Writer
+
+	// Collect optionally gathers the run's findings as data alongside the human
+	// report, for a caller that renders them structurally. Nil collects nothing
+	// and leaves every other behaviour untouched.
+	Collect *FindingCollector
 }
 
 // workspaceOrResolve returns ws when set — the production path, where a caller
@@ -262,6 +267,8 @@ func RunEntity(cfg Config) error {
 		if verdict != "" {
 			proposedBump := bumpDirection(previousVersion, header.Metadata.Version)
 			if !proposedBumpSatisfies(proposedBump, verdict) {
+				cfg.Collect.Add(aggregated, cfg.EntityPath)
+				cfg.Collect.Entities(1)
 				printFindings(aggregated, cfg.DiagOut)
 				return fmt.Errorf(
 					"aggrega lint --pre-publish: schema-evolution requires %s bump; proposed %s -> %s is %s",
@@ -275,6 +282,8 @@ func RunEntity(cfg Config) error {
 		}
 	}
 
+	cfg.Collect.Add(aggregated, cfg.EntityPath)
+	cfg.Collect.Entities(1)
 	halted := printFindings(aggregated, cfg.DiagOut)
 	if halted {
 		return fmt.Errorf("aggrega lint: %d error finding(s)", countErrors(aggregated))

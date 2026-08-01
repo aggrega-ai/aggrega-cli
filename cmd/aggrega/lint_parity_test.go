@@ -133,7 +133,7 @@ func TestLintReleaseCoreParity(t *testing.T) {
 
 	// Core oracle.
 	var coreOut, coreDiag bytes.Buffer
-	coreErr := lintops.RunRelease(rw, releasePath, dirs, &coreOut, &coreDiag)
+	coreErr := lintops.RunRelease(rw, releasePath, dirs, &coreOut, &coreDiag, nil)
 
 	// CLI leg.
 	var cliOut bytes.Buffer

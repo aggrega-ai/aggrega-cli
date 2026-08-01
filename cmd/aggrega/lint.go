@@ -5,6 +5,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"os"
 
 	"github.com/spf13/cobra"
@@ -41,6 +42,8 @@ var (
 	lintNoAllowCategoryMismatches bool
 	lintEnforceImmutability       bool
 	lintNoEnforceImmutability     bool
+
+	lintOutput string
 )
 
 func newLintCmd() *cobra.Command {
@@ -71,9 +74,23 @@ classification is compared against the proposed version bump; mismatches
 halt. --pre-publish applies to the single-entity shape only. Per-workspace
 policy flags from .aggrega-config.yaml's lint.publishing_discipline block
 can be overridden per invocation via the --allow-*/--no-allow-* and
---enforce-*/--no-enforce-* flag pairs.`,
+--enforce-*/--no-enforce-* flag pairs.
+
+All three shapes accept -o json, which replaces the human report on standard
+output with one structured document: every finding with its severity, the rule
+that produced it, its message, and the entity file it concerns, plus counts by
+severity. A finding carries a line and column only when the rule that produced
+it located the issue that precisely; otherwise the file alone locates it. The
+message is the rule's own text, carried through unchanged, so the structured and
+human renderings never word a finding differently. The exit status is the same
+under either format.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			format, err := parseFormat("lint", lintOutput, "text", "json")
+			if err != nil {
+				return err
+			}
+			structured := format == "json"
 			path := lintEntityPath
 			if path == "" && len(args) > 0 {
 				path = args[0]
@@ -82,6 +99,32 @@ can be overridden per invocation via the --allow-*/--no-allow-* and
 			if err != nil {
 				return err
 			}
+
+			// On the structured surface stdout carries exactly one JSON document, so
+			// the operation's own confirmation and summary lines are routed off it and
+			// the report is written in their place. The findings report still reaches
+			// stderr, where a text diagnostic alongside machine-readable stdout is
+			// where a consumer expects it.
+			var collect *lintops.FindingCollector
+			opOut := cmd.OutOrStdout()
+			if structured {
+				collect = &lintops.FindingCollector{}
+				opOut = io.Discard
+			}
+			// emit writes the structured report, when one was asked for and the run got
+			// far enough to produce it, and returns the run's own verdict unchanged. A
+			// run that failed before any rule executed emits no report: an empty one
+			// would claim a clean lint over a lint that never happened.
+			emit := func(runErr error) error {
+				if !structured || !collect.Reached() {
+					return runErr
+				}
+				if werr := writeStructured(cmd.OutOrStdout(), "lint", structuredIndented, collect.Report()); werr != nil {
+					return werr
+				}
+				return runErr
+			}
+
 			if lintReleasePath != "" {
 				// Release-closure mode is mutually exclusive with a positional /
 				// --entity target — they select different closures.
@@ -94,26 +137,27 @@ can be overridden per invocation via the --allow-*/--no-allow-* and
 				if lintPrePublish {
 					return fmt.Errorf("OPS_ERROR: --pre-publish is mutually exclusive with --release; --pre-publish applies to a single entity, --release checks a Release closure")
 				}
-				return lintops.RunRelease(rw, lintReleasePath, lintCatalogDirs, cmd.OutOrStdout(), os.Stderr)
+				return emit(lintops.RunRelease(rw, lintReleasePath, lintCatalogDirs, opOut, os.Stderr, collect))
 			}
 			if path == "" {
 				// No entity argument → whole-catalog conventions.
-				return lintops.RunCatalogWide(rw, lintCatalogDirs, cmd.OutOrStdout(), os.Stderr)
+				return emit(lintops.RunCatalogWide(rw, lintCatalogDirs, opOut, os.Stderr, collect))
 			}
 			if lintBaseline != "" && !lintPrePublish {
 				// --baseline only shapes the pre-publish predecessor; forcing a
 				// baseline without the check it feeds is a mistake, so halt loudly.
 				return fmt.Errorf("OPS_ERROR: --baseline requires --pre-publish")
 			}
-			return lintops.RunEntity(lintops.Config{
+			return emit(lintops.RunEntity(lintops.Config{
 				EntityPath:     path,
 				PrePublish:     lintPrePublish,
 				Baseline:       lintBaseline,
 				PluginPath:     lintPluginPath,
 				PolicyResolver: makeResolverFromCobra(cmd),
 				Workspace:      rw,
-				Out:            cmd.OutOrStdout(),
-			})
+				Out:            opOut,
+				Collect:        collect,
+			}))
 		},
 	}
 	c.Flags().StringArrayVar(&lintCatalogDirs, "catalog", nil,
@@ -123,6 +167,7 @@ can be overridden per invocation via the --allow-*/--no-allow-* and
 	c.Flags().BoolVar(&lintPrePublish, "pre-publish", false, "Fetch the previous registry version and verify the proposed bump against the schema-evolution classification")
 	c.Flags().StringVar(&lintBaseline, "baseline", "", "Diff the pre-publish evolution check against this specific already-published version instead of the auto-selected highest version below the one being published; must be a strict-SemVer tag present in the registry (requires --pre-publish)")
 	c.Flags().StringVar(&lintPluginPath, "plugin", "", "Filesystem path to the publishing-linter .wasm artifact (overrides workspace plugins.linter[0].uri)")
+	c.Flags().StringVarP(&lintOutput, "output", "o", "text", "Output format: text|json.")
 
 	// Tri-state allow_* flags
 	c.Flags().BoolVar(&lintAllowDynamicRefs, "allow-dynamic-refs", false, "Force allow_dynamic_refs=true for this invocation")

@@ -154,7 +154,7 @@ func (s *server) lintInProcess(ctx context.Context, req lintRequest, stdout, std
 		return err
 	}
 	if req.release != "" {
-		return lintops.RunRelease(tw.rw, tw.absReleasePath(req.release), nil, stdout, stderr)
+		return lintops.RunRelease(tw.rw, tw.absReleasePath(req.release), nil, stdout, stderr, nil)
 	}
 	pluginPath := req.plugin
 	if pluginPath != "" {

@@ -31,7 +31,10 @@ import (
 // whole-catalog correctness (`aggrega validate`): correctness halts on a broken
 // entity, conventions report publishing-discipline advisories and never halt on a
 // convention finding alone.
-func RunCatalogWide(rw *workspaceconfig.ResolvedWorkspace, catalogFlagDirs []string, out, diagOut io.Writer) error {
+//
+// collect optionally gathers the findings as data alongside the human report; nil
+// collects nothing.
+func RunCatalogWide(rw *workspaceconfig.ResolvedWorkspace, catalogFlagDirs []string, out, diagOut io.Writer, collect *FindingCollector) error {
 	rw, err := workspaceOrResolve(rw)
 	if err != nil {
 		return fmt.Errorf("load workspace config: %w", err)
@@ -49,7 +52,7 @@ func RunCatalogWide(rw *workspaceconfig.ResolvedWorkspace, catalogFlagDirs []str
 	for _, f := range files {
 		paths = append(paths, f.Path)
 	}
-	return lintConventionsFiles(rw, catalogFlagDirs, paths, out, diagOut)
+	return lintConventionsFiles(rw, catalogFlagDirs, paths, out, diagOut, collect)
 }
 
 // RunRelease computes a Release's resolved closure through the SAME build
@@ -60,7 +63,10 @@ func RunCatalogWide(rw *workspaceconfig.ResolvedWorkspace, catalogFlagDirs []str
 // no local file to lint and are skipped (the publishing-linter checks author-time
 // conventions, which only apply to locally-authored files). Findings are advisory
 // — conventions never halt on a convention finding alone.
-func RunRelease(rw *workspaceconfig.ResolvedWorkspace, releasePath string, catalogFlagDirs []string, out, diagOut io.Writer) error {
+//
+// collect optionally gathers the findings as data alongside the human report; nil
+// collects nothing.
+func RunRelease(rw *workspaceconfig.ResolvedWorkspace, releasePath string, catalogFlagDirs []string, out, diagOut io.Writer, collect *FindingCollector) error {
 	rw, err := workspaceOrResolve(rw)
 	if err != nil {
 		return fmt.Errorf("workspaceconfig: %w", err)
@@ -98,7 +104,7 @@ func RunRelease(rw *workspaceconfig.ResolvedWorkspace, releasePath string, catal
 		index[f.Kind+"|"+f.Name] = f.Path
 	}
 	paths := closureEntityFiles(lazyView, rc.Closure, index)
-	return lintConventionsFiles(rw, catalogFlagDirs, paths, out, diagOut)
+	return lintConventionsFiles(rw, catalogFlagDirs, paths, out, diagOut, collect)
 }
 
 // lintConventionsFiles runs the structural publishing-linter rules (the default
@@ -112,7 +118,8 @@ func RunRelease(rw *workspaceconfig.ResolvedWorkspace, releasePath string, catal
 // convention finding is advisory and never halts; a plugin-load, read, or parse
 // failure is a real error and does halt. Findings are written to diagOut
 // (os.Stderr in production); the final summary is written to out (os.Stdout).
-func lintConventionsFiles(rw *workspaceconfig.ResolvedWorkspace, catalogFlagDirs []string, paths []string, out, diagOut io.Writer) error {
+// collect optionally gathers the same findings as data; nil collects nothing.
+func lintConventionsFiles(rw *workspaceconfig.ResolvedWorkspace, catalogFlagDirs []string, paths []string, out, diagOut io.Writer, collect *FindingCollector) error {
 	wsCfg := rw.Config()
 	dirs := workspaceconfig.ResolveCatalogDirs(catalogFlagDirs, wsCfg, rw.Root())
 	lazyView := catalog.NewLazyLookup(rw.Root(), wsCfg.ResolvedArtifactCacheDir(), dirs, nil)
@@ -144,6 +151,7 @@ func lintConventionsFiles(rw *workspaceconfig.ResolvedWorkspace, catalogFlagDirs
 			return fmt.Errorf("aggrega lint: dispatch %s: %w", path, err)
 		}
 		aggregated := downgradeToWarning(aggregateFindings(rawFindings))
+		collect.Add(aggregated, path)
 		if len(aggregated) == 0 {
 			continue
 		}
@@ -151,6 +159,7 @@ func lintConventionsFiles(rw *workspaceconfig.ResolvedWorkspace, catalogFlagDirs
 		printFindings(aggregated, diagOut)
 		findingCount += len(aggregated)
 	}
+	collect.Entities(len(paths))
 	fmt.Fprintf(out, "conventions checked: %d entit%s, %d advisory finding(s)\n",
 		len(paths), plural(len(paths), "y", "ies"), findingCount)
 	return nil
