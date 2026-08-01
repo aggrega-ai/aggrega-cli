@@ -91,6 +91,18 @@ type factDecl struct {
 	// value, inside a container or as a type argument; nor any diagnostic
 	// shape. A view exposes named facts and never a raw document, and one
 	// accessor handing back a document reopens re-derivation for every check.
+	//
+	// Nor may it mention a type whose field some fact names in its SourceField.
+	// Reading a value out of a carrier is what every fact does; handing the
+	// carrier itself back is what this refuses, because a check holding that
+	// structure can read the very field another fact declares separately, at its
+	// own stage and with its own placement, and so re-derive it. A compilation
+	// product sits outside the authored-entity closure by design — facts over
+	// products must remain declarable, and most of the later stages read one —
+	// so this is the rule that closes the same hole for a product carrier.
+	//
+	// Where a rule genuinely cannot be expressed inside either bound, declare
+	// ReportedException rather than reshaping the rule around the guard.
 	Returns string
 
 	// Doc is the accessor's godoc body, in declarative voice.
