@@ -232,15 +232,21 @@ func TestAnalyzeReportsOverDeclarationAndClearsTheExactDeclaration(t *testing.T)
 func TestTheVerdictTracksTheDeclarationAndNotTheFile(t *testing.T) {
 	t.Parallel()
 
-	// One fact, complete at the second stage of the chain, read the same way in
-	// both variants.
+	// Two facts, both complete at the second stage of the chain, read the same way
+	// in both variants. The component type is read as a fact keyed by the node
+	// rather than taken from the subject, because a subject carries the
+	// coordinates its kind is keyed by and a component type is not one of them.
 	const corpus = `package probe
 
 import "github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
 
 var Rule = constraint.Check[constraint.%[1]s, constraint.NoHostPowers, constraint.NodeSocketSubject]{
 	Run: func(v constraint.%[1]s, s constraint.NodeSocketSubject) []constraint.Objection {
-		if v.SocketRequired(s.ComponentType(), s.SocketName()) {
+		componentType, declared := v.InstanceComponentType(s.NodeID())
+		if !declared {
+			return nil
+		}
+		if v.SocketRequired(componentType, s.SocketName()) {
 			return nil
 		}
 		return []constraint.Objection{s.Raise(nil, s.SocketName())}
@@ -280,13 +286,13 @@ var Rule = constraint.Check[constraint.%[1]s, constraint.NoHostPowers, constrain
 				got = append(got, finding.Kind)
 			}
 			if !slices.Equal(got, tc.want) {
-				t.Fatalf("declaring %s over a body reading one second-stage fact reports %v; want %v.\n%s",
+				t.Fatalf("declaring %s over a body reading second-stage facts reports %v; want %v.\n%s",
 					tc.declared, got, tc.want, Report(findings))
 			}
 			for _, finding := range findings {
 				if finding.NarrowestView != "NormalizedView" {
 					t.Errorf("the narrower view is named as %q; want NormalizedView, which is the stage "+
-						"declaring the one fact the body reads", finding.NarrowestView)
+						"declaring every fact the body reads", finding.NarrowestView)
 				}
 			}
 		})

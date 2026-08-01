@@ -63,17 +63,27 @@ var ExactlyDeclaredParameterRule = constraint.Check[constraint.TopologyView, con
 	},
 }
 
-// AccessorThroughAVariableRule reads its fact through a variable rather than
-// calling it in place. It over-declares exactly as the first check does, and it
-// is separate because taking an accessor as a value is the shape a reading over
-// call expressions alone would miss — it would clear this check and report the
-// first one, from bodies that read the same fact.
+// AccessorThroughAVariableRule reads one of its two facts through a variable
+// rather than calling it in place. It over-declares exactly as the first check
+// does, and it is separate because taking an accessor as a value is the shape a
+// reading over call expressions alone would miss — it would clear this check and
+// report the first one, from bodies that read the same fact.
+//
+// Reading one fact in place and the other through a variable is deliberate, and
+// the variable-held one is what the fixture is for: a reading that saw only call
+// expressions would find the component type here and miss the slot predicate,
+// reporting a narrower requirement set than the body actually has. That is a
+// sharper failure than seeing nothing, because it looks like an answer.
 var AccessorThroughAVariableRule = constraint.Check[constraint.GraphView, constraint.NoHostPowers, constraint.NodeSlotSubject]{
 	Sentinel: ErrSlotRequirement,
 	Severity: constraint.SeverityFatal,
 	Run: func(v constraint.GraphView, s constraint.NodeSlotSubject) []constraint.Objection {
+		componentType, declared := v.InstanceComponentType(s.NodeID())
+		if !declared {
+			return nil
+		}
 		required := v.SlotRequired
-		if !required(s.ComponentType(), s.SlotName()) {
+		if !required(componentType, s.SlotName()) {
 			return nil
 		}
 		return []constraint.Objection{s.Raise(ErrSlotRequirement, s.SlotName())}
