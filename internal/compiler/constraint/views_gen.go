@@ -44,7 +44,7 @@ type LeafProvenance struct {
 	DisplacedAnnotationSource string
 }
 
-// View is the base every rung's view embeds. It declares no fact of its
+// View is the base every stage's view embeds. It declares no fact of its
 // own; it carries the contract every view shares.
 //
 // A view exposes named facts and never a raw document. There is no
@@ -79,13 +79,13 @@ type LeafProvenance struct {
 // [NoHostPowers].
 type View interface{}
 
-// DocumentView exposes the facts complete at the document rung: one
+// DocumentView exposes the facts complete at the document stage: one
 // authored document as the loader hands it over: parsed and
 // envelope-checked, neither normalized nor parameter-interpolated.
 //
 // It embeds View, so every fact complete earlier is readable here and the
 // containment is a compile-time fact rather than a documented convention.
-// A check declaring this view is placed at this rung, because it is the
+// A check declaring this view is placed at this stage, because it is the
 // earliest one at which every fact the check reads is complete.
 type DocumentView interface {
 	View
@@ -97,7 +97,7 @@ type DocumentView interface {
 	// same fact at an earlier moment. A reader asking which parameters a
 	// template never referenced has to see the references the author wrote,
 	// which interpolation has already consumed; treating the two as one fact
-	// would make that question unanswerable and would put two rungs out of
+	// would make that question unanswerable and would put two stages out of
 	// order with each other.
 	//
 	// Keyed by document; read from
@@ -120,13 +120,13 @@ type DocumentView interface {
 	EntityAssertionNameSet(document string) []string
 }
 
-// NormalizedView exposes the facts complete at the normalized rung: both
+// NormalizedView exposes the facts complete at the normalized stage: both
 // authoring documents normalized and parameter-interpolated, with the
 // catalog reachable.
 //
 // It embeds DocumentView, so every fact complete earlier is readable here
 // and the containment is a compile-time fact rather than a documented
-// convention. A check declaring this view is placed at this rung, because
+// convention. A check declaring this view is placed at this stage, because
 // it is the earliest one at which every fact the check reads is complete.
 type NormalizedView interface {
 	DocumentView
@@ -227,13 +227,13 @@ type NormalizedView interface {
 	AuthoredAttachmentBlock(node string) types.OrderedMap[types.FeatureInstance]
 }
 
-// TopologyView exposes the facts complete at the topology rung: the
+// TopologyView exposes the facts complete at the topology stage: the
 // flattened node set, including sub-aggregate nodes, with the prune set
 // and per-node resolved parameters.
 //
 // It embeds NormalizedView, so every fact complete earlier is readable
 // here and the containment is a compile-time fact rather than a documented
-// convention. A check declaring this view is placed at this rung, because
+// convention. A check declaring this view is placed at this stage, because
 // it is the earliest one at which every fact the check reads is complete.
 type TopologyView interface {
 	NormalizedView
@@ -252,13 +252,13 @@ type TopologyView interface {
 	ResolvedParameter(node string, name string) (any, bool)
 }
 
-// GraphView exposes the facts complete at the graph rung: the finalised
+// GraphView exposes the facts complete at the graph stage: the finalised
 // graph after the whole attachment cascade and annotation-driven
 // expansion.
 //
 // It embeds TopologyView, so every fact complete earlier is readable here
 // and the containment is a compile-time fact rather than a documented
-// convention. A check declaring this view is placed at this rung, because
+// convention. A check declaring this view is placed at this stage, because
 // it is the earliest one at which every fact the check reads is complete.
 type GraphView interface {
 	TopologyView
@@ -276,13 +276,13 @@ type GraphView interface {
 	PerLeafAttachmentProvenance(node string, attachment string, pillar string, leaf string) LeafProvenance
 }
 
-// HydratedView exposes the facts complete at the hydrated rung: per-node
+// HydratedView exposes the facts complete at the hydrated stage: per-node
 // resolved locals and provides — state that exists before any artifact
 // bytes.
 //
 // It embeds GraphView, so every fact complete earlier is readable here and
 // the containment is a compile-time fact rather than a documented
-// convention. A check declaring this view is placed at this rung, because
+// convention. A check declaring this view is placed at this stage, because
 // it is the earliest one at which every fact the check reads is complete.
 type HydratedView interface {
 	GraphView
@@ -304,12 +304,12 @@ type HydratedView interface {
 	ResolvedNodeProvides(node string, key string) (string, bool)
 }
 
-// RenderedView exposes the facts complete at the rendered rung: artifact
+// RenderedView exposes the facts complete at the rendered stage: artifact
 // bytes and the emitted file set.
 //
 // It embeds HydratedView, so every fact complete earlier is readable here
 // and the containment is a compile-time fact rather than a documented
-// convention. A check declaring this view is placed at this rung, because
+// convention. A check declaring this view is placed at this stage, because
 // it is the earliest one at which every fact the check reads is complete.
 type RenderedView interface {
 	HydratedView

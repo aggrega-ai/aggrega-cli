@@ -145,7 +145,7 @@ func TestNoAccessorMentionsAnAuthoredEntityType(t *testing.T) {
 					"CONSEQUENCE: a check that could obtain a diagnostic could assemble its own provenance, "+
 					"and provenance must arrive from the subject so that it cannot participate in the "+
 					"placement computation. A check reading late facts purely to build a locator would "+
-					"otherwise be placed at the latest rung its diagnostic needs rather than the earliest "+
+					"otherwise be placed at the latest stage its diagnostic needs rather than the earliest "+
 					"its predicate allows, and the computed placement would be wrong for the whole corpus "+
 					"with nothing able to detect it.",
 					name, strings.Join(diagnosticHits, ", "))

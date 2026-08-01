@@ -30,7 +30,7 @@ var externalTargets = map[string]bool{
 // A failure means the registry (or the generator) changed without regenerating.
 //
 // This is what makes a placement change reviewable. Moving a fact to another
-// rung is one line in the registry, and its consequences — a method moving
+// stage is one line in the registry, and its consequences — a method moving
 // between view interfaces, a row moving in the placement table, a subject kind
 // appearing or disappearing — arrive as a diff rather than as a judgement a
 // reader would have to reconstruct.
@@ -91,34 +91,34 @@ func TestRegenGateCoversEveryTarget(t *testing.T) {
 	}
 }
 
-// TestLadderDerivesLinearChain pins the two properties the emitters rely on and
-// the generator refuses to proceed without: the declared rung relation is a
-// single chain, and every rung on it is occupied.
+// TestChainDerivesLinearly pins the two properties the emitters rely on and the
+// generator refuses to proceed without: the declared stage relation is a single
+// chain, and every stage on it is occupied.
 //
-// The refusal itself is the enforcement — generation halts, so no ladder with an
+// The refusal itself is the enforcement — generation halts, so no chain with an
 // unordered pair in it can be emitted or committed. This test states the
 // satisfied case, so a registry edit that breaks it fails here as well as at
 // generation.
-func TestLadderDerivesLinearChain(t *testing.T) {
+func TestChainDerivesLinearly(t *testing.T) {
 	t.Parallel()
-	l, err := deriveLadder()
+	c, err := deriveChain()
 	if err != nil {
-		t.Fatalf("the rung chain does not derive: %v", err)
+		t.Fatalf("the stage chain does not derive: %v", err)
 	}
-	if len(l.order) != len(rungs) {
-		t.Fatalf("the chain holds %d rungs, %d are declared", len(l.order), len(rungs))
+	if len(c.order) != len(stages) {
+		t.Fatalf("the chain holds %d stages, %d are declared", len(c.order), len(stages))
 	}
-	for i, r := range l.order {
+	for i, s := range c.order {
 		if i == 0 {
-			if r.Extends != "" {
-				t.Errorf("the chain's root %q extends %q", r.Name, r.Extends)
+			if s.Extends != "" {
+				t.Errorf("the chain's root %q extends %q", s.Name, s.Extends)
 			}
-		} else if r.Extends != l.order[i-1].Name {
-			t.Errorf("rung %q extends %q but follows %q in the chain",
-				r.Name, r.Extends, l.order[i-1].Name)
+		} else if s.Extends != c.order[i-1].Name {
+			t.Errorf("stage %q extends %q but follows %q in the chain",
+				s.Name, s.Extends, c.order[i-1].Name)
 		}
-		if len(l.facts[r.Name]) == 0 {
-			t.Errorf("rung %q is on the chain with no fact landing there", r.Name)
+		if len(c.facts[s.Name]) == 0 {
+			t.Errorf("stage %q is on the chain with no fact landing there", s.Name)
 		}
 	}
 }
@@ -142,7 +142,7 @@ func TestSubjectKindsPartitionTheFacts(t *testing.T) {
 	if total != len(facts) {
 		t.Errorf("the per-kind tallies sum to %d, %d facts are declared", total, len(facts))
 	}
-	t.Logf("%d facts over %d rungs, keyed by %d subject kinds", len(facts), len(rungs), len(kinds))
+	t.Logf("%d facts over %d stages, keyed by %d subject kinds", len(facts), len(stages), len(kinds))
 }
 
 // TestTupleSharesAreReported checks that the near-duplicate print reports what it
@@ -151,12 +151,12 @@ func TestSubjectKindsPartitionTheFacts(t *testing.T) {
 // The calibration matters more than the assertion. An empty share list is the
 // expected result for a registry with no near-duplicates, and an empty list is
 // indistinguishable from a broken detector unless the detector is shown to fire.
-// So this feeds it a pair sharing a rung, a carrier and a subject, and requires
+// So this feeds it a pair sharing a stage, a carrier and a subject, and requires
 // the pair back.
 func TestTupleSharesAreReported(t *testing.T) {
 	t.Parallel()
 	for _, s := range deriveTupleShares(facts) {
-		t.Logf("shared tuple (%s, %s, %s): %v", s.Rung, s.SourceField, s.Subject, s.Facts)
+		t.Logf("shared tuple (%s, %s, %s): %v", s.Stage, s.SourceField, s.Subject, s.Facts)
 	}
 
 	probe := facts[0]
@@ -170,7 +170,7 @@ func TestTupleSharesAreReported(t *testing.T) {
 		}
 	}
 	if !found {
-		t.Errorf("two facts sharing a rung, a source carrier and a subject were not reported as sharing "+
+		t.Errorf("two facts sharing a stage, a source carrier and a subject were not reported as sharing "+
 			"a tuple; the near-duplicate print is not firing, so an empty share list would mean nothing.\n"+
 			"got: %+v", deriveTupleShares(probed))
 	}

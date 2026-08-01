@@ -17,34 +17,34 @@ import (
 )
 
 // constraintPackage is where the view chain is declared. These tests read the
-// real chain rather than a synthetic one, so a fact moving to another rung moves
+// real chain rather than a synthetic one, so a fact moving to another stage moves
 // what they expect in the same edit that moves the fact.
 const constraintPackage = "../../compiler/constraint"
 
 const checkCorpus = "testdata/checks"
 
-// TestReadLadderDerivesTheChainFromTheDeclaredViews reads the shipped chain and
-// pins what was derived from it: the base, the rungs in order, and the rung each
+// TestReadChainDerivesItFromTheDeclaredViews reads the shipped chain and pins
+// what was derived from it: the base, the stages in order, and the stage each
 // fact becomes readable at.
 //
 // The expectations are deliberately spot-checks against the source rather than a
 // copy of it. A test restating every fact would be the hand-written table this
 // package exists not to have, one file further out.
-func TestReadLadderDerivesTheChainFromTheDeclaredViews(t *testing.T) {
+func TestReadChainDerivesItFromTheDeclaredViews(t *testing.T) {
 	t.Parallel()
 
-	ladder, err := ReadLadder(constraintPackage)
+	chain, err := ReadChain(constraintPackage)
 	if err != nil {
 		t.Fatalf("read the view chain: %v", err)
 	}
 
-	if got, want := ladder.Base(), "View"; got != want {
+	if got, want := chain.Base(), "View"; got != want {
 		t.Errorf("the base of the chain reads as %q; want %q — the base is taken from the check type's "+
 			"first type-parameter constraint, so a wrong one means the chain was assembled from the "+
 			"wrong root", got, want)
 	}
 
-	wantRungs := []string{
+	wantStages := []string{
 		"DocumentView",
 		"NormalizedView",
 		"TopologyView",
@@ -52,21 +52,21 @@ func TestReadLadderDerivesTheChainFromTheDeclaredViews(t *testing.T) {
 		"HydratedView",
 		"RenderedView",
 	}
-	var gotRungs []string
-	for _, rung := range ladder.Rungs() {
-		gotRungs = append(gotRungs, rung.Name)
+	var gotStages []string
+	for _, stage := range chain.Stages() {
+		gotStages = append(gotStages, stage.Name)
 	}
-	if !slices.Equal(gotRungs, wantRungs) {
+	if !slices.Equal(gotStages, wantStages) {
 		t.Fatalf("the chain reads as %v; want %v — order is the whole of a placement, so a wrong order "+
-			"names a wrong narrower view for every check", gotRungs, wantRungs)
+			"names a wrong narrower view for every check", gotStages, wantStages)
 	}
 
 	// Facts placed by reading the embedding. Each is expected readable from its
-	// own rung outward and NOT one rung earlier; the pair is what makes this a
+	// own stage outward and NOT one stage earlier; the pair is what makes this a
 	// placement rather than a membership test.
 	for _, tc := range []struct {
-		fact string
-		rung string
+		fact  string
+		stage string
 	}{
 		{"DeclaredParameterKeys", "DocumentView"},
 		{"SocketRequired", "NormalizedView"},
@@ -75,29 +75,29 @@ func TestReadLadderDerivesTheChainFromTheDeclaredViews(t *testing.T) {
 		{"DeclaredLocalsKeys", "HydratedView"},
 		{"EmittedFilePathSet", "RenderedView"},
 	} {
-		at, ok := ladder.Index(tc.rung)
+		at, ok := chain.Index(tc.stage)
 		if !ok {
-			t.Fatalf("the chain carries no rung named %s", tc.rung)
+			t.Fatalf("the chain carries no stage named %s", tc.stage)
 		}
-		if !slices.Contains(ladder.FactsAvailableAt(at), tc.fact) {
-			t.Errorf("%s is not readable at %s, though that is the rung declaring it", tc.fact, tc.rung)
+		if !slices.Contains(chain.FactsAvailableAt(at), tc.fact) {
+			t.Errorf("%s is not readable at %s, though that is the stage declaring it", tc.fact, tc.stage)
 		}
-		if at > 0 && slices.Contains(ladder.FactsAvailableAt(at-1), tc.fact) {
-			t.Errorf("%s is readable one rung before %s, so the chain places it earlier than its "+
+		if at > 0 && slices.Contains(chain.FactsAvailableAt(at-1), tc.fact) {
+			t.Errorf("%s is readable one stage before %s, so the chain places it earlier than its "+
 				"declaration does and every check reading it would be reported as over-declaring",
-				tc.fact, tc.rung)
+				tc.fact, tc.stage)
 		}
 	}
 
 	// Calibration. A reader answering "readable" for anything would place every
-	// check at the innermost rung and report the whole corpus as over-declaring;
+	// check at the innermost stage and report the whole corpus as over-declaring;
 	// one answering "unknown" for everything would report nothing at all. Require
 	// both answers on known cases before believing the verdicts above.
-	if _, unknown := ladder.NarrowestSufficient([]string{"NoSuchFactIsDeclaredAnywhere"}); len(unknown) != 1 {
+	if _, unknown := chain.NarrowestSufficient([]string{"NoSuchFactIsDeclaredAnywhere"}); len(unknown) != 1 {
 		t.Errorf("a fact no view declares is not reported as unknown, so the reader answers "+
 			"\"readable\" for anything (unknown: %v)", unknown)
 	}
-	if _, unknown := ladder.NarrowestSufficient([]string{"SocketRequired"}); len(unknown) != 0 {
+	if _, unknown := chain.NarrowestSufficient([]string{"SocketRequired"}); len(unknown) != 0 {
 		t.Errorf("a fact a view does declare is reported as unknown, so the reader answers "+
 			"\"unknown\" for everything (unknown: %v)", unknown)
 	}
@@ -106,23 +106,23 @@ func TestReadLadderDerivesTheChainFromTheDeclaredViews(t *testing.T) {
 // TestTheChainIsReadAndNotTabulated asserts that this package holds no copy of
 // what it reads.
 //
-// A hand-written accessor-to-rung table would agree with the chain on the day it
-// was written and drift silently afterwards: the chain is generated from the fact
-// registry, so a fact moving rungs would leave the table confidently wrong rather
-// than failing. So no view name and no fact name may appear anywhere in this
-// package's own non-test source, as an identifier or inside a string.
+// A hand-written accessor-to-stage table would agree with the chain on the day
+// it was written and drift silently afterwards: the chain is generated from the
+// fact registry, so a fact moving stages would leave the table confidently wrong
+// rather than failing. So no view name and no fact name may appear anywhere in
+// this package's own non-test source, as an identifier or inside a string.
 func TestTheChainIsReadAndNotTabulated(t *testing.T) {
 	t.Parallel()
 
-	ladder, err := ReadLadder(constraintPackage)
+	chain, err := ReadChain(constraintPackage)
 	if err != nil {
 		t.Fatalf("read the view chain: %v", err)
 	}
 
-	forbidden := []string{ladder.Base()}
-	for _, rung := range ladder.Rungs() {
-		forbidden = append(forbidden, rung.Name)
-		forbidden = append(forbidden, rung.Facts...)
+	forbidden := []string{chain.Base()}
+	for _, stage := range chain.Stages() {
+		forbidden = append(forbidden, stage.Name)
+		forbidden = append(forbidden, stage.Facts...)
 	}
 	if len(forbidden) < 7 {
 		t.Fatalf("only %d names were read from the chain, so this assertion would search for almost "+
@@ -147,7 +147,7 @@ func TestTheChainIsReadAndNotTabulated(t *testing.T) {
 			t.Errorf("this package's own source names %q, which is a name read from the view chain.\n"+
 				"INVARIANT: the chain is read from the source declaring it, never restated here.\n"+
 				"CONSEQUENCE: a restated name agrees with the chain today and drifts the moment a fact "+
-				"moves rungs — and a wrong placement names a confident wrong narrower view rather than "+
+				"moves stages — and a wrong placement names a confident wrong narrower view rather than "+
 				"failing.", name)
 		}
 	}
@@ -164,12 +164,12 @@ func TestTheChainIsReadAndNotTabulated(t *testing.T) {
 func TestAnalyzeReportsOverDeclarationAndClearsTheExactDeclaration(t *testing.T) {
 	t.Parallel()
 
-	ladder, err := ReadLadder(constraintPackage)
+	chain, err := ReadChain(constraintPackage)
 	if err != nil {
 		t.Fatalf("read the view chain: %v", err)
 	}
 
-	findings, err := Analyze(ladder, checkCorpus)
+	findings, err := Analyze(chain, checkCorpus)
 	if err != nil {
 		t.Fatalf("read the check corpus: %v", err)
 	}
@@ -232,7 +232,7 @@ func TestAnalyzeReportsOverDeclarationAndClearsTheExactDeclaration(t *testing.T)
 func TestTheVerdictTracksTheDeclarationAndNotTheFile(t *testing.T) {
 	t.Parallel()
 
-	// One fact, complete at the second rung of the chain, read the same way in
+	// One fact, complete at the second stage of the chain, read the same way in
 	// both variants.
 	const corpus = `package probe
 
@@ -248,7 +248,7 @@ var Rule = constraint.Check[constraint.%[1]s, constraint.NoHostPowers, constrain
 }
 `
 
-	ladder, err := ReadLadder(constraintPackage)
+	chain, err := ReadChain(constraintPackage)
 	if err != nil {
 		t.Fatalf("read the view chain: %v", err)
 	}
@@ -270,7 +270,7 @@ var Rule = constraint.Check[constraint.%[1]s, constraint.NoHostPowers, constrain
 				t.Fatalf("write the probe corpus: %v", err)
 			}
 
-			findings, err := Analyze(ladder, dir)
+			findings, err := Analyze(chain, dir)
 			if err != nil {
 				t.Fatalf("read the probe corpus: %v", err)
 			}
@@ -280,12 +280,12 @@ var Rule = constraint.Check[constraint.%[1]s, constraint.NoHostPowers, constrain
 				got = append(got, finding.Kind)
 			}
 			if !slices.Equal(got, tc.want) {
-				t.Fatalf("declaring %s over a body reading one second-rung fact reports %v; want %v.\n%s",
+				t.Fatalf("declaring %s over a body reading one second-stage fact reports %v; want %v.\n%s",
 					tc.declared, got, tc.want, Report(findings))
 			}
 			for _, finding := range findings {
 				if finding.NarrowestView != "NormalizedView" {
-					t.Errorf("the narrower view is named as %q; want NormalizedView, which is the rung "+
+					t.Errorf("the narrower view is named as %q; want NormalizedView, which is the stage "+
 						"declaring the one fact the body reads", finding.NarrowestView)
 				}
 			}
@@ -299,11 +299,11 @@ var Rule = constraint.Check[constraint.%[1]s, constraint.NoHostPowers, constrain
 func TestTheOverDeclarationReportNamesTheNarrowerView(t *testing.T) {
 	t.Parallel()
 
-	ladder, err := ReadLadder(constraintPackage)
+	chain, err := ReadChain(constraintPackage)
 	if err != nil {
 		t.Fatalf("read the view chain: %v", err)
 	}
-	findings, err := Analyze(ladder, checkCorpus)
+	findings, err := Analyze(chain, checkCorpus)
 	if err != nil {
 		t.Fatalf("read the check corpus: %v", err)
 	}
@@ -335,12 +335,12 @@ func TestTheOverDeclarationReportNamesTheNarrowerView(t *testing.T) {
 func TestTheReportIsByteIdenticalAcrossRuns(t *testing.T) {
 	t.Parallel()
 
-	ladder, err := ReadLadder(constraintPackage)
+	chain, err := ReadChain(constraintPackage)
 	if err != nil {
 		t.Fatalf("read the view chain: %v", err)
 	}
 
-	first, err := Analyze(ladder, checkCorpus)
+	first, err := Analyze(chain, checkCorpus)
 	if err != nil {
 		t.Fatalf("read the check corpus: %v", err)
 	}
@@ -350,7 +350,7 @@ func TestTheReportIsByteIdenticalAcrossRuns(t *testing.T) {
 	want := Report(first)
 
 	for range 8 {
-		reread, err := ReadLadder(constraintPackage)
+		reread, err := ReadChain(constraintPackage)
 		if err != nil {
 			t.Fatalf("read the view chain: %v", err)
 		}
@@ -364,10 +364,10 @@ func TestTheReportIsByteIdenticalAcrossRuns(t *testing.T) {
 	}
 }
 
-// TestReadLadderRefusesAChainThatIsNotOne pins the refusal. A shape with no
-// single order between its rungs has no narrowest sufficient view to compute, so
+// TestReadChainRefusesAChainThatIsNotOne pins the refusal. A shape with no
+// single order between its stages has no narrowest sufficient view to compute, so
 // the answer is an error rather than a pick.
-func TestReadLadderRefusesAChainThatIsNotOne(t *testing.T) {
+func TestReadChainRefusesAChainThatIsNotOne(t *testing.T) {
 	t.Parallel()
 
 	for _, tc := range []struct {
@@ -377,25 +377,25 @@ func TestReadLadderRefusesAChainThatIsNotOne(t *testing.T) {
 	}{
 		{
 			name: "two views embed the base",
-			dir:  "testdata/ladder-branch-out",
+			dir:  "testdata/stages-branch-out",
 			want: "View is embedded by AlphaView and BetaView",
 		},
 		{
 			name: "one view embeds two",
-			dir:  "testdata/ladder-branch-in",
+			dir:  "testdata/stages-branch-in",
 			want: "JoinView embeds AlphaView and BetaView",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			if _, err := ReadLadder(tc.dir); err == nil {
+			if _, err := ReadChain(tc.dir); err == nil {
 				t.Fatalf("reading %s returned a chain; want a refusal — a shape with no order between "+
-					"its rungs would otherwise yield an arbitrary narrower view for every check reading "+
+					"its stages would otherwise yield an arbitrary narrower view for every check reading "+
 					"across it", tc.dir)
 			} else if !strings.Contains(err.Error(), tc.want) {
 				t.Errorf("the refusal reads %q; want it to name %q, so the reader is told which two "+
-					"rungs have no order between them", err.Error(), tc.want)
+					"stages have no order between them", err.Error(), tc.want)
 			}
 		})
 	}
@@ -408,12 +408,12 @@ func TestReadLadderRefusesAChainThatIsNotOne(t *testing.T) {
 // comments — the file and line belong in a report a reader is looking at, not in
 // an expectation.
 func ExampleAnalyze() {
-	ladder, err := ReadLadder(constraintPackage)
+	chain, err := ReadChain(constraintPackage)
 	if err != nil {
 		fmt.Println(err)
 		return
 	}
-	findings, err := Analyze(ladder, checkCorpus)
+	findings, err := Analyze(chain, checkCorpus)
 	if err != nil {
 		fmt.Println(err)
 		return

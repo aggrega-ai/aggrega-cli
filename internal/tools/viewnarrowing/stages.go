@@ -16,83 +16,84 @@ import (
 
 // checkTypeName is the only identifier this package anchors on. It is the type
 // whose declarations are read, so knowing its name is unavoidable; everything
-// else — the base of the view chain, the rungs, and which facts sit at each — is
-// derived from source rather than named here.
+// else — the base of the view chain, the stages, and which facts sit at each —
+// is derived from source rather than named here.
 const checkTypeName = "Check"
 
-// Rung is one point on the view chain: the view interface addressable there, and
-// the facts that interface declares itself.
+// Stage is one point on the view chain: the view interface addressable there,
+// and the facts that interface declares itself.
 //
 // Facts are the accessor names declared directly on the interface, sorted. The
-// facts a check may read at a rung are those plus every earlier rung's, which is
-// what the embedding expresses; [Ladder.FactsAvailableAt] is that union.
-type Rung struct {
-	// Name is the view interface addressable at this rung.
+// facts a check may read at a stage are those plus every earlier stage's, which
+// is what the embedding expresses; [Chain.FactsAvailableAt] is that union.
+type Stage struct {
+	// Name is the view interface addressable at this stage.
 	Name string
 
 	// Facts are the accessor names that interface declares itself, sorted.
 	Facts []string
 }
 
-// Ladder is the view chain as read from the source that declares it: the rungs
-// in order, innermost first, and the rung at which each fact becomes readable.
+// Chain is the view chain as read from the source that declares it: the stages
+// in order, innermost first, and the stage at which each fact becomes readable.
 //
-// A Ladder is derived, never written. [ReadLadder] reads it from the interfaces
-// and the embedding between them, so a fact moving to a different rung moves
+// A Chain is derived, never written. [ReadChain] reads it from the interfaces
+// and the embedding between them, so a fact moving to a different stage moves
 // every verdict computed from it in the same edit that moves the fact.
-type Ladder struct {
+type Chain struct {
 	base      string
 	baseFacts []string
-	rungs     []Rung
+	stages    []Stage
 
-	// firstRung is the earliest rung index at which a fact is readable. A fact
-	// declared on the base is readable at every rung, so it maps to 0.
-	firstRung map[string]int
+	// firstStage is the earliest stage index at which a fact is readable. A
+	// fact declared on the base is readable at every stage, so it maps to 0.
+	firstStage map[string]int
 }
 
 // Base is the interface every view embeds — the contract naming no fact of its
-// own. It is not an addressable rung: a check declaring it declares that it
+// own. It is not an addressable stage: a check declaring it declares that it
 // reads nothing.
-func (l Ladder) Base() string { return l.base }
+func (c Chain) Base() string { return c.base }
 
-// Rungs are the addressable points on the chain, innermost first.
-func (l Ladder) Rungs() []Rung { return slices.Clone(l.rungs) }
+// Stages are the addressable points on the chain, innermost first.
+func (c Chain) Stages() []Stage { return slices.Clone(c.stages) }
 
 // Index reports the position of a view on the chain, and whether the chain
-// carries it at all. The base is not a rung and is reported as absent.
-func (l Ladder) Index(view string) (int, bool) {
-	for i, rung := range l.rungs {
-		if rung.Name == view {
+// carries it at all. The base is not a stage and is reported as absent.
+func (c Chain) Index(view string) (int, bool) {
+	for i, stage := range c.stages {
+		if stage.Name == view {
 			return i, true
 		}
 	}
 	return 0, false
 }
 
-// FactsAvailableAt are every fact a check declaring the rung at index may read:
-// the rung's own facts, every earlier rung's, and any the base declares. Sorted.
-func (l Ladder) FactsAvailableAt(index int) []string {
-	out := slices.Clone(l.baseFacts)
-	for i := 0; i <= index && i < len(l.rungs); i++ {
-		out = append(out, l.rungs[i].Facts...)
+// FactsAvailableAt are every fact a check declaring the stage at index may read:
+// the stage's own facts, every earlier stage's, and any the base declares.
+// Sorted.
+func (c Chain) FactsAvailableAt(index int) []string {
+	out := slices.Clone(c.baseFacts)
+	for i := 0; i <= index && i < len(c.stages); i++ {
+		out = append(out, c.stages[i].Facts...)
 	}
 	slices.Sort(out)
 	return slices.Compact(out)
 }
 
-// NarrowestSufficient is the earliest rung at which every named fact is
+// NarrowestSufficient is the earliest stage at which every named fact is
 // readable, which is where a check reading exactly those facts belongs.
 //
-// An empty fact set is satisfied at the innermost rung: a check reading no fact
-// is placed by nothing, so the earliest rung is as good an answer as any and the
-// caller is expected to report that shape rather than the index.
+// An empty fact set is satisfied at the innermost stage: a check reading no fact
+// is placed by nothing, so the earliest stage is as good an answer as any and
+// the caller is expected to report that shape rather than the index.
 //
-// unknown names the facts no rung declares, sorted. When it is non-empty the
+// unknown names the facts no stage declares, sorted. When it is non-empty the
 // index means nothing and the caller must not draw a verdict from it: a fact the
 // chain does not carry cannot be placed.
-func (l Ladder) NarrowestSufficient(facts []string) (index int, unknown []string) {
+func (c Chain) NarrowestSufficient(facts []string) (index int, unknown []string) {
 	for _, fact := range facts {
-		at, ok := l.firstRung[fact]
+		at, ok := c.firstStage[fact]
 		if !ok {
 			unknown = append(unknown, fact)
 			continue
@@ -103,7 +104,7 @@ func (l Ladder) NarrowestSufficient(facts []string) (index int, unknown []string
 	return index, slices.Compact(unknown)
 }
 
-// ReadLadder reads the view chain from the Go sources in dir.
+// ReadChain reads the view chain from the Go sources in dir.
 //
 // It finds the check type's declaration, takes the base of the chain from that
 // type's first type-parameter constraint, collects every interface in dir that
@@ -113,15 +114,15 @@ func (l Ladder) NarrowestSufficient(facts []string) (index int, unknown []string
 // the same view, or one view embedding two — has no single narrowest sufficient
 // answer for a check reading facts from both branches, so it is an error here
 // rather than an arbitrary verdict later.
-func ReadLadder(dir string) (Ladder, error) {
+func ReadChain(dir string) (Chain, error) {
 	files, err := parsePackageDir(dir)
 	if err != nil {
-		return Ladder{}, err
+		return Chain{}, err
 	}
 
 	base, err := baseViewName(files)
 	if err != nil {
-		return Ladder{}, fmt.Errorf("read the base of the view chain from %s: %w", dir, err)
+		return Chain{}, fmt.Errorf("read the base of the view chain from %s: %w", dir, err)
 	}
 
 	interfaces := map[string]ifaceShape{}
@@ -131,43 +132,43 @@ func ReadLadder(dir string) (Ladder, error) {
 		}
 	}
 	if _, ok := interfaces[base]; !ok {
-		return Ladder{}, fmt.Errorf("the check type constrains its view parameter by %s, which is declared as no interface in %s",
+		return Chain{}, fmt.Errorf("the check type constrains its view parameter by %s, which is declared as no interface in %s",
 			base, dir)
 	}
 
 	views := viewClosure(base, interfaces)
-	chain, err := orderChain(base, views, interfaces)
+	ordered, err := orderChain(base, views, interfaces)
 	if err != nil {
-		return Ladder{}, err
+		return Chain{}, err
 	}
 
-	ladder := Ladder{
-		base:      base,
-		baseFacts: interfaces[base].facts,
-		firstRung: map[string]int{},
+	chain := Chain{
+		base:       base,
+		baseFacts:  interfaces[base].facts,
+		firstStage: map[string]int{},
 	}
-	for _, fact := range ladder.baseFacts {
-		ladder.firstRung[fact] = 0
+	for _, fact := range chain.baseFacts {
+		chain.firstStage[fact] = 0
 	}
-	for i, name := range chain {
+	for i, name := range ordered {
 		facts := interfaces[name].facts
-		ladder.rungs = append(ladder.rungs, Rung{Name: name, Facts: facts})
+		chain.stages = append(chain.stages, Stage{Name: name, Facts: facts})
 		for _, fact := range facts {
-			// A fact name declared at two rungs is readable from the earlier of
+			// A fact name declared at two stages is readable from the earlier of
 			// them, so the earliest declaration wins. Go admits the shape when
 			// the signatures are identical, which is why it is handled here
 			// rather than assumed away.
-			if at, seen := ladder.firstRung[fact]; seen && at <= i {
+			if at, seen := chain.firstStage[fact]; seen && at <= i {
 				continue
 			}
-			ladder.firstRung[fact] = i
+			chain.firstStage[fact] = i
 		}
 	}
-	if len(ladder.rungs) == 0 {
-		return Ladder{}, fmt.Errorf("no interface in %s embeds %s, so the view chain has no rung and nothing can be placed on it",
+	if len(chain.stages) == 0 {
+		return Chain{}, fmt.Errorf("no interface in %s embeds %s, so the view chain has no stage and nothing can be placed on it",
 			dir, base)
 	}
-	return ladder, nil
+	return chain, nil
 }
 
 type ifaceShape struct {
@@ -261,8 +262,8 @@ func viewClosure(base string, interfaces map[string]ifaceShape) map[string]bool 
 	return views
 }
 
-// orderChain returns the rungs from the base outward, refusing any shape that is
-// not a single line.
+// orderChain returns the stages from the base outward, refusing any shape that
+// is not a single line.
 func orderChain(base string, views map[string]bool, interfaces map[string]ifaceShape) ([]string, error) {
 	// Sorted, so that a chain with more than one defect reports the same defect
 	// on every run rather than whichever one map iteration reached first.

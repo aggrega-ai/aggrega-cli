@@ -27,7 +27,7 @@ var (
 )
 
 // OverDeclaringSocketRule declares the graph view and reads only facts that are
-// complete two rungs earlier, so it is placed later in the compilation than the
+// complete two stages earlier, so it is placed later in the compilation than the
 // facts it reads require. That is the whole defect being read for.
 var OverDeclaringSocketRule = constraint.Check[constraint.GraphView, constraint.NoHostPowers, constraint.NodeSocketSubject]{
 	Sentinel: ErrSocketRequirement,
@@ -47,7 +47,7 @@ var OverDeclaringSocketRule = constraint.Check[constraint.GraphView, constraint.
 // ExactlyDeclaredParameterRule is the control, and the reason it is here is that
 // without it a reading which flagged every check would satisfy the
 // over-declaration case while proving nothing. It declares the topology view and
-// reads a topology-rung fact, so the narrowest view that suffices is the one it
+// reads a topology-stage fact, so the narrowest view that suffices is the one it
 // declares and nothing is reported about it.
 var ExactlyDeclaredParameterRule = constraint.Check[constraint.TopologyView, constraint.NoHostPowers, constraint.NodeParameterSubject]{
 	Sentinel: ErrParameterUnresolved,

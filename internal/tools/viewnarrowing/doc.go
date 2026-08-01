@@ -15,11 +15,11 @@
 //
 // # The chain is read, never tabulated
 //
-// [ReadLadder] derives which facts are complete at which point by reading the
+// [ReadChain] derives which facts are complete at which point by reading the
 // view interfaces and the embedding between them. Nothing here maps an accessor
 // to a point in the compilation by hand: the view chain is generated from the
 // fact registry, so a hand-written mapping would go stale the moment a fact
-// moved rungs, and would then report a confident wrong answer rather than
+// moved stages, and would then report a confident wrong answer rather than
 // failing. The one identifier this package anchors on is the check type's own
 // name, and even the base of the chain is read from that type's first
 // type-parameter constraint rather than assumed.

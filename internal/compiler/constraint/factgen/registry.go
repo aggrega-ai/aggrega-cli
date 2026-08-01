@@ -5,7 +5,7 @@ package main
 
 // This file is the fact registry: the single place a constraint fact is
 // declared. Everything the framework knows about placement is derived from it —
-// the view ladder, the subject-kind set, the placement table — so adding,
+// the view stages, the subject-kind set, the placement table — so adding,
 // moving or removing a fact is a one-line edit here whose consequences appear
 // as a diff in generated output rather than as a judgement buried inside a
 // check.
@@ -14,10 +14,10 @@ package main
 // would be a second place to look for the answer to "is this fact already
 // declared", which is the question the registry exists to make cheap.
 
-// rungs declares the view ladder, root first. The order in this slice is not
-// the ladder — the Extends relation is — and the generator refuses a relation
+// stages declares the view chain, root first. The order in this slice is not
+// the chain — the Extends relation is — and the generator refuses a relation
 // that is not a single chain.
-var rungs = []rungDecl{
+var stages = []stageDecl{
 	{
 		Name:    "document",
 		Extends: "",
@@ -80,10 +80,10 @@ var records = []recordDecl{
 
 // facts declares every fact the framework exposes.
 //
-// The set declared here realizes the full derived ladder and the full derived
-// subject-kind set: every rung is occupied and every subject kind is keyed, so
+// The set declared here realizes the full derived chain and the full derived
+// subject-kind set: every stage is occupied and every subject kind is keyed, so
 // both derived sets are complete and a consumer building one traversal per kind
-// has every kind in front of it. Further facts sharing an already-realized rung
+// has every kind in front of it. Further facts sharing an already-realized stage
 // and kind are added by the change that needs them; each is a declaration, not
 // a design act, so the registry grows one line at a time.
 var facts = []factDecl{
@@ -91,7 +91,7 @@ var facts = []factDecl{
 
 	{
 		Name:        "raw-aggregate-text",
-		Rung:        "document",
+		Stage:       "document",
 		SourceField: "resolver.LintUnreadParameters(rawAggregate)",
 		Subject:     []string{"document"},
 		Params:      []paramDecl{{Name: "document", Type: "string"}},
@@ -102,12 +102,12 @@ var facts = []factDecl{
 			"moment. A reader asking which parameters a template never " +
 			"referenced has to see the references the author wrote, which " +
 			"interpolation has already consumed; treating the two as one fact " +
-			"would make that question unanswerable and would put two rungs out " +
-			"of order with each other.",
+			"would make that question unanswerable and would put two stages " +
+			"out of order with each other.",
 	},
 	{
 		Name:        "declared-parameter-keys",
-		Rung:        "document",
+		Stage:       "document",
 		SourceField: "types.AggregateSpec.Parameters",
 		Subject:     []string{"document", "parameter"},
 		Params:      []paramDecl{{Name: "document", Type: "string"}},
@@ -117,7 +117,7 @@ var facts = []factDecl{
 	},
 	{
 		Name:        "entity-assertion-name-set",
-		Rung:        "document",
+		Stage:       "document",
 		SourceField: "types.ComponentSpec.Assertions",
 		Subject:     []string{"document", "assertion"},
 		Params:      []paramDecl{{Name: "document", Type: "string"}},
@@ -131,7 +131,7 @@ var facts = []factDecl{
 
 	{
 		Name:        "instance-component-type",
-		Rung:        "normalized",
+		Stage:       "normalized",
 		SourceField: "types.ComponentInstance.Type",
 		Subject:     []string{"node"},
 		Params:      []paramDecl{{Name: "node", Type: "string"}},
@@ -144,7 +144,7 @@ var facts = []factDecl{
 	},
 	{
 		Name:        "socket-required",
-		Rung:        "normalized",
+		Stage:       "normalized",
 		SourceField: "types.UsesSchemaEntry.Required",
 		Subject:     []string{"node", "socket"},
 		Params: []paramDecl{
@@ -157,7 +157,7 @@ var facts = []factDecl{
 	},
 	{
 		Name:        "per-edge-target",
-		Rung:        "normalized",
+		Stage:       "normalized",
 		SourceField: "types.VerboseUsesEntry.Target",
 		Subject:     []string{"edge"},
 		Params: []paramDecl{
@@ -175,7 +175,7 @@ var facts = []factDecl{
 	},
 	{
 		Name:        "authored-attachment-names",
-		Rung:        "normalized",
+		Stage:       "normalized",
 		SourceField: "types.ComponentInstance.Features",
 		Subject:     []string{"node", "attachment"},
 		Params:      []paramDecl{{Name: "node", Type: "string"}},
@@ -185,7 +185,7 @@ var facts = []factDecl{
 	},
 	{
 		Name:        "attachment-authored-uses-socket-names",
-		Rung:        "normalized",
+		Stage:       "normalized",
 		SourceField: "types.FeatureInstance.Uses",
 		Subject:     []string{"node", "attachment", "socket"},
 		Params: []paramDecl{
@@ -201,7 +201,7 @@ var facts = []factDecl{
 	},
 	{
 		Name:        "slot-required",
-		Rung:        "normalized",
+		Stage:       "normalized",
 		SourceField: "types.AttachmentSlot.Required",
 		Subject:     []string{"node", "slot"},
 		Params: []paramDecl{
@@ -217,7 +217,7 @@ var facts = []factDecl{
 	},
 	{
 		Name:        "authored-inject-mechanism-names",
-		Rung:        "normalized",
+		Stage:       "normalized",
 		SourceField: "types.ComponentInstance.Inject",
 		Subject:     []string{"node", "mechanism"},
 		Params:      []paramDecl{{Name: "node", Type: "string"}},
@@ -227,7 +227,7 @@ var facts = []factDecl{
 	},
 	{
 		Name:        "authored-inject-delivery-keys",
-		Rung:        "normalized",
+		Stage:       "normalized",
 		SourceField: "types.ComponentInstance.Inject",
 		Subject:     []string{"node", "mechanism", "delivery-key"},
 		Params: []paramDecl{
@@ -240,7 +240,7 @@ var facts = []factDecl{
 	},
 	{
 		Name:        "authored-values-pillar",
-		Rung:        "normalized",
+		Stage:       "normalized",
 		SourceField: "types.ComponentInstance.Values",
 		Subject:     []string{"node", "pillar", "leaf"},
 		Params: []paramDecl{
@@ -258,7 +258,7 @@ var facts = []factDecl{
 	},
 	{
 		Name:        "authored-attachment-block",
-		Rung:        "normalized",
+		Stage:       "normalized",
 		SourceField: "types.ComponentInstance.Features",
 		Subject:     []string{"node", "attachment"},
 		Params:      []paramDecl{{Name: "node", Type: "string"}},
@@ -278,7 +278,7 @@ var facts = []factDecl{
 
 	{
 		Name:        "resolved-parameter",
-		Rung:        "topology",
+		Stage:       "topology",
 		SourceField: "topology.TopologyNode.ResolvedParameters",
 		Subject:     []string{"node", "parameter"},
 		Params: []paramDecl{
@@ -299,7 +299,7 @@ var facts = []factDecl{
 
 	{
 		Name:        "per-leaf-attachment-provenance",
-		Rung:        "graph",
+		Stage:       "graph",
 		SourceField: "types.IRFeatureEntry.ValuesProvenance",
 		Subject:     []string{"node", "attachment", "pillar", "leaf"},
 		Params: []paramDecl{
@@ -322,7 +322,7 @@ var facts = []factDecl{
 
 	{
 		Name:        "declared-locals-keys",
-		Rung:        "hydrated",
+		Stage:       "hydrated",
 		SourceField: "types.RecipeSpec.Locals",
 		Subject:     []string{"node", "locals-key"},
 		Params:      []paramDecl{{Name: "node", Type: "string"}},
@@ -335,7 +335,7 @@ var facts = []factDecl{
 	},
 	{
 		Name:        "resolved-node-provides",
-		Rung:        "hydrated",
+		Stage:       "hydrated",
 		SourceField: "renderer.NodeProvides",
 		Subject:     []string{"node", "provides-key"},
 		Params: []paramDecl{
@@ -351,7 +351,7 @@ var facts = []factDecl{
 
 	{
 		Name:        "pipeline-step-input-shape",
-		Rung:        "rendered",
+		Stage:       "rendered",
 		SourceField: "types.RecipeSpec.Pipeline",
 		Subject:     []string{"node", "pipeline-step"},
 		Params: []paramDecl{
@@ -364,7 +364,7 @@ var facts = []factDecl{
 	},
 	{
 		Name:        "emitted-file-path-set",
-		Rung:        "rendered",
+		Stage:       "rendered",
 		SourceField: "renderer.AssembledFile",
 		Subject:     []string{"boundary", "provider", "path"},
 		Params: []paramDecl{
@@ -381,7 +381,7 @@ var facts = []factDecl{
 	},
 	{
 		Name:        "artifact-projection-content",
-		Rung:        "rendered",
+		Stage:       "rendered",
 		SourceField: "types.RecipeSpec.Artifacts",
 		Subject:     []string{"node", "artifact"},
 		Params: []paramDecl{

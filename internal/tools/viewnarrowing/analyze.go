@@ -32,7 +32,7 @@ const (
 	Unreadable Kind = "unreadable"
 
 	// UnknownView is a check declaring a view the chain does not carry. Nothing
-	// places it, because the declaration names no rung.
+	// places it, because the declaration names no stage.
 	UnknownView Kind = "unknown-view"
 
 	// UnknownFact is a check reading an accessor no view on the chain declares.
@@ -48,7 +48,7 @@ const (
 // literal that is not bound to a name. DeclaredView is the view its declaration
 // names. NarrowestView is the view that would suffice, set only where one could
 // be computed — so an empty NarrowestView means no verdict was drawn rather than
-// that the innermost rung was the answer. Facts are the accessor names its body
+// that the innermost stage was the answer. Facts are the accessor names its body
 // was read to call, sorted. Detail carries whatever the kind needs beyond the two
 // views: the facts no view declares, or how the view left the body.
 type Finding struct {
@@ -80,7 +80,7 @@ func (f Finding) String() string {
 	case Unreadable:
 		fmt.Fprintf(&b, " declares %s and %s, so it is neither cleared nor accused", f.DeclaredView, f.Detail)
 	case UnknownView:
-		fmt.Fprintf(&b, " declares %s, which is on no rung of the view chain", f.DeclaredView)
+		fmt.Fprintf(&b, " declares %s, which is on no stage of the view chain", f.DeclaredView)
 	case UnknownFact:
 		fmt.Fprintf(&b, " declares %s and reads %s, which no view on the chain declares",
 			f.DeclaredView, f.Detail)
@@ -102,17 +102,17 @@ func Report(findings []Finding) string {
 }
 
 // Analyze reads every check declared in the non-test Go sources of each dir and
-// reports what it finds against ladder.
+// reports what it finds against chain.
 //
 // It takes the chain as a value rather than reading it itself, so the corpus and
-// the chain are independent inputs: the same ladder reads a whole tree of check
-// packages, and a caller holding one already-read ladder pays for it once.
+// the chain are independent inputs: the same chain reads a whole tree of check
+// packages, and a caller holding one already-read chain pays for it once.
 //
 // Findings are ordered by file, then position, then name — an order that depends
 // on the sources and not on a map's iteration, so the same input reports the
 // same bytes.
-func Analyze(ladder Ladder, dirs ...string) ([]Finding, error) {
-	if len(ladder.rungs) == 0 {
+func Analyze(chain Chain, dirs ...string) ([]Finding, error) {
+	if len(chain.stages) == 0 {
 		return nil, fmt.Errorf("the view chain is empty, so a clean result would certify nothing")
 	}
 
@@ -124,7 +124,7 @@ func Analyze(ladder Ladder, dirs ...string) ([]Finding, error) {
 			return nil, err
 		}
 		for _, file := range files {
-			findings = append(findings, analyzeFile(ladder, fset, file)...)
+			findings = append(findings, analyzeFile(chain, fset, file)...)
 		}
 	}
 	slices.SortStableFunc(findings, func(a, b Finding) int {
@@ -139,7 +139,7 @@ func Analyze(ladder Ladder, dirs ...string) ([]Finding, error) {
 	return findings, nil
 }
 
-func analyzeFile(ladder Ladder, fset *token.FileSet, file *ast.File) []Finding {
+func analyzeFile(chain Chain, fset *token.FileSet, file *ast.File) []Finding {
 	names := literalNames(file)
 
 	var findings []Finding
@@ -148,7 +148,7 @@ func analyzeFile(ladder Ladder, fset *token.FileSet, file *ast.File) []Finding {
 		if !ok || typeName(lit.Type) != checkTypeName {
 			return true
 		}
-		if finding, report := analyzeCheck(ladder, lit, names[lit]); report {
+		if finding, report := analyzeCheck(chain, lit, names[lit]); report {
 			position := fset.Position(lit.Pos())
 			finding.File = position.Filename
 			finding.Line = position.Line
@@ -162,7 +162,7 @@ func analyzeFile(ladder Ladder, fset *token.FileSet, file *ast.File) []Finding {
 // analyzeCheck reads one check literal. It reports nothing when the declared view
 // is exactly the narrowest one that suffices, which is the whole point: a
 // correctly-declaring check is silent here.
-func analyzeCheck(ladder Ladder, lit *ast.CompositeLit, name string) (Finding, bool) {
+func analyzeCheck(chain Chain, lit *ast.CompositeLit, name string) (Finding, bool) {
 	finding := Finding{Check: name}
 
 	// A literal of this name that is not a generic instantiation is some other
@@ -179,7 +179,7 @@ func analyzeCheck(ladder Ladder, lit *ast.CompositeLit, name string) (Finding, b
 		return finding, true
 	}
 
-	declaredAt, onChain := ladder.Index(finding.DeclaredView)
+	declaredAt, onChain := chain.Index(finding.DeclaredView)
 	if !onChain {
 		finding.Kind = UnknownView
 		return finding, true
@@ -197,7 +197,7 @@ func analyzeCheck(ladder Ladder, lit *ast.CompositeLit, name string) (Finding, b
 		// The predicate cannot name its view, so its body cannot read a fact
 		// from it. That is the no-fact case rather than an unreadable one.
 		finding.Kind = NoFactRead
-		finding.NarrowestView = ladder.rungs[0].Name
+		finding.NarrowestView = chain.stages[0].Name
 		return finding, true
 	}
 
@@ -210,11 +210,11 @@ func analyzeCheck(ladder Ladder, lit *ast.CompositeLit, name string) (Finding, b
 	}
 	if len(facts) == 0 {
 		finding.Kind = NoFactRead
-		finding.NarrowestView = ladder.rungs[0].Name
+		finding.NarrowestView = chain.stages[0].Name
 		return finding, true
 	}
 
-	narrowestAt, unknown := ladder.NarrowestSufficient(facts)
+	narrowestAt, unknown := chain.NarrowestSufficient(facts)
 	if len(unknown) > 0 {
 		finding.Kind = UnknownFact
 		finding.Detail = strings.Join(unknown, ", ")
@@ -224,7 +224,7 @@ func analyzeCheck(ladder Ladder, lit *ast.CompositeLit, name string) (Finding, b
 		return Finding{}, false
 	}
 	finding.Kind = OverDeclared
-	finding.NarrowestView = ladder.rungs[narrowestAt].Name
+	finding.NarrowestView = chain.stages[narrowestAt].Name
 	return finding, true
 }
 

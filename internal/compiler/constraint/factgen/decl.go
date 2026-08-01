@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Cognitio S.r.l.
 
-// Command factgen generates the constraint framework's view ladder, its derived
+// Command factgen generates the constraint framework's view stages, its derived
 // subject-kind set, and the reviewable placement table, from the fact registry
 // declared in registry.go.
 //
@@ -19,31 +19,31 @@
 // package regenerates all of them.
 package main
 
-// rungDecl declares one rung of the view ladder: a point in the compilation at
+// stageDecl declares one stage of the view chain: a point in the compilation at
 // which some set of facts is complete.
 //
-// A rung exists if and only if some fact lands there. A rung declared here with
-// no fact landing on it is refused rather than silently dropped, because a rung
-// nothing occupies is vocabulary every future author must learn and no check
-// uses.
-type rungDecl struct {
-	// Name is the rung's name. It names the state the rung holds, never a
+// A stage exists if and only if some fact lands there. A stage declared here
+// with no fact landing on it is refused rather than silently dropped, because a
+// stage nothing occupies is vocabulary every future author must learn and no
+// check uses.
+type stageDecl struct {
+	// Name is the stage's name. It names the state the stage holds, never a
 	// position in a sequence, so the name survives a change to the order
 	// things happen in.
 	Name string
 
-	// Extends names the rung this one contains: every fact complete at
-	// Extends is still complete here. It is empty for the ladder's root.
+	// Extends names the stage this one contains: every fact complete at
+	// Extends is still complete here. It is empty for the chain's root.
 	//
 	// The relation is declared rather than derived, and that is deliberate.
 	// Facts accumulate, so deriving the order from the fact sets alone would
 	// make "the chain is linear" true by construction and the assertion
-	// worthless. Declared, the relation can be wrong — a second rung
-	// extending an already-extended rung is a branch, which means two rungs
+	// worthless. Declared, the relation can be wrong — a second stage
+	// extending an already-extended stage is a branch, which means two stages
 	// no order relates, and the generator refuses it.
 	Extends string
 
-	// Holds describes what is complete at this rung, for the placement table.
+	// Holds describes what is complete at this stage, for the placement table.
 	Holds string
 }
 
@@ -62,14 +62,14 @@ type factDecl struct {
 	// interface, and that does not compile.
 	Name string
 
-	// Rung names the rung at which this fact is complete.
-	Rung string
+	// Stage names the stage at which this fact is complete.
+	Stage string
 
 	// SourceField names the pipeline product field the fact reads, as a Go
 	// structure and field. Where the product is carried as a function
 	// parameter rather than as a field, it names that single carrier instead;
 	// what matters is that exactly one carrier is named, because two facts
-	// sharing a rung, a carrier and a subject are the mechanically flaggable
+	// sharing a stage, a carrier and a subject are the mechanically flaggable
 	// shape of same-semantics-under-a-different-name duplication.
 	SourceField string
 

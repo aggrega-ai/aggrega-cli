@@ -20,7 +20,7 @@ var (
 // localView is a view declared here rather than taken from the chain. It is the
 // shape a check takes while the framework has no invocation site supplying a
 // view, and it is exactly the shape nothing can be placed from: the declaration
-// names no rung, so there is no narrowest sufficient answer to compute.
+// names no stage, so there is no narrowest sufficient answer to compute.
 type localView struct{ names []string }
 
 func (l localView) EntityAssertionNameSet(string) []string { return l.names }
@@ -44,7 +44,7 @@ var LocallyDeclaredViewRule = constraint.Check[localView, constraint.NoHostPower
 
 // MisspelledFactRule reads an accessor no view on the chain declares. The reading
 // cannot place a fact the chain does not carry, so it reports the fact rather
-// than a rung — and reporting it is what keeps a misspelling from being read as
+// than a stage — and reporting it is what keeps a misspelling from being read as
 // a check needing nothing.
 var MisspelledFactRule = constraint.Check[constraint.RenderedView, constraint.NoHostPowers, constraint.BoundaryProviderPathSubject]{
 	Sentinel: ErrFileCollision,

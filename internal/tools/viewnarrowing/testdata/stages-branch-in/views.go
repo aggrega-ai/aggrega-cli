@@ -2,8 +2,8 @@
 // Copyright 2026 Cognitio S.r.l.
 
 // Package branchin is a view chain that joins: one view embeds two others, so
-// its facts are complete at a point two rungs claim. Reading this shape must
-// refuse for the same reason a branch must — the order between the rungs it
+// its facts are complete at a point two stages claim. Reading this shape must
+// refuse for the same reason a branch must — the order between the stages it
 // joins is not stated by the embedding.
 package branchin
 

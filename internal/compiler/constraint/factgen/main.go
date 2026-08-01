@@ -32,21 +32,21 @@ func main() {
 // a target is registered, so nothing that names one — a generate directive, a
 // drift gate, a caller passing a path — can name a target the generator does not
 // render, and an unregistered base name is refused rather than written.
-var targets = map[string]func(ladder, []kind, []tupleShare) ([]byte, error){
-	"views_gen.go": func(l ladder, _ []kind, _ []tupleShare) ([]byte, error) {
-		return emitViews(l)
+var targets = map[string]func(chain, []kind, []tupleShare) ([]byte, error){
+	"views_gen.go": func(c chain, _ []kind, _ []tupleShare) ([]byte, error) {
+		return emitViews(c)
 	},
-	"subjectkinds_gen.go": func(_ ladder, kinds []kind, _ []tupleShare) ([]byte, error) {
+	"subjectkinds_gen.go": func(_ chain, kinds []kind, _ []tupleShare) ([]byte, error) {
 		return emitSubjectKinds(kinds)
 	},
 	"constraint-placement-table.md": emitPlacementTable,
 }
 
-// generateFor derives the ladder, the subject-kind set and the tuple shares from
-// the registry, and renders one target.
+// generateFor derives the stage chain, the subject-kind set and the tuple shares
+// from the registry, and renders one target.
 //
 // Every derivation runs for every target, so a registry that does not derive —
-// an unoccupied rung, a rung chain with an unordered pair in it, a fact naming
+// an unoccupied stage, a stage chain with an unordered pair in it, a fact naming
 // no carrier — halts generation of all of them rather than only of the one that
 // happens to read the broken part.
 func generateFor(base string) ([]byte, error) {
@@ -62,7 +62,7 @@ func generateFor(base string) ([]byte, error) {
 	if err := validateFacts(); err != nil {
 		return nil, err
 	}
-	l, err := deriveLadder()
+	c, err := deriveChain()
 	if err != nil {
 		return nil, err
 	}
@@ -70,10 +70,10 @@ func generateFor(base string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	return render(l, kinds, deriveTupleShares(facts))
+	return render(c, kinds, deriveTupleShares(facts))
 }
 
-// report prints what the run derived, and the facts sharing a rung, a source
+// report prints what the run derived, and the facts sharing a stage, a source
 // carrier and a subject.
 //
 // The share list is printed on every run rather than written to a file of its
@@ -82,7 +82,7 @@ func generateFor(base string) ([]byte, error) {
 // never proof of it. It is also carried in the placement table, where review
 // reaches it without running the generator.
 func report(w *os.File, out string) {
-	l, err := deriveLadder()
+	c, err := deriveChain()
 	if err != nil {
 		return
 	}
@@ -90,17 +90,17 @@ func report(w *os.File, out string) {
 	shares := deriveTupleShares(facts)
 
 	fmt.Fprintf(w, "factgen: wrote %s\n", out)
-	fmt.Fprintf(w, "factgen: %d facts over %d rungs, keyed by %d subject kinds\n",
-		len(facts), len(l.order), len(kinds))
+	fmt.Fprintf(w, "factgen: %d facts over %d stages, keyed by %d subject kinds\n",
+		len(facts), len(c.order), len(kinds))
 	if len(shares) == 0 {
-		fmt.Fprintln(w, "factgen: no two facts share a (rung, source carrier, subject) tuple")
+		fmt.Fprintln(w, "factgen: no two facts share a (stage, source carrier, subject) tuple")
 		return
 	}
 	fmt.Fprintf(w, "factgen: %d tuple(s) shared by more than one fact — review each, a share is not proof of duplication:\n",
 		len(shares))
 	for _, s := range shares {
 		fmt.Fprintf(w, "factgen:   (%s, %s, %s): %s\n",
-			s.Rung, s.SourceField, s.Subject, strings.Join(s.Facts, ", "))
+			s.Stage, s.SourceField, s.Subject, strings.Join(s.Facts, ", "))
 	}
 }
 

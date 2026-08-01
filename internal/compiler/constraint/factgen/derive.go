@@ -8,10 +8,10 @@ import (
 	"strings"
 )
 
-// ladder is the rung set in containment order, root first, once the declared
+// chain is the stage set in containment order, root first, once the declared
 // Extends relation has been checked to be a single chain.
-type ladder struct {
-	order []rungDecl
+type chain struct {
+	order []stageDecl
 	facts map[string][]factDecl
 }
 
@@ -54,95 +54,96 @@ func (k kind) Traversal() string {
 	return "pull"
 }
 
-// tupleShare is a group of facts sharing a rung, a source carrier and a subject
+// tupleShare is a group of facts sharing a stage, a source carrier and a subject
 // key.
 //
 // A share is not proof of duplication and the generator does not treat it as
 // one. Same-name duplication is closed, but by two mechanisms rather than one:
-// the language rejects two declarations of a name at one rung, or at two rungs
-// with differing signatures, while the case it admits — two rungs and an
+// the language rejects two declarations of a name at one stage, or at two stages
+// with differing signatures, while the case it admits — two stages and an
 // identical signature, which a method set may carry through embedding — is
 // refused by validateFacts. Same semantics under two different names is not
 // closed and there is no mechanism for it; printing the shares is a mitigation
 // that turns an invisible risk into a reviewable list.
 type tupleShare struct {
-	Rung        string
+	Stage       string
 	SourceField string
 	Subject     string
 	Facts       []string
 }
 
-// deriveLadder checks the declared rung relation and returns the rung set in
-// containment order together with the facts landing on each rung.
+// deriveChain checks the declared stage relation and returns the stage set in
+// containment order together with the facts landing on each stage.
 //
-// It refuses, rather than repairing, four shapes. A rung nothing occupies, since
-// a rung exists if and only if a fact lands there. A fact naming an undeclared
-// rung. More than one root, or a rung two others extend — either of which means
-// two rungs no containment relation orders, and an unordered pair is exactly
-// what makes the earliest rung a fact is complete at un-computable. And a cycle.
-func deriveLadder() (ladder, error) {
-	byName := make(map[string]rungDecl, len(rungs))
-	for _, r := range rungs {
-		if r.Name == "" {
-			return ladder{}, fmt.Errorf("a rung is declared with no name")
+// It refuses, rather than repairing, four shapes. A stage nothing occupies,
+// since a stage exists if and only if a fact lands there. A fact naming an
+// undeclared stage. More than one root, or a stage two others extend — either of
+// which means two stages no containment relation orders, and an unordered pair
+// is exactly what makes the earliest stage a fact is complete at un-computable.
+// And a cycle.
+func deriveChain() (chain, error) {
+	byName := make(map[string]stageDecl, len(stages))
+	for _, s := range stages {
+		if s.Name == "" {
+			return chain{}, fmt.Errorf("a stage is declared with no name")
 		}
-		if _, dup := byName[r.Name]; dup {
-			return ladder{}, fmt.Errorf("rung %q is declared twice", r.Name)
+		if _, dup := byName[s.Name]; dup {
+			return chain{}, fmt.Errorf("stage %q is declared twice", s.Name)
 		}
-		byName[r.Name] = r
+		byName[s.Name] = s
 	}
 
-	occupants := make(map[string][]factDecl, len(rungs))
+	occupants := make(map[string][]factDecl, len(stages))
 	for _, f := range facts {
-		if _, ok := byName[f.Rung]; !ok {
-			return ladder{}, fmt.Errorf("fact %q names rung %q, which is not declared", f.Name, f.Rung)
+		if _, ok := byName[f.Stage]; !ok {
+			return chain{}, fmt.Errorf("fact %q names stage %q, which is not declared", f.Name, f.Stage)
 		}
-		occupants[f.Rung] = append(occupants[f.Rung], f)
+		occupants[f.Stage] = append(occupants[f.Stage], f)
 	}
-	for _, r := range rungs {
-		if len(occupants[r.Name]) == 0 {
-			return ladder{}, fmt.Errorf(
-				"rung %q is declared but no fact lands there; a rung exists only where a fact does, "+
-					"so either declare the fact or remove the rung", r.Name)
+	for _, s := range stages {
+		if len(occupants[s.Name]) == 0 {
+			return chain{}, fmt.Errorf(
+				"stage %q is declared but no fact lands there; a stage exists only where a fact does, "+
+					"so either declare the fact or remove the stage", s.Name)
 		}
 	}
 
 	var roots []string
-	extendedBy := make(map[string][]string, len(rungs))
-	for _, r := range rungs {
-		if r.Extends == "" {
-			roots = append(roots, r.Name)
+	extendedBy := make(map[string][]string, len(stages))
+	for _, s := range stages {
+		if s.Extends == "" {
+			roots = append(roots, s.Name)
 			continue
 		}
-		if _, ok := byName[r.Extends]; !ok {
-			return ladder{}, fmt.Errorf("rung %q extends %q, which is not declared", r.Name, r.Extends)
+		if _, ok := byName[s.Extends]; !ok {
+			return chain{}, fmt.Errorf("stage %q extends %q, which is not declared", s.Name, s.Extends)
 		}
-		if r.Extends == r.Name {
-			return ladder{}, fmt.Errorf("rung %q extends itself", r.Name)
+		if s.Extends == s.Name {
+			return chain{}, fmt.Errorf("stage %q extends itself", s.Name)
 		}
-		extendedBy[r.Extends] = append(extendedBy[r.Extends], r.Name)
+		extendedBy[s.Extends] = append(extendedBy[s.Extends], s.Name)
 	}
 	if len(roots) != 1 {
-		return ladder{}, fmt.Errorf(
-			"the rung chain is not linear: %d rungs extend nothing (%s), so no containment relation "+
-				"orders them and the earliest rung a fact is complete at is not computable",
+		return chain{}, fmt.Errorf(
+			"the stage chain is not linear: %d stages extend nothing (%s), so no containment relation "+
+				"orders them and the earliest stage a fact is complete at is not computable",
 			len(roots), strings.Join(roots, ", "))
 	}
 	for extended, extenders := range extendedBy {
 		if len(extenders) > 1 {
-			return ladder{}, fmt.Errorf(
-				"the rung chain is not linear: rungs %s all extend %q, so no containment relation "+
-					"orders them against each other and the earliest rung a fact is complete at is "+
+			return chain{}, fmt.Errorf(
+				"the stage chain is not linear: stages %s all extend %q, so no containment relation "+
+					"orders them against each other and the earliest stage a fact is complete at is "+
 					"not computable", strings.Join(extenders, ", "), extended)
 		}
 	}
 
-	order := make([]rungDecl, 0, len(rungs))
-	seen := make(map[string]bool, len(rungs))
+	order := make([]stageDecl, 0, len(stages))
+	seen := make(map[string]bool, len(stages))
 	current := roots[0]
 	for {
 		if seen[current] {
-			return ladder{}, fmt.Errorf("the rung chain cycles at %q", current)
+			return chain{}, fmt.Errorf("the stage chain cycles at %q", current)
 		}
 		seen[current] = true
 		order = append(order, byName[current])
@@ -152,19 +153,19 @@ func deriveLadder() (ladder, error) {
 		}
 		current = next[0]
 	}
-	if len(order) != len(rungs) {
-		unreached := make([]string, 0, len(rungs)-len(order))
-		for _, r := range rungs {
-			if !seen[r.Name] {
-				unreached = append(unreached, r.Name)
+	if len(order) != len(stages) {
+		unreached := make([]string, 0, len(stages)-len(order))
+		for _, s := range stages {
+			if !seen[s.Name] {
+				unreached = append(unreached, s.Name)
 			}
 		}
-		return ladder{}, fmt.Errorf(
-			"the rung chain does not reach every rung: %s sit outside it, so they are ordered "+
+		return chain{}, fmt.Errorf(
+			"the stage chain does not reach every stage: %s sit outside it, so they are ordered "+
 				"against nothing", strings.Join(unreached, ", "))
 	}
 
-	return ladder{order: order, facts: occupants}, nil
+	return chain{order: order, facts: occupants}, nil
 }
 
 // deriveKinds returns the subject kinds, in the order their first keying fact is
@@ -188,21 +189,21 @@ func deriveKinds() ([]kind, error) {
 	return out, nil
 }
 
-// deriveTupleShares returns the groups of facts sharing a rung, a source carrier
-// and a subject key, in the order the group's first fact is declared.
+// deriveTupleShares returns the groups of facts sharing a stage, a source
+// carrier and a subject key, in the order the group's first fact is declared.
 func deriveTupleShares(fs []factDecl) []tupleShare {
 	var out []tupleShare
 	index := make(map[string]int)
 	for _, f := range fs {
 		subject := kind{Coordinates: f.Subject}.Display()
-		key := strings.Join([]string{f.Rung, f.SourceField, subject}, "\x00")
+		key := strings.Join([]string{f.Stage, f.SourceField, subject}, "\x00")
 		if i, ok := index[key]; ok {
 			out[i].Facts = append(out[i].Facts, f.Name)
 			continue
 		}
 		index[key] = len(out)
 		out = append(out, tupleShare{
-			Rung:        f.Rung,
+			Stage:       f.Stage,
 			SourceField: f.SourceField,
 			Subject:     subject,
 			Facts:       []string{f.Name},
@@ -219,35 +220,35 @@ func deriveTupleShares(fs []factDecl) []tupleShare {
 
 // validateFacts checks the per-fact declaration shape the emitters rely on.
 //
-// It deliberately does NOT check for a duplicate fact name at one rung, and the
+// It deliberately does NOT check for a duplicate fact name at one stage, and the
 // omission is load-bearing rather than an oversight. Because the accessor's
 // method name is derived from the fact name, two declarations of one name at one
-// rung emit two methods of one name on one interface, which the Go compiler
+// stage emit two methods of one name on one interface, which the Go compiler
 // refuses. Checking it here would shadow that, so the strongest available
 // enforcement would never fire and the language's guarantee would quietly become
 // this function's instead.
 //
-// It DOES refuse one fact name at two rungs, because the language provably does
+// It DOES refuse one fact name at two stages, because the language provably does
 // not. Measured against the compiler rather than reasoned about: with the two
-// declarations at one rung the build fails with a duplicate method; with them at
-// two rungs and differing signatures the build fails as well, because an
+// declarations at one stage the build fails with a duplicate method; with them at
+// two stages and differing signatures the build fails as well, because an
 // explicitly declared method conflicts with an embedded one it disagrees with;
-// but with them at two rungs and an identical signature the build SUCCEEDS,
+// but with them at two stages and an identical signature the build SUCCEEDS,
 // since a method set may overlap through embedding when the signatures match.
 // That last case is exactly the placement error the registry exists to prevent —
 // one fact claiming two different earliest-complete points — so it is refused
 // here. Do not remove this on the reasoning that the compiler covers it; it was
 // checked, and it does not.
 func validateFacts() error {
-	rungOf := make(map[string]string, len(facts))
+	stageOf := make(map[string]string, len(facts))
 	for _, f := range facts {
-		if prior, seen := rungOf[f.Name]; seen && prior != f.Rung {
+		if prior, seen := stageOf[f.Name]; seen && prior != f.Stage {
 			return fmt.Errorf(
-				"fact %q is declared at two rungs, %q and %q; a fact has exactly one earliest rung "+
+				"fact %q is declared at two stages, %q and %q; a fact has exactly one earliest stage "+
 					"at which it is complete, and two would make the placement of every check reading "+
-					"it ambiguous", f.Name, prior, f.Rung)
+					"it ambiguous", f.Name, prior, f.Stage)
 		}
-		rungOf[f.Name] = f.Rung
+		stageOf[f.Name] = f.Stage
 	}
 	for _, f := range facts {
 		switch {
@@ -288,8 +289,8 @@ func accessorName(factName string) string {
 	return b.String()
 }
 
-// viewName derives a rung's view interface name.
-func viewName(rung string) string { return pascal(rung) + "View" }
+// viewName derives a stage's view interface name.
+func viewName(stage string) string { return pascal(stage) + "View" }
 
 func pascal(s string) string {
 	parts := strings.Split(s, "-")

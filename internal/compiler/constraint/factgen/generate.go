@@ -3,7 +3,7 @@
 
 package main
 
-// The view ladder and the derived subject-kind set are generated into the parent
+// The view stages and the derived subject-kind set are generated into the parent
 // package. Both are emitted by path rather than driven from a directive beside
 // the output, because the registry is the single source and one directive set
 // keeps every projection of it in step.

@@ -22,7 +22,7 @@ package constraint
 // declaring a non-empty capability is a finding worth examining rather than a
 // routine shape.
 //
-// The registry has no slot for a host power at all: a fact declares a rung, a
+// The registry has no slot for a host power at all: a fact declares a stage, a
 // carrier, a subject key and a result, and there is nowhere to record a
 // filesystem read. So a host power cannot arrive through a fact even by
 // accident; it can only arrive by declaration, on this axis.
