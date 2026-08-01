@@ -4,7 +4,6 @@
 package main
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -129,10 +128,8 @@ type searchOptions struct {
 // loaded, the run fails loudly rather than presenting an empty result as a
 // successful search.
 func searchRun(rw *workspaceconfig.ResolvedWorkspace, out, errOut io.Writer, opts searchOptions) error {
-	switch opts.Output {
-	case "table", "json", "names":
-	default:
-		return fmt.Errorf("aggrega search: unknown output format %q; expected one of table, json, names", opts.Output)
+	if _, err := parseFormat("search", opts.Output, "table", "json", "names"); err != nil {
+		return err
 	}
 
 	cfg := rw.Config()
@@ -271,10 +268,5 @@ func writeSearchJSON(out io.Writer, indexes []loadedIndex, records []IndexRecord
 	if records == nil {
 		records = []IndexRecord{}
 	}
-	data, err := json.MarshalIndent(searchJSON{Updated: updated, Records: records}, "", "  ")
-	if err != nil {
-		return fmt.Errorf("aggrega search: marshal results: %w", err)
-	}
-	_, err = out.Write(append(data, '\n'))
-	return err
+	return writeStructured(out, "search", structuredIndented, searchJSON{Updated: updated, Records: records})
 }

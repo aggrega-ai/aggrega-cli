@@ -99,6 +99,12 @@ func parseColorMode(s string) (colorMode, error) {
 
 // parseOutputFormat maps the --output string to an outputFormat, returning a
 // clear error naming the accepted set on an unrecognized value.
+//
+// It deliberately does not delegate to parseFormat: parseFormat validates a
+// value and hands it back for the caller to switch on, whereas inspect's formats
+// are a typed enum threaded through the whole inspect option set, so routing
+// through it would validate and then switch a second time on the same string.
+// The two are a near-duplicate on purpose, not an oversight.
 func parseOutputFormat(s string) (outputFormat, error) {
 	switch s {
 	case "text":

@@ -321,7 +321,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          VERSION_JSON="$(aggrega-cli/aggrega version --json)"
+          VERSION_JSON="$(aggrega-cli/aggrega version -o json)"
           HOST_ABI="$(printf '%s' "$VERSION_JSON" | grep -o '"abiVersion":"[^"]*"' | head -1 | cut -d'"' -f4)"
           BIN_VERSION="$(printf '%s' "$VERSION_JSON" | grep -o '"version":"[^"]*"' | head -1 | cut -d'"' -f4)"
           [ -n "$HOST_ABI" ] || { echo "ABI gate: binary reported no abiVersion" >&2; exit 1; }
@@ -371,7 +371,7 @@ jobs:
           set -euo pipefail
           export AGGREGA_BIN="$PWD/aggrega-cli/aggrega"
           mkdir -p "$RUNNER_TEMP/entities"
-          "$AGGREGA_BIN" plugin gen-catalog --from-embedded --overlay "$OVERLAY_DIR" -o "$RUNNER_TEMP/entities"
+          "$AGGREGA_BIN" plugin gen-catalog --from-embedded --overlay "$OVERLAY_DIR" --output-dir "$RUNNER_TEMP/entities"
 
       # =====================================================================
       # PUBLISH PHASE — reached only when every prep step above succeeded.
@@ -439,7 +439,7 @@ jobs:
           # public Sigstore. The identity token is read from SIGSTORE_ID_TOKEN
           # (minted above). The image tag equals the binary's reported version
           # (v-less), matching the tag the build script pushed.
-          BIN_VERSION="$(aggrega-cli/aggrega version --json | grep -o '"version":"[^"]*"' | head -1 | cut -d'"' -f4)"
+          BIN_VERSION="$(aggrega-cli/aggrega version -o json | grep -o '"version":"[^"]*"' | head -1 | cut -d'"' -f4)"
           [ -n "$BIN_VERSION" ] || { echo "binary reported no version" >&2; exit 1; }
           aggrega-cli/aggrega sign "$REGISTRY/tools/aggrega:$BIN_VERSION" \
             --fulcio-url "$FULCIO_URL" --rekor-url "$REKOR_URL"
@@ -507,7 +507,7 @@ jobs:
             TAG="$REF_NAME"
           fi
 
-          BIN_VERSION="$(aggrega-cli/aggrega version --json | grep -o '"version":"[^"]*"' | head -1 | cut -d'"' -f4)"
+          BIN_VERSION="$(aggrega-cli/aggrega version -o json | grep -o '"version":"[^"]*"' | head -1 | cut -d'"' -f4)"
           [ -n "$BIN_VERSION" ] || { echo "binary reported no version" >&2; exit 1; }
 
           RELEASE_DIR="$RUNNER_TEMP/release"

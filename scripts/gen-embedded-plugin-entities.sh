@@ -53,7 +53,7 @@ OUT="$TMP/catalog"
 echo "=== generate embedded plugin entities ==="
 "$BIN" plugin gen-catalog --from-embedded \
   --overlay "$OVERLAY_DIR" \
-  --output "$OUT"
+  --output-dir "$OUT"
 
 # Relocate each generated per-coordinate entity to the flat, name-based embed
 # layout beside its guest. gen-catalog writes <out>/<pluginType>/<name>/<ver>/

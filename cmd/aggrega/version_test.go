@@ -288,8 +288,8 @@ func TestVersionVerboseTable(t *testing.T) {
 	}
 }
 
-// TestVersionVerboseJSON proves --verbose --json adds the embeddedPlugins array
-// while the plain --json wire shape omits it.
+// TestVersionVerboseJSON proves --verbose -o json adds the embeddedPlugins array
+// while the plain -o json wire shape omits it.
 func TestVersionVerboseJSON(t *testing.T) {
 	summaries := collectEmbeddedSummaries()
 
@@ -302,7 +302,7 @@ func TestVersionVerboseJSON(t *testing.T) {
 		t.Fatalf("unmarshal plain: %v", err)
 	}
 	if _, present := plainGeneric["embeddedPlugins"]; present {
-		t.Errorf("plain --json should omit embeddedPlugins; got:\n%s", plain.String())
+		t.Errorf("plain -o json should omit embeddedPlugins; got:\n%s", plain.String())
 	}
 
 	var verbose bytes.Buffer
@@ -377,5 +377,48 @@ func TestVersionJSONIsValidJSON(t *testing.T) {
 		if _, present := generic[k]; !present {
 			t.Errorf("missing expected key %q in version JSON", k)
 		}
+	}
+}
+
+// TestVersionJSONIsCompact pins the byte shape of the structured version output,
+// which is a contract rather than a formatting preference: build and release
+// pipelines read a single field out of it with line-oriented pattern matching
+// instead of a JSON parser, and every such pattern matches only the unspaced
+// "key":"value" form. An indented rendering would still be valid JSON, would
+// still satisfy every other test in this file, and would match none of those
+// patterns — so the shape is asserted here directly, in the same form the
+// consumers match on.
+//
+// The verbose form is asserted too, because it is the larger payload and is
+// therefore where a pretty-printer would most plausibly be introduced.
+func TestVersionJSONIsCompact(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		verbose bool
+	}{{"plain", false}, {"verbose", true}} {
+		t.Run(tc.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			if err := runVersion(&buf, true, tc.verbose); err != nil {
+				t.Fatalf("runVersion: %v", err)
+			}
+			out := buf.String()
+
+			if n := strings.Count(out, "\n"); n != 1 {
+				t.Errorf("expected exactly one newline (the trailing one), got %d in:\n%q", n, out)
+			}
+			if !strings.HasSuffix(out, "}\n") {
+				t.Errorf("expected the payload to end with a brace then one newline; got %q", out)
+			}
+			if strings.Contains(out, "  ") {
+				t.Errorf("expected no indentation run in the payload; got %q", out)
+			}
+
+			// The exact substrings the release and tooling pipelines match on.
+			for _, want := range []string{`"version":"`, `"abiVersion":"`} {
+				if !strings.Contains(out, want) {
+					t.Errorf("expected the unspaced form %s in the payload; got %q", want, out)
+				}
+			}
+		})
 	}
 }

@@ -21,7 +21,7 @@
 # The binary MUST be the embedded build (guests compiled in, resolves with no
 # network) and MUST carry the git-describe version stamp. The build script
 # enforces both by running `aggrega plugin list` (embedded guests present) and
-# `aggrega version --json` (version + abiVersion present) before the image is
+# `aggrega version -o json` (version + abiVersion present) before the image is
 # built. The build context is the aggrega-cli directory, where the build
 # scripts leave the `aggrega` binary.
 
@@ -31,7 +31,7 @@
 ARG VERSION=unknown
 
 # Plugin ABI version the binary speaks. Sourced from the binary's own
-# `aggrega version --json` abiVersion field, stamped as a label so a consumer
+# `aggrega version -o json` abiVersion field, stamped as a label so a consumer
 # CI can gate on ABI compatibility from the manifest alone.
 ARG ABI_VERSION=unknown
 
@@ -75,7 +75,7 @@ ARG ABI_VERSION
 
 # Standard OCI annotations plus the aggrega-specific label namespace consumers
 # gate on. The abiVersion and version labels mirror the binary's own
-# `aggrega version --json` fields so a registry-level check and a run-time
+# `aggrega version -o json` fields so a registry-level check and a run-time
 # check agree.
 LABEL org.opencontainers.image.title="aggrega" \
       org.opencontainers.image.description="The aggrega CLI: an ahead-of-time compiler and registry client for cloud-native deployment intent." \

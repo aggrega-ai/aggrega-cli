@@ -61,7 +61,7 @@ func Run(ctx context.Context, opts Options, out io.Writer) error {
 		return fmt.Errorf("aggrega plugin gen-catalog: one of --from-embedded or --plugin <path> is required")
 	}
 	if opts.OutputDir == "" {
-		return fmt.Errorf("aggrega plugin gen-catalog: --output <dir> is required")
+		return fmt.Errorf("aggrega plugin gen-catalog: --output-dir <dir> is required")
 	}
 	if opts.OverlayPath == "" {
 		return fmt.Errorf("aggrega plugin gen-catalog: --overlay is required (a directory for --from-embedded, a file for --plugin)")

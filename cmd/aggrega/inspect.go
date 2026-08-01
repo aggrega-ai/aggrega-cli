@@ -115,7 +115,7 @@ func newInspectCmd() *cobra.Command {
 	c.Flags().BoolVar(&resolvedFlag, "resolved", false, "Render the entity fully resolved.")
 	c.Flags().StringVar(&colorFlag, "color", "auto", "Colorize output: auto|always|never.")
 	c.Flags().BoolVar(&noColorFlag, "no-color", false, "Disable colorized output (alias for --color=never).")
-	c.Flags().StringVar(&outputFlag, "output", "text", "Output format: text|yaml.")
+	c.Flags().StringVarP(&outputFlag, "output", "o", "text", "Output format: text|yaml.")
 	c.Flags().BoolVar(&showImplementsFlag, "show-implements", false, "For a Recipe or FeatureRecipe, resolve spec.implements against the catalog and render the bound Component or Feature.")
 	c.Flags().BoolVar(&flatFlag, "flat", false, "Render a tree-shaped entity (Aggregate, Release) as a flat list, each node prefixed with its full dotted path. No effect on tabular kinds.")
 	c.Flags().StringVar(&pluginFlag, "plugin", "", "Filesystem path to a raw .wasm artifact; derives and prints the host functions it imports (the pre-publish, not-yet-stamped view). Takes no identifier argument.")

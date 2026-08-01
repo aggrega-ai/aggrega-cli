@@ -87,21 +87,21 @@ fi
 [ -x "$BINARY" ] || die "aggrega binary not found or not executable at: $BINARY
 build it first with the repository build (scripts/build.sh), then re-run."
 
-# Verify the binary is the embedded build: `plugin list --json` reports the
+# Verify the binary is the embedded build: `plugin list -o json` reports the
 # guests compiled into the binary as a machine-readable array. A --light binary
 # reports an empty array and would package a non-functional tooling image. The
 # check reads the JSON rather than the human table, so it does not depend on the
 # table's display format (which lists bare `<socket>/<name>` identities, not
 # URIs). Whitespace is stripped so the non-empty test (`"embedded":[{`) is
 # insensitive to the pretty-printer, and it needs no jq.
-if ! "$BINARY" plugin list --json 2>/dev/null | tr -d '[:space:]' | grep -q '"embedded":\[{'; then
+if ! "$BINARY" plugin list -o json 2>/dev/null | tr -d '[:space:]' | grep -q '"embedded":\[{'; then
   die "binary at $BINARY is not the embedded build (no embedded guests).
 the tooling image needs the embedded binary; rebuild without --light."
 fi
 
 # Read the version and ABI version straight from the binary so the image labels
-# and the binary's own `aggrega version --json` output cannot diverge.
-VERSION_JSON="$("$BINARY" version --json 2>/dev/null)" || die "could not read version from $BINARY"
+# and the binary's own `aggrega version -o json` output cannot diverge.
+VERSION_JSON="$("$BINARY" version -o json 2>/dev/null)" || die "could not read version from $BINARY"
 BIN_VERSION="$(printf '%s' "$VERSION_JSON" | grep -o '"version":"[^"]*"' | head -1 | cut -d'"' -f4)"
 BIN_ABI="$(printf '%s' "$VERSION_JSON" | grep -o '"abiVersion":"[^"]*"' | head -1 | cut -d'"' -f4)"
 

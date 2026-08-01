@@ -44,6 +44,6 @@ rm -rf "$OUTPUT_DIR/provider" "$OUTPUT_DIR/linter" "$OUTPUT_DIR/parser"
 echo "=== generate core plugin catalog entities ==="
 "$BIN" plugin gen-catalog --from-embedded \
   --overlay "$OVERLAY_DIR" \
-  --output "$OUTPUT_DIR"
+  --output-dir "$OUTPUT_DIR"
 
 echo "=== done: entities under $OUTPUT_DIR/{provider,linter} ==="

@@ -19,7 +19,7 @@ import (
 )
 
 var (
-	versionJSON    bool
+	versionOutput  string
 	versionVerbose bool
 )
 
@@ -54,15 +54,17 @@ func newVersionCmd() *cobra.Command {
 		Long: `Print the aggrega CLI's build identity.
 
 By default the output is a single human-readable line followed by a
-one-line pointer to the plugins compiled into the binary. With --json,
-the output is a structured JSON object suitable for programmatic
-consumption (the VS Code extension uses this form to read the
-binary's version at activation time).
+one-line pointer to the plugins compiled into the binary. With
+-o json, the output is a structured JSON object suitable for
+programmatic consumption (the VS Code extension uses this form to
+read the binary's version at activation time), emitted on a single
+line so a line-oriented consumer can read a field without a JSON
+parser.
 
 With --verbose, the output replaces the pointer line with a table of
 the embedded plugins — type, name, served capabilities, and commit —
 under a header naming the count and their shared version. With
---verbose --json, the JSON object gains an embeddedPlugins array
+--verbose -o json, the JSON object gains an embeddedPlugins array
 carrying the same detail.
 
 Version strings are v-less (1.0.0, not v1.0.0), homogeneous with the
@@ -71,19 +73,31 @@ release version; source builds report the literal "(devel)".
 Operators who see "(devel)" know they are running an unreleased
 build.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runVersion(cmd.OutOrStdout(), versionJSON, versionVerbose)
+			format, err := parseFormat("version", versionOutput, "text", "json")
+			if err != nil {
+				return err
+			}
+			return runVersion(cmd.OutOrStdout(), format == "json", versionVerbose)
 		},
 	}
-	c.Flags().BoolVar(&versionJSON, "json", false, "emit a structured JSON object instead of the human-readable line")
+	c.Flags().StringVarP(&versionOutput, "output", "o", "text", "Output format: text|json.")
 	c.Flags().BoolVar(&versionVerbose, "verbose", false, "include the embedded-plugin set in the output")
 	return c
 }
 
 // versionInfo is the structured payload emitted by `aggrega version
-// --json`. Field names are camelCase to match the Go ecosystem's
+// -o json`. Field names are camelCase to match the Go ecosystem's
 // json.Marshal default convention; the wire shape is pinned by
 // version_test.go and re-pinned on the extension side by
 // version-check.test.ts.
+//
+// The payload is emitted compact — one line, no space after a colon —
+// and that byte shape is part of the contract, not a formatting
+// preference: build and release pipelines read a single field out of it
+// with line-oriented pattern matching rather than a JSON parser, and an
+// indented rendering would still be valid JSON while matching none of
+// those patterns. version_test.go pins the shape so it cannot be
+// changed silently.
 //
 // abiVersion reports the plugin ABI version this binary speaks — the
 // single version its host and its embedded guests agree on. It is a
@@ -105,7 +119,7 @@ type versionInfo struct {
 	EmbeddedPlugins []embeddedPluginJSON `json:"embeddedPlugins,omitempty"`
 }
 
-// embeddedPluginJSON is one embedded plugin's detail on the --verbose --json
+// embeddedPluginJSON is one embedded plugin's detail on the --verbose -o json
 // surface: its identity, self-reported type, served capabilities, and build
 // provenance.
 type embeddedPluginJSON struct {
@@ -129,8 +143,7 @@ func runVersion(w io.Writer, asJSON, verbose bool) error {
 		if verbose {
 			info.EmbeddedPlugins = embeddedSummariesToJSON(summaries)
 		}
-		enc := json.NewEncoder(w)
-		return enc.Encode(info)
+		return writeStructured(w, "version", structuredCompact, info)
 	}
 	if _, err := io.WriteString(w, formatVersionLine(info)); err != nil {
 		return err

@@ -173,7 +173,7 @@ func TestFormatPluginListDeterministic(t *testing.T) {
 	}
 }
 
-// TestWritePluginListJSON proves the --json surface carries the full per-plugin
+// TestWritePluginListJSON proves the -o json surface carries the full per-plugin
 // detail, groups it deterministically, emits an empty array (not null) for an
 // empty group, and reports a describe failure's error rather than dropping the
 // plugin.

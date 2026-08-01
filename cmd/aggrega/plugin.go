@@ -42,7 +42,7 @@ func newPluginCmd() *cobra.Command {
 }
 
 func newPluginListCmd() *cobra.Command {
-	var asJSON bool
+	var output string
 	c := &cobra.Command{
 		Use:   "list",
 		Short: "List the plugins the CLI can resolve with their describe() metadata",
@@ -63,21 +63,25 @@ type, name, served capabilities, and version. The output is read-only and
 deterministic. A plugin that fails to resolve or describe is listed with an
 abnormal-state label rather than halting the whole listing.
 
-With --json, the output is a structured object carrying the full per-plugin
+With -o json, the output is a structured object carrying the full per-plugin
 detail — type, name, version, commit, capabilities, input kinds, boundary
 assembly, exports, origin, readiness, and any resolve or describe error —
 grouped as embedded and configured. It is suitable for programmatic
 consumption and documentation generation.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			format, err := parseFormat("plugin list", output, "table", "json")
+			if err != nil {
+				return err
+			}
 			rw, err := workspaceFromContext(cmd.Context())
 			if err != nil {
 				return err
 			}
-			return pluginListRun(cmd.Context(), rw, cmd.OutOrStdout(), asJSON)
+			return pluginListRun(cmd.Context(), rw, cmd.OutOrStdout(), format == "json")
 		},
 	}
-	c.Flags().BoolVar(&asJSON, "json", false, "emit a structured JSON object instead of the human-readable table")
+	c.Flags().StringVarP(&output, "output", "o", "table", "Output format: table|json.")
 	return c
 }
 
@@ -389,7 +393,7 @@ func pluginDiagName(uri string) string {
 // placeholders keep the output readable when a group is empty. Each group renders
 // as a four-column table — type, name, capabilities, version — so the whole set
 // is scannable at a glance; the full per-plugin detail is available through the
-// --json form. The CLI-extension commands are part of the configured group,
+// -o json form. The CLI-extension commands are part of the configured group,
 // legible there by their cli type.
 func formatPluginList(w io.Writer, embeddedEntries, configuredEntries []pluginListEntry) {
 	renderPluginGroup(w, "Embedded built-ins:", embeddedEntries)
@@ -439,7 +443,7 @@ func pluginRowCapabilities(e pluginListEntry) string {
 // precedence over the provenance string: a resolve or describe failure shows the
 // installed-plugin readiness label when one exists (unresolved, describe-failed)
 // or a bare "describe failed" otherwise, and a digest drift shows its label. The
-// full error text and the drifted digests are available through the --json form.
+// full error text and the drifted digests are available through the -o json form.
 // A healthy plugin shows its version and commit, or nothing when the guest
 // carries no provenance.
 func pluginRowVersion(e pluginListEntry) string {
@@ -458,7 +462,7 @@ func pluginRowVersion(e pluginListEntry) string {
 	}
 }
 
-// pluginListDoc is the structured --json listing: the two plugin groups, each a
+// pluginListDoc is the structured -o json listing: the two plugin groups, each a
 // list of full per-plugin detail entries. The group order and the entries within
 // each group are deterministic, so the emitted JSON is byte-identical across runs
 // of the same input. The configured group carries the CLI-extension commands
@@ -468,7 +472,7 @@ type pluginListDoc struct {
 	Configured []pluginEntryDoc `json:"configured"`
 }
 
-// pluginEntryDoc is one plugin's full detail on the --json surface: its identity
+// pluginEntryDoc is one plugin's full detail on the -o json surface: its identity
 // and origin, its self-reported type, provenance, served capabilities, rendered
 // input kinds, boundary assembly, and exports, plus the installed-plugin
 // readiness label and any resolve or describe error. Optional fields are omitted
@@ -494,12 +498,7 @@ func writePluginListJSON(w io.Writer, embeddedEntries, configuredEntries []plugi
 		Embedded:   pluginEntriesToDocs(embeddedEntries),
 		Configured: pluginEntriesToDocs(configuredEntries),
 	}
-	b, err := json.MarshalIndent(doc, "", "  ")
-	if err != nil {
-		return err
-	}
-	_, err = fmt.Fprintln(w, string(b))
-	return err
+	return writeStructured(w, "plugin list", structuredIndented, doc)
 }
 
 // pluginEntriesToDocs maps a group's entries to their JSON detail form,

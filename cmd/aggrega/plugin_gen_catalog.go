@@ -46,9 +46,9 @@ Two selection modes:
   --plugin <f.wasm> generate a single entity for one non-embedded guest. The
                     overlay path is a single overlay file.
 
-The output is written under <output>/<name>/<version>/plugin.yaml and carries a
-generated-output banner. Regenerating over unchanged inputs yields byte-identical
-files.`,
+The output is written under <output-dir>/<name>/<version>/plugin.yaml and carries
+a generated-output banner. Regenerating over unchanged inputs yields
+byte-identical files.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return gencatalog.Run(cmd.Context(), gencatalog.Options{
@@ -61,7 +61,7 @@ files.`,
 	}
 	c.Flags().BoolVar(&opts.fromEmbedded, "from-embedded", false, "generate an entity for every guest embedded in this binary")
 	c.Flags().StringVar(&opts.pluginPath, "plugin", "", "generate a single entity for the .wasm guest at this path")
-	c.Flags().StringVarP(&opts.outputDir, "output", "o", "", "directory the generated entities are written under (required)")
+	c.Flags().StringVar(&opts.outputDir, "output-dir", "", "directory the generated entities are written under (required)")
 	c.Flags().StringVar(&opts.overlayPath, "overlay", "", "authored overlay directory (--from-embedded) or file (--plugin) (required)")
 	return c
 }
