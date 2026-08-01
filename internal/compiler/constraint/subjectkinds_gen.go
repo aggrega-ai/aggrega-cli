@@ -49,7 +49,7 @@ const (
 	// SubjectDocumentAssertion is the subject kind (document, assertion), keyed by 1 declared fact.
 	SubjectDocumentAssertion SubjectKind = "(document, assertion)"
 
-	// SubjectNode is the subject kind node, keyed by 3 declared facts.
+	// SubjectNode is the subject kind node, keyed by 4 declared facts.
 	SubjectNode SubjectKind = "node"
 
 	// SubjectNodeSocket is the subject kind (node, socket), keyed by 2 declared facts.
@@ -91,10 +91,10 @@ const (
 	// SubjectNodePipelineStep is the subject kind (node, pipeline-step), keyed by 1 declared fact.
 	SubjectNodePipelineStep SubjectKind = "(node, pipeline-step)"
 
-	// SubjectBoundaryProviderPath is the subject kind (boundary, provider, path), keyed by 1 declared fact.
+	// SubjectBoundaryProviderPath is the subject kind (boundary, provider, path), keyed by 2 declared facts.
 	SubjectBoundaryProviderPath SubjectKind = "(boundary, provider, path)"
 
-	// SubjectNodeArtifact is the subject kind (node, artifact), keyed by 1 declared fact.
+	// SubjectNodeArtifact is the subject kind (node, artifact), keyed by 2 declared facts.
 	SubjectNodeArtifact SubjectKind = "(node, artifact)"
 )
 

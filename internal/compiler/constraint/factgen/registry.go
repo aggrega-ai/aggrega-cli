@@ -572,6 +572,34 @@ var facts = []factDecl{
 		Doc: "ResolvedNodeProvides is the value a node's Recipe resolved for one " +
 			"provides key, and whether the key was resolved at all.",
 	},
+	{
+		Name:        "values-mapping-template-refs",
+		Stage:       "hydrated",
+		SourceField: "gotmpl.CollectTemplateFieldAccesses(valuesMapping.Inline)",
+		Subject:     []string{"node"},
+		Params:      []paramDecl{{Name: "node", Type: "string"}},
+		Returns:     "([]string, bool)",
+		Doc: "ValuesMappingTemplateRefs are the context paths a node's inline " +
+			"values-mapping template reads, and whether the node's mapping " +
+			"is authored inline at all.\n\nThe second result is " +
+			"load-bearing. A mapping authored as an import carries no inline " +
+			"text, so its reference set is absent rather than empty, and a " +
+			"rule that could not tell the two apart would report every " +
+			"value unread for exactly those nodes whose mapping it never " +
+			"read.\n\nThe reference set over-collects: it records a read " +
+			"inside a rebound body, and both halves of a chained " +
+			"expression. That direction is part of the fact rather than an " +
+			"incidental property of it. A rule asking which values were " +
+			"consumed must count a key reached through a rebinding as read, " +
+			"because one it failed to attribute would be reported unread " +
+			"and the author would be told to remove a key the template " +
+			"uses. A rule that instead admits or refuses authoring needs " +
+			"the opposite direction and must not read this fact, since " +
+			"attributing a reference wrongly refuses authoring the " +
+			"template language permits.\n\nThe paths come back sorted. A " +
+			"template has no single reading order to preserve, so sorting " +
+			"is what makes the result the same on every run.",
+	},
 
 	// ---------------------------------------------------------------- rendered
 
@@ -604,6 +632,48 @@ var facts = []factDecl{
 			"assembly. They stay distinct rules over one fact rather than " +
 			"becoming several facts, because what differs between them is the " +
 			"predicate and not the question.",
+	},
+	{
+		Name:        "assembled-file-content",
+		Stage:       "rendered",
+		SourceField: "renderer.AssembledFile.Content",
+		Subject:     []string{"boundary", "provider", "path"},
+		Params: []paramDecl{
+			{Name: "boundary", Type: "string"},
+			{Name: "provider", Type: "string"},
+			{Name: "path", Type: "string"},
+		},
+		Returns: "[]byte",
+		Doc: "AssembledFileContent is the bytes standing at one output path " +
+			"for one provider within one boundary.\n\nIt is keyed by the " +
+			"path as well as by the boundary and the provider, where the " +
+			"path set naming those same three coordinates is keyed by the " +
+			"first two and enumerates the third. The two answer different " +
+			"questions: one is which paths were written, this is what " +
+			"stands at one of them, and neither is derivable from the " +
+			"other.\n\nA rule scanning assembled output reads one path's " +
+			"bytes at a time rather than receiving the assembly, so no " +
+			"rule can walk from one path to another's content.",
+	},
+	{
+		Name:        "artifact-projection-name-set",
+		Stage:       "rendered",
+		SourceField: "types.RecipeSpec.Artifacts",
+		Subject:     []string{"node", "artifact"},
+		Params:      []paramDecl{{Name: "node", Type: "string"}},
+		Returns:     "[]string",
+		Doc: "ArtifactProjectionNameSet are the artifact names a node " +
+			"projects, in author order.\n\nIt is a separate fact from " +
+			"the bytes one artifact projects to, and the pair is " +
+			"deliberate rather than one question under two names. This " +
+			"one answers which artifacts exist, which a rule needs in " +
+			"hand before it can ask about any single one; the other " +
+			"answers what stands in one, which is unanswerable until a " +
+			"name is in hand.\n\nThe fact is a name list and not the " +
+			"projected entries themselves. Handing back the entries " +
+			"would let a rule reach the projected bytes the framework " +
+			"already exposes as a fact of its own, so a rule could " +
+			"re-derive a declared fact from this one.",
 	},
 	{
 		Name:        "artifact-projection-content",

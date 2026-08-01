@@ -476,6 +476,32 @@ type HydratedView interface {
 	//
 	// Keyed by (node, provides-key); read from renderer.NodeProvides.
 	ResolvedNodeProvides(node string, key string) (string, bool)
+
+	// ValuesMappingTemplateRefs are the context paths a node's inline
+	// values-mapping template reads, and whether the node's mapping is
+	// authored inline at all.
+	//
+	// The second result is load-bearing. A mapping authored as an import
+	// carries no inline text, so its reference set is absent rather than
+	// empty, and a rule that could not tell the two apart would report every
+	// value unread for exactly those nodes whose mapping it never read.
+	//
+	// The reference set over-collects: it records a read inside a rebound
+	// body, and both halves of a chained expression. That direction is part of
+	// the fact rather than an incidental property of it. A rule asking which
+	// values were consumed must count a key reached through a rebinding as
+	// read, because one it failed to attribute would be reported unread and
+	// the author would be told to remove a key the template uses. A rule that
+	// instead admits or refuses authoring needs the opposite direction and
+	// must not read this fact, since attributing a reference wrongly refuses
+	// authoring the template language permits.
+	//
+	// The paths come back sorted. A template has no single reading order to
+	// preserve, so sorting is what makes the result the same on every run.
+	//
+	// Keyed by node; read from
+	// gotmpl.CollectTemplateFieldAccesses(valuesMapping.Inline).
+	ValuesMappingTemplateRefs(node string) ([]string, bool)
 }
 
 // RenderedView exposes the facts complete at the rendered stage: artifact
@@ -504,6 +530,40 @@ type RenderedView interface {
 	//
 	// Keyed by (boundary, provider, path); read from renderer.AssembledFile.
 	EmittedFilePathSet(boundary string, provider string) []string
+
+	// AssembledFileContent is the bytes standing at one output path for one
+	// provider within one boundary.
+	//
+	// It is keyed by the path as well as by the boundary and the provider,
+	// where the path set naming those same three coordinates is keyed by the
+	// first two and enumerates the third. The two answer different questions:
+	// one is which paths were written, this is what stands at one of them, and
+	// neither is derivable from the other.
+	//
+	// A rule scanning assembled output reads one path's bytes at a time rather
+	// than receiving the assembly, so no rule can walk from one path to
+	// another's content.
+	//
+	// Keyed by (boundary, provider, path); read from
+	// renderer.AssembledFile.Content.
+	AssembledFileContent(boundary string, provider string, path string) []byte
+
+	// ArtifactProjectionNameSet are the artifact names a node projects, in
+	// author order.
+	//
+	// It is a separate fact from the bytes one artifact projects to, and the
+	// pair is deliberate rather than one question under two names. This one
+	// answers which artifacts exist, which a rule needs in hand before it can
+	// ask about any single one; the other answers what stands in one, which is
+	// unanswerable until a name is in hand.
+	//
+	// The fact is a name list and not the projected entries themselves.
+	// Handing back the entries would let a rule reach the projected bytes the
+	// framework already exposes as a fact of its own, so a rule could
+	// re-derive a declared fact from this one.
+	//
+	// Keyed by (node, artifact); read from types.RecipeSpec.Artifacts.
+	ArtifactProjectionNameSet(node string) []string
 
 	// ArtifactProjectionContent is the bytes one of a node's artifacts
 	// projected to.
