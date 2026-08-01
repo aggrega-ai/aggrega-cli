@@ -25,7 +25,7 @@ type genCatalogRunner func(ctx context.Context, opts gencatalog.Options, out io.
 type genCatalogArgs struct {
 	FromEmbedded bool   `json:"from_embedded"`
 	Plugin       string `json:"plugin"`
-	Output       string `json:"output"`
+	Output       string `json:"output_dir"`
 	Overlay      string `json:"overlay"`
 }
 
@@ -43,9 +43,9 @@ var genCatalogToolSpec = toolSpec{
 		"limits come from an authored overlay, so a generated entity can never promise a capability the binary does not " +
 		"provide. Two modes: `from_embedded: true` generates an entity for every guest embedded in the compiler (the " +
 		"`overlay` is a directory of per-plugin overlays); or `plugin` names a single .wasm file to generate one entity " +
-		"for (the `overlay` is a single file). `output` is the directory the entities are written under. Regenerating over " +
-		"unchanged inputs yields byte-identical files. Use it to keep Plugin catalog entities in sync with the guests they " +
-		"describe.",
+		"for (the `overlay` is a single file). `output_dir` is the directory the entities are written under. Regenerating " +
+		"over unchanged inputs yields byte-identical files. Use it to keep Plugin catalog entities in sync with the guests " +
+		"they describe.",
 	inputSchema: `{
   "type": "object",
   "properties": {
@@ -57,7 +57,7 @@ var genCatalogToolSpec = toolSpec{
       "type": "string",
       "description": "Path to a single .wasm guest to generate one entity for. The overlay is then a single overlay file. Mutually exclusive with from_embedded."
     },
-    "output": {
+    "output_dir": {
       "type": "string",
       "description": "Directory the generated Plugin entities are written under."
     },
@@ -66,7 +66,7 @@ var genCatalogToolSpec = toolSpec{
       "description": "Authored overlay: a directory (with from_embedded) or a single file (with plugin)."
     }
   },
-  "required": ["output", "overlay"]
+  "required": ["output_dir", "overlay"]
 }`,
 	invoke: genCatalogInvoke,
 }
@@ -85,7 +85,7 @@ func genCatalogInvoke(s *server, ctx context.Context, args json.RawMessage) (*ca
 		return nil, &rpcError{Code: codeInvalidParams, Message: "gen-catalog requires one of 'from_embedded': true or a 'plugin' path"}
 	}
 	if strings.TrimSpace(a.Output) == "" {
-		return nil, &rpcError{Code: codeInvalidParams, Message: "gen-catalog requires an 'output' directory"}
+		return nil, &rpcError{Code: codeInvalidParams, Message: "gen-catalog requires an 'output_dir' directory"}
 	}
 	if strings.TrimSpace(a.Overlay) == "" {
 		return nil, &rpcError{Code: codeInvalidParams, Message: "gen-catalog requires an 'overlay' path (a directory with from_embedded, a file with plugin)"}
