@@ -290,9 +290,9 @@ func (c *Catalog) featureTypeToFeatureRecipeWithManifest(manifest *types.Manifes
 // ladder below reads the ceiling, RecipeByURI's godoc points here instead of
 // restating it, and the shape diagnostic quotes the shape statement verbatim.
 // Keeping it single-sourced is load-bearing rather than tidy: a ladder that
-// grows a rung — a reference position beyond the capability one — widens the
-// accepted shape, and a count or a shape list restated anywhere else would go
-// quietly false, because no gate reads prose. Whoever adds the rung edits these
+// grows a reference position beyond the capability one widens the accepted
+// shape, and a count or a shape list restated anywhere else would go quietly
+// false, because no gate reads prose. Whoever adds the position edits these
 // two lines and every reader follows.
 const (
 	recipeReferenceMaxSegments = 2

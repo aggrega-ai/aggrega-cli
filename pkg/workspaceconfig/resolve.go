@@ -477,7 +477,7 @@ func globPrefixPresent(dir, prefix string) bool {
 // cascadeDirs returns the directories from root down to start (inclusive),
 // ordered farthest-from-start (root) first so the caller applies them
 // lowest-precedence first. start and root must both be absolute, with root an
-// ancestor of (or equal to) start. Every such directory is a cascade rung
+// ancestor of (or equal to) start. Every such directory is a cascade layer
 // whether or not it holds a config file — the caller stats each candidate file
 // per directory, so a directory carrying only a CI-owned overlay still
 // contributes.

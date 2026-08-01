@@ -158,7 +158,7 @@ func TestGenerateBaseAttachmentsJSONSchema_RequiredVsOptional(t *testing.T) {
 }
 
 func TestGenerateBaseAttachmentsJSONSchema_NeverEmitsAPresenceRequirement(t *testing.T) {
-	// The single-source rung for "a slot's declared requirement": presence is
+	// The single-source home for "a slot's declared requirement": presence is
 	// enforced in exactly one place, over the node's post-cascade attachment
 	// set. This projection must be structurally incapable of making the same
 	// claim over an authored block, because the two would disagree — a slot

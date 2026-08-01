@@ -228,7 +228,7 @@ func TestResolveFlagRootOverrides(t *testing.T) {
 // (1) workspace.catalog_dirs_append accumulates across the global layer and the
 // workspace:-bearing root (the only layers that can carry a workspace: block);
 // (2) a top-level setting (default_registry) cascades independently through a
-// bare child rung that nearer-overrides the root and global. This is the
+// bare child layer that nearer-overrides the root and global. This is the
 // cross-layer accumulation the shared applyAppends loop performs for all six
 // `_append` fields, with catalog_dirs as the representative.
 func TestResolveCascadeAppendAndTopLevel(t *testing.T) {
@@ -240,7 +240,7 @@ func TestResolveCascadeAppendAndTopLevel(t *testing.T) {
 	// Root carries the workspace: block (base catalog_dirs + an append).
 	write(t, filepath.Join(root, ".aggrega-config.yaml"),
 		"workspace:\n  catalog_dirs: [base]\n  catalog_dirs_append: [p]\ndefault_registry: root.io\n")
-	// A bare child rung (no workspace: block) contributes only top-level
+	// A bare child layer (no workspace: block) contributes only top-level
 	// settings; it does not anchor a root and carries no catalog_dirs.
 	child := filepath.Join(root, "svc")
 	write(t, filepath.Join(child, ".aggrega-config.yaml"), "default_registry: child.io\n")
@@ -274,7 +274,7 @@ func TestResolveCascadeAppendAndTopLevel(t *testing.T) {
 	}
 	// default_registry cascades top-level: child (nearest) overrides root and global.
 	if reg := rw.Config().DefaultRegistry; reg != "child.io" {
-		t.Errorf("DefaultRegistry: got %q; want child.io (bare child rung nearer-overrides)", reg)
+		t.Errorf("DefaultRegistry: got %q; want child.io (bare child layer nearer-overrides)", reg)
 	}
 }
 
@@ -434,7 +434,7 @@ func TestResolveAppendPerField(t *testing.T) {
 
 // TestResolveProvidersComposeAcrossLayers proves the provider socket list
 // composes homogeneously with the other plugin sockets: a base entry at the
-// root and an appended entry at a child rung concatenate in cascade order, and
+// root and an appended entry at a child layer concatenate in cascade order, and
 // the target→URI projection carries both.
 func TestResolveProvidersComposeAcrossLayers(t *testing.T) {
 	t.Parallel()

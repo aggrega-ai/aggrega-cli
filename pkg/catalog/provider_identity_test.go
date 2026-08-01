@@ -206,7 +206,7 @@ func TestLazy_TwoProvidersCoexist_SameProviderShadows(t *testing.T) {
 // a loud resolution halt naming the mapping value.
 //
 // An unversioned reference across two versions of one recipe used to miss as
-// ambiguous, on the reading that any rung finding more than one candidate must
+// ambiguous, on the reading that any tier finding more than one candidate must
 // refuse rather than guess. It resolves to the highest version now, because
 // choosing among the versions of ONE recipe is precisely what a version rule
 // decides and involves no guess: highest-satisfying is the answer an unversioned
