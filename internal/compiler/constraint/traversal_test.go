@@ -501,6 +501,77 @@ func TestATraversalInvokesOncePerInstanceInEnumeratorOrderWithFrameworkProvenanc
 	}
 }
 
+// TestCoordinateAccessorsCarryTheEnumeratedCoordinateValues proves the coordinate
+// accessors are wired to the traversal rather than merely declared: a check reads
+// back the node and the socket it was invoked for, and they are the values the
+// enumerators handed over.
+//
+// It is a separate assertion from the provenance transcript above because the two
+// travel independently, and one of them can be empty while the other must not be.
+// A coordinate keys a fact accessor; a locator names an authored site. So a
+// subject whose authored site the dotted form cannot express still carries its
+// coordinates in full — which is why the node with no locator at all appears here
+// with its identifier intact. A check handed an empty identifier would read facts
+// for the wrong instance, or for no instance, and the provenance assertion cannot
+// see that: it passes on an empty locator, because for that node an empty locator
+// is the correct answer.
+func TestCoordinateAccessorsCarryTheEnumeratedCoordinateValues(t *testing.T) {
+	t.Parallel()
+
+	fixture := newTraversalFixture()
+
+	assert := func(t *testing.T, got, want []string) {
+		t.Helper()
+
+		if len(got) != len(want) {
+			t.Fatalf("the check was invoked %d time(s); want %d\ngot:  %v\nwant: %v",
+				len(got), len(want), got, want)
+		}
+		for i := range got {
+			if got[i] != want[i] {
+				t.Errorf("invocation %d read coordinates %q; want %q.\n"+
+					"INVARIANT: a subject carries the coordinate values of the instance the check was "+
+					"invoked for.\n"+
+					"CONSEQUENCE: every fact is keyed, so a check reads facts through these values. Wrong "+
+					"or empty ones read a different instance's facts, or none, and the predicate then "+
+					"decides on evidence belonging to something else.", i, got[i], want[i])
+			}
+		}
+	}
+
+	t.Run(string(SubjectNodeSocket), func(t *testing.T) {
+		t.Parallel()
+
+		var got []string
+		_ = RunOnNodeSockets(fixture, fixture, traversalView{}, Check[traversalView, NoHostPowers, NodeSocketSubject]{
+			Sentinel: errRuleBroken,
+			Severity: SeverityFatal,
+			Run: func(_ traversalView, s NodeSocketSubject) []Objection {
+				got = append(got, s.NodeID()+"|"+s.SocketName())
+				return nil
+			},
+		})
+
+		assert(t, got, []string{"web|zebra", "web|alpha", "billing.api|db"})
+	})
+
+	t.Run(string(SubjectEdge), func(t *testing.T) {
+		t.Parallel()
+
+		var got []string
+		_ = RunOnEdges(fixture, traversalView{}, Check[traversalView, NoHostPowers, EdgeSubject]{
+			Sentinel: errRuleBroken,
+			Severity: SeverityFatal,
+			Run: func(_ traversalView, s EdgeSubject) []Objection {
+				got = append(got, s.NodeID()+"|"+s.SocketName())
+				return nil
+			},
+		})
+
+		assert(t, got, []string{"web|zebra", "billing.api|db"})
+	})
+}
+
 // TestATraversalOverNoInstancesInvokesNothing pins the empty case explicitly
 // rather than leaving it to be inferred. A traversal that invoked a check once
 // with a zero subject over an empty enumeration would raise about something that

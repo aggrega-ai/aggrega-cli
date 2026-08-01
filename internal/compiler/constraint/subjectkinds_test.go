@@ -313,12 +313,14 @@ var subjectKindBindings = map[SubjectKind]struct {
 	SubjectNodeSocket: {
 		iface: reflect.TypeOf((*NodeSocketSubject)(nil)).Elem(),
 		make: func(f string) Subject {
-			return newNodeSocketSubject(f, "spec", "components", "web", "uses", "databases")
+			return newNodeSocketSubject(f, "web", "databases", "spec", "components", "web", "uses", "databases")
 		},
 	},
 	SubjectEdge: {
 		iface: reflect.TypeOf((*EdgeSubject)(nil)).Elem(),
-		make:  func(f string) Subject { return newEdgeSubject(f, "spec", "components", "web", "uses", "databases") },
+		make: func(f string) Subject {
+			return newEdgeSubject(f, "web", "databases", "spec", "components", "web", "uses", "databases")
+		},
 	},
 	SubjectNodeAttachment: {
 		iface: reflect.TypeOf((*NodeAttachmentSubject)(nil)).Elem(),

@@ -148,7 +148,8 @@ func RunOnNodeSockets[V View, C any](
 		out := make([]NodeSocketSubject, 0, len(names))
 		for _, socket := range names {
 			out = append(out, newNodeSocketSubject(
-				node.SourceFile, componentInnerSegments(node, authoredKeyUses, socket)...,
+				node.SourceFile, node.ID, socket,
+				componentInnerSegments(node, authoredKeyUses, socket)...,
 			))
 		}
 		return out
@@ -172,7 +173,8 @@ func RunOnEdges[V View, C any](
 	var out []Objection
 	for _, edge := range edges.Edges() {
 		subject := newEdgeSubject(
-			edge.Node.SourceFile, componentInnerSegments(edge.Node, authoredKeyUses, edge.Socket)...,
+			edge.Node.SourceFile, edge.Node.ID, edge.Socket,
+			componentInnerSegments(edge.Node, authoredKeyUses, edge.Socket)...,
 		)
 		out = append(out, check.Run(view, subject)...)
 	}

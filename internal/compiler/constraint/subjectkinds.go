@@ -27,6 +27,30 @@ package constraint
 // that kind too, and a check declaring "once per node" could be handed a socket
 // subject. Kind distinctness is the seal the framework rests on, so the nesting
 // stays in the data rather than in the type hierarchy.
+//
+// # Coordinate accessors
+//
+// A kind also exposes one exported accessor per coordinate it carries, returning
+// the coordinate value the traversal was invoked for. They are what lets a check
+// key an accessor to its own instance: every fact is keyed, so a check invoked
+// once per (node, socket) reads a fact for that node and that socket rather than
+// for the whole set.
+//
+// An accessor exists because the kind carries that coordinate, and for no other
+// reason — never because a predicate would find a value convenient. A value that
+// is a projection of a coordinate rather than a coordinate itself is read as the
+// declared fact keyed by that coordinate, which is what keeps the dependency
+// visible to the placement computation: a fact carries the point it completes at,
+// and a subject carries none, so reading such a value from a subject would hide
+// a real dependency from the point where a check's placement is worked out.
+//
+// The accessor name is the coordinate's name plus a suffix naming what the value
+// is — an identifier, a name — rather than the bare coordinate, so a signature
+// reads as the thing it returns.
+//
+// Adding one does not weaken the seal. Forgery is prevented by the unexported
+// marker, which a type declared outside this package cannot declare however many
+// exported methods the kind also carries.
 
 // DocumentParameterSubject is the subject of a check invoked once per parameter
 // the presented document's contract declares.
@@ -86,30 +110,75 @@ func newNodeSubject(sourceFile string, segments ...string) NodeSubject {
 // socket of a node.
 type NodeSocketSubject interface {
 	Subject
+
+	// NodeID identifies the node the socket is declared on, as every keyed
+	// fact takes it.
+	NodeID() string
+
+	// SocketName is the dependency socket the check was invoked for.
+	SocketName() string
+
 	nodeSocket()
 }
 
-type nodeSocketSubject struct{ provenance }
+type nodeSocketSubject struct {
+	provenance
+	node   string
+	socket string
+}
 
 func (nodeSocketSubject) nodeSocket() {}
 
-func newNodeSocketSubject(sourceFile string, segments ...string) NodeSocketSubject {
-	return nodeSocketSubject{newProvenance(sourceFile, segments...)}
+func (s nodeSocketSubject) NodeID() string { return s.node }
+
+func (s nodeSocketSubject) SocketName() string { return s.socket }
+
+func newNodeSocketSubject(sourceFile, node, socket string, segments ...string) NodeSocketSubject {
+	return nodeSocketSubject{
+		provenance: newProvenance(sourceFile, segments...),
+		node:       node,
+		socket:     socket,
+	}
 }
 
 // EdgeSubject is the subject of a check invoked once per edge: one wiring of a
 // consumer's socket to a target.
+//
+// Its single coordinate is the edge, whose identity is the node and the socket
+// taken together, so it carries an accessor for each half of that pair rather
+// than one naming the edge — the pair is what the fact keyed by an edge takes as
+// its key, and the edge itself names no scalar a check could use.
 type EdgeSubject interface {
 	Subject
+
+	// NodeID identifies the consumer the edge is authored in, as every keyed
+	// fact takes it.
+	NodeID() string
+
+	// SocketName is the dependency socket the edge wires.
+	SocketName() string
+
 	edge()
 }
 
-type edgeSubject struct{ provenance }
+type edgeSubject struct {
+	provenance
+	node   string
+	socket string
+}
 
 func (edgeSubject) edge() {}
 
-func newEdgeSubject(sourceFile string, segments ...string) EdgeSubject {
-	return edgeSubject{newProvenance(sourceFile, segments...)}
+func (s edgeSubject) NodeID() string { return s.node }
+
+func (s edgeSubject) SocketName() string { return s.socket }
+
+func newEdgeSubject(sourceFile, node, socket string, segments ...string) EdgeSubject {
+	return edgeSubject{
+		provenance: newProvenance(sourceFile, segments...),
+		node:       node,
+		socket:     socket,
+	}
 }
 
 // NodeAttachmentSubject is the subject of a check invoked once per attachment a
