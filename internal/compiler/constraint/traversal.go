@@ -488,8 +488,11 @@ func RunOnNodeArtifacts[V View, C any](
 // The locator names the boundary alone — .spec.boundaries.<boundary> — and that
 // is the whole of what is authored here. A provider is selected rather than
 // written at this site, and an emitted path is output rather than authoring, so
-// neither contributes a segment; a check raising about a particular path names
-// it in its detail.
+// neither contributes a segment. Both are still coordinates the subject carries,
+// which is what lets a check raising about a particular path name it in its
+// detail: coordinate state and locator segments answer different questions, and
+// this kind is where the same value is legitimate as one and refused as the
+// other.
 func RunOnBoundaryProviderPaths[V View, C any](
 	boundaries BoundaryEnumerator,
 	providers ProviderEnumerator,
@@ -501,8 +504,10 @@ func RunOnBoundaryProviderPaths[V View, C any](
 	for _, boundary := range boundaries.Boundaries() {
 		segments := documentSpecSegments(authoredKeyBoundaries, boundary.Value)
 		for _, provider := range providers.Providers(boundary.Value) {
-			for range paths.EmittedPaths(boundary.Value, provider) {
-				subject := newBoundaryProviderPathSubject(boundary.SourceFile, segments...)
+			for _, path := range paths.EmittedPaths(boundary.Value, provider) {
+				subject := newBoundaryProviderPathSubject(
+					boundary.SourceFile, boundary.Value, provider, path, segments...,
+				)
 				out = append(out, check.Run(view, subject)...)
 			}
 		}

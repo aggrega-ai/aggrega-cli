@@ -384,9 +384,12 @@ func traversalCases() []traversalCase {
 			},
 		},
 		{
-			// Three invocations carrying the same subject, because neither the
+			// Three invocations carrying the same provenance, because neither the
 			// provider nor the emitted path is authored at this site: the
-			// boundary is the whole of what the author wrote.
+			// boundary is the whole of what the author wrote. The subjects differ
+			// in their coordinates, which this transcript cannot see — that is
+			// what TestCoordinateAccessorsCarryTheEnumeratedCoordinateValues is
+			// for.
 			kind: SubjectBoundaryProviderPath,
 			run: func(f traversalFixture, v traversalView) []Objection {
 				return RunOnBoundaryProviderPaths(f, f, f, v, raisingCheck[BoundaryProviderPathSubject]())
@@ -503,8 +506,8 @@ func TestATraversalInvokesOncePerInstanceInEnumeratorOrderWithFrameworkProvenanc
 
 // TestCoordinateAccessorsCarryTheEnumeratedCoordinateValues proves the coordinate
 // accessors are wired to the traversal rather than merely declared: a check reads
-// back the node and the socket it was invoked for, and they are the values the
-// enumerators handed over.
+// back the coordinates of the instance it was invoked for, and they are the values
+// the enumerators handed over.
 //
 // It is a separate assertion from the provenance transcript above because the two
 // travel independently, and one of them can be empty while the other must not be.
@@ -569,6 +572,28 @@ func TestCoordinateAccessorsCarryTheEnumeratedCoordinateValues(t *testing.T) {
 		})
 
 		assert(t, got, []string{"web|zebra", "billing.api|db"})
+	})
+
+	// The kind whose innermost coordinate contributes no locator segment, which is
+	// exactly why it needs this assertion rather than the provenance transcript:
+	// all three of its invocations carry one identical locator, so nothing in that
+	// transcript distinguishes them and a traversal that discarded the path would
+	// read as correct there.
+	t.Run(string(SubjectBoundaryProviderPath), func(t *testing.T) {
+		t.Parallel()
+
+		var got []string
+		_ = RunOnBoundaryProviderPaths(fixture, fixture, fixture, traversalView{},
+			Check[traversalView, NoHostPowers, BoundaryProviderPathSubject]{
+				Sentinel: errRuleBroken,
+				Severity: SeverityFatal,
+				Run: func(_ traversalView, s BoundaryProviderPathSubject) []Objection {
+					got = append(got, s.BoundaryName()+"|"+s.ProviderName()+"|"+s.EmittedPath())
+					return nil
+				},
+			})
+
+		assert(t, got, []string{"prod|helm|a.yaml", "prod|helm|b.yaml", "prod|terraform|main.tf.json"})
 	})
 }
 

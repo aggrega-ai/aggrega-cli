@@ -226,15 +226,301 @@ func TestEveryDerivedSubjectKindHasASealedSubjectTypeAndEveryPullKindATraversal(
 		len(SubjectKinds), len(expected), len(markerOwners), pull, traversed)
 }
 
-// packageTraversalsBySubjectType returns, per subject type name, the exported
-// functions in this package that take a check declared over it.
+// The coordinate-supply assertion, and what it deliberately does not claim.
+//
+// A kind exposes an exported accessor per coordinate it carries, and the value
+// each returns arrives where the framework's traversal constructs the instance.
+// Those are two declarations in two places — an interface and a constructor — so
+// they can disagree, and the disagreement is silent in the direction that costs
+// most: an accessor with no parameter to fill it returns the zero value on every
+// invocation, and every fact is keyed, so the check reads facts for the empty
+// instance and decides on evidence belonging to nothing.
+//
+// # The criterion
+//
+// For each derived kind, the constructor named new<KindTypeName> takes exactly
+// one non-variadic parameter per exported accessor the kind's interface declares,
+// plus one for the source file.
+//
+// The right-hand side is the accessor count and deliberately NOT the coordinate
+// count the generated set carries, because a coordinate need not map to one
+// scalar: the edge kind carries a single coordinate whose identity is a node and a
+// socket taken together, and it exposes an accessor for each half of that pair. A
+// criterion equating the two counts would fail that kind, whose shape the package
+// argues for where the kind is declared.
+//
+// # What it cannot see
+//
+// It reads a parameter count, so a constructor accepting a coordinate and storing
+// nothing satisfies it. That a coordinate reaches the check is proved
+// behaviourally, per kind, by the traversal tests.
+//
+// It says nothing about a kind exposing no accessor at all: a coordinate the
+// generated set declares and no accessor returns is outside its reach. That is
+// the residual rather than a clean corner, so the census logged below reports how
+// many enumerated kinds are in that state instead of leaving a reader to assume
+// none are.
+//
+// It inspects only the constructor whose name the kind's type name derives. A kind
+// may declare a second one taking provenance inputs — how the instance was
+// reached, which the locator rule needs — and those are not coordinate supply.
+func TestEveryCoordinateAccessorHasAConstructorParameterToFillIt(t *testing.T) {
+	t.Parallel()
+
+	if len(SubjectKinds) == 0 {
+		t.Fatalf("the generated kind set is empty, so a clean result here certifies nothing")
+	}
+
+	declared := packageInterfaceDecls(t)
+	funcs := packageFuncDeclsByName(t)
+
+	// Calibration in both directions the instrument can be wrong: a lookup finding
+	// nothing would report every kind as missing a constructor, one matching
+	// anything would report every kind as supplied, and a counter reading a grouped
+	// parameter declaration as one parameter would report the shipped kinds as
+	// under-supplied.
+	known := funcs["newNodeSocketSubject"]
+	if known == nil {
+		t.Fatalf("the declaration lookup does not see newNodeSocketSubject, which is declared, so it is "+
+			"not a working instrument and its verdict on the other kinds means nothing (saw %d function(s))",
+			len(funcs))
+	}
+	if funcs["newNoSuchDerivedKindSubject"] != nil {
+		t.Fatalf("the declaration lookup claims to see newNoSuchDerivedKindSubject, which is declared " +
+			"nowhere, so it would report every kind as supplied")
+	}
+	if got, want := nonVariadicParams(known), 3; got != want {
+		t.Fatalf("the parameter count reads newNodeSocketSubject as taking %d non-variadic parameter(s); "+
+			"want %d — that constructor declares them in one group, which is the form the count has to read",
+			got, want)
+	}
+
+	exposing, bare := 0, 0
+	for _, info := range SubjectKinds {
+		name := subjectTypeNameFor(info.Coordinates)
+		iface, ctor := declared[name], funcs["new"+name]
+		if iface == nil || ctor == nil {
+			// Both absences belong to the completeness assertion above, which
+			// reports each with its own consequence. Repeating them here would
+			// double one failure into two.
+			continue
+		}
+
+		_, _, accessors := interfaceShape(iface)
+		if info.Traversal == TraversalPull {
+			if len(accessors) > 0 {
+				exposing++
+			} else {
+				bare++
+			}
+		}
+
+		if got, want := nonVariadicParams(ctor)-1, len(accessors); got != want {
+			sort.Strings(accessors)
+			t.Errorf("new%s takes %d coordinate parameter(s) against %d coordinate accessor(s) on %s (%s).\n"+
+				"INVARIANT: a coordinate a kind exposes is supplied where the framework's traversal "+
+				"constructs the instance, so an accessor and a constructor parameter exist in pairs.\n"+
+				"CONSEQUENCE: an accessor with no parameter to fill it returns the zero value on every "+
+				"invocation, and a check reads every fact keyed by that coordinate for the empty instance "+
+				"— a rule evaluated against the wrong thing, or against nothing, while reading as a rule "+
+				"that ran and found nothing. A parameter with no accessor is the mirror: a coordinate the "+
+				"traversal supplies and no check can name.",
+				name, got, want, name, strings.Join(accessors, ", "))
+		}
+	}
+
+	t.Logf("coordinate supply: %d of %d enumerated kinds expose at least one coordinate accessor; %d expose "+
+		"none, so a check declaring one of those cannot name the instance it was invoked for — a residual "+
+		"this assertion neither fails on nor can see",
+		exposing, exposing+bare, bare)
+}
+
+// The instance-binding assertion, which is a floor and is named as one.
+//
+// A traversal enumerates a kind's coordinates and hands the check one subject per
+// instance. A range statement binding neither its key nor its value enumerates
+// instances while discarding which one it is on, so every subject built inside it
+// is built from the outer coordinates alone and the innermost coordinate reaches
+// nothing at all.
+//
+// # The criterion
+//
+// Inside a pull kind's traversal — including the function literals it declares,
+// which is where the node-rooted traversals build their subjects — no range
+// statement binds neither a key nor a value.
+//
+// It is a syntactic property and deliberately not a match on names. Comparing a
+// bound identifier against its coordinate's name cannot work over this set: four
+// declared coordinates are written with a hyphen and can never be a Go identifier
+// at all, the node coordinate reaches a constructor as a field selector rather
+// than a bare name, and a short local name is legitimate. Such a criterion would
+// fail traversals that are correct.
+//
+// # What it cannot see
+//
+// It reads binding, not use. A value bound to an identifier and then never
+// passed, or passed to the wrong parameter, satisfies it.
+//
+// It says nothing about coordinate state. A bound value spent only on the locator
+// leaves a check just as unable to name its instance, and that is the state most
+// enumerated kinds are in — the census in
+// [TestEveryCoordinateAccessorHasAConstructorParameterToFillIt] reports how many.
+//
+// It inspects a traversal's own body and the function literals within it, never
+// the shared helpers it calls, so a discard inside one of those is out of reach.
+//
+// An indexed range binds a key and passes, whether or not the element is read.
+func TestNoPullTraversalDiscardsAnInstanceItEnumerates(t *testing.T) {
+	t.Parallel()
+
+	fset, decls := packageTraversalDeclsBySubjectType(t)
+
+	// Calibration on the exact surface class, in both directions: the detector has
+	// to fire on a discarded range value and stay silent on a bound one, or a clean
+	// verdict would say only that it never matches anything.
+	const calibration = `package p
+
+func discards(xs []string) {
+	for range xs {
+		_ = 1
+	}
+}
+
+func binds(xs []string) {
+	for _, x := range xs {
+		_ = x
+	}
+}
+`
+	probe, err := parser.ParseFile(token.NewFileSet(), "calibration.go", calibration, 0)
+	if err != nil {
+		t.Fatalf("parse the calibration source: %v", err)
+	}
+	calibrated := 0
+	for _, decl := range probe.Decls {
+		fn, ok := decl.(*ast.FuncDecl)
+		if !ok {
+			continue
+		}
+		calibrated++
+		fired, want := len(discardedRanges(fn)) > 0, fn.Name.Name == "discards"
+		if fired != want {
+			t.Fatalf("the detector reports fired=%v on the calibration function %s; want %v — it is not a "+
+				"working instrument and its verdict on the traversals means nothing", fired, fn.Name.Name, want)
+		}
+	}
+	if calibrated != 2 {
+		t.Fatalf("the calibration source yielded %d function(s); want 2, one of each direction", calibrated)
+	}
+
+	inspected := 0
+	var findings []string
+	for _, info := range SubjectKinds {
+		if info.Traversal != TraversalPull {
+			continue
+		}
+		for _, fn := range decls[subjectTypeNameFor(info.Coordinates)] {
+			inspected++
+			for _, pos := range discardedRanges(fn) {
+				findings = append(findings, fmt.Sprintf("%s, the traversal of %s, at %s",
+					fn.Name.Name, info.Kind, fset.Position(pos)))
+			}
+		}
+	}
+	if inspected == 0 {
+		t.Fatalf("no traversal was inspected, so a clean result certifies nothing")
+	}
+	if len(findings) > 0 {
+		sort.Strings(findings)
+		t.Errorf("%d range statement(s) bind neither a key nor a value: %s.\n"+
+			"INVARIANT: a traversal hands the check a subject naming the instance it was invoked for, so "+
+			"every coordinate it enumerates is bound and threaded into that subject.\n"+
+			"CONSEQUENCE: a discarded range value is a coordinate the kind declares and the traversal "+
+			"cannot supply. The check is invoked the right number of times and cannot tell which instance "+
+			"it is looking at, so it can neither key a fact to it nor name it in what it raises — a rule "+
+			"that runs and reports nothing, which reads exactly like a rule that ran and found nothing.\n"+
+			"Bind the value and pass it to the kind's constructor as a coordinate. It is not a locator "+
+			"segment unless the author wrote it.",
+			len(findings), strings.Join(findings, "; "))
+	}
+	t.Logf("instance binding: %d pull traversal(s) inspected, %d discarded range(s)", inspected, len(findings))
+}
+
+// discardedRanges reports the position of every range statement within fn,
+// including the function literals it declares, that binds neither a key nor a
+// value.
+func discardedRanges(fn *ast.FuncDecl) []token.Pos {
+	var out []token.Pos
+	ast.Inspect(fn, func(node ast.Node) bool {
+		if rng, ok := node.(*ast.RangeStmt); ok && rng.Key == nil && rng.Value == nil {
+			out = append(out, rng.For)
+		}
+		return true
+	})
+	return out
+}
+
+// packageTraversalDeclsBySubjectType returns, per subject type name, the
+// declarations of the exported functions in this package that take a check
+// declared over it, together with the file set their positions resolve against.
 //
 // Taking a Check is the criterion rather than a naming convention, because it is
 // the property that matters: a function reaching a check's predicate through the
 // declaration is a traversal, and one named like a traversal that takes a bare
 // predicate is not. It reads the non-test sources, so a traversal declared only in
 // a test cannot satisfy the assertion.
+//
+// This is the one place that criterion lives, and
+// [packageTraversalsBySubjectType] is its name-only projection: two assertions
+// over the traversals cannot disagree about what one is.
+func packageTraversalDeclsBySubjectType(t *testing.T) (*token.FileSet, map[string][]*ast.FuncDecl) {
+	t.Helper()
+
+	fset, files := packageNonTestFiles(t)
+
+	out := map[string][]*ast.FuncDecl{}
+	for _, file := range files {
+		for _, decl := range file.Decls {
+			fn, ok := decl.(*ast.FuncDecl)
+			if !ok || fn.Recv != nil || !fn.Name.IsExported() || fn.Type.Params == nil {
+				continue
+			}
+			for _, param := range fn.Type.Params.List {
+				subject, ok := checkSubjectTypeArgument(param.Type)
+				if !ok {
+					continue
+				}
+				out[subject] = append(out[subject], fn)
+			}
+		}
+	}
+	return fset, out
+}
+
+// packageTraversalsBySubjectType names the traversals
+// [packageTraversalDeclsBySubjectType] discovered.
 func packageTraversalsBySubjectType(t *testing.T) map[string][]string {
+	t.Helper()
+
+	_, decls := packageTraversalDeclsBySubjectType(t)
+
+	out := map[string][]string{}
+	for subject, fns := range decls {
+		for _, fn := range fns {
+			out[subject] = append(out[subject], fn.Name.Name)
+		}
+	}
+	return out
+}
+
+// packageNonTestFiles parses this package's non-test sources and returns them
+// with the file set their positions resolve against.
+//
+// Every AST assertion in this file reads that one corpus — non-test sources, so
+// that a declaration existing only in a test satisfies none of them — and it is
+// parsed in one place so two assertions both claiming to cover the package cannot
+// be covering different sets of files.
+func packageNonTestFiles(t *testing.T) (*token.FileSet, []*ast.File) {
 	t.Helper()
 
 	fset := token.NewFileSet()
@@ -245,25 +531,55 @@ func packageTraversalsBySubjectType(t *testing.T) map[string][]string {
 		t.Fatalf("parse this package's sources: %v", err)
 	}
 
-	out := map[string][]string{}
+	var files []*ast.File
 	for _, pkg := range pkgs {
 		for _, file := range pkg.Files {
-			for _, decl := range file.Decls {
-				fn, ok := decl.(*ast.FuncDecl)
-				if !ok || fn.Recv != nil || !fn.Name.IsExported() || fn.Type.Params == nil {
-					continue
-				}
-				for _, param := range fn.Type.Params.List {
-					subject, ok := checkSubjectTypeArgument(param.Type)
-					if !ok {
-						continue
-					}
-					out[subject] = append(out[subject], fn.Name.Name)
-				}
+			files = append(files, file)
+		}
+	}
+	if len(files) == 0 {
+		t.Fatalf("no non-test source was parsed, so every assertion over this corpus certifies nothing")
+	}
+	return fset, files
+}
+
+// packageFuncDeclsByName returns every top-level function this package declares
+// in its non-test sources, keyed by name.
+func packageFuncDeclsByName(t *testing.T) map[string]*ast.FuncDecl {
+	t.Helper()
+
+	_, files := packageNonTestFiles(t)
+
+	out := map[string]*ast.FuncDecl{}
+	for _, file := range files {
+		for _, decl := range file.Decls {
+			if fn, ok := decl.(*ast.FuncDecl); ok && fn.Recv == nil {
+				out[fn.Name.Name] = fn
 			}
 		}
 	}
 	return out
+}
+
+// nonVariadicParams counts the parameters a function takes before its variadic
+// one, counting each name in a grouped declaration separately: "sourceFile,
+// boundary string" is two parameters and not one.
+func nonVariadicParams(fn *ast.FuncDecl) int {
+	if fn.Type.Params == nil {
+		return 0
+	}
+	count := 0
+	for _, field := range fn.Type.Params.List {
+		if _, variadic := field.Type.(*ast.Ellipsis); variadic {
+			continue
+		}
+		if len(field.Names) == 0 {
+			count++
+			continue
+		}
+		count += len(field.Names)
+	}
+	return count
 }
 
 // checkSubjectTypeArgument reports the subject type a Check instantiation names,
@@ -384,7 +700,9 @@ var subjectKindBindings = map[SubjectKind]struct {
 	},
 	SubjectBoundaryProviderPath: {
 		iface: reflect.TypeOf((*BoundaryProviderPathSubject)(nil)).Elem(),
-		make:  func(f string) Subject { return newBoundaryProviderPathSubject(f, "spec", "boundaries", "prod") },
+		make: func(f string) Subject {
+			return newBoundaryProviderPathSubject(f, "prod", "helm", "a.yaml", "spec", "boundaries", "prod")
+		},
 	},
 	SubjectNodeArtifact: {
 		iface: reflect.TypeOf((*NodeArtifactSubject)(nil)).Elem(),
@@ -537,21 +855,13 @@ func subjectTypeNameFor(coordinates []string) string {
 func packageInterfaceDecls(t *testing.T) map[string]*ast.InterfaceType {
 	t.Helper()
 
-	fset := token.NewFileSet()
-	pkgs, err := parser.ParseDir(fset, ".", func(fi fs.FileInfo) bool {
-		return !strings.HasSuffix(fi.Name(), "_test.go")
-	}, 0)
-	if err != nil {
-		t.Fatalf("parse this package's sources: %v", err)
-	}
+	_, files := packageNonTestFiles(t)
 
 	out := map[string]*ast.InterfaceType{}
-	for _, pkg := range pkgs {
-		for _, file := range pkg.Files {
-			for _, decl := range interfaceDecls(file) {
-				if iface, ok := decl.spec.Type.(*ast.InterfaceType); ok {
-					out[decl.name] = iface
-				}
+	for _, file := range files {
+		for _, decl := range interfaceDecls(file) {
+			if iface, ok := decl.spec.Type.(*ast.InterfaceType); ok {
+				out[decl.name] = iface
 			}
 		}
 	}

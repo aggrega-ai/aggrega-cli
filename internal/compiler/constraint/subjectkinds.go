@@ -369,15 +369,48 @@ func newNodePipelineStepSubject(sourceFile string, segments ...string) NodePipel
 // only visible per provider within the boundary that holds them.
 type BoundaryProviderPathSubject interface {
 	Subject
+
+	// BoundaryName is the boundary the emitted set was written within, as every
+	// keyed fact takes it.
+	BoundaryName() string
+
+	// ProviderName is the provider within that boundary the path was written for.
+	ProviderName() string
+
+	// EmittedPath is the output path the check was invoked for. It is the one
+	// coordinate here that contributes no locator segment, because it is output
+	// rather than something an author wrote — so a check naming a particular path
+	// reads it from here.
+	EmittedPath() string
+
 	boundaryProviderPath()
 }
 
-type boundaryProviderPathSubject struct{ provenance }
+type boundaryProviderPathSubject struct {
+	provenance
+	boundary string
+	provider string
+	path     string
+}
 
 func (boundaryProviderPathSubject) boundaryProviderPath() {}
 
-func newBoundaryProviderPathSubject(sourceFile string, segments ...string) BoundaryProviderPathSubject {
-	return boundaryProviderPathSubject{newProvenance(sourceFile, segments...)}
+func (s boundaryProviderPathSubject) BoundaryName() string { return s.boundary }
+
+func (s boundaryProviderPathSubject) ProviderName() string { return s.provider }
+
+func (s boundaryProviderPathSubject) EmittedPath() string { return s.path }
+
+func newBoundaryProviderPathSubject(
+	sourceFile, boundary, provider, path string,
+	segments ...string,
+) BoundaryProviderPathSubject {
+	return boundaryProviderPathSubject{
+		provenance: newProvenance(sourceFile, segments...),
+		boundary:   boundary,
+		provider:   provider,
+		path:       path,
+	}
 }
 
 // NodeArtifactSubject is the subject of a check invoked once per artifact a node
