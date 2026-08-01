@@ -5,7 +5,7 @@
 // cobra command tree and splices it into hand-authored documentation pages
 // between HTML-comment markers.
 //
-// The package owns two concerns: rendering (turning a *cobra.Command into a
+// The package owns two concerns: rendering (turning a command descriptor into a
 // stable markdown fragment — synopsis, flags table, subcommand list) and
 // splicing (rewriting only the marked region of a page while preserving all
 // curated prose outside the markers). A generated region is delimited by:
@@ -13,6 +13,14 @@
 //	<!-- BEGIN GENERATED: <id> -->
 //	...generated content...
 //	<!-- END GENERATED: <id> -->
+//
+// It does not read the command tree itself. Every command fact it renders comes
+// from the catalog clisurface.Catalog projects, which is the single place the
+// tree is read, so the reference cannot describe a different command surface
+// than any other consumer of that catalog sees. What this package adds on top is
+// presentation policy: which commands a reference shows (hidden commands and
+// cobra's generated help and completion commands are omitted) and in what order
+// (by name).
 //
 // Splicing is idempotent: given identical input, a second run produces
 // byte-identical output, so a regenerate-and-diff check can detect drift.
@@ -28,7 +36,8 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
-	"github.com/spf13/pflag"
+
+	"github.com/aggrega-ai/aggrega-cli/internal/clisurface"
 )
 
 // beginMarker and endMarker are the format strings for the HTML-comment
@@ -63,13 +72,18 @@ func Generate(root *cobra.Command, docsDir string) (Result, error) {
 	var res Result
 	cliDir := filepath.Join(docsDir, "language-reference", "cli")
 
-	cmds := visibleCommands(root)
+	cat := clisurface.Catalog(root)
+	if len(cat) == 0 {
+		return res, nil
+	}
+	rootCmd := cat[0]
+	cmds := visibleCommands(cat, rootCmd.Path)
 
 	for _, cmd := range cmds {
-		name := cmd.Name()
+		name := cmd.Name
 		page := filepath.Join(cliDir, "aggrega-"+name+".md")
 		id := "cli-" + name
-		inner := renderCommand(cmd)
+		inner := renderCommand(cmd, cat)
 
 		existing, err := os.ReadFile(page)
 		switch {
@@ -113,7 +127,7 @@ func Generate(root *cobra.Command, docsDir string) (Result, error) {
 	// Global (root persistent) flags table.
 	globals := filepath.Join(cliDir, "global-flags.md")
 	if body, err := os.ReadFile(globals); err == nil {
-		changed, werr := writeSpliced(globals, string(body), "global-flags", renderFlagSet(root.PersistentFlags()))
+		changed, werr := writeSpliced(globals, string(body), "global-flags", renderFlagSet(rootCmd.PersistentFlags))
 		if werr != nil {
 			return res, werr
 		}
@@ -176,37 +190,41 @@ func splice(content, id, inner string) (string, error) {
 	}
 }
 
-// visibleCommands returns root's immediate subcommands that should appear in
-// the reference, excluding hidden commands and cobra's auto-generated help
-// and completion commands, sorted by name for determinism.
-func visibleCommands(root *cobra.Command) []*cobra.Command {
-	var out []*cobra.Command
-	for _, c := range root.Commands() {
-		if c.Hidden || c.Name() == "help" || c.Name() == "completion" {
+// visibleCommands returns the catalog entries whose parent is parentPath and
+// that should appear in the reference, excluding hidden commands and cobra's
+// generated help and completion commands, sorted by name for determinism. This
+// is the reference's presentation policy over the unfiltered catalog; the
+// catalog itself carries every command.
+func visibleCommands(cat []clisurface.Descriptor, parentPath string) []clisurface.Descriptor {
+	var out []clisurface.Descriptor
+	for _, c := range clisurface.Children(cat, parentPath) {
+		if c.Hidden || c.Name == "help" || c.Name == "completion" {
 			continue
 		}
 		out = append(out, c)
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Name() < out[j].Name() })
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out
 }
 
 // renderCommand produces the mechanical reference fragment for one command:
 // its synopsis, its own flags, and its subcommands. Descriptive prose is left
-// to the curated portion of the page.
-func renderCommand(cmd *cobra.Command) string {
+// to the curated portion of the page. The flags rendered are the command's
+// local ones — the flags it inherits are documented once on the global-flags
+// page instead of repeated under every command.
+func renderCommand(cmd clisurface.Descriptor, cat []clisurface.Descriptor) string {
 	var b strings.Builder
 	b.WriteString("**Synopsis**\n\n")
 	b.WriteString("```\n")
-	b.WriteString(cmd.UseLine())
+	b.WriteString(cmd.Synopsis)
 	b.WriteString("\n```")
 
-	if flags := renderFlagSet(cmd.LocalFlags()); flags != "" {
+	if flags := renderFlagSet(cmd.LocalFlags); flags != "" {
 		b.WriteString("\n\n**Flags**\n\n")
 		b.WriteString(flags)
 	}
 
-	if subs := renderSubcommands(cmd); subs != "" {
+	if subs := renderSubcommands(cmd, cat); subs != "" {
 		b.WriteString("\n\n**Subcommands**\n\n")
 		b.WriteString(subs)
 	}
@@ -214,17 +232,17 @@ func renderCommand(cmd *cobra.Command) string {
 	return b.String()
 }
 
-// renderFlagSet renders a flag set as a markdown table sorted by flag name.
-// Hidden flags and the auto-added help flag are omitted. It returns the empty
-// string when no flag qualifies, so callers can suppress an empty section.
-func renderFlagSet(fs *pflag.FlagSet) string {
-	var flags []*pflag.Flag
-	fs.VisitAll(func(f *pflag.Flag) {
+// renderFlagSet renders flags as a markdown table sorted by flag name. Hidden
+// flags and the auto-added help flag are omitted. It returns the empty string
+// when no flag qualifies, so callers can suppress an empty section.
+func renderFlagSet(all []clisurface.Flag) string {
+	var flags []clisurface.Flag
+	for _, f := range all {
 		if f.Hidden || f.Name == "help" {
-			return
+			continue
 		}
 		flags = append(flags, f)
-	})
+	}
 	if len(flags) == 0 {
 		return ""
 	}
@@ -238,7 +256,7 @@ func renderFlagSet(fs *pflag.FlagSet) string {
 		if f.Shorthand != "" {
 			name += ", `-" + f.Shorthand + "`"
 		}
-		def := f.DefValue
+		def := f.Default
 		if def == "" {
 			def = "—"
 		} else {
@@ -252,8 +270,8 @@ func renderFlagSet(fs *pflag.FlagSet) string {
 // renderSubcommands renders a command's visible subcommands as a table of
 // command path and short description, sorted by name. It returns the empty
 // string when the command is a leaf.
-func renderSubcommands(cmd *cobra.Command) string {
-	subs := visibleCommands(cmd)
+func renderSubcommands(cmd clisurface.Descriptor, cat []clisurface.Descriptor) string {
+	subs := visibleCommands(cat, cmd.Path)
 	if len(subs) == 0 {
 		return ""
 	}
@@ -261,19 +279,19 @@ func renderSubcommands(cmd *cobra.Command) string {
 	b.WriteString("| Command | Description |\n")
 	b.WriteString("| --- | --- |\n")
 	for _, c := range subs {
-		b.WriteString("| `" + c.CommandPath() + "` | " + escapeCell(c.Short) + " |\n")
+		b.WriteString("| `" + c.Path + "` | " + escapeCell(c.Short) + " |\n")
 	}
 	return strings.TrimRight(b.String(), "\n")
 }
 
 // renderCommandList renders the top-level command summary table used in the
 // CLI overview chapter.
-func renderCommandList(cmds []*cobra.Command) string {
+func renderCommandList(cmds []clisurface.Descriptor) string {
 	var b strings.Builder
 	b.WriteString("| Command | Description |\n")
 	b.WriteString("| --- | --- |\n")
 	for _, c := range cmds {
-		b.WriteString("| `" + c.CommandPath() + "` | " + escapeCell(c.Short) + " |\n")
+		b.WriteString("| `" + c.Path + "` | " + escapeCell(c.Short) + " |\n")
 	}
 	return strings.TrimRight(b.String(), "\n")
 }
@@ -281,12 +299,12 @@ func renderCommandList(cmds []*cobra.Command) string {
 // stubPage returns the minimal page body used when a command has no curated
 // page yet: a title and the command's short description. The generated region
 // is appended by the splice step.
-func stubPage(cmd *cobra.Command) string {
+func stubPage(cmd clisurface.Descriptor) string {
 	short := cmd.Short
 	if short == "" {
-		short = cmd.CommandPath() + " command."
+		short = cmd.Path + " command."
 	}
-	return "# " + cmd.CommandPath() + "\n\n" + short + "\n"
+	return "# " + cmd.Path + "\n\n" + short + "\n"
 }
 
 // escapeCell makes a value safe to place inside a markdown table cell by

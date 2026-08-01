@@ -10,6 +10,8 @@ import (
 	"testing"
 
 	"github.com/spf13/cobra"
+
+	"github.com/aggrega-ai/aggrega-cli/internal/clisurface"
 )
 
 func TestSpliceAppendsWhenMarkersAbsent(t *testing.T) {
@@ -73,7 +75,9 @@ func TestRenderFlagSetSortsAndSkipsHidden(t *testing.T) {
 	cmd.Flags().String("secret", "", "hidden flag")
 	_ = cmd.Flags().MarkHidden("secret")
 
-	out := renderFlagSet(cmd.Flags())
+	// Routed through the catalog rather than the flag set, so the projection's
+	// capture of a hidden flag is exercised alongside the rendering policy.
+	out := renderFlagSet(clisurface.Catalog(cmd)[0].LocalFlags)
 	ai := strings.Index(out, "`--alpha`")
 	zi := strings.Index(out, "`--zulu`")
 	if ai == -1 || zi == -1 {
