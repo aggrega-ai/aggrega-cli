@@ -225,6 +225,110 @@ type NormalizedView interface {
 	// the framework reports the fact rather than admitting it silently, and
 	// the shape is open rather than settled.
 	AuthoredAttachmentBlock(node string) types.OrderedMap[types.FeatureInstance]
+
+	// SocketSelector is the label constraint a component type's dependency
+	// socket declares on what it may be pointed at, empty when it constrains
+	// nothing.
+	//
+	// Emptiness is one answer rather than two. A socket declared without a
+	// constraint and a socket the catalog declares no entry for both leave the
+	// target unconstrained, and the question a rule over this fact asks is
+	// whether there is a constraint to evaluate at all. A fact that
+	// distinguished the two would put a second condition on one question, and
+	// the two could then disagree.
+	//
+	// Keyed by (node, socket); read from types.UsesSchemaEntry.Selector.
+	SocketSelector(componentType string, socket string) string
+
+	// AttachmentSocketSelector is the label constraint declared on a socket of
+	// the Feature an attachment resolves to, empty when it constrains nothing.
+	//
+	// It is a separate fact from the consuming component's own socket
+	// constraint, and keyed per attachment, because the two read different
+	// declaration surfaces: an edge drawn from an attachment's own dependency
+	// block participates in the attached Feature's socket declarations rather
+	// than in the component's. One fact spanning both would have to pick a
+	// surface, and would answer for the wrong one wherever the other applied.
+	//
+	// Keyed by (node, attachment, socket); read from
+	// types.UsesSchemaEntry.Selector.
+	AttachmentSocketSelector(featureType string, socket string) string
+
+	// SlotSelector is the label constraint an attachment slot declares on
+	// which Feature may bind it, empty when it accepts any fill.
+	//
+	// A slot is a binding point and not a dependency socket, so this is a
+	// separate fact from a socket's constraint even though both are written in
+	// one grammar: they are declared on separate authored surfaces and
+	// evaluated against different label sets — a slot's against the labels
+	// of the Feature filling it, a socket's against the labels of the node an
+	// edge points at.
+	//
+	// Keyed by (node, slot); read from types.AttachmentSlot.Selector.
+	SlotSelector(componentType string, slot string) string
+
+	// FeatureAppliesTo is the single label constraint a Feature declares on
+	// which components it may attach to, empty when it constrains nothing.
+	//
+	// The requirements written inside it all hold together, so the whole of it
+	// is one constraint and one fact.
+	//
+	// Keyed by (node, attachment); read from types.FeatureSpec.AppliesTo.
+	FeatureAppliesTo(featureType string) string
+
+	// FeatureAppliesToAnyOf are the alternative label constraints a Feature
+	// declares, of which any one holding is enough, in author order.
+	//
+	// It is a separate fact from the single constraint rather than the same
+	// fact in another shape. The two match by different rules — the
+	// requirements inside the single one hold together, whereas these hold
+	// alternatively — and each is independently absent, so a rule may
+	// legitimately read either without the other. Each item carries one of two
+	// authored forms, a constraint string or a flat set of pairs matched by
+	// equality, and which form an item carries is part of the answer.
+	//
+	// Keyed by (node, attachment); read from types.FeatureSpec.AppliesToAnyOf.
+	//
+	// Reported exception: the return shape exposes an authored entity type, so
+	// a reader of this fact can reach the authored item shape the fact does
+	// not name, including the method reporting which of the two forms an item
+	// carries; the framework reports the fact rather than admitting it
+	// silently, and the shape is open rather than settled.
+	FeatureAppliesToAnyOf(featureType string) []types.SelectorTerm
+
+	// AttachmentFeatureLabels is the label set the catalog entity an
+	// attachment resolves to declares, in author order.
+	//
+	// These are the attached Feature's own labels and not those of the node
+	// carrying it: a rule asking whether a fill satisfies the constraint on
+	// the place it binds evaluates that constraint against the fill's labels.
+	// The labels are complete as soon as the catalog is reachable, so the fact
+	// is placed there even though the finalised graph carries a projection of
+	// the same labels later; a fact is placed at the earliest stage at which
+	// it is complete.
+	//
+	// Keyed by (node, attachment); read from types.FeatureMetadata.Labels.
+	AttachmentFeatureLabels(featureType string) types.OrderedMap[string]
+
+	// RequiredAttachmentMandates are the presence mandates a component type
+	// declares through its annotations, in author order — each carrying the
+	// annotation key as written, the label naming the requirement, the Feature
+	// type at least one attachment must carry, and the reason the mandate
+	// cannot be evaluated when its declaration is broken.
+	//
+	// The broken-declaration reason travels with the requirement rather than
+	// arriving as a fact of its own, and that is why this one is composite: a
+	// mandate whose declaration cannot be evaluated must never read as a
+	// satisfied one, so the reason has to be in hand at the moment the
+	// requirement would otherwise be tested.
+	//
+	// A mandate is not a binding point. It requires that some attachment of a
+	// named type be present under any name, which is a different question from
+	// a named slot being bound, and the two are separate facts because they
+	// are separate questions.
+	//
+	// Keyed by node; read from types.RequiredAttachmentTypes(annotations).
+	RequiredAttachmentMandates(componentType string) []types.RequiredAttachmentType
 }
 
 // TopologyView exposes the facts complete at the topology stage: the
@@ -274,6 +378,76 @@ type GraphView interface {
 	// Keyed by (node, attachment, pillar, leaf); read from
 	// types.IRFeatureEntry.ValuesProvenance.
 	PerLeafAttachmentProvenance(node string, attachment string, pillar string, leaf string) LeafProvenance
+
+	// NodeLabels is the label set a node carries once every contributing
+	// surface has been folded, in author order.
+	//
+	// The accessor takes the node as an argument rather than reading the
+	// subject under inspection, and that is what lets a rule keyed on one node
+	// read another's labels: a rule about an edge asks about the node at the
+	// far end of it, which is never the node the rule is invoked over.
+	//
+	// Keyed by node; read from types.IRNode.Labels.
+	NodeLabels(node string) types.OrderedMap[string]
+
+	// PerEdgeOriginFeatureType is the Feature type an edge originated from,
+	// empty when the edge was drawn from a component's own dependency block.
+	//
+	// The emptiness is the answer and not a missing value: it is what tells a
+	// rule which declaration surface carries the edge's socket, and therefore
+	// which socket constraint applies.
+	//
+	// This names the Feature TYPE and never the per-attachment instance. The
+	// instance is a separate coordinate on a separate carrier, and a rule
+	// reaching for the declaration needs the type, so a fact conflating them
+	// would hand half of its readers the wrong string.
+	//
+	// Keyed by edge; read from types.IREdge.OriginFeature.
+	PerEdgeOriginFeatureType(node string, socket string) string
+
+	// PerEdgeResolvedTarget is the node an edge resolves to.
+	//
+	// It is a separate fact from the target as authored rather than the same
+	// fact at a later moment. An authored target may be empty and mean the
+	// socket's own alias, so the resolved form is the only one a rule about
+	// the node at the far end of an edge can read; reading the authored form
+	// for that question would make the rule wrong for exactly those edges
+	// whose target the author left implicit.
+	//
+	// Keyed by edge; read from types.IREdge.Target.
+	PerEdgeResolvedTarget(node string, socket string) string
+
+	// AttachmentResolvedType is the Feature type an attachment resolves to,
+	// empty when it resolved to no catalog entity.
+	//
+	// It is the resolved type rather than the authored one because an
+	// attachment's type can be contributed at a scope above the node: the
+	// block authored on the node itself is silent for precisely the
+	// attachments a rule most needs to reach.
+	//
+	// Keyed by (node, attachment); read from types.IRFeatureEntry.Type.
+	AttachmentResolvedType(node string, attachment string) string
+
+	// MergedAttachmentNames are the attachment names a node carries once the
+	// whole attachment cascade has folded, in the order the merged set holds
+	// them.
+	//
+	// It is deliberately separate from the names an instance authored, and
+	// that distinction is the point. An attachment contributed at a scope the
+	// node inherits from binds a name on every node beneath that scope, so the
+	// authored block is empty for exactly those deployments that rely on
+	// sharing; a rule reading the authored names in place of these rejects a
+	// deployment shape the product supports.
+	//
+	// The fact is a name list and not the merged entries themselves. Handing
+	// back the entries would let a rule reach the per-leaf configuration
+	// provenance the framework already exposes as a fact of its own, so a rule
+	// could re-derive a declared fact from this one — which is the shape
+	// every return here exists to keep closed.
+	//
+	// Keyed by (node, attachment); read from
+	// types.IRSpec.FeatureValuesMapping.
+	MergedAttachmentNames(node string) []string
 }
 
 // HydratedView exposes the facts complete at the hydrated stage: per-node

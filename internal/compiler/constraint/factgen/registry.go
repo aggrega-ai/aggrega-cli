@@ -273,6 +273,140 @@ var facts = []factDecl{
 			"not name; the framework reports the fact rather than admitting it " +
 			"silently, and the shape is open rather than settled",
 	},
+	{
+		Name:        "socket-selector",
+		Stage:       "normalized",
+		SourceField: "types.UsesSchemaEntry.Selector",
+		Subject:     []string{"node", "socket"},
+		Params: []paramDecl{
+			{Name: "componentType", Type: "string"},
+			{Name: "socket", Type: "string"},
+		},
+		Returns: "string",
+		Doc: "SocketSelector is the label constraint a component type's " +
+			"dependency socket declares on what it may be pointed at, empty " +
+			"when it constrains nothing.\n\nEmptiness is one answer rather " +
+			"than two. A socket declared without a constraint and a socket the " +
+			"catalog declares no entry for both leave the target unconstrained, " +
+			"and the question a rule over this fact asks is whether there is a " +
+			"constraint to evaluate at all. A fact that distinguished the two " +
+			"would put a second condition on one question, and the two could " +
+			"then disagree.",
+	},
+	{
+		Name:        "attachment-socket-selector",
+		Stage:       "normalized",
+		SourceField: "types.UsesSchemaEntry.Selector",
+		Subject:     []string{"node", "attachment", "socket"},
+		Params: []paramDecl{
+			{Name: "featureType", Type: "string"},
+			{Name: "socket", Type: "string"},
+		},
+		Returns: "string",
+		Doc: "AttachmentSocketSelector is the label constraint declared on a " +
+			"socket of the Feature an attachment resolves to, empty when it " +
+			"constrains nothing.\n\nIt is a separate fact from the consuming " +
+			"component's own socket constraint, and keyed per attachment, " +
+			"because the two read different declaration surfaces: an edge drawn " +
+			"from an attachment's own dependency block participates in the " +
+			"attached Feature's socket declarations rather than in the " +
+			"component's. One fact spanning both would have to pick a surface, " +
+			"and would answer for the wrong one wherever the other applied.",
+	},
+	{
+		Name:        "slot-selector",
+		Stage:       "normalized",
+		SourceField: "types.AttachmentSlot.Selector",
+		Subject:     []string{"node", "slot"},
+		Params: []paramDecl{
+			{Name: "componentType", Type: "string"},
+			{Name: "slot", Type: "string"},
+		},
+		Returns: "string",
+		Doc: "SlotSelector is the label constraint an attachment slot declares " +
+			"on which Feature may bind it, empty when it accepts any fill.\n" +
+			"\nA slot is a binding point and not a dependency socket, so " +
+			"this is a separate fact from a socket's constraint even though both " +
+			"are written in one grammar: they are declared on separate authored " +
+			"surfaces and evaluated against different label sets — a slot's " +
+			"against the labels of the Feature filling it, a socket's against " +
+			"the labels of the node an edge points at.",
+	},
+	{
+		Name:        "feature-applies-to",
+		Stage:       "normalized",
+		SourceField: "types.FeatureSpec.AppliesTo",
+		Subject:     []string{"node", "attachment"},
+		Params:      []paramDecl{{Name: "featureType", Type: "string"}},
+		Returns:     "string",
+		Doc: "FeatureAppliesTo is the single label constraint a Feature declares " +
+			"on which components it may attach to, empty when it constrains " +
+			"nothing.\n\nThe requirements written inside it all hold " +
+			"together, so the whole of it is one constraint and one fact.",
+	},
+	{
+		Name:        "feature-applies-to-any-of",
+		Stage:       "normalized",
+		SourceField: "types.FeatureSpec.AppliesToAnyOf",
+		Subject:     []string{"node", "attachment"},
+		Params:      []paramDecl{{Name: "featureType", Type: "string"}},
+		Returns:     "[]types.SelectorTerm",
+		Doc: "FeatureAppliesToAnyOf are the alternative label constraints a " +
+			"Feature declares, of which any one holding is enough, in author " +
+			"order.\n\nIt is a separate fact from the single constraint " +
+			"rather than the same fact in another shape. The two match by " +
+			"different rules — the requirements inside the single one hold " +
+			"together, whereas these hold alternatively — and each is " +
+			"independently absent, so a rule may legitimately read either " +
+			"without the other. Each item carries one of two authored forms, a " +
+			"constraint string or a flat set of pairs matched by equality, and " +
+			"which form an item carries is part of the answer.",
+		ReportedException: "the return shape exposes an authored entity type, " +
+			"so a reader of this fact can reach the authored item shape the fact " +
+			"does not name, including the method reporting which of the two " +
+			"forms an item carries; the framework reports the fact rather than " +
+			"admitting it silently, and the shape is open rather than settled",
+	},
+	{
+		Name:        "attachment-feature-labels",
+		Stage:       "normalized",
+		SourceField: "types.FeatureMetadata.Labels",
+		Subject:     []string{"node", "attachment"},
+		Params:      []paramDecl{{Name: "featureType", Type: "string"}},
+		Returns:     "types.OrderedMap[string]",
+		Doc: "AttachmentFeatureLabels is the label set the catalog entity an " +
+			"attachment resolves to declares, in author order.\n\nThese " +
+			"are the attached Feature's own labels and not those of the node " +
+			"carrying it: a rule asking whether a fill satisfies the constraint " +
+			"on the place it binds evaluates that constraint against the fill's " +
+			"labels. The labels are complete as soon as the catalog is " +
+			"reachable, so the fact is placed there even though the finalised " +
+			"graph carries a projection of the same labels later; a fact is " +
+			"placed at the earliest stage at which it is complete.",
+	},
+	{
+		Name:        "required-attachment-mandates",
+		Stage:       "normalized",
+		SourceField: "types.RequiredAttachmentTypes(annotations)",
+		Subject:     []string{"node"},
+		Params:      []paramDecl{{Name: "componentType", Type: "string"}},
+		Returns:     "[]types.RequiredAttachmentType",
+		Doc: "RequiredAttachmentMandates are the presence mandates a component " +
+			"type declares through its annotations, in author order — each " +
+			"carrying the annotation key as written, the label naming the " +
+			"requirement, the Feature type at least one attachment must carry, " +
+			"and the reason the mandate cannot be evaluated when its " +
+			"declaration is broken.\n\nThe broken-declaration reason " +
+			"travels with the requirement rather than arriving as a fact of its " +
+			"own, and that is why this one is composite: a mandate whose " +
+			"declaration cannot be evaluated must never read as a satisfied " +
+			"one, so the reason has to be in hand at the moment the requirement " +
+			"would otherwise be tested.\n\nA mandate is not a binding " +
+			"point. It requires that some attachment of a named type be present " +
+			"under any name, which is a different question from a named slot " +
+			"being bound, and the two are separate facts because they are " +
+			"separate questions.",
+	},
 
 	// ---------------------------------------------------------------- topology
 
@@ -316,6 +450,98 @@ var facts = []factDecl{
 			"both sides, so splitting it into per-coordinate accessors would " +
 			"make the question un-askable and the accessors individually " +
 			"meaningless.",
+	},
+	{
+		Name:        "node-labels",
+		Stage:       "graph",
+		SourceField: "types.IRNode.Labels",
+		Subject:     []string{"node"},
+		Params:      []paramDecl{{Name: "node", Type: "string"}},
+		Returns:     "types.OrderedMap[string]",
+		Doc: "NodeLabels is the label set a node carries once every contributing " +
+			"surface has been folded, in author order.\n\nThe accessor " +
+			"takes the node as an argument rather than reading the subject under " +
+			"inspection, and that is what lets a rule keyed on one node read " +
+			"another's labels: a rule about an edge asks about the node at the " +
+			"far end of it, which is never the node the rule is invoked over.",
+	},
+	{
+		Name:        "per-edge-origin-feature-type",
+		Stage:       "graph",
+		SourceField: "types.IREdge.OriginFeature",
+		Subject:     []string{"edge"},
+		Params: []paramDecl{
+			{Name: "node", Type: "string"},
+			{Name: "socket", Type: "string"},
+		},
+		Returns: "string",
+		Doc: "PerEdgeOriginFeatureType is the Feature type an edge originated " +
+			"from, empty when the edge was drawn from a component's own " +
+			"dependency block.\n\nThe emptiness is the answer and not a " +
+			"missing value: it is what tells a rule which declaration surface " +
+			"carries the edge's socket, and therefore which socket constraint " +
+			"applies.\n\nThis names the Feature TYPE and never the " +
+			"per-attachment instance. The instance is a separate coordinate on a " +
+			"separate carrier, and a rule reaching for the declaration needs the " +
+			"type, so a fact conflating them would hand half of its readers the " +
+			"wrong string.",
+	},
+	{
+		Name:        "per-edge-resolved-target",
+		Stage:       "graph",
+		SourceField: "types.IREdge.Target",
+		Subject:     []string{"edge"},
+		Params: []paramDecl{
+			{Name: "node", Type: "string"},
+			{Name: "socket", Type: "string"},
+		},
+		Returns: "string",
+		Doc: "PerEdgeResolvedTarget is the node an edge resolves to.\n\nIt " +
+			"is a separate fact from the target as authored rather than the same " +
+			"fact at a later moment. An authored target may be empty and mean " +
+			"the socket's own alias, so the resolved form is the only one a rule " +
+			"about the node at the far end of an edge can read; reading the " +
+			"authored form for that question would make the rule wrong for " +
+			"exactly those edges whose target the author left implicit.",
+	},
+	{
+		Name:        "attachment-resolved-type",
+		Stage:       "graph",
+		SourceField: "types.IRFeatureEntry.Type",
+		Subject:     []string{"node", "attachment"},
+		Params: []paramDecl{
+			{Name: "node", Type: "string"},
+			{Name: "attachment", Type: "string"},
+		},
+		Returns: "string",
+		Doc: "AttachmentResolvedType is the Feature type an attachment resolves " +
+			"to, empty when it resolved to no catalog entity.\n\nIt is the " +
+			"resolved type rather than the authored one because an attachment's " +
+			"type can be contributed at a scope above the node: the block " +
+			"authored on the node itself is silent for precisely the " +
+			"attachments a rule most needs to reach.",
+	},
+	{
+		Name:        "merged-attachment-names",
+		Stage:       "graph",
+		SourceField: "types.IRSpec.FeatureValuesMapping",
+		Subject:     []string{"node", "attachment"},
+		Params:      []paramDecl{{Name: "node", Type: "string"}},
+		Returns:     "[]string",
+		Doc: "MergedAttachmentNames are the attachment names a node carries once " +
+			"the whole attachment cascade has folded, in the order the merged " +
+			"set holds them.\n\nIt is deliberately separate from the names " +
+			"an instance authored, and that distinction is the point. An " +
+			"attachment contributed at a scope the node inherits from binds a " +
+			"name on every node beneath that scope, so the authored block is " +
+			"empty for exactly those deployments that rely on sharing; a rule " +
+			"reading the authored names in place of these rejects a deployment " +
+			"shape the product supports.\n\nThe fact is a name list and " +
+			"not the merged entries themselves. Handing back the entries would " +
+			"let a rule reach the per-leaf configuration provenance the " +
+			"framework already exposes as a fact of its own, so a rule could " +
+			"re-derive a declared fact from this one — which is the shape every " +
+			"return here exists to keep closed.",
 	},
 
 	// ---------------------------------------------------------------- hydrated
