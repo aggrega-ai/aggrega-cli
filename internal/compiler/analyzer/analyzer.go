@@ -308,13 +308,15 @@ func Analyze(graph *types.IRGraph, catalogLookup resolver.CatalogLookup) *Analys
 	return result
 }
 
-// AnalyzeContext is Analyze with cooperative cancellation: validateSelectors
-// and validateAppliesTo check ctx.Err() per iteration so a long Step-4 pass
-// over a large graph can be interrupted (e.g. by the daemon's shutdown
-// drain). It returns a non-nil error only when ctx is cancelled mid-pass;
-// analyzer violations remain in the result's Errors slice as structured
-// data, never as the function-level error. Analyze is the background-context
-// convenience wrapper.
+// AnalyzeContext is Analyze with cooperative cancellation: validateSelectors,
+// validateAppliesTo, validateSlotSelectors, validateRequiredAttachmentTypes and
+// validateRequiredAttachmentSlots each check ctx.Err() per iteration — every
+// validator the sequence runs, so none of them can hold a cancelled caller — so
+// a long analysis over a large graph can be interrupted (e.g. by the daemon's
+// shutdown drain). It returns a non-nil error only when ctx is cancelled
+// mid-analysis; analyzer violations remain in the result's Errors slice as
+// structured data, never as the function-level error. Analyze is the
+// background-context convenience wrapper.
 func AnalyzeContext(ctx context.Context, graph *types.IRGraph, catalogLookup resolver.CatalogLookup) (*AnalysisResult, error) {
 	// 1. Selector validation (usesSchema selector rules)
 	errs, err := validateSelectors(ctx, graph, catalogLookup)
