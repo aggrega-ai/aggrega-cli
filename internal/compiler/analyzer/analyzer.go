@@ -14,15 +14,21 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
-// AnalysisResult is the bundled output of [Analyze]. The three fields
-// carry the artifacts produced by Step 4's two label-matching classes
-// and its precalculated_paths / policy-input assembly:
+// AnalysisResult is the bundled output of [Analyze]. Its four fields
+// carry the artifacts produced by Step 4's two label-matching classes,
+// its attachment-requirement checks, its advisory lints, and its
+// precalculated_paths / policy-input assembly:
 //
 //   - Errors — every selector and appliesTo violation discovered, plus
-//     any failed policy-socket verdict appended by the pipeline, one
+//     every attachment-requirement violation and any failed
+//     policy-socket verdict appended by the pipeline, one
 //     [AnalysisError] per violation. Build flow gates on
 //     len(Errors) > 0; see the package doc Pipeline Integration
 //     subsection for the gating semantics.
+//   - Warnings — one advisory string per finding from the lints, which
+//     never reach the Errors gate: a warning does not make the emitted
+//     output wrong, so a result carrying warnings and no errors
+//     proceeds.
 //   - Paths — the cycle-safe DFS enumeration of acyclic paths through
 //     the IR graph; see [calculatePaths] for the contract.
 //   - PolicyInput — the policy socket payload (always
@@ -284,11 +290,17 @@ type PrecalculatedPath struct {
 //     same Errors slice).
 //  3. Precalculated paths from calculatePaths.
 //  4. The PolicyInput payload from assemblePolicyInput.
+//  5. Advisory warnings from lintOverriddenAnnotation, on
+//     AnalysisResult.Warnings — one string per authoring leaf where an
+//     explicit attachment value suppressed an annotation-supplied one.
 //
 // Build flow gates on len(result.Errors) > 0 before invoking Step 5.
-// AnalysisResult.Paths and AnalysisResult.PolicyInput are computed
-// unconditionally; see the package doc Pipeline Integration
-// subsection for their downstream consumption status.
+// AnalysisResult.Warnings, AnalysisResult.Paths and
+// AnalysisResult.PolicyInput are computed unconditionally, and none of
+// them reaches that gate: a warning is advisory, so a result carrying
+// warnings and no errors proceeds and the warnings are surfaced to the
+// operator alongside the build. See the package doc Pipeline
+// Integration subsection for their downstream consumption status.
 func Analyze(graph *types.IRGraph, catalogLookup resolver.CatalogLookup) *AnalysisResult {
 	// Background context never cancels, so the discarded error is always
 	// nil; callers that participate in cancellation use AnalyzeContext.

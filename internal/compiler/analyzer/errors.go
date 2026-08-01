@@ -67,6 +67,19 @@ var (
 	// itself as broken rather than as unsatisfied.
 	ErrMalformedAttachmentRequirement = errors.New("malformed attachment requirement")
 
+	// ErrOverriddenAnnotation is the ABI-stable sentinel for a leaf of an
+	// attachment's configuration where an explicitly authored value took
+	// precedence over one an annotation supplied. It is advisory: the emitted
+	// output is not wrong, so the finding is reported and the build finishes.
+	//
+	// It names a suppression rather than a conflict, and the distinction is what
+	// makes the rule report every displacement rather than only the ones that
+	// changed something. The per-leaf merge overwrites the annotation-supplied
+	// value with the explicit one, so the suppressed value is not recoverable
+	// downstream and no comparison between the two is available to make; the
+	// provenance record is the whole of the evidence.
+	ErrOverriddenAnnotation = errors.New("annotation contribution overridden by an explicit value")
+
 	// ErrCatalogLookup is the ABI-stable sentinel reserved for catalog
 	// lookups that fail during analyzer-phase evaluation. Today catalog
 	// misses inside validateSelectors and validateAppliesTo trigger a
