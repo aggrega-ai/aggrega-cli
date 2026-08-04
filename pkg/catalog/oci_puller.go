@@ -43,6 +43,64 @@ var ErrUnscopedPluginReference = errors.New("wasm plugin reference must carry a 
 // than surfacing later as a cryptic fetch failure.
 var ErrUnscopedRecipeReference = errors.New("recipe reference must be provider-scoped (<provider>/<name>); an empty provider cannot bind to an OCI location")
 
+// ErrAllVersionsRetracted is returned when every published version of an entity
+// that selection could otherwise have chosen has been withdrawn, so the
+// discovery step is left with no eligible candidate. It is a loud, recoverable
+// halt.
+//
+// It is deliberately NOT the not-found sentinel. A repository whose every
+// version is withdrawn still exists and still holds those versions; reporting it
+// as a missing entity would name the wrong problem, send the reader looking for a
+// typo, and read as a quiet fallback rather than the refusal it is.
+var ErrAllVersionsRetracted = errors.New("every published version this reference could select has been withdrawn")
+
+// VersionExclusion is one published version a RetractionScreen removed from
+// selection, paired with the reason recorded against it.
+type VersionExclusion struct {
+	// Version is the excluded published version.
+	Version string
+	// Reason is the withdrawal reason recorded against that version. It may be
+	// empty: a record is not required to carry prose.
+	Reason string
+}
+
+// RetractionScreen removes withdrawn published versions from the registry-side
+// discovery step and reports what it removed.
+//
+// It is injected rather than implemented in this package, for two reasons.
+// Deciding that a version is withdrawn means reading a signed marker and judging
+// its signer against the workspace's trust policy, and neither the marker format
+// nor the trust policy belongs here. And injection is what keeps
+// selectPullVersion and oci.SelectLatestVersion pure over a tag list: a screen
+// that reached a registry from inside selection would make every one of
+// selection's call sites inherit a network dependency.
+//
+// An implementation answers offline from a recorded, signature-verified fact and
+// never fetches. That is what lets the screen run at no extra round trips, and it
+// fixes the screen's one honest limit: the fact is a snapshot, so it says what the
+// registry reported when the snapshot was taken and never what it reports now.
+//
+// A nil screen is the unscreened default — selection considers every published
+// version, which is what a workspace with no local snapshot must do.
+type RetractionScreen interface {
+	// ScreenVersions partitions an artifact's published tags into the versions
+	// eligible for selection and the versions withdrawn from it. A tag the screen
+	// holds no record for is eligible.
+	ScreenVersions(reference string, tags []string) (eligible []string, excluded []VersionExclusion)
+
+	// ReportSelection announces the outcome of a screened selection: the version
+	// taken, and every version withdrawn from consideration with its reason. The
+	// caller invokes it only when at least one version was excluded, so an
+	// ordinary selection stays silent.
+	ReportSelection(reference, selected string, excluded []VersionExclusion)
+
+	// ReportPinned announces that a reference named an exact version the screen
+	// holds a withdrawal record for. Naming a version IS the override, so such a
+	// reference still resolves; this is what stops it resolving quietly. It is
+	// silent for a version with no record.
+	ReportPinned(reference, version string)
+}
+
 // NewDefaultOCIPuller returns the production OCIPuller backed by
 // pkg/oci.NewRemoteRepository per Pull-call. Returns nil when the
 // workspace is configured offline so closure-walker and lazy-lookup
@@ -54,7 +112,24 @@ var ErrUnscopedRecipeReference = errors.New("recipe reference must be provider-s
 // consumers (the compiler-as-service daemon) construct pullers via
 // the same canonical helper. Local copies would drift; one
 // implementation prevents that.
+//
+// The returned puller carries no retraction screen, so its discovery step
+// considers every published version. A caller that can supply a verified
+// withdrawal record builds its puller through NewOCIPullerWithRetractionScreen
+// instead.
 func NewDefaultOCIPuller(wsCfg workspaceconfig.Config) OCIPuller {
+	return NewOCIPullerWithRetractionScreen(wsCfg, nil)
+}
+
+// NewOCIPullerWithRetractionScreen returns the production OCIPuller with a
+// retraction screen attached, so the discovery step skips versions the screen
+// reports withdrawn and announces every skip. It shares NewDefaultOCIPuller's
+// construction exactly, including returning nil when the workspace is offline —
+// an offline workspace reaches no registry, so it never selects a version at all.
+//
+// A nil screen yields the unscreened puller, so this is the single construction
+// path and the screened and unscreened forms cannot drift.
+func NewOCIPullerWithRetractionScreen(wsCfg workspaceconfig.Config, screen RetractionScreen) OCIPuller {
 	httpClient, err := egress.HTTPClient(wsCfg)
 	if err != nil {
 		// The network-egress gate refused (the workspace is offline): return no
@@ -63,7 +138,7 @@ func NewDefaultOCIPuller(wsCfg workspaceconfig.Config) OCIPuller {
 		// gate; this call site only reacts to it.
 		return nil
 	}
-	return DefaultOCIPuller{registry: wsCfg.DefaultRegistry, httpClient: httpClient}
+	return DefaultOCIPuller{registry: wsCfg.DefaultRegistry, httpClient: httpClient, retraction: screen}
 }
 
 // DefaultOCIPuller is the production OCIPuller implementation. Pull constructs a
@@ -71,9 +146,14 @@ func NewDefaultOCIPuller(wsCfg workspaceconfig.Config) OCIPuller {
 // matches pkg/oci's documented surface exactly. registry is the configured
 // default registry, used by PullLibrary to bind a host-less library identity to a
 // physical location.
+//
+// retraction is the optional withdrawal screen consulted by the entity discovery
+// step. It is nil on an unscreened puller, and only PullEntity consults it — see
+// selectEntityPullVersion for the scope statement and what it leaves uncovered.
 type DefaultOCIPuller struct {
 	registry   string
 	httpClient *http.Client
+	retraction RetractionScreen
 }
 
 func (p DefaultOCIPuller) Pull(ctx context.Context, reference, tag string) (*oci.PullResult, error) {
@@ -175,10 +255,15 @@ func (p DefaultOCIPuller) PullEntity(ctx context.Context, identity, kind, floorV
 		if terr != nil {
 			return nil, "", terr
 		}
-		version, terr = selectPullVersion(reference, tags)
+		version, terr = p.selectEntityPullVersion(reference, tags)
 		if terr != nil {
 			return nil, "", terr
 		}
+	} else if p.retraction != nil {
+		// An exact version bypasses the discovery step entirely, which is what makes
+		// a withdrawn version's explicit pin keep resolving: naming the version IS
+		// the override. It does not resolve quietly.
+		p.retraction.ReportPinned(reference, version)
 	}
 	// A Plugin publishes as ONE OCI manifest whose CONFIG blob is the entity YAML
 	// and whose single layer is the inline .wasm. A generic content-layer pull
@@ -345,4 +430,63 @@ func selectPullVersion(reference string, tags []string) (string, error) {
 		return "", fmt.Errorf("oci: no semver-tagged version found for %s: %w", reference, oci.ErrFetchNotFound)
 	}
 	return version, nil
+}
+
+// selectEntityPullVersion is the entity discovery step: the highest conformant
+// published version, minus any version the attached retraction screen reports
+// withdrawn.
+//
+// With no screen it is exactly selectPullVersion, which stays the one home of the
+// selection rule — the screen filters the candidate list and never re-implements
+// the choice.
+//
+// With a screen, a withdrawn version is removed before selection and the outcome
+// is announced, naming what was skipped, why, and what was taken instead. The
+// announcement is the point: skipping a version silently would substitute a
+// release the author never named on evidence absent from their own files, while
+// skipping it out loud is the guardrail the author can act on.
+//
+// The two failure modes are kept apart, because collapsing them would report the
+// wrong problem. When the screen withdrew at least one selectable version and
+// nothing eligible is left, the withdrawal IS the reason and the halt says so.
+// When it withdrew nothing, a failure to select has nothing to do with withdrawal
+// and keeps the not-found reading it has always had.
+//
+// Scope, stated rather than implied: this covers the core catalog entity pull and
+// nothing else. The library discovery step (PullLibrary), the sub-aggregate one
+// (PullAggregate) and the plugin-add command's own selection each reach
+// oci.SelectLatestVersion by their own route and are unscreened, as is the
+// long-running daemon's lazy descent, which builds an unscreened puller because
+// it has no writer to announce a skip on.
+func (p DefaultOCIPuller) selectEntityPullVersion(reference string, tags []string) (string, error) {
+	if p.retraction == nil {
+		return selectPullVersion(reference, tags)
+	}
+	eligible, excluded := p.retraction.ScreenVersions(reference, tags)
+	version, err := selectPullVersion(reference, eligible)
+	if err != nil {
+		if len(excluded) > 0 {
+			return "", fmt.Errorf("%w: %s: withdrawn: %s", ErrAllVersionsRetracted, reference, formatVersionExclusions(excluded))
+		}
+		return "", err
+	}
+	if len(excluded) > 0 {
+		p.retraction.ReportSelection(reference, version, excluded)
+	}
+	return version, nil
+}
+
+// formatVersionExclusions renders withdrawn versions and their reasons for a halt
+// message. The order is the screen's, which is ascending published version, so the
+// message is byte-stable for the same registry state.
+func formatVersionExclusions(excluded []VersionExclusion) string {
+	parts := make([]string, 0, len(excluded))
+	for _, x := range excluded {
+		if x.Reason == "" {
+			parts = append(parts, x.Version)
+			continue
+		}
+		parts = append(parts, x.Version+" ("+x.Reason+")")
+	}
+	return strings.Join(parts, ", ")
 }

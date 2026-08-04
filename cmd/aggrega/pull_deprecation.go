@@ -13,6 +13,7 @@ import (
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"oras.land/oras-go/v2"
 
+	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/deprecation"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
@@ -286,7 +287,48 @@ func discoverEntityDeprecation(
 	// The marker is a signed artifact: its signature is a referrer of the
 	// MARKER's own manifest digest, discovered and verified the same way an
 	// artifact signature is — but against the deprecation-signer trust set.
-	markerDigest := marker.Digest.String()
+	signer, err := verifyMarkerSignature(ctx, wsCfg, target, marker.Digest.String(), policy, origSigner)
+	if err != nil {
+		return nil, err
+	}
+	// The recorded diagnostic falls back to the reason when a marker carries no
+	// separate message, so the build-time notice is never blank.
+	message := decoded.Message
+	if message == "" {
+		message = decoded.Reason
+	}
+	return &lockfile.DeprecationRecord{
+		Message:  message,
+		Severity: string(decoded.Severity),
+		Signer:   signer,
+	}, nil
+}
+
+// verifyMarkerSignature verifies a deprecation marker's OWN signature against the
+// honored signer set and returns the verified signature to record. A marker is a
+// signed artifact in its own right: its signature is a referrer of the marker's
+// manifest digest, discovered and verified exactly as an artifact signature is,
+// but against the deprecation-signer trust set rather than the artifact one.
+//
+// It is the single home for that verification. Two passes need it — the pull-time
+// closure discovery that records a marker onto a lockfile row, and the index build
+// that records a marker per published version — and a second copy would be free to
+// drift on the one judgement that matters, which signer set is honored.
+//
+// origSigner is the original artifact's own verified signer, folded into the
+// honored set for a keyless registry so a publisher can withdraw their own
+// artifact; nil narrows the honored set to the registry's configured deprecation
+// identities. Returns the no-signature sentinel for a marker with no signature at
+// all, and the verification error for one whose signature does not verify — so an
+// unsigned marker and an untrusted one stay distinguishable to the caller.
+func verifyMarkerSignature(
+	ctx context.Context,
+	wsCfg workspaceconfig.Config,
+	target oras.ReadOnlyTarget,
+	markerDigest string,
+	policy workspaceconfig.RegistryConfig,
+	origSigner *pullverify.Result,
+) (*lockfile.VerifiedSignature, error) {
 	sigRefs, err := oci.ListReferrers(ctx, target, markerDigest, signing.BundleMediaType)
 	if err != nil {
 		return nil, fmt.Errorf("list marker signature referrers: %w", err)
@@ -305,21 +347,11 @@ func discoverEntityDeprecation(
 		}
 		res, verr := pullverify.VerifyBundle(wsCfg, bundle, markerDigest, markerPolicy)
 		if verr == nil {
-			// The recorded diagnostic falls back to the reason when a marker
-			// carries no separate message, so the build-time notice is never blank.
-			message := decoded.Message
-			if message == "" {
-				message = decoded.Reason
-			}
-			return &lockfile.DeprecationRecord{
-				Message:  message,
-				Severity: string(decoded.Severity),
-				Signer: &lockfile.VerifiedSignature{
-					Mode:         res.Mode,
-					Identity:     res.Identity,
-					Issuer:       res.Issuer,
-					BundleDigest: res.BundleDigest,
-				},
+			return &lockfile.VerifiedSignature{
+				Mode:         res.Mode,
+				Identity:     res.Identity,
+				Issuer:       res.Issuer,
+				BundleDigest: res.BundleDigest,
 			}, nil
 		}
 		lastErr = verr
@@ -328,6 +360,52 @@ func discoverEntityDeprecation(
 		lastErr = signing.ErrSignatureVerificationFailed
 	}
 	return nil, lastErr
+}
+
+// verifiedArtifactSigner recovers a published version's OWN verified signer from
+// its signature referrers, best-effort, returning nil when none verifies.
+//
+// The closure discovery pass gets this for free: a signature pass has already run
+// over the same artifacts and recorded each verified signer. The index build has
+// not, and it needs the same fact for the same reason — a keyless registry honors
+// a marker signed by the artifact's own publisher, so without it a publisher
+// withdrawing their own artifact would go unhonored and the withdrawal would never
+// be recorded.
+//
+// Every step is best-effort and nil is a complete answer: it narrows the honored
+// signer set to the registry's configured deprecation identities rather than
+// widening it, so a failure here can only under-record a withdrawal, never invent
+// one.
+func verifiedArtifactSigner(
+	ctx context.Context,
+	wsCfg workspaceconfig.Config,
+	target oras.ReadOnlyTarget,
+	subjectRef string,
+	policy workspaceconfig.RegistryConfig,
+) *pullverify.Result {
+	// Referrers are listed against the subject REFERENCE, matching the closure
+	// discovery pass, while the signature is verified against the resolved MANIFEST
+	// digest, which is what a bundle commits to. The two are deliberately different
+	// inputs: listing by reference is what the sibling path does, and it does not
+	// require the target to resolve a bare digest.
+	digest, exists, err := oci.Resolve(ctx, target, subjectRef)
+	if err != nil || !exists {
+		return nil
+	}
+	sigRefs, err := oci.ListReferrers(ctx, target, subjectRef, signing.BundleMediaType)
+	if err != nil || len(sigRefs) == 0 {
+		return nil
+	}
+	for _, ref := range sigRefs {
+		bundle, ferr := oci.FetchReferrerPayload(ctx, target, ref)
+		if ferr != nil {
+			continue
+		}
+		if res, verr := pullverify.VerifyBundle(wsCfg, bundle, digest, policy); verr == nil {
+			return res
+		}
+	}
+	return nil
 }
 
 // deprecationMarkerPolicy derives the trust policy a deprecation marker's
@@ -353,6 +431,177 @@ func deprecationMarkerPolicy(policy workspaceconfig.RegistryConfig, origSigner *
 	}
 	markerPolicy.TrustedIdentities = ids
 	return markerPolicy
+}
+
+// retractionScreen answers the registry-side discovery step from the local
+// registry index: which published versions of an artifact carry a
+// signature-verified marker at the withdrawal severity, and therefore must not be
+// selected by a reference that did not name them.
+//
+// It is offline by construction — the index is a snapshot a registry update built,
+// and reading it costs no round trip — which is the whole reason the exclusion can
+// happen at selection time at all. A live per-candidate marker lookup would need
+// each candidate's manifest digest plus a referrers listing, so it would scale with
+// the number of published versions, and it would put a network dependency inside a
+// selection primitive that three other call sites share.
+//
+// The cost of reading a snapshot is staleness, and it is not smoothed over: a
+// version withdrawn since the snapshot was taken is not seen, so every notice this
+// writes carries the moment the snapshot was taken and points at the command that
+// refreshes it. The screen protects against selecting a version known to be
+// withdrawn; it cannot promise a version is not withdrawn now.
+//
+// Only a signature-verified record screens a version. An unverified record carries
+// no trust basis, and letting one change what the compiler resolves would make an
+// unauthenticated registry-side claim load-bearing.
+type retractionScreen struct {
+	// withdrawnByURI maps an artifact's index URI to its withdrawn versions and
+	// the reason recorded against each.
+	withdrawnByURI map[string]map[string]string
+	// observedAt is when the index snapshot was taken; hasObservedAt distinguishes
+	// an absent stamp from one that happens to parse to the zero time.
+	observedAt    time.Time
+	hasObservedAt bool
+	out           io.Writer
+}
+
+// newRetractionScreen builds the discovery-step withdrawal screen for a registry
+// host from that host's local index, or returns nil when no screen can be formed:
+// an empty host, no writer to announce a skip on, no index built for the host, or
+// an index recording no verified withdrawal.
+//
+// A nil screen leaves the discovery step unscreened, which is the honest posture
+// rather than a degradation — with no local snapshot there is no verified fact to
+// act on, and acting on an unverified one is exactly what this must not do.
+func newRetractionScreen(rw *workspaceconfig.ResolvedWorkspace, host string, out io.Writer) catalog.RetractionScreen {
+	if host == "" || out == nil {
+		return nil
+	}
+	loaded, err := loadHostIndex(rw.Root(), rw.Config().ResolvedArtifactCacheDir(), host)
+	if err != nil {
+		return nil
+	}
+	withdrawnByURI := map[string]map[string]string{}
+	for _, rec := range loaded.Records {
+		for _, d := range rec.Deprecations {
+			// A softer severity warns without changing what is selected, and an
+			// unverified record is not a trust decision. Both are skipped here.
+			if d.Signer == nil || d.Marker.Severity != deprecation.SeverityRetracted {
+				continue
+			}
+			if withdrawnByURI[rec.URI] == nil {
+				withdrawnByURI[rec.URI] = map[string]string{}
+			}
+			withdrawnByURI[rec.URI][d.Version] = d.Marker.Reason
+		}
+	}
+	if len(withdrawnByURI) == 0 {
+		return nil
+	}
+	return &retractionScreen{
+		withdrawnByURI: withdrawnByURI,
+		observedAt:     loaded.LastUpdated,
+		hasObservedAt:  loaded.HasTimestamp,
+		out:            out,
+	}
+}
+
+// ScreenVersions partitions an artifact's published tags into the versions the
+// discovery step may select and the versions withdrawn from it.
+//
+// A withdrawn tag the discovery step could not have selected anyway — one that is
+// not strict SemVer, or a pre-release, which the step skips — is left in the
+// eligible list rather than reported as an exclusion. Screening it would change
+// nothing about the outcome while turning a genuine no-conformant-version miss
+// into a withdrawal that never happened. The eligibility test is the selection
+// primitive itself rather than a re-derived rule, so the two cannot disagree about
+// what "selectable" means.
+func (s *retractionScreen) ScreenVersions(reference string, tags []string) ([]string, []catalog.VersionExclusion) {
+	withdrawn, ok := s.withdrawnByURI[indexURIForReference(reference)]
+	if !ok {
+		return tags, nil
+	}
+	selectable := func(tag string) bool {
+		return oci.SelectLatestVersion([]string{tag}, false /* includePreRelease */) != ""
+	}
+	eligible := make([]string, 0, len(tags))
+	var excludedVersions []string
+	for _, tag := range tags {
+		if _, hit := withdrawn[tag]; hit && selectable(tag) {
+			excludedVersions = append(excludedVersions, tag)
+			continue
+		}
+		eligible = append(eligible, tag)
+	}
+	if len(excludedVersions) == 0 {
+		return tags, nil
+	}
+	// Ascending published-version order, so the notice and any halt message are
+	// byte-stable for the same registry state regardless of the order the registry
+	// listed the tags in.
+	excluded := make([]catalog.VersionExclusion, 0, len(excludedVersions))
+	for _, v := range oci.SortedSemverTags(excludedVersions) {
+		excluded = append(excluded, catalog.VersionExclusion{Version: v, Reason: withdrawn[v]})
+	}
+	return eligible, excluded
+}
+
+// ReportSelection names every version the screen withdrew, the reason recorded
+// against it, and the version taken in its place. Announcing the substitution is
+// what separates this from a quiet fallback: the reference did not name the
+// version that was taken, and the evidence for skipping the higher one is not in
+// the author's own files, so it is stated where they will read it.
+func (s *retractionScreen) ReportSelection(reference, selected string, excluded []catalog.VersionExclusion) {
+	for _, x := range excluded {
+		if x.Reason == "" {
+			fmt.Fprintf(s.out, "  retraction: %s:%s is withdrawn and was not selected\n", reference, x.Version)
+			continue
+		}
+		fmt.Fprintf(s.out, "  retraction: %s:%s is withdrawn and was not selected: %s\n", reference, x.Version, x.Reason)
+	}
+	fmt.Fprintf(s.out, "  retraction: %s resolved to %s instead%s\n", reference, selected, s.asOfSuffix())
+}
+
+// ReportPinned announces that a reference named an exact version carrying a
+// withdrawal record. Such a reference still resolves — naming the version is the
+// override, and refusing it would break a build that already committed to that
+// version — so this reports rather than refuses.
+func (s *retractionScreen) ReportPinned(reference, version string) {
+	withdrawn, ok := s.withdrawnByURI[indexURIForReference(reference)]
+	if !ok {
+		return
+	}
+	reason, hit := withdrawn[version]
+	if !hit {
+		return
+	}
+	if reason == "" {
+		fmt.Fprintf(s.out, "  retraction: %s:%s is withdrawn; resolving it because the reference names it explicitly%s\n",
+			reference, version, s.asOfSuffix())
+		return
+	}
+	fmt.Fprintf(s.out, "  retraction: %s:%s is withdrawn (%s); resolving it because the reference names it explicitly%s\n",
+		reference, version, reason, s.asOfSuffix())
+}
+
+// asOfSuffix renders when the withdrawal record was observed, so a reader can tell
+// a fresh record from a stale one, plus the command that refreshes it. It never
+// claims currency: the record says what the registry reported when the index was
+// last built, not what it reports now.
+func (s *retractionScreen) asOfSuffix() string {
+	if !s.hasObservedAt {
+		return " (recorded in the local registry index, which carries no build time; run `aggrega registry update` to refresh it)"
+	}
+	return fmt.Sprintf(" (recorded in the local registry index as of %s; run `aggrega registry update` to refresh it)",
+		s.observedAt.UTC().Format(time.RFC3339))
+}
+
+// indexURIForReference maps a bound OCI repository reference (`<host>/<path>`, the
+// form the entity pull binds and fetches from) to the artifact URI the local index
+// keys its records by. The two differ only by the scheme prefix, and deriving one
+// from the other here keeps the single mapping out of every call site.
+func indexURIForReference(reference string) string {
+	return "oci://" + reference
 }
 
 // deprecationSignerLabel renders a recorded marker signer for a diagnostic

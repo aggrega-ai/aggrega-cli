@@ -19,7 +19,9 @@ import (
 	"oras.land/oras-go/v2"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/deprecation"
+	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
+	"github.com/aggrega-ai/aggrega-cli/pkg/pullverify"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
@@ -104,8 +106,10 @@ var registryIndexTarget = func(cfg workspaceconfig.Config, host string) (registr
 // that the listing is unchanged; it is empty when the registry serves no
 // validator or the listing spanned more than one page. Deprecations records, per
 // deprecated version, the authoritative deprecation marker discovered from that
-// version's referrers, so the advisory display reads a marker from the local
-// index rather than probing the registry live. All are omitted when empty.
+// version's referrers together with that marker's verified signature, so a
+// consumer reads a signed claim from the local index rather than probing the
+// registry live; a version whose marker does not verify contributes no entry. All
+// are omitted when empty.
 type IndexRecord struct {
 	URI            string                    `json:"uri"`
 	Name           string                    `json:"name"`
@@ -123,14 +127,23 @@ type IndexRecord struct {
 }
 
 // VersionDeprecation pairs a strict-SemVer version with the authoritative
-// deprecation marker discovered on that version's referrers. The whole marker is
-// stored (all its fields), so the advisory display reconstructs the same view
-// off the local index that a live referrer probe produced. The marshalled marker
-// carries a fixed field order, so a record is byte-identical for identical
-// registry state.
+// deprecation marker discovered on that version's referrers, plus the verified
+// signature of that marker. The whole marker is stored (all its fields), so a
+// display reconstructs the same view off the local index that a live referrer
+// probe produced. The marshalled marker carries a fixed field order, so a record
+// is byte-identical for identical registry state.
+//
+// Signer is what makes the record a trust decision rather than a hint: a marker
+// is recorded only when its OWN signature verifies against the honored signer set,
+// so a present record implies a verified one and a consumer needs no second
+// judgement. It is a pointer so a record written before verification existed
+// decodes with no signer and is therefore not honored — the safe direction, since
+// an unverified record can then only fail to exclude a version, never exclude one
+// on unauthenticated evidence.
 type VersionDeprecation struct {
-	Version string             `json:"version"`
-	Marker  deprecation.Marker `json:"marker"`
+	Version string                      `json:"version"`
+	Marker  deprecation.Marker          `json:"marker"`
+	Signer  *lockfile.VerifiedSignature `json:"signer,omitempty"`
 }
 
 // RegistryIndex is the in-memory aggregate a registry update builds for one
@@ -300,7 +313,11 @@ func updateHostIndex(ctx context.Context, cfg workspaceconfig.Config, root, cach
 	if !upgrade {
 		prior = loadPriorRecords(root, cacheDir, host)
 	}
-	idx, err := buildHostIndex(ctx, host, src, prior, out)
+	// The host's own trust policy, resolved once for the whole walk: it decides
+	// which signers may withdraw a version of anything this host serves, so every
+	// repository under the host is verified against the same set.
+	policy, _ := cfg.RegistryTrustPolicy(host)
+	idx, err := buildHostIndex(ctx, cfg, policy, host, src, prior, out)
 	if err != nil {
 		return 0, err
 	}
@@ -337,14 +354,22 @@ func loadPriorRecords(root, cacheDir, host string) map[string]IndexRecord {
 // by URI then version so the emitted files are deterministic. A repository that
 // dropped out of the registry is simply not enumerated, so it contributes no
 // record and its file is not rewritten (the writer resets the host directory).
-func buildHostIndex(ctx context.Context, host string, src registryIndexSource, prior map[string]IndexRecord, out io.Writer) (RegistryIndex, error) {
+func buildHostIndex(
+	ctx context.Context,
+	wsCfg workspaceconfig.Config,
+	policy workspaceconfig.RegistryConfig,
+	host string,
+	src registryIndexSource,
+	prior map[string]IndexRecord,
+	out io.Writer,
+) (RegistryIndex, error) {
 	repos, err := searchRegistry(ctx, src, "", catalogSearchScope)
 	if err != nil {
 		return RegistryIndex{}, err
 	}
 	idx := RegistryIndex{Host: host}
 	for _, repo := range repos {
-		rec, ok := indexRepo(ctx, host, src, repo, prior, out)
+		rec, ok := indexRepo(ctx, wsCfg, policy, host, src, repo, prior, out)
 		if !ok {
 			continue
 		}
@@ -390,7 +415,16 @@ func sortIndexRecords(records []IndexRecord) {
 // failure, a resolve failure, or a manifest read failure — is skipped with a note
 // so one unreadable repository does not abandon the walk, mirroring the search
 // primitive's partial-on-error posture.
-func indexRepo(ctx context.Context, host string, src registryIndexSource, repo string, prior map[string]IndexRecord, out io.Writer) (IndexRecord, bool) {
+func indexRepo(
+	ctx context.Context,
+	wsCfg workspaceconfig.Config,
+	policy workspaceconfig.RegistryConfig,
+	host string,
+	src registryIndexSource,
+	repo string,
+	prior map[string]IndexRecord,
+	out io.Writer,
+) (IndexRecord, bool) {
 	target, err := src.Repository(repo)
 	if err != nil {
 		fmt.Fprintf(out, "  skipped %s: %v\n", repo, err)
@@ -473,7 +507,7 @@ func indexRepo(ctx context.Context, host string, src registryIndexSource, repo s
 	rec.Versions = versions
 	rec.ManifestDigest = manifestDigest
 	rec.ListingDigest = listingDigest
-	rec.Deprecations = collectVersionDeprecations(ctx, target, versions)
+	rec.Deprecations = collectVersionDeprecations(ctx, wsCfg, policy, target, repo, versions, out)
 	return rec, true
 }
 
@@ -493,26 +527,73 @@ func equalStrings(a, b []string) bool {
 }
 
 // collectVersionDeprecations scans each conforming version's deprecation
-// referrers and records the authoritative marker for every version that carries
-// one, in the ascending version order it is given. Each version's marker is
-// selected by the same newest-issuedOn rule the live probe uses (with the
-// manifest digest as the deterministic tiebreak), so the index-served advisory
-// reproduces the live view. Every step is best-effort: a referrer-listing or
-// decode failure skips that version rather than failing the build, mirroring the
-// walk's partial-on-error posture. A version with no marker contributes nothing,
-// so the slice is empty when no version is deprecated.
-func collectVersionDeprecations(ctx context.Context, target oras.ReadOnlyTarget, versions []string) []VersionDeprecation {
+// referrers and records the authoritative marker for every version that carries a
+// marker whose OWN signature verifies, in the ascending version order it is given.
+// Each version's marker is selected by the same newest-issuedOn rule the closure
+// discovery pass uses (with the manifest digest as the deterministic tiebreak), and
+// verified through the same single verification home, so the two passes cannot
+// disagree about which marker is authoritative or which signer is honored.
+//
+// Recording implies verification, and that invariant is what the record is for: a
+// consumer reading the index offline — including the discovery step that refuses to
+// select a withdrawn version — acts on a signed claim it does not have to re-judge.
+// A marker with no signature, or one that does not verify against the honored set,
+// is not recorded at all rather than recorded as unverified: a record that had to be
+// checked before use would put the trust judgement back at every read site.
+//
+// A registry whose policy skips signature verification records nothing. That is the
+// operator's own choice rather than a gap — with verification off there is no trust
+// basis for a withdrawal, and inventing one from an unauthenticated marker is
+// exactly what must not happen.
+//
+// The original artifact's own signer is recovered only on a keyless policy, where
+// the honored set folds it in so a publisher can withdraw their own artifact. A
+// keyed policy pins one key, so the same key already IS the same signer and the two
+// extra reads are skipped.
+//
+// Every step stays best-effort: a referrer-listing, decode or verification failure
+// skips that version rather than failing the index build, mirroring the walk's
+// partial-on-error posture. A version with no honored marker contributes nothing, so
+// the slice is empty when no version is withdrawn or deprecated.
+//
+// A marker that is PRESENT but not honored is noted rather than dropped in silence.
+// Silence there would be the worst of the three outcomes: the operator would see an
+// index with no withdrawal, having attached one, and nothing would say why. The note
+// mirrors the closure discovery pass, which reports the same condition in the same
+// words.
+func collectVersionDeprecations(
+	ctx context.Context,
+	wsCfg workspaceconfig.Config,
+	policy workspaceconfig.RegistryConfig,
+	target oras.ReadOnlyTarget,
+	repo string,
+	versions []string,
+	out io.Writer,
+) []VersionDeprecation {
+	if wsCfg.SkipSignatureVerification || policy.SkipSignatureVerification {
+		return nil
+	}
 	var deprecations []VersionDeprecation
 	for _, version := range versions {
 		markers, err := oci.ListReferrers(ctx, target, version, deprecation.ArtifactType)
 		if err != nil || len(markers) == 0 {
 			continue
 		}
-		_, marker, err := latestDeprecationMarker(ctx, target, markers)
+		markerDesc, marker, err := latestDeprecationMarker(ctx, target, markers)
 		if err != nil {
+			fmt.Fprintf(out, "  deprecation: %s:%s: marker present but not readable (%v); not recorded\n", repo, version, err)
 			continue
 		}
-		deprecations = append(deprecations, VersionDeprecation{Version: version, Marker: marker})
+		var origSigner *pullverify.Result
+		if policy.PublicKey == "" {
+			origSigner = verifiedArtifactSigner(ctx, wsCfg, target, version, policy)
+		}
+		signer, err := verifyMarkerSignature(ctx, wsCfg, target, markerDesc.Digest.String(), policy, origSigner)
+		if err != nil {
+			fmt.Fprintf(out, "  deprecation: %s:%s: marker present but not honored (%v); not recorded\n", repo, version, err)
+			continue
+		}
+		deprecations = append(deprecations, VersionDeprecation{Version: version, Marker: marker, Signer: signer})
 	}
 	return deprecations
 }

@@ -21,6 +21,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/deprecation"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
+	"github.com/aggrega-ai/aggrega-cli/pkg/signing"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
@@ -41,6 +42,65 @@ func (c *countingTarget) Fetch(ctx context.Context, target ocispec.Descriptor) (
 
 const updateTestConfig = "workspace: {}\ndefault_registry: hub.aggrega.ai\n" +
 	"registries:\n  - host: hub.aggrega.ai\n    name: hub\n"
+
+// keyedMarkerSigner returns a keyed signer plus a workspace config that pins its
+// public key on the test host. The index build records a deprecation marker only
+// when the marker's OWN signature verifies against the honored signer set, so a
+// test that needs a recorded marker must attach a signed one and must configure the
+// key that verifies it. A pinned key makes the same key the same signer, which is
+// what keeps these in-memory tests free of a keyless trust root.
+func keyedMarkerSigner(t *testing.T) (signing.Signer, string) {
+	t.Helper()
+	privPEM, pubPEM, err := signing.GenerateKeyedPEM()
+	if err != nil {
+		t.Fatalf("GenerateKeyedPEM: %v", err)
+	}
+	signer, err := signing.LoadKeyedSigner(privPEM, nil)
+	if err != nil {
+		t.Fatalf("LoadKeyedSigner: %v", err)
+	}
+	var b strings.Builder
+	b.WriteString("workspace: {}\ndefault_registry: hub.aggrega.ai\n")
+	b.WriteString("registries:\n  - host: hub.aggrega.ai\n    name: hub\n")
+	b.WriteString("    public_key: |\n")
+	for _, line := range strings.Split(strings.TrimRight(string(pubPEM), "\n"), "\n") {
+		b.WriteString("      " + line + "\n")
+	}
+	return signer, b.String()
+}
+
+// attachSignedMarkerToTag attaches marker to tag on an in-memory store through the
+// production attach path, so the marker and the signature of its own manifest
+// digest land in the same two-referrer shape `aggrega deprecate` writes. Calling
+// the production path rather than re-deriving it is what keeps a test fixture from
+// asserting against a shape the command does not actually produce.
+//
+// It then makes the marker manifest resolvable BY DIGEST, which is a fidelity shim
+// for the in-memory store rather than anything the production path needs. A marker
+// is an untagged referrer, and verifying its own signature means listing referrers
+// of the marker's digest — a registry resolves a manifest by digest, while the
+// in-memory store resolves only what it has tagged, so without this the marker's
+// signature is unreachable in-memory and the marker is correctly reported
+// unhonored. The end-to-end behaviour is proven against a real registry elsewhere;
+// this only lets the offline index tests reach the same code path.
+func attachSignedMarkerToTag(t *testing.T, store *memory.Store, tag string, marker deprecation.Marker, signer signing.Signer) {
+	t.Helper()
+	ctx := context.Background()
+	err := attachSignedMarker(ctx, io.Discard, store, tag,
+		"hub.aggrega.ai/component/core/api-server:"+tag, marker, signer)
+	if err != nil {
+		t.Fatalf("attachSignedMarker(%s): %v", tag, err)
+	}
+	markers, err := oci.ListReferrers(ctx, store, tag, deprecation.ArtifactType)
+	if err != nil || len(markers) == 0 {
+		t.Fatalf("marker not discoverable after attach on %s: %v (%d found)", tag, err, len(markers))
+	}
+	for _, m := range markers {
+		if terr := store.Tag(ctx, m, m.Digest.String()); terr != nil {
+			t.Fatalf("tag marker by digest: %v", terr)
+		}
+	}
+}
 
 func frozenClock() func() time.Time {
 	return func() time.Time { return time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC) }
@@ -531,25 +591,23 @@ func TestRegistryUpdateRecordsPerVersionDeprecations(t *testing.T) {
 	// Not parallel: mutates the process-global registryIndexTarget seam other tests read.
 	const host = "hub.aggrega.ai"
 	const repo = "component/core/api-server"
-	ctx := context.Background()
 
 	meta := oci.SearchableMetadata{Description: "d", Category: "compute", Kind: "Component"}
 	target := seedComponentRepo(t, []string{"1.0.0", "2.0.0"}, meta)
 
-	// Attach a deprecation marker to 1.0.0 only; 2.0.0 stays undeprecated.
+	// Attach a SIGNED deprecation marker to 1.0.0 only; 2.0.0 stays undeprecated.
+	// The signature is required, not incidental: an unsigned marker is not recorded
+	// at all, because a consumer reading this record offline — including the
+	// resolution step that refuses to select a withdrawn version — must be acting on
+	// a signed claim rather than an unauthenticated one.
+	signer, content := keyedMarkerSigner(t)
 	marker := deprecation.Marker{
 		Severity:    deprecation.SeverityWarning,
 		Reason:      "superseded by 2.0.0",
 		Replacement: "oci://hub.aggrega.ai/component/core/api-server:2.0.0",
 		IssuedOn:    "2026-05-01T00:00:00Z",
 	}
-	payload, err := deprecation.Marshal(marker)
-	if err != nil {
-		t.Fatalf("marshal marker: %v", err)
-	}
-	if _, err := oci.AttachReferrer(ctx, target.Store, "1.0.0", deprecation.ArtifactType, payload); err != nil {
-		t.Fatalf("attach deprecation referrer: %v", err)
-	}
+	attachSignedMarkerToTag(t, target.Store, "1.0.0", marker, signer)
 
 	src := fakeIndexSource{
 		repos:   []string{repo},
@@ -558,8 +616,6 @@ func TestRegistryUpdateRecordsPerVersionDeprecations(t *testing.T) {
 	withIndexTarget(t, src)
 
 	root := t.TempDir()
-	content := "workspace: {}\ndefault_registry: hub.aggrega.ai\n" +
-		"registries:\n  - host: hub.aggrega.ai\n    name: hub\n"
 	rw := resolveWorkspaceWithConfig(t, root, content)
 	frozen := func() time.Time { return time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC) }
 
@@ -578,7 +634,9 @@ func TestRegistryUpdateRecordsPerVersionDeprecations(t *testing.T) {
 	}
 	rec := loaded.Records[0]
 	if len(rec.Deprecations) != 1 {
-		t.Fatalf("deprecations = %+v; want exactly the one deprecated version", rec.Deprecations)
+		// The walk's own notes name a marker it declined to honor, so a failure here
+		// says WHY rather than only that the slice is empty.
+		t.Fatalf("deprecations = %+v; want exactly the one deprecated version\nwalk output:\n%s", rec.Deprecations, out.String())
 	}
 	got := rec.Deprecations[0]
 	if got.Version != "1.0.0" {
@@ -589,6 +647,14 @@ func TestRegistryUpdateRecordsPerVersionDeprecations(t *testing.T) {
 		got.Marker.Replacement != marker.Replacement ||
 		got.Marker.IssuedOn != marker.IssuedOn {
 		t.Errorf("marker round-trip mismatch: got %+v want %+v", got.Marker, marker)
+	}
+	// Recording implies verification: the record carries the verified signature of
+	// the marker's own manifest digest, so no read site has to re-judge trust.
+	if got.Signer == nil {
+		t.Fatal("recorded marker carries no verified signature; recording must imply verification")
+	}
+	if got.Signer.Mode != "keyed" {
+		t.Errorf("recorded signer mode = %q; want keyed for a key-pinned registry", got.Signer.Mode)
 	}
 
 	// The per-repo record file is byte-identical across two runs against the same
@@ -723,14 +789,14 @@ func TestRegistryUpdateDeprecationOnExistingTagBound(t *testing.T) {
 	// Not parallel: mutates the process-global registryIndexTarget seam other tests read.
 	const host = "hub.aggrega.ai"
 	const repo = "component/core/api-server"
-	ctx := context.Background()
 	meta := oci.SearchableMetadata{Description: "d", Category: "compute", Kind: "Component"}
 	target := seedComponentRepo(t, []string{"1.0.0"}, meta)
 	src := fakeIndexSource{repos: []string{repo}, targets: map[string]oras.ReadOnlyTarget{repo: target}}
 	withIndexTarget(t, src)
 
 	root := t.TempDir()
-	rw := resolveWorkspaceWithConfig(t, root, updateTestConfig)
+	signer, content := keyedMarkerSigner(t)
+	rw := resolveWorkspaceWithConfig(t, root, content)
 	cacheDir := rw.Config().ResolvedArtifactCacheDir()
 	frozen := frozenClock()
 	var out bytes.Buffer
@@ -740,16 +806,10 @@ func TestRegistryUpdateDeprecationOnExistingTagBound(t *testing.T) {
 		t.Fatalf("registryUpdateRun (build): %v", err)
 	}
 
-	// Attach a marker to the EXISTING 1.0.0 tag: this adds a sibling referrer, so
-	// neither the tag set nor 1.0.0's manifest digest changes.
+	// Attach a signed marker to the EXISTING 1.0.0 tag: this adds sibling referrers,
+	// so neither the tag set nor 1.0.0's manifest digest changes.
 	marker := deprecation.Marker{Severity: deprecation.SeverityWarning, Reason: "old", IssuedOn: "2026-05-01T00:00:00Z"}
-	payload, err := deprecation.Marshal(marker)
-	if err != nil {
-		t.Fatalf("marshal marker: %v", err)
-	}
-	if _, err := oci.AttachReferrer(ctx, target.Store, "1.0.0", deprecation.ArtifactType, payload); err != nil {
-		t.Fatalf("attach referrer: %v", err)
-	}
+	attachSignedMarkerToTag(t, target.Store, "1.0.0", marker, signer)
 
 	// Conditional refresh reuses the prior record — the new marker is NOT seen.
 	if err := registryUpdateRun(registryUpdateConfig{ws: rw, Out: &out, now: frozen}); err != nil {

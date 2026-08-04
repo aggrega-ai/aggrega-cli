@@ -14,11 +14,20 @@ import (
 )
 
 // deprecationView is the display-facing summary of the latest deprecation
-// marker recorded for an artifact. It is read from the local discovery index
-// (the snapshot a registry update builds) for advisory display in inspect, and
-// is NOT signature-verified — the signed, verified enforcement path runs at pull
-// time and records the build-time gate. So a view surfaced here is a hint, not a
-// trust decision.
+// marker recorded for an artifact. It is read from the local registry index — the
+// snapshot a registry update builds — where a marker is recorded only once its own
+// signature has verified against the honored signer set. So a view surfaced here
+// rests on a signed claim rather than an unauthenticated one, and the same
+// recorded fact is what the resolution step reads when it refuses to select a
+// withdrawn version.
+//
+// What it is NOT is current. The record says what the registry reported when the
+// index was last built; a marker attached since then is not in it. ObservedAt
+// carries that moment so a stale record is distinguishable from a fresh one, and
+// HasObservedAt separates an index that carries no build time from one whose build
+// time happens to be the zero time. A display that omitted the moment would invite
+// the reader to treat the absence of a marker as evidence of non-withdrawal, which
+// the design cannot support.
 type deprecationView struct {
 	Severity    string
 	Reason      string
@@ -27,6 +36,9 @@ type deprecationView struct {
 	// Tag is the version the winning marker was recorded on, so a per-repository
 	// advisory can name which release is deprecated.
 	Tag string
+	// ObservedAt is when the index snapshot this view was read from was built.
+	ObservedAt    time.Time
+	HasObservedAt bool
 }
 
 // repoDeprecationLookup resolves the latest deprecation marker for a repository
@@ -65,7 +77,14 @@ var newRepoDeprecationLookup = func(rw *workspaceconfig.ResolvedWorkspace, host 
 		if !ok {
 			return deprecationView{}, false
 		}
-		return latestDeprecationView(deps)
+		v, found := latestDeprecationView(deps)
+		if !found {
+			return deprecationView{}, false
+		}
+		// The moment the snapshot was taken travels with the view, so the display
+		// states what the record is as-of rather than implying it is current.
+		v.ObservedAt, v.HasObservedAt = loaded.LastUpdated, loaded.HasTimestamp
+		return v, true
 	}
 }
 
@@ -117,7 +136,13 @@ var lookupComponentDeprecation = func(rw *workspaceconfig.ResolvedWorkspace, com
 
 // renderDeprecationBlock writes a multi-line deprecation notice for an inspected
 // entity: the severity (and the version it was found on), the reason, the
-// replacement when named, and the issue date.
+// replacement when named, the issue date, and the moment the record was observed.
+//
+// The observation moment is not decoration. Two different times are in play and
+// conflating them would mislead: the issue date is when the publisher issued the
+// marker, while the observed moment is when this workspace last looked. Only the
+// second tells the reader how far the record might have fallen behind, so it names
+// the command that refreshes it.
 func renderDeprecationBlock(out io.Writer, v deprecationView) {
 	fmt.Fprintf(out, "Deprecation: %s", v.Severity)
 	if v.Tag != "" {
@@ -132,5 +157,11 @@ func renderDeprecationBlock(out io.Writer, v deprecationView) {
 	}
 	if v.IssuedOn != "" {
 		fmt.Fprintf(out, "  Issued: %s\n", v.IssuedOn)
+	}
+	if v.HasObservedAt {
+		fmt.Fprintf(out, "  Recorded as of: %s (run `aggrega registry update` to refresh)\n",
+			v.ObservedAt.UTC().Format(time.RFC3339))
+	} else {
+		fmt.Fprintln(out, "  Recorded from the local registry index, which carries no build time (run `aggrega registry update` to refresh)")
 	}
 }

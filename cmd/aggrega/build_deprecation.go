@@ -33,12 +33,20 @@ import (
 //     build.halt_on_deprecated: halt when the entity is deprecated AND the flag
 //     is set, advisory otherwise.
 //
+// Only the first of those two reports an observation moment, and the asymmetry is
+// deliberate: a recorded marker states what a registry reported at some past pull,
+// so how stale it might be is part of the fact, while metadata.deprecated is read
+// from the resolved entity in this build and has no separate moment to state.
+//
 // The first halting source encountered fails the build. Advisories for every
 // deprecated entity write to diagOut regardless. Iteration is over the sorted
 // closure-entity URIs so the surfaced advisory/halt order is deterministic and
 // independent of closure order.
 func enforceClosureDeprecation(cl closure.Closure, lf *lockfile.Lockfile, lazyView *catalog.LazyLookup, buildCfg workspaceconfig.BuildConfig, diagOut io.Writer) error {
 	threshold := deprecation.Severity(buildCfg.HaltOnDeprecatedSeverity)
+	// One stamp governs every recorded marker in this lockfile, so it is rendered
+	// once rather than per entity.
+	asOf := lockfileAsOfSuffix(lf.GeneratedAt)
 
 	recByURI := make(map[string]*lockfile.DeprecationRecord)
 	for i := range lf.Entities {
@@ -66,10 +74,13 @@ func enforceClosureDeprecation(cl closure.Closure, lf *lockfile.Lockfile, lazyVi
 		// severity threshold.
 		if rec, ok := recByURI[e.URI]; ok {
 			if deprecation.MeetsThreshold(deprecation.Severity(rec.Severity), threshold) {
-				return fmt.Errorf("%w: %s is deprecated (%s): %s: %w",
-					deprecation.ErrDeprecatedEntity, e.URI, rec.Severity, rec.Message, errHaltThreshold(threshold))
+				// The moment qualifies the recorded fact, so it sits with the
+				// message rather than after the threshold clause, which would
+				// read as though the policy were what had been recorded.
+				return fmt.Errorf("%w: %s is deprecated (%s): %s%s: %w",
+					deprecation.ErrDeprecatedEntity, e.URI, rec.Severity, rec.Message, asOf, errHaltThreshold(threshold))
 			}
-			fmt.Fprintf(diagOut, "  deprecation: %s is deprecated (%s): %s\n", e.URI, rec.Severity, rec.Message)
+			fmt.Fprintf(diagOut, "  deprecation: %s is deprecated (%s): %s%s\n", e.URI, rec.Severity, rec.Message, asOf)
 		}
 
 		// Author-time source: metadata.deprecated on the resolved entity, gated
@@ -90,6 +101,36 @@ func enforceClosureDeprecation(cl closure.Closure, lf *lockfile.Lockfile, lazyVi
 // message wraps first; this only names the policy that triggered it.
 func errHaltThreshold(threshold deprecation.Severity) error {
 	return fmt.Errorf("halt_on_deprecated_severity is %q", threshold)
+}
+
+// lockfileAsOfSuffix renders when a recorded marker was observed — the moment the
+// lockfile carrying it was generated — together with the command that refreshes it,
+// so a reader can tell a stale record from a fresh one. A withdrawal is mutable
+// registry state, so the record says what the registry reported at that pull and
+// never what it reports now; the suffix exists to stop the message implying a
+// currency the offline build cannot provide.
+//
+// The stamp can only lag the true observation, never lead it: it is set solely when
+// a pull generates the lockfile, a re-pull that changes nothing keeps the earlier
+// stamp, and the build preserves whatever it loaded. So the suffix errs toward
+// reporting the record as older than it is, which is the safe direction.
+//
+// generatedAt is the lockfile's own stamp, already RFC 3339 when present; empty
+// means the lockfile carries none, which is reported as such rather than rendered
+// as a zero moment.
+//
+// This is deliberately NOT shared with the as-of wording on the index-served
+// surfaces (the pull-time withdrawal notices and the inspect deprecation block).
+// The two report different facts: a different provenance (the local registry index
+// versus the lockfile), a different refresh command, and a different input (a parsed
+// instant plus a presence flag versus an already-formatted string, so no formatting
+// rule is duplicated here). Folding them together would take a template with every
+// distinguishing part injected, which would single-source nothing.
+func lockfileAsOfSuffix(generatedAt string) string {
+	if generatedAt == "" {
+		return " (recorded in the lockfile at pull, which carries no generation time; re-run `aggrega pull` to refresh it)"
+	}
+	return fmt.Sprintf(" (recorded in the lockfile at pull, as of %s; re-run `aggrega pull` to refresh it)", generatedAt)
 }
 
 // entityDeprecated reports whether the closure entity carries an author-time

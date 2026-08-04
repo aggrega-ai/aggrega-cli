@@ -339,7 +339,12 @@ func pullRun(cfg pullConfig) error {
 	workspaceRoot := rw.Root()
 	puller := cfg.puller
 	if puller == nil {
-		puller = catalog.NewDefaultOCIPuller(wsCfg)
+		// The discovery step consults the local registry index so a version recorded
+		// withdrawn is not selected by a reference that did not name it, and every
+		// skip is announced on the same writer the deprecation notices use. A
+		// workspace with no index built gets a nil screen and an unscreened
+		// discovery step.
+		puller = catalog.NewOCIPullerWithRetractionScreen(wsCfg, newRetractionScreen(rw, wsCfg.DefaultRegistry, cfg.DiagOut))
 	}
 	// The registry (Tier-3) seam for a bare-name top-level spec.aggregate that the
 	// same-directory scan and the catalog both miss: fetch + cache it by identity,
