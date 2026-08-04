@@ -87,9 +87,9 @@ var registryIndexTarget = func(cfg workspaceconfig.Config, host string) (registr
 // IndexRecord is one entity's row in a local registry index: its OCI URI, the
 // latest published version, the full list of published versions, and the
 // searchable catalog facets read back from the latest version's manifest
-// annotations. Labels reconstructs the catalog category label from the category
-// facet so a search can match records with the same label selector the catalog
-// uses; it is absent when the entity declares no category. PluginType and
+// annotations. Labels is the entity's whole authored label map in author order,
+// so a search matches records with the same label selector the catalog uses; it
+// is absent when the published manifest carries no label map. PluginType and
 // Capabilities carry a plugin's socket facets and are absent on non-plugin
 // entities.
 //
@@ -160,11 +160,11 @@ With no argument, every configured registry is indexed. With a single registry
 argument (a host or a friendly alias), only that registry is indexed.
 
 For each repository the highest strict-SemVer version is selected (pre-release
-versions are skipped) and its catalog facets — kind, description, category, and,
-for plugins, socket type and capabilities — are recorded from the published
-manifest. A repository with no conforming version is skipped; a repository that
-cannot be read is skipped with a note, so one unreadable repository does not
-abandon the whole index.
+versions are skipped) and its catalog facets — kind, description, category,
+labels, and, for plugins, socket type and capabilities — are recorded from the
+published manifest. A repository with no conforming version is skipped; a
+repository that cannot be read is skipped with a note, so one unreadable
+repository does not abandon the whole index.
 
 The per-repository records are byte-identical across two runs against the same
 registry state; the freshness timestamp is written to a sibling file so it never
@@ -465,7 +465,11 @@ func indexRepo(ctx context.Context, host string, src registryIndexSource, repo s
 		fmt.Fprintf(out, "  skipped %s: %v\n", repo, err)
 		return IndexRecord{}, false
 	}
-	rec := recordFromAnnotations(host, repo, version, annotations)
+	rec, err := recordFromAnnotations(host, repo, version, annotations)
+	if err != nil {
+		fmt.Fprintf(out, "  skipped %s: %v\n", repo, err)
+		return IndexRecord{}, false
+	}
 	rec.Versions = versions
 	rec.ManifestDigest = manifestDigest
 	rec.ListingDigest = listingDigest
@@ -517,10 +521,20 @@ func collectVersionDeprecations(ctx context.Context, target oras.ReadOnlyTarget,
 // version and its manifest annotations. Every facet is read through the
 // searchable-annotation constants, so no annotation key is spelled here as a
 // bare string. Capabilities were stamped comma-joined in author order and are
-// split back into a list. The catalog category label is reconstructed from the
-// category facet so a search can match with the same label selector the catalog
-// uses; the label is omitted when the entity declares no category.
-func recordFromAnnotations(host, repo, version string, ann map[string]string) IndexRecord {
+// split back into a list.
+//
+// Labels are decoded from the label-map annotation the publish stamped, so a
+// search matches on every label the entity's author wrote. The decode preserves
+// author order, which is what keeps a rewritten record byte-identical for
+// unchanged registry state. A record carries no labels when the published
+// manifest carries no label map — an entity that declares none, and an artifact
+// published before the whole map travelled.
+//
+// A label map that is present but undecodable is an error rather than a record
+// with the labels dropped: a partially-populated label map would make a selector
+// silently match nothing, which is indistinguishable from the entity not
+// existing.
+func recordFromAnnotations(host, repo, version string, ann map[string]string) (IndexRecord, error) {
 	rec := IndexRecord{
 		URI:         "oci://" + host + "/" + repo,
 		Name:        repo,
@@ -533,12 +547,14 @@ func recordFromAnnotations(host, repo, version string, ann map[string]string) In
 	if caps := ann[oci.AnnotationCapabilities]; caps != "" {
 		rec.Capabilities = strings.Split(caps, ",")
 	}
-	if rec.Category != "" {
+	if raw := ann[oci.AnnotationLabels]; raw != "" {
 		labels := types.NewOrderedMap[string]()
-		labels.Set(componentCategoryLabel, rec.Category)
+		if err := labels.UnmarshalJSON([]byte(raw)); err != nil {
+			return IndexRecord{}, fmt.Errorf("decoding labels of %s:%s: %w", repo, version, err)
+		}
 		rec.Labels = labels
 	}
-	return rec
+	return rec, nil
 }
 
 // writeHostIndex writes one file per repository under the host's index

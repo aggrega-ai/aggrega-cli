@@ -21,6 +21,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/deprecation"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
@@ -121,6 +122,18 @@ func (s listingSpySource) ConditionalTags(ctx context.Context, repo, ifNoneMatch
 	return s.fakeIndexSource.ConditionalTags(ctx, repo, ifNoneMatch)
 }
 
+// componentFixtureLabels is the authored label map the component fixtures carry:
+// a category label plus a non-category one, in author order. Both are needed for
+// a fixture to be a shape the publish path can actually produce — the category
+// facet is derived from the category label, so a manifest cannot carry the facet
+// without carrying the map.
+func componentFixtureLabels() *types.OrderedMap[string] {
+	labels := types.NewOrderedMap[string]()
+	labels.Set("component.aggrega.ai/type", "server")
+	labels.Set(componentCategoryLabel, "compute")
+	return labels
+}
+
 // seedComponentRepo packs a real catalog Component manifest per tag with the
 // searchable annotations a publish stamps, so the index build reads back
 // annotations produced by the actual publish path.
@@ -129,7 +142,10 @@ func seedComponentRepo(t *testing.T, tags []string, meta oci.SearchableMetadata)
 	ctx := context.Background()
 	target := &memTagTarget{Store: memory.New()}
 	const mediaType = "application/vnd.aggrega.component.v1alpha1+yaml"
-	ann := meta.Annotations()
+	ann, err := meta.Annotations()
+	if err != nil {
+		t.Fatalf("seed component Annotations: %v", err)
+	}
 	for _, tag := range tags {
 		// Vary content per tag so content-address dedupe does not collapse the
 		// per-version manifests.
@@ -148,7 +164,10 @@ func seedPluginRepo(t *testing.T, tags []string, meta oci.SearchableMetadata) *m
 	t.Helper()
 	ctx := context.Background()
 	target := &memTagTarget{Store: memory.New()}
-	ann := meta.Annotations()
+	ann, err := meta.Annotations()
+	if err != nil {
+		t.Fatalf("seed plugin Annotations: %v", err)
+	}
 	for _, tag := range tags {
 		entityYAML := []byte("kind: Plugin\nmetadata:\n  version: " + tag + "\n")
 		wasm := []byte("\x00asm" + tag)
@@ -191,6 +210,9 @@ func TestRegistryUpdateBuildsSearchableIndex(t *testing.T) {
 		Description: "Stateless HTTP API server",
 		Category:    "compute",
 		Kind:        "Component",
+		// The category facet is derived from the category label at publish, so a
+		// manifest carrying the facet always carries the label map it came from.
+		Labels: componentFixtureLabels(),
 	}
 	pluginMeta := oci.SearchableMetadata{
 		Description:  "Helm rendering provider",
@@ -279,10 +301,17 @@ func TestRegistryUpdateBuildsSearchableIndex(t *testing.T) {
 		t.Errorf("component category = %q; want compute", comp.Category)
 	}
 	if comp.Labels == nil {
-		t.Fatalf("component labels nil; want reconstructed category label")
+		t.Fatalf("component labels nil; want the published label map")
 	}
 	if v, ok := comp.Labels.Get(componentCategoryLabel); !ok || v != "compute" {
 		t.Errorf("component label %s = %q (ok=%v); want compute", componentCategoryLabel, v, ok)
+	}
+	// Every authored label is read back, not only the category, and in author order.
+	if v, ok := comp.Labels.Get("component.aggrega.ai/type"); !ok || v != "server" {
+		t.Errorf("component label component.aggrega.ai/type = %q (ok=%v); want server", v, ok)
+	}
+	if keys := comp.Labels.Keys(); len(keys) != 2 || keys[0] != "component.aggrega.ai/type" || keys[1] != componentCategoryLabel {
+		t.Errorf("component label keys = %v; want author order [component.aggrega.ai/type %s]", keys, componentCategoryLabel)
 	}
 
 	plug := loaded.Records[1]

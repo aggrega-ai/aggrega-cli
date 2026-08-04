@@ -13,6 +13,7 @@ import (
 	"oras.land/oras-go/v2/content/memory"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
 // manifestAnnotations fetches the manifest tagged `tag` on store and returns its
@@ -37,25 +38,44 @@ func manifestAnnotations(t *testing.T, ctx context.Context, store *memory.Store,
 	return m.Annotations
 }
 
+// mustAnnotations renders the metadata's annotations and fails the test on an
+// encoding error, so a call site that is not itself about the error path reads as
+// one expression.
+func mustAnnotations(t *testing.T, m oci.SearchableMetadata) map[string]string {
+	t.Helper()
+	a, err := m.Annotations()
+	if err != nil {
+		t.Fatalf("Annotations: %v", err)
+	}
+	return a
+}
+
 // TestSearchableMetadataAnnotationsOmitsEmpty pins the assembly contract: only
-// populated facets render, capabilities join in author order, and an empty
-// struct renders no keys.
+// populated facets render, capabilities join in author order, labels render as a
+// JSON object in author order, and an empty struct renders no keys.
 func TestSearchableMetadataAnnotationsOmitsEmpty(t *testing.T) {
 	t.Parallel()
 
-	full := oci.SearchableMetadata{
+	labels := types.NewOrderedMap[string]()
+	labels.Set("component.aggrega.ai/type", "server")
+	labels.Set("component.aggrega.ai/category", "compute")
+
+	full := mustAnnotations(t, oci.SearchableMetadata{
 		Description:  "A demo plugin.",
 		Category:     "compute",
 		Kind:         "Plugin",
 		PluginType:   "frp_step",
+		Labels:       labels,
 		Capabilities: []string{"helm", "compose"},
-	}.Annotations()
+	})
 	want := map[string]string{
 		ocispec.AnnotationDescription: "A demo plugin.",
 		oci.AnnotationCategory:        "compute",
 		oci.AnnotationKind:            "Plugin",
 		oci.AnnotationPluginType:      "frp_step",
 		oci.AnnotationCapabilities:    "helm,compose",
+		// Author order, not sorted: `type` was written before `category`.
+		oci.AnnotationLabels: `{"component.aggrega.ai/type":"server","component.aggrega.ai/category":"compute"}`,
 	}
 	for k, v := range want {
 		if full[k] != v {
@@ -67,15 +87,26 @@ func TestSearchableMetadataAnnotationsOmitsEmpty(t *testing.T) {
 	}
 
 	// A catalog entity carries no plugin facets; those keys must be absent.
-	comp := oci.SearchableMetadata{Description: "d", Category: "compute", Kind: "Component"}.Annotations()
+	comp := mustAnnotations(t, oci.SearchableMetadata{Description: "d", Category: "compute", Kind: "Component"})
 	if _, ok := comp[oci.AnnotationPluginType]; ok {
 		t.Error("component annotations should omit plugin-type")
 	}
 	if _, ok := comp[oci.AnnotationCapabilities]; ok {
 		t.Error("component annotations should omit capabilities")
 	}
+	// An entity declaring no labels renders no label key at all, rather than an
+	// empty JSON object a reader would have to special-case.
+	if _, ok := comp[oci.AnnotationLabels]; ok {
+		t.Error("an entity with no labels should omit the labels annotation")
+	}
+	if _, ok := mustAnnotations(t, oci.SearchableMetadata{
+		Kind:   "Component",
+		Labels: types.NewOrderedMap[string](),
+	})[oci.AnnotationLabels]; ok {
+		t.Error("an empty label map should omit the labels annotation")
+	}
 
-	if got := (oci.SearchableMetadata{}).Annotations(); len(got) != 0 {
+	if got := mustAnnotations(t, oci.SearchableMetadata{}); len(got) != 0 {
 		t.Errorf("empty metadata should render no annotations; got %v", got)
 	}
 }
@@ -90,11 +121,11 @@ func TestManifestDigestMatchesPushWithAnnotations(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	content := []byte("apiVersion: aggrega.ai/v1alpha1\nkind: Component\nmetadata:\n  name: core/compute/api-server\n  version: 1.0.0\n")
-	ann := oci.SearchableMetadata{
+	ann := mustAnnotations(t, oci.SearchableMetadata{
 		Description: "The API server component.",
 		Category:    "compute",
 		Kind:        "Component",
-	}.Annotations()
+	})
 
 	preview, err := oci.ManifestDigest(ctx, oci.MediaTypeComponent, content, ann)
 	if err != nil {
@@ -127,12 +158,12 @@ func TestPluginManifestDigestMatchesPushWithAnnotations(t *testing.T) {
 	ctx := context.Background()
 	entity := []byte("apiVersion: aggrega.ai/v1alpha1\nkind: Plugin\nmetadata:\n  name: frp/patch\n  version: 1.0.0\n")
 	wasm := []byte("\x00asm\x01\x00\x00\x00fake-wasm-body")
-	ann := oci.SearchableMetadata{
+	ann := mustAnnotations(t, oci.SearchableMetadata{
 		Description:  "A patch step plugin.",
 		Kind:         "Plugin",
 		PluginType:   "frp_step",
 		Capabilities: []string{"helm", "compose"},
-	}.Annotations()
+	})
 
 	preview, err := oci.PluginManifestDigest(ctx, entity, wasm, ann)
 	if err != nil {

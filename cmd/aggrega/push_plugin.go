@@ -131,16 +131,20 @@ func pushPlugin(out io.Writer, cfg pushConfig, registry string, wantSign bool, n
 
 	// Searchable catalog annotations, sourced from the entity as pushed (never a
 	// re-invoked describe()), built once and stamped identically onto the digest
-	// preview and the real push. A plugin carries no category label, so Category
-	// is left empty. Building them once is load-bearing: the previewed digest is
-	// signed and compared by the immutability guard, so the preview must stamp
-	// exactly the annotations the push will.
-	annotations := oci.SearchableMetadata{
+	// preview and the real push. A plugin's metadata carries neither a category
+	// label nor a label map, so both facets are left empty. Building them once is
+	// load-bearing: the previewed digest is signed and compared by the
+	// immutability guard, so the preview must stamp exactly the annotations the
+	// push will.
+	annotations, err := oci.SearchableMetadata{
 		Description:  entity.Metadata.Description,
 		Kind:         "Plugin",
 		PluginType:   entity.Metadata.PluginType,
 		Capabilities: entity.Spec.Capabilities,
 	}.Annotations()
+	if err != nil {
+		return fmt.Errorf("aggrega push: Plugin %s: %w", name, err)
+	}
 
 	if cfg.DryRun {
 		fmt.Fprintf(out, "aggrega push (dry-run): %s:%s\n  kind: Plugin\n  entity mediatype: %s\n  wasm mediatype: %s\n  wasm content digest: %s\n  entity size: %d bytes\n  wasm size: %d bytes\n",

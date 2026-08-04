@@ -17,6 +17,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/registryhost"
 	"github.com/aggrega-ai/aggrega-cli/pkg/signing"
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
@@ -177,10 +178,14 @@ const componentCategoryLabel = "component.aggrega.ai/category"
 type pushEntityHeader struct {
 	Kind     string `yaml:"kind"`
 	Metadata struct {
-		Name        string            `yaml:"name"`
-		Version     string            `yaml:"version"`
-		Description string            `yaml:"description"`
-		Labels      map[string]string `yaml:"labels"`
+		Name        string `yaml:"name"`
+		Version     string `yaml:"version"`
+		Description string `yaml:"description"`
+		// Labels is decoded into an ordered map rather than a Go map because the
+		// whole map is stamped onto the published manifest, and identical input must
+		// produce byte-identical published bytes. A Go map would lose the author's
+		// order at the decode, before the publish path could preserve it.
+		Labels types.OrderedMap[string] `yaml:"labels"`
 	} `yaml:"metadata"`
 	Spec struct {
 		// Capability is the render-engine capability for Recipe / FeatureRecipe.
@@ -322,11 +327,20 @@ func pushRun(cfg pushConfig) error {
 	// the digest preview and the real push. Building them once is load-bearing:
 	// the previewed digest is signed and compared by the immutability guard, so
 	// the preview must stamp exactly the annotations the push will.
-	annotations := oci.SearchableMetadata{
+	//
+	// The whole authored label map travels, not just the category: a label
+	// selector filters on every label an author wrote, and it can only match what
+	// the manifest carries.
+	category, _ := header.Metadata.Labels.Get(componentCategoryLabel)
+	annotations, err := oci.SearchableMetadata{
 		Description: header.Metadata.Description,
-		Category:    header.Metadata.Labels[componentCategoryLabel],
+		Category:    category,
 		Kind:        header.Kind,
+		Labels:      &header.Metadata.Labels,
 	}.Annotations()
+	if err != nil {
+		return fmt.Errorf("aggrega push: %s: %w", cfg.EntityPath, err)
+	}
 
 	if cfg.DryRun {
 		fmt.Fprintf(out, "aggrega push (dry-run): %s:%s\n  kind: %s\n  mediatype: %s\n  size: %d bytes\n",

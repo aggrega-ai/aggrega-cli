@@ -23,8 +23,9 @@ func searchFrozen() time.Time { return time.Date(2026, 1, 2, 3, 4, 5, 0, time.UT
 // buildSearchWorkspace writes a real local index into a temp workspace by driving
 // the registry-update path against an in-memory source, so the search runs read
 // back bytes produced by the actual index writer. The seeded index carries a
-// component (Kind Component, a category label) and a plugin (Kind Plugin, a
-// plugin type and capabilities) under host hub.aggrega.ai.
+// component (Kind Component, an authored label map holding a category label and
+// a non-category one) and a plugin (Kind Plugin, a plugin type and capabilities)
+// under host hub.aggrega.ai.
 func buildSearchWorkspace(t *testing.T) *workspaceconfig.ResolvedWorkspace {
 	t.Helper()
 	const host = "hub.aggrega.ai"
@@ -33,6 +34,9 @@ func buildSearchWorkspace(t *testing.T) *workspaceconfig.ResolvedWorkspace {
 		Description: "Stateless HTTP API server",
 		Category:    "compute",
 		Kind:        "Component",
+		// The category facet is derived from the category label at publish, so a
+		// manifest carrying the facet always carries the label map it came from.
+		Labels: componentFixtureLabels(),
 	}
 	pluginMeta := oci.SearchableMetadata{
 		Description:  "Helm rendering provider",
@@ -105,6 +109,7 @@ func TestSearchRoundTripQueryAndFacets(t *testing.T) {
 		{"--kind plugin folds onto stamped Plugin", searchOptions{Kinds: []string{"plugin"}, Output: "names"}, []string{pluginURI}},
 		{"--kind featurerecipe form is accepted", searchOptions{Kinds: []string{"component"}, Output: "names"}, []string{componentURI}},
 		{"category via label selector", searchOptions{Selector: "component.aggrega.ai/category=compute", Output: "names"}, []string{componentURI}},
+		{"non-category label via selector", searchOptions{Selector: "component.aggrega.ai/type=server", Output: "names"}, []string{componentURI}},
 		{"--capability scopes to plugin", searchOptions{Capabilities: []string{"render"}, Output: "names"}, []string{pluginURI}},
 		{"--plugin-type scopes to plugin", searchOptions{PluginType: "provider", Output: "names"}, []string{pluginURI}},
 		{"no filter returns both, URI-sorted", searchOptions{Output: "names"}, []string{componentURI, pluginURI}},
