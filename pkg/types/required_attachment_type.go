@@ -98,7 +98,7 @@ func RequiredAttachmentTypes(annotations OrderedMap[string]) []RequiredAttachmen
 			m.Malformed = "the key needs a label naming the requirement, as in " +
 				RequiredAttachmentTypeAnnotationPrefix + "database"
 		case !FeatureNameShapeRe.MatchString(value):
-			m.Malformed = "the value must be a Feature type URI of the form <namespace>/<name> " +
+			m.Malformed = "the value must be a Feature type URI of the form <publisher>/<name> " +
 				"in lower-case kebab segments, as in core/prometheus-exporter"
 		}
 		out = append(out, m)
