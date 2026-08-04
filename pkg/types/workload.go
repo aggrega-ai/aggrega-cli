@@ -72,20 +72,15 @@ type Workload struct {
 	HostAliases                   []HostAlias `json:"hostAliases,omitempty" yaml:"hostAliases,omitempty"`
 	// Reference-form fields (form: reference only — an external endpoint with
 	// no compute). Endpoint is the external host or URL, piped through as a
-	// deterministic pointer (AOT: never resolved). Port is optional. Credential
-	// is an optional featuresSchema-slot pointer carried to consumers via
-	// provides — the secret value is never resolved here.
-	Endpoint   string      `json:"endpoint,omitempty" yaml:"endpoint,omitempty"`
-	Port       int         `json:"port,omitempty" yaml:"port,omitempty"`
-	Credential *Credential `json:"credential,omitempty" yaml:"credential,omitempty"`
-}
-
-// Credential is a reference-form credential pointer: a featuresSchema slot
-// (From) delivered to consumers as an environment variable (Env). Per the AOT
-// boundary the secret value is never resolved; this is a pointer only.
-type Credential struct {
-	From string `json:"from,omitempty" yaml:"from,omitempty"`
-	Env  string `json:"env,omitempty" yaml:"env,omitempty"`
+	// deterministic pointer (AOT: never resolved). Port is optional. The
+	// reference form carries no credential field of its own, because the
+	// environment-variable name belongs to the consumer rather than to the
+	// endpoint. A consumer needing a credential for the endpoint declares the
+	// slot on its own Component's featuresSchema and fills it from its
+	// container's attachments block, where that slot's inject list permits the
+	// delivery.
+	Endpoint string `json:"endpoint,omitempty" yaml:"endpoint,omitempty"`
+	Port     int    `json:"port,omitempty" yaml:"port,omitempty"`
 }
 
 // DNSConfig mirrors the K8s pod dnsConfig shape. Nameservers and Searches have

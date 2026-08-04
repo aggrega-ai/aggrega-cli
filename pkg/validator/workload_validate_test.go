@@ -248,7 +248,6 @@ func referenceWorkload() *types.Workload {
 		Form:       "reference",
 		Endpoint:   "https://api.anthropic.com",
 		Port:       443,
-		Credential: &types.Credential{From: "api_key", Env: "ANTHROPIC_API_KEY"},
 	}
 }
 
@@ -264,7 +263,6 @@ func TestValidateWorkload_Reference_NoEndpoint_Fails(t *testing.T) {
 	w := referenceWorkload()
 	w.Endpoint = ""
 	w.Port = 0
-	w.Credential = nil
 	if err := validator.ValidateWorkload(w, "", "", ""); !errors.Is(err, validator.ErrWorkloadValidation) {
 		t.Fatalf("reference without endpoint should fail schema, got %v", err)
 	}

@@ -1185,7 +1185,6 @@ func TestSynthesizeWorkload_ReferenceExternalName(t *testing.T) {
 		Form:       "reference",
 		Endpoint:   "https://api.anthropic.com:443/v1",
 		Port:       443,
-		Credential: &types.Credential{From: "api_key", Env: "ANTHROPIC_API_KEY"},
 	}
 	files, err := SynthesizeWorkloadCore(w, renderer.AttachmentProvidesFromContext(nil), nodeCtxFor("anthropic"))
 	if err != nil {

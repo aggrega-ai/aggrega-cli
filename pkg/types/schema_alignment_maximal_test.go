@@ -389,7 +389,7 @@ func maximalWorkloadCompute() types.Workload {
 
 // maximalWorkloadReference populates the reference arm: an external endpoint
 // with no compute. The document root forbids the compute fields here, so this
-// instance exists to exercise the three Go fields the compute instance may not
+// instance exists to exercise the two Go fields the compute instance may not
 // declare — without it, they would be checked in neither direction.
 func maximalWorkloadReference() types.Workload {
 	return types.Workload{
@@ -399,10 +399,9 @@ func maximalWorkloadReference() types.Workload {
 			Labels:      map[string]string{"app": "managed-db"},
 			Annotations: map[string]string{"example.com/owner": "platform"},
 		},
-		Form:       "reference",
-		Endpoint:   "db.managed.example.com",
-		Port:       5432,
-		Credential: &types.Credential{From: "db_admin", Env: "DATABASE_PASSWORD"},
+		Form:     "reference",
+		Endpoint: "db.managed.example.com",
+		Port:     5432,
 	}
 }
 

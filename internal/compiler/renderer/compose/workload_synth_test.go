@@ -611,7 +611,6 @@ func TestSynthesizeWorkload_ReferenceEmitsNoFragment(t *testing.T) {
 		Kind:       "Workload",
 		Form:       "reference",
 		Endpoint:   "https://api.anthropic.com",
-		Credential: &types.Credential{From: "api_key", Env: "ANTHROPIC_API_KEY"},
 	}
 	files, _, err := SynthesizeWorkloadCore(w, nodeCtxFor("anthropic"))
 	if err != nil {
