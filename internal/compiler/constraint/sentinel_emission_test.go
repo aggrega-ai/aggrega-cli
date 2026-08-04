@@ -8,6 +8,7 @@ import (
 	"go/parser"
 	"go/token"
 	"io/fs"
+	"os"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -74,14 +75,76 @@ import (
 // message because an unstated heuristic that reads as a proof is the failure
 // class this framework exists to remove, and an instrument is the most expensive
 // place to leave one: every count downstream inherits its silence.
+//
+// # The census criterion, and what it deliberately excludes
+//
+// A sentinel is a distinct name matching [sentinelName] bound by a
+// package-level var specification in a non-test .go file of this module. The
+// asserted population is those declared under [scannedRoots]. Every count this
+// file reports is a count of that population and of nothing else, so the
+// criterion is written down here: a count whose criterion is implicit invites
+// two readers to compare two different measurements and conclude the population
+// moved.
+//
+// The exclusions, each a choice about what the population IS rather than a
+// convenience, so that none of them is later "fixed" as an oversight:
+//
+//   - A _test.go file. A sentinel declared in a test is scaffolding rather than
+//     a rule the product raises, and including them would additionally make
+//     this assertion assert over its own instrument.
+//   - A testdata directory. Fixture Go is example data, not specification.
+//   - A directory carrying its own go.mod, and a vendor directory. Their
+//     sentinels belong to another module, so reporting one would be a finding
+//     nobody working in this module could act on.
+//   - A directory whose name begins with "." or "_", which is what the Go tool
+//     itself skips, so a file there is in no package this module builds.
+//   - A const declaration. An error sentinel is a value and a const cannot hold
+//     one.
+//   - A var bound inside a function body. The census reads file-level
+//     declarations only, because the convention a sentinel follows is a
+//     package-level exported name.
+//
+// And one deliberate inclusion, recorded because it is the one a later edit is
+// most likely to undo: an alias declaration of the form
+//
+//	ErrX = otherpkg.ErrY
+//
+// counts. [sentinelName] is matched against the declared name and nothing
+// constrains the right-hand side, which is deliberate — the alias is a distinct
+// exported name a consumer can match against, so it is a sentinel of this
+// module even though the value it carries originates elsewhere. Constraining
+// the right-hand side to a construction expression would read as tightening the
+// criterion and would silently drop every re-export.
 const sentinelEmissionBlocks = false
 
 // sentinelName matches the declaration convention for a sentinel: an exported
 // package-level error variable named for the rule it stands for.
 var sentinelName = regexp.MustCompile(`^Err[A-Z][A-Za-z0-9]*$`)
 
-// scannedRoots are the subtrees the census reads, relative to this package.
-var scannedRoots = []string{"../../../pkg", "../../../internal"}
+// scannedRoots are the subtrees whose declarations form the asserted
+// population, relative to this package: every tree in this module that holds
+// Go.
+//
+// The set is asserted to cover the module rather than assumed to —
+// [TestAssertedSentinelPopulationCoversTheModule] reads the whole module with
+// the identical criterion and fails on anything these roots do not reach. A
+// root that declares no sentinel today is still listed, because a tree absent
+// from this set is precisely where a later sentinel arrives unobserved: the
+// census would report a clean population while saying nothing about the file it
+// never opened.
+var scannedRoots = []string{
+	"../../../pkg",
+	"../../../internal",
+	"../../../cmd",
+	"../../../plugins",
+}
+
+// moduleRoot is this module's root, relative to this package. It is read for one
+// purpose only — establishing that [scannedRoots] covers it — and never as the
+// population itself: an explicit root list is what makes the asserted scope
+// legible, and widening the scope to the module root would trade that legibility
+// for a scope that silently absorbs whatever tree appears next.
+const moduleRoot = "../../.."
 
 // frameworkPackageSuffix locates the framework's own package, which is how a
 // plain declared function's membership is read: a function declared here is part
@@ -172,6 +235,97 @@ func TestSentinelEmissionSitesAreTheFrameworkDispatch(t *testing.T) {
 	}
 }
 
+// TestAssertedSentinelPopulationCoversTheModule asserts that [scannedRoots]
+// reaches every sentinel declaration in the module, so the population every other
+// count in this file is taken over is the whole population rather than whatever
+// the root list happens to name.
+//
+// This is the completeness half of the census, and it exists because the failure
+// it catches is silent in both directions. A sentinel declared in a tree no root
+// reaches is not reported as missing — it is not reported at all, and the census
+// prints a clean population while saying nothing about the file it never opened.
+// The reverse reading is worse: a reader comparing two counts taken under two
+// root lists sees the population move and concludes sentinels were added or
+// removed, when the criterion changed underneath them.
+//
+// # Why this one blocks while the emission assertion does not
+//
+// [sentinelEmissionBlocks] gates the emission assertion because that assertion
+// fails on the shipped tree today: the migration it measures is under way and a
+// blocking form would be switched off rather than fixed. Coverage carries no such
+// backlog — the roots cover the module, so this assertion passes — and there is
+// nothing for a grace period to protect. It therefore fails rather than reports,
+// which matters more here than elsewhere in this file: a passing Go test's log
+// output is discarded unless the run asks for verbose output, so an assertion
+// that only logs is an assertion whose finding no build mode shows.
+//
+// The remedy when it fails is one of two edits, and the failure names both: add
+// the tree to [scannedRoots] if its sentinels belong to the asserted population,
+// or move the declaration into a tree already listed. Neither is a suppression —
+// both make the population say what it means.
+func TestAssertedSentinelPopulationCoversTheModule(t *testing.T) {
+	t.Parallel()
+
+	assertedFiles := collectGoFiles(t, scannedRoots)
+	asserted := declaredSentinels(assertedFiles)
+	if len(asserted) == 0 {
+		t.Fatalf("no sentinel declaration was found under %s, so a clean coverage result certifies nothing",
+			strings.Join(scannedRoots, ", "))
+	}
+
+	moduleFiles := collectGoFiles(t, []string{moduleRoot})
+	moduleWide := declaredSentinels(moduleFiles)
+
+	var unreadFiles []string
+	for path := range moduleFiles {
+		if _, ok := assertedFiles[path]; !ok {
+			unreadFiles = append(unreadFiles, filepath.ToSlash(path))
+		}
+	}
+	sort.Strings(unreadFiles)
+
+	var escaped []string
+	for name, path := range moduleWide {
+		if _, ok := asserted[name]; !ok {
+			escaped = append(escaped, name+" at "+filepath.ToSlash(path))
+		}
+	}
+	sort.Strings(escaped)
+
+	t.Logf("sentinel population coverage: %d sentinels over %d files under the asserted roots (%s); "+
+		"%d sentinels over %d files read across the whole module (%s). This assertion blocks: unlike the "+
+		"emission assertion in this file, coverage carries no backlog to grow out of.",
+		len(asserted), len(assertedFiles), strings.Join(scannedRoots, ", "),
+		len(moduleWide), len(moduleFiles), moduleRoot)
+
+	if len(escaped) > 0 {
+		t.Errorf("%d sentinel(s) are declared in this module but sit outside the asserted population.\n"+
+			"CONSEQUENCE: no count in this file describes them. They are not reported as missing an "+
+			"emission site, not reported as emitted outside the framework's dispatch, and not counted in "+
+			"the declared total — the census reads a population that does not include them and prints a "+
+			"clean result.\n"+
+			"REMEDY: add the tree to scannedRoots if these sentinels belong to the asserted population, or "+
+			"move the declaration into a tree already listed.\n"+
+			"First 12, alphabetically: %s", len(escaped), strings.Join(head(escaped, 12), "; "))
+	}
+
+	// The name-level finding above cannot see a declaration whose name is ALSO
+	// declared inside the roots: the population is a set of names, so a duplicate
+	// name is not absent from it while its file still goes unread. Asserting the
+	// file set closes that hole and makes the escape impossible rather than merely
+	// detected.
+	if len(unreadFiles) > 0 {
+		t.Errorf("%d non-test Go file(s) in this module sit under no asserted root, so any sentinel they "+
+			"declare is outside every count this file reports.\n"+
+			"This fails even when those files declare no sentinel today, deliberately: the tree is where "+
+			"the next one lands, and a root added after the fact does not retroactively make the "+
+			"intervening counts true.\n"+
+			"REMEDY: add the tree to scannedRoots, or exclude it through the documented criterion if its "+
+			"Go belongs to another module.\n"+
+			"First 12, alphabetically: %s", len(unreadFiles), strings.Join(head(unreadFiles, 12), ", "))
+	}
+}
+
 // emissionSite is one place a sentinel is named, and whether that place is the
 // framework's dispatch. Membership travels with the site rather than being
 // recomputed from its name, because the two kinds of site establish it
@@ -210,57 +364,8 @@ type emissionSite struct {
 func sentinelCensus(t *testing.T) (declared []string, emitters map[string][]emissionSite) {
 	t.Helper()
 
-	fset := token.NewFileSet()
-	files := map[string]*ast.File{}
-	for _, root := range scannedRoots {
-		err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
-			switch {
-			case err != nil:
-				return err
-			case d.IsDir():
-				if d.Name() == "testdata" {
-					return fs.SkipDir
-				}
-				return nil
-			case !strings.HasSuffix(path, ".go"), strings.HasSuffix(path, "_test.go"):
-				return nil
-			}
-			parsed, perr := parser.ParseFile(fset, path, nil, 0)
-			if perr != nil {
-				return nil // a file this census cannot parse is skipped, not fatal
-			}
-			files[path] = parsed
-			return nil
-		})
-		if err != nil {
-			t.Fatalf("walk %s: %v", root, err)
-		}
-	}
-	if len(files) == 0 {
-		t.Fatalf("no Go file was read under %s; the census instrument is not working",
-			strings.Join(scannedRoots, ", "))
-	}
-
-	names := map[string]bool{}
-	for _, file := range files {
-		for _, decl := range file.Decls {
-			gen, ok := decl.(*ast.GenDecl)
-			if !ok || gen.Tok != token.VAR {
-				continue
-			}
-			for _, spec := range gen.Specs {
-				vs, ok := spec.(*ast.ValueSpec)
-				if !ok {
-					continue
-				}
-				for _, id := range vs.Names {
-					if sentinelName.MatchString(id.Name) {
-						names[id.Name] = true
-					}
-				}
-			}
-		}
-	}
+	files := collectGoFiles(t, scannedRoots)
+	names := declaredSentinels(files)
 
 	emitters = map[string][]emissionSite{}
 	for path, file := range files {
@@ -311,17 +416,112 @@ func sentinelCensus(t *testing.T) (declared []string, emitters map[string][]emis
 	return declared, emitters
 }
 
+// collectGoFiles parses every file the criterion admits under roots, keyed by
+// path. It is one half of the criterion's single home — the scope half — and both
+// the asserted-population read and the module-wide coverage read call it, so
+// neither can acquire a scope rule the other lacks.
+//
+// A file that will not parse is skipped rather than fatal, because a census is
+// not a compiler and a tree mid-edit should not turn an unrelated assertion red.
+func collectGoFiles(t *testing.T, roots []string) map[string]*ast.File {
+	t.Helper()
+
+	fset := token.NewFileSet()
+	files := map[string]*ast.File{}
+	for _, root := range roots {
+		err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+			switch {
+			case err != nil:
+				return err
+			case d.IsDir():
+				if skipDir(path, root, d.Name()) {
+					return fs.SkipDir
+				}
+				return nil
+			case !strings.HasSuffix(path, ".go"), strings.HasSuffix(path, "_test.go"):
+				return nil
+			}
+			parsed, perr := parser.ParseFile(fset, path, nil, 0)
+			if perr != nil {
+				return nil // a file this census cannot parse is skipped, not fatal
+			}
+			files[path] = parsed
+			return nil
+		})
+		if err != nil {
+			t.Fatalf("walk %s: %v", root, err)
+		}
+	}
+	if len(files) == 0 {
+		t.Fatalf("no Go file was read under %s; the census instrument is not working",
+			strings.Join(roots, ", "))
+	}
+	return files
+}
+
+// skipDir reports whether the walk stops at a directory. The exclusions are the
+// scope half of the census criterion and each is documented with its reason
+// beside [sentinelEmissionBlocks]; a root is never skipped for its own sake,
+// which is what keeps a root spelled with a leading ".." from matching the
+// dot-prefix rule and emptying the walk.
+func skipDir(path, root, name string) bool {
+	if path == root {
+		return false
+	}
+	if name == "testdata" || name == "vendor" ||
+		strings.HasPrefix(name, ".") || strings.HasPrefix(name, "_") {
+		return true
+	}
+	_, err := os.Stat(filepath.Join(path, "go.mod"))
+	return err == nil
+}
+
+// declaredSentinels returns each declared sentinel name and one path declaring
+// it. It is the other half of the criterion's single home — the name half — so
+// the asserted population and the module-wide coverage read cannot drift into two
+// criteria that happen to agree today.
+//
+// Where a name is declared more than once the lexicographically first path wins,
+// so a reported path is the same on every run rather than whichever the map
+// handed back first.
+func declaredSentinels(files map[string]*ast.File) map[string]string {
+	names := map[string]string{}
+	for path, file := range files {
+		for _, decl := range file.Decls {
+			gen, ok := decl.(*ast.GenDecl)
+			if !ok || gen.Tok != token.VAR {
+				continue
+			}
+			for _, spec := range gen.Specs {
+				vs, ok := spec.(*ast.ValueSpec)
+				if !ok {
+					continue
+				}
+				for _, id := range vs.Names {
+					if !sentinelName.MatchString(id.Name) {
+						continue
+					}
+					if prior, seen := names[id.Name]; !seen || path < prior {
+						names[id.Name] = path
+					}
+				}
+			}
+		}
+	}
+	return names
+}
+
 // recordNamed attributes site to every declared sentinel the subtree names.
-func recordNamed(emitters map[string][]emissionSite, names map[string]bool, site emissionSite, subtree ast.Node) {
+func recordNamed(emitters map[string][]emissionSite, names map[string]string, site emissionSite, subtree ast.Node) {
 	named := map[string]bool{}
 	ast.Inspect(subtree, func(node ast.Node) bool {
 		switch x := node.(type) {
 		case *ast.Ident:
-			if names[x.Name] {
+			if _, ok := names[x.Name]; ok {
 				named[x.Name] = true
 			}
 		case *ast.SelectorExpr:
-			if names[x.Sel.Name] {
+			if _, ok := names[x.Sel.Name]; ok {
 				named[x.Sel.Name] = true
 			}
 		}
