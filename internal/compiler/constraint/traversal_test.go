@@ -232,9 +232,14 @@ func raisingCheck[S Subject]() Check[traversalView, NoHostPowers, S] {
 // traversalCase is one enumerated kind's traversal, together with the transcript
 // it must produce over the fixture: one "file|locator" entry per invocation, in
 // invocation order.
+//
+// run takes the cancellation signal rather than closing over one, so the same
+// table drives both the uncancelled transcript and the assertion that every one
+// of the sixteen entry points honours a signal. A table that could only be driven
+// one way would leave the second property to a hand-picked subset of the kinds.
 type traversalCase struct {
 	kind SubjectKind
-	run  func(traversalFixture, traversalView) []Objection
+	run  func(Cancellation, traversalFixture, traversalView) ([]Objection, error)
 	want []string
 }
 
@@ -242,8 +247,8 @@ func traversalCases() []traversalCase {
 	return []traversalCase{
 		{
 			kind: SubjectNode,
-			run: func(f traversalFixture, v traversalView) []Objection {
-				return RunOnNodes(f, v, raisingCheck[NodeSubject]())
+			run: func(cancelled Cancellation, f traversalFixture, v traversalView) ([]Objection, error) {
+				return RunOnNodes(cancelled, f, v, raisingCheck[NodeSubject]())
 			},
 			want: []string{
 				"aggregate.yaml|.spec.components.web",
@@ -252,8 +257,8 @@ func traversalCases() []traversalCase {
 		},
 		{
 			kind: SubjectNodeSocket,
-			run: func(f traversalFixture, v traversalView) []Objection {
-				return RunOnNodeSockets(f, f, v, raisingCheck[NodeSocketSubject]())
+			run: func(cancelled Cancellation, f traversalFixture, v traversalView) ([]Objection, error) {
+				return RunOnNodeSockets(cancelled, f, f, v, raisingCheck[NodeSocketSubject]())
 			},
 			want: []string{
 				"aggregate.yaml|.spec.components.web.uses.zebra",
@@ -263,8 +268,8 @@ func traversalCases() []traversalCase {
 		},
 		{
 			kind: SubjectEdge,
-			run: func(f traversalFixture, v traversalView) []Objection {
-				return RunOnEdges(f, v, raisingCheck[EdgeSubject]())
+			run: func(cancelled Cancellation, f traversalFixture, v traversalView) ([]Objection, error) {
+				return RunOnEdges(cancelled, f, v, raisingCheck[EdgeSubject]())
 			},
 			want: []string{
 				"aggregate.yaml|.spec.components.web.uses.zebra",
@@ -273,8 +278,8 @@ func traversalCases() []traversalCase {
 		},
 		{
 			kind: SubjectNodeAttachment,
-			run: func(f traversalFixture, v traversalView) []Objection {
-				return RunOnNodeAttachments(f, f, v, raisingCheck[NodeAttachmentSubject]())
+			run: func(cancelled Cancellation, f traversalFixture, v traversalView) ([]Objection, error) {
+				return RunOnNodeAttachments(cancelled, f, f, v, raisingCheck[NodeAttachmentSubject]())
 			},
 			want: []string{
 				"aggregate.yaml|.spec.components.web.features.tls",
@@ -283,8 +288,8 @@ func traversalCases() []traversalCase {
 		},
 		{
 			kind: SubjectNodeAttachmentSocket,
-			run: func(f traversalFixture, v traversalView) []Objection {
-				return RunOnNodeAttachmentSockets(f, f, f, v, raisingCheck[NodeAttachmentSocketSubject]())
+			run: func(cancelled Cancellation, f traversalFixture, v traversalView) ([]Objection, error) {
+				return RunOnNodeAttachmentSockets(cancelled, f, f, f, v, raisingCheck[NodeAttachmentSocketSubject]())
 			},
 			want: []string{
 				"aggregate.yaml|.spec.components.web.features.tls.uses.issuer",
@@ -292,8 +297,8 @@ func traversalCases() []traversalCase {
 		},
 		{
 			kind: SubjectNodeSlot,
-			run: func(f traversalFixture, v traversalView) []Objection {
-				return RunOnNodeSlots(f, f, v, raisingCheck[NodeSlotSubject]())
+			run: func(cancelled Cancellation, f traversalFixture, v traversalView) ([]Objection, error) {
+				return RunOnNodeSlots(cancelled, f, f, v, raisingCheck[NodeSlotSubject]())
 			},
 			want: []string{
 				"aggregate.yaml|.spec.components.web.features.sidecar",
@@ -301,8 +306,8 @@ func traversalCases() []traversalCase {
 		},
 		{
 			kind: SubjectNodeMechanism,
-			run: func(f traversalFixture, v traversalView) []Objection {
-				return RunOnNodeMechanisms(f, f, v, raisingCheck[NodeMechanismSubject]())
+			run: func(cancelled Cancellation, f traversalFixture, v traversalView) ([]Objection, error) {
+				return RunOnNodeMechanisms(cancelled, f, f, v, raisingCheck[NodeMechanismSubject]())
 			},
 			want: []string{
 				"aggregate.yaml|.spec.components.web.inject.env",
@@ -311,8 +316,8 @@ func traversalCases() []traversalCase {
 		},
 		{
 			kind: SubjectNodeMechanismDeliveryKey,
-			run: func(f traversalFixture, v traversalView) []Objection {
-				return RunOnNodeMechanismDeliveryKeys(f, f, f, v, raisingCheck[NodeMechanismDeliveryKeySubject]())
+			run: func(cancelled Cancellation, f traversalFixture, v traversalView) ([]Objection, error) {
+				return RunOnNodeMechanismDeliveryKeys(cancelled, f, f, f, v, raisingCheck[NodeMechanismDeliveryKeySubject]())
 			},
 			want: []string{
 				"aggregate.yaml|.spec.components.web.inject.env.DB_HOST",
@@ -321,8 +326,8 @@ func traversalCases() []traversalCase {
 		},
 		{
 			kind: SubjectNodePillarLeaf,
-			run: func(f traversalFixture, v traversalView) []Objection {
-				return RunOnNodePillarLeaves(f, f, f, v, raisingCheck[NodePillarLeafSubject]())
+			run: func(cancelled Cancellation, f traversalFixture, v traversalView) ([]Objection, error) {
+				return RunOnNodePillarLeaves(cancelled, f, f, f, v, raisingCheck[NodePillarLeafSubject]())
 			},
 			want: []string{
 				"aggregate.yaml|.spec.components.web.values.app.replicas",
@@ -335,8 +340,8 @@ func traversalCases() []traversalCase {
 			// level rather than inside the component, so the component's
 			// inexpressible site does not reach it.
 			kind: SubjectNodeParameter,
-			run: func(f traversalFixture, v traversalView) []Objection {
-				return RunOnNodeParameters(f, f, v, raisingCheck[NodeParameterSubject]())
+			run: func(cancelled Cancellation, f traversalFixture, v traversalView) ([]Objection, error) {
+				return RunOnNodeParameters(cancelled, f, f, v, raisingCheck[NodeParameterSubject]())
 			},
 			want: []string{
 				"aggregate.yaml|.spec.parameters.db_size",
@@ -345,8 +350,8 @@ func traversalCases() []traversalCase {
 		},
 		{
 			kind: SubjectNodeAttachmentPillarLeaf,
-			run: func(f traversalFixture, v traversalView) []Objection {
-				return RunOnNodeAttachmentPillarLeaves(f, f, f, f, v, raisingCheck[NodeAttachmentPillarLeafSubject]())
+			run: func(cancelled Cancellation, f traversalFixture, v traversalView) ([]Objection, error) {
+				return RunOnNodeAttachmentPillarLeaves(cancelled, f, f, f, f, v, raisingCheck[NodeAttachmentPillarLeafSubject]())
 			},
 			want: []string{
 				"aggregate.yaml|.spec.components.web.features.tls.values.app.issuer",
@@ -357,8 +362,8 @@ func traversalCases() []traversalCase {
 			// documents, and the enumerated entry is the only thing that knows
 			// which.
 			kind: SubjectNodeLocalsKey,
-			run: func(f traversalFixture, v traversalView) []Objection {
-				return RunOnNodeLocalsKeys(f, f, v, raisingCheck[NodeLocalsKeySubject]())
+			run: func(cancelled Cancellation, f traversalFixture, v traversalView) ([]Objection, error) {
+				return RunOnNodeLocalsKeys(cancelled, f, f, v, raisingCheck[NodeLocalsKeySubject]())
 			},
 			want: []string{
 				"recipes/web.yaml|.spec.locals.fullname",
@@ -367,8 +372,8 @@ func traversalCases() []traversalCase {
 		},
 		{
 			kind: SubjectNodeProvidesKey,
-			run: func(f traversalFixture, v traversalView) []Objection {
-				return RunOnNodeProvidesKeys(f, f, v, raisingCheck[NodeProvidesKeySubject]())
+			run: func(cancelled Cancellation, f traversalFixture, v traversalView) ([]Objection, error) {
+				return RunOnNodeProvidesKeys(cancelled, f, f, v, raisingCheck[NodeProvidesKeySubject]())
 			},
 			want: []string{
 				"recipes/web.yaml|.spec.provides.host",
@@ -376,8 +381,8 @@ func traversalCases() []traversalCase {
 		},
 		{
 			kind: SubjectNodePipelineStep,
-			run: func(f traversalFixture, v traversalView) []Objection {
-				return RunOnNodePipelineSteps(f, f, v, raisingCheck[NodePipelineStepSubject]())
+			run: func(cancelled Cancellation, f traversalFixture, v traversalView) ([]Objection, error) {
+				return RunOnNodePipelineSteps(cancelled, f, f, v, raisingCheck[NodePipelineStepSubject]())
 			},
 			want: []string{
 				"recipes/web.yaml|.spec.pipeline.render",
@@ -391,8 +396,8 @@ func traversalCases() []traversalCase {
 			// what TestCoordinateAccessorsCarryTheEnumeratedCoordinateValues is
 			// for.
 			kind: SubjectBoundaryProviderPath,
-			run: func(f traversalFixture, v traversalView) []Objection {
-				return RunOnBoundaryProviderPaths(f, f, f, v, raisingCheck[BoundaryProviderPathSubject]())
+			run: func(cancelled Cancellation, f traversalFixture, v traversalView) ([]Objection, error) {
+				return RunOnBoundaryProviderPaths(cancelled, f, f, f, v, raisingCheck[BoundaryProviderPathSubject]())
 			},
 			want: []string{
 				"release.yaml|.spec.boundaries.prod",
@@ -402,8 +407,8 @@ func traversalCases() []traversalCase {
 		},
 		{
 			kind: SubjectNodeArtifact,
-			run: func(f traversalFixture, v traversalView) []Objection {
-				return RunOnNodeArtifacts(f, f, v, raisingCheck[NodeArtifactSubject]())
+			run: func(cancelled Cancellation, f traversalFixture, v traversalView) ([]Objection, error) {
+				return RunOnNodeArtifacts(cancelled, f, f, v, raisingCheck[NodeArtifactSubject]())
 			},
 			want: []string{
 				"recipes/web.yaml|.spec.artifacts.values-yaml",
@@ -471,7 +476,14 @@ func TestATraversalInvokesOncePerInstanceInEnumeratorOrderWithFrameworkProvenanc
 		t.Run(string(tc.kind), func(t *testing.T) {
 			t.Parallel()
 
-			objections := tc.run(fixture, traversalView{})
+			objections, err := tc.run(nil, fixture, traversalView{})
+			if err != nil {
+				t.Fatalf("the traversal returned %v over a walk nothing cancelled.\n"+
+					"INVARIANT: a traversal reports an error only when the cancellation signal it was given "+
+					"returned one, and a nil signal never does.\n"+
+					"CONSEQUENCE: an error here means the walk stopped for a reason no caller asked for, so "+
+					"the transcript below is a truncation rather than the whole enumeration.", err)
+			}
 
 			got := make([]string, 0, len(objections))
 			for _, o := range objections {
@@ -615,19 +627,26 @@ type coordinateFlowCase struct {
 
 // readback collects one record per invocation from a check declared over S,
 // joining the coordinate values its accessors return.
+//
+// Nothing here supplies a cancellation signal, so a walk cannot stop early and
+// the error is always nil. It is surfaced rather than discarded all the same: a
+// stopped walk would hand back a short record set, and a short set is
+// indistinguishable from a coordinate that never arrived.
 func readback[S Subject](
-	run func(Check[traversalView, NoHostPowers, S]) []Objection,
+	run func(Check[traversalView, NoHostPowers, S]) ([]Objection, error),
 	of func(S) string,
 ) []string {
 	var got []string
-	_ = run(Check[traversalView, NoHostPowers, S]{
+	if _, err := run(Check[traversalView, NoHostPowers, S]{
 		Sentinel: errRuleBroken,
 		Severity: SeverityFatal,
 		Run: func(_ traversalView, s S) []Objection {
 			got = append(got, of(s))
 			return nil
 		},
-	})
+	}); err != nil {
+		panic("a coordinate readback stopped early with no cancellation signal supplied: " + err.Error())
+	}
 	return got
 }
 
@@ -639,8 +658,8 @@ func coordinateFlowCases() []coordinateFlowCase {
 			kind: SubjectDocument,
 			seam: seamTraversal,
 			read: func(_ traversalFixture) []string {
-				return readback(func(c Check[traversalView, NoHostPowers, DocumentSubject]) []Objection {
-					return RunOnDocument(documentFile, traversalView{}, c)
+				return readback(func(c Check[traversalView, NoHostPowers, DocumentSubject]) ([]Objection, error) {
+					return RunOnDocument(documentFile, traversalView{}, c), nil
 				}, func(s DocumentSubject) string { return s.SourceFile() })
 			},
 			want: []string{documentFile},
@@ -677,8 +696,8 @@ func coordinateFlowCases() []coordinateFlowCase {
 			kind: SubjectNode,
 			seam: seamTraversal,
 			read: func(f traversalFixture) []string {
-				return readback(func(c Check[traversalView, NoHostPowers, NodeSubject]) []Objection {
-					return RunOnNodes(f, traversalView{}, c)
+				return readback(func(c Check[traversalView, NoHostPowers, NodeSubject]) ([]Objection, error) {
+					return RunOnNodes(nil, f, traversalView{}, c)
 				}, func(s NodeSubject) string { return s.NodeID() })
 			},
 			want: []string{"web", "billing.api"},
@@ -687,8 +706,8 @@ func coordinateFlowCases() []coordinateFlowCase {
 			kind: SubjectNodeAttachment,
 			seam: seamTraversal,
 			read: func(f traversalFixture) []string {
-				return readback(func(c Check[traversalView, NoHostPowers, NodeAttachmentSubject]) []Objection {
-					return RunOnNodeAttachments(f, f, traversalView{}, c)
+				return readback(func(c Check[traversalView, NoHostPowers, NodeAttachmentSubject]) ([]Objection, error) {
+					return RunOnNodeAttachments(nil, f, f, traversalView{}, c)
 				}, func(s NodeAttachmentSubject) string { return s.NodeID() + "|" + s.AttachmentName() })
 			},
 			want: []string{"web|tls", "web|logging"},
@@ -697,8 +716,8 @@ func coordinateFlowCases() []coordinateFlowCase {
 			kind: SubjectNodeAttachmentSocket,
 			seam: seamTraversal,
 			read: func(f traversalFixture) []string {
-				return readback(func(c Check[traversalView, NoHostPowers, NodeAttachmentSocketSubject]) []Objection {
-					return RunOnNodeAttachmentSockets(f, f, f, traversalView{}, c)
+				return readback(func(c Check[traversalView, NoHostPowers, NodeAttachmentSocketSubject]) ([]Objection, error) {
+					return RunOnNodeAttachmentSockets(nil, f, f, f, traversalView{}, c)
 				}, func(s NodeAttachmentSocketSubject) string {
 					return s.NodeID() + "|" + s.AttachmentName() + "|" + s.SocketName()
 				})
@@ -709,8 +728,8 @@ func coordinateFlowCases() []coordinateFlowCase {
 			kind: SubjectNodeSlot,
 			seam: seamTraversal,
 			read: func(f traversalFixture) []string {
-				return readback(func(c Check[traversalView, NoHostPowers, NodeSlotSubject]) []Objection {
-					return RunOnNodeSlots(f, f, traversalView{}, c)
+				return readback(func(c Check[traversalView, NoHostPowers, NodeSlotSubject]) ([]Objection, error) {
+					return RunOnNodeSlots(nil, f, f, traversalView{}, c)
 				}, func(s NodeSlotSubject) string { return s.NodeID() + "|" + s.SlotName() })
 			},
 			want: []string{"web|sidecar"},
@@ -719,8 +738,8 @@ func coordinateFlowCases() []coordinateFlowCase {
 			kind: SubjectNodeMechanism,
 			seam: seamTraversal,
 			read: func(f traversalFixture) []string {
-				return readback(func(c Check[traversalView, NoHostPowers, NodeMechanismSubject]) []Objection {
-					return RunOnNodeMechanisms(f, f, traversalView{}, c)
+				return readback(func(c Check[traversalView, NoHostPowers, NodeMechanismSubject]) ([]Objection, error) {
+					return RunOnNodeMechanisms(nil, f, f, traversalView{}, c)
 				}, func(s NodeMechanismSubject) string { return s.NodeID() + "|" + s.MechanismName() })
 			},
 			want: []string{"web|env", "web|file"},
@@ -729,8 +748,8 @@ func coordinateFlowCases() []coordinateFlowCase {
 			kind: SubjectNodeMechanismDeliveryKey,
 			seam: seamTraversal,
 			read: func(f traversalFixture) []string {
-				return readback(func(c Check[traversalView, NoHostPowers, NodeMechanismDeliveryKeySubject]) []Objection {
-					return RunOnNodeMechanismDeliveryKeys(f, f, f, traversalView{}, c)
+				return readback(func(c Check[traversalView, NoHostPowers, NodeMechanismDeliveryKeySubject]) ([]Objection, error) {
+					return RunOnNodeMechanismDeliveryKeys(nil, f, f, f, traversalView{}, c)
 				}, func(s NodeMechanismDeliveryKeySubject) string {
 					return s.NodeID() + "|" + s.MechanismName() + "|" + s.DeliveryKey()
 				})
@@ -741,8 +760,8 @@ func coordinateFlowCases() []coordinateFlowCase {
 			kind: SubjectNodePillarLeaf,
 			seam: seamTraversal,
 			read: func(f traversalFixture) []string {
-				return readback(func(c Check[traversalView, NoHostPowers, NodePillarLeafSubject]) []Objection {
-					return RunOnNodePillarLeaves(f, f, f, traversalView{}, c)
+				return readback(func(c Check[traversalView, NoHostPowers, NodePillarLeafSubject]) ([]Objection, error) {
+					return RunOnNodePillarLeaves(nil, f, f, f, traversalView{}, c)
 				}, func(s NodePillarLeafSubject) string {
 					return s.NodeID() + "|" + s.PillarName() + "|" + s.LeafName()
 				})
@@ -753,8 +772,8 @@ func coordinateFlowCases() []coordinateFlowCase {
 			kind: SubjectNodeParameter,
 			seam: seamTraversal,
 			read: func(f traversalFixture) []string {
-				return readback(func(c Check[traversalView, NoHostPowers, NodeParameterSubject]) []Objection {
-					return RunOnNodeParameters(f, f, traversalView{}, c)
+				return readback(func(c Check[traversalView, NoHostPowers, NodeParameterSubject]) ([]Objection, error) {
+					return RunOnNodeParameters(nil, f, f, traversalView{}, c)
 				}, func(s NodeParameterSubject) string { return s.NodeID() + "|" + s.ParameterName() })
 			},
 			want: []string{"web|db_size", "billing.api|region"},
@@ -763,8 +782,8 @@ func coordinateFlowCases() []coordinateFlowCase {
 			kind: SubjectNodeAttachmentPillarLeaf,
 			seam: seamTraversal,
 			read: func(f traversalFixture) []string {
-				return readback(func(c Check[traversalView, NoHostPowers, NodeAttachmentPillarLeafSubject]) []Objection {
-					return RunOnNodeAttachmentPillarLeaves(f, f, f, f, traversalView{}, c)
+				return readback(func(c Check[traversalView, NoHostPowers, NodeAttachmentPillarLeafSubject]) ([]Objection, error) {
+					return RunOnNodeAttachmentPillarLeaves(nil, f, f, f, f, traversalView{}, c)
 				}, func(s NodeAttachmentPillarLeafSubject) string {
 					return s.NodeID() + "|" + s.AttachmentName() + "|" + s.PillarName() + "|" + s.LeafName()
 				})
@@ -781,8 +800,8 @@ func coordinateFlowCases() []coordinateFlowCase {
 			kind: SubjectNodeLocalsKey,
 			seam: seamTraversal,
 			read: func(f traversalFixture) []string {
-				return readback(func(c Check[traversalView, NoHostPowers, NodeLocalsKeySubject]) []Objection {
-					return RunOnNodeLocalsKeys(f, f, traversalView{}, c)
+				return readback(func(c Check[traversalView, NoHostPowers, NodeLocalsKeySubject]) ([]Objection, error) {
+					return RunOnNodeLocalsKeys(nil, f, f, traversalView{}, c)
 				}, func(s NodeLocalsKeySubject) string { return s.NodeID() + "|" + s.LocalsKey() })
 			},
 			want: []string{"web|fullname", "billing.api|prefix"},
@@ -791,8 +810,8 @@ func coordinateFlowCases() []coordinateFlowCase {
 			kind: SubjectNodeProvidesKey,
 			seam: seamTraversal,
 			read: func(f traversalFixture) []string {
-				return readback(func(c Check[traversalView, NoHostPowers, NodeProvidesKeySubject]) []Objection {
-					return RunOnNodeProvidesKeys(f, f, traversalView{}, c)
+				return readback(func(c Check[traversalView, NoHostPowers, NodeProvidesKeySubject]) ([]Objection, error) {
+					return RunOnNodeProvidesKeys(nil, f, f, traversalView{}, c)
 				}, func(s NodeProvidesKeySubject) string { return s.NodeID() + "|" + s.ProvidesKey() })
 			},
 			want: []string{"web|host"},
@@ -801,8 +820,8 @@ func coordinateFlowCases() []coordinateFlowCase {
 			kind: SubjectNodePipelineStep,
 			seam: seamTraversal,
 			read: func(f traversalFixture) []string {
-				return readback(func(c Check[traversalView, NoHostPowers, NodePipelineStepSubject]) []Objection {
-					return RunOnNodePipelineSteps(f, f, traversalView{}, c)
+				return readback(func(c Check[traversalView, NoHostPowers, NodePipelineStepSubject]) ([]Objection, error) {
+					return RunOnNodePipelineSteps(nil, f, f, traversalView{}, c)
 				}, func(s NodePipelineStepSubject) string { return s.NodeID() + "|" + s.StepID() })
 			},
 			want: []string{"web|render"},
@@ -811,8 +830,8 @@ func coordinateFlowCases() []coordinateFlowCase {
 			kind: SubjectNodeArtifact,
 			seam: seamTraversal,
 			read: func(f traversalFixture) []string {
-				return readback(func(c Check[traversalView, NoHostPowers, NodeArtifactSubject]) []Objection {
-					return RunOnNodeArtifacts(f, f, traversalView{}, c)
+				return readback(func(c Check[traversalView, NoHostPowers, NodeArtifactSubject]) ([]Objection, error) {
+					return RunOnNodeArtifacts(nil, f, f, traversalView{}, c)
 				}, func(s NodeArtifactSubject) string { return s.NodeID() + "|" + s.ArtifactName() })
 			},
 			want: []string{"web|values-yaml"},
@@ -821,8 +840,8 @@ func coordinateFlowCases() []coordinateFlowCase {
 			kind: SubjectNodeSocket,
 			seam: seamTraversal,
 			read: func(f traversalFixture) []string {
-				return readback(func(c Check[traversalView, NoHostPowers, NodeSocketSubject]) []Objection {
-					return RunOnNodeSockets(f, f, traversalView{}, c)
+				return readback(func(c Check[traversalView, NoHostPowers, NodeSocketSubject]) ([]Objection, error) {
+					return RunOnNodeSockets(nil, f, f, traversalView{}, c)
 				}, func(s NodeSocketSubject) string { return s.NodeID() + "|" + s.SocketName() })
 			},
 			want: []string{"web|zebra", "web|alpha", "billing.api|db"},
@@ -831,8 +850,8 @@ func coordinateFlowCases() []coordinateFlowCase {
 			kind: SubjectEdge,
 			seam: seamTraversal,
 			read: func(f traversalFixture) []string {
-				return readback(func(c Check[traversalView, NoHostPowers, EdgeSubject]) []Objection {
-					return RunOnEdges(f, traversalView{}, c)
+				return readback(func(c Check[traversalView, NoHostPowers, EdgeSubject]) ([]Objection, error) {
+					return RunOnEdges(nil, f, traversalView{}, c)
 				}, func(s EdgeSubject) string { return s.NodeID() + "|" + s.SocketName() })
 			},
 			want: []string{"web|zebra", "billing.api|db"},
@@ -847,8 +866,8 @@ func coordinateFlowCases() []coordinateFlowCase {
 			kind: SubjectBoundaryProviderPath,
 			seam: seamTraversal,
 			read: func(f traversalFixture) []string {
-				return readback(func(c Check[traversalView, NoHostPowers, BoundaryProviderPathSubject]) []Objection {
-					return RunOnBoundaryProviderPaths(f, f, f, traversalView{}, c)
+				return readback(func(c Check[traversalView, NoHostPowers, BoundaryProviderPathSubject]) ([]Objection, error) {
+					return RunOnBoundaryProviderPaths(nil, f, f, f, traversalView{}, c)
 				}, func(s BoundaryProviderPathSubject) string {
 					return s.BoundaryName() + "|" + s.ProviderName() + "|" + s.EmittedPath()
 				})
@@ -925,7 +944,12 @@ func TestATraversalOverNoInstancesInvokesNothing(t *testing.T) {
 		t.Run(string(tc.kind), func(t *testing.T) {
 			t.Parallel()
 
-			if got := tc.run(empty, traversalView{}); len(got) != 0 {
+			got, err := tc.run(nil, empty, traversalView{})
+			if err != nil {
+				t.Fatalf("the traversal returned %v over an empty enumeration nothing cancelled; "+
+					"want no error", err)
+			}
+			if len(got) != 0 {
 				t.Errorf("the traversal returned %d objection(s) over an empty enumeration; want none", len(got))
 			}
 		})

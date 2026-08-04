@@ -47,6 +47,14 @@ func newDocumentSubject(sourceFile string) DocumentSubject {
 // view carries the facts the check declared. sourceFile is the document's
 // workspace-relative path, and is the whole of the document subject's
 // provenance.
+//
+// It is the one entry that takes no [Cancellation], and the asymmetry follows
+// from the push model rather than being an omission in it. Every pull traversal
+// reads a cancellation signal in its loop because a walk over an enumeration is
+// an interval a caller may want to cut short. This runs the check once, against
+// one document, so there is no interval to cut: a caller that wants to stop
+// stops before presenting the next document. A parameter here would be one this
+// function never reads.
 func RunOnDocument[V View, C any](sourceFile string, view V, check Check[V, C, DocumentSubject]) []Objection {
 	return check.Run(view, newDocumentSubject(sourceFile))
 }

@@ -195,6 +195,167 @@ func TestCollectTemplateRootRefs_RootVariableInsideRebinding(t *testing.T) {
 	}
 }
 
+func refPaths(refs []templateRootRef) []string {
+	out := make([]string, 0, len(refs))
+	for _, r := range refs {
+		out = append(out, r.Path)
+	}
+	return out
+}
+
+// Aliasing a WHOLE root — binding it to a variable, or rebinding the dot to it with
+// a with — is checked on the same terms as reading a key beneath it directly. The
+// diagnostic is asserted to be the direct spelling's verbatim, because a reference
+// that resolves to the same path is the same reference and there is no second rule
+// for it.
+//
+// The alias used to escape the check entirely, and the cost was not merely an
+// unvalidated read: one walk feeds both the admission check and the absent-leaf
+// seeding, so a reference neither of them attributed was neither refused nor
+// softened, and a mistyped key under a closed pillar reached the emitted artifact as
+// the literal text "<no value>".
+func TestEvalTemplate_WholeRootAliasIsCheckedLikeTheDirectSpelling(t *testing.T) {
+	t.Parallel()
+	ctx := populatedTemplateContext(t)
+	direct, err := EvalTemplate("probe", `{{ .metadata.no_such_key }}`, ctx)
+	if err == nil {
+		t.Fatalf("the direct spelling must halt; it is the terms every other spelling is held to, rendered %q", direct)
+	}
+	wantErr := err.Error()
+	aliased := map[string]string{
+		"variable":               `{{ $m := .metadata }}{{ $m.no_such_key }}`,
+		"with-rebound dot":       `{{ with .metadata }}{{ .no_such_key }}{{ end }}`,
+		"with declaration":       `{{ with $m := .metadata }}{{ $m.no_such_key }}{{ end }}`,
+		"variable of a variable": `{{ $m := .metadata }}{{ $n := $m }}{{ $n.no_such_key }}`,
+		"root-anchored variable": `{{ $m := $.metadata }}{{ $m.no_such_key }}`,
+		"nested with":            `{{ with .metadata }}{{ with . }}{{ .no_such_key }}{{ end }}{{ end }}`,
+	}
+	for name, tmpl := range aliased {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			out, err := EvalTemplate("probe", tmpl, ctx)
+			if err == nil {
+				t.Fatalf("expected a halt, rendered %q", out)
+			}
+			if !errors.Is(err, ErrTemplateUnknownRoot) {
+				t.Errorf("expected ErrTemplateUnknownRoot, got: %v", err)
+			}
+			if err.Error() != wantErr {
+				t.Errorf("diagnostic differs from the direct spelling's\n alias: %s\ndirect: %s", err.Error(), wantErr)
+			}
+		})
+	}
+}
+
+// A key the root's type DOES define keeps rendering through every alias spelling.
+// This is what makes the check above a tightening of one reference rather than a
+// refusal of the alias construct, and it is the assertion that would fail if the
+// resolution were ever widened into refusing a bare root or a rebound dot.
+func TestEvalTemplate_WholeRootAliasKeepsDeclaredKeysRendering(t *testing.T) {
+	t.Parallel()
+	ctx := populatedTemplateContext(t)
+	forms := []string{
+		`{{ .metadata.release_name }}`,
+		`{{ $m := .metadata }}{{ $m.release_name }}`,
+		`{{ with .metadata }}{{ .release_name }}{{ end }}`,
+		`{{ with $m := .metadata }}{{ $m.release_name }}{{ end }}`,
+		`{{ $m := .metadata }}{{ $n := $m }}{{ $n.release_name }}`,
+	}
+	for _, tmpl := range forms {
+		out, err := EvalTemplate("probe", tmpl, ctx)
+		if err != nil {
+			t.Errorf("%q must render, got: %v", tmpl, err)
+			continue
+		}
+		if out != "rel" {
+			t.Errorf("%q rendered %q, want %q", tmpl, out, "rel")
+		}
+	}
+}
+
+// An absent key under an OPEN root is normal authoring, so reading one through an
+// alias must produce exactly what the direct spelling produces. It is the same walk
+// that feeds the absent-leaf seeding, so an alias the walk did not attribute used to
+// render the literal "<no value>" where the direct spelling rendered nothing — a
+// divergence that reached the emitted artifact without any root being closed.
+func TestEvalTemplate_AliasedAbsentKeyUnderOpenRootRendersEmpty(t *testing.T) {
+	t.Parallel()
+	ctx := populatedTemplateContext(t)
+	forms := []string{
+		`{{ .values.absentkey }}`,
+		`{{ $v := .values }}{{ $v.absentkey }}`,
+		`{{ with .values }}{{ .absentkey }}{{ end }}`,
+		`{{ $v := .values }}{{ with $v }}{{ .absentkey }}{{ end }}`,
+	}
+	for _, tmpl := range forms {
+		out, err := EvalTemplate("probe", tmpl, ctx)
+		if err != nil {
+			t.Errorf("%q must not halt — an absent key under an open root is normal authoring, got: %v", tmpl, err)
+			continue
+		}
+		if out != "" {
+			t.Errorf("%q rendered %q, want the empty string; an unseeded read emits the literal <no value>", tmpl, out)
+		}
+	}
+}
+
+// What the walk deliberately does NOT name, pinned so the residue is not later
+// mistaken for a second hole and closed by guesswork. A range body's dot is one
+// element of the container, and what a function yields is decided at evaluation
+// rather than by the text — so neither is a path the template names, and
+// attributing either would refuse authoring on an inference the walk has no basis
+// to make. The last case is the shipped edge-configuration idiom: attributing the
+// inner reads there would treat an edge's own fields as context pillars.
+func TestCollectTemplateRootRefs_UnnameableDotIsNotAttributed(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		tmpl string
+		want []string
+	}{
+		{`{{ range .context.uses }}{{ .target }}{{ end }}`, []string{".context.uses"}},
+		{`{{ range $k, $v := .infra }}{{ $k }}{{ $v.anything }}{{ end }}`, []string{".infra"}},
+		{`{{ with default dict .metadata }}{{ .no_such_key }}{{ end }}`, []string{".metadata"}},
+		{`{{ $m := default dict .metadata }}{{ $m.no_such_key }}`, []string{".metadata"}},
+		{`{{ with index .context.uses "main" }}{{ with .values }}{{ .protocol }}{{ end }}{{ end }}`, []string{".context.uses"}},
+	}
+	for _, tc := range cases {
+		got := refPaths(collectTemplateRootRefs(mustParseForRoots(t, tc.tmpl)))
+		if strings.Join(got, ",") != strings.Join(tc.want, ",") {
+			t.Errorf("%q collected %v, want exactly %v", tc.tmpl, got, tc.want)
+		}
+	}
+}
+
+// A path bound to a variable and then iterated through it is one reference, iterated.
+// Resolving the alias to the path it aliases is what lets the two occurrences share a
+// single entry so the flag merges: without the merge the binding's non-iterated entry
+// would have an empty string seeded at the leaf, and the range would then fail on a
+// string where an absent reference would have iterated as nothing.
+func TestCollectTemplateRootRefs_AliasedIterationMergesOntoOneReference(t *testing.T) {
+	t.Parallel()
+	refs := collectTemplateRootRefs(mustParseForRoots(t, `{{ $list := .values.items }}{{ range $list }}{{ . }}{{ end }}`))
+	if got := refPaths(refs); strings.Join(got, ",") != ".values.items" {
+		t.Fatalf("collected %v, want exactly [.values.items]", got)
+	}
+	if !refs[0].Iterated {
+		t.Error("a path iterated through an alias must be marked iterated, or its leaf is seeded as a scalar")
+	}
+}
+
+// A variable reassigned to something the walk cannot name UNBINDS rather than
+// keeping the path it used to hold, so a later read is not attributed to a root the
+// author never wrote at that point.
+func TestCollectTemplateRootRefs_ReassignedVariableDoesNotKeepAStalePath(t *testing.T) {
+	t.Parallel()
+	refs := collectTemplateRootRefs(mustParseForRoots(t,
+		`{{ $m := .metadata }}{{ range .values }}{{ $m := . }}{{ $m.no_such_key }}{{ end }}`))
+	for _, r := range refs {
+		if r.Path == ".metadata.no_such_key" {
+			t.Errorf("a shadowed variable must not resolve through its outer binding: %v", refPaths(refs))
+		}
+	}
+}
+
 // The admitted root set and the keys actually delivered to a template come from
 // one derivation. This pins that: whatever the context walk emits as top-level
 // keys for a fully-populated context is exactly what the check admits. A future

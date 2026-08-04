@@ -103,4 +103,18 @@
 // materialised document set to walk. [RunOnDocument] is therefore the
 // push-model entry — the caller holding a document presents it, and the check
 // runs once, against that one document.
+//
+// # Stopping a walk is the caller's to ask for
+//
+// A pull traversal may walk a large enumeration, so each one takes a
+// [Cancellation] — a function the caller supplies, read inside the loop, whose
+// non-nil return stops the walk and becomes the error the traversal hands back.
+// A stopped walk returns no objections, because a partial set presented as a
+// whole one would report a subset of the violations as all of them.
+//
+// It is a bare function rather than a broader carrier because a check point is
+// the whole of what a traversal needs: no deadline, no clock, no ambient state.
+// The type is therefore unable to carry anything else, which keeps the
+// compilation's own cancellation scope on the caller's side of this package
+// entirely.
 package constraint

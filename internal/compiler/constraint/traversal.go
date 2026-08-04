@@ -24,6 +24,19 @@ package constraint
 // byte-identical across runs of the same input; the enumerator interfaces carry
 // that obligation.
 //
+// # Cancellation
+//
+// Every traversal takes a Cancellation and reads it as the first statement of
+// its outermost loop body, so a long walk stops within one outer iteration
+// rather than at the end of the enumeration. A stopped walk returns no
+// objections and the reason the signal gave: a partial set handed back as though
+// it were complete would report a subset of the violations as all of them.
+//
+// The read sits in the loop because there is nowhere else it can be. An
+// enumerator hands back a materialised slice, so a signal offered to one could
+// only decline to *build* the slice and would do nothing at all once it exists —
+// and the walk is where the time goes.
+//
 // # Provenance
 //
 // A subject's locator is assembled here and never by a check. Three shapes
@@ -99,19 +112,27 @@ func documentSpecSegments(block string, tail ...string) []string {
 // subjects yields the subjects of one node rather than running the check itself,
 // so a traversal contributes only how a kind's coordinates and provenance are
 // built and never how invocation works.
+//
+// The cancellation read is here for the same reason the nesting is: fourteen
+// kinds would otherwise each carry their own copy of it, and fourteen copies of
+// one rule are fourteen chances for one of them to drift.
 func runOverNodes[V any, S Subject](
+	cancelled Cancellation,
 	nodes NodeEnumerator,
 	view V,
 	run func(V, S) []Objection,
 	subjects func(NodeInstance) []S,
-) []Objection {
+) ([]Objection, error) {
 	var out []Objection
 	for _, node := range nodes.Nodes() {
+		if err := cancelled.err(); err != nil {
+			return nil, err
+		}
 		for _, subject := range subjects(node) {
 			out = append(out, run(view, subject)...)
 		}
 	}
-	return out
+	return out, nil
 }
 
 // RunOnNodes invokes check once per node, in the order nodes returns them.
@@ -121,11 +142,12 @@ func runOverNodes[V any, S Subject](
 // even when normalization reached it through a synthesized subsystem, while a
 // component in a subsystem the author declared carries no locator at all.
 func RunOnNodes[V View, C any](
+	cancelled Cancellation,
 	nodes NodeEnumerator,
 	view V,
 	check Check[V, C, NodeSubject],
-) []Objection {
-	return runOverNodes(nodes, view, check.Run, func(node NodeInstance) []NodeSubject {
+) ([]Objection, error) {
+	return runOverNodes(cancelled, nodes, view, check.Run, func(node NodeInstance) []NodeSubject {
 		return []NodeSubject{newComponentNodeSubject(
 			node.SourceFile, node.ID, node.AuthoredName, node.SubsystemPath, node.SynthesizedSubsystem,
 		)}
@@ -138,12 +160,13 @@ func RunOnNodes[V View, C any](
 // A socket's locator is .spec.components.<name>.uses.<socket>, the entry in the
 // component's dependency block.
 func RunOnNodeSockets[V View, C any](
+	cancelled Cancellation,
 	nodes NodeEnumerator,
 	sockets NodeSocketEnumerator,
 	view V,
 	check Check[V, C, NodeSocketSubject],
-) []Objection {
-	return runOverNodes(nodes, view, check.Run, func(node NodeInstance) []NodeSocketSubject {
+) ([]Objection, error) {
+	return runOverNodes(cancelled, nodes, view, check.Run, func(node NodeInstance) []NodeSocketSubject {
 		names := sockets.NodeSockets(node.ID)
 		out := make([]NodeSocketSubject, 0, len(names))
 		for _, socket := range names {
@@ -166,19 +189,23 @@ func RunOnNodeSockets[V View, C any](
 // authored entry a socket names, because an edge is the wiring the author wrote
 // there.
 func RunOnEdges[V View, C any](
+	cancelled Cancellation,
 	edges EdgeEnumerator,
 	view V,
 	check Check[V, C, EdgeSubject],
-) []Objection {
+) ([]Objection, error) {
 	var out []Objection
 	for _, edge := range edges.Edges() {
+		if err := cancelled.err(); err != nil {
+			return nil, err
+		}
 		subject := newEdgeSubject(
 			edge.Node.SourceFile, edge.Node.ID, edge.Socket,
 			componentInnerSegments(edge.Node, authoredKeyUses, edge.Socket)...,
 		)
 		out = append(out, check.Run(view, subject)...)
 	}
-	return out
+	return out, nil
 }
 
 // RunOnNodeAttachments invokes check once per attachment each node carries, in
@@ -186,12 +213,13 @@ func RunOnEdges[V View, C any](
 //
 // An attachment's locator is .spec.components.<name>.features.<attachment>.
 func RunOnNodeAttachments[V View, C any](
+	cancelled Cancellation,
 	nodes NodeEnumerator,
 	attachments AttachmentEnumerator,
 	view V,
 	check Check[V, C, NodeAttachmentSubject],
-) []Objection {
-	return runOverNodes(nodes, view, check.Run, func(node NodeInstance) []NodeAttachmentSubject {
+) ([]Objection, error) {
+	return runOverNodes(cancelled, nodes, view, check.Run, func(node NodeInstance) []NodeAttachmentSubject {
 		names := attachments.Attachments(node.ID)
 		out := make([]NodeAttachmentSubject, 0, len(names))
 		for _, attachment := range names {
@@ -212,13 +240,14 @@ func RunOnNodeAttachments[V View, C any](
 // these sockets are declared on the attached Feature, a separate authoring
 // surface from the component's own.
 func RunOnNodeAttachmentSockets[V View, C any](
+	cancelled Cancellation,
 	nodes NodeEnumerator,
 	attachments AttachmentEnumerator,
 	sockets AttachmentSocketEnumerator,
 	view V,
 	check Check[V, C, NodeAttachmentSocketSubject],
-) []Objection {
-	return runOverNodes(nodes, view, check.Run, func(node NodeInstance) []NodeAttachmentSocketSubject {
+) ([]Objection, error) {
+	return runOverNodes(cancelled, nodes, view, check.Run, func(node NodeInstance) []NodeAttachmentSocketSubject {
 		var out []NodeAttachmentSocketSubject
 		for _, attachment := range attachments.Attachments(node.ID) {
 			for _, socket := range sockets.AttachmentSockets(node.ID, attachment) {
@@ -241,12 +270,13 @@ func RunOnNodeAttachmentSockets[V View, C any](
 // attachment block that fills it — which is the site the author writes whether
 // or not the slot is currently filled.
 func RunOnNodeSlots[V View, C any](
+	cancelled Cancellation,
 	nodes NodeEnumerator,
 	slots SlotEnumerator,
 	view V,
 	check Check[V, C, NodeSlotSubject],
-) []Objection {
-	return runOverNodes(nodes, view, check.Run, func(node NodeInstance) []NodeSlotSubject {
+) ([]Objection, error) {
+	return runOverNodes(cancelled, nodes, view, check.Run, func(node NodeInstance) []NodeSlotSubject {
 		names := slots.Slots(node.ID)
 		out := make([]NodeSlotSubject, 0, len(names))
 		for _, slot := range names {
@@ -264,12 +294,13 @@ func RunOnNodeSlots[V View, C any](
 //
 // A mechanism's locator is .spec.components.<name>.inject.<mechanism>.
 func RunOnNodeMechanisms[V View, C any](
+	cancelled Cancellation,
 	nodes NodeEnumerator,
 	mechanisms MechanismEnumerator,
 	view V,
 	check Check[V, C, NodeMechanismSubject],
-) []Objection {
-	return runOverNodes(nodes, view, check.Run, func(node NodeInstance) []NodeMechanismSubject {
+) ([]Objection, error) {
+	return runOverNodes(cancelled, nodes, view, check.Run, func(node NodeInstance) []NodeMechanismSubject {
 		names := mechanisms.Mechanisms(node.ID)
 		out := make([]NodeMechanismSubject, 0, len(names))
 		for _, mechanism := range names {
@@ -288,13 +319,14 @@ func RunOnNodeMechanisms[V View, C any](
 //
 // The locator is .spec.components.<name>.inject.<mechanism>.<key>.
 func RunOnNodeMechanismDeliveryKeys[V View, C any](
+	cancelled Cancellation,
 	nodes NodeEnumerator,
 	mechanisms MechanismEnumerator,
 	keys DeliveryKeyEnumerator,
 	view V,
 	check Check[V, C, NodeMechanismDeliveryKeySubject],
-) []Objection {
-	return runOverNodes(nodes, view, check.Run, func(node NodeInstance) []NodeMechanismDeliveryKeySubject {
+) ([]Objection, error) {
+	return runOverNodes(cancelled, nodes, view, check.Run, func(node NodeInstance) []NodeMechanismDeliveryKeySubject {
 		var out []NodeMechanismDeliveryKeySubject
 		for _, mechanism := range mechanisms.Mechanisms(node.ID) {
 			for _, key := range keys.DeliveryKeys(node.ID, mechanism) {
@@ -315,13 +347,14 @@ func RunOnNodeMechanismDeliveryKeys[V View, C any](
 //
 // The locator is .spec.components.<name>.values.<pillar>.<leaf>.
 func RunOnNodePillarLeaves[V View, C any](
+	cancelled Cancellation,
 	nodes NodeEnumerator,
 	pillars NodePillarEnumerator,
 	leaves NodePillarLeafEnumerator,
 	view V,
 	check Check[V, C, NodePillarLeafSubject],
-) []Objection {
-	return runOverNodes(nodes, view, check.Run, func(node NodeInstance) []NodePillarLeafSubject {
+) ([]Objection, error) {
+	return runOverNodes(cancelled, nodes, view, check.Run, func(node NodeInstance) []NodePillarLeafSubject {
 		var out []NodePillarLeafSubject
 		for _, pillar := range pillars.NodePillars(node.ID) {
 			for _, leaf := range leaves.NodePillarLeaves(node.ID, pillar) {
@@ -347,12 +380,13 @@ func RunOnNodePillarLeaves[V View, C any](
 // is the sub-aggregate that declares its parameters. A component instance has no
 // parameter block for a locator to name.
 func RunOnNodeParameters[V View, C any](
+	cancelled Cancellation,
 	nodes NodeEnumerator,
 	parameters ParameterEnumerator,
 	view V,
 	check Check[V, C, NodeParameterSubject],
-) []Objection {
-	return runOverNodes(nodes, view, check.Run, func(node NodeInstance) []NodeParameterSubject {
+) ([]Objection, error) {
+	return runOverNodes(cancelled, nodes, view, check.Run, func(node NodeInstance) []NodeParameterSubject {
 		names := parameters.Parameters(node.ID)
 		out := make([]NodeParameterSubject, 0, len(names))
 		for _, name := range names {
@@ -374,14 +408,15 @@ func RunOnNodeParameters[V View, C any](
 // pillar is a coordinate here and the slot is a coordinate in its own right
 // elsewhere: the two are not the same axis.
 func RunOnNodeAttachmentPillarLeaves[V View, C any](
+	cancelled Cancellation,
 	nodes NodeEnumerator,
 	attachments AttachmentEnumerator,
 	pillars AttachmentPillarEnumerator,
 	leaves AttachmentPillarLeafEnumerator,
 	view V,
 	check Check[V, C, NodeAttachmentPillarLeafSubject],
-) []Objection {
-	return runOverNodes(nodes, view, check.Run, func(node NodeInstance) []NodeAttachmentPillarLeafSubject {
+) ([]Objection, error) {
+	return runOverNodes(cancelled, nodes, view, check.Run, func(node NodeInstance) []NodeAttachmentPillarLeafSubject {
 		var out []NodeAttachmentPillarLeafSubject
 		for _, attachment := range attachments.Attachments(node.ID) {
 			for _, pillar := range pillars.AttachmentPillars(node.ID, attachment) {
@@ -410,12 +445,13 @@ func RunOnNodeAttachmentPillarLeaves[V View, C any](
 // different document from the Aggregate the node was authored in — so the file
 // comes from the enumerated entry and not from the node.
 func RunOnNodeLocalsKeys[V View, C any](
+	cancelled Cancellation,
 	nodes NodeEnumerator,
 	locals LocalsKeyEnumerator,
 	view V,
 	check Check[V, C, NodeLocalsKeySubject],
-) []Objection {
-	return runOverNodes(nodes, view, check.Run, func(node NodeInstance) []NodeLocalsKeySubject {
+) ([]Objection, error) {
+	return runOverNodes(cancelled, nodes, view, check.Run, func(node NodeInstance) []NodeLocalsKeySubject {
 		entries := locals.LocalsKeys(node.ID)
 		out := make([]NodeLocalsKeySubject, 0, len(entries))
 		for _, entry := range entries {
@@ -433,12 +469,13 @@ func RunOnNodeLocalsKeys[V View, C any](
 //
 // The locator is .spec.provides.<key> in the Recipe's own file.
 func RunOnNodeProvidesKeys[V View, C any](
+	cancelled Cancellation,
 	nodes NodeEnumerator,
 	provides ProvidesKeyEnumerator,
 	view V,
 	check Check[V, C, NodeProvidesKeySubject],
-) []Objection {
-	return runOverNodes(nodes, view, check.Run, func(node NodeInstance) []NodeProvidesKeySubject {
+) ([]Objection, error) {
+	return runOverNodes(cancelled, nodes, view, check.Run, func(node NodeInstance) []NodeProvidesKeySubject {
 		entries := provides.ProvidesKeys(node.ID)
 		out := make([]NodeProvidesKeySubject, 0, len(entries))
 		for _, entry := range entries {
@@ -459,12 +496,13 @@ func RunOnNodeProvidesKeys[V View, C any](
 // identifier rather than a position: a position moves when a step is inserted
 // above it, and the identifier does not.
 func RunOnNodePipelineSteps[V View, C any](
+	cancelled Cancellation,
 	nodes NodeEnumerator,
 	steps PipelineStepEnumerator,
 	view V,
 	check Check[V, C, NodePipelineStepSubject],
-) []Objection {
-	return runOverNodes(nodes, view, check.Run, func(node NodeInstance) []NodePipelineStepSubject {
+) ([]Objection, error) {
+	return runOverNodes(cancelled, nodes, view, check.Run, func(node NodeInstance) []NodePipelineStepSubject {
 		entries := steps.PipelineSteps(node.ID)
 		out := make([]NodePipelineStepSubject, 0, len(entries))
 		for _, entry := range entries {
@@ -483,12 +521,13 @@ func RunOnNodePipelineSteps[V View, C any](
 // The locator is .spec.artifacts.<name> in the Recipe's own file, where the
 // authored key is the output filename.
 func RunOnNodeArtifacts[V View, C any](
+	cancelled Cancellation,
 	nodes NodeEnumerator,
 	artifacts ArtifactEnumerator,
 	view V,
 	check Check[V, C, NodeArtifactSubject],
-) []Objection {
-	return runOverNodes(nodes, view, check.Run, func(node NodeInstance) []NodeArtifactSubject {
+) ([]Objection, error) {
+	return runOverNodes(cancelled, nodes, view, check.Run, func(node NodeInstance) []NodeArtifactSubject {
 		entries := artifacts.Artifacts(node.ID)
 		out := make([]NodeArtifactSubject, 0, len(entries))
 		for _, entry := range entries {
@@ -514,14 +553,18 @@ func RunOnNodeArtifacts[V View, C any](
 // this kind is where the same value is legitimate as one and refused as the
 // other.
 func RunOnBoundaryProviderPaths[V View, C any](
+	cancelled Cancellation,
 	boundaries BoundaryEnumerator,
 	providers ProviderEnumerator,
 	paths EmittedPathEnumerator,
 	view V,
 	check Check[V, C, BoundaryProviderPathSubject],
-) []Objection {
+) ([]Objection, error) {
 	var out []Objection
 	for _, boundary := range boundaries.Boundaries() {
+		if err := cancelled.err(); err != nil {
+			return nil, err
+		}
 		segments := documentSpecSegments(authoredKeyBoundaries, boundary.Value)
 		for _, provider := range providers.Providers(boundary.Value) {
 			for _, path := range paths.EmittedPaths(boundary.Value, provider) {
@@ -532,5 +575,5 @@ func RunOnBoundaryProviderPaths[V View, C any](
 			}
 		}
 	}
-	return out
+	return out, nil
 }

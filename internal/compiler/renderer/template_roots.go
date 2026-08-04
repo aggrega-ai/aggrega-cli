@@ -14,8 +14,15 @@ import (
 )
 
 // templateRootRef is one field access a template makes against its context
-// root. Segs holds the path segments with the root first; Path holds the
-// authored dot-path a diagnostic quotes back to the author.
+// root. Segs holds the path segments with the root first; Path holds that same
+// path spelled the way a diagnostic quotes it back to the author.
+//
+// Path is the EFFECTIVE path rather than the author's keystrokes. A read a template
+// makes through an alias for a root — a declared variable bound to it, or the dot a
+// with body rebinds to it — is recorded under the path it resolves to, not under the
+// alias. That is what lets the aliased and the direct spelling of one reference
+// share a single entry, so the iteration flag below merges across them and a
+// diagnostic names the reference the check actually refused.
 //
 // Iterated marks a reference the template iterates over — the operand of a range
 // pipeline — rather than reads as a value. Iteration needs a container where a
@@ -43,14 +50,28 @@ type templateRootRef struct {
 //     contributes nothing while the inner .values.tls still contributes
 //     "values". This is what keeps a defensively-written optional key from
 //     reading as a reference to a root named "ca".
-//   - inside a range or with body the dot is rebound to the element, so .name
-//     there names a field of that element and contributes nothing. The
-//     range/with pipeline itself is evaluated against the surrounding dot and
-//     does contribute. An else branch runs with the dot unchanged and so
-//     contributes exactly as its surrounding scope does.
+//   - inside a range body the dot is the element, so .name there names a field of
+//     that element and contributes nothing; a range's declared key and element
+//     variables name that same unnameable value and contribute nothing either. A
+//     with body differs, because its dot is the value the pipeline named: when that
+//     pipeline is a single root-anchored reference, the body's reads resolve through
+//     it, so {{ with .metadata }}{{ .release_name }}{{ end }} contributes
+//     ".metadata.release_name" exactly as the direct spelling does. The range or
+//     with pipeline itself is evaluated against the surrounding dot and does
+//     contribute. An else branch runs with the dot unchanged and so contributes
+//     exactly as its surrounding scope does.
 //   - $ names the context root under any rebinding, so $.values.x contributes
-//     "values" even inside a rebound body. Every other variable names a value
-//     the template itself declared and contributes nothing.
+//     "values" even inside a rebound body. A variable the template declared
+//     contributes through whatever it was bound to, so {{ $m := .metadata }} makes
+//     $m.release_name contribute ".metadata.release_name". A variable holding a
+//     value no static reading can name contributes nothing, and a variable's own
+//     name never reads as a root.
+//   - a dot the walk cannot name contributes nothing beneath it. A with or an
+//     assignment whose pipeline applies a function or chains commands —
+//     {{ with default dict .metadata }}, {{ with index .context.uses "main" }} —
+//     leaves the dot unnameable, because what such a pipeline yields is decided at
+//     evaluation rather than by its text. The pipeline's own root-anchored arguments
+//     still contribute.
 //
 // A template invoked by name receives whatever the invocation passes as its
 // dot, so the invocation's pipeline contributes and the invoked body does not.
@@ -96,14 +117,141 @@ type templateRootRef struct {
 // consumer sits on exactly one side. Neither walk may grow a polarity parameter,
 // for the same reason in both places — a caller could then pass the wrong
 // direction, and the failure would be silent in whichever direction it went.
+//
+// Resolving an alias to the path it aliases NARROWS the under-collection without
+// reversing the polarity, which is the property that keeps the paragraphs above
+// true. The walk attributes a read through an alias only where the alias's own path
+// is decidable from the text, and records nothing wherever it is not, so every
+// reference the walk newly attributes is one whose direct spelling it already
+// attributed. Nothing the surface admitted becomes refused; what stops being
+// possible is spelling a reference through an alias to get a verdict the direct
+// spelling would not have given.
 func collectTemplateRootRefs(root parse.Node) []templateRootRef {
-	var refs []templateRootRef
-	seen := map[string]int{}
-	walkTemplateRoots(root, true, &refs, seen)
-	return refs
+	out := &templateRootRefs{seen: map[string]int{}}
+	walkTemplateRoots(root, templateDot{known: true}, templateVars{}, out)
+	return out.refs
 }
 
-func walkTemplateRoots(n parse.Node, dotIsRoot bool, refs *[]templateRootRef, seen map[string]int) {
+// templateRootRefs accumulates the walk's result: the references in
+// first-appearance order, and the index each recorded path sits at so a path met
+// twice merges into its existing entry rather than appearing twice.
+type templateRootRefs struct {
+	refs []templateRootRef
+	seen map[string]int
+}
+
+// templateDot is what the dot names at one point in the walk. A known dot carries
+// the root-anchored path it resolves to, and an empty path on a known dot means the
+// dot is the context root itself. An unknown dot is one no static reading can name —
+// a range element, or the result of a function the walk must not reason about — and
+// nothing read beneath it is attributed to the context root.
+type templateDot struct {
+	segs  []string
+	known bool
+}
+
+// resolve returns the root-anchored path a field access off this dot names. ok is
+// false for an unknown dot, which is what keeps a read beneath an unnameable value
+// from being attributed to a root the author never wrote.
+func (d templateDot) resolve(ident []string) ([]string, bool) {
+	if !d.known {
+		return nil, false
+	}
+	out := make([]string, 0, len(d.segs)+len(ident))
+	out = append(out, d.segs...)
+	return append(out, ident...), true
+}
+
+// templateVars maps a variable the template declared to the root-anchored path it
+// holds. A variable ABSENT from the map is one whose value the walk cannot name, and
+// absence is the fail-safe state: a read through it contributes nothing, exactly as
+// a read beneath an unknown dot does. Names are keyed as the template spells them,
+// with the leading sigil.
+type templateVars map[string][]string
+
+// clone is how a block body gets its own environment. A declaration inside a body
+// goes out of scope at the body's end, so binding it into the enclosing map would
+// let it name the wrong value for the actions that follow.
+func (v templateVars) clone() templateVars {
+	out := make(templateVars, len(v))
+	for name, segs := range v {
+		out[name] = segs
+	}
+	return out
+}
+
+// resolveVariablePath returns the root-anchored path a variable read names, through
+// whatever the variable was bound to.
+func resolveVariablePath(v *parse.VariableNode, vars templateVars) ([]string, bool) {
+	if len(v.Ident) == 0 {
+		return nil, false
+	}
+	base, bound := vars[v.Ident[0]]
+	if !bound {
+		return nil, false
+	}
+	out := make([]string, 0, len(base)+len(v.Ident)-1)
+	out = append(out, base...)
+	return append(out, v.Ident[1:]...), true
+}
+
+// templatePipeDot is the dot a pipeline's value would rebind to, which is the path
+// the pipeline names when the pipeline is a single reference and nothing more. A
+// pipeline that applies a function or chains commands resolves to an unknown dot:
+// what such a pipeline yields is decided at evaluation rather than by its text, so
+// naming it would mean reasoning about what a function returns.
+func templatePipeDot(p *parse.PipeNode, dot templateDot, vars templateVars) templateDot {
+	if p == nil || len(p.Cmds) != 1 {
+		return templateDot{}
+	}
+	cmd := p.Cmds[0]
+	if cmd == nil || len(cmd.Args) != 1 {
+		return templateDot{}
+	}
+	switch a := cmd.Args[0].(type) {
+	case *parse.DotNode:
+		return dot
+	case *parse.FieldNode:
+		if segs, ok := dot.resolve(a.Ident); ok {
+			return templateDot{segs: segs, known: true}
+		}
+	case *parse.VariableNode:
+		if len(a.Ident) == 0 {
+			return templateDot{}
+		}
+		if a.Ident[0] == "$" {
+			return templateDot{segs: append([]string(nil), a.Ident[1:]...), known: true}
+		}
+		if segs, ok := resolveVariablePath(a, vars); ok {
+			return templateDot{segs: segs, known: true}
+		}
+	case *parse.PipeNode:
+		return templatePipeDot(a, dot, vars)
+	}
+	return templateDot{}
+}
+
+// bindTemplatePipeDecls points a pipeline's own declarations at the value they hold.
+// A declaration whose value is not nameable UNBINDS the variable instead of leaving
+// a stale path behind, so a reassignment cannot make a later read resolve to the
+// path the variable used to hold.
+func bindTemplatePipeDecls(vars templateVars, p *parse.PipeNode, value templateDot) {
+	if p == nil {
+		return
+	}
+	for _, decl := range p.Decl {
+		if decl == nil || len(decl.Ident) != 1 {
+			continue
+		}
+		if !value.known {
+			delete(vars, decl.Ident[0])
+			continue
+		}
+		vars[decl.Ident[0]] = append([]string(nil), value.segs...)
+	}
+}
+
+func walkTemplateRoots(n parse.Node, dot templateDot, vars templateVars, out *templateRootRefs) {
 	if n == nil {
 		return
 	}
@@ -112,15 +260,23 @@ func walkTemplateRoots(n parse.Node, dotIsRoot bool, refs *[]templateRootRef, se
 		if v == nil {
 			return
 		}
+		// One environment threads through the list, because a declaration in one
+		// action is in scope for the actions that follow it.
 		for _, child := range v.Nodes {
-			walkTemplateRoots(child, dotIsRoot, refs, seen)
+			walkTemplateRoots(child, dot, vars, out)
 		}
 	case *parse.ActionNode:
-		walkTemplateRootsPipe(v.Pipe, dotIsRoot, false, refs, seen)
+		walkTemplateRootsPipe(v.Pipe, dot, vars, false, out)
+		bindTemplatePipeDecls(vars, v.Pipe, templatePipeDot(v.Pipe, dot, vars))
 	case *parse.IfNode:
-		walkTemplateRootsPipe(v.Pipe, dotIsRoot, false, refs, seen)
-		walkTemplateRoots(v.List, dotIsRoot, refs, seen)
-		walkTemplateRoots(v.ElseList, dotIsRoot, refs, seen)
+		walkTemplateRootsPipe(v.Pipe, dot, vars, false, out)
+		value := templatePipeDot(v.Pipe, dot, vars)
+		body := vars.clone()
+		bindTemplatePipeDecls(body, v.Pipe, value)
+		walkTemplateRoots(v.List, dot, body, out)
+		elseVars := vars.clone()
+		bindTemplatePipeDecls(elseVars, v.Pipe, value)
+		walkTemplateRoots(v.ElseList, dot, elseVars, out)
 	case *parse.RangeNode:
 		// Everything the range pipeline reaches is marked iterated. A reference
 		// nested inside that pipeline — an argument to a function whose result is
@@ -128,19 +284,30 @@ func walkTemplateRoots(n parse.Node, dotIsRoot bool, refs *[]templateRootRef, se
 		// than under-marks: the flag only ever withholds something from an absent
 		// reference, so marking one reference too many costs nothing and missing
 		// one costs a container where the template needed it.
-		walkTemplateRootsPipe(v.Pipe, dotIsRoot, true, refs, seen)
-		walkTemplateRoots(v.List, false, refs, seen)
-		walkTemplateRoots(v.ElseList, dotIsRoot, refs, seen)
+		walkTemplateRootsPipe(v.Pipe, dot, vars, true, out)
+		// The body's dot is one element of what the pipeline named, and so are the
+		// key and element variables the range declares. An element is not nameable
+		// from the text, so all three are unknown rather than the container's path.
+		body := vars.clone()
+		bindTemplatePipeDecls(body, v.Pipe, templateDot{})
+		walkTemplateRoots(v.List, templateDot{}, body, out)
+		walkTemplateRoots(v.ElseList, dot, vars.clone(), out)
 	case *parse.WithNode:
-		walkTemplateRootsPipe(v.Pipe, dotIsRoot, false, refs, seen)
-		walkTemplateRoots(v.List, false, refs, seen)
-		walkTemplateRoots(v.ElseList, dotIsRoot, refs, seen)
+		walkTemplateRootsPipe(v.Pipe, dot, vars, false, out)
+		// A with body's dot IS the value the pipeline named, so a nameable pipeline
+		// makes the body's reads resolve through it on the same terms the direct
+		// spelling gets.
+		value := templatePipeDot(v.Pipe, dot, vars)
+		body := vars.clone()
+		bindTemplatePipeDecls(body, v.Pipe, value)
+		walkTemplateRoots(v.List, value, body, out)
+		walkTemplateRoots(v.ElseList, dot, vars.clone(), out)
 	case *parse.TemplateNode:
-		walkTemplateRootsPipe(v.Pipe, dotIsRoot, false, refs, seen)
+		walkTemplateRootsPipe(v.Pipe, dot, vars, false, out)
 	}
 }
 
-func walkTemplateRootsPipe(p *parse.PipeNode, dotIsRoot, iterated bool, refs *[]templateRootRef, seen map[string]int) {
+func walkTemplateRootsPipe(p *parse.PipeNode, dot templateDot, vars templateVars, iterated bool, out *templateRootRefs) {
 	if p == nil {
 		return
 	}
@@ -149,42 +316,51 @@ func walkTemplateRootsPipe(p *parse.PipeNode, dotIsRoot, iterated bool, refs *[]
 			continue
 		}
 		for _, arg := range cmd.Args {
-			walkTemplateRootsArg(arg, dotIsRoot, iterated, refs, seen)
+			walkTemplateRootsArg(arg, dot, vars, iterated, out)
 		}
 	}
 }
 
-func walkTemplateRootsArg(arg parse.Node, dotIsRoot, iterated bool, refs *[]templateRootRef, seen map[string]int) {
+func walkTemplateRootsArg(arg parse.Node, dot templateDot, vars templateVars, iterated bool, out *templateRootRefs) {
 	switch a := arg.(type) {
 	case *parse.FieldNode:
-		if dotIsRoot {
-			recordTemplateRootRef(refs, seen, a.Ident, "."+strings.Join(a.Ident, "."), iterated)
+		if segs, ok := dot.resolve(a.Ident); ok {
+			recordTemplateRootRef(out, segs, "."+strings.Join(segs, "."), iterated)
 		}
 	case *parse.VariableNode:
-		if len(a.Ident) > 1 && a.Ident[0] == "$" {
-			recordTemplateRootRef(refs, seen, a.Ident[1:], "$."+strings.Join(a.Ident[1:], "."), iterated)
+		if len(a.Ident) == 0 {
+			return
+		}
+		if a.Ident[0] == "$" {
+			if len(a.Ident) > 1 {
+				recordTemplateRootRef(out, a.Ident[1:], "$."+strings.Join(a.Ident[1:], "."), iterated)
+			}
+			return
+		}
+		if segs, ok := resolveVariablePath(a, vars); ok {
+			recordTemplateRootRef(out, segs, "."+strings.Join(segs, "."), iterated)
 		}
 	case *parse.ChainNode:
 		// The chained fields hang off the receiver's value, not off the dot;
 		// only the receiver can reach the context root.
-		walkTemplateRootsArg(a.Node, dotIsRoot, iterated, refs, seen)
+		walkTemplateRootsArg(a.Node, dot, vars, iterated, out)
 	case *parse.PipeNode:
-		walkTemplateRootsPipe(a, dotIsRoot, iterated, refs, seen)
+		walkTemplateRootsPipe(a, dot, vars, iterated, out)
 	}
 }
 
-func recordTemplateRootRef(refs *[]templateRootRef, seen map[string]int, segs []string, path string, iterated bool) {
+func recordTemplateRootRef(out *templateRootRefs, segs []string, path string, iterated bool) {
 	if len(segs) == 0 || segs[0] == "" {
 		return
 	}
-	if at, ok := seen[path]; ok {
+	if at, ok := out.seen[path]; ok {
 		// A path read as a value in one place and iterated in another is iterated:
 		// the position that needs a container is the binding one.
-		(*refs)[at].Iterated = (*refs)[at].Iterated || iterated
+		out.refs[at].Iterated = out.refs[at].Iterated || iterated
 		return
 	}
-	seen[path] = len(*refs)
-	*refs = append(*refs, templateRootRef{Segs: segs, Path: path, Iterated: iterated})
+	out.seen[path] = len(out.refs)
+	out.refs = append(out.refs, templateRootRef{Segs: segs, Path: path, Iterated: iterated})
 }
 
 // contextRootField is one root a render context exposes: the name a template
@@ -370,9 +546,14 @@ type templateScopeViolation struct {
 // name the context does not define into an empty value: a wrapper can supply a
 // default for an absent key, never for a name that does not exist.
 //
-// A whole-root reference is admitted whenever its root is: what a template does
-// with the root's value once it holds it is the evaluator's business, and refusing
-// a bare root would break every defensive wrapper over a pillar.
+// A bare whole-root reference is admitted whenever its root is, because refusing a
+// bare root would break every defensive wrapper over a pillar. That admission covers
+// the reference itself and not whatever is read through it: a read the template makes
+// through an alias for a root — a variable bound to it, or the dot a with body
+// rebinds to it — resolves to the path it aliases and is checked on exactly the terms
+// the direct spelling gets. So aliasing a root cannot launder a key the root's type
+// does not define; that is the same laundering the wrapper case above closes, reached
+// by a different spelling.
 //
 // The comparison looks only at names and never at what any value means.
 func (s templateScope) check(tree parse.Node) *templateScopeViolation {

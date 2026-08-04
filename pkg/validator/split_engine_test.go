@@ -14,111 +14,6 @@ import (
 
 // ----- JSON Schema bridge synthesis -----
 
-func TestGenerateBaseUsesJSONSchema_Simple(t *testing.T) {
-	schema := types.OrderedMap[types.UsesSchemaEntry]{}
-	schema.Set("databases", types.UsesSchemaEntry{
-		Selector: `component.aggrega.ai/type in (resource, stateful-server)`,
-		Inject:   []string{"env", "file"},
-	})
-
-	out := GenerateBaseUsesJSONSchema(schema)
-	if out == nil {
-		t.Fatal("expected non-nil schema; got nil")
-	}
-	if out.Type != "object" {
-		t.Errorf("expected root type=object; got %q", out.Type)
-	}
-	socket, ok := out.Properties["databases"]
-	if !ok {
-		t.Fatalf("expected databases socket; got %v", out.Properties)
-	}
-	sel, ok := socket.Extra["x-aggrega-selector"].(string)
-	if !ok || sel != `component.aggrega.ai/type in (resource, stateful-server)` {
-		t.Errorf("expected x-aggrega-selector extension; got %v", socket.Extra["x-aggrega-selector"])
-	}
-	inj, ok := socket.Extra["x-aggrega-inject"].([]string)
-	if !ok || len(inj) != 2 || inj[0] != "env" || inj[1] != "file" {
-		t.Errorf("expected x-aggrega-inject=[env file]; got %v", socket.Extra["x-aggrega-inject"])
-	}
-	// Each socket's value is a map keyed by instance name; the
-	// AdditionalProperties slot carries the (target, inject?) shape.
-	if socket.AdditionalProperties == nil {
-		t.Fatalf("expected socket.AdditionalProperties to constrain instance values; got nil")
-	}
-	if socket.AdditionalProperties.Type != "object" {
-		t.Errorf("expected instance value type=object; got %q", socket.AdditionalProperties.Type)
-	}
-	target, ok := socket.AdditionalProperties.Properties["target"]
-	if !ok || target.Type != "string" {
-		t.Errorf("expected target: string on instance value; got %v", target)
-	}
-	if len(socket.AdditionalProperties.Required) != 1 || socket.AdditionalProperties.Required[0] != "target" {
-		t.Errorf("expected target in Required; got %v", socket.AdditionalProperties.Required)
-	}
-	if _, ok := socket.AdditionalProperties.Properties["inject"]; !ok {
-		t.Errorf("expected inject block on instance value when allowlist supplied")
-	}
-}
-
-func TestGenerateBaseUsesJSONSchema_NoInject(t *testing.T) {
-	schema := types.OrderedMap[types.UsesSchemaEntry]{}
-	schema.Set("apis", types.UsesSchemaEntry{Selector: `component.aggrega.ai/type in (server)`})
-
-	out := GenerateBaseUsesJSONSchema(schema)
-	if out == nil {
-		t.Fatal("expected non-nil schema; got nil")
-	}
-	socket := out.Properties["apis"]
-	if _, ok := socket.Extra["x-aggrega-inject"]; ok {
-		t.Errorf("expected no x-aggrega-inject for Black-Box pattern (no allowlist); got %v", socket.Extra["x-aggrega-inject"])
-	}
-	if _, ok := socket.AdditionalProperties.Properties["inject"]; ok {
-		t.Errorf("expected no inject sub-schema on instance value when allowlist absent")
-	}
-}
-
-func TestGenerateBaseUsesJSONSchema_Empty(t *testing.T) {
-	out := GenerateBaseUsesJSONSchema(types.OrderedMap[types.UsesSchemaEntry]{})
-	if out != nil {
-		t.Errorf("expected nil for empty usesSchema; got %v", out)
-	}
-}
-
-func TestGenerateBaseUsesJSONSchema_AuthorOrder(t *testing.T) {
-	// OrderedMap iteration is author-order-deterministic by contract.
-	// The emitted PropertyOrder must reflect the declared sequence
-	// (z, a, m) rather than alphabetic (a, m, z).
-	schema := types.OrderedMap[types.UsesSchemaEntry]{}
-	schema.Set("z_socket", types.UsesSchemaEntry{Selector: "s1"})
-	schema.Set("a_socket", types.UsesSchemaEntry{Selector: "s2"})
-	schema.Set("m_socket", types.UsesSchemaEntry{Selector: "s3"})
-
-	out := GenerateBaseUsesJSONSchema(schema)
-	expected := []string{"z_socket", "a_socket", "m_socket"}
-	if len(out.PropertyOrder) != 3 {
-		t.Fatalf("expected PropertyOrder len=3; got %v", out.PropertyOrder)
-	}
-	for i, want := range expected {
-		if out.PropertyOrder[i] != want {
-			t.Errorf("expected PropertyOrder[%d]=%q; got %q", i, want, out.PropertyOrder[i])
-		}
-	}
-}
-
-func TestGenerateBaseUsesJSONSchema_ClosedAdditionalProperties(t *testing.T) {
-	// Closed-struct discipline: the parent's AdditionalProperties
-	// rejects every value (Not of empty schema). Marshaling produces
-	// the schema-form additionalProperties: {"not": {}} which is the
-	// JSON Schema 2020-12 equivalent of closed objects.
-	schema := types.OrderedMap[types.UsesSchemaEntry]{}
-	schema.Set("databases", types.UsesSchemaEntry{Selector: "s1"})
-
-	out := GenerateBaseUsesJSONSchema(schema)
-	if out.AdditionalProperties == nil || out.AdditionalProperties.Not == nil {
-		t.Errorf("expected closed parent (AdditionalProperties.Not non-nil); got %+v", out.AdditionalProperties)
-	}
-}
-
 func TestGenerateBaseAttachmentsJSONSchema_RequiredVsOptional(t *testing.T) {
 	schema := types.OrderedMap[types.AttachmentSlot]{}
 	schema.Set("db_password", types.AttachmentSlot{Required: true, Inject: []string{"env"}})
@@ -308,26 +203,19 @@ func TestGenerateBaseAttachmentsJSONSchema_RequiredSlotFillMustNameAType(t *test
 }
 
 func TestGenerateBaseJSONSchemas_CompileAsValidators(t *testing.T) {
-	// Both projections must be usable, not merely well-formed on paper. The
+	// The projection must be usable, not merely well-formed on paper. The
 	// library resolves a schema document as a tree and refuses one where the
 	// same *Schema node sits at two positions, so reusing a single closed-object
 	// node across depths yields a projection that fails at validator
 	// construction — and a caller that treats a construction failure as
-	// "nothing to check" would then validate nothing at all, silently. Both
-	// generators place a closed object at more than one depth, so both need this
-	// guard.
+	// "nothing to check" would then validate nothing at all, silently. This
+	// projection places a closed object at more than one depth, so it needs
+	// the guard.
 	slots := types.OrderedMap[types.AttachmentSlot]{}
 	slots.Set("root_password", types.AttachmentSlot{Required: true, Inject: []string{}})
 	slots.Set("user_password", types.AttachmentSlot{Inject: []string{"env", "file"}})
 	if _, err := jsonvalidator.New(GenerateBaseAttachmentsJSONSchema(slots)); err != nil {
 		t.Errorf("attachment projection does not compile into a validator: %v", err)
-	}
-
-	sockets := types.OrderedMap[types.UsesSchemaEntry]{}
-	sockets.Set("database", types.UsesSchemaEntry{Selector: "a=b", Inject: []string{"env"}})
-	sockets.Set("cache", types.UsesSchemaEntry{Selector: "c=d"})
-	if _, err := jsonvalidator.New(GenerateBaseUsesJSONSchema(sockets)); err != nil {
-		t.Errorf("uses projection does not compile into a validator: %v", err)
 	}
 }
 
@@ -401,23 +289,5 @@ func TestGenerateBaseAttachmentsJSONSchema_SensitiveSlotCarriesTheMarker(t *test
 	// disable the slot-shape check rather than announce itself.
 	if _, err := jsonvalidator.New(out); err != nil {
 		t.Errorf("projection carrying the marker does not compile into a validator: %v", err)
-	}
-}
-
-func TestGenerateBaseUsesJSONSchema_MarshalsCleanly(t *testing.T) {
-	// The emitted *jsonschema.Schema must marshal to valid JSON for
-	// downstream consumers (the validator adapter, golden tests).
-	schema := types.OrderedMap[types.UsesSchemaEntry]{}
-	schema.Set("databases", types.UsesSchemaEntry{Selector: "sel", Inject: []string{"env"}})
-
-	out := GenerateBaseUsesJSONSchema(schema)
-	b, err := json.Marshal(out)
-	if err != nil {
-		t.Fatalf("json.Marshal: %v", err)
-	}
-	for _, frag := range []string{"databases", "x-aggrega-selector", "x-aggrega-inject", "target"} {
-		if !strings.Contains(string(b), frag) {
-			t.Errorf("expected %q in marshaled output; got %s", frag, b)
-		}
 	}
 }

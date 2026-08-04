@@ -24,98 +24,6 @@ func jsonSchemaFalse() *jsonschema.Schema {
 	return &jsonschema.Schema{Not: &jsonschema.Schema{}}
 }
 
-// GenerateBaseUsesJSONSchema builds a JSON Schema 2020-12 sub-schema
-// from a component/feature usesSchema map. The returned schema
-// represents the `uses` pillar's structural shape: each socket
-// becomes a property; each socket's value is an object map keyed by
-// instance name whose values carry the (target, inject?) shape.
-//
-// Extension keywords attach Aggrega-specific metadata for downstream
-// tooling: `x-aggrega-selector` carries the original selector
-// expression on each socket; `x-aggrega-inject` (when the entry
-// supplies an Inject allowlist) carries the list of permitted
-// mechanism strings. The selector itself is not enforced at the
-// schema level — the analyzer (Step 4 selector matcher) handles that;
-// the extension keyword is metadata-only for inspection + policy
-// tooling.
-//
-// Closed-struct discipline: the parent `uses` schema it emits carries
-// additionalProperties: false (Schema-form: Not of empty), so a socket
-// name absent from usesSchema does not satisfy the emitted document.
-// Author-order from the OrderedMap input drives PropertyOrder on the
-// emitted schema, preserving the author's declared sequence.
-//
-// What that closure does and does not amount to is worth being exact
-// about, because the two are easy to read as one. This function has no
-// caller outside its own tests: nothing builds a validator from the
-// document it returns, so no build is refused on the strength of the
-// closure above. Nor does any other check stand behind it for a
-// component's own uses block — an author may name a socket the catalog
-// did not declare, and the resolver accepts it. So the closure describes
-// the shape this generator emits and nothing more: it is not a gate an
-// authored uses block passes through, and it does not describe what the
-// compiler accepts. The sibling [GenerateBaseAttachmentsJSONSchema] does
-// not share that gap, since it is wired to a resolver guard that
-// validates against its output.
-func GenerateBaseUsesJSONSchema(usesSchema types.OrderedMap[types.UsesSchemaEntry]) *jsonschema.Schema {
-	if usesSchema.Len() == 0 {
-		return nil
-	}
-
-	propertyOrder := make([]string, 0, usesSchema.Len())
-	properties := map[string]*jsonschema.Schema{}
-
-	for socketName, entry := range usesSchema.All() {
-		// Per-instance-name value: { target: string, inject?: { ... } }.
-		instanceValue := &jsonschema.Schema{
-			Type:                 "object",
-			Required:             []string{"target"},
-			Properties:           map[string]*jsonschema.Schema{"target": {Type: "string"}},
-			AdditionalProperties: jsonSchemaFalse(),
-		}
-		instanceValue.PropertyOrder = []string{"target"}
-		if len(entry.Inject) > 0 {
-			injectProps := map[string]*jsonschema.Schema{}
-			for _, mech := range entry.Inject {
-				injectProps[mech] = &jsonschema.Schema{
-					Type:                 "object",
-					AdditionalProperties: &jsonschema.Schema{Type: "string"},
-				}
-			}
-			instanceValue.Properties["inject"] = &jsonschema.Schema{
-				Type:                 "object",
-				Properties:           injectProps,
-				AdditionalProperties: jsonSchemaFalse(),
-			}
-			instanceValue.PropertyOrder = append(instanceValue.PropertyOrder, "inject")
-		}
-
-		// Socket schema: object map keyed by instance name. Each
-		// instance-name's value matches instanceValue (above) via
-		// AdditionalProperties as a constraining sub-schema.
-		socketSchema := &jsonschema.Schema{
-			Type:                 "object",
-			AdditionalProperties: instanceValue,
-			Extra: map[string]any{
-				"x-aggrega-selector": entry.Selector,
-			},
-		}
-		if len(entry.Inject) > 0 {
-			socketSchema.Extra["x-aggrega-inject"] = append([]string(nil), entry.Inject...)
-		}
-
-		properties[socketName] = socketSchema
-		propertyOrder = append(propertyOrder, socketName)
-	}
-
-	return &jsonschema.Schema{
-		Type:                 "object",
-		Properties:           properties,
-		PropertyOrder:        propertyOrder,
-		AdditionalProperties: jsonSchemaFalse(),
-	}
-}
-
 // GenerateBaseAttachmentsJSONSchema builds a JSON Schema 2020-12
 // sub-schema from a component/feature featuresSchema map, describing
 // the SHAPE of an attachment block: each slot becomes a property whose
@@ -232,10 +140,9 @@ func GenerateBaseAttachmentsJSONSchema(featuresSchema types.OrderedMap[types.Att
 	}
 
 	// No AdditionalProperties constraint: the outer attachment object is
-	// open by design (see the godoc). The `uses` generator above closes
-	// its parent because an undeclared socket name is a topology error;
-	// an undeclared attachment name is a legal free attachment. No
-	// Required either — presence is not this schema's question.
+	// open by design (see the godoc) — an attachment name no slot declares
+	// is a legal free attachment rather than an error. No Required either —
+	// presence is not this schema's question.
 	return &jsonschema.Schema{
 		Type:          "object",
 		Properties:    properties,
