@@ -21,8 +21,7 @@
 //
 // Several documented defaults are NOT the Go zero-value:
 // default_registry = "hub.aggrega.ai", artifact_cache_dir =
-// ".aggrega/cache", halt_on_deprecated_severity = "error",
-// enforce_immutability = true,
+// ".aggrega/cache", enforce_immutability = true,
 // parse_cache.max_entries = 1000, and parse_cache.max_bytes =
 // 100_000_000. Callers obtain a Config seeded with those defaults via
 // Default(); the loader's overlay pattern (Load reads file → schema
@@ -475,15 +474,18 @@ func (c Config) ResolvedArtifactCacheDir() string {
 // BuildConfig groups build-time strictness dials and authoring
 // hints. AuthoringRelease names a Release YAML the LSP treats as
 // the "current Release" for inline diagnostics. HaltOnDeprecated
-// and HaltOnDeprecatedSeverity control how the build reacts to
-// deprecated-entity consumption: HaltOnDeprecated halts on an
+// and HaltOnDeprecatedSeverity govern only whether deprecated-entity
+// consumption HALTS the build; they never govern whether it is
+// reported, which is unconditional. HaltOnDeprecated halts on an
 // entity marked deprecated by its author (metadata.deprecated:
 // true); HaltOnDeprecatedSeverity is the threshold (in the ordered
-// set warning < error < retracted, default "error") at or above
-// which a retroactive deprecation marker recorded in the lockfile
-// halts the build rather than emitting an advisory. YAMLIndent sets
-// the indentation width of every rendered YAML artifact (default 2,
-// range [2,9]).
+// set warning < error < retracted) at or above which a retroactive
+// deprecation marker recorded in the lockfile halts the build.
+// HaltOnDeprecatedSeverity is UNSET by default, and an unset
+// threshold halts on nothing: a recorded marker is registry state
+// applied after the pin was taken, so a build that succeeded once
+// keeps succeeding, loudly advised. YAMLIndent sets the indentation
+// width of every rendered YAML artifact (default 2, range [2,9]).
 type BuildConfig struct {
 	AuthoringRelease         string `yaml:"authoring_release"`
 	HaltOnDeprecated         bool   `yaml:"halt_on_deprecated"`
@@ -699,15 +701,16 @@ type ServeConfig struct {
 }
 
 // Default returns a Config populated with the documented defaults.
-// Eight documented defaults are NOT the Go zero-value and are seeded
+// Seven documented defaults are NOT the Go zero-value and are seeded
 // explicitly: DefaultRegistry = "hub.aggrega.ai",
-// ArtifactCacheDir = ".aggrega/cache",
-// Build.HaltOnDeprecatedSeverity = "error", Build.YAMLIndent = 2,
+// ArtifactCacheDir = ".aggrega/cache", Build.YAMLIndent = 2,
 // Lint.PublishingDiscipline.EnforceImmutability = true,
 // ParseCache.MaxEntries = 1000, ParseCache.MaxBytes = 100_000_000,
 // and Concurrency.PoolSize = 4. Remaining fields stay at Go's
 // zero-value (AutoPull false, every Allow* flag false, every list nil,
-// every other string empty).
+// every other string empty) — including
+// Build.HaltOnDeprecatedSeverity, whose empty value is the documented
+// default and means no recorded deprecation marker halts the build.
 //
 // Callers that want a true zero-value Config use Config{} directly;
 // callers that want the documented baseline use Default(). The
@@ -718,8 +721,7 @@ func Default() Config {
 		DefaultRegistry:  "hub.aggrega.ai",
 		ArtifactCacheDir: ".aggrega/cache",
 		Build: BuildConfig{
-			HaltOnDeprecatedSeverity: "error",
-			YAMLIndent:               2,
+			YAMLIndent: 2,
 		},
 		Lint: LintConfig{
 			PublishingDiscipline: PublishingDisciplineConfig{

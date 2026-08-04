@@ -5,10 +5,12 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"strings"
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
+	"github.com/aggrega-ai/aggrega-cli/pkg/deprecation"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
@@ -121,6 +123,130 @@ func TestBuildRecordedMarkerWithoutAStampReportsItsAbsence(t *testing.T) {
 				t.Errorf("the refresh path is stated even with no stamp:\n%s", got)
 			}
 		})
+	}
+}
+
+// closureWithThreeRecordedSeverities builds a closure carrying one entity per
+// severity, keyed so the URI sort puts them in warning, error, retracted order.
+// It is the input both axes need: what the gate REPORTS is asked of all three at
+// once, and what it HALTS on is asked of a walk where the halting entity is not
+// the last.
+func closureWithThreeRecordedSeverities(generatedAt string) (closure.Closure, *lockfile.Lockfile) {
+	const base = "oci://reg.example/components/"
+	rows := []struct{ name, severity, message string }{
+		{"a", "warning", "superseded by a2"},
+		{"b", "error", "no longer fit for new use"},
+		{"c", "retracted", "withdrawn"},
+	}
+	cl := closure.Closure{}
+	lf := &lockfile.Lockfile{GeneratedAt: generatedAt}
+	for _, r := range rows {
+		cl.Entities = append(cl.Entities, closure.ResolvedRef{URI: base + r.name})
+		lf.Entities = append(lf.Entities, lockfile.Entity{
+			URI: base + r.name,
+			Deprecation: &lockfile.DeprecationRecord{
+				Severity: r.severity,
+				Message:  r.message,
+			},
+		})
+	}
+	return cl, lf
+}
+
+// TestBuildWithNoThresholdAdvisesEverySeverity pins the default: with no halt
+// threshold configured, every recorded severity — retracted included — is
+// reported and none of them stops the build. A recorded marker is registry state
+// applied after the version was pinned, so a build that succeeded once keeps
+// succeeding, loudly advised.
+func TestBuildWithNoThresholdAdvisesEverySeverity(t *testing.T) {
+	const stamp = "2026-07-01T09:30:00Z"
+	cl, lf := closureWithThreeRecordedSeverities(stamp)
+
+	var out bytes.Buffer
+	// workspaceconfig.Default() leaves HaltOnDeprecatedSeverity empty, so the
+	// zero BuildConfig IS the default configuration.
+	if err := enforceClosureDeprecation(cl, lf, nil, workspaceconfig.BuildConfig{}, &out); err != nil {
+		t.Fatalf("no configured threshold must halt on nothing; got: %v", err)
+	}
+
+	got := out.String()
+	for _, want := range []string{
+		"components/a is deprecated (warning)",
+		"components/b is deprecated (error)",
+		"components/c is deprecated (retracted)",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("the notice must cover every severity; missing %q:\n%s", want, got)
+		}
+	}
+	// The observation moment rides every recorded-marker notice, not only the
+	// severities that used to fall below a threshold.
+	if n := strings.Count(got, "as of "+stamp); n != 3 {
+		t.Errorf("every recorded-marker notice must state when the record was observed; got %d of 3:\n%s", n, got)
+	}
+}
+
+// TestBuildStrictThresholdStillReportsEveryEntity pins the other half of the
+// separation: a workspace that configures a halt must not thereby learn LESS.
+// The halt is returned after the walk completes, so an entity sorted after the
+// halting one keeps its notice — the failure mode a mid-walk return produces
+// silently, with nothing in the output to show a report went missing.
+func TestBuildStrictThresholdStillReportsEveryEntity(t *testing.T) {
+	const stamp = "2026-07-01T09:30:00Z"
+	cl, lf := closureWithThreeRecordedSeverities(stamp)
+
+	var out bytes.Buffer
+	err := enforceClosureDeprecation(cl, lf, nil, workspaceconfig.BuildConfig{HaltOnDeprecatedSeverity: "error"}, &out)
+	if !errors.Is(err, deprecation.ErrDeprecatedEntity) {
+		t.Fatalf("a recorded marker at the configured threshold must halt; got: %v", err)
+	}
+	// The FIRST halting entry in the sorted walk owns the error, so the halt is
+	// deterministic rather than dependent on which entry the walk stopped at.
+	if !strings.Contains(err.Error(), "components/b is deprecated (error)") {
+		t.Errorf("the halt must name the first halting entry in the walk:\n%v", err)
+	}
+
+	got := out.String()
+	for _, want := range []string{
+		"components/a is deprecated (warning)",
+		"components/b is deprecated (error)",
+		"components/c is deprecated (retracted)",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("a configured halt must not cost a notice; missing %q:\n%s", want, got)
+		}
+	}
+}
+
+// TestBuildHaltRendersItsWholeMessageToTheTerminal guards the halt's rendered
+// form, not just its error value. The CLI renders a multi-error as its wrapped
+// errors alone — so a halt message wrapping TWO errors reaches the terminal as
+// the sentinel and the policy clause with everything between them dropped: the
+// entity, the severity, the message, and the observation moment. Asserting on
+// err.Error() cannot see that, because Go renders the format string there
+// regardless. This asserts on what the user actually reads.
+func TestBuildHaltRendersItsWholeMessageToTheTerminal(t *testing.T) {
+	const stamp = "2026-07-01T09:30:00Z"
+	cl, lf := closureWithRecordedMarker("oci://reg.example/components/api", "retracted", "withdrawn: bad release", stamp)
+
+	var out bytes.Buffer
+	err := enforceClosureDeprecation(cl, lf, nil, workspaceconfig.BuildConfig{HaltOnDeprecatedSeverity: "retracted"}, &out)
+	if err == nil {
+		t.Fatal("a recorded marker at the configured threshold must halt the build")
+	}
+
+	rendered := formatCompilerError(err)
+	for _, want := range []string{
+		"components/api",
+		"(retracted)",
+		"withdrawn: bad release",
+		"as of " + stamp,
+		"aggrega pull",
+		`halt_on_deprecated_severity is "retracted"`,
+	} {
+		if !strings.Contains(rendered, want) {
+			t.Errorf("the rendered halt drops %q — the message reached the terminal incomplete:\n%s", want, rendered)
+		}
 	}
 }
 

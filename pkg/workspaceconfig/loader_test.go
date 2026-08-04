@@ -120,9 +120,9 @@ func TestLoadOverlaysDefaultsForOmittedFields(t *testing.T) {
 	t.Parallel()
 	// Fixture sets workspace.offline only; every other field omitted.
 	// The overlay-on-Default pattern preserves the documented defaults
-	// for absent keys: DefaultRegistry, CacheDir,
-	// HaltOnDeprecatedSeverity, and EnforceImmutability. AutoPull is the
-	// Go zero-value (false).
+	// for absent keys: DefaultRegistry, CacheDir, and
+	// EnforceImmutability. AutoPull is the Go zero-value (false), and so
+	// is HaltOnDeprecatedSeverity, whose documented default is unset.
 	content := `
 offline: true
 `
@@ -146,9 +146,9 @@ offline: true
 	if got.AutoPull {
 		t.Errorf("Workspace.AutoPull: want false (Default); got true")
 	}
-	if got.Build.HaltOnDeprecatedSeverity != "error" {
-		t.Errorf("Build.HaltOnDeprecatedSeverity: want %q (Default); got %q",
-			"error", got.Build.HaltOnDeprecatedSeverity)
+	if got.Build.HaltOnDeprecatedSeverity != "" {
+		t.Errorf("Build.HaltOnDeprecatedSeverity: want %q (Default: no halt threshold); got %q",
+			"", got.Build.HaltOnDeprecatedSeverity)
 	}
 	if !got.Lint.PublishingDiscipline.EnforceImmutability {
 		t.Errorf("Lint.PublishingDiscipline.EnforceImmutability: want true (Default); got false")
@@ -274,8 +274,10 @@ func TestDefaultReturnsDocumentedDefaults(t *testing.T) {
 	if d.Build.HaltOnDeprecated {
 		t.Errorf("Default().Build.HaltOnDeprecated should be false")
 	}
-	if d.Build.HaltOnDeprecatedSeverity != "error" {
-		t.Errorf("Default().Build.HaltOnDeprecatedSeverity: %q", d.Build.HaltOnDeprecatedSeverity)
+	// The documented default is UNSET: no recorded deprecation marker halts a
+	// build the workspace did not configure to halt.
+	if d.Build.HaltOnDeprecatedSeverity != "" {
+		t.Errorf("Default().Build.HaltOnDeprecatedSeverity: want %q; got %q", "", d.Build.HaltOnDeprecatedSeverity)
 	}
 	pd := d.Lint.PublishingDiscipline
 	if !pd.EnforceImmutability {
@@ -382,9 +384,9 @@ lint: {}
 		t.Errorf("Workspace.CacheDir: want %q (Default preserved); got %q",
 			".aggrega/cache", got.ArtifactCacheDir)
 	}
-	if got.Build.HaltOnDeprecatedSeverity != "error" {
-		t.Errorf("Build.HaltOnDeprecatedSeverity: want %q (Default preserved); got %q",
-			"error", got.Build.HaltOnDeprecatedSeverity)
+	if got.Build.HaltOnDeprecatedSeverity != "" {
+		t.Errorf("Build.HaltOnDeprecatedSeverity: want %q (Default preserved: no halt threshold); got %q",
+			"", got.Build.HaltOnDeprecatedSeverity)
 	}
 	if !got.Lint.PublishingDiscipline.EnforceImmutability {
 		t.Errorf("Lint.PublishingDiscipline.EnforceImmutability: want true (Default preserved); got false")

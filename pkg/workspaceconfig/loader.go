@@ -86,7 +86,7 @@ var ErrAmbiguousRegistryAlias = errors.New("workspaceconfig: registry alias matc
 // File absence is NOT an error: a workspace without a
 // .aggrega-config.yaml gets Default() (the documented defaults
 // — hub.aggrega.ai for the registry, .aggrega for the cache,
-// "error" for halt_on_deprecated_severity, true for
+// no halt_on_deprecated_severity, true for
 // enforce_immutability). Callers don't need to pre-check
 // for the file.
 //
