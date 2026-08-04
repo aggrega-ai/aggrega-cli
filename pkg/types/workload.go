@@ -117,8 +117,6 @@ type HostAlias struct {
 // AggregateMetadata.Labels uses for author-declared module-level
 // labels).
 type WorkloadMetadata struct {
-	Name        string            `json:"name,omitempty" yaml:"name,omitempty"`
-	Version     string            `json:"version,omitempty" yaml:"version,omitempty"`
 	Labels      map[string]string `json:"labels,omitempty" yaml:"labels,omitempty"`
 	Annotations map[string]string `json:"annotations,omitempty" yaml:"annotations,omitempty"`
 }

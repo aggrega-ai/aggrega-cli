@@ -290,10 +290,6 @@ func ptr[T any](v T) *T { return &v }
 // forms become the two hooks, and the two bulk-environment sources become two
 // entries — because stacking two variants on one position satisfies two branches
 // of an exactly-one disjunction and is rejected.
-//
-// metadata.name and metadata.version are deliberately left unset. The schema's
-// metadata object admits labels and annotations only, so populating either Go
-// field makes the document invalid; they are Go fields with no schema position.
 func maximalWorkloadCompute() types.Workload {
 	return types.Workload{
 		APIVersion: "aggrega.ai/v1alpha1",
