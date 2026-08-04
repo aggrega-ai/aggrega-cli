@@ -6,10 +6,13 @@ package main
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
 	"github.com/aggrega-ai/aggrega-cli/internal/compilerops"
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 )
 
 // TestRenderReleaseValidation_VerdictInvariantAcrossVerbosity proves the
@@ -66,6 +69,64 @@ func TestRenderReleaseValidation_VerdictInvariantAcrossVerbosity(t *testing.T) {
 		if strings.Contains(c, absent) {
 			t.Errorf("concise output must not contain %q\nfull output:\n%s", absent, c)
 		}
+	}
+}
+
+// TestRenderReleaseValidation_AssertionMessageSurvivesFlattening pins the one
+// property an assertion has: the author's message reaches the operator. A
+// categorised envelope renders a single frame, so flattening a diagnostic with
+// Error alone reports the phase that failed ("Component/Feature assertions") and
+// drops the frame beneath it — the entity, the assertion name, and the
+// author-written fix instruction, which is the only actionable part an assertion
+// carries. This test fails a regression that reverts the flattening to Error.
+//
+// The chain shape mirrors what the assertion evaluator actually produces: a
+// phase-context envelope wrapping the per-entity attribution wrapping the
+// sentinel and the fail-call message.
+func TestRenderReleaseValidation_AssertionMessageSurvivesFlattening(t *testing.T) {
+	const authored = "set values.port to a value at or below 1023 in the Aggregate"
+
+	failure := fmt.Errorf("assertion %q: %w: %s",
+		"Component/core/server/only/port_must_be_privileged",
+		renderer.ErrAssertionFailed, authored)
+	attributed := fmt.Errorf("Component %q instance %q assertion %q: %w",
+		"core/server", "only", "port_must_be_privileged", failure)
+	vr := &compilerops.ValidateResult{
+		RunErr: &cerrors.CompilerError{
+			Category: cerrors.DeveloperError,
+			Message:  "Component/Feature assertions",
+			Wrap:     attributed,
+		},
+	}
+
+	for _, tc := range []struct {
+		name      string
+		verbosity string
+	}{
+		{"detailed", compilerops.VerbosityDetailed},
+		{"concise", compilerops.VerbosityConcise},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var out bytes.Buffer
+			err := renderReleaseValidation(vr, "release.yaml", tc.verbosity, &out, &out)
+			if err == nil {
+				t.Fatal("expected a non-nil verdict for a failing assertion")
+			}
+			got := out.String()
+			// The phase label alone is the collapsed form; every one of these is a
+			// frame beneath it that Error would have dropped.
+			for _, want := range []string{
+				"Component/Feature assertions",
+				`Component "core/server"`,
+				`instance "only"`,
+				`assertion "port_must_be_privileged"`,
+				authored,
+			} {
+				if !strings.Contains(got, want) {
+					t.Errorf("rendered diagnostic must carry %q\nfull output:\n%s", want, got)
+				}
+			}
+		})
 	}
 }
 

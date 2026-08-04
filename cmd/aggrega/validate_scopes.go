@@ -13,6 +13,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compilerops"
 	"github.com/aggrega-ai/aggrega-cli/internal/validateops"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
@@ -56,7 +57,7 @@ func validateCatalogWide(wsRoot, cacheDir string, dirs []string, diagOut, out io
 	}
 	if len(res.ExtendsErrs) > 0 {
 		for _, e := range res.ExtendsErrs {
-			fmt.Fprintf(diagOut, "  extends: %s\n", e)
+			fmt.Fprintf(diagOut, "  extends: %s\n", cerrors.CauseChain(e))
 		}
 		return fmt.Errorf("catalog validation failed: %d extends resolution error(s)", len(res.ExtendsErrs))
 	}
@@ -65,7 +66,7 @@ func validateCatalogWide(wsRoot, cacheDir string, dirs []string, diagOut, out io
 	}
 	if len(res.InputKindErrs) > 0 {
 		for _, e := range res.InputKindErrs {
-			fmt.Fprintf(diagOut, "  input-kind: %s\n", e)
+			fmt.Fprintf(diagOut, "  input-kind: %s\n", cerrors.CauseChain(e))
 		}
 		return fmt.Errorf("catalog validation failed: %d input-kind capability error(s)", len(res.InputKindErrs))
 	}
@@ -178,11 +179,11 @@ func renderReleaseValidation(vr *compilerops.ValidateResult, releasePath, verbos
 	if len(vr.ClosureExtendsErrors) > 0 {
 		if detailed {
 			for _, e := range vr.ClosureExtendsErrors {
-				fmt.Fprintf(diagOut, "  extends: %s\n", e)
+				fmt.Fprintf(diagOut, "  extends: %s\n", cerrors.CauseChain(e))
 			}
 		} else {
 			fmt.Fprintf(diagOut, "release dependency validation: %d extends diagnostic(s); first: %s\n",
-				len(vr.ClosureExtendsErrors), vr.ClosureExtendsErrors[0])
+				len(vr.ClosureExtendsErrors), cerrors.CauseChain(vr.ClosureExtendsErrors[0]))
 		}
 		return fmt.Errorf("release dependency validation failed: %d extends resolution error(s)", len(vr.ClosureExtendsErrors))
 	}
@@ -196,14 +197,19 @@ func renderReleaseValidation(vr *compilerops.ValidateResult, releasePath, verbos
 		return vr.RunErr
 	}
 
+	// Every diagnostic here is composed as ONE line, so each is flattened with
+	// CauseChain rather than Error: a categorised envelope renders a single frame,
+	// which names the phase that failed and drops the frame beneath it carrying the
+	// actual fault — the offending entity, the assertion, and an assertion's own
+	// author-written message, which is the only actionable part it has.
 	var pipelineDiags []string
 	if vr.Tier4 != nil {
 		for _, ve := range vr.Tier4.ResolveDiagnostics {
-			pipelineDiags = append(pipelineDiags, ve.Error())
+			pipelineDiags = append(pipelineDiags, cerrors.CauseChain(ve))
 		}
 		if vr.Tier4.Analysis != nil {
 			for _, ae := range vr.Tier4.Analysis.Errors {
-				pipelineDiags = append(pipelineDiags, ae.Error())
+				pipelineDiags = append(pipelineDiags, cerrors.CauseChain(ae))
 			}
 		}
 	}
@@ -211,10 +217,10 @@ func renderReleaseValidation(vr *compilerops.ValidateResult, releasePath, verbos
 	// surface it only when the resolver produced no structured diagnostic, so a
 	// resolver failure is not double-reported.
 	if vr.RunErr != nil && (vr.Tier4 == nil || len(vr.Tier4.ResolveDiagnostics) == 0) {
-		pipelineDiags = append(pipelineDiags, vr.RunErr.Error())
+		pipelineDiags = append(pipelineDiags, cerrors.CauseChain(vr.RunErr))
 	}
 	for _, f := range vr.ResolutionFindings {
-		pipelineDiags = append(pipelineDiags, f.Error())
+		pipelineDiags = append(pipelineDiags, cerrors.CauseChain(f))
 	}
 
 	if detailed {
@@ -232,7 +238,7 @@ func renderReleaseValidation(vr *compilerops.ValidateResult, releasePath, verbos
 		}
 
 		for _, e := range vr.InputKindErrors {
-			fmt.Fprintf(diagOut, "  input-kind: %s\n", e)
+			fmt.Fprintf(diagOut, "  input-kind: %s\n", cerrors.CauseChain(e))
 		}
 	} else {
 		// The concise form collapses the verdict-affecting diagnostics — the
@@ -243,7 +249,7 @@ func renderReleaseValidation(vr *compilerops.ValidateResult, releasePath, verbos
 			if len(pipelineDiags) > 0 {
 				first = pipelineDiags[0]
 			} else {
-				first = "input-kind: " + vr.InputKindErrors[0].Error()
+				first = "input-kind: " + cerrors.CauseChain(vr.InputKindErrors[0])
 			}
 			fmt.Fprintf(diagOut, "release dependency validation: %d diagnostic(s); first: %s\n", total, first)
 		}
