@@ -1083,7 +1083,12 @@ func tier3PullCatalogEntity(workspaceRoot, cacheDir string, puller OCIPuller, ur
 			if rh, ok := puller.(interface{ RegistryHost() string }); ok {
 				host = rh.RegistryHost()
 			}
-			if rem := oci.RemediationFor(err, host); rem != "" {
+			// remediationFor, not oci.RemediationFor: this is the one pull path that
+			// can surface a reference-binding refusal (PullEntity binds the identity
+			// before it fetches), and those sentinels are declared in this package, so
+			// only the catalog-side mapping reaches them. It delegates to the fetch
+			// mapping first, so every fetch remediation still arrives unchanged.
+			if rem := remediationFor(err, host); rem != "" {
 				return nil, closure.Resolution{}, fmt.Errorf("catalog: tier-3 pull %s: %w\n  %s", uri, err, rem)
 			}
 			return nil, closure.Resolution{}, fmt.Errorf("catalog: tier-3 pull %s: %w", uri, err)
