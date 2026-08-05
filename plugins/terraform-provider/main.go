@@ -9,8 +9,7 @@
 // vendors a Terraform module verbatim into the node's output file set and, when
 // the node carries input values, writes them alongside as an auto-loaded tfvars
 // overlay. It synthesizes nothing from a Workload — workload synthesis is not a
-// terraform concern — so the guest handles a source projection alone and rejects
-// a payload that carries a workload.
+// terraform concern — so the guest rejects a payload that carries a workload.
 //
 // The guest decodes a RenderNodeInput, resolves the acquired module source from
 // the payload's name-only SourceListing, asks the host to pack the module's bytes
@@ -23,13 +22,20 @@
 // (strings, numbers, booleans, lists, maps), so a Terraform interpolation string
 // such as ${aws_db_instance.x.endpoint} passes through as a JSON string verbatim,
 // unresolved and uninterpreted. A node with no values yields no overlay; a payload
-// carrying neither a source nor a workload projection yields an empty output. The
+// with no projection yields an empty output. The
 // host writes all returned bytes verbatim and runs no serializer, so the vendored
 // module matches the projected source byte-for-byte.
 //
-// The guest is dependency-free of any Terraform, HCL, or HashiCorp library: it
-// copies bytes and emits the overlay as plain JSON, interpreting nothing.
-// Interpreting the Terraform content is the runtime's concern, not the compiler's.
+// The guest never rewrites the module: it passes the vendored bytes through and
+// emits the overlay as plain JSON. It does read the module's Terraform
+// configuration files — validate_node_input parses each one with the HCL library
+// and reports one diagnostic per syntax finding. That parse is read-only: it
+// discards the parsed body, so the bytes it reports on are the bytes the guest
+// returns. It confirms the module's HCL is well-formed and nothing more,
+// resolving no variables, evaluating no expressions, contacting no provider, and
+// running no Terraform toolchain. A file that does not parse yields an
+// error-severity diagnostic, which halts the build; what the configuration means
+// once it does parse is the runtime's concern.
 //
 // Build: GOOS=wasip1 GOARCH=wasm go build -buildmode=c-shared -o terraform-provider.wasm ./plugins/terraform-provider
 // (c-shared produces a WASI reactor whose _initialize the host runs before
