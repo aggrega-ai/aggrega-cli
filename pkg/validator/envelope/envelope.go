@@ -28,8 +28,10 @@ import (
 
 	schemas "github.com/aggrega-ai/aggrega-schemas"
 
+	aggerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	clischemas "github.com/aggrega-ai/aggrega-cli/pkg/schemas/jsonschema"
 	jsonvalidator "github.com/aggrega-ai/aggrega-cli/pkg/validator/jsonschema"
+	"github.com/aggrega-ai/aggrega-cli/pkg/yamlpos"
 )
 
 // ErrEntityEnvelope is the sentinel for a document failing its
@@ -117,14 +119,39 @@ func validatorFor(kind Kind) (jsonvalidator.Validator, error) {
 }
 
 // Error is the structured envelope violation: the file, the entity
-// kind, and the engine's path-pointed findings. Unwraps to
-// ErrEntityEnvelope.
+// kind, the engine's path-pointed findings, and where in the document
+// each of those paths sits. Unwraps to ErrEntityEnvelope.
 type Error struct {
 	Kind     Kind
 	Path     string
 	Findings []jsonvalidator.Finding
+
+	// Positions maps a finding's FieldPath to the source position of the
+	// key that path names. It is keyed by path rather than correlated to
+	// Findings by index because a position is a property of the path: the
+	// engine reports several findings along one path, and they share it.
+	//
+	// Each entry carries the file as well as the line and column, so a
+	// caller converting a finding into a categorised compiler error can
+	// hand the location straight to that error's source pointer.
+	//
+	// A path absent from the map is one the document does not address —
+	// see yamlpos.FieldNode for which shapes those are. Such a finding
+	// renders without a position; no position is substituted for it,
+	// because a coordinate a reader has to distrust is worse than none.
+	//
+	// The map is only ever looked up, never iterated, so it introduces no
+	// ordering into the rendered message.
+	Positions map[string]aggerrors.SourceLocation
 }
 
+// Error renders the violation as one grouped report: a header naming the
+// file and kind, then each finding with its position, key path and message.
+//
+// The header establishes the file, so a finding carries only its line and
+// column rather than repeating the path — the same grouping the compiler's
+// other multi-finding schema report uses, and the difference between a
+// readable diagnostic and one that restates an absolute path five times.
 func (e *Error) Error() string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "%s: %s document violates its envelope schema", e.Path, e.Kind)
@@ -137,7 +164,11 @@ func (e *Error) Error() string {
 		if fp == "" {
 			fp = "(root)"
 		}
-		fmt.Fprintf(&b, "; %s: %s", fp, f.Message)
+		b.WriteString("; ")
+		if loc, ok := e.Positions[f.FieldPath]; ok && loc.Line > 0 {
+			fmt.Fprintf(&b, "%d:%d: ", loc.Line, loc.Column)
+		}
+		fmt.Fprintf(&b, "%s: %s", fp, f.Message)
 	}
 	return b.String()
 }
@@ -172,9 +203,10 @@ func (e *envelopeFailure) Unwrap() []error { return []error{e.cause, ErrEntityEn
 // bytes then succeeds and would carry the build forward with this check
 // never having run.
 //
-// A schema violation returns *Error, carrying one finding per violation. A
-// parse failure and an engine failure have no per-field findings and report
-// their own message unchanged.
+// A schema violation returns *Error, carrying one finding per violation and
+// the source position of each violated path, resolved against the bytes
+// supplied here. A parse failure and an engine failure have no per-field
+// findings and report their own message unchanged.
 func ValidateBytes(kind Kind, data []byte, path string) (any, error) {
 	var instance any
 	if err := yaml.Unmarshal(data, &instance); err != nil {
@@ -198,9 +230,61 @@ func ValidateBytes(kind Kind, data []byte, path string) (any, error) {
 		return instance, &envelopeFailure{cause: err}
 	}
 	if len(findings) > 0 {
-		return instance, &Error{Kind: kind, Path: path, Findings: findings}
+		return instance, newSchemaError(kind, path, data, findings)
 	}
 	return instance, nil
+}
+
+// newSchemaError builds the schema violation and positions each finding
+// against the document's own bytes, so a reader is told where to look
+// rather than only what is wrong.
+//
+// The position walk runs here, once, on the failure path only, and it is
+// the sole place an envelope finding acquires a position: every surface
+// that reports one — the CLI's rendered message and the editor's
+// diagnostics alike — resolves the path through yamlpos.FieldNode, so the
+// two cannot disagree about where a violation sits.
+//
+// Positions are UTF-8 columns, matching the byte columns yaml.v3 itself
+// records and the source pointers the rest of the compiler's diagnostics
+// carry. A consumer reporting positions in another encoding converts them
+// through its own LineIndex rather than re-walking the document.
+//
+// A position is only ever a position in the bytes handed to ValidateBytes,
+// which is why it is resolved here and not further out. That makes one rule
+// binding on callers: a caller validating bytes the author did not write —
+// the output of a rendered template, say, rather than the contents of a file
+// — must not surface these coordinates as though they pointed into an
+// authoring file. They point into the text that was validated. A line number
+// aimed at text the author never typed is worse than no line number, so such
+// a caller reports the finding without a position and leaves the reader to
+// the key path.
+func newSchemaError(kind Kind, path string, data []byte, findings []jsonvalidator.Finding) *Error {
+	e := &Error{Kind: kind, Path: path, Findings: findings}
+	var doc yaml.Node
+	if err := yaml.Unmarshal(data, &doc); err != nil {
+		// The document did not re-parse as a node tree, so nothing can be
+		// positioned. The findings still stand: they came from an instance
+		// the generic decode did produce.
+		return e
+	}
+	idx := yamlpos.BuildLineIndexWithEncoding(data, yamlpos.PositionEncodingUTF8)
+	e.Positions = make(map[string]aggerrors.SourceLocation, len(findings))
+	for _, f := range findings {
+		if _, done := e.Positions[f.FieldPath]; done {
+			continue
+		}
+		span, ok := yamlpos.FieldRange(&doc, idx, f.FieldPath)
+		if !ok {
+			continue
+		}
+		e.Positions[f.FieldPath] = aggerrors.SourceLocation{
+			File:   path,
+			Line:   span.Line,
+			Column: span.Column,
+		}
+	}
+	return e
 }
 
 // ValidateInstance validates an already-parsed, normalised generic

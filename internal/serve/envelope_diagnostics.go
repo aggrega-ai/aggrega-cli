@@ -138,10 +138,18 @@ func (s *Server) envelopeDiagnosticsForBuffer(file string, content []byte, doc *
 	idx := yamlpos.BuildLineIndexWithEncoding(content, s.positionEncoding())
 	var diags []Diagnostic
 	for _, f := range leafmostFindings(envErr.Findings) {
+		// The path is resolved through the same walk the envelope's own
+		// rendered message uses, against the same buffer bytes it just
+		// validated, so the two surfaces cannot disagree about WHICH key a
+		// violation points at. The span is recomputed here rather than read
+		// off the error because it must be expressed in the client's
+		// negotiated position encoding, which only the daemon knows — so the
+		// line is the same number on both surfaces and the column is the same
+		// position counted in the units each surface reports in.
 		line, col := 1, 1
 		var endLine, endCol int
-		if node := walkYAMLToField(doc, "."+f.FieldPath); node != nil {
-			line, col, endLine, endCol = diagRangeForNode(idx, node)
+		if span, ok := yamlpos.FieldRange(doc, idx, f.FieldPath); ok {
+			line, col, endLine, endCol = span.Line, span.Column, span.EndLine, span.EndColumn
 		}
 		// Carry the same envelope framing the CLI renders ("…document
 		// violates its envelope schema") plus the path-pointed finding, so

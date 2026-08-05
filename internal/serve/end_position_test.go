@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/analyzer"
+	"github.com/aggrega-ai/aggrega-cli/pkg/yamlpos"
 )
 
 // TestErrorDataRangeRoundTrip pins the wire contract for the
@@ -177,7 +178,7 @@ spec:
 	// Confirm the top-level locator cannot precisely reach the nested key
 	// (line 7); it falls back to an ancestor — which is why the analyzer
 	// emits an empty Field rather than this path.
-	if node := walkYAMLToField(doc, ".spec.components.db.uses.primary"); node != nil && node.Line == 7 {
+	if node := yamlpos.FieldNode(doc, ".spec.components.db.uses.primary"); node != nil && node.Line == 7 {
 		t.Errorf("top-level locator reached the nested db key (line 7); expected ancestor fallback")
 	}
 	// The analyzer emits an empty Field for the nested component; with no

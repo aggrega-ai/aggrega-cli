@@ -267,8 +267,8 @@ func analyzerErrorsToDiagnostics(errs []analyzer.AnalysisError, file string, doc
 		}
 		line, col := 1, 1
 		var endLine, endCol int
-		if node := walkYAMLToField(doc, errs[i].Field); node != nil {
-			line, col, endLine, endCol = diagRangeForNode(idx, node)
+		if span, ok := yamlpos.FieldRange(doc, idx, errs[i].Field); ok {
+			line, col, endLine, endCol = span.Line, span.Column, span.EndLine, span.EndColumn
 		}
 		out = append(out, Diagnostic{
 			Line:      line,
@@ -299,8 +299,8 @@ func analyzerErrorsToDiagnostics(errs []analyzer.AnalysisError, file string, doc
 func resolverFindingToDiagnostic(ve *resolver.ResolverError, severity string, doc *yaml.Node, idx yamlpos.LineIndex) Diagnostic {
 	line, col := 1, 1
 	var endLine, endCol int
-	if node := walkYAMLToField(doc, ve.Field); node != nil {
-		line, col, endLine, endCol = diagRangeForNode(idx, node)
+	if span, ok := yamlpos.FieldRange(doc, idx, ve.Field); ok {
+		line, col, endLine, endCol = span.Line, span.Column, span.EndLine, span.EndColumn
 	}
 	return Diagnostic{
 		Line:      line,
@@ -312,91 +312,13 @@ func resolverFindingToDiagnostic(ve *resolver.ResolverError, severity string, do
 	}
 }
 
-// diagRangeForNode computes the 1-based start and end position of a
-// matched key node in the validated file's coordinate space, using the
-// same LineIndex/encoding the rest of the daemon's position machinery
-// uses. The end position spans the key token via ScalarEnd. A
-// multi-line value (block scalar) has no single-line span, so the end
-// is left zero and the caller renders the diagnostic point-style.
-func diagRangeForNode(idx yamlpos.LineIndex, node *yaml.Node) (line, col, endLine, endCol int) {
-	start := idx.NodeToPosition(node)
-	line, col = start.Line+1, start.Character+1
-	if strings.Contains(node.Value, "\n") {
-		return line, col, 0, 0
-	}
-	end := idx.ScalarEnd(node)
-	return line, col, end.Line + 1, end.Character + 1
-}
-
-// walkYAMLToField walks the parsed yaml.Node to find the key node at
-// the supplied JSON-path-style Field. Returns nil when the path is
-// empty or does not match any key in the document.
-//
-// Field syntax (mirroring resolver/ResolverError.Field):
-//
-//   - Leading "." marks an absolute path from the document root.
-//   - Segments are dot-separated.
-//   - Each segment is treated as a literal key in a mapping node.
-//
-// Sequence indices and special-character keys are not yet supported;
-// when encountered, the walk falls back to nil and the caller emits
-// the diagnostic at file:1:1. Future work extends the walker to
-// handle "[<index>]" syntax and quoted keys when authoring shapes
-// surface them.
-func walkYAMLToField(doc *yaml.Node, field string) *yaml.Node {
-	if field == "" {
-		return nil
-	}
-	// Strip leading "." from the absolute path.
-	path := strings.TrimPrefix(field, ".")
-	if path == "" {
-		return nil
-	}
-	segments := strings.Split(path, ".")
-
-	// Unwrap document node to get to the root mapping.
-	root := doc
-	if root != nil && root.Kind == yaml.DocumentNode && len(root.Content) > 0 {
-		root = root.Content[0]
-	}
-
-	return walkSegments(root, segments)
-}
-
-// walkSegments recursively walks the YAML tree following the supplied
-// segment list. Returns the LAST segment's key node, or the deepest
-// reached key node when the walk exhausts the document before consuming
-// all segments. Returns nil when the first segment doesn't match.
-func walkSegments(n *yaml.Node, segments []string) *yaml.Node {
-	if n == nil || len(segments) == 0 {
-		return nil
-	}
-	if n.Kind != yaml.MappingNode {
-		return nil
-	}
-	target := segments[0]
-	rest := segments[1:]
-	for i := 0; i+1 < len(n.Content); i += 2 {
-		keyNode := n.Content[i]
-		valNode := n.Content[i+1]
-		if keyNode.Value != target {
-			continue
-		}
-		// Match found. If this is the last segment, return the key node.
-		// Otherwise descend into the value and look up the remaining
-		// segments. If the descent fails to find the next segment, fall
-		// back to THIS key node — better than nothing because it's at
-		// least in the right neighborhood.
-		if len(rest) == 0 {
-			return keyNode
-		}
-		if inner := walkSegments(valNode, rest); inner != nil {
-			return inner
-		}
-		return keyNode
-	}
-	return nil
-}
+// The field-path-to-position walk this file used to carry lives at
+// yamlpos.FieldNode / yamlpos.FieldRange. It was moved rather than shared
+// from here because the envelope layer needs the same walk and must not
+// depend on the daemon: with one implementation, a violation reported to an
+// editor and the same violation reported on a terminal cannot point at
+// different keys. Do not reintroduce a local walker — the guard test in
+// yamlpos pins the caller set for exactly that reason.
 
 // tier4PhaseErrorMessage formats a non-resolver pre-analyzer phase
 // error into the Tier-D message shape. RunTier4Pipeline wraps phase
