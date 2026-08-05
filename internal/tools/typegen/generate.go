@@ -9,12 +9,27 @@ package main
 // boundary by path rather than driven from a directive inside aggrega-abi.
 // Run from the umbrella checkout: `go generate ./internal/tools/typegen`.
 //
+// Every Rust codec target is driven from here. The Rust crate is lint-gated as a
+// whole — the gate reads the crate, not a per-file list — so a Rust target left
+// out of this set is a file the gate still judges and no command refreshes. The
+// gap is not visible at the gate either: the omitted file simply keeps whatever
+// the generator emitted when someone last invoked it by path, and reads as
+// current. So a new Rust target is added here in the same edit that registers it.
+//
 //go:generate go run . ../../../../aggrega-abi/rust/src/cbor_gen.rs
 //go:generate go run . ../../../../aggrega-abi/typescript/src/cbor_gen.ts
 //go:generate go run . ../../../../aggrega-abi/go/pkg/abi/frp_gen.go
+//go:generate go run . ../../../../aggrega-abi/rust/src/frp_gen.rs
 //go:generate go run . ../../../../aggrega-abi/go/pkg/abi/describe_gen.go
+//go:generate go run . ../../../../aggrega-abi/rust/src/describe_gen.rs
 //go:generate go run . ../../../../aggrega-abi/go/pkg/abi/parse_gen.go
+//go:generate go run . ../../../../aggrega-abi/rust/src/parse_gen.rs
 //go:generate go run . ../../../../aggrega-abi/go/pkg/abi/import_gen.go
+//go:generate go run . ../../../../aggrega-abi/rust/src/import_gen.rs
+//go:generate go run . ../../../../aggrega-abi/rust/src/cli_gen.rs
+//go:generate go run . ../../../../aggrega-abi/rust/src/linter_gen.rs
+//go:generate go run . ../../../../aggrega-abi/rust/src/mutator_gen.rs
+//go:generate go run . ../../../../aggrega-abi/rust/src/policy_gen.rs
 //go:generate go run . ../../../../aggrega-abi/go/pkg/abi/hostfunc_error_enums_gen.go
 //go:generate go run . ../../../../aggrega-abi/rust/src/hostfunc_error_enums_gen.rs
 //go:generate go run . ../../../../aggrega-abi/typescript/src/hostfunc_error_enums_gen.ts

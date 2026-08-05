@@ -209,31 +209,60 @@ func emitRustCBOREncodeField(b *strings.Builder, f codecField, defTypes map[stri
 	b.WriteString("        }\n")
 }
 
+// rustRefValue returns the expression denoting the value that the reference
+// expression src points at, spelled the way a Rust author would spell it.
+//
+// The two forms src can take are already values in disguise or genuine
+// references, and they need opposite treatment. A borrow taken at the call site
+// (&self.name) denotes the very same place as the field itself, so the borrow is
+// dropped; a binding that is already a reference (the let-Some, map-value and
+// slice-element bindings) is dereferenced. Composing the two blindly would emit
+// *&self.name — a borrow the compiler immediately undoes, which reads as an
+// oversight and which every Rust linter reports.
+func rustRefValue(src string) string {
+	if strings.HasPrefix(src, "&") {
+		return src[1:]
+	}
+	return "*" + src
+}
+
+// rustRefReceiver returns the expression to call a method on, given a reference
+// expression src. A method call auto-references its receiver, so a borrow taken
+// at the call site is redundant and is dropped: &self.name becomes self.name,
+// while a binding that is already a reference calls through the borrow unchanged.
+//
+// This is deliberately a separate rule from rustRefValue rather than a shared
+// one. They agree on a borrowed place and disagree on a reference binding, where
+// a value needs the dereference a receiver must not have.
+func rustRefReceiver(src string) string {
+	return strings.TrimPrefix(src, "&")
+}
+
 // emitRustCBOREncodeRef appends the canonical CBOR encoding of the value the
 // reference expression src (a &T of the given resolved Go type) points at. Every
-// value is handled through a reference so scalars deref, strings coerce to &str,
-// and composites iterate through the borrow — one shape regardless of whether src
-// is a struct field, a map value, or a slice element.
+// value is handled through a reference so strings coerce to &str and composites
+// iterate through the borrow — one shape regardless of whether src is a struct
+// field, a map value, or a slice element. Scalars and method receivers are
+// spelled through rustRefValue and rustRefReceiver, which resolve the borrow at
+// emission time so the output carries no borrow the compiler would undo.
 func emitRustCBOREncodeRef(b *strings.Builder, src, goType, rustTy, indent string, defTypes map[string]bool) {
 	switch {
 	case goType == "string":
 		fmt.Fprintf(b, "%scrate::cbor_gen::write_text(out, %s);\n", indent, src)
 	case goType == "int" || goType == "int64":
-		fmt.Fprintf(b, "%scrate::cbor_gen::write_int(out, *%s);\n", indent, src)
+		fmt.Fprintf(b, "%scrate::cbor_gen::write_int(out, %s);\n", indent, rustRefValue(src))
 	case goType == "float64":
-		fmt.Fprintf(b, "%scrate::cbor_gen::write_float(out, *%s);\n", indent, src)
+		fmt.Fprintf(b, "%scrate::cbor_gen::write_float(out, %s);\n", indent, rustRefValue(src))
 	case goType == "bool":
-		fmt.Fprintf(b, "%scrate::cbor_gen::write_bool(out, *%s);\n", indent, src)
+		fmt.Fprintf(b, "%scrate::cbor_gen::write_bool(out, %s);\n", indent, rustRefValue(src))
 	case goType == "[]byte":
 		fmt.Fprintf(b, "%scrate::cbor_gen::write_bytes(out, &crate::cbor_gen::b64_decode(%s)?);\n", indent, src)
 	case goType == "json.RawMessage" || goType == "any" || goType == "interface{}":
-		fmt.Fprintf(b, "%scrate::cbor_gen::write_bytes(out, %s.get().as_bytes());\n", indent, src)
+		fmt.Fprintf(b, "%scrate::cbor_gen::write_bytes(out, %s.get().as_bytes());\n", indent, rustRefReceiver(src))
 	case strings.HasPrefix(goType, "*"):
 		emitRustCBOREncodeRef(b, src, goType[1:], strings.TrimSuffix(strings.TrimPrefix(rustTy, "Option<"), ">"), indent, defTypes)
 	case defTypes[goType]:
-		// A method call auto-refs, so drop a leading & (an owned field's &self.name
-		// becomes self.name.append_cbor(); a &T binding calls through the borrow).
-		fmt.Fprintf(b, "%s%s.append_cbor(out)?;\n", indent, strings.TrimPrefix(src, "&"))
+		fmt.Fprintf(b, "%s%s.append_cbor(out)?;\n", indent, rustRefReceiver(src))
 	case strings.HasPrefix(goType, "map["):
 		valType := goType[strings.IndexByte(goType, ']')+1:]
 		emitRustCBOREncodeMap(b, src, valType, goTypeToRust(valType, "", defTypes), indent, defTypes)
@@ -243,7 +272,7 @@ func emitRustCBOREncodeRef(b *strings.Builder, src, goType, rustTy, indent strin
 	default:
 		// A def type behind a Box (pointer-to-def, inner of Option<Box<T>>): the
 		// method auto-derefs through the Box.
-		fmt.Fprintf(b, "%s%s.append_cbor(out)?;\n", indent, strings.TrimPrefix(src, "&"))
+		fmt.Fprintf(b, "%s%s.append_cbor(out)?;\n", indent, rustRefReceiver(src))
 	}
 }
 
@@ -671,7 +700,7 @@ impl<'a> CborDec<'a> {
             }
             25 => {
                 self.need(2)?;
-                let v = (self.data[self.pos] as u64) << 8 | self.data[self.pos + 1] as u64;
+                let v = ((self.data[self.pos] as u64) << 8) | self.data[self.pos + 1] as u64;
                 self.pos += 2;
                 v
             }
@@ -679,7 +708,7 @@ impl<'a> CborDec<'a> {
                 self.need(4)?;
                 let mut v: u64 = 0;
                 for k in 0..4 {
-                    v = v << 8 | self.data[self.pos + k] as u64;
+                    v = (v << 8) | self.data[self.pos + k] as u64;
                 }
                 self.pos += 4;
                 v
@@ -688,7 +717,7 @@ impl<'a> CborDec<'a> {
                 self.need(8)?;
                 let mut v: u64 = 0;
                 for k in 0..8 {
-                    v = v << 8 | self.data[self.pos + k] as u64;
+                    v = (v << 8) | self.data[self.pos + k] as u64;
                 }
                 self.pos += 8;
                 v
