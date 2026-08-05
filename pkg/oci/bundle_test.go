@@ -139,6 +139,7 @@ func TestBundleBareKindsPerVersionSubdir(t *testing.T) {
 		{"Feature", "feature.yaml", oci.MediaTypeFeature},
 		{"Aggregate", "aggregate.yaml", oci.MediaTypeAggregate},
 		{"WorkloadLibrary", "library.yaml", oci.MediaTypeWorkloadLibrary},
+		{"ArtifactsLibrary", "library.yaml", oci.MediaTypeArtifactsLibrary},
 	}
 	body := func(kind string) []byte {
 		return []byte("apiVersion: aggrega.ai/v1alpha1\nkind: " + kind + "\nmetadata:\n  name: demo/x\n  version: 1.0.0\n")
@@ -209,6 +210,69 @@ func TestBundlePluginNoVersionSubdir(t *testing.T) {
 	mustWrite(t, compPath, compBody)
 	if _, _, err := oci.Bundle("Component", compPath); !errors.Is(err, oci.ErrEntityVersionPathMismatch) {
 		t.Errorf("Component off-layout should still wrap ErrEntityVersionPathMismatch; got %v", err)
+	}
+}
+
+// TestBundleCoversEveryMediaTypeKind converts Bundle's default arm from an
+// assertion into a check. Bundle gates on the mediatype table and then dispatches
+// on its own switch, so a kind can sit in the table with no matching case: the
+// gate lets it through and the switch drops it on ErrUnknownEntityKind. That is
+// the one shape where the two homes disagree, and it is invisible until somebody
+// pushes that kind — which is how ArtifactsLibrary came to be publishable by the
+// table and unbundleable in fact for as long as it was.
+//
+// So this walks the enumeration rather than a hand-listed set: every kind the
+// transport resolves a mediatype for must reach an arm. The assertion is
+// deliberately narrow — that the kind is NOT rejected as unknown, and that the
+// returned mediatype is the one the table resolves. It says nothing about WHICH
+// arm, because that is a per-kind judgement about the entity's shape and belongs
+// in the per-kind tests above; a check that guessed would either forbid a
+// legitimate archive kind or wave a mis-filed one through.
+//
+// The non-emptiness guard is calibration: an empty enumeration would make the
+// loop body run zero times and the test pass while checking nothing, and a
+// vacuous pass reads exactly like a real one.
+func TestBundleCoversEveryMediaTypeKind(t *testing.T) {
+	t.Parallel()
+	kinds := oci.MediaTypeKinds()
+	if len(kinds) == 0 {
+		t.Fatal("the transport resolves no kinds at all, so the loop below asserts nothing")
+	}
+	for _, kind := range kinds {
+		t.Run(kind, func(t *testing.T) {
+			t.Parallel()
+			// In-layout for every kind: the entity file's parent dir equals its
+			// metadata.version, which satisfies the per-version guard. Plugin is
+			// exempt from that guard and unaffected by satisfying it anyway.
+			ver := filepath.Join(t.TempDir(), "1.0.0")
+			if err := os.MkdirAll(ver, 0o755); err != nil {
+				t.Fatalf("mkdir: %v", err)
+			}
+			path := filepath.Join(ver, "entity.yaml")
+			mustWrite(t, path, []byte("apiVersion: aggrega.ai/v1alpha1\nkind: "+kind+
+				"\nmetadata:\n  name: demo/x\n  version: 1.0.0\n"))
+
+			data, mt, err := oci.Bundle(kind, path)
+			if errors.Is(err, oci.ErrUnknownEntityKind) {
+				t.Fatalf("kind %q resolves a mediatype but Bundle has no case for it: it is publishable "+
+					"by the mediatype table and unbundleable in fact. Add an arm to Bundle's switch — "+
+					"bare YAML for a self-contained entity, tar.gz for one whose version directory "+
+					"carries co-located source.", kind)
+			}
+			if err != nil {
+				t.Fatalf("kind %q: Bundle: %v", kind, err)
+			}
+			want, err := oci.MediaTypeForKind(kind)
+			if err != nil {
+				t.Fatalf("kind %q came from MediaTypeKinds but MediaTypeForKind rejects it: %v", kind, err)
+			}
+			if mt != want {
+				t.Errorf("kind %q mediatype = %q; want %q", kind, mt, want)
+			}
+			if len(data) == 0 {
+				t.Errorf("kind %q bundled to zero bytes", kind)
+			}
+		})
 	}
 }
 

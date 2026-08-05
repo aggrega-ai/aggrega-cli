@@ -136,12 +136,16 @@ func startRegistry(t *testing.T, handlerWrap func(http.Handler) http.Handler) st
 // that walk is a named entry here with a reason attached — and the reason is
 // carried in the value rather than in a comment so the check below can require
 // one to exist.
+//
+// A kind is listed here only when pushing it would be WRONG, never merely because
+// the catalog happens to hold none of it: the walk below is zero-count safe, so a
+// kind with no instances contributes no pushes and needs no exclusion. Reading it
+// the other way is how ArtifactsLibrary came to be excluded on the strength of an
+// empty catalog — which then read as a standing decision not to publish the kind,
+// when publishing it is exactly what it is for.
 var nonRoundTripKinds = map[string]string{
 	"Plugin": "the catalog walk publishes entity YAML only; a Plugin's .wasm " +
 		"artifact is a separate push with its own mediatype",
-	"ArtifactsLibrary": "no catalog entity declares this kind, and whether it is " +
-		"published at all is unsettled, so a push here would assert a decision " +
-		"nothing has made",
 }
 
 // publishableKinds is the kinds this round-trip pushes: every kind the OCI

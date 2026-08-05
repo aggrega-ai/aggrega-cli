@@ -91,14 +91,16 @@ var kindSources = map[string]kindSource{
 // embedded schema, the destination package, the schema file basename for the
 // generated header, and the explicit set of enum-bearing field names to emit.
 //
-// The emitter is a general string-enum → Go bare-const capability: for each
-// named field it locates the field's string `enum` anywhere in the schema
+// The emitter is a general closed-string-vocabulary → Go bare-const capability:
+// for each named field it locates the field's string `enum`, or the single value
+// its string `const` declares, anywhere in the schema
 // (recursing through `properties`, `items`, and `x-aggrega-go-type`-annotated
 // nodes alike) and emits one bare untyped string const per value, named
-// Pascal(field)+Pascal(value). `fields` scopes the emission to the enums this
-// file owns rather than every enum in the schema — the schema also carries
-// enums (pluginType, abiVersion) whose Go identity lives in hand-written
-// homes; listing only the owned fields keeps a single home per enum.
+// Pascal(field)+Pascal(value) for an `enum` and Pascal(field) alone for a
+// `const`, whose one value is the field itself. `fields` scopes the emission to the vocabularies
+// this file owns rather than every one in the schema — the schema also carries
+// vocabularies (pluginType) whose Go identity lives in hand-written
+// homes; listing only the owned fields keeps a single home per vocabulary.
 type enumSource struct {
 	schema     string
 	schemaFile string
@@ -166,7 +168,54 @@ var enumSources = map[string]enumSource{
 		regen:      "// Regenerate with `go generate ./internal/tools/typegen` from the\n// aggrega-cli checkout.\n",
 		doc:        hostfuncErrorEnumDoc,
 	},
+
+	// Plugin ABI version — the descriptor's abi_version is declared as a
+	// single-valued const in the describe schema, so the schema is the one place
+	// the version is written and the Go/Rust/TS consts below are generated from
+	// it. The three plugin kits re-export the generated const instead of
+	// declaring their own copy, so bumping the ABI is a one-line schema edit.
+	"abi_version_enums_gen.go": {
+		schema:     schemas.WasmDescribeV1alpha1,
+		schemaFile: "wasm-describe-v1alpha1.schema.json",
+		pkg:        "abi",
+		fields:     []string{"abi_version"},
+		regen:      "// Regenerate with `go generate ./internal/tools/typegen` from the\n// aggrega-cli checkout.\n",
+		doc:        abiVersionEnumDoc,
+	},
+	"abi_version_enums_gen.rs": {
+		schema:     schemas.WasmDescribeV1alpha1,
+		schemaFile: "wasm-describe-v1alpha1.schema.json",
+		fields:     []string{"abi_version"},
+		lang:       "rust",
+		regen:      "// Regenerate with `go generate ./internal/tools/typegen` from the\n// aggrega-cli checkout.\n",
+		doc:        abiVersionEnumDoc,
+	},
+	"abi_version_enums_gen.ts": {
+		schema:     schemas.WasmDescribeV1alpha1,
+		schemaFile: "wasm-describe-v1alpha1.schema.json",
+		fields:     []string{"abi_version"},
+		lang:       "ts",
+		regen:      "// Regenerate with `go generate ./internal/tools/typegen` from the\n// aggrega-cli checkout.\n",
+		doc:        abiVersionEnumDoc,
+	},
 }
+
+// abiVersionEnumDoc is the shared file-level doc for the three plugin-ABI-version
+// targets, so the Go/Rust/TS files carry one explanation.
+const abiVersionEnumDoc = "This const is the plugin ABI version, generated from the descriptor schema's\n" +
+	"declaration of abi_version. The schema pins that field to a single value, and\n" +
+	"this const, its Rust and TypeScript siblings, and the three plugin kits'\n" +
+	"re-exports are all generated or aliased from that one declaration, so bumping\n" +
+	"the ABI is a schema edit and a regeneration rather than an edit in each\n" +
+	"language.\n" +
+	"\n" +
+	"A guest stamps the version into the descriptor it returns from describe(); the\n" +
+	"host accepts exactly the version it speaks and refuses a guest built against\n" +
+	"any other at load rather than mis-invoking it at dispatch.\n" +
+	"\n" +
+	"It is unrelated to the IR payload's schema version, which travels in an IR\n" +
+	"graph's provenance and versions the graph shape rather than the plugin ABI.\n" +
+	"The two spell the same string today and are separate vocabularies."
 
 // hostfuncErrorEnumDoc is the shared file-level doc for the three host-function
 // error-code enum targets, so the Go/Rust/TS files carry one explanation.
@@ -848,10 +897,15 @@ type schemaNode struct {
 	GoType      string // x-aggrega-go-type override (names a hand-written or generic type)
 	Ref         string // $ref target (e.g. #/$defs/Unit); resolves to a Go type name
 	Required    []string
-	Enum        []string    // enum values, in declared order (string enums only)
-	props       []namedNode // in declared order
-	Items       *schemaNode
-	defs        []namedNode // $defs entries, in declared order (multi-type schemas only)
+	Enum        []string // enum values, in declared order (string enums only)
+	// Const is a string `const` value, which is a closed vocabulary of exactly
+	// one member: a schema declaring `const` fixes the field to that single
+	// value the same way an `enum` fixes it to a set. A non-string const
+	// (a number, a boolean) leaves this empty — see decodeNode.
+	Const string
+	props []namedNode // in declared order
+	Items *schemaNode
+	defs  []namedNode // $defs entries, in declared order (multi-type schemas only)
 }
 
 type namedNode struct {
@@ -869,6 +923,7 @@ func decodeNode(raw json.RawMessage) (schemaNode, error) {
 		Ref         string          `json:"$ref"`
 		Required    []string        `json:"required"`
 		Enum        []string        `json:"enum"`
+		Const       json.RawMessage `json:"const"`
 		Items       json.RawMessage `json:"items"`
 		Properties  json.RawMessage `json:"properties"`
 		Defs        json.RawMessage `json:"$defs"`
@@ -877,6 +932,17 @@ func decodeNode(raw json.RawMessage) (schemaNode, error) {
 		return n, err
 	}
 	n.Type, n.Description, n.GoType, n.Ref, n.Required, n.Enum = flat.Type, flat.Description, flat.GoType, flat.Ref, flat.Required, flat.Enum
+	// `const` is decoded as raw JSON rather than a string field because the
+	// keyword admits any JSON type and the schema corpus carries a numeric one
+	// (a lockfile version). A typed string field would fail the whole decode on
+	// that schema; reading it raw and keeping only a string keeps every schema
+	// decodable while a non-string const is simply not a string vocabulary.
+	if len(flat.Const) > 0 {
+		var s string
+		if err := json.Unmarshal(flat.Const, &s); err == nil {
+			n.Const = s
+		}
+	}
 	if len(flat.Items) > 0 {
 		it, err := decodeNode(flat.Items)
 		if err != nil {
@@ -1661,31 +1727,80 @@ func generate(typeName, schemaJSON string) ([]byte, error) {
 type namedEnum struct {
 	field  string
 	values []string
+	// fromConst records that the schema pinned this field with `const` rather
+	// than listing an `enum`, which is what decides how the identifier is named.
+	fromConst bool
+}
+
+// closedValues returns a node's closed string vocabulary in declared order — its
+// `enum` members, or the single member a string `const` declares — and whether
+// the declaration was a `const`. A `const` is a
+// one-member vocabulary — the schema fixes the field to exactly that value — so
+// both keywords resolve to the same shape and every enum backend emits from a
+// values slice without caring which keyword declared it. `enum` wins if a node
+// somehow carries both, keeping the richer declaration.
+func closedValues(n schemaNode) ([]string, bool) {
+	if len(n.Enum) > 0 {
+		return n.Enum, false
+	}
+	if n.Const != "" {
+		return []string{n.Const}, true
+	}
+	return nil, false
+}
+
+// constIdent names the emitted identifier for one member of a closed vocabulary,
+// joining the field and value parts with sep (empty for the Pascal-cased Go and
+// TypeScript idioms, "_" for Rust's SCREAMING_SNAKE_CASE).
+//
+// An `enum` member is named for the field and the value together, because the
+// field alone cannot tell the members apart. A `const` member is named for the
+// field alone: the schema pins that field to exactly one value, so folding the
+// value into the identifier would rename the symbol every time the value is
+// revised, and each consumer would have to be re-pointed at a new name for the
+// same concept. Naming it for the field keeps a revision a one-line schema edit
+// that every generated binding and every consumer follows unchanged.
+func constIdent(field, value, sep string, fromConst bool) string {
+	if fromConst {
+		return field
+	}
+	return field + sep + value
 }
 
 // collectEnums walks a schema node depth-first, in declared order, collecting
-// every string `enum` whose owning field name is in want. It recurses through
-// `properties` and `items` and does NOT stop at an x-aggrega-go-type annotation
+// every closed string vocabulary — an `enum` or a single-valued `const` — whose
+// owning field name is in want. It recurses through
+// `properties`, `items` and `$defs`, and does NOT stop at an x-aggrega-go-type
+// annotation
 // — the enum-bearing fields (e.g. exports.items.operates/scope) live under
 // items nodes the struct path skips, so the enum walk must descend through them.
 // A field name appears at most once: the first match in declared order wins, so
 // a duplicated name across branches is collected once deterministically.
 func collectEnums(n schemaNode, want map[string]bool, seen map[string]bool, out *[]namedEnum) {
 	for _, p := range n.props {
-		if len(p.node.Enum) > 0 && want[p.name] && !seen[p.name] {
+		if vals, fromConst := closedValues(p.node); len(vals) > 0 && want[p.name] && !seen[p.name] {
 			seen[p.name] = true
-			*out = append(*out, namedEnum{field: p.name, values: p.node.Enum})
+			*out = append(*out, namedEnum{field: p.name, values: vals, fromConst: fromConst})
 		}
 		collectEnums(p.node, want, seen, out)
 	}
 	if n.Items != nil {
 		collectEnums(*n.Items, want, seen, out)
 	}
+	// A schema that declares its types under $defs and carries no root
+	// properties (the describe socket is one) keeps every vocabulary out of reach
+	// of the walk above, so the walk descends into $defs as well. It runs last so
+	// a field reachable through properties resolves to the node it already
+	// resolved to — the first match in declared order still wins.
+	for _, d := range n.defs {
+		collectEnums(d.node, want, seen, out)
+	}
 }
 
 // generateEnums produces the formatted Go source for a string-enum-const file:
-// one bare untyped string const per enum value of each requested field, named
-// Pascal(field)+Pascal(value), in (field-declaration, then enum-array) order so
+// one bare untyped string const per value of each requested field, named
+// Pascal(field)+Pascal(value) for an `enum` and Pascal(field) alone for a
+// `const`, in (field-declaration, then enum-array) order so
 // regeneration is byte-stable. It is the single-type enum-emit path. Bare
 // untyped consts (not a typed enum) keep the consts drop-in for a string-typed
 // consumer (a string switch scrutinee, a string struct field) without forcing a
@@ -1701,7 +1816,7 @@ func generateEnums(e enumSource) ([]byte, error) {
 		fieldPascal := pascal(en.field)
 		fmt.Fprintf(&body, "const (\n")
 		for _, v := range en.values {
-			fmt.Fprintf(&body, "\t%s%s = %q\n", fieldPascal, pascal(v), v)
+			fmt.Fprintf(&body, "\t%s = %q\n", constIdent(fieldPascal, pascal(v), "", en.fromConst), v)
 		}
 		body.WriteString(")\n\n")
 	}
@@ -1715,7 +1830,8 @@ func generateEnums(e enumSource) ([]byte, error) {
 }
 
 // resolveEnums decodes an enum source's schema and resolves every requested
-// field to its string enum, failing loudly if a requested field is missing (a
+// field to its closed string vocabulary — an `enum` or a single-valued `const` —
+// failing loudly if a requested field is missing (a
 // schema rename or a dropped enum would otherwise silently vanish the consts).
 // It is the shared front-end for the Go, Rust, and TS enum backends, so the
 // three languages emit from one resolved vocabulary.
@@ -1773,7 +1889,8 @@ func screamingSnake(s string) string {
 }
 
 // generateEnumsRust emits the Rust &str consts for an enum source: one
-// `pub const <FIELD>_<VALUE>: &str = "<value>";` per value, in schema
+// `pub const <FIELD>_<VALUE>: &str = "<value>";` per value — `<FIELD>` alone for
+// a `const` — in schema
 // declaration order so regeneration is byte-stable. The consts are bare &str so
 // they drop into a string comparison without a type conversion, matching the Go
 // bare-const contract.
@@ -1792,14 +1909,16 @@ func generateEnumsRust(e enumSource) ([]byte, error) {
 	for _, en := range enums {
 		fieldScream := screamingSnake(en.field)
 		for _, v := range en.values {
-			fmt.Fprintf(&b, "pub const %s_%s: &str = %q;\n", fieldScream, screamingSnake(v), v)
+			fmt.Fprintf(&b, "pub const %s: &str = %q;\n",
+				constIdent(fieldScream, screamingSnake(v), "_", en.fromConst), v)
 		}
 	}
 	return []byte(b.String()), nil
 }
 
 // generateEnumsTS emits the TypeScript string consts for an enum source: one
-// `export const <Field><Value> = "<value>";` per value, in schema declaration
+// `export const <Field><Value> = "<value>";` per value — `<Field>` alone for a
+// `const` — in schema declaration
 // order so regeneration is byte-stable. The const identifiers mirror the Go
 // PascalCase names so the PDK re-export is symmetric across languages.
 func generateEnumsTS(e enumSource) ([]byte, error) {
@@ -1817,7 +1936,8 @@ func generateEnumsTS(e enumSource) ([]byte, error) {
 	for _, en := range enums {
 		fieldPascal := pascal(en.field)
 		for _, v := range en.values {
-			fmt.Fprintf(&b, "export const %s%s = %q;\n", fieldPascal, pascal(v), v)
+			fmt.Fprintf(&b, "export const %s = %q;\n",
+				constIdent(fieldPascal, pascal(v), "", en.fromConst), v)
 		}
 	}
 	return []byte(b.String()), nil

@@ -207,6 +207,18 @@ func validateFeatureEntity(res *EntityResult, wsRoot, cacheDir string, dirs []st
 // validateWorkloadEntity runs the standalone Workload shape check. A Workload
 // normally lives embedded inside a Recipe's workload: block; validating a lone
 // Workload file exercises the same shape rules that path applies.
+//
+// It checks the typed value only, and that is deliberate rather than an
+// omission. ValidateEntity validates these same bytes against the Workload
+// schema before dispatching here, so a key the document carries that the schema
+// does not declare has already halted the run and never reaches this function.
+// A byte-level check added here would hand the same bytes to the same schema a
+// second time and could not fail — it would read as a gate while being
+// incapable of firing, and it would make the Workload path the one kind that
+// validates its document twice. What the typed check contributes instead is the
+// complement documented on validator.ValidateWorkload: constraints that hold
+// over the decoded value, which is a different instance from the document a
+// field's elided zero value no longer appears in.
 func validateWorkloadEntity(res *EntityResult, path string, data []byte) error {
 	var wl types.Workload
 	if err := yaml.Unmarshal(data, &wl); err != nil {

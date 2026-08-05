@@ -18,6 +18,9 @@ package main
 //go:generate go run . ../../../../aggrega-abi/go/pkg/abi/hostfunc_error_enums_gen.go
 //go:generate go run . ../../../../aggrega-abi/rust/src/hostfunc_error_enums_gen.rs
 //go:generate go run . ../../../../aggrega-abi/typescript/src/hostfunc_error_enums_gen.ts
+//go:generate go run . ../../../../aggrega-abi/go/pkg/abi/abi_version_enums_gen.go
+//go:generate go run . ../../../../aggrega-abi/rust/src/abi_version_enums_gen.rs
+//go:generate go run . ../../../../aggrega-abi/typescript/src/abi_version_enums_gen.ts
 //go:generate go run . ../../../../aggrega-abi/go/pkg/abi/annotationtransform_gen.go
 //go:generate go run . ../../../../aggrega-abi/rust/src/annotationtransform_gen.rs
 //go:generate go run . ../../../../aggrega-abi/typescript/src/annotationtransform_gen.ts

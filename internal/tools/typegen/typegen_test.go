@@ -85,6 +85,9 @@ var enumTargetPaths = map[string][]string{
 	"hostfunc_error_enums_gen.go": {"..", "..", "..", "..", "aggrega-abi", "go", "pkg", "abi"},
 	"hostfunc_error_enums_gen.rs": {"..", "..", "..", "..", "aggrega-abi", "rust", "src"},
 	"hostfunc_error_enums_gen.ts": {"..", "..", "..", "..", "aggrega-abi", "typescript", "src"},
+	"abi_version_enums_gen.go":    {"..", "..", "..", "..", "aggrega-abi", "go", "pkg", "abi"},
+	"abi_version_enums_gen.rs":    {"..", "..", "..", "..", "aggrega-abi", "rust", "src"},
+	"abi_version_enums_gen.ts":    {"..", "..", "..", "..", "aggrega-abi", "typescript", "src"},
 }
 
 // codecTargetPaths maps each codec target's output basename to the directory

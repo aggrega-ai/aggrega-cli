@@ -65,8 +65,12 @@ func EntityYAMLFromBundle(blob []byte) ([]byte, error) {
 // switches on):
 //
 //   - Component / Feature / Aggregate / SchemaLibrary /
-//     MappingLibrary / WorkloadLibrary / Plugin → bare YAML, no archive;
-//     bytes are the file contents unchanged.
+//     MappingLibrary / WorkloadLibrary / ArtifactsLibrary / Plugin → bare
+//     YAML, no archive; bytes are the file contents unchanged. A library
+//     kind is self-contained: every fragment it publishes — a schema, a
+//     mapping, a workload body, an artifact file body — is authored inline
+//     in the entity, so there is no co-located source to collect and a file
+//     sitting beside the entity is not part of the artifact.
 //   - Recipe / FeatureRecipe → tar.gz containing the YAML plus any
 //     co-located source: directories, $import:-referenced files in
 //     the same directory tree, and inline artifacts: payloads. File
@@ -100,7 +104,7 @@ func Bundle(kind, entityPath string) ([]byte, string, error) {
 	}
 
 	switch kind {
-	case "Component", "Feature", "Aggregate", "SchemaLibrary", "MappingLibrary", "WorkloadLibrary", "Plugin":
+	case "Component", "Feature", "Aggregate", "SchemaLibrary", "MappingLibrary", "WorkloadLibrary", "ArtifactsLibrary", "Plugin":
 		data, err := os.ReadFile(entityPath)
 		if err != nil {
 			return nil, "", fmt.Errorf("oci: bundle read %s: %w", entityPath, err)
@@ -115,13 +119,17 @@ func Bundle(kind, entityPath string) ([]byte, string, error) {
 		return archive, mediaType, nil
 
 	default:
-		// MediaTypeForKind at the top of Bundle filters unknown
-		// kinds before this switch runs, so default is unreachable
-		// for the documented kind set. Maintenance note: a new
-		// publishable kind needs both a kindMediaTypes entry and a
-		// matching case here. Falling through to the default would
-		// silently bundle the new kind under whichever shape its
-		// dispatch branch picks; explicit cases prevent that drift.
+		// A new publishable kind needs BOTH a kindMediaTypes entry and a
+		// matching case above, and the two are easy to get half-right: a kind
+		// with a mediatype and no case passes the gate at the top of Bundle and
+		// then lands here, so it is publishable by the mediatype table and
+		// unbundleable in fact. That happened once, while a comment here
+		// asserted this arm was unreachable — an assertion nothing checked. It
+		// is checked now: TestBundleCoversEveryMediaTypeKind bundles every kind
+		// MediaTypeKinds enumerates and fails on this sentinel, so the gap reds
+		// the build instead of waiting for a push. Which arm a new kind joins is
+		// still a judgement — bare YAML for a self-contained entity, tar.gz for
+		// one whose version directory carries co-located source.
 		return nil, "", ErrUnknownEntityKind
 	}
 }

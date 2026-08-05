@@ -31,10 +31,11 @@ func writeEntityFixture(t *testing.T, path, content string) {
 	}
 }
 
-// TestPushBareYAMLEntity pins per-kind round-trip for the three
-// bare-YAML kinds: Component, Feature, Provider. Each kind bundles
-// to bare YAML bytes under its canonical mediatype and round-trips
-// through Push + Pull against an in-memory CAS.
+// TestPushBareYAMLEntity pins per-kind round-trip for Component and Feature: each
+// bundles to bare YAML bytes under its canonical mediatype and round-trips through
+// Push + Pull against an in-memory CAS. It is a sample of the bare-YAML kinds
+// rather than a census of them — the census that every kind the transport resolves
+// reaches a bundle arm at all lives with the bundler, in pkg/oci.
 func TestPushBareYAMLEntity(t *testing.T) {
 	cases := []struct {
 		name      string
@@ -489,6 +490,8 @@ func TestPushReferenceRoundTripsThroughSplitURIForOCI(t *testing.T) {
 		{"SchemaLibrary", "", "Probes", "1.0.0"},
 		{"MappingLibrary", "", "BaseMappings", "2.1.0"},
 		{"WorkloadLibrary", "", "BaseWorkloads", "1.0.0"},
+		{"ArtifactsLibrary", "", "SharedArtifacts", "1.0.0"},
+		{"Aggregate", "", "core/storefront", "1.0.0"},
 		// Plugin kind: path segment is "plugin"; the plugin's
 		// metadata.name path-encodes the socket. Reference shape:
 		// <registry>/plugin/<socket>/<name>.
