@@ -24,27 +24,110 @@ import (
 )
 
 // retractionFixture is one prepared registry for the selection arms below: a real
-// in-process registry holding two signed versions of one Component, a workspace
-// whose registry policy pins the publisher's key, and the local index built from
-// that registry through the production `registry update`.
+// in-process registry holding two signed versions of one publishable entity, a
+// workspace whose registry policy pins the publisher's key, and the local index
+// built from that registry through the production `registry update`.
 type retractionFixture struct {
 	host      string
 	rw        *workspaceconfig.ResolvedWorkspace
 	reference string
 }
 
-// newRetractionFixture publishes test/svc at 1.0.0 AND 2.0.0 to a fresh registry
-// through the production signed push, optionally attaches a signed deprecation
-// marker of the given severity to each named version through the production
-// `aggrega deprecate`, then builds the local index through the production
-// `registry update`.
+// retractionSubject describes the publishable entity a fixture holds: the
+// repository path its publish binds to under the registry host, the entity file's
+// name, and the per-version entity body. Parameterising it is what lets the same
+// six production steps — push, marker attach, marker signature, index build, index
+// verification, screened selection — cover each discovery step that selects a
+// version, rather than one of them with the others taken on trust.
+type retractionSubject struct {
+	repoPath string
+	filename string
+	body     func(version string) string
+}
+
+// componentSubject is the core catalog entity the entity discovery step resolves.
+func componentSubject() retractionSubject {
+	return retractionSubject{
+		repoPath: "component/test/svc",
+		filename: "component.yaml",
+		body: func(version string) string {
+			return `apiVersion: aggrega.ai/v1alpha1
+kind: Component
+metadata:
+  name: test/svc
+  version: "` + version + `"
+  labels:
+    component.aggrega.ai/type: server
+spec:
+  schema:
+    infra:
+      port: { type: integer, default: 8080 }
+`
+		},
+	}
+}
+
+// schemaLibrarySubject is the library the library discovery step resolves by its
+// host-less identity.
+func schemaLibrarySubject() retractionSubject {
+	return retractionSubject{
+		repoPath: "schemalibrary/dbsizing",
+		filename: "schemalibrary.yaml",
+		body: func(version string) string {
+			return `apiVersion: aggrega.ai/v1alpha1
+kind: SchemaLibrary
+metadata:
+  name: DbSizing
+  version: "` + version + `"
+spec:
+  schemas:
+    Storage:
+      size: { type: string, default: "10Gi" }
+`
+		},
+	}
+}
+
+// aggregateSubject is the published Aggregate the sub-aggregate discovery step
+// resolves by its bare identity.
+func aggregateSubject() retractionSubject {
+	return retractionSubject{
+		repoPath: "aggregate/test/app-agg",
+		filename: "aggregate.yaml",
+		body: func(version string) string {
+			return `apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: test/app-agg
+  version: "` + version + `"
+spec:
+  components:
+    app:
+      type: test/svc
+`
+		},
+	}
+}
+
+// newRetractionFixture publishes the Component subject at 1.0.0 AND 2.0.0, the
+// shape every entity-route arm below reads.
+func newRetractionFixture(t *testing.T, markers map[string]string) retractionFixture {
+	t.Helper()
+	return newRetractionFixtureFor(t, componentSubject(), markers)
+}
+
+// newRetractionFixtureFor publishes the subject at 1.0.0 AND 2.0.0 to a fresh
+// registry through the production signed push, optionally attaches a signed
+// deprecation marker of the given severity to each named version through the
+// production `aggrega deprecate`, then builds the local index through the
+// production `registry update`.
 //
 // Two published versions is the whole point: a single-version repository cannot
 // show a selection consequence at all, because there is nothing else to select.
 // Every link is the production path — the push, the marker attach, the marker's
 // own signature, the index build and its verification — so a passing arm cannot
 // be an artefact of a hand-stubbed index.
-func newRetractionFixture(t *testing.T, markers map[string]string) retractionFixture {
+func newRetractionFixtureFor(t *testing.T, subject retractionSubject, markers map[string]string) retractionFixture {
 	t.Helper()
 
 	privPEM, pubPEM, err := signing.GenerateKeyedPEM()
@@ -59,20 +142,8 @@ func newRetractionFixture(t *testing.T, markers map[string]string) retractionFix
 	host := startRegistry(t, nil)
 	cat := t.TempDir()
 	for _, version := range []string{"1.0.0", "2.0.0"} {
-		body := `apiVersion: aggrega.ai/v1alpha1
-kind: Component
-metadata:
-  name: test/svc
-  version: "` + version + `"
-  labels:
-    component.aggrega.ai/type: server
-spec:
-  schema:
-    infra:
-      port: { type: integer, default: 8080 }
-`
-		path := filepath.Join(cat, "component/test/svc", version, "component.yaml")
-		writeFixture(t, path, body)
+		path := filepath.Join(cat, subject.repoPath, version, subject.filename)
+		writeFixture(t, path, subject.body(version))
 		pushCatalogEntitySigned(t, host, path, signer)
 	}
 
@@ -81,7 +152,7 @@ spec:
 	// signature to verify rather than a fabricated verdict to trust.
 	for version, severity := range markers {
 		if derr := deprecateRun(deprecateConfig{
-			Reference: host + "/component/test/svc:" + version,
+			Reference: host + "/" + subject.repoPath + ":" + version,
 			Severity:  severity,
 			Reason:    "withdrawn in favour of a successor",
 			Signer:    signer,
@@ -109,7 +180,7 @@ spec:
 		t.Fatalf("registryUpdateRun: %v\n%s", uerr, updateOut.String())
 	}
 
-	return retractionFixture{host: host, rw: rw, reference: host + "/component/test/svc"}
+	return retractionFixture{host: host, rw: rw, reference: host + "/" + subject.repoPath}
 }
 
 // screenedPuller builds the production entity puller with the production
@@ -257,6 +328,184 @@ func TestIntegration_RetractionExcludesAtSelection(t *testing.T) {
 			if !strings.Contains(err.Error(), want) {
 				t.Errorf("halt message must name %q; got: %v", want, err)
 			}
+		}
+	})
+}
+
+// pullLibrary resolves the SchemaLibrary through the production library discovery
+// step. floor is the reference's explicit version, empty for the bare-name
+// reference whose resolution the withdrawal screen governs.
+func pullLibrary(t *testing.T, puller catalog.OCIPuller, floor string) (string, error) {
+	t.Helper()
+	lp, ok := puller.(catalog.LibraryPuller)
+	if !ok {
+		t.Fatal("production puller must implement LibraryPuller")
+	}
+	_, version, err := lp.PullLibrary(context.Background(), "DbSizing", "SchemaLibrary", floor)
+	return version, err
+}
+
+// pullAggregate resolves the published Aggregate through the production
+// sub-aggregate discovery step.
+func pullAggregate(t *testing.T, puller catalog.OCIPuller, floor string) (string, error) {
+	t.Helper()
+	ap, ok := puller.(catalog.AggregatePuller)
+	if !ok {
+		t.Fatal("production puller must implement AggregatePuller")
+	}
+	_, version, err := ap.PullAggregate(context.Background(), "test/app-agg", floor)
+	return version, err
+}
+
+// TestIntegration_RetractionExcludesAtLibrarySelection is the library discovery
+// step's discriminating pair, plus its explicit-pin arm.
+//
+// It is the same load-bearing pair the entity route carries and for the same
+// reason: "the lower version resolves" passes identically whether the exclusion
+// fired or whether the higher version was never published, so the same two-version
+// library is resolved twice — once with the higher version withdrawn and once
+// without — and only the DIFFERENCE is evidence. A screen keyed on the entity
+// route alone would pass the unmarked arm and fail the marked one.
+func TestIntegration_RetractionExcludesAtLibrarySelection(t *testing.T) {
+	t.Run("retracted_higher_version_is_excluded_and_announced", func(t *testing.T) {
+		f := newRetractionFixtureFor(t, schemaLibrarySubject(), map[string]string{"2.0.0": "retracted"})
+		var diag bytes.Buffer
+		version, err := pullLibrary(t, f.screenedPuller(t, &diag), "")
+		if err != nil {
+			t.Fatalf("a bare-name library with one unretracted version must resolve; got: %v", err)
+		}
+		if version != "1.0.0" {
+			t.Fatalf("resolved %q; want 1.0.0 — the withdrawn 2.0.0 must not be selected", version)
+		}
+		notice := diag.String()
+		for _, want := range []string{
+			"2.0.0 is withdrawn and was not selected",
+			"withdrawn in favour of a successor",
+			"resolved to 1.0.0 instead",
+			"aggrega registry update",
+		} {
+			if !strings.Contains(notice, want) {
+				t.Errorf("the announcement must contain %q; diagnostics were:\n%s", want, notice)
+			}
+		}
+	})
+
+	t.Run("no_marker_at_all_selects_the_higher", func(t *testing.T) {
+		f := newRetractionFixtureFor(t, schemaLibrarySubject(), nil)
+		var diag bytes.Buffer
+		version, err := pullLibrary(t, f.screenedPuller(t, &diag), "")
+		if err != nil {
+			t.Fatalf("an unmarked library must resolve: %v", err)
+		}
+		if version != "2.0.0" {
+			t.Fatalf("resolved %q; want 2.0.0 for an unmarked library", version)
+		}
+	})
+
+	t.Run("explicit_pin_for_a_retracted_version_still_resolves_loudly", func(t *testing.T) {
+		// Naming the version IS the override, on this route as on the entity one.
+		f := newRetractionFixtureFor(t, schemaLibrarySubject(), map[string]string{"2.0.0": "retracted"})
+		var diag bytes.Buffer
+		version, err := pullLibrary(t, f.screenedPuller(t, &diag), "2.0.0")
+		if err != nil {
+			t.Fatalf("an explicit pin for a withdrawn library version must still resolve; got: %v", err)
+		}
+		if version != "2.0.0" {
+			t.Fatalf("resolved %q; want the pinned 2.0.0", version)
+		}
+		if !strings.Contains(diag.String(), "names it explicitly") {
+			t.Errorf("a pinned withdrawn version must resolve LOUDLY; diagnostics were:\n%s", diag.String())
+		}
+	})
+
+	t.Run("unscreened_selection_takes_the_retracted_version", func(t *testing.T) {
+		// The screen is what changes the outcome, not the fixture: an unscreened
+		// puller over the identical registry state selects the withdrawn version.
+		f := newRetractionFixtureFor(t, schemaLibrarySubject(), map[string]string{"2.0.0": "retracted"})
+		version, err := pullLibrary(t, catalog.NewDefaultOCIPuller(f.rw.Config()), "")
+		if err != nil {
+			t.Fatalf("unscreened library resolution must succeed: %v", err)
+		}
+		if version != "2.0.0" {
+			t.Fatalf("unscreened resolution took %q; want 2.0.0 — selection is marker-blind without a screen", version)
+		}
+	})
+
+	t.Run("every_version_retracted_halts_loudly_and_not_as_not_found", func(t *testing.T) {
+		f := newRetractionFixtureFor(t, schemaLibrarySubject(), map[string]string{"1.0.0": "retracted", "2.0.0": "retracted"})
+		var diag bytes.Buffer
+		_, err := pullLibrary(t, f.screenedPuller(t, &diag), "")
+		if !errors.Is(err, catalog.ErrAllVersionsRetracted) {
+			t.Fatalf("a fully-withdrawn library must halt with ErrAllVersionsRetracted; got: %v", err)
+		}
+		if errors.Is(err, oci.ErrFetchNotFound) {
+			t.Fatalf("a fully-withdrawn library must NOT report as not-found; got: %v", err)
+		}
+	})
+}
+
+// TestIntegration_RetractionExcludesAtAggregateSelection is the sub-aggregate
+// discovery step's discriminating pair, plus its explicit-pin arm. The pair is
+// load-bearing for the same reason it is on the other two routes.
+func TestIntegration_RetractionExcludesAtAggregateSelection(t *testing.T) {
+	t.Run("retracted_higher_version_is_excluded_and_announced", func(t *testing.T) {
+		f := newRetractionFixtureFor(t, aggregateSubject(), map[string]string{"2.0.0": "retracted"})
+		var diag bytes.Buffer
+		version, err := pullAggregate(t, f.screenedPuller(t, &diag), "")
+		if err != nil {
+			t.Fatalf("a bare-name Aggregate with one unretracted version must resolve; got: %v", err)
+		}
+		if version != "1.0.0" {
+			t.Fatalf("resolved %q; want 1.0.0 — the withdrawn 2.0.0 must not be selected", version)
+		}
+		notice := diag.String()
+		for _, want := range []string{
+			"2.0.0 is withdrawn and was not selected",
+			"withdrawn in favour of a successor",
+			"resolved to 1.0.0 instead",
+			"aggrega registry update",
+		} {
+			if !strings.Contains(notice, want) {
+				t.Errorf("the announcement must contain %q; diagnostics were:\n%s", want, notice)
+			}
+		}
+	})
+
+	t.Run("no_marker_at_all_selects_the_higher", func(t *testing.T) {
+		f := newRetractionFixtureFor(t, aggregateSubject(), nil)
+		var diag bytes.Buffer
+		version, err := pullAggregate(t, f.screenedPuller(t, &diag), "")
+		if err != nil {
+			t.Fatalf("an unmarked Aggregate must resolve: %v", err)
+		}
+		if version != "2.0.0" {
+			t.Fatalf("resolved %q; want 2.0.0 for an unmarked Aggregate", version)
+		}
+	})
+
+	t.Run("explicit_pin_for_a_retracted_version_still_resolves_loudly", func(t *testing.T) {
+		f := newRetractionFixtureFor(t, aggregateSubject(), map[string]string{"2.0.0": "retracted"})
+		var diag bytes.Buffer
+		version, err := pullAggregate(t, f.screenedPuller(t, &diag), "2.0.0")
+		if err != nil {
+			t.Fatalf("an explicit pin for a withdrawn Aggregate version must still resolve; got: %v", err)
+		}
+		if version != "2.0.0" {
+			t.Fatalf("resolved %q; want the pinned 2.0.0", version)
+		}
+		if !strings.Contains(diag.String(), "names it explicitly") {
+			t.Errorf("a pinned withdrawn version must resolve LOUDLY; diagnostics were:\n%s", diag.String())
+		}
+	})
+
+	t.Run("unscreened_selection_takes_the_retracted_version", func(t *testing.T) {
+		f := newRetractionFixtureFor(t, aggregateSubject(), map[string]string{"2.0.0": "retracted"})
+		version, err := pullAggregate(t, catalog.NewDefaultOCIPuller(f.rw.Config()), "")
+		if err != nil {
+			t.Fatalf("unscreened Aggregate resolution must succeed: %v", err)
+		}
+		if version != "2.0.0" {
+			t.Fatalf("unscreened resolution took %q; want 2.0.0 — selection is marker-blind without a screen", version)
 		}
 	})
 }

@@ -443,7 +443,7 @@ func deprecationMarkerPolicy(policy workspaceconfig.RegistryConfig, origSigner *
 // happen at selection time at all. A live per-candidate marker lookup would need
 // each candidate's manifest digest plus a referrers listing, so it would scale with
 // the number of published versions, and it would put a network dependency inside a
-// selection primitive that three other call sites share.
+// selection primitive every pull entrypoint shares.
 //
 // The cost of reading a snapshot is staleness, and it is not smoothed over: a
 // version withdrawn since the snapshot was taken is not seen, so every notice this

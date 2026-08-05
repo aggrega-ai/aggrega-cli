@@ -147,9 +147,9 @@ func NewOCIPullerWithRetractionScreen(wsCfg workspaceconfig.Config, screen Retra
 // default registry, used by PullLibrary to bind a host-less library identity to a
 // physical location.
 //
-// retraction is the optional withdrawal screen consulted by the entity discovery
-// step. It is nil on an unscreened puller, and only PullEntity consults it — see
-// selectEntityPullVersion for the scope statement and what it leaves uncovered.
+// retraction is the optional withdrawal screen consulted by the discovery step of
+// every pull entrypoint on this puller. It is nil on an unscreened puller — see
+// selectScreenedPullVersion for the scope statement and what it leaves uncovered.
 type DefaultOCIPuller struct {
 	registry   string
 	httpClient *http.Client
@@ -168,10 +168,11 @@ func (p DefaultOCIPuller) Pull(ctx context.Context, reference, tag string) (*oci
 // binding it to a physical location through the configured default registry —
 // the pull-side mirror of push's name→location (`<registry>/<kind-segment>/<name>`).
 // When floorVersion is empty (a pure bare-name reference at first pull) it lists
-// the registry's tags and selects the highest semver; otherwise it uses the
-// asserted floor as the tag. The selected version is returned so the
-// lockfile pins it. The "latest" resolution happens HERE, at the network step, and
-// is pinned — the build never lists tags or fetches.
+// the registry's tags and selects the highest semver an attached withdrawal screen
+// leaves eligible; otherwise it uses the asserted floor as the tag, announcing it
+// when the screen holds a withdrawal record for it. The selected version is
+// returned so the lockfile pins it. The "latest" resolution happens HERE, at the
+// network step, and is pinned — the build never lists tags or fetches.
 func (p DefaultOCIPuller) PullLibrary(ctx context.Context, name, kind, floorVersion string) (*oci.PullResult, string, error) {
 	reference := libraryReference(p.registry, kind, name)
 	repo, err := oci.NewRemoteRepository(reference, p.httpClient)
@@ -184,10 +185,12 @@ func (p DefaultOCIPuller) PullLibrary(ctx context.Context, name, kind, floorVers
 		if terr != nil {
 			return nil, "", terr
 		}
-		version, terr = selectPullVersion(reference, tags)
+		version, terr = p.selectScreenedPullVersion(reference, tags)
 		if terr != nil {
 			return nil, "", terr
 		}
+	} else {
+		p.reportPinnedVersion(reference, version)
 	}
 	result, perr := oci.Pull(ctx, repo, version)
 	if perr != nil {
@@ -200,11 +203,13 @@ func (p DefaultOCIPuller) PullLibrary(ctx context.Context, name, kind, floorVers
 // a physical location through the configured default registry — the pull-side
 // mirror of push's name→location (`<registry>/aggregate/<name>`). Discovery
 // mirrors PullLibrary: an empty floorVersion lists tags and selects the highest
-// semver; a non-empty floor is the tag. It returns the OCI tag it fetched under
-// (a location/discovery coordinate); the IDENTITY pinned in the lockfile is the
-// fetched body's metadata.version, which PullAndCacheAggregate reads and pins —
-// so the tag is discarded and the pin is identity-stable even when a publisher
-// tags `latest`/`stable` over the versioned identity.
+// semver an attached withdrawal screen leaves eligible; a non-empty floor is the
+// tag, announced when the screen holds a withdrawal record for it. It returns the
+// OCI tag it fetched under (a location/discovery coordinate); the IDENTITY pinned
+// in the lockfile is the fetched body's metadata.version, which
+// PullAndCacheAggregate reads and pins — so the tag is discarded and the pin is
+// identity-stable even when a publisher tags `latest`/`stable` over the versioned
+// identity.
 func (p DefaultOCIPuller) PullAggregate(ctx context.Context, name, floorVersion string) (*oci.PullResult, string, error) {
 	reference := p.registry + "/" + OCILocation("Aggregate", "", name)
 	repo, err := oci.NewRemoteRepository(reference, p.httpClient)
@@ -217,10 +222,12 @@ func (p DefaultOCIPuller) PullAggregate(ctx context.Context, name, floorVersion 
 		if terr != nil {
 			return nil, "", terr
 		}
-		tag, terr = selectPullVersion(reference, tags)
+		tag, terr = p.selectScreenedPullVersion(reference, tags)
 		if terr != nil {
 			return nil, "", terr
 		}
+	} else {
+		p.reportPinnedVersion(reference, tag)
 	}
 	result, perr := oci.Pull(ctx, repo, tag)
 	if perr != nil {
@@ -255,15 +262,12 @@ func (p DefaultOCIPuller) PullEntity(ctx context.Context, identity, kind, floorV
 		if terr != nil {
 			return nil, "", terr
 		}
-		version, terr = p.selectEntityPullVersion(reference, tags)
+		version, terr = p.selectScreenedPullVersion(reference, tags)
 		if terr != nil {
 			return nil, "", terr
 		}
-	} else if p.retraction != nil {
-		// An exact version bypasses the discovery step entirely, which is what makes
-		// a withdrawn version's explicit pin keep resolving: naming the version IS
-		// the override. It does not resolve quietly.
-		p.retraction.ReportPinned(reference, version)
+	} else {
+		p.reportPinnedVersion(reference, version)
 	}
 	// A Plugin publishes as ONE OCI manifest whose CONFIG blob is the entity YAML
 	// and whose single layer is the inline .wasm. A generic content-layer pull
@@ -432,9 +436,9 @@ func selectPullVersion(reference string, tags []string) (string, error) {
 	return version, nil
 }
 
-// selectEntityPullVersion is the entity discovery step: the highest conformant
-// published version, minus any version the attached retraction screen reports
-// withdrawn.
+// selectScreenedPullVersion is the discovery step every pull entrypoint on this
+// puller shares: the highest conformant published version, minus any version the
+// attached retraction screen reports withdrawn.
 //
 // With no screen it is exactly selectPullVersion, which stays the one home of the
 // selection rule — the screen filters the candidate list and never re-implements
@@ -452,13 +456,15 @@ func selectPullVersion(reference string, tags []string) (string, error) {
 // When it withdrew nothing, a failure to select has nothing to do with withdrawal
 // and keeps the not-found reading it has always had.
 //
-// Scope, stated rather than implied: this covers the core catalog entity pull and
-// nothing else. The library discovery step (PullLibrary), the sub-aggregate one
-// (PullAggregate) and the plugin-add command's own selection each reach
-// oci.SelectLatestVersion by their own route and are unscreened, as is the
-// long-running daemon's lazy descent, which builds an unscreened puller because
-// it has no writer to announce a skip on.
-func (p DefaultOCIPuller) selectEntityPullVersion(reference string, tags []string) (string, error) {
+// Scope, stated rather than implied: it covers the catalog entity pull
+// (PullEntity), the library discovery step (PullLibrary) and the sub-aggregate one
+// (PullAggregate), so the version a reference resolves to does not depend on which
+// of the three fetched it. A puller constructed without a screen leaves all three
+// unscreened, which is the posture the long-running daemon's lazy descent holds.
+// The plugin-add command's version discovery stays outside this step entirely: it
+// resolves from the local registry index, falling back to oci.SelectLatestVersion
+// over a live tag list, by its own route.
+func (p DefaultOCIPuller) selectScreenedPullVersion(reference string, tags []string) (string, error) {
 	if p.retraction == nil {
 		return selectPullVersion(reference, tags)
 	}
@@ -474,6 +480,22 @@ func (p DefaultOCIPuller) selectEntityPullVersion(reference string, tags []strin
 		p.retraction.ReportSelection(reference, version, excluded)
 	}
 	return version, nil
+}
+
+// reportPinnedVersion announces a version a reference named outright, when the
+// attached screen holds a withdrawal record for it. An exact version bypasses the
+// discovery step entirely, which is what makes a withdrawn version's explicit pin
+// keep resolving: naming the version IS the override. This is what stops it
+// resolving quietly.
+//
+// It is the one home for that announcement, so the three pull entrypoints cannot
+// drift into announcing a pin on some references and not others. An unscreened
+// puller, and a version the screen holds no record for, announce nothing.
+func (p DefaultOCIPuller) reportPinnedVersion(reference, version string) {
+	if p.retraction == nil {
+		return
+	}
+	p.retraction.ReportPinned(reference, version)
 }
 
 // formatVersionExclusions renders withdrawn versions and their reasons for a halt

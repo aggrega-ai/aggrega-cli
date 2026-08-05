@@ -44,18 +44,18 @@ func (s *fixedScreen) ReportPinned(_, version string) {
 	s.pinned = append(s.pinned, version)
 }
 
-// TestSelectEntityPullVersionScreening pins the discovery step's behaviour under a
+// TestSelectScreenedPullVersionScreening pins the discovery step's behaviour under a
 // screen, and above all keeps its two failure modes apart. Collapsing them would
 // report a fully-withdrawn repository as a missing entity — the path of least
 // resistance, and the one thing this must not do.
-func TestSelectEntityPullVersionScreening(t *testing.T) {
+func TestSelectScreenedPullVersionScreening(t *testing.T) {
 	const ref = "reg.test/component/core/svc"
 
 	t.Run("unscreened_puller_selects_the_highest", func(t *testing.T) {
 		// The behaviour that existed before any screen, preserved by construction: a
 		// nil screen is the unscreened default, not a degraded mode.
 		p := DefaultOCIPuller{}
-		got, err := p.selectEntityPullVersion(ref, []string{"1.0.0", "2.0.0"})
+		got, err := p.selectScreenedPullVersion(ref, []string{"1.0.0", "2.0.0"})
 		if err != nil || got != "2.0.0" {
 			t.Fatalf("unscreened selection = (%q, %v); want (2.0.0, nil)", got, err)
 		}
@@ -64,7 +64,7 @@ func TestSelectEntityPullVersionScreening(t *testing.T) {
 	t.Run("withdrawn_highest_falls_to_the_next_and_announces", func(t *testing.T) {
 		screen := &fixedScreen{withdrawn: map[string]string{"2.0.0": "withdrawn"}}
 		p := DefaultOCIPuller{retraction: screen}
-		got, err := p.selectEntityPullVersion(ref, []string{"1.0.0", "2.0.0"})
+		got, err := p.selectScreenedPullVersion(ref, []string{"1.0.0", "2.0.0"})
 		if err != nil || got != "1.0.0" {
 			t.Fatalf("screened selection = (%q, %v); want (1.0.0, nil)", got, err)
 		}
@@ -76,7 +76,7 @@ func TestSelectEntityPullVersionScreening(t *testing.T) {
 	t.Run("no_exclusion_stays_silent", func(t *testing.T) {
 		screen := &fixedScreen{withdrawn: map[string]string{"9.9.9": "withdrawn"}}
 		p := DefaultOCIPuller{retraction: screen}
-		got, err := p.selectEntityPullVersion(ref, []string{"1.0.0", "2.0.0"})
+		got, err := p.selectScreenedPullVersion(ref, []string{"1.0.0", "2.0.0"})
 		if err != nil || got != "2.0.0" {
 			t.Fatalf("selection = (%q, %v); want (2.0.0, nil)", got, err)
 		}
@@ -88,7 +88,7 @@ func TestSelectEntityPullVersionScreening(t *testing.T) {
 	t.Run("every_candidate_withdrawn_halts_loudly_not_as_not_found", func(t *testing.T) {
 		screen := &fixedScreen{withdrawn: map[string]string{"1.0.0": "gone", "2.0.0": "also gone"}}
 		p := DefaultOCIPuller{retraction: screen}
-		_, err := p.selectEntityPullVersion(ref, []string{"1.0.0", "2.0.0"})
+		_, err := p.selectScreenedPullVersion(ref, []string{"1.0.0", "2.0.0"})
 		if !errors.Is(err, ErrAllVersionsRetracted) {
 			t.Fatalf("error = %v; want ErrAllVersionsRetracted", err)
 		}
@@ -108,7 +108,7 @@ func TestSelectEntityPullVersionScreening(t *testing.T) {
 		// withdrawal and must keep the reading it has always had.
 		screen := &fixedScreen{withdrawn: map[string]string{"9.9.9": "gone"}}
 		p := DefaultOCIPuller{retraction: screen}
-		_, err := p.selectEntityPullVersion(ref, []string{"v1", "1.2.3.4"})
+		_, err := p.selectScreenedPullVersion(ref, []string{"v1", "1.2.3.4"})
 		if !errors.Is(err, oci.ErrFetchNotFound) {
 			t.Fatalf("error = %v; want the not-found reading when nothing was withdrawn", err)
 		}
