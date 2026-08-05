@@ -87,6 +87,10 @@ type factDecl struct {
 	// Returns is the accessor's result, emitted verbatim after the parameter
 	// list — so a single type or a parenthesized list are both admissible.
 	//
+	// Four bounds hold over it, on two separate axes: two over what a check
+	// could re-derive from the result, and two over what a check could DO with
+	// it.
+	//
 	// A return type may not mention an authored-entity type, by pointer or by
 	// value, inside a container or as a type argument; nor any diagnostic
 	// shape. A view exposes named facts and never a raw document, and one
@@ -101,8 +105,25 @@ type factDecl struct {
 	// products must remain declarable, and most of the later stages read one —
 	// so this is the rule that closes the same hole for a product carrier.
 	//
-	// Where a rule genuinely cannot be expressed inside either bound, declare
-	// ReportedException rather than reshaping the rule around the guard.
+	// On the other axis, a result may not mention a function type, at any
+	// nesting depth — bare, inside a container, or as a type argument. A fact is
+	// a value already read out of the product; a callable is a power the caller
+	// invokes, and the powers a check holds are declared on their own axis so
+	// that they stay visible to the placement the declaration is computed from.
+	//
+	// Nor may a result mention a package-qualified type unless the admitted set
+	// the guard over the generated views declares names that type. The set
+	// admits rather than forbids: everything dangerous cannot be enumerated and
+	// everything safe can, so a type nobody has classified is refused rather
+	// than passed, and admitting one is an edit to that set with the reason
+	// recorded beside the entry.
+	//
+	// Where a rule genuinely cannot be expressed within these bounds, declare
+	// ReportedException rather than reshaping the rule around the guard: the
+	// framework then reports the shape as open rather than admitting it
+	// silently. The function-type bound is the one with no such escape, and
+	// deliberately so — an exception records a shape as open, and a power is not
+	// an open shape but a different kind of thing.
 	Returns string
 
 	// Doc is the accessor's godoc body, in declarative voice.
