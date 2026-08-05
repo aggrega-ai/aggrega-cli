@@ -782,6 +782,19 @@ type entityHeader struct {
 // Release (which are deployment-side and are silently skipped — see
 // LoadAll's error model). Adding a new catalog-resident kind requires
 // extending the switch here AND adding the matching map field on Catalog.
+//
+// This kind set coincides exactly with the publishable set that pkg/oci's
+// mediatype table declares. The coincidence is real but not definitional, and
+// the two must not be collapsed into one home: this switch answers which kinds
+// a catalog holds and how each one is parsed into which map, while the
+// mediatype table answers which kinds may be published and under which
+// mediatype. Every arm below carries irreducible per-kind work — its own parse
+// call, its own identity claim, its own destination map and its own source map
+// — so there is no membership test here to extract in the first place. A kind
+// that is catalog-resident without being publishable is a shape the design
+// permits, and the two sides already exclude on unrelated grounds: Manifest and
+// Release are absent here because they are deployment-side, which is not a
+// reason a publishing rule would ever give.
 func (c *Catalog) indexFile(data []byte, path string) error {
 	var header entityHeader
 	if err := yaml.Unmarshal(data, &header); err != nil {
