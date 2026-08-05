@@ -125,7 +125,9 @@ type pipelineFile0 struct {
 // boundary-scope FeatureRecipe). They drive the pre-walk compatibility check:
 // each step's plugin declares an enumerated set of compatible providers, and the
 // provider of every scope the step's export touches must appear in it, or the
-// build halts with ErrPluginProviderIncompatible before any guest runs.
+// build halts with ErrPluginProviderIncompatible before the walk runs any guest.
+// The check reads each step plugin's describe() self-report to obtain that
+// declared set, so it runs guest code itself; what it precedes is the walk.
 //
 // lookup nil disables execution: the steps are validated by their presence but
 // not run, and a validate-only warning is returned (the non-regression path).
@@ -497,11 +499,13 @@ func validateStepOutput(export wasm.PluginExport, raw []byte, step types.Pipelin
 
 // stepDescriber reads one pipeline step's plugin describe() descriptor — the
 // seam through which the executor reaches a plugin's declared providers
-// and per-export capability declarations before any guest runs. The production
-// path binds it to the shared resolver + describe() gate (newStepDescriber); a
-// test supplies a canned descriptor so the pre-walk enforcement is exercised
-// without a real .wasm. It is separate from frp.StepInvoker because enforcement
-// needs the descriptor (which the invoker hides) ahead of the walk.
+// and per-export capability declarations before the walk runs any guest. Reading
+// the descriptor is itself a guest call, so what it precedes is the walk, not
+// every crossing to a guest. The production path binds it to the shared
+// resolver + describe() gate (newStepDescriber); a test supplies a canned
+// descriptor so the pre-walk enforcement is exercised without a real .wasm. It
+// is separate from frp.StepInvoker because enforcement needs the descriptor
+// (which the invoker hides) ahead of the walk.
 type stepDescriber func(ctx context.Context, step types.PipelineStep) (wasm.PluginDescriptor, error)
 
 // newStepDescriber binds the per-step descriptor read over the shared

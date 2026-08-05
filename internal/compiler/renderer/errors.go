@@ -314,7 +314,8 @@ var (
 	// wrong patch, so the build halts loudly rather than proceeding. An empty or
 	// absent set declares no compatibility claim, so it matches no provider and
 	// every step that uses the plugin halts here. The check is pre-invoke (read
-	// from describe() before any guest runs) and matches provider names exactly.
+	// from describe(), which is itself a guest call, before the walk invokes any
+	// step) and matches provider names exactly.
 	// Category: CATALOG_ERROR.
 	ErrPluginProviderIncompatible = errors.New("pipeline plugin is not compatible with the rendering provider")
 
