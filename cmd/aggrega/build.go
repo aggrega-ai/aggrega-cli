@@ -387,7 +387,10 @@ func dispatchBuildWithDiag(rw *workspaceconfig.ResolvedWorkspace, releasePath st
 	// just-pinned plugin entities visible; the pins are restored to the lockfile
 	// view afterward so the render path below resolves exactly as before.
 	closureLookup := resolved.Lookup
-	reconAggLoader, _ := closureLookup.(closure.AggregateLoader)
+	reconAggLoader, aggErr := closure.RequireAggregateLoader(closureLookup)
+	if aggErr != nil {
+		return withSkipContext(aggErr, skipped)
+	}
 	reconBindings := lockfile.ProviderBindings(lf)
 	reconResolver := func(ref string) (types.Plugin, bool, error) {
 		return lazyView.ProviderPluginForTarget(ref, reconBindings)

@@ -1956,6 +1956,30 @@ func (x *lazyClosureLookup) ResolveAggregate(uri string) (closure.Resolution, er
 	return x.base.ResolveAggregate(uri)
 }
 
+// LoadAggregate loads a resolved sub-aggregate's parsed body over the lazy
+// backing, satisfying closure.AggregateLoader so the transitive sub-aggregate
+// axis can be computed against this view rather than only against an eagerly
+// loaded catalog.
+//
+// The read delegates to base — the same recipe-shell-backed lookup that already
+// serves the Aggregate kind here — so the body comes from the authored catalog
+// bytes or the pinned cache slot the eager path reads, at the same point in the
+// walk, through the same code. Nothing is loaded up front: the lazy cascade is
+// untouched, and this method reads only what the descent asks for.
+//
+// A base that cannot serve resolved bodies refuses with
+// closure.ErrNoAggregateLoader rather than yielding nothing, because the descent
+// treats an absent loader as "none was wired" and skips in silence.
+func (x *lazyClosureLookup) LoadAggregate(uri, version, digest string) (*types.Aggregate, error) {
+	x.l.mu.Lock()
+	defer x.l.mu.Unlock()
+	loader, err := closure.RequireAggregateLoader(x.base)
+	if err != nil {
+		return nil, err
+	}
+	return loader.LoadAggregate(uri, version, digest)
+}
+
 func (x *lazyClosureLookup) ResolveSchemaLibrary(uri string) (closure.LibraryResolution, error) {
 	x.l.mu.Lock()
 	defer x.l.mu.Unlock()

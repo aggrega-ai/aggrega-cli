@@ -103,7 +103,10 @@ func reconstructClosureAxes(view *catalog.LazyLookup, resolved *compilerops.Reso
 	if err := closure.AugmentClosure(&resolved.Closure, view, lookup); err != nil {
 		return err
 	}
-	aggLoader, _ := lookup.(closure.AggregateLoader)
+	aggLoader, err := closure.RequireAggregateLoader(lookup)
+	if err != nil {
+		return err
+	}
 	bindings := lockfile.ProviderBindings(lf)
 	reconResolver := func(ref string) (types.Plugin, bool, error) {
 		return view.ProviderPluginForTarget(ref, bindings)

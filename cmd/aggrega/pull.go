@@ -493,11 +493,15 @@ func pullRun(cfg pullConfig) error {
 	if err := closure.AugmentClosure(&cl, lazyView, lookup); err != nil {
 		return fmt.Errorf("resolve: %w", err)
 	}
-	// Pull-side transitive sub-aggregate descent: pin the closure of every
-	// Aggregate reachable through a chain of sub-aggregate references, loading
-	// each from the cache the resolution just populated. Lock-time only — the
-	// build path reads these pins from the lockfile and never descends.
-	aggLoader, _ := lookup.(closure.AggregateLoader)
+	// Transitive sub-aggregate descent: pin the closure of every Aggregate
+	// reachable through a chain of sub-aggregate references, loading each from the
+	// cache the resolution just populated. This is where the pins are WRITTEN; a
+	// build or a serve drift check re-derives the same axis hermetically from the
+	// pinned cache, so the two sides must reach the identical set.
+	aggLoader, aggErr := closure.RequireAggregateLoader(lookup)
+	if aggErr != nil {
+		return aggErr
+	}
 	if err := closure.DescendSubAggregates(&cl, aggLoader, lookup); err != nil {
 		return fmt.Errorf("resolve: sub-aggregate descent: %w", err)
 	}

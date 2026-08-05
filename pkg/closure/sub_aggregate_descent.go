@@ -45,6 +45,28 @@ type AggregateLoader interface {
 	LoadAggregate(uri, version, digest string) (*types.Aggregate, error)
 }
 
+// ErrNoAggregateLoader halts a caller whose catalog lookup cannot load resolved
+// sub-aggregate bodies, so the sub-aggregate axis cannot be computed over it.
+var ErrNoAggregateLoader = errors.New("resolve: catalog lookup cannot load resolved sub-aggregate bodies")
+
+// RequireAggregateLoader adapts a Lookup to the AggregateLoader the
+// sub-aggregate axis needs, refusing with ErrNoAggregateLoader when the lookup
+// cannot serve resolved bodies.
+//
+// Every caller that descends or reconstructs that axis goes through this one
+// function, because the failure it guards is silent by construction:
+// DescendSubAggregates reads a nil loader as "no loader was wired" and returns
+// immediately, so a caller that discarded a failed assertion would hand it nil
+// and receive a closure short an entire axis with nothing reported. Routing the
+// check here leaves no site able to discard it.
+func RequireAggregateLoader(lookup Lookup) (AggregateLoader, error) {
+	loader, ok := lookup.(AggregateLoader)
+	if !ok {
+		return nil, ErrNoAggregateLoader
+	}
+	return loader, nil
+}
+
 // DescendSubAggregates extends an already-computed Closure with its transitive
 // sub-aggregate axis: every Aggregate reachable through a chain of
 // Aggregate.Spec.Aggregates references is loaded, re-walked, and its own
@@ -52,11 +74,16 @@ type AggregateLoader interface {
 // in-memory Aggregate value, so it pins only the DIRECT sub-aggregates of the
 // top-level Aggregate; this pass closes over the rest.
 //
-// It is a pull-side augmentation, run after ComputeClosure (and the library
-// discovery passes) at lock time — never inside ComputeClosure, which also runs
-// on the hermetic build and serve paths where no registry pull may occur. The
-// shape mirrors DescendRecipeSources: a separate pass over the resolved closure
-// driven by an injected loader.
+// It is a separate pass, run after ComputeClosure (and the library discovery
+// passes) — never inside ComputeClosure, which takes no loader and so cannot
+// obtain the parsed bodies this pass re-walks. Every path that pins or verifies a
+// closure runs it: the lock-time descent that writes the pins, and the hermetic
+// reconstruction a build or a serve drift check performs against an existing
+// lockfile (ReconstructClosureAxes). A hermetic caller is unaffected by that
+// reach, because the loader's contract is a read of already-resolved bytes —
+// authored catalog bytes, or the content-addressed slot the pin names, verified
+// against that pin — never a fetch. The shape mirrors DescendRecipeSources: a
+// separate pass over the resolved closure driven by an injected loader.
 //
 // Termination has two disciplines, matching the topology flattener:
 //

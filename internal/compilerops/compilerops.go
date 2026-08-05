@@ -86,7 +86,14 @@ type ResolvedClosure struct {
 	// through. A caller that verifies drift against a lockfile reuses it to
 	// reconstruct the sub-aggregate and plugin axes ComputeClosure leaves empty,
 	// so the reconstruction resolves against the identical pinned view — no second
-	// lookup is built. Callers that only render may ignore it.
+	// lookup is built.
+	//
+	// The sub-aggregate axis needs one capability beyond the resolver surface: a
+	// read of a resolved Aggregate's parsed body. closure.RequireAggregateLoader
+	// obtains it from this Lookup and refuses loudly when the Lookup cannot serve
+	// it, so a caller cannot end up reconstructing that axis with no loader — which
+	// the descent would read as "none wired" and skip without a word. Callers that
+	// only render may ignore Lookup entirely.
 	Lookup closure.Lookup
 }
 
