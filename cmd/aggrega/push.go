@@ -35,11 +35,30 @@ var (
 )
 
 func newPushCmd() *cobra.Command {
+	// listKinds is a local rather than one of the flag-bound globals above so
+	// each newPushCmd() construction carries its own copy, keeping a test that
+	// builds the command independent of the root command's.
+	var listKinds bool
 	c := &cobra.Command{
 		Use:   "push <entity-path>",
 		Short: "Bundle and publish a catalog entity to an OCI registry",
-		Args:  cobra.MaximumNArgs(1),
+		Args: func(cmd *cobra.Command, args []string) error {
+			// --list-kinds answers a question about the binary, not about an
+			// entity, so naming one alongside it is refused rather than
+			// ignored: a silently-dropped path reads as a push that happened.
+			if listKinds {
+				return cobra.NoArgs(cmd, args)
+			}
+			return cobra.MaximumNArgs(1)(cmd, args)
+		},
 		RunE: func(cmd *cobra.Command, args []string) error {
+			// Answered before the workspace is resolved: the kind set is a
+			// property of the binary, and resolution both reads the config
+			// cascade and reports its warnings on stderr — neither belongs in
+			// the path of a query a script parses.
+			if listKinds {
+				return listPublishableKinds(cmd.OutOrStdout())
+			}
 			path := pushEntityPath
 			if path == "" && len(args) > 0 {
 				path = args[0]
@@ -80,7 +99,30 @@ func newPushCmd() *cobra.Command {
 	c.Flags().StringVar(&pushTimestamp, "timestamp-url", "", "Optional RFC3161 timestamp-authority URL for keyless signing.")
 	c.Flags().StringVar(&pushIDToken, "identity-token", "", "OIDC identity token for keyless signing. Optional at an interactive terminal (a browser flow acquires one) and on GitHub Actions (the workflow OIDC token is minted automatically); required for other non-interactive/CI use, where it may instead be exported as AGGREGA_IDENTITY_TOKEN or SIGSTORE_ID_TOKEN.")
 	c.Flags().StringVar(&pushPluginPath, "plugin", "", "Path to the local .wasm artifact for a Plugin entity. Required when publishing a Plugin: publish pushes the .wasm artifact, computes its content digest, and pushes the entity.")
+	c.Flags().BoolVar(&listKinds, "list-kinds", false, "List every entity kind that can be published, then exit without publishing anything. The output is machine-readable and its shape is stable: one kind per line, in sorted order, with nothing else.")
 	return c
+}
+
+// listPublishableKinds writes each publishable entity kind on its own line, in
+// the lexical order oci.MediaTypeKinds already returns them in.
+//
+// That enumeration is the single home of the publishable-kind set, so this
+// helper neither restates it nor filters it. A restated copy agrees on the day
+// it is written and silently disagrees the day a kind is added — and a filter
+// would be such a copy expressed as an exclusion. The order is not re-sorted
+// here for the same reason: sorting twice invites the two orderings to drift.
+//
+// The emitted shape is a parsed contract, not display text. One kind per line
+// with no header, count, or decoration is what lets a caller read the set
+// without a parser, so the shape is held stable rather than adjusted for
+// readability.
+func listPublishableKinds(out io.Writer) error {
+	for _, kind := range oci.MediaTypeKinds() {
+		if _, err := fmt.Fprintln(out, kind); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // pushConfig is the input contract for the push workflow. The cobra
