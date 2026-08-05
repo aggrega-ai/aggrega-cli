@@ -194,7 +194,7 @@ var CLIRunExportName = minExportName(plugintype.CLI)
 
 // BoundaryAssemblyNone, BoundaryAssemblyMerge, and BoundaryAssemblyNest are
 // the three boundary-assembly modes a plugin reports via
-// [Capabilities.BoundaryAssembly]: none writes each node's output directly at
+// [ProviderContract.BoundaryAssembly]: none writes each node's output directly at
 // the dispatch path, merge folds the per-node fragments into one document, and
 // nest places each node's output under its own position in an umbrella
 // structure. The shape validator accepts these three values or the empty
@@ -349,7 +349,7 @@ func (d PluginDescriptor) validateCommands(pluginIdentity string) error {
 }
 
 // validateLinkCapability enforces the cross-boundary-linking coherence rule:
-// the [Capabilities.CrossBoundaryLinking] flag is set if and only if the
+// the [ProviderContract.CrossBoundaryLinking] flag is set if and only if the
 // descriptor declares both the link_publish and link_resolve exports. The two
 // exports are a paired contract, and the flag is the plugin-level claim that
 // the pair is present; a declaration that sets the flag without both exports,
