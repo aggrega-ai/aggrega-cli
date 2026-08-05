@@ -49,6 +49,7 @@ func TestReadChainDerivesItFromTheDeclaredViews(t *testing.T) {
 		"NormalizedView",
 		"TopologyView",
 		"GraphView",
+		"DescribedView",
 		"HydratedView",
 		"RenderedView",
 	}
@@ -72,6 +73,7 @@ func TestReadChainDerivesItFromTheDeclaredViews(t *testing.T) {
 		{"SocketRequired", "NormalizedView"},
 		{"ResolvedParameter", "TopologyView"},
 		{"PerLeafAttachmentProvenance", "GraphView"},
+		{"StepExportScope", "DescribedView"},
 		{"DeclaredLocalsKeys", "HydratedView"},
 		{"EmittedFilePathSet", "RenderedView"},
 	} {

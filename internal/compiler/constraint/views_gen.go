@@ -450,16 +450,120 @@ type GraphView interface {
 	MergedAttachmentNames(node string) []string
 }
 
-// HydratedView exposes the facts complete at the hydrated stage: per-node
-// resolved locals and provides — state that exists before any artifact
-// bytes.
+// DescribedView exposes the facts complete at the described stage: every
+// plugin a node's pipeline steps and its rendering provider resolve to,
+// loaded and self-described: the declared capabilities, the exports, and
+// the input and output schemas each export declares, before any step runs.
 //
 // It embeds GraphView, so every fact complete earlier is readable here and
 // the containment is a compile-time fact rather than a documented
 // convention. A check declaring this view is placed at this stage, because
 // it is the earliest one at which every fact the check reads is complete.
-type HydratedView interface {
+type DescribedView interface {
 	GraphView
+
+	// StepPluginCompatibleCapabilities are the provider capabilities a
+	// pipeline step's plugin declares its step is compatible with, in declared
+	// order.
+	//
+	// An empty result is a claim rather than a missing value: a plugin
+	// declaring no capability claims compatibility with nothing, so a rule
+	// asking whether the provider a step runs under is among the declared set
+	// refuses an empty declaration instead of treating it as unconstrained.
+	//
+	// The set is the step plugin's own declaration about itself. Which
+	// provider a step actually runs under is a separate question on a separate
+	// carrier, so a rule matching the two composes this fact with that one
+	// rather than asking a single fact to span both surfaces.
+	//
+	// Keyed by (node, pipeline-step); read from
+	// wasm.PluginDescriptor.Capabilities.
+	StepPluginCompatibleCapabilities(node string, step string) []string
+
+	// StepExportScope is the document root the export a pipeline step
+	// dispatches to declares it operates on, empty when the export declares
+	// none.
+	//
+	// Emptiness is one answer rather than two. An export declaring no scope
+	// and a plugin declaring no such export both leave the scope unstated, and
+	// the question a rule asks is which document set the step addresses;
+	// distinguishing the two would put a second condition on one question, and
+	// the two could then disagree.
+	//
+	// It is keyed per step rather than per plugin because a plugin offers
+	// several exports and a step dispatches to exactly one of them, so the
+	// plugin alone does not determine the answer.
+	//
+	// Keyed by (node, pipeline-step); read from wasm.PluginExport.Scope.
+	StepExportScope(node string, step string) string
+
+	// StepExportInputSchema is the schema document the export a pipeline step
+	// dispatches to declares for the step-local input a pipeline entry
+	// supplies, as opaque bytes — empty when the export declares no input
+	// contract.
+	//
+	// The bytes are opaque by type, so nothing about the declared shape is
+	// legible from the fact beyond the document itself. That is what lets a
+	// conformance rule receive a whole schema without receiving the
+	// self-report carrying it.
+	//
+	// It is a separate fact from the declared output schema rather than the
+	// same fact in two directions. The two are independently absent and are
+	// evaluated against different values — one against what a pipeline entry
+	// supplies, the other against what the step returns — so a rule may
+	// legitimately ask about either without the other.
+	//
+	// Keyed by (node, pipeline-step); read from wasm.PluginExport.Input.
+	StepExportInputSchema(node string, step string) []byte
+
+	// StepExportOutputSchema is the schema document the export a pipeline step
+	// dispatches to declares for the outputs it returns, as opaque bytes —
+	// empty when the export declares no output contract.
+	//
+	// The bytes are opaque by type, on the same reasoning as the declared
+	// input schema: a conformance rule receives the whole document without
+	// receiving the self-report carrying it.
+	//
+	// It is deliberately the second of a pair rather than one fact over both
+	// directions of the contract. An export may declare either without the
+	// other, and the two are evaluated at different moments — one before the
+	// step runs, one after — so a single fact spanning them would be absent
+	// for a step declaring only the half a rule needed.
+	//
+	// Keyed by (node, pipeline-step); read from wasm.PluginExport.Output.
+	StepExportOutputSchema(node string, step string) []byte
+
+	// ProviderBoundaryAssembly is how the rendering provider a node resolves
+	// to declares it combines a dispatch group's per-node output, empty when
+	// it declares no assembly claim.
+	//
+	// The empty value is an answer and not a missing one: a provider stating
+	// no assembly claim writes each node's output directly at the dispatch
+	// path, which is exactly what distinguishes it from one that folds the
+	// per-node fragments into a single document and from one that nests each
+	// node under its own position.
+	//
+	// The fact names the claim of the node's OWN provider. Which provider
+	// assembles a whole dispatch group is a different question, and not this
+	// fact: a group may hold nodes whose providers resolve at different
+	// versions and one of them is elected for the group, so the elected claim
+	// is not a function of any single node in the group. A rule about a group
+	// needs that election, which is keyed by the group rather than by a node.
+	//
+	// Keyed by node; read from wasm.ProviderContract.BoundaryAssembly.
+	ProviderBoundaryAssembly(node string) string
+}
+
+// HydratedView exposes the facts complete at the hydrated stage: per-node
+// resolved locals and provides — state that exists before any artifact
+// bytes.
+//
+// It embeds DescribedView, so every fact complete earlier is readable here
+// and the containment is a compile-time fact rather than a documented
+// convention. A check declaring this view is placed at this stage, because
+// it is the earliest one at which every fact the check reads is complete.
+type HydratedView interface {
+	DescribedView
 
 	// DeclaredLocalsKeys are the local names a node's Recipe declares, in
 	// author order.

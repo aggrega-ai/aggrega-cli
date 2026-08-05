@@ -43,8 +43,16 @@ var stages = []stageDecl{
 			"annotation-driven expansion",
 	},
 	{
-		Name:    "hydrated",
+		Name:    "described",
 		Extends: "graph",
+		Holds: "every plugin a node's pipeline steps and its rendering provider " +
+			"resolve to, loaded and self-described: the declared capabilities, the " +
+			"exports, and the input and output schemas each export declares, before " +
+			"any step runs",
+	},
+	{
+		Name:    "hydrated",
+		Extends: "described",
 		Holds: "per-node resolved locals and provides — state that exists before " +
 			"any artifact bytes",
 	},
@@ -542,6 +550,123 @@ var facts = []factDecl{
 			"framework already exposes as a fact of its own, so a rule could " +
 			"re-derive a declared fact from this one — which is the shape every " +
 			"return here exists to keep closed.",
+	},
+
+	// --------------------------------------------------------------- described
+
+	{
+		Name:        "step-plugin-compatible-capabilities",
+		Stage:       "described",
+		SourceField: "wasm.PluginDescriptor.Capabilities",
+		Subject:     []string{"node", "pipeline-step"},
+		Params: []paramDecl{
+			{Name: "node", Type: "string"},
+			{Name: "step", Type: "string"},
+		},
+		Returns: "[]string",
+		Doc: "StepPluginCompatibleCapabilities are the provider capabilities a " +
+			"pipeline step's plugin declares its step is compatible with, in " +
+			"declared order.\n\nAn empty result is a claim rather than a " +
+			"missing value: a plugin declaring no capability claims " +
+			"compatibility with nothing, so a rule asking whether the provider " +
+			"a step runs under is among the declared set refuses an empty " +
+			"declaration instead of treating it as unconstrained.\n\nThe set " +
+			"is the step plugin's own declaration about itself. Which provider " +
+			"a step actually runs under is a separate question on a separate " +
+			"carrier, so a rule matching the two composes this fact with that " +
+			"one rather than asking a single fact to span both surfaces.",
+	},
+	{
+		Name:        "step-export-scope",
+		Stage:       "described",
+		SourceField: "wasm.PluginExport.Scope",
+		Subject:     []string{"node", "pipeline-step"},
+		Params: []paramDecl{
+			{Name: "node", Type: "string"},
+			{Name: "step", Type: "string"},
+		},
+		Returns: "string",
+		Doc: "StepExportScope is the document root the export a pipeline step " +
+			"dispatches to declares it operates on, empty when the export " +
+			"declares none.\n\nEmptiness is one answer rather than two. An " +
+			"export declaring no scope and a plugin declaring no such export " +
+			"both leave the scope unstated, and the question a rule asks is " +
+			"which document set the step addresses; distinguishing the two " +
+			"would put a second condition on one question, and the two could " +
+			"then disagree.\n\nIt is keyed per step rather than per plugin " +
+			"because a plugin offers several exports and a step dispatches to " +
+			"exactly one of them, so the plugin alone does not determine the " +
+			"answer.",
+	},
+	{
+		Name:        "step-export-input-schema",
+		Stage:       "described",
+		SourceField: "wasm.PluginExport.Input",
+		Subject:     []string{"node", "pipeline-step"},
+		Params: []paramDecl{
+			{Name: "node", Type: "string"},
+			{Name: "step", Type: "string"},
+		},
+		Returns: "[]byte",
+		Doc: "StepExportInputSchema is the schema document the export a pipeline " +
+			"step dispatches to declares for the step-local input a pipeline " +
+			"entry supplies, as opaque bytes — empty when the export declares " +
+			"no input contract.\n\nThe bytes are opaque by type, so nothing " +
+			"about the declared shape is legible from the fact beyond the " +
+			"document itself. That is what lets a conformance rule receive a " +
+			"whole schema without receiving the self-report carrying it.\n" +
+			"\nIt is a separate fact from the declared output schema rather " +
+			"than the same fact in two directions. The two are independently " +
+			"absent and are evaluated against different values — one against " +
+			"what a pipeline entry supplies, the other against what the step " +
+			"returns — so a rule may legitimately ask about either without the " +
+			"other.",
+	},
+	{
+		Name:        "step-export-output-schema",
+		Stage:       "described",
+		SourceField: "wasm.PluginExport.Output",
+		Subject:     []string{"node", "pipeline-step"},
+		Params: []paramDecl{
+			{Name: "node", Type: "string"},
+			{Name: "step", Type: "string"},
+		},
+		Returns: "[]byte",
+		Doc: "StepExportOutputSchema is the schema document the export a pipeline " +
+			"step dispatches to declares for the outputs it returns, as opaque " +
+			"bytes — empty when the export declares no output contract.\n" +
+			"\nThe bytes are opaque by type, on the same reasoning as the " +
+			"declared input schema: a conformance rule receives the whole " +
+			"document without receiving the self-report carrying it.\n\nIt " +
+			"is deliberately the second of a pair rather than one fact over " +
+			"both directions of the contract. An export may declare either " +
+			"without the other, and the two are evaluated at different moments " +
+			"— one before the step runs, one after — so a single fact spanning " +
+			"them would be absent for a step declaring only the half a rule " +
+			"needed.",
+	},
+	{
+		Name:        "provider-boundary-assembly",
+		Stage:       "described",
+		SourceField: "wasm.ProviderContract.BoundaryAssembly",
+		Subject:     []string{"node"},
+		Params:      []paramDecl{{Name: "node", Type: "string"}},
+		Returns:     "string",
+		Doc: "ProviderBoundaryAssembly is how the rendering provider a node " +
+			"resolves to declares it combines a dispatch group's per-node " +
+			"output, empty when it declares no assembly claim.\n\nThe empty " +
+			"value is an answer and not a missing one: a provider stating no " +
+			"assembly claim writes each node's output directly at the dispatch " +
+			"path, which is exactly what distinguishes it from one that folds " +
+			"the per-node fragments into a single document and from one that " +
+			"nests each node under its own position.\n\nThe fact names the " +
+			"claim of the node's OWN provider. Which provider assembles a whole " +
+			"dispatch group is a different question, and not this fact: a group " +
+			"may hold nodes whose providers resolve at different versions and " +
+			"one of them is elected for the group, so the elected claim is not " +
+			"a function of any single node in the group. A rule about a group " +
+			"needs that election, which is keyed by the group rather than by a " +
+			"node.",
 	},
 
 	// ---------------------------------------------------------------- hydrated
