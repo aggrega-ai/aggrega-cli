@@ -1,7 +1,8 @@
 # Tier-4 fixture: missing-required-parameter
 
 Minimal Aggregate + Release + Manifest exercising the
-`ErrParameterMissing` path in Step 1 of the compiler pipeline.
+`ErrParameterMissing` path in the resolution stage of the compiler
+pipeline.
 
 The Aggregate declares `spec.parameters.database_url` with `type:
 string` and `required: true`. The Release omits any `spec.parameters:`

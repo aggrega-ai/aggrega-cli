@@ -12,7 +12,7 @@ of the same Aggregate:
 
 Two variants rather than one document carrying both faults, because the two
 diagnostics are produced at different pipeline stages: the shape violation
-halts at Step 1, so a document carrying it never reaches the Step-4 pass that
-reports the requirement. The fixture exists so each diagnostic can be observed
-on the language-server path, positioned on its own authoring key rather than at
-the head of the file.
+halts during resolution, so a document carrying it never reaches the
+static-analysis stage that reports the requirement. The fixture exists so each
+diagnostic can be observed on the language-server path, positioned on its own
+authoring key rather than at the head of the file.

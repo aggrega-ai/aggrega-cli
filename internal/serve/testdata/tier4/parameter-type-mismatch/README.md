@@ -1,7 +1,7 @@
 # Tier-4 fixture: parameter-type-mismatch
 
 Minimal Aggregate + Release + Manifest exercising the parameter-contract
-type-mismatch path in Step 1 of the compiler pipeline.
+type-mismatch path in the resolution stage of the compiler pipeline.
 
 The Aggregate declares `spec.parameters.port` with `type: integer` and
 `required: true`. The Release supplies `spec.parameters.port:

@@ -13,7 +13,7 @@ spec:
       components:
         # data.consumer is the flattened node ID of the sub-aggregate's
         # `consumer` component. pool_size 999 exceeds the socket infraSchema
-        # maximum (100): if Step-1 per-edge conformance covers sub-aggregate
+        # maximum (100): if resolution's per-edge conformance covers sub-aggregate
         # components, this halts; if it skips them, the build succeeds and the
         # non-conforming infra flows unvalidated.
         data.consumer:
