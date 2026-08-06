@@ -40,7 +40,6 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
 )
@@ -89,24 +88,21 @@ type fileFormat struct {
 }
 
 // DefaultIndexPath returns the compile-attribution index's path under the given
-// user cache root — a sibling of the compiled-module cache directory and the
-// provenance index. Under a test binary it returns a fixed location under the
-// system temp directory, so a suite never writes to the developer's real cache.
-// The caller supplies the cache root (rather than this package resolving it) so
-// the package depends on no host-runtime package.
+// cache root — a sibling of the compiled-module cache directory and the
+// provenance index. The caller supplies the cache root (rather than this package
+// resolving it) so the package depends on no host-runtime package; the caller's
+// root is therefore the one that decides where the index lives, and this package
+// adds no second opinion about it.
 func DefaultIndexPath(cacheRoot string) string {
-	if testing.Testing() {
-		return filepath.Join(os.TempDir(), "aggrega-compile-attribution-index-test", indexFileName)
-	}
 	return filepath.Join(cacheRoot, indexFileName)
 }
 
 // PathForCompileDir returns the index path that sits beside the compiled-module
 // cache directory: the index lives in the compile directory's parent, alongside
 // the provenance index. It is the write-side spelling the loader uses when it
-// knows only the compile directory. In the shipped layout the compile directory
-// is a child of the user cache root, so this resolves to the same file
-// DefaultIndexPath(root) returns.
+// knows only the compile directory. The compile directory is a child of the cache
+// root, so this resolves to the same file DefaultIndexPath(root) returns — the
+// read side and the write side of one index name one path.
 func PathForCompileDir(compileDir string) string {
 	return filepath.Join(filepath.Dir(compileDir), indexFileName)
 }

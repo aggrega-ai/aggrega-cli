@@ -26,7 +26,6 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"testing"
 	"time"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
@@ -78,16 +77,12 @@ type fileFormat struct {
 	Entries []Entry `json:"entries"`
 }
 
-// DefaultIndexPath returns the provenance index's path under the user cache root
-// and whether one could be resolved. The file is a sibling of the compile-cache
-// and plugin-describe directories, reusing the single exported root spelling
-// rather than re-deriving it. Under a test binary the path is a fixed location
-// under the system temp directory, so the suite never writes to the developer's
-// real cache. A false return means no user cache directory could be resolved.
+// DefaultIndexPath returns the provenance index's path under the cache root and
+// whether one could be resolved. The file is a sibling of the compile-cache and
+// plugin-describe directories, reusing the single exported root spelling rather
+// than re-deriving it — so wherever that root resolves, this index follows it. A
+// false return means no cache root could be resolved.
 func DefaultIndexPath() (string, bool) {
-	if testing.Testing() {
-		return filepath.Join(os.TempDir(), "aggrega-provenance-index-test", indexFileName), true
-	}
 	root, ok := wasm.AggregaCacheRoot()
 	if !ok {
 		return "", false

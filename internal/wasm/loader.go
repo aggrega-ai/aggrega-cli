@@ -204,19 +204,18 @@ func NewCachingLoaderFromContext(ctx context.Context, fetch FetchService) *Loade
 // The selection is made once, at first construction:
 //
 //   - Within a test binary (testing.Testing() reports true) the cache is an
-//     on-disk store rooted at a fixed directory under the system temp directory
-//     (see testCompilationCacheDir), regardless of disablePersistent. Every test
-//     process — including the many package binaries a single suite run executes
-//     in parallel — shares that one directory, so each distinct guest compiles at
-//     most once across the whole run and every later process reuses the machine
-//     code instead of cold-compiling its own copy. The directory is deliberately
-//     off the user cache directory, so the suite never touches a developer's real
-//     build cache. An in-memory cache is the fallback only when that directory
-//     cannot be created.
-//   - Otherwise selectCompilationCache honors disablePersistent: false (the
-//     default) prefers the persistent on-disk store under wasmCompileCacheDir
-//     with an in-memory fallback; true uses an in-memory-only cache. Only the
-//     first caller's disablePersistent is consulted, which matches real usage: a
+//     on-disk store at CompileCacheDir regardless of disablePersistent. Every
+//     test process — including the many package binaries a single suite run
+//     executes in parallel — shares that one directory, so each distinct guest
+//     compiles at most once across the whole run and every later process reuses
+//     the machine code instead of cold-compiling its own copy. An in-memory cache
+//     is the fallback only when that directory cannot be created. This branch
+//     decides only disk-vs-memory; the directory itself is resolved by cacheRoot,
+//     which is what keeps it off a developer's real build cache.
+//   - Otherwise selectCompilationCacheWithDir honors disablePersistent: false
+//     (the default) prefers the persistent on-disk store at CompileCacheDir with
+//     an in-memory fallback; true uses an in-memory-only cache. Only the first
+//     caller's disablePersistent is consulted, which matches real usage: a
 //     process runs one CLI command's worth of that dial, or the daemon's
 //     disk-backed default.
 //
@@ -245,28 +244,23 @@ func sharedCompilationCache(disablePersistent bool) wazero.CompilationCache {
 	return sharedCompilationCacheInstance
 }
 
-// testCompilationCacheDir returns the fixed directory that test binaries share
-// as their compile cache. It is a stable location under the system temp
-// directory — the same path for every test process, so a whole suite run
-// compiles each guest once and reuses it — and deliberately distinct from the
-// user cache directory selectCompilationCache uses, so tests never touch a
-// developer's real build cache.
-func testCompilationCacheDir() string {
-	return filepath.Join(os.TempDir(), "aggrega-wasm-compile-test")
-}
-
-// testCompilationCache returns the shared on-disk cache test binaries use,
-// rooted at testCompilationCacheDir, falling back to an in-memory cache only
-// when that directory cannot be created. The second return is the on-disk
-// directory backing the cache, or "" when the fallback in-memory cache is used;
-// callers record it so the cross-process compile lock can locate its per-guest
-// lock files.
+// testCompilationCache returns the shared on-disk cache test binaries use, at the
+// compile-cache directory every other caller resolves (CompileCacheDir), falling
+// back to an in-memory cache only when that directory cannot be created. The
+// second return is the on-disk directory backing the cache, or "" when the
+// fallback in-memory cache is used; callers record it so the cross-process compile
+// lock can locate its per-guest lock files.
+//
+// It exists as its own function only because a test binary always takes the disk
+// branch regardless of the disable-persistent dial (see sharedCompilationCache);
+// it decides nothing about *where* the cache lives, which is cacheRoot's answer
+// alone.
 func testCompilationCache() (wazero.CompilationCache, string) {
-	dir := testCompilationCacheDir()
-	if disk, err := wazero.NewCompilationCacheWithDir(dir); err == nil {
-		return disk, dir
+	dir, ok := CompileCacheDir()
+	if !ok {
+		return wazero.NewCompilationCache(), ""
 	}
-	return wazero.NewCompilationCache(), ""
+	return compilationCacheAt(dir)
 }
 
 var (
@@ -281,111 +275,139 @@ var (
 	sharedCompilationCacheDir string
 )
 
-// selectCompilationCache is the disk-vs-memory primitive behind
-// sharedCompilationCache's non-test branch: with disablePersistent false it
-// prefers the persistent on-disk store under wasmCompileCacheDir and falls back
-// to an in-memory cache when no cache directory resolves or the disk store
-// cannot be created; with disablePersistent true it returns an in-memory-only
-// cache.
-//
-// Every shipping path reaches this primitive through sharedCompilationCache. The
-// sole direct callers are the disk-branch unit tests, which must exercise the
-// on-disk selection that sharedCompilationCache's test-mode gate would otherwise
-// mask. That deliberate bypass is the only sanctioned way to reach this
-// primitive without the gate; it must not be "simplified" to route through
-// sharedCompilationCache, which would blind the disk-branch coverage.
-func selectCompilationCache(disablePersistent bool) wazero.CompilationCache {
-	cache, _ := selectCompilationCacheWithDir(disablePersistent)
-	return cache
+// selectCompilationCacheWithDir is the disk-vs-memory choice behind
+// sharedCompilationCache: with disablePersistent false it prefers the persistent
+// on-disk store at CompileCacheDir and falls back to an in-memory cache when no
+// cache directory resolves or the disk store cannot be created; with
+// disablePersistent true it returns an in-memory-only cache. The second return is
+// the on-disk directory backing the cache, or "" when the in-memory cache is
+// used; sharedCompilationCache records it so Load's cross-process compile lock
+// can locate its per-guest lock files without re-deriving the selection.
+func selectCompilationCacheWithDir(disablePersistent bool) (wazero.CompilationCache, string) {
+	if disablePersistent {
+		return wazero.NewCompilationCache(), ""
+	}
+	dir, ok := CompileCacheDir()
+	if !ok {
+		return wazero.NewCompilationCache(), ""
+	}
+	return compilationCacheAt(dir)
 }
 
-// selectCompilationCacheWithDir is selectCompilationCache's primitive: it makes
-// the same disk-vs-memory choice and additionally returns the on-disk directory
-// backing the cache, or "" when the in-memory fallback is used. It is the single
-// site that decides the cache directory; sharedCompilationCache records the
-// returned directory so Load's cross-process compile lock can locate its
-// per-guest lock files without re-deriving the selection.
-func selectCompilationCacheWithDir(disablePersistent bool) (wazero.CompilationCache, string) {
-	if !disablePersistent {
-		if dir, ok := wasmCompileCacheDir(); ok {
-			if disk, err := wazero.NewCompilationCacheWithDir(dir); err == nil {
-				return disk, dir
-			}
-		}
+// compilationCacheAt returns a disk-backed compilation cache rooted at dir,
+// falling back to an in-memory cache only when that directory cannot be created.
+// The second return is dir when the disk store was built and "" for the in-memory
+// fallback, so a caller can tell which branch it got without inspecting the
+// opaque cache value.
+//
+// Taking the directory as a parameter is what lets the disk branch be exercised
+// against a caller-chosen directory. That matters because a test binary resolves
+// every cache location to one shared root (see cacheRoot), which a test can
+// neither start empty nor safely populate; a test that must observe the
+// disk-vs-memory decision itself therefore passes its own throwaway directory
+// here rather than reaching for a second, unguarded way to name a cache
+// directory.
+func compilationCacheAt(dir string) (wazero.CompilationCache, string) {
+	if disk, err := wazero.NewCompilationCacheWithDir(dir); err == nil {
+		return disk, dir
 	}
 	return wazero.NewCompilationCache(), ""
 }
 
-// aggregaCacheRoot returns the user-level cache root the CLI's persistent caches
-// live under and whether one could be resolved. It is the single site that names
-// the root directory, so the compile cache and the plugin-describe cache share
-// one parent rather than each re-spelling it. A false return (no resolvable user
-// cache directory) signals the caller to fall back to a non-persistent path
-// rather than fail.
-func aggregaCacheRoot() (string, bool) {
+// Directory names beneath the cache root. Each cache names its leaf exactly
+// once, so a location is always the root plus one of these rather than a second
+// spelling of the whole path.
+const (
+	compileCacheDirName  = "wasm-compile"
+	describeCacheDirName = "plugin-describe"
+
+	// userCacheRootDirName is the directory the CLI owns beneath the user cache
+	// directory.
+	userCacheRootDirName = "aggrega"
+
+	// testCacheRootDirName is the directory, beneath the system temp directory,
+	// that holds every cache while a test binary is running. It is a fixed name
+	// rather than a per-process one so all test processes share one set of caches
+	// and a whole run compiles each guest at most once.
+	testCacheRootDirName = "aggrega-cache-test"
+)
+
+// cacheRoot returns the root directory this process's persistent caches live
+// under and whether one could be resolved.
+//
+// It is the single site that decides that root. Every cache — the compiled-module
+// store, the plugin-describe store, the provenance index, the compile-attribution
+// index — derives its own location from this one answer, so the read side and the
+// write side of any one cache cannot disagree about where it lives, and a cache
+// added later inherits the decision instead of repeating it.
+//
+// Within a test binary the root is a fixed directory beneath the system temp
+// directory rather than the user cache directory. Two reasons, and both are
+// load-bearing. A test must never read or write the cache a developer's own
+// builds depend on: those bytes are expensive to rebuild and nothing a test holds
+// can reconstruct them, and the cache-maintenance surface can remove a directory
+// outright. And every test process sharing one root means a whole run compiles
+// each guest at most once, with later processes reusing the machine code rather
+// than each paying its own cold compile.
+//
+// A false return (no resolvable user cache directory) signals the caller to fall
+// back to a non-persistent path rather than fail.
+func cacheRoot() (string, bool) {
+	if testing.Testing() {
+		return filepath.Join(os.TempDir(), testCacheRootDirName), true
+	}
 	base, err := os.UserCacheDir()
 	if err != nil {
 		return "", false
 	}
-	return filepath.Join(base, "aggrega"), true
+	return filepath.Join(base, userCacheRootDirName), true
 }
 
-// AggregaCacheRoot returns the user-level cache root the CLI's persistent caches
-// live under and whether one could be resolved. It is the exported accessor over
-// the single internal root spelling, so a sibling cache that lives alongside the
+// AggregaCacheRoot returns the root directory the CLI's persistent caches live
+// under and whether one could be resolved. It is the exported accessor over the
+// single internal root spelling, so a sibling cache that lives alongside the
 // compile cache and the plugin-describe cache — such as the plugin provenance
-// index — locates the same parent without re-spelling the root itself. A false
-// return means no user cache directory could be resolved.
+// index or the compile-attribution index — locates the same parent without
+// re-deriving it. A false return means no cache root could be resolved.
 func AggregaCacheRoot() (string, bool) {
-	return aggregaCacheRoot()
+	return cacheRoot()
 }
 
-// wasmCompileCacheDir returns the directory for the persistent wazero
-// compilation cache and whether one could be resolved. The provider guests are
-// identical bytes across every project, so the cache is rooted at the
-// user-level cache directory rather than a per-project one: the first build on
-// a machine pays the guest's compilation cost, and every later build of any
-// project reuses it. wazero namespaces its entries by a version+arch+os marker
-// beneath this directory, so an incompatible cache is ignored, not misread. A
-// false return (no resolvable user cache directory) signals the caller to fall
-// back to an in-memory cache rather than fail the build.
-func wasmCompileCacheDir() (string, bool) {
-	root, ok := aggregaCacheRoot()
+// CompileCacheDir returns the directory of the persistent wazero compiled-module
+// cache and whether one could be resolved. The provider guests are identical
+// bytes across every project, so the cache is rooted at the cache root rather
+// than a per-project directory: the first build on a machine pays the guest's
+// compilation cost, and every later build of any project reuses it. wazero
+// namespaces its entries by a version+arch+os marker beneath this directory, so
+// an incompatible cache is ignored, not misread.
+//
+// It is the one spelling of this directory. The loader compiles into it and the
+// cache-inspection and cache-maintenance commands enumerate and reclaim it, so
+// those commands necessarily act on the same bytes the loader produced. A false
+// return means no cache root could be resolved, so no persistent compile cache
+// exists to act on and the caller falls back to an in-memory cache.
+func CompileCacheDir() (string, bool) {
+	root, ok := cacheRoot()
 	if !ok {
 		return "", false
 	}
-	return filepath.Join(root, "wasm-compile"), true
-}
-
-// CompileCacheDir returns the directory of the persistent wazero
-// compiled-module cache and whether one could be resolved. It exposes the
-// internally-resolved location so cache-inspection and cache-maintenance
-// commands enumerate and reclaim the same directory the loader compiles into,
-// without re-deriving the path. A false return means no user cache directory
-// could be resolved, so no persistent compile cache exists to act on.
-func CompileCacheDir() (string, bool) {
-	return wasmCompileCacheDir()
+	return filepath.Join(root, compileCacheDirName), true
 }
 
 // PluginDescribeCacheDir returns the directory for the persistent
 // plugin-describe cache and whether one could be resolved. A guest's describe()
 // output is a static, content-addressed self-report, so the cache keys each
 // descriptor on the resolved guest's content digest and lives alongside the
-// compile cache under the shared user-level aggrega root: a configured plugin is
-// described once and re-read from cache on later runs, and a change to the
-// resolved artifact yields a new digest and so a fresh entry. Under a test
-// binary the directory is a fixed path under the system temp directory rather
-// than the developer's real cache, so the suite never touches it. A false return
-// signals the caller to skip the cache and describe the guest directly.
+// compile cache under the shared cache root: a configured plugin is described
+// once and re-read from cache on later runs, and a change to the resolved
+// artifact yields a new digest and so a fresh entry. A false return signals the
+// caller to skip the cache and describe the guest directly.
 func PluginDescribeCacheDir() (string, bool) {
-	if testing.Testing() {
-		return filepath.Join(os.TempDir(), "aggrega-plugin-describe-test"), true
-	}
-	root, ok := aggregaCacheRoot()
+	root, ok := cacheRoot()
 	if !ok {
 		return "", false
 	}
-	return filepath.Join(root, "plugin-describe"), true
+	return filepath.Join(root, describeCacheDirName), true
 }
 
 // PluginCompileCacheCold reports a coarse, up-front guess of whether a build
@@ -406,15 +428,21 @@ func PluginCompileCacheCold(ctx context.Context) bool {
 	if DisablePluginCacheFromContext(ctx) {
 		return true
 	}
-	dir, ok := wasmCompileCacheDir()
+	dir, ok := CompileCacheDir()
 	if !ok {
 		return true
 	}
+	return dirHasNoEntries(dir)
+}
+
+// dirHasNoEntries reports whether dir holds no entries, treating an unreadable or
+// absent directory as empty. It is the cold-guess predicate PluginCompileCacheCold
+// applies to the resolved compile-cache directory, split out so the predicate can
+// be exercised against a caller-chosen directory in the three states it
+// distinguishes — absent, present but empty, populated.
+func dirHasNoEntries(dir string) bool {
 	entries, err := os.ReadDir(dir)
-	if err != nil || len(entries) == 0 {
-		return true
-	}
-	return false
+	return err != nil || len(entries) == 0
 }
 
 // externalInputsContextKey keys the external-input service on a

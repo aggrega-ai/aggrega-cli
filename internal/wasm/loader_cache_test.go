@@ -12,21 +12,6 @@ import (
 	"testing"
 )
 
-// diskCacheDir returns the on-disk compile-cache directory that the loader
-// would use given the current environment, and whether one resolves. The
-// disk-vs-memory branch is otherwise unobservable — wazero.CompilationCache is
-// opaque — so these tests assert on the cache directory's existence as the
-// faithful side effect of the disk branch: NewCompilationCacheWithDir creates
-// the directory, the in-memory constructor touches no filesystem.
-func diskCacheDir(t *testing.T) string {
-	t.Helper()
-	dir, ok := wasmCompileCacheDir()
-	if !ok {
-		t.Fatal("wasmCompileCacheDir did not resolve; test needs a resolvable cache dir")
-	}
-	return dir
-}
-
 func dirExists(t *testing.T, dir string) bool {
 	t.Helper()
 	_, err := os.Stat(dir)
@@ -40,49 +25,69 @@ func dirExists(t *testing.T, dir string) bool {
 	return false
 }
 
-// TestSelectCompilationCacheDiskByDefault proves the default (disablePersistent
-// false) path selects the persistent on-disk cache: the cache directory is
-// created even though nothing else exercises it, confirming the disk branch ran.
+// TestCompilationCacheAtSelectsDisk proves the on-disk branch is real: given a
+// directory, the disk-backed cache is built and the directory is created, and the
+// returned directory is the one that was asked for.
 //
-// Sanctioned single-source exception: this test's PURPOSE is the on-disk
-// selection, which sharedCompilationCache's test-mode gate masks by handing
-// every test build the in-memory singleton. It therefore calls
-// selectCompilationCache — the disk-vs-memory primitive — directly to reach the
-// disk branch. Do NOT "unify" this to route through sharedCompilationCache; that
-// would blind the disk coverage in every test binary.
-func TestSelectCompilationCacheDiskByDefault(t *testing.T) {
-	t.Setenv("XDG_CACHE_HOME", t.TempDir())
-	dir := diskCacheDir(t)
+// The disk-vs-memory branch is otherwise unobservable — wazero.CompilationCache is
+// opaque — so the directory's existence is the faithful side effect to assert:
+// NewCompilationCacheWithDir creates it, the in-memory constructor touches no
+// filesystem.
+//
+// Sanctioned exception, and the reason it must stay one: this test's PURPOSE is
+// the on-disk selection, which every other path in a test binary masks — the
+// process-wide cache is a singleton constructed once, and its directory is the
+// one shared cache root, which no test may start empty or safely populate. The
+// test therefore passes its OWN throwaway directory to the primitive. Do not
+// "unify" this to route through sharedCompilationCache; that would blind the disk
+// coverage in every test binary.
+func TestCompilationCacheAtSelectsDisk(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), compileCacheDirName)
 	if dirExists(t, dir) {
-		t.Fatalf("precondition: cache dir %s already exists in fresh temp", dir)
+		t.Fatalf("precondition: cache dir %s already exists in a fresh temp dir", dir)
 	}
 
-	cache := selectCompilationCache(false)
+	cache, got := compilationCacheAt(dir)
 	defer cache.Close(context.Background())
 
+	if got != dir {
+		t.Fatalf("compilationCacheAt should report the directory it backed the cache with; want %s, got %q", dir, got)
+	}
 	if !dirExists(t, dir) {
-		t.Fatalf("disablePersistent false should select the on-disk cache and create %s; it was not created", dir)
+		t.Fatalf("the on-disk branch should create %s; it was not created", dir)
 	}
 }
 
 // TestSelectCompilationCacheDisableSkipsDisk proves the disablePersistent-true
-// path selects the in-memory cache even when an on-disk cache directory WOULD
-// resolve: no cache directory is created on disk.
+// path selects the in-memory cache: it reports no backing directory at all, so no
+// cache directory is resolved and none can be created.
 //
-// Sanctioned single-source exception, as in TestSelectCompilationCacheDiskByDefault:
-// it reaches the disk-vs-memory primitive directly, past the test-mode gate.
+// Asserting on the reported directory rather than on some directory's absence is
+// what makes this independent of where caches live: an in-memory cache has no
+// directory to name, which is a property of the branch itself.
 func TestSelectCompilationCacheDisableSkipsDisk(t *testing.T) {
-	t.Setenv("XDG_CACHE_HOME", t.TempDir())
-	dir := diskCacheDir(t)
-	if dirExists(t, dir) {
-		t.Fatalf("precondition: cache dir %s already exists in fresh temp", dir)
-	}
-
-	cache := selectCompilationCache(true)
+	cache, dir := selectCompilationCacheWithDir(true)
 	defer cache.Close(context.Background())
 
-	if dirExists(t, dir) {
-		t.Fatalf("disablePersistent true should select the in-memory cache and touch no disk; %s was created", dir)
+	if dir != "" {
+		t.Fatalf("disablePersistent true should select the in-memory cache, which backs onto no directory; got %q", dir)
+	}
+}
+
+// TestSelectCompilationCacheDiskByDefault proves the default (disablePersistent
+// false) path selects the persistent on-disk cache and backs it with the one
+// resolved compile-cache directory — not a second, separately-derived path.
+func TestSelectCompilationCacheDiskByDefault(t *testing.T) {
+	want, ok := CompileCacheDir()
+	if !ok {
+		t.Fatal("CompileCacheDir did not resolve; this test needs a resolved compile-cache directory")
+	}
+
+	cache, dir := selectCompilationCacheWithDir(false)
+	defer cache.Close(context.Background())
+
+	if dir != want {
+		t.Fatalf("disablePersistent false should back the cache with the resolved compile-cache directory; want %s, got %q", want, dir)
 	}
 }
 
@@ -105,22 +110,21 @@ func TestDisablePluginCacheContextRoundTrip(t *testing.T) {
 
 // TestTestModeSharesOneDiskCache is the enforcement guard for the decision
 // site: within a test binary every cache request MUST resolve to ONE
-// process-wide cache, backed by the shared test compile-cache directory rather
-// than the developer's real user cache directory. Sharing one directory across
-// every test process lets each guest compile once per suite run and every later
-// process reuse the machine code, eliminating the cold-recompile storm; keeping
-// it off the user cache directory leaves a developer's real build cache
-// untouched. It exercises the disk-defaulting input (disablePersistent false)
-// and the disable input (true) and proves both resolve to that same singleton.
+// process-wide cache, disk-backed at the one resolved compile-cache directory.
+// Sharing one directory across every test process lets each guest compile once
+// per run and every later process reuse the machine code, eliminating the
+// cold-recompile storm. It exercises the disk-defaulting input (disablePersistent
+// false) and the disable input (true) and proves both resolve to that same
+// singleton.
 //
-// A regression that pointed the test-mode cache at the user cache directory
-// would create diskCacheDir here and fail this test; one that reverted to a
-// per-process cache would break the singleton identity assertion.
+// Where that directory lives is asserted by the cache-location census, not here;
+// this test owns the singleton identity and the disk backing. A regression that
+// reverted to a per-process cache would break the identity assertion; one that
+// moved the location would fail the census.
 func TestTestModeSharesOneDiskCache(t *testing.T) {
-	t.Setenv("XDG_CACHE_HOME", t.TempDir())
-	dir := diskCacheDir(t)
-	if dirExists(t, dir) {
-		t.Fatalf("precondition: cache dir %s already exists in fresh temp", dir)
+	dir, ok := CompileCacheDir()
+	if !ok {
+		t.Fatal("CompileCacheDir did not resolve; this test needs a resolved compile-cache directory")
 	}
 
 	// disablePersistent false is the production disk-default and true is the
@@ -129,14 +133,16 @@ func TestTestModeSharesOneDiskCache(t *testing.T) {
 	c1 := sharedCompilationCache(false)
 	c2 := sharedCompilationCache(true)
 
-	if dirExists(t, dir) {
-		t.Fatalf("under go test the compile cache must stay off the user cache directory; on-disk cache dir %s was created", dir)
+	// The test-mode cache is disk-backed at the resolved compile-cache directory,
+	// which the wazero cache constructor creates on construction; by now the
+	// process-wide singleton exists, so the directory must be present.
+	if !dirExists(t, dir) {
+		t.Fatalf("under go test the shared compile cache must be disk-backed at %s; the directory was not created", dir)
 	}
-	// The test-mode cache is disk-backed at the shared test directory, which the
-	// wazero cache constructor creates on construction; by now the process-wide
-	// singleton exists, so the directory must be present.
-	if !dirExists(t, testCompilationCacheDir()) {
-		t.Fatalf("under go test the shared compile cache must be disk-backed at %s; the directory was not created", testCompilationCacheDir())
+	if sharedCompilationCacheDir != dir {
+		t.Fatalf("the recorded shared cache directory must be the resolved compile-cache directory, "+
+			"so the cross-process compile lock places its lock files where the cache actually is; want %s, got %q",
+			dir, sharedCompilationCacheDir)
 	}
 	if c1 != c2 {
 		t.Fatal("under go test every build must share ONE cache instance; got two distinct caches")

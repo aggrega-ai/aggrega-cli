@@ -267,15 +267,19 @@ func TestLoadMissingIsEmpty(t *testing.T) {
 }
 
 // TestPathForCompileDirMatchesRoot proves the write-side path (derived from the
-// compile directory) and the read-side default path (derived from the cache
-// root) resolve to the same file in the shipped layout, where the compile
-// directory is a child of the cache root. DefaultIndexPath's test-binary branch
-// is bypassed here by comparing against the explicit non-test spelling.
+// compile directory) and the read-side default path (derived from the cache root)
+// resolve to the same file, given the layout where the compile directory is a
+// child of the cache root.
+//
+// The two real functions are compared against each other rather than one against
+// a hand-written copy of the other's body: a copy would agree with a wrong answer
+// as readily as a right one, and it is exactly the read and write sides
+// disagreeing that this guards against.
 func TestPathForCompileDirMatchesRoot(t *testing.T) {
 	t.Parallel()
 	root := "/home/u/.cache/aggrega"
 	compileDir := filepath.Join(root, "wasm-compile")
-	if got, want := PathForCompileDir(compileDir), filepath.Join(root, indexFileName); got != want {
+	if got, want := PathForCompileDir(compileDir), DefaultIndexPath(root); got != want {
 		t.Fatalf("PathForCompileDir = %q, want %q", got, want)
 	}
 }

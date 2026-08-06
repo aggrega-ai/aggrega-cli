@@ -48,22 +48,17 @@ func TestLoader_NilOnLoad_Safe(t *testing.T) {
 	_ = plugin.Close(ctx)
 }
 
-// TestPluginCompileCacheCold pins the up-front cold/warm heuristic:
-//   - the disable-persistent-cache signal always reports cold;
-//   - an absent or empty persistent cache directory reports cold;
-//   - a populated persistent cache directory reports warm.
+// TestPluginCompileCacheCold pins the up-front cold/warm heuristic's two halves.
+//
+// The disable-persistent-cache signal always reports cold, which is a property of
+// the exported function and is asserted through it. The three on-disk states —
+// absent, present but empty, populated — are asserted against the predicate the
+// function applies, over a directory this test owns. That split is deliberate: a
+// test binary resolves the compile-cache directory to one shared root that other
+// packages are concurrently reading and writing, so it can be neither started
+// empty nor safely emptied, and a test that tried would be asserting on state it
+// does not control.
 func TestPluginCompileCacheCold(t *testing.T) {
-	// Point the user cache dir at a controlled, initially-empty temp dir so the
-	// heuristic reads a known state rather than the developer's real cache.
-	tmp := t.TempDir()
-	t.Setenv("XDG_CACHE_HOME", tmp)
-	// os.UserCacheDir on non-Linux may consult other vars; the test asserts
-	// behaviour relative to whatever wasmCompileCacheDir resolves to.
-	dir, ok := wasmCompileCacheDir()
-	if !ok {
-		t.Skip("no resolvable user cache directory in this environment")
-	}
-
 	base := context.Background()
 
 	// Disable-cache signal → always cold, regardless of on-disk state.
@@ -71,24 +66,26 @@ func TestPluginCompileCacheCold(t *testing.T) {
 		t.Errorf("disable-plugin-cache must report cold")
 	}
 
+	dir := filepath.Join(t.TempDir(), "compile-cache")
+
 	// Absent directory → cold.
-	if !PluginCompileCacheCold(base) {
-		t.Errorf("absent cache dir must report cold")
+	if !dirHasNoEntries(dir) {
+		t.Errorf("absent cache dir must read as empty (cold)")
 	}
 
 	// Empty directory → cold.
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatalf("mkdir cache dir: %v", err)
 	}
-	if !PluginCompileCacheCold(base) {
-		t.Errorf("empty cache dir must report cold")
+	if !dirHasNoEntries(dir) {
+		t.Errorf("empty cache dir must read as empty (cold)")
 	}
 
 	// Populated directory → warm.
 	if err := os.WriteFile(filepath.Join(dir, "marker"), []byte("x"), 0o644); err != nil {
 		t.Fatalf("write cache entry: %v", err)
 	}
-	if PluginCompileCacheCold(base) {
-		t.Errorf("populated cache dir must report warm")
+	if dirHasNoEntries(dir) {
+		t.Errorf("populated cache dir must not read as empty (warm)")
 	}
 }
