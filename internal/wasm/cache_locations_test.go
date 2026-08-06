@@ -92,6 +92,13 @@ func everyCacheLocation(t *testing.T) []cacheLocation {
 // covers every location. The narrower guard is kept because this is the one
 // location whose loss is irreversible, so a failure here means something different
 // from a failure there, and the message a maintainer reads should say so.
+//
+// This file asks the standard library where the user cache directory is, and it is
+// the one place outside the resolver that may. Do not "unify" it by routing the
+// question through the resolver: the resolver's answer is precisely what is under
+// test here, so comparing it against itself would turn both guards in this file
+// into tautologies that pass no matter where the cache lands. The independence is
+// the point — this side of the comparison has to be reached for separately.
 func TestTestBinaryCannotResolveTheDeveloperCache(t *testing.T) {
 	userCache, err := os.UserCacheDir()
 	if err != nil {

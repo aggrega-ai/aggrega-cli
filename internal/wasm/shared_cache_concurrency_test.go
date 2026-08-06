@@ -26,10 +26,16 @@ import (
 //	    only compiled machine code, a pure function of the guest bytes, so it
 //	    cannot perturb output.
 //
-// Under `go test` the shared cache is disk-backed at a fixed directory off the
-// machine's user cache directory (see testCompilationCacheDir), so the suite
-// never touches a developer's real build cache while still exercising the
-// disk-backed cross-process compile lock.
+// Under `go test` the shared cache is disk-backed at the same compile-cache
+// directory every other caller resolves (see testCompilationCache), and that
+// directory sits beneath the system temp directory rather than the user cache
+// directory — cacheRoot resolves the test-binary case separately, and it is the
+// single site that decides. That is what keeps the suite off a developer's real
+// build cache: those bytes live under the user cache directory, nothing a test
+// holds can reconstruct them, and the cache-maintenance surface can remove the
+// directory outright. The cache is nonetheless a real on-disk one, which is the
+// condition for the cross-process compile lock existing at all, so this test
+// exercises that lock rather than skipping past it.
 func TestSharedCompilationCacheConcurrentLoads(t *testing.T) {
 	// Build the fixture once, before any goroutine loads it, so the on-demand
 	// build never races. Skips cleanly when the toolchain/PDK is absent.
