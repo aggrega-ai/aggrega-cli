@@ -5,14 +5,11 @@
 // cobra command tree and splices it into hand-authored documentation pages
 // between HTML-comment markers.
 //
-// The package owns two concerns: rendering (turning a command descriptor into a
-// stable markdown fragment — synopsis, flags table, subcommand list) and
-// splicing (rewriting only the marked region of a page while preserving all
-// curated prose outside the markers). A generated region is delimited by:
-//
-//	<!-- BEGIN GENERATED: <id> -->
-//	...generated content...
-//	<!-- END GENERATED: <id> -->
+// The package owns one concern: rendering — turning a command descriptor into a
+// stable markdown fragment (synopsis, flags table, subcommand list). Placing
+// that fragment into a page belongs to docsplice, which owns the generated-region
+// convention for every generator that writes one, so the marker format is not
+// restated here.
 //
 // It does not read the command tree itself. Every command fact it renders comes
 // from the catalog clisurface.Catalog projects, which is the single place the
@@ -38,13 +35,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/clisurface"
-)
-
-// beginMarker and endMarker are the format strings for the HTML-comment
-// delimiters that fence a generated region. The %s is the region id.
-const (
-	beginMarker = "<!-- BEGIN GENERATED: %s -->"
-	endMarker   = "<!-- END GENERATED: %s -->"
+	"github.com/aggrega-ai/aggrega-cli/internal/docsplice"
 )
 
 // Result reports what Generate did to the documentation tree.
@@ -95,7 +86,7 @@ func Generate(root *cobra.Command, docsDir string) (Result, error) {
 			return res, fmt.Errorf("read %s: %w", page, err)
 		}
 
-		changed, werr := writeSpliced(page, string(existing), id, inner)
+		changed, werr := docsplice.WriteFile(page, string(existing), id, inner)
 		if werr != nil {
 			return res, werr
 		}
@@ -110,7 +101,7 @@ func Generate(root *cobra.Command, docsDir string) (Result, error) {
 	// Command summary in the overview chapter.
 	overview := filepath.Join(docsDir, "language-reference", "07-cli.md")
 	if body, err := os.ReadFile(overview); err == nil {
-		changed, werr := writeSpliced(overview, string(body), "command-list", renderCommandList(cmds))
+		changed, werr := docsplice.WriteFile(overview, string(body), "command-list", renderCommandList(cmds))
 		if werr != nil {
 			return res, werr
 		}
@@ -127,7 +118,7 @@ func Generate(root *cobra.Command, docsDir string) (Result, error) {
 	// Global (root persistent) flags table.
 	globals := filepath.Join(cliDir, "global-flags.md")
 	if body, err := os.ReadFile(globals); err == nil {
-		changed, werr := writeSpliced(globals, string(body), "global-flags", renderFlagSet(rootCmd.PersistentFlags))
+		changed, werr := docsplice.WriteFile(globals, string(body), "global-flags", renderFlagSet(rootCmd.PersistentFlags))
 		if werr != nil {
 			return res, werr
 		}
@@ -142,52 +133,6 @@ func Generate(root *cobra.Command, docsDir string) (Result, error) {
 	}
 
 	return res, nil
-}
-
-// writeSpliced computes the spliced content and writes it only when it
-// differs from what is on disk, so unchanged pages keep their modification
-// time. It reports whether the file changed.
-func writeSpliced(path, content, id, inner string) (bool, error) {
-	next, err := splice(content, id, inner)
-	if err != nil {
-		return false, fmt.Errorf("splice %s (%s): %w", path, id, err)
-	}
-	if next == content {
-		return false, nil
-	}
-	if err := os.WriteFile(path, []byte(next), 0o644); err != nil {
-		return false, fmt.Errorf("write %s: %w", path, err)
-	}
-	return true, nil
-}
-
-// splice replaces the region delimited by the id's markers with inner,
-// preserving everything outside the markers verbatim. When the markers are
-// absent the block is appended after the existing content. The canonical
-// block form is the begin marker, the inner content, and the end marker each
-// on their own line, which makes a second call with identical inner a no-op.
-func splice(content, id, inner string) (string, error) {
-	begin := fmt.Sprintf(beginMarker, id)
-	end := fmt.Sprintf(endMarker, id)
-	block := begin + "\n" + inner + "\n" + end
-
-	bi := strings.Index(content, begin)
-	ei := strings.Index(content, end)
-
-	switch {
-	case bi == -1 && ei == -1:
-		if strings.TrimSpace(content) == "" {
-			return block + "\n", nil
-		}
-		return strings.TrimRight(content, "\n") + "\n\n" + block + "\n", nil
-	case bi == -1 || ei == -1:
-		return "", fmt.Errorf("unbalanced markers for id %q", id)
-	case ei < bi:
-		return "", fmt.Errorf("end marker precedes begin marker for id %q", id)
-	default:
-		after := ei + len(end)
-		return content[:bi] + block + content[after:], nil
-	}
 }
 
 // visibleCommands returns the catalog entries whose parent is parentPath and

@@ -204,6 +204,53 @@ func quoteList(ss []string) string {
 	return strings.Join(parts, ", ")
 }
 
+// emitSubjectKindsRegion renders the subject-kind set for the generated region
+// of the framework's engineering-standards page.
+//
+// It is a narrower projection than the placement table's kind section on
+// purpose. The page it lands in explains what a kind IS — coordinates nest but
+// kinds do not — so the region carries the set, its coordinate nesting and its
+// traversal, and points at the placement table for the per-fact view rather than
+// restating it. Both projections come from this one derivation, so they cannot
+// disagree; what would be a second copy is the derivation, not the presentation.
+//
+// The Go constant name is carried because the page's reader is a contributor who
+// will go looking for the type, and it is the one field that lets them cross from
+// the prose to the generated source without guessing at the capitalisation.
+func emitSubjectKindsRegion(_ chain, kinds []kind, _ []tupleShare) ([]byte, error) {
+	var b strings.Builder
+	b.WriteString("*Generated from the fact registry at\n")
+	b.WriteString("`aggrega-cli/internal/compiler/constraint/factgen/registry.go`. Do not hand-edit\n")
+	b.WriteString("this region — the workspace build gates it for drift and prints the command that\n")
+	b.WriteString("refreshes it.*\n\n")
+	b.WriteString("A kind exists if and only if some declared fact is keyed by it, so this set is a\n")
+	b.WriteString("consequence of the fact declarations rather than a list kept in step with them.\n")
+	b.WriteString("Coordinates are ordered outermost first, so a check declaring a kind runs once\n")
+	b.WriteString("per innermost coordinate within each outer one. Traversal is derived from the\n")
+	b.WriteString("outermost coordinate: a document-rooted kind is push, because no point in the\n")
+	b.WriteString("compilation holds a materialised document set to walk.\n\n")
+	b.WriteString("| Kind | Coordinates | Traversal | Go constant | Keyed facts |\n")
+	b.WriteString("|---|---|---|---|---|\n")
+	for _, k := range kinds {
+		coords := make([]string, 0, len(k.Coordinates))
+		for _, c := range k.Coordinates {
+			coords = append(coords, "`"+c+"`")
+		}
+		fmt.Fprintf(&b, "| `%s` | %s | %s | `%s` | %d |\n",
+			k.Display(), strings.Join(coords, " › "), k.Traversal(), k.GoName(), len(k.Facts))
+	}
+	// The generated placement table is named rather than linked. This prose is a
+	// string literal in a Go file, which is a user-visible surface, so it carries
+	// no path into a private documentation tree — the page's own curated prose,
+	// which may cite such a path freely, already points the reader at it.
+	fmt.Fprintf(&b, "\n%d kinds, keyed by %d declared facts. Which facts key which kind, and at\n",
+		len(kinds), len(facts))
+	b.WriteString("which stage each is complete, is carried by the generated placement table\n")
+	b.WriteString("named at the top of this page.\n")
+
+	return []byte(strings.TrimRight(b.String(), "\n")), nil
+}
+
 // emitPlacementTable renders the reviewable placement table.
 func emitPlacementTable(c chain, kinds []kind, shares []tupleShare) ([]byte, error) {
 	var b strings.Builder

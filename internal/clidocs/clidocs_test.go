@@ -14,60 +14,6 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/clisurface"
 )
 
-func TestSpliceAppendsWhenMarkersAbsent(t *testing.T) {
-	got, err := splice("curated prose\n", "id1", "generated")
-	if err != nil {
-		t.Fatalf("splice: %v", err)
-	}
-	want := "curated prose\n\n<!-- BEGIN GENERATED: id1 -->\ngenerated\n<!-- END GENERATED: id1 -->\n"
-	if got != want {
-		t.Fatalf("append mismatch:\n got %q\nwant %q", got, want)
-	}
-}
-
-func TestSpliceIsIdempotent(t *testing.T) {
-	first, err := splice("curated\n", "id1", "gen v1")
-	if err != nil {
-		t.Fatalf("first splice: %v", err)
-	}
-	second, err := splice(first, "id1", "gen v1")
-	if err != nil {
-		t.Fatalf("second splice: %v", err)
-	}
-	if first != second {
-		t.Fatalf("splice not idempotent:\n first  %q\n second %q", first, second)
-	}
-}
-
-func TestSpliceRefreshesInPlaceAndPreservesSurroundingProse(t *testing.T) {
-	page := "# Title\n\nintro\n\n<!-- BEGIN GENERATED: id1 -->\nold\n<!-- END GENERATED: id1 -->\n\ntrailing curated section\n"
-	got, err := splice(page, "id1", "new content")
-	if err != nil {
-		t.Fatalf("splice: %v", err)
-	}
-	if !strings.Contains(got, "# Title\n\nintro\n") {
-		t.Errorf("leading prose lost:\n%s", got)
-	}
-	if !strings.Contains(got, "\n\ntrailing curated section\n") {
-		t.Errorf("trailing prose lost:\n%s", got)
-	}
-	if strings.Contains(got, "old") {
-		t.Errorf("stale generated content retained:\n%s", got)
-	}
-	if !strings.Contains(got, "\nnew content\n") {
-		t.Errorf("new generated content missing:\n%s", got)
-	}
-}
-
-func TestSpliceRejectsUnbalancedMarkers(t *testing.T) {
-	if _, err := splice("<!-- BEGIN GENERATED: id1 -->\nx\n", "id1", "y"); err == nil {
-		t.Fatal("expected error for missing end marker")
-	}
-	if _, err := splice("<!-- END GENERATED: id1 -->\n", "id1", "y"); err == nil {
-		t.Fatal("expected error for missing begin marker")
-	}
-}
-
 func TestRenderFlagSetSortsAndSkipsHidden(t *testing.T) {
 	cmd := &cobra.Command{Use: "demo"}
 	cmd.Flags().String("zulu", "", "last flag")
