@@ -128,17 +128,33 @@ func ValidateInjectBlocks(na types.NormalizedAggregate, _ *types.Release) error 
 		return nil
 	}
 	var errs []error
-	for name, sub := range agg.Spec.Subsystems.All() {
-		// The synthesized default holds components authored at the top-level
-		// surface; render their inject diagnostics at the root shape rather
-		// than under the generated scope name. The IR itself keeps the literal
-		// default scope — this elides only the diagnostic locator string.
-		prefix := fmt.Sprintf(".spec.subsystems[%q]", name)
-		if sub.Synthesized {
-			prefix = ".spec"
-		}
-		errs = append(errs, validateSubsystem(sub, prefix)...)
-	}
+	// No visitor callback fails, so the walk cannot: every violation is collected
+	// and joined so the operator sees them all at once.
+	_ = types.WalkInstanceTree(agg.Spec.Subsystems, types.SubsystemTree(), ".spec", struct{}{},
+		types.InstanceTreeVisitor[types.Subsystem, types.ComponentInstance, struct{}]{
+			// The synthesized default holds components authored at the top-level
+			// surface; render their inject diagnostics at the root shape rather than
+			// under the generated scope name. The IR itself keeps the literal default
+			// scope — this elides only the diagnostic locator string.
+			Path: func(parentPath, name string, synthesized bool) string {
+				if synthesized {
+					return parentPath
+				}
+				return fmt.Sprintf("%s.subsystems[%q]", parentPath, name)
+			},
+			Visit: func(comp types.ComponentInstance, name, path string, _ bool, _ struct{}) error {
+				errs = append(errs, validateComponentInstance(comp, fmt.Sprintf("%s.components[%q]", path, name))...)
+				return nil
+			},
+			// Subsystem-wide attachments are checked after the component loop and
+			// before the nested descent, so the joined diagnostic reads outer scope's
+			// components, then its own attachments, then inward.
+			Leave: func(sub types.Subsystem, _, path string, _ struct{}) {
+				for fname, feat := range sub.Features.All() {
+					errs = append(errs, validateFeatureInstance(feat, fmt.Sprintf("%s.features[%q]", path, fname))...)
+				}
+			},
+		})
 	// Release-side: no typed *InjectBlock surfaces today. If a future
 	// schema revision adds InjectBlock-bearing fields under Boundary,
 	// BoundaryComponent, or BoundaryFeature, walk them here.
@@ -184,20 +200,6 @@ func validateUsesBlock(uses types.OrderedMap[types.UsesSocketValue], prefix stri
 				errs = append(errs, err)
 			}
 		}
-	}
-	return errs
-}
-
-func validateSubsystem(sub types.Subsystem, prefix string) []error {
-	var errs []error
-	for cname, comp := range sub.Components.All() {
-		errs = append(errs, validateComponentInstance(comp, fmt.Sprintf("%s.components[%q]", prefix, cname))...)
-	}
-	for fname, feat := range sub.Features.All() {
-		errs = append(errs, validateFeatureInstance(feat, fmt.Sprintf("%s.features[%q]", prefix, fname))...)
-	}
-	for sname, nested := range sub.Subsystems.All() {
-		errs = append(errs, validateSubsystem(nested, fmt.Sprintf("%s.subsystems[%q]", prefix, sname))...)
 	}
 	return errs
 }

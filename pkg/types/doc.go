@@ -17,4 +17,11 @@
 // collection — every YAML-driven map field uses it so that author order
 // survives parse and emission round-trip, a load-bearing property for
 // the deterministic-output invariant.
+//
+// WalkInstanceTree is the shared descent over a tree of containers holding
+// named component instances. Both such trees live here — Subsystem over
+// ComponentInstance in the Aggregate, Boundary over BoundaryComponent in
+// the Release — and consumers across the pipeline fold their own state
+// over it rather than open-coding the recursion, so every one of them
+// visits in the same author order.
 package types

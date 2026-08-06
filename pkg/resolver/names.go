@@ -69,29 +69,60 @@ func ValidateInstanceNames(na types.NormalizedAggregate) []*ResolverError {
 		}
 	}
 
-	// Subsystems (recursive)
-	for name, sub := range agg.Spec.Subsystems.All() {
-		// The synthesized default holds components authored at the top-level
-		// `.spec.components` surface; its name is compiler-generated, not
-		// author-typed. Validate its components at the root shape so a name
-		// diagnostic points where the author wrote them, and skip the
-		// generated-scope-name check. Keys on the provenance flag, not the
-		// name string — a user-declared subsystem named "default" is validated
-		// as the qualified scope it is.
-		if sub.Synthesized {
-			errs = append(errs, validateSubsystemNames(entity, ".spec", sub)...)
-			continue
-		}
-		if !instanceNamePattern.MatchString(name) {
-			errs = append(errs, &ResolverError{
-				Entity:  entity,
-				Field:   fmt.Sprintf(".spec.subsystems[%q]", name),
-				Message: fmt.Sprintf("instance name %q is invalid: must match %s", name, instanceNamePattern.String()),
-				Err:     ErrInvalidInstanceName,
-			})
-		}
-		errs = append(errs, validateSubsystemNames(entity, ".spec.subsystems."+name, sub)...)
-	}
+	// Subsystems (recursive). The accumulator is the enclosing scope's authoring
+	// path, so a subsystem's own name diagnostic reports the scope that declares
+	// it while its contents report its own scope.
+	_ = types.WalkInstanceTree(agg.Spec.Subsystems, types.SubsystemTree(), ".spec", ".spec",
+		types.InstanceTreeVisitor[types.Subsystem, types.ComponentInstance, string]{
+			// The synthesized default holds components authored at the top-level
+			// `.spec.components` surface, so its contents validate at the root shape
+			// the author typed rather than under the generated scope name. Keys on the
+			// provenance flag, not the name string — a user-declared subsystem named
+			// "default" is validated as the qualified scope it is.
+			Path: func(parentPath, name string, synthesized bool) string {
+				if synthesized {
+					return parentPath
+				}
+				return parentPath + ".subsystems." + name
+			},
+			Enter: func(sub types.Subsystem, name, path, parentPath string) string {
+				// A synthesized scope's name is compiler-generated, not author-typed,
+				// so it is not held to the authored-name pattern.
+				if !sub.Synthesized && !instanceNamePattern.MatchString(name) {
+					errs = append(errs, &ResolverError{
+						Entity:  entity,
+						Field:   fmt.Sprintf("%s.subsystems[%q]", parentPath, name),
+						Message: fmt.Sprintf("instance name %q is invalid: must match %s", name, instanceNamePattern.String()),
+						Err:     ErrInvalidInstanceName,
+					})
+				}
+				return path
+			},
+			Visit: func(comp types.ComponentInstance, name, path string, _ bool, _ string) error {
+				if !instanceNamePattern.MatchString(name) {
+					errs = append(errs, &ResolverError{
+						Entity:  entity,
+						Field:   fmt.Sprintf("%s.components[%q]", path, name),
+						Message: fmt.Sprintf("instance name %q is invalid: must match %s", name, instanceNamePattern.String()),
+						Err:     ErrInvalidInstanceName,
+					})
+				}
+				errs = append(errs, validateComponentInstanceNames(entity, name, comp)...)
+				return nil
+			},
+			Leave: func(sub types.Subsystem, _, path, _ string) {
+				for name := range sub.Features.All() {
+					if !instanceNamePattern.MatchString(name) {
+						errs = append(errs, &ResolverError{
+							Entity:  entity,
+							Field:   fmt.Sprintf("%s.features[%q]", path, name),
+							Message: fmt.Sprintf("feature instance name %q is invalid: must match %s", name, instanceNamePattern.String()),
+							Err:     ErrInvalidInstanceName,
+						})
+					}
+				}
+			},
+		})
 
 	sortResolverErrors(errs)
 	return errs
@@ -132,47 +163,6 @@ func validateComponentInstanceNames(entity, compName string, comp types.Componen
 				Err:     ErrInvalidInstanceName,
 			})
 		}
-	}
-
-	return errs
-}
-
-func validateSubsystemNames(entity, path string, sub types.Subsystem) []*ResolverError {
-	var errs []*ResolverError
-
-	for name, comp := range sub.Components.All() {
-		if !instanceNamePattern.MatchString(name) {
-			errs = append(errs, &ResolverError{
-				Entity:  entity,
-				Field:   fmt.Sprintf("%s.components[%q]", path, name),
-				Message: fmt.Sprintf("instance name %q is invalid: must match %s", name, instanceNamePattern.String()),
-				Err:     ErrInvalidInstanceName,
-			})
-		}
-		errs = append(errs, validateComponentInstanceNames(entity, name, comp)...)
-	}
-
-	for name := range sub.Features.All() {
-		if !instanceNamePattern.MatchString(name) {
-			errs = append(errs, &ResolverError{
-				Entity:  entity,
-				Field:   fmt.Sprintf("%s.features[%q]", path, name),
-				Message: fmt.Sprintf("feature instance name %q is invalid: must match %s", name, instanceNamePattern.String()),
-				Err:     ErrInvalidInstanceName,
-			})
-		}
-	}
-
-	for name, nested := range sub.Subsystems.All() {
-		if !instanceNamePattern.MatchString(name) {
-			errs = append(errs, &ResolverError{
-				Entity:  entity,
-				Field:   fmt.Sprintf("%s.subsystems[%q]", path, name),
-				Message: fmt.Sprintf("instance name %q is invalid: must match %s", name, instanceNamePattern.String()),
-				Err:     ErrInvalidInstanceName,
-			})
-		}
-		errs = append(errs, validateSubsystemNames(entity, path+".subsystems."+name, nested)...)
 	}
 
 	return errs

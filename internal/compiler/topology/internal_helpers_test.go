@@ -209,11 +209,11 @@ func TestBuild_CredentialAttachmentUsesProducesEdges(t *testing.T) {
 	}
 }
 
-// TestFlattenSubsystem_NestedSubsystemRecursion pins the recursive
-// descent into nested subsystems within flattenSubsystem. Components
-// at multiple nesting levels all surface as flat nodes with their
-// qualified IDs.
-func TestFlattenSubsystem_NestedSubsystemRecursion(t *testing.T) {
+// TestFlattenSubsystems_NestedSubsystemRecursion pins the recursive descent into
+// nested subsystems. Components at multiple nesting levels all surface as flat
+// nodes with their qualified IDs, and each carries the dotted path of every
+// subsystem on its ancestry.
+func TestFlattenSubsystems_NestedSubsystemRecursion(t *testing.T) {
 	t.Parallel()
 	leafComps := types.OrderedMap[types.ComponentInstance]{}
 	leafComps.Set("leaf", types.ComponentInstance{Type: "core/server"})
@@ -221,15 +221,23 @@ func TestFlattenSubsystem_NestedSubsystemRecursion(t *testing.T) {
 	midSubs := types.OrderedMap[types.Subsystem]{}
 	midSubs.Set("inner", leaf)
 	mid := types.Subsystem{Subsystems: midSubs}
+	outer := types.OrderedMap[types.Subsystem]{}
+	outer.Set("outer", mid)
+	agg := &types.Aggregate{}
+	agg.Spec.Subsystems = outer
 	result := &flattenResult{
 		Nodes:              types.OrderedMap[*TopologyNode]{},
 		FeatureAttachments: map[string][]FeatureAttachment{},
 	}
-	if err := flattenSubsystem(result, "", ".outer", "", mid, nil, nil); err != nil {
-		t.Fatalf("flattenSubsystem: %v", err)
+	if err := flattenSubsystems(result, "", "", "", types.Normalize(agg), nil); err != nil {
+		t.Fatalf("flattenSubsystems: %v", err)
 	}
-	if _, ok := result.Nodes.Get("leaf"); !ok {
-		t.Errorf("expected leaf node to flatten; got nodes: %v", result.Nodes.Keys())
+	node, ok := result.Nodes.Get("leaf")
+	if !ok {
+		t.Fatalf("expected leaf node to flatten; got nodes: %v", result.Nodes.Keys())
+	}
+	if node.SubsystemPath != "outer.inner" {
+		t.Errorf("SubsystemPath = %q, want %q", node.SubsystemPath, "outer.inner")
 	}
 }
 

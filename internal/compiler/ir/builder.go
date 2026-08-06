@@ -213,8 +213,9 @@ func BuildIRContext(ctx context.Context, cfg BuildIRConfig) (*types.IRGraph, Fea
 		}
 
 		// Sync wave from the node's containing boundary's per-boundary SyncWave field.
-		// Resolver pre-populates BoundaryInfra.SyncWave during walkBoundary; default 0
-		// for boundaries that omit syncWave or for nodes without BoundaryInfra context.
+		// Resolver pre-populates BoundaryInfra.SyncWave during the boundary-infra
+		// cascade; default 0 for boundaries that omit syncWave or for nodes without
+		// BoundaryInfra context.
 		if bi, ok := res.BoundaryInfra[nodeID]; ok && bi != nil {
 			irNode.SyncWave = bi.SyncWave
 		}

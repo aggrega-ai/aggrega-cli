@@ -207,25 +207,25 @@ func collectAggregateScopeAttachments(na types.NormalizedAggregate) []scopeAttac
 		return nil
 	}
 	var out []scopeAttachment
-	var walk func(path string, sub types.Subsystem)
-	walk = func(path string, sub types.Subsystem) {
-		for name, feat := range sub.Features.All() {
-			if feat.Uses.Len() == 0 {
-				continue
-			}
-			out = append(out, scopeAttachment{
-				field:    fmt.Sprintf("%s.features[%q].uses", subsystemFieldPath(path), name),
-				featType: feat.Type,
-				uses:     feat.Uses,
-			})
-		}
-		for childName, child := range sub.Subsystems.All() {
-			walk(path+"."+childName, child)
-		}
-	}
-	for name, sub := range agg.Spec.Subsystems.All() {
-		walk(name, sub)
-	}
+	// This walk reads no component instances, so it declares no per-instance
+	// callback and the container hook carries all of it. No callback fails, so the
+	// walk cannot.
+	_ = types.WalkInstanceTree(agg.Spec.Subsystems, types.SubsystemTree(), "", struct{}{},
+		types.InstanceTreeVisitor[types.Subsystem, types.ComponentInstance, struct{}]{
+			Path: types.JoinSubsystemPath,
+			Leave: func(sub types.Subsystem, _, path string, _ struct{}) {
+				for name, feat := range sub.Features.All() {
+					if feat.Uses.Len() == 0 {
+						continue
+					}
+					out = append(out, scopeAttachment{
+						field:    fmt.Sprintf("%s.features[%q].uses", subsystemFieldPath(path), name),
+						featType: feat.Type,
+						uses:     feat.Uses,
+					})
+				}
+			},
+		})
 	return out
 }
 
@@ -244,42 +244,40 @@ func collectReleaseScopeAttachments(release *types.Release) []scopeAttachment {
 		return nil
 	}
 	var out []scopeAttachment
-	var walk func(path string, b types.Boundary)
-	walk = func(path string, b types.Boundary) {
-		for name, feat := range b.Features.All() {
-			if feat.Uses.Len() == 0 {
-				continue
-			}
-			out = append(out, scopeAttachment{
-				field:    fmt.Sprintf(".spec.boundaries[%q].features[%q].uses", path, name),
-				featType: feat.Type,
-				uses:     feat.Uses,
-			})
-		}
-		for nodeID, bc := range b.Components.All() {
-			for name, feat := range bc.Features.All() {
-				if feat.Uses.Len() == 0 {
-					continue
+	// The boundary's own attachments are collected in the container hook so they
+	// precede its components', which is the order the godoc above states. No
+	// callback fails, so the walk cannot.
+	_ = types.WalkInstanceTree(release.Spec.Boundaries, types.BoundaryTree(), "", struct{}{},
+		types.InstanceTreeVisitor[types.Boundary, types.BoundaryComponent, struct{}]{
+			Path: joinBoundaryPath,
+			Enter: func(b types.Boundary, _, path string, acc struct{}) struct{} {
+				for name, feat := range b.Features.All() {
+					if feat.Uses.Len() == 0 {
+						continue
+					}
+					out = append(out, scopeAttachment{
+						field:    fmt.Sprintf(".spec.boundaries[%q].features[%q].uses", path, name),
+						featType: feat.Type,
+						uses:     feat.Uses,
+					})
 				}
-				out = append(out, scopeAttachment{
-					field: fmt.Sprintf("%s.features[%q].uses",
-						releaseComponentFieldPath(path, nodeID, b.Synthesized), name),
-					featType: feat.Type,
-					uses:     feat.Uses,
-				})
-			}
-		}
-		for childName, child := range b.Boundaries.All() {
-			childPath := childName
-			if path != "" {
-				childPath = path + "/" + childName
-			}
-			walk(childPath, child)
-		}
-	}
-	for name, b := range release.Spec.Boundaries.All() {
-		walk(name, b)
-	}
+				return acc
+			},
+			Visit: func(bc types.BoundaryComponent, nodeID, path string, synthesized bool, _ struct{}) error {
+				for name, feat := range bc.Features.All() {
+					if feat.Uses.Len() == 0 {
+						continue
+					}
+					out = append(out, scopeAttachment{
+						field: fmt.Sprintf("%s.features[%q].uses",
+							releaseComponentFieldPath(path, nodeID, synthesized), name),
+						featType: feat.Type,
+						uses:     feat.Uses,
+					})
+				}
+				return nil
+			},
+		})
 	return out
 }
 

@@ -165,31 +165,29 @@ func (s *walkState) walkAggregate(na types.NormalizedAggregate, path string) {
 			s.addEntityKind(sub.Type, subPath, aggregateKindHint)
 		}
 	}
-	for name, sys := range agg.Spec.Subsystems.All() {
-		subPath := fmt.Sprintf("%s.spec.subsystems.%s", path, name)
-		s.walkSubsystem(sys, subPath)
-	}
-}
-
-// walkSubsystem recurses into Subsystem.Subsystems (recursive),
-// Subsystem.Components, and Subsystem.Features.
-func (s *walkState) walkSubsystem(sys types.Subsystem, path string) {
-	for name, ci := range sys.Components.All() {
-		instancePath := fmt.Sprintf("%s.components.%s.type", path, name)
-		if ci.Type != "" {
-			s.addEntityKind(ci.Type, instancePath, "component")
-		}
-		s.walkComponentInstanceFeatures(ci, fmt.Sprintf("%s.components.%s", path, name))
-	}
-	for name, fi := range sys.Features.All() {
-		instancePath := fmt.Sprintf("%s.features.%s.type", path, name)
-		if fi.Type != "" {
-			s.addEntityKind(fi.Type, instancePath, "feature")
-		}
-	}
-	for name, sub := range sys.Subsystems.All() {
-		s.walkSubsystem(sub, fmt.Sprintf("%s.subsystems.%s", path, name))
-	}
+	// Every subsystem's components and its own scope-wide attachments are recorded;
+	// the authoring-site path accumulated per level is what a reference records as
+	// its origin. No visitor callback fails, so the walk cannot.
+	_ = types.WalkInstanceTree(agg.Spec.Subsystems, types.SubsystemTree(), path+".spec", struct{}{},
+		types.InstanceTreeVisitor[types.Subsystem, types.ComponentInstance, struct{}]{
+			Path: func(parentPath, name string, _ bool) string {
+				return parentPath + ".subsystems." + name
+			},
+			Visit: func(ci types.ComponentInstance, name, subPath string, _ bool, _ struct{}) error {
+				if ci.Type != "" {
+					s.addEntityKind(ci.Type, fmt.Sprintf("%s.components.%s.type", subPath, name), "component")
+				}
+				s.walkComponentInstanceFeatures(ci, fmt.Sprintf("%s.components.%s", subPath, name))
+				return nil
+			},
+			Leave: func(sys types.Subsystem, _, subPath string, _ struct{}) {
+				for name, fi := range sys.Features.All() {
+					if fi.Type != "" {
+						s.addEntityKind(fi.Type, fmt.Sprintf("%s.features.%s.type", subPath, name), "feature")
+					}
+				}
+			},
+		})
 }
 
 // walkComponentInstanceFeatures collects every Feature URI declared via the

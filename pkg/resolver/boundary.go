@@ -95,61 +95,57 @@ func WireBoundaryInfra(nr types.NormalizedRelease) (map[string]*BoundaryInfra, m
 	}
 	perComponent := map[string]*BoundaryInfra{}
 	perBoundary := map[string]types.OrderedMap[string]{}
-	for bName, boundary := range release.Spec.Boundaries.All() {
-		walkBoundary(bName, "", boundary, types.OrderedMap[*types.AnnotationValue]{}, perComponent, perBoundary)
-	}
+	// The cascade carries the pointer-tristate so YAML `null` can opt out an
+	// inherited annotation; the post-cascade [BoundaryInfra.Annotations] and
+	// perBoundary maps exposed to downstream phases are the flattened
+	// OrderedMap[string] form — nil entries are filtered out (opt-out applied) and
+	// non-nil entries are dereferenced. No visitor callback fails, so the walk
+	// cannot.
+	_ = types.WalkInstanceTree(release.Spec.Boundaries, types.BoundaryTree(), "", boundaryScope{},
+		types.InstanceTreeVisitor[types.Boundary, types.BoundaryComponent, boundaryScope]{
+			Path: joinBoundaryPath,
+			Enter: func(b types.Boundary, _, path string, inherited boundaryScope) boundaryScope {
+				// Merge annotations under the AnnotationValue sum-type cascade: parent
+				// cascades down, boundary's own annotations override. IsEmpty entries on
+				// the overlay opt out of the inherited binding wholesale; structured
+				// overlays per-subkey-merge with structured parents; shape mismatches
+				// replace. The merge primitive handles all four cases.
+				merged := mergeAnnotationValueMaps(inherited.annotations, b.Annotations)
+
+				// Record the boundary-level cascade BEFORE per-component overrides. The
+				// renderer-facing surface consumes the Scalar-projection — only scalar
+				// entries surface as template substitution; structured annotations flow
+				// through Feature expansion only and do not enter the
+				// .parent_boundary.annotations / .context.annotations.* render context.
+				perBoundary[path] = types.ScalarOnly(merged)
+
+				return boundaryScope{annotations: merged, boundary: b}
+			},
+			Visit: func(comp types.BoundaryComponent, name, path string, synthesized bool, scope boundaryScope) error {
+				// BoundaryComponent.Annotations override the boundary chain per key.
+				compAnnotations := mergeAnnotationValueMaps(scope.annotations, comp.Annotations)
+				perComponent[name] = &BoundaryInfra{
+					Infra:        comp.Infra,
+					Annotations:  types.ScalarOnly(compAnnotations),
+					BoundaryPath: path,
+					Directory:    scope.boundary.Directory,
+					SubDirectory: resolveSubDirectory(scope.boundary.SubDirectory, comp.SubDirectory),
+					SyncWave:     scope.boundary.SyncWave,
+					Synthesized:  synthesized,
+				}
+				return nil
+			},
+		})
 	return perComponent, perBoundary
 }
 
-// walkBoundary recurses the Release boundary tree, cascading annotations
-// from outer boundaries into inner ones and into each boundary's routed
-// components. The cascade carries the pointer-tristate so YAML `null`
-// can opt-out an inherited annotation; the post-cascade
-// [BoundaryInfra.Annotations] and perBoundary maps exposed to downstream
-// phases are the flattened OrderedMap[string] form — nil entries are
-// filtered out (opt-out applied) and non-nil entries are dereferenced.
-func walkBoundary(name, parentPath string, b types.Boundary, parentAnnotations types.OrderedMap[*types.AnnotationValue], perComponent map[string]*BoundaryInfra, perBoundary map[string]types.OrderedMap[string]) {
-	currentPath := name
-	if parentPath != "" {
-		currentPath = parentPath + "/" + name
-	}
-
-	// Merge annotations under the AnnotationValue sum-type cascade:
-	// parent cascades down, boundary's own annotations override.
-	// IsEmpty entries on the overlay opt out of the inherited binding
-	// wholesale; structured overlays per-subkey-merge with structured
-	// parents; shape mismatches replace. The merge primitive handles
-	// all four cases.
-	mergedAnnotations := mergeAnnotationValueMaps(parentAnnotations, b.Annotations)
-
-	// Record the boundary-level cascade BEFORE per-component overrides.
-	// The renderer-facing surface consumes the Scalar-projection — only
-	// scalar entries surface as template substitution; structured
-	// annotations flow through Feature expansion only and do not enter
-	// the .parent_boundary.annotations / .context.annotations.* render
-	// context.
-	perBoundary[currentPath] = types.ScalarOnly(mergedAnnotations)
-
-	// Collect components in this boundary
-	for compName, comp := range b.Components.All() {
-		// BoundaryComponent.Annotations override the boundary chain per key.
-		compAnnotations := mergeAnnotationValueMaps(mergedAnnotations, comp.Annotations)
-		bi := &BoundaryInfra{
-			Infra:        comp.Infra,
-			Annotations:  types.ScalarOnly(compAnnotations),
-			BoundaryPath: currentPath,
-			Directory:    b.Directory,
-			SubDirectory: resolveSubDirectory(b.SubDirectory, comp.SubDirectory),
-			SyncWave:     b.SyncWave,
-			Synthesized:  b.Synthesized,
-		}
-		perComponent[compName] = bi
-	}
-
-	// Recurse into nested boundaries
-	for childName, childBoundary := range b.Boundaries.All() {
-		walkBoundary(childName, currentPath, childBoundary, mergedAnnotations, perComponent, perBoundary)
-	}
+// boundaryScope is the per-boundary state the infra cascade carries down the
+// Release boundary tree: the effective annotation cascade at that boundary, plus
+// the boundary itself, whose directory and sync-wave fields land on every
+// component routed into it.
+type boundaryScope struct {
+	annotations types.OrderedMap[*types.AnnotationValue]
+	boundary    types.Boundary
 }
 
 func resolveSubDirectory(boundaryLevel, componentLevel string) string {

@@ -864,7 +864,7 @@ func keysOf(m map[string]AnnotationProvenance) []string {
 
 // Aggregate-side expansion tests. These tests pin the Aggregate-side
 // leg of the annotation-driven Feature expansion pass: the
-// expandAggregateSubsystem walker, the side-vs-pillar enforcement
+// expandAggregateSubsystems walk, the side-vs-pillar enforcement
 // (Aggregate-side routes only through values-pillar paths), null
 // opt-out across the subsystem cascade, explicit-feature preservation,
 // top-level component expansion, provenance recording, deeply nested

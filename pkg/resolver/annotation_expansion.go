@@ -201,10 +201,8 @@ func ExpandAnnotations(rr *ResolveResult, catalogLookup CatalogLookup) error {
 	cache := newFeatureSchemaCache(catalogLookup.EffectiveSchema)
 
 	if rr.Release != nil {
-		for bName, boundary := range rr.Release.Spec.Boundaries.All() {
-			if err := expandBoundary(bName, "", boundary, types.OrderedMap[*types.AnnotationValue]{}, map[string]string{}, registry, catalogLookup, cache, rr); err != nil {
-				return err
-			}
+		if err := expandBoundaries(registry, catalogLookup, cache, rr); err != nil {
+			return err
 		}
 	}
 
@@ -225,89 +223,94 @@ func ExpandAnnotations(rr *ResolveResult, catalogLookup CatalogLookup) error {
 		// value the caller never sees.
 		na := types.Normalize(rr.Aggregate)
 		rr.Aggregate = na.Aggregate()
-		for subName, sub := range na.Aggregate().Spec.Subsystems.All() {
-			if err := expandAggregateSubsystem(subName, "subsystems", sub, types.OrderedMap[*types.AnnotationValue]{}, map[string]string{}, registry, catalogLookup, cache, rr); err != nil {
-				return err
-			}
+		if err := expandAggregateSubsystems(na, registry, catalogLookup, cache, rr); err != nil {
+			return err
 		}
 	}
 	return nil
 }
 
-// expandBoundary walks one boundary (and its descendants) of the Release
-// tree, cascading annotation values + their source locations from outer
-// to inner. parentAnnotations carries the effective pointer-tristate
-// value map at entry; parentSources carries the per-key author location
-// (the boundary path or component path where the annotation was
-// authored, NOT the boundary where it currently applies — the
-// distinction matters for provenance, because an inherited annotation
-// reports its authoring boundary as its source). Nil-pointer values in
-// the effective map are opt-out signals; expansion skips them without
-// injecting a synthetic Feature and without recording provenance.
-func expandBoundary(
-	name, parentPath string,
-	b types.Boundary,
-	parentAnnotations types.OrderedMap[*types.AnnotationValue],
-	parentSources map[string]string,
+// annotationCascade is the per-scope state an annotation expansion carries down a
+// container tree: the effective annotation values at that scope, and per key the
+// authoring location the value was written at. The source is the authoring scope,
+// NOT the scope where the value currently applies — an inherited annotation
+// reports the scope it was written at, which is what makes provenance point at the
+// text the author can edit.
+type annotationCascade struct {
+	values  types.OrderedMap[*types.AnnotationValue]
+	sources map[string]string
+}
+
+// withScopeAnnotations layers one scope's own annotations onto the inherited
+// cascade, recording that scope as the source of every key it declares. sourceOf
+// formats the authoring location for a key at this scope.
+func (c annotationCascade) withScopeAnnotations(own types.OrderedMap[*types.AnnotationValue], sourceOf func(key string) string) annotationCascade {
+	next := annotationCascade{
+		values:  mergeAnnotationValueMaps(c.values, own),
+		sources: make(map[string]string, len(c.sources)+own.Len()),
+	}
+	for k, v := range c.sources {
+		next.sources[k] = v
+	}
+	for k := range own.All() {
+		next.sources[k] = sourceOf(k)
+	}
+	return next
+}
+
+// expandBoundaries walks the Release boundary tree, cascading annotation values
+// and their source locations from outer to inner. Nil-pointer values in the
+// effective map are opt-out signals; expansion skips them without injecting a
+// synthetic Feature and without recording provenance.
+//
+// The mutated component is written back into the tree per component rather than
+// once at the end, for the same reason the Aggregate side does it — see
+// [expandAggregateSubsystems].
+func expandBoundaries(
 	registry *AnnotationRegistry,
 	catalogLookup CatalogLookup,
 	cache *featureSchemaCache,
 	rr *ResolveResult,
 ) error {
-	currentPath := name
-	if parentPath != "" {
-		currentPath = parentPath + "/" + name
-	}
+	return types.WalkInstanceTree(rr.Release.Spec.Boundaries, types.BoundaryTree(), "",
+		annotationCascade{sources: map[string]string{}},
+		types.InstanceTreeVisitor[types.Boundary, types.BoundaryComponent, annotationCascade]{
+			Path: joinBoundaryPath,
+			Enter: func(b types.Boundary, _, path string, inherited annotationCascade) annotationCascade {
+				return inherited.withScopeAnnotations(b.Annotations, func(key string) string {
+					return annotationSourcePath(rr.ReleasePath, path, "", key, b.Synthesized)
+				})
+			},
+			Visit: func(comp types.BoundaryComponent, name, path string, synthesized bool, cascade annotationCascade) error {
+				effective := cascade.withScopeAnnotations(comp.Annotations, func(key string) string {
+					return annotationSourcePath(rr.ReleasePath, path, name, key, synthesized)
+				})
 
-	mergedAnnotations := mergeAnnotationValueMaps(parentAnnotations, b.Annotations)
-	mergedSources := make(map[string]string, len(parentSources)+b.Annotations.Len())
-	for k, v := range parentSources {
-		mergedSources[k] = v
-	}
-	for k := range b.Annotations.All() {
-		mergedSources[k] = annotationSourcePath(rr.ReleasePath, currentPath, "", k, b.Synthesized)
-	}
+				for key, value := range effective.values.All() {
+					if value.IsEmpty() {
+						// Whole-value opt-out: no synthetic Feature for this key on this
+						// component; no provenance record.
+						continue
+					}
+					binding, ok := registry.Lookup(key)
+					if !ok {
+						continue
+					}
+					feature, errs := expandBinding(key, value, binding, sideRelease, lookupFeature(catalogLookup, binding.Feature), cache, path, name, effective.sources[key])
+					if len(errs) > 0 {
+						return wrapAnnotationOpsError(path, name, key, "expansion", errors.Join(errs...))
+					}
+					if _, already := comp.Features.Get(key); already {
+						continue
+					}
+					comp.Features.Set(key, feature)
+					recordAnnotationProvenance(rr, AnnotationProvenanceKey(path, name, key), key, effective.sources[key])
+				}
 
-	for compName, comp := range b.Components.All() {
-		effective := mergeAnnotationValueMaps(mergedAnnotations, comp.Annotations)
-		effectiveSources := make(map[string]string, len(mergedSources)+comp.Annotations.Len())
-		for k, v := range mergedSources {
-			effectiveSources[k] = v
-		}
-		for k := range comp.Annotations.All() {
-			effectiveSources[k] = annotationSourcePath(rr.ReleasePath, currentPath, compName, k, b.Synthesized)
-		}
-
-		for key, value := range effective.All() {
-			if value.IsEmpty() {
-				// Whole-value opt-out: no synthetic Feature for this
-				// key on this component; no provenance record.
-				continue
-			}
-			binding, ok := registry.Lookup(key)
-			if !ok {
-				continue
-			}
-			feature, errs := expandBinding(key, value, binding, sideRelease, lookupFeature(catalogLookup, binding.Feature), cache, currentPath, compName, effectiveSources[key])
-			if len(errs) > 0 {
-				return wrapAnnotationOpsError(currentPath, compName, key, "expansion", errors.Join(errs...))
-			}
-			if _, already := comp.Features.Get(key); already {
-				continue
-			}
-			comp.Features.Set(key, feature)
-			recordAnnotationProvenance(rr, AnnotationProvenanceKey(currentPath, compName, key), key, effectiveSources[key])
-		}
-
-		writeComponent(rr.Release, currentPath, compName, comp)
-	}
-
-	for childName, child := range b.Boundaries.All() {
-		if err := expandBoundary(childName, currentPath, child, mergedAnnotations, mergedSources, registry, catalogLookup, cache, rr); err != nil {
-			return err
-		}
-	}
-	return nil
+				writeComponent(rr.Release, path, name, comp)
+				return nil
+			},
+		})
 }
 
 // annotationSourcePath formats the source location for an annotation
@@ -674,6 +677,22 @@ func writeComponent(release *types.Release, boundaryPath, compName string, comp 
 	release.Spec.Boundaries.Set(segments[0], chain[0])
 }
 
+// joinBoundaryPath composes the slash-separated path of a boundary from its
+// parent's path and its own name: "aws-prod" at the top level,
+// "aws-prod/eks-main" one level in. It is the inverse of [splitBoundaryPath] and
+// the spelling [BoundaryInfra.BoundaryPath] carries.
+//
+// The synthesized flag is accepted so the function is usable directly as an
+// [types.InstanceTreeVisitor.Path]; the path does not vary with it, because a
+// component routed into the synthesized default keys under that boundary's name
+// like any other and consumers that render it differently key on the flag.
+func joinBoundaryPath(parentPath, name string, _ bool) string {
+	if parentPath == "" {
+		return name
+	}
+	return parentPath + "/" + name
+}
+
 func splitBoundaryPath(path string) []string {
 	if path == "" {
 		return nil
@@ -760,89 +779,69 @@ func recordAnnotationProvenance(rr *ResolveResult, provKey, annotationKey, sourc
 	rr.AnnotationProvenance[provKey] = prov
 }
 
-// expandAggregateSubsystem walks one subsystem of the Aggregate's
-// subsystem-and-component tree, cascading annotation values and their
-// authoring source locations from outer to inner. parentAnnotations
-// carries the effective AnnotationValue map at entry; parentSources
-// carries the per-key author location.
+// expandAggregateSubsystems walks the Aggregate's subsystem-and-component tree,
+// cascading annotation values and their authoring source locations from outer to
+// inner.
 //
-// For each contained component, every effective annotation that
-// matches a registered binding synthesizes a FeatureInstance
-// attachment on the component's Features map. Aggregate-side
-// expansion routes only through paths in binding.Maps.Values; routing
-// the annotation through an infra-pillar path halts with a Loud
-// Guardrail. Empty AnnotationValue entries (whole-value opt-outs)
-// produce no synthetic Feature and no provenance record. Structured
-// values are not yet routed through expansion — the parse, cascade,
-// and schema layers accept them, but per-subkey expansion routing is
-// the follow-on iteration's scope. Encountering a structured value
-// at expansion time surfaces a clear error rather than silently
+// For each contained component, every effective annotation that matches a
+// registered binding synthesizes a FeatureInstance attachment on the component's
+// Features map. Aggregate-side expansion routes only through paths in
+// binding.Maps.Values; routing the annotation through an infra-pillar path halts
+// with a Loud Guardrail. Empty AnnotationValue entries (whole-value opt-outs)
+// produce no synthetic Feature and no provenance record. Structured values are not
+// yet routed through expansion — the parse, cascade, and schema layers accept
+// them, but per-subkey expansion routing is not implemented; encountering a
+// structured value at expansion time surfaces a clear error rather than silently
 // dropping the contribution.
 //
-// parentPath is the dotted prefix accumulated by the caller — for
-// the first-level entry from ExpandAnnotations, parentPath is
-// "subsystems"; for a recursive call into a nested subsystem, the
-// caller appends the current subsystem name and the bridge
-// ".subsystems".
-func expandAggregateSubsystem(
-	name, parentPath string,
-	s types.Subsystem,
-	parentAnnotations types.OrderedMap[*types.AnnotationValue],
-	parentSources map[string]string,
+// The mutated component is written back into the tree per component rather than
+// once at the end: OrderedMap hands out its values by value, so the walk holds a
+// copy of each component, and a later write must observe the earlier ones in the
+// same scope.
+func expandAggregateSubsystems(
+	na types.NormalizedAggregate,
 	registry *AnnotationRegistry,
 	catalogLookup CatalogLookup,
 	cache *featureSchemaCache,
 	rr *ResolveResult,
 ) error {
-	currentPath := parentPath + "." + name
+	return types.WalkInstanceTree(na.Aggregate().Spec.Subsystems, types.SubsystemTree(), "",
+		annotationCascade{sources: map[string]string{}},
+		types.InstanceTreeVisitor[types.Subsystem, types.ComponentInstance, annotationCascade]{
+			Path: aggregateAnnotationScopePath,
+			Enter: func(sub types.Subsystem, _, path string, inherited annotationCascade) annotationCascade {
+				return inherited.withScopeAnnotations(sub.Annotations, func(key string) string {
+					return aggregateAnnotationSourcePath(rr.AggregatePath, path, key)
+				})
+			},
+			Visit: func(comp types.ComponentInstance, name, path string, _ bool, cascade annotationCascade) error {
+				componentPath := path + ".components." + name
+				effective := cascade.withScopeAnnotations(comp.Annotations, func(key string) string {
+					return aggregateAnnotationSourcePath(rr.AggregatePath, componentPath, key)
+				})
 
-	mergedAnnotations := mergeAnnotationValueMaps(parentAnnotations, s.Annotations)
-	mergedSources := make(map[string]string, len(parentSources)+s.Annotations.Len())
-	for k, v := range parentSources {
-		mergedSources[k] = v
-	}
-	for k := range s.Annotations.All() {
-		mergedSources[k] = aggregateAnnotationSourcePath(rr.AggregatePath, currentPath, k)
-	}
-
-	for compName, comp := range s.Components.All() {
-		componentPath := currentPath + ".components." + compName
-		effective := mergeAnnotationValueMaps(mergedAnnotations, comp.Annotations)
-		effectiveSources := make(map[string]string, len(mergedSources)+comp.Annotations.Len())
-		for k, v := range mergedSources {
-			effectiveSources[k] = v
-		}
-		for k := range comp.Annotations.All() {
-			effectiveSources[k] = aggregateAnnotationSourcePath(rr.AggregatePath, componentPath, k)
-		}
-
-		for key, value := range effective.All() {
-			if value.IsEmpty() {
-				continue
-			}
-			binding, ok := registry.Lookup(key)
-			if !ok {
-				continue
-			}
-			if _, already := comp.Features.Get(key); already {
-				continue
-			}
-			feature, errs := synthesizeAggregateFeatureFromAnnotation(key, *value, binding, lookupFeature(catalogLookup, binding.Feature), cache, effectiveSources[key])
-			if len(errs) > 0 {
-				return wrapAggregateAnnotationOpsError(componentPath, key, "expansion", errors.Join(errs...))
-			}
-			comp.Features.Set(key, feature)
-			recordAnnotationProvenance(rr, AnnotationProvenanceKey(componentPath, "", key), key, effectiveSources[key])
-		}
-		writeAggregateComponent(rr.Aggregate, componentPath, comp)
-	}
-
-	for childName, child := range s.Subsystems.All() {
-		if err := expandAggregateSubsystem(childName, currentPath+".subsystems", child, mergedAnnotations, mergedSources, registry, catalogLookup, cache, rr); err != nil {
-			return err
-		}
-	}
-	return nil
+				for key, value := range effective.values.All() {
+					if value.IsEmpty() {
+						continue
+					}
+					binding, ok := registry.Lookup(key)
+					if !ok {
+						continue
+					}
+					if _, already := comp.Features.Get(key); already {
+						continue
+					}
+					feature, errs := synthesizeAggregateFeatureFromAnnotation(key, *value, binding, lookupFeature(catalogLookup, binding.Feature), cache, effective.sources[key])
+					if len(errs) > 0 {
+						return wrapAggregateAnnotationOpsError(componentPath, key, "expansion", errors.Join(errs...))
+					}
+					comp.Features.Set(key, feature)
+					recordAnnotationProvenance(rr, AnnotationProvenanceKey(componentPath, "", key), key, effective.sources[key])
+				}
+				writeAggregateComponent(rr.Aggregate, componentPath, comp)
+				return nil
+			},
+		})
 }
 
 // aggregateAnnotationSourcePath formats the source location for an

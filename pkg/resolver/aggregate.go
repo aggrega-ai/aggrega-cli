@@ -41,64 +41,46 @@ func WireAggregateAnnotations(na types.NormalizedAggregate) map[string]types.Ord
 	}
 	perComponent := map[string]types.OrderedMap[string]{}
 
-	// Top-level subsystems carry their own annotations plus a per-
-	// subsystem subtree. Each subsystem's recursion roots at the
-	// canonical "subsystems." prefix; the recursive helper extends the
-	// path string as it descends.
-	for subName, sub := range agg.Spec.Subsystems.All() {
-		walkAggregateSubsystem(subName, "subsystems", sub, types.OrderedMap[*types.AnnotationValue]{}, perComponent)
-	}
+	// The accumulator is the cascade: the AnnotationValue sum-type map is carried
+	// through the descent so structured-value subkey opt-outs at any scope keep
+	// suppressing inherited subkeys for deeper scopes. Scalar-projecting to
+	// OrderedMap[string] happens only at the renderer-facing leaf, where the
+	// per-component effective set is finalized for template substitution.
+	//
+	// No visitor callback fails, so the walk cannot.
+	_ = types.WalkInstanceTree(agg.Spec.Subsystems, types.SubsystemTree(), "", types.OrderedMap[*types.AnnotationValue]{},
+		types.InstanceTreeVisitor[types.Subsystem, types.ComponentInstance, types.OrderedMap[*types.AnnotationValue]]{
+			Path: aggregateAnnotationScopePath,
+			// Merge the inherited cascade with this subsystem's own annotations per the
+			// AnnotationValue rules: whole-value nils opt out wholesale; structured +
+			// structured deep-merges per subkey with per-subkey nil opt-out; shape
+			// mismatches replace.
+			Enter: func(sub types.Subsystem, _, _ string, inherited types.OrderedMap[*types.AnnotationValue]) types.OrderedMap[*types.AnnotationValue] {
+				return mergeAnnotationValueMaps(inherited, sub.Annotations)
+			},
+			// Merge the component's own annotations on top of the subsystem-level
+			// cascade, then project to the OrderedMap[string] downstream consumers use.
+			Visit: func(comp types.ComponentInstance, name, path string, _ bool, cascade types.OrderedMap[*types.AnnotationValue]) error {
+				compAnnotations := mergeAnnotationValueMaps(cascade, comp.Annotations)
+				perComponent[path+".components."+name] = types.ScalarOnly(compAnnotations)
+				return nil
+			},
+		})
 
 	return perComponent
 }
 
-// walkAggregateSubsystem recurses one Subsystem of the Aggregate tree,
-// cascading annotations from outer subsystems into the current one and
-// into each contained component, then descending into nested
-// subsystems. The cascade carries the AnnotationValue sum-type map
-// through recursion so structured-value subkey opt-outs at any scope
-// continue to suppress inherited subkeys for deeper scopes;
-// Scalar-projecting to OrderedMap[string] happens only at the
-// renderer-facing leaf where the per-component effective set is
-// finalized for template substitution.
+// aggregateAnnotationScopePath composes the canonical authoring path of one
+// annotation scope in the Aggregate's subsystem tree: "subsystems.<s>" at the top
+// level and "subsystems.<outer>.subsystems.<inner>" below it. The component leaf
+// appends ".components.<name>".
 //
-// parentPath is the dotted prefix accumulated by the caller — for the
-// first-level entry from WireAggregateAnnotations, parentPath is
-// "subsystems"; for a recursive call into a nested subsystem, the
-// caller appends the current subsystem's name and the bridge
-// ".subsystems" before passing parentPath down.
-func walkAggregateSubsystem(
-	name, parentPath string,
-	s types.Subsystem,
-	parentAnnotations types.OrderedMap[*types.AnnotationValue],
-	perComponent map[string]types.OrderedMap[string],
-) {
-	// The canonical authoring path for this subsystem: parent prefix +
-	// "." + this subsystem's name. The component-path leaf appends
-	// ".components.<comp>"; the nested-subsystem recursion appends
-	// ".subsystems".
-	currentPath := parentPath + "." + name
-
-	// Merge parent annotations with this subsystem's own per the
-	// AnnotationValue cascade rules: whole-value nils opt out
-	// wholesale; structured + structured deep-merges per subkey with
-	// per-subkey nil opt-out; shape mismatches replace.
-	mergedAnnotations := mergeAnnotationValueMaps(parentAnnotations, s.Annotations)
-
-	// For each contained component, merge in the component's own
-	// annotations on top of the subsystem-level cascade, then project
-	// to the post-flatten OrderedMap[string] downstream consumers use.
-	// Components are written to perComponent keyed by their canonical
-	// dotted path.
-	for compName, comp := range s.Components.All() {
-		compAnnotations := mergeAnnotationValueMaps(mergedAnnotations, comp.Annotations)
-		perComponent[currentPath+".components."+compName] = types.ScalarOnly(compAnnotations)
+// It satisfies [types.InstanceTreeVisitor.Path]; the path does not vary with the
+// synthesized flag, because a component folded into the synthesized default keys
+// at subsystems.default.components.<name> like any other.
+func aggregateAnnotationScopePath(parentPath, name string, _ bool) string {
+	if parentPath == "" {
+		return "subsystems." + name
 	}
-
-	// Recurse into nested subsystems. The cascade-level annotation map
-	// passed down is the subsystem-merged form so nested scopes can
-	// further override or opt-out at any granularity.
-	for childName, child := range s.Subsystems.All() {
-		walkAggregateSubsystem(childName, currentPath+".subsystems", child, mergedAnnotations, perComponent)
-	}
+	return parentPath + ".subsystems." + name
 }

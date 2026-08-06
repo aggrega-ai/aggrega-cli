@@ -77,7 +77,7 @@ func evalActive(active types.ActiveFlag, nodeID string) (bool, error) {
 // Walk order — two passes over the current Aggregate level, each in
 // author order:
 //
-//  1. Subsystems (agg.Spec.Subsystems). flattenSubsystem walks each
+//  1. Subsystems (agg.Spec.Subsystems). flattenSubsystems walks each
 //     subsystem's components and nested sub-subsystems, accumulating
 //     dotted subsystemPath segments. A component authored at the top-level
 //     `.spec.components` surface is reached here, inside the synthesized
@@ -151,11 +151,8 @@ func flattenAggregate(
 	agg := na.Aggregate()
 
 	// Walk subsystems in author order (recursive)
-	for subName, sub := range agg.Spec.Subsystems.All() {
-		subPath := qualifiedID(subsystemPath, subName)
-		if err := flattenSubsystem(result, prefix, subPath, sourceFile, sub, nil, params); err != nil {
-			return nil, err
-		}
+	if err := flattenSubsystems(result, prefix, subsystemPath, sourceFile, na, params); err != nil {
+		return nil, err
 	}
 
 	// Walk sub-aggregates in author order
@@ -235,83 +232,80 @@ func flattenAggregate(
 	return result, nil
 }
 
-// flattenSubsystem walks a single subsystem's components and any nested
-// sub-subsystems, appending each component to the parent flattenResult's
-// node map and accumulating dotted subsystemPath segments as the recursion
-// descends. The subsystemPath ends up on each TopologyNode and feeds IR's
-// Tier-3 Onion Model traversal (collectSubsystemFeatures in
-// internal/compiler/ir/features.go) — the path string is what tells IR
-// which subsystem-level features cascade to the node and in what
-// outer-to-inner order.
+// flattenSubsystems walks the Aggregate's subsystem tree, appending each
+// component to the flattenResult's node map and accumulating dotted
+// subsystemPath segments as the descent proceeds. The subsystemPath ends up on
+// each TopologyNode and feeds the IR's scope-feature cascade
+// (collectSubsystemFeatures in internal/compiler/ir/features.go) — the path
+// string is what tells the IR which subsystem-level features cascade to the node
+// and in what outer-to-inner order.
 //
-// Subsystems are not gated by the sub-aggregate cycle / depth bounds:
-// they are part of the authoring root of the same Aggregate, so the
-// only bound is the YAML schema's structural validity. Pathologically
-// deep subsystem nesting in a single Aggregate would still reach the
-// recursion stack limit, but no architectural anchor enshrines a depth
-// bound for subsystem nesting today.
+// Subsystems are not gated by the sub-aggregate cycle / depth bounds: they are
+// part of the authoring root of the same Aggregate, so the only bound is the YAML
+// schema's structural validity. Pathologically deep subsystem nesting in a single
+// Aggregate would still reach the recursion stack limit, but no architectural
+// anchor enshrines a depth bound for subsystem nesting today.
 //
-// Returns ErrSubAggregateNameCollision (wrapped) if a Set on the flat
-// node map would overwrite an existing entry. The collision is impossible
-// by current schema (root-level instance names cannot contain dots) but
-// the guard defends against future schema loosening or validation bypass.
-func flattenSubsystem(result *flattenResult, prefix, subsystemPath, sourceFile string, sub types.Subsystem, ancestorScopeFeatures []scopeFeatureUses, params map[string]any) error {
-	// Extend the inherited subsystem-feature cascade with this subsystem's own
-	// subsystem-wide features (author order), so a component at this level —
-	// and every nested level — carries the features of all subsystems on its
-	// path. Mirrors the outer-to-inner accumulation the edge pass previously
-	// recomputed by walking the root Aggregate; capturing it here against the
-	// subsystem tree actually being flattened is what makes it correct for a
-	// sub-aggregate's own subsystems.
-	// Build a fresh slice (do not append into the ancestor's backing array, or
-	// sibling subsystems would see each other's features through a shared array).
-	scopeFeatures := make([]scopeFeatureUses, len(ancestorScopeFeatures), len(ancestorScopeFeatures)+sub.Features.Len())
-	copy(scopeFeatures, ancestorScopeFeatures)
-	for fname, feat := range sub.Features.All() {
-		scopeFeatures = append(scopeFeatures, scopeFeatureUses{
-			instanceName: fname,
-			featureType:  feat.Type,
-			uses:         feat.Uses,
+// rootPath is the dotted path the tree's top level hangs beneath — empty for an
+// Aggregate's own subsystems.
+//
+// Returns ErrSubAggregateNameCollision (wrapped) if a Set on the flat node map
+// would overwrite an existing entry. The collision is impossible by current schema
+// (root-level instance names cannot contain dots) but the guard defends against
+// future schema loosening or validation bypass.
+func flattenSubsystems(result *flattenResult, prefix, rootPath, sourceFile string, na types.NormalizedAggregate, params map[string]any) error {
+	return types.WalkInstanceTree(na.Aggregate().Spec.Subsystems, types.SubsystemTree(), rootPath, []scopeFeatureUses(nil),
+		types.InstanceTreeVisitor[types.Subsystem, types.ComponentInstance, []scopeFeatureUses]{
+			Path: types.JoinSubsystemPath,
+			// Extend the inherited subsystem-feature cascade with this subsystem's own
+			// subsystem-wide features (author order), so a component at this level — and
+			// every nested level — carries the features of all subsystems on its path.
+			// Capturing it against the subsystem tree actually being flattened is what
+			// makes it correct for a sub-aggregate's own subsystems.
+			Enter: func(sub types.Subsystem, _, _ string, ancestorScopeFeatures []scopeFeatureUses) []scopeFeatureUses {
+				// Build a fresh slice (do not append into the ancestor's backing array, or
+				// sibling subsystems would see each other's features through a shared array).
+				scopeFeatures := make([]scopeFeatureUses, len(ancestorScopeFeatures), len(ancestorScopeFeatures)+sub.Features.Len())
+				copy(scopeFeatures, ancestorScopeFeatures)
+				for fname, feat := range sub.Features.All() {
+					scopeFeatures = append(scopeFeatures, scopeFeatureUses{
+						instanceName: fname,
+						featureType:  feat.Type,
+						uses:         feat.Uses,
+					})
+				}
+				return scopeFeatures
+			},
+			Visit: func(comp types.ComponentInstance, name, subsystemPath string, synthesized bool, scopeFeatures []scopeFeatureUses) error {
+				nodeID := qualifiedID(prefix, name)
+				keep, err := evalActive(comp.Active, nodeID)
+				if err != nil {
+					return err
+				}
+				if !keep {
+					result.Pruned.Set(nodeID, true)
+					return nil
+				}
+				if existing, exists := result.Nodes.Get(nodeID); exists {
+					return cerrors.Wrap(ErrSubAggregateNameCollision, cerrors.DeveloperError, cerrors.SourceLocation{File: prefix}, fmt.Sprintf("id %q (path %q) collides with existing entry from %q", nodeID, prefix, existing.SourceAggregate))
+				}
+				result.Nodes.Set(nodeID, &TopologyNode{
+					InstanceID:           nodeID,
+					ComponentType:        comp.Type,
+					Values:               comp.Values,
+					SelfInject:           comp.Inject,
+					Uses:                 comp.Uses,
+					ScopeFeatureUses:     scopeFeatures,
+					ResolvedParameters:   params,
+					SubsystemPath:        subsystemPath,
+					SynthesizedSubsystem: synthesized,
+					SourceAggregate:      prefix,
+					SourceFile:           sourceFile,
+				})
+				collectAttachments(result, nodeID, comp, 0)
+				return nil
+			},
 		})
-	}
-
-	for name, comp := range sub.Components.All() {
-		nodeID := qualifiedID(prefix, name)
-		keep, err := evalActive(comp.Active, nodeID)
-		if err != nil {
-			return err
-		}
-		if !keep {
-			result.Pruned.Set(nodeID, true)
-			continue
-		}
-		if existing, exists := result.Nodes.Get(nodeID); exists {
-			return cerrors.Wrap(ErrSubAggregateNameCollision, cerrors.DeveloperError, cerrors.SourceLocation{File: prefix}, fmt.Sprintf("id %q (path %q) collides with existing entry from %q", nodeID, prefix, existing.SourceAggregate))
-		}
-		result.Nodes.Set(nodeID, &TopologyNode{
-			InstanceID:           nodeID,
-			ComponentType:        comp.Type,
-			Values:               comp.Values,
-			SelfInject:           comp.Inject,
-			Uses:                 comp.Uses,
-			ScopeFeatureUses:     scopeFeatures,
-			ResolvedParameters:   params,
-			SubsystemPath:        subsystemPath,
-			SynthesizedSubsystem: sub.Synthesized,
-			SourceAggregate:      prefix,
-			SourceFile:           sourceFile,
-		})
-		collectAttachments(result, nodeID, comp, 0)
-	}
-
-	// Recurse into nested subsystems, carrying the accumulated cascade.
-	for subName, nested := range sub.Subsystems.All() {
-		nestedPath := subsystemPath + "." + subName
-		if err := flattenSubsystem(result, prefix, nestedPath, sourceFile, nested, scopeFeatures, params); err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 // collectAttachments records a node's attachments into the per-node slice

@@ -12,10 +12,10 @@ import (
 	"go.yaml.in/yaml/v3"
 )
 
-// WireAggregateAnnotations tests pin the Aggregate-side cascade walker
+// WireAggregateAnnotations tests pin the Aggregate-side cascade
 // against the canonical authoring-tree path format and the
 // pointer-tristate cascade semantics established by the Release-side
-// walkBoundary. Coverage spans the baseline (empty), top-level
+// boundary-infra cascade. Coverage spans the baseline (empty), top-level
 // component, subsystem propagation, component override, nested
 // subsystem cascade, null opt-out at two levels, and deterministic
 // iteration.

@@ -254,24 +254,20 @@ func (n NormalizedAggregate) ComponentInstances() []ComponentInstanceRef {
 		return nil
 	}
 	var out []ComponentInstanceRef
-	appendSubsystemComponents("", n.agg.Spec.Subsystems, &out)
+	// The visitor cannot fail, so neither can the walk; the error return has no
+	// value to a signature with no failure mode.
+	_ = WalkInstanceTree(n.agg.Spec.Subsystems, SubsystemTree(), "", struct{}{},
+		InstanceTreeVisitor[Subsystem, ComponentInstance, struct{}]{
+			Path: JoinSubsystemPath,
+			Visit: func(inst ComponentInstance, name, path string, synthesized bool, _ struct{}) error {
+				out = append(out, ComponentInstanceRef{
+					Name:          name,
+					Instance:      inst,
+					SubsystemPath: path,
+					Synthesized:   synthesized,
+				})
+				return nil
+			},
+		})
 	return out
-}
-
-func appendSubsystemComponents(parentPath string, subs OrderedMap[Subsystem], out *[]ComponentInstanceRef) {
-	for subName, sub := range subs.All() {
-		path := subName
-		if parentPath != "" {
-			path = parentPath + "." + subName
-		}
-		for name, inst := range sub.Components.All() {
-			*out = append(*out, ComponentInstanceRef{
-				Name:          name,
-				Instance:      inst,
-				SubsystemPath: path,
-				Synthesized:   sub.Synthesized,
-			})
-		}
-		appendSubsystemComponents(path, sub.Subsystems, out)
-	}
 }
