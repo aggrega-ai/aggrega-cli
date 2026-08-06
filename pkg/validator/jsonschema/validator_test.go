@@ -150,7 +150,7 @@ tlsConfig:
 
 // TestValidateXAggregaWhenFalsyWithoutElse verifies falsy + no else:
 // produces no findings even when then:'s constraints would otherwise
-// fail. D-001b-2 semantic: omit else means no constraint when falsy.
+// fail. Omitting else means no constraint applies when falsy.
 func TestValidateXAggregaWhenFalsyWithoutElse(t *testing.T) {
 	t.Parallel()
 

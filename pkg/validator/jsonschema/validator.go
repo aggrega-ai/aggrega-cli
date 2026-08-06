@@ -76,6 +76,8 @@ func New(schema *jsonschema.Schema) (Validator, error) {
 
 	a := &googleAdapter{
 		subResolved:           map[string]*jsonschema.Resolved{},
+		subPruned:             map[string]*jsonschema.Resolved{},
+		subDefinition:         map[string]string{},
 		required:              map[string][]string{},
 		rootDefs:              schema.Defs,
 		additionalPropsBranch: map[string]*branchIndex{},
@@ -85,6 +87,7 @@ func New(schema *jsonschema.Schema) (Validator, error) {
 		notIndexes:            map[string]*branchIndex{},
 		patternPropsResolved:  map[string][]*patternEntry{},
 		dependentSchemas:      map[string][]*dependentEntry{},
+		expanding:             map[string]bool{},
 	}
 
 	// First pass: walk the schema to find x-aggrega-when: and
@@ -127,6 +130,34 @@ type googleAdapter struct {
 	// sidestepping the library's randomised property iteration so
 	// multi-violation Reports are byte-identical across builds.
 	subResolved map[string]*jsonschema.Resolved
+
+	// subPruned mirrors subResolved with the schema at each path reduced
+	// to the constraints that apply to that position only — its declared
+	// property names and every local keyword intact, the property values
+	// replaced by schemas constraining nothing (see pruneOwnKeywords).
+	// The deterministic walk validates against this rather than against
+	// subResolved, because a library call over a whole subtree reports
+	// whichever equally-failing child its map iteration reached first and
+	// so varies between runs. Each child is reached by the walk itself, in
+	// sorted key order, so nothing goes unchecked.
+	//
+	// A path is absent only when the reduced schema fails to resolve,
+	// which cannot happen for a path whose full schema resolved; the walk
+	// falls back to subResolved in that case, keeping the coverage it
+	// would otherwise lose. TestEveryIndexedPathHasAPrunedSchema pins the
+	// absence to zero for the shipped schemas.
+	subPruned map[string]*jsonschema.Resolved
+
+	// subDefinition maps an instance path to the name of the reusable
+	// definition that was substituted for a reference at that position.
+	// Absent for a position that referenced nothing.
+	//
+	// The name is what a diagnostic at that position says was violated. It
+	// has to be recorded because the substituted definition becomes the
+	// root of the library call, and a library names its own call root as
+	// the root — so the definition's name appears in the message only if
+	// the adapter puts it there.
+	subDefinition map[string]string
 
 	// required maps an instance path to the sorted list of required
 	// property names declared on the schema node at that path. Used
@@ -177,10 +208,9 @@ type googleAdapter struct {
 	additionalPropsBranch map[string]*branchIndex
 
 	// oneOf/allOf/anyOf/notIndexes map a path to the ordered list (or
-	// single, for not) of branchIndex sub-structures. Option α
-	// recursive branch walking reads these branchIndex shapes via
-	// walkBranch rather than calling the library's randomised root
-	// validation.
+	// single, for not) of branchIndex sub-structures. The recursive
+	// branch walk reads these shapes via walkBranch rather than calling
+	// the library's randomised root validation.
 	oneOfBranches map[string][]*branchIndex
 	allOfBranches map[string][]*branchIndex
 	anyOfBranches map[string][]*branchIndex
@@ -193,6 +223,18 @@ type googleAdapter struct {
 	// deterministic (the library's PatternProperties iteration is
 	// randomised).
 	patternPropsResolved map[string][]*patternEntry
+
+	// expanding names the reusable definitions currently being substituted
+	// for a reference during index construction. A schema may define a
+	// structure that contains itself — a subsystem holding subsystems, a
+	// provenance record pointing at a provenance record — and substituting
+	// such a definition for its own reference would never terminate. A
+	// definition already being expanded is left as the reference it was,
+	// which is the behaviour before substitution existed.
+	//
+	// Construction is single-threaded (New builds the index before
+	// returning the adapter), so a plain map needs no guarding.
+	expanding map[string]bool
 
 	// dependentSchemas maps a parent path to its trigger-key-keyed
 	// dependent sub-schemas. Each entry is (triggerKey,
@@ -208,19 +250,48 @@ type googleAdapter struct {
 // deterministically without invoking the library's randomised root
 // validation.
 //
-// Leaf-vs-compound discipline (Option α-strict): the resolved field
-// is populated ONLY for leaf branches — branches with no Properties,
-// no nested combinators (oneOf/allOf/anyOf/not), no patternProperties,
-// no dependentSchemas, and no additionalProperties. For leaf branches
-// the resolved.Validate call below is deterministic at the library
-// level (type/pattern/enum/range constraints produce stable
-// single-message findings; no map iteration involved). For compound
-// branches, resolved is nil and walkBranch reads from the
-// per-construct maps; the library is never invoked at instance-root
-// scope for these branches.
+// A branch is a leaf when it declares no properties, no nested
+// combinators (oneOf/allOf/anyOf/not), no patternProperties, no
+// dependentSchemas and no additionalProperties — the resolved field is
+// populated for exactly those, and nil otherwise. A leaf's constraints
+// (type, pattern, enum, range) produce one stable message per call with
+// no map iteration behind them, so validating against it directly is
+// deterministic. A compound branch is walked construct by construct
+// instead, and the constraints belonging to the branch position itself
+// come from ownPruned.
+//
+// A branch that carries only a reference to one of the schema's own
+// definitions is classified on the definition it names, not on the
+// reference: a reference is the shape of a leaf while what it names may
+// declare a whole object, and reading the reference alone would hand that
+// object to the library entire.
 type branchIndex struct {
-	resolved              *jsonschema.Resolved // leaf-only; nil for compound branches per Option α-strict
-	subResolved           map[string]*jsonschema.Resolved
+	// resolved carries a leaf branch's constraints. nil for a compound
+	// branch.
+	resolved *jsonschema.Resolved
+
+	// definition names the reusable definition this branch was built from,
+	// when the branch carried only a reference to one, and is empty
+	// otherwise. It is what a diagnostic for this branch says was
+	// violated: the definition is the root of the library call made here,
+	// and a library names its own call root as the root.
+	definition string
+
+	// ownPruned carries a compound branch's own constraints — the
+	// declared property names, closedness, the property-count bounds, the
+	// array keywords, the in-place applicators — with the property values
+	// pruned away, so validating against it cannot descend into a child.
+	// nil for a leaf branch, whose resolved covers the same ground.
+	ownPruned *jsonschema.Resolved
+
+	// subBranches indexes a compound branch's declared properties by
+	// property name. Each entry is a full branchIndex rather than a bare
+	// resolved schema, so a property that is itself an object is walked
+	// property by property instead of being handed to the library whole,
+	// and a property naming one of the schema's own definitions resolves
+	// against the definitions in scope rather than being dropped.
+	subBranches map[string]*branchIndex
+
 	required              map[string][]string
 	additionalPropsBranch map[string]*branchIndex
 	oneOfBranches         map[string][]*branchIndex
@@ -264,8 +335,8 @@ type whenNode struct {
 	thenResolved *jsonschema.Resolved
 
 	// elseResolved is the pre-resolved else: branch. nil when the
-	// author omitted else: (D-001b-2 semantic — no constraint when
-	// falsy).
+	// author omitted else:, in which case no constraint applies when the
+	// predicate is falsy.
 	elseResolved *jsonschema.Resolved
 }
 

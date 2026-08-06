@@ -290,19 +290,29 @@ func joinPath(path []string) string {
 // So `$ref → #/$defs/X` resolves at any depth and against any
 // enclosing scope, not only against the document root.
 //
-// PatternProperties / DependentSchemas / AdditionalProperties are
-// recursed for x-aggrega-* discovery in walk() but are not indexed
-// for deterministic sub-schema validation here — the library's own
-// iteration over those map-typed fields remains non-deterministic
-// and is a documented limitation routed to a follow-up.
+// PatternProperties, DependentSchemas and AdditionalProperties are
+// indexed here too, each into its own branch structure, so the walk
+// reaches them rather than leaving the library to iterate the matching
+// instance keys.
 //
-// Residual walker-completeness gaps for `$ref` resolution: (a)
-// cross-property refs (`$ref → #/properties/foo` — the graft covers
-// $defs only, not /properties), (b) `$defs/X` entries whose own
-// refs leave $defs scope (e.g., `$defs/X` referencing
-// `/properties/foo`). Either pattern would require root-validate +
-// finding-filter and accept determinism degradation for the affected
-// paths only.
+// Alongside each position's full schema, the index carries that
+// position reduced to its own keywords, with its declared property
+// values pruned away. The per-call walk checks a position against the
+// reduced copy: one call over a whole subtree reports whichever of
+// several equally-failing children the library's map iteration reached
+// first, and the walk reaches each child itself. A non-root position
+// carrying only a reference is indexed as the schema it names, so the
+// recursion descends into that schema's properties instead of stopping
+// at a node that declares none.
+//
+// Residual gaps for `$ref` resolution: (a) cross-property refs
+// (`$ref → #/properties/foo` — the graft covers $defs only, not
+// /properties), (b) `$defs/X` entries whose own refs leave $defs scope
+// (e.g., `$defs/X` referencing `/properties/foo`), (c) a root that
+// carries only a reference, which indexes nothing and therefore
+// enforces nothing. Either of the first two would require validating at
+// the root and filtering findings, accepting the ordering degradation
+// for the affected paths only.
 func (a *googleAdapter) indexSubSchemas(s *jsonschema.Schema, path string, ambientDefs map[string]*jsonschema.Schema) error {
 	if s == nil {
 		return nil
@@ -318,6 +328,29 @@ func (a *googleAdapter) indexSubSchemas(s *jsonschema.Schema, path string, ambie
 			merged[k] = v
 		}
 		s.Defs = merged
+	}
+
+	// A non-root position that carries only a reference is indexed as the
+	// schema it names, so this level's own recursion reaches that schema's
+	// properties. Without the substitution the position would index as a
+	// node with no properties of its own, its children would have no entry
+	// in the index, and pruning its own call — which the next step does —
+	// would leave them unchecked. The root is deliberately left alone: a
+	// reference-only root is a separate, already-escalated question about
+	// what the index enforces when nothing is indexed at all, and settling
+	// it here would settle it without the reasoning that belongs to it.
+	if path != "" {
+		if name, substituted, ok := substituteRefOnly(s); ok && !a.expanding[name] {
+			s = substituted
+			// The definition becomes the root of the library call made at
+			// this position, and a library names its call root as the root
+			// rather than by name — so without recording the name here, a
+			// diagnostic would no longer say which declared shape was
+			// violated.
+			a.subDefinition[path] = name
+			a.expanding[name] = true
+			defer delete(a.expanding, name)
+		}
 	}
 
 	// Resolve this sub-schema as a standalone root. The root schema
@@ -469,13 +502,46 @@ func (a *googleAdapter) indexSubSchemas(s *jsonschema.Schema, path string, ambie
 		}
 	}
 
+	// The reduced schema for this position, built last so it can be told
+	// exactly which families the walk will evaluate here and therefore
+	// which it must not repeat. Keyed on what was indexed above rather than
+	// on what the schema declares, so a family the index could not build
+	// stays in the reduced copy and keeps being checked.
+	_, hasRequired := a.required[path]
+	_, hasAllOf := a.allOfBranches[path]
+	_, hasAnyOf := a.anyOfBranches[path]
+	_, hasOneOf := a.oneOfBranches[path]
+	_, hasNot := a.notIndexes[path]
+	_, hasDependent := a.dependentSchemas[path]
+	reduced := pruneOwnKeywords(s, evaluatedByWalk{
+		required:         hasRequired,
+		allOf:            hasAllOf,
+		anyOf:            hasAnyOf,
+		oneOf:            hasOneOf,
+		not:              hasNot,
+		dependentSchemas: hasDependent,
+	})
+	if reducedResolved, reducedErr := reduced.Resolve(nil); reducedErr == nil {
+		a.subPruned[path] = reducedResolved
+	}
+
 	return nil
 }
 
-// buildBranchIndex constructs a branchIndex for a sub-schema. Applies
-// the Option α-strict leaf-vs-compound discipline: leaf branches get
-// resolved populated only; compound branches recursively populate the
-// per-construct maps and leave resolved nil.
+// buildBranchIndex constructs a branchIndex for a sub-schema. A leaf
+// branch gets resolved populated and nothing else; a compound branch
+// gets its own pruned constraints plus a recursively-built index per
+// construct, and resolved stays nil.
+//
+// A branch carrying only a reference to one of the schema's own
+// definitions is built from the definition it names. Without that
+// substitution such a branch reads as a leaf — a reference declares no
+// properties of its own — and the whole referenced object would be handed
+// to the library in one call, which is exactly the parent-level call that
+// reports an arbitrary one of several equally-failing children. The
+// substitution is refused whenever the reference sits alongside any other
+// constraint (see refOnly), so an unrecognised shape keeps the behaviour
+// it had.
 //
 // Returns nil if Resolve fails after $defs graft (tolerate-skip per
 // the existing walker-completeness gap pattern; the corresponding
@@ -498,12 +564,24 @@ func (a *googleAdapter) buildBranchIndex(s *jsonschema.Schema, ambientDefs map[s
 		s.Defs = merged
 	}
 
+	definition := ""
+	if name, substituted, ok := substituteRefOnly(s); ok && !a.expanding[name] {
+		s = substituted
+		// Recorded for the same reason as in indexSubSchemas: the
+		// definition becomes the root of the library call made for this
+		// branch, and a library names its call root as the root, so the
+		// name is the only place the violated shape can come from.
+		definition = name
+		a.expanding[name] = true
+		defer delete(a.expanding, name)
+	}
+
 	resolved, err := s.Resolve(nil)
 	if err != nil {
 		return nil
 	}
 
-	bi := &branchIndex{}
+	bi := &branchIndex{definition: definition}
 
 	// Leaf-vs-compound decision: a branch is a leaf iff it has no
 	// Properties, no nested combinators, no patternProperties, no
@@ -526,7 +604,7 @@ func (a *googleAdapter) buildBranchIndex(s *jsonschema.Schema, ambientDefs map[s
 	// ambient-defs threading as indexSubSchemas; nextAmbient = s.Defs
 	// post-graft.
 	nextAmbient := s.Defs
-	bi.subResolved = map[string]*jsonschema.Resolved{}
+	bi.subBranches = map[string]*branchIndex{}
 	bi.required = map[string][]string{}
 
 	if len(s.Required) > 0 {
@@ -542,9 +620,13 @@ func (a *googleAdapter) buildBranchIndex(s *jsonschema.Schema, ambientDefs map[s
 		}
 		sort.Strings(propertyNames)
 		for _, name := range propertyNames {
-			propResolved, perr := s.Properties[name].Resolve(nil)
-			if perr == nil {
-				bi.subResolved[name] = propResolved
+			// Built through buildBranchIndex rather than resolved directly,
+			// so the definitions in scope reach the property (a property
+			// that is a reference used to fail resolution here and be
+			// dropped) and so a property that is itself an object is walked
+			// per-property instead of being handed to the library whole.
+			if sub := a.buildBranchIndex(s.Properties[name], nextAmbient); sub != nil {
+				bi.subBranches[name] = sub
 			}
 		}
 	}
@@ -633,6 +715,29 @@ func (a *googleAdapter) buildBranchIndex(s *jsonschema.Schema, ambientDefs map[s
 		if len(entries) > 0 {
 			bi.dependentSchemas = map[string][]*dependentEntry{"": entries}
 		}
+	}
+
+	// The branch position's own constraints, built last so it can be told
+	// which families the walk evaluates at this branch and therefore which
+	// it must not repeat. Keyed on what was indexed above rather than on
+	// what the branch declares, so a family the index could not build stays
+	// in the reduced copy and keeps being checked.
+	_, hasRequired := bi.required[""]
+	_, hasAllOf := bi.allOfBranches[""]
+	_, hasAnyOf := bi.anyOfBranches[""]
+	_, hasOneOf := bi.oneOfBranches[""]
+	_, hasNot := bi.notIndexes[""]
+	_, hasDependent := bi.dependentSchemas[""]
+	reduced := pruneOwnKeywords(s, evaluatedByWalk{
+		required:         hasRequired,
+		allOf:            hasAllOf,
+		anyOf:            hasAnyOf,
+		oneOf:            hasOneOf,
+		not:              hasNot,
+		dependentSchemas: hasDependent,
+	})
+	if reducedResolved, reducedErr := reduced.Resolve(nil); reducedErr == nil {
+		bi.ownPruned = reducedResolved
 	}
 
 	return bi

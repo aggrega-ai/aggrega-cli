@@ -82,7 +82,7 @@ func TestOneOf_NoMatch_SingleFinding(t *testing.T) {
 }
 
 // TestOneOf_MultipleMatch_SingleFinding pins multi-match oneOf
-// semantic + the revision-2 enhancement (matched-branch indices in
+// semantic plus the matched-branch indices in
 // the error message).
 func TestOneOf_MultipleMatch_SingleFinding(t *testing.T) {
 	t.Parallel()
@@ -351,7 +351,7 @@ func TestDependentSchemas_MultipleTriggersPresent_AllDependentsValidate(t *testi
 }
 
 // TestExtendedWalker_Determinism is the load-bearing acceptance signal
-// for Option α: a fixture exercising ALL seven constructs runs 10× in
+// for the recursive branch walk: a fixture exercising ALL seven constructs runs 10× in
 // the same process; assert byte-identical Findings JSON across runs.
 func TestExtendedWalker_Determinism(t *testing.T) {
 	t.Parallel()

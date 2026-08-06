@@ -279,11 +279,11 @@ func TestLibraryErrorToFindingsNil(t *testing.T) {
 
 	a := &googleAdapter{}
 	rpt := &Report{}
-	a.libraryErrorToFindings(rpt, nil)
+	a.libraryErrorToFindings(rpt, nil, nil)
 	if len(rpt.Findings) != 0 {
 		t.Errorf("nil err should produce no findings; got %v", rpt.Findings)
 	}
-	a.libraryErrorToFindingsWithPathPrefix(rpt, nil, "foo")
+	a.libraryErrorToFindingsWithPathPrefix(rpt, nil, "foo", nil)
 	if len(rpt.Findings) != 0 {
 		t.Errorf("nil err prefix variant should produce no findings; got %v", rpt.Findings)
 	}
@@ -296,7 +296,7 @@ func TestLibraryErrorToFindingsWithErr(t *testing.T) {
 
 	a := &googleAdapter{}
 	rpt := &Report{}
-	a.libraryErrorToFindings(rpt, &stubErr{msg: "validating root: validating /properties/name: pattern fail"})
+	a.libraryErrorToFindings(rpt, &stubErr{msg: "validating root: validating /properties/name: pattern fail"}, nil)
 	if len(rpt.Findings) != 1 {
 		t.Fatalf("expected 1 finding; got %d", len(rpt.Findings))
 	}
@@ -316,6 +316,7 @@ func TestLibraryErrorToFindingsWithPathPrefixActive(t *testing.T) {
 		rpt,
 		&stubErr{msg: "validating root: validating /properties/inner: minimum fail"},
 		"outer",
+		nil,
 	)
 	if len(rpt.Findings) != 1 {
 		t.Fatalf("expected 1 finding; got %d", len(rpt.Findings))
@@ -330,6 +331,7 @@ func TestLibraryErrorToFindingsWithPathPrefixActive(t *testing.T) {
 		rpt2,
 		&stubErr{msg: "validating root: required: missing properties: [\"X\"]"},
 		"outer",
+		nil,
 	)
 	if len(rpt2.Findings) != 1 {
 		t.Fatalf("expected 1 finding; got %d", len(rpt2.Findings))

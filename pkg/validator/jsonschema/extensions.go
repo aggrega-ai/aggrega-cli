@@ -17,16 +17,20 @@ import (
 // Validate implements the Validator interface. The algorithm:
 //
 //  1. Deterministic property walk. Recursively iterate the instance's
-//     keys in sorted order; at each property, validate the sub-instance
-//     against the pre-resolved sub-schema (from a.subResolved) and
-//     emit a Finding on failure. Check the schema's Required slice at
-//     each level and emit one Finding per missing required key in
-//     sorted order. Recurse into nested objects so deep properties
-//     walk deterministically rather than relying on the library's
-//     randomised internal Properties iteration. Cross-property
-//     constraints at the root (allOf, anyOf, oneOf, not at root) and
-//     patternProperties / dependentSchemas iteration are documented
-//     walker-completeness gaps — not covered by this walk.
+//     keys in sorted order; at each property, check the sub-instance
+//     against the constraints belonging to that position — the schema
+//     there reduced to its own keywords, with its declared property
+//     values pruned away (see pruneOwnKeywords) — and emit a Finding on
+//     failure. Check the schema's Required slice at each level and emit
+//     one Finding per missing required key in sorted order. Recurse into
+//     nested objects, and into the patternProperties and
+//     additionalProperties branches, so every position is reached by the
+//     walk rather than by the library's randomised iteration over a
+//     schema's or an instance's map. What the walk does not reach — an
+//     array's elements, and the properties an in-place applicator
+//     declares — keeps its constraints intact at the position that
+//     declares them, so those are checked by the library within one
+//     position's call.
 //
 //  2. Walk the pre-collected x-aggrega-when: nodes shallowest-first.
 //     For each:
@@ -43,7 +47,7 @@ import (
 //     else: branch (findings rebased to the sub-instance's path).
 //     - On falsy + no else: present: drop the walk's findings for this
 //     subtree (no constraint applies when falsy and no else: was
-//     authored — D-001b-2 semantic).
+//     authored).
 //     Subsequent x-aggrega-when: nodes nested under a falsy outer
 //     branch are skipped (consumed by the outer's filter).
 //
@@ -66,20 +70,12 @@ func (a *googleAdapter) Validate(instance any, ctx *Context) (*Report, error) {
 		params = ctx.Parameters
 	}
 
-	// Step 1: deterministic property walk. Validates each property's
-	// sub-instance against its pre-resolved sub-schema in sorted-key
-	// order; checks required at each level. Sidesteps the library's
-	// fail-fast-with-randomised-iteration semantic so multi-violation
-	// Reports are byte-identical across builds.
-	//
-	// Cross-property constraints at the root (allOf, anyOf, oneOf,
-	// not, patternProperties, dependentSchemas) are NOT validated by
-	// this walk. The library's own root validation would catch them
-	// but reintroduces non-determinism because the library's root
-	// Validate uses randomised map iteration internally. These
-	// constraints surface as a documented walker-completeness gap;
-	// the typical compact-form output uses object-with-properties
-	// patterns that the walk covers fully.
+	// Step 1: deterministic property walk. Checks each position against
+	// the constraints declared at that position, in sorted-key order, and
+	// checks required at each level. Sidesteps the library's
+	// fail-fast-with-randomised-iteration semantic so a report naming
+	// several violations names the same ones, in the same order, on every
+	// run.
 	a.deterministicWalk(instance, "", rpt)
 
 	// Predicate-inert mode: the caller lacks the correct parameter context for
@@ -158,7 +154,7 @@ nextWhen:
 		// If else: was authored, validate against it.
 		if wn.elseResolved != nil {
 			if err := wn.elseResolved.Validate(subInstance); err != nil {
-				a.libraryErrorToFindingsWithPathPrefix(rpt, err, whenPathStr)
+				a.libraryErrorToFindingsWithPathPrefix(rpt, err, whenPathStr, subInstance)
 			}
 		}
 
@@ -210,18 +206,17 @@ nextValidate:
 	return rpt, nil
 }
 
-// deterministicWalk recursively validates each property in the
-// instance against its pre-resolved sub-schema (from a.subResolved)
-// in sorted-key order, plus checks required-property presence at each
-// level. Sidesteps the library's randomised property iteration so
-// multi-violation Reports are byte-identical across builds.
+// deterministicWalk recursively checks each property in the instance
+// against the constraints declared at that property's position, in
+// sorted-key order, plus checks required-property presence at each level.
+// Sidesteps the library's randomised property iteration, so a report
+// naming several violations names the same ones in the same order on
+// every run.
 //
-// The walk emits findings with FieldPath at the property's instance
-// path. Library sub-schema validation produces deterministic findings
-// for leaf constraints (type, pattern, range, enum, etc.) per call.
-// For sub-schemas that themselves contain Properties, the recursion
-// descends into each child rather than letting the library iterate
-// internally.
+// The walk emits findings with FieldPath at the property's instance path.
+// Because the check at a position covers that position only, a failing
+// value is named once, at its own path, instead of once at its own path
+// and again — chosen arbitrarily among its siblings — at each ancestor.
 //
 // Per-key dispatch follows the precedence rule the walker enforces:
 // Properties > PatternProperties > AdditionalProperties. A key declared
@@ -232,11 +227,11 @@ nextValidate:
 // boolean form is enforced via Properties shape alone).
 //
 // Cross-property constraints (allOf, anyOf, oneOf, not, dependentSchemas)
-// evaluate at the current path after the per-key dispatch via Option α
-// recursive walkBranch. The library's instance-root Validate is never
-// invoked for these constructs — the walker delivers deterministic
-// finding emission across the full JSON Schema 2020-12 surface this
-// adapter covers.
+// evaluate at the current path after the per-key dispatch, each through
+// its own recursive branch walk. The library's instance-root Validate is
+// never invoked for these constructs, so their findings are emitted in a
+// fixed order across the JSON Schema 2020-12 surface this adapter
+// covers.
 func (a *googleAdapter) deterministicWalk(instance any, path string, rpt *Report) {
 	// Required-property check at this level: emit one finding per
 	// missing key, in sorted order, BEFORE recursing into present
@@ -274,13 +269,18 @@ func (a *googleAdapter) deterministicWalk(instance any, path string, rpt *Report
 				subPath = path + "." + k
 			}
 
-			// Arm 1: declared in Properties.
-			if subResolved, hasSub := a.subResolved[subPath]; hasSub {
-				if err := subResolved.Validate(m[k]); err != nil {
+			// Arm 1: declared in Properties. Validated against the
+			// position's own constraints, with its declared property values
+			// pruned away — the recursion on the next line reaches those in
+			// sorted key order, whereas one library call over the whole
+			// subtree reports whichever equally-failing child its map
+			// iteration happened to reach first.
+			if _, hasSub := a.subResolved[subPath]; hasSub {
+				if err := a.validateOwnKeywords(subPath, m[k]); err != nil {
 					rpt.append(Finding{
 						FieldPath: subPath,
 						Keyword:   "validation",
-						Message:   err.Error(),
+						Message:   findingMessage(err, m[k], a.subDefinition[subPath]),
 					})
 				}
 				a.deterministicWalk(m[k], subPath, rpt)
@@ -310,7 +310,7 @@ func (a *googleAdapter) deterministicWalk(instance any, path string, rpt *Report
 		}
 	}
 
-	// Combinator evaluation at this path via Option α recursive walkBranch.
+	// Combinator evaluation at this path, each through its own branch walk.
 	if branches, ok := a.oneOfBranches[path]; ok {
 		evaluateOneOf(a, branches, instance, path, rpt)
 	}
@@ -344,33 +344,53 @@ func (a *googleAdapter) deterministicWalk(instance any, path string, rpt *Report
 	}
 }
 
+// validateOwnKeywords checks the sub-instance at path against the
+// constraints belonging to that position — its type, its bounds, its
+// declared property names, its closedness, its array keywords — without
+// descending into the declared property values, which the walk reaches
+// itself.
+//
+// Falls back to the position's full schema when no reduced one was built,
+// which keeps the coverage that would otherwise be lost at the cost of
+// the ordering guarantee for that one position;
+// TestEveryIndexedPathHasAPrunedSchema pins the fallback unreached for
+// the shipped schemas.
+func (a *googleAdapter) validateOwnKeywords(path string, instance any) error {
+	if pruned, ok := a.subPruned[path]; ok {
+		return pruned.Validate(instance)
+	}
+	if resolved, ok := a.subResolved[path]; ok {
+		return resolved.Validate(instance)
+	}
+	return nil
+}
+
 // walkBranch validates an instance against a pre-indexed branch using
 // the same deterministic property-walk discipline as the top-level
 // walker. Reads from the branchIndex rather than googleAdapter's
 // top-level maps. Recursion through nested combinators is bounded by
 // schema depth.
 //
-// Leaf-vs-compound discipline (Option α-strict): bi.resolved is
-// populated ONLY for leaf branches (no Properties, no nested
-// combinators, no patternProperties, no dependentSchemas, no
-// additionalProperties). For leaf branches the library Validate runs
-// (deterministic at the library level for type/pattern/enum/range
-// constraints). For compound branches, bi.resolved is nil and only
-// the per-construct walks run — the library is never invoked at
-// instance-root scope.
+// A leaf branch (no properties, no nested combinators, no
+// patternProperties, no dependentSchemas, no additionalProperties) is
+// validated directly: its constraints produce one stable message per
+// call with no map iteration behind them. A compound branch is validated
+// against its own constraints only — with its declared property values
+// pruned away — and each property is then walked, so a branch with
+// several equally-failing children reports all of them in sorted key
+// order rather than one chosen by map-iteration order.
 func (a *googleAdapter) walkBranch(bi *branchIndex, instance any, path string) *Report {
 	rpt := &Report{}
 	if bi == nil {
 		return rpt
 	}
 
-	// Leaf-validation fallback (Option α-strict).
 	if bi.resolved != nil {
 		if err := bi.resolved.Validate(instance); err != nil {
 			rpt.append(Finding{
 				FieldPath: path,
 				Keyword:   "validation",
-				Message:   err.Error(),
+				Message:   findingMessage(err, instance, bi.definition),
 			})
 		}
 		return rpt
@@ -386,7 +406,7 @@ func (a *googleAdapter) walkBranch(bi *branchIndex, instance any, path string) *
 	// branch validation when the branch shape clearly requires an
 	// object. The gate closes that hole without invoking the library's
 	// non-deterministic root validation.
-	requiresObject := len(bi.subResolved) > 0 ||
+	requiresObject := len(bi.subBranches) > 0 ||
 		len(bi.patternPropsResolved) > 0 ||
 		len(bi.additionalPropsBranch) > 0 ||
 		len(bi.dependentSchemas) > 0
@@ -395,9 +415,23 @@ func (a *googleAdapter) walkBranch(bi *branchIndex, instance any, path string) *
 			rpt.append(Finding{
 				FieldPath: path,
 				Keyword:   "type",
-				Message:   fmt.Sprintf("expected object, got %T", instance),
+				Message:   "expected object, got " + jsonTypeName(instance),
 			})
 			return rpt
+		}
+	}
+
+	// The branch position's own constraints — its type, its bounds, its
+	// closedness, its array keywords, its in-place applicators — checked
+	// without descending into the declared property values the per-key
+	// dispatch below covers.
+	if bi.ownPruned != nil {
+		if err := bi.ownPruned.Validate(instance); err != nil {
+			rpt.append(Finding{
+				FieldPath: path,
+				Keyword:   "validation",
+				Message:   findingMessage(err, instance, bi.definition),
+			})
 		}
 	}
 
@@ -433,15 +467,12 @@ func (a *googleAdapter) walkBranch(bi *branchIndex, instance any, path string) *
 				subPath = path + "." + k
 			}
 
-			// Arm 1: declared in Properties (branch-local).
-			if subResolved, hasSub := bi.subResolved[k]; hasSub {
-				if err := subResolved.Validate(m[k]); err != nil {
-					rpt.append(Finding{
-						FieldPath: subPath,
-						Keyword:   "validation",
-						Message:   err.Error(),
-					})
-				}
+			// Arm 1: declared in Properties (branch-local). Walked rather
+			// than validated in one call, so a property that is itself an
+			// object reports every failing child of its own.
+			if sub, hasSub := bi.subBranches[k]; hasSub {
+				branchRpt := a.walkBranch(sub, m[k], subPath)
+				rpt.Findings = append(rpt.Findings, branchRpt.Findings...)
 				continue
 			}
 
@@ -468,7 +499,7 @@ func (a *googleAdapter) walkBranch(bi *branchIndex, instance any, path string) *
 		}
 	}
 
-	// Combinators at this branch (Option α recursion).
+	// Combinators at this branch, recursively.
 	if branches, ok := bi.oneOfBranches[""]; ok {
 		evaluateOneOf(a, branches, instance, path, rpt)
 	}
@@ -506,9 +537,8 @@ func (a *googleAdapter) walkBranch(bi *branchIndex, instance any, path string) *
 
 // evaluateOneOf walks each branch via walkBranch; exactly-one
 // clean-match accepts the instance; zero matches or multi-match emit
-// a single deterministic Finding. Multi-match diagnostics include the
-// matched-branch indices (revision-2 enhancement for operator
-// debugging).
+// a single deterministic Finding. A multi-match diagnostic names the
+// matched-branch indices, so an author can see which branches collided.
 func evaluateOneOf(a *googleAdapter, branches []*branchIndex, instance any, path string, rpt *Report) {
 	var matchedIndices []int
 	var failures []string
@@ -724,14 +754,14 @@ func isUnderPath(child, path string) bool {
 // First-pass: one Finding per library error envelope. Splitting a
 // single library error into multiple per-keyword findings is a
 // follow-up enhancement.
-func (a *googleAdapter) libraryErrorToFindings(rpt *Report, err error) {
+func (a *googleAdapter) libraryErrorToFindings(rpt *Report, err error, instance any) {
 	if err == nil {
 		return
 	}
 	rpt.append(Finding{
 		FieldPath: extractPath(err),
 		Keyword:   "validation",
-		Message:   err.Error(),
+		Message:   findingMessage(err, instance, ""),
 	})
 }
 
@@ -740,7 +770,7 @@ func (a *googleAdapter) libraryErrorToFindings(rpt *Report, err error) {
 // when an else: branch validation produces findings whose paths are
 // relative to the sub-instance; the prefix rebases them to the root
 // instance's path space.
-func (a *googleAdapter) libraryErrorToFindingsWithPathPrefix(rpt *Report, err error, prefix string) {
+func (a *googleAdapter) libraryErrorToFindingsWithPathPrefix(rpt *Report, err error, prefix string, instance any) {
 	if err == nil {
 		return
 	}
@@ -752,7 +782,7 @@ func (a *googleAdapter) libraryErrorToFindingsWithPathPrefix(rpt *Report, err er
 	rpt.append(Finding{
 		FieldPath: full,
 		Keyword:   "validation",
-		Message:   err.Error(),
+		Message:   findingMessage(err, instance, ""),
 	})
 }
 

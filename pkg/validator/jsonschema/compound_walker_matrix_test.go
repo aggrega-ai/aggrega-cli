@@ -435,8 +435,8 @@ func TestBuildBranchIndex_CompoundBranchPopulatesEveryConstruct(t *testing.T) {
 	if bi.resolved != nil {
 		t.Errorf("compound branch should leave resolved nil; got non-nil")
 	}
-	if _, ok := bi.subResolved["alpha"]; !ok {
-		t.Errorf("subResolved[alpha] not populated")
+	if _, ok := bi.subBranches["alpha"]; !ok {
+		t.Errorf("subBranches[alpha] not populated")
 	}
 	if _, ok := bi.required[""]; !ok {
 		t.Errorf("required[\"\"] not populated")
