@@ -74,19 +74,43 @@ type pluginRetractionFixture struct {
 	rw   *workspaceconfig.ResolvedWorkspace
 }
 
+// pluginRetractionOption adjusts how a fixture is prepared. The default prepares a
+// registry AND the local index built from it; an option may withhold the index so a
+// resolution takes the live fallback instead of the snapshot.
+type pluginRetractionOption func(*pluginRetractionOptions)
+
+type pluginRetractionOptions struct{ buildIndex bool }
+
+// withoutLocalIndex prepares the registry exactly as the default does — same
+// publishes, same signed markers, same trust policy — but leaves the local discovery
+// index unbuilt. Version resolution then finds no record for the repository and takes
+// the live path, which is the only way to exercise it: with an index present the
+// snapshot answers first and the live path is never reached.
+//
+// Withholding the index rather than deleting it afterwards is deliberate. A fixture
+// that built an index and then removed it would prove the same thing only if the
+// removal were complete, and a partial removal would silently resolve from whatever
+// remained.
+func withoutLocalIndex(o *pluginRetractionOptions) { o.buildIndex = false }
+
 // newPluginRetractionFixture publishes the governance plugin at 1.0.0 AND 2.0.0
 // through the production signed push, optionally attaches a signed deprecation
 // marker of the given severity to each named version through the production
 // `aggrega deprecate`, then builds the local index through the production
-// `registry update`.
+// `registry update` unless an option withholds it.
 //
 // Two published versions is the whole point: a single-version repository cannot
 // show a selection consequence at all, because there is nothing else to select.
 // Every link is the production path — the push, the marker attach, the marker's own
 // signature, the index build and its verification — so a passing arm cannot be an
 // artefact of a hand-stubbed index.
-func newPluginRetractionFixture(t *testing.T, guests map[string]string, markers map[string]string) pluginRetractionFixture {
+func newPluginRetractionFixture(t *testing.T, guests map[string]string, markers map[string]string, opts ...pluginRetractionOption) pluginRetractionFixture {
 	t.Helper()
+
+	o := pluginRetractionOptions{buildIndex: true}
+	for _, opt := range opts {
+		opt(&o)
+	}
 
 	privPEM, pubPEM, err := signing.GenerateKeyedPEM()
 	if err != nil {
@@ -130,9 +154,17 @@ func newPluginRetractionFixture(t *testing.T, guests map[string]string, markers 
 	}
 	rw := resolveWorkspaceWithConfig(t, t.TempDir(), b.String())
 
-	var updateOut bytes.Buffer
-	if uerr := registryUpdateRun(registryUpdateConfig{ws: rw, Out: &updateOut}); uerr != nil {
-		t.Fatalf("registryUpdateRun: %v\n%s", uerr, updateOut.String())
+	if o.buildIndex {
+		var updateOut bytes.Buffer
+		if uerr := registryUpdateRun(registryUpdateConfig{ws: rw, Out: &updateOut}); uerr != nil {
+			t.Fatalf("registryUpdateRun: %v\n%s", uerr, updateOut.String())
+		}
+	} else if _, lerr := loadHostIndex(rw.Root(), rw.Config().ResolvedArtifactCacheDir(), host); !errors.Is(lerr, errIndexNotBuilt) {
+		// The precondition IS the fixture: an arm that means to exercise the live path
+		// proves nothing if a snapshot answered first. Asserting the absence here means a
+		// later change that starts building an index eagerly fails loudly rather than
+		// quietly re-routing these arms through the path they exist to bypass.
+		t.Fatalf("fixture precondition: want no local index for %s; loadHostIndex reported %v", host, lerr)
 	}
 
 	return pluginRetractionFixture{host: host, rw: rw}
@@ -273,6 +305,105 @@ func TestIntegration_PluginAddExcludesWithdrawnAtSelection(t *testing.T) {
 		// exists and still holds those versions, and naming the wrong problem would
 		// send the reader looking for a typo.
 		f := newPluginRetractionFixture(t, guests, map[string]string{"1.0.0": "retracted", "2.0.0": "retracted"})
+		_, out, err := f.addGovernancePlugin(t)
+		if !errors.Is(err, catalog.ErrAllVersionsRetracted) {
+			t.Fatalf("a fully-withdrawn plugin must halt with ErrAllVersionsRetracted; got: %v\n%s", err, out)
+		}
+		t.Logf("rendered halt: %v", err)
+		for _, want := range []string{"1.0.0", "2.0.0", "withdrawn in favour of a successor"} {
+			if !strings.Contains(err.Error(), want) {
+				t.Errorf("halt message must name %q; got: %v", want, err)
+			}
+		}
+	})
+}
+
+// TestIntegration_PluginAddExcludesWithdrawnWithNoLocalIndex is the same
+// discriminating pair for the path taken when the local index does not carry the
+// repository at all — an online workspace whose snapshot was never built.
+//
+// It is a separate concern from the pair above rather than more of it: there, the
+// withdrawal is read from a snapshot a `registry update` recorded, and the screen
+// costs no round trip. Here there is no snapshot, so the withdrawal has to be read
+// from the registry during the attach itself. Same registry state, same signed
+// markers, same production commands — only the presence of the index differs, which
+// is what makes the two arms below evidence about the live path specifically.
+func TestIntegration_PluginAddExcludesWithdrawnWithNoLocalIndex(t *testing.T) {
+	shared := wasmtest.EnsureFixtureBuilt(t, "mutator-proof-go.wasm")
+	guests := map[string]string{
+		"1.0.0": buildStampedGuest(t, shared, "1.0.0"),
+		"2.0.0": buildStampedGuest(t, shared, "2.0.0"),
+	}
+
+	t.Run("withdrawn_higher_version_is_not_pinned_and_the_substitution_is_announced", func(t *testing.T) {
+		f := newPluginRetractionFixture(t, guests, map[string]string{"2.0.0": "retracted"}, withoutLocalIndex)
+		version, out, err := f.addGovernancePlugin(t)
+		if err != nil {
+			t.Fatalf("attaching a plugin with one unwithdrawn version must succeed; got: %v\n%s", err, out)
+		}
+		if version != "1.0.0" {
+			t.Fatalf("pinned %q; want 1.0.0 — the withdrawn 2.0.0 must not be pinned with no snapshot to screen from", version)
+		}
+		t.Logf("rendered command output:\n%s", out)
+		for _, want := range []string{
+			f.host + "/" + pluginRetractionRepoPath + ":2.0.0 is withdrawn and was not selected",
+			"withdrawn in favour of a successor",
+			"resolved to 1.0.0 instead",
+		} {
+			if !strings.Contains(out, want) {
+				t.Errorf("the announcement must contain %q; rendered output was:\n%s", want, out)
+			}
+		}
+		// The provenance clause differs from the snapshot path's on purpose: these
+		// markers were read during this command, so there is no staleness to warn about
+		// and no snapshot to refresh.
+		if !strings.Contains(out, "read from the registry just now") {
+			t.Errorf("the announcement must name its live source; rendered output was:\n%s", out)
+		}
+		if strings.Contains(out, "registry update") {
+			t.Errorf("a live reading must not point at the snapshot-refresh command; rendered output was:\n%s", out)
+		}
+		// The command still reports what it did, on the same writer.
+		if !strings.Contains(out, pluginRetractionSocketName+":1.0.0") {
+			t.Errorf("the command must still name what it attached; rendered output was:\n%s", out)
+		}
+	})
+
+	t.Run("the_same_fixture_without_the_marker_pins_the_higher", func(t *testing.T) {
+		// The other half of the pair. Without it, "1.0.0 was pinned" above would pass
+		// identically had 2.0.0 simply never been published.
+		f := newPluginRetractionFixture(t, guests, nil, withoutLocalIndex)
+		version, out, err := f.addGovernancePlugin(t)
+		if err != nil {
+			t.Fatalf("attaching an unmarked plugin must succeed; got: %v\n%s", err, out)
+		}
+		if version != "2.0.0" {
+			t.Fatalf("pinned %q; want 2.0.0 for an unmarked plugin", version)
+		}
+		if strings.Contains(out, "retraction:") {
+			t.Errorf("an unmarked plugin must announce no exclusion; rendered output was:\n%s", out)
+		}
+	})
+
+	t.Run("a_softer_severity_on_the_same_fixture_still_pins_the_higher", func(t *testing.T) {
+		// The sharpest arm: the marker is present, signed and verified through the live
+		// read exactly as in the excluding arm, so the read is working and holds a record
+		// for this very repository. Only the SEVERITY differs.
+		f := newPluginRetractionFixture(t, guests, map[string]string{"2.0.0": "warning"}, withoutLocalIndex)
+		version, out, err := f.addGovernancePlugin(t)
+		if err != nil {
+			t.Fatalf("a soft marker must not affect the attach; got: %v\n%s", err, out)
+		}
+		if version != "2.0.0" {
+			t.Fatalf("pinned %q; want 2.0.0 — a soft severity warns and does not change selection", version)
+		}
+		if strings.Contains(out, "retraction:") {
+			t.Errorf("a soft marker must announce no exclusion; rendered output was:\n%s", out)
+		}
+	})
+
+	t.Run("every_version_withdrawn_halts_loudly_and_not_as_not_found", func(t *testing.T) {
+		f := newPluginRetractionFixture(t, guests, map[string]string{"1.0.0": "retracted", "2.0.0": "retracted"}, withoutLocalIndex)
 		_, out, err := f.addGovernancePlugin(t)
 		if !errors.Is(err, catalog.ErrAllVersionsRetracted) {
 			t.Fatalf("a fully-withdrawn plugin must halt with ErrAllVersionsRetracted; got: %v\n%s", err, out)

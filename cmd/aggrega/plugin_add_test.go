@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -37,8 +38,15 @@ func resolvedTestWorkspace(t *testing.T) *workspaceconfig.ResolvedWorkspace {
 	return rw
 }
 
-// withTagLister points the config-socket version-resolution seam at a fixed tag
+// withTagLister points the config-socket version-resolution seams at a fixed tag
 // set for the duration of the test, so version resolution runs without a network.
+//
+// It wires BOTH seams the fallback resolution reads, because the fallback screens as
+// well as selects: a test that fixed only the tags would leave the withdrawal-marker
+// read pointing at the live registry, which is the one path in this package that can
+// turn a unit test into a real network call. No withdrawal is reported, so selection
+// over the fixed tags is unscreened — the arms that assert a screened outcome supply
+// their own withdrawals through withWithdrawals.
 func withTagLister(t *testing.T, tags []string) {
 	t.Helper()
 	prev := pluginRepoTagLister
@@ -46,6 +54,38 @@ func withTagLister(t *testing.T, tags []string) {
 		return tags, nil
 	}
 	t.Cleanup(func() { pluginRepoTagLister = prev })
+	withWithdrawals(t, nil)
+}
+
+// withWithdrawals points the withdrawal-marker seam at a fixed set of verified
+// withdrawals for the duration of the test, keyed by version. Each is recorded with a
+// signer, because only a signature-verified record screens a version; a nil map
+// reports no withdrawal at all.
+//
+// The versions the seam is asked about are captured so an arm can assert WHICH
+// versions were looked up — the network cost of the fallback is part of its contract,
+// and a count read from the fixture is the only way to hold it.
+func withWithdrawals(t *testing.T, withdrawn map[string]string) *[]string {
+	t.Helper()
+	asked := &[]string{}
+	prev := pluginRepoWithdrawalLister
+	pluginRepoWithdrawalLister = func(_ context.Context, _ workspaceconfig.Config, _, _ string, versions []string, _ io.Writer) ([]VersionDeprecation, error) {
+		*asked = append(*asked, versions...)
+		var deps []VersionDeprecation
+		for _, v := range oci.SortedSemverTags(keysOf(withdrawn)) {
+			deps = append(deps, VersionDeprecation{
+				Version: v,
+				Marker: deprecation.Marker{
+					Severity: deprecation.SeverityRetracted,
+					Reason:   withdrawn[v],
+				},
+				Signer: &lockfile.VerifiedSignature{Identity: "publisher", Mode: "keyed"},
+			})
+		}
+		return deps, nil
+	}
+	t.Cleanup(func() { pluginRepoWithdrawalLister = prev })
+	return asked
 }
 
 // TestPluginAddRun_Provider proves the provider path searches, resolves the
@@ -585,6 +625,279 @@ func TestResolveLatestPluginVersion_WithdrawalScreening(t *testing.T) {
 			if !strings.Contains(err.Error(), want) {
 				t.Errorf("halt message must name %q; got: %v", want, err)
 			}
+		}
+	})
+}
+
+// resolvePluginVersionFromFallback resolves with NO local index written, so the
+// index step reports absent and resolution takes the live fallback. The workspace is
+// online, so nothing suppresses the fallback: what is proven is the fallback's own
+// screening.
+func resolvePluginVersionFromFallback(t *testing.T, rw *workspaceconfig.ResolvedWorkspace, out io.Writer) (string, error) {
+	t.Helper()
+	return resolveLatestPluginVersion(context.Background(), rw, screenedIndexHost, screenedIndexRepo, out)
+}
+
+// TestResolveLatestPluginVersion_FallbackWithdrawalScreening is the discriminating
+// pair the live fallback needs — the path taken when the local index does not carry
+// the repository at all — plus the arms that fence it.
+//
+// The pair is what makes either half evidence. "The lower version resolves" passes
+// identically whether the exclusion fired or whether the higher version was never in
+// the tag set, so the SAME two-version tag set is resolved twice, once with the higher
+// version withdrawn and once without, and only the DIFFERENCE between the two
+// outcomes proves the screen ran.
+func TestResolveLatestPluginVersion_FallbackWithdrawalScreening(t *testing.T) {
+	// Not parallel: these arms mutate the process-global resolution seams.
+	t.Run("withdrawn_higher_version_is_excluded_and_announced", func(t *testing.T) {
+		rw := resolvedTestWorkspace(t)
+		withTagLister(t, []string{"1.0.0", "2.0.0"})
+		withWithdrawals(t, map[string]string{"2.0.0": "withdrawn in favour of a successor"})
+
+		var out bytes.Buffer
+		got, err := resolvePluginVersionFromFallback(t, rw, &out)
+		if err != nil {
+			t.Fatalf("a tag set with one unwithdrawn version must resolve; got: %v", err)
+		}
+		if got != "1.0.0" {
+			t.Fatalf("resolved %q; want 1.0.0 — the withdrawn 2.0.0 must not be pinned with no index to screen from", got)
+		}
+		// Read as rendered bytes, never as a format string.
+		notice := out.String()
+		t.Logf("rendered announcement:\n%s", notice)
+		for _, want := range []string{
+			screenedIndexHost + "/" + screenedIndexRepo + ":2.0.0 is withdrawn and was not selected",
+			"withdrawn in favour of a successor",
+			"resolved to 1.0.0 instead",
+		} {
+			if !strings.Contains(notice, want) {
+				t.Errorf("the announcement must contain %q; rendered bytes were:\n%s", want, notice)
+			}
+		}
+		// The provenance clause is part of the contract and it differs from the
+		// snapshot path's on purpose: these markers were read during this command, so
+		// there is no staleness to warn about and no refresh to point at. Pointing at
+		// the index-refresh command here would misdescribe where the evidence came from.
+		if !strings.Contains(notice, "read from the registry just now") {
+			t.Errorf("the announcement must name its live source; rendered bytes were:\n%s", notice)
+		}
+		if strings.Contains(notice, "registry update") {
+			t.Errorf("a live reading must not point at the snapshot-refresh command; rendered bytes were:\n%s", notice)
+		}
+	})
+
+	t.Run("the_same_tags_without_the_marker_pin_the_higher", func(t *testing.T) {
+		// The other half of the pair: identical tag set, no withdrawal.
+		rw := resolvedTestWorkspace(t)
+		withTagLister(t, []string{"1.0.0", "2.0.0"})
+
+		var out bytes.Buffer
+		got, err := resolvePluginVersionFromFallback(t, rw, &out)
+		if err != nil {
+			t.Fatalf("an unmarked tag set must resolve: %v", err)
+		}
+		if got != "2.0.0" {
+			t.Fatalf("resolved %q; want 2.0.0 for an unmarked tag set", got)
+		}
+		if out.Len() != 0 {
+			t.Errorf("an ordinary resolution must announce nothing; rendered bytes were:\n%s", out.String())
+		}
+	})
+
+	t.Run("a_soft_severity_does_not_change_what_is_selected", func(t *testing.T) {
+		// The sharpest form of the pair: a marker is present, signed and verified for
+		// this very repository, and only the SEVERITY differs from the excluding arm.
+		rw := resolvedTestWorkspace(t)
+		withTagLister(t, []string{"1.0.0", "2.0.0"})
+		prev := pluginRepoWithdrawalLister
+		pluginRepoWithdrawalLister = func(_ context.Context, _ workspaceconfig.Config, _, _ string, _ []string, _ io.Writer) ([]VersionDeprecation, error) {
+			return []VersionDeprecation{{
+				Version: "2.0.0",
+				Marker:  deprecation.Marker{Severity: deprecation.SeverityWarning, Reason: "superseded"},
+				Signer:  &lockfile.VerifiedSignature{Identity: "publisher", Mode: "keyed"},
+			}}, nil
+		}
+		t.Cleanup(func() { pluginRepoWithdrawalLister = prev })
+
+		var out bytes.Buffer
+		got, err := resolvePluginVersionFromFallback(t, rw, &out)
+		if err != nil {
+			t.Fatalf("a soft marker must not affect resolution: %v", err)
+		}
+		if got != "2.0.0" {
+			t.Fatalf("resolved %q; want 2.0.0 — a soft severity warns and does not change selection", got)
+		}
+	})
+
+	t.Run("an_unsigned_marker_does_not_screen", func(t *testing.T) {
+		// A withdrawal nobody signed carries no trust basis. Letting it change what is
+		// resolved would make an unauthenticated registry-side claim load-bearing.
+		rw := resolvedTestWorkspace(t)
+		withTagLister(t, []string{"1.0.0", "2.0.0"})
+		prev := pluginRepoWithdrawalLister
+		pluginRepoWithdrawalLister = func(_ context.Context, _ workspaceconfig.Config, _, _ string, _ []string, _ io.Writer) ([]VersionDeprecation, error) {
+			return []VersionDeprecation{{
+				Version: "2.0.0",
+				Marker:  deprecation.Marker{Severity: deprecation.SeverityRetracted, Reason: "withdrawn"},
+			}}, nil
+		}
+		t.Cleanup(func() { pluginRepoWithdrawalLister = prev })
+
+		got, err := resolvePluginVersionFromFallback(t, rw, &bytes.Buffer{})
+		if err != nil {
+			t.Fatalf("an unsigned record must not halt resolution: %v", err)
+		}
+		if got != "2.0.0" {
+			t.Fatalf("resolved %q; want 2.0.0 — an unverified record must not change what is pinned", got)
+		}
+	})
+
+	t.Run("every_version_withdrawn_halts_loudly_and_not_as_not_found", func(t *testing.T) {
+		rw := resolvedTestWorkspace(t)
+		withTagLister(t, []string{"1.0.0", "2.0.0"})
+		withWithdrawals(t, map[string]string{"1.0.0": "withdrawn", "2.0.0": "also withdrawn"})
+
+		_, err := resolvePluginVersionFromFallback(t, rw, &bytes.Buffer{})
+		if !errors.Is(err, catalog.ErrAllVersionsRetracted) {
+			t.Fatalf("a fully-withdrawn repository must halt with ErrAllVersionsRetracted; got: %v", err)
+		}
+		if errors.Is(err, oci.ErrFetchNotFound) {
+			t.Fatalf("a fully-withdrawn repository must NOT report as not-found; got: %v", err)
+		}
+		for _, want := range []string{"1.0.0", "2.0.0", "withdrawn", "also withdrawn"} {
+			if !strings.Contains(err.Error(), want) {
+				t.Errorf("halt message must name %q; got: %v", want, err)
+			}
+		}
+	})
+
+	t.Run("no_writer_leaves_the_selection_unscreened_and_reads_no_marker", func(t *testing.T) {
+		// With nowhere to announce a substitution, selection is left unscreened rather
+		// than excluding quietly — and the marker reads are skipped along with it, so a
+		// screen that would not be used costs nothing.
+		rw := resolvedTestWorkspace(t)
+		withTagLister(t, []string{"1.0.0", "2.0.0"})
+		asked := withWithdrawals(t, map[string]string{"2.0.0": "withdrawn"})
+
+		got, err := resolveLatestPluginVersion(context.Background(), rw, screenedIndexHost, screenedIndexRepo, nil)
+		if err != nil {
+			t.Fatalf("resolution with no writer must succeed: %v", err)
+		}
+		if got != "2.0.0" {
+			t.Fatalf("resolved %q; want 2.0.0 — with nowhere to announce, selection stays unscreened", got)
+		}
+		if len(*asked) != 0 {
+			t.Errorf("no writer must cost no marker read; the seam was asked about %v", *asked)
+		}
+	})
+
+	t.Run("no_conformant_tag_resolves_empty_and_reads_no_marker", func(t *testing.T) {
+		// The caller names the absent publication in its own words, so this reports the
+		// empty version rather than an error. There is also no version the discovery
+		// step could select, so there is nothing to screen and no round trip to spend.
+		rw := resolvedTestWorkspace(t)
+		withTagLister(t, []string{"latest", "v1.2.3", "1.2.3.4"})
+		asked := withWithdrawals(t, map[string]string{"1.0.0": "withdrawn"})
+
+		got, err := resolvePluginVersionFromFallback(t, rw, &bytes.Buffer{})
+		if err != nil {
+			t.Fatalf("a non-conformant tag set must report the empty version, not an error; got: %v", err)
+		}
+		if got != "" {
+			t.Fatalf("resolved %q; want the empty version for a tag set with no strict-SemVer tag", got)
+		}
+		if len(*asked) != 0 {
+			t.Errorf("a tag set with nothing selectable must cost no marker read; the seam was asked about %v", *asked)
+		}
+	})
+
+	t.Run("the_marker_read_covers_every_conforming_version", func(t *testing.T) {
+		// The fallback's network cost is part of its contract, so it is held by the
+		// fixture rather than left to a reading of the code: one marker read per
+		// strict-SemVer published version, pre-releases included, which is exactly the
+		// set the local index build records markers for. Holding the SET also pins the
+		// correctness argument — screening over every version, rather than stopping at
+		// the first clean one, is what makes the outcome independent of fetch order.
+		rw := resolvedTestWorkspace(t)
+		tags := []string{"latest", "2.0.0-rc.1", "1.0.0", "2.0.0", "0.9.0", "1.2.3.4"}
+		withTagLister(t, tags)
+		asked := withWithdrawals(t, nil)
+
+		if _, err := resolvePluginVersionFromFallback(t, rw, &bytes.Buffer{}); err != nil {
+			t.Fatalf("resolution over a hostile tag set must succeed: %v", err)
+		}
+		want := oci.SortedSemverTags(tags)
+		if strings.Join(*asked, ",") != strings.Join(want, ",") {
+			t.Errorf("markers were read for %v; want exactly the conforming versions %v", *asked, want)
+		}
+	})
+
+	t.Run("an_unreadable_marker_read_degrades_out_loud_rather_than_halting", func(t *testing.T) {
+		// A transient registry fault must not fail an attach that would otherwise
+		// succeed, so resolution proceeds unscreened. Degrading can only fail to
+		// exclude, never exclude on evidence that did not verify — and it says so, which
+		// is the difference between a degraded result and a wrong one.
+		rw := resolvedTestWorkspace(t)
+		withTagLister(t, []string{"1.0.0", "2.0.0"})
+		prev := pluginRepoWithdrawalLister
+		pluginRepoWithdrawalLister = func(_ context.Context, _ workspaceconfig.Config, _, _ string, _ []string, _ io.Writer) ([]VersionDeprecation, error) {
+			return nil, errors.New("registry unreachable")
+		}
+		t.Cleanup(func() { pluginRepoWithdrawalLister = prev })
+
+		var out bytes.Buffer
+		got, err := resolvePluginVersionFromFallback(t, rw, &out)
+		if err != nil {
+			t.Fatalf("an unreadable marker read must not halt resolution: %v", err)
+		}
+		if got != "2.0.0" {
+			t.Fatalf("resolved %q; want 2.0.0 — a failed marker read leaves selection unscreened", got)
+		}
+		notice := out.String()
+		t.Logf("rendered degrade notice:\n%s", notice)
+		for _, want := range []string{
+			"withdrawal markers could not be read",
+			"registry unreachable",
+			"were not checked for withdrawal",
+		} {
+			if !strings.Contains(notice, want) {
+				t.Errorf("the degrade must be stated and contain %q; rendered bytes were:\n%s", want, notice)
+			}
+		}
+	})
+
+	t.Run("an_offline_workspace_reads_neither_seam", func(t *testing.T) {
+		// The offline refusal is unchanged and must stay ahead of both network reads:
+		// the withdrawal read is a second way to network, so it is fenced here too.
+		dir := t.TempDir()
+		cfgPath := filepath.Join(dir, workspaceconfig.ConfigFilename)
+		if err := os.WriteFile(cfgPath, []byte("workspace: {}\ndefault_registry: hub.aggrega.ai\noffline: true\n"), 0o644); err != nil {
+			t.Fatalf("seed config: %v", err)
+		}
+		rw, err := workspaceconfig.Resolve(dir, "")
+		if err != nil {
+			t.Fatalf("resolve workspace: %v", err)
+		}
+		prevTags := pluginRepoTagLister
+		pluginRepoTagLister = func(context.Context, workspaceconfig.Config, string, string) ([]string, error) {
+			t.Fatalf("offline discovery must not network for a live tag list")
+			return nil, nil
+		}
+		t.Cleanup(func() { pluginRepoTagLister = prevTags })
+		prevMarkers := pluginRepoWithdrawalLister
+		pluginRepoWithdrawalLister = func(_ context.Context, _ workspaceconfig.Config, _, _ string, _ []string, _ io.Writer) ([]VersionDeprecation, error) {
+			t.Fatalf("offline discovery must not network for withdrawal markers")
+			return nil, nil
+		}
+		t.Cleanup(func() { pluginRepoWithdrawalLister = prevMarkers })
+
+		_, err = resolveLatestPluginVersion(context.Background(), rw, screenedIndexHost, screenedIndexRepo, &bytes.Buffer{})
+		// The wording is the only guidance an offline workspace with no snapshot gets,
+		// so it is asserted verbatim rather than by keyword.
+		const wantOffline = "offline workspace has no local index entry for " + screenedIndexRepo + "; " +
+			"run 'aggrega registry update' to build the discovery index"
+		if err == nil || err.Error() != wantOffline {
+			t.Fatalf("offline refusal = %v; want %q", err, wantOffline)
 		}
 	})
 }

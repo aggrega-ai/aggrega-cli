@@ -433,23 +433,24 @@ func deprecationMarkerPolicy(policy workspaceconfig.RegistryConfig, origSigner *
 	return markerPolicy
 }
 
-// retractionScreen answers the registry-side discovery step from the local
-// registry index: which published versions of an artifact carry a
+// retractionScreen answers the registry-side discovery step from withdrawal facts
+// gathered before selection began: which published versions of an artifact carry a
 // signature-verified marker at the withdrawal severity, and therefore must not be
 // selected by a reference that did not name them.
 //
-// It is offline by construction — the index is a snapshot a registry update built,
-// and reading it costs no round trip — which is the whole reason the exclusion can
-// happen at selection time at all. A live per-candidate marker lookup would need
-// each candidate's manifest digest plus a referrers listing, so it would scale with
-// the number of published versions, and it would put a network dependency inside a
-// selection primitive every pull entrypoint shares.
+// Its facts are always already in hand — it performs no lookup of its own, which is
+// the whole reason the exclusion can happen at selection time at all. A screen that
+// reached a registry from inside the partition would put a network dependency inside
+// a selection primitive every pull entrypoint shares, and would make the cost scale
+// with the number of published versions at every one of those call sites.
 //
-// The cost of reading a snapshot is staleness, and it is not smoothed over: a
-// version withdrawn since the snapshot was taken is not seen, so every notice this
-// writes carries the moment the snapshot was taken and points at the command that
-// refreshes it. The screen protects against selecting a version known to be
-// withdrawn; it cannot promise a version is not withdrawn now.
+// Two sources supply those facts, and they differ only in how current they are, so
+// each screen carries a provenance clause naming its own source. The local index is
+// a snapshot, and its staleness is not smoothed over: a version withdrawn since the
+// snapshot was taken is not seen, so the clause states when the snapshot was taken
+// and points at the command that refreshes it. A per-repository reading taken during
+// the command has no such gap and says so. Either way the screen protects against
+// selecting a version known to be withdrawn; only the second can speak to now.
 //
 // Only a signature-verified record screens a version. An unverified record carries
 // no trust basis, and letting one change what the compiler resolves would make an
@@ -458,11 +459,34 @@ type retractionScreen struct {
 	// withdrawnByURI maps an artifact's index URI to its withdrawn versions and
 	// the reason recorded against each.
 	withdrawnByURI map[string]map[string]string
-	// observedAt is when the index snapshot was taken; hasObservedAt distinguishes
-	// an absent stamp from one that happens to parse to the zero time.
-	observedAt    time.Time
-	hasObservedAt bool
-	out           io.Writer
+	// provenance is the parenthesised clause every notice ends in, naming where this
+	// screen's facts came from and how current they are. It is rendered at
+	// construction rather than derived per notice, so one screen cannot describe its
+	// own source two ways.
+	provenance string
+	out        io.Writer
+}
+
+// withdrawnVersions reduces one artifact's recorded deprecations to the versions a
+// screen must exclude, mapped to the reason recorded against each.
+//
+// It is the one home of the honored-withdrawal rule, so every screen — whichever
+// source supplied its facts — excludes on exactly the same grounds. A softer
+// severity warns without changing what is selected, and an unverified record is not
+// a trust decision; both are skipped, and the second is why an unsigned record can
+// only ever fail to exclude rather than exclude on unauthenticated evidence.
+func withdrawnVersions(deps []VersionDeprecation) map[string]string {
+	var withdrawn map[string]string
+	for _, d := range deps {
+		if d.Signer == nil || d.Marker.Severity != deprecation.SeverityRetracted {
+			continue
+		}
+		if withdrawn == nil {
+			withdrawn = map[string]string{}
+		}
+		withdrawn[d.Version] = d.Marker.Reason
+	}
+	return withdrawn
 }
 
 // newRetractionScreen builds the discovery-step withdrawal screen for a registry
@@ -483,16 +507,8 @@ func newRetractionScreen(rw *workspaceconfig.ResolvedWorkspace, host string, out
 	}
 	withdrawnByURI := map[string]map[string]string{}
 	for _, rec := range loaded.Records {
-		for _, d := range rec.Deprecations {
-			// A softer severity warns without changing what is selected, and an
-			// unverified record is not a trust decision. Both are skipped here.
-			if d.Signer == nil || d.Marker.Severity != deprecation.SeverityRetracted {
-				continue
-			}
-			if withdrawnByURI[rec.URI] == nil {
-				withdrawnByURI[rec.URI] = map[string]string{}
-			}
-			withdrawnByURI[rec.URI][d.Version] = d.Marker.Reason
+		if withdrawn := withdrawnVersions(rec.Deprecations); withdrawn != nil {
+			withdrawnByURI[rec.URI] = withdrawn
 		}
 	}
 	if len(withdrawnByURI) == 0 {
@@ -500,8 +516,51 @@ func newRetractionScreen(rw *workspaceconfig.ResolvedWorkspace, host string, out
 	}
 	return &retractionScreen{
 		withdrawnByURI: withdrawnByURI,
-		observedAt:     loaded.LastUpdated,
-		hasObservedAt:  loaded.HasTimestamp,
+		provenance:     indexProvenance(loaded.LastUpdated, loaded.HasTimestamp),
+		out:            out,
+	}
+}
+
+// indexProvenance renders the provenance clause for facts read from the local
+// registry index: when the snapshot was taken, so a reader can tell a fresh record
+// from a stale one, plus the command that refreshes it. It never claims currency —
+// the record says what the registry reported when the index was last built, not what
+// it reports now — and it distinguishes an index carrying no build time from one
+// whose build time happens to be the zero time.
+func indexProvenance(observedAt time.Time, hasObservedAt bool) string {
+	if !hasObservedAt {
+		return " (recorded in the local registry index, which carries no build time; run `aggrega registry update` to refresh it)"
+	}
+	return fmt.Sprintf(" (recorded in the local registry index as of %s; run `aggrega registry update` to refresh it)",
+		observedAt.UTC().Format(time.RFC3339))
+}
+
+// newLiveRetractionScreen builds the discovery-step withdrawal screen for ONE
+// artifact from withdrawal facts read from the registry during this command, or
+// returns nil when no screen can be formed: no writer to announce a skip on, or no
+// verified withdrawal among the facts supplied.
+//
+// It is the counterpart to the index-backed screen for a reference the local
+// snapshot does not carry. The facts arrive already gathered and already verified,
+// so the screen itself still reaches no registry: the round trips were spent by the
+// caller before selection began, which is what keeps the never-fetch contract every
+// selection call site relies on.
+//
+// Its provenance clause carries no refresh hint, and that asymmetry is the point.
+// Facts read during the command have no staleness to warn about, so pointing at the
+// command that rebuilds the snapshot would misdescribe where this screen's evidence
+// came from.
+func newLiveRetractionScreen(reference string, deps []VersionDeprecation, out io.Writer) catalog.RetractionScreen {
+	if out == nil {
+		return nil
+	}
+	withdrawn := withdrawnVersions(deps)
+	if withdrawn == nil {
+		return nil
+	}
+	return &retractionScreen{
+		withdrawnByURI: map[string]map[string]string{indexURIForReference(reference): withdrawn},
+		provenance:     " (read from the registry just now)",
 		out:            out,
 	}
 }
@@ -584,16 +643,12 @@ func (s *retractionScreen) ReportPinned(reference, version string) {
 		reference, version, reason, s.asOfSuffix())
 }
 
-// asOfSuffix renders when the withdrawal record was observed, so a reader can tell
-// a fresh record from a stale one, plus the command that refreshes it. It never
-// claims currency: the record says what the registry reported when the index was
-// last built, not what it reports now.
+// asOfSuffix renders where this screen's withdrawal facts came from and how current
+// they are, so a reader can tell a fresh fact from a stale one. It is rendered once
+// at construction: every notice a screen writes therefore names the same source,
+// which is what stops one screen describing its own evidence two ways.
 func (s *retractionScreen) asOfSuffix() string {
-	if !s.hasObservedAt {
-		return " (recorded in the local registry index, which carries no build time; run `aggrega registry update` to refresh it)"
-	}
-	return fmt.Sprintf(" (recorded in the local registry index as of %s; run `aggrega registry update` to refresh it)",
-		s.observedAt.UTC().Format(time.RFC3339))
+	return s.provenance
 }
 
 // indexURIForReference maps a bound OCI repository reference (`<host>/<path>`, the

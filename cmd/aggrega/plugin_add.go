@@ -346,12 +346,77 @@ var pluginRepoTagLister = func(ctx context.Context, cfg workspaceconfig.Config, 
 	return oci.ListTags(ctx, repo)
 }
 
+// pluginRepoWithdrawalLister reads the deprecation markers published against a
+// plugin repository's versions and returns the ones whose own signature verifies,
+// so a reference the local index does not carry can still be screened against a
+// signed withdrawal rather than pinning one blind.
+//
+// It is a package-level seam so version resolution runs against a fake in tests;
+// production reads through the shared repository client, so the loopback plain-HTTP
+// and credential wiring match every other registry read. It is separate from the
+// tag-listing seam above rather than folded into it because the two are wanted
+// independently: the offline path takes neither, and a caller with nowhere to
+// announce a substitution takes the tags and skips the markers entirely.
+//
+// The marker read, its trust policy and its verification are the ones the local
+// index build performs, reached through that same single home — so a version's
+// withdrawal is judged identically whether the index recorded it earlier or this
+// command reads it now, and the two cannot drift apart.
+var pluginRepoWithdrawalLister = func(ctx context.Context, cfg workspaceconfig.Config, host, repoPath string, versions []string, out io.Writer) ([]VersionDeprecation, error) {
+	httpClient, err := workspaceEgressClient(cfg)
+	if err != nil {
+		return nil, err
+	}
+	repo, err := oci.NewRemoteRepository(host+"/"+repoPath, httpClient)
+	if err != nil {
+		return nil, err
+	}
+	policy, _ := cfg.RegistryTrustPolicy(host)
+	return collectVersionDeprecations(ctx, cfg, policy, repo, repoPath, versions, out), nil
+}
+
+// livePluginRetractionScreen builds the withdrawal screen for a plugin repository
+// the local index does not carry, from markers read during this command. It returns
+// nil — leaving selection unscreened — whenever no screen can be formed, and each
+// of those cases is a deliberate posture rather than a fallthrough:
+//
+// With no writer there is nowhere to announce a substitution, and excluding a
+// version nobody can be told about is the silent substitution this exists to
+// prevent; the marker reads are skipped along with it, so nothing is paid for a
+// screen that would not be used. With no strict-SemVer tag there is no version the
+// discovery step could select, so there is nothing to screen. And when the marker
+// read itself fails, selection proceeds unscreened rather than halting: the same
+// best-effort posture the index build takes on the same failure, which keeps a
+// transient registry fault from failing an attach that would otherwise succeed.
+// Degrading can only ever fail to exclude a version, never exclude one on evidence
+// that did not verify.
+//
+// The failure is reported rather than swallowed. A caller told that markers could
+// not be read knows the selection was not screened, which is the difference between
+// a degraded result and a wrong one.
+func livePluginRetractionScreen(ctx context.Context, cfg workspaceconfig.Config, host, repoPath, reference string, tags []string, out io.Writer) catalog.RetractionScreen {
+	if out == nil {
+		return nil
+	}
+	versions := oci.SortedSemverTags(tags)
+	if len(versions) == 0 {
+		return nil
+	}
+	deps, err := pluginRepoWithdrawalLister(ctx, cfg, host, repoPath, versions, out)
+	if err != nil {
+		fmt.Fprintf(out, "  deprecation: %s: withdrawal markers could not be read (%v); published versions were not checked for withdrawal\n",
+			repoPath, err)
+		return nil
+	}
+	return newLiveRetractionScreen(reference, deps, out)
+}
+
 // resolveLatestPluginVersion returns the highest strict-SemVer version published
 // for the plugin repository that has not been withdrawn, or the empty string when
 // no conforming version is found. Discovery reads the local registry index by
 // default — the snapshot a `registry update` builds — so version resolution costs
 // no network round-trip on the common path. Pre-release versions are excluded, the
-// same rule the publishing and deprecation paths apply. A version the snapshot
+// same rule the publishing and deprecation paths apply. A version a verified marker
 // records as withdrawn is skipped and the substitution announced on out; out is
 // also where an announcement would go for a screened selection, so a nil writer
 // leaves selection unscreened rather than skipping a version silently.
@@ -359,9 +424,16 @@ var pluginRepoTagLister = func(ctx context.Context, cfg workspaceconfig.Config, 
 // When the local index does not carry the repository — never built, or the
 // repository is absent from the snapshot — resolution falls back to a live tag
 // list, except in an offline workspace, where discovery must not network: it
-// fails loudly, pointing at `registry update`. That fallback holds no withdrawal
-// records, so it selects over every published version. The actual plugin fetch/add
-// is always live regardless; only this version discovery reads the snapshot.
+// fails loudly, pointing at `registry update`. That fallback screens too: having
+// no recorded withdrawal to read, it reads the repository's markers from the
+// registry before selecting, so a withdrawn version is skipped there exactly as it
+// is on the snapshot path. The actual plugin fetch/add is always live regardless;
+// only this version discovery prefers the snapshot.
+//
+// A tag set with no strict-SemVer version resolves to the empty string rather than
+// an error, which is what lets the caller name the missing publication in its own
+// words. A repository whose every selectable version is withdrawn is the different
+// case and does halt: nothing is left to attach, and the withdrawal is the reason.
 func resolveLatestPluginVersion(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, host, repoPath string, out io.Writer) (string, error) {
 	if version, ok, err := pluginVersionFromIndex(rw, host, repoPath, out); err != nil {
 		return "", err
@@ -376,7 +448,22 @@ func resolveLatestPluginVersion(ctx context.Context, rw *workspaceconfig.Resolve
 	if err != nil {
 		return "", fmt.Errorf("list versions for %s: %w", repoPath, err)
 	}
-	return oci.SelectLatestVersion(tags, false /* includePreRelease */), nil
+	// The screen and the selection key off this one reference, and the screen is
+	// populated before selection runs so selection itself still reaches no registry.
+	reference := host + "/" + repoPath
+	screen := livePluginRetractionScreen(ctx, cfg, host, repoPath, reference, tags, out)
+	version, err := catalog.SelectScreenedVersion(screen, reference, tags)
+	if err != nil {
+		// No conforming tag is the caller's empty-version case, not a failure: it
+		// reports the absent publication naming this repository. Every other halt —
+		// a fully-withdrawn repository above all — carries a reason of its own and
+		// must not be flattened into "no version published".
+		if errors.Is(err, oci.ErrFetchNotFound) {
+			return "", nil
+		}
+		return "", err
+	}
+	return version, nil
 }
 
 // pluginVersionFromIndex resolves a plugin repository's version from the host's
