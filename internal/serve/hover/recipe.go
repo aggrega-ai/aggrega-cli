@@ -14,7 +14,6 @@ import "fmt"
 //   - **Implements**: `<component URI>`
 //   - **Capability**: `<render-engine capability>`
 //   - **Pipeline**: N steps
-//   - **Deprecated**: yes — when set
 func Recipe(e Entity) string {
 	name := scalarValueAtPath(e.Doc, "metadata", "name")
 	version := scalarValueAtPath(e.Doc, "metadata", "version")
@@ -22,7 +21,6 @@ func Recipe(e Entity) string {
 	implements := scalarValueAtPath(e.Doc, "spec", "implements")
 	capability := scalarValueAtPath(e.Doc, "spec", "capability")
 	pipelineSteps := sequenceLenAtPath(e.Doc, "spec", "pipeline")
-	deprecated := boolValueAtPath(e.Doc, "metadata", "deprecated")
 
 	body := []string{}
 	if implements != "" {
@@ -33,9 +31,6 @@ func Recipe(e Entity) string {
 	}
 	if pipelineSteps > 0 {
 		body = append(body, fmt.Sprintf("**Pipeline**: %d steps", pipelineSteps))
-	}
-	if dep := Deprecated(deprecated); dep != "" {
-		body = append(body, dep)
 	}
 
 	return Assemble(

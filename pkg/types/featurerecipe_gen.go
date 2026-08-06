@@ -33,8 +33,6 @@ type FeatureRecipeMetadata struct {
 	Home string `json:"home,omitempty" yaml:"home,omitempty"`
 	// Keywords A list of descriptive keywords for UI discoverability.
 	Keywords []string `json:"keywords,omitempty" yaml:"keywords,omitempty"`
-	// Deprecated Indicates whether this entity is deprecated and should no longer be used.
-	Deprecated bool `json:"deprecated,omitempty" yaml:"deprecated,omitempty"`
 }
 
 // FeatureRecipeSpec The render-engine capability binding, mapping, pipeline, and inject mapping for a FeatureRecipe. Carries the same three input kinds as a Recipe (sourced, synthesized, artifacts) plus the FeatureRecipe-only injectMapping; a pure-wiring FeatureRecipe declaring only capability and implements is valid and renders nothing.

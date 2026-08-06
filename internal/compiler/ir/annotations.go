@@ -57,9 +57,8 @@ func buildAnnotationBuckets(
 }
 
 // buildCatalogMetadata extracts the enterprise-metadata suite (license,
-// repository, home, keywords, deprecated, maintainers) from a catalog
-// Component's metadata into a *types.CatalogMetadata for embedding in the
-// IRNode.
+// repository, home, keywords, maintainers) from a catalog Component's metadata
+// into a *types.CatalogMetadata for embedding in the IRNode.
 //
 // The conditional-return pattern at the bottom of the function — return
 // nil when every field is empty — is deliberate: the caller writes
@@ -83,14 +82,13 @@ func buildCatalogMetadata(compType string, catalogLookup resolver.CatalogLookup)
 		Repository: catComp.Metadata.Repository,
 		Home:       catComp.Metadata.Home,
 		Keywords:   catComp.Metadata.Keywords,
-		Deprecated: catComp.Metadata.Deprecated,
 	}
 	if len(catComp.Metadata.Maintainers) > 0 {
 		meta.Maintainers = catComp.Metadata.Maintainers
 	}
 	// Only return if there's actual content
 	if meta.License == "" && meta.Repository == "" && meta.Home == "" &&
-		len(meta.Keywords) == 0 && !meta.Deprecated && len(meta.Maintainers) == 0 {
+		len(meta.Keywords) == 0 && len(meta.Maintainers) == 0 {
 		return nil
 	}
 	return meta

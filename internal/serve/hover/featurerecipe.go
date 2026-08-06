@@ -14,7 +14,6 @@ func FeatureRecipe(e Entity) string {
 	implements := scalarValueAtPath(e.Doc, "spec", "implements")
 	capability := scalarValueAtPath(e.Doc, "spec", "capability")
 	pipelineSteps := sequenceLenAtPath(e.Doc, "spec", "pipeline")
-	deprecated := boolValueAtPath(e.Doc, "metadata", "deprecated")
 
 	body := []string{}
 	if implements != "" {
@@ -25,9 +24,6 @@ func FeatureRecipe(e Entity) string {
 	}
 	if pipelineSteps > 0 {
 		body = append(body, fmt.Sprintf("**Pipeline**: %d steps", pipelineSteps))
-	}
-	if dep := Deprecated(deprecated); dep != "" {
-		body = append(body, dep)
 	}
 
 	return Assemble(

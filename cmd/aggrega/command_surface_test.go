@@ -13,17 +13,32 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/clisurface"
 )
 
-// reachableCommandPaths collects every command path reachable from root using a
+// reachableCommands collects every command reachable from root using a
 // breadth-first walk written independently of the catalog's own depth-first
 // projection, so a bug in one cannot hide in the other.
-func reachableCommandPaths(root *cobra.Command) []string {
-	var paths []string
+//
+// This is the one walk of the tree the tests in this package share. A second copy
+// would agree with it today and that agreement is precisely what would hide the
+// divergence later, so a test needing the tree asks here and projects whatever it
+// needs from the commands returned.
+func reachableCommands(root *cobra.Command) []*cobra.Command {
+	var all []*cobra.Command
 	queue := []*cobra.Command{root}
 	for len(queue) > 0 {
 		cmd := queue[0]
 		queue = queue[1:]
-		paths = append(paths, cmd.CommandPath())
+		all = append(all, cmd)
 		queue = append(queue, cmd.Commands()...)
+	}
+	return all
+}
+
+// reachableCommandPaths projects the command paths out of the shared walk.
+func reachableCommandPaths(root *cobra.Command) []string {
+	cmds := reachableCommands(root)
+	paths := make([]string, 0, len(cmds))
+	for _, cmd := range cmds {
+		paths = append(paths, cmd.CommandPath())
 	}
 	return paths
 }

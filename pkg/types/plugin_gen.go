@@ -35,8 +35,6 @@ type PluginMetadata struct {
 	Home string `json:"home,omitempty" yaml:"home,omitempty"`
 	// Keywords A list of descriptive keywords for UI discoverability.
 	Keywords []string `json:"keywords,omitempty" yaml:"keywords,omitempty"`
-	// Deprecated Indicates whether this entity is deprecated and should no longer be used.
-	Deprecated bool `json:"deprecated,omitempty" yaml:"deprecated,omitempty"`
 }
 
 // PluginSpec The ABI version the plugin targets, an optional signature pointer, and an optional runtime block. The plugin's `.wasm` location is derived from the plugin's identity — its `metadata.pluginType` (the socket) plus its bare `metadata.name` — and the configured registry; it is not carried in the spec.

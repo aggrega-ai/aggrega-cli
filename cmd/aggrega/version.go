@@ -72,6 +72,7 @@ version form catalog entities use. Tagged release builds report the
 release version; source builds report the literal "(devel)".
 Operators who see "(devel)" know they are running an unreleased
 build.`,
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			format, err := parseFormat("version", versionOutput, "text", "json")
 			if err != nil {

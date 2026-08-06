@@ -152,16 +152,24 @@ func Execute() {
 }
 
 // executeRoot runs root and maps its outcome to a process exit code without
-// exiting itself, so the exit boundary is testable. A nil error is exit 0. An
-// installed plugin that ran and exited non-zero surfaces as an exitCodeError,
-// whose code is propagated verbatim with no formatted diagnostic — a non-zero
-// command result is the plugin's status, not a host error. Any other error is the
-// single formatted diagnostic to stderr and exit 1; when it is cobra's
-// unknown-command error for a discoverable plugin name, an install hint is
-// appended.
+// exiting itself, so the exit boundary is testable. An installed plugin that ran
+// and exited non-zero surfaces as an exitCodeError, whose code is propagated
+// verbatim with no formatted diagnostic — a non-zero command result is the
+// plugin's status, not a host error. Any other error is the single formatted
+// diagnostic to stderr and exit 1; when it is cobra's unknown-command error for a
+// discoverable plugin name, an install hint is appended.
+//
+// A reported success is checked once more before it becomes exit 0, which is why
+// this uses ExecuteC rather than Execute: only ExecuteC hands back the command the
+// arguments actually resolved to, and that command is the only place the leftover
+// positionals can still be read. See strayPositionalOnParentCommand for the case
+// this catches and why the error alone cannot express it.
 func executeRoot(root *cobra.Command) int {
-	err := root.Execute()
+	cmd, err := root.ExecuteC()
 	if err == nil {
+		if strayPositionalOnParentCommand(cmd) {
+			return 1
+		}
 		return 0
 	}
 	var ece exitCodeError
@@ -170,4 +178,35 @@ func executeRoot(root *cobra.Command) int {
 	}
 	fmt.Fprintln(os.Stderr, unknownCommandSuggestion(formatCompilerError(err), err))
 	return 1
+}
+
+// strayPositionalOnParentCommand reports whether cmd is a command that exists
+// only to group its subcommands, yet was handed positional arguments it has no
+// use for.
+//
+// Such a command does no work of its own: "aggrega cache" is there to route to
+// "cache status", "cache prune" and the rest. Cobra answers an invocation of one
+// by printing its help, and it signals that outcome exactly as it signals an
+// explicit --help — a nil error. So a mistyped subcommand name arrives here
+// indistinguishable from a help request that succeeded, and "aggrega cache prunee"
+// prints help and reports success. The same typo written directly under the root
+// is rejected, because the root alone gets cobra's unknown-subcommand check.
+// Re-reading the resolved command's leftover positionals restores the missing
+// half: the help still prints, byte for byte as before, but the invocation now
+// reports failure.
+//
+// Each of the three conditions carries weight. A command with a run body consumes
+// its own positional arguments and polices them with its own argument validator,
+// so it is none of this check's business. A command with no subcommands has no
+// subcommand name to mistype. And an invocation with no positional arguments left
+// over is the ordinary, correct "aggrega cache", which must keep succeeding.
+//
+// The leftover positionals are readable here because cobra parses flags before it
+// decides the command cannot run, so the resolved command's flag set already holds
+// whatever the flags did not claim.
+func strayPositionalOnParentCommand(cmd *cobra.Command) bool {
+	if cmd == nil || cmd.Runnable() || !cmd.HasSubCommands() {
+		return false
+	}
+	return len(cmd.Flags().Args()) > 0
 }

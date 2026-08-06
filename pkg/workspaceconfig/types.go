@@ -473,22 +473,19 @@ func (c Config) ResolvedArtifactCacheDir() string {
 
 // BuildConfig groups build-time strictness dials and authoring
 // hints. AuthoringRelease names a Release YAML the LSP treats as
-// the "current Release" for inline diagnostics. HaltOnDeprecated
-// and HaltOnDeprecatedSeverity govern only whether deprecated-entity
-// consumption HALTS the build; they never govern whether it is
-// reported, which is unconditional. HaltOnDeprecated halts on an
-// entity marked deprecated by its author (metadata.deprecated:
-// true); HaltOnDeprecatedSeverity is the threshold (in the ordered
-// set warning < error < retracted) at or above which a retroactive
-// deprecation marker recorded in the lockfile halts the build.
-// HaltOnDeprecatedSeverity is UNSET by default, and an unset
-// threshold halts on nothing: a recorded marker is registry state
-// applied after the pin was taken, so a build that succeeded once
-// keeps succeeding, loudly advised. YAMLIndent sets the indentation
-// width of every rendered YAML artifact (default 2, range [2,9]).
+// the "current Release" for inline diagnostics.
+// HaltOnDeprecatedSeverity governs only whether deprecated-entity
+// consumption HALTS the build; it never governs whether it is
+// reported, which is unconditional. It is the threshold (in the
+// ordered set warning < error < retracted) at or above which a
+// retroactive deprecation marker recorded in the lockfile halts the
+// build, and it is UNSET by default: an unset threshold halts on
+// nothing, because a recorded marker is registry state applied after
+// the pin was taken, so a build that succeeded once keeps
+// succeeding, loudly advised. YAMLIndent sets the indentation width
+// of every rendered YAML artifact (default 2, range [2,9]).
 type BuildConfig struct {
 	AuthoringRelease         string `yaml:"authoring_release"`
-	HaltOnDeprecated         bool   `yaml:"halt_on_deprecated"`
 	HaltOnDeprecatedSeverity string `yaml:"halt_on_deprecated_severity"`
 	YAMLIndent               int    `yaml:"yaml_indent"`
 }

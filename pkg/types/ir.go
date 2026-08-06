@@ -226,7 +226,6 @@ type CatalogMetadata struct {
 	Repository  string       `json:"repository,omitempty"`
 	Home        string       `json:"home,omitempty"`
 	Keywords    []string     `json:"keywords,omitempty"`
-	Deprecated  bool         `json:"deprecated,omitempty"`
 }
 
 // IREdge is a directed logical relationship between IR nodes.

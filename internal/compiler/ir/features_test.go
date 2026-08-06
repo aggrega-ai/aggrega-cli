@@ -1591,9 +1591,9 @@ func TestBuildCatalogMetadata_LookupMissReturnsNil(t *testing.T) {
 
 // TestBuildCatalogMetadata_EmptyContentReturnsNil pins the all-fields-
 // empty branch: a Component whose metadata carries no license, no
-// repo, no home, no keywords, not-deprecated, no maintainers collapses
-// to nil so the IR's CatalogMetadata pointer stays unset and the
-// `omitempty` JSON tag suppresses the field entirely.
+// repo, no home, no keywords, no maintainers collapses to nil so the
+// IR's CatalogMetadata pointer stays unset and the `omitempty` JSON
+// tag suppresses the field entirely.
 func TestBuildCatalogMetadata_EmptyContentReturnsNil(t *testing.T) {
 	t.Parallel()
 	cl := resolver.CatalogLookup{
@@ -1620,7 +1620,6 @@ func TestBuildCatalogMetadata_PopulatedReturnsAllFields(t *testing.T) {
 					Repository:  "https://example.com/repo",
 					Home:        "https://example.com",
 					Keywords:    []string{"k1", "k2"},
-					Deprecated:  true,
 					Maintainers: []types.Maintainer{{Name: "alice"}},
 				},
 			}, true
@@ -1633,7 +1632,7 @@ func TestBuildCatalogMetadata_PopulatedReturnsAllFields(t *testing.T) {
 	if got.License != "Apache-2.0" || got.Repository == "" || got.Home == "" {
 		t.Errorf("scalar fields not propagated: %+v", got)
 	}
-	if !got.Deprecated || len(got.Keywords) != 2 || len(got.Maintainers) != 1 {
+	if len(got.Keywords) != 2 || len(got.Maintainers) != 1 {
 		t.Errorf("multi-shape fields not propagated: %+v", got)
 	}
 }

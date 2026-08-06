@@ -54,7 +54,6 @@ func maximalComponent() types.Component {
 			Repository:  "https://example.com/repo",
 			Home:        "https://example.com",
 			Keywords:    []string{"k"},
-			Deprecated:  true,
 			Labels:      om[string]("component.aggrega.ai/type", "server", "component.aggrega.ai/category", "compute"),
 			Annotations: om[string]("a", "b"),
 		},
@@ -152,7 +151,6 @@ func maximalPlugin() types.Plugin {
 			Repository:  "https://example.com/repo",
 			Home:        "https://example.com",
 			Keywords:    []string{"linter"},
-			Deprecated:  false,
 		},
 		Spec: types.PluginSpec{
 			AbiVersion:   "v1alpha1",
@@ -440,7 +438,6 @@ func maximalAggregaConfig() workspaceconfig.Config {
 		ArtifactCacheDir: ".aggrega/cache",
 		Build: workspaceconfig.BuildConfig{
 			AuthoringRelease:         "./releases/prod.yaml",
-			HaltOnDeprecated:         true,
 			HaltOnDeprecatedSeverity: "error",
 			YAMLIndent:               2,
 		},

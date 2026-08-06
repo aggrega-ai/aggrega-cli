@@ -10,13 +10,11 @@ func Feature(e Entity) string {
 	name := scalarValueAtPath(e.Doc, "metadata", "name")
 	version := scalarValueAtPath(e.Doc, "metadata", "version")
 	desc := scalarValueAtPath(e.Doc, "metadata", "description")
-	deprecated := boolValueAtPath(e.Doc, "metadata", "deprecated")
 	return Assemble(
 		Header("Feature", name, version),
 		Description(desc),
 		Separator(),
 		SchemaExcerpt(e.Doc, 10),
 		Extends(e.Doc),
-		Deprecated(deprecated),
 	)
 }

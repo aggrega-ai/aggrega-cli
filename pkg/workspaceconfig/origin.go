@@ -208,7 +208,6 @@ func originFields() []originField {
 		sc("artifact_cache_dir", func(c Config) string { return c.ArtifactCacheDir }),
 		sc("skip_signature_verification", func(c Config) string { return strconv.FormatBool(c.SkipSignatureVerification) }),
 		sc("build.authoring_release", func(c Config) string { return c.Build.AuthoringRelease }),
-		sc("build.halt_on_deprecated", func(c Config) string { return strconv.FormatBool(c.Build.HaltOnDeprecated) }),
 		sc("build.halt_on_deprecated_severity", func(c Config) string { return c.Build.HaltOnDeprecatedSeverity }),
 		sc("build.yaml_indent", func(c Config) string { return strconv.Itoa(c.Build.YAMLIndent) }),
 		sc("lint.publishing_discipline.enforce_immutability", func(c Config) string {

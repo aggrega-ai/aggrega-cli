@@ -39,7 +39,6 @@ workspace:
 
 build:
   authoring_release: prod-release.yaml
-  halt_on_deprecated: true
   halt_on_deprecated_severity: warning
 
 plugins:
@@ -82,9 +81,6 @@ lint:
 
 	if got.Build.AuthoringRelease != "prod-release.yaml" {
 		t.Errorf("Build.AuthoringRelease: %q", got.Build.AuthoringRelease)
-	}
-	if !got.Build.HaltOnDeprecated {
-		t.Errorf("Build.HaltOnDeprecated should be true")
 	}
 	if got.Build.HaltOnDeprecatedSeverity != "warning" {
 		t.Errorf("Build.HaltOnDeprecatedSeverity: %q", got.Build.HaltOnDeprecatedSeverity)
@@ -270,9 +266,6 @@ func TestDefaultReturnsDocumentedDefaults(t *testing.T) {
 	}
 	if d.AutoPull {
 		t.Errorf("Default().AutoPull should be false: build is read-only by default")
-	}
-	if d.Build.HaltOnDeprecated {
-		t.Errorf("Default().Build.HaltOnDeprecated should be false")
 	}
 	// The documented default is UNSET: no recorded deprecation marker halts a
 	// build the workspace did not configure to halt.

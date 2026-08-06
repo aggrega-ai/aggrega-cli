@@ -12,14 +12,10 @@ func ArtifactsLibrary(e Entity) string {
 	version := scalarValueAtPath(e.Doc, "metadata", "version")
 	desc := scalarValueAtPath(e.Doc, "metadata", "description")
 	artifacts := mappingNodeAtPath(e.Doc, "spec", "artifacts")
-	deprecated := boolValueAtPath(e.Doc, "metadata", "deprecated")
 
 	body := []string{}
 	if artifacts != nil {
 		body = append(body, fmt.Sprintf("**Artifacts**: %d bundles", mappingPairCount(artifacts)))
-	}
-	if dep := Deprecated(deprecated); dep != "" {
-		body = append(body, dep)
 	}
 
 	return Assemble(

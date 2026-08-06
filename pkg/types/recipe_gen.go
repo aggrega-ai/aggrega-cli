@@ -33,8 +33,6 @@ type RecipeMetadata struct {
 	Home string `json:"home,omitempty" yaml:"home,omitempty"`
 	// Keywords A list of descriptive keywords for UI discoverability.
 	Keywords []string `json:"keywords,omitempty" yaml:"keywords,omitempty"`
-	// Deprecated Indicates whether this entity is deprecated and should no longer be used.
-	Deprecated bool `json:"deprecated,omitempty" yaml:"deprecated,omitempty"`
 }
 
 // RecipeSpec The provider binding, source, value mapping, and pipeline for a Recipe. Supports three input kinds composed by addition: sourced (source plus valuesMapping overlay), synthesized (workload), and artifacts (named output files).

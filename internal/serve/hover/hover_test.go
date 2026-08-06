@@ -118,32 +118,6 @@ func TestHoverManifestRendersSelfMetadataName(t *testing.T) {
 
 // --- Cross-reference / instance / edge cases at renderer level ---
 
-// TestHoverRendersDeprecationFlagWhenSetByFutureSchema pins the
-// anticipatory deprecation-render path. No entity schema in
-// pkg/types/ currently carries a top-level metadata.deprecated bool;
-// the renderer ships ahead of the future deprecation mechanism so
-// per-kind hover content is wired when the schema field lands. This
-// test uses a freeform mapping entry that
-// yaml.v3 accepts but no validated entity currently produces — the
-// render path is reachable by this test, unreachable in production
-// until the schema addition lands.
-func TestHoverRendersDeprecationFlagWhenSetByFutureSchema(t *testing.T) {
-	t.Parallel()
-	src := "apiVersion: aggrega.ai/v1alpha1\nkind: Component\nmetadata:\n  name: old/thing\n  version: 1.0.0\n  deprecated: true\nspec: {}\n"
-	out := Component(parseEntity(t, src))
-	assertContains(t, out, "**Deprecated**: yes")
-}
-
-// TestHoverOmitsDeprecationLineWhenAbsent pins the unreached-default
-// behavior on every current entity (metadata.deprecated absent →
-// boolValueAtPath returns false → Deprecated() returns empty).
-func TestHoverOmitsDeprecationLineWhenAbsent(t *testing.T) {
-	t.Parallel()
-	src := "apiVersion: aggrega.ai/v1alpha1\nkind: Component\nmetadata:\n  name: ok/thing\n  version: 1.0.0\nspec: {}\n"
-	out := Component(parseEntity(t, src))
-	assertNotContains(t, out, "**Deprecated**:")
-}
-
 func TestHoverSchemaExcerptTruncatesToTenLines(t *testing.T) {
 	t.Parallel()
 	// Build a schema with > 10 lines after yaml.Marshal.

@@ -51,24 +51,6 @@ func Separator() string {
 	return "---"
 }
 
-// Deprecated renders the **Deprecated**: yes line when the flag is
-// true; returns empty string otherwise.
-//
-// Anticipatory code: no entity schema in pkg/types/ currently
-// carries a top-level Deprecated bool on its Metadata struct. The
-// deprecation mechanism is not yet defined; the renderer surface
-// here ships ahead of it so the per-kind hover content will already
-// be wired when the schema field lands. On current entities the
-// render path is unreachable — boolValueAtPath returns
-// false for every validated entity, so the Deprecated line never
-// fires in production hover output.
-func Deprecated(flag bool) string {
-	if !flag {
-		return ""
-	}
-	return "**Deprecated**: yes"
-}
-
 // Extends locates spec.extends and renders the **Extends**: line when
 // the value is non-empty; returns empty string otherwise.
 func Extends(doc *yaml.Node) string {
@@ -188,14 +170,6 @@ func scalarValueAtPath(doc *yaml.Node, path ...string) string {
 		return n.Value
 	}
 	return ""
-}
-
-// boolValueAtPath walks doc following the supplied mapping keys and
-// returns the bool value at the end of the path. Returns false when
-// the path is absent, the terminal node is not a scalar, or the
-// scalar's text is not the literal "true".
-func boolValueAtPath(doc *yaml.Node, path ...string) bool {
-	return scalarValueAtPath(doc, path...) == "true"
 }
 
 // mappingChildKeysFrom returns the author-order list of keys in the

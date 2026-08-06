@@ -1,4 +1,2 @@
 default_registry: global.example.com
 artifact_cache_dir: .aggrega/global-cache
-build:
-  halt_on_deprecated: true

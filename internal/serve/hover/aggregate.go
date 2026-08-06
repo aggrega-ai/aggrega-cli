@@ -26,12 +26,10 @@ import (
 //   - top 3 keys + truncation
 //   - **Sub-aggregates**: N (when present)
 //   - top 3 keys + type URIs + truncation
-//   - **Deprecated**: yes (when set)
 func Aggregate(e Entity) string {
 	name := scalarValueAtPath(e.Doc, "metadata", "name")
 	version := scalarValueAtPath(e.Doc, "metadata", "version")
 	desc := scalarValueAtPath(e.Doc, "metadata", "description")
-	deprecated := boolValueAtPath(e.Doc, "metadata", "deprecated")
 
 	body := []string{}
 	if section := componentsSection(e.Doc); section != "" {
@@ -42,9 +40,6 @@ func Aggregate(e Entity) string {
 	}
 	if section := subAggregatesSection(e.Doc); section != "" {
 		body = append(body, section)
-	}
-	if dep := Deprecated(deprecated); dep != "" {
-		body = append(body, dep)
 	}
 
 	return Assemble(

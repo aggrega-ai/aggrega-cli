@@ -34,8 +34,6 @@ type AggregateMetadata struct {
 	Home string `json:"home,omitempty" yaml:"home,omitempty"`
 	// Keywords A list of descriptive keywords for UI discoverability.
 	Keywords []string `json:"keywords,omitempty" yaml:"keywords,omitempty"`
-	// Deprecated Indicates whether this entity is deprecated and should no longer be used.
-	Deprecated bool `json:"deprecated,omitempty" yaml:"deprecated,omitempty"`
 	// Labels Module-level duck-typing labels for catalog discovery, policy evaluation, and Studio/IDE filtering. These labels describe the Aggregate's identity as a reusable module (e.g., aggregate.aggrega.ai/tier: infrastructure, aggregate.aggrega.ai/compliance: pci-dss). They do NOT cascade to child component nodes — component labels come exclusively from the Component catalog entity in Domain 2.
 	Labels OrderedMap[string] `json:"labels,omitempty,omitzero" yaml:"labels,omitempty"`
 }

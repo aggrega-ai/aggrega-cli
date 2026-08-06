@@ -17,9 +17,7 @@ import (
 
 // closureWithRecordedMarker builds the minimal input the build-time gate needs to
 // reach its recorded-marker branch: one closure entity, one lockfile row carrying a
-// deprecation record, and the lockfile's own generation stamp. KindHint is left
-// empty on purpose so the author-time branch short-circuits without a lazy lookup —
-// this exercises the recorded-marker arm in isolation.
+// deprecation record, and the lockfile's own generation stamp.
 func closureWithRecordedMarker(uri, severity, message, generatedAt string) (closure.Closure, *lockfile.Lockfile) {
 	cl := closure.Closure{Entities: []closure.ResolvedRef{{URI: uri}}}
 	lf := &lockfile.Lockfile{
@@ -44,7 +42,7 @@ func TestBuildAdvisoryForRecordedMarkerCarriesTheObservationMoment(t *testing.T)
 	cl, lf := closureWithRecordedMarker("oci://reg.example/components/api", "warning", "superseded by v3", stamp)
 
 	var out bytes.Buffer
-	err := enforceClosureDeprecation(cl, lf, nil, workspaceconfig.BuildConfig{HaltOnDeprecatedSeverity: "error"}, &out)
+	err := enforceClosureDeprecation(cl, lf, workspaceconfig.BuildConfig{HaltOnDeprecatedSeverity: "error"}, &out)
 	if err != nil {
 		t.Fatalf("advisory severity must not halt the build: %v", err)
 	}
@@ -66,7 +64,7 @@ func TestBuildHaltForRecordedMarkerCarriesTheObservationMoment(t *testing.T) {
 	cl, lf := closureWithRecordedMarker("oci://reg.example/components/api", "retracted", "withdrawn: bad release", stamp)
 
 	var out bytes.Buffer
-	err := enforceClosureDeprecation(cl, lf, nil, workspaceconfig.BuildConfig{HaltOnDeprecatedSeverity: "error"}, &out)
+	err := enforceClosureDeprecation(cl, lf, workspaceconfig.BuildConfig{HaltOnDeprecatedSeverity: "error"}, &out)
 	if err == nil {
 		t.Fatal("a recorded marker at or above the threshold must halt the build")
 	}
@@ -104,7 +102,7 @@ func TestBuildRecordedMarkerWithoutAStampReportsItsAbsence(t *testing.T) {
 			cl, lf := closureWithRecordedMarker("oci://reg.example/components/api", tc.severity, "no longer maintained", "")
 
 			var out bytes.Buffer
-			err := enforceClosureDeprecation(cl, lf, nil, workspaceconfig.BuildConfig{HaltOnDeprecatedSeverity: tc.threshold}, &out)
+			err := enforceClosureDeprecation(cl, lf, workspaceconfig.BuildConfig{HaltOnDeprecatedSeverity: tc.threshold}, &out)
 			if tc.wantHalt != (err != nil) {
 				t.Fatalf("wantHalt=%v, got err=%v", tc.wantHalt, err)
 			}
@@ -165,7 +163,7 @@ func TestBuildWithNoThresholdAdvisesEverySeverity(t *testing.T) {
 	var out bytes.Buffer
 	// workspaceconfig.Default() leaves HaltOnDeprecatedSeverity empty, so the
 	// zero BuildConfig IS the default configuration.
-	if err := enforceClosureDeprecation(cl, lf, nil, workspaceconfig.BuildConfig{}, &out); err != nil {
+	if err := enforceClosureDeprecation(cl, lf, workspaceconfig.BuildConfig{}, &out); err != nil {
 		t.Fatalf("no configured threshold must halt on nothing; got: %v", err)
 	}
 
@@ -196,7 +194,7 @@ func TestBuildStrictThresholdStillReportsEveryEntity(t *testing.T) {
 	cl, lf := closureWithThreeRecordedSeverities(stamp)
 
 	var out bytes.Buffer
-	err := enforceClosureDeprecation(cl, lf, nil, workspaceconfig.BuildConfig{HaltOnDeprecatedSeverity: "error"}, &out)
+	err := enforceClosureDeprecation(cl, lf, workspaceconfig.BuildConfig{HaltOnDeprecatedSeverity: "error"}, &out)
 	if !errors.Is(err, deprecation.ErrDeprecatedEntity) {
 		t.Fatalf("a recorded marker at the configured threshold must halt; got: %v", err)
 	}
@@ -230,7 +228,7 @@ func TestBuildHaltRendersItsWholeMessageToTheTerminal(t *testing.T) {
 	cl, lf := closureWithRecordedMarker("oci://reg.example/components/api", "retracted", "withdrawn: bad release", stamp)
 
 	var out bytes.Buffer
-	err := enforceClosureDeprecation(cl, lf, nil, workspaceconfig.BuildConfig{HaltOnDeprecatedSeverity: "retracted"}, &out)
+	err := enforceClosureDeprecation(cl, lf, workspaceconfig.BuildConfig{HaltOnDeprecatedSeverity: "retracted"}, &out)
 	if err == nil {
 		t.Fatal("a recorded marker at the configured threshold must halt the build")
 	}
@@ -250,25 +248,19 @@ func TestBuildHaltRendersItsWholeMessageToTheTerminal(t *testing.T) {
 	}
 }
 
-// TestBuildEmitsNothingWhenNeitherDeprecationSourceApplies keeps the observation
-// moment inside the guard that owns it: an entity with no recorded marker produces
-// no notice at all, so the suffix cannot escape the recorded-marker arm by someone
+// TestBuildEmitsNothingWhenNoRecordedMarkerApplies keeps the observation moment
+// inside the guard that owns it: an entity with no recorded marker produces no
+// notice at all, so the suffix cannot escape the recorded-marker arm by someone
 // hoisting the advisory out of its own conditional.
-//
-// It does NOT cover the author-time metadata.deprecated notice, which needs a
-// resolved catalog to reach. That notice deliberately carries no observation moment
-// — it is read from the entity during this build, so there is no past moment to
-// state — and the asymmetry is enforced by the suffix being applied only inside the
-// recorded-marker branch.
-func TestBuildEmitsNothingWhenNeitherDeprecationSourceApplies(t *testing.T) {
+func TestBuildEmitsNothingWhenNoRecordedMarkerApplies(t *testing.T) {
 	cl := closure.Closure{Entities: []closure.ResolvedRef{{URI: "oci://reg.example/components/api"}}}
 	lf := &lockfile.Lockfile{GeneratedAt: "2026-07-01T09:30:00Z"}
 
 	var out bytes.Buffer
-	if err := enforceClosureDeprecation(cl, lf, nil, workspaceconfig.BuildConfig{HaltOnDeprecatedSeverity: "error"}, &out); err != nil {
-		t.Fatalf("an entity with no deprecation of either kind must not halt: %v", err)
+	if err := enforceClosureDeprecation(cl, lf, workspaceconfig.BuildConfig{HaltOnDeprecatedSeverity: "error"}, &out); err != nil {
+		t.Fatalf("an entity with no recorded marker must not halt: %v", err)
 	}
 	if got := out.String(); got != "" {
-		t.Errorf("no deprecation of either kind must emit nothing, got:\n%s", got)
+		t.Errorf("no recorded marker must emit nothing, got:\n%s", got)
 	}
 }

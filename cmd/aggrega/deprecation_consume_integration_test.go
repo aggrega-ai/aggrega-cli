@@ -23,8 +23,8 @@ import (
 // controls. requiresSignatures pins the keyed publisher key and demands a
 // signature; !requiresSignatures leaves the registry verify-if-present (an
 // unknown-key marker is then dropped rather than halting). haltSeverity sets
-// build.halt_on_deprecated_severity; haltAuthored sets build.halt_on_deprecated.
-func deprecationConsumerConfigBody(host string, pinnedPubPEM []byte, requiresSignatures bool, haltSeverity string, haltAuthored bool) string {
+// build.halt_on_deprecated_severity.
+func deprecationConsumerConfigBody(host string, pinnedPubPEM []byte, requiresSignatures bool, haltSeverity string) string {
 	var b strings.Builder
 	b.WriteString("default_registry: \"" + host + "\"\n")
 	b.WriteString("auto_pull: true\n")
@@ -32,9 +32,6 @@ func deprecationConsumerConfigBody(host string, pinnedPubPEM []byte, requiresSig
 	b.WriteString("build:\n")
 	if haltSeverity != "" {
 		b.WriteString("  halt_on_deprecated_severity: \"" + haltSeverity + "\"\n")
-	}
-	if haltAuthored {
-		b.WriteString("  halt_on_deprecated: true\n")
 	}
 	b.WriteString("registries:\n")
 	b.WriteString("  - host: \"" + host + "\"\n")
@@ -52,9 +49,8 @@ func deprecationConsumerConfigBody(host string, pinnedPubPEM []byte, requiresSig
 // SIGNED by signer to the registry at host, then writes a consumer workspace
 // wired to build the Component over that registry, with the given config body.
 // It chdir's into the workspace and returns the Component's bare closure URI —
-// the lockfile row key a discovered marker lands on. The `deprecated` flag, when
-// set, marks the Component's metadata.deprecated: true at authoring time.
-func writeDeprecationConsumerCatalog(t *testing.T, host string, signer signing.Signer, configBody string, authorDeprecated bool) string {
+// the lockfile row key a discovered marker lands on.
+func writeDeprecationConsumerCatalog(t *testing.T, host string, signer signing.Signer, configBody string) string {
 	t.Helper()
 	cat := t.TempDir()
 
@@ -65,11 +61,7 @@ metadata:
   version: "1.0.0"
   labels:
     component.aggrega.ai/type: server
-`
-	if authorDeprecated {
-		componentBody += "  deprecated: true\n"
-	}
-	componentBody += `spec:
+spec:
   schema:
     infra:
       port: { type: integer, default: 8080 }
@@ -157,9 +149,9 @@ func componentDeprecateRef(host string) string {
 // the marker into the lockfile) and BUILD it through dispatchBuild (which
 // enforces from the lockfile only, touching no registry).
 //
-// The severity arms prove the threshold gate; the author-time arm proves the
-// second source under the same gate; the untrusted-marker arm proves a marker
-// signed by a key the policy does not trust is not honored as authoritative.
+// The severity arms prove the threshold gate; the untrusted-marker arm proves a
+// marker signed by a key the policy does not trust is not honored as
+// authoritative.
 func TestIntegration_ConsumeRetroactiveDeprecation(t *testing.T) {
 	privPEM, pubPEM, err := signing.GenerateKeyedPEM()
 	if err != nil {
@@ -194,8 +186,8 @@ func TestIntegration_ConsumeRetroactiveDeprecation(t *testing.T) {
 	t.Run("warning_severity_advises_build_succeeds", func(t *testing.T) {
 		host := startRegistry(t, nil)
 		// halt threshold "error": a "warning" marker is below it → advisory only.
-		cfg := deprecationConsumerConfigBody(host, pubPEM, true, "error", false)
-		writeDeprecationConsumerCatalog(t, host, signer, cfg, false)
+		cfg := deprecationConsumerConfigBody(host, pubPEM, true, "error")
+		writeDeprecationConsumerCatalog(t, host, signer, cfg)
 		deprecate(t, host, "warning", "migrate to test/svc2 soon", nil)
 
 		if perr := pullRun(pullConfig{ReleasePath: "release.yaml"}); perr != nil {
@@ -221,8 +213,8 @@ func TestIntegration_ConsumeRetroactiveDeprecation(t *testing.T) {
 
 	t.Run("error_severity_halts_build", func(t *testing.T) {
 		host := startRegistry(t, nil)
-		cfg := deprecationConsumerConfigBody(host, pubPEM, true, "error", false)
-		writeDeprecationConsumerCatalog(t, host, signer, cfg, false)
+		cfg := deprecationConsumerConfigBody(host, pubPEM, true, "error")
+		writeDeprecationConsumerCatalog(t, host, signer, cfg)
 		deprecate(t, host, "error", "no longer fit for new use", nil)
 
 		if perr := pullRun(pullConfig{ReleasePath: "release.yaml"}); perr != nil {
@@ -237,8 +229,8 @@ func TestIntegration_ConsumeRetroactiveDeprecation(t *testing.T) {
 	t.Run("retracted_severity_halts_build", func(t *testing.T) {
 		host := startRegistry(t, nil)
 		// Threshold "retracted": only a retracted marker halts; below it advises.
-		cfg := deprecationConsumerConfigBody(host, pubPEM, true, "retracted", false)
-		writeDeprecationConsumerCatalog(t, host, signer, cfg, false)
+		cfg := deprecationConsumerConfigBody(host, pubPEM, true, "retracted")
+		writeDeprecationConsumerCatalog(t, host, signer, cfg)
 		deprecate(t, host, "retracted", "withdrawn; use test/svc2", nil)
 
 		if perr := pullRun(pullConfig{ReleasePath: "release.yaml"}); perr != nil {
@@ -247,36 +239,6 @@ func TestIntegration_ConsumeRetroactiveDeprecation(t *testing.T) {
 		berr := dispatchBuild(nil, "release.yaml", nil, false, io.Discard, io.Discard)
 		if !errors.Is(berr, deprecation.ErrDeprecatedEntity) {
 			t.Fatalf("build must HALT with ErrDeprecatedEntity for a retracted marker at retracted threshold; got: %v", berr)
-		}
-	})
-
-	t.Run("author_time_deprecated_halts_under_halt_on_deprecated", func(t *testing.T) {
-		host := startRegistry(t, nil)
-		// No retroactive marker; the Component itself is metadata.deprecated:true.
-		// halt_on_deprecated:true → the author-time source halts.
-		cfg := deprecationConsumerConfigBody(host, pubPEM, true, "error", true)
-		writeDeprecationConsumerCatalog(t, host, signer, cfg, true)
-
-		if perr := pullRun(pullConfig{ReleasePath: "release.yaml"}); perr != nil {
-			t.Fatalf("pull of an author-deprecated component must succeed; got: %v", perr)
-		}
-		berr := dispatchBuild(nil, "release.yaml", nil, false, io.Discard, io.Discard)
-		if !errors.Is(berr, deprecation.ErrDeprecatedEntity) {
-			t.Fatalf("an author-deprecated entity must HALT under halt_on_deprecated; got: %v", berr)
-		}
-	})
-
-	t.Run("author_time_deprecated_advises_when_halt_off", func(t *testing.T) {
-		host := startRegistry(t, nil)
-		// halt_on_deprecated omitted (false): author-deprecation advises only.
-		cfg := deprecationConsumerConfigBody(host, pubPEM, true, "error", false)
-		writeDeprecationConsumerCatalog(t, host, signer, cfg, true)
-
-		if perr := pullRun(pullConfig{ReleasePath: "release.yaml"}); perr != nil {
-			t.Fatalf("pull must succeed; got: %v", perr)
-		}
-		if berr := dispatchBuild(nil, "release.yaml", nil, false, io.Discard, io.Discard); berr != nil {
-			t.Fatalf("author-deprecation with halt off must ADVISE, not halt; got: %v", berr)
 		}
 	})
 
@@ -289,8 +251,8 @@ func TestIntegration_ConsumeRetroactiveDeprecation(t *testing.T) {
 		// even at a halting threshold. This isolates "untrusted marker" from
 		// "trusted marker": were the marker honored, the retracted severity would
 		// halt the build.
-		cfg := deprecationConsumerConfigBody(host, pubPEM, false, "warning", false)
-		writeDeprecationConsumerCatalog(t, host, signer, cfg, false)
+		cfg := deprecationConsumerConfigBody(host, pubPEM, false, "warning")
+		writeDeprecationConsumerCatalog(t, host, signer, cfg)
 
 		// Sign the marker with a key the workspace does not pin.
 		otherPriv, _, gerr := signing.GenerateKeyedPEM()

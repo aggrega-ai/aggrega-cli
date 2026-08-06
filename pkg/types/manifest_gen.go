@@ -35,8 +35,6 @@ type ManifestMetadata struct {
 	Home string `json:"home,omitempty" yaml:"home,omitempty"`
 	// Keywords A list of descriptive keywords for UI discoverability.
 	Keywords []string `json:"keywords,omitempty" yaml:"keywords,omitempty"`
-	// Deprecated Indicates whether this entity is deprecated and should no longer be used.
-	Deprecated bool `json:"deprecated,omitempty" yaml:"deprecated,omitempty"`
 }
 
 // ManifestSpec The Manifest's mapping declarations plus optional base inheritance: mappings connects abstract component and feature types to concrete Recipe and FeatureRecipe implementations; extends inherits mappings from a base Manifest.

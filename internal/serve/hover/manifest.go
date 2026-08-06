@@ -22,12 +22,10 @@ import (
 //   - **Legacy provider-keyed mappings**: N entries (when present)
 //   - `<provider-name>`: M entries
 //   - ...one-line-per-provider
-//   - **Deprecated**: yes (when set)
 func Manifest(e Entity) string {
 	name := scalarValueAtPath(e.Doc, "metadata", "name")
 	version := scalarValueAtPath(e.Doc, "metadata", "version")
 	desc := scalarValueAtPath(e.Doc, "metadata", "description")
-	deprecated := boolValueAtPath(e.Doc, "metadata", "deprecated")
 
 	body := []string{}
 	if section := flatMappingsSection(e.Doc); section != "" {
@@ -35,9 +33,6 @@ func Manifest(e Entity) string {
 	}
 	if section := legacyMappingsSection(e.Doc); section != "" {
 		body = append(body, section)
-	}
-	if dep := Deprecated(deprecated); dep != "" {
-		body = append(body, dep)
 	}
 
 	return Assemble(

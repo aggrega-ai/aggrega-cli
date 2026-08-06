@@ -12,14 +12,10 @@ func WorkloadLibrary(e Entity) string {
 	version := scalarValueAtPath(e.Doc, "metadata", "version")
 	desc := scalarValueAtPath(e.Doc, "metadata", "description")
 	workloads := mappingNodeAtPath(e.Doc, "spec", "workloads")
-	deprecated := boolValueAtPath(e.Doc, "metadata", "deprecated")
 
 	body := []string{}
 	if workloads != nil {
 		body = append(body, fmt.Sprintf("**Workloads**: %d entries", mappingPairCount(workloads)))
-	}
-	if dep := Deprecated(deprecated); dep != "" {
-		body = append(body, dep)
 	}
 
 	return Assemble(

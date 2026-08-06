@@ -17,7 +17,6 @@ func SchemaLibrary(e Entity) string {
 	desc := scalarValueAtPath(e.Doc, "metadata", "description")
 	schemas := mappingNodeAtPath(e.Doc, "spec", "schemas")
 	templates := mappingNodeAtPath(e.Doc, "spec", "templates")
-	deprecated := boolValueAtPath(e.Doc, "metadata", "deprecated")
 
 	body := []string{}
 	if schemas != nil {
@@ -25,9 +24,6 @@ func SchemaLibrary(e Entity) string {
 	}
 	if templates != nil {
 		body = append(body, fmt.Sprintf("**Templates**: %d entries", mappingPairCount(templates)))
-	}
-	if dep := Deprecated(deprecated); dep != "" {
-		body = append(body, dep)
 	}
 
 	return Assemble(

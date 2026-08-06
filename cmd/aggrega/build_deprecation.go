@@ -8,7 +8,6 @@ import (
 	"io"
 	"sort"
 
-	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
 	"github.com/aggrega-ai/aggrega-cli/pkg/deprecation"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
@@ -16,51 +15,42 @@ import (
 )
 
 // enforceClosureDeprecation reports each closure entity's and plugin's
-// deprecation status from TWO sources under one build-time gate, and halts only
-// where the workspace asked for a halt. It reads ONLY the lockfile (the
-// retroactive marker recorded at pull) and the resolved entity metadata (the
-// author-time flag) — it never touches a registry, preserving the ahead-of-time
-// boundary that build is offline and lockfile-only.
-//
-// The two sources:
-//
-//   - the lockfile Deprecation record, a retroactive marker discovered and
-//     verified at pull time, carrying a severity in the ordered set
-//     warning < error < retracted;
-//   - the entity's author-time metadata.deprecated flag.
+// deprecation status under one build-time gate, and halts only where the
+// workspace asked for a halt. Its source is the lockfile Deprecation record — a
+// retroactive marker discovered and verified at pull time, carrying a severity
+// in the ordered set warning < error < retracted. It reads ONLY the lockfile, so
+// it never touches a registry, preserving the ahead-of-time boundary that build
+// is offline and lockfile-only.
 //
 // Reporting and halting are independent axes, and keeping them independent is
 // the point of this gate:
 //
-//   - Reporting is unconditional. Every entity carrying either source produces a
-//     notice on diagOut naming the entity — and, for a recorded marker, its
-//     severity and message — at every severity. No configuration silences it, so
-//     raising a halt threshold never reduces what the build says.
+//   - Reporting is unconditional. Every entity carrying a recorded marker
+//     produces a notice on diagOut naming the entity, its severity and its
+//     message, at every severity. No configuration silences it, so raising a
+//     halt threshold never reduces what the build says.
 //   - Halting is governed by configuration alone. A recorded marker halts when
 //     build.halt_on_deprecated_severity names a severity AND the recorded
-//     severity meets or exceeds it; an author-time flag halts when
-//     build.halt_on_deprecated is true. Neither dial is set by default, so a
-//     default workspace is advised and never stopped. That default is
-//     deliberate: a recorded marker is mutable registry state applied after the
-//     pin was taken, so halting on it would fail today a build that succeeded
-//     yesterday with no input of the user's having changed.
+//     severity meets or exceeds it. The dial is not set by default, so a default
+//     workspace is advised and never stopped. That default is deliberate: a
+//     recorded marker is mutable registry state applied after the pin was taken,
+//     so halting on it would fail today a build that succeeded yesterday with no
+//     input of the user's having changed.
 //
 // An unset threshold is tested for explicitly rather than left to rank below
 // every severity, so the default behaviour does not depend on how an
 // unrecognised severity happens to compare.
 //
-// Only the recorded-marker notice reports an observation moment, and the
-// asymmetry is deliberate: a recorded marker states what a registry reported at
-// some past pull, so how stale it might be is part of the fact, while
-// metadata.deprecated is read from the resolved entity in this build and has no
-// separate moment to state.
+// The notice reports an observation moment: a recorded marker states what a
+// registry reported at some past pull, so how stale it might be is part of the
+// fact.
 //
 // The walk always completes before a halt is returned, so a configured halt
 // never costs the reader the notices for entities sorted after the halting one;
-// the first halting source in the walk owns the returned error. Iteration is
+// the first halting marker in the walk owns the returned error. Iteration is
 // over the sorted closure-entity and plugin URIs, so the surfaced order is
 // deterministic and independent of closure order.
-func enforceClosureDeprecation(cl closure.Closure, lf *lockfile.Lockfile, lazyView *catalog.LazyLookup, buildCfg workspaceconfig.BuildConfig, diagOut io.Writer) error {
+func enforceClosureDeprecation(cl closure.Closure, lf *lockfile.Lockfile, buildCfg workspaceconfig.BuildConfig, diagOut io.Writer) error {
 	threshold := deprecation.Severity(buildCfg.HaltOnDeprecatedSeverity)
 	// One stamp governs every recorded marker in this lockfile, so it is rendered
 	// once rather than per entity.
@@ -93,10 +83,9 @@ func enforceClosureDeprecation(cl closure.Closure, lf *lockfile.Lockfile, lazyVi
 	var halt error
 
 	for _, e := range refs {
-		// Retroactive source: a verified marker recorded at pull. The moment
-		// qualifies the recorded fact, so it sits with the message rather than
-		// after the threshold clause, which would read as though the policy were
-		// what had been recorded.
+		// The moment qualifies the recorded fact, so it sits with the message
+		// rather than after the threshold clause, which would read as though the
+		// policy were what had been recorded.
 		if rec, ok := recByURI[e.URI]; ok {
 			fmt.Fprintf(diagOut, "  deprecation: %s is deprecated (%s): %s%s\n", e.URI, rec.Severity, rec.Message, asOf)
 			// The empty threshold is read as "no halt configured" here rather
@@ -107,16 +96,6 @@ func enforceClosureDeprecation(cl closure.Closure, lf *lockfile.Lockfile, lazyVi
 			if halt == nil && threshold != "" && deprecation.MeetsThreshold(deprecation.Severity(rec.Severity), threshold) {
 				halt = fmt.Errorf("%w: %s is deprecated (%s): %s%s: %s",
 					deprecation.ErrDeprecatedEntity, e.URI, rec.Severity, rec.Message, asOf, haltThresholdClause(threshold))
-			}
-		}
-
-		// Author-time source: metadata.deprecated on the resolved entity, whose
-		// halt is the halt_on_deprecated bool alone.
-		if entityDeprecated(e, lazyView) {
-			fmt.Fprintf(diagOut, "  deprecation: %s is marked deprecated by its author (metadata.deprecated: true)\n", e.URI)
-			if halt == nil && buildCfg.HaltOnDeprecated {
-				halt = fmt.Errorf("%w: %s is marked deprecated by its author (metadata.deprecated: true)",
-					deprecation.ErrDeprecatedEntity, e.URI)
 			}
 		}
 	}
@@ -162,35 +141,4 @@ func lockfileAsOfSuffix(generatedAt string) string {
 		return " (recorded in the lockfile at pull, which carries no generation time; re-run `aggrega pull` to refresh it)"
 	}
 	return fmt.Sprintf(" (recorded in the lockfile at pull, as of %s; re-run `aggrega pull` to refresh it)", generatedAt)
-}
-
-// entityDeprecated reports whether the closure entity carries an author-time
-// metadata.deprecated: true, read from the resolved entity via the same lazy
-// lookup the build resolves everything else through (lockfile-pinned, offline).
-// The entity's KindHint routes to the right accessor; an entity whose kind
-// carries no deprecation flag, or one that does not resolve, reports false.
-func entityDeprecated(e closure.ResolvedRef, lazyView *catalog.LazyLookup) bool {
-	switch e.KindHint {
-	case "component":
-		if c, ok := lazyView.Component(e.URI); ok {
-			return c.Metadata.Deprecated
-		}
-	case "feature":
-		if f, ok := lazyView.Feature(e.URI); ok {
-			return f.Metadata.Deprecated
-		}
-	case "recipe":
-		if r, ok := lazyView.RecipeByURI(e.URI); ok {
-			return r.Metadata.Deprecated
-		}
-	case "feature_recipe":
-		if fr, ok := lazyView.FeatureRecipeByURI(e.URI); ok {
-			return fr.Metadata.Deprecated
-		}
-	case "plugin":
-		if p, ok := lazyView.PluginByURI(e.URI); ok {
-			return p.Metadata.Deprecated
-		}
-	}
-	return false
 }

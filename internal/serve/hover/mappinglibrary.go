@@ -12,14 +12,10 @@ func MappingLibrary(e Entity) string {
 	version := scalarValueAtPath(e.Doc, "metadata", "version")
 	desc := scalarValueAtPath(e.Doc, "metadata", "description")
 	mappings := mappingNodeAtPath(e.Doc, "spec", "mappings")
-	deprecated := boolValueAtPath(e.Doc, "metadata", "deprecated")
 
 	body := []string{}
 	if mappings != nil {
 		body = append(body, fmt.Sprintf("**Mappings**: %d entries", mappingPairCount(mappings)))
-	}
-	if dep := Deprecated(deprecated); dep != "" {
-		body = append(body, dep)
 	}
 
 	return Assemble(

@@ -25,6 +25,7 @@ func newAcquireCmd() *cobra.Command {
 			"pinned into the content-addressed input store, and recorded in the Release's " +
 			"lockfile, so a subsequent build serves those inputs from the store without " +
 			"refetching. One line is printed per newly-pinned URL.",
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			rw, err := workspaceFromContext(cmd.Context())
 			if err != nil {

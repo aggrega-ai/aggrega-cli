@@ -35,8 +35,6 @@ type ComponentMetadata struct {
 	Home string `json:"home,omitempty" yaml:"home,omitempty"`
 	// Keywords A list of descriptive keywords for UI discoverability.
 	Keywords []string `json:"keywords,omitempty" yaml:"keywords,omitempty"`
-	// Deprecated Indicates whether this entity is deprecated and should no longer be used.
-	Deprecated bool `json:"deprecated,omitempty" yaml:"deprecated,omitempty"`
 	// Labels Duck-typing labels to declare characteristics. Must include the reserved 'component.aggrega.ai/type' key.
 	Labels OrderedMap[string] `json:"labels" yaml:"labels"`
 	// Annotations Immutable, intrinsic component characteristics authored by the Platform Architect in Domain 2. Cascades down to the .context.annotations.catalog bucket.

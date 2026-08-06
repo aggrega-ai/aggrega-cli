@@ -36,6 +36,7 @@ heuristics. Every log, warning, and diagnostic is written to stderr
 instead. The server reads one message per line and exits cleanly when
 stdin reaches end of stream, so a client that closes the connection shuts
 the server down.`,
+		Args: cobra.NoArgs,
 		RunE: runMCP,
 	}
 }

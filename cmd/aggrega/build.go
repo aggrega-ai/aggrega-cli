@@ -72,6 +72,7 @@ func newBuildCmd() *cobra.Command {
 	c := &cobra.Command{
 		Use:   "build",
 		Short: "Compile Aggregate + Release into Helm artifacts via the 5-step pipeline",
+		Args:  cobra.NoArgs,
 		RunE:  runBuild,
 	}
 	c.Flags().StringVar(&releasePath, "release", "", "Path to Release YAML file (required)")
@@ -445,11 +446,10 @@ func dispatchBuildWithDiag(rw *workspaceconfig.ResolvedWorkspace, releasePath st
 	}
 
 	// Deprecated-entity policy gate: evaluate each closure entity's deprecation
-	// status from the retroactive lockfile marker and the author-time
-	// metadata.deprecated flag under one build-time path, halting or advising per
-	// the workspace build policy. Reads only the lockfile and resolved entity
-	// metadata — no registry access (the ahead-of-time boundary).
-	if err := enforceClosureDeprecation(cl, lf, lazyView, wsCfg.Build, diagOut); err != nil {
+	// status from the retroactive lockfile marker, halting or advising per the
+	// workspace build policy. Reads only the lockfile — no registry access (the
+	// ahead-of-time boundary).
+	if err := enforceClosureDeprecation(cl, lf, wsCfg.Build, diagOut); err != nil {
 		return err
 	}
 

@@ -33,8 +33,6 @@ type ReleaseMetadata struct {
 	Home string `json:"home,omitempty" yaml:"home,omitempty"`
 	// Keywords A list of descriptive keywords for UI discoverability.
 	Keywords []string `json:"keywords,omitempty" yaml:"keywords,omitempty"`
-	// Deprecated Indicates whether this entity is deprecated and should no longer be used.
-	Deprecated bool `json:"deprecated,omitempty" yaml:"deprecated,omitempty"`
 }
 
 // ReleaseSpec The deployment binding and routing: the Aggregate and Manifest this release deploys (or an extends base), the environment-specific parameter fulfillment, and the boundaries that route components into deployment targets.

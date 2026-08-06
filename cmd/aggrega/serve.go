@@ -40,6 +40,7 @@ The daemon honors the aggrega/shutdown JSON-RPC notification for a
 cooperative cross-platform exit: the daemon completes the in-flight
 handler if any, refuses new requests with code 1005, and exits
 cleanly within a 2-second drain budget.`,
+		Args: cobra.NoArgs,
 		RunE: runServe,
 	}
 	c.Flags().Bool("build-on-inspect", false,
