@@ -1,6 +1,21 @@
 #!/usr/bin/env bash
 # aggrega-cli/scripts/build.sh — self-contained build for the aggrega CLI.
 #
+# 🔴 THIS IS NOT THE GATE SCRIPT, AND THE TWO SHARE A FILENAME.
+#
+# It builds; it does not test. There are no test modes here — no unit battery, no
+# integration battery, no drift gates, no lint tiers. Its only mode switch is
+# --light. Invoking it and reading a success as "the gate passed" reports a green
+# for a battery that never ran.
+#
+# The gate lives at the umbrella root and is invoked from there:
+#
+#     ./scripts/build.sh --test-fast aggrega-cli
+#
+# That script is a different program with the same basename, and the umbrella root
+# is where every gate invocation belongs. Anything asking for a build gate wants
+# that one, not this one.
+#
 # Builds the version-stamped aggrega binary with its provider/linter guests
 # embedded (default), or the no-embed aggrega-light binary (--light). Runs from a
 # sibling checkout — aggrega-cli/ beside its sibling repositories
