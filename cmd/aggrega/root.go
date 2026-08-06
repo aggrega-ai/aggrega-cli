@@ -65,10 +65,19 @@ func newRootCmd() *cobra.Command {
 		// discovering a workspace. The display decision is set here — before
 		// any command's RunE — so the color and progress surfaces read one
 		// single-sourced value.
+		//
+		// The compiled-module cache's size cap is armed here for the same
+		// reason: this runs before any command body, so it is before any plugin
+		// could be loaded, and the cap is applied when the cache is first
+		// opened. It is armed with a function rather than a value so the
+		// deferral above survives — a command that loads no plugin resolves no
+		// workspace and reads no configuration.
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 			globalDisplay = resolveGlobalDisplay(noColorFlag, plainFlag, os.LookupEnv)
 			root := workspaceRootFromFlagOrEnv(cmd, workspaceRootFlag, nil)
-			cmd.SetContext(withWorkspaceResolver(cmd.Context(), root, globalConfigLookup(configPathFlag, nil)))
+			ctx := withWorkspaceResolver(cmd.Context(), root, globalConfigLookup(configPathFlag, nil))
+			cmd.SetContext(ctx)
+			armCompiledModuleCacheCap(ctx)
 			return nil
 		},
 	}

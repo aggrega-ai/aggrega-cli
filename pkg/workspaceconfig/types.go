@@ -7,11 +7,12 @@
 // root marker — its presence marks the workspace root and it holds
 // only the root-defining catalog directories. Pure settings live at
 // the top level: default_registry, offline, auto_pull, and
-// artifact_cache_dir, plus the build, plugins, lint, and parse_cache
-// blocks — covering registry routing, build-time strictness dials,
-// workspace-level Wasm plugin attachments (including the per-target
-// provider-rendering bindings), per-rule lint gates, and the daemon's
-// parse-cache eviction caps.
+// artifact_cache_dir, plus the build, plugins, lint, parse_cache, and
+// compiled_module_cache blocks — covering registry routing, build-time
+// strictness dials, workspace-level Wasm plugin attachments (including
+// the per-target provider-rendering bindings), per-rule lint gates, the
+// daemon's parse-cache eviction caps, and the size cap for the on-disk
+// compiled-module store.
 //
 // The workspace file is flat top-level (no apiVersion/kind/metadata
 // envelope), distinguishing it from catalog content which carries
@@ -22,8 +23,9 @@
 // Several documented defaults are NOT the Go zero-value:
 // default_registry = "hub.aggrega.ai", artifact_cache_dir =
 // ".aggrega/cache", enforce_immutability = true,
-// parse_cache.max_entries = 1000, and parse_cache.max_bytes =
-// 100_000_000. Callers obtain a Config seeded with those defaults via
+// parse_cache.max_entries = 1000, parse_cache.max_bytes =
+// 100_000_000, and compiled_module_cache.max_bytes =
+// 53_687_091_200. Callers obtain a Config seeded with those defaults via
 // Default(); the loader's overlay pattern (Load reads file → schema
 // validates → yaml.Unmarshal into a Default()-initialised value)
 // preserves the documented defaults when the file omits a key.
@@ -93,6 +95,13 @@ type Config struct {
 	ParseCache  ParseCacheConfig  `yaml:"parse_cache"`
 	Concurrency ConcurrencyConfig `yaml:"concurrency"`
 	Serve       ServeConfig       `yaml:"serve"`
+
+	// CompiledModuleCache carries the size cap for the on-disk
+	// compiled-module store. That store is machine-wide rather than
+	// per-workspace, so the setting is most at home in the global
+	// config file; it resolves through the same cascade as every
+	// other key, so a workspace file can still override it.
+	CompiledModuleCache CompiledModuleCacheConfig `yaml:"compiled_module_cache"`
 
 	// Signing carries the global signing defaults: the keyless service
 	// URLs and an optional keyed-key path. A per-registry signing block
@@ -671,6 +680,33 @@ type ParseCacheConfig struct {
 	MaxBytes int `yaml:"max_bytes"`
 }
 
+// CompiledModuleCacheConfig carries the size cap for the on-disk
+// compiled-module store — the machine-code cache that lets a Wasm
+// plugin be compiled once per machine instead of once per build.
+//
+// The store is shared across every workspace on the machine and grows
+// only when a plugin is compiled for the first time, so the cap is a
+// ceiling on accumulation rather than a per-build budget. It is applied
+// once per invocation, before any plugin is loaded, by removing whole
+// entries oldest-compiled first; every removed byte is recoverable by
+// recompiling, so lowering the cap costs compile time and nothing else.
+// Distinct from Config.ArtifactCacheDir, which holds pulled registry
+// content, and from ParseCacheConfig, which caps an in-memory cache.
+type CompiledModuleCacheConfig struct {
+	// MaxBytes caps the bytes the compiled-module store holds on
+	// disk. Default 53_687_091_200 (50 GiB); 0 = uncapped, so the
+	// store grows without bound and nothing is removed automatically.
+	//
+	// It belongs above what one build compiles. The cap is applied
+	// before a build compiles anything, so a cap below a single
+	// build's working set makes every build discard and recompile
+	// the same modules and the store stops saving anything. For the
+	// same reason the store can sit above the cap between builds —
+	// the cap is applied first and the build then writes what it
+	// compiled — and is trimmed again at the start of the next one.
+	MaxBytes int64 `yaml:"max_bytes"`
+}
+
 // ConcurrencyConfig carries the daemon's request-dispatch concurrency
 // settings. The daemon reads requests off a single stdin stream and
 // runs each through a worker pool; PoolSize sets how many worker
@@ -698,12 +734,13 @@ type ServeConfig struct {
 }
 
 // Default returns a Config populated with the documented defaults.
-// Seven documented defaults are NOT the Go zero-value and are seeded
+// Eight documented defaults are NOT the Go zero-value and are seeded
 // explicitly: DefaultRegistry = "hub.aggrega.ai",
 // ArtifactCacheDir = ".aggrega/cache", Build.YAMLIndent = 2,
 // Lint.PublishingDiscipline.EnforceImmutability = true,
 // ParseCache.MaxEntries = 1000, ParseCache.MaxBytes = 100_000_000,
-// and Concurrency.PoolSize = 4. Remaining fields stay at Go's
+// CompiledModuleCache.MaxBytes = 53_687_091_200, and
+// Concurrency.PoolSize = 4. Remaining fields stay at Go's
 // zero-value (AutoPull false, every Allow* flag false, every list nil,
 // every other string empty) — including
 // Build.HaltOnDeprecatedSeverity, whose empty value is the documented
@@ -728,6 +765,9 @@ func Default() Config {
 		ParseCache: ParseCacheConfig{
 			MaxEntries: 1000,
 			MaxBytes:   100_000_000,
+		},
+		CompiledModuleCache: CompiledModuleCacheConfig{
+			MaxBytes: 53_687_091_200,
 		},
 		Concurrency: ConcurrencyConfig{
 			PoolSize: 4,

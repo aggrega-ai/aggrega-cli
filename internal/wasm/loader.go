@@ -58,7 +58,6 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -233,13 +232,19 @@ func NewCachingLoaderFromContext(ctx context.Context, fetch FetchService) *Loade
 // sharedCompilationCacheDir so Load's cross-process lock can place its per-guest
 // lock file there; an in-memory cache leaves it empty and Load takes only the
 // in-process lock.
+//
+// A disk-backed cache is also held to its size cap here, once, before this
+// process compiles or reads anything. That placement is what keeps the cap off
+// the compile path — see reclaimCompileCacheAtStartup, which records why this is
+// the safe moment to remove an entry from a directory other processes are using.
 func sharedCompilationCache(disablePersistent bool) wazero.CompilationCache {
 	sharedCompilationCacheOnce.Do(func() {
 		if testing.Testing() {
 			sharedCompilationCacheInstance, sharedCompilationCacheDir = testCompilationCache()
-			return
+		} else {
+			sharedCompilationCacheInstance, sharedCompilationCacheDir = selectCompilationCacheWithDir(disablePersistent)
 		}
-		sharedCompilationCacheInstance, sharedCompilationCacheDir = selectCompilationCacheWithDir(disablePersistent)
+		reclaimCompileCacheAtStartup(sharedCompilationCacheDir)
 	})
 	return sharedCompilationCacheInstance
 }
@@ -1023,21 +1028,19 @@ func (l *Loader) attributeCompileLeaves(guestDigest string, before, after map[st
 // *.tmp staging files an in-flight compile leaves behind, so the snapshot diff
 // captures only finished compiled modules.
 //
-// This exclusion mirrors the compiled-leaf membership test the cache-inspection
-// command applies (cmd/aggrega isCompileLeaf); the two are kept as separate
-// small predicates on either side of the package boundary. Keep them in step: a
-// change to which files count as compiled leaves must land on both.
+// Membership is isCompileCacheLeaf, the same predicate capped reclamation
+// consults, so what this snapshot counts as a compiled module and what a size cap
+// removes are one answer rather than two that agree today. The cache-inspection
+// command applies its own small predicate on the far side of the package
+// boundary; keep the two in step, since a change to which files count as compiled
+// modules must land on both.
 func listCompileLeaves(dir string) map[string]int64 {
 	out := map[string]int64{}
 	_ = filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() {
 			return nil
 		}
-		name := d.Name()
-		if strings.HasPrefix(name, ".compile-") && strings.HasSuffix(name, ".lock") {
-			return nil
-		}
-		if strings.HasSuffix(name, ".tmp") {
+		if !isCompileCacheLeaf(d.Name()) {
 			return nil
 		}
 		rel, relErr := filepath.Rel(dir, p)

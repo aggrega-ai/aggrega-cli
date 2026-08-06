@@ -16,7 +16,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/spf13/cobra"
 
@@ -310,15 +309,23 @@ func enumDocsBundles(root string) []cacheElement {
 }
 
 // isCompileLeaf reports whether a non-directory filename beneath the
-// compiled-module cache is a cache leaf — a compiled module worth listing,
-// counting, and evicting. It is the single membership test both the status
-// enumeration and the eviction enumeration consult, so the two agree on exactly
-// which files count as cache content. Two kinds of file are excluded because
-// they are not compiled modules: the transient per-guest compile-lock sidecars
-// (`.compile-<digest>.lock`) that serialize concurrent compiles, and the
-// half-written `*.tmp` transients an in-flight compile stages before its atomic
-// rename. Both come and go with a compile in progress and never represent
-// finished cache content.
+// compiled-module cache is a cache leaf — a compiled module worth listing and
+// counting. It is the membership test the status enumeration applies. Two kinds
+// of file are excluded because they are not compiled modules: the transient
+// per-guest compile-lock sidecars (`.compile-<digest>.lock`) that serialize
+// concurrent compiles, and the half-written `*.tmp` transients an in-flight
+// compile stages before its atomic rename. Both come and go with a compile in
+// progress and never represent finished cache content. The same shape covers the
+// lock a reclamation pass holds, so that file is excluded here too.
+//
+// A second small predicate on the far side of the package boundary decides the
+// same question for the loader and for capped reclamation. The two are
+// deliberately separate rather than one exported predicate, so this package's
+// reporting surface does not widen that one; keep them in step, since a change to
+// which files count as compiled modules must land on both. The membership guard
+// in this package's tests asserts that the status listing and the shared
+// reclamation enumeration return the same set, so a divergence surfaces there
+// rather than as a cap that counts what the listing does not show.
 func isCompileLeaf(name string) bool {
 	if strings.HasPrefix(name, ".compile-") && strings.HasSuffix(name, ".lock") {
 		return false
@@ -726,9 +733,9 @@ func newCacheEvictCmd() *cobra.Command {
 		Short: "Trim the compiled-module cache to a size cap, oldest first",
 		Long: `Trim the compiled-module cache to a size cap by removing the
 least-recently-compiled modules first, until the cache total is at or below
---max-size. The compiled-module cache is the one machine-global store that grows
-without bound: every provider guest is compiled once and reused across every
-project on the machine, so over time it can dominate on-disk cache use.
+--max-size. The compiled-module cache is machine-global: every provider guest is
+compiled once and reused across every project on the machine, so over time it can
+dominate on-disk cache use.
 
 Unlike prune (which reclaims artifact-cache entries no lockfile references) and
 clear (which wipes every cache), evict is size-bounded and touches only the
@@ -740,8 +747,13 @@ status summary prints — for example 5GiB, "4.5 GiB", or 512MiB — or a bare
 integer byte count. The unit suffix is case-insensitive and an optional space
 may separate the number from the unit.
 
-Eviction is explicit: no build evicts on its own. When the cache already fits
-the cap, evict reports a no-op and removes nothing.`,
+This verb is the on-demand trim, at a cap you give it once. The cache is also
+held to a standing cap without being asked: every invocation that loads a plugin
+applies the ` + "`compiled_module_cache.max_bytes`" + ` setting (53687091200 bytes, 50 GiB,
+by default) before it compiles anything, using this same removal order. Use this
+verb to reclaim space now or below the standing cap; change the setting to move
+the standing cap itself. When the cache already fits the cap, evict reports a
+no-op and removes nothing.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if strings.TrimSpace(maxSize) == "" {
@@ -761,112 +773,69 @@ the cap, evict reports a no-op and removes nothing.`,
 	return c
 }
 
-// evictLeaf is one compiled-module cache leaf considered for size-bounded
-// eviction: its display label, filesystem path, byte size, and last
-// modification time. modTime orders eviction (oldest-compiled first) but is
-// never printed, so eviction output carries no raw timestamps and the selection
-// stays a pure function of the on-disk leaf set.
-type evictLeaf struct {
-	label   string
-	path    string
-	size    int64
-	modTime time.Time
-}
-
-// collectCompileLeaves enumerates the compiled-module cache leaves eligible for
-// eviction beneath root. It applies the same membership test the status
-// enumeration uses — isCompileLeaf — so the transient per-guest compile-lock
-// sidecars and half-written *.tmp transients are never evicted or counted, and
-// an in-flight compile is left alone. A root that does not exist is an empty
-// leaf set, not an error. Each leaf carries its size and modification time for
-// the oldest-first order.
-func collectCompileLeaves(root string) ([]evictLeaf, error) {
-	if _, err := os.Stat(root); err != nil {
-		if os.IsNotExist(err) {
-			return nil, nil
-		}
-		return nil, err
-	}
-	var out []evictLeaf
-	err := filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if d.IsDir() {
-			return nil
-		}
-		if !isCompileLeaf(d.Name()) {
-			return nil
-		}
-		info, ierr := d.Info()
-		if ierr != nil {
-			return ierr
-		}
-		rel, relErr := filepath.Rel(root, p)
-		if relErr != nil {
-			rel = p
-		}
-		out = append(out, evictLeaf{
-			label:   filepath.ToSlash(rel),
-			path:    p,
-			size:    info.Size(),
-			modTime: info.ModTime(),
-		})
-		return nil
-	})
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-// runCacheEvict trims the compiled-module cache to capBytes. It enumerates the
-// eligible leaves, and when their total already fits the cap prints a single
-// no-op line and removes nothing. Otherwise it removes leaves oldest-compiled
-// first — modification time ascending, leaf label ascending as the deterministic
-// tie-break — until the remaining total fits the cap, reporting each removal and
-// a closing summary. Eviction is best-effort with respect to a concurrent
-// compile: the cache is re-derivable, so a race only forces a recompile. A
-// per-leaf removal failure is returned loudly rather than swallowed.
+// runCacheEvict trims the compiled-module cache to capBytes and reports what it
+// did. When the cache already fits the cap it prints a single no-op line and
+// removes nothing; otherwise it names each removed leaf and closes with a
+// summary.
+//
+// The selection and the removal are not decided here: both come from the shared
+// capped-reclamation routine, the same one that applies the configured cap
+// automatically. This function only renders the outcome, so the verb and the
+// automatic cap can never disagree about which leaves a given cap removes. What
+// that routine guarantees — removal oldest-compiled first with a deterministic
+// tie-break, in-flight compiles left alone, and a removed entry costing a later
+// recompile rather than a failed read — is documented once, there.
+//
+// A removal failure is reported loudly, after naming the leaves that were
+// removed before it, so a partial trim is never silent.
 func runCacheEvict(w io.Writer, loc cacheLocations, capBytes int64) error {
 	if loc.compileDir == "" {
 		return fmt.Errorf("cache evict: no compiled-module cache directory could be resolved")
 	}
-	leaves, err := collectCompileLeaves(loc.compileDir)
-	if err != nil {
-		return fmt.Errorf("cache evict: enumerate compiled-module cache: %w", err)
-	}
-	var total int64
-	for _, l := range leaves {
-		total += l.size
-	}
-	if total <= capBytes {
-		fmt.Fprintf(w, "compiled-module cache is %s, within cap %s; nothing evicted\n", humanSize(total), humanSize(capBytes))
+	res, err := wasm.ReclaimCompileCache(loc.compileDir, capBytes)
+	if res.WithinCapBefore() && err == nil {
+		fmt.Fprintf(w, "compiled-module cache is %s, within cap %s; nothing evicted\n", humanSize(res.Total), humanSize(capBytes))
 		return nil
 	}
-	sort.Slice(leaves, func(i, j int) bool {
-		if !leaves[i].modTime.Equal(leaves[j].modTime) {
-			return leaves[i].modTime.Before(leaves[j].modTime)
-		}
-		return leaves[i].label < leaves[j].label
-	})
-	remaining := total
-	var removed int
-	var reclaimed int64
-	for _, l := range leaves {
-		if remaining <= capBytes {
-			break
-		}
-		if rmErr := os.Remove(l.path); rmErr != nil {
-			return fmt.Errorf("cache evict: remove %s: %w", l.path, rmErr)
-		}
-		fmt.Fprintf(w, "evicted %s (%s)\n", l.label, humanSize(l.size))
-		removed++
-		reclaimed += l.size
-		remaining -= l.size
+	for _, l := range res.Removed {
+		fmt.Fprintf(w, "evicted %s (%s)\n", l.Label, humanSize(l.Size))
 	}
-	fmt.Fprintf(w, "evicted %d leaf(s), %s reclaimed; %s retained (cap %s)\n", removed, humanSize(reclaimed), humanSize(remaining), humanSize(capBytes))
+	if err != nil {
+		return fmt.Errorf("cache evict: %w", err)
+	}
+	fmt.Fprintf(w, "evicted %d leaf(s), %s reclaimed; %s retained (cap %s)\n",
+		len(res.Removed), humanSize(res.Reclaimed), humanSize(res.Remaining), humanSize(capBytes))
 	return nil
+}
+
+// armCompiledModuleCacheCap arms the size cap the compiled-module cache is held
+// to, reading it from the resolved configuration's `compiled_module_cache`
+// block. The root command calls it once, before any command body runs and so
+// before any plugin could be loaded.
+//
+// The cap is handed over as a function rather than a value so that resolving the
+// configuration stays deferred: a command that never loads a plugin never opens
+// the compiled-module cache, so the function is never called and no workspace is
+// discovered. When resolution fails there is no configured answer to honour, so
+// the function reports the built-in default and the cache stays capped rather
+// than becoming unbounded because a workspace could not be found.
+func armCompiledModuleCacheCap(ctx context.Context) {
+	wasm.SetCompileCacheCapResolver(func() int64 { return compiledModuleCacheCap(ctx) })
+}
+
+// compiledModuleCacheCap reads the compiled-module cache's size cap out of the
+// resolved configuration. It is the whole of what arming defers, split out so the
+// reading can be exercised against a fixture workspace without arming anything.
+//
+// A workspace that does not resolve yields the built-in default rather than no
+// cap: a cache that cannot find its setting is still a cache that should not grow
+// without bound.
+func compiledModuleCacheCap(ctx context.Context) int64 {
+	ws, err := workspaceFromContext(ctx)
+	if err != nil {
+		return wasm.DefaultCompileCacheCapBytes
+	}
+	return ws.Config().CompiledModuleCache.MaxBytes
 }
 
 // parseHumanSize parses a byte quantity written in the same binary-unit

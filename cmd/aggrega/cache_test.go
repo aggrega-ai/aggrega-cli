@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm/attribindex"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm/embedded"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm/provindex"
@@ -884,16 +885,19 @@ func TestCompileLeafMembershipUnified(t *testing.T) {
 		}
 	}
 
-	// Evict enumeration: the same single leaf, agreeing with status.
-	leaves, err := collectCompileLeaves(compileDir)
+	// Reclamation enumeration: the same single leaf, agreeing with status. It is
+	// the shared collector the size cap uses, so this asserts the status listing
+	// agrees with what a cap would actually remove — not with a second local copy
+	// of the membership rule.
+	leaves, err := wasm.CollectCompileCacheLeaves(compileDir)
 	if err != nil {
-		t.Fatalf("collectCompileLeaves: %v", err)
+		t.Fatalf("CollectCompileCacheLeaves: %v", err)
 	}
 	if len(leaves) != 1 {
-		t.Fatalf("evict enumeration returned %d leaf(s), want 1:\n%+v", len(leaves), leaves)
+		t.Fatalf("reclamation enumeration returned %d leaf(s), want 1:\n%+v", len(leaves), leaves)
 	}
-	if leaves[0].path != module {
-		t.Fatalf("evict enumeration leaf %q, want the module %q", leaves[0].path, module)
+	if leaves[0].Path != module {
+		t.Fatalf("reclamation enumeration leaf %q, want the module %q", leaves[0].Path, module)
 	}
 
 	// The predicate itself, exercised directly on each name.

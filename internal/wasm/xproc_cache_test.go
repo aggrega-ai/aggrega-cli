@@ -268,3 +268,144 @@ func TestCrossProcessDiskCacheReuse(t *testing.T) {
 		t.Fatalf("warm run (%s) not faster than cold run (%s): shared disk cache was not reused across processes", warmDur, coldDur)
 	}
 }
+
+// TestCrossProcessReuseSurvivesCappedReclaim is the guard on the property a size
+// cap could plausibly destroy: that a shared on-disk compiled-module cache is
+// still reused across processes after the cap has removed entries from it.
+//
+// It matters because the cap and the sharing pull in opposite directions. The
+// sharing is why a whole test run compiles each guest at most once instead of
+// paying a cold compile per process; a cap that held the cache under its bound by
+// removing what the next process needs would keep the accounting honest while
+// destroying the thing the cache exists for. So a reclamation that stayed under
+// cap is not sufficient — reuse has to be shown still working afterwards.
+//
+// It also measures the safety claim the reclamation point rests on: removing an
+// entry a live process is about to read costs that process a recompile and never a
+// failed read. A worker that ran into a removed entry as an error rather than a
+// miss would exit non-zero and fail this test loudly. The two reclamation shapes
+// are both exercised — one entry removed, and every entry removed — because they
+// fail differently: a partial removal leaves a directory that is populated but
+// incomplete, which is the state a naive reader would mishandle.
+func TestCrossProcessReuseSurvivesCappedReclaim(t *testing.T) {
+	if testing.Short() {
+		t.Skip("cross-process reuse-after-reclaim timing skipped in -short")
+	}
+	guest := ensureFixtureBuilt(t, "policy-go.wasm")
+	cacheDir := t.TempDir()
+
+	timeWorker := func(label string) ([]byte, time.Duration) {
+		t.Helper()
+		start := time.Now()
+		out := runWorker(t, cacheDir, guest)
+		d := time.Since(start)
+		if len(out) == 0 {
+			t.Fatalf("%s: worker produced empty output", label)
+		}
+		return out, d
+	}
+
+	cacheTotal := func(label string) (int64, []wasm.CompileCacheLeaf) {
+		t.Helper()
+		leaves, err := wasm.CollectCompileCacheLeaves(cacheDir)
+		if err != nil {
+			t.Fatalf("%s: enumerate cache: %v", label, err)
+		}
+		if len(leaves) == 0 {
+			t.Fatalf("%s: the cache holds no entries, so this test would prove nothing about reuse", label)
+		}
+		var total int64
+		for _, l := range leaves {
+			total += l.Size
+		}
+		return total, leaves
+	}
+
+	want, coldDur := timeWorker("cold")
+	_, warmDur := timeWorker("warm")
+	if warmDur >= coldDur {
+		t.Fatalf("the baseline is not established: warm (%s) was not faster than cold (%s), "+
+			"so a later warm run proves nothing about reuse", warmDur, coldDur)
+	}
+
+	total, leaves := cacheTotal("populated")
+	t.Logf("populated cache: %d entrie(s), %d bytes; cold=%s warm=%s", len(leaves), total, coldDur, warmDur)
+
+	// A cap at the total is a no-op, and the cache is still reused afterwards. This
+	// is the overwhelmingly common case in practice — a cache under its cap — so it
+	// is the one that must cost nothing.
+	noop, err := wasm.ReclaimCompileCache(cacheDir, total)
+	if err != nil {
+		t.Fatalf("no-op reclaim: %v", err)
+	}
+	if len(noop.Removed) != 0 {
+		t.Fatalf("a cap at the cache total removed %d entrie(s); it must remove nothing: %+v",
+			len(noop.Removed), noop.Removed)
+	}
+	got, afterNoopDur := timeWorker("warm after a no-op cap")
+	if string(got) != string(want) {
+		t.Fatalf("output changed after a no-op cap\n want: %s\n  got: %s", want, got)
+	}
+	if afterNoopDur >= coldDur {
+		t.Fatalf("a no-op cap cost the cache its warmth: %s, not faster than cold %s", afterNoopDur, coldDur)
+	}
+
+	// Now a cap that genuinely removes something: exactly the oldest entry. The
+	// next process must succeed — a removed entry is a miss that recompiles — and
+	// the process after it must be warm again, which is the reuse claim.
+	oldest := leaves[0]
+	for _, l := range leaves[1:] {
+		if l.ModTime.Before(oldest.ModTime) {
+			oldest = l
+		}
+	}
+	partial, err := wasm.ReclaimCompileCache(cacheDir, total-oldest.Size)
+	if err != nil {
+		t.Fatalf("partial reclaim: %v", err)
+	}
+	if len(partial.Removed) == 0 {
+		t.Fatalf("a cap below the total removed nothing, so nothing was reclaimed to measure against")
+	}
+	if partial.Remaining > total-oldest.Size {
+		t.Fatalf("after the partial pass the cache holds %d bytes, above the %d-byte cap",
+			partial.Remaining, total-oldest.Size)
+	}
+	got, repopDur := timeWorker("first process after a partial reclaim")
+	if string(got) != string(want) {
+		t.Fatalf("output changed after a partial reclaim\n want: %s\n  got: %s", want, got)
+	}
+	got, warmAfterPartialDur := timeWorker("warm after a partial reclaim")
+	if string(got) != string(want) {
+		t.Fatalf("output changed on the warm run after a partial reclaim\n want: %s\n  got: %s", want, got)
+	}
+	if warmAfterPartialDur >= coldDur {
+		t.Fatalf("cross-process reuse did not recover after a partial reclaim: warm %s, not faster than cold %s",
+			warmAfterPartialDur, coldDur)
+	}
+	t.Logf("partial reclaim removed %d entrie(s), %d bytes; repopulate=%s warm-after=%s",
+		len(partial.Removed), partial.Reclaimed, repopDur, warmAfterPartialDur)
+
+	// The extreme: a cap so low every entry goes. The next process must still
+	// succeed, which is the sharpest form of "a removed entry is a miss".
+	full, err := wasm.ReclaimCompileCache(cacheDir, 1)
+	if err != nil {
+		t.Fatalf("full reclaim: %v", err)
+	}
+	if full.Remaining > 1 {
+		t.Fatalf("a 1-byte cap left %d bytes behind", full.Remaining)
+	}
+	got, afterWipeDur := timeWorker("first process after every entry was removed")
+	if string(got) != string(want) {
+		t.Fatalf("output changed after every entry was removed\n want: %s\n  got: %s", want, got)
+	}
+	got, warmAfterWipeDur := timeWorker("warm after every entry was removed")
+	if string(got) != string(want) {
+		t.Fatalf("output changed on the warm run after every entry was removed\n want: %s\n  got: %s", want, got)
+	}
+	if warmAfterWipeDur >= afterWipeDur {
+		t.Fatalf("the cache did not repopulate after a full reclaim: warm %s, not faster than the repopulating run %s",
+			warmAfterWipeDur, afterWipeDur)
+	}
+	t.Logf("full reclaim removed %d entrie(s), %d bytes; repopulate=%s warm-after=%s",
+		len(full.Removed), full.Reclaimed, afterWipeDur, warmAfterWipeDur)
+}

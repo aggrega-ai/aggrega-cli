@@ -14,3 +14,15 @@ package wasm
 func flockGuestCompile(dir, key string) func() {
 	return func() {}
 }
+
+// flockCompileCacheReclaim is the lock-free variant of the compiled-module
+// cache's reclamation lock for platforms without POSIX advisory file locking. It
+// reports true — reclamation PROCEEDS here — because the lock is an efficiency
+// measure rather than a safety one: it keeps several processes from each trimming
+// the same directory at once, and without it the worst outcome is that two
+// processes both trim and between them remove more than either needed, which
+// costs a recompile and never a failed read. Reporting false instead would leave
+// the cache uncapped on these platforms, which is the worse trade.
+func flockCompileCacheReclaim(dir string) (func(), bool) {
+	return func() {}, true
+}
