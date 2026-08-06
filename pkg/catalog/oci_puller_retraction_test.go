@@ -44,6 +44,56 @@ func (s *fixedScreen) ReportPinned(_, version string) {
 	s.pinned = append(s.pinned, version)
 }
 
+// TestSelectScreenedVersionIsInvariantUnderSemverFiltering proves, by execution,
+// the property a caller holding a pre-filtered candidate list depends on:
+// selecting over the strict-SemVer subset of a tag list resolves the same version
+// as selecting over the raw list.
+//
+// It matters because a caller may hold only the conformant subset — a recorded
+// version set rather than a live tag listing — and must still resolve what the raw
+// listing would have resolved, so screening a pre-filtered list changes nothing
+// absent a withdrawal. The tag set is deliberately hostile: non-conformant tags
+// that the subset drops, and a pre-release that it retains while selection skips
+// it. That is the shape where the argument fails if it is wrong.
+func TestSelectScreenedVersionIsInvariantUnderSemverFiltering(t *testing.T) {
+	const ref = "reg.test/plugin/governance/tag-injector"
+	for _, tc := range []struct {
+		name string
+		tags []string
+		want string
+	}{
+		{
+			name: "non_conformant_tags_and_a_pre_release",
+			tags: []string{"latest", "v1.2.3", "1.2.3.4", "2.0.0-rc.1", "1.0.0", "2.0.0", "0.9.0"},
+			want: "2.0.0",
+		},
+		{
+			name: "the_highest_conformant_tag_is_a_pre_release",
+			tags: []string{"stable", "1.0.0", "2.0.0-rc.1"},
+			want: "1.0.0",
+		},
+		{
+			name: "build_metadata_and_an_unsorted_listing",
+			tags: []string{"1.10.0", "1.9.0", "1.10.0+build.7", "release-candidate"},
+			want: "1.10.0",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			raw := oci.SelectLatestVersion(tc.tags, false /* includePreRelease */)
+			if raw != tc.want {
+				t.Fatalf("selection over the raw listing = %q; want %q", raw, tc.want)
+			}
+			filtered, err := SelectScreenedVersion(nil, ref, oci.SortedSemverTags(tc.tags))
+			if err != nil {
+				t.Fatalf("selection over the conformant subset failed: %v", err)
+			}
+			if filtered != raw {
+				t.Fatalf("selection over the conformant subset = %q; over the raw listing = %q — the two must agree", filtered, raw)
+			}
+		})
+	}
+}
+
 // TestSelectScreenedPullVersionScreening pins the discovery step's behaviour under a
 // screen, and above all keeps its two failure modes apart. Collapsing them would
 // report a fully-withdrawn repository as a missing entity — the path of least
@@ -114,6 +164,27 @@ func TestSelectScreenedPullVersionScreening(t *testing.T) {
 		}
 		if errors.Is(err, ErrAllVersionsRetracted) {
 			t.Fatalf("a repository with no conformant version was not withdrawn; got %v", err)
+		}
+	})
+
+	t.Run("the_method_and_the_exported_function_agree", func(t *testing.T) {
+		// The method delegates, so the two must never diverge. Asserting the outcomes
+		// match rather than asserting the delegation exists is what survives a future
+		// refactor of either side: a second copy of the rule would pass a test that
+		// only looked at one of them.
+		tags := []string{"1.0.0", "1.5.0", "2.0.0"}
+		viaMethod := &fixedScreen{withdrawn: map[string]string{"2.0.0": "withdrawn"}}
+		viaFunc := &fixedScreen{withdrawn: map[string]string{"2.0.0": "withdrawn"}}
+		p := DefaultOCIPuller{retraction: viaMethod}
+		gotMethod, errMethod := p.selectScreenedPullVersion(ref, tags)
+		gotFunc, errFunc := SelectScreenedVersion(viaFunc, ref, tags)
+		if gotMethod != gotFunc || (errMethod == nil) != (errFunc == nil) {
+			t.Fatalf("method = (%q, %v); function = (%q, %v) — the two must not diverge",
+				gotMethod, errMethod, gotFunc, errFunc)
+		}
+		if viaMethod.selected != viaFunc.selected {
+			t.Fatalf("announcements diverged: method announced %q, function announced %q",
+				viaMethod.selected, viaFunc.selected)
 		}
 	})
 

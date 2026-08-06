@@ -250,7 +250,7 @@ func pluginAddRun(ctx context.Context, cfg pluginAddConfig) error {
 	// identity (<pluginType>/<name>) and pin the latest published version so the
 	// attachment is version-pinned.
 	entity := strings.TrimPrefix(repoPath, catalog.KindPathSegment("Plugin")+"/")
-	version, err := resolveLatestPluginVersion(ctx, rw, host, repoPath)
+	version, err := resolveLatestPluginVersion(ctx, rw, host, repoPath, cfg.Out)
 	if err != nil {
 		return fmt.Errorf("aggrega plugin add: %w", err)
 	}
@@ -284,7 +284,7 @@ func pluginAddCLIRun(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace,
 	if err != nil {
 		return err
 	}
-	version, err := resolveLatestPluginVersion(ctx, rw, host, repoPath)
+	version, err := resolveLatestPluginVersion(ctx, rw, host, repoPath, cfg.Out)
 	if err != nil {
 		return fmt.Errorf("aggrega plugin add: %w", err)
 	}
@@ -347,20 +347,23 @@ var pluginRepoTagLister = func(ctx context.Context, cfg workspaceconfig.Config, 
 }
 
 // resolveLatestPluginVersion returns the highest strict-SemVer version published
-// for the plugin repository, or the empty string when no conforming version is
-// found. Discovery reads the local registry index by default — the snapshot a
-// `registry update` builds — so version resolution costs no network round-trip on
-// the common path; the record's headline version is the same highest-released
-// selection a live tag list yields. Pre-release versions are excluded, the same
-// rule the publishing and deprecation paths apply.
+// for the plugin repository that has not been withdrawn, or the empty string when
+// no conforming version is found. Discovery reads the local registry index by
+// default — the snapshot a `registry update` builds — so version resolution costs
+// no network round-trip on the common path. Pre-release versions are excluded, the
+// same rule the publishing and deprecation paths apply. A version the snapshot
+// records as withdrawn is skipped and the substitution announced on out; out is
+// also where an announcement would go for a screened selection, so a nil writer
+// leaves selection unscreened rather than skipping a version silently.
 //
 // When the local index does not carry the repository — never built, or the
 // repository is absent from the snapshot — resolution falls back to a live tag
 // list, except in an offline workspace, where discovery must not network: it
-// fails loudly, pointing at `registry update`. The actual plugin fetch/add is
-// always live regardless; only this version discovery reads the snapshot.
-func resolveLatestPluginVersion(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, host, repoPath string) (string, error) {
-	if version, ok, err := pluginVersionFromIndex(rw, host, repoPath); err != nil {
+// fails loudly, pointing at `registry update`. That fallback holds no withdrawal
+// records, so it selects over every published version. The actual plugin fetch/add
+// is always live regardless; only this version discovery reads the snapshot.
+func resolveLatestPluginVersion(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, host, repoPath string, out io.Writer) (string, error) {
+	if version, ok, err := pluginVersionFromIndex(rw, host, repoPath, out); err != nil {
 		return "", err
 	} else if ok {
 		return version, nil
@@ -376,12 +379,27 @@ func resolveLatestPluginVersion(ctx context.Context, rw *workspaceconfig.Resolve
 	return oci.SelectLatestVersion(tags, false /* includePreRelease */), nil
 }
 
-// pluginVersionFromIndex resolves a plugin repository's headline version from the
-// host's local discovery index. It reports the version and whether the repository
-// was present. An index that has not been built reports (absent) so the caller
-// can fall back to a live lookup; a genuine read or parse fault of a built index
-// surfaces as an error rather than a silent fallback.
-func pluginVersionFromIndex(rw *workspaceconfig.ResolvedWorkspace, host, repoPath string) (string, bool, error) {
+// pluginVersionFromIndex resolves a plugin repository's version from the host's
+// local discovery index, screened against the withdrawal records that same index
+// carries. It reports the version and whether the repository was present. An index
+// that has not been built reports (absent) so the caller can fall back to a live
+// lookup; a genuine read or parse fault of a built index surfaces as an error
+// rather than a silent fallback.
+//
+// Selection runs over the record's published-version set rather than taking its
+// headline, because the headline is recorded from an unscreened selection: it names
+// the highest published version whether or not that version has since been
+// withdrawn. Running the shared screened selection over the set instead is what
+// makes a withdrawn version skipped here exactly as it is skipped when an entity is
+// pulled, with the substitution announced on out. Absent a withdrawal the two
+// resolve the same version, because the set retains the headline and selection
+// applies the same rule the headline was recorded with.
+//
+// A record carrying no version set holds only its headline: there is nothing to
+// select over, so the headline stands. A nil out leaves selection unscreened, which
+// is the honest posture — an exclusion nobody can be told about is the silent
+// substitution this exists to prevent.
+func pluginVersionFromIndex(rw *workspaceconfig.ResolvedWorkspace, host, repoPath string, out io.Writer) (string, bool, error) {
 	loaded, err := loadHostIndex(rw.Root(), rw.Config().ResolvedArtifactCacheDir(), host)
 	if err != nil {
 		if errors.Is(err, errIndexNotBuilt) {
@@ -389,11 +407,22 @@ func pluginVersionFromIndex(rw *workspaceconfig.ResolvedWorkspace, host, repoPat
 		}
 		return "", false, err
 	}
-	uri := "oci://" + host + "/" + repoPath
+	// The record lookup and the screen both key off this one reference through the
+	// single index-URI mapping, so they cannot disagree about which record they mean.
+	reference := host + "/" + repoPath
+	uri := indexURIForReference(reference)
 	for _, rec := range loaded.Records {
-		if rec.URI == uri {
+		if rec.URI != uri {
+			continue
+		}
+		if len(rec.Versions) == 0 {
 			return rec.Version, true, nil
 		}
+		version, serr := catalog.SelectScreenedVersion(newRetractionScreen(rw, host, out), reference, rec.Versions)
+		if serr != nil {
+			return "", true, serr
+		}
+		return version, true, nil
 	}
 	return "", false, nil
 }

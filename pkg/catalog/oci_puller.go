@@ -436,12 +436,21 @@ func selectPullVersion(reference string, tags []string) (string, error) {
 	return version, nil
 }
 
-// selectScreenedPullVersion is the discovery step every pull entrypoint on this
-// puller shares: the highest conformant published version, minus any version the
-// attached retraction screen reports withdrawn.
+// SelectScreenedVersion picks the highest conformant published version from a tag
+// list, minus any version the supplied screen reports withdrawn. reference is the
+// artifact the tags belong to: it keys the screen's records and names the artifact
+// in the announcement and in any halt.
 //
-// With no screen it is exactly selectPullVersion, which stays the one home of the
-// selection rule — the screen filters the candidate list and never re-implements
+// It is the one home of screened selection, reached two ways. The pull entrypoints
+// reach it through the screen attached to the puller they run on. A caller that
+// holds a screen of its own and no puller — the plugin attach command, resolving an
+// unpinned reference against the local registry index — passes that screen here
+// directly. One home and an injected screen is what keeps a second copy of the
+// exclusion rule from existing, and a copy that agreed today is what would hide the
+// next divergence.
+//
+// With a nil screen it is exactly selectPullVersion, which stays the one home of
+// the selection rule — the screen filters the candidate list and never re-implements
 // the choice.
 //
 // With a screen, a withdrawn version is removed before selection and the outcome
@@ -456,19 +465,13 @@ func selectPullVersion(reference string, tags []string) (string, error) {
 // When it withdrew nothing, a failure to select has nothing to do with withdrawal
 // and keeps the not-found reading it has always had.
 //
-// Scope, stated rather than implied: it covers the catalog entity pull
-// (PullEntity), the library discovery step (PullLibrary) and the sub-aggregate one
-// (PullAggregate), so the version a reference resolves to does not depend on which
-// of the three fetched it. A puller constructed without a screen leaves all three
-// unscreened, which is the posture the long-running daemon's lazy descent holds.
-// The plugin-add command's version discovery stays outside this step entirely: it
-// resolves from the local registry index, falling back to oci.SelectLatestVersion
-// over a live tag list, by its own route.
-func (p DefaultOCIPuller) selectScreenedPullVersion(reference string, tags []string) (string, error) {
-	if p.retraction == nil {
+// This function reaches no registry. The screen is injected rather than built here
+// precisely so that stays true at every call site — see RetractionScreen.
+func SelectScreenedVersion(screen RetractionScreen, reference string, tags []string) (string, error) {
+	if screen == nil {
 		return selectPullVersion(reference, tags)
 	}
-	eligible, excluded := p.retraction.ScreenVersions(reference, tags)
+	eligible, excluded := screen.ScreenVersions(reference, tags)
 	version, err := selectPullVersion(reference, eligible)
 	if err != nil {
 		if len(excluded) > 0 {
@@ -477,9 +480,22 @@ func (p DefaultOCIPuller) selectScreenedPullVersion(reference string, tags []str
 		return "", err
 	}
 	if len(excluded) > 0 {
-		p.retraction.ReportSelection(reference, version, excluded)
+		screen.ReportSelection(reference, version, excluded)
 	}
 	return version, nil
+}
+
+// selectScreenedPullVersion is the discovery step every pull entrypoint on this
+// puller shares: SelectScreenedVersion over the screen this puller was constructed
+// with, which is nil on an unscreened one.
+//
+// Scope, stated rather than implied: it covers the catalog entity pull
+// (PullEntity), the library discovery step (PullLibrary) and the sub-aggregate one
+// (PullAggregate), so the version a reference resolves to does not depend on which
+// of the three fetched it. A puller constructed without a screen leaves all three
+// unscreened, which is the posture the long-running daemon's lazy descent holds.
+func (p DefaultOCIPuller) selectScreenedPullVersion(reference string, tags []string) (string, error) {
+	return SelectScreenedVersion(p.retraction, reference, tags)
 }
 
 // reportPinnedVersion announces a version a reference named outright, when the
