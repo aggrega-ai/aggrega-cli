@@ -2,10 +2,13 @@
 // Copyright 2026 Cognitio S.r.l.
 
 // Workload struct surface — the platform-owned `aggrega.ai/v1alpha1` Workload
-// kind referenced by Recipes that adopt the synthesized input kind. Field
-// shapes mirror workload-v1alpha1.schema.json in the aggrega-schemas repo and are
-// constrained at runtime by the embedded JSON Schema at
-// pkg/schemas/jsonschema/workload.json.
+// kind referenced by Recipes that adopt the synthesized input kind. The Workload
+// and WorkloadMetadata declarations are generated from
+// workload-v1alpha1.schema.json in the aggrega-schemas repo, so they cannot drift
+// from it; the value types they reference are hand-written here and mirror that
+// same schema. At runtime the parsed value is constrained by that schema's
+// source, which pkg/schemas/jsonschema rebinds from the aggrega-schemas module
+// as WorkloadJSONSchema.
 //
 // Validation flow: yaml.Unmarshal decodes into typed Go fields; the consumer
 // (Phase B.2) calls validator.ValidateWorkload to validate the parsed value
@@ -28,60 +31,28 @@ import (
 	"go.yaml.in/yaml/v3"
 )
 
-// Workload is the platform-owned synthesisable deployment unit.
-type Workload struct {
-	APIVersion string           `json:"apiVersion" yaml:"apiVersion"`
-	Kind       string           `json:"kind" yaml:"kind"`
-	Metadata   WorkloadMetadata `json:"metadata" yaml:"metadata"`
-	// Form is the abstract controller-shape intent — one of stateless,
-	// stateful, daemon, scheduled, task. Empty is treated as stateless. Each
-	// provider Engine maps the form to a provider-native shape (Deployment,
-	// StatefulSet, DaemonSet, CronJob, Job for Kubernetes; a service or a
-	// one-shot container for compose); the form itself carries no
-	// provider-native vocabulary.
-	Form string `json:"form,omitempty" yaml:"form,omitempty"`
-	// Schedule is the cron schedule for form: scheduled — a standard 5-field
-	// crontab expression (e.g. "0 0 * * *") or one of the @hourly / @daily /
-	// @weekly / @monthly / @yearly macros. It is the companion of that form and
-	// is only meaningful when Form is scheduled.
-	Schedule           string                    `json:"schedule,omitempty" yaml:"schedule,omitempty"`
-	Replicas           *int                      `json:"replicas,omitempty" yaml:"replicas,omitempty"`
-	InitContainers     []ContainerSpec           `json:"initContainers,omitempty" yaml:"initContainers,omitempty"`
-	Containers         OrderedMap[ContainerSpec] `json:"containers,omitempty,omitzero" yaml:"containers,omitempty"`
-	Volumes            OrderedMap[VolumeSpec]    `json:"volumes,omitempty,omitzero" yaml:"volumes,omitempty"`
-	Services           OrderedMap[ServiceSpec]   `json:"services,omitempty,omitzero" yaml:"services,omitempty"`
-	Scheduling         *Scheduling               `json:"scheduling,omitempty" yaml:"scheduling,omitempty"`
-	PodSecurityContext *PodSecurityContext       `json:"podSecurityContext,omitempty" yaml:"podSecurityContext,omitempty"`
-	ServiceAccount     string                    `json:"serviceAccount,omitempty" yaml:"serviceAccount,omitempty"`
-	// Pod-level fields. imagePullSecrets, priorityClassName, runtimeClassName,
-	// and dnsPolicy are helm-only (compose has no in-file analog and omits them,
-	// documented on the schema). terminationGracePeriodSeconds, dnsConfig, and
-	// hostAliases map to compose stop_grace_period, dns/dns_search, and
-	// extra_hosts.
-	ImagePullSecrets  []string `json:"imagePullSecrets,omitempty" yaml:"imagePullSecrets,omitempty"`
-	PriorityClassName string   `json:"priorityClassName,omitempty" yaml:"priorityClassName,omitempty"`
-	// RuntimeClassName selects the container runtime the workload runs under (for
-	// example a GPU-enabled runtime such as "nvidia"). The name is piped through
-	// verbatim; the cluster resolves it to a configured RuntimeClass at schedule
-	// time. helm emits pod.runtimeClassName; compose has no runtime-class analog
-	// and omits it. Compute-only: not permitted on a reference workload.
-	RuntimeClassName              string      `json:"runtimeClassName,omitempty" yaml:"runtimeClassName,omitempty"`
-	TerminationGracePeriodSeconds *int        `json:"terminationGracePeriodSeconds,omitempty" yaml:"terminationGracePeriodSeconds,omitempty"`
-	DNSPolicy                     string      `json:"dnsPolicy,omitempty" yaml:"dnsPolicy,omitempty"`
-	DNSConfig                     *DNSConfig  `json:"dnsConfig,omitempty" yaml:"dnsConfig,omitempty"`
-	HostAliases                   []HostAlias `json:"hostAliases,omitempty" yaml:"hostAliases,omitempty"`
-	// Reference-form fields (form: reference only — an external endpoint with
-	// no compute). Endpoint is the external host or URL, piped through as a
-	// deterministic pointer (AOT: never resolved). Port is optional. The
-	// reference form carries no credential field of its own, because the
-	// environment-variable name belongs to the consumer rather than to the
-	// endpoint. A consumer needing a credential for the endpoint declares the
-	// slot on its own Component's featuresSchema and fills it from its
-	// container's attachments block, where that slot's inject list permits the
-	// delivery.
-	Endpoint string `json:"endpoint,omitempty" yaml:"endpoint,omitempty"`
-	Port     int    `json:"port,omitempty" yaml:"port,omitempty"`
-}
+//go:generate go run ../../internal/tools/typegen workload_gen.go
+
+// Workload's struct declarations (Workload and WorkloadMetadata) are generated
+// into workload_gen.go from the published workload-v1alpha1 schema, and the
+// schema's descriptions become their godoc. The schema declares no description
+// on the metadata object, so WorkloadMetadata itself carries none; its two
+// fields carry theirs. This hand-written companion holds the value types those
+// declarations reference — ContainerSpec, VolumeSpec, ServiceSpec, Scheduling,
+// PodSecurityContext, DNSConfig and HostAlias, together with the types those
+// reference in turn — plus the custom yaml and json codecs ResourceList
+// carries.
+//
+// WorkloadMetadata's Labels and Annotations are annotated in the schema as
+// map[string]string rather than OrderedMap[string], the typing that preserves
+// author key order. They are the synthesis-intermediate shape, parallel to the
+// K8s-shaped pass-through fields documented at
+// aggrega-docs/language-reference/entities/workload.md § Validation surface:
+// Workload values are programmatically constructed by Recipe synthesis or
+// parsed from a default yaml.v3 unmarshal of templated output rather than
+// arriving as author-declared YAML, so author key order is not load-bearing at
+// this layer. AggregateMetadata.Labels uses the order-preserving typing,
+// because module-level labels there are author-declared.
 
 // DNSConfig mirrors the K8s pod dnsConfig shape. Nameservers and Searches have
 // compose analogs (dns / dns_search); Options is opaque K8s-shaped pass-through
@@ -97,23 +68,6 @@ type DNSConfig struct {
 type HostAlias struct {
 	IP        string   `json:"ip,omitempty" yaml:"ip,omitempty"`
 	Hostnames []string `json:"hostnames,omitempty" yaml:"hostnames,omitempty"`
-}
-
-// WorkloadMetadata carries optional labels and annotations on the
-// Workload. Both fields are typed map[string]string — the
-// synthesis-intermediate shape, parallel to the K8s-shaped
-// pass-through fields documented at
-// aggrega-docs/language-reference/entities/workload.md § Validation
-// surface. Workload values are programmatically constructed by Recipe
-// synthesis or parsed from yaml.v3 default unmarshal of templated
-// output; they do not originate as author-declared YAML, so
-// author-key-order preservation is not load-bearing at this layer
-// (which would otherwise call for OrderedMap[string], the typing
-// AggregateMetadata.Labels uses for author-declared module-level
-// labels).
-type WorkloadMetadata struct {
-	Labels      map[string]string `json:"labels,omitempty" yaml:"labels,omitempty"`
-	Annotations map[string]string `json:"annotations,omitempty" yaml:"annotations,omitempty"`
 }
 
 // ContainerSpec describes one container in a Workload.

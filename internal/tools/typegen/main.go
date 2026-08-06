@@ -85,6 +85,7 @@ var kindSources = map[string]kindSource{
 	"release_gen.go":          {"Release", schemas.ReleaseV1alpha1},
 	"component_gen.go":        {"Component", schemas.ComponentV1alpha1},
 	"plugin_gen.go":           {"Plugin", schemas.PluginV1alpha1},
+	"workload_gen.go":         {"Workload", schemas.WorkloadV1alpha1},
 }
 
 // enumSource binds an output filename to a string-enum-const emission: the
@@ -994,7 +995,7 @@ func decodeOrderedProps(raw json.RawMessage) ([]namedNode, error) {
 	return out, nil
 }
 
-var initialisms = map[string]string{"api": "API", "url": "URL", "id": "ID", "ir": "IR", "uri": "URI", "json": "JSON"}
+var initialisms = map[string]string{"api": "API", "url": "URL", "id": "ID", "ir": "IR", "uri": "URI", "json": "JSON", "dns": "DNS"}
 
 // pascal converts a schema property key (camelCase or snake_case) to a Go
 // exported field name, applying the Go initialism convention. Segment

@@ -9,13 +9,13 @@
 // Go→schema direction. Both leave the same hole open, and it is the hole that
 // matters for a hand-written type:
 //
-//   - A flattened comparison cannot see WHERE a name is declared. The workload
-//     schema declares `name` on a container, so a `name` field added to the
-//     workload's metadata object — which the schema closes to labels and
-//     annotations — resolves against the container's property and reads as
-//     agreement. The decoder would accept such a key and the schema would
-//     refuse the document, which is a build that halts on content the Go type
-//     invited.
+//   - A flattened comparison cannot see WHERE a name is declared. The pin
+//     record's schema declares `digest` on a pin entry, so a `digest` field
+//     added to that entry's signature block — which the schema closes to
+//     bundle_digest, identity, issuer and mode — resolves against the entry's
+//     own property and reads as agreement. The decoder would accept such a key
+//     and the schema would refuse the document, which is a build that halts on
+//     content the Go type invited.
 //   - The instance direction sees only fields the hand-populated instance
 //     actually sets. A field added to the Go type and not to that instance is
 //     checked by nothing.
@@ -45,8 +45,6 @@ import (
 	schemas "github.com/aggrega-ai/aggrega-schemas"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
-	clischemas "github.com/aggrega-ai/aggrega-cli/pkg/schemas/jsonschema"
-	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator/envelope"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
@@ -72,27 +70,7 @@ type closureCase struct {
 func closureCases() []closureCase {
 	return []closureCase{
 		{
-			// The workload's Go type is hand-maintained against its schema — the
-			// one authored kind with no generated field set — so it is the one
-			// kind where a field can be added on either side alone.
-			kind:       envelope.KindWorkload,
-			schema:     clischemas.WorkloadJSONSchema,
-			root:       reflect.TypeOf(types.Workload{}),
-			exceptions: map[string]string{},
-			canaries: []string{
-				// Reached only through a map-valued position's value schema and a
-				// reference into the shared container definition.
-				"containers.*.image",
-				// Reached only through an array position's item schema.
-				"hostAliases[].ip",
-				// Reached only through a reference nested inside a reference.
-				"containers.*.health.live.timeoutSeconds",
-				// Reached only through two map-valued positions in succession.
-				"containers.*.attachments.*.from",
-			},
-		},
-		{
-			// The pin record is hand-written too, and its typed decode does not
+			// The pin record is hand-written, and its typed decode does not
 			// reject unknown fields. Since the pins are what make a build
 			// reproducible, a pin field the schema refuses would surface as a build
 			// that halts on its own lockfile.
