@@ -7,6 +7,19 @@ package completion
 // Order follows the typical operator-authoring sequence — the most
 // common entry-point kinds come first; sortText generation uses the
 // slice index so the client's lexicographic sort matches this order.
+//
+// The set is closed: these twelve are every value an author may write in
+// an entity document's kind field. Two kinds an author might expect are
+// deliberately absent. A credential is not a kind of its own — it is a
+// Feature carrying the label feature.aggrega.ai/kind: secret, realized by
+// a FeatureRecipe. Neither is Provider a kind: it has no schema and no Go
+// type, and the word names a provider by name and a Plugin's spec.provider
+// block.
+//
+// Derive an authoring-kind list from this slice rather than from
+// envelope.Kind. That type is deliberately wider — beyond these twelve it
+// carries AggregaConfig, Lockfile, Workload and IR, so a switch generated
+// from it would offer an author four values no entity document accepts.
 var EntityKinds = []string{
 	"Aggregate",
 	"Manifest",
