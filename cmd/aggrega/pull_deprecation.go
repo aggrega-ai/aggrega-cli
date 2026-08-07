@@ -95,14 +95,12 @@ func discoverClosureDeprecations(
 		}
 	}
 
-	for i := range lf.Entities {
-		if rec, ok := recordByURI[lf.Entities[i].URI]; ok {
-			lf.Entities[i].Deprecation = rec
-		}
-	}
-	for i := range lf.Plugins {
-		if rec, ok := recordByURI[lf.Plugins[i].URI]; ok {
-			lf.Plugins[i].Deprecation = rec
+	// The fold walks the lockfile's own enumeration of marker-bearing rows, so a
+	// discovered marker reaches every section that can record one without this pass
+	// naming the sections.
+	for _, row := range lf.VerifiedFactRows() {
+		if rec, ok := recordByURI[row.URI]; ok {
+			row.RecordDeprecation(rec)
 		}
 	}
 	return nil
@@ -117,6 +115,12 @@ func discoverClosureDeprecations(
 // different artifact whose deprecation status must be re-discovered, not
 // inherited).
 //
+// Both sides are read from the lockfile's own enumeration of marker-bearing rows,
+// so every section that can record a marker is carried forward. A section covered
+// by discovery but not by this carry-forward would look correct on the pull that
+// found the marker and lose it on the next warm-cache re-pull — a section-shaped
+// gap that no single pull can show.
+//
 // A nil prior is a no-op: the first pull has nothing to carry forward, and
 // neither does a full refresh, which deliberately reads no prior pin set.
 func carryForwardDeprecation(lf *lockfile.Lockfile, prior *lockfile.Lockfile) {
@@ -127,27 +131,17 @@ func carryForwardDeprecation(lf *lockfile.Lockfile, prior *lockfile.Lockfile) {
 		digest string
 		rec    *lockfile.DeprecationRecord
 	}
-	priorByURI := make(map[string]priorPin, len(prior.Entities)+len(prior.Plugins))
-	for i := range prior.Entities {
-		priorByURI[prior.Entities[i].URI] = priorPin{prior.Entities[i].Digest, prior.Entities[i].Deprecation}
+	priorRows := prior.VerifiedFactRows()
+	priorByURI := make(map[string]priorPin, len(priorRows))
+	for _, row := range priorRows {
+		priorByURI[row.URI] = priorPin{row.Digest, row.Deprecation()}
 	}
-	for i := range prior.Plugins {
-		priorByURI[prior.Plugins[i].URI] = priorPin{prior.Plugins[i].Digest, prior.Plugins[i].Deprecation}
-	}
-	for i := range lf.Entities {
-		if lf.Entities[i].Deprecation != nil {
+	for _, row := range lf.VerifiedFactRows() {
+		if row.Deprecation() != nil {
 			continue
 		}
-		if p, ok := priorByURI[lf.Entities[i].URI]; ok && p.rec != nil && p.digest == lf.Entities[i].Digest {
-			lf.Entities[i].Deprecation = p.rec
-		}
-	}
-	for i := range lf.Plugins {
-		if lf.Plugins[i].Deprecation != nil {
-			continue
-		}
-		if p, ok := priorByURI[lf.Plugins[i].URI]; ok && p.rec != nil && p.digest == lf.Plugins[i].Digest {
-			lf.Plugins[i].Deprecation = p.rec
+		if p, ok := priorByURI[row.URI]; ok && p.rec != nil && p.digest == row.Digest {
+			row.RecordDeprecation(p.rec)
 		}
 	}
 }

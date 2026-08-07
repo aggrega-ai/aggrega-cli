@@ -159,10 +159,21 @@ type ExternalInput struct {
 // library-version-bump impact diffs traceable without re-running
 // closure.
 type SchemaLibrary struct {
-	URI             string            `yaml:"uri"`
-	ResolvedVersion string            `yaml:"resolved_version"`
-	Digest          string            `yaml:"digest"`
-	Consumers       []LibraryConsumer `yaml:"consumers"`
+	URI             string `yaml:"uri"`
+	ResolvedVersion string `yaml:"resolved_version"`
+	Digest          string `yaml:"digest"`
+	// ManifestDigest is the OCI manifest digest the library artifact's signature
+	// commits to — the verify subject. It differs from Digest, the portable content
+	// digest used for the cache pin and integrity check. Present only for a
+	// registry-resolved library; empty (and omitted) otherwise.
+	ManifestDigest string            `yaml:"manifest_digest,omitempty"`
+	Consumers      []LibraryConsumer `yaml:"consumers"`
+	// Deprecation records a verified retroactive deprecation marker discovered at
+	// pull time. Present only when a signed, trusted marker was found on the
+	// library artifact; empty (and omitted) otherwise. Build reads this recorded
+	// fact and never touches a registry (the ahead-of-time boundary).
+	Deprecation *DeprecationRecord `yaml:"deprecation,omitempty"`
+	Signature   *VerifiedSignature `yaml:"signature,omitempty"`
 }
 
 // MappingLibrary is structurally identical to SchemaLibrary —
@@ -173,7 +184,11 @@ type MappingLibrary struct {
 	URI             string            `yaml:"uri"`
 	ResolvedVersion string            `yaml:"resolved_version"`
 	Digest          string            `yaml:"digest"`
+	ManifestDigest  string            `yaml:"manifest_digest,omitempty"`
 	Consumers       []LibraryConsumer `yaml:"consumers"`
+
+	Deprecation *DeprecationRecord `yaml:"deprecation,omitempty"`
+	Signature   *VerifiedSignature `yaml:"signature,omitempty"`
 }
 
 // WorkloadLibrary is structurally identical to SchemaLibrary and
@@ -184,7 +199,11 @@ type WorkloadLibrary struct {
 	URI             string            `yaml:"uri"`
 	ResolvedVersion string            `yaml:"resolved_version"`
 	Digest          string            `yaml:"digest"`
+	ManifestDigest  string            `yaml:"manifest_digest,omitempty"`
 	Consumers       []LibraryConsumer `yaml:"consumers"`
+
+	Deprecation *DeprecationRecord `yaml:"deprecation,omitempty"`
+	Signature   *VerifiedSignature `yaml:"signature,omitempty"`
 }
 
 // ArtifactsLibrary is structurally identical to SchemaLibrary,
@@ -195,7 +214,11 @@ type ArtifactsLibrary struct {
 	URI             string            `yaml:"uri"`
 	ResolvedVersion string            `yaml:"resolved_version"`
 	Digest          string            `yaml:"digest"`
+	ManifestDigest  string            `yaml:"manifest_digest,omitempty"`
 	Consumers       []LibraryConsumer `yaml:"consumers"`
+
+	Deprecation *DeprecationRecord `yaml:"deprecation,omitempty"`
+	Signature   *VerifiedSignature `yaml:"signature,omitempty"`
 }
 
 // LibraryConsumer records a single catalog-graph edge from a

@@ -843,6 +843,7 @@ func buildLockfile(releasePath string, cl closure.Closure, wsCfg workspaceconfig
 			URI:             l.URI,
 			ResolvedVersion: l.ResolvedVersion,
 			Digest:          l.Digest,
+			ManifestDigest:  l.ManifestDigest,
 			Consumers:       copyConsumers(l.Consumers),
 		})
 	}
@@ -853,6 +854,7 @@ func buildLockfile(releasePath string, cl closure.Closure, wsCfg workspaceconfig
 			URI:             l.URI,
 			ResolvedVersion: l.ResolvedVersion,
 			Digest:          l.Digest,
+			ManifestDigest:  l.ManifestDigest,
 			Consumers:       copyConsumers(l.Consumers),
 		})
 	}
@@ -863,6 +865,7 @@ func buildLockfile(releasePath string, cl closure.Closure, wsCfg workspaceconfig
 			URI:             l.URI,
 			ResolvedVersion: l.ResolvedVersion,
 			Digest:          l.Digest,
+			ManifestDigest:  l.ManifestDigest,
 			Consumers:       copyConsumers(l.Consumers),
 		})
 	}
@@ -873,6 +876,7 @@ func buildLockfile(releasePath string, cl closure.Closure, wsCfg workspaceconfig
 			URI:             l.URI,
 			ResolvedVersion: l.ResolvedVersion,
 			Digest:          l.Digest,
+			ManifestDigest:  l.ManifestDigest,
 			Consumers:       copyConsumers(l.Consumers),
 		})
 	}

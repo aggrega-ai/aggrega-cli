@@ -984,6 +984,7 @@ func (p *pendingLibrary) toResolvedLibrary(uri string) ResolvedLibrary {
 	if p.resolution != nil {
 		out.ResolvedVersion = p.resolution.ResolvedVersion
 		out.Digest = p.resolution.Digest
+		out.ManifestDigest = p.resolution.ManifestDigest
 		out.ResolutionPath = p.resolution.ResolutionPath
 	}
 	return out

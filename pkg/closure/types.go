@@ -230,16 +230,22 @@ type ResolvedRef struct {
 	KindHint string
 }
 
-// ResolvedLibrary captures a SchemaLibrary, MappingLibrary, or
-// WorkloadLibrary resolution result with its consumer chain. Mirrors
-// the lockfile package's SchemaLibrary / MappingLibrary / WorkloadLibrary
+// ResolvedLibrary captures a SchemaLibrary, MappingLibrary, WorkloadLibrary, or
+// ArtifactsLibrary resolution result with its consumer chain. Mirrors the lockfile
+// package's SchemaLibrary / MappingLibrary / WorkloadLibrary / ArtifactsLibrary
 // wire shapes so the lockfile writer can copy field-for-field.
 type ResolvedLibrary struct {
 	URI             string
 	ResolvedVersion string
 	Digest          string
-	ResolutionPath  string
-	Consumers       []LibraryConsumer
+	// ManifestDigest is the OCI manifest digest the library artifact's signature
+	// commits to — the verify subject at pull time. It differs from Digest, the
+	// portable content digest used for the cache pin and integrity check. Set only
+	// for a registry-resolved (Tier-3) library; empty for a Tier-1 / Tier-2 / local
+	// library, none of which carry a registry signature.
+	ManifestDigest string
+	ResolutionPath string
+	Consumers      []LibraryConsumer
 }
 
 // LibraryConsumer records a single catalog-entity → library

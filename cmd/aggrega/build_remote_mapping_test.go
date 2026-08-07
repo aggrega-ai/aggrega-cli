@@ -280,7 +280,7 @@ func TestPullFetchesRemoteMappingLibraryViaTier3(t *testing.T) {
 	root := t.TempDir()
 	t.Chdir(root)
 	releasePath := remoteMappingLibraryFixture(t, root)
-	writeWorkspaceConfig(t, root, "default_registry: hub.aggrega.ai\n")
+	writeWorkspaceConfig(t, root, "default_registry: hub.aggrega.ai\n"+fakeRegistryTrust)
 	catalogDir := filepath.Join(root, "catalog")
 
 	// Make HelmHelpers genuinely remote.

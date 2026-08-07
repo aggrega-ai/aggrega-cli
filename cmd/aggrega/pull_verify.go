@@ -29,25 +29,29 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
-// verifyClosureSignatures runs the pull-time signature verification pass
-// over the closure's registry-resolved catalog entities AND Wasm plugins,
-// and folds the verified facts into the lockfile, caching each verified
-// signature bundle as a content-addressed blob for air-gapped
-// re-verification. It is called only on the pull write path — never on
+// verifyClosureSignatures runs the pull-time signature verification pass over
+// every registry-resolved reference in the closure — catalog entities, the four
+// library sections, and Wasm plugins — and folds the verified facts into the
+// lockfile, caching each verified signature bundle as a content-addressed blob for
+// air-gapped re-verification. It is called only on the pull write path — never on
 // build, which reads the recorded facts from the lockfile and never
 // re-verifies signatures (the AOT boundary).
 //
-// A Wasm plugin is an OCI artifact like any other: it verifies through the
-// same Verify call, against the same per-registry trust policy, as a
-// catalog entity — there is no separate plugin trust path. Entities and
-// plugins are combined into one verification run so the per-registry policy
-// resolution is provably identical for both.
+// A library and a Wasm plugin are OCI artifacts like any other: each verifies
+// through the same Verify call, against the same per-registry trust policy, as a
+// catalog entity — there is no separate trust path per kind. Every axis is
+// combined into one verification run so the per-registry policy resolution is
+// provably identical for all of them.
+//
+// The axes are read from the closure's own enumeration rather than named here, so
+// a section added to the closure cannot quietly bypass verification: it is either
+// in that enumeration or recorded there as carrying no verifiable reference.
 //
 // A registry-resolved item is one freshly fetched from a registry (Tier-3).
-// A catalog entity carries a host-less bare identity — its registry host and
-// path are bound at pull time from the workspace registry and the entity kind,
+// A catalog entity or a library carries a host-less bare identity — its registry
+// host and path are bound at pull time from the workspace registry and the kind,
 // recovered here from the same binding the puller used — while a content-pinned
-// .wasm plugin already carries its host in the URI. Both are verified against
+// .wasm plugin already carries its host in the URI. All are verified against
 // the resolved registry's trust policy. A Tier-1 / Tier-2 / local / external
 // item is skipped: it was already verified when first fetched, or never carries
 // a registry signature. A fatal verification failure (a required signature that
@@ -59,9 +63,14 @@ import (
 // targetFor resolves each verifiable item's OCI target for referrer discovery;
 // production passes remoteTargetFor (a real remote repository per registry).
 func verifyClosureSignatures(ctx context.Context, lf *lockfile.Lockfile, cl closure.Closure, wsCfg workspaceconfig.Config, cacheDir string, diagOut io.Writer, targetFor pullverify.TargetFor) error {
-	verifiable := make([]pullverify.Entity, 0, len(cl.Entities)+len(cl.Plugins))
-	collect := func(refs []closure.ResolvedRef) error {
-		for _, e := range refs {
+	axes := cl.VerifiableAxes()
+	total := 0
+	for _, axis := range axes {
+		total += len(axis.Refs)
+	}
+	verifiable := make([]pullverify.Entity, 0, total)
+	for _, axis := range axes {
+		for _, e := range axis.Refs {
 			// Verify only items freshly resolved from a registry (Tier-3).
 			// A Tier-1 catalog or Tier-2 cache hit was already verified on
 			// the pull that first fetched it (its lockfile entry carries the
@@ -70,14 +79,22 @@ func verifyClosureSignatures(ctx context.Context, lf *lockfile.Lockfile, cl clos
 			if !isRegistryResolved(e.ResolutionPath) {
 				continue
 			}
-			// A catalog entity's URI is a host-less bare identity; the registry
-			// host and path are bound at pull time from the workspace registry
-			// and the entity kind, not carried in the URI. Recover that binding
-			// from the SAME primitive the puller used so the verify target is the
-			// location the entity was fetched from. A host-carrying artifact (a
+			// A catalog entity's or library's URI is a host-less bare identity; the
+			// registry host and path are bound at pull time from the workspace
+			// registry and the kind, not carried in the URI. Recover that binding
+			// from the SAME location rule the puller used so the verify target is the
+			// location the artifact was fetched from. A host-carrying artifact (a
 			// content-pinned .wasm plugin) does not bind — its URI already carries
 			// the reference — so fall back to the URI-derived host for it.
-			location, bound := catalog.BindEntityLocation(wsCfg.DefaultRegistry, e.KindHint, e.URI)
+			kind, location, bound := verifySubjectBinding(wsCfg.DefaultRegistry, axis, e)
+			if axis.Kind != "" && !bound {
+				// A single-kind axis carries host-less identities only, so there is no
+				// URI to fall back to: the fall-through below exists for a host-carrying
+				// artifact reference, and reaching it with a bare library name would read
+				// the version suffix's colon as a host:port authority. Unbound means
+				// unverifiable, so skip rather than verify against an invented location.
+				continue
+			}
 			host := registryhost.Of(e.URI)
 			if bound {
 				host = registryhost.Of(location)
@@ -93,27 +110,16 @@ func verifyClosureSignatures(ctx context.Context, lf *lockfile.Lockfile, cl clos
 			// which would leave the item unverified under a require-signatures policy)
 			// names the item and points at the missing digest.
 			if e.ManifestDigest == "" {
-				return fmt.Errorf("verify: registry entity %q has no manifest digest to verify against; the resolution tier did not record one", e.URI)
+				return fmt.Errorf("verify: registry artifact %q has no manifest digest to verify against; the resolution tier did not record one", e.URI)
 			}
 			verifiable = append(verifiable, pullverify.Entity{
 				URI:            e.URI,
 				ManifestDigest: e.ManifestDigest,
 				Host:           host,
 				Location:       location,
-				// Derive the canonical PascalCase kind from the closure kind
-				// hint through the single normalization primitive so the verify
-				// pass can consult the org signing policy's kind scope without
-				// re-spelling the kind vocabulary.
-				Kind: catalog.EntityKindForHint(e.KindHint),
+				Kind:           kind,
 			})
 		}
-		return nil
-	}
-	if err := collect(cl.Entities); err != nil {
-		return err
-	}
-	if err := collect(cl.Plugins); err != nil {
-		return err
 	}
 	if len(verifiable) == 0 {
 		return nil
@@ -132,25 +138,18 @@ func verifyClosureSignatures(ctx context.Context, lf *lockfile.Lockfile, cl clos
 	for _, r := range results {
 		factByURI[r.URI] = r
 	}
-	for i := range lf.Entities {
-		r, ok := factByURI[lf.Entities[i].URI]
+	// The fold walks the lockfile's own enumeration of marker-bearing rows, so a
+	// verified fact reaches every section that can record one without this pass
+	// naming the sections.
+	for _, row := range lf.VerifiedFactRows() {
+		r, ok := factByURI[row.URI]
 		if !ok {
 			continue
 		}
 		if err := cacheBundleBlob(cacheDir, r.BundleDigest, r.Bundle); err != nil {
 			return fmt.Errorf("cache signature bundle for %s: %w", r.URI, err)
 		}
-		lf.Entities[i].Signature = signatureFact(r)
-	}
-	for i := range lf.Plugins {
-		r, ok := factByURI[lf.Plugins[i].URI]
-		if !ok {
-			continue
-		}
-		if err := cacheBundleBlob(cacheDir, r.BundleDigest, r.Bundle); err != nil {
-			return fmt.Errorf("cache signature bundle for %s: %w", r.URI, err)
-		}
-		lf.Plugins[i].Signature = signatureFact(r)
+		row.RecordSignature(signatureFact(r))
 	}
 
 	// Retroactive deprecation discovery: at the same registry-touching moment,
@@ -163,6 +162,37 @@ func verifyClosureSignatures(ctx context.Context, lf *lockfile.Lockfile, cl clos
 		return err
 	}
 	return nil
+}
+
+// verifySubjectBinding resolves one closure reference's catalog kind and the
+// registry location its signature referrers are discovered against. It reports
+// bound=false when no location can be formed, in which case the caller falls back
+// to the URI-derived host — the same posture the puller takes when it cannot bind a
+// bare identity.
+//
+// The two shapes differ only in where the kind comes from, and the axis says which:
+// a mixed-kind axis carries a collection-site hint per reference, and a
+// single-kind axis states the kind once. Both bind through catalog.OCILocation,
+// which is the single home of the identity-to-location rule that push publishes at
+// and every pull tier fetches from, so verify-location, pull-location and
+// push-location cannot diverge.
+//
+// A library identity is not scope-qualified — unlike a Recipe's provider/name or a
+// Plugin's pluginType/name — so its location is the kind path segment plus the bare
+// name, which is what the location rule produces for an empty scope.
+func verifySubjectBinding(registry string, axis closure.VerifiableAxis, ref closure.VerifiableRef) (kind, location string, bound bool) {
+	if axis.Kind == "" {
+		// Derive the canonical PascalCase kind from the closure kind hint through the
+		// single normalization primitive so the verify pass can consult the org
+		// signing policy's kind scope without re-spelling the kind vocabulary.
+		location, bound = catalog.BindEntityLocation(registry, ref.KindHint, ref.URI)
+		return catalog.EntityKindForHint(ref.KindHint), location, bound
+	}
+	if registry == "" {
+		return axis.Kind, "", false
+	}
+	identity, _, _ := catalog.SplitVersionedURI(ref.URI)
+	return axis.Kind, registry + "/" + catalog.OCILocation(axis.Kind, "", identity), true
 }
 
 // verifyPluginHostFunctions re-derives each in-closure plugin's host functions

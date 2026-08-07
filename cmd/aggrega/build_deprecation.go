@@ -14,9 +14,10 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
-// enforceClosureDeprecation reports each closure entity's and plugin's
-// deprecation status under one build-time gate, and halts only where the
-// workspace asked for a halt. Its source is the lockfile Deprecation record — a
+// enforceClosureDeprecation reports the deprecation status of every reference in
+// the closure under one build-time gate — catalog entities, the four library
+// sections, and Wasm plugins — and halts only where the workspace asked for a
+// halt. Its source is the lockfile Deprecation record — a
 // retroactive marker discovered and verified at pull time, carrying a severity
 // in the ordered set warning < error < retracted. It reads ONLY the lockfile, so
 // it never touches a registry, preserving the ahead-of-time boundary that build
@@ -25,8 +26,8 @@ import (
 // Reporting and halting are independent axes, and keeping them independent is
 // the point of this gate:
 //
-//   - Reporting is unconditional. Every entity carrying a recorded marker
-//     produces a notice on diagOut naming the entity, its severity and its
+//   - Reporting is unconditional. Every reference carrying a recorded marker
+//     produces a notice on diagOut naming it, its severity and its
 //     message, at every severity. No configuration silences it, so raising a
 //     halt threshold never reduces what the build says.
 //   - Halting is governed by configuration alone. A recorded marker halts when
@@ -46,35 +47,52 @@ import (
 // fact.
 //
 // The walk always completes before a halt is returned, so a configured halt
-// never costs the reader the notices for entities sorted after the halting one;
+// never costs the reader the notices for references sorted after the halting one;
 // the first halting marker in the walk owns the returned error. Iteration is
-// over the sorted closure-entity and plugin URIs, so the surfaced order is
+// over the sorted closure URIs, so the surfaced order is
 // deterministic and independent of closure order.
+//
+// The gate is kind-independent, and that is the property to preserve. Neither
+// side of it names a closure section or a lockfile section: the walked references
+// come from the closure's own enumeration of its verifiable axes, and the recorded
+// markers from the lockfile's own enumeration of its marker-bearing rows. A gate
+// that named the sections instead reported on exactly the sections someone
+// remembered, and a reference on an unnamed section built silently against a
+// withdrawn artifact — with the gate's own silence reading as "nothing is
+// withdrawn". Adding a section to either type is a build-time question rather than
+// a silent omission, because the coverage assertion beside the closure enumeration
+// requires every declared section to be classified.
 func enforceClosureDeprecation(cl closure.Closure, lf *lockfile.Lockfile, buildCfg workspaceconfig.BuildConfig, diagOut io.Writer) error {
 	threshold := deprecation.Severity(buildCfg.HaltOnDeprecatedSeverity)
 	// One stamp governs every recorded marker in this lockfile, so it is rendered
-	// once rather than per entity.
+	// once rather than per reference.
 	asOf := lockfileAsOfSuffix(lf.GeneratedAt)
 
-	recByURI := make(map[string]*lockfile.DeprecationRecord)
-	for i := range lf.Entities {
-		if lf.Entities[i].Deprecation != nil {
-			recByURI[lf.Entities[i].URI] = lf.Entities[i].Deprecation
-		}
-	}
-	for i := range lf.Plugins {
-		if lf.Plugins[i].Deprecation != nil {
-			recByURI[lf.Plugins[i].URI] = lf.Plugins[i].Deprecation
+	rows := lf.VerifiedFactRows()
+	recByURI := make(map[string]*lockfile.DeprecationRecord, len(rows))
+	for _, row := range rows {
+		if rec := row.Deprecation(); rec != nil {
+			recByURI[row.URI] = rec
 		}
 	}
 
-	// Evaluate catalog entities AND Wasm plugins under one gate: both are
-	// consumed by the build and both can carry either deprecation source. Their
-	// URI namespaces are disjoint, so a single sorted walk is unambiguous and
-	// deterministic.
-	refs := make([]closure.ResolvedRef, 0, len(cl.Entities)+len(cl.Plugins))
-	refs = append(refs, cl.Entities...)
-	refs = append(refs, cl.Plugins...)
+	// Evaluate every axis under one gate: all of them are consumed by the build and
+	// any of them can carry a recorded marker. The walk is sorted by URI, so the
+	// surfaced order — and therefore which reference owns a halt — is deterministic
+	// and independent of both closure order and the order the axes are enumerated in.
+	// The record index above is keyed by URI across every section, so two references
+	// sharing one URI would share one record; that is the pre-existing keying rather
+	// than an assumption about the sections being disjoint, and it is why the index
+	// and the walk are joined on the same key.
+	axes := cl.VerifiableAxes()
+	total := 0
+	for _, axis := range axes {
+		total += len(axis.Refs)
+	}
+	refs := make([]closure.VerifiableRef, 0, total)
+	for _, axis := range axes {
+		refs = append(refs, axis.Refs...)
+	}
 	sort.Slice(refs, func(i, j int) bool { return refs[i].URI < refs[j].URI })
 
 	// A halt is recorded rather than returned mid-walk: returning here would

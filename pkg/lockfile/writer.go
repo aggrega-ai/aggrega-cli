@@ -28,9 +28,9 @@ import (
 //     lexicographically.
 //   - Inside each ExternalInput: RequiredBy sorted lexicographically
 //     and deduplicated.
-//   - Inside each SchemaLibrary / MappingLibrary / WorkloadLibrary:
-//     Consumers sorted by ConsumerURI; within each LibraryConsumer,
-//     Fragments sorted lexicographically.
+//   - Inside each SchemaLibrary / MappingLibrary / WorkloadLibrary /
+//     ArtifactsLibrary: Consumers sorted by ConsumerURI; within each
+//     LibraryConsumer, Fragments sorted lexicographically.
 //   - Inside each SourceArtifact: ReferencedBy sorted by the
 //     composite (URI, Field).
 //
@@ -127,12 +127,14 @@ func generatedAtValue(b []byte) string {
 // sortedCopy or canonicaliseConsumers.
 //
 // Maintenance hazard: any new field added to Entity / ExternalInput /
-// SchemaLibrary / MappingLibrary / WorkloadLibrary / Plugin / LibraryConsumer
-// that holds a slice MUST be reallocated here. The outer struct-copy via `entryCopy := m`
-// clones scalar fields but shares slice headers, so without explicit
-// reallocation a subsequent sort would mutate the caller's slice. The
-// existing sortedCopy helper covers []string; new shapes need
-// analogous deep-copy helpers.
+// SchemaLibrary / MappingLibrary / WorkloadLibrary / ArtifactsLibrary / Plugin /
+// LibraryConsumer that holds a slice OR a pointer MUST be cloned here. The outer
+// struct-copy via `entryCopy := m` clones scalar fields but shares slice headers
+// and pointers, so without an explicit clone a subsequent sort would mutate the
+// caller's slice and a caller mutating the output could reach back into the input.
+// The existing sortedCopy helper covers []string, cloneSignature and
+// cloneDeprecation cover the two recorded-fact pointers; new shapes need analogous
+// deep-copy helpers.
 func canonicalise(lf *Lockfile) *Lockfile {
 	out := &Lockfile{
 		GeneratedAt: lf.GeneratedAt,
@@ -144,13 +146,7 @@ func canonicalise(lf *Lockfile) *Lockfile {
 	for i, e := range lf.Entities {
 		entryCopy := e
 		entryCopy.ReferencedFrom = sortedCopy(e.ReferencedFrom)
-		// The Signature pointer is shared by the struct-copy; clone it so a
-		// caller mutating the output cannot reach back into the input. The
-		// value has no slices, so a shallow clone of the struct suffices.
-		if e.Signature != nil {
-			sig := *e.Signature
-			entryCopy.Signature = &sig
-		}
+		entryCopy.Signature = cloneSignature(e.Signature)
 		entryCopy.Deprecation = cloneDeprecation(e.Deprecation)
 		out.Entities[i] = entryCopy
 	}
@@ -172,6 +168,8 @@ func canonicalise(lf *Lockfile) *Lockfile {
 	for i, l := range lf.SchemaLibraries {
 		entryCopy := l
 		entryCopy.Consumers = canonicaliseConsumers(l.Consumers)
+		entryCopy.Signature = cloneSignature(l.Signature)
+		entryCopy.Deprecation = cloneDeprecation(l.Deprecation)
 		out.SchemaLibraries[i] = entryCopy
 	}
 	sort.Slice(out.SchemaLibraries, func(i, j int) bool {
@@ -182,6 +180,8 @@ func canonicalise(lf *Lockfile) *Lockfile {
 	for i, l := range lf.MappingLibraries {
 		entryCopy := l
 		entryCopy.Consumers = canonicaliseConsumers(l.Consumers)
+		entryCopy.Signature = cloneSignature(l.Signature)
+		entryCopy.Deprecation = cloneDeprecation(l.Deprecation)
 		out.MappingLibraries[i] = entryCopy
 	}
 	sort.Slice(out.MappingLibraries, func(i, j int) bool {
@@ -192,6 +192,8 @@ func canonicalise(lf *Lockfile) *Lockfile {
 	for i, l := range lf.WorkloadLibraries {
 		entryCopy := l
 		entryCopy.Consumers = canonicaliseConsumers(l.Consumers)
+		entryCopy.Signature = cloneSignature(l.Signature)
+		entryCopy.Deprecation = cloneDeprecation(l.Deprecation)
 		out.WorkloadLibraries[i] = entryCopy
 	}
 	sort.Slice(out.WorkloadLibraries, func(i, j int) bool {
@@ -202,6 +204,8 @@ func canonicalise(lf *Lockfile) *Lockfile {
 	for i, l := range lf.ArtifactsLibraries {
 		entryCopy := l
 		entryCopy.Consumers = canonicaliseConsumers(l.Consumers)
+		entryCopy.Signature = cloneSignature(l.Signature)
+		entryCopy.Deprecation = cloneDeprecation(l.Deprecation)
 		out.ArtifactsLibraries[i] = entryCopy
 	}
 	sort.Slice(out.ArtifactsLibraries, func(i, j int) bool {
@@ -232,13 +236,7 @@ func canonicalise(lf *Lockfile) *Lockfile {
 	for i, p := range lf.Plugins {
 		entryCopy := p
 		entryCopy.ReferencedFrom = sortedCopy(p.ReferencedFrom)
-		// The Signature pointer is shared by the struct-copy; clone it so a
-		// caller mutating the output cannot reach back into the input. The
-		// value has no slices, so a shallow clone of the struct suffices.
-		if p.Signature != nil {
-			sig := *p.Signature
-			entryCopy.Signature = &sig
-		}
+		entryCopy.Signature = cloneSignature(p.Signature)
 		entryCopy.Deprecation = cloneDeprecation(p.Deprecation)
 		out.Plugins[i] = entryCopy
 	}
@@ -317,10 +315,22 @@ func cloneDeprecation(in *DeprecationRecord) *DeprecationRecord {
 		return nil
 	}
 	out := *in
-	if in.Signer != nil {
-		signer := *in.Signer
-		out.Signer = &signer
+	out.Signer = cloneSignature(in.Signer)
+	return &out
+}
+
+// cloneSignature deep-copies a VerifiedSignature pointer so a caller mutating the
+// canonicalised output cannot reach back into the input. The struct-copy of a row
+// shares the pointer, so every marker-bearing section clones through here rather
+// than spelling the clone per section — six copies of one two-line rule is six
+// places for a newly added section to be forgotten. The value holds no slices, so
+// a shallow clone of the struct suffices. Returns nil for a nil input (a row with
+// no recorded signature).
+func cloneSignature(in *VerifiedSignature) *VerifiedSignature {
+	if in == nil {
+		return nil
 	}
+	out := *in
 	return &out
 }
 

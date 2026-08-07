@@ -18,6 +18,25 @@ import (
 	"oras.land/oras-go/v2/content/memory"
 )
 
+// fakeRegistryTrust is the trust stance a fixture must declare when its registry
+// tier is a fake puller rather than a real registry: verification is skipped for
+// that one host.
+//
+// It is required, not optional. A library or entity the fake puller resolves is a
+// registry-resolved (Tier-3) reference like any other, so the pull-time verify pass
+// discovers its signature referrers at the real host bound from default_registry —
+// which the fake puller does not serve. Without this stance the fixture reaches out
+// to a host it never published to and the pull halts on a referrer it cannot fetch;
+// worse, an untagged test that does reach the network is a test whose result depends
+// on what a remote host happens to answer.
+//
+// The stance is per-host rather than the global switch, so the fixture silences
+// exactly the host it fakes and the global opt-out's own loud warning stays
+// meaningful. Library signature verification and marker discovery are proven
+// against in-memory stores that DO serve referrers, so scoping it off here costs no
+// coverage.
+const fakeRegistryTrust = "registries:\n  - host: hub.aggrega.ai\n    skip_signature_verification: true\n"
+
 // ociManifestArtifact round-trips body through an in-memory CAS to obtain the OCI
 // manifest bytes and digest a real registry pull persists — the manifest whose
 // single layer commits to body's content digest, and whose own content digest is
@@ -113,7 +132,7 @@ func TestBuildResolvesRemoteLibraryTagVersionMismatch(t *testing.T) {
 	root := t.TempDir()
 	t.Chdir(root)
 	releasePath := remoteLibraryFixture(t, root)
-	writeWorkspaceConfig(t, root, "default_registry: hub.aggrega.ai\nauto_pull: false\n")
+	writeWorkspaceConfig(t, root, "default_registry: hub.aggrega.ai\nauto_pull: false\n"+fakeRegistryTrust)
 	catalogDir := filepath.Join(root, "catalog")
 	if err := os.Remove(filepath.Join(catalogDir, "schemalibraries", "dbsizing.yaml")); err != nil {
 		t.Fatalf("remove local library: %v", err)
@@ -158,7 +177,7 @@ func TestPullFetchesRemoteLibraryViaTier3(t *testing.T) {
 	root := t.TempDir()
 	t.Chdir(root)
 	releasePath := remoteLibraryFixture(t, root)
-	writeWorkspaceConfig(t, root, "default_registry: hub.aggrega.ai\n")
+	writeWorkspaceConfig(t, root, "default_registry: hub.aggrega.ai\n"+fakeRegistryTrust)
 	catalogDir := filepath.Join(root, "catalog")
 
 	// Make DbSizing genuinely remote: remove the local copy so only a Tier-3
@@ -492,7 +511,7 @@ func TestPullSourceTemplateReadsBridgedLibraryDefault(t *testing.T) {
 	root := t.TempDir()
 	t.Chdir(root)
 	releasePath := remoteLibraryFixture(t, root)
-	writeWorkspaceConfig(t, root, "default_registry: hub.aggrega.ai\n")
+	writeWorkspaceConfig(t, root, "default_registry: hub.aggrega.ai\n"+fakeRegistryTrust)
 	catalogDir := filepath.Join(root, "catalog")
 
 	// Sourced-mode Recipe whose source: version reads the library-$ref-composed
