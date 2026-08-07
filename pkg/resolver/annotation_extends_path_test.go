@@ -10,6 +10,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/compactform"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator"
+	"github.com/aggrega-ai/aggrega-cli/pkg/validator/envelope"
 	"go.yaml.in/yaml/v3"
 )
 
@@ -30,10 +31,12 @@ func extendsFeatureFixture(t *testing.T) (composed compactform.Schema, feat *typ
 		return n
 	}
 	parentEntry := validator.CatalogEntry{
+		Kind:       envelope.KindFeature,
 		URI:        "core/test/parent-feat",
 		JSONSchema: validator.CompileSchemaForMerge(parse("values:\n  threshold: { type: integer, maximum: 10 }\n"), nil),
 	}
 	childEntry := validator.CatalogEntry{
+		Kind:       envelope.KindFeature,
 		URI:        "core/test/child-feat",
 		Extends:    "core/test/parent-feat",
 		JSONSchema: validator.CompileSchemaForMerge(parse("values:\n  label: { type: string }\n"), nil),

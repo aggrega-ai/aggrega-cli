@@ -1392,6 +1392,7 @@ func (c *Catalog) ResolveAllExtends() []*validator.ValidationError {
 			return validator.CatalogEntry{}, false
 		}
 		return validator.CatalogEntry{
+			Kind:       envelope.KindFeature,
 			URI:        feat.Metadata.Name,
 			Extends:    feat.Spec.Extends,
 			JSONSchema: validator.CompileSchemaForMerge(feat.Spec.Schema, c.SchemaLibraries),
@@ -1421,12 +1422,11 @@ func (c *Catalog) ResolveAllExtends() []*validator.ValidationError {
 			continue
 		}
 		if _, ok, verr := c.resolveComponentKey(comp.Spec.Extends); !ok && errors.Is(verr, ErrUnsatisfiableEntityVersion) {
-			errs = append(errs, &validator.ValidationError{
-				Entity:     "Component " + name,
+			errs = append(errs, validator.NewValidationError(envelope.KindComponent, name, validator.ValidationDetail{
 				FieldPath:  ".extends",
 				Constraint: fmt.Sprintf("no catalog version satisfies extends parent %q", comp.Spec.Extends),
 				Err:        ErrUnsatisfiableEntityVersion,
-			})
+			}))
 			continue
 		}
 		resolved, vErrs := validator.ResolveComponentExtends(comp, compLookup)
@@ -1452,12 +1452,11 @@ func (c *Catalog) ResolveAllExtends() []*validator.ValidationError {
 			continue
 		}
 		if _, ok, verr := c.resolveFeatureKey(feat.Spec.Extends); !ok && errors.Is(verr, ErrUnsatisfiableEntityVersion) {
-			errs = append(errs, &validator.ValidationError{
-				Entity:     "Feature " + name,
+			errs = append(errs, validator.NewValidationError(envelope.KindFeature, name, validator.ValidationDetail{
 				FieldPath:  ".extends",
 				Constraint: fmt.Sprintf("no catalog version satisfies extends parent %q", feat.Spec.Extends),
 				Err:        ErrUnsatisfiableEntityVersion,
-			})
+			}))
 			continue
 		}
 		resolved, vErrs := validator.ResolveFeatureExtends(feat, featLookup)
@@ -1468,6 +1467,7 @@ func (c *Catalog) ResolveAllExtends() []*validator.ValidationError {
 		c.Features[name] = resolved
 
 		rootEntry := validator.CatalogEntry{
+			Kind:       envelope.KindFeature,
 			URI:        feat.Metadata.Name,
 			Extends:    feat.Spec.Extends,
 			JSONSchema: validator.CompileSchemaForMerge(feat.Spec.Schema, c.SchemaLibraries),

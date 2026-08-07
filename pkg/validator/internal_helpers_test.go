@@ -8,6 +8,8 @@ import (
 	"testing"
 
 	"go.yaml.in/yaml/v3"
+
+	"github.com/aggrega-ai/aggrega-cli/pkg/validator/envelope"
 )
 
 // TestYamlNodeKindName_DiscriminatesEveryKind pins the discriminator
@@ -110,13 +112,12 @@ func TestHasOverlapEscapeHatch_DetectsEveryEscapeClause(t *testing.T) {
 // period.
 func TestValidationError_Error_FormatsAllFields(t *testing.T) {
 	t.Parallel()
-	ve := &ValidationError{
-		Entity:     "Component core/api:1.0.0",
+	ve := NewValidationError(envelope.KindComponent, "core/api:1.0.0", ValidationDetail{
 		FieldPath:  ".values.port",
 		Constraint: "must be >= 1024",
 		Actual:     "80",
 		Suggestion: "Use a port number >= 1024",
-	}
+	})
 	msg := ve.Error()
 	for _, want := range []string{
 		"Component core/api:1.0.0",
@@ -136,10 +137,9 @@ func TestValidationError_Error_FormatsAllFields(t *testing.T) {
 // optional clauses (Constraint / Actual / Suggestion) are omitted.
 func TestValidationError_Error_MinimalShape(t *testing.T) {
 	t.Parallel()
-	ve := &ValidationError{
-		Entity:    "Feature core/x:1.0.0",
+	ve := NewValidationError(envelope.KindFeature, "core/x:1.0.0", ValidationDetail{
 		FieldPath: ".values.foo",
-	}
+	})
 	msg := ve.Error()
 	if !strings.Contains(msg, "Feature core/x:1.0.0") || !strings.Contains(msg, ".values.foo") {
 		t.Errorf("minimal shape: required fields missing; got: %s", msg)

@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/jsonschema-go/jsonschema"
 
+	"github.com/aggrega-ai/aggrega-cli/pkg/validator/envelope"
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator/merger"
 )
 
@@ -21,6 +22,14 @@ type CatalogEntry struct {
 	URI      string         // e.g. "core/api-server:1.0.0"
 	Extends  string         // parent URI, empty if no inheritance
 	Metadata map[string]any // raw YAML metadata for deep merge
+
+	// Kind is the entity kind the URI names. It is required: a failure
+	// resolving this chain is reported against the entity, and the kind is
+	// what tells the reader — and the compiler's error categorisation —
+	// which authoring surface the entity lives on. Leaving it unset is a
+	// caller mistake, and NewValidationError refuses such a failure outright
+	// rather than attributing it to a default surface.
+	Kind envelope.Kind
 
 	// JSONSchema is the entity's JSON Schema 2020-12 payload (the
 	// output of pkg/compactform's compile step). When populated, the
@@ -61,38 +70,35 @@ func ResolveInheritance(entry CatalogEntry, lookup func(uri string) (CatalogEntr
 	for current.Extends != "" {
 		if len(chain) >= maxInheritanceDepth {
 			return InheritanceResult{
-				Errors: []*ValidationError{{
-					Entity:     entry.URI,
+				Errors: []*ValidationError{NewValidationError(entry.Kind, entry.URI, ValidationDetail{
 					FieldPath:  ".spec.extends",
 					Constraint: fmt.Sprintf("inheritance chain exceeds maximum depth of %d", maxInheritanceDepth),
 					Suggestion: "Reduce the inheritance chain length",
 					Err:        ErrInheritanceMerge,
-				}},
+				})},
 			}
 		}
 
 		if visited[current.Extends] {
 			return InheritanceResult{
-				Errors: []*ValidationError{{
-					Entity:     entry.URI,
+				Errors: []*ValidationError{NewValidationError(entry.Kind, entry.URI, ValidationDetail{
 					FieldPath:  ".spec.extends",
 					Constraint: fmt.Sprintf("circular extends detected: %s already in chain", current.Extends),
 					Suggestion: "Remove the circular extends reference",
 					Err:        ErrCyclicExtension,
-				}},
+				})},
 			}
 		}
 
 		parent, ok := lookup(current.Extends)
 		if !ok {
 			return InheritanceResult{
-				Errors: []*ValidationError{{
-					Entity:     entry.URI,
+				Errors: []*ValidationError{NewValidationError(entry.Kind, entry.URI, ValidationDetail{
 					FieldPath:  ".spec.extends",
 					Constraint: fmt.Sprintf("parent entity %q not found in catalog", current.Extends),
 					Suggestion: "Verify the extends URI points to an existing catalog entity",
 					Err:        ErrInheritanceMerge,
-				}},
+				})},
 			}
 		}
 
@@ -149,13 +155,12 @@ func ResolveInheritance(entry CatalogEntry, lookup func(uri string) (CatalogEntr
 				// via errors.Is. Squashing the inner sentinel into
 				// the Constraint string is acceptable until a
 				// caller depends on the distinction.
-				result.Errors = append(result.Errors, &ValidationError{
-					Entity:     entry.URI,
+				result.Errors = append(result.Errors, NewValidationError(entry.Kind, entry.URI, ValidationDetail{
 					FieldPath:  ".spec.jsonSchema",
 					Constraint: "JSON Schema merge failed: " + err.Error(),
 					Suggestion: "Verify the JSON Schema payloads on each catalog entry in the extends chain",
 					Err:        ErrInheritanceMerge,
-				})
+				}))
 			} else {
 				result.MergedJSONSchema = merged
 			}

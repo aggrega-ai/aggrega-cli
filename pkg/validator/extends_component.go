@@ -7,6 +7,7 @@ import (
 	"fmt"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
+	"github.com/aggrega-ai/aggrega-cli/pkg/validator/envelope"
 )
 
 // ComponentLookup resolves a component name URI to the raw catalog Component.
@@ -45,9 +46,9 @@ func ResolveComponentExtends(comp types.Component, lookup ComponentLookup) (type
 		if !ok {
 			return CatalogEntry{}, false
 		}
-		return CatalogEntry{URI: c.Metadata.Name, Extends: c.Spec.Extends}, true
+		return CatalogEntry{Kind: envelope.KindComponent, URI: c.Metadata.Name, Extends: c.Spec.Extends}, true
 	}
-	entry := CatalogEntry{URI: comp.Metadata.Name, Extends: comp.Spec.Extends}
+	entry := CatalogEntry{Kind: envelope.KindComponent, URI: comp.Metadata.Name, Extends: comp.Spec.Extends}
 
 	if result := ResolveInheritance(entry, catalogLookup); len(result.Errors) > 0 {
 		return comp, result.Errors
@@ -84,9 +85,9 @@ func ResolveFeatureExtends(feat types.Feature, lookup FeatureLookup) (types.Feat
 		if !ok {
 			return CatalogEntry{}, false
 		}
-		return CatalogEntry{URI: f.Metadata.Name, Extends: f.Spec.Extends}, true
+		return CatalogEntry{Kind: envelope.KindFeature, URI: f.Metadata.Name, Extends: f.Spec.Extends}, true
 	}
-	entry := CatalogEntry{URI: feat.Metadata.Name, Extends: feat.Spec.Extends}
+	entry := CatalogEntry{Kind: envelope.KindFeature, URI: feat.Metadata.Name, Extends: feat.Spec.Extends}
 
 	if result := ResolveInheritance(entry, catalogLookup); len(result.Errors) > 0 {
 		return feat, result.Errors
@@ -132,21 +133,19 @@ func collectComponentChain(child types.Component, lookup ComponentLookup) ([]typ
 	for current.Spec.Extends != "" {
 		if visited[current.Spec.Extends] {
 			// Should have been caught by ResolveInheritance; defensive only.
-			return nil, []*ValidationError{{
-				Entity:     child.Metadata.Name,
+			return nil, []*ValidationError{NewValidationError(envelope.KindComponent, child.Metadata.Name, ValidationDetail{
 				FieldPath:  ".spec.extends",
 				Constraint: "circular extends detected while rebuilding chain",
 				Err:        ErrCyclicExtension,
-			}}
+			})}
 		}
 		parent, ok := lookup(current.Spec.Extends)
 		if !ok {
-			return nil, []*ValidationError{{
-				Entity:     child.Metadata.Name,
+			return nil, []*ValidationError{NewValidationError(envelope.KindComponent, child.Metadata.Name, ValidationDetail{
 				FieldPath:  ".spec.extends",
 				Constraint: "parent component not found while rebuilding chain",
 				Err:        ErrInheritanceMerge,
-			}}
+			})}
 		}
 		visited[current.Spec.Extends] = true
 		chain = append(chain, parent)
@@ -161,21 +160,19 @@ func collectFeatureChain(child types.Feature, lookup FeatureLookup) ([]types.Fea
 	current := child
 	for current.Spec.Extends != "" {
 		if visited[current.Spec.Extends] {
-			return nil, []*ValidationError{{
-				Entity:     child.Metadata.Name,
+			return nil, []*ValidationError{NewValidationError(envelope.KindFeature, child.Metadata.Name, ValidationDetail{
 				FieldPath:  ".spec.extends",
 				Constraint: "circular extends detected while rebuilding chain",
 				Err:        ErrCyclicExtension,
-			}}
+			})}
 		}
 		parent, ok := lookup(current.Spec.Extends)
 		if !ok {
-			return nil, []*ValidationError{{
-				Entity:     child.Metadata.Name,
+			return nil, []*ValidationError{NewValidationError(envelope.KindFeature, child.Metadata.Name, ValidationDetail{
 				FieldPath:  ".spec.extends",
 				Constraint: "parent feature not found while rebuilding chain",
 				Err:        ErrInheritanceMerge,
-			}}
+			})}
 		}
 		visited[current.Spec.Extends] = true
 		chain = append(chain, parent)
@@ -284,13 +281,12 @@ func mergeAssertions(parentEntity, childEntity string, parent, child types.Order
 			if taken == v {
 				continue
 			}
-			errs = append(errs, &ValidationError{
-				Entity:     "Component " + childEntity,
+			errs = append(errs, NewValidationError(envelope.KindComponent, childEntity, ValidationDetail{
 				FieldPath:  ".spec.assertions." + k,
 				Constraint: fmt.Sprintf("assertion %q is already present on the base Component %q, declaring a different rule", k, parentEntity),
 				Suggestion: "Rename this assertion; an extending Component's assertions add to the base's and never replace one.",
 				Err:        ErrAssertionNameCollision,
-			})
+			}))
 			continue
 		}
 		out.Set(k, v)

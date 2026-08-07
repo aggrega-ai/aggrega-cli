@@ -23,6 +23,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator"
+	"github.com/aggrega-ai/aggrega-cli/pkg/validator/envelope"
 )
 
 // NewLazyLookup returns a *LazyLookup whose AsCatalogLookup method
@@ -731,7 +732,10 @@ func (l *LazyLookup) component(uri string) (types.Component, bool) {
 	}
 	merged, vErrs := validator.ResolveComponentExtends(comp, l.component)
 	if len(vErrs) > 0 {
-		fmt.Fprintf(os.Stderr, "  extends: Component %s: %s\n", uri, vErrs[0].Error())
+		// The failure names its own entity, kind included, so the line adds no
+		// prefix of its own — one identity per diagnostic, and the same line
+		// shape the whole-catalog resolution pass prints.
+		fmt.Fprintf(os.Stderr, "  extends: %s\n", vErrs[0].Error())
 	}
 	l.components[uri] = merged
 	return merged, true
@@ -760,7 +764,7 @@ func (l *LazyLookup) feature(uri string) (types.Feature, bool) {
 	}
 	merged, vErrs := validator.ResolveFeatureExtends(feat, l.feature)
 	if len(vErrs) > 0 {
-		fmt.Fprintf(os.Stderr, "  extends: Feature %s: %s\n", uri, vErrs[0].Error())
+		fmt.Fprintf(os.Stderr, "  extends: %s\n", vErrs[0].Error())
 	}
 	l.features[uri] = merged
 	return merged, true
@@ -1785,6 +1789,7 @@ func (l *LazyLookup) ResolveClosureExtends(cl closure.Closure) []error {
 			return validator.CatalogEntry{}, false
 		}
 		return validator.CatalogEntry{
+			Kind:       envelope.KindFeature,
 			URI:        feat.Metadata.Name,
 			Extends:    feat.Spec.Extends,
 			JSONSchema: validator.CompileSchemaForMerge(feat.Spec.Schema, l.schemaLibraries),
@@ -1853,6 +1858,7 @@ func (l *LazyLookup) ResolveClosureExtends(cl closure.Closure) []error {
 				continue
 			}
 			rootEntry := validator.CatalogEntry{
+				Kind:       envelope.KindFeature,
 				URI:        feat.Metadata.Name,
 				Extends:    feat.Spec.Extends,
 				JSONSchema: validator.CompileSchemaForMerge(feat.Spec.Schema, l.schemaLibraries),

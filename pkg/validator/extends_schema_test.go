@@ -8,6 +8,8 @@ import (
 	"testing"
 
 	"go.yaml.in/yaml/v3"
+
+	"github.com/aggrega-ai/aggrega-cli/pkg/validator/envelope"
 )
 
 func schemaNode(t *testing.T, y string) yaml.Node {
@@ -24,7 +26,7 @@ func schemaNode(t *testing.T, y string) yaml.Node {
 func chainEntry(t *testing.T, uri, extends, schema string) CatalogEntry {
 	t.Helper()
 	node := schemaNode(t, schema)
-	return CatalogEntry{URI: uri, Extends: extends, JSONSchema: CompileSchemaForMerge(node, nil)}
+	return CatalogEntry{Kind: envelope.KindFeature, URI: uri, Extends: extends, JSONSchema: CompileSchemaForMerge(node, nil)}
 }
 
 // TestComposeExtends_MergesPillars: the composed effective schema carries BOTH
@@ -62,8 +64,8 @@ func TestComposeExtends_MergesPillars(t *testing.T) {
 // schema composes nothing (CompileSchemaForMerge → nil; merge stays dormant).
 func TestComposeExtends_NoSchemaIsNoComposition(t *testing.T) {
 	t.Parallel()
-	child := CatalogEntry{URI: "c", Extends: "p"}
-	parent := CatalogEntry{URI: "p"}
+	child := CatalogEntry{Kind: envelope.KindFeature, URI: "c", Extends: "p"}
+	parent := CatalogEntry{Kind: envelope.KindFeature, URI: "p"}
 	lookup := func(uri string) (CatalogEntry, bool) {
 		if uri == "p" {
 			return parent, true

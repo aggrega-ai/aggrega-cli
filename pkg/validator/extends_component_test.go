@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"go.yaml.in/yaml/v3"
 )
@@ -252,7 +253,7 @@ func TestResolveComponentExtends_CyclicExtendsEmitsSentinel(t *testing.T) {
 		t.Fatal("expected cycle error")
 	}
 	if !errors.Is(errs[0], ErrCyclicExtension) {
-		t.Errorf("expected ErrCyclicExtension, got %v", errs[0].Err)
+		t.Errorf("expected ErrCyclicExtension, got %v", errs[0])
 	}
 }
 
@@ -269,7 +270,7 @@ func TestResolveComponentExtends_MissingParent(t *testing.T) {
 		t.Fatal("expected missing-parent error")
 	}
 	if !errors.Is(errs[0], ErrInheritanceMerge) {
-		t.Errorf("expected ErrInheritanceMerge, got %v", errs[0].Err)
+		t.Errorf("expected ErrInheritanceMerge, got %v", errs[0])
 	}
 }
 
@@ -542,7 +543,7 @@ func TestResolveComponentExtends_AssertionNameCollisionHalts(t *testing.T) {
 		t.Fatalf("expected exactly one collision error, got %d: %v", len(errs), errs)
 	}
 	if !errors.Is(errs[0], ErrAssertionNameCollision) {
-		t.Errorf("expected ErrAssertionNameCollision, got %v", errs[0].Err)
+		t.Errorf("expected ErrAssertionNameCollision, got %v", errs[0])
 	}
 	msg := errs[0].Error()
 	for _, want := range []string{"core/gateway", "core/base", "tls-required", ".spec.assertions.tls-required"} {
@@ -647,4 +648,118 @@ func equalStrings(got, want []string) bool {
 		}
 	}
 	return true
+}
+
+// TestExtendsFaultsAreCatalogDomain pins the authoring domain every extends
+// fault on a Component or a Feature reports. Both kinds are catalog content,
+// so a broken extends chain is the catalog author's to fix — and the entity
+// reference in the diagnostic names the kind, so a reader is told which
+// catalog surface to open.
+//
+// The domain follows from the kind the failure was built with, which is why
+// this holds for the chain-rebuild faults as well as the schema-merge ones:
+// no site has to remember to prepend a word for the failure to be routed.
+func TestExtendsFaultsAreCatalogDomain(t *testing.T) {
+	t.Parallel()
+
+	cyclicComponent := types.Component{
+		Metadata: types.ComponentMetadata{Name: "core/a", Version: "1.0.0"},
+		Spec:     types.ComponentSpec{Extends: "core/b"},
+	}
+	componentLookup := func(uri string) (types.Component, bool) {
+		switch uri {
+		case "core/a":
+			return cyclicComponent, true
+		case "core/b":
+			return types.Component{
+				Metadata: types.ComponentMetadata{Name: "core/b", Version: "1.0.0"},
+				Spec:     types.ComponentSpec{Extends: "core/a"},
+			}, true
+		}
+		return types.Component{}, false
+	}
+
+	cyclicFeature := types.Feature{
+		Metadata: types.FeatureMetadata{Name: "core/x", Version: "1.0.0"},
+		Spec:     types.FeatureSpec{Extends: "core/y"},
+	}
+	featureLookup := func(uri string) (types.Feature, bool) {
+		switch uri {
+		case "core/x":
+			return cyclicFeature, true
+		case "core/y":
+			return types.Feature{
+				Metadata: types.FeatureMetadata{Name: "core/y", Version: "1.0.0"},
+				Spec:     types.FeatureSpec{Extends: "core/x"},
+			}, true
+		}
+		return types.Feature{}, false
+	}
+
+	cases := []struct {
+		name      string
+		resolve   func() []*ValidationError
+		wantInMsg string
+	}{
+		{
+			name: "component cycle",
+			resolve: func() []*ValidationError {
+				_, errs := ResolveComponentExtends(cyclicComponent, componentLookup)
+				return errs
+			},
+			wantInMsg: "Component core/a",
+		},
+		{
+			name: "component missing parent",
+			resolve: func() []*ValidationError {
+				child := types.Component{
+					Metadata: types.ComponentMetadata{Name: "core/child", Version: "1.0.0"},
+					Spec:     types.ComponentSpec{Extends: "core/vanished"},
+				}
+				_, errs := ResolveComponentExtends(child, func(string) (types.Component, bool) {
+					return types.Component{}, false
+				})
+				return errs
+			},
+			wantInMsg: "Component core/child",
+		},
+		{
+			name: "feature cycle",
+			resolve: func() []*ValidationError {
+				_, errs := ResolveFeatureExtends(cyclicFeature, featureLookup)
+				return errs
+			},
+			wantInMsg: "Feature core/x",
+		},
+		{
+			name: "feature missing parent",
+			resolve: func() []*ValidationError {
+				child := types.Feature{
+					Metadata: types.FeatureMetadata{Name: "core/childfeat", Version: "1.0.0"},
+					Spec:     types.FeatureSpec{Extends: "core/vanished"},
+				}
+				_, errs := ResolveFeatureExtends(child, func(string) (types.Feature, bool) {
+					return types.Feature{}, false
+				})
+				return errs
+			},
+			wantInMsg: "Feature core/childfeat",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			errs := tc.resolve()
+			if len(errs) == 0 {
+				t.Fatal("expected an extends fault")
+			}
+			ce := errs[0].ToCompilerError()
+			if ce.Category != cerrors.CatalogError {
+				t.Errorf("Category = %v, want %v", ce.Category, cerrors.CatalogError)
+			}
+			if !strings.Contains(ce.Message, tc.wantInMsg) {
+				t.Errorf("Message should name the entity as %q; got %q", tc.wantInMsg, ce.Message)
+			}
+		})
+	}
 }
