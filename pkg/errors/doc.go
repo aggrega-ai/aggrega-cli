@@ -27,4 +27,22 @@
 //
 // CompilerError implements the standard error interface plus Unwrap so
 // errors.Is and errors.As work against the carried inner error chain.
+//
+// # Identities and occurrences
+//
+// A halting condition has an identity and an occurrence, and this package
+// carries both.
+//
+// Code is the identity: a string-typed constant that satisfies the error
+// interface, declares its message in one Register call standing beside it, and
+// stays matchable under errors.Is through arbitrary wrapping. One Code value is
+// shared by every occurrence of the condition it names.
+//
+// CompilerError is the occurrence: it carries the Category, the SourceLocation
+// and the surrounding detail that differ between one failure and the next.
+//
+// The division follows from that sharing. Anything that differs between two
+// occurrences of the same condition belongs on the instance, because a single
+// shared value cannot express it; anything true of the condition itself belongs
+// beside the identity, declared once.
 package errors
