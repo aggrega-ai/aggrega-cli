@@ -8,8 +8,12 @@
 // exactly and every struct carries paired JSON and YAML tags. Opaque
 // developer payloads land in map[string]any.
 //
-// The 8-Entity Taxonomy authored against this package: Aggregate,
-// Component, Feature, Recipe, FeatureRecipe, Plugin, Manifest, Release.
+// The authoring entities modelled here: Aggregate, Component, Feature,
+// Recipe, FeatureRecipe, Plugin, SchemaLibrary, MappingLibrary,
+// WorkloadLibrary, ArtifactsLibrary, Manifest, Release. The declaring
+// source for the set is the document-envelope kind enumeration, which
+// also carries the non-authoring kinds (configuration, lockfile,
+// workload, IR); read it there rather than counting this list.
 // The IR graph (IRGraph plus per-graph types in ir.go) and the
 // TemplateContext consumed by template rendering are also declared here.
 //

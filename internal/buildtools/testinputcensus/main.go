@@ -93,9 +93,17 @@ import (
 // Each figure is a measurement rather than a target, so it carries what it was
 // measured over. Criterion: a test package counts when its test log records at
 // least one open or stat of a path that resolves outside its own module root and
-// inside the repository tree. Measured 2026-08-06 on go1.26.0 with caching
-// defeated, over the four Go modules in the tree that carry test packages —
-// 96 test packages in total, of which 15 count.
+// inside the repository tree. The counting figure — 15 packages — was measured
+// 2026-08-06 on go1.26.0 with caching defeated.
+//
+// The denominator was re-measured 2026-08-07 under its own criterion, which is a
+// different and much cheaper one: the module set is the same walk this census is
+// driven from, and a package counts toward the denominator when `go list` reports
+// it carrying TestGoFiles or XTestGoFiles. That gives 97 test packages across
+// exactly four modules — aggrega-cli 94, aggrega-abi/go 1, aggrega-pdk/go 1,
+// aggrega-schemas 1. It was 96 when the counting figure was taken, so the
+// denominator has moved by one and the two numbers now carry separate dates
+// rather than one date covering both.
 var expected = map[string]int{
 	// The two shared-payload parity suites, whose input corpus is the
 	// golden-vector tree at the repository root above each module — read by the
@@ -108,6 +116,43 @@ var expected = map[string]int{
 	// sibling plugin toolkits, and the catalog content it compiles against. This
 	// module does NOT currently run with caching defeated, which the census says
 	// on every run.
+	//
+	// Four of its packages are the named carriers of that exposure, recorded here
+	// because a reader otherwise has to run the census to learn which they are:
+	//
+	//   - internal/wasm            reads the shared schema tree.
+	//   - pkg/validator            resolves the repository root at run time and
+	//                              joins paths beneath it.
+	//   - pkg/plugintest           the shared harness other packages reach the
+	//                              out-of-module corpus through.
+	//   - internal/tools/typegen   byte-compares the codecs it commits into the
+	//                              sibling shared-payload module.
+	//
+	// 🔴 A TEXTUAL census cannot find these, and that is worth stating because it
+	// is the obvious thing to try. pkg/validator reaches outside the module via a
+	// helper that walks UP to the repository root and joins from there, so the
+	// path is assembled at run time and no relative-path literal appears in the
+	// source at all. A grep for an escaping path finds two of the four and reads
+	// as a complete answer. The census reads the test log precisely because the
+	// log records the open that happened rather than the spelling of a path.
+	//
+	// WHY THE CACHING NOTE ABOVE IS NOT A THEORETICAL WORRY. Measured end to end
+	// 2026-08-07 on go1.26.0, against the shared golden corpus this comment names.
+	// Criterion: warm the cache on a passing package, change the golden by exactly
+	// one character keeping its byte length identical, then run the same package
+	// twice — once as the routine gate runs it, once with caching defeated.
+	//
+	//   - The cached run reported `ok (cached)` and exited 0. Go's test-input
+	//     identity was BIT-IDENTICAL across the mutation, because the golden sits
+	//     outside the module whose sources the cache keys on, so it is in no hash.
+	//   - The same tree state with caching defeated FAILED, exit 1, on three
+	//     separate byte-identity assertions naming the mutated field.
+	//
+	// So a green from the routine gate is not evidence that the current bytes of
+	// an out-of-module input were read — only that they were read at some point.
+	// That is the whole reason the two modules above are enrolled in cache-defeat
+	// and the reason this module's absence from that enrolment is called out
+	// rather than left implicit.
 	"aggrega-cli": 13,
 }
 

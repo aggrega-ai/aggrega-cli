@@ -206,13 +206,20 @@ var enumSources = map[string]enumSource{
 const abiVersionEnumDoc = "This const is the plugin ABI version, generated from the descriptor schema's\n" +
 	"declaration of abi_version. The schema pins that field to a single value, and\n" +
 	"this const, its Rust and TypeScript siblings, and the three plugin kits'\n" +
-	"re-exports are all generated or aliased from that one declaration, so bumping\n" +
-	"the ABI is a schema edit and a regeneration rather than an edit in each\n" +
-	"language.\n" +
+	"re-exports are all generated or aliased from that one declaration.\n" +
 	"\n" +
 	"A guest stamps the version into the descriptor it returns from describe(); the\n" +
 	"host accepts exactly the version it speaks and refuses a guest built against\n" +
 	"any other at load rather than mis-invoking it at dispatch.\n" +
+	"\n" +
+	"The version the host speaks has its own home, and it is NOT generated from\n" +
+	"this schema: the compiler declares it by hand as ABIVersionV1Alpha1 in\n" +
+	"aggrega-cli/internal/wasm/describe.go, and the descriptor check in that file\n" +
+	"is what rejects a guest at load. That home is named here because it is the\n" +
+	"enforcing one: nothing cross-checks it against the schema, so bumping the ABI\n" +
+	"is a schema edit plus a regeneration AND a hand edit to the host constant, and\n" +
+	"a bump that stops at the regeneration leaves the compiler still refusing every\n" +
+	"guest built against the new version.\n" +
 	"\n" +
 	"It is unrelated to the IR payload's schema version, which travels in an IR\n" +
 	"graph's provenance and versions the graph shape rather than the plugin ABI.\n" +
