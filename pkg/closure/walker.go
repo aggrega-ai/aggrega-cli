@@ -241,26 +241,51 @@ func (s *walkState) walkManifest(m *types.Manifest) {
 	}
 }
 
-// walkReleaseAttachments descends Release.Spec.Boundaries recursively
-// and collects the type URIs of per-component Feature attachments. A
-// credential is a Feature carrying the feature.aggrega.ai/kind: secret
-// label, so it is collected through the same walk as any other attachment.
+// walkReleaseAttachments descends Release.Spec.Boundaries and every boundary
+// nested inside them, collecting the type URIs of the Feature attachments declared
+// on the boundary itself and on each component the boundary routes. A Feature
+// attached at any nesting depth is collected like one attached at the top. A
+// credential is a Feature carrying the feature.aggrega.ai/kind: secret label, so it
+// is collected through the same walk as any other attachment.
+//
+// The descent is the shared boundary-tree walk, so the boundaries reached here are
+// the same ones every other consumer of that tree reaches. The authoring path
+// recorded against each reference spells out the full chain of boundaries leading to
+// it, so a pinned entity stays traceable to the position in the Release that asked
+// for it.
+//
+// A boundary also routes sub-aggregates through [types.Boundary.Aggregates], whose
+// routed components carry attachments of their own. That axis is not part of the
+// boundary's component tree and is not walked here, so a Feature attached through it
+// is not collected.
 func (s *walkState) walkReleaseAttachments(r *types.Release) {
 	if r == nil {
 		return
 	}
-	for name, b := range r.Spec.Boundaries.All() {
-		s.walkBoundary(b, fmt.Sprintf("release.spec.boundaries.%s", name))
-	}
+	// No visitor callback fails, so the walk cannot.
+	_ = types.WalkInstanceTree(r.Spec.Boundaries, types.BoundaryTree(), "release.spec", struct{}{},
+		types.InstanceTreeVisitor[types.Boundary, types.BoundaryComponent, struct{}]{
+			Path: func(parentPath, name string, _ bool) string {
+				return parentPath + ".boundaries." + name
+			},
+			Visit: func(bc types.BoundaryComponent, name, path string, _ bool, _ struct{}) error {
+				s.addBoundaryFeatures(bc.Features, fmt.Sprintf("%s.components.%s", path, name))
+				return nil
+			},
+			Leave: func(b types.Boundary, _, path string, _ struct{}) {
+				s.addBoundaryFeatures(b.Features, path)
+			},
+		})
 }
 
-func (s *walkState) walkBoundary(b types.Boundary, path string) {
-	for compName, bc := range b.Components.All() {
-		compPath := fmt.Sprintf("%s.components.%s", path, compName)
-		for fname, bf := range bc.Features.All() {
-			if bf.Type != "" {
-				s.addEntityKind(bf.Type, fmt.Sprintf("%s.features.%s.type", compPath, fname), "feature")
-			}
+// addBoundaryFeatures records every non-empty Feature type URI in one attachment
+// map, under the authoring path of the site that declares it. A boundary and a
+// component the boundary routes carry the same attachment shape, so one accumulator
+// serves both and neither site can drift from the other.
+func (s *walkState) addBoundaryFeatures(features types.OrderedMap[types.BoundaryFeature], path string) {
+	for name, bf := range features.All() {
+		if bf.Type != "" {
+			s.addEntityKind(bf.Type, fmt.Sprintf("%s.features.%s.type", path, name), "feature")
 		}
 	}
 }
