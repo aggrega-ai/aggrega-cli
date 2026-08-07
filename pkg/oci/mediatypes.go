@@ -33,10 +33,10 @@ const (
 	MediaTypeFeature          = "application/vnd.aggrega.feature.v1alpha1+yaml"
 	MediaTypeRecipe           = "application/vnd.aggrega.recipe.v1alpha1+tar+gz"
 	MediaTypeFeatureRecipe    = "application/vnd.aggrega.featurerecipe.v1alpha1+tar+gz"
-	MediaTypeSchemaLibrary    = "application/vnd.aggrega.schemalibrary.v1+json"
-	MediaTypeMappingLibrary   = "application/vnd.aggrega.mappinglibrary.v1+json"
-	MediaTypeWorkloadLibrary  = "application/vnd.aggrega.workloadlibrary.v1+json"
-	MediaTypeArtifactsLibrary = "application/vnd.aggrega.artifactslibrary.v1+json"
+	MediaTypeSchemaLibrary    = "application/vnd.aggrega.schemalibrary.v1alpha1+yaml"
+	MediaTypeMappingLibrary   = "application/vnd.aggrega.mappinglibrary.v1alpha1+yaml"
+	MediaTypeWorkloadLibrary  = "application/vnd.aggrega.workloadlibrary.v1alpha1+yaml"
+	MediaTypeArtifactsLibrary = "application/vnd.aggrega.artifactslibrary.v1alpha1+yaml"
 	MediaTypeAggregate        = "application/vnd.aggrega.aggregate.v1alpha1+yaml"
 	// MediaTypePlugin is the mediatype of the Plugin entity's YAML —
 	// the authoring/metadata surface that pins the .wasm artifact by digest.
