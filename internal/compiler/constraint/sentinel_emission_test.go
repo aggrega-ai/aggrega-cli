@@ -79,12 +79,12 @@ import (
 // # The census criterion, and what it deliberately excludes
 //
 // A sentinel is a distinct name matching [sentinelName] bound by a
-// package-level var specification in a non-test .go file of this module. The
-// asserted population is those declared under [scannedRoots]. Every count this
-// file reports is a count of that population and of nothing else, so the
-// criterion is written down here: a count whose criterion is implicit invites
-// two readers to compare two different measurements and conclude the population
-// moved.
+// package-level var or const specification in a non-test .go file of this
+// module. The asserted population is those declared under [scannedRoots]. Every
+// count this file reports is a count of that population and of nothing else, so
+// the criterion is written down here: a count whose criterion is implicit
+// invites two readers to compare two different measurements and conclude the
+// population moved.
 //
 // The exclusions, each a choice about what the population IS rather than a
 // convenience, so that none of them is later "fixed" as an oversight:
@@ -98,14 +98,23 @@ import (
 //     nobody working in this module could act on.
 //   - A directory whose name begins with "." or "_", which is what the Go tool
 //     itself skips, so a file there is in no package this module builds.
-//   - A const declaration. An error sentinel is a value and a const cannot hold
-//     one.
 //   - A var bound inside a function body. The census reads file-level
 //     declarations only, because the convention a sentinel follows is a
 //     package-level exported name.
 //
-// And one deliberate inclusion, recorded because it is the one a later edit is
-// most likely to undo: an alias declaration of the form
+// And two deliberate inclusions, recorded because they are the ones a later edit
+// is most likely to undo.
+//
+// A const declaration counts. A sentinel is the distinct exported name a
+// consumer matches against and the rule that name stands for, not the kind of
+// declaration that binds it, so an identity declared as a constant is a sentinel
+// exactly as one bound to a value is. Reading var alone would make this a count
+// of one declaration shape rather than of the rules this module raises, and a
+// rule whose declaration changed shape would then read as a rule that
+// disappeared — the one reading a population count must never produce, because
+// it is indistinguishable from a rule that was genuinely dropped.
+//
+// An alias declaration of the form
 //
 //	ErrX = otherpkg.ErrY
 //
@@ -224,7 +233,7 @@ func TestSentinelEmissionSitesAreTheFrameworkDispatch(t *testing.T) {
 	if len(unemitted) > 0 {
 		report("%d sentinel(s) have no emission site at all: %s.\n"+
 			"A sentinel nothing emits is either a rule that was removed without its name, or a name "+
-			"minted for a check that was never written.", len(unemitted), strings.Join(head(unemitted, 12), ", "))
+			"minted for a check that was never written.", len(unemitted), strings.Join(sortedNames(unemitted), ", "))
 	}
 
 	if !sentinelEmissionBlocks {
@@ -489,7 +498,7 @@ func declaredSentinels(files map[string]*ast.File) map[string]string {
 	for path, file := range files {
 		for _, decl := range file.Decls {
 			gen, ok := decl.(*ast.GenDecl)
-			if !ok || gen.Tok != token.VAR {
+			if !ok || (gen.Tok != token.VAR && gen.Tok != token.CONST) {
 				continue
 			}
 			for _, spec := range gen.Specs {
@@ -572,9 +581,24 @@ func constructedTypeName(expr ast.Expr) string {
 	return ""
 }
 
-func head(ss []string, n int) []string {
+// sortedNames returns ss in alphabetical order, leaving ss itself untouched, so
+// a report names the same entries in the same order on every run.
+//
+// A report names the whole of a bucket whose every entry is individually
+// actionable and caps one that is not; [head] is the capped form, and a capped
+// list says so in the sentence introducing it. The two are chosen deliberately,
+// because a list whose introduction states a larger count than the list contains
+// reads as a discrepancy in the instrument rather than as a cap.
+func sortedNames(ss []string) []string {
 	sorted := append([]string(nil), ss...)
 	sort.Strings(sorted)
+	return sorted
+}
+
+// head returns the first n of [sortedNames], for a bucket too large to name
+// entry by entry.
+func head(ss []string, n int) []string {
+	sorted := sortedNames(ss)
 	if len(sorted) <= n {
 		return sorted
 	}
