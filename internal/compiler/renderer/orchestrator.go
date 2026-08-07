@@ -852,9 +852,9 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		if err := phaseB4(ctx, tmplCtx, state, engine, nodeCtx); err != nil {
 			return nil, cerrors.Wrap(err, cerrors.TranslationError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("rendering node %q", nodeID))
 		}
-		// Slot 10 (PassPhaseB4) is now wired per-emitted-file inside phaseB4
-		// itself; the orchestrator-level single-event-per-node wire that
-		// previously lived here was superseded by the per-file granularity.
+		// Slot 10 is wired per-emitted-file inside that stage itself, not at
+		// the orchestrator level: the granularity is per emitted file, not per
+		// node.
 
 		// Phase B.5 — filename collision detection across input-kind
 		// origins (rule 7). Collisions can surface across EmitOriginSource

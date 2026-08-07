@@ -4,11 +4,11 @@
 // Package catalog is the single source of truth for entity loading from
 // filesystem-resident YAML. It walks one or more directory trees, identifies
 // each .yaml / .yml file's entity kind from the top-level "kind:" field
-// (Component, Feature, Recipe, FeatureRecipe, Aggregate, Plugin — the six
-// catalog-resident kinds out of the eight-entity taxonomy; Manifest and
-// Release are deployment-side and live outside the catalog), unmarshals
-// into the matching pkg/types struct, and indexes the result for
-// in-process lookup.
+// (Component, Feature, Recipe, FeatureRecipe, Aggregate, SchemaLibrary,
+// MappingLibrary, WorkloadLibrary, ArtifactsLibrary, Plugin — the
+// catalog-resident kinds; Manifest and Release are deployment-side and live
+// outside the catalog), unmarshals into the matching pkg/types struct, and
+// indexes the result for in-process lookup.
 //
 // The Catalog struct exposes two surfaces over the same loaded data:
 //

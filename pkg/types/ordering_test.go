@@ -10,7 +10,7 @@ import (
 	"go.yaml.in/yaml/v3"
 )
 
-// Author-order preservation tests for each 8-entity kind.
+// Author-order preservation tests for each entity kind.
 //
 // Each test loads a YAML fixture whose keys are deliberately NOT in alphabetical
 // order, unmarshals into the Go entity type, and asserts that the OrderedMap

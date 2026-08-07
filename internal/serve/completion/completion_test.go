@@ -24,7 +24,7 @@ func TestCompletionKindReturnsAllEntityKinds(t *testing.T) {
 	if items[0].Label != "Aggregate" {
 		t.Errorf("first item = %q; want Aggregate (Operator-layer authoring entry point)", items[0].Label)
 	}
-	// All 11 kinds should be present.
+	// Every kind in the closed set should be present.
 	got := map[string]bool{}
 	for _, item := range items {
 		got[item.Label] = true

@@ -797,9 +797,8 @@ func (p *Plugin) writeParseSourceFailure(writer pluginMemoryWriter, message, cod
 //     resolved root.
 //
 // The resolved path is sandboxed under the source root; a selection escaping
-// above it is refused. The keying and walk order match the enumeration the
-// host-side source projection historically produced, so the packed bytes are
-// byte-identical to the pre-listing model for the same input.
+// above it is refused. The keying and walk order are fixed by the host's
+// deterministic walk, so the packed bytes are byte-identical for the same input.
 // packSourceSelection returns the wire error code for the failure condition it
 // hits alongside the error, so the host boundary sets one code per condition
 // (the sandbox escape's code is owned by resolveUnderSourceRoot). On success the

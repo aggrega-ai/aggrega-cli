@@ -73,11 +73,11 @@ var kindMediaTypes = map[string]string{
 }
 
 // MediaTypeForKind returns the canonical OCI mediatype for the given
-// entity kind. The kind parameter matches the convention used in
-// pkg/catalog/catalog.go: plain string values "Component", "Feature",
-// "Recipe", "FeatureRecipe", "SchemaLibrary",
-// "MappingLibrary", "WorkloadLibrary", "Aggregate". Returns ErrUnknownEntityKind for
-// unrecognised values (a programming error, not a user-input error).
+// entity kind. The kind parameter is the plain string value the catalog
+// loader switches on, such as "Component" or "SchemaLibrary"; the resolvable
+// set is the kindMediaTypes table above, which MediaTypeKinds enumerates
+// rather than restating here. Returns ErrUnknownEntityKind for unrecognised
+// values (a programming error, not a user-input error).
 func MediaTypeForKind(kind string) (string, error) {
 	if mt, ok := kindMediaTypes[kind]; ok {
 		return mt, nil

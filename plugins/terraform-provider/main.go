@@ -359,10 +359,9 @@ func nodeCtxFromInput(in rendercore.RenderNodeInput) rendercore.NodeRenderContex
 // packTerraformSource resolves the acquired module source from the host's
 // name-only listing and asks the host to pack the module's bytes. A directory
 // source is vendored whole through a tree pack rooted at the source root; a
-// single-file source (a lone module file) is packed as one file. This is the
-// guest-side resolution the host formerly performed when it packed source bytes
-// directly: terraform vendors all module files verbatim with no ambiguity halt,
-// so the resolution is a straight directory-versus-file branch.
+// single-file source (a lone module file) is packed as one file. The resolution
+// is a straight directory-versus-file branch: this provider vendors all module
+// files verbatim with no ambiguity halt.
 func packTerraformSource(listing *rendercore.SourceListing) (*aggrega.SourceProjection, error) {
 	if listing.RootIsDir {
 		return aggrega.PackSource("tree", "")
