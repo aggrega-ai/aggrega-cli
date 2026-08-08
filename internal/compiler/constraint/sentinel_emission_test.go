@@ -283,14 +283,14 @@ func TestSentinelEmissionSitesAreTheFrameworkDispatch(t *testing.T) {
 func TestAssertedSentinelPopulationCoversTheModule(t *testing.T) {
 	t.Parallel()
 
-	assertedFiles := collectGoFiles(t, scannedRoots)
+	assertedFiles, _ := collectGoFiles(t, scannedRoots, excludeTestFiles)
 	asserted := declaredSentinels(assertedFiles)
 	if len(asserted) == 0 {
 		t.Fatalf("no sentinel declaration was found under %s, so a clean coverage result certifies nothing",
 			strings.Join(scannedRoots, ", "))
 	}
 
-	moduleFiles := collectGoFiles(t, []string{moduleRoot})
+	moduleFiles, _ := collectGoFiles(t, []string{moduleRoot}, excludeTestFiles)
 	moduleWide := declaredSentinels(moduleFiles)
 
 	var unreadFiles []string
@@ -381,7 +381,7 @@ type emissionSite struct {
 func sentinelCensus(t *testing.T) (declared []string, emitters map[string][]emissionSite) {
 	t.Helper()
 
-	files := collectGoFiles(t, scannedRoots)
+	files, _ := collectGoFiles(t, scannedRoots, excludeTestFiles)
 	names := declaredSentinels(files)
 
 	emitters = map[string][]emissionSite{}
@@ -433,14 +433,40 @@ func sentinelCensus(t *testing.T) (declared []string, emitters map[string][]emis
 	return declared, emitters
 }
 
+// testFileScope states whether a walk admits _test.go files.
+//
+// It is a named type rather than a bare bool so the choice reads at the call
+// site. The populations this package walks differ in exactly this one respect,
+// and a literal true or false in the argument list would say which population is
+// meant only to a reader who first opens [collectGoFiles].
+type testFileScope bool
+
+const (
+	// excludeTestFiles is the sentinel census's scope. A sentinel declared in a
+	// test is scaffolding rather than a rule this module raises, which is the
+	// criterion recorded beside [sentinelEmissionBlocks].
+	excludeTestFiles testFileScope = false
+
+	// includeTestFiles is the code-literal guard's scope. That guard reads a
+	// match written against a registered code wherever it appears, and a test is
+	// where one is most likely to be written: asserting on the code string is
+	// the readiest way to reach for the wire identifier from Go.
+	includeTestFiles testFileScope = true
+)
+
 // collectGoFiles parses every file the criterion admits under roots, keyed by
-// path. It is one half of the criterion's single home — the scope half — and both
-// the asserted-population read and the module-wide coverage read call it, so
-// neither can acquire a scope rule the other lacks.
+// path, and returns the file set those positions are recorded in so a caller can
+// report a finding by line.
+//
+// It is one half of the criterion's single home — the scope half. Both the
+// asserted-population read and the module-wide coverage read pass the identical
+// scope, so neither of them can acquire a scope rule the other lacks; a caller
+// whose population is genuinely different states that difference in the
+// argument, where it is visible, rather than by walking the tree a second time.
 //
 // A file that will not parse is skipped rather than fatal, because a census is
 // not a compiler and a tree mid-edit should not turn an unrelated assertion red.
-func collectGoFiles(t *testing.T, roots []string) map[string]*ast.File {
+func collectGoFiles(t *testing.T, roots []string, tests testFileScope) (map[string]*ast.File, *token.FileSet) {
 	t.Helper()
 
 	fset := token.NewFileSet()
@@ -455,7 +481,9 @@ func collectGoFiles(t *testing.T, roots []string) map[string]*ast.File {
 					return fs.SkipDir
 				}
 				return nil
-			case !strings.HasSuffix(path, ".go"), strings.HasSuffix(path, "_test.go"):
+			case !strings.HasSuffix(path, ".go"):
+				return nil
+			case tests == excludeTestFiles && strings.HasSuffix(path, "_test.go"):
 				return nil
 			}
 			parsed, perr := parser.ParseFile(fset, path, nil, 0)
@@ -473,7 +501,7 @@ func collectGoFiles(t *testing.T, roots []string) map[string]*ast.File {
 		t.Fatalf("no Go file was read under %s; the census instrument is not working",
 			strings.Join(roots, ", "))
 	}
-	return files
+	return files, fset
 }
 
 // skipDir reports whether the walk stops at a directory. The exclusions are the
