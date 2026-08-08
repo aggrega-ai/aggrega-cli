@@ -55,8 +55,9 @@ func kindExpectsManifest(kind string) bool {
 
 // Re-exports of the canonical fetch-error sentinels. Identity-equal
 // to pkg/oci's; errors.Is against either name matches the same
-// wrapped chain.
-var (
+// wrapped chain. They restate no message: the message is registered
+// once, beside the canonical declaration.
+const (
 	ErrFetchNotFound  = oci.ErrFetchNotFound
 	ErrFetchIntegrity = oci.ErrFetchIntegrity
 )

@@ -493,6 +493,15 @@ func skipDir(path, root, name string) bool {
 // Where a name is declared more than once the lexicographically first path wins,
 // so a reported path is the same on every run rather than whichever the map
 // handed back first.
+//
+// A second recogniser of the same declaration shapes lives in the published-pages
+// parity assertion under cmd/aggrega, and the two are deliberately NOT unified.
+// This one parses the syntax tree; that one scans source text. They fail in
+// different directions, which is the whole value: a text scan reads a shape this
+// walk cannot express, and this walk reads a shape no pattern can bound. Unifying
+// them would replace two independent readings of one population with a single
+// point of blindness, so a criterion change must be carried to both sites by hand
+// — which is the cost this duplication is knowingly paying.
 func declaredSentinels(files map[string]*ast.File) map[string]string {
 	names := map[string]string{}
 	for path, file := range files {

@@ -27,7 +27,6 @@ import (
 	"archive/tar"
 	"compress/gzip"
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"net/url"
@@ -38,26 +37,37 @@ import (
 
 	"oras.land/oras-go/v2"
 
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 )
 
 // ErrFetchNotFound is re-exported from pkg/oci so a caller can errors.Is a
 // cache miss against either name. ReadPage returns it (wrapped) when no bundle
-// has been resolved for the requested reference and version.
-var ErrFetchNotFound = oci.ErrFetchNotFound
+// has been resolved for the requested reference and version. It is the
+// canonical identity itself, and restates no message: the message is
+// registered once, beside the canonical declaration.
+const ErrFetchNotFound = oci.ErrFetchNotFound
 
 // ErrNotDocsBundle reports that a resolved artifact does not carry the
 // documentation-bundle media type. A reference that resolves to some other
 // artifact kind (a catalog entity, a .wasm plugin) is rejected rather than
 // cached as a documentation bundle, so a mis-pointed reference fails loudly at
 // resolve time instead of surfacing as an unreadable bundle later.
-var ErrNotDocsBundle = errors.New("docscache: artifact is not a documentation bundle")
+const ErrNotDocsBundle cerrors.Code = "docscache/not-docs-bundle"
+
+var _ = cerrors.Register(ErrNotDocsBundle, cerrors.Meta{
+	Message: "docscache: artifact is not a documentation bundle",
+})
 
 // ErrPageNotFound reports that the requested page is absent from an otherwise
 // present, integrity-verified bundle. It is distinct from ErrFetchNotFound (no
 // bundle cached at all): the bundle resolved and cached, but carries no entry
 // at the requested path.
-var ErrPageNotFound = errors.New("docscache: page not found in documentation bundle")
+const ErrPageNotFound cerrors.Code = "docscache/page-not-found"
+
+var _ = cerrors.Register(ErrPageNotFound, cerrors.Meta{
+	Message: "docscache: page not found in documentation bundle",
+})
 
 // VerifyAtPull verifies a resolved documentation bundle's signature at pull
 // time, given the OCI manifest digest the signature commits to. It is the

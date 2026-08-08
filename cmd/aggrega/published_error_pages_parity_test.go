@@ -37,9 +37,26 @@ var screamingPrefix = regexp.MustCompile(`\b[A-Z][A-Z0-9_]{3,}:`)
 var goErrorIdentifier = regexp.MustCompile(`\bErr[A-Z][A-Za-z0-9]*`)
 
 // declaredIdentifier matches a declaration of such an identifier in Go source,
-// in either of the two forms the tree uses: a fresh sentinel, or an alias for one
-// declared in another package.
-var declaredIdentifier = regexp.MustCompile(`\b(Err[A-Z][A-Za-z0-9]*)\s*(=|\berror\b)`)
+// in each of the three forms the tree uses: a variable initialised at its
+// declaration, an alias for one declared in another package, and a typed constant,
+// whose type name sits between the identifier and the assignment.
+//
+// The optional type token is separated by spaces or tabs rather than by arbitrary
+// whitespace, so it cannot span a line ending. A separator that reached across one
+// would let a match beginning in the right-hand side of a declaration run on and
+// consume the identifier declared on the line below, dropping that identifier from
+// the set — a loss the assertions downstream cannot distinguish from a sentinel
+// that was genuinely removed.
+//
+// A second recogniser of the same declaration shapes lives in the sentinel-emission
+// assertion under internal/compiler/constraint, and the two are deliberately NOT
+// unified. That one parses the syntax tree; this one scans source text. They fail in
+// different directions, which is the whole value: this scan reads a shape a tree walk
+// cannot express, and that walk reads a shape no pattern can bound. Unifying them
+// would replace two independent readings of one population with a single point of
+// blindness, so a criterion change must be carried to both sites by hand — which is
+// the cost this duplication is knowingly paying.
+var declaredIdentifier = regexp.MustCompile(`\b(Err[A-Z][A-Za-z0-9]*)(?:[ \t]+[\w.]+)?\s*(=|\berror\b)`)
 
 // goSourceCorpus returns every non-test Go file's text in the module, joined, and
 // the set of exported error identifiers the module declares.
@@ -81,8 +98,18 @@ func goSourceCorpus(t *testing.T) (string, map[string]bool) {
 	if !strings.Contains(b.String(), "CATALOG_ERROR") {
 		t.Fatal("source corpus does not contain a known category literal; the walk is broken, not the pages")
 	}
+	// The declaration scan is calibrated against one identifier of each declared
+	// form. A needle of a single form cannot detect a criterion that has stopped
+	// seeing another form: the scan would go on matching the needle while
+	// under-reporting every identifier declared the other way, and the assertions
+	// below would read that silent shortfall as pages naming an absent sentinel.
 	if !declared["ErrMalformedRecipeReference"] {
-		t.Fatal("declaration scan found no known sentinel; the scan is broken, not the pages")
+		t.Fatal("declaration scan did not see ErrMalformedRecipeReference, declared as an initialised variable; " +
+			"the scan has stopped matching that declaration form — the scan is broken, not the pages")
+	}
+	if !declared["ErrUnknownEntityKind"] {
+		t.Fatal("declaration scan did not see ErrUnknownEntityKind, declared as a typed constant; " +
+			"the scan has stopped matching that declaration form — the scan is broken, not the pages")
 	}
 	return b.String(), declared
 }

@@ -4,25 +4,28 @@
 package sourceresolver
 
 import (
-	"errors"
 	"fmt"
 
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/registryhost"
 )
 
 // Re-exports of the canonical fetch-error sentinels declared at
-// aggrega-cli/pkg/oci/errors.go. The re-exports identify the same
-// underlying sentinel instances (assignment-by-reference, not
-// copy), so errors.Is against either name resolves equivalently
-// for any wrapped error chain.
+// aggrega-cli/pkg/oci/errors.go. Each re-export is the canonical
+// identity itself rather than a second identity carrying the same
+// text, so errors.Is against either name resolves equivalently for
+// any wrapped error chain.
 //
 // Consumers that want to match against fetch errors without also
 // importing pkg/oci use these re-exports directly. Identity is
 // asserted at test time via the == comparison; the test will fail
-// if a future maintainer reaches for errors.New on this side
-// instead of preserving the reference.
-var (
+// if a future maintainer declares a fresh identity on this side
+// instead of pointing at the canonical one. The declarations
+// deliberately restate no message: the message is registered once,
+// beside the canonical declaration, and a second registration of
+// one identity is refused.
+const (
 	ErrFetchNotFound           = oci.ErrFetchNotFound
 	ErrFetchUnauthorized       = oci.ErrFetchUnauthorized
 	ErrFetchNetworkUnreachable = oci.ErrFetchNetworkUnreachable
@@ -33,7 +36,11 @@ var (
 // is registered for spec.Kind. Distinct from the fetch sentinels;
 // names a dispatch-side failure rather than a transport-time
 // failure.
-var ErrUnknownKind = errors.New("sourceresolver: no adapter registered for source kind")
+const ErrUnknownKind cerrors.Code = "sourceresolver/unknown-kind"
+
+var _ = cerrors.Register(ErrUnknownKind, cerrors.Meta{
+	Message: "sourceresolver: no adapter registered for source kind",
+})
 
 // Wrap returns an error that satisfies errors.Is(returned, sentinel)
 // and carries source-resolver context (kind, URL, version) plus

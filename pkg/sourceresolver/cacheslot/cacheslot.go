@@ -21,7 +21,6 @@
 package cacheslot
 
 import (
-	"errors"
 	"fmt"
 	"net/url"
 	"os"
@@ -30,6 +29,7 @@ import (
 	"strings"
 	"time"
 
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/registryhost"
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/metadata"
 )
@@ -49,7 +49,11 @@ const DigestPrefixLen = 12
 // tests, debugging tools). The sentinel surfaces the mistake
 // loudly rather than letting a buggy slot path survive into the
 // cache.
-var ErrEmptyWorkspaceRoot = errors.New("cacheslot: empty workspaceRoot")
+const ErrEmptyWorkspaceRoot cerrors.Code = "sourceresolver-cacheslot/empty-workspace-root"
+
+var _ = cerrors.Register(ErrEmptyWorkspaceRoot, cerrors.Meta{
+	Message: "cacheslot: empty workspaceRoot",
+})
 
 // Slot computes the absolute cache-slot directory path for a
 // resolved source artifact. The URL host and URL-path components
