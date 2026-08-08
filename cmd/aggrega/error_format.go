@@ -20,22 +20,54 @@ import (
 // expression, optional pillar snapshot). When err is not (or does not wrap)
 // a *CompilerError, falls back to err.Error() so non-CLI callers and
 // non-categorised errors retain their existing presentation.
+//
+// Dispatch runs three detection branches in a fixed order, and that order is
+// part of the contract rather than an implementation detail:
+//
+//  1. Multi-error first. A chain built by errors.Join exposes
+//     Unwrap() []error; every element is rendered on its own and the results
+//     joined by a line carrying only "---". Readers split on that separator
+//     to enumerate the joined errors, and each element keeps its own category
+//     tag because each is rendered independently. This runs first because
+//     errors.As matches only the first matching element, so a join of several
+//     envelopes would otherwise render one and silently drop the rest.
+//
+//  2. The envelope next. An error that is, or wraps, a *cerrors.CompilerError
+//     renders through the chain walk and returns.
+//
+//  3. The structured domain types last. Each is detected with errors.As; the
+//     first match is converted through the type's ToCompilerError and
+//     re-entered here. That recursive call lands on the envelope branch and
+//     renders. Falling through every branch returns the error's own Error
+//     output, which is the presentation for errors that have not adopted the
+//     conversion pattern.
+//
+// A new domain type's detection branch goes AFTER the envelope branch, never
+// before, and the reason is recursion termination rather than taste. A
+// converted envelope still carries the domain-typed error in its wrap chain,
+// so errors.As against that domain type keeps matching once the conversion has
+// happened. Were a domain branch to run first, it would convert an
+// already-converted error again, and the resulting envelope would again carry
+// the domain type in its chain, with nothing differing between iterations to
+// stop it. Detecting the envelope first ends the walk there, and leaves the
+// domain branches firing only on a chain that carries no envelope yet — which
+// is what makes conversion an entry path rather than a re-entry path.
+//
+// Adding a domain type to the pattern is four steps: declare ToCompilerError
+// on the type with the Category its authoring surface implies; confirm the
+// type's own Error output still carries the diagnostic the user needs, since
+// the envelope's message is usually built out of it; add the detection branch
+// here, below the envelope branch; and cover it with a test asserting both
+// that errors.Is against the type's sentinel still matches and that the
+// rendered output carries the expected category tag.
 func formatCompilerError(err error) string {
 	if err == nil {
 		return ""
 	}
-	// Multi-error chains FIRST. The standard library's errors.Join (Go 1.20+)
-	// produces an error whose Unwrap returns a slice of underlying errors.
-	// errors.As walks the chain and matches the FIRST matching descendant,
-	// so a Join'd chain of N CompilerErrors would render only the first
-	// without this branch. Iterating Unwrap() []error and rendering each
-	// independently surfaces every joined error to the user. Recursion is
-	// safe — each sub-error is rendered via formatCompilerError(sub) which
-	// hits the terminal CompilerError-rendering branch (or one of the
-	// structured-type-conversion branches that ultimately renders a
-	// CompilerError) and returns without re-entering this multi-error arm
-	// (the per-sub error is not a multi-error itself unless explicitly
-	// nested, which is also handled correctly via the recursive call).
+	// Multi-error chains FIRST — see the branch order documented above.
+	// Recursion is safe: each sub-error re-enters and reaches a terminal
+	// branch, and a sub-error that is itself a multi-error is handled by the
+	// same recursive call.
 	type multiErr interface{ Unwrap() []error }
 	if me, ok := err.(multiErr); ok {
 		parts := me.Unwrap()
@@ -51,18 +83,9 @@ func formatCompilerError(err error) string {
 			}
 		}
 	}
-	// Detection order: CompilerError FIRST. errors.As walks the chain via
-	// Unwrap; a CompilerError that wraps a structured-error type (the result
-	// of any ToCompilerError below) would also match errors.As against that
-	// structured-error type. Checking CompilerError first ensures the
-	// rich-rendering path takes a converted error to its terminal branch
-	// without re-entering the structured-error detection arms.
-	//
-	// For inputs that are NOT already CompilerError, the structured-error
-	// detection branches convert via ToCompilerError. The conversion
-	// produces a *CompilerError carrying the structured error in its Wrap
-	// chain; the recursive call then hits the CompilerError-first arm and
-	// renders.
+	// The envelope SECOND, and every structured-type branch below it. The
+	// ordering rule and why breaking it does not terminate are documented
+	// above; a branch added out of order compiles and passes its own test.
 	var ce *cerrors.CompilerError
 	if stderrors.As(err, &ce) && ce != nil {
 		return renderCompilerErrorChain(ce)

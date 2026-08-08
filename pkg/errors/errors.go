@@ -47,9 +47,21 @@ const (
 	PolicyError Category = "POLICY_ERROR"
 )
 
-// SourceLocation points at a position in the authoring artifact at fault.
-// File is the path; Line and Column are 1-based positions when available,
-// zero when the source pointer is file-level only.
+// SourceLocation points at the most specific authoring locator available for
+// the failure, which is a file path or a JSON path depending on what the
+// surface that reported it can supply.
+//
+// File carries that locator. It is a real filesystem path where the failure
+// has a position in an authored document — the typical shape for a catalog
+// content error surfacing a YAML position. Where no file position applies it
+// is a logical identifier the reader can still act on: an entity name, a
+// Release name, a graph node id, or a JSON-path field locator such as
+// ".values.port". The dual meaning is deliberate; a caller that has only a
+// field locator should pass it rather than leave the pointer empty.
+//
+// Line and Column are 1-based positions when available and zero when the
+// pointer is file-level only, which is always the case for a logical
+// identifier.
 type SourceLocation struct {
 	File   string
 	Line   int
@@ -91,6 +103,13 @@ type CompilerError struct {
 // Error returns a single-line representation of the error suitable for
 // log output. The CLI formatter renders the rich multi-line shape; this
 // method is the fallback for non-CLI callers (tests, internal logs).
+//
+// Staying on one line is deliberate rather than incidental. An error is
+// routinely re-wrapped on its way up with fmt.Errorf("%w: ..."), and a
+// multi-line Error would carry its own layout into every such wrap, so the
+// rich shape would leak into contexts that expect one line per error. The
+// multi-line rendering therefore belongs to the formatter, which knows it is
+// writing to a terminal, and not to this method, which does not.
 func (e *CompilerError) Error() string {
 	if e == nil {
 		return "<nil>"

@@ -1,32 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Cognitio S.r.l.
 
-// Package egress is the single gate every network-egressing path crosses. It is
-// the sole home of the offline decision and the sole constructor of the network
-// clients and transports the rest of the compiler uses to reach a registry, a
-// remote source, or an identity provider.
-//
-// The offline decision is DERIVED, never trusted from the caller. A caller does
-// not hand the gate a boolean; it hands the gate the resolved workspace
-// configuration, and the gate reads the offline field from it. The only
-// legitimate source of a resolved configuration is the workspace-resolution
-// choke-point, so a caller cannot fabricate an offline-false configuration to
-// bypass the promise without first re-rolling workspace resolution — which a
-// separate structural guard forbids. The two guards compose: resolution is
-// single-sourced, and egress reads offline only from resolution's output.
-//
-// When the resolved configuration is offline, the constructors refuse at
-// construction, before any dial, returning ErrOfflineEgress. Offline forbids the
-// fetch, not the math: cryptographic verification of already-cached or pinned
-// material against a pinned key or root performs no egress and does not pass
-// through this gate.
-//
-// A structural guard-test asserts that no package outside this one constructs a
-// network client or reaches for a network library directly, so a future consumer
-// that forgets the gate cannot silently egress — deny-by-default over the whole
-// module. The narrow exception is the OCI-semantics package, which owns the
-// oras-specific repository and registry construction and receives its transport
-// from this gate.
 package egress
 
 import (
@@ -56,6 +30,12 @@ var errOfflineEgress = cerrors.Register("egress/offline-egress", cerrors.Meta{
 // (nil, ErrOfflineEgress) before any dial; otherwise it returns the shared
 // default transport. It is the transport source the OCI package threads into its
 // repository and registry construction.
+//
+// It is also how a caller consults the offline decision without building a
+// client it does not yet need — a pre-flight that has to know whether a later
+// step could reach the network at all asks here and matches the returned error,
+// which keeps that pre-flight and the fetch it guards reading one decision from
+// one place instead of two readings that can drift apart.
 func RoundTripper(cfg workspaceconfig.Config) (http.RoundTripper, error) {
 	if cfg.Offline {
 		return nil, ErrOfflineEgress()

@@ -28,6 +28,43 @@
 // CompilerError implements the standard error interface plus Unwrap so
 // errors.Is and errors.As work against the carried inner error chain.
 //
+// # Converting a domain error into the envelope
+//
+// A package that reports failures through its own structured error type
+// carries a ToCompilerError method on that type, which builds the envelope
+// with the Category the failure's authoring surface implies.
+//
+// The method is additive. The type keeps its own Error method, so callers
+// inside the package still format and assert against the type's own shape,
+// and the envelope is built only where the error is about to reach the CLI.
+//
+// Conversion preserves matching. The envelope holds the original
+// domain-typed error in its wrap chain, so errors.Is against a sentinel
+// declared inside that domain type resolves identically before and after
+// conversion, and a test written against the sentinel needs no knowledge of
+// which side of the conversion it is looking at.
+//
+// Each converting type documents its own Category routing beside its
+// ToCompilerError method, because that routing is a property of the type's
+// authoring surface rather than of this package. A type whose every instance
+// belongs to one domain by construction names its Category directly; a type
+// that can report against several kinds of entity reads it from the kind the
+// failure carries, through ClassifyEntityKind.
+//
+// # The fetch family is matched, not converted
+//
+// FetchError has no converting type, and the asymmetry is structural rather
+// than an omission. A remote-acquisition failure originates as a shared
+// sentinel wrapped with transport context — a URL, a version, a remediation
+// pointer — rather than as a structured value with fields to read, so there
+// is no domain type on which a conversion method could sit. It reaches its
+// Category by having the chain matched against those sentinels at the
+// diagnostic surface, which then builds the envelope with FetchError. That
+// match is the acquisition-layer counterpart of a ToCompilerError: a sentinel
+// test rather than a type assertion. A refusal to egress at all, raised when
+// the workspace is offline, is matched by the same set, because from the
+// user's position it is likewise an inability to fetch.
+//
 // # Identities and occurrences
 //
 // A halting condition has an identity and an occurrence, and this package
