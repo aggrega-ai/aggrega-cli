@@ -2,23 +2,26 @@ package thing
 
 import cerrors "example.test/fixture/pkg/errors"
 
-const ErrPlain cerrors.Code = "thing/plain"
+func ErrPlain() error { return errPlain }
 
-var _ = cerrors.Register(ErrPlain, cerrors.Meta{
+var errPlain = cerrors.Register("thing/plain", cerrors.Meta{
 	Message: "a plain condition",
 })
 
 // A message quoting authoring syntax, so the rendering is exercised against a
 // backtick it has to fence around rather than only against prose.
-const ErrQuoted cerrors.Code = "thing/quoted"
+func ErrQuoted() error { return errQuoted }
 
-var _ = cerrors.Register(ErrQuoted, cerrors.Meta{
+var errQuoted = cerrors.Register("thing/quoted", cerrors.Meta{
 	Message: "the `uses:` block is malformed",
 })
 
-// A name that is not an identity. It must not reach the index.
-const NotAnIdentity cerrors.Code = "thing/not-an-identity"
+// A registered condition published under a name that is not an identity. The
+// registration is real and the accessor is exported, so what keeps it out of the
+// index is the naming convention alone — which is what this fixture exists to
+// hold the scan to. It must not reach the index.
+func NotAnIdentity() error { return notAnIdentity }
 
-var _ = cerrors.Register(NotAnIdentity, cerrors.Meta{
+var notAnIdentity = cerrors.Register("thing/not-an-identity", cerrors.Meta{
 	Message: "not an identity",
 })

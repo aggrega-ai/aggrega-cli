@@ -78,13 +78,13 @@ import (
 //
 // # The census criterion, and what it deliberately excludes
 //
-// A sentinel is a distinct name matching [sentinelName] bound by a
-// package-level var or const specification in a non-test .go file of this
-// module. The asserted population is those declared under [scannedRoots]. Every
-// count this file reports is a count of that population and of nothing else, so
-// the criterion is written down here: a count whose criterion is implicit
-// invites two readers to compare two different measurements and conclude the
-// population moved.
+// A sentinel is a distinct name matching [sentinelName] bound by a package-level
+// declaration in a non-test .go file of this module: a function declaration, or
+// a var or const specification. The asserted population is those declared under
+// [scannedRoots]. Every count this file reports is a count of that population and
+// of nothing else, so the criterion is written down here: a count whose criterion
+// is implicit invites two readers to compare two different measurements and
+// conclude the population moved.
 //
 // The exclusions, each a choice about what the population IS rather than a
 // convenience, so that none of them is later "fixed" as an oversight:
@@ -101,29 +101,37 @@ import (
 //   - A var bound inside a function body. The census reads file-level
 //     declarations only, because the convention a sentinel follows is a
 //     package-level exported name.
+//   - A method. A name bound to a receiver is reached through a value rather
+//     than through the package, so it is not a name a consumer matches against.
 //
-// And two deliberate inclusions, recorded because they are the ones a later edit
-// is most likely to undo.
+// And three deliberate inclusions, recorded because they are the ones a later
+// edit is most likely to undo.
 //
-// A const declaration counts. A sentinel is the distinct exported name a
+// A function declaration counts, and it is the shape most sentinels take: the
+// identity itself is a value no caller can construct, published by an exported
+// accessor standing beside the registration that declares it. The accessor's
+// name is the name a consumer matches against, so the accessor is the
+// declaration this census counts.
+//
+// A const or var declaration counts. A sentinel is the distinct exported name a
 // consumer matches against and the rule that name stands for, not the kind of
-// declaration that binds it, so an identity declared as a constant is a sentinel
-// exactly as one bound to a value is. Reading var alone would make this a count
-// of one declaration shape rather than of the rules this module raises, and a
+// declaration that binds it, so an identity bound to a value is a sentinel
+// exactly as one published by an accessor is. Reading one shape alone would make
+// this a count of that shape rather than of the rules this module raises, and a
 // rule whose declaration changed shape would then read as a rule that
 // disappeared — the one reading a population count must never produce, because
 // it is indistinguishable from a rule that was genuinely dropped.
 //
-// An alias declaration of the form
+// A forwarding declaration, of either shape —
 //
-//	ErrX = otherpkg.ErrY
+//	func ErrX() error { return otherpkg.ErrY() }
 //
-// counts. [sentinelName] is matched against the declared name and nothing
-// constrains the right-hand side, which is deliberate — the alias is a distinct
-// exported name a consumer can match against, so it is a sentinel of this
-// module even though the value it carries originates elsewhere. Constraining
-// the right-hand side to a construction expression would read as tightening the
-// criterion and would silently drop every re-export.
+// — counts. [sentinelName] is matched against the declared name and nothing
+// constrains what the declaration yields, which is deliberate: the forwarding
+// name is a distinct exported name a consumer can match against, so it is a
+// sentinel of this module even though the identity it carries originates
+// elsewhere. Constraining the right-hand side to a registration would read as
+// tightening the criterion and would silently drop every re-export.
 const sentinelEmissionBlocks = false
 
 // sentinelName matches the declaration convention for a sentinel: an exported
@@ -490,6 +498,13 @@ func skipDir(path, root, name string) bool {
 // the asserted population and the module-wide coverage read cannot drift into two
 // criteria that happen to agree today.
 //
+// Both declaration shapes are read: the exported accessor that publishes an
+// identity, and a var or const bound to one. A walk reading only the second
+// would report a population of the handful of sentinels still declared as values
+// and say nothing about the rest — and it would report it as a clean count
+// rather than as the blindness it is, which is exactly the reading a population
+// count must never produce.
+//
 // Where a name is declared more than once the lexicographically first path wins,
 // so a reported path is the same on every run rather than whichever the map
 // handed back first.
@@ -504,23 +519,35 @@ func skipDir(path, root, name string) bool {
 // — which is the cost this duplication is knowingly paying.
 func declaredSentinels(files map[string]*ast.File) map[string]string {
 	names := map[string]string{}
+	record := func(name, path string) {
+		if !sentinelName.MatchString(name) {
+			return
+		}
+		if prior, seen := names[name]; !seen || path < prior {
+			names[name] = path
+		}
+	}
 	for path, file := range files {
 		for _, decl := range file.Decls {
-			gen, ok := decl.(*ast.GenDecl)
-			if !ok || (gen.Tok != token.VAR && gen.Tok != token.CONST) {
-				continue
-			}
-			for _, spec := range gen.Specs {
-				vs, ok := spec.(*ast.ValueSpec)
-				if !ok {
+			switch d := decl.(type) {
+			case *ast.FuncDecl:
+				// A method is reached through a value rather than through the
+				// package, so its name is not one a consumer matches against.
+				if d.Recv != nil {
 					continue
 				}
-				for _, id := range vs.Names {
-					if !sentinelName.MatchString(id.Name) {
+				record(d.Name.Name, path)
+			case *ast.GenDecl:
+				if d.Tok != token.VAR && d.Tok != token.CONST {
+					continue
+				}
+				for _, spec := range d.Specs {
+					vs, ok := spec.(*ast.ValueSpec)
+					if !ok {
 						continue
 					}
-					if prior, seen := names[id.Name]; !seen || path < prior {
-						names[id.Name] = path
+					for _, id := range vs.Names {
+						record(id.Name, path)
 					}
 				}
 			}

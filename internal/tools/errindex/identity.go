@@ -16,12 +16,12 @@ import (
 )
 
 // errorsPackageDir is the module-relative directory of the package that declares
-// Code, Meta and Register.
+// Meta and Register.
 //
-// A declaration is recognised only when the file carrying it imports that
-// package, or is that package. Matching a bare type name instead would let any
-// unrelated type called Code register an identity, and the resulting entry would
-// look exactly like a real one.
+// A registration is recognised only when the file carrying it imports that
+// package, or is that package. Matching a bare function name instead would let
+// any unrelated function called Register declare an identity, and the resulting
+// entry would look exactly like a real one.
 const errorsPackageDir = "pkg/errors"
 
 // Identity is one handle a caller can match: the package that declares the name,
@@ -58,22 +58,57 @@ var skipDirs = map[string]bool{
 	"plugins":      true,
 }
 
+// registered is what one registration declares: the code the identity is
+// registered under and the message it renders. It is keyed by the package-local
+// name the registration is bound to, which is the name the accessor beside it
+// returns and never a name a caller can reach.
+type registered struct {
+	code    string
+	message string
+}
+
+// accessorTarget is what an accessor's body yields. Exactly one field is set:
+// the package-local name of the registration that declares the identity, or the
+// qualified handle of an identity in another package that the accessor
+// re-exports.
+type accessorTarget struct {
+	local string
+	alias string
+}
+
 // scan reads every non-test Go file under root and returns the identities the
 // module declares, ordered by package then name so the output is a function of
 // the tree alone and not of the order the filesystem happened to yield.
 //
 // It reads declaration syntax rather than a compiled program, which is what lets
-// it run without building the module. The cost is stated rather than hidden: a
-// handle produced by anything other than a `Code`-typed constant or a re-export
-// of one is invisible to it. One such handle exists — a variable wrapping another
-// identity so that a caller may match either — and it is described in the page's
-// curated prose rather than tabulated, because it registers no message for a
-// table to carry.
+// it run without building the module. An identity is declared in two halves that
+// sit beside each other: a registration bound to a package-local name, carrying
+// the code and the message, and an exported accessor returning that name. Only
+// the accessor's name is reachable by a caller, so it is the accessor that fixes
+// the handle and the registration that supplies what the handle describes. The
+// two halves are joined after the whole tree is read rather than as each file is
+// parsed, because an accessor may be written either side of the registration it
+// returns.
+//
+// The cost is stated rather than hidden: a handle produced by anything other
+// than an accessor over a registration, or an accessor re-exporting one from
+// another package, is invisible to it. Two such handles exist and neither is
+// tabulated. One is a variable wrapping another identity so that a caller may
+// match either, which registers no message for a table to carry; it is described
+// in the page's curated prose instead. The other is an accessor forwarding to a
+// second accessor in its own package, which names the same identity twice within
+// one import — a reader who can reach either name can already reach the other,
+// so the page loses no reachable match by carrying it once.
 func scan(root, modulePath string) ([]Identity, error) {
-	origins := map[string]*Identity{}  // handle -> identity
-	aliasTarget := map[string]string{} // handle -> target handle
-	messages := map[string]string{}    // handle -> registered message
-	order := []string{}                // handles in discovery order, sorted later
+	type accessorDecl struct {
+		pkg    string
+		name   string
+		target accessorTarget
+	}
+
+	registrations := map[string]registered{} // pkgDir + "." + local name
+	accessors := []accessorDecl{}            // in discovery order, sorted later
+	seen := map[string]bool{}                // accessor handles already declared
 
 	err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
@@ -107,49 +142,40 @@ func scan(root, modulePath string) ([]Identity, error) {
 		errPkg, isErrorsPkg := errorsPackageAlias(imports, pkgDir)
 
 		for _, decl := range file.Decls {
-			gen, ok := decl.(*ast.GenDecl)
-			if !ok || (gen.Tok != token.CONST && gen.Tok != token.VAR) {
-				continue
-			}
-			for _, spec := range gen.Specs {
-				vs, ok := spec.(*ast.ValueSpec)
+			switch d := decl.(type) {
+			case *ast.FuncDecl:
+				name, target, ok := accessor(d, imports)
 				if !ok {
 					continue
 				}
-				// A registration stands as a discarded declaration beside the
-				// identity it describes, so it is read from the same specs.
-				if name, msg, ok := registration(vs, errPkg, isErrorsPkg); ok {
-					h := pkgDir + "." + name
-					if prev, dup := messages[h]; dup && prev != msg {
-						return fmt.Errorf("%s: %s has two registered messages", path, h)
-					}
-					messages[h] = msg
-					continue
-				}
-				if len(vs.Names) != 1 || len(vs.Values) != 1 {
-					continue
-				}
-				name := vs.Names[0].Name
-				if !strings.HasPrefix(name, "Err") {
-					continue
-				}
 				h := pkgDir + "." + name
-
-				if code, ok := codeDeclaration(vs, errPkg, isErrorsPkg); ok {
-					if _, dup := origins[h]; dup {
-						return fmt.Errorf("%s: %s declared twice", path, h)
-					}
-					origins[h] = &Identity{Pkg: pkgDir, Name: name, Code: code}
-					order = append(order, h)
+				// Two declarations of one handle are unreachable in a package
+				// Go compiles, but the scan parses every file whatever its build
+				// constraints, so two files excluded from each other by a build
+				// tag reach here together.
+				if seen[h] {
+					return fmt.Errorf("%s: %s declared twice", path, h)
+				}
+				seen[h] = true
+				accessors = append(accessors, accessorDecl{pkg: pkgDir, name: name, target: target})
+			case *ast.GenDecl:
+				if d.Tok != token.CONST && d.Tok != token.VAR {
 					continue
 				}
-				if target, ok := reExport(vs, imports); ok {
-					if _, dup := aliasTarget[h]; dup {
-						return fmt.Errorf("%s: %s re-exported twice", path, h)
+				for _, spec := range d.Specs {
+					vs, ok := spec.(*ast.ValueSpec)
+					if !ok {
+						continue
 					}
-					aliasTarget[h] = target
-					origins[h] = &Identity{Pkg: pkgDir, Name: name, AliasOf: target}
-					order = append(order, h)
+					name, reg, ok := registration(vs, errPkg, isErrorsPkg)
+					if !ok {
+						continue
+					}
+					key := pkgDir + "." + name
+					if prev, dup := registrations[key]; dup && prev != reg {
+						return fmt.Errorf("%s: %s is registered twice, with different metadata", path, key)
+					}
+					registrations[key] = reg
 				}
 			}
 		}
@@ -159,26 +185,63 @@ func scan(root, modulePath string) ([]Identity, error) {
 		return nil, err
 	}
 
-	// A re-export takes the message registered against the identity it forwards
-	// to. Resolving it is not a convenience: the re-exported name is the one a
+	// The declaring accessors are resolved first, because a re-export takes the
+	// message registered against the identity it forwards to and cannot be
+	// resolved until that identity has one. The re-exported name is the one a
 	// caller is told to match, and its own declaration carries no message at all.
-	for h, target := range aliasTarget {
-		msg, ok := messages[target]
-		if !ok {
-			return nil, fmt.Errorf("%s re-exports %s, which registers no message", h, target)
+	byHandle := map[string]*Identity{}
+	out := make([]Identity, 0, len(accessors))
+	for _, acc := range accessors {
+		if acc.target.alias != "" {
+			continue
 		}
-		messages[h] = msg
+		reg, ok := registrations[acc.pkg+"."+acc.target.local]
+		if !ok {
+			// The accessor returns a package-local name that no registration
+			// binds, so the handle names no identity: matching it would read
+			// whatever that name happens to hold. It is reported rather than
+			// skipped, because a skip removes the handle from the page while
+			// leaving it exported and apparently matchable.
+			return nil, fmt.Errorf("%s.%s returns %s, which no registration in that package binds; "+
+				"a caller matching the handle would match whatever that name holds rather than a declared condition",
+				acc.pkg, acc.name, acc.target.local)
+		}
+		byHandle[acc.pkg+"."+acc.name] = &Identity{
+			Pkg: acc.pkg, Name: acc.name, Code: reg.code, Message: reg.message,
+		}
 	}
-
-	out := make([]Identity, 0, len(order))
-	for _, h := range order {
-		id := origins[h]
-		msg, ok := messages[h]
-		if !ok {
-			return nil, fmt.Errorf("%s declares a code with no registered message; "+
-				"a caller matching it would read text naming the unregistered code instead of a description", h)
+	// A re-export forwards to a DECLARING accessor and never to another
+	// re-export. The restriction is checked rather than assumed: the loop above
+	// resolved every declaring accessor, so a target absent from byHandle either
+	// declares nothing or is itself a re-export, and the two are separated here
+	// so a chain is refused by name instead of resolving or not according to the
+	// order the two happened to be walked in.
+	reExported := map[string]bool{}
+	for _, acc := range accessors {
+		if acc.target.alias != "" {
+			reExported[acc.pkg+"."+acc.name] = true
 		}
-		id.Message = msg
+	}
+	for _, acc := range accessors {
+		if acc.target.alias == "" {
+			continue
+		}
+		origin, ok := byHandle[acc.target.alias]
+		if !ok {
+			if reExported[acc.target.alias] {
+				return nil, fmt.Errorf("%s.%s re-exports %s, which is itself a re-export; "+
+					"a re-export names the identity it forwards to, so a chain would print a reader "+
+					"a second name to follow rather than the one that declares the condition",
+					acc.pkg, acc.name, acc.target.alias)
+			}
+			return nil, fmt.Errorf("%s.%s re-exports %s, which registers no message", acc.pkg, acc.name, acc.target.alias)
+		}
+		byHandle[acc.pkg+"."+acc.name] = &Identity{
+			Pkg: acc.pkg, Name: acc.name, Message: origin.Message, AliasOf: acc.target.alias,
+		}
+	}
+	for _, acc := range accessors {
+		id := byHandle[acc.pkg+"."+acc.name]
 		id.Importable = importable(id.Pkg)
 		out = append(out, *id)
 	}
@@ -238,62 +301,106 @@ func errorsPackageAlias(imports map[string]string, pkgDir string) (string, bool)
 	return "", false
 }
 
-// codeDeclaration reports the value of `Err… Code = "…"`, qualified by the
-// errors package unless the file is that package.
-func codeDeclaration(vs *ast.ValueSpec, errPkg string, isErrorsPkg bool) (string, bool) {
-	if vs.Type == nil || !namesErrorsSymbol(vs.Type, "Code", errPkg, isErrorsPkg) {
-		return "", false
+// accessor reports the exported name an accessor declares and what its body
+// yields, for the two shapes that publish an identity:
+//
+//	func ErrX() error { return errX }              // declares, over a registration
+//	func ErrX() error { return otherpkg.ErrY() }   // re-exports another package's
+//
+// The signature is checked rather than the name alone. A name beginning "Err"
+// is not on its own evidence of an accessor — a package-level formatting or
+// predicate helper can share the prefix — and it is the empty parameter list
+// with a single unnamed `error` result that tells them apart.
+//
+// A body forwarding to another accessor in the SAME package is deliberately not
+// recognised. Such a handle names an identity that is already reachable under
+// its own name from the same import, so admitting it would put one condition on
+// the page twice, under a second name a reader gains nothing by matching. The
+// omission is stated on [scan] as a cost rather than left to be inferred here.
+func accessor(fd *ast.FuncDecl, imports map[string]string) (string, accessorTarget, bool) {
+	none := accessorTarget{}
+	if fd.Recv != nil || fd.Body == nil || fd.Name == nil {
+		return "", none, false
 	}
-	lit, ok := vs.Values[0].(*ast.BasicLit)
-	if !ok || lit.Kind != token.STRING {
-		return "", false
+	name := fd.Name.Name
+	if !strings.HasPrefix(name, "Err") || !yieldsErrorAlone(fd.Type) {
+		return "", none, false
 	}
-	v, err := strconv.Unquote(lit.Value)
-	if err != nil {
-		return "", false
+	if len(fd.Body.List) != 1 {
+		return "", none, false
 	}
-	return v, true
+	ret, ok := fd.Body.List[0].(*ast.ReturnStmt)
+	if !ok || len(ret.Results) != 1 {
+		return "", none, false
+	}
+	switch v := ret.Results[0].(type) {
+	case *ast.Ident:
+		return name, accessorTarget{local: v.Name}, true
+	case *ast.CallExpr:
+		sel, ok := v.Fun.(*ast.SelectorExpr)
+		if !ok || len(v.Args) != 0 || !strings.HasPrefix(sel.Sel.Name, "Err") {
+			return "", none, false
+		}
+		pkgIdent, ok := sel.X.(*ast.Ident)
+		if !ok {
+			return "", none, false
+		}
+		dir, ok := imports[pkgIdent.Name]
+		if !ok {
+			return "", none, false
+		}
+		return name, accessorTarget{alias: dir + "." + sel.Sel.Name}, true
+	}
+	return "", none, false
 }
 
-// reExport reports the qualified handle of `ErrX = otherpkg.ErrY`.
-func reExport(vs *ast.ValueSpec, imports map[string]string) (string, bool) {
-	if vs.Type != nil {
-		return "", false
+// yieldsErrorAlone reports whether the signature takes nothing and returns a
+// single unnamed error, which is the shape that distinguishes an accessor from
+// any other function sharing the name prefix.
+func yieldsErrorAlone(ft *ast.FuncType) bool {
+	if ft.TypeParams != nil || (ft.Params != nil && len(ft.Params.List) != 0) {
+		return false
 	}
-	sel, ok := vs.Values[0].(*ast.SelectorExpr)
-	if !ok || !strings.HasPrefix(sel.Sel.Name, "Err") {
-		return "", false
+	if ft.Results == nil || len(ft.Results.List) != 1 {
+		return false
 	}
-	pkgIdent, ok := sel.X.(*ast.Ident)
-	if !ok {
-		return "", false
+	result := ft.Results.List[0]
+	if len(result.Names) != 0 {
+		return false
 	}
-	dir, ok := imports[pkgIdent.Name]
-	if !ok {
-		return "", false
-	}
-	return dir + "." + sel.Sel.Name, true
+	id, ok := result.Type.(*ast.Ident)
+	return ok && id.Name == "error"
 }
 
-// registration reports the identity name and message of
-// `_ = Register(ErrX, Meta{Message: "…"})`.
-func registration(vs *ast.ValueSpec, errPkg string, isErrorsPkg bool) (string, string, bool) {
-	if len(vs.Values) != 1 {
-		return "", "", false
+// registration reports the package-local name, code and message of
+// `var errX = Register("…", Meta{Message: "…"})`.
+//
+// The code is read from the call's first argument rather than from a type
+// ascribed to the declaration, because the code is what the call declares: a
+// registration binds an identity that carries the code, and the declaration
+// itself names no type at all.
+func registration(vs *ast.ValueSpec, errPkg string, isErrorsPkg bool) (string, registered, bool) {
+	none := registered{}
+	if len(vs.Names) != 1 || len(vs.Values) != 1 {
+		return "", none, false
 	}
 	call, ok := vs.Values[0].(*ast.CallExpr)
 	if !ok || !namesErrorsSymbol(call.Fun, "Register", errPkg, isErrorsPkg) || len(call.Args) != 2 {
-		return "", "", false
+		return "", none, false
 	}
-	ident, ok := call.Args[0].(*ast.Ident)
+	lit, ok := call.Args[0].(*ast.BasicLit)
+	if !ok || lit.Kind != token.STRING {
+		return "", none, false
+	}
+	code, err := strconv.Unquote(lit.Value)
+	if err != nil {
+		return "", none, false
+	}
+	meta, ok := call.Args[1].(*ast.CompositeLit)
 	if !ok {
-		return "", "", false
+		return "", none, false
 	}
-	lit, ok := call.Args[1].(*ast.CompositeLit)
-	if !ok {
-		return "", "", false
-	}
-	for _, el := range lit.Elts {
+	for _, el := range meta.Elts {
 		kv, ok := el.(*ast.KeyValueExpr)
 		if !ok {
 			continue
@@ -306,17 +413,17 @@ func registration(vs *ast.ValueSpec, errPkg string, isErrorsPkg bool) (string, s
 		if !ok || str.Kind != token.STRING {
 			continue
 		}
-		v, err := strconv.Unquote(str.Value)
-		if err != nil {
-			return "", "", false
+		message, uerr := strconv.Unquote(str.Value)
+		if uerr != nil {
+			return "", none, false
 		}
-		return ident.Name, v, true
+		return vs.Names[0].Name, registered{code: code, message: message}, true
 	}
-	return "", "", false
+	return "", none, false
 }
 
 // namesErrorsSymbol reports whether expr names sym in the package that declares
-// Code — `cerrors.Code` from outside it, a bare `Code` from within.
+// Register — `cerrors.Register` from outside it, a bare `Register` from within.
 func namesErrorsSymbol(expr ast.Expr, sym, errPkg string, isErrorsPkg bool) bool {
 	if isErrorsPkg {
 		ident, ok := expr.(*ast.Ident)

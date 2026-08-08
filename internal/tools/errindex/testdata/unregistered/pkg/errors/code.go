@@ -1,7 +1,14 @@
 package errors
 
-type Code string
-
 type Meta struct{ Message string }
 
-func Register(code Code, meta Meta) struct{} { return struct{}{} }
+type sealed struct {
+	code    string
+	message string
+}
+
+func (s *sealed) Error() string { return s.message }
+
+func Register(code string, meta Meta) *sealed {
+	return &sealed{code: code, message: meta.Message}
+}

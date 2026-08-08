@@ -18,6 +18,12 @@ import (
 // and a reference page's left-hand column is a promise that the name can be
 // dereferenced.
 //
+// The column carries the call rather than the bare name, because the bare name
+// is what a reader cannot use: an identity is reached through the accessor that
+// publishes it, so the name on its own is a function value and does not compile
+// where an error is expected. Printing the call is what keeps the promise above
+// literally true for every row.
+//
 // Grouping is by the package that DECLARES the name — the package a reader
 // imports to match it — and not by where the condition is raised. A name is
 // frequently declared in one package and raised from several others, so a
@@ -55,7 +61,7 @@ func renderRegion(ids []Identity) (string, error) {
 				return "", fmt.Errorf("%s: the registered message contains a table separator, "+
 					"which no escaping renders correctly inside a cell; reword the message", id.Handle())
 			}
-			fmt.Fprintf(&b, "| %s | %s |\n", codeSpan(id.Name), codeSpan(id.Message))
+			fmt.Fprintf(&b, "| %s | %s |\n", codeSpan(id.Name+"()"), codeSpan(id.Message))
 			// A re-export is named alongside the handle it forwards to, so a
 			// reader holding one name knows the other matches too — but only
 			// when that other name is one they can reach. Where the origin sits
@@ -71,7 +77,7 @@ func renderRegion(ids []Identity) (string, error) {
 			b.WriteString("\n")
 			for _, id := range reExports {
 				fmt.Fprintf(&b, "- %s is the same value as %s, so a match against either name succeeds.\n",
-					codeSpan(id.Name), codeSpan(id.AliasOf))
+					codeSpan(id.Name+"()"), codeSpan(id.AliasOf+"()"))
 			}
 		}
 	}

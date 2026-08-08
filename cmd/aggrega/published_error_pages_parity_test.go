@@ -37,16 +37,18 @@ var screamingPrefix = regexp.MustCompile(`\b[A-Z][A-Z0-9_]{3,}:`)
 var goErrorIdentifier = regexp.MustCompile(`\bErr[A-Z][A-Za-z0-9]*`)
 
 // declaredIdentifier matches a declaration of such an identifier in Go source,
-// in each of the three forms the tree uses: a variable initialised at its
-// declaration, an alias for one declared in another package, and a typed constant,
-// whose type name sits between the identifier and the assignment.
+// in each of the two forms the tree uses: an accessor, which takes nothing and
+// returns an error, and a variable or constant bound directly to a value. An
+// accessor forwarding to another package's identity is the same shape as one
+// returning its own, so both are read as accessors — which is right, since a
+// forwarding name is matchable exactly as a declaring one is.
 //
-// The type token is captured rather than merely skipped, because it is the only
-// thing in the pattern that tells the forms apart, and the calibration below
+// The `() error` token is captured rather than merely skipped, because it is the
+// only thing in the pattern that tells the forms apart, and the calibration below
 // asserts one needle of each form. Skipping it would leave both needles matching
 // under either shape.
 //
-// The optional type token is separated by spaces or tabs rather than by arbitrary
+// Each alternative is separated by spaces or tabs rather than by arbitrary
 // whitespace, so it cannot span a line ending. A separator that reached across one
 // would let a match beginning in the right-hand side of a declaration run on and
 // consume the identifier declared on the line below, dropping that identifier from
@@ -61,7 +63,7 @@ var goErrorIdentifier = regexp.MustCompile(`\bErr[A-Z][A-Za-z0-9]*`)
 // would replace two independent readings of one population with a single point of
 // blindness, so a criterion change must be carried to both sites by hand — which is
 // the cost this duplication is knowingly paying.
-var declaredIdentifier = regexp.MustCompile(`\b(Err[A-Z][A-Za-z0-9]*)(?:[ \t]+([\w.]+))?\s*(=|\berror\b)`)
+var declaredIdentifier = regexp.MustCompile(`\b(Err[A-Z][A-Za-z0-9]*)(?:\(\)[ \t]+(error)\b|[ \t]*=)`)
 
 // declarationForm records which declaration shapes an identifier was seen in.
 //
@@ -71,17 +73,18 @@ var declaredIdentifier = regexp.MustCompile(`\b(Err[A-Z][A-Za-z0-9]*)(?:[ \t]+([
 // pattern that needle was chosen to exercise unwatched, with nothing going red.
 // Recording the shape is what makes that change fail loudly instead.
 type declarationForm struct {
-	// untyped is `ErrX = …`: no type token between the identifier and the
-	// assignment. It is the shape a variable initialised at its declaration
-	// takes, and the shape an alias for another package's identity takes.
-	untyped bool
-	// typed is `ErrX Code = …`: a type token sits between the identifier and
-	// the assignment, which is how a typed constant is declared.
-	typed bool
+	// accessor is `ErrX() error`: the identifier is declared as a function
+	// taking nothing and returning an error. It is the shape an identity takes
+	// when the value itself is sealed and reached only through the name that
+	// publishes it.
+	accessor bool
+	// variable is `ErrX = …`: the identifier is bound directly to a value, with
+	// no parameter list and no result between it and the assignment.
+	variable bool
 }
 
 // declared reports whether the identifier was seen in any declaration form.
-func (f declarationForm) declared() bool { return f.untyped || f.typed }
+func (f declarationForm) declared() bool { return f.accessor || f.variable }
 
 // goSourceCorpus returns every non-test Go file's text in the module, joined, and
 // the set of exported error identifiers the module declares.
@@ -113,9 +116,9 @@ func goSourceCorpus(t *testing.T) (string, map[string]declarationForm) {
 		for _, m := range declaredIdentifier.FindAllStringSubmatch(string(data), -1) {
 			form := declared[m[1]]
 			if m[2] == "" {
-				form.untyped = true
+				form.variable = true
 			} else {
-				form.typed = true
+				form.accessor = true
 			}
 			declared[m[1]] = form
 		}
@@ -140,10 +143,11 @@ func goSourceCorpus(t *testing.T) (string, map[string]declarationForm) {
 	// was chosen to represent goes unwatched.
 	//
 	// The variable-form needle names the one identity that is declared that way and
-	// cannot become a coded constant: it wraps another sentinel so a caller may
-	// match either identity, and a string constant has nothing to unwrap. That is a
-	// property of what the identity has to do rather than a stage it is passing
-	// through, so this needle is stable and does not need re-pointing.
+	// cannot become an accessor over a registration: it wraps another sentinel so a
+	// caller may match either identity, and it registers no message of its own for
+	// a registration to carry. That is a property of what the identity has to do
+	// rather than a stage it is passing through, so this needle is stable and does
+	// not need re-pointing.
 	//
 	// Each needle asserts the declaration SHAPE, not merely that the identifier is
 	// declared. Presence would be satisfied by either shape, so an identity that
@@ -151,18 +155,18 @@ func goSourceCorpus(t *testing.T) (string, map[string]declarationForm) {
 	// the pattern it was chosen to represent stopped being exercised — the silent
 	// degradation these two assertions exist to prevent. Asserting the shape makes
 	// that change fail here, beside the reason, rather than nowhere.
-	if !declared["ErrCacheMetadataInvalid"].untyped {
-		t.Fatal("declaration scan did not see ErrCacheMetadataInvalid declared with no type token between " +
-			"the identifier and the assignment, which is the form an initialised variable takes. " +
-			"Either the scan has stopped matching that form, or the identity became a typed constant — " +
-			"which it cannot be, because it wraps another sentinel so a caller may match either, and a " +
-			"string constant has nothing to unwrap. Whichever it is, the variable-form leg of this " +
+	if !declared["ErrCacheMetadataInvalid"].variable {
+		t.Fatal("declaration scan did not see ErrCacheMetadataInvalid declared with the identifier bound " +
+			"directly to a value, which is the form an initialised variable takes. " +
+			"Either the scan has stopped matching that form, or the identity became an accessor — " +
+			"which it cannot be, because it wraps another sentinel so a caller may match either, and it " +
+			"registers no message of its own. Whichever it is, the variable-form leg of this " +
 			"calibration is no longer exercised: fix the scan, or point this needle at another identity " +
 			"declared that way.")
 	}
-	if !declared["ErrUnknownEntityKind"].typed {
-		t.Fatal("declaration scan did not see ErrUnknownEntityKind declared with a type token between the " +
-			"identifier and the assignment, which is the form a typed constant takes; " +
+	if !declared["ErrUnknownEntityKind"].accessor {
+		t.Fatal("declaration scan did not see ErrUnknownEntityKind declared as a function taking nothing " +
+			"and returning an error, which is the form an accessor over a sealed identity takes; " +
 			"the scan has stopped matching that declaration form — the scan is broken, not the pages")
 	}
 	return b.String(), declared

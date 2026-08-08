@@ -73,19 +73,21 @@ func TestScan_ReadsDeclarationsRegistrationsAndReExports(t *testing.T) {
 	}
 	for handle := range got {
 		if strings.HasSuffix(handle, ".NotAnIdentity") {
-			t.Errorf("%s was extracted; a constant of the identity type whose name is not an identity must not be", handle)
+			t.Errorf("%s was extracted; a registered condition published under a name that is not "+
+				"an identity must not be", handle)
 		}
 	}
 }
 
-func TestScan_RefusesACodeWithNoRegisteredMessage(t *testing.T) {
+func TestScan_RefusesAHandleWithNoRegistrationBehindIt(t *testing.T) {
 	t.Parallel()
-	// Refusing is the point. A code with no registration renders as text naming
-	// the unregistered code, and a page carrying that reads as a description
-	// while describing nothing — the shape a generator must not paper over.
+	// Refusing is the point. A handle with nothing registered behind it matches
+	// whatever the name it returns happens to hold, and a page carrying that reads
+	// as a description while describing nothing — the shape a generator must not
+	// paper over.
 	_, err := scan("testdata/unregistered", "example.test/unregistered")
 	if err == nil {
-		t.Fatal("scan accepted a code with no registered message")
+		t.Fatal("scan accepted a handle with no registration behind it")
 	}
 	if !strings.Contains(err.Error(), "pkg/thing.ErrOrphan") {
 		t.Errorf("error does not name the offending handle: %v", err)
@@ -113,11 +115,13 @@ func TestRenderRegion_OmitsUnimportablePackagesAndUnreachableOrigins(t *testing.
 		t.Error("region names the origin of a re-export whose origin is unreachable")
 	}
 	// The re-exported name itself is matchable, so its row belongs on the page.
-	if !strings.Contains(region, "| `ErrHidden` |") {
+	// The row carries the call, because the bare name is a function value and
+	// does not compile where an error is expected.
+	if !strings.Contains(region, "| `ErrHidden()` |") {
 		t.Errorf("region omits an importable re-export:\n%s", region)
 	}
 	// Where both names are reachable, the pairing is stated.
-	if !strings.Contains(region, "- `ErrPlain` is the same value as `pkg/thing.ErrPlain`, so a match against either name succeeds.") {
+	if !strings.Contains(region, "- `ErrPlain()` is the same value as `pkg/thing.ErrPlain()`, so a match against either name succeeds.") {
 		t.Errorf("region omits the reachable re-export pairing:\n%s", region)
 	}
 	// A message quoting authoring syntax carries a backtick; a fixed one-backtick

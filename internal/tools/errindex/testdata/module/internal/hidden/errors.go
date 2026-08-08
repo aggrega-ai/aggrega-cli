@@ -2,8 +2,8 @@ package hidden
 
 import cerrors "example.test/fixture/pkg/errors"
 
-const ErrHidden cerrors.Code = "hidden/hidden"
+func ErrHidden() error { return errHidden }
 
-var _ = cerrors.Register(ErrHidden, cerrors.Meta{
+var errHidden = cerrors.Register("hidden/hidden", cerrors.Meta{
 	Message: "raised from a package no reader can import",
 })

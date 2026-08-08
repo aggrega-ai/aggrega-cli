@@ -7,10 +7,10 @@ import (
 
 // A re-export whose origin a reader can reach. Both names are importable, so the
 // rendering is expected to say the two match each other.
-const ErrPlain = thing.ErrPlain
+func ErrPlain() error { return thing.ErrPlain() }
 
-const ErrOwn cerrors.Code = "other/own"
+func ErrOwn() error { return errOwn }
 
-var _ = cerrors.Register(ErrOwn, cerrors.Meta{
+var errOwn = cerrors.Register("other/own", cerrors.Meta{
 	Message: "declared here",
 })
