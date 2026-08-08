@@ -49,11 +49,10 @@ import (
 )
 
 // defaultPackages enumerates the packages mutated by a no-argument
-// invocation. The list is the load-bearing test-coverage cluster
-// established by the surrounding test-coverage initiative; cmd/aggrega
-// is intentionally excluded because its documented coverage carve-out
-// already explains why per-function unit tests aren't the load-bearing
-// signal there.
+// invocation. The list is the load-bearing test-coverage cluster;
+// cmd/aggrega is intentionally excluded because the carve-outs recorded
+// in scripts/coverage-baseline.txt already explain why per-function unit
+// tests aren't the load-bearing signal there.
 var defaultPackages = []string{
 	"pkg/resolver",
 	"pkg/validator",

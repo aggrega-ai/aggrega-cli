@@ -40,19 +40,19 @@ github.com/aggrega-ai/aggrega-cli/pkg/errors                  90
 github.com/aggrega-ai/aggrega-cli/pkg/labels                  90
 github.com/aggrega-ai/aggrega-cli/pkg/selector                90
 
-# cmd/aggrega: 82% achieved + Phase 5 exclusion-list carve-outs.
+# cmd/aggrega: 82% achieved + exclusion-list carve-outs.
 # The package's residual gap below 90% is:
 #   - main() and Execute() — CLI bootstrap (the binary's `os.Args` →
 #     library-call translation). Behavior verified by binary-level
 #     smoke tests, not per-function unit tests. Excluded from the
-#     90% floor via Phase 5's exclusion-list mechanism.
+#     90% floor via the exclusion-list mechanism.
 #   - runBuild's subsystem error-propagation paths — each branch
 #     wraps a downstream package's error (resolver, topology, ir,
 #     analyzer, renderer). The downstream packages' own coverage
 #     pins their failure modes; the wrapping is mechanical.
 github.com/aggrega-ai/aggrega-cli/cmd/aggrega                 82
 
-# cmd/mutation-baseline: 64% achieved + Phase 5 exclusion-list
+# cmd/mutation-baseline: 64% achieved + exclusion-list
 # carve-outs. The package's residual gap below 90% is:
 #   - main() — CLI bootstrap that translates flags and triggers the
 #     run. Behavior verified by binary-level smoke test (the binary's
