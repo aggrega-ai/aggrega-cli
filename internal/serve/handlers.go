@@ -427,6 +427,16 @@ func (s *Server) dispatchIrGraph(ctx context.Context, req *jsonRPCRequest) error
 	return s.writeResult(ctx, req.ID, result)
 }
 
+// irGraphPipelineOptions builds the pipeline options for the irGraph
+// inspection path. Render-skip is the default: irGraph reads only the IR
+// graph and discards render output, so unless the build's findings are
+// explicitly requested (the build-on-inspect dial) the pipeline stops
+// after the IR graph is finalised and never loads rendering plugins. The
+// returned graph is byte-identical either way — render never mutates it.
+func (s *Server) irGraphPipelineOptions() pipeline.Options {
+	return pipeline.Options{IncludeTrace: false, SkipRender: !s.buildOnInspect}
+}
+
 // handleIrGraph loads the Release at params.Release, derives the
 // Aggregate and Manifest paths, reads them from disk, and invokes
 // pipeline.RunPipeline to produce the IR graph. The graph is
@@ -438,14 +448,14 @@ func (s *Server) dispatchIrGraph(ctx context.Context, req *jsonRPCRequest) error
 // Aggregate, lockfile data when the lockfile machinery ships)
 // resolve against the Release's containing directory.
 //
-// Catalog lookup asymmetry: the resolver.CatalogLookup argument
-// (Component + Feature) comes from the session-scoped lazy lookup
-// constructed at daemon startup — per-URI cascade through Tier-1
-// (filesystem) → Tier-2 (workspace cache) → Tier-3 (OCI registry).
-// The renderer.RecipeLookup + topology.SubAggregateLoader arguments
-// come from an eager *catalog.Catalog loaded on first use; implements-
-// keyed Recipe lookup with three-form version precedence is a
-// separate design problem that the lazy primitive does not address.
+// Catalog lookup: every lookup the pipeline needs is served by the
+// session-scoped lazy lookup constructed at daemon startup, which
+// covers the whole catalog surface rather than Component and Feature
+// alone. This handler does not read that lookup directly — it forks a
+// request-scoped view seeded with this request's lockfile pins, so the
+// resolver lookup, the Recipe lookup and the sub-aggregate loader all
+// resolve against one immutable pin snapshot and a concurrent request
+// cannot perturb it.
 //
 // End-to-end fixture-driven coverage lives in
 // cmd/aggrega/serve_test.go: TestServeAggregaIrGraphEndToEnd, which
@@ -454,16 +464,6 @@ func (s *Server) dispatchIrGraph(ctx context.Context, req *jsonRPCRequest) error
 // well-formed IRGraph envelope. Per-handler dispatch is additionally
 // unit-tested via bytes.Buffer mocks in internal/serve/server_test.go;
 // the pipeline.RunPipeline call is covered by pipeline's own tests.
-// irGraphPipelineOptions builds the pipeline options for the irGraph
-// inspection path. Render-skip is the default: irGraph reads only the IR
-// graph and discards render output, so unless the build's findings are
-// explicitly requested (the build-on-inspect dial) the pipeline stops
-// after the IR graph is finalised and never loads rendering plugins. The
-// returned graph is byte-identical either way — render never mutates it.
-func (s *Server) irGraphPipelineOptions() pipeline.Options {
-	return pipeline.Options{IncludeTrace: false, SkipRender: !s.buildOnInspect}
-}
-
 func (s *Server) handleIrGraph(ctx context.Context, params irGraphParams) (irGraphResult, *jsonRPCError) {
 	releasePath := filepath.Join(s.workspaceRoot, params.Release)
 

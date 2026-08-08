@@ -10,7 +10,81 @@
 // The package's contract is the wire protocol, not the Go API — no
 // public types outside this package consume serve.Run or the handler
 // functions. The only intended consumer is the IDE extension that
-// spawns the daemon as a subprocess.
+// spawns the daemon as a subprocess. Because the protocol rather than
+// the Go surface is what callers bind to, the sections below state it
+// here rather than leaving it to be reassembled from the handlers.
+//
+// # The protocol is domain-specific, not the Language Server Protocol
+//
+// The framing is the one editors already speak — Content-Length headers
+// over stdin/stdout — and a few shapes borrow LSP's vocabulary, notably
+// yamlpos.Position, yamlpos.Range and the position-encoding negotiation
+// on aggrega/initialize. The method set is not LSP's. Every method sits
+// under the `aggrega/` namespace and operates on Aggregates, Releases,
+// catalog entities and the IR graph, which LSP does not model. An editor
+// integration translates between the two surfaces; pointing a stock LSP
+// client at this daemon does not work.
+//
+// # The method and notification set
+//
+// Requests, each answered with a result or a JSON-RPC error envelope:
+//
+//	aggrega/initialize           handshake: negotiates the position
+//	                             encoding and reports the resolved
+//	                             workspace root, the configuration layer
+//	                             that supplied it, and the marker that
+//	                             anchored it
+//	aggrega/validate             parses and semantically validates one
+//	                             file, returning its diagnostics
+//	aggrega/invalidate           drops cached state for one file or for
+//	                             the whole workspace
+//	aggrega/diagnostics          returns the diagnostics already cached
+//	                             for a file
+//	aggrega/irGraph              returns the IR graph for a Release
+//	aggrega/releaseCandidates    lists the workspace's Release documents,
+//	                             selected by document kind rather than by
+//	                             filename
+//	aggrega/resolve              position to the definition it names
+//	aggrega/findReferences       position to the sites referencing it
+//	aggrega/findImplementations  position to the entities implementing it
+//	aggrega/hover                position to hover contents
+//	aggrega/completion           position to completion items
+//
+// Notifications:
+//
+//	aggrega/shutdown             starts the drain-then-abort sequence
+//	                             documented on dispatchLoop
+//	aggrega/publishDiagnostics   server-push, carrying diagnostics the
+//	                             daemon produced outside any request —
+//	                             a lockfile drift finding, for instance
+//
+// # Validation seeds the per-file state every other file operation reads
+//
+// aggrega/validate is the only method that populates a file's parse and
+// diagnostic cache entries. aggrega/diagnostics, aggrega/hover,
+// aggrega/completion, aggrega/resolve, aggrega/findReferences and
+// aggrega/findImplementations all read that state and refuse with the
+// file-not-validated application code when it is absent, so a client
+// sends validate for a file before any of them. Entries are keyed by
+// file path alone: one daemon serves one workspace and one client, so
+// no per-client dimension is needed.
+//
+// # Where the rest of the contract lives
+//
+// The wire framing, the worker-pool submission loop and the two-step
+// shutdown are on dispatchLoop. The application error codes and the
+// condition each one reports are on their declarations in this package.
+// Cache staleness is not a client responsibility: cache re-reads the
+// file's modification time on every lookup and discards an entry the
+// file has outgrown, so external edits — a branch switch, an editor
+// writing outside the extension — heal on their own, and
+// aggrega/invalidate is a latency optimisation rather than a
+// correctness requirement. Diagnostic position fidelity, including the
+// authoring shapes that fall back to the head of the file, is on
+// runTier4Validation. Workspace anchoring is in package workspaceconfig,
+// whose Marker constants are declared in the order discovery consults
+// them; the choice of active Release when a workspace holds several is
+// on runManifestCascade.
 package serve
 
 import (
