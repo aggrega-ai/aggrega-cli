@@ -16,6 +16,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compilerops"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
+	"github.com/aggrega-ai/aggrega-cli/pkg/entitykind"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator"
@@ -186,17 +187,18 @@ type catalogEntityFile struct {
 }
 
 // isLintableCatalogKind reports whether a peeked kind names a published catalog
-// entity the publishing-linter rules apply to. Deployment/authoring-side kinds
-// (Aggregate, Manifest, Release) are not published catalog entities and are
-// excluded from the conventions passes.
+// entity the publishing-linter rules apply to. Deployment- and authoring-side
+// kinds are not published catalog entities and are excluded from the conventions
+// passes.
+//
+// It reads the declared entity-kind vocabulary rather than naming the kinds here.
+// This is the gate the whole walk turns on — a kind it declines is dropped before
+// its file enters the name index, so that file reaches no convention rule and
+// nothing reports that it was skipped. A kind missing from a list written here is
+// therefore silently unlinted, which is exactly what happened to the two library
+// kinds added most recently.
 func isLintableCatalogKind(kind string) bool {
-	switch kind {
-	case "Component", "Feature", "Recipe", "FeatureRecipe",
-		"SchemaLibrary", "MappingLibrary", "Plugin":
-		return true
-	default:
-		return false
-	}
+	return entitykind.IsConventionsLinted(entitykind.Kind(kind))
 }
 
 // walkCatalogEntityFiles walks dirs in order, reads every .yaml / .yml file, and

@@ -7,37 +7,35 @@ import (
 	"context"
 	"encoding/json"
 	"strings"
+
+	"github.com/aggrega-ai/aggrega-cli/pkg/entitykind"
 )
 
-// docPointers maps an entity kind token to the language-reference page that
-// documents it. A diagnostic naming a kind is expanded with a pointer to that
-// page so the reader can look up the authoring contract; an unrecognized or
-// absent kind falls back to the language-reference index. Every path is a
-// public documentation location that ships with the compiler.
-var docPointers = map[string]string{
-	"aggregate":      "aggrega-docs/language-reference/entities/aggregate.md",
-	"component":      "aggrega-docs/language-reference/entities/component.md",
-	"feature":        "aggrega-docs/language-reference/entities/feature.md",
-	"featurerecipe":  "aggrega-docs/language-reference/entities/featurerecipe.md",
-	"manifest":       "aggrega-docs/language-reference/entities/manifest.md",
-	"mappinglibrary": "aggrega-docs/language-reference/entities/mappinglibrary.md",
-	"plugin":         "aggrega-docs/language-reference/entities/plugin.md",
-	"recipe":         "aggrega-docs/language-reference/entities/recipe.md",
-	"release":        "aggrega-docs/language-reference/entities/release.md",
-	"schemalibrary":  "aggrega-docs/language-reference/entities/schemalibrary.md",
-	"workload":       "aggrega-docs/language-reference/entities/workload.md",
-}
+// docEntityDir is the directory holding the per-kind language-reference pages.
+// A kind's page is named for the kind's own path segment, so the pointer is
+// derived rather than restated per kind.
+const docEntityDir = "aggrega-docs/language-reference/entities/"
 
 // docIndex is the fallback pointer when no kind-specific page applies.
 const docIndex = "aggrega-docs/language-reference/"
 
-// docPointerFor returns the language-reference page for a kind token, or the
-// index when the kind is empty or unrecognized.
+// docPointerFor returns the language-reference page documenting an entity kind, or
+// the index when the kind is empty, unrecognized, or has no page of its own.
+//
+// A diagnostic naming a kind is expanded with this pointer so the reader can look
+// up the authoring contract. Falling back to the index for a kind with no page is
+// deliberate: naming a page that does not ship would read as a broken reference to
+// whoever followed it, which is worse than being sent to the index.
 func docPointerFor(kind string) string {
-	if p, ok := docPointers[strings.ToLower(strings.TrimSpace(kind))]; ok {
-		return p
+	segment := strings.ToLower(strings.TrimSpace(kind))
+	k, ok := entitykind.BySegment(segment)
+	if !ok {
+		return docIndex
 	}
-	return docIndex
+	if e, _ := entitykind.Lookup(k); !e.ReferencePage {
+		return docIndex
+	}
+	return docEntityDir + segment + ".md"
 }
 
 // explainDiagnostic expands a diagnostic message into actionable guidance: the

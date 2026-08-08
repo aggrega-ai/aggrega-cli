@@ -40,14 +40,21 @@ func OCILocation(kind, provider, name string) string {
 }
 
 // KindPathSegment maps an entity kind to its OCI repository path segment.
-// Default behavior is `strings.ToLower(kind)`; the Plugin kind aliases to
-// the canonical `plugin` path prefix per the plugin URI convention
+//
+// For an entity kind the segment is the kind's own lowercase path token, which is
+// what the declared entity-kind vocabulary hands out; a test holds that no entity
+// kind needs an exception here, so this stays a single rule rather than a table
+// that could fall behind. The one alias is `Wasm`, which is not an entity kind at
+// all — it is the raw plugin artifact, published beneath the same `plugin` prefix
+// as the Plugin entity that pins it, per the plugin URI convention
 // (`<registry>/plugin/<pluginType>/<name>`).
+//
+// A token that is neither an entity kind nor `Wasm` is lowercased unchanged, so a
+// caller addressing something outside the vocabulary still gets a well-formed
+// lowercase segment rather than an empty one.
 func KindPathSegment(kind string) string {
-	switch kind {
-	case "Plugin", "Wasm":
+	if kind == "Wasm" {
 		return "plugin"
-	default:
-		return strings.ToLower(kind)
 	}
+	return strings.ToLower(kind)
 }

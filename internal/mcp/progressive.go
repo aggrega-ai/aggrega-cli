@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+
+	"github.com/aggrega-ai/aggrega-cli/pkg/entitykind"
 )
 
 // deferredToolRegistry is the long-tail tool set the default tools/list does
@@ -150,21 +152,24 @@ func descriptorFor(spec toolSpec, deferred bool) capabilityDescriptor {
 }
 
 // knownEntityKinds returns the entity-kind vocabulary the capability tool's kind
-// filter accepts, sorted for a deterministic diagnostic. It draws on the same
-// entity-kind set the diagnostic doc-pointer map is keyed by, so the filter and
-// the guidance surface speak one vocabulary.
+// filter accepts, sorted for a deterministic diagnostic. It reads the declared
+// entity-kind set, so the filter admits every kind an author can write.
+//
+// It deliberately does not read the set of kinds that have a reference page. Which
+// kinds exist and which of them are documented are different questions with
+// different answers, and deriving the first from the second made a kind whose page
+// had not been written yet indistinguishable from a kind that does not exist —
+// which is what the author was then told.
 func knownEntityKinds() []string {
-	kinds := make([]string, 0, len(docPointers))
-	for k := range docPointers {
-		kinds = append(kinds, k)
-	}
+	kinds := entitykind.Segments()
 	sort.Strings(kinds)
 	return kinds
 }
 
-// isKnownEntityKind reports whether kind is a recognized entity kind.
+// isKnownEntityKind reports whether kind is a recognized entity kind, named by its
+// lowercase path segment.
 func isKnownEntityKind(kind string) bool {
-	_, ok := docPointers[kind]
+	_, ok := entitykind.BySegment(kind)
 	return ok
 }
 

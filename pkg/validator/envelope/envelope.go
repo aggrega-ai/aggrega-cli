@@ -18,6 +18,7 @@ package envelope
 import (
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -89,6 +90,29 @@ var schemaSource = map[Kind]string{
 	KindLockfile:         schemas.LockfileV1alpha1,
 	KindWorkload:         clischemas.WorkloadJSONSchema,
 	KindIR:               schemas.IRSchemaV1alpha1,
+}
+
+// Kinds returns every document family this package validates, in lexical
+// order. The returned slice is freshly allocated, so a caller may not
+// change the family set through it.
+//
+// It is the enumeration counterpart to the per-kind validation calls: a
+// caller that must reason about the whole family set — checking that its
+// own handling accounts for all of them, say — reads that set from here
+// rather than restating it. A restated copy agrees on the day it is
+// written and disagrees silently the day a family is added.
+//
+// The set is authoritative for envelope validation and nothing more. It
+// is wider than the set of kinds a user authors, because generated and
+// configuration documents carry envelope schemas too, so a caller that
+// needs only authored kinds must narrow rather than take this whole.
+func Kinds() []Kind {
+	out := make([]Kind, 0, len(schemaSource))
+	for kind := range schemaSource {
+		out = append(out, kind)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i] < out[j] })
+	return out
 }
 
 // compiled caches one compiled validator per kind. Catalog loads

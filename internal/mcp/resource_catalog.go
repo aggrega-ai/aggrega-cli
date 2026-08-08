@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
+	"github.com/aggrega-ai/aggrega-cli/pkg/entitykind"
 )
 
 const (
@@ -18,31 +19,38 @@ const (
 	catalogMimeType = "application/yaml"
 )
 
-// catalogKindSegments maps a catalog:// URI's leading kind segment to the entity
-// kind string the catalog's raw-bytes accessor keys on. The remaining path
-// segments are the entity identity within that kind — metadata.name for the
-// by-name kinds, the provider/name:version identity for recipes.
-var catalogKindSegments = map[string]string{
-	"component":      "Component",
-	"feature":        "Feature",
-	"recipe":         "Recipe",
-	"featurerecipe":  "FeatureRecipe",
-	"aggregate":      "Aggregate",
-	"schemalibrary":  "SchemaLibrary",
-	"mappinglibrary": "MappingLibrary",
-	"plugin":         "Plugin",
+// catalogKindForSegment resolves a catalog:// URI's leading kind segment to the
+// entity kind string the catalog's raw-bytes accessor keys on, and reports
+// whether the segment names an entity kind at all. The remaining path segments
+// are the entity identity within that kind — metadata.name for the by-name kinds,
+// the provider/name:version identity for recipes.
+//
+// It resolves every entity kind rather than a narrower list of the kinds a
+// catalog is expected to hold. Whether a given kind is actually resident is the
+// catalog's own answer, given when the identity is looked up, so keeping a second
+// list here would only be a chance for the two to disagree — and when they did,
+// the newer kind was the one left unaddressable.
+func catalogKindForSegment(segment string) (string, bool) {
+	kind, ok := entitykind.BySegment(segment)
+	return string(kind), ok
 }
 
 // catalogResourceTemplate returns the catalog-entity URI-template family. The
 // template is parameterised by the entity kind segment and the entity identity;
 // the instance set is the resolved workspace's catalog, so the family is
 // templated rather than pre-enumerated.
+//
+// The description names the kind segments by reading the same vocabulary the
+// resolution reads, so what a reader is told and what actually resolves cannot
+// come apart.
 func catalogResourceTemplate() resourceTemplate {
 	return resourceTemplate{
 		URITemplate: "catalog://{kind}/{name}",
 		Name:        "catalog-entity",
-		Description: "A catalog entity's authored YAML, served verbatim from the resolved workspace catalog. The first path segment is the entity kind (component, feature, recipe, featurerecipe, aggregate, schemalibrary, mappinglibrary, plugin) and the remainder is the entity identity — for example catalog://component/core/compute/api-server or catalog://recipe/helm/mariadb-bitnami:1.0.0.",
-		MimeType:    catalogMimeType,
+		Description: "A catalog entity's authored YAML, served verbatim from the resolved workspace catalog. The first path segment is the entity kind (" +
+			strings.Join(entitykind.Segments(), ", ") +
+			") and the remainder is the entity identity — for example catalog://component/core/compute/api-server or catalog://recipe/helm/mariadb-bitnami:1.0.0.",
+		MimeType: catalogMimeType,
 	}
 }
 
@@ -63,7 +71,7 @@ func (s *server) readCatalogResource(uri string) (any, *rpcError) {
 	if !found || identity == "" {
 		return nil, resourceNotFound(uri)
 	}
-	kind, ok := catalogKindSegments[seg]
+	kind, ok := catalogKindForSegment(seg)
 	if !ok {
 		return nil, resourceNotFound(uri)
 	}
