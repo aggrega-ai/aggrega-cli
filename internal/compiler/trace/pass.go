@@ -3,12 +3,23 @@
 
 package trace
 
-// Pass names a snapshot slot in the per-node trace layout. Each Pass maps
-// to a numbered file under .trace/boundaries/<boundary>/<instance_id>/
-// (sibling to dist/) per the documented 12-file layout.
+// Pass names a snapshot slot in the per-node trace layout. Each Pass maps to
+// one numbered file or directory under
+// .trace/boundaries/<boundary>/<instance_id>/ (sibling to dist/).
+//
+// Some slots are written for every node, because the stages they capture run
+// whatever shape the Recipe has; the rest appear only when the Recipe declares
+// the input kind that stage reads. That makes the slot inventory itself
+// informative — which slots a node produced shows which input kinds its Recipe
+// actually exercised, independent of what the catalog entry claims it does.
+//
+// Adding a stage means adding its Pass here, adding the Write call at the
+// stage that produces the state, and describing the new slot in the published
+// build-command reference. The layout is a surface authors read directly, so a
+// slot that appears with nothing describing it is output they cannot interpret.
 type Pass string
 
-// The 12-file layout's pass identifiers.
+// The pass identifiers, one per slot in the per-node layout.
 const (
 	// PassPillarsInitial captures the per-node values, infra, context (basic
 	// identity), and metadata pillars before any sub-pass has run. Slot:
