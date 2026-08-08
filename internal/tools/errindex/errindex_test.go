@@ -337,30 +337,15 @@ func TestReportGaps_NamesEveryUncoveredOriginAndNoReExport(t *testing.T) {
 	}
 }
 
-func TestResolveCoverage_LiveModuleAnchorsAllResolve(t *testing.T) {
-	t.Parallel()
-	// The fixture proves the rules; this proves the published page's own
-	// declarations still name identities that exist. A rename that left an
-	// anchor behind would otherwise be found only by the drift gate.
-	modulePath, err := modulePathOf("../../..")
-	if err != nil {
-		t.Fatalf("module path: %v", err)
-	}
-	ids, err := scan("../../..", modulePath)
-	if err != nil {
-		t.Fatalf("scan module: %v", err)
-	}
-	docsRoot := "../../../../aggrega-docs"
-	if _, serr := os.Stat(filepath.Join(docsRoot, haltsRelPath)); serr != nil {
-		t.Skipf("published pages not present (standalone checkout): %v", serr)
-	}
-	covered, err := resolveCoverage(ids, docsRoot)
-	if err != nil {
-		t.Fatalf("the published page declares a correspondence that resolves to nothing: %v", err)
-	}
-	// Calibration: the assertion above reads as "nothing is wrong" over an
-	// empty set, so the set is proven non-empty against a known entry first.
-	if !covered["pkg/resolver.ErrParameterMissing"] {
-		t.Fatal("no coverage extracted for a known anchored identity; the extraction is broken, not the page")
-	}
-}
+// There is deliberately no test here reading the published halting-conditions
+// page. The generator resolves every coverage anchor on that page before it
+// writes anything, and the drift check that regenerates the sentinel reference
+// runs the generator over a copy of the whole published errors directory on
+// every routine build — so an anchor naming an identity nothing declares
+// already fails there, unconditionally.
+//
+// A test doing the same reads a file outside this module root, which no test
+// cache key covers: it would be the weaker of the two checks and the only one
+// able to serve a stale pass. It would also be the only one able to skip
+// itself when the sibling tree is absent. The fixture tests above prove every
+// rule the resolver applies, which is the part that belongs in this package.

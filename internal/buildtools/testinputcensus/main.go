@@ -99,11 +99,15 @@ import (
 // The denominator was re-measured 2026-08-07 under its own criterion, which is a
 // different and much cheaper one: the module set is the same walk this census is
 // driven from, and a package counts toward the denominator when `go list` reports
-// it carrying TestGoFiles or XTestGoFiles. That gives 97 test packages across
+// it carrying TestGoFiles or XTestGoFiles. That gave 97 test packages across
 // exactly four modules — aggrega-cli 94, aggrega-abi/go 1, aggrega-pdk/go 1,
-// aggrega-schemas 1. It was 96 when the counting figure was taken, so the
-// denominator has moved by one and the two numbers now carry separate dates
-// rather than one date covering both.
+// aggrega-schemas 1 — and 96 when the counting figure was taken the day before,
+// so the two numbers carry separate dates rather than one date covering both.
+//
+// Re-measured 2026-08-08: aggrega-cli carries 96, the other three unchanged.
+// The denominator moves whenever a package gains its first test, so expect it to
+// drift between readings — it is a snapshot for scale, and the gate watches the
+// numerator alone.
 var expected = map[string]int{
 	// The two shared-payload parity suites, whose input corpus is the
 	// golden-vector tree at the repository root above each module — read by the
@@ -117,8 +121,13 @@ var expected = map[string]int{
 	// module does NOT currently run with caching defeated, which the census says
 	// on every run.
 	//
-	// Four of its packages are the named carriers of that exposure, recorded here
-	// because a reader otherwise has to run the census to learn which they are:
+	// Four of its packages are the ROOTS of that exposure — the ones that reach
+	// out of the module on their own account, rather than through a shared harness.
+	// 🔴 They are NOT the whole set: the measured carrier count is the number
+	// below, and the rest reach the same corpus through one of these four or
+	// through workspace-root discovery. Run the census with -report-only to read
+	// the full roster; naming all of them here would be a second copy that goes
+	// stale between readings, which is exactly what the census exists to catch.
 	//
 	//   - internal/wasm            reads the shared schema tree.
 	//   - pkg/validator            resolves the repository root at run time and
