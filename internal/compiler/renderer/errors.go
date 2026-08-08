@@ -291,7 +291,9 @@ var _ = cerrors.Register(ErrUnknownProvider, cerrors.Meta{
 // invocations whose on-disk outputs would collide. The error names the
 // conflicting providers, the conflicting boundaries, and the resolution
 // paths (restore the per-provider sub-path default, or change one
-// boundary's directory). Category: TRANSLATION_ERROR.
+// boundary's directory). Category: OPS_ERROR — the collision exists
+// because of how the boundaries were configured, so it is the operator
+// who has the change to make.
 const ErrPathCollision cerrors.Code = "compiler-renderer/path-collision"
 
 var _ = cerrors.Register(ErrPathCollision, cerrors.Meta{

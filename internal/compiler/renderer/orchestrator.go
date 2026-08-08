@@ -5,6 +5,7 @@ package renderer
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"sort"
@@ -842,7 +843,19 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// when present, and accumulate on state.EmittedFiles for Phase
 		// B.5 collision detection.
 		if err := phaseB3(ctx, tmplCtx, state, engine, nodeCtx); err != nil {
-			return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("rendering node %q", nodeID))
+			// An artifacts-evaluation failure is normally a catalog fault: the
+			// entry, its import, or its template is what went wrong. A provider
+			// that rendered non-deterministically is the exception — the fault is
+			// in the provider itself, not in the artifacts entry that happened to
+			// route through it — so it carries the same translation category here
+			// that it carries on the source-render and workload-synthesis
+			// crossings. The condition fixes the category; the crossing it
+			// surfaced through does not.
+			category := cerrors.CatalogError
+			if errors.Is(err, ErrRenderNondeterministic) {
+				category = cerrors.TranslationError
+			}
+			return nil, cerrors.Wrap(err, category, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("rendering node %q", nodeID))
 		}
 
 		// Phase B.4 — workload synthesizer dispatch. No-op for a node with no
