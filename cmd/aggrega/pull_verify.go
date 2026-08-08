@@ -197,7 +197,7 @@ func verifySubjectBinding(registry string, axis closure.VerifiableAxis, ref clos
 
 // verifyPluginHostFunctions re-derives each in-closure plugin's host functions
 // from its freshly-cached, content-digest-verified .wasm and verifies the result
-// matches the machine-owned stamp the publish flow wrote into the entity's
+// matches the machine-owned record committed in the entity's
 // spec.runtime.hostFunctions. It is called only on the pull path (write and
 // verify), never on build, which reads the recorded closure and never re-derives
 // (the ahead-of-time boundary).
@@ -205,18 +205,26 @@ func verifySubjectBinding(registry string, axis closure.VerifiableAxis, ref clos
 // The check is defense-in-depth over the content-digest pin: the digest pin
 // guarantees the bytes are the bytes the entity committed to, but it does not
 // catch a binary published by something other than the aggrega publish flow
-// (which would carry no stamp, or one that does not match its own imports) or a
-// publish-side stamping bug. Re-deriving from the verified bytes and comparing to
-// the stamp catches both, and HALTS the pull on any divergence
+// (which would carry no record, or one that does not match its own imports) or a
+// bug in the tooling that records it. Re-deriving from the verified bytes and
+// comparing to the record catches both, and HALTS the pull on any divergence
 // (ErrWasmHostFunctionsStampMismatch).
+//
+// The two sides of the lifecycle answer a divergence the same way and for
+// different reasons. At publish there is an author present and a file to correct,
+// so the refusal names the sync command that re-records the set. At pull there is
+// neither: the registry artifact is immutable to the consumer, and a record that
+// disagrees with the binary it ships with is evidence the pair was not produced
+// by the publish flow at all. Both refuse; only the remedy differs.
 //
 // It iterates the artifact axis (registry-resolved .wasm pins), the same scope
 // the signature verify covers: a host-less / local plugin carries no cached
-// artifact and no registry stamp to re-derive against. The .wasm bytes are read
+// artifact and no registry record to re-derive against. The .wasm bytes are read
 // once from the cache slot the artifact descent populated, keyed by the artifact
 // URI and its content-digest pin. The single derivation primitive
-// (wasm.DeriveHostFunctions) is the same one publish stamped with and the loader
-// registers from, so the three surfaces cannot drift.
+// (wasm.DeriveHostFunctions) is the same one the recording tooling wrote with,
+// publish verified against, and the loader registers from, so no two of those
+// surfaces can drift.
 //
 // diagOut receives a per-plugin verification notice (os.Stderr in production).
 func verifyPluginHostFunctions(ctx context.Context, cl *closure.Closure, loader closure.RecipeLoader, workspaceRoot, cacheDir string, diagOut io.Writer) error {
@@ -274,8 +282,8 @@ func verifyPluginHostFunctions(ctx context.Context, cl *closure.Closure, loader 
 }
 
 // verifyPluginHostFunctionStamp re-derives host functions from a plugin's
-// content-verified .wasm bytes and verifies they match the machine-owned stamp
-// the publish flow wrote into the entity's spec.runtime.hostFunctions, HALTING
+// content-verified .wasm bytes and verifies they match the machine-owned record
+// committed in the entity's spec.runtime.hostFunctions, HALTING
 // on any divergence (ErrWasmHostFunctionsStampMismatch). It is the single
 // per-plugin host-function check: the pinned closure pass and the shared fetch
 // verification home both call it, so no tier carries a second copy of the stamp

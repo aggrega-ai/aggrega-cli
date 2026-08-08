@@ -38,11 +38,11 @@ import (
 // reported as unavailable, and the command does not fail.
 //
 // The host functions are derived directly from the binary's import section via the
-// single derivation primitive (wasm.DeriveHostFunctions), the same one the publish
-// flow stamps with and the loader registers from, so what an author sees is exactly
-// what publish would stamp. The set is labelled as derived-from-binary and
-// not-yet-stamped to distinguish it from the entity-read view inspect shows for a
-// published Plugin.
+// single derivation primitive (wasm.DeriveHostFunctions), the same one the record-
+// sync tooling writes with and the loader registers from, so what an author sees
+// here is exactly the set publish will require the entity to have recorded. The
+// set is labelled as derived-from-binary and not-yet-recorded to distinguish it
+// from the entity-read view inspect shows for a published Plugin.
 func inspectRawPlugin(out io.Writer, wasmPath string) error {
 	wasmBytes, err := os.ReadFile(wasmPath)
 	if err != nil {
@@ -57,8 +57,8 @@ func inspectRawPlugin(out io.Writer, wasmPath string) error {
 
 	// describe() is best-effort here. Inspect on a raw .wasm is a permissive
 	// pre-publish diagnostic view, not a validation gate: its always-available job
-	// is to show the host functions the binary imports — what publish would stamp —
-	// and that works for any reactor .wasm, including one whose describe()
+	// is to show the host functions the binary imports — the set the entity must
+	// record — and that works for any reactor .wasm, including one whose describe()
 	// self-report is absent or not yet wired. So a describe failure skips only the
 	// export-contract block and never aborts; the derived host functions below still
 	// print. The Loud Guardrail for a guest that cannot describe itself is

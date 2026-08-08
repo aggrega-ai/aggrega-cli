@@ -7,12 +7,25 @@
 // ResolvedSource lock-time output shape, and the kind-dispatching
 // framework that routes by source kind.
 //
-// Per-kind transport adapters (helm-oci-chart, helm-https-chart,
-// compose-https-fragment, terraform-module-git, terraform-module-oci)
-// live in sub-packages and register with the dispatcher at import
-// time. Consumers that want the full registered set blank-import
-// the adapter sub-packages alongside this one; the dispatcher then
-// routes any registered kind without further wiring.
+// Four per-kind transport adapters — helm-oci-chart, helm-https-chart,
+// compose-https-fragment and terraform-module-git — live in sub-packages
+// and register with the dispatcher at import time. Consumers that want
+// the full registered set blank-import the adapter sub-packages
+// alongside this one; the dispatcher then routes any registered kind
+// without further wiring. A fifth kind, terraform-module-oci, is
+// reserved in the lockfile's kind enum and has no adapter, so a source
+// declaring it resolves to the unknown-kind refusal rather than being
+// silently accepted.
+//
+// The adapters split on where an archive's trust anchor comes from, and
+// the split is a determinism contract rather than an implementation
+// detail. An adapter that pulls a pre-built archive pins the upstream
+// digest verbatim and re-archives nothing, because upstream's own bytes
+// are the thing being trusted. An adapter that builds the archive itself
+// — from a fetched fragment, or from a cloned working tree — has no
+// upstream digest to inherit, so it writes through the strict archive
+// writer (zero timestamps, fixed ownership and modes, alphabetical
+// order) and two runs over the same input produce identical bytes.
 //
 // The framework is the orchestrator-facing entry point: render
 // engines never call adapters directly. The orchestrator resolves

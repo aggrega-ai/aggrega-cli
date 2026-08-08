@@ -11,16 +11,24 @@ import (
 // DeriveHostFunctions reads the host functions a plugin actually imports from
 // the .wasm bytes themselves, returning the imported custom host-function names
 // in canonical form: sorted and de-duplicated. It is the single derivation
-// primitive — publish stamps the canonical set it returns, pull re-derives and
-// verifies against the stamp, the loader registers the derived set, and the
-// pre-publish tooling surfaces it. The .wasm import section is ground truth for
-// which host functions the guest calls, so no authored list can drift from the
-// binary.
+// primitive: every surface that needs to know what host functions a binary calls
+// routes through it, and there is no parallel derivation anywhere.
 //
-// The canonical ordering makes a re-derive of the same .wasm byte-identical, so
-// a stamp is stable across publishes and a stamp-vs-binary comparison at pull is
-// a plain equality. Registration is order-independent, so sorting does not
-// affect the bound host surface.
+// The .wasm import section is ground truth for which host functions the guest
+// calls, so no authored list can drift from the binary. The record itself is
+// machine-owned rather than authored: `aggrega plugin sync` derives it and writes
+// it into the Plugin entity's spec.runtime.hostFunctions, publish verifies the
+// committed record against the binary and refuses to publish a divergent pair,
+// pull re-derives from the content-verified bytes and refuses a record that does
+// not describe them, and the loader derives once more and registers exactly what
+// it finds. Load never consults the record — the binary is ground truth at the
+// moment of execution, and the record is the consume-side integrity claim about
+// it, not a substitute for reading it.
+//
+// The canonical ordering makes a re-derive of the same .wasm byte-identical, so a
+// record is stable across publishes and a record-vs-binary comparison is a plain
+// set equality rather than a diff. Registration is order-independent, so sorting
+// does not affect the bound host surface.
 //
 // It reuses the load gate's import-section parser and keeps only imports under
 // the Extism custom-host namespace (extism:host/user). Imports under the Extism

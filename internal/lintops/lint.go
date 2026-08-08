@@ -146,6 +146,22 @@ func pluginIsCore(coordinate string) bool {
 // proposed version bump; a mismatch halts. It writes the findings report to
 // DiagOut and the success confirmation to Out, and returns a non-nil error when
 // the run halts.
+//
+// The two modes differ in severity because they differ in consequence. Default
+// mode is an authoring aid over content that has not been published and can
+// still be changed freely, so a finding is advice; nothing about the local tree
+// is a commitment to anyone. Pre-publish mode is the last point before content
+// becomes immutable to every consumer, so the same finding becomes a refusal.
+// The evolution check is confined to pre-publish for a structural reason rather
+// than a policy one: classifying a change requires the previous published bytes
+// to compare against, and in default mode there is no registry to read them from.
+//
+// A first publication has no predecessor and therefore nothing to classify. That
+// case is distinguished from a genuine absence of history rather than assumed:
+// an entity whose published tags are all pre-releases is not a first
+// publication, and treating it as one would wave through a bump the check exists
+// to verify. Where there is genuinely no prior version the bump check is skipped
+// and the run says so, so a silent pass and an unverifiable one never look alike.
 func RunEntity(cfg Config) error {
 	if cfg.DiagOut == nil {
 		cfg.DiagOut = os.Stderr

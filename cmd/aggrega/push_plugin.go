@@ -47,7 +47,16 @@ import (
 // published verbatim; when they diverge the publish HALTS and directs the author
 // to re-record the set with `aggrega plugin sync`, so a published entity always
 // carries the record its binary actually implies and publish never silently
-// rewrites the committed file.
+// rewrites the committed file. Refusing rather than repairing is what keeps the
+// record reviewable: a machine-owned field that publish rewrote would change
+// without ever appearing in a diff anyone read.
+//
+// The .wasm bytes are read once and the same slice is threaded through
+// validation, the content-digest computation, and the push. There is therefore no
+// window in which the verified record, the digest, and the bytes that ship could
+// describe different content — an edit landing on disk after the read cannot
+// reach any of the three. The loader applies the same read-once discipline
+// between import inspection, derivation, and instantiation.
 func pushPlugin(out io.Writer, cfg pushConfig, registry string, wantSign bool, name, version, entityPath string, entityYAML []byte) error {
 	if cfg.PluginPath == "" {
 		return fmt.Errorf("aggrega push: Plugin %s: --plugin <path-to-.wasm> is required to publish a Plugin (publish binds the .wasm into the entity's manifest)", name)

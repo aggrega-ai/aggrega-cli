@@ -20,6 +20,18 @@
 // untars under a single <chartname>/ directory, so the helm engine
 // descends to the directory holding Chart.yaml before loader.Load.
 //
+// Two properties of that gate are easy to misread from the cache
+// layout. The digest fragment embedded in a slot's path is
+// namespacing only and is never what the gate compares: it keeps the
+// same {kind, url, version} re-tagged at different content in
+// distinct slots, and a full SHA-256 over the archive bytes is what
+// actually decides. And because the extracted directory is wiped and
+// regenerated from the archive on every read, a hand-edit made below
+// it is silently discarded on the next build, while a hand-edit to the
+// archive itself is caught and refuses the build — so a local change
+// that appears to work is a change that will not survive, and the two
+// cases fail in opposite ways.
+//
 // The package re-exports the four fetch-error sentinels from pkg/oci
 // so consumers can errors.Is against either name without importing
 // pkg/oci directly.
