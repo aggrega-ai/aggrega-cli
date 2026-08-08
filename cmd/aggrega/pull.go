@@ -307,11 +307,13 @@ func pullRun(cfg pullConfig) error {
 	// top-level aggregate the same way build does, or a catalog-resident
 	// aggregate would build but not pin (lock/build divergence).
 
-	// Workspace-agnostic: pull walks the closure to populate the
-	// lockfile and never emits IR, so the catalog's source-file
-	// accessors are unused. Pass "" for workspace root. The walk skips
-	// the configured cache directory so cached library.yaml files are not
-	// ingested as authored Tier-1 catalog.
+	// pull walks the closure to populate the lockfile and never emits IR, so the
+	// catalog's source-file accessors go unused. The resolved workspace root is
+	// still supplied, because it is the anchor the configured cache directory is
+	// written against: with it, the walk steps over cached library.yaml files
+	// rather than ingesting them as authored Tier-1 catalog no matter which
+	// directory pull is invoked from.
+	workspaceRoot := rw.Root()
 	cacheDir := wsCfg.ResolvedArtifactCacheDir()
 	// Effective first-win catalog search stack: --catalog flag dirs prepended to
 	// the workspace catalog_dirs. Resolved here (not by the caller) so direct pull
@@ -324,7 +326,7 @@ func pullRun(cfg pullConfig) error {
 	// below acquire it; closure-scoped Pass-2 (through the pinned lazy lookup) is
 	// the validation gate, scoped to what the Release reaches.
 	progress.phase(pullPhaseLoadCatalog)
-	cat, skipped, err := catalog.LoadPassOneTolerant("", cacheDir, dirs...)
+	cat, skipped, err := catalog.LoadPassOneTolerant(workspaceRoot, cacheDir, dirs...)
 	if err != nil {
 		return fmt.Errorf("catalog load: %w", err)
 	}
@@ -336,7 +338,6 @@ func pullRun(cfg pullConfig) error {
 	}
 
 	progress.phase(pullPhaseDependencies)
-	workspaceRoot := rw.Root()
 	puller := cfg.puller
 	if puller == nil {
 		// The discovery step consults the local registry index so a version recorded

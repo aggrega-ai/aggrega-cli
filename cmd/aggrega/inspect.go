@@ -286,21 +286,23 @@ func inspectPath(rw *workspaceconfig.ResolvedWorkspace, path string, catalogDirs
 // matched no catalog entity of any kind — the bare identifier is not assumed to
 // be a Component.
 func inspectCatalogEntity(rw *workspaceconfig.ResolvedWorkspace, identifier string, catalogDirs []string, opts inspectOptions) error {
-	// Workspace-agnostic inspection: catalog entity details print without
-	// rendering any per-node IR, so no workspace-relative path normalization is
-	// needed (empty workspace root below). The walk still skips the configured
-	// cache directory so cached library.yaml files are not shown as authored
-	// Tier-1 catalog.
+	// Catalog entity details print without rendering any per-node IR, so no
+	// workspace-relative path normalization is needed. The resolved workspace root
+	// is still supplied, because it is the anchor the configured cache directory is
+	// written against: with it, the walk steps over cached library.yaml files rather
+	// than showing them as authored Tier-1 catalog no matter which directory
+	// inspect is invoked from.
 	rw, err := workspaceOrResolve(rw)
 	if err != nil {
 		return fmt.Errorf("workspaceconfig: %w", err)
 	}
+	wsRoot := rw.Root()
 	wsCfg := rw.Config()
 	cacheDir := wsCfg.ResolvedArtifactCacheDir()
 	// Strict load (inspect must fail on a broken catalog, unlike build's tolerant
 	// Pass-1) over the first-win stack: --catalog dirs prepended to catalog_dirs.
 	dirs := workspaceconfig.ResolveCatalogDirs(catalogDirs, wsCfg, ".")
-	cat, err := catalog.LoadAllWithCacheDir("", cacheDir, dirs...)
+	cat, err := catalog.LoadAllWithCacheDir(wsRoot, cacheDir, dirs...)
 	if err != nil {
 		return fmt.Errorf("catalog load: %w", err)
 	}

@@ -178,18 +178,21 @@ func resolveImplementsFeature(rw *workspaceconfig.ResolvedWorkspace, catalogDirs
 // returns its CatalogLookup. It is the single catalog entry point for the
 // --show-implements path; the as-authored file renderers do not load a catalog
 // for their default render. Like the catalog-name entity path
-// (inspectCatalogEntity), it does no per-node IR rendering, so it passes an
-// empty workspace root — no workspace-relative source-path stamping is needed
-// to resolve an implements reference.
+// (inspectCatalogEntity), it does no per-node IR rendering, so no
+// workspace-relative source-path stamping is needed to resolve an implements
+// reference — but it still supplies the resolved workspace root, which anchors
+// the configured cache directory so the walk steps over cached entities from
+// whichever directory the command is invoked.
 func loadCatalogLookup(rw *workspaceconfig.ResolvedWorkspace, catalogDirs []string) (resolver.CatalogLookup, error) {
 	rw, err := workspaceOrResolve(rw)
 	if err != nil {
 		return resolver.CatalogLookup{}, fmt.Errorf("workspaceconfig: %w", err)
 	}
+	wsRoot := rw.Root()
 	wsCfg := rw.Config()
 	cacheDir := wsCfg.ResolvedArtifactCacheDir()
 	dirs := workspaceconfig.ResolveCatalogDirs(catalogDirs, wsCfg, ".")
-	cat, err := catalog.LoadAllWithCacheDir("", cacheDir, dirs...)
+	cat, err := catalog.LoadAllWithCacheDir(wsRoot, cacheDir, dirs...)
 	if err != nil {
 		return resolver.CatalogLookup{}, fmt.Errorf("catalog load: %w", err)
 	}

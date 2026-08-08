@@ -70,10 +70,19 @@ var envBindings = []envBinding{
 		apply:      func(cfg *Config, raw string) error { return applyBool(raw, &cfg.AutoPull) },
 	},
 	{
+		// Validated here so a value the setting cannot hold fails loudly, naming
+		// the variable, exactly as a config file does — the setting is a
+		// workspace-relative subdirectory on every layer that can carry it.
 		envVar:     "AGGREGA_ARTIFACT_CACHE_DIR",
 		configPath: "artifact_cache_dir",
 		kind:       envKindString,
-		apply:      func(cfg *Config, raw string) error { cfg.ArtifactCacheDir = raw; return nil },
+		apply: func(cfg *Config, raw string) error {
+			if err := validateArtifactCacheDir(raw, "$AGGREGA_ARTIFACT_CACHE_DIR"); err != nil {
+				return err
+			}
+			cfg.ArtifactCacheDir = raw
+			return nil
+		},
 	},
 	{
 		// The workspace.catalog_dirs path drops its workspace. prefix here: the

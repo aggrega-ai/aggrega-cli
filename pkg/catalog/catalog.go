@@ -411,7 +411,7 @@ func (c *Catalog) walkDirInto(dir, cacheClean string, tolerant bool) ([]SkippedE
 			return err
 		}
 		if d.IsDir() {
-			return SkipDirIfArtifactCache(dir, path, cacheClean)
+			return SkipDirIfArtifactCache(c.workspaceRoot, path, cacheClean)
 		}
 		if !strings.HasSuffix(path, ".yaml") && !strings.HasSuffix(path, ".yml") {
 			return nil
@@ -439,33 +439,47 @@ func (c *Catalog) walkDirInto(dir, cacheClean string, tolerant bool) ([]SkippedE
 }
 
 // SkipDirIfArtifactCache returns the walk directive for a directory reached at
-// path while walking walkRoot: fs.SkipDir when that directory IS the workspace's
-// artifact cache, nil otherwise. It is the single decision site for "does a
-// catalog walk step over this directory", so every walk that enumerates authored
-// catalog entities routes through it and the walks cannot drift on the answer.
+// path: fs.SkipDir when that directory IS the workspace's artifact cache, nil
+// otherwise. It is the single decision site for "does a catalog walk step over
+// this directory", so every walk that enumerates authored catalog entities
+// routes through it and the walks cannot drift on the answer.
 //
 // The cache stores resolution artifacts — bytes a registry fetch placed there,
 // addressed by content and vouched for by a lockfile digest. They are not
 // authored catalog entities, and a walk that reads one as though an author had
 // written it takes bytes nothing has verified, on a path the author cannot edit.
 //
-// cacheDir is the cache location relative to the workspace root — the
-// `artifact_cache_dir` setting, `.aggrega/cache` by default. Passing "" disables
-// the check, for a caller with no cache of its own.
+// cacheDir is the `artifact_cache_dir` setting, `.aggrega/cache` by default. It
+// is interpreted relative to workspaceRoot, which is the anchor the setting
+// itself is written against — so the cache resolves to one location no matter
+// which directory a given walk happens to start from. Passing "" for cacheDir
+// disables the check, for a caller with no cache of its own.
 //
-// The comparison anchors on walkRoot rather than on the workspace root, because
-// a catalog directory defaults to the workspace root: in that layout the cache
-// sits directly inside the walked tree, which is precisely when a walk can reach
-// it.
-func SkipDirIfArtifactCache(walkRoot, path, cacheDir string) error {
+// Both sides are resolved to absolute form before they are compared, because a
+// catalog directory is not required to sit at the workspace root: a walk may
+// start above the cache, at it, or in a sibling subtree, and comparing a
+// walk-relative path against a workspace-relative setting would only ever agree
+// in the one layout where those two anchors coincide. An absolute cacheDir is
+// taken as already resolved rather than re-anchored, so it is never silently
+// relocated under the workspace root. A relative workspaceRoot — including the
+// empty string, from a caller that tracks no root — anchors to the process
+// working directory, the same anchor the path side resolves against.
+func SkipDirIfArtifactCache(workspaceRoot, path, cacheDir string) error {
 	if cacheDir == "" {
 		return nil
 	}
-	rel, err := filepath.Rel(walkRoot, path)
+	if !filepath.IsAbs(cacheDir) {
+		cacheDir = filepath.Join(workspaceRoot, cacheDir)
+	}
+	cacheAbs, err := filepath.Abs(cacheDir)
 	if err != nil {
 		return nil
 	}
-	if filepath.Clean(rel) == filepath.Clean(cacheDir) {
+	pathAbs, err := filepath.Abs(path)
+	if err != nil {
+		return nil
+	}
+	if pathAbs == cacheAbs {
 		return fs.SkipDir
 	}
 	return nil

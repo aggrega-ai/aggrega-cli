@@ -936,7 +936,7 @@ func (l *LazyLookup) walkAndIndex(targetKind string, index map[string]string) {
 				return nil
 			}
 			if d.IsDir() {
-				return SkipDirIfArtifactCache(dir, path, l.cacheDir)
+				return SkipDirIfArtifactCache(l.workspaceRoot, path, l.cacheDir)
 			}
 			ext := filepath.Ext(path)
 			if ext != ".yaml" && ext != ".yml" {
@@ -995,7 +995,7 @@ func (l *LazyLookup) buildSchemaLibraries() error {
 				return nil
 			}
 			if d.IsDir() {
-				return SkipDirIfArtifactCache(dir, path, l.cacheDir)
+				return SkipDirIfArtifactCache(l.workspaceRoot, path, l.cacheDir)
 			}
 			ext := filepath.Ext(path)
 			if ext != ".yaml" && ext != ".yml" {
@@ -1094,7 +1094,7 @@ func (l *LazyLookup) buildRecipeIndex() {
 				return nil
 			}
 			if d.IsDir() {
-				return SkipDirIfArtifactCache(dir, path, l.cacheDir)
+				return SkipDirIfArtifactCache(l.workspaceRoot, path, l.cacheDir)
 			}
 			ext := filepath.Ext(path)
 			if ext != ".yaml" && ext != ".yml" {

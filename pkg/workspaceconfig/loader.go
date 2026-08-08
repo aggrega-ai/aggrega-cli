@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
@@ -169,6 +170,9 @@ func load(path string) (Config, error) {
 		// still report something.
 		return Config{}, fmt.Errorf("workspaceconfig: typed unmarshal %s: %w", path, err)
 	}
+	if err := validateArtifactCacheDir(p.ArtifactCacheDir, path); err != nil {
+		return Config{}, err
+	}
 	if err := validateSigningKinds(p.Signing.Kinds, path); err != nil {
 		return Config{}, err
 	}
@@ -178,6 +182,40 @@ func load(path string) (Config, error) {
 		}
 	}
 	return p, nil
+}
+
+// validateArtifactCacheDir rejects an artifact_cache_dir that is absolute, or
+// that names the workspace root itself, wrapping ErrConfigInvalid so the failure
+// is category-consistent with every other config-load rejection. The path
+// argument names the offending layer (a config file, or an environment variable)
+// so the operator sees which one carried the value.
+//
+// The setting is workspace-relative by contract: every consumer joins it to the
+// workspace root, so an absolute value would name a location outside the
+// workspace that the walk anchors cannot reach, and the cache the build reads
+// would silently stop being the cache the walks step over.
+//
+// The workspace root itself fails the same way from the other direction: it puts
+// the cache and the workspace at one location, so a catalog directory sitting at
+// the workspace root — the mainstream layout — is the cache, and the catalog walk
+// steps over the entire tree and ingests nothing while reporting no error. It is
+// also incoherent on its own terms, scattering fetched artifacts across the
+// workspace root. The predicate is filepath.Clean rather than a string compare so
+// every spelling of the workspace root is caught, not just the bare dot.
+//
+// Refusing both at load keeps the one contract every consumer already assumes,
+// and refuses once rather than letting each consumer discover it differently.
+func validateArtifactCacheDir(v, path string) error {
+	if v == "" {
+		return nil
+	}
+	if filepath.IsAbs(v) {
+		return fmt.Errorf("workspaceconfig: %s: artifact_cache_dir %q must be a workspace-relative path, not an absolute one; write it relative to the workspace root (for example `.aggrega/cache`): %w", path, v, ErrConfigInvalid())
+	}
+	if filepath.Clean(v) == "." {
+		return fmt.Errorf("workspaceconfig: %s: artifact_cache_dir %q names the workspace root itself; a catalog directory at the workspace root would then be stepped over as cache, leaving nothing to load — give the cache its own subdirectory (for example `.aggrega/cache`): %w", path, v, ErrConfigInvalid())
+	}
+	return nil
 }
 
 // validateSigningKinds rejects a signing.kinds entry that is neither the "all"

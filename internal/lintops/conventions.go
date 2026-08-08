@@ -44,7 +44,7 @@ func RunCatalogWide(rw *workspaceconfig.ResolvedWorkspace, catalogFlagDirs []str
 		return fmt.Errorf("OPS_ERROR: whole-catalog conventions check needs catalog directories to scan; pass --catalog or set `workspace.catalog_dirs` in .aggrega-config.yaml (or check a specific Release with --release)")
 	}
 	dirs := workspaceconfig.ResolveCatalogDirs(catalogFlagDirs, wsCfg, rw.Root())
-	files, err := walkCatalogEntityFiles(dirs, wsCfg.ResolvedArtifactCacheDir())
+	files, err := walkCatalogEntityFiles(rw.Root(), dirs, wsCfg.ResolvedArtifactCacheDir())
 	if err != nil {
 		return err
 	}
@@ -95,7 +95,7 @@ func RunRelease(rw *workspaceconfig.ResolvedWorkspace, releasePath string, catal
 		return cerr
 	}
 
-	files, err := walkCatalogEntityFiles(dirs, cacheDir)
+	files, err := walkCatalogEntityFiles(wsRoot, dirs, cacheDir)
 	if err != nil {
 		return err
 	}
@@ -206,13 +206,15 @@ func isLintableCatalogKind(kind string) bool {
 // carries non-entity YAML. The result is sorted by path for deterministic
 // iteration and reporting.
 //
-// cacheDir is the workspace's artifact cache location; the walk steps over it,
-// so an entity resolved from a cache slot is never returned as an author-owned
-// file. That is what lets the conventions passes keep their promise to report
-// only against files the author can edit — a catalog directory commonly IS the
-// workspace root, which puts the cache inside the walked tree. Passing ""
-// disables the skip.
-func walkCatalogEntityFiles(dirs []string, cacheDir string) ([]catalogEntityFile, error) {
+// cacheDir is the workspace's artifact cache location, interpreted relative to
+// wsRoot; the walk steps over it, so an entity resolved from a cache slot is
+// never returned as an author-owned file. That is what lets the conventions
+// passes keep their promise to report only against files the author can edit —
+// a catalog directory commonly IS the workspace root, which puts the cache
+// inside the walked tree, but it may equally sit above or beside it, which is
+// why the cache is anchored on wsRoot rather than on each walked directory.
+// Passing "" for cacheDir disables the skip.
+func walkCatalogEntityFiles(wsRoot string, dirs []string, cacheDir string) ([]catalogEntityFile, error) {
 	var files []catalogEntityFile
 	seen := map[string]struct{}{}
 	for _, dir := range dirs {
@@ -226,7 +228,7 @@ func walkCatalogEntityFiles(dirs []string, cacheDir string) ([]catalogEntityFile
 				return nil
 			}
 			if d.IsDir() {
-				return catalog.SkipDirIfArtifactCache(dir, path, cacheDir)
+				return catalog.SkipDirIfArtifactCache(wsRoot, path, cacheDir)
 			}
 			ext := filepath.Ext(path)
 			if ext != ".yaml" && ext != ".yml" {
