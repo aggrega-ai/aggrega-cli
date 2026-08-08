@@ -145,11 +145,11 @@ spec:
 	}
 
 	// In-closure libraries present → passes, exactly as eager.
-	if err := ValidateClosurePillars(cat.Components, cat.componentSources, nil, nil, cat.SchemaLibraries); err != nil {
+	if err := ValidateClosurePillars(cat.Components, cat.componentSources, nil, nil, cat.SchemaLibraries, nil); err != nil {
 		t.Fatalf("closure pillars should pass when the referenced library is in scope: %v", err)
 	}
 	// Same Component, empty library scope → the $ref cannot resolve → red.
-	if err := ValidateClosurePillars(cat.Components, cat.componentSources, nil, nil, map[string]types.SchemaLibrary{}); err == nil {
+	if err := ValidateClosurePillars(cat.Components, cat.componentSources, nil, nil, map[string]types.SchemaLibrary{}, nil); err == nil {
 		t.Fatal("closure pillars must fail when the referenced library is out of scope (in-closure $ref unresolvable)")
 	}
 }

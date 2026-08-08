@@ -49,7 +49,10 @@ func (c *Catalog) ValidateClosureScopedPillars(cl closure.Closure) error {
 			featSrc[key] = c.featureSources[key]
 		}
 	}
-	return ValidateClosurePillars(comps, compSrc, feats, featSrc, c.SchemaLibraries)
+	// No remedy provider: the eager catalog does not retain the artifact cache
+	// location, and its own walk has always stepped over the cache, so a library
+	// missing here was never cache-reachable in the first place.
+	return ValidateClosurePillars(comps, compSrc, feats, featSrc, c.SchemaLibraries, nil)
 }
 
 // ResolveClosureExtends resolves the extends chain for ONLY the Components and

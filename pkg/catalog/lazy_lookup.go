@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 
 	"go.yaml.in/yaml/v3"
@@ -912,7 +913,9 @@ func (l *LazyLookup) buildFeatureIndex() {
 // walkAndIndex walks every catalog directory recursively, header-
 // unmarshals each *.yaml / *.yml file, and records files whose kind
 // matches the target kind into the supplied index. Files whose kind
-// does not match are skipped without indexing.
+// does not match are skipped without indexing. The artifact cache is
+// stepped over (SkipDirIfArtifactCache): a cache slot holds resolution
+// artifacts, which are never authored catalog entities.
 //
 // Precedence across catalog directories is FIRST-WIN: catalogDirs is
 // caller-ordered, so the earliest directory declaring a bare
@@ -933,7 +936,7 @@ func (l *LazyLookup) walkAndIndex(targetKind string, index map[string]string) {
 				return nil
 			}
 			if d.IsDir() {
-				return nil
+				return SkipDirIfArtifactCache(dir, path, l.cacheDir)
 			}
 			ext := filepath.Ext(path)
 			if ext != ".yaml" && ext != ".yml" {
@@ -967,6 +970,12 @@ func (l *LazyLookup) walkAndIndex(targetKind string, index map[string]string) {
 // set for cross-document $ref expansion, so the whole set is resolved as a unit
 // here (not per-URI on demand). Idempotent via schemaLibrariesBuilt.
 //
+// The artifact cache is stepped over (SkipDirIfArtifactCache). A cached library
+// enters through the pinned Tier-2 fold below, where its digest and manifest are
+// checked; reading it here instead would take it on trust, and — because this
+// walk keys on the bare name and the fold below is first-win — would let an
+// unpinned cache slot claim the name before the verified one is ever consulted.
+//
 // Returns the first validation error encountered, in catalog-walk order — the same
 // rejection the eager catalog.Load surfaces, so the lazy backing does not silently
 // accept a library the build rejects (reject-parity). Valid libraries are still
@@ -982,8 +991,11 @@ func (l *LazyLookup) buildSchemaLibraries() error {
 	var firstErr error
 	for _, dir := range l.catalogDirs {
 		_ = filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
-			if err != nil || d.IsDir() {
+			if err != nil {
 				return nil
+			}
+			if d.IsDir() {
+				return SkipDirIfArtifactCache(dir, path, l.cacheDir)
 			}
 			ext := filepath.Ext(path)
 			if ext != ".yaml" && ext != ".yml" {
@@ -1033,6 +1045,13 @@ func (l *LazyLookup) buildSchemaLibraries() error {
 // a broken UNUSED recipe is invisible to a resolution that doesn't need it, where
 // the eager catalog.Load fails the whole walk on the first broken recipe.
 //
+// The artifact cache is stepped over (SkipDirIfArtifactCache). A cached entity
+// enters through the pinned Tier-2 fold below, under digest and manifest
+// verification. Reading it here instead would both bypass that check and — since
+// a walk visits "." before any letter or digit — let the cached copy claim a
+// name ahead of the author's own file, which would then be reported as the
+// shadowed duplicate.
+//
 // Determinism: filepath.WalkDir visits lexically and catalogDirs is caller-
 // ordered, so identity-collision shadowing (first-wins) is stable across runs;
 // the matcher's own sort.Strings over candidate identities does the rest. Parsing
@@ -1071,8 +1090,11 @@ func (l *LazyLookup) buildRecipeIndex() {
 	l.recipeIndexBuilt = true
 	for _, dir := range l.catalogDirs {
 		_ = filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
-			if err != nil || d.IsDir() {
+			if err != nil {
 				return nil
+			}
+			if d.IsDir() {
+				return SkipDirIfArtifactCache(dir, path, l.cacheDir)
 			}
 			ext := filepath.Ext(path)
 			if ext != ".yaml" && ext != ".yml" {
@@ -1691,7 +1713,77 @@ func (l *LazyLookup) ValidateClosureScopedPillars(cl closure.Closure) error {
 			featSrc[feat.Metadata.Name] = l.featureIndex[name]
 		}
 	}
-	return ValidateClosurePillars(comps, compSrc, feats, featSrc, l.schemaLibraries)
+	// A schema reference that resolves to nothing has one cause the author cannot
+	// see from the file it is reported against: the library sits in the artifact
+	// cache with nothing vouching for it, so it was never read. Name it, and name
+	// the command that fixes it.
+	return ValidateClosurePillars(comps, compSrc, feats, featSrc, l.schemaLibraries, func() string {
+		return cachedLibraryRemedy(l.unverifiedCachedSchemaLibraries())
+	})
+}
+
+// unverifiedCachedSchemaLibraries names the SchemaLibraries the artifact cache
+// holds that did not reach the resolved set. Cached content is read only where a
+// lockfile entry vouches for its digest, so a library sitting in the cache and
+// absent from the resolved set is one nothing has verified — the shape a stale
+// or hand-placed cache entry takes.
+//
+// SchemaLibrary is the only kind reported, because this is the set the schema
+// reference surface consumes; naming a kind whose index this call has not built
+// would report it as unverified purely because nothing asked for it yet.
+//
+// The cache is read only once a resolution has already failed, so a build that
+// succeeds never pays for the enumeration. Names come back sorted for a stable
+// diagnostic.
+func (l *LazyLookup) unverifiedCachedSchemaLibraries() []string {
+	if l.cacheDir == "" {
+		return nil
+	}
+	var names []string
+	seen := map[string]bool{}
+	_ = filepath.WalkDir(oci.EntitiesRoot(l.workspaceRoot, l.cacheDir), func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() || d.Name() != "library.yaml" {
+			return nil
+		}
+		data, rerr := os.ReadFile(path)
+		if rerr != nil {
+			return nil
+		}
+		var hdr fileHeader
+		if uerr := yaml.Unmarshal(data, &hdr); uerr != nil {
+			return nil
+		}
+		if hdr.Kind != "SchemaLibrary" || hdr.Metadata.Name == "" {
+			return nil
+		}
+		if _, resolved := l.schemaLibraries[hdr.Metadata.Name]; resolved {
+			return nil
+		}
+		if !seen[hdr.Metadata.Name] {
+			seen[hdr.Metadata.Name] = true
+			names = append(names, fmt.Sprintf("SchemaLibrary %q", hdr.Metadata.Name))
+		}
+		return nil
+	})
+	sort.Strings(names)
+	return names
+}
+
+// cachedLibraryRemedy is the operator-actionable line appended to a schema
+// resolution failure when the artifact cache holds library content that never
+// reached the resolved set. It states the rule in the terms the author works in
+// — the cache holds what a fetch put there, and it counts as catalog content
+// only where a lockfile entry vouches for its digest — then names the command
+// that records such an entry, and the alternative of authoring the library
+// directly. Returns "" when there is nothing to say.
+func cachedLibraryRemedy(names []string) string {
+	if len(names) == 0 {
+		return ""
+	}
+	return "remediation: the artifact cache holds library content that no lockfile entry pins (" +
+		strings.Join(names, ", ") +
+		"); cached content counts as catalog content only where a lockfile entry vouches for its digest, so it was not used. " +
+		"Run `aggrega pull --release <release>` to resolve and record it, or author the library under a catalog directory."
 }
 
 // ClosureLintWarnings returns the schema-pillar-overlap advisories for every

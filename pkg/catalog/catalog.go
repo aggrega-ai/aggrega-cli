@@ -6,6 +6,7 @@ package catalog
 import (
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -410,16 +411,7 @@ func (c *Catalog) walkDirInto(dir, cacheClean string, tolerant bool) ([]SkippedE
 			return err
 		}
 		if d.IsDir() {
-			// Skip the content-addressed cache: it is a resolution
-			// artifact, not authored Tier-1 catalog. Anchored on the
-			// walked root so the `--catalog .` default (cache under the
-			// catalog dir) is caught regardless of workspaceRoot.
-			if cacheClean != "" {
-				if rel, relErr := filepath.Rel(dir, path); relErr == nil && filepath.Clean(rel) == cacheClean {
-					return filepath.SkipDir
-				}
-			}
-			return nil
+			return SkipDirIfArtifactCache(dir, path, cacheClean)
 		}
 		if !strings.HasSuffix(path, ".yaml") && !strings.HasSuffix(path, ".yml") {
 			return nil
@@ -444,6 +436,39 @@ func (c *Catalog) walkDirInto(dir, cacheClean string, tolerant bool) ([]SkippedE
 		return nil, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: dir}, "catalog load")
 	}
 	return skipped, nil
+}
+
+// SkipDirIfArtifactCache returns the walk directive for a directory reached at
+// path while walking walkRoot: fs.SkipDir when that directory IS the workspace's
+// artifact cache, nil otherwise. It is the single decision site for "does a
+// catalog walk step over this directory", so every walk that enumerates authored
+// catalog entities routes through it and the walks cannot drift on the answer.
+//
+// The cache stores resolution artifacts — bytes a registry fetch placed there,
+// addressed by content and vouched for by a lockfile digest. They are not
+// authored catalog entities, and a walk that reads one as though an author had
+// written it takes bytes nothing has verified, on a path the author cannot edit.
+//
+// cacheDir is the cache location relative to the workspace root — the
+// `artifact_cache_dir` setting, `.aggrega/cache` by default. Passing "" disables
+// the check, for a caller with no cache of its own.
+//
+// The comparison anchors on walkRoot rather than on the workspace root, because
+// a catalog directory defaults to the workspace root: in that layout the cache
+// sits directly inside the walked tree, which is precisely when a walk can reach
+// it.
+func SkipDirIfArtifactCache(walkRoot, path, cacheDir string) error {
+	if cacheDir == "" {
+		return nil
+	}
+	rel, err := filepath.Rel(walkRoot, path)
+	if err != nil {
+		return nil
+	}
+	if filepath.Clean(rel) == filepath.Clean(cacheDir) {
+		return fs.SkipDir
+	}
+	return nil
 }
 
 // mergeFrom folds one already-indexed directory (perDir) into the accumulated
@@ -713,10 +738,19 @@ func (c *Catalog) validateSchemaPillarsPass() error {
 // CatalogError. Returns nil when every supplied entity validates. The advisory
 // pillar-overlap lint is intentionally NOT run here — it is a non-fatal authoring
 // smell the build collects separately, not part of the reject gate.
+//
+// remedy, when non-nil, supplies an operator-actionable line appended to the
+// aggregate message. It is a function rather than a string because it is called
+// ONLY when there is already an error to attach it to: a caller that has to read
+// the filesystem to work out what to suggest must not pay for that on a clean
+// validation. It belongs in the message rather than in a wrapping error because
+// the aggregate message is what the diagnostic surface renders. Pass nil for a
+// caller with nothing to suggest.
 func ValidateClosurePillars(
 	components map[string]types.Component, componentSources map[string]string,
 	features map[string]types.Feature, featureSources map[string]string,
 	libs map[string]types.SchemaLibrary,
+	remedy func() string,
 ) error {
 	var validationErrors []error
 
@@ -755,11 +789,20 @@ func ValidateClosurePillars(
 	for _, e := range validationErrors {
 		parts = append(parts, e.Error())
 	}
+	message := fmt.Sprintf("closure validation: %d schema validation error(s):\n  - %s",
+		len(validationErrors), strings.Join(parts, "\n  - "))
+	// The remedy is consulted only now, on the failing path, so a caller that
+	// has to read the filesystem to produce one never pays for it on a clean
+	// validation.
+	if remedy != nil {
+		if r := remedy(); r != "" {
+			message += "\n  " + r
+		}
+	}
 	return cerrors.New(
 		cerrors.CatalogError,
 		cerrors.SourceLocation{},
-		fmt.Sprintf("closure validation: %d schema validation error(s):\n  - %s",
-			len(validationErrors), strings.Join(parts, "\n  - ")),
+		message,
 		nil,
 		nil,
 	)
