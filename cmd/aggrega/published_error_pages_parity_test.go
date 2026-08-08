@@ -41,6 +41,11 @@ var goErrorIdentifier = regexp.MustCompile(`\bErr[A-Z][A-Za-z0-9]*`)
 // declaration, an alias for one declared in another package, and a typed constant,
 // whose type name sits between the identifier and the assignment.
 //
+// The type token is captured rather than merely skipped, because it is the only
+// thing in the pattern that tells the forms apart, and the calibration below
+// asserts one needle of each form. Skipping it would leave both needles matching
+// under either shape.
+//
 // The optional type token is separated by spaces or tabs rather than by arbitrary
 // whitespace, so it cannot span a line ending. A separator that reached across one
 // would let a match beginning in the right-hand side of a declaration run on and
@@ -56,15 +61,35 @@ var goErrorIdentifier = regexp.MustCompile(`\bErr[A-Z][A-Za-z0-9]*`)
 // would replace two independent readings of one population with a single point of
 // blindness, so a criterion change must be carried to both sites by hand — which is
 // the cost this duplication is knowingly paying.
-var declaredIdentifier = regexp.MustCompile(`\b(Err[A-Z][A-Za-z0-9]*)(?:[ \t]+[\w.]+)?\s*(=|\berror\b)`)
+var declaredIdentifier = regexp.MustCompile(`\b(Err[A-Z][A-Za-z0-9]*)(?:[ \t]+([\w.]+))?\s*(=|\berror\b)`)
+
+// declarationForm records which declaration shapes an identifier was seen in.
+//
+// Presence alone is not enough for the calibration. The pattern above matches
+// both shapes, so an identifier that changed from one to the other would go on
+// matching and a presence check would go on passing — leaving the leg of the
+// pattern that needle was chosen to exercise unwatched, with nothing going red.
+// Recording the shape is what makes that change fail loudly instead.
+type declarationForm struct {
+	// untyped is `ErrX = …`: no type token between the identifier and the
+	// assignment. It is the shape a variable initialised at its declaration
+	// takes, and the shape an alias for another package's identity takes.
+	untyped bool
+	// typed is `ErrX Code = …`: a type token sits between the identifier and
+	// the assignment, which is how a typed constant is declared.
+	typed bool
+}
+
+// declared reports whether the identifier was seen in any declaration form.
+func (f declarationForm) declared() bool { return f.untyped || f.typed }
 
 // goSourceCorpus returns every non-test Go file's text in the module, joined, and
 // the set of exported error identifiers the module declares.
-func goSourceCorpus(t *testing.T) (string, map[string]bool) {
+func goSourceCorpus(t *testing.T) (string, map[string]declarationForm) {
 	t.Helper()
 	root := moduleRootForParity(t)
 	var b strings.Builder
-	declared := map[string]bool{}
+	declared := map[string]declarationForm{}
 	err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
@@ -86,7 +111,13 @@ func goSourceCorpus(t *testing.T) (string, map[string]bool) {
 		b.Write(data)
 		b.WriteByte('\n')
 		for _, m := range declaredIdentifier.FindAllStringSubmatch(string(data), -1) {
-			declared[m[1]] = true
+			form := declared[m[1]]
+			if m[2] == "" {
+				form.untyped = true
+			} else {
+				form.typed = true
+			}
+			declared[m[1]] = form
 		}
 		return nil
 	})
@@ -113,12 +144,25 @@ func goSourceCorpus(t *testing.T) (string, map[string]bool) {
 	// match either identity, and a string constant has nothing to unwrap. That is a
 	// property of what the identity has to do rather than a stage it is passing
 	// through, so this needle is stable and does not need re-pointing.
-	if !declared["ErrCacheMetadataInvalid"] {
-		t.Fatal("declaration scan did not see ErrCacheMetadataInvalid, declared as an initialised variable; " +
-			"the scan has stopped matching that declaration form — the scan is broken, not the pages")
+	//
+	// Each needle asserts the declaration SHAPE, not merely that the identifier is
+	// declared. Presence would be satisfied by either shape, so an identity that
+	// changed from one to the other would keep the needle passing while the leg of
+	// the pattern it was chosen to represent stopped being exercised — the silent
+	// degradation these two assertions exist to prevent. Asserting the shape makes
+	// that change fail here, beside the reason, rather than nowhere.
+	if !declared["ErrCacheMetadataInvalid"].untyped {
+		t.Fatal("declaration scan did not see ErrCacheMetadataInvalid declared with no type token between " +
+			"the identifier and the assignment, which is the form an initialised variable takes. " +
+			"Either the scan has stopped matching that form, or the identity became a typed constant — " +
+			"which it cannot be, because it wraps another sentinel so a caller may match either, and a " +
+			"string constant has nothing to unwrap. Whichever it is, the variable-form leg of this " +
+			"calibration is no longer exercised: fix the scan, or point this needle at another identity " +
+			"declared that way.")
 	}
-	if !declared["ErrUnknownEntityKind"] {
-		t.Fatal("declaration scan did not see ErrUnknownEntityKind, declared as a typed constant; " +
+	if !declared["ErrUnknownEntityKind"].typed {
+		t.Fatal("declaration scan did not see ErrUnknownEntityKind declared with a type token between the " +
+			"identifier and the assignment, which is the form a typed constant takes; " +
 			"the scan has stopped matching that declaration form — the scan is broken, not the pages")
 	}
 	return b.String(), declared
@@ -216,7 +260,7 @@ func TestPublishedErrorPages_EveryNamedSentinelIsDeclared(t *testing.T) {
 				continue
 			}
 			seen++
-			if !declared[id] {
+			if !declared[id].declared() {
 				t.Errorf("%s names the sentinel %s, which no Go source declares.\n"+
 					"Either the sentinel was renamed or removed and the page did not follow, or the page "+
 					"advertises a match an integration author cannot compile.", name, id)

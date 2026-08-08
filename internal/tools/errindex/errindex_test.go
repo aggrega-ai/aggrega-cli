@@ -4,6 +4,8 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -184,5 +186,177 @@ func TestCodeSpan_FencesAndPads(t *testing.T) {
 		if got := codeSpan(tc.in); got != tc.want {
 			t.Errorf("codeSpan(%q) = %q, want %q", tc.in, got, tc.want)
 		}
+	}
+}
+
+// haltsPageIn writes a halting-conditions page carrying body into a temporary
+// documentation tree and returns the tree root.
+func haltsPageIn(t *testing.T, body string) string {
+	t.Helper()
+	root := t.TempDir()
+	dir := filepath.Join(root, filepath.Dir(haltsRelPath))
+	if err := os.MkdirAll(dir, 0o750); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, haltsRelPath), []byte(body), 0o600); err != nil {
+		t.Fatalf("write page: %v", err)
+	}
+	return root
+}
+
+func fixtureIdentities(t *testing.T) []Identity {
+	t.Helper()
+	ids, err := scan("testdata/module", "example.test/fixture")
+	if err != nil {
+		t.Fatalf("scan: %v", err)
+	}
+	return ids
+}
+
+func TestResolveCoverage_CreditsAReExportToTheIdentityItForwardsTo(t *testing.T) {
+	t.Parallel()
+	// The anchor names the re-export, which is the name a caller was told to
+	// match. Crediting it to the origin is what keeps one condition from being
+	// counted as covered under one name and gapped under the other.
+	root := haltsPageIn(t, `# Halts
+
+### Something went wrong
+
+<!-- covers: pkg/other.ErrPlain -->
+
+Prose.
+`)
+	covered, err := resolveCoverage(fixtureIdentities(t), root)
+	if err != nil {
+		t.Fatalf("resolveCoverage: %v", err)
+	}
+	if !covered["pkg/thing.ErrPlain"] {
+		t.Errorf("naming the re-export did not credit its origin: %v", covered)
+	}
+	if covered["pkg/other.ErrPlain"] {
+		t.Errorf("the re-export was credited as an identity of its own: %v", covered)
+	}
+}
+
+func TestResolveCoverage_RefusesADeclarationThatResolvesToNothing(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name, anchor, want string
+	}{
+		{
+			name:   "no such identity",
+			anchor: "pkg/thing.ErrAbsent",
+			want:   "no such identity is declared: pkg/thing.ErrAbsent",
+		},
+		{
+			// A bare name names no single identity in a module that declares
+			// the same name in two packages, so it is refused rather than
+			// guessed at — a guess would silently claim the wrong one.
+			name:   "unqualified name",
+			anchor: "ErrPlain",
+			want:   "not a qualified package.Name handle: ErrPlain",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			root := haltsPageIn(t, "# Halts\n\n### Entry\n\n<!-- covers: "+tc.anchor+" -->\n")
+			_, err := resolveCoverage(fixtureIdentities(t), root)
+			if err == nil {
+				t.Fatalf("resolveCoverage accepted %q", tc.anchor)
+			}
+			if !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("error does not name the defect: %v", err)
+			}
+		})
+	}
+}
+
+func TestResolveCoverage_RefusesAPageWithNoAnchors(t *testing.T) {
+	t.Parallel()
+	// Zero anchors and a page that covers nothing are indistinguishable in the
+	// output, so the moved-marker case is reported as the instrument failure it
+	// is rather than served as a full set of gaps.
+	root := haltsPageIn(t, "# Halts\n\n### Entry\n\nProse with no anchor at all.\n")
+	if _, err := resolveCoverage(fixtureIdentities(t), root); err == nil {
+		t.Fatal("resolveCoverage accepted a page carrying no anchor")
+	} else if !strings.Contains(err.Error(), "the anchor form or the page layout moved") {
+		t.Errorf("error does not report an instrument failure: %v", err)
+	}
+}
+
+func TestReportGaps_NamesEveryUncoveredOriginAndNoReExport(t *testing.T) {
+	t.Parallel()
+	root := haltsPageIn(t, "# Halts\n\n### Entry\n\n<!-- covers: pkg/other.ErrPlain, pkg/other.ErrOwn -->\n")
+	ids := fixtureIdentities(t)
+	covered, err := resolveCoverage(ids, root)
+	if err != nil {
+		t.Fatalf("resolveCoverage: %v", err)
+	}
+	var b strings.Builder
+	reportGaps(&b, ids, covered, true)
+	got := b.String()
+
+	// Four origins; two are covered, so two remain — and the count in the
+	// header is derived from the same walk rather than written down.
+	if !strings.Contains(got, "WARN: 2 of 4 declared halting conditions have no entry") {
+		t.Errorf("header does not report the derived counts:\n%s", got)
+	}
+	for _, want := range []string{"pkg/thing.ErrQuoted", "internal/hidden.ErrHidden"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("gap report omits %s:\n%s", want, got)
+		}
+	}
+	// A re-export is the same identity under a second name. Counting it would
+	// report one condition as two gaps against a population that never grew.
+	if strings.Contains(got, "pkg/wrap.ErrHidden") {
+		t.Errorf("gap report names a re-export:\n%s", got)
+	}
+	// The message is printed beside the handle so the report can be acted on
+	// without looking each identity up.
+	if !strings.Contains(got, "pkg/thing.ErrQuoted: the `uses:` block is malformed") {
+		t.Errorf("gap report omits the registered message:\n%s", got)
+	}
+
+	// The summary form is what the routine build prints, so it carries the same
+	// counts and names no identity — the enumeration is what -gaps adds.
+	var summary strings.Builder
+	reportGaps(&summary, ids, covered, false)
+	s := summary.String()
+	if !strings.Contains(s, "WARN: 2 of 4 declared halting conditions have no entry") {
+		t.Errorf("summary does not report the derived counts:\n%s", s)
+	}
+	if strings.Contains(s, "pkg/thing.ErrQuoted") {
+		t.Errorf("summary enumerates identities without -gaps:\n%s", s)
+	}
+	if !strings.Contains(s, "-gaps") {
+		t.Errorf("summary does not say how to see the list:\n%s", s)
+	}
+}
+
+func TestResolveCoverage_LiveModuleAnchorsAllResolve(t *testing.T) {
+	t.Parallel()
+	// The fixture proves the rules; this proves the published page's own
+	// declarations still name identities that exist. A rename that left an
+	// anchor behind would otherwise be found only by the drift gate.
+	modulePath, err := modulePathOf("../../..")
+	if err != nil {
+		t.Fatalf("module path: %v", err)
+	}
+	ids, err := scan("../../..", modulePath)
+	if err != nil {
+		t.Fatalf("scan module: %v", err)
+	}
+	docsRoot := "../../../../aggrega-docs"
+	if _, serr := os.Stat(filepath.Join(docsRoot, haltsRelPath)); serr != nil {
+		t.Skipf("published pages not present (standalone checkout): %v", serr)
+	}
+	covered, err := resolveCoverage(ids, docsRoot)
+	if err != nil {
+		t.Fatalf("the published page declares a correspondence that resolves to nothing: %v", err)
+	}
+	// Calibration: the assertion above reads as "nothing is wrong" over an
+	// empty set, so the set is proven non-empty against a known entry first.
+	if !covered["pkg/resolver.ErrParameterMissing"] {
+		t.Fatal("no coverage extracted for a known anchored identity; the extraction is broken, not the page")
 	}
 }

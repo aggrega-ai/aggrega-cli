@@ -12,11 +12,18 @@
 // Run it as:
 //
 //	go run ./internal/tools/errindex -out ../aggrega-docs
+//	go run ./internal/tools/errindex -out ../aggrega-docs -gaps
 //	go run ./internal/tools/errindex -index
 //
 // The module's `make docs` target invokes the first form. It writes only inside
 // the region its markers delimit; every other byte of the page is curated prose
 // and survives untouched.
+//
+// Every -out run also reports how many declared halting conditions no entry on
+// the halting-conditions page names. That count is a warn tier: it never changes
+// the exit code, because not every condition needs a user-facing entry. Add
+// -gaps to name them, which is the form to reach for when the count has moved
+// and you want to know what moved it.
 package main
 
 import (
@@ -39,6 +46,7 @@ func main() {
 	root := flag.String("root", ".", "path to the module root to read declarations from")
 	out := flag.String("out", "", "path to the documentation tree whose sentinel reference to refresh")
 	index := flag.Bool("index", false, "print the identity index as tab-separated records and write nothing")
+	gaps := flag.Bool("gaps", false, "name every declared halting condition no entry on the halting-conditions page covers")
 	flag.Parse()
 
 	if (*out == "") == !*index {
@@ -71,6 +79,17 @@ func main() {
 	if err != nil {
 		fail(err)
 	}
+
+	// The coverage declarations are read and checked before anything is
+	// written, so a correspondence that resolves to nothing never leaves a
+	// half-refreshed tree behind it. The gap report itself is printed after the
+	// write, where it reads as a note about the tree rather than as a reason
+	// the write failed.
+	covered, err := resolveCoverage(ids, *out)
+	if err != nil {
+		fail(err)
+	}
+
 	page := filepath.Join(*out, pageRelPath)
 	content, err := os.ReadFile(page)
 	if err != nil {
@@ -82,9 +101,14 @@ func main() {
 	}
 	if written {
 		fmt.Println("updated", page)
-		return
+	} else {
+		fmt.Println("unchanged", page)
 	}
-	fmt.Println("unchanged", page)
+
+	// The gap tier reports and never fails, so it goes to stderr and leaves the
+	// exit code alone: a condition with no user-facing entry is a note for
+	// whoever maintains that page, not a reason to refuse the build.
+	reportGaps(os.Stderr, ids, covered, *gaps)
 }
 
 func fail(err error) {
