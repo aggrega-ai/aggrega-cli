@@ -3,7 +3,7 @@
 
 package rendercore
 
-import "errors"
+import cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 
 // ErrPipelinePatchTargetNotStructured marks an emitted file that a pipeline
 // PATCH step addresses but which is not parseable structured YAML/JSON, so it
@@ -12,4 +12,8 @@ import "errors"
 // skipping the operation. An emitted file that is only ever an EMIT side
 // effect — never a PATCH target — is not segmented, so a non-structured file
 // is an error only when a step tries to address a document inside it.
-var ErrPipelinePatchTargetNotStructured = errors.New("pipeline PATCH target is not parseable structured YAML/JSON")
+const ErrPipelinePatchTargetNotStructured cerrors.Code = "compiler-rendercore/pipeline-patch-target-not-structured"
+
+var _ = cerrors.Register(ErrPipelinePatchTargetNotStructured, cerrors.Meta{
+	Message: "pipeline PATCH target is not parseable structured YAML/JSON",
+})

@@ -4,7 +4,6 @@
 package rendercore
 
 import (
-	"errors"
 	"strings"
 
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
@@ -30,7 +29,11 @@ const (
 // other form halts loudly rather than silently dropping the per-replica
 // semantics. Surfaced wrapped in a CompilerError via cerrors so errors.Is
 // matches.
-var ErrPersistentTemplateRequiresStatefulForm = errors.New("persistentTemplate volume requires form: stateful")
+const ErrPersistentTemplateRequiresStatefulForm cerrors.Code = "compiler-rendercore/persistent-template-requires-stateful-form"
+
+var _ = cerrors.Register(ErrPersistentTemplateRequiresStatefulForm, cerrors.Meta{
+	Message: "persistentTemplate volume requires form: stateful",
+})
 
 // ErrScheduledFormRequiresSchedule is the companion constraint that a
 // form: scheduled workload must carry a schedule: a scheduled workload maps to
@@ -38,35 +41,55 @@ var ErrPersistentTemplateRequiresStatefulForm = errors.New("persistentTemplate v
 // coherent recurrence to emit. Declaring form: scheduled with no schedule halts
 // loudly rather than invent one. Surfaced wrapped in a CompilerError via cerrors
 // so errors.Is matches.
-var ErrScheduledFormRequiresSchedule = errors.New("form: scheduled requires a schedule")
+const ErrScheduledFormRequiresSchedule cerrors.Code = "compiler-rendercore/scheduled-form-requires-schedule"
+
+var _ = cerrors.Register(ErrScheduledFormRequiresSchedule, cerrors.Meta{
+	Message: "form: scheduled requires a schedule",
+})
 
 // ErrScheduleRequiresScheduledForm is the reverse companion constraint: a
 // schedule is only meaningful on a form: scheduled workload. A schedule set on
 // any other form has no recurring resource to attach to, so it halts loudly
 // rather than silently ignore the schedule. Surfaced wrapped in a CompilerError
 // via cerrors so errors.Is matches.
-var ErrScheduleRequiresScheduledForm = errors.New("schedule requires form: scheduled")
+const ErrScheduleRequiresScheduledForm cerrors.Code = "compiler-rendercore/schedule-requires-scheduled-form"
+
+var _ = cerrors.Register(ErrScheduleRequiresScheduledForm, cerrors.Meta{
+	Message: "schedule requires form: scheduled",
+})
 
 // ErrReferenceFormRequiresEndpoint is the companion constraint that a
 // form: reference workload must declare an endpoint: a reference is an external
 // endpoint pointer with no compute, and without an endpoint there is nothing to
 // point at. Surfaced wrapped in a CompilerError via cerrors so errors.Is
 // matches.
-var ErrReferenceFormRequiresEndpoint = errors.New("form: reference requires an endpoint")
+const ErrReferenceFormRequiresEndpoint cerrors.Code = "compiler-rendercore/reference-form-requires-endpoint"
+
+var _ = cerrors.Register(ErrReferenceFormRequiresEndpoint, cerrors.Meta{
+	Message: "form: reference requires an endpoint",
+})
 
 // ErrEndpointRequiresReferenceForm is the reverse companion constraint: an
 // endpoint (and its companion port/credential) is only meaningful on a
 // form: reference workload. Declaring it on any other form halts loudly rather
 // than silently ignore it. Surfaced wrapped in a CompilerError via cerrors so
 // errors.Is matches.
-var ErrEndpointRequiresReferenceForm = errors.New("endpoint requires form: reference")
+const ErrEndpointRequiresReferenceForm cerrors.Code = "compiler-rendercore/endpoint-requires-reference-form"
+
+var _ = cerrors.Register(ErrEndpointRequiresReferenceForm, cerrors.Meta{
+	Message: "endpoint requires form: reference",
+})
 
 // ErrInvalidCronSchedule is emitted when a schedule fails the structural cron
 // check: it is neither one of the accepted macros (@hourly, @daily, @weekly,
 // @monthly, @yearly) nor a standard 5-field crontab expression using only the
 // legal characters. Surfaced wrapped in a CompilerError via cerrors so
 // errors.Is matches.
-var ErrInvalidCronSchedule = errors.New("schedule is not a valid cron expression")
+const ErrInvalidCronSchedule cerrors.Code = "compiler-rendercore/invalid-cron-schedule"
+
+var _ = cerrors.Register(ErrInvalidCronSchedule, cerrors.Meta{
+	Message: "schedule is not a valid cron expression",
+})
 
 // NormalizeWorkloadForm maps an empty form to the stateless default and
 // returns every other value unchanged. It is the single source of the

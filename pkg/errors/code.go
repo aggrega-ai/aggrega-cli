@@ -11,11 +11,15 @@ import (
 // Code is the identity of a halting condition, declared as a constant and
 // carrying its message in one registration beside it:
 //
-//	const ErrPathCollision Code = "renderer/path-collision"
+//	const ErrBudgetExceeded Code = "example/budget-exceeded"
 //
-//	var _ = Register(ErrPathCollision, Meta{
-//		Message: "two artifacts render to the same output path",
+//	var _ = Register(ErrBudgetExceeded, Meta{
+//		Message: "the declared budget was exceeded",
 //	})
+//
+// The identity above is illustrative and names no package in this module,
+// deliberately. An example naming a real declaration is a second copy of that
+// declaration's value, and the two drift the moment either is edited.
 //
 // Code implements error on a value receiver, so a constant satisfies the error
 // interface directly. It is both what a caller raises and what a caller matches
@@ -98,11 +102,15 @@ var (
 // that the call can stand as a package-level declaration beside the identity it
 // describes:
 //
-//	const ErrPathCollision Code = "renderer/path-collision"
+//	const ErrBudgetExceeded Code = "example/budget-exceeded"
 //
-//	var _ = Register(ErrPathCollision, Meta{
-//		Message: "two artifacts render to the same output path",
+//	var _ = Register(ErrBudgetExceeded, Meta{
+//		Message: "the declared budget was exceeded",
 //	})
+//
+// The identity above is illustrative and names no package in this module,
+// deliberately. An example naming a real declaration is a second copy of that
+// declaration's value, and the two drift the moment either is edited.
 //
 // The return type is deliberately empty rather than the code itself. Returning
 // the code would invite binding an identity to the call's result, which makes

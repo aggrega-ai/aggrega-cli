@@ -11,13 +11,17 @@
 // version-stripped) so a cycle cannot evade detection by inconsistent spelling.
 package refcycle
 
-import "errors"
+import cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 
 // ErrCycle is the shared sentinel for a detected reference-expansion cycle.
 // Callers wrap it with surface-specific context (the offending chain, the
 // `$ref` / `$import` keyword, source location); consumers match the failure
 // with errors.Is(err, ErrCycle).
-var ErrCycle = errors.New("circular reference expansion")
+const ErrCycle cerrors.Code = "refcycle/cycle"
+
+var _ = cerrors.Register(ErrCycle, cerrors.Meta{
+	Message: "circular reference expansion",
+})
 
 // Check reports whether key is already in flight within stack. When it is,
 // cyclic is true and chain is the full cycle path — stack followed by the

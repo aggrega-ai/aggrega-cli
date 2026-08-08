@@ -116,8 +116,10 @@ var (
 	unwrapAlias       = rendercore.UnwrapAlias
 	mappingValueByKey = rendercore.MappingValueByKey
 	nodeKindName      = rendercore.NodeKindName
-
-	// ErrPipelinePatchTargetNotStructured keeps its identity for errors.Is
-	// while its definition lives with the segmenter in rendercore.
-	ErrPipelinePatchTargetNotStructured = rendercore.ErrPipelinePatchTargetNotStructured
 )
+
+// ErrPipelinePatchTargetNotStructured keeps its identity for errors.Is
+// while its definition lives with the segmenter in rendercore. It restates no
+// message: the message is registered once, beside the canonical declaration,
+// and a second registration of one identity is refused.
+const ErrPipelinePatchTargetNotStructured = rendercore.ErrPipelinePatchTargetNotStructured

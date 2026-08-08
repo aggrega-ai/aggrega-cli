@@ -3,12 +3,16 @@
 
 package helm
 
-import "errors"
+import cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 
 // ErrEmptySource is emitted when a Recipe has `source: ""` (empty string).
 // Nil/absent source = sourceless (generative) mode; non-empty string = sourced.
 // Empty string is never valid.
-var ErrEmptySource = errors.New("recipe source is empty string; use nil for sourceless mode or a non-empty path for sourced mode")
+const ErrEmptySource cerrors.Code = "compiler-renderer-helm/empty-source"
+
+var _ = cerrors.Register(ErrEmptySource, cerrors.Meta{
+	Message: "recipe source is empty string; use nil for sourceless mode or a non-empty path for sourced mode",
+})
 
 // ErrRenderedFileCollision is emitted when two distinct rendered resources
 // derive the same output filename with differing content. Output filenames are
@@ -18,7 +22,11 @@ var ErrEmptySource = errors.New("recipe source is empty string; use nil for sour
 // halts instead, naming both source templates and the shared output path so the
 // author can give the resources distinct identities. Byte-identical duplicates
 // are not a collision — one copy is kept.
-var ErrRenderedFileCollision = errors.New("two rendered resources derive the same output filename with differing content")
+const ErrRenderedFileCollision cerrors.Code = "compiler-renderer-helm/rendered-file-collision"
+
+var _ = cerrors.Register(ErrRenderedFileCollision, cerrors.Meta{
+	Message: "two rendered resources derive the same output filename with differing content",
+})
 
 // StatefulSet governing-Service halt sentinels. A synthesized StatefulSet (any
 // Workload declaring a persistentTemplate volume) requires exactly one headless
@@ -26,14 +34,20 @@ var ErrRenderedFileCollision = errors.New("two rendered resources derive the sam
 // rendered name. Zero or several headless Services halt loudly rather than emit
 // a StatefulSet K8s would reject. Surfaced wrapped in a CompilerError via
 // cerrors so errors.Is matches.
-var (
-	// ErrStatefulSetNoHeadlessService is emitted when a Workload synthesizing a
-	// StatefulSet declares no headless Service to govern it (K8s requires
-	// spec.serviceName).
-	ErrStatefulSetNoHeadlessService = errors.New("synthesized StatefulSet has no headless governing Service")
+// ErrStatefulSetNoHeadlessService is emitted when a Workload synthesizing a
+// StatefulSet declares no headless Service to govern it (K8s requires
+// spec.serviceName).
+const ErrStatefulSetNoHeadlessService cerrors.Code = "compiler-renderer-helm/stateful-set-no-headless-service"
 
-	// ErrStatefulSetAmbiguousHeadlessService is emitted when a Workload
-	// synthesizing a StatefulSet declares more than one headless Service, so the
-	// governing Service is ambiguous.
-	ErrStatefulSetAmbiguousHeadlessService = errors.New("synthesized StatefulSet has more than one headless Service")
-)
+var _ = cerrors.Register(ErrStatefulSetNoHeadlessService, cerrors.Meta{
+	Message: "synthesized StatefulSet has no headless governing Service",
+})
+
+// ErrStatefulSetAmbiguousHeadlessService is emitted when a Workload
+// synthesizing a StatefulSet declares more than one headless Service, so the
+// governing Service is ambiguous.
+const ErrStatefulSetAmbiguousHeadlessService cerrors.Code = "compiler-renderer-helm/stateful-set-ambiguous-headless-service"
+
+var _ = cerrors.Register(ErrStatefulSetAmbiguousHeadlessService, cerrors.Meta{
+	Message: "synthesized StatefulSet has more than one headless Service",
+})
