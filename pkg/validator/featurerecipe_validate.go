@@ -4,7 +4,6 @@
 package validator
 
 import (
-	"errors"
 	"fmt"
 	"strings"
 
@@ -27,17 +26,24 @@ import (
 // bound to a provider with no workload-synthesis capability halts loudly
 // there), not at load. Cross-input-kind filename collision is enforced at
 // emission time by Phase B.5.
-var (
-	// ErrFeatureRecipeRule1: valuesMapping requires source.
-	ErrFeatureRecipeRule1 = errors.New("featurerecipe rule 1: valuesMapping requires source")
 
-	// ErrFeatureRecipeEvalProviderConstraint: the eval provider executes
-	// formatting in-memory and has no rendering surface; declaring
-	// source/valuesMapping/workload/artifacts on an eval FeatureRecipe is
-	// rejected. injectMapping remains allowed (it is a Phase-A delivery
-	// transform, not a rendering surface).
-	ErrFeatureRecipeEvalProviderConstraint = errors.New("featurerecipe eval-provider constraint: render input-kind fields are forbidden when provider is eval")
-)
+// ErrFeatureRecipeRule1: valuesMapping requires source.
+const ErrFeatureRecipeRule1 cerrors.Code = "validator/feature-recipe-rule-1"
+
+var _ = cerrors.Register(ErrFeatureRecipeRule1, cerrors.Meta{
+	Message: "featurerecipe rule 1: valuesMapping requires source",
+})
+
+// ErrFeatureRecipeEvalProviderConstraint: the eval provider executes
+// formatting in-memory and has no rendering surface; declaring
+// source/valuesMapping/workload/artifacts on an eval FeatureRecipe is
+// rejected. injectMapping remains allowed (it is a Phase-A delivery
+// transform, not a rendering surface).
+const ErrFeatureRecipeEvalProviderConstraint cerrors.Code = "validator/feature-recipe-eval-provider-constraint"
+
+var _ = cerrors.Register(ErrFeatureRecipeEvalProviderConstraint, cerrors.Meta{
+	Message: "featurerecipe eval-provider constraint: render input-kind fields are forbidden when provider is eval",
+})
 
 // FeatureRecipeValidationError carries the structured detail for a load-time
 // FeatureRecipe validation failure. The Error() output is the

@@ -4,12 +4,12 @@
 package resolver
 
 import (
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"go.yaml.in/yaml/v3"
 )
@@ -18,12 +18,20 @@ import (
 // Aggregate (or two Manifest) entities that share a metadata.name — the
 // same-directory analogue of the catalog's ErrDuplicateRecipeIdentity. The
 // message names the directory to read distinctly from the catalog-tier duplicate.
-var ErrDuplicateTriadIdentity = errors.New("duplicate Aggregate/Manifest identity (metadata.name) in the Release directory")
+const ErrDuplicateTriadIdentity cerrors.Code = "resolver/duplicate-triad-identity"
+
+var _ = cerrors.Register(ErrDuplicateTriadIdentity, cerrors.Meta{
+	Message: "duplicate Aggregate/Manifest identity (metadata.name) in the Release directory",
+})
 
 // ErrTriadRefUnresolvable fires when a bare-identity aggregate:/manifest:
 // reference resolves to no entity in the same-directory scan, the catalog, or the
 // registry.
-var ErrTriadRefUnresolvable = errors.New("aggregate/manifest reference unresolvable")
+const ErrTriadRefUnresolvable cerrors.Code = "resolver/triad-ref-unresolvable"
+
+var _ = cerrors.Register(ErrTriadRefUnresolvable, cerrors.Meta{
+	Message: "aggregate/manifest reference unresolvable",
+})
 
 // ResolvedAggregate is the result of resolving a Release's spec.aggregate
 // reference: the loaded entity plus the file path it resolved to and that file's

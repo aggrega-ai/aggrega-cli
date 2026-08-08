@@ -17,7 +17,6 @@ package envelope
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -37,7 +36,11 @@ import (
 // ErrEntityEnvelope is the sentinel for a document failing its
 // kind's envelope schema. errors.Is-recoverable at the pipeline
 // boundary.
-var ErrEntityEnvelope = errors.New("document envelope validation failed: correct the document to match its kind's schema")
+const ErrEntityEnvelope aggerrors.Code = "validator-envelope/entity-envelope"
+
+var _ = aggerrors.Register(ErrEntityEnvelope, aggerrors.Meta{
+	Message: "document envelope validation failed: correct the document to match its kind's schema",
+})
 
 // Kind names a document family with an embedded envelope schema.
 type Kind string

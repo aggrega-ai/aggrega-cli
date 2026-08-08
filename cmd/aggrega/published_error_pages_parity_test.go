@@ -103,8 +103,16 @@ func goSourceCorpus(t *testing.T) (string, map[string]bool) {
 	// seeing another form: the scan would go on matching the needle while
 	// under-reporting every identifier declared the other way, and the assertions
 	// below would read that silent shortfall as pages naming an absent sentinel.
-	if !declared["ErrMalformedRecipeReference"] {
-		t.Fatal("declaration scan did not see ErrMalformedRecipeReference, declared as an initialised variable; " +
+	// The variable-form needle names an identifier still declared that way. As
+	// identities move to the constant form, this needle has to be re-pointed at one
+	// that has not moved yet — and when the last variable-form declaration goes, the
+	// form no longer exists to calibrate against, so this assertion is replaced by a
+	// check of the criterion against sample text rather than deleted outright.
+	// Leaving two constant-form needles here would restore exactly the blind spot the
+	// paragraph above describes, silently, because nothing goes red when a needle
+	// changes form.
+	if !declared["ErrOrderedMapDecodeDepthExceeded"] {
+		t.Fatal("declaration scan did not see ErrOrderedMapDecodeDepthExceeded, declared as an initialised variable; " +
 			"the scan has stopped matching that declaration form — the scan is broken, not the pages")
 	}
 	if !declared["ErrUnknownEntityKind"] {

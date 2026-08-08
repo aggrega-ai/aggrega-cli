@@ -5,12 +5,12 @@ package catalog
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net/http"
 	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/egress"
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
@@ -23,7 +23,11 @@ import (
 // itself. A reference that already includes a host or path segment would be
 // double-prefixed into an unfetchable location, so it is refused loudly here
 // rather than surfacing later as a cryptic tag error.
-var ErrQualifiedPluginReference = errors.New("wasm plugin reference must be the plugin coordinate identity (<pluginType>/<name>:<version>), not a registry-qualified or artifact path")
+const ErrQualifiedPluginReference cerrors.Code = "catalog/qualified-plugin-reference"
+
+var _ = cerrors.Register(ErrQualifiedPluginReference, cerrors.Meta{
+	Message: "wasm plugin reference must be the plugin coordinate identity (<pluginType>/<name>:<version>), not a registry-qualified or artifact path",
+})
 
 // ErrUnscopedPluginReference is returned when a Plugin reference carries no
 // pluginType scope — either no "/" at all or an empty leading segment
@@ -32,7 +36,11 @@ var ErrQualifiedPluginReference = errors.New("wasm plugin reference must be the 
 // of the same name; an empty scope would bind to a location with an empty scope
 // segment (a double slash) that cannot resolve. The reference is refused loudly
 // here rather than surfacing later as a cryptic fetch failure.
-var ErrUnscopedPluginReference = errors.New("wasm plugin reference must carry a pluginType scope (<pluginType>/<name>); an empty scope cannot bind to an OCI location")
+const ErrUnscopedPluginReference cerrors.Code = "catalog/unscoped-plugin-reference"
+
+var _ = cerrors.Register(ErrUnscopedPluginReference, cerrors.Meta{
+	Message: "wasm plugin reference must carry a pluginType scope (<pluginType>/<name>); an empty scope cannot bind to an OCI location",
+})
 
 // ErrUnscopedRecipeReference is returned when a Recipe / FeatureRecipe reference
 // carries no provider scope — either no "/" at all or an empty leading provider
@@ -41,7 +49,11 @@ var ErrUnscopedPluginReference = errors.New("wasm plugin reference must carry a 
 // empty provider would bind to a location with an empty provider segment (a
 // double slash) that cannot resolve. The reference is refused loudly here rather
 // than surfacing later as a cryptic fetch failure.
-var ErrUnscopedRecipeReference = errors.New("recipe reference must be provider-scoped (<provider>/<name>); an empty provider cannot bind to an OCI location")
+const ErrUnscopedRecipeReference cerrors.Code = "catalog/unscoped-recipe-reference"
+
+var _ = cerrors.Register(ErrUnscopedRecipeReference, cerrors.Meta{
+	Message: "recipe reference must be provider-scoped (<provider>/<name>); an empty provider cannot bind to an OCI location",
+})
 
 // ErrAllVersionsRetracted is returned when every published version of an entity
 // that selection could otherwise have chosen has been withdrawn, so the
@@ -52,7 +64,11 @@ var ErrUnscopedRecipeReference = errors.New("recipe reference must be provider-s
 // version is withdrawn still exists and still holds those versions; reporting it
 // as a missing entity would name the wrong problem, send the reader looking for a
 // typo, and read as a quiet fallback rather than the refusal it is.
-var ErrAllVersionsRetracted = errors.New("every published version this reference could select has been withdrawn")
+const ErrAllVersionsRetracted cerrors.Code = "catalog/all-versions-retracted"
+
+var _ = cerrors.Register(ErrAllVersionsRetracted, cerrors.Meta{
+	Message: "every published version this reference could select has been withdrawn",
+})
 
 // VersionExclusion is one published version a RetractionScreen removed from
 // selection, paired with the reason recorded against it.

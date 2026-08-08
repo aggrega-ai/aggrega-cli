@@ -4,11 +4,11 @@
 package catalog
 
 import (
-	"errors"
 	"sort"
 	"strings"
 
 	"github.com/Masterminds/semver/v3"
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 )
 
 // ErrUnsatisfiableEntityVersion is a recoverable sentinel: a catalog reference
@@ -25,7 +25,11 @@ import (
 // mapping halts exactly as the same typo on a component type does. The accessors
 // whose shape carries no error channel report it as a miss, and the build's
 // resolution-completeness pass turns that miss into the loud halt.
-var ErrUnsatisfiableEntityVersion = errors.New("no catalog version satisfies the referenced version constraint")
+const ErrUnsatisfiableEntityVersion cerrors.Code = "catalog/unsatisfiable-entity-version"
+
+var _ = cerrors.Register(ErrUnsatisfiableEntityVersion, cerrors.Meta{
+	Message: "no catalog version satisfies the referenced version constraint",
+})
 
 // SplitVersionedURI splits a URI like "core/api-server:1.0.0" into its base
 // (before the last colon) and version (after the last colon) segments. The

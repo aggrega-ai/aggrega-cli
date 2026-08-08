@@ -3,117 +3,155 @@
 
 package topology
 
-import "errors"
+import cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 
-var (
-	// ErrSubAggregateLoad fires from flattenAggregate when a sub-aggregate
-	// import either fails to load (the SubAggregateLoader callback returns
-	// an error) or is detected as a circular reference (the Aggregate's
-	// `aggregates` block names a sub-aggregate type already on the visited
-	// stack). The wrapped error carries the failing type URI and the
-	// accumulated dotted prefix of the offending chain so callers can point
-	// the author at the specific import that caused the failure.
-	ErrSubAggregateLoad = errors.New("sub-aggregate load failed")
+// ErrSubAggregateLoad fires from flattenAggregate when a sub-aggregate
+// import either fails to load (the SubAggregateLoader callback returns
+// an error) or is detected as a circular reference (the Aggregate's
+// `aggregates` block names a sub-aggregate type already on the visited
+// stack). The wrapped error carries the failing type URI and the
+// accumulated dotted prefix of the offending chain so callers can point
+// the author at the specific import that caused the failure.
+const ErrSubAggregateLoad cerrors.Code = "compiler-topology/sub-aggregate-load"
 
-	// ErrMaxDepth fires from flattenAggregate when sub-aggregate inclusion
-	// recursion exceeds maxSubAggregateDepth (currently 10). The bound
-	// caps both pathological-depth authoring mistakes and any sub-aggregate
-	// cycle that would otherwise recurse to stack-overflow. The wrapped
-	// error carries the depth reached and the prefix path of the offending
-	// chain.
-	ErrMaxDepth = errors.New("max sub-aggregate nesting depth exceeded")
+var _ = cerrors.Register(ErrSubAggregateLoad, cerrors.Meta{
+	Message: "sub-aggregate load failed",
+})
 
-	// ErrReleaseEdgeRetarget fires from the Release edge pass when a Release
-	// per-edge `uses` entry whose (consumer, socket, alias) matches an existing
-	// developer-declared edge supplies a different target. A Release may
-	// configure an edge (add per-edge infra) or wire an edge into a
-	// declared-but-unbound socket, but it may not redirect an edge the developer
-	// already declared — the developer owns the architecture they authored. A
-	// Release entry that names the same target, or omits the target, is a
-	// configure and is permitted. The wrapped error names the edge and both the
-	// declared and the Release-supplied target.
-	ErrReleaseEdgeRetarget = errors.New("release edge retargets a developer-declared edge")
+// ErrMaxDepth fires from flattenAggregate when sub-aggregate inclusion
+// recursion exceeds maxSubAggregateDepth (currently 10). The bound
+// caps both pathological-depth authoring mistakes and any sub-aggregate
+// cycle that would otherwise recurse to stack-overflow. The wrapped
+// error carries the depth reached and the prefix path of the offending
+// chain.
+const ErrMaxDepth cerrors.Code = "compiler-topology/max-depth"
 
-	// ErrDanglingUsesTarget fires when a `uses` edge names a target component
-	// that is not present in the resolved topology — origin-agnostic: a
-	// developer-authored Aggregate edge and a Release-wired edge are checked
-	// alike. A dangling target is a Loud Guardrail, not a silent drop: an edge
-	// to a non-existent target would otherwise vanish and leave the consumer's
-	// inject silently empty. The wrapped error names the consuming node, the
-	// socket, the alias, and the missing target so the author can correct the
-	// reference. The check is the structural sibling of the uses-socket
-	// allowlist (the socket must be declared and the target must resolve before
-	// an edge is type-checked at Step 4).
-	ErrDanglingUsesTarget = errors.New("uses edge target does not exist")
+var _ = cerrors.Register(ErrMaxDepth, cerrors.Meta{
+	Message: "max sub-aggregate nesting depth exceeded",
+})
 
-	// ErrSubAggregateNameCollision fires from flattenAggregate when a Set
-	// operation on the flat node map would overwrite an existing entry —
-	// a condition impossible by the current Aggregate schema (root-level
-	// instance names cannot contain dots, so dotted sub-aggregate IDs
-	// cannot collide with root-level names) but defended-against in case
-	// a future schema loosening or a code path bypassing validation lets
-	// two flattened IDs collide. The wrapped error carries the colliding
-	// ID, the dotted prefix path that produced it, and the existing
-	// entry's source aggregate so the diagnostic points the author at the
-	// precise authoring position.
-	ErrSubAggregateNameCollision = errors.New("flattened node ID collision: rename one of the colliding instances so their flattened IDs differ")
+// ErrReleaseEdgeRetarget fires from the Release edge pass when a Release
+// per-edge `uses` entry whose (consumer, socket, alias) matches an existing
+// developer-declared edge supplies a different target. A Release may
+// configure an edge (add per-edge infra) or wire an edge into a
+// declared-but-unbound socket, but it may not redirect an edge the developer
+// already declared — the developer owns the architecture they authored. A
+// Release entry that names the same target, or omits the target, is a
+// configure and is permitted. The wrapped error names the edge and both the
+// declared and the Release-supplied target.
+const ErrReleaseEdgeRetarget cerrors.Code = "compiler-topology/release-edge-retarget"
 
-	// ErrUnnormalizedAggregate fires at the topology entry when an Aggregate
-	// reaches flatten carrying BOTH a non-empty top-level components surface AND
-	// a synthesized `default` subsystem — an impossible state for an Aggregate
-	// born through the normalization core (Normalize folds the root into the
-	// default and clears it). It signals a bypass: a hand-built `types.Aggregate`
-	// literal or a load path that skipped the parse core. This is an
-	// internal-invariant breach, not an authoring error — a Loud Guardrail
-	// (Invariant 4) backstopping the NormalizedAggregate type rather than
-	// silently flattening a half-normalized graph.
-	ErrUnnormalizedAggregate = errors.New("aggregate reached topology un-normalized (non-empty root components alongside a synthesized default subsystem)")
+var _ = cerrors.Register(ErrReleaseEdgeRetarget, cerrors.Meta{
+	Message: "release edge retargets a developer-declared edge",
+})
 
-	// ErrInvalidActive fires from flattenAggregate when a component's or a
-	// sub-aggregate module's resolved `active` toggle is neither empty nor a
-	// boolean literal. The toggle reaches flatten as an already-resolved string
-	// (a boolean authored directly, or a parameter template the resolver
-	// rendered to a literal); flatten interprets it strictly, so a value that is
-	// not empty and does not parse as a boolean — including the "<no value>"
-	// literal a template over a missing key produces — is a Loud Guardrail
-	// (Invariant 4) rather than a silent default. The wrapped error names the
-	// node whose toggle failed and the offending resolved value so the author
-	// can correct the toggle or the parameter driving it.
-	ErrInvalidActive = errors.New("active toggle did not resolve to a boolean")
+// ErrDanglingUsesTarget fires when a `uses` edge names a target component
+// that is not present in the resolved topology — origin-agnostic: a
+// developer-authored Aggregate edge and a Release-wired edge are checked
+// alike. A dangling target is a Loud Guardrail, not a silent drop: an edge
+// to a non-existent target would otherwise vanish and leave the consumer's
+// inject silently empty. The wrapped error names the consuming node, the
+// socket, the alias, and the missing target so the author can correct the
+// reference. The check is the structural sibling of the uses-socket
+// allowlist (the socket must be declared and the target must resolve before
+// an edge is type-checked at Step 4).
+const ErrDanglingUsesTarget cerrors.Code = "compiler-topology/dangling-uses-target"
 
-	// ErrUsesPrunedComponent fires from the origin-agnostic dangling-target
-	// sweep when a surviving component's `uses` edge targets a component that
-	// was pruned from the topology because its `active` toggle resolved to
-	// false. It is the pruned-target sibling of ErrDanglingUsesTarget: the
-	// target is not merely absent, it was deliberately removed, so the
-	// diagnostic distinguishes the two rather than reporting a generic dangling
-	// reference. Pruning a component that a survivor still depends on would
-	// otherwise leave the consumer's inject silently empty, so the build halts
-	// (Invariant 4). The wrapped error names the surviving consumer, the pruned
-	// target, and that the target was pruned because its `active` resolved to
-	// false so the author can either keep the target present or drop the edge.
-	ErrUsesPrunedComponent = errors.New("uses edge target was pruned because its active toggle resolved to false")
+var _ = cerrors.Register(ErrDanglingUsesTarget, cerrors.Meta{
+	Message: "uses edge target does not exist",
+})
 
-	// ErrReexportCycle fires from flattenAggregate when resolving a re-exported
-	// component alias walks a chain of exported aliases that loops back on itself
-	// before reaching a concrete node. A parent aggregate may re-publish a child
-	// module's exported alias under a new name; resolving that re-export follows
-	// the child's alias table to the underlying node. An acyclic inclusion tree
-	// makes such a loop unconstructible through normal authoring, so this is a
-	// backstop: rather than following the chain forever, the walk halts (Invariant
-	// 4). The wrapped error names the alias chain it walked so the author can see
-	// where the references close the loop.
-	ErrReexportCycle = errors.New("re-exported component alias forms a cycle")
+// ErrSubAggregateNameCollision fires from flattenAggregate when a Set
+// operation on the flat node map would overwrite an existing entry —
+// a condition impossible by the current Aggregate schema (root-level
+// instance names cannot contain dots, so dotted sub-aggregate IDs
+// cannot collide with root-level names) but defended-against in case
+// a future schema loosening or a code path bypassing validation lets
+// two flattened IDs collide. The wrapped error carries the colliding
+// ID, the dotted prefix path that produced it, and the existing
+// entry's source aggregate so the diagnostic points the author at the
+// precise authoring position.
+const ErrSubAggregateNameCollision cerrors.Code = "compiler-topology/sub-aggregate-name-collision"
 
-	// ErrMutatorPatchRejected fires when a mutator plugin returns a JSON Patch
-	// the host refuses to apply to the labels-only graph projection: a patch
-	// that fails to decode, a patch whose operation does not apply cleanly, or
-	// a patch that reaches outside the node-label surface (adding or removing a
-	// node, touching a node field other than its labels, or setting a non-string
-	// label value). The mutator's sanctioned surface is node labels only — the
-	// narrow auto-tagging exception — so any change beyond that is a Loud
-	// Guardrail (Invariant 4): the build halts rather than silently absorbing a
-	// mutation the plugin was not authorized to make. The wrapped error names
-	// the offending patch and the specific confinement rule it broke.
-	ErrMutatorPatchRejected = errors.New("mutator patch rejected")
-)
+var _ = cerrors.Register(ErrSubAggregateNameCollision, cerrors.Meta{
+	Message: "flattened node ID collision: rename one of the colliding instances so their flattened IDs differ",
+})
+
+// ErrUnnormalizedAggregate fires at the topology entry when an Aggregate
+// reaches flatten carrying BOTH a non-empty top-level components surface AND
+// a synthesized `default` subsystem — an impossible state for an Aggregate
+// born through the normalization core (Normalize folds the root into the
+// default and clears it). It signals a bypass: a hand-built `types.Aggregate`
+// literal or a load path that skipped the parse core. This is an
+// internal-invariant breach, not an authoring error — a Loud Guardrail
+// (Invariant 4) backstopping the NormalizedAggregate type rather than
+// silently flattening a half-normalized graph.
+const ErrUnnormalizedAggregate cerrors.Code = "compiler-topology/unnormalized-aggregate"
+
+var _ = cerrors.Register(ErrUnnormalizedAggregate, cerrors.Meta{
+	Message: "aggregate reached topology un-normalized (non-empty root components alongside a synthesized default subsystem)",
+})
+
+// ErrInvalidActive fires from flattenAggregate when a component's or a
+// sub-aggregate module's resolved `active` toggle is neither empty nor a
+// boolean literal. The toggle reaches flatten as an already-resolved string
+// (a boolean authored directly, or a parameter template the resolver
+// rendered to a literal); flatten interprets it strictly, so a value that is
+// not empty and does not parse as a boolean — including the "<no value>"
+// literal a template over a missing key produces — is a Loud Guardrail
+// (Invariant 4) rather than a silent default. The wrapped error names the
+// node whose toggle failed and the offending resolved value so the author
+// can correct the toggle or the parameter driving it.
+const ErrInvalidActive cerrors.Code = "compiler-topology/invalid-active"
+
+var _ = cerrors.Register(ErrInvalidActive, cerrors.Meta{
+	Message: "active toggle did not resolve to a boolean",
+})
+
+// ErrUsesPrunedComponent fires from the origin-agnostic dangling-target
+// sweep when a surviving component's `uses` edge targets a component that
+// was pruned from the topology because its `active` toggle resolved to
+// false. It is the pruned-target sibling of ErrDanglingUsesTarget: the
+// target is not merely absent, it was deliberately removed, so the
+// diagnostic distinguishes the two rather than reporting a generic dangling
+// reference. Pruning a component that a survivor still depends on would
+// otherwise leave the consumer's inject silently empty, so the build halts
+// (Invariant 4). The wrapped error names the surviving consumer, the pruned
+// target, and that the target was pruned because its `active` resolved to
+// false so the author can either keep the target present or drop the edge.
+const ErrUsesPrunedComponent cerrors.Code = "compiler-topology/uses-pruned-component"
+
+var _ = cerrors.Register(ErrUsesPrunedComponent, cerrors.Meta{
+	Message: "uses edge target was pruned because its active toggle resolved to false",
+})
+
+// ErrReexportCycle fires from flattenAggregate when resolving a re-exported
+// component alias walks a chain of exported aliases that loops back on itself
+// before reaching a concrete node. A parent aggregate may re-publish a child
+// module's exported alias under a new name; resolving that re-export follows
+// the child's alias table to the underlying node. An acyclic inclusion tree
+// makes such a loop unconstructible through normal authoring, so this is a
+// backstop: rather than following the chain forever, the walk halts (Invariant
+// 4). The wrapped error names the alias chain it walked so the author can see
+// where the references close the loop.
+const ErrReexportCycle cerrors.Code = "compiler-topology/reexport-cycle"
+
+var _ = cerrors.Register(ErrReexportCycle, cerrors.Meta{
+	Message: "re-exported component alias forms a cycle",
+})
+
+// ErrMutatorPatchRejected fires when a mutator plugin returns a JSON Patch
+// the host refuses to apply to the labels-only graph projection: a patch
+// that fails to decode, a patch whose operation does not apply cleanly, or
+// a patch that reaches outside the node-label surface (adding or removing a
+// node, touching a node field other than its labels, or setting a non-string
+// label value). The mutator's sanctioned surface is node labels only — the
+// narrow auto-tagging exception — so any change beyond that is a Loud
+// Guardrail (Invariant 4): the build halts rather than silently absorbing a
+// mutation the plugin was not authorized to make. The wrapped error names
+// the offending patch and the specific confinement rule it broke.
+const ErrMutatorPatchRejected cerrors.Code = "compiler-topology/mutator-patch-rejected"
+
+var _ = cerrors.Register(ErrMutatorPatchRejected, cerrors.Meta{
+	Message: "mutator patch rejected",
+})

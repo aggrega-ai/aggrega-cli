@@ -4,7 +4,6 @@
 package validator
 
 import (
-	"errors"
 	"fmt"
 
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
@@ -12,11 +11,24 @@ import (
 )
 
 // Sentinel errors for errors.Is matching.
-var (
-	ErrInheritanceMerge       = errors.New("inheritance merge failed: resolve the conflicting field definitions across the extends chain")
-	ErrCyclicExtension        = errors.New("cyclic extends chain")
-	ErrAssertionNameCollision = errors.New("assertion name declared twice across the extends chain: rename the extending entity's assertion, whose assertions add to the base's and never replace one")
-)
+
+const ErrInheritanceMerge cerrors.Code = "validator/inheritance-merge"
+
+var _ = cerrors.Register(ErrInheritanceMerge, cerrors.Meta{
+	Message: "inheritance merge failed: resolve the conflicting field definitions across the extends chain",
+})
+
+const ErrCyclicExtension cerrors.Code = "validator/cyclic-extension"
+
+var _ = cerrors.Register(ErrCyclicExtension, cerrors.Meta{
+	Message: "cyclic extends chain",
+})
+
+const ErrAssertionNameCollision cerrors.Code = "validator/assertion-name-collision"
+
+var _ = cerrors.Register(ErrAssertionNameCollision, cerrors.Meta{
+	Message: "assertion name declared twice across the extends chain: rename the extending entity's assertion, whose assertions add to the base's and never replace one",
+})
 
 // ValidationDetail describes a validation failure: where it was found, what
 // was required there, what was found instead, what to do about it, and the

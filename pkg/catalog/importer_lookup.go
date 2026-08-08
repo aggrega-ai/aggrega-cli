@@ -4,10 +4,10 @@
 package catalog
 
 import (
-	"errors"
 	"fmt"
 	"strings"
 
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
@@ -39,7 +39,11 @@ const importCapabilityPrefix = "import:"
 // composed capability so the diagnostic points at the missing advertiser. The
 // format space is open — a new format ships as a new importer plugin, no core
 // change — so this halt reflects the advertised set, not a fixed enumeration.
-var ErrNoImporterForFormat = errors.New("no importer plugin advertises the requested format")
+const ErrNoImporterForFormat cerrors.Code = "catalog/no-importer-for-format"
+
+var _ = cerrors.Register(ErrNoImporterForFormat, cerrors.Meta{
+	Message: "no importer plugin advertises the requested format",
+})
 
 // ErrAmbiguousImporterPlugin fires at resolution when a requested format is
 // advertised by more than one distinct importer plugin and the catalog cannot
@@ -49,7 +53,11 @@ var ErrNoImporterForFormat = errors.New("no importer plugin advertises the reque
 // every candidate, sorted, so the diagnostic is byte-identical across runs. It is
 // the importer-socket sibling of the provider socket's ambiguity halt, scoped to
 // the importer type and phrased for the importer surface.
-var ErrAmbiguousImporterPlugin = errors.New("format is advertised by more than one importer plugin")
+const ErrAmbiguousImporterPlugin cerrors.Code = "catalog/ambiguous-importer-plugin"
+
+var _ = cerrors.Register(ErrAmbiguousImporterPlugin, cerrors.Meta{
+	Message: "format is advertised by more than one importer plugin",
+})
 
 // importerCapabilityDiag is the importer socket's diagnostic set for the shared
 // capability select. Only the ambiguity halt is reachable on the importer path:

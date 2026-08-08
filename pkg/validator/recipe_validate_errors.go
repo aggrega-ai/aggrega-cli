@@ -4,7 +4,6 @@
 package validator
 
 import (
-	"errors"
 	"fmt"
 
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
@@ -21,36 +20,55 @@ import (
 // Rule 7 is enforced at emission time (Phase B.5 filename collision detection)
 // and is reserved here so the load-time validator and the emission-time
 // detector share an error shape.
-var (
-	// ErrRecipeRule1: valuesMapping requires source.
-	ErrRecipeRule1 = errors.New("recipe rule 1: valuesMapping requires source")
 
-	// ErrRecipeRule5: at least one input kind must be present.
-	ErrRecipeRule5 = errors.New("recipe rule 5: at least one input kind required")
+// ErrRecipeRule1: valuesMapping requires source.
+const ErrRecipeRule1 cerrors.Code = "validator/recipe-rule-1"
 
-	// ErrRecipeRule7: emission-time filename collision across input-kind
-	// origins (source output, workload synthesis, artifacts). RESERVED
-	// for Phase B.5 emission-time use; not surfaced by ValidateRecipe at
-	// load time. The sentinel is declared here so the load-time validator
-	// and the emission-time detector share a single RecipeValidationError
-	// shape and a single CATALOG_ERROR message format.
-	ErrRecipeRule7 = errors.New("recipe rule 7: filename collision across input-kind origins at emission")
+var _ = cerrors.Register(ErrRecipeRule1, cerrors.Meta{
+	Message: "recipe rule 1: valuesMapping requires source",
+})
 
-	// ErrRecipeEvalProviderConstraint: the eval provider executes formatting
-	// in-memory and has no rendering surface; declaring source/workload/
-	// artifacts on an eval Recipe is rejected. The eval carve-out also
-	// exempts the Recipe from rule 5 — eval Recipes legitimately declare
-	// only `provides:` and have zero input kinds.
-	ErrRecipeEvalProviderConstraint = errors.New("recipe eval-provider constraint: input-kind fields are forbidden when provider is eval")
+// ErrRecipeRule5: at least one input kind must be present.
+const ErrRecipeRule5 cerrors.Code = "validator/recipe-rule-5"
 
-	// ErrRecipeOutputLabelReservedNamespace: an outputLabels key uses a
-	// platform-reserved namespace (aggrega.ai/ or app.kubernetes.io/). Those
-	// prefixes are owned by the fixed provenance set; a recipe may not stamp
-	// them, which also keeps a validated output-label set disjoint from the
-	// provenance set. Engine-agnostic: enforced at load, before any provider
-	// consumes the labels.
-	ErrRecipeOutputLabelReservedNamespace = errors.New("recipe output-labels constraint: key uses a reserved namespace")
-)
+var _ = cerrors.Register(ErrRecipeRule5, cerrors.Meta{
+	Message: "recipe rule 5: at least one input kind required",
+})
+
+// ErrRecipeRule7: emission-time filename collision across input-kind
+// origins (source output, workload synthesis, artifacts). RESERVED
+// for Phase B.5 emission-time use; not surfaced by ValidateRecipe at
+// load time. The sentinel is declared here so the load-time validator
+// and the emission-time detector share a single RecipeValidationError
+// shape and a single CATALOG_ERROR message format.
+const ErrRecipeRule7 cerrors.Code = "validator/recipe-rule-7"
+
+var _ = cerrors.Register(ErrRecipeRule7, cerrors.Meta{
+	Message: "recipe rule 7: filename collision across input-kind origins at emission",
+})
+
+// ErrRecipeEvalProviderConstraint: the eval provider executes formatting
+// in-memory and has no rendering surface; declaring source/workload/
+// artifacts on an eval Recipe is rejected. The eval carve-out also
+// exempts the Recipe from rule 5 — eval Recipes legitimately declare
+// only `provides:` and have zero input kinds.
+const ErrRecipeEvalProviderConstraint cerrors.Code = "validator/recipe-eval-provider-constraint"
+
+var _ = cerrors.Register(ErrRecipeEvalProviderConstraint, cerrors.Meta{
+	Message: "recipe eval-provider constraint: input-kind fields are forbidden when provider is eval",
+})
+
+// ErrRecipeOutputLabelReservedNamespace: an outputLabels key uses a
+// platform-reserved namespace (aggrega.ai/ or app.kubernetes.io/). Those
+// prefixes are owned by the fixed provenance set; a recipe may not stamp
+// them, which also keeps a validated output-label set disjoint from the
+// provenance set. Engine-agnostic: enforced at load, before any provider
+// consumes the labels.
+const ErrRecipeOutputLabelReservedNamespace cerrors.Code = "validator/recipe-output-label-reserved-namespace"
+
+var _ = cerrors.Register(ErrRecipeOutputLabelReservedNamespace, cerrors.Meta{
+	Message: "recipe output-labels constraint: key uses a reserved namespace",
+})
 
 // RecipeValidationError carries the structured detail for a load-time or
 // post-Manifest-resolution Recipe validation failure. The Error() output is

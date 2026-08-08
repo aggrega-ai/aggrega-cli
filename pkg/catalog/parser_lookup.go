@@ -4,11 +4,11 @@
 package catalog
 
 import (
-	"errors"
 	"fmt"
 	"slices"
 	"sort"
 
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
@@ -41,7 +41,11 @@ const parseCapabilityPrefix = "parse:"
 // composed capability so the diagnostic points at the missing advertiser. The
 // format space is open — a new format ships as a new parser plugin, no core
 // change — so this halt reflects the advertised set, not a fixed enumeration.
-var ErrNoParserForFormat = errors.New("no parser plugin advertises the requested format")
+const ErrNoParserForFormat cerrors.Code = "catalog/no-parser-for-format"
+
+var _ = cerrors.Register(ErrNoParserForFormat, cerrors.Meta{
+	Message: "no parser plugin advertises the requested format",
+})
 
 // ErrAmbiguousParserPlugin fires at resolution when a requested format is
 // advertised by more than one distinct parser plugin and the catalog cannot pick
@@ -51,7 +55,11 @@ var ErrNoParserForFormat = errors.New("no parser plugin advertises the requested
 // every candidate, sorted, so the diagnostic is byte-identical across runs. It is
 // the parser-socket sibling of the provider socket's ambiguity halt, scoped to
 // the parser type and phrased for the parser surface.
-var ErrAmbiguousParserPlugin = errors.New("format is advertised by more than one parser plugin")
+const ErrAmbiguousParserPlugin cerrors.Code = "catalog/ambiguous-parser-plugin"
+
+var _ = cerrors.Register(ErrAmbiguousParserPlugin, cerrors.Meta{
+	Message: "format is advertised by more than one parser plugin",
+})
 
 // ParserPluginForFormat resolves a requested source format to the parser Plugin
 // entity that advertises it. It composes the "parse:<format>" capability and

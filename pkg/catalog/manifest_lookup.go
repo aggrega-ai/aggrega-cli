@@ -27,13 +27,21 @@ import (
 // Manifest entry IS the Recipe URI; the Recipe's spec.implements is
 // a consistency anchor, not a dispatch mechanism. Mismatches halt at
 // workspace load.
-var ErrManifestImplementsMismatch = errors.New("manifest mapping entry's recipe spec.implements does not match the mapped component-type / feature-type key")
+const ErrManifestImplementsMismatch cerrors.Code = "catalog/manifest-implements-mismatch"
+
+var _ = cerrors.Register(ErrManifestImplementsMismatch, cerrors.Meta{
+	Message: "manifest mapping entry's recipe spec.implements does not match the mapped component-type / feature-type key",
+})
 
 // ErrAmbiguousTypeMapping fires when a component/feature type resolves to more
 // than one version-distinct Manifest mapping key under version-tolerant
 // matching — the lookup cannot pick one without guessing, so it halts loudly
 // rather than silently resolving the first.
-var ErrAmbiguousTypeMapping = errors.New("manifest maps multiple version-distinct keys to the same base type; the type-to-recipe lookup is ambiguous")
+const ErrAmbiguousTypeMapping cerrors.Code = "catalog/ambiguous-type-mapping"
+
+var _ = cerrors.Register(ErrAmbiguousTypeMapping, cerrors.Meta{
+	Message: "manifest maps multiple version-distinct keys to the same base type; the type-to-recipe lookup is ambiguous",
+})
 
 // ErrDuplicateEntityIdentity fires when two catalog entities of one kind share
 // the same identity WITHIN A SINGLE catalog directory — an authoring collision,
@@ -42,14 +50,18 @@ var ErrAmbiguousTypeMapping = errors.New("manifest maps multiple version-distinc
 // FeatureRecipe, Plugin, SchemaLibrary, MappingLibrary, Aggregate): within one
 // directory a duplicate identity halts; ACROSS directories the same identity is
 // a first-win shadow (the earlier-listed directory wins), never an error.
-var ErrDuplicateEntityIdentity = errors.New("duplicate entity identity within a single catalog directory")
+const ErrDuplicateEntityIdentity cerrors.Code = "catalog/duplicate-entity-identity"
+
+var _ = cerrors.Register(ErrDuplicateEntityIdentity, cerrors.Meta{
+	Message: "duplicate entity identity within a single catalog directory",
+})
 
 // ErrDuplicateRecipeIdentity is the recipe-specific facet of
 // ErrDuplicateEntityIdentity, preserved as an alias so callers matching the
 // recipe collision via errors.Is keep working. The Recipe / FeatureRecipe load
 // cases wrap it with the provider+name+version context; the wrapped error still
 // satisfies errors.Is against both this name and ErrDuplicateEntityIdentity.
-var ErrDuplicateRecipeIdentity = ErrDuplicateEntityIdentity
+const ErrDuplicateRecipeIdentity = ErrDuplicateEntityIdentity
 
 // ErrProviderVersionUnsatisfiable fires when a Recipe binds a version-pinned
 // provider — "helm:1.0.0" or "helm:^1.0.0" — but no provider-rendering Plugin
@@ -64,7 +76,11 @@ var ErrDuplicateRecipeIdentity = ErrDuplicateEntityIdentity
 // version constraint — a Component, Feature, Aggregate, Plugin, Recipe or
 // FeatureRecipe named at a version the catalog does not hold — rather than the
 // selection of a render engine for a capability.
-var ErrProviderVersionUnsatisfiable = errors.New("no provider-rendering plugin version satisfies the recipe's provider version pin")
+const ErrProviderVersionUnsatisfiable cerrors.Code = "catalog/provider-version-unsatisfiable"
+
+var _ = cerrors.Register(ErrProviderVersionUnsatisfiable, cerrors.Meta{
+	Message: "no provider-rendering plugin version satisfies the recipe's provider version pin",
+})
 
 // ErrAmbiguousProviderPlugin fires at resolution when a capability is served
 // by more than one distinct provider-rendering Plugin and no plugins.providers
@@ -76,7 +92,11 @@ var ErrProviderVersionUnsatisfiable = errors.New("no provider-rendering plugin v
 // plugins.providers surface that selects one. It is a point-of-use halt: it fires
 // at pull (resolution) and at build (render-engine selection), not at catalog
 // load, so an ambiguity outside a Release's reach never blocks an unrelated build.
-var ErrAmbiguousProviderPlugin = errors.New("capability is served by more than one provider plugin; add a plugins.providers entry to select one")
+const ErrAmbiguousProviderPlugin cerrors.Code = "catalog/ambiguous-provider-plugin"
+
+var _ = cerrors.Register(ErrAmbiguousProviderPlugin, cerrors.Meta{
+	Message: "capability is served by more than one provider plugin; add a plugins.providers entry to select one",
+})
 
 // ErrProviderBindingUnsatisfied fires at resolution when a plugins.providers
 // entry selects a plugin identity that no provider-rendering Plugin serving the
@@ -84,7 +104,11 @@ var ErrAmbiguousProviderPlugin = errors.New("capability is served by more than o
 // does not (or no longer) serves the target. The explicit selection is a request
 // the catalog cannot honor, so it halts loudly rather than silently falling back
 // to another engine.
-var ErrProviderBindingUnsatisfied = errors.New("plugins.providers entry names a plugin no provider-rendering plugin serving the capability matches")
+const ErrProviderBindingUnsatisfied cerrors.Code = "catalog/provider-binding-unsatisfied"
+
+var _ = cerrors.Register(ErrProviderBindingUnsatisfied, cerrors.Meta{
+	Message: "plugins.providers entry names a plugin no provider-rendering plugin serving the capability matches",
+})
 
 // ErrNoRecipeResolved fires when a component/feature instance has no explicit
 // Manifest mapping for its type. Resolution is mapping-only — the catalog never
@@ -99,7 +123,11 @@ var ErrProviderBindingUnsatisfied = errors.New("plugins.providers entry names a 
 // value whose shape a reference cannot express is
 // ErrMalformedRecipeReference instead, so the absent-from-the-catalog claim is
 // only made about a reference that could have resolved.
-var ErrNoRecipeResolved = errors.New("no recipe resolved for component/feature instance: add an explicit Manifest mapping for its type")
+const ErrNoRecipeResolved cerrors.Code = "catalog/no-recipe-resolved"
+
+var _ = cerrors.Register(ErrNoRecipeResolved, cerrors.Meta{
+	Message: "no recipe resolved for component/feature instance: add an explicit Manifest mapping for its type",
+})
 
 // ErrMalformedRecipeReference fires when a Manifest mapping value carries more
 // slash-separated segments than a Recipe / FeatureRecipe reference accepts. The
@@ -111,7 +139,11 @@ var ErrNoRecipeResolved = errors.New("no recipe resolved for component/feature i
 // for the type — is a step the author of a mis-shaped mapping has already taken.
 // The accepted shape itself has a single home beside the resolution ladder that
 // enforces it; see recipeReferenceMaxSegments.
-var ErrMalformedRecipeReference = errors.New("malformed recipe reference in a Manifest mapping value")
+const ErrMalformedRecipeReference cerrors.Code = "catalog/malformed-recipe-reference"
+
+var _ = cerrors.Register(ErrMalformedRecipeReference, cerrors.Meta{
+	Message: "malformed recipe reference in a Manifest mapping value",
+})
 
 // RecipeMappingURI composes the bare "name:version" URI form that Manifest
 // mapping values and the closure walker use. A versionless entity keys on its

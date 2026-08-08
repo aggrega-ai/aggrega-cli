@@ -4,7 +4,6 @@
 package resolver
 
 import (
-	"errors"
 	"fmt"
 
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
@@ -13,176 +12,271 @@ import (
 // Sentinel errors for errors.Is matching. Every ResolverError wraps one of
 // these in its Err field; callers compare via errors.Is rather than string
 // equality on the Message text.
-var (
-	// ErrInvalidParameterRef wraps a Go-template parse or execution error
-	// surfaced during parameter interpolation.
-	ErrInvalidParameterRef = errors.New("invalid parameter reference: check the {{ .parameters.* }} expression names a declared parameter and parses as a Go template")
 
-	// ErrParametersImportLoad wraps a read or unmarshal failure for the
-	// single path supplied at Release.spec.parameters.$import:.
-	ErrParametersImportLoad = errors.New("parameters $import: load failed")
+// ErrInvalidParameterRef wraps a Go-template parse or execution error
+// surfaced during parameter interpolation.
+const ErrInvalidParameterRef cerrors.Code = "resolver/invalid-parameter-ref"
 
-	// ErrInvalidInstanceName wraps a user-authored dictionary key (component,
-	// feature, secret, subsystem, aggregate name) that does not match the
-	// instance-name pattern.
-	ErrInvalidInstanceName = errors.New("invalid instance name: names must match ^[a-zA-Z0-9_-]+$ (letters, digits, hyphen, underscore; no dots)")
+var _ = cerrors.Register(ErrInvalidParameterRef, cerrors.Meta{
+	Message: "invalid parameter reference: check the {{ .parameters.* }} expression names a declared parameter and parses as a Go template",
+})
 
-	// ErrInvalidTargetRef wraps a target reference (e.g., uses.target) whose
-	// dot-separated segments do not all match the instance-name pattern.
-	ErrInvalidTargetRef = errors.New("invalid target reference: each dot-separated segment must match ^[a-zA-Z0-9_-]+$")
+// ErrParametersImportLoad wraps a read or unmarshal failure for the
+// single path supplied at Release.spec.parameters.$import:.
+const ErrParametersImportLoad cerrors.Code = "resolver/parameters-import-load"
 
-	// ErrYAMLLoad wraps a file-read or YAML-unmarshal failure for any of the
-	// three source documents (Aggregate, Release, Manifest).
-	ErrYAMLLoad = errors.New("YAML load failed: check the file exists, is readable, and contains well-formed YAML")
+var _ = cerrors.Register(ErrParametersImportLoad, cerrors.Meta{
+	Message: "parameters $import: load failed",
+})
 
-	// ErrManifestReservedPrefix wraps a Manifest features.annotations
-	// binding key that uses the reserved aggrega.ai/ prefix. The prefix
-	// is reserved for the provider well-known annotations documented at
-	// aggrega-docs/language-reference/providers/well-known-annotations.md;
-	// authors of annotation-driven Feature bindings use a namespaced
-	// sub-prefix (feature.aggrega.ai/ for standard-library shortcuts,
-	// any custom domain for enterprise shortcuts). The rule is enforced
-	// at Manifest load — the YAML parsed successfully but the binding
-	// fails a semantic reservation check, distinct from ErrYAMLLoad.
-	ErrManifestReservedPrefix = errors.New("manifest annotation binding uses reserved prefix")
+// ErrInvalidInstanceName wraps a user-authored dictionary key (component,
+// feature, secret, subsystem, aggregate name) that does not match the
+// instance-name pattern.
+const ErrInvalidInstanceName cerrors.Code = "resolver/invalid-instance-name"
 
-	// ErrManifestCrossBindingPillarCollision wraps two Manifest
-	// annotation bindings that target the same Feature URI with the
-	// same (path, pillar) routing pair. Only one binding may declare
-	// a given (path, pillar) pair per target Feature; multiple
-	// bindings competing for the same routing slot cannot resolve
-	// unambiguously at expansion time.
-	ErrManifestCrossBindingPillarCollision = errors.New("manifest annotation bindings collide on same Feature path+pillar")
+var _ = cerrors.Register(ErrInvalidInstanceName, cerrors.Meta{
+	Message: "invalid instance name: names must match ^[a-zA-Z0-9_-]+$ (letters, digits, hyphen, underscore; no dots)",
+})
 
-	// ErrInvalidInjectKey wraps an inject delivery key that does not match
-	// the expected per-mechanism format.
-	ErrInvalidInjectKey = errors.New("invalid inject key: the from-key must name a declared provides key of the target component type")
+// ErrInvalidTargetRef wraps a target reference (e.g., uses.target) whose
+// dot-separated segments do not all match the instance-name pattern.
+const ErrInvalidTargetRef cerrors.Code = "resolver/invalid-target-ref"
 
-	// ErrSchemaConformance wraps a developer-authored component-instance
-	// values or infra pillar that does not conform to the catalog
-	// Component's declared schema for that pillar (wrong type, out of
-	// range, missing required-non-defaulted field, or a property the
-	// schema forbids). Validated at Step 1, default-aware: a field the
-	// schema supplies a default for is not "missing". Distinct from
-	// monotonic-narrowing, which stays signal-only.
-	ErrSchemaConformance = errors.New("authored pillar does not conform to its declared schema")
+var _ = cerrors.Register(ErrInvalidTargetRef, cerrors.Meta{
+	Message: "invalid target reference: each dot-separated segment must match ^[a-zA-Z0-9_-]+$",
+})
 
-	// ErrAttachmentSlotShape wraps an authored attachment that binds a
-	// declared slot but does not match that slot's declared shape: a key the
-	// slot does not permit, or an inject delivery mechanism outside the
-	// slot's allowlist (including any mechanism at all on a Black-Box slot,
-	// whose empty allowlist reserves delivery to the Recipe). Validated at
-	// Step 1 against the shape the entity's featuresSchema projects.
-	//
-	// It is a SHAPE sentinel only. Whether a slot declared `required: true`
-	// ends up bound is a different question, asked of the attachment set a
-	// node holds after the whole cascade, and it is never reported here.
-	ErrAttachmentSlotShape = errors.New("attachment does not conform to its declared slot shape")
+// ErrYAMLLoad wraps a file-read or YAML-unmarshal failure for any of the
+// three source documents (Aggregate, Release, Manifest).
+const ErrYAMLLoad cerrors.Code = "resolver/yaml-load"
 
-	// ErrAttachmentSlotNearMiss marks an ADVISORY finding, not a halt: an
-	// attachment whose name is not a declared slot on its component's type but
-	// is within a small edit distance of one — the shape a slot-name typo
-	// takes. An attachment name matching no slot is legal (the attachment
-	// surface is open), so this sentinel never reaches a build's verdict; it
-	// exists so a front end can recognise the advisory class and render it as a
-	// warning.
-	ErrAttachmentSlotNearMiss = errors.New("attachment name is a near miss for a declared slot")
+var _ = cerrors.Register(ErrYAMLLoad, cerrors.Meta{
+	Message: "YAML load failed: check the file exists, is readable, and contains well-formed YAML",
+})
 
-	// ErrUsesSocketNearMiss marks an ADVISORY finding, not a halt: a socket
-	// named on a component's own uses block that its Component type does not
-	// declare in usesSchema but is within a small edit distance of one — the
-	// shape a socket-name typo takes. A socket name matching no declared socket
-	// is legal on that surface (the Aggregate author owns the topology and may
-	// name a socket the catalog did not anticipate), so this sentinel never
-	// reaches a build's verdict; it exists so a front end can recognise the
-	// advisory class and render it as a warning.
-	ErrUsesSocketNearMiss = errors.New("uses socket name is a near miss for a declared socket")
+// ErrManifestReservedPrefix wraps a Manifest features.annotations
+// binding key that uses the reserved aggrega.ai/ prefix. The prefix
+// is reserved for the provider well-known annotations documented at
+// aggrega-docs/language-reference/providers/well-known-annotations.md;
+// authors of annotation-driven Feature bindings use a namespaced
+// sub-prefix (feature.aggrega.ai/ for standard-library shortcuts,
+// any custom domain for enterprise shortcuts). The rule is enforced
+// at Manifest load — the YAML parsed successfully but the binding
+// fails a semantic reservation check, distinct from ErrYAMLLoad.
+const ErrManifestReservedPrefix cerrors.Code = "resolver/manifest-reserved-prefix"
 
-	// ErrUnreadParameter marks an ADVISORY finding, not a halt: a parameter the
-	// Aggregate declares that no reference in the Aggregate's own text reads.
-	// Declaring a parameter nothing reads is legal — the compiler does not police
-	// which knobs an author exposes — so this sentinel never reaches a build's
-	// verdict; it exists so a front end can recognise the advisory class and
-	// render it as a warning.
-	ErrUnreadParameter = errors.New("declared parameter is read by no reference in the Aggregate")
+var _ = cerrors.Register(ErrManifestReservedPrefix, cerrors.Meta{
+	Message: "manifest annotation binding uses reserved prefix",
+})
 
-	// ErrGuardEntityViewInconsistency wraps an internal-consistency failure: a
-	// guard needs a catalog entity for a type that resolution resolved AS A
-	// CATALOG REFERENCE (a bare-token identity, not a Tier-1 relative-path file),
-	// yet the entity is absent from the guard's catalog view. A genuinely
-	// unresolvable reference halts earlier at resolution; reaching a guard with
-	// the entity missing means the build's resolved set and the guard's view have
-	// diverged — a loud halt, never a silent skip. (Tier-1 relative-path types,
-	// which legitimately have no catalog entity, are not this error.)
-	ErrGuardEntityViewInconsistency = errors.New("guard catalog-entity view inconsistency")
+// ErrManifestCrossBindingPillarCollision wraps two Manifest
+// annotation bindings that target the same Feature URI with the
+// same (path, pillar) routing pair. Only one binding may declare
+// a given (path, pillar) pair per target Feature; multiple
+// bindings competing for the same routing slot cannot resolve
+// unambiguously at expansion time.
+const ErrManifestCrossBindingPillarCollision cerrors.Code = "resolver/manifest-cross-binding-pillar-collision"
 
-	// ErrMissingRequiredFeature wraps a component whose declared catalog type
-	// carries a presence mandate — a features.aggrega.ai/requiredType.<label>
-	// annotation — that no attachment in the node's final set satisfies.
-	ErrMissingRequiredFeature = errors.New("missing required feature: attach a Feature of the required type to the component")
+var _ = cerrors.Register(ErrManifestCrossBindingPillarCollision, cerrors.Meta{
+	Message: "manifest annotation bindings collide on same Feature path+pillar",
+})
 
-	// ErrFeatureMergeConflict wraps a conflict during Release-side Feature
-	// attachment merging (e.g., divergent values on the same Feature key).
-	ErrFeatureMergeConflict = errors.New("feature merge conflict: reconcile the Aggregate and Release declarations for the feature")
+// ErrInvalidInjectKey wraps an inject delivery key that does not match
+// the expected per-mechanism format.
+const ErrInvalidInjectKey cerrors.Code = "resolver/invalid-inject-key"
 
-	// ErrUnknownUsesSocket wraps a socket name that the entity owning the surface
-	// does not declare in its usesSchema, on a surface that may only name a
-	// declared socket: a Feature attachment's uses (the socket must be on the
-	// attached Feature) and a Release per-edge uses (the socket must be on the
-	// consuming component). A component's own uses block is NOT one of those
-	// surfaces — an Aggregate author may name a socket the catalog did not
-	// declare — so this sentinel no longer fires for it.
-	ErrUnknownUsesSocket = errors.New("unknown uses socket: name a socket the entity declares in its usesSchema — only a component's own uses block may name one the catalog did not declare")
+var _ = cerrors.Register(ErrInvalidInjectKey, cerrors.Meta{
+	Message: "invalid inject key: the from-key must name a declared provides key of the target component type",
+})
 
-	// ErrSelfInjectForbidden wraps a self-inject declaration on a component
-	// whose catalog type does not declare a spec.inject allowlist.
-	ErrSelfInjectForbidden = errors.New("self-inject on component without spec.inject allowlist")
+// ErrSchemaConformance wraps a developer-authored component-instance
+// values or infra pillar that does not conform to the catalog
+// Component's declared schema for that pillar (wrong type, out of
+// range, missing required-non-defaulted field, or a property the
+// schema forbids). Validated at Step 1, default-aware: a field the
+// schema supplies a default for is not "missing". Distinct from
+// monotonic-narrowing, which stays signal-only.
+const ErrSchemaConformance cerrors.Code = "resolver/schema-conformance"
 
-	// ErrInjectKeyCollision wraps a delivery key declared on more than one
-	// inject source for the same component.
-	ErrInjectKeyCollision = errors.New("duplicate delivery key across inject sources")
+var _ = cerrors.Register(ErrSchemaConformance, cerrors.Meta{
+	Message: "authored pillar does not conform to its declared schema",
+})
 
-	// ErrMissingRequiredSocket wraps a uses-socket marked required in the
-	// Component's usesSchema that no instance populates.
-	ErrMissingRequiredSocket = errors.New("required uses socket not populated")
+// ErrAttachmentSlotShape wraps an authored attachment that binds a
+// declared slot but does not match that slot's declared shape: a key the
+// slot does not permit, or an inject delivery mechanism outside the
+// slot's allowlist (including any mechanism at all on a Black-Box slot,
+// whose empty allowlist reserves delivery to the Recipe). Validated at
+// Step 1 against the shape the entity's featuresSchema projects.
+//
+// It is a SHAPE sentinel only. Whether a slot declared `required: true`
+// ends up bound is a different question, asked of the attachment set a
+// node holds after the whole cascade, and it is never reported here.
+const ErrAttachmentSlotShape cerrors.Code = "resolver/attachment-slot-shape"
 
-	// ErrParameterMissing wraps a parameter declared required: true in the
-	// Aggregate's typed contract that neither the Aggregate's default nor
-	// the Release fulfillment supplies. Surfaced at Step 1a.
-	ErrParameterMissing = errors.New("required parameter not supplied")
+var _ = cerrors.Register(ErrAttachmentSlotShape, cerrors.Meta{
+	Message: "attachment does not conform to its declared slot shape",
+})
 
-	// ErrParameterContractViolation wraps a parameter value that fails the
-	// Aggregate's typed contract — type mismatch, enum / pattern / range
-	// violation, validate-predicate failure, or a Release key with no
-	// corresponding Aggregate declaration (closed-contract policy).
-	// Surfaced at Step 1a.
-	ErrParameterContractViolation = errors.New("parameter contract violated")
+// ErrAttachmentSlotNearMiss marks an ADVISORY finding, not a halt: an
+// attachment whose name is not a declared slot on its component's type but
+// is within a small edit distance of one — the shape a slot-name typo
+// takes. An attachment name matching no slot is legal (the attachment
+// surface is open), so this sentinel never reaches a build's verdict; it
+// exists so a front end can recognise the advisory class and render it as a
+// warning.
+const ErrAttachmentSlotNearMiss cerrors.Code = "resolver/attachment-slot-near-miss"
 
-	// ErrDuplicateBoundaryComponent wraps a Release that declares the same
-	// component name in more than one boundary of its boundary tree. The two
-	// declarations are not merged and not ranked: a component's boundary context
-	// (output directory, sub-directory, sync wave, annotations, boundary infra)
-	// and its per-edge `uses` surface are read by separate walks that resolve a
-	// duplicated name to different declarations, so one node would take its
-	// output location from one declaration and its per-edge configuration from
-	// another. Rejected at Release load rather than resolved silently — the
-	// diagnostic names both declaration sites so the author can delete the one
-	// they did not mean.
-	ErrDuplicateBoundaryComponent = errors.New("component declared in more than one boundary: declare each component in exactly one boundary")
+var _ = cerrors.Register(ErrAttachmentSlotNearMiss, cerrors.Meta{
+	Message: "attachment name is a near miss for a declared slot",
+})
 
-	// ErrUnnormalizedRelease fires at the resolve entry when a Release arrives
-	// with a non-empty top-level components surface AND a synthesized `default`
-	// boundary — an impossible state for a Release born through the normalization
-	// core (`types.NormalizeRelease` folds the root into the default and clears
-	// it), and the authored-both shape is envelope-rejected. It signals a bypass:
-	// a hand-built `types.Release` literal or a load path that skipped the parse
-	// core. An internal-invariant breach (a Loud Guardrail, Invariant 4)
-	// backstopping the `NormalizedRelease` type. Asserted at resolveFromInputs
-	// entry — the earliest point every boundary consumer (WireBoundaryInfra, the
-	// release guards, the renderer via rr.Release) sits behind — so one check
-	// protects the whole pipeline, not just the renderer.
-	ErrUnnormalizedRelease = errors.New("release reached resolve un-normalized (non-empty root components alongside a synthesized default boundary)")
-)
+// ErrUsesSocketNearMiss marks an ADVISORY finding, not a halt: a socket
+// named on a component's own uses block that its Component type does not
+// declare in usesSchema but is within a small edit distance of one — the
+// shape a socket-name typo takes. A socket name matching no declared socket
+// is legal on that surface (the Aggregate author owns the topology and may
+// name a socket the catalog did not anticipate), so this sentinel never
+// reaches a build's verdict; it exists so a front end can recognise the
+// advisory class and render it as a warning.
+const ErrUsesSocketNearMiss cerrors.Code = "resolver/uses-socket-near-miss"
+
+var _ = cerrors.Register(ErrUsesSocketNearMiss, cerrors.Meta{
+	Message: "uses socket name is a near miss for a declared socket",
+})
+
+// ErrUnreadParameter marks an ADVISORY finding, not a halt: a parameter the
+// Aggregate declares that no reference in the Aggregate's own text reads.
+// Declaring a parameter nothing reads is legal — the compiler does not police
+// which knobs an author exposes — so this sentinel never reaches a build's
+// verdict; it exists so a front end can recognise the advisory class and
+// render it as a warning.
+const ErrUnreadParameter cerrors.Code = "resolver/unread-parameter"
+
+var _ = cerrors.Register(ErrUnreadParameter, cerrors.Meta{
+	Message: "declared parameter is read by no reference in the Aggregate",
+})
+
+// ErrGuardEntityViewInconsistency wraps an internal-consistency failure: a
+// guard needs a catalog entity for a type that resolution resolved AS A
+// CATALOG REFERENCE (a bare-token identity, not a Tier-1 relative-path file),
+// yet the entity is absent from the guard's catalog view. A genuinely
+// unresolvable reference halts earlier at resolution; reaching a guard with
+// the entity missing means the build's resolved set and the guard's view have
+// diverged — a loud halt, never a silent skip. (Tier-1 relative-path types,
+// which legitimately have no catalog entity, are not this error.)
+const ErrGuardEntityViewInconsistency cerrors.Code = "resolver/guard-entity-view-inconsistency"
+
+var _ = cerrors.Register(ErrGuardEntityViewInconsistency, cerrors.Meta{
+	Message: "guard catalog-entity view inconsistency",
+})
+
+// ErrMissingRequiredFeature wraps a component whose declared catalog type
+// carries a presence mandate — a features.aggrega.ai/requiredType.<label>
+// annotation — that no attachment in the node's final set satisfies.
+const ErrMissingRequiredFeature cerrors.Code = "resolver/missing-required-feature"
+
+var _ = cerrors.Register(ErrMissingRequiredFeature, cerrors.Meta{
+	Message: "missing required feature: attach a Feature of the required type to the component",
+})
+
+// ErrFeatureMergeConflict wraps a conflict during Release-side Feature
+// attachment merging (e.g., divergent values on the same Feature key).
+const ErrFeatureMergeConflict cerrors.Code = "resolver/feature-merge-conflict"
+
+var _ = cerrors.Register(ErrFeatureMergeConflict, cerrors.Meta{
+	Message: "feature merge conflict: reconcile the Aggregate and Release declarations for the feature",
+})
+
+// ErrUnknownUsesSocket wraps a socket name that the entity owning the surface
+// does not declare in its usesSchema, on a surface that may only name a
+// declared socket: a Feature attachment's uses (the socket must be on the
+// attached Feature) and a Release per-edge uses (the socket must be on the
+// consuming component). A component's own uses block is NOT one of those
+// surfaces — an Aggregate author may name a socket the catalog did not
+// declare — so this sentinel no longer fires for it.
+const ErrUnknownUsesSocket cerrors.Code = "resolver/unknown-uses-socket"
+
+var _ = cerrors.Register(ErrUnknownUsesSocket, cerrors.Meta{
+	Message: "unknown uses socket: name a socket the entity declares in its usesSchema — only a component's own uses block may name one the catalog did not declare",
+})
+
+// ErrSelfInjectForbidden wraps a self-inject declaration on a component
+// whose catalog type does not declare a spec.inject allowlist.
+const ErrSelfInjectForbidden cerrors.Code = "resolver/self-inject-forbidden"
+
+var _ = cerrors.Register(ErrSelfInjectForbidden, cerrors.Meta{
+	Message: "self-inject on component without spec.inject allowlist",
+})
+
+// ErrInjectKeyCollision wraps a delivery key declared on more than one
+// inject source for the same component.
+const ErrInjectKeyCollision cerrors.Code = "resolver/inject-key-collision"
+
+var _ = cerrors.Register(ErrInjectKeyCollision, cerrors.Meta{
+	Message: "duplicate delivery key across inject sources",
+})
+
+// ErrMissingRequiredSocket wraps a uses-socket marked required in the
+// Component's usesSchema that no instance populates.
+const ErrMissingRequiredSocket cerrors.Code = "resolver/missing-required-socket"
+
+var _ = cerrors.Register(ErrMissingRequiredSocket, cerrors.Meta{
+	Message: "required uses socket not populated",
+})
+
+// ErrParameterMissing wraps a parameter declared required: true in the
+// Aggregate's typed contract that neither the Aggregate's default nor
+// the Release fulfillment supplies. Surfaced at Step 1a.
+const ErrParameterMissing cerrors.Code = "resolver/parameter-missing"
+
+var _ = cerrors.Register(ErrParameterMissing, cerrors.Meta{
+	Message: "required parameter not supplied",
+})
+
+// ErrParameterContractViolation wraps a parameter value that fails the
+// Aggregate's typed contract — type mismatch, enum / pattern / range
+// violation, validate-predicate failure, or a Release key with no
+// corresponding Aggregate declaration (closed-contract policy).
+// Surfaced at Step 1a.
+const ErrParameterContractViolation cerrors.Code = "resolver/parameter-contract-violation"
+
+var _ = cerrors.Register(ErrParameterContractViolation, cerrors.Meta{
+	Message: "parameter contract violated",
+})
+
+// ErrDuplicateBoundaryComponent wraps a Release that declares the same
+// component name in more than one boundary of its boundary tree. The two
+// declarations are not merged and not ranked: a component's boundary context
+// (output directory, sub-directory, sync wave, annotations, boundary infra)
+// and its per-edge `uses` surface are read by separate walks that resolve a
+// duplicated name to different declarations, so one node would take its
+// output location from one declaration and its per-edge configuration from
+// another. Rejected at Release load rather than resolved silently — the
+// diagnostic names both declaration sites so the author can delete the one
+// they did not mean.
+const ErrDuplicateBoundaryComponent cerrors.Code = "resolver/duplicate-boundary-component"
+
+var _ = cerrors.Register(ErrDuplicateBoundaryComponent, cerrors.Meta{
+	Message: "component declared in more than one boundary: declare each component in exactly one boundary",
+})
+
+// ErrUnnormalizedRelease fires at the resolve entry when a Release arrives
+// with a non-empty top-level components surface AND a synthesized `default`
+// boundary — an impossible state for a Release born through the normalization
+// core (`types.NormalizeRelease` folds the root into the default and clears
+// it), and the authored-both shape is envelope-rejected. It signals a bypass:
+// a hand-built `types.Release` literal or a load path that skipped the parse
+// core. An internal-invariant breach (a Loud Guardrail, Invariant 4)
+// backstopping the `NormalizedRelease` type. Asserted at resolveFromInputs
+// entry — the earliest point every boundary consumer (WireBoundaryInfra, the
+// release guards, the renderer via rr.Release) sits behind — so one check
+// protects the whole pipeline, not just the renderer.
+const ErrUnnormalizedRelease cerrors.Code = "resolver/unnormalized-release"
+
+var _ = cerrors.Register(ErrUnnormalizedRelease, cerrors.Meta{
+	Message: "release reached resolve un-normalized (non-empty root components alongside a synthesized default boundary)",
+})
 
 // ResolverError carries entity and field context alongside a sentinel error.
 // Entity follows the convention "<Kind> <metadata.name>" (e.g.

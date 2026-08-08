@@ -4,31 +4,42 @@
 package jsonschema
 
 import (
-	"errors"
 	"fmt"
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 )
 
 // Sentinel errors for errors.Is matching against adapter failures.
-var (
-	// ErrSchemaResolve indicates the underlying library failed to
-	// resolve the schema (typically a malformed $ref or a meta-schema
-	// validation failure). Surfaces at adapter construction time
-	// (eager pre-resolution).
-	ErrSchemaResolve = errors.New("validator/jsonschema: schema resolution failed")
 
-	// ErrInstanceValidation indicates the underlying library reported
-	// a validation failure against the instance that the adapter could
-	// not translate to a structured Finding. Findings produced from
-	// validation failures travel via *Report; this sentinel covers the
-	// envelope-level failure where the library returns an error the
-	// adapter cannot decompose.
-	ErrInstanceValidation = errors.New("validator/jsonschema: instance validation failed")
+// ErrSchemaResolve indicates the underlying library failed to
+// resolve the schema (typically a malformed $ref or a meta-schema
+// validation failure). Surfaces at adapter construction time
+// (eager pre-resolution).
+const ErrSchemaResolve cerrors.Code = "validator-jsonschema/schema-resolve"
 
-	// ErrExtensionEval indicates an x-aggrega-when: or x-aggrega-
-	// validate: template predicate failed to evaluate (template parse
-	// error, evaluation runtime error, or non-boolean result).
-	ErrExtensionEval = errors.New("validator/jsonschema: x-aggrega extension evaluation failed")
-)
+var _ = cerrors.Register(ErrSchemaResolve, cerrors.Meta{
+	Message: "validator/jsonschema: schema resolution failed",
+})
+
+// ErrInstanceValidation indicates the underlying library reported
+// a validation failure against the instance that the adapter could
+// not translate to a structured Finding. Findings produced from
+// validation failures travel via *Report; this sentinel covers the
+// envelope-level failure where the library returns an error the
+// adapter cannot decompose.
+const ErrInstanceValidation cerrors.Code = "validator-jsonschema/instance-validation"
+
+var _ = cerrors.Register(ErrInstanceValidation, cerrors.Meta{
+	Message: "validator/jsonschema: instance validation failed",
+})
+
+// ErrExtensionEval indicates an x-aggrega-when: or x-aggrega-
+// validate: template predicate failed to evaluate (template parse
+// error, evaluation runtime error, or non-boolean result).
+const ErrExtensionEval cerrors.Code = "validator-jsonschema/extension-eval"
+
+var _ = cerrors.Register(ErrExtensionEval, cerrors.Meta{
+	Message: "validator/jsonschema: x-aggrega extension evaluation failed",
+})
 
 // AdapterError wraps the underlying library or template evaluation
 // error with adapter-side context. Callers match the sentinel via
