@@ -8,8 +8,26 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
-// AssembleNodeContext builds the full TemplateContext for one node,
-// matching template-context-v1alpha1.schema.json.
+// AssembleNodeContext builds the TemplateContext for one node, matching
+// template-context-v1alpha1.schema.json. The context is the projection Recipe
+// and FeatureRecipe templates are written against — a view assembled in memory
+// for the duration of the render and never persisted — so what this function
+// puts on it is exactly what a template can read.
+//
+// It fills the node's identity and topology (instance_id, labels, the three
+// cascading annotation buckets, the pre-hydrated inject pipe, and the enriched
+// uses map keyed by the alias the developer gave each edge), the evaluated
+// values and infra dictionaries, the node's own resolved provides, its
+// attachments in author order, and the immutable inject_raw record of what the
+// developer actually authored.
+//
+// Several fields are deliberately left empty here and filled by whoever owns
+// them, which is the trap for a reader who assumes the returned context is
+// final: locals are evaluated ahead of the node's provides and published onto
+// the context later, each attachment's resolved provides arrive once its bound
+// FeatureRecipe has been evaluated, and Release identity is folded in by
+// AssembleNodeContextWithRelease. Reading one of those off a freshly assembled
+// context yields the zero value rather than an error.
 func AssembleNodeContext(
 	nodeID string,
 	graph *types.IRGraph,

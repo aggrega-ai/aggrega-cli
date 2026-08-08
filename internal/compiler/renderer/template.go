@@ -354,24 +354,31 @@ type orderedMapForTemplate interface {
 }
 
 // toLowercaseMap walks an arbitrary Go value and produces a representation
-// shaped for Go text/template consumption. The walker replaces an earlier
-// json.Marshal / json.Unmarshal round-trip that was destroying OrderedMap
-// author-order at the JSON-decode step — author-order is load-bearing for
-// JSON-serialization consumers (IR output, --trace debug, Wasm payloads)
-// but irrelevant for text/template's alphabetical map-range default. The
-// walker preserves OrderedMap shape all the way to the template boundary
-// and then intentionally converts to map[string]any at that boundary —
-// the controlled handoff from "author-order Go data" to
-// "alphabetical-iteration template data."
+// shaped for Go text/template consumption. It is what makes the render context
+// readable the way a Recipe author writes it: templates address fields by their
+// lowercase JSON-tag names — .context.values, .context.infra and so on, exactly
+// as template-context-v1alpha1.schema.json names them — while the Go types
+// behind them use exported field names. This walker is the one place that
+// translation happens.
+//
+// It is also the boundary at which author order is handed off. Author order is
+// load-bearing for every consumer that serializes the context (the IR, trace
+// output, plugin payloads), so types.OrderedMap keeps its shape all the way
+// here; at this boundary it becomes a plain map, which text/template then ranges
+// over in alphabetical key order. That handoff is deliberate, not incidental:
+// ordered-semantic data is modelled where the shape is declared, never by
+// relying on the order a template happens to iterate in.
 //
 // Conversion rules:
 //   - Struct fields: reflected by JSON tag (first token before `,`).
 //     `json:"-"` skips the field. No tag falls back to the lowercased field
-//     name. `omitempty` and `omitzero` cause zero-valued fields to be
-//     omitted (matching the prior JSON round-trip behavior).
+//     name. `omitempty` and `omitzero` are treated alike — either one omits the
+//     field when it is zero, and for a struct that declares IsZero() that
+//     method decides.
 //   - types.OrderedMap[V] (detected via orderedMapForTemplate interface):
 //     unwrapped to map[string]any via TemplateAlphabeticalMap, then values
-//     recursively walked.
+//     recursively walked — so a nested OrderedMap is unwrapped at every level
+//     and every level iterates alphabetically at the template boundary.
 //   - map[K]V where K is string-convertible: walked recursively, emitted
 //     as map[string]any.
 //   - Slices / arrays: walked element-wise, emitted as []any.
@@ -519,8 +526,8 @@ func fieldJSONName(f reflect.StructField) (name string, omitEmpty bool, skip boo
 }
 
 // isEmptyForTemplate matches encoding/json's omitempty semantics plus the
-// Go 1.24 omitzero semantics. Keeps the walker's output shape equivalent
-// to what the prior JSON round-trip produced.
+// omitzero semantics, so a field elides from the template view under the same
+// conditions it would elide from the context's JSON form.
 func isEmptyForTemplate(v reflect.Value) bool {
 	if !v.IsValid() {
 		return true

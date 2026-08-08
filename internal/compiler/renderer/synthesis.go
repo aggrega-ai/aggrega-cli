@@ -16,8 +16,14 @@ import (
 // B.4 type-asserts the engine to this interface when a Recipe has declared
 // workload:; engines that don't implement it produce a CATALOG_ERROR at B.4.
 //
-// Implemented by: helm and compose engines. Other providers (terraform,
-// cloudformation, eval) do not implement WorkloadSynthesizer today.
+// Synthesis starts from a declared Workload and from nothing else — which is
+// why the parameter is a *types.Workload rather than the node's values. A
+// provider never reads a values dictionary and decides for itself that the
+// author must have wanted a running service: compute exists in the output
+// because the developer declared it, or it does not exist. A Recipe that
+// declares neither source: nor workload: is an artifacts-only Recipe, rendered
+// by a provider that reports ArtifactsStandalone and emitting exactly the
+// artifacts it declared; it never becomes a silently synthesized compute unit.
 type WorkloadSynthesizer interface {
 	// SynthesizeWorkload produces provider-native manifests from a parsed
 	// Workload. ctx is the per-node TemplateContext (gives access to

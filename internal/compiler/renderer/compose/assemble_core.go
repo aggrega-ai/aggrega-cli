@@ -8,11 +8,10 @@
 //
 // AssembleBoundaryCore takes exactly the inputs the merge consumes — the per-node
 // fragments, the per-node annotations, the IR edges, the boundary-path fallback,
-// and the yaml indent — so both the in-tree host engine (through the
-// AssembleBoundary adapter, which projects the host BoundaryInfo) and the
-// provider Wasm guest call this one function. This file carries no build tag: it
-// compiles for the host and for the wasip1 guest alike, so it imports no
-// host-only capability (no filesystem, no network).
+// and the yaml indent — rather than a host-shaped carrier the caller would have
+// to build, so the compose provider plugin reaches the merge directly. This file
+// carries no build tag: it compiles for the host and for the wasip1 guest alike,
+// so it imports no host-only capability (no filesystem, no network).
 //
 // Merge contract.
 //

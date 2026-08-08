@@ -801,7 +801,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// provider) BoundaryAssembler at the contributor's evaluated path.
 		// Engines that implement BoundaryAssembler but place per-node
 		// content at engine-controlled positions (today: helm-chart,
-		// signalled by ExternalArtifactsHandler — its sub-charts land at
+		// signalled by the engine's artifacts capability — its sub-charts land at
 		// charts/<nodeID>/ via the umbrella's nestPerNode contract) keep
 		// Render output Intermediate=false so the orchestrator nests their
 		// files under the per-node prefix rather than routing them to
@@ -1050,7 +1050,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// Host docs a component-scope FR pipeline may /host PATCH or EMIT: the
 		// host component's own discrete documents (state.EmittedFiles).
 		// hostIsAssembler mirrors the per-node renderIsIntermediate predicate —
-		// an assembler that is not an ExternalArtifactsHandler renders
+		// an assembler that does not place its own artifacts renders
 		// pre-assembly fragments, so a /host PATCH against it halts (post-
 		// assembly territory). providerName is the host component's recipe
 		// provider, threaded in so a host-scope pipeline step's
@@ -1550,6 +1550,15 @@ func resolveFeatureRecipes(
 // Both the component render path (RenderAll) and the FeatureRecipe render
 // sites call this, so a Recipe and a FeatureRecipe bound to the same provider
 // gate identically — there is one gate, not a parallel FR track.
+//
+// This is also the only place an unsupported combination becomes an authoring
+// diagnostic. Engines carry no mode-rejection logic of their own, which is what
+// keeps the message an author sees identical whichever provider refused and
+// stops a fourth and fifth provider from each inventing their own wording. The
+// consequence for whoever adds a provider: declare the input kinds and write no
+// rejection switch. The consequence for whoever debugs one: an engine that is
+// handed a kind its own report did not declare has been mis-routed — that is a
+// defect on this path, not something the author of the Recipe can fix.
 func gateInputKind(nodeID, providerName string, engine Engine, hasSource, hasWorkload, hasArtifacts bool) error {
 	caps := engine.Contract()
 	switch {

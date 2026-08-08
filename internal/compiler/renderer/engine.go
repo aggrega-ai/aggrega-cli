@@ -58,9 +58,9 @@ type NodeInputValidator interface {
 // the core's stock YAML codec ([NewStockYAMLCodec]).
 //
 // The pipeline executor type-asserts this capability off the engine rendering
-// the scope it is carving, exactly as it asserts BoundaryAssembler and
-// ExternalArtifactsHandler elsewhere: own-scope units use the own engine's
-// codec, host-scope units use the host engine's codec.
+// the scope it is carving, exactly as it asserts [BoundaryAssembler] and the
+// artifacts-placement capability elsewhere: own-scope units use the own
+// engine's codec, host-scope units use the host engine's codec.
 type CodecProvider interface {
 	PipelineCodec(yamlIndent int) (frp.Codec, bool)
 }
@@ -108,18 +108,29 @@ func linksCrossBoundary(engine Engine) bool {
 
 // ProviderContract declares which of the three Recipe input kinds a
 // provider engine can render. This is the INPUT-KIND axis only — it is
-// orthogonal to the output-assembly axis (BoundaryAssembler /
-// ExternalArtifactsHandler, which describe how a node's output is assembled,
-// not which input kinds it accepts).
+// orthogonal to the output-assembly axis ([BoundaryAssembler] and
+// [BoundaryAssemblyReporter], which describe how a node's output is assembled,
+// not which input kinds it accepts). Conflating the two is the easy mistake:
+// an engine that merges its output and an engine that renders sourced input are
+// answering different questions.
 //
 //   - Sourced — renders a Recipe with a source: (sourced mode).
-//   - Synthesized — renders a Recipe with a workload: (synthesised mode);
-//     true iff the engine also implements WorkloadSynthesizer (pinned by test).
+//   - Synthesized — renders a Recipe with a workload: (synthesised mode).
 //   - ArtifactsStandalone — renders an artifacts-only Recipe (no source:, no
 //     workload:) by emitting its declared artifacts as the node's output.
 //
-// The central gate consumes these to accept or reject a (node-mode, provider)
-// combination once per node, with a single uniform diagnostic.
+// Which kinds a given provider supports is the provider's own claim, read from
+// its describe() self-report — never a table of provider names held in the
+// core. A per-provider table here would put provider knowledge in the core,
+// and it would be wrong the first time a provider's capabilities changed
+// without the core being rebuilt.
+//
+// The central input-kind gate consumes these to accept or reject a
+// (node-mode, provider) combination once per node, with a single uniform
+// diagnostic. Synthesis is gated twice over, at two different layers: this
+// report decides whether the node may be dispatched at all, and the synthesis
+// dispatch separately requires the engine to implement [WorkloadSynthesizer],
+// halting with a catalog error naming the provider when it does not.
 type ProviderContract struct {
 	Sourced             bool
 	Synthesized         bool

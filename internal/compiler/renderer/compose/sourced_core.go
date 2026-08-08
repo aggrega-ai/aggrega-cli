@@ -18,11 +18,11 @@
 //
 // RenderSourcedCore is the byte-identical-critical part of sourced-mode
 // rendering: it receives the base compose bytes in memory and never reads from
-// disk, so both the in-tree host engine (which reads the file from a path) and
-// the provider Wasm guest (which reconstructs the source from the payload's
-// source projection) share this one render path. This file carries no build
-// tag: it compiles for the host and for the wasip1 guest alike, so it imports no
-// host-only capability (no filesystem, no network).
+// disk, so the caller supplies the source however it obtained it — the compose
+// provider plugin reconstructs it from its render input's source projection.
+// This file carries no build tag: it compiles for the host and for the wasip1
+// guest alike, so it imports no host-only capability (no filesystem, no
+// network).
 
 package compose
 
@@ -45,9 +45,9 @@ import (
 // operator-facing source identifier threaded through only for diagnostics so the
 // parse-error messages match the source the host read.
 //
-// Exported so the provider Wasm guest (package main, which cannot reach an
-// unexported compose function) renders through the same single-source core the
-// in-tree sourced path calls, keeping the two surfaces byte-identical.
+// Exported so the compose provider plugin — a separate main package, which
+// cannot reach an unexported compose function — renders through this core rather
+// than reimplementing the parse-and-overlay it describes.
 func RenderSourcedCore(baseComposeBytes []byte, sourcePath string, values map[string]any, nodeCtx rendercore.NodeRenderContext) (map[string][]byte, error) {
 	// A Compose file is a single YAML document. Decode the first document, then
 	// require the stream to be exhausted: a single file carrying `---`-separated

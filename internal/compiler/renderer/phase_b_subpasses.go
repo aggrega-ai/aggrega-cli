@@ -791,7 +791,7 @@ func renderFeatureRecipeFiles(
 	// Sourced mode hits engine.Render; synthesised renders at B.4, artifacts at
 	// B.3. EmitOriginSource files accumulate by sorted filename for
 	// determinism. The Intermediate flag follows the same rule the component
-	// path uses: a BoundaryAssembler that is not an ExternalArtifactsHandler
+	// path uses: a BoundaryAssembler that does not place its own artifacts
 	// consumes Render output as fragment input.
 	if hasSource {
 		files, err := frEngine.Render(ctx, frValues, frNodeCtx)

@@ -1,25 +1,67 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Cognitio S.r.l.
 
-// Package compose implements the compose provider engine: per-node Workload
-// synthesis into Docker Compose service fragments, plus (in a follow-up track)
-// a Release-level merger that composes fragments into a single
-// docker-compose.yaml at the Release output root.
+// Package compose holds the compose provider's translation core: the
+// filesystem-free functions that turn a node's render input into Docker Compose
+// content, and that fold a dispatch group's per-node contributions into one
+// document.
 //
-// Per-node contract (this file). SynthesizeWorkload returns one EmittedFile
-// per node — `<nodeID>.compose-fragment.yaml` — containing a partial
-// ComposeFile populated with the node's services, volumes, and networks. The
-// fragment is self-contained: it round-trips through yaml.Unmarshal cleanly.
+// The core carries no build tag, so it compiles for the host and for the wasip1
+// guest alike, and it therefore imports no host-only capability — no filesystem,
+// no network. Every entry point takes exactly the inputs its translation
+// consumes: AssembleBoundaryCore takes the per-node fragments, the per-node
+// annotations, the uses edges, the boundary-path fallback and the YAML indent;
+// RenderSourcedCore takes the base compose bytes rather than a path. That is
+// what lets the compose provider plugin call these translations directly
+// instead of carrying its own copy of them.
 //
-// Release-level merge. A BoundaryComposer/Release-merger
-// reads the per-node fragments, deep-merges them, and emits a single
-// docker-compose.yaml at the Release output root. Until that lands, fragments
-// remain visible in the output tree.
+// # The two input kinds converge on one fragment
 //
-// Translation discipline. Aggrega's Workload model carries Kubernetes-shaped
-// semantics (PodSpec, probes, volume types, service types). Compose is
-// shape-poorer; some translations are degraded with explicit warning comments
-// in the rendered YAML. The engine never silently drops information — fields
-// it cannot express either translate to a sensible compose primitive (with a
-// comment explaining the degradation) or fail with TRANSLATION_ERROR.
+// A node reaches the merge through one of two paths, and both produce the same
+// intermediate shape, so the merge has one input format rather than two:
+//
+//   - Synthesised. A node whose Recipe declares workload: is translated into a
+//     partial compose document holding just that node's contribution — one
+//     service for the main container plus one per sidecar, one top-level volume
+//     per persistent claim, and the per-container environment, probes and volume
+//     mounts.
+//   - Sourced. A node whose Recipe declares source: has that file parsed and the
+//     Recipe's evaluated values deep-merged on top, per compose's own overlay
+//     semantics (see deepMergeOverlay).
+//
+// Either way the result is marshalled to YAML and handed back as one
+// intermediate fragment named `<nodeID>.compose-fragment.yaml`. The fragment is
+// self-contained: it round-trips through YAML unmarshalling cleanly, which is
+// what lets the merge parse it back.
+//
+// # Fragments are intermediates, never output
+//
+// The fragments exist only to be folded together. They accumulate in memory,
+// keyed by node ID, and nothing writes them to the dispatch path — the compose
+// provider declares that it merges its dispatch group's per-node output, and
+// merged output means the per-node halves are inputs to the merge rather than
+// artifacts in their own right. Only the assembled docker-compose.yaml is
+// emitted.
+//
+// # Determinism
+//
+// Given identical input the assembled document is byte-identical, and every
+// ordering decision on the way there is deliberate rather than incidental:
+// contributing nodes are sorted before the merge walks them, so merge order is a
+// property of the node IDs and not of map iteration; inferred dependencies are
+// sorted by target name before they are recorded; and a collision diagnostic
+// sorts both its contributor descriptors and its services, so the same conflict
+// produces the same message text every time. Where a collection carries a
+// meaningful author order, that order is preserved instead — an init-container
+// chain is ordered because the ordering is the meaning.
+//
+// # Translation discipline
+//
+// Aggrega's Workload model carries Kubernetes-shaped semantics (pod
+// specifications, probes, volume types, service types). Compose is
+// shape-poorer, so some translations are degraded, and where they are, the
+// rendered YAML says so in a comment. The translation never silently drops
+// information: a field it cannot express either maps onto a sensible compose
+// primitive with a comment explaining the degradation, or halts with a
+// translation error naming what could not be expressed.
 package compose

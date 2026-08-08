@@ -15,6 +15,17 @@ import (
 // it at .context.uses.<alias> — per-edge config at .context.uses.<alias>.values
 // and .context.uses.<alias>.infra.
 //
+// The projection is what carries a dependency's deterministic pointer strings
+// across the graph — a service name, an interpolation string, a formatted
+// connection string — so a Recipe template reads a neighbour's published values
+// as ordinary struct fields instead of walking the topology itself.
+//
+// A target's locals are not in the projection and never cross an edge. Locals
+// are the producing Recipe's own private working state; provides is the entire
+// surface a consumer can read. Nothing here reads the target's locals and the
+// projected entry carries no field for them, so a template that reaches for one
+// finds nothing rather than finding a value it was never meant to see.
+//
 // The projection is consumer-scoped by construction: the loop only includes
 // edges whose Source is this node (the node's outgoing edges), so a node never
 // sees per-edge config authored on an edge pointing at it. This is what keeps a
