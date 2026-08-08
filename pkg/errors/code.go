@@ -61,11 +61,15 @@ func (s *sealed) Error() string { return s.message }
 
 // ErrorCode returns the code the identity was registered under.
 //
-// The code is the stable identifier a consumer outside Go reads — a wire
-// payload, a log line, a diagnostic table. It is deliberately separate from the
-// Go accessor that yields the identity, because the two have different
-// audiences: the Go name can be refactored without disturbing the code, and the
-// code can be read by a consumer that cannot import Go at all.
+// The code is the durable identifier of the condition itself. It is
+// deliberately separate from the Go accessor that yields the identity, so the
+// two carry their stability independently: the accessor can be renamed or moved
+// without disturbing the code a condition was registered under.
+//
+// It is reached from Go, through CodeOf or the CodedError interface, and from
+// there only. No emitted diagnostic carries it today — the printed output is the
+// category prefix, the source location and the message text — so a consumer that
+// does not link this package recognises conditions by their message instead.
 func (s *sealed) ErrorCode() string { return s.code }
 
 // CodedError is an error that reports the code of the halting condition it
