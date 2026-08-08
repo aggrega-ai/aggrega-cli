@@ -83,6 +83,17 @@ func EvaluateRecipeSource(
 //   - anything else: a shape that reached here already typed. No template is
 //     evaluated against it, so it is returned untouched.
 //
+// That last arm is deliberately forward-compatible — an unfamiliar shape
+// survives the walk rather than being mangled by it — and the cost of that
+// is precision. A structured source that arrived through an order-preserving
+// decode is an ordered container rather than a map[string]any, so it lands in
+// the passthrough instead of the map arm and its string fields go unevaluated:
+// no error, no diagnostic, just a template that was never rendered. The source
+// field is declared as a bare any and decodes through the standard path today,
+// which is what keeps the map arm the one that fires. Declaring it as an
+// order-preserving container instead replaces the passthrough with an explicit
+// arm for that shape, in the same change.
+//
 // Other places in the compiler also switch on this union, and they are
 // deliberately NOT folded in here, because they ask a different question of the
 // same value: whether a source is declared at all, whether its URL is local, and

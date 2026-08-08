@@ -269,8 +269,12 @@ type ProviderMappings struct {
 type MappingTier struct {
 	Type OrderedMap[string] `json:"type,omitempty,omitzero" yaml:"type,omitempty"`
 	Name OrderedMap[string] `json:"name,omitempty,omitzero" yaml:"name,omitempty"`
-	// *Pointer: nil vs empty matters for the annotation-expansion intent — a nil
-	// pointer means the author did not declare annotation bindings at all; an
-	// empty OrderedMap is currently authorable but may carry meaning later.
+	// Pointer rather than value, because "absent" and "declared empty" are
+	// two different declarations here and the value form collapses them into
+	// one. A tier that omits the key inherits the annotation bindings of the
+	// manifest it extends; a tier that declares an empty dictionary replaces
+	// them, which is how an author opts out of an inherited registry.
+	// Bindings are replaced wholesale rather than composed key by key, so an
+	// empty dictionary clears the inherited set rather than merging into it.
 	Annotations *OrderedMap[AnnotationBinding] `json:"annotations,omitempty" yaml:"annotations,omitempty"`
 }

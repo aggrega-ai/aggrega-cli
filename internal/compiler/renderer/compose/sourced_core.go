@@ -106,6 +106,10 @@ func RenderSourcedCore(baseComposeBytes []byte, sourcePath string, values map[st
 //   - When base lacks k, overlay[k] is added.
 //   - When overlay lacks k, base[k] is preserved.
 //
+// "Is a map" means whatever asStringMap recognises as one, so a value it
+// does not recognise takes the replace branch rather than the recurse
+// branch. That helper's own comment carries what follows from it.
+//
 // Returns the merged map. Inputs may be nil; nil base treated as empty.
 func deepMergeOverlay(base, overlay map[string]any) map[string]any {
 	if base == nil {
@@ -137,6 +141,18 @@ func deepMergeOverlay(base, overlay map[string]any) map[string]any {
 // yaml.v3 decodes maps as either map[string]any (when keys are
 // always strings) or map[any]any (when keys are mixed). The
 // merger needs string-keyed maps; this helper coerces the latter.
+//
+// Those two shapes are the whole set it recognises, which is correct while
+// both merge inputs arrive as plain decoded containers: the base document is
+// decoded into a map[string]any above, and the overlay is required to be one
+// on the way in. That requirement is a contract on the caller rather than
+// something the compiler enforces, and it is the fragile half of the
+// arrangement. An order-preserving container decodes a nested object as
+// *types.OrderedMap[any], which this helper reports as not-a-map — and an
+// unrecognised shape is indistinguishable here from a genuine scalar, so
+// deepMergeOverlay replaces where it should have recursed, with no error and
+// no panic. Teaching either input to decode through an ordered container
+// therefore adds an arm here for that shape in the same change.
 func asStringMap(v any) (map[string]any, bool) {
 	switch m := v.(type) {
 	case map[string]any:

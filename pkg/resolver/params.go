@@ -99,6 +99,8 @@ func LoadParametersImport(path string) (map[string]any, error) {
 // rendered output — template references are by key, not by iteration
 // order.
 func MergeParameters(release types.ParametersBlock, external map[string]any) map[string]any {
+	// Flattening here is load-bearing for deepMerge below, whose recursion
+	// recognises only plain maps; see the contract note on that function.
 	releasePlain := orderedMapToPlain(release.Inline)
 	if releasePlain == nil && external == nil {
 		return map[string]any{}
@@ -141,6 +143,15 @@ func PurgeParameters(params *map[string]any) {
 }
 
 // deepMerge recursively merges child into base. Maps recurse; scalars/arrays replace.
+//
+// Both parameters are plain map[string]any by contract, and the recursion depends
+// on it: the assertions below recognise only map[string]any, so a nested
+// *types.OrderedMap[any] would fall to the replace branch and discard the base
+// subtree rather than merging it — silently, with no error. MergeParameters, the
+// sole caller, upholds that contract from both sides: inline parameters are
+// flattened through orderedMapToPlain, and imported ones decode into a bare map.
+// Widening this signature to any, or dropping that flattening, needs an explicit
+// *types.OrderedMap[any] arm here first.
 func deepMerge(base, child map[string]any) map[string]any {
 	if base == nil && child == nil {
 		return map[string]any{}

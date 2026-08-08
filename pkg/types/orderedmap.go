@@ -60,6 +60,31 @@ var vIsInterfaceCache sync.Map // map[reflect.Type]bool
 // the same key order as the source — the property GitOps diff-based
 // reviewers depend on.
 //
+// Order is frequently semantic rather than merely cosmetic. A Workload's
+// containers dictionary fixes which container leads the generated pod spec;
+// a featuresSchema slot dictionary fixes the order diagnostics report slots
+// in; an Aggregate's components dictionary fixes listing order. In each case
+// the author's key order is part of what the author declared, and a
+// hash-randomized map would discard it.
+//
+// # Choosing OrderedMap over a plain map
+//
+// Use OrderedMap for an author-declared collection: anything parsed from a
+// YAML or JSON authoring surface whose key order the author chose. Use a
+// plain map[string]X for a collection that is derived rather than authored —
+// an internal cache or index that never serializes has no author order to
+// preserve, and neither does a set computed from author input.
+//
+// The derived case is worth naming explicitly, because reaching for
+// OrderedMap there is a mistake rather than a harmless over-precaution.
+// Edges computed from declarations, an inventory assembled by a walk, or any
+// other synthesized collection has no author order, so "preserving insertion
+// order" preserves whatever traversal happened to build it — which is not a
+// stable property. Sort such a collection explicitly by a derivation key
+// instead. That is a different mechanism for a different problem, and
+// conflating the two produces output that is ordered without being
+// deterministic.
+//
 // OrderedMap is safe to use as a zero value. Set / Delete lazily initialize
 // the backing map. The type is not safe for concurrent mutation; callers
 // that share an OrderedMap across goroutines must serialize writes
@@ -67,6 +92,15 @@ var vIsInterfaceCache sync.Map // map[reflect.Type]bool
 //
 // Mutation semantics on a nil receiver mirror Go's builtin map: Delete is
 // a no-op (returns false); Set panics with a typed error message.
+//
+// A struct field declared *OrderedMap[V] rather than OrderedMap[V] carries
+// one distinction the value form cannot: a field absent from the source
+// stays nil, while a field present but empty decodes as non-nil and empty.
+// The value form collapses those two into the same zero value. Use the
+// pointer form only where a consumer behaves differently for the two cases —
+// inheriting a parent's entries versus explicitly clearing them is the usual
+// reason. Where both mean the same thing, the value form is simpler and
+// spares every reader a nil check.
 //
 // # Round-trip fidelity for OrderedMap[any]
 //
@@ -90,6 +124,37 @@ var vIsInterfaceCache sync.Map // map[reflect.Type]bool
 //
 // Decode depth is bounded; pathological input that exceeds the internal
 // depth limit returns an error wrapping ErrOrderedMapDecodeDepthExceeded.
+//
+// # Dispatching on decoded OrderedMap[any] values
+//
+// Because a nested object decodes as *OrderedMap[any] rather than
+// map[string]any, any consumer that inspects a decoded value by its type
+// must account for that shape. Three arrangements do so, and they are not
+// equally durable:
+//
+//   - An explicit type-switch arm on *OrderedMap[any] that iterates via
+//     All(). The consumer handles the shape itself and stays correct however
+//     it is called.
+//   - A pre-unwrap: the consumer recognizes the ordered shape through a
+//     small interface and flattens it before its own dispatch runs. Also
+//     self-contained.
+//   - A parameter typed map[string]any rather than any, which leaves each
+//     caller responsible for unwrapping first — via
+//     TemplateAlphabeticalMapDeep or an equivalent — before it calls.
+//
+// Only the first two are enforced by the type system. The third is a
+// convention among callsites, and when it lapses it lapses silently: an
+// ordered value reaching such a consumer fails its map[string]any type
+// assertion and is treated as an opaque scalar rather than as a map, so a
+// merge replaces where it should have recursed. Nothing panics and nothing
+// reports an error. A change that routes OrderedMap-decoded content into a
+// map[string]any-typed consumer therefore adds an explicit arm to that
+// consumer in the same change.
+//
+// A consumer whose type switch ends in a default arm passing unknown shapes
+// through untouched is forward-compatible but imprecise: it carries an
+// ordered value through rather than mishandling it, which is correct only
+// while that consumer owes the value no order-dependent behavior.
 type OrderedMap[V any] struct {
 	keys   []string
 	values map[string]V
@@ -130,6 +195,20 @@ func (m OrderedMap[V]) IsZero() bool {
 // author-order iteration, callers access Keys() and All() directly; this
 // method is the intentional bridge to the alphabetical-iteration template
 // boundary that matches Helm-community authoring expectations.
+//
+// The alphabetical boundary is deliberate and narrow. Every other consumer
+// reads author order: MarshalJSON and MarshalYAML both emit keys in author
+// order, so anything reading a serialized OrderedMap sees the order the
+// author wrote. Go's text/template is the single exception, because its map
+// range is alphabetical and offers no hook to change that.
+//
+// One consequence binds template authoring. A template must not recover an
+// ordered sequence by ranging a map, because at this boundary that order is
+// alphabetical rather than authored. Where sequence carries meaning — init
+// containers, environment variables that reference one another, a dependency
+// ordering, successive script lines — the authoring surface models it as a
+// list, or a synthesizer emits it already ordered. The order is never
+// reconstructed from map iteration inside a template.
 //
 // Single-level only: nested *OrderedMap[any] values pass through unchanged.
 // Callers that need a fully unwrapped representation walkable by Go templates
