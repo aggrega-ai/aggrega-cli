@@ -4,10 +4,10 @@
 package types
 
 import (
-	"errors"
 	"os"
 	"strings"
 
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"go.yaml.in/yaml/v3"
 )
 
@@ -15,7 +15,11 @@ import (
 // carries a shape outside the two documented modes: not a string
 // scalar; not a mapping with a single `$import:` key; or a mapping
 // with extra siblings beyond `$import:`.
-var ErrArtifactEntryShape = errors.New("artifacts entry: shape must be a string scalar or {$import: <local-path>}")
+const ErrArtifactEntryShape cerrors.Code = "types/artifact-entry-shape"
+
+var _ = cerrors.Register(ErrArtifactEntryShape, cerrors.Meta{
+	Message: "artifacts entry: shape must be a string scalar or {$import: <local-path>}",
+})
 
 // ArtifactEntry carries one Recipe artifact entry with three content-
 // shape-dispatched modes per the file-import vocabulary (chapter 07):

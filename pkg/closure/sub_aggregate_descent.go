@@ -4,9 +4,9 @@
 package closure
 
 import (
-	"errors"
 	"fmt"
 
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
@@ -29,7 +29,11 @@ const maxSubAggregateDepth = 10
 // evades the visited set (for example a version-renaming chain that presents a
 // fresh identity at every level). An ordinary cycle (A imports B imports A)
 // terminates earlier via the visited set and never reaches this bound.
-var ErrSubAggregateDepth = errors.New("resolve: sub-aggregate inclusion depth exceeded")
+const ErrSubAggregateDepth cerrors.Code = "closure/sub-aggregate-depth"
+
+var _ = cerrors.Register(ErrSubAggregateDepth, cerrors.Meta{
+	Message: "resolve: sub-aggregate inclusion depth exceeded",
+})
 
 // AggregateLoader loads the parsed body of a resolved (pinned) sub-aggregate so
 // DescendSubAggregates can re-walk its own references. The digest is the pin
@@ -47,7 +51,11 @@ type AggregateLoader interface {
 
 // ErrNoAggregateLoader halts a caller whose catalog lookup cannot load resolved
 // sub-aggregate bodies, so the sub-aggregate axis cannot be computed over it.
-var ErrNoAggregateLoader = errors.New("resolve: catalog lookup cannot load resolved sub-aggregate bodies")
+const ErrNoAggregateLoader cerrors.Code = "closure/no-aggregate-loader"
+
+var _ = cerrors.Register(ErrNoAggregateLoader, cerrors.Meta{
+	Message: "resolve: catalog lookup cannot load resolved sub-aggregate bodies",
+})
 
 // RequireAggregateLoader adapts a Lookup to the AggregateLoader the
 // sub-aggregate axis needs, refusing with ErrNoAggregateLoader when the lookup

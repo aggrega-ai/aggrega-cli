@@ -4,29 +4,45 @@
 package types
 
 import (
-	"errors"
 	"fmt"
 	"strings"
 
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"go.yaml.in/yaml/v3"
 )
 
 // ErrTemplateNotFound fires when a `$instantiate:` reference names a template
 // that is not declared in the library's `spec.templates` map.
-var ErrTemplateNotFound = errors.New("schemalibrary: template not found")
+const ErrTemplateNotFound cerrors.Code = "types/template-not-found"
+
+var _ = cerrors.Register(ErrTemplateNotFound, cerrors.Meta{
+	Message: "schemalibrary: template not found",
+})
 
 // ErrTemplateParamMissing fires when a `$instantiate:` `$args:` binding
 // omits a parameter the template declares as required (no default).
-var ErrTemplateParamMissing = errors.New("schemalibrary: template parameter missing")
+const ErrTemplateParamMissing cerrors.Code = "types/template-param-missing"
+
+var _ = cerrors.Register(ErrTemplateParamMissing, cerrors.Meta{
+	Message: "schemalibrary: template parameter missing",
+})
 
 // ErrTemplateParamTypeMismatch fires when a `$instantiate:` `$args:` binding
 // supplies a value whose type does not match the parameter's declared type.
-var ErrTemplateParamTypeMismatch = errors.New("schemalibrary: template parameter type mismatch")
+const ErrTemplateParamTypeMismatch cerrors.Code = "types/template-param-type-mismatch"
+
+var _ = cerrors.Register(ErrTemplateParamTypeMismatch, cerrors.Meta{
+	Message: "schemalibrary: template parameter type mismatch",
+})
 
 // ErrForbiddenKeyword fires when a schema entry uses a JSON Schema keyword
 // forbidden by default in SchemaLibrary content. Currently: $dynamicAnchor,
 // $dynamicRef.
-var ErrForbiddenKeyword = errors.New("schemalibrary: forbidden JSON Schema keyword")
+const ErrForbiddenKeyword cerrors.Code = "types/forbidden-keyword"
+
+var _ = cerrors.Register(ErrForbiddenKeyword, cerrors.Meta{
+	Message: "schemalibrary: forbidden JSON Schema keyword",
+})
 
 // InstantiateTemplate substitutes the named template's body with the
 // provided arguments and returns the resulting yaml.Node ready for the

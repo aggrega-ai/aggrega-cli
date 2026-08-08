@@ -4,9 +4,9 @@
 package types
 
 import (
-	"errors"
 	"fmt"
 
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"go.yaml.in/yaml/v3"
 )
 
@@ -14,7 +14,11 @@ import (
 // a shape outside the two documented modes: not an object (inline
 // parameter map); a mapping with `$import:` plus other siblings; or a
 // `$import:` value that isn't a string scalar.
-var ErrParametersShape = errors.New("parameters: shape must be an inline object or {$import: <local-path>}")
+const ErrParametersShape cerrors.Code = "types/parameters-shape"
+
+var _ = cerrors.Register(ErrParametersShape, cerrors.Meta{
+	Message: "parameters: shape must be an inline object or {$import: <local-path>}",
+})
 
 // ParametersBlock carries the Release's environment-specific parameter
 // fulfillment with two content-shape-dispatched modes per chapter 07:

@@ -3,7 +3,9 @@
 
 package pipeline
 
-import "errors"
+import (
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
+)
 
 // ErrPolicySettingsInvalid is the ABI-stable sentinel for a policy attachment
 // whose operator-supplied with.settings does not satisfy the settings schema the
@@ -14,7 +16,11 @@ import "errors"
 // wrapping error names the plugin, the offending settings key or path, and the
 // schema's expectation, so the operator sees exactly which setting to fix. A
 // build halts on it loudly rather than handing the plugin ill-shaped settings.
-var ErrPolicySettingsInvalid = errors.New("policy attachment settings do not satisfy the plugin's declared settings schema")
+const ErrPolicySettingsInvalid cerrors.Code = "compiler-pipeline/policy-settings-invalid"
+
+var _ = cerrors.Register(ErrPolicySettingsInvalid, cerrors.Meta{
+	Message: "policy attachment settings do not satisfy the plugin's declared settings schema",
+})
 
 // ErrAnnotationInjectionRejected is the ABI-stable sentinel for an
 // annotation-transform plugin whose output the host refuses to apply: an
@@ -25,4 +31,8 @@ var ErrPolicySettingsInvalid = errors.New("policy attachment settings do not sat
 // build loudly rather than being silently absorbed. It is the annotation-role
 // analogue of the label role's patch-confinement halt — the structural facet
 // guarantee for the annotation-transform role.
-var ErrAnnotationInjectionRejected = errors.New("annotation-transform plugin output was rejected: an injection targets a component coordinate the host did not supply")
+const ErrAnnotationInjectionRejected cerrors.Code = "compiler-pipeline/annotation-injection-rejected"
+
+var _ = cerrors.Register(ErrAnnotationInjectionRejected, cerrors.Meta{
+	Message: "annotation-transform plugin output was rejected: an injection targets a component coordinate the host did not supply",
+})

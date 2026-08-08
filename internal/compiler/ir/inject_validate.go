@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"strings"
 
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
@@ -25,7 +26,11 @@ import (
 // Per the Aggrega architectural invariant set (Invariant 4): policy
 // violations produce Loud Guardrails — the build halts with a specific
 // error, never silent mutations.
-var ErrInjectEntryAmbiguous = errors.New("inject entry carries both `value:` and `from:`; schema requires exactly one")
+const ErrInjectEntryAmbiguous cerrors.Code = "compiler-ir/inject-entry-ambiguous"
+
+var _ = cerrors.Register(ErrInjectEntryAmbiguous, cerrors.Meta{
+	Message: "inject entry carries both `value:` and `from:`; schema requires exactly one",
+})
 
 // ValidateInjectBlock walks a single InjectBlock's mechanisms (env, file,
 // arg, and each Additional[...] entry) and reports any verbose-form entry

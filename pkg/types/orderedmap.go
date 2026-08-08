@@ -6,13 +6,13 @@ package types
 import (
 	"bytes"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"iter"
 	"reflect"
 	"sync"
 
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"go.yaml.in/yaml/v3"
 )
 
@@ -20,7 +20,11 @@ import (
 // UnmarshalJSON or UnmarshalYAML exceeds orderedMapDecodeMaxDepth, guarding
 // against pathological input that would otherwise blow the call stack.
 // Wrapped via fmt.Errorf at the emission site with the offending depth.
-var ErrOrderedMapDecodeDepthExceeded = errors.New("OrderedMap: decode depth exceeded")
+const ErrOrderedMapDecodeDepthExceeded cerrors.Code = "types/ordered-map-decode-depth-exceeded"
+
+var _ = cerrors.Register(ErrOrderedMapDecodeDepthExceeded, cerrors.Meta{
+	Message: "OrderedMap: decode depth exceeded",
+})
 
 // orderedMapDecodeMaxDepth bounds nested-OrderedMap recursion in unmarshal
 // paths. Catalog payloads observed in practice nest at most a handful of

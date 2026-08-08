@@ -8,17 +8,21 @@ import (
 	"fmt"
 	"os"
 
-	"go.yaml.in/yaml/v3"
-
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator/envelope"
+	"go.yaml.in/yaml/v3"
 )
 
 // ErrConfigInvalid wraps every structural-validation failure raised
 // by Load. Errors satisfying errors.Is(err, ErrConfigInvalid) carry
 // a wrapped message naming the offending field path and the
 // validation diagnostic.
-var ErrConfigInvalid = errors.New("workspaceconfig: file failed schema validation")
+const ErrConfigInvalid cerrors.Code = "workspaceconfig/config-invalid"
+
+var _ = cerrors.Register(ErrConfigInvalid, cerrors.Meta{
+	Message: "workspaceconfig: file failed schema validation",
+})
 
 // ErrDuplicateProviderTarget reports that the composed provider list binds
 // one capability more than once. Errors satisfying
@@ -28,7 +32,11 @@ var ErrConfigInvalid = errors.New("workspaceconfig: file failed schema validatio
 // — whether within one layer or contributed across the cascade and its
 // `_append` companions — halt resolution loudly rather than silently letting
 // one win.
-var ErrDuplicateProviderTarget = errors.New("workspaceconfig: capability is bound to more than one provider plugin")
+const ErrDuplicateProviderTarget cerrors.Code = "workspaceconfig/duplicate-provider-target"
+
+var _ = cerrors.Register(ErrDuplicateProviderTarget, cerrors.Meta{
+	Message: "workspaceconfig: capability is bound to more than one provider plugin",
+})
 
 // ErrCapabilityOnCrossCuttingSocket reports that a cross-cutting socket
 // (governance, linter, importer) is bound by capability instead of by
@@ -38,7 +46,11 @@ var ErrDuplicateProviderTarget = errors.New("workspaceconfig: capability is boun
 // capability lookup would match nothing. A capability binding on one of them is
 // therefore an attachment that can never resolve, and it halts loudly at load
 // rather than surfacing later as an opaque resolve miss.
-var ErrCapabilityOnCrossCuttingSocket = errors.New("workspaceconfig: a cross-cutting socket is bound by capability but attaches by uri")
+const ErrCapabilityOnCrossCuttingSocket cerrors.Code = "workspaceconfig/capability-on-cross-cutting-socket"
+
+var _ = cerrors.Register(ErrCapabilityOnCrossCuttingSocket, cerrors.Meta{
+	Message: "workspaceconfig: a cross-cutting socket is bound by capability but attaches by uri",
+})
 
 // ErrInertFieldOnProviderSocket reports that a provider-socket binding sets a
 // field that has no referent on that socket — `function` or `with`. Errors
@@ -50,7 +62,11 @@ var ErrCapabilityOnCrossCuttingSocket = errors.New("workspaceconfig: a cross-cut
 // domain boundary. A field with no referent on a socket is rejected at
 // authoring rather than silently dropped, so the operator learns the field is
 // inert instead of quietly seeing it ignored.
-var ErrInertFieldOnProviderSocket = errors.New("workspaceconfig: a provider socket binding sets a field with no referent on that socket")
+const ErrInertFieldOnProviderSocket cerrors.Code = "workspaceconfig/inert-field-on-provider-socket"
+
+var _ = cerrors.Register(ErrInertFieldOnProviderSocket, cerrors.Meta{
+	Message: "workspaceconfig: a provider socket binding sets a field with no referent on that socket",
+})
 
 // ErrGovernanceRoleInvalid reports that a governance attachment declares no
 // role, or a role that is not a known governance role. Errors satisfying
@@ -62,14 +78,22 @@ var ErrInertFieldOnProviderSocket = errors.New("workspaceconfig: a provider sock
 // silently ignored. It is rejected at authoring on the composed config so a
 // hand-edited role typo or omission halts loudly rather than dropping the
 // plugin.
-var ErrGovernanceRoleInvalid = errors.New("workspaceconfig: a governance attachment declares no role or an unknown role")
+const ErrGovernanceRoleInvalid cerrors.Code = "workspaceconfig/governance-role-invalid"
+
+var _ = cerrors.Register(ErrGovernanceRoleInvalid, cerrors.Meta{
+	Message: "workspaceconfig: a governance attachment declares no role or an unknown role",
+})
 
 // ErrDuplicateRegistryAlias reports that a registry alias is already used by a
 // different host entry. Errors satisfying errors.Is(err, ErrDuplicateRegistryAlias)
 // carry the offending alias and the host that already holds it. A registry alias
 // is a unique convenience selector across entries, so registering one already
 // bound to another host halts loudly rather than shadowing the existing binding.
-var ErrDuplicateRegistryAlias = errors.New("workspaceconfig: registry alias is already used by another host")
+const ErrDuplicateRegistryAlias cerrors.Code = "workspaceconfig/duplicate-registry-alias"
+
+var _ = cerrors.Register(ErrDuplicateRegistryAlias, cerrors.Meta{
+	Message: "workspaceconfig: registry alias is already used by another host",
+})
 
 // ErrAmbiguousRegistryAlias reports that a registry token matched the alias of
 // more than one entry during resolution. Errors satisfying
@@ -77,7 +101,11 @@ var ErrDuplicateRegistryAlias = errors.New("workspaceconfig: registry alias is a
 // selects exactly one host; a hand-edited config that binds the same alias to two
 // hosts makes the selection ambiguous, so resolution halts loudly rather than
 // silently choosing one host over the other.
-var ErrAmbiguousRegistryAlias = errors.New("workspaceconfig: registry alias matches more than one host")
+const ErrAmbiguousRegistryAlias cerrors.Code = "workspaceconfig/ambiguous-registry-alias"
+
+var _ = cerrors.Register(ErrAmbiguousRegistryAlias, cerrors.Meta{
+	Message: "workspaceconfig: registry alias matches more than one host",
+})
 
 // Load reads the workspace's .aggrega-config.yaml file at path,
 // validates it against the aggrega-config-v1alpha1 JSON Schema, and

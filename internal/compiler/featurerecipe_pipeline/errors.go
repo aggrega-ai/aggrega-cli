@@ -3,7 +3,9 @@
 
 package featurerecipe_pipeline
 
-import "errors"
+import (
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
+)
 
 // ErrPipelineTargetAbsent fires when a patch addresses a document not
 // present in the keyed set — a scope/key pair the set does not hold. It is
@@ -13,7 +15,11 @@ import "errors"
 // renderer integration that wires the walk into the render loop promotes
 // this to its own build-halting Loud Guardrail; the walk reports the
 // typed cause so callers can match it with errors.Is.
-var ErrPipelineTargetAbsent = errors.New("pipeline patch targets a document not present in the set")
+const ErrPipelineTargetAbsent cerrors.Code = "compiler-featurerecipe-pipeline/pipeline-target-absent"
+
+var _ = cerrors.Register(ErrPipelineTargetAbsent, cerrors.Meta{
+	Message: "pipeline patch targets a document not present in the set",
+})
 
 // ErrPipelineStepFailed is the walk's umbrella sentinel for a step that
 // failed for any reason other than an absent patch target — a guest trap,
@@ -21,7 +27,11 @@ var ErrPipelineTargetAbsent = errors.New("pipeline patch targets a document not 
 // document in the set, or a patch the apply engine rejected. The
 // underlying cause is wrapped with %w so a caller can still match the
 // specific engine error (for example jsonpatch.ErrTestFailed) through it.
-var ErrPipelineStepFailed = errors.New("pipeline step failed")
+const ErrPipelineStepFailed cerrors.Code = "compiler-featurerecipe-pipeline/pipeline-step-failed"
+
+var _ = cerrors.Register(ErrPipelineStepFailed, cerrors.Meta{
+	Message: "pipeline step failed",
+})
 
 // ErrPipelineContractViolation fires when a step's typed input or output does
 // not satisfy the schema its export declares: the rendered `with` input does
@@ -31,7 +41,11 @@ var ErrPipelineStepFailed = errors.New("pipeline step failed")
 // for an optional step, the same way a broken `when`/`with` predicate halts
 // regardless of Optional. The wrapping caller names the offending step and
 // keeps this sentinel in the unwrap chain so callers match it with errors.Is.
-var ErrPipelineContractViolation = errors.New("pipeline step typed-I/O contract violation")
+const ErrPipelineContractViolation cerrors.Code = "compiler-featurerecipe-pipeline/pipeline-contract-violation"
+
+var _ = cerrors.Register(ErrPipelineContractViolation, cerrors.Meta{
+	Message: "pipeline step typed-I/O contract violation",
+})
 
 // ErrPipelineTargetOpaque fires when a patch addresses a unit the codec
 // declined to give a tree-view — an opaque unit (a binary blob, free text,
@@ -44,4 +58,8 @@ var ErrPipelineContractViolation = errors.New("pipeline step typed-I/O contract 
 // This is the walk's local surface for the not-structured condition. The
 // renderer integration promotes it to its own build-halting Loud Guardrail;
 // the walk reports the typed cause so callers can match it with errors.Is.
-var ErrPipelineTargetOpaque = errors.New("pipeline patch targets an opaque (non-structured) unit")
+const ErrPipelineTargetOpaque cerrors.Code = "compiler-featurerecipe-pipeline/pipeline-target-opaque"
+
+var _ = cerrors.Register(ErrPipelineTargetOpaque, cerrors.Meta{
+	Message: "pipeline patch targets an opaque (non-structured) unit",
+})

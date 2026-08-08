@@ -24,8 +24,7 @@
 package closure
 
 import (
-	"errors"
-
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
@@ -187,20 +186,32 @@ type ResolvedSource struct {
 // DescendRecipeSources's lock-time evaluation pass. The build-time
 // counterpart (lockfile-vs-actual drift) wraps ErrFetchIntegrity at
 // the orchestrator, not this sentinel.
-var ErrSourceTemplateAtLockTime = errors.New("resolve: source-template evaluation failure at lock time")
+const ErrSourceTemplateAtLockTime cerrors.Code = "closure/source-template-at-lock-time"
+
+var _ = cerrors.Register(ErrSourceTemplateAtLockTime, cerrors.Meta{
+	Message: "resolve: source-template evaluation failure at lock time",
+})
 
 // ErrSourceTemplateParse marks a source-template that fails to PARSE (malformed
 // template text). A parse error is a structural authoring bug at any phase, so
 // lock-time local resolution keeps it loud rather than tolerating it. Errors of
 // this class also wrap ErrSourceTemplateAtLockTime.
-var ErrSourceTemplateParse = errors.New("resolve: source-template parse error")
+const ErrSourceTemplateParse cerrors.Code = "closure/source-template-parse"
+
+var _ = cerrors.Register(ErrSourceTemplateParse, cerrors.Meta{
+	Message: "resolve: source-template parse error",
+})
 
 // ErrSourceTemplateProvidesRef marks a source-template that references
 // `.provides`. Locals feed `.provides`, never the reverse — a template (or a
 // local) reading `.provides` is an invalid reverse reference at any phase, not a
 // lock-time-only absence, so lock-time local resolution keeps it loud. Errors of
 // this class also wrap ErrSourceTemplateAtLockTime.
-var ErrSourceTemplateProvidesRef = errors.New("resolve: source-template references .provides (invalid reverse reference)")
+const ErrSourceTemplateProvidesRef cerrors.Code = "closure/source-template-provides-ref"
+
+var _ = cerrors.Register(ErrSourceTemplateProvidesRef, cerrors.Meta{
+	Message: "resolve: source-template references .provides (invalid reverse reference)",
+})
 
 // ResolvedRef captures a single catalog-entity or Wasm-plugin
 // resolution result. Mirrors the lockfile package's Entity /
@@ -338,7 +349,11 @@ type LibraryResolution struct {
 // incompatible major versions of the same library URI. The
 // wrapped error message names the library URI, the conflicting
 // versions, and the consumer chain.
-var ErrMVSConflict = errors.New("resolve: minimum version selection conflict — incompatible library version requirements")
+const ErrMVSConflict cerrors.Code = "closure/mvs-conflict"
+
+var _ = cerrors.Register(ErrMVSConflict, cerrors.Meta{
+	Message: "resolve: minimum version selection conflict — incompatible library version requirements",
+})
 
 // ErrUnresolvableURI reports a URI in the Release's closure that names
 // no entity the catalog holds, which the walker cannot proceed past. The
@@ -349,13 +364,21 @@ var ErrMVSConflict = errors.New("resolve: minimum version selection conflict —
 // whose shape a recipe reference cannot express is judged before the walk
 // runs, so a mis-shaped reference no longer arrives here to be reported as
 // an entity the catalog does not hold.
-var ErrUnresolvableURI = errors.New("resolve: no entity in the catalog matches this URI")
+const ErrUnresolvableURI cerrors.Code = "closure/unresolvable-uri"
+
+var _ = cerrors.Register(ErrUnresolvableURI, cerrors.Meta{
+	Message: "resolve: no entity in the catalog matches this URI",
+})
 
 // ErrInvalidLibraryRef surfaces when a $ref: or $import: value
 // does not match the canonical library-reference URI shape per
 // the file-import vocabulary spec. The wrapped error names the
 // offending input string.
-var ErrInvalidLibraryRef = errors.New("resolve: invalid library reference URI")
+const ErrInvalidLibraryRef cerrors.Code = "closure/invalid-library-ref"
+
+var _ = cerrors.Register(ErrInvalidLibraryRef, cerrors.Meta{
+	Message: "resolve: invalid library reference URI",
+})
 
 // inputs bundles the four loaded structures ComputeClosure walks.
 // Keeping them in one struct keeps the public signature small and

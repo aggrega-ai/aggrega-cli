@@ -5,7 +5,6 @@ package cfncore
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"sort"
 	"strconv"
@@ -13,6 +12,7 @@ import (
 
 	frp "github.com/aggrega-ai/aggrega-cli/internal/compiler/featurerecipe_pipeline"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 )
 
 // Handle field names the producer's link_publish exposes for the consumer's
@@ -29,7 +29,11 @@ const (
 // raises when the consuming endpoint's assembled files carry no CloudFormation
 // stack template to inject the reference into. Without the consumer's stack the
 // resolve cannot locate the placeholder it must replace.
-var ErrLinkConsumerStackMissing = errors.New("cloudformation-provider: cross-boundary link resolve received no consumer stack template")
+const ErrLinkConsumerStackMissing cerrors.Code = "cloudformation-provider-cfncore/link-consumer-stack-missing"
+
+var _ = cerrors.Register(ErrLinkConsumerStackMissing, cerrors.Meta{
+	Message: "cloudformation-provider: cross-boundary link resolve received no consumer stack template",
+})
 
 // ErrLinkSentinelInterpolated is the loud failure a cross-boundary link resolve
 // raises when the placeholder for an injected value survives only inside a
@@ -37,7 +41,11 @@ var ErrLinkConsumerStackMissing = errors.New("cloudformation-provider: cross-bou
 // is an intrinsic object, which can only replace a whole value; a placeholder
 // spliced into a longer string cannot be swapped for an intrinsic. The build
 // halts rather than emit a reference in the wrong shape.
-var ErrLinkSentinelInterpolated = errors.New("cloudformation-provider: cross-boundary link value is interpolated into a larger string; only a whole-scalar injection can carry a cross-stack reference")
+const ErrLinkSentinelInterpolated cerrors.Code = "cloudformation-provider-cfncore/link-sentinel-interpolated"
+
+var _ = cerrors.Register(ErrLinkSentinelInterpolated, cerrors.Meta{
+	Message: "cloudformation-provider: cross-boundary link value is interpolated into a larger string; only a whole-scalar injection can carry a cross-stack reference",
+})
 
 // LinkPublish produces the producer-side wiring for one cross-boundary link on
 // the consumed (target) endpoint's side: for each output key the consuming edge

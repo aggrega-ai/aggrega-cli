@@ -4,10 +4,10 @@
 package types
 
 import (
-	"errors"
 	"fmt"
 	"strings"
 
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"go.yaml.in/yaml/v3"
 )
 
@@ -18,7 +18,11 @@ import (
 // shape at workspace-load time; this sentinel covers the Go-side typed-unmarshal
 // path so consumers can errors.Is against the failure without parsing the
 // formatted error text.
-var ErrArtifactsLibraryEntryShape = errors.New("artifactslibrary: entry must be a mapping of filename to a string body")
+const ErrArtifactsLibraryEntryShape cerrors.Code = "types/artifacts-library-entry-shape"
+
+var _ = cerrors.Register(ErrArtifactsLibraryEntryShape, cerrors.Meta{
+	Message: "artifactslibrary: entry must be a mapping of filename to a string body",
+})
 
 //go:generate go run ../../internal/tools/typegen artifactslibrary_gen.go
 

@@ -9,6 +9,7 @@ import (
 	"sort"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 )
 
 // ErrLockfileDrift wraps every drift detection failure raised by
@@ -29,7 +30,11 @@ import (
 // tiers does not drift; drift surfaces only when the content
 // actually changes (re-published tag, vendored re-tarred content,
 // edited workspace catalog entity).
-var ErrLockfileDrift = errors.New("lockfile: out of date; it no longer matches the current catalog")
+const ErrLockfileDrift cerrors.Code = "lockfile/lockfile-drift"
+
+var _ = cerrors.Register(ErrLockfileDrift, cerrors.Meta{
+	Message: "lockfile: out of date; it no longer matches the current catalog",
+})
 
 // Verify checks every URI in the freshly-computed closure against
 // the loaded lockfile's pinned (version, digest). Returns nil when

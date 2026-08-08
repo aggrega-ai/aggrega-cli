@@ -4,9 +4,9 @@
 package types
 
 import (
-	"errors"
 	"strings"
 
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"go.yaml.in/yaml/v3"
 )
 
@@ -14,7 +14,11 @@ import (
 // node carries a shape outside the three documented modes: not a string
 // scalar; not a mapping with a single $import key; or a mapping carrying
 // extra siblings beyond $import.
-var ErrValuesMappingShape = errors.New("valuesmapping: shape must be a string scalar or {$import: <path-or-library-identity>}")
+const ErrValuesMappingShape cerrors.Code = "types/values-mapping-shape"
+
+var _ = cerrors.Register(ErrValuesMappingShape, cerrors.Meta{
+	Message: "valuesmapping: shape must be a string scalar or {$import: <path-or-library-identity>}",
+})
 
 // ValuesMapping carries one of three content-shape-dispatched forms per
 // the schema-language migration's mapping authoring surface:

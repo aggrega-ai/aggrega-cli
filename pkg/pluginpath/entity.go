@@ -4,8 +4,9 @@
 package pluginpath
 
 import (
-	"errors"
 	"fmt"
+
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 )
 
 // ErrPluginEntityNotFound is the Loud Guardrail for a plugin reference that
@@ -14,7 +15,11 @@ import (
 // .wasm artifact reference is derived from its bare identity. A bare .wasm
 // reference or an artifact reference is no longer accepted: the build halts here
 // naming the offending reference.
-var ErrPluginEntityNotFound = errors.New("plugin reference is not a Plugin entity")
+const ErrPluginEntityNotFound cerrors.Code = "pluginpath/plugin-entity-not-found"
+
+var _ = cerrors.Register(ErrPluginEntityNotFound, cerrors.Meta{
+	Message: "plugin reference is not a Plugin entity",
+})
 
 // EntityLookup adapts the artifact-resolving cascade into an entity-fronted
 // Lookup: a plugin reference is a Plugin entity URI, and resolution is a

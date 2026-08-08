@@ -4,10 +4,10 @@
 package types
 
 import (
-	"errors"
 	"fmt"
 	"strings"
 
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"go.yaml.in/yaml/v3"
 )
 
@@ -17,7 +17,11 @@ import (
 // the same shape at workspace-load time; this sentinel covers the
 // Go-side typed-unmarshal path so consumers can errors.Is against the
 // failure without parsing the formatted error text.
-var ErrWorkloadEntryNotScalar = errors.New("workloadlibrary: entry body must be a string scalar")
+const ErrWorkloadEntryNotScalar cerrors.Code = "types/workload-entry-not-scalar"
+
+var _ = cerrors.Register(ErrWorkloadEntryNotScalar, cerrors.Meta{
+	Message: "workloadlibrary: entry body must be a string scalar",
+})
 
 //go:generate go run ../../internal/tools/typegen workloadlibrary_gen.go
 

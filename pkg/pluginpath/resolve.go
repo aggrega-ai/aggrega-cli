@@ -44,6 +44,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm/embedded"
 	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
@@ -243,7 +244,11 @@ type PluginExportClaim struct {
 // load with this sentinel. The check is a byte/hash comparison — never a
 // cryptographic signature re-verification, and never a network or trust-root
 // touch — so it holds under the hermetic, air-gapped build.
-var ErrPluginBundleDigestMismatch = errors.New("cached signature bundle does not match its recorded digest")
+const ErrPluginBundleDigestMismatch cerrors.Code = "pluginpath/plugin-bundle-digest-mismatch"
+
+var _ = cerrors.Register(ErrPluginBundleDigestMismatch, cerrors.Meta{
+	Message: "cached signature bundle does not match its recorded digest",
+})
 
 // Lookup resolves a plugin URI to its resolved bytes. It is the seam each
 // socket binds: the render pipeline binds a build-configured Resolver's Resolve

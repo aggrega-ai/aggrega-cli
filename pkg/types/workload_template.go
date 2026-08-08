@@ -4,9 +4,9 @@
 package types
 
 import (
-	"errors"
 	"strings"
 
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"go.yaml.in/yaml/v3"
 )
 
@@ -14,7 +14,11 @@ import (
 // carries a shape outside the documented modes: not a string scalar;
 // not a mapping with a single `$import:` key; or a mapping with extra
 // siblings beyond `$import:`.
-var ErrWorkloadTemplateShape = errors.New("workload: shape must be a string scalar or {$import: <path-or-library-identity>}")
+const ErrWorkloadTemplateShape cerrors.Code = "types/workload-template-shape"
+
+var _ = cerrors.Register(ErrWorkloadTemplateShape, cerrors.Meta{
+	Message: "workload: shape must be a string scalar or {$import: <path-or-library-identity>}",
+})
 
 // WorkloadTemplate carries the Recipe's authored workload-YAML producer
 // with three content-shape-dispatched modes per the file-import

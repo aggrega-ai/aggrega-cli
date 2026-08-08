@@ -23,30 +23,29 @@ import (
 // errors.Is against them without importing an internal package. They alias the
 // same error values the CLI publish flow reports, so a check written against
 // them here matches a failure the publish flow would raise.
-var (
-	// ErrTypeMismatch reports that the declared plugin type disagrees with the
-	// type the binary's describe() self-report states.
-	ErrTypeMismatch = wasm.ErrWasmPluginTypeMismatch
 
-	// ErrRejected reports that the sandbox refused the binary at the describe
-	// load — an illegal host-function import, an unsupported ABI, a malformed
-	// describe() self-report, or a similar descriptor-level violation.
-	ErrRejected = wasm.ErrWasmManifestRejected
+// ErrTypeMismatch reports that the declared plugin type disagrees with the
+// type the binary's describe() self-report states.
+const ErrTypeMismatch = wasm.ErrWasmPluginTypeMismatch
 
-	// ErrContractMismatch reports that an authored capability claim disagrees
-	// with the binary's describe() self-report. Entity mode only.
-	ErrContractMismatch = wasm.ErrWasmContractMismatch
+// ErrRejected reports that the sandbox refused the binary at the describe
+// load — an illegal host-function import, an unsupported ABI, a malformed
+// describe() self-report, or a similar descriptor-level violation.
+const ErrRejected = wasm.ErrWasmManifestRejected
 
-	// ErrCommandsMismatch reports that an authored command mirror disagrees with
-	// the commands the binary's describe() self-report declares. Entity mode
-	// only.
-	ErrCommandsMismatch = wasm.ErrWasmCommandsMirrorMismatch
+// ErrContractMismatch reports that an authored capability claim disagrees
+// with the binary's describe() self-report. Entity mode only.
+const ErrContractMismatch = wasm.ErrWasmContractMismatch
 
-	// ErrHostFunctionsMismatch reports that an authored host-function record
-	// disagrees with the functions the binary actually imports. Entity mode
-	// only.
-	ErrHostFunctionsMismatch = wasm.ErrWasmHostFunctionsStampMismatch
-)
+// ErrCommandsMismatch reports that an authored command mirror disagrees with
+// the commands the binary's describe() self-report declares. Entity mode
+// only.
+const ErrCommandsMismatch = wasm.ErrWasmCommandsMirrorMismatch
+
+// ErrHostFunctionsMismatch reports that an authored host-function record
+// disagrees with the functions the binary actually imports. Entity mode
+// only.
+const ErrHostFunctionsMismatch = wasm.ErrWasmHostFunctionsStampMismatch
 
 // Options configures a binary-only guest validation.
 type Options struct {

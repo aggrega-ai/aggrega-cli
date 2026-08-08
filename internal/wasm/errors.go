@@ -4,8 +4,9 @@
 package wasm
 
 import (
-	"errors"
 	"fmt"
+
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 )
 
 // CodedHostError carries a machine-matchable host-function wire error code
@@ -55,7 +56,11 @@ func (e *CodedHostError) Unwrap() error { return e.Err }
 // Errors wrapping this sentinel name the violated surface and the
 // plugin identifier so callers see exactly which surface caused the
 // rejection.
-var ErrWasmManifestRejected = errors.New("wasm: plugin rejected by the sandbox")
+const ErrWasmManifestRejected cerrors.Code = "wasm/wasm-manifest-rejected"
+
+var _ = cerrors.Register(ErrWasmManifestRejected, cerrors.Meta{
+	Message: "wasm: plugin rejected by the sandbox",
+})
 
 // ErrWasmGuestPanic indicates that guest plugin code panicked during a
 // Plugin.Call invocation. The Loader's Call method wraps the Extism
@@ -69,7 +74,11 @@ var ErrWasmManifestRejected = errors.New("wasm: plugin rejected by the sandbox")
 // access) into error return values rather than Go panics. This
 // sentinel is reserved for panics that escape Extism's own error
 // envelope — the safety net behind the SDK's normal error path.
-var ErrWasmGuestPanic = errors.New("wasm: guest plugin panicked during call")
+const ErrWasmGuestPanic cerrors.Code = "wasm/wasm-guest-panic"
+
+var _ = cerrors.Register(ErrWasmGuestPanic, cerrors.Meta{
+	Message: "wasm: guest plugin panicked during call",
+})
 
 // ErrWasmPluginExited indicates that a guest plugin invoked WASI
 // proc_exit with a non-zero code during a Plugin.Call. The Extism
@@ -82,7 +91,11 @@ var ErrWasmGuestPanic = errors.New("wasm: guest plugin panicked during call")
 //
 // The wrapping error carries the exit code the plugin passed to
 // proc_exit so callers see the failure code in the message.
-var ErrWasmPluginExited = errors.New("wasm: plugin invoked proc_exit")
+const ErrWasmPluginExited cerrors.Code = "wasm/wasm-plugin-exited"
+
+var _ = cerrors.Register(ErrWasmPluginExited, cerrors.Meta{
+	Message: "wasm: plugin invoked proc_exit",
+})
 
 // ErrWasmGuestError indicates that a guest plugin ran to completion but
 // reported, through the optional error field on its socket-output envelope, that
@@ -92,7 +105,11 @@ var ErrWasmPluginExited = errors.New("wasm: plugin invoked proc_exit")
 // classify with errors.Is, by distinct transport (a panic escaping the call, a
 // proc_exit, or a message the guest itself placed on its output). The wrapping
 // error carries the export name and the guest's message.
-var ErrWasmGuestError = errors.New("wasm: guest plugin reported an error")
+const ErrWasmGuestError cerrors.Code = "wasm/wasm-guest-error"
+
+var _ = cerrors.Register(ErrWasmGuestError, cerrors.Meta{
+	Message: "wasm: guest plugin reported an error",
+})
 
 // GuestReturnedError maps a guest-returned socket-output error message onto the
 // host taxonomy: it returns an error wrapping ErrWasmGuestError (naming the
@@ -119,7 +136,11 @@ func GuestReturnedError(export, msg string) error {
 // field, and both values so the author sees exactly which claim diverged from
 // the plugin's self-report. The same cross-check runs at publish time, so a
 // mismatch surfaces before the entity is published rather than at load.
-var ErrWasmContractMismatch = errors.New("wasm: entity contract claim does not match plugin describe()")
+const ErrWasmContractMismatch cerrors.Code = "wasm/wasm-contract-mismatch"
+
+var _ = cerrors.Register(ErrWasmContractMismatch, cerrors.Meta{
+	Message: "wasm: entity contract claim does not match plugin describe()",
+})
 
 // ErrWasmHostFunctionsStampMismatch indicates that a Plugin entity's stamped
 // runtime host-function record disagrees with the host functions the verified
@@ -140,7 +161,11 @@ var ErrWasmContractMismatch = errors.New("wasm: entity contract claim does not m
 // ErrWasmContractMismatch: that covers the export operates/scope claim against
 // describe(); this covers the stamped host-function record against the verified
 // binary's imports.
-var ErrWasmHostFunctionsStampMismatch = errors.New("wasm: stamped host-function record does not match .wasm imports")
+const ErrWasmHostFunctionsStampMismatch cerrors.Code = "wasm/wasm-host-functions-stamp-mismatch"
+
+var _ = cerrors.Register(ErrWasmHostFunctionsStampMismatch, cerrors.Meta{
+	Message: "wasm: stamped host-function record does not match .wasm imports",
+})
 
 // ErrWasmPluginTypeMismatch indicates that the plugin type expected at a load
 // site disagrees with the plugin type the .wasm binary self-reports in
@@ -158,7 +183,11 @@ var ErrWasmHostFunctionsStampMismatch = errors.New("wasm: stamped host-function 
 // and commands; this compares the single plugin-type label on each side. The
 // wrapping error names the plugin identity, the expected type, and the reported
 // type so the author sees exactly which two kinds diverged.
-var ErrWasmPluginTypeMismatch = errors.New("wasm: declared plugin type does not match plugin describe()")
+const ErrWasmPluginTypeMismatch cerrors.Code = "wasm/wasm-plugin-type-mismatch"
+
+var _ = cerrors.Register(ErrWasmPluginTypeMismatch, cerrors.Meta{
+	Message: "wasm: declared plugin type does not match plugin describe()",
+})
 
 // ErrWasmCommandsMirrorMismatch indicates that a Plugin entity's recorded
 // command mirror disagrees with the commands the plugin's describe() self-report
@@ -181,7 +210,11 @@ var ErrWasmPluginTypeMismatch = errors.New("wasm: declared plugin type does not 
 // ErrWasmHostFunctionsStampMismatch: that covers the stamped host-function record
 // against the verified binary's imports; this covers the recorded command mirror
 // against the plugin's describe() self-report.
-var ErrWasmCommandsMirrorMismatch = errors.New("wasm: recorded command mirror does not match plugin describe()")
+const ErrWasmCommandsMirrorMismatch cerrors.Code = "wasm/wasm-commands-mirror-mismatch"
+
+var _ = cerrors.Register(ErrWasmCommandsMirrorMismatch, cerrors.Meta{
+	Message: "wasm: recorded command mirror does not match plugin describe()",
+})
 
 // ErrProducerConsumptionReentry indicates that a producer reached through the
 // host-mediated producer-consumption seam attempted a further producer-consumption
@@ -195,7 +228,11 @@ var ErrWasmCommandsMirrorMismatch = errors.New("wasm: recorded command mirror do
 // carrying this sentinel's text. The sentinel is producer- and consumer-agnostic
 // — it guards any consumer/producer pair routed through the one shared seam, not
 // a single socket pair.
-var ErrProducerConsumptionReentry = errors.New("producer-consumption re-entry denied: a producer reached through the host may not issue a further producer-consumption call")
+const ErrProducerConsumptionReentry cerrors.Code = "wasm/producer-consumption-reentry"
+
+var _ = cerrors.Register(ErrProducerConsumptionReentry, cerrors.Meta{
+	Message: "producer-consumption re-entry denied: a producer reached through the host may not issue a further producer-consumption call",
+})
 
 // ErrWasmPluginVersionMismatch indicates that a Plugin entity's recorded
 // metadata.version disagrees with the build-provenance version the plugin's
@@ -217,4 +254,8 @@ var ErrProducerConsumptionReentry = errors.New("producer-consumption re-entry de
 // ErrWasmCommandsMirrorMismatch and ErrWasmHostFunctionsStampMismatch: those
 // cover the command mirror and host-function record; this covers the recorded
 // metadata.version against the plugin's describe() build-provenance version.
-var ErrWasmPluginVersionMismatch = errors.New("wasm: entity metadata.version does not match plugin describe()")
+const ErrWasmPluginVersionMismatch cerrors.Code = "wasm/wasm-plugin-version-mismatch"
+
+var _ = cerrors.Register(ErrWasmPluginVersionMismatch, cerrors.Meta{
+	Message: "wasm: entity metadata.version does not match plugin describe()",
+})

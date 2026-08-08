@@ -30,9 +30,9 @@
 package egress
 
 import (
-	"errors"
 	"net/http"
 
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
@@ -45,7 +45,11 @@ import (
 // It belongs to the fetch-error family: the source-resolution error classifier
 // routes it into the same category as a remote-acquisition fault, since an
 // offline refusal is, from the user's perspective, an inability to fetch.
-var ErrOfflineEgress = errors.New("egress: network access refused because the workspace is offline; remediation: unset workspace.offline (or AGGREGA_OFFLINE) or run `aggrega pull --release <release>` from a connected environment to populate the cache")
+const ErrOfflineEgress cerrors.Code = "egress/offline-egress"
+
+var _ = cerrors.Register(ErrOfflineEgress, cerrors.Meta{
+	Message: "egress: network access refused because the workspace is offline; remediation: unset workspace.offline (or AGGREGA_OFFLINE) or run `aggrega pull --release <release>` from a connected environment to populate the cache",
+})
 
 // RoundTripper returns the HTTP transport for network egress, derived from the
 // resolved workspace configuration. When the configuration is offline it returns

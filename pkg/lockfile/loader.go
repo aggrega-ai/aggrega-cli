@@ -8,16 +8,20 @@ import (
 	"fmt"
 	"os"
 
-	"go.yaml.in/yaml/v3"
-
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator/envelope"
+	"go.yaml.in/yaml/v3"
 )
 
 // ErrLockfileInvalid wraps every structural-validation failure
 // raised by LoadLockfile. Errors satisfying
 // errors.Is(err, ErrLockfileInvalid) carry a wrapped message naming
 // the offending field path and the validation diagnostic.
-var ErrLockfileInvalid = errors.New("lockfile: file failed schema validation")
+const ErrLockfileInvalid cerrors.Code = "lockfile/lockfile-invalid"
+
+var _ = cerrors.Register(ErrLockfileInvalid, cerrors.Meta{
+	Message: "lockfile: file failed schema validation",
+})
 
 // DiagnosticSeverity classifies a non-fatal observation surfaced by
 // LoadLockfile. "soft" covers tolerant-load conditions (missing

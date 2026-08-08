@@ -15,18 +15,22 @@
 package yamlpos
 
 import (
-	"errors"
 	"strconv"
 	"unicode/utf16"
 	"unicode/utf8"
 
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"go.yaml.in/yaml/v3"
 )
 
 // ErrPositionOutOfRange is returned when a Position addresses a line
 // outside the document or when conversion against an empty LineIndex
 // is attempted.
-var ErrPositionOutOfRange = errors.New("position out of range")
+const ErrPositionOutOfRange cerrors.Code = "yamlpos/position-out-of-range"
+
+var _ = cerrors.Register(ErrPositionOutOfRange, cerrors.Meta{
+	Message: "position out of range",
+})
 
 // Position matches the LSP shape: 0-based line + 0-based character
 // offset measured in UTF-16 code units.

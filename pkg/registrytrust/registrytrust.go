@@ -25,7 +25,6 @@ package registrytrust
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -34,6 +33,7 @@ import (
 	"time"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/egress"
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/registryhost"
 )
 
@@ -141,7 +141,11 @@ func validateIdentities(field string, ids []AdvertisedIdentity) error {
 // identity pinning. Distinct from a transport error (DNS/TCP/TLS), which the
 // caller may also tolerate but which signals a reachability problem rather
 // than a deliberate "no policy advertised".
-var ErrNoTrustAdvertised = errors.New("registrytrust: registry advertises no trust config")
+const ErrNoTrustAdvertised cerrors.Code = "registrytrust/no-trust-advertised"
+
+var _ = cerrors.Register(ErrNoTrustAdvertised, cerrors.Meta{
+	Message: "registrytrust: registry advertises no trust config",
+})
 
 // ErrMalformedTrust reports that a registry served a trust document that
 // fetched successfully but failed to decode or validate. Unlike a 404 or a
@@ -149,7 +153,11 @@ var ErrNoTrustAdvertised = errors.New("registrytrust: registry advertises no tru
 // endpoint exists and answered, but its content is not a usable trust policy,
 // which signals a real misconfiguration rather than an absent policy. Both
 // Decode and Fetch wrap this sentinel on a decode/validation failure.
-var ErrMalformedTrust = errors.New("registrytrust: advertised trust config is malformed")
+const ErrMalformedTrust cerrors.Code = "registrytrust/malformed-trust"
+
+var _ = cerrors.Register(ErrMalformedTrust, cerrors.Meta{
+	Message: "registrytrust: advertised trust config is malformed",
+})
 
 // fetchTimeout bounds the one-time well-known GET so a hung endpoint cannot
 // stall registration indefinitely.

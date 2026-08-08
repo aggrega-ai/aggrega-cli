@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
@@ -14,7 +15,11 @@ import (
 // value does not match the document value at its path. Callers that
 // treat a failed test as a controlled outcome rather than a malformed
 // patch match on it with errors.Is.
-var ErrTestFailed = errors.New("jsonpatch: test operation failed")
+const ErrTestFailed cerrors.Code = "compiler-jsonpatch/test-failed"
+
+var _ = cerrors.Register(ErrTestFailed, cerrors.Meta{
+	Message: "jsonpatch: test operation failed",
+})
 
 // Op is one RFC 6902 operation the engine applies. It is deliberately a
 // local type, structurally identical to the Wasm-ABI patch operation

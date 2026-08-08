@@ -18,20 +18,24 @@ package cliplugin
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"os"
 
 	abi "github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 )
 
 // ErrNoResolver is returned when Run is invoked on a Runner with no Resolve seam
 // set, so there is no way to turn the plugin URI into bytes.
-var ErrNoResolver = errors.New("cliplugin: no plugin resolver configured")
+const ErrNoResolver cerrors.Code = "cliplugin/no-resolver"
+
+var _ = cerrors.Register(ErrNoResolver, cerrors.Meta{
+	Message: "cliplugin: no plugin resolver configured",
+})
 
 // Runner dispatches an installed CLI plugin. It composes plugin-URI resolution
 // with a runtime-profile Wasm load and invoke; it carries no per-command state,

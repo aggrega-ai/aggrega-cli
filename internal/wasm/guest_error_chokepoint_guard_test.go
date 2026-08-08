@@ -28,12 +28,22 @@ const sentinelHome = "internal/wasm/errors.go"
 // seam is deliberate.
 func sentinelName() string { return "ErrWasm" + "GuestError" }
 
-// readOnlyCalls are the calls that merely CLASSIFY an error against the
-// sentinel. They are legitimate on any surface — the taxonomy exists to be
-// matched — so the guard admits them everywhere and judges everything else.
-var readOnlyCalls = map[string]bool{
-	"errors.Is": true,
-	"errors.As": true,
+// nonConstructingCalls are the calls that take the sentinel without building an
+// error around it. Two classes qualify and both are legitimate on any surface,
+// so the guard admits them everywhere and judges everything else.
+//
+// A CLASSIFYING call — errors.Is, errors.As — uses the taxonomy as intended; the
+// taxonomy exists to be matched.
+//
+// A REGISTERING call declares the identity's own message beside the identity. It
+// is part of the declaration rather than a use of it, and it cannot become the
+// second copy this guard exists to catch: registering one identity twice panics
+// at start-up, so the single-registration property is enforced by the registry
+// itself rather than by reading source shape.
+var nonConstructingCalls = map[string]bool{
+	"errors.Is":        true,
+	"errors.As":        true,
+	"cerrors.Register": true,
 }
 
 // TestGuestErrorSentinelHasOneWrapSite is the chokepoint guard for the
@@ -98,7 +108,7 @@ func TestGuestErrorSentinelHasOneWrapSite(t *testing.T) {
 			if !ok {
 				return true
 			}
-			if readOnlyCalls[callName(call.Fun)] {
+			if nonConstructingCalls[callName(call.Fun)] {
 				return true
 			}
 			for _, arg := range call.Args {
