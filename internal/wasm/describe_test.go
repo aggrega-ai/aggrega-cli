@@ -140,7 +140,7 @@ func TestPluginDescriptorValidateABIHandshake(t *testing.T) {
 		d := base()
 		d.AbiVersion = bad
 		err := d.Validate("acme/provider")
-		if !errors.Is(err, ErrWasmManifestRejected) {
+		if !errors.Is(err, ErrWasmManifestRejected()) {
 			t.Fatalf("abi_version %q: want ErrWasmManifestRejected, got %v", bad, err)
 		}
 	}
@@ -167,7 +167,7 @@ func TestPluginDescriptorValidateUnknownPluginType(t *testing.T) {
 		Exports:    []PluginExport{{Name: "render_node"}},
 	}
 	err := d.Validate("acme/mystery")
-	if !errors.Is(err, ErrWasmManifestRejected) {
+	if !errors.Is(err, ErrWasmManifestRejected()) {
 		t.Fatalf("unknown plugin_type: want ErrWasmManifestRejected, got %v", err)
 	}
 	const want = `plugin "acme/mystery" declares unknown plugin_type "transmogrifier": ` +
@@ -269,7 +269,7 @@ func TestPluginDescriptorValidateMinimumExports(t *testing.T) {
 			t.Parallel()
 			err := tc.descriptor.Validate("acme/plugin")
 			if tc.wantReject {
-				if !errors.Is(err, ErrWasmManifestRejected) {
+				if !errors.Is(err, ErrWasmManifestRejected()) {
 					t.Fatalf("want ErrWasmManifestRejected, got %v", err)
 				}
 				return
@@ -300,7 +300,7 @@ func TestPluginDescriptorValidateCLI(t *testing.T) {
 		PluginType: string(PluginTypeCLI),
 		Exports:    []PluginExport{{Name: "run"}},
 	}
-	if err := withoutRun.Validate("acme/cli"); !errors.Is(err, ErrWasmManifestRejected) {
+	if err := withoutRun.Validate("acme/cli"); !errors.Is(err, ErrWasmManifestRejected()) {
 		t.Fatalf("cli without %q: want ErrWasmManifestRejected, got %v", CLIRunExportName, err)
 	}
 }
@@ -337,7 +337,7 @@ func TestPluginDescriptorValidateCommands(t *testing.T) {
 		Commands:   []PluginCLICommand{{Name: "ok"}, {Name: ""}},
 		Exports:    []PluginExport{{Name: CLIRunExportName}},
 	}
-	if err := emptyName.Validate("acme/cli"); !errors.Is(err, ErrWasmManifestRejected) {
+	if err := emptyName.Validate("acme/cli"); !errors.Is(err, ErrWasmManifestRejected()) {
 		t.Fatalf("cli with an empty command name: want ErrWasmManifestRejected, got %v", err)
 	}
 }
@@ -371,7 +371,7 @@ func TestPluginDescriptorValidateSettingsSchemaShape(t *testing.T) {
 	// compile, so the load gate refuses it.
 	malformed := base(`{"type":123}`)
 	err := malformed.Validate("acme/policy")
-	if !errors.Is(err, ErrWasmManifestRejected) {
+	if !errors.Is(err, ErrWasmManifestRejected()) {
 		t.Fatalf("malformed settings_schema: want ErrWasmManifestRejected, got %v", err)
 	}
 	if !strings.Contains(err.Error(), "acme/policy") {
@@ -466,7 +466,7 @@ func TestPluginDescriptorValidateHostFunctionsSubsetOfAllowlist(t *testing.T) {
 			{Name: "render_node", HostFunctions: []string{"aggrega_log", "catalog_lookup"}},
 		},
 	}
-	if err := reject.Validate("acme/provider"); !errors.Is(err, ErrWasmManifestRejected) {
+	if err := reject.Validate("acme/provider"); !errors.Is(err, ErrWasmManifestRejected()) {
 		t.Fatalf("un-allowlisted host function: want ErrWasmManifestRejected, got %v", err)
 	}
 
@@ -531,7 +531,7 @@ func TestPluginDescriptorValidateCapabilityShape(t *testing.T) {
 			// only the capability-shape check is under test.
 			err := d.Validate("acme/frp-step")
 			if tc.wantReject {
-				if !errors.Is(err, ErrWasmManifestRejected) {
+				if !errors.Is(err, ErrWasmManifestRejected()) {
 					t.Fatalf("want ErrWasmManifestRejected, got %v", err)
 				}
 				return
@@ -656,7 +656,7 @@ func TestPluginDescriptorValidateLinkCapability(t *testing.T) {
 			}
 			err := d.Validate("acme/link-provider")
 			if tc.wantReject {
-				if !errors.Is(err, ErrWasmManifestRejected) {
+				if !errors.Is(err, ErrWasmManifestRejected()) {
 					t.Fatalf("want ErrWasmManifestRejected, got %v", err)
 				}
 				return
@@ -692,7 +692,7 @@ func TestValidate_StreamingHostFuncs_DescriptorLevelDisjointness(t *testing.T) {
 			{Name: "emit_progress", HostFunctions: []string{"aggrega_cli_write_stdout"}},
 		},
 	}
-	if err := nonCLI.Validate("acme/provider"); !errors.Is(err, ErrWasmManifestRejected) {
+	if err := nonCLI.Validate("acme/provider"); !errors.Is(err, ErrWasmManifestRejected()) {
 		t.Fatalf("non-cli type declaring a streaming host function: want ErrWasmManifestRejected, got %v", err)
 	}
 

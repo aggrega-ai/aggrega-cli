@@ -190,7 +190,7 @@ func expandSchemaLibraryRef(
 			Path:    consumerFile,
 			Keyword: "$ref",
 			Message: msg + ": " + refURI,
-			Err:     ErrHostInLibraryRef,
+			Err:     ErrHostInLibraryRef(),
 		}
 	}
 
@@ -200,7 +200,7 @@ func expandSchemaLibraryRef(
 			Path:    consumerFile,
 			Keyword: "$ref",
 			Message: "cross-document $ref shape must be `<LibraryName>#/schemas/<EntryName>`: " + refURI,
-			Err:     ErrReferenceUnresolvable,
+			Err:     ErrReferenceUnresolvable(),
 		}
 	}
 
@@ -220,7 +220,7 @@ func expandSchemaLibraryRef(
 			Path:    consumerFile,
 			Keyword: "$ref",
 			Message: "cross-document $ref version separator is ':', not '@' — use `" + strings.Replace(refURI, "@", ":", 1) + "`: " + refURI,
-			Err:     ErrReferenceUnresolvable,
+			Err:     ErrReferenceUnresolvable(),
 		}
 	}
 
@@ -236,7 +236,7 @@ func expandSchemaLibraryRef(
 			Path:    consumerFile,
 			Keyword: "$ref",
 			Message: "circular cross-document $ref expansion: " + strings.Join(chain, " -> "),
-			Err:     ErrCircularRef,
+			Err:     ErrCircularRef(),
 		}
 	}
 
@@ -249,7 +249,7 @@ func expandSchemaLibraryRef(
 			Path:    consumerFile,
 			Keyword: "$ref",
 			Message: "SchemaLibrary " + parsed.library + " not found in catalog (referenced from " + consumerFile + "): " + refURI,
-			Err:     ErrUnresolvedSchemaLibraryRef,
+			Err:     ErrUnresolvedSchemaLibraryRef(),
 		}
 	}
 
@@ -260,7 +260,7 @@ func expandSchemaLibraryRef(
 			Path:    consumerFile,
 			Keyword: "$ref",
 			Message: "entry " + parsed.entry + " not found in SchemaLibrary " + parsed.library + ": " + refURI,
-			Err:     ErrUnresolvedSchemaLibraryRef,
+			Err:     ErrUnresolvedSchemaLibraryRef(),
 		}
 	}
 

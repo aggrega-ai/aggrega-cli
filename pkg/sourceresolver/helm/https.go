@@ -111,7 +111,7 @@ func (a *httpsAdapter) Resolve(spec sourceresolver.SourceSpec) (*sourceresolver.
 	if _, isProd := a.getter.(*productionGetter); isProd {
 		transport, ok := egressTransport(spec.Client)
 		if !ok {
-			return nil, egress.ErrOfflineEgress
+			return nil, egress.ErrOfflineEgress()
 		}
 		httpOpts = append(httpOpts, getter.WithTransport(transport))
 	}
@@ -123,7 +123,7 @@ func (a *httpsAdapter) Resolve(spec sourceresolver.SourceSpec) (*sourceresolver.
 	var resolvedURL string
 	if !strings.HasSuffix(strings.ToLower(spec.URL), ".tgz") {
 		if spec.Chart == "" {
-			return nil, sourceresolver.Wrap(spec, sourceresolver.ErrFetchNotFound,
+			return nil, sourceresolver.Wrap(spec, sourceresolver.ErrFetchNotFound(),
 				errors.New("repo-root URL requires spec.Chart"))
 		}
 		u, err := a.resolveIndex(spec.URL, spec.Chart, spec.Version, httpOpts...)
@@ -266,15 +266,15 @@ func mapHTTPError(spec sourceresolver.SourceSpec, err error) error {
 	msg := err.Error()
 	switch {
 	case strings.Contains(msg, "404"):
-		return sourceresolver.Wrap(spec, sourceresolver.ErrFetchNotFound, err)
+		return sourceresolver.Wrap(spec, sourceresolver.ErrFetchNotFound(), err)
 	case strings.Contains(msg, "401"), strings.Contains(msg, "403"):
-		return sourceresolver.Wrap(spec, sourceresolver.ErrFetchUnauthorized, err)
+		return sourceresolver.Wrap(spec, sourceresolver.ErrFetchUnauthorized(), err)
 	case strings.Contains(msg, "no such host"),
 		strings.Contains(msg, "connection refused"),
 		strings.Contains(msg, "i/o timeout"):
-		return sourceresolver.Wrap(spec, sourceresolver.ErrFetchNetworkUnreachable, err)
+		return sourceresolver.Wrap(spec, sourceresolver.ErrFetchNetworkUnreachable(), err)
 	default:
-		return sourceresolver.Wrap(spec, sourceresolver.ErrFetchNetworkUnreachable, err)
+		return sourceresolver.Wrap(spec, sourceresolver.ErrFetchNetworkUnreachable(), err)
 	}
 }
 

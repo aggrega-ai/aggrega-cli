@@ -180,7 +180,7 @@ func TestWalk_WhenErrorHaltsEvenOptional(t *testing.T) {
 	steps := []types.PipelineStep{{ID: "s1", Plugin: "p", Function: "f", When: whenText, Optional: true}}
 
 	_, err := Walk(context.Background(), docs, steps, inv.invoke, &types.TemplateContext{}, renderctx.RenderContext{}, errOnWhen(whenText))
-	if !errors.Is(err, ErrPipelineStepFailed) {
+	if !errors.Is(err, ErrPipelineStepFailed()) {
 		t.Fatalf("err = %v, want ErrPipelineStepFailed", err)
 	}
 	if _, ran := inv.received["s1"]; ran {

@@ -100,7 +100,7 @@ func TestLoginAuthenticatesEndToEnd(t *testing.T) {
 			t.Fatalf("NewRemoteRepository: %v", err)
 		}
 		_, _, err = oci.Resolve(context.Background(), repo, "1.0.0")
-		if !errors.Is(err, oci.ErrFetchUnauthorized) {
+		if !errors.Is(err, oci.ErrFetchUnauthorized()) {
 			t.Fatalf("expected ErrFetchUnauthorized without a stored credential; got %v", err)
 		}
 	})
@@ -136,7 +136,7 @@ func TestLoginAuthenticatesEndToEnd(t *testing.T) {
 			Registry: host, Username: "hello", PasswordStdin: true,
 			In: strings.NewReader("not-the-password\n"), Out: io.Discard,
 		})
-		if !errors.Is(err, oci.ErrFetchUnauthorized) {
+		if !errors.Is(err, oci.ErrFetchUnauthorized()) {
 			t.Fatalf("expected ErrFetchUnauthorized verifying a bad credential; got %v", err)
 		}
 		got, err := freshDockerStore(t).Get(context.Background(), host)

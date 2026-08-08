@@ -277,7 +277,7 @@ func TestErrors(t *testing.T) {
 func TestTestFailureSentinel(t *testing.T) {
 	doc := parseDoc(t, `{"a":1}`)
 	err := Apply(doc, []Op{{Op: "test", Path: "/a", Value: parseVal(t, `2`)}})
-	if !errors.Is(err, ErrTestFailed) {
+	if !errors.Is(err, ErrTestFailed()) {
 		t.Fatalf("expected ErrTestFailed, got %v", err)
 	}
 }

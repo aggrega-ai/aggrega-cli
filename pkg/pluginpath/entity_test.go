@@ -72,7 +72,7 @@ func TestEntityLookup_BareWasmHaltsLoudly(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected a loud halt for a bare-.wasm reference; got nil")
 	}
-	if !errors.Is(err, ErrPluginEntityNotFound) {
+	if !errors.Is(err, ErrPluginEntityNotFound()) {
 		t.Errorf("error should wrap ErrPluginEntityNotFound; got: %v", err)
 	}
 	if !strings.Contains(err.Error(), bareWasm) {
@@ -94,7 +94,7 @@ func TestEntityLookup_NilTranslatorHaltsLoudly(t *testing.T) {
 		return ResolvedPlugin{}, nil
 	}, SurfaceEntityOnly)
 	_, err := front("core/frp/patch:1.0.0")
-	if !errors.Is(err, ErrPluginEntityNotFound) {
+	if !errors.Is(err, ErrPluginEntityNotFound()) {
 		t.Errorf("nil translator should halt with ErrPluginEntityNotFound; got: %v", err)
 	}
 }

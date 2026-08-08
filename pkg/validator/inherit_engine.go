@@ -74,7 +74,7 @@ func ResolveInheritance(entry CatalogEntry, lookup func(uri string) (CatalogEntr
 					FieldPath:  ".spec.extends",
 					Constraint: fmt.Sprintf("inheritance chain exceeds maximum depth of %d", maxInheritanceDepth),
 					Suggestion: "Reduce the inheritance chain length",
-					Err:        ErrInheritanceMerge,
+					Err:        ErrInheritanceMerge(),
 				})},
 			}
 		}
@@ -85,7 +85,7 @@ func ResolveInheritance(entry CatalogEntry, lookup func(uri string) (CatalogEntr
 					FieldPath:  ".spec.extends",
 					Constraint: fmt.Sprintf("circular extends detected: %s already in chain", current.Extends),
 					Suggestion: "Remove the circular extends reference",
-					Err:        ErrCyclicExtension,
+					Err:        ErrCyclicExtension(),
 				})},
 			}
 		}
@@ -97,7 +97,7 @@ func ResolveInheritance(entry CatalogEntry, lookup func(uri string) (CatalogEntr
 					FieldPath:  ".spec.extends",
 					Constraint: fmt.Sprintf("parent entity %q not found in catalog", current.Extends),
 					Suggestion: "Verify the extends URI points to an existing catalog entity",
-					Err:        ErrInheritanceMerge,
+					Err:        ErrInheritanceMerge(),
 				})},
 			}
 		}
@@ -159,7 +159,7 @@ func ResolveInheritance(entry CatalogEntry, lookup func(uri string) (CatalogEntr
 					FieldPath:  ".spec.jsonSchema",
 					Constraint: "JSON Schema merge failed: " + err.Error(),
 					Suggestion: "Verify the JSON Schema payloads on each catalog entry in the extends chain",
-					Err:        ErrInheritanceMerge,
+					Err:        ErrInheritanceMerge(),
 				}))
 			} else {
 				result.MergedJSONSchema = merged

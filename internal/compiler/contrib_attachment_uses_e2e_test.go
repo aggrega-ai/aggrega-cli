@@ -60,7 +60,7 @@ func TestContribAttachmentUses_UndeclaredSocketHaltsAtEveryScope(t *testing.T) {
 					"testdata/subagg-coverage/catalog/base",
 				},
 			})
-			if !errors.Is(err, resolver.ErrUnknownUsesSocket) {
+			if !errors.Is(err, resolver.ErrUnknownUsesSocket()) {
 				t.Fatalf("want ErrUnknownUsesSocket; got %v", err)
 			}
 			// The locator has to name the scope the attachment was authored at —

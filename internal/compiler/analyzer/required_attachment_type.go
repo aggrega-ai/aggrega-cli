@@ -76,7 +76,7 @@ func validateRequiredAttachmentTypes(ctx context.Context, graph *types.IRGraph) 
 					Message: fmt.Sprintf(
 						"component type %q declares a malformed attachment requirement in annotation %q: %s",
 						node.Component, m.Key, m.Malformed),
-					Sentinel: ErrMalformedAttachmentRequirement,
+					Sentinel: ErrMalformedAttachmentRequirement(),
 				})
 			case !attached[m.Type]:
 				errs = append(errs, AnalysisError{
@@ -88,7 +88,7 @@ func validateRequiredAttachmentTypes(ctx context.Context, graph *types.IRGraph) 
 						"component type %q requires an attachment of type %q for %q, but none is attached; "+
 							"attach a Feature of that type to the component, or at a scope it inherits from",
 						node.Component, m.Type, m.Label),
-					Sentinel: resolver.ErrMissingRequiredFeature,
+					Sentinel: resolver.ErrMissingRequiredFeature(),
 				})
 			}
 		}

@@ -57,7 +57,7 @@ func TestParserPluginForFormat_UnknownFormatHaltsLoud(t *testing.T) {
 	}}
 
 	_, err := c.ParserPluginForFormat("nonexistent")
-	if !errors.Is(err, catalog.ErrNoParserForFormat) {
+	if !errors.Is(err, catalog.ErrNoParserForFormat()) {
 		t.Fatalf("err = %v; want ErrNoParserForFormat", err)
 	}
 }
@@ -73,7 +73,7 @@ func TestParserPluginForFormat_AmbiguousHaltsLoud(t *testing.T) {
 	}}
 
 	_, err := c.ParserPluginForFormat("hcl")
-	if !errors.Is(err, catalog.ErrAmbiguousParserPlugin) {
+	if !errors.Is(err, catalog.ErrAmbiguousParserPlugin()) {
 		t.Fatalf("err = %v; want ErrAmbiguousParserPlugin", err)
 	}
 }
@@ -122,7 +122,7 @@ func TestParserPluginForFormat_IgnoresNonParserTypes(t *testing.T) {
 	}
 
 	// The parser resolver never resolves a bare provider capability like "helm".
-	if _, err := c.ParserPluginForFormat("helm"); !errors.Is(err, catalog.ErrNoParserForFormat) {
+	if _, err := c.ParserPluginForFormat("helm"); !errors.Is(err, catalog.ErrNoParserForFormat()) {
 		t.Fatalf("resolving provider capability as a format: err = %v; want ErrNoParserForFormat", err)
 	}
 }

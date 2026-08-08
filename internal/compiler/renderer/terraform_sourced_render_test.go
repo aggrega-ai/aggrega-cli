@@ -299,7 +299,7 @@ func TestRenderAll_TerraformMalformedModuleHalts(t *testing.T) {
 			if err == nil {
 				t.Fatal("expected RenderAll to halt on the malformed terraform module input; got nil")
 			}
-			if !errors.Is(err, renderer.ErrProviderNodeInputInvalid) {
+			if !errors.Is(err, renderer.ErrProviderNodeInputInvalid()) {
 				t.Fatalf("halt is not the ErrProviderNodeInputInvalid guardrail: %v", err)
 			}
 			msg := err.Error()

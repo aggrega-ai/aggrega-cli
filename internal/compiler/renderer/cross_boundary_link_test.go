@@ -186,7 +186,7 @@ func TestCrossBoundaryLink_CrossProviderUnsupported(t *testing.T) {
 	}
 	w := warnings[0]
 	// The warning carries the sentinel message and names both providers + the socket.
-	if !strings.Contains(w, renderer.ErrCrossProviderLinkUnsupported.Error()) {
+	if !strings.Contains(w, renderer.ErrCrossProviderLinkUnsupported().Error()) {
 		t.Errorf("warning missing sentinel message: %q", w)
 	}
 	for _, want := range []string{linkProvider, otherProvider, linkSocket} {
@@ -220,7 +220,7 @@ func TestCrossBoundaryLink_OpaqueTargetHalts(t *testing.T) {
 
 	_, _, err := renderer.RunCrossBoundaryLinkPassForTest(
 		context.Background(), []types.IREdge{linkEdge()}, nodes, nil, factory, 2)
-	if !errors.Is(err, frp.ErrPipelineTargetOpaque) {
+	if !errors.Is(err, frp.ErrPipelineTargetOpaque()) {
 		t.Fatalf("want ErrPipelineTargetOpaque, got %v", err)
 	}
 }

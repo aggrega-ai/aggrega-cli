@@ -92,7 +92,7 @@ func TestCrossCheckHostFunctions(t *testing.T) {
 				if err == nil {
 					t.Fatalf("expected a halt, got nil")
 				}
-				if !errors.Is(err, ErrWasmManifestRejected) {
+				if !errors.Is(err, ErrWasmManifestRejected()) {
 					t.Fatalf("expected ErrWasmManifestRejected, got %v", err)
 				}
 				if tc.wantSub != "" && !strings.Contains(err.Error(), tc.wantSub) {

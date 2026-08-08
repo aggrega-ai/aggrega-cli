@@ -576,7 +576,7 @@ func (s *walkState) resolveEntities(lookup Lookup) error {
 		}
 		if res.NotFound {
 			return fmt.Errorf("%w: entity %q (referenced from %s)",
-				ErrUnresolvableURI, uri, referencedFromPreview(pending.referencedFrom))
+				ErrUnresolvableURI(), uri, referencedFromPreview(pending.referencedFrom))
 		}
 		pending.resolution = &res
 	}
@@ -609,7 +609,7 @@ func (s *walkState) resolveLibraries(pending map[string]*pendingLibrary, resolve
 			return fmt.Errorf("resolve: resolve library %q: %w", uri, err)
 		}
 		if res.NotFound {
-			return fmt.Errorf("%w: library %q", ErrUnresolvableURI, uri)
+			return fmt.Errorf("%w: library %q", ErrUnresolvableURI(), uri)
 		}
 		// Trust the lookup-reported ResolvedVersion when callers
 		// supplied no explicit version pin; otherwise prefer the
@@ -650,7 +650,7 @@ func selectMVSVersion(libraryURI string, versionByConsumer map[string]string) (s
 		if major != winnerMajor {
 			conflicts[consumer] = version
 			return "", fmt.Errorf("%w: library %q has consumers requiring incompatible majors: %s",
-				ErrMVSConflict, libraryURI, formatConsumerConflicts(conflicts))
+				ErrMVSConflict(), libraryURI, formatConsumerConflicts(conflicts))
 		}
 		conflicts[consumer] = version
 		if compareSemver(version, winner) > 0 {

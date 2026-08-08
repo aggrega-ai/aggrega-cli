@@ -53,7 +53,7 @@ type recordingPuller struct {
 func (p *recordingPuller) Pull(ctx context.Context, reference, tag string) (*oci.PullResult, error) {
 	p.calls = append(p.calls, reference+":"+tag)
 	if p.body == nil {
-		return nil, oci.ErrFetchNotFound
+		return nil, oci.ErrFetchNotFound()
 	}
 	return &oci.PullResult{Bytes: p.body, MediaType: oci.MediaTypeComponent}, nil
 }

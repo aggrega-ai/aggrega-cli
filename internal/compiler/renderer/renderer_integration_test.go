@@ -53,7 +53,7 @@ func TestIntegration_ProvidesSelfContainmentViolation(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for provides self-containment violation")
 	}
-	if !errors.Is(err, renderer.ErrProvidesSelfContainment) {
+	if !errors.Is(err, renderer.ErrProvidesSelfContainment()) {
 		t.Errorf("expected ErrProvidesSelfContainment, got: %v", err)
 	}
 }

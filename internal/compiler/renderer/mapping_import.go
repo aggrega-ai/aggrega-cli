@@ -32,26 +32,26 @@ func resolveMappingLibraryImport(ref string, libs map[string]types.MappingLibrar
 	library, entry, ok := splitMappingImportRef(ref)
 	if !ok {
 		if strings.HasPrefix(ref, "oci://") {
-			return "", fmt.Errorf("%w: %q", ErrHostInLibraryImport, ref)
+			return "", fmt.Errorf("%w: %q", ErrHostInLibraryImport(), ref)
 		}
-		return "", fmt.Errorf("%w: %q", ErrMappingImportShape, ref)
+		return "", fmt.Errorf("%w: %q", ErrMappingImportShape(), ref)
 	}
 	// A stale `@` version separator is rejected with a steer to `:` rather than
 	// falling through to an opaque library-not-found.
 	if strings.IndexByte(library, '@') >= 0 {
-		return "", fmt.Errorf("%w: version separator is ':', not '@' — use %q", ErrMappingImportShape, strings.Replace(ref, "@", ":", 1))
+		return "", fmt.Errorf("%w: version separator is ':', not '@' — use %q", ErrMappingImportShape(), strings.Replace(ref, "@", ":", 1))
 	}
 	key := library + "#/mappings/" + entry
 	if chain, cyclic := refcycle.Check(stack, key); cyclic {
-		return "", fmt.Errorf("%w: %s", ErrCircularImport, strings.Join(chain, " -> "))
+		return "", fmt.Errorf("%w: %s", ErrCircularImport(), strings.Join(chain, " -> "))
 	}
 	ml, found := libs[library]
 	if !found {
-		return "", fmt.Errorf("%w: MappingLibrary %q (entry %q)", ErrMappingLibraryNotFound, library, entry)
+		return "", fmt.Errorf("%w: MappingLibrary %q (entry %q)", ErrMappingLibraryNotFound(), library, entry)
 	}
 	me, found := ml.Spec.Mappings.Get(entry)
 	if !found {
-		return "", fmt.Errorf("%w: entry %q in MappingLibrary %q", ErrMappingEntryNotFound, entry, library)
+		return "", fmt.Errorf("%w: entry %q in MappingLibrary %q", ErrMappingEntryNotFound(), entry, library)
 	}
 	if target, ok := fieldRootImportTarget(me.Body); ok {
 		return resolveMappingLibraryImport(target, libs, refcycle.Push(stack, key))

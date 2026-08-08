@@ -80,7 +80,7 @@ func TestTier2ReadVerified(t *testing.T) {
 
 	t.Run("content pin mismatch is ErrFetchIntegrity", func(t *testing.T) {
 		_, err := tier2ReadVerified(ws, cacheDir, uri, "sha256:0000000000000000000000000000000000000000000000000000000000000000", manifestPin)
-		if !errors.Is(err, oci.ErrFetchIntegrity) {
+		if !errors.Is(err, oci.ErrFetchIntegrity()) {
 			t.Errorf("error = %v; want ErrFetchIntegrity", err)
 		}
 	})
@@ -93,7 +93,7 @@ func TestTier2ReadVerified(t *testing.T) {
 			t.Fatalf("tamper manifest: %v", err)
 		}
 		_, err := tier2ReadVerified(tws, cacheDir, uri, cp, mp)
-		if !errors.Is(err, oci.ErrCachedManifestIntegrity) {
+		if !errors.Is(err, oci.ErrCachedManifestIntegrity()) {
 			t.Errorf("error = %v; want ErrCachedManifestIntegrity", err)
 		}
 	})
@@ -107,14 +107,14 @@ func TestTier2ReadVerified(t *testing.T) {
 		// but no persisted manifest is an incomplete cache entry. The read fails
 		// closed as a miss so the caller re-pulls — it does NOT fall back to the
 		// content pin, even for faithful content matching the pin.
-		if _, err := tier2ReadVerified(iws, cacheDir, uri, contentPin, manifestPin); !errors.Is(err, oci.ErrFetchNotFound) {
+		if _, err := tier2ReadVerified(iws, cacheDir, uri, contentPin, manifestPin); !errors.Is(err, oci.ErrFetchNotFound()) {
 			t.Errorf("manifest-less slot: err = %v; want ErrFetchNotFound (fail-closed miss)", err)
 		}
 	})
 
 	t.Run("missing cache slot is ErrFetchNotFound", func(t *testing.T) {
 		_, err := tier2ReadVerified(ws, cacheDir, "hub.aggrega.ai/schemalibrary/core/Absent:1.0.0", contentPin, manifestPin)
-		if !errors.Is(err, oci.ErrFetchNotFound) {
+		if !errors.Is(err, oci.ErrFetchNotFound()) {
 			t.Errorf("error = %v; want ErrFetchNotFound", err)
 		}
 	})
@@ -155,7 +155,7 @@ func TestTier2ReadVerifiedManifestAuthorityBeatsForgedPins(t *testing.T) {
 	// the real one, mirroring the git-tracked independent record.
 	forgedContentPin := contentDigest(forged)
 	_, err := tier2ReadVerified(ws, cacheDir, uri, forgedContentPin, manifestPin)
-	if !errors.Is(err, oci.ErrFetchIntegrity) {
+	if !errors.Is(err, oci.ErrFetchIntegrity()) {
 		t.Errorf("forged content + forged content pin: err = %v; want ErrFetchIntegrity from the manifest-authority check", err)
 	}
 }

@@ -324,7 +324,7 @@ func TestValidateBoundaryScopeFRTemplate_AllBranches(t *testing.T) {
 	frTypo := &types.FeatureRecipe{}
 	frTypo.Metadata.Name = "frTypo"
 	frTypo.Spec.ValuesMapping = types.ValuesMapping{Inline: "{{ .boundary.name }}"}
-	if err := validateBoundaryScopeFRTemplate(frTypo); !errors.Is(err, ErrTemplateUnknownRoot) {
+	if err := validateBoundaryScopeFRTemplate(frTypo); !errors.Is(err, ErrTemplateUnknownRoot()) {
 		t.Errorf("a mistyped key under .boundary must be refused, got: %v", err)
 	}
 	// FR with rejected fields (any per-component pillar reference).
@@ -356,7 +356,7 @@ func TestValidateBoundaryScopeFRTemplate_AllBranches(t *testing.T) {
 	frWLBad := &types.FeatureRecipe{}
 	frWLBad.Metadata.Name = "frWLBad"
 	frWLBad.Spec.Workload = types.WorkloadTemplate{Inline: "image: app:{{ .context.instance_id }}"}
-	if err := validateBoundaryScopeFRTemplate(frWLBad); !errors.Is(err, ErrFRTemplateInvalidField) {
+	if err := validateBoundaryScopeFRTemplate(frWLBad); !errors.Is(err, ErrFRTemplateInvalidField()) {
 		t.Errorf("boundary-scope workload referencing .context.* must be rejected, got: %v", err)
 	}
 	// An inline artifact referencing a per-component-only field is rejected.
@@ -365,7 +365,7 @@ func TestValidateBoundaryScopeFRTemplate_AllBranches(t *testing.T) {
 	art := types.OrderedMap[types.ArtifactEntry]{}
 	art.Set("cm.yaml", types.ArtifactEntry{Inline: "data: {{ .attachment_name }}"})
 	frArtBad.Spec.Artifacts = art
-	if err := validateBoundaryScopeFRTemplate(frArtBad); !errors.Is(err, ErrFRTemplateInvalidField) {
+	if err := validateBoundaryScopeFRTemplate(frArtBad); !errors.Is(err, ErrFRTemplateInvalidField()) {
 		t.Errorf("boundary-scope artifact referencing .attachment_name must be rejected, got: %v", err)
 	}
 }

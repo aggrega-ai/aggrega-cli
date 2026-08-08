@@ -15,9 +15,9 @@ import (
 // the CompilerError's inner error, so the joined build error is
 // errors.Is-recoverable at the pipeline boundary. Both the selector
 // and the appliesTo checks carry this one sentinel.
-const ErrSelectorViolation cerrors.Code = "compiler-analyzer/selector-violation"
+func ErrSelectorViolation() error { return errSelectorViolation }
 
-var _ = cerrors.Register(ErrSelectorViolation, cerrors.Meta{
+var errSelectorViolation = cerrors.Register("compiler-analyzer/selector-violation", cerrors.Meta{
 	Message: "selector violation",
 })
 
@@ -26,9 +26,9 @@ var _ = cerrors.Register(ErrSelectorViolation, cerrors.Meta{
 // Feature attached to fill it — the slot analog of a usesSchema socket
 // selector violation, evaluated against the attached Feature's labels at
 // Step 4.
-const ErrSlotSelectorUnsatisfied cerrors.Code = "compiler-analyzer/slot-selector-unsatisfied"
+func ErrSlotSelectorUnsatisfied() error { return errSlotSelectorUnsatisfied }
 
-var _ = cerrors.Register(ErrSlotSelectorUnsatisfied, cerrors.Meta{
+var errSlotSelectorUnsatisfied = cerrors.Register("compiler-analyzer/slot-selector-unsatisfied", cerrors.Meta{
 	Message: "attachment slot selector unsatisfied",
 })
 
@@ -50,9 +50,9 @@ var _ = cerrors.Register(ErrSlotSelectorUnsatisfied, cerrors.Meta{
 // of a named type be present, at any name, with at-least-one cardinality; a
 // slot's `required` demands that ONE NAMED binding point be bound. Two
 // questions with two remediations, so two sentinels.
-const ErrRequiredSlotUnfilled cerrors.Code = "compiler-analyzer/required-slot-unfilled"
+func ErrRequiredSlotUnfilled() error { return errRequiredSlotUnfilled }
 
-var _ = cerrors.Register(ErrRequiredSlotUnfilled, cerrors.Meta{
+var errRequiredSlotUnfilled = cerrors.Register("compiler-analyzer/required-slot-unfilled", cerrors.Meta{
 	Message: "required attachment slot unfilled",
 })
 
@@ -66,9 +66,9 @@ var _ = cerrors.Register(ErrRequiredSlotUnfilled, cerrors.Meta{
 // the pipeline boundary. Policy never mutates — a failed rule halts
 // the build (the Invariant-4 "reject, never silently mutate" Loud
 // Guardrail); the message the plugin supplied is surfaced verbatim.
-const ErrPolicyViolation cerrors.Code = "compiler-analyzer/policy-violation"
+func ErrPolicyViolation() error { return errPolicyViolation }
 
-var _ = cerrors.Register(ErrPolicyViolation, cerrors.Meta{
+var errPolicyViolation = cerrors.Register("compiler-analyzer/policy-violation", cerrors.Meta{
 	Message: "policy violation",
 })
 
@@ -82,9 +82,9 @@ var _ = cerrors.Register(ErrPolicyViolation, cerrors.Meta{
 // feature — and an annotation value is an opaque string that no structural
 // validation upstream has checked, so a broken declaration must announce
 // itself as broken rather than as unsatisfied.
-const ErrMalformedAttachmentRequirement cerrors.Code = "compiler-analyzer/malformed-attachment-requirement"
+func ErrMalformedAttachmentRequirement() error { return errMalformedAttachmentRequirement }
 
-var _ = cerrors.Register(ErrMalformedAttachmentRequirement, cerrors.Meta{
+var errMalformedAttachmentRequirement = cerrors.Register("compiler-analyzer/malformed-attachment-requirement", cerrors.Meta{
 	Message: "malformed attachment requirement",
 })
 
@@ -99,9 +99,9 @@ var _ = cerrors.Register(ErrMalformedAttachmentRequirement, cerrors.Meta{
 // value with the explicit one, so the suppressed value is not recoverable
 // downstream and no comparison between the two is available to make; the
 // provenance record is the whole of the evidence.
-const ErrOverriddenAnnotation cerrors.Code = "compiler-analyzer/overridden-annotation"
+func ErrOverriddenAnnotation() error { return errOverriddenAnnotation }
 
-var _ = cerrors.Register(ErrOverriddenAnnotation, cerrors.Meta{
+var errOverriddenAnnotation = cerrors.Register("compiler-analyzer/overridden-annotation", cerrors.Meta{
 	Message: "annotation contribution overridden by an explicit value",
 })
 
@@ -114,8 +114,8 @@ var _ = cerrors.Register(ErrOverriddenAnnotation, cerrors.Meta{
 // internal invariant violation rather than an authoring error. The
 // sentinel ships preserved for any future emission site that needs
 // to surface that invariant violation as a fatal halt.
-const ErrCatalogLookup cerrors.Code = "compiler-analyzer/catalog-lookup"
+func ErrCatalogLookup() error { return errCatalogLookup }
 
-var _ = cerrors.Register(ErrCatalogLookup, cerrors.Meta{
+var errCatalogLookup = cerrors.Register("compiler-analyzer/catalog-lookup", cerrors.Meta{
 	Message: "catalog lookup failed",
 })

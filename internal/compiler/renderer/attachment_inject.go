@@ -171,7 +171,7 @@ func enforceProvidesContract(declared map[string]bool, produced types.OrderedMap
 	sort.Strings(keys)
 	for _, key := range keys {
 		if _, has := produced.Get(key); !has {
-			return cerrors.Wrap(ErrProvidesContractUnfulfilled, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID},
+			return cerrors.Wrap(ErrProvidesContractUnfulfilled(), cerrors.CatalogError, cerrors.SourceLocation{File: nodeID},
 				fmt.Sprintf("%s: %s does not publish provides key %q declared by %s's schema.provides contract", contextPrefix, realizer, key, abstract))
 		}
 	}
@@ -263,7 +263,7 @@ func deliverAttachmentInjectKeys(inject *types.InjectPipe, instanceName string, 
 	set := func(dest *types.OrderedMap[string], mech, localKey, providesKey string) error {
 		if _, exists := dest.Get(localKey); exists {
 			return cerrors.Wrap(
-				fmt.Errorf("%w: key %q in mechanism %q (attachment %q)", ErrAttachmentInjectKeyCollision, localKey, mech, instanceName),
+				fmt.Errorf("%w: key %q in mechanism %q (attachment %q)", ErrAttachmentInjectKeyCollision(), localKey, mech, instanceName),
 				cerrors.DeveloperError, cerrors.SourceLocation{File: nodeID},
 				fmt.Sprintf("node %q attachment %q inject delivery-key collision", nodeID, instanceName))
 		}

@@ -132,7 +132,7 @@ func TestMutators_RolelessAttachmentFailsLoudly(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected a role-less transform attachment to fail schema validation, got nil")
 	}
-	if !errors.Is(err, lockfile.ErrLockfileInvalid) {
+	if !errors.Is(err, lockfile.ErrLockfileInvalid()) {
 		t.Fatalf("expected ErrLockfileInvalid for a role-less transform attachment, got: %v", err)
 	}
 }

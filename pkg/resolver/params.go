@@ -34,7 +34,7 @@ func InterpolateParameters(raw []byte, params map[string]any) ([]byte, error) {
 		return nil, &ResolverError{
 			Entity:  "Aggregate",
 			Message: fmt.Sprintf("template parse error: %v", err),
-			Err:     ErrInvalidParameterRef,
+			Err:     ErrInvalidParameterRef(),
 		}
 	}
 
@@ -45,7 +45,7 @@ func InterpolateParameters(raw []byte, params map[string]any) ([]byte, error) {
 		return nil, &ResolverError{
 			Entity:  "Aggregate",
 			Message: fmt.Sprintf("template execution error: %v", err),
-			Err:     ErrInvalidParameterRef,
+			Err:     ErrInvalidParameterRef(),
 		}
 	}
 
@@ -67,7 +67,7 @@ func LoadParametersImport(path string) (map[string]any, error) {
 			Entity:  "Release",
 			Field:   fmt.Sprintf(".spec.parameters.$import: %s", path),
 			Message: fmt.Sprintf("failed to read file: %v", err),
-			Err:     ErrParametersImportLoad,
+			Err:     ErrParametersImportLoad(),
 		}
 	}
 	var params map[string]any
@@ -76,7 +76,7 @@ func LoadParametersImport(path string) (map[string]any, error) {
 			Entity:  "Release",
 			Field:   fmt.Sprintf(".spec.parameters.$import: %s", path),
 			Message: fmt.Sprintf("failed to unmarshal YAML: %v", err),
-			Err:     ErrParametersImportLoad,
+			Err:     ErrParametersImportLoad(),
 		}
 	}
 	return params, nil

@@ -62,7 +62,7 @@ func TestHermeticMiss(t *testing.T) {
 
 	inputURL := srv.URL + "/input.yaml"
 	_, err := svc.Fetch(context.Background(), inputURL, "recipe.helm.demo")
-	if !errors.Is(err, externalinputs.ErrAcquisitionDisabled) {
+	if !errors.Is(err, externalinputs.ErrAcquisitionDisabled()) {
 		t.Fatalf("want ErrAcquisitionDisabled, got %v", err)
 	}
 	if !strings.Contains(err.Error(), inputURL) {
@@ -259,7 +259,7 @@ func TestRefillMismatchHalts(t *testing.T) {
 	svc := externalinputs.NewService(root, true, &http.Client{}, pinned)
 
 	_, err := svc.Fetch(context.Background(), inputURL, "recipe.helm.demo")
-	if !errors.Is(err, externalinputs.ErrDigestMismatch) {
+	if !errors.Is(err, externalinputs.ErrDigestMismatch()) {
 		t.Fatalf("want ErrDigestMismatch, got %v", err)
 	}
 	msg := err.Error()
@@ -296,7 +296,7 @@ func TestTamperedStore(t *testing.T) {
 	svc := externalinputs.NewService(root, true, &http.Client{}, pinned)
 
 	_, err := svc.Fetch(context.Background(), inputURL, "recipe.helm.demo")
-	if !errors.Is(err, externalinputs.ErrStoreCorrupt) {
+	if !errors.Is(err, externalinputs.ErrStoreCorrupt()) {
 		t.Fatalf("want ErrStoreCorrupt, got %v", err)
 	}
 	msg := err.Error()
@@ -320,7 +320,7 @@ func TestSchemeRejection(t *testing.T) {
 	ctx := context.Background()
 
 	_, err := svc.Fetch(ctx, "ftp://example.com/x.tgz", "recipe.helm.demo")
-	if !errors.Is(err, externalinputs.ErrSchemeNotAllowed) {
+	if !errors.Is(err, externalinputs.ErrSchemeNotAllowed()) {
 		t.Fatalf("ftp: want ErrSchemeNotAllowed, got %v", err)
 	}
 	if !strings.Contains(err.Error(), `"ftp"`) ||
@@ -330,7 +330,7 @@ func TestSchemeRejection(t *testing.T) {
 	}
 
 	_, err = svc.Fetch(ctx, "http://example.com/x.tgz", "recipe.helm.demo")
-	if !errors.Is(err, externalinputs.ErrSchemeNotAllowed) {
+	if !errors.Is(err, externalinputs.ErrSchemeNotAllowed()) {
 		t.Fatalf("non-loopback http: want ErrSchemeNotAllowed, got %v", err)
 	}
 	if !strings.Contains(err.Error(), "loopback") {
@@ -347,7 +347,7 @@ func TestSchemeRejection(t *testing.T) {
 		"http://0.0.0.0/x.tgz",
 	} {
 		_, err = noAcq.Fetch(ctx, loopbackHTTP, "recipe.helm.demo")
-		if errors.Is(err, externalinputs.ErrSchemeNotAllowed) {
+		if errors.Is(err, externalinputs.ErrSchemeNotAllowed()) {
 			t.Errorf("%q: plain http to a loopback host must pass the scheme gate, got scheme rejection: %v", loopbackHTTP, err)
 		}
 	}

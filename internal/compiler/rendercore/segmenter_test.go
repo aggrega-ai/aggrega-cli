@@ -67,9 +67,9 @@ func TestSplitDocCountAndTokens(t *testing.T) {
 			segs, err := Split(name, []byte(tc.body))
 			if tc.parseErr {
 				if err == nil {
-					t.Fatalf("Split(%q) = nil error, want %v", tc.body, ErrPipelinePatchTargetNotStructured)
+					t.Fatalf("Split(%q) = nil error, want %v", tc.body, ErrPipelinePatchTargetNotStructured())
 				}
-				if !errors.Is(err, ErrPipelinePatchTargetNotStructured) {
+				if !errors.Is(err, ErrPipelinePatchTargetNotStructured()) {
 					t.Fatalf("Split(%q) error = %v, want errors.Is ErrPipelinePatchTargetNotStructured", tc.body, err)
 				}
 				if segs != nil {

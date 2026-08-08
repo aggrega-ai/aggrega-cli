@@ -115,7 +115,7 @@ func TestRenderAll_AssemblerProviderMissingAssembleBoundary_Halts(t *testing.T) 
 	if err == nil {
 		t.Fatal("RenderAll succeeded; expected a loud halt for a provider that cannot assemble its dispatch group")
 	}
-	if !errors.Is(err, renderer.ErrBoundaryAssemblerMissing) {
+	if !errors.Is(err, renderer.ErrBoundaryAssemblerMissing()) {
 		t.Fatalf("RenderAll error = %v; want ErrBoundaryAssemblerMissing", err)
 	}
 }

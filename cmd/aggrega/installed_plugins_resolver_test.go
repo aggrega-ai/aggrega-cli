@@ -80,7 +80,7 @@ func TestInstalledPluginRunner_ResolvesCachedURI(t *testing.T) {
 	if runErr == nil {
 		t.Fatalf("running non-guest cached bytes should fail at load, not succeed")
 	}
-	if errors.Is(runErr, cliplugin.ErrNoResolver) || strings.Contains(runErr.Error(), "not resolvable") {
+	if errors.Is(runErr, cliplugin.ErrNoResolver()) || strings.Contains(runErr.Error(), "not resolvable") {
 		t.Fatalf("workspace runner must resolve the cached URI, not fail resolution; got %v", runErr)
 	}
 	// Resolution succeeds before the load fails, so the workspace runner returns

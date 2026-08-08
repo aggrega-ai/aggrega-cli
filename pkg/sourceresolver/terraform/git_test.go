@@ -92,7 +92,7 @@ func TestTerraformGitResolveMissingRefWrapsNotFound(t *testing.T) {
 		WorkspaceRoot: t.TempDir(),
 		CacheDir:      ".aggrega/cache",
 	})
-	if !errors.Is(err, sourceresolver.ErrFetchNotFound) {
+	if !errors.Is(err, sourceresolver.ErrFetchNotFound()) {
 		t.Errorf("error should wrap ErrFetchNotFound; got %v", err)
 	}
 }

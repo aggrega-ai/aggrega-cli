@@ -57,7 +57,7 @@ func TestHelmEngine_Sourced_DistinctContentCollisionHalts(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected a collision error when two distinct resources derive one output filename")
 	}
-	if !errors.Is(err, helm.ErrRenderedFileCollision) {
+	if !errors.Is(err, helm.ErrRenderedFileCollision()) {
 		t.Fatalf("error is not ErrRenderedFileCollision: %v", err)
 	}
 	// The halt must name both source templates and the output path.

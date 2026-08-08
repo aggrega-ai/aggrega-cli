@@ -202,7 +202,7 @@ func pushArtifactRun(cfg pushArtifactConfig) error {
 			return nil
 		}
 		return fmt.Errorf("aggrega push-artifact: %s:%s is already published as %s; refusing to overwrite with %s — publish a new version: %w",
-			reference, cfg.Tag, existingDigest, proposedDigest, oci.ErrImmutableTagConflict)
+			reference, cfg.Tag, existingDigest, proposedDigest, oci.ErrImmutableTagConflict())
 	}
 
 	digest, err := oci.Push(context.Background(), target, cfg.Tag, mediaType, content, nil)

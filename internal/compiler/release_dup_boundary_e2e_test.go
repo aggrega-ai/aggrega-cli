@@ -29,7 +29,7 @@ func TestReleaseDupBoundary_HaltsNamingBothSites(t *testing.T) {
 		ReleasePath:  "testdata/uses-edge-config/release-dup-boundary.yaml",
 		CatalogPaths: []string{"testdata/uses-edge-config/catalog/base"},
 	})
-	if !errors.Is(err, resolver.ErrDuplicateBoundaryComponent) {
+	if !errors.Is(err, resolver.ErrDuplicateBoundaryComponent()) {
 		t.Fatalf("want ErrDuplicateBoundaryComponent for a component declared in two boundaries; got %v", err)
 	}
 	// Both declaration sites, not just the offending one: an author told only

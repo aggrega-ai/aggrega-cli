@@ -324,7 +324,7 @@ func TestCollectNodeFeatures_TypeMismatchError(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for type mismatch")
 	}
-	if !errors.Is(err, ErrFeatureTypeMismatch) {
+	if !errors.Is(err, ErrFeatureTypeMismatch()) {
 		t.Errorf("expected ErrFeatureTypeMismatch, got: %v", err)
 	}
 }

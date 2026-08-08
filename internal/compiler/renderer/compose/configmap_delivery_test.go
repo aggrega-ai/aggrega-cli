@@ -64,7 +64,7 @@ func TestComposeAssemble_ConfigMapVolumeMissingArtifactHalts(t *testing.T) {
 	if err == nil {
 		t.Fatal("assemble accepted a configmap volume with no declared config; want a halt")
 	}
-	if !errors.Is(err, ErrTranslationConfigMapMissingArtifact) {
+	if !errors.Is(err, ErrTranslationConfigMapMissingArtifact()) {
 		t.Fatalf("error = %v, want it to carry ErrTranslationConfigMapMissingArtifact", err)
 	}
 	for _, want := range []string{`service "api"`, `config "app-settings"`, `"/etc/app"`, "artifacts:"} {

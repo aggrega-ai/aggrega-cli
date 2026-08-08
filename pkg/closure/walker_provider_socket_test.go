@@ -151,7 +151,7 @@ func TestResolveProviderSocketEntities_UnresolvableHaltsLoudly(t *testing.T) {
 	c := closure.Closure{}
 	refs := []workspaceconfig.PluginRef{{Capability: "helm", URI: "provider/helm:1.0.0"}}
 	err := closure.ResolveProviderSocketEntities(&c, refs, lookup)
-	if !errors.Is(err, closure.ErrUnresolvableURI) {
+	if !errors.Is(err, closure.ErrUnresolvableURI()) {
 		t.Fatalf("want ErrUnresolvableURI; got %v", err)
 	}
 }

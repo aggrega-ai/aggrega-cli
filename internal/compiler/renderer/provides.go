@@ -102,7 +102,7 @@ func providesAllowedRootsPhrase() string {
 }
 
 func providesContainmentErr(recipeID, expr string) error {
-	return cerrors.Wrap(ErrProvidesSelfContainment, cerrors.CatalogError, cerrors.SourceLocation{File: recipeID},
+	return cerrors.Wrap(ErrProvidesSelfContainment(), cerrors.CatalogError, cerrors.SourceLocation{File: recipeID},
 		fmt.Sprintf("Recipe %q provides references %q — the provides block is self-contained and may reference only "+
 			"%s, and static text", recipeID, expr, providesAllowedRootsPhrase()))
 }
@@ -193,7 +193,7 @@ func EvaluateAllProvides(
 		for key, tmplText := range recipe.Spec.Provides.All() {
 			val, err := evalTemplateString(tmplText, pCtx, fmt.Sprintf("provides[%q]", key))
 			if err != nil {
-				return nil, nil, cerrors.Wrap(ErrProvidesEvaluation, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID},
+				return nil, nil, cerrors.Wrap(ErrProvidesEvaluation(), cerrors.CatalogError, cerrors.SourceLocation{File: nodeID},
 					fmt.Sprintf("node %q provides[%q]: %v", nodeID, key, err))
 			}
 			resolved.Set(key, strings.TrimSpace(val))

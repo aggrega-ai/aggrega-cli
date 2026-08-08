@@ -90,7 +90,7 @@ func TestCrossCheckContract(t *testing.T) {
 			if err == nil {
 				t.Fatal("expected an error, got nil")
 			}
-			if !errors.Is(err, ErrWasmContractMismatch) {
+			if !errors.Is(err, ErrWasmContractMismatch()) {
 				t.Fatalf("error does not wrap ErrWasmContractMismatch: %v", err)
 			}
 			if !strings.Contains(err.Error(), "frp/patch:1.0.0") {
@@ -194,7 +194,7 @@ func TestCrossCheckContract_PluginLevel(t *testing.T) {
 			if err == nil {
 				t.Fatal("expected an error, got nil")
 			}
-			if !errors.Is(err, ErrWasmContractMismatch) {
+			if !errors.Is(err, ErrWasmContractMismatch()) {
 				t.Fatalf("error does not wrap ErrWasmContractMismatch: %v", err)
 			}
 			if !strings.Contains(err.Error(), "provider/helm-chart:1.0.0") {
@@ -294,7 +294,7 @@ func TestCrossCheckContract_CrossBoundaryLinking(t *testing.T) {
 			if err == nil {
 				t.Fatal("expected an error, got nil")
 			}
-			if !errors.Is(err, ErrWasmContractMismatch) {
+			if !errors.Is(err, ErrWasmContractMismatch()) {
 				t.Fatalf("error does not wrap ErrWasmContractMismatch: %v", err)
 			}
 			if !strings.Contains(err.Error(), "provider/cfn-renderer:1.0.0") {

@@ -33,7 +33,7 @@ import (
 // clearly rather than failing deep inside a TUF request.
 func TrustedRoot(cfg workspaceconfig.Config) (root.TrustedMaterial, error) {
 	if cfg.Offline {
-		return nil, egress.ErrOfflineEgress
+		return nil, egress.ErrOfflineEgress()
 	}
 	live, err := root.NewLiveTrustedRoot(tuf.DefaultOptions())
 	if err != nil {

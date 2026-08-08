@@ -234,7 +234,7 @@ func TestPinMismatchHalts(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected integrity halt; got nil")
 	}
-	if !errors.Is(err, oci.ErrFetchIntegrity) {
+	if !errors.Is(err, oci.ErrFetchIntegrity()) {
 		t.Errorf("want ErrFetchIntegrity; got %v", err)
 	}
 }
@@ -260,7 +260,7 @@ func TestOCIUnresolvableNoPuller(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected not-resolvable error; got nil")
 	}
-	if !errors.Is(err, oci.ErrFetchNotFound) {
+	if !errors.Is(err, oci.ErrFetchNotFound()) {
 		t.Errorf("want ErrFetchNotFound; got %v", err)
 	}
 	if !strings.Contains(err.Error(), "not resolvable") {

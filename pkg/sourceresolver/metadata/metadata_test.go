@@ -199,7 +199,7 @@ pulled_at: "not-a-timestamp"
 // regenerate).
 func TestErrCacheMetadataInvalidWrapsFetchIntegrity(t *testing.T) {
 	t.Parallel()
-	if !errors.Is(metadata.ErrCacheMetadataInvalid, oci.ErrFetchIntegrity) {
+	if !errors.Is(metadata.ErrCacheMetadataInvalid, oci.ErrFetchIntegrity()) {
 		t.Errorf("ErrCacheMetadataInvalid MUST wrap oci.ErrFetchIntegrity for fetch-class routing")
 	}
 
@@ -218,7 +218,7 @@ pulled_at: "2026-05-22T12:30:00Z"
 	if !errors.Is(err, metadata.ErrCacheMetadataInvalid) {
 		t.Errorf("Read error should satisfy errors.Is against ErrCacheMetadataInvalid")
 	}
-	if !errors.Is(err, oci.ErrFetchIntegrity) {
+	if !errors.Is(err, oci.ErrFetchIntegrity()) {
 		t.Errorf("Read error should ALSO satisfy errors.Is against oci.ErrFetchIntegrity through the wrapped chain")
 	}
 }

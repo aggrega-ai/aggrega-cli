@@ -44,7 +44,7 @@ func TestValidateFeatureRecipe_Rule1_ValuesMappingWithoutSource_Fails(t *testing
 	fr := newFeatureRecipe("helm")
 	fr.Spec.ValuesMapping = types.ValuesMapping{Inline: `{"image": "x:1"}`}
 	err := validator.ValidateFeatureRecipe(fr, tFile)
-	if !errors.Is(err, validator.ErrFeatureRecipeRule1) {
+	if !errors.Is(err, validator.ErrFeatureRecipeRule1()) {
 		t.Fatalf("expected ErrFeatureRecipeRule1, got %v", err)
 	}
 }
@@ -66,7 +66,7 @@ func TestValidateFeatureRecipe_EvalProvider_RejectsRenderKinds(t *testing.T) {
 	fr := newFeatureRecipe("eval")
 	fr.Spec.Source = "./chart"
 	err := validator.ValidateFeatureRecipe(fr, tFile)
-	if !errors.Is(err, validator.ErrFeatureRecipeEvalProviderConstraint) {
+	if !errors.Is(err, validator.ErrFeatureRecipeEvalProviderConstraint()) {
 		t.Fatalf("expected ErrFeatureRecipeEvalProviderConstraint, got %v", err)
 	}
 }

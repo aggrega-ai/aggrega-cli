@@ -288,7 +288,7 @@ spec:
 	// The document envelope owns the non-scalar rejection on the loader
 	// path (the MappingLibrary schema types entries as strings); the
 	// typed ErrMappingEntryNotScalar still guards constructed inputs.
-	if !errors.Is(err, envelope.ErrEntityEnvelope) {
+	if !errors.Is(err, envelope.ErrEntityEnvelope()) {
 		t.Errorf("expected ErrEntityEnvelope in chain; got %v", err)
 	}
 }
@@ -329,7 +329,7 @@ spec:
 	if err == nil {
 		t.Fatal("expected error for $dynamicAnchor in template body; got nil")
 	}
-	if !errors.Is(err, types.ErrForbiddenKeyword) {
+	if !errors.Is(err, types.ErrForbiddenKeyword()) {
 		t.Errorf("expected ErrForbiddenKeyword in chain; got %v", err)
 	}
 }
@@ -362,7 +362,7 @@ spec:
 	if err == nil {
 		t.Fatal("expected error for $dynamicAnchor; got nil")
 	}
-	if !errors.Is(err, types.ErrForbiddenKeyword) {
+	if !errors.Is(err, types.ErrForbiddenKeyword()) {
 		t.Errorf("expected ErrForbiddenKeyword in chain; got %v", err)
 	}
 }

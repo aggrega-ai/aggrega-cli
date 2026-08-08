@@ -15,9 +15,9 @@ import (
 // carries a shape outside the two documented modes: not a string
 // scalar; not a mapping with a single `$import:` key; or a mapping
 // with extra siblings beyond `$import:`.
-const ErrArtifactEntryShape cerrors.Code = "types/artifact-entry-shape"
+func ErrArtifactEntryShape() error { return errArtifactEntryShape }
 
-var _ = cerrors.Register(ErrArtifactEntryShape, cerrors.Meta{
+var errArtifactEntryShape = cerrors.Register("types/artifact-entry-shape", cerrors.Meta{
 	Message: "artifacts entry: shape must be a string scalar or {$import: <local-path>}",
 })
 
@@ -98,7 +98,7 @@ func (a ArtifactEntry) Text() (string, error) {
 
 // UnmarshalYAML dispatches via the shared unmarshalImportable helper.
 func (a *ArtifactEntry) UnmarshalYAML(node *yaml.Node) error {
-	inline, importTarget, err := unmarshalImportable(node, ErrArtifactEntryShape)
+	inline, importTarget, err := unmarshalImportable(node, ErrArtifactEntryShape())
 	if err != nil {
 		return err
 	}

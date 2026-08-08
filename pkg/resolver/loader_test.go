@@ -60,7 +60,7 @@ func TestLoadAggregate_FileNotFound(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for missing file")
 	}
-	if !errors.Is(err, ErrYAMLLoad) {
+	if !errors.Is(err, ErrYAMLLoad()) {
 		t.Errorf("expected ErrYAMLLoad, got %v", err)
 	}
 }
@@ -79,7 +79,7 @@ func TestLoadAggregate_InvalidYAML(t *testing.T) {
 	// typed unmarshal and reports every failure under its own sentinel. The
 	// assertion pairs the sentinel with the message so a future change cannot
 	// keep the sentinel while losing the parser's account of what is wrong.
-	if !errors.Is(err, envelope.ErrEntityEnvelope) {
+	if !errors.Is(err, envelope.ErrEntityEnvelope()) {
 		t.Errorf("expected ErrEntityEnvelope, got %v", err)
 	}
 	if !strings.Contains(err.Error(), "found character that cannot start any token") {
@@ -187,10 +187,10 @@ spec:
 	if !strings.Contains(msg, "reserved prefix") {
 		t.Errorf("error message should explain the reservation; got: %s", msg)
 	}
-	if !errors.Is(err, ErrManifestReservedPrefix) {
+	if !errors.Is(err, ErrManifestReservedPrefix()) {
 		t.Errorf("error should wrap ErrManifestReservedPrefix (not ErrYAMLLoad); got chain: %v", err)
 	}
-	if errors.Is(err, ErrYAMLLoad) {
+	if errors.Is(err, ErrYAMLLoad()) {
 		t.Errorf("error should NOT wrap ErrYAMLLoad — the YAML parsed successfully; the failure is a semantic reservation check")
 	}
 }
@@ -295,7 +295,7 @@ spec:
 	if !strings.Contains(msg, "pool_size") {
 		t.Errorf("error should name the colliding path; got: %s", msg)
 	}
-	if !errors.Is(err, ErrManifestCrossBindingPillarCollision) {
+	if !errors.Is(err, ErrManifestCrossBindingPillarCollision()) {
 		t.Errorf("error should wrap ErrManifestCrossBindingPillarCollision; got chain: %v", err)
 	}
 }

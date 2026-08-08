@@ -39,9 +39,9 @@ const importCapabilityPrefix = "import:"
 // composed capability so the diagnostic points at the missing advertiser. The
 // format space is open — a new format ships as a new importer plugin, no core
 // change — so this halt reflects the advertised set, not a fixed enumeration.
-const ErrNoImporterForFormat cerrors.Code = "catalog/no-importer-for-format"
+func ErrNoImporterForFormat() error { return errNoImporterForFormat }
 
-var _ = cerrors.Register(ErrNoImporterForFormat, cerrors.Meta{
+var errNoImporterForFormat = cerrors.Register("catalog/no-importer-for-format", cerrors.Meta{
 	Message: "no importer plugin advertises the requested format",
 })
 
@@ -53,9 +53,9 @@ var _ = cerrors.Register(ErrNoImporterForFormat, cerrors.Meta{
 // every candidate, sorted, so the diagnostic is byte-identical across runs. It is
 // the importer-socket sibling of the provider socket's ambiguity halt, scoped to
 // the importer type and phrased for the importer surface.
-const ErrAmbiguousImporterPlugin cerrors.Code = "catalog/ambiguous-importer-plugin"
+func ErrAmbiguousImporterPlugin() error { return errAmbiguousImporterPlugin }
 
-var _ = cerrors.Register(ErrAmbiguousImporterPlugin, cerrors.Meta{
+var errAmbiguousImporterPlugin = cerrors.Register("catalog/ambiguous-importer-plugin", cerrors.Meta{
 	Message: "format is advertised by more than one importer plugin",
 })
 
@@ -68,10 +68,10 @@ var _ = cerrors.Register(ErrAmbiguousImporterPlugin, cerrors.Meta{
 // the path never emits.
 var importerCapabilityDiag = capabilityDiag{
 	noun:                 "importer plugin",
-	bindingUnsatisfied:   ErrNoImporterForFormat,
-	versionUnsatisfiable: ErrNoImporterForFormat,
+	bindingUnsatisfied:   ErrNoImporterForFormat(),
+	versionUnsatisfiable: ErrNoImporterForFormat(),
 	ambiguous: func(capability string, candidates []string) error {
-		return fmt.Errorf("%w: format %q is advertised by importer plugins %v", ErrAmbiguousImporterPlugin, strings.TrimPrefix(capability, importCapabilityPrefix), candidates)
+		return fmt.Errorf("%w: format %q is advertised by importer plugins %v", ErrAmbiguousImporterPlugin(), strings.TrimPrefix(capability, importCapabilityPrefix), candidates)
 	},
 }
 
@@ -105,7 +105,7 @@ func (c *Catalog) ImporterPluginForFormat(format string) (types.Plugin, error) {
 		return types.Plugin{}, err
 	}
 	if !ok {
-		return types.Plugin{}, fmt.Errorf("%w: no importer plugin advertises %q", ErrNoImporterForFormat, capability)
+		return types.Plugin{}, fmt.Errorf("%w: no importer plugin advertises %q", ErrNoImporterForFormat(), capability)
 	}
 	return p, nil
 }

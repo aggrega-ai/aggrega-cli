@@ -29,21 +29,18 @@ const sentinelHome = "internal/wasm/errors.go"
 func sentinelName() string { return "ErrWasm" + "GuestError" }
 
 // nonConstructingCalls are the calls that take the sentinel without building an
-// error around it. Two classes qualify and both are legitimate on any surface,
-// so the guard admits them everywhere and judges everything else.
+// error around it. A CLASSIFYING call — errors.Is, errors.As — uses the taxonomy
+// as intended; the taxonomy exists to be matched, so the guard admits it
+// everywhere and judges everything else.
 //
-// A CLASSIFYING call — errors.Is, errors.As — uses the taxonomy as intended; the
-// taxonomy exists to be matched.
-//
-// A REGISTERING call declares the identity's own message beside the identity. It
-// is part of the declaration rather than a use of it, and it cannot become the
-// second copy this guard exists to catch: registering one identity twice panics
-// at start-up, so the single-registration property is enforced by the registry
-// itself rather than by reading source shape.
+// Registration needs no entry here. It declares the identity against a code
+// value rather than against the identity's own name, so it never reads as a use
+// of the sentinel in the first place — and it could not become the second copy
+// this guard exists to catch in any case, because registering one code twice
+// panics at start-up.
 var nonConstructingCalls = map[string]bool{
-	"errors.Is":        true,
-	"errors.As":        true,
-	"cerrors.Register": true,
+	"errors.Is": true,
+	"errors.As": true,
 }
 
 // TestGuestErrorSentinelHasOneWrapSite is the chokepoint guard for the
@@ -167,12 +164,19 @@ func callName(fun ast.Expr) string {
 
 // referencesSentinel reports whether an argument names the sentinel, either
 // bare within its own package or qualified from outside it.
+//
+// The identity is reached through its accessor, so the argument a caller writes
+// is a call rather than a bare name. The call is unwrapped to the name it
+// invokes: reading only the bare form would find no site at all, and a guard
+// that stops finding anything reports a clean tree while guarding nothing.
 func referencesSentinel(arg ast.Expr, needle string) bool {
 	switch a := arg.(type) {
 	case *ast.Ident:
 		return a.Name == needle
 	case *ast.SelectorExpr:
 		return a.Sel.Name == needle
+	case *ast.CallExpr:
+		return len(a.Args) == 0 && referencesSentinel(a.Fun, needle)
 	}
 	return false
 }

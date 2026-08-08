@@ -147,7 +147,7 @@ spec:
 			if err == nil {
 				t.Fatalf("expected envelope rejection for %q; got nil", name)
 			}
-			if !errors.Is(err, envelope.ErrEntityEnvelope) {
+			if !errors.Is(err, envelope.ErrEntityEnvelope()) {
 				t.Fatalf("expected ErrEntityEnvelope for %q; got %v", name, err)
 			}
 		})
@@ -284,7 +284,7 @@ spec:
 			if err == nil {
 				t.Fatalf("expected envelope rejection for %q; got nil", name)
 			}
-			if !errors.Is(err, envelope.ErrEntityEnvelope) {
+			if !errors.Is(err, envelope.ErrEntityEnvelope()) {
 				t.Fatalf("expected ErrEntityEnvelope for %q; got %v", name, err)
 			}
 		})

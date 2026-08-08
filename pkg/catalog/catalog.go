@@ -1022,7 +1022,7 @@ func (c *Catalog) claimIdentity(fullKey, desc, path string) error {
 		c.pathByIdentity = make(map[string]string)
 	}
 	if _, dup := c.pathByIdentity[fullKey]; dup {
-		return cerrors.Wrap(ErrDuplicateEntityIdentity, cerrors.CatalogError, cerrors.SourceLocation{File: path}, fmt.Sprintf("%s already declared in this catalog directory", desc))
+		return cerrors.Wrap(ErrDuplicateEntityIdentity(), cerrors.CatalogError, cerrors.SourceLocation{File: path}, fmt.Sprintf("%s already declared in this catalog directory", desc))
 	}
 	c.pathByIdentity[fullKey] = path
 	return nil
@@ -1464,11 +1464,11 @@ func (c *Catalog) ResolveAllExtends() []*validator.ValidationError {
 		if comp.Spec.Extends == "" {
 			continue
 		}
-		if _, ok, verr := c.resolveComponentKey(comp.Spec.Extends); !ok && errors.Is(verr, ErrUnsatisfiableEntityVersion) {
+		if _, ok, verr := c.resolveComponentKey(comp.Spec.Extends); !ok && errors.Is(verr, ErrUnsatisfiableEntityVersion()) {
 			errs = append(errs, validator.NewValidationError(envelope.KindComponent, name, validator.ValidationDetail{
 				FieldPath:  ".extends",
 				Constraint: fmt.Sprintf("no catalog version satisfies extends parent %q", comp.Spec.Extends),
-				Err:        ErrUnsatisfiableEntityVersion,
+				Err:        ErrUnsatisfiableEntityVersion(),
 			}))
 			continue
 		}
@@ -1494,11 +1494,11 @@ func (c *Catalog) ResolveAllExtends() []*validator.ValidationError {
 		if feat.Spec.Extends == "" {
 			continue
 		}
-		if _, ok, verr := c.resolveFeatureKey(feat.Spec.Extends); !ok && errors.Is(verr, ErrUnsatisfiableEntityVersion) {
+		if _, ok, verr := c.resolveFeatureKey(feat.Spec.Extends); !ok && errors.Is(verr, ErrUnsatisfiableEntityVersion()) {
 			errs = append(errs, validator.NewValidationError(envelope.KindFeature, name, validator.ValidationDetail{
 				FieldPath:  ".extends",
 				Constraint: fmt.Sprintf("no catalog version satisfies extends parent %q", feat.Spec.Extends),
-				Err:        ErrUnsatisfiableEntityVersion,
+				Err:        ErrUnsatisfiableEntityVersion(),
 			}))
 			continue
 		}

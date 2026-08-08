@@ -32,7 +32,7 @@ func dispatchMapping(node *yaml.Node, path string, ctx *compileCtx) (any, error)
 			Path:    path,
 			Line:    nodeLine(node),
 			Message: "expected mapping node",
-			Err:     ErrEscapeContentInvalid,
+			Err:     ErrEscapeContentInvalid(),
 		}
 	}
 
@@ -57,7 +57,7 @@ func dispatchMapping(node *yaml.Node, path string, ctx *compileCtx) (any, error)
 				Line:    nodeLine(node),
 				Keyword: "$mode",
 				Message: "value must be `compact` or `jsonschema`",
-				Err:     ErrAmbiguousDispatch,
+				Err:     ErrAmbiguousDispatch(),
 			}
 		}
 	}

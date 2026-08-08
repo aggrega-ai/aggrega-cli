@@ -29,9 +29,11 @@ const (
 // other form halts loudly rather than silently dropping the per-replica
 // semantics. Surfaced wrapped in a CompilerError via cerrors so errors.Is
 // matches.
-const ErrPersistentTemplateRequiresStatefulForm cerrors.Code = "compiler-rendercore/persistent-template-requires-stateful-form"
+func ErrPersistentTemplateRequiresStatefulForm() error {
+	return errPersistentTemplateRequiresStatefulForm
+}
 
-var _ = cerrors.Register(ErrPersistentTemplateRequiresStatefulForm, cerrors.Meta{
+var errPersistentTemplateRequiresStatefulForm = cerrors.Register("compiler-rendercore/persistent-template-requires-stateful-form", cerrors.Meta{
 	Message: "persistentTemplate volume requires form: stateful",
 })
 
@@ -41,9 +43,9 @@ var _ = cerrors.Register(ErrPersistentTemplateRequiresStatefulForm, cerrors.Meta
 // coherent recurrence to emit. Declaring form: scheduled with no schedule halts
 // loudly rather than invent one. Surfaced wrapped in a CompilerError via cerrors
 // so errors.Is matches.
-const ErrScheduledFormRequiresSchedule cerrors.Code = "compiler-rendercore/scheduled-form-requires-schedule"
+func ErrScheduledFormRequiresSchedule() error { return errScheduledFormRequiresSchedule }
 
-var _ = cerrors.Register(ErrScheduledFormRequiresSchedule, cerrors.Meta{
+var errScheduledFormRequiresSchedule = cerrors.Register("compiler-rendercore/scheduled-form-requires-schedule", cerrors.Meta{
 	Message: "form: scheduled requires a schedule",
 })
 
@@ -52,9 +54,9 @@ var _ = cerrors.Register(ErrScheduledFormRequiresSchedule, cerrors.Meta{
 // any other form has no recurring resource to attach to, so it halts loudly
 // rather than silently ignore the schedule. Surfaced wrapped in a CompilerError
 // via cerrors so errors.Is matches.
-const ErrScheduleRequiresScheduledForm cerrors.Code = "compiler-rendercore/schedule-requires-scheduled-form"
+func ErrScheduleRequiresScheduledForm() error { return errScheduleRequiresScheduledForm }
 
-var _ = cerrors.Register(ErrScheduleRequiresScheduledForm, cerrors.Meta{
+var errScheduleRequiresScheduledForm = cerrors.Register("compiler-rendercore/schedule-requires-scheduled-form", cerrors.Meta{
 	Message: "schedule requires form: scheduled",
 })
 
@@ -63,9 +65,9 @@ var _ = cerrors.Register(ErrScheduleRequiresScheduledForm, cerrors.Meta{
 // endpoint pointer with no compute, and without an endpoint there is nothing to
 // point at. Surfaced wrapped in a CompilerError via cerrors so errors.Is
 // matches.
-const ErrReferenceFormRequiresEndpoint cerrors.Code = "compiler-rendercore/reference-form-requires-endpoint"
+func ErrReferenceFormRequiresEndpoint() error { return errReferenceFormRequiresEndpoint }
 
-var _ = cerrors.Register(ErrReferenceFormRequiresEndpoint, cerrors.Meta{
+var errReferenceFormRequiresEndpoint = cerrors.Register("compiler-rendercore/reference-form-requires-endpoint", cerrors.Meta{
 	Message: "form: reference requires an endpoint",
 })
 
@@ -74,9 +76,9 @@ var _ = cerrors.Register(ErrReferenceFormRequiresEndpoint, cerrors.Meta{
 // form: reference workload. Declaring it on any other form halts loudly rather
 // than silently ignore it. Surfaced wrapped in a CompilerError via cerrors so
 // errors.Is matches.
-const ErrEndpointRequiresReferenceForm cerrors.Code = "compiler-rendercore/endpoint-requires-reference-form"
+func ErrEndpointRequiresReferenceForm() error { return errEndpointRequiresReferenceForm }
 
-var _ = cerrors.Register(ErrEndpointRequiresReferenceForm, cerrors.Meta{
+var errEndpointRequiresReferenceForm = cerrors.Register("compiler-rendercore/endpoint-requires-reference-form", cerrors.Meta{
 	Message: "endpoint requires form: reference",
 })
 
@@ -85,9 +87,9 @@ var _ = cerrors.Register(ErrEndpointRequiresReferenceForm, cerrors.Meta{
 // @monthly, @yearly) nor a standard 5-field crontab expression using only the
 // legal characters. Surfaced wrapped in a CompilerError via cerrors so
 // errors.Is matches.
-const ErrInvalidCronSchedule cerrors.Code = "compiler-rendercore/invalid-cron-schedule"
+func ErrInvalidCronSchedule() error { return errInvalidCronSchedule }
 
-var _ = cerrors.Register(ErrInvalidCronSchedule, cerrors.Meta{
+var errInvalidCronSchedule = cerrors.Register("compiler-rendercore/invalid-cron-schedule", cerrors.Meta{
 	Message: "schedule is not a valid cron expression",
 })
 
@@ -115,7 +117,7 @@ func ValidateWorkloadForm(w *types.Workload, nodeID string) error {
 			if v.PersistentTemplate != nil {
 				return cerrors.New(cerrors.TranslationError, cerrors.SourceLocation{File: nodeID},
 					"workload declares a persistentTemplate volume but is not form: stateful; declare form: stateful",
-					nil, ErrPersistentTemplateRequiresStatefulForm)
+					nil, ErrPersistentTemplateRequiresStatefulForm())
 			}
 		}
 	}
@@ -124,23 +126,23 @@ func ValidateWorkloadForm(w *types.Workload, nodeID string) error {
 	case form == WorkloadFormReference && w.Endpoint == "":
 		return cerrors.New(cerrors.TranslationError, cerrors.SourceLocation{File: nodeID},
 			"workload is form: reference but declares no endpoint; set endpoint to the external host or URL the reference points at",
-			nil, ErrReferenceFormRequiresEndpoint)
+			nil, ErrReferenceFormRequiresEndpoint())
 	case form != WorkloadFormReference && w.Endpoint != "":
 		return cerrors.New(cerrors.TranslationError, cerrors.SourceLocation{File: nodeID},
 			"workload declares an endpoint but is not form: reference; declare form: reference or remove the endpoint",
-			nil, ErrEndpointRequiresReferenceForm)
+			nil, ErrEndpointRequiresReferenceForm())
 	case form == WorkloadFormScheduled && w.Schedule == "":
 		return cerrors.New(cerrors.TranslationError, cerrors.SourceLocation{File: nodeID},
 			"workload is form: scheduled but declares no schedule; set schedule to a 5-field cron expression or an @-macro (e.g. @daily)",
-			nil, ErrScheduledFormRequiresSchedule)
+			nil, ErrScheduledFormRequiresSchedule())
 	case form != WorkloadFormScheduled && w.Schedule != "":
 		return cerrors.New(cerrors.TranslationError, cerrors.SourceLocation{File: nodeID},
 			"workload declares a schedule but is not form: scheduled; declare form: scheduled or remove the schedule",
-			nil, ErrScheduleRequiresScheduledForm)
+			nil, ErrScheduleRequiresScheduledForm())
 	case form == WorkloadFormScheduled && !isValidCronSchedule(w.Schedule):
 		return cerrors.New(cerrors.TranslationError, cerrors.SourceLocation{File: nodeID},
 			"workload schedule is not a valid cron expression; use a 5-field crontab expression (e.g. \"0 0 * * *\") or one of @hourly, @daily, @weekly, @monthly, @yearly",
-			nil, ErrInvalidCronSchedule)
+			nil, ErrInvalidCronSchedule())
 	}
 
 	return nil

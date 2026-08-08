@@ -24,13 +24,13 @@ func TestGuestReturnedError(t *testing.T) {
 	if err == nil {
 		t.Fatal("a non-empty message must yield an error")
 	}
-	if !errors.Is(err, ErrWasmGuestError) {
+	if !errors.Is(err, ErrWasmGuestError()) {
 		t.Errorf("a guest-returned error must classify as ErrWasmGuestError, got %v", err)
 	}
 	if !strings.Contains(err.Error(), "render_node") || !strings.Contains(err.Error(), "template evaluation failed") {
 		t.Errorf("the error must name the export and the reason, got %q", err.Error())
 	}
-	if errors.Is(err, ErrWasmGuestPanic) || errors.Is(err, ErrWasmPluginExited) {
+	if errors.Is(err, ErrWasmGuestPanic()) || errors.Is(err, ErrWasmPluginExited()) {
 		t.Error("a guest structured error must not classify as a crash or a proc_exit")
 	}
 }

@@ -96,7 +96,7 @@ func TestColocatedMissFallsThroughToExhaustionHalt(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected an exhaustion halt on a co-located miss; got nil")
 	}
-	if !errors.Is(err, oci.ErrFetchNotFound) {
+	if !errors.Is(err, oci.ErrFetchNotFound()) {
 		t.Fatalf("want ErrFetchNotFound exhaustion halt; got %v", err)
 	}
 	if !strings.Contains(err.Error(), "colocated") {
@@ -122,7 +122,7 @@ func TestColocatedPinMismatchHaltsBeforeLoad(t *testing.T) {
 		pluginpath.PinPostureLockfile,
 		pluginpath.PinMaps{Pins: map[string]string{ref: digest.ContentDigest([]byte("the-real-bytes"))}},
 	)
-	if _, err := resolver.Resolve(ref); !errors.Is(err, oci.ErrFetchIntegrity) {
+	if _, err := resolver.Resolve(ref); !errors.Is(err, oci.ErrFetchIntegrity()) {
 		t.Fatalf("want integrity halt at resolution; got %v", err)
 	}
 }

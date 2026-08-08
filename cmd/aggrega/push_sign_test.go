@@ -92,7 +92,7 @@ func TestPushUnsignedToSignatureRequiringRegistryRefused(t *testing.T) {
 		PushTarget: store,
 		Sign:       &noSign,
 	})
-	if !errors.Is(err, signing.ErrUnsignedPushRefused) {
+	if !errors.Is(err, signing.ErrUnsignedPushRefused()) {
 		t.Fatalf("want ErrUnsignedPushRefused, got %v", err)
 	}
 
@@ -147,7 +147,7 @@ func TestPushSignRequestedWithoutSignerRefused(t *testing.T) {
 		Sign:       &sign,
 		// Signer nil.
 	})
-	if !errors.Is(err, signing.ErrUnsignedPushRefused) {
+	if !errors.Is(err, signing.ErrUnsignedPushRefused()) {
 		t.Fatalf("want ErrUnsignedPushRefused, got %v", err)
 	}
 }

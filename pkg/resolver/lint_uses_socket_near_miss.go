@@ -75,7 +75,7 @@ func LintUsesSocketNearMiss(na types.NormalizedAggregate, catalog CatalogLookup)
 						"socket %q on component %q is not declared in the usesSchema of type %q, but the type declares the socket %q — if %q was meant, this edge is currently an ad-hoc connection and carries no selector",
 						name, p.name, p.inst.Type, socket, socket,
 					),
-					Err: ErrUsesSocketNearMiss,
+					Err: ErrUsesSocketNearMiss(),
 				})
 			}
 		}

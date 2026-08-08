@@ -119,7 +119,7 @@ func ImportArtifact(ctx context.Context, res ImporterResolver, load ImporterLoad
 			// here, at the layer that owns the catalog dependency. The boundary
 			// reads the code off the CodedHostError; any other seam error stays
 			// uncoded and the boundary treats it as a parse failure.
-			if errors.Is(err, catalog.ErrNoParserForFormat) {
+			if errors.Is(err, catalog.ErrNoParserForFormat()) {
 				return nil, &wasm.CodedHostError{Code: abi.CodeNoParserForFormat, Err: err}
 			}
 			return nil, err

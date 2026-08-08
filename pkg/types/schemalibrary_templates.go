@@ -13,34 +13,34 @@ import (
 
 // ErrTemplateNotFound fires when a `$instantiate:` reference names a template
 // that is not declared in the library's `spec.templates` map.
-const ErrTemplateNotFound cerrors.Code = "types/template-not-found"
+func ErrTemplateNotFound() error { return errTemplateNotFound }
 
-var _ = cerrors.Register(ErrTemplateNotFound, cerrors.Meta{
+var errTemplateNotFound = cerrors.Register("types/template-not-found", cerrors.Meta{
 	Message: "schemalibrary: template not found",
 })
 
 // ErrTemplateParamMissing fires when a `$instantiate:` `$args:` binding
 // omits a parameter the template declares as required (no default).
-const ErrTemplateParamMissing cerrors.Code = "types/template-param-missing"
+func ErrTemplateParamMissing() error { return errTemplateParamMissing }
 
-var _ = cerrors.Register(ErrTemplateParamMissing, cerrors.Meta{
+var errTemplateParamMissing = cerrors.Register("types/template-param-missing", cerrors.Meta{
 	Message: "schemalibrary: template parameter missing",
 })
 
 // ErrTemplateParamTypeMismatch fires when a `$instantiate:` `$args:` binding
 // supplies a value whose type does not match the parameter's declared type.
-const ErrTemplateParamTypeMismatch cerrors.Code = "types/template-param-type-mismatch"
+func ErrTemplateParamTypeMismatch() error { return errTemplateParamTypeMismatch }
 
-var _ = cerrors.Register(ErrTemplateParamTypeMismatch, cerrors.Meta{
+var errTemplateParamTypeMismatch = cerrors.Register("types/template-param-type-mismatch", cerrors.Meta{
 	Message: "schemalibrary: template parameter type mismatch",
 })
 
 // ErrForbiddenKeyword fires when a schema entry uses a JSON Schema keyword
 // forbidden by default in SchemaLibrary content. Currently: $dynamicAnchor,
 // $dynamicRef.
-const ErrForbiddenKeyword cerrors.Code = "types/forbidden-keyword"
+func ErrForbiddenKeyword() error { return errForbiddenKeyword }
 
-var _ = cerrors.Register(ErrForbiddenKeyword, cerrors.Meta{
+var errForbiddenKeyword = cerrors.Register("types/forbidden-keyword", cerrors.Meta{
 	Message: "schemalibrary: forbidden JSON Schema keyword",
 })
 
@@ -68,11 +68,11 @@ var _ = cerrors.Register(ErrForbiddenKeyword, cerrors.Meta{
 // markers.
 func InstantiateTemplate(lib *SchemaLibrary, templateName string, args map[string]any) (yaml.Node, error) {
 	if lib == nil {
-		return yaml.Node{}, fmt.Errorf("%w: nil library", ErrTemplateNotFound)
+		return yaml.Node{}, fmt.Errorf("%w: nil library", ErrTemplateNotFound())
 	}
 	tmpl, ok := lib.Spec.Templates.Get(templateName)
 	if !ok {
-		return yaml.Node{}, fmt.Errorf("%w: %q not declared in spec.templates", ErrTemplateNotFound, templateName)
+		return yaml.Node{}, fmt.Errorf("%w: %q not declared in spec.templates", ErrTemplateNotFound(), templateName)
 	}
 
 	// Resolve arguments + apply defaults; type-check.
@@ -84,10 +84,10 @@ func InstantiateTemplate(lib *SchemaLibrary, templateName string, args map[strin
 				resolved[paramName] = decl.Default
 				continue
 			}
-			return yaml.Node{}, fmt.Errorf("%w: %q (template %q)", ErrTemplateParamMissing, paramName, templateName)
+			return yaml.Node{}, fmt.Errorf("%w: %q (template %q)", ErrTemplateParamMissing(), paramName, templateName)
 		}
 		if err := typecheckParam(paramName, decl, argVal); err != nil {
-			return yaml.Node{}, fmt.Errorf("%w: %v", ErrTemplateParamTypeMismatch, err)
+			return yaml.Node{}, fmt.Errorf("%w: %v", ErrTemplateParamTypeMismatch(), err)
 		}
 		resolved[paramName] = argVal
 	}
@@ -96,7 +96,7 @@ func InstantiateTemplate(lib *SchemaLibrary, templateName string, args map[strin
 	// type-mismatch-class error rather than silently ignore.
 	for argName := range args {
 		if _, declared := tmpl.Params.Get(argName); !declared {
-			return yaml.Node{}, fmt.Errorf("%w: argument %q is not declared in template %q's $params", ErrTemplateParamTypeMismatch, argName, templateName)
+			return yaml.Node{}, fmt.Errorf("%w: argument %q is not declared in template %q's $params", ErrTemplateParamTypeMismatch(), argName, templateName)
 		}
 	}
 
@@ -206,7 +206,7 @@ func scanForbiddenKeywords(node *yaml.Node) error {
 		for i := 0; i+1 < len(node.Content); i += 2 {
 			key := node.Content[i]
 			if key.Value == "$dynamicAnchor" || key.Value == "$dynamicRef" {
-				return fmt.Errorf("%w: %q at line %d", ErrForbiddenKeyword, key.Value, key.Line)
+				return fmt.Errorf("%w: %q at line %d", ErrForbiddenKeyword(), key.Value, key.Line)
 			}
 		}
 	}

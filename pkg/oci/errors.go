@@ -17,27 +17,27 @@ import (
 // Category integration and call-site wrapping in the compiler's
 // diagnostic surface land at a follow-up implementation; this sentinel is
 // a pure declaration today.
-const ErrFetchNotFound cerrors.Code = "oci/fetch-not-found"
+func ErrFetchNotFound() error { return errFetchNotFound }
 
-var _ = cerrors.Register(ErrFetchNotFound, cerrors.Meta{
+var errFetchNotFound = cerrors.Register("oci/fetch-not-found", cerrors.Meta{
 	Message: "oci: artifact not found at remote source",
 })
 
 // ErrFetchUnauthorized is returned when registry authentication is
 // required or fails. Call sites wrap this sentinel with the registry
 // host and a `docker login <registry>` remediation pointer.
-const ErrFetchUnauthorized cerrors.Code = "oci/fetch-unauthorized"
+func ErrFetchUnauthorized() error { return errFetchUnauthorized }
 
-var _ = cerrors.Register(ErrFetchUnauthorized, cerrors.Meta{
+var errFetchUnauthorized = cerrors.Register("oci/fetch-unauthorized", cerrors.Meta{
 	Message: "oci: authentication required or failed",
 })
 
 // ErrFetchNetworkUnreachable is returned when the transport layer
 // fails (DNS resolution, TCP connection, TLS handshake). Call sites
 // wrap this sentinel with the URL.
-const ErrFetchNetworkUnreachable cerrors.Code = "oci/fetch-network-unreachable"
+func ErrFetchNetworkUnreachable() error { return errFetchNetworkUnreachable }
 
-var _ = cerrors.Register(ErrFetchNetworkUnreachable, cerrors.Meta{
+var errFetchNetworkUnreachable = cerrors.Register("oci/fetch-network-unreachable", cerrors.Meta{
 	Message: "oci: network unreachable",
 })
 
@@ -45,9 +45,9 @@ var _ = cerrors.Register(ErrFetchNetworkUnreachable, cerrors.Meta{
 // manifest's claimed digest. Call sites wrap this sentinel with the
 // URL, the expected digest, and an
 // `aggrega pull --upgrade --release <release>` remediation pointer.
-const ErrFetchIntegrity cerrors.Code = "oci/fetch-integrity"
+func ErrFetchIntegrity() error { return errFetchIntegrity }
 
-var _ = cerrors.Register(ErrFetchIntegrity, cerrors.Meta{
+var errFetchIntegrity = cerrors.Register("oci/fetch-integrity", cerrors.Meta{
 	Message: "oci: content digest mismatch",
 })
 
@@ -58,9 +58,9 @@ var _ = cerrors.Register(ErrFetchIntegrity, cerrors.Meta{
 // manifest that is missing the expected content layer halts loudly
 // instead of yielding the wrong blob. Call sites wrap this sentinel with
 // the media type that was expected.
-const ErrNoContentLayer cerrors.Code = "oci/no-content-layer"
+func ErrNoContentLayer() error { return errNoContentLayer }
 
-var _ = cerrors.Register(ErrNoContentLayer, cerrors.Meta{
+var errNoContentLayer = cerrors.Register("oci/no-content-layer", cerrors.Meta{
 	Message: "oci: manifest has no layer of the expected content media type",
 })
 
@@ -69,9 +69,9 @@ var _ = cerrors.Register(ErrNoContentLayer, cerrors.Meta{
 // layer cannot be selected unambiguously. Selection halts loudly rather
 // than pick one. Call sites wrap this sentinel with the media type and
 // the count.
-const ErrAmbiguousContentLayer cerrors.Code = "oci/ambiguous-content-layer"
+func ErrAmbiguousContentLayer() error { return errAmbiguousContentLayer }
 
-var _ = cerrors.Register(ErrAmbiguousContentLayer, cerrors.Meta{
+var errAmbiguousContentLayer = cerrors.Register("oci/ambiguous-content-layer", cerrors.Meta{
 	Message: "oci: manifest has multiple layers of the expected content media type",
 })
 
@@ -83,9 +83,9 @@ var _ = cerrors.Register(ErrAmbiguousContentLayer, cerrors.Meta{
 // recomputed digest, and the expected digest; the remediation is
 // `aggrega pull --upgrade --release <release>` to refresh the cache
 // from authoritative bytes.
-const ErrCachedManifestIntegrity cerrors.Code = "oci/cached-manifest-integrity"
+func ErrCachedManifestIntegrity() error { return errCachedManifestIntegrity }
 
-var _ = cerrors.Register(ErrCachedManifestIntegrity, cerrors.Meta{
+var errCachedManifestIntegrity = cerrors.Register("oci/cached-manifest-integrity", cerrors.Meta{
 	Message: "oci: cached manifest digest mismatch",
 })
 
@@ -98,18 +98,18 @@ var _ = cerrors.Register(ErrCachedManifestIntegrity, cerrors.Meta{
 // (verified by aggrega lint --pre-publish) instead. Re-pushing
 // byte-identical content under the same tag is not a conflict — it is
 // an idempotent no-op.
-const ErrImmutableTagConflict cerrors.Code = "oci/immutable-tag-conflict"
+func ErrImmutableTagConflict() error { return errImmutableTagConflict }
 
-var _ = cerrors.Register(ErrImmutableTagConflict, cerrors.Meta{
+var errImmutableTagConflict = cerrors.Register("oci/immutable-tag-conflict", cerrors.Meta{
 	Message: "oci: tag already published with different content",
 })
 
 // ErrUnknownEntityKind is returned by MediaTypeForKind for kind
 // strings not in the canonical entity-kind set. Programming error
 // at the dispatch boundary, not a user-input error.
-const ErrUnknownEntityKind cerrors.Code = "oci/unknown-entity-kind"
+func ErrUnknownEntityKind() error { return errUnknownEntityKind }
 
-var _ = cerrors.Register(ErrUnknownEntityKind, cerrors.Meta{
+var errUnknownEntityKind = cerrors.Register("oci/unknown-entity-kind", cerrors.Meta{
 	Message: "oci: unknown entity kind for mediatype dispatch",
 })
 
@@ -120,9 +120,9 @@ var _ = cerrors.Register(ErrUnknownEntityKind, cerrors.Meta{
 // to every publishable kind — Component, Feature, Plugin, Aggregate,
 // Recipe, FeatureRecipe, SchemaLibrary, MappingLibrary. Call sites wrap
 // this sentinel with both values for the operator's diagnostic.
-const ErrEntityVersionPathMismatch cerrors.Code = "oci/entity-version-path-mismatch"
+func ErrEntityVersionPathMismatch() error { return errEntityVersionPathMismatch }
 
-var _ = cerrors.Register(ErrEntityVersionPathMismatch, cerrors.Meta{
+var errEntityVersionPathMismatch = cerrors.Register("oci/entity-version-path-mismatch", cerrors.Meta{
 	Message: "oci: entity per-version subdirectory mismatch",
 })
 
@@ -135,9 +135,9 @@ var _ = cerrors.Register(ErrEntityVersionPathMismatch, cerrors.Meta{
 // identities collision-free under that mapping; a collision would silently
 // overwrite one entity's published bytes with another's. The whole-catalog lint
 // halts loudly on it rather than let population drop an entity.
-const ErrOCILocationCollision cerrors.Code = "oci/oci-location-collision"
+func ErrOCILocationCollision() error { return errOCILocationCollision }
 
-var _ = cerrors.Register(ErrOCILocationCollision, cerrors.Meta{
+var errOCILocationCollision = cerrors.Register("oci/oci-location-collision", cerrors.Meta{
 	Message: "oci: distinct catalog identities map to the same OCI repository location",
 })
 
@@ -167,13 +167,13 @@ func RemediationFor(sentinel error, registryHost string) string {
 		host = "<registry>"
 	}
 	switch {
-	case errors.Is(sentinel, ErrFetchNotFound):
+	case errors.Is(sentinel, ErrFetchNotFound()):
 		return "remediation: verify the URL and version are correct; for cache misses with offline mode set, disable offline or rerun aggrega pull --release <release>"
-	case errors.Is(sentinel, ErrFetchUnauthorized):
+	case errors.Is(sentinel, ErrFetchUnauthorized()):
 		return "remediation: docker login " + host + " (or helm registry login " + host + " for Helm-specific OCI) before re-running aggrega pull --release <release>"
-	case errors.Is(sentinel, ErrFetchNetworkUnreachable):
+	case errors.Is(sentinel, ErrFetchNetworkUnreachable()):
 		return "remediation: check network connectivity to " + host + "; corporate proxies typically need HTTPS_PROXY exported"
-	case errors.Is(sentinel, ErrFetchIntegrity), errors.Is(sentinel, ErrCachedManifestIntegrity):
+	case errors.Is(sentinel, ErrFetchIntegrity()), errors.Is(sentinel, ErrCachedManifestIntegrity()):
 		return "remediation: run aggrega pull --upgrade --release <release> to refresh the lockfile and cache"
 	default:
 		return ""

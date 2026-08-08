@@ -16,9 +16,9 @@ import (
 // compact-form keyword nor a JSON-Schema-reserved keyword nor a
 // recognised escape (`$jsonschema`, `$mode`, `$ref`). The compiler
 // rejects unknown keywords up front so typos surface immediately.
-const ErrUnknownKeyword cerrors.Code = "compactform/unknown-keyword"
+func ErrUnknownKeyword() error { return errUnknownKeyword }
 
-var _ = cerrors.Register(ErrUnknownKeyword, cerrors.Meta{
+var errUnknownKeyword = cerrors.Register("compactform/unknown-keyword", cerrors.Meta{
 	Message: "compactform: unknown keyword",
 })
 
@@ -27,9 +27,9 @@ var _ = cerrors.Register(ErrUnknownKeyword, cerrors.Meta{
 // did not supply a `$mode:` annotation to disambiguate. The canonical
 // example is a compact-form schema with a field literally named
 // `type`.
-const ErrAmbiguousDispatch cerrors.Code = "compactform/ambiguous-dispatch"
+func ErrAmbiguousDispatch() error { return errAmbiguousDispatch }
 
-var _ = cerrors.Register(ErrAmbiguousDispatch, cerrors.Meta{
+var errAmbiguousDispatch = cerrors.Register("compactform/ambiguous-dispatch", cerrors.Meta{
 	Message: "compactform: ambiguous dispatch — $mode required",
 })
 
@@ -37,9 +37,9 @@ var _ = cerrors.Register(ErrAmbiguousDispatch, cerrors.Meta{
 // content that does not parse as JSON Schema YAML. The escape hatch
 // embeds JSON Schema verbatim; malformed content is rejected here
 // rather than passed downstream to the validator.
-const ErrEscapeContentInvalid cerrors.Code = "compactform/escape-content-invalid"
+func ErrEscapeContentInvalid() error { return errEscapeContentInvalid }
 
-var _ = cerrors.Register(ErrEscapeContentInvalid, cerrors.Meta{
+var errEscapeContentInvalid = cerrors.Register("compactform/escape-content-invalid", cerrors.Meta{
 	Message: "compactform: $jsonschema content invalid",
 })
 
@@ -48,9 +48,9 @@ var _ = cerrors.Register(ErrEscapeContentInvalid, cerrors.Meta{
 // (e.g. `min:` on a `type: object` field, `pattern:` on a numeric
 // type). The dispatch of `min` / `max` to JSON Schema's
 // `minimum` / `minLength` / `minItems` depends on the field's type.
-const ErrConstraintTypeMismatch cerrors.Code = "compactform/constraint-type-mismatch"
+func ErrConstraintTypeMismatch() error { return errConstraintTypeMismatch }
 
-var _ = cerrors.Register(ErrConstraintTypeMismatch, cerrors.Meta{
+var errConstraintTypeMismatch = cerrors.Register("compactform/constraint-type-mismatch", cerrors.Meta{
 	Message: "compactform: constraint not valid for declared type",
 })
 
@@ -58,9 +58,9 @@ var _ = cerrors.Register(ErrConstraintTypeMismatch, cerrors.Meta{
 // malformed (the resolver itself runs in pkg/validator/merger/ and
 // pkg/validator/jsonschema/; the compactform compiler only validates
 // the URL shape).
-const ErrReferenceUnresolvable cerrors.Code = "compactform/reference-unresolvable"
+func ErrReferenceUnresolvable() error { return errReferenceUnresolvable }
 
-var _ = cerrors.Register(ErrReferenceUnresolvable, cerrors.Meta{
+var errReferenceUnresolvable = cerrors.Register("compactform/reference-unresolvable", cerrors.Meta{
 	Message: "compactform: $ref unresolvable",
 })
 
@@ -71,9 +71,9 @@ var _ = cerrors.Register(ErrReferenceUnresolvable, cerrors.Meta{
 // schemas map. Distinct from ErrReferenceUnresolvable which signals
 // a syntactically malformed URL; this sentinel signals a syntactically
 // valid URL whose target does not exist.
-const ErrUnresolvedSchemaLibraryRef cerrors.Code = "compactform/unresolved-schema-library-ref"
+func ErrUnresolvedSchemaLibraryRef() error { return errUnresolvedSchemaLibraryRef }
 
-var _ = cerrors.Register(ErrUnresolvedSchemaLibraryRef, cerrors.Meta{
+var errUnresolvedSchemaLibraryRef = cerrors.Register("compactform/unresolved-schema-library-ref", cerrors.Meta{
 	Message: "compactform: cross-document $ref target not found",
 })
 
@@ -85,9 +85,9 @@ var _ = cerrors.Register(ErrUnresolvedSchemaLibraryRef, cerrors.Meta{
 // the chain named in the message (e.g.
 // "A#/schemas/X -> B#/schemas/Y -> A#/schemas/X"). Deeper cycle graphs
 // across multi-hop reference chains are detected by the same stack
-// discipline. Match with errors.Is(err, ErrCircularRef) or, equivalently,
-// errors.Is(err, refcycle.ErrCycle).
-const ErrCircularRef = refcycle.ErrCycle
+// discipline. Match with errors.Is(err, ErrCircularRef()) or, equivalently,
+// errors.Is(err, refcycle.ErrCycle()).
+func ErrCircularRef() error { return refcycle.ErrCycle() }
 
 // ErrHostInLibraryRef indicates a cross-document `$ref:` carries a
 // registry host — the `oci://<host>/…` form. A library reference
@@ -97,9 +97,9 @@ const ErrCircularRef = refcycle.ErrCycle
 // is supplied by the lockfile. A host in a reference is rejected at
 // compile so physical location cannot leak into authored source; the
 // error message steers the author to the identity form.
-const ErrHostInLibraryRef cerrors.Code = "compactform/host-in-library-ref"
+func ErrHostInLibraryRef() error { return errHostInLibraryRef }
 
-var _ = cerrors.Register(ErrHostInLibraryRef, cerrors.Meta{
+var errHostInLibraryRef = cerrors.Register("compactform/host-in-library-ref", cerrors.Meta{
 	Message: "compactform: cross-document $ref carries a registry host; reference the library by identity",
 })
 

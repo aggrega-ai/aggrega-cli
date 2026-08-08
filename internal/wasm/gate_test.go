@@ -47,7 +47,7 @@ func TestParseAndValidateDescriptor(t *testing.T) {
 				if err == nil {
 					t.Fatalf("expected error, got descriptor %+v", desc)
 				}
-				if !errors.Is(err, ErrWasmManifestRejected) {
+				if !errors.Is(err, ErrWasmManifestRejected()) {
 					t.Fatalf("error does not wrap ErrWasmManifestRejected: %v", err)
 				}
 				return
@@ -77,7 +77,7 @@ func TestInvokeExportUndeclared(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error invoking undeclared export")
 	}
-	if !errors.Is(err, ErrWasmManifestRejected) {
+	if !errors.Is(err, ErrWasmManifestRejected()) {
 		t.Fatalf("error does not wrap ErrWasmManifestRejected: %v", err)
 	}
 }
@@ -118,7 +118,7 @@ func TestLoadAndDescribeFixture(t *testing.T) {
 
 	// An export the descriptor does not declare is refused even on a
 	// live plugin.
-	if _, err := InvokeExport(ctx, plugin, desc, "render_node", nil); !errors.Is(err, ErrWasmManifestRejected) {
+	if _, err := InvokeExport(ctx, plugin, desc, "render_node", nil); !errors.Is(err, ErrWasmManifestRejected()) {
 		t.Fatalf("undeclared export on live plugin: got %v", err)
 	}
 }

@@ -88,7 +88,7 @@ func TestRenderReleaseValidation_AssertionMessageSurvivesFlattening(t *testing.T
 
 	failure := fmt.Errorf("assertion %q: %w: %s",
 		"Component/core/server/only/port_must_be_privileged",
-		renderer.ErrAssertionFailed, authored)
+		renderer.ErrAssertionFailed(), authored)
 	attributed := fmt.Errorf("Component %q instance %q assertion %q: %w",
 		"core/server", "only", "port_must_be_privileged", failure)
 	vr := &compilerops.ValidateResult{

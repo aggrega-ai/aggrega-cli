@@ -243,7 +243,7 @@ func scanOrphanCrossBoundaryLinkSentinels(assembledByDispatch map[dispatchKey]*a
 			if bytes.Contains(grp.files[name].Content, prefix) {
 				return cerrors.New(cerrors.TranslationError, cerrors.SourceLocation{File: name},
 					fmt.Sprintf("assembled file %q at dispatch path %q retains an unresolved cross-boundary link placeholder",
-						name, k.Path), nil, ErrOrphanCrossBoundaryLinkSentinel)
+						name, k.Path), nil, ErrOrphanCrossBoundaryLinkSentinel())
 			}
 		}
 	}
@@ -346,5 +346,5 @@ func applyLinkPatch(codec frp.Codec, name string, body []byte, ops []frp.JSONPat
 // away.
 func crossProviderLinkUnsupported(edge types.IREdge, srcProvider, tgtProvider string) error {
 	return fmt.Errorf("%w: uses edge %q -> %q on socket %q spans providers %q (source) and %q (target); the edge keeps its scalar value-pipe",
-		ErrCrossProviderLinkUnsupported, edge.Source, edge.Target, edge.Socket, srcProvider, tgtProvider)
+		ErrCrossProviderLinkUnsupported(), edge.Source, edge.Target, edge.Socket, srcProvider, tgtProvider)
 }

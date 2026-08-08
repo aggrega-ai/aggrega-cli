@@ -59,7 +59,7 @@ func evalActive(active types.ActiveFlag, nodeID string) (bool, error) {
 	}
 	b, err := strconv.ParseBool(s)
 	if err != nil {
-		return false, cerrors.Wrap(ErrInvalidActive, cerrors.DeveloperError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("node %q active resolved to %q, which is not a boolean", nodeID, string(active)))
+		return false, cerrors.Wrap(ErrInvalidActive(), cerrors.DeveloperError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("node %q active resolved to %q, which is not a boolean", nodeID, string(active)))
 	}
 	return b, nil
 }
@@ -138,7 +138,7 @@ func flattenAggregate(
 	params map[string]any,
 ) (*flattenResult, error) {
 	if depth > maxSubAggregateDepth {
-		return nil, cerrors.Wrap(ErrMaxDepth, cerrors.DeveloperError, cerrors.SourceLocation{File: prefix}, fmt.Sprintf("depth %d at prefix %q", depth, prefix))
+		return nil, cerrors.Wrap(ErrMaxDepth(), cerrors.DeveloperError, cerrors.SourceLocation{File: prefix}, fmt.Sprintf("depth %d at prefix %q", depth, prefix))
 	}
 
 	result := &flattenResult{
@@ -172,12 +172,12 @@ func flattenAggregate(
 			}
 
 			if visited[subAgg.Type] {
-				return nil, cerrors.Wrap(ErrSubAggregateLoad, cerrors.DeveloperError, cerrors.SourceLocation{File: childPrefix}, fmt.Sprintf("circular sub-aggregate reference %q at %q", subAgg.Type, childPrefix))
+				return nil, cerrors.Wrap(ErrSubAggregateLoad(), cerrors.DeveloperError, cerrors.SourceLocation{File: childPrefix}, fmt.Sprintf("circular sub-aggregate reference %q at %q", subAgg.Type, childPrefix))
 			}
 
 			childAgg, childSourceFile, childParams, err := loader(subAgg.Type, plainParams(subAgg.Parameters))
 			if err != nil {
-				return nil, cerrors.Wrap(err, cerrors.DeveloperError, cerrors.SourceLocation{File: childPrefix}, fmt.Sprintf("%v", ErrSubAggregateLoad))
+				return nil, cerrors.Wrap(err, cerrors.DeveloperError, cerrors.SourceLocation{File: childPrefix}, fmt.Sprintf("%v", ErrSubAggregateLoad()))
 			}
 
 			childVisited := copyVisited(visited)
@@ -196,7 +196,7 @@ func flattenAggregate(
 			// Merge child results — preserve child's author-order during merge.
 			for id, node := range childResult.Nodes.All() {
 				if existing, exists := result.Nodes.Get(id); exists {
-					return nil, cerrors.Wrap(ErrSubAggregateNameCollision, cerrors.DeveloperError, cerrors.SourceLocation{File: childPrefix}, fmt.Sprintf("id %q (path %q) collides with existing entry from %q", id, childPrefix, existing.SourceAggregate))
+					return nil, cerrors.Wrap(ErrSubAggregateNameCollision(), cerrors.DeveloperError, cerrors.SourceLocation{File: childPrefix}, fmt.Sprintf("id %q (path %q) collides with existing entry from %q", id, childPrefix, existing.SourceAggregate))
 				}
 				result.Nodes.Set(id, node)
 			}
@@ -287,7 +287,7 @@ func flattenSubsystems(result *flattenResult, prefix, rootPath, sourceFile strin
 					return nil
 				}
 				if existing, exists := result.Nodes.Get(nodeID); exists {
-					return cerrors.Wrap(ErrSubAggregateNameCollision, cerrors.DeveloperError, cerrors.SourceLocation{File: prefix}, fmt.Sprintf("id %q (path %q) collides with existing entry from %q", nodeID, prefix, existing.SourceAggregate))
+					return cerrors.Wrap(ErrSubAggregateNameCollision(), cerrors.DeveloperError, cerrors.SourceLocation{File: prefix}, fmt.Sprintf("id %q (path %q) collides with existing entry from %q", nodeID, prefix, existing.SourceAggregate))
 				}
 				result.Nodes.Set(nodeID, &TopologyNode{
 					InstanceID:           nodeID,
@@ -365,7 +365,7 @@ func resolveExportTarget(candidate string, nodes types.OrderedMap[*TopologyNode]
 		}
 		chain = append(chain, cur)
 		if visited[cur] {
-			return "", cerrors.Wrap(ErrReexportCycle, cerrors.DeveloperError, cerrors.SourceLocation{File: candidate}, fmt.Sprintf("re-exported component alias chain loops: %s", strings.Join(chain, " -> ")))
+			return "", cerrors.Wrap(ErrReexportCycle(), cerrors.DeveloperError, cerrors.SourceLocation{File: candidate}, fmt.Sprintf("re-exported component alias chain loops: %s", strings.Join(chain, " -> ")))
 		}
 		visited[cur] = true
 		cur = next

@@ -74,7 +74,7 @@ var CrossBoundaryLinkPlaceholderResolved = constraint.Check[
 	constraint.NoHostPowers,
 	constraint.BoundaryProviderPathSubject,
 ]{
-	Sentinel: ErrOrphanCrossBoundaryLinkSentinel,
+	Sentinel: ErrOrphanCrossBoundaryLinkSentinel(),
 	Severity: constraint.SeverityFatal,
 	Run: func(
 		v constraint.RenderedView,
@@ -85,7 +85,7 @@ var CrossBoundaryLinkPlaceholderResolved = constraint.Check[
 			return nil
 		}
 		return []constraint.Objection{s.Raise(
-			ErrOrphanCrossBoundaryLinkSentinel, s.ProviderName(), s.EmittedPath(),
+			ErrOrphanCrossBoundaryLinkSentinel(), s.ProviderName(), s.EmittedPath(),
 		)}
 	},
 }

@@ -221,7 +221,7 @@ func validateBoundaryScopeFRTemplate(fr *types.FeatureRecipe) error {
 func boundaryScopeFRErr(frName, label string, v *templateScopeViolation) error {
 	if v.Level == scopeLevelRoot && slices.Contains(boundaryScopeFRScope.exclude, v.Ref.Segs[0]) {
 		inner := fmt.Errorf("%w: FeatureRecipe %q with executionScope: boundary references per-component-only field %s in %s; boundary-scope FRs use .boundary.* pillars in place of .context.* / .workload / .attachment_name / .inject — see aggrega-docs/language-reference/entities/featurerecipe.md",
-			ErrFRTemplateInvalidField, frName, v.Ref.Path, label)
+			ErrFRTemplateInvalidField(), frName, v.Ref.Path, label)
 		return cerrors.Wrap(inner, cerrors.CatalogError, cerrors.SourceLocation{}, inner.Error())
 	}
 	return templateUnknownRootErr(cerrors.CatalogError, fmt.Sprintf("%s %s", frName, label), v)

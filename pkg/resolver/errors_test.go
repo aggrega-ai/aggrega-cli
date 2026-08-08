@@ -20,7 +20,7 @@ func TestResolverError_ToCompilerError_AggregateRoutesToDeveloper(t *testing.T) 
 		Entity:  "Aggregate my-app",
 		Field:   ".spec.components.bad-name",
 		Message: "invalid component name",
-		Err:     resolver.ErrInvalidInstanceName,
+		Err:     resolver.ErrInvalidInstanceName(),
 	}
 	ce := re.ToCompilerError()
 	if ce == nil {
@@ -34,7 +34,7 @@ func TestResolverError_ToCompilerError_AggregateRoutesToDeveloper(t *testing.T) 
 	}
 	// Inner error chain preserved: errors.Is against the resolver sentinel
 	// matches through the converted CompilerError.
-	if !stderrors.Is(ce, resolver.ErrInvalidInstanceName) {
+	if !stderrors.Is(ce, resolver.ErrInvalidInstanceName()) {
 		t.Errorf("errors.Is(ce, ErrInvalidInstanceName) = false, want true (chain preservation)")
 	}
 }
@@ -46,7 +46,7 @@ func TestResolverError_ToCompilerError_ReleaseRoutesToOps(t *testing.T) {
 		Entity:  "Release prod",
 		Field:   ".spec.boundaries.frontend.parameters.bad-key",
 		Message: "parameter type mismatch",
-		Err:     resolver.ErrInvalidParameterRef,
+		Err:     resolver.ErrInvalidParameterRef(),
 	}
 	ce := re.ToCompilerError()
 	if ce.Category != cerrors.OpsError {
@@ -61,7 +61,7 @@ func TestResolverError_ToCompilerError_RecipeRoutesToCatalog(t *testing.T) {
 		Entity:  "Recipe my-recipe",
 		Field:   ".spec.implements",
 		Message: "unknown component type",
-		Err:     resolver.ErrYAMLLoad,
+		Err:     resolver.ErrYAMLLoad(),
 	}
 	ce := re.ToCompilerError()
 	if ce.Category != cerrors.CatalogError {

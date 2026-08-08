@@ -12,7 +12,7 @@ import (
 // TestValidateBytes_EveryFailureCarriesTheSentinel pins the property that
 // makes ErrEntityEnvelope safe to gate on: every error ValidateBytes returns
 // matches it. The property belongs to ValidateBytes, not to its callers'
-// habits — a caller written as `if errors.Is(err, ErrEntityEnvelope)` treats a
+// habits — a caller written as `if errors.Is(err, ErrEntityEnvelope())` treats a
 // non-matching error as success, so a return path added without the sentinel
 // would be silently skipped at every such call site. This test is what fails
 // instead.
@@ -90,7 +90,7 @@ spec:
 			if !strings.Contains(err.Error(), tc.wantMessageFragment) {
 				t.Fatalf("%s: expected the %q return path, got %v", tc.name, tc.wantMessageFragment, err)
 			}
-			if !errors.Is(err, ErrEntityEnvelope) {
+			if !errors.Is(err, ErrEntityEnvelope()) {
 				t.Errorf("%s: error must match ErrEntityEnvelope; got %v", tc.name, err)
 			}
 		})

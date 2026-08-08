@@ -22,7 +22,7 @@ func TestTranslateRejectsAllowedHosts(t *testing.T) {
 		AllowedHosts: []string{"example.com"},
 	}
 	_, err := translateToManifest(spec)
-	if !errors.Is(err, ErrWasmManifestRejected) {
+	if !errors.Is(err, ErrWasmManifestRejected()) {
 		t.Fatalf("expected ErrWasmManifestRejected, got %v", err)
 	}
 	if !strings.Contains(err.Error(), "AllowedHosts") {
@@ -42,7 +42,7 @@ func TestTranslateRejectsAllowedPaths(t *testing.T) {
 		AllowedPaths: map[string]string{"/etc": "/etc"},
 	}
 	err := enforceAOTPurityFirewall(manifest, "test-plugin")
-	if !errors.Is(err, ErrWasmManifestRejected) {
+	if !errors.Is(err, ErrWasmManifestRejected()) {
 		t.Fatalf("expected ErrWasmManifestRejected, got %v", err)
 	}
 	if !strings.Contains(err.Error(), "AllowedPaths") {
@@ -52,7 +52,7 @@ func TestTranslateRejectsAllowedPaths(t *testing.T) {
 
 func TestHostFunctionsSubsetRejectsOutsideAllowlist(t *testing.T) {
 	err := validateHostFunctionsSubset("test-plugin", "provider", []string{"aggrega_log", "rogue_function"})
-	if !errors.Is(err, ErrWasmManifestRejected) {
+	if !errors.Is(err, ErrWasmManifestRejected()) {
 		t.Fatalf("expected ErrWasmManifestRejected, got %v", err)
 	}
 	if !strings.Contains(err.Error(), "rogue_function") {
@@ -69,7 +69,7 @@ func TestHostFunctionsSubsetRejectsOutsideAllowlist(t *testing.T) {
 // render a blank "a  plugin".
 func TestHostFunctionsSubsetRejectionMessage(t *testing.T) {
 	typed := validateHostFunctionsSubset("test-plugin", "provider", []string{"rogue_function"})
-	if !errors.Is(typed, ErrWasmManifestRejected) {
+	if !errors.Is(typed, ErrWasmManifestRejected()) {
 		t.Fatalf("typed: expected ErrWasmManifestRejected, got %v", typed)
 	}
 	for _, want := range []string{
@@ -84,7 +84,7 @@ func TestHostFunctionsSubsetRejectionMessage(t *testing.T) {
 	}
 
 	omitted := validateHostFunctionsSubset("test-plugin", "", []string{"rogue_function"})
-	if !errors.Is(omitted, ErrWasmManifestRejected) {
+	if !errors.Is(omitted, ErrWasmManifestRejected()) {
 		t.Fatalf("omitted: expected ErrWasmManifestRejected, got %v", omitted)
 	}
 	if !strings.Contains(omitted.Error(), "imports host function") ||
@@ -199,7 +199,7 @@ func TestCallWithPanicRecoveryWrapsPanic(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected error from panicking function, got nil with output %q", output)
 	}
-	if !errors.Is(err, ErrWasmGuestPanic) {
+	if !errors.Is(err, ErrWasmGuestPanic()) {
 		t.Errorf("expected error to wrap ErrWasmGuestPanic; got: %v", err)
 	}
 	if !strings.Contains(err.Error(), "test-plugin") {
@@ -233,7 +233,7 @@ func TestCallWithPanicRecoveryPassesNormalErrors(t *testing.T) {
 	if err != sentinel {
 		t.Errorf("expected sentinel error to pass through unwrapped; got %v", err)
 	}
-	if errors.Is(err, ErrWasmGuestPanic) {
+	if errors.Is(err, ErrWasmGuestPanic()) {
 		t.Error("non-panic error path should not wrap ErrWasmGuestPanic")
 	}
 }

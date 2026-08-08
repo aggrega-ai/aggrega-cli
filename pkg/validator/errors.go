@@ -12,21 +12,21 @@ import (
 
 // Sentinel errors for errors.Is matching.
 
-const ErrInheritanceMerge cerrors.Code = "validator/inheritance-merge"
+func ErrInheritanceMerge() error { return errInheritanceMerge }
 
-var _ = cerrors.Register(ErrInheritanceMerge, cerrors.Meta{
+var errInheritanceMerge = cerrors.Register("validator/inheritance-merge", cerrors.Meta{
 	Message: "inheritance merge failed: resolve the conflicting field definitions across the extends chain",
 })
 
-const ErrCyclicExtension cerrors.Code = "validator/cyclic-extension"
+func ErrCyclicExtension() error { return errCyclicExtension }
 
-var _ = cerrors.Register(ErrCyclicExtension, cerrors.Meta{
+var errCyclicExtension = cerrors.Register("validator/cyclic-extension", cerrors.Meta{
 	Message: "cyclic extends chain",
 })
 
-const ErrAssertionNameCollision cerrors.Code = "validator/assertion-name-collision"
+func ErrAssertionNameCollision() error { return errAssertionNameCollision }
 
-var _ = cerrors.Register(ErrAssertionNameCollision, cerrors.Meta{
+var errAssertionNameCollision = cerrors.Register("validator/assertion-name-collision", cerrors.Meta{
 	Message: "assertion name declared twice across the extends chain: rename the extending entity's assertion, whose assertions add to the base's and never replace one",
 })
 

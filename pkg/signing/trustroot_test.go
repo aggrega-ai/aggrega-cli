@@ -39,7 +39,7 @@ func TestTrustedMaterialFromRootPathLoadsPinnedRoot(t *testing.T) {
 func TestTrustedMaterialFromRootPathRejectsMissingFile(t *testing.T) {
 	t.Parallel()
 	_, err := signing.TrustedMaterialFromRootPath(filepath.Join(t.TempDir(), "does-not-exist.json"))
-	if !errors.Is(err, signing.ErrTrustRootLoad) {
+	if !errors.Is(err, signing.ErrTrustRootLoad()) {
 		t.Fatalf("want ErrTrustRootLoad, got %v", err)
 	}
 }
@@ -53,7 +53,7 @@ func TestTrustedMaterialFromRootPathRejectsGarbage(t *testing.T) {
 		t.Fatalf("write garbage: %v", err)
 	}
 	_, err := signing.TrustedMaterialFromRootPath(p)
-	if !errors.Is(err, signing.ErrTrustRootLoad) {
+	if !errors.Is(err, signing.ErrTrustRootLoad()) {
 		t.Fatalf("want ErrTrustRootLoad, got %v", err)
 	}
 }

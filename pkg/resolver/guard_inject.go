@@ -109,7 +109,7 @@ func guardInjectKeys(na types.NormalizedAggregate, catalog CatalogLookup) []*Res
 							Entity:  entity,
 							Field:   fmt.Sprintf("%s.inject.%s[%q]", base, ref.mechanism, ref.deliveryKey),
 							Message: invalidInjectKeyMessage(ref.providesKey, comp.Type, ownKeys),
-							Err:     ErrInvalidInjectKey,
+							Err:     ErrInvalidInjectKey(),
 						})
 					}
 				}
@@ -140,7 +140,7 @@ func guardInjectKeys(na types.NormalizedAggregate, catalog CatalogLookup) []*Res
 							Entity:  entity,
 							Field:   fmt.Sprintf("%s.uses[%q][%q].inject.%s[%q]", base, socket, alias, ref.mechanism, ref.deliveryKey),
 							Message: invalidInjectKeyMessage(ref.providesKey, targetType, targetKeys),
-							Err:     ErrInvalidInjectKey,
+							Err:     ErrInvalidInjectKey(),
 						})
 					}
 				}

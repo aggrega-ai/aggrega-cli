@@ -63,7 +63,7 @@ func (d *Dispatcher) Resolve(spec SourceSpec) (*ResolvedSource, error) {
 	adapter, ok := d.adapters[spec.Kind]
 	d.mu.RUnlock()
 	if !ok {
-		return nil, fmt.Errorf("sourceresolver: kind=%s: %w", spec.Kind, ErrUnknownKind)
+		return nil, fmt.Errorf("sourceresolver: kind=%s: %w", spec.Kind, ErrUnknownKind())
 	}
 	return adapter.Resolve(spec)
 }

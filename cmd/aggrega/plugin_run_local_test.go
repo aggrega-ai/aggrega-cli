@@ -132,7 +132,7 @@ func TestRunLocal_EntityForm_ContractMismatch(t *testing.T) {
 	entity := writeKindFixture(t, "plugin", parserEntityClaimsUndeclaredExport)
 
 	_, err := runLocal(t, "--plugin", guest, "--export", "parse", "--with", parsePayload, entity)
-	if !errors.Is(err, wasm.ErrWasmContractMismatch) {
+	if !errors.Is(err, wasm.ErrWasmContractMismatch()) {
 		t.Fatalf("a claim the guest does not declare should halt with ErrWasmContractMismatch; got %v", err)
 	}
 }
@@ -146,7 +146,7 @@ func TestRunLocal_EntityForm_PluginTypeMismatch(t *testing.T) {
 	entity := writeKindFixture(t, "plugin", parserEntityWrongType)
 
 	_, err := runLocal(t, "--plugin", guest, "--export", "parse", "--with", parsePayload, entity)
-	if !errors.Is(err, wasm.ErrWasmPluginTypeMismatch) {
+	if !errors.Is(err, wasm.ErrWasmPluginTypeMismatch()) {
 		t.Fatalf("a diverging pluginType should halt with ErrWasmPluginTypeMismatch; got %v", err)
 	}
 }
@@ -256,7 +256,7 @@ func TestRunLocal_TypeGate(t *testing.T) {
 		t.Parallel()
 		guest := wasmtest.EnsureFixtureBuilt(t, "parse-go.wasm")
 		_, err := runLocal(t, "--plugin", guest, "--export", "parse", "--type", "governance", "--with", parsePayload)
-		if !errors.Is(err, wasm.ErrWasmPluginTypeMismatch) {
+		if !errors.Is(err, wasm.ErrWasmPluginTypeMismatch()) {
 			t.Fatalf("a mismatched --type should halt with ErrWasmPluginTypeMismatch; got %v", err)
 		}
 	})

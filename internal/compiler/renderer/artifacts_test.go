@@ -227,7 +227,7 @@ func TestBuildArtifactsProjection_ImportPinVerify(t *testing.T) {
 	if err == nil {
 		t.Fatalf("tampered import rendered without halting; expected a loud halt")
 	}
-	if !errors.Is(err, ErrArtifactContentMismatch) {
+	if !errors.Is(err, ErrArtifactContentMismatch()) {
 		t.Errorf("tampered-import error = %v; want ErrArtifactContentMismatch", err)
 	}
 }

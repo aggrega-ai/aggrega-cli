@@ -85,7 +85,7 @@ func TestInterpolateParameters_SprigRequired(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error from Sprig required function")
 	}
-	if !errors.Is(err, ErrInvalidParameterRef) {
+	if !errors.Is(err, ErrInvalidParameterRef()) {
 		t.Errorf("expected ErrInvalidParameterRef, got %v", err)
 	}
 }
@@ -112,7 +112,7 @@ func TestLoadParametersImport_FileNotFound(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for missing file")
 	}
-	if !errors.Is(err, ErrParametersImportLoad) {
+	if !errors.Is(err, ErrParametersImportLoad()) {
 		t.Errorf("expected ErrParametersImportLoad, got %v", err)
 	}
 }

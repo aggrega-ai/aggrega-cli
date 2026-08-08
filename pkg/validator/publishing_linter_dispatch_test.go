@@ -488,7 +488,7 @@ func TestDispatchPublishingLinterRejectsNonLinter(t *testing.T) {
 		EntityKind: "Component",
 		Proposed:   json.RawMessage(`{"kind":"Component","metadata":{"name":"core/compute/api-server"}}`),
 	})
-	if !errors.Is(err, wasm.ErrWasmPluginTypeMismatch) {
+	if !errors.Is(err, wasm.ErrWasmPluginTypeMismatch()) {
 		t.Fatalf("a non-linter guest at the linter socket should halt with ErrWasmPluginTypeMismatch; got %v", err)
 	}
 }
@@ -516,7 +516,7 @@ func TestDispatchPublishingLinterCrossCheckHalts(t *testing.T) {
 		EntityKind: "Component",
 		Proposed:   json.RawMessage(`{"kind":"Component","metadata":{"name":"core/compute/api-server"}}`),
 	})
-	if !errors.Is(err, wasm.ErrWasmContractMismatch) {
+	if !errors.Is(err, wasm.ErrWasmContractMismatch()) {
 		t.Fatalf("a disagreeing claim should halt the linter load with ErrWasmContractMismatch; got %v", err)
 	}
 	if !strings.Contains(err.Error(), "scope") {

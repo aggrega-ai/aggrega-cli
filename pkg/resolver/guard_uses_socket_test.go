@@ -179,7 +179,7 @@ func TestGuardUsesSocket(t *testing.T) {
 				},
 			},
 			wantErr: true,
-			errSent: ErrUnknownUsesSocket,
+			errSent: ErrUnknownUsesSocket(),
 		},
 		{
 			name: "feature no usesSchema with uses fails",
@@ -190,7 +190,7 @@ func TestGuardUsesSocket(t *testing.T) {
 				},
 			},
 			wantErr: true,
-			errSent: ErrUnknownUsesSocket,
+			errSent: ErrUnknownUsesSocket(),
 		},
 		{
 			name:    "nil aggregate passes",

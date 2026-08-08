@@ -25,7 +25,7 @@ func TestRecipeValidationError_ToCompilerError_RoutesToCatalog(t *testing.T) {
 		Rule:        "1",
 		Description: "valuesMapping requires source",
 		Detail:      "Recipe declares valuesMapping but no source field",
-		Err:         validator.ErrRecipeRule1,
+		Err:         validator.ErrRecipeRule1(),
 	}
 	ce := rve.ToCompilerError()
 	if ce == nil {
@@ -45,7 +45,7 @@ func TestRecipeValidationError_ToCompilerError_RoutesToCatalog(t *testing.T) {
 		t.Errorf("Message missing Detail: %q", ce.Message)
 	}
 	// Inner chain preserved.
-	if !stderrors.Is(ce, validator.ErrRecipeRule1) {
+	if !stderrors.Is(ce, validator.ErrRecipeRule1()) {
 		t.Errorf("errors.Is(ce, ErrRecipeRule1) = false, want true")
 	}
 }
@@ -62,7 +62,7 @@ func TestWorkloadValidationError_ToCompilerError_RoutesToCatalog(t *testing.T) {
 		Findings: []validator.WorkloadValidationFinding{
 			{FieldPath: ".containers.main.image", Constraint: "required field missing"},
 		},
-		Err: validator.ErrWorkloadValidation,
+		Err: validator.ErrWorkloadValidation(),
 	}
 	ce := wve.ToCompilerError()
 	if ce.Category != cerrors.CatalogError {
@@ -71,7 +71,7 @@ func TestWorkloadValidationError_ToCompilerError_RoutesToCatalog(t *testing.T) {
 	if ce.Source.File != "/path/to/recipe.yaml" {
 		t.Errorf("Source.File = %q, want %q", ce.Source.File, "/path/to/recipe.yaml")
 	}
-	if !stderrors.Is(ce, validator.ErrWorkloadValidation) {
+	if !stderrors.Is(ce, validator.ErrWorkloadValidation()) {
 		t.Errorf("errors.Is(ce, ErrWorkloadValidation) = false, want true")
 	}
 }
@@ -86,7 +86,7 @@ func TestValidationError_ToCompilerError_ComponentRoutesToCatalog(t *testing.T) 
 		Constraint: "must be >= 1024",
 		Actual:     "80",
 		Suggestion: "Use a port number >= 1024",
-		Err:        validator.ErrInheritanceMerge,
+		Err:        validator.ErrInheritanceMerge(),
 	})
 	ce := ve.ToCompilerError()
 	if ce.Category != cerrors.CatalogError {
@@ -104,7 +104,7 @@ func TestValidationError_ToCompilerError_ComponentRoutesToCatalog(t *testing.T) 
 	if !strings.Contains(ce.Message, "Use a port number >= 1024") {
 		t.Errorf("Message missing Suggestion: %q", ce.Message)
 	}
-	if !stderrors.Is(ce, validator.ErrInheritanceMerge) {
+	if !stderrors.Is(ce, validator.ErrInheritanceMerge()) {
 		t.Errorf("errors.Is(ce, ErrInheritanceMerge) = false, want true")
 	}
 }
@@ -115,7 +115,7 @@ func TestValidationError_ToCompilerError_ComponentRoutesToCatalog(t *testing.T) 
 func TestValidationError_ToCompilerError_AggregateRoutesToDeveloper(t *testing.T) {
 	ve := validator.NewValidationError(envelope.KindAggregate, "my-app", validator.ValidationDetail{
 		FieldPath: ".values.replicas",
-		Err:       validator.ErrInheritanceMerge,
+		Err:       validator.ErrInheritanceMerge(),
 	})
 	ce := ve.ToCompilerError()
 	if ce.Category != cerrors.DeveloperError {

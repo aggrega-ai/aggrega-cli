@@ -10,9 +10,9 @@ import (
 // ErrUnsupportedKey is returned when a held key supplied to the keyed
 // signer is not an ECDSA P-256 key — the only key profile the keyed
 // escape hatch supports, matching cosign's default.
-const ErrUnsupportedKey cerrors.Code = "signing/unsupported-key"
+func ErrUnsupportedKey() error { return errUnsupportedKey }
 
-var _ = cerrors.Register(ErrUnsupportedKey, cerrors.Meta{
+var errUnsupportedKey = cerrors.Register("signing/unsupported-key", cerrors.Meta{
 	Message: "signing: unsupported held-key type",
 })
 
@@ -20,9 +20,9 @@ var _ = cerrors.Register(ErrUnsupportedKey, cerrors.Meta{
 // against the supplied public key and payload. It is the negative
 // outcome of an offline verification — the bytes were tampered, the
 // wrong key was supplied, or the payload differs from what was signed.
-const ErrSignatureInvalid cerrors.Code = "signing/signature-invalid"
+func ErrSignatureInvalid() error { return errSignatureInvalid }
 
-var _ = cerrors.Register(ErrSignatureInvalid, cerrors.Meta{
+var errSignatureInvalid = cerrors.Register("signing/signature-invalid", cerrors.Meta{
 	Message: "signing: signature does not verify",
 })
 
@@ -32,9 +32,9 @@ var _ = cerrors.Register(ErrSignatureInvalid, cerrors.Meta{
 // records the signature in a transparency log, and discards the key. It
 // cannot run offline, so it surfaces this sentinel rather than a partial
 // or simulated result.
-const ErrKeylessLive cerrors.Code = "signing/keyless-live"
+func ErrKeylessLive() error { return errKeylessLive }
 
-var _ = cerrors.Register(ErrKeylessLive, cerrors.Meta{
+var errKeylessLive = cerrors.Register("signing/keyless-live", cerrors.Meta{
 	Message: "signing: keyless signing requires a live identity provider, Fulcio, and Rekor",
 })
 
@@ -45,9 +45,9 @@ var _ = cerrors.Register(ErrKeylessLive, cerrors.Meta{
 // against the pinned public key. It is the catch-all negative outcome of
 // bundle verification, distinct from ErrUntrustedIdentity (a structurally
 // valid signature whose signer is not trusted).
-const ErrSignatureVerificationFailed cerrors.Code = "signing/signature-verification-failed"
+func ErrSignatureVerificationFailed() error { return errSignatureVerificationFailed }
 
-var _ = cerrors.Register(ErrSignatureVerificationFailed, cerrors.Meta{
+var errSignatureVerificationFailed = cerrors.Register("signing/signature-verification-failed", cerrors.Meta{
 	Message: "signing: signature bundle does not verify",
 })
 
@@ -57,9 +57,9 @@ var _ = cerrors.Register(ErrSignatureVerificationFailed, cerrors.Meta{
 // registry's trusted identities. The artifact was signed by a real but
 // unexpected signer; the operator must add the identity to the registry's
 // trust policy or reject the artifact.
-const ErrUntrustedIdentity cerrors.Code = "signing/untrusted-identity"
+func ErrUntrustedIdentity() error { return errUntrustedIdentity }
 
-var _ = cerrors.Register(ErrUntrustedIdentity, cerrors.Meta{
+var errUntrustedIdentity = cerrors.Register("signing/untrusted-identity", cerrors.Meta{
 	Message: "signing: signature identity is not trusted for this registry",
 })
 
@@ -68,9 +68,9 @@ var _ = cerrors.Register(ErrUntrustedIdentity, cerrors.Meta{
 // signature referrer to verify. An unsigned artifact published to a
 // signature-requiring registry cannot be admitted; the operator must sign
 // it or pull from a registry that does not require signatures.
-const ErrNoSignatureFound cerrors.Code = "signing/no-signature-found"
+func ErrNoSignatureFound() error { return errNoSignatureFound }
 
-var _ = cerrors.Register(ErrNoSignatureFound, cerrors.Meta{
+var errNoSignatureFound = cerrors.Register("signing/no-signature-found", cerrors.Meta{
 	Message: "signing: no signature found for an artifact that requires one",
 })
 
@@ -78,9 +78,9 @@ var _ = cerrors.Register(ErrNoSignatureFound, cerrors.Meta{
 // requested with an empty trusted-identity set. A keyless policy with no
 // acceptable identities would admit any signer, so it is refused rather
 // than treated as "trust everyone".
-const ErrNoTrustedIdentities cerrors.Code = "signing/no-trusted-identities"
+func ErrNoTrustedIdentities() error { return errNoTrustedIdentities }
 
-var _ = cerrors.Register(ErrNoTrustedIdentities, cerrors.Meta{
+var errNoTrustedIdentities = cerrors.Register("signing/no-trusted-identities", cerrors.Meta{
 	Message: "signing: keyless verification requires at least one trusted identity",
 })
 
@@ -89,9 +89,9 @@ var _ = cerrors.Register(ErrNoTrustedIdentities, cerrors.Meta{
 // bundle the trust-root parser rejects. Air-gapped verification depends on
 // the pinned root, so a load failure halts rather than silently falling
 // back to a network fetch.
-const ErrTrustRootLoad cerrors.Code = "signing/trust-root-load"
+func ErrTrustRootLoad() error { return errTrustRootLoad }
 
-var _ = cerrors.Register(ErrTrustRootLoad, cerrors.Meta{
+var errTrustRootLoad = cerrors.Register("signing/trust-root-load", cerrors.Meta{
 	Message: "signing: cannot load pinned trust root",
 })
 
@@ -101,9 +101,9 @@ var _ = cerrors.Register(ErrTrustRootLoad, cerrors.Meta{
 // override it. The build halts and the operator must sign the artifact
 // (or target a registry that does not require signatures) before the
 // push can proceed.
-const ErrUnsignedPushRefused cerrors.Code = "signing/unsigned-push-refused"
+func ErrUnsignedPushRefused() error { return errUnsignedPushRefused }
 
-var _ = cerrors.Register(ErrUnsignedPushRefused, cerrors.Meta{
+var errUnsignedPushRefused = cerrors.Register("signing/unsigned-push-refused", cerrors.Meta{
 	Message: "signing: registry requires signatures; refusing to push unsigned content",
 })
 
@@ -116,8 +116,8 @@ var _ = cerrors.Register(ErrUnsignedPushRefused, cerrors.Meta{
 // signature requirement. Publishing an in-scope kind unsigned is refused
 // outright — there is no flag to override it — and the operator must sign
 // the artifact before the push can proceed.
-const ErrSigningPolicyRequiresSignature cerrors.Code = "signing/signing-policy-requires-signature"
+func ErrSigningPolicyRequiresSignature() error { return errSigningPolicyRequiresSignature }
 
-var _ = cerrors.Register(ErrSigningPolicyRequiresSignature, cerrors.Meta{
+var errSigningPolicyRequiresSignature = cerrors.Register("signing/signing-policy-requires-signature", cerrors.Meta{
 	Message: "signing: signing policy requires a signature for this artifact kind; refusing to push unsigned content",
 })

@@ -92,7 +92,7 @@ spec:
 `
 	var lib types.ArtifactsLibrary
 	err := yaml.Unmarshal([]byte(src), &lib)
-	if !errors.Is(err, types.ErrArtifactsLibraryEntryShape) {
+	if !errors.Is(err, types.ErrArtifactsLibraryEntryShape()) {
 		t.Fatalf("expected ErrArtifactsLibraryEntryShape, got %v", err)
 	}
 }

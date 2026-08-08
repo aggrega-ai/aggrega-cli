@@ -274,7 +274,7 @@ func TestVerifyManifestImplementsConsistency_FailOnMismatch(t *testing.T) {
 	if len(errs) == 0 {
 		t.Fatal("expected ErrManifestImplementsMismatch")
 	}
-	if !errors.Is(errs[0], ErrManifestImplementsMismatch) {
+	if !errors.Is(errs[0], ErrManifestImplementsMismatch()) {
 		t.Errorf("expected ErrManifestImplementsMismatch in chain; got %v", errs[0])
 	}
 }
@@ -310,7 +310,7 @@ func TestVerifyManifestImplementsConsistency_CaretAware(t *testing.T) {
 	if len(errs) == 0 {
 		t.Fatal("caret out of range should fail with ErrManifestImplementsMismatch")
 	}
-	if !errors.Is(errs[0], ErrManifestImplementsMismatch) {
+	if !errors.Is(errs[0], ErrManifestImplementsMismatch()) {
 		t.Errorf("expected ErrManifestImplementsMismatch in chain; got %v", errs[0])
 	}
 }
@@ -487,7 +487,7 @@ func TestComponentRecipeURI_AmbiguousVersionKeys(t *testing.T) {
 
 	if _, ok, err := ComponentRecipeURI(manifest, "", "core/datastore/mariadb"); err == nil {
 		t.Fatalf("expected ErrAmbiguousTypeMapping; got ok=%v, nil error", ok)
-	} else if !errors.Is(err, ErrAmbiguousTypeMapping) {
+	} else if !errors.Is(err, ErrAmbiguousTypeMapping()) {
 		t.Errorf("expected ErrAmbiguousTypeMapping in chain; got %v", err)
 	}
 
@@ -515,7 +515,7 @@ func TestFeatureRecipeURI_AmbiguousVersionKeys(t *testing.T) {
 
 	if _, ok, err := FeatureRecipeURI(manifest, "", "core/security/tls"); err == nil {
 		t.Fatalf("expected ErrAmbiguousTypeMapping; got ok=%v, nil error", ok)
-	} else if !errors.Is(err, ErrAmbiguousTypeMapping) {
+	} else if !errors.Is(err, ErrAmbiguousTypeMapping()) {
 		t.Errorf("expected ErrAmbiguousTypeMapping in chain; got %v", err)
 	}
 }
@@ -643,7 +643,7 @@ func TestNameTier_DuplicateIdentityDetected(t *testing.T) {
 	dir := t.TempDir()
 	writeCatalogEntity(t, dir, "a.yaml", recipeYAML("dup", "app/db"))
 	writeCatalogEntity(t, dir, "b.yaml", recipeYAML("dup", "app/other"))
-	if _, err := LoadAll("", dir); err == nil || !errors.Is(err, ErrDuplicateRecipeIdentity) {
+	if _, err := LoadAll("", dir); err == nil || !errors.Is(err, ErrDuplicateRecipeIdentity()) {
 		t.Fatalf("expected ErrDuplicateRecipeIdentity for identity dup:1.0.0; got %v", err)
 	}
 }
@@ -666,7 +666,7 @@ func TestVerifyRecipeResolution_HaltsLoudly(t *testing.T) {
 	gAmbig := &types.IRGraph{}
 	gAmbig.Spec.Nodes.Set("db-x", types.IRNode{Component: "app/db"})
 	err = c.VerifyRecipeResolution(empty, gAmbig)
-	if err == nil || !errors.Is(err, ErrNoRecipeResolved) {
+	if err == nil || !errors.Is(err, ErrNoRecipeResolved()) {
 		t.Errorf("expected ErrNoRecipeResolved for unmapped 2-impl type; got %v", err)
 	} else if !strings.Contains(err.Error(), "db-a") || !strings.Contains(err.Error(), "db-b") {
 		t.Errorf("candidate-list error must name both implementing recipes; got %v", err)
@@ -674,7 +674,7 @@ func TestVerifyRecipeResolution_HaltsLoudly(t *testing.T) {
 
 	gNone := &types.IRGraph{}
 	gNone.Spec.Nodes.Set("x", types.IRNode{Component: "app/none"})
-	if err := c.VerifyRecipeResolution(empty, gNone); err == nil || !errors.Is(err, ErrNoRecipeResolved) {
+	if err := c.VerifyRecipeResolution(empty, gNone); err == nil || !errors.Is(err, ErrNoRecipeResolved()) {
 		t.Errorf("expected ErrNoRecipeResolved for unimplemented type; got %v", err)
 	}
 
@@ -736,10 +736,10 @@ func TestVerifyRecipeResolution_ShapeFaultVersusAbsentEntity(t *testing.T) {
 	if shapeErr == nil {
 		t.Fatalf("a reference past the segment ceiling must halt")
 	}
-	if !errors.Is(shapeErr, ErrMalformedRecipeReference) {
+	if !errors.Is(shapeErr, ErrMalformedRecipeReference()) {
 		t.Errorf("expected ErrMalformedRecipeReference in chain; got %v", shapeErr)
 	}
-	if errors.Is(shapeErr, ErrNoRecipeResolved) {
+	if errors.Is(shapeErr, ErrNoRecipeResolved()) {
 		t.Errorf("a shape fault must not report as no-recipe-resolved; got %v", shapeErr)
 	}
 	if strings.Contains(shapeErr.Error(), "not in the catalog") {
@@ -762,10 +762,10 @@ func TestVerifyRecipeResolution_ShapeFaultVersusAbsentEntity(t *testing.T) {
 	if absentErr == nil {
 		t.Fatalf("a mapping to an absent recipe must halt")
 	}
-	if !errors.Is(absentErr, ErrNoRecipeResolved) {
+	if !errors.Is(absentErr, ErrNoRecipeResolved()) {
 		t.Errorf("expected ErrNoRecipeResolved in chain; got %v", absentErr)
 	}
-	if errors.Is(absentErr, ErrMalformedRecipeReference) {
+	if errors.Is(absentErr, ErrMalformedRecipeReference()) {
 		t.Errorf("an absent entity must not report as a shape fault; got %v", absentErr)
 	}
 	for _, want := range []string{
@@ -797,7 +797,7 @@ func TestCatalogImmunity_UnmappedSingleImplementerHalts(t *testing.T) {
 	g.Spec.Nodes.Set("db", types.IRNode{Component: "app/db"})
 
 	err = c.VerifyRecipeResolution(&types.Manifest{}, g)
-	if err == nil || !errors.Is(err, ErrNoRecipeResolved) {
+	if err == nil || !errors.Is(err, ErrNoRecipeResolved()) {
 		t.Fatalf("an unmapped instance with exactly ONE implementer must halt with ErrNoRecipeResolved; got %v", err)
 	}
 	if !strings.Contains(err.Error(), "only-db") {

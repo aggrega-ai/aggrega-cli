@@ -130,7 +130,7 @@ type pinCacheCountingPuller struct{ calls int }
 
 func (p *pinCacheCountingPuller) Pull(context.Context, string, string) (*oci.PullResult, error) {
 	p.calls++
-	return nil, oci.ErrFetchNotFound
+	return nil, oci.ErrFetchNotFound()
 }
 
 // writePinnedSlot writes one entity's bytes to the kind-appropriate Tier-2 cache

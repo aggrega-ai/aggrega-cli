@@ -168,7 +168,7 @@ func (a *googleAdapter) collectWhenNode(s *jsonschema.Schema, instancePath []str
 			Path:    joinPath(instancePath),
 			Keyword: "x-aggrega-when",
 			Message: fmt.Sprintf("expected string template; got %T", rawTpl),
-			Err:     ErrExtensionEval,
+			Err:     ErrExtensionEval(),
 		}
 	}
 	tpl, err := template.New("when").Funcs(sprigFuncs).Parse(tplStr)
@@ -177,7 +177,7 @@ func (a *googleAdapter) collectWhenNode(s *jsonschema.Schema, instancePath []str
 			Path:    joinPath(instancePath),
 			Keyword: "x-aggrega-when",
 			Message: "template parse: " + err.Error(),
-			Err:     ErrExtensionEval,
+			Err:     ErrExtensionEval(),
 		}
 	}
 
@@ -193,7 +193,7 @@ func (a *googleAdapter) collectWhenNode(s *jsonschema.Schema, instancePath []str
 				Path:    joinPath(instancePath),
 				Keyword: "then",
 				Message: "then: branch Resolve: " + err.Error(),
-				Err:     ErrSchemaResolve,
+				Err:     ErrSchemaResolve(),
 			}
 		}
 		wn.thenResolved = resolved
@@ -205,7 +205,7 @@ func (a *googleAdapter) collectWhenNode(s *jsonschema.Schema, instancePath []str
 				Path:    joinPath(instancePath),
 				Keyword: "else",
 				Message: "else: branch Resolve: " + err.Error(),
-				Err:     ErrSchemaResolve,
+				Err:     ErrSchemaResolve(),
 			}
 		}
 		wn.elseResolved = resolved
@@ -225,7 +225,7 @@ func (a *googleAdapter) collectValidateNode(s *jsonschema.Schema, instancePath [
 			Path:    joinPath(instancePath),
 			Keyword: "x-aggrega-validate",
 			Message: fmt.Sprintf("expected string template; got %T", rawTpl),
-			Err:     ErrExtensionEval,
+			Err:     ErrExtensionEval(),
 		}
 	}
 	tpl, err := template.New("validate").Funcs(sprigFuncs).Parse(tplStr)
@@ -234,7 +234,7 @@ func (a *googleAdapter) collectValidateNode(s *jsonschema.Schema, instancePath [
 			Path:    joinPath(instancePath),
 			Keyword: "x-aggrega-validate",
 			Message: "template parse: " + err.Error(),
-			Err:     ErrExtensionEval,
+			Err:     ErrExtensionEval(),
 		}
 	}
 
@@ -367,7 +367,7 @@ func (a *googleAdapter) indexSubSchemas(s *jsonschema.Schema, path string, ambie
 			return &AdapterError{
 				Path:    "",
 				Message: "schema.Resolve: " + err.Error(),
-				Err:     ErrSchemaResolve,
+				Err:     ErrSchemaResolve(),
 			}
 		}
 		return nil
@@ -473,7 +473,7 @@ func (a *googleAdapter) indexSubSchemas(s *jsonschema.Schema, path string, ambie
 				return &AdapterError{
 					Path:    path,
 					Message: "patternProperties regex compile: " + perr.Error(),
-					Err:     ErrSchemaResolve,
+					Err:     ErrSchemaResolve(),
 				}
 			}
 			if bi := a.buildBranchIndex(s.PatternProperties[p], nextAmbient); bi != nil {

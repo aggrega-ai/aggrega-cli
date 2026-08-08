@@ -41,7 +41,7 @@ func TestResolveCapabilityOnCrossCuttingSocketHalts(t *testing.T) {
 			if err == nil {
 				t.Fatalf("Resolve over a capability-bound %s socket returned nil; expected a loud halt", tc.socket)
 			}
-			if !errors.Is(err, workspaceconfig.ErrCapabilityOnCrossCuttingSocket) {
+			if !errors.Is(err, workspaceconfig.ErrCapabilityOnCrossCuttingSocket()) {
 				t.Fatalf("halt must be ErrCapabilityOnCrossCuttingSocket; got: %v", err)
 			}
 			if !strings.Contains(err.Error(), tc.socket) {
@@ -74,7 +74,7 @@ func TestResolveCapabilityOnCrossCuttingSocketViaAppendHalts(t *testing.T) {
 	if err == nil {
 		t.Fatal("Resolve over an append-contributed capability binding returned nil; expected a loud halt")
 	}
-	if !errors.Is(err, workspaceconfig.ErrCapabilityOnCrossCuttingSocket) {
+	if !errors.Is(err, workspaceconfig.ErrCapabilityOnCrossCuttingSocket()) {
 		t.Fatalf("append-contributed halt must be ErrCapabilityOnCrossCuttingSocket; got: %v", err)
 	}
 	if !strings.Contains(err.Error(), "governance") || !strings.Contains(err.Error(), "helm") {
@@ -147,7 +147,7 @@ func TestResolveGovernanceRoleMissingHalts(t *testing.T) {
 	if err == nil {
 		t.Fatal("Resolve over a role-less governance attachment returned nil; expected a loud halt")
 	}
-	if !errors.Is(err, workspaceconfig.ErrGovernanceRoleInvalid) {
+	if !errors.Is(err, workspaceconfig.ErrGovernanceRoleInvalid()) {
 		t.Fatalf("halt must be ErrGovernanceRoleInvalid; got: %v", err)
 	}
 	if !strings.Contains(err.Error(), "oci://h/gov:1") {
@@ -173,7 +173,7 @@ func TestResolveGovernanceRoleUnknownHalts(t *testing.T) {
 	if err == nil {
 		t.Fatal("Resolve over an unknown governance role returned nil; expected a loud halt")
 	}
-	if !errors.Is(err, workspaceconfig.ErrConfigInvalid) {
+	if !errors.Is(err, workspaceconfig.ErrConfigInvalid()) {
 		t.Fatalf("halt must be ErrConfigInvalid (schema role enum); got: %v", err)
 	}
 }
@@ -198,7 +198,7 @@ func TestResolveInertFieldOnProviderSocketHalts(t *testing.T) {
 			if err == nil {
 				t.Fatalf("Resolve over a provider binding carrying %s returned nil; expected a loud halt", tc.field)
 			}
-			if !errors.Is(err, workspaceconfig.ErrInertFieldOnProviderSocket) {
+			if !errors.Is(err, workspaceconfig.ErrInertFieldOnProviderSocket()) {
 				t.Fatalf("halt must be ErrInertFieldOnProviderSocket; got: %v", err)
 			}
 			if !strings.Contains(err.Error(), "provider") {
@@ -231,7 +231,7 @@ func TestResolveInertFieldOnProviderSocketViaAppendHalts(t *testing.T) {
 	if err == nil {
 		t.Fatal("Resolve over an append-contributed inert provider field returned nil; expected a loud halt")
 	}
-	if !errors.Is(err, workspaceconfig.ErrInertFieldOnProviderSocket) {
+	if !errors.Is(err, workspaceconfig.ErrInertFieldOnProviderSocket()) {
 		t.Fatalf("append-contributed halt must be ErrInertFieldOnProviderSocket; got: %v", err)
 	}
 	if !strings.Contains(err.Error(), "function") || !strings.Contains(err.Error(), "compose") {

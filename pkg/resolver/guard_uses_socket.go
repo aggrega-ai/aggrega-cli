@@ -174,7 +174,7 @@ func guardReleaseUsesSocket(na types.NormalizedAggregate, release *types.Release
 				Field:  fmt.Sprintf("%s.uses[%q]", releaseComponentFieldPath(ref.boundaryPath, ref.nodeID, ref.synthesized), ref.socket),
 				Message: fmt.Sprintf("socket %q not defined in component type %q usesSchema (valid: %v)",
 					ref.socket, compType, catComp.Spec.UsesSchema.Keys()),
-				Err: ErrUnknownUsesSocket,
+				Err: ErrUnknownUsesSocket(),
 			})
 		}
 	}
@@ -433,7 +433,7 @@ func validateFeatureUsesAgainstSchema(entity, fieldPath string, uses types.Order
 				Entity:  entity,
 				Field:   fmt.Sprintf("%s[%q]", fieldPath, socket),
 				Message: fmt.Sprintf("feature type %q has no usesSchema — uses declarations are not allowed", featType),
-				Err:     ErrUnknownUsesSocket,
+				Err:     ErrUnknownUsesSocket(),
 			})
 		}
 		return errs
@@ -446,7 +446,7 @@ func validateFeatureUsesAgainstSchema(entity, fieldPath string, uses types.Order
 				Entity:  entity,
 				Field:   fmt.Sprintf("%s[%q]", fieldPath, socket),
 				Message: fmt.Sprintf("socket %q not defined in feature type %q usesSchema (valid: %v)", socket, featType, catFeat.Spec.UsesSchema.Keys()),
-				Err:     ErrUnknownUsesSocket,
+				Err:     ErrUnknownUsesSocket(),
 			})
 		}
 	}

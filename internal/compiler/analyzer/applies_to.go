@@ -86,7 +86,7 @@ func validateAppliesTo(ctx context.Context, graph *types.IRGraph, catalogLookup 
 					Message:    fmt.Sprintf("selector parse error: %v", parseErr),
 					OriginFile: sourceFileFor(graph, nodeID),
 					Field:      appliesToFieldPath(nodeID, instance, node.SubsystemPath),
-					Sentinel:   ErrSelectorViolation,
+					Sentinel:   ErrSelectorViolation(),
 				})
 				continue
 			}
@@ -102,7 +102,7 @@ func validateAppliesTo(ctx context.Context, graph *types.IRGraph, catalogLookup 
 					),
 					OriginFile: sourceFileFor(graph, nodeID),
 					Field:      appliesToFieldPath(nodeID, instance, node.SubsystemPath),
-					Sentinel:   ErrSelectorViolation,
+					Sentinel:   ErrSelectorViolation(),
 				})
 			}
 		}

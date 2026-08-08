@@ -14,9 +14,9 @@ import (
 // node carries a shape outside the three documented modes: not a string
 // scalar; not a mapping with a single $import key; or a mapping carrying
 // extra siblings beyond $import.
-const ErrValuesMappingShape cerrors.Code = "types/values-mapping-shape"
+func ErrValuesMappingShape() error { return errValuesMappingShape }
 
-var _ = cerrors.Register(ErrValuesMappingShape, cerrors.Meta{
+var errValuesMappingShape = cerrors.Register("types/values-mapping-shape", cerrors.Meta{
 	Message: "valuesmapping: shape must be a string scalar or {$import: <path-or-library-identity>}",
 })
 
@@ -87,7 +87,7 @@ func (v ValuesMapping) IsEmpty() bool {
 // unmarshalImportable helper. A nil node is a no-op so callers using
 // *ValuesMapping with omitempty don't trip the sentinel.
 func (v *ValuesMapping) UnmarshalYAML(node *yaml.Node) error {
-	inline, importTarget, err := unmarshalImportable(node, ErrValuesMappingShape)
+	inline, importTarget, err := unmarshalImportable(node, ErrValuesMappingShape())
 	if err != nil {
 		return err
 	}

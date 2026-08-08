@@ -81,7 +81,7 @@ func NewAdapter() sourceresolver.Adapter {
 // guarantee.
 func defaultClone(ctx context.Context, destDir, url string, httpClient *http.Client) (*git.Repository, error) {
 	if httpClient == nil {
-		return nil, egress.ErrOfflineEgress
+		return nil, egress.ErrOfflineEgress()
 	}
 	transportclient.InstallProtocol("https", githttp.NewClient(httpClient))
 	transportclient.InstallProtocol("http", githttp.NewClient(httpClient))
@@ -116,7 +116,7 @@ func (a *adapter) Resolve(spec sourceresolver.SourceSpec) (*sourceresolver.Resol
 		// Preserve the egress refusal as the specific offline sentinel; the
 		// generic fetch-error mapping would flatten it into a network-unreachable
 		// message and lose the errors.Is match.
-		if errors.Is(err, egress.ErrOfflineEgress) {
+		if errors.Is(err, egress.ErrOfflineEgress()) {
 			return nil, err
 		}
 		return nil, mapGitError(spec, err)
@@ -128,7 +128,7 @@ func (a *adapter) Resolve(spec sourceresolver.SourceSpec) (*sourceresolver.Resol
 	}
 	hash, err := repo.ResolveRevision(plumbing.Revision(ref))
 	if err != nil {
-		return nil, sourceresolver.Wrap(spec, sourceresolver.ErrFetchNotFound, err)
+		return nil, sourceresolver.Wrap(spec, sourceresolver.ErrFetchNotFound(), err)
 	}
 
 	wt, err := repo.Worktree()
@@ -217,18 +217,18 @@ func (t *tarBuf) Bytes() []byte { return t.b }
 
 func mapGitError(spec sourceresolver.SourceSpec, err error) error {
 	if errors.Is(err, transport.ErrAuthenticationRequired) || errors.Is(err, transport.ErrAuthorizationFailed) {
-		return sourceresolver.Wrap(spec, sourceresolver.ErrFetchUnauthorized, err)
+		return sourceresolver.Wrap(spec, sourceresolver.ErrFetchUnauthorized(), err)
 	}
 	if errors.Is(err, transport.ErrRepositoryNotFound) {
-		return sourceresolver.Wrap(spec, sourceresolver.ErrFetchNotFound, err)
+		return sourceresolver.Wrap(spec, sourceresolver.ErrFetchNotFound(), err)
 	}
 	msg := err.Error()
 	if strings.Contains(msg, "no such host") ||
 		strings.Contains(msg, "connection refused") ||
 		strings.Contains(msg, "i/o timeout") {
-		return sourceresolver.Wrap(spec, sourceresolver.ErrFetchNetworkUnreachable, err)
+		return sourceresolver.Wrap(spec, sourceresolver.ErrFetchNetworkUnreachable(), err)
 	}
-	return sourceresolver.Wrap(spec, sourceresolver.ErrFetchNetworkUnreachable, err)
+	return sourceresolver.Wrap(spec, sourceresolver.ErrFetchNetworkUnreachable(), err)
 }
 
 func init() {

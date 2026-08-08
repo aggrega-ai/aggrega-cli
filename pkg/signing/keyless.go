@@ -75,7 +75,7 @@ func (k *KeylessSigner) Sign(ctx context.Context, artifactDigest string) (bundle
 	// operator-facing token resolution and the helpful refuse message live at
 	// the command layer; this terse guard is a distinct internal surface.
 	if k.TokenSource == nil {
-		return nil, "", fmt.Errorf("%w: an identity token source is required", ErrKeylessLive)
+		return nil, "", fmt.Errorf("%w: an identity token source is required", ErrKeylessLive())
 	}
 	// The keyless flow is irreducibly live — certificate issuance, transparency-log
 	// inclusion, and timestamping are all network operations with no offline mode.
@@ -91,7 +91,7 @@ func (k *KeylessSigner) Sign(ctx context.Context, artifactDigest string) (bundle
 		return nil, "", fmt.Errorf("signing: identity token: %w", err)
 	}
 	if idToken == "" {
-		return nil, "", fmt.Errorf("%w: an identity token is required", ErrKeylessLive)
+		return nil, "", fmt.Errorf("%w: an identity token is required", ErrKeylessLive())
 	}
 
 	ephemeral, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)

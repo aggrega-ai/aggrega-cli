@@ -116,7 +116,7 @@ func workloadSchemaError(recipePath, recipeName, recipeVersion string, findings 
 		RecipeVersion: recipeVersion,
 		Stage:         "schema",
 		Findings:      findingsToWorkloadFindings(findings),
-		Err:           ErrWorkloadValidation,
+		Err:           ErrWorkloadValidation(),
 	}
 }
 
@@ -133,7 +133,7 @@ func workloadPipelineError(recipePath, recipeName, recipeVersion, constraint str
 		Findings: []WorkloadValidationFinding{{
 			Constraint: constraint,
 		}},
-		Err: ErrWorkloadValidation,
+		Err: ErrWorkloadValidation(),
 	}
 }
 

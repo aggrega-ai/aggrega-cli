@@ -224,7 +224,7 @@ func (e *AnalysisError) ToCompilerError() *cerrors.CompilerError {
 	switch {
 	case e.Kind == AnalysisErrorPolicy:
 		category = cerrors.PolicyError
-	case errors.Is(e.Sentinel, ErrMalformedAttachmentRequirement):
+	case errors.Is(e.Sentinel, ErrMalformedAttachmentRequirement()):
 		// The broken declaration is on the Component catalog entity, so the
 		// remediation belongs to whoever authors the catalog — unlike an
 		// unsatisfied mandate, which the Aggregate's author resolves by

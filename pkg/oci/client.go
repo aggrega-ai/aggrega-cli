@@ -71,10 +71,10 @@ func Pull(ctx context.Context, target oras.ReadOnlyTarget, tag string, expectedM
 	manifestDesc, err := target.Resolve(ctx, tag)
 	if err != nil {
 		if errors.Is(err, errdef.ErrNotFound) {
-			return nil, fmt.Errorf("oci: %q: %w", tag, ErrFetchNotFound)
+			return nil, fmt.Errorf("oci: %q: %w", tag, ErrFetchNotFound())
 		}
 		if isUnauthorized(err) {
-			return nil, fmt.Errorf("oci: resolve %q: %v: %w", tag, err, ErrFetchUnauthorized)
+			return nil, fmt.Errorf("oci: resolve %q: %v: %w", tag, err, ErrFetchUnauthorized())
 		}
 		return nil, fmt.Errorf("oci: resolve %q: %w", tag, err)
 	}
@@ -97,7 +97,7 @@ func Pull(ctx context.Context, target oras.ReadOnlyTarget, tag string, expectedM
 	contentRC, err := target.Fetch(ctx, contentDesc)
 	if err != nil {
 		if errors.Is(err, errdef.ErrNotFound) {
-			return nil, fmt.Errorf("oci: content for %q: %w", tag, ErrFetchNotFound)
+			return nil, fmt.Errorf("oci: content for %q: %w", tag, ErrFetchNotFound())
 		}
 		return nil, fmt.Errorf("oci: fetch content %q: %w", tag, err)
 	}
@@ -242,7 +242,7 @@ func Resolve(ctx context.Context, target oras.ReadOnlyTarget, tag string) (diges
 			return "", false, nil
 		}
 		if isUnauthorized(err) {
-			return "", false, fmt.Errorf("oci: resolve %q: %v: %w", tag, err, ErrFetchUnauthorized)
+			return "", false, fmt.Errorf("oci: resolve %q: %v: %w", tag, err, ErrFetchUnauthorized())
 		}
 		return "", false, fmt.Errorf("oci: resolve %q: %w", tag, err)
 	}
@@ -360,7 +360,7 @@ func VerifyCredential(ctx context.Context, registryHost string, cred auth.Creden
 	}
 	if err := reg.Ping(ctx); err != nil {
 		if isUnauthorized(err) {
-			return fmt.Errorf("oci: verify credential for %q: %v: %w", registryHost, err, ErrFetchUnauthorized)
+			return fmt.Errorf("oci: verify credential for %q: %v: %w", registryHost, err, ErrFetchUnauthorized())
 		}
 		return fmt.Errorf("oci: verify credential for %q: %w", registryHost, err)
 	}
@@ -510,9 +510,9 @@ func selectContentLayer(layers []ocispec.Descriptor, expected string) (ocispec.D
 	case 1:
 		return matches[0], nil
 	case 0:
-		return ocispec.Descriptor{}, fmt.Errorf("oci: manifest has no layer of media type %q: %w", expected, ErrNoContentLayer)
+		return ocispec.Descriptor{}, fmt.Errorf("oci: manifest has no layer of media type %q: %w", expected, ErrNoContentLayer())
 	default:
-		return ocispec.Descriptor{}, fmt.Errorf("oci: manifest has %d layers of media type %q; expected exactly one: %w", len(matches), expected, ErrAmbiguousContentLayer)
+		return ocispec.Descriptor{}, fmt.Errorf("oci: manifest has %d layers of media type %q; expected exactly one: %w", len(matches), expected, ErrAmbiguousContentLayer())
 	}
 }
 

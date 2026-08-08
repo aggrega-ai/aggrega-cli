@@ -93,7 +93,7 @@ func isRetryablePublishError(err error) bool {
 	if err == nil {
 		return false
 	}
-	if errors.Is(err, oci.ErrImmutableTagConflict) || errors.Is(err, oci.ErrFetchUnauthorized) {
+	if errors.Is(err, oci.ErrImmutableTagConflict()) || errors.Is(err, oci.ErrFetchUnauthorized()) {
 		return false
 	}
 	if errors.Is(err, context.Canceled) {

@@ -45,9 +45,9 @@ import (
 // It belongs to the fetch-error family: the source-resolution error classifier
 // routes it into the same category as a remote-acquisition fault, since an
 // offline refusal is, from the user's perspective, an inability to fetch.
-const ErrOfflineEgress cerrors.Code = "egress/offline-egress"
+func ErrOfflineEgress() error { return errOfflineEgress }
 
-var _ = cerrors.Register(ErrOfflineEgress, cerrors.Meta{
+var errOfflineEgress = cerrors.Register("egress/offline-egress", cerrors.Meta{
 	Message: "egress: network access refused because the workspace is offline; remediation: unset workspace.offline (or AGGREGA_OFFLINE) or run `aggrega pull --release <release>` from a connected environment to populate the cache",
 })
 
@@ -58,7 +58,7 @@ var _ = cerrors.Register(ErrOfflineEgress, cerrors.Meta{
 // repository and registry construction.
 func RoundTripper(cfg workspaceconfig.Config) (http.RoundTripper, error) {
 	if cfg.Offline {
-		return nil, ErrOfflineEgress
+		return nil, ErrOfflineEgress()
 	}
 	return http.DefaultTransport, nil
 }

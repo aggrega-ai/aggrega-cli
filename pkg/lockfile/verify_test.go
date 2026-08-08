@@ -65,7 +65,7 @@ func TestVerifyDetectsEntityDigestMismatch(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected ErrLockfileDrift for digest mismatch; got nil")
 	}
-	if !errors.Is(err, lockfile.ErrLockfileDrift) {
+	if !errors.Is(err, lockfile.ErrLockfileDrift()) {
 		t.Errorf("error should wrap ErrLockfileDrift; got %v", err)
 	}
 }
@@ -79,7 +79,7 @@ func TestVerifyDetectsMissingEntityInLockfile(t *testing.T) {
 		},
 	}
 	err := lockfile.Verify(lf, expected)
-	if !errors.Is(err, lockfile.ErrLockfileDrift) {
+	if !errors.Is(err, lockfile.ErrLockfileDrift()) {
 		t.Errorf("missing-entity error should wrap ErrLockfileDrift; got %v", err)
 	}
 }
@@ -98,7 +98,7 @@ func TestVerifyDetectsExtraEntityInLockfile(t *testing.T) {
 		},
 	}
 	err := lockfile.Verify(lf, expected)
-	if !errors.Is(err, lockfile.ErrLockfileDrift) {
+	if !errors.Is(err, lockfile.ErrLockfileDrift()) {
 		t.Errorf("extra-lockfile-entry error should wrap ErrLockfileDrift; got %v", err)
 	}
 }
@@ -128,7 +128,7 @@ func TestVerifyReportsAllDriftEntriesAcrossAxes(t *testing.T) {
 		},
 	}
 	err := lockfile.Verify(lf, expected)
-	if !errors.Is(err, lockfile.ErrLockfileDrift) {
+	if !errors.Is(err, lockfile.ErrLockfileDrift()) {
 		t.Fatalf("expected ErrLockfileDrift; got %v", err)
 	}
 	msg := err.Error()

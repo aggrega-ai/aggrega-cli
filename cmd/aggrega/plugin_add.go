@@ -458,7 +458,7 @@ func resolveLatestPluginVersion(ctx context.Context, rw *workspaceconfig.Resolve
 		// reports the absent publication naming this repository. Every other halt —
 		// a fully-withdrawn repository above all — carries a reason of its own and
 		// must not be flattened into "no version published".
-		if errors.Is(err, oci.ErrFetchNotFound) {
+		if errors.Is(err, oci.ErrFetchNotFound()) {
 			return "", nil
 		}
 		return "", err

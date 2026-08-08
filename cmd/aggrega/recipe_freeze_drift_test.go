@@ -206,7 +206,7 @@ func TestFreezeFullURIRecipeOnePullFixpoint(t *testing.T) {
 	// The one-pull fixpoint: a build after a single pull verifies the frozen
 	// lockfile against a freshly-recomputed closure and must NOT report drift.
 	if err := dispatchBuildWithDiag(nil, releasePath, []string{catalogDir}, false, buildDiagOptions{quiet: true}, buildRunOptions{outDir: filepath.Join(root, "dist", "main")}, io.Discard, io.Discard); err != nil {
-		if errors.Is(err, lockfile.ErrLockfileDrift) {
+		if errors.Is(err, lockfile.ErrLockfileDrift()) {
 			t.Fatalf("build after a single pull reported lockfile drift — the one-pull-lag bug: %v", err)
 		}
 		t.Fatalf("build after a single pull failed: %v", err)

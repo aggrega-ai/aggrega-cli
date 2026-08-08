@@ -80,7 +80,7 @@ func TestGraphRuleIRVerdictDenyE2E(t *testing.T) {
 	if err == nil {
 		t.Fatalf("graph-rule deny: expected a halt, got nil")
 	}
-	if !errors.Is(err, analyzer.ErrPolicyViolation) {
+	if !errors.Is(err, analyzer.ErrPolicyViolation()) {
 		t.Fatalf("graph-rule deny not errors.Is ErrPolicyViolation: %v", err)
 	}
 	msg := err.Error()
@@ -184,7 +184,7 @@ func TestContentRuleRenderVerdictDenyE2E(t *testing.T) {
 	if err == nil {
 		t.Fatalf("content-rule deny: expected a halt, got nil")
 	}
-	if !errors.Is(err, analyzer.ErrPolicyViolation) {
+	if !errors.Is(err, analyzer.ErrPolicyViolation()) {
 		t.Fatalf("content-rule deny not errors.Is ErrPolicyViolation: %v", err)
 	}
 	msg := err.Error()
@@ -329,7 +329,7 @@ func TestLabelTransformToVerdictChainE2E(t *testing.T) {
 	if err == nil {
 		t.Fatalf("chain (label-transform detached): expected a deny halt (no stamped label), got nil")
 	}
-	if !errors.Is(err, analyzer.ErrPolicyViolation) {
+	if !errors.Is(err, analyzer.ErrPolicyViolation()) {
 		t.Fatalf("chain detached halt not errors.Is ErrPolicyViolation: %v", err)
 	}
 	if !strings.Contains(err.Error(), proofChainLabel) {

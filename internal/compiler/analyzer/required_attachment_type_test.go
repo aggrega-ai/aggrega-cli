@@ -89,7 +89,7 @@ func TestRequiredAttachmentTypes_UnmetHalts(t *testing.T) {
 	if len(errs) != 1 {
 		t.Fatalf("want 1 violation, got %d: %v", len(errs), errs)
 	}
-	if !errors.Is(errs[0].Sentinel, resolver.ErrMissingRequiredFeature) {
+	if !errors.Is(errs[0].Sentinel, resolver.ErrMissingRequiredFeature()) {
 		t.Errorf("want ErrMissingRequiredFeature, got %v", errs[0].Sentinel)
 	}
 	// The diagnostic names the requirement's label AND the required type.
@@ -132,10 +132,10 @@ func TestRequiredAttachmentTypes_MalformedIsDistinct(t *testing.T) {
 	if len(errs) != 1 {
 		t.Fatalf("want 1 violation, got %d: %v", len(errs), errs)
 	}
-	if !errors.Is(errs[0].Sentinel, ErrMalformedAttachmentRequirement) {
+	if !errors.Is(errs[0].Sentinel, ErrMalformedAttachmentRequirement()) {
 		t.Errorf("want ErrMalformedAttachmentRequirement, got %v", errs[0].Sentinel)
 	}
-	if errors.Is(errs[0].Sentinel, resolver.ErrMissingRequiredFeature) {
+	if errors.Is(errs[0].Sentinel, resolver.ErrMissingRequiredFeature()) {
 		t.Error("a malformed declaration must not report as a missing attachment")
 	}
 	if !strings.Contains(errs[0].Message, "malformed") {
@@ -157,7 +157,7 @@ func TestRequiredAttachmentTypes_LabellessKeyReported(t *testing.T) {
 	if len(errs) != 1 {
 		t.Fatalf("want 1 violation, got %d: %v", len(errs), errs)
 	}
-	if !errors.Is(errs[0].Sentinel, ErrMalformedAttachmentRequirement) {
+	if !errors.Is(errs[0].Sentinel, ErrMalformedAttachmentRequirement()) {
 		t.Errorf("want ErrMalformedAttachmentRequirement, got %v", errs[0].Sentinel)
 	}
 }
@@ -224,7 +224,7 @@ func TestAnalyzeContext_SurfacesMandateViolation(t *testing.T) {
 	}
 	var found bool
 	for _, e := range result.Errors {
-		if errors.Is(e.Sentinel, resolver.ErrMissingRequiredFeature) {
+		if errors.Is(e.Sentinel, resolver.ErrMissingRequiredFeature()) {
 			found = true
 			if !strings.HasPrefix(e.Error(), "web: ") {
 				t.Errorf("rendered violation must name the node first: %q", e.Error())

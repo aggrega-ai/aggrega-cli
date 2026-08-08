@@ -44,7 +44,7 @@ func TestSelectPullVersion(t *testing.T) {
 				if err == nil {
 					t.Fatalf("selectPullVersion(%v): want error; got version %q", tc.tags, got)
 				}
-				if tc.errIsNotF && !errors.Is(err, oci.ErrFetchNotFound) {
+				if tc.errIsNotF && !errors.Is(err, oci.ErrFetchNotFound()) {
 					t.Errorf("selectPullVersion(%v): error %v; want wrapped ErrFetchNotFound", tc.tags, err)
 				}
 				if got != "" {
@@ -91,7 +91,7 @@ func TestEntityReference_PluginGuard(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			_, err := entityReference(registry, "Plugin", tc.identity)
-			if !errors.Is(err, ErrQualifiedPluginReference) {
+			if !errors.Is(err, ErrQualifiedPluginReference()) {
 				t.Fatalf("entityReference(%q) error = %v; want errors.Is(ErrQualifiedPluginReference)", tc.identity, err)
 			}
 		})
@@ -132,7 +132,7 @@ func TestEntityReference_RecipeScopeGuard(t *testing.T) {
 		} {
 			t.Run(kind+" "+tc.name, func(t *testing.T) {
 				_, err := entityReference(registry, kind, tc.identity)
-				if !errors.Is(err, ErrUnscopedRecipeReference) {
+				if !errors.Is(err, ErrUnscopedRecipeReference()) {
 					t.Fatalf("entityReference(%s, %q) error = %v; want errors.Is(ErrUnscopedRecipeReference)", kind, tc.identity, err)
 				}
 			})

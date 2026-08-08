@@ -85,7 +85,7 @@ func TestArtifactEntry_RejectsMapWithExtraKeys(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error on extra keys")
 	}
-	if !errors.Is(err, ErrArtifactEntryShape) {
+	if !errors.Is(err, ErrArtifactEntryShape()) {
 		t.Errorf("expected ErrArtifactEntryShape; got %v", err)
 	}
 }

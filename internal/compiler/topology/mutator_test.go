@@ -102,7 +102,7 @@ func TestApplyMutatorPatches_RejectsOutOfBounds(t *testing.T) {
 			if err == nil {
 				t.Fatalf("expected ErrMutatorPatchRejected, got nil")
 			}
-			if !errors.Is(err, topology.ErrMutatorPatchRejected) {
+			if !errors.Is(err, topology.ErrMutatorPatchRejected()) {
 				t.Fatalf("expected ErrMutatorPatchRejected, got %v", err)
 			}
 			// The rejected mutation must not have leaked into the graph.

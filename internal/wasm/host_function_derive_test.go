@@ -177,7 +177,7 @@ func TestVerifyDerivedAgainstAllowlist(t *testing.T) {
 		t.Fatalf("derive: %v", err)
 	}
 	err = validateHostFunctionsSubset("test-plugin", "provider", derived)
-	if !errors.Is(err, ErrWasmManifestRejected) {
+	if !errors.Is(err, ErrWasmManifestRejected()) {
 		t.Fatalf("expected ErrWasmManifestRejected for a non-allowlisted derived host function; got %v", err)
 	}
 	if !strings.Contains(err.Error(), "rogue_function") {

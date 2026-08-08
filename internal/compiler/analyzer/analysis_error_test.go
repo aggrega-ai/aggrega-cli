@@ -116,7 +116,7 @@ func TestAnalysisError_ToCompilerError_PolicyRoutesToPolicyError(t *testing.T) {
 	e := &analyzer.AnalysisError{
 		Kind:     analyzer.AnalysisErrorPolicy,
 		Message:  "policy plugin \"house-rules\" rejected the build: image must be digest-pinned",
-		Sentinel: analyzer.ErrPolicyViolation,
+		Sentinel: analyzer.ErrPolicyViolation(),
 	}
 	ce := e.ToCompilerError()
 	if ce == nil {
@@ -128,7 +128,7 @@ func TestAnalysisError_ToCompilerError_PolicyRoutesToPolicyError(t *testing.T) {
 	if !strings.Contains(ce.Message, "image must be digest-pinned") {
 		t.Errorf("Message missing plugin-supplied verdict text: %q", ce.Message)
 	}
-	if !stderrors.Is(ce, analyzer.ErrPolicyViolation) {
+	if !stderrors.Is(ce, analyzer.ErrPolicyViolation()) {
 		t.Errorf("errors.Is should traverse to ErrPolicyViolation through the envelope chain")
 	}
 }

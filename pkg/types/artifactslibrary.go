@@ -18,9 +18,9 @@ import (
 // shape at workspace-load time; this sentinel covers the Go-side typed-unmarshal
 // path so consumers can errors.Is against the failure without parsing the
 // formatted error text.
-const ErrArtifactsLibraryEntryShape cerrors.Code = "types/artifacts-library-entry-shape"
+func ErrArtifactsLibraryEntryShape() error { return errArtifactsLibraryEntryShape }
 
-var _ = cerrors.Register(ErrArtifactsLibraryEntryShape, cerrors.Meta{
+var errArtifactsLibraryEntryShape = cerrors.Register("types/artifacts-library-entry-shape", cerrors.Meta{
 	Message: "artifactslibrary: entry must be a mapping of filename to a string body",
 })
 
@@ -67,7 +67,7 @@ func (e *ArtifactsLibraryEntry) UnmarshalYAML(value *yaml.Node) error {
 		return nil
 	}
 	if value.Kind != yaml.MappingNode {
-		return fmt.Errorf("%w: got kind %d at line %d", ErrArtifactsLibraryEntryShape, value.Kind, value.Line)
+		return fmt.Errorf("%w: got kind %d at line %d", ErrArtifactsLibraryEntryShape(), value.Kind, value.Line)
 	}
 	files := OrderedMap[string]{}
 	for i := 0; i+1 < len(value.Content); i += 2 {
@@ -75,7 +75,7 @@ func (e *ArtifactsLibraryEntry) UnmarshalYAML(value *yaml.Node) error {
 		valNode := value.Content[i+1]
 		if valNode.Kind != yaml.ScalarNode {
 			return fmt.Errorf("%w: file %q body must be a string scalar (got kind %d at line %d)",
-				ErrArtifactsLibraryEntryShape, keyNode.Value, valNode.Kind, valNode.Line)
+				ErrArtifactsLibraryEntryShape(), keyNode.Value, valNode.Kind, valNode.Line)
 		}
 		files.Set(keyNode.Value, valNode.Value)
 	}

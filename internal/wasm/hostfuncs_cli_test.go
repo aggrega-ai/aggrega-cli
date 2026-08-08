@@ -98,7 +98,7 @@ func TestValidateHostFunctionsSubsetCLI_RejectsUnknown(t *testing.T) {
 	}
 	// An unknown name is rejected.
 	err := validateHostFunctionsSubsetCLI("probe", "cli", []string{"aggrega_cli_write_stdout", "aggrega_exfiltrate"})
-	if !errors.Is(err, ErrWasmManifestRejected) {
+	if !errors.Is(err, ErrWasmManifestRejected()) {
 		t.Fatalf("CLI gate error = %v; want wrapping ErrWasmManifestRejected", err)
 	}
 }

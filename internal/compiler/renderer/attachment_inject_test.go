@@ -137,7 +137,7 @@ func TestResolveAttachmentInject_CollisionWithExistingKeyHalts(t *testing.T) {
 	inject, _ := BuildInjectPipe(nil)
 	inject.Env.Set("DB_PASSWORD", "from-self-inject") // a prior developer source claimed the key
 	err := ResolveAttachmentInject(&inject, graph, "api", lookup, nil)
-	if !errors.Is(err, ErrAttachmentInjectKeyCollision) {
+	if !errors.Is(err, ErrAttachmentInjectKeyCollision()) {
 		t.Fatalf("expected ErrAttachmentInjectKeyCollision, got %v", err)
 	}
 }
@@ -177,7 +177,7 @@ func TestEnforceProvidesContract_ShortfallHalts(t *testing.T) {
 	produced := providedBag("host")
 	err := enforceProvidesContract(declared, produced, "web",
 		`node "web"`, `Recipe "svc"`, `Component "core/service"`)
-	if !errors.Is(err, ErrProvidesContractUnfulfilled) {
+	if !errors.Is(err, ErrProvidesContractUnfulfilled()) {
 		t.Fatalf("a missing declared key must halt with ErrProvidesContractUnfulfilled; got: %v", err)
 	}
 	if !strings.Contains(err.Error(), `"port"`) {

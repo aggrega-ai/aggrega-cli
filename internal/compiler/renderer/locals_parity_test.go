@@ -54,7 +54,7 @@ func localsParityCases() []localsParityCase {
 			// emitted output would otherwise follow an inference.
 			name:     "forward reference halts",
 			locals:   []string{observedKey, "{{ .locals.base }}.internal", "base", "svc"},
-			sentinel: ErrLocalsForwardReference,
+			sentinel: ErrLocalsForwardReference(),
 		},
 		{
 			// A mistyped key is a different mistake with a different fix, and it
@@ -62,7 +62,7 @@ func localsParityCases() []localsParityCase {
 			// author to reorder a block that is already in the right order.
 			name:     "unknown reference halts",
 			locals:   []string{"base", "svc", observedKey, "{{ .locals.bass }}.internal"},
-			sentinel: ErrLocalsUnknownReference,
+			sentinel: ErrLocalsUnknownReference(),
 		},
 	}
 }
@@ -192,9 +192,9 @@ func TestLocalsContract_AllFourSurfacesAgree(t *testing.T) {
 // logged cell names the class rather than the whole wrapped chain.
 func sentinelName(err error) string {
 	switch {
-	case errors.Is(err, ErrLocalsForwardReference):
+	case errors.Is(err, ErrLocalsForwardReference()):
 		return "ErrLocalsForwardReference"
-	case errors.Is(err, ErrLocalsUnknownReference):
+	case errors.Is(err, ErrLocalsUnknownReference()):
 		return "ErrLocalsUnknownReference"
 	default:
 		return "other: " + err.Error()
@@ -257,7 +257,7 @@ func TestLocalsContract_SelfReferenceIsForwardWithItsOwnRemedy(t *testing.T) {
 	if err == nil {
 		t.Fatal("a self-reference must halt")
 	}
-	if !errors.Is(err, ErrLocalsForwardReference) {
+	if !errors.Is(err, ErrLocalsForwardReference()) {
 		t.Fatalf("a self-reference is the forward class; got: %v", err)
 	}
 	msg := diagnosticChainText(err)
@@ -461,7 +461,7 @@ func TestLocalsContract_SourceSurfaceReadsResolvedLocalsAndRefusesUnknown(t *tes
 		"oci://example.test/charts/api:{{ .locals.chart_vrsion }}", "api",
 		types.OrderedMap[any]{}, types.OrderedMap[any]{}, locals,
 	)
-	if !errors.Is(err, ErrLocalsUnknownReference) {
+	if !errors.Is(err, ErrLocalsUnknownReference()) {
 		t.Errorf("a source template naming an undeclared local must halt with the unknown-reference class, got: %v", err)
 	}
 }

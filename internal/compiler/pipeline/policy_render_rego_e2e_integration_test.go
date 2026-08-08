@@ -153,7 +153,7 @@ func TestRegorusRenderPolicyDenyHaltsE2E(t *testing.T) {
 	if err == nil {
 		t.Fatalf("violating compose render: expected a halt, got nil")
 	}
-	if !errors.Is(err, analyzer.ErrPolicyViolation) {
+	if !errors.Is(err, analyzer.ErrPolicyViolation()) {
 		t.Fatalf("violating halt not errors.Is ErrPolicyViolation: %v", err)
 	}
 	msg := err.Error()

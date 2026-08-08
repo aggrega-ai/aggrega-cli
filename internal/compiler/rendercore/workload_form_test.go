@@ -63,7 +63,7 @@ func TestValidateWorkloadForm(t *testing.T) {
 
 	// non-stateful (and empty) + persistentTemplate → halt.
 	for _, form := range []string{"", WorkloadFormStateless, WorkloadFormDaemon, WorkloadFormTask} {
-		if err := ValidateWorkloadForm(withPersistentTemplate(form), "node"); !errors.Is(err, ErrPersistentTemplateRequiresStatefulForm) {
+		if err := ValidateWorkloadForm(withPersistentTemplate(form), "node"); !errors.Is(err, ErrPersistentTemplateRequiresStatefulForm()) {
 			t.Errorf("form %q with persistentTemplate: want ErrPersistentTemplateRequiresStatefulForm, got %v", form, err)
 		}
 	}
@@ -101,14 +101,14 @@ func TestValidateWorkloadForm_Schedule(t *testing.T) {
 	}
 
 	// scheduled + empty schedule → ErrScheduledFormRequiresSchedule.
-	if err := ValidateWorkloadForm(scheduled(""), "node"); !errors.Is(err, ErrScheduledFormRequiresSchedule) {
+	if err := ValidateWorkloadForm(scheduled(""), "node"); !errors.Is(err, ErrScheduledFormRequiresSchedule()) {
 		t.Errorf("scheduled with no schedule: want ErrScheduledFormRequiresSchedule, got %v", err)
 	}
 
 	// schedule set on a non-scheduled form → ErrScheduleRequiresScheduledForm.
 	for _, form := range []string{"", WorkloadFormStateless, WorkloadFormStateful, WorkloadFormDaemon, WorkloadFormTask} {
 		w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload", Form: form, Schedule: "@daily"}
-		if err := ValidateWorkloadForm(w, "node"); !errors.Is(err, ErrScheduleRequiresScheduledForm) {
+		if err := ValidateWorkloadForm(w, "node"); !errors.Is(err, ErrScheduleRequiresScheduledForm()) {
 			t.Errorf("form %q with a schedule: want ErrScheduleRequiresScheduledForm, got %v", form, err)
 		}
 	}
@@ -124,7 +124,7 @@ func TestValidateWorkloadForm_Schedule(t *testing.T) {
 		"@every 5m",         // unrecognized macro form
 		"abc def ghi jk lm", // alphabetic fields
 	} {
-		if err := ValidateWorkloadForm(scheduled(bad), "node"); !errors.Is(err, ErrInvalidCronSchedule) {
+		if err := ValidateWorkloadForm(scheduled(bad), "node"); !errors.Is(err, ErrInvalidCronSchedule()) {
 			t.Errorf("scheduled with malformed schedule %q: want ErrInvalidCronSchedule, got %v", bad, err)
 		}
 	}

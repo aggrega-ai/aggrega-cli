@@ -151,7 +151,7 @@ func TestValuesMapping_RejectsMapWithoutImport(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error on map-without-$import")
 	}
-	if !errors.Is(err, ErrValuesMappingShape) {
+	if !errors.Is(err, ErrValuesMappingShape()) {
 		t.Errorf("expected ErrValuesMappingShape in chain; got %v", err)
 	}
 }
@@ -172,7 +172,7 @@ func TestValuesMapping_RejectsMapWithExtraKeys(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error on map-with-extra-keys")
 	}
-	if !errors.Is(err, ErrValuesMappingShape) {
+	if !errors.Is(err, ErrValuesMappingShape()) {
 		t.Errorf("expected ErrValuesMappingShape in chain; got %v", err)
 	}
 }

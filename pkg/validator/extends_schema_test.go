@@ -118,7 +118,7 @@ func TestComposeExtends_MissingParentHalts(t *testing.T) {
 		t.Fatal("expected a structural halt for the missing parent")
 	}
 	for _, e := range result.Errors {
-		if !errors.Is(e, ErrInheritanceMerge) {
+		if !errors.Is(e, ErrInheritanceMerge()) {
 			t.Errorf("missing-parent halt must wrap ErrInheritanceMerge; got %v", e)
 		}
 	}

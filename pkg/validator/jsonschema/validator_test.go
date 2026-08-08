@@ -23,7 +23,7 @@ func TestNewNilSchema(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error on nil schema; got nil")
 	}
-	if !errors.Is(err, ErrSchemaResolve) {
+	if !errors.Is(err, ErrSchemaResolve()) {
 		t.Errorf("expected ErrSchemaResolve; got %v", err)
 	}
 	var ae *AdapterError

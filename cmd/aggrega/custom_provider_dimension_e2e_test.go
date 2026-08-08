@@ -542,7 +542,7 @@ spec:
 		if err == nil {
 			t.Fatal("build SUCCEEDED for a capability no provider plugin serves and no binding selects; expected a loud halt")
 		}
-		if !errors.Is(err, renderer.ErrUnknownProvider) && !errors.Is(err, catalog.ErrProviderBindingUnsatisfied) {
+		if !errors.Is(err, renderer.ErrUnknownProvider()) && !errors.Is(err, catalog.ErrProviderBindingUnsatisfied()) {
 			t.Fatalf("unknown-target halt = %v; want errors.Is renderer.ErrUnknownProvider or catalog.ErrProviderBindingUnsatisfied", err)
 		}
 	})

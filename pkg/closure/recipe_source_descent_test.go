@@ -276,7 +276,7 @@ func TestDescendDoesNotShareInfraAcrossComponents(t *testing.T) {
 	}
 
 	_, err := closure.DescendRecipeSources(perComp, cl, loader, &fakeSourceResolver{}, "/ws", ".aggrega/cache")
-	if !errors.Is(err, closure.ErrSourceTemplateAtLockTime) {
+	if !errors.Is(err, closure.ErrSourceTemplateAtLockTime()) {
 		t.Errorf("a component reading a key it does not declare should halt (no cross-component bleed); got %v", err)
 	}
 }
@@ -345,7 +345,7 @@ func TestDescendFeatureRecipeDoesNotShareInfraAcrossInstances(t *testing.T) {
 	}
 
 	_, err := closure.DescendRecipeSources(perEntity, cl, loader, &fakeSourceResolver{}, "/ws", ".aggrega/cache")
-	if !errors.Is(err, closure.ErrSourceTemplateAtLockTime) {
+	if !errors.Is(err, closure.ErrSourceTemplateAtLockTime()) {
 		t.Errorf("a feature instance reading a key it does not declare should halt (no cross-instance bleed); got %v", err)
 	}
 }
@@ -392,7 +392,7 @@ func TestDescendHaltsOnProvidesReference(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected ErrSourceTemplateAtLockTime; got nil")
 	}
-	if !errors.Is(err, closure.ErrSourceTemplateAtLockTime) {
+	if !errors.Is(err, closure.ErrSourceTemplateAtLockTime()) {
 		t.Errorf("error should wrap ErrSourceTemplateAtLockTime; got %v", err)
 	}
 	if !contains(err.Error(), "spec.source.version") {
@@ -414,7 +414,7 @@ func TestDescendHaltsOnLocalsReferencingProvides(t *testing.T) {
 	cl := closure.Closure{Entities: []closure.ResolvedRef{{URI: uri}}}
 
 	_, err := closure.DescendRecipeSources(usedFromClosure(cl), cl, loader, &fakeSourceResolver{}, "/ws", ".aggrega/cache")
-	if !errors.Is(err, closure.ErrSourceTemplateAtLockTime) {
+	if !errors.Is(err, closure.ErrSourceTemplateAtLockTime()) {
 		t.Errorf(".locals→.provides chain should halt with ErrSourceTemplateAtLockTime; got %v", err)
 	}
 }
@@ -520,7 +520,7 @@ func TestDescendHaltsOnAmbiguousKind(t *testing.T) {
 	}
 	cl := closure.Closure{Entities: []closure.ResolvedRef{{URI: uri}}}
 	_, err := closure.DescendRecipeSources(usedFromClosure(cl), cl, loader, &fakeSourceResolver{}, "/ws", ".aggrega/cache")
-	if !errors.Is(err, closure.ErrSourceTemplateAtLockTime) {
+	if !errors.Is(err, closure.ErrSourceTemplateAtLockTime()) {
 		t.Errorf("ambiguous scalar source should halt with ErrSourceTemplateAtLockTime; got %v", err)
 	}
 }
@@ -657,7 +657,7 @@ func TestDescendRejectsProvidesInsideRangeBranch(t *testing.T) {
 	cl := closure.Closure{Entities: []closure.ResolvedRef{{URI: uri}}}
 
 	_, err := closure.DescendRecipeSources(usedFromClosure(cl), cl, loader, &fakeSourceResolver{}, "/ws", ".aggrega/cache")
-	if !errors.Is(err, closure.ErrSourceTemplateAtLockTime) {
+	if !errors.Is(err, closure.ErrSourceTemplateAtLockTime()) {
 		t.Errorf("AST walk should reject .provides nested in range branch; got %v", err)
 	}
 }
@@ -680,7 +680,7 @@ func TestDescendRejectsProvidesInsideTemplateInvocation(t *testing.T) {
 	cl := closure.Closure{Entities: []closure.ResolvedRef{{URI: uri}}}
 
 	_, err := closure.DescendRecipeSources(usedFromClosure(cl), cl, loader, &fakeSourceResolver{}, "/ws", ".aggrega/cache")
-	if !errors.Is(err, closure.ErrSourceTemplateAtLockTime) {
+	if !errors.Is(err, closure.ErrSourceTemplateAtLockTime()) {
 		t.Errorf(".provides in template-invocation pipeline should halt; got %v", err)
 	}
 }

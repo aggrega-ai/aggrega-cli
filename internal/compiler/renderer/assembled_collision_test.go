@@ -110,7 +110,7 @@ func TestRenderAll_FlatContributorsOnOneOutputPathHalt(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected a halt, got files: %v", sortedKeys(res.Files))
 	}
-	if !errors.Is(err, renderer.ErrAssembledOutputCollision) {
+	if !errors.Is(err, renderer.ErrAssembledOutputCollision()) {
 		t.Fatalf("expected ErrAssembledOutputCollision, got: %v", err)
 	}
 	msg := err.Error()
@@ -215,7 +215,7 @@ func TestRenderAll_AssemblyAndContributorCollisionNamesBoth(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected a halt")
 	}
-	if !errors.Is(err, renderer.ErrAssembledOutputCollision) {
+	if !errors.Is(err, renderer.ErrAssembledOutputCollision()) {
 		t.Fatalf("expected ErrAssembledOutputCollision, got: %v", err)
 	}
 	msg := err.Error()

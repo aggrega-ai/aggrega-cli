@@ -44,7 +44,7 @@ func TestGuardRequiredUsesSockets_MissingRequiredSocket(t *testing.T) {
 	if len(errs) != 1 {
 		t.Fatalf("expected 1 error, got %d: %+v", len(errs), errs)
 	}
-	if !errors.Is(errs[0], ErrMissingRequiredSocket) {
+	if !errors.Is(errs[0], ErrMissingRequiredSocket()) {
 		t.Errorf("expected ErrMissingRequiredSocket, got %v", errs[0].Err)
 	}
 	// Top-level component folds into the synthesized default → the locator is
@@ -134,7 +134,7 @@ func TestGuardRequiredUsesSockets_EmptyMapIsNotPopulated(t *testing.T) {
 	if len(errs) != 1 {
 		t.Fatalf("empty verbose map should count as not-populated, got %+v", errs)
 	}
-	if !errors.Is(errs[0], ErrMissingRequiredSocket) {
+	if !errors.Is(errs[0], ErrMissingRequiredSocket()) {
 		t.Errorf("expected ErrMissingRequiredSocket")
 	}
 }
@@ -212,7 +212,7 @@ func TestGuardRequiredUsesSockets_ReleaseTargetlessEntryDoesNotSatisfy(t *testin
 	if len(errs) != 1 {
 		t.Fatalf("a targetless Release entry creates no edge and must not satisfy the socket; got %+v", errs)
 	}
-	if !errors.Is(errs[0], ErrMissingRequiredSocket) {
+	if !errors.Is(errs[0], ErrMissingRequiredSocket()) {
 		t.Errorf("expected ErrMissingRequiredSocket, got %v", errs[0].Err)
 	}
 }
@@ -252,7 +252,7 @@ func TestGuardRequiredUsesSockets_ReleaseBindsUnrelatedNodeStillHalts(t *testing
 	if len(errs) != 1 {
 		t.Fatalf("a binding on another node must not satisfy this node's socket; got %+v", errs)
 	}
-	if !errors.Is(errs[0], ErrMissingRequiredSocket) {
+	if !errors.Is(errs[0], ErrMissingRequiredSocket()) {
 		t.Errorf("expected ErrMissingRequiredSocket, got %v", errs[0].Err)
 	}
 }
@@ -263,7 +263,7 @@ func TestGuardRequiredUsesSockets_ReleaseBindsUnrelatedNodeStillHalts(t *testing
 func TestGuardRequiredUsesSockets_NilReleaseUnchanged(t *testing.T) {
 	t.Parallel()
 	errs := guardRequiredUsesSockets(normalized(t, aggWithUnboundRequiredSocket()), nil, requiredSocketCatalog())
-	if len(errs) != 1 || !errors.Is(errs[0], ErrMissingRequiredSocket) {
+	if len(errs) != 1 || !errors.Is(errs[0], ErrMissingRequiredSocket()) {
 		t.Fatalf("want exactly 1 ErrMissingRequiredSocket with no Release; got %+v", errs)
 	}
 }

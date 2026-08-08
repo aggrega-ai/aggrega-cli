@@ -34,7 +34,7 @@ func (nondeterministicEngine) Contract() renderer.ProviderContract {
 
 func (nondeterministicEngine) halt(nodeID string) error {
 	return fmt.Errorf("node %q: two renders of identical input produced different output: %w",
-		nodeID, renderer.ErrRenderNondeterministic)
+		nodeID, renderer.ErrRenderNondeterministic())
 }
 
 func (e nondeterministicEngine) Render(_ context.Context, _ map[string]any, nodeCtx renderer.NodeRenderContext) ([]renderer.RenderedFile, error) {
@@ -146,7 +146,7 @@ containers:
 
 			err := renderWithNondeterministicProvider(t, tc.spec)
 
-			if !errors.Is(err, renderer.ErrRenderNondeterministic) {
+			if !errors.Is(err, renderer.ErrRenderNondeterministic()) {
 				t.Fatalf("expected the non-determinism halt in the chain; got %v", err)
 			}
 

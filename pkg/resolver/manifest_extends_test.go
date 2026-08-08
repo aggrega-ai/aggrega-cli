@@ -231,7 +231,7 @@ spec:
 	if err == nil {
 		t.Fatalf("cycle: expected error, got nil")
 	}
-	if !errors.Is(err, validator.ErrCyclicExtension) {
+	if !errors.Is(err, validator.ErrCyclicExtension()) {
 		t.Errorf("cycle error = %v; want wrapped ErrCyclicExtension", err)
 	}
 }
@@ -262,7 +262,7 @@ spec:
 	if err == nil {
 		t.Fatalf("missing parent: expected error, got nil")
 	}
-	if !errors.Is(err, validator.ErrInheritanceMerge) {
+	if !errors.Is(err, validator.ErrInheritanceMerge()) {
 		t.Errorf("missing-parent error = %v; want wrapped ErrInheritanceMerge", err)
 	}
 }

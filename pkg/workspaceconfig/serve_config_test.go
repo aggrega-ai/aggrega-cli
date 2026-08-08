@@ -58,7 +58,7 @@ serve:
 	if err == nil {
 		t.Fatal("expected validation error for unknown serve sub-key; got nil")
 	}
-	if !errors.Is(err, ErrConfigInvalid) {
+	if !errors.Is(err, ErrConfigInvalid()) {
 		t.Errorf("error should wrap ErrConfigInvalid; got %v", err)
 	}
 }
@@ -79,7 +79,7 @@ serve:
 	if err == nil {
 		t.Fatal("expected validation error for the superseded serve key; got nil")
 	}
-	if !errors.Is(err, ErrConfigInvalid) {
+	if !errors.Is(err, ErrConfigInvalid()) {
 		t.Errorf("error should wrap ErrConfigInvalid; got %v", err)
 	}
 }

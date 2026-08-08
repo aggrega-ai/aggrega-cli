@@ -32,7 +32,7 @@ func ResolveChain(child *Schema, lookup func(uri string) (*Schema, bool)) ([]*Sc
 	if child == nil || child.Schema == nil {
 		return nil, &MergeError{
 			Detail: "ResolveChain: child schema is nil",
-			Err:    ErrMergeInvalid,
+			Err:    ErrMergeInvalid(),
 		}
 	}
 
@@ -56,7 +56,7 @@ func ResolveChain(child *Schema, lookup func(uri string) (*Schema, bool)) ([]*Sc
 			return nil, &MergeError{
 				Source: parentURI,
 				Detail: "cyclic extends: " + parentURI + " already in chain",
-				Err:    ErrCyclicExtension,
+				Err:    ErrCyclicExtension(),
 			}
 		}
 
@@ -64,7 +64,7 @@ func ResolveChain(child *Schema, lookup func(uri string) (*Schema, bool)) ([]*Sc
 			return nil, &MergeError{
 				Source: parentURI,
 				Detail: "extends chain exceeds maximum depth of " + itoa(maxExtendsDepth),
-				Err:    ErrMaxDepth,
+				Err:    ErrMaxDepth(),
 			}
 		}
 
@@ -73,14 +73,14 @@ func ResolveChain(child *Schema, lookup func(uri string) (*Schema, bool)) ([]*Sc
 			return nil, &MergeError{
 				Source: parentURI,
 				Detail: "parent " + parentURI + " not found via lookup",
-				Err:    ErrMergeInvalid,
+				Err:    ErrMergeInvalid(),
 			}
 		}
 		if parent == nil || parent.Schema == nil {
 			return nil, &MergeError{
 				Source: parentURI,
 				Detail: "lookup returned a nil parent for " + parentURI,
-				Err:    ErrMergeInvalid,
+				Err:    ErrMergeInvalid(),
 			}
 		}
 

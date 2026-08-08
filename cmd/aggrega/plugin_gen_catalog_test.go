@@ -162,7 +162,7 @@ spec:
 	cfg := pushConfig{PluginPath: wasmPath, DryRun: true}
 	var out bytes.Buffer
 	if err := pushPlugin(&out, cfg, registry, false, entity.Metadata.Name, entity.Metadata.Version, entPath, entityYAML); err != nil {
-		if errors.Is(err, wasm.ErrWasmHostFunctionsStampMismatch) {
+		if errors.Is(err, wasm.ErrWasmHostFunctionsStampMismatch()) {
 			t.Fatalf("push re-derived a different host-function set than the generator stamped: %v", err)
 		}
 		t.Fatalf("push --plugin --dry-run cross-check failed: %v", err)

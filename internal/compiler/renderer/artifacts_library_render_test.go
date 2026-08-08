@@ -114,10 +114,10 @@ func TestArtifactsLibraryImport_LoudFailures(t *testing.T) {
 		imp  string
 		want error
 	}{
-		{"oci host rejected", "oci://hub/SharedCRDs#/artifacts/WidgetCRD", ErrHostInLibraryImport},
-		{"unknown library", "Absent#/artifacts/WidgetCRD", ErrArtifactsLibraryNotFound},
-		{"unknown bundle", "SharedCRDs#/artifacts/Missing", ErrArtifactsLibraryEntryNotFound},
-		{"nested import in bundle file", "Nested#/artifacts/Bad", ErrArtifactImportShape},
+		{"oci host rejected", "oci://hub/SharedCRDs#/artifacts/WidgetCRD", ErrHostInLibraryImport()},
+		{"unknown library", "Absent#/artifacts/WidgetCRD", ErrArtifactsLibraryNotFound()},
+		{"unknown bundle", "SharedCRDs#/artifacts/Missing", ErrArtifactsLibraryEntryNotFound()},
+		{"nested import in bundle file", "Nested#/artifacts/Bad", ErrArtifactImportShape()},
 	}
 	for _, tc := range cases {
 		tc := tc
@@ -155,7 +155,7 @@ func TestArtifactsLibraryImport_OutputCollisionHalts(t *testing.T) {
 			[]string{"widget-crd.yaml"}, []string{albCRDBody}),
 	}
 	_, err := buildArtifactsProjection(tmplCtx, state, nodeCtx, "{{", "}}")
-	if !errors.Is(err, ErrArtifactOutputCollision) {
+	if !errors.Is(err, ErrArtifactOutputCollision()) {
 		t.Fatalf("expected ErrArtifactOutputCollision; got %v", err)
 	}
 }

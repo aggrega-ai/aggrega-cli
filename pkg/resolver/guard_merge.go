@@ -49,7 +49,7 @@ func guardFeatureMerge(na types.NormalizedAggregate, release *types.Release) []*
 					Entity:  entity,
 					Field:   fmt.Sprintf("%s.features[%q]", base, featName),
 					Message: fmt.Sprintf("feature type mismatch: Aggregate declares %q but Release declares %q", aggFeat.Type, relFeat.Type),
-					Err:     ErrFeatureMergeConflict,
+					Err:     ErrFeatureMergeConflict(),
 				})
 			}
 		}

@@ -59,10 +59,10 @@ func TestIntegration_PushRefusesUnsignedUnderOrgPolicy(t *testing.T) {
 
 		noSign := false
 		err := pushRun(pushConfig{EntityPath: entityPath, Registry: host, Sign: &noSign})
-		if !errors.Is(err, signing.ErrSigningPolicyRequiresSignature) {
+		if !errors.Is(err, signing.ErrSigningPolicyRequiresSignature()) {
 			t.Fatalf("want ErrSigningPolicyRequiresSignature for an unsigned in-scope Plugin, got %v", err)
 		}
-		if errors.Is(err, signing.ErrUnsignedPushRefused) {
+		if errors.Is(err, signing.ErrUnsignedPushRefused()) {
 			t.Fatalf("org-policy refusal must not carry the per-registry sentinel: %v", err)
 		}
 	})
@@ -77,7 +77,7 @@ func TestIntegration_PushRefusesUnsignedUnderOrgPolicy(t *testing.T) {
 
 		noSign := false
 		err := pushRun(pushConfig{EntityPath: entityPath, Registry: host, Sign: &noSign})
-		if !errors.Is(err, signing.ErrSigningPolicyRequiresSignature) {
+		if !errors.Is(err, signing.ErrSigningPolicyRequiresSignature()) {
 			t.Fatalf("want ErrSigningPolicyRequiresSignature for an unsigned in-scope Component, got %v", err)
 		}
 	})
@@ -147,7 +147,7 @@ func TestIntegration_PushOrgPolicyUnremovableViaCIOverlay(t *testing.T) {
 
 	noSign := false
 	err := pushRun(pushConfig{EntityPath: entityPath, Registry: host, Sign: &noSign})
-	if !errors.Is(err, signing.ErrSigningPolicyRequiresSignature) {
+	if !errors.Is(err, signing.ErrSigningPolicyRequiresSignature()) {
 		t.Fatalf("a CI-overlay-enabled org policy must still refuse an unsigned in-scope push through the enforcement site, got %v", err)
 	}
 }
@@ -264,7 +264,7 @@ func TestIntegration_PullRejectsUnsignedUnderOrgPolicy(t *testing.T) {
 		writeOrgSigningPullWorkspace(t, host, "signing:\n  required: true\n  kinds: [Component]\n")
 
 		err := pullRun(pullConfig{ReleasePath: "release.yaml"})
-		if !errors.Is(err, signing.ErrNoSignatureFound) {
+		if !errors.Is(err, signing.ErrNoSignatureFound()) {
 			t.Fatalf("an unsigned in-scope Component under the org policy must be REJECTED at pull with ErrNoSignatureFound, got %v", err)
 		}
 	})

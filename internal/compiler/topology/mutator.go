@@ -114,17 +114,17 @@ func ApplyMutatorPatches(topo *TopologyResult, out MutatorOutput) error {
 
 	docBytes, err := json.Marshal(doc)
 	if err != nil {
-		return fmt.Errorf("%w: assemble labels projection: %v", ErrMutatorPatchRejected, err)
+		return fmt.Errorf("%w: assemble labels projection: %v", ErrMutatorPatchRejected(), err)
 	}
 
 	for i, raw := range out.Patches {
 		patch, err := jsonpatch.DecodePatch(raw)
 		if err != nil {
-			return fmt.Errorf("%w: patch %d does not decode as a JSON Patch document: %v", ErrMutatorPatchRejected, i, err)
+			return fmt.Errorf("%w: patch %d does not decode as a JSON Patch document: %v", ErrMutatorPatchRejected(), i, err)
 		}
 		docBytes, err = patch.Apply(docBytes)
 		if err != nil {
-			return fmt.Errorf("%w: patch %d does not apply to the node-label surface: %v", ErrMutatorPatchRejected, i, err)
+			return fmt.Errorf("%w: patch %d does not apply to the node-label surface: %v", ErrMutatorPatchRejected(), i, err)
 		}
 	}
 
@@ -164,43 +164,43 @@ func ApplyMutatorPatches(topo *TopologyResult, out MutatorOutput) error {
 func confinedLabels(topo *TopologyResult, docBytes []byte) (map[string]map[string]string, error) {
 	var top map[string]json.RawMessage
 	if err := json.Unmarshal(docBytes, &top); err != nil {
-		return nil, fmt.Errorf("%w: mutated document is not a JSON object: %v", ErrMutatorPatchRejected, err)
+		return nil, fmt.Errorf("%w: mutated document is not a JSON object: %v", ErrMutatorPatchRejected(), err)
 	}
 	if len(top) != 1 {
-		return nil, fmt.Errorf("%w: mutated document added a top-level key outside %q", ErrMutatorPatchRejected, "nodes")
+		return nil, fmt.Errorf("%w: mutated document added a top-level key outside %q", ErrMutatorPatchRejected(), "nodes")
 	}
 	rawNodes, ok := top["nodes"]
 	if !ok {
-		return nil, fmt.Errorf("%w: mutated document dropped the %q key", ErrMutatorPatchRejected, "nodes")
+		return nil, fmt.Errorf("%w: mutated document dropped the %q key", ErrMutatorPatchRejected(), "nodes")
 	}
 
 	var nodes map[string]json.RawMessage
 	if err := json.Unmarshal(rawNodes, &nodes); err != nil {
-		return nil, fmt.Errorf("%w: mutated node set is not a JSON object: %v", ErrMutatorPatchRejected, err)
+		return nil, fmt.Errorf("%w: mutated node set is not a JSON object: %v", ErrMutatorPatchRejected(), err)
 	}
 	if len(nodes) != topo.Nodes.Len() {
-		return nil, fmt.Errorf("%w: mutated node set changed size (a mutator may not add or remove nodes)", ErrMutatorPatchRejected)
+		return nil, fmt.Errorf("%w: mutated node set changed size (a mutator may not add or remove nodes)", ErrMutatorPatchRejected())
 	}
 
 	out := make(map[string]map[string]string, len(nodes))
 	for id, rawNode := range nodes {
 		if _, exists := topo.Nodes.Get(id); !exists {
-			return nil, fmt.Errorf("%w: mutated node set introduced node %q (a mutator may not add nodes)", ErrMutatorPatchRejected, id)
+			return nil, fmt.Errorf("%w: mutated node set introduced node %q (a mutator may not add nodes)", ErrMutatorPatchRejected(), id)
 		}
 		var nodeObj map[string]json.RawMessage
 		if err := json.Unmarshal(rawNode, &nodeObj); err != nil {
-			return nil, fmt.Errorf("%w: node %q is not a JSON object after patching: %v", ErrMutatorPatchRejected, id, err)
+			return nil, fmt.Errorf("%w: node %q is not a JSON object after patching: %v", ErrMutatorPatchRejected(), id, err)
 		}
 		if len(nodeObj) != 1 {
-			return nil, fmt.Errorf("%w: node %q gained a field outside %q (a mutator may only touch labels)", ErrMutatorPatchRejected, id, "labels")
+			return nil, fmt.Errorf("%w: node %q gained a field outside %q (a mutator may only touch labels)", ErrMutatorPatchRejected(), id, "labels")
 		}
 		rawLabels, ok := nodeObj["labels"]
 		if !ok {
-			return nil, fmt.Errorf("%w: node %q lost its %q field", ErrMutatorPatchRejected, id, "labels")
+			return nil, fmt.Errorf("%w: node %q lost its %q field", ErrMutatorPatchRejected(), id, "labels")
 		}
 		var labels map[string]string
 		if err := json.Unmarshal(rawLabels, &labels); err != nil {
-			return nil, fmt.Errorf("%w: node %q carries a non-string label value after patching: %v", ErrMutatorPatchRejected, id, err)
+			return nil, fmt.Errorf("%w: node %q carries a non-string label value after patching: %v", ErrMutatorPatchRejected(), id, err)
 		}
 		out[id] = labels
 	}

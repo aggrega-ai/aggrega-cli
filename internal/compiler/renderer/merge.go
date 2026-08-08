@@ -91,7 +91,7 @@ func ParseInjectMappingOutput(output string, authored []string) (*types.InjectPi
 		if !structured.Env.IsZero() || !structured.File.IsZero() || !structured.Arg.IsZero() || structured.Additional.Len() > 0 {
 			for _, mech := range authored {
 				if !mechanismPresent(&structured, mech) {
-					return nil, fmt.Errorf("%w: mechanism %q has no matching key in injectMapping output", ErrUnmappedCustomMechanism, mech)
+					return nil, fmt.Errorf("%w: mechanism %q has no matching key in injectMapping output", ErrUnmappedCustomMechanism(), mech)
 				}
 			}
 			return &structured, nil

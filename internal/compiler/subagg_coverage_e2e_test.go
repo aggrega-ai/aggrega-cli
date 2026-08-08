@@ -56,7 +56,7 @@ func TestSubaggCoverage_ControlBuilds(t *testing.T) {
 func TestSubaggCoverage_UnboundRequiredSocketHalts(t *testing.T) {
 	t.Parallel()
 	_, err := pipelinetest.BuildE(t, subaggCoverageInput("release-unbound-required.yaml"))
-	if !errors.Is(err, resolver.ErrMissingRequiredSocket) {
+	if !errors.Is(err, resolver.ErrMissingRequiredSocket()) {
 		t.Fatalf("want ErrMissingRequiredSocket for an unbound required socket on a sub-aggregate component; got %v", err)
 	}
 }
@@ -67,7 +67,7 @@ func TestSubaggCoverage_UnboundRequiredSocketHalts(t *testing.T) {
 func TestSubaggCoverage_AuthoredSlotShapeHalts(t *testing.T) {
 	t.Parallel()
 	_, err := pipelinetest.BuildE(t, subaggCoverageInput("release-bad-slot-shape.yaml"))
-	if !errors.Is(err, resolver.ErrAttachmentSlotShape) {
+	if !errors.Is(err, resolver.ErrAttachmentSlotShape()) {
 		t.Fatalf("want ErrAttachmentSlotShape for an authored delivery on a Black-Box slot inside a sub-aggregate; got %v", err)
 	}
 }
@@ -78,7 +78,7 @@ func TestSubaggCoverage_AuthoredSlotShapeHalts(t *testing.T) {
 func TestSubaggCoverage_ReleaseUndeclaredSocketHalts(t *testing.T) {
 	t.Parallel()
 	_, err := pipelinetest.BuildE(t, subaggCoverageInput("release-relsocket.yaml"))
-	if !errors.Is(err, resolver.ErrUnknownUsesSocket) {
+	if !errors.Is(err, resolver.ErrUnknownUsesSocket()) {
 		t.Fatalf("want ErrUnknownUsesSocket for a Release edge into an undeclared socket on a sub-aggregate node; got %v", err)
 	}
 }
@@ -90,7 +90,7 @@ func TestSubaggCoverage_ReleaseUndeclaredSocketHalts(t *testing.T) {
 func TestSubaggCoverage_ReleaseDroppedEntryInfraHalts(t *testing.T) {
 	t.Parallel()
 	_, err := pipelinetest.BuildE(t, subaggCoverageInput("release-relinfra.yaml"))
-	if !errors.Is(err, resolver.ErrSchemaConformance) {
+	if !errors.Is(err, resolver.ErrSchemaConformance()) {
 		t.Fatalf("want ErrSchemaConformance for out-of-range per-edge infra on an entry that reached no edge; got %v", err)
 	}
 }

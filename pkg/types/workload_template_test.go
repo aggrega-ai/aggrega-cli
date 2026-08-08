@@ -75,7 +75,7 @@ func TestWorkloadTemplate_RejectsMapWithoutImport(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error")
 	}
-	if !errors.Is(err, ErrWorkloadTemplateShape) {
+	if !errors.Is(err, ErrWorkloadTemplateShape()) {
 		t.Errorf("expected ErrWorkloadTemplateShape; got %v", err)
 	}
 }

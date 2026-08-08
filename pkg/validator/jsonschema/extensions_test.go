@@ -148,9 +148,9 @@ func TestAdapterErrorFormat(t *testing.T) {
 		Path:    "foo.bar",
 		Keyword: "x-aggrega-when",
 		Message: "template parse: unexpected",
-		Err:     ErrExtensionEval,
+		Err:     ErrExtensionEval(),
 	}
-	if ae.Unwrap() != ErrExtensionEval {
+	if ae.Unwrap() != ErrExtensionEval() {
 		t.Errorf("Unwrap should return the sentinel; got %v", ae.Unwrap())
 	}
 	msg := ae.Error()
@@ -160,7 +160,7 @@ func TestAdapterErrorFormat(t *testing.T) {
 		}
 	}
 	// Path-less + keyword-less form.
-	ae2 := &AdapterError{Message: "schema is nil", Err: ErrSchemaResolve}
+	ae2 := &AdapterError{Message: "schema is nil", Err: ErrSchemaResolve()}
 	msg2 := ae2.Error()
 	if !contains(msg2, "schema is nil") {
 		t.Errorf("Error should contain message; got %q", msg2)

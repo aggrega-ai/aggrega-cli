@@ -67,7 +67,7 @@ func VerifyKeyedBundle(bundleBytes, pubPEM []byte, artifactDigest string) error 
 	}
 	ecPub, ok := pub.(*ecdsa.PublicKey)
 	if !ok {
-		return fmt.Errorf("signing: %w: pinned key is %T, want ECDSA P-256", ErrUnsupportedKey, pub)
+		return fmt.Errorf("signing: %w: pinned key is %T, want ECDSA P-256", ErrUnsupportedKey(), pub)
 	}
 	verifier, err := signature.LoadECDSAVerifier(ecPub, crypto.SHA256)
 	if err != nil {
@@ -93,7 +93,7 @@ func VerifyKeyedBundle(bundleBytes, pubPEM []byte, artifactDigest string) error 
 		verify.WithKey(),
 	)
 	if _, err := sev.Verify(b, policy); err != nil {
-		return fmt.Errorf("signing: %w: %v", ErrSignatureVerificationFailed, err)
+		return fmt.Errorf("signing: %w: %v", ErrSignatureVerificationFailed(), err)
 	}
 	return nil
 }
@@ -154,7 +154,7 @@ func VerifyKeylessBundle(bundleBytes []byte, trustedMaterial root.TrustedMateria
 // from the policy, so the returned identity is the bundle's actual signer.
 func verifyKeylessEntity(entity verify.SignedEntity, trustedMaterial root.TrustedMaterial, identities []TrustedIdentity, artifactDigest string) (KeylessIdentity, error) {
 	if len(identities) == 0 {
-		return KeylessIdentity{}, ErrNoTrustedIdentities
+		return KeylessIdentity{}, ErrNoTrustedIdentities()
 	}
 
 	certIDs := make([]verify.CertificateIdentity, 0, len(identities))
@@ -194,11 +194,11 @@ func verifyKeylessEntity(entity verify.SignedEntity, trustedMaterial root.Truste
 			// rejected it. Name both when they can be read from the leaf
 			// certificate; fall back to the library detail alone otherwise.
 			if issuer, san, ok := mismatchCertIdentity(entity); ok {
-				return KeylessIdentity{}, fmt.Errorf("signing: %w: %v; signer presented issuer %q with identity %q, but no trusted identity permits that issuer", ErrUntrustedIdentity, err, issuer, san)
+				return KeylessIdentity{}, fmt.Errorf("signing: %w: %v; signer presented issuer %q with identity %q, but no trusted identity permits that issuer", ErrUntrustedIdentity(), err, issuer, san)
 			}
-			return KeylessIdentity{}, fmt.Errorf("signing: %w: %v", ErrUntrustedIdentity, err)
+			return KeylessIdentity{}, fmt.Errorf("signing: %w: %v", ErrUntrustedIdentity(), err)
 		}
-		return KeylessIdentity{}, fmt.Errorf("signing: %w: %v", ErrSignatureVerificationFailed, err)
+		return KeylessIdentity{}, fmt.Errorf("signing: %w: %v", ErrSignatureVerificationFailed(), err)
 	}
 	return matchedKeylessIdentity(result), nil
 }

@@ -209,7 +209,7 @@ entities: "not-a-list"
 	if err == nil {
 		t.Fatal("expected error for non-list entities; got nil")
 	}
-	if !errors.Is(err, lockfile.ErrLockfileInvalid) {
+	if !errors.Is(err, lockfile.ErrLockfileInvalid()) {
 		t.Errorf("error should wrap ErrLockfileInvalid; got %v", err)
 	}
 	if !strings.Contains(err.Error(), "entities") {
@@ -229,7 +229,7 @@ unknown_section: true
 	if err == nil {
 		t.Fatal("expected error for unknown top-level key; got nil")
 	}
-	if !errors.Is(err, lockfile.ErrLockfileInvalid) {
+	if !errors.Is(err, lockfile.ErrLockfileInvalid()) {
 		t.Errorf("error should wrap ErrLockfileInvalid; got %v", err)
 	}
 }
@@ -447,7 +447,7 @@ release: ./release-prod.yaml
 			if err == nil {
 				t.Fatalf("expected error for missing %s; got nil", tc.field)
 			}
-			if !errors.Is(err, lockfile.ErrLockfileInvalid) {
+			if !errors.Is(err, lockfile.ErrLockfileInvalid()) {
 				t.Errorf("error should wrap ErrLockfileInvalid; got %v", err)
 			}
 		})
@@ -776,7 +776,7 @@ plugins: []
 	if err == nil {
 		t.Fatal("expected schema rejection for unknown entity")
 	}
-	if !errors.Is(err, lockfile.ErrLockfileInvalid) {
+	if !errors.Is(err, lockfile.ErrLockfileInvalid()) {
 		t.Errorf("error should wrap ErrLockfileInvalid; got %v", err)
 	}
 }
@@ -806,7 +806,7 @@ plugins: []
 	if err == nil {
 		t.Fatal("expected schema rejection for unknown kind")
 	}
-	if !errors.Is(err, lockfile.ErrLockfileInvalid) {
+	if !errors.Is(err, lockfile.ErrLockfileInvalid()) {
 		t.Errorf("error should wrap ErrLockfileInvalid; got %v", err)
 	}
 }
@@ -833,7 +833,7 @@ plugins: []
 	if err == nil {
 		t.Fatal("expected schema rejection for empty referenced_by")
 	}
-	if !errors.Is(err, lockfile.ErrLockfileInvalid) {
+	if !errors.Is(err, lockfile.ErrLockfileInvalid()) {
 		t.Errorf("error should wrap ErrLockfileInvalid; got %v", err)
 	}
 }

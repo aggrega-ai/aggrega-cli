@@ -74,7 +74,7 @@ func Compile(input *yaml.Node, opts ...CompileOption) (Schema, error) {
 	if input == nil {
 		return nil, &CompileError{
 			Message: "input is nil",
-			Err:     ErrEscapeContentInvalid,
+			Err:     ErrEscapeContentInvalid(),
 		}
 	}
 
@@ -131,7 +131,7 @@ func compileNode(node *yaml.Node, path string, ctx *compileCtx) (any, error) {
 			Path:    path,
 			Line:    node.Line,
 			Message: "unsupported YAML node kind",
-			Err:     ErrEscapeContentInvalid,
+			Err:     ErrEscapeContentInvalid(),
 		}
 	}
 }

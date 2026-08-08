@@ -20,9 +20,9 @@ import (
 // UnmarshalJSON or UnmarshalYAML exceeds orderedMapDecodeMaxDepth, guarding
 // against pathological input that would otherwise blow the call stack.
 // Wrapped via fmt.Errorf at the emission site with the offending depth.
-const ErrOrderedMapDecodeDepthExceeded cerrors.Code = "types/ordered-map-decode-depth-exceeded"
+func ErrOrderedMapDecodeDepthExceeded() error { return errOrderedMapDecodeDepthExceeded }
 
-var _ = cerrors.Register(ErrOrderedMapDecodeDepthExceeded, cerrors.Meta{
+var errOrderedMapDecodeDepthExceeded = cerrors.Register("types/ordered-map-decode-depth-exceeded", cerrors.Meta{
 	Message: "OrderedMap: decode depth exceeded",
 })
 
@@ -312,7 +312,7 @@ func (m *OrderedMap[V]) UnmarshalYAML(node *yaml.Node) error {
 // Mirrors unmarshalJSONWithDepth's structure on the YAML path.
 func (m *OrderedMap[V]) unmarshalYAMLWithDepth(node *yaml.Node, depth int) error {
 	if depth > orderedMapDecodeMaxDepth {
-		return fmt.Errorf("%w (depth=%d)", ErrOrderedMapDecodeDepthExceeded, depth)
+		return fmt.Errorf("%w (depth=%d)", ErrOrderedMapDecodeDepthExceeded(), depth)
 	}
 	if node.Kind != yaml.MappingNode {
 		return fmt.Errorf("OrderedMap: expected mapping node, got kind %d at line %d", node.Kind, node.Line)
@@ -439,7 +439,7 @@ func (m *OrderedMap[V]) UnmarshalJSON(data []byte) error {
 // construction.
 func (m *OrderedMap[V]) unmarshalJSONWithDepth(data []byte, depth int) error {
 	if depth > orderedMapDecodeMaxDepth {
-		return fmt.Errorf("%w (depth=%d)", ErrOrderedMapDecodeDepthExceeded, depth)
+		return fmt.Errorf("%w (depth=%d)", ErrOrderedMapDecodeDepthExceeded(), depth)
 	}
 
 	m.keys = make([]string, 0)
@@ -565,7 +565,7 @@ func decodeJSONValue[V any](raw json.RawMessage, depth int) (V, error) {
 	var zero V
 
 	if depth > orderedMapDecodeMaxDepth {
-		return zero, fmt.Errorf("%w (depth=%d)", ErrOrderedMapDecodeDepthExceeded, depth)
+		return zero, fmt.Errorf("%w (depth=%d)", ErrOrderedMapDecodeDepthExceeded(), depth)
 	}
 
 	if vImplementsJSONUnmarshaler[V]() {
@@ -646,7 +646,7 @@ func decodeYAMLValue[V any](valueNode *yaml.Node, depth int) (V, error) {
 	var zero V
 
 	if depth > orderedMapDecodeMaxDepth {
-		return zero, fmt.Errorf("%w (depth=%d)", ErrOrderedMapDecodeDepthExceeded, depth)
+		return zero, fmt.Errorf("%w (depth=%d)", ErrOrderedMapDecodeDepthExceeded(), depth)
 	}
 
 	if vImplementsYAMLUnmarshaler[V]() {

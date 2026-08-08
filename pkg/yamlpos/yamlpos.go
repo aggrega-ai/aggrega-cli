@@ -26,9 +26,9 @@ import (
 // ErrPositionOutOfRange is returned when a Position addresses a line
 // outside the document or when conversion against an empty LineIndex
 // is attempted.
-const ErrPositionOutOfRange cerrors.Code = "yamlpos/position-out-of-range"
+func ErrPositionOutOfRange() error { return errPositionOutOfRange }
 
-var _ = cerrors.Register(ErrPositionOutOfRange, cerrors.Meta{
+var errPositionOutOfRange = cerrors.Register("yamlpos/position-out-of-range", cerrors.Meta{
 	Message: "position out of range",
 })
 
@@ -280,7 +280,7 @@ func (idx LineIndex) runeUnits(r rune) int {
 // outside the document.
 func (idx LineIndex) lineBytes(line int) ([]byte, error) {
 	if line < 0 || line >= len(idx.lineStarts) {
-		return nil, ErrPositionOutOfRange
+		return nil, ErrPositionOutOfRange()
 	}
 	start := idx.lineStarts[line]
 	var end int

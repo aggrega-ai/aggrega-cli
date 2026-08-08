@@ -258,7 +258,7 @@ func TestGuardSchemaConformance_TwoIndependentViolations(t *testing.T) {
 		t.Fatalf("want exactly 2 errors for two independent violations; got %d: %v", len(errs), errs)
 	}
 	for _, e := range errs {
-		if !errors.Is(e, ErrSchemaConformance) {
+		if !errors.Is(e, ErrSchemaConformance()) {
 			t.Errorf("error %v does not wrap ErrSchemaConformance", e)
 		}
 	}
@@ -616,7 +616,7 @@ func TestPillarConformance_SensitiveLeafKeepsLocatorAndKeyword(t *testing.T) {
 	if found == nil {
 		t.Fatalf("no finding at the sensitive leaf; got %v", errs)
 	}
-	if !errors.Is(found, ErrSchemaConformance) {
+	if !errors.Is(found, ErrSchemaConformance()) {
 		t.Errorf("a withheld finding must still wrap ErrSchemaConformance; got %v", found.Err)
 	}
 	if found.Entity != "Aggregate demo" {
@@ -799,7 +799,7 @@ func requireConformance(t *testing.T, errs []*ResolverError, wantCount int, want
 		t.Fatalf("want exactly %d ErrSchemaConformance error(s) at/under %s; got %d: %v", wantCount, wantFieldPrefix, len(errs), errs)
 	}
 	for _, e := range errs {
-		if !errors.Is(e, ErrSchemaConformance) {
+		if !errors.Is(e, ErrSchemaConformance()) {
 			t.Errorf("error %v does not wrap ErrSchemaConformance", e)
 		}
 	}

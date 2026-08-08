@@ -53,14 +53,16 @@ func kindExpectsManifest(kind string) bool {
 	return kind == helm.KindOCI
 }
 
-// Re-exports of the canonical fetch-error sentinels. Identity-equal
-// to pkg/oci's; errors.Is against either name matches the same
-// wrapped chain. They restate no message: the message is registered
-// once, beside the canonical declaration.
-const (
-	ErrFetchNotFound  = oci.ErrFetchNotFound
-	ErrFetchIntegrity = oci.ErrFetchIntegrity
-)
+// ErrFetchNotFound re-exports the canonical fetch-error identity declared in
+// pkg/oci. It yields that identity itself rather than a second one carrying the
+// same text, so errors.Is against either name matches the same wrapped chain,
+// and it registers no message of its own: the message is declared once, beside
+// the canonical declaration.
+func ErrFetchNotFound() error { return oci.ErrFetchNotFound() }
+
+// ErrFetchIntegrity re-exports the canonical fetch-error identity declared in
+// pkg/oci, on the same terms as ErrFetchNotFound above.
+func ErrFetchIntegrity() error { return oci.ErrFetchIntegrity() }
 
 // LookupAndExtract looks up the lockfile entry for {kind, url, chart,
 // pinned_version}, verifies the full SHA-256 of the cached `.tgz`
@@ -82,19 +84,19 @@ const (
 // by construction and stays on content-pin authority.
 func LookupAndExtract(lf *lockfile.Lockfile, kind, url, chart, version, workspaceRoot, cacheDir string) (string, error) {
 	if lf == nil {
-		return "", fmt.Errorf("sourcecache: lockfile is nil: %w", ErrFetchNotFound)
+		return "", fmt.Errorf("sourcecache: lockfile is nil: %w", ErrFetchNotFound())
 	}
 	entry := findEntry(lf, kind, url, chart, version)
 	if entry == nil {
 		return "", fmt.Errorf("sourcecache: no lockfile entry for kind=%s url=%s chart=%s version=%s: %w",
-			kind, url, chart, version, ErrFetchNotFound)
+			kind, url, chart, version, ErrFetchNotFound())
 	}
 	slot := SlotPath(workspaceRoot, cacheDir, kind, url, chart, version, entry.Digest)
 	blobPath := filepath.Join(slot, "blob.tgz")
 	blobBytes, err := os.ReadFile(blobPath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return "", fmt.Errorf("sourcecache: cache blob missing at %s: %w", blobPath, ErrFetchNotFound)
+			return "", fmt.Errorf("sourcecache: cache blob missing at %s: %w", blobPath, ErrFetchNotFound())
 		}
 		return "", fmt.Errorf("sourcecache: read blob %s: %w", blobPath, err)
 	}
@@ -102,7 +104,7 @@ func LookupAndExtract(lf *lockfile.Lockfile, kind, url, chart, version, workspac
 	gotDigest := digest.ContentDigest(blobBytes)
 	if gotDigest != entry.Digest {
 		return "", fmt.Errorf("sourcecache: blob digest %s mismatches lockfile digest %s: %w",
-			gotDigest, entry.Digest, ErrFetchIntegrity)
+			gotDigest, entry.Digest, ErrFetchIntegrity())
 	}
 	meta, err := metadata.Read(filepath.Join(slot, "metadata.yaml"))
 	if err != nil {
@@ -110,7 +112,7 @@ func LookupAndExtract(lf *lockfile.Lockfile, kind, url, chart, version, workspac
 	}
 	if meta.Digest != entry.Digest {
 		return "", fmt.Errorf("sourcecache: metadata digest %s mismatches lockfile digest %s: %w",
-			meta.Digest, entry.Digest, ErrFetchIntegrity)
+			meta.Digest, entry.Digest, ErrFetchIntegrity())
 	}
 
 	// Manifest authority. An OCI-distributed source (a helm-oci-chart) persists
@@ -142,7 +144,7 @@ func LookupAndExtract(lf *lockfile.Lockfile, kind, url, chart, version, workspac
 		}
 	case os.IsNotExist(mrerr):
 		if kindExpectsManifest(kind) {
-			return "", fmt.Errorf("sourcecache: %s cached without its OCI manifest; run `aggrega pull --release <release>` first: %w", blobPath, ErrFetchNotFound)
+			return "", fmt.Errorf("sourcecache: %s cached without its OCI manifest; run `aggrega pull --release <release>` first: %w", blobPath, ErrFetchNotFound())
 		}
 	default:
 		return "", fmt.Errorf("sourcecache: read manifest for %s: %w", blobPath, mrerr)
@@ -207,7 +209,7 @@ func extractTarGz(archiveBytes []byte, destDir string) error {
 			continue
 		}
 		if strings.HasPrefix(cleanRel, "..") || strings.HasPrefix(cleanRel, "/") {
-			return fmt.Errorf("path traversal attempt %q in archive: %w", hdr.Name, ErrFetchIntegrity)
+			return fmt.Errorf("path traversal attempt %q in archive: %w", hdr.Name, ErrFetchIntegrity())
 		}
 		dest := filepath.Join(destDir, cleanRel)
 		destAbs, err := filepath.Abs(dest)
@@ -219,7 +221,7 @@ func extractTarGz(archiveBytes []byte, destDir string) error {
 			return fmt.Errorf("abs destDir %q: %w", destDir, err)
 		}
 		if !strings.HasPrefix(destAbs, destDirAbs+string(filepath.Separator)) && destAbs != destDirAbs {
-			return fmt.Errorf("entry %q escapes extract destination: %w", hdr.Name, ErrFetchIntegrity)
+			return fmt.Errorf("entry %q escapes extract destination: %w", hdr.Name, ErrFetchIntegrity())
 		}
 		switch hdr.Typeflag {
 		case tar.TypeDir:

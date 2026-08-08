@@ -118,7 +118,7 @@ func requireConformanceHalt(t *testing.T, err error, wantFieldSubstr string) {
 	if err == nil {
 		t.Fatalf("expected an ErrSchemaConformance halt naming %q; got nil", wantFieldSubstr)
 	}
-	if !errors.Is(err, resolver.ErrSchemaConformance) {
+	if !errors.Is(err, resolver.ErrSchemaConformance()) {
 		t.Fatalf("error does not wrap ErrSchemaConformance: %v", err)
 	}
 	if !strings.Contains(err.Error(), wantFieldSubstr) {
@@ -218,7 +218,7 @@ func TestAttachmentConformance_FeatureInfraViolation(t *testing.T) {
 		t.Fatal("expected an infra conformance violation for replicas below minimum")
 	}
 	for _, e := range errs {
-		if !errors.Is(e, resolver.ErrSchemaConformance) {
+		if !errors.Is(e, resolver.ErrSchemaConformance()) {
 			t.Errorf("error does not wrap ErrSchemaConformance: %v", e)
 		}
 	}

@@ -18,12 +18,12 @@ func TestSentinelPassThroughErrorsIs(t *testing.T) {
 		name     string
 		sentinel error
 	}{
-		{"ErrFetchNotFound", oci.ErrFetchNotFound},
-		{"ErrFetchUnauthorized", oci.ErrFetchUnauthorized},
-		{"ErrFetchNetworkUnreachable", oci.ErrFetchNetworkUnreachable},
-		{"ErrFetchIntegrity", oci.ErrFetchIntegrity},
-		{"ErrUnknownEntityKind", oci.ErrUnknownEntityKind},
-		{"ErrEntityVersionPathMismatch", oci.ErrEntityVersionPathMismatch},
+		{"ErrFetchNotFound", oci.ErrFetchNotFound()},
+		{"ErrFetchUnauthorized", oci.ErrFetchUnauthorized()},
+		{"ErrFetchNetworkUnreachable", oci.ErrFetchNetworkUnreachable()},
+		{"ErrFetchIntegrity", oci.ErrFetchIntegrity()},
+		{"ErrUnknownEntityKind", oci.ErrUnknownEntityKind()},
+		{"ErrEntityVersionPathMismatch", oci.ErrEntityVersionPathMismatch()},
 	}
 	for _, tc := range cases {
 		tc := tc
@@ -69,7 +69,7 @@ func TestMediaTypeForKindDispatchesAllKinds(t *testing.T) {
 func TestMediaTypeForKindUnknownReturnsErrUnknownEntityKind(t *testing.T) {
 	t.Parallel()
 	_, err := oci.MediaTypeForKind("NotARealKind")
-	if !errors.Is(err, oci.ErrUnknownEntityKind) {
+	if !errors.Is(err, oci.ErrUnknownEntityKind()) {
 		t.Errorf("unknown kind should return ErrUnknownEntityKind; got %v", err)
 	}
 	// Aggregate is publishable — it resolves to its mediatype.
@@ -90,10 +90,10 @@ func TestRemediationForMapsEachSentinel(t *testing.T) {
 		host     string
 		want     string
 	}{
-		{"NotFound", oci.ErrFetchNotFound, "hub.aggrega.ai", "remediation: verify the URL and version"},
-		{"Unauthorized", oci.ErrFetchUnauthorized, "hub.aggrega.ai", "docker login hub.aggrega.ai"},
-		{"NetworkUnreachable", oci.ErrFetchNetworkUnreachable, "hub.aggrega.ai", "check network connectivity to hub.aggrega.ai"},
-		{"Integrity", oci.ErrFetchIntegrity, "hub.aggrega.ai", "aggrega pull --upgrade"},
+		{"NotFound", oci.ErrFetchNotFound(), "hub.aggrega.ai", "remediation: verify the URL and version"},
+		{"Unauthorized", oci.ErrFetchUnauthorized(), "hub.aggrega.ai", "docker login hub.aggrega.ai"},
+		{"NetworkUnreachable", oci.ErrFetchNetworkUnreachable(), "hub.aggrega.ai", "check network connectivity to hub.aggrega.ai"},
+		{"Integrity", oci.ErrFetchIntegrity(), "hub.aggrega.ai", "aggrega pull --upgrade"},
 	}
 	for _, tc := range cases {
 		got := oci.RemediationFor(tc.sentinel, tc.host)
@@ -116,7 +116,7 @@ func TestRemediationForReturnsEmptyForNonSentinel(t *testing.T) {
 
 func TestRemediationForUsesPlaceholderWhenHostEmpty(t *testing.T) {
 	t.Parallel()
-	got := oci.RemediationFor(oci.ErrFetchUnauthorized, "")
+	got := oci.RemediationFor(oci.ErrFetchUnauthorized(), "")
 	if !strings.Contains(got, "<registry>") {
 		t.Errorf("RemediationFor with empty host should use <registry> placeholder; got %q", got)
 	}
@@ -126,7 +126,7 @@ func TestRemediationForTraversesWrappedChain(t *testing.T) {
 	t.Parallel()
 	// errors.Is should traverse a wrapped chain — callers may pass
 	// either the bare sentinel or any error that wraps it.
-	wrapped := fmt.Errorf("outer wrap: %w", oci.ErrFetchIntegrity)
+	wrapped := fmt.Errorf("outer wrap: %w", oci.ErrFetchIntegrity())
 	got := oci.RemediationFor(wrapped, "host")
 	if !strings.Contains(got, "aggrega pull --upgrade") {
 		t.Errorf("RemediationFor should traverse wrapped chain; got %q", got)

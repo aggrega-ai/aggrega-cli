@@ -191,7 +191,7 @@ func resolveFromInputs(ctx context.Context, in ResolveInputs) (*ResolveResult, e
 	// internal-invariant breach, not an authoring error.
 	if release != nil {
 		if _, hasDefault := release.Spec.Boundaries.Get("default"); hasDefault && release.Spec.Components.Len() > 0 {
-			return nil, fmt.Errorf("%w: construct releases through the normalization core (types.NormalizeRelease via the load path), not a hand-built literal", ErrUnnormalizedRelease)
+			return nil, fmt.Errorf("%w: construct releases through the normalization core (types.NormalizeRelease via the load path), not a hand-built literal", ErrUnnormalizedRelease())
 		}
 	}
 
@@ -234,7 +234,7 @@ func resolveFromInputs(ctx context.Context, in ResolveInputs) (*ResolveResult, e
 
 	// Validate the interpolated document's envelope before typed
 	// unmarshal — post-interpolation is the final authored shape.
-	if _, eerr := envelope.ValidateBytes(envelope.KindAggregate, interpolated, in.AggregatePath); errors.Is(eerr, envelope.ErrEntityEnvelope) {
+	if _, eerr := envelope.ValidateBytes(envelope.KindAggregate, interpolated, in.AggregatePath); errors.Is(eerr, envelope.ErrEntityEnvelope()) {
 		return nil, &ResolverError{Entity: "Aggregate", Field: in.AggregatePath, Message: eerr.Error(), Err: eerr}
 	}
 
@@ -245,7 +245,7 @@ func resolveFromInputs(ctx context.Context, in ResolveInputs) (*ResolveResult, e
 			Entity:  "Aggregate",
 			Field:   in.AggregatePath,
 			Message: fmt.Sprintf("failed to unmarshal interpolated YAML: %v", err),
-			Err:     ErrYAMLLoad,
+			Err:     ErrYAMLLoad(),
 		}
 	}
 

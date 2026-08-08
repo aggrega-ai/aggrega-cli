@@ -612,7 +612,7 @@ func registryAddRun(cfg registryAddConfig) error {
 func pinAdvertisedTrust(reg *workspaceconfig.RegistryConfig, host string, client *http.Client, out interface{ Write([]byte) (int, error) }) error {
 	adv, ferr := registrytrust.Fetch(context.Background(), client, host)
 	if ferr != nil {
-		if errors.Is(ferr, registrytrust.ErrMalformedTrust) {
+		if errors.Is(ferr, registrytrust.ErrMalformedTrust()) {
 			return fmt.Errorf("aggrega registry add: %w", ferr)
 		}
 		if out != nil {

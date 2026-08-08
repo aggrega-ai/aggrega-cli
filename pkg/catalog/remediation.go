@@ -33,7 +33,7 @@ func remediationFor(err error, registryHost string) string {
 		return rem
 	}
 	switch {
-	case errors.Is(err, ErrUnscopedRecipeReference):
+	case errors.Is(err, ErrUnscopedRecipeReference()):
 		// Reaching a registry pull at all means the local catalog directories were
 		// searched first and none held this reference, so naming the local remedy
 		// here is a statement about what already happened rather than a guess.

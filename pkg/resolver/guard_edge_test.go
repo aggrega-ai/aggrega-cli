@@ -135,7 +135,7 @@ func TestGuardReleaseUsesSocket_SynthesizedDefaultElidesPath(t *testing.T) {
 	agg := aggWithEdge("databases", "main", types.OrderedMap[any]{})
 	rel := normalizedReleaseTopLevelEdge("caches", "primary", om("x", "y")) // undeclared socket
 	errs := guardReleaseUsesSocket(normalized(t, agg), rel, edgeSchemaCatalog(t))
-	if len(errs) != 1 || !errors.Is(errs[0], ErrUnknownUsesSocket) {
+	if len(errs) != 1 || !errors.Is(errs[0], ErrUnknownUsesSocket()) {
 		t.Fatalf("want exactly 1 ErrUnknownUsesSocket; got %v", errs)
 	}
 	if errs[0].Field != `.spec.components["svc"].uses["caches"]` {
@@ -241,7 +241,7 @@ func TestGuardReleaseUsesSocket_UndeclaredSocketHalts(t *testing.T) {
 	agg := aggWithEdge("databases", "main", types.OrderedMap[any]{})
 	rel := releaseWithEdgeInfra("caches", "primary", om("x", "y")) // no such socket
 	errs := guardReleaseUsesSocket(normalized(t, agg), rel, edgeSchemaCatalog(t))
-	if len(errs) != 1 || !errors.Is(errs[0], ErrUnknownUsesSocket) {
+	if len(errs) != 1 || !errors.Is(errs[0], ErrUnknownUsesSocket()) {
 		t.Fatalf("want exactly 1 ErrUnknownUsesSocket; got %v", errs)
 	}
 }

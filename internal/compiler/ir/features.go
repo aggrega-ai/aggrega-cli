@@ -435,7 +435,7 @@ func validateNodeAttachments(
 // joinAttachmentConformance canonicalises the collected attachment-conformance
 // violations by (Entity, Field) — byte-identical across runs of the same input,
 // matching the Step-1 gate's ordering — and joins them into one error. The
-// joined error wraps every violation, so errors.Is(err, ErrSchemaConformance)
+// joined error wraps every violation, so errors.Is(err, ErrSchemaConformance())
 // holds for the build halt.
 func joinAttachmentConformance(errs []*resolver.ResolverError) error {
 	sort.SliceStable(errs, func(i, j int) bool {
@@ -573,7 +573,7 @@ func mergeContribution(
 
 	if existing.Type != "" && featType != "" && existing.Type != featType {
 		return cerrors.Wrap(
-			ErrFeatureTypeMismatch,
+			ErrFeatureTypeMismatch(),
 			cerrors.OpsError,
 			cerrors.SourceLocation{File: nodeID},
 			fmt.Sprintf("node %q attachment %q: existing type %q conflicts with %q", nodeID, instanceName, existing.Type, featType),

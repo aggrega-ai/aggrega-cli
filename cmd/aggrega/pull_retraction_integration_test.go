@@ -316,12 +316,12 @@ func TestIntegration_RetractionExcludesAtSelection(t *testing.T) {
 		f := newRetractionFixture(t, map[string]string{"1.0.0": "retracted", "2.0.0": "retracted"})
 		var diag bytes.Buffer
 		_, err := pullEntity(t, f.screenedPuller(t, &diag), "")
-		if !errors.Is(err, catalog.ErrAllVersionsRetracted) {
+		if !errors.Is(err, catalog.ErrAllVersionsRetracted()) {
 			t.Fatalf("a fully-withdrawn repository must halt with ErrAllVersionsRetracted; got: %v", err)
 		}
 		// The path of least resistance would have surfaced this as a missing entity,
 		// which names the wrong problem and reads as a quiet fallback.
-		if errors.Is(err, oci.ErrFetchNotFound) {
+		if errors.Is(err, oci.ErrFetchNotFound()) {
 			t.Fatalf("a fully-withdrawn repository must NOT report as not-found; got: %v", err)
 		}
 		for _, want := range []string{"1.0.0", "2.0.0", "withdrawn in favour of a successor"} {
@@ -435,10 +435,10 @@ func TestIntegration_RetractionExcludesAtLibrarySelection(t *testing.T) {
 		f := newRetractionFixtureFor(t, schemaLibrarySubject(), map[string]string{"1.0.0": "retracted", "2.0.0": "retracted"})
 		var diag bytes.Buffer
 		_, err := pullLibrary(t, f.screenedPuller(t, &diag), "")
-		if !errors.Is(err, catalog.ErrAllVersionsRetracted) {
+		if !errors.Is(err, catalog.ErrAllVersionsRetracted()) {
 			t.Fatalf("a fully-withdrawn library must halt with ErrAllVersionsRetracted; got: %v", err)
 		}
-		if errors.Is(err, oci.ErrFetchNotFound) {
+		if errors.Is(err, oci.ErrFetchNotFound()) {
 			t.Fatalf("a fully-withdrawn library must NOT report as not-found; got: %v", err)
 		}
 	})

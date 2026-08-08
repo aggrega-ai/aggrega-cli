@@ -17,13 +17,13 @@ import (
 // interpolation) from regressing in CI without a live registry.
 func TestRemediationFor_Unauthorized(t *testing.T) {
 	host := "registry.example.com:5000"
-	got := RemediationFor(fmt.Errorf("pull failed: %w", ErrFetchUnauthorized), host)
+	got := RemediationFor(fmt.Errorf("pull failed: %w", ErrFetchUnauthorized()), host)
 	if !strings.Contains(got, "docker login "+host) {
 		t.Errorf("unauthorized remediation = %q; want it to contain %q", got, "docker login "+host)
 	}
 
 	// Empty host falls back to a placeholder rather than an empty command.
-	if blank := RemediationFor(ErrFetchUnauthorized, ""); !strings.Contains(blank, "docker login <registry>") {
+	if blank := RemediationFor(ErrFetchUnauthorized(), ""); !strings.Contains(blank, "docker login <registry>") {
 		t.Errorf("empty-host remediation = %q; want the <registry> placeholder", blank)
 	}
 

@@ -72,7 +72,7 @@ func LintUnreadParameters(rawAggregate []byte, contract types.OrderedMap[any], a
 			Message: fmt.Sprintf(
 				"parameter %q is declared but no {{ .parameters.%s }} reference in the Aggregate reads it",
 				key, key),
-			Err: ErrUnreadParameter,
+			Err: ErrUnreadParameter(),
 		})
 	}
 	return out

@@ -174,10 +174,10 @@ func TestPipelineTerraformFrp_NativeHCLOpaqueHalts(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected halt for PATCH against a native-HCL opaque body; got nil")
 	}
-	if !errors.Is(err, ErrPipelinePatchTargetNotStructured) {
+	if !errors.Is(err, ErrPipelinePatchTargetNotStructured()) {
 		t.Errorf("expected ErrPipelinePatchTargetNotStructured; got %v", err)
 	}
-	if !errors.Is(err, frp.ErrPipelineTargetOpaque) {
+	if !errors.Is(err, frp.ErrPipelineTargetOpaque()) {
 		t.Errorf("expected the walk's ErrPipelineTargetOpaque to remain in the errors.Is chain; got %v", err)
 	}
 }

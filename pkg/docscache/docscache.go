@@ -46,16 +46,16 @@ import (
 // has been resolved for the requested reference and version. It is the
 // canonical identity itself, and restates no message: the message is
 // registered once, beside the canonical declaration.
-const ErrFetchNotFound = oci.ErrFetchNotFound
+func ErrFetchNotFound() error { return oci.ErrFetchNotFound() }
 
 // ErrNotDocsBundle reports that a resolved artifact does not carry the
 // documentation-bundle media type. A reference that resolves to some other
 // artifact kind (a catalog entity, a .wasm plugin) is rejected rather than
 // cached as a documentation bundle, so a mis-pointed reference fails loudly at
 // resolve time instead of surfacing as an unreadable bundle later.
-const ErrNotDocsBundle cerrors.Code = "docscache/not-docs-bundle"
+func ErrNotDocsBundle() error { return errNotDocsBundle }
 
-var _ = cerrors.Register(ErrNotDocsBundle, cerrors.Meta{
+var errNotDocsBundle = cerrors.Register("docscache/not-docs-bundle", cerrors.Meta{
 	Message: "docscache: artifact is not a documentation bundle",
 })
 
@@ -63,9 +63,9 @@ var _ = cerrors.Register(ErrNotDocsBundle, cerrors.Meta{
 // present, integrity-verified bundle. It is distinct from ErrFetchNotFound (no
 // bundle cached at all): the bundle resolved and cached, but carries no entry
 // at the requested path.
-const ErrPageNotFound cerrors.Code = "docscache/page-not-found"
+func ErrPageNotFound() error { return errPageNotFound }
 
-var _ = cerrors.Register(ErrPageNotFound, cerrors.Meta{
+var errPageNotFound = cerrors.Register("docscache/page-not-found", cerrors.Meta{
 	Message: "docscache: page not found in documentation bundle",
 })
 
@@ -133,7 +133,7 @@ func ResolveAndCache(ctx context.Context, target oras.ReadOnlyTarget, ref, versi
 	}
 	if pr.MediaType != oci.MediaTypeDocs {
 		return "", fmt.Errorf("docscache: %s@%s has media type %q, want %q: %w",
-			ref, version, pr.MediaType, oci.MediaTypeDocs, ErrNotDocsBundle)
+			ref, version, pr.MediaType, oci.MediaTypeDocs, ErrNotDocsBundle())
 	}
 	if verify != nil {
 		if err := verify(ctx, pr.Digest); err != nil {
@@ -170,14 +170,14 @@ func ReadPage(workspaceRoot, cacheDir, ref, version, page string) ([]byte, strin
 	blob, err := os.ReadFile(filepath.Join(slot, "blob"))
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil, "", fmt.Errorf("docscache: no cached bundle for %s@%s: %w", ref, version, ErrFetchNotFound)
+			return nil, "", fmt.Errorf("docscache: no cached bundle for %s@%s: %w", ref, version, ErrFetchNotFound())
 		}
 		return nil, "", fmt.Errorf("docscache: read cached bundle %s@%s: %w", ref, version, err)
 	}
 	manifest, err := os.ReadFile(filepath.Join(slot, "manifest"))
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil, "", fmt.Errorf("docscache: cached bundle %s@%s missing its manifest: %w", ref, version, ErrFetchNotFound)
+			return nil, "", fmt.Errorf("docscache: cached bundle %s@%s missing its manifest: %w", ref, version, ErrFetchNotFound())
 		}
 		return nil, "", fmt.Errorf("docscache: read cached manifest %s@%s: %w", ref, version, err)
 	}
@@ -190,7 +190,7 @@ func ReadPage(workspaceRoot, cacheDir, ref, version, page string) ([]byte, strin
 		return nil, "", fmt.Errorf("docscache: read page %q from %s@%s: %w", page, ref, version, err)
 	}
 	if !ok {
-		return nil, "", fmt.Errorf("docscache: page %q in %s@%s: %w", page, ref, version, ErrPageNotFound)
+		return nil, "", fmt.Errorf("docscache: page %q in %s@%s: %w", page, ref, version, ErrPageNotFound())
 	}
 	return data, mimeForPage(page), nil
 }
@@ -222,7 +222,7 @@ func readTarEntry(bundleBytes []byte, target string) ([]byte, bool, error) {
 		}
 		clean := path.Clean(hdr.Name)
 		if strings.HasPrefix(clean, "..") || strings.HasPrefix(clean, "/") {
-			return nil, false, fmt.Errorf("path traversal entry %q: %w", hdr.Name, oci.ErrFetchIntegrity)
+			return nil, false, fmt.Errorf("path traversal entry %q: %w", hdr.Name, oci.ErrFetchIntegrity())
 		}
 		if hdr.Typeflag != tar.TypeReg || clean != want {
 			continue

@@ -75,7 +75,7 @@ func TestVerdictGateSignatureHaltsAtPull(t *testing.T) {
 		wsCfg := keyedVerdictConfig("keyed.example.com", otherPub, true)
 
 		err := verdictGateVerify(t, store, wsCfg, uri, dg)
-		if !errors.Is(err, signing.ErrSignatureVerificationFailed) {
+		if !errors.Is(err, signing.ErrSignatureVerificationFailed()) {
 			t.Fatalf("a verdict gate signed with the wrong key must halt with ErrSignatureVerificationFailed; got %v", err)
 		}
 	})
@@ -93,7 +93,7 @@ func TestVerdictGateSignatureHaltsAtPull(t *testing.T) {
 		wsCfg := keyedVerdictConfig("req.example.com", []byte("irrelevant"), true)
 
 		err = verdictGateVerify(t, store, wsCfg, uri, dg)
-		if !errors.Is(err, signing.ErrNoSignatureFound) {
+		if !errors.Is(err, signing.ErrNoSignatureFound()) {
 			t.Fatalf("an unsigned verdict gate under a required-signing registry must halt with ErrNoSignatureFound; got %v", err)
 		}
 	})
@@ -143,7 +143,7 @@ func TestVerdictGateHostFunctionStampHaltsAtSharedHome(t *testing.T) {
 		in := base
 		in.Entity = pluginEntity("linter/gate", []string{"aggrega_log"})
 		_, err := verifyFetchedPlugin(context.Background(), in, offline, nil, io.Discard)
-		if !errors.Is(err, wasm.ErrWasmHostFunctionsStampMismatch) {
+		if !errors.Is(err, wasm.ErrWasmHostFunctionsStampMismatch()) {
 			t.Fatalf("a verdict gate whose stamp diverges from its .wasm imports must halt with ErrWasmHostFunctionsStampMismatch; got %v", err)
 		}
 	})

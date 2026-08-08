@@ -113,7 +113,7 @@ func enforceClosureDeprecation(cl closure.Closure, lf *lockfile.Lockfile, buildC
 			// the default from advising to halting.
 			if halt == nil && threshold != "" && deprecation.MeetsThreshold(deprecation.Severity(rec.Severity), threshold) {
 				halt = fmt.Errorf("%w: %s is deprecated (%s): %s%s: %s",
-					deprecation.ErrDeprecatedEntity, e.URI, rec.Severity, rec.Message, asOf, haltThresholdClause(threshold))
+					deprecation.ErrDeprecatedEntity(), e.URI, rec.Severity, rec.Message, asOf, haltThresholdClause(threshold))
 			}
 		}
 	}

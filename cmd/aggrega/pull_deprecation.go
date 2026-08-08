@@ -328,7 +328,7 @@ func verifyMarkerSignature(
 		return nil, fmt.Errorf("list marker signature referrers: %w", err)
 	}
 	if len(sigRefs) == 0 {
-		return nil, signing.ErrNoSignatureFound
+		return nil, signing.ErrNoSignatureFound()
 	}
 
 	markerPolicy := deprecationMarkerPolicy(policy, origSigner)
@@ -351,7 +351,7 @@ func verifyMarkerSignature(
 		lastErr = verr
 	}
 	if lastErr == nil {
-		lastErr = signing.ErrSignatureVerificationFailed
+		lastErr = signing.ErrSignatureVerificationFailed()
 	}
 	return nil, lastErr
 }

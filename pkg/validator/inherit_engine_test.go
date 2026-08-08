@@ -103,7 +103,7 @@ func TestResolveInheritance_CycleDetection(t *testing.T) {
 	if len(result.Errors) == 0 {
 		t.Fatal("expected cycle detection error")
 	}
-	if !errors.Is(result.Errors[0], ErrCyclicExtension) {
+	if !errors.Is(result.Errors[0], ErrCyclicExtension()) {
 		t.Errorf("expected ErrCyclicExtension, got %v", result.Errors[0])
 	}
 	if !strings.Contains(result.Errors[0].Error(), " — ") {
@@ -126,7 +126,7 @@ func TestResolveInheritance_ParentNotFound(t *testing.T) {
 	if len(result.Errors) == 0 {
 		t.Fatal("expected error for missing parent")
 	}
-	if !errors.Is(result.Errors[0], ErrInheritanceMerge) {
+	if !errors.Is(result.Errors[0], ErrInheritanceMerge()) {
 		t.Errorf("expected ErrInheritanceMerge, got %v", result.Errors[0])
 	}
 }

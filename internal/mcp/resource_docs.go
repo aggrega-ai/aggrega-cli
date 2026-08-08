@@ -74,7 +74,7 @@ func (s *server) readDocsResource(uri string) (any, *rpcError) {
 	ref, version := s.docsBundleCoords(tw)
 	data, mimeType, rerr := docscache.ReadPage(tw.root, tw.cacheDir, ref, version, page)
 	if rerr != nil {
-		if errors.Is(rerr, docscache.ErrFetchNotFound) || errors.Is(rerr, docscache.ErrPageNotFound) {
+		if errors.Is(rerr, docscache.ErrFetchNotFound()) || errors.Is(rerr, docscache.ErrPageNotFound()) {
 			return nil, resourceNotFound(uri)
 		}
 		return nil, &rpcError{Code: codeInternalError, Message: "read documentation resource: " + rerr.Error()}

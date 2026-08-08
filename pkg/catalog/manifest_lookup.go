@@ -27,9 +27,9 @@ import (
 // Manifest entry IS the Recipe URI; the Recipe's spec.implements is
 // a consistency anchor, not a dispatch mechanism. Mismatches halt at
 // workspace load.
-const ErrManifestImplementsMismatch cerrors.Code = "catalog/manifest-implements-mismatch"
+func ErrManifestImplementsMismatch() error { return errManifestImplementsMismatch }
 
-var _ = cerrors.Register(ErrManifestImplementsMismatch, cerrors.Meta{
+var errManifestImplementsMismatch = cerrors.Register("catalog/manifest-implements-mismatch", cerrors.Meta{
 	Message: "manifest mapping entry's recipe spec.implements does not match the mapped component-type / feature-type key",
 })
 
@@ -37,9 +37,9 @@ var _ = cerrors.Register(ErrManifestImplementsMismatch, cerrors.Meta{
 // than one version-distinct Manifest mapping key under version-tolerant
 // matching — the lookup cannot pick one without guessing, so it halts loudly
 // rather than silently resolving the first.
-const ErrAmbiguousTypeMapping cerrors.Code = "catalog/ambiguous-type-mapping"
+func ErrAmbiguousTypeMapping() error { return errAmbiguousTypeMapping }
 
-var _ = cerrors.Register(ErrAmbiguousTypeMapping, cerrors.Meta{
+var errAmbiguousTypeMapping = cerrors.Register("catalog/ambiguous-type-mapping", cerrors.Meta{
 	Message: "manifest maps multiple version-distinct keys to the same base type; the type-to-recipe lookup is ambiguous",
 })
 
@@ -50,9 +50,9 @@ var _ = cerrors.Register(ErrAmbiguousTypeMapping, cerrors.Meta{
 // FeatureRecipe, Plugin, SchemaLibrary, MappingLibrary, Aggregate): within one
 // directory a duplicate identity halts; ACROSS directories the same identity is
 // a first-win shadow (the earlier-listed directory wins), never an error.
-const ErrDuplicateEntityIdentity cerrors.Code = "catalog/duplicate-entity-identity"
+func ErrDuplicateEntityIdentity() error { return errDuplicateEntityIdentity }
 
-var _ = cerrors.Register(ErrDuplicateEntityIdentity, cerrors.Meta{
+var errDuplicateEntityIdentity = cerrors.Register("catalog/duplicate-entity-identity", cerrors.Meta{
 	Message: "duplicate entity identity within a single catalog directory",
 })
 
@@ -61,7 +61,7 @@ var _ = cerrors.Register(ErrDuplicateEntityIdentity, cerrors.Meta{
 // recipe collision via errors.Is keep working. The Recipe / FeatureRecipe load
 // cases wrap it with the provider+name+version context; the wrapped error still
 // satisfies errors.Is against both this name and ErrDuplicateEntityIdentity.
-const ErrDuplicateRecipeIdentity = ErrDuplicateEntityIdentity
+func ErrDuplicateRecipeIdentity() error { return ErrDuplicateEntityIdentity() }
 
 // ErrProviderVersionUnsatisfiable fires when a Recipe binds a version-pinned
 // provider — "helm:1.0.0" or "helm:^1.0.0" — but no provider-rendering Plugin
@@ -76,9 +76,9 @@ const ErrDuplicateRecipeIdentity = ErrDuplicateEntityIdentity
 // version constraint — a Component, Feature, Aggregate, Plugin, Recipe or
 // FeatureRecipe named at a version the catalog does not hold — rather than the
 // selection of a render engine for a capability.
-const ErrProviderVersionUnsatisfiable cerrors.Code = "catalog/provider-version-unsatisfiable"
+func ErrProviderVersionUnsatisfiable() error { return errProviderVersionUnsatisfiable }
 
-var _ = cerrors.Register(ErrProviderVersionUnsatisfiable, cerrors.Meta{
+var errProviderVersionUnsatisfiable = cerrors.Register("catalog/provider-version-unsatisfiable", cerrors.Meta{
 	Message: "no provider-rendering plugin version satisfies the recipe's provider version pin",
 })
 
@@ -92,9 +92,9 @@ var _ = cerrors.Register(ErrProviderVersionUnsatisfiable, cerrors.Meta{
 // plugins.providers surface that selects one. It is a point-of-use halt: it fires
 // at pull (resolution) and at build (render-engine selection), not at catalog
 // load, so an ambiguity outside a Release's reach never blocks an unrelated build.
-const ErrAmbiguousProviderPlugin cerrors.Code = "catalog/ambiguous-provider-plugin"
+func ErrAmbiguousProviderPlugin() error { return errAmbiguousProviderPlugin }
 
-var _ = cerrors.Register(ErrAmbiguousProviderPlugin, cerrors.Meta{
+var errAmbiguousProviderPlugin = cerrors.Register("catalog/ambiguous-provider-plugin", cerrors.Meta{
 	Message: "capability is served by more than one provider plugin; add a plugins.providers entry to select one",
 })
 
@@ -104,9 +104,9 @@ var _ = cerrors.Register(ErrAmbiguousProviderPlugin, cerrors.Meta{
 // does not (or no longer) serves the target. The explicit selection is a request
 // the catalog cannot honor, so it halts loudly rather than silently falling back
 // to another engine.
-const ErrProviderBindingUnsatisfied cerrors.Code = "catalog/provider-binding-unsatisfied"
+func ErrProviderBindingUnsatisfied() error { return errProviderBindingUnsatisfied }
 
-var _ = cerrors.Register(ErrProviderBindingUnsatisfied, cerrors.Meta{
+var errProviderBindingUnsatisfied = cerrors.Register("catalog/provider-binding-unsatisfied", cerrors.Meta{
 	Message: "plugins.providers entry names a plugin no provider-rendering plugin serving the capability matches",
 })
 
@@ -123,9 +123,9 @@ var _ = cerrors.Register(ErrProviderBindingUnsatisfied, cerrors.Meta{
 // value whose shape a reference cannot express is
 // ErrMalformedRecipeReference instead, so the absent-from-the-catalog claim is
 // only made about a reference that could have resolved.
-const ErrNoRecipeResolved cerrors.Code = "catalog/no-recipe-resolved"
+func ErrNoRecipeResolved() error { return errNoRecipeResolved }
 
-var _ = cerrors.Register(ErrNoRecipeResolved, cerrors.Meta{
+var errNoRecipeResolved = cerrors.Register("catalog/no-recipe-resolved", cerrors.Meta{
 	Message: "no recipe resolved for component/feature instance: add an explicit Manifest mapping for its type",
 })
 
@@ -139,9 +139,9 @@ var _ = cerrors.Register(ErrNoRecipeResolved, cerrors.Meta{
 // for the type — is a step the author of a mis-shaped mapping has already taken.
 // The accepted shape itself has a single home beside the resolution ladder that
 // enforces it; see recipeReferenceMaxSegments.
-const ErrMalformedRecipeReference cerrors.Code = "catalog/malformed-recipe-reference"
+func ErrMalformedRecipeReference() error { return errMalformedRecipeReference }
 
-var _ = cerrors.Register(ErrMalformedRecipeReference, cerrors.Meta{
+var errMalformedRecipeReference = cerrors.Register("catalog/malformed-recipe-reference", cerrors.Meta{
 	Message: "malformed recipe reference in a Manifest mapping value",
 })
 
@@ -223,7 +223,7 @@ func versionTolerantTypeGet(typeMap types.OrderedMap[string], lookupType string)
 	case 1:
 		return matchURI, true, nil
 	default:
-		return "", false, fmt.Errorf("%w: type %q matches version-distinct keys %v — pin the authored type's version or remove the duplicate mapping keys", ErrAmbiguousTypeMapping, lookupType, matchedKeys)
+		return "", false, fmt.Errorf("%w: type %q matches version-distinct keys %v — pin the authored type's version or remove the duplicate mapping keys", ErrAmbiguousTypeMapping(), lookupType, matchedKeys)
 	}
 }
 
@@ -518,10 +518,10 @@ type capabilityDiag struct {
 // byte-identical now that the shared select is generalized across sockets.
 var providerCapabilityDiag = capabilityDiag{
 	noun:                 "provider-rendering plugin",
-	bindingUnsatisfied:   ErrProviderBindingUnsatisfied,
-	versionUnsatisfiable: ErrProviderVersionUnsatisfiable,
+	bindingUnsatisfied:   ErrProviderBindingUnsatisfied(),
+	versionUnsatisfiable: ErrProviderVersionUnsatisfiable(),
 	ambiguous: func(capability string, candidates []string) error {
-		return fmt.Errorf("%w: capability %q is served by more than one provider plugin (%s); add a plugins.providers entry for %q selecting one", ErrAmbiguousProviderPlugin, capability, strings.Join(candidates, ", "), capability)
+		return fmt.Errorf("%w: capability %q is served by more than one provider plugin (%s); add a plugins.providers entry for %q selecting one", ErrAmbiguousProviderPlugin(), capability, strings.Join(candidates, ", "), capability)
 	},
 }
 
@@ -860,16 +860,16 @@ func (c *Catalog) resolveComponentRecipeForVerify(manifest *types.Manifest, inst
 			// itself is single-sourced in the constant pair above, which is what keeps
 			// them from disagreeing.
 			if n, tooMany := recipeReferenceSegments(uri); tooMany {
-				return fmt.Errorf("%w: component %q (type %q): the Manifest maps it to %q, which carries %d slash-separated segments; a recipe reference accepts %s; correct the mapping value in the Manifest", ErrMalformedRecipeReference, instanceName, componentType, uri, n, acceptedRecipeReferenceShapes)
+				return fmt.Errorf("%w: component %q (type %q): the Manifest maps it to %q, which carries %d slash-separated segments; a recipe reference accepts %s; correct the mapping value in the Manifest", ErrMalformedRecipeReference(), instanceName, componentType, uri, n, acceptedRecipeReferenceShapes)
 			}
-			return fmt.Errorf("%w: component %q (type %q): the Manifest maps it to recipe %q, which is not in the catalog", ErrNoRecipeResolved, instanceName, componentType, uri)
+			return fmt.Errorf("%w: component %q (type %q): the Manifest maps it to recipe %q, which is not in the catalog", ErrNoRecipeResolved(), instanceName, componentType, uri)
 		}
 		return nil
 	}
 	if candidates := recipesImplementing(c.Recipes, componentType); len(candidates) > 0 {
-		return fmt.Errorf("%w: component %q (type %q); recipes implementing it: %v; pin one in the Manifest", ErrNoRecipeResolved, instanceName, componentType, candidates)
+		return fmt.Errorf("%w: component %q (type %q); recipes implementing it: %v; pin one in the Manifest", ErrNoRecipeResolved(), instanceName, componentType, candidates)
 	}
-	return fmt.Errorf("%w: component %q (type %q); no recipe implements this type", ErrNoRecipeResolved, instanceName, componentType)
+	return fmt.Errorf("%w: component %q (type %q); no recipe implements this type", ErrNoRecipeResolved(), instanceName, componentType)
 }
 
 // resolveFeatureRecipeForVerify is the FeatureRecipe analogue of
@@ -885,16 +885,16 @@ func (c *Catalog) resolveFeatureRecipeForVerify(manifest *types.Manifest, instan
 			// records: this pass enumerates every fault where the load-time check
 			// halts on the first, and the grammar is single-sourced either way.
 			if n, tooMany := recipeReferenceSegments(uri); tooMany {
-				return fmt.Errorf("%w: feature %q (type %q): the Manifest maps it to %q, which carries %d slash-separated segments; a feature recipe reference accepts %s; correct the mapping value in the Manifest", ErrMalformedRecipeReference, instanceName, featureType, uri, n, acceptedRecipeReferenceShapes)
+				return fmt.Errorf("%w: feature %q (type %q): the Manifest maps it to %q, which carries %d slash-separated segments; a feature recipe reference accepts %s; correct the mapping value in the Manifest", ErrMalformedRecipeReference(), instanceName, featureType, uri, n, acceptedRecipeReferenceShapes)
 			}
-			return fmt.Errorf("%w: feature %q (type %q): the Manifest maps it to feature recipe %q, which is not in the catalog", ErrNoRecipeResolved, instanceName, featureType, uri)
+			return fmt.Errorf("%w: feature %q (type %q): the Manifest maps it to feature recipe %q, which is not in the catalog", ErrNoRecipeResolved(), instanceName, featureType, uri)
 		}
 		return nil
 	}
 	if candidates := featureRecipesImplementing(c.FeatureRecipes, featureType); len(candidates) > 0 {
-		return fmt.Errorf("%w: feature %q (type %q); feature recipes implementing it: %v; pin one in the Manifest", ErrNoRecipeResolved, instanceName, featureType, candidates)
+		return fmt.Errorf("%w: feature %q (type %q); feature recipes implementing it: %v; pin one in the Manifest", ErrNoRecipeResolved(), instanceName, featureType, candidates)
 	}
-	return fmt.Errorf("%w: feature %q (type %q); no feature recipe implements this type", ErrNoRecipeResolved, instanceName, featureType)
+	return fmt.Errorf("%w: feature %q (type %q); no feature recipe implements this type", ErrNoRecipeResolved(), instanceName, featureType)
 }
 
 // ResolutionFindings is the shared resolution-completeness producer: it walks
@@ -1009,7 +1009,7 @@ func (c *Catalog) VerifyManifestImplementsConsistency(manifest *types.Manifest, 
 				continue
 			}
 			if !manifestMappingSatisfiedByAncestry(r.Spec.Implements, bases) {
-				errs = append(errs, cerrors.Wrap(ErrManifestImplementsMismatch, cerrors.CatalogError, cerrors.SourceLocation{File: manifestPath}, fmt.Sprintf("manifest mapping %q -> %q: recipe spec.implements is %q (expected %q, or a type %q extends)", compType, recipeURI, r.Spec.Implements, compType, compType)))
+				errs = append(errs, cerrors.Wrap(ErrManifestImplementsMismatch(), cerrors.CatalogError, cerrors.SourceLocation{File: manifestPath}, fmt.Sprintf("manifest mapping %q -> %q: recipe spec.implements is %q (expected %q, or a type %q extends)", compType, recipeURI, r.Spec.Implements, compType, compType)))
 			}
 		}
 	}
@@ -1021,7 +1021,7 @@ func (c *Catalog) VerifyManifestImplementsConsistency(manifest *types.Manifest, 
 				continue // missing featurerecipe → resolution path's concern
 			}
 			if !manifestMappingConsistent(fr.Spec.Implements, featType) {
-				errs = append(errs, cerrors.Wrap(ErrManifestImplementsMismatch, cerrors.CatalogError, cerrors.SourceLocation{File: manifestPath}, fmt.Sprintf("manifest feature mapping %q -> %q: featurerecipe spec.implements is %q (expected %q)", featType, frURI, fr.Spec.Implements, featType)))
+				errs = append(errs, cerrors.Wrap(ErrManifestImplementsMismatch(), cerrors.CatalogError, cerrors.SourceLocation{File: manifestPath}, fmt.Sprintf("manifest feature mapping %q -> %q: featurerecipe spec.implements is %q (expected %q)", featType, frURI, fr.Spec.Implements, featType)))
 			}
 		}
 	}

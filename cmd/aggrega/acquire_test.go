@@ -93,7 +93,7 @@ func TestNewExternalInputsServiceFrozenRefusesUnpinned(t *testing.T) {
 	svc := newExternalInputsService(t.TempDir(), &lockfile.Lockfile{}, true, workspaceconfig.Config{})
 
 	_, err := svc.Fetch(context.Background(), "https://example.com/never-pinned", "unit-test")
-	if !errors.Is(err, externalinputs.ErrAcquisitionDisabled) {
+	if !errors.Is(err, externalinputs.ErrAcquisitionDisabled()) {
 		t.Fatalf("frozen closure must refuse an unpinned URL with ErrAcquisitionDisabled; got %v", err)
 	}
 }

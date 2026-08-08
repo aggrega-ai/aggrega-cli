@@ -567,7 +567,7 @@ func (l *LazyLookup) VerifyPinnedIntegrity() error {
 	for _, uri := range uris {
 		pin := l.pins[uri]
 		_, err := tier2ReadVerified(l.workspaceRoot, l.cacheDir, versionedSlotURI(uri, pin.ResolvedVersion), pin.Digest, pin.ManifestDigest)
-		if err != nil && (errors.Is(err, oci.ErrFetchIntegrity) || errors.Is(err, oci.ErrCachedManifestIntegrity)) {
+		if err != nil && (errors.Is(err, oci.ErrFetchIntegrity()) || errors.Is(err, oci.ErrCachedManifestIntegrity())) {
 			return fmt.Errorf("pinned entity %s: %w", uri, err)
 		}
 	}
@@ -678,7 +678,7 @@ func (l *LazyLookup) tier2Verified(uri string) ([]byte, tier2Outcome) {
 	switch {
 	case err == nil:
 		return bytes, tier2Use
-	case errors.Is(err, oci.ErrFetchIntegrity), errors.Is(err, oci.ErrCachedManifestIntegrity):
+	case errors.Is(err, oci.ErrFetchIntegrity()), errors.Is(err, oci.ErrCachedManifestIntegrity()):
 		return nil, tier2Skip
 	default: // oci.ErrFetchNotFound (slot absent / incomplete) or an unreadable slot
 		return nil, tier2Fetch
@@ -1518,7 +1518,7 @@ func (l *LazyLookup) PluginFromCacheByURI(uri string) (types.Plugin, string, boo
 	}
 	entityBytes, err := oci.ReadCached(l.workspaceRoot, l.cacheDir, uri, version)
 	if err != nil {
-		if errors.Is(err, oci.ErrFetchNotFound) {
+		if errors.Is(err, oci.ErrFetchNotFound()) {
 			return types.Plugin{}, "", false, nil
 		}
 		return types.Plugin{}, "", false, fmt.Errorf("catalog: read cached plugin entity %s: %w", uri, err)
@@ -1528,7 +1528,7 @@ func (l *LazyLookup) PluginFromCacheByURI(uri string) (types.Plugin, string, boo
 		// A content blob with no persisted manifest is an incomplete slot; treat it
 		// as a miss so the caller surfaces the pull-first remediation rather than
 		// trusting a half-populated slot.
-		if errors.Is(merr, oci.ErrFetchNotFound) {
+		if errors.Is(merr, oci.ErrFetchNotFound()) {
 			return types.Plugin{}, "", false, nil
 		}
 		return types.Plugin{}, "", false, fmt.Errorf("catalog: read cached plugin manifest %s: %w", uri, merr)

@@ -12,9 +12,9 @@ import cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 // stack). The wrapped error carries the failing type URI and the
 // accumulated dotted prefix of the offending chain so callers can point
 // the author at the specific import that caused the failure.
-const ErrSubAggregateLoad cerrors.Code = "compiler-topology/sub-aggregate-load"
+func ErrSubAggregateLoad() error { return errSubAggregateLoad }
 
-var _ = cerrors.Register(ErrSubAggregateLoad, cerrors.Meta{
+var errSubAggregateLoad = cerrors.Register("compiler-topology/sub-aggregate-load", cerrors.Meta{
 	Message: "sub-aggregate load failed",
 })
 
@@ -24,9 +24,9 @@ var _ = cerrors.Register(ErrSubAggregateLoad, cerrors.Meta{
 // cycle that would otherwise recurse to stack-overflow. The wrapped
 // error carries the depth reached and the prefix path of the offending
 // chain.
-const ErrMaxDepth cerrors.Code = "compiler-topology/max-depth"
+func ErrMaxDepth() error { return errMaxDepth }
 
-var _ = cerrors.Register(ErrMaxDepth, cerrors.Meta{
+var errMaxDepth = cerrors.Register("compiler-topology/max-depth", cerrors.Meta{
 	Message: "max sub-aggregate nesting depth exceeded",
 })
 
@@ -39,9 +39,9 @@ var _ = cerrors.Register(ErrMaxDepth, cerrors.Meta{
 // Release entry that names the same target, or omits the target, is a
 // configure and is permitted. The wrapped error names the edge and both the
 // declared and the Release-supplied target.
-const ErrReleaseEdgeRetarget cerrors.Code = "compiler-topology/release-edge-retarget"
+func ErrReleaseEdgeRetarget() error { return errReleaseEdgeRetarget }
 
-var _ = cerrors.Register(ErrReleaseEdgeRetarget, cerrors.Meta{
+var errReleaseEdgeRetarget = cerrors.Register("compiler-topology/release-edge-retarget", cerrors.Meta{
 	Message: "release edge retargets a developer-declared edge",
 })
 
@@ -55,9 +55,9 @@ var _ = cerrors.Register(ErrReleaseEdgeRetarget, cerrors.Meta{
 // reference. The check is the structural sibling of the uses-socket
 // allowlist (the socket must be declared and the target must resolve before
 // an edge is type-checked at Step 4).
-const ErrDanglingUsesTarget cerrors.Code = "compiler-topology/dangling-uses-target"
+func ErrDanglingUsesTarget() error { return errDanglingUsesTarget }
 
-var _ = cerrors.Register(ErrDanglingUsesTarget, cerrors.Meta{
+var errDanglingUsesTarget = cerrors.Register("compiler-topology/dangling-uses-target", cerrors.Meta{
 	Message: "uses edge target does not exist",
 })
 
@@ -71,9 +71,9 @@ var _ = cerrors.Register(ErrDanglingUsesTarget, cerrors.Meta{
 // ID, the dotted prefix path that produced it, and the existing
 // entry's source aggregate so the diagnostic points the author at the
 // precise authoring position.
-const ErrSubAggregateNameCollision cerrors.Code = "compiler-topology/sub-aggregate-name-collision"
+func ErrSubAggregateNameCollision() error { return errSubAggregateNameCollision }
 
-var _ = cerrors.Register(ErrSubAggregateNameCollision, cerrors.Meta{
+var errSubAggregateNameCollision = cerrors.Register("compiler-topology/sub-aggregate-name-collision", cerrors.Meta{
 	Message: "flattened node ID collision: rename one of the colliding instances so their flattened IDs differ",
 })
 
@@ -86,9 +86,9 @@ var _ = cerrors.Register(ErrSubAggregateNameCollision, cerrors.Meta{
 // internal-invariant breach, not an authoring error — a Loud Guardrail
 // (Invariant 4) backstopping the NormalizedAggregate type rather than
 // silently flattening a half-normalized graph.
-const ErrUnnormalizedAggregate cerrors.Code = "compiler-topology/unnormalized-aggregate"
+func ErrUnnormalizedAggregate() error { return errUnnormalizedAggregate }
 
-var _ = cerrors.Register(ErrUnnormalizedAggregate, cerrors.Meta{
+var errUnnormalizedAggregate = cerrors.Register("compiler-topology/unnormalized-aggregate", cerrors.Meta{
 	Message: "aggregate reached topology un-normalized (non-empty root components alongside a synthesized default subsystem)",
 })
 
@@ -102,9 +102,9 @@ var _ = cerrors.Register(ErrUnnormalizedAggregate, cerrors.Meta{
 // (Invariant 4) rather than a silent default. The wrapped error names the
 // node whose toggle failed and the offending resolved value so the author
 // can correct the toggle or the parameter driving it.
-const ErrInvalidActive cerrors.Code = "compiler-topology/invalid-active"
+func ErrInvalidActive() error { return errInvalidActive }
 
-var _ = cerrors.Register(ErrInvalidActive, cerrors.Meta{
+var errInvalidActive = cerrors.Register("compiler-topology/invalid-active", cerrors.Meta{
 	Message: "active toggle did not resolve to a boolean",
 })
 
@@ -119,9 +119,9 @@ var _ = cerrors.Register(ErrInvalidActive, cerrors.Meta{
 // (Invariant 4). The wrapped error names the surviving consumer, the pruned
 // target, and that the target was pruned because its `active` resolved to
 // false so the author can either keep the target present or drop the edge.
-const ErrUsesPrunedComponent cerrors.Code = "compiler-topology/uses-pruned-component"
+func ErrUsesPrunedComponent() error { return errUsesPrunedComponent }
 
-var _ = cerrors.Register(ErrUsesPrunedComponent, cerrors.Meta{
+var errUsesPrunedComponent = cerrors.Register("compiler-topology/uses-pruned-component", cerrors.Meta{
 	Message: "uses edge target was pruned because its active toggle resolved to false",
 })
 
@@ -134,9 +134,9 @@ var _ = cerrors.Register(ErrUsesPrunedComponent, cerrors.Meta{
 // backstop: rather than following the chain forever, the walk halts (Invariant
 // 4). The wrapped error names the alias chain it walked so the author can see
 // where the references close the loop.
-const ErrReexportCycle cerrors.Code = "compiler-topology/reexport-cycle"
+func ErrReexportCycle() error { return errReexportCycle }
 
-var _ = cerrors.Register(ErrReexportCycle, cerrors.Meta{
+var errReexportCycle = cerrors.Register("compiler-topology/reexport-cycle", cerrors.Meta{
 	Message: "re-exported component alias forms a cycle",
 })
 
@@ -150,8 +150,8 @@ var _ = cerrors.Register(ErrReexportCycle, cerrors.Meta{
 // Guardrail (Invariant 4): the build halts rather than silently absorbing a
 // mutation the plugin was not authorized to make. The wrapped error names
 // the offending patch and the specific confinement rule it broke.
-const ErrMutatorPatchRejected cerrors.Code = "compiler-topology/mutator-patch-rejected"
+func ErrMutatorPatchRejected() error { return errMutatorPatchRejected }
 
-var _ = cerrors.Register(ErrMutatorPatchRejected, cerrors.Meta{
+var errMutatorPatchRejected = cerrors.Register("compiler-topology/mutator-patch-rejected", cerrors.Meta{
 	Message: "mutator patch rejected",
 })

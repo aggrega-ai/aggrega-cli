@@ -702,5 +702,5 @@ func templateUnknownRootErr(category cerrors.Category, name string, v *templateS
 		msg = fmt.Sprintf("template %q references %q — %s defines %s",
 			name, v.Ref.Path, root, templateRootsPhrase(root, v.Admitted))
 	}
-	return cerrors.Wrap(ErrTemplateUnknownRoot, category, cerrors.SourceLocation{File: name}, msg)
+	return cerrors.Wrap(ErrTemplateUnknownRoot(), category, cerrors.SourceLocation{File: name}, msg)
 }

@@ -15,9 +15,9 @@ import (
 // value does not match the document value at its path. Callers that
 // treat a failed test as a controlled outcome rather than a malformed
 // patch match on it with errors.Is.
-const ErrTestFailed cerrors.Code = "compiler-jsonpatch/test-failed"
+func ErrTestFailed() error { return errTestFailed }
 
-var _ = cerrors.Register(ErrTestFailed, cerrors.Meta{
+var errTestFailed = cerrors.Register("compiler-jsonpatch/test-failed", cerrors.Meta{
 	Message: "jsonpatch: test operation failed",
 })
 
@@ -269,10 +269,10 @@ func doReplace(doc *types.OrderedMap[any], tokens []string, value any) error {
 func doTest(doc *types.OrderedMap[any], tokens []string, value any) error {
 	got, ok := getAt(doc, tokens)
 	if !ok {
-		return fmt.Errorf("%w: no value at path", ErrTestFailed)
+		return fmt.Errorf("%w: no value at path", ErrTestFailed())
 	}
 	if !deepEqual(got, value) {
-		return ErrTestFailed
+		return ErrTestFailed()
 	}
 	return nil
 }

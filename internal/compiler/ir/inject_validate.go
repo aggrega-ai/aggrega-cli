@@ -26,9 +26,9 @@ import (
 // Per the Aggrega architectural invariant set (Invariant 4): policy
 // violations produce Loud Guardrails — the build halts with a specific
 // error, never silent mutations.
-const ErrInjectEntryAmbiguous cerrors.Code = "compiler-ir/inject-entry-ambiguous"
+func ErrInjectEntryAmbiguous() error { return errInjectEntryAmbiguous }
 
-var _ = cerrors.Register(ErrInjectEntryAmbiguous, cerrors.Meta{
+var errInjectEntryAmbiguous = cerrors.Register("compiler-ir/inject-entry-ambiguous", cerrors.Meta{
 	Message: "inject entry carries both `value:` and `from:`; schema requires exactly one",
 })
 
@@ -90,7 +90,7 @@ func ValidateInjectBlock(b *types.InjectBlock, pathPrefix string) error {
 	if len(violations) == 0 {
 		return nil
 	}
-	return fmt.Errorf("%w: %s", ErrInjectEntryAmbiguous, strings.Join(violations, "; "))
+	return fmt.Errorf("%w: %s", ErrInjectEntryAmbiguous(), strings.Join(violations, "; "))
 }
 
 // ValidateInjectBlocks walks every InjectBlock surface in the resolved

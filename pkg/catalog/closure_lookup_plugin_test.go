@@ -112,7 +112,7 @@ func TestComputeClosureLocalPluginSocketDoesNotHalt(t *testing.T) {
 
 	cl, err := closure.ComputeClosure(rel, nil, types.NormalizedAggregate{}, cfg, lookup)
 	if err != nil {
-		if errors.Is(err, closure.ErrUnresolvableURI) {
+		if errors.Is(err, closure.ErrUnresolvableURI()) {
 			t.Fatalf("ComputeClosure halted on a LOCAL Plugin socket (the closed gap): %v", err)
 		}
 		t.Fatalf("ComputeClosure: %v", err)

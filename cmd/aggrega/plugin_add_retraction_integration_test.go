@@ -306,7 +306,7 @@ func TestIntegration_PluginAddExcludesWithdrawnAtSelection(t *testing.T) {
 		// send the reader looking for a typo.
 		f := newPluginRetractionFixture(t, guests, map[string]string{"1.0.0": "retracted", "2.0.0": "retracted"})
 		_, out, err := f.addGovernancePlugin(t)
-		if !errors.Is(err, catalog.ErrAllVersionsRetracted) {
+		if !errors.Is(err, catalog.ErrAllVersionsRetracted()) {
 			t.Fatalf("a fully-withdrawn plugin must halt with ErrAllVersionsRetracted; got: %v\n%s", err, out)
 		}
 		t.Logf("rendered halt: %v", err)
@@ -405,7 +405,7 @@ func TestIntegration_PluginAddExcludesWithdrawnWithNoLocalIndex(t *testing.T) {
 	t.Run("every_version_withdrawn_halts_loudly_and_not_as_not_found", func(t *testing.T) {
 		f := newPluginRetractionFixture(t, guests, map[string]string{"1.0.0": "retracted", "2.0.0": "retracted"}, withoutLocalIndex)
 		_, out, err := f.addGovernancePlugin(t)
-		if !errors.Is(err, catalog.ErrAllVersionsRetracted) {
+		if !errors.Is(err, catalog.ErrAllVersionsRetracted()) {
 			t.Fatalf("a fully-withdrawn plugin must halt with ErrAllVersionsRetracted; got: %v\n%s", err, out)
 		}
 		t.Logf("rendered halt: %v", err)

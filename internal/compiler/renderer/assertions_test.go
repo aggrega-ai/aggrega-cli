@@ -29,7 +29,7 @@ func TestEvaluateAssertion_FailsWithCustomMessage(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error; got nil")
 	}
-	if !errors.Is(err, ErrAssertionFailed) {
+	if !errors.Is(err, ErrAssertionFailed()) {
 		t.Errorf("expected ErrAssertionFailed in chain; got %v", err)
 	}
 	if !strings.Contains(err.Error(), "replicas must be positive") {
@@ -38,7 +38,7 @@ func TestEvaluateAssertion_FailsWithCustomMessage(t *testing.T) {
 }
 
 // TestEvaluateAssertion_PreservesErrAssertionFailedChain pins the
-// errors.Is contract — callers using errors.Is(err, ErrAssertionFailed)
+// errors.Is contract — callers using errors.Is(err, ErrAssertionFailed())
 // at wire-in sites match regardless of intermediate wrapping.
 func TestEvaluateAssertion_PreservesErrAssertionFailedChain(t *testing.T) {
 	t.Parallel()
@@ -47,7 +47,7 @@ func TestEvaluateAssertion_PreservesErrAssertionFailedChain(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error; got nil")
 	}
-	if !errors.Is(err, ErrAssertionFailed) {
+	if !errors.Is(err, ErrAssertionFailed()) {
 		t.Errorf("errors.Is(err, ErrAssertionFailed) = false; want true")
 	}
 }
@@ -63,7 +63,7 @@ func TestEvaluateAssertion_MissingKeyProducesError(t *testing.T) {
 		t.Fatal("expected missing-key error; got nil")
 	}
 	// missing-key errors are not ErrAssertionFailed — they're template-engine errors.
-	if errors.Is(err, ErrAssertionFailed) {
+	if errors.Is(err, ErrAssertionFailed()) {
 		t.Errorf("did not expect ErrAssertionFailed for missing-key; got %v", err)
 	}
 	if !strings.Contains(err.Error(), "typo") {
@@ -214,7 +214,7 @@ func TestEvaluateAssertion_ShippedCatalogBodiesEvaluate(t *testing.T) {
 			}
 			// Prerequisite denied: the assertion halts with its authored message.
 			err := EvaluateAssertion(name, body, AssertionContext{Infra: map[string]any{"control_plane_present": false}})
-			if !errors.Is(err, ErrAssertionFailed) {
+			if !errors.Is(err, ErrAssertionFailed()) {
 				t.Errorf("denied prerequisite must report ErrAssertionFailed: %v", err)
 			}
 			// Key absent entirely: infra is an open map, so the halt comes from the
@@ -262,7 +262,7 @@ func TestEvaluateAssertion_NilPhaseReferencesHalt(t *testing.T) {
 	// A reference to a name the context does not define at all is refused before
 	// execution, which is a different class from an absent key under a defined one.
 	err := EvaluateAssertion("nilphase", `{{ if .NoSuchRoot }}{{ end }}`, step4b)
-	if !errors.Is(err, ErrTemplateUnknownRoot) {
+	if !errors.Is(err, ErrTemplateUnknownRoot()) {
 		t.Errorf("an undefined reference must report ErrTemplateUnknownRoot: %v", err)
 	}
 	t.Logf("undefined reference   -> %v", err)

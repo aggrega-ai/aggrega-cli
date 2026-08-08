@@ -51,7 +51,7 @@ func TestSignPushDigestTerminalNotRetriedStillRefused(t *testing.T) {
 	shrinkRetryDelay(t)
 	fake := &signingtest.FakeSigner{Err: errors.New("permanent signing failure")}
 	_, _, err := signPushDigestWith(context.Background(), fake, "example.com/component/core/api-server", "1.0.0", "sha256:abc")
-	if !errors.Is(err, signing.ErrUnsignedPushRefused) {
+	if !errors.Is(err, signing.ErrUnsignedPushRefused()) {
 		t.Fatalf("error = %v, want wrapped ErrUnsignedPushRefused", err)
 	}
 	if len(fake.Signed) != 1 {

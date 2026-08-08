@@ -114,7 +114,7 @@ func TestPullNoContentLayerHaltsLoudly(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected an error for a manifest with no content-type layer; got nil")
 	}
-	if !errors.Is(err, oci.ErrNoContentLayer) {
+	if !errors.Is(err, oci.ErrNoContentLayer()) {
 		t.Errorf("error should wrap ErrNoContentLayer; got %v", err)
 	}
 }
@@ -140,7 +140,7 @@ func TestPullAmbiguousContentLayerHaltsLoudly(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected an error for a manifest with two content-type layers; got nil")
 	}
-	if !errors.Is(err, oci.ErrAmbiguousContentLayer) {
+	if !errors.Is(err, oci.ErrAmbiguousContentLayer()) {
 		t.Errorf("error should wrap ErrAmbiguousContentLayer; got %v", err)
 	}
 }
@@ -196,7 +196,7 @@ func TestVerifyContentAgainstManifestSelectsByMediaType(t *testing.T) {
 	if err := oci.VerifyContentAgainstManifest(res.ManifestBytes, content, testHelmContentMediaType); err != nil {
 		t.Errorf("verifying the chart content against the content layer should pass; got %v", err)
 	}
-	if err := oci.VerifyContentAgainstManifest(res.ManifestBytes, prov, testHelmContentMediaType); !errors.Is(err, oci.ErrFetchIntegrity) {
+	if err := oci.VerifyContentAgainstManifest(res.ManifestBytes, prov, testHelmContentMediaType); !errors.Is(err, oci.ErrFetchIntegrity()) {
 		t.Errorf("verifying the provenance bytes against the content layer should fail with ErrFetchIntegrity; got %v", err)
 	}
 }

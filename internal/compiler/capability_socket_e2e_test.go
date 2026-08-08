@@ -55,7 +55,7 @@ func TestCapabilitySocket_RedSelectorHalt(t *testing.T) {
 	if err == nil {
 		t.Fatal("want a selector-violation halt for an out-of-set engine target; got nil")
 	}
-	if !errors.Is(err, analyzer.ErrSelectorViolation) {
+	if !errors.Is(err, analyzer.ErrSelectorViolation()) {
 		t.Fatalf("want errors.Is(err, ErrSelectorViolation); got %v", err)
 	}
 	if !strings.Contains(err.Error(), "datastore.aggrega.ai/engine") {

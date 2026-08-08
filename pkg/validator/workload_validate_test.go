@@ -43,7 +43,7 @@ func TestValidateWorkload_BadAPIVersion_Fails(t *testing.T) {
 	w := minimalWorkload()
 	w.APIVersion = "wrong/v0"
 	err := validator.ValidateWorkload(w, "", "", "")
-	if !errors.Is(err, validator.ErrWorkloadValidation) {
+	if !errors.Is(err, validator.ErrWorkloadValidation()) {
 		t.Fatalf("expected ErrWorkloadValidation, got %v", err)
 	}
 }
@@ -53,7 +53,7 @@ func TestValidateWorkload_BadKind_Fails(t *testing.T) {
 	w := minimalWorkload()
 	w.Kind = "NotWorkload"
 	err := validator.ValidateWorkload(w, "", "", "")
-	if !errors.Is(err, validator.ErrWorkloadValidation) {
+	if !errors.Is(err, validator.ErrWorkloadValidation()) {
 		t.Fatalf("expected ErrWorkloadValidation, got %v", err)
 	}
 }
@@ -63,7 +63,7 @@ func TestValidateWorkload_BadServiceType_Fails(t *testing.T) {
 	w := minimalWorkload()
 	w.Services.Set("api", types.ServiceSpec{Type: "InvalidType"})
 	err := validator.ValidateWorkload(w, "", "", "")
-	if !errors.Is(err, validator.ErrWorkloadValidation) {
+	if !errors.Is(err, validator.ErrWorkloadValidation()) {
 		t.Fatalf("expected ErrWorkloadValidation, got %v", err)
 	}
 }
@@ -75,7 +75,7 @@ func TestValidateWorkload_PortOutOfRange_Fails(t *testing.T) {
 	main.Ports.Set("web", 70000) // > 65535
 	w.Containers.Set("main", main)
 	err := validator.ValidateWorkload(w, "", "", "")
-	if !errors.Is(err, validator.ErrWorkloadValidation) {
+	if !errors.Is(err, validator.ErrWorkloadValidation()) {
 		t.Fatalf("expected ErrWorkloadValidation, got %v", err)
 	}
 }
@@ -87,7 +87,7 @@ func TestValidateWorkload_PortZero_Fails(t *testing.T) {
 	main.Ports.Set("web", 0) // < 1
 	w.Containers.Set("main", main)
 	err := validator.ValidateWorkload(w, "", "", "")
-	if !errors.Is(err, validator.ErrWorkloadValidation) {
+	if !errors.Is(err, validator.ErrWorkloadValidation()) {
 		t.Fatalf("expected ErrWorkloadValidation, got %v", err)
 	}
 }
@@ -98,7 +98,7 @@ func TestValidateWorkload_NegativeReplicas_Fails(t *testing.T) {
 	neg := -1
 	w.Replicas = &neg
 	err := validator.ValidateWorkload(w, "", "", "")
-	if !errors.Is(err, validator.ErrWorkloadValidation) {
+	if !errors.Is(err, validator.ErrWorkloadValidation()) {
 		t.Fatalf("expected ErrWorkloadValidation, got %v", err)
 	}
 }
@@ -110,7 +110,7 @@ func TestValidateWorkload_BadRestartPolicy_Fails(t *testing.T) {
 	main.RestartPolicy = "Sometimes"
 	w.Containers.Set("main", main)
 	err := validator.ValidateWorkload(w, "", "", "")
-	if !errors.Is(err, validator.ErrWorkloadValidation) {
+	if !errors.Is(err, validator.ErrWorkloadValidation()) {
 		t.Fatalf("expected ErrWorkloadValidation, got %v", err)
 	}
 }
@@ -202,7 +202,7 @@ func TestValidateWorkload_ProbeMultipleShapes_Fails(t *testing.T) {
 	main.Health = &types.HealthSpec{Ready: &types.ProbeSpec{HTTP: "/health", TCP: 8080}}
 	w.Containers.Set("main", main)
 	err := validator.ValidateWorkload(w, "", "", "")
-	if !errors.Is(err, validator.ErrWorkloadValidation) {
+	if !errors.Is(err, validator.ErrWorkloadValidation()) {
 		t.Fatalf("multi-shape probe should fail; got %v", err)
 	}
 }
@@ -217,7 +217,7 @@ func TestValidateWorkload_VolumeMultipleVariants_Fails(t *testing.T) {
 		Persistent: &types.PersistentVolume{Size: "1Gi"},
 	})
 	err := validator.ValidateWorkload(w, "", "", "")
-	if !errors.Is(err, validator.ErrWorkloadValidation) {
+	if !errors.Is(err, validator.ErrWorkloadValidation()) {
 		t.Fatalf("multi-variant volume should fail; got %v", err)
 	}
 }
@@ -263,7 +263,7 @@ func TestValidateWorkload_Reference_NoEndpoint_Fails(t *testing.T) {
 	w := referenceWorkload()
 	w.Endpoint = ""
 	w.Port = 0
-	if err := validator.ValidateWorkload(w, "", "", ""); !errors.Is(err, validator.ErrWorkloadValidation) {
+	if err := validator.ValidateWorkload(w, "", "", ""); !errors.Is(err, validator.ErrWorkloadValidation()) {
 		t.Fatalf("reference without endpoint should fail schema, got %v", err)
 	}
 }
@@ -272,7 +272,7 @@ func TestValidateWorkload_Reference_WithContainers_Fails(t *testing.T) {
 	t.Parallel()
 	w := referenceWorkload()
 	w.Containers.Set("main", types.ContainerSpec{Image: "app:1.0"})
-	if err := validator.ValidateWorkload(w, "", "", ""); !errors.Is(err, validator.ErrWorkloadValidation) {
+	if err := validator.ValidateWorkload(w, "", "", ""); !errors.Is(err, validator.ErrWorkloadValidation()) {
 		t.Fatalf("reference with containers should fail schema, got %v", err)
 	}
 }
@@ -281,7 +281,7 @@ func TestValidateWorkload_NonReference_WithEndpoint_Fails(t *testing.T) {
 	t.Parallel()
 	w := minimalWorkload() // stateless with containers
 	w.Endpoint = "api.example.com"
-	if err := validator.ValidateWorkload(w, "", "", ""); !errors.Is(err, validator.ErrWorkloadValidation) {
+	if err := validator.ValidateWorkload(w, "", "", ""); !errors.Is(err, validator.ErrWorkloadValidation()) {
 		t.Fatalf("non-reference with endpoint should fail schema, got %v", err)
 	}
 }

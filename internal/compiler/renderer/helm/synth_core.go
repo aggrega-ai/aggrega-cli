@@ -382,11 +382,11 @@ func statefulSetGoverningService(services []Service, nodeID string) (string, err
 	case 0:
 		return "", cerrors.New(cerrors.TranslationError, cerrors.SourceLocation{File: nodeID},
 			"synthesized StatefulSet requires a headless governing Service (declare a service with type: Headless); none found",
-			nil, ErrStatefulSetNoHeadlessService)
+			nil, ErrStatefulSetNoHeadlessService())
 	default:
 		return "", cerrors.New(cerrors.TranslationError, cerrors.SourceLocation{File: nodeID},
 			"synthesized StatefulSet declares more than one headless Service; the governing Service is ambiguous (declare exactly one type: Headless service)",
-			nil, ErrStatefulSetAmbiguousHeadlessService)
+			nil, ErrStatefulSetAmbiguousHeadlessService())
 	}
 }
 

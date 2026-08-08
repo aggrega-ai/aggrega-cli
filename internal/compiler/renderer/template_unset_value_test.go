@@ -183,7 +183,7 @@ func TestEvalTemplate_UnsetValueDoesNotAdmitClosedPillarTypo(t *testing.T) {
 			if err == nil {
 				t.Fatal("an undefined reference must halt")
 			}
-			if !errors.Is(err, ErrTemplateUnknownRoot) {
+			if !errors.Is(err, ErrTemplateUnknownRoot()) {
 				t.Errorf("halt must be the unknown-reference one, got: %v", err)
 			}
 		})
@@ -353,7 +353,7 @@ func TestEvalTemplate_ParametersIsNotAValueTemplateRoot(t *testing.T) {
 	if err == nil {
 		t.Fatal("a value template reading .parameters must halt")
 	}
-	if !errors.Is(err, ErrTemplateUnknownRoot) {
+	if !errors.Is(err, ErrTemplateUnknownRoot()) {
 		t.Errorf("halt must be the unknown-reference one, got: %v", err)
 	}
 }

@@ -11,34 +11,38 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/registryhost"
 )
 
-// Re-exports of the canonical fetch-error sentinels declared at
-// aggrega-cli/pkg/oci/errors.go. Each re-export is the canonical
-// identity itself rather than a second identity carrying the same
-// text, so errors.Is against either name resolves equivalently for
-// any wrapped error chain.
+// The four accessors below re-export the canonical fetch-error identities
+// declared at aggrega-cli/pkg/oci/errors.go. Each yields the canonical identity
+// itself rather than a second identity carrying the same text, so errors.Is
+// against either name resolves equivalently for any wrapped error chain.
 //
-// Consumers that want to match against fetch errors without also
-// importing pkg/oci use these re-exports directly. Identity is
-// asserted at test time via the == comparison; the test will fail
-// if a future maintainer declares a fresh identity on this side
-// instead of pointing at the canonical one. The declarations
-// deliberately restate no message: the message is registered once,
-// beside the canonical declaration, and a second registration of
-// one identity is refused.
-const (
-	ErrFetchNotFound           = oci.ErrFetchNotFound
-	ErrFetchUnauthorized       = oci.ErrFetchUnauthorized
-	ErrFetchNetworkUnreachable = oci.ErrFetchNetworkUnreachable
-	ErrFetchIntegrity          = oci.ErrFetchIntegrity
-)
+// Consumers that want to match against fetch errors without also importing
+// pkg/oci use these re-exports directly. Identity is asserted at test time via
+// the == comparison of the values they yield; the test will fail if a future
+// maintainer declares a fresh identity on this side instead of pointing at the
+// canonical one. The declarations deliberately restate no message: the message
+// is registered once, beside the canonical declaration, and a second
+// registration of one code is refused.
+
+// ErrFetchNotFound re-exports the canonical not-found fetch identity.
+func ErrFetchNotFound() error { return oci.ErrFetchNotFound() }
+
+// ErrFetchUnauthorized re-exports the canonical unauthorized fetch identity.
+func ErrFetchUnauthorized() error { return oci.ErrFetchUnauthorized() }
+
+// ErrFetchNetworkUnreachable re-exports the canonical network-unreachable fetch identity.
+func ErrFetchNetworkUnreachable() error { return oci.ErrFetchNetworkUnreachable() }
+
+// ErrFetchIntegrity re-exports the canonical integrity-failure fetch identity.
+func ErrFetchIntegrity() error { return oci.ErrFetchIntegrity() }
 
 // ErrUnknownKind is returned by Dispatcher.Resolve when no adapter
 // is registered for spec.Kind. Distinct from the fetch sentinels;
 // names a dispatch-side failure rather than a transport-time
 // failure.
-const ErrUnknownKind cerrors.Code = "sourceresolver/unknown-kind"
+func ErrUnknownKind() error { return errUnknownKind }
 
-var _ = cerrors.Register(ErrUnknownKind, cerrors.Meta{
+var errUnknownKind = cerrors.Register("sourceresolver/unknown-kind", cerrors.Meta{
 	Message: "sourceresolver: no adapter registered for source kind",
 })
 

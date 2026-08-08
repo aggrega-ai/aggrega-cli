@@ -258,7 +258,7 @@ func TestLookupAndExtractMissingLockfileEntryWrapsNotFound(t *testing.T) {
 	root := t.TempDir()
 	lf := &lockfile.Lockfile{Version: 1, Release: "./r.yaml", GeneratedAt: "2026-05-22T10:00:00Z"}
 	_, err := sourcecache.LookupAndExtract(lf, "helm-oci-chart", "oci://r/c", "", "1.0.0", root, ".aggrega/cache")
-	if !errors.Is(err, sourcecache.ErrFetchNotFound) {
+	if !errors.Is(err, sourcecache.ErrFetchNotFound()) {
 		t.Errorf("missing lockfile entry should wrap ErrFetchNotFound; got %v", err)
 	}
 }
@@ -279,7 +279,7 @@ func TestLookupAndExtractTamperedArchiveWrapsIntegrity(t *testing.T) {
 
 	lf := fixtureLockfile("helm-oci-chart", "oci://r/c", "1.0.0", originalDigest)
 	_, err := sourcecache.LookupAndExtract(lf, "helm-oci-chart", "oci://r/c", "", "1.0.0", root, ".aggrega/cache")
-	if !errors.Is(err, sourcecache.ErrFetchIntegrity) {
+	if !errors.Is(err, sourcecache.ErrFetchIntegrity()) {
 		t.Errorf("tampered .tgz should wrap ErrFetchIntegrity; got %v", err)
 	}
 }
@@ -296,7 +296,7 @@ func TestLookupAndExtractMetadataMismatchWrapsIntegrity(t *testing.T) {
 
 	lf := fixtureLockfile("helm-oci-chart", "oci://r/c", "1.0.0", blobDigest)
 	_, err := sourcecache.LookupAndExtract(lf, "helm-oci-chart", "oci://r/c", "", "1.0.0", root, ".aggrega/cache")
-	if !errors.Is(err, sourcecache.ErrFetchIntegrity) {
+	if !errors.Is(err, sourcecache.ErrFetchIntegrity()) {
 		t.Errorf("metadata digest mismatch should wrap ErrFetchIntegrity; got %v", err)
 	}
 }
@@ -327,7 +327,7 @@ func TestLookupAndExtractManifestAuthorityBeatsForgedPins(t *testing.T) {
 
 	lf := fixtureLockfile("helm-oci-chart", "oci://r/c", "1.0.0", forgedDigest)
 	_, err := sourcecache.LookupAndExtract(lf, "helm-oci-chart", "oci://r/c", "", "1.0.0", root, ".aggrega/cache")
-	if !errors.Is(err, sourcecache.ErrFetchIntegrity) {
+	if !errors.Is(err, sourcecache.ErrFetchIntegrity()) {
 		t.Errorf("forged archive + forged content pins: err = %v; want ErrFetchIntegrity from the manifest-authority check", err)
 	}
 }
@@ -347,7 +347,7 @@ func TestLookupAndExtractOCIManifestLessSlotFailsClosed(t *testing.T) {
 		t.Fatalf("remove manifest: %v", err)
 	}
 	lf := fixtureLockfile("helm-oci-chart", "oci://r/c", "1.0.0", digestOf(blob))
-	if _, err := sourcecache.LookupAndExtract(lf, "helm-oci-chart", "oci://r/c", "", "1.0.0", root, ".aggrega/cache"); !errors.Is(err, sourcecache.ErrFetchNotFound) {
+	if _, err := sourcecache.LookupAndExtract(lf, "helm-oci-chart", "oci://r/c", "", "1.0.0", root, ".aggrega/cache"); !errors.Is(err, sourcecache.ErrFetchNotFound()) {
 		t.Errorf("manifest-less OCI slot: err = %v; want ErrFetchNotFound (fail-closed miss)", err)
 	}
 }
@@ -384,7 +384,7 @@ func TestLookupAndExtractNonOCIManifestLessSlotReadsOnContentPin(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(slot, "blob.tgz"), tampered, 0o644); err != nil {
 		t.Fatalf("tamper blob: %v", err)
 	}
-	if _, err := sourcecache.LookupAndExtract(lf, kind, url, "", "1.0.0", root, ".aggrega/cache"); !errors.Is(err, sourcecache.ErrFetchIntegrity) {
+	if _, err := sourcecache.LookupAndExtract(lf, kind, url, "", "1.0.0", root, ".aggrega/cache"); !errors.Is(err, sourcecache.ErrFetchIntegrity()) {
 		t.Errorf("non-OCI drifted slot: err = %v; want ErrFetchIntegrity", err)
 	}
 }
@@ -439,7 +439,7 @@ func TestLookupAndExtractForgedManifestCaughtByLockfilePin(t *testing.T) {
 	lf.SourceArtifacts[0].ManifestDigest = originalManifestDigest
 
 	_, err := sourcecache.LookupAndExtract(lf, "helm-oci-chart", "oci://r/c", "", "1.0.0", root, ".aggrega/cache")
-	if !errors.Is(err, oci.ErrCachedManifestIntegrity) {
+	if !errors.Is(err, oci.ErrCachedManifestIntegrity()) {
 		t.Errorf("forged archive + forged content pins + forged manifest: err = %v; want ErrCachedManifestIntegrity from the lockfile manifest-digest pin", err)
 	}
 }
@@ -630,7 +630,7 @@ func TestExtractRejectsPathTraversal(t *testing.T) {
 	lf := fixtureLockfile("helm-oci-chart", "oci://r/c", "1.0.0", digest)
 
 	_, err := sourcecache.LookupAndExtract(lf, "helm-oci-chart", "oci://r/c", "", "1.0.0", root, ".aggrega/cache")
-	if !errors.Is(err, sourcecache.ErrFetchIntegrity) {
+	if !errors.Is(err, sourcecache.ErrFetchIntegrity()) {
 		t.Errorf("path-traversal entry should halt with ErrFetchIntegrity; got %v", err)
 	}
 	// And the malicious file MUST NOT have been written to the parent.

@@ -33,7 +33,7 @@ func TestPolicyVerdictErrors_FiredVerdictsBecomeErrors(t *testing.T) {
 		if e.Kind != analyzer.AnalysisErrorPolicy {
 			t.Errorf("verdict error kind = %q, want %q", e.Kind, analyzer.AnalysisErrorPolicy)
 		}
-		if !errors.Is(e.Sentinel, analyzer.ErrPolicyViolation) {
+		if !errors.Is(e.Sentinel, analyzer.ErrPolicyViolation()) {
 			t.Errorf("verdict error sentinel = %v, want ErrPolicyViolation", e.Sentinel)
 		}
 		// The rendered message names the plugin leaf and carries the plugin text

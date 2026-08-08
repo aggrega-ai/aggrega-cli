@@ -15,11 +15,11 @@ import (
 
 // ErrLockfileInvalid wraps every structural-validation failure
 // raised by LoadLockfile. Errors satisfying
-// errors.Is(err, ErrLockfileInvalid) carry a wrapped message naming
+// errors.Is(err, ErrLockfileInvalid()) carry a wrapped message naming
 // the offending field path and the validation diagnostic.
-const ErrLockfileInvalid cerrors.Code = "lockfile/lockfile-invalid"
+func ErrLockfileInvalid() error { return errLockfileInvalid }
 
-var _ = cerrors.Register(ErrLockfileInvalid, cerrors.Meta{
+var errLockfileInvalid = cerrors.Register("lockfile/lockfile-invalid", cerrors.Meta{
 	Message: "lockfile: file failed schema validation",
 })
 
@@ -94,7 +94,7 @@ func LoadLockfile(path string) (*Lockfile, []Diagnostic, error) {
 			fieldPath = "(root)"
 		}
 		return nil, nil, fmt.Errorf("lockfile: %s: %s: %s: %w",
-			path, fieldPath, f.Message, ErrLockfileInvalid)
+			path, fieldPath, f.Message, ErrLockfileInvalid())
 	}
 	if err != nil {
 		return nil, nil, fmt.Errorf("lockfile: parse %s: %w", path, err)

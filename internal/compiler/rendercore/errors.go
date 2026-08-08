@@ -12,8 +12,8 @@ import cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 // skipping the operation. An emitted file that is only ever an EMIT side
 // effect — never a PATCH target — is not segmented, so a non-structured file
 // is an error only when a step tries to address a document inside it.
-const ErrPipelinePatchTargetNotStructured cerrors.Code = "compiler-rendercore/pipeline-patch-target-not-structured"
+func ErrPipelinePatchTargetNotStructured() error { return errPipelinePatchTargetNotStructured }
 
-var _ = cerrors.Register(ErrPipelinePatchTargetNotStructured, cerrors.Meta{
+var errPipelinePatchTargetNotStructured = cerrors.Register("compiler-rendercore/pipeline-patch-target-not-structured", cerrors.Meta{
 	Message: "pipeline PATCH target is not parseable structured YAML/JSON",
 })

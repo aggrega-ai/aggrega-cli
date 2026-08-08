@@ -69,7 +69,7 @@ func AmbientGitHubActionsSource(look func(string) string, client *http.Client, v
 			// The client is obtained from the network-egress gate (pkg/egress); a
 			// nil client means the workspace is offline, so the ambient-token fetch
 			// is refused rather than reaching for a default client.
-			return "", fmt.Errorf("github actions ambient identity token: %w", egress.ErrOfflineEgress)
+			return "", fmt.Errorf("github actions ambient identity token: %w", egress.ErrOfflineEgress())
 		}
 		base := look(envActionsIDTokenRequestURL)
 		reqToken := look(envActionsIDTokenRequestToken)

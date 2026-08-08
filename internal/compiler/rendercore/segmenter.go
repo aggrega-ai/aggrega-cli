@@ -77,9 +77,9 @@ func Split(name string, body []byte) ([]Segment, error) {
 	if err != nil {
 		// Wrap the typed sentinel (so callers match with errors.Is) and carry
 		// the parser's detail in the message for the operator's diagnostic.
-		return nil, cerrors.Wrap(ErrPipelinePatchTargetNotStructured, cerrors.CatalogError,
+		return nil, cerrors.Wrap(ErrPipelinePatchTargetNotStructured(), cerrors.CatalogError,
 			cerrors.SourceLocation{File: name},
-			ErrPipelinePatchTargetNotStructured.Error()+": "+err.Error())
+			ErrPipelinePatchTargetNotStructured().Error()+": "+err.Error())
 	}
 	nDoc := len(docs)
 	if nDoc == 0 {

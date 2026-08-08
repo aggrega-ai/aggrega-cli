@@ -560,7 +560,7 @@ func TestBuildIR_InjectValidationHaltsWithSpecificError(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected ErrInjectEntryAmbiguous, got nil")
 	}
-	if !errors.Is(err, ErrInjectEntryAmbiguous) {
+	if !errors.Is(err, ErrInjectEntryAmbiguous()) {
 		t.Errorf("error is not ErrInjectEntryAmbiguous: %v", err)
 	}
 	if !strings.Contains(err.Error(), `components["api"].inject.env[0]`) {

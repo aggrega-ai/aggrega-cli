@@ -74,8 +74,8 @@ func TestPluginRowCells(t *testing.T) {
 		want  string
 	}{
 		{"digest drift", pluginListEntry{readiness: "digest-drift", desc: wasm.PluginDescriptor{Metadata: &wasm.PluginDescriptorMeta{Version: "1.0.0"}}}, "digest-drift"},
-		{"failure with readiness", pluginListEntry{readiness: "unresolved", err: wasm.ErrWasmManifestRejected}, "unresolved"},
-		{"failure without readiness", pluginListEntry{err: wasm.ErrWasmManifestRejected}, "describe failed"},
+		{"failure with readiness", pluginListEntry{readiness: "unresolved", err: wasm.ErrWasmManifestRejected()}, "unresolved"},
+		{"failure without readiness", pluginListEntry{err: wasm.ErrWasmManifestRejected()}, "describe failed"},
 		{"unstamped healthy", pluginListEntry{desc: wasm.PluginDescriptor{PluginType: string(wasm.PluginTypeProvider)}}, ""},
 	}
 	for _, tc := range versionCases {
@@ -112,7 +112,7 @@ func TestFormatPluginListTable(t *testing.T) {
 	}
 	configuredEntries := []pluginListEntry{
 		{source: "configured", uri: "oci://example.com/plugins/broken", origin: "plugins.linter[0]",
-			err: wasm.ErrWasmManifestRejected},
+			err: wasm.ErrWasmManifestRejected()},
 	}
 
 	var buf bytes.Buffer
@@ -198,7 +198,7 @@ func TestWritePluginListJSON(t *testing.T) {
 	// configured array, and the command must carry its cli type and readiness.
 	configuredEntries := []pluginListEntry{
 		{source: "configured", uri: "oci://example.com/plugins/broken", origin: "plugins.linter[0]",
-			err: wasm.ErrWasmManifestRejected},
+			err: wasm.ErrWasmManifestRejected()},
 		{source: "installed", uri: "oci://example.com/plugins/cli/greet:1.0.0",
 			origin: "pinned abc1234", readiness: "ready",
 			desc: wasm.PluginDescriptor{

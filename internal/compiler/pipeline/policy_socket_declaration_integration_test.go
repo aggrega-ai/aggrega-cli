@@ -119,7 +119,7 @@ func TestPolicyRejectsFreeFormConnectionE2E(t *testing.T) {
 	if err == nil {
 		t.Fatalf("no-free-form-connections policy: expected a halt, got nil")
 	}
-	if !errors.Is(err, analyzer.ErrPolicyViolation) {
+	if !errors.Is(err, analyzer.ErrPolicyViolation()) {
 		t.Fatalf("halt not errors.Is ErrPolicyViolation: %v", err)
 	}
 	// The message is built from values the guest read off the wire, so its
@@ -159,7 +159,7 @@ func TestPolicyReadsDeclaredMarkerE2E(t *testing.T) {
 	if err == nil {
 		t.Fatalf("deny-on-declared policy: expected a halt, got nil (so the marker was not readable)")
 	}
-	if !errors.Is(err, analyzer.ErrPolicyViolation) {
+	if !errors.Is(err, analyzer.ErrPolicyViolation()) {
 		t.Fatalf("halt not errors.Is ErrPolicyViolation: %v", err)
 	}
 	for _, want := range []string{"declared connection", "is declared"} {

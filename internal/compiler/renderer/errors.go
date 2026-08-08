@@ -12,9 +12,9 @@ import (
 // diagnostic spells out which roots the provides surface admits, derived
 // from the allowlists themselves, so the permitted set is stated once and
 // cannot drift from the check that enforces it.
-const ErrProvidesSelfContainment cerrors.Code = "compiler-renderer/provides-self-containment"
+func ErrProvidesSelfContainment() error { return errProvidesSelfContainment }
 
-var _ = cerrors.Register(ErrProvidesSelfContainment, cerrors.Meta{
+var errProvidesSelfContainment = cerrors.Register("compiler-renderer/provides-self-containment", cerrors.Meta{
 	Message: "provides block references a root outside the self-contained set",
 })
 
@@ -26,9 +26,9 @@ var _ = cerrors.Register(ErrProvidesSelfContainment, cerrors.Meta{
 // reference is bare or wrapped in a fallback, because a root that does not
 // exist is an authoring error at either spelling — a wrapper can supply a
 // default for an absent KEY, never for an absent ROOT.
-const ErrTemplateUnknownRoot cerrors.Code = "compiler-renderer/template-unknown-root"
+func ErrTemplateUnknownRoot() error { return errTemplateUnknownRoot }
 
-var _ = cerrors.Register(ErrTemplateUnknownRoot, cerrors.Meta{
+var errTemplateUnknownRoot = cerrors.Register("compiler-renderer/template-unknown-root", cerrors.Meta{
 	Message: "template references a root the render context does not define",
 })
 
@@ -46,10 +46,10 @@ var _ = cerrors.Register(ErrTemplateUnknownRoot, cerrors.Meta{
 // is an ORDERING fault whose fix is to reorder the block, and reporting both
 // through one condition would tell an author who mistyped a key to reorder
 // their block. Category: CATALOG_ERROR. Match with
-// errors.Is(err, ErrLocalsForwardReference).
-const ErrLocalsForwardReference cerrors.Code = "compiler-renderer/locals-forward-reference"
+// errors.Is(err, ErrLocalsForwardReference()).
+func ErrLocalsForwardReference() error { return errLocalsForwardReference }
 
-var _ = cerrors.Register(ErrLocalsForwardReference, cerrors.Meta{
+var errLocalsForwardReference = cerrors.Register("compiler-renderer/locals-forward-reference", cerrors.Meta{
 	Message: "locals entry references a sibling defined later in the same block",
 })
 
@@ -64,34 +64,34 @@ var _ = cerrors.Register(ErrLocalsForwardReference, cerrors.Meta{
 // keys the block does declare, so the correction is readable from the halt. It is deliberately
 // distinct from ErrLocalsForwardReference: this one is a NAMING fault whose fix
 // is to correct the key, and the two mistakes have different remedies.
-// Category: CATALOG_ERROR. Match with errors.Is(err, ErrLocalsUnknownReference).
-const ErrLocalsUnknownReference cerrors.Code = "compiler-renderer/locals-unknown-reference"
+// Category: CATALOG_ERROR. Match with errors.Is(err, ErrLocalsUnknownReference()).
+func ErrLocalsUnknownReference() error { return errLocalsUnknownReference }
 
-var _ = cerrors.Register(ErrLocalsUnknownReference, cerrors.Meta{
+var errLocalsUnknownReference = cerrors.Register("compiler-renderer/locals-unknown-reference", cerrors.Meta{
 	Message: "template references a key the locals block does not declare",
 })
 
-const ErrProvidesEvaluation cerrors.Code = "compiler-renderer/provides-evaluation"
+func ErrProvidesEvaluation() error { return errProvidesEvaluation }
 
-var _ = cerrors.Register(ErrProvidesEvaluation, cerrors.Meta{
+var errProvidesEvaluation = cerrors.Register("compiler-renderer/provides-evaluation", cerrors.Meta{
 	Message: "provides template evaluation failed",
 })
 
-const ErrSelfInjectKeyCollision cerrors.Code = "compiler-renderer/self-inject-key-collision"
+func ErrSelfInjectKeyCollision() error { return errSelfInjectKeyCollision }
 
-var _ = cerrors.Register(ErrSelfInjectKeyCollision, cerrors.Meta{
+var errSelfInjectKeyCollision = cerrors.Register("compiler-renderer/self-inject-key-collision", cerrors.Meta{
 	Message: "duplicate delivery key across self-inject and uses-inject",
 })
 
-const ErrAttachmentInjectKeyCollision cerrors.Code = "compiler-renderer/attachment-inject-key-collision"
+func ErrAttachmentInjectKeyCollision() error { return errAttachmentInjectKeyCollision }
 
-var _ = cerrors.Register(ErrAttachmentInjectKeyCollision, cerrors.Meta{
+var errAttachmentInjectKeyCollision = cerrors.Register("compiler-renderer/attachment-inject-key-collision", cerrors.Meta{
 	Message: "duplicate delivery key across attachment-inject and another inject source",
 })
 
-const ErrUnmappedCustomMechanism cerrors.Code = "compiler-renderer/unmapped-custom-mechanism"
+func ErrUnmappedCustomMechanism() error { return errUnmappedCustomMechanism }
 
-var _ = cerrors.Register(ErrUnmappedCustomMechanism, cerrors.Meta{
+var errUnmappedCustomMechanism = cerrors.Register("compiler-renderer/unmapped-custom-mechanism", cerrors.Meta{
 	Message: "custom inject mechanism has no matching key in injectMapping output; add the mechanism's key to the Recipe injectMapping",
 })
 
@@ -111,62 +111,62 @@ var _ = cerrors.Register(ErrUnmappedCustomMechanism, cerrors.Meta{
 // realizer, the abstract entity, and the first missing key (declared keys are
 // checked in sorted order, so the reported key and the halt are byte-identical
 // across runs). Category: CATALOG_ERROR. Match with
-// errors.Is(err, ErrProvidesContractUnfulfilled).
-const ErrProvidesContractUnfulfilled cerrors.Code = "compiler-renderer/provides-contract-unfulfilled"
+// errors.Is(err, ErrProvidesContractUnfulfilled()).
+func ErrProvidesContractUnfulfilled() error { return errProvidesContractUnfulfilled }
 
-var _ = cerrors.Register(ErrProvidesContractUnfulfilled, cerrors.Meta{
+var errProvidesContractUnfulfilled = cerrors.Register("compiler-renderer/provides-contract-unfulfilled", cerrors.Meta{
 	Message: "realizer does not publish a provides key its abstract entity's schema.provides contract declares",
 })
 
 // ErrMappingImportShape fires when a valuesMapping $import: (or a recursive
 // MappingLibrary entry body's field-root $import:) is neither a host-bearing
 // reference nor a well-formed bare-name `<Library>#/mappings/<entry>` identity.
-const ErrMappingImportShape cerrors.Code = "compiler-renderer/mapping-import-shape"
+func ErrMappingImportShape() error { return errMappingImportShape }
 
-var _ = cerrors.Register(ErrMappingImportShape, cerrors.Meta{
+var errMappingImportShape = cerrors.Register("compiler-renderer/mapping-import-shape", cerrors.Meta{
 	Message: "valuesMapping $import: is not a bare-name mapping-library reference (<Library>#/mappings/<entry>)",
 })
 
 // ErrMappingLibraryNotFound fires when a bare-name mapping-library import
 // names a MappingLibrary absent from the resolved set (the local catalog plus
 // any lockfile-pinned libraries bridged in at load).
-const ErrMappingLibraryNotFound cerrors.Code = "compiler-renderer/mapping-library-not-found"
+func ErrMappingLibraryNotFound() error { return errMappingLibraryNotFound }
 
-var _ = cerrors.Register(ErrMappingLibraryNotFound, cerrors.Meta{
+var errMappingLibraryNotFound = cerrors.Register("compiler-renderer/mapping-library-not-found", cerrors.Meta{
 	Message: "mapping-library import references a MappingLibrary not present in the catalog",
 })
 
 // ErrMappingEntryNotFound fires when a bare-name mapping-library import names
 // an entry absent from the resolved MappingLibrary's mappings map.
-const ErrMappingEntryNotFound cerrors.Code = "compiler-renderer/mapping-entry-not-found"
+func ErrMappingEntryNotFound() error { return errMappingEntryNotFound }
 
-var _ = cerrors.Register(ErrMappingEntryNotFound, cerrors.Meta{
+var errMappingEntryNotFound = cerrors.Register("compiler-renderer/mapping-entry-not-found", cerrors.Meta{
 	Message: "mapping-library import references an entry not present in the MappingLibrary",
 })
 
 // ErrWorkloadImportShape fires when a workload $import: (or a recursive
 // WorkloadLibrary entry body's field-root $import:) is neither a host-bearing
 // reference nor a well-formed bare-name `<Library>#/workloads/<entry>` identity.
-const ErrWorkloadImportShape cerrors.Code = "compiler-renderer/workload-import-shape"
+func ErrWorkloadImportShape() error { return errWorkloadImportShape }
 
-var _ = cerrors.Register(ErrWorkloadImportShape, cerrors.Meta{
+var errWorkloadImportShape = cerrors.Register("compiler-renderer/workload-import-shape", cerrors.Meta{
 	Message: "workload $import: is not a bare-name workload-library reference (<Library>#/workloads/<entry>)",
 })
 
 // ErrWorkloadLibraryNotFound fires when a bare-name workload-library import
 // names a WorkloadLibrary absent from the resolved set (the local catalog plus
 // any lockfile-pinned libraries bridged in at load).
-const ErrWorkloadLibraryNotFound cerrors.Code = "compiler-renderer/workload-library-not-found"
+func ErrWorkloadLibraryNotFound() error { return errWorkloadLibraryNotFound }
 
-var _ = cerrors.Register(ErrWorkloadLibraryNotFound, cerrors.Meta{
+var errWorkloadLibraryNotFound = cerrors.Register("compiler-renderer/workload-library-not-found", cerrors.Meta{
 	Message: "workload-library import references a WorkloadLibrary not present in the catalog",
 })
 
 // ErrWorkloadEntryNotFound fires when a bare-name workload-library import names
 // an entry absent from the resolved WorkloadLibrary's workloads map.
-const ErrWorkloadEntryNotFound cerrors.Code = "compiler-renderer/workload-entry-not-found"
+func ErrWorkloadEntryNotFound() error { return errWorkloadEntryNotFound }
 
-var _ = cerrors.Register(ErrWorkloadEntryNotFound, cerrors.Meta{
+var errWorkloadEntryNotFound = cerrors.Register("compiler-renderer/workload-entry-not-found", cerrors.Meta{
 	Message: "workload-library import references an entry not present in the WorkloadLibrary",
 })
 
@@ -175,26 +175,26 @@ var _ = cerrors.Register(ErrWorkloadEntryNotFound, cerrors.Meta{
 // `<Library>#/artifacts/<entry>` identity — including a field-root `$import:`
 // nested inside a bundle file body, which is not supported (a single bundle
 // file cannot expand into another bundle; compose at the consumption site).
-const ErrArtifactImportShape cerrors.Code = "compiler-renderer/artifact-import-shape"
+func ErrArtifactImportShape() error { return errArtifactImportShape }
 
-var _ = cerrors.Register(ErrArtifactImportShape, cerrors.Meta{
+var errArtifactImportShape = cerrors.Register("compiler-renderer/artifact-import-shape", cerrors.Meta{
 	Message: "artifacts $import: is not a bare-name artifacts-library reference (<Library>#/artifacts/<entry>)",
 })
 
 // ErrArtifactsLibraryNotFound fires when a bare-name artifacts-library import
 // names an ArtifactsLibrary absent from the resolved set (the local catalog
 // plus any lockfile-pinned libraries bridged in at load).
-const ErrArtifactsLibraryNotFound cerrors.Code = "compiler-renderer/artifacts-library-not-found"
+func ErrArtifactsLibraryNotFound() error { return errArtifactsLibraryNotFound }
 
-var _ = cerrors.Register(ErrArtifactsLibraryNotFound, cerrors.Meta{
+var errArtifactsLibraryNotFound = cerrors.Register("compiler-renderer/artifacts-library-not-found", cerrors.Meta{
 	Message: "artifacts-library import references an ArtifactsLibrary not present in the catalog",
 })
 
 // ErrArtifactsLibraryEntryNotFound fires when a bare-name artifacts-library
 // import names a bundle absent from the resolved ArtifactsLibrary's artifacts map.
-const ErrArtifactsLibraryEntryNotFound cerrors.Code = "compiler-renderer/artifacts-library-entry-not-found"
+func ErrArtifactsLibraryEntryNotFound() error { return errArtifactsLibraryEntryNotFound }
 
-var _ = cerrors.Register(ErrArtifactsLibraryEntryNotFound, cerrors.Meta{
+var errArtifactsLibraryEntryNotFound = cerrors.Register("compiler-renderer/artifacts-library-entry-not-found", cerrors.Meta{
 	Message: "artifacts-library import references a bundle not present in the ArtifactsLibrary",
 })
 
@@ -203,9 +203,9 @@ var _ = cerrors.Register(ErrArtifactsLibraryEntryNotFound, cerrors.Meta{
 // artifacts entry. A collision halts loudly rather than one output silently
 // overwriting another (a Loud Guardrail, per the No Ghost Infrastructure
 // invariant).
-const ErrArtifactOutputCollision cerrors.Code = "compiler-renderer/artifact-output-collision"
+func ErrArtifactOutputCollision() error { return errArtifactOutputCollision }
 
-var _ = cerrors.Register(ErrArtifactOutputCollision, cerrors.Meta{
+var errArtifactOutputCollision = cerrors.Register("compiler-renderer/artifact-output-collision", cerrors.Meta{
 	Message: "artifacts output filename collision: two artifact outputs resolve to the same filename",
 })
 
@@ -226,9 +226,9 @@ var _ = cerrors.Register(ErrArtifactOutputCollision, cerrors.Meta{
 // paths. A caller matching one is not asking about the other. A third,
 // likewise separate, guard covers two resources colliding inside a single
 // component's own render, before any of them reach an assembly.
-const ErrAssembledOutputCollision cerrors.Code = "compiler-renderer/assembled-output-collision"
+func ErrAssembledOutputCollision() error { return errAssembledOutputCollision }
 
-var _ = cerrors.Register(ErrAssembledOutputCollision, cerrors.Meta{
+var errAssembledOutputCollision = cerrors.Register("compiler-renderer/assembled-output-collision", cerrors.Meta{
 	Message: "assembled output collision: two contributors write the same output path",
 })
 
@@ -237,9 +237,9 @@ var _ = cerrors.Register(ErrAssembledOutputCollision, cerrors.Meta{
 // identity the $ref surface reports via ErrCircularRef — so one detector
 // guards both surfaces; the recursive resolver maintains a stack of in-flight
 // canonical `<Library>#/mappings/<Entry>` keys and surfaces this with the
-// chain named in the message. Match with errors.Is(err, ErrCircularImport)
-// or, equivalently, errors.Is(err, refcycle.ErrCycle).
-const ErrCircularImport = refcycle.ErrCycle
+// chain named in the message. Match with errors.Is(err, ErrCircularImport())
+// or, equivalently, errors.Is(err, refcycle.ErrCycle()).
+func ErrCircularImport() error { return refcycle.ErrCycle() }
 
 // ErrHostInLibraryImport fires when a library $import: carries a
 // registry host — the `oci://…` form. It is shared by the valuesMapping
@@ -250,9 +250,9 @@ const ErrCircularImport = refcycle.ErrCycle
 // the lockfile. A host in the reference is rejected so physical location
 // cannot leak into authored source. The per-surface wrapping context names
 // which surface carried the host.
-const ErrHostInLibraryImport cerrors.Code = "compiler-renderer/host-in-library-import"
+func ErrHostInLibraryImport() error { return errHostInLibraryImport }
 
-var _ = cerrors.Register(ErrHostInLibraryImport, cerrors.Meta{
+var errHostInLibraryImport = cerrors.Register("compiler-renderer/host-in-library-import", cerrors.Meta{
 	Message: "library $import: carries a registry host; reference the library by bare-name identity",
 })
 
@@ -265,10 +265,10 @@ var _ = cerrors.Register(ErrHostInLibraryImport, cerrors.Meta{
 // and info-severity diagnostics from the same export do not produce this
 // halt — they surface to the build result's warnings. Category:
 // TRANSLATION_ERROR (a provider-reported structural defect in the node's
-// rendered input). Match with errors.Is(err, ErrProviderNodeInputInvalid).
-const ErrProviderNodeInputInvalid cerrors.Code = "compiler-renderer/provider-node-input-invalid"
+// rendered input). Match with errors.Is(err, ErrProviderNodeInputInvalid()).
+func ErrProviderNodeInputInvalid() error { return errProviderNodeInputInvalid }
 
-var _ = cerrors.Register(ErrProviderNodeInputInvalid, cerrors.Meta{
+var errProviderNodeInputInvalid = cerrors.Register("compiler-renderer/provider-node-input-invalid", cerrors.Meta{
 	Message: "provider rejected node input",
 })
 
@@ -276,11 +276,11 @@ var _ = cerrors.Register(ErrProviderNodeInputInvalid, cerrors.Meta{
 // build-time engineFactory when a Recipe declares a provider name that
 // the CLI does not register. The CLI's engineFactory closure wraps this
 // sentinel with the offending provider name so callers can match via
-// errors.Is(err, ErrUnknownProvider) regardless of which provider
+// errors.Is(err, ErrUnknownProvider()) regardless of which provider
 // triggered the halt.
-const ErrUnknownProvider cerrors.Code = "compiler-renderer/unknown-provider"
+func ErrUnknownProvider() error { return errUnknownProvider }
 
-var _ = cerrors.Register(ErrUnknownProvider, cerrors.Meta{
+var errUnknownProvider = cerrors.Register("compiler-renderer/unknown-provider", cerrors.Meta{
 	Message: "unknown provider",
 })
 
@@ -294,9 +294,9 @@ var _ = cerrors.Register(ErrUnknownProvider, cerrors.Meta{
 // boundary's directory). Category: OPS_ERROR — the collision exists
 // because of how the boundaries were configured, so it is the operator
 // who has the change to make.
-const ErrPathCollision cerrors.Code = "compiler-renderer/path-collision"
+func ErrPathCollision() error { return errPathCollision }
 
-var _ = cerrors.Register(ErrPathCollision, cerrors.Meta{
+var errPathCollision = cerrors.Register("compiler-renderer/path-collision", cerrors.Meta{
 	Message: "dispatch path produced multiple provider outputs",
 })
 
@@ -308,9 +308,9 @@ var _ = cerrors.Register(ErrPathCollision, cerrors.Meta{
 // assembler-input validation surfaces structural violations
 // immediately rather than letting them propagate. Category:
 // TRANSLATION_ERROR.
-const ErrInstanceIDCollision cerrors.Code = "compiler-renderer/instance-id-collision"
+func ErrInstanceIDCollision() error { return errInstanceIDCollision }
 
-var _ = cerrors.Register(ErrInstanceIDCollision, cerrors.Meta{
+var errInstanceIDCollision = cerrors.Register("compiler-renderer/instance-id-collision", cerrors.Meta{
 	Message: "multiple contributors share an instance ID at the same dispatch path",
 })
 
@@ -321,9 +321,9 @@ var _ = cerrors.Register(ErrInstanceIDCollision, cerrors.Meta{
 // (computed via the boundary annotation cascade) resolve to different
 // values. The merged assembly has exactly one name; cascade or declare
 // matching values explicitly. Category: TRANSLATION_ERROR.
-const ErrChartNameMismatch cerrors.Code = "compiler-renderer/chart-name-mismatch"
+func ErrChartNameMismatch() error { return errChartNameMismatch }
 
-var _ = cerrors.Register(ErrChartNameMismatch, cerrors.Meta{
+var errChartNameMismatch = cerrors.Register("compiler-renderer/chart-name-mismatch", cerrors.Meta{
 	Message: "merged-path assembly has conflicting assembly-name annotation values",
 })
 
@@ -342,9 +342,9 @@ var _ = cerrors.Register(ErrChartNameMismatch, cerrors.Meta{
 // handling than value templates because silent path failures produce broken
 // outputs that operators only discover post-build. Category: OPS_ERROR
 // (operator-authored path template).
-const ErrPathTemplateInvalidField cerrors.Code = "compiler-renderer/path-template-invalid-field"
+func ErrPathTemplateInvalidField() error { return errPathTemplateInvalidField }
 
-var _ = cerrors.Register(ErrPathTemplateInvalidField, cerrors.Meta{
+var errPathTemplateInvalidField = cerrors.Register("compiler-renderer/path-template-invalid-field", cerrors.Meta{
 	Message: "path template references a field not in the documented allowlist",
 })
 
@@ -359,9 +359,9 @@ var _ = cerrors.Register(ErrPathTemplateInvalidField, cerrors.Meta{
 // parse time so the runtime never has to defend against shape
 // mismatches. Category: CATALOG_ERROR (catalog-authored FR
 // references invalid context for its scope).
-const ErrFRTemplateInvalidField cerrors.Code = "compiler-renderer/fr-template-invalid-field"
+func ErrFRTemplateInvalidField() error { return errFRTemplateInvalidField }
 
-var _ = cerrors.Register(ErrFRTemplateInvalidField, cerrors.Meta{
+var errFRTemplateInvalidField = cerrors.Register("compiler-renderer/fr-template-invalid-field", cerrors.Meta{
 	Message: "FeatureRecipe template references a per-component-only field with executionScope: boundary",
 })
 
@@ -375,9 +375,9 @@ var _ = cerrors.Register(ErrFRTemplateInvalidField, cerrors.Meta{
 // message carries the operator-supplied fail-call argument. The
 // evaluator uses missingkey=error so any reference to an undefined
 // field also halts here.
-const ErrAssertionFailed cerrors.Code = "compiler-renderer/assertion-failed"
+func ErrAssertionFailed() error { return errAssertionFailed }
 
-var _ = cerrors.Register(ErrAssertionFailed, cerrors.Meta{
+var errAssertionFailed = cerrors.Register("compiler-renderer/assertion-failed", cerrors.Meta{
 	Message: "assertion failed",
 })
 
@@ -387,9 +387,9 @@ var _ = cerrors.Register(ErrAssertionFailed, cerrors.Meta{
 // Guardrail promoting the pipeline walk's local absent-target cause: the
 // walk reports the typed condition; the integration halts the build with
 // this sentinel, naming the offending step and the addressed key.
-const ErrPipelineTargetNotEmitted cerrors.Code = "compiler-renderer/pipeline-target-not-emitted"
+func ErrPipelineTargetNotEmitted() error { return errPipelineTargetNotEmitted }
 
-var _ = cerrors.Register(ErrPipelineTargetNotEmitted, cerrors.Meta{
+var errPipelineTargetNotEmitted = cerrors.Register("compiler-renderer/pipeline-target-not-emitted", cerrors.Meta{
 	Message: "pipeline PATCH targets a document the node did not emit",
 })
 
@@ -399,9 +399,9 @@ var _ = cerrors.Register(ErrPipelineTargetNotEmitted, cerrors.Meta{
 // only scope is its own output). The host root is absent for these
 // surfaces, so a /host patch or emit halts loudly rather than silently
 // resolving against an empty set.
-const ErrPipelineHostScopeUnavailable cerrors.Code = "compiler-renderer/pipeline-host-scope-unavailable"
+func ErrPipelineHostScopeUnavailable() error { return errPipelineHostScopeUnavailable }
 
-var _ = cerrors.Register(ErrPipelineHostScopeUnavailable, cerrors.Meta{
+var errPipelineHostScopeUnavailable = cerrors.Register("compiler-renderer/pipeline-host-scope-unavailable", cerrors.Meta{
 	Message: "pipeline /host operation from a step with no host component",
 })
 
@@ -430,9 +430,9 @@ var _ = cerrors.Register(ErrPipelineHostScopeUnavailable, cerrors.Meta{
 // a cause-naming message rather than reporting an empty-provider compatibility
 // claim. The remedy is to target a non-assembler provider for the
 // FeatureRecipe's own output, move the step to /host, or remove it.
-const ErrPipelinePatchPreAssembly cerrors.Code = "compiler-renderer/pipeline-patch-pre-assembly"
+func ErrPipelinePatchPreAssembly() error { return errPipelinePatchPreAssembly }
 
-var _ = cerrors.Register(ErrPipelinePatchPreAssembly, cerrors.Meta{
+var errPipelinePatchPreAssembly = cerrors.Register("compiler-renderer/pipeline-patch-pre-assembly", cerrors.Meta{
 	Message: "pipeline PATCH targets an assembler provider's pre-assembly fragments",
 })
 
@@ -448,9 +448,9 @@ var _ = cerrors.Register(ErrPipelinePatchPreAssembly, cerrors.Meta{
 // from describe(), which is itself a guest call, before the walk invokes any
 // step) and matches provider names exactly.
 // Category: CATALOG_ERROR.
-const ErrPluginProviderIncompatible cerrors.Code = "compiler-renderer/plugin-provider-incompatible"
+func ErrPluginProviderIncompatible() error { return errPluginProviderIncompatible }
 
-var _ = cerrors.Register(ErrPluginProviderIncompatible, cerrors.Meta{
+var errPluginProviderIncompatible = cerrors.Register("compiler-renderer/plugin-provider-incompatible", cerrors.Meta{
 	Message: "pipeline plugin is not compatible with the rendering provider",
 })
 
@@ -467,9 +467,9 @@ var _ = cerrors.Register(ErrPluginProviderIncompatible, cerrors.Meta{
 // is to serve the provider through a plugin that advertises both render_node
 // and assemble_boundary, or to render the provider through its in-tree
 // engine. Category: TRANSLATION_ERROR.
-const ErrBoundaryAssemblerMissing cerrors.Code = "compiler-renderer/boundary-assembler-missing"
+func ErrBoundaryAssemblerMissing() error { return errBoundaryAssemblerMissing }
 
-var _ = cerrors.Register(ErrBoundaryAssemblerMissing, cerrors.Meta{
+var errBoundaryAssemblerMissing = cerrors.Register("compiler-renderer/boundary-assembler-missing", cerrors.Meta{
 	Message: "provider expected to assemble its dispatch group provides no boundary assembler",
 })
 
@@ -483,10 +483,10 @@ var _ = cerrors.Register(ErrBoundaryAssemblerMissing, cerrors.Meta{
 // path; the remedy is to re-resolve (re-freeze the pin) if the change was
 // intended, or restore the file. Category: CATALOG_ERROR (a catalog-authored
 // imported artifact drifted from its recorded pin). Match with
-// errors.Is(err, ErrArtifactContentMismatch).
-const ErrArtifactContentMismatch cerrors.Code = "compiler-renderer/artifact-content-mismatch"
+// errors.Is(err, ErrArtifactContentMismatch()).
+func ErrArtifactContentMismatch() error { return errArtifactContentMismatch }
 
-var _ = cerrors.Register(ErrArtifactContentMismatch, cerrors.Meta{
+var errArtifactContentMismatch = cerrors.Register("compiler-renderer/artifact-content-mismatch", cerrors.Meta{
 	Message: "imported artifact content does not match the recipe's recorded digest",
 })
 
@@ -502,10 +502,10 @@ var _ = cerrors.Register(ErrArtifactContentMismatch, cerrors.Meta{
 // ids), both provider names, and the socket. It is a warning today, not a
 // build halt — the edge still carries its scalar value across the boundary —
 // so the build completes with the value-pipe fallback rather than failing.
-// Match with errors.Is(err, ErrCrossProviderLinkUnsupported).
-const ErrCrossProviderLinkUnsupported cerrors.Code = "compiler-renderer/cross-provider-link-unsupported"
+// Match with errors.Is(err, ErrCrossProviderLinkUnsupported()).
+func ErrCrossProviderLinkUnsupported() error { return errCrossProviderLinkUnsupported }
 
-var _ = cerrors.Register(ErrCrossProviderLinkUnsupported, cerrors.Meta{
+var errCrossProviderLinkUnsupported = cerrors.Register("compiler-renderer/cross-provider-link-unsupported", cerrors.Meta{
 	Message: "cross-boundary link between endpoints rendered by different providers is not supported",
 })
 
@@ -520,10 +520,10 @@ var _ = cerrors.Register(ErrCrossProviderLinkUnsupported, cerrors.Meta{
 // The comparison is over the guest's raw emitted output, the same surface the
 // rendered artifacts are carved from. Category: TRANSLATION_ERROR (a
 // provider-side non-determinism in synthesised output). Match with
-// errors.Is(err, ErrRenderNondeterministic).
-const ErrRenderNondeterministic cerrors.Code = "compiler-renderer/render-nondeterministic"
+// errors.Is(err, ErrRenderNondeterministic()).
+func ErrRenderNondeterministic() error { return errRenderNondeterministic }
 
-var _ = cerrors.Register(ErrRenderNondeterministic, cerrors.Meta{
+var errRenderNondeterministic = cerrors.Register("compiler-renderer/render-nondeterministic", cerrors.Meta{
 	Message: "provider render is not deterministic",
 })
 
@@ -539,9 +539,9 @@ var _ = cerrors.Register(ErrRenderNondeterministic, cerrors.Meta{
 // is never valid shipped output, so the build halts here rather than emitting
 // it. The wrapping chain names the offending file and its dispatch path.
 // Category: TRANSLATION_ERROR. Match with
-// errors.Is(err, ErrOrphanCrossBoundaryLinkSentinel).
-const ErrOrphanCrossBoundaryLinkSentinel cerrors.Code = "compiler-renderer/orphan-cross-boundary-link-sentinel"
+// errors.Is(err, ErrOrphanCrossBoundaryLinkSentinel()).
+func ErrOrphanCrossBoundaryLinkSentinel() error { return errOrphanCrossBoundaryLinkSentinel }
 
-var _ = cerrors.Register(ErrOrphanCrossBoundaryLinkSentinel, cerrors.Meta{
+var errOrphanCrossBoundaryLinkSentinel = cerrors.Register("compiler-renderer/orphan-cross-boundary-link-sentinel", cerrors.Meta{
 	Message: "assembled output retains an unresolved cross-boundary link placeholder",
 })

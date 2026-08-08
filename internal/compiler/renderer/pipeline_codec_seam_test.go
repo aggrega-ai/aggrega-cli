@@ -71,7 +71,7 @@ func TestSelectCodec_PicksProviderCodec(t *testing.T) {
 		case "plain":
 			return plainEngine{}, nil
 		default:
-			return nil, ErrUnknownProvider
+			return nil, ErrUnknownProvider()
 		}
 	}
 

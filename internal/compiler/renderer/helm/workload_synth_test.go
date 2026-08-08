@@ -490,7 +490,7 @@ func TestSynthesizeWorkload_StatefulSetNoHeadless_Halts(t *testing.T) {
 	w.Services.Set("db", svc)
 
 	_, err := SynthesizeWorkloadCore(w, renderer.AttachmentProvidesFromContext(nil), nodeCtxFor("postgres"))
-	if !errors.Is(err, ErrStatefulSetNoHeadlessService) {
+	if !errors.Is(err, ErrStatefulSetNoHeadlessService()) {
 		t.Fatalf("expected ErrStatefulSetNoHeadlessService; got %v", err)
 	}
 }
@@ -512,7 +512,7 @@ func TestSynthesizeWorkload_StatefulSetMultipleHeadless_Halts(t *testing.T) {
 	w.Services.Set("db2", h2)
 
 	_, err := SynthesizeWorkloadCore(w, renderer.AttachmentProvidesFromContext(nil), nodeCtxFor("postgres"))
-	if !errors.Is(err, ErrStatefulSetAmbiguousHeadlessService) {
+	if !errors.Is(err, ErrStatefulSetAmbiguousHeadlessService()) {
 		t.Fatalf("expected ErrStatefulSetAmbiguousHeadlessService; got %v", err)
 	}
 }
@@ -971,7 +971,7 @@ func TestSynthesizeWorkload_FormScheduledHalts(t *testing.T) {
 	w.Containers.Set("main", c)
 
 	_, err := SynthesizeWorkloadCore(w, renderer.AttachmentProvidesFromContext(nil), nodeCtxFor("nightly"))
-	if !errors.Is(err, rendercore.ErrScheduledFormRequiresSchedule) {
+	if !errors.Is(err, rendercore.ErrScheduledFormRequiresSchedule()) {
 		t.Fatalf("expected ErrScheduledFormRequiresSchedule; got %v", err)
 	}
 }
@@ -1028,7 +1028,7 @@ func TestSynthesizeWorkload_FormScheduledMalformedHalts(t *testing.T) {
 	w.Containers.Set("main", c)
 
 	_, err := SynthesizeWorkloadCore(w, renderer.AttachmentProvidesFromContext(nil), nodeCtxFor("nightly"))
-	if !errors.Is(err, rendercore.ErrInvalidCronSchedule) {
+	if !errors.Is(err, rendercore.ErrInvalidCronSchedule()) {
 		t.Fatalf("expected ErrInvalidCronSchedule; got %v", err)
 	}
 }
@@ -1042,7 +1042,7 @@ func TestSynthesizeWorkload_ScheduleOnNonScheduledFormHalts(t *testing.T) {
 	w.Containers.Set("main", c)
 
 	_, err := SynthesizeWorkloadCore(w, renderer.AttachmentProvidesFromContext(nil), nodeCtxFor("api"))
-	if !errors.Is(err, rendercore.ErrScheduleRequiresScheduledForm) {
+	if !errors.Is(err, rendercore.ErrScheduleRequiresScheduledForm()) {
 		t.Fatalf("expected ErrScheduleRequiresScheduledForm; got %v", err)
 	}
 }
@@ -1059,7 +1059,7 @@ func TestSynthesizeWorkload_PersistentTemplateRequiresStateful(t *testing.T) {
 		w.Volumes.Set("data", types.VolumeSpec{PersistentTemplate: &types.PersistentTemplateVolume{Size: "10Gi"}})
 
 		_, err := SynthesizeWorkloadCore(w, renderer.AttachmentProvidesFromContext(nil), nodeCtxFor("db"))
-		if !errors.Is(err, rendercore.ErrPersistentTemplateRequiresStatefulForm) {
+		if !errors.Is(err, rendercore.ErrPersistentTemplateRequiresStatefulForm()) {
 			t.Errorf("form %q with persistentTemplate: expected ErrPersistentTemplateRequiresStatefulForm; got %v", form, err)
 		}
 	}
@@ -1202,7 +1202,7 @@ func TestSynthesizeWorkload_ReferenceRequiresEndpoint(t *testing.T) {
 	t.Parallel()
 	w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload", Form: "reference"}
 	_, err := SynthesizeWorkloadCore(w, renderer.AttachmentProvidesFromContext(nil), nodeCtxFor("x"))
-	if !errors.Is(err, rendercore.ErrReferenceFormRequiresEndpoint) {
+	if !errors.Is(err, rendercore.ErrReferenceFormRequiresEndpoint()) {
 		t.Errorf("expected ErrReferenceFormRequiresEndpoint, got %v", err)
 	}
 }

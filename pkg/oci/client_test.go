@@ -97,7 +97,7 @@ func TestPullDigestMismatchSurfacesErrFetchIntegrity(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected ErrFetchIntegrity; got nil")
 	}
-	if !errors.Is(err, oci.ErrFetchIntegrity) {
+	if !errors.Is(err, oci.ErrFetchIntegrity()) {
 		t.Errorf("error should wrap ErrFetchIntegrity; got %v", err)
 	}
 }
@@ -409,7 +409,7 @@ func TestPull_UnauthorizedMapping(t *testing.T) {
 			if err == nil {
 				t.Fatal("expected error")
 			}
-			if got := errors.Is(err, oci.ErrFetchUnauthorized); got != tc.unauthorized {
+			if got := errors.Is(err, oci.ErrFetchUnauthorized()); got != tc.unauthorized {
 				t.Errorf("errors.Is(ErrFetchUnauthorized) = %v, want %v (err: %v)", got, tc.unauthorized, err)
 			}
 		})

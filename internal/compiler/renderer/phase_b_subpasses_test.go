@@ -208,7 +208,7 @@ services:
 	_ = phaseB1(ctx, state)
 
 	err := phaseB2(ctx, state, emptySlots)
-	if !errors.Is(err, validator.ErrWorkloadValidation) {
+	if !errors.Is(err, validator.ErrWorkloadValidation()) {
 		t.Fatalf("expected ErrWorkloadValidation, got %v", err)
 	}
 }
@@ -239,7 +239,7 @@ containers:
 	_ = phaseB1(ctx, state)
 
 	err := phaseB2(ctx, state, emptySlots)
-	if !errors.Is(err, validator.ErrWorkloadValidation) {
+	if !errors.Is(err, validator.ErrWorkloadValidation()) {
 		t.Fatalf("expected ErrWorkloadValidation for a stray top-level key, got %v", err)
 	}
 	if !strings.Contains(err.Error(), "replicaz") {
@@ -271,7 +271,7 @@ containers:
 	_ = phaseB1(ctx, state)
 
 	err := phaseB2(ctx, state, emptySlots)
-	if !errors.Is(err, validator.ErrWorkloadValidation) {
+	if !errors.Is(err, validator.ErrWorkloadValidation()) {
 		t.Fatalf("expected ErrWorkloadValidation for an empty required value, got %v", err)
 	}
 	if !strings.Contains(err.Error(), "image") {
@@ -304,7 +304,7 @@ containers:
 	_ = phaseB1(ctx, state)
 
 	err := phaseB2(ctx, state, slots)
-	if !errors.Is(err, validator.ErrWorkloadFeaturesSchema) {
+	if !errors.Is(err, validator.ErrWorkloadFeaturesSchema()) {
 		t.Fatalf("expected ErrWorkloadFeaturesSchema, got %v", err)
 	}
 }
@@ -365,7 +365,7 @@ func TestPhaseB5_CrossOriginCollision_Fails(t *testing.T) {
 	}
 
 	err := phaseB5(state)
-	if !errors.Is(err, validator.ErrRecipeRule7) {
+	if !errors.Is(err, validator.ErrRecipeRule7()) {
 		t.Fatalf("expected ErrRecipeRule7, got %v", err)
 	}
 	msg := err.Error()

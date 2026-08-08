@@ -67,7 +67,7 @@ func TestEvalPathTemplate_ComponentIDRefusedOnDirectoryOnly(t *testing.T) {
 	t.Parallel()
 	data := pathTemplateFixture()
 	_, err := EvalPathTemplate("directory:web", "directory", "web", `{{ .component_id }}`, data)
-	if !errors.Is(err, ErrPathTemplateInvalidField) {
+	if !errors.Is(err, ErrPathTemplateInvalidField()) {
 		t.Fatalf("expected ErrPathTemplateInvalidField, got: %v", err)
 	}
 	if !strings.Contains(err.Error(), ".component_id") || !strings.Contains(err.Error(), `boundary "web"`) {
@@ -85,7 +85,7 @@ func TestEvalPathTemplate_ComponentIDRefusedOnDirectoryOnly(t *testing.T) {
 
 	// An unknown contextKind selects the narrower surface, so a typo in the
 	// dispatch cannot silently widen what a boundary directory may read.
-	if _, err := EvalPathTemplate("d", "typo", "web", `{{ .component_id }}`, data); !errors.Is(err, ErrPathTemplateInvalidField) {
+	if _, err := EvalPathTemplate("d", "typo", "web", `{{ .component_id }}`, data); !errors.Is(err, ErrPathTemplateInvalidField()) {
 		t.Errorf("an unrecognised contextKind must select the directory: surface, got: %v", err)
 	}
 }
@@ -142,7 +142,7 @@ func TestEvalPathTemplate_MistypedKeyUnderClosedVariableHalts(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected a halt, rendered %q", out)
 	}
-	if !errors.Is(err, ErrTemplateUnknownRoot) {
+	if !errors.Is(err, ErrTemplateUnknownRoot()) {
 		t.Errorf("expected ErrTemplateUnknownRoot, got: %v", err)
 	}
 	if !strings.Contains(err.Error(), ".manifest.recipe_name") {

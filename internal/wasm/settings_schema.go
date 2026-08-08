@@ -55,7 +55,7 @@ func (d PluginDescriptor) validateSettingsSchema(pluginIdentity string) error {
 	}
 	if _, err := compileSettingsSchema(d.SettingsSchema); err != nil {
 		return fmt.Errorf("plugin %q declares a settings_schema that is not a valid JSON Schema: %v: %w",
-			pluginIdentity, err, ErrWasmManifestRejected)
+			pluginIdentity, err, ErrWasmManifestRejected())
 	}
 	return nil
 }

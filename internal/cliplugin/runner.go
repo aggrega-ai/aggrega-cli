@@ -31,9 +31,9 @@ import (
 
 // ErrNoResolver is returned when Run is invoked on a Runner with no Resolve seam
 // set, so there is no way to turn the plugin URI into bytes.
-const ErrNoResolver cerrors.Code = "cliplugin/no-resolver"
+func ErrNoResolver() error { return errNoResolver }
 
-var _ = cerrors.Register(ErrNoResolver, cerrors.Meta{
+var errNoResolver = cerrors.Register("cliplugin/no-resolver", cerrors.Meta{
 	Message: "cliplugin: no plugin resolver configured",
 })
 
@@ -90,7 +90,7 @@ type Runner struct {
 // drift.
 func (r Runner) Run(ctx context.Context, uri, command string, argv []string) (int, string, error) {
 	if r.Resolve == nil {
-		return 0, "", ErrNoResolver
+		return 0, "", ErrNoResolver()
 	}
 	stdout := r.Stdout
 	if stdout == nil {

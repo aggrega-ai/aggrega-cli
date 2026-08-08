@@ -315,7 +315,7 @@ func TestIntegration_ReferencedSecret_WorkloadNotReferenceableHalt(t *testing.T)
 	}
 
 	_, err := renderer.RenderAll(context.Background(), input, lookup, testHelmFactory(t))
-	if !errors.Is(err, validator.ErrSlotNotReferenceable) {
+	if !errors.Is(err, validator.ErrSlotNotReferenceable()) {
 		t.Fatalf("a workload referencing a non-referenceable slot should halt with ErrSlotNotReferenceable; got: %v", err)
 	}
 }
@@ -329,7 +329,7 @@ func TestIntegration_ReferencedSecret_FulfilmentHalt(t *testing.T) {
 
 	dbSecrets, _ := input.Graph.Spec.FeatureValuesMapping.Get("db")
 	_, err := renderer.ResolveAttachmentProvides(dbSecrets, "db", lookup, input.CatalogLookup)
-	if !errors.Is(err, renderer.ErrProvidesContractUnfulfilled) {
+	if !errors.Is(err, renderer.ErrProvidesContractUnfulfilled()) {
 		t.Fatalf("a FeatureRecipe omitting a contract key should halt with ErrProvidesContractUnfulfilled; got: %v", err)
 	}
 }

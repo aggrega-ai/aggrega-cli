@@ -13,8 +13,8 @@ import (
 // configured halt threshold. Below the threshold, or with no threshold
 // configured, the same consumption surfaces as an advisory rather than this
 // error.
-const ErrDeprecatedEntity cerrors.Code = "deprecation/deprecated-entity"
+func ErrDeprecatedEntity() error { return errDeprecatedEntity }
 
-var _ = cerrors.Register(ErrDeprecatedEntity, cerrors.Meta{
+var errDeprecatedEntity = cerrors.Register("deprecation/deprecated-entity", cerrors.Meta{
 	Message: "deprecation: build consumes a deprecated entity",
 })

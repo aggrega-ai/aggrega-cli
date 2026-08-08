@@ -58,7 +58,7 @@ func TestImporterPluginForFormat_UnknownFormatHaltsLoud(t *testing.T) {
 	}}
 
 	_, err := c.ImporterPluginForFormat("nonexistent")
-	if !errors.Is(err, catalog.ErrNoImporterForFormat) {
+	if !errors.Is(err, catalog.ErrNoImporterForFormat()) {
 		t.Fatalf("err = %v; want ErrNoImporterForFormat", err)
 	}
 }
@@ -74,7 +74,7 @@ func TestImporterPluginForFormat_AmbiguousHaltsLoud(t *testing.T) {
 	}}
 
 	_, err := c.ImporterPluginForFormat("demo")
-	if !errors.Is(err, catalog.ErrAmbiguousImporterPlugin) {
+	if !errors.Is(err, catalog.ErrAmbiguousImporterPlugin()) {
 		t.Fatalf("err = %v; want ErrAmbiguousImporterPlugin", err)
 	}
 	if msg := err.Error(); !strings.Contains(msg, "demo-a") || !strings.Contains(msg, "demo-b") {
@@ -127,7 +127,7 @@ func TestImporterPluginForFormat_IgnoresNonImporterTypes(t *testing.T) {
 	}
 
 	// The importer resolver never resolves a bare provider capability like "helm".
-	if _, err := c.ImporterPluginForFormat("helm"); !errors.Is(err, catalog.ErrNoImporterForFormat) {
+	if _, err := c.ImporterPluginForFormat("helm"); !errors.Is(err, catalog.ErrNoImporterForFormat()) {
 		t.Fatalf("resolving provider capability as a format: err = %v; want ErrNoImporterForFormat", err)
 	}
 }

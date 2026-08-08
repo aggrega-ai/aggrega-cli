@@ -51,7 +51,7 @@ func TestCLIStreamProbe_CompileTimeLoadRejectsStreaming(t *testing.T) {
 	if err == nil {
 		t.Fatal("Load accepted a guest importing aggrega_cli_write_stdout; the compile-time profile must reject it")
 	}
-	if !errors.Is(err, ErrWasmManifestRejected) {
+	if !errors.Is(err, ErrWasmManifestRejected()) {
 		t.Fatalf("Load error = %v; want an error wrapping ErrWasmManifestRejected", err)
 	}
 }

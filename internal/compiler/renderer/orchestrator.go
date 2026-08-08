@@ -180,7 +180,7 @@ func (s *assembledFileSet) resolve(prefix string) (map[string]AssembledFile, err
 			clauses = append(clauses, collisionClause(prefix+path, byPath[path]))
 		}
 		inner := fmt.Errorf("%w: %s; rename one of the colliding files so each output path is written once",
-			ErrAssembledOutputCollision, strings.Join(clauses, "; "))
+			ErrAssembledOutputCollision(), strings.Join(clauses, "; "))
 		return nil, cerrors.Wrap(inner, cerrors.TranslationError, cerrors.SourceLocation{File: prefix + collided[0]}, inner.Error())
 	}
 	files := make(map[string]AssembledFile, len(byPath))
@@ -852,7 +852,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 			// crossings. The condition fixes the category; the crossing it
 			// surfaced through does not.
 			category := cerrors.CatalogError
-			if errors.Is(err, ErrRenderNondeterministic) {
+			if errors.Is(err, ErrRenderNondeterministic()) {
 				category = cerrors.TranslationError
 			}
 			return nil, cerrors.Wrap(err, category, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("rendering node %q", nodeID))
@@ -986,7 +986,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		// letting them propagate to broken assembled output.
 		if _, alreadyHere := dispatch[key].files[nodeID]; alreadyHere {
 			inner := fmt.Errorf("%w: dispatch path %q provider %q already contains node %q (contributing boundaries: %v); component instance IDs must be unique within an assembly group",
-				ErrInstanceIDCollision, key.Path, key.Provider, nodeID, dispatch[key].contributingBoundaries)
+				ErrInstanceIDCollision(), key.Path, key.Provider, nodeID, dispatch[key].contributingBoundaries)
 			return nil, cerrors.Wrap(inner, cerrors.TranslationError, cerrors.SourceLocation{}, inner.Error())
 		}
 		// Track contributing boundaries (deduplicated). Used for diagnostic
@@ -1274,7 +1274,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 			contributingBoundaries = append(contributingBoundaries, dispatch[k].contributingBoundaries...)
 		}
 		inner := fmt.Errorf("%w: dispatch path %q produced multiple provider outputs (%v); contributing boundaries %v resolve to the same path under their current directory: / subDirectory: settings; set distinct subDirectory values per provider or change one boundary's directory",
-			ErrPathCollision, path, providers, contributingBoundaries)
+			ErrPathCollision(), path, providers, contributingBoundaries)
 		return nil, cerrors.Wrap(inner, cerrors.OpsError, cerrors.SourceLocation{}, inner.Error())
 	}
 
@@ -1316,7 +1316,7 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 		}
 		if mismatch {
 			inner := fmt.Errorf("%w: boundaries %v merge to assembly path %q under provider %q but their effective %s annotations resolve to different values: %v; the merged assembly has exactly one name; cascade or declare matching values explicitly",
-				ErrChartNameMismatch, pd.contributingBoundaries, key.Path, key.Provider, annotationKey, mismatchValues)
+				ErrChartNameMismatch(), pd.contributingBoundaries, key.Path, key.Provider, annotationKey, mismatchValues)
 			return nil, cerrors.Wrap(inner, cerrors.TranslationError, cerrors.SourceLocation{}, inner.Error())
 		}
 	}
@@ -1586,7 +1586,7 @@ func routeNodeInputDiagnostics(nodeID, providerName string, diags []Diagnostic, 
 	}
 	if len(errs) > 0 {
 		inner := fmt.Errorf("%w: node %q, provider %q: %s",
-			ErrProviderNodeInputInvalid, nodeID, providerName, strings.Join(errs, "; "))
+			ErrProviderNodeInputInvalid(), nodeID, providerName, strings.Join(errs, "; "))
 		return cerrors.Wrap(inner, cerrors.TranslationError, cerrors.SourceLocation{File: nodeID}, inner.Error())
 	}
 	return nil
@@ -1695,7 +1695,7 @@ func selectBoundaryAssembler(pd *pendingDispatch, key dispatchKey) error {
 	}
 	if AssemblesBoundary(selected) && key.Path != "" {
 		inner := fmt.Errorf("%w: provider %q renders per node but its rendering plugin does not provide boundary assembly (assemble_boundary); dispatch path %q would emit unassembled fragments",
-			ErrBoundaryAssemblerMissing, key.Provider, key.Path)
+			ErrBoundaryAssemblerMissing(), key.Provider, key.Path)
 		return cerrors.Wrap(inner, cerrors.TranslationError, cerrors.SourceLocation{File: key.Path}, inner.Error())
 	}
 	return nil

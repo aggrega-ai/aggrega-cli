@@ -25,7 +25,7 @@ import (
 func TrustedMaterialFromRootPath(path string) (root.TrustedMaterial, error) {
 	tr, err := root.NewTrustedRootFromPath(path)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %s: %v", ErrTrustRootLoad, path, err)
+		return nil, fmt.Errorf("%w: %s: %v", ErrTrustRootLoad(), path, err)
 	}
 	return tr, nil
 }

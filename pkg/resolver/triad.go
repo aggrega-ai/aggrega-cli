@@ -18,18 +18,18 @@ import (
 // Aggregate (or two Manifest) entities that share a metadata.name — the
 // same-directory analogue of the catalog's ErrDuplicateRecipeIdentity. The
 // message names the directory to read distinctly from the catalog-tier duplicate.
-const ErrDuplicateTriadIdentity cerrors.Code = "resolver/duplicate-triad-identity"
+func ErrDuplicateTriadIdentity() error { return errDuplicateTriadIdentity }
 
-var _ = cerrors.Register(ErrDuplicateTriadIdentity, cerrors.Meta{
+var errDuplicateTriadIdentity = cerrors.Register("resolver/duplicate-triad-identity", cerrors.Meta{
 	Message: "duplicate Aggregate/Manifest identity (metadata.name) in the Release directory",
 })
 
 // ErrTriadRefUnresolvable fires when a bare-identity aggregate:/manifest:
 // reference resolves to no entity in the same-directory scan, the catalog, or the
 // registry.
-const ErrTriadRefUnresolvable cerrors.Code = "resolver/triad-ref-unresolvable"
+func ErrTriadRefUnresolvable() error { return errTriadRefUnresolvable }
 
-var _ = cerrors.Register(ErrTriadRefUnresolvable, cerrors.Meta{
+var errTriadRefUnresolvable = cerrors.Register("resolver/triad-ref-unresolvable", cerrors.Meta{
 	Message: "aggregate/manifest reference unresolvable",
 })
 
@@ -121,7 +121,7 @@ func ResolveAggregate(releaseDir, ref string, catLookup AggregateLookup, registr
 		path := filepath.Join(releaseDir, ref)
 		data, err := os.ReadFile(path)
 		if err != nil {
-			return ResolvedAggregate{}, &ResolverError{Entity: "Aggregate", Field: path, Message: fmt.Sprintf("failed to read file: %v", err), Err: ErrYAMLLoad}
+			return ResolvedAggregate{}, &ResolverError{Entity: "Aggregate", Field: path, Message: fmt.Sprintf("failed to read file: %v", err), Err: ErrYAMLLoad()}
 		}
 		agg, err := LoadAggregateFromBytes(data, path)
 		if err != nil {
@@ -162,7 +162,7 @@ func ResolveManifest(releaseDir, ref string) (ResolvedManifest, error) {
 		path := filepath.Join(releaseDir, ref)
 		data, err := os.ReadFile(path)
 		if err != nil {
-			return ResolvedManifest{}, &ResolverError{Entity: "Manifest", Field: path, Message: fmt.Sprintf("failed to read file: %v", err), Err: ErrYAMLLoad}
+			return ResolvedManifest{}, &ResolverError{Entity: "Manifest", Field: path, Message: fmt.Sprintf("failed to read file: %v", err), Err: ErrYAMLLoad()}
 		}
 		man, err := LoadManifestFromBytes(data, path)
 		if err != nil {
@@ -262,7 +262,7 @@ func scanReleaseDir(releaseDir string) (*triadIndex, error) {
 				continue
 			}
 			if _, dup := idx.aggregates[agg.Metadata.Name]; dup {
-				return nil, fmt.Errorf("%w: Aggregate %q declared more than once in %s", ErrDuplicateTriadIdentity, agg.Metadata.Name, releaseDir)
+				return nil, fmt.Errorf("%w: Aggregate %q declared more than once in %s", ErrDuplicateTriadIdentity(), agg.Metadata.Name, releaseDir)
 			}
 			idx.aggregates[agg.Metadata.Name] = ResolvedAggregate{Aggregate: agg, Path: path, Bytes: data}
 		case "Manifest":
@@ -272,7 +272,7 @@ func scanReleaseDir(releaseDir string) (*triadIndex, error) {
 				continue
 			}
 			if _, dup := idx.manifests[man.Metadata.Name]; dup {
-				return nil, fmt.Errorf("%w: Manifest %q declared more than once in %s", ErrDuplicateTriadIdentity, man.Metadata.Name, releaseDir)
+				return nil, fmt.Errorf("%w: Manifest %q declared more than once in %s", ErrDuplicateTriadIdentity(), man.Metadata.Name, releaseDir)
 			}
 			idx.manifests[man.Metadata.Name] = ResolvedManifest{Manifest: man, Path: path, Bytes: data}
 		default:
@@ -298,13 +298,13 @@ func (idx *triadIndex) unresolvable(kind, ref string) error {
 			// attached — notably envelope.ErrEntityEnvelope — stays
 			// errors.Is-recoverable through the by-name triad scan, matching
 			// the by-path loaders' recoverability.
-			return fmt.Errorf("%w: needed %s %q is the unparseable file %s: %w", ErrTriadRefUnresolvable, kind, ref, s.path, s.reason)
+			return fmt.Errorf("%w: needed %s %q is the unparseable file %s: %w", ErrTriadRefUnresolvable(), kind, ref, s.path, s.reason)
 		}
 	}
 	for _, s := range idx.skipped {
 		if s.name == "" {
-			return fmt.Errorf("%w: %s %q not found; unparseable file %s could not be indexed and may be it: %w", ErrTriadRefUnresolvable, kind, ref, s.path, s.reason)
+			return fmt.Errorf("%w: %s %q not found; unparseable file %s could not be indexed and may be it: %w", ErrTriadRefUnresolvable(), kind, ref, s.path, s.reason)
 		}
 	}
-	return fmt.Errorf("%w: no %s named %q in the Release directory, catalog, or registry", ErrTriadRefUnresolvable, kind, ref)
+	return fmt.Errorf("%w: no %s named %q in the Release directory, catalog, or registry", ErrTriadRefUnresolvable(), kind, ref)
 }

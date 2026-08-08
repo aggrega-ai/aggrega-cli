@@ -171,7 +171,7 @@ func TestSignVerifyRealLinterWrongKeyHalts(t *testing.T) {
 	}
 
 	err := verifyClosureSignatures(context.Background(), lf, cl, wsCfg, t.TempDir(), nil, pluginTargetFor(store, "1.0.0"))
-	if !errors.Is(err, signing.ErrSignatureVerificationFailed) {
+	if !errors.Is(err, signing.ErrSignatureVerificationFailed()) {
 		t.Fatalf("want ErrSignatureVerificationFailed, got %v", err)
 	}
 }

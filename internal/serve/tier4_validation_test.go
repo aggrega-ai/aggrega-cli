@@ -59,7 +59,7 @@ func TestResolverViolationToDiagnostic_FieldMatchesYAML(t *testing.T) {
 		Entity:  "Aggregate",
 		Field:   ".spec.parameters.host",
 		Message: "parameter host: expected string, got integer",
-		Err:     resolver.ErrParameterContractViolation,
+		Err:     resolver.ErrParameterContractViolation(),
 	}
 	diag := resolverFindingToDiagnostic(ve, "error", doc, lineIndexFor(content))
 	if diag.Line != 5 {
@@ -87,7 +87,7 @@ func TestResolverViolationToDiagnostic_FieldMissingFallsBackToNeighborhood(t *te
 		Entity:  "Aggregate",
 		Field:   ".spec.parameters.missing",
 		Message: "parameter missing: required",
-		Err:     resolver.ErrParameterMissing,
+		Err:     resolver.ErrParameterMissing(),
 	}
 	// .spec matches but .parameters does not, so the walker falls back
 	// to the deepest reached key (.spec at line 1, column 1).
@@ -819,10 +819,10 @@ func TestMultiResolverErrorRoundTripPreservesViolations(t *testing.T) {
 		Entity:   "Aggregate",
 		Field:    ".spec.parameters",
 		Summary:  "2 parameter contract violations:\n  - .spec.parameters.port: ...\n  - .spec.parameters.host: ...",
-		Sentinel: resolver.ErrParameterContractViolation,
+		Sentinel: resolver.ErrParameterContractViolation(),
 		Violations: []*resolver.ResolverError{
-			{Entity: "Aggregate", Field: ".spec.parameters.port", Message: "port: expected integer", Err: resolver.ErrParameterContractViolation},
-			{Entity: "Aggregate", Field: ".spec.parameters.host", Message: "host: expected string", Err: resolver.ErrParameterContractViolation},
+			{Entity: "Aggregate", Field: ".spec.parameters.port", Message: "port: expected integer", Err: resolver.ErrParameterContractViolation()},
+			{Entity: "Aggregate", Field: ".spec.parameters.host", Message: "host: expected string", Err: resolver.ErrParameterContractViolation()},
 		},
 	}
 	// Confirm errors.As recovers the MultiResolverError shape (this
@@ -882,7 +882,7 @@ func TestAttachmentSlotNearMissPublishesAsEditorWarning(t *testing.T) {
 		Entity:  "Aggregate test-app",
 		Field:   `.spec.components.db.features.db_passwrod`,
 		Message: `attachment "db_passwrod" is not a declared slot, but the type declares the slot "db_password"`,
-		Err:     resolver.ErrAttachmentSlotNearMiss,
+		Err:     resolver.ErrAttachmentSlotNearMiss(),
 	}
 
 	diag := resolverFindingToDiagnostic(advisory, "warning", doc, lineIndexFor(content))
@@ -918,11 +918,11 @@ func TestTier4AdvisoriesMapToWarningsAlongsideErrors(t *testing.T) {
 
 	violation := &resolver.ResolverError{
 		Entity: "Aggregate", Field: ".spec.parameters.host",
-		Message: "boom", Err: resolver.ErrParameterContractViolation,
+		Message: "boom", Err: resolver.ErrParameterContractViolation(),
 	}
 	advisory := &resolver.ResolverError{
 		Entity: "Aggregate", Field: ".spec.parameters.host",
-		Message: "near miss", Err: resolver.ErrAttachmentSlotNearMiss,
+		Message: "near miss", Err: resolver.ErrAttachmentSlotNearMiss(),
 	}
 
 	got := []Diagnostic{

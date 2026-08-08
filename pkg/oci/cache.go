@@ -126,7 +126,7 @@ func ReadCached(workspaceRoot, cacheDir, uri, version string) ([]byte, error) {
 	data, err := os.ReadFile(blob)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil, fmt.Errorf("oci: cache miss for %s@%s: %w", uri, version, ErrFetchNotFound)
+			return nil, fmt.Errorf("oci: cache miss for %s@%s: %w", uri, version, ErrFetchNotFound())
 		}
 		return nil, fmt.Errorf("oci: cache read %s@%s: %w", uri, version, err)
 	}
@@ -161,7 +161,7 @@ func ReadCachedManifest(workspaceRoot, cacheDir, uri, version string) ([]byte, e
 	data, err := os.ReadFile(blob)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil, fmt.Errorf("oci: manifest cache miss for %s@%s: %w", uri, version, ErrFetchNotFound)
+			return nil, fmt.Errorf("oci: manifest cache miss for %s@%s: %w", uri, version, ErrFetchNotFound())
 		}
 		return nil, fmt.Errorf("oci: manifest cache read %s@%s: %w", uri, version, err)
 	}

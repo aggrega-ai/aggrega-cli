@@ -239,7 +239,7 @@ func TestIntegration_PluginSignedClosure_PolicyHaltsOnMissingSig(t *testing.T) {
 		},
 	}
 	verr := verifyClosureSignatures(ctx, lf, cl, wsCfg, t.TempDir(), nil, remoteTargetForWith(&http.Client{}))
-	if !errors.Is(verr, signing.ErrNoSignatureFound) {
+	if !errors.Is(verr, signing.ErrNoSignatureFound()) {
 		t.Fatalf("a signature-requiring policy must HALT with ErrNoSignatureFound when the single manifest carries no signature; got: %v", verr)
 	}
 }
@@ -275,7 +275,7 @@ func TestIntegration_PluginSignedClosure_PolicyHaltsOnWrongKey(t *testing.T) {
 	}
 
 	verr := verifyClosureSignatures(ctx, lf, cl, wsCfg, t.TempDir(), nil, remoteTargetForWith(&http.Client{}))
-	if !errors.Is(verr, signing.ErrSignatureVerificationFailed) {
+	if !errors.Is(verr, signing.ErrSignatureVerificationFailed()) {
 		t.Fatalf("a wrong pinned key must HALT with ErrSignatureVerificationFailed; got: %v", verr)
 	}
 }

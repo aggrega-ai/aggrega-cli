@@ -152,7 +152,7 @@ func TestProviderPluginAmbiguityIsPointOfUse(t *testing.T) {
 	if ok || rerr == nil {
 		t.Fatalf("ProviderPluginByName(\"helm\") over an ambiguous catalog: got (ok=%v, err=%v); want (false, ErrAmbiguousProviderPlugin)", ok, rerr)
 	}
-	if !errors.Is(rerr, catalog.ErrAmbiguousProviderPlugin) {
+	if !errors.Is(rerr, catalog.ErrAmbiguousProviderPlugin()) {
 		t.Errorf("ambiguity error must be ErrAmbiguousProviderPlugin; got: %v", rerr)
 	}
 	if !strings.Contains(rerr.Error(), "helm-renderer") || !strings.Contains(rerr.Error(), "helm-renderer-alt") {
@@ -186,7 +186,7 @@ func TestProviderPluginBindingDisambiguates(t *testing.T) {
 
 	// A binding naming a plugin no candidate matches is a loud, unfulfillable halt.
 	_, ok, rerr = cat.ProviderPluginForTarget("helm", map[string]string{"helm": "nonexistent"})
-	if ok || !errors.Is(rerr, catalog.ErrProviderBindingUnsatisfied) {
+	if ok || !errors.Is(rerr, catalog.ErrProviderBindingUnsatisfied()) {
 		t.Errorf("an unsatisfiable binding must return ErrProviderBindingUnsatisfied; got (ok=%v, err=%v)", ok, rerr)
 	}
 }

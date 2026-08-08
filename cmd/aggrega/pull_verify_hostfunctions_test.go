@@ -114,7 +114,7 @@ func TestVerifyPluginHostFunctions_StampDivergesHalts(t *testing.T) {
 	cl := pluginArtifactClosure(artifactURI, entityURI, contentDigest)
 
 	err := verifyPluginHostFunctions(context.Background(), cl, loader, workspaceRoot, cacheDir, os.Stderr)
-	if !errors.Is(err, wasm.ErrWasmHostFunctionsStampMismatch) {
+	if !errors.Is(err, wasm.ErrWasmHostFunctionsStampMismatch()) {
 		t.Fatalf("a divergent stamp should halt with ErrWasmHostFunctionsStampMismatch; got %v", err)
 	}
 }

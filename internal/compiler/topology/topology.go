@@ -352,7 +352,7 @@ func BuildContext(ctx context.Context, cfg BuildConfig) (*TopologyResult, error)
 	// half-normalized graph. An internal-invariant breach, not an authoring error.
 	if agg != nil {
 		if _, hasDefault := agg.Spec.Subsystems.Get("default"); hasDefault && agg.Spec.Components.Len() > 0 {
-			return nil, fmt.Errorf("%w: construct aggregates through the normalization core (types.Normalize via the parse path), not a hand-built literal", ErrUnnormalizedAggregate)
+			return nil, fmt.Errorf("%w: construct aggregates through the normalization core (types.Normalize via the parse path), not a hand-built literal", ErrUnnormalizedAggregate())
 		}
 	}
 
@@ -525,7 +525,7 @@ func BuildContext(ctx context.Context, cfg BuildConfig) (*TopologyResult, error)
 						if entry.Target != "" && entry.Target != edges[idx].Target {
 							return nil, fmt.Errorf(
 								"release edge %s/%s/%s retargets developer-declared target %q to %q: %w",
-								nodeID, socket, alias, edges[idx].Target, entry.Target, ErrReleaseEdgeRetarget)
+								nodeID, socket, alias, edges[idx].Target, entry.Target, ErrReleaseEdgeRetarget())
 						}
 						if entry.Infra.Len() > 0 {
 							merged := types.OrderedMap[any]{}
@@ -616,11 +616,11 @@ func BuildContext(ctx context.Context, cfg BuildConfig) (*TopologyResult, error)
 			if _, gone := flat.Pruned.Get(e.Target); gone {
 				return nil, fmt.Errorf(
 					"uses edge %s/%s/%s targets %q, which was pruned from the topology because its active toggle resolved to false: %w",
-					e.Source, e.Socket, e.Alias, e.Target, ErrUsesPrunedComponent)
+					e.Source, e.Socket, e.Alias, e.Target, ErrUsesPrunedComponent())
 			}
 			return nil, fmt.Errorf(
 				"uses edge %s/%s/%s targets %q, which is not a component in the topology: %w",
-				e.Source, e.Socket, e.Alias, e.Target, ErrDanglingUsesTarget)
+				e.Source, e.Socket, e.Alias, e.Target, ErrDanglingUsesTarget())
 		}
 	}
 
@@ -875,7 +875,7 @@ func guardSubAggregateReleaseEdges(
 				Field:  field,
 				Message: fmt.Sprintf("socket %q not defined in component type %q usesSchema (valid: %v)",
 					ref.Socket, node.ComponentType, catComp.Spec.UsesSchema.Keys()),
-				Err: resolver.ErrUnknownUsesSocket,
+				Err: resolver.ErrUnknownUsesSocket(),
 			})
 			continue
 		}

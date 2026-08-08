@@ -127,7 +127,7 @@ func TestVerifyKeyedRejectsWrongKey(t *testing.T) {
 		Config: cfg,
 		Target: targetForStore(store, "1.0.0"),
 	})
-	if !errors.Is(err, signing.ErrSignatureVerificationFailed) {
+	if !errors.Is(err, signing.ErrSignatureVerificationFailed()) {
 		t.Fatalf("want ErrSignatureVerificationFailed, got %v", err)
 	}
 }
@@ -153,7 +153,7 @@ func TestVerifyMissingSignatureHaltsWhenRequired(t *testing.T) {
 		Config: cfg,
 		Target: targetForStore(store, "1.0.0"),
 	})
-	if !errors.Is(verr, signing.ErrNoSignatureFound) {
+	if !errors.Is(verr, signing.ErrNoSignatureFound()) {
 		t.Fatalf("want ErrNoSignatureFound, got %v", verr)
 	}
 }
@@ -199,7 +199,7 @@ func TestVerifyOrgPolicyRequiresSignatureForKind(t *testing.T) {
 		Config: cfg,
 		Target: targetForStore(store, "1.0.0"),
 	})
-	if !errors.Is(verr, signing.ErrNoSignatureFound) {
+	if !errors.Is(verr, signing.ErrNoSignatureFound()) {
 		t.Fatalf("an unsigned in-scope kind under the org policy must halt with ErrNoSignatureFound, got %v", verr)
 	}
 }
@@ -244,7 +244,7 @@ func TestVerifyOrgPolicyFailSafeEmptyKind(t *testing.T) {
 		Config: cfg,
 		Target: targetForStore(store, "1.0.0"),
 	})
-	if !errors.Is(verr, signing.ErrNoSignatureFound) {
+	if !errors.Is(verr, signing.ErrNoSignatureFound()) {
 		t.Fatalf("an unclassifiable artifact under an active org policy must halt with ErrNoSignatureFound, got %v", verr)
 	}
 }
@@ -351,7 +351,7 @@ func TestVerifyPerRegistryRequiredRefusesUnsigned(t *testing.T) {
 		Config: cfg,
 		Target: targetForStore(store, "1.0.0"),
 	})
-	if !errors.Is(verr, signing.ErrNoSignatureFound) {
+	if !errors.Is(verr, signing.ErrNoSignatureFound()) {
 		t.Fatalf("per-registry required must halt an unsigned in-scope artifact with ErrNoSignatureFound, got %v", verr)
 	}
 }

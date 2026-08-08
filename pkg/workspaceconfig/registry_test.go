@@ -78,7 +78,7 @@ func TestResolveRegistryAmbiguousAlias(t *testing.T) {
 	if err == nil {
 		t.Fatal("ambiguous alias should be rejected")
 	}
-	if !errors.Is(err, ErrAmbiguousRegistryAlias) {
+	if !errors.Is(err, ErrAmbiguousRegistryAlias()) {
 		t.Errorf("error = %v, want ErrAmbiguousRegistryAlias", err)
 	}
 }
@@ -134,7 +134,7 @@ func TestUpsertRegistryDuplicateAliasDifferentHost(t *testing.T) {
 	if err == nil {
 		t.Fatal("duplicate alias on a different host should be rejected")
 	}
-	if !errors.Is(err, ErrDuplicateRegistryAlias) {
+	if !errors.Is(err, ErrDuplicateRegistryAlias()) {
 		t.Errorf("error = %v, want ErrDuplicateRegistryAlias", err)
 	}
 }

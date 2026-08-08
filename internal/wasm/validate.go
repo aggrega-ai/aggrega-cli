@@ -130,7 +130,7 @@ func ValidatePlugin(ctx context.Context, wasmBytes []byte, opts ValidateOptions)
 			return ValidateReport{}, fmt.Errorf(
 				"plugin %q: recorded command mirror %s does not match the plugin describe() commands %s: %w",
 				opts.Identity, FormatCommandMirror(opts.Entity.CommandMirror), FormatCommandMirror(desc.Commands),
-				ErrWasmCommandsMirrorMismatch)
+				ErrWasmCommandsMirrorMismatch())
 		}
 		derived, err := DeriveHostFunctions(opts.Identity, wasmBytes)
 		if err != nil {
@@ -139,7 +139,7 @@ func ValidatePlugin(ctx context.Context, wasmBytes []byte, opts ValidateOptions)
 		if !HostFunctionsEqual(opts.Entity.HostFunctions, derived) {
 			return ValidateReport{}, fmt.Errorf(
 				"plugin %q: recorded host-function record %v does not match the .wasm imports %v: %w",
-				opts.Identity, opts.Entity.HostFunctions, derived, ErrWasmHostFunctionsStampMismatch)
+				opts.Identity, opts.Entity.HostFunctions, derived, ErrWasmHostFunctionsStampMismatch())
 		}
 		describeVersion := ""
 		if desc.Metadata != nil {
@@ -148,7 +148,7 @@ func ValidatePlugin(ctx context.Context, wasmBytes []byte, opts ValidateOptions)
 		if opts.Entity.Version != describeVersion {
 			return ValidateReport{}, fmt.Errorf(
 				"plugin %q: recorded metadata.version %q does not match the plugin describe() version %q: %w",
-				opts.Identity, opts.Entity.Version, describeVersion, ErrWasmPluginVersionMismatch)
+				opts.Identity, opts.Entity.Version, describeVersion, ErrWasmPluginVersionMismatch())
 		}
 		report.Notices = UnderDeclaredNotices(opts.Entity.CuratedSurface, desc)
 	}

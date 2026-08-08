@@ -53,7 +53,7 @@ func UpsertRegistry(path string, reg RegistryConfig) error {
 			for i := range registries {
 				if registries[i].Host != reg.Host && registries[i].Name == reg.Name {
 					return fmt.Errorf("workspaceconfig: registry alias %q is already used by host %q; choose a different alias or address that host directly: %w",
-						reg.Name, registries[i].Host, ErrDuplicateRegistryAlias)
+						reg.Name, registries[i].Host, ErrDuplicateRegistryAlias())
 				}
 			}
 		}

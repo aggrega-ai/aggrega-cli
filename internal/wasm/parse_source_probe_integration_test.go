@@ -140,7 +140,7 @@ func TestParseSourceProbe_ReentryGuard(t *testing.T) {
 	if strings.Contains(got, "nested_producer_seam_ran") {
 		t.Fatalf("the nested producer-consumption call succeeded — ctx did not carry the depth across the boundary; output = %q", got)
 	}
-	if !strings.Contains(got, wasm.ErrProducerConsumptionReentry.Error()) {
+	if !strings.Contains(got, wasm.ErrProducerConsumptionReentry().Error()) {
 		t.Fatalf("nested call was not denied with the re-entry sentinel; output = %q", got)
 	}
 }
@@ -176,20 +176,20 @@ func TestParseSourceProbe_NoParser(t *testing.T) {
 	plugin, desc := loadParseSourceProbe(t, ctx)
 
 	plugin.SetSourceParser(func(context.Context, string, []byte, json.RawMessage) (json.RawMessage, error) {
-		return nil, fmt.Errorf("%w: no parser plugin advertises %q", catalog.ErrNoParserForFormat, "parse:bogus")
+		return nil, fmt.Errorf("%w: no parser plugin advertises %q", catalog.ErrNoParserForFormat(), "parse:bogus")
 	})
 
 	out, err := wasm.InvokeExport(ctx, plugin, desc, wasm.ImportExport, []byte(`{}`))
 	if err != nil {
 		t.Fatalf("InvokeExport(import) trapped instead of surfacing in-band: %v", err)
 	}
-	if !strings.HasPrefix(string(out), "ERR:") || !strings.Contains(string(out), catalog.ErrNoParserForFormat.Error()) {
+	if !strings.HasPrefix(string(out), "ERR:") || !strings.Contains(string(out), catalog.ErrNoParserForFormat().Error()) {
 		t.Errorf("consumer output = %q; want an in-band ERR carrying the no-parser message", out)
 	}
 	warnings := plugin.DrainWarnings()
 	found := false
 	for _, w := range warnings {
-		if strings.Contains(w, catalog.ErrNoParserForFormat.Error()) {
+		if strings.Contains(w, catalog.ErrNoParserForFormat().Error()) {
 			found = true
 		}
 	}

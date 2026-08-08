@@ -47,7 +47,7 @@ func TestSelectEntityVersion(t *testing.T) {
 				t.Errorf("key=%q want %q", key, tc.wantKey)
 			}
 			if tc.wantUnsat {
-				if !errors.Is(err, ErrUnsatisfiableEntityVersion) {
+				if !errors.Is(err, ErrUnsatisfiableEntityVersion()) {
 					t.Errorf("want ErrUnsatisfiableEntityVersion, got %v", err)
 				}
 			} else if err != nil {

@@ -96,7 +96,7 @@ func TestValidateImportModulesRejectsUnknownModule(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected rejection of an import under module %q; got nil", badModule)
 	}
-	if !errors.Is(err, ErrWasmManifestRejected) {
+	if !errors.Is(err, ErrWasmManifestRejected()) {
 		t.Errorf("error does not wrap ErrWasmManifestRejected: %v", err)
 	}
 	if !strings.Contains(err.Error(), badModule) {
@@ -119,7 +119,7 @@ func TestValidateImportModulesRejectsUnknownModuleAmongAllowed(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected rejection of an import under module %q; got nil", badModule)
 	}
-	if !errors.Is(err, ErrWasmManifestRejected) {
+	if !errors.Is(err, ErrWasmManifestRejected()) {
 		t.Errorf("error does not wrap ErrWasmManifestRejected: %v", err)
 	}
 	if !strings.Contains(err.Error(), badModule) {
@@ -177,10 +177,10 @@ func TestCallWithPanicRecoveryWrapsGuestPanic(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error from generic panic; got nil")
 	}
-	if !errors.Is(err, ErrWasmGuestPanic) {
+	if !errors.Is(err, ErrWasmGuestPanic()) {
 		t.Errorf("generic panic must wrap ErrWasmGuestPanic: %v", err)
 	}
-	if errors.Is(err, ErrWasmPluginExited) {
+	if errors.Is(err, ErrWasmPluginExited()) {
 		t.Errorf("generic panic must not wrap ErrWasmPluginExited: %v", err)
 	}
 }

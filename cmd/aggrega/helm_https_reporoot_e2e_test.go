@@ -165,8 +165,8 @@ func TestHTTPSRepoRootBuildReproduction(t *testing.T) {
 	err := dispatchBuild(nil, releasePath, []string{catalogDir}, false, os.Stderr, os.Stdout)
 	if err != nil {
 		t.Logf("FULL ERROR CHAIN: %v", err)
-		t.Logf("errors.Is(err, oci.ErrFetchNotFound)  = %v", errors.Is(err, oci.ErrFetchNotFound))
-		t.Logf("errors.Is(err, oci.ErrFetchIntegrity) = %v", errors.Is(err, oci.ErrFetchIntegrity))
+		t.Logf("errors.Is(err, oci.ErrFetchNotFound)  = %v", errors.Is(err, oci.ErrFetchNotFound()))
+		t.Logf("errors.Is(err, oci.ErrFetchIntegrity) = %v", errors.Is(err, oci.ErrFetchIntegrity()))
 		for e := err; e != nil; e = errors.Unwrap(e) {
 			t.Logf("  wrap: %s", e.Error())
 		}
@@ -390,7 +390,7 @@ func TestHTTPSRepoRootChartCollision(t *testing.T) {
 
 	// Both render.
 	if err := dispatchBuild(nil, releasePath, []string{catalogDir}, false, os.Stderr, os.Stdout); err != nil {
-		t.Logf("errors.Is(err, oci.ErrFetchNotFound) = %v", errors.Is(err, oci.ErrFetchNotFound))
+		t.Logf("errors.Is(err, oci.ErrFetchNotFound) = %v", errors.Is(err, oci.ErrFetchNotFound()))
 		t.Fatalf("build FAILED for two charts colliding on one repo root: %v", err)
 	}
 	dist := snapshotDist(t, filepath.Join(root, "dist"))

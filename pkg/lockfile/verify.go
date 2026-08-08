@@ -13,7 +13,7 @@ import (
 )
 
 // ErrLockfileDrift wraps every drift detection failure raised by
-// Verify. Errors satisfying errors.Is(err, ErrLockfileDrift) carry a
+// Verify. Errors satisfying errors.Is(err, ErrLockfileDrift()) carry a
 // wrapped message naming every offending URI surfaced across the
 // closure axes (entities, schema libraries, mapping libraries,
 // workload libraries, Wasm plugins). Each axis collects all of its drift entries before
@@ -30,9 +30,9 @@ import (
 // tiers does not drift; drift surfaces only when the content
 // actually changes (re-published tag, vendored re-tarred content,
 // edited workspace catalog entity).
-const ErrLockfileDrift cerrors.Code = "lockfile/lockfile-drift"
+func ErrLockfileDrift() error { return errLockfileDrift }
 
-var _ = cerrors.Register(ErrLockfileDrift, cerrors.Meta{
+var errLockfileDrift = cerrors.Register("lockfile/lockfile-drift", cerrors.Meta{
 	Message: "lockfile: out of date; it no longer matches the current catalog",
 })
 
@@ -61,7 +61,7 @@ func Verify(lf *Lockfile, expected closure.Closure) error {
 	if len(driftErrs) == 0 {
 		return nil
 	}
-	return fmt.Errorf("%w: %w", ErrLockfileDrift, errors.Join(driftErrs...))
+	return fmt.Errorf("%w: %w", ErrLockfileDrift(), errors.Join(driftErrs...))
 }
 
 func collectEntityDrift(have []Entity, want []closure.ResolvedRef) []error {

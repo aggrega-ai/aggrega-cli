@@ -128,7 +128,7 @@ spec:
   schema:
     values:
       port: { type: integer }
-`, envelope.ErrEntityEnvelope},
+`, envelope.ErrEntityEnvelope()},
 		// Retired key (secretNames) — the exact hole the gate was built to close.
 		{"component-retired-secretNames", "Component", `apiVersion: aggrega.ai/v1alpha1
 kind: Component
@@ -142,7 +142,7 @@ spec:
   schema:
     values:
       port: { type: integer }
-`, envelope.ErrEntityEnvelope},
+`, envelope.ErrEntityEnvelope()},
 		// Missing required metadata field (version).
 		{"component-missing-version", "Component", `apiVersion: aggrega.ai/v1alpha1
 kind: Component
@@ -154,7 +154,7 @@ spec:
   schema:
     values:
       port: { type: integer }
-`, envelope.ErrEntityEnvelope},
+`, envelope.ErrEntityEnvelope()},
 		// *From: family — banned by spec-level closure, rejected as an
 		// unknown key (no dedicated *From sentinel exists; the mechanism
 		// IS unknown-key rejection).
@@ -170,7 +170,7 @@ spec:
   schema:
     values:
       port: { type: integer }
-`, envelope.ErrEntityEnvelope},
+`, envelope.ErrEntityEnvelope()},
 		// Wrong envelope shape: spec authored as a list, not a map.
 		{"feature-wrong-spec-shape", "Feature", `apiVersion: aggrega.ai/v1alpha1
 kind: Feature
@@ -181,7 +181,7 @@ spec:
   - not
   - a
   - map
-`, envelope.ErrEntityEnvelope},
+`, envelope.ErrEntityEnvelope()},
 		// Typo'd key on a Recipe spec.
 		{"recipe-typo-key", "Recipe", `apiVersion: aggrega.ai/v1alpha1
 kind: Recipe
@@ -197,7 +197,7 @@ spec:
     containers:
       main:
         image: x:1
-`, envelope.ErrEntityEnvelope},
+`, envelope.ErrEntityEnvelope()},
 		// SchemaLibrary missing required (schemas).
 		{"schemalibrary-missing-schemas", "SchemaLibrary", `apiVersion: aggrega.ai/v1alpha1
 kind: SchemaLibrary
@@ -205,7 +205,7 @@ metadata:
   name: BaseComponents
   version: "1.0.0"
 spec: {}
-`, envelope.ErrEntityEnvelope},
+`, envelope.ErrEntityEnvelope()},
 		// MappingLibrary unknown key.
 		{"mappinglibrary-unknown-key", "MappingLibrary", `apiVersion: aggrega.ai/v1alpha1
 kind: MappingLibrary
@@ -216,7 +216,7 @@ spec:
   mappings:
     Frag: "key: value"
   bogus: x
-`, envelope.ErrEntityEnvelope},
+`, envelope.ErrEntityEnvelope()},
 	}
 }
 

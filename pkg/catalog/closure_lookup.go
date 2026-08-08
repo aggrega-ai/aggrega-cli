@@ -415,7 +415,7 @@ func (l *catalogLookup) honorPinDigest(uri string, res closure.Resolution) (clos
 	}
 	return closure.Resolution{}, fmt.Errorf(
 		"%w: pinned entity %q: registry now serves digest %s for the pinned version, not the pinned digest %s; run `aggrega pull --upgrade --release <release>` to update the pin",
-		oci.ErrFetchIntegrity, uri, res.Digest, pin.Digest)
+		oci.ErrFetchIntegrity(), uri, res.Digest, pin.Digest)
 }
 
 // ociKindForHint maps a closure KindHint to the catalog kind the OCI location
@@ -631,7 +631,7 @@ func (l *catalogLookup) resolveVersionedPluginArtifact(uri, version string) (clo
 	}
 	result, err := l.ociPuller.Pull(context.Background(), reference, version)
 	if err != nil {
-		if errors.Is(err, oci.ErrFetchNotFound) {
+		if errors.Is(err, oci.ErrFetchNotFound()) {
 			return closure.Resolution{NotFound: true}, nil
 		}
 		if rem := oci.RemediationFor(err, registryhost.Of(reference)); rem != "" {
@@ -647,7 +647,7 @@ func (l *catalogLookup) resolveVersionedPluginArtifact(uri, version string) (clo
 	if prior, ok := l.priorPins[uri]; ok {
 		if prior.Digest != "" && contentPin != prior.Digest {
 			return closure.Resolution{}, fmt.Errorf("catalog: pulled plugin artifact %s content digest %s does not match pin %s: %w",
-				uri, contentPin, prior.Digest, oci.ErrFetchIntegrity)
+				uri, contentPin, prior.Digest, oci.ErrFetchIntegrity())
 		}
 		if prior.ManifestDigest != "" {
 			if verr := oci.VerifyManifestDigest(result.ManifestBytes, prior.ManifestDigest); verr != nil {
@@ -679,7 +679,7 @@ func (l *catalogLookup) readCachedPluginArtifact(uri, contentPin string) (closur
 	}
 	bytes, err := oci.ReadCached(l.workspaceRoot, l.cacheDir, uri, contentPin)
 	if err != nil {
-		if errors.Is(err, oci.ErrFetchNotFound) {
+		if errors.Is(err, oci.ErrFetchNotFound()) {
 			return closure.Resolution{}, false, nil
 		}
 		return closure.Resolution{}, false, fmt.Errorf("catalog: read cached plugin artifact %s: %w", uri, err)
@@ -700,10 +700,10 @@ func (l *catalogLookup) readCachedPluginArtifact(uri, contentPin string) (closur
 		}
 		if got := contentDigest(bytes); got != contentPin {
 			return closure.Resolution{}, false, fmt.Errorf("catalog: cached plugin artifact %s content digest %s does not match pin %s: %w",
-				uri, got, contentPin, oci.ErrFetchIntegrity)
+				uri, got, contentPin, oci.ErrFetchIntegrity())
 		}
 		return pinnedPluginResolution(contentPin, contentDigest(manifestBytes)), true, nil
-	case errors.Is(mrerr, oci.ErrFetchNotFound):
+	case errors.Is(mrerr, oci.ErrFetchNotFound()):
 		return closure.Resolution{}, false, nil
 	default:
 		return closure.Resolution{}, false, fmt.Errorf("catalog: read cached manifest for plugin artifact %s: %w", uri, mrerr)
@@ -1006,7 +1006,7 @@ func tier2ReadVerified(workspaceRoot, cacheDir, uri, expectedDigest, expectedMan
 	}
 	bytes, res, ok := tier2ReadSlotUnverified(workspaceRoot, cacheDir, uri)
 	if !ok {
-		return nil, fmt.Errorf("catalog: %s not present in the content cache; run `aggrega pull --release <release>` first: %w", uri, oci.ErrFetchNotFound)
+		return nil, fmt.Errorf("catalog: %s not present in the content cache; run `aggrega pull --release <release>` first: %w", uri, oci.ErrFetchNotFound())
 	}
 	// Manifest authority. Every registry pull persists the OCI manifest beside the
 	// content; it is the root the content is verified against. Verify the manifest
@@ -1038,15 +1038,15 @@ func tier2ReadVerified(workspaceRoot, cacheDir, uri, expectedDigest, expectedMan
 		} else if err := oci.VerifyContentAgainstManifest(manifestBytes, bytes); err != nil {
 			return nil, fmt.Errorf("catalog: cached %s: %w", uri, err)
 		}
-	case errors.Is(mrerr, oci.ErrFetchNotFound):
-		return nil, fmt.Errorf("catalog: %s cached without its OCI manifest; run `aggrega pull --release <release>` first: %w", uri, oci.ErrFetchNotFound)
+	case errors.Is(mrerr, oci.ErrFetchNotFound()):
+		return nil, fmt.Errorf("catalog: %s cached without its OCI manifest; run `aggrega pull --release <release>` first: %w", uri, oci.ErrFetchNotFound())
 	default:
 		return nil, fmt.Errorf("catalog: read cached manifest for %s: %w", uri, mrerr)
 	}
 	// Content still matches the recorded content pin.
 	if got := contentDigest(bytes); got != expectedDigest {
 		return nil, fmt.Errorf("catalog: cached %s content digest %s does not match lockfile pin %s: %w",
-			uri, got, expectedDigest, oci.ErrFetchIntegrity)
+			uri, got, expectedDigest, oci.ErrFetchIntegrity())
 	}
 	return bytes, nil
 }
@@ -1076,7 +1076,7 @@ func tier3PullCatalogEntity(workspaceRoot, cacheDir string, puller OCIPuller, ur
 		name, floor, hasFloor := SplitVersionedURI(uri)
 		result, resolvedVersion, err := ep.PullEntity(context.Background(), name, kind, floor)
 		if err != nil {
-			if errors.Is(err, oci.ErrFetchNotFound) {
+			if errors.Is(err, oci.ErrFetchNotFound()) {
 				return nil, closure.Resolution{NotFound: true}, nil
 			}
 			// For the EntityPuller path the bound host is the configured registry,
@@ -1123,7 +1123,7 @@ func tier3PullCatalogEntity(workspaceRoot, cacheDir string, puller OCIPuller, ur
 	}
 	result, err := puller.Pull(context.Background(), reference, tag)
 	if err != nil {
-		if errors.Is(err, oci.ErrFetchNotFound) {
+		if errors.Is(err, oci.ErrFetchNotFound()) {
 			return nil, closure.Resolution{NotFound: true}, nil
 		}
 		// Fetch sentinels carry an operator remediation (e.g. the
@@ -1161,7 +1161,7 @@ func (l *catalogLookup) tier3Library(uri, kind string) (closure.Resolution, erro
 		name, floor, hasFloor := SplitVersionedURI(uri)
 		result, resolvedVersion, err := lp.PullLibrary(context.Background(), name, kind, floor)
 		if err != nil {
-			if errors.Is(err, oci.ErrFetchNotFound) {
+			if errors.Is(err, oci.ErrFetchNotFound()) {
 				return closure.Resolution{NotFound: true}, nil
 			}
 			return closure.Resolution{}, fmt.Errorf("catalog: tier-3 pull %s %s: %w", kind, name, err)
@@ -1202,7 +1202,7 @@ func (l *catalogLookup) tier3Library(uri, kind string) (closure.Resolution, erro
 	}
 	result, err := l.ociPuller.Pull(context.Background(), reference, tag)
 	if err != nil {
-		if errors.Is(err, oci.ErrFetchNotFound) {
+		if errors.Is(err, oci.ErrFetchNotFound()) {
 			return closure.Resolution{NotFound: true}, nil
 		}
 		return closure.Resolution{}, fmt.Errorf("catalog: tier-3 pull %s %s: %w", kind, uri, err)
@@ -1268,7 +1268,7 @@ func PullAndCacheAggregate(workspaceRoot, cacheDir string, puller OCIPuller, ref
 	name, floor, _ := SplitVersionedURI(ref)
 	result, fetchVersion, perr := ap.PullAggregate(context.Background(), name, floor)
 	if perr != nil {
-		if errors.Is(perr, oci.ErrFetchNotFound) {
+		if errors.Is(perr, oci.ErrFetchNotFound()) {
 			return nil, "", "", "", false, nil
 		}
 		return nil, "", "", "", false, fmt.Errorf("catalog: tier-3 pull Aggregate %s: %w", name, perr)

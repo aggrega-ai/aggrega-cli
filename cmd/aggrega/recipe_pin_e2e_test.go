@@ -305,7 +305,7 @@ func TestE2SourceTamperHaltsBuild(t *testing.T) {
 	if err == nil {
 		t.Fatalf("build succeeded over a tampered source; expected a loud halt")
 	}
-	if !errors.Is(err, oci.ErrFetchIntegrity) {
+	if !errors.Is(err, oci.ErrFetchIntegrity()) {
 		t.Errorf("tampered-source build error = %v; want ErrFetchIntegrity", err)
 	}
 }

@@ -70,7 +70,7 @@ func (a *adapter) Kind() string { return Kind }
 func (a *adapter) Resolve(spec sourceresolver.SourceSpec) (*sourceresolver.ResolvedSource, error) {
 	req, err := http.NewRequest(http.MethodGet, spec.URL, nil)
 	if err != nil {
-		return nil, sourceresolver.Wrap(spec, sourceresolver.ErrFetchNetworkUnreachable, err)
+		return nil, sourceresolver.Wrap(spec, sourceresolver.ErrFetchNetworkUnreachable(), err)
 	}
 	// Production carries no client of its own: the egress-gate client threaded
 	// through the spec transports the fetch. Tests inject a client on the adapter.
@@ -79,7 +79,7 @@ func (a *adapter) Resolve(spec sourceresolver.SourceSpec) (*sourceresolver.Resol
 		client = spec.Client
 	}
 	if client == nil {
-		return nil, sourceresolver.Wrap(spec, sourceresolver.ErrFetchNetworkUnreachable,
+		return nil, sourceresolver.Wrap(spec, sourceresolver.ErrFetchNetworkUnreachable(),
 			fmt.Errorf("compose-https-fragment: no egress client available for %q", spec.URL))
 	}
 	resp, err := client.Do(req)
@@ -92,7 +92,7 @@ func (a *adapter) Resolve(spec sourceresolver.SourceSpec) (*sourceresolver.Resol
 	}
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, sourceresolver.Wrap(spec, sourceresolver.ErrFetchNetworkUnreachable, err)
+		return nil, sourceresolver.Wrap(spec, sourceresolver.ErrFetchNetworkUnreachable(), err)
 	}
 
 	fragmentName := path.Base(spec.URL)
@@ -131,25 +131,25 @@ func (a *adapter) Resolve(spec sourceresolver.SourceSpec) (*sourceresolver.Resol
 func mapTransportError(spec sourceresolver.SourceSpec, err error) error {
 	var netErr net.Error
 	if errors.As(err, &netErr) {
-		return sourceresolver.Wrap(spec, sourceresolver.ErrFetchNetworkUnreachable, err)
+		return sourceresolver.Wrap(spec, sourceresolver.ErrFetchNetworkUnreachable(), err)
 	}
 	if strings.Contains(err.Error(), "connection refused") ||
 		strings.Contains(err.Error(), "no such host") {
-		return sourceresolver.Wrap(spec, sourceresolver.ErrFetchNetworkUnreachable, err)
+		return sourceresolver.Wrap(spec, sourceresolver.ErrFetchNetworkUnreachable(), err)
 	}
-	return sourceresolver.Wrap(spec, sourceresolver.ErrFetchNetworkUnreachable, err)
+	return sourceresolver.Wrap(spec, sourceresolver.ErrFetchNetworkUnreachable(), err)
 }
 
 func mapStatusError(spec sourceresolver.SourceSpec, status int) error {
 	switch status {
 	case http.StatusNotFound:
-		return sourceresolver.Wrap(spec, sourceresolver.ErrFetchNotFound,
+		return sourceresolver.Wrap(spec, sourceresolver.ErrFetchNotFound(),
 			fmt.Errorf("HTTP %d", status))
 	case http.StatusUnauthorized, http.StatusForbidden:
-		return sourceresolver.Wrap(spec, sourceresolver.ErrFetchUnauthorized,
+		return sourceresolver.Wrap(spec, sourceresolver.ErrFetchUnauthorized(),
 			fmt.Errorf("HTTP %d", status))
 	default:
-		return sourceresolver.Wrap(spec, sourceresolver.ErrFetchNotFound,
+		return sourceresolver.Wrap(spec, sourceresolver.ErrFetchNotFound(),
 			fmt.Errorf("HTTP %d", status))
 	}
 }

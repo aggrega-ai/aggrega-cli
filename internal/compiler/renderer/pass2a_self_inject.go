@@ -160,7 +160,7 @@ func CheckSelfInjectCollisions(selfKeys map[string]map[string]string, usesEdges 
 	first := collisions[0]
 	return cerrors.Wrap(
 		fmt.Errorf("%w: delivery key %q in mechanism %q declared by both component-level self-inject and uses-level cross-inject (uses socket %q)",
-			ErrSelfInjectKeyCollision, first.deliveryKey, first.mechanism, first.usesSocket),
+			ErrSelfInjectKeyCollision(), first.deliveryKey, first.mechanism, first.usesSocket),
 		cerrors.DeveloperError,
 		cerrors.SourceLocation{File: nodeID},
 		fmt.Sprintf("node %q self-inject vs uses-inject collision", nodeID),

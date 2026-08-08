@@ -45,7 +45,7 @@ func TestValidateInstanceNames_DotRejected(t *testing.T) {
 	if len(errs) == 0 {
 		t.Fatal("expected error for dot in instance name")
 	}
-	if !errors.Is(errs[0], ErrInvalidInstanceName) {
+	if !errors.Is(errs[0], ErrInvalidInstanceName()) {
 		t.Errorf("expected ErrInvalidInstanceName, got %v", errs[0].Err)
 	}
 }

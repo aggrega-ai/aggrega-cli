@@ -128,7 +128,7 @@ func TestRunNodePipeline_AssemblerOwnPatchHalts(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected pre-assembly halt; got nil error")
 	}
-	if !errors.Is(err, ErrPipelinePatchPreAssembly) {
+	if !errors.Is(err, ErrPipelinePatchPreAssembly()) {
 		t.Errorf("expected ErrPipelinePatchPreAssembly; got %v", err)
 	}
 }

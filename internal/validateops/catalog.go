@@ -175,5 +175,5 @@ func VerifyNoOCILocationCollision(cat *catalog.Catalog) error {
 		return nil
 	}
 	sort.Strings(collisions)
-	return fmt.Errorf("%w:\n  - %s", oci.ErrOCILocationCollision, strings.Join(collisions, "\n  - "))
+	return fmt.Errorf("%w:\n  - %s", oci.ErrOCILocationCollision(), strings.Join(collisions, "\n  - "))
 }

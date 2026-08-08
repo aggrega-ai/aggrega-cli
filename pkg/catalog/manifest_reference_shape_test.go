@@ -67,7 +67,7 @@ func TestManifestRecipeReferenceFaults_ReportsEveryMisShapedValue(t *testing.T) 
 		t.Fatalf("reported %d fault(s), want 4 (one per mis-shaped value): %v", len(faults), faults)
 	}
 	for _, f := range faults {
-		if !errors.Is(f, ErrMalformedRecipeReference) {
+		if !errors.Is(f, ErrMalformedRecipeReference()) {
 			t.Errorf("fault does not wrap the shape sentinel: %v", f)
 		}
 	}

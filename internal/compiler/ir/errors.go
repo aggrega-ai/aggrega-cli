@@ -24,8 +24,8 @@ import (
 // for instanceName carries a non-empty Type that disagrees with the
 // incoming Type. Callers receive a wrapped error naming nodeID,
 // instanceName, and both conflicting type URIs.
-const ErrFeatureTypeMismatch cerrors.Code = "compiler-ir/feature-type-mismatch"
+func ErrFeatureTypeMismatch() error { return errFeatureTypeMismatch }
 
-var _ = cerrors.Register(ErrFeatureTypeMismatch, cerrors.Meta{
+var errFeatureTypeMismatch = cerrors.Register("compiler-ir/feature-type-mismatch", cerrors.Meta{
 	Message: "feature type mismatch between Aggregate and Release",
 })

@@ -386,7 +386,7 @@ func TestAnalyze_AppliesToParseError(t *testing.T) {
 	if !strings.Contains(e.Message, "selector parse error") {
 		t.Errorf("message: %q, want a selector parse error", e.Message)
 	}
-	if e.Sentinel == nil || !errors.Is(e.Sentinel, ErrSelectorViolation) {
+	if e.Sentinel == nil || !errors.Is(e.Sentinel, ErrSelectorViolation()) {
 		t.Errorf("sentinel: %v, want ErrSelectorViolation", e.Sentinel)
 	}
 	if e.Source != "worker" || e.Target != "mon" {
@@ -494,7 +494,7 @@ func TestAnalyze_CapabilityAxisSocket_Red(t *testing.T) {
 		t.Fatalf("expected 1 selector error for out-of-set engine value, got %d: %+v", len(result.Errors), result.Errors)
 	}
 	e := result.Errors[0]
-	if e.Sentinel == nil || !errors.Is(e.Sentinel, ErrSelectorViolation) {
+	if e.Sentinel == nil || !errors.Is(e.Sentinel, ErrSelectorViolation()) {
 		t.Errorf("sentinel: %v, want ErrSelectorViolation", e.Sentinel)
 	}
 	if e.Source != "tool" || e.Target != "db" || e.Socket != "target_datastore" {

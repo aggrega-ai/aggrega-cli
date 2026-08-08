@@ -225,7 +225,7 @@ func attachmentShapeErrors(
 			Entity:  entity,
 			Field:   field,
 			Message: fmt.Sprintf("attachment does not conform to the declared slot shape: %s", msg),
-			Err:     ErrAttachmentSlotShape,
+			Err:     ErrAttachmentSlotShape(),
 		})
 	}
 	return errs

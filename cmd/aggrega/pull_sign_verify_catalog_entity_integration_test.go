@@ -223,7 +223,7 @@ func TestIntegration_PullCommandVerifiesSignedCatalogEntity_Keyed(t *testing.T) 
 		writeCatalogEntityConsumerWorkspace(t, host, wrongPubPEM, signedPush)
 
 		perr := pullRun(pullConfig{ReleasePath: "release.yaml"})
-		if !errors.Is(perr, signing.ErrSignatureVerificationFailed) {
+		if !errors.Is(perr, signing.ErrSignatureVerificationFailed()) {
 			t.Fatalf("a wrong pinned key must HALT the pull with ErrSignatureVerificationFailed; got: %v", perr)
 		}
 	})
@@ -236,7 +236,7 @@ func TestIntegration_PullCommandVerifiesSignedCatalogEntity_Keyed(t *testing.T) 
 		writeCatalogEntityConsumerWorkspace(t, host, pubPEM, unsignedPush)
 
 		perr := pullRun(pullConfig{ReleasePath: "release.yaml"})
-		if !errors.Is(perr, signing.ErrNoSignatureFound) {
+		if !errors.Is(perr, signing.ErrNoSignatureFound()) {
 			t.Fatalf("an unsigned catalog entity under a require-signatures policy must HALT with ErrNoSignatureFound; got: %v", perr)
 		}
 	})

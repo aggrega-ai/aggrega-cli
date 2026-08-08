@@ -15,9 +15,9 @@ import (
 // .wasm artifact reference is derived from its bare identity. A bare .wasm
 // reference or an artifact reference is no longer accepted: the build halts here
 // naming the offending reference.
-const ErrPluginEntityNotFound cerrors.Code = "pluginpath/plugin-entity-not-found"
+func ErrPluginEntityNotFound() error { return errPluginEntityNotFound }
 
-var _ = cerrors.Register(ErrPluginEntityNotFound, cerrors.Meta{
+var errPluginEntityNotFound = cerrors.Register("pluginpath/plugin-entity-not-found", cerrors.Meta{
 	Message: "plugin reference is not a Plugin entity",
 })
 
@@ -81,7 +81,7 @@ func EntityLookup(entityToArtifact func(uri string) (artifactURI string, claim *
 			return ResolvedPlugin{}, fmt.Errorf(
 				"%w: %q must be a Plugin entity URI (e.g. `name:version` or `provider/name:version`); "+
 					"bare-`.wasm` and artifact references are no longer accepted",
-				ErrPluginEntityNotFound, entityURI)
+				ErrPluginEntityNotFound(), entityURI)
 		}
 		resolved, err := cascade(artifactURI)
 		if err != nil {

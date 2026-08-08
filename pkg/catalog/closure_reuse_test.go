@@ -169,7 +169,7 @@ func TestClosureLookupWithReuseVerifiesCacheReuse(t *testing.T) {
 		}
 		lookup := cat.ClosureLookupWithReuse(&orasPullerAdapter{target: store}, ws, cacheDir, nil, nil, reuse)
 		_, err = lookup.ResolveSchemaLibrary(reuseURI)
-		if !errors.Is(err, oci.ErrFetchIntegrity) {
+		if !errors.Is(err, oci.ErrFetchIntegrity()) {
 			t.Errorf("re-tagged upstream: err = %v; want ErrFetchIntegrity (halt, not a re-pinned launder)", err)
 		}
 	})
@@ -207,5 +207,5 @@ type failPuller struct{ t *testing.T }
 
 func (p *failPuller) Pull(ctx context.Context, reference, tag string) (*oci.PullResult, error) {
 	p.t.Errorf("unexpected Tier-3 pull of %s:%s on a verified cache hit", reference, tag)
-	return nil, oci.ErrFetchNotFound
+	return nil, oci.ErrFetchNotFound()
 }

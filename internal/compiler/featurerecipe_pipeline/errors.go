@@ -15,9 +15,9 @@ import (
 // renderer integration that wires the walk into the render loop promotes
 // this to its own build-halting Loud Guardrail; the walk reports the
 // typed cause so callers can match it with errors.Is.
-const ErrPipelineTargetAbsent cerrors.Code = "compiler-featurerecipe-pipeline/pipeline-target-absent"
+func ErrPipelineTargetAbsent() error { return errPipelineTargetAbsent }
 
-var _ = cerrors.Register(ErrPipelineTargetAbsent, cerrors.Meta{
+var errPipelineTargetAbsent = cerrors.Register("compiler-featurerecipe-pipeline/pipeline-target-absent", cerrors.Meta{
 	Message: "pipeline patch targets a document not present in the set",
 })
 
@@ -27,9 +27,9 @@ var _ = cerrors.Register(ErrPipelineTargetAbsent, cerrors.Meta{
 // document in the set, or a patch the apply engine rejected. The
 // underlying cause is wrapped with %w so a caller can still match the
 // specific engine error (for example jsonpatch.ErrTestFailed) through it.
-const ErrPipelineStepFailed cerrors.Code = "compiler-featurerecipe-pipeline/pipeline-step-failed"
+func ErrPipelineStepFailed() error { return errPipelineStepFailed }
 
-var _ = cerrors.Register(ErrPipelineStepFailed, cerrors.Meta{
+var errPipelineStepFailed = cerrors.Register("compiler-featurerecipe-pipeline/pipeline-step-failed", cerrors.Meta{
 	Message: "pipeline step failed",
 })
 
@@ -41,9 +41,9 @@ var _ = cerrors.Register(ErrPipelineStepFailed, cerrors.Meta{
 // for an optional step, the same way a broken `when`/`with` predicate halts
 // regardless of Optional. The wrapping caller names the offending step and
 // keeps this sentinel in the unwrap chain so callers match it with errors.Is.
-const ErrPipelineContractViolation cerrors.Code = "compiler-featurerecipe-pipeline/pipeline-contract-violation"
+func ErrPipelineContractViolation() error { return errPipelineContractViolation }
 
-var _ = cerrors.Register(ErrPipelineContractViolation, cerrors.Meta{
+var errPipelineContractViolation = cerrors.Register("compiler-featurerecipe-pipeline/pipeline-contract-violation", cerrors.Meta{
 	Message: "pipeline step typed-I/O contract violation",
 })
 
@@ -58,8 +58,8 @@ var _ = cerrors.Register(ErrPipelineContractViolation, cerrors.Meta{
 // This is the walk's local surface for the not-structured condition. The
 // renderer integration promotes it to its own build-halting Loud Guardrail;
 // the walk reports the typed cause so callers can match it with errors.Is.
-const ErrPipelineTargetOpaque cerrors.Code = "compiler-featurerecipe-pipeline/pipeline-target-opaque"
+func ErrPipelineTargetOpaque() error { return errPipelineTargetOpaque }
 
-var _ = cerrors.Register(ErrPipelineTargetOpaque, cerrors.Meta{
+var errPipelineTargetOpaque = cerrors.Register("compiler-featurerecipe-pipeline/pipeline-target-opaque", cerrors.Meta{
 	Message: "pipeline patch targets an opaque (non-structured) unit",
 })

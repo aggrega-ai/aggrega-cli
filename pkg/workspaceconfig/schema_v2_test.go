@@ -78,7 +78,7 @@ func TestBareWorkspaceRejectedWithFixIt(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected a bare `workspace:` (null) to be rejected; got nil")
 	}
-	if !errors.Is(err, ErrConfigInvalid) {
+	if !errors.Is(err, ErrConfigInvalid()) {
 		t.Errorf("error should wrap ErrConfigInvalid; got %v", err)
 	}
 	if !strings.Contains(err.Error(), "workspace: {}") {
@@ -109,7 +109,7 @@ func TestMovedKeysReportRelocation(t *testing.T) {
 			if err == nil {
 				t.Fatalf("expected a relocation diagnostic for %s; got nil", tc.name)
 			}
-			if !errors.Is(err, ErrConfigInvalid) {
+			if !errors.Is(err, ErrConfigInvalid()) {
 				t.Errorf("error should wrap ErrConfigInvalid; got %v", err)
 			}
 			if !strings.Contains(err.Error(), tc.want) {

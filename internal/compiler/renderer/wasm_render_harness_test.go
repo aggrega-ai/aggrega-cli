@@ -99,7 +99,7 @@ func wasmEngineFactory(t *testing.T) renderer.EngineFactory {
 		switch bare {
 		case "", "helm", "compose", "helm-chart", "terraform":
 		default:
-			return nil, fmt.Errorf("%w: %q", renderer.ErrUnknownProvider, providerRef)
+			return nil, fmt.Errorf("%w: %q", renderer.ErrUnknownProvider(), providerRef)
 		}
 		// The guest URI below is derived from the bare kind alone, so the bare kind
 		// is this factory's whole engine identity — the harness counterpart of the

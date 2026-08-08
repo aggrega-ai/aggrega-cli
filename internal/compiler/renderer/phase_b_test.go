@@ -119,7 +119,7 @@ func TestExecutePhaseB_LibraryImportNotFound(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for an unresolved bare-name library-import valuesMapping")
 	}
-	if !errors.Is(err, ErrMappingLibraryNotFound) {
+	if !errors.Is(err, ErrMappingLibraryNotFound()) {
 		t.Errorf("expected ErrMappingLibraryNotFound, got: %v", err)
 	}
 }
@@ -139,7 +139,7 @@ func TestExecutePhaseB_RejectsHostBearingImport(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for host-bearing library-import valuesMapping")
 	}
-	if !errors.Is(err, ErrHostInLibraryImport) {
+	if !errors.Is(err, ErrHostInLibraryImport()) {
 		t.Errorf("expected ErrHostInLibraryImport, got: %v", err)
 	}
 }

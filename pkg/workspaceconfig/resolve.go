@@ -656,7 +656,7 @@ func checkUniqueProviderTargets(providers []PluginRef) error {
 	seen := make(map[string]struct{}, len(providers))
 	for _, ref := range providers {
 		if _, dup := seen[ref.Capability]; dup {
-			return fmt.Errorf("workspaceconfig: capability %q is bound to more than one provider plugin; keep exactly one plugins.providers entry per capability: %w", ref.Capability, ErrDuplicateProviderTarget)
+			return fmt.Errorf("workspaceconfig: capability %q is bound to more than one provider plugin; keep exactly one plugins.providers entry per capability: %w", ref.Capability, ErrDuplicateProviderTarget())
 		}
 		seen[ref.Capability] = struct{}{}
 	}
@@ -684,7 +684,7 @@ func checkCrossCuttingSocketAttach(plugins PluginsConfig) error {
 	for _, socket := range sockets {
 		for _, ref := range socket.refs {
 			if ref.Capability != "" {
-				return fmt.Errorf("workspaceconfig: the %s socket is bound by capability %q, but the cross-cutting sockets attach by uri: their plugin serves no capability, so a capability lookup matches nothing; attach it with `uri:` instead: %w", socket.name, ref.Capability, ErrCapabilityOnCrossCuttingSocket)
+				return fmt.Errorf("workspaceconfig: the %s socket is bound by capability %q, but the cross-cutting sockets attach by uri: their plugin serves no capability, so a capability lookup matches nothing; attach it with `uri:` instead: %w", socket.name, ref.Capability, ErrCapabilityOnCrossCuttingSocket())
 			}
 		}
 	}
@@ -710,10 +710,10 @@ func checkCrossCuttingSocketAttach(plugins PluginsConfig) error {
 func checkInertProviderFields(providers []PluginRef) error {
 	for _, ref := range providers {
 		if ref.Function != "" {
-			return fmt.Errorf("workspaceconfig: the provider socket binding for capability %q sets `function:`, but a provider drives a fixed set of phase-keyed exports rather than one selectable entry, so `function:` names nothing there; remove it: %w", ref.Capability, ErrInertFieldOnProviderSocket)
+			return fmt.Errorf("workspaceconfig: the provider socket binding for capability %q sets `function:`, but a provider drives a fixed set of phase-keyed exports rather than one selectable entry, so `function:` names nothing there; remove it: %w", ref.Capability, ErrInertFieldOnProviderSocket())
 		}
 		if ref.With != nil {
-			return fmt.Errorf("workspaceconfig: the provider socket binding for capability %q sets `with:`, but provider render configuration belongs in the Recipe, not the workspace provider binding; remove it: %w", ref.Capability, ErrInertFieldOnProviderSocket)
+			return fmt.Errorf("workspaceconfig: the provider socket binding for capability %q sets `with:`, but provider render configuration belongs in the Recipe, not the workspace provider binding; remove it: %w", ref.Capability, ErrInertFieldOnProviderSocket())
 		}
 	}
 	return nil
@@ -742,10 +742,10 @@ func checkGovernanceRoles(governance []PluginRef) error {
 		}
 		if ref.Role == "" {
 			return fmt.Errorf("workspaceconfig: governance attachment %q declares no role; set `role:` to one of %s: %w",
-				ref.URI, strings.Join(names, ", "), ErrGovernanceRoleInvalid)
+				ref.URI, strings.Join(names, ", "), ErrGovernanceRoleInvalid())
 		}
 		return fmt.Errorf("workspaceconfig: governance attachment %q declares unknown role %q; use one of %s: %w",
-			ref.URI, ref.Role, strings.Join(names, ", "), ErrGovernanceRoleInvalid)
+			ref.URI, ref.Role, strings.Join(names, ", "), ErrGovernanceRoleInvalid())
 	}
 	return nil
 }

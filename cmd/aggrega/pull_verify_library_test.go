@@ -171,7 +171,7 @@ func TestVerifyClosureLibraryUnsignedHalts(t *testing.T) {
 	if err == nil {
 		t.Fatal("an unsigned library under a signature-requiring registry must halt the pull")
 	}
-	if !errors.Is(err, signing.ErrNoSignatureFound) {
+	if !errors.Is(err, signing.ErrNoSignatureFound()) {
 		t.Fatalf("want ErrNoSignatureFound, got %v", err)
 	}
 }

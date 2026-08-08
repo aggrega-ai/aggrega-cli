@@ -277,7 +277,7 @@ func buildSourceSpec(source any, values, infra map[string]any, locals types.Orde
 		return nil, fmt.Errorf(
 			"resolve: %s spec.source has unsupported shape %T: %w "+
 				"(refactor to a scalar URI or to the structured form {kind, url, version, ...})",
-			recipeURI, source, ErrSourceTemplateAtLockTime)
+			recipeURI, source, ErrSourceTemplateAtLockTime())
 	}
 }
 
@@ -335,7 +335,7 @@ func buildSpecFromMap(s map[string]any, values, infra map[string]any, locals typ
 	if !isKnownKind(spec.Kind) {
 		return nil, fmt.Errorf(
 			"resolve: %s spec.source.kind %q not recognised: %w",
-			recipeURI, spec.Kind, ErrSourceTemplateAtLockTime)
+			recipeURI, spec.Kind, ErrSourceTemplateAtLockTime())
 	}
 	return spec, nil
 }
@@ -384,7 +384,7 @@ func evalSourceTemplate(input string, ctx templateContext, fieldPath string) (st
 	}).Parse(input)
 	if err != nil {
 		return "", fmt.Errorf("resolve: parse template at %s: %w (also %w) (cause: %s)",
-			fieldPath, ErrSourceTemplateAtLockTime, ErrSourceTemplateParse, err)
+			fieldPath, ErrSourceTemplateAtLockTime(), ErrSourceTemplateParse(), err)
 	}
 	if err := rejectProvidesReference(tmpl, fieldPath); err != nil {
 		return "", err
@@ -397,7 +397,7 @@ func evalSourceTemplate(input string, ctx templateContext, fieldPath string) (st
 	}
 	if err := tmpl.Execute(&buf, data); err != nil {
 		return "", fmt.Errorf("resolve: evaluate template at %s: %w (cause: %s)",
-			fieldPath, ErrSourceTemplateAtLockTime, err)
+			fieldPath, ErrSourceTemplateAtLockTime(), err)
 	}
 	return buf.String(), nil
 }
@@ -513,7 +513,7 @@ func providesError(fieldPath string) error {
 		"source-version template at %s references `.provides`, which is an invalid reverse "+
 			"reference (locals feed provides, never the reverse) — refactor to read only "+
 			"`.values` and `.infra` (and `.locals` over the same): %w (also %w)",
-		fieldPath, ErrSourceTemplateAtLockTime, ErrSourceTemplateProvidesRef)
+		fieldPath, ErrSourceTemplateAtLockTime(), ErrSourceTemplateProvidesRef())
 }
 
 // optionalFunc implements `{{ optional .infra "key" "default" }}`
@@ -551,7 +551,7 @@ func resolveLocals(locals types.OrderedMap[string], ctx templateContext, recipeU
 			// own evaluation remains the gate — if `source:` references this
 			// now-absent local, that eval fails with ErrSourceTemplateAtLockTime
 			// naming the source field.
-			if errors.Is(err, ErrSourceTemplateParse) || errors.Is(err, ErrSourceTemplateProvidesRef) {
+			if errors.Is(err, ErrSourceTemplateParse()) || errors.Is(err, ErrSourceTemplateProvidesRef()) {
 				return err
 			}
 			continue
@@ -600,7 +600,7 @@ func classifyKindFromScheme(url, recipeURI string) (string, error) {
 		return "", fmt.Errorf(
 			"resolve: %s spec.source URL %q is ambiguous — "+
 				"refactor to the structured form {kind, url, version, ...} so the kind is explicit: %w",
-			recipeURI, url, ErrSourceTemplateAtLockTime)
+			recipeURI, url, ErrSourceTemplateAtLockTime())
 	}
 }
 

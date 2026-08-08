@@ -26,7 +26,7 @@ func TestCheckProvidesSelfContainment_ForbiddenInject(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error")
 	}
-	if !errors.Is(err, ErrProvidesSelfContainment) {
+	if !errors.Is(err, ErrProvidesSelfContainment()) {
 		t.Errorf("expected ErrProvidesSelfContainment, got: %v", err)
 	}
 }
@@ -37,7 +37,7 @@ func TestCheckProvidesSelfContainment_ForbiddenUses(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error")
 	}
-	if !errors.Is(err, ErrProvidesSelfContainment) {
+	if !errors.Is(err, ErrProvidesSelfContainment()) {
 		t.Errorf("expected ErrProvidesSelfContainment, got: %v", err)
 	}
 }
@@ -184,7 +184,7 @@ func TestEvaluateAllProvides_LocalReadingProvidesHalts(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected a halt on the reverse reference, got nil")
 	}
-	if !errors.Is(err, ErrTemplateUnknownRoot) {
+	if !errors.Is(err, ErrTemplateUnknownRoot()) {
 		t.Errorf("expected the unknown-reference halt, got: %v", err)
 	}
 	for _, want := range []string{"db", "reverse-recipe", ".provides.host"} {
@@ -220,7 +220,7 @@ func TestEvaluateAllProvides_SelfContainmentViolation(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for self-containment violation")
 	}
-	if !errors.Is(err, ErrProvidesSelfContainment) {
+	if !errors.Is(err, ErrProvidesSelfContainment()) {
 		t.Errorf("expected ErrProvidesSelfContainment, got: %v", err)
 	}
 }
@@ -247,7 +247,7 @@ func TestEvaluateAllProvides_ProvidesReadingUnknownLocalHalts(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected a halt on the unknown local, got nil")
 	}
-	if !errors.Is(err, ErrLocalsUnknownReference) {
+	if !errors.Is(err, ErrLocalsUnknownReference()) {
 		t.Fatalf("expected ErrLocalsUnknownReference, got: %v", err)
 	}
 	text := diagnosticChainText(err)
@@ -277,7 +277,7 @@ func TestEvaluateAllProvides_ProvidesReadingLocalWithoutLocalsBlockHalts(t *test
 	if err == nil {
 		t.Fatal("expected a halt on the unknown local, got nil")
 	}
-	if !errors.Is(err, ErrLocalsUnknownReference) {
+	if !errors.Is(err, ErrLocalsUnknownReference()) {
 		t.Fatalf("expected ErrLocalsUnknownReference, got: %v", err)
 	}
 	text := diagnosticChainText(err)
@@ -364,7 +364,7 @@ func TestCheckProvidesSelfContainment_ForbiddenRoots(t *testing.T) {
 			if err == nil {
 				t.Fatalf("%s: expected halt, got nil (silent-empty footgun)", name)
 			}
-			if !errors.Is(err, ErrProvidesSelfContainment) {
+			if !errors.Is(err, ErrProvidesSelfContainment()) {
 				t.Errorf("%s: expected ErrProvidesSelfContainment, got: %v", name, err)
 			}
 		})
@@ -429,7 +429,7 @@ func TestEvaluateAllProvides_ForbiddenAnnotationHaltsNotEmpty(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected halt for placement annotation in provides, got nil")
 	}
-	if !errors.Is(err, ErrProvidesSelfContainment) {
+	if !errors.Is(err, ErrProvidesSelfContainment()) {
 		t.Errorf("expected ErrProvidesSelfContainment, got: %v", err)
 	}
 }

@@ -41,12 +41,12 @@ func TestAssertionCallerParity_ValidationPathReachesTheSameVerdict(t *testing.T)
 	t.Parallel()
 
 	_, buildErr := pipelinetest.BuildE(t, assertionCoverageInput())
-	if !errors.Is(buildErr, renderer.ErrAssertionFailed) {
+	if !errors.Is(buildErr, renderer.ErrAssertionFailed()) {
 		t.Fatalf("render path: want ErrAssertionFailed; got %v", buildErr)
 	}
 
 	t4, validateErr := pipelinetest.Tier4E(t, assertionCoverageInput())
-	if !errors.Is(validateErr, renderer.ErrAssertionFailed) {
+	if !errors.Is(validateErr, renderer.ErrAssertionFailed()) {
 		t.Fatalf("validation path: want ErrAssertionFailed; got %v", validateErr)
 	}
 	if buildErr.Error() != validateErr.Error() {

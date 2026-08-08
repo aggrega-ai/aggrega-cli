@@ -139,11 +139,11 @@ func TestSelectScreenedPullVersionScreening(t *testing.T) {
 		screen := &fixedScreen{withdrawn: map[string]string{"1.0.0": "gone", "2.0.0": "also gone"}}
 		p := DefaultOCIPuller{retraction: screen}
 		_, err := p.selectScreenedPullVersion(ref, []string{"1.0.0", "2.0.0"})
-		if !errors.Is(err, ErrAllVersionsRetracted) {
+		if !errors.Is(err, ErrAllVersionsRetracted()) {
 			t.Fatalf("error = %v; want ErrAllVersionsRetracted", err)
 		}
 		// Reusing the no-candidate path would have surfaced this as a missing entity.
-		if errors.Is(err, oci.ErrFetchNotFound) {
+		if errors.Is(err, oci.ErrFetchNotFound()) {
 			t.Fatalf("a fully-withdrawn repository must NOT read as not-found; got %v", err)
 		}
 		for _, want := range []string{"1.0.0", "2.0.0", "gone", "also gone"} {
@@ -159,10 +159,10 @@ func TestSelectScreenedPullVersionScreening(t *testing.T) {
 		screen := &fixedScreen{withdrawn: map[string]string{"9.9.9": "gone"}}
 		p := DefaultOCIPuller{retraction: screen}
 		_, err := p.selectScreenedPullVersion(ref, []string{"v1", "1.2.3.4"})
-		if !errors.Is(err, oci.ErrFetchNotFound) {
+		if !errors.Is(err, oci.ErrFetchNotFound()) {
 			t.Fatalf("error = %v; want the not-found reading when nothing was withdrawn", err)
 		}
-		if errors.Is(err, ErrAllVersionsRetracted) {
+		if errors.Is(err, ErrAllVersionsRetracted()) {
 			t.Fatalf("a repository with no conformant version was not withdrawn; got %v", err)
 		}
 	})

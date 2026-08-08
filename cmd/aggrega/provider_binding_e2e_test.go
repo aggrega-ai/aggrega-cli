@@ -278,7 +278,7 @@ func TestProviderBinding_AmbiguousTargetHaltsLoudly(t *testing.T) {
 	if err == nil {
 		t.Fatal("pull over an ambiguous target with no binding returned nil; expected a loud halt")
 	}
-	if !errors.Is(err, catalog.ErrAmbiguousProviderPlugin) {
+	if !errors.Is(err, catalog.ErrAmbiguousProviderPlugin()) {
 		t.Fatalf("ambiguity halt must be ErrAmbiguousProviderPlugin; got: %v", err)
 	}
 	if !chainContains(err, "(helm, helm-renderer-alt)") {

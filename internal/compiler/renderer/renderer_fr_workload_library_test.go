@@ -162,7 +162,7 @@ func TestFRWorkloadLibraryImport_UnknownLibraryHalts(t *testing.T) {
 	if err == nil {
 		t.Fatal("unknown WorkloadLibrary at featurerecipe.workload must halt; got nil")
 	}
-	if !errors.Is(err, renderer.ErrWorkloadLibraryNotFound) {
+	if !errors.Is(err, renderer.ErrWorkloadLibraryNotFound()) {
 		t.Errorf("error = %v; want ErrWorkloadLibraryNotFound", err)
 	}
 }

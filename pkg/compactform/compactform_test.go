@@ -135,7 +135,7 @@ func TestCompileNilInput(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error on nil input; got nil")
 	}
-	if !errors.Is(err, ErrEscapeContentInvalid) {
+	if !errors.Is(err, ErrEscapeContentInvalid()) {
 		t.Fatalf("expected ErrEscapeContentInvalid; got %v", err)
 	}
 	var ce *CompileError
@@ -160,7 +160,7 @@ func TestCompileUnknownKeyword(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected ErrUnknownKeyword; got nil")
 	}
-	if !errors.Is(err, ErrUnknownKeyword) {
+	if !errors.Is(err, ErrUnknownKeyword()) {
 		t.Fatalf("expected ErrUnknownKeyword; got %v", err)
 	}
 	if !strings.Contains(err.Error(), "mn") {
@@ -183,7 +183,7 @@ func TestCompileConstraintTypeMismatch(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected ErrConstraintTypeMismatch; got nil")
 	}
-	if !errors.Is(err, ErrConstraintTypeMismatch) {
+	if !errors.Is(err, ErrConstraintTypeMismatch()) {
 		t.Fatalf("expected ErrConstraintTypeMismatch; got %v", err)
 	}
 }
@@ -199,7 +199,7 @@ func TestCompileNodeUnsupportedKind(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for unsupported node kind; got nil")
 	}
-	if !errors.Is(err, ErrEscapeContentInvalid) {
+	if !errors.Is(err, ErrEscapeContentInvalid()) {
 		t.Errorf("expected ErrEscapeContentInvalid; got %v", err)
 	}
 }

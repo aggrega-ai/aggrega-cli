@@ -20,10 +20,10 @@ func TestSentinelReExportsIdentity(t *testing.T) {
 		sourceResolver error
 		canonical      error
 	}{
-		{"ErrFetchNotFound", sourceresolver.ErrFetchNotFound, oci.ErrFetchNotFound},
-		{"ErrFetchUnauthorized", sourceresolver.ErrFetchUnauthorized, oci.ErrFetchUnauthorized},
-		{"ErrFetchNetworkUnreachable", sourceresolver.ErrFetchNetworkUnreachable, oci.ErrFetchNetworkUnreachable},
-		{"ErrFetchIntegrity", sourceresolver.ErrFetchIntegrity, oci.ErrFetchIntegrity},
+		{"ErrFetchNotFound", sourceresolver.ErrFetchNotFound(), oci.ErrFetchNotFound()},
+		{"ErrFetchUnauthorized", sourceresolver.ErrFetchUnauthorized(), oci.ErrFetchUnauthorized()},
+		{"ErrFetchNetworkUnreachable", sourceresolver.ErrFetchNetworkUnreachable(), oci.ErrFetchNetworkUnreachable()},
+		{"ErrFetchIntegrity", sourceresolver.ErrFetchIntegrity(), oci.ErrFetchIntegrity()},
 	}
 	for _, tc := range cases {
 		tc := tc
@@ -64,10 +64,10 @@ func TestWrapPassThroughErrorsIs(t *testing.T) {
 		name     string
 		sentinel error
 	}{
-		{"ErrFetchNotFound", sourceresolver.ErrFetchNotFound},
-		{"ErrFetchUnauthorized", sourceresolver.ErrFetchUnauthorized},
-		{"ErrFetchNetworkUnreachable", sourceresolver.ErrFetchNetworkUnreachable},
-		{"ErrFetchIntegrity", sourceresolver.ErrFetchIntegrity},
+		{"ErrFetchNotFound", sourceresolver.ErrFetchNotFound()},
+		{"ErrFetchUnauthorized", sourceresolver.ErrFetchUnauthorized()},
+		{"ErrFetchNetworkUnreachable", sourceresolver.ErrFetchNetworkUnreachable()},
+		{"ErrFetchIntegrity", sourceresolver.ErrFetchIntegrity()},
 	}
 
 	for _, tc := range sentinels {
@@ -103,8 +103,8 @@ func TestWrapNilCauseOmitsCauseClause(t *testing.T) {
 		URL:     "oci://example.com/foo",
 		Version: "1.0.0",
 	}
-	wrapped := sourceresolver.Wrap(spec, sourceresolver.ErrFetchNotFound, nil)
-	if !errors.Is(wrapped, sourceresolver.ErrFetchNotFound) {
+	wrapped := sourceresolver.Wrap(spec, sourceresolver.ErrFetchNotFound(), nil)
+	if !errors.Is(wrapped, sourceresolver.ErrFetchNotFound()) {
 		t.Errorf("nil-cause Wrap should still satisfy errors.Is against the sentinel")
 	}
 	msg := wrapped.Error()
@@ -138,10 +138,10 @@ func TestWrapAppendsRemediationPerSentinel(t *testing.T) {
 		sentinel error
 		want     string
 	}{
-		{"NotFound", sourceresolver.ErrFetchNotFound, "remediation: verify the URL and version"},
-		{"Unauthorized", sourceresolver.ErrFetchUnauthorized, "docker login hub.aggrega.ai"},
-		{"NetworkUnreachable", sourceresolver.ErrFetchNetworkUnreachable, "check network connectivity to hub.aggrega.ai"},
-		{"Integrity", sourceresolver.ErrFetchIntegrity, "aggrega pull --upgrade"},
+		{"NotFound", sourceresolver.ErrFetchNotFound(), "remediation: verify the URL and version"},
+		{"Unauthorized", sourceresolver.ErrFetchUnauthorized(), "docker login hub.aggrega.ai"},
+		{"NetworkUnreachable", sourceresolver.ErrFetchNetworkUnreachable(), "check network connectivity to hub.aggrega.ai"},
+		{"Integrity", sourceresolver.ErrFetchIntegrity(), "aggrega pull --upgrade"},
 	}
 	for _, tc := range cases {
 		err := sourceresolver.Wrap(spec, tc.sentinel, fmt.Errorf("underlying"))
@@ -161,7 +161,7 @@ func TestWrapHostExtractionFromOCIScheme(t *testing.T) {
 		URL:     "oci://hub.aggrega.ai/charts/mariadb",
 		Version: "1.0.0",
 	}
-	err := sourceresolver.Wrap(spec, sourceresolver.ErrFetchUnauthorized, nil)
+	err := sourceresolver.Wrap(spec, sourceresolver.ErrFetchUnauthorized(), nil)
 	if !strings.Contains(err.Error(), "hub.aggrega.ai") {
 		t.Errorf("host extraction failed for oci:// URL; got %q", err.Error())
 	}
@@ -174,7 +174,7 @@ func TestWrapHostExtractionFromHTTPSScheme(t *testing.T) {
 		URL:     "https://charts.bitnami.com/bitnami/mariadb-25.0.8.tgz",
 		Version: "25.0.8",
 	}
-	err := sourceresolver.Wrap(spec, sourceresolver.ErrFetchNetworkUnreachable, nil)
+	err := sourceresolver.Wrap(spec, sourceresolver.ErrFetchNetworkUnreachable(), nil)
 	if !strings.Contains(err.Error(), "charts.bitnami.com") {
 		t.Errorf("host extraction failed for https:// URL; got %q", err.Error())
 	}
@@ -187,7 +187,7 @@ func TestWrapHostExtractionFromGitScheme(t *testing.T) {
 		URL:     "git+ssh://git@github.com/example/module.git",
 		Version: "abc123",
 	}
-	err := sourceresolver.Wrap(spec, sourceresolver.ErrFetchUnauthorized, nil)
+	err := sourceresolver.Wrap(spec, sourceresolver.ErrFetchUnauthorized(), nil)
 	if !strings.Contains(err.Error(), "git@github.com") {
 		t.Errorf("host extraction failed for git+ssh:// URL; got %q", err.Error())
 	}
@@ -207,4 +207,4 @@ func TestWrapSkipsRemediationForNonFetchSentinel(t *testing.T) {
 	}
 }
 
-var _ = oci.ErrFetchIntegrity // keep oci import healthy if test set shrinks
+var _ = oci.ErrFetchIntegrity() // keep oci import healthy if test set shrinks

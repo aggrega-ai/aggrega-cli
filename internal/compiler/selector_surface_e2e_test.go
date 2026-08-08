@@ -83,7 +83,7 @@ func TestSelectorSurface_ConstraintNotSatisfiedHalts(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected a build halt for the unsatisfied appliesTo, got nil")
 	}
-	if !errors.Is(err, analyzer.ErrSelectorViolation) {
+	if !errors.Is(err, analyzer.ErrSelectorViolation()) {
 		t.Fatalf("expected ErrSelectorViolation, got: %v", err)
 	}
 	if !strings.Contains(err.Error(), "appliesTo constraint not satisfied") {
@@ -121,7 +121,7 @@ func TestSelectorSurface_UsesSchemaSelectorViolation(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected a build halt for the usesSchema socket-selector violation, got nil")
 	}
-	if !errors.Is(err, analyzer.ErrSelectorViolation) {
+	if !errors.Is(err, analyzer.ErrSelectorViolation()) {
 		t.Fatalf("expected ErrSelectorViolation, got: %v", err)
 	}
 }

@@ -23,7 +23,7 @@ func TestMerge_EmptyChainErrors(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error on empty chain; got nil")
 	}
-	if !errors.Is(err, ErrMergeInvalid) {
+	if !errors.Is(err, ErrMergeInvalid()) {
 		t.Errorf("expected ErrMergeInvalid; got %v", err)
 	}
 }
@@ -37,7 +37,7 @@ func TestMerge_NilSchemaInChainErrors(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error on nil schema in chain; got nil")
 	}
-	if !errors.Is(err, ErrMergeInvalid) {
+	if !errors.Is(err, ErrMergeInvalid()) {
 		t.Errorf("expected ErrMergeInvalid; got %v", err)
 	}
 }
@@ -708,7 +708,7 @@ func TestResolveChain_CycleDetection(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected ErrCyclicExtension; got nil")
 	}
-	if !errors.Is(err, ErrCyclicExtension) {
+	if !errors.Is(err, ErrCyclicExtension()) {
 		t.Errorf("expected ErrCyclicExtension; got %v", err)
 	}
 }
@@ -740,7 +740,7 @@ func TestResolveChain_MaxDepth(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected ErrMaxDepth; got nil")
 	}
-	if !errors.Is(err, ErrMaxDepth) {
+	if !errors.Is(err, ErrMaxDepth()) {
 		t.Errorf("expected ErrMaxDepth; got %v", err)
 	}
 }
@@ -758,7 +758,7 @@ func TestResolveChain_MissingParent(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error on missing parent; got nil")
 	}
-	if !errors.Is(err, ErrMergeInvalid) {
+	if !errors.Is(err, ErrMergeInvalid()) {
 		t.Errorf("expected ErrMergeInvalid; got %v", err)
 	}
 }
@@ -772,7 +772,7 @@ func TestResolveChain_NilChild(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error on nil child; got nil")
 	}
-	if !errors.Is(err, ErrMergeInvalid) {
+	if !errors.Is(err, ErrMergeInvalid()) {
 		t.Errorf("expected ErrMergeInvalid; got %v", err)
 	}
 }
@@ -1139,7 +1139,7 @@ func TestMerge_NarrowingTypesListSubsetNoViolation(t *testing.T) {
 // path / detail / source slots when populated.
 func TestMergeError_Format(t *testing.T) {
 	t.Parallel()
-	e := &MergeError{Path: "port", Source: "parent.yaml:1", Detail: "constraint X failed", Err: ErrMergeInvalid}
+	e := &MergeError{Path: "port", Source: "parent.yaml:1", Detail: "constraint X failed", Err: ErrMergeInvalid()}
 	got := e.Error()
 	for _, frag := range []string{"port", "constraint X failed", "parent.yaml:1"} {
 		if !strings.Contains(got, frag) {
@@ -1147,7 +1147,7 @@ func TestMergeError_Format(t *testing.T) {
 		}
 	}
 	// Empty path skips the "at " prefix.
-	e2 := &MergeError{Detail: "structural failure", Err: ErrMergeInvalid}
+	e2 := &MergeError{Detail: "structural failure", Err: ErrMergeInvalid()}
 	if !strings.Contains(e2.Error(), "structural failure") {
 		t.Errorf("expected structural failure in message; got %q", e2.Error())
 	}
@@ -1188,7 +1188,7 @@ func TestResolveChain_LookupReturnsNilParent(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error on nil-parent lookup; got nil")
 	}
-	if !errors.Is(err, ErrMergeInvalid) {
+	if !errors.Is(err, ErrMergeInvalid()) {
 		t.Errorf("expected ErrMergeInvalid; got %v", err)
 	}
 }

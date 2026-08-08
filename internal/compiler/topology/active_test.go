@@ -109,7 +109,7 @@ func TestFlatten_ActiveNonBooleanHalts(t *testing.T) {
 	for _, bad := range []string{"<no value>", "yes", "maybe"} {
 		agg := &types.Aggregate{Spec: types.AggregateSpec{Components: comps([2]string{"api", bad})}}
 		_, err := flattenAggregate(types.Normalize(agg), "", "", "", nil, map[string]bool{}, 0, nil)
-		if !errors.Is(err, ErrInvalidActive) {
+		if !errors.Is(err, ErrInvalidActive()) {
 			t.Errorf("active=%q: expected ErrInvalidActive, got %v", bad, err)
 		}
 	}
@@ -170,10 +170,10 @@ func TestBuild_SurvivorUsesPrunedHalts(t *testing.T) {
 	agg := &types.Aggregate{Spec: types.AggregateSpec{Components: components}}
 
 	_, err := buildAgg(t, agg, nil)
-	if !errors.Is(err, ErrUsesPrunedComponent) {
+	if !errors.Is(err, ErrUsesPrunedComponent()) {
 		t.Fatalf("expected ErrUsesPrunedComponent, got %v", err)
 	}
-	if errors.Is(err, ErrDanglingUsesTarget) {
+	if errors.Is(err, ErrDanglingUsesTarget()) {
 		t.Error("a pruned target must not be classified as a generic dangling target")
 	}
 }
@@ -189,10 +189,10 @@ func TestBuild_DanglingTargetStillClassifiedDangling(t *testing.T) {
 	agg := &types.Aggregate{Spec: types.AggregateSpec{Components: components}}
 
 	_, err := buildAgg(t, agg, nil)
-	if !errors.Is(err, ErrDanglingUsesTarget) {
+	if !errors.Is(err, ErrDanglingUsesTarget()) {
 		t.Fatalf("expected ErrDanglingUsesTarget, got %v", err)
 	}
-	if errors.Is(err, ErrUsesPrunedComponent) {
+	if errors.Is(err, ErrUsesPrunedComponent()) {
 		t.Error("a never-existent target must not be classified as pruned")
 	}
 }

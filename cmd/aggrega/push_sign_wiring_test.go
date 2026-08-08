@@ -94,7 +94,7 @@ func TestPushSignerErrorLeavesZeroBytes(t *testing.T) {
 		Sign:       &sign,
 		Signer:     &signingtest.FakeSigner{Err: errors.New("boom")},
 	})
-	if !errors.Is(err, signing.ErrUnsignedPushRefused) {
+	if !errors.Is(err, signing.ErrUnsignedPushRefused()) {
 		t.Fatalf("want ErrUnsignedPushRefused, got %v", err)
 	}
 	if _, exists, _ := oci.Resolve(ctx, store, "1.0.0"); exists {
@@ -118,7 +118,7 @@ func TestPushKeyedMissingKeyLeavesZeroBytes(t *testing.T) {
 		Sign:       &sign,
 		KeyPath:    filepath.Join(t.TempDir(), "does-not-exist.pem"),
 	})
-	if !errors.Is(err, signing.ErrUnsignedPushRefused) {
+	if !errors.Is(err, signing.ErrUnsignedPushRefused()) {
 		t.Fatalf("want ErrUnsignedPushRefused, got %v", err)
 	}
 	if _, exists, _ := oci.Resolve(ctx, store, "1.0.0"); exists {
@@ -147,7 +147,7 @@ func TestPushKeylessNoTokenNoTTYLeavesZeroBytes(t *testing.T) {
 		TokenGetter: func() (string, error) { t.Fatal("TokenGetter must not be called without a TTY"); return "", nil },
 		// No KeyPath and no IDToken, no TTY → loud refuse before push.
 	})
-	if !errors.Is(err, signing.ErrUnsignedPushRefused) {
+	if !errors.Is(err, signing.ErrUnsignedPushRefused()) {
 		t.Fatalf("want ErrUnsignedPushRefused, got %v", err)
 	}
 	if _, exists, _ := oci.Resolve(ctx, store, "1.0.0"); exists {

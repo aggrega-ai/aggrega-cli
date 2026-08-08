@@ -91,19 +91,19 @@ func isLocalURL(s string) bool {
 // pkg/sourcecache that didn't pass through sourceresolver.Wrap).
 func matchFetchSentinel(err error) (error, bool) {
 	switch {
-	case errors.Is(err, oci.ErrFetchNotFound):
-		return oci.ErrFetchNotFound, true
-	case errors.Is(err, oci.ErrFetchUnauthorized):
-		return oci.ErrFetchUnauthorized, true
-	case errors.Is(err, oci.ErrFetchNetworkUnreachable):
-		return oci.ErrFetchNetworkUnreachable, true
-	case errors.Is(err, oci.ErrFetchIntegrity):
-		return oci.ErrFetchIntegrity, true
-	case errors.Is(err, egress.ErrOfflineEgress):
+	case errors.Is(err, oci.ErrFetchNotFound()):
+		return oci.ErrFetchNotFound(), true
+	case errors.Is(err, oci.ErrFetchUnauthorized()):
+		return oci.ErrFetchUnauthorized(), true
+	case errors.Is(err, oci.ErrFetchNetworkUnreachable()):
+		return oci.ErrFetchNetworkUnreachable(), true
+	case errors.Is(err, oci.ErrFetchIntegrity()):
+		return oci.ErrFetchIntegrity(), true
+	case errors.Is(err, egress.ErrOfflineEgress()):
 		// An offline-egress refusal is a fetch-family fault: from the user's
 		// perspective it is an inability to fetch. It carries its own remediation,
 		// so the classifier appends none.
-		return egress.ErrOfflineEgress, true
+		return egress.ErrOfflineEgress(), true
 	default:
 		return nil, false
 	}

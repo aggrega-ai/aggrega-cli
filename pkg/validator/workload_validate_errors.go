@@ -17,9 +17,9 @@ import (
 
 // ErrWorkloadValidation: schema-validation failure on the parsed
 // Workload against the embedded Workload JSON Schema.
-const ErrWorkloadValidation cerrors.Code = "validator/workload-validation"
+func ErrWorkloadValidation() error { return errWorkloadValidation }
 
-var _ = cerrors.Register(ErrWorkloadValidation, cerrors.Meta{
+var errWorkloadValidation = cerrors.Register("validator/workload-validation", cerrors.Meta{
 	Message: "workload validation failed",
 })
 
@@ -29,9 +29,9 @@ var _ = cerrors.Register(ErrWorkloadValidation, cerrors.Meta{
 // uses a delivery mechanism (`as:`) not in the slot's `inject:`
 // allowlist, or references a blackbox slot (Inject == nil/empty,
 // reserved for Recipe-internal plumbing).
-const ErrWorkloadFeaturesSchema cerrors.Code = "validator/workload-features-schema"
+func ErrWorkloadFeaturesSchema() error { return errWorkloadFeaturesSchema }
 
-var _ = cerrors.Register(ErrWorkloadFeaturesSchema, cerrors.Meta{
+var errWorkloadFeaturesSchema = cerrors.Register("validator/workload-features-schema", cerrors.Meta{
 	Message: "workload featuresSchema cross-check failed",
 })
 
@@ -40,9 +40,9 @@ var _ = cerrors.Register(ErrWorkloadFeaturesSchema, cerrors.Meta{
 // reference reads (name, key). The slot's fill publishes no locator to
 // point at, so it cannot be referenced by name from a Workload.
 // Structural key-presence only; no value inspection.
-const ErrSlotNotReferenceable cerrors.Code = "validator/slot-not-referenceable"
+func ErrSlotNotReferenceable() error { return errSlotNotReferenceable }
 
-var _ = cerrors.Register(ErrSlotNotReferenceable, cerrors.Meta{
+var errSlotNotReferenceable = cerrors.Register("validator/slot-not-referenceable", cerrors.Meta{
 	Message: "workload attachment slot is not referenceable",
 })
 

@@ -400,7 +400,7 @@ func TestBuild_ReleaseConflictingTargetHalts(t *testing.T) {
 		BoundaryInfra: map[string]*resolver.BoundaryInfra{"api": {BoundaryPath: "prod"}},
 	}
 	_, err := Build(BuildConfig{ResolveResult: rr})
-	if !errors.Is(err, ErrReleaseEdgeRetarget) {
+	if !errors.Is(err, ErrReleaseEdgeRetarget()) {
 		t.Fatalf("want ErrReleaseEdgeRetarget; got %v", err)
 	}
 }
@@ -452,7 +452,7 @@ func TestBuild_ReleaseDanglingTargetHalts(t *testing.T) {
 		BoundaryInfra: map[string]*resolver.BoundaryInfra{"api": {BoundaryPath: "prod"}},
 	}
 	_, err := Build(BuildConfig{ResolveResult: rr})
-	if !errors.Is(err, ErrDanglingUsesTarget) {
+	if !errors.Is(err, ErrDanglingUsesTarget()) {
 		t.Fatalf("want ErrDanglingUsesTarget; got %v", err)
 	}
 }
@@ -470,7 +470,7 @@ func TestBuild_AggregateDanglingTargetHalts(t *testing.T) {
 
 	rr := &resolver.ResolveResult{Aggregate: agg}
 	_, err := Build(BuildConfig{ResolveResult: rr})
-	if !errors.Is(err, ErrDanglingUsesTarget) {
+	if !errors.Is(err, ErrDanglingUsesTarget()) {
 		t.Fatalf("want ErrDanglingUsesTarget for a dangling Aggregate edge; got %v", err)
 	}
 }

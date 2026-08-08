@@ -105,7 +105,7 @@ func TestExecutePass2a_ForbiddenReference(t *testing.T) {
 	// halts as the undefined key it is rather than through a condition naming
 	// cross-node data — one condition for every reference the context does not
 	// define, on every surface.
-	if !errors.Is(err, ErrTemplateUnknownRoot) {
+	if !errors.Is(err, ErrTemplateUnknownRoot()) {
 		t.Errorf("expected ErrTemplateUnknownRoot, got: %v", err)
 	}
 	// Every frame the diagnostic carries is rendered to the author, so every frame
@@ -306,7 +306,7 @@ func TestCheckSelfInjectCollisions_CrossSourceSameMechanism(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected ErrSelfInjectKeyCollision, got nil")
 	}
-	if !errors.Is(err, ErrSelfInjectKeyCollision) {
+	if !errors.Is(err, ErrSelfInjectKeyCollision()) {
 		t.Errorf("expected errors.Is(err, ErrSelfInjectKeyCollision), got: %v", err)
 	}
 }
@@ -331,7 +331,7 @@ func TestCheckSelfInjectCollisions_DeterministicEmissionAcrossMechanisms(t *test
 	if err == nil {
 		t.Fatalf("expected ErrSelfInjectKeyCollision, got nil")
 	}
-	if !errors.Is(err, ErrSelfInjectKeyCollision) {
+	if !errors.Is(err, ErrSelfInjectKeyCollision()) {
 		t.Fatalf("expected errors.Is(err, ErrSelfInjectKeyCollision), got: %v", err)
 	}
 	// Walk the error chain — cerrors.Wrap masks the inner-error text in its

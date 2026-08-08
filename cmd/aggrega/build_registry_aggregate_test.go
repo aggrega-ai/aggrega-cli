@@ -37,14 +37,14 @@ type fakeAggEntry struct {
 }
 
 func (p *fakeAggregatePuller) Pull(context.Context, string, string) (*oci.PullResult, error) {
-	return nil, oci.ErrFetchNotFound
+	return nil, oci.ErrFetchNotFound()
 }
 
 func (p *fakeAggregatePuller) PullAggregate(ctx context.Context, name, _ string) (*oci.PullResult, string, error) {
 	p.calls = append(p.calls, name)
 	e, ok := p.entries[name]
 	if !ok {
-		return nil, "", oci.ErrFetchNotFound
+		return nil, "", oci.ErrFetchNotFound()
 	}
 	// Populate the OCI manifest bytes AND digest exactly as the real pull does — the
 	// manifest wrapping the served body — so the sub-aggregate carries a non-empty

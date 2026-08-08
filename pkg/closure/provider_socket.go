@@ -57,7 +57,7 @@ func ResolveProviderSocketEntities(cl *Closure, providerRefs []workspaceconfig.P
 		}
 		if res.NotFound {
 			return fmt.Errorf("%w: entity %q (referenced from %s)",
-				ErrUnresolvableURI, ref.URI, refPath)
+				ErrUnresolvableURI(), ref.URI, refPath)
 		}
 		// Registry-only pinning: a Tier-1-local provider resolves at build through
 		// the local catalog walk and is never lockfile-pinned, so pinning it here

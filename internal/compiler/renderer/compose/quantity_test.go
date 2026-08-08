@@ -115,7 +115,7 @@ func TestTranslateComposeResources(t *testing.T) {
 
 	// An unconvertible quantity halts with the sentinel.
 	_, err = translateComposeResources(&types.ResourceSpec{Limits: &types.ResourceList{Memory: "1.5Gi"}}, "node")
-	if !errors.Is(err, ErrUnconvertibleComposeQuantity) {
+	if !errors.Is(err, ErrUnconvertibleComposeQuantity()) {
 		t.Errorf("expected ErrUnconvertibleComposeQuantity, got %v", err)
 	}
 }

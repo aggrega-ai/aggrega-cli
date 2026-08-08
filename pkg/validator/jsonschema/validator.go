@@ -70,7 +70,7 @@ func New(schema *jsonschema.Schema) (Validator, error) {
 	if schema == nil {
 		return nil, &AdapterError{
 			Message: "schema is nil",
-			Err:     ErrSchemaResolve,
+			Err:     ErrSchemaResolve(),
 		}
 	}
 

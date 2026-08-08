@@ -423,7 +423,7 @@ func TestIntegration_RegistryBuild_WithheldEntityHaltsAtClosure(t *testing.T) {
 	if err == nil {
 		t.Fatal("build SUCCEEDED with a referenced entity withheld; the unified view silently proceeded on a gap")
 	}
-	if !errors.Is(err, closure.ErrUnresolvableURI) {
+	if !errors.Is(err, closure.ErrUnresolvableURI()) {
 		t.Fatalf("withheld entity: err = %v; want errors.Is(closure.ErrUnresolvableURI) — the loud closure halt", err)
 	}
 }
@@ -466,7 +466,7 @@ func TestIntegration_RegistryBuild_GuardNegatives(t *testing.T) {
 				// database is a string field; a list violates the values schema.
 				mutateFile(t, ws, "aggregate.yaml", "database: appdb", "database: [not, a, string]")
 			},
-			wantErr: resolver.ErrSchemaConformance,
+			wantErr: resolver.ErrSchemaConformance(),
 		},
 		{
 			// This case drives the OPERATOR edge surface rather than the Aggregate's
@@ -492,7 +492,7 @@ func TestIntegration_RegistryBuild_GuardNegatives(t *testing.T) {
 					"      infra:\n        port: 8080\n",
 					"      uses:\n        databases-typo:\n          db:\n            target: db\n      infra:\n        port: 8080\n")
 			},
-			wantErr: resolver.ErrUnknownUsesSocket,
+			wantErr: resolver.ErrUnknownUsesSocket(),
 		},
 		{
 			name: "self_inject_forbidden",
@@ -501,7 +501,7 @@ func TestIntegration_RegistryBuild_GuardNegatives(t *testing.T) {
 				// the non-allowlisted `arg` mechanism is forbidden.
 				mutateFile(t, ws, "aggregate.yaml", "      values:\n        database: appdb", "      inject:\n        arg:\n          - in: X\n            from: host\n      values:\n        database: appdb")
 			},
-			wantErr: resolver.ErrSelfInjectForbidden,
+			wantErr: resolver.ErrSelfInjectForbidden(),
 		},
 		{
 			name: "invalid_inject_key",
@@ -511,7 +511,7 @@ func TestIntegration_RegistryBuild_GuardNegatives(t *testing.T) {
 				// the target — guard_inject (the 5th silent-skipper) must reject it.
 				mutateFile(t, ws, "aggregate.yaml", "                  from: host", "                  from: not-a-provides-key")
 			},
-			wantErr: resolver.ErrInvalidInjectKey,
+			wantErr: resolver.ErrInvalidInjectKey(),
 		},
 	}
 
@@ -1339,7 +1339,7 @@ spec:
 	if err == nil {
 		t.Fatalf("required-socket: build SUCCEEDED; want failure with ErrMissingRequiredSocket")
 	}
-	if !errors.Is(err, resolver.ErrMissingRequiredSocket) {
+	if !errors.Is(err, resolver.ErrMissingRequiredSocket()) {
 		t.Fatalf("required-socket: build err = %v; want errors.Is(ErrMissingRequiredSocket) (a different error means the wrong guard fired)", err)
 	}
 }

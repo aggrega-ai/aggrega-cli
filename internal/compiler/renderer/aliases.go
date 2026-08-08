@@ -122,4 +122,6 @@ var (
 // while its definition lives with the segmenter in rendercore. It restates no
 // message: the message is registered once, beside the canonical declaration,
 // and a second registration of one identity is refused.
-const ErrPipelinePatchTargetNotStructured = rendercore.ErrPipelinePatchTargetNotStructured
+func ErrPipelinePatchTargetNotStructured() error {
+	return rendercore.ErrPipelinePatchTargetNotStructured()
+}

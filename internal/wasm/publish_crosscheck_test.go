@@ -45,7 +45,7 @@ func TestValidatePlugin_CapabilityClaimMismatch(t *testing.T) {
 		DeclaredType: string(PluginTypeFRPStep),
 		Entity:       entity,
 	})
-	if !errors.Is(err, ErrWasmContractMismatch) {
+	if !errors.Is(err, ErrWasmContractMismatch()) {
 		t.Fatalf("a disagreeing capability claim should halt with ErrWasmContractMismatch; got %v", err)
 	}
 	if !strings.Contains(err.Error(), "frp/patch") {

@@ -23,7 +23,7 @@ func TestRoundTripperOnline(t *testing.T) {
 
 func TestRoundTripperOfflineRefuses(t *testing.T) {
 	rt, err := egress.RoundTripper(workspaceconfig.Config{Offline: true})
-	if !errors.Is(err, egress.ErrOfflineEgress) {
+	if !errors.Is(err, egress.ErrOfflineEgress()) {
 		t.Fatalf("offline RoundTripper: err = %v; want ErrOfflineEgress", err)
 	}
 	if rt != nil {
@@ -43,7 +43,7 @@ func TestHTTPClientOnline(t *testing.T) {
 
 func TestHTTPClientOfflineRefuses(t *testing.T) {
 	c, err := egress.HTTPClient(workspaceconfig.Config{Offline: true})
-	if !errors.Is(err, egress.ErrOfflineEgress) {
+	if !errors.Is(err, egress.ErrOfflineEgress()) {
 		t.Fatalf("offline HTTPClient: err = %v; want ErrOfflineEgress", err)
 	}
 	if c != nil {
@@ -54,7 +54,7 @@ func TestHTTPClientOfflineRefuses(t *testing.T) {
 // The offline refusal carries its own remediation so callers that surface it
 // need append none, and the source-resolution classifier will not double-append.
 func TestErrOfflineEgressCarriesRemediation(t *testing.T) {
-	if got := egress.ErrOfflineEgress.Error(); !contains(got, "remediation:") {
+	if got := egress.ErrOfflineEgress().Error(); !contains(got, "remediation:") {
 		t.Errorf("ErrOfflineEgress message %q lacks a remediation clause", got)
 	}
 }

@@ -40,7 +40,7 @@ func TestValidateInjectBlock_BothPresent_Error(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected error, got nil")
 	}
-	if !errors.Is(err, ErrInjectEntryAmbiguous) {
+	if !errors.Is(err, ErrInjectEntryAmbiguous()) {
 		t.Errorf("error is not ErrInjectEntryAmbiguous: %v", err)
 	}
 	if !strings.Contains(err.Error(), ".inject.env[0]") {
@@ -63,7 +63,7 @@ func TestValidateInjectBlock_BothPresent_MultipleMechanisms(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected aggregated error, got nil")
 	}
-	if !errors.Is(err, ErrInjectEntryAmbiguous) {
+	if !errors.Is(err, ErrInjectEntryAmbiguous()) {
 		t.Errorf("error is not ErrInjectEntryAmbiguous: %v", err)
 	}
 	msg := err.Error()
@@ -148,7 +148,7 @@ func TestValidateInjectBlock_AdditionalMechanisms(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected error on custom-mechanism both-present, got nil")
 	}
-	if !errors.Is(err, ErrInjectEntryAmbiguous) {
+	if !errors.Is(err, ErrInjectEntryAmbiguous()) {
 		t.Errorf("error is not ErrInjectEntryAmbiguous: %v", err)
 	}
 	if !strings.Contains(err.Error(), ".inject.ssm_param[0]") {
@@ -202,7 +202,7 @@ func TestValidateAggregate_TierThreeFeatureInject_BothPresent(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected error on Tier 3 feature inject both-present, got nil")
 	}
-	if !errors.Is(err, ErrInjectEntryAmbiguous) {
+	if !errors.Is(err, ErrInjectEntryAmbiguous()) {
 		t.Errorf("error is not ErrInjectEntryAmbiguous: %v", err)
 	}
 	msg := err.Error()
@@ -229,7 +229,7 @@ func TestValidateInjectBlocks_SynthesizedDefaultElidesPath(t *testing.T) {
 	agg := &types.Aggregate{Spec: types.AggregateSpec{Components: components}}
 
 	err := ValidateInjectBlocks(normalized(t, agg), nil)
-	if err == nil || !errors.Is(err, ErrInjectEntryAmbiguous) {
+	if err == nil || !errors.Is(err, ErrInjectEntryAmbiguous()) {
 		t.Fatalf("want ErrInjectEntryAmbiguous; got %v", err)
 	}
 	msg := err.Error()
@@ -306,7 +306,7 @@ func TestValidateAggregate_FeatureInstance_NestedUses(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected error on feature-instance nested-uses both-present, got nil")
 	}
-	if !errors.Is(err, ErrInjectEntryAmbiguous) {
+	if !errors.Is(err, ErrInjectEntryAmbiguous()) {
 		t.Errorf("error is not ErrInjectEntryAmbiguous: %v", err)
 	}
 	if !strings.Contains(err.Error(), `components["api"].features["metrics"].uses["scrape_target"]["alias"].inject.env[0]`) {
@@ -350,7 +350,7 @@ func TestValidateAggregate_CredentialAttachment_NestedUses(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected error on secret-instance nested-uses both-present, got nil")
 	}
-	if !errors.Is(err, ErrInjectEntryAmbiguous) {
+	if !errors.Is(err, ErrInjectEntryAmbiguous()) {
 		t.Errorf("error is not ErrInjectEntryAmbiguous: %v", err)
 	}
 	if !strings.Contains(err.Error(), `components["api"].features["db-creds"].uses["backend"]["alias"].inject.env[0]`) {

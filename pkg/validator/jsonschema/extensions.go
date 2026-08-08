@@ -136,7 +136,7 @@ nextWhen:
 				Path:    whenPathStr,
 				Keyword: "x-aggrega-when",
 				Message: "template evaluation: " + err.Error(),
-				Err:     ErrExtensionEval,
+				Err:     ErrExtensionEval(),
 			}
 		}
 
@@ -188,7 +188,7 @@ nextValidate:
 				Path:    vnPathStr,
 				Keyword: "x-aggrega-validate",
 				Message: "template evaluation: " + err.Error(),
-				Err:     ErrExtensionEval,
+				Err:     ErrExtensionEval(),
 			}
 		}
 

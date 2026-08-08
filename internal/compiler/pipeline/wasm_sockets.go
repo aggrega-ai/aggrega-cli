@@ -344,7 +344,7 @@ func runRenderPolicySocket(ctx context.Context, inputs Inputs, catalogLookup res
 func invokeVerdictPlugin(ctx context.Context, spec wasm.PluginSpec, export string, payload []byte, settings map[string]any) (out []byte, err error) {
 	err = withSocketPlugin(ctx, spec, func(plugin *wasm.Plugin, desc wasm.PluginDescriptor) error {
 		if serr := desc.ValidateSettings(settings); serr != nil {
-			return fmt.Errorf("with.settings does not satisfy the plugin's declared settings schema: %v: %w", serr, ErrPolicySettingsInvalid)
+			return fmt.Errorf("with.settings does not satisfy the plugin's declared settings schema: %v: %w", serr, ErrPolicySettingsInvalid())
 		}
 		o, cerr := wasm.InvokeExport(ctx, plugin, desc, export, payload)
 		if cerr != nil {
@@ -532,7 +532,7 @@ func policyVerdictErrors(pluginURI string, po abi.PolicyOutput) []analyzer.Analy
 		errs = append(errs, analyzer.AnalysisError{
 			Kind:     analyzer.AnalysisErrorPolicy,
 			Message:  fmt.Sprintf("policy plugin %q rejected the build: %s%s", pluginRefName(pluginURI), r.Message, policyVerdictDetail(r)),
-			Sentinel: analyzer.ErrPolicyViolation,
+			Sentinel: analyzer.ErrPolicyViolation(),
 		})
 	}
 	return errs

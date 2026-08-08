@@ -112,7 +112,7 @@ func Decode(raw []byte) (AdvertisedTrust, error) {
 	dec.DisallowUnknownFields()
 	var t AdvertisedTrust
 	if err := dec.Decode(&t); err != nil {
-		return AdvertisedTrust{}, fmt.Errorf("%w: %v", ErrMalformedTrust, err)
+		return AdvertisedTrust{}, fmt.Errorf("%w: %v", ErrMalformedTrust(), err)
 	}
 	if err := validateIdentities("trusted_identities", t.TrustedIdentities); err != nil {
 		return AdvertisedTrust{}, err
@@ -126,10 +126,10 @@ func Decode(raw []byte) (AdvertisedTrust, error) {
 func validateIdentities(field string, ids []AdvertisedIdentity) error {
 	for i, id := range ids {
 		if id.Identity == "" && id.IdentityRegexp == "" {
-			return fmt.Errorf("%w: %s[%d]: an identity entry must set identity or identity_regexp", ErrMalformedTrust, field, i)
+			return fmt.Errorf("%w: %s[%d]: an identity entry must set identity or identity_regexp", ErrMalformedTrust(), field, i)
 		}
 		if id.Issuer == "" {
-			return fmt.Errorf("%w: %s[%d]: an identity entry must set issuer", ErrMalformedTrust, field, i)
+			return fmt.Errorf("%w: %s[%d]: an identity entry must set issuer", ErrMalformedTrust(), field, i)
 		}
 	}
 	return nil
@@ -141,9 +141,9 @@ func validateIdentities(field string, ids []AdvertisedIdentity) error {
 // identity pinning. Distinct from a transport error (DNS/TCP/TLS), which the
 // caller may also tolerate but which signals a reachability problem rather
 // than a deliberate "no policy advertised".
-const ErrNoTrustAdvertised cerrors.Code = "registrytrust/no-trust-advertised"
+func ErrNoTrustAdvertised() error { return errNoTrustAdvertised }
 
-var _ = cerrors.Register(ErrNoTrustAdvertised, cerrors.Meta{
+var errNoTrustAdvertised = cerrors.Register("registrytrust/no-trust-advertised", cerrors.Meta{
 	Message: "registrytrust: registry advertises no trust config",
 })
 
@@ -153,9 +153,9 @@ var _ = cerrors.Register(ErrNoTrustAdvertised, cerrors.Meta{
 // endpoint exists and answered, but its content is not a usable trust policy,
 // which signals a real misconfiguration rather than an absent policy. Both
 // Decode and Fetch wrap this sentinel on a decode/validation failure.
-const ErrMalformedTrust cerrors.Code = "registrytrust/malformed-trust"
+func ErrMalformedTrust() error { return errMalformedTrust }
 
-var _ = cerrors.Register(ErrMalformedTrust, cerrors.Meta{
+var errMalformedTrust = cerrors.Register("registrytrust/malformed-trust", cerrors.Meta{
 	Message: "registrytrust: advertised trust config is malformed",
 })
 
@@ -182,7 +182,7 @@ func Fetch(ctx context.Context, client *http.Client, host string) (AdvertisedTru
 		// The client is obtained from the network-egress gate (pkg/egress); a nil
 		// client means the workspace is offline, so the well-known trust fetch is
 		// refused before any dial.
-		return AdvertisedTrust{}, fmt.Errorf("registrytrust: fetch %s: %w", host, egress.ErrOfflineEgress)
+		return AdvertisedTrust{}, fmt.Errorf("registrytrust: fetch %s: %w", host, egress.ErrOfflineEgress())
 	}
 	client.Timeout = fetchTimeout
 
@@ -205,7 +205,7 @@ func Fetch(ctx context.Context, client *http.Client, host string) (AdvertisedTru
 	defer resp.Body.Close()
 
 	if resp.StatusCode == http.StatusNotFound {
-		return AdvertisedTrust{}, ErrNoTrustAdvertised
+		return AdvertisedTrust{}, ErrNoTrustAdvertised()
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return AdvertisedTrust{}, fmt.Errorf("registrytrust: fetch trust config from %s: HTTP %d", host, resp.StatusCode)

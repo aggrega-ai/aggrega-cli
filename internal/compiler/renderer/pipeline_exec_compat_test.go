@@ -56,7 +56,7 @@ func TestProviderCompat_OwnScopeMismatchHalts(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected halt for own-scope provider mismatch; got nil")
 	}
-	if !errors.Is(err, ErrPluginProviderIncompatible) {
+	if !errors.Is(err, ErrPluginProviderIncompatible()) {
 		t.Errorf("expected ErrPluginProviderIncompatible; got %v", err)
 	}
 	// The Loud Guardrail names the offending provider, its scope, and the
@@ -86,7 +86,7 @@ func TestProviderCompat_HostScopeMismatchHalts(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected halt for host-scope provider mismatch; got nil")
 	}
-	if !errors.Is(err, ErrPluginProviderIncompatible) {
+	if !errors.Is(err, ErrPluginProviderIncompatible()) {
 		t.Errorf("expected ErrPluginProviderIncompatible; got %v", err)
 	}
 	msg := err.Error()
@@ -132,7 +132,7 @@ func TestProviderCompat_EmptyTargetsHalts(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected halt for empty targets; got nil")
 	}
-	if !errors.Is(err, ErrPluginProviderIncompatible) {
+	if !errors.Is(err, ErrPluginProviderIncompatible()) {
 		t.Errorf("expected ErrPluginProviderIncompatible; got %v", err)
 	}
 	// The message renders an empty declared set as "(none)".

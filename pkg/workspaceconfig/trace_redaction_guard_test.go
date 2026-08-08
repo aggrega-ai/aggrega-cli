@@ -122,7 +122,7 @@ func TestPersistedTraceRedactionKeyIsRejectedAtLoad(t *testing.T) {
 			if err == nil {
 				t.Fatalf("a persisted trace-redaction key must be rejected at load; the config was accepted:\n%s", tc.body)
 			}
-			if !errors.Is(err, ErrConfigInvalid) {
+			if !errors.Is(err, ErrConfigInvalid()) {
 				t.Errorf("rejection should wrap ErrConfigInvalid; got %v", err)
 			}
 		})

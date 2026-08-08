@@ -69,7 +69,7 @@ func LintAttachmentSlotNearMiss(na types.NormalizedAggregate, catalog CatalogLoo
 						"attachment %q on component %q is not a declared slot of type %q, but the type declares the slot %q — if %q was meant, the attachment is currently a free attachment and does not fill it",
 						name, p.name, p.inst.Type, slot, slot,
 					),
-					Err: ErrAttachmentSlotNearMiss,
+					Err: ErrAttachmentSlotNearMiss(),
 				})
 			}
 		}

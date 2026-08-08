@@ -123,7 +123,7 @@ func TestGovernanceFreeAttachmentDenyE2E(t *testing.T) {
 	if err == nil {
 		t.Fatalf("free-attachment deny: expected a halt, got nil")
 	}
-	if !errors.Is(err, analyzer.ErrPolicyViolation) {
+	if !errors.Is(err, analyzer.ErrPolicyViolation()) {
 		t.Fatalf("free-attachment deny not errors.Is ErrPolicyViolation: %v", err)
 	}
 	msg := err.Error()
@@ -170,7 +170,7 @@ func TestGovernanceSensitiveByValueDenyE2E(t *testing.T) {
 	if err == nil {
 		t.Fatalf("sensitive-by-value deny: expected a halt, got nil")
 	}
-	if !errors.Is(err, analyzer.ErrPolicyViolation) {
+	if !errors.Is(err, analyzer.ErrPolicyViolation()) {
 		t.Fatalf("sensitive-by-value deny not errors.Is ErrPolicyViolation: %v", err)
 	}
 	msg := err.Error()
@@ -217,7 +217,7 @@ func TestGovernanceSecretKindFromLabelsDenyE2E(t *testing.T) {
 	if err == nil {
 		t.Fatalf("secret-kind deny: expected a halt, got nil")
 	}
-	if !errors.Is(err, analyzer.ErrPolicyViolation) {
+	if !errors.Is(err, analyzer.ErrPolicyViolation()) {
 		t.Fatalf("secret-kind deny not errors.Is ErrPolicyViolation: %v", err)
 	}
 	msg := err.Error()
@@ -269,7 +269,7 @@ func TestGovernanceCatalogAnnotationDenyE2E(t *testing.T) {
 	if err == nil {
 		t.Fatalf("catalog-annotation deny: expected a halt, got nil")
 	}
-	if !errors.Is(err, analyzer.ErrPolicyViolation) {
+	if !errors.Is(err, analyzer.ErrPolicyViolation()) {
 		t.Fatalf("catalog-annotation deny not errors.Is ErrPolicyViolation: %v", err)
 	}
 	msg := err.Error()

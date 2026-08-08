@@ -96,7 +96,7 @@ func TestStep4b_ComponentAssertionFailsHaltsBuild(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error; got nil")
 	}
-	if !errors.Is(err, ErrAssertionFailed) {
+	if !errors.Is(err, ErrAssertionFailed()) {
 		t.Errorf("expected ErrAssertionFailed; got %v", err)
 	}
 	for _, want := range []string{"web", "core/server", "replicas-positive", "replicas must be positive"} {
@@ -130,7 +130,7 @@ func TestStep4b_FeatureAssertionFailsHaltsBuild(t *testing.T) {
 		Feature:   func(string) (types.Feature, bool) { return feat, true },
 	}
 	err := EvaluateComponentAndFeatureAssertions(graph, cl)
-	if err == nil || !errors.Is(err, ErrAssertionFailed) {
+	if err == nil || !errors.Is(err, ErrAssertionFailed()) {
 		t.Fatalf("expected ErrAssertionFailed; got %v", err)
 	}
 	if !strings.Contains(err.Error(), "audit cannot be off") {
@@ -227,7 +227,7 @@ func TestStep4b_ReferenceToStep5bFieldProducesMissingKeyError(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected missing-key error; got nil")
 	}
-	if errors.Is(err, ErrAssertionFailed) {
+	if errors.Is(err, ErrAssertionFailed()) {
 		t.Errorf("did not expect ErrAssertionFailed; this is a missing-key surface, got %v", err)
 	}
 }
@@ -310,7 +310,7 @@ func TestStep4b_UsesProvidesReferenceFails(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected missing-key error on .uses.<socket>.<provides_key>; got nil")
 	}
-	if errors.Is(err, ErrAssertionFailed) {
+	if errors.Is(err, ErrAssertionFailed()) {
 		t.Errorf("did not expect ErrAssertionFailed; expected missing-key, got %v", err)
 	}
 }

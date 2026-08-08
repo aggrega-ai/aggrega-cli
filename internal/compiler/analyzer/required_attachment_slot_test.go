@@ -65,7 +65,7 @@ func TestRequiredAttachmentSlots_UnfilledHalts(t *testing.T) {
 	if len(errs) != 1 {
 		t.Fatalf("want exactly one violation for the unbound required slot; got %v", errs)
 	}
-	if !errors.Is(errs[0].Sentinel, ErrRequiredSlotUnfilled) {
+	if !errors.Is(errs[0].Sentinel, ErrRequiredSlotUnfilled()) {
 		t.Errorf("sentinel = %v; want ErrRequiredSlotUnfilled", errs[0].Sentinel)
 	}
 	for _, want := range []string{"root_password", "core/datastore/db"} {

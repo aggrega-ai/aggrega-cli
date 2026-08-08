@@ -15,46 +15,46 @@ import (
 )
 
 // ErrConfigInvalid wraps every structural-validation failure raised
-// by Load. Errors satisfying errors.Is(err, ErrConfigInvalid) carry
+// by Load. Errors satisfying errors.Is(err, ErrConfigInvalid()) carry
 // a wrapped message naming the offending field path and the
 // validation diagnostic.
-const ErrConfigInvalid cerrors.Code = "workspaceconfig/config-invalid"
+func ErrConfigInvalid() error { return errConfigInvalid }
 
-var _ = cerrors.Register(ErrConfigInvalid, cerrors.Meta{
+var errConfigInvalid = cerrors.Register("workspaceconfig/config-invalid", cerrors.Meta{
 	Message: "workspaceconfig: file failed schema validation",
 })
 
 // ErrDuplicateProviderTarget reports that the composed provider list binds
 // one capability more than once. Errors satisfying
-// errors.Is(err, ErrDuplicateProviderTarget) carry the offending capability
+// errors.Is(err, ErrDuplicateProviderTarget()) carry the offending capability
 // name. A capability may have exactly one provider-rendering plugin
 // binding in the resolved configuration, so two entries for the same capability
 // — whether within one layer or contributed across the cascade and its
 // `_append` companions — halt resolution loudly rather than silently letting
 // one win.
-const ErrDuplicateProviderTarget cerrors.Code = "workspaceconfig/duplicate-provider-target"
+func ErrDuplicateProviderTarget() error { return errDuplicateProviderTarget }
 
-var _ = cerrors.Register(ErrDuplicateProviderTarget, cerrors.Meta{
+var errDuplicateProviderTarget = cerrors.Register("workspaceconfig/duplicate-provider-target", cerrors.Meta{
 	Message: "workspaceconfig: capability is bound to more than one provider plugin",
 })
 
 // ErrCapabilityOnCrossCuttingSocket reports that a cross-cutting socket
 // (governance, linter, importer) is bound by capability instead of by
-// uri. Errors satisfying errors.Is(err, ErrCapabilityOnCrossCuttingSocket)
+// uri. Errors satisfying errors.Is(err, ErrCapabilityOnCrossCuttingSocket())
 // carry the offending socket name and capability value. These sockets attach
 // their plugin directly by uri: the attached plugin serves no capability, so a
 // capability lookup would match nothing. A capability binding on one of them is
 // therefore an attachment that can never resolve, and it halts loudly at load
 // rather than surfacing later as an opaque resolve miss.
-const ErrCapabilityOnCrossCuttingSocket cerrors.Code = "workspaceconfig/capability-on-cross-cutting-socket"
+func ErrCapabilityOnCrossCuttingSocket() error { return errCapabilityOnCrossCuttingSocket }
 
-var _ = cerrors.Register(ErrCapabilityOnCrossCuttingSocket, cerrors.Meta{
+var errCapabilityOnCrossCuttingSocket = cerrors.Register("workspaceconfig/capability-on-cross-cutting-socket", cerrors.Meta{
 	Message: "workspaceconfig: a cross-cutting socket is bound by capability but attaches by uri",
 })
 
 // ErrInertFieldOnProviderSocket reports that a provider-socket binding sets a
 // field that has no referent on that socket — `function` or `with`. Errors
-// satisfying errors.Is(err, ErrInertFieldOnProviderSocket) carry the offending
+// satisfying errors.Is(err, ErrInertFieldOnProviderSocket()) carry the offending
 // capability and name the inert field. A provider drives a fixed set of
 // phase-keyed exports rather than one selectable entry, so `function` names
 // nothing on it; and provider render configuration belongs in the Recipe, not
@@ -62,15 +62,15 @@ var _ = cerrors.Register(ErrCapabilityOnCrossCuttingSocket, cerrors.Meta{
 // domain boundary. A field with no referent on a socket is rejected at
 // authoring rather than silently dropped, so the operator learns the field is
 // inert instead of quietly seeing it ignored.
-const ErrInertFieldOnProviderSocket cerrors.Code = "workspaceconfig/inert-field-on-provider-socket"
+func ErrInertFieldOnProviderSocket() error { return errInertFieldOnProviderSocket }
 
-var _ = cerrors.Register(ErrInertFieldOnProviderSocket, cerrors.Meta{
+var errInertFieldOnProviderSocket = cerrors.Register("workspaceconfig/inert-field-on-provider-socket", cerrors.Meta{
 	Message: "workspaceconfig: a provider socket binding sets a field with no referent on that socket",
 })
 
 // ErrGovernanceRoleInvalid reports that a governance attachment declares no
 // role, or a role that is not a known governance role. Errors satisfying
-// errors.Is(err, ErrGovernanceRoleInvalid) carry the offending attachment
+// errors.Is(err, ErrGovernanceRoleInvalid()) carry the offending attachment
 // identity and the invalid role value. The role — not the plugin's declared
 // kind — selects which pipeline runner (and therefore which facet) an
 // attachment feeds, and the dispatch reads attachments by role, so an
@@ -78,32 +78,32 @@ var _ = cerrors.Register(ErrInertFieldOnProviderSocket, cerrors.Meta{
 // silently ignored. It is rejected at authoring on the composed config so a
 // hand-edited role typo or omission halts loudly rather than dropping the
 // plugin.
-const ErrGovernanceRoleInvalid cerrors.Code = "workspaceconfig/governance-role-invalid"
+func ErrGovernanceRoleInvalid() error { return errGovernanceRoleInvalid }
 
-var _ = cerrors.Register(ErrGovernanceRoleInvalid, cerrors.Meta{
+var errGovernanceRoleInvalid = cerrors.Register("workspaceconfig/governance-role-invalid", cerrors.Meta{
 	Message: "workspaceconfig: a governance attachment declares no role or an unknown role",
 })
 
 // ErrDuplicateRegistryAlias reports that a registry alias is already used by a
-// different host entry. Errors satisfying errors.Is(err, ErrDuplicateRegistryAlias)
+// different host entry. Errors satisfying errors.Is(err, ErrDuplicateRegistryAlias())
 // carry the offending alias and the host that already holds it. A registry alias
 // is a unique convenience selector across entries, so registering one already
 // bound to another host halts loudly rather than shadowing the existing binding.
-const ErrDuplicateRegistryAlias cerrors.Code = "workspaceconfig/duplicate-registry-alias"
+func ErrDuplicateRegistryAlias() error { return errDuplicateRegistryAlias }
 
-var _ = cerrors.Register(ErrDuplicateRegistryAlias, cerrors.Meta{
+var errDuplicateRegistryAlias = cerrors.Register("workspaceconfig/duplicate-registry-alias", cerrors.Meta{
 	Message: "workspaceconfig: registry alias is already used by another host",
 })
 
 // ErrAmbiguousRegistryAlias reports that a registry token matched the alias of
 // more than one entry during resolution. Errors satisfying
-// errors.Is(err, ErrAmbiguousRegistryAlias) carry the offending alias. An alias
+// errors.Is(err, ErrAmbiguousRegistryAlias()) carry the offending alias. An alias
 // selects exactly one host; a hand-edited config that binds the same alias to two
 // hosts makes the selection ambiguous, so resolution halts loudly rather than
 // silently choosing one host over the other.
-const ErrAmbiguousRegistryAlias cerrors.Code = "workspaceconfig/ambiguous-registry-alias"
+func ErrAmbiguousRegistryAlias() error { return errAmbiguousRegistryAlias }
 
-var _ = cerrors.Register(ErrAmbiguousRegistryAlias, cerrors.Meta{
+var errAmbiguousRegistryAlias = cerrors.Register("workspaceconfig/ambiguous-registry-alias", cerrors.Meta{
 	Message: "workspaceconfig: registry alias matches more than one host",
 })
 
@@ -193,7 +193,7 @@ func validateSigningKinds(kinds []string, path string) error {
 			continue
 		}
 		if _, err := oci.MediaTypeForKind(k); err != nil {
-			return fmt.Errorf("workspaceconfig: %s: signing.kinds entry %q is not a signable artifact kind; use a catalog entity or plugin kind, or %q for every kind: %w", path, k, signingKindsAll, ErrConfigInvalid)
+			return fmt.Errorf("workspaceconfig: %s: signing.kinds entry %q is not a signable artifact kind; use a catalog entity or plugin kind, or %q for every kind: %w", path, k, signingKindsAll, ErrConfigInvalid())
 		}
 	}
 	return nil
@@ -229,7 +229,7 @@ func validateBytes(data []byte, path string) error {
 			fieldPath = "(root)"
 		}
 		return fmt.Errorf("workspaceconfig: %s: %s: %s: %w",
-			path, fieldPath, f.Message, ErrConfigInvalid)
+			path, fieldPath, f.Message, ErrConfigInvalid())
 	}
 	if err != nil {
 		return fmt.Errorf("workspaceconfig: validate %s: %w", path, err)
@@ -253,7 +253,7 @@ func checkConfigShape(probe any, path string) error {
 	}
 	if ws, present := root["workspace"]; present {
 		if ws == nil {
-			return fmt.Errorf("workspaceconfig: %s: `workspace` must be a mapping; write `workspace: {}` to mark a workspace root with no catalog directories: %w", path, ErrConfigInvalid)
+			return fmt.Errorf("workspaceconfig: %s: `workspace` must be a mapping; write `workspace: {}` to mark a workspace root with no catalog directories: %w", path, ErrConfigInvalid())
 		}
 		if wsMap, ok := ws.(map[string]any); ok {
 			for _, moved := range []string{"default_registry", "offline", "auto_pull", "cache_dir"} {
@@ -262,13 +262,13 @@ func checkConfigShape(probe any, path string) error {
 					if moved == "cache_dir" {
 						hint = "artifact_cache_dir"
 					}
-					return fmt.Errorf("workspaceconfig: %s: `%s` moved to the top level; set top-level `%s`, not under `workspace`: %w", path, moved, hint, ErrConfigInvalid)
+					return fmt.Errorf("workspaceconfig: %s: `%s` moved to the top level; set top-level `%s`, not under `workspace`: %w", path, moved, hint, ErrConfigInvalid())
 				}
 			}
 		}
 	}
 	if _, found := root["cache"]; found {
-		return fmt.Errorf("workspaceconfig: %s: the `cache` block was renamed to `parse_cache`: %w", path, ErrConfigInvalid)
+		return fmt.Errorf("workspaceconfig: %s: the `cache` block was renamed to `parse_cache`: %w", path, ErrConfigInvalid())
 	}
 	return nil
 }

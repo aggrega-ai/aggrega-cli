@@ -288,7 +288,7 @@ func TestResolveEntitySource_RecipePinDisagreesWithLockfileHalts(t *testing.T) {
 	if err == nil {
 		t.Fatalf("disagreeing recipe pin resolved without halting")
 	}
-	if !errors.Is(err, oci.ErrFetchIntegrity) {
+	if !errors.Is(err, oci.ErrFetchIntegrity()) {
 		t.Errorf("recipe-pin disagreement error = %v; want ErrFetchIntegrity", err)
 	}
 	// An agreeing pin resolves cleanly.
@@ -339,7 +339,7 @@ func TestResolveSourceForNodeHaltsOnMissingLockfileEntry(t *testing.T) {
 		CacheDir:      ".aggrega/cache",
 	}
 	err := resolveSourceForNode(input, recipe, &NodeRenderContext{})
-	if !errors.Is(err, sourcecache.ErrFetchNotFound) {
+	if !errors.Is(err, sourcecache.ErrFetchNotFound()) {
 		t.Errorf("missing lockfile entry should wrap ErrFetchNotFound; got %v", err)
 	}
 }
@@ -436,10 +436,10 @@ func TestMatchFetchSentinelDetectsEachSentinel(t *testing.T) {
 		name string
 		sent error
 	}{
-		{"NotFound", oci.ErrFetchNotFound},
-		{"Unauthorized", oci.ErrFetchUnauthorized},
-		{"NetworkUnreachable", oci.ErrFetchNetworkUnreachable},
-		{"Integrity", oci.ErrFetchIntegrity},
+		{"NotFound", oci.ErrFetchNotFound()},
+		{"Unauthorized", oci.ErrFetchUnauthorized()},
+		{"NetworkUnreachable", oci.ErrFetchNetworkUnreachable()},
+		{"Integrity", oci.ErrFetchIntegrity()},
 	}
 	for _, tc := range cases {
 		wrapped := fmt.Errorf("outer wrap: %w", tc.sent)
@@ -460,7 +460,7 @@ func TestMatchFetchSentinelReturnsFalseForNonFetchErrors(t *testing.T) {
 	if ok || got != nil {
 		t.Errorf("non-fetch error should return (nil, false); got (%v, %v)", got, ok)
 	}
-	if g, ok := matchFetchSentinel(closure.ErrSourceTemplateAtLockTime); ok {
+	if g, ok := matchFetchSentinel(closure.ErrSourceTemplateAtLockTime()); ok {
 		t.Errorf("ErrSourceTemplateAtLockTime is not a fetch sentinel; got (%v, ok=true)", g)
 	}
 }

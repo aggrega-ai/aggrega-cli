@@ -152,7 +152,7 @@ func TestIntegration_EntitySignatureVerifiesAgainstManifestDigest(t *testing.T) 
 	}
 	// The F1 behaviour: verifying the SAME bundle against the content digest halts.
 	bugErr := signing.VerifyKeyedBundle(bundle, signer.PublicKeyPEM(), contentDg)
-	if !errors.Is(bugErr, signing.ErrSignatureVerificationFailed) {
+	if !errors.Is(bugErr, signing.ErrSignatureVerificationFailed()) {
 		t.Fatalf("verify against the content digest (the F1 behaviour) must HALT with ErrSignatureVerificationFailed, got: %v", bugErr)
 	}
 }

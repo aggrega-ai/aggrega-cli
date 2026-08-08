@@ -35,7 +35,7 @@ func LoadAggregate(path string) (*types.Aggregate, error) {
 			Entity:  "Aggregate",
 			Field:   path,
 			Message: fmt.Sprintf("failed to read file: %v", err),
-			Err:     ErrYAMLLoad,
+			Err:     ErrYAMLLoad(),
 		}
 	}
 	return LoadAggregateFromBytes(data, path)
@@ -46,7 +46,7 @@ func LoadAggregate(path string) (*types.Aggregate, error) {
 // for callers that already hold the bytes (the same-directory triad scan) and
 // must not read the file a second time.
 func LoadAggregateFromBytes(data []byte, path string) (*types.Aggregate, error) {
-	if _, eerr := envelope.ValidateBytes(envelope.KindAggregate, data, path); errors.Is(eerr, envelope.ErrEntityEnvelope) {
+	if _, eerr := envelope.ValidateBytes(envelope.KindAggregate, data, path); errors.Is(eerr, envelope.ErrEntityEnvelope()) {
 		return nil, &ResolverError{Entity: "Aggregate", Field: path, Message: eerr.Error(), Err: eerr}
 	}
 	var agg types.Aggregate
@@ -55,7 +55,7 @@ func LoadAggregateFromBytes(data []byte, path string) (*types.Aggregate, error) 
 			Entity:  "Aggregate",
 			Field:   path,
 			Message: fmt.Sprintf("failed to unmarshal YAML: %v", err),
-			Err:     ErrYAMLLoad,
+			Err:     ErrYAMLLoad(),
 		}
 	}
 	// Single normalization core: fold a top-level components surface into the
@@ -73,7 +73,7 @@ func LoadRelease(path string) (*types.Release, error) {
 			Entity:  "Release",
 			Field:   path,
 			Message: fmt.Sprintf("failed to read file: %v", err),
-			Err:     ErrYAMLLoad,
+			Err:     ErrYAMLLoad(),
 		}
 	}
 	return LoadReleaseFromBytes(data, path)
@@ -84,7 +84,7 @@ func LoadRelease(path string) (*types.Release, error) {
 // any error to path. It is the read-free core of LoadRelease, for callers that
 // already hold the bytes (the same read-free split LoadManifestFromBytes has).
 func LoadReleaseFromBytes(data []byte, path string) (*types.Release, error) {
-	if _, eerr := envelope.ValidateBytes(envelope.KindRelease, data, path); errors.Is(eerr, envelope.ErrEntityEnvelope) {
+	if _, eerr := envelope.ValidateBytes(envelope.KindRelease, data, path); errors.Is(eerr, envelope.ErrEntityEnvelope()) {
 		return nil, &ResolverError{Entity: "Release", Field: path, Message: eerr.Error(), Err: eerr}
 	}
 	var rel types.Release
@@ -93,7 +93,7 @@ func LoadReleaseFromBytes(data []byte, path string) (*types.Release, error) {
 			Entity:  "Release",
 			Field:   path,
 			Message: fmt.Sprintf("failed to unmarshal YAML: %v", err),
-			Err:     ErrYAMLLoad,
+			Err:     ErrYAMLLoad(),
 		}
 	}
 	// Single normalization core: fold a top-level components surface into the
@@ -148,7 +148,7 @@ func rejectDuplicateBoundaryComponents(rel *types.Release, path string) error {
 						"component %q is declared in boundary %q and again in boundary %q (source %s); a component belongs to exactly one boundary — remove whichever declaration is not intended",
 						name, prior, boundaryPath, path,
 					),
-					Err: ErrDuplicateBoundaryComponent,
+					Err: ErrDuplicateBoundaryComponent(),
 				}
 			}
 			firstDeclaredAt[name] = boundaryPath
@@ -188,7 +188,7 @@ func LoadManifest(path string) (*types.Manifest, error) {
 			Entity:  "Manifest",
 			Field:   path,
 			Message: fmt.Sprintf("failed to read file: %v", err),
-			Err:     ErrYAMLLoad,
+			Err:     ErrYAMLLoad(),
 		}
 	}
 	return LoadManifestFromBytes(data, path)
@@ -199,7 +199,7 @@ func LoadManifest(path string) (*types.Manifest, error) {
 // attributing any error to path. It is the read-free core of LoadManifest, for
 // callers that already hold the bytes (the same-directory triad scan).
 func LoadManifestFromBytes(data []byte, path string) (*types.Manifest, error) {
-	if _, eerr := envelope.ValidateBytes(envelope.KindManifest, data, path); errors.Is(eerr, envelope.ErrEntityEnvelope) {
+	if _, eerr := envelope.ValidateBytes(envelope.KindManifest, data, path); errors.Is(eerr, envelope.ErrEntityEnvelope()) {
 		return nil, &ResolverError{Entity: "Manifest", Field: path, Message: eerr.Error(), Err: eerr}
 	}
 	var man types.Manifest
@@ -208,7 +208,7 @@ func LoadManifestFromBytes(data []byte, path string) (*types.Manifest, error) {
 			Entity:  "Manifest",
 			Field:   path,
 			Message: fmt.Sprintf("failed to unmarshal YAML: %v", err),
-			Err:     ErrYAMLLoad,
+			Err:     ErrYAMLLoad(),
 		}
 	}
 	if err := rejectReservedAnnotationBindings(&man, path); err != nil {
@@ -240,7 +240,7 @@ func rejectReservedAnnotationBindings(man *types.Manifest, path string) error {
 						"CATALOG_ERROR: features.annotations binding %q uses reserved prefix %q; reserved for provider well-known annotations. Use feature.<your-domain>/ for Feature bindings.",
 						key, reservedPrefix,
 					),
-					Err: ErrManifestReservedPrefix,
+					Err: ErrManifestReservedPrefix(),
 				}
 			}
 		}
@@ -301,7 +301,7 @@ func rejectCrossBindingPathPillarCollision(man *types.Manifest, path string) err
 								"CATALOG_ERROR: annotation bindings %q and %q both target Feature %q with path %q routing to pillar %q; only one binding may declare a given (path, pillar) pair per Feature.",
 								priorKey, key, binding.Feature, p, pillar,
 							),
-							Err: ErrManifestCrossBindingPillarCollision,
+							Err: ErrManifestCrossBindingPillarCollision(),
 						}
 					}
 					featureMap[target] = key

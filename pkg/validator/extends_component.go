@@ -136,7 +136,7 @@ func collectComponentChain(child types.Component, lookup ComponentLookup) ([]typ
 			return nil, []*ValidationError{NewValidationError(envelope.KindComponent, child.Metadata.Name, ValidationDetail{
 				FieldPath:  ".spec.extends",
 				Constraint: "circular extends detected while rebuilding chain",
-				Err:        ErrCyclicExtension,
+				Err:        ErrCyclicExtension(),
 			})}
 		}
 		parent, ok := lookup(current.Spec.Extends)
@@ -144,7 +144,7 @@ func collectComponentChain(child types.Component, lookup ComponentLookup) ([]typ
 			return nil, []*ValidationError{NewValidationError(envelope.KindComponent, child.Metadata.Name, ValidationDetail{
 				FieldPath:  ".spec.extends",
 				Constraint: "parent component not found while rebuilding chain",
-				Err:        ErrInheritanceMerge,
+				Err:        ErrInheritanceMerge(),
 			})}
 		}
 		visited[current.Spec.Extends] = true
@@ -163,7 +163,7 @@ func collectFeatureChain(child types.Feature, lookup FeatureLookup) ([]types.Fea
 			return nil, []*ValidationError{NewValidationError(envelope.KindFeature, child.Metadata.Name, ValidationDetail{
 				FieldPath:  ".spec.extends",
 				Constraint: "circular extends detected while rebuilding chain",
-				Err:        ErrCyclicExtension,
+				Err:        ErrCyclicExtension(),
 			})}
 		}
 		parent, ok := lookup(current.Spec.Extends)
@@ -171,7 +171,7 @@ func collectFeatureChain(child types.Feature, lookup FeatureLookup) ([]types.Fea
 			return nil, []*ValidationError{NewValidationError(envelope.KindFeature, child.Metadata.Name, ValidationDetail{
 				FieldPath:  ".spec.extends",
 				Constraint: "parent feature not found while rebuilding chain",
-				Err:        ErrInheritanceMerge,
+				Err:        ErrInheritanceMerge(),
 			})}
 		}
 		visited[current.Spec.Extends] = true
@@ -285,7 +285,7 @@ func mergeAssertions(parentEntity, childEntity string, parent, child types.Order
 				FieldPath:  ".spec.assertions." + k,
 				Constraint: fmt.Sprintf("assertion %q is already present on the base Component %q, declaring a different rule", k, parentEntity),
 				Suggestion: "Rename this assertion; an extending Component's assertions add to the base's and never replace one.",
-				Err:        ErrAssertionNameCollision,
+				Err:        ErrAssertionNameCollision(),
 			}))
 			continue
 		}

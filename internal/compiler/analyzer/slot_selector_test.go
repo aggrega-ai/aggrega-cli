@@ -95,7 +95,7 @@ func TestValidateSlotSelectors_Unsatisfied(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !hasSentinel(errs, ErrSlotSelectorUnsatisfied) {
+	if !hasSentinel(errs, ErrSlotSelectorUnsatisfied()) {
 		t.Errorf("unsatisfied fill should halt with ErrSlotSelectorUnsatisfied; got %+v", errs)
 	}
 }

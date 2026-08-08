@@ -101,7 +101,7 @@ func TestLoadAndDescribePublishingLinter(t *testing.T) {
 
 	// An export the descriptor does not declare is refused before the
 	// guest runs, even on a live plugin.
-	if _, err := InvokeExport(ctx, plugin, desc, "render_node", nil); !errors.Is(err, ErrWasmManifestRejected) {
+	if _, err := InvokeExport(ctx, plugin, desc, "render_node", nil); !errors.Is(err, ErrWasmManifestRejected()) {
 		t.Fatalf("undeclared export on live plugin: got %v want ErrWasmManifestRejected", err)
 	}
 }

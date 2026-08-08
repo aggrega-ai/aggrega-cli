@@ -49,19 +49,19 @@ func ResolveManifestExtends(releaseDir string, child *types.Manifest) (*types.Ma
 	for current.Spec.Extends != "" {
 		if len(chain) >= maxManifestExtendsDepth {
 			return nil, fmt.Errorf("%w: Manifest %q extends chain exceeds maximum depth of %d; reduce the chain length",
-				validator.ErrInheritanceMerge, child.Metadata.Name, maxManifestExtendsDepth)
+				validator.ErrInheritanceMerge(), child.Metadata.Name, maxManifestExtendsDepth)
 		}
 
 		parentRef := current.Spec.Extends
 		if visited[parentRef] {
 			return nil, fmt.Errorf("%w: Manifest %q extends %q, which is already in the chain; remove the circular reference",
-				validator.ErrCyclicExtension, current.Metadata.Name, parentRef)
+				validator.ErrCyclicExtension(), current.Metadata.Name, parentRef)
 		}
 
 		parentRes, err := ResolveManifest(releaseDir, parentRef)
 		if err != nil {
 			return nil, fmt.Errorf("%w: Manifest %q extends %q, which could not be resolved: %v",
-				validator.ErrInheritanceMerge, current.Metadata.Name, parentRef, err)
+				validator.ErrInheritanceMerge(), current.Metadata.Name, parentRef, err)
 		}
 		parent := parentRes.Manifest
 

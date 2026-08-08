@@ -33,7 +33,7 @@ func TestTier3EntityRefusal_NamesTheLocalCatalogRemedy(t *testing.T) {
 	if err == nil {
 		t.Fatal("tier3PullCatalogEntity: want a refusal for an unscoped recipe reference; got nil error")
 	}
-	if !errors.Is(err, ErrUnscopedRecipeReference) {
+	if !errors.Is(err, ErrUnscopedRecipeReference()) {
 		t.Fatalf("error = %v; want errors.Is(err, ErrUnscopedRecipeReference)", err)
 	}
 
@@ -75,8 +75,8 @@ func TestRemediationFor_DelegationPrecedence(t *testing.T) {
 	const host = "127.0.0.1:5000"
 
 	t.Run("fetch sentinel keeps its own remediation", func(t *testing.T) {
-		got := remediationFor(oci.ErrFetchUnauthorized, host)
-		if want := oci.RemediationFor(oci.ErrFetchUnauthorized, host); got != want {
+		got := remediationFor(oci.ErrFetchUnauthorized(), host)
+		if want := oci.RemediationFor(oci.ErrFetchUnauthorized(), host); got != want {
 			t.Errorf("remediationFor(ErrFetchUnauthorized) = %q; want the fetch mapping's own %q", got, want)
 		}
 		if !strings.Contains(got, "docker login "+host) {
@@ -85,7 +85,7 @@ func TestRemediationFor_DelegationPrecedence(t *testing.T) {
 	})
 
 	t.Run("wrapped catalog sentinel is recognised through the chain", func(t *testing.T) {
-		wrapped := errors.New("outer: " + ErrUnscopedRecipeReference.Error())
+		wrapped := errors.New("outer: " + ErrUnscopedRecipeReference().Error())
 		if remediationFor(wrapped, host) != "" {
 			t.Error("a look-alike error that does not wrap the sentinel must not match")
 		}
@@ -117,7 +117,7 @@ func errUnscopedRecipeWrapped() error {
 // own remediation line, so the catalog-side mapping is proven additive at the call
 // site and not only in isolation.
 func TestTier3EntityRefusal_FetchSentinelKeepsItsRemediation(t *testing.T) {
-	p := erroringEntityPuller{err: oci.ErrFetchUnauthorized}
+	p := erroringEntityPuller{err: oci.ErrFetchUnauthorized()}
 
 	_, _, err := tier3PullCatalogEntity(t.TempDir(), ".aggrega/cache", p, "compose/mariadb:1.0.0", "Recipe")
 	if err == nil {

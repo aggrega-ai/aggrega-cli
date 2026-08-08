@@ -249,7 +249,7 @@ func TestValidatingLoadRefusesAnUndeclaredLibraryKey(t *testing.T) {
 		t.Fatalf("write probe lockfile: %v", err)
 	}
 
-	if _, _, err := LoadLockfile(path); !errors.Is(err, ErrLockfileInvalid) {
+	if _, _, err := LoadLockfile(path); !errors.Is(err, ErrLockfileInvalid()) {
 		t.Fatalf("the validating load must refuse an undeclared key on a library row; got %v", err)
 	}
 }

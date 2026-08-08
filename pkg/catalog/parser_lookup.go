@@ -41,9 +41,9 @@ const parseCapabilityPrefix = "parse:"
 // composed capability so the diagnostic points at the missing advertiser. The
 // format space is open — a new format ships as a new parser plugin, no core
 // change — so this halt reflects the advertised set, not a fixed enumeration.
-const ErrNoParserForFormat cerrors.Code = "catalog/no-parser-for-format"
+func ErrNoParserForFormat() error { return errNoParserForFormat }
 
-var _ = cerrors.Register(ErrNoParserForFormat, cerrors.Meta{
+var errNoParserForFormat = cerrors.Register("catalog/no-parser-for-format", cerrors.Meta{
 	Message: "no parser plugin advertises the requested format",
 })
 
@@ -55,9 +55,9 @@ var _ = cerrors.Register(ErrNoParserForFormat, cerrors.Meta{
 // every candidate, sorted, so the diagnostic is byte-identical across runs. It is
 // the parser-socket sibling of the provider socket's ambiguity halt, scoped to
 // the parser type and phrased for the parser surface.
-const ErrAmbiguousParserPlugin cerrors.Code = "catalog/ambiguous-parser-plugin"
+func ErrAmbiguousParserPlugin() error { return errAmbiguousParserPlugin }
 
-var _ = cerrors.Register(ErrAmbiguousParserPlugin, cerrors.Meta{
+var errAmbiguousParserPlugin = cerrors.Register("catalog/ambiguous-parser-plugin", cerrors.Meta{
 	Message: "format is advertised by more than one parser plugin",
 })
 
@@ -103,7 +103,7 @@ func (c *Catalog) ParserPluginForFormat(format string) (types.Plugin, error) {
 
 	switch len(distinctNames) {
 	case 0:
-		return types.Plugin{}, fmt.Errorf("%w: no parser plugin advertises %q", ErrNoParserForFormat, capability)
+		return types.Plugin{}, fmt.Errorf("%w: no parser plugin advertises %q", ErrNoParserForFormat(), capability)
 	case 1:
 		// Exactly one parser repository — fall through to version select.
 	default:
@@ -112,7 +112,7 @@ func (c *Catalog) ParserPluginForFormat(format string) (types.Plugin, error) {
 			names = append(names, n)
 		}
 		sort.Strings(names)
-		return types.Plugin{}, fmt.Errorf("%w: format %q is advertised by parser plugins %v", ErrAmbiguousParserPlugin, format, names)
+		return types.Plugin{}, fmt.Errorf("%w: format %q is advertised by parser plugins %v", ErrAmbiguousParserPlugin(), format, names)
 	}
 
 	var base string
@@ -126,7 +126,7 @@ func (c *Catalog) ParserPluginForFormat(format string) (types.Plugin, error) {
 		// The base name matched above, so selectEntityVersion returns a version
 		// only when the sole parser carries an unresolvable version shape; treat
 		// that as no advertiser for the format rather than a silent pass.
-		return types.Plugin{}, fmt.Errorf("%w: no parser plugin version resolves for %q", ErrNoParserForFormat, capability)
+		return types.Plugin{}, fmt.Errorf("%w: no parser plugin version resolves for %q", ErrNoParserForFormat(), capability)
 	}
 	return matches[key], nil
 }

@@ -152,7 +152,7 @@ func TestRunner_RefusesNonCLIPlugin(t *testing.T) {
 	r := Runner{Resolve: bytesLookup(guest), Stdout: &stdout, Stderr: &stderr}
 
 	code, _, err := r.Run(ctx, "test://noncli-probe", "noncli-probe", nil)
-	if !errors.Is(err, wasm.ErrWasmPluginTypeMismatch) {
+	if !errors.Is(err, wasm.ErrWasmPluginTypeMismatch()) {
 		t.Fatalf("Run error = %v; want an error wrapping wasm.ErrWasmPluginTypeMismatch", err)
 	}
 	if code != 0 {
@@ -164,7 +164,7 @@ func TestRunner_RefusesNonCLIPlugin(t *testing.T) {
 // ErrNoResolver rather than panicking.
 func TestRunner_NoResolver(t *testing.T) {
 	code, _, err := Runner{}.Run(context.Background(), "test://whatever", "whatever", nil)
-	if !errors.Is(err, ErrNoResolver) {
+	if !errors.Is(err, ErrNoResolver()) {
 		t.Fatalf("Run error = %v; want an error wrapping ErrNoResolver", err)
 	}
 	if code != 0 {

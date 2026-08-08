@@ -92,7 +92,7 @@ type fakeRemoteLibraryPuller struct {
 }
 
 func (p *fakeRemoteLibraryPuller) Pull(_ context.Context, _, _ string) (*oci.PullResult, error) {
-	return nil, oci.ErrFetchNotFound // library resolution uses PullLibrary
+	return nil, oci.ErrFetchNotFound() // library resolution uses PullLibrary
 }
 
 func (p *fakeRemoteLibraryPuller) PullLibrary(_ context.Context, _, _, floorVersion string) (*oci.PullResult, string, error) {
@@ -491,7 +491,7 @@ func TestBuildHaltsOnTamperedBridgedLibrary(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected the build to halt on the tampered library pin; got nil")
 	}
-	if !errors.Is(err, oci.ErrFetchIntegrity) {
+	if !errors.Is(err, oci.ErrFetchIntegrity()) {
 		t.Errorf("error should wrap ErrFetchIntegrity (verify-on-read at the bridge); got %v", err)
 	}
 }

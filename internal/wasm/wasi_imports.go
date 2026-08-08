@@ -89,7 +89,7 @@ func validateImportModules(pluginName string, wasmBytes []byte) error {
 			continue
 		}
 		return fmt.Errorf("plugin %q imports %s.%s: module %q is not on the import-module allowlist: %w",
-			pluginName, imp.Module, imp.Name, imp.Module, ErrWasmManifestRejected)
+			pluginName, imp.Module, imp.Name, imp.Module, ErrWasmManifestRejected())
 	}
 	return nil
 }

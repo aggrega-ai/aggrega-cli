@@ -195,7 +195,7 @@ func TestBuildStrictThresholdStillReportsEveryEntity(t *testing.T) {
 
 	var out bytes.Buffer
 	err := enforceClosureDeprecation(cl, lf, workspaceconfig.BuildConfig{HaltOnDeprecatedSeverity: "error"}, &out)
-	if !errors.Is(err, deprecation.ErrDeprecatedEntity) {
+	if !errors.Is(err, deprecation.ErrDeprecatedEntity()) {
 		t.Fatalf("a recorded marker at the configured threshold must halt; got: %v", err)
 	}
 	// The FIRST halting entry in the sorted walk owns the error, so the halt is

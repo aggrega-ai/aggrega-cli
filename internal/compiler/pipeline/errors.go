@@ -16,9 +16,9 @@ import (
 // wrapping error names the plugin, the offending settings key or path, and the
 // schema's expectation, so the operator sees exactly which setting to fix. A
 // build halts on it loudly rather than handing the plugin ill-shaped settings.
-const ErrPolicySettingsInvalid cerrors.Code = "compiler-pipeline/policy-settings-invalid"
+func ErrPolicySettingsInvalid() error { return errPolicySettingsInvalid }
 
-var _ = cerrors.Register(ErrPolicySettingsInvalid, cerrors.Meta{
+var errPolicySettingsInvalid = cerrors.Register("compiler-pipeline/policy-settings-invalid", cerrors.Meta{
 	Message: "policy attachment settings do not satisfy the plugin's declared settings schema",
 })
 
@@ -31,8 +31,8 @@ var _ = cerrors.Register(ErrPolicySettingsInvalid, cerrors.Meta{
 // build loudly rather than being silently absorbed. It is the annotation-role
 // analogue of the label role's patch-confinement halt — the structural facet
 // guarantee for the annotation-transform role.
-const ErrAnnotationInjectionRejected cerrors.Code = "compiler-pipeline/annotation-injection-rejected"
+func ErrAnnotationInjectionRejected() error { return errAnnotationInjectionRejected }
 
-var _ = cerrors.Register(ErrAnnotationInjectionRejected, cerrors.Meta{
+var errAnnotationInjectionRejected = cerrors.Register("compiler-pipeline/annotation-injection-rejected", cerrors.Meta{
 	Message: "annotation-transform plugin output was rejected: an injection targets a component coordinate the host did not supply",
 })

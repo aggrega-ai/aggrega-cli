@@ -122,7 +122,7 @@ func TestRegorusPolicyDenyHaltsE2E(t *testing.T) {
 	if err == nil {
 		t.Fatalf("deny policy: expected a halt, got nil")
 	}
-	if !errors.Is(err, analyzer.ErrPolicyViolation) {
+	if !errors.Is(err, analyzer.ErrPolicyViolation()) {
 		t.Fatalf("deny halt not errors.Is ErrPolicyViolation: %v", err)
 	}
 	const wantMsg = "reference policy: build rejected"
@@ -154,7 +154,7 @@ func TestRegorusPolicyUnsupportedBuiltinFaultsE2E(t *testing.T) {
 		t.Fatalf("unsupported-builtin policy: expected a halt, got nil (silent pass is the exact failure this guards)")
 	}
 	// It must NOT be a policy verdict: an unevaluable policy is a fault, not a deny.
-	if errors.Is(err, analyzer.ErrPolicyViolation) {
+	if errors.Is(err, analyzer.ErrPolicyViolation()) {
 		t.Fatalf("unsupported-builtin halt was routed as a policy verdict (ErrPolicyViolation); it must be a build fault:\n%v", err)
 	}
 	// It must be the invocation-fault path: the guest returned an error from
@@ -175,7 +175,7 @@ func TestRegorusPolicySettingsReachDataE2E(t *testing.T) {
 	if err == nil {
 		t.Fatalf("settings-driven deny: expected a halt, got nil (settings did not reach Rego data)")
 	}
-	if !errors.Is(err, analyzer.ErrPolicyViolation) {
+	if !errors.Is(err, analyzer.ErrPolicyViolation()) {
 		t.Fatalf("settings-driven deny not errors.Is ErrPolicyViolation: %v", err)
 	}
 	const wantMsg = "denied by settings"

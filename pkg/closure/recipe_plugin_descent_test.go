@@ -633,13 +633,13 @@ func TestProviderPluginDescent_FeatureRecipe(t *testing.T) {
 // error propagates through the descent, carrying the existing catalog sentinel.
 func TestProviderPluginDescent_VersionUnsatisfiable(t *testing.T) {
 	resolver := func(ref string) (types.Plugin, bool, error) {
-		return types.Plugin{}, false, catalog.ErrProviderVersionUnsatisfiable
+		return types.Plugin{}, false, catalog.ErrProviderVersionUnsatisfiable()
 	}
 	_, err := runProviderDescent(t, providerDescentLookup(), providerRecipeLoader(t), resolver)
 	if err == nil {
 		t.Fatalf("provider descent must halt on an unsatisfiable version pin")
 	}
-	if !errors.Is(err, catalog.ErrProviderVersionUnsatisfiable) {
+	if !errors.Is(err, catalog.ErrProviderVersionUnsatisfiable()) {
 		t.Fatalf("error = %v; want wrapping ErrProviderVersionUnsatisfiable", err)
 	}
 }

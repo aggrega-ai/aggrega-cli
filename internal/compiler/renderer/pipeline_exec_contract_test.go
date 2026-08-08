@@ -53,7 +53,7 @@ func TestValidateStepInput_ContractHalt(t *testing.T) {
 
 	// Violation: name is a number, not a string.
 	err := validateStepInput(export, inputPayload(t, orderedOf("name", 123)), step)
-	if !errors.Is(err, frp.ErrPipelineContractViolation) {
+	if !errors.Is(err, frp.ErrPipelineContractViolation()) {
 		t.Fatalf("violating input: err = %v, want ErrPipelineContractViolation", err)
 	}
 	if !strings.Contains(err.Error(), "configure-db") || !strings.Contains(err.Error(), "input does not satisfy the declared input contract") {
@@ -76,7 +76,7 @@ func TestValidateStepOutput_ContractHalt(t *testing.T) {
 
 	// Violation: required "name" is absent.
 	err := validateStepOutput(export, outputPayload(t, orderedOf("other", "v")), step)
-	if !errors.Is(err, frp.ErrPipelineContractViolation) {
+	if !errors.Is(err, frp.ErrPipelineContractViolation()) {
 		t.Fatalf("violating outputs: err = %v, want ErrPipelineContractViolation", err)
 	}
 	if !strings.Contains(err.Error(), "emit-dsn") || !strings.Contains(err.Error(), "outputs that do not satisfy the declared output contract") {

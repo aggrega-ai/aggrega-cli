@@ -62,7 +62,7 @@ func TestEnvelope_RecursiveAliasRefused(t *testing.T) {
 	if err == nil {
 		t.Fatal("an anchor aliased inside its own content must fail the envelope; got nil")
 	}
-	if !errors.Is(err, ErrEntityEnvelope) {
+	if !errors.Is(err, ErrEntityEnvelope()) {
 		t.Fatalf("want errors.Is(err, ErrEntityEnvelope); got %v", err)
 	}
 	msg := err.Error()
@@ -105,7 +105,7 @@ spec: &outer
 	if err == nil {
 		t.Fatal("an anchor reached beneath itself through a second anchor must fail the envelope; got nil")
 	}
-	if !errors.Is(err, ErrEntityEnvelope) {
+	if !errors.Is(err, ErrEntityEnvelope()) {
 		t.Fatalf("want errors.Is(err, ErrEntityEnvelope); got %v", err)
 	}
 	if !strings.Contains(err.Error(), "outer") {

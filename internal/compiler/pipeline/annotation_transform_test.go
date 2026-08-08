@@ -40,7 +40,7 @@ func TestApplyAnnotationInjections_RejectsUnknownCoordinate(t *testing.T) {
 	if err == nil {
 		t.Fatalf("injection onto an unsupplied coordinate: expected a halt, got nil")
 	}
-	if !errors.Is(err, ErrAnnotationInjectionRejected) {
+	if !errors.Is(err, ErrAnnotationInjectionRejected()) {
 		t.Fatalf("halt not errors.Is ErrAnnotationInjectionRejected: %v", err)
 	}
 }

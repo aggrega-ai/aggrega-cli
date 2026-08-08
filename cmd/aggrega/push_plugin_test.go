@@ -217,7 +217,7 @@ spec:
 		Registry:   "hub.aggrega.ai",
 		PushTarget: store,
 	})
-	if !errors.Is(err, wasm.ErrWasmContractMismatch) {
+	if !errors.Is(err, wasm.ErrWasmContractMismatch()) {
 		t.Fatalf("want ErrWasmContractMismatch, got %v", err)
 	}
 
@@ -256,7 +256,7 @@ func TestPushPluginPartialPushSafety(t *testing.T) {
 	if perr == nil {
 		t.Fatalf("plugin must not be pullable after a failed manifest tag; pulled %q", pr.MediaType)
 	}
-	if !errors.Is(perr, oci.ErrFetchNotFound) {
+	if !errors.Is(perr, oci.ErrFetchNotFound()) {
 		t.Errorf("consume side should fail-at-pull with ErrFetchNotFound; got %v", perr)
 	}
 }
@@ -461,7 +461,7 @@ func TestPushPluginLargeGuestDefaultCapInsufficient(t *testing.T) {
 	if err == nil {
 		t.Fatal("a large guest loaded under the platform default cap should fail to instantiate; got nil")
 	}
-	if errors.Is(err, wasm.ErrWasmContractMismatch) {
+	if errors.Is(err, wasm.ErrWasmContractMismatch()) {
 		t.Fatalf("failure should be a load error, not a capability mismatch; got %v", err)
 	}
 }
@@ -569,7 +569,7 @@ func TestPushPluginProviderReusableInstanceMismatchHalts(t *testing.T) {
 		DryRun:     true,
 		Out:        &bytes.Buffer{},
 	})
-	if !errors.Is(err, wasm.ErrWasmContractMismatch) {
+	if !errors.Is(err, wasm.ErrWasmContractMismatch()) {
 		t.Fatalf("want ErrWasmContractMismatch for a reusable-instance disagreement; got %v", err)
 	}
 	if !strings.Contains(err.Error(), "reusable_instance") {
@@ -658,7 +658,7 @@ func TestPublishPullRoundTripPlugin(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(slot, "blob"), []byte("tampered"), 0o644); err != nil {
 		t.Fatalf("tamper write: %v", err)
 	}
-	if _, err := cachedLookup.ResolvePlugin(uri, version); !errors.Is(err, oci.ErrFetchIntegrity) {
+	if _, err := cachedLookup.ResolvePlugin(uri, version); !errors.Is(err, oci.ErrFetchIntegrity()) {
 		t.Errorf("tampered cache: err = %v; want ErrFetchIntegrity", err)
 	}
 }

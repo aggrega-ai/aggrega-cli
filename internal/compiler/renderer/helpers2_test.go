@@ -150,7 +150,7 @@ file:
   K1: v1
 `
 	_, err = ParseInjectMappingOutput(output, []string{"env", "file"})
-	if err == nil || !errors.Is(err, ErrUnmappedCustomMechanism) {
+	if err == nil || !errors.Is(err, ErrUnmappedCustomMechanism()) {
 		t.Errorf("authored 'file' missing should error ErrUnmappedCustomMechanism; got %v", err)
 	}
 
@@ -191,13 +191,13 @@ func TestResolveValuesMappingText_AllModes(t *testing.T) {
 
 	// Bare-name library import naming an absent library errors.
 	_, err = resolveValuesMappingText(types.ValuesMapping{Import: "Absent#/mappings/X"}, "n", "Recipe", libs)
-	if err == nil || !errors.Is(err, ErrMappingLibraryNotFound) {
+	if err == nil || !errors.Is(err, ErrMappingLibraryNotFound()) {
 		t.Errorf("unresolved library import should error ErrMappingLibraryNotFound; got %v", err)
 	}
 
 	// Host-bearing $import is rejected (not addressable by location).
 	_, err = resolveValuesMappingText(types.ValuesMapping{Import: "oci://hub/lib@1#/mappings/X"}, "n", "Recipe", libs)
-	if err == nil || !errors.Is(err, ErrHostInLibraryImport) {
+	if err == nil || !errors.Is(err, ErrHostInLibraryImport()) {
 		t.Errorf("host-bearing $import should error ErrHostInLibraryImport; got %v", err)
 	}
 
@@ -242,7 +242,7 @@ func TestResolveWorkloadText_AllModes(t *testing.T) {
 	}
 	// Host-bearing reference rejected.
 	_, err = resolveWorkloadText(types.WorkloadTemplate{Import: "oci://hub/BaseWorkloads#/workloads/Deployment"}, "n", wlibs)
-	if err == nil || !errors.Is(err, ErrHostInLibraryImport) {
+	if err == nil || !errors.Is(err, ErrHostInLibraryImport()) {
 		t.Errorf("oci:// $import should error ErrHostInLibraryImport; got %v", err)
 	}
 	// File missing.

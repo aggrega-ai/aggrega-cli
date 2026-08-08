@@ -63,7 +63,7 @@ min: 5`
 	if err == nil {
 		t.Fatal("expected ErrConstraintTypeMismatch for union-with-min; got nil")
 	}
-	if !errors.Is(err, ErrConstraintTypeMismatch) {
+	if !errors.Is(err, ErrConstraintTypeMismatch()) {
 		t.Errorf("expected ErrConstraintTypeMismatch; got %v", err)
 	}
 	if !strings.Contains(err.Error(), "unresolved") {
@@ -90,7 +90,7 @@ min: 1`
 	if err == nil {
 		t.Fatal("expected ErrConstraintTypeMismatch for unsupported type-value node kind; got nil")
 	}
-	if !errors.Is(err, ErrConstraintTypeMismatch) {
+	if !errors.Is(err, ErrConstraintTypeMismatch()) {
 		t.Errorf("expected ErrConstraintTypeMismatch; got %v", err)
 	}
 }
@@ -494,7 +494,7 @@ func TestEmitValuesTypeNonScalarRejected(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected ErrConstraintTypeMismatch; got nil")
 	}
-	if !errors.Is(err, ErrConstraintTypeMismatch) {
+	if !errors.Is(err, ErrConstraintTypeMismatch()) {
 		t.Errorf("expected ErrConstraintTypeMismatch; got %v", err)
 	}
 }
@@ -576,7 +576,7 @@ func TestEmitMinMaxOnBooleanRejected(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected ErrConstraintTypeMismatch; got nil")
 	}
-	if !errors.Is(err, ErrConstraintTypeMismatch) {
+	if !errors.Is(err, ErrConstraintTypeMismatch()) {
 		t.Errorf("expected ErrConstraintTypeMismatch; got %v", err)
 	}
 }

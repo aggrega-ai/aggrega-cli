@@ -642,7 +642,7 @@ func TestPullVerifyDriftedLockfileReturnsErr(t *testing.T) {
 	if err == nil {
 		t.Fatal("pullRun --verify on drifted lockfile: expected error, got nil")
 	}
-	if !errors.Is(err, lockfile.ErrLockfileDrift) {
+	if !errors.Is(err, lockfile.ErrLockfileDrift()) {
 		t.Errorf("expected ErrLockfileDrift in error chain; got: %v", err)
 	}
 }

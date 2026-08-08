@@ -50,7 +50,7 @@ func TestVerifyKeyedBundleRejectsWrongKey(t *testing.T) {
 	bundleBytes, _ := keyedBundleForTest(t, testDigest)
 	_, otherPub := keyedBundleForTest(t, testDigest)
 	err := signing.VerifyKeyedBundle(bundleBytes, otherPub, testDigest)
-	if !errors.Is(err, signing.ErrSignatureVerificationFailed) {
+	if !errors.Is(err, signing.ErrSignatureVerificationFailed()) {
 		t.Fatalf("want ErrSignatureVerificationFailed, got %v", err)
 	}
 }
@@ -63,7 +63,7 @@ func TestVerifyKeyedBundleRejectsWrongDigest(t *testing.T) {
 	bundleBytes, pubPEM := keyedBundleForTest(t, testDigest)
 	const otherDigest = "sha256:0000000000000000000000000000000000000000000000000000000000000000"
 	err := signing.VerifyKeyedBundle(bundleBytes, pubPEM, otherDigest)
-	if !errors.Is(err, signing.ErrSignatureVerificationFailed) {
+	if !errors.Is(err, signing.ErrSignatureVerificationFailed()) {
 		t.Fatalf("want ErrSignatureVerificationFailed, got %v", err)
 	}
 }

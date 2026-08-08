@@ -13,20 +13,19 @@ import (
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 )
 
-// The identities below are declared and registered exactly as a consuming
-// package writes them: a constant for the identity, and a package-level
-// registration standing beside it. Declaring them here means the registrations
-// run at package initialisation, which is the shape being tested rather than a
+// The identities below are declared and published exactly as a consuming
+// package writes them: a registration bound to an unexported value, and an
+// accessor standing beside it. Declaring them here means the registrations run
+// at package initialisation, which is the shape being tested rather than a
 // convenience of the test.
 //
 // Every code value in this file is distinct. The registry is process-wide, so a
 // repeated value would be a duplicate registration and would panic at init.
 const (
-	codeCyclicExtension       cerrors.Code = "validator/cyclic-extension"
-	codeMergerCyclicExtension cerrors.Code = "validator-merger/cyclic-extension"
-	codeUnregistered          cerrors.Code = "renderer/never-registered"
-	codeDuplicate             cerrors.Code = "resolver/duplicate-subject"
-	codeEmptyMessage          cerrors.Code = "resolver/empty-message-subject"
+	codeCyclicExtension       = "validator/cyclic-extension"
+	codeMergerCyclicExtension = "validator-merger/cyclic-extension"
+	codeDuplicate             = "resolver/duplicate-subject"
+	codeEmptyMessage          = "resolver/empty-message-subject"
 )
 
 // The two messages below are the real, distinct texts carried today by two
@@ -39,56 +38,136 @@ const (
 )
 
 var (
-	_ = cerrors.Register(codeCyclicExtension, cerrors.Meta{Message: messageCyclicExtension})
-	_ = cerrors.Register(codeMergerCyclicExtension, cerrors.Meta{Message: messageMergerCyclicExtension})
-	_ = cerrors.Register(codeDuplicate, cerrors.Meta{Message: "the first registration of this code"})
+	identityCyclicExtension       = cerrors.Register(codeCyclicExtension, cerrors.Meta{Message: messageCyclicExtension})
+	identityMergerCyclicExtension = cerrors.Register(codeMergerCyclicExtension, cerrors.Meta{Message: messageMergerCyclicExtension})
+	identityDuplicate             = cerrors.Register(codeDuplicate, cerrors.Meta{Message: "the first registration of this code"})
 )
 
-// A constant of the identity type satisfies error. This assertion is the
-// compile-time half of the guarantee: it fails to build rather than to run if
-// the value receiver is ever changed to a pointer receiver, which would leave
-// only addressable values implementing the interface and so exclude constants.
-var _ error = codeCyclicExtension
+func errCyclicExtension() error       { return identityCyclicExtension }
+func errMergerCyclicExtension() error { return identityMergerCyclicExtension }
 
-func TestCode_ErrorReturnsTheRegisteredMessageByteForByte(t *testing.T) {
+// The registered identity satisfies both the error interface a caller matches
+// against and the interface that reports the code. These assertions are the
+// compile-time half of the guarantee: they fail to build rather than to run if
+// either method is ever dropped or given a receiver the returned value does not
+// have.
+var (
+	_ error              = identityCyclicExtension
+	_ cerrors.CodedError = identityCyclicExtension
+	_ error              = identityDuplicate
+)
+
+func TestIdentity_ErrorReturnsTheRegisteredMessageByteForByte(t *testing.T) {
 	t.Parallel()
-	if got := codeCyclicExtension.Error(); got != messageCyclicExtension {
+	if got := errCyclicExtension().Error(); got != messageCyclicExtension {
 		t.Errorf("Error() = %q; want %q", got, messageCyclicExtension)
 	}
 }
 
-// TestCode_IsMatchesThroughTwoWrapLayers is the instrument for the property a
-// caller depends on: an identity stays matchable however deeply the error is
+// TestIdentity_IsMatchesThroughTwoWrapLayers is the instrument for the property
+// a caller depends on: an identity stays matchable however deeply the error is
 // wrapped on its way up. Two layers rather than one, because a single layer
 // would also pass for a comparison that only ever inspects the outermost error.
-func TestCode_IsMatchesThroughTwoWrapLayers(t *testing.T) {
+func TestIdentity_IsMatchesThroughTwoWrapLayers(t *testing.T) {
 	t.Parallel()
 
-	inner := fmt.Errorf("reading the extends chain: %w", codeCyclicExtension)
+	inner := fmt.Errorf("reading the extends chain: %w", errCyclicExtension())
 	outer := fmt.Errorf("resolving the aggregate: %w", inner)
 
-	if !stderrors.Is(outer, codeCyclicExtension) {
+	if !stderrors.Is(outer, errCyclicExtension()) {
 		t.Errorf("errors.Is failed to match the identity through two wrap layers; chain: %v", outer)
 	}
-	if stderrors.Is(outer, codeMergerCyclicExtension) {
+	if stderrors.Is(outer, errMergerCyclicExtension()) {
 		t.Errorf("errors.Is matched a different identity through the same chain; chain: %v", outer)
 	}
 
 	// A third layer, to establish that the match is depth-independent rather
 	// than passing at exactly the depth the test happens to build.
 	deepest := fmt.Errorf("building the graph: %w", outer)
-	if !stderrors.Is(deepest, codeCyclicExtension) {
+	if !stderrors.Is(deepest, errCyclicExtension()) {
 		t.Errorf("errors.Is failed to match the identity through three wrap layers; chain: %v", deepest)
 	}
 }
 
-// TestCode_RegisteredMessageSurvivesWrapping pins the property that makes the
-// registered message the user-visible text: every enclosing frame renders it
-// unchanged, so moving a message into a registration moves no output.
-func TestCode_RegisteredMessageSurvivesWrapping(t *testing.T) {
+// TestIdentity_AccessorYieldsOneSharedValue pins what makes the accessor form
+// work at all: every call returns the same identity, not a fresh equal-looking
+// one. A constructor returning a new value each time would leave errors.Is
+// matching nothing, because the standard comparison is on the value itself.
+func TestIdentity_AccessorYieldsOneSharedValue(t *testing.T) {
 	t.Parallel()
 
-	inner := fmt.Errorf("reading the extends chain: %w", codeCyclicExtension)
+	if errCyclicExtension() != errCyclicExtension() {
+		t.Fatalf("two calls to one accessor returned different identities")
+	}
+	wrapped := fmt.Errorf("resolving the aggregate: %w", errCyclicExtension())
+	if !stderrors.Is(wrapped, errCyclicExtension()) {
+		t.Errorf("an identity raised through one call did not match the value another call yields")
+	}
+}
+
+// TestIdentity_CodeIsReadableThroughWraps is the instrument for the wire half
+// of the split: the code is an output, readable from any error in the chain
+// rather than only from the identity itself, and it equals the code the
+// identity was registered under.
+func TestIdentity_CodeIsReadableThroughWraps(t *testing.T) {
+	t.Parallel()
+
+	inner := fmt.Errorf("reading the extends chain: %w", errCyclicExtension())
+	outer := fmt.Errorf("resolving the aggregate: %w", inner)
+
+	got, ok := cerrors.CodeOf(outer)
+	if !ok {
+		t.Fatalf("no code was readable from a chain carrying a registered identity: %v", outer)
+	}
+	if got != codeCyclicExtension {
+		t.Errorf("CodeOf = %q; want the code the identity was registered under, %q", got, codeCyclicExtension)
+	}
+
+	// The same read, through errors.As on the reporting interface directly,
+	// because that is the shape a consumer outside this package writes when it
+	// wants the reporting error rather than only the string.
+	var coded cerrors.CodedError
+	if !stderrors.As(outer, &coded) {
+		t.Fatalf("errors.As found no code-reporting error in the chain: %v", outer)
+	}
+	if coded.ErrorCode() != codeCyclicExtension {
+		t.Errorf("ErrorCode() = %q; want %q", coded.ErrorCode(), codeCyclicExtension)
+	}
+
+	// A chain carrying no registered identity reports no code. That is a fact
+	// about the chain, so it is reported rather than guessed at.
+	if got, ok := cerrors.CodeOf(stderrors.New("an ordinary error")); ok {
+		t.Errorf("CodeOf reported %q for a chain carrying no identity", got)
+	}
+	if _, ok := cerrors.CodeOf(nil); ok {
+		t.Errorf("CodeOf reported a code for a nil error")
+	}
+}
+
+// TestIdentity_ForgingTheCodeStringYieldsNoIdentity is the runtime half of the
+// asymmetry the split exists for: the code travels outward and never back. The
+// compile-time half — that the identity type cannot be named, its field cannot
+// be set, and the accessor cannot be reassigned — is enforced in the sealing
+// gate, which is where a guarantee that must not merely be asserted belongs.
+func TestIdentity_ForgingTheCodeStringYieldsNoIdentity(t *testing.T) {
+	t.Parallel()
+
+	forged := stderrors.New(codeCyclicExtension)
+	if stderrors.Is(forged, errCyclicExtension()) {
+		t.Errorf("an error built from the code string matched the identity, so the code is an input to matching")
+	}
+	if stderrors.Is(errCyclicExtension(), forged) {
+		t.Errorf("the identity matched an error built from its own code string")
+	}
+}
+
+// TestIdentity_RegisteredMessageSurvivesWrapping pins the property that makes
+// the registered message the user-visible text: every enclosing frame renders it
+// unchanged, so moving a message into a registration moves no output.
+func TestIdentity_RegisteredMessageSurvivesWrapping(t *testing.T) {
+	t.Parallel()
+
+	inner := fmt.Errorf("reading the extends chain: %w", errCyclicExtension())
 	outer := fmt.Errorf("resolving the aggregate: %w", inner)
 
 	want := "resolving the aggregate: reading the extends chain: " + messageCyclicExtension
@@ -97,50 +176,43 @@ func TestCode_RegisteredMessageSurvivesWrapping(t *testing.T) {
 	}
 }
 
-// TestCode_SameRuleNameInTwoPackagesStaysTwoIdentities is the reason a code
+// TestIdentity_MessageIsNeverEmpty pins the one forbidden answer. An empty
+// message renders inside an enclosing wrap as a dangling separator, which reads
+// as a truncated diagnostic rather than as the defect it is. Registration
+// refuses one at the door, so no identity can carry it.
+func TestIdentity_MessageIsNeverEmpty(t *testing.T) {
+	t.Parallel()
+
+	if errCyclicExtension().Error() == "" {
+		t.Fatalf("an identity rendered the empty string")
+	}
+	wrapped := fmt.Errorf("resolving the aggregate: %w", errCyclicExtension()).Error()
+	if strings.HasSuffix(wrapped, ": ") {
+		t.Errorf("wrapped text ends in a dangling separator: %q", wrapped)
+	}
+}
+
+// TestIdentity_SameRuleNameInTwoPackagesStaysTwoIdentities is the reason a code
 // value names its declaring package as well as its rule. Two rules sharing one
 // exported name in two packages are distinct conditions today; a value derived
 // from the rule name alone would merge them, so errors.Is would begin matching
 // across the pair and only one of the two messages could be registered.
-func TestCode_SameRuleNameInTwoPackagesStaysTwoIdentities(t *testing.T) {
+func TestIdentity_SameRuleNameInTwoPackagesStaysTwoIdentities(t *testing.T) {
 	t.Parallel()
 
-	if codeCyclicExtension == codeMergerCyclicExtension {
-		t.Fatalf("the two identities share one value, so they are one identity: %q", codeCyclicExtension)
+	if errCyclicExtension() == errMergerCyclicExtension() {
+		t.Fatalf("the two accessors yield one identity, so they are one condition")
 	}
-	if got := codeCyclicExtension.Error(); got != messageCyclicExtension {
+	if got := errCyclicExtension().Error(); got != messageCyclicExtension {
 		t.Errorf("first identity Error() = %q; want %q", got, messageCyclicExtension)
 	}
-	if got := codeMergerCyclicExtension.Error(); got != messageMergerCyclicExtension {
+	if got := errMergerCyclicExtension().Error(); got != messageMergerCyclicExtension {
 		t.Errorf("second identity Error() = %q; want %q", got, messageMergerCyclicExtension)
 	}
 
-	wrapped := fmt.Errorf("resolving the aggregate: %w", codeCyclicExtension)
-	if stderrors.Is(wrapped, codeMergerCyclicExtension) {
+	wrapped := fmt.Errorf("resolving the aggregate: %w", errCyclicExtension())
+	if stderrors.Is(wrapped, errMergerCyclicExtension()) {
 		t.Errorf("errors.Is matched across two distinct identities")
-	}
-}
-
-// TestCode_UnregisteredIsLoudAndNeverEmpty pins the failure shape for an
-// identity declared without a registration. The empty string is the one
-// forbidden answer: inside an enclosing wrap it renders as a dangling
-// separator, which reads as a truncated diagnostic rather than as a defect.
-func TestCode_UnregisteredIsLoudAndNeverEmpty(t *testing.T) {
-	t.Parallel()
-
-	got := codeUnregistered.Error()
-	if got == "" {
-		t.Fatalf("an unregistered code returned the empty string")
-	}
-	if !strings.Contains(got, string(codeUnregistered)) {
-		t.Errorf("unregistered text %q does not name the code %q, so the missing registration cannot be found",
-			got, string(codeUnregistered))
-	}
-
-	// Through a wrap, the enclosing frame must still be followed by text.
-	wrapped := fmt.Errorf("resolving the aggregate: %w", codeUnregistered).Error()
-	if strings.HasSuffix(wrapped, ": ") {
-		t.Errorf("wrapped text ends in a dangling separator: %q", wrapped)
 	}
 }
 
@@ -153,8 +225,8 @@ func TestRegister_PanicsOnADuplicateCode(t *testing.T) {
 	if v == nil {
 		t.Fatalf("registering an already-registered code did not panic")
 	}
-	if msg := fmt.Sprint(v); !strings.Contains(msg, string(codeDuplicate)) {
-		t.Errorf("panic %q does not name the duplicated code %q", msg, string(codeDuplicate))
+	if msg := fmt.Sprint(v); !strings.Contains(msg, codeDuplicate) {
+		t.Errorf("panic %q does not name the duplicated code %q", msg, codeDuplicate)
 	}
 }
 
@@ -178,13 +250,17 @@ func TestRegister_PanicsOnAnEmptyMessage(t *testing.T) {
 	if v == nil {
 		t.Fatalf("registering an empty message did not panic")
 	}
-	if msg := fmt.Sprint(v); !strings.Contains(msg, string(codeEmptyMessage)) {
-		t.Errorf("panic %q does not name the offending code %q", msg, string(codeEmptyMessage))
+	if msg := fmt.Sprint(v); !strings.Contains(msg, codeEmptyMessage) {
+		t.Errorf("panic %q does not name the offending code %q", msg, codeEmptyMessage)
 	}
 	// The refused registration must not have landed: a code rejected at the
-	// door is unregistered, not registered with empty text.
-	if got := codeEmptyMessage.Error(); got == "" {
-		t.Errorf("a refused registration left the code returning the empty string")
+	// door is unregistered, so registering it properly still succeeds. If the
+	// refusal had left a half-written entry behind, this second call would be
+	// refused as a duplicate.
+	if v := panicValue(func() {
+		cerrors.Register(codeEmptyMessage, cerrors.Meta{Message: "a message this time"})
+	}); v != nil {
+		t.Errorf("a refused registration left the code occupied; re-registering panicked with %v", v)
 	}
 }
 
@@ -198,30 +274,37 @@ func TestRegister_IsSafeUnderConcurrentUse(t *testing.T) {
 
 	const registrants = 16
 	var wg sync.WaitGroup
+	got := make([]error, registrants)
 
 	for i := range registrants {
 		wg.Add(1)
 		go func(n int) {
 			defer wg.Done()
-			code := cerrors.Code(fmt.Sprintf("concurrency/registrant-%02d", n))
-			cerrors.Register(code, cerrors.Meta{Message: fmt.Sprintf("registrant %02d", n)})
+			got[n] = cerrors.Register(
+				fmt.Sprintf("concurrency/registrant-%02d", n),
+				cerrors.Meta{Message: fmt.Sprintf("registrant %02d", n)},
+			)
 		}(i)
 
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			// Reads run against the map while the writes above are in flight.
-			_ = codeCyclicExtension.Error()
-			_ = codeUnregistered.Error()
+			// Reads run against the registry while the writes above are in flight.
+			_ = errCyclicExtension().Error()
+			_ = errMergerCyclicExtension().Error()
 		}()
 	}
 	wg.Wait()
 
 	for i := range registrants {
-		code := cerrors.Code(fmt.Sprintf("concurrency/registrant-%02d", i))
 		want := fmt.Sprintf("registrant %02d", i)
-		if got := code.Error(); got != want {
-			t.Errorf("Error() for %q = %q; want %q", string(code), got, want)
+		if got[i].Error() != want {
+			t.Errorf("identity %d rendered %q; want %q", i, got[i].Error(), want)
+		}
+		code, ok := cerrors.CodeOf(got[i])
+		if !ok || code != fmt.Sprintf("concurrency/registrant-%02d", i) {
+			t.Errorf("identity %d reported code %q (found=%v); want %q",
+				i, code, ok, fmt.Sprintf("concurrency/registrant-%02d", i))
 		}
 	}
 }

@@ -126,7 +126,7 @@ func TestBuildDefaultReadonlyWithLockfileWritesNoSource(t *testing.T) {
 	if err != nil && strings.Contains(err.Error(), "lockfile") && strings.Contains(err.Error(), "missing") {
 		t.Fatalf("default build with a present lockfile must not halt as missing; got %v", err)
 	}
-	if err != nil && errors.Is(err, lockfile.ErrLockfileDrift) {
+	if err != nil && errors.Is(err, lockfile.ErrLockfileDrift()) {
 		t.Errorf("unexpected drift on unchanged fixture: %v", err)
 	}
 
@@ -156,7 +156,7 @@ func TestBuildOfflineWithMissingLockfileHaltsWithFetchNotFound(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected halt on offline + missing lockfile; got nil")
 	}
-	if !errors.Is(err, oci.ErrFetchNotFound) {
+	if !errors.Is(err, oci.ErrFetchNotFound()) {
 		t.Errorf("error should wrap ErrFetchNotFound; got %v", err)
 	}
 }
@@ -197,7 +197,7 @@ func TestBuildVerifiesLockfileAndHaltsOnDrift(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected ErrLockfileDrift; got nil")
 	}
-	if !errors.Is(err, lockfile.ErrLockfileDrift) {
+	if !errors.Is(err, lockfile.ErrLockfileDrift()) {
 		t.Errorf("error should wrap ErrLockfileDrift; got %v", err)
 	}
 }
@@ -217,7 +217,7 @@ func TestBuildSucceedsWhenLockfileMatchesClosure(t *testing.T) {
 	// (this fixture has no Manifest mapping that the renderer requires);
 	// the test only asserts the lockfile verification gate is cleared.
 	err := dispatchBuild(nil, releasePath, []string{filepath.Join(root, "catalog")}, false, os.Stderr, os.Stdout)
-	if err != nil && errors.Is(err, lockfile.ErrLockfileDrift) {
+	if err != nil && errors.Is(err, lockfile.ErrLockfileDrift()) {
 		t.Errorf("unexpected drift on unchanged fixture: %v", err)
 	}
 }

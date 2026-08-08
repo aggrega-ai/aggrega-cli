@@ -63,7 +63,7 @@ spec:
 	if err == nil {
 		t.Fatal("compact map-form inject must fail the envelope; got nil")
 	}
-	if !errors.Is(err, ErrEntityEnvelope) {
+	if !errors.Is(err, ErrEntityEnvelope()) {
 		t.Fatalf("want errors.Is(err, ErrEntityEnvelope); got %v", err)
 	}
 	if !strings.Contains(err.Error(), "aggregate.yaml") || !strings.Contains(err.Error(), "Aggregate") {
@@ -124,7 +124,7 @@ spec:
 	if err == nil {
 		t.Fatal("Release values: on a boundary component must fail the envelope; got nil")
 	}
-	if !errors.Is(err, ErrEntityEnvelope) {
+	if !errors.Is(err, ErrEntityEnvelope()) {
 		t.Fatalf("want errors.Is(err, ErrEntityEnvelope); got %v", err)
 	}
 	if !strings.Contains(err.Error(), "values") {
@@ -158,7 +158,7 @@ spec:
 	if err == nil {
 		t.Fatal("aggregate: alongside extends: must fail the envelope; got nil")
 	}
-	if !errors.Is(err, ErrEntityEnvelope) {
+	if !errors.Is(err, ErrEntityEnvelope()) {
 		t.Fatalf("want errors.Is(err, ErrEntityEnvelope); got %v", err)
 	}
 }
@@ -186,7 +186,7 @@ spec:
 	if err == nil {
 		t.Fatal("Aggregate component infra: must fail the envelope; got nil")
 	}
-	if !errors.Is(err, ErrEntityEnvelope) {
+	if !errors.Is(err, ErrEntityEnvelope()) {
 		t.Fatalf("want errors.Is(err, ErrEntityEnvelope); got %v", err)
 	}
 	if !strings.Contains(err.Error(), "infra") {
@@ -220,7 +220,7 @@ spec:
 	if err == nil {
 		t.Fatal("bare-string uses target must fail the envelope; got nil")
 	}
-	if !errors.Is(err, ErrEntityEnvelope) {
+	if !errors.Is(err, ErrEntityEnvelope()) {
 		t.Fatalf("want errors.Is(err, ErrEntityEnvelope); got %v", err)
 	}
 }
@@ -276,7 +276,7 @@ spec:
 	if err == nil {
 		t.Fatal("stray secretNames must fail the envelope; got nil")
 	}
-	if !errors.Is(err, ErrEntityEnvelope) {
+	if !errors.Is(err, ErrEntityEnvelope()) {
 		t.Fatalf("want errors.Is(err, ErrEntityEnvelope); got %v", err)
 	}
 	if !strings.Contains(err.Error(), "secretNames") {
@@ -333,7 +333,7 @@ func TestEnvelope_FeatureRecipeWorkloadLibraryImport(t *testing.T) {
 		if err == nil {
 			t.Fatal("oci:// host at featurerecipe.workload $import must fail the envelope; got nil")
 		}
-		if !errors.Is(err, ErrEntityEnvelope) {
+		if !errors.Is(err, ErrEntityEnvelope()) {
 			t.Fatalf("want errors.Is(err, ErrEntityEnvelope); got %v", err)
 		}
 	})

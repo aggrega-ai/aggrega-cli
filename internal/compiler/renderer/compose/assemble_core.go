@@ -336,7 +336,7 @@ func checkConfigReferences(merged ComposeFile) error {
 	}
 	return cerrors.New(cerrors.TranslationError, cerrors.SourceLocation{},
 		fmt.Sprintf("compose AssembleBoundary: %s; declare each one as a top-level configs: entry from the Recipe's artifacts: input", strings.Join(unresolved, "; ")),
-		nil, ErrTranslationConfigMapMissingArtifact)
+		nil, ErrTranslationConfigMapMissingArtifact())
 }
 
 // applyDependsOn projects IR edges onto contributing services and records an

@@ -404,7 +404,7 @@ func assertFrozenBuildDriftsOnTamperedSocketPin(t *testing.T, host string, catDi
 	if err == nil {
 		t.Fatal("frozen build with a tampered socket .wasm pin SUCCEEDED; drift over the reconstructed workspace-socket axis was not detected — the fix blinded the drift check")
 	}
-	if !errors.Is(err, lockfile.ErrLockfileDrift) {
+	if !errors.Is(err, lockfile.ErrLockfileDrift()) {
 		t.Fatalf("tampered socket pin: got %v; want errors.Is(lockfile.ErrLockfileDrift)", err)
 	}
 	if !strings.Contains(err.Error(), socketCoord) {

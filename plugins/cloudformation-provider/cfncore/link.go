@@ -29,9 +29,9 @@ const (
 // raises when the consuming endpoint's assembled files carry no CloudFormation
 // stack template to inject the reference into. Without the consumer's stack the
 // resolve cannot locate the placeholder it must replace.
-const ErrLinkConsumerStackMissing cerrors.Code = "cloudformation-provider-cfncore/link-consumer-stack-missing"
+func ErrLinkConsumerStackMissing() error { return errLinkConsumerStackMissing }
 
-var _ = cerrors.Register(ErrLinkConsumerStackMissing, cerrors.Meta{
+var errLinkConsumerStackMissing = cerrors.Register("cloudformation-provider-cfncore/link-consumer-stack-missing", cerrors.Meta{
 	Message: "cloudformation-provider: cross-boundary link resolve received no consumer stack template",
 })
 
@@ -41,9 +41,9 @@ var _ = cerrors.Register(ErrLinkConsumerStackMissing, cerrors.Meta{
 // is an intrinsic object, which can only replace a whole value; a placeholder
 // spliced into a longer string cannot be swapped for an intrinsic. The build
 // halts rather than emit a reference in the wrong shape.
-const ErrLinkSentinelInterpolated cerrors.Code = "cloudformation-provider-cfncore/link-sentinel-interpolated"
+func ErrLinkSentinelInterpolated() error { return errLinkSentinelInterpolated }
 
-var _ = cerrors.Register(ErrLinkSentinelInterpolated, cerrors.Meta{
+var errLinkSentinelInterpolated = cerrors.Register("cloudformation-provider-cfncore/link-sentinel-interpolated", cerrors.Meta{
 	Message: "cloudformation-provider: cross-boundary link value is interpolated into a larger string; only a whole-scalar injection can carry a cross-stack reference",
 })
 
@@ -104,7 +104,7 @@ func LinkPublish(edge rendercore.LinkEdge) (rendercore.LinkPublishOutput, error)
 func LinkResolve(edge rendercore.LinkEdge, handle map[string]string, consumerFiles []rendercore.RenderedFile) (rendercore.LinkResolveOutput, error) {
 	stack, ok := findStackFile(consumerFiles)
 	if !ok {
-		return rendercore.LinkResolveOutput{}, ErrLinkConsumerStackMissing
+		return rendercore.LinkResolveOutput{}, ErrLinkConsumerStackMissing()
 	}
 	var doc any
 	if err := json.Unmarshal(stack, &doc); err != nil {
@@ -124,7 +124,7 @@ func LinkResolve(edge rendercore.LinkEdge, handle map[string]string, consumerFil
 		path, whole, interpolated := findSentinelPath(doc, sentinel)
 		if !whole {
 			if interpolated {
-				return rendercore.LinkResolveOutput{}, fmt.Errorf("%w: output key %q on socket %q", ErrLinkSentinelInterpolated, outputKey, edge.Socket)
+				return rendercore.LinkResolveOutput{}, fmt.Errorf("%w: output key %q on socket %q", ErrLinkSentinelInterpolated(), outputKey, edge.Socket)
 			}
 			// The consumer did not render this injected value; nothing to wire.
 			continue

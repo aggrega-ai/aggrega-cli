@@ -33,7 +33,7 @@ func TestWalkInvalidWhenTemplate(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected ErrExtensionEval; got nil")
 	}
-	if !errors.Is(err, ErrExtensionEval) {
+	if !errors.Is(err, ErrExtensionEval()) {
 		t.Errorf("expected ErrExtensionEval; got %v", err)
 	}
 }
@@ -58,7 +58,7 @@ func TestWalkInvalidValidateTemplate(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected ErrExtensionEval; got nil")
 	}
-	if !errors.Is(err, ErrExtensionEval) {
+	if !errors.Is(err, ErrExtensionEval()) {
 		t.Errorf("expected ErrExtensionEval; got %v", err)
 	}
 }
@@ -83,7 +83,7 @@ func TestWalkNonStringWhenTemplate(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected ErrExtensionEval; got nil")
 	}
-	if !errors.Is(err, ErrExtensionEval) {
+	if !errors.Is(err, ErrExtensionEval()) {
 		t.Errorf("expected ErrExtensionEval; got %v", err)
 	}
 }
@@ -149,7 +149,7 @@ func TestWalkNonStringValidateTemplate(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected ErrExtensionEval; got nil")
 	}
-	if !errors.Is(err, ErrExtensionEval) {
+	if !errors.Is(err, ErrExtensionEval()) {
 		t.Errorf("expected ErrExtensionEval; got %v", err)
 	}
 }
@@ -171,7 +171,7 @@ func TestNewRootResolveError(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected ErrSchemaResolve; got nil")
 	}
-	if !errors.Is(err, ErrSchemaResolve) {
+	if !errors.Is(err, ErrSchemaResolve()) {
 		t.Errorf("expected ErrSchemaResolve; got %v", err)
 	}
 }
@@ -310,7 +310,7 @@ func TestWalkErrorPropagation(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error from deeply-nested template parse failure; got nil")
 	}
-	if !errors.Is(err, ErrExtensionEval) {
+	if !errors.Is(err, ErrExtensionEval()) {
 		t.Errorf("expected ErrExtensionEval; got %v", err)
 	}
 }

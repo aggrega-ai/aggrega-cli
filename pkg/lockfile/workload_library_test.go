@@ -45,7 +45,7 @@ func TestVerifyWorkloadLibraryDrift(t *testing.T) {
 		}},
 	}
 	err := lockfile.Verify(lf, expected)
-	if !errors.Is(err, lockfile.ErrLockfileDrift) {
+	if !errors.Is(err, lockfile.ErrLockfileDrift()) {
 		t.Fatalf("expected ErrLockfileDrift for workload-library digest mismatch; got %v", err)
 	}
 	if !strings.Contains(err.Error(), "BaseWorkloads") {

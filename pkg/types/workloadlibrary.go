@@ -17,9 +17,9 @@ import (
 // the same shape at workspace-load time; this sentinel covers the
 // Go-side typed-unmarshal path so consumers can errors.Is against the
 // failure without parsing the formatted error text.
-const ErrWorkloadEntryNotScalar cerrors.Code = "types/workload-entry-not-scalar"
+func ErrWorkloadEntryNotScalar() error { return errWorkloadEntryNotScalar }
 
-var _ = cerrors.Register(ErrWorkloadEntryNotScalar, cerrors.Meta{
+var errWorkloadEntryNotScalar = cerrors.Register("types/workload-entry-not-scalar", cerrors.Meta{
 	Message: "workloadlibrary: entry body must be a string scalar",
 })
 
@@ -55,7 +55,7 @@ func (e *WorkloadEntry) UnmarshalYAML(value *yaml.Node) error {
 		return nil
 	}
 	if value.Kind != yaml.ScalarNode {
-		return fmt.Errorf("%w: got kind %d at line %d", ErrWorkloadEntryNotScalar, value.Kind, value.Line)
+		return fmt.Errorf("%w: got kind %d at line %d", ErrWorkloadEntryNotScalar(), value.Kind, value.Line)
 	}
 	e.Body = value.Value
 	return nil

@@ -244,7 +244,7 @@ func TestLookupReturnsErrorOnOutOfRangePosition(t *testing.T) {
 	var doc yaml.Node
 	_ = yaml.Unmarshal(content, &doc)
 	_, err := Lookup(&doc, idx, Position{Line: 999, Character: 0})
-	if !errors.Is(err, ErrPositionOutOfRange) {
+	if !errors.Is(err, ErrPositionOutOfRange()) {
 		t.Errorf("Lookup with out-of-range line: got err %v; want ErrPositionOutOfRange", err)
 	}
 }

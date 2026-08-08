@@ -481,7 +481,7 @@ func pillarConformanceErrors(
 			Entity:  entity,
 			Field:   field,
 			Message: fmt.Sprintf("%s pillar does not conform to %s: %s", pillar, schemaLabel, msg),
-			Err:     ErrSchemaConformance,
+			Err:     ErrSchemaConformance(),
 		})
 	}
 	return errs

@@ -162,7 +162,7 @@ func TestResolveAggregate_Replay_NeededFileBroken_RecoveredName(t *testing.T) {
 	// is a scalar where the Aggregate type expects a structured block.
 	writeTriadFile(t, dir, "broken.yaml", "apiVersion: aggrega.ai/v1alpha1\nkind: Aggregate\nmetadata:\n  version: \"1.0.0\"\n  name: needed-app\nspec: \"not a spec block\"\n")
 	_, err := ResolveAggregate(dir, "needed-app", nil, nil)
-	if !errors.Is(err, ErrTriadRefUnresolvable) {
+	if !errors.Is(err, ErrTriadRefUnresolvable()) {
 		t.Fatalf("err = %v; want ErrTriadRefUnresolvable", err)
 	}
 	if !strings.Contains(err.Error(), "needed Aggregate \"needed-app\" is the unparseable file") {
@@ -178,7 +178,7 @@ func TestResolveAggregate_Replay_NeededAbsent_UnrecoverableName_Hedged(t *testin
 	dir := t.TempDir()
 	writeTriadFile(t, dir, "broken.yaml", "}{ not yaml at all : : :\n") // envelope unrecoverable
 	_, err := ResolveAggregate(dir, "absent-app", nil, nil)
-	if !errors.Is(err, ErrTriadRefUnresolvable) {
+	if !errors.Is(err, ErrTriadRefUnresolvable()) {
 		t.Fatalf("err = %v; want ErrTriadRefUnresolvable", err)
 	}
 	if !strings.Contains(err.Error(), "may be it") {
@@ -198,7 +198,7 @@ func TestResolveAggregate_DuplicateIdentityHalts(t *testing.T) {
 	writeTriadFile(t, dir, "a.yaml", "apiVersion: aggrega.ai/v1alpha1\nkind: Aggregate\nmetadata:\n  version: \"1.0.0\"\n  name: dup\nspec:\n  components: {}\n")
 	writeTriadFile(t, dir, "b.yaml", "apiVersion: aggrega.ai/v1alpha1\nkind: Aggregate\nmetadata:\n  version: \"1.0.0\"\n  name: dup\nspec:\n  components: {}\n")
 	_, err := ResolveAggregate(dir, "dup", nil, nil)
-	if !errors.Is(err, ErrDuplicateTriadIdentity) {
+	if !errors.Is(err, ErrDuplicateTriadIdentity()) {
 		t.Fatalf("err = %v; want ErrDuplicateTriadIdentity", err)
 	}
 	if !strings.Contains(err.Error(), "Release directory") {
@@ -213,7 +213,7 @@ func TestResolveAggregate_PlainNotFound(t *testing.T) {
 	dir := t.TempDir()
 	writeTriadFile(t, dir, "aggregate.yaml", "apiVersion: aggrega.ai/v1alpha1\nkind: Aggregate\nmetadata:\n  version: \"1.0.0\"\n  name: present\nspec:\n  components: {}\n")
 	_, err := ResolveAggregate(dir, "absent", nil, nil)
-	if !errors.Is(err, ErrTriadRefUnresolvable) {
+	if !errors.Is(err, ErrTriadRefUnresolvable()) {
 		t.Fatalf("err = %v; want ErrTriadRefUnresolvable", err)
 	}
 	if strings.Contains(err.Error(), "unparseable") {

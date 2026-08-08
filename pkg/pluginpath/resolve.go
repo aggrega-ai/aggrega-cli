@@ -244,9 +244,9 @@ type PluginExportClaim struct {
 // load with this sentinel. The check is a byte/hash comparison — never a
 // cryptographic signature re-verification, and never a network or trust-root
 // touch — so it holds under the hermetic, air-gapped build.
-const ErrPluginBundleDigestMismatch cerrors.Code = "pluginpath/plugin-bundle-digest-mismatch"
+func ErrPluginBundleDigestMismatch() error { return errPluginBundleDigestMismatch }
 
-var _ = cerrors.Register(ErrPluginBundleDigestMismatch, cerrors.Meta{
+var errPluginBundleDigestMismatch = cerrors.Register("pluginpath/plugin-bundle-digest-mismatch", cerrors.Meta{
 	Message: "cached signature bundle does not match its recorded digest",
 })
 
@@ -406,7 +406,7 @@ func (r Resolver) Resolve(uri string) (ResolvedPlugin, error) {
 		switch {
 		case err == nil:
 			return r.verified(uri, b, TierCache)
-		case errors.Is(err, oci.ErrFetchNotFound):
+		case errors.Is(err, oci.ErrFetchNotFound()):
 			// fall through to Tier 3
 		default:
 			return ResolvedPlugin{}, err
@@ -424,9 +424,9 @@ func (r Resolver) Resolve(uri string) (ResolvedPlugin, error) {
 	}
 
 	if workspaceconfig.LooksLikeOCIURI(uri) {
-		return ResolvedPlugin{}, fmt.Errorf("plugin %q not resolvable: %s: %w", uri, ociNotWiredHint, oci.ErrFetchNotFound)
+		return ResolvedPlugin{}, fmt.Errorf("plugin %q not resolvable: %s: %w", uri, ociNotWiredHint, oci.ErrFetchNotFound())
 	}
-	return ResolvedPlugin{}, fmt.Errorf("plugin %q not resolvable through any tier (embed, colocated, local, cache, registry): %w", uri, oci.ErrFetchNotFound)
+	return ResolvedPlugin{}, fmt.Errorf("plugin %q not resolvable through any tier (embed, colocated, local, cache, registry): %w", uri, oci.ErrFetchNotFound())
 }
 
 // verified checks bytes against the URI's digest pin when one is present, then
@@ -441,7 +441,7 @@ func (r Resolver) verified(uri string, b []byte, tier Tier) (ResolvedPlugin, err
 		if got := digest.ContentDigest(b); got != pin {
 			return ResolvedPlugin{}, fmt.Errorf(
 				"plugin %q resolved from %s tier: content digest %s does not match lockfile pin %s: %w",
-				uri, tier, got, pin, oci.ErrFetchIntegrity)
+				uri, tier, got, pin, oci.ErrFetchIntegrity())
 		}
 	}
 	if bundleDigest, ok := r.bundleDigests[uri]; ok && bundleDigest != "" {
@@ -467,12 +467,12 @@ func (r Resolver) verifyCachedBundle(uri string, tier Tier, bundleDigest string)
 	if err != nil {
 		return fmt.Errorf(
 			"plugin %q resolved from %s tier: cached signature bundle %s is unreadable: %w",
-			uri, tier, path, ErrPluginBundleDigestMismatch)
+			uri, tier, path, ErrPluginBundleDigestMismatch())
 	}
 	if got := digest.ContentDigest(b); got != bundleDigest {
 		return fmt.Errorf(
 			"plugin %q resolved from %s tier: cached signature bundle %s has digest %s, recorded digest is %s: %w",
-			uri, tier, path, got, bundleDigest, ErrPluginBundleDigestMismatch)
+			uri, tier, path, got, bundleDigest, ErrPluginBundleDigestMismatch())
 	}
 	return nil
 }

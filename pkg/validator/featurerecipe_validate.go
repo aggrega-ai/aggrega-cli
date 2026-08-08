@@ -28,9 +28,9 @@ import (
 // emission time by Phase B.5.
 
 // ErrFeatureRecipeRule1: valuesMapping requires source.
-const ErrFeatureRecipeRule1 cerrors.Code = "validator/feature-recipe-rule-1"
+func ErrFeatureRecipeRule1() error { return errFeatureRecipeRule1 }
 
-var _ = cerrors.Register(ErrFeatureRecipeRule1, cerrors.Meta{
+var errFeatureRecipeRule1 = cerrors.Register("validator/feature-recipe-rule-1", cerrors.Meta{
 	Message: "featurerecipe rule 1: valuesMapping requires source",
 })
 
@@ -39,9 +39,9 @@ var _ = cerrors.Register(ErrFeatureRecipeRule1, cerrors.Meta{
 // source/valuesMapping/workload/artifacts on an eval FeatureRecipe is
 // rejected. injectMapping remains allowed (it is a Phase-A delivery
 // transform, not a rendering surface).
-const ErrFeatureRecipeEvalProviderConstraint cerrors.Code = "validator/feature-recipe-eval-provider-constraint"
+func ErrFeatureRecipeEvalProviderConstraint() error { return errFeatureRecipeEvalProviderConstraint }
 
-var _ = cerrors.Register(ErrFeatureRecipeEvalProviderConstraint, cerrors.Meta{
+var errFeatureRecipeEvalProviderConstraint = cerrors.Register("validator/feature-recipe-eval-provider-constraint", cerrors.Meta{
 	Message: "featurerecipe eval-provider constraint: render input-kind fields are forbidden when provider is eval",
 })
 
@@ -120,7 +120,7 @@ func validateFeatureRecipeRule1(fr *types.FeatureRecipe, sourcePath string) erro
 		Rule:        "1",
 		Description: "valuesMapping requires source",
 		Detail:      "declare a source: pointer alongside valuesMapping (or remove the valuesMapping if no overlay is intended)",
-		Err:         ErrFeatureRecipeRule1,
+		Err:         ErrFeatureRecipeRule1(),
 	}
 }
 
@@ -152,6 +152,6 @@ func validateFeatureRecipeEvalProvider(fr *types.FeatureRecipe, sourcePath strin
 		Rule:        "eval",
 		Description: "the eval provider executes formatting in-memory and forbids render input-kind fields",
 		Detail:      fmt.Sprintf("forbidden fields declared: %s", strings.Join(declared, ", ")),
-		Err:         ErrFeatureRecipeEvalProviderConstraint,
+		Err:         ErrFeatureRecipeEvalProviderConstraint(),
 	}
 }

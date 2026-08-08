@@ -45,7 +45,7 @@ func TestKeylessSignFetchesTokenPerSign(t *testing.T) {
 		},
 	}
 	for i := 0; i < 2; i++ {
-		if _, _, err := signer.Sign(ctx, "sha256:abc"); !errors.Is(err, ErrKeylessLive) {
+		if _, _, err := signer.Sign(ctx, "sha256:abc"); !errors.Is(err, ErrKeylessLive()) {
 			t.Fatalf("Sign #%d: want ErrKeylessLive, got %v", i+1, err)
 		}
 	}
@@ -59,7 +59,7 @@ func TestKeylessSignFetchesTokenPerSign(t *testing.T) {
 func TestKeylessSignNilSourceRefuses(t *testing.T) {
 	t.Parallel()
 	signer := &KeylessSigner{}
-	if _, _, err := signer.Sign(context.Background(), "sha256:abc"); !errors.Is(err, ErrKeylessLive) {
+	if _, _, err := signer.Sign(context.Background(), "sha256:abc"); !errors.Is(err, ErrKeylessLive()) {
 		t.Fatalf("want ErrKeylessLive for nil source, got %v", err)
 	}
 }
@@ -220,7 +220,7 @@ func TestAmbientGitHubActionsSourceOfflineRefuses(t *testing.T) {
 		envActionsIDTokenRequestURL:   "https://token.example.invalid",
 		envActionsIDTokenRequestToken: "req-token",
 	}), nil, nil)
-	if _, err := src(context.Background()); !errors.Is(err, egress.ErrOfflineEgress) {
+	if _, err := src(context.Background()); !errors.Is(err, egress.ErrOfflineEgress()) {
 		t.Fatalf("nil client (offline) should refuse with ErrOfflineEgress, got %v", err)
 	}
 }

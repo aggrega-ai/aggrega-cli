@@ -341,7 +341,7 @@ func pathTemplateRefusedErr(boundaryName string, v *templateScopeViolation) erro
 		return templateUnknownRootErr(cerrors.CatalogError, boundaryName, v)
 	}
 	inner := fmt.Errorf("%w: boundary %q references unknown field %s; allowlist: see aggrega-docs/language-reference/path-template-variables.md",
-		ErrPathTemplateInvalidField, boundaryName, v.Ref.Path)
+		ErrPathTemplateInvalidField(), boundaryName, v.Ref.Path)
 	return cerrors.Wrap(inner, cerrors.OpsError, cerrors.SourceLocation{}, inner.Error())
 }
 

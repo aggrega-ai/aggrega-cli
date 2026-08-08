@@ -39,7 +39,7 @@ func TestAssembledFileSet_DiagnosticInvariantUnderPlacementOrder(t *testing.T) {
 		if err == nil {
 			t.Fatalf("order %v: expected a collision", order)
 		}
-		if !errors.Is(err, ErrAssembledOutputCollision) {
+		if !errors.Is(err, ErrAssembledOutputCollision()) {
 			t.Fatalf("order %v: expected ErrAssembledOutputCollision, got %v", order, err)
 		}
 		if want == "" {

@@ -14,9 +14,9 @@ import (
 // a shape outside the two documented modes: not an object (inline
 // parameter map); a mapping with `$import:` plus other siblings; or a
 // `$import:` value that isn't a string scalar.
-const ErrParametersShape cerrors.Code = "types/parameters-shape"
+func ErrParametersShape() error { return errParametersShape }
 
-var _ = cerrors.Register(ErrParametersShape, cerrors.Meta{
+var errParametersShape = cerrors.Register("types/parameters-shape", cerrors.Meta{
 	Message: "parameters: shape must be an inline object or {$import: <local-path>}",
 })
 
@@ -67,7 +67,7 @@ func (p *ParametersBlock) UnmarshalYAML(node *yaml.Node) error {
 		return nil
 	}
 	if node.Kind != yaml.MappingNode {
-		return fmt.Errorf("%w: got kind %d at line %d", ErrParametersShape, node.Kind, node.Line)
+		return fmt.Errorf("%w: got kind %d at line %d", ErrParametersShape(), node.Kind, node.Line)
 	}
 	// Check whether the mapping declares $import:.
 	hasImport := false
@@ -81,15 +81,15 @@ func (p *ParametersBlock) UnmarshalYAML(node *yaml.Node) error {
 	if hasImport {
 		// Mode 2: must be exactly one key, $import, string-scalar value.
 		if len(node.Content) != 2 {
-			return fmt.Errorf("%w: $import: must be the only key (got %d keys) at line %d", ErrParametersShape, len(node.Content)/2, node.Line)
+			return fmt.Errorf("%w: $import: must be the only key (got %d keys) at line %d", ErrParametersShape(), len(node.Content)/2, node.Line)
 		}
 		keyNode := node.Content[0]
 		valNode := node.Content[1]
 		if keyNode.Value != "$import" {
-			return fmt.Errorf("%w: $import: must be the only key at line %d", ErrParametersShape, node.Line)
+			return fmt.Errorf("%w: $import: must be the only key at line %d", ErrParametersShape(), node.Line)
 		}
 		if valNode.Kind != yaml.ScalarNode {
-			return fmt.Errorf("%w: $import value must be a string scalar at line %d", ErrParametersShape, valNode.Line)
+			return fmt.Errorf("%w: $import value must be a string scalar at line %d", ErrParametersShape(), valNode.Line)
 		}
 		p.Import = valNode.Value
 		return nil

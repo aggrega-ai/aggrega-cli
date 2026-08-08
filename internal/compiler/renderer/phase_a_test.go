@@ -316,7 +316,7 @@ func TestExecutePhaseA_UnmappedCustomMechanismHalts(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected ErrUnmappedCustomMechanism, got nil")
 	}
-	if !errors.Is(err, ErrUnmappedCustomMechanism) {
+	if !errors.Is(err, ErrUnmappedCustomMechanism()) {
 		t.Errorf("expected errors.Is(err, ErrUnmappedCustomMechanism), got: %v", err)
 	}
 	// Walk the error chain — cerrors.Wrap masks the inner-error text in its

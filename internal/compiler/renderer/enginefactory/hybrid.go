@@ -147,7 +147,7 @@ func routeEngine(
 		// No serving render_node plugin (a nil catalog accessor, a provider name no
 		// provider-Plugin serves, or a Plugin that does not advertise render_node).
 		// Rendering is Wasm-only, so this halts loudly rather than falling back.
-		return nil, "", fmt.Errorf("%w: %q", renderer.ErrUnknownProvider, bare)
+		return nil, "", fmt.Errorf("%w: %q", renderer.ErrUnknownProvider(), bare)
 	}
 	// The adapter's lookup key is the resolved Plugin's entity identity coordinate
 	// (<pluginType>/<name>:version); the entity-fronted pluginLookup resolves that

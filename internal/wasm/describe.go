@@ -289,7 +289,7 @@ const (
 func (d PluginDescriptor) Validate(pluginIdentity string) error {
 	if d.AbiVersion != ABIVersionV1Alpha1 {
 		return fmt.Errorf("plugin %q declares abi_version %q; host speaks %q: %w",
-			pluginIdentity, d.AbiVersion, ABIVersionV1Alpha1, ErrWasmManifestRejected)
+			pluginIdentity, d.AbiVersion, ABIVersionV1Alpha1, ErrWasmManifestRejected())
 	}
 
 	// Membership is asked of the canonical plugin-type registry rather than
@@ -302,7 +302,7 @@ func (d PluginDescriptor) Validate(pluginIdentity string) error {
 	entry, ok := plugintype.Lookup(PluginType(d.PluginType))
 	if !ok || entry.Reserved {
 		return fmt.Errorf("plugin %q declares unknown plugin_type %q: %w",
-			pluginIdentity, d.PluginType, ErrWasmManifestRejected)
+			pluginIdentity, d.PluginType, ErrWasmManifestRejected())
 	}
 
 	if err := d.validateMinimumExports(pluginIdentity); err != nil {
@@ -342,7 +342,7 @@ func (d PluginDescriptor) validateCommands(pluginIdentity string) error {
 	for i, command := range d.Commands {
 		if command.Name == "" {
 			return fmt.Errorf("plugin %q declares a command at index %d with an empty name: %w",
-				pluginIdentity, i, ErrWasmManifestRejected)
+				pluginIdentity, i, ErrWasmManifestRejected())
 		}
 	}
 	return nil
@@ -363,10 +363,10 @@ func (d PluginDescriptor) validateLinkCapability(pluginIdentity string) error {
 	switch {
 	case crossBoundaryLinking && !bothExports:
 		return fmt.Errorf("plugin %q declares the cross-boundary linking capability but does not export both %q and %q: %w",
-			pluginIdentity, LinkPublishExport, LinkResolveExport, ErrWasmManifestRejected)
+			pluginIdentity, LinkPublishExport, LinkResolveExport, ErrWasmManifestRejected())
 	case !crossBoundaryLinking && bothExports:
 		return fmt.Errorf("plugin %q exports both %q and %q but does not declare the cross-boundary linking capability: %w",
-			pluginIdentity, LinkPublishExport, LinkResolveExport, ErrWasmManifestRejected)
+			pluginIdentity, LinkPublishExport, LinkResolveExport, ErrWasmManifestRejected())
 	}
 	return nil
 }
@@ -388,11 +388,11 @@ func (d PluginDescriptor) validateContract(pluginIdentity string) error {
 	default:
 		return fmt.Errorf("plugin %q declares unknown boundary_assembly %q (want %q, %q, %q, or empty): %w",
 			pluginIdentity, d.Contract.BoundaryAssembly,
-			BoundaryAssemblyNone, BoundaryAssemblyMerge, BoundaryAssemblyNest, ErrWasmManifestRejected)
+			BoundaryAssemblyNone, BoundaryAssemblyMerge, BoundaryAssemblyNest, ErrWasmManifestRejected())
 	}
 	if a := d.Contract.AssemblyNameAnnotation; a != nil && a.Annotation == "" {
 		return fmt.Errorf("plugin %q declares an assembly_name_annotation with an empty annotation key: %w",
-			pluginIdentity, ErrWasmManifestRejected)
+			pluginIdentity, ErrWasmManifestRejected())
 	}
 	return nil
 }
@@ -412,14 +412,14 @@ func (d PluginDescriptor) validateExportCapabilities(pluginIdentity string) erro
 			// well-shaped
 		default:
 			return fmt.Errorf("plugin %q export %q declares unknown operates %q (want %q, %q, or empty): %w",
-				pluginIdentity, export.Name, export.Operates, operatesPatch, operatesEmit, ErrWasmManifestRejected)
+				pluginIdentity, export.Name, export.Operates, operatesPatch, operatesEmit, ErrWasmManifestRejected())
 		}
 		switch export.Scope {
 		case "", ScopeOwn, ScopeHost:
 			// well-shaped
 		default:
 			return fmt.Errorf("plugin %q export %q declares unknown scope %q (want %q, %q, or empty): %w",
-				pluginIdentity, export.Name, export.Scope, ScopeOwn, ScopeHost, ErrWasmManifestRejected)
+				pluginIdentity, export.Name, export.Scope, ScopeOwn, ScopeHost, ErrWasmManifestRejected())
 		}
 	}
 	return nil
@@ -443,13 +443,13 @@ func (d PluginDescriptor) validateMinimumExports(pluginIdentity string) error {
 	if rule.IsPrefix {
 		if !d.hasExportWithPrefix(rule.Name) {
 			return fmt.Errorf("%s plugin %q declares no %s* export: %w",
-				entry.Label, pluginIdentity, rule.Name, ErrWasmManifestRejected)
+				entry.Label, pluginIdentity, rule.Name, ErrWasmManifestRejected())
 		}
 		return nil
 	}
 	if !d.hasExport(rule.Name) {
 		return fmt.Errorf("%s plugin %q declares no %q export: %w",
-			entry.Label, pluginIdentity, rule.Name, ErrWasmManifestRejected)
+			entry.Label, pluginIdentity, rule.Name, ErrWasmManifestRejected())
 	}
 	return nil
 }

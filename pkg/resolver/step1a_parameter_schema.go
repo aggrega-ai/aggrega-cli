@@ -127,7 +127,7 @@ func validateParameterContractEnvelope(contract types.OrderedMap[any], aggregate
 			Entity:  "Aggregate",
 			Field:   aggregatePath,
 			Message: fmt.Sprintf("internal: failed to load parameter-contract sub-schema validator: %v", err),
-			Err:     ErrYAMLLoad,
+			Err:     ErrYAMLLoad(),
 		}
 	}
 
@@ -138,7 +138,7 @@ func validateParameterContractEnvelope(contract types.OrderedMap[any], aggregate
 			Entity:  "Aggregate",
 			Field:   aggregatePath,
 			Message: fmt.Sprintf("internal: failed to marshal contract for envelope validation: %v", err),
-			Err:     ErrYAMLLoad,
+			Err:     ErrYAMLLoad(),
 		}
 	}
 	var instance any
@@ -147,7 +147,7 @@ func validateParameterContractEnvelope(contract types.OrderedMap[any], aggregate
 			Entity:  "Aggregate",
 			Field:   aggregatePath,
 			Message: fmt.Sprintf("internal: failed to unmarshal contract for envelope validation: %v", err),
-			Err:     ErrYAMLLoad,
+			Err:     ErrYAMLLoad(),
 		}
 	}
 
@@ -157,7 +157,7 @@ func validateParameterContractEnvelope(contract types.OrderedMap[any], aggregate
 			Entity:  "Aggregate",
 			Field:   ".spec.parameters",
 			Message: fmt.Sprintf("envelope-validation execution failed: %v", vErr),
-			Err:     ErrYAMLLoad,
+			Err:     ErrYAMLLoad(),
 		}
 	}
 	if len(rpt.Findings) == 0 {
@@ -174,7 +174,7 @@ func validateParameterContractEnvelope(contract types.OrderedMap[any], aggregate
 			Entity:  "Aggregate",
 			Field:   field,
 			Message: fmt.Sprintf("envelope: %s: %s", f.Keyword, f.Message),
-			Err:     ErrYAMLLoad,
+			Err:     ErrYAMLLoad(),
 		})
 	}
 	return aggregateParameterViolations(verrs)

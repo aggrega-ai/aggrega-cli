@@ -121,7 +121,7 @@ func TestSelfContainedSurfacesRefuseCrossNodeData(t *testing.T) {
 				t.Errorf("%s: %q must halt", surface.name, tmpl)
 				continue
 			}
-			if !stderrors.Is(err, ErrTemplateUnknownRoot) {
+			if !stderrors.Is(err, ErrTemplateUnknownRoot()) {
 				t.Errorf("%s: %q must report ErrTemplateUnknownRoot, got: %v", surface.name, tmpl, err)
 			}
 			// Every frame is rendered to the author, so every frame has to name the

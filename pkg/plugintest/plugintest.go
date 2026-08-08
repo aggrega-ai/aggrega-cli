@@ -26,26 +26,26 @@ import (
 
 // ErrTypeMismatch reports that the declared plugin type disagrees with the
 // type the binary's describe() self-report states.
-const ErrTypeMismatch = wasm.ErrWasmPluginTypeMismatch
+func ErrTypeMismatch() error { return wasm.ErrWasmPluginTypeMismatch() }
 
 // ErrRejected reports that the sandbox refused the binary at the describe
 // load — an illegal host-function import, an unsupported ABI, a malformed
 // describe() self-report, or a similar descriptor-level violation.
-const ErrRejected = wasm.ErrWasmManifestRejected
+func ErrRejected() error { return wasm.ErrWasmManifestRejected() }
 
 // ErrContractMismatch reports that an authored capability claim disagrees
 // with the binary's describe() self-report. Entity mode only.
-const ErrContractMismatch = wasm.ErrWasmContractMismatch
+func ErrContractMismatch() error { return wasm.ErrWasmContractMismatch() }
 
 // ErrCommandsMismatch reports that an authored command mirror disagrees with
 // the commands the binary's describe() self-report declares. Entity mode
 // only.
-const ErrCommandsMismatch = wasm.ErrWasmCommandsMirrorMismatch
+func ErrCommandsMismatch() error { return wasm.ErrWasmCommandsMirrorMismatch() }
 
 // ErrHostFunctionsMismatch reports that an authored host-function record
 // disagrees with the functions the binary actually imports. Entity mode
 // only.
-const ErrHostFunctionsMismatch = wasm.ErrWasmHostFunctionsStampMismatch
+func ErrHostFunctionsMismatch() error { return wasm.ErrWasmHostFunctionsStampMismatch() }
 
 // Options configures a binary-only guest validation.
 type Options struct {

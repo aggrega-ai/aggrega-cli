@@ -130,7 +130,7 @@ func Bundle(kind, entityPath string) ([]byte, string, error) {
 		// the build instead of waiting for a push. Which arm a new kind joins is
 		// still a judgement — bare YAML for a self-contained entity, tar.gz for
 		// one whose version directory carries co-located source.
-		return nil, "", ErrUnknownEntityKind
+		return nil, "", ErrUnknownEntityKind()
 	}
 }
 
@@ -163,7 +163,7 @@ func validateEntityVersionPathSubdir(entityPath string) error {
 
 	if envelope.Metadata.Version != parentVersion {
 		return fmt.Errorf("oci: %s: path version %q != metadata.version %q: %w",
-			entityPath, parentVersion, envelope.Metadata.Version, ErrEntityVersionPathMismatch)
+			entityPath, parentVersion, envelope.Metadata.Version, ErrEntityVersionPathMismatch())
 	}
 	return nil
 }

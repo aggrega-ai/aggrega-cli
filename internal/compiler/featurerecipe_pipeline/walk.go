@@ -173,7 +173,7 @@ func Walk(
 			// `when`/`with` predicate halts regardless of Optional. Optional
 			// tolerates a runtime step failure; it does not tolerate a violated
 			// declared contract.
-			if step.Optional && !errors.Is(err, ErrPipelineContractViolation) {
+			if step.Optional && !errors.Is(err, ErrPipelineContractViolation()) {
 				warnings = append(warnings, renderctx.Diagnostic{
 					Severity: "warning",
 					Code:     stepSkippedCode,
@@ -207,7 +207,7 @@ func Walk(
 		if step.ID != "" && stepOutputs.Len() > 0 {
 			out, err := toStepOutput(stepOutputs)
 			if err != nil {
-				return WalkResult{}, fmt.Errorf("%w: step %q (index %d) record outputs: %w", ErrPipelineStepFailed, step.ID, i, err)
+				return WalkResult{}, fmt.Errorf("%w: step %q (index %d) record outputs: %w", ErrPipelineStepFailed(), step.ID, i, err)
 			}
 			withCtx.Steps.Set(step.ID, out)
 		}
@@ -238,7 +238,7 @@ func runStep(
 ) ([]SideEffect, []renderctx.Diagnostic, []JSONPatchOp, types.OrderedMap[any], error) {
 	stepInput, err := evalWith(step, withCtx, eval)
 	if err != nil {
-		return nil, nil, nil, types.OrderedMap[any]{}, fmt.Errorf("%w: step %q (index %d) `with`: %w", ErrPipelineStepFailed, step.ID, index, err)
+		return nil, nil, nil, types.OrderedMap[any]{}, fmt.Errorf("%w: step %q (index %d) `with`: %w", ErrPipelineStepFailed(), step.ID, index, err)
 	}
 
 	payload, err := json.Marshal(FRPStepInput{
@@ -249,26 +249,26 @@ func runStep(
 		PrecedingSteps: preceding,
 	})
 	if err != nil {
-		return nil, nil, nil, types.OrderedMap[any]{}, fmt.Errorf("%w: step %q (index %d) marshal input: %w", ErrPipelineStepFailed, step.ID, index, err)
+		return nil, nil, nil, types.OrderedMap[any]{}, fmt.Errorf("%w: step %q (index %d) marshal input: %w", ErrPipelineStepFailed(), step.ID, index, err)
 	}
 
 	raw, err := invoke(ctx, step, payload)
 	if err != nil {
-		return nil, nil, nil, types.OrderedMap[any]{}, fmt.Errorf("%w: step %q (index %d) invoke: %w", ErrPipelineStepFailed, step.ID, index, err)
+		return nil, nil, nil, types.OrderedMap[any]{}, fmt.Errorf("%w: step %q (index %d) invoke: %w", ErrPipelineStepFailed(), step.ID, index, err)
 	}
 
 	var out FRPStepOutput
 	if err := json.Unmarshal(raw, &out); err != nil {
-		return nil, nil, nil, types.OrderedMap[any]{}, fmt.Errorf("%w: step %q (index %d) unmarshal output: %w", ErrPipelineStepFailed, step.ID, index, err)
+		return nil, nil, nil, types.OrderedMap[any]{}, fmt.Errorf("%w: step %q (index %d) unmarshal output: %w", ErrPipelineStepFailed(), step.ID, index, err)
 	}
 
 	if gerr := wasm.GuestReturnedError(step.Function, out.Error); gerr != nil {
-		return nil, nil, nil, types.OrderedMap[any]{}, fmt.Errorf("%w: step %q (index %d): %w", ErrPipelineStepFailed, step.ID, index, gerr)
+		return nil, nil, nil, types.OrderedMap[any]{}, fmt.Errorf("%w: step %q (index %d): %w", ErrPipelineStepFailed(), step.ID, index, gerr)
 	}
 
 	for _, d := range out.Diagnostics {
 		if d.Severity == "error" {
-			return nil, out.Diagnostics, nil, types.OrderedMap[any]{}, fmt.Errorf("%w: step %q (index %d) error diagnostic: %s", ErrPipelineStepFailed, step.ID, index, d.Message)
+			return nil, out.Diagnostics, nil, types.OrderedMap[any]{}, fmt.Errorf("%w: step %q (index %d) error diagnostic: %s", ErrPipelineStepFailed(), step.ID, index, d.Message)
 		}
 	}
 
@@ -291,7 +291,7 @@ func stepEnabled(step types.PipelineStep, index int, withCtx *types.TemplateCont
 	}
 	rendered, err := eval(fmt.Sprintf("pipeline-step[%s].when", step.ID), step.When, withCtx)
 	if err != nil {
-		return false, fmt.Errorf("%w: step %q (index %d) `when`: %w", ErrPipelineStepFailed, step.ID, index, err)
+		return false, fmt.Errorf("%w: step %q (index %d) `when`: %w", ErrPipelineStepFailed(), step.ID, index, err)
 	}
 	return truthy.Bool(rendered), nil
 }
@@ -391,15 +391,15 @@ func ApplyPatches(docs *DocumentSet, ops []JSONPatchOp) error {
 
 		unit, ok := root.Get(op.Key)
 		if !ok {
-			return fmt.Errorf("%w: scope %q key %q", ErrPipelineTargetAbsent, op.Scope, op.Key)
+			return fmt.Errorf("%w: scope %q key %q", ErrPipelineTargetAbsent(), op.Scope, op.Key)
 		}
 		if !unit.Structured() {
-			return fmt.Errorf("%w: scope %q key %q", ErrPipelineTargetOpaque, op.Scope, op.Key)
+			return fmt.Errorf("%w: scope %q key %q", ErrPipelineTargetOpaque(), op.Scope, op.Key)
 		}
 
 		newTree, err := applier.Apply(unit.Tree, []JSONPatchOp{op})
 		if err != nil {
-			return fmt.Errorf("%w: scope %q key %q: %w", ErrPipelineStepFailed, op.Scope, op.Key, err)
+			return fmt.Errorf("%w: scope %q key %q: %w", ErrPipelineStepFailed(), op.Scope, op.Key, err)
 		}
 		unit.Tree = newTree
 		root.Set(op.Key, unit)
@@ -419,7 +419,7 @@ func scopeRoot(docs *DocumentSet, scope DocumentScope) (*types.OrderedMap[Unit],
 	case DocumentScopeHost:
 		return &docs.Host, nil
 	default:
-		return nil, fmt.Errorf("%w: unknown patch scope %q", ErrPipelineStepFailed, scope)
+		return nil, fmt.Errorf("%w: unknown patch scope %q", ErrPipelineStepFailed(), scope)
 	}
 }
 

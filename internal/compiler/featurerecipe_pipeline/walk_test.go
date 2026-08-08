@@ -145,7 +145,7 @@ func TestWalk_AbsentTargetStrictHalt(t *testing.T) {
 	steps := []types.PipelineStep{{ID: "s1", Plugin: "p", Function: "f"}}
 
 	_, err := Walk(context.Background(), docs, steps, inv.invoke, &types.TemplateContext{}, renderctx.RenderContext{}, noEval)
-	if !errors.Is(err, ErrPipelineTargetAbsent) {
+	if !errors.Is(err, ErrPipelineTargetAbsent()) {
 		t.Fatalf("err = %v, want ErrPipelineTargetAbsent", err)
 	}
 	// Input docs untouched (Walk takes DocumentSet by value).
@@ -211,7 +211,7 @@ func TestWalk_ErrorDiagnosticHalts(t *testing.T) {
 	// strict
 	_, err := Walk(context.Background(), docs, []types.PipelineStep{{ID: "s1", Plugin: "p", Function: "f"}},
 		inv.invoke, &types.TemplateContext{}, renderctx.RenderContext{}, noEval)
-	if !errors.Is(err, ErrPipelineStepFailed) {
+	if !errors.Is(err, ErrPipelineStepFailed()) {
 		t.Fatalf("strict: err = %v, want ErrPipelineStepFailed", err)
 	}
 
@@ -266,7 +266,7 @@ func TestWalk_InvokeTrapStrictAndOptional(t *testing.T) {
 
 	_, err := Walk(context.Background(), docs, []types.PipelineStep{{ID: "s1", Plugin: "p", Function: "f"}},
 		inv.invoke, &types.TemplateContext{}, renderctx.RenderContext{}, noEval)
-	if !errors.Is(err, ErrPipelineStepFailed) {
+	if !errors.Is(err, ErrPipelineStepFailed()) {
 		t.Fatalf("trap strict: err = %v, want ErrPipelineStepFailed", err)
 	}
 
@@ -290,10 +290,10 @@ func TestWalk_ContractViolationHaltsEvenOptional(t *testing.T) {
 	// A contract violation surfaced by the invoker halts even though the step
 	// is Optional — the same way a broken predicate does.
 	inv := newScripted()
-	inv.fail["s1"] = fmt.Errorf("`with` input does not satisfy the declared input contract: %w", ErrPipelineContractViolation)
+	inv.fail["s1"] = fmt.Errorf("`with` input does not satisfy the declared input contract: %w", ErrPipelineContractViolation())
 	_, err := Walk(context.Background(), docs, []types.PipelineStep{{ID: "s1", Plugin: "p", Function: "f", Optional: true}},
 		inv.invoke, &types.TemplateContext{}, renderctx.RenderContext{}, noEval)
-	if !errors.Is(err, ErrPipelineContractViolation) {
+	if !errors.Is(err, ErrPipelineContractViolation()) {
 		t.Fatalf("contract violation on optional step: err = %v, want halt with ErrPipelineContractViolation", err)
 	}
 
@@ -321,7 +321,7 @@ func TestWalk_PatchAgainstOpaqueUnitHalts(t *testing.T) {
 	steps := []types.PipelineStep{{ID: "s1", Plugin: "p", Function: "f"}}
 
 	_, err := Walk(context.Background(), docs, steps, inv.invoke, &types.TemplateContext{}, renderctx.RenderContext{}, noEval)
-	if !errors.Is(err, ErrPipelineTargetOpaque) {
+	if !errors.Is(err, ErrPipelineTargetOpaque()) {
 		t.Fatalf("err = %v, want ErrPipelineTargetOpaque", err)
 	}
 }
@@ -368,10 +368,10 @@ func TestWalk_FailedTestOpMatchesEngineSentinel(t *testing.T) {
 
 	_, err := Walk(context.Background(), docs, []types.PipelineStep{{ID: "s1", Plugin: "p", Function: "f"}},
 		inv.invoke, &types.TemplateContext{}, renderctx.RenderContext{}, noEval)
-	if !errors.Is(err, jsonpatch.ErrTestFailed) {
+	if !errors.Is(err, jsonpatch.ErrTestFailed()) {
 		t.Fatalf("err = %v, want it to wrap jsonpatch.ErrTestFailed", err)
 	}
-	if !errors.Is(err, ErrPipelineStepFailed) {
+	if !errors.Is(err, ErrPipelineStepFailed()) {
 		t.Errorf("err = %v, want it to also match ErrPipelineStepFailed", err)
 	}
 }
@@ -388,10 +388,10 @@ func TestWalk_GuestReportedErrorMatchesHostTaxonomy(t *testing.T) {
 
 	_, err := Walk(context.Background(), docs, []types.PipelineStep{{ID: "s1", Plugin: "p", Function: "render_chart"}},
 		inv.invoke, &types.TemplateContext{}, renderctx.RenderContext{}, noEval)
-	if !errors.Is(err, wasm.ErrWasmGuestError) {
+	if !errors.Is(err, wasm.ErrWasmGuestError()) {
 		t.Fatalf("err = %v, want it to wrap the guest-error sentinel", err)
 	}
-	if !errors.Is(err, ErrPipelineStepFailed) {
+	if !errors.Is(err, ErrPipelineStepFailed()) {
 		t.Errorf("err = %v, want it to also match ErrPipelineStepFailed", err)
 	}
 	if !strings.Contains(err.Error(), `"render_chart"`) {

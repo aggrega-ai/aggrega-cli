@@ -53,7 +53,7 @@ func emitCompactConstraint(node *yaml.Node, path string, ctx *compileCtx) (Schem
 				Line:    nodeLine(v),
 				Keyword: "type",
 				Message: "expected a scalar type name or a sequence of type names (JSON Schema 2020-12 array-of-types); got unsupported node kind",
-				Err:     ErrConstraintTypeMismatch,
+				Err:     ErrConstraintTypeMismatch(),
 			}
 		}
 	}
@@ -105,7 +105,7 @@ func emitCompactConstraint(node *yaml.Node, path string, ctx *compileCtx) (Schem
 					Line:    nodeLine(node),
 					Keyword: "valuesType",
 					Message: "expected a scalar type name",
-					Err:     ErrConstraintTypeMismatch,
+					Err:     ErrConstraintTypeMismatch(),
 				}
 			}
 			out["additionalProperties"] = Schema{"type": v.Value}
@@ -174,7 +174,7 @@ func emitCompactConstraint(node *yaml.Node, path string, ctx *compileCtx) (Schem
 					Line:    nodeLine(node),
 					Keyword: k,
 					Message: "unknown keyword",
-					Err:     ErrUnknownKeyword,
+					Err:     ErrUnknownKeyword(),
 				}
 			}
 			// Generic passthrough for known JSON Schema keywords
@@ -285,7 +285,7 @@ func minMaxKeyForType(typ string, isMin bool, path, keyword string, line int) (s
 			Line:    line,
 			Keyword: keyword,
 			Message: "constraint applies to a single declared type (integer/number/string/array); `type:` is unresolved (union or absent) — narrow `type:` to a single value or remove this constraint",
-			Err:     ErrConstraintTypeMismatch,
+			Err:     ErrConstraintTypeMismatch(),
 		}
 	default:
 		return "", &CompileError{
@@ -293,7 +293,7 @@ func minMaxKeyForType(typ string, isMin bool, path, keyword string, line int) (s
 			Line:    line,
 			Keyword: keyword,
 			Message: "constraint applies to integer/number/string/array; declared type is `" + typ + "`",
-			Err:     ErrConstraintTypeMismatch,
+			Err:     ErrConstraintTypeMismatch(),
 		}
 	}
 }
@@ -404,7 +404,7 @@ func emitJSONSchemaPassthrough(node *yaml.Node, path string, ctx *compileCtx) (S
 				Line:    nodeLine(node),
 				Keyword: k,
 				Message: "unknown keyword",
-				Err:     ErrUnknownKeyword,
+				Err:     ErrUnknownKeyword(),
 			}
 		}
 		switch k {
@@ -449,7 +449,7 @@ func emitEscape(node *yaml.Node, path string, ctx *compileCtx) (Schema, error) {
 					Line:    nodeLine(v),
 					Keyword: "$jsonschema",
 					Message: "escape content does not parse as YAML: " + err.Error(),
-					Err:     ErrEscapeContentInvalid,
+					Err:     ErrEscapeContentInvalid(),
 				}
 			}
 			if inner.Kind == yaml.DocumentNode && len(inner.Content) > 0 {
@@ -473,7 +473,7 @@ func emitEscape(node *yaml.Node, path string, ctx *compileCtx) (Schema, error) {
 			Line:    nodeLine(v),
 			Keyword: "$jsonschema",
 			Message: "expected block-scalar string or nested mapping",
-			Err:     ErrEscapeContentInvalid,
+			Err:     ErrEscapeContentInvalid(),
 		}
 	}
 	return Schema{}, nil
@@ -563,7 +563,7 @@ func emitInDocumentReference(node *yaml.Node, path string, ctx *compileCtx) (Sch
 					Line:    nodeLine(v),
 					Keyword: "$ref",
 					Message: "expected a non-empty reference URL",
-					Err:     ErrReferenceUnresolvable,
+					Err:     ErrReferenceUnresolvable(),
 				}
 			}
 			out["$ref"] = v.Value
@@ -632,7 +632,7 @@ func emitWithXRefExpand(node *yaml.Node, refURI, path string, ctx *compileCtx) (
 			Line:    nodeLine(node),
 			Keyword: "$ref",
 			Message: "cross-document $ref but no SchemaLibrary catalog supplied: " + refURI,
-			Err:     ErrUnresolvedSchemaLibraryRef,
+			Err:     ErrUnresolvedSchemaLibraryRef(),
 		}
 	}
 
@@ -718,7 +718,7 @@ func collectConsumerSiblings(node *yaml.Node, path string) (props map[string]*ya
 					Line:    nodeLine(v),
 					Keyword: "properties",
 					Message: "expected a mapping of property names to schemas",
-					Err:     ErrEscapeContentInvalid,
+					Err:     ErrEscapeContentInvalid(),
 				}
 			}
 			for j := 0; j+1 < len(v.Content); j += 2 {
@@ -755,7 +755,7 @@ func collectConsumerSiblings(node *yaml.Node, path string) (props map[string]*ya
 				Line:    nodeLine(k),
 				Keyword: k.Value,
 				Message: msg,
-				Err:     ErrUnknownKeyword,
+				Err:     ErrUnknownKeyword(),
 			}
 		}
 	}
@@ -861,7 +861,7 @@ func emitComposition(node *yaml.Node, compKey, path string, ctx *compileCtx) (Sc
 					Line:    nodeLine(v),
 					Keyword: compKey,
 					Message: "expected a sequence of schemas",
-					Err:     ErrEscapeContentInvalid,
+					Err:     ErrEscapeContentInvalid(),
 				}
 			}
 			entries := make([]any, 0, len(v.Content))
@@ -885,7 +885,7 @@ func emitComposition(node *yaml.Node, compKey, path string, ctx *compileCtx) (Sc
 				Line:    nodeLine(node),
 				Keyword: k,
 				Message: "unknown keyword",
-				Err:     ErrUnknownKeyword,
+				Err:     ErrUnknownKeyword(),
 			}
 		}
 		child, err := compileNode(v, pathJoin(path, k), ctx)

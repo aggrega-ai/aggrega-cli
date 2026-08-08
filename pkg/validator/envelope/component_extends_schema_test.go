@@ -50,7 +50,7 @@ func TestEnvelope_ExtendingComponentSchemaMarker(t *testing.T) {
 	if authoredErr == nil {
 		t.Fatal("extends plus an authored spec.schema must fail the envelope; got nil")
 	}
-	if !errors.Is(authoredErr, ErrEntityEnvelope) {
+	if !errors.Is(authoredErr, ErrEntityEnvelope()) {
 		t.Fatalf("want errors.Is(err, ErrEntityEnvelope); got %v", authoredErr)
 	}
 
@@ -61,7 +61,7 @@ func TestEnvelope_ExtendingComponentSchemaMarker(t *testing.T) {
 	if omittedErr == nil {
 		t.Fatal("extends with spec.schema omitted must fail the envelope; got nil")
 	}
-	if !errors.Is(omittedErr, ErrEntityEnvelope) {
+	if !errors.Is(omittedErr, ErrEntityEnvelope()) {
 		t.Fatalf("want errors.Is(err, ErrEntityEnvelope); got %v", omittedErr)
 	}
 
@@ -120,7 +120,7 @@ func TestEnvelope_NonExtendingComponentAuthorsItsOwnSchema(t *testing.T) {
 			if err == nil {
 				t.Fatalf("%s must fail the envelope; got nil", tc.name)
 			}
-			if !errors.Is(err, ErrEntityEnvelope) {
+			if !errors.Is(err, ErrEntityEnvelope()) {
 				t.Fatalf("want errors.Is(err, ErrEntityEnvelope); got %v", err)
 			}
 			if !strings.Contains(err.Error(), rule) {
@@ -144,7 +144,7 @@ func TestEnvelope_ExtendingComponentMarkerIsExact(t *testing.T) {
 			if err == nil {
 				t.Fatalf("spec.schema: %q on an extending Component must fail the envelope; got nil", value)
 			}
-			if !errors.Is(err, ErrEntityEnvelope) {
+			if !errors.Is(err, ErrEntityEnvelope()) {
 				t.Fatalf("want errors.Is(err, ErrEntityEnvelope); got %v", err)
 			}
 		})

@@ -215,7 +215,7 @@ func TestIntegration_PullCommandVerifiesSignedSubAggregate_Keyed(t *testing.T) {
 		writeSubAggregateConsumerWorkspace(t, host, wrongPubPEM, signedPush)
 
 		perr := pullRun(pullConfig{ReleasePath: "release.yaml"})
-		if !errors.Is(perr, signing.ErrSignatureVerificationFailed) {
+		if !errors.Is(perr, signing.ErrSignatureVerificationFailed()) {
 			t.Fatalf("a wrong pinned key must HALT the pull with ErrSignatureVerificationFailed; got: %v", perr)
 		}
 	})

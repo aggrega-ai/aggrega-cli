@@ -124,7 +124,7 @@ func TestHelmEngine_Sourced_CrdTemplateCollisionHalts(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected a collision error when a crds/ and a templates/ resource derive one output filename")
 	}
-	if !errors.Is(err, helm.ErrRenderedFileCollision) {
+	if !errors.Is(err, helm.ErrRenderedFileCollision()) {
 		t.Fatalf("error is not ErrRenderedFileCollision: %v", err)
 	}
 	if !strings.Contains(err.Error(), "xc-customresourcedefinition-things-example-com.yaml") {

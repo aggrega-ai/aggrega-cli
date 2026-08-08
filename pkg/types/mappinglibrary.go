@@ -17,9 +17,9 @@ import (
 // the same shape at workspace-load time; this sentinel covers the
 // Go-side typed-unmarshal path so consumers can errors.Is against the
 // failure without parsing the formatted error text.
-const ErrMappingEntryNotScalar cerrors.Code = "types/mapping-entry-not-scalar"
+func ErrMappingEntryNotScalar() error { return errMappingEntryNotScalar }
 
-var _ = cerrors.Register(ErrMappingEntryNotScalar, cerrors.Meta{
+var errMappingEntryNotScalar = cerrors.Register("types/mapping-entry-not-scalar", cerrors.Meta{
 	Message: "mappinglibrary: entry body must be a string scalar",
 })
 
@@ -55,7 +55,7 @@ func (e *MappingEntry) UnmarshalYAML(value *yaml.Node) error {
 		return nil
 	}
 	if value.Kind != yaml.ScalarNode {
-		return fmt.Errorf("%w: got kind %d at line %d", ErrMappingEntryNotScalar, value.Kind, value.Line)
+		return fmt.Errorf("%w: got kind %d at line %d", ErrMappingEntryNotScalar(), value.Kind, value.Line)
 	}
 	e.Body = value.Value
 	return nil

@@ -742,7 +742,7 @@ func (p *Plugin) handleAggregaParseSource(ctx context.Context, reader pluginMemo
 		return
 	}
 	if producerConsumptionDepthFromContext(ctx) >= producerConsumptionDepthLimit {
-		stack[0] = p.writeParseSourceFailure(writer, fmt.Sprintf("aggrega_parse_source: %v", ErrProducerConsumptionReentry), abi.CodeProducerConsumptionReentry)
+		stack[0] = p.writeParseSourceFailure(writer, fmt.Sprintf("aggrega_parse_source: %v", ErrProducerConsumptionReentry()), abi.CodeProducerConsumptionReentry)
 		return
 	}
 	if p.sourceParser == nil {

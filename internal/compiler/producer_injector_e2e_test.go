@@ -128,7 +128,7 @@ func TestProducerInjector_HaltOnBadInput(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected the build to halt on the input-contract violation; got no error")
 	}
-	if !errors.Is(err, frp.ErrPipelineContractViolation) {
+	if !errors.Is(err, frp.ErrPipelineContractViolation()) {
 		t.Errorf("expected ErrPipelineContractViolation in the error chain; got: %v", err)
 	}
 	// The user-facing top-level renders a single-line summary; the contract
@@ -165,7 +165,7 @@ func TestProducerInjector_HaltOnBadOutput(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected the build to halt on the output-contract violation; got no error")
 	}
-	if !errors.Is(err, frp.ErrPipelineContractViolation) {
+	if !errors.Is(err, frp.ErrPipelineContractViolation()) {
 		t.Errorf("expected ErrPipelineContractViolation in the error chain; got: %v", err)
 	}
 	detail := deepestWrapped(err)

@@ -84,7 +84,7 @@ func SynthesizeWorkloadCore(
 	default:
 		return nil, nil, cerrors.New(cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID},
 			fmt.Sprintf("compose: workload form %q has no compose mapping; compose supports stateless and stateful only", rendercore.NormalizeWorkloadForm(w.Form)),
-			nil, ErrUnsupportedComposeForm)
+			nil, ErrUnsupportedComposeForm())
 	}
 
 	// Unsupported-field diagnostics accumulate here in a deterministic order: per
@@ -355,7 +355,7 @@ func translateContainer(
 	if c.Lifecycle != nil {
 		return Service{}, nil, cerrors.New(cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID},
 			fmt.Sprintf("compose: node %q declares container lifecycle hooks; compose has no lifecycle-hook primitive", nodeCtx.NodeID),
-			nil, ErrUnsupportedComposeLifecycle)
+			nil, ErrUnsupportedComposeLifecycle())
 	}
 
 	// Container resource requests/limits → compose deploy.resources
@@ -377,7 +377,7 @@ func translateContainer(
 	if len(c.EnvFrom) > 0 {
 		return Service{}, nil, cerrors.New(cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID},
 			fmt.Sprintf("compose: node %q declares container envFrom; compose has no env-from-object primitive", nodeCtx.NodeID),
-			nil, ErrUnsupportedComposeEnvFrom)
+			nil, ErrUnsupportedComposeEnvFrom())
 	}
 
 	// imagePullPolicy → compose pull_policy (schema-validated enum).
@@ -679,7 +679,7 @@ func probeToHealthcheck(p *types.ProbeSpec, ports types.OrderedMap[int]) (*Healt
 	case len(p.Exec) > 0:
 		hc.Test = append([]string{"CMD"}, p.Exec...)
 	default:
-		return nil, ErrTranslationProbeShape
+		return nil, ErrTranslationProbeShape()
 	}
 
 	if p.PeriodSeconds != nil {
@@ -703,7 +703,7 @@ func probeToHealthcheck(p *types.ProbeSpec, ports types.OrderedMap[int]) (*Healt
 // error if no ports are declared.
 func resolveHTTPProbePort(ports types.OrderedMap[int]) (int, error) {
 	if ports.Len() == 0 {
-		return 0, ErrTranslationProbeNoPort
+		return 0, ErrTranslationProbeNoPort()
 	}
 	names := []string{}
 	for name := range ports.All() {

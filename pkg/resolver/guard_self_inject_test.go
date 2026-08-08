@@ -70,7 +70,7 @@ func TestGuardSelfInject_BlackBoxRejected(t *testing.T) {
 	if len(errs) == 0 {
 		t.Fatal("expected error for Black-Box self-inject")
 	}
-	if !errors.Is(errs[0], ErrSelfInjectForbidden) {
+	if !errors.Is(errs[0], ErrSelfInjectForbidden()) {
 		t.Errorf("expected ErrSelfInjectForbidden, got: %v", errs[0])
 	}
 }
@@ -90,7 +90,7 @@ func TestGuardSelfInject_ForbiddenMechanism(t *testing.T) {
 	if len(errs) == 0 {
 		t.Fatal("expected error for forbidden mechanism")
 	}
-	if !errors.Is(errs[0], ErrSelfInjectForbidden) {
+	if !errors.Is(errs[0], ErrSelfInjectForbidden()) {
 		t.Errorf("expected ErrSelfInjectForbidden, got: %v", errs[0])
 	}
 }
@@ -114,7 +114,7 @@ func TestGuardSelfInject_KeyCollision(t *testing.T) {
 	errs := guardSelfInject(normalized(t, agg), selfInjectCatalog())
 	found := false
 	for _, e := range errs {
-		if errors.Is(e, ErrInjectKeyCollision) {
+		if errors.Is(e, ErrInjectKeyCollision()) {
 			found = true
 		}
 	}
@@ -159,7 +159,7 @@ func TestGuardSelfInject_VerboseFormUsesInjectKeyCollision_OrderedMapShape(t *te
 	errs := guardSelfInject(normalized(t, agg), selfInjectCatalog())
 	found := false
 	for _, e := range errs {
-		if errors.Is(e, ErrInjectKeyCollision) {
+		if errors.Is(e, ErrInjectKeyCollision()) {
 			found = true
 		}
 	}
@@ -219,7 +219,7 @@ func TestGuardSelfInject_CrossMechanismCollision(t *testing.T) {
 	// mechanism path, mirroring the rule-3 emission granularity.
 	collisions := []*ResolverError{}
 	for _, e := range errs {
-		if errors.Is(e, ErrInjectKeyCollision) {
+		if errors.Is(e, ErrInjectKeyCollision()) {
 			collisions = append(collisions, e)
 		}
 	}
@@ -360,7 +360,7 @@ func TestGuardSelfInject_SelfInjectOrderedMapShape_KeyCollision(t *testing.T) {
 	errs := guardSelfInject(normalized(t, agg), selfInjectCatalog())
 	found := false
 	for _, e := range errs {
-		if errors.Is(e, ErrInjectKeyCollision) {
+		if errors.Is(e, ErrInjectKeyCollision()) {
 			found = true
 		}
 	}

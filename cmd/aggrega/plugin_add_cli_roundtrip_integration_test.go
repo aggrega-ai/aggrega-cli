@@ -182,7 +182,7 @@ func TestIntegration_PluginAddCLI_FetchCachesForOfflineRun(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(slot, "blob"), append([]byte("tampered"), guest...), 0o644); err != nil {
 		t.Fatalf("tamper blob: %v", err)
 	}
-	if _, err := workspacePluginResolver(rwOffline)(ref); err == nil || !errors.Is(err, oci.ErrFetchIntegrity) {
+	if _, err := workspacePluginResolver(rwOffline)(ref); err == nil || !errors.Is(err, oci.ErrFetchIntegrity()) {
 		t.Fatalf("tampered cache should halt with ErrFetchIntegrity; got %v", err)
 	}
 

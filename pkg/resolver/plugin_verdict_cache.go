@@ -42,7 +42,7 @@ type VerdictPluginTierSources struct {
 // naming the plugin and wrapping oci.ErrFetchNotFound.
 func ResolveVerdictPluginFromCache(sources VerdictPluginTierSources, pluginFromCache func(uri string) (types.Plugin, string, bool, error), uri string) (pluginpath.ResolvedPlugin, error) {
 	if pluginFromCache == nil {
-		return pluginpath.ResolvedPlugin{}, fmt.Errorf("resolve verdict-socket plugin %q: no cache-backed catalog lookup: %w", uri, oci.ErrFetchNotFound)
+		return pluginpath.ResolvedPlugin{}, fmt.Errorf("resolve verdict-socket plugin %q: no cache-backed catalog lookup: %w", uri, oci.ErrFetchNotFound())
 	}
 	entity, wasmDigest, ok, err := pluginFromCache(uri)
 	if err != nil {
@@ -50,7 +50,7 @@ func ResolveVerdictPluginFromCache(sources VerdictPluginTierSources, pluginFromC
 	}
 	if !ok {
 		return pluginpath.ResolvedPlugin{}, fmt.Errorf("resolve verdict-socket plugin %q: %s: %w",
-			uri, "not present in the content cache; run `aggrega pull --release <release>` first", oci.ErrFetchNotFound)
+			uri, "not present in the content cache; run `aggrega pull --release <release>` first", oci.ErrFetchNotFound())
 	}
 	artifactRef := entity.ArtifactReference()
 	// A fresh resolver keyed only by the manifest-derived .wasm digest: the pin
@@ -92,7 +92,7 @@ func VerdictLookup(base pluginpath.Lookup, cacheResolve func(uri string) (plugin
 		if err == nil {
 			return resolved, nil
 		}
-		if !errors.Is(err, pluginpath.ErrPluginEntityNotFound) && !errors.Is(err, oci.ErrFetchNotFound) {
+		if !errors.Is(err, pluginpath.ErrPluginEntityNotFound()) && !errors.Is(err, oci.ErrFetchNotFound()) {
 			return pluginpath.ResolvedPlugin{}, err
 		}
 		return cacheResolve(uri)

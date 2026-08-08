@@ -104,12 +104,12 @@ func TestResolveMappingLibraryImport_CycleHalts(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected a cycle error; got nil")
 	}
-	if !errors.Is(err, ErrCircularImport) {
+	if !errors.Is(err, ErrCircularImport()) {
 		t.Errorf("error = %v; want ErrCircularImport", err)
 	}
 	// Shared-primitive conformance: the $import cycle sentinel IS refcycle.ErrCycle,
 	// the same identity the $ref surface reports — one detector guards both.
-	if !errors.Is(err, refcycle.ErrCycle) {
+	if !errors.Is(err, refcycle.ErrCycle()) {
 		t.Errorf("error = %v; want the shared refcycle.ErrCycle identity", err)
 	}
 }
@@ -126,12 +126,12 @@ func TestResolveMappingLibraryImport_Errors(t *testing.T) {
 		ref  string
 		want error
 	}{
-		{"unknown library", "Absent#/mappings/Core", ErrMappingLibraryNotFound},
-		{"unknown entry", "Helpers#/mappings/Missing", ErrMappingEntryNotFound},
-		{"host-bearing", "oci://hub/Helpers:1.0.0#/mappings/Core", ErrHostInLibraryImport},
-		{"stale @ version separator", "Helpers@1.0.0#/mappings/Core", ErrMappingImportShape},
-		{"non-mappings fragment", "Helpers#/schemas/Core", ErrMappingImportShape},
-		{"no fragment", "Helpers", ErrMappingImportShape},
+		{"unknown library", "Absent#/mappings/Core", ErrMappingLibraryNotFound()},
+		{"unknown entry", "Helpers#/mappings/Missing", ErrMappingEntryNotFound()},
+		{"host-bearing", "oci://hub/Helpers:1.0.0#/mappings/Core", ErrHostInLibraryImport()},
+		{"stale @ version separator", "Helpers@1.0.0#/mappings/Core", ErrMappingImportShape()},
+		{"non-mappings fragment", "Helpers#/schemas/Core", ErrMappingImportShape()},
+		{"no fragment", "Helpers", ErrMappingImportShape()},
 	}
 	for _, tc := range cases {
 		tc := tc

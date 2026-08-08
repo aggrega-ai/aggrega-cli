@@ -202,7 +202,7 @@ func RenderLoadedChart(
 					// Byte-identical duplicate: keeping one loses nothing.
 					continue
 				}
-				return cerrors.Wrap(ErrRenderedFileCollision, cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("helm: node %q: rendered resources %q and %q both derive output %q with differing content", nodeCtx.NodeID, keyOrigin[outKey], sourcePath, outKey))
+				return cerrors.Wrap(ErrRenderedFileCollision(), cerrors.TranslationError, cerrors.SourceLocation{File: nodeCtx.NodeID}, fmt.Sprintf("helm: node %q: rendered resources %q and %q both derive output %q with differing content", nodeCtx.NodeID, keyOrigin[outKey], sourcePath, outKey))
 			}
 			out[outKey] = annotated
 			keyOrigin[outKey] = sourcePath

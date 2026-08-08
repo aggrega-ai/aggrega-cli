@@ -79,7 +79,7 @@ func TestParseIdentityRef(t *testing.T) {
 				if err == nil {
 					t.Fatalf("expected error for input %q; got nil", tc.input)
 				}
-				if !errors.Is(err, ErrInvalidLibraryRef) {
+				if !errors.Is(err, ErrInvalidLibraryRef()) {
 					t.Errorf("error should wrap ErrInvalidLibraryRef; got %v", err)
 				}
 				return
@@ -169,7 +169,7 @@ func TestParseIdentityImportRef(t *testing.T) {
 				if err == nil {
 					t.Fatalf("expected error for input %q; got nil", tc.input)
 				}
-				if !errors.Is(err, ErrInvalidLibraryRef) {
+				if !errors.Is(err, ErrInvalidLibraryRef()) {
 					t.Errorf("error should wrap ErrInvalidLibraryRef; got %v", err)
 				}
 				return
@@ -219,7 +219,7 @@ func TestSelectMVSVersionDetectsMajorVersionDisagreement(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected ErrMVSConflict; got nil")
 	}
-	if !errors.Is(err, ErrMVSConflict) {
+	if !errors.Is(err, ErrMVSConflict()) {
 		t.Errorf("error should wrap ErrMVSConflict; got %v", err)
 	}
 	msg := err.Error()

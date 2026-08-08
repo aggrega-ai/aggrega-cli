@@ -81,7 +81,7 @@ func TestEvalTemplate_UnknownRootHaltsBareAndShielded(t *testing.T) {
 			if err == nil {
 				t.Fatalf("%s: expected halt, rendered %q at no error", name, out)
 			}
-			if !errors.Is(err, ErrTemplateUnknownRoot) {
+			if !errors.Is(err, ErrTemplateUnknownRoot()) {
 				t.Errorf("%s: expected ErrTemplateUnknownRoot, got: %v", name, err)
 			}
 			if !strings.Contains(err.Error(), "staleroot") {
@@ -237,7 +237,7 @@ func TestEvalTemplate_WholeRootAliasIsCheckedLikeTheDirectSpelling(t *testing.T)
 			if err == nil {
 				t.Fatalf("expected a halt, rendered %q", out)
 			}
-			if !errors.Is(err, ErrTemplateUnknownRoot) {
+			if !errors.Is(err, ErrTemplateUnknownRoot()) {
 				t.Errorf("expected ErrTemplateUnknownRoot, got: %v", err)
 			}
 			if err.Error() != wantErr {
@@ -464,7 +464,7 @@ func TestContextRootNames_NonStructIsNotCheckable(t *testing.T) {
 		t.Error("a nil context must not yield a derived root set")
 	}
 	if _, err := EvalTemplate("map-probe", `{{ .anything.at.all }}`, map[string]any{}); err != nil {
-		if errors.Is(err, ErrTemplateUnknownRoot) {
+		if errors.Is(err, ErrTemplateUnknownRoot()) {
 			t.Errorf("an uncheckable context must not raise an unknown-root halt: %v", err)
 		}
 	}

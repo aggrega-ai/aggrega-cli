@@ -117,7 +117,7 @@ func TestDecodeMalformed(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			_, err := Decode([]byte(tc.body))
-			if !errors.Is(err, ErrMalformedTrust) {
+			if !errors.Is(err, ErrMalformedTrust()) {
 				t.Fatalf("Decode(%s) err = %v; want errors.Is(ErrMalformedTrust)", tc.name, err)
 			}
 		})
@@ -160,7 +160,7 @@ func TestFetch404IsNoTrustAdvertised(t *testing.T) {
 	t.Cleanup(srv.Close)
 	host := strings.TrimPrefix(srv.URL, "http://")
 	_, err := Fetch(context.Background(), srv.Client(), host)
-	if !errors.Is(err, ErrNoTrustAdvertised) {
+	if !errors.Is(err, ErrNoTrustAdvertised()) {
 		t.Fatalf("Fetch 404 err = %v; want errors.Is(ErrNoTrustAdvertised)", err)
 	}
 }
@@ -176,7 +176,7 @@ func TestFetchMalformedBodyIsHardError(t *testing.T) {
 	t.Cleanup(srv.Close)
 	host := strings.TrimPrefix(srv.URL, "http://")
 	_, err := Fetch(context.Background(), srv.Client(), host)
-	if !errors.Is(err, ErrMalformedTrust) {
+	if !errors.Is(err, ErrMalformedTrust()) {
 		t.Fatalf("Fetch malformed err = %v; want errors.Is(ErrMalformedTrust)", err)
 	}
 }
@@ -198,10 +198,10 @@ func TestFetchTransportError(t *testing.T) {
 	if err == nil {
 		t.Fatal("Fetch against a closed endpoint should error")
 	}
-	if errors.Is(err, ErrMalformedTrust) {
+	if errors.Is(err, ErrMalformedTrust()) {
 		t.Errorf("transport error must not be ErrMalformedTrust: %v", err)
 	}
-	if errors.Is(err, ErrNoTrustAdvertised) {
+	if errors.Is(err, ErrNoTrustAdvertised()) {
 		t.Errorf("a connect failure is a transport error, not a 404: %v", err)
 	}
 }

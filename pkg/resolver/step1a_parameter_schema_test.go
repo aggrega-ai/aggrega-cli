@@ -45,7 +45,7 @@ spec:
 	if !errors.As(err, &re) {
 		t.Fatalf("expected *ResolverError, got %T: %v", err, err)
 	}
-	if !errors.Is(err, ErrYAMLLoad) {
+	if !errors.Is(err, ErrYAMLLoad()) {
 		t.Errorf("expected ErrYAMLLoad sentinel; got %v", err)
 	}
 }
@@ -77,7 +77,7 @@ spec:
 	if err == nil {
 		t.Fatalf("expected envelope-validation error for non-integer minLength; got nil")
 	}
-	if !errors.Is(err, ErrYAMLLoad) {
+	if !errors.Is(err, ErrYAMLLoad()) {
 		t.Errorf("expected ErrYAMLLoad sentinel; got %v", err)
 	}
 }

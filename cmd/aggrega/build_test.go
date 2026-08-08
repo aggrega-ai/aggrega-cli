@@ -137,7 +137,7 @@ spec:
 	if err == nil {
 		t.Fatal("build returned nil; expected assertion failure")
 	}
-	if !errors.Is(err, renderer.ErrAssertionFailed) {
+	if !errors.Is(err, renderer.ErrAssertionFailed()) {
 		t.Errorf("expected ErrAssertionFailed in chain; got %v", err)
 	}
 	if !chainContains(err, "cli-step4b-smoke-fired") {
@@ -264,7 +264,7 @@ spec:
 	if err != nil {
 		t.Fatalf("verify-determinism build over the deterministic helm guest failed: %v", err)
 	}
-	if errors.Is(err, renderer.ErrRenderNondeterministic) {
+	if errors.Is(err, renderer.ErrRenderNondeterministic()) {
 		t.Fatalf("deterministic guest incorrectly flagged non-deterministic: %v", err)
 	}
 }
@@ -452,7 +452,7 @@ func TestRunBuild_ProvidesContractUnfulfilledHaltsCLI(t *testing.T) {
 	if err == nil {
 		t.Fatal("build returned nil; expected a provides-contract shortfall halt")
 	}
-	if !errors.Is(err, renderer.ErrProvidesContractUnfulfilled) {
+	if !errors.Is(err, renderer.ErrProvidesContractUnfulfilled()) {
 		t.Errorf("expected ErrProvidesContractUnfulfilled in chain; got %v", err)
 	}
 	if !chainContains(err, `"dsn"`) {
@@ -647,7 +647,7 @@ func TestRunBuild_FeatureProvidesContractUnfulfilledHaltsCLI(t *testing.T) {
 	if err == nil {
 		t.Fatal("build returned nil; expected a feature provides-contract shortfall halt")
 	}
-	if !errors.Is(err, renderer.ErrProvidesContractUnfulfilled) {
+	if !errors.Is(err, renderer.ErrProvidesContractUnfulfilled()) {
 		t.Errorf("expected ErrProvidesContractUnfulfilled in chain; got %v", err)
 	}
 	if !chainContains(err, `"dsn"`) {

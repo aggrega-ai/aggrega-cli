@@ -932,7 +932,7 @@ func TestOrderedMapInterface_RoundTripFidelity_DepthBoundExhaustion(t *testing.T
 	if err == nil {
 		t.Fatal("expected ErrOrderedMapDecodeDepthExceeded, got nil")
 	}
-	if !errors.Is(err, ErrOrderedMapDecodeDepthExceeded) {
+	if !errors.Is(err, ErrOrderedMapDecodeDepthExceeded()) {
 		t.Errorf("error chain does not wrap ErrOrderedMapDecodeDepthExceeded: %v", err)
 	}
 }
@@ -1164,7 +1164,7 @@ func TestOrderedMapInterface_YAMLRoundTripFidelity_DepthBoundExhaustion(t *testi
 	if err == nil {
 		t.Fatal("expected ErrOrderedMapDecodeDepthExceeded, got nil")
 	}
-	if !errors.Is(err, ErrOrderedMapDecodeDepthExceeded) {
+	if !errors.Is(err, ErrOrderedMapDecodeDepthExceeded()) {
 		t.Errorf("error chain does not wrap ErrOrderedMapDecodeDepthExceeded: %v", err)
 	}
 }

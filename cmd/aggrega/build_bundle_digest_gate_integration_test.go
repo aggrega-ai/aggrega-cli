@@ -270,7 +270,7 @@ func TestIntegration_BuildBundleDigestGate(t *testing.T) {
 		}
 
 		berr := dispatchBuild(nil, "release.yaml", []string{std}, false, os.Stderr, os.Stdout)
-		if !errors.Is(berr, pluginpath.ErrPluginBundleDigestMismatch) {
+		if !errors.Is(berr, pluginpath.ErrPluginBundleDigestMismatch()) {
 			t.Fatalf("a tampered cached bundle must halt with ErrPluginBundleDigestMismatch before instantiation; got: %v", berr)
 		}
 	})
@@ -287,7 +287,7 @@ func TestIntegration_BuildBundleDigestGate(t *testing.T) {
 		overwriteCachedBlobByDigest(t, filepath.Join(cwd, ".aggrega", "cache"), row.Digest, []byte("tampered-wasm-bytes-not-a-module"))
 
 		berr := dispatchBuild(nil, "release.yaml", []string{std}, false, os.Stderr, os.Stdout)
-		if !errors.Is(berr, oci.ErrFetchIntegrity) {
+		if !errors.Is(berr, oci.ErrFetchIntegrity()) {
 			t.Fatalf("a tampered .wasm must halt with ErrFetchIntegrity via the content-digest pin; got: %v", berr)
 		}
 	})

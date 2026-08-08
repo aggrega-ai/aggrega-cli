@@ -470,7 +470,7 @@ func validateStepInput(export wasm.PluginExport, payload []byte, step types.Pipe
 	}
 	if err := wasm.ValidateValueAgainstSchema(export.Input, in.StepInput); err != nil {
 		return fmt.Errorf("pipeline step %q `with` input does not satisfy the declared input contract: %w: %w",
-			step.ID, err, frp.ErrPipelineContractViolation)
+			step.ID, err, frp.ErrPipelineContractViolation())
 	}
 	return nil
 }
@@ -492,7 +492,7 @@ func validateStepOutput(export wasm.PluginExport, raw []byte, step types.Pipelin
 	}
 	if err := wasm.ValidateValueAgainstSchema(export.Output, out.Outputs); err != nil {
 		return fmt.Errorf("pipeline step %q returned outputs that do not satisfy the declared output contract: %w: %w",
-			step.ID, err, frp.ErrPipelineContractViolation)
+			step.ID, err, frp.ErrPipelineContractViolation())
 	}
 	return nil
 }
@@ -795,28 +795,28 @@ func sideEffectName(se frp.SideEffect, idx int) string {
 // hostless step becomes ErrPipelineHostScopeUnavailable; any other walk
 // failure is wrapped as a catalog error naming the node.
 func mapWalkError(err error, nodeID string, hasHost bool) error {
-	if errors.Is(err, frp.ErrPipelineTargetOpaque) {
+	if errors.Is(err, frp.ErrPipelineTargetOpaque()) {
 		// The codec declined a tree-view for the addressed unit; the guest
 		// addressed it with a PATCH anyway. Chain the walk's cause so both
 		// sentinels stay matchable via errors.Is.
-		inner := fmt.Errorf("%w: %w", ErrPipelinePatchTargetNotStructured, err)
+		inner := fmt.Errorf("%w: %w", ErrPipelinePatchTargetNotStructured(), err)
 		return cerrors.Wrap(inner, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID},
-			fmt.Sprintf("node %q: %s", nodeID, ErrPipelinePatchTargetNotStructured.Error()))
+			fmt.Sprintf("node %q: %s", nodeID, ErrPipelinePatchTargetNotStructured().Error()))
 	}
-	if errors.Is(err, frp.ErrPipelineTargetAbsent) {
+	if errors.Is(err, frp.ErrPipelineTargetAbsent()) {
 		// A boundary-scope / hostless step that addressed /host surfaces here as
 		// an absent target on the empty Host root; report the precise host-scope
 		// diagnostic when the step had no host component. Chain the walk's cause
 		// (two %w verbs) so both the renderer sentinel and the walk's
 		// ErrPipelineTargetAbsent stay matchable via errors.Is.
 		if !hasHost && mentionsHostScope(err) {
-			inner := fmt.Errorf("%w: %w", ErrPipelineHostScopeUnavailable, err)
+			inner := fmt.Errorf("%w: %w", ErrPipelineHostScopeUnavailable(), err)
 			return cerrors.Wrap(inner, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID},
-				fmt.Sprintf("node %q: %s", nodeID, ErrPipelineHostScopeUnavailable.Error()))
+				fmt.Sprintf("node %q: %s", nodeID, ErrPipelineHostScopeUnavailable().Error()))
 		}
-		inner := fmt.Errorf("%w: %w", ErrPipelineTargetNotEmitted, err)
+		inner := fmt.Errorf("%w: %w", ErrPipelineTargetNotEmitted(), err)
 		return cerrors.Wrap(inner, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID},
-			fmt.Sprintf("node %q: %s", nodeID, ErrPipelineTargetNotEmitted.Error()))
+			fmt.Sprintf("node %q: %s", nodeID, ErrPipelineTargetNotEmitted().Error()))
 	}
 	return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID},
 		fmt.Sprintf("node %q: pipeline step failed", nodeID))
@@ -836,14 +836,14 @@ func wrapPipelineErr(err error, nodeID string) error {
 }
 
 func pipelineNotStructuredErr(nodeID, token string) error {
-	return cerrors.Wrap(ErrPipelinePatchTargetNotStructured, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID},
-		fmt.Sprintf("node %q: %s: document %q", nodeID, ErrPipelinePatchTargetNotStructured.Error(), token))
+	return cerrors.Wrap(ErrPipelinePatchTargetNotStructured(), cerrors.CatalogError, cerrors.SourceLocation{File: nodeID},
+		fmt.Sprintf("node %q: %s: document %q", nodeID, ErrPipelinePatchTargetNotStructured().Error(), token))
 }
 
 func pipelinePreAssemblyErr(nodeID, token, scope string) error {
-	return cerrors.Wrap(ErrPipelinePatchPreAssembly, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID},
+	return cerrors.Wrap(ErrPipelinePatchPreAssembly(), cerrors.CatalogError, cerrors.SourceLocation{File: nodeID},
 		fmt.Sprintf("node %q: %s (%s-scope document %q is rendered by an assembler provider; the post-assembly phase re-runs this PATCH once the documents are discrete)",
-			nodeID, ErrPipelinePatchPreAssembly.Error(), scope, token))
+			nodeID, ErrPipelinePatchPreAssembly().Error(), scope, token))
 }
 
 // pipelineOwnOnAssemblerErr is the Loud Guardrail for a deferred own-scope
@@ -857,7 +857,7 @@ func pipelinePreAssemblyErr(nodeID, token, scope string) error {
 // remedies, instead of the bare provider-incompatibility report whose empty
 // provider name reads as a malformed compatibility claim.
 func pipelineOwnOnAssemblerErr(nodeID, stepID string) error {
-	return cerrors.Wrap(ErrPipelinePatchPreAssembly, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID},
+	return cerrors.Wrap(ErrPipelinePatchPreAssembly(), cerrors.CatalogError, cerrors.SourceLocation{File: nodeID},
 		fmt.Sprintf("node %q: own-scope pipeline step %q cannot run on an assembler provider. A component-scope FeatureRecipe's own output is emitted as discrete fragment files and is never assembled, so an own-scope step has no merged document to patch after assembly. Remedy: target a non-assembler provider for the FeatureRecipe's own output, or move the step to /host, or remove it",
 			nodeID, stepID))
 }
@@ -874,12 +874,12 @@ func pipelineProviderIncompatibleErr(nodeID, plugin string, declared []string, s
 	if len(declared) > 0 {
 		declaredList = strings.Join(declared, ", ")
 	}
-	return cerrors.Wrap(ErrPluginProviderIncompatible, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID},
+	return cerrors.Wrap(ErrPluginProviderIncompatible(), cerrors.CatalogError, cerrors.SourceLocation{File: nodeID},
 		fmt.Sprintf("node %q: %s: plugin %q does not list provider %q (the %s-scope provider); declared targets: [%s]",
-			nodeID, ErrPluginProviderIncompatible.Error(), plugin, provider, scope, declaredList))
+			nodeID, ErrPluginProviderIncompatible().Error(), plugin, provider, scope, declaredList))
 }
 
 func pipelineHostScopeErr(nodeID, name string) error {
-	return cerrors.Wrap(ErrPipelineHostScopeUnavailable, cerrors.CatalogError, cerrors.SourceLocation{File: nodeID},
-		fmt.Sprintf("node %q: %s (emit %q)", nodeID, ErrPipelineHostScopeUnavailable.Error(), name))
+	return cerrors.Wrap(ErrPipelineHostScopeUnavailable(), cerrors.CatalogError, cerrors.SourceLocation{File: nodeID},
+		fmt.Sprintf("node %q: %s (emit %q)", nodeID, ErrPipelineHostScopeUnavailable().Error(), name))
 }

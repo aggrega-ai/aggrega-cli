@@ -81,7 +81,7 @@ func TestDispatchEmptyRef(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected ErrReferenceUnresolvable; got nil")
 	}
-	if !errors.Is(err, ErrReferenceUnresolvable) {
+	if !errors.Is(err, ErrReferenceUnresolvable()) {
 		t.Fatalf("expected ErrReferenceUnresolvable; got %v", err)
 	}
 }
@@ -129,7 +129,7 @@ func TestDispatchModeInvalid(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected ErrAmbiguousDispatch; got nil")
 	}
-	if !errors.Is(err, ErrAmbiguousDispatch) {
+	if !errors.Is(err, ErrAmbiguousDispatch()) {
 		t.Fatalf("expected ErrAmbiguousDispatch; got %v", err)
 	}
 }
@@ -258,7 +258,7 @@ bad:
 	if err == nil {
 		t.Fatal("expected ErrUnknownKeyword; got nil")
 	}
-	if !errors.Is(err, ErrUnknownKeyword) {
+	if !errors.Is(err, ErrUnknownKeyword()) {
 		t.Errorf("expected ErrUnknownKeyword; got %v", err)
 	}
 }
@@ -280,7 +280,7 @@ bad:
 	if err == nil {
 		t.Fatal("expected ErrEscapeContentInvalid; got nil")
 	}
-	if !errors.Is(err, ErrEscapeContentInvalid) {
+	if !errors.Is(err, ErrEscapeContentInvalid()) {
 		t.Errorf("expected ErrEscapeContentInvalid; got %v", err)
 	}
 }
@@ -312,7 +312,7 @@ field:
 	if err == nil {
 		t.Fatal("expected ErrEscapeContentInvalid; got nil")
 	}
-	if !errors.Is(err, ErrEscapeContentInvalid) {
+	if !errors.Is(err, ErrEscapeContentInvalid()) {
 		t.Errorf("expected ErrEscapeContentInvalid; got %v", err)
 	}
 }
@@ -334,7 +334,7 @@ field:
 	if err == nil {
 		t.Fatal("expected ErrEscapeContentInvalid; got nil")
 	}
-	if !errors.Is(err, ErrEscapeContentInvalid) {
+	if !errors.Is(err, ErrEscapeContentInvalid()) {
 		t.Errorf("expected ErrEscapeContentInvalid; got %v", err)
 	}
 }
@@ -357,7 +357,7 @@ field:
 	if err == nil {
 		t.Fatal("expected ErrUnknownKeyword; got nil")
 	}
-	if !errors.Is(err, ErrUnknownKeyword) {
+	if !errors.Is(err, ErrUnknownKeyword()) {
 		t.Errorf("expected ErrUnknownKeyword; got %v", err)
 	}
 }

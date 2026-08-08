@@ -403,7 +403,7 @@ func TestResolvePluginVersionTagRoundTrip(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(slot, "blob"), []byte("tampered"), 0o644); err != nil {
 		t.Fatalf("tamper write: %v", err)
 	}
-	if _, err := cachedLookup.ResolvePlugin(artifactURI, version); !errors.Is(err, oci.ErrFetchIntegrity) {
+	if _, err := cachedLookup.ResolvePlugin(artifactURI, version); !errors.Is(err, oci.ErrFetchIntegrity()) {
 		t.Errorf("tampered cache: err = %v; want ErrFetchIntegrity", err)
 	}
 }
@@ -478,7 +478,7 @@ func TestResolvePluginManifestSelfVerify(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(slot, "manifest"), []byte("tampered-manifest"), 0o644); err != nil {
 		t.Fatalf("tamper manifest write: %v", err)
 	}
-	if _, err := offline.ResolvePlugin(artifactURI, version); !errors.Is(err, oci.ErrCachedManifestIntegrity) {
+	if _, err := offline.ResolvePlugin(artifactURI, version); !errors.Is(err, oci.ErrCachedManifestIntegrity()) {
 		t.Errorf("tampered manifest (reuse pin): err = %v; want ErrCachedManifestIntegrity", err)
 	}
 
@@ -563,7 +563,7 @@ func TestResolvePluginManifestAuthorityBeatsForgedContentPin(t *testing.T) {
 		artifactURI: {ResolvedVersion: forgedDigest, Digest: forgedDigest, ManifestDigest: res.ManifestDigest},
 	}}
 	offline := cat.ClosureLookupWithReuse(nil, dir, ".aggrega/cache", nil, nil, reuse)
-	if _, err := offline.ResolvePlugin(artifactURI, version); !errors.Is(err, oci.ErrFetchIntegrity) {
+	if _, err := offline.ResolvePlugin(artifactURI, version); !errors.Is(err, oci.ErrFetchIntegrity()) {
 		t.Errorf("forged content + forged content pin: err = %v; want ErrFetchIntegrity from the manifest-authority check", err)
 	}
 }

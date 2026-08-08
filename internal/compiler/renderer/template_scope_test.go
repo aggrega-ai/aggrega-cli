@@ -179,7 +179,7 @@ func TestEvalTemplate_MistypedKeyUnderClosedPillarHalts(t *testing.T) {
 			if err == nil {
 				t.Fatalf("expected halt, rendered %q at no error", out)
 			}
-			if !errors.Is(err, ErrTemplateUnknownRoot) {
+			if !errors.Is(err, ErrTemplateUnknownRoot()) {
 				t.Errorf("expected ErrTemplateUnknownRoot, got: %v", err)
 			}
 			if !strings.Contains(err.Error(), tc.wantPath) {

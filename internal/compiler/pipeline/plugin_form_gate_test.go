@@ -42,7 +42,7 @@ func TestBuildEntityPluginLookup_EntityOnlyFormGate(t *testing.T) {
 	} {
 		entityConsulted = false
 		_, err := lookup(ref)
-		if !errors.Is(err, pluginpath.ErrPluginEntityNotFound) {
+		if !errors.Is(err, pluginpath.ErrPluginEntityNotFound()) {
 			t.Errorf("lookup(%q): want ErrPluginEntityNotFound; got %v", ref, err)
 		}
 		if err != nil && !strings.Contains(err.Error(), ref) {
@@ -59,7 +59,7 @@ func TestBuildEntityPluginLookup_EntityOnlyFormGate(t *testing.T) {
 	// behavior.
 	entityConsulted = false
 	_, err := lookup("core/helm-renderer:0.4.1")
-	if !errors.Is(err, pluginpath.ErrPluginEntityNotFound) {
+	if !errors.Is(err, pluginpath.ErrPluginEntityNotFound()) {
 		t.Fatalf("a non-existent entity URI should still halt not-found; got %v", err)
 	}
 	if !entityConsulted {

@@ -108,7 +108,7 @@ func TestRegistryAddDuplicateAliasDifferentHost(t *testing.T) {
 	if err == nil {
 		t.Fatal("duplicate alias on a different host should be rejected")
 	}
-	if !errors.Is(err, workspaceconfig.ErrDuplicateRegistryAlias) {
+	if !errors.Is(err, workspaceconfig.ErrDuplicateRegistryAlias()) {
 		t.Errorf("error = %v, want ErrDuplicateRegistryAlias", err)
 	}
 }

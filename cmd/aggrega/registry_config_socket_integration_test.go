@@ -382,7 +382,7 @@ func TestIntegration_ConfigSocketPluginPinning_RoundTrip(t *testing.T) {
 		if err == nil {
 			t.Fatal("build SUCCEEDED with a denying policy socket; the pulled policy guest did not halt the build")
 		}
-		if !errors.Is(err, analyzer.ErrPolicyViolation) {
+		if !errors.Is(err, analyzer.ErrPolicyViolation()) {
 			t.Fatalf("policy halt not errors.Is ErrPolicyViolation: %v", err)
 		}
 		// Attributability: the halt carries the guest's own verdict message, so the

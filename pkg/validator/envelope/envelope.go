@@ -36,9 +36,9 @@ import (
 // ErrEntityEnvelope is the sentinel for a document failing its
 // kind's envelope schema. errors.Is-recoverable at the pipeline
 // boundary.
-const ErrEntityEnvelope aggerrors.Code = "validator-envelope/entity-envelope"
+func ErrEntityEnvelope() error { return errEntityEnvelope }
 
-var _ = aggerrors.Register(ErrEntityEnvelope, aggerrors.Meta{
+var errEntityEnvelope = aggerrors.Register("validator-envelope/entity-envelope", aggerrors.Meta{
 	Message: "document envelope validation failed: correct the document to match its kind's schema",
 })
 
@@ -176,7 +176,7 @@ func (e *Error) Error() string {
 	return b.String()
 }
 
-func (e *Error) Unwrap() error { return ErrEntityEnvelope }
+func (e *Error) Unwrap() error { return ErrEntityEnvelope() }
 
 // envelopeFailure attaches ErrEntityEnvelope to a validation failure that has
 // no per-field findings to report — a document that will not parse, or an
@@ -193,7 +193,7 @@ func (e *envelopeFailure) Error() string { return e.cause.Error() }
 
 // Unwrap reports the cause and the sentinel together, so a caller matching
 // either the specific cause or ErrEntityEnvelope succeeds.
-func (e *envelopeFailure) Unwrap() []error { return []error{e.cause, ErrEntityEnvelope} }
+func (e *envelopeFailure) Unwrap() []error { return []error{e.cause, ErrEntityEnvelope()} }
 
 // ValidateBytes parses raw YAML document bytes, validates the
 // document against kind's embedded schema, and returns the parsed,

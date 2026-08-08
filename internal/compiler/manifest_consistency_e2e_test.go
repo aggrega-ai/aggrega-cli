@@ -31,7 +31,7 @@ func TestManifestImplementsConsistency_HaltsOnMismatch(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected a build halt for the inconsistent Manifest mapping, got nil")
 	}
-	if !errors.Is(err, catalog.ErrManifestImplementsMismatch) {
+	if !errors.Is(err, catalog.ErrManifestImplementsMismatch()) {
 		t.Fatalf("expected ErrManifestImplementsMismatch, got: %v", err)
 	}
 }
@@ -47,7 +47,7 @@ func TestManifestImplementsConsistency_ConsistentManifestUnaffected(t *testing.T
 		ReleasePath:  "testdata/fullstack-app/release.yaml",
 		CatalogPaths: []string{"testdata/fullstack-app/catalog/base", "testdata/fullstack-app/catalog/recipes/helm-synthesized-with-artifacts"},
 	})
-	if errors.Is(err, catalog.ErrManifestImplementsMismatch) {
+	if errors.Is(err, catalog.ErrManifestImplementsMismatch()) {
 		t.Fatalf("consistent Manifest must not trip the implements-consistency halt, got: %v", err)
 	}
 }

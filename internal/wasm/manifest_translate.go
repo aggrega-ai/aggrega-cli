@@ -61,7 +61,7 @@ func translateToManifest(spec PluginSpec) (extism.Manifest, error) {
 func enforceAOTPurityFirewall(manifest extism.Manifest, pluginName string) error {
 	if len(manifest.AllowedHosts) > 0 {
 		return fmt.Errorf("plugin %q declares AllowedHosts %v: %w",
-			pluginName, manifest.AllowedHosts, ErrWasmManifestRejected)
+			pluginName, manifest.AllowedHosts, ErrWasmManifestRejected())
 	}
 	if len(manifest.AllowedPaths) > 0 {
 		paths := make([]string, 0, len(manifest.AllowedPaths))
@@ -70,7 +70,7 @@ func enforceAOTPurityFirewall(manifest extism.Manifest, pluginName string) error
 		}
 		sort.Strings(paths) // deterministic error-message ordering across runs
 		return fmt.Errorf("plugin %q declares AllowedPaths %v: %w",
-			pluginName, paths, ErrWasmManifestRejected)
+			pluginName, paths, ErrWasmManifestRejected())
 	}
 	return nil
 }
@@ -121,8 +121,8 @@ func validateHostFunctionsSubsetCLI(name, typeLabel string, names []string) erro
 func hostFunctionRejection(name, typeLabel, fn string, permitted []string) error {
 	if typeLabel == "" {
 		return fmt.Errorf("plugin %q imports host function %q, which is not permitted; permitted host functions: %v: %w",
-			name, fn, permitted, ErrWasmManifestRejected)
+			name, fn, permitted, ErrWasmManifestRejected())
 	}
 	return fmt.Errorf("plugin %q imports host function %q, which is not permitted for a %s plugin; permitted host functions: %v: %w",
-		name, fn, typeLabel, permitted, ErrWasmManifestRejected)
+		name, fn, typeLabel, permitted, ErrWasmManifestRejected())
 }

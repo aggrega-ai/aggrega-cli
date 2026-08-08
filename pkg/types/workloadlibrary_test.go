@@ -214,7 +214,7 @@ spec:
 	if err == nil {
 		t.Fatal("expected error on non-scalar workload entry; got nil")
 	}
-	if !errors.Is(err, ErrWorkloadEntryNotScalar) {
+	if !errors.Is(err, ErrWorkloadEntryNotScalar()) {
 		t.Errorf("expected ErrWorkloadEntryNotScalar in chain; got %v", err)
 	}
 }

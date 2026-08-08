@@ -26,7 +26,7 @@ func TestBuild_UnnormalizedAggregateFailsLoud(t *testing.T) {
 	agg.Spec.Subsystems = subs
 	rr := &resolver.ResolveResult{Aggregate: agg}
 
-	if _, err := Build(BuildConfig{ResolveResult: rr}); err == nil || !errors.Is(err, ErrUnnormalizedAggregate) {
+	if _, err := Build(BuildConfig{ResolveResult: rr}); err == nil || !errors.Is(err, ErrUnnormalizedAggregate()) {
 		t.Fatalf("non-empty root alongside a default subsystem must fail loud with ErrUnnormalizedAggregate; got %v", err)
 	}
 }

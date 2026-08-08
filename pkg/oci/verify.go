@@ -30,11 +30,11 @@ import (
 func VerifyContentAgainstManifest(manifestBytes, content []byte, expectedMediaType ...string) error {
 	layer, _, err := descriptorFromManifest(manifestBytes, expectedMediaType...)
 	if err != nil {
-		return fmt.Errorf("oci: parse manifest for content verify: %w: %w", err, ErrFetchIntegrity)
+		return fmt.Errorf("oci: parse manifest for content verify: %w: %w", err, ErrFetchIntegrity())
 	}
 	if got := digest.ContentDigest(content); got != layer.Digest.String() {
 		return fmt.Errorf("oci: content digest %s != manifest layer %s: %w",
-			got, layer.Digest.String(), ErrFetchIntegrity)
+			got, layer.Digest.String(), ErrFetchIntegrity())
 	}
 	return nil
 }
@@ -54,11 +54,11 @@ func VerifyContentAgainstManifest(manifestBytes, content []byte, expectedMediaTy
 func VerifyConfigAgainstManifest(manifestBytes, content []byte) error {
 	view, err := parseManifest(manifestBytes)
 	if err != nil {
-		return fmt.Errorf("oci: parse manifest for config verify: %w: %w", err, ErrFetchIntegrity)
+		return fmt.Errorf("oci: parse manifest for config verify: %w: %w", err, ErrFetchIntegrity())
 	}
 	if got := digest.ContentDigest(content); got != view.Config.Digest.String() {
 		return fmt.Errorf("oci: config digest %s != manifest config %s: %w",
-			got, view.Config.Digest.String(), ErrFetchIntegrity)
+			got, view.Config.Digest.String(), ErrFetchIntegrity())
 	}
 	return nil
 }
@@ -76,7 +76,7 @@ func VerifyConfigAgainstManifest(manifestBytes, content []byte) error {
 func VerifyManifestDigest(manifestBytes []byte, pinnedManifestDigest string) error {
 	if got := digest.ContentDigest(manifestBytes); got != pinnedManifestDigest {
 		return fmt.Errorf("oci: cached manifest digest %s != pinned %s: %w",
-			got, pinnedManifestDigest, ErrCachedManifestIntegrity)
+			got, pinnedManifestDigest, ErrCachedManifestIntegrity())
 	}
 	return nil
 }

@@ -203,7 +203,7 @@ func TestSigningKindsUnknownFailsLoudly(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected an unknown signing.kinds entry to be rejected; got nil")
 	}
-	if !errors.Is(err, ErrConfigInvalid) {
+	if !errors.Is(err, ErrConfigInvalid()) {
 		t.Errorf("error should wrap ErrConfigInvalid; got %v", err)
 	}
 	if !strings.Contains(err.Error(), "Bogus") {
@@ -245,7 +245,7 @@ func TestPerRegistrySigningKindsValidated(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected an unknown per-registry signing.kinds entry to be rejected; got nil")
 	}
-	if !errors.Is(err, ErrConfigInvalid) {
+	if !errors.Is(err, ErrConfigInvalid()) {
 		t.Errorf("error should wrap ErrConfigInvalid; got %v", err)
 	}
 	if !strings.Contains(err.Error(), "Bogus") {
@@ -283,7 +283,7 @@ func TestRetiredRegistryKeysRejected(t *testing.T) {
 			if err == nil {
 				t.Fatalf("retired key %q must be rejected; got nil", key)
 			}
-			if !errors.Is(err, ErrConfigInvalid) {
+			if !errors.Is(err, ErrConfigInvalid()) {
 				t.Errorf("rejection of %q should wrap ErrConfigInvalid; got %v", key, err)
 			}
 		})
@@ -338,7 +338,7 @@ func TestSigningPolicyEnvComposesMonotonic(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected an unknown AGGREGA_SIGNING_KINDS entry to be rejected; got nil")
 	}
-	if !errors.Is(err, ErrConfigInvalid) {
+	if !errors.Is(err, ErrConfigInvalid()) {
 		t.Errorf("env unknown-kind error should wrap ErrConfigInvalid; got %v", err)
 	}
 }

@@ -57,7 +57,7 @@ func TestLintAttachmentSlotNearMiss_TypoReported(t *testing.T) {
 	if len(got) != 1 {
 		t.Fatalf("expected exactly 1 advisory; got %d: %v", len(got), got)
 	}
-	if !errors.Is(got[0], ErrAttachmentSlotNearMiss) {
+	if !errors.Is(got[0], ErrAttachmentSlotNearMiss()) {
 		t.Errorf("expected ErrAttachmentSlotNearMiss; got %v", got[0].Err)
 	}
 	// Both spellings must appear, or the author cannot see the pair.

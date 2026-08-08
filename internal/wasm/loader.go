@@ -1178,7 +1178,7 @@ func (p *Plugin) Call(ctx context.Context, funcName string, input []byte) ([]byt
 		// exit is an ordinary status, not an error. The two policies are a
 		// deliberate near-duplicate; keep them distinct, do not unify them.
 		return nil, fmt.Errorf("wasm: plugin %q call to %s invoked proc_exit(%d): %w",
-			p.name, funcName, exitCode, ErrWasmPluginExited)
+			p.name, funcName, exitCode, ErrWasmPluginExited())
 	}
 	return output, nil
 }
@@ -1225,7 +1225,7 @@ func callWithPanicRecovery(pluginName, funcName string, f func() ([]byte, error)
 			return
 		}
 		err = fmt.Errorf("wasm: guest plugin %q panicked in %s: %v: %w",
-			pluginName, funcName, r, ErrWasmGuestPanic)
+			pluginName, funcName, r, ErrWasmGuestPanic())
 	}()
 	return f()
 }

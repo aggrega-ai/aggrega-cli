@@ -126,7 +126,7 @@ func TestVerifyClosurePluginWrongKeyHalts(t *testing.T) {
 	}
 
 	err := verifyClosureSignatures(context.Background(), lf, cl, wsCfg, t.TempDir(), nil, pluginTargetFor(store, "1.0.0"))
-	if !errors.Is(err, signing.ErrSignatureVerificationFailed) {
+	if !errors.Is(err, signing.ErrSignatureVerificationFailed()) {
 		t.Fatalf("want ErrSignatureVerificationFailed, got %v", err)
 	}
 }
@@ -155,7 +155,7 @@ func TestVerifyClosurePluginMissingSignatureHalts(t *testing.T) {
 	}
 
 	err = verifyClosureSignatures(ctx, lf, cl, wsCfg, t.TempDir(), nil, pluginTargetFor(store, "1.0.0"))
-	if !errors.Is(err, signing.ErrNoSignatureFound) {
+	if !errors.Is(err, signing.ErrNoSignatureFound()) {
 		t.Fatalf("want ErrNoSignatureFound, got %v", err)
 	}
 }

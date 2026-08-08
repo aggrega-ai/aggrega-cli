@@ -57,7 +57,7 @@ func TestAcceptReferenceForm_EntityOnly(t *testing.T) {
 			t.Errorf("AcceptReferenceForm(%q, entity-only) = nil; want a rejection", tc.uri)
 			continue
 		}
-		if !errors.Is(err, ErrPluginEntityNotFound) {
+		if !errors.Is(err, ErrPluginEntityNotFound()) {
 			t.Errorf("AcceptReferenceForm(%q, entity-only) must wrap ErrPluginEntityNotFound; got %v", tc.uri, err)
 		}
 		if !strings.Contains(err.Error(), tc.uri) {

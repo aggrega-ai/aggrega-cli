@@ -97,7 +97,7 @@ func TestVerifyNoOCILocationCollision(t *testing.T) {
 		"AIDatastores": schemaLib("AIDatastores"),
 		"AiDatastores": schemaLib("AiDatastores"),
 	}}
-	if err := validateops.VerifyNoOCILocationCollision(bad); !errors.Is(err, oci.ErrOCILocationCollision) {
+	if err := validateops.VerifyNoOCILocationCollision(bad); !errors.Is(err, oci.ErrOCILocationCollision()) {
 		t.Errorf("case-variant identities should collide; got %v", err)
 	}
 }

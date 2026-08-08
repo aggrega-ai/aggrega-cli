@@ -99,7 +99,7 @@ func TestValidateWorkloadAttachments_UndeclaredSlot_Fails(t *testing.T) {
 	w.Containers.Set("main", c)
 
 	err := validator.ValidateWorkloadAttachments(w, slots, "", "", "")
-	if !errors.Is(err, validator.ErrWorkloadFeaturesSchema) {
+	if !errors.Is(err, validator.ErrWorkloadFeaturesSchema()) {
 		t.Fatalf("expected ErrWorkloadFeaturesSchema, got %v", err)
 	}
 	if !strings.Contains(err.Error(), "not-declared") {
@@ -122,7 +122,7 @@ func TestValidateWorkloadAttachments_AsNotInAllowlist_Fails(t *testing.T) {
 	w.Containers.Set("main", c)
 
 	err := validator.ValidateWorkloadAttachments(w, slots, "", "", "")
-	if !errors.Is(err, validator.ErrWorkloadFeaturesSchema) {
+	if !errors.Is(err, validator.ErrWorkloadFeaturesSchema()) {
 		t.Fatalf("expected ErrWorkloadFeaturesSchema, got %v", err)
 	}
 	if !strings.Contains(err.Error(), `"file"`) {
@@ -148,7 +148,7 @@ func TestValidateWorkloadAttachments_BlackboxSlot_Fails(t *testing.T) {
 	w.Containers.Set("main", c)
 
 	err := validator.ValidateWorkloadAttachments(w, slots, "", "", "")
-	if !errors.Is(err, validator.ErrWorkloadFeaturesSchema) {
+	if !errors.Is(err, validator.ErrWorkloadFeaturesSchema()) {
 		t.Fatalf("expected ErrWorkloadFeaturesSchema, got %v", err)
 	}
 	if !strings.Contains(err.Error(), "blackbox") {
@@ -171,7 +171,7 @@ func TestValidateWorkloadAttachments_InitContainerWalked(t *testing.T) {
 	w := &types.Workload{InitContainers: []types.ContainerSpec{c}}
 
 	err := validator.ValidateWorkloadAttachments(w, slots, "", "", "")
-	if !errors.Is(err, validator.ErrWorkloadFeaturesSchema) {
+	if !errors.Is(err, validator.ErrWorkloadFeaturesSchema()) {
 		t.Fatalf("expected ErrWorkloadFeaturesSchema for initContainer ref, got %v", err)
 	}
 	if !strings.Contains(err.Error(), ".initContainers[0]") {
@@ -196,7 +196,7 @@ func TestValidateWorkloadAttachments_MultipleFindings_AllSurfaced(t *testing.T) 
 	w.Containers.Set("main", c)
 
 	err := validator.ValidateWorkloadAttachments(w, slots, "", "", "")
-	if !errors.Is(err, validator.ErrWorkloadFeaturesSchema) {
+	if !errors.Is(err, validator.ErrWorkloadFeaturesSchema()) {
 		t.Fatalf("expected ErrWorkloadFeaturesSchema, got %v", err)
 	}
 	msg := err.Error()

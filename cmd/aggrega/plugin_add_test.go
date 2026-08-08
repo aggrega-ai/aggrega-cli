@@ -615,10 +615,10 @@ func TestResolveLatestPluginVersion_WithdrawalScreening(t *testing.T) {
 
 		var out bytes.Buffer
 		_, err := resolvePluginVersionFromIndexOnly(t, rw, &out)
-		if !errors.Is(err, catalog.ErrAllVersionsRetracted) {
+		if !errors.Is(err, catalog.ErrAllVersionsRetracted()) {
 			t.Fatalf("a fully-withdrawn repository must halt with ErrAllVersionsRetracted; got: %v", err)
 		}
-		if errors.Is(err, oci.ErrFetchNotFound) {
+		if errors.Is(err, oci.ErrFetchNotFound()) {
 			t.Fatalf("a fully-withdrawn repository must NOT report as not-found; got: %v", err)
 		}
 		for _, want := range []string{"1.0.0", "2.0.0", "withdrawn", "also withdrawn"} {
@@ -758,10 +758,10 @@ func TestResolveLatestPluginVersion_FallbackWithdrawalScreening(t *testing.T) {
 		withWithdrawals(t, map[string]string{"1.0.0": "withdrawn", "2.0.0": "also withdrawn"})
 
 		_, err := resolvePluginVersionFromFallback(t, rw, &bytes.Buffer{})
-		if !errors.Is(err, catalog.ErrAllVersionsRetracted) {
+		if !errors.Is(err, catalog.ErrAllVersionsRetracted()) {
 			t.Fatalf("a fully-withdrawn repository must halt with ErrAllVersionsRetracted; got: %v", err)
 		}
-		if errors.Is(err, oci.ErrFetchNotFound) {
+		if errors.Is(err, oci.ErrFetchNotFound()) {
 			t.Fatalf("a fully-withdrawn repository must NOT report as not-found; got: %v", err)
 		}
 		for _, want := range []string{"1.0.0", "2.0.0", "withdrawn", "also withdrawn"} {

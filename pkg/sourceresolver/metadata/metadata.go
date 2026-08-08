@@ -46,13 +46,13 @@ import (
 // ErrCacheMetadataInvalid for the specific cause, or against
 // oci.ErrFetchIntegrity for the fetch-class category.
 //
-// It is deliberately not a coded identity. A coded identity is a
-// string constant, and a string has nothing to unwrap — so expressing
-// this one that way would silently drop the second of the two matches
+// It is deliberately not a coded identity. A coded identity stands on
+// its own with nothing beneath it to unwrap — so expressing this one
+// that way would silently drop the second of the two matches
 // documented above, leaving cache-metadata corruption invisible to
 // every caller that routes on the fetch class. Wrapping is the whole
 // point of this declaration, so the wrapping form is kept.
-var ErrCacheMetadataInvalid = fmt.Errorf("metadata: cache metadata.yaml failed schema validation: %w", oci.ErrFetchIntegrity)
+var ErrCacheMetadataInvalid = fmt.Errorf("metadata: cache metadata.yaml failed schema validation: %w", oci.ErrFetchIntegrity())
 
 var (
 	validatorOnce sync.Once

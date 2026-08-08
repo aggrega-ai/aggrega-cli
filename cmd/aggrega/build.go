@@ -652,12 +652,12 @@ func acquireLockfile(rw *workspaceconfig.ResolvedWorkspace, releasePath string, 
 	// a missing one cannot be filled here. The offline decision is read from the
 	// egress gate (the sole home of that decision), not from the config field
 	// directly, so this pre-flight and the actual fill cannot diverge.
-	if _, egErr := egress.RoundTripper(wsCfg); stderrors.Is(egErr, egress.ErrOfflineEgress) {
+	if _, egErr := egress.RoundTripper(wsCfg); stderrors.Is(egErr, egress.ErrOfflineEgress()) {
 		if preexisted {
 			return true, nil
 		}
 		return false, fmt.Errorf("aggrega build: lockfile %s missing and workspace is offline; run `aggrega pull --release %s` from a connected environment first: %w",
-			lockfilePath, releasePath, oci.ErrFetchNotFound)
+			lockfilePath, releasePath, oci.ErrFetchNotFound())
 	}
 
 	// build's auto-pull is the opt-in fill: it runs when the --auto-pull flag or

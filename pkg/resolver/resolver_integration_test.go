@@ -38,7 +38,7 @@ func resolveForTest(t *testing.T, cfg ResolveConfig) (*ResolveResult, error) {
 			Entity:  "Aggregate",
 			Field:   cfg.AggregatePath,
 			Message: fmt.Sprintf("failed to read file: %v", err),
-			Err:     ErrYAMLLoad,
+			Err:     ErrYAMLLoad(),
 		}
 	}
 	var captured *ResolveResult
@@ -162,11 +162,11 @@ func TestResolve_Integration(t *testing.T) {
 			// instance-name validator still guards constructed inputs.
 			name:     "dot in instance name fails the document envelope",
 			fixtures: "bad-name",
-			wantErr:  envelope.ErrEntityEnvelope,
+			wantErr:  envelope.ErrEntityEnvelope(),
 		},
 		{
 			name:    "missing aggregate file produces ErrYAMLLoad",
-			wantErr: ErrYAMLLoad,
+			wantErr: ErrYAMLLoad(),
 			validate: func(t *testing.T, result *ResolveResult) {
 				// Should not reach here — wantErr is set
 			},
@@ -191,7 +191,7 @@ func TestResolve_Integration(t *testing.T) {
 		{
 			name:     "typed parameters fail enum + range constraints at Step 1a",
 			fixtures: "typed-params-fail",
-			wantErr:  ErrParameterContractViolation,
+			wantErr:  ErrParameterContractViolation(),
 		},
 	}
 

@@ -43,7 +43,7 @@ spec:
 func TestLoadRelease_DuplicateBoundaryComponentHalts(t *testing.T) {
 	t.Parallel()
 	_, err := LoadReleaseFromBytes([]byte(dupBoundaryRelease), "release.yaml")
-	if !errors.Is(err, ErrDuplicateBoundaryComponent) {
+	if !errors.Is(err, ErrDuplicateBoundaryComponent()) {
 		t.Fatalf("want ErrDuplicateBoundaryComponent; got %v", err)
 	}
 	for _, want := range []string{`"api"`, `"outer"`, `"outer/inner"`, "release.yaml"} {
@@ -85,7 +85,7 @@ spec:
         api: {}
 `
 	_, err := LoadReleaseFromBytes([]byte(siblings), "release.yaml")
-	if !errors.Is(err, ErrDuplicateBoundaryComponent) {
+	if !errors.Is(err, ErrDuplicateBoundaryComponent()) {
 		t.Fatalf("want ErrDuplicateBoundaryComponent for sibling boundaries; got %v", err)
 	}
 	for _, want := range []string{`"left"`, `"right"`} {

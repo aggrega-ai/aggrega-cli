@@ -54,7 +54,7 @@ func TestReadCachedMissReturnsErrFetchNotFound(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected cache miss error; got nil")
 	}
-	if !errors.Is(err, oci.ErrFetchNotFound) {
+	if !errors.Is(err, oci.ErrFetchNotFound()) {
 		t.Errorf("error should wrap ErrFetchNotFound; got %v", err)
 	}
 }
@@ -87,7 +87,7 @@ func TestReadCachedManifestMissReturnsErrFetchNotFound(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected manifest cache miss error; got nil")
 	}
-	if !errors.Is(err, oci.ErrFetchNotFound) {
+	if !errors.Is(err, oci.ErrFetchNotFound()) {
 		t.Errorf("error should wrap ErrFetchNotFound; got %v", err)
 	}
 }

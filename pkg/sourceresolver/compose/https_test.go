@@ -111,7 +111,7 @@ func TestComposeResolve404WrapsNotFound(t *testing.T) {
 		WorkspaceRoot: t.TempDir(),
 		CacheDir:      ".aggrega/cache",
 	})
-	if !errors.Is(err, sourceresolver.ErrFetchNotFound) {
+	if !errors.Is(err, sourceresolver.ErrFetchNotFound()) {
 		t.Errorf("error should wrap ErrFetchNotFound; got %v", err)
 	}
 }
@@ -131,7 +131,7 @@ func TestComposeResolve401WrapsUnauthorized(t *testing.T) {
 		WorkspaceRoot: t.TempDir(),
 		CacheDir:      ".aggrega/cache",
 	})
-	if !errors.Is(err, sourceresolver.ErrFetchUnauthorized) {
+	if !errors.Is(err, sourceresolver.ErrFetchUnauthorized()) {
 		t.Errorf("error should wrap ErrFetchUnauthorized; got %v", err)
 	}
 }
@@ -147,7 +147,7 @@ func TestComposeResolveConnectionRefusedWrapsNetwork(t *testing.T) {
 		WorkspaceRoot: t.TempDir(),
 		CacheDir:      ".aggrega/cache",
 	})
-	if !errors.Is(err, sourceresolver.ErrFetchNetworkUnreachable) {
+	if !errors.Is(err, sourceresolver.ErrFetchNetworkUnreachable()) {
 		t.Errorf("error should wrap ErrFetchNetworkUnreachable; got %v", err)
 	}
 }

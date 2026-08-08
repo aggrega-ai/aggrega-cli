@@ -92,15 +92,15 @@ func pushPlugin(out io.Writer, cfg pushConfig, registry string, wantSign bool, n
 		MaxMemoryPages: crossCheckMaxPages,
 		Entity:         resolver.PluginEntityInputs(entity),
 	})
-	if errors.Is(err, wasm.ErrWasmCommandsMirrorMismatch) {
+	if errors.Is(err, wasm.ErrWasmCommandsMirrorMismatch()) {
 		return fmt.Errorf("aggrega push: Plugin %s: spec.commands in %s is out of sync with the .wasm at %s — re-run `aggrega plugin sync %s --plugin %s` and commit the result before publishing: %w",
 			entityIdentity, entityPath, cfg.PluginPath, entityPath, cfg.PluginPath, err)
 	}
-	if errors.Is(err, wasm.ErrWasmHostFunctionsStampMismatch) {
+	if errors.Is(err, wasm.ErrWasmHostFunctionsStampMismatch()) {
 		return fmt.Errorf("aggrega push: Plugin %s: spec.runtime.hostFunctions in %s is out of sync with the .wasm at %s — re-run `aggrega plugin sync %s --plugin %s` and commit the result before publishing: %w",
 			entityIdentity, entityPath, cfg.PluginPath, entityPath, cfg.PluginPath, err)
 	}
-	if errors.Is(err, wasm.ErrWasmPluginVersionMismatch) {
+	if errors.Is(err, wasm.ErrWasmPluginVersionMismatch()) {
 		return fmt.Errorf("aggrega push: Plugin %s: metadata.version in %s does not match the .wasm describe() version at %s — set metadata.version to the guest's build version (regenerate with `aggrega plugin gen-catalog --plugin`) before publishing: %w",
 			entityIdentity, entityPath, cfg.PluginPath, err)
 	}
@@ -185,7 +185,7 @@ func pushPlugin(out io.Writer, cfg pushConfig, registry string, wantSign bool, n
 			return nil
 		}
 		return fmt.Errorf("aggrega push: %s:%s is already published as %s; refusing to overwrite with %s — publish a new version (aggrega lint --pre-publish verifies the bump): %w",
-			reference, version, existingDigest, proposedDigest, oci.ErrImmutableTagConflict)
+			reference, version, existingDigest, proposedDigest, oci.ErrImmutableTagConflict())
 	}
 
 	// Sign-before-push: when signing is requested, sign the proposed manifest

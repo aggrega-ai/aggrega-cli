@@ -542,7 +542,7 @@ func (e *Engine) verifyRenderDeterminism(ctx context.Context, plugin *wasm.Plugi
 	if !bytes.Equal(first, second) {
 		return fmt.Errorf(
 			"wasmengine: node %q (provider %q): two renders of identical input produced different output: %w",
-			node.ID, node.Provenance.ProviderName, renderer.ErrRenderNondeterministic)
+			node.ID, node.Provenance.ProviderName, renderer.ErrRenderNondeterministic())
 	}
 	return nil
 }

@@ -199,7 +199,7 @@ func buildCorpusRows() []buildRow {
 		// unknown-key violation the lint table asserts via lintCatalogWide.
 		// Build (catalog load) + lint together evidence the one gate across
 		// the two surfaces that take a catalog-entity subject. ---
-		{name: "xsurface-component-unknown-key", want: envelope.ErrEntityEnvelope, mutate: func(wf *workspaceFiles) {
+		{name: "xsurface-component-unknown-key", want: envelope.ErrEntityEnvelope(), mutate: func(wf *workspaceFiles) {
 			wf.component = `apiVersion: aggrega.ai/v1alpha1
 kind: Component
 metadata:
@@ -218,7 +218,7 @@ spec:
 		// component-infra envelope violation the serve row asserts as a
 		// daemon diagnostic. Build + serve together evidence the one gate
 		// across the two surfaces that take an Aggregate subject. ---
-		{name: "xsurface-aggregate-component-infra", want: envelope.ErrEntityEnvelope, mutate: func(wf *workspaceFiles) {
+		{name: "xsurface-aggregate-component-infra", want: envelope.ErrEntityEnvelope(), mutate: func(wf *workspaceFiles) {
 			wf.aggregate = `apiVersion: aggrega.ai/v1alpha1
 kind: Aggregate
 metadata:
@@ -236,7 +236,7 @@ spec:
 		// Default-scopes mutual exclusivity (Aggregate side, symmetric to the
 		// Release XOR): top-level components AND named subsystems both non-empty
 		// is rejected at the envelope gate's not/allOf. No new sentinel.
-		{name: "aggregate-components-and-subsystems-both", want: envelope.ErrEntityEnvelope, mutate: func(wf *workspaceFiles) {
+		{name: "aggregate-components-and-subsystems-both", want: envelope.ErrEntityEnvelope(), mutate: func(wf *workspaceFiles) {
 			wf.aggregate = `apiVersion: aggrega.ai/v1alpha1
 kind: Aggregate
 metadata:
@@ -255,7 +255,7 @@ spec:
           type: core/server
 `
 		}},
-		{name: "aggregate-unknown-spec-key", want: envelope.ErrEntityEnvelope, mutate: func(wf *workspaceFiles) {
+		{name: "aggregate-unknown-spec-key", want: envelope.ErrEntityEnvelope(), mutate: func(wf *workspaceFiles) {
 			wf.aggregate = `apiVersion: aggrega.ai/v1alpha1
 kind: Aggregate
 metadata:
@@ -270,7 +270,7 @@ spec:
         port: 8080
 `
 		}},
-		{name: "manifest-missing-required-mappings", want: envelope.ErrEntityEnvelope, mutate: func(wf *workspaceFiles) {
+		{name: "manifest-missing-required-mappings", want: envelope.ErrEntityEnvelope(), mutate: func(wf *workspaceFiles) {
 			wf.manifest = `apiVersion: aggrega.ai/v1alpha1
 kind: Manifest
 metadata:
@@ -279,14 +279,14 @@ metadata:
 spec: {}
 `
 		}},
-		{name: "release-unknown-spec-key", want: envelope.ErrEntityEnvelope, mutate: func(wf *workspaceFiles) {
+		{name: "release-unknown-spec-key", want: envelope.ErrEntityEnvelope(), mutate: func(wf *workspaceFiles) {
 			wf.release = injectReleaseSpecKey()
 		}},
 		// Default-scopes mutual exclusivity: a Release declaring BOTH a
 		// top-level components surface AND named boundaries is rejected at the
 		// envelope gate (the schema's not/allOf XOR). No new sentinel — the
 		// envelope reject carries it.
-		{name: "release-components-and-boundaries-both", want: envelope.ErrEntityEnvelope, mutate: func(wf *workspaceFiles) {
+		{name: "release-components-and-boundaries-both", want: envelope.ErrEntityEnvelope(), mutate: func(wf *workspaceFiles) {
 			wf.release = `apiVersion: aggrega.ai/v1alpha1
 kind: Release
 metadata:
@@ -310,7 +310,7 @@ spec:
 `
 		}},
 		// --- Invariant-5 ban set (permanent rows, each loud) ---
-		{name: "inv5-release-values-on-boundary-component", want: envelope.ErrEntityEnvelope, mutate: func(wf *workspaceFiles) {
+		{name: "inv5-release-values-on-boundary-component", want: envelope.ErrEntityEnvelope(), mutate: func(wf *workspaceFiles) {
 			wf.release = `apiVersion: aggrega.ai/v1alpha1
 kind: Release
 metadata:
@@ -329,7 +329,7 @@ spec:
             port: 9999
 `
 		}},
-		{name: "inv5-release-aggregate-with-extends", want: envelope.ErrEntityEnvelope, mutate: func(wf *workspaceFiles) {
+		{name: "inv5-release-aggregate-with-extends", want: envelope.ErrEntityEnvelope(), mutate: func(wf *workspaceFiles) {
 			wf.release = `apiVersion: aggrega.ai/v1alpha1
 kind: Release
 metadata:
@@ -348,7 +348,7 @@ spec:
             replicas: 1
 `
 		}},
-		{name: "inv5-release-values-on-edge", want: envelope.ErrEntityEnvelope, mutate: func(wf *workspaceFiles) {
+		{name: "inv5-release-values-on-edge", want: envelope.ErrEntityEnvelope(), mutate: func(wf *workspaceFiles) {
 			wf.release = `apiVersion: aggrega.ai/v1alpha1
 kind: Release
 metadata:
@@ -373,7 +373,7 @@ spec:
                   protocol: grpc
 `
 		}},
-		{name: "inv5-from-family-on-boundary-component", want: envelope.ErrEntityEnvelope, mutate: func(wf *workspaceFiles) {
+		{name: "inv5-from-family-on-boundary-component", want: envelope.ErrEntityEnvelope(), mutate: func(wf *workspaceFiles) {
 			wf.release = `apiVersion: aggrega.ai/v1alpha1
 kind: Release
 metadata:
@@ -394,7 +394,7 @@ spec:
 `
 		}},
 		// --- pillar (content) gate canary: one row, ErrSchemaConformance ---
-		{name: "pillar-canary-value-type-mismatch", want: resolver.ErrSchemaConformance, mutate: func(wf *workspaceFiles) {
+		{name: "pillar-canary-value-type-mismatch", want: resolver.ErrSchemaConformance(), mutate: func(wf *workspaceFiles) {
 			// port is declared integer; author a string. Envelope passes
 			// (values is an open map); the Step-1 content gate rejects.
 			wf.aggregate = `apiVersion: aggrega.ai/v1alpha1

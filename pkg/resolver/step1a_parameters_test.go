@@ -66,7 +66,7 @@ func TestStep1a_FailsOnTypeMismatch(t *testing.T) {
 	if len(errs) != 1 {
 		t.Fatalf("expected 1 error; got %d: %v", len(errs), errs)
 	}
-	if !errors.Is(errs[0], ErrParameterContractViolation) {
+	if !errors.Is(errs[0], ErrParameterContractViolation()) {
 		t.Errorf("expected ErrParameterContractViolation; got %v", errs[0])
 	}
 	if !strings.Contains(errs[0].Message, "expected type integer") {
@@ -85,7 +85,7 @@ func TestStep1a_FailsOnEnumMiss(t *testing.T) {
 	)
 	params := map[string]any{"env": "production"}
 	errs := ValidateParametersAgainstContract(contract, params, "test.yaml")
-	if len(errs) != 1 || !errors.Is(errs[0], ErrParameterContractViolation) {
+	if len(errs) != 1 || !errors.Is(errs[0], ErrParameterContractViolation()) {
 		t.Fatalf("expected one ErrParameterContractViolation; got %v", errs)
 	}
 }
@@ -135,7 +135,7 @@ func TestStep1a_FailsOnMissingRequired(t *testing.T) {
 	)
 	params := map[string]any{}
 	errs := ValidateParametersAgainstContract(contract, params, "test.yaml")
-	if len(errs) != 1 || !errors.Is(errs[0], ErrParameterMissing) {
+	if len(errs) != 1 || !errors.Is(errs[0], ErrParameterMissing()) {
 		t.Fatalf("expected ErrParameterMissing; got %v", errs)
 	}
 }
@@ -176,7 +176,7 @@ func TestStep1a_ShorthandRejected(t *testing.T) {
 			if len(errs) == 0 {
 				t.Fatalf("expected shorthand-rejection error; got none")
 			}
-			if !errors.Is(errs[0], ErrParameterContractViolation) {
+			if !errors.Is(errs[0], ErrParameterContractViolation()) {
 				t.Errorf("expected ErrParameterContractViolation; got %v", errs[0])
 			}
 			if !strings.Contains(errs[0].Message, "typed-contract form") {
@@ -228,7 +228,7 @@ func TestStep1a_ClosedContractRejectsUndeclared(t *testing.T) {
 	)
 	params := map[string]any{"port": 8080, "rogue": "value"}
 	errs := ValidateParametersAgainstContract(contract, params, "test.yaml")
-	if len(errs) != 1 || !errors.Is(errs[0], ErrParameterContractViolation) {
+	if len(errs) != 1 || !errors.Is(errs[0], ErrParameterContractViolation()) {
 		t.Fatalf("expected one ErrParameterContractViolation for undeclared key; got %v", errs)
 	}
 	if !strings.Contains(errs[0].Message, "rogue") {
@@ -350,7 +350,7 @@ func TestStep1a_NestedPropertiesRecursion(t *testing.T) {
 		},
 	}
 	errs = ValidateParametersAgainstContract(contract, missingHost, "test.yaml")
-	if len(errs) != 1 || !errors.Is(errs[0], ErrParameterMissing) {
+	if len(errs) != 1 || !errors.Is(errs[0], ErrParameterMissing()) {
 		t.Errorf("missing-host: expected ErrParameterMissing; got %v", errs)
 	}
 }
@@ -435,7 +435,7 @@ func TestAggregateParameterViolations_MultiViolation(t *testing.T) {
 	if multi.Field != ".spec.parameters" {
 		t.Errorf("MultiResolverError Field = %q; want %q", multi.Field, ".spec.parameters")
 	}
-	if !errors.Is(err, ErrParameterContractViolation) {
+	if !errors.Is(err, ErrParameterContractViolation()) {
 		t.Errorf("aggregated error not ErrParameterContractViolation: %v", err)
 	}
 

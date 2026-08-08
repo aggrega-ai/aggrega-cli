@@ -128,7 +128,7 @@ func resolveEntitySource(input RendererInput, source any, locals types.OrderedMa
 		if lfrec, found := lockfileSourceRecord(input.Lockfile, spec.Kind, spec.URL, spec.Chart, spec.Version); found {
 			if pin.Digest != lfrec.Digest || pin.ManifestDigest != lfrec.ManifestDigest {
 				return nil, fmt.Errorf("source-artifact %s@%s: recipe pin (digest %s) disagrees with lockfile record (digest %s): %w",
-					spec.URL, spec.Version, pin.Digest, lfrec.Digest, oci.ErrFetchIntegrity)
+					spec.URL, spec.Version, pin.Digest, lfrec.Digest, oci.ErrFetchIntegrity())
 			}
 		}
 	}

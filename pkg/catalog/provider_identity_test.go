@@ -123,7 +123,7 @@ func TestLoad_SameProviderDuplicateHalts(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected duplicate-identity halt")
 	}
-	if !errors.Is(err, ErrDuplicateRecipeIdentity) {
+	if !errors.Is(err, ErrDuplicateRecipeIdentity()) {
 		t.Errorf("errors.Is(ErrDuplicateRecipeIdentity) = false; err = %v", err)
 	}
 	// The qualified identity is carried by the frame that wraps the

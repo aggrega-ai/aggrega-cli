@@ -225,7 +225,7 @@ func TestLocalsIdentity_BaseRecipeRefusesAttachmentName(t *testing.T) {
 	if err == nil {
 		t.Fatal("a base Recipe local reading .attachment_name must halt, not render empty")
 	}
-	if !errors.Is(err, ErrTemplateUnknownRoot) {
+	if !errors.Is(err, ErrTemplateUnknownRoot()) {
 		t.Errorf("expected the unknown-reference halt, got: %v", err)
 	}
 	if !strings.Contains(diagnosticChainText(err), ".attachment_name") {
@@ -237,7 +237,7 @@ func TestLocalsIdentity_BaseRecipeRefusesAttachmentName(t *testing.T) {
 	wrapped := types.OrderedMap[string]{}
 	wrapped.Set("who", `{{ default "x" .attachment_name }}`)
 	if _, err := EvaluateRecipeLocals(recipeWith(wrapped), identityHostID,
-		types.OrderedMap[any]{}, types.OrderedMap[any]{}); !errors.Is(err, ErrTemplateUnknownRoot) {
+		types.OrderedMap[any]{}, types.OrderedMap[any]{}); !errors.Is(err, ErrTemplateUnknownRoot()) {
 		t.Errorf("a wrapped .attachment_name must halt on the base surface too, got: %v", err)
 	}
 }
@@ -261,7 +261,7 @@ func TestLocalsIdentity_RecipeSourceRefusesAttachmentName(t *testing.T) {
 		`oci://example.test/charts/{{ .attachment_name }}:1.0.0`, identityHostID,
 		types.OrderedMap[any]{}, types.OrderedMap[any]{}, types.OrderedMap[string]{},
 	)
-	if !errors.Is(err, ErrTemplateUnknownRoot) {
+	if !errors.Is(err, ErrTemplateUnknownRoot()) {
 		t.Errorf("a source template reading .attachment_name must halt, got: %v", err)
 	}
 }

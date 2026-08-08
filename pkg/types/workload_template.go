@@ -14,9 +14,9 @@ import (
 // carries a shape outside the documented modes: not a string scalar;
 // not a mapping with a single `$import:` key; or a mapping with extra
 // siblings beyond `$import:`.
-const ErrWorkloadTemplateShape cerrors.Code = "types/workload-template-shape"
+func ErrWorkloadTemplateShape() error { return errWorkloadTemplateShape }
 
-var _ = cerrors.Register(ErrWorkloadTemplateShape, cerrors.Meta{
+var errWorkloadTemplateShape = cerrors.Register("types/workload-template-shape", cerrors.Meta{
 	Message: "workload: shape must be a string scalar or {$import: <path-or-library-identity>}",
 })
 
@@ -77,7 +77,7 @@ func (w WorkloadTemplate) HasOCIPrefix() bool {
 
 // UnmarshalYAML dispatches via the shared unmarshalImportable helper.
 func (w *WorkloadTemplate) UnmarshalYAML(node *yaml.Node) error {
-	inline, importTarget, err := unmarshalImportable(node, ErrWorkloadTemplateShape)
+	inline, importTarget, err := unmarshalImportable(node, ErrWorkloadTemplateShape())
 	if err != nil {
 		return err
 	}

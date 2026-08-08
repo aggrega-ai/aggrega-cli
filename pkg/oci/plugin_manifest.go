@@ -155,10 +155,10 @@ func FetchPluginEntity(ctx context.Context, target oras.ReadOnlyTarget, tag stri
 	manifestDesc, err := target.Resolve(ctx, tag)
 	if err != nil {
 		if errors.Is(err, errdef.ErrNotFound) {
-			return nil, fmt.Errorf("oci: %q: %w", tag, ErrFetchNotFound)
+			return nil, fmt.Errorf("oci: %q: %w", tag, ErrFetchNotFound())
 		}
 		if isUnauthorized(err) {
-			return nil, fmt.Errorf("oci: resolve %q: %v: %w", tag, err, ErrFetchUnauthorized)
+			return nil, fmt.Errorf("oci: resolve %q: %v: %w", tag, err, ErrFetchUnauthorized())
 		}
 		return nil, fmt.Errorf("oci: resolve %q: %w", tag, err)
 	}

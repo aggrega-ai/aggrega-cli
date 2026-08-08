@@ -83,7 +83,7 @@ func TestStep5b_RecipeAssertionFailsHaltsBuild(t *testing.T) {
 		NodeProvides{},
 		NodeLocals{},
 	)
-	if err == nil || !errors.Is(err, ErrAssertionFailed) {
+	if err == nil || !errors.Is(err, ErrAssertionFailed()) {
 		t.Fatalf("expected ErrAssertionFailed; got %v", err)
 	}
 	for _, want := range []string{"helm-server", "web", "replicas-positive", "chart requires replicas >= 1"} {
@@ -332,7 +332,7 @@ func TestStep5b_FeatureRecipeAssertionFailsHaltsBuild(t *testing.T) {
 		NodeProvides{},
 		NodeLocals{},
 	)
-	if err == nil || !errors.Is(err, ErrAssertionFailed) {
+	if err == nil || !errors.Is(err, ErrAssertionFailed()) {
 		t.Fatalf("expected ErrAssertionFailed; got %v", err)
 	}
 	if !strings.Contains(err.Error(), "audit-fr") {

@@ -162,7 +162,7 @@ func Verify(ctx context.Context, entities []Entity, opts Options) ([]Result, err
 
 		res, verr := verifyEntity(ctx, opts.Config, e, policy, configured, opts.Target)
 		if verr != nil {
-			if errors.Is(verr, signing.ErrNoSignatureFound) && !requireSignature {
+			if errors.Is(verr, signing.ErrNoSignatureFound()) && !requireSignature {
 				// Unknown / non-mandatory registry, no signature present:
 				// verify-if-present means nothing to verify. Not a failure.
 				continue
@@ -201,7 +201,7 @@ func verifyEntity(ctx context.Context, cfg workspaceconfig.Config, e Entity, pol
 		return nil, fmt.Errorf("list signature referrers: %w", err)
 	}
 	if len(refs) == 0 {
-		return nil, signing.ErrNoSignatureFound
+		return nil, signing.ErrNoSignatureFound()
 	}
 
 	// Verify the entity's content digest against any attached signature.
@@ -223,7 +223,7 @@ func verifyEntity(ctx context.Context, cfg workspaceconfig.Config, e Entity, pol
 		lastErr = verr
 	}
 	if lastErr == nil {
-		lastErr = signing.ErrSignatureVerificationFailed
+		lastErr = signing.ErrSignatureVerificationFailed()
 	}
 	return nil, lastErr
 }

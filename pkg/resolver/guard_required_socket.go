@@ -104,7 +104,7 @@ func ValidateRequiredSockets(comp types.Component, instanceName, componentField 
 			Entity:  fmt.Sprintf("Component %q (instance %q)", comp.Metadata.Name, instanceName),
 			Field:   fmt.Sprintf("%s.uses[%q]", componentField, socketName),
 			Message: fmt.Sprintf("required uses socket %q has no entries in component %q", socketName, instanceName),
-			Err:     ErrMissingRequiredSocket,
+			Err:     ErrMissingRequiredSocket(),
 		})
 	}
 	return errs

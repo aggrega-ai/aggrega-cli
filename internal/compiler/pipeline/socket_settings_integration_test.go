@@ -85,7 +85,7 @@ func TestPolicySocketSettingsViolationE2E(t *testing.T) {
 			if err == nil {
 				t.Fatalf("violating settings %v: expected a halt, got nil", tc.settings)
 			}
-			if !errors.Is(err, pipeline.ErrPolicySettingsInvalid) {
+			if !errors.Is(err, pipeline.ErrPolicySettingsInvalid()) {
 				t.Fatalf("halt not errors.Is ErrPolicySettingsInvalid: %v", err)
 			}
 			if !strings.Contains(err.Error(), tc.wantKey) {

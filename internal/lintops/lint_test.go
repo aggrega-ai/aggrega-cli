@@ -275,7 +275,7 @@ func TestResolvePluginBytesOCIUnresolvable(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for uncached OCI artifact; got nil")
 	}
-	if !errors.Is(err, oci.ErrFetchNotFound) {
+	if !errors.Is(err, oci.ErrFetchNotFound()) {
 		t.Errorf("error should wrap the not-found sentinel; got: %v", err)
 	}
 }
@@ -297,7 +297,7 @@ func TestResolvePluginBytesEntityNotFound(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for a non-entity linter URI; got nil")
 	}
-	if !errors.Is(err, oci.ErrFetchNotFound) {
+	if !errors.Is(err, oci.ErrFetchNotFound()) {
 		t.Errorf("error should wrap the not-found sentinel; got: %v", err)
 	}
 }

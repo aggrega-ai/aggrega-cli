@@ -100,14 +100,14 @@ func TestHandleParseSource_ReentryDenied(t *testing.T) {
 		t.Fatalf("seam was invoked on a re-entrant call; the guard must deny before running the producer")
 	}
 	env := lastParseSourceEnvelope(t, writer)
-	if !strings.Contains(env.Error, ErrProducerConsumptionReentry.Error()) {
-		t.Errorf("envelope error = %q; want it to carry the re-entry sentinel message %q", env.Error, ErrProducerConsumptionReentry.Error())
+	if !strings.Contains(env.Error, ErrProducerConsumptionReentry().Error()) {
+		t.Errorf("envelope error = %q; want it to carry the re-entry sentinel message %q", env.Error, ErrProducerConsumptionReentry().Error())
 	}
 	if env.ErrorCode != abi.CodeProducerConsumptionReentry {
 		t.Errorf("error_code = %q; want %q", env.ErrorCode, abi.CodeProducerConsumptionReentry)
 	}
 	warnings := p.DrainWarnings()
-	if len(warnings) != 1 || !strings.Contains(warnings[0], ErrProducerConsumptionReentry.Error()) {
+	if len(warnings) != 1 || !strings.Contains(warnings[0], ErrProducerConsumptionReentry().Error()) {
 		t.Errorf("warnings = %v; want one warning carrying the re-entry message", warnings)
 	}
 }
@@ -125,7 +125,7 @@ func TestHandleParseSource_ReentryBeatsMissingSeam(t *testing.T) {
 	p.handleAggregaParseSource(ctx, reader, writer, []uint64{7})
 
 	env := lastParseSourceEnvelope(t, writer)
-	if !strings.Contains(env.Error, ErrProducerConsumptionReentry.Error()) {
+	if !strings.Contains(env.Error, ErrProducerConsumptionReentry().Error()) {
 		t.Errorf("envelope error = %q; want the re-entry message to win over the missing-seam message", env.Error)
 	}
 }

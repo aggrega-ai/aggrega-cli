@@ -77,7 +77,7 @@ func TestNewHybrid_RoutesTerraform(t *testing.T) {
 	if err == nil {
 		t.Fatal("factory(\"no-such-provider\") succeeded; expected a loud ErrUnknownProvider halt")
 	}
-	if !errors.Is(err, renderer.ErrUnknownProvider) {
+	if !errors.Is(err, renderer.ErrUnknownProvider()) {
 		t.Fatalf("factory(\"no-such-provider\") error = %v, want wrapped renderer.ErrUnknownProvider", err)
 	}
 }

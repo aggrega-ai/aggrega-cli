@@ -108,7 +108,7 @@ func TestEvaluateRecipeSource_RejectsInjectRef(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected self-containment error")
 	}
-	if !errors.Is(err, ErrTemplateUnknownRoot) {
+	if !errors.Is(err, ErrTemplateUnknownRoot()) {
 		t.Errorf("expected the unknown-reference halt, got: %v", err)
 	}
 	if !strings.Contains(diagnosticChainText(err), ".context.inject.env.PATH") {
@@ -136,7 +136,7 @@ func TestEvaluateRecipeSource_RejectsProvidesRef(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected a halt on the reverse reference, got nil")
 	}
-	if !errors.Is(err, ErrTemplateUnknownRoot) {
+	if !errors.Is(err, ErrTemplateUnknownRoot()) {
 		t.Errorf("expected the unknown-reference halt, got: %v", err)
 	}
 	if !strings.Contains(diagnosticChainText(err), ".provides.host") {

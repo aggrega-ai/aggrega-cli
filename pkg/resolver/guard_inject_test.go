@@ -98,7 +98,7 @@ func TestGuardInjectKeys_SelfInjectFromTypoHalts(t *testing.T) {
 	if len(errs) != 1 {
 		t.Fatalf("expected 1 error; got %d (%v)", len(errs), errs)
 	}
-	if !errors.Is(errs[0], ErrInvalidInjectKey) {
+	if !errors.Is(errs[0], ErrInvalidInjectKey()) {
 		t.Errorf("expected ErrInvalidInjectKey; got %v", errs[0].Err)
 	}
 	if !strings.Contains(errs[0].Message, "host") || !strings.Contains(errs[0].Message, "port") {
@@ -230,7 +230,7 @@ func TestGuardInjectKeys_UsesCrossInjectTypoHalts(t *testing.T) {
 	if len(errs) != 1 {
 		t.Fatalf("expected 1 error; got %d (%v)", len(errs), errs)
 	}
-	if !errors.Is(errs[0], ErrInvalidInjectKey) {
+	if !errors.Is(errs[0], ErrInvalidInjectKey()) {
 		t.Errorf("expected ErrInvalidInjectKey; got %v", errs[0].Err)
 	}
 	if !strings.Contains(errs[0].Field, ".uses[\"data\"][\"db\"].inject") {
@@ -310,7 +310,7 @@ func TestGuardInjectKeys_CustomMechanismCovered(t *testing.T) {
 	if len(errs) != 1 {
 		t.Fatalf("expected 1 error; got %d (%v)", len(errs), errs)
 	}
-	if !errors.Is(errs[0], ErrInvalidInjectKey) {
+	if !errors.Is(errs[0], ErrInvalidInjectKey()) {
 		t.Errorf("expected ErrInvalidInjectKey; got %v", errs[0].Err)
 	}
 	if !strings.Contains(errs[0].Field, "ssm_param") {
@@ -347,7 +347,7 @@ func TestGuardInjectKeys_NoProvidesRejectsEveryFrom(t *testing.T) {
 		t.Fatalf("expected 2 errors (every from: rejected); got %d (%v)", len(errs), errs)
 	}
 	for _, e := range errs {
-		if !errors.Is(e, ErrInvalidInjectKey) {
+		if !errors.Is(e, ErrInvalidInjectKey()) {
 			t.Errorf("expected ErrInvalidInjectKey; got %v", e.Err)
 		}
 		if !strings.Contains(e.Message, "no provides keys") {

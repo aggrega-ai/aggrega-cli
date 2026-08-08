@@ -424,7 +424,7 @@ spec:
 	if errNeg == nil {
 		t.Fatal("negative control: build with no mutator succeeded; the feature's appliesTo should be unsatisfied and halt the build")
 	}
-	if !errors.Is(errNeg, analyzer.ErrSelectorViolation) {
+	if !errors.Is(errNeg, analyzer.ErrSelectorViolation()) {
 		t.Fatalf("negative control: want ErrSelectorViolation (the injected label is load-bearing), got: %v", errNeg)
 	}
 	t.Logf("negative control PASS: no mutator -> appliesTo unsatisfied -> build halts with ErrSelectorViolation")

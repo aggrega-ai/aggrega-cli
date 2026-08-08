@@ -318,7 +318,7 @@ func testSentinelPathCollision(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected ErrPathCollision; got %d files rendered", len(res.Files))
 	}
-	if !stderrors.Is(err, renderer.ErrPathCollision) {
+	if !stderrors.Is(err, renderer.ErrPathCollision()) {
 		t.Errorf("expected errors.Is(err, ErrPathCollision); got: %s", joinErrorChain(err))
 	}
 }
@@ -334,9 +334,9 @@ func testSentinelPathCollision(t *testing.T) {
 func testSentinelInstanceIDCollision(t *testing.T) {
 	t.Parallel()
 	inner := fmt.Errorf("%w: dispatch path %q provider %q already contains node %q",
-		renderer.ErrInstanceIDCollision, "dist/shared", "helm", "api")
+		renderer.ErrInstanceIDCollision(), "dist/shared", "helm", "api")
 	wrapped := cerrors.Wrap(inner, cerrors.TranslationError, cerrors.SourceLocation{}, inner.Error())
-	if !stderrors.Is(wrapped, renderer.ErrInstanceIDCollision) {
+	if !stderrors.Is(wrapped, renderer.ErrInstanceIDCollision()) {
 		t.Errorf("expected errors.Is(wrapped, ErrInstanceIDCollision); got chain: %s", joinErrorChain(wrapped))
 	}
 }
@@ -357,7 +357,7 @@ func testSentinelChartNameMismatch(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected ErrChartNameMismatch; got %d files rendered", len(res.Files))
 	}
-	if !stderrors.Is(err, renderer.ErrChartNameMismatch) {
+	if !stderrors.Is(err, renderer.ErrChartNameMismatch()) {
 		t.Errorf("expected errors.Is(err, ErrChartNameMismatch); got: %s", joinErrorChain(err))
 	}
 }
@@ -376,7 +376,7 @@ func testSentinelFRTemplateInvalidField(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected ErrFRTemplateInvalidField; got %d files rendered", len(res.Files))
 	}
-	if !stderrors.Is(err, renderer.ErrFRTemplateInvalidField) {
+	if !stderrors.Is(err, renderer.ErrFRTemplateInvalidField()) {
 		t.Errorf("expected errors.Is(err, ErrFRTemplateInvalidField); got: %s", joinErrorChain(err))
 	}
 }

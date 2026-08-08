@@ -172,7 +172,7 @@ func TestPinnedRootAnchorSelectedByOrchestrator(t *testing.T) {
 		Config: cfg,
 		Target: e2eTargetFor(store, "1.0.0"),
 	})
-	if !errors.Is(verr, signing.ErrTrustRootLoad) {
+	if !errors.Is(verr, signing.ErrTrustRootLoad()) {
 		t.Fatalf("want ErrTrustRootLoad (pinned-root branch selected, load halts), got %v", verr)
 	}
 }

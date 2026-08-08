@@ -190,7 +190,7 @@ func TestDescendCycle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("cycle must halt cleanly via visited-set, got error: %v", err)
 	}
-	if errors.Is(err, closure.ErrSubAggregateDepth) {
+	if errors.Is(err, closure.ErrSubAggregateDepth()) {
 		t.Fatalf("cycle halted via depth bound, not the visited set")
 	}
 
@@ -224,7 +224,7 @@ func TestDescendDepthBound(t *testing.T) {
 	loader := &fakeAggLoader{bodies: bodies}
 
 	_, err := runDescent(t, top, lookup, loader)
-	if !errors.Is(err, closure.ErrSubAggregateDepth) {
+	if !errors.Is(err, closure.ErrSubAggregateDepth()) {
 		t.Fatalf("deep chain must trip ErrSubAggregateDepth, got: %v", err)
 	}
 }

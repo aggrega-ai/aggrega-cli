@@ -265,7 +265,7 @@ func TestImportArtifact_NoParserForFormatHaltsLoud(t *testing.T) {
 
 	// Sanity: the resolver the callback delegates to fails with the reused
 	// sentinel for the format the probe requests.
-	if _, err := parserRes.ParserPluginForFormat("json"); !errors.Is(err, catalog.ErrNoParserForFormat) {
+	if _, err := parserRes.ParserPluginForFormat("json"); !errors.Is(err, catalog.ErrNoParserForFormat()) {
 		t.Fatalf("parser resolver err = %v; want ErrNoParserForFormat", err)
 	}
 

@@ -22,7 +22,7 @@ func notFoundCatalog() CatalogLookup {
 func requireViewInconsistency(t *testing.T, errs []*ResolverError) {
 	t.Helper()
 	for _, e := range errs {
-		if errors.Is(e, ErrGuardEntityViewInconsistency) {
+		if errors.Is(e, ErrGuardEntityViewInconsistency()) {
 			return
 		}
 	}
@@ -47,7 +47,7 @@ func TestGuardEntityViewInconsistency_Classifies(t *testing.T) {
 		t.Errorf("parent-relative-path type must classify as a legitimate skip (nil); got %v", verr)
 	}
 	verr := guardEntityViewInconsistency("E", "F", "core/absent:1.0.0")
-	if verr == nil || !errors.Is(verr, ErrGuardEntityViewInconsistency) {
+	if verr == nil || !errors.Is(verr, ErrGuardEntityViewInconsistency()) {
 		t.Fatalf("bare catalog ref must halt with ErrGuardEntityViewInconsistency; got %v", verr)
 	}
 }

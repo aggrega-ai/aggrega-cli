@@ -229,7 +229,7 @@ func TestLinkResolveInterpolatedSentinelHalts(t *testing.T) {
 	files := []rendercore.RenderedFile{{Path: StackTemplateName, Content: consumerStack("jdbc://" + sentinel + ":5432")}}
 
 	_, err := LinkResolve(edge, pub.Handle, files)
-	if !errors.Is(err, ErrLinkSentinelInterpolated) {
+	if !errors.Is(err, ErrLinkSentinelInterpolated()) {
 		t.Fatalf("want ErrLinkSentinelInterpolated, got %v", err)
 	}
 }
@@ -238,7 +238,7 @@ func TestLinkResolveMissingConsumerStackHalts(t *testing.T) {
 	edge := testLinkEdge(nil, nil)
 	pub, _ := LinkPublish(edge)
 	_, err := LinkResolve(edge, pub.Handle, nil)
-	if !errors.Is(err, ErrLinkConsumerStackMissing) {
+	if !errors.Is(err, ErrLinkConsumerStackMissing()) {
 		t.Fatalf("want ErrLinkConsumerStackMissing, got %v", err)
 	}
 }

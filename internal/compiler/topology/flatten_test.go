@@ -204,7 +204,7 @@ func TestFlattenAggregate_CircularSubAggregate(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for circular sub-aggregate")
 	}
-	if !errors.Is(err, ErrSubAggregateLoad) {
+	if !errors.Is(err, ErrSubAggregateLoad()) {
 		t.Errorf("expected ErrSubAggregateLoad, got %v", err)
 	}
 }
@@ -216,7 +216,7 @@ func TestFlattenAggregate_MaxDepth(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for max depth")
 	}
-	if !errors.Is(err, ErrMaxDepth) {
+	if !errors.Is(err, ErrMaxDepth()) {
 		t.Errorf("expected ErrMaxDepth, got %v", err)
 	}
 }

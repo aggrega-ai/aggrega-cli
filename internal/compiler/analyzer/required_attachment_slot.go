@@ -88,7 +88,7 @@ func validateRequiredAttachmentSlots(ctx context.Context, graph *types.IRGraph, 
 					"component type %q declares the attachment slot %q as required, but no attachment binds it; "+
 						"attach a Feature under that name on the component, or at a scope it inherits from",
 					node.Component, slotName),
-				Sentinel: ErrRequiredSlotUnfilled,
+				Sentinel: ErrRequiredSlotUnfilled(),
 			})
 		}
 	}

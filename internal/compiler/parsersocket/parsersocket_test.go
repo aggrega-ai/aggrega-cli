@@ -96,7 +96,7 @@ func TestParseArtifact_UnknownFormatHaltsLoud(t *testing.T) {
 	}
 
 	_, err := parsersocket.ParseArtifact(context.Background(), c, load, "unknown", []byte("x"), nil)
-	if !errors.Is(err, catalog.ErrNoParserForFormat) {
+	if !errors.Is(err, catalog.ErrNoParserForFormat()) {
 		t.Fatalf("err = %v; want ErrNoParserForFormat", err)
 	}
 	if loaderCalled {

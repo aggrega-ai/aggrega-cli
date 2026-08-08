@@ -30,26 +30,26 @@ func resolveWorkloadLibraryImport(ref string, libs map[string]types.WorkloadLibr
 	library, entry, ok := splitWorkloadImportRef(ref)
 	if !ok {
 		if strings.HasPrefix(ref, "oci://") {
-			return "", fmt.Errorf("%w: %q", ErrHostInLibraryImport, ref)
+			return "", fmt.Errorf("%w: %q", ErrHostInLibraryImport(), ref)
 		}
-		return "", fmt.Errorf("%w: %q", ErrWorkloadImportShape, ref)
+		return "", fmt.Errorf("%w: %q", ErrWorkloadImportShape(), ref)
 	}
 	// A stale `@` version separator is rejected with a steer to `:` rather than
 	// falling through to an opaque library-not-found.
 	if strings.IndexByte(library, '@') >= 0 {
-		return "", fmt.Errorf("%w: version separator is ':', not '@' — use %q", ErrWorkloadImportShape, strings.Replace(ref, "@", ":", 1))
+		return "", fmt.Errorf("%w: version separator is ':', not '@' — use %q", ErrWorkloadImportShape(), strings.Replace(ref, "@", ":", 1))
 	}
 	key := library + "#/workloads/" + entry
 	if chain, cyclic := refcycle.Check(stack, key); cyclic {
-		return "", fmt.Errorf("%w: %s", ErrCircularImport, strings.Join(chain, " -> "))
+		return "", fmt.Errorf("%w: %s", ErrCircularImport(), strings.Join(chain, " -> "))
 	}
 	wl, found := libs[library]
 	if !found {
-		return "", fmt.Errorf("%w: WorkloadLibrary %q (entry %q)", ErrWorkloadLibraryNotFound, library, entry)
+		return "", fmt.Errorf("%w: WorkloadLibrary %q (entry %q)", ErrWorkloadLibraryNotFound(), library, entry)
 	}
 	we, found := wl.Spec.Workloads.Get(entry)
 	if !found {
-		return "", fmt.Errorf("%w: entry %q in WorkloadLibrary %q", ErrWorkloadEntryNotFound, entry, library)
+		return "", fmt.Errorf("%w: entry %q in WorkloadLibrary %q", ErrWorkloadEntryNotFound(), entry, library)
 	}
 	if target, ok := fieldRootImportTarget(we.Body); ok {
 		return resolveWorkloadLibraryImport(target, libs, refcycle.Push(stack, key))

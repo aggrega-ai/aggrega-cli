@@ -444,7 +444,7 @@ func wrapAssertionErr(err error) error {
 func dropCatalogViewInconsistencies(errs []*resolver.ResolverError) []*resolver.ResolverError {
 	kept := errs[:0:0]
 	for _, e := range errs {
-		if stderrors.Is(e, resolver.ErrGuardEntityViewInconsistency) {
+		if stderrors.Is(e, resolver.ErrGuardEntityViewInconsistency()) {
 			continue
 		}
 		kept = append(kept, e)

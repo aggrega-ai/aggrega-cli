@@ -169,7 +169,7 @@ func (l *Loader) DescribeAndValidate(ctx context.Context, plugin *Plugin, spec P
 			_ = plugin.Close(ctx)
 			return PluginDescriptor{}, fmt.Errorf(
 				"wasm: plugin %q: recorded command mirror %s does not match the plugin describe() commands %s; re-run `aggrega plugin sync` and commit the result: %w",
-				spec.Name, FormatCommandMirror(spec.Commands), FormatCommandMirror(desc.Commands), ErrWasmCommandsMirrorMismatch)
+				spec.Name, FormatCommandMirror(spec.Commands), FormatCommandMirror(desc.Commands), ErrWasmCommandsMirrorMismatch())
 		}
 	}
 
@@ -190,7 +190,7 @@ func parseAndValidateDescriptor(raw []byte, identity string) (PluginDescriptor, 
 	var desc PluginDescriptor
 	if err := desc.UnmarshalJSON(raw); err != nil {
 		return PluginDescriptor{}, fmt.Errorf("wasm: plugin %q describe() output is not valid JSON: %v: %w",
-			identity, err, ErrWasmManifestRejected)
+			identity, err, ErrWasmManifestRejected())
 	}
 	if err := desc.Validate(identity); err != nil {
 		return PluginDescriptor{}, err
@@ -216,7 +216,7 @@ func gateExpectedType(pluginIdentity string, desc PluginDescriptor, expected Plu
 	}
 	return fmt.Errorf(
 		"wasm: plugin %q: expected a %s plugin (plugin type %q) but its describe() reports plugin type %q: %w",
-		pluginIdentity, noun, string(expected), desc.PluginType, ErrWasmPluginTypeMismatch)
+		pluginIdentity, noun, string(expected), desc.PluginType, ErrWasmPluginTypeMismatch())
 }
 
 // InvokeExport calls the named export after confirming the descriptor
@@ -263,7 +263,7 @@ func InvokeExportStatus(ctx context.Context, plugin *Plugin, desc PluginDescript
 func ensureDeclared(plugin *Plugin, desc PluginDescriptor, export string) error {
 	if !desc.hasExport(export) {
 		return fmt.Errorf("wasm: plugin %q does not declare export %q in describe(): %w",
-			plugin.Name(), export, ErrWasmManifestRejected)
+			plugin.Name(), export, ErrWasmManifestRejected())
 	}
 	return nil
 }

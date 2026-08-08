@@ -78,7 +78,7 @@ func EvaluateAssertion(name, body string, ctx AssertionContext) error {
 		missingKey: missingKeyError,
 		extraFuncs: map[string]any{
 			"fail": func(msg string) (string, error) {
-				return "", fmt.Errorf("%w: %s", ErrAssertionFailed, msg)
+				return "", fmt.Errorf("%w: %s", ErrAssertionFailed(), msg)
 			},
 		},
 		failed: func(stage templateEvalStage, err error) error {

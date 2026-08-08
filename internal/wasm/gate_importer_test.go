@@ -35,7 +35,7 @@ func TestPluginDescriptorValidateImporter(t *testing.T) {
 		Capabilities: []string{"import:terraform"},
 		Exports:      []PluginExport{{Name: "read"}},
 	}
-	if err := withoutImport.Validate("acme/importer"); !errors.Is(err, ErrWasmManifestRejected) {
+	if err := withoutImport.Validate("acme/importer"); !errors.Is(err, ErrWasmManifestRejected()) {
 		t.Fatalf("importer without %q: want ErrWasmManifestRejected, got %v", ImportExport, err)
 	}
 }

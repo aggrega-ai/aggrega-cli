@@ -316,7 +316,7 @@ func resolvePushSigner(cfg pushConfig, registry string) (signing.Signer, error) 
 		ambientClient, _ := workspaceEgressClient(rw.Config())
 		idToken, tokenSource, terr = resolveIdentityTokenSource(cfg.IDToken, envLookupOrGetenv(cfg.EnvLookup), ttyOrDefault(cfg.IsTTY), tokenGetterOrDefault(cfg.TokenGetter), checkIDTokenSubject, ambientClient)
 		if terr != nil {
-			return nil, fmt.Errorf("aggrega push: %w: %w", terr, signing.ErrUnsignedPushRefused)
+			return nil, fmt.Errorf("aggrega push: %w: %w", terr, signing.ErrUnsignedPushRefused())
 		}
 	}
 	signer, berr := buildSigner(signerParams{
@@ -329,7 +329,7 @@ func resolvePushSigner(cfg pushConfig, registry string) (signing.Signer, error) 
 		Config:       rw.Config(),
 	})
 	if berr != nil {
-		return nil, fmt.Errorf("aggrega push: construct signer: %w: %w", berr, signing.ErrUnsignedPushRefused)
+		return nil, fmt.Errorf("aggrega push: construct signer: %w: %w", berr, signing.ErrUnsignedPushRefused())
 	}
 	return signer, nil
 }
@@ -359,9 +359,9 @@ func signPushDigestWith(ctx context.Context, signer signing.Signer, reference, t
 		// returned — so the operator fixes the provider/client/scope rather than
 		// re-exporting a token that cannot help.
 		if keylessSubjectFailure(err) {
-			return nil, "", fmt.Errorf("aggrega push: sign %s:%s: the identity token carries no verified email or subject claim — the OIDC flow/client did not return an email-scoped identity (re-exporting or re-acquiring the token will not help); configure the identity provider/client/scope to return one: %w: %w", reference, tag, err, signing.ErrUnsignedPushRefused)
+			return nil, "", fmt.Errorf("aggrega push: sign %s:%s: the identity token carries no verified email or subject claim — the OIDC flow/client did not return an email-scoped identity (re-exporting or re-acquiring the token will not help); configure the identity provider/client/scope to return one: %w: %w", reference, tag, err, signing.ErrUnsignedPushRefused())
 		}
-		return nil, "", fmt.Errorf("aggrega push: sign %s:%s: %w: %w", reference, tag, err, signing.ErrUnsignedPushRefused)
+		return nil, "", fmt.Errorf("aggrega push: sign %s:%s: %w: %w", reference, tag, err, signing.ErrUnsignedPushRefused())
 	}
 	return bundle, artifactType, nil
 }

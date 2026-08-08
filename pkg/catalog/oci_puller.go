@@ -23,9 +23,9 @@ import (
 // itself. A reference that already includes a host or path segment would be
 // double-prefixed into an unfetchable location, so it is refused loudly here
 // rather than surfacing later as a cryptic tag error.
-const ErrQualifiedPluginReference cerrors.Code = "catalog/qualified-plugin-reference"
+func ErrQualifiedPluginReference() error { return errQualifiedPluginReference }
 
-var _ = cerrors.Register(ErrQualifiedPluginReference, cerrors.Meta{
+var errQualifiedPluginReference = cerrors.Register("catalog/qualified-plugin-reference", cerrors.Meta{
 	Message: "wasm plugin reference must be the plugin coordinate identity (<pluginType>/<name>:<version>), not a registry-qualified or artifact path",
 })
 
@@ -36,9 +36,9 @@ var _ = cerrors.Register(ErrQualifiedPluginReference, cerrors.Meta{
 // of the same name; an empty scope would bind to a location with an empty scope
 // segment (a double slash) that cannot resolve. The reference is refused loudly
 // here rather than surfacing later as a cryptic fetch failure.
-const ErrUnscopedPluginReference cerrors.Code = "catalog/unscoped-plugin-reference"
+func ErrUnscopedPluginReference() error { return errUnscopedPluginReference }
 
-var _ = cerrors.Register(ErrUnscopedPluginReference, cerrors.Meta{
+var errUnscopedPluginReference = cerrors.Register("catalog/unscoped-plugin-reference", cerrors.Meta{
 	Message: "wasm plugin reference must carry a pluginType scope (<pluginType>/<name>); an empty scope cannot bind to an OCI location",
 })
 
@@ -49,9 +49,9 @@ var _ = cerrors.Register(ErrUnscopedPluginReference, cerrors.Meta{
 // empty provider would bind to a location with an empty provider segment (a
 // double slash) that cannot resolve. The reference is refused loudly here rather
 // than surfacing later as a cryptic fetch failure.
-const ErrUnscopedRecipeReference cerrors.Code = "catalog/unscoped-recipe-reference"
+func ErrUnscopedRecipeReference() error { return errUnscopedRecipeReference }
 
-var _ = cerrors.Register(ErrUnscopedRecipeReference, cerrors.Meta{
+var errUnscopedRecipeReference = cerrors.Register("catalog/unscoped-recipe-reference", cerrors.Meta{
 	Message: "recipe reference must be provider-scoped (<provider>/<name>); an empty provider cannot bind to an OCI location",
 })
 
@@ -64,9 +64,9 @@ var _ = cerrors.Register(ErrUnscopedRecipeReference, cerrors.Meta{
 // version is withdrawn still exists and still holds those versions; reporting it
 // as a missing entity would name the wrong problem, send the reader looking for a
 // typo, and read as a quiet fallback rather than the refusal it is.
-const ErrAllVersionsRetracted cerrors.Code = "catalog/all-versions-retracted"
+func ErrAllVersionsRetracted() error { return errAllVersionsRetracted }
 
-var _ = cerrors.Register(ErrAllVersionsRetracted, cerrors.Meta{
+var errAllVersionsRetracted = cerrors.Register("catalog/all-versions-retracted", cerrors.Meta{
 	Message: "every published version this reference could select has been withdrawn",
 })
 
@@ -392,7 +392,7 @@ func EntityKindForHint(hint string) string {
 // location is formed.
 func entityReference(registry, kind, identity string) (string, error) {
 	if kind == "Plugin" && hasRegistryHostSegment(identity) {
-		return "", fmt.Errorf("%w: %q", ErrQualifiedPluginReference, identity)
+		return "", fmt.Errorf("%w: %q", ErrQualifiedPluginReference(), identity)
 	}
 	provider, name := "", identity
 	switch kind {
@@ -400,14 +400,14 @@ func entityReference(registry, kind, identity string) (string, error) {
 		i := strings.IndexByte(identity, '/')
 		if i <= 0 {
 			// i < 0: no "/" (unscoped). i == 0: empty leading provider ("/name").
-			return "", fmt.Errorf("%w: %q", ErrUnscopedRecipeReference, identity)
+			return "", fmt.Errorf("%w: %q", ErrUnscopedRecipeReference(), identity)
 		}
 		provider, name = identity[:i], identity[i+1:]
 	case "Plugin", "Wasm":
 		i := strings.IndexByte(identity, '/')
 		if i <= 0 {
 			// i < 0: no "/" (unscoped). i == 0: empty leading pluginType ("/name").
-			return "", fmt.Errorf("%w: %q", ErrUnscopedPluginReference, identity)
+			return "", fmt.Errorf("%w: %q", ErrUnscopedPluginReference(), identity)
 		}
 		provider, name = identity[:i], identity[i+1:]
 	}
@@ -447,7 +447,7 @@ func libraryReference(registry, kind, name string) string {
 func selectPullVersion(reference string, tags []string) (string, error) {
 	version := oci.SelectLatestVersion(tags, false /* includePreRelease */)
 	if version == "" {
-		return "", fmt.Errorf("oci: no semver-tagged version found for %s: %w", reference, oci.ErrFetchNotFound)
+		return "", fmt.Errorf("oci: no semver-tagged version found for %s: %w", reference, oci.ErrFetchNotFound())
 	}
 	return version, nil
 }
@@ -491,7 +491,7 @@ func SelectScreenedVersion(screen RetractionScreen, reference string, tags []str
 	version, err := selectPullVersion(reference, eligible)
 	if err != nil {
 		if len(excluded) > 0 {
-			return "", fmt.Errorf("%w: %s: withdrawn: %s", ErrAllVersionsRetracted, reference, formatVersionExclusions(excluded))
+			return "", fmt.Errorf("%w: %s: withdrawn: %s", ErrAllVersionsRetracted(), reference, formatVersionExclusions(excluded))
 		}
 		return "", err
 	}

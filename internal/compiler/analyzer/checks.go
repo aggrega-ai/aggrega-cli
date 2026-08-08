@@ -76,7 +76,7 @@ var EdgeTargetSatisfiesSocketSelector = constraint.Check[
 	constraint.NoHostPowers,
 	constraint.EdgeSubject,
 ]{
-	Sentinel: ErrSelectorViolation,
+	Sentinel: ErrSelectorViolation(),
 	Severity: constraint.SeverityFatal,
 	Run: func(v constraint.GraphView, s constraint.EdgeSubject) []constraint.Objection {
 		var labelConstraint string
@@ -99,13 +99,13 @@ var EdgeTargetSatisfiesSocketSelector = constraint.Check[
 		match, err := selector.MatchString(labelConstraint, v.NodeLabels(target))
 		if err != nil {
 			return []constraint.Objection{s.Raise(
-				ErrSelectorViolation, labelConstraint, target, err.Error(),
+				ErrSelectorViolation(), labelConstraint, target, err.Error(),
 			)}
 		}
 		if match {
 			return nil
 		}
-		return []constraint.Objection{s.Raise(ErrSelectorViolation, labelConstraint, target)}
+		return []constraint.Objection{s.Raise(ErrSelectorViolation(), labelConstraint, target)}
 	},
 }
 
@@ -128,7 +128,7 @@ var AttachmentSatisfiesFeatureApplicability = constraint.Check[
 	constraint.NoHostPowers,
 	constraint.NodeAttachmentSubject,
 ]{
-	Sentinel: ErrSelectorViolation,
+	Sentinel: ErrSelectorViolation(),
 	Severity: constraint.SeverityFatal,
 	Run: func(v constraint.GraphView, s constraint.NodeAttachmentSubject) []constraint.Objection {
 		featureType := v.AttachmentResolvedType(s.NodeID(), s.AttachmentName())
@@ -141,13 +141,13 @@ var AttachmentSatisfiesFeatureApplicability = constraint.Check[
 		anyHolds, anyErr := selector.MatchAnyOf(v.FeatureAppliesToAnyOf(featureType), labels)
 		if unevaluable := firstNonNil(allErr, anyErr); unevaluable != nil {
 			return []constraint.Objection{s.Raise(
-				ErrSelectorViolation, featureType, appliesTo, unevaluable.Error(),
+				ErrSelectorViolation(), featureType, appliesTo, unevaluable.Error(),
 			)}
 		}
 		if allHold && anyHolds {
 			return nil
 		}
-		return []constraint.Objection{s.Raise(ErrSelectorViolation, featureType, appliesTo)}
+		return []constraint.Objection{s.Raise(ErrSelectorViolation(), featureType, appliesTo)}
 	},
 }
 
@@ -170,7 +170,7 @@ var SlotFillSatisfiesSlotSelector = constraint.Check[
 	constraint.NoHostPowers,
 	constraint.NodeSlotSubject,
 ]{
-	Sentinel: ErrSlotSelectorUnsatisfied,
+	Sentinel: ErrSlotSelectorUnsatisfied(),
 	Severity: constraint.SeverityFatal,
 	Run: func(v constraint.GraphView, s constraint.NodeSlotSubject) []constraint.Objection {
 		componentType, instanced := v.InstanceComponentType(s.NodeID())
@@ -193,14 +193,14 @@ var SlotFillSatisfiesSlotSelector = constraint.Check[
 		match, err := selector.MatchString(labelConstraint, v.AttachmentFeatureLabels(fillType))
 		if err != nil {
 			return []constraint.Objection{s.Raise(
-				ErrSlotSelectorUnsatisfied, labelConstraint, fillType, err.Error(),
+				ErrSlotSelectorUnsatisfied(), labelConstraint, fillType, err.Error(),
 			)}
 		}
 		if match {
 			return nil
 		}
 		return []constraint.Objection{s.Raise(
-			ErrSlotSelectorUnsatisfied, labelConstraint, fillType,
+			ErrSlotSelectorUnsatisfied(), labelConstraint, fillType,
 		)}
 	},
 }
@@ -229,7 +229,7 @@ var RequiredAttachmentTypeAttached = constraint.Check[
 	constraint.NoHostPowers,
 	constraint.NodeSubject,
 ]{
-	Sentinel: resolver.ErrMissingRequiredFeature,
+	Sentinel: resolver.ErrMissingRequiredFeature(),
 	Severity: constraint.SeverityFatal,
 	Run: func(v constraint.GraphView, s constraint.NodeSubject) []constraint.Objection {
 		componentType, instanced := v.InstanceComponentType(s.NodeID())
@@ -252,7 +252,7 @@ var RequiredAttachmentTypeAttached = constraint.Check[
 				continue
 			}
 			out = append(out, s.Raise(
-				resolver.ErrMissingRequiredFeature, mandate.Key, mandate.Type, mandate.Label,
+				resolver.ErrMissingRequiredFeature(), mandate.Key, mandate.Type, mandate.Label,
 			))
 		}
 		return out
@@ -280,7 +280,7 @@ var AttachmentRequirementWellFormed = constraint.Check[
 	constraint.NoHostPowers,
 	constraint.NodeSubject,
 ]{
-	Sentinel: ErrMalformedAttachmentRequirement,
+	Sentinel: ErrMalformedAttachmentRequirement(),
 	Severity: constraint.SeverityFatal,
 	Run: func(v constraint.NormalizedView, s constraint.NodeSubject) []constraint.Objection {
 		componentType, instanced := v.InstanceComponentType(s.NodeID())
@@ -293,7 +293,7 @@ var AttachmentRequirementWellFormed = constraint.Check[
 				continue
 			}
 			out = append(out, s.Raise(
-				ErrMalformedAttachmentRequirement, mandate.Key, mandate.Malformed,
+				ErrMalformedAttachmentRequirement(), mandate.Key, mandate.Malformed,
 			))
 		}
 		return out
@@ -325,7 +325,7 @@ var RequiredAttachmentSlotBound = constraint.Check[
 	constraint.NoHostPowers,
 	constraint.NodeSlotSubject,
 ]{
-	Sentinel: ErrRequiredSlotUnfilled,
+	Sentinel: ErrRequiredSlotUnfilled(),
 	Severity: constraint.SeverityFatal,
 	Run: func(v constraint.GraphView, s constraint.NodeSlotSubject) []constraint.Objection {
 		componentType, instanced := v.InstanceComponentType(s.NodeID())
@@ -338,7 +338,7 @@ var RequiredAttachmentSlotBound = constraint.Check[
 		if slices.Contains(v.MergedAttachmentNames(s.NodeID()), s.SlotName()) {
 			return nil
 		}
-		return []constraint.Objection{s.Raise(ErrRequiredSlotUnfilled, componentType)}
+		return []constraint.Objection{s.Raise(ErrRequiredSlotUnfilled(), componentType)}
 	},
 }
 
@@ -364,7 +364,7 @@ var OverriddenAnnotationAdvisory = constraint.Check[
 	constraint.NoHostPowers,
 	constraint.NodeAttachmentPillarLeafSubject,
 ]{
-	Sentinel: ErrOverriddenAnnotation,
+	Sentinel: ErrOverriddenAnnotation(),
 	Severity: constraint.SeverityWarning,
 	Run: func(
 		v constraint.GraphView,
@@ -377,7 +377,7 @@ var OverriddenAnnotationAdvisory = constraint.Check[
 			return nil
 		}
 		return []constraint.Objection{s.Raise(
-			ErrOverriddenAnnotation,
+			ErrOverriddenAnnotation(),
 			leaf.DisplacedAnnotationKey,
 			leaf.DisplacedAnnotationSource,
 		)}

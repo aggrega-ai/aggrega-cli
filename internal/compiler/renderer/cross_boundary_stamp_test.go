@@ -61,7 +61,7 @@ func TestScanOrphanCrossBoundaryLinkSentinels(t *testing.T) {
 		if err == nil {
 			t.Fatalf("surviving placeholder: expected error, got nil")
 		}
-		if !errors.Is(err, ErrOrphanCrossBoundaryLinkSentinel) {
+		if !errors.Is(err, ErrOrphanCrossBoundaryLinkSentinel()) {
 			t.Fatalf("surviving placeholder: error %v does not match ErrOrphanCrossBoundaryLinkSentinel", err)
 		}
 	})

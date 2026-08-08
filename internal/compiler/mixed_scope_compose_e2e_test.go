@@ -61,7 +61,7 @@ func TestMixedScopeCompose_OwnStepHaltsWithClearDiagnostic(t *testing.T) {
 
 	// The halt reuses the assembler-fragment sentinel: the own target would be
 	// an unassembled assembler fragment.
-	if !errors.Is(err, renderer.ErrPipelinePatchPreAssembly) {
+	if !errors.Is(err, renderer.ErrPipelinePatchPreAssembly()) {
 		t.Errorf("expected the halt to match ErrPipelinePatchPreAssembly; got:\n%v", err)
 	}
 
@@ -81,7 +81,7 @@ func TestMixedScopeCompose_OwnStepHaltsWithClearDiagnostic(t *testing.T) {
 
 	// It must NOT surface the bare provider-incompatibility report whose empty
 	// provider name reads as a malformed claim.
-	if errors.Is(err, renderer.ErrPluginProviderIncompatible) {
+	if errors.Is(err, renderer.ErrPluginProviderIncompatible()) {
 		t.Errorf("halt should not be the generic provider-incompatibility report; got:\n%v", err)
 	}
 	if chainContains(err, `does not list provider ""`) {
@@ -90,7 +90,7 @@ func TestMixedScopeCompose_OwnStepHaltsWithClearDiagnostic(t *testing.T) {
 
 	// And it must NOT be the generic absent-target diagnostic — that path is
 	// unreachable for this corner (the pre-walk compatibility gate fires first).
-	if errors.Is(err, renderer.ErrPipelineTargetNotEmitted) {
+	if errors.Is(err, renderer.ErrPipelineTargetNotEmitted()) {
 		t.Errorf("halt should not be the generic ErrPipelineTargetNotEmitted; got:\n%v", err)
 	}
 }

@@ -123,7 +123,7 @@ func TestGuardFeatureMerge_TypeMismatch(t *testing.T) {
 	if len(errs) == 0 {
 		t.Fatal("expected error for type mismatch")
 	}
-	if !errors.Is(errs[0], ErrFeatureMergeConflict) {
+	if !errors.Is(errs[0], ErrFeatureMergeConflict()) {
 		t.Errorf("expected ErrFeatureMergeConflict, got %v", errs[0].Err)
 	}
 }
@@ -166,10 +166,10 @@ func TestRunGuards_MultipleViolationsCollected(t *testing.T) {
 
 	var hasUnknownSocket, hasSelfInject bool
 	for _, e := range errs {
-		if errors.Is(e, ErrUnknownUsesSocket) {
+		if errors.Is(e, ErrUnknownUsesSocket()) {
 			hasUnknownSocket = true
 		}
-		if errors.Is(e, ErrSelfInjectForbidden) {
+		if errors.Is(e, ErrSelfInjectForbidden()) {
 			hasSelfInject = true
 		}
 	}

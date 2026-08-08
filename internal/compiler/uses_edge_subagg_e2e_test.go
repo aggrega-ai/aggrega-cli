@@ -100,7 +100,7 @@ func TestUsesEdgeSubagg_NonConformingInfraHalts(t *testing.T) {
 		ReleasePath:  "testdata/uses-edge-subagg/release-bad-infra.yaml",
 		CatalogPaths: []string{subaggCatalog, subaggLocalCatalog},
 	})
-	if !errors.Is(err, resolver.ErrSchemaConformance) {
+	if !errors.Is(err, resolver.ErrSchemaConformance()) {
 		t.Fatalf("want ErrSchemaConformance for an out-of-range per-edge infra on a sub-aggregate edge; got %v", err)
 	}
 }
@@ -143,7 +143,7 @@ func TestUsesEdgeSubagg_AdHocSocketDanglingTargetStillHalts(t *testing.T) {
 		ReleasePath:  "testdata/uses-edge-subagg/release-adhoc-dangle.yaml",
 		CatalogPaths: []string{subaggCatalog, subaggLocalCatalog},
 	})
-	if !errors.Is(err, topology.ErrDanglingUsesTarget) {
+	if !errors.Is(err, topology.ErrDanglingUsesTarget()) {
 		t.Fatalf("want ErrDanglingUsesTarget for an ad-hoc socket pointing at a non-existent target; got %v", err)
 	}
 }
@@ -213,7 +213,7 @@ func TestUsesEdgeSubagg_ParamContractViolationHalts(t *testing.T) {
 		ReleasePath:  "testdata/uses-edge-subagg/release-paramsub-badparam.yaml",
 		CatalogPaths: []string{subaggCatalog, subaggLocalCatalog},
 	})
-	if !errors.Is(err, resolver.ErrParameterContractViolation) {
+	if !errors.Is(err, resolver.ErrParameterContractViolation()) {
 		t.Fatalf("want ErrParameterContractViolation for an out-of-enum sub-aggregate param; got %v", err)
 	}
 }
@@ -244,7 +244,7 @@ func TestUsesEdgeSubagg_PredicateHaltsUnderSubAggParams(t *testing.T) {
 		ReleasePath:  "testdata/uses-edge-subagg/release-predsub-bad.yaml",
 		CatalogPaths: []string{subaggCatalog, subaggLocalCatalog},
 	})
-	if !errors.Is(err, resolver.ErrSchemaConformance) {
+	if !errors.Is(err, resolver.ErrSchemaConformance()) {
 		t.Fatalf("want ErrSchemaConformance: mode 'fast' violates the predicate under allowed_mode 'slow'; got %v", err)
 	}
 }
@@ -259,7 +259,7 @@ func TestUsesEdgeSubagg_DanglingTargetHalts(t *testing.T) {
 		ReleasePath:  "testdata/uses-edge-subagg/release-dangle.yaml",
 		CatalogPaths: []string{subaggCatalog, subaggLocalCatalog},
 	})
-	if !errors.Is(err, topology.ErrDanglingUsesTarget) {
+	if !errors.Is(err, topology.ErrDanglingUsesTarget()) {
 		t.Fatalf("want ErrDanglingUsesTarget for a dangling sub-aggregate edge; got %v", err)
 	}
 }
@@ -279,7 +279,7 @@ func TestUsesEdgeSubagg_SelectorTripsOnWrongType(t *testing.T) {
 	if err == nil {
 		t.Fatal("want a selector violation for a wrong-typed sub-aggregate target; got nil")
 	}
-	if !errors.Is(err, analyzer.ErrSelectorViolation) {
+	if !errors.Is(err, analyzer.ErrSelectorViolation()) {
 		t.Fatalf("want errors.Is(err, ErrSelectorViolation); got %v", err)
 	}
 	if !strings.Contains(err.Error(), "selector") {

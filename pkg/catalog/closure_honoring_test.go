@@ -35,7 +35,7 @@ func sha256Hex(b []byte) string {
 type twoVersionPuller struct{ v100, v110 []byte }
 
 func (p *twoVersionPuller) Pull(context.Context, string, string) (*oci.PullResult, error) {
-	return nil, oci.ErrFetchNotFound // legacy path unused
+	return nil, oci.ErrFetchNotFound() // legacy path unused
 }
 
 func (p *twoVersionPuller) PullEntity(_ context.Context, _, _, floorVersion string) (*oci.PullResult, string, error) {
@@ -57,7 +57,7 @@ func (p *twoVersionPuller) byFloor(floorVersion string) (*oci.PullResult, string
 	case "": // bare reference → list-tags → highest
 		return &oci.PullResult{Bytes: p.v110}, "1.1.0", nil
 	}
-	return nil, "", oci.ErrFetchNotFound
+	return nil, "", oci.ErrFetchNotFound()
 }
 
 // TestClosureLookup_HonorsPinnedVersion is the load-bearing proof of the
@@ -102,7 +102,7 @@ func TestClosureLookup_HonorsPinnedVersion(t *testing.T) {
 	// the pinned digest halts with ErrFetchIntegrity rather than re-pinning.
 	drift := &catalog.ReuseVerification{PriorPins: map[string]catalog.Pin{uri: {ResolvedVersion: "1.0.0", Digest: sha256Hex([]byte("STALE-PINNED-BYTES"))}}}
 	_, err = cat.ClosureLookupWithReuse(puller, t.TempDir(), cacheDir, nil, nil, drift).ResolveCatalogEntity(uri, "component")
-	if !errors.Is(err, oci.ErrFetchIntegrity) {
+	if !errors.Is(err, oci.ErrFetchIntegrity()) {
 		t.Errorf("drifted pin: err %v; want ErrFetchIntegrity (no launder/re-pin)", err)
 	}
 

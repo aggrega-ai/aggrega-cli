@@ -101,8 +101,8 @@ func TestIsRetryablePublishError(t *testing.T) {
 		want bool
 	}{
 		{"nil", nil, false},
-		{"immutable-tag conflict", oci.ErrImmutableTagConflict, false},
-		{"auth denied", oci.ErrFetchUnauthorized, false},
+		{"immutable-tag conflict", oci.ErrImmutableTagConflict(), false},
+		{"auth denied", oci.ErrFetchUnauthorized(), false},
 		{"registry 503", &errcode.ErrorResponse{StatusCode: 503}, true},
 		{"registry 403", &errcode.ErrorResponse{StatusCode: 403}, false},
 		{"net timeout", timeoutError{}, true},

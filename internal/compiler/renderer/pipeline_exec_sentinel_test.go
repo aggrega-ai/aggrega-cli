@@ -86,11 +86,11 @@ func TestRunNodePipeline_TargetNotEmitted(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected halt for PATCH to absent token; got nil")
 	}
-	if !errors.Is(err, ErrPipelineTargetNotEmitted) {
+	if !errors.Is(err, ErrPipelineTargetNotEmitted()) {
 		t.Errorf("expected ErrPipelineTargetNotEmitted; got %v", err)
 	}
 	// The walk's typed cause is preserved in the unwrap chain.
-	if !errors.Is(err, frp.ErrPipelineTargetAbsent) {
+	if !errors.Is(err, frp.ErrPipelineTargetAbsent()) {
 		t.Errorf("expected the walk's ErrPipelineTargetAbsent to remain in the errors.Is chain; got %v", err)
 	}
 }
@@ -113,7 +113,7 @@ func TestRunNodePipeline_HostEmitFromHostlessHalts(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected halt for /host EMIT from a hostless step; got nil")
 	}
-	if !errors.Is(err, ErrPipelineHostScopeUnavailable) {
+	if !errors.Is(err, ErrPipelineHostScopeUnavailable()) {
 		t.Errorf("expected ErrPipelineHostScopeUnavailable; got %v", err)
 	}
 }
@@ -140,7 +140,7 @@ func TestRunNodePipeline_HostPatchFromHostlessHalts(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected halt for /host PATCH from a hostless step; got nil")
 	}
-	if !errors.Is(err, ErrPipelineHostScopeUnavailable) {
+	if !errors.Is(err, ErrPipelineHostScopeUnavailable()) {
 		t.Errorf("expected ErrPipelineHostScopeUnavailable; got %v", err)
 	}
 }
@@ -180,10 +180,10 @@ func TestRunNodePipeline_PatchOpaqueUnitHalts(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected halt for PATCH against an opaque unit; got nil")
 	}
-	if !errors.Is(err, ErrPipelinePatchTargetNotStructured) {
+	if !errors.Is(err, ErrPipelinePatchTargetNotStructured()) {
 		t.Errorf("expected ErrPipelinePatchTargetNotStructured; got %v", err)
 	}
-	if !errors.Is(err, frp.ErrPipelineTargetOpaque) {
+	if !errors.Is(err, frp.ErrPipelineTargetOpaque()) {
 		t.Errorf("expected the walk's ErrPipelineTargetOpaque to remain in the errors.Is chain; got %v", err)
 	}
 }

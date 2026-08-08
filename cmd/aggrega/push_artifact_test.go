@@ -208,7 +208,7 @@ func TestPushArtifactImmutableTag(t *testing.T) {
 		PushTarget: store,
 		Out:        &third,
 	})
-	if !errors.Is(err, oci.ErrImmutableTagConflict) {
+	if !errors.Is(err, oci.ErrImmutableTagConflict()) {
 		t.Fatalf("conflicting re-push should return ErrImmutableTagConflict; got %v", err)
 	}
 }

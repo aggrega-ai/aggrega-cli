@@ -59,7 +59,7 @@ func TestLoadAndDescribe_CapabilityClaimDisagrees(t *testing.T) {
 			{Name: "step", Operates: operatesPatch, Scope: ScopeHost},
 		}},
 	})
-	if !errors.Is(err, ErrWasmContractMismatch) {
+	if !errors.Is(err, ErrWasmContractMismatch()) {
 		t.Fatalf("a disagreeing claim should halt with ErrWasmContractMismatch; got %v", err)
 	}
 	if !strings.Contains(err.Error(), "frp-step-go") {

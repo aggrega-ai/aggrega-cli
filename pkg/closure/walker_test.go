@@ -450,7 +450,7 @@ func TestUnresolvableCatalogEntityHaltsWithWrappedError(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected ErrUnresolvableURI; got nil")
 	}
-	if !errors.Is(err, closure.ErrUnresolvableURI) {
+	if !errors.Is(err, closure.ErrUnresolvableURI()) {
 		t.Errorf("error should wrap ErrUnresolvableURI; got %v", err)
 	}
 	if !strings.Contains(err.Error(), "api-server") {

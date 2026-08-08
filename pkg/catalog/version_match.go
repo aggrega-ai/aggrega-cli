@@ -25,9 +25,9 @@ import (
 // mapping halts exactly as the same typo on a component type does. The accessors
 // whose shape carries no error channel report it as a miss, and the build's
 // resolution-completeness pass turns that miss into the loud halt.
-const ErrUnsatisfiableEntityVersion cerrors.Code = "catalog/unsatisfiable-entity-version"
+func ErrUnsatisfiableEntityVersion() error { return errUnsatisfiableEntityVersion }
 
-var _ = cerrors.Register(ErrUnsatisfiableEntityVersion, cerrors.Meta{
+var errUnsatisfiableEntityVersion = cerrors.Register("catalog/unsatisfiable-entity-version", cerrors.Meta{
 	Message: "no catalog version satisfies the referenced version constraint",
 })
 
@@ -146,7 +146,7 @@ func selectEntityVersion[V any](index map[string]V, callerURI string, meta func(
 	// not). For an unversioned reference, fall back to the lone version-less /
 	// best-effort entry so version-less catalogs still resolve.
 	if hasVer {
-		return "", false, ErrUnsatisfiableEntityVersion
+		return "", false, ErrUnsatisfiableEntityVersion()
 	}
 	fallback := -1
 	for i := range cands {

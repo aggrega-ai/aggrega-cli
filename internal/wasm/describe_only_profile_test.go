@@ -50,7 +50,7 @@ func TestLoadForDescribe_DescribesStreamingCLIGuest(t *testing.T) {
 	// The build profile rejects the streaming guest before describe() can run.
 	if _, _, err := loader.LoadAndDescribe(ctx, PluginSpec{Name: "cli-args-exit", Path: path}); err == nil {
 		t.Fatal("LoadAndDescribe (build profile) accepted a streaming cli guest; it must reject the streaming import before describe()")
-	} else if !errors.Is(err, ErrWasmManifestRejected) {
+	} else if !errors.Is(err, ErrWasmManifestRejected()) {
 		t.Fatalf("LoadAndDescribe error = %v; want an error wrapping ErrWasmManifestRejected", err)
 	}
 
@@ -113,7 +113,7 @@ func TestBuildProfileStillRejectsStreamingImport(t *testing.T) {
 	if err == nil {
 		t.Fatal("Load accepted a guest importing aggrega_cli_write_stdout; the build profile must reject it")
 	}
-	if !errors.Is(err, ErrWasmManifestRejected) {
+	if !errors.Is(err, ErrWasmManifestRejected()) {
 		t.Fatalf("Load error = %v; want an error wrapping ErrWasmManifestRejected", err)
 	}
 }

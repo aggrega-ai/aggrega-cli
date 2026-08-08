@@ -132,7 +132,7 @@ func TestValidatePluginBadTypeHaltsLoudly(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected a schema error, got nil; output:\n%s", buf.String())
 	}
-	if !errors.Is(err, envelope.ErrEntityEnvelope) {
+	if !errors.Is(err, envelope.ErrEntityEnvelope()) {
 		t.Errorf("error does not wrap ErrEntityEnvelope: %v", err)
 	}
 	if !strings.Contains(err.Error(), "envelope schema") {
@@ -148,7 +148,7 @@ func TestValidatePluginMissingRequiredHaltsLoudly(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected a schema error, got nil; output:\n%s", buf.String())
 	}
-	if !errors.Is(err, envelope.ErrEntityEnvelope) {
+	if !errors.Is(err, envelope.ErrEntityEnvelope()) {
 		t.Errorf("error does not wrap ErrEntityEnvelope: %v", err)
 	}
 }
@@ -181,7 +181,7 @@ func TestValidatePluginBinaryOnlyTypeMismatchHaltsLoudly(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected a type-mismatch error, got nil; output:\n%s", buf.String())
 	}
-	if !errors.Is(err, wasm.ErrWasmPluginTypeMismatch) {
+	if !errors.Is(err, wasm.ErrWasmPluginTypeMismatch()) {
 		t.Errorf("error does not wrap ErrWasmPluginTypeMismatch: %v", err)
 	}
 }
@@ -290,7 +290,7 @@ func TestValidateBrokenEntityHaltsLoudly(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected a schema error, got nil; output:\n%s", buf.String())
 	}
-	if !errors.Is(err, envelope.ErrEntityEnvelope) {
+	if !errors.Is(err, envelope.ErrEntityEnvelope()) {
 		t.Errorf("error does not wrap ErrEntityEnvelope: %v", err)
 	}
 	if !strings.Contains(err.Error(), "envelope schema") {

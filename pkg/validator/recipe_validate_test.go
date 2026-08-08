@@ -44,7 +44,7 @@ func TestValidateRecipe_Rule1_ValuesMappingWithoutSource_Fails(t *testing.T) {
 	r := newRecipe("helm")
 	r.Spec.ValuesMapping = types.ValuesMapping{Inline: `{"image": "demo:1.0"}`} // no source
 	err := validator.ValidateRecipe(r, tFile)
-	if !errors.Is(err, validator.ErrRecipeRule1) {
+	if !errors.Is(err, validator.ErrRecipeRule1()) {
 		t.Fatalf("expected ErrRecipeRule1, got %v", err)
 	}
 }
@@ -53,7 +53,7 @@ func TestValidateRecipe_Rule1_ValuesMappingFileImportWithoutSource_Fails(t *test
 	t.Parallel()
 	r := newRecipe("helm")
 	r.Spec.ValuesMapping = types.ValuesMapping{Import: "./values.tmpl"} // no source
-	if err := validator.ValidateRecipe(r, tFile); !errors.Is(err, validator.ErrRecipeRule1) {
+	if err := validator.ValidateRecipe(r, tFile); !errors.Is(err, validator.ErrRecipeRule1()) {
 		t.Fatalf("expected ErrRecipeRule1, got %v", err)
 	}
 }
@@ -113,7 +113,7 @@ func TestValidateRecipe_Rule5_NoInputKind_Fails(t *testing.T) {
 	r := newRecipe("helm")
 	// Bare Recipe with no source / workload / artifacts.
 	err := validator.ValidateRecipe(r, tFile)
-	if !errors.Is(err, validator.ErrRecipeRule5) {
+	if !errors.Is(err, validator.ErrRecipeRule5()) {
 		t.Fatalf("expected ErrRecipeRule5, got %v", err)
 	}
 }
@@ -174,7 +174,7 @@ func TestValidateRecipe_Eval_RejectsValuesMapping(t *testing.T) {
 	r := newRecipe("eval")
 	r.Spec.ValuesMapping = types.ValuesMapping{Inline: `{"x": 1}`}
 	err := validator.ValidateRecipe(r, tFile)
-	if !errors.Is(err, validator.ErrRecipeEvalProviderConstraint) {
+	if !errors.Is(err, validator.ErrRecipeEvalProviderConstraint()) {
 		t.Fatalf("expected ErrRecipeEvalProviderConstraint, got %v", err)
 	}
 }
@@ -184,7 +184,7 @@ func TestValidateRecipe_Eval_RejectsWorkload(t *testing.T) {
 	r := newRecipe("eval")
 	r.Spec.Workload = types.WorkloadTemplate{Inline: "apiVersion: aggrega.ai/v1alpha1\nkind: Workload"}
 	err := validator.ValidateRecipe(r, tFile)
-	if !errors.Is(err, validator.ErrRecipeEvalProviderConstraint) {
+	if !errors.Is(err, validator.ErrRecipeEvalProviderConstraint()) {
 		t.Fatalf("expected ErrRecipeEvalProviderConstraint, got %v", err)
 	}
 }
@@ -195,7 +195,7 @@ func TestValidateRecipe_Eval_RejectsArtifacts(t *testing.T) {
 	r.Spec.Artifacts = types.OrderedMap[types.ArtifactEntry]{}
 	r.Spec.Artifacts.Set("x.yaml", types.ArtifactEntry{Import: "./x.yaml"})
 	err := validator.ValidateRecipe(r, tFile)
-	if !errors.Is(err, validator.ErrRecipeEvalProviderConstraint) {
+	if !errors.Is(err, validator.ErrRecipeEvalProviderConstraint()) {
 		t.Fatalf("expected ErrRecipeEvalProviderConstraint, got %v", err)
 	}
 }
@@ -254,7 +254,7 @@ func TestValidateRecipe_OutputLabels_AggregaAIReserved_Fails(t *testing.T) {
 	t.Parallel()
 	r := recipeWithLabels("helm", map[string]string{"aggrega.ai/foo": "bar"})
 	err := validator.ValidateRecipe(r, tFile)
-	if !errors.Is(err, validator.ErrRecipeOutputLabelReservedNamespace) {
+	if !errors.Is(err, validator.ErrRecipeOutputLabelReservedNamespace()) {
 		t.Fatalf("expected ErrRecipeOutputLabelReservedNamespace, got %v", err)
 	}
 	if !strings.Contains(err.Error(), "aggrega.ai/foo") {
@@ -265,7 +265,7 @@ func TestValidateRecipe_OutputLabels_AggregaAIReserved_Fails(t *testing.T) {
 func TestValidateRecipe_OutputLabels_K8sRecommendedReserved_Fails(t *testing.T) {
 	t.Parallel()
 	r := recipeWithLabels("helm", map[string]string{"app.kubernetes.io/bar": "baz"})
-	if err := validator.ValidateRecipe(r, tFile); !errors.Is(err, validator.ErrRecipeOutputLabelReservedNamespace) {
+	if err := validator.ValidateRecipe(r, tFile); !errors.Is(err, validator.ErrRecipeOutputLabelReservedNamespace()) {
 		t.Fatalf("expected ErrRecipeOutputLabelReservedNamespace, got %v", err)
 	}
 }
@@ -284,7 +284,7 @@ func TestValidateRecipe_OutputLabels_EvalReserved_Fails(t *testing.T) {
 	t.Parallel()
 	r := newRecipe("eval")
 	r.Spec.OutputLabels = map[string]string{"aggrega.ai/x": "y"}
-	if err := validator.ValidateRecipe(r, tFile); !errors.Is(err, validator.ErrRecipeOutputLabelReservedNamespace) {
+	if err := validator.ValidateRecipe(r, tFile); !errors.Is(err, validator.ErrRecipeOutputLabelReservedNamespace()) {
 		t.Fatalf("expected reserved-namespace reject on eval Recipe, got %v", err)
 	}
 }
@@ -299,7 +299,7 @@ func TestValidateRecipe_OutputLabels_ThreadsThroughCompilerError(t *testing.T) {
 	if !errors.As(err, &rve) {
 		t.Fatalf("expected *RecipeValidationError, got %v", err)
 	}
-	if !errors.Is(rve.ToCompilerError(), validator.ErrRecipeOutputLabelReservedNamespace) {
+	if !errors.Is(rve.ToCompilerError(), validator.ErrRecipeOutputLabelReservedNamespace()) {
 		t.Fatalf("sentinel should thread through the converted CompilerError")
 	}
 }

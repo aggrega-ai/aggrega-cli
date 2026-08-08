@@ -82,7 +82,7 @@ func (m *mockPuller) Pull(ctx context.Context, reference, tag string) (*oci.Pull
 	m.pullCalls[key]++
 	bytes, ok := m.bytesByURI[key]
 	if !ok {
-		return nil, oci.ErrFetchNotFound
+		return nil, oci.ErrFetchNotFound()
 	}
 	mt, ok := m.mediaTypeByURI[key]
 	if !ok {

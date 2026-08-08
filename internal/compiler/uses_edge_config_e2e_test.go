@@ -202,7 +202,7 @@ func TestUsesEdgeConfig_Guardrails(t *testing.T) {
 			ReleasePath:  "testdata/uses-edge-config/release-bad-infra.yaml",
 			CatalogPaths: []string{"testdata/uses-edge-config/catalog/base"},
 		})
-		if !errors.Is(err, resolver.ErrSchemaConformance) {
+		if !errors.Is(err, resolver.ErrSchemaConformance()) {
 			t.Fatalf("want ErrSchemaConformance for an out-of-range per-edge infra; got %v", err)
 		}
 		if !strings.Contains(err.Error(), "1 guard violation") {
@@ -216,7 +216,7 @@ func TestUsesEdgeConfig_Guardrails(t *testing.T) {
 			ReleasePath:  "testdata/uses-edge-config/release-retarget.yaml",
 			CatalogPaths: []string{"testdata/uses-edge-config/catalog/base"},
 		})
-		if !errors.Is(err, topology.ErrReleaseEdgeRetarget) {
+		if !errors.Is(err, topology.ErrReleaseEdgeRetarget()) {
 			t.Fatalf("want ErrReleaseEdgeRetarget for a Release retarget of a dev-declared edge; got %v", err)
 		}
 	})
@@ -227,7 +227,7 @@ func TestUsesEdgeConfig_Guardrails(t *testing.T) {
 			ReleasePath:  "testdata/uses-edge-config/release-dangling.yaml",
 			CatalogPaths: []string{"testdata/uses-edge-config/catalog/base"},
 		})
-		if !errors.Is(err, topology.ErrDanglingUsesTarget) {
+		if !errors.Is(err, topology.ErrDanglingUsesTarget()) {
 			t.Fatalf("want ErrDanglingUsesTarget for a Release edge to a non-existent target; got %v", err)
 		}
 	})
@@ -245,7 +245,7 @@ func TestUsesEdgeConfig_Guardrails(t *testing.T) {
 		if err == nil {
 			t.Fatal("want a selector-violation halt for a Release-created edge to a wrong-typed target; got nil")
 		}
-		if !errors.Is(err, analyzer.ErrSelectorViolation) {
+		if !errors.Is(err, analyzer.ErrSelectorViolation()) {
 			t.Fatalf("want errors.Is(err, ErrSelectorViolation); got %v", err)
 		}
 		if !strings.Contains(err.Error(), "selector") {

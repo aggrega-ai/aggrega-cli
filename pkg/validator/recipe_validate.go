@@ -83,7 +83,7 @@ func validateRecipeEvalProvider(r *types.Recipe, sourcePath string) error {
 		Rule:        "eval",
 		Description: "the eval provider executes formatting in-memory and forbids input-kind fields",
 		Detail:      fmt.Sprintf("forbidden fields declared: %s", strings.Join(declared, ", ")),
-		Err:         ErrRecipeEvalProviderConstraint,
+		Err:         ErrRecipeEvalProviderConstraint(),
 	}
 }
 
@@ -117,7 +117,7 @@ func validateRecipeOutputLabels(r *types.Recipe, sourcePath string) error {
 				Detail: fmt.Sprintf(
 					"key %q uses a reserved namespace (%q and %q are reserved for platform provenance)",
 					key, types.ReservedLabelPrefixAggregaAI, types.ReservedLabelPrefixK8sRecommended),
-				Err: ErrRecipeOutputLabelReservedNamespace,
+				Err: ErrRecipeOutputLabelReservedNamespace(),
 			}
 		}
 	}
@@ -143,7 +143,7 @@ func validateRecipeRule1(r *types.Recipe, sourcePath string) error {
 		Rule:        "1",
 		Description: "valuesMapping requires source",
 		Detail:      "declare a source: pointer alongside valuesMapping (or remove the valuesMapping if no overlay is intended)",
-		Err:         ErrRecipeRule1,
+		Err:         ErrRecipeRule1(),
 	}
 }
 
@@ -173,7 +173,7 @@ func validateRecipeRule5(r *types.Recipe, sourcePath string) error {
 		Rule:        "5",
 		Description: "at least one input kind must be present",
 		Detail:      "declare one of: source (with valuesMapping), workload, artifacts",
-		Err:         ErrRecipeRule5,
+		Err:         ErrRecipeRule5(),
 	}
 }
 

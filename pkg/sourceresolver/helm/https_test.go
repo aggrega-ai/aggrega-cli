@@ -137,7 +137,7 @@ func TestHTTPSResolveRepoRootMissingChart(t *testing.T) {
 		WorkspaceRoot: t.TempDir(),
 		CacheDir:      ".aggrega/cache",
 	})
-	if !errors.Is(err, sourceresolver.ErrFetchNotFound) {
+	if !errors.Is(err, sourceresolver.ErrFetchNotFound()) {
 		t.Errorf("missing chart should wrap ErrFetchNotFound; got %v", err)
 	}
 }
@@ -154,7 +154,7 @@ func TestHTTPSResolveGetterNotFound(t *testing.T) {
 		WorkspaceRoot: t.TempDir(),
 		CacheDir:      ".aggrega/cache",
 	})
-	if !errors.Is(err, sourceresolver.ErrFetchNotFound) {
+	if !errors.Is(err, sourceresolver.ErrFetchNotFound()) {
 		t.Errorf("404 should wrap ErrFetchNotFound; got %v", err)
 	}
 }
@@ -171,7 +171,7 @@ func TestHTTPSResolveGetterUnauthorized(t *testing.T) {
 		WorkspaceRoot: t.TempDir(),
 		CacheDir:      ".aggrega/cache",
 	})
-	if !errors.Is(err, sourceresolver.ErrFetchUnauthorized) {
+	if !errors.Is(err, sourceresolver.ErrFetchUnauthorized()) {
 		t.Errorf("401 should wrap ErrFetchUnauthorized; got %v", err)
 	}
 }

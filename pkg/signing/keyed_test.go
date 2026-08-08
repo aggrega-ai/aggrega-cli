@@ -72,7 +72,7 @@ func TestKeyedVerifyRejectsTamperedPayload(t *testing.T) {
 	if err == nil {
 		t.Fatal("VerifyKeyed accepted a tampered payload")
 	}
-	if !errors.Is(err, signing.ErrSignatureInvalid) {
+	if !errors.Is(err, signing.ErrSignatureInvalid()) {
 		t.Fatalf("want ErrSignatureInvalid, got %v", err)
 	}
 }
@@ -101,7 +101,7 @@ func TestKeyedVerifyRejectsWrongKey(t *testing.T) {
 		t.Fatalf("Sign: %v", err)
 	}
 
-	if err := signing.VerifyKeyed(otherPubPEM, payload, sig); !errors.Is(err, signing.ErrSignatureInvalid) {
+	if err := signing.VerifyKeyed(otherPubPEM, payload, sig); !errors.Is(err, signing.ErrSignatureInvalid()) {
 		t.Fatalf("want ErrSignatureInvalid for wrong key, got %v", err)
 	}
 }

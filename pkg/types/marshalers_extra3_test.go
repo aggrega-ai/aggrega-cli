@@ -54,14 +54,14 @@ func TestOrderedMap_DepthExceeded_YAMLAndJSON(t *testing.T) {
 	var m OrderedMap[any]
 	mapNode := &yaml.Node{Kind: yaml.MappingNode}
 	err := m.unmarshalYAMLWithDepth(mapNode, orderedMapDecodeMaxDepth+1)
-	if err == nil || !errors.Is(err, ErrOrderedMapDecodeDepthExceeded) {
+	if err == nil || !errors.Is(err, ErrOrderedMapDecodeDepthExceeded()) {
 		t.Errorf("YAML depth-exceeded should error ErrOrderedMapDecodeDepthExceeded; got %v", err)
 	}
 
 	// JSON path.
 	var m2 OrderedMap[any]
 	err = m2.unmarshalJSONWithDepth([]byte(`{}`), orderedMapDecodeMaxDepth+1)
-	if err == nil || !errors.Is(err, ErrOrderedMapDecodeDepthExceeded) {
+	if err == nil || !errors.Is(err, ErrOrderedMapDecodeDepthExceeded()) {
 		t.Errorf("JSON depth-exceeded should error ErrOrderedMapDecodeDepthExceeded; got %v", err)
 	}
 }
@@ -71,7 +71,7 @@ func TestOrderedMap_DepthExceeded_YAMLAndJSON(t *testing.T) {
 func TestDecodeJSONValue_DepthExceeded(t *testing.T) {
 	t.Parallel()
 	_, err := decodeJSONValue[any]([]byte(`{}`), orderedMapDecodeMaxDepth+1)
-	if err == nil || !errors.Is(err, ErrOrderedMapDecodeDepthExceeded) {
+	if err == nil || !errors.Is(err, ErrOrderedMapDecodeDepthExceeded()) {
 		t.Errorf("depth-exceeded should error; got %v", err)
 	}
 }
@@ -80,7 +80,7 @@ func TestDecodeJSONValue_DepthExceeded(t *testing.T) {
 func TestDecodeYAMLValue_DepthExceeded(t *testing.T) {
 	t.Parallel()
 	_, err := decodeYAMLValue[any](&yaml.Node{Kind: yaml.MappingNode}, orderedMapDecodeMaxDepth+1)
-	if err == nil || !errors.Is(err, ErrOrderedMapDecodeDepthExceeded) {
+	if err == nil || !errors.Is(err, ErrOrderedMapDecodeDepthExceeded()) {
 		t.Errorf("depth-exceeded should error; got %v", err)
 	}
 }

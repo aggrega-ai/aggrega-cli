@@ -369,7 +369,7 @@ func TestRenderPolicyHCL_DenyReadsTree(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected a policy halt for an absent required resource type, got nil")
 	}
-	if !errors.Is(err, analyzer.ErrPolicyViolation) {
+	if !errors.Is(err, analyzer.ErrPolicyViolation()) {
 		t.Fatalf("render-policy HCL deny not errors.Is ErrPolicyViolation: %v", err)
 	}
 	msg := err.Error()

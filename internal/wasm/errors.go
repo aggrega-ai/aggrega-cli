@@ -56,9 +56,9 @@ func (e *CodedHostError) Unwrap() error { return e.Err }
 // Errors wrapping this sentinel name the violated surface and the
 // plugin identifier so callers see exactly which surface caused the
 // rejection.
-const ErrWasmManifestRejected cerrors.Code = "wasm/wasm-manifest-rejected"
+func ErrWasmManifestRejected() error { return errWasmManifestRejected }
 
-var _ = cerrors.Register(ErrWasmManifestRejected, cerrors.Meta{
+var errWasmManifestRejected = cerrors.Register("wasm/wasm-manifest-rejected", cerrors.Meta{
 	Message: "wasm: plugin rejected by the sandbox",
 })
 
@@ -74,9 +74,9 @@ var _ = cerrors.Register(ErrWasmManifestRejected, cerrors.Meta{
 // access) into error return values rather than Go panics. This
 // sentinel is reserved for panics that escape Extism's own error
 // envelope — the safety net behind the SDK's normal error path.
-const ErrWasmGuestPanic cerrors.Code = "wasm/wasm-guest-panic"
+func ErrWasmGuestPanic() error { return errWasmGuestPanic }
 
-var _ = cerrors.Register(ErrWasmGuestPanic, cerrors.Meta{
+var errWasmGuestPanic = cerrors.Register("wasm/wasm-guest-panic", cerrors.Meta{
 	Message: "wasm: guest plugin panicked during call",
 })
 
@@ -91,9 +91,9 @@ var _ = cerrors.Register(ErrWasmGuestPanic, cerrors.Meta{
 //
 // The wrapping error carries the exit code the plugin passed to
 // proc_exit so callers see the failure code in the message.
-const ErrWasmPluginExited cerrors.Code = "wasm/wasm-plugin-exited"
+func ErrWasmPluginExited() error { return errWasmPluginExited }
 
-var _ = cerrors.Register(ErrWasmPluginExited, cerrors.Meta{
+var errWasmPluginExited = cerrors.Register("wasm/wasm-plugin-exited", cerrors.Meta{
 	Message: "wasm: plugin invoked proc_exit",
 })
 
@@ -105,9 +105,9 @@ var _ = cerrors.Register(ErrWasmPluginExited, cerrors.Meta{
 // classify with errors.Is, by distinct transport (a panic escaping the call, a
 // proc_exit, or a message the guest itself placed on its output). The wrapping
 // error carries the export name and the guest's message.
-const ErrWasmGuestError cerrors.Code = "wasm/wasm-guest-error"
+func ErrWasmGuestError() error { return errWasmGuestError }
 
-var _ = cerrors.Register(ErrWasmGuestError, cerrors.Meta{
+var errWasmGuestError = cerrors.Register("wasm/wasm-guest-error", cerrors.Meta{
 	Message: "wasm: guest plugin reported an error",
 })
 
@@ -121,7 +121,7 @@ func GuestReturnedError(export, msg string) error {
 	if msg == "" {
 		return nil
 	}
-	return fmt.Errorf("call %q: %w: %s", export, ErrWasmGuestError, msg)
+	return fmt.Errorf("call %q: %w: %s", export, ErrWasmGuestError(), msg)
 }
 
 // ErrWasmContractMismatch indicates that a catalog Plugin entity's
@@ -136,9 +136,9 @@ func GuestReturnedError(export, msg string) error {
 // field, and both values so the author sees exactly which claim diverged from
 // the plugin's self-report. The same cross-check runs at publish time, so a
 // mismatch surfaces before the entity is published rather than at load.
-const ErrWasmContractMismatch cerrors.Code = "wasm/wasm-contract-mismatch"
+func ErrWasmContractMismatch() error { return errWasmContractMismatch }
 
-var _ = cerrors.Register(ErrWasmContractMismatch, cerrors.Meta{
+var errWasmContractMismatch = cerrors.Register("wasm/wasm-contract-mismatch", cerrors.Meta{
 	Message: "wasm: entity contract claim does not match plugin describe()",
 })
 
@@ -161,9 +161,9 @@ var _ = cerrors.Register(ErrWasmContractMismatch, cerrors.Meta{
 // ErrWasmContractMismatch: that covers the export operates/scope claim against
 // describe(); this covers the stamped host-function record against the verified
 // binary's imports.
-const ErrWasmHostFunctionsStampMismatch cerrors.Code = "wasm/wasm-host-functions-stamp-mismatch"
+func ErrWasmHostFunctionsStampMismatch() error { return errWasmHostFunctionsStampMismatch }
 
-var _ = cerrors.Register(ErrWasmHostFunctionsStampMismatch, cerrors.Meta{
+var errWasmHostFunctionsStampMismatch = cerrors.Register("wasm/wasm-host-functions-stamp-mismatch", cerrors.Meta{
 	Message: "wasm: stamped host-function record does not match .wasm imports",
 })
 
@@ -183,9 +183,9 @@ var _ = cerrors.Register(ErrWasmHostFunctionsStampMismatch, cerrors.Meta{
 // and commands; this compares the single plugin-type label on each side. The
 // wrapping error names the plugin identity, the expected type, and the reported
 // type so the author sees exactly which two kinds diverged.
-const ErrWasmPluginTypeMismatch cerrors.Code = "wasm/wasm-plugin-type-mismatch"
+func ErrWasmPluginTypeMismatch() error { return errWasmPluginTypeMismatch }
 
-var _ = cerrors.Register(ErrWasmPluginTypeMismatch, cerrors.Meta{
+var errWasmPluginTypeMismatch = cerrors.Register("wasm/wasm-plugin-type-mismatch", cerrors.Meta{
 	Message: "wasm: declared plugin type does not match plugin describe()",
 })
 
@@ -210,9 +210,9 @@ var _ = cerrors.Register(ErrWasmPluginTypeMismatch, cerrors.Meta{
 // ErrWasmHostFunctionsStampMismatch: that covers the stamped host-function record
 // against the verified binary's imports; this covers the recorded command mirror
 // against the plugin's describe() self-report.
-const ErrWasmCommandsMirrorMismatch cerrors.Code = "wasm/wasm-commands-mirror-mismatch"
+func ErrWasmCommandsMirrorMismatch() error { return errWasmCommandsMirrorMismatch }
 
-var _ = cerrors.Register(ErrWasmCommandsMirrorMismatch, cerrors.Meta{
+var errWasmCommandsMirrorMismatch = cerrors.Register("wasm/wasm-commands-mirror-mismatch", cerrors.Meta{
 	Message: "wasm: recorded command mirror does not match plugin describe()",
 })
 
@@ -228,9 +228,9 @@ var _ = cerrors.Register(ErrWasmCommandsMirrorMismatch, cerrors.Meta{
 // carrying this sentinel's text. The sentinel is producer- and consumer-agnostic
 // — it guards any consumer/producer pair routed through the one shared seam, not
 // a single socket pair.
-const ErrProducerConsumptionReentry cerrors.Code = "wasm/producer-consumption-reentry"
+func ErrProducerConsumptionReentry() error { return errProducerConsumptionReentry }
 
-var _ = cerrors.Register(ErrProducerConsumptionReentry, cerrors.Meta{
+var errProducerConsumptionReentry = cerrors.Register("wasm/producer-consumption-reentry", cerrors.Meta{
 	Message: "producer-consumption re-entry denied: a producer reached through the host may not issue a further producer-consumption call",
 })
 
@@ -254,8 +254,8 @@ var _ = cerrors.Register(ErrProducerConsumptionReentry, cerrors.Meta{
 // ErrWasmCommandsMirrorMismatch and ErrWasmHostFunctionsStampMismatch: those
 // cover the command mirror and host-function record; this covers the recorded
 // metadata.version against the plugin's describe() build-provenance version.
-const ErrWasmPluginVersionMismatch cerrors.Code = "wasm/wasm-plugin-version-mismatch"
+func ErrWasmPluginVersionMismatch() error { return errWasmPluginVersionMismatch }
 
-var _ = cerrors.Register(ErrWasmPluginVersionMismatch, cerrors.Meta{
+var errWasmPluginVersionMismatch = cerrors.Register("wasm/wasm-plugin-version-mismatch", cerrors.Meta{
 	Message: "wasm: entity metadata.version does not match plugin describe()",
 })

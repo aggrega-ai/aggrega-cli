@@ -42,7 +42,7 @@ spec:
 	if err == nil {
 		t.Fatal("both components and subsystems non-empty must halt at the envelope XOR")
 	}
-	if !errors.Is(err, envelope.ErrEntityEnvelope) {
+	if !errors.Is(err, envelope.ErrEntityEnvelope()) {
 		t.Fatalf("want errors.Is(err, ErrEntityEnvelope); got %v", err)
 	}
 	// Message-level tightening: pin that the spec-root not/allOf XOR is what

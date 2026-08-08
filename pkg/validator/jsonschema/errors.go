@@ -14,9 +14,9 @@ import (
 // resolve the schema (typically a malformed $ref or a meta-schema
 // validation failure). Surfaces at adapter construction time
 // (eager pre-resolution).
-const ErrSchemaResolve cerrors.Code = "validator-jsonschema/schema-resolve"
+func ErrSchemaResolve() error { return errSchemaResolve }
 
-var _ = cerrors.Register(ErrSchemaResolve, cerrors.Meta{
+var errSchemaResolve = cerrors.Register("validator-jsonschema/schema-resolve", cerrors.Meta{
 	Message: "validator/jsonschema: schema resolution failed",
 })
 
@@ -26,18 +26,18 @@ var _ = cerrors.Register(ErrSchemaResolve, cerrors.Meta{
 // validation failures travel via *Report; this sentinel covers the
 // envelope-level failure where the library returns an error the
 // adapter cannot decompose.
-const ErrInstanceValidation cerrors.Code = "validator-jsonschema/instance-validation"
+func ErrInstanceValidation() error { return errInstanceValidation }
 
-var _ = cerrors.Register(ErrInstanceValidation, cerrors.Meta{
+var errInstanceValidation = cerrors.Register("validator-jsonschema/instance-validation", cerrors.Meta{
 	Message: "validator/jsonschema: instance validation failed",
 })
 
 // ErrExtensionEval indicates an x-aggrega-when: or x-aggrega-
 // validate: template predicate failed to evaluate (template parse
 // error, evaluation runtime error, or non-boolean result).
-const ErrExtensionEval cerrors.Code = "validator-jsonschema/extension-eval"
+func ErrExtensionEval() error { return errExtensionEval }
 
-var _ = cerrors.Register(ErrExtensionEval, cerrors.Meta{
+var errExtensionEval = cerrors.Register("validator-jsonschema/extension-eval", cerrors.Meta{
 	Message: "validator/jsonschema: x-aggrega extension evaluation failed",
 })
 

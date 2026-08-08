@@ -138,7 +138,7 @@ func TestOutputLabels_ReservedNamespace_HaltsBuild(t *testing.T) {
 	}
 	// The build halts loudly as a catalog error, and the reserved-namespace
 	// sentinel threads through the wrapped chain.
-	if !errors.Is(err, validator.ErrRecipeOutputLabelReservedNamespace) {
+	if !errors.Is(err, validator.ErrRecipeOutputLabelReservedNamespace()) {
 		t.Errorf("build error should carry ErrRecipeOutputLabelReservedNamespace; got: %v", err)
 	}
 	if !strings.Contains(err.Error(), "CATALOG_ERROR") {

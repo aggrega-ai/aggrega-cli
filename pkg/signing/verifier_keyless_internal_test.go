@@ -111,7 +111,7 @@ func TestVerifyKeylessRejectsWrongIdentity(t *testing.T) {
 	}
 	ids := []TrustedIdentity{{Identity: maintainerIdentity, Issuer: googleIssuer}}
 	_, err = verifyKeylessEntity(entity, vs, ids, keylessDigest)
-	if !errors.Is(err, ErrUntrustedIdentity) {
+	if !errors.Is(err, ErrUntrustedIdentity()) {
 		t.Fatalf("want ErrUntrustedIdentity, got %v", err)
 	}
 }
@@ -135,7 +135,7 @@ func TestVerifyKeylessRejectsWrongIssuer(t *testing.T) {
 	}
 	ids := []TrustedIdentity{{Identity: maintainerIdentity, Issuer: googleIssuer}}
 	_, err = verifyKeylessEntity(entity, vs, ids, keylessDigest)
-	if !errors.Is(err, ErrUntrustedIdentity) {
+	if !errors.Is(err, ErrUntrustedIdentity()) {
 		t.Fatalf("want ErrUntrustedIdentity, got %v", err)
 	}
 	msg := err.Error()
@@ -217,7 +217,7 @@ func TestVerifyKeylessRejectsWrongArtifactDigest(t *testing.T) {
 	ids := []TrustedIdentity{{Identity: maintainerIdentity, Issuer: googleIssuer}}
 	const otherDigest = "sha256:1111111111111111111111111111111111111111111111111111111111111111"
 	_, err = verifyKeylessEntity(entity, vs, ids, otherDigest)
-	if !errors.Is(err, ErrSignatureVerificationFailed) {
+	if !errors.Is(err, ErrSignatureVerificationFailed()) {
 		t.Fatalf("want ErrSignatureVerificationFailed, got %v", err)
 	}
 }
@@ -241,7 +241,7 @@ func TestVerifyKeylessRejectsForeignTrustAnchor(t *testing.T) {
 	}
 	ids := []TrustedIdentity{{Identity: maintainerIdentity, Issuer: googleIssuer}}
 	_, err = verifyKeylessEntity(entity, foreign, ids, keylessDigest)
-	if !errors.Is(err, ErrSignatureVerificationFailed) {
+	if !errors.Is(err, ErrSignatureVerificationFailed()) {
 		t.Fatalf("want ErrSignatureVerificationFailed (foreign anchor), got %v", err)
 	}
 }
@@ -258,7 +258,7 @@ func TestVerifyKeylessRejectsEmptyIdentitySet(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Sign: %v", err)
 	}
-	if _, err := verifyKeylessEntity(entity, vs, nil, keylessDigest); !errors.Is(err, ErrNoTrustedIdentities) {
+	if _, err := verifyKeylessEntity(entity, vs, nil, keylessDigest); !errors.Is(err, ErrNoTrustedIdentities()) {
 		t.Fatalf("want ErrNoTrustedIdentities, got %v", err)
 	}
 }

@@ -33,10 +33,18 @@
 // A halting condition has an identity and an occurrence, and this package
 // carries both.
 //
-// Code is the identity: a string-typed constant that satisfies the error
-// interface, declares its message in one Register call standing beside it, and
-// stays matchable under errors.Is through arbitrary wrapping. One Code value is
-// shared by every occurrence of the condition it names.
+// The identity is a value declared by a Register call and published by an
+// exported accessor standing beside it. It satisfies the error interface, it
+// stays matchable under errors.Is through arbitrary wrapping, and one such
+// value is shared by every occurrence of the condition it names. Neither its
+// type nor its fields are exported, so no package but the one that declares it
+// can produce it.
+//
+// The code the identity carries is a separate thing from the identity itself,
+// and the separation is deliberate. The identity is what Go code matches; the
+// code is the stable identifier a consumer outside Go reads, obtained from any
+// error in the chain with CodeOf. It is an output, never an input to matching —
+// writing the string back yields a string, not an identity.
 //
 // CompilerError is the occurrence: it carries the Category, the SourceLocation
 // and the surrounding detail that differ between one failure and the next.

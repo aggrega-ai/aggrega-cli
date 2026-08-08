@@ -332,7 +332,7 @@ func TestPolicySocketHaltE2E(t *testing.T) {
 	if err == nil {
 		t.Fatalf("RunPipeline with failing policy: expected a halt, got nil")
 	}
-	if !errors.Is(err, analyzer.ErrPolicyViolation) {
+	if !errors.Is(err, analyzer.ErrPolicyViolation()) {
 		t.Fatalf("policy halt not errors.Is ErrPolicyViolation: %v", err)
 	}
 	const wantMsg = "fixture rule B: deliberate fail for end-to-end coverage"
@@ -451,7 +451,7 @@ func TestPolicySocketSeverityDenyE2E(t *testing.T) {
 	if err == nil {
 		t.Fatalf("deny verdict: expected a halt, got nil")
 	}
-	if !errors.Is(err, analyzer.ErrPolicyViolation) {
+	if !errors.Is(err, analyzer.ErrPolicyViolation()) {
 		t.Fatalf("deny halt not errors.Is ErrPolicyViolation: %v", err)
 	}
 	msg := err.Error()
@@ -555,7 +555,7 @@ func TestRenderStagePolicySocketDenyE2E(t *testing.T) {
 	if err == nil {
 		t.Fatalf("render-stage deny: expected a halt, got nil")
 	}
-	if !errors.Is(err, analyzer.ErrPolicyViolation) {
+	if !errors.Is(err, analyzer.ErrPolicyViolation()) {
 		t.Fatalf("render-stage deny not errors.Is ErrPolicyViolation: %v", err)
 	}
 	if !strings.Contains(err.Error(), "render stage saw") {
@@ -734,7 +734,7 @@ func TestGovernanceEngineAllFourRolesIRVerdictHaltsE2E(t *testing.T) {
 	if err == nil {
 		t.Fatalf("ir-verdict deny: expected a halt, got nil")
 	}
-	if !errors.Is(err, analyzer.ErrPolicyViolation) {
+	if !errors.Is(err, analyzer.ErrPolicyViolation()) {
 		t.Fatalf("ir-verdict deny not errors.Is ErrPolicyViolation: %v", err)
 	}
 	if !strings.Contains(err.Error(), governanceMultiroleVerdictMsg) {
@@ -762,7 +762,7 @@ func TestGovernanceEngineAllFourRolesRenderVerdictHaltsE2E(t *testing.T) {
 	if err == nil {
 		t.Fatalf("render-verdict deny: expected a halt, got nil")
 	}
-	if !errors.Is(err, analyzer.ErrPolicyViolation) {
+	if !errors.Is(err, analyzer.ErrPolicyViolation()) {
 		t.Fatalf("render-verdict deny not errors.Is ErrPolicyViolation: %v", err)
 	}
 	if !strings.Contains(err.Error(), governanceMultiroleVerdictMsg) {

@@ -72,7 +72,7 @@ func validateSlotSelectors(ctx context.Context, graph *types.IRGraph, catalogLoo
 				errs = append(errs, AnalysisError{
 					Source: nodeID, Target: slotName, Selector: slot.Selector,
 					Message:  fmt.Sprintf("attachment slot %q selector parse error: %v", slotName, perr),
-					Sentinel: ErrSlotSelectorUnsatisfied,
+					Sentinel: ErrSlotSelectorUnsatisfied(),
 				})
 				continue
 			}
@@ -81,7 +81,7 @@ func validateSlotSelectors(ctx context.Context, graph *types.IRGraph, catalogLoo
 					Source: nodeID, Target: slotName, Selector: slot.Selector,
 					Message: fmt.Sprintf("attachment slot %q on component %q: attached Feature %q labels do not satisfy the slot selector %q",
 						slotName, node.Component, entry.Type, slot.Selector),
-					Sentinel: ErrSlotSelectorUnsatisfied,
+					Sentinel: ErrSlotSelectorUnsatisfied(),
 				})
 			}
 		}

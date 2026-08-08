@@ -252,7 +252,7 @@ func TestResolveComponentExtends_CyclicExtendsEmitsSentinel(t *testing.T) {
 	if len(errs) == 0 {
 		t.Fatal("expected cycle error")
 	}
-	if !errors.Is(errs[0], ErrCyclicExtension) {
+	if !errors.Is(errs[0], ErrCyclicExtension()) {
 		t.Errorf("expected ErrCyclicExtension, got %v", errs[0])
 	}
 }
@@ -269,7 +269,7 @@ func TestResolveComponentExtends_MissingParent(t *testing.T) {
 	if len(errs) == 0 {
 		t.Fatal("expected missing-parent error")
 	}
-	if !errors.Is(errs[0], ErrInheritanceMerge) {
+	if !errors.Is(errs[0], ErrInheritanceMerge()) {
 		t.Errorf("expected ErrInheritanceMerge, got %v", errs[0])
 	}
 }
@@ -387,7 +387,7 @@ func TestComponentAncestry_CyclicChain(t *testing.T) {
 	if len(errs) == 0 {
 		t.Fatalf("expected a cycle error; got ancestry %v", componentNames(got))
 	}
-	if !errors.Is(errs[0], ErrCyclicExtension) {
+	if !errors.Is(errs[0], ErrCyclicExtension()) {
 		t.Errorf("expected ErrCyclicExtension; got %v", errs[0])
 	}
 	if got != nil {
@@ -409,7 +409,7 @@ func TestComponentAncestry_MissingParent(t *testing.T) {
 	if len(errs) == 0 {
 		t.Fatal("expected an unresolvable-parent error")
 	}
-	if !errors.Is(errs[0], ErrInheritanceMerge) {
+	if !errors.Is(errs[0], ErrInheritanceMerge()) {
 		t.Errorf("expected ErrInheritanceMerge; got %v", errs[0])
 	}
 }
@@ -542,7 +542,7 @@ func TestResolveComponentExtends_AssertionNameCollisionHalts(t *testing.T) {
 	if len(errs) != 1 {
 		t.Fatalf("expected exactly one collision error, got %d: %v", len(errs), errs)
 	}
-	if !errors.Is(errs[0], ErrAssertionNameCollision) {
+	if !errors.Is(errs[0], ErrAssertionNameCollision()) {
 		t.Errorf("expected ErrAssertionNameCollision, got %v", errs[0])
 	}
 	msg := errs[0].Error()

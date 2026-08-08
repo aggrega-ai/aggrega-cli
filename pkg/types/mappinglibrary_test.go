@@ -235,7 +235,7 @@ spec:
 	if err == nil {
 		t.Fatal("expected error on non-scalar mapping entry; got nil")
 	}
-	if !errors.Is(err, ErrMappingEntryNotScalar) {
+	if !errors.Is(err, ErrMappingEntryNotScalar()) {
 		t.Errorf("expected ErrMappingEntryNotScalar in chain; got %v", err)
 	}
 }

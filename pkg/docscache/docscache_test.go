@@ -178,7 +178,7 @@ func TestResolveCacheAndServeOffline(t *testing.T) {
 func TestReadPageCacheMissIsLoud(t *testing.T) {
 	t.Parallel()
 	_, _, err := docscache.ReadPage(t.TempDir(), ".aggrega/cache", testRef, testVersion, componentPage)
-	if !errors.Is(err, docscache.ErrFetchNotFound) {
+	if !errors.Is(err, docscache.ErrFetchNotFound()) {
 		t.Fatalf("want ErrFetchNotFound, got %v", err)
 	}
 }
@@ -195,7 +195,7 @@ func TestReadMissingPage(t *testing.T) {
 		t.Fatalf("ResolveAndCache: %v", err)
 	}
 	_, _, err := docscache.ReadPage(ws, cacheDir, testRef, testVersion, "language-reference/entities/missing.md")
-	if !errors.Is(err, docscache.ErrPageNotFound) {
+	if !errors.Is(err, docscache.ErrPageNotFound()) {
 		t.Fatalf("want ErrPageNotFound, got %v", err)
 	}
 }
@@ -212,11 +212,11 @@ func TestVerifyAtPullRejectsWrongKey(t *testing.T) {
 	_, otherPub := signedBundleStore(t, buildBundle(t, map[string]string{componentPage: componentBody}))
 
 	_, err := docscache.ResolveAndCache(ctx, store, testRef, testVersion, ws, cacheDir, keyedVerifier(store, otherPub))
-	if !errors.Is(err, signing.ErrSignatureVerificationFailed) {
+	if !errors.Is(err, signing.ErrSignatureVerificationFailed()) {
 		t.Fatalf("want ErrSignatureVerificationFailed, got %v", err)
 	}
 	// The cache slot must not have been populated by a failed verify.
-	if _, _, rerr := docscache.ReadPage(ws, cacheDir, testRef, testVersion, componentPage); !errors.Is(rerr, docscache.ErrFetchNotFound) {
+	if _, _, rerr := docscache.ReadPage(ws, cacheDir, testRef, testVersion, componentPage); !errors.Is(rerr, docscache.ErrFetchNotFound()) {
 		t.Fatalf("failed verify should leave the cache empty, got %v", rerr)
 	}
 }
@@ -231,7 +231,7 @@ func TestResolveRejectsNonDocsMediaType(t *testing.T) {
 		t.Fatalf("Push: %v", err)
 	}
 	_, err := docscache.ResolveAndCache(ctx, store, testRef, testVersion, t.TempDir(), ".aggrega/cache", nil)
-	if !errors.Is(err, docscache.ErrNotDocsBundle) {
+	if !errors.Is(err, docscache.ErrNotDocsBundle()) {
 		t.Fatalf("want ErrNotDocsBundle, got %v", err)
 	}
 }
@@ -252,7 +252,7 @@ func TestReadPageDetectsTamper(t *testing.T) {
 		t.Fatalf("tamper blob: %v", err)
 	}
 	_, _, rerr := docscache.ReadPage(ws, cacheDir, testRef, testVersion, componentPage)
-	if !errors.Is(rerr, oci.ErrFetchIntegrity) {
+	if !errors.Is(rerr, oci.ErrFetchIntegrity()) {
 		t.Fatalf("want ErrFetchIntegrity, got %v", rerr)
 	}
 }

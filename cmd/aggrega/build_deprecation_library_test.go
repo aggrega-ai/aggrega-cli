@@ -128,7 +128,7 @@ func TestBuildHaltsOnAPinnedRetractedLibrary(t *testing.T) {
 
 	var out bytes.Buffer
 	err := enforceClosureDeprecation(cl, lf, workspaceconfig.BuildConfig{HaltOnDeprecatedSeverity: "retracted"}, &out)
-	if !errors.Is(err, deprecation.ErrDeprecatedEntity) {
+	if !errors.Is(err, deprecation.ErrDeprecatedEntity()) {
 		t.Fatalf("a withdrawn library at the configured threshold must halt the build; got: %v", err)
 	}
 	// The FIRST halting reference in the sorted walk owns the error, so the halt is

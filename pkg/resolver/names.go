@@ -64,7 +64,7 @@ func ValidateInstanceNames(na types.NormalizedAggregate) []*ResolverError {
 				Entity:  entity,
 				Field:   fmt.Sprintf(".spec.aggregates[%q]", name),
 				Message: fmt.Sprintf("instance name %q is invalid: must match %s", name, instanceNamePattern.String()),
-				Err:     ErrInvalidInstanceName,
+				Err:     ErrInvalidInstanceName(),
 			})
 		}
 	}
@@ -93,7 +93,7 @@ func ValidateInstanceNames(na types.NormalizedAggregate) []*ResolverError {
 						Entity:  entity,
 						Field:   fmt.Sprintf("%s.subsystems[%q]", parentPath, name),
 						Message: fmt.Sprintf("instance name %q is invalid: must match %s", name, instanceNamePattern.String()),
-						Err:     ErrInvalidInstanceName,
+						Err:     ErrInvalidInstanceName(),
 					})
 				}
 				return path
@@ -104,7 +104,7 @@ func ValidateInstanceNames(na types.NormalizedAggregate) []*ResolverError {
 						Entity:  entity,
 						Field:   fmt.Sprintf("%s.components[%q]", path, name),
 						Message: fmt.Sprintf("instance name %q is invalid: must match %s", name, instanceNamePattern.String()),
-						Err:     ErrInvalidInstanceName,
+						Err:     ErrInvalidInstanceName(),
 					})
 				}
 				errs = append(errs, validateComponentInstanceNames(entity, name, comp)...)
@@ -117,7 +117,7 @@ func ValidateInstanceNames(na types.NormalizedAggregate) []*ResolverError {
 							Entity:  entity,
 							Field:   fmt.Sprintf("%s.features[%q]", path, name),
 							Message: fmt.Sprintf("feature instance name %q is invalid: must match %s", name, instanceNamePattern.String()),
-							Err:     ErrInvalidInstanceName,
+							Err:     ErrInvalidInstanceName(),
 						})
 					}
 				}
@@ -144,7 +144,7 @@ func ValidateTargetRef(ref, entity, field string) *ResolverError {
 			Entity:  entity,
 			Field:   field,
 			Message: fmt.Sprintf("target reference %q is invalid: each segment must match %s, separated by dots", ref, instanceNamePattern.String()),
-			Err:     ErrInvalidTargetRef,
+			Err:     ErrInvalidTargetRef(),
 		}
 	}
 	return nil
@@ -160,7 +160,7 @@ func validateComponentInstanceNames(entity, compName string, comp types.Componen
 				Entity:  entity,
 				Field:   fmt.Sprintf("%s.features[%q]", basePath, fname),
 				Message: fmt.Sprintf("feature instance name %q is invalid: must match %s", fname, instanceNamePattern.String()),
-				Err:     ErrInvalidInstanceName,
+				Err:     ErrInvalidInstanceName(),
 			})
 		}
 	}

@@ -10,9 +10,9 @@ import (
 // ErrSchemeNotAllowed reports that an external-input URL uses a scheme
 // outside the allowlist (https; http to a loopback host; oci). The wrapping
 // error names the offending URL and scheme alongside the allowed set.
-const ErrSchemeNotAllowed cerrors.Code = "externalinputs/scheme-not-allowed"
+func ErrSchemeNotAllowed() error { return errSchemeNotAllowed }
 
-var _ = cerrors.Register(ErrSchemeNotAllowed, cerrors.Meta{
+var errSchemeNotAllowed = cerrors.Register("externalinputs/scheme-not-allowed", cerrors.Meta{
 	Message: "externalinputs: URL scheme is not allowed",
 })
 
@@ -20,9 +20,9 @@ var _ = cerrors.Register(ErrSchemeNotAllowed, cerrors.Meta{
 // acquisition is disabled — the frozen-closure guarantee working as intended.
 // The wrapping error names the URL and the remedy: re-run with acquisition
 // enabled, or run the standalone acquisition pass to pin the input.
-const ErrAcquisitionDisabled cerrors.Code = "externalinputs/acquisition-disabled"
+func ErrAcquisitionDisabled() error { return errAcquisitionDisabled }
 
-var _ = cerrors.Register(ErrAcquisitionDisabled, cerrors.Meta{
+var errAcquisitionDisabled = cerrors.Register("externalinputs/acquisition-disabled", cerrors.Meta{
 	Message: "externalinputs: acquisition is disabled for unpinned inputs",
 })
 
@@ -30,17 +30,17 @@ var _ = cerrors.Register(ErrAcquisitionDisabled, cerrors.Meta{
 // not match the recorded digest. The recorded digest always wins: nothing is
 // written to the store and no bytes are returned. The wrapping error names
 // the URL, the pinned digest, and the digest the fetched bytes produced.
-const ErrDigestMismatch cerrors.Code = "externalinputs/digest-mismatch"
+func ErrDigestMismatch() error { return errDigestMismatch }
 
-var _ = cerrors.Register(ErrDigestMismatch, cerrors.Meta{
+var errDigestMismatch = cerrors.Register("externalinputs/digest-mismatch", cerrors.Meta{
 	Message: "externalinputs: fetched bytes mismatch the pinned digest",
 })
 
 // ErrStoreCorrupt reports that a store blob read back for a pinned URL fails
 // verification against its record — a tampered or corrupted store. The
 // wrapping error names the URL and both the expected and observed values.
-const ErrStoreCorrupt cerrors.Code = "externalinputs/store-corrupt"
+func ErrStoreCorrupt() error { return errStoreCorrupt }
 
-var _ = cerrors.Register(ErrStoreCorrupt, cerrors.Meta{
+var errStoreCorrupt = cerrors.Register("externalinputs/store-corrupt", cerrors.Meta{
 	Message: "externalinputs: store blob mismatches its pinned record",
 })

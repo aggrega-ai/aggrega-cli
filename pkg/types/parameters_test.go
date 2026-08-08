@@ -121,7 +121,7 @@ func TestParametersBlock_RejectsImportWithExtraKeys(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error: $import: must be the only key")
 	}
-	if !errors.Is(err, ErrParametersShape) {
+	if !errors.Is(err, ErrParametersShape()) {
 		t.Errorf("expected ErrParametersShape; got %v", err)
 	}
 }

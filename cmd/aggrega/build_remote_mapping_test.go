@@ -28,7 +28,7 @@ type fakeRemoteMappingLibraryPuller struct {
 }
 
 func (p *fakeRemoteMappingLibraryPuller) Pull(_ context.Context, _, _ string) (*oci.PullResult, error) {
-	return nil, oci.ErrFetchNotFound // library resolution uses PullLibrary
+	return nil, oci.ErrFetchNotFound() // library resolution uses PullLibrary
 }
 
 func (p *fakeRemoteMappingLibraryPuller) PullLibrary(_ context.Context, _, _, floorVersion string) (*oci.PullResult, string, error) {
@@ -402,7 +402,7 @@ spec:
 	if err == nil {
 		t.Fatal("expected the build to halt on the mapping-import cycle; got nil")
 	}
-	if !errors.Is(err, renderer.ErrCircularImport) {
+	if !errors.Is(err, renderer.ErrCircularImport()) {
 		t.Errorf("error should wrap ErrCircularImport; got %v", err)
 	}
 }

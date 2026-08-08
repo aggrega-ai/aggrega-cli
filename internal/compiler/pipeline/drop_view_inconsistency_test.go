@@ -15,8 +15,8 @@ import (
 // the resolved-set / view divergence while every other guard violation still
 // halts. Order is preserved so the surviving halt renders deterministically.
 func TestDropCatalogViewInconsistencies(t *testing.T) {
-	viewInconsistency := &resolver.ResolverError{Entity: "A", Field: "f", Message: "absent", Err: resolver.ErrGuardEntityViewInconsistency}
-	realViolation := &resolver.ResolverError{Entity: "B", Field: "g", Message: "bad", Err: resolver.ErrSchemaConformance}
+	viewInconsistency := &resolver.ResolverError{Entity: "A", Field: "f", Message: "absent", Err: resolver.ErrGuardEntityViewInconsistency()}
+	realViolation := &resolver.ResolverError{Entity: "B", Field: "g", Message: "bad", Err: resolver.ErrSchemaConformance()}
 
 	t.Run("drops only the view-inconsistency finding, preserving order", func(t *testing.T) {
 		kept := dropCatalogViewInconsistencies([]*resolver.ResolverError{realViolation, viewInconsistency, realViolation})
@@ -24,7 +24,7 @@ func TestDropCatalogViewInconsistencies(t *testing.T) {
 			t.Fatalf("want 2 surviving violations; got %d (%v)", len(kept), kept)
 		}
 		for _, e := range kept {
-			if errors.Is(e, resolver.ErrGuardEntityViewInconsistency) {
+			if errors.Is(e, resolver.ErrGuardEntityViewInconsistency()) {
 				t.Fatalf("view-inconsistency finding survived the filter: %v", e)
 			}
 		}

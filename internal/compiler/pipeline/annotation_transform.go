@@ -189,7 +189,7 @@ func applyAnnotationInjections(rr *resolver.ResolveResult, out AnnotationTransfo
 	for _, inj := range out.Injections {
 		if !targetSet[annotationTargetKey(inj.BoundaryPath, inj.ComponentName)] {
 			return fmt.Errorf("%w: injection targets boundary %q component %q (annotation %q)",
-				ErrAnnotationInjectionRejected, inj.BoundaryPath, inj.ComponentName, inj.AnnotationKey)
+				ErrAnnotationInjectionRejected(), inj.BoundaryPath, inj.ComponentName, inj.AnnotationKey)
 		}
 		// Mutate the authoring tree so expansion (which reads fresh from the
 		// Release) sees the injected annotation, and update the renderer-facing

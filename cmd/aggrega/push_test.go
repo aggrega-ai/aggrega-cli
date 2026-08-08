@@ -167,7 +167,7 @@ spec:
 	if err == nil {
 		t.Fatal("expected ErrEntityVersionPathMismatch; got nil")
 	}
-	if !errors.Is(err, oci.ErrEntityVersionPathMismatch) {
+	if !errors.Is(err, oci.ErrEntityVersionPathMismatch()) {
 		t.Errorf("error should wrap ErrEntityVersionPathMismatch; got %v", err)
 	}
 }
@@ -351,7 +351,7 @@ metadata:
 			if err == nil {
 				t.Fatalf("expected ErrUnknownEntityKind for %s; got nil", tc.name)
 			}
-			if !errors.Is(err, oci.ErrUnknownEntityKind) {
+			if !errors.Is(err, oci.ErrUnknownEntityKind()) {
 				t.Errorf("error should wrap ErrUnknownEntityKind; got %v", err)
 			}
 		})

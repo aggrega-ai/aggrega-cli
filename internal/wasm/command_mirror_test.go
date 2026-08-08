@@ -136,7 +136,7 @@ func TestDescribeAndValidate_CommandMirrorDriftHalts(t *testing.T) {
 		CommandsMirrored: true,
 	}
 	_, _, err := loader.LoadForDescribe(ctx, spec)
-	if !errors.Is(err, ErrWasmCommandsMirrorMismatch) {
+	if !errors.Is(err, ErrWasmCommandsMirrorMismatch()) {
 		t.Fatalf("a drifted command mirror should halt with ErrWasmCommandsMirrorMismatch; got %v", err)
 	}
 	for _, want := range []string{"cli/greet:1.0.0", "aggrega plugin sync"} {
@@ -169,7 +169,7 @@ func TestDescribeAndValidate_CommandMirrorFlagDriftHalts(t *testing.T) {
 		CommandsMirrored: true,
 	}
 	_, _, err := loader.LoadForDescribe(ctx, spec)
-	if !errors.Is(err, ErrWasmCommandsMirrorMismatch) {
+	if !errors.Is(err, ErrWasmCommandsMirrorMismatch()) {
 		t.Fatalf("a flag-only mirror divergence should halt with ErrWasmCommandsMirrorMismatch; got %v", err)
 	}
 	for _, want := range []string{"cli/greet:1.0.0", "loud", "aggrega plugin sync"} {

@@ -15,42 +15,42 @@ import (
 
 // ErrInvalidParameterRef wraps a Go-template parse or execution error
 // surfaced during parameter interpolation.
-const ErrInvalidParameterRef cerrors.Code = "resolver/invalid-parameter-ref"
+func ErrInvalidParameterRef() error { return errInvalidParameterRef }
 
-var _ = cerrors.Register(ErrInvalidParameterRef, cerrors.Meta{
+var errInvalidParameterRef = cerrors.Register("resolver/invalid-parameter-ref", cerrors.Meta{
 	Message: "invalid parameter reference: check the {{ .parameters.* }} expression names a declared parameter and parses as a Go template",
 })
 
 // ErrParametersImportLoad wraps a read or unmarshal failure for the
 // single path supplied at Release.spec.parameters.$import:.
-const ErrParametersImportLoad cerrors.Code = "resolver/parameters-import-load"
+func ErrParametersImportLoad() error { return errParametersImportLoad }
 
-var _ = cerrors.Register(ErrParametersImportLoad, cerrors.Meta{
+var errParametersImportLoad = cerrors.Register("resolver/parameters-import-load", cerrors.Meta{
 	Message: "parameters $import: load failed",
 })
 
 // ErrInvalidInstanceName wraps a user-authored dictionary key (component,
 // feature, secret, subsystem, aggregate name) that does not match the
 // instance-name pattern.
-const ErrInvalidInstanceName cerrors.Code = "resolver/invalid-instance-name"
+func ErrInvalidInstanceName() error { return errInvalidInstanceName }
 
-var _ = cerrors.Register(ErrInvalidInstanceName, cerrors.Meta{
+var errInvalidInstanceName = cerrors.Register("resolver/invalid-instance-name", cerrors.Meta{
 	Message: "invalid instance name: names must match ^[a-zA-Z0-9_-]+$ (letters, digits, hyphen, underscore; no dots)",
 })
 
 // ErrInvalidTargetRef wraps a target reference (e.g., uses.target) whose
 // dot-separated segments do not all match the instance-name pattern.
-const ErrInvalidTargetRef cerrors.Code = "resolver/invalid-target-ref"
+func ErrInvalidTargetRef() error { return errInvalidTargetRef }
 
-var _ = cerrors.Register(ErrInvalidTargetRef, cerrors.Meta{
+var errInvalidTargetRef = cerrors.Register("resolver/invalid-target-ref", cerrors.Meta{
 	Message: "invalid target reference: each dot-separated segment must match ^[a-zA-Z0-9_-]+$",
 })
 
 // ErrYAMLLoad wraps a file-read or YAML-unmarshal failure for any of the
 // three source documents (Aggregate, Release, Manifest).
-const ErrYAMLLoad cerrors.Code = "resolver/yaml-load"
+func ErrYAMLLoad() error { return errYAMLLoad }
 
-var _ = cerrors.Register(ErrYAMLLoad, cerrors.Meta{
+var errYAMLLoad = cerrors.Register("resolver/yaml-load", cerrors.Meta{
 	Message: "YAML load failed: check the file exists, is readable, and contains well-formed YAML",
 })
 
@@ -63,9 +63,9 @@ var _ = cerrors.Register(ErrYAMLLoad, cerrors.Meta{
 // any custom domain for enterprise shortcuts). The rule is enforced
 // at Manifest load — the YAML parsed successfully but the binding
 // fails a semantic reservation check, distinct from ErrYAMLLoad.
-const ErrManifestReservedPrefix cerrors.Code = "resolver/manifest-reserved-prefix"
+func ErrManifestReservedPrefix() error { return errManifestReservedPrefix }
 
-var _ = cerrors.Register(ErrManifestReservedPrefix, cerrors.Meta{
+var errManifestReservedPrefix = cerrors.Register("resolver/manifest-reserved-prefix", cerrors.Meta{
 	Message: "manifest annotation binding uses reserved prefix",
 })
 
@@ -75,17 +75,17 @@ var _ = cerrors.Register(ErrManifestReservedPrefix, cerrors.Meta{
 // a given (path, pillar) pair per target Feature; multiple
 // bindings competing for the same routing slot cannot resolve
 // unambiguously at expansion time.
-const ErrManifestCrossBindingPillarCollision cerrors.Code = "resolver/manifest-cross-binding-pillar-collision"
+func ErrManifestCrossBindingPillarCollision() error { return errManifestCrossBindingPillarCollision }
 
-var _ = cerrors.Register(ErrManifestCrossBindingPillarCollision, cerrors.Meta{
+var errManifestCrossBindingPillarCollision = cerrors.Register("resolver/manifest-cross-binding-pillar-collision", cerrors.Meta{
 	Message: "manifest annotation bindings collide on same Feature path+pillar",
 })
 
 // ErrInvalidInjectKey wraps an inject delivery key that does not match
 // the expected per-mechanism format.
-const ErrInvalidInjectKey cerrors.Code = "resolver/invalid-inject-key"
+func ErrInvalidInjectKey() error { return errInvalidInjectKey }
 
-var _ = cerrors.Register(ErrInvalidInjectKey, cerrors.Meta{
+var errInvalidInjectKey = cerrors.Register("resolver/invalid-inject-key", cerrors.Meta{
 	Message: "invalid inject key: the from-key must name a declared provides key of the target component type",
 })
 
@@ -96,9 +96,9 @@ var _ = cerrors.Register(ErrInvalidInjectKey, cerrors.Meta{
 // schema forbids). Validated at Step 1, default-aware: a field the
 // schema supplies a default for is not "missing". Distinct from
 // monotonic-narrowing, which stays signal-only.
-const ErrSchemaConformance cerrors.Code = "resolver/schema-conformance"
+func ErrSchemaConformance() error { return errSchemaConformance }
 
-var _ = cerrors.Register(ErrSchemaConformance, cerrors.Meta{
+var errSchemaConformance = cerrors.Register("resolver/schema-conformance", cerrors.Meta{
 	Message: "authored pillar does not conform to its declared schema",
 })
 
@@ -112,9 +112,9 @@ var _ = cerrors.Register(ErrSchemaConformance, cerrors.Meta{
 // It is a SHAPE sentinel only. Whether a slot declared `required: true`
 // ends up bound is a different question, asked of the attachment set a
 // node holds after the whole cascade, and it is never reported here.
-const ErrAttachmentSlotShape cerrors.Code = "resolver/attachment-slot-shape"
+func ErrAttachmentSlotShape() error { return errAttachmentSlotShape }
 
-var _ = cerrors.Register(ErrAttachmentSlotShape, cerrors.Meta{
+var errAttachmentSlotShape = cerrors.Register("resolver/attachment-slot-shape", cerrors.Meta{
 	Message: "attachment does not conform to its declared slot shape",
 })
 
@@ -125,9 +125,9 @@ var _ = cerrors.Register(ErrAttachmentSlotShape, cerrors.Meta{
 // surface is open), so this sentinel never reaches a build's verdict; it
 // exists so a front end can recognise the advisory class and render it as a
 // warning.
-const ErrAttachmentSlotNearMiss cerrors.Code = "resolver/attachment-slot-near-miss"
+func ErrAttachmentSlotNearMiss() error { return errAttachmentSlotNearMiss }
 
-var _ = cerrors.Register(ErrAttachmentSlotNearMiss, cerrors.Meta{
+var errAttachmentSlotNearMiss = cerrors.Register("resolver/attachment-slot-near-miss", cerrors.Meta{
 	Message: "attachment name is a near miss for a declared slot",
 })
 
@@ -139,9 +139,9 @@ var _ = cerrors.Register(ErrAttachmentSlotNearMiss, cerrors.Meta{
 // name a socket the catalog did not anticipate), so this sentinel never
 // reaches a build's verdict; it exists so a front end can recognise the
 // advisory class and render it as a warning.
-const ErrUsesSocketNearMiss cerrors.Code = "resolver/uses-socket-near-miss"
+func ErrUsesSocketNearMiss() error { return errUsesSocketNearMiss }
 
-var _ = cerrors.Register(ErrUsesSocketNearMiss, cerrors.Meta{
+var errUsesSocketNearMiss = cerrors.Register("resolver/uses-socket-near-miss", cerrors.Meta{
 	Message: "uses socket name is a near miss for a declared socket",
 })
 
@@ -151,9 +151,9 @@ var _ = cerrors.Register(ErrUsesSocketNearMiss, cerrors.Meta{
 // which knobs an author exposes — so this sentinel never reaches a build's
 // verdict; it exists so a front end can recognise the advisory class and
 // render it as a warning.
-const ErrUnreadParameter cerrors.Code = "resolver/unread-parameter"
+func ErrUnreadParameter() error { return errUnreadParameter }
 
-var _ = cerrors.Register(ErrUnreadParameter, cerrors.Meta{
+var errUnreadParameter = cerrors.Register("resolver/unread-parameter", cerrors.Meta{
 	Message: "declared parameter is read by no reference in the Aggregate",
 })
 
@@ -165,26 +165,26 @@ var _ = cerrors.Register(ErrUnreadParameter, cerrors.Meta{
 // the entity missing means the build's resolved set and the guard's view have
 // diverged — a loud halt, never a silent skip. (Tier-1 relative-path types,
 // which legitimately have no catalog entity, are not this error.)
-const ErrGuardEntityViewInconsistency cerrors.Code = "resolver/guard-entity-view-inconsistency"
+func ErrGuardEntityViewInconsistency() error { return errGuardEntityViewInconsistency }
 
-var _ = cerrors.Register(ErrGuardEntityViewInconsistency, cerrors.Meta{
+var errGuardEntityViewInconsistency = cerrors.Register("resolver/guard-entity-view-inconsistency", cerrors.Meta{
 	Message: "guard catalog-entity view inconsistency",
 })
 
 // ErrMissingRequiredFeature wraps a component whose declared catalog type
 // carries a presence mandate — a features.aggrega.ai/requiredType.<label>
 // annotation — that no attachment in the node's final set satisfies.
-const ErrMissingRequiredFeature cerrors.Code = "resolver/missing-required-feature"
+func ErrMissingRequiredFeature() error { return errMissingRequiredFeature }
 
-var _ = cerrors.Register(ErrMissingRequiredFeature, cerrors.Meta{
+var errMissingRequiredFeature = cerrors.Register("resolver/missing-required-feature", cerrors.Meta{
 	Message: "missing required feature: attach a Feature of the required type to the component",
 })
 
 // ErrFeatureMergeConflict wraps a conflict during Release-side Feature
 // attachment merging (e.g., divergent values on the same Feature key).
-const ErrFeatureMergeConflict cerrors.Code = "resolver/feature-merge-conflict"
+func ErrFeatureMergeConflict() error { return errFeatureMergeConflict }
 
-var _ = cerrors.Register(ErrFeatureMergeConflict, cerrors.Meta{
+var errFeatureMergeConflict = cerrors.Register("resolver/feature-merge-conflict", cerrors.Meta{
 	Message: "feature merge conflict: reconcile the Aggregate and Release declarations for the feature",
 })
 
@@ -195,42 +195,42 @@ var _ = cerrors.Register(ErrFeatureMergeConflict, cerrors.Meta{
 // consuming component). A component's own uses block is NOT one of those
 // surfaces — an Aggregate author may name a socket the catalog did not
 // declare — so this sentinel no longer fires for it.
-const ErrUnknownUsesSocket cerrors.Code = "resolver/unknown-uses-socket"
+func ErrUnknownUsesSocket() error { return errUnknownUsesSocket }
 
-var _ = cerrors.Register(ErrUnknownUsesSocket, cerrors.Meta{
+var errUnknownUsesSocket = cerrors.Register("resolver/unknown-uses-socket", cerrors.Meta{
 	Message: "unknown uses socket: name a socket the entity declares in its usesSchema — only a component's own uses block may name one the catalog did not declare",
 })
 
 // ErrSelfInjectForbidden wraps a self-inject declaration on a component
 // whose catalog type does not declare a spec.inject allowlist.
-const ErrSelfInjectForbidden cerrors.Code = "resolver/self-inject-forbidden"
+func ErrSelfInjectForbidden() error { return errSelfInjectForbidden }
 
-var _ = cerrors.Register(ErrSelfInjectForbidden, cerrors.Meta{
+var errSelfInjectForbidden = cerrors.Register("resolver/self-inject-forbidden", cerrors.Meta{
 	Message: "self-inject on component without spec.inject allowlist",
 })
 
 // ErrInjectKeyCollision wraps a delivery key declared on more than one
 // inject source for the same component.
-const ErrInjectKeyCollision cerrors.Code = "resolver/inject-key-collision"
+func ErrInjectKeyCollision() error { return errInjectKeyCollision }
 
-var _ = cerrors.Register(ErrInjectKeyCollision, cerrors.Meta{
+var errInjectKeyCollision = cerrors.Register("resolver/inject-key-collision", cerrors.Meta{
 	Message: "duplicate delivery key across inject sources",
 })
 
 // ErrMissingRequiredSocket wraps a uses-socket marked required in the
 // Component's usesSchema that no instance populates.
-const ErrMissingRequiredSocket cerrors.Code = "resolver/missing-required-socket"
+func ErrMissingRequiredSocket() error { return errMissingRequiredSocket }
 
-var _ = cerrors.Register(ErrMissingRequiredSocket, cerrors.Meta{
+var errMissingRequiredSocket = cerrors.Register("resolver/missing-required-socket", cerrors.Meta{
 	Message: "required uses socket not populated",
 })
 
 // ErrParameterMissing wraps a parameter declared required: true in the
 // Aggregate's typed contract that neither the Aggregate's default nor
 // the Release fulfillment supplies. Surfaced at Step 1a.
-const ErrParameterMissing cerrors.Code = "resolver/parameter-missing"
+func ErrParameterMissing() error { return errParameterMissing }
 
-var _ = cerrors.Register(ErrParameterMissing, cerrors.Meta{
+var errParameterMissing = cerrors.Register("resolver/parameter-missing", cerrors.Meta{
 	Message: "required parameter not supplied",
 })
 
@@ -239,9 +239,9 @@ var _ = cerrors.Register(ErrParameterMissing, cerrors.Meta{
 // violation, validate-predicate failure, or a Release key with no
 // corresponding Aggregate declaration (closed-contract policy).
 // Surfaced at Step 1a.
-const ErrParameterContractViolation cerrors.Code = "resolver/parameter-contract-violation"
+func ErrParameterContractViolation() error { return errParameterContractViolation }
 
-var _ = cerrors.Register(ErrParameterContractViolation, cerrors.Meta{
+var errParameterContractViolation = cerrors.Register("resolver/parameter-contract-violation", cerrors.Meta{
 	Message: "parameter contract violated",
 })
 
@@ -255,9 +255,9 @@ var _ = cerrors.Register(ErrParameterContractViolation, cerrors.Meta{
 // another. Rejected at Release load rather than resolved silently — the
 // diagnostic names both declaration sites so the author can delete the one
 // they did not mean.
-const ErrDuplicateBoundaryComponent cerrors.Code = "resolver/duplicate-boundary-component"
+func ErrDuplicateBoundaryComponent() error { return errDuplicateBoundaryComponent }
 
-var _ = cerrors.Register(ErrDuplicateBoundaryComponent, cerrors.Meta{
+var errDuplicateBoundaryComponent = cerrors.Register("resolver/duplicate-boundary-component", cerrors.Meta{
 	Message: "component declared in more than one boundary: declare each component in exactly one boundary",
 })
 
@@ -272,9 +272,9 @@ var _ = cerrors.Register(ErrDuplicateBoundaryComponent, cerrors.Meta{
 // entry — the earliest point every boundary consumer (WireBoundaryInfra, the
 // release guards, the renderer via rr.Release) sits behind — so one check
 // protects the whole pipeline, not just the renderer.
-const ErrUnnormalizedRelease cerrors.Code = "resolver/unnormalized-release"
+func ErrUnnormalizedRelease() error { return errUnnormalizedRelease }
 
-var _ = cerrors.Register(ErrUnnormalizedRelease, cerrors.Meta{
+var errUnnormalizedRelease = cerrors.Register("resolver/unnormalized-release", cerrors.Meta{
 	Message: "release reached resolve un-normalized (non-empty root components alongside a synthesized default boundary)",
 })
 

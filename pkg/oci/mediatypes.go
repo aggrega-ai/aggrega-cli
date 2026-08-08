@@ -82,7 +82,7 @@ func MediaTypeForKind(kind string) (string, error) {
 	if mt, ok := kindMediaTypes[kind]; ok {
 		return mt, nil
 	}
-	return "", ErrUnknownEntityKind
+	return "", ErrUnknownEntityKind()
 }
 
 // MediaTypeKinds returns every entity kind MediaTypeForKind resolves, in

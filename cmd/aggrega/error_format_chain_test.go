@@ -31,7 +31,7 @@ import (
 func TestFormatCompilerError_NestedFrames_CatalogDuplicate(t *testing.T) {
 	t.Parallel()
 	inner := cerrors.Wrap(
-		catalog.ErrDuplicateRecipeIdentity,
+		catalog.ErrDuplicateRecipeIdentity(),
 		cerrors.CatalogError,
 		cerrors.SourceLocation{File: "aggrega-catalog/recipe/terraform/mariadb-rds-copy/recipe.yaml"},
 		`recipe identity "terraform/mariadb-rds:1.0.0" already declared`,
@@ -52,7 +52,7 @@ func TestFormatCompilerError_NestedFrames_CatalogDuplicate(t *testing.T) {
 		}
 	}
 	// errors.Is stays intact: rendering is read-only on the chain.
-	if !stderrors.Is(outer, catalog.ErrDuplicateRecipeIdentity) {
+	if !stderrors.Is(outer, catalog.ErrDuplicateRecipeIdentity()) {
 		t.Error("errors.Is must keep traversing the chain")
 	}
 }
@@ -157,10 +157,10 @@ func TestFormatCompilerError_MultiErrorLink_ResolutionShape(t *testing.T) {
 	t.Parallel()
 	unmapped := fmt.Errorf(
 		"%w: component %q (type %q); recipes implementing it: [cloudformation/mariadb-rds:1.0.0 terraform/mariadb-rds:1.0.0]; pin one in the Manifest",
-		catalog.ErrNoRecipeResolved, "db", "core/datastore/mariadb:1.0.0")
+		catalog.ErrNoRecipeResolved(), "db", "core/datastore/mariadb:1.0.0")
 	noRecipe := fmt.Errorf(
 		"%w: feature %q (type %q): no Manifest mapping and no feature recipe implements it",
-		catalog.ErrNoRecipeResolved, "metrics", "core/metrics:1.0.0")
+		catalog.ErrNoRecipeResolved(), "metrics", "core/metrics:1.0.0")
 	join := stderrors.Join(unmapped, noRecipe)
 	head := cerrors.Wrap(join, cerrors.CatalogError,
 		cerrors.SourceLocation{}, "recipe resolution")
@@ -177,7 +177,7 @@ func TestFormatCompilerError_MultiErrorLink_ResolutionShape(t *testing.T) {
 			t.Errorf("recipe-resolution shape missing %q\n--- got ---\n%s", want, got)
 		}
 	}
-	if !stderrors.Is(head, catalog.ErrNoRecipeResolved) {
+	if !stderrors.Is(head, catalog.ErrNoRecipeResolved()) {
 		t.Error("errors.Is must keep traversing through the multi-error link")
 	}
 }

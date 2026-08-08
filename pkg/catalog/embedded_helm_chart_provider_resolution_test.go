@@ -135,7 +135,7 @@ func TestHelmChartProviderEmbeddedResolutionChain(t *testing.T) {
 		if err == nil {
 			t.Fatal("resolve with a wrong pin succeeded; expected an integrity halt")
 		}
-		if !errors.Is(err, oci.ErrFetchIntegrity) {
+		if !errors.Is(err, oci.ErrFetchIntegrity()) {
 			t.Fatalf("wrong-pin resolve error = %v, want wrapped oci.ErrFetchIntegrity", err)
 		}
 	})

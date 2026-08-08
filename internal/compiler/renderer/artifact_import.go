@@ -34,22 +34,22 @@ func resolveArtifactLibraryImport(ref string, libs map[string]types.ArtifactsLib
 	library, entry, ok := splitArtifactImportRef(ref)
 	if !ok {
 		if strings.HasPrefix(ref, "oci://") {
-			return types.ArtifactsLibraryEntry{}, fmt.Errorf("%w: %q", ErrHostInLibraryImport, ref)
+			return types.ArtifactsLibraryEntry{}, fmt.Errorf("%w: %q", ErrHostInLibraryImport(), ref)
 		}
-		return types.ArtifactsLibraryEntry{}, fmt.Errorf("%w: %q", ErrArtifactImportShape, ref)
+		return types.ArtifactsLibraryEntry{}, fmt.Errorf("%w: %q", ErrArtifactImportShape(), ref)
 	}
 	// A stale `@` version separator is rejected with a steer to `:` rather than
 	// falling through to an opaque library-not-found.
 	if strings.IndexByte(library, '@') >= 0 {
-		return types.ArtifactsLibraryEntry{}, fmt.Errorf("%w: version separator is ':', not '@' — use %q", ErrArtifactImportShape, strings.Replace(ref, "@", ":", 1))
+		return types.ArtifactsLibraryEntry{}, fmt.Errorf("%w: version separator is ':', not '@' — use %q", ErrArtifactImportShape(), strings.Replace(ref, "@", ":", 1))
 	}
 	al, found := libs[library]
 	if !found {
-		return types.ArtifactsLibraryEntry{}, fmt.Errorf("%w: ArtifactsLibrary %q (bundle %q)", ErrArtifactsLibraryNotFound, library, entry)
+		return types.ArtifactsLibraryEntry{}, fmt.Errorf("%w: ArtifactsLibrary %q (bundle %q)", ErrArtifactsLibraryNotFound(), library, entry)
 	}
 	bundle, found := al.Spec.Artifacts.Get(entry)
 	if !found {
-		return types.ArtifactsLibraryEntry{}, fmt.Errorf("%w: bundle %q in ArtifactsLibrary %q", ErrArtifactsLibraryEntryNotFound, entry, library)
+		return types.ArtifactsLibraryEntry{}, fmt.Errorf("%w: bundle %q in ArtifactsLibrary %q", ErrArtifactsLibraryEntryNotFound(), entry, library)
 	}
 	// A bundle file body is terminal content: a field-root `$import:` as a whole
 	// file body cannot expand into another bundle (one file slot, many files),
@@ -58,7 +58,7 @@ func resolveArtifactLibraryImport(ref string, libs map[string]types.ArtifactsLib
 		body, _ := bundle.Files.Get(fname)
 		if _, nested := fieldRootImportTarget(body); nested {
 			return types.ArtifactsLibraryEntry{}, fmt.Errorf("%w: bundle %q file %q body is a field-root $import: (nested library import inside a bundle file is not supported; compose at the consumption site)",
-				ErrArtifactImportShape, entry, fname)
+				ErrArtifactImportShape(), entry, fname)
 		}
 	}
 	return bundle, nil

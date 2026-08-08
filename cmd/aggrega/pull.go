@@ -527,7 +527,7 @@ func pullRun(cfg pullConfig) error {
 	providerBindResolver := func(ref string) (types.Plugin, bool, error) {
 		bare, _, _ := strings.Cut(ref, ":")
 		p, ok, err := lazyView.ProviderPluginForTarget(ref, wsCfg.Plugins.ProviderTargetURIs())
-		if errors.Is(err, catalog.ErrAmbiguousProviderPlugin) && providerBindingHelperEligible(cfg) {
+		if errors.Is(err, catalog.ErrAmbiguousProviderPlugin()) && providerBindingHelperEligible(cfg) {
 			if herr := runProviderBindingHelper(bare, lazyView.ProviderPluginCandidates(bare), rw.Root(), &wsCfg, cfg.DiagOut); herr != nil {
 				return types.Plugin{}, false, herr
 			}
@@ -1082,7 +1082,7 @@ func cacheVerdictSocketPlugins(ctx context.Context, cfg workspaceconfig.Config, 
 			}
 			if artRes.NotFound {
 				return fmt.Errorf("cache %s socket plugin artifact %q: entity resolved but its .wasm did not: %w",
-					socket.Socket, ref.URI, closure.ErrUnresolvableURI)
+					socket.Socket, ref.URI, closure.ErrUnresolvableURI())
 			}
 			if err := verifyCachedVerdictSocketPlugin(ctx, cfg, lazyView, ref.URI, artRes.ManifestDigest, workspaceRoot, cacheDir, targetFor, diagOut); err != nil {
 				return fmt.Errorf("verify %s socket plugin %q: %w", socket.Socket, ref.URI, err)
@@ -1127,7 +1127,7 @@ func verifyCachedVerdictSocketPlugin(ctx context.Context, cfg workspaceconfig.Co
 	if ok {
 		artifactRef := entity.ArtifactReference()
 		wasmBytes, rerr := oci.ReadCached(workspaceRoot, cacheDir, artifactRef, wasmDigest)
-		if rerr != nil && !errors.Is(rerr, oci.ErrFetchNotFound) {
+		if rerr != nil && !errors.Is(rerr, oci.ErrFetchNotFound()) {
 			return fmt.Errorf("read cached .wasm %s: %w", artifactRef, rerr)
 		}
 		if rerr == nil {

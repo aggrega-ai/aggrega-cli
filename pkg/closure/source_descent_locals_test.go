@@ -50,7 +50,7 @@ func TestDescendFailsWhenSourceNeedsAnUnresolvableLocal(t *testing.T) {
 	cl := closure.Closure{Entities: []closure.ResolvedRef{{URI: uri, KindHint: "recipe"}}}
 
 	_, err := closure.DescendRecipeSources(usedFromClosure(cl), cl, loader, &fakeSourceResolver{}, "/ws", ".aggrega/cache")
-	if !errors.Is(err, closure.ErrSourceTemplateAtLockTime) {
+	if !errors.Is(err, closure.ErrSourceTemplateAtLockTime()) {
 		t.Fatalf("source referencing a skipped local should halt with ErrSourceTemplateAtLockTime; got %v", err)
 	}
 	if !contains(err.Error(), "spec.source.version") {
@@ -69,10 +69,10 @@ func TestDescendKeepsParseErrorLoud(t *testing.T) {
 	cl := closure.Closure{Entities: []closure.ResolvedRef{{URI: uri, KindHint: "recipe"}}}
 
 	_, err := closure.DescendRecipeSources(usedFromClosure(cl), cl, loader, &fakeSourceResolver{}, "/ws", ".aggrega/cache")
-	if !errors.Is(err, closure.ErrSourceTemplateParse) {
+	if !errors.Is(err, closure.ErrSourceTemplateParse()) {
 		t.Errorf("malformed local should be ErrSourceTemplateParse (loud); got %v", err)
 	}
-	if !errors.Is(err, closure.ErrSourceTemplateAtLockTime) {
+	if !errors.Is(err, closure.ErrSourceTemplateAtLockTime()) {
 		t.Errorf("parse error should still wrap ErrSourceTemplateAtLockTime; got %v", err)
 	}
 }
@@ -89,10 +89,10 @@ func TestDescendKeepsProvidesLocalLoud(t *testing.T) {
 	cl := closure.Closure{Entities: []closure.ResolvedRef{{URI: uri, KindHint: "recipe"}}}
 
 	_, err := closure.DescendRecipeSources(usedFromClosure(cl), cl, loader, &fakeSourceResolver{}, "/ws", ".aggrega/cache")
-	if !errors.Is(err, closure.ErrSourceTemplateProvidesRef) {
+	if !errors.Is(err, closure.ErrSourceTemplateProvidesRef()) {
 		t.Errorf(".provides local should be ErrSourceTemplateProvidesRef (loud) regardless of source usage; got %v", err)
 	}
-	if !errors.Is(err, closure.ErrSourceTemplateAtLockTime) {
+	if !errors.Is(err, closure.ErrSourceTemplateAtLockTime()) {
 		t.Errorf(".provides reverse-ref should still wrap ErrSourceTemplateAtLockTime; got %v", err)
 	}
 }

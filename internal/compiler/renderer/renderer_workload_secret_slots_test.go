@@ -119,7 +119,7 @@ func TestIntegration_WorkloadSecretSlots_BaseRecipe_HaltNonReferenceable(t *test
 	t.Parallel()
 	// Transparent slot but no referenceable fill: nothing to point at.
 	err := renderBaseWithSlot(t, slotMap("password", []string{"env"}), false)
-	if !errors.Is(err, validator.ErrSlotNotReferenceable) {
+	if !errors.Is(err, validator.ErrSlotNotReferenceable()) {
 		t.Fatalf("transparent slot without a referenceable fill should HALT with ErrSlotNotReferenceable, got: %v", err)
 	}
 }
@@ -127,7 +127,7 @@ func TestIntegration_WorkloadSecretSlots_BaseRecipe_HaltNonReferenceable(t *test
 func TestIntegration_WorkloadSecretSlots_BaseRecipe_HaltUndeclared(t *testing.T) {
 	t.Parallel()
 	err := renderBaseWithSlot(t, slotMap("", nil), false) // no slots declared
-	if !errors.Is(err, validator.ErrWorkloadFeaturesSchema) {
+	if !errors.Is(err, validator.ErrWorkloadFeaturesSchema()) {
 		t.Fatalf("undeclared slot should HALT with ErrWorkloadFeaturesSchema, got: %v", err)
 	}
 }
@@ -135,7 +135,7 @@ func TestIntegration_WorkloadSecretSlots_BaseRecipe_HaltUndeclared(t *testing.T)
 func TestIntegration_WorkloadSecretSlots_BaseRecipe_HaltBlackbox(t *testing.T) {
 	t.Parallel()
 	err := renderBaseWithSlot(t, slotMap("password", []string{}), false) // blackbox: inject:[]
-	if !errors.Is(err, validator.ErrWorkloadFeaturesSchema) {
+	if !errors.Is(err, validator.ErrWorkloadFeaturesSchema()) {
 		t.Fatalf("blackbox slot should HALT with ErrWorkloadFeaturesSchema, got: %v", err)
 	}
 }
@@ -242,7 +242,7 @@ func TestIntegration_WorkloadSecretSlots_FeatureRecipe_AdmitDeclaredTransparent(
 func TestIntegration_WorkloadSecretSlots_FeatureRecipe_HaltNonReferenceable(t *testing.T) {
 	t.Parallel()
 	err := renderFRWithSlot(t, slotMap("frpass", []string{"env"}), false)
-	if !errors.Is(err, validator.ErrSlotNotReferenceable) {
+	if !errors.Is(err, validator.ErrSlotNotReferenceable()) {
 		t.Fatalf("FR transparent slot without a referenceable fill should HALT with ErrSlotNotReferenceable, got: %v", err)
 	}
 }
@@ -250,7 +250,7 @@ func TestIntegration_WorkloadSecretSlots_FeatureRecipe_HaltNonReferenceable(t *t
 func TestIntegration_WorkloadSecretSlots_FeatureRecipe_HaltUndeclared(t *testing.T) {
 	t.Parallel()
 	err := renderFRWithSlot(t, slotMap("", nil), false) // Feature declares no slots
-	if !errors.Is(err, validator.ErrWorkloadFeaturesSchema) {
+	if !errors.Is(err, validator.ErrWorkloadFeaturesSchema()) {
 		t.Fatalf("FR undeclared slot should HALT with ErrWorkloadFeaturesSchema, got: %v", err)
 	}
 }

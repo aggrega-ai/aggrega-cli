@@ -91,7 +91,7 @@ func (a *ociAdapter) Resolve(spec sourceresolver.SourceSpec) (*sourceresolver.Re
 	reference := strings.TrimPrefix(spec.URL, "oci://")
 	target, err := a.newTarget(reference, spec.Client)
 	if err != nil {
-		return nil, sourceresolver.Wrap(spec, sourceresolver.ErrFetchNetworkUnreachable, err)
+		return nil, sourceresolver.Wrap(spec, sourceresolver.ErrFetchNetworkUnreachable(), err)
 	}
 
 	ctx := context.Background()
@@ -138,16 +138,16 @@ func (a *ociAdapter) Resolve(spec sourceresolver.SourceSpec) (*sourceresolver.Re
 // is preserved through the wrap.
 func mapOCIError(spec sourceresolver.SourceSpec, cause error) error {
 	switch {
-	case errors.Is(cause, ocierr.ErrFetchNotFound):
-		return sourceresolver.Wrap(spec, sourceresolver.ErrFetchNotFound, cause)
-	case errors.Is(cause, ocierr.ErrFetchUnauthorized):
-		return sourceresolver.Wrap(spec, sourceresolver.ErrFetchUnauthorized, cause)
-	case errors.Is(cause, ocierr.ErrFetchNetworkUnreachable):
-		return sourceresolver.Wrap(spec, sourceresolver.ErrFetchNetworkUnreachable, cause)
-	case errors.Is(cause, ocierr.ErrFetchIntegrity):
-		return sourceresolver.Wrap(spec, sourceresolver.ErrFetchIntegrity, cause)
+	case errors.Is(cause, ocierr.ErrFetchNotFound()):
+		return sourceresolver.Wrap(spec, sourceresolver.ErrFetchNotFound(), cause)
+	case errors.Is(cause, ocierr.ErrFetchUnauthorized()):
+		return sourceresolver.Wrap(spec, sourceresolver.ErrFetchUnauthorized(), cause)
+	case errors.Is(cause, ocierr.ErrFetchNetworkUnreachable()):
+		return sourceresolver.Wrap(spec, sourceresolver.ErrFetchNetworkUnreachable(), cause)
+	case errors.Is(cause, ocierr.ErrFetchIntegrity()):
+		return sourceresolver.Wrap(spec, sourceresolver.ErrFetchIntegrity(), cause)
 	default:
-		return sourceresolver.Wrap(spec, sourceresolver.ErrFetchNetworkUnreachable, cause)
+		return sourceresolver.Wrap(spec, sourceresolver.ErrFetchNetworkUnreachable(), cause)
 	}
 }
 

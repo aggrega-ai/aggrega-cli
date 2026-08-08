@@ -252,7 +252,7 @@ func TestEvalPathTemplate_HappyAndParseError(t *testing.T) {
 	}
 	// A variable the context type does not define is refused before execution.
 	_, err = EvalPathTemplate("t", "directory", "b", `{{ .unknown_field }}`, data)
-	if !errors.Is(err, ErrPathTemplateInvalidField) {
+	if !errors.Is(err, ErrPathTemplateInvalidField()) {
 		t.Errorf("unknown field should report ErrPathTemplateInvalidField; got %v", err)
 	}
 	if err == nil || !strings.Contains(err.Error(), "unknown_field") {

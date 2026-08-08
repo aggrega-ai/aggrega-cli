@@ -29,9 +29,9 @@ const maxSubAggregateDepth = 10
 // evades the visited set (for example a version-renaming chain that presents a
 // fresh identity at every level). An ordinary cycle (A imports B imports A)
 // terminates earlier via the visited set and never reaches this bound.
-const ErrSubAggregateDepth cerrors.Code = "closure/sub-aggregate-depth"
+func ErrSubAggregateDepth() error { return errSubAggregateDepth }
 
-var _ = cerrors.Register(ErrSubAggregateDepth, cerrors.Meta{
+var errSubAggregateDepth = cerrors.Register("closure/sub-aggregate-depth", cerrors.Meta{
 	Message: "resolve: sub-aggregate inclusion depth exceeded",
 })
 
@@ -51,9 +51,9 @@ type AggregateLoader interface {
 
 // ErrNoAggregateLoader halts a caller whose catalog lookup cannot load resolved
 // sub-aggregate bodies, so the sub-aggregate axis cannot be computed over it.
-const ErrNoAggregateLoader cerrors.Code = "closure/no-aggregate-loader"
+func ErrNoAggregateLoader() error { return errNoAggregateLoader }
 
-var _ = cerrors.Register(ErrNoAggregateLoader, cerrors.Meta{
+var errNoAggregateLoader = cerrors.Register("closure/no-aggregate-loader", cerrors.Meta{
 	Message: "resolve: catalog lookup cannot load resolved sub-aggregate bodies",
 })
 
@@ -70,7 +70,7 @@ var _ = cerrors.Register(ErrNoAggregateLoader, cerrors.Meta{
 func RequireAggregateLoader(lookup Lookup) (AggregateLoader, error) {
 	loader, ok := lookup.(AggregateLoader)
 	if !ok {
-		return nil, ErrNoAggregateLoader
+		return nil, ErrNoAggregateLoader()
 	}
 	return loader, nil
 }
@@ -129,7 +129,7 @@ func DescendSubAggregates(c *Closure, loader AggregateLoader, lookup Lookup) err
 		}
 		visited[f.uri] = struct{}{}
 		if f.depth > maxSubAggregateDepth {
-			return fmt.Errorf("%w: %q at depth %d", ErrSubAggregateDepth, f.uri, f.depth)
+			return fmt.Errorf("%w: %q at depth %d", ErrSubAggregateDepth(), f.uri, f.depth)
 		}
 
 		agg, err := loader.LoadAggregate(f.uri, f.version, f.digest)

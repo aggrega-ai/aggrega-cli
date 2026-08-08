@@ -108,7 +108,7 @@ spec:
 	// meaningful only because this fixture is genuinely invalid.
 	if _, eerr := envelope.ValidateBytes(envelope.KindPlugin, []byte(malformed), "broken.yaml"); eerr == nil {
 		t.Fatalf("fixture invalid: envelope must reject the malformed Plugin (reject-parity is vacuous otherwise)")
-	} else if !errors.Is(eerr, envelope.ErrEntityEnvelope) {
+	} else if !errors.Is(eerr, envelope.ErrEntityEnvelope()) {
 		t.Fatalf("envelope rejection should wrap ErrEntityEnvelope; got %v", eerr)
 	}
 
@@ -118,7 +118,7 @@ spec:
 	// Eager: the fail-fast load halts, surfacing the envelope violation.
 	if _, err := LoadAll("", dir); err == nil {
 		t.Fatalf("eager LoadAll must halt on a malformed Plugin")
-	} else if !errors.Is(err, envelope.ErrEntityEnvelope) {
+	} else if !errors.Is(err, envelope.ErrEntityEnvelope()) {
 		t.Errorf("eager load error should wrap ErrEntityEnvelope; got %v", err)
 	}
 

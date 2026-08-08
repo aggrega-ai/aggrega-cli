@@ -227,7 +227,7 @@ properties: {}
 	if err == nil {
 		t.Fatal("expected error for unresolved library; got nil")
 	}
-	if !errors.Is(err, ErrUnresolvedSchemaLibraryRef) {
+	if !errors.Is(err, ErrUnresolvedSchemaLibraryRef()) {
 		t.Errorf("error = %v; want ErrUnresolvedSchemaLibraryRef", err)
 	}
 	if !strings.Contains(err.Error(), "MissingLib") {
@@ -259,7 +259,7 @@ properties: {}
 	if err == nil {
 		t.Fatal("expected error; got nil")
 	}
-	if !errors.Is(err, ErrUnresolvedSchemaLibraryRef) {
+	if !errors.Is(err, ErrUnresolvedSchemaLibraryRef()) {
 		t.Errorf("error = %v; want ErrUnresolvedSchemaLibraryRef", err)
 	}
 	if !strings.Contains(err.Error(), "Missing") {
@@ -302,14 +302,14 @@ properties: {}
 	if err == nil {
 		t.Fatal("expected cycle error; got nil")
 	}
-	if !errors.Is(err, ErrCircularRef) {
+	if !errors.Is(err, ErrCircularRef()) {
 		t.Errorf("error = %v; want ErrCircularRef", err)
 	}
 	// Shared-primitive conformance: the $ref cycle sentinel IS refcycle.ErrCycle,
 	// the same identity the $import surface reports — one detector guards both, so
 	// a mutation to the primitive's logic surfaces in pkg/refcycle's unit test and
 	// a change to the shared sentinel breaks both surfaces' cycle assertions.
-	if !errors.Is(err, refcycle.ErrCycle) {
+	if !errors.Is(err, refcycle.ErrCycle()) {
 		t.Errorf("error = %v; want the shared refcycle.ErrCycle identity", err)
 	}
 	if !strings.Contains(err.Error(), "->") {
@@ -364,7 +364,7 @@ properties: {}
 	if err == nil {
 		t.Fatal("expected cycle error; got nil")
 	}
-	if !errors.Is(err, ErrCircularRef) {
+	if !errors.Is(err, ErrCircularRef()) {
 		t.Fatalf("error = %v; want ErrCircularRef", err)
 	}
 	// The cycle is keyed and reported by canonical identity: the `:version`
@@ -436,7 +436,7 @@ func TestExpand_HostBearingRefRejected(t *testing.T) {
 properties: {}
 `)
 	_, err := Compile(consumer, WithSchemaLibraries(libs), WithConsumerFile("test/consumer.yaml"))
-	if !errors.Is(err, ErrHostInLibraryRef) {
+	if !errors.Is(err, ErrHostInLibraryRef()) {
 		t.Fatalf("error = %v; want ErrHostInLibraryRef", err)
 	}
 	msg := err.Error()
@@ -510,7 +510,7 @@ format: email
 	if err == nil {
 		t.Fatal("expected sibling rejection; got nil")
 	}
-	if !errors.Is(err, ErrUnknownKeyword) {
+	if !errors.Is(err, ErrUnknownKeyword()) {
 		t.Errorf("error = %v; want ErrUnknownKeyword", err)
 	}
 }
@@ -638,7 +638,7 @@ properties: {}
 	if err == nil {
 		t.Fatal("expected error for cross-document $ref without catalog; got nil")
 	}
-	if !errors.Is(err, ErrUnresolvedSchemaLibraryRef) {
+	if !errors.Is(err, ErrUnresolvedSchemaLibraryRef()) {
 		t.Errorf("error = %v; want ErrUnresolvedSchemaLibraryRef", err)
 	}
 }

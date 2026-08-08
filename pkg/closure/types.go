@@ -186,9 +186,9 @@ type ResolvedSource struct {
 // DescendRecipeSources's lock-time evaluation pass. The build-time
 // counterpart (lockfile-vs-actual drift) wraps ErrFetchIntegrity at
 // the orchestrator, not this sentinel.
-const ErrSourceTemplateAtLockTime cerrors.Code = "closure/source-template-at-lock-time"
+func ErrSourceTemplateAtLockTime() error { return errSourceTemplateAtLockTime }
 
-var _ = cerrors.Register(ErrSourceTemplateAtLockTime, cerrors.Meta{
+var errSourceTemplateAtLockTime = cerrors.Register("closure/source-template-at-lock-time", cerrors.Meta{
 	Message: "resolve: source-template evaluation failure at lock time",
 })
 
@@ -196,9 +196,9 @@ var _ = cerrors.Register(ErrSourceTemplateAtLockTime, cerrors.Meta{
 // template text). A parse error is a structural authoring bug at any phase, so
 // lock-time local resolution keeps it loud rather than tolerating it. Errors of
 // this class also wrap ErrSourceTemplateAtLockTime.
-const ErrSourceTemplateParse cerrors.Code = "closure/source-template-parse"
+func ErrSourceTemplateParse() error { return errSourceTemplateParse }
 
-var _ = cerrors.Register(ErrSourceTemplateParse, cerrors.Meta{
+var errSourceTemplateParse = cerrors.Register("closure/source-template-parse", cerrors.Meta{
 	Message: "resolve: source-template parse error",
 })
 
@@ -207,9 +207,9 @@ var _ = cerrors.Register(ErrSourceTemplateParse, cerrors.Meta{
 // local) reading `.provides` is an invalid reverse reference at any phase, not a
 // lock-time-only absence, so lock-time local resolution keeps it loud. Errors of
 // this class also wrap ErrSourceTemplateAtLockTime.
-const ErrSourceTemplateProvidesRef cerrors.Code = "closure/source-template-provides-ref"
+func ErrSourceTemplateProvidesRef() error { return errSourceTemplateProvidesRef }
 
-var _ = cerrors.Register(ErrSourceTemplateProvidesRef, cerrors.Meta{
+var errSourceTemplateProvidesRef = cerrors.Register("closure/source-template-provides-ref", cerrors.Meta{
 	Message: "resolve: source-template references .provides (invalid reverse reference)",
 })
 
@@ -349,9 +349,9 @@ type LibraryResolution struct {
 // incompatible major versions of the same library URI. The
 // wrapped error message names the library URI, the conflicting
 // versions, and the consumer chain.
-const ErrMVSConflict cerrors.Code = "closure/mvs-conflict"
+func ErrMVSConflict() error { return errMVSConflict }
 
-var _ = cerrors.Register(ErrMVSConflict, cerrors.Meta{
+var errMVSConflict = cerrors.Register("closure/mvs-conflict", cerrors.Meta{
 	Message: "resolve: minimum version selection conflict — incompatible library version requirements",
 })
 
@@ -364,9 +364,9 @@ var _ = cerrors.Register(ErrMVSConflict, cerrors.Meta{
 // whose shape a recipe reference cannot express is judged before the walk
 // runs, so a mis-shaped reference no longer arrives here to be reported as
 // an entity the catalog does not hold.
-const ErrUnresolvableURI cerrors.Code = "closure/unresolvable-uri"
+func ErrUnresolvableURI() error { return errUnresolvableURI }
 
-var _ = cerrors.Register(ErrUnresolvableURI, cerrors.Meta{
+var errUnresolvableURI = cerrors.Register("closure/unresolvable-uri", cerrors.Meta{
 	Message: "resolve: no entity in the catalog matches this URI",
 })
 
@@ -374,9 +374,9 @@ var _ = cerrors.Register(ErrUnresolvableURI, cerrors.Meta{
 // does not match the canonical library-reference URI shape per
 // the file-import vocabulary spec. The wrapped error names the
 // offending input string.
-const ErrInvalidLibraryRef cerrors.Code = "closure/invalid-library-ref"
+func ErrInvalidLibraryRef() error { return errInvalidLibraryRef }
 
-var _ = cerrors.Register(ErrInvalidLibraryRef, cerrors.Meta{
+var errInvalidLibraryRef = cerrors.Register("closure/invalid-library-ref", cerrors.Meta{
 	Message: "resolve: invalid library reference URI",
 })
 

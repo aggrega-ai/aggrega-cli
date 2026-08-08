@@ -87,7 +87,7 @@ func TestIndexFile_WithinDirDuplicateHaltsStrict(t *testing.T) {
 			if err == nil {
 				t.Fatalf("%s: expected within-dir duplicate to halt strict load", kind)
 			}
-			if !errors.Is(err, ErrDuplicateEntityIdentity) {
+			if !errors.Is(err, ErrDuplicateEntityIdentity()) {
 				t.Errorf("%s: want ErrDuplicateEntityIdentity, got %v", kind, err)
 			}
 		})
@@ -103,7 +103,7 @@ func TestIndexFile_WithinDirDuplicateRecipeAliasStillMatches(t *testing.T) {
 	writeFile(t, dir+"/a.yaml", dupKindBodies["Recipe"]("first"))
 	writeFile(t, dir+"/b.yaml", dupKindBodies["Recipe"]("second"))
 	_, err := LoadAll("", dir)
-	if !errors.Is(err, ErrDuplicateRecipeIdentity) {
+	if !errors.Is(err, ErrDuplicateRecipeIdentity()) {
 		t.Errorf("recipe within-dir dup must still match the ErrDuplicateRecipeIdentity alias, got %v", err)
 	}
 }
@@ -126,7 +126,7 @@ func TestIndexFile_WithinDirDuplicateTolerantSkips(t *testing.T) {
 	}
 	var found bool
 	for _, s := range skipped {
-		if errors.Is(s.Err, ErrDuplicateEntityIdentity) {
+		if errors.Is(s.Err, ErrDuplicateEntityIdentity()) {
 			found = true
 		}
 	}

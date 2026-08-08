@@ -40,6 +40,6 @@ func (c Config) ResolveRegistry(token string) (string, error) {
 		return matched[0], nil
 	default:
 		return "", fmt.Errorf("workspaceconfig: registry alias %q matches %d hosts (%v); address the registry by host or remove the duplicate alias: %w",
-			token, len(matched), matched, ErrAmbiguousRegistryAlias)
+			token, len(matched), matched, ErrAmbiguousRegistryAlias())
 	}
 }

@@ -72,7 +72,7 @@ func ConditionalListTags(ctx context.Context, host, repo, ifNoneMatch string, ht
 		}
 		return payload.Tags, resp.Header.Get("ETag"), false, resp.Header.Get("Link") != "", nil
 	case http.StatusUnauthorized, http.StatusForbidden:
-		return nil, "", false, false, fmt.Errorf("oci: tags/list %q: status %d: %w", repo, resp.StatusCode, ErrFetchUnauthorized)
+		return nil, "", false, false, fmt.Errorf("oci: tags/list %q: status %d: %w", repo, resp.StatusCode, ErrFetchUnauthorized())
 	default:
 		return nil, "", false, false, fmt.Errorf("oci: tags/list %q: unexpected status %d", repo, resp.StatusCode)
 	}

@@ -57,7 +57,7 @@ func TestVerifyDeterminismHaltsOnNonDeterministicGuest(t *testing.T) {
 	if err == nil {
 		t.Fatal("verify-determinism render of a non-deterministic guest returned nil; expected a halt")
 	}
-	if !errors.Is(err, renderer.ErrRenderNondeterministic) {
+	if !errors.Is(err, renderer.ErrRenderNondeterministic()) {
 		t.Fatalf("expected ErrRenderNondeterministic in chain; got %v", err)
 	}
 }

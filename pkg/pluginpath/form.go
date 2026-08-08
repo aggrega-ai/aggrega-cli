@@ -95,12 +95,12 @@ func AcceptReferenceForm(uri string, policy SurfacePolicy) error {
 	case FormLocalPath:
 		return fmt.Errorf(
 			"%w: %q is a filesystem path, but a pipeline plugin must be a Plugin entity URI (e.g. `name:version` or `provider/name:version`)",
-			ErrPluginEntityNotFound, uri)
+			ErrPluginEntityNotFound(), uri)
 	case FormArtifact:
 		return fmt.Errorf(
 			"%w: %q is an artifact reference (an `oci://` scheme, a bare `.wasm`, or an `@sha256:` digest), "+
 				"but a pipeline plugin must be a Plugin entity URI (e.g. `name:version` or `provider/name:version`)",
-			ErrPluginEntityNotFound, uri)
+			ErrPluginEntityNotFound(), uri)
 	default:
 		return nil
 	}

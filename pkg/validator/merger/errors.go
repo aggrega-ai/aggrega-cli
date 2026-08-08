@@ -9,9 +9,9 @@ import cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 // extends chain — the visited-set sees the same URI twice. Wrapped in
 // *MergeError carrying the offending URI and the partial chain that
 // led to the cycle.
-const ErrCyclicExtension cerrors.Code = "validator-merger/cyclic-extension"
+func ErrCyclicExtension() error { return errCyclicExtension }
 
-var _ = cerrors.Register(ErrCyclicExtension, cerrors.Meta{
+var errCyclicExtension = cerrors.Register("validator-merger/cyclic-extension", cerrors.Meta{
 	Message: "merger: cyclic extends chain",
 })
 
@@ -19,9 +19,9 @@ var _ = cerrors.Register(ErrCyclicExtension, cerrors.Meta{
 // levels before terminating. Mirrors the existing validator inheritance
 // walker's depth bound. Wrapped in *MergeError carrying the terminal
 // URI and chain depth.
-const ErrMaxDepth cerrors.Code = "validator-merger/max-depth"
+func ErrMaxDepth() error { return errMaxDepth }
 
-var _ = cerrors.Register(ErrMaxDepth, cerrors.Meta{
+var errMaxDepth = cerrors.Register("validator-merger/max-depth", cerrors.Meta{
 	Message: "merger: extends chain exceeds maximum depth",
 })
 
@@ -29,9 +29,9 @@ var _ = cerrors.Register(ErrMaxDepth, cerrors.Meta{
 // keyword rules cannot resolve — for example, an empty input chain
 // passed to Merge. Wrapped in *MergeError carrying a path hint and a
 // human-readable detail.
-const ErrMergeInvalid cerrors.Code = "validator-merger/merge-invalid"
+func ErrMergeInvalid() error { return errMergeInvalid }
 
-var _ = cerrors.Register(ErrMergeInvalid, cerrors.Meta{
+var errMergeInvalid = cerrors.Register("validator-merger/merge-invalid", cerrors.Meta{
 	Message: "merger: invalid merge input",
 })
 

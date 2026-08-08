@@ -36,7 +36,7 @@ func guardEntityViewInconsistency(entity, field, typeRef string) *ResolverError 
 		Entity:  entity,
 		Field:   field,
 		Message: fmt.Sprintf("type %q was resolved as a catalog reference but is absent from the guard's catalog view (build resolved-set / guard view divergence)", typeRef),
-		Err:     ErrGuardEntityViewInconsistency,
+		Err:     ErrGuardEntityViewInconsistency(),
 	}
 }
 

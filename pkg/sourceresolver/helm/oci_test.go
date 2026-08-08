@@ -131,7 +131,7 @@ func TestOCIResolveNotFoundWrapsSentinel(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for missing tag; got nil")
 	}
-	if !errors.Is(err, sourceresolver.ErrFetchNotFound) {
+	if !errors.Is(err, sourceresolver.ErrFetchNotFound()) {
 		t.Errorf("error should wrap ErrFetchNotFound; got %v", err)
 	}
 }
@@ -148,7 +148,7 @@ func TestOCIResolveTargetFactoryFailureWrapsNetwork(t *testing.T) {
 		WorkspaceRoot: t.TempDir(),
 		CacheDir:      ".aggrega/cache",
 	})
-	if !errors.Is(err, sourceresolver.ErrFetchNetworkUnreachable) {
+	if !errors.Is(err, sourceresolver.ErrFetchNetworkUnreachable()) {
 		t.Errorf("error should wrap ErrFetchNetworkUnreachable; got %v", err)
 	}
 }

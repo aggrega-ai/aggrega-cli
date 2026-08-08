@@ -16,10 +16,10 @@ import cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 // ErrCycle is the shared sentinel for a detected reference-expansion cycle.
 // Callers wrap it with surface-specific context (the offending chain, the
 // `$ref` / `$import` keyword, source location); consumers match the failure
-// with errors.Is(err, ErrCycle).
-const ErrCycle cerrors.Code = "refcycle/cycle"
+// with errors.Is(err, ErrCycle()).
+func ErrCycle() error { return errCycle }
 
-var _ = cerrors.Register(ErrCycle, cerrors.Meta{
+var errCycle = cerrors.Register("refcycle/cycle", cerrors.Meta{
 	Message: "circular reference expansion",
 })
 

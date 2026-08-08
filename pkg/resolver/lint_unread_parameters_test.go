@@ -49,7 +49,7 @@ func TestLintUnreadParameters_UnreferencedParameterIsReported(t *testing.T) {
 	if want := []string{".spec.parameters.never_read"}; !equalStrings(fieldsOf(got), want) {
 		t.Fatalf("fields = %v; want %v", fieldsOf(got), want)
 	}
-	if !errors.Is(got[0], ErrUnreadParameter) {
+	if !errors.Is(got[0], ErrUnreadParameter()) {
 		t.Errorf("finding does not carry ErrUnreadParameter: %v", got[0])
 	}
 	if !strings.Contains(got[0].Message, `"never_read"`) {
@@ -241,7 +241,7 @@ func TestLintUnreadParameters_RidesTheResolveResult(t *testing.T) {
 			t.Errorf("referenced parameter reported unread: %s", f)
 		}
 	}
-	if !errors.Is(result.LintAdvisories[0], ErrUnreadParameter) {
+	if !errors.Is(result.LintAdvisories[0], ErrUnreadParameter()) {
 		t.Errorf("advisory does not carry ErrUnreadParameter: %v", result.LintAdvisories[0])
 	}
 	// The Entity names the Aggregate so a reader can tell which document the

@@ -22,16 +22,16 @@ import (
 // detector share an error shape.
 
 // ErrRecipeRule1: valuesMapping requires source.
-const ErrRecipeRule1 cerrors.Code = "validator/recipe-rule-1"
+func ErrRecipeRule1() error { return errRecipeRule1 }
 
-var _ = cerrors.Register(ErrRecipeRule1, cerrors.Meta{
+var errRecipeRule1 = cerrors.Register("validator/recipe-rule-1", cerrors.Meta{
 	Message: "recipe rule 1: valuesMapping requires source",
 })
 
 // ErrRecipeRule5: at least one input kind must be present.
-const ErrRecipeRule5 cerrors.Code = "validator/recipe-rule-5"
+func ErrRecipeRule5() error { return errRecipeRule5 }
 
-var _ = cerrors.Register(ErrRecipeRule5, cerrors.Meta{
+var errRecipeRule5 = cerrors.Register("validator/recipe-rule-5", cerrors.Meta{
 	Message: "recipe rule 5: at least one input kind required",
 })
 
@@ -41,9 +41,9 @@ var _ = cerrors.Register(ErrRecipeRule5, cerrors.Meta{
 // load time. The sentinel is declared here so the load-time validator
 // and the emission-time detector share a single RecipeValidationError
 // shape and a single CATALOG_ERROR message format.
-const ErrRecipeRule7 cerrors.Code = "validator/recipe-rule-7"
+func ErrRecipeRule7() error { return errRecipeRule7 }
 
-var _ = cerrors.Register(ErrRecipeRule7, cerrors.Meta{
+var errRecipeRule7 = cerrors.Register("validator/recipe-rule-7", cerrors.Meta{
 	Message: "recipe rule 7: filename collision across input-kind origins at emission",
 })
 
@@ -52,9 +52,9 @@ var _ = cerrors.Register(ErrRecipeRule7, cerrors.Meta{
 // artifacts on an eval Recipe is rejected. The eval carve-out also
 // exempts the Recipe from rule 5 — eval Recipes legitimately declare
 // only `provides:` and have zero input kinds.
-const ErrRecipeEvalProviderConstraint cerrors.Code = "validator/recipe-eval-provider-constraint"
+func ErrRecipeEvalProviderConstraint() error { return errRecipeEvalProviderConstraint }
 
-var _ = cerrors.Register(ErrRecipeEvalProviderConstraint, cerrors.Meta{
+var errRecipeEvalProviderConstraint = cerrors.Register("validator/recipe-eval-provider-constraint", cerrors.Meta{
 	Message: "recipe eval-provider constraint: input-kind fields are forbidden when provider is eval",
 })
 
@@ -64,9 +64,9 @@ var _ = cerrors.Register(ErrRecipeEvalProviderConstraint, cerrors.Meta{
 // them, which also keeps a validated output-label set disjoint from the
 // provenance set. Engine-agnostic: enforced at load, before any provider
 // consumes the labels.
-const ErrRecipeOutputLabelReservedNamespace cerrors.Code = "validator/recipe-output-label-reserved-namespace"
+func ErrRecipeOutputLabelReservedNamespace() error { return errRecipeOutputLabelReservedNamespace }
 
-var _ = cerrors.Register(ErrRecipeOutputLabelReservedNamespace, cerrors.Meta{
+var errRecipeOutputLabelReservedNamespace = cerrors.Register("validator/recipe-output-label-reserved-namespace", cerrors.Meta{
 	Message: "recipe output-labels constraint: key uses a reserved namespace",
 })
 

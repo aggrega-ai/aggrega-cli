@@ -923,7 +923,7 @@ func TestStep4b_AssertionFailureHaltsEvaluator(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected ErrAssertionFailed; got nil")
 	}
-	if !errors.Is(err, renderer.ErrAssertionFailed) {
+	if !errors.Is(err, renderer.ErrAssertionFailed()) {
 		t.Errorf("error chain missing ErrAssertionFailed: %v", err)
 	}
 	if !strings.Contains(err.Error(), "component-assertion-smoke-fired") {
@@ -971,7 +971,7 @@ func TestRenderAll_Step5bAssertionFailureHaltsPipeline(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected RenderAll to halt with assertion failure; got nil")
 	}
-	if !errors.Is(err, renderer.ErrAssertionFailed) {
+	if !errors.Is(err, renderer.ErrAssertionFailed()) {
 		t.Errorf("error chain missing ErrAssertionFailed: %v", err)
 	}
 	// The fail-call text is preserved in the inner wrap chain (cerrors.Wrap's

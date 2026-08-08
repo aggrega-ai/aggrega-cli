@@ -339,10 +339,10 @@ func pushRun(cfg pushConfig) error {
 		// destination-scoped cause).
 		if requiresSignatures {
 			return fmt.Errorf("aggrega push: registry %q requires signatures; re-run signing the artifact (there is no flag to push unsigned content here): %w",
-				registry, signing.ErrUnsignedPushRefused)
+				registry, signing.ErrUnsignedPushRefused())
 		}
 		return fmt.Errorf("aggrega push: the signing policy requires a signature for kind %q; re-run signing the artifact (there is no flag to push unsigned content here): %w",
-			header.Kind, signing.ErrSigningPolicyRequiresSignature)
+			header.Kind, signing.ErrSigningPolicyRequiresSignature())
 	}
 
 	// A Plugin publishes as ONE manifest — the entity YAML as the config blob,
@@ -427,7 +427,7 @@ func pushRun(cfg pushConfig) error {
 			return nil
 		}
 		return fmt.Errorf("aggrega push: %s:%s is already published as %s; refusing to overwrite with %s — publish a new version (aggrega lint --pre-publish verifies the bump): %w",
-			reference, tag, existingDigest, proposedDigest, oci.ErrImmutableTagConflict)
+			reference, tag, existingDigest, proposedDigest, oci.ErrImmutableTagConflict())
 	}
 
 	// Sign-before-push: produce the signature bundle BEFORE any bytes reach

@@ -209,7 +209,7 @@ func TestValidateGuest_WrongDeclaredType_Fails(t *testing.T) {
 	if err == nil {
 		t.Fatalf("declaring guest %q (true type %q) as %q unexpectedly validated", uri, trueType, wrongType)
 	}
-	if !errors.Is(err, plugintest.ErrTypeMismatch) {
+	if !errors.Is(err, plugintest.ErrTypeMismatch()) {
 		t.Fatalf("wrong-type error for %q was not ErrTypeMismatch: %v", uri, err)
 	}
 	t.Logf("PASS wrong-type guard: guest %q declared %q -> %v", uri, wrongType, err)

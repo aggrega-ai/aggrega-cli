@@ -142,7 +142,7 @@ func (s *Service) Fetch(ctx context.Context, rawURL string, requiredBy string) (
 	if !s.acquire {
 		return nil, fmt.Errorf(
 			"externalinputs: %q is not pinned in the lockfile; re-run with acquisition enabled or run the standalone acquisition pass to pin it: %w",
-			rawURL, ErrAcquisitionDisabled)
+			rawURL, ErrAcquisitionDisabled())
 	}
 	return s.acquireAndPin(ctx, kind, rawURL, requiredBy)
 }
@@ -216,13 +216,13 @@ func verifyStoredBlob(kind inputKind, rawURL string, rec lockfile.ExternalInput,
 	case kindOCI:
 		if int64(len(b)) != rec.Size {
 			return fmt.Errorf("externalinputs: %q: store blob sha256/%s is %d bytes but the pinned record says %d: %w",
-				rawURL, rec.Sha256, len(b), rec.Size, ErrStoreCorrupt)
+				rawURL, rec.Sha256, len(b), rec.Size, ErrStoreCorrupt())
 		}
 		return nil
 	default:
 		if got := payloadHex(b); got != rec.Sha256 {
 			return fmt.Errorf("externalinputs: %q: store blob sha256 is %s, pinned digest is %s: %w",
-				rawURL, got, rec.Sha256, ErrStoreCorrupt)
+				rawURL, got, rec.Sha256, ErrStoreCorrupt())
 		}
 		return nil
 	}
@@ -249,7 +249,7 @@ func (s *Service) refill(ctx context.Context, kind inputKind, rawURL string, rec
 		}
 		if res.Digest != want {
 			return nil, fmt.Errorf("externalinputs: %q: refilled manifest digest is %s, pinned digest is %s: %w",
-				rawURL, res.Digest, want, ErrDigestMismatch)
+				rawURL, res.Digest, want, ErrDigestMismatch())
 		}
 		if err := s.writeBlob(rec.Sha256, res.Bytes); err != nil {
 			return nil, err
@@ -262,7 +262,7 @@ func (s *Service) refill(ctx context.Context, kind inputKind, rawURL string, rec
 		}
 		if got := payloadHex(b); got != rec.Sha256 {
 			return nil, fmt.Errorf("externalinputs: %q: refetched bytes hash to %s, pinned digest is %s: %w",
-				rawURL, got, rec.Sha256, ErrDigestMismatch)
+				rawURL, got, rec.Sha256, ErrDigestMismatch())
 		}
 		if err := s.writeBlob(rec.Sha256, b); err != nil {
 			return nil, err
@@ -335,7 +335,7 @@ func (s *Service) appendProvenance(rawURL, requiredBy string) {
 // bytes. Non-2xx statuses are errors naming the URL and status.
 func (s *Service) httpGet(ctx context.Context, rawURL string) ([]byte, error) {
 	if s.client == nil {
-		return nil, fmt.Errorf("externalinputs: fetch %q: %w", rawURL, egress.ErrOfflineEgress)
+		return nil, fmt.Errorf("externalinputs: fetch %q: %w", rawURL, egress.ErrOfflineEgress())
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 	if err != nil {
@@ -361,7 +361,7 @@ func (s *Service) httpGet(ctx context.Context, rawURL string) ([]byte, error) {
 // the payload against the manifest's layer descriptor either way.
 func (s *Service) ociPull(ctx context.Context, repoRef, ref string) (*oci.PullResult, error) {
 	if s.client == nil {
-		return nil, fmt.Errorf("externalinputs: pull %q: %w", repoRef, egress.ErrOfflineEgress)
+		return nil, fmt.Errorf("externalinputs: pull %q: %w", repoRef, egress.ErrOfflineEgress())
 	}
 	repo, err := oci.NewRemoteRepository(repoRef, s.client)
 	if err != nil {
@@ -449,13 +449,13 @@ func classify(rawURL string) (inputKind, error) {
 		}
 		return 0, fmt.Errorf(
 			"externalinputs: %q: plain http is allowed for loopback hosts only (allowed schemes: https, http to a loopback host, oci): %w",
-			rawURL, ErrSchemeNotAllowed)
+			rawURL, ErrSchemeNotAllowed())
 	case "oci":
 		return kindOCI, nil
 	default:
 		return 0, fmt.Errorf(
 			"externalinputs: %q: scheme %q is not allowed (allowed schemes: https, http to a loopback host, oci): %w",
-			rawURL, u.Scheme, ErrSchemeNotAllowed)
+			rawURL, u.Scheme, ErrSchemeNotAllowed())
 	}
 }
 

@@ -132,9 +132,9 @@ func TestWorkloadLibraryImport_LoudFailures(t *testing.T) {
 		imp  string
 		want error
 	}{
-		{"oci host rejected", "oci://hub/BaseWorkloads#/workloads/Deployment", ErrHostInLibraryImport},
-		{"unknown library", "Absent#/workloads/Deployment", ErrWorkloadLibraryNotFound},
-		{"unknown entry", "BaseWorkloads#/workloads/Missing", ErrWorkloadEntryNotFound},
+		{"oci host rejected", "oci://hub/BaseWorkloads#/workloads/Deployment", ErrHostInLibraryImport()},
+		{"unknown library", "Absent#/workloads/Deployment", ErrWorkloadLibraryNotFound()},
+		{"unknown entry", "BaseWorkloads#/workloads/Missing", ErrWorkloadEntryNotFound()},
 	}
 	for _, tc := range cases {
 		tc := tc
@@ -164,7 +164,7 @@ func TestWorkloadLibraryImport_CycleHaltsThroughPhaseB(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected a cycle halt; got nil")
 	}
-	if !errors.Is(err, ErrCircularImport) {
+	if !errors.Is(err, ErrCircularImport()) {
 		t.Errorf("error = %v; want ErrCircularImport", err)
 	}
 }

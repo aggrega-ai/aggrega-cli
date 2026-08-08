@@ -23,7 +23,7 @@ import (
 // classifier, and that its self-carried remediation is not double-appended.
 func TestOfflineEgressRoutesToFetchErrorFamily(t *testing.T) {
 	t.Parallel()
-	wrapped := fmt.Errorf("fetch referrers: %w", egress.ErrOfflineEgress)
+	wrapped := fmt.Errorf("fetch referrers: %w", egress.ErrOfflineEgress())
 	ce, ok := renderer.WrapSourceResolutionErrorForTest(wrapped)
 	if !ok {
 		t.Fatal("wrapped ErrOfflineEgress did not produce a CompilerError")
@@ -31,7 +31,7 @@ func TestOfflineEgressRoutesToFetchErrorFamily(t *testing.T) {
 	if ce.Category != cerrors.FetchError {
 		t.Errorf("Category = %q; want FETCH_ERROR for an offline-egress refusal", ce.Category)
 	}
-	if !errors.Is(ce, egress.ErrOfflineEgress) {
+	if !errors.Is(ce, egress.ErrOfflineEgress()) {
 		t.Errorf("classified error no longer detects ErrOfflineEgress in its chain")
 	}
 }

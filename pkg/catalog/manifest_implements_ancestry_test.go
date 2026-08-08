@@ -107,7 +107,7 @@ func TestVerifyManifestImplementsConsistency_UnrelatedStillHalts(t *testing.T) {
 	if len(errs) == 0 {
 		t.Fatal("an unrelated implements must still halt")
 	}
-	if !errors.Is(errs[0], ErrManifestImplementsMismatch) {
+	if !errors.Is(errs[0], ErrManifestImplementsMismatch()) {
 		t.Errorf("expected ErrManifestImplementsMismatch; got %v", errs[0])
 	}
 }
@@ -134,7 +134,7 @@ func TestVerifyManifestImplementsConsistency_AncestryHonoursCaret(t *testing.T) 
 	if len(errs) == 0 {
 		t.Fatal("a base outside the recipe's caret range must not satisfy the child")
 	}
-	if !errors.Is(errs[0], ErrManifestImplementsMismatch) {
+	if !errors.Is(errs[0], ErrManifestImplementsMismatch()) {
 		t.Errorf("expected ErrManifestImplementsMismatch; got %v", errs[0])
 	}
 
@@ -168,10 +168,10 @@ func TestVerifyManifestImplementsConsistency_CyclicChainReportsChainFault(t *tes
 	if len(errs) == 0 {
 		t.Fatal("a cyclic chain must be reported")
 	}
-	if !errors.Is(errs[0], validator.ErrCyclicExtension) {
+	if !errors.Is(errs[0], validator.ErrCyclicExtension()) {
 		t.Errorf("expected the chain-structural sentinel ErrCyclicExtension; got %v", errs[0])
 	}
-	if errors.Is(errs[0], ErrManifestImplementsMismatch) {
+	if errors.Is(errs[0], ErrManifestImplementsMismatch()) {
 		t.Errorf("a chain fault must not be reported as a mapping mismatch: %v", errs[0])
 	}
 }
@@ -197,7 +197,7 @@ func TestVerifyManifestImplementsConsistency_NilResolverResolvesNoAncestry(t *te
 	if len(errs) == 0 {
 		t.Fatal("a nil resolver must resolve no ancestry, so this mapping fails")
 	}
-	if !errors.Is(errs[0], ErrManifestImplementsMismatch) {
+	if !errors.Is(errs[0], ErrManifestImplementsMismatch()) {
 		t.Errorf("expected ErrManifestImplementsMismatch; got %v", errs[0])
 	}
 }
@@ -342,7 +342,7 @@ func TestLazyLookup_AssertManifestImplementsConsistency_Ancestry(t *testing.T) {
 	if err == nil {
 		t.Fatal("the build path must still halt on an unrelated implements")
 	}
-	if !errors.Is(err, ErrManifestImplementsMismatch) {
+	if !errors.Is(err, ErrManifestImplementsMismatch()) {
 		t.Errorf("expected ErrManifestImplementsMismatch; got %v", err)
 	}
 
@@ -353,7 +353,7 @@ func TestLazyLookup_AssertManifestImplementsConsistency_Ancestry(t *testing.T) {
 	if cerr == nil {
 		t.Fatal("a cyclic chain must be reported on the build path")
 	}
-	if !errors.Is(cerr, validator.ErrCyclicExtension) {
+	if !errors.Is(cerr, validator.ErrCyclicExtension()) {
 		t.Errorf("expected ErrCyclicExtension on the build path; got %v", cerr)
 	}
 

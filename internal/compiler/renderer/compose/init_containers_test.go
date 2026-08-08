@@ -352,13 +352,13 @@ func TestSynthesizeWorkload_InitContainerReachesSharedTranslationHalts(t *testin
 		{
 			name:     "lifecycle",
 			init:     types.ContainerSpec{Name: "prep", Image: "prep:1.0", Lifecycle: &types.LifecycleSpec{}},
-			sentinel: ErrUnsupportedComposeLifecycle,
+			sentinel: ErrUnsupportedComposeLifecycle(),
 			want:     "lifecycle-hook primitive",
 		},
 		{
 			name:     "envFrom",
 			init:     types.ContainerSpec{Name: "prep", Image: "prep:1.0", EnvFrom: []types.EnvFromSource{{ConfigMap: "settings"}}},
-			sentinel: ErrUnsupportedComposeEnvFrom,
+			sentinel: ErrUnsupportedComposeEnvFrom(),
 			want:     "env-from-object primitive",
 		},
 		{

@@ -101,10 +101,10 @@ func TestResolveWorkloadLibraryImport_CycleHalts(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected a cycle error; got nil")
 	}
-	if !errors.Is(err, ErrCircularImport) {
+	if !errors.Is(err, ErrCircularImport()) {
 		t.Errorf("error = %v; want ErrCircularImport", err)
 	}
-	if !errors.Is(err, refcycle.ErrCycle) {
+	if !errors.Is(err, refcycle.ErrCycle()) {
 		t.Errorf("error = %v; want the shared refcycle.ErrCycle identity", err)
 	}
 }
@@ -121,12 +121,12 @@ func TestResolveWorkloadLibraryImport_Errors(t *testing.T) {
 		ref  string
 		want error
 	}{
-		{"unknown library", "Absent#/workloads/Deployment", ErrWorkloadLibraryNotFound},
-		{"unknown entry", "BaseWorkloads#/workloads/Missing", ErrWorkloadEntryNotFound},
-		{"host-bearing", "oci://hub/BaseWorkloads:1.0.0#/workloads/Deployment", ErrHostInLibraryImport},
-		{"stale @ version separator", "BaseWorkloads@1.0.0#/workloads/Deployment", ErrWorkloadImportShape},
-		{"non-workloads fragment", "BaseWorkloads#/mappings/Deployment", ErrWorkloadImportShape},
-		{"no fragment", "BaseWorkloads", ErrWorkloadImportShape},
+		{"unknown library", "Absent#/workloads/Deployment", ErrWorkloadLibraryNotFound()},
+		{"unknown entry", "BaseWorkloads#/workloads/Missing", ErrWorkloadEntryNotFound()},
+		{"host-bearing", "oci://hub/BaseWorkloads:1.0.0#/workloads/Deployment", ErrHostInLibraryImport()},
+		{"stale @ version separator", "BaseWorkloads@1.0.0#/workloads/Deployment", ErrWorkloadImportShape()},
+		{"non-workloads fragment", "BaseWorkloads#/mappings/Deployment", ErrWorkloadImportShape()},
+		{"no fragment", "BaseWorkloads", ErrWorkloadImportShape()},
 	}
 	for _, tc := range cases {
 		tc := tc

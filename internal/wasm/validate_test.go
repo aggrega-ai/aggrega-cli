@@ -20,7 +20,7 @@ func TestValidatePlugin_TypeMismatch(t *testing.T) {
 		Identity:     "frp/patch:1.0.0",
 		DeclaredType: string(PluginTypeFRPStep),
 	})
-	if !errors.Is(err, ErrWasmPluginTypeMismatch) {
+	if !errors.Is(err, ErrWasmPluginTypeMismatch()) {
 		t.Fatalf("declared frp_step over a cli guest should halt with ErrWasmPluginTypeMismatch; got %v", err)
 	}
 	for _, want := range []string{"frp/patch:1.0.0", string(PluginTypeFRPStep), string(PluginTypeCLI)} {
@@ -113,7 +113,7 @@ func TestValidatePlugin_EntityCrossChecks(t *testing.T) {
 		DeclaredType: string(PluginTypeFRPStep),
 		Entity:       stale,
 	})
-	if !errors.Is(err, ErrWasmHostFunctionsStampMismatch) {
+	if !errors.Is(err, ErrWasmHostFunctionsStampMismatch()) {
 		t.Fatalf("a stale host-function record should halt with ErrWasmHostFunctionsStampMismatch; got %v", err)
 	}
 }
@@ -151,7 +151,7 @@ func TestValidatePlugin_VersionCrossCheck(t *testing.T) {
 		DeclaredType: string(PluginTypeFRPStep),
 		Entity:       mismatched,
 	})
-	if !errors.Is(err, ErrWasmPluginVersionMismatch) {
+	if !errors.Is(err, ErrWasmPluginVersionMismatch()) {
 		t.Fatalf("a divergent metadata.version should halt with ErrWasmPluginVersionMismatch; got %v", err)
 	}
 	for _, want := range []string{"frp/patch:1.0.0", describeVersion + "9.9.9-divergent"} {
@@ -187,7 +187,7 @@ func TestNonCLIStreamingDescriptorRejectedAtDescribe(t *testing.T) {
 	// admits neither streaming name.
 	raw := []byte(`{"abi_version":"v1alpha1","plugin_type":"frp_step","exports":[{"name":"step","operates":"patch","scope":"own","host_functions":["aggrega_cli_write_stdout"]}]}`)
 	_, err := parseAndValidateDescriptor(raw, "frp/patch:1.0.0")
-	if !errors.Is(err, ErrWasmManifestRejected) {
+	if !errors.Is(err, ErrWasmManifestRejected()) {
 		t.Fatalf("a non-cli descriptor declaring a streaming host function should be rejected at describe validation with ErrWasmManifestRejected; got %v", err)
 	}
 }

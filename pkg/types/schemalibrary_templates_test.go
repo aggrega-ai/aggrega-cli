@@ -80,7 +80,7 @@ func TestInstantiateTemplate_TemplateNotFound(t *testing.T) {
 	t.Parallel()
 	lib := libraryWithTemplate(t)
 	_, err := InstantiateTemplate(lib, "Missing", map[string]any{})
-	if !errors.Is(err, ErrTemplateNotFound) {
+	if !errors.Is(err, ErrTemplateNotFound()) {
 		t.Errorf("expected ErrTemplateNotFound; got %v", err)
 	}
 }
@@ -92,7 +92,7 @@ func TestInstantiateTemplate_ParamMissing(t *testing.T) {
 	t.Parallel()
 	lib := libraryWithTemplate(t)
 	_, err := InstantiateTemplate(lib, "Probe", map[string]any{})
-	if !errors.Is(err, ErrTemplateParamMissing) {
+	if !errors.Is(err, ErrTemplateParamMissing()) {
 		t.Errorf("expected ErrTemplateParamMissing; got %v", err)
 	}
 	if !strings.Contains(err.Error(), "port") {
@@ -107,7 +107,7 @@ func TestInstantiateTemplate_ParamTypeMismatch(t *testing.T) {
 	t.Parallel()
 	lib := libraryWithTemplate(t)
 	_, err := InstantiateTemplate(lib, "Probe", map[string]any{"port": "not-a-number"})
-	if !errors.Is(err, ErrTemplateParamTypeMismatch) {
+	if !errors.Is(err, ErrTemplateParamTypeMismatch()) {
 		t.Errorf("expected ErrTemplateParamTypeMismatch; got %v", err)
 	}
 }
@@ -122,7 +122,7 @@ func TestInstantiateTemplate_UndeclaredArgRejected(t *testing.T) {
 		"port":  8080,
 		"extra": "value",
 	})
-	if !errors.Is(err, ErrTemplateParamTypeMismatch) {
+	if !errors.Is(err, ErrTemplateParamTypeMismatch()) {
 		t.Errorf("expected error for undeclared arg; got %v", err)
 	}
 }
@@ -195,7 +195,7 @@ properties:
 	}
 	entry := &SchemaEntry{Content: *node.Content[0]}
 	err := ValidateSchemaEntry(entry)
-	if !errors.Is(err, ErrForbiddenKeyword) {
+	if !errors.Is(err, ErrForbiddenKeyword()) {
 		t.Errorf("expected ErrForbiddenKeyword; got %v", err)
 	}
 	if !strings.Contains(err.Error(), "$dynamicAnchor") {
@@ -219,7 +219,7 @@ properties:
 	}
 	entry := &SchemaEntry{Content: *node.Content[0]}
 	err := ValidateSchemaEntry(entry)
-	if !errors.Is(err, ErrForbiddenKeyword) {
+	if !errors.Is(err, ErrForbiddenKeyword()) {
 		t.Errorf("expected ErrForbiddenKeyword; got %v", err)
 	}
 }

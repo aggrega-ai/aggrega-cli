@@ -73,7 +73,7 @@ func TestFormatCompilerError_DeveloperCategory_RendersViaResolverError(t *testin
 		Entity:  "Aggregate my-app",
 		Field:   ".spec.components.bad-name",
 		Message: "invalid component name",
-		Err:     resolver.ErrInvalidInstanceName,
+		Err:     resolver.ErrInvalidInstanceName(),
 	}
 	got := formatCompilerError(re)
 	for _, want := range []string{
@@ -96,7 +96,7 @@ func TestFormatCompilerError_OpsCategory_RendersViaResolverError(t *testing.T) {
 		Entity:  "Release prod",
 		Field:   ".spec.boundaries.frontend.parameters",
 		Message: "parameter type mismatch",
-		Err:     resolver.ErrInvalidParameterRef,
+		Err:     resolver.ErrInvalidParameterRef(),
 	}
 	got := formatCompilerError(re)
 	if !strings.Contains(got, "[OPS_ERROR]") {
@@ -115,7 +115,7 @@ func TestFormatCompilerError_CatalogCategory_RendersViaRecipeValidationError(t *
 		Version:     "1.0.0",
 		Rule:        "1",
 		Description: "valuesMapping requires source",
-		Err:         validator.ErrRecipeRule1,
+		Err:         validator.ErrRecipeRule1(),
 	}
 	got := formatCompilerError(rve)
 	for _, want := range []string{
@@ -205,8 +205,8 @@ func TestFormatCompilerError_ErrorsJoin_RendersAll(t *testing.T) {
 func TestFormatCompilerError_ErrorsJoin_MixedTypes(t *testing.T) {
 	t.Parallel()
 	ce := cerrors.New(cerrors.TranslationError, cerrors.SourceLocation{}, "translation msg", nil, nil)
-	re := &resolver.ResolverError{Entity: "Aggregate my-app", Field: ".f", Message: "resolver msg", Err: resolver.ErrInvalidInstanceName}
-	rve := &validator.RecipeValidationError{Path: "/r.yaml", Description: "recipe rule msg", Err: validator.ErrRecipeRule1}
+	re := &resolver.ResolverError{Entity: "Aggregate my-app", Field: ".f", Message: "resolver msg", Err: resolver.ErrInvalidInstanceName()}
+	rve := &validator.RecipeValidationError{Path: "/r.yaml", Description: "recipe rule msg", Err: validator.ErrRecipeRule1()}
 	joined := stderrors.Join(ce, re, rve)
 
 	got := formatCompilerError(joined)

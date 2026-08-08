@@ -66,7 +66,7 @@ func TestGuardAttachmentSlotShape_BlackBoxSlotRejectsAuthoredDelivery(t *testing
 	if len(errs) == 0 {
 		t.Fatal("a Black-Box slot reserves delivery to the Recipe; an authored inject block must be rejected")
 	}
-	if !errors.Is(errs[0].Err, ErrAttachmentSlotShape) {
+	if !errors.Is(errs[0].Err, ErrAttachmentSlotShape()) {
 		t.Errorf("sentinel = %v; want ErrAttachmentSlotShape", errs[0].Err)
 	}
 	if !strings.Contains(errs[0].Field, "features.root_password") {
@@ -82,7 +82,7 @@ func TestGuardAttachmentSlotShape_MechanismOutsideAllowlistRejected(t *testing.T
 	if len(errs) == 0 {
 		t.Fatal("`arg` is not in the slot's [env, file] allowlist; the fill must be rejected")
 	}
-	if !errors.Is(errs[0].Err, ErrAttachmentSlotShape) {
+	if !errors.Is(errs[0].Err, ErrAttachmentSlotShape()) {
 		t.Errorf("sentinel = %v; want ErrAttachmentSlotShape", errs[0].Err)
 	}
 }

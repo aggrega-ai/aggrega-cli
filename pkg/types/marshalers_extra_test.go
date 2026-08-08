@@ -643,7 +643,7 @@ sibling: 1
 `
 	var p3 ParametersBlock
 	err := yaml.Unmarshal([]byte(src), &p3)
-	if err == nil || !errors.Is(err, ErrParametersShape) {
+	if err == nil || !errors.Is(err, ErrParametersShape()) {
 		t.Errorf("mixed $import/sibling should error ErrParametersShape; got %v", err)
 	}
 
@@ -668,7 +668,7 @@ $import:
 	src = `- 1`
 	var p6 ParametersBlock
 	err = yaml.Unmarshal([]byte(src), &p6)
-	if err == nil || !errors.Is(err, ErrParametersShape) {
+	if err == nil || !errors.Is(err, ErrParametersShape()) {
 		t.Errorf("sequence should error ErrParametersShape; got %v", err)
 	}
 }

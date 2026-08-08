@@ -220,7 +220,7 @@ plugins:
 	if err == nil {
 		t.Fatal("expected validation error for non-list governance; got nil")
 	}
-	if !errors.Is(err, ErrConfigInvalid) {
+	if !errors.Is(err, ErrConfigInvalid()) {
 		t.Errorf("error should wrap ErrConfigInvalid; got %v", err)
 	}
 	if !strings.Contains(err.Error(), "governance") {
@@ -244,7 +244,7 @@ plugins:
 	if err == nil {
 		t.Fatal("expected validation error for non-object entry in governance; got nil")
 	}
-	if !errors.Is(err, ErrConfigInvalid) {
+	if !errors.Is(err, ErrConfigInvalid()) {
 		t.Errorf("error should wrap ErrConfigInvalid; got %v", err)
 	}
 	if !strings.Contains(err.Error(), "governance") {
@@ -294,7 +294,7 @@ func TestLoadRejectsUnknownTopLevelKey(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected validation error for unknown top-level key; got nil")
 	}
-	if !errors.Is(err, ErrConfigInvalid) {
+	if !errors.Is(err, ErrConfigInvalid()) {
 		t.Errorf("error should wrap ErrConfigInvalid; got %v", err)
 	}
 }
@@ -312,7 +312,7 @@ build:
 	if err == nil {
 		t.Fatal("expected validation error for halt_on_deprecated_severity outside enum; got nil")
 	}
-	if !errors.Is(err, ErrConfigInvalid) {
+	if !errors.Is(err, ErrConfigInvalid()) {
 		t.Errorf("error should wrap ErrConfigInvalid; got %v", err)
 	}
 	if !strings.Contains(err.Error(), "halt_on_deprecated_severity") {

@@ -75,17 +75,17 @@ func CrossCheckContract(entityIdentity string, claim EntityContractClaim, desc P
 		if !ok {
 			return fmt.Errorf(
 				"entity %q claims export %q, which the plugin's describe() does not declare: %w",
-				entityIdentity, want.Name, ErrWasmContractMismatch)
+				entityIdentity, want.Name, ErrWasmContractMismatch())
 		}
 		if want.Operates != got.Operates {
 			return fmt.Errorf(
 				"entity %q export %q declares operates %q but the plugin's describe() reports %q: %w",
-				entityIdentity, want.Name, want.Operates, got.Operates, ErrWasmContractMismatch)
+				entityIdentity, want.Name, want.Operates, got.Operates, ErrWasmContractMismatch())
 		}
 		if want.Scope != got.Scope {
 			return fmt.Errorf(
 				"entity %q export %q declares scope %q but the plugin's describe() reports %q: %w",
-				entityIdentity, want.Name, want.Scope, got.Scope, ErrWasmContractMismatch)
+				entityIdentity, want.Name, want.Scope, got.Scope, ErrWasmContractMismatch())
 		}
 	}
 	if claim.Contract != nil {
@@ -134,14 +134,14 @@ func crossCheckHostFunctions(pluginIdentity string, desc PluginDescriptor, impor
 		if !importedSet[name] {
 			return fmt.Errorf(
 				"plugin %q declares host function %q in describe() that its wasm does not import: %w",
-				pluginIdentity, name, ErrWasmManifestRejected)
+				pluginIdentity, name, ErrWasmManifestRejected())
 		}
 	}
 	for _, name := range imported {
 		if !declaredSet[name] {
 			return fmt.Errorf(
 				"plugin %q imports host function %q that its describe() does not declare: %w",
-				pluginIdentity, name, ErrWasmManifestRejected)
+				pluginIdentity, name, ErrWasmManifestRejected())
 		}
 	}
 	return nil
@@ -176,22 +176,22 @@ func crossCheckProviderContract(entityIdentity string, want, got ProviderContrac
 	if want.InputKinds.Sourced != got.InputKinds.Sourced {
 		return fmt.Errorf(
 			"entity %q declares input_kinds.sourced %t but the plugin's describe() reports %t: %w",
-			entityIdentity, want.InputKinds.Sourced, got.InputKinds.Sourced, ErrWasmContractMismatch)
+			entityIdentity, want.InputKinds.Sourced, got.InputKinds.Sourced, ErrWasmContractMismatch())
 	}
 	if want.InputKinds.Synthesized != got.InputKinds.Synthesized {
 		return fmt.Errorf(
 			"entity %q declares input_kinds.synthesized %t but the plugin's describe() reports %t: %w",
-			entityIdentity, want.InputKinds.Synthesized, got.InputKinds.Synthesized, ErrWasmContractMismatch)
+			entityIdentity, want.InputKinds.Synthesized, got.InputKinds.Synthesized, ErrWasmContractMismatch())
 	}
 	if want.InputKinds.ArtifactsStandalone != got.InputKinds.ArtifactsStandalone {
 		return fmt.Errorf(
 			"entity %q declares input_kinds.artifacts_standalone %t but the plugin's describe() reports %t: %w",
-			entityIdentity, want.InputKinds.ArtifactsStandalone, got.InputKinds.ArtifactsStandalone, ErrWasmContractMismatch)
+			entityIdentity, want.InputKinds.ArtifactsStandalone, got.InputKinds.ArtifactsStandalone, ErrWasmContractMismatch())
 	}
 	if want.BoundaryAssembly != got.BoundaryAssembly {
 		return fmt.Errorf(
 			"entity %q declares boundary_assembly %q but the plugin's describe() reports %q: %w",
-			entityIdentity, want.BoundaryAssembly, got.BoundaryAssembly, ErrWasmContractMismatch)
+			entityIdentity, want.BoundaryAssembly, got.BoundaryAssembly, ErrWasmContractMismatch())
 	}
 	if err := crossCheckDelimiters(entityIdentity, want.ArtifactDelimiters, got.ArtifactDelimiters); err != nil {
 		return err
@@ -202,17 +202,17 @@ func crossCheckProviderContract(entityIdentity string, want, got ProviderContrac
 	if !equalStringSlices(want.SourceFilter, got.SourceFilter) {
 		return fmt.Errorf(
 			"entity %q declares source_filter %v but the plugin's describe() reports %v: %w",
-			entityIdentity, want.SourceFilter, got.SourceFilter, ErrWasmContractMismatch)
+			entityIdentity, want.SourceFilter, got.SourceFilter, ErrWasmContractMismatch())
 	}
 	if want.ReusableInstance != got.ReusableInstance {
 		return fmt.Errorf(
 			"entity %q declares reusable_instance %t but the plugin's describe() reports %t: %w",
-			entityIdentity, want.ReusableInstance, got.ReusableInstance, ErrWasmContractMismatch)
+			entityIdentity, want.ReusableInstance, got.ReusableInstance, ErrWasmContractMismatch())
 	}
 	if want.CrossBoundaryLinking != got.CrossBoundaryLinking {
 		return fmt.Errorf(
 			"entity %q declares cross_boundary_linking %t but the plugin's describe() reports %t: %w",
-			entityIdentity, want.CrossBoundaryLinking, got.CrossBoundaryLinking, ErrWasmContractMismatch)
+			entityIdentity, want.CrossBoundaryLinking, got.CrossBoundaryLinking, ErrWasmContractMismatch())
 	}
 	return nil
 }
@@ -224,12 +224,12 @@ func crossCheckDelimiters(entityIdentity string, want, got *ArtifactDelimiters) 
 	if (want == nil) != (got == nil) {
 		return fmt.Errorf(
 			"entity %q and the plugin's describe() disagree on whether artifact_delimiters is declared (entity declares=%t, plugin declares=%t): %w",
-			entityIdentity, want != nil, got != nil, ErrWasmContractMismatch)
+			entityIdentity, want != nil, got != nil, ErrWasmContractMismatch())
 	}
 	if want != nil && *want != *got {
 		return fmt.Errorf(
 			"entity %q declares artifact_delimiters %q/%q but the plugin's describe() reports %q/%q: %w",
-			entityIdentity, want.Left, want.Right, got.Left, got.Right, ErrWasmContractMismatch)
+			entityIdentity, want.Left, want.Right, got.Left, got.Right, ErrWasmContractMismatch())
 	}
 	return nil
 }
@@ -242,12 +242,12 @@ func crossCheckAssemblyNameAnnotation(entityIdentity string, want, got *Assembly
 	if (want == nil) != (got == nil) {
 		return fmt.Errorf(
 			"entity %q and the plugin's describe() disagree on whether assembly_name_annotation is declared (entity declares=%t, plugin declares=%t): %w",
-			entityIdentity, want != nil, got != nil, ErrWasmContractMismatch)
+			entityIdentity, want != nil, got != nil, ErrWasmContractMismatch())
 	}
 	if want != nil && *want != *got {
 		return fmt.Errorf(
 			"entity %q declares assembly_name_annotation %q (require_unique=%t) but the plugin's describe() reports %q (require_unique=%t): %w",
-			entityIdentity, want.Annotation, want.RequireUnique, got.Annotation, got.RequireUnique, ErrWasmContractMismatch)
+			entityIdentity, want.Annotation, want.RequireUnique, got.Annotation, got.RequireUnique, ErrWasmContractMismatch())
 	}
 	return nil
 }

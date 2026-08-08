@@ -43,7 +43,7 @@ func ManifestRecipeReferenceFaults(manifest *types.Manifest) []error {
 		}
 		faults = append(faults, fmt.Errorf(
 			"%w: %s.%s maps to %q, which carries %d slash-separated segments; a %s accepts %s; correct the mapping value in the Manifest",
-			ErrMalformedRecipeReference, coordinate, key, uri, n, subject, acceptedRecipeReferenceShapes))
+			ErrMalformedRecipeReference(), coordinate, key, uri, n, subject, acceptedRecipeReferenceShapes))
 	}
 	walkTier := func(coordinate string, tier *types.MappingTier, subject string) {
 		if tier == nil {

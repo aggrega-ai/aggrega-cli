@@ -63,7 +63,7 @@ func guardSelfInject(na types.NormalizedAggregate, catalog CatalogLookup) []*Res
 				Entity:  entity,
 				Field:   fmt.Sprintf("%s.inject", base),
 				Message: fmt.Sprintf("component type %q has no spec.inject allowlist (Black-Box pattern) — self-inject is not allowed", comp.Type),
-				Err:     ErrSelfInjectForbidden,
+				Err:     ErrSelfInjectForbidden(),
 			})
 			continue
 		}
@@ -82,7 +82,7 @@ func guardSelfInject(na types.NormalizedAggregate, catalog CatalogLookup) []*Res
 					Entity:  entity,
 					Field:   fmt.Sprintf("%s.inject.%s", base, mech),
 					Message: fmt.Sprintf("mechanism %q not in component type %q spec.inject allowlist %v", mech, comp.Type, catComp.Spec.Inject),
-					Err:     ErrSelfInjectForbidden,
+					Err:     ErrSelfInjectForbidden(),
 				})
 			}
 		}
@@ -97,7 +97,7 @@ func guardSelfInject(na types.NormalizedAggregate, catalog CatalogLookup) []*Res
 						Entity:  entity,
 						Field:   fmt.Sprintf("%s.inject.%s[%q]", base, mech, key),
 						Message: fmt.Sprintf("delivery key %q in mechanism %q is declared in both component self-inject and uses-inject", key, mech),
-						Err:     ErrInjectKeyCollision,
+						Err:     ErrInjectKeyCollision(),
 					})
 				}
 			}
@@ -136,7 +136,7 @@ func guardSelfInject(na types.NormalizedAggregate, catalog CatalogLookup) []*Res
 					Entity:  entity,
 					Field:   fmt.Sprintf("%s.inject.%s[%q]", base, mech, key),
 					Message: fmt.Sprintf("delivery key %q in mechanism %q collides with declaration in mechanism(s) %v", key, mech, others),
-					Err:     ErrInjectKeyCollision,
+					Err:     ErrInjectKeyCollision(),
 				})
 			}
 		}

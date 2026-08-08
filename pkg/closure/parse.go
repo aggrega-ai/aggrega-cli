@@ -77,7 +77,7 @@ func isIdentityArtifactImportRef(value string) bool {
 // naming the offending string.
 func parseIdentityRefWithFragment(s, fragmentPrefix string) (libraryName, version, fragment string, err error) {
 	if !isIdentityRefWithFragment(s, fragmentPrefix) {
-		return "", "", "", fmt.Errorf("%w: %q", ErrInvalidLibraryRef, s)
+		return "", "", "", fmt.Errorf("%w: %q", ErrInvalidLibraryRef(), s)
 	}
 	hash := strings.IndexByte(s, '#')
 	doc := s[:hash]
@@ -88,10 +88,10 @@ func parseIdentityRefWithFragment(s, fragmentPrefix string) (libraryName, versio
 		version = doc[at+1:]
 	}
 	if libraryName == "" {
-		return "", "", "", fmt.Errorf("%w: %q", ErrInvalidLibraryRef, s)
+		return "", "", "", fmt.Errorf("%w: %q", ErrInvalidLibraryRef(), s)
 	}
 	if strings.IndexByte(libraryName, '@') >= 0 {
-		return "", "", "", fmt.Errorf("%w: version separator is ':', not '@' — use %q", ErrInvalidLibraryRef, strings.Replace(s, "@", ":", 1))
+		return "", "", "", fmt.Errorf("%w: version separator is ':', not '@' — use %q", ErrInvalidLibraryRef(), strings.Replace(s, "@", ":", 1))
 	}
 	return libraryName, version, fragment, nil
 }

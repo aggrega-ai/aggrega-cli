@@ -99,7 +99,7 @@ func TestSlotEmptyWorkspaceRootRejected(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for empty workspaceRoot; got nil")
 	}
-	if !errors.Is(err, cacheslot.ErrEmptyWorkspaceRoot) {
+	if !errors.Is(err, cacheslot.ErrEmptyWorkspaceRoot()) {
 		t.Errorf("error should wrap ErrEmptyWorkspaceRoot; got %v", err)
 	}
 }

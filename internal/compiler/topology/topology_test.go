@@ -412,7 +412,7 @@ func TestGuardSubAggregateNodes_ResolvedCatalogRefAbsentHalts(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected a sub-aggregate view-inconsistency halt; got nil")
 	}
-	if !errors.Is(err, resolver.ErrGuardEntityViewInconsistency) {
+	if !errors.Is(err, resolver.ErrGuardEntityViewInconsistency()) {
 		t.Errorf("expected ErrGuardEntityViewInconsistency; got %v", err)
 	}
 }
@@ -458,7 +458,7 @@ func TestErrSubAggregateNameCollision_HaltsOnOverwrite(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected ErrSubAggregateNameCollision, got nil")
 	}
-	if !errors.Is(err, ErrSubAggregateNameCollision) {
+	if !errors.Is(err, ErrSubAggregateNameCollision()) {
 		t.Errorf("expected ErrSubAggregateNameCollision, got %v", err)
 	}
 }
@@ -617,7 +617,7 @@ func TestBuild_UnknownEdgeTargetHalts(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected ErrDanglingUsesTarget for unknown edge target, got nil")
 	}
-	if !errors.Is(err, ErrDanglingUsesTarget) {
+	if !errors.Is(err, ErrDanglingUsesTarget()) {
 		t.Errorf("expected ErrDanglingUsesTarget, got %v", err)
 	}
 }
@@ -742,7 +742,7 @@ func TestBuild_TransitiveReexportDanglingHalts(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected ErrDanglingUsesTarget for a multi-hop dangling re-export, got nil")
 	}
-	if !errors.Is(err, ErrDanglingUsesTarget) {
+	if !errors.Is(err, ErrDanglingUsesTarget()) {
 		t.Errorf("expected ErrDanglingUsesTarget, got %v", err)
 	}
 }
@@ -776,7 +776,7 @@ func TestResolveExportTarget_CycleHalts(t *testing.T) {
 		if got.err == nil {
 			t.Fatalf("expected a cycle error, got resolved=%q with nil error", got.resolved)
 		}
-		if !errors.Is(got.err, ErrReexportCycle) {
+		if !errors.Is(got.err, ErrReexportCycle()) {
 			t.Errorf("expected ErrReexportCycle, got %v", got.err)
 		}
 		if !strings.Contains(got.err.Error(), "a -> b -> a") {

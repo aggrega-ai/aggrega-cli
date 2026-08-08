@@ -30,7 +30,7 @@ func LoadAggregateParameterContract(path string) (types.OrderedMap[any], error) 
 			Entity:  "Aggregate",
 			Field:   path,
 			Message: fmt.Sprintf("failed to read file: %v", err),
-			Err:     ErrYAMLLoad,
+			Err:     ErrYAMLLoad(),
 		}
 	}
 	return LoadAggregateParameterContractFromBytes(data, path)
@@ -63,7 +63,7 @@ func LoadAggregateParameterContractFromBytes(data []byte, sourcePath string) (ty
 			Entity:  "Aggregate",
 			Field:   sourcePath,
 			Message: fmt.Sprintf("failed to unmarshal contract shell: %v", err),
-			Err:     ErrYAMLLoad,
+			Err:     ErrYAMLLoad(),
 		}
 	}
 	// Second-line-of-defense: envelope-validate the shallow-loaded contract
@@ -108,7 +108,7 @@ func aggregateParameterViolations(verrs []*ResolverError) error {
 		Entity:     "Aggregate",
 		Field:      ".spec.parameters",
 		Summary:    b.String(),
-		Sentinel:   ErrParameterContractViolation,
+		Sentinel:   ErrParameterContractViolation(),
 		Violations: verrs,
 	}
 }
@@ -248,7 +248,7 @@ func ValidateParametersAgainstContract(
 				Message: fmt.Sprintf(
 					"Release supplies parameter %q with no corresponding Aggregate declaration",
 					k),
-				Err: ErrParameterContractViolation,
+				Err: ErrParameterContractViolation(),
 			})
 		}
 	}
@@ -261,7 +261,7 @@ func ValidateParametersAgainstContract(
 				Entity:  "Aggregate",
 				Field:   fmt.Sprintf(".spec.parameters.%s", key),
 				Message: fmt.Sprintf("failed to decode parameter contract: %v", derr),
-				Err:     ErrParameterContractViolation,
+				Err:     ErrParameterContractViolation(),
 			})
 			continue
 		}
@@ -273,7 +273,7 @@ func ValidateParametersAgainstContract(
 				Entity:  "Aggregate",
 				Field:   fmt.Sprintf(".spec.parameters.%s", key),
 				Message: fmt.Sprintf("parameter %q is required but not supplied by Release", key),
-				Err:     ErrParameterMissing,
+				Err:     ErrParameterMissing(),
 			})
 		case releaseHas:
 			errs = append(errs, validateEntry(key, pc, releaseValue)...)
@@ -298,7 +298,7 @@ func validateEntry(path string, pc types.ParameterContract, value any) []*Resolv
 			Entity:  "Aggregate",
 			Field:   fmt.Sprintf(".spec.parameters.%s", path),
 			Message: fmt.Sprintf("parameter %q expected type %s; got %T", path, pc.Type, value),
-			Err:     ErrParameterContractViolation,
+			Err:     ErrParameterContractViolation(),
 		})
 		return errs
 	}
@@ -320,7 +320,7 @@ func validateEntry(path string, pc types.ParameterContract, value any) []*Resolv
 				Entity:  "Aggregate",
 				Field:   fmt.Sprintf(".spec.parameters.%s", path),
 				Message: fmt.Sprintf("parameter %q value %v not in enum %v", path, value, pc.Enum),
-				Err:     ErrParameterContractViolation,
+				Err:     ErrParameterContractViolation(),
 			})
 		}
 	}
@@ -331,7 +331,7 @@ func validateEntry(path string, pc types.ParameterContract, value any) []*Resolv
 				Entity:  "Aggregate",
 				Field:   fmt.Sprintf(".spec.parameters.%s", path),
 				Message: fmt.Sprintf("parameter %q validate predicate error: %v", path, perr),
-				Err:     ErrParameterContractViolation,
+				Err:     ErrParameterContractViolation(),
 			})
 		} else if !ok {
 			msg := pc.ValidateMessage
@@ -342,7 +342,7 @@ func validateEntry(path string, pc types.ParameterContract, value any) []*Resolv
 				Entity:  "Aggregate",
 				Field:   fmt.Sprintf(".spec.parameters.%s", path),
 				Message: msg,
-				Err:     ErrParameterContractViolation,
+				Err:     ErrParameterContractViolation(),
 			})
 		}
 	}
@@ -397,7 +397,7 @@ func checkStringConstraints(path string, pc types.ParameterContract, s string) [
 			Entity:  "Aggregate",
 			Field:   fmt.Sprintf(".spec.parameters.%s", path),
 			Message: fmt.Sprintf("parameter %q length %d below minLength %d", path, len(s), *pc.MinLength),
-			Err:     ErrParameterContractViolation,
+			Err:     ErrParameterContractViolation(),
 		})
 	}
 	if pc.MaxLength != nil && len(s) > *pc.MaxLength {
@@ -405,7 +405,7 @@ func checkStringConstraints(path string, pc types.ParameterContract, s string) [
 			Entity:  "Aggregate",
 			Field:   fmt.Sprintf(".spec.parameters.%s", path),
 			Message: fmt.Sprintf("parameter %q length %d above maxLength %d", path, len(s), *pc.MaxLength),
-			Err:     ErrParameterContractViolation,
+			Err:     ErrParameterContractViolation(),
 		})
 	}
 	if pc.Pattern != "" {
@@ -415,14 +415,14 @@ func checkStringConstraints(path string, pc types.ParameterContract, s string) [
 				Entity:  "Aggregate",
 				Field:   fmt.Sprintf(".spec.parameters.%s", path),
 				Message: fmt.Sprintf("parameter %q pattern compile error: %v", path, perr),
-				Err:     ErrParameterContractViolation,
+				Err:     ErrParameterContractViolation(),
 			})
 		} else if !re.MatchString(s) {
 			errs = append(errs, &ResolverError{
 				Entity:  "Aggregate",
 				Field:   fmt.Sprintf(".spec.parameters.%s", path),
 				Message: fmt.Sprintf("parameter %q value %q does not match pattern %q", path, s, pc.Pattern),
-				Err:     ErrParameterContractViolation,
+				Err:     ErrParameterContractViolation(),
 			})
 		}
 	}
@@ -441,7 +441,7 @@ func checkNumericConstraints(path string, pc types.ParameterContract, v any) []*
 				Entity:  "Aggregate",
 				Field:   fmt.Sprintf(".spec.parameters.%s", path),
 				Message: fmt.Sprintf("parameter %q value %v below min %v", path, v, pc.Min),
-				Err:     ErrParameterContractViolation,
+				Err:     ErrParameterContractViolation(),
 			})
 		}
 	}
@@ -451,7 +451,7 @@ func checkNumericConstraints(path string, pc types.ParameterContract, v any) []*
 				Entity:  "Aggregate",
 				Field:   fmt.Sprintf(".spec.parameters.%s", path),
 				Message: fmt.Sprintf("parameter %q value %v above max %v", path, v, pc.Max),
-				Err:     ErrParameterContractViolation,
+				Err:     ErrParameterContractViolation(),
 			})
 		}
 	}
@@ -503,7 +503,7 @@ func checkObjectConstraints(path string, pc types.ParameterContract, v any) []*R
 					Message: fmt.Sprintf(
 						"Release supplies nested parameter %q under %q with no corresponding Properties declaration",
 						k, path),
-					Err: ErrParameterContractViolation,
+					Err: ErrParameterContractViolation(),
 				})
 			}
 		}
@@ -517,7 +517,7 @@ func checkObjectConstraints(path string, pc types.ParameterContract, v any) []*R
 				Entity:  "Aggregate",
 				Field:   fmt.Sprintf(".spec.parameters.%s.%s", path, childKey),
 				Message: fmt.Sprintf("failed to decode nested parameter contract: %v", derr),
-				Err:     ErrParameterContractViolation,
+				Err:     ErrParameterContractViolation(),
 			})
 			continue
 		}
@@ -529,7 +529,7 @@ func checkObjectConstraints(path string, pc types.ParameterContract, v any) []*R
 				Entity:  "Aggregate",
 				Field:   fmt.Sprintf(".spec.parameters.%s", childPath),
 				Message: fmt.Sprintf("nested parameter %q is required but not supplied by Release", childPath),
-				Err:     ErrParameterMissing,
+				Err:     ErrParameterMissing(),
 			})
 		case childHas:
 			errs = append(errs, validateEntry(childPath, childPC, childValue)...)
@@ -545,7 +545,7 @@ func checkObjectConstraints(path string, pc types.ParameterContract, v any) []*R
 				Entity:  "Aggregate",
 				Field:   fmt.Sprintf(".spec.parameters.%s", path),
 				Message: fmt.Sprintf("failed to decode valuesType contract: %v", derr),
-				Err:     ErrParameterContractViolation,
+				Err:     ErrParameterContractViolation(),
 			})
 		} else {
 			for k, val := range childMap {
@@ -580,7 +580,7 @@ func checkArrayConstraints(path string, pc types.ParameterContract, v any) []*Re
 			Entity:  "Aggregate",
 			Field:   fmt.Sprintf(".spec.parameters.%s", path),
 			Message: fmt.Sprintf("failed to decode items contract: %v", derr),
-			Err:     ErrParameterContractViolation,
+			Err:     ErrParameterContractViolation(),
 		}}
 	}
 	var errs []*ResolverError

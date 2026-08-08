@@ -272,7 +272,7 @@ func TestSynthesizeWorkload_HTTPProbeNoPort_Errors(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected TRANSLATION_ERROR for http probe with no ports")
 	}
-	if !errors.Is(err, ErrTranslationProbeNoPort) {
+	if !errors.Is(err, ErrTranslationProbeNoPort()) {
 		t.Errorf("expected ErrTranslationProbeNoPort, got %v", err)
 	}
 }
@@ -432,7 +432,7 @@ func TestSynthesizeWorkload_UnsupportedFormsHalt(t *testing.T) {
 		w.Containers.Set("main", c)
 
 		_, _, err := SynthesizeWorkloadCore(w, nodeCtxFor("x"))
-		if !errors.Is(err, ErrUnsupportedComposeForm) {
+		if !errors.Is(err, ErrUnsupportedComposeForm()) {
 			t.Errorf("form %q: expected ErrUnsupportedComposeForm; got %v", form, err)
 		}
 	}
@@ -448,7 +448,7 @@ func TestSynthesizeWorkload_PersistentTemplateRequiresStateful(t *testing.T) {
 	w.Volumes.Set("data", types.VolumeSpec{PersistentTemplate: &types.PersistentTemplateVolume{Size: "10Gi"}})
 
 	_, _, err := SynthesizeWorkloadCore(w, nodeCtxFor("db"))
-	if !errors.Is(err, rendercore.ErrPersistentTemplateRequiresStatefulForm) {
+	if !errors.Is(err, rendercore.ErrPersistentTemplateRequiresStatefulForm()) {
 		t.Fatalf("expected ErrPersistentTemplateRequiresStatefulForm; got %v", err)
 	}
 }
@@ -492,7 +492,7 @@ func TestSynthesizeWorkload_LifecycleHalts(t *testing.T) {
 	w.Containers.Set("main", c)
 
 	_, _, err := SynthesizeWorkloadCore(w, nodeCtxFor("x"))
-	if !errors.Is(err, ErrUnsupportedComposeLifecycle) {
+	if !errors.Is(err, ErrUnsupportedComposeLifecycle()) {
 		t.Errorf("expected ErrUnsupportedComposeLifecycle, got %v", err)
 	}
 }
@@ -507,7 +507,7 @@ func TestSynthesizeWorkload_UnconvertibleResourceQuantityHalts(t *testing.T) {
 	w.Containers.Set("main", c)
 
 	_, _, err := SynthesizeWorkloadCore(w, nodeCtxFor("x"))
-	if !errors.Is(err, ErrUnconvertibleComposeQuantity) {
+	if !errors.Is(err, ErrUnconvertibleComposeQuantity()) {
 		t.Errorf("expected ErrUnconvertibleComposeQuantity, got %v", err)
 	}
 }
@@ -561,7 +561,7 @@ func TestSynthesizeWorkload_EnvFromHalts(t *testing.T) {
 	w.Containers.Set("main", c)
 
 	_, _, err := SynthesizeWorkloadCore(w, nodeCtxFor("x"))
-	if !errors.Is(err, ErrUnsupportedComposeEnvFrom) {
+	if !errors.Is(err, ErrUnsupportedComposeEnvFrom()) {
 		t.Errorf("expected ErrUnsupportedComposeEnvFrom, got %v", err)
 	}
 }
@@ -629,7 +629,7 @@ func TestSynthesizeWorkload_EndpointRequiresReferenceForm(t *testing.T) {
 	c := types.ContainerSpec{Image: "app:1.0"}
 	w.Containers.Set("main", c)
 	_, _, err := SynthesizeWorkloadCore(w, nodeCtxFor("x"))
-	if !errors.Is(err, rendercore.ErrEndpointRequiresReferenceForm) {
+	if !errors.Is(err, rendercore.ErrEndpointRequiresReferenceForm()) {
 		t.Errorf("expected ErrEndpointRequiresReferenceForm, got %v", err)
 	}
 }

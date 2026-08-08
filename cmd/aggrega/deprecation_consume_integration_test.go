@@ -221,7 +221,7 @@ func TestIntegration_ConsumeRetroactiveDeprecation(t *testing.T) {
 			t.Fatalf("pull with an error-severity marker must succeed (halt is at build); got: %v", perr)
 		}
 		berr := dispatchBuild(nil, "release.yaml", nil, false, io.Discard, io.Discard)
-		if !errors.Is(berr, deprecation.ErrDeprecatedEntity) {
+		if !errors.Is(berr, deprecation.ErrDeprecatedEntity()) {
 			t.Fatalf("build must HALT with ErrDeprecatedEntity at severity==threshold; got: %v", berr)
 		}
 	})
@@ -237,7 +237,7 @@ func TestIntegration_ConsumeRetroactiveDeprecation(t *testing.T) {
 			t.Fatalf("pull with a retracted marker must succeed; got: %v", perr)
 		}
 		berr := dispatchBuild(nil, "release.yaml", nil, false, io.Discard, io.Discard)
-		if !errors.Is(berr, deprecation.ErrDeprecatedEntity) {
+		if !errors.Is(berr, deprecation.ErrDeprecatedEntity()) {
 			t.Fatalf("build must HALT with ErrDeprecatedEntity for a retracted marker at retracted threshold; got: %v", berr)
 		}
 	})

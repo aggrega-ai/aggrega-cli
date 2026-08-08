@@ -478,7 +478,7 @@ func TestResolveProvidersDuplicateTargetHalts(t *testing.T) {
 	if err == nil {
 		t.Fatal("Resolve over a duplicate provider target returned nil; expected a loud halt")
 	}
-	if !errors.Is(err, workspaceconfig.ErrDuplicateProviderTarget) {
+	if !errors.Is(err, workspaceconfig.ErrDuplicateProviderTarget()) {
 		t.Fatalf("duplicate-target halt must be ErrDuplicateProviderTarget; got: %v", err)
 	}
 	if !strings.Contains(err.Error(), "helm") {
@@ -500,7 +500,7 @@ func TestResolveRejectsLegacyProviderBindings(t *testing.T) {
 	if err == nil {
 		t.Fatal("Resolve over a legacy top-level provider_bindings key returned nil; expected a loud schema rejection")
 	}
-	if !errors.Is(err, workspaceconfig.ErrConfigInvalid) {
+	if !errors.Is(err, workspaceconfig.ErrConfigInvalid()) {
 		t.Fatalf("legacy-key rejection must wrap ErrConfigInvalid; got: %v", err)
 	}
 }

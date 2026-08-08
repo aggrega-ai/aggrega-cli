@@ -49,9 +49,9 @@ const DigestPrefixLen = 12
 // tests, debugging tools). The sentinel surfaces the mistake
 // loudly rather than letting a buggy slot path survive into the
 // cache.
-const ErrEmptyWorkspaceRoot cerrors.Code = "sourceresolver-cacheslot/empty-workspace-root"
+func ErrEmptyWorkspaceRoot() error { return errEmptyWorkspaceRoot }
 
-var _ = cerrors.Register(ErrEmptyWorkspaceRoot, cerrors.Meta{
+var errEmptyWorkspaceRoot = cerrors.Register("sourceresolver-cacheslot/empty-workspace-root", cerrors.Meta{
 	Message: "cacheslot: empty workspaceRoot",
 })
 
@@ -76,7 +76,7 @@ var _ = cerrors.Register(ErrEmptyWorkspaceRoot, cerrors.Meta{
 func Slot(workspaceRoot, cacheDir, kind, sourceURL, chart, version, digest string) (string, error) {
 	if workspaceRoot == "" {
 		return "", fmt.Errorf("%w (kind=%s url=%s chart=%s version=%s)",
-			ErrEmptyWorkspaceRoot, kind, sourceURL, chart, version)
+			ErrEmptyWorkspaceRoot(), kind, sourceURL, chart, version)
 	}
 	host, urlPath := splitURL(sourceURL)
 	prefix := digestPrefix(digest)

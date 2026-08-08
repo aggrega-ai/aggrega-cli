@@ -96,7 +96,7 @@ func TestPullPushLibraryPerVersionSubdirEnforced(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected ErrEntityVersionPathMismatch; got nil")
 	}
-	if !errors.Is(err, oci.ErrEntityVersionPathMismatch) {
+	if !errors.Is(err, oci.ErrEntityVersionPathMismatch()) {
 		t.Errorf("error should wrap ErrEntityVersionPathMismatch; got %v", err)
 	}
 }
@@ -168,7 +168,7 @@ func TestBundleBareKindsPerVersionSubdir(t *testing.T) {
 				t.Fatalf("mkdir: %v", err)
 			}
 			mustWrite(t, filepath.Join(ver, tc.file), body(tc.kind))
-			if _, _, err := oci.Bundle(tc.kind, filepath.Join(ver, tc.file)); !errors.Is(err, oci.ErrEntityVersionPathMismatch) {
+			if _, _, err := oci.Bundle(tc.kind, filepath.Join(ver, tc.file)); !errors.Is(err, oci.ErrEntityVersionPathMismatch()) {
 				t.Errorf("off-layout %s should wrap ErrEntityVersionPathMismatch; got %v", tc.kind, err)
 			}
 		})
@@ -208,7 +208,7 @@ func TestBundlePluginNoVersionSubdir(t *testing.T) {
 	compBody := []byte("apiVersion: aggrega.ai/v1alpha1\nkind: Component\nmetadata:\n  name: demo/x\n  version: 1.0.0\n")
 	compPath := filepath.Join(dir, "component.yaml")
 	mustWrite(t, compPath, compBody)
-	if _, _, err := oci.Bundle("Component", compPath); !errors.Is(err, oci.ErrEntityVersionPathMismatch) {
+	if _, _, err := oci.Bundle("Component", compPath); !errors.Is(err, oci.ErrEntityVersionPathMismatch()) {
 		t.Errorf("Component off-layout should still wrap ErrEntityVersionPathMismatch; got %v", err)
 	}
 }
@@ -253,7 +253,7 @@ func TestBundleCoversEveryMediaTypeKind(t *testing.T) {
 				"\nmetadata:\n  name: demo/x\n  version: 1.0.0\n"))
 
 			data, mt, err := oci.Bundle(kind, path)
-			if errors.Is(err, oci.ErrUnknownEntityKind) {
+			if errors.Is(err, oci.ErrUnknownEntityKind()) {
 				t.Fatalf("kind %q resolves a mediatype but Bundle has no case for it: it is publishable "+
 					"by the mediatype table and unbundleable in fact. Add an arm to Bundle's switch — "+
 					"bare YAML for a self-contained entity, tar.gz for one whose version directory "+

@@ -117,7 +117,7 @@ func buildArtifactsProjection(
 			return nil
 		}
 		if _, dup := seen[outputName]; dup {
-			return cerrors.Wrap(ErrArtifactOutputCollision, cerrors.CatalogError, cerrors.SourceLocation{File: outputName},
+			return cerrors.Wrap(ErrArtifactOutputCollision(), cerrors.CatalogError, cerrors.SourceLocation{File: outputName},
 				fmt.Sprintf("Recipe %q emits artifact output %q more than once", state.RecipeName, outputName))
 		}
 		seen[outputName] = struct{}{}
@@ -137,7 +137,7 @@ func buildArtifactsProjection(
 		case entry.HasOCIPrefix():
 			// A library is addressed by bare-name identity, never by registry
 			// location; reject a host-bearing reference (mirrors workload:).
-			return ArtifactsProjection{}, cerrors.Wrap(ErrHostInLibraryImport,
+			return ArtifactsProjection{}, cerrors.Wrap(ErrHostInLibraryImport(),
 				cerrors.CatalogError, cerrors.SourceLocation{File: state.RecipeName},
 				fmt.Sprintf("Recipe %q artifact %q $import %q", state.RecipeName, key, entry.Import))
 		case entry.IsLibraryImport():
@@ -173,7 +173,7 @@ func buildArtifactsProjection(
 				// no recorded pin (never frozen) has nothing to compare and proceeds.
 				if pin, ok := recipepin.MatchArtifactPin(state.Recipe.Spec.ArtifactDigests, key); ok {
 					if got := digest.ContentDigest([]byte(tmplText)); got != pin.Digest {
-						return ArtifactsProjection{}, cerrors.Wrap(ErrArtifactContentMismatch,
+						return ArtifactsProjection{}, cerrors.Wrap(ErrArtifactContentMismatch(),
 							cerrors.CatalogError, cerrors.SourceLocation{File: entry.Import},
 							fmt.Sprintf("Recipe %q artifact %q imported file %s digest %s does not match recorded pin %s",
 								state.RecipeName, key, entry.Import, got, pin.Digest))

@@ -320,7 +320,7 @@ func resolvePluginURI(uri string, in pluginResolutionInputs) (pluginpath.Resolve
 		if err == nil {
 			return resolved, nil
 		}
-		if !errors.Is(err, pluginpath.ErrPluginEntityNotFound) {
+		if !errors.Is(err, pluginpath.ErrPluginEntityNotFound()) {
 			return pluginpath.ResolvedPlugin{}, err
 		}
 	}

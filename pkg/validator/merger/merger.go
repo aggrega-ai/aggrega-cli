@@ -86,14 +86,14 @@ func Merge(schemas []*Schema) (*Schema, error) {
 	if len(schemas) == 0 {
 		return nil, &MergeError{
 			Detail: "merge input chain is empty",
-			Err:    ErrMergeInvalid,
+			Err:    ErrMergeInvalid(),
 		}
 	}
 	for i, s := range schemas {
 		if s == nil || s.Schema == nil {
 			return nil, &MergeError{
 				Detail: nilSchemaDetail(i),
-				Err:    ErrMergeInvalid,
+				Err:    ErrMergeInvalid(),
 			}
 		}
 	}

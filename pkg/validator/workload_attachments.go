@@ -66,7 +66,7 @@ func ValidateWorkloadAttachments(
 		RecipeVersion: recipeVersion,
 		Stage:         "featuresSchema",
 		Findings:      findings,
-		Err:           ErrWorkloadFeaturesSchema,
+		Err:           ErrWorkloadFeaturesSchema(),
 	}
 }
 
@@ -166,7 +166,7 @@ func ValidateWorkloadResourceReferences(
 		RecipeVersion: recipeVersion,
 		Stage:         "slotReferenceability",
 		Findings:      findings,
-		Err:           ErrSlotNotReferenceable,
+		Err:           ErrSlotNotReferenceable(),
 	}
 }
 

@@ -68,7 +68,7 @@ func TestOpaWasmPolicyDenyHaltsE2E(t *testing.T) {
 	if err == nil {
 		t.Fatalf("deny policy: expected a halt, got nil")
 	}
-	if !errors.Is(err, analyzer.ErrPolicyViolation) {
+	if !errors.Is(err, analyzer.ErrPolicyViolation()) {
 		t.Fatalf("deny halt not errors.Is ErrPolicyViolation: %v", err)
 	}
 	const wantMsg = "the build graph exceeds the permitted node count"

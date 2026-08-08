@@ -110,7 +110,7 @@ func TestExecutePhaseA_FeatureLocalsForwardReferenceHalts(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected a halt on a forward sibling reference, got nil")
 	}
-	if !errors.Is(err, ErrLocalsForwardReference) {
+	if !errors.Is(err, ErrLocalsForwardReference()) {
 		t.Errorf("error does not carry the forward-reference sentinel: %v", err)
 	}
 	if _, exists := ctx.Context.Inject.Env.Get("X"); exists {
@@ -135,14 +135,14 @@ func TestExecutePhaseA_FeatureLocalsCannotReadBaseLocal(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected a halt reading a base Recipe local from an attachment local, got nil")
 	}
-	if !errors.Is(err, ErrLocalsUnknownReference) {
+	if !errors.Is(err, ErrLocalsUnknownReference()) {
 		t.Errorf("error does not carry the unknown-reference sentinel: %v", err)
 	}
 
 	// Same block, the attachment render path: the answer must not differ.
 	_, perr := EvaluateFeatureRecipeLocals(refs[0].FeatureRecipe, "mon", "checkout-api",
 		types.OrderedMap[any]{}, types.OrderedMap[any]{})
-	if !errors.Is(perr, ErrLocalsUnknownReference) {
+	if !errors.Is(perr, ErrLocalsUnknownReference()) {
 		t.Errorf("the two attachment-locals surfaces disagree: interception halt %v, render path %v", err, perr)
 	}
 }

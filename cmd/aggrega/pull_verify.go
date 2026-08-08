@@ -258,7 +258,7 @@ func verifyPluginHostFunctions(ctx context.Context, cl *closure.Closure, loader 
 
 		wasmBytes, err := oci.ReadCached(workspaceRoot, cacheDir, artifactURI, pinDigest)
 		if err != nil {
-			if errors.Is(err, oci.ErrFetchNotFound) {
+			if errors.Is(err, oci.ErrFetchNotFound()) {
 				// No cached artifact (offline / hermetic): nothing to re-derive
 				// against, so there is no stamp to contradict.
 				continue
@@ -294,7 +294,7 @@ func verifyPluginHostFunctionStamp(entity *types.Plugin, entityURI, artifactURI 
 	stamped := stampedHostFunctions(entity)
 	if !canonicalStringSetsEqual(stamped, derived) {
 		return fmt.Errorf("plugin %q: stamped spec.runtime.hostFunctions %v does not match %v derived from the verified .wasm %s: %w",
-			entityURI, stamped, derived, artifactURI, wasm.ErrWasmHostFunctionsStampMismatch)
+			entityURI, stamped, derived, artifactURI, wasm.ErrWasmHostFunctionsStampMismatch())
 	}
 	fmt.Fprintf(diagOut, "  verify: plugin %s host functions match the published .wasm\n", entityURI)
 	return nil
@@ -439,7 +439,7 @@ func signatureFact(r pullverify.Result) *lockfile.VerifiedSignature {
 func remoteTargetForWith(httpClient *http.Client) pullverify.TargetFor {
 	return func(e pullverify.Entity) (oras.ReadOnlyTarget, string, error) {
 		if httpClient == nil {
-			return nil, "", egress.ErrOfflineEgress
+			return nil, "", egress.ErrOfflineEgress()
 		}
 		// A catalog entity's URI is a host-less bare identity, so its repository
 		// reference is the location bound at pull time (host + path), carried on the

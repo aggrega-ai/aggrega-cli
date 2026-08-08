@@ -102,7 +102,7 @@ func TestDispatcherResolveUnknownKindReturnsErrUnknownKind(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected ErrUnknownKind; got nil")
 	}
-	if !errors.Is(err, sourceresolver.ErrUnknownKind) {
+	if !errors.Is(err, sourceresolver.ErrUnknownKind()) {
 		t.Errorf("error should wrap ErrUnknownKind; got %v", err)
 	}
 }

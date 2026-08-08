@@ -96,7 +96,7 @@ func TestPushRefusesOverwriteWithDifferentContent(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected ErrImmutableTagConflict; got nil")
 	}
-	if !errors.Is(err, oci.ErrImmutableTagConflict) {
+	if !errors.Is(err, oci.ErrImmutableTagConflict()) {
 		t.Errorf("error should wrap ErrImmutableTagConflict; got %v", err)
 	}
 

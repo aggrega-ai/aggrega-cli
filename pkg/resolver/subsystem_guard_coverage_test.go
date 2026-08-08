@@ -49,7 +49,7 @@ func TestSubsystemGuardCoverage_SelfInject(t *testing.T) {
 		Type:   "core/datastore/postgres",
 		Inject: &types.InjectBlock{Env: map[string]any{"X": "1"}},
 	})
-	requireSubsystemHalt(t, guardSelfInject(normalized(t, agg), selfInjectCatalog()), ErrSelfInjectForbidden, subsysDBPath)
+	requireSubsystemHalt(t, guardSelfInject(normalized(t, agg), selfInjectCatalog()), ErrSelfInjectForbidden(), subsysDBPath)
 }
 
 // TestSubsystemGuardCoverage_Merge — a feature-type merge conflict on a
@@ -70,7 +70,7 @@ func TestSubsystemGuardCoverage_Merge(t *testing.T) {
 	rel := &types.Release{}
 	rel.Spec.Boundaries = boundaries
 
-	requireSubsystemHalt(t, guardFeatureMerge(normalized(t, agg), rel), ErrFeatureMergeConflict, subsysDBPath)
+	requireSubsystemHalt(t, guardFeatureMerge(normalized(t, agg), rel), ErrFeatureMergeConflict(), subsysDBPath)
 }
 
 // TestCollectComponentInstances_RootOnlyFoldsToDefault pins the walker's
