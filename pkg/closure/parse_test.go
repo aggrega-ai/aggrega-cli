@@ -74,7 +74,7 @@ func TestParseIdentityRef(t *testing.T) {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			name, version, fragment, err := parseIdentityRef(tc.input)
+			name, version, fragment, err := LibraryAxisNamed("SchemaLibraries").ParseRef(tc.input)
 			if tc.wantErr {
 				if err == nil {
 					t.Fatalf("expected error for input %q; got nil", tc.input)
@@ -164,7 +164,7 @@ func TestParseIdentityImportRef(t *testing.T) {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			name, version, fragment, err := parseIdentityImportRef(tc.input)
+			name, version, fragment, err := LibraryAxisNamed("MappingLibraries").ParseRef(tc.input)
 			if tc.wantErr {
 				if err == nil {
 					t.Fatalf("expected error for input %q; got nil", tc.input)

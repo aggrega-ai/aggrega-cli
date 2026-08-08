@@ -31,7 +31,7 @@ import (
 // non-`#/artifacts/` shape is ErrArtifactImportShape; an unknown library or bundle
 // surfaces ErrArtifactsLibraryNotFound / ErrArtifactsLibraryEntryNotFound.
 func resolveArtifactLibraryImport(ref string, libs map[string]types.ArtifactsLibrary) (types.ArtifactsLibraryEntry, error) {
-	library, entry, ok := splitArtifactImportRef(ref)
+	library, entry, ok := splitLibraryImportRef(ref, "/artifacts/")
 	if !ok {
 		if strings.HasPrefix(ref, "oci://") {
 			return types.ArtifactsLibraryEntry{}, fmt.Errorf("%w: %q", ErrHostInLibraryImport(), ref)
@@ -62,25 +62,4 @@ func resolveArtifactLibraryImport(ref string, libs map[string]types.ArtifactsLib
 		}
 	}
 	return bundle, nil
-}
-
-// splitArtifactImportRef parses a host-less `<Library>[:<version>]#/artifacts/<Entry>`
-// into its library name and entry (bundle) name, stripping any `:version` floor. A
-// host-bearing reference (`oci://…`), a non-`#/artifacts/` fragment shape, or an
-// empty entry or library returns ok=false. The host-less identity grammar itself is
-// shared from [types.IdentityRefParts]; the `:version` strip and the non-empty-entry
-// requirement are layered here — the same split shape splitWorkloadImportRef uses.
-func splitArtifactImportRef(ref string) (library, entry string, ok bool) {
-	doc, ent, matched := types.IdentityRefParts(ref, "/artifacts/")
-	if !matched || ent == "" {
-		return "", "", false
-	}
-	library = doc
-	if at := strings.IndexByte(doc, ':'); at >= 0 {
-		library = doc[:at]
-	}
-	if library == "" {
-		return "", "", false
-	}
-	return library, ent, true
 }

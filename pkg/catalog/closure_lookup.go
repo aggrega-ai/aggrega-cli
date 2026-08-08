@@ -488,8 +488,13 @@ func (l *catalogLookup) lookupExternal(uri string) (closure.Resolution, bool) {
 	}, true
 }
 
-func (l *catalogLookup) ResolveSchemaLibrary(uri string) (closure.LibraryResolution, error) {
-	if res, entries, ok := l.tier1SchemaLibrary(uri); ok {
+// ResolveLibrary resolves a library reference on any axis through the same three
+// tiers every axis uses: the locally-authored catalog, the pinned content cache,
+// then the registry. The axis selects the local-catalog reader and names the kind
+// the registry tier fetches under; nothing else differs between the axes, so the
+// cascade is written once here rather than copied per axis.
+func (l *catalogLookup) ResolveLibrary(axis closure.LibraryAxis, uri string) (closure.LibraryResolution, error) {
+	if res, entries, ok := l.tier1Library(axis, uri); ok {
 		return closure.LibraryResolution{Resolution: res, Entries: entries}, nil
 	}
 	fetchURI := l.pinnedFetchURI(uri)
@@ -497,58 +502,7 @@ func (l *catalogLookup) ResolveSchemaLibrary(uri string) (closure.LibraryResolut
 		res, err := l.honorPinDigest(uri, res)
 		return closure.LibraryResolution{Resolution: res}, err
 	}
-	res, err := l.tier3Library(fetchURI, "SchemaLibrary")
-	if err != nil {
-		return closure.LibraryResolution{Resolution: res}, err
-	}
-	res, err = l.honorPinDigest(uri, res)
-	return closure.LibraryResolution{Resolution: res}, err
-}
-
-func (l *catalogLookup) ResolveMappingLibrary(uri string) (closure.LibraryResolution, error) {
-	if res, entries, ok := l.tier1MappingLibrary(uri); ok {
-		return closure.LibraryResolution{Resolution: res, Entries: entries}, nil
-	}
-	fetchURI := l.pinnedFetchURI(uri)
-	if _, res, ok := l.tier2(fetchURI); ok {
-		res, err := l.honorPinDigest(uri, res)
-		return closure.LibraryResolution{Resolution: res}, err
-	}
-	res, err := l.tier3Library(fetchURI, "MappingLibrary")
-	if err != nil {
-		return closure.LibraryResolution{Resolution: res}, err
-	}
-	res, err = l.honorPinDigest(uri, res)
-	return closure.LibraryResolution{Resolution: res}, err
-}
-
-func (l *catalogLookup) ResolveWorkloadLibrary(uri string) (closure.LibraryResolution, error) {
-	if res, entries, ok := l.tier1WorkloadLibrary(uri); ok {
-		return closure.LibraryResolution{Resolution: res, Entries: entries}, nil
-	}
-	fetchURI := l.pinnedFetchURI(uri)
-	if _, res, ok := l.tier2(fetchURI); ok {
-		res, err := l.honorPinDigest(uri, res)
-		return closure.LibraryResolution{Resolution: res}, err
-	}
-	res, err := l.tier3Library(fetchURI, "WorkloadLibrary")
-	if err != nil {
-		return closure.LibraryResolution{Resolution: res}, err
-	}
-	res, err = l.honorPinDigest(uri, res)
-	return closure.LibraryResolution{Resolution: res}, err
-}
-
-func (l *catalogLookup) ResolveArtifactsLibrary(uri string) (closure.LibraryResolution, error) {
-	if res, entries, ok := l.tier1ArtifactsLibrary(uri); ok {
-		return closure.LibraryResolution{Resolution: res, Entries: entries}, nil
-	}
-	fetchURI := l.pinnedFetchURI(uri)
-	if _, res, ok := l.tier2(fetchURI); ok {
-		res, err := l.honorPinDigest(uri, res)
-		return closure.LibraryResolution{Resolution: res}, err
-	}
-	res, err := l.tier3Library(fetchURI, "ArtifactsLibrary")
+	res, err := l.tier3Library(fetchURI, axis.Kind)
 	if err != nil {
 		return closure.LibraryResolution{Resolution: res}, err
 	}
@@ -802,75 +756,78 @@ func (l *catalogLookup) tier1CatalogEntity(uri string) (closure.Resolution, bool
 	return closure.Resolution{}, false
 }
 
-func (l *catalogLookup) tier1SchemaLibrary(uri string) (closure.Resolution, map[string]struct{}, bool) {
+// tier1Library resolves a library from the locally-authored catalog on any axis.
+// The version a reference asserts is a floor for selection, so an explicit one in
+// the URI wins over the library's own metadata version.
+//
+// An axis the local catalog holds no map for resolves as a miss rather than an
+// error: a library that is not authored locally is exactly what the cache and
+// registry tiers below exist to serve.
+func (l *catalogLookup) tier1Library(axis closure.LibraryAxis, uri string) (closure.Resolution, map[string]struct{}, bool) {
 	name := schemaLibraryNameFromURI(uri)
-	lib, ok := l.catalog.SchemaLibraries[name]
+	metaName, metaVersion, entries, ok := l.localLibrary(axis, name)
 	if !ok {
 		return closure.Resolution{}, nil, false
 	}
-	resolved := lib.Metadata.Version
+	resolved := metaVersion
 	if _, v, hasV := SplitVersionedURI(uri); hasV && v != "" {
 		resolved = v
 	}
-	entries := map[string]struct{}{}
-	for n := range lib.Spec.Schemas.All() {
-		entries[n] = struct{}{}
-	}
-	for n := range lib.Spec.Templates.All() {
-		entries[n] = struct{}{}
-	}
-	return l.tier1Resolution("SchemaLibrary", lib.Metadata.Name, lib.Metadata.Version, resolved), entries, true
+	return l.tier1Resolution(axis.Kind, metaName, metaVersion, resolved), entries, true
 }
 
-func (l *catalogLookup) tier1MappingLibrary(uri string) (closure.Resolution, map[string]struct{}, bool) {
-	name := schemaLibraryNameFromURI(uri)
-	lib, ok := l.catalog.MappingLibraries[name]
-	if !ok {
-		return closure.Resolution{}, nil, false
+// localLibrary reads one library out of the locally-authored catalog, returning its
+// identity and the set of entry names it publishes.
+//
+// This is the one place an axis is bound to the catalog map and the spec section
+// that hold it — which map and which section is new information per axis, not a
+// copy of another axis's — so it is stated here once instead of at every tier.
+func (l *catalogLookup) localLibrary(axis closure.LibraryAxis, name string) (metaName, metaVersion string, entries map[string]struct{}, ok bool) {
+	entries = map[string]struct{}{}
+	switch axis.Kind {
+	case "SchemaLibrary":
+		lib, found := l.catalog.SchemaLibraries[name]
+		if !found {
+			return "", "", nil, false
+		}
+		for n := range lib.Spec.Schemas.All() {
+			entries[n] = struct{}{}
+		}
+		// A SchemaLibrary publishes templates alongside schemas; both are
+		// addressable entries of the same library.
+		for n := range lib.Spec.Templates.All() {
+			entries[n] = struct{}{}
+		}
+		return lib.Metadata.Name, lib.Metadata.Version, entries, true
+	case "MappingLibrary":
+		lib, found := l.catalog.MappingLibraries[name]
+		if !found {
+			return "", "", nil, false
+		}
+		for n := range lib.Spec.Mappings.All() {
+			entries[n] = struct{}{}
+		}
+		return lib.Metadata.Name, lib.Metadata.Version, entries, true
+	case "WorkloadLibrary":
+		lib, found := l.catalog.WorkloadLibraries[name]
+		if !found {
+			return "", "", nil, false
+		}
+		for n := range lib.Spec.Workloads.All() {
+			entries[n] = struct{}{}
+		}
+		return lib.Metadata.Name, lib.Metadata.Version, entries, true
+	case "ArtifactsLibrary":
+		lib, found := l.catalog.ArtifactsLibraries[name]
+		if !found {
+			return "", "", nil, false
+		}
+		for n := range lib.Spec.Artifacts.All() {
+			entries[n] = struct{}{}
+		}
+		return lib.Metadata.Name, lib.Metadata.Version, entries, true
 	}
-	resolved := lib.Metadata.Version
-	if _, v, hasV := SplitVersionedURI(uri); hasV && v != "" {
-		resolved = v
-	}
-	entries := map[string]struct{}{}
-	for n := range lib.Spec.Mappings.All() {
-		entries[n] = struct{}{}
-	}
-	return l.tier1Resolution("MappingLibrary", lib.Metadata.Name, lib.Metadata.Version, resolved), entries, true
-}
-
-func (l *catalogLookup) tier1WorkloadLibrary(uri string) (closure.Resolution, map[string]struct{}, bool) {
-	name := schemaLibraryNameFromURI(uri)
-	lib, ok := l.catalog.WorkloadLibraries[name]
-	if !ok {
-		return closure.Resolution{}, nil, false
-	}
-	resolved := lib.Metadata.Version
-	if _, v, hasV := SplitVersionedURI(uri); hasV && v != "" {
-		resolved = v
-	}
-	entries := map[string]struct{}{}
-	for n := range lib.Spec.Workloads.All() {
-		entries[n] = struct{}{}
-	}
-	return l.tier1Resolution("WorkloadLibrary", lib.Metadata.Name, lib.Metadata.Version, resolved), entries, true
-}
-
-func (l *catalogLookup) tier1ArtifactsLibrary(uri string) (closure.Resolution, map[string]struct{}, bool) {
-	name := schemaLibraryNameFromURI(uri)
-	lib, ok := l.catalog.ArtifactsLibraries[name]
-	if !ok {
-		return closure.Resolution{}, nil, false
-	}
-	resolved := lib.Metadata.Version
-	if _, v, hasV := SplitVersionedURI(uri); hasV && v != "" {
-		resolved = v
-	}
-	entries := map[string]struct{}{}
-	for n := range lib.Spec.Artifacts.All() {
-		entries[n] = struct{}{}
-	}
-	return l.tier1Resolution("ArtifactsLibrary", lib.Metadata.Name, lib.Metadata.Version, resolved), entries, true
+	return "", "", nil, false
 }
 
 func (l *catalogLookup) tier1Resolution(kind, identifier, metaVersion, requestedVersion string) closure.Resolution {
@@ -1290,16 +1247,15 @@ func PullAndCacheAggregate(workspaceRoot, cacheDir string, puller OCIPuller, ref
 }
 
 // writeEntityToCacheSlot stores the pulled bytes at the standard
-// cache slot for uri@version. For SchemaLibrary and MappingLibrary
-// mediatypes the bytes land under the canonical "library.yaml"
-// filename (matching the local-authoring layout); every other
-// mediatype writes via pkg/oci.WriteCached's "blob" filename.
+// cache slot for uri@version. A library on any declared axis lands
+// under the canonical "library.yaml" filename (matching the
+// local-authoring layout); every other mediatype writes via
+// pkg/oci.WriteCached's "blob" filename.
 func writeEntityToCacheSlot(workspaceRoot, cacheDir, uri, version string, result *oci.PullResult) error {
 	if cacheDir == "" {
 		return nil
 	}
-	switch result.MediaType {
-	case oci.MediaTypeSchemaLibrary, oci.MediaTypeMappingLibrary:
+	if isLibraryMediaType(result.MediaType) {
 		slot := oci.CachePath(workspaceRoot, cacheDir, uri, version)
 		if err := os.MkdirAll(slot, 0o755); err != nil {
 			return err
@@ -1307,7 +1263,7 @@ func writeEntityToCacheSlot(workspaceRoot, cacheDir, uri, version string, result
 		if err := os.WriteFile(filepath.Join(slot, "library.yaml"), result.Bytes, 0o644); err != nil {
 			return err
 		}
-	default:
+	} else {
 		if err := oci.WriteCached(workspaceRoot, cacheDir, uri, version, result.Bytes); err != nil {
 			return err
 		}
@@ -1323,6 +1279,22 @@ func writeEntityToCacheSlot(workspaceRoot, cacheDir, uri, version string, result
 		}
 	}
 	return nil
+}
+
+// isLibraryMediaType reports whether mt is the mediatype of a library on any
+// declared axis.
+//
+// It is derived from the declared axis set rather than listed here, because a list
+// is what let this decision cover some axes and not others: the branch it gates
+// named two of the four, so the remaining two were cached under a different
+// filename than their siblings with nothing reporting the difference.
+func isLibraryMediaType(mt string) bool {
+	for _, axis := range closure.LibraryAxes() {
+		if libraryMT, err := oci.MediaTypeForKind(axis.Kind); err == nil && libraryMT == mt {
+			return true
+		}
+	}
+	return false
 }
 
 // readCacheSlotBytes reads the entity bytes from a cache slot. Tries

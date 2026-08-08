@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
+	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 )
 
@@ -110,7 +111,7 @@ func TestClosureLookup_HonorsPinnedVersion(t *testing.T) {
 	// SchemaLibrary resolves the pin's exact version though a higher one is served.
 	const libURI = "test/two-ver-lib"
 	libReuse := &catalog.ReuseVerification{PriorPins: map[string]catalog.Pin{libURI: {ResolvedVersion: "1.0.0", Digest: sha256Hex(v100)}}}
-	libRes, err := cat.ClosureLookupWithReuse(puller, t.TempDir(), cacheDir, nil, nil, libReuse).ResolveSchemaLibrary(libURI)
+	libRes, err := cat.ClosureLookupWithReuse(puller, t.TempDir(), cacheDir, nil, nil, libReuse).ResolveLibrary(closure.LibraryAxisNamed("SchemaLibraries"), libURI)
 	if err != nil {
 		t.Fatalf("honored library resolve: %v", err)
 	}

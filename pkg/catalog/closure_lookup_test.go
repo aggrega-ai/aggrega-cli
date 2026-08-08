@@ -14,6 +14,7 @@ import (
 	"oras.land/oras-go/v2/content/memory"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
+	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
 	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 )
@@ -253,7 +254,7 @@ spec:
 	}
 
 	lookup := cat.ClosureLookup(&orasPullerAdapter{target: store}, dir, ".aggrega/cache")
-	res, err := lookup.ResolveSchemaLibrary("hub.aggrega.ai/schemalibrary/core/Probes:1.0.0")
+	res, err := lookup.ResolveLibrary(closure.LibraryAxisNamed("SchemaLibraries"), "hub.aggrega.ai/schemalibrary/core/Probes:1.0.0")
 	if err != nil {
 		t.Fatalf("ResolveSchemaLibrary: %v", err)
 	}
@@ -301,7 +302,7 @@ spec:
 	}
 
 	lookup := cat.ClosureLookup(&orasPullerAdapter{target: store}, dir, ".aggrega/cache")
-	if _, err := lookup.ResolveMappingLibrary("hub.aggrega.ai/mappinglibrary/core/BaseMappings:1.0.0"); err != nil {
+	if _, err := lookup.ResolveLibrary(closure.LibraryAxisNamed("MappingLibraries"), "hub.aggrega.ai/mappinglibrary/core/BaseMappings:1.0.0"); err != nil {
 		t.Fatalf("ResolveMappingLibrary: %v", err)
 	}
 

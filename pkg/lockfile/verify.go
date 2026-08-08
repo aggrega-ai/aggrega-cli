@@ -52,147 +52,63 @@ var errLockfileDrift = cerrors.Register("lockfile/lockfile-drift", cerrors.Meta{
 // would double-verify the same condition.
 func Verify(lf *Lockfile, expected closure.Closure) error {
 	var driftErrs []error
-	driftErrs = append(driftErrs, collectEntityDrift(lf.Entities, expected.Entities)...)
-	driftErrs = append(driftErrs, collectSchemaLibraryDrift(lf.SchemaLibraries, expected.SchemaLibraries)...)
-	driftErrs = append(driftErrs, collectMappingLibraryDrift(lf.MappingLibraries, expected.MappingLibraries)...)
-	driftErrs = append(driftErrs, collectWorkloadLibraryDrift(lf.WorkloadLibraries, expected.WorkloadLibraries)...)
-	driftErrs = append(driftErrs, collectArtifactsLibraryDrift(lf.ArtifactsLibraries, expected.ArtifactsLibraries)...)
-	driftErrs = append(driftErrs, collectPluginDrift(lf.Plugins, expected.Plugins)...)
+	driftErrs = append(driftErrs, collectDrift("entity",
+		driftKeysOf(lf.Entities, entityKey), refKeys(expected.Entities))...)
+	// The library axes report in declared order, each under its own operator-facing
+	// label, so the labels here cannot disagree with the ones the rest of the
+	// toolchain uses for the same axis.
+	for _, sec := range librarySections() {
+		driftErrs = append(driftErrs, collectDrift(sec.axis.Label,
+			sec.keys(lf), libraryKeys(sec.axis.Libraries(&expected)))...)
+	}
+	driftErrs = append(driftErrs, collectDrift("wasm-plugin",
+		driftKeysOf(lf.Plugins, pluginKey), refKeys(expected.Plugins))...)
 	if len(driftErrs) == 0 {
 		return nil
 	}
 	return fmt.Errorf("%w: %w", ErrLockfileDrift(), errors.Join(driftErrs...))
 }
 
-func collectEntityDrift(have []Entity, want []closure.ResolvedRef) []error {
-	haveByURI := make(map[string]Entity, len(have))
-	for _, e := range have {
-		haveByURI[e.URI] = e
-	}
-	seen := make(map[string]struct{}, len(want))
-	var out []error
-	for _, w := range want {
-		seen[w.URI] = struct{}{}
-		h, ok := haveByURI[w.URI]
-		if !ok {
-			out = append(out, fmt.Errorf("entity %q not in lockfile", w.URI))
-			continue
-		}
-		if h.ResolvedVersion != w.ResolvedVersion || h.Digest != w.Digest {
-			out = append(out, fmt.Errorf("entity %q changed: lockfile=(%s,%s) current=(%s,%s)",
-				w.URI, h.ResolvedVersion, h.Digest, w.ResolvedVersion, w.Digest))
-		}
-	}
-	for _, uri := range sortedExtras(haveByURI, seen) {
-		out = append(out, fmt.Errorf("entity %q no longer used by the release", uri))
-	}
-	return out
+// driftKey is the identity triple every axis is compared on: the reference that
+// joins a lockfile row to a closure member, and the pinned pair that must match.
+type driftKey struct {
+	URI             string
+	ResolvedVersion string
+	Digest          string
 }
 
-func collectSchemaLibraryDrift(have []SchemaLibrary, want []closure.ResolvedLibrary) []error {
-	haveByURI := make(map[string]SchemaLibrary, len(have))
-	for _, e := range have {
-		haveByURI[e.URI] = e
-	}
-	seen := make(map[string]struct{}, len(want))
-	var out []error
-	for _, w := range want {
-		seen[w.URI] = struct{}{}
-		h, ok := haveByURI[w.URI]
-		if !ok {
-			out = append(out, fmt.Errorf("schema-library %q not in lockfile", w.URI))
-			continue
-		}
-		if h.ResolvedVersion != w.ResolvedVersion || h.Digest != w.Digest {
-			out = append(out, fmt.Errorf("schema-library %q changed: lockfile=(%s,%s) current=(%s,%s)",
-				w.URI, h.ResolvedVersion, h.Digest, w.ResolvedVersion, w.Digest))
-		}
-	}
-	for _, uri := range sortedExtras(haveByURI, seen) {
-		out = append(out, fmt.Errorf("schema-library %q no longer used by the release", uri))
-	}
-	return out
+func entityKey(e Entity) driftKey {
+	return driftKey{URI: e.URI, ResolvedVersion: e.ResolvedVersion, Digest: e.Digest}
 }
 
-func collectMappingLibraryDrift(have []MappingLibrary, want []closure.ResolvedLibrary) []error {
-	haveByURI := make(map[string]MappingLibrary, len(have))
-	for _, e := range have {
-		haveByURI[e.URI] = e
-	}
-	seen := make(map[string]struct{}, len(want))
-	var out []error
-	for _, w := range want {
-		seen[w.URI] = struct{}{}
-		h, ok := haveByURI[w.URI]
-		if !ok {
-			out = append(out, fmt.Errorf("mapping-library %q not in lockfile", w.URI))
-			continue
-		}
-		if h.ResolvedVersion != w.ResolvedVersion || h.Digest != w.Digest {
-			out = append(out, fmt.Errorf("mapping-library %q changed: lockfile=(%s,%s) current=(%s,%s)",
-				w.URI, h.ResolvedVersion, h.Digest, w.ResolvedVersion, w.Digest))
-		}
-	}
-	for _, uri := range sortedExtras(haveByURI, seen) {
-		out = append(out, fmt.Errorf("mapping-library %q no longer used by the release", uri))
-	}
-	return out
+func pluginKey(p Plugin) driftKey {
+	return driftKey{URI: p.URI, ResolvedVersion: p.ResolvedVersion, Digest: p.Digest}
 }
 
-func collectWorkloadLibraryDrift(have []WorkloadLibrary, want []closure.ResolvedLibrary) []error {
-	haveByURI := make(map[string]WorkloadLibrary, len(have))
-	for _, e := range have {
-		haveByURI[e.URI] = e
-	}
-	seen := make(map[string]struct{}, len(want))
-	var out []error
-	for _, w := range want {
-		seen[w.URI] = struct{}{}
-		h, ok := haveByURI[w.URI]
-		if !ok {
-			out = append(out, fmt.Errorf("workload-library %q not in lockfile", w.URI))
-			continue
-		}
-		if h.ResolvedVersion != w.ResolvedVersion || h.Digest != w.Digest {
-			out = append(out, fmt.Errorf("workload-library %q changed: lockfile=(%s,%s) current=(%s,%s)",
-				w.URI, h.ResolvedVersion, h.Digest, w.ResolvedVersion, w.Digest))
-		}
-	}
-	for _, uri := range sortedExtras(haveByURI, seen) {
-		out = append(out, fmt.Errorf("workload-library %q no longer used by the release", uri))
-	}
-	return out
+func refKeys(refs []closure.ResolvedRef) []driftKey {
+	return driftKeysOf(refs, func(r closure.ResolvedRef) driftKey {
+		return driftKey{URI: r.URI, ResolvedVersion: r.ResolvedVersion, Digest: r.Digest}
+	})
 }
 
-func collectArtifactsLibraryDrift(have []ArtifactsLibrary, want []closure.ResolvedLibrary) []error {
-	haveByURI := make(map[string]ArtifactsLibrary, len(have))
-	for _, e := range have {
-		haveByURI[e.URI] = e
-	}
-	seen := make(map[string]struct{}, len(want))
-	var out []error
-	for _, w := range want {
-		seen[w.URI] = struct{}{}
-		h, ok := haveByURI[w.URI]
-		if !ok {
-			out = append(out, fmt.Errorf("artifacts-library %q not in lockfile", w.URI))
-			continue
-		}
-		if h.ResolvedVersion != w.ResolvedVersion || h.Digest != w.Digest {
-			out = append(out, fmt.Errorf("artifacts-library %q changed: lockfile=(%s,%s) current=(%s,%s)",
-				w.URI, h.ResolvedVersion, h.Digest, w.ResolvedVersion, w.Digest))
-		}
-	}
-	for _, uri := range sortedExtras(haveByURI, seen) {
-		out = append(out, fmt.Errorf("artifacts-library %q no longer used by the release", uri))
-	}
-	return out
+func libraryKeys(libs []closure.ResolvedLibrary) []driftKey {
+	return driftKeysOf(libs, func(l closure.ResolvedLibrary) driftKey {
+		return driftKey{URI: l.URI, ResolvedVersion: l.ResolvedVersion, Digest: l.Digest}
+	})
 }
 
-func collectPluginDrift(have []Plugin, want []closure.ResolvedRef) []error {
-	haveByURI := make(map[string]Plugin, len(have))
-	for _, e := range have {
-		haveByURI[e.URI] = e
+// collectDrift reports every way one axis's lockfile rows disagree with the
+// closure just computed: a reference the lockfile does not pin, a reference whose
+// pinned pair moved, and a pinned reference the release no longer reaches.
+//
+// It is written once and given the axis's label, so every axis reports the same
+// three conditions in the same words. A per-axis copy is how one axis comes to
+// report a condition its siblings do not — and drift the operator is never told
+// about is drift they cannot act on.
+func collectDrift(label string, have, want []driftKey) []error {
+	haveByURI := make(map[string]driftKey, len(have))
+	for _, h := range have {
+		haveByURI[h.URI] = h
 	}
 	seen := make(map[string]struct{}, len(want))
 	var out []error
@@ -200,16 +116,16 @@ func collectPluginDrift(have []Plugin, want []closure.ResolvedRef) []error {
 		seen[w.URI] = struct{}{}
 		h, ok := haveByURI[w.URI]
 		if !ok {
-			out = append(out, fmt.Errorf("wasm-plugin %q not in lockfile", w.URI))
+			out = append(out, fmt.Errorf("%s %q not in lockfile", label, w.URI))
 			continue
 		}
 		if h.ResolvedVersion != w.ResolvedVersion || h.Digest != w.Digest {
-			out = append(out, fmt.Errorf("wasm-plugin %q changed: lockfile=(%s,%s) current=(%s,%s)",
-				w.URI, h.ResolvedVersion, h.Digest, w.ResolvedVersion, w.Digest))
+			out = append(out, fmt.Errorf("%s %q changed: lockfile=(%s,%s) current=(%s,%s)",
+				label, w.URI, h.ResolvedVersion, h.Digest, w.ResolvedVersion, w.Digest))
 		}
 	}
 	for _, uri := range sortedExtras(haveByURI, seen) {
-		out = append(out, fmt.Errorf("wasm-plugin %q no longer used by the release", uri))
+		out = append(out, fmt.Errorf("%s %q no longer used by the release", label, uri))
 	}
 	return out
 }

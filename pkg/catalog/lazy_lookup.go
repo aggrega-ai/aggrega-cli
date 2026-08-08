@@ -1640,6 +1640,32 @@ func (l *LazyLookup) ArtifactsLibrary(uri string) (types.ArtifactsLibrary, bool)
 	return lib, ok
 }
 
+// LibraryName returns the declared name of an in-closure library on the given
+// axis, so a caller that treats the axes alike can resolve one without naming
+// which axis it is holding.
+//
+// This is the single place the axis set is bound to the per-kind accessors above.
+// A caller that instead reached for those accessors directly would have to name
+// each axis, and naming them is exactly how a caller comes to cover some and not
+// others.
+func (l *LazyLookup) LibraryName(axis closure.LibraryAxis, uri string) (string, bool) {
+	switch axis.Kind {
+	case "SchemaLibrary":
+		lib, ok := l.SchemaLibrary(uri)
+		return lib.Metadata.Name, ok
+	case "MappingLibrary":
+		lib, ok := l.MappingLibrary(uri)
+		return lib.Metadata.Name, ok
+	case "WorkloadLibrary":
+		lib, ok := l.WorkloadLibrary(uri)
+		return lib.Metadata.Name, ok
+	case "ArtifactsLibrary":
+		lib, ok := l.ArtifactsLibrary(uri)
+		return lib.Metadata.Name, ok
+	}
+	return "", false
+}
+
 // Skips returns the tolerant-enumeration skip reasons keyed by file path — every
 // catalog file the lazy enumeration could not index (a recipe/FR/aggregate/
 // provider/mapping-library that failed to parse, a duplicate identity, or a
@@ -2078,28 +2104,10 @@ func (x *lazyClosureLookup) LoadAggregate(uri, version, digest string) (*types.A
 	return loader.LoadAggregate(uri, version, digest)
 }
 
-func (x *lazyClosureLookup) ResolveSchemaLibrary(uri string) (closure.LibraryResolution, error) {
+func (x *lazyClosureLookup) ResolveLibrary(axis closure.LibraryAxis, uri string) (closure.LibraryResolution, error) {
 	x.l.mu.Lock()
 	defer x.l.mu.Unlock()
-	return x.base.ResolveSchemaLibrary(uri)
-}
-
-func (x *lazyClosureLookup) ResolveMappingLibrary(uri string) (closure.LibraryResolution, error) {
-	x.l.mu.Lock()
-	defer x.l.mu.Unlock()
-	return x.base.ResolveMappingLibrary(uri)
-}
-
-func (x *lazyClosureLookup) ResolveWorkloadLibrary(uri string) (closure.LibraryResolution, error) {
-	x.l.mu.Lock()
-	defer x.l.mu.Unlock()
-	return x.base.ResolveWorkloadLibrary(uri)
-}
-
-func (x *lazyClosureLookup) ResolveArtifactsLibrary(uri string) (closure.LibraryResolution, error) {
-	x.l.mu.Lock()
-	defer x.l.mu.Unlock()
-	return x.base.ResolveArtifactsLibrary(uri)
+	return x.base.ResolveLibrary(axis, uri)
 }
 
 func (x *lazyClosureLookup) ResolvePlugin(uri, version string) (closure.Resolution, error) {

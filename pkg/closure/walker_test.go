@@ -41,8 +41,18 @@ func (f *fakeLookup) ResolveAggregate(uri string) (closure.Resolution, error) {
 	return f.ResolveCatalogEntity(uri, "aggregate")
 }
 
-func (f *fakeLookup) ResolveSchemaLibrary(uri string) (closure.LibraryResolution, error) {
-	if res, ok := f.schemaLibs[fakeBaseName(uri)]; ok {
+// ResolveLibrary dispatches on the axis rather than exposing one method per axis,
+// mirroring the interface it stands in for. An axis the fixture declares no map
+// for resolves as not-found, which is the honest answer for an axis no test
+// populated.
+func (f *fakeLookup) ResolveLibrary(axis closure.LibraryAxis, uri string) (closure.LibraryResolution, error) {
+	byAxis := map[string]map[string]closure.LibraryResolution{
+		"SchemaLibraries":    f.schemaLibs,
+		"MappingLibraries":   f.mappingLibs,
+		"WorkloadLibraries":  f.workloadLibs,
+		"ArtifactsLibraries": f.artifactsLibs,
+	}
+	if res, ok := byAxis[axis.Axis][fakeBaseName(uri)]; ok {
 		return res, nil
 	}
 	return closure.LibraryResolution{Resolution: closure.Resolution{NotFound: true}}, nil
@@ -56,27 +66,6 @@ func fakeBaseName(uri string) string {
 		return uri[:i]
 	}
 	return uri
-}
-
-func (f *fakeLookup) ResolveMappingLibrary(uri string) (closure.LibraryResolution, error) {
-	if res, ok := f.mappingLibs[fakeBaseName(uri)]; ok {
-		return res, nil
-	}
-	return closure.LibraryResolution{Resolution: closure.Resolution{NotFound: true}}, nil
-}
-
-func (f *fakeLookup) ResolveWorkloadLibrary(uri string) (closure.LibraryResolution, error) {
-	if res, ok := f.workloadLibs[fakeBaseName(uri)]; ok {
-		return res, nil
-	}
-	return closure.LibraryResolution{Resolution: closure.Resolution{NotFound: true}}, nil
-}
-
-func (f *fakeLookup) ResolveArtifactsLibrary(uri string) (closure.LibraryResolution, error) {
-	if res, ok := f.artifactsLibs[fakeBaseName(uri)]; ok {
-		return res, nil
-	}
-	return closure.LibraryResolution{Resolution: closure.Resolution{NotFound: true}}, nil
 }
 
 func (f *fakeLookup) ResolvePlugin(uri, _ string) (closure.Resolution, error) {

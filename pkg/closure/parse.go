@@ -10,20 +10,11 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
-// schemasFragmentPrefix is the JSON Pointer fragment body that marks a
-// SchemaLibrary entry reference (`<Library>#/schemas/<Entry>`), the surface
-// parseIdentityRef parses. mappingsFragmentPrefix is the parallel marker for a
-// MappingLibrary `$import:` entry reference (`<Library>#/mappings/<Entry>`),
-// parsed by parseIdentityImportRef. workloadsFragmentPrefix is the marker for a
-// WorkloadLibrary `$import:` entry reference (`<Library>#/workloads/<Entry>`),
-// parsed by parseIdentityWorkloadImportRef. All three share the host-less
-// identity grammar and differ only in the fragment surface they admit.
-const (
-	schemasFragmentPrefix   = "/schemas/"
-	mappingsFragmentPrefix  = "/mappings/"
-	workloadsFragmentPrefix = "/workloads/"
-	artifactsFragmentPrefix = "/artifacts/"
-)
+// The JSON Pointer fragment body that marks an entry reference on each axis —
+// `/schemas/`, `/mappings/`, `/workloads/`, `/artifacts/` — is declared once, on
+// the axis itself, and reached through [LibraryAxis.IsRef] and
+// [LibraryAxis.ParseRef]. The primitives below carry the grammar every axis
+// shares; the axis supplies the one thing that differs.
 
 // isIdentityRefWithFragment reports whether value is a host-less cross-document
 // library reference in the identity form `<Library>[:<version>]#<fragmentPrefix>…`
@@ -34,37 +25,6 @@ const (
 func isIdentityRefWithFragment(value, fragmentPrefix string) bool {
 	_, _, ok := types.IdentityRefParts(value, fragmentPrefix)
 	return ok
-}
-
-// isIdentityLibraryRef reports whether a `$ref:` value is a host-less
-// cross-document SchemaLibrary reference in the identity form
-// `<Library>[:<version>]#/schemas/<Entry>`.
-func isIdentityLibraryRef(value string) bool {
-	return isIdentityRefWithFragment(value, schemasFragmentPrefix)
-}
-
-// isIdentityImportRef reports whether an `$import:` value is a host-less
-// cross-document MappingLibrary reference in the identity form
-// `<Library>[:<version>]#/mappings/<Entry>`. A local file path (mode 2, no
-// fragment) and the host-bearing `oci://…` form both return false.
-func isIdentityImportRef(value string) bool {
-	return isIdentityRefWithFragment(value, mappingsFragmentPrefix)
-}
-
-// isIdentityWorkloadImportRef reports whether an `$import:` value is a host-less
-// cross-document WorkloadLibrary reference in the identity form
-// `<Library>[:<version>]#/workloads/<Entry>`. A local file path (mode 2, no
-// fragment) and the host-bearing `oci://…` form both return false.
-func isIdentityWorkloadImportRef(value string) bool {
-	return isIdentityRefWithFragment(value, workloadsFragmentPrefix)
-}
-
-// isIdentityArtifactImportRef reports whether an `$import:` value is a host-less
-// cross-document ArtifactsLibrary reference in the identity form
-// `<Library>[:<version>]#/artifacts/<Entry>`. A local file path (mode 2, no
-// fragment) and the host-bearing `oci://…` form both return false.
-func isIdentityArtifactImportRef(value string) bool {
-	return isIdentityRefWithFragment(value, artifactsFragmentPrefix)
 }
 
 // parseIdentityRefWithFragment parses a host-less identity library reference
@@ -94,33 +54,6 @@ func parseIdentityRefWithFragment(s, fragmentPrefix string) (libraryName, versio
 		return "", "", "", fmt.Errorf("%w: version separator is ':', not '@' — use %q", ErrInvalidLibraryRef(), strings.Replace(s, "@", ":", 1))
 	}
 	return libraryName, version, fragment, nil
-}
-
-// parseIdentityRef parses a host-less identity SchemaLibrary `$ref:` reference
-// `<Library>[:<version>]#/schemas/<Entry>`. See parseIdentityRefWithFragment.
-func parseIdentityRef(s string) (libraryName, version, fragment string, err error) {
-	return parseIdentityRefWithFragment(s, schemasFragmentPrefix)
-}
-
-// parseIdentityImportRef parses a host-less identity MappingLibrary `$import:`
-// reference `<Library>[:<version>]#/mappings/<Entry>`. See
-// parseIdentityRefWithFragment.
-func parseIdentityImportRef(s string) (libraryName, version, fragment string, err error) {
-	return parseIdentityRefWithFragment(s, mappingsFragmentPrefix)
-}
-
-// parseIdentityWorkloadImportRef parses a host-less identity WorkloadLibrary
-// `$import:` reference `<Library>[:<version>]#/workloads/<Entry>`. See
-// parseIdentityRefWithFragment.
-func parseIdentityWorkloadImportRef(s string) (libraryName, version, fragment string, err error) {
-	return parseIdentityRefWithFragment(s, workloadsFragmentPrefix)
-}
-
-// parseIdentityArtifactImportRef parses a host-less identity ArtifactsLibrary
-// `$import:` reference `<Library>[:<version>]#/artifacts/<Entry>`. See
-// parseIdentityRefWithFragment.
-func parseIdentityArtifactImportRef(s string) (libraryName, version, fragment string, err error) {
-	return parseIdentityRefWithFragment(s, artifactsFragmentPrefix)
 }
 
 // formatFragmentRef rebuilds the wire-form fragment ("#/schemas/X",

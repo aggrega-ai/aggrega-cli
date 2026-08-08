@@ -56,6 +56,114 @@ type VerifiableAxis struct {
 	Refs []VerifiableRef
 }
 
+// LibraryAxis describes one library axis of a closure: a section whose members
+// are cross-document libraries selected by minimum version and pinned by the
+// lockfile. The four axes differ only in the fragment surface they admit and the
+// section they accumulate into, so every operation over them is written once and
+// parameterised by this descriptor rather than copied per axis.
+//
+// The exported fields are the axis's identity and vocabulary; the unexported
+// accessor binds that identity to the public Closure section it accumulates into.
+type LibraryAxis struct {
+	// Axis is the Closure section this axis reads, named exactly as the field is
+	// declared, so it joins onto the coverage assertions the same way VerifiableAxis
+	// does.
+	Axis string
+	// Kind is the catalog kind the axis's members publish under.
+	Kind string
+	// FragmentPrefix is the JSON Pointer fragment body that marks a reference on
+	// this axis — the surface `<Library>[:<version>]#<FragmentPrefix><Entry>` admits.
+	// All four axes share one host-less identity grammar and differ only here.
+	FragmentPrefix string
+	// Label is the axis's name in operator-facing diagnostics, where a lockfile row
+	// is reported as drifted, missing or no longer used.
+	Label string
+
+	// libs binds the axis to its Closure section. The walk's own accumulator needs
+	// no such binding: it is keyed by axis name, so it grows with this table.
+	libs func(*Closure) *[]ResolvedLibrary
+}
+
+// libraryAxes is the single declared set of library axes. Every pass that treats
+// the axes alike ranges over it, so an axis added here is picked up by the walk,
+// the reference grammar, minimum-version resolution, materialisation,
+// canonical ordering, the resolver interface, lockfile drift reporting, the pin
+// projection and the convention lint without any of them naming it.
+//
+// Order is load-bearing: it fixes the order diagnostics are emitted in, so
+// reordering these rows reorders operator-visible output.
+var libraryAxes = []LibraryAxis{
+	{
+		Axis: "SchemaLibraries", Kind: "SchemaLibrary",
+		FragmentPrefix: "/schemas/", Label: "schema-library",
+		libs: func(c *Closure) *[]ResolvedLibrary { return &c.SchemaLibraries },
+	},
+	{
+		Axis: "MappingLibraries", Kind: "MappingLibrary",
+		FragmentPrefix: "/mappings/", Label: "mapping-library",
+		libs: func(c *Closure) *[]ResolvedLibrary { return &c.MappingLibraries },
+	},
+	{
+		Axis: "WorkloadLibraries", Kind: "WorkloadLibrary",
+		FragmentPrefix: "/workloads/", Label: "workload-library",
+		libs: func(c *Closure) *[]ResolvedLibrary { return &c.WorkloadLibraries },
+	},
+	{
+		Axis: "ArtifactsLibraries", Kind: "ArtifactsLibrary",
+		FragmentPrefix: "/artifacts/", Label: "artifacts-library",
+		libs: func(c *Closure) *[]ResolvedLibrary { return &c.ArtifactsLibraries },
+	},
+}
+
+// LibraryAxes returns the declared library axes in diagnostic order. A caller that
+// must bind the axis set to its own types — a lockfile section, a catalog map —
+// ranges over this rather than restating the set, so the binding can be asserted
+// complete instead of silently covering a subset.
+func LibraryAxes() []LibraryAxis { return libraryAxes }
+
+// LibraryAxisNamed returns the axis whose Closure section is named section. It
+// exists for the few call sites that are genuinely about one axis — a public
+// entry point named for the surface it walks — rather than about the axes alike.
+// A name no axis declares is a programming error at package scope, so it panics
+// rather than returning a zero axis that would silently accumulate nowhere.
+func LibraryAxisNamed(section string) LibraryAxis {
+	for _, a := range libraryAxes {
+		if a.Axis == section {
+			return a
+		}
+	}
+	panic("closure: no library axis named " + section)
+}
+
+// Libraries returns the axis's section of c.
+func (a LibraryAxis) Libraries(c *Closure) []ResolvedLibrary { return *a.libs(c) }
+
+// pendingLibs returns the axis's in-progress accumulator on s. The accumulator is
+// keyed by axis name rather than held in a field per axis, so it needs no binding
+// in the table and an axis added there is accumulated without further wiring.
+func (a LibraryAxis) pendingLibs(s *walkState) map[string]*pendingLibrary {
+	return s.libs[a.Axis]
+}
+
+// SetLibraries replaces the axis's section of c.
+func (a LibraryAxis) SetLibraries(c *Closure, libs []ResolvedLibrary) { *a.libs(c) = libs }
+
+// IsRef reports whether value is a host-less cross-document library reference on
+// this axis, in the identity form `<Library>[:<version>]#<FragmentPrefix>…`.
+// In-document anchors, host-bearing `oci://…` references and every other shape
+// return false, so a discovery walk records only genuine cross-library references
+// on the surface it is walking.
+func (a LibraryAxis) IsRef(value string) bool {
+	return isIdentityRefWithFragment(value, a.FragmentPrefix)
+}
+
+// ParseRef parses a host-less identity reference on this axis into its library
+// name, optional version assertion and fragment body. See
+// parseIdentityRefWithFragment for the grammar and the error shape.
+func (a LibraryAxis) ParseRef(s string) (libraryName, version, fragment string, err error) {
+	return parseIdentityRefWithFragment(s, a.FragmentPrefix)
+}
+
 // axesWithoutVerifiableRefs names each closure section deliberately left out of
 // VerifiableAxes, mapped to the reason it carries no verifiable reference.
 //
@@ -87,15 +195,20 @@ var axesWithoutVerifiableRefs = map[string]string{
 //
 // Every covered axis is returned whether or not it holds members, so the returned
 // set describes the closure's shape rather than one closure's contents.
+// The library sections are read from the declared axis set rather than listed
+// here, so the two enumerations cannot disagree: an axis added to that set is
+// verifiable by construction instead of needing to be remembered here as well.
 func (c Closure) VerifiableAxes() []VerifiableAxis {
-	return []VerifiableAxis{
-		{Axis: "Entities", Refs: refsOf(c.Entities)},
-		{Axis: "SchemaLibraries", Kind: "SchemaLibrary", Refs: libraryRefsOf(c.SchemaLibraries)},
-		{Axis: "MappingLibraries", Kind: "MappingLibrary", Refs: libraryRefsOf(c.MappingLibraries)},
-		{Axis: "WorkloadLibraries", Kind: "WorkloadLibrary", Refs: libraryRefsOf(c.WorkloadLibraries)},
-		{Axis: "ArtifactsLibraries", Kind: "ArtifactsLibrary", Refs: libraryRefsOf(c.ArtifactsLibraries)},
-		{Axis: "Plugins", Refs: refsOf(c.Plugins)},
+	axes := make([]VerifiableAxis, 0, len(libraryAxes)+2)
+	axes = append(axes, VerifiableAxis{Axis: "Entities", Refs: refsOf(c.Entities)})
+	for _, a := range libraryAxes {
+		axes = append(axes, VerifiableAxis{
+			Axis: a.Axis,
+			Kind: a.Kind,
+			Refs: libraryRefsOf(a.Libraries(&c)),
+		})
 	}
+	return append(axes, VerifiableAxis{Axis: "Plugins", Refs: refsOf(c.Plugins)})
 }
 
 // refsOf projects a mixed-kind section onto the common shape, carrying each

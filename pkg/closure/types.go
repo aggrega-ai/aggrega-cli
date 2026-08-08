@@ -33,7 +33,12 @@ import (
 // one-to-one to lockfile sections; downstream code consumes the
 // Closure field-by-field when materialising the lockfile.
 //
-// Field declaration order is alphabetical for predictability.
+// Fields are grouped by what they hold — the entity refs, then the
+// library axes, then the source artifacts and the plugins — rather
+// than alphabetically. The library axes' order is the declared axis
+// order and is load-bearing: it fixes the order the per-axis passes
+// emit diagnostics in, so reordering them reorders operator-visible
+// output.
 //
 // SourceArtifacts is populated by DescendRecipeSources, NOT by
 // ComputeClosure. The two passes run sequentially at orchestrator
@@ -300,10 +305,11 @@ type Lookup interface {
 	// mirroring ResolveSchemaLibrary — the generic catalog-entity tier-3 needs a
 	// tag and cannot fetch a bare name.
 	ResolveAggregate(uri string) (Resolution, error)
-	ResolveSchemaLibrary(uri string) (LibraryResolution, error)
-	ResolveMappingLibrary(uri string) (LibraryResolution, error)
-	ResolveWorkloadLibrary(uri string) (LibraryResolution, error)
-	ResolveArtifactsLibrary(uri string) (LibraryResolution, error)
+	// ResolveLibrary resolves a cross-document library reference on the given axis.
+	// One method covers every library axis rather than one method per axis: the
+	// axis is data, so an implementation dispatches on it and an axis added to the
+	// declared set needs no new method here and no new method on any implementer.
+	ResolveLibrary(axis LibraryAxis, uri string) (LibraryResolution, error)
 	// ResolvePlugin resolves a Plugin entity's .wasm artifact reference — the
 	// entity's bare identity (<socket>/<name>). The .wasm rides inline as a layer
 	// of the single plugin manifest published under the entity's version tag, so

@@ -317,14 +317,14 @@ func closureEntityFiles(lazyView *catalog.LazyLookup, cl closure.Closure, index 
 			add(byName("Plugin", pl.Metadata.Name))
 		}
 	}
-	for _, lib := range cl.SchemaLibraries {
-		if sl, ok := lazyView.SchemaLibrary(lib.URI); ok {
-			add(byName("SchemaLibrary", sl.Metadata.Name))
-		}
-	}
-	for _, lib := range cl.MappingLibraries {
-		if ml, ok := lazyView.MappingLibrary(lib.URI); ok {
-			add(byName("MappingLibrary", ml.Metadata.Name))
+	// Every declared library axis, not a chosen subset: a locally-authored library
+	// on an axis this loop skipped would reach no convention rule at all, and
+	// nothing else would report that it had been skipped.
+	for _, axis := range closure.LibraryAxes() {
+		for _, lib := range axis.Libraries(&cl) {
+			if name, ok := lazyView.LibraryName(axis, lib.URI); ok {
+				add(byName(axis.Kind, name))
+			}
 		}
 	}
 	paths := make([]string, 0, len(set))

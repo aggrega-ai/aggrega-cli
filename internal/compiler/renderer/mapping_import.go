@@ -29,7 +29,7 @@ import (
 // non-`#/mappings/` shape is ErrMappingImportShape; an unknown library or entry
 // surfaces ErrMappingLibraryNotFound / ErrMappingEntryNotFound.
 func resolveMappingLibraryImport(ref string, libs map[string]types.MappingLibrary, stack []string) (string, error) {
-	library, entry, ok := splitMappingImportRef(ref)
+	library, entry, ok := splitLibraryImportRef(ref, "/mappings/")
 	if !ok {
 		if strings.HasPrefix(ref, "oci://") {
 			return "", fmt.Errorf("%w: %q", ErrHostInLibraryImport(), ref)
@@ -59,15 +59,22 @@ func resolveMappingLibraryImport(ref string, libs map[string]types.MappingLibrar
 	return me.Body, nil
 }
 
-// splitMappingImportRef parses a host-less `<Library>[:<version>]#/mappings/<Entry>`
+// splitLibraryImportRef parses a host-less `<Library>[:<version>]#<fragmentPrefix><Entry>`
 // into its library name and entry, stripping any `:version` floor. A host-bearing
-// reference (`oci://…`), a non-`#/mappings/` fragment shape, or an empty entry or
-// library returns ok=false. The host-less identity grammar itself is shared from
-// [types.IdentityRefParts] (the renderer imports `pkg/types`, not `pkg/closure`,
-// so this consumption site stays decoupled from the catalog/closure layer); the
-// `:version` strip and the non-empty-entry requirement are layered here.
-func splitMappingImportRef(ref string) (library, entry string, ok bool) {
-	doc, ent, matched := types.IdentityRefParts(ref, "/mappings/")
+// reference (`oci://…`), a fragment shape other than the requested one, or an empty
+// entry or library returns ok=false.
+//
+// The host-less identity grammar itself is shared from [types.IdentityRefParts]; the
+// `:version` strip and the non-empty-entry requirement are layered here. Every
+// import axis consumes the same grammar and differs only in the fragment prefix it
+// admits, so the split is written once and the axis supplies the prefix.
+//
+// The prefixes are stated at the three call sites rather than read from the
+// closure package's axis table: this is the render-time consumption site, and it
+// stays decoupled from the catalog/closure layer on purpose. A reference reaches
+// here already resolved, so nothing here needs to know how it was pinned.
+func splitLibraryImportRef(ref, fragmentPrefix string) (library, entry string, ok bool) {
+	doc, ent, matched := types.IdentityRefParts(ref, fragmentPrefix)
 	if !matched || ent == "" {
 		return "", "", false
 	}

@@ -30,26 +30,92 @@ type LibrarySource interface {
 	ArtifactsLibrary(uri string) (types.ArtifactsLibrary, bool)
 }
 
-// AugmentClosure resolves the cross-document library axes the entity walk does
-// not descend — the SchemaLibrary axis first, then the MappingLibrary axis, then
-// the WorkloadLibrary axis — merging each into the closure. Every discovery reads
-// the resolved closure through the same source, so a pull and a build of the same
-// Release compute the identical library closure. It routes libraries only; the
-// plugin, sub-aggregate, and source axes are reconstructed by their own passes.
+// AugmentClosure resolves the cross-document library axes the entity walk does not
+// descend, merging each into the closure. Every discovery reads the resolved
+// closure through the same source, so a pull and a build of the same Release
+// compute the identical library closure. It routes libraries only; the plugin,
+// sub-aggregate, and source axes are reconstructed by their own passes.
+//
+// The axes run in declared order, and each reports failure under its own
+// operator-facing label rather than a hand-written string, so a label cannot
+// disagree with the one the lockfile uses for the same axis.
 func AugmentClosure(cl *Closure, src LibrarySource, lookup Lookup) error {
-	if err := discoverClosureLibraries(cl, src, lookup); err != nil {
-		return fmt.Errorf("schema-library discovery: %w", err)
-	}
-	if err := discoverClosureMappingLibraries(cl, src, lookup); err != nil {
-		return fmt.Errorf("mapping-library discovery: %w", err)
-	}
-	if err := discoverClosureWorkloadLibraries(cl, src, lookup); err != nil {
-		return fmt.Errorf("workload-library discovery: %w", err)
-	}
-	if err := discoverClosureArtifactsLibraries(cl, src, lookup); err != nil {
-		return fmt.Errorf("artifacts-library discovery: %w", err)
+	for _, d := range libraryDiscoverers() {
+		if err := d.discover(cl, src, lookup); err != nil {
+			return fmt.Errorf("%s discovery: %w", d.axis.Label, err)
+		}
 	}
 	return nil
+}
+
+// libraryDiscoverer binds one axis to the producer that knows where that axis's
+// references live in an entity. That binding is the one thing a shared driver
+// cannot supply: which field of a Recipe or Component carries the reference is new
+// information per axis, not a copy of another axis's.
+type libraryDiscoverer struct {
+	axis     LibraryAxis
+	discover func(*Closure, LibrarySource, Lookup) error
+}
+
+// libraryDiscoverers returns the per-axis producers in declared order. It is the
+// single place the axis set is bound to its producers; the coverage assertion
+// beside it requires every declared axis to appear, so an axis added to the set
+// cannot silently go undiscovered.
+func libraryDiscoverers() []libraryDiscoverer {
+	return []libraryDiscoverer{
+		{LibraryAxisNamed("SchemaLibraries"), discoverClosureLibraries},
+		{LibraryAxisNamed("MappingLibraries"), discoverClosureMappingLibraries},
+		{LibraryAxisNamed("WorkloadLibraries"), discoverClosureWorkloadLibraries},
+		{LibraryAxisNamed("ArtifactsLibraries"), discoverClosureArtifactsLibraries},
+	}
+}
+
+// collectTemplateConsumers walks the closure's entities once and emits the
+// consumers a template axis contributes, recipes first and then feature-recipes,
+// each sorted by URI for deterministic output. Each entity is visited once per
+// axis; a duplicate URI contributes nothing further.
+//
+// The traversal, the deduplication and the ordering are identical on every
+// template axis, so they are written here once; the caller supplies only the
+// extraction that differs — which field of the entity carries the reference.
+func collectTemplateConsumers(
+	cl *Closure,
+	src LibrarySource,
+	fromRecipe func(uri string, r types.Recipe) []TemplateConsumer,
+	fromFeatureRecipe func(uri string, fr types.FeatureRecipe) []TemplateConsumer,
+) []TemplateConsumer {
+	var recipeConsumers, frConsumers []TemplateConsumer
+	rSeen, frSeen := map[string]struct{}{}, map[string]struct{}{}
+	for _, e := range cl.Entities {
+		if r, ok := src.RecipeByURI(e.URI); ok {
+			if _, dup := rSeen[e.URI]; dup {
+				continue
+			}
+			rSeen[e.URI] = struct{}{}
+			recipeConsumers = append(recipeConsumers, fromRecipe(e.URI, r)...)
+			continue
+		}
+		if fr, ok := src.FeatureRecipeByURI(e.URI); ok {
+			if _, dup := frSeen[e.URI]; dup {
+				continue
+			}
+			frSeen[e.URI] = struct{}{}
+			frConsumers = append(frConsumers, fromFeatureRecipe(e.URI, fr)...)
+		}
+	}
+	sort.SliceStable(recipeConsumers, func(i, j int) bool { return recipeConsumers[i].URI < recipeConsumers[j].URI })
+	sort.SliceStable(frConsumers, func(i, j int) bool { return frConsumers[i].URI < frConsumers[j].URI })
+	return append(recipeConsumers, frConsumers...)
+}
+
+// importConsumer renders a field that carries an `$import:` target back into its
+// authored directive form for the discovery walker, which scans a template body
+// for a field-root `$import:`. An inline body carries no import and yields none.
+func importConsumer(uri, importTarget string) []TemplateConsumer {
+	if importTarget == "" {
+		return nil
+	}
+	return []TemplateConsumer{{URI: uri, Template: "$import: " + importTarget}}
 }
 
 // discoverClosureLibraries is the single producer of the closure's SchemaLibrary
@@ -123,54 +189,23 @@ func discoverClosureLibraries(cl *Closure, src LibrarySource, lookup Lookup) err
 	return cl.DiscoverSchemaLibraries(lookup, consumers, body)
 }
 
-// discoverClosureMappingLibraries is the mapping-axis mirror of
-// discoverClosureLibraries: the single producer of the closure's MappingLibrary
-// axis, shared by pull's pin flow and build's drift-verify flow. It scans every
-// Recipe and FeatureRecipe valuesMapping in the loaded catalog for a field-root
-// `$import:` library reference, resolves the discovered libraries (minimum-version
-// selection + the injected lookup), and descends them transitively to a fixpoint,
-// merging the result into cl.MappingLibraries.
+// discoverClosureMappingLibraries is the single producer of the closure's
+// MappingLibrary axis. It scans every in-closure Recipe and FeatureRecipe
+// valuesMapping for a field-root `$import:` reference and descends the discovered
+// libraries transitively.
 //
 // A valuesMapping is presented to the walker in its authored `$import: <ref>`
-// directive form; a Mode-1 inline values template and a Mode-2 local-file import
-// carry no library reference and are skipped by the walker's identity gate.
-// Iteration is sorted-name for deterministic output.
+// directive form; an inline values template and a local-file import carry no
+// library reference and are skipped by the walker's identity gate.
 func discoverClosureMappingLibraries(cl *Closure, src LibrarySource, lookup Lookup) error {
-	// Closure-scoped: resolve each closure recipe / feature-recipe via the lazy
-	// lookup and collect its `$import:` valuesMapping consumer — recipes first,
-	// then feature-recipes, each sorted by URI for deterministic output. A Mode-1
-	// inline template or a Mode-2 local-file import carries no library reference
-	// and is skipped by the directive gate.
-	var recipeConsumers, frConsumers []MappingConsumer
-	rSeen, frSeen := map[string]struct{}{}, map[string]struct{}{}
-	for _, e := range cl.Entities {
-		if r, ok := src.RecipeByURI(e.URI); ok {
-			if _, dup := rSeen[e.URI]; dup {
-				continue
-			}
-			rSeen[e.URI] = struct{}{}
-			if tmpl, ok := valuesMappingImportDirective(r.Spec.ValuesMapping); ok {
-				recipeConsumers = append(recipeConsumers, MappingConsumer{URI: e.URI, Template: tmpl})
-			}
-			continue
-		}
-		if fr, ok := src.FeatureRecipeByURI(e.URI); ok {
-			if _, dup := frSeen[e.URI]; dup {
-				continue
-			}
-			frSeen[e.URI] = struct{}{}
-			if tmpl, ok := valuesMappingImportDirective(fr.Spec.ValuesMapping); ok {
-				frConsumers = append(frConsumers, MappingConsumer{URI: e.URI, Template: tmpl})
-			}
-		}
-	}
-	sort.Slice(recipeConsumers, func(i, j int) bool { return recipeConsumers[i].URI < recipeConsumers[j].URI })
-	sort.Slice(frConsumers, func(i, j int) bool { return frConsumers[i].URI < frConsumers[j].URI })
-	consumers := append(recipeConsumers, frConsumers...)
+	consumers := collectTemplateConsumers(cl, src,
+		func(uri string, r types.Recipe) []TemplateConsumer {
+			return importConsumer(uri, r.Spec.ValuesMapping.Import)
+		},
+		func(uri string, fr types.FeatureRecipe) []TemplateConsumer {
+			return importConsumer(uri, fr.Spec.ValuesMapping.Import)
+		})
 
-	// Transitive body accessor: a discovered MappingLibrary's own entry bodies, for
-	// descending their field-root `$import:`s, resolved through the lazy library
-	// walk. A library the closure does not reach lands with the lookup's Tier-3 path.
 	body := func(lib ResolvedLibrary) ([]string, bool, error) {
 		ml, ok := src.MappingLibrary(lib.URI)
 		if !ok {
@@ -184,68 +219,26 @@ func discoverClosureMappingLibraries(cl *Closure, src LibrarySource, lookup Look
 		return bodies, true, nil
 	}
 
-	return cl.DiscoverMappingLibraries(lookup, consumers, body)
+	return cl.DiscoverTemplateLibraries(LibraryAxisNamed("MappingLibraries"), lookup, consumers, body)
 }
 
-// valuesMappingImportDirective renders a valuesMapping that carries an `$import:`
-// target back into its authored directive form (`$import: <target>`) for the
-// discovery walker, which scans a template body for a field-root `$import:`. A
-// Mode-1 inline values template carries no import and yields ok=false.
-func valuesMappingImportDirective(vm types.ValuesMapping) (string, bool) {
-	if vm.Import == "" {
-		return "", false
-	}
-	return "$import: " + vm.Import, true
-}
-
-// discoverClosureWorkloadLibraries is the workload-axis mirror of
-// discoverClosureMappingLibraries: the single producer of the closure's
-// WorkloadLibrary axis, shared by pull's pin flow and build's drift-verify flow.
-// It scans every Recipe and FeatureRecipe workload in the loaded catalog for a
-// field-root `$import:` library reference, resolves the discovered libraries
-// (minimum-version selection + the injected lookup), and descends them
-// transitively to a fixpoint, merging the result into cl.WorkloadLibraries.
+// discoverClosureWorkloadLibraries is the single producer of the closure's
+// WorkloadLibrary axis. It scans every in-closure Recipe and FeatureRecipe workload
+// for a field-root `$import:` reference and descends the discovered libraries
+// transitively.
 //
-// A workload is presented to the walker in its authored `$import: <ref>`
-// directive form; a Mode-1 inline template and a Mode-2 local-file import carry
-// no library reference and are skipped by the walker's identity gate. A
-// FeatureRecipe workload `#/workloads/` reference is refused at envelope
-// validation (the featurerecipe schema admits only inline + local-file at this
-// site), so an FR consumer contributes no workload-library edge here; scanning it
-// is harmless and keeps the producer symmetric with the mapping axis. Iteration
-// is sorted-name for deterministic output.
+// A FeatureRecipe workload library reference is refused at envelope validation, so
+// an attachment consumer contributes no edge here; scanning it is harmless and
+// keeps the producer symmetric with the mapping axis.
 func discoverClosureWorkloadLibraries(cl *Closure, src LibrarySource, lookup Lookup) error {
-	var recipeConsumers, frConsumers []WorkloadConsumer
-	rSeen, frSeen := map[string]struct{}{}, map[string]struct{}{}
-	for _, e := range cl.Entities {
-		if r, ok := src.RecipeByURI(e.URI); ok {
-			if _, dup := rSeen[e.URI]; dup {
-				continue
-			}
-			rSeen[e.URI] = struct{}{}
-			if tmpl, ok := workloadImportDirective(r.Spec.Workload); ok {
-				recipeConsumers = append(recipeConsumers, WorkloadConsumer{URI: e.URI, Template: tmpl})
-			}
-			continue
-		}
-		if fr, ok := src.FeatureRecipeByURI(e.URI); ok {
-			if _, dup := frSeen[e.URI]; dup {
-				continue
-			}
-			frSeen[e.URI] = struct{}{}
-			if tmpl, ok := workloadImportDirective(fr.Spec.Workload); ok {
-				frConsumers = append(frConsumers, WorkloadConsumer{URI: e.URI, Template: tmpl})
-			}
-		}
-	}
-	sort.Slice(recipeConsumers, func(i, j int) bool { return recipeConsumers[i].URI < recipeConsumers[j].URI })
-	sort.Slice(frConsumers, func(i, j int) bool { return frConsumers[i].URI < frConsumers[j].URI })
-	consumers := append(recipeConsumers, frConsumers...)
+	consumers := collectTemplateConsumers(cl, src,
+		func(uri string, r types.Recipe) []TemplateConsumer {
+			return importConsumer(uri, r.Spec.Workload.Import)
+		},
+		func(uri string, fr types.FeatureRecipe) []TemplateConsumer {
+			return importConsumer(uri, fr.Spec.Workload.Import)
+		})
 
-	// Transitive body accessor: a discovered WorkloadLibrary's own entry bodies,
-	// for descending their field-root `$import:`s, resolved through the lazy
-	// library walk. A library the closure does not reach lands with the lookup's
-	// Tier-3 path.
 	body := func(lib ResolvedLibrary) ([]string, bool, error) {
 		wl, ok := src.WorkloadLibrary(lib.URI)
 		if !ok {
@@ -259,63 +252,23 @@ func discoverClosureWorkloadLibraries(cl *Closure, src LibrarySource, lookup Loo
 		return bodies, true, nil
 	}
 
-	return cl.DiscoverWorkloadLibraries(lookup, consumers, body)
+	return cl.DiscoverTemplateLibraries(LibraryAxisNamed("WorkloadLibraries"), lookup, consumers, body)
 }
 
-// workloadImportDirective renders a workload template that carries an `$import:`
-// target back into its authored directive form (`$import: <target>`) for the
-// discovery walker, which scans a template body for a field-root `$import:`. A
-// Mode-1 inline workload template carries no import and yields ok=false.
-func workloadImportDirective(w types.WorkloadTemplate) (string, bool) {
-	if w.Import == "" {
-		return "", false
-	}
-	return "$import: " + w.Import, true
-}
-
-// discoverClosureArtifactsLibraries is the artifacts-axis mirror of
-// discoverClosureWorkloadLibraries: the single producer of the closure's
-// ArtifactsLibrary axis, shared by pull's pin flow and build's drift-verify flow.
-// It scans every Recipe and FeatureRecipe artifacts map in the loaded catalog for
-// field-root `$import:` library references, resolves the discovered libraries
-// (minimum-version selection + the injected lookup), and descends them
-// transitively to a fixpoint, merging the result into cl.ArtifactsLibraries.
-//
-// Unlike the workload and mapping axes — where a Recipe carries a single
-// `spec.workload` / `spec.valuesMapping` field — artifacts is a MAP, so a single
-// Recipe may contribute several `$import:` edges (one per artifacts entry that
-// imports a bundle). Each entry is emitted as its own consumer; a Mode-1 inline
-// body and a Mode-2 local-file import carry no library reference and are skipped
-// by the walker's identity gate. Iteration is sorted-URI (entries within a recipe
-// keep author order) for deterministic output.
+// discoverClosureArtifactsLibraries is the single producer of the closure's
+// ArtifactsLibrary axis. Unlike the workload and mapping axes — where an entity
+// carries a single field — artifacts is a MAP, so one entity may contribute several
+// edges, one per entry that imports a bundle. Entry author order is preserved.
 func discoverClosureArtifactsLibraries(cl *Closure, src LibrarySource, lookup Lookup) error {
-	var recipeConsumers, frConsumers []ArtifactsConsumer
-	rSeen, frSeen := map[string]struct{}{}, map[string]struct{}{}
-	for _, e := range cl.Entities {
-		if r, ok := src.RecipeByURI(e.URI); ok {
-			if _, dup := rSeen[e.URI]; dup {
-				continue
-			}
-			rSeen[e.URI] = struct{}{}
-			recipeConsumers = append(recipeConsumers, artifactsImportConsumers(e.URI, r.Spec.Artifacts)...)
-			continue
-		}
-		if fr, ok := src.FeatureRecipeByURI(e.URI); ok {
-			if _, dup := frSeen[e.URI]; dup {
-				continue
-			}
-			frSeen[e.URI] = struct{}{}
-			frConsumers = append(frConsumers, artifactsImportConsumers(e.URI, fr.Spec.Artifacts)...)
-		}
-	}
-	sort.SliceStable(recipeConsumers, func(i, j int) bool { return recipeConsumers[i].URI < recipeConsumers[j].URI })
-	sort.SliceStable(frConsumers, func(i, j int) bool { return frConsumers[i].URI < frConsumers[j].URI })
-	consumers := append(recipeConsumers, frConsumers...)
+	consumers := collectTemplateConsumers(cl, src,
+		func(uri string, r types.Recipe) []TemplateConsumer {
+			return artifactsImportConsumers(uri, r.Spec.Artifacts)
+		},
+		func(uri string, fr types.FeatureRecipe) []TemplateConsumer {
+			return artifactsImportConsumers(uri, fr.Spec.Artifacts)
+		})
 
-	// Transitive body accessor: a discovered ArtifactsLibrary's own bundle file
-	// bodies (flattened across every bundle entry), for descending their field-root
-	// `$import:`s, resolved through the lazy library walk. A library the closure
-	// does not reach lands with the lookup's Tier-3 path.
+	// A discovered bundle's own file bodies, flattened across every bundle entry.
 	body := func(lib ResolvedLibrary) ([]string, bool, error) {
 		al, ok := src.ArtifactsLibrary(lib.URI)
 		if !ok {
@@ -332,21 +285,17 @@ func discoverClosureArtifactsLibraries(cl *Closure, src LibrarySource, lookup Lo
 		return bodies, true, nil
 	}
 
-	return cl.DiscoverArtifactsLibraries(lookup, consumers, body)
+	return cl.DiscoverTemplateLibraries(LibraryAxisNamed("ArtifactsLibraries"), lookup, consumers, body)
 }
 
 // artifactsImportConsumers renders every artifacts-map entry that carries an
-// `$import:` target into an ArtifactsConsumer in authored directive form
-// (`$import: <target>`) for the discovery walker. A Mode-1 inline body yields no
-// consumer. Author order of the entries is preserved.
-func artifactsImportConsumers(uri string, artifacts types.OrderedMap[types.ArtifactEntry]) []ArtifactsConsumer {
-	var out []ArtifactsConsumer
+// `$import:` target into a consumer in authored directive form. An inline body
+// yields no consumer. Author order of the entries is preserved.
+func artifactsImportConsumers(uri string, artifacts types.OrderedMap[types.ArtifactEntry]) []TemplateConsumer {
+	var out []TemplateConsumer
 	for _, k := range artifacts.Keys() {
 		entry, _ := artifacts.Get(k)
-		if entry.Import == "" {
-			continue
-		}
-		out = append(out, ArtifactsConsumer{URI: uri, Template: "$import: " + entry.Import})
+		out = append(out, importConsumer(uri, entry.Import)...)
 	}
 	return out
 }

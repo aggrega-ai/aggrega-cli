@@ -126,8 +126,7 @@ func generatedAtValue(b []byte) string {
 // (ReferencedFrom, Consumers, Fragments) is also reallocated via
 // sortedCopy or canonicaliseConsumers.
 //
-// Maintenance hazard: any new field added to Entity / ExternalInput /
-// SchemaLibrary / MappingLibrary / WorkloadLibrary / ArtifactsLibrary / Plugin /
+// Maintenance hazard: any new field added to Entity, ExternalInput, Plugin or
 // LibraryConsumer that holds a slice OR a pointer MUST be cloned here. The outer
 // struct-copy via `entryCopy := m` clones scalar fields but shares slice headers
 // and pointers, so without an explicit clone a subsequent sort would mutate the
@@ -135,6 +134,10 @@ func generatedAtValue(b []byte) string {
 // The existing sortedCopy helper covers []string, cloneSignature and
 // cloneDeprecation cover the two recorded-fact pointers; new shapes need analogous
 // deep-copy helpers.
+//
+// The same hazard on a library row is handled beside the section binding, where
+// canonicaliseLibrarySection reallocates each row's slice and pointer fields for
+// every axis at once.
 func canonicalise(lf *Lockfile) *Lockfile {
 	out := &Lockfile{
 		GeneratedAt: lf.GeneratedAt,
@@ -164,53 +167,11 @@ func canonicalise(lf *Lockfile) *Lockfile {
 		return out.ExternalInputs[i].URL < out.ExternalInputs[j].URL
 	})
 
-	out.SchemaLibraries = make([]SchemaLibrary, len(lf.SchemaLibraries))
-	for i, l := range lf.SchemaLibraries {
-		entryCopy := l
-		entryCopy.Consumers = canonicaliseConsumers(l.Consumers)
-		entryCopy.Signature = cloneSignature(l.Signature)
-		entryCopy.Deprecation = cloneDeprecation(l.Deprecation)
-		out.SchemaLibraries[i] = entryCopy
+	// Every library section, deep-copied and sorted through the one binding that
+	// names them, so a section cannot be left un-canonicalised by omission.
+	for _, sec := range librarySections() {
+		sec.canonicalise(out, lf)
 	}
-	sort.Slice(out.SchemaLibraries, func(i, j int) bool {
-		return out.SchemaLibraries[i].URI < out.SchemaLibraries[j].URI
-	})
-
-	out.MappingLibraries = make([]MappingLibrary, len(lf.MappingLibraries))
-	for i, l := range lf.MappingLibraries {
-		entryCopy := l
-		entryCopy.Consumers = canonicaliseConsumers(l.Consumers)
-		entryCopy.Signature = cloneSignature(l.Signature)
-		entryCopy.Deprecation = cloneDeprecation(l.Deprecation)
-		out.MappingLibraries[i] = entryCopy
-	}
-	sort.Slice(out.MappingLibraries, func(i, j int) bool {
-		return out.MappingLibraries[i].URI < out.MappingLibraries[j].URI
-	})
-
-	out.WorkloadLibraries = make([]WorkloadLibrary, len(lf.WorkloadLibraries))
-	for i, l := range lf.WorkloadLibraries {
-		entryCopy := l
-		entryCopy.Consumers = canonicaliseConsumers(l.Consumers)
-		entryCopy.Signature = cloneSignature(l.Signature)
-		entryCopy.Deprecation = cloneDeprecation(l.Deprecation)
-		out.WorkloadLibraries[i] = entryCopy
-	}
-	sort.Slice(out.WorkloadLibraries, func(i, j int) bool {
-		return out.WorkloadLibraries[i].URI < out.WorkloadLibraries[j].URI
-	})
-
-	out.ArtifactsLibraries = make([]ArtifactsLibrary, len(lf.ArtifactsLibraries))
-	for i, l := range lf.ArtifactsLibraries {
-		entryCopy := l
-		entryCopy.Consumers = canonicaliseConsumers(l.Consumers)
-		entryCopy.Signature = cloneSignature(l.Signature)
-		entryCopy.Deprecation = cloneDeprecation(l.Deprecation)
-		out.ArtifactsLibraries[i] = entryCopy
-	}
-	sort.Slice(out.ArtifactsLibraries, func(i, j int) bool {
-		return out.ArtifactsLibraries[i].URI < out.ArtifactsLibraries[j].URI
-	})
 
 	out.SourceArtifacts = make([]SourceArtifact, len(lf.SourceArtifacts))
 	for i, sa := range lf.SourceArtifacts {

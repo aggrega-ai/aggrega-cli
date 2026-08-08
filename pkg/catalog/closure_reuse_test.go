@@ -14,6 +14,7 @@ import (
 	"oras.land/oras-go/v2/content/memory"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
+	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 )
 
@@ -91,7 +92,7 @@ func TestClosureLookupWithReuseVerifiesCacheReuse(t *testing.T) {
 		}
 		// A puller that must not be reached on a verified hit.
 		lookup := cat.ClosureLookupWithReuse(&failPuller{t: t}, ws, cacheDir, nil, nil, reuse)
-		res, err := lookup.ResolveSchemaLibrary(reuseURI)
+		res, err := lookup.ResolveLibrary(closure.LibraryAxisNamed("SchemaLibraries"), reuseURI)
 		if err != nil {
 			t.Fatalf("ResolveSchemaLibrary: %v", err)
 		}
@@ -125,7 +126,7 @@ func TestClosureLookupWithReuseVerifiesCacheReuse(t *testing.T) {
 			Warn:      func(n string) { notices = append(notices, n) },
 		}
 		lookup := cat.ClosureLookupWithReuse(&orasPullerAdapter{target: store}, ws, cacheDir, nil, nil, reuse)
-		res, err := lookup.ResolveSchemaLibrary(reuseURI)
+		res, err := lookup.ResolveLibrary(closure.LibraryAxisNamed("SchemaLibraries"), reuseURI)
 		if err != nil {
 			t.Fatalf("ResolveSchemaLibrary: %v", err)
 		}
@@ -168,7 +169,7 @@ func TestClosureLookupWithReuseVerifiesCacheReuse(t *testing.T) {
 			PriorPins: map[string]catalog.Pin{reuseURI: {ResolvedVersion: "1.0.0", Digest: goodPin}},
 		}
 		lookup := cat.ClosureLookupWithReuse(&orasPullerAdapter{target: store}, ws, cacheDir, nil, nil, reuse)
-		_, err = lookup.ResolveSchemaLibrary(reuseURI)
+		_, err = lookup.ResolveLibrary(closure.LibraryAxisNamed("SchemaLibraries"), reuseURI)
 		if !errors.Is(err, oci.ErrFetchIntegrity()) {
 			t.Errorf("re-tagged upstream: err = %v; want ErrFetchIntegrity (halt, not a re-pinned launder)", err)
 		}
@@ -188,7 +189,7 @@ func TestClosureLookupWithReuseVerifiesCacheReuse(t *testing.T) {
 		}
 		// nil reuse + nil puller: the hermetic build / serve construction.
 		lookup := cat.ClosureLookupWithReuse(nil, ws, cacheDir, nil, nil, nil)
-		res, err := lookup.ResolveSchemaLibrary(reuseURI)
+		res, err := lookup.ResolveLibrary(closure.LibraryAxisNamed("SchemaLibraries"), reuseURI)
 		if err != nil {
 			t.Fatalf("ResolveSchemaLibrary: %v", err)
 		}
