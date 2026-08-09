@@ -19,5 +19,5 @@ spec:
         label: "{{ .values.label }}"
   pipeline:
     - id: inject_into_host
-      plugin: frp_step/host-patch:1.0.0
+      plugin: pipeline-step/host-patch:1.0.0
       function: step

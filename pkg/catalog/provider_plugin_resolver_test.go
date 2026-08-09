@@ -32,7 +32,7 @@ spec:
 // TestProviderPluginByNameResolvesShippedProviders proves the provider-name →
 // provider-Plugin resolution over a realistic catalog: each of the three
 // provider names resolves to the Plugin that lists it in targets, a name no
-// plugin serves misses, and a non-provider (frp_step) plugin that happens to
+// plugin serves misses, and a non-provider (pipeline-step) plugin that happens to
 // list a provider name is NOT treated as a render engine. The fictional provider
 // names deliberately do NOT match any core provider the binary embeds, so this
 // exercises the catalog resolution algorithm in isolation from the embedded-wins
@@ -43,7 +43,7 @@ func TestProviderPluginByNameResolvesShippedProviders(t *testing.T) {
 	writeYAMLToCatalog(t, dir, "plugins/acme-renderer.yaml", providerPlugin("acme-renderer", "1.0.0", "acme"))
 	writeYAMLToCatalog(t, dir, "plugins/widget-renderer.yaml", providerPlugin("widget-renderer", "1.0.0", "widget"))
 	writeYAMLToCatalog(t, dir, "plugins/gadget-renderer.yaml", providerPlugin("gadget-renderer", "1.0.0", "gadget"))
-	// An frp_step plugin that lists "acme" in targets — a DIFFERENT
+	// A pipeline-step plugin that lists "acme" in targets — a DIFFERENT
 	// meaning (the provider a pipeline step renders alongside), not a render-engine
 	// claim. It must be excluded: if it counted, "acme" would be claimed by two
 	// distinct plugin names and resolve to (_, false).
@@ -51,7 +51,7 @@ func TestProviderPluginByNameResolvesShippedProviders(t *testing.T) {
 kind: Plugin
 metadata:
   name: acme-pipeline-step
-  pluginType: frp_step
+  pluginType: pipeline-step
   version: 1.0.0
 spec:
   abiVersion: v1alpha1
@@ -89,7 +89,7 @@ spec:
 			continue
 		}
 		if got.Metadata.Name != tc.wantName {
-			t.Errorf("ProviderPluginByName(%q): got plugin %q; want %q (frp_step must not shadow the provider engine)",
+			t.Errorf("ProviderPluginByName(%q): got plugin %q; want %q (pipeline-step must not shadow the provider engine)",
 				tc.provider, got.Metadata.Name, tc.wantName)
 		}
 		viaLookup, ok, err := lookup.ProviderPlugin(tc.provider)

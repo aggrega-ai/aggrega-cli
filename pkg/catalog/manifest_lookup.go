@@ -458,7 +458,7 @@ func (c *Catalog) PluginByURI(uri string) (types.Plugin, bool) {
 // "helm:^1.0.0") a Recipe binds through spec.capability; the bare name (before
 // any pin) is matched against each plugin's served capabilities. A pluginType:
 // provider Plugin serves the capabilities listed in its spec.capabilities; a
-// linter or frp_step plugin whose capabilities happen to list the name is
+// linter or pipeline-step plugin whose capabilities happen to list the name is
 // excluded — that list carries a different meaning for a non-provider plugin.
 //
 // The bindings map is the workspace-config (at pull) or lockfile-derived (at

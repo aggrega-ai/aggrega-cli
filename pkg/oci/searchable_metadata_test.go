@@ -64,7 +64,7 @@ func TestSearchableMetadataAnnotationsOmitsEmpty(t *testing.T) {
 		Description:  "A demo plugin.",
 		Category:     "compute",
 		Kind:         "Plugin",
-		PluginType:   "frp_step",
+		PluginType:   "pipeline-step",
 		Labels:       labels,
 		Capabilities: []string{"helm", "compose"},
 	})
@@ -72,7 +72,7 @@ func TestSearchableMetadataAnnotationsOmitsEmpty(t *testing.T) {
 		ocispec.AnnotationDescription: "A demo plugin.",
 		oci.AnnotationCategory:        "compute",
 		oci.AnnotationKind:            "Plugin",
-		oci.AnnotationPluginType:      "frp_step",
+		oci.AnnotationPluginType:      "pipeline-step",
 		oci.AnnotationCapabilities:    "helm,compose",
 		// Author order, not sorted: `type` was written before `category`.
 		oci.AnnotationLabels: `{"component.aggrega.ai/type":"server","component.aggrega.ai/category":"compute"}`,
@@ -161,7 +161,7 @@ func TestPluginManifestDigestMatchesPushWithAnnotations(t *testing.T) {
 	ann := mustAnnotations(t, oci.SearchableMetadata{
 		Description:  "A patch step plugin.",
 		Kind:         "Plugin",
-		PluginType:   "frp_step",
+		PluginType:   "pipeline-step",
 		Capabilities: []string{"helm", "compose"},
 	})
 
@@ -182,7 +182,7 @@ func TestPluginManifestDigestMatchesPushWithAnnotations(t *testing.T) {
 	got := manifestAnnotations(t, ctx, store, "1.0.0")
 	assertAnnotation(t, got, ocispec.AnnotationDescription, "A patch step plugin.")
 	assertAnnotation(t, got, oci.AnnotationKind, "Plugin")
-	assertAnnotation(t, got, oci.AnnotationPluginType, "frp_step")
+	assertAnnotation(t, got, oci.AnnotationPluginType, "pipeline-step")
 	assertAnnotation(t, got, oci.AnnotationCapabilities, "helm,compose")
 	assertAnnotation(t, got, ocispec.AnnotationCreated, "1970-01-01T00:00:00Z")
 }

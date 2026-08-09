@@ -45,7 +45,7 @@ func pluginEntityYAML(host, name, version string) string {
 kind: Plugin
 metadata:
   name: ` + name + `
-  pluginType: ` + frpStepPluginType + `
+  pluginType: ` + pipelineStepPluginType + `
   version: "` + version + `"
 spec:
   abiVersion: v1alpha1
@@ -62,7 +62,7 @@ spec:
 // manifest digest both axes commit to.
 func fetchPublishedPlugin(t *testing.T, host, name, version string) signedPluginPublication {
 	t.Helper()
-	loc := catalog.OCILocation("Plugin", frpStepPluginType, name)
+	loc := catalog.OCILocation("Plugin", pipelineStepPluginType, name)
 	repo, err := oci.NewRemoteRepository(host+"/"+loc, &http.Client{})
 	if err != nil {
 		t.Fatalf("entity repo: %v", err)

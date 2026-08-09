@@ -29,9 +29,9 @@ func producerInjectorChainInput(t *testing.T) pipelinetest.Input {
 		"testdata/producer-injector/catalog/base",
 		"testdata/producer-injector/catalog/recipes/helm-chart",
 	}, map[string]string{
-		"frp_step/secret-ref-producer": "secret-ref-producer-go.wasm",
-		"frp_step/secret-injector":     "secret-injector-go.wasm",
-		"frp_step/sidecar-injector":    "sidecar-injector-go.wasm",
+		"pipeline-step/secret-ref-producer": "secret-ref-producer-go.wasm",
+		"pipeline-step/secret-injector":     "secret-injector-go.wasm",
+		"pipeline-step/sidecar-injector":    "sidecar-injector-go.wasm",
 	})
 	return pipelinetest.Input{
 		ReleasePath:  "testdata/producer-injector/release-chain.yaml",
@@ -116,7 +116,7 @@ func TestProducerInjector_HaltOnBadInput(t *testing.T) {
 		"testdata/producer-injector/catalog/base",
 		"testdata/producer-injector/catalog/recipes/helm-chart",
 	}, map[string]string{
-		"frp_step/secret-injector": "secret-injector-go.wasm",
+		"pipeline-step/secret-injector": "secret-injector-go.wasm",
 	})
 	in := pipelinetest.Input{
 		ReleasePath:  "testdata/producer-injector/release-badinput.yaml",
@@ -153,7 +153,7 @@ func TestProducerInjector_HaltOnBadOutput(t *testing.T) {
 		"testdata/producer-injector/catalog/base",
 		"testdata/producer-injector/catalog/recipes/helm-chart",
 	}, map[string]string{
-		"frp_step/secret-ref-producer-badoutput": "secret-ref-producer-badoutput-go.wasm",
+		"pipeline-step/secret-ref-producer-badoutput": "secret-ref-producer-badoutput-go.wasm",
 	})
 	in := pipelinetest.Input{
 		ReleasePath:  "testdata/producer-injector/release-badoutput.yaml",

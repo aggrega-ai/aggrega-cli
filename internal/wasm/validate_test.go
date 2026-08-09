@@ -18,12 +18,12 @@ func TestValidatePlugin_TypeMismatch(t *testing.T) {
 	wasmBytes := buildCLIArgsExitGuest(t)
 	_, err := ValidatePlugin(context.Background(), wasmBytes, ValidateOptions{
 		Identity:     "frp/patch:1.0.0",
-		DeclaredType: string(PluginTypeFRPStep),
+		DeclaredType: string(PluginTypePipelineStep),
 	})
 	if !errors.Is(err, ErrWasmPluginTypeMismatch()) {
-		t.Fatalf("declared frp_step over a cli guest should halt with ErrWasmPluginTypeMismatch; got %v", err)
+		t.Fatalf("declared pipeline-step over a cli guest should halt with ErrWasmPluginTypeMismatch; got %v", err)
 	}
-	for _, want := range []string{"frp/patch:1.0.0", string(PluginTypeFRPStep), string(PluginTypeCLI)} {
+	for _, want := range []string{"frp/patch:1.0.0", string(PluginTypePipelineStep), string(PluginTypeCLI)} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("type-mismatch halt should name %q; got %v", want, err)
 		}
@@ -80,7 +80,7 @@ func TestValidatePlugin_EntityCrossChecks(t *testing.T) {
 	// fixture reports rather than hard-coding the build-provenance string.
 	base, err := ValidatePlugin(context.Background(), wasmBytes, ValidateOptions{
 		Identity:     "frp/patch:1.0.0",
-		DeclaredType: string(PluginTypeFRPStep),
+		DeclaredType: string(PluginTypePipelineStep),
 	})
 	if err != nil {
 		t.Fatalf("binary-only validate should pass; got %v", err)
@@ -98,7 +98,7 @@ func TestValidatePlugin_EntityCrossChecks(t *testing.T) {
 	}
 	if _, err := ValidatePlugin(context.Background(), wasmBytes, ValidateOptions{
 		Identity:     "frp/patch:1.0.0",
-		DeclaredType: string(PluginTypeFRPStep),
+		DeclaredType: string(PluginTypePipelineStep),
 		Entity:       ok,
 	}); err != nil {
 		t.Fatalf("an agreeing entity surface should pass validation; got %v", err)
@@ -110,7 +110,7 @@ func TestValidatePlugin_EntityCrossChecks(t *testing.T) {
 	}
 	_, err = ValidatePlugin(context.Background(), wasmBytes, ValidateOptions{
 		Identity:     "frp/patch:1.0.0",
-		DeclaredType: string(PluginTypeFRPStep),
+		DeclaredType: string(PluginTypePipelineStep),
 		Entity:       stale,
 	})
 	if !errors.Is(err, ErrWasmHostFunctionsStampMismatch()) {
@@ -131,7 +131,7 @@ func TestValidatePlugin_VersionCrossCheck(t *testing.T) {
 	// validate, so the match case tracks whatever the fixture reports.
 	base, err := ValidatePlugin(context.Background(), wasmBytes, ValidateOptions{
 		Identity:     "frp/patch:1.0.0",
-		DeclaredType: string(PluginTypeFRPStep),
+		DeclaredType: string(PluginTypePipelineStep),
 	})
 	if err != nil {
 		t.Fatalf("binary-only validate should pass; got %v", err)
@@ -148,7 +148,7 @@ func TestValidatePlugin_VersionCrossCheck(t *testing.T) {
 	mismatched := &EntityInputs{Claim: claim, Version: describeVersion + "9.9.9-divergent"}
 	_, err = ValidatePlugin(context.Background(), wasmBytes, ValidateOptions{
 		Identity:     "frp/patch:1.0.0",
-		DeclaredType: string(PluginTypeFRPStep),
+		DeclaredType: string(PluginTypePipelineStep),
 		Entity:       mismatched,
 	})
 	if !errors.Is(err, ErrWasmPluginVersionMismatch()) {
@@ -163,7 +163,7 @@ func TestValidatePlugin_VersionCrossCheck(t *testing.T) {
 	matched := &EntityInputs{Claim: claim, Version: describeVersion}
 	if _, err := ValidatePlugin(context.Background(), wasmBytes, ValidateOptions{
 		Identity:     "frp/patch:1.0.0",
-		DeclaredType: string(PluginTypeFRPStep),
+		DeclaredType: string(PluginTypePipelineStep),
 		Entity:       matched,
 	}); err != nil {
 		t.Fatalf("a matching metadata.version should pass validation; got %v", err)
@@ -180,12 +180,12 @@ func TestValidatePlugin_VersionCrossCheck(t *testing.T) {
 // import-legality gate for this class, so no separate strict reload of the bytes is
 // needed to catch it.
 func TestNonCLIStreamingDescriptorRejectedAtDescribe(t *testing.T) {
-	// A well-formed frp_step descriptor whose "step" export declares the cli-only
+	// A well-formed pipeline-step descriptor whose "step" export declares the cli-only
 	// streaming emitter — the honest self-report of a non-cli binary that imports
 	// it. Descriptor validation checks each export's declared host functions
 	// against the profile allowlist for the reported type, which for a non-cli type
 	// admits neither streaming name.
-	raw := []byte(`{"abi_version":"v1alpha1","plugin_type":"frp_step","exports":[{"name":"step","operates":"patch","scope":"own","host_functions":["aggrega_cli_write_stdout"]}]}`)
+	raw := []byte(`{"abi_version":"v1alpha1","plugin_type":"pipeline-step","exports":[{"name":"step","operates":"patch","scope":"own","host_functions":["aggrega_cli_write_stdout"]}]}`)
 	_, err := parseAndValidateDescriptor(raw, "frp/patch:1.0.0")
 	if !errors.Is(err, ErrWasmManifestRejected()) {
 		t.Fatalf("a non-cli descriptor declaring a streaming host function should be rejected at describe validation with ErrWasmManifestRejected; got %v", err)

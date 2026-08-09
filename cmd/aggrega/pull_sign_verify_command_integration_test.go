@@ -27,7 +27,7 @@ import (
 // signature transitively covers the inline .wasm. It returns the .wasm content
 // digest the closure pins. It is the signed counterpart of publishPluginEntity,
 // mirroring its canonical BARE spec.plugin identity. name is the plugin's BARE
-// metadata.name; the socket is frpStepPluginType.
+// metadata.name; the socket is pipelineStepPluginType.
 func publishSignedPluginEntity(t *testing.T, host, name, version, pluginPath string, signer signing.Signer) string {
 	t.Helper()
 	wasmBytes, err := os.ReadFile(pluginPath)
@@ -42,7 +42,7 @@ func publishSignedPluginEntity(t *testing.T, host, name, version, pluginPath str
 kind: Plugin
 metadata:
   name: `+name+`
-  pluginType: `+frpStepPluginType+`
+  pluginType: `+pipelineStepPluginType+`
   version: "`+version+`"
 spec:
   abiVersion: v1alpha1
@@ -59,7 +59,7 @@ spec:
 		Sign:       &sign,
 		Signer:     signer,
 	}); err != nil {
-		t.Fatalf("publish signed plugin entity %s/%s:%s: %v", frpStepPluginType, name, version, err)
+		t.Fatalf("publish signed plugin entity %s/%s:%s: %v", pipelineStepPluginType, name, version, err)
 	}
 	return contentDigest
 }
@@ -238,7 +238,7 @@ func TestIntegration_PullCommandVerifiesSignedPlugin_Keyed(t *testing.T) {
 		pluginName = "patch-server"
 		version    = "1.0.0"
 	)
-	pluginURI := types.PluginCoordinate(frpStepPluginType, pluginName) + ":" + version
+	pluginURI := types.PluginCoordinate(pipelineStepPluginType, pluginName) + ":" + version
 
 	t.Run("positive_signed_plugin_verifies_through_pull_command", func(t *testing.T) {
 		host := startRegistry(t, nil)
@@ -246,7 +246,7 @@ func TestIntegration_PullCommandVerifiesSignedPlugin_Keyed(t *testing.T) {
 		// The .wasm ARTIFACT row is keyed by the entity's identity coordinate
 		// <pluginType>/<name> under the single-manifest model — no @sha256:
 		// content-digest suffix.
-		artifactURI := types.PluginCoordinate(frpStepPluginType, pluginName)
+		artifactURI := types.PluginCoordinate(pipelineStepPluginType, pluginName)
 		// The whole Tier-3-resolved closure is under the require-signatures policy,
 		// so the catalog entities are signed by the same publisher too.
 		ws := writePipelinePluginConsumerWorkspace(t, host, pluginURI, pubPEM, signer)

@@ -252,7 +252,7 @@ const pluginPartialRuntimeFixture = `apiVersion: aggrega.ai/v1alpha1
 kind: Plugin
 metadata:
   name: step
-  pluginType: frp_step
+  pluginType: pipeline-step
   version: "1.0.0"
 spec:
   abiVersion: v1alpha1

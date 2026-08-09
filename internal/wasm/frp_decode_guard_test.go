@@ -87,11 +87,11 @@ func TestFRPDecodeGuard(t *testing.T) {
 	}
 	defer plugin.Close(ctx)
 
-	// Descriptor parity with the Rust reference plugin: an frp_step plugin
+	// Descriptor parity with the Rust reference plugin: a pipeline-step plugin
 	// whose step export operates=patch / scope=own and declares the helm
 	// and helm-chart compatible providers.
-	if desc.PluginType != string(wasm.PluginTypeFRPStep) {
-		t.Fatalf("plugin type: got %q want %q", desc.PluginType, wasm.PluginTypeFRPStep)
+	if desc.PluginType != string(wasm.PluginTypePipelineStep) {
+		t.Fatalf("plugin type: got %q want %q", desc.PluginType, wasm.PluginTypePipelineStep)
 	}
 	if desc.AbiVersion != wasm.ABIVersionV1Alpha1 {
 		t.Fatalf("abi version: got %q want %q", desc.AbiVersion, wasm.ABIVersionV1Alpha1)

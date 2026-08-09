@@ -27,7 +27,7 @@ func hostPatchComposeFixtureInput(t *testing.T) pipelinetest.Input {
 		"testdata/host-patch-compose/catalog/base",
 		"testdata/host-patch-compose/catalog/recipes/compose",
 	}, map[string]string{
-		"frp_step/host-patch-compose": "frp-step-host-patch-compose-rust.wasm",
+		"pipeline-step/host-patch-compose": "frp-step-host-patch-compose-rust.wasm",
 	})
 	return pipelinetest.Input{
 		ReleasePath:  "testdata/host-patch-compose/release.yaml",

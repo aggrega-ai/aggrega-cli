@@ -42,7 +42,7 @@ func TestValidatePlugin_CapabilityClaimMismatch(t *testing.T) {
 	}
 	_, err := ValidatePlugin(context.Background(), wasmBytes, ValidateOptions{
 		Identity:     "frp/patch:1.0.0",
-		DeclaredType: string(PluginTypeFRPStep),
+		DeclaredType: string(PluginTypePipelineStep),
 		Entity:       entity,
 	})
 	if !errors.Is(err, ErrWasmContractMismatch()) {

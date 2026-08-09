@@ -12,8 +12,8 @@ const (
 	Provider Type = "provider"
 	// Linter inspects authored content and raises diagnostics.
 	Linter Type = "linter"
-	// FRPStep transforms the IR within a feature recipe's pipeline.
-	FRPStep Type = "frp_step"
+	// PipelineStep transforms the IR within a feature recipe's pipeline.
+	PipelineStep Type = "pipeline-step"
 	// Governance serves the build-pipeline governance roles: it transforms
 	// topology-graph node labels at a transform role, or renders an accept/reject
 	// verdict over the IR graph or the rendered artifacts at a verdict role. The
@@ -212,7 +212,7 @@ var entries = []Entry{
 		LoadProfile: LoadProfileBuild,
 	},
 	{
-		Type:        FRPStep,
+		Type:        PipelineStep,
 		Label:       "feature-recipe-pipeline",
 		MinExport:   MinExport{Name: "step"},
 		Socket:      "",

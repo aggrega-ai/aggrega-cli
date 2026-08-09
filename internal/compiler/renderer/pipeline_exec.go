@@ -420,7 +420,7 @@ func newStepInvoker(lookup pluginpath.Lookup) frp.StepInvoker {
 		// compiles once and every later step and concurrent request reuses it.
 		loader := wasm.NewCachingLoaderFromContext(ctx, wasm.ExternalInputsFromContext(ctx))
 		stepSpec := resolver.PluginSpec(step.Plugin, resolved)
-		stepSpec.PluginType = wasm.PluginTypeFRPStep
+		stepSpec.PluginType = wasm.PluginTypePipelineStep
 		plugin, desc, err := loader.LoadAndDescribe(ctx, stepSpec)
 		if err != nil {
 			return nil, err
@@ -527,7 +527,7 @@ func newStepDescriber(lookup pluginpath.Lookup) stepDescriber {
 		// same process-wide shared compilation cache.
 		loader := wasm.NewCachingLoaderFromContext(ctx, wasm.ExternalInputsFromContext(ctx))
 		stepSpec := resolver.PluginSpec(step.Plugin, resolved)
-		stepSpec.PluginType = wasm.PluginTypeFRPStep
+		stepSpec.PluginType = wasm.PluginTypePipelineStep
 		plugin, desc, err := loader.LoadAndDescribe(ctx, stepSpec)
 		if err != nil {
 			return wasm.PluginDescriptor{}, err

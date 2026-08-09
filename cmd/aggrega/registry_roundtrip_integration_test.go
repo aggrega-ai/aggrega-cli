@@ -84,13 +84,13 @@ func offlineReferenceCompose(t *testing.T, std, exampleDir string) string {
 	return sha256HexFile(t, filepath.Join("dist", "compose", "docker-compose.yaml"))
 }
 
-// frpStepPluginType is the single fixture-side source for the pipeline plugins'
+// pipelineStepPluginType is the single fixture-side source for the pipeline plugins'
 // socket. A Plugin's identity coordinate is <pluginType>/<name> and its OCI
 // location is plugin/<lower(pluginType)>/<lower(name)>; every fixture that
-// authors, references, or resolves an frp_step plugin derives both from this
+// authors, references, or resolves a pipeline-step plugin derives both from this
 // const through types.PluginCoordinate and catalog.OCILocation, so no site
 // hardcodes a divergent literal.
-const frpStepPluginType = "frp_step"
+const pipelineStepPluginType = "pipeline-step"
 
 func standardCatalogDir(t *testing.T) string {
 	t.Helper()
@@ -593,7 +593,7 @@ func TestIntegration_Capstone_LintAndExample(t *testing.T) {
 // at once. The entity's authored exports agree with the committed frp-step-go
 // fixture's describe() (export "step", operates=patch, scope=own), so the
 // publish-time cross-check passes. name is the plugin's BARE metadata.name (e.g.
-// "patch-server"); the socket is frpStepPluginType. pluginPath is the pre-built
+// "patch-server"); the socket is pipelineStepPluginType. pluginPath is the pre-built
 // fixture (resolved before any chdir). Returns the .wasm content digest the
 // consumer pins at pull.
 func publishPluginEntity(t *testing.T, host, name, version, pluginPath string) string {
@@ -627,7 +627,7 @@ func publishPluginEntityWithRuntime(t *testing.T, host, name, version, pluginPat
 kind: Plugin
 metadata:
   name: `+name+`
-  pluginType: `+frpStepPluginType+`
+  pluginType: `+pipelineStepPluginType+`
   version: "`+version+`"
 spec:
   abiVersion: v1alpha1
@@ -637,7 +637,7 @@ spec:
       scope: own
 `+runtimeBlock)
 	if err := pushRun(pushConfig{EntityPath: entityPath, PluginPath: pluginPath, Registry: host}); err != nil {
-		t.Fatalf("publish plugin entity %s/%s:%s: %v", frpStepPluginType, name, version, err)
+		t.Fatalf("publish plugin entity %s/%s:%s: %v", pipelineStepPluginType, name, version, err)
 	}
 	return contentDigest
 }
@@ -686,13 +686,13 @@ func TestIntegration_PipelinePluginPinning_RoundTrip(t *testing.T) {
 	// reference shape. The pull binds <pluginType>/<name> to its OCI location
 	// <registry>/plugin/<lower(pluginType)>/<lower(name)> itself; a
 	// registry-qualified reference would be refused with ErrQualifiedPluginReference.
-	recipePluginURI := types.PluginCoordinate(frpStepPluginType, recipePluginName) + ":1.0.0"
-	frPluginURI := types.PluginCoordinate(frpStepPluginType, frPluginName) + ":1.0.0"
+	recipePluginURI := types.PluginCoordinate(pipelineStepPluginType, recipePluginName) + ":1.0.0"
+	frPluginURI := types.PluginCoordinate(pipelineStepPluginType, frPluginName) + ":1.0.0"
 
 	// A controlled fixture catalog: a Component implemented by a pipeline-bearing
 	// Recipe, and a (secret) Feature implemented by a pipeline-bearing FeatureRecipe.
 	// The committed frp-step-go fixture self-describes as a helm/helm-chart
-	// compatible frp_step plugin that content-selects a Deployment, PATCHes an
+	// compatible pipeline-step plugin that content-selects a Deployment, PATCHes an
 	// own-scope annotation, and EMITs an own-scope ConfigMap. So the fixture
 	// catalog renders under the helm provider: the Recipe produces a Deployment the
 	// recipe-plugin patches, and the resource-generating FeatureRecipe runs its own
@@ -779,8 +779,8 @@ spec:
 	// tag, not by a content-digest-pinned reference; the plugins rows pin these
 	// coordinate URIs. Both reuse the same committed fixture, so the content digests
 	// match while the locations differ.
-	recipeArtifactURI := types.PluginCoordinate(frpStepPluginType, recipePluginName)
-	frArtifactURI := types.PluginCoordinate(frpStepPluginType, frPluginName)
+	recipeArtifactURI := types.PluginCoordinate(pipelineStepPluginType, recipePluginName)
+	frArtifactURI := types.PluginCoordinate(pipelineStepPluginType, frPluginName)
 
 	// Single-manifest witness: the plugin repo's version tag resolves to ONE
 	// manifest whose config blob is the entity YAML and whose inline layer is the
@@ -968,7 +968,7 @@ spec:
 // layer must hash to it, tying the manifest to the artifact axis.
 func assertSinglePluginManifest(t *testing.T, host, name, version, wantWasmDigest string) {
 	t.Helper()
-	loc := catalog.OCILocation("Plugin", frpStepPluginType, name)
+	loc := catalog.OCILocation("Plugin", pipelineStepPluginType, name)
 	repo, err := oci.NewRemoteRepository(host+"/"+loc, &http.Client{})
 	if err != nil {
 		t.Fatalf("new repo for %s: %v", loc, err)
@@ -996,7 +996,7 @@ func assertSinglePluginManifest(t *testing.T, host, name, version, wantWasmDiges
 // references the named Plugin entity by its bare identity, and writes a
 // consumer workspace (aggregate / manifest / release / workspace config) wired to
 // build that Component over the registry at host. The committed frp-step-go
-// fixture self-describes as a helm-compatible frp_step plugin (export "step",
+// fixture self-describes as a helm-compatible pipeline-step plugin (export "step",
 // patch, own-scope), so the Recipe renders under the helm provider and the build
 // invokes the plugin. Returns the consumer workspace path (not yet chdir'd into).
 //
@@ -1127,7 +1127,7 @@ func TestIntegration_PipelinePlugin_RuntimeTimeoutFlowsToBuild(t *testing.T) {
 	// Plugin identity coordinate <pluginType>/<name>:<version> — the canonical
 	// reference shape the recipe pipeline step names; the pull binds
 	// <pluginType>/<name> to its OCI location in the registry.
-	pluginURI := types.PluginCoordinate(frpStepPluginType, pluginName) + ":1.0.0"
+	pluginURI := types.PluginCoordinate(pipelineStepPluginType, pluginName) + ":1.0.0"
 
 	t.Run("tiny_timeout_fails_at_guest_call", func(t *testing.T) {
 		host := startRegistry(t, nil)

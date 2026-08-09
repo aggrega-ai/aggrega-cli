@@ -43,14 +43,14 @@ func TestPluginDescriptorRoundTrip(t *testing.T) {
 		},
 		"frp-step": {
 			AbiVersion: ABIVersionV1Alpha1,
-			PluginType: string(PluginTypeFRPStep),
+			PluginType: string(PluginTypePipelineStep),
 			Exports: []PluginExport{
 				{Name: "step", InputPattern: string(InputPatternMinimal)},
 			},
 		},
 		"frp-step-with-capabilities": {
 			AbiVersion:   ABIVersionV1Alpha1,
-			PluginType:   string(PluginTypeFRPStep),
+			PluginType:   string(PluginTypePipelineStep),
 			Capabilities: []string{"helm", "helm-chart"},
 			Exports: []PluginExport{
 				{
@@ -214,18 +214,18 @@ func TestPluginDescriptorValidateMinimumExports(t *testing.T) {
 				Exports:    []PluginExport{{Name: "lint_naming"}},
 			},
 		},
-		"frp_step-without-step": {
+		"pipeline-step-without-step": {
 			descriptor: PluginDescriptor{
 				AbiVersion: ABIVersionV1Alpha1,
-				PluginType: string(PluginTypeFRPStep),
+				PluginType: string(PluginTypePipelineStep),
 				Exports:    []PluginExport{{Name: "transform"}},
 			},
 			wantReject: true,
 		},
-		"frp_step-with-step": {
+		"pipeline-step-with-step": {
 			descriptor: PluginDescriptor{
 				AbiVersion: ABIVersionV1Alpha1,
-				PluginType: string(PluginTypeFRPStep),
+				PluginType: string(PluginTypePipelineStep),
 				Exports:    []PluginExport{{Name: "step"}},
 			},
 		},
@@ -524,10 +524,10 @@ func TestPluginDescriptorValidateCapabilityShape(t *testing.T) {
 			t.Parallel()
 			d := PluginDescriptor{
 				AbiVersion: ABIVersionV1Alpha1,
-				PluginType: string(PluginTypeFRPStep),
+				PluginType: string(PluginTypePipelineStep),
 				Exports:    []PluginExport{tc.export},
 			}
-			// The frp_step minimum export is "step"; every case names it so
+			// The pipeline-step minimum export is "step"; every case names it so
 			// only the capability-shape check is under test.
 			err := d.Validate("acme/frp-step")
 			if tc.wantReject {
@@ -551,7 +551,7 @@ func TestPluginDescriptorTargetsUnchecked(t *testing.T) {
 	t.Parallel()
 	d := PluginDescriptor{
 		AbiVersion:   ABIVersionV1Alpha1,
-		PluginType:   string(PluginTypeFRPStep),
+		PluginType:   string(PluginTypePipelineStep),
 		Capabilities: []string{"a-provider-that-does-not-exist", "another"},
 		Exports:      []PluginExport{{Name: "step"}},
 	}
@@ -571,7 +571,7 @@ func TestDefaultInputPattern(t *testing.T) {
 		{PluginTypeProvider, "render_node", InputPatternFull},
 		{PluginTypeProvider, "assemble_boundary", InputPatternFull},
 		{PluginTypeLinter, "lint_naming", InputPatternFull},
-		{PluginTypeFRPStep, "step", InputPatternMinimal},
+		{PluginTypePipelineStep, "step", InputPatternMinimal},
 	}
 	for _, tc := range cases {
 		if got := defaultInputPattern(tc.pluginType, tc.exportName); got != tc.want {

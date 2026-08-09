@@ -33,8 +33,8 @@ func mixedScopeComposeFixtureInput(t *testing.T) pipelinetest.Input {
 		"testdata/mixed-scope-compose/catalog/base",
 		"testdata/mixed-scope-compose/catalog/recipes/compose",
 	}, map[string]string{
-		"frp_step/own-patch-compose":  "frp-step-own-patch-compose-rust.wasm",
-		"frp_step/host-patch-compose": "frp-step-host-patch-compose-rust.wasm",
+		"pipeline-step/own-patch-compose":  "frp-step-own-patch-compose-rust.wasm",
+		"pipeline-step/host-patch-compose": "frp-step-host-patch-compose-rust.wasm",
 	})
 	return pipelinetest.Input{
 		ReleasePath:  "testdata/mixed-scope-compose/release.yaml",

@@ -28,7 +28,7 @@ func hostPatchHelmchartFixtureInput(t *testing.T) pipelinetest.Input {
 		"testdata/host-patch-helmchart/catalog/base",
 		"testdata/host-patch-helmchart/catalog/recipes/helm-chart",
 	}, map[string]string{
-		"frp_step/host-patch": "frp-step-host-patch-rust.wasm",
+		"pipeline-step/host-patch": "frp-step-host-patch-rust.wasm",
 	})
 	return pipelinetest.Input{
 		ReleasePath:  "testdata/host-patch-helmchart/release.yaml",

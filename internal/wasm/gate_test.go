@@ -20,8 +20,8 @@ func TestParseAndValidateDescriptor(t *testing.T) {
 		wantErr bool
 	}{
 		{
-			name: "valid frp_step descriptor",
-			raw:  `{"abi_version":"v1alpha1","plugin_type":"frp_step","exports":[{"name":"step"}]}`,
+			name: "valid pipeline-step descriptor",
+			raw:  `{"abi_version":"v1alpha1","plugin_type":"pipeline-step","exports":[{"name":"step"}]}`,
 		},
 		{
 			name:    "malformed JSON",
@@ -30,12 +30,12 @@ func TestParseAndValidateDescriptor(t *testing.T) {
 		},
 		{
 			name:    "unsupported ABI version",
-			raw:     `{"abi_version":"v2","plugin_type":"frp_step","exports":[{"name":"step"}]}`,
+			raw:     `{"abi_version":"v2","plugin_type":"pipeline-step","exports":[{"name":"step"}]}`,
 			wantErr: true,
 		},
 		{
-			name:    "frp_step missing minimum export",
-			raw:     `{"abi_version":"v1alpha1","plugin_type":"frp_step","exports":[{"name":"render_node"}]}`,
+			name:    "pipeline-step missing minimum export",
+			raw:     `{"abi_version":"v1alpha1","plugin_type":"pipeline-step","exports":[{"name":"render_node"}]}`,
 			wantErr: true,
 		},
 	}
@@ -55,8 +55,8 @@ func TestParseAndValidateDescriptor(t *testing.T) {
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
-			if desc.PluginType != string(PluginTypeFRPStep) {
-				t.Fatalf("plugin type: got %q want %q", desc.PluginType, PluginTypeFRPStep)
+			if desc.PluginType != string(PluginTypePipelineStep) {
+				t.Fatalf("plugin type: got %q want %q", desc.PluginType, PluginTypePipelineStep)
 			}
 		})
 	}
@@ -69,7 +69,7 @@ func TestInvokeExportUndeclared(t *testing.T) {
 
 	desc := PluginDescriptor{
 		AbiVersion: ABIVersionV1Alpha1,
-		PluginType: string(PluginTypeFRPStep),
+		PluginType: string(PluginTypePipelineStep),
 		Exports:    []PluginExport{{Name: "step"}},
 	}
 	plugin := &Plugin{name: "fixture"}
@@ -101,14 +101,14 @@ func TestLoadAndDescribeFixture(t *testing.T) {
 	}
 	defer plugin.Close(ctx)
 
-	if desc.PluginType != string(PluginTypeFRPStep) {
-		t.Fatalf("plugin type: got %q want %q", desc.PluginType, PluginTypeFRPStep)
+	if desc.PluginType != string(PluginTypePipelineStep) {
+		t.Fatalf("plugin type: got %q want %q", desc.PluginType, PluginTypePipelineStep)
 	}
-	if !desc.hasExport(frpStepExportName) {
-		t.Fatalf("descriptor does not declare the %q export", frpStepExportName)
+	if !desc.hasExport(pipelineStepExportName) {
+		t.Fatalf("descriptor does not declare the %q export", pipelineStepExportName)
 	}
 
-	out, err := InvokeExport(ctx, plugin, desc, frpStepExportName, []byte(`{}`))
+	out, err := InvokeExport(ctx, plugin, desc, pipelineStepExportName, []byte(`{}`))
 	if err != nil {
 		t.Fatalf("InvokeExport(step): %v", err)
 	}

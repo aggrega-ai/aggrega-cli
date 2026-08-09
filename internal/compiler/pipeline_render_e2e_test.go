@@ -25,7 +25,7 @@ func pipelineRenderFixtureInput(t *testing.T) pipelinetest.Input {
 		"testdata/pipeline-render/catalog/base",
 		"testdata/pipeline-render/catalog/recipes/helm",
 	}, map[string]string{
-		"frp_step/patch": "frp-step-patch-rust.wasm",
+		"pipeline-step/patch": "frp-step-patch-rust.wasm",
 	})
 	return pipelinetest.Input{
 		ReleasePath:  "testdata/pipeline-render/release.yaml",

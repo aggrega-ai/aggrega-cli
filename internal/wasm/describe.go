@@ -43,10 +43,10 @@ const (
 	// lint_* export.
 	PluginTypeLinter = plugintype.Linter
 
-	// PluginTypeFRPStep is a feature-recipe-pipeline step plugin: it
+	// PluginTypePipelineStep is a feature-recipe-pipeline step plugin: it
 	// transforms the IR within a feature recipe's pipeline. Its minimum
 	// export is step.
-	PluginTypeFRPStep = plugintype.FRPStep
+	PluginTypePipelineStep = plugintype.PipelineStep
 
 	// PluginTypeGovernance is a governance plugin: it serves the build-pipeline
 	// transform and verdict roles. Attached at a transform role it auto-tags
@@ -123,10 +123,10 @@ func minExportName(t plugintype.Type) string {
 // plugin-type registry so the literal lives once.
 var lintExportPrefix = minExportName(plugintype.Linter)
 
-// frpStepExportName is the required export name for a
+// pipelineStepExportName is the required export name for a
 // feature-recipe-pipeline step plugin. It reads the name from the canonical
 // plugin-type registry so the literal lives once.
-var frpStepExportName = minExportName(plugintype.FRPStep)
+var pipelineStepExportName = minExportName(plugintype.PipelineStep)
 
 // TransformAnnotationsExport, MutateExport, and ValidateExport are the default
 // entry-function names for the governance roles: the annotation-transform role
@@ -514,7 +514,7 @@ func (d PluginDescriptor) hasExportWithPrefix(prefix string) bool {
 // reads the declared value first and falls back here only when it is
 // empty.
 func defaultInputPattern(pluginType PluginType, exportName string) InputPattern {
-	if pluginType == PluginTypeFRPStep && exportName == frpStepExportName {
+	if pluginType == PluginTypePipelineStep && exportName == pipelineStepExportName {
 		return InputPatternMinimal
 	}
 	return InputPatternFull

@@ -53,7 +53,7 @@ const agreeingPluginEntity = `apiVersion: aggrega.ai/v1alpha1
 kind: Plugin
 metadata:
   name: patch
-  pluginType: frp_step
+  pluginType: pipeline-step
   version: "1.0.0"
 spec:
   abiVersion: v1alpha1
@@ -200,7 +200,7 @@ func TestPushPluginDescribeMismatchHaltsNoBytes(t *testing.T) {
 kind: Plugin
 metadata:
   name: patch
-  pluginType: frp_step
+  pluginType: pipeline-step
   version: "1.0.0"
 spec:
   abiVersion: v1alpha1

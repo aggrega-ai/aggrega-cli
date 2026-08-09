@@ -29,7 +29,7 @@ func ownPatchComposeFixtureInput(t *testing.T) pipelinetest.Input {
 		"testdata/own-patch-compose/catalog/base",
 		"testdata/own-patch-compose/catalog/recipes/compose",
 	}, map[string]string{
-		"frp_step/own-patch-compose": "frp-step-own-patch-compose-rust.wasm",
+		"pipeline-step/own-patch-compose": "frp-step-own-patch-compose-rust.wasm",
 	})
 	return pipelinetest.Input{
 		ReleasePath:  "testdata/own-patch-compose/release.yaml",

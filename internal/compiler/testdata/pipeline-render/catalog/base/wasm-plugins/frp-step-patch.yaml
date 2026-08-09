@@ -3,7 +3,7 @@ kind: Plugin
 metadata:
   name: patch
   version: "1.0.0"
-  pluginType: frp_step
+  pluginType: pipeline-step
 spec:
   abiVersion: v1alpha1
   capabilities:

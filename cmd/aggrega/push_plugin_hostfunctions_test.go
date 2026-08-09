@@ -27,7 +27,7 @@ apiVersion: aggrega.ai/v1alpha1
 kind: Plugin
 metadata:
   name: patch # the plugin's bare identity
-  pluginType: frp_step
+  pluginType: pipeline-step
   version: "1.0.0"
 spec:
   plugin: "oci://hub.aggrega.ai/plugin/frp/patch"
@@ -95,7 +95,7 @@ func TestSpliceHostFunctions_CreatesRuntimeWhenAbsent(t *testing.T) {
 kind: Plugin
 metadata:
   name: patch
-  pluginType: frp_step
+  pluginType: pipeline-step
   version: "1.0.0"
 spec:
   plugin: "oci://hub.aggrega.ai/plugin/frp/patch" # bare identity
@@ -257,7 +257,7 @@ const pushVerifyEntity = `apiVersion: aggrega.ai/v1alpha1
 kind: Plugin
 metadata:
   name: patch
-  pluginType: frp_step
+  pluginType: pipeline-step
   version: "1.0.0"
 spec:
   abiVersion: v1alpha1

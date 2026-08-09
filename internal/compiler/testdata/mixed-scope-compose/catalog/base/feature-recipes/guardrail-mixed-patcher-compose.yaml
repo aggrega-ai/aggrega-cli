@@ -31,8 +31,8 @@ spec:
   # the build halts with a scope-specific diagnostic.
   pipeline:
     - id: inject_into_own
-      plugin: frp_step/own-patch-compose:1.0.0
+      plugin: pipeline-step/own-patch-compose:1.0.0
       function: step
     - id: inject_into_host
-      plugin: frp_step/host-patch-compose:1.0.0
+      plugin: pipeline-step/host-patch-compose:1.0.0
       function: step

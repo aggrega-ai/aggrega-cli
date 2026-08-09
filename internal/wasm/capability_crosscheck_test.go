@@ -17,7 +17,7 @@ func TestCrossCheckContract(t *testing.T) {
 
 	desc := PluginDescriptor{
 		AbiVersion: ABIVersionV1Alpha1,
-		PluginType: string(PluginTypeFRPStep),
+		PluginType: string(PluginTypePipelineStep),
 		Exports: []PluginExport{
 			{Name: "step", Operates: operatesPatch, Scope: ScopeOwn, Selector: "the plugin's own description"},
 			{Name: "extra", Operates: operatesEmit, Scope: ScopeHost},
@@ -314,7 +314,7 @@ func TestCrossCheckContract_EmptyClaim(t *testing.T) {
 	t.Parallel()
 	desc := PluginDescriptor{
 		AbiVersion: ABIVersionV1Alpha1,
-		PluginType: string(PluginTypeFRPStep),
+		PluginType: string(PluginTypePipelineStep),
 		Exports:    []PluginExport{{Name: "step", Operates: operatesPatch, Scope: ScopeOwn}},
 	}
 	if err := CrossCheckContract("frp/patch:1.0.0", EntityContractClaim{}, desc); err != nil {

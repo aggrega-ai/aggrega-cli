@@ -76,7 +76,7 @@ func (p Plugin) ArtifactReference() string {
 // pluginType: provider Plugin. It documents how the plugin's rendering
 // engine translates the Workload kind into provider-native manifests and
 // which platform-native annotations the engine reads. It carries no
-// meaning on a linter or frp_step plugin. The block is hand-written
+// meaning on a linter or pipeline-step plugin. The block is hand-written
 // because the generator names it via x-aggrega-go-type on the schema's
 // object node and does not descend into it.
 type PluginProvider struct {

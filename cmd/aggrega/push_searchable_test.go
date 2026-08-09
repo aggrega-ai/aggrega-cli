@@ -106,7 +106,7 @@ func TestPushStampsPluginSearchableAnnotations(t *testing.T) {
 kind: Plugin
 metadata:
   name: patch
-  pluginType: frp_step
+  pluginType: pipeline-step
   version: "1.0.0"
   description: A patch-applying feature-recipe step.
 spec:
@@ -139,8 +139,8 @@ spec:
 	if got[oci.AnnotationKind] != "Plugin" {
 		t.Errorf("kind annotation = %q; want %q", got[oci.AnnotationKind], "Plugin")
 	}
-	if got[oci.AnnotationPluginType] != "frp_step" {
-		t.Errorf("plugin-type annotation = %q; want %q", got[oci.AnnotationPluginType], "frp_step")
+	if got[oci.AnnotationPluginType] != "pipeline-step" {
+		t.Errorf("plugin-type annotation = %q; want %q", got[oci.AnnotationPluginType], "pipeline-step")
 	}
 	if got[oci.AnnotationCapabilities] != "helm" {
 		t.Errorf("capabilities annotation = %q; want %q", got[oci.AnnotationCapabilities], "helm")

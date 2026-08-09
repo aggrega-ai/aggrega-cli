@@ -68,10 +68,10 @@ const (
 	// its identity coordinate (<pluginType>/<name>); registryPluginEntity is the
 	// version-exact coordinate URI a recipe pipeline step references.
 	registryPluginName     = "patch-workloads"
-	registryPluginArtifact = "frp_step/" + registryPluginName
+	registryPluginArtifact = "pipeline-step/" + registryPluginName
 	registryPluginEntity   = registryPluginArtifact + ":1.0.0"
 	localPluginName        = "patch-local"
-	localPluginArtifact    = "frp_step/" + localPluginName
+	localPluginArtifact    = "pipeline-step/" + localPluginName
 	localPluginEntity      = localPluginArtifact + ":1.0.0"
 )
 
@@ -189,7 +189,7 @@ func TestPluginDescent_RegistryResolvedPinned(t *testing.T) {
 			recipeURI: recipeWithPipelinePlugin(t, "svc", registryProvider, registryPluginEntity),
 		},
 		plugins: map[string]*types.Plugin{
-			registryPluginEntity: pluginEntity(t, registryPluginName, "frp_step"),
+			registryPluginEntity: pluginEntity(t, registryPluginName, "pipeline-step"),
 		},
 	}
 	cl, err := runPluginDescent(t, pluginDescentLookup(), loader)
@@ -237,7 +237,7 @@ func TestPluginDescent_Tier1LocalNotPinned(t *testing.T) {
 			recipeURI: recipeWithPipelinePlugin(t, "svc", registryProvider, localPluginEntity),
 		},
 		plugins: map[string]*types.Plugin{
-			localPluginEntity: pluginEntity(t, localPluginName, "frp_step"),
+			localPluginEntity: pluginEntity(t, localPluginName, "pipeline-step"),
 		},
 	}
 	cl, err := runPluginDescent(t, pluginDescentLookup(), loader)
@@ -282,7 +282,7 @@ func TestPluginDescent_Deterministic(t *testing.T) {
 				recipeURI: recipeWithPipelinePlugin(t, "svc", registryProvider, registryPluginEntity),
 			},
 			plugins: map[string]*types.Plugin{
-				registryPluginEntity: pluginEntity(t, registryPluginName, "frp_step"),
+				registryPluginEntity: pluginEntity(t, registryPluginName, "pipeline-step"),
 			},
 		}
 		cl, err := runPluginDescent(t, pluginDescentLookup(), loader)
@@ -315,7 +315,7 @@ func TestPluginDescent_NilLoaderNoop(t *testing.T) {
 const (
 	frRecipeURI      = "hub.aggrega.ai/featurerecipe/example/cred:1.0.0"
 	frPluginName     = "patch-credential"
-	frPluginArtifact = "frp_step/" + frPluginName
+	frPluginArtifact = "pipeline-step/" + frPluginName
 	frPluginEntity   = frPluginArtifact + ":1.0.0"
 )
 
@@ -362,7 +362,7 @@ func TestPluginDescent_FeatureRecipePinned(t *testing.T) {
 			frRecipeURI: featureRecipeWithPipelinePlugin(t, "cred", registryProvider, frPluginEntity),
 		},
 		plugins: map[string]*types.Plugin{
-			frPluginEntity: pluginEntity(t, frPluginName, "frp_step"),
+			frPluginEntity: pluginEntity(t, frPluginName, "pipeline-step"),
 		},
 	}
 	rel := loadRelease(t, providerDescentRelease)

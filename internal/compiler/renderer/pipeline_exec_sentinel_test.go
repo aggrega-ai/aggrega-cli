@@ -24,7 +24,7 @@ func compatibleDescriber() stepDescriber {
 	return func(_ context.Context, _ types.PipelineStep) (wasm.PluginDescriptor, error) {
 		return wasm.PluginDescriptor{
 			AbiVersion:   wasm.ABIVersionV1Alpha1,
-			PluginType:   string(wasm.PluginTypeFRPStep),
+			PluginType:   string(wasm.PluginTypePipelineStep),
 			Capabilities: []string{"helm"},
 			Exports:      []wasm.PluginExport{{Name: "step", Operates: "patch", Scope: wasm.ScopeOwn}},
 		}, nil

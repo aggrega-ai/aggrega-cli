@@ -3,7 +3,7 @@ kind: Plugin
 metadata:
   name: sidecar-injector
   version: "1.0.0"
-  pluginType: frp_step
+  pluginType: pipeline-step
   description: Patch the consuming workload to add a companion sidecar container.
 spec:
   abiVersion: v1alpha1
