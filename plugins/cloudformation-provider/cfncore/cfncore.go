@@ -28,6 +28,7 @@ import (
 	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderctx"
+	"github.com/aggrega-ai/aggrega-cli/pkg/anchorcycle"
 	"github.com/awslabs/goformation/v7/intrinsics"
 	"go.yaml.in/yaml/v3"
 )
@@ -335,6 +336,13 @@ func decodeToValue(content []byte) (any, error) {
 	if err := yaml.Unmarshal(content, &root); err != nil {
 		return nil, fmt.Errorf("cloudformation-provider: parse fragment: %w", err)
 	}
+	// Parsing does not expand aliases, so a fragment whose anchor is aliased
+	// inside its own content parses cleanly here and only fails when nodeToValue
+	// follows the alias links. The refusal therefore sits between the parse and
+	// the walk. Depth alone is never refused: a deep fragment converts normally.
+	if anchor, found := anchorcycle.Find(&root); found {
+		return nil, fmt.Errorf("cloudformation-provider: parse fragment: %s", anchorcycle.Explain(anchor))
+	}
 	if root.Kind == 0 || len(root.Content) == 0 {
 		return nil, nil
 	}
@@ -344,6 +352,12 @@ func decodeToValue(content []byte) (any, error) {
 // nodeToValue converts one YAML node to a plain Go value, resolving aliases and
 // expanding a CloudFormation short-form intrinsic tag into its long-form object
 // spelling.
+//
+// It follows alias links without tracking where it has been, so it terminates
+// only on a tree whose anchors are free of recursion. decodeToValue establishes
+// that with anchorcycle.Find before calling; the check is not repeated here,
+// because a guarantee that has one home cannot drift out of agreement with
+// itself.
 func nodeToValue(n *yaml.Node) (any, error) {
 	if n.Kind == yaml.AliasNode {
 		if n.Alias == nil {

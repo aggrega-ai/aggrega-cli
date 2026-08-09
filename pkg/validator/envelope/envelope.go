@@ -28,6 +28,7 @@ import (
 
 	schemas "github.com/aggrega-ai/aggrega-schemas"
 
+	"github.com/aggrega-ai/aggrega-cli/pkg/anchorcycle"
 	aggerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	clischemas "github.com/aggrega-ai/aggrega-cli/pkg/schemas/jsonschema"
 	jsonvalidator "github.com/aggrega-ai/aggrega-cli/pkg/validator/jsonschema"
@@ -260,11 +261,9 @@ func ValidateBytes(kind Kind, data []byte, path string) (any, error) {
 		// failed — a document can fail that decode for its template keys and
 		// carry a recursive anchor as well, which would leave the anchor
 		// unreported if this checked the decode's message instead.
-		if anchor, found := recursiveAnchor(&node); found {
+		if anchor, found := anchorcycle.Find(&node); found {
 			return nil, &envelopeFailure{cause: fmt.Errorf(
-				"envelope: parse %s: anchor &%s is aliased by *%s inside its own content, so the "+
-					"document expands without end; point that alias at content declared outside "+
-					"&%s, or write the content out in full", path, anchor, anchor, anchor)}
+				"envelope: parse %s: %s", path, anchorcycle.Explain(anchor))}
 		}
 		instance = nodeToAny(&node)
 	}
@@ -350,62 +349,6 @@ func ValidateInstance(kind Kind, instance any) ([]jsonvalidator.Finding, error) 
 	return report.Findings, nil
 }
 
-// recursiveAnchor reports an anchor that is aliased somewhere inside its
-// own content, and whether one exists at all. Such a document denotes an
-// infinite tree: expanding the alias reproduces the anchor, which contains
-// the alias again, so no walk over the expanded form can terminate.
-//
-// It is the single place that decision is made. Callers run it once on a
-// freshly parsed tree, before handing that tree to anything that follows
-// alias links, which is why the walkers themselves carry no such check: a
-// second copy would agree with this one today and be the thing that
-// disagrees with it later.
-//
-// The walk is over the document's own nodes, following alias links as
-// edges, and it colours each node once it is finished. That is what keeps
-// it linear in the size of the text: a document may name one anchor from
-// very many places without any recursion at all, and its expanded form is
-// then exponentially larger than the text — so a check that walked the
-// expansion would exhaust the same resources it exists to protect. Only an
-// anchor reached while the walk is still inside it counts, which is the
-// difference between refusing recursion and refusing depth.
-func recursiveAnchor(root *yaml.Node) (string, bool) {
-	inside := map[*yaml.Node]bool{}
-	finished := map[*yaml.Node]bool{}
-
-	var walk func(*yaml.Node) (string, bool)
-	walk = func(n *yaml.Node) (string, bool) {
-		if n == nil || finished[n] {
-			return "", false
-		}
-		if inside[n] {
-			// Reached while still descending through it. The anchor is what
-			// the author has to break, so it is what gets named; an alias
-			// cannot resolve to an unanchored node, and the alias's own text
-			// is the same word, so the fallback is only ever a formality.
-			if n.Anchor != "" {
-				return n.Anchor, true
-			}
-			return n.Value, true
-		}
-		inside[n] = true
-		if n.Alias != nil {
-			if anchor, found := walk(n.Alias); found {
-				return anchor, true
-			}
-		}
-		for _, c := range n.Content {
-			if anchor, found := walk(c); found {
-				return anchor, true
-			}
-		}
-		delete(inside, n)
-		finished[n] = true
-		return "", false
-	}
-	return walk(root)
-}
-
 // nodeToAny converts a yaml.Node tree into the generic shape the
 // validator consumes. Mapping keys that are not scalars (template
 // expressions parsed as flow mappings) are represented by an indexed
@@ -414,7 +357,7 @@ func recursiveAnchor(root *yaml.Node) (string, bool) {
 //
 // It follows alias links without tracking where it has been, so it
 // terminates only on a tree whose anchors are free of recursion. Callers
-// establish that with recursiveAnchor before calling; the check is not
+// establish that with anchorcycle.Find before calling; the check is not
 // repeated here, because a guarantee that has one home cannot drift out of
 // agreement with itself.
 func nodeToAny(n *yaml.Node) any {

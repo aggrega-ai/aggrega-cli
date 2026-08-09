@@ -4,6 +4,7 @@
 package compactform
 
 import (
+	"github.com/aggrega-ai/aggrega-cli/pkg/anchorcycle"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"go.yaml.in/yaml/v3"
 )
@@ -65,6 +66,11 @@ func WithConsumerFile(path string) CompileOption {
 // byte-identical output across runs. Map-typed input nodes preserve
 // author order via yaml.Node's natural sequential representation.
 //
+// An input whose anchor is aliased inside its own content is refused,
+// naming that anchor: it describes an infinite tree rather than a schema,
+// so there is nothing to compile. Depth on its own is never a reason for
+// this refusal — a legitimately deep schema compiles normally.
+//
 // Errors are *CompileError values wrapping one of the package
 // sentinels (ErrUnknownKeyword / ErrAmbiguousDispatch /
 // ErrEscapeContentInvalid / ErrConstraintTypeMismatch /
@@ -75,6 +81,18 @@ func Compile(input *yaml.Node, opts ...CompileOption) (Schema, error) {
 		return nil, &CompileError{
 			Message: "input is nil",
 			Err:     ErrEscapeContentInvalid(),
+		}
+	}
+
+	// The tree arrives from a parse this package did not perform, and a
+	// recursive anchor survives a parse untouched — it only bites when
+	// something follows the alias links, which is exactly what compileNode
+	// does. So the refusal sits here, on the near side of the walk.
+	if anchor, found := anchorcycle.Find(input); found {
+		return nil, &CompileError{
+			Line:    nodeLine(input),
+			Message: anchorcycle.Explain(anchor),
+			Err:     ErrCircularRef(),
 		}
 	}
 
@@ -108,6 +126,14 @@ func Compile(input *yaml.Node, opts ...CompileOption) (Schema, error) {
 // YAML-path-like location for error provenance (e.g.
 // "spec.schema.values.port"). The ctx argument carries the cross-document
 // expansion state; a nil ctx disables cross-document $ref expansion.
+//
+// It follows alias links without tracking where it has been, so it
+// terminates only on a tree whose anchors are free of recursion. Every tree
+// that reaches it has been checked with anchorcycle.Find — at Compile for
+// the caller's input, and at the escape emitter for a body parsed out of a
+// block scalar, which is a tree Compile never saw. The check is not repeated
+// here, because a guarantee that has one home cannot drift out of agreement
+// with itself.
 func compileNode(node *yaml.Node, path string, ctx *compileCtx) (any, error) {
 	if node == nil {
 		return nil, nil

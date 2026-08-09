@@ -77,15 +77,34 @@ var errUnresolvedSchemaLibraryRef = cerrors.Register("compactform/unresolved-sch
 	Message: "compactform: cross-document $ref target not found",
 })
 
-// ErrCircularRef is the $ref-surface name for a cross-document expansion
-// cycle. It is the shared refcycle.ErrCycle sentinel so the `$ref` and
-// `$import` surfaces report the same cycle identity through one detector;
-// the compactform expander maintains a resolution-stack of in-flight
-// canonical keys during recursive expansion and surfaces this error with
-// the chain named in the message (e.g.
+// ErrCircularRef indicates a schema that cannot be expanded, because
+// expanding it reproduces what the expansion started from. Two conditions
+// report through it. They are detected by different means, and the message
+// is what tells them apart: one names a reference chain, the other names an
+// anchor.
+//
+// The first is a cross-document expansion cycle on the `$ref` and `$import`
+// surfaces. The compactform expander maintains a resolution-stack of
+// in-flight canonical keys during recursive expansion and surfaces this
+// error with the chain named in the message (e.g.
 // "A#/schemas/X -> B#/schemas/Y -> A#/schemas/X"). Deeper cycle graphs
 // across multi-hop reference chains are detected by the same stack
-// discipline. Match with errors.Is(err, ErrCircularRef()) or, equivalently,
+// discipline.
+//
+// The second is a YAML anchor aliased somewhere inside its own content,
+// which denotes an infinite tree within a single document. It is detected by
+// node identity inside one parsed document rather than by canonical key
+// across documents, and the rule and its message belong to pkg/anchorcycle
+// — see that package for why the two detectors are deliberately not
+// unified. Compile refuses it on the tree it is handed; the `$jsonschema`
+// escape refuses it again on an escape body, which is a block-scalar string
+// when Compile inspects its input and becomes a node tree only one parse
+// later.
+//
+// It is the shared refcycle.ErrCycle sentinel, so every surface above
+// reports one cycle identity rather than teaching an author several names
+// for "this expands without end". Match with
+// errors.Is(err, ErrCircularRef()) or, equivalently,
 // errors.Is(err, refcycle.ErrCycle()).
 func ErrCircularRef() error { return refcycle.ErrCycle() }
 
@@ -124,9 +143,11 @@ type CompileError struct {
 	// Message is the human-readable description of the failure.
 	Message string
 
-	// Err is the underlying sentinel (one of ErrUnknownKeyword /
+	// Err is the underlying sentinel — one of ErrUnknownKeyword /
 	// ErrAmbiguousDispatch / ErrEscapeContentInvalid /
-	// ErrConstraintTypeMismatch / ErrReferenceUnresolvable).
+	// ErrConstraintTypeMismatch / ErrReferenceUnresolvable /
+	// ErrUnresolvedSchemaLibraryRef / ErrCircularRef / ErrHostInLibraryRef,
+	// which is the same set Compile documents.
 	Err error
 }
 

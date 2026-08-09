@@ -4,6 +4,7 @@
 package compactform
 
 import (
+	"github.com/aggrega-ai/aggrega-cli/pkg/anchorcycle"
 	"github.com/aggrega-ai/aggrega-cli/pkg/refcycle"
 	"go.yaml.in/yaml/v3"
 )
@@ -450,6 +451,19 @@ func emitEscape(node *yaml.Node, path string, ctx *compileCtx) (Schema, error) {
 					Keyword: "$jsonschema",
 					Message: "escape content does not parse as YAML: " + err.Error(),
 					Err:     ErrEscapeContentInvalid(),
+				}
+			}
+			// A fresh tree the entry check never saw: it was a string when
+			// Compile inspected its input, and its anchors only become anchors
+			// on the parse above. Recursion in it is therefore refused here
+			// rather than there.
+			if anchor, found := anchorcycle.Find(&inner); found {
+				return nil, &CompileError{
+					Path:    path,
+					Line:    nodeLine(v),
+					Keyword: "$jsonschema",
+					Message: anchorcycle.Explain(anchor),
+					Err:     ErrCircularRef(),
 				}
 			}
 			if inner.Kind == yaml.DocumentNode && len(inner.Content) > 0 {

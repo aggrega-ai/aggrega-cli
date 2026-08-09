@@ -48,7 +48,12 @@ func ValidatePluginProviderSchemas(
 // Empty (or whitespace-only) bodies pass without inspection. Non-empty
 // bodies parse as YAML and pass through pkg/compactform; any error from
 // either stage wraps into a CatalogError citing the entity kind, the
-// entity name, the field name, and the source file.
+// entity name, the field name, the source file, and the underlying
+// diagnostic. The cause is interpolated into the message rather than only
+// wrapped for errors.Is, because it carries the whole of what the author
+// must act on — which anchor closes a cycle, which line does not parse —
+// and a reader of the rendered message is the only consumer that can act
+// on it.
 func validateProviderSchemaField(entityKind, fieldName, entityName, filePath, body string) error {
 	if strings.TrimSpace(body) == "" {
 		return nil
@@ -58,18 +63,18 @@ func validateProviderSchemaField(entityKind, fieldName, entityName, filePath, bo
 		return cerrors.Wrap(err,
 			cerrors.CatalogError,
 			cerrors.SourceLocation{File: filePath},
-			fmt.Sprintf("%s %q: spec.%s body is not valid YAML. "+
+			fmt.Sprintf("%s %q: spec.%s body is not valid YAML: %s. "+
 				"Authored as JSON Schema 2020-12; "+
 				"see vocabulary/compact-form-authoring.md.",
-				entityKind, entityName, fieldName))
+				entityKind, entityName, fieldName, err.Error()))
 	}
 	if _, err := compactform.Compile(&bodyNode, compactform.WithConsumerFile(filePath)); err != nil {
 		return cerrors.Wrap(err,
 			cerrors.CatalogError,
 			cerrors.SourceLocation{File: filePath},
-			fmt.Sprintf("%s %q: spec.%s body failed to compile to JSON Schema 2020-12. "+
+			fmt.Sprintf("%s %q: spec.%s body failed to compile to JSON Schema 2020-12: %s. "+
 				"See vocabulary/compact-form-authoring.md for the authoring surface.",
-				entityKind, entityName, fieldName))
+				entityKind, entityName, fieldName, err.Error()))
 	}
 	return nil
 }
