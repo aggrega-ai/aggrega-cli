@@ -9,6 +9,7 @@ import (
 
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
+	"github.com/aggrega-ai/aggrega-cli/pkg/validator/envelope"
 )
 
 // FeatureRecipe-validation sentinels. FeatureRecipes carry the same three
@@ -45,47 +46,13 @@ var errFeatureRecipeEvalProviderConstraint = cerrors.Register("validator/feature
 	Message: "featurerecipe eval-provider constraint: render input-kind fields are forbidden when provider is eval",
 })
 
-// FeatureRecipeValidationError carries the structured detail for a load-time
-// FeatureRecipe validation failure. The Error() output is the
-// CATALOG_ERROR-prefixed message format shared with the Recipe validator so
-// FeatureRecipe and Recipe load errors look identical to the operator.
-type FeatureRecipeValidationError struct {
-	Path        string
-	Name        string
-	Version     string
-	Rule        string
-	Description string
-	Detail      string
-	Err         error
-}
-
-// Error formats the validation failure as a CATALOG_ERROR-prefixed message.
-func (e *FeatureRecipeValidationError) Error() string {
-	header := fmt.Sprintf("CATALOG_ERROR: FeatureRecipe %s (%s:%s) violates rule %s:",
-		e.Path, e.Name, e.Version, e.Rule)
-	out := header + "\n  " + e.Description
-	if e.Detail != "" {
-		out += "\n  " + e.Detail
-	}
-	return out
-}
-
-// Unwrap returns the sentinel for errors.Is matching.
-func (e *FeatureRecipeValidationError) Unwrap() error { return e.Err }
-
-// ToCompilerError converts the structured error into a *cerrors.CompilerError
-// carrying CategoryCatalogError — FeatureRecipe content is catalog content.
-func (e *FeatureRecipeValidationError) ToCompilerError() *cerrors.CompilerError {
-	msg := e.Description
-	if e.Detail != "" {
-		msg = msg + " — " + e.Detail
-	}
-	return cerrors.Wrap(e, cerrors.CatalogError, cerrors.SourceLocation{File: e.Path}, msg)
-}
+// Both rules here report through NewShapeRuleError, so a FeatureRecipe failure
+// is a *ValidationError carrying the FeatureRecipe kind — the same shape a
+// Recipe failure takes, so the two read identically to the operator.
 
 // ValidateFeatureRecipe enforces the FeatureRecipe shape rules at load time.
 // Called from catalog loading immediately after yaml.Unmarshal succeeds.
-// Returns a *FeatureRecipeValidationError (or nil on pass).
+// Returns a *ValidationError against the FeatureRecipe kind (or nil on pass).
 //
 // Two rules: the eval-provider carve-out (reject render input-kind fields —
 // eval has no rendering surface) and rule 1 (valuesMapping requires source).
@@ -113,15 +80,16 @@ func validateFeatureRecipeRule1(fr *types.FeatureRecipe, sourcePath string) erro
 	if !sourceIsEmpty(fr.Spec.Source) {
 		return nil
 	}
-	return &FeatureRecipeValidationError{
-		Path:        sourcePath,
-		Name:        fr.Metadata.Name,
-		Version:     fr.Metadata.Version,
-		Rule:        "1",
-		Description: "valuesMapping requires source",
-		Detail:      "declare a source: pointer alongside valuesMapping (or remove the valuesMapping if no overlay is intended)",
-		Err:         ErrFeatureRecipeRule1(),
-	}
+	return NewShapeRuleError(ShapeRuleViolation{
+		Kind:       envelope.KindFeatureRecipe,
+		Name:       fr.Metadata.Name,
+		Version:    fr.Metadata.Version,
+		Path:       sourcePath,
+		Rule:       "1",
+		Constraint: "valuesMapping requires source",
+		Suggestion: "declare a source: pointer alongside valuesMapping (or remove the valuesMapping if no overlay is intended)",
+		Err:        ErrFeatureRecipeRule1(),
+	})
 }
 
 // validateFeatureRecipeEvalProvider enforces the eval-provider constraint:
@@ -145,13 +113,14 @@ func validateFeatureRecipeEvalProvider(fr *types.FeatureRecipe, sourcePath strin
 	if len(declared) == 0 {
 		return nil
 	}
-	return &FeatureRecipeValidationError{
-		Path:        sourcePath,
-		Name:        fr.Metadata.Name,
-		Version:     fr.Metadata.Version,
-		Rule:        "eval",
-		Description: "the eval provider executes formatting in-memory and forbids render input-kind fields",
-		Detail:      fmt.Sprintf("forbidden fields declared: %s", strings.Join(declared, ", ")),
-		Err:         ErrFeatureRecipeEvalProviderConstraint(),
-	}
+	return NewShapeRuleError(ShapeRuleViolation{
+		Kind:       envelope.KindFeatureRecipe,
+		Name:       fr.Metadata.Name,
+		Version:    fr.Metadata.Version,
+		Path:       sourcePath,
+		Rule:       "eval",
+		Constraint: "the eval provider executes formatting in-memory and forbids render input-kind fields",
+		Suggestion: fmt.Sprintf("forbidden fields declared: %s", strings.Join(declared, ", ")),
+		Err:        ErrFeatureRecipeEvalProviderConstraint(),
+	})
 }

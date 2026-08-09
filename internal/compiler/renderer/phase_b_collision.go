@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator"
+	"github.com/aggrega-ai/aggrega-cli/pkg/validator/envelope"
 )
 
 // detectFilenameCollisions walks state.EmittedFiles and groups by Name.
@@ -19,8 +20,8 @@ import (
 // are caught by rule 6 (load-time) or by engine-internal logic.
 //
 // Findings are sorted alphabetically by filename for output stability.
-// Multiple cross-origin collisions in one Recipe produce one
-// RecipeValidationError carrying every collision in its Detail line.
+// Multiple cross-origin collisions in one Recipe produce one validation
+// failure carrying every collision.
 func detectFilenameCollisions(state *PhaseBState) error {
 	if state == nil || len(state.EmittedFiles) == 0 {
 		return nil
@@ -75,13 +76,14 @@ func detectFilenameCollisions(state *PhaseBState) error {
 			fmt.Sprintf("%s declared by: %s", c.filename, strings.Join(c.origins, ", ")))
 	}
 
-	return &validator.RecipeValidationError{
-		Path:        state.RecipePath,
-		Name:        state.RecipeName,
-		Version:     state.RecipeVersion,
-		Rule:        "7",
-		Description: "filename collision across input-kind origins at emission",
-		Detail:      strings.Join(details, "; "),
-		Err:         validator.ErrRecipeRule7(),
-	}
+	return validator.NewShapeRuleError(validator.ShapeRuleViolation{
+		Kind:       envelope.KindRecipe,
+		Name:       state.RecipeName,
+		Version:    state.RecipeVersion,
+		Path:       state.RecipePath,
+		Rule:       "7",
+		Constraint: "filename collision across input-kind origins at emission",
+		Suggestion: strings.Join(details, "; "),
+		Err:        validator.ErrRecipeRule7(),
+	})
 }

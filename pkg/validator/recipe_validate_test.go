@@ -202,11 +202,11 @@ func TestValidateRecipe_Eval_RejectsArtifacts(t *testing.T) {
 
 // ----- Error message format consistency -----
 
-func TestValidateRecipe_ErrorMessage_CATALOG_ERRORPrefixedAndStructured(t *testing.T) {
+func TestValidateRecipe_ErrorMessage_NamesEntityRuleAndLocation(t *testing.T) {
 	t.Parallel()
 	// Use rule 5 to trip the validator (rule 1 isn't currently active on this path).
-	// Rule 5's CATALOG_ERROR shape is identical to rule 1's; this test
-	// asserts the format contract independent of which rule fires.
+	// Every Recipe shape rule reports through one shape; this test asserts the
+	// format contract independent of which rule fires.
 	r := newRecipe("helm")
 	// Bare Recipe (no input kinds) → rule 5 fires.
 	err := validator.ValidateRecipe(r, tFile)
@@ -214,8 +214,10 @@ func TestValidateRecipe_ErrorMessage_CATALOG_ERRORPrefixedAndStructured(t *testi
 		t.Fatal("expected error")
 	}
 	msg := err.Error()
-	if !strings.HasPrefix(msg, "CATALOG_ERROR: Recipe ") {
-		t.Errorf("message must start with CATALOG_ERROR prefix, got: %q", msg)
+	// The entity reference opens the message and is built from the kind the
+	// failure carries, never parsed back out of the rendered text.
+	if !strings.HasPrefix(msg, "Recipe ") {
+		t.Errorf("message must open with the entity reference, got: %q", msg)
 	}
 	if !strings.Contains(msg, tFile) {
 		t.Errorf("message must contain file path: %q", msg)
@@ -295,11 +297,11 @@ func TestValidateRecipe_OutputLabels_ThreadsThroughCompilerError(t *testing.T) {
 	t.Parallel()
 	r := recipeWithLabels("helm", map[string]string{"aggrega.ai/foo": "bar"})
 	err := validator.ValidateRecipe(r, tFile)
-	var rve *validator.RecipeValidationError
-	if !errors.As(err, &rve) {
-		t.Fatalf("expected *RecipeValidationError, got %v", err)
+	var ve *validator.ValidationError
+	if !errors.As(err, &ve) {
+		t.Fatalf("expected *validator.ValidationError, got %v", err)
 	}
-	if !errors.Is(rve.ToCompilerError(), validator.ErrRecipeOutputLabelReservedNamespace()) {
+	if !errors.Is(ve.ToCompilerError(), validator.ErrRecipeOutputLabelReservedNamespace()) {
 		t.Fatalf("sentinel should thread through the converted CompilerError")
 	}
 }

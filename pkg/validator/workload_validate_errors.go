@@ -47,10 +47,15 @@ var errSlotNotReferenceable = cerrors.Register("validator/slot-not-referenceable
 })
 
 // WorkloadValidationError carries the structured detail for a Workload
-// validation failure (schema validation or featuresSchema cross-check). The
-// Error() output uses the same CATALOG_ERROR-prefixed format as
-// RecipeValidationError so operator-facing messages are uniform across
-// load-time validation surfaces.
+// validation failure (schema validation or featuresSchema cross-check).
+//
+// It is a GROUPED report rather than a singular failure: one detected
+// condition yields one error carrying every offending field, so an author
+// reading it sees the whole Workload's faults at once instead of fixing them
+// one build at a time. That cardinality is why it keeps a shape of its own
+// rather than reporting through ValidationError, which carries exactly one
+// detail. Its Error output opens with the entity reference and leaves the
+// category to the envelope, so a rendered diagnostic names the category once.
 type WorkloadValidationError struct {
 	// Path is the Recipe file path the Workload was loaded from. Empty when
 	// the Workload was constructed programmatically (tests, synthesizers).
@@ -82,11 +87,21 @@ type WorkloadValidationFinding struct {
 	Suggestion string // optional fix hint
 }
 
-// Error formats the validation failure as a CATALOG_ERROR-prefixed message.
-// Each finding renders as an indented detail line so a multi-failure error
-// reads as a single grouped report rather than N separate errors.
+// Error formats the validation failure. Each finding renders as an indented
+// detail line so a multi-failure error reads as a single grouped report rather
+// than N separate errors.
+//
+// It does not name its own category. The category is a rendering concern the
+// diagnostic envelope owns and states once, as its leading tag; a message that
+// also opened with the category word printed it twice in one diagnostic. The
+// deeper reason the two must stay identical is that the chain walk suppresses a
+// terminal frame only when the text it would add is already present — so an
+// Error output that is not exactly what the envelope's message was built from
+// renders a second time as a "caused by:" continuation, repeating the whole
+// report. One rendering feeding both surfaces is what keeps that from
+// happening, rather than agreement that has to be maintained.
 func (e *WorkloadValidationError) Error() string {
-	header := "CATALOG_ERROR: Workload"
+	header := "Workload"
 	if e.RecipeName != "" || e.RecipeVersion != "" {
 		header += fmt.Sprintf(" (in Recipe %s:%s)", e.RecipeName, e.RecipeVersion)
 	}
@@ -124,8 +139,8 @@ func (e *WorkloadValidationError) Unwrap() error {
 // validation failures are catalog-domain — the Recipe author wrote the
 // workload block; the Aggregate / Release didn't author it. The Source
 // location maps Path (the Recipe file) into SourceLocation.File. The
-// Message preserves the multi-finding shape from Error() so operator-
-// facing presentation is consistent regardless of conversion path.
+// Message is exactly the Error output, so operator-facing presentation is
+// consistent regardless of conversion path and the diagnostic is said once.
 //
 // Inner error chain preserved via cerrors.Wrap so errors.Is against
 // ErrWorkloadValidation / ErrWorkloadFeaturesSchema continues to match.

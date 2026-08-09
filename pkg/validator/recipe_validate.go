@@ -9,12 +9,13 @@ import (
 	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
+	"github.com/aggrega-ai/aggrega-cli/pkg/validator/envelope"
 )
 
 // ValidateRecipe enforces the Recipe shape rules at load time. Called from
 // catalog loading immediately after yaml.Unmarshal succeeds, before the
-// Recipe is admitted to the catalog map. Returns a *RecipeValidationError
-// (or nil on pass).
+// Recipe is admitted to the catalog map. Returns a *ValidationError against
+// the Recipe kind (or nil on pass).
 //
 // Rules enforced here: 1, 5 (chapter 16), plus the eval-provider constraint.
 // The workload-requires-provider-workloadSchema constraint is enforced at
@@ -76,15 +77,16 @@ func validateRecipeEvalProvider(r *types.Recipe, sourcePath string) error {
 	if len(declared) == 0 {
 		return nil
 	}
-	return &RecipeValidationError{
-		Path:        sourcePath,
-		Name:        r.Metadata.Name,
-		Version:     r.Metadata.Version,
-		Rule:        "eval",
-		Description: "the eval provider executes formatting in-memory and forbids input-kind fields",
-		Detail:      fmt.Sprintf("forbidden fields declared: %s", strings.Join(declared, ", ")),
-		Err:         ErrRecipeEvalProviderConstraint(),
-	}
+	return NewShapeRuleError(ShapeRuleViolation{
+		Kind:       envelope.KindRecipe,
+		Name:       r.Metadata.Name,
+		Version:    r.Metadata.Version,
+		Path:       sourcePath,
+		Rule:       "eval",
+		Constraint: "the eval provider executes formatting in-memory and forbids input-kind fields",
+		Suggestion: fmt.Sprintf("forbidden fields declared: %s", strings.Join(declared, ", ")),
+		Err:        ErrRecipeEvalProviderConstraint(),
+	})
 }
 
 // validateRecipeOutputLabels rejects any spec.outputLabels key under a
@@ -108,17 +110,18 @@ func validateRecipeOutputLabels(r *types.Recipe, sourcePath string) error {
 	for _, key := range keys {
 		if strings.HasPrefix(key, types.ReservedLabelPrefixAggregaAI) ||
 			strings.HasPrefix(key, types.ReservedLabelPrefixK8sRecommended) {
-			return &RecipeValidationError{
-				Path:        sourcePath,
-				Name:        r.Metadata.Name,
-				Version:     r.Metadata.Version,
-				Rule:        "output-labels",
-				Description: "outputLabels may not use a reserved namespace",
-				Detail: fmt.Sprintf(
+			return NewShapeRuleError(ShapeRuleViolation{
+				Kind:       envelope.KindRecipe,
+				Name:       r.Metadata.Name,
+				Version:    r.Metadata.Version,
+				Path:       sourcePath,
+				Rule:       "output-labels",
+				Constraint: "outputLabels may not use a reserved namespace",
+				Suggestion: fmt.Sprintf(
 					"key %q uses a reserved namespace (%q and %q are reserved for platform provenance)",
 					key, types.ReservedLabelPrefixAggregaAI, types.ReservedLabelPrefixK8sRecommended),
 				Err: ErrRecipeOutputLabelReservedNamespace(),
-			}
+			})
 		}
 	}
 	return nil
@@ -136,15 +139,16 @@ func validateRecipeRule1(r *types.Recipe, sourcePath string) error {
 	if !sourceIsEmpty(r.Spec.Source) {
 		return nil
 	}
-	return &RecipeValidationError{
-		Path:        sourcePath,
-		Name:        r.Metadata.Name,
-		Version:     r.Metadata.Version,
-		Rule:        "1",
-		Description: "valuesMapping requires source",
-		Detail:      "declare a source: pointer alongside valuesMapping (or remove the valuesMapping if no overlay is intended)",
-		Err:         ErrRecipeRule1(),
-	}
+	return NewShapeRuleError(ShapeRuleViolation{
+		Kind:       envelope.KindRecipe,
+		Name:       r.Metadata.Name,
+		Version:    r.Metadata.Version,
+		Path:       sourcePath,
+		Rule:       "1",
+		Constraint: "valuesMapping requires source",
+		Suggestion: "declare a source: pointer alongside valuesMapping (or remove the valuesMapping if no overlay is intended)",
+		Err:        ErrRecipeRule1(),
+	})
 }
 
 // validateRecipeRule5: at least one input kind must be present.
@@ -166,15 +170,16 @@ func validateRecipeRule5(r *types.Recipe, sourcePath string) error {
 	if r.Spec.Artifacts.Len() > 0 {
 		return nil
 	}
-	return &RecipeValidationError{
-		Path:        sourcePath,
-		Name:        r.Metadata.Name,
-		Version:     r.Metadata.Version,
-		Rule:        "5",
-		Description: "at least one input kind must be present",
-		Detail:      "declare one of: source (with valuesMapping), workload, artifacts",
-		Err:         ErrRecipeRule5(),
-	}
+	return NewShapeRuleError(ShapeRuleViolation{
+		Kind:       envelope.KindRecipe,
+		Name:       r.Metadata.Name,
+		Version:    r.Metadata.Version,
+		Path:       sourcePath,
+		Rule:       "5",
+		Constraint: "at least one input kind must be present",
+		Suggestion: "declare one of: source (with valuesMapping), workload, artifacts",
+		Err:        ErrRecipeRule5(),
+	})
 }
 
 // sourceIsEmpty reports whether the Recipe's Spec.Source field carries no

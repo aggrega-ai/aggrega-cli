@@ -94,10 +94,6 @@ func formatCompilerError(err error) string {
 	if stderrors.As(err, &re) && re != nil {
 		return formatCompilerError(re.ToCompilerError())
 	}
-	var rve *validator.RecipeValidationError
-	if stderrors.As(err, &rve) && rve != nil {
-		return formatCompilerError(rve.ToCompilerError())
-	}
 	var wve *validator.WorkloadValidationError
 	if stderrors.As(err, &wve) && wve != nil {
 		return formatCompilerError(wve.ToCompilerError())

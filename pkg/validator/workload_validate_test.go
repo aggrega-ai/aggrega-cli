@@ -145,8 +145,13 @@ func TestValidateWorkload_ErrorMessageFormat(t *testing.T) {
 		t.Fatal("expected error")
 	}
 	msg := err.Error()
-	if !strings.HasPrefix(msg, "CATALOG_ERROR: Workload") {
-		t.Errorf("must start with CATALOG_ERROR prefix, got: %q", msg)
+	// The category is the envelope's to state, once, as its own tag; the
+	// failure's own text names the entity and leaves the category alone.
+	if !strings.HasPrefix(msg, "Workload") {
+		t.Errorf("must open with the entity reference, got: %q", msg)
+	}
+	if strings.Contains(msg, "CATALOG_ERROR") {
+		t.Errorf("must not name its own category, got: %q", msg)
 	}
 	if !strings.Contains(msg, "test:1.0.0") {
 		t.Errorf("must contain recipe name:version, got: %q", msg)

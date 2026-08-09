@@ -14,39 +14,78 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator/envelope"
 )
 
-// TestRecipeValidationError_ToCompilerError_RoutesToCatalog verifies that
-// every RecipeValidationError converts to a CompilerError with
-// CatalogError category. Recipe rule violations are always catalog-domain.
-func TestRecipeValidationError_ToCompilerError_RoutesToCatalog(t *testing.T) {
-	rve := &validator.RecipeValidationError{
-		Path:        "/path/to/recipe.yaml",
-		Name:        "my-recipe",
-		Version:     "1.0.0",
-		Rule:        "1",
-		Description: "valuesMapping requires source",
-		Detail:      "Recipe declares valuesMapping but no source field",
-		Err:         validator.ErrRecipeRule1(),
+// TestShapeRuleError_RoutesToCatalog verifies that a shape-rule failure on
+// either catalog kind that carries them converts to a CompilerError with the
+// CatalogError category, and that the rule identifier survives the fold into
+// the constraint text — it is the only thing telling an author WHICH rule
+// failed.
+func TestShapeRuleError_RoutesToCatalog(t *testing.T) {
+	for _, tc := range []struct {
+		kind          envelope.Kind
+		wantReference string
+		sentinel      error
+	}{
+		{envelope.KindRecipe, "Recipe my-recipe:1.0.0", validator.ErrRecipeRule1()},
+		{envelope.KindFeatureRecipe, "FeatureRecipe my-recipe:1.0.0", validator.ErrFeatureRecipeRule1()},
+	} {
+		t.Run(string(tc.kind), func(t *testing.T) {
+			err := validator.NewShapeRuleError(validator.ShapeRuleViolation{
+				Kind:       tc.kind,
+				Name:       "my-recipe",
+				Version:    "1.0.0",
+				Path:       "/path/to/recipe.yaml",
+				Rule:       "1",
+				Constraint: "valuesMapping requires source",
+				Suggestion: "declare a source: pointer alongside valuesMapping",
+				Err:        tc.sentinel,
+			})
+			ce := err.ToCompilerError()
+			if ce == nil {
+				t.Fatal("ToCompilerError returned nil")
+			}
+			if ce.Category != cerrors.CatalogError {
+				t.Errorf("Category = %v, want %v", ce.Category, cerrors.CatalogError)
+			}
+			if ce.Source.File != "/path/to/recipe.yaml" {
+				t.Errorf("Source.File = %q, want %q", ce.Source.File, "/path/to/recipe.yaml")
+			}
+			for _, want := range []string{
+				tc.wantReference,
+				"rule 1: valuesMapping requires source",
+				"declare a source: pointer alongside valuesMapping",
+			} {
+				if !strings.Contains(ce.Message, want) {
+					t.Errorf("Message missing %q: %q", want, ce.Message)
+				}
+			}
+			// Inner chain preserved.
+			if !stderrors.Is(ce, tc.sentinel) {
+				t.Errorf("errors.Is(ce, %v) = false, want true", tc.sentinel)
+			}
+			// The envelope's message and the failure's own text are one string,
+			// which is what keeps a rendered diagnostic from being said twice.
+			if ce.Message != err.Error() {
+				t.Errorf("envelope message %q differs from Error() %q", ce.Message, err.Error())
+			}
+		})
 	}
-	ce := rve.ToCompilerError()
-	if ce == nil {
-		t.Fatal("ToCompilerError returned nil")
+}
+
+// TestShapeRuleError_OmitsAnAbsentRuleAndVersion verifies the two optional
+// parts render away cleanly rather than leaving a dangling separator.
+func TestShapeRuleError_OmitsAnAbsentRuleAndVersion(t *testing.T) {
+	err := validator.NewShapeRuleError(validator.ShapeRuleViolation{
+		Kind:       envelope.KindRecipe,
+		Name:       "my-recipe",
+		Path:       "/path/to/recipe.yaml",
+		Constraint: "valuesMapping requires source",
+	})
+	msg := err.Error()
+	if !strings.HasPrefix(msg, "Recipe my-recipe:") {
+		t.Errorf("an absent version should leave no trailing separator: %q", msg)
 	}
-	if ce.Category != cerrors.CatalogError {
-		t.Errorf("Category = %v, want %v", ce.Category, cerrors.CatalogError)
-	}
-	if ce.Source.File != "/path/to/recipe.yaml" {
-		t.Errorf("Source.File = %q, want %q", ce.Source.File, "/path/to/recipe.yaml")
-	}
-	// Description + Detail composed into Message.
-	if !strings.Contains(ce.Message, "valuesMapping requires source") {
-		t.Errorf("Message missing Description: %q", ce.Message)
-	}
-	if !strings.Contains(ce.Message, "Recipe declares valuesMapping") {
-		t.Errorf("Message missing Detail: %q", ce.Message)
-	}
-	// Inner chain preserved.
-	if !stderrors.Is(ce, validator.ErrRecipeRule1()) {
-		t.Errorf("errors.Is(ce, ErrRecipeRule1) = false, want true")
+	if strings.Contains(msg, "rule :") {
+		t.Errorf("an absent rule identifier should leave no empty rule token: %q", msg)
 	}
 }
 

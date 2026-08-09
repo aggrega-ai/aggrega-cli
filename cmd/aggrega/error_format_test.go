@@ -12,6 +12,7 @@ import (
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator"
+	"github.com/aggrega-ai/aggrega-cli/pkg/validator/envelope"
 )
 
 // TestFormatCompilerError_RichShape verifies the formatter renders the
@@ -104,25 +105,93 @@ func TestFormatCompilerError_OpsCategory_RendersViaResolverError(t *testing.T) {
 	}
 }
 
-// TestFormatCompilerError_CatalogCategory_RendersViaRecipeValidationError
-// verifies CatalogError renders correctly for a RecipeValidationError.
-// Exercises the second structured-error detection branch.
-func TestFormatCompilerError_CatalogCategory_RendersViaRecipeValidationError(t *testing.T) {
+// TestFormatCompilerError_CatalogCategory_RendersRecipeShapeRule verifies a
+// Recipe shape-rule failure renders under the catalog category, naming the
+// file, the rule and what the rule requires.
+//
+// It also pins that the diagnostic is said ONCE. A failure whose own text is
+// not the text the envelope's message was built from renders a second time as
+// a "caused by:" continuation, because the chain walk cannot tell a restatement
+// from a new frame. Reporting through one shape is what keeps the two strings
+// equal, so the count is the thing worth asserting rather than the absence of
+// any particular marker.
+func TestFormatCompilerError_CatalogCategory_RendersRecipeShapeRule(t *testing.T) {
 	t.Parallel()
-	rve := &validator.RecipeValidationError{
-		Path:        "/path/to/recipe.yaml",
-		Name:        "my-recipe",
-		Version:     "1.0.0",
-		Rule:        "1",
-		Description: "valuesMapping requires source",
-		Err:         validator.ErrRecipeRule1(),
-	}
+	rve := validator.NewShapeRuleError(validator.ShapeRuleViolation{
+		Kind:       envelope.KindRecipe,
+		Name:       "my-recipe",
+		Version:    "1.0.0",
+		Path:       "/path/to/recipe.yaml",
+		Rule:       "1",
+		Constraint: "valuesMapping requires source",
+		Err:        validator.ErrRecipeRule1(),
+	})
 	got := formatCompilerError(rve)
 	for _, want := range []string{
 		"[CATALOG_ERROR]",
 		"/path/to/recipe.yaml",
-		"valuesMapping requires source",
+		"rule 1: valuesMapping requires source",
+		"Recipe my-recipe:1.0.0",
 	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("output missing %q\n--- got ---\n%s", want, got)
+		}
+	}
+	if n := strings.Count(got, "valuesMapping requires source"); n != 1 {
+		t.Errorf("diagnostic rendered %d times, want exactly 1\n--- got ---\n%s", n, got)
+	}
+}
+
+// TestFormatCompilerError_CatalogCategory_RendersFeatureRecipeShapeRule covers
+// the FeatureRecipe half of the same path. Both kinds report through one shape,
+// so both reach the category tag; neither falls through to a bare string.
+func TestFormatCompilerError_CatalogCategory_RendersFeatureRecipeShapeRule(t *testing.T) {
+	t.Parallel()
+	fre := validator.NewShapeRuleError(validator.ShapeRuleViolation{
+		Kind:       envelope.KindFeatureRecipe,
+		Name:       "my-featurerecipe",
+		Version:    "1.0.0",
+		Path:       "/path/to/featurerecipe.yaml",
+		Rule:       "1",
+		Constraint: "valuesMapping requires source",
+		Err:        validator.ErrFeatureRecipeRule1(),
+	})
+	got := formatCompilerError(fre)
+	for _, want := range []string{
+		"[CATALOG_ERROR]",
+		"/path/to/featurerecipe.yaml",
+		"FeatureRecipe my-featurerecipe:1.0.0",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("output missing %q\n--- got ---\n%s", want, got)
+		}
+	}
+	if n := strings.Count(got, "valuesMapping requires source"); n != 1 {
+		t.Errorf("diagnostic rendered %d times, want exactly 1\n--- got ---\n%s", n, got)
+	}
+}
+
+// TestFormatCompilerError_WorkloadValidation_CategorySaidOnce pins that the
+// grouped Workload report names its category exactly once. The envelope carries
+// the category as its own bracketed tag, so a message that also opened with the
+// category word printed it twice in one diagnostic.
+func TestFormatCompilerError_WorkloadValidation_CategorySaidOnce(t *testing.T) {
+	t.Parallel()
+	wve := &validator.WorkloadValidationError{
+		Path:          "/path/to/recipe.yaml",
+		RecipeName:    "my-recipe",
+		RecipeVersion: "1.0.0",
+		Stage:         "schema",
+		Findings: []validator.WorkloadValidationFinding{
+			{FieldPath: ".containers.main.image", Constraint: "required field missing"},
+		},
+		Err: validator.ErrWorkloadValidation(),
+	}
+	got := formatCompilerError(wve)
+	if n := strings.Count(got, "CATALOG_ERROR"); n != 1 {
+		t.Errorf("category named %d times, want exactly 1\n--- got ---\n%s", n, got)
+	}
+	for _, want := range []string{"[CATALOG_ERROR]", ".containers.main.image", "required field missing"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("output missing %q\n--- got ---\n%s", want, got)
 		}
@@ -200,13 +269,19 @@ func TestFormatCompilerError_ErrorsJoin_RendersAll(t *testing.T) {
 
 // TestFormatCompilerError_ErrorsJoin_MixedTypes verifies the multi-error
 // branch handles a Join'd chain of mixed structured types (CompilerError +
-// ResolverError + RecipeValidationError). Each sub-error converts via its
-// own ToCompilerError path; all three render.
+// ResolverError + a Recipe shape-rule failure). Each sub-error converts via
+// its own ToCompilerError path; all three render.
 func TestFormatCompilerError_ErrorsJoin_MixedTypes(t *testing.T) {
 	t.Parallel()
 	ce := cerrors.New(cerrors.TranslationError, cerrors.SourceLocation{}, "translation msg", nil, nil)
 	re := &resolver.ResolverError{Entity: "Aggregate my-app", Field: ".f", Message: "resolver msg", Err: resolver.ErrInvalidInstanceName()}
-	rve := &validator.RecipeValidationError{Path: "/r.yaml", Description: "recipe rule msg", Err: validator.ErrRecipeRule1()}
+	rve := validator.NewShapeRuleError(validator.ShapeRuleViolation{
+		Kind:       envelope.KindRecipe,
+		Name:       "r",
+		Path:       "/r.yaml",
+		Constraint: "recipe rule msg",
+		Err:        validator.ErrRecipeRule1(),
+	})
 	joined := stderrors.Join(ce, re, rve)
 
 	got := formatCompilerError(joined)

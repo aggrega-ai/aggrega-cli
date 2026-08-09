@@ -101,6 +101,67 @@ func NewValidationError(kind envelope.Kind, name string, detail ValidationDetail
 	return &ValidationError{kind: kind, name: name, detail: detail}
 }
 
+// ShapeRuleViolation describes a catalog entity that breaks one of the shape
+// rules governing its kind: which entity, where it was loaded from, which rule,
+// what that rule requires, and what to do about it.
+//
+// It is a description handed to NewShapeRuleError, not a failure in its own
+// right. It carries no Error method, nothing returns it, and no caller matches
+// on it — the failure a rule check returns is always *ValidationError, which is
+// the one shape a singular validation failure takes.
+type ShapeRuleViolation struct {
+	// Kind is the entity kind whose rules were checked. It selects the
+	// authoring domain the failure is reported under and supplies the leading
+	// word of the entity reference the message renders.
+	Kind envelope.Kind
+	// Name is the entity's metadata name, e.g. "helm/mariadb".
+	Name string
+	// Version is the entity's metadata version. Optional: omitted from the
+	// rendered reference when empty.
+	Version string
+	// Path is the file the entity was loaded from. It is the failure's
+	// locator, so it is what the rendered diagnostic's source pointer reads.
+	Path string
+	// Rule identifies the violated rule the way the entity's reference
+	// documentation names it — a number for the numbered shape rules, a word
+	// for the named ones. Optional: omitted from the message when empty.
+	Rule string
+	// Constraint states what the rule requires.
+	Constraint string
+	// Suggestion is the rule-specific advice for satisfying it.
+	Suggestion string
+	// Err is the sentinel callers match on.
+	Err error
+}
+
+// NewShapeRuleError builds the validation failure a ShapeRuleViolation
+// describes.
+//
+// The rule identifier travels inside the constraint text rather than in a field
+// of its own, because what an author needs is a single sentence naming both the
+// rule that failed and what it requires; a diagnostic that names the failure
+// without naming the rule is weaker than one that names both.
+//
+// It panics when Kind names no authoring domain, for the reason
+// NewValidationError does: a kind reaches here as a constant chosen where the
+// rule is checked, never from an authored document.
+func NewShapeRuleError(v ShapeRuleViolation) *ValidationError {
+	name := v.Name
+	if v.Version != "" {
+		name += ":" + v.Version
+	}
+	constraint := v.Constraint
+	if v.Rule != "" {
+		constraint = "rule " + v.Rule + ": " + constraint
+	}
+	return NewValidationError(v.Kind, name, ValidationDetail{
+		FieldPath:  v.Path,
+		Constraint: constraint,
+		Suggestion: v.Suggestion,
+		Err:        v.Err,
+	})
+}
+
 // entity renders the entity reference the failure is reported against, in
 // the "<Kind> <name>" shape — e.g. "Component core/api-server:1.0.0".
 func (e *ValidationError) entity() string {

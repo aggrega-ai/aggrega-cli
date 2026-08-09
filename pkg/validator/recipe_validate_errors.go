@@ -4,8 +4,6 @@
 package validator
 
 import (
-	"fmt"
-
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 )
 
@@ -17,9 +15,12 @@ import (
 // The workload-requires-provider-workloadSchema constraint is enforced at
 // render time by the central input-kind gate (a synthesised Recipe bound to a
 // provider with no workload-synthesis capability halts loudly there).
-// Rule 7 is enforced at emission time (Phase B.5 filename collision detection)
-// and is reserved here so the load-time validator and the emission-time
-// detector share an error shape.
+// Rule 7 is enforced at emission time (filename collision detection) and is
+// reserved here so the load-time validator and the emission-time detector
+// share an error shape.
+//
+// Every rule here reports through NewShapeRuleError, so a Recipe failure is a
+// *ValidationError whatever stage detected it.
 
 // ErrRecipeRule1: valuesMapping requires source.
 func ErrRecipeRule1() error { return errRecipeRule1 }
@@ -36,11 +37,10 @@ var errRecipeRule5 = cerrors.Register("validator/recipe-rule-5", cerrors.Meta{
 })
 
 // ErrRecipeRule7: emission-time filename collision across input-kind
-// origins (source output, workload synthesis, artifacts). RESERVED
-// for Phase B.5 emission-time use; not surfaced by ValidateRecipe at
-// load time. The sentinel is declared here so the load-time validator
-// and the emission-time detector share a single RecipeValidationError
-// shape and a single CATALOG_ERROR message format.
+// origins (source output, workload synthesis, artifacts). RESERVED for
+// emission-time use; not surfaced by ValidateRecipe at load time. The
+// sentinel is declared here so the load-time validator and the
+// emission-time detector report the same failure shape.
 func ErrRecipeRule7() error { return errRecipeRule7 }
 
 var errRecipeRule7 = cerrors.Register("validator/recipe-rule-7", cerrors.Meta{
@@ -69,66 +69,3 @@ func ErrRecipeOutputLabelReservedNamespace() error { return errRecipeOutputLabel
 var errRecipeOutputLabelReservedNamespace = cerrors.Register("validator/recipe-output-label-reserved-namespace", cerrors.Meta{
 	Message: "recipe output-labels constraint: key uses a reserved namespace",
 })
-
-// RecipeValidationError carries the structured detail for a load-time or
-// post-Manifest-resolution Recipe validation failure. The Error() output is
-// the CATALOG_ERROR-prefixed message format documented in the user-facing
-// fatal-halts reference.
-type RecipeValidationError struct {
-	// Path is the file path the Recipe was loaded from (e.g.,
-	// "aggrega-catalog/recipe/helm/mariadb-bitnami/recipe.yaml").
-	Path string
-	// Name is the Recipe's metadata.name.
-	Name string
-	// Version is the Recipe's metadata.version.
-	Version string
-	// Rule is the violated rule identifier — typically a number 1..7. For
-	// the eval-provider constraint it is the string "eval".
-	Rule string
-	// Description is the human-readable rule description (e.g., "valuesMapping
-	// requires source"). Authored by the validator at the call site.
-	Description string
-	// Detail is rule-specific context (e.g., for rule 7: the colliding
-	// basenames).
-	Detail string
-	// Err is the sentinel for errors.Is matching.
-	Err error
-}
-
-// Error formats the validation failure as a CATALOG_ERROR-prefixed multi-line
-// message. The shape is shared with the emission-time rule 7 detector so
-// load-time and render-time Recipe errors look identical to the operator.
-func (e *RecipeValidationError) Error() string {
-	header := fmt.Sprintf("CATALOG_ERROR: Recipe %s (%s:%s) violates rule %s:",
-		e.Path, e.Name, e.Version, e.Rule)
-	out := header + "\n  " + e.Description
-	if e.Detail != "" {
-		out += "\n  " + e.Detail
-	}
-	return out
-}
-
-// Unwrap returns the sentinel for errors.Is matching.
-func (e *RecipeValidationError) Unwrap() error {
-	return e.Err
-}
-
-// ToCompilerError converts the structured RecipeValidationError into a
-// *cerrors.CompilerError carrying CategoryCatalogError. Recipe rule
-// violations are always catalog-domain — the Recipe is catalog content
-// authored by Ops/Catalog Architects, never by the developer (Aggregate)
-// or operator (Release).
-//
-// The Source location maps Path (the Recipe file path) into
-// SourceLocation.File. The Message combines Description and Detail so the
-// CompilerError-rendered output retains the structured detail the
-// CATALOG_ERROR-prefixed Error() shape carries. Inner error chain
-// preserved via cerrors.Wrap so errors.Is against the recipe-rule sentinels
-// continues to match through the converted CompilerError.
-func (e *RecipeValidationError) ToCompilerError() *cerrors.CompilerError {
-	msg := e.Description
-	if e.Detail != "" {
-		msg = msg + " — " + e.Detail
-	}
-	return cerrors.Wrap(e, cerrors.CatalogError, cerrors.SourceLocation{File: e.Path}, msg)
-}

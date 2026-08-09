@@ -322,7 +322,7 @@ func phaseB4(ctx context.Context, tmplCtx *types.TemplateContext, state *PhaseBS
 
 // phaseB5 detects filename collisions across input-kind origins on
 // state.EmittedFiles. Cross-origin collisions produce a
-// RecipeValidationError{Rule: "7"} (the reserved rule-7 sentinel format).
+// a rule-7 validation failure (the reserved rule-7 sentinel format).
 // Within-origin collisions are caught by other rules (rule 6 at load time
 // for duplicate artifacts: entry keys; engine-internal logic for duplicate
 // sourced output).

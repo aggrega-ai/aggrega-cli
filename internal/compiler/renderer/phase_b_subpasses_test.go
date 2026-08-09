@@ -354,7 +354,7 @@ func TestPhaseB5_NoCollision_FeaturesUnderSubPath(t *testing.T) {
 }
 
 // Verifies that a true cross-origin collision at boundary root produces a
-// rule 7 CATALOG_ERROR.
+// rule 7 catalog failure.
 func TestPhaseB5_CrossOriginCollision_Fails(t *testing.T) {
 	t.Parallel()
 	r := minimalRecipe("test")
