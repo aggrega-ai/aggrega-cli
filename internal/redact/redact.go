@@ -44,12 +44,19 @@ func Placeholder() string { return placeholder }
 // vanished would be a hole the reader cannot see, and a reader who cannot tell an
 // omission from an empty result will read the display as complete.
 // TestWithheldProjectionLiteralHasOneHome enforces the single spelling.
+//
+// The invocation it names is the WHOLE runnable one, not just the flag that
+// selects the behaviour. This text is written into a file rather than printed
+// beside a prompt, so its reader meets it long after the build and has nothing
+// on screen to complete it from; an invocation short of a required flag halts,
+// and a halt is what a reader of a shortened display reads as a broken tool.
 const withheldProjection = "<withheld: rendered from data an author declared sensitive, and could not be " +
-	"re-rendered with that data substituted; re-run with `aggrega build --trace-unredacted` " +
-	"to capture it in the clear>"
+	"re-rendered with that data substituted; re-run with " +
+	"`aggrega build --release <release> --trace --trace-unredacted` to capture it in the clear>"
 
 // WithheldProjection returns the fixed text that stands in for a whole
-// projection a human-readable surface cannot show, naming the flag that shows it.
+// projection a human-readable surface cannot show, naming the invocation that
+// shows it.
 //
 // It replaces a projection rather than a value because some displayed data is
 // not addressable by key: a rendered document's fields carry no link back to the
@@ -79,11 +86,15 @@ func WithheldProjection() string { return withheldProjection }
 // The text is emitted inside a YAML document, where a single-quoted scalar escapes
 // an apostrophe by doubling it — so a reader searching a capture for this exact
 // text would not find it, and neither would a test.
+//
+// Like the withholding statement above it names the whole runnable invocation
+// rather than the flag alone, and for the same reason: it is read from a file,
+// where there is nothing on screen to complete a partial command from.
 const substitutedProjection = "<re-rendered: the same template evaluated against a context whose " +
 	"declared-sensitive data reads as `" + placeholder + "`, so this is not the document the build " +
 	"emitted; a template that branches on the content of a value renders differently here, and data " +
-	"no declaration names is carried through unchanged. Re-run with `aggrega build " +
-	"--trace-unredacted` to capture the emitted document.>"
+	"no declaration names is carried through unchanged. Re-run with `aggrega build --release <release> " +
+	"--trace --trace-unredacted` to capture the emitted document.>"
 
 // SubstitutedProjection returns the fixed text a human-readable surface prints
 // beside a projection it shows as a re-render with declared-sensitive data

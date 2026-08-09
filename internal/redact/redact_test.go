@@ -460,11 +460,34 @@ func TestWithheldProjection_IsDistinctFromThePlaceholderAndNamesTheEscapeHatch(t
 	if got == Placeholder() {
 		t.Error("a withheld whole projection and a withheld single value must be distinguishable")
 	}
-	if !strings.Contains(got, "--trace-unredacted") {
-		t.Errorf("the statement must name the flag that shows the data; got %q", got)
-	}
+	assertNamesARunnableUnredactedInvocation(t, got, "the withholding statement")
 	if !strings.Contains(got, "withheld") {
 		t.Errorf("the statement must say the data was withheld rather than merely absent; got %q", got)
+	}
+}
+
+// TestSubstitutedProjection_NamesARunnableInvocation holds the re-render
+// announcement to the same standard as the withholding statement. Both are read
+// out of a file rather than off a terminal, so a partial command in either one
+// sends the reader to a halt with nothing on screen to complete it from.
+func TestSubstitutedProjection_NamesARunnableInvocation(t *testing.T) {
+	t.Parallel()
+	assertNamesARunnableUnredactedInvocation(t, SubstitutedProjection(), "the re-render announcement")
+}
+
+// assertNamesARunnableUnredactedInvocation requires a text to name the whole
+// invocation that captures a trace in the clear, not just the flag selecting it.
+//
+// Each fragment is asserted separately so a failure says which one is missing.
+// Naming only the behaviour-selecting flag is the shape this guards against: that
+// form halts twice over — once on the required release, and again on the trace the
+// unredacted capture has nothing to write without.
+func assertNamesARunnableUnredactedInvocation(t *testing.T, got, subject string) {
+	t.Helper()
+	for _, fragment := range []string{"aggrega build", "--release", "--trace ", "--trace-unredacted"} {
+		if !strings.Contains(got, fragment) {
+			t.Errorf("%s must name a runnable invocation and is missing %q; got %q", subject, fragment, got)
+		}
 	}
 }
 
