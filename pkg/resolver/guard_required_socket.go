@@ -132,11 +132,21 @@ type releaseSocketKey struct {
 // required-socket rule rejects even though an edge does get drawn for it.
 //
 // Node identity is the consuming node ID as the Release authored it, matched
-// against the resolver-visible instance name — the convention every Step-1
-// guard that reads the Release edge surface already uses, via the shared
-// [collectReleaseEdgeEntries] walk. A node the resolver cannot see is therefore
-// invisible here exactly as it is to the socket-allowlist and per-edge
-// conformance gates that validate the very same entries.
+// against the resolver-visible instance name — the convention every guard that
+// reads the Release edge surface before flattening already uses, via the shared
+// [collectReleaseEdgeEntries] walk. The two identities are the same string by
+// construction: a component keeps its bare instance name in the flattened graph
+// whether the Aggregate declared it at the top level or inside a subsystem at
+// any depth, and a dotted node ID marks a component reached through a
+// sub-aggregate rather than one nested in a subsystem. Matching on anything else
+// would reject a Release that binds the socket correctly.
+//
+// A node whose declaration the resolver cannot see — a sub-aggregate component,
+// whose document loads only when the graph is flattened — is invisible here
+// exactly as it is to the socket-allowlist and per-edge conformance gates that
+// validate the very same entries. The rule is asked of it once flattening has
+// made it visible, reading the resolved edge set for the same answer, so the
+// coverage boundary is a division of labour rather than a hole.
 func releaseBoundSockets(release *types.Release) map[releaseSocketKey]struct{} {
 	if release == nil {
 		return nil

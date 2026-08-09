@@ -45,6 +45,29 @@ var errReleaseEdgeRetarget = cerrors.Register("compiler-topology/release-edge-re
 	Message: "release edge retargets a developer-declared edge",
 })
 
+// ErrUnboundReleaseEdgeConfig fires when a Release per-edge `uses` entry
+// carries per-edge `infra` but no edge exists at its (consumer, socket, alias)
+// once every edge has been drawn. An entry that names a target creates the edge
+// it configures; an entry that omits one configures an edge that must already
+// have been declared, so an entry with configuration and no edge to put it on
+// applies to nothing. Accepting it would let an operator author infrastructure
+// that never reaches the output and read the successful build as confirmation,
+// which is the inverse of a Loud Guardrail (Invariant 4).
+//
+// The condition is exact rather than heuristic: after the Release edge pass the
+// edge set is final, so the entry either landed on an edge or it did not. Note
+// which declaration is at fault — the socket IS declared by the consuming
+// component's usesSchema, or the socket-allowlist guard would have refused it
+// first; what is missing is a bound edge at that socket and alias. The wrapped
+// error names the consuming node, the socket and the alias, and says whether
+// the node exists in the topology at all, because a Release naming a node the
+// Aggregate does not declare reaches this same condition.
+func ErrUnboundReleaseEdgeConfig() error { return errUnboundReleaseEdgeConfig }
+
+var errUnboundReleaseEdgeConfig = cerrors.Register("compiler-topology/unbound-release-edge-config", cerrors.Meta{
+	Message: "release per-edge configuration has no edge to apply to",
+})
+
 // ErrDanglingUsesTarget fires when a `uses` edge names a target component
 // that is not present in the resolved topology — origin-agnostic: a
 // developer-authored Aggregate edge and a Release-wired edge are checked

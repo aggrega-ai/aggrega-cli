@@ -139,10 +139,15 @@ func collectReleaseEdgeEntries(release *types.Release) []releaseEdgeEntry {
 // are kept apart on purpose and must not be unified.
 //
 // The consuming node's component type is resolved from the Aggregate's
-// resolver-visible instances (top-level + subsystem). A Release edge on a node
-// whose type the resolver cannot see — a sub-aggregate component, which loads
-// only at topology — skips here; that coverage boundary is shared with the
-// per-edge conformance gate.
+// resolver-visible instances, which is every component the Aggregate declares:
+// those at the top level and those in a declared subsystem, at any nesting
+// depth. Both are addressed by their bare instance name, which is the same
+// identity a Release names them by, so a subsystem component is inspected here
+// like any other. A Release edge on a node whose type is not among them — a
+// sub-aggregate component, whose document loads only when the graph is flattened
+// — is skipped here and validated once flattening has made it visible, so the
+// skip is a division of labour rather than a hole. That coverage boundary is
+// shared with the per-edge conformance gate.
 func guardReleaseUsesSocket(na types.NormalizedAggregate, release *types.Release, catalog CatalogLookup) []*ResolverError {
 	agg := na.Aggregate()
 	if agg == nil || release == nil || catalog.Component == nil {

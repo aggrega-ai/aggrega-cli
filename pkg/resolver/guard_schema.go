@@ -121,22 +121,33 @@ func guardSchemaConformance(
 
 // guardEdgeConformance validates per-edge connection-scoped config against the
 // source socket's declared per-edge contract, closed. A developer-authored
-// `values` block on a verbose `uses` entry (Aggregate) is validated against the
-// socket's valueSchema; an operator-authored `infra` block on a Release `uses`
-// entry is validated against the socket's infraSchema. Both route through the
-// shared [ValidatePillarConformance] entry — the same one the component and
-// attachment gates use — so an authored per-edge schema is interpreted
-// identically wherever the value originates. Default-aware and parameter-aware
-// via that shared entry. A socket that declares no contract for the pillar
-// skips (opt-in conformance). Each violation wraps ErrSchemaConformance, its
-// Field naming the edge (consumer, socket, alias), the pillar, and the leaf
-// path.
+// `values` block on an Aggregate `uses` edge is validated against the socket's
+// valueSchema; an operator-authored `infra` block on a Release `uses` entry is
+// validated against the socket's infraSchema. Both route through the shared
+// [ValidatePillarConformance] entry — the same one the component and attachment
+// gates use — so an authored per-edge schema is interpreted identically wherever
+// the value originates. Default-aware and parameter-aware via that shared entry.
+// A socket that declares no contract for the pillar skips (opt-in conformance).
+// Each violation wraps ErrSchemaConformance, its Field naming the edge
+// (consumer, socket, alias), the pillar, and the leaf path.
+//
+// What is opt-in is the SOCKET's contract, never the edge's content. Once a
+// socket declares a contract for a pillar, every edge on that socket is
+// validated against it, including an edge that authors nothing for the pillar —
+// an empty block is the maximal violation of a key the socket declares required,
+// not a case with nothing to check. Both authoring forms of an Aggregate edge
+// are reached, through [EdgeValuesOf], so a contract is enforced the same way
+// whichever form the author chose.
 //
 // The Release infra walk resolves the consuming node's component type from the
-// Aggregate's resolver-visible instances (top-level and subsystem components).
-// A Release edge on a node the resolver cannot see a type for — a sub-aggregate
-// component, which loads only at topology — skips here; that coverage boundary
-// is the same one the undeclared-socket guard carries.
+// Aggregate's resolver-visible instances, which is every component the Aggregate
+// declares: those at the top level and those in a declared subsystem, at any
+// nesting depth. Both are addressed by their bare instance name, which is the
+// same identity a Release names them by. A Release edge on a node whose type is
+// not among them — a sub-aggregate component, whose document loads only when the
+// graph is flattened — is skipped here and validated once flattening has made it
+// visible; that coverage boundary is the same one the undeclared-socket guard
+// carries.
 func guardEdgeConformance(na types.NormalizedAggregate, release *types.Release, catalog CatalogLookup, parameters map[string]any) []*ResolverError {
 	agg := na.Aggregate()
 	if agg == nil || catalog.Component == nil {
@@ -167,17 +178,14 @@ func guardEdgeConformance(na types.NormalizedAggregate, release *types.Release, 
 			continue
 		}
 		for socket, sv := range p.inst.Uses.All() {
-			for alias, e := range sv.Verbose.All() {
-				if e.Values.Len() == 0 {
-					continue
-				}
-				compiled, ok := CompileSocketPillarSchema(catalog, p.inst.Type, socket, "values")
-				if !ok {
-					continue
-				}
-				field := fmt.Sprintf("%s.uses[%q][%q]", componentFieldPath(p.subsystemPath, p.name, p.synthesized), socket, alias)
+			compiled, ok := CompileSocketPillarSchema(catalog, p.inst.Type, socket, "values")
+			if !ok {
+				continue
+			}
+			for _, ev := range EdgeValuesOf(sv) {
+				field := fmt.Sprintf("%s.uses[%q][%q]", componentFieldPath(p.subsystemPath, p.name, p.synthesized), socket, ev.Alias)
 				errs = append(errs, ValidatePillarConformance(
-					compiled, "values", e.Values, parameters,
+					compiled, "values", ev.Values, parameters,
 					aggEntity, field, "the socket valueSchema")...)
 			}
 		}
@@ -191,9 +199,6 @@ func guardEdgeConformance(na types.NormalizedAggregate, release *types.Release, 
 			typeOf[p.name] = p.inst.Type
 		}
 		for _, ref := range collectReleaseEdgeEntries(release) {
-			if ref.entry.Infra.Len() == 0 {
-				continue
-			}
 			compType, ok := typeOf[ref.nodeID]
 			if !ok {
 				continue
@@ -220,6 +225,48 @@ func guardEdgeConformance(na types.NormalizedAggregate, release *types.Release, 
 
 	sortResolverErrors(errs)
 	return errs
+}
+
+// EdgeValues is the per-edge developer `values` block one edge of a socket
+// carries: the alias identifying the edge, and the block itself, which is empty
+// when the author wrote none.
+type EdgeValues struct {
+	Alias  string
+	Values types.OrderedMap[any]
+}
+
+// EdgeValuesOf projects one socket's authored `uses` value into one entry per
+// edge, in author order, whichever form the author used: a compact list yields
+// an entry per target with the target as its alias, and a verbose map yields an
+// entry per alias.
+//
+// An edge that authors no per-edge values yields an entry carrying an empty
+// block rather than being omitted. That is the whole point of the projection: a
+// socket's valueSchema may declare a key as required, and an edge that writes
+// nothing is the maximal violation of such a key rather than a case with nothing
+// to check. Omitting it would enforce a required key against every edge that
+// authors something and against no edge that authors nothing.
+//
+// Both authoring forms are projected here so a socket contract is enforced the
+// same way whichever the author chose. A compact edge can never satisfy a
+// required per-edge key — the form has nowhere to write one — which is a fact
+// about the contract the author declared, not a reason to exempt the form.
+func EdgeValuesOf(sv types.UsesSocketValue) []EdgeValues {
+	if len(sv.Compact) > 0 {
+		out := make([]EdgeValues, 0, len(sv.Compact))
+		for _, target := range sv.Compact {
+			out = append(out, EdgeValues{Alias: target})
+		}
+		return out
+	}
+	if sv.Verbose.Len() == 0 {
+		return nil
+	}
+	out := make([]EdgeValues, 0, sv.Verbose.Len())
+	for alias, e := range sv.Verbose.All() {
+		out = append(out, EdgeValues{Alias: alias, Values: e.Values})
+	}
+	return out
 }
 
 // CompileSocketPillarSchema compiles a socket's per-edge contract for one

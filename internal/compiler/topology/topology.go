@@ -540,8 +540,10 @@ func BuildContext(ctx context.Context, cfg BuildConfig) (*TopologyResult, error)
 						continue
 					}
 					// No matching edge: create one when a target is given,
-					// stamped Release-origin. A targetless unmatched entry is an
-					// undeclared-socket case the resolver guard surfaces at Step 1.
+					// stamped Release-origin. A targetless entry configures an
+					// edge rather than creating one, so it draws nothing here;
+					// whether it found an edge to configure is settled by the
+					// unbound-configuration sweep below, once every edge exists.
 					// Target existence is enforced by the origin-agnostic
 					// dangling-target sweep below, not here.
 					if entry.Target != "" {
@@ -556,6 +558,18 @@ func BuildContext(ctx context.Context, cfg BuildConfig) (*TopologyResult, error)
 					}
 				}
 			}
+		}
+	}
+
+	// Release per-edge configuration that reached no edge. The edge set is final
+	// for Release purposes once the pass above has run — every entry that named
+	// a target drew its edge, and every entry that omitted one had its chance to
+	// land on an existing edge. An entry still carrying `infra` at this point
+	// applies to nothing: the infrastructure the operator authored would be
+	// absent from the output while the build reported success.
+	if cfg.ResolveResult != nil && cfg.ResolveResult.Release != nil {
+		if err := guardUnboundReleaseEdgeConfig(flat, edges, cfg.ResolveResult.Release, cfg.CatalogLookup); err != nil {
+			return nil, err
 		}
 	}
 
@@ -765,17 +779,19 @@ func guardSubAggregateNodes(flat *flattenResult, edges []NormalizedEdge, cfg Bui
 				fmt.Sprintf(".%s", nodeID), "the Component schema")...)
 		}
 
-		// Per-edge developer values authored on the node's uses.
+		// Per-edge developer values authored on the node's uses. Projected through
+		// the resolver's own edge-values view so an edge that authors nothing is
+		// checked here exactly as it is for a root component — a socket contract
+		// must not depend on how deep the author nested the component.
 		for socket, sv := range node.Uses.All() {
-			for alias, e := range sv.Verbose.All() {
-				if e.Values.Len() == 0 {
-					continue
-				}
-				if compiled, ok := resolver.CompileSocketPillarSchema(catalog, node.ComponentType, socket, "values"); ok {
-					errs = append(errs, resolver.ValidatePillarConformance(
-						compiled, "values", e.Values, node.ResolvedParameters, entity,
-						fmt.Sprintf(".%s.uses[%q][%q]", nodeID, socket, alias), "the socket valueSchema")...)
-				}
+			compiled, ok := resolver.CompileSocketPillarSchema(catalog, node.ComponentType, socket, "values")
+			if !ok {
+				continue
+			}
+			for _, ev := range resolver.EdgeValuesOf(sv) {
+				errs = append(errs, resolver.ValidatePillarConformance(
+					compiled, "values", ev.Values, node.ResolvedParameters, entity,
+					fmt.Sprintf(".%s.uses[%q][%q]", nodeID, socket, ev.Alias), "the socket valueSchema")...)
 			}
 		}
 	}
@@ -798,7 +814,7 @@ func guardSubAggregateNodes(flat *flattenResult, edges []NormalizedEdge, cfg Bui
 		}
 	}
 
-	errs = append(errs, guardSubAggregateReleaseEdges(flat, edges, release, catalog)...)
+	errs = append(errs, guardSubAggregateReleaseEdges(flat, release, catalog)...)
 	return errs
 }
 
@@ -816,6 +832,92 @@ func authoredAttachments(attachments []FeatureAttachment) types.OrderedMap[types
 	return out
 }
 
+// guardUnboundReleaseEdgeConfig halts when a Release per-edge `uses` entry
+// carries `infra` that no edge will ever receive. It runs after the Release edge
+// pass, where the edge set becomes final: an entry naming a target has drawn its
+// edge by then, and an entry omitting one has had its chance to land on an edge
+// the Aggregate or a Feature declared. Configuration still holding no edge at
+// that point is authoring that does nothing, and accepting it silently would put
+// the operator's infrastructure out of the output while the build succeeds.
+//
+// Three conditions are deliberately NOT this guard's, and each is left to the
+// rule that owns it, so a halt added here cannot disable one of them:
+//
+//   - A socket the consuming component's usesSchema does not declare belongs to
+//     the undeclared-socket rule, which produces the better diagnostic — it can
+//     list the sockets that do exist. Such an entry is skipped here whenever the
+//     consuming component's type is in view, whether the rule already ran before
+//     flattening or runs over the flattened sub-aggregate nodes afterwards.
+//   - A target that names no component belongs to the dangling-target sweep: an
+//     entry with a target does create an edge, so it never reaches this guard.
+//   - A consuming component pruned by a false `active` toggle takes its whole
+//     edge set with it by design. The entry is inert because the operator turned
+//     the component off, not because the entry is wrong.
+//
+// A node absent from the topology altogether is this guard's, because the entry
+// configures nothing for the same reason and nothing else reports it. The
+// diagnostic says which case it is so the author knows whether to correct the
+// node name or to wire the edge.
+//
+// The entries come from the shared Release-boundary walk, so the first offender
+// is the same one on every run of the same input. That walk visits every
+// boundary, while the Release edge pass visits only the boundary chain the
+// consuming node belongs to — so an entry the pass never reached is caught here
+// too, on the same evidence as any other: no edge carries it.
+func guardUnboundReleaseEdgeConfig(
+	flat *flattenResult,
+	edges []NormalizedEdge,
+	release *types.Release,
+	catalog resolver.CatalogLookup,
+) error {
+	if release == nil {
+		return nil
+	}
+	for _, ref := range resolver.ReleaseEdgeEntries(release) {
+		if ref.Entry.Infra.Len() == 0 {
+			continue
+		}
+		bound := false
+		for i := range edges {
+			if edges[i].Source == ref.NodeID && edges[i].Socket == ref.Socket && edges[i].Alias == ref.Alias {
+				bound = true
+				break
+			}
+		}
+		if bound {
+			continue
+		}
+		if _, pruned := flat.Pruned.Get(ref.NodeID); pruned {
+			continue
+		}
+		node, isNode := flat.Nodes.Get(ref.NodeID)
+		if !isNode {
+			return fmt.Errorf(
+				"release edge %s/%s/%s sets infra on %q, which is not a component in the topology: %w",
+				ref.NodeID, ref.Socket, ref.Alias, ref.NodeID, ErrUnboundReleaseEdgeConfig())
+		}
+		// Without a catalog view, or with a component type absent from it, whether
+		// the socket is declared cannot be answered — and the answer is what
+		// separates this rule from the undeclared-socket one. Both cases are
+		// classified by their own rules elsewhere; guessing here would take a halt
+		// from a rule that reports it better.
+		if catalog.Component == nil {
+			continue
+		}
+		catComp, found := catalog.Component(node.ComponentType)
+		if !found {
+			continue
+		}
+		if _, declared := catComp.Spec.UsesSchema.Get(ref.Socket); !declared {
+			continue
+		}
+		return fmt.Errorf(
+			"release edge %s/%s/%s sets infra but no edge is bound there: an entry without a target configures an edge that must already exist, so give the entry a target to wire the edge or remove the entry: %w",
+			ref.NodeID, ref.Socket, ref.Alias, ErrUnboundReleaseEdgeConfig())
+	}
+	return nil
+}
+
 // guardSubAggregateReleaseEdges validates the Release's per-edge `uses` surface
 // for consuming nodes that exist only after sub-aggregate flattening. Step 1
 // validates the same surface for every node whose component type the resolver can
@@ -823,25 +925,19 @@ func authoredAttachments(attachments []FeatureAttachment) types.OrderedMap[types
 // without this pass a Release could name a socket no usesSchema declares, or set
 // out-of-range per-edge infra, on a sub-aggregate node and be accepted in silence.
 //
-// Two rules, matching the two Step-1 guards this closes the coverage boundary of:
-//
-//   - the socket must exist in the consuming component's usesSchema;
-//   - `infra` must conform to that socket's infraSchema.
-//
-// The infra rule is applied only to an entry that reached NO edge. An entry that
-// did reach one had its infra merged onto that edge, and the merged result is
-// validated by the per-edge walk above — validating both would report one
-// authoring mistake twice. The match predicate below is the same
-// (source, socket, alias) triple the Release edge pass keys its merge on; the two
-// are a deliberate near-duplicate because unifying them would mean handing the
-// merge pass a validation concern, and they must change together — a divergence
-// would either double-report an entry or leave one unvalidated.
+// The rule is the socket-allowlist one: the socket must exist in the consuming
+// component's usesSchema. Per-edge `infra` conformance is not asked here,
+// because by the time this runs an entry's infra has necessarily reached an
+// edge — the entry either named a target, which drew one, or landed on one the
+// module declared — and the merged result is validated by the per-edge walk
+// above. An entry whose infra reached no edge has already halted at the
+// unbound-configuration sweep; validating a value that goes nowhere would
+// report the lesser of the two faults.
 //
 // Walk order is the shared Release-boundary walk's, so violations are
 // deterministic across runs.
 func guardSubAggregateReleaseEdges(
 	flat *flattenResult,
-	edges []NormalizedEdge,
 	release *types.Release,
 	catalog resolver.CatalogLookup,
 ) []*resolver.ResolverError {
@@ -849,14 +945,6 @@ func guardSubAggregateReleaseEdges(
 		return nil
 	}
 	entity := fmt.Sprintf("Release %s", release.Metadata.Name)
-	reachedEdge := func(nodeID, socket, alias string) bool {
-		for i := range edges {
-			if edges[i].Source == nodeID && edges[i].Socket == socket && edges[i].Alias == alias {
-				return true
-			}
-		}
-		return false
-	}
 
 	var errs []*resolver.ResolverError
 	for _, ref := range resolver.ReleaseEdgeEntries(release) {
@@ -868,24 +956,14 @@ func guardSubAggregateReleaseEdges(
 		if !found {
 			continue // classified once by the per-node view-inconsistency check
 		}
-		field := fmt.Sprintf(".%s.uses[%q][%q]", ref.NodeID, ref.Socket, ref.Alias)
 		if _, declared := catComp.Spec.UsesSchema.Get(ref.Socket); !declared {
 			errs = append(errs, &resolver.ResolverError{
 				Entity: entity,
-				Field:  field,
+				Field:  fmt.Sprintf(".%s.uses[%q][%q]", ref.NodeID, ref.Socket, ref.Alias),
 				Message: fmt.Sprintf("socket %q not defined in component type %q usesSchema (valid: %v)",
 					ref.Socket, node.ComponentType, catComp.Spec.UsesSchema.Keys()),
 				Err: resolver.ErrUnknownUsesSocket(),
 			})
-			continue
-		}
-		if ref.Entry.Infra.Len() == 0 || reachedEdge(ref.NodeID, ref.Socket, ref.Alias) {
-			continue
-		}
-		if compiled, ok := resolver.CompileSocketPillarSchema(catalog, node.ComponentType, ref.Socket, "infra"); ok {
-			errs = append(errs, resolver.ValidatePillarConformance(
-				compiled, "infra", ref.Entry.Infra, node.ResolvedParameters, entity,
-				field, "the socket infraSchema")...)
 		}
 	}
 	return errs

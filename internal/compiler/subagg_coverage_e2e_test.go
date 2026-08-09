@@ -24,6 +24,7 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline/pipelinetest"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/topology"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 )
 
@@ -84,13 +85,19 @@ func TestSubaggCoverage_ReleaseUndeclaredSocketHalts(t *testing.T) {
 }
 
 // TestSubaggCoverage_ReleaseDroppedEntryInfraHalts — a Release per-edge entry on
-// a declared-but-unbound socket, carrying out-of-range infra and no target. It
-// reaches no edge, so the per-edge walk over resolved edges structurally cannot
-// see it; the entry itself has to be read.
+// a declared-but-unbound socket, carrying infra and no target. It reaches no
+// edge, so the per-edge walk over resolved edges structurally cannot see it; the
+// entry itself has to be read.
+//
+// The fault reported is that the configuration lands nowhere, which is the
+// larger of the two things wrong with the entry: whether the value conforms to
+// the socket's contract does not matter while nothing carries it. Conformance on
+// a sub-aggregate edge that a Release entry DOES reach is pinned separately, by
+// TestUsesEdgeSubagg_NonConformingInfraHalts.
 func TestSubaggCoverage_ReleaseDroppedEntryInfraHalts(t *testing.T) {
 	t.Parallel()
 	_, err := pipelinetest.BuildE(t, subaggCoverageInput("release-relinfra.yaml"))
-	if !errors.Is(err, resolver.ErrSchemaConformance()) {
-		t.Fatalf("want ErrSchemaConformance for out-of-range per-edge infra on an entry that reached no edge; got %v", err)
+	if !errors.Is(err, topology.ErrUnboundReleaseEdgeConfig()) {
+		t.Fatalf("want ErrUnboundReleaseEdgeConfig for per-edge infra on an entry that reached no edge; got %v", err)
 	}
 }
