@@ -5,8 +5,10 @@
 //
 // Three engines:
 //   - Schema Engine: evaluates JSON Schema against developer values
-//   - Inheritance Engine: Two-Tiered Merge (YAML metadata deep-merge + JSON Schema
-//     composition via extends)
+//   - Inheritance Engine: walks an extends chain, gating it against cycles, a
+//     depth bound and unresolvable parents, and composes the chain's JSON
+//     Schemas. Inherited labels and annotations merge on the typed entity in
+//     ResolveComponentExtends / ResolveFeatureExtends, not here.
 //   - Split Schema Engine: synthesises a base JSON Schema from usesSchema and
 //     composes it with the entity's authored Schema content via the merger phase
 //

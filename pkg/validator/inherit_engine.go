@@ -15,13 +15,17 @@ import (
 // maxInheritanceDepth prevents unbounded chains.
 const maxInheritanceDepth = 10
 
-// CatalogEntry provides the metadata and schema for an entity resolved
-// by URI. The caller (Step 1 resolver) populates these from the loaded
-// catalog.
+// CatalogEntry identifies an entity in an extends chain and carries the
+// schema payload the chain composition reads. The caller populates it
+// from the loaded catalog.
+//
+// It deliberately carries no metadata: an extending entity's inherited
+// labels and annotations are merged on the typed entity by
+// ResolveComponentExtends and ResolveFeatureExtends, which is the single
+// home for that mechanic.
 type CatalogEntry struct {
-	URI      string         // e.g. "core/api-server:1.0.0"
-	Extends  string         // parent URI, empty if no inheritance
-	Metadata map[string]any // raw YAML metadata for deep merge
+	URI     string // e.g. "core/api-server:1.0.0"
+	Extends string // parent URI, empty if no inheritance
 
 	// Kind is the entity kind the URI names. It is required: a failure
 	// resolving this chain is reported against the entity, and the kind is
@@ -42,26 +46,32 @@ type CatalogEntry struct {
 
 // InheritanceResult holds the output of resolving an extends chain.
 //
-// Phase 1 (YAML metadata deep-merge) populates MergedMetadata. The
-// JSON-Schema-merge phase populates MergedJSONSchema when any chain
-// entry carries a JSONSchema payload; the field stays nil when no
-// chain entry carries JSON Schema content.
+// MergedJSONSchema carries the composed chain schema when any chain
+// entry supplies a JSONSchema payload; it stays nil when no chain entry
+// carries JSON Schema content. Errors carries the chain-structural
+// failures — a cycle, the depth bound, an unresolvable parent — and a
+// caller that needs only those may read Errors and discard the rest.
 type InheritanceResult struct {
-	MergedMetadata   map[string]any
 	MergedJSONSchema *merger.Schema
 	Errors           []*ValidationError
 }
 
-// ResolveInheritance resolves the extends chain for an entity using
-// the provided catalog lookup.
+// ResolveInheritance walks the extends chain for an entity using the
+// provided catalog lookup, and does two things with the chain it walks.
 //
-//   - Phase 1: deep-merges YAML metadata bottom-up.
-//   - Phase 2: when any chain entry carries a JSONSchema payload,
-//     composes the chain via pkg/validator/merger to produce a merged
-//     schema with provenance metadata.
+// It gates the chain: a repeated URI (visited-set keyed by URI) reports
+// ErrCyclicExtension, a chain longer than the depth bound of 10 reports
+// ErrInheritanceMerge, and so does a parent the lookup cannot resolve.
+// Each halts the walk and returns the failure alone. Callers that only
+// need an extends chain validated read Errors and ignore the rest.
 //
-// Cycle detection (visited-set keyed by URI) and max-depth bound
-// (10 levels) gate both phases.
+// It composes the chain's schemas: when any chain entry supplies a
+// JSONSchema payload, the chain is merged root-ancestor-first through
+// pkg/validator/merger into MergedJSONSchema, carrying source-position
+// provenance. Entries supplying no payload make this a no-op.
+//
+// Inherited labels and annotations are not merged here — that happens on
+// the typed entity in ResolveComponentExtends and ResolveFeatureExtends.
 func ResolveInheritance(entry CatalogEntry, lookup func(uri string) (CatalogEntry, bool)) InheritanceResult {
 	chain := []CatalogEntry{entry}
 	visited := map[string]bool{entry.URI: true}
@@ -107,23 +117,16 @@ func ResolveInheritance(entry CatalogEntry, lookup func(uri string) (CatalogEntr
 		current = parent
 	}
 
-	// Phase 1: deep-merge YAML metadata from root ancestor → child.
-	mergedMeta := map[string]any{}
-	for i := len(chain) - 1; i >= 0; i-- {
-		if chain[i].Metadata != nil {
-			mergedMeta = deepMergeYAML(mergedMeta, chain[i].Metadata)
-		}
-	}
+	var result InheritanceResult
 
-	result := InheritanceResult{MergedMetadata: mergedMeta}
-
-	// Phase 2: merge JSON Schema payloads via pkg/validator/merger.
-	// Dormant unless at least one chain entry carries a JSONSchema
-	// payload — current callers don't populate the field; the
-	// catalog walker activates this path once entries carry their
-	// JSON Schema 2020-12 payloads (handled by the schema-authoring
-	// phase). The merger emits structural narrowing-violation
-	// signals via the returned Schema's NarrowingViolations slice.
+	// Merge JSON Schema payloads via pkg/validator/merger. A no-op
+	// unless at least one chain entry carries a JSONSchema payload:
+	// the catalog walker supplies them for Features, while a caller
+	// resolving a Component chain leaves the field unset because an
+	// extending Component inherits its base's pillar block verbatim
+	// and has nothing to compose. The merger emits structural
+	// narrowing-violation signals via the returned Schema's
+	// NarrowingViolations slice.
 	hasJSONSchema := false
 	for _, ent := range chain {
 		if ent.JSONSchema != nil {

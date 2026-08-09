@@ -24,9 +24,11 @@
 //     without forcing the catalog to re-export internal map shapes.
 //
 // ResolveAllExtends walks the loaded Component / Feature entries and
-// performs the Two-Tiered Inheritance Merge: deep-merge of the YAML
-// envelope plus JSON Schema composition of the entity's authored Schema
-// content. The merge reports a child that widens a parent constraint as a
+// resolves each extends chain: labels and annotations merge per key with
+// the extending entity winning a shared key, and the entity's authored
+// Schema content composes under JSON Schema composition. Every other
+// metadata field is the extending entity's own, so identity and provenance
+// never inherit. The merge reports a child that widens a parent constraint as a
 // non-halting side-band signal; a narrow-only rule is opt-in policy
 // (the publishing-discipline plugin, at publish time), not a compiler check.
 // Recipe and FeatureRecipe split into separate index maps keyed by

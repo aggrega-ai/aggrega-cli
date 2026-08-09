@@ -1377,8 +1377,10 @@ func (c *Catalog) DeprecationWarnings() []string {
 
 // ResolveAllExtends walks every Component and Feature in the catalog and
 // resolves its extends chain in-place via the validator package's
-// ResolveComponentExtends / ResolveFeatureExtends. Both kinds deep-merge the
-// YAML envelope; the two kinds part company on the pillar block. An extending
+// ResolveComponentExtends / ResolveFeatureExtends. Both kinds merge labels and
+// annotations per key, the extending entity winning a shared key, and leave
+// every other metadata field to the extending entity; the two kinds part
+// company on the pillar block. An extending
 // Component authors no pillar content and receives its base's block verbatim,
 // so its chain composes nothing and stores no second view. An extending
 // Feature's chain still composes its pillars under JSON Schema composition,

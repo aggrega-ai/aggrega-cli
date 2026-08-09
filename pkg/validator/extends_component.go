@@ -18,8 +18,10 @@ type ComponentLookup func(uri string) (types.Component, bool)
 type FeatureLookup func(uri string) (types.Feature, bool)
 
 // ResolveComponentExtends returns a fully-merged Component after walking the
-// extends chain. Labels/Annotations maps are deep-merged (child wins per key),
-// the Inject list is concatenated and deduplicated, UsesSchema entries are
+// extends chain. Labels and Annotations merge per key, base entries first and
+// the child winning a shared key; every other Metadata field is the child's
+// verbatim, so identity and provenance never inherit. The Inject list is
+// concatenated and deduplicated, UsesSchema entries are
 // merged (child entry overrides parent on the same socket name), and
 // Assertions accumulate root-first with no per-name override. Returns the
 // original component unchanged when Spec.Extends == "".
@@ -109,12 +111,21 @@ func ResolveFeatureExtends(feat types.Feature, lookup FeatureLookup) (types.Feat
 // extends, nearest parent first, resolved through lookup. The slice excludes
 // comp itself, so a Component declaring no extends has an empty ancestry.
 //
-// It is a read-only view of the very chain walk the inheritance merge performs,
-// exposed so a consumer that needs only "what does this descend from" answers
-// the question with the merge's own safeguards instead of walking Spec.Extends
-// again: a circular chain yields ErrCyclicExtension and an unresolvable parent
-// yields ErrInheritanceMerge, in both cases rather than looping. A second walk
-// could disagree with this one; there is no second walk.
+// It is a read-only view of the very chain walk the inheritance merge performs
+// — it calls collectComponentChain, the same collector ResolveComponentExtends
+// folds its merge over — exposed so a consumer that needs only "what does this
+// descend from" answers the question from the merge's own chain instead of
+// walking Spec.Extends again. It reports the same failures that collector does:
+// a circular chain yields ErrCyclicExtension and an unresolvable parent yields
+// ErrInheritanceMerge, in both cases rather than looping.
+//
+// Sharing the collector is what makes the answer agree with the merge. Note
+// which walk is shared: ResolveComponentExtends runs two, calling
+// ResolveInheritance first to gate the chain and collectComponentChain second to
+// build the merge input, and it is the second that this function shares. So the
+// ancestry reported here is by construction the ancestry merged, while a chain
+// this function reports without complaint may still be one ResolveComponentExtends
+// refuses — the gate walk applies a depth bound that the collector does not.
 func ComponentAncestry(comp types.Component, lookup ComponentLookup) ([]types.Component, []*ValidationError) {
 	chain, errs := collectComponentChain(comp, lookup)
 	if len(errs) > 0 {
