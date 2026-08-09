@@ -10,6 +10,8 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/aggrega-ai/aggrega-cli/pkg/plugintype"
 )
 
 func TestPluginDescriptorRoundTrip(t *testing.T) {
@@ -174,6 +176,67 @@ func TestPluginDescriptorValidateUnknownPluginType(t *testing.T) {
 		"wasm: plugin rejected by the sandbox"
 	if got := err.Error(); got != want {
 		t.Fatalf("unknown plugin_type message:\n got: %s\nwant: %s", got, want)
+	}
+}
+
+// TestPluginDescriptorValidatePluginTypeMembership pins both directions of the
+// plugin-type membership gate against the registry itself, so neither direction
+// can be narrowed or widened without a failure here.
+//
+// Accept: every type the registry carries is admitted. The descriptor under test
+// is built from that entry's own minimum-export rule, so the case set tracks the
+// registry rather than a hand-written list beside it — a list that would go stale
+// silently the next time a type is added or its rule changes.
+//
+// Refuse: a plugin_type the registry does not carry is refused. The refused value
+// is derived by extending a registry type with a suffix, which keeps it absent
+// from the registry by construction rather than by an author's assumption that
+// some chosen literal will stay unused.
+func TestPluginDescriptorValidatePluginTypeMembership(t *testing.T) {
+	t.Parallel()
+
+	entries := plugintype.Entries()
+	if len(entries) == 0 {
+		t.Fatal("plugin-type registry is empty; the membership gate has nothing to admit")
+	}
+
+	for _, e := range entries {
+		e := e
+		t.Run("accept/"+string(e.Type), func(t *testing.T) {
+			t.Parallel()
+			d := PluginDescriptor{AbiVersion: ABIVersionV1Alpha1, PluginType: string(e.Type)}
+			if name := e.MinExport.Name; name != "" {
+				if e.MinExport.IsPrefix {
+					name += "membership"
+				}
+				d.Exports = []PluginExport{{Name: name}}
+			}
+			if err := d.Validate("acme/plugin"); err != nil {
+				t.Fatalf("registry type %q: want accept, got %v", e.Type, err)
+			}
+		})
+
+		absent := string(e.Type) + "-absent-from-the-registry"
+		t.Run("refuse/"+absent, func(t *testing.T) {
+			t.Parallel()
+			if _, ok := plugintype.Lookup(plugintype.Type(absent)); ok {
+				t.Fatalf("%q is in the registry; the refusal case needs a type the registry does not carry", absent)
+			}
+			d := PluginDescriptor{
+				AbiVersion: ABIVersionV1Alpha1,
+				PluginType: absent,
+				Exports:    []PluginExport{{Name: "render_node"}},
+			}
+			err := d.Validate("acme/plugin")
+			if !errors.Is(err, ErrWasmManifestRejected()) {
+				t.Fatalf("absent type %q: want ErrWasmManifestRejected, got %v", absent, err)
+			}
+			want := `plugin "acme/plugin" declares unknown plugin_type "` + absent + `": ` +
+				"wasm: plugin rejected by the sandbox"
+			if got := err.Error(); got != want {
+				t.Fatalf("absent type %q message:\n got: %s\nwant: %s", absent, got, want)
+			}
+		})
 	}
 }
 

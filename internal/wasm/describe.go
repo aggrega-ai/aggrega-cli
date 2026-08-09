@@ -294,13 +294,10 @@ func (d PluginDescriptor) Validate(pluginIdentity string) error {
 
 	// Membership is asked of the canonical plugin-type registry rather than
 	// re-listed here, so the gate and the registry cannot disagree about what the
-	// type set is. A reserved entry is refused alongside an absent one, because
-	// recognized means more than declared: a reserved entry names a socket with no
-	// realized plugin type — no minimum-export rule, no dispatcher — and the
-	// published plugin_type vocabulary omits it, so a descriptor naming one
-	// declares a type no author can write and the host could never dispatch.
-	entry, ok := plugintype.Lookup(PluginType(d.PluginType))
-	if !ok || entry.Reserved {
+	// type set is. A type the registry does not carry is one the published
+	// plugin_type vocabulary omits and the host could never dispatch, so the
+	// descriptor is refused.
+	if _, ok := plugintype.Lookup(PluginType(d.PluginType)); !ok {
 		return fmt.Errorf("plugin %q declares unknown plugin_type %q: %w",
 			pluginIdentity, d.PluginType, ErrWasmManifestRejected())
 	}
@@ -431,9 +428,9 @@ func (d PluginDescriptor) validateExportCapabilities(pluginIdentity string) erro
 // export name or name prefix, and the human-facing type label — from the
 // canonical plugin-type registry rather than re-spelling one case per type,
 // so the gate and the registry can never disagree on what each type requires.
-// A type absent from the registry, or a reserved type with no rule, imposes no
-// minimum-export requirement here (an unrecognized plugin_type is rejected
-// earlier in Validate).
+// A type absent from the registry, or one whose registry entry declares no rule,
+// imposes no minimum-export requirement here (an unrecognized plugin_type is
+// rejected earlier in Validate).
 func (d PluginDescriptor) validateMinimumExports(pluginIdentity string) error {
 	entry, ok := plugintype.Lookup(PluginType(d.PluginType))
 	if !ok || entry.MinExport.Name == "" {

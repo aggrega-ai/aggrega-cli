@@ -154,8 +154,9 @@ const (
 // MinExport is a plugin type's minimum-export rule: the export name the host
 // requires a plugin of this type to declare, or a name prefix at least one
 // export must carry. IsPrefix distinguishes the two: false means Name is an
-// exact export name; true means Name is a prefix. A reserved type has no rule
-// and leaves both fields zero.
+// exact export name; true means Name is a prefix. A type whose required export
+// is fixed by its attachment role rather than by the type itself declares no
+// rule and leaves both fields zero.
 type MinExport struct {
 	// Name is the exact required export name, or the required prefix when
 	// IsPrefix is true.
@@ -174,7 +175,7 @@ type Entry struct {
 	// reads longer than its terse canonical string.
 	Label string
 	// MinExport is the type's minimum-export rule. It is the zero value for a
-	// reserved type, which has no rule.
+	// type that declares no rule.
 	MinExport MinExport
 	// Socket is the workspace socket name the type attaches at, or "" when the
 	// type is not a workspace-socket type.
@@ -185,9 +186,6 @@ type Entry struct {
 	Mechanism Mechanism
 	// LoadProfile is the host-function profile the type loads under.
 	LoadProfile LoadProfile
-	// Reserved reports whether the type is reserved — a socket present without a
-	// realized plugin type (no minimum export, no dispatcher).
-	Reserved bool
 }
 
 // entries is the registry, in fixed author-defined order. Enumeration reads a

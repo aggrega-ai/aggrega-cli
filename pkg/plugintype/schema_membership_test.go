@@ -15,23 +15,21 @@ import (
 
 // TestSchemaPluginTypeEnumsMatchRegistry proves the two published plugin-type
 // enums — the entity schema's metadata.pluginType and the wire descriptor
-// schema's plugin_type — are both exactly the non-reserved plugin types the
-// registry declares. It reads the schema bytes from the embedded aggrega-schemas
-// module (the single published source, never a file path) so a drift between a
+// schema's plugin_type — are both exactly the plugin types the registry
+// declares. It reads the schema bytes from the embedded aggrega-schemas module
+// (the single published source, never a file path) so a drift between a
 // hand-edited schema enum and the registry fails loudly here.
 //
-// The expected set is the canonical strings of every registry entry whose
-// Reserved field is false. Reserved types (the import socket) are intentionally
-// excluded from both schema enums: a reserved entry names a workspace socket
-// with no realized plugin type, so it is not an authorable pluginType and must
-// not appear in the entity or wire enum. The subset the schemas publish is
-// therefore precisely "the non-reserved types" — the same set on both surfaces.
+// The expected set is the canonical string of every registry entry: a type the
+// registry carries is one an author may write as a pluginType and a guest may
+// declare on the wire, so the registry and the two published enums name one set
+// across all three surfaces.
 //
 // This guard covers the schema enums only. The describe-consts and the
 // workspace-config socket set are checked by their own superset guard, which
 // composes with this one rather than duplicating it.
 func TestSchemaPluginTypeEnumsMatchRegistry(t *testing.T) {
-	want := nonReservedRegistryTypes()
+	want := registryTypeStrings()
 
 	entityEnum := extractEnum(t, "entity (metadata.pluginType)", []byte(schemas.PluginV1alpha1),
 		"properties", "metadata", "properties", "pluginType", "enum")
@@ -42,14 +40,11 @@ func TestSchemaPluginTypeEnumsMatchRegistry(t *testing.T) {
 	assertEnumEqualsRegistry(t, "wire (plugin_type)", wireEnum, want)
 }
 
-// nonReservedRegistryTypes returns the canonical strings of every registry entry
-// that is not reserved, sorted for order-independent comparison.
-func nonReservedRegistryTypes() []string {
+// registryTypeStrings returns the canonical strings of every registry entry,
+// sorted for order-independent comparison.
+func registryTypeStrings() []string {
 	var out []string
 	for _, e := range plugintype.Entries() {
-		if e.Reserved {
-			continue
-		}
 		out = append(out, string(e.Type))
 	}
 	sort.Strings(out)
@@ -95,16 +90,16 @@ func extractEnum(t *testing.T, side string, raw []byte, path ...string) []string
 }
 
 // assertEnumEqualsRegistry fails when the schema enum diverges from the
-// registry's non-reserved set, naming the diverged side and directing the author
-// to reconcile against the pkg/plugintype registry so a future added type or a
+// registry's type set, naming the diverged side and directing the author to
+// reconcile against the pkg/plugintype registry so a future added type or a
 // dropped enum member is caught here rather than at author time.
 func assertEnumEqualsRegistry(t *testing.T, side string, got, want []string) {
 	t.Helper()
 	if !equalStringSlices(got, want) {
-		t.Errorf("%s schema enum = %v; want %v (the registry's non-reserved plugin types)\n"+
+		t.Errorf("%s schema enum = %v; want %v (the plugin types the registry declares)\n"+
 			"the schema enum and the pkg/plugintype registry disagree; reconcile the schema "+
-			"against the registry — every non-reserved registry type appears in the enum, and no "+
-			"reserved type does", side, got, want)
+			"against the registry — every registry type appears in the enum, and the enum names "+
+			"no type the registry does not carry", side, got, want)
 	}
 }
 

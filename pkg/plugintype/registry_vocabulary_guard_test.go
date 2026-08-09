@@ -24,9 +24,9 @@ import (
 const guardModuleRoot = "../.."
 
 // TestPluginTypeVocabularySurfacesMatchRegistry pins the plugin-type vocabulary
-// surfaces to the pkg/plugintype registry, so a future eighth plugin type — or
-// promoting the reserved import socket into a realized plugin type — fails loudly
-// in exactly one place instead of drifting silently across the code base.
+// surfaces to the pkg/plugintype registry, so adding a plugin type, removing one,
+// or giving one a workspace socket fails loudly in exactly one place instead of
+// drifting silently across the code base.
 //
 // Four surfaces re-express the plugin-type vocabulary; this guard covers two of
 // them, and the sibling schema guard covers the other two:
@@ -46,14 +46,14 @@ const guardModuleRoot = "../.."
 // The registry draws two distinct sets, and the guard encodes the asymmetry
 // precisely:
 //
-//   - The non-reserved type set (Entries with Reserved == false) is the seven
-//     realized plugin types; it excludes the reserved import socket, which is a
-//     workspace socket without a realized plugin type. The describe consts
-//     express exactly this set.
-//   - The socket-attached subset (Entries with Socket != "") is five sockets and
-//     deliberately includes the reserved import socket, which has a socket name
-//     without a plugin type. The workspace Socket set expresses exactly this
-//     subset.
+//   - The type set is the Type of every registry entry. The describe consts
+//     express exactly this set — one PluginType* const per entry, each assigned
+//     a plugintype.* value rather than a re-spelled literal.
+//   - The socket-attached subset is the entries whose Socket is non-empty. It is
+//     a proper subset: a type that attaches by another mechanism — a catalog
+//     pipeline step, an ambient capability, a runtime-installed command — carries
+//     no socket name and is absent from it. The workspace Socket set expresses
+//     exactly this subset.
 func TestPluginTypeVocabularySurfacesMatchRegistry(t *testing.T) {
 	// pluginTypeConstStrings maps each registry plugin-type const identifier to
 	// its canonical string, read from the registry's own source. It bridges the
@@ -65,7 +65,7 @@ func TestPluginTypeVocabularySurfacesMatchRegistry(t *testing.T) {
 	t.Run("describe_consts", func(t *testing.T) {
 		// Surface (a): every PluginType* const in describe.go must reference a
 		// plugintype.* value (never a re-spelled string literal), and the set of
-		// referenced types must equal the registry's non-reserved set exactly.
+		// referenced types must equal the registry's type set exactly.
 		refs := describePluginTypeConstRefs(t)
 
 		var got []string
@@ -81,13 +81,14 @@ func TestPluginTypeVocabularySurfacesMatchRegistry(t *testing.T) {
 		}
 		sort.Strings(got)
 
-		want := nonReservedRegistryTypes()
+		want := registryTypeStrings()
 		if !equalStringSlices(got, want) {
 			t.Errorf("internal/wasm/describe.go PluginType* consts = %v; want %v "+
-				"(the registry's non-reserved plugin types)\n"+
+				"(the plugin types the registry declares)\n"+
 				"the describe consts and the pkg/plugintype registry disagree; reconcile "+
-				"describe.go against the registry — every non-reserved type appears exactly "+
-				"once as a plugintype.* reference, and no reserved type does", got, want)
+				"describe.go against the registry — every registry type appears exactly "+
+				"once as a plugintype.* reference, and no const names a type the registry "+
+				"does not carry", got, want)
 		}
 	})
 
@@ -108,7 +109,7 @@ func TestPluginTypeVocabularySurfacesMatchRegistry(t *testing.T) {
 				"(the registry's socket-attached subset)\n"+
 				"PluginSockets() and the pkg/plugintype registry disagree; reconcile "+
 				"PluginSockets() against the registry — it must enumerate exactly the "+
-				"entries whose Socket is set, including the reserved import socket", enumerated, wantSockets)
+				"entries whose Socket is set", enumerated, wantSockets)
 		}
 
 		// Surface (d) part 2: every Socket* var in socket.go must derive its name
@@ -143,8 +144,8 @@ func TestPluginTypeVocabularySurfacesMatchRegistry(t *testing.T) {
 
 // socketAttachedRegistrySocketNames returns the socket names of every registry
 // entry that attaches at a workspace socket, sorted for order-independent
-// comparison. The reserved import socket is included — it names a socket without
-// a realized plugin type.
+// comparison. An entry that attaches by another mechanism carries no socket name
+// and is absent from the result.
 func socketAttachedRegistrySocketNames() []string {
 	var out []string
 	for _, e := range plugintype.Entries() {

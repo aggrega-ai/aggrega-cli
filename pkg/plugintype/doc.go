@@ -9,12 +9,12 @@
 // the type names, minimum-export rules, socket names, tiers, mechanisms, and
 // load profiles for itself.
 //
-// The vocabulary is the set of recognized plugin types (provider, linter,
-// feature-recipe-pipeline step, mutator, policy, CLI, parser) plus a reserved
-// entry for a not-yet-realized type. Each entry records the type's canonical
-// string, its minimum-export rule (an exact export name or a name prefix), the
-// workspace socket it attaches at when it is a socket type, its reproducibility
-// tier, its attachment mechanism, and the host-function load profile it loads
-// under. Entries enumerate in a fixed author-defined order so any consumer that
-// iterates the registry emits deterministic output.
+// The vocabulary is the set of recognized plugin types — one registry entry per
+// type, and the same set the published pluginType and plugin_type enums carry.
+// Each entry records the type's canonical string, its minimum-export rule (an
+// exact export name or a name prefix), the workspace socket it attaches at when
+// it is a socket type, its reproducibility tier, its attachment mechanism, and
+// the host-function load profile it loads under. Entries enumerate in a fixed
+// author-defined order so any consumer that iterates the registry emits
+// deterministic output.
 package plugintype
