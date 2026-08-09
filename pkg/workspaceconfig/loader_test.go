@@ -53,7 +53,6 @@ plugins:
 
 lint:
   publishing_discipline:
-    enforce_immutability: false
     allow_dynamic_refs: true
     allow_id_overrides: true
     allow_direct_x_aggrega_extensions: true
@@ -102,9 +101,6 @@ lint:
 	}
 
 	pd := got.Lint.PublishingDiscipline
-	if pd.EnforceImmutability {
-		t.Errorf("EnforceImmutability should be false (file opt-out)")
-	}
 	if !pd.AllowDynamicRefs || !pd.AllowIDOverrides ||
 		!pd.AllowDirectXAggregaExtensions || !pd.AllowNonstandardNames ||
 		!pd.AllowCategoryMismatches {
@@ -116,9 +112,9 @@ func TestLoadOverlaysDefaultsForOmittedFields(t *testing.T) {
 	t.Parallel()
 	// Fixture sets workspace.offline only; every other field omitted.
 	// The overlay-on-Default pattern preserves the documented defaults
-	// for absent keys: DefaultRegistry, CacheDir, and
-	// EnforceImmutability. AutoPull is the Go zero-value (false), and so
-	// is HaltOnDeprecatedSeverity, whose documented default is unset.
+	// for absent keys: DefaultRegistry and CacheDir. AutoPull is the Go
+	// zero-value (false), and so is HaltOnDeprecatedSeverity, whose
+	// documented default is unset.
 	content := `
 offline: true
 `
@@ -145,9 +141,6 @@ offline: true
 	if got.Build.HaltOnDeprecatedSeverity != "" {
 		t.Errorf("Build.HaltOnDeprecatedSeverity: want %q (Default: no halt threshold); got %q",
 			"", got.Build.HaltOnDeprecatedSeverity)
-	}
-	if !got.Lint.PublishingDiscipline.EnforceImmutability {
-		t.Errorf("Lint.PublishingDiscipline.EnforceImmutability: want true (Default); got false")
 	}
 }
 
@@ -273,9 +266,6 @@ func TestDefaultReturnsDocumentedDefaults(t *testing.T) {
 		t.Errorf("Default().Build.HaltOnDeprecatedSeverity: want %q; got %q", "", d.Build.HaltOnDeprecatedSeverity)
 	}
 	pd := d.Lint.PublishingDiscipline
-	if !pd.EnforceImmutability {
-		t.Errorf("Default().Lint.PublishingDiscipline.EnforceImmutability should be true")
-	}
 	if pd.AllowDynamicRefs || pd.AllowIDOverrides ||
 		pd.AllowDirectXAggregaExtensions || pd.AllowNonstandardNames ||
 		pd.AllowCategoryMismatches {
@@ -380,8 +370,5 @@ lint: {}
 	if got.Build.HaltOnDeprecatedSeverity != "" {
 		t.Errorf("Build.HaltOnDeprecatedSeverity: want %q (Default preserved: no halt threshold); got %q",
 			"", got.Build.HaltOnDeprecatedSeverity)
-	}
-	if !got.Lint.PublishingDiscipline.EnforceImmutability {
-		t.Errorf("Lint.PublishingDiscipline.EnforceImmutability: want true (Default preserved); got false")
 	}
 }

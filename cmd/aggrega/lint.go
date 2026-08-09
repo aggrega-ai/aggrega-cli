@@ -24,10 +24,9 @@ var (
 	lintPluginPath  string
 	lintCatalogDirs []string
 
-	// Tri-state policy override flags. Both
-	// `allow_*` (6) and `enforce_*` (2) families get paired CLI
-	// flags. makeResolverFromCobra decides effective value per cobra
-	// Flags().Changed() state.
+	// Tri-state policy override flags. Each of the six `allow_*`
+	// policy keys gets a paired CLI flag. makeResolverFromCobra
+	// decides effective value per cobra Flags().Changed() state.
 	lintAllowDynamicRefs          bool
 	lintNoAllowDynamicRefs        bool
 	lintAllowIDOverrides          bool
@@ -40,8 +39,6 @@ var (
 	lintNoAllowNonstandardNames   bool
 	lintAllowCategoryMismatches   bool
 	lintNoAllowCategoryMismatches bool
-	lintEnforceImmutability       bool
-	lintNoEnforceImmutability     bool
 
 	lintOutput string
 )
@@ -182,10 +179,6 @@ under either format.`,
 	c.Flags().BoolVar(&lintNoAllowNonstandardNames, "no-allow-nonstandard-names", false, "Force allow_nonstandard_names=false")
 	c.Flags().BoolVar(&lintAllowCategoryMismatches, "allow-category-mismatches", false, "Force allow_category_mismatches=true")
 	c.Flags().BoolVar(&lintNoAllowCategoryMismatches, "no-allow-category-mismatches", false, "Force allow_category_mismatches=false")
-
-	// Tri-state enforce_* flags
-	c.Flags().BoolVar(&lintEnforceImmutability, "enforce-immutability", false, "Force enforce_immutability=true")
-	c.Flags().BoolVar(&lintNoEnforceImmutability, "no-enforce-immutability", false, "Force enforce_immutability=false")
 
 	return c
 }

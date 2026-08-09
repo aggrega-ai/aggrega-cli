@@ -145,9 +145,8 @@ func TestSchemaEvolutionMatrixAllKinds(t *testing.T) {
 // the fixture in default mode (the rule_id presence in findings
 // is the assertion, not exit code).
 type participationCase struct {
-	ruleID         string
-	fixtureFile    string
-	policyOverride map[string]bool // optional flag overrides per fixture
+	ruleID      string
+	fixtureFile string
 }
 
 // TestRuleParticipation asserts every rule registered in the
@@ -199,7 +198,7 @@ func dispatchAndCheckRule(t *testing.T, pluginPath string, c participationCase) 
 		t.Fatalf("yaml→json: %v", err)
 	}
 
-	policies := buildParticipationPolicies(c.policyOverride)
+	policies := buildParticipationPolicies()
 
 	input := validator.LinterInput{
 		RuleID:     c.ruleID,
@@ -227,24 +226,16 @@ func dispatchAndCheckRule(t *testing.T, pluginPath string, c participationCase) 
 	return false
 }
 
-// buildParticipationPolicies builds a Policies JSON with the
-// rule under test enabled (for enforce_* flags) and other flags
-// at defaults.
-func buildParticipationPolicies(overrides map[string]bool) json.RawMessage {
+// buildParticipationPolicies builds a Policies JSON with every
+// opt-out flag at its default, so each rule under test is active.
+func buildParticipationPolicies() json.RawMessage {
 	policies := map[string]any{
-		"enforce_immutability":              false,
 		"allow_dynamic_refs":                false,
 		"allow_id_overrides":                false,
 		"allow_direct_x_aggrega_extensions": false,
 		"allow_aggrega_ai_prefix":           false,
 		"allow_nonstandard_names":           false,
 		"allow_category_mismatches":         false,
-	}
-	for k, v := range overrides {
-		switch k {
-		case "enforce-immutability":
-			policies["enforce_immutability"] = v
-		}
 	}
 	out, _ := json.Marshal(policies)
 	return out
@@ -321,7 +312,7 @@ func dispatchAllAndCollectRuleIDs(t *testing.T, pluginPath string, yamlBytes []b
 	if err != nil {
 		t.Fatalf("yaml→json: %v", err)
 	}
-	policies := buildParticipationPolicies(nil)
+	policies := buildParticipationPolicies()
 
 	pluginBytes, err := os.ReadFile(pluginPath)
 	if err != nil {
@@ -375,7 +366,7 @@ func TestPluginDefaultLimits(t *testing.T) {
 			RuleID:     "plugin-default-limits",
 			EntityKind: header.Kind,
 			Proposed:   proposedJSON,
-			Policies:   buildParticipationPolicies(nil),
+			Policies:   buildParticipationPolicies(),
 		}
 		findings, err := validator.DispatchPublishingLinter(wasm.PluginSpec{Name: "publishing-linter", Bytes: pluginBytes}, "", input)
 		if err != nil {

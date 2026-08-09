@@ -115,8 +115,7 @@ var errAmbiguousRegistryAlias = cerrors.Register("workspaceconfig/ambiguous-regi
 // File absence is NOT an error: a workspace without a
 // .aggrega-config.yaml gets Default() (the documented defaults
 // — hub.aggrega.ai for the registry, .aggrega for the cache,
-// no halt_on_deprecated_severity, true for
-// enforce_immutability). Callers don't need to pre-check
+// no halt_on_deprecated_severity). Callers don't need to pre-check
 // for the file.
 //
 // Validation runs BEFORE typed unmarshalling: an invalid file

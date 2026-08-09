@@ -58,7 +58,6 @@ var tier3Flags = []string{
 	"allow-aggrega-ai-prefix",
 	"allow-nonstandard-names",
 	"allow-category-mismatches",
-	"enforce-immutability",
 }
 
 // TestTier3FlagsHaveNoEnvBinding is the anti-drift guard: no situational flag

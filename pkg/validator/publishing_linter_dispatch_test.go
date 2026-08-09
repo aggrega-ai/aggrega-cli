@@ -216,7 +216,6 @@ func TestPoliciesRoundTripThroughSchema(t *testing.T) {
 	// field. This mirrors workspaceconfig.PublishingDisciplineConfig's
 	// shape exactly per the schema's Policies $def.
 	policies := json.RawMessage(`{
-		"enforce_immutability": true,
 		"allow_dynamic_refs": true,
 		"allow_id_overrides": true,
 		"allow_direct_x_aggrega_extensions": true,

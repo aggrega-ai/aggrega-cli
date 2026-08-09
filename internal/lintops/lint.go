@@ -522,7 +522,6 @@ func convertYAMLMaps(v interface{}) interface{} {
 // resolve is called per flag-base name to determine the effective value.
 func effectivePolicies(ws workspaceconfig.PublishingDisciplineConfig, resolve func(string, bool) bool) json.RawMessage {
 	policies := map[string]any{
-		"enforce_immutability":              resolve("enforce-immutability", ws.EnforceImmutability),
 		"allow_dynamic_refs":                resolve("allow-dynamic-refs", ws.AllowDynamicRefs),
 		"allow_id_overrides":                resolve("allow-id-overrides", ws.AllowIDOverrides),
 		"allow_direct_x_aggrega_extensions": resolve("allow-direct-x-aggrega-extensions", ws.AllowDirectXAggregaExtensions),

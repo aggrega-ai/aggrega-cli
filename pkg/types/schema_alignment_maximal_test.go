@@ -457,7 +457,6 @@ func maximalAggregaConfig() workspaceconfig.Config {
 		},
 		Lint: workspaceconfig.LintConfig{
 			PublishingDiscipline: workspaceconfig.PublishingDisciplineConfig{
-				EnforceImmutability:           true,
 				AllowDynamicRefs:              true,
 				AllowIDOverrides:              true,
 				AllowDirectXAggregaExtensions: true,

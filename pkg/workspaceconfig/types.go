@@ -22,9 +22,9 @@
 //
 // Several documented defaults are NOT the Go zero-value:
 // default_registry = "hub.aggrega.ai", artifact_cache_dir =
-// ".aggrega/cache", enforce_immutability = true,
-// parse_cache.max_entries = 1000, parse_cache.max_bytes =
-// 100_000_000, and compiled_module_cache.max_bytes =
+// ".aggrega/cache", parse_cache.max_entries = 1000,
+// parse_cache.max_bytes = 100_000_000, and
+// compiled_module_cache.max_bytes =
 // 53_687_091_200. Callers obtain a Config seeded with those defaults via
 // Default(); the loader's overlay pattern (Load reads file → schema
 // validates → yaml.Unmarshal into a Default()-initialised value)
@@ -643,9 +643,8 @@ type LintConfig struct {
 }
 
 // PublishingDisciplineConfig carries workspace-wide gates for the
-// publishing-linter's rule set. EnforceImmutability is a
-// workspace-wide rule gate (default true). The remaining flags relax
-// individual discouragement checks.
+// publishing-linter's rule set. Each flag relaxes an individual
+// discouragement check.
 //
 // JSON marshalling matches the schema's Policies $def in
 // aggrega-schemas/json/wasm-linter-v1alpha1.schema.json.
@@ -655,7 +654,6 @@ type LintConfig struct {
 // renaming a field here requires a coordinated update to the schema
 // and to the plugin's policies.rs mirror.
 type PublishingDisciplineConfig struct {
-	EnforceImmutability           bool `yaml:"enforce_immutability"`
 	AllowDynamicRefs              bool `yaml:"allow_dynamic_refs"`
 	AllowIDOverrides              bool `yaml:"allow_id_overrides"`
 	AllowDirectXAggregaExtensions bool `yaml:"allow_direct_x_aggrega_extensions"`
@@ -734,10 +732,9 @@ type ServeConfig struct {
 }
 
 // Default returns a Config populated with the documented defaults.
-// Eight documented defaults are NOT the Go zero-value and are seeded
+// Seven documented defaults are NOT the Go zero-value and are seeded
 // explicitly: DefaultRegistry = "hub.aggrega.ai",
 // ArtifactCacheDir = ".aggrega/cache", Build.YAMLIndent = 2,
-// Lint.PublishingDiscipline.EnforceImmutability = true,
 // ParseCache.MaxEntries = 1000, ParseCache.MaxBytes = 100_000_000,
 // CompiledModuleCache.MaxBytes = 53_687_091_200, and
 // Concurrency.PoolSize = 4. Remaining fields stay at Go's
@@ -756,11 +753,6 @@ func Default() Config {
 		ArtifactCacheDir: ".aggrega/cache",
 		Build: BuildConfig{
 			YAMLIndent: 2,
-		},
-		Lint: LintConfig{
-			PublishingDiscipline: PublishingDisciplineConfig{
-				EnforceImmutability: true,
-			},
 		},
 		ParseCache: ParseCacheConfig{
 			MaxEntries: 1000,

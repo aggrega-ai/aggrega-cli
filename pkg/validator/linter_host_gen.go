@@ -46,8 +46,6 @@ type LinterOutput struct {
 
 // Policies Per-workspace publishing-discipline configuration the rule set consults. Mirrors workspaceconfig.PublishingDisciplineConfig field-for-field. Schema is the contract: both the Go workspaceconfig struct's godoc AND the Rust policies.rs struct doc cross-reference this $def. Field omission defaults each flag to false; the host's serialiser writes only fields with non-default values.
 type Policies struct {
-	// EnforceImmutability When true, published artefacts are immutable at the registry path; re-publishing the same version is rejected. When false, the rule is suppressed (development-only).
-	EnforceImmutability bool `json:"enforce_immutability,omitempty" yaml:"enforce_immutability,omitempty" cbor:"enforce_immutability,omitempty"`
 	// AllowDynamicRefs When true, $dynamicAnchor / $dynamicRef usage in SchemaLibrary entries is permitted (suppresses the dynamic_refs rule). Default false.
 	AllowDynamicRefs bool `json:"allow_dynamic_refs,omitempty" yaml:"allow_dynamic_refs,omitempty" cbor:"allow_dynamic_refs,omitempty"`
 	// AllowIDOverrides When true, $id overrides in SchemaLibrary entries are permitted (suppresses the id_overrides rule). Default false.
@@ -271,18 +269,6 @@ func (t Policies) MarshalJSON() ([]byte, error) {
 	var buf bytes.Buffer
 	buf.WriteByte('{')
 	first := true
-	if t.EnforceImmutability != false {
-		if !first {
-			buf.WriteByte(',')
-		}
-		first = false
-		buf.WriteString("\"enforce_immutability\":")
-		if t.EnforceImmutability {
-			buf.WriteString("true")
-		} else {
-			buf.WriteString("false")
-		}
-	}
 	if t.AllowDynamicRefs != false {
 		if !first {
 			buf.WriteByte(',')
@@ -373,12 +359,6 @@ func (t *Policies) UnmarshalJSON(data []byte) error {
 			return err
 		}
 		switch key {
-		case "enforce_immutability":
-			if v, err := readBool(dec); err != nil {
-				return err
-			} else {
-				t.EnforceImmutability = v
-			}
 		case "allow_dynamic_refs":
 			if v, err := readBool(dec); err != nil {
 				return err
@@ -636,9 +616,6 @@ func (t Policies) appendCBOR(dst []byte) ([]byte, error) {
 	if t.AllowIDOverrides != false {
 		n++
 	}
-	if t.EnforceImmutability != false {
-		n++
-	}
 	if t.AllowAggregaAiPrefix != false {
 		n++
 	}
@@ -659,10 +636,6 @@ func (t Policies) appendCBOR(dst []byte) ([]byte, error) {
 	if t.AllowIDOverrides != false {
 		dst = appendCBORTextString(dst, "allow_id_overrides")
 		dst = appendCBORBool(dst, t.AllowIDOverrides)
-	}
-	if t.EnforceImmutability != false {
-		dst = appendCBORTextString(dst, "enforce_immutability")
-		dst = appendCBORBool(dst, t.EnforceImmutability)
 	}
 	if t.AllowAggregaAiPrefix != false {
 		dst = appendCBORTextString(dst, "allow_aggrega_ai_prefix")
@@ -701,12 +674,6 @@ func (t *Policies) decodeCBOR(dec *cborDec) error {
 			return err
 		}
 		switch key {
-		case "enforce_immutability":
-			if v, err := dec.readBool(); err != nil {
-				return err
-			} else {
-				t.EnforceImmutability = v
-			}
 		case "allow_dynamic_refs":
 			if v, err := dec.readBool(); err != nil {
 				return err

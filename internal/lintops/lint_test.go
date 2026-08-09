@@ -399,7 +399,6 @@ func TestEffectivePolicies(t *testing.T) {
 		{"allow-aggrega-ai-prefix", func(c *workspaceconfig.PublishingDisciplineConfig, v bool) { c.AllowAggregaAIPrefix = v }, "allow_aggrega_ai_prefix"},
 		{"allow-nonstandard-names", func(c *workspaceconfig.PublishingDisciplineConfig, v bool) { c.AllowNonstandardNames = v }, "allow_nonstandard_names"},
 		{"allow-category-mismatches", func(c *workspaceconfig.PublishingDisciplineConfig, v bool) { c.AllowCategoryMismatches = v }, "allow_category_mismatches"},
-		{"enforce-immutability", func(c *workspaceconfig.PublishingDisciplineConfig, v bool) { c.EnforceImmutability = v }, "enforce_immutability"},
 	}
 	for _, tc := range flagBases {
 		// Cell 1: workspace=true, resolver echoes workspace → effective=true

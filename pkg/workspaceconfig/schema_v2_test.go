@@ -140,7 +140,7 @@ plugins:
     - uri: ./plugin.wasm
 lint:
   publishing_discipline:
-    enforce_immutability: true
+    allow_dynamic_refs: true
 parse_cache:
   max_entries: 1000
   max_bytes: 100000000

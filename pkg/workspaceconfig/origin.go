@@ -210,9 +210,6 @@ func originFields() []originField {
 		sc("build.authoring_release", func(c Config) string { return c.Build.AuthoringRelease }),
 		sc("build.halt_on_deprecated_severity", func(c Config) string { return c.Build.HaltOnDeprecatedSeverity }),
 		sc("build.yaml_indent", func(c Config) string { return strconv.Itoa(c.Build.YAMLIndent) }),
-		sc("lint.publishing_discipline.enforce_immutability", func(c Config) string {
-			return strconv.FormatBool(c.Lint.PublishingDiscipline.EnforceImmutability)
-		}),
 		sc("lint.publishing_discipline.allow_dynamic_refs", func(c Config) string {
 			return strconv.FormatBool(c.Lint.PublishingDiscipline.AllowDynamicRefs)
 		}),
