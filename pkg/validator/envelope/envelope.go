@@ -66,10 +66,14 @@ const (
 	// KindIR is the emitted intermediate representation. It is an
 	// OUTPUT-side, TEST-ONLY kind: no loader calls ValidateBytes/
 	// ValidateInstance with it, so it creates no runtime gate (a gate is
-	// a call site, never map membership). It exists so the schema↔struct
-	// alignment suite can validate emitted IR against ir-v1alpha1 through
-	// the one validation component. Do not wire it into a parse path —
-	// runtime emit-validation is deliberately not part of the pipeline.
+	// a call site, never map membership). It exists so that emission-side
+	// conformance checks can validate a REAL emitted IR instance against
+	// ir-v1alpha1 through the one validation component. The bidirectional
+	// schema↔struct alignment suite deliberately excludes this kind and
+	// cannot cover it: the IR types are json-tagged, and that suite's
+	// schema-to-Go direction reads yaml tags. Do not wire it into a parse
+	// path — runtime emit-validation is deliberately not part of the
+	// pipeline.
 	KindIR Kind = "IR"
 )
 
