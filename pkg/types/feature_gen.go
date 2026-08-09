@@ -35,7 +35,7 @@ type FeatureMetadata struct {
 	Home string `json:"home,omitempty" yaml:"home,omitempty"`
 	// Keywords A list of descriptive keywords for UI discoverability.
 	Keywords []string `json:"keywords,omitempty" yaml:"keywords,omitempty"`
-	// Labels Duck-typing labels for the Feature. The reserved label 'feature.aggrega.ai/kind' with value 'secret' marks this as a credential Feature, which routes the attachment through the credential pipeline. A credential Feature and an ordinary Feature are attached the same way, under the same attachment surface; the label selects the pipeline, not the authoring block.
+	// Labels Duck-typing labels for the Feature. The reserved label 'feature.aggrega.ai/kind' with value 'secret' marks this as a credential Feature for the author and for the tooling that surfaces it. A credential Feature and an ordinary Feature are attached the same way, under the same attachment surface; what an attachment produces is decided by the FeatureRecipe the Manifest maps its type to, not by the label.
 	Labels OrderedMap[string] `json:"labels,omitempty,omitzero" yaml:"labels,omitempty"`
 	// Annotations Immutable, intrinsic feature characteristics authored by the Platform Architect in Domain 2. Cascades down to the .context.annotations.catalog bucket.
 	Annotations OrderedMap[string] `json:"annotations,omitempty,omitzero" yaml:"annotations,omitempty"`
