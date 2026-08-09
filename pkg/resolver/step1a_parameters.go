@@ -286,6 +286,17 @@ func ValidateParametersAgainstContract(
 // validateEntry runs the contract checks against one Release-supplied
 // value. Order: type-kind dispatch first (rejects type mismatches early),
 // then per-shape constraints, then enum membership, then validate-predicate.
+//
+// An entry declaring no type is skipped entirely: it applies no constraints at
+// all, and no type is inferred from the supplied value. An author who wants a
+// parameter constrained declares its type; an untyped declaration accepts
+// whatever the Release supplies, which is what makes it the escape hatch for a
+// value whose shape the Aggregate does not wish to pin.
+//
+// A type mismatch short-circuits. When the value is not of the declared type the
+// function returns that one violation and runs nothing further, so the author is
+// not also told that a string constraint failed against a value that was never a
+// string.
 func validateEntry(path string, pc types.ParameterContract, value any) []*ResolverError {
 	if pc.Type == "" {
 		return nil
@@ -359,6 +370,15 @@ func validateEntry(path string, pc types.ParameterContract, value any) []*Resolv
 //   - type: boolean    accepts bool only
 //   - type: array      accepts []any
 //   - type: object     accepts map[string]any
+//
+// Those six spellings are the whole set, and no other spelling reaches here:
+// every path to this function obtains its contract through
+// [LoadAggregateParameterContractFromBytes], which envelope-validates the
+// authored contract against the published Aggregate schema, where the parameter
+// type is a closed enum of exactly these six. A misspelt type therefore halts at
+// workspace load, naming the contract, rather than arriving as a Release-side
+// contract violation. The permissive fall-through below is defensive against
+// that guarantee being bypassed; it is not an authoring escape hatch.
 func typeMatches(declaredType string, v any) bool {
 	switch declaredType {
 	case "string":

@@ -383,11 +383,22 @@ func DecodeVerboseInjectEntry(entry any) (in, value, from string, hasValue, hasF
 // author gave it. Used in Aggregate component.features, subsystem.features, and
 // Release boundary features.
 //
-// This is the one attachment shape. A credential Feature — one carrying the
-// feature.aggrega.ai/kind: secret label — is attached here like any other, with
-// the same fields; the label selects what the attachment's bound FeatureRecipe
-// produces, not the surface it is declared on. For a credential, Values holds
-// pointers into a secret store rather than resolved material.
+// This is the one attachment shape, and there is no second one. A credential
+// Feature — one carrying the feature.aggrega.ai/kind: secret label — is attached
+// here like any other, with the same fields, on the same surface, at any scope
+// that accepts an attachment. There is no placement partition between the
+// attachment blocks: no block is reserved for credentials and none excludes them.
+//
+// The label itself steers nothing. It is duck-typing metadata on the catalog
+// Feature, carried through uninterpreted; the compiler reads it on no branch, so
+// a labelled attachment is resolved, merged and rendered by exactly the paths an
+// unlabelled one is. What a given attachment produces is decided by the
+// FeatureRecipe the Manifest maps its type to — the operator's explicit
+// deployment choice — never by the label. The label's audience is the author and
+// the catalog tooling that surfaces it.
+//
+// For a credential, Values holds pointers into a secret store rather than
+// resolved material.
 type FeatureInstance struct {
 	Type        string                      `json:"type" yaml:"type"`
 	Description string                      `json:"description,omitempty" yaml:"description,omitempty"`
