@@ -69,6 +69,28 @@
 // file path alone: one daemon serves one workspace and one client, so
 // no per-client dimension is needed.
 //
+// # Paths on the wire
+//
+// A request naming a document names it relative to the workspace root
+// the handshake reported. The daemon refuses any other form rather than
+// repairing it: an absolute value, or one resolving outside that root,
+// draws the standard invalid-params error, whose message states the
+// contract and then the specific fault. The refusal is load-bearing
+// rather than defensive — filepath.Join concatenates an absolute second
+// operand instead of failing, so a value quietly joined has the daemon
+// read, and report diagnostics against, a path the workspace never
+// held. Repairing such a value here would teach every client that the
+// contract is optional, so the request is rejected and its sender
+// corrects it. aggrega/irGraph is the method this governs today; see
+// resolveReleaseParam.
+//
+// Error envelopes point back at artifacts through fields named for the
+// artifact, never through one general-purpose path field. On errorData,
+// File is the source document its Line and Column locate, Lockfile is a
+// lockfile, and Release is a Release. A client learns what it was handed
+// from the field it read, rather than having to branch on the error code
+// beside it.
+//
 // # Where the rest of the contract lives
 //
 // The wire framing, the worker-pool submission loop and the two-step

@@ -36,8 +36,11 @@ import (
 // envelope as a stderr-logged warning and skips drift verification;
 // the next handleIrGraph retries.
 //
-// The load-stage failures populate Data.File with the Release path being
-// resolved; the closure-compute failure stays Data-less (the catalog spans
+// The load-stage failures populate Data.File with the Release document whose
+// load failed — File names the source document a failure is about, and nothing
+// else; a lockfile-scoped failure names its lockfile in Data.Lockfile instead,
+// so a client never has to read the error code to learn which artifact it was
+// handed. The closure-compute failure stays Data-less (the catalog spans
 // multiple source dirs) and is annotated with skipContext so an in-closure
 // entity skipped at the tolerant lazy enumeration is explained rather than a
 // bare "not found".

@@ -9,6 +9,15 @@ package serve
 // 1-based per the daemon's LSP-aligned convention (matching the
 // existing Diagnostic wire shape).
 //
+// Each path-valued field names one artifact and only that artifact, so
+// a client learns what it received from the field it read rather than
+// from the error code alongside it. File is the source document the
+// position fields locate — the document being validated, or the
+// Release whose load failed. Lockfile is the lockfile a lockfile-scoped
+// failure is about. Release is the Release the error refers to. A site
+// populates as many as it has in hand; none of them stands in for
+// another.
+//
 // All fields are optional; the JSON encoding via omitempty drops
 // zero-valued fields so callers can populate partial information
 // without leaking placeholders. A site that knows only the file
@@ -36,6 +45,13 @@ package serve
 // carried structurally so a client can compose the remediating command
 // without parsing it back out of Message.
 //
+// Lockfile names the lockfile a lockfile-scoped failure is about: the
+// path the daemon looked for and did not find, or could not stat. It is
+// a separate field from File because a lockfile is a different artifact
+// from the source document a diagnostic anchors at, and a client that
+// reads one must not have to determine from the error code which of the
+// two it was handed.
+//
 // Cumulative shape across consecutive evolutions:
 //
 //	File           — initial shape (envelope's source-file label)
@@ -45,6 +61,8 @@ package serve
 //	EndLine        — added for wide diagnostic ranges (1-based, omitempty)
 //	EndColumn      — added for wide diagnostic ranges (1-based, omitempty)
 //	Release        — added for the lockfile-absent emission path
+//	Lockfile       — added so a lockfile-scoped emission names the
+//	                 lockfile in a field of its own
 //
 // All fields are additive and omitempty so older clients ignore
 // new fields and newer clients consume them when present.
@@ -62,6 +80,18 @@ type errorData struct {
 	EndLine        int    `json:"end_line,omitempty"`
 	EndColumn      int    `json:"end_column,omitempty"`
 	Release        string `json:"release,omitempty"`
+	Lockfile       string `json:"lockfile,omitempty"`
+}
+
+// newLockfileErrorData returns a populated *errorData for a
+// lockfile-scoped failure: the lockfile the daemon looked for, plus the
+// Release it belongs to, spelled the way the request named it. The
+// position fields stay zero (omitted from the wire) — a lockfile-scoped
+// failure is about a whole file, not a position in one. File is left
+// empty on purpose: the failing artifact is the lockfile, and it has its
+// own field.
+func newLockfileErrorData(lockfilePath, release string) *errorData {
+	return &errorData{Lockfile: lockfilePath, Release: release}
 }
 
 // newErrorData returns a populated *errorData. Line and column are

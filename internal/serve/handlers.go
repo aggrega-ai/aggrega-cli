@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strconv"
+	"strings"
 
 	"go.yaml.in/yaml/v3"
 
@@ -404,6 +405,48 @@ type irGraphParams struct {
 	Release string `json:"release"`
 }
 
+// resolveReleaseParam turns the `release` request parameter into the
+// absolute path the daemon reads, refusing any value that does not
+// honour the parameter's contract: a path relative to the workspace
+// root, naming a document inside it.
+//
+// The refusal is the point, not a repair. Joining an absolute value
+// onto the workspace root concatenates rather than fails, so without
+// this the daemon reads — and reports diagnostics against — a path that
+// was never the Release's, and the reader is told about a file that does
+// not exist. Normalising the value here instead would hide the same
+// mistake in every client that makes it, so the request is rejected and
+// its sender corrects it.
+//
+// Escape is judged on where the value lands, not on how it is spelled:
+// the check runs against the joined-and-cleaned path, so an interior
+// `a/../b` resolves and passes while `../../elsewhere` is refused.
+func resolveReleaseParam(workspaceRoot, release string) (string, *jsonRPCError) {
+	if release == "" {
+		return "", invalidReleaseParam("the request named no Release")
+	}
+	if filepath.IsAbs(release) {
+		return "", invalidReleaseParam(fmt.Sprintf("%q is an absolute path", release))
+	}
+	resolved := filepath.Join(workspaceRoot, release)
+	rel, err := filepath.Rel(workspaceRoot, resolved)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", invalidReleaseParam(fmt.Sprintf("%q resolves outside the workspace root", release))
+	}
+	return resolved, nil
+}
+
+// invalidReleaseParam builds the refusal a malformed `release` value
+// draws. Every branch names the contract first and the specific fault
+// second, so a client author reading one message learns what to send
+// without consulting anything else.
+func invalidReleaseParam(fault string) *jsonRPCError {
+	return &jsonRPCError{
+		Code:    jsonRPCInvalidParams,
+		Message: "invalid params: release must be a path relative to the workspace root, naming a Release inside it; " + fault,
+	}
+}
+
 // irGraphResult is the response shape for `aggrega/irGraph`. The
 // graph field is the serialized types.IRGraph.
 type irGraphResult struct {
@@ -443,10 +486,11 @@ func (s *Server) irGraphPipelineOptions() pipeline.Options {
 // returned as JSON; trace data is discarded (Options.IncludeTrace is
 // false).
 //
-// Path resolution: params.Release is interpreted relative to the
-// daemon's workspace root. Subsequent filesystem reads (Manifest,
-// Aggregate, lockfile data when the lockfile machinery ships)
-// resolve against the Release's containing directory.
+// Path resolution: params.Release is a path relative to the daemon's
+// workspace root, naming a Release inside it, and resolveReleaseParam
+// refuses any other shape before a single file is read. Subsequent
+// filesystem reads (Manifest, Aggregate, lockfile) resolve against the
+// Release's containing directory.
 //
 // Catalog lookup: every lookup the pipeline needs is served by the
 // session-scoped lazy lookup constructed at daemon startup, which
@@ -465,7 +509,10 @@ func (s *Server) irGraphPipelineOptions() pipeline.Options {
 // unit-tested via bytes.Buffer mocks in internal/serve/server_test.go;
 // the pipeline.RunPipeline call is covered by pipeline's own tests.
 func (s *Server) handleIrGraph(ctx context.Context, params irGraphParams) (irGraphResult, *jsonRPCError) {
-	releasePath := filepath.Join(s.workspaceRoot, params.Release)
+	releasePath, paramErr := resolveReleaseParam(s.workspaceRoot, params.Release)
+	if paramErr != nil {
+		return irGraphResult{}, paramErr
+	}
 
 	// 1. Lockfile-absent gate. Blocking — no IR graph produced
 	//    until the operator regenerates the lockfile (via the
@@ -478,13 +525,13 @@ func (s *Server) handleIrGraph(ctx context.Context, params irGraphParams) (irGra
 			return irGraphResult{}, &jsonRPCError{
 				Code:    errLockfileAbsent,
 				Message: fmt.Sprintf("lockfile %s not found; run `aggrega pull --release %s` to generate", lockfilePath, params.Release),
-				Data:    &errorData{File: lockfilePath, Release: params.Release},
+				Data:    newLockfileErrorData(lockfilePath, params.Release),
 			}
 		}
 		return irGraphResult{}, &jsonRPCError{
 			Code:    errEntityNotResolvable,
 			Message: fmt.Sprintf("lockfile stat %s: %v", lockfilePath, err),
-			Data:    newErrorData(lockfilePath, 0, 0),
+			Data:    newLockfileErrorData(lockfilePath, params.Release),
 		}
 	}
 

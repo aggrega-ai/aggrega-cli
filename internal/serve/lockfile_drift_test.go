@@ -44,7 +44,7 @@ type jsonRPCNotificationRead struct {
 // TestHandleIrGraphLockfileAbsentEmits1003 verifies that an
 // aggrega/irGraph request against a workspace with a Release path
 // that resolves but no sibling lockfile produces the
-// lockfile-absent envelope with Data.File pointing at the expected
+// lockfile-absent envelope with Data.Lockfile pointing at the expected
 // lockfile path and Data.Release naming the Release the request
 // asked for. The post-absent-gate flow (resolveReleaseClosure
 // + verifyDriftAndPublish + pipeline) never fires because the gate
@@ -54,6 +54,12 @@ type jsonRPCNotificationRead struct {
 // envelope suggests is parameterised by the Release: a client reading
 // it out of the prose Message would couple to wording that is free to
 // change, so the Release travels structurally.
+//
+// Data.File is asserted EMPTY, and that assertion is the point rather
+// than a detail: File names the source document a diagnostic anchors
+// at, so a lockfile path travelling in it would be indistinguishable
+// from a source path without reading the error code beside it. Each
+// artifact has its own field, and this pins that they stay apart.
 func TestHandleIrGraphLockfileAbsentEmits1003(t *testing.T) {
 	t.Parallel()
 	tmp := t.TempDir()
@@ -75,8 +81,11 @@ func TestHandleIrGraphLockfileAbsentEmits1003(t *testing.T) {
 		t.Fatalf("expected Data field populated; got nil")
 	}
 	wantLockfile := filepath.Join(tmp, "release.lock")
-	if resp.Error.Data.File != wantLockfile {
-		t.Errorf("Data.File: got %q, want %q", resp.Error.Data.File, wantLockfile)
+	if resp.Error.Data.Lockfile != wantLockfile {
+		t.Errorf("Data.Lockfile: got %q, want %q", resp.Error.Data.Lockfile, wantLockfile)
+	}
+	if resp.Error.Data.File != "" {
+		t.Errorf("Data.File: got %q, want empty — the lockfile travels in Data.Lockfile, and File names only the source document a diagnostic anchors at", resp.Error.Data.File)
 	}
 	if resp.Error.Data.Release != missing {
 		t.Errorf("Data.Release: got %q, want %q", resp.Error.Data.Release, missing)
