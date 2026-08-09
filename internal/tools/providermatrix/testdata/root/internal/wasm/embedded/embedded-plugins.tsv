@@ -1,0 +1,5 @@
+# fixture manifest — same tab-separated shape as the real one
+
+provider	alpha	./plugins/alpha-provider	go
+linter	something	./plugins/ignored-linter	rust
+provider	beta	./plugins/beta-provider	go
