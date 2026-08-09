@@ -16,7 +16,13 @@ import (
 
 // Validate implements the Validator interface. The algorithm:
 //
-//  1. Deterministic property walk. Recursively iterate the instance's
+//  1. The instance root's own constraints, then a deterministic property
+//     walk. The root is checked first and separately, because the walk
+//     covers a position from the level above it and the root has no level
+//     above it; without that check a root's type, property-count bounds,
+//     propertyNames, enum, const and dependentRequired apply to nothing,
+//     and a scalar or sequence document satisfies an object schema in
+//     full. Then recursively iterate the instance's
 //     keys in sorted order; at each property, check the sub-instance
 //     against the constraints belonging to that position — the schema
 //     there reduced to its own keywords, with its declared property
@@ -70,12 +76,58 @@ func (a *googleAdapter) Validate(instance any, ctx *Context) (*Report, error) {
 		params = ctx.Parameters
 	}
 
-	// Step 1: deterministic property walk. Checks each position against
-	// the constraints declared at that position, in sorted-key order, and
-	// checks required at each level. Sidesteps the library's
-	// fail-fast-with-randomised-iteration semantic so a report naming
-	// several violations names the same ones, in the same order, on every
-	// run.
+	// Step 1: the instance root's own constraints, then the deterministic
+	// property walk.
+	//
+	// The root check is made here because the walk cannot make it. A
+	// position's own keywords are checked by its PARENT's per-key dispatch,
+	// which validates the child value before recursing into it — so every
+	// position is covered by the level above it, and the root, having no
+	// level above it, is covered by nothing. Its keywords are indexed like
+	// any other position's and then read by no one.
+	//
+	// What that silently loses is the whole root keyword set — its type
+	// above all, but equally its property-count bounds, its propertyNames,
+	// its enum and const, its dependentRequired. A document whose root is a
+	// scalar or a sequence therefore satisfies an object schema completely:
+	// nothing errors and nothing warns, because every remaining check either
+	// iterates an instance that is not a map or descends into properties
+	// that do not exist. That failure is silent and in the permissive
+	// direction, which is the direction no passing document can reveal.
+	//
+	// Two root families already survive without this, and they are the
+	// reason the gap reads as narrower than it is: required is checked in
+	// the walk's own body, and closedness is checked by the per-key dispatch
+	// keyed on the parent path, which at the root is the root itself.
+	//
+	// The check is the same one every other position receives, rather than a
+	// root-specific type test. A second implementation would agree with
+	// pruneOwnKeywords on the day it was written and drift from it after.
+	//
+	// No definition name is passed, and that is the one place this check
+	// differs from the per-property one. Naming the definition exists to
+	// repair a label that is wrong at a sub-position: a schema library calls
+	// whatever it was handed "root", so a definition substituted for a
+	// reference deep in the document gets described as the root when it is
+	// nothing of the kind. At the instance root the two coincide — the
+	// library's "root" is the document's root — so the label is already
+	// accurate, and rewriting it would make one set of constraints report
+	// differently depending on whether the author wrote them at the root or
+	// behind a reference to them. Those two documents say the same thing, so
+	// they must fail the same way.
+	if err := a.validateOwnKeywords("", instance); err != nil {
+		rpt.append(Finding{
+			FieldPath: "",
+			Keyword:   "validation",
+			Message:   findingMessage(err, instance, ""),
+		})
+	}
+
+	// Checks each position against the constraints declared at that
+	// position, in sorted-key order, and checks required at each level.
+	// Sidesteps the library's fail-fast-with-randomised-iteration semantic
+	// so a report naming several violations names the same ones, in the same
+	// order, on every run.
 	a.deterministicWalk(instance, "", rpt)
 
 	// Predicate-inert mode: the caller lacks the correct parameter context for
@@ -217,6 +269,13 @@ nextValidate:
 // Because the check at a position covers that position only, a failing
 // value is named once, at its own path, instead of once at its own path
 // and again — chosen arbitrarily among its siblings — at each ancestor.
+//
+// A position's own keywords are checked here from the level above it, as
+// part of the per-key dispatch, and never for the position the walk is
+// currently at. The instance root therefore falls outside this walk
+// entirely and is checked by the caller before the walk begins. Do not add
+// a self-check here to cover it: every non-root position already has one
+// from its parent, so a self-check would report each of them twice.
 //
 // Per-key dispatch follows the precedence rule the walker enforces:
 // Properties > PatternProperties > AdditionalProperties. A key declared

@@ -206,17 +206,41 @@ func TestRootReferenceAlongsideOtherConstraintsIsLeftAsAReference(t *testing.T) 
   }
 }`
 
-	// The assertion is construction and a clean run, not a finding count: the
-	// point is that an unrecognised root shape is handled rather than
-	// mistaken for a bare reference. What such a root enforces is the
-	// separate, wider question of what the index checks at a position
-	// declaring constraints of its own.
-	report, err := newValidatorFromJSON(t, mixed).Validate(map[string]any{"apiVersion": "v1"}, nil)
+	// Both directions, because either alone is satisfied by a validator that
+	// has stopped working: one that enforces nothing accepts the satisfying
+	// document, and one that rejects everything rejects the violating one.
+	//
+	// The root here declares a constraint of its own alongside the
+	// reference, so both must reach the instance — the reference is not
+	// substituted for the root, and the root's own keyword is not lost to
+	// the reference.
+	validator := newValidatorFromJSON(t, mixed)
+
+	satisfying := map[string]any{"apiVersion": "v1", "second": true}
+	report, err := validator.Validate(satisfying, nil)
 	if err != nil {
-		t.Fatalf("validate: %v", err)
+		t.Fatalf("validate the satisfying document: %v", err)
 	}
 	if len(report.Findings) != 0 {
-		t.Errorf("expected no findings for a document satisfying the referenced shape; got %+v",
-			report.Findings)
+		t.Errorf("expected no findings for a document satisfying both the referenced shape and "+
+			"the root's own constraint; got %+v", report.Findings)
+	}
+
+	// One property, where the root declares it must carry two. The
+	// referenced shape is satisfied, so the only thing that can reject this
+	// is the constraint the root declares next to its reference.
+	report, err = validator.Validate(map[string]any{"apiVersion": "v1"}, nil)
+	if err != nil {
+		t.Fatalf("validate the violating document: %v", err)
+	}
+	if len(report.Findings) == 0 {
+		t.Fatal("a document violating the constraint the root declares alongside its reference " +
+			"produced no findings, so that constraint is declared and never applied")
+	}
+	for _, f := range report.Findings {
+		if f.FieldPath != "" {
+			t.Errorf("expected the root's own constraint to be reported at the root; got a "+
+				"finding at %q: %+v", f.FieldPath, f)
+		}
 	}
 }
