@@ -141,6 +141,29 @@ var errOCILocationCollision = cerrors.Register("oci/oci-location-collision", cer
 	Message: "oci: distinct catalog identities map to the same OCI repository location",
 })
 
+// ErrReferrerDiscoveryUnavailable is returned when an artifact's referrers
+// could not be looked up at all: the target cannot serve referrer discovery,
+// the subject the referrers hang off could not be located, or the discovery
+// request itself failed. It names a question that went UNANSWERED.
+//
+// That is a different outcome from an answered question that found nothing,
+// and the two must not be conflated. An artifact that simply carries no
+// referrer resolves normally and yields an empty list; this sentinel says the
+// list was never obtained, so nothing at all is known about what is attached.
+//
+// The distinction is what lets a caller act correctly on a missing referrer.
+// A caller that consumes referrers only when they are present may continue
+// past this sentinel, because an unanswered lookup produced nothing to
+// consume either way. A caller that REQUIRES a referrer must treat it as a
+// failure: a check that could not run has not passed, and admitting the
+// artifact would rest on a question nobody managed to put. Call sites wrap
+// this sentinel with the subject reference and the underlying cause.
+func ErrReferrerDiscoveryUnavailable() error { return errReferrerDiscoveryUnavailable }
+
+var errReferrerDiscoveryUnavailable = cerrors.Register("oci/referrer-discovery-unavailable", cerrors.Meta{
+	Message: "oci: referrer discovery could not be completed",
+})
+
 // RemediationFor returns the operator-actionable remediation hint
 // for a fetch-sentinel error. The registryHost substring substitutes
 // into auth/network messages; pass an empty string when the host is

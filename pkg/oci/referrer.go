@@ -89,20 +89,31 @@ func AttachReferrerToDescriptor(ctx context.Context, target oras.Target, subject
 // subjectRef is any reference the target resolves to the subject's
 // manifest descriptor (a version tag or a manifest digest).
 //
-// Returns an empty slice (not nil) when the subject has no matching
-// referrer.
+// The two ways of finding no referrer are reported differently, because a
+// caller acting on an absent referrer needs to tell them apart:
+//
+//   - The lookup succeeded and the subject has no matching referrer — an
+//     empty slice (not nil) and a nil error. The question was answered.
+//   - The lookup could not be completed at all — an error wrapping
+//     [ErrReferrerDiscoveryUnavailable], whatever prevented it: a target that
+//     cannot serve discovery, a subject that could not be located, or a
+//     failed discovery request. The question went unanswered, so the absence
+//     of a referrer here is not evidence that none is attached.
+//
+// The underlying cause stays in the returned error's chain alongside the
+// sentinel, so a caller may match either.
 func ListReferrers(ctx context.Context, target oras.ReadOnlyTarget, subjectRef string, artifactType string) ([]ocispec.Descriptor, error) {
 	store, ok := target.(content.ReadOnlyGraphStorage)
 	if !ok {
-		return nil, fmt.Errorf("oci: target does not support referrer discovery: %T", target)
+		return nil, fmt.Errorf("oci: target does not support referrer discovery: %T: %w", target, ErrReferrerDiscoveryUnavailable())
 	}
 	subjectDesc, err := target.Resolve(ctx, subjectRef)
 	if err != nil {
-		return nil, fmt.Errorf("oci: resolve subject %q: %w", subjectRef, err)
+		return nil, fmt.Errorf("oci: resolve subject %q: %w: %w", subjectRef, err, ErrReferrerDiscoveryUnavailable())
 	}
 	refs, err := registry.Referrers(ctx, store, subjectDesc, artifactType)
 	if err != nil {
-		return nil, fmt.Errorf("oci: list referrers of %q: %w", subjectRef, err)
+		return nil, fmt.Errorf("oci: list referrers of %q: %w: %w", subjectRef, err, ErrReferrerDiscoveryUnavailable())
 	}
 	if refs == nil {
 		return []ocispec.Descriptor{}, nil

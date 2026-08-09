@@ -103,9 +103,12 @@ type Options struct {
 // Verify runs the verification pass over entities and returns the verified
 // facts. A fatal verification failure (a required signature that is
 // missing, untrusted, or invalid for a non-advisory registry) returns a
-// non-nil error and halts the pull. Advisory registries downgrade failures
-// to warnings; the global skip and per-registry skip disable verification
-// loudly.
+// non-nil error and halts the pull. A required signature whose lookup could
+// not be completed halts it too: a check that did not run has not passed.
+// Where no signature is required, neither an absent signature nor an
+// unanswerable lookup halts, because neither leaves anything to verify.
+// Advisory registries downgrade failures to warnings; the global skip and
+// per-registry skip disable verification loudly.
 func Verify(ctx context.Context, entities []Entity, opts Options) ([]Result, error) {
 	warn := opts.Warn
 	if warn == nil {
@@ -145,7 +148,10 @@ func Verify(ctx context.Context, entities []Entity, opts Options) ([]Result, err
 
 		// Default-for-unknown: a host with no explicit policy, no baseline, and
 		// no required stance verifies only if a signature is present, and never
-		// halts on a missing one.
+		// halts on a missing one. "Missing" covers both ways a signature can
+		// fail to turn up — the registry answered and nothing is attached, and
+		// the registry could not be asked — because neither leaves a signature
+		// to verify. The two part company only once a signature is required.
 		requireSignature := registryRequired || orgRequired
 
 		// A per-host break-glass skip disables verification for this host — but
@@ -162,10 +168,30 @@ func Verify(ctx context.Context, entities []Entity, opts Options) ([]Result, err
 
 		res, verr := verifyEntity(ctx, opts.Config, e, policy, configured, opts.Target)
 		if verr != nil {
-			if errors.Is(verr, signing.ErrNoSignatureFound()) && !requireSignature {
-				// Unknown / non-mandatory registry, no signature present:
-				// verify-if-present means nothing to verify. Not a failure.
-				continue
+			if !requireSignature {
+				// Two outcomes leave nothing to verify, and neither is evidence
+				// against the artifact. They are admitted separately because
+				// they are different facts about the registry.
+				if errors.Is(verr, signing.ErrNoSignatureFound()) {
+					// The registry answered and nothing is attached:
+					// verify-if-present means nothing to verify. Not a failure.
+					continue
+				}
+				if errors.Is(verr, oci.ErrReferrerDiscoveryUnavailable()) {
+					// The registry could not be asked, so nothing was
+					// established either way. Treating that as a failed
+					// verification would refuse an artifact on the strength of
+					// a question nobody managed to put — but it is said out
+					// loud, because a check that did not run is not a check
+					// that passed, and silence would read as a clean unsigned
+					// pull. Where a signature IS required this case is
+					// deliberately not admitted here: it falls through to the
+					// halt below, because a required check that could not run
+					// has not passed.
+					warn(fmt.Sprintf("signature verification could not run for %s "+
+						"(the registry could not answer the signature lookup and no signature is required; continuing): %v", e.URI, verr))
+					continue
+				}
 			}
 			if policy.Advisory {
 				warn(fmt.Sprintf("signature verification failed for %s (advisory; continuing): %v", e.URI, verr))
@@ -182,7 +208,10 @@ func Verify(ctx context.Context, entities []Entity, opts Options) ([]Result, err
 
 // verifyEntity fetches and verifies one entity's signature. Returns a nil
 // Result with no error when the entity has no reachable registry (skipped).
-// Returns ErrNoSignatureFound when no signature referrer is present.
+// Returns ErrNoSignatureFound when the registry reports no signature referrer,
+// and an error wrapping oci.ErrReferrerDiscoveryUnavailable when the referrer
+// lookup could not be completed at all — the caller distinguishes the two
+// because only the first is an answer.
 func verifyEntity(ctx context.Context, cfg workspaceconfig.Config, e Entity, policy workspaceconfig.RegistryConfig, configured bool, targetFor TargetFor) (*Result, error) {
 	if targetFor == nil {
 		return nil, nil

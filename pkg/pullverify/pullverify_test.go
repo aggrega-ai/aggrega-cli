@@ -56,6 +56,19 @@ func targetForStore(store oras.ReadOnlyTarget, subjectRef string) pullverify.Tar
 	}
 }
 
+// unanswerableTarget hands the verify pass a target that cannot answer a
+// referrer lookup: the subject reference names nothing the store holds, so
+// discovery fails before it can report whether a signature is attached.
+//
+// It stands for a registry the lookup cannot be completed against — a
+// referrers API that is not served, a subject that cannot be located, a
+// transport that does not carry the request — as distinct from a registry that
+// answers and reports nothing attached, which is what an artifact pushed
+// without a signature produces.
+func unanswerableTarget(store oras.ReadOnlyTarget) pullverify.TargetFor {
+	return targetForStore(store, "sha256:0000000000000000000000000000000000000000000000000000000000000000")
+}
+
 // TestVerifyKeyedRecordsFact proves the pull verify pass discovers a keyed
 // signature referrer in an in-memory target, verifies it against the
 // pinned key, and records a keyed verified fact with the cached bundle.
@@ -443,5 +456,99 @@ func TestVerifyGlobalSkipDefeatsOrgRequired(t *testing.T) {
 	}
 	if warning == "" {
 		t.Error("global skip must be loud")
+	}
+}
+
+// TestVerifyUnanswerableLookupHaltsWhenRequired proves the half of the
+// tolerance that must not relax: where a signature is REQUIRED, a referrer
+// lookup that cannot be answered still halts the pull.
+//
+// A required check that could not run has not passed. "The registry could not
+// be asked" is not a substitute for "the signature verified", so the pull
+// stops rather than admit an artifact whose signature nobody established.
+func TestVerifyUnanswerableLookupHaltsWhenRequired(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	store, dg, pubPEM := signedStore(t)
+
+	cfg := workspaceconfig.Config{
+		Registries: []workspaceconfig.RegistryConfig{
+			{Host: "req.example.com", Signing: workspaceconfig.SigningConfig{Required: true}, PublicKey: string(pubPEM)},
+		},
+	}
+	ent := pullverify.Entity{URI: "req.example.com/component/x", ManifestDigest: dg, Host: "req.example.com", Kind: "Component"}
+	_, verr := pullverify.Verify(ctx, []pullverify.Entity{ent}, pullverify.Options{
+		Config: cfg,
+		Target: unanswerableTarget(store),
+	})
+	if verr == nil {
+		t.Fatal("a required signature whose lookup could not be answered must halt the pull; got nil error")
+	}
+	// The halt must be ON the unanswered lookup, not on something incidental,
+	// or this test would keep passing for the wrong reason.
+	if !errors.Is(verr, oci.ErrReferrerDiscoveryUnavailable()) {
+		t.Fatalf("the halt must name the lookup that could not be completed, got %v", verr)
+	}
+}
+
+// TestVerifyGenuineFailureHaltsWhenNotRequired proves the tolerance is narrow:
+// it admits only the two outcomes that leave nothing to verify, never a
+// signature that was found and did not verify.
+//
+// The registry pins the wrong key and requires nothing. Verification therefore
+// runs, finds a signature, and rejects it — an answered question with a bad
+// answer, which halts whether or not a signature was required. A tolerance that
+// widened to "any verification error is survivable when none was required"
+// would return no error here.
+func TestVerifyGenuineFailureHaltsWhenNotRequired(t *testing.T) {
+	t.Parallel()
+	store, dg, _ := signedStore(t)
+	_, _, wrongPub := signedStore(t)
+
+	cfg := workspaceconfig.Config{
+		Registries: []workspaceconfig.RegistryConfig{
+			{Host: "lax.example.com", PublicKey: string(wrongPub)},
+		},
+	}
+	ent := pullverify.Entity{URI: "lax.example.com/component/x", ManifestDigest: dg, Host: "lax.example.com", Kind: "Component"}
+	_, verr := pullverify.Verify(context.Background(), []pullverify.Entity{ent}, pullverify.Options{
+		Config: cfg,
+		Target: targetForStore(store, "1.0.0"),
+	})
+	if !errors.Is(verr, signing.ErrSignatureVerificationFailed()) {
+		t.Fatalf("a signature that was found and did not verify must halt even where none was required, got %v", verr)
+	}
+}
+
+// TestVerifyUnanswerableLookupToleratedWhenNotRequired proves the other half:
+// where nothing required a signature, a referrer lookup that cannot be answered
+// does not halt the pull.
+//
+// The default for an unknown registry is to verify a signature if one is
+// present and never to halt on a missing one. A lookup that could not be
+// completed establishes no signature to verify, so there is nothing to act on
+// — and treating a registry that cannot be asked as one that answered
+// "tampered" refuses an artifact on the strength of a question nobody managed
+// to put.
+func TestVerifyUnanswerableLookupToleratedWhenNotRequired(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	store, dg, _ := signedStore(t)
+
+	var notice string
+	ent := pullverify.Entity{URI: "unknown.example.com/component/x", ManifestDigest: dg, Host: "unknown.example.com", Kind: "Component"}
+	results, verr := pullverify.Verify(ctx, []pullverify.Entity{ent}, pullverify.Options{
+		Config: workspaceconfig.Config{},
+		Target: unanswerableTarget(store),
+		Warn:   func(s string) { notice = s },
+	})
+	if verr != nil {
+		t.Fatalf("no signature was required, so a lookup that could not be answered must not halt the pull: %v", verr)
+	}
+	if len(results) != 0 {
+		t.Errorf("an unanswered lookup verifies nothing and must record no fact, got %d", len(results))
+	}
+	if notice == "" {
+		t.Error("continuing past a check that could not run must say so rather than pass silently")
 	}
 }

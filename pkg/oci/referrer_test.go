@@ -6,8 +6,12 @@ package oci_test
 import (
 	"bytes"
 	"context"
+	"errors"
+	"io"
 	"testing"
 
+	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
+	"oras.land/oras-go/v2"
 	"oras.land/oras-go/v2/content/memory"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
@@ -102,6 +106,77 @@ func TestListReferrersEmpty(t *testing.T) {
 	}
 	if len(refs) != 0 {
 		t.Fatalf("got %d referrers for an unsigned artifact, want 0", len(refs))
+	}
+	// The discriminating half: an ANSWERED lookup that found nothing must not
+	// carry the unavailable sentinel, or a caller could not tell "none is
+	// attached" from "nobody could say".
+	if errors.Is(err, oci.ErrReferrerDiscoveryUnavailable()) {
+		t.Error("an answered lookup that found no referrer must not report discovery as unavailable")
+	}
+}
+
+// bareTarget satisfies oras.ReadOnlyTarget without satisfying
+// content.ReadOnlyGraphStorage: it can fetch and resolve, but it holds no
+// predecessor graph, so a referrer lookup cannot be served against it.
+type bareTarget struct{ inner *memory.Store }
+
+func (b bareTarget) Fetch(ctx context.Context, target ocispec.Descriptor) (io.ReadCloser, error) {
+	return b.inner.Fetch(ctx, target)
+}
+
+func (b bareTarget) Exists(ctx context.Context, target ocispec.Descriptor) (bool, error) {
+	return b.inner.Exists(ctx, target)
+}
+
+func (b bareTarget) Resolve(ctx context.Context, ref string) (ocispec.Descriptor, error) {
+	return b.inner.Resolve(ctx, ref)
+}
+
+// brokenGraph serves the predecessor graph by refusing to: it stands for a
+// registry that accepts the discovery request and fails it.
+type brokenGraph struct{ *memory.Store }
+
+func (brokenGraph) Predecessors(context.Context, ocispec.Descriptor) ([]ocispec.Descriptor, error) {
+	return nil, errors.New("referrers unavailable")
+}
+
+// TestListReferrersUnanswerableCarriesSentinel proves every way the lookup can
+// fail to complete reports the same condition, so a caller reads "this could
+// not be determined" from the error rather than inferring it from the text.
+//
+// The three ways are structurally distinct — a target that cannot serve
+// discovery at all, a subject that cannot be located, and a discovery request
+// that fails — and a caller acting on an absent referrer must treat all three
+// alike and none of them as "no referrer is attached".
+func TestListReferrersUnanswerableCarriesSentinel(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	store := memory.New()
+	if _, err := oci.Push(ctx, store, "4.0.0", oci.MediaTypeComponent, []byte("subject"), nil); err != nil {
+		t.Fatalf("Push: %v", err)
+	}
+
+	cases := []struct {
+		name       string
+		target     oras.ReadOnlyTarget
+		subjectRef string
+	}{
+		{"target cannot serve discovery", bareTarget{inner: store}, "4.0.0"},
+		{"subject cannot be located", store, "5.0.0"},
+		{"discovery request fails", brokenGraph{Store: store}, "4.0.0"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			refs, err := oci.ListReferrers(ctx, tc.target, tc.subjectRef, sigArtifactType)
+			if err == nil {
+				t.Fatalf("a lookup that cannot be completed must report an error; got %d referrers", len(refs))
+			}
+			if !errors.Is(err, oci.ErrReferrerDiscoveryUnavailable()) {
+				t.Fatalf("error must carry the unavailable condition, got %v", err)
+			}
+		})
 	}
 }
 
