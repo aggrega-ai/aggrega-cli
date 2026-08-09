@@ -763,3 +763,154 @@ func TestExtendsFaultsAreCatalogDomain(t *testing.T) {
 		})
 	}
 }
+
+// TestResolveFeatureExtends_InheritsAttachmentSurface pins that a Feature which
+// declares no attachment surface of its own attaches exactly where its base
+// attaches. A Feature whose selector went missing would attach to nothing, and
+// nothing else in the pipeline reports that a Feature can no longer attach
+// anywhere, so the loss would be silent.
+func TestResolveFeatureExtends_InheritsAttachmentSurface(t *testing.T) {
+	t.Parallel()
+	anyOfLabels := types.OrderedMap[string]{}
+	anyOfLabels.Set("component.aggrega.ai/type", "batch")
+	base := types.Feature{
+		Metadata: types.FeatureMetadata{Name: "core/queue", Version: "1.0.0"},
+		Spec: types.FeatureSpec{
+			AppliesTo: "component.aggrega.ai/type=worker",
+			AppliesToAnyOf: []types.SelectorTerm{
+				types.StringTerm("component.aggrega.ai/type=task"),
+				types.MapTerm(anyOfLabels),
+			},
+			Interoperability: &types.Interoperability{
+				ConflictsWith:    []string{"core/fixed-replica-controller"},
+				ComponentRefPath: "/spec/scaleTargetRef/name",
+			},
+		},
+	}
+	child := types.Feature{
+		Metadata: types.FeatureMetadata{Name: "core/kafka-queue", Version: "1.0.0"},
+		Spec:     types.FeatureSpec{Extends: "core/queue"},
+	}
+	lookup := func(uri string) (types.Feature, bool) {
+		if uri == "core/queue" {
+			return base, true
+		}
+		return types.Feature{}, false
+	}
+
+	got, errs := ResolveFeatureExtends(child, lookup)
+	if len(errs) != 0 {
+		t.Fatalf("unexpected errors: %v", errs)
+	}
+	if got.Spec.AppliesTo != "component.aggrega.ai/type=worker" {
+		t.Errorf("AppliesTo = %q, want the base's selector", got.Spec.AppliesTo)
+	}
+	if len(got.Spec.AppliesToAnyOf) != 2 {
+		t.Fatalf("AppliesToAnyOf = %+v, want the base's two terms", got.Spec.AppliesToAnyOf)
+	}
+	if got.Spec.AppliesToAnyOf[0].Selector != "component.aggrega.ai/type=task" {
+		t.Errorf("AppliesToAnyOf[0] = %q, want the base's string term", got.Spec.AppliesToAnyOf[0].Selector)
+	}
+	if !got.Spec.AppliesToAnyOf[1].IsMap() {
+		t.Errorf("AppliesToAnyOf[1] should keep the base's flat-map arm")
+	}
+	if got.Spec.Interoperability == nil {
+		t.Fatal("Interoperability should be inherited, got nil")
+	}
+	if got.Spec.Interoperability.ComponentRefPath != "/spec/scaleTargetRef/name" {
+		t.Errorf("ComponentRefPath = %q, want the base's path", got.Spec.Interoperability.ComponentRefPath)
+	}
+	if len(got.Spec.Interoperability.ConflictsWith) != 1 ||
+		got.Spec.Interoperability.ConflictsWith[0] != "core/fixed-replica-controller" {
+		t.Errorf("ConflictsWith = %v, want the base's list", got.Spec.Interoperability.ConflictsWith)
+	}
+}
+
+// TestResolveFeatureExtends_ChildOverridesAttachmentSurface pins the precedence
+// on both axes at once: a declared selector replaces the base's outright, while
+// the interoperability block resolves field by field, so declaring one control
+// never drops the other. A child specialising where its artifacts land keeps the
+// incompatibilities its base declared.
+func TestResolveFeatureExtends_ChildOverridesAttachmentSurface(t *testing.T) {
+	t.Parallel()
+	base := types.Feature{
+		Metadata: types.FeatureMetadata{Name: "core/queue", Version: "1.0.0"},
+		Spec: types.FeatureSpec{
+			AppliesTo:      "component.aggrega.ai/type=worker",
+			AppliesToAnyOf: []types.SelectorTerm{types.StringTerm("component.aggrega.ai/type=task")},
+			Interoperability: &types.Interoperability{
+				ConflictsWith:    []string{"core/fixed-replica-controller"},
+				ComponentRefPath: "/spec/base/name",
+			},
+		},
+	}
+	child := types.Feature{
+		Metadata: types.FeatureMetadata{Name: "core/kafka-queue", Version: "1.0.0"},
+		Spec: types.FeatureSpec{
+			Extends:          "core/queue",
+			AppliesTo:        "component.aggrega.ai/type=server",
+			AppliesToAnyOf:   []types.SelectorTerm{types.StringTerm("component.aggrega.ai/type=gateway")},
+			Interoperability: &types.Interoperability{ComponentRefPath: "/spec/child/name"},
+		},
+	}
+	lookup := func(uri string) (types.Feature, bool) {
+		if uri == "core/queue" {
+			return base, true
+		}
+		return types.Feature{}, false
+	}
+
+	got, errs := ResolveFeatureExtends(child, lookup)
+	if len(errs) != 0 {
+		t.Fatalf("unexpected errors: %v", errs)
+	}
+	if got.Spec.AppliesTo != "component.aggrega.ai/type=server" {
+		t.Errorf("AppliesTo = %q, want the child's selector", got.Spec.AppliesTo)
+	}
+	if len(got.Spec.AppliesToAnyOf) != 1 ||
+		got.Spec.AppliesToAnyOf[0].Selector != "component.aggrega.ai/type=gateway" {
+		t.Errorf("AppliesToAnyOf = %+v, want only the child's term", got.Spec.AppliesToAnyOf)
+	}
+	if got.Spec.Interoperability.ComponentRefPath != "/spec/child/name" {
+		t.Errorf("ComponentRefPath = %q, want the child's path", got.Spec.Interoperability.ComponentRefPath)
+	}
+	if len(got.Spec.Interoperability.ConflictsWith) != 1 ||
+		got.Spec.Interoperability.ConflictsWith[0] != "core/fixed-replica-controller" {
+		t.Errorf("ConflictsWith = %v, want the base's list preserved", got.Spec.Interoperability.ConflictsWith)
+	}
+}
+
+// TestResolveFeatureExtends_InteroperabilityIsNotAliased pins that the merge
+// hands back a fresh block. The chain walk reads catalog entries the caller
+// still holds, so returning the base's own pointer would let a later write
+// through the resolved Feature reach back into the base entity.
+func TestResolveFeatureExtends_InteroperabilityIsNotAliased(t *testing.T) {
+	t.Parallel()
+	baseBlock := &types.Interoperability{ComponentRefPath: "/spec/base/name"}
+	base := types.Feature{
+		Metadata: types.FeatureMetadata{Name: "core/queue", Version: "1.0.0"},
+		Spec:     types.FeatureSpec{Interoperability: baseBlock},
+	}
+	child := types.Feature{
+		Metadata: types.FeatureMetadata{Name: "core/kafka-queue", Version: "1.0.0"},
+		Spec:     types.FeatureSpec{Extends: "core/queue"},
+	}
+	lookup := func(uri string) (types.Feature, bool) {
+		if uri == "core/queue" {
+			return base, true
+		}
+		return types.Feature{}, false
+	}
+
+	got, errs := ResolveFeatureExtends(child, lookup)
+	if len(errs) != 0 {
+		t.Fatalf("unexpected errors: %v", errs)
+	}
+	if got.Spec.Interoperability == baseBlock {
+		t.Fatal("resolved Feature shares the base's interoperability block")
+	}
+	got.Spec.Interoperability.ComponentRefPath = "/spec/mutated/name"
+	if baseBlock.ComponentRefPath != "/spec/base/name" {
+		t.Errorf("base block mutated through the resolved Feature: %q", baseBlock.ComponentRefPath)
+	}
+}

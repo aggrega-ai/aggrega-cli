@@ -227,6 +227,28 @@ func mergeComponent(parent, child types.Component) (types.Component, []*Validati
 	return out, errs
 }
 
+// mergeFeature overlays the child Feature onto the parent. The result keeps the
+// child's identity (Name, Version, Extends) but carries merged Metadata and
+// Spec. Labels and Annotations merge per key with the child winning a shared
+// key; every other Metadata field is the child's verbatim, so identity and
+// provenance never inherit. FeaturesSchema and UsesSchema merge per entry name.
+//
+// The attachment surface — AppliesTo, AppliesToAnyOf and Interoperability —
+// inherits whole-field: an extending Feature that declares one keeps its own,
+// and one that declares none attaches exactly where its base attaches. The two
+// selector forms inherit independently because they compose rather than
+// replace: each form that is present must hold — the AppliesTo string must
+// match, and at least one AppliesToAnyOf item must match — while a form left
+// absent constrains nothing. So a Feature may take its base's AND-selector
+// while declaring its own OR-set. A declared selector replaces the base's outright rather than
+// merging the requirements inside it — a selector is one expression, and
+// intersecting two of them would produce a constraint neither author wrote.
+//
+// Spec.Schema is absent here on purpose: a Feature's pillar content composes
+// under JSON Schema composition during the inheritance merge phase, which
+// stores the composed result separately from the entity struct. Assigning a
+// parent's authored node here would overwrite the child's own pillars with the
+// base's and shadow that composition.
 func mergeFeature(parent, child types.Feature) types.Feature {
 	out := child
 	out.Metadata.Labels = mergeStringMap(parent.Metadata.Labels, child.Metadata.Labels)
@@ -234,7 +256,50 @@ func mergeFeature(parent, child types.Feature) types.Feature {
 
 	out.Spec.FeaturesSchema = mergeFeaturesSchema(parent.Spec.FeaturesSchema, child.Spec.FeaturesSchema)
 	out.Spec.UsesSchema = mergeUsesSchema(parent.Spec.UsesSchema, child.Spec.UsesSchema)
+
+	if child.Spec.AppliesTo == "" {
+		out.Spec.AppliesTo = parent.Spec.AppliesTo
+	}
+	if len(child.Spec.AppliesToAnyOf) == 0 {
+		out.Spec.AppliesToAnyOf = parent.Spec.AppliesToAnyOf
+	}
+	out.Spec.Interoperability = mergeInteroperability(parent.Spec.Interoperability, child.Spec.Interoperability)
 	return out
+}
+
+// mergeInteroperability overlays the child's interoperability controls onto the
+// parent's one field at a time: a field the child declares wins, and a field it
+// leaves unset keeps the base's value.
+//
+// Per-field rather than whole-block, because the two controls are independent
+// and a Feature routinely needs only one of them. A Feature that specialises
+// where its base's artifacts land, by declaring componentRefPath alone, still
+// carries the incompatibilities its base declared — replacing the block
+// wholesale would drop them without a word, which is exactly the failure the
+// conflictsWith list exists to prevent. The child's conflictsWith list, when it
+// declares one, replaces the base's rather than extending it: naming its own
+// incompatibilities is a deliberate statement about what this Feature may sit
+// beside, not an omission.
+//
+// The result is always a fresh value, so a merge never writes through a pointer
+// a catalog entry still holds.
+func mergeInteroperability(parent, child *types.Interoperability) *types.Interoperability {
+	if parent == nil && child == nil {
+		return nil
+	}
+	var merged types.Interoperability
+	if parent != nil {
+		merged = *parent
+	}
+	if child != nil {
+		if len(child.ConflictsWith) > 0 {
+			merged.ConflictsWith = child.ConflictsWith
+		}
+		if child.ComponentRefPath != "" {
+			merged.ComponentRefPath = child.ComponentRefPath
+		}
+	}
+	return &merged
 }
 
 // mergeStringMap returns a new OrderedMap with parent entries overridden by child entries.
