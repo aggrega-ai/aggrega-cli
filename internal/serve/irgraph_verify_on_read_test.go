@@ -180,16 +180,6 @@ spec:
       main:
         image: demo-server:latest
 `)
-	writeFixtureFile(t, filepath.Join(catalogDir, "providers", "helm.yaml"), `apiVersion: aggrega.ai/v1alpha1
-kind: Provider
-metadata:
-  name: helm
-  version: "1.0.0"
-spec:
-  workloadSchema: |
-    type: object
-    additionalProperties: true
-`)
 
 	// The Component is referenced by a VERSIONED type so its resolution URI is
 	// versioned (demo/server:1.0.0) — the form the Tier-2 cache is keyed by.
@@ -380,16 +370,6 @@ spec:
     containers:
       main:
         image: demo-server:latest
-`)
-	writeFixtureFile(t, filepath.Join(catalogDir, "providers", "helm.yaml"), `apiVersion: aggrega.ai/v1alpha1
-kind: Provider
-metadata:
-  name: helm
-  version: "1.0.0"
-spec:
-  workloadSchema: |
-    type: object
-    additionalProperties: true
 `)
 
 	// The sub-aggregate lives in the catalog dir (NOT drifted, so it loads and

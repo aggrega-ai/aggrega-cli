@@ -58,16 +58,6 @@ spec:
       main:
         image: demo-server:latest
 `)
-	writeFixtureFile(t, filepath.Join(catalogDir, "providers", "helm.yaml"), `apiVersion: aggrega.ai/v1alpha1
-kind: Provider
-metadata:
-  name: helm
-  version: "1.0.0"
-spec:
-  workloadSchema: |
-    type: object
-    additionalProperties: true
-`)
 	// The helm-renderer provider Plugin binds the helm provider to the embedded
 	// helm rendering guest; its digest-free spec.plugin identity resolves through
 	// the plugin-resolution cascade's embed tier with no cache or lockfile.

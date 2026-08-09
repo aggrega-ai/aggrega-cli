@@ -82,14 +82,6 @@ spec:
     values:
       port: { type: integer }
 `
-	baseProvider = `apiVersion: aggrega.ai/v1alpha1
-kind: Provider
-metadata:
-  name: compose
-  version: "1.0.0"
-spec:
-  plugin: "builtin:compose"
-`
 	baseRecipe = `apiVersion: aggrega.ai/v1alpha1
 kind: Recipe
 metadata:
@@ -146,8 +138,8 @@ func baseWorkspaceFiles() workspaceFiles {
 }
 
 // writeMinimalWorkspace lays the files down in a temp dir and returns the
-// pipelinetest.Input that builds it. Catalog (component + provider +
-// recipe) sits under catalog/; the triad sits at the root so the
+// pipelinetest.Input that builds it. Catalog (component + recipe + the
+// renderer plugin) sits under catalog/; the triad sits at the root so the
 // resolver's same-dir scan finds aggregate + manifest by Release pointer.
 func writeMinimalWorkspace(t *testing.T, wf workspaceFiles) pipelinetest.Input {
 	t.Helper()
@@ -165,7 +157,6 @@ func writeMinimalWorkspace(t *testing.T, wf workspaceFiles) pipelinetest.Input {
 	write("manifest.yaml", wf.manifest)
 	write("release.yaml", wf.release)
 	write("catalog/components/server.yaml", wf.component)
-	write("catalog/providers/compose.yaml", baseProvider)
 	write("catalog/recipes/server.yaml", baseRecipe)
 	write("catalog/plugins/compose-renderer.yaml", baseComposeRendererPlugin)
 	return pipelinetest.Input{

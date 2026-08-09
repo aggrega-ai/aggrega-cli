@@ -41,28 +41,35 @@ func TestReportCatalogShadows(t *testing.T) {
 
 // TestBuild_MultiCatalogResolvesAcrossDirs proves multi-directory catalog
 // consumption: ONE offline build resolves entities split across two catalog
-// directories — the provider in a second dir, the rest in the first — both via
+// directories — the Recipe in a second dir, the rest in the first — both via
 // two --catalog flags and via catalog_dirs config. No network: the auto-pull
 // resolves the whole closure from the local directories. This is what lets a
 // project consume a shared catalog alongside its own local entities.
+//
+// The Recipe is the entity relocated because its resolution genuinely depends
+// on the set of directories searched: with the Recipe in the second directory,
+// a build handed only the first halts with the Recipe unresolved. A provider
+// would prove nothing here — the binary embeds its own core provider entities
+// and prefers them over a catalog entity of the same provider name, so a core
+// provider resolves without any catalog directory supplying it.
 func TestBuild_MultiCatalogResolvesAcrossDirs(t *testing.T) {
 	root := t.TempDir()
 	t.Chdir(root)
 	releasePath := authoringFixture(t, root)
 
-	// Relocate the provider into a SECOND catalog directory, so the build can
+	// Relocate the Recipe into a SECOND catalog directory, so the build can
 	// only succeed if both directories are searched.
 	dir1 := filepath.Join(root, "catalog")
 	dir2 := filepath.Join(root, "catalog2")
-	provSrc := filepath.Join(dir1, "providers", "helm.yaml")
-	provDst := filepath.Join(dir2, "providers", "helm.yaml")
-	data, err := os.ReadFile(provSrc)
+	recipeSrc := filepath.Join(dir1, "recipes", "server.yaml")
+	recipeDst := filepath.Join(dir2, "recipes", "server.yaml")
+	data, err := os.ReadFile(recipeSrc)
 	if err != nil {
-		t.Fatalf("read provider: %v", err)
+		t.Fatalf("read recipe: %v", err)
 	}
-	writeFixture(t, provDst, string(data))
-	if err := os.Remove(provSrc); err != nil {
-		t.Fatalf("remove provider from dir1: %v", err)
+	writeFixture(t, recipeDst, string(data))
+	if err := os.Remove(recipeSrc); err != nil {
+		t.Fatalf("remove recipe from dir1: %v", err)
 	}
 
 	reset := func() {
@@ -84,7 +91,7 @@ func TestBuild_MultiCatalogResolvesAcrossDirs(t *testing.T) {
 	writeWorkspaceConfig(t, root, "auto_pull: true\n")
 	reset()
 	if err := dispatchBuild(nil, releasePath, []string{dir1, dir2}, false, os.Stderr, os.Stdout); err != nil {
-		t.Fatalf("two-flag build failed (provider in dir2 must resolve): %v", err)
+		t.Fatalf("two-flag build failed (Recipe in dir2 must resolve): %v", err)
 	}
 	if renderedCount() == 0 {
 		t.Error("two-flag build wrote no artifacts")

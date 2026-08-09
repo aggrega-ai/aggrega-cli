@@ -83,14 +83,6 @@ spec:
     values:
       port: { type: integer, default: 8080 }
 `)
-	writeFixture(t, filepath.Join(catalogRoot, "providers", "helm.yaml"), `apiVersion: aggrega.ai/v1alpha1
-kind: Provider
-metadata:
-  name: helm
-  version: "1.0.0"
-spec:
-  plugin: "builtin:helm"
-`)
 	writeHelmRendererPlugin(t, filepath.Join(catalogRoot, "providers"))
 	// The $import target: a loose file next to the recipe whose bytes the freeze
 	// hashes into the recipe's artifactDigests, so the recipe file changes at freeze.

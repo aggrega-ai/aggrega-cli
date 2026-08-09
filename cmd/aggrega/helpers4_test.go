@@ -69,13 +69,6 @@ spec:
     values:
       port: { type: integer }
 `)
-	writeFixture(t, filepath.Join(catalogRoot, "providers", "bogus.yaml"), `apiVersion: aggrega.ai/v1alpha1
-kind: Provider
-metadata:
-  name: bogus-provider
-  version: 1.0.0
-spec: {}
-`)
 	writeFixture(t, filepath.Join(catalogRoot, "recipes", "server.yaml"), `apiVersion: aggrega.ai/v1alpha1
 kind: Recipe
 metadata:

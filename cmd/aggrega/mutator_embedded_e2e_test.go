@@ -9,8 +9,8 @@
 // bare embedded identity: its .wasm resolves through the embed tier,
 // and a workspace-catalog Plugin entity supplies the entity the closure pins.
 //
-// The compose provider entity ships in the standard catalog (its .wasm is
-// embedded); the fixture catalog supplies the component(s), recipe(s), the
+// The compose provider entity is embedded in the binary alongside its .wasm; the
+// fixture catalog supplies the component(s), recipe(s), the
 // mutator Plugin entities, and — for the feature proof — a Feature and its
 // FeatureRecipe. The compose recipe emits every node-label key=value pair and
 // every attached feature type into a container variable, so a label a mutator

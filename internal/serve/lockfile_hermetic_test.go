@@ -92,14 +92,6 @@ spec:
       main:
         image: demo-server:latest
 `)
-	writeFixtureFile(t, filepath.Join(catalogDir, "providers", "helm.yaml"), `apiVersion: aggrega.ai/v1alpha1
-kind: Provider
-metadata:
-  name: helm
-  version: "1.0.0"
-spec:
-  plugin: "builtin:helm"
-`)
 	writeFixtureFile(t, filepath.Join(ws, "app-manifest.yaml"), `apiVersion: aggrega.ai/v1alpha1
 kind: Manifest
 metadata:
@@ -374,16 +366,6 @@ spec:
     containers:
       main:
         image: demo-server:latest
-`)
-	writeFixtureFile(t, filepath.Join(catalogDir, "providers", "helm.yaml"), `apiVersion: aggrega.ai/v1alpha1
-kind: Provider
-metadata:
-  name: helm
-  version: "1.0.0"
-spec:
-  workloadSchema: |
-    type: object
-    additionalProperties: true
 `)
 	// The selected provider Plugin — its embed-backed guest renders the node.
 	writeFixtureFile(t, filepath.Join(catalogDir, "plugins", "helm-renderer.yaml"), `apiVersion: aggrega.ai/v1alpha1

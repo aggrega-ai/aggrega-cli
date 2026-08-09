@@ -457,18 +457,68 @@ spec:
 	}
 }
 
+// referenceFixture is the authoring input one kind's reference shape is built
+// from: the scope segment a Recipe, FeatureRecipe or Plugin reference carries
+// (empty for kinds whose shape has none), the entity's metadata.name, and a
+// version to append as the tag.
+type referenceFixture struct {
+	provider     string
+	metadataName string
+	version      string
+}
+
+// referenceFixtures supplies one fixture per kind the OCI transport resolves a
+// mediatype for. It is a lookup, never the walk itself: the round-trip below is
+// driven by oci.MediaTypeKinds(), so a kind added to the transport and not given
+// a fixture here fails loudly rather than being silently left unchecked. A
+// hand-listed set of cases could not fail that way — it would simply stop
+// mentioning the new kind, and agree with itself forever.
+var referenceFixtures = map[string]referenceFixture{
+	"Component":        {"", "core/api-server", "1.0.0"},
+	"Feature":          {"", "core/ingress", "1.2.0"},
+	"Recipe":           {"helm", "server", "2.0.0"},
+	"FeatureRecipe":    {"helm", "ingress-nginx", "1.0.0"},
+	"SchemaLibrary":    {"", "Probes", "1.0.0"},
+	"MappingLibrary":   {"", "BaseMappings", "2.1.0"},
+	"WorkloadLibrary":  {"", "BaseWorkloads", "1.0.0"},
+	"ArtifactsLibrary": {"", "SharedArtifacts", "1.0.0"},
+	"Aggregate":        {"", "core/storefront", "1.0.0"},
+	// Plugin kind: path segment is "plugin"; the plugin's metadata.name
+	// path-encodes the socket. Reference shape:
+	// <registry>/plugin/<socket>/<name>.
+	"Plugin": {"", "linter/aggrega-publishing", "1.0.0"},
+}
+
+// nonSymmetricKinds names each kind the OCI transport resolves a mediatype for
+// that the reference round-trip nonetheless does not check, mapped to the reason
+// it does not. It is the only way a kind leaves the walk, so every narrowing of
+// that walk is a named entry here with a reason attached — and the reason is
+// carried in the value rather than in a comment so the check can require one to
+// exist.
+//
+// It is empty, and that is a measurement rather than an oversight: reference
+// symmetry is a property of the reference grammar, not of any kind's content, so
+// every kind the transport resolves has a reference shape and every such shape
+// must round-trip exactly. A kind belongs here only when checking it would be
+// WRONG — never because supplying a fixture for it is inconvenient, which is the
+// hand-list defect returning under a better name.
+var nonSymmetricKinds = map[string]string{}
+
 // TestPushReferenceRoundTripsThroughSplitURIForOCI pins the
-// publish/consume reference-shape symmetry across every
-// publishable catalog kind. The push-side helper
+// publish/consume reference-shape symmetry across every kind the
+// OCI transport resolves a mediatype for. The push-side helper
 // buildPushReference constructs a reference; appending ":<version>"
 // yields a canonical entity URI; catalog.SplitURIForOCI parses it
 // back into (reference, tag); the round-trip MUST be exact.
 //
-// The round-trip is only meaningful for publishable kinds. Non-
-// publishable kinds halt at the bundle step BEFORE reference
-// construction (see TestPushRejectsNonCatalogKinds); SplitURIForOCI
-// itself is kindless and parses any URI shape, so it cannot reject
-// non-publishable kinds at the parsing layer anyway.
+// The walk is derived from oci.MediaTypeKinds() minus nonSymmetricKinds
+// rather than hand-listed, so adding a kind to the transport either
+// extends this check or is refused here with a reason. Kinds the
+// transport resolves no mediatype for are out of scope by construction:
+// they halt at the bundle step BEFORE reference construction (see
+// TestPushRejectsNonCatalogKinds), and SplitURIForOCI is itself kindless
+// — it parses any URI shape, so it could not reject them at the parsing
+// layer anyway.
 //
 // Any future divergence between buildPushReference and
 // SplitURIForOCI surfaces here at unit-test time, not end-to-end at
@@ -476,33 +526,28 @@ spec:
 // request.
 func TestPushReferenceRoundTripsThroughSplitURIForOCI(t *testing.T) {
 	t.Parallel()
-	cases := []struct {
-		kind         string
-		provider     string
-		metadataName string
-		version      string
-	}{
-		{"Component", "", "core/api-server", "1.0.0"},
-		{"Feature", "", "core/ingress", "1.2.0"},
-		{"Recipe", "helm", "server", "2.0.0"},
-		{"FeatureRecipe", "helm", "ingress-nginx", "1.0.0"},
-		{"Provider", "", "helm", "3.0.0"},
-		{"SchemaLibrary", "", "Probes", "1.0.0"},
-		{"MappingLibrary", "", "BaseMappings", "2.1.0"},
-		{"WorkloadLibrary", "", "BaseWorkloads", "1.0.0"},
-		{"ArtifactsLibrary", "", "SharedArtifacts", "1.0.0"},
-		{"Aggregate", "", "core/storefront", "1.0.0"},
-		// Plugin kind: path segment is "plugin"; the plugin's
-		// metadata.name path-encodes the socket. Reference shape:
-		// <registry>/plugin/<socket>/<name>.
-		{"Plugin", "", "linter/aggrega-publishing", "1.0.0"},
+	kinds := oci.MediaTypeKinds()
+	if len(kinds) == 0 {
+		t.Fatal("the transport resolves no kinds at all, so the checks below assert nothing")
 	}
 	registry := "hub.aggrega.ai"
-	for _, tc := range cases {
-		t.Run(tc.kind, func(t *testing.T) {
+	checked := 0
+	for _, kind := range kinds {
+		if _, excluded := nonSymmetricKinds[kind]; excluded {
+			continue
+		}
+		fx, ok := referenceFixtures[kind]
+		if !ok {
+			t.Errorf("the transport resolves a mediatype for kind %q, but referenceFixtures "+
+				"carries no fixture for it and nonSymmetricKinds does not exclude it: add a "+
+				"fixture, or exclude the kind with a reason", kind)
+			continue
+		}
+		checked++
+		t.Run(kind, func(t *testing.T) {
 			t.Parallel()
-			ref := buildPushReference(registry, tc.kind, tc.provider, tc.metadataName)
-			uri := ref + ":" + tc.version
+			ref := buildPushReference(registry, kind, fx.provider, fx.metadataName)
+			uri := ref + ":" + fx.version
 			gotRef, gotTag, ok := catalog.SplitURIForOCI(uri)
 			if !ok {
 				t.Fatalf("SplitURIForOCI(%q) returned ok=false", uri)
@@ -510,10 +555,53 @@ func TestPushReferenceRoundTripsThroughSplitURIForOCI(t *testing.T) {
 			if gotRef != ref {
 				t.Errorf("reference round-trip: got %q; want %q", gotRef, ref)
 			}
-			if gotTag != tc.version {
-				t.Errorf("tag round-trip: got %q; want %q", gotTag, tc.version)
+			if gotTag != fx.version {
+				t.Errorf("tag round-trip: got %q; want %q", gotTag, fx.version)
 			}
 		})
+	}
+	if checked == 0 {
+		t.Fatal("no kind was round-tripped at all — the exclusions have swallowed the whole set")
+	}
+}
+
+// TestReferenceFixturesTrackTransportKinds checks the half of the derivation
+// above that is not structural.
+//
+// That the walk reaches every kind the transport resolves is guaranteed by
+// construction — the walk IS the transport's kind set — so an assertion to that
+// effect could never fail. Two things are not guaranteed, because both are
+// hand-written keys. A fixture can name a kind the transport stopped resolving
+// (or never resolved, on a typo), in which case it sits there looking like
+// coverage while checking nothing. An exclusion can do the same, and can also be
+// added with no reason recorded, quietly narrowing the walk and losing the
+// derivation's whole point — that a kind goes unchecked only deliberately.
+func TestReferenceFixturesTrackTransportKinds(t *testing.T) {
+	t.Parallel()
+	kinds := oci.MediaTypeKinds()
+	if len(kinds) == 0 {
+		t.Fatal("the transport resolves no kinds at all, so the checks below assert nothing")
+	}
+	resolved := map[string]bool{}
+	for _, kind := range kinds {
+		resolved[kind] = true
+	}
+	for kind := range referenceFixtures {
+		if !resolved[kind] {
+			t.Errorf("referenceFixtures carries a fixture for kind %q, but the transport "+
+				"resolves no mediatype for it — the fixture is stale or misspelled, and it "+
+				"reads as coverage while checking nothing", kind)
+		}
+	}
+	for kind, reason := range nonSymmetricKinds {
+		if !resolved[kind] {
+			t.Errorf("kind %q is named as excluded from the reference round-trip, but the "+
+				"transport resolves no mediatype for it — the exclusion is stale or "+
+				"misspelled, and it is silently excluding nothing", kind)
+		}
+		if reason == "" {
+			t.Errorf("kind %q is excluded from the reference round-trip with no reason recorded", kind)
+		}
 	}
 }
 

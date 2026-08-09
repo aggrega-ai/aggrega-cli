@@ -58,8 +58,8 @@ import (
 // the serve/build default) or reads them live from the workspace config (false,
 // the control). The catalog view carries a NIL puller, so the render is hermetic
 // (cache-only) exactly as the daemon's is. catDirs supplies any local catalog
-// entities (a custom dimension's kind:Provider, the standard catalog's core
-// providers) the closure resolves alongside the registry-pulled entities.
+// entities the closure resolves alongside the registry-pulled ones; the core
+// provider entities come from the binary's embed rather than from a directory.
 func serveRenderArtifacts(t *testing.T, ws, releaseRel string, catDirs []string, withLockfile bool) (map[string][]byte, error) {
 	t.Helper()
 	rw, err := workspaceconfig.Resolve(ws, "")

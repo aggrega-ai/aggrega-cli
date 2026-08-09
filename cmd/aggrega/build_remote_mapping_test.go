@@ -126,14 +126,6 @@ spec:
       tag: { type: string, default: "v3" }
 `)
 	writeFixture(t, filepath.Join(catalogRoot, "mappinglibraries", "helmhelpers.yaml"), fmt.Sprintf(helmHelpersLibrarySourceFmt, "1.0.0"))
-	writeFixture(t, filepath.Join(catalogRoot, "providers", "helm.yaml"), `apiVersion: aggrega.ai/v1alpha1
-kind: Provider
-metadata:
-  name: helm
-  version: "1.0.0"
-spec:
-  plugin: "builtin:helm"
-`)
 	writeHelmRendererPlugin(t, filepath.Join(catalogRoot, "providers"))
 	// A minimal local Helm chart whose deployment template echoes .Values.image —
 	// the valuesMapping output overlays the chart values, so the imported mapping

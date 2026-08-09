@@ -206,8 +206,8 @@ func TestAnnotationTransformSocket_RolePinnedThroughLockfile(t *testing.T) {
 func TestMutatorSocket_BuildIsInvariantToConfigAfterPull(t *testing.T) {
 	mutatorBytes := wasmtest.EnsureFixtureBytes(t, "mutator-proof-go.wasm")
 	root, catalogDir := localMutatorWorkspace(t, mutatorBytes)
-	// The compose PROVIDER entity ships in the standard catalog (its .wasm is
-	// embedded); the fixture catalog supplies the component, recipe, and mutator.
+	// The compose provider entity is embedded in the binary alongside its .wasm;
+	// the fixture catalog supplies the component, recipe, and mutator.
 	catDirs := []string{catalogDir, standardCatalogDir(t)}
 
 	const (

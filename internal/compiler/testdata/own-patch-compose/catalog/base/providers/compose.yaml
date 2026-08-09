@@ -1,9 +1,0 @@
-apiVersion: aggrega.ai/v1alpha1
-kind: Provider
-metadata:
-  name: compose
-  version: "1.0.0"
-spec:
-  workloadSchema: |
-    type: object
-    additionalProperties: true

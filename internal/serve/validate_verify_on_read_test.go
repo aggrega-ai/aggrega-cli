@@ -95,16 +95,6 @@ spec:
       main:
         image: demo-server:latest
 `)
-	writeFixtureFile(t, filepath.Join(catalogDir, "providers", "helm.yaml"), `apiVersion: aggrega.ai/v1alpha1
-kind: Provider
-metadata:
-  name: helm
-  version: "1.0.0"
-spec:
-  workloadSchema: |
-    type: object
-    additionalProperties: true
-`)
 
 	// Versioned type so the Component's resolution URI is the versioned form the
 	// Tier-2 cache is keyed by.

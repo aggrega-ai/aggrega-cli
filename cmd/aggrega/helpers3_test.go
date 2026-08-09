@@ -77,14 +77,6 @@ spec:
     values:
       port: { type: integer }
 `)
-	writeFixture(t, filepath.Join(catalogRoot, "providers", "helm.yaml"), `apiVersion: aggrega.ai/v1alpha1
-kind: Provider
-metadata:
-  name: helm
-  version: 1.0.0
-spec:
-  plugin: "builtin:helm"
-`)
 	writeHelmRendererPlugin(t, filepath.Join(catalogRoot, "providers"))
 	writeFixture(t, filepath.Join(catalogRoot, "recipes", "server.yaml"), `apiVersion: aggrega.ai/v1alpha1
 kind: Recipe
@@ -146,13 +138,6 @@ spec:
       type: {}
 `)
 	catalogRoot := filepath.Join(root, "catalog")
-	writeFixture(t, filepath.Join(catalogRoot, "providers", "helm.yaml"), `apiVersion: aggrega.ai/v1alpha1
-kind: Provider
-metadata:
-  name: helm
-  version: 1.0.0
-spec: {}
-`)
 	writeHelmRendererPlugin(t, filepath.Join(catalogRoot, "providers"))
 
 	prevRelease, prevCatalog, prevTrace := releasePath, catalogDirs, traceEnabled
@@ -186,13 +171,6 @@ metadata:
 spec:
   extends: nonexistent-parent
   schema: inherited
-`)
-	writeFixture(t, filepath.Join(catalogRoot, "providers", "helm.yaml"), `apiVersion: aggrega.ai/v1alpha1
-kind: Provider
-metadata:
-  name: helm
-  version: 1.0.0
-spec: {}
 `)
 	writeHelmRendererPlugin(t, filepath.Join(catalogRoot, "providers"))
 	// Minimal release pointing to nothing — we expect failure earlier
@@ -242,13 +220,6 @@ func TestInspectReleaseFile_MalformedRelease(t *testing.T) {
 	root := t.TempDir()
 	writeFixture(t, filepath.Join(root, "release.yaml"), "::: not yaml :::")
 	catalogRoot := filepath.Join(root, "catalog")
-	writeFixture(t, filepath.Join(catalogRoot, "providers", "helm.yaml"), `apiVersion: aggrega.ai/v1alpha1
-kind: Provider
-metadata:
-  name: helm
-  version: 1.0.0
-spec: {}
-`)
 	writeHelmRendererPlugin(t, filepath.Join(catalogRoot, "providers"))
 	err := renderReleaseFile(nil, filepath.Join(root, "release.yaml"), nil, []string{catalogRoot}, testInspectOptions(io.Discard))
 	if err == nil {
@@ -314,14 +285,6 @@ spec:
   schema:
     values:
       port: { type: integer }
-`)
-	writeFixture(t, filepath.Join(catalogRoot, "providers", "helm.yaml"), `apiVersion: aggrega.ai/v1alpha1
-kind: Provider
-metadata:
-  name: helm
-  version: 1.0.0
-spec:
-  plugin: "builtin:helm"
 `)
 	writeHelmRendererPlugin(t, filepath.Join(catalogRoot, "providers"))
 	writeFixture(t, filepath.Join(catalogRoot, "recipes", "server.yaml"), `apiVersion: aggrega.ai/v1alpha1

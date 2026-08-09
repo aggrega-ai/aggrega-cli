@@ -152,14 +152,6 @@ spec:
           web: {{ .values.port }}
 `)
 	}
-	writeFixture(t, filepath.Join(catalogRoot, "providers", "helm.yaml"), `apiVersion: aggrega.ai/v1alpha1
-kind: Provider
-metadata:
-  name: helm
-  version: "1.0.0"
-spec:
-  plugin: "builtin:helm"
-`)
 	writeHelmRendererPlugin(t, filepath.Join(catalogRoot, "providers"))
 	return filepath.Join(root, "release.yaml")
 }

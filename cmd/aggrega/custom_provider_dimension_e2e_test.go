@@ -165,10 +165,10 @@ spec:
 
 // customDimensionCatalog writes and pushes a fixture catalog whose Component is
 // implemented by a Recipe rendering under the CUSTOM capability. The compute
-// resolves purely over the registry; the capability's kind:Provider (its
-// workload schema) is a local catalog entity (Providers are not a publishable
-// kind), supplied to pull and build through --catalog like the embedded core
-// providers. Returns the local catalog dir carrying the Provider entity.
+// resolves purely over the registry. Returns an empty local catalog dir, which
+// the caller supplies to pull and build through --catalog: the capability's
+// render behaviour is carried entirely by the published provider Plugin, so the
+// local dir contributes no entity and exists only to exercise the flag.
 func customDimensionCatalog(t *testing.T, host, capability string) string {
 	t.Helper()
 	cat := t.TempDir()
@@ -200,21 +200,7 @@ spec:
 `)
 	pushCatalog(t, host, cat)
 
-	// The capability's kind:Provider (workload schema). Not a publishable kind, so
-	// it lives in a local catalog dir supplied through --catalog, exactly as the
-	// embedded core providers' entities are supplied locally in the other
-	// round-trip suites. A permissive schema accepts the fixture workload as-is.
 	local := t.TempDir()
-	writeFixtureEntity(t, local, "provider/"+capability+"/1.0.0/provider.yaml", `apiVersion: aggrega.ai/v1alpha1
-kind: Provider
-metadata:
-  name: `+capability+`
-  version: "1.0.0"
-spec:
-  workloadSchema: |
-    type: object
-    additionalProperties: true
-`)
 	return local
 }
 
@@ -461,8 +447,9 @@ func TestIntegration_CustomProviderDimension_RoundTrip(t *testing.T) {
 		)
 		host := startRegistry(t, nil)
 
-		// A fixture Component + helm Recipe pushed to the registry; helm's
-		// kind:Provider comes from the standard catalog (supplied locally).
+		// A fixture Component + helm Recipe pushed to the registry. Nothing local
+		// declares the helm provider: render-time resolution overlays the binary's
+		// embedded core provider entities, so helm resolves from the embed.
 		cat := t.TempDir()
 		writeFixtureEntity(t, cat, "component/test/svc/1.0.0/component.yaml", `apiVersion: aggrega.ai/v1alpha1
 kind: Component
@@ -527,8 +514,8 @@ spec:
 	t.Run("unknown_target_halts_loudly", func(t *testing.T) {
 		const capability = "voidtarget"
 		host := startRegistry(t, nil)
-		// The capability's kind:Provider is supplied locally so closure/workload
-		// resolution reaches render; NO provider plugin serves it and NO binding is
+		// Closure/workload resolution reaches render on the published Component and
+		// Recipe alone; NO provider plugin serves the capability and NO binding is
 		// declared, so render halts loudly.
 		localProvider := customDimensionCatalog(t, host, capability)
 		catDirs := []string{localProvider}

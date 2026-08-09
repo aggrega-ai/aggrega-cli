@@ -326,14 +326,6 @@ spec:
   assertions:
     port-must-be-privileged: '{{ fail "PROBEMSG-port-8080-is-not-privileged" }}'
 `)
-	writeFixture(t, filepath.Join(catalogRoot, "base", "providers", "helm.yaml"), `apiVersion: aggrega.ai/v1alpha1
-kind: Provider
-metadata:
-  name: helm
-  version: "1.0.0"
-spec:
-  plugin: "builtin:helm"
-`)
 	writeHelmRendererPlugin(t, filepath.Join(catalogRoot, "base", "providers"))
 	writeFixture(t, filepath.Join(catalogRoot, "recipes", "helm", "server.yaml"), `apiVersion: aggrega.ai/v1alpha1
 kind: Recipe

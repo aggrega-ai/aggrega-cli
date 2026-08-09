@@ -290,14 +290,6 @@ spec:
         $ref: "DbSizing#/schemas/Storage"
 `)
 	writeFixture(t, filepath.Join(catalogRoot, "schemalibraries", "dbsizing.yaml"), dbSizingLibrarySource)
-	writeFixture(t, filepath.Join(catalogRoot, "providers", "helm.yaml"), `apiVersion: aggrega.ai/v1alpha1
-kind: Provider
-metadata:
-  name: helm
-  version: "1.0.0"
-spec:
-  plugin: "builtin:helm"
-`)
 	writeHelmRendererPlugin(t, filepath.Join(catalogRoot, "providers"))
 	writeFixture(t, filepath.Join(catalogRoot, "recipes", "server.yaml"), `apiVersion: aggrega.ai/v1alpha1
 kind: Recipe

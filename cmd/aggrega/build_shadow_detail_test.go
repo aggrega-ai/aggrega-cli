@@ -88,14 +88,6 @@ spec:
 	writeFixture(t, filepath.Join(dirB, "components", "server.yaml"), component("from-dir-b"))
 
 	// Recipe + provider live only in dir A so they resolve unambiguously.
-	writeFixture(t, filepath.Join(dirA, "providers", "helm.yaml"), `apiVersion: aggrega.ai/v1alpha1
-kind: Provider
-metadata:
-  name: helm
-  version: "1.0.0"
-spec:
-  plugin: "builtin:helm"
-`)
 	writeHelmRendererPlugin(t, filepath.Join(dirA, "providers"))
 	writeFixture(t, filepath.Join(dirA, "recipes", "helm", "server.yaml"), `apiVersion: aggrega.ai/v1alpha1
 kind: Recipe

@@ -85,8 +85,8 @@ spec:
 // compose-provider Component and its Recipe — the compute the config-socket build
 // renders. The mutator socket runs over this node's topology entry; the policy
 // socket runs over the IR this node produces. The catalog is pushed to the
-// registry so it resolves over the wire; the compose PROVIDER entity resolves from
-// the locally-supplied standard catalog. Returns the pushed catalog dir.
+// registry so it resolves over the wire; the compose provider entity comes from
+// the binary's embed, not from any catalog directory. Returns the pushed catalog dir.
 func configSocketFixtureCatalog(t *testing.T, host string) {
 	t.Helper()
 	cat := t.TempDir()

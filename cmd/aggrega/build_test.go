@@ -85,14 +85,6 @@ spec:
     smoke_assert: '{{ fail "cli-step4b-smoke-fired" }}'
 `)
 
-	writeFixture(t, filepath.Join(catalogRoot, "base", "providers", "helm.yaml"), `apiVersion: aggrega.ai/v1alpha1
-kind: Provider
-metadata:
-  name: helm
-  version: "1.0.0"
-spec:
-  plugin: "builtin:helm"
-`)
 	writeHelmRendererPlugin(t, filepath.Join(catalogRoot, "base", "providers"))
 
 	writeFixture(t, filepath.Join(catalogRoot, "recipes", "helm", "server.yaml"), `apiVersion: aggrega.ai/v1alpha1
@@ -213,14 +205,6 @@ spec:
       port: { type: integer, default: 8080 }
 `)
 
-	writeFixture(t, filepath.Join(catalogRoot, "base", "providers", "helm.yaml"), `apiVersion: aggrega.ai/v1alpha1
-kind: Provider
-metadata:
-  name: helm
-  version: "1.0.0"
-spec:
-  plugin: "builtin:helm"
-`)
 	writeHelmRendererPlugin(t, filepath.Join(catalogRoot, "base", "providers"))
 
 	writeFixture(t, filepath.Join(catalogRoot, "recipes", "helm", "server.yaml"), `apiVersion: aggrega.ai/v1alpha1
@@ -390,14 +374,6 @@ spec:
       dsn: { type: string }
 `)
 
-	writeFixture(t, filepath.Join(catalogRoot, "base", "providers", "helm.yaml"), `apiVersion: aggrega.ai/v1alpha1
-kind: Provider
-metadata:
-  name: helm
-  version: "1.0.0"
-spec:
-  plugin: "builtin:helm"
-`)
 	writeHelmRendererPlugin(t, filepath.Join(catalogRoot, "base", "providers"))
 
 	writeFixture(t, filepath.Join(catalogRoot, "recipes", "helm", "store.yaml"), `apiVersion: aggrega.ai/v1alpha1
@@ -575,14 +551,6 @@ spec:
       dsn: { type: string }
 `)
 
-	writeFixture(t, filepath.Join(catalogRoot, "base", "providers", "helm.yaml"), `apiVersion: aggrega.ai/v1alpha1
-kind: Provider
-metadata:
-  name: helm
-  version: "1.0.0"
-spec:
-  plugin: "builtin:helm"
-`)
 	writeHelmRendererPlugin(t, filepath.Join(catalogRoot, "base", "providers"))
 
 	writeFixture(t, filepath.Join(catalogRoot, "recipes", "helm", "store.yaml"), `apiVersion: aggrega.ai/v1alpha1
