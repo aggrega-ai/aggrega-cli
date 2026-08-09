@@ -98,8 +98,16 @@ func TestIRSchemaRootMirrorsGraphDefinition(t *testing.T) {
 // be rejected can tell the two apart.
 //
 // Scope here is the IR root. The same property holds for every kind the
-// validator carries an embedded schema for, and covering all of them is a
-// broader piece of work than this file's subject.
+// validator carries an embedded schema for, and the whole-registry check now
+// lives with the registry, in the envelope package, where it can iterate the
+// kinds rather than name them.
+//
+// This narrower check is kept deliberately rather than folded into that one.
+// It reaches the validator from the package that owns the emitted structures,
+// so it fails on the side that would break first if the IR root and its schema
+// ever parted company — and a check that only ever ran from the validator's own
+// package could be satisfied by a change to the validator alone. Whoever
+// consolidates these two later should keep one arriving from each side.
 func TestIRSchemaRootConstraintsReachTheInstanceRoot(t *testing.T) {
 	t.Parallel()
 

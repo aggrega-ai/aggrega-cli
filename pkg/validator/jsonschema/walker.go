@@ -300,19 +300,17 @@ func joinPath(path []string) string {
 // values pruned away. The per-call walk checks a position against the
 // reduced copy: one call over a whole subtree reports whichever of
 // several equally-failing children the library's map iteration reached
-// first, and the walk reaches each child itself. A non-root position
-// carrying only a reference is indexed as the schema it names, so the
-// recursion descends into that schema's properties instead of stopping
-// at a node that declares none.
+// first, and the walk reaches each child itself. A position carrying
+// only a reference — the root included — is indexed as the schema it
+// names, so the recursion descends into that schema's properties
+// instead of stopping at a node that declares none.
 //
 // Residual gaps for `$ref` resolution: (a) cross-property refs
 // (`$ref → #/properties/foo` — the graft covers $defs only, not
 // /properties), (b) `$defs/X` entries whose own refs leave $defs scope
-// (e.g., `$defs/X` referencing `/properties/foo`), (c) a root that
-// carries only a reference, which indexes nothing and therefore
-// enforces nothing. Either of the first two would require validating at
-// the root and filtering findings, accepting the ordering degradation
-// for the affected paths only.
+// (e.g., `$defs/X` referencing `/properties/foo`). Either would require
+// validating at the root and filtering findings, accepting the ordering
+// degradation for the affected paths only.
 func (a *googleAdapter) indexSubSchemas(s *jsonschema.Schema, path string, ambientDefs map[string]*jsonschema.Schema) error {
 	if s == nil {
 		return nil
@@ -330,27 +328,31 @@ func (a *googleAdapter) indexSubSchemas(s *jsonschema.Schema, path string, ambie
 		s.Defs = merged
 	}
 
-	// A non-root position that carries only a reference is indexed as the
-	// schema it names, so this level's own recursion reaches that schema's
+	// A position that carries only a reference is indexed as the schema it
+	// names, so this level's own recursion reaches that schema's
 	// properties. Without the substitution the position would index as a
 	// node with no properties of its own, its children would have no entry
 	// in the index, and pruning its own call — which the next step does —
-	// would leave them unchecked. The root is deliberately left alone: a
-	// reference-only root is a separate, already-escalated question about
-	// what the index enforces when nothing is indexed at all, and settling
-	// it here would settle it without the reasoning that belongs to it.
-	if path != "" {
-		if name, substituted, ok := substituteRefOnly(s); ok && !a.expanding[name] {
-			s = substituted
-			// The definition becomes the root of the library call made at
-			// this position, and a library names its call root as the root
-			// rather than by name — so without recording the name here, a
-			// diagnostic would no longer say which declared shape was
-			// violated.
-			a.subDefinition[path] = name
-			a.expanding[name] = true
-			defer delete(a.expanding, name)
-		}
+	// would leave them unchecked.
+	//
+	// The root is included, and it is the position where leaving the
+	// reference in place costs the most. The index is what the walk
+	// enforces from, so a root that indexes nothing enforces nothing: every
+	// document validates clean, however malformed, because there is no
+	// entry against which to find it wanting. That failure is silent and in
+	// the permissive direction, which is the direction no positive test can
+	// see — a schema in this shape reads as stricter than one that inlines
+	// the same constraints while enforcing none of them.
+	if name, substituted, ok := substituteRefOnly(s); ok && !a.expanding[name] {
+		s = substituted
+		// The definition becomes the root of the library call made at
+		// this position, and a library names its call root as the root
+		// rather than by name — so without recording the name here, a
+		// diagnostic would no longer say which declared shape was
+		// violated.
+		a.subDefinition[path] = name
+		a.expanding[name] = true
+		defer delete(a.expanding, name)
 	}
 
 	// Resolve this sub-schema as a standalone root. The root schema
