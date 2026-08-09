@@ -107,6 +107,33 @@ fn name_shape_mappinglibrary_rejects_non_pascalcase() {
     rejects("MappingLibrary", "lower-case");
 }
 
+// Every library kind carries the same PascalCase shape, so each one is
+// covered in both directions rather than by one representative. The
+// rejecting case is the load-bearing half: a kind with no dispatch
+// entry resolves to "no shape" and reports nothing, which satisfies a
+// passing assertion while checking the name against nothing at all.
+#[test]
+fn name_shape_workloadlibrary_pascalcase_passes() {
+    passes("WorkloadLibrary", "BaseWorkloads");
+}
+
+#[test]
+fn name_shape_workloadlibrary_rejects_non_pascalcase() {
+    rejects("WorkloadLibrary", "base-workloads");
+    rejects("WorkloadLibrary", "not_snake_case_either");
+}
+
+#[test]
+fn name_shape_artifactslibrary_pascalcase_passes() {
+    passes("ArtifactsLibrary", "BaseArtifacts");
+}
+
+#[test]
+fn name_shape_artifactslibrary_rejects_non_pascalcase() {
+    rejects("ArtifactsLibrary", "base-artifacts");
+    rejects("ArtifactsLibrary", "not_snake_case_either");
+}
+
 #[test]
 fn name_shape_policy_flag_suppresses() {
     let policies = Some(Policies {

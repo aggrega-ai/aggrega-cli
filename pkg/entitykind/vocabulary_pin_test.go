@@ -178,6 +178,95 @@ func TestPublishableKindsAreEntityKinds(t *testing.T) {
 	}
 }
 
+// TestPublishableKindsAreConventionsLinted holds the two sets that answer
+// overlapping questions about the same kind — may it be published, and do the
+// publishing-conventions rules examine it — against each other, in both directions.
+//
+// They are separate facts and neither implies the other, which is exactly why they
+// need pinning rather than merging: a kind can be catalog-resident without being
+// publishable, and an authoring-side document can be publishable without the
+// catalog-publishing rules having anything to say about it. What must not happen is
+// for the two to disagree by accident. A kind that is published while no convention
+// rule examines it ships unlinted, and nothing reports the gap — the walk drops the
+// file before it reaches any rule, so the result is a clean report rather than a
+// skipped one.
+//
+// Every difference between the sets is therefore declared below with its reason. A
+// kind entering one set without entering the other, or without being claimed as a
+// deliberate difference, fails here.
+func TestPublishableKindsAreConventionsLinted(t *testing.T) {
+	// Publishable kinds the conventions rules deliberately do not examine, with the
+	// reason each is exempt.
+	publishableButNotLinted := map[entitykind.Kind]string{
+		entitykind.Aggregate: "an Aggregate is a developer's application-intent document; it is publishable as a reusable module, but the conventions rules describe catalog-publishing discipline, which is not what an Aggregate is authored against",
+	}
+
+	// Conventions-linted kinds that are not publishable, with the reason each is
+	// linted anyway. Empty today: every kind the rules examine is one that ships.
+	lintedButNotPublishable := map[entitykind.Kind]string{}
+
+	publishable := map[entitykind.Kind]bool{}
+	for _, kind := range oci.MediaTypeKinds() {
+		publishable[entitykind.Kind(kind)] = true
+	}
+	if len(publishable) == 0 {
+		t.Fatal("no publishable kinds were enumerated; every assertion below would be vacuous")
+	}
+
+	linted := map[entitykind.Kind]bool{}
+	for _, kind := range entitykind.ConventionsLinted() {
+		linted[kind] = true
+	}
+	if len(linted) == 0 {
+		t.Fatal("no conventions-linted kinds were enumerated; every assertion below would be vacuous")
+	}
+
+	for kind := range publishable {
+		if linted[kind] {
+			continue
+		}
+		if _, named := publishableButNotLinted[kind]; named {
+			continue
+		}
+		t.Errorf("kind %s is publishable but no convention rule examines it, and it is not named as a deliberate exemption: "+
+			"a document of that kind ships without ever being checked, and because the walk drops it before any rule runs, "+
+			"the pass reports success rather than reporting that it skipped anything. "+
+			"Either mark the kind conventions-linted in the vocabulary, or name it here with the reason it is exempt.", kind)
+	}
+
+	for kind := range linted {
+		if publishable[kind] {
+			continue
+		}
+		if _, named := lintedButNotPublishable[kind]; named {
+			continue
+		}
+		t.Errorf("kind %s is conventions-linted but is not publishable, and is not named as a deliberate difference: "+
+			"the publishing-conventions rules are being run over a document that is never published. "+
+			"Either give the kind a mediatype, or name it here with the reason it is linted anyway.", kind)
+	}
+
+	// Both exclusion sets are held against reality so neither can go stale. An
+	// entry describing a difference that no longer exists is worse than no entry:
+	// it silently licenses the very drift it was written to make visible.
+	for kind, reason := range publishableButNotLinted {
+		if !publishable[kind] {
+			t.Errorf("%s is named as publishable-but-not-linted (%s) but is no longer publishable; the exemption is stale and should be removed", kind, reason)
+		}
+		if linted[kind] {
+			t.Errorf("%s is named as publishable-but-not-linted (%s) but the rules now examine it; remove the exemption so the sets read as agreeing", kind, reason)
+		}
+	}
+	for kind, reason := range lintedButNotPublishable {
+		if !linted[kind] {
+			t.Errorf("%s is named as linted-but-not-publishable (%s) but is no longer conventions-linted; the entry is stale and should be removed", kind, reason)
+		}
+		if publishable[kind] {
+			t.Errorf("%s is named as linted-but-not-publishable (%s) but is now publishable; remove the entry so the sets read as agreeing", kind, reason)
+		}
+	}
+}
+
 // TestKindPathSegmentNeedsNoPerKindException holds the OCI repository path rule to
 // the vocabulary's own segment rule.
 //

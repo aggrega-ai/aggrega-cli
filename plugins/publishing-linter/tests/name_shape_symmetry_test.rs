@@ -6,10 +6,18 @@
 //! source-of-truth in `aggrega-cli/pkg/catalog/name_shape.go`.
 //!
 //! The test reads the Go file (umbrella-relative; available in
-//! umbrella checkouts), greps the seven `const X = ...` lines that
-//! carry the per-kind regex strings, and compares the extracted
-//! patterns to the Rust-side constants. Drift between the two
-//! surfaces surfaces here at unit-test time.
+//! umbrella checkouts), extracts every `const X = ...` line carrying a
+//! per-kind regex string, and compares the extracted patterns to the
+//! Rust-side dispatch table. Drift between the two surfaces surfaces
+//! here at unit-test time.
+//!
+//! The comparison runs in BOTH directions and neither side's kind set
+//! is transcribed here. The Rust side is walked from its own dispatch
+//! table, and each kind's Go constant name is derived — the constant
+//! for a kind is exactly `<Kind>NameShape` — so a kind added to one
+//! side alone fails. A one-directional check would not: a kind added
+//! to the Go declarations with no Rust arm leaves the rule resolving
+//! "no shape" for it, which reports nothing and reads as a pass.
 //!
 //! Skip-on-missing-file behaviour: standalone PDK / plugin checkouts
 //! where the Go file is unreachable skip the test gracefully (cargo's
@@ -26,10 +34,7 @@
 
 use std::path::PathBuf;
 
-use publishing_linter::rules::name_shape::{
-    AGGREGATE_NAME_SHAPE, COMPONENT_NAME_SHAPE, FEATURE_NAME_SHAPE, FEATURE_RECIPE_NAME_SHAPE,
-    MAPPING_LIBRARY_NAME_SHAPE, RECIPE_NAME_SHAPE, SCHEMA_LIBRARY_NAME_SHAPE,
-};
+use publishing_linter::rules::name_shape::NAME_SHAPES;
 
 fn go_source_path() -> Option<PathBuf> {
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -56,6 +61,41 @@ fn extract_go_const(source: &str, name: &str) -> Option<String> {
     Some(after[..end].to_string())
 }
 
+/// `go_const_name` derives the Go source-of-truth constant name for a
+/// kind. The naming rule is uniform across every kind, so the mapping
+/// is computed rather than listed — a list here would be a third copy
+/// of the kind set and would need remembering exactly when a kind is
+/// added.
+fn go_const_name(kind: &str) -> String {
+    format!("{kind}NameShape")
+}
+
+/// `declared_go_kinds` recovers the kind set from the Go file itself by
+/// walking its `const <Kind>NameShape = ` declarations. This is what
+/// lets the reverse direction be checked at all: without it the test
+/// could only confirm that the kinds Rust knows about agree, which is
+/// exactly the check that passes while a Go-declared kind reaches no
+/// dispatch arm.
+fn declared_go_kinds(source: &str) -> Vec<String> {
+    const PREFIX: &str = "const ";
+    const SUFFIX: &str = "NameShape = `";
+    let mut kinds = Vec::new();
+    for line in source.lines() {
+        let line = line.trim_start();
+        let Some(rest) = line.strip_prefix(PREFIX) else {
+            continue;
+        };
+        let Some(idx) = rest.find(SUFFIX) else {
+            continue;
+        };
+        let kind = &rest[..idx];
+        if !kind.is_empty() {
+            kinds.push(kind.to_string());
+        }
+    }
+    kinds
+}
+
 #[test]
 fn name_shape_constants_match_go_source_of_truth() {
     let path = match go_source_path() {
@@ -80,28 +120,43 @@ fn name_shape_constants_match_go_source_of_truth() {
     let source = std::fs::read_to_string(&path)
         .unwrap_or_else(|e| panic!("read Go file at {}: {e}", path.display()));
 
-    let cases: &[(&str, &str)] = &[
-        ("ComponentNameShape", COMPONENT_NAME_SHAPE),
-        ("FeatureNameShape", FEATURE_NAME_SHAPE),
-        ("RecipeNameShape", RECIPE_NAME_SHAPE),
-        ("FeatureRecipeNameShape", FEATURE_RECIPE_NAME_SHAPE),
-        ("AggregateNameShape", AGGREGATE_NAME_SHAPE),
-        ("SchemaLibraryNameShape", SCHEMA_LIBRARY_NAME_SHAPE),
-        ("MappingLibraryNameShape", MAPPING_LIBRARY_NAME_SHAPE),
-    ];
+    let go_kinds = declared_go_kinds(&source);
+    assert!(
+        !go_kinds.is_empty(),
+        "no `const <Kind>NameShape` declarations were extracted from {}; the extraction has \
+         broken and every assertion below would be vacuous",
+        path.display()
+    );
 
     let mut mismatches: Vec<String> = Vec::new();
-    for (go_name, rust_const) in cases {
-        let go_value = match extract_go_const(&source, go_name) {
+
+    // Forward: every kind the rule dispatches on has a Go declaration
+    // carrying the identical pattern.
+    for (kind, rust_const) in NAME_SHAPES {
+        let go_name = go_const_name(kind);
+        let go_value = match extract_go_const(&source, &go_name) {
             Some(v) => v,
             None => {
-                mismatches.push(format!("const {go_name} not found in Go source"));
+                mismatches.push(format!(
+                    "{kind}: the rule carries a pattern but the Go source declares no const {go_name}"
+                ));
                 continue;
             }
         };
         if go_value != *rust_const {
+            mismatches.push(format!("{go_name}: Go {go_value:?} != Rust {rust_const:?}"));
+        }
+    }
+
+    // Reverse: every kind the Go source declares a shape for is
+    // actually dispatched on. A kind failing here is one whose name is
+    // documented as having a shape and checked by nothing — the rule
+    // returns no finding for it, which reads as a clean result.
+    for kind in &go_kinds {
+        if !NAME_SHAPES.iter().any(|(k, _)| k == kind) {
             mismatches.push(format!(
-                "{go_name}: Go {go_value:?} != Rust {rust_const:?}"
+                "{kind}: the Go source declares a name shape but the rule has no entry, so a \
+                 name of that kind is checked by nothing and every one of them reports clean"
             ));
         }
     }

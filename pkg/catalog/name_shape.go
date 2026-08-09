@@ -7,14 +7,24 @@
 // publishing linter, whose Rust implementation carries its own copy of
 // each pattern and reports a finding when an author runs aggrega lint.
 //
-// Exactly one consumer relationship exists, and it is cross-language:
-// the publishing linter's symmetry test
-// (plugins/publishing-linter/tests/name_shape_symmetry_test.rs) reads
-// this file as SOURCE TEXT. It greps for the literal prefix
-// "const <Name> = " followed by a backtick-quoted string, extracts the
-// seven per-kind patterns, and compares each to the corresponding
-// Rust constant in plugins/publishing-linter/src/rules/name_shape.rs,
-// re-compiling in its own regex engine.
+// Two consumer relationships exist, and both read this file as SOURCE
+// TEXT rather than importing it:
+//
+//   - The publishing linter's symmetry test
+//     (plugins/publishing-linter/tests/name_shape_symmetry_test.rs)
+//     greps for the literal prefix "const <Name> = " followed by a
+//     backtick-quoted string, extracts every per-kind pattern, and
+//     compares each to the corresponding Rust constant in
+//     plugins/publishing-linter/src/rules/name_shape.rs, re-compiling
+//     in its own regex engine. The comparison runs in both directions,
+//     so a pattern declared on one side only fails there.
+//   - This package's own coverage test (name_shape_coverage_test.go)
+//     extracts the same declarations to hold this set against the
+//     entity-kind vocabulary, so a kind the conventions rules apply to
+//     cannot end up with its name checked by nothing.
+//
+// The constant name is derived rather than listed by both: the
+// constant for a kind is exactly "<Kind>NameShape".
 //
 // The literal declaration form is therefore load-bearing. Each pattern
 // MUST stay on one line as `const <Name> = ` plus a backtick-quoted
@@ -73,13 +83,29 @@ const FeatureRecipeNameShape = `^[a-z][a-z0-9-]*$`
 // Verified against the first hub Aggregate when one ships.
 const AggregateNameShape = `^[a-z][a-z0-9-]*/[a-z][a-z0-9-]*$`
 
-// SchemaLibraryNameShape matches a PascalCase single identifier. This
-// pattern is also enforced by the JSON Schema envelope at
-// aggrega-schemas/json/schemalibrary-v1alpha1.schema.json;
-// structural validation rejects non-conforming names at parse time.
+// --- Library name shapes ---
+//
+// Every library kind carries the same PascalCase shape, and every
+// library kind's JSON Schema envelope declares that pattern on
+// metadata.name, so structural validation rejects a non-conforming
+// name at parse time and the name-shape check below reports it at
+// author time. The four patterns are declared separately rather than
+// as one shared constant because each is pinned individually against
+// its counterpart in the linter, and a shared constant would collapse
+// four independent pins into one.
+
+// SchemaLibraryNameShape matches a PascalCase single identifier.
 // Example matches: "BaseComponents", "AIDatastores", "WebPrimitives".
 const SchemaLibraryNameShape = `^[A-Z][A-Za-z0-9]*$`
 
 // MappingLibraryNameShape matches the same PascalCase shape as
-// SchemaLibraryNameShape; same JSON Schema envelope enforcement.
+// SchemaLibraryNameShape. Example match: "BaseMappings".
 const MappingLibraryNameShape = `^[A-Z][A-Za-z0-9]*$`
+
+// WorkloadLibraryNameShape matches the same PascalCase shape as
+// SchemaLibraryNameShape. Example match: "BaseWorkloads".
+const WorkloadLibraryNameShape = `^[A-Z][A-Za-z0-9]*$`
+
+// ArtifactsLibraryNameShape matches the same PascalCase shape as
+// SchemaLibraryNameShape.
+const ArtifactsLibraryNameShape = `^[A-Z][A-Za-z0-9]*$`

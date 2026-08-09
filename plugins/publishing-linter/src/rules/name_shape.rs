@@ -92,16 +92,31 @@ pub const FEATURE_RECIPE_NAME_SHAPE: &str = r"^[a-z][a-z0-9-]*$";
 pub const AGGREGATE_NAME_SHAPE: &str = r"^[a-z][a-z0-9-]*/[a-z][a-z0-9-]*$";
 pub const SCHEMA_LIBRARY_NAME_SHAPE: &str = r"^[A-Z][A-Za-z0-9]*$";
 pub const MAPPING_LIBRARY_NAME_SHAPE: &str = r"^[A-Z][A-Za-z0-9]*$";
+pub const WORKLOAD_LIBRARY_NAME_SHAPE: &str = r"^[A-Z][A-Za-z0-9]*$";
+pub const ARTIFACTS_LIBRARY_NAME_SHAPE: &str = r"^[A-Z][A-Za-z0-9]*$";
+
+/// `NAME_SHAPES` pairs each entity kind with its documented name
+/// pattern, and is the only place that pairing is written down. A kind
+/// absent from it has no pattern, so the rule reports nothing for a
+/// document of that kind — which is why the table is enumerable rather
+/// than a match expression: the symmetry test walks it against the
+/// Go-side declarations in both directions, so a kind added to one
+/// side alone fails rather than silently resolving to "no shape".
+pub const NAME_SHAPES: &[(&str, &str)] = &[
+    ("Component", COMPONENT_NAME_SHAPE),
+    ("Feature", FEATURE_NAME_SHAPE),
+    ("Recipe", RECIPE_NAME_SHAPE),
+    ("FeatureRecipe", FEATURE_RECIPE_NAME_SHAPE),
+    ("Aggregate", AGGREGATE_NAME_SHAPE),
+    ("SchemaLibrary", SCHEMA_LIBRARY_NAME_SHAPE),
+    ("MappingLibrary", MAPPING_LIBRARY_NAME_SHAPE),
+    ("WorkloadLibrary", WORKLOAD_LIBRARY_NAME_SHAPE),
+    ("ArtifactsLibrary", ARTIFACTS_LIBRARY_NAME_SHAPE),
+];
 
 fn per_kind_pattern(kind: &str) -> Option<&'static str> {
-    match kind {
-        "Component" => Some(COMPONENT_NAME_SHAPE),
-        "Feature" => Some(FEATURE_NAME_SHAPE),
-        "Recipe" => Some(RECIPE_NAME_SHAPE),
-        "FeatureRecipe" => Some(FEATURE_RECIPE_NAME_SHAPE),
-        "Aggregate" => Some(AGGREGATE_NAME_SHAPE),
-        "SchemaLibrary" => Some(SCHEMA_LIBRARY_NAME_SHAPE),
-        "MappingLibrary" => Some(MAPPING_LIBRARY_NAME_SHAPE),
-        _ => None,
-    }
+    NAME_SHAPES
+        .iter()
+        .find(|(k, _)| *k == kind)
+        .map(|(_, pattern)| *pattern)
 }
