@@ -45,9 +45,19 @@ import (
 // removes the last off-framework emission path flips [sentinelEmissionBlocks] to
 // true in the same edit that makes the flip pass.
 //
-// Reporting is not nothing: the counts appear in every test run, so the
-// off-framework population is visible and its direction of travel is legible
-// while the migration is under way.
+// Reporting is weaker than it sounds, and saying so here is the point: nothing
+// about a report-only assertion distinguishes one whose finding reaches a reader
+// from one whose finding reaches nobody, because the code plainly writes the
+// message either way. A Go package that passes prints nothing in a routine run —
+// not the framework's log, not a write to standard error, not a write to
+// standard output — so while this constant is false the counts reach a reader
+// only under a verbose run (`go test -v`) of this package. The channel
+// measurement behind that claim is recorded once, beside
+// [codeLiteralGuardBlocks], rather than restated here.
+//
+// What still blocks at false is the instrument itself: a declared population of
+// zero is fatal below, so a census that has stopped working is loud even while a
+// population it reports is quiet.
 //
 // # What counts as the framework's dispatch, and why not by address
 //
