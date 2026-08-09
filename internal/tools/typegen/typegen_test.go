@@ -148,6 +148,33 @@ var codecTargetPaths = map[string][]string{
 	"providerrender_host_gen.go": {"..", "..", "compiler", "rendercore"},
 }
 
+// TestTargetPathsNameRegisteredTargets checks the two path tables in the
+// direction the drift gates cannot. Each of those gates walks a target registry
+// and looks the target's path up, so a registered target with no path fails
+// loudly — but a path entry naming a target that is no longer registered is
+// never looked up by anything, and so reports nothing at all. Removing a target
+// from its registry leaves its path entry behind, still pointing across the
+// submodule boundary at a file nothing generates, and every gate stays green.
+//
+// These tables are where a coupling that appears in no repository's diff is
+// written down: the generator reads a schema in one repository and commits its
+// output into another. A stale entry here is a stale record of that coupling, so
+// the two directions are asserted rather than one.
+func TestTargetPathsNameRegisteredTargets(t *testing.T) {
+	for outFile := range enumTargetPaths {
+		if _, ok := enumSources[outFile]; !ok {
+			t.Errorf("enumTargetPaths registers a committed path for %q, which is not a registered enum "+
+				"target: nothing generates that file, so the entry is inert and no gate reads it", outFile)
+		}
+	}
+	for outFile := range codecTargetPaths {
+		if _, ok := codecTargets[outFile]; !ok {
+			t.Errorf("codecTargetPaths registers a committed path for %q, which is not a registered codec "+
+				"target: nothing generates that file, so the entry is inert and no gate reads it", outFile)
+		}
+	}
+}
+
 // TestRegenClean_Codec is the regen-drift gate for the multi-type codec
 // targets: re-running the generator for each codec target must byte-match the
 // committed generated file. A failure means the schema or the generator changed

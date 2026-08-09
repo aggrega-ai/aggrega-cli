@@ -1105,6 +1105,88 @@ func refTypeName(ref string) string {
 	return ref
 }
 
+// checkStructNode refuses, before anything is emitted, the two schema shapes the
+// generator has no Go type name for. An object carrying neither an
+// `x-aggrega-go-type` annotation nor `properties` resolves to a struct name that
+// nothing then declares, because a struct is only emitted for an object that has
+// properties to build one from. An object sitting on an `items` node resolves to
+// nothing at all, because the mechanical array recursion has no name to give the
+// element. Both otherwise emit a file — the first referencing an undeclared type,
+// the second an array with an empty element type — and each surfaces downstream
+// as a formatter error naming a line in generated code, which does not say which
+// schema node caused it. So the refusal names the node's path in the schema and
+// the annotation it needs.
+//
+// The walk mirrors emission, and mirroring where it STOPS is what keeps the
+// refusal from rejecting schemas that generate correctly: the generator emits an
+// annotated type verbatim and never descends into an annotated node, and it
+// resolves a `$ref` to the def's own type without reading the node either — so a
+// node under an annotation or a `$ref` is never read by the generator, and is
+// never judged here.
+//
+// It takes a node the generator emits as a struct: the entity root on the
+// single-type path, or one `$defs` entry on the multi-type path. path is that
+// node's location in the schema, which each refusal extends to point at the
+// offending node rather than at the type it was reached through.
+func checkStructNode(schemaFile, path string, n schemaNode) error {
+	for _, p := range n.props {
+		if err := checkFieldNode(schemaFile, path+"/properties/"+p.name, p.node); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// checkFieldNode takes a node in a property position, where the generator has a
+// name to give a nested struct — so an object here is emittable exactly when it
+// declares the properties that struct is built from.
+func checkFieldNode(schemaFile, path string, n schemaNode) error {
+	if n.GoType != "" || n.Ref != "" {
+		return nil
+	}
+	switch n.Type {
+	case "array":
+		if n.Items == nil {
+			return nil
+		}
+		return checkElementNode(schemaFile, path+"/items", *n.Items)
+	case "object":
+		if len(n.props) == 0 {
+			return fmt.Errorf("typegen: %s: the object at %s declares no properties and carries no "+
+				"x-aggrega-go-type annotation, so there is no struct to build from it and the generated "+
+				"file would reference a type that is never declared. Give the node an "+
+				"x-aggrega-go-type annotation naming the Go type of the node it annotates, or declare "+
+				"the properties the struct is built from", schemaFile, path)
+		}
+		return checkStructNode(schemaFile, path, n)
+	}
+	return nil
+}
+
+// checkElementNode takes a node in an `items` position, where the generator has
+// no name to give the element — so an object here is emittable only when it is
+// annotated or resolved by a `$ref`. Its own properties do not help: the array
+// recursion never names a struct for them.
+func checkElementNode(schemaFile, path string, n schemaNode) error {
+	if n.GoType != "" || n.Ref != "" {
+		return nil
+	}
+	switch n.Type {
+	case "array":
+		if n.Items == nil {
+			return nil
+		}
+		return checkElementNode(schemaFile, path+"/items", *n.Items)
+	case "object":
+		return fmt.Errorf("typegen: %s: the items node at %s is an object carrying no "+
+			"x-aggrega-go-type annotation, so there is no element type to emit and the generated file "+
+			"would carry an array with an empty element type. Give the items node an "+
+			"x-aggrega-go-type annotation naming the element type; the mechanical array recursion "+
+			"lifts it to []T", schemaFile, path)
+	}
+	return nil
+}
+
 // collectSelectors records the package selector of any qualified type
 // (<lower>.<Upper>, e.g. yaml.Node) appearing in a Go type string, so the
 // import block can be emitted. Same-package types (OrderedMap[...], []T, *T)
@@ -1704,6 +1786,13 @@ func emitCodecHelpers(b *strings.Builder) {
 	b.WriteString("}\n\n")
 }
 
+// entitySchemaFile names the published schema an entity kind is generated from.
+// The generated header line and the refusals below both name it, so it is
+// derived in one place rather than spelled out at each.
+func entitySchemaFile(typeName string) string {
+	return strings.ToLower(typeName) + "-v1alpha1.schema.json"
+}
+
 // generate produces the formatted Go source for one entity kind: its struct
 // field declarations plus the import block its field types require. It is the
 // single-type emission path (one top-level struct + nested named structs),
@@ -1714,6 +1803,9 @@ func generate(typeName, schemaJSON string) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("decode schema: %w", err)
 	}
+	if err := checkStructNode(entitySchemaFile(typeName), "#", root); err != nil {
+		return nil, err
+	}
 
 	var body strings.Builder
 	used := map[string]bool{}
@@ -1723,7 +1815,7 @@ func generate(typeName, schemaJSON string) ([]byte, error) {
 	emitQueue(&body, queue, used, nil, false)
 
 	head := genHeader("package types",
-		fmt.Sprintf("// aggrega-schemas/json/%s-v1alpha1.schema.json. DO NOT EDIT.\n", strings.ToLower(typeName)),
+		fmt.Sprintf("// aggrega-schemas/json/%s. DO NOT EDIT.\n", entitySchemaFile(typeName)),
 		fmt.Sprintf("// Hand-written content (shared types, methods, marshalers) lives in\n// %s.go and common.go; regenerate with `go generate ./pkg/types/...`.\n", strings.ToLower(typeName)),
 		used)
 
@@ -1956,6 +2048,24 @@ func generateEnumsTS(e enumSource) ([]byte, error) {
 // resolution) is shared; only the emission half forks per language. An empty
 // lang defaults to the Go backend so existing Go targets need no lang field.
 func generateDefs(t codecTarget) ([]byte, error) {
+	// Every backend below emits from the same decoded schema, so a shape the
+	// generator cannot name a type for is refused once here rather than in each:
+	// the Go, Rust and TypeScript files a schema owes are refused together, so no
+	// language is left holding a file the others refused to emit. The CBOR-helper
+	// targets are generated from no schema and carry nothing to check.
+	if t.schema != "" {
+		root, err := decodeNode(json.RawMessage(t.schema))
+		if err != nil {
+			return nil, fmt.Errorf("decode schema: %w", err)
+		}
+		// The multi-type walk reads `$defs` and never the root's oneOf/type, so
+		// the refusal starts at each def for the same reason emission does.
+		for _, d := range root.defs {
+			if err := checkStructNode(t.schemaFile, "#/$defs/"+d.name, d.node); err != nil {
+				return nil, err
+			}
+		}
+	}
 	switch t.lang {
 	case "", "go":
 		return generateDefsGo(t)
