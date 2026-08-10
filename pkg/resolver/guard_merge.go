@@ -80,7 +80,8 @@ func guardFeatureMerge(na types.NormalizedAggregate, release *types.Release) []*
 func collectReleaseBoundaryFeaturesForComponent(boundaries types.OrderedMap[types.Boundary], compName string) map[string]types.BoundaryFeature {
 	result := map[string]types.BoundaryFeature{}
 	for _, boundary := range boundaries.All() {
-		if bc, ok := boundary.Components.Get(compName); ok {
+		components := types.BoundaryComponents(boundary)
+		if bc, ok := components.Get(compName); ok {
 			for featName, feat := range bc.Features.All() {
 				result[featName] = feat
 			}

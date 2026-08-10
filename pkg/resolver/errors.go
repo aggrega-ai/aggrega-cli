@@ -245,16 +245,24 @@ var errParameterContractViolation = cerrors.Register("resolver/parameter-contrac
 	Message: "parameter contract violated",
 })
 
-// ErrDuplicateBoundaryComponent wraps a Release that declares the same
-// component name in more than one boundary of its boundary tree. The two
-// declarations are not merged and not ranked: a component's boundary context
-// (output directory, sub-directory, sync wave, annotations, boundary infra)
-// and its per-edge `uses` surface are read by separate walks that resolve a
-// duplicated name to different declarations, so one node would take its
-// output location from one declaration and its per-edge configuration from
-// another. Rejected at Release load rather than resolved silently — the
-// diagnostic names both declaration sites so the author can delete the one
-// they did not mean.
+// ErrDuplicateBoundaryComponent wraps a Release that places one component in
+// more than one boundary of its boundary tree. The two placements are not merged
+// and not ranked: a component's boundary context (output directory,
+// sub-directory, sync wave, annotations, boundary infra) and its per-edge `uses`
+// surface are read by separate walks that resolve a duplicated name to different
+// declarations, so one node would take its output location from one and its
+// per-edge configuration from another. Rejected at Release load rather than
+// resolved silently — the diagnostic names both sites so the author can delete
+// the one they did not mean.
+//
+// A boundary places components two ways, and both count: naming a component
+// directly, and routing in a whole sub-module, which places every component that
+// module contains. So this also covers the same sub-module routed into two
+// boundaries, a module routed into one boundary with a module nested inside it
+// routed into another, and a component named at one boundary while the module
+// containing it is routed into a different one. Routing a module and naming one
+// of its components under the same boundary is not a conflict: both agree on
+// where the component belongs.
 func ErrDuplicateBoundaryComponent() error { return errDuplicateBoundaryComponent }
 
 var errDuplicateBoundaryComponent = cerrors.Register("resolver/duplicate-boundary-component", cerrors.Meta{

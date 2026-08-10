@@ -652,6 +652,11 @@ func resolveBindingTarget(binding types.AnnotationBinding, value string) (string
 // reads the boundary chain fresh from the Release (picking up any prior
 // component writes within the same boundary), Sets the mutated component
 // at the leaf, and writes the chain back up to the Release root.
+//
+// The leaf write goes through [types.SetBoundaryComponent], so a component the
+// boundary routes in from a sub-module is written back into the routing entry
+// that declares it rather than materialised as a second entry on the boundary's
+// own component axis.
 func writeComponent(release *types.Release, boundaryPath, compName string, comp types.BoundaryComponent) {
 	segments := splitBoundaryPath(boundaryPath)
 	if len(segments) == 0 {
@@ -670,7 +675,7 @@ func writeComponent(release *types.Release, boundaryPath, compName string, comp 
 		}
 		chain[i] = child
 	}
-	chain[len(segments)-1].Components.Set(compName, comp)
+	types.SetBoundaryComponent(&chain[len(segments)-1], compName, comp)
 	for i := len(segments) - 1; i > 0; i-- {
 		chain[i-1].Boundaries.Set(segments[i], chain[i])
 	}

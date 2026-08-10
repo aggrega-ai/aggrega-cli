@@ -1,0 +1,43 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: prod-release-helm-synthesized-with-artifacts
+  environment: production
+  version: "1.0.0"
+spec:
+  aggregate: ../aggregate.yaml
+  manifest: ../manifests/helm-synthesized-with-artifacts.yaml
+  boundaries:
+    frontend-ns:
+      directory: ./dist/frontend
+      annotations:
+        aggrega.ai/namespace: "frontend-zone"
+      components:
+        frontend:
+          infra:
+            replicas: 2
+            port: 3003
+          features:
+            cross-namespace-routing:
+              type: core/k8s-dns-resolver
+              infra:
+                target_var: "API_HOST"
+    backend-ns:
+      directory: ./dist/backend
+      annotations:
+        aggrega.ai/namespace: "backend-zone"
+      components:
+        backend:
+          infra:
+            replicas: 3
+            port: 8082
+    data-ns:
+      directory: ./dist/data
+      annotations:
+        aggrega.ai/namespace: "database-zone"
+      aggregates:
+        data:
+          components:
+            main-db:
+              infra:
+                replicas: 1

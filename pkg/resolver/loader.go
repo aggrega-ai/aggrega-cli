@@ -107,11 +107,23 @@ func LoadReleaseFromBytes(data []byte, path string) (*types.Release, error) {
 	return normalized, nil
 }
 
-// rejectDuplicateBoundaryComponents walks the Release boundary tree and rejects
-// a component name declared at more than one boundary. The rule's inputs are
-// complete the moment the document is parsed — it reads nothing but the Release
-// — so it is enforced here, at load, where every consumer of a Release sits
-// behind it.
+// boundaryPlacement is one thing a boundary places: a component it names, or a
+// sub-module it routes. Both are checked in one sequence because both decide
+// which boundary a node belongs to, and a conflict between them is the same fault
+// as a conflict within either.
+type boundaryPlacement struct {
+	key          string // a component's flattened id, or a routed sub-module's dotted prefix
+	boundaryPath string
+	locator      []string
+	synthesized  bool
+	module       bool
+}
+
+// rejectDuplicateBoundaryComponents walks the Release boundary tree and rejects a
+// document that places one node in more than one boundary. The rule's inputs are
+// complete the moment the document is parsed — it reads nothing but the Release —
+// so it is enforced here, at load, where every consumer of a Release sits behind
+// it.
 //
 // It exists because the shape has no single meaning. A component's boundary
 // context and its per-edge `uses` surface are read by two separate walks of the
@@ -120,12 +132,27 @@ func LoadReleaseFromBytes(data []byte, path string) (*types.Release, error) {
 // configuration comes from another. Halting is what makes that unreachable;
 // ranking the declarations would only pick a winner nobody asked for.
 //
+// A boundary places nodes on two axes, and the check spans both:
+//
+//   - the same component id named at two boundaries — the direct case;
+//   - the same sub-module routed into two boundaries, which places every one of
+//     its components twice, and likewise a module routed into one boundary while
+//     a module nested inside it is routed into another;
+//   - a component named at one boundary while the sub-module containing it is
+//     routed into a different one.
+//
+// Routing a module and naming one of its components under the SAME boundary is
+// not a conflict: the module places the component and the named entry configures
+// it, and both agree on where it belongs. Nesting a routing entry inside another
+// under one boundary is likewise pure addressing.
+//
 // The diagnostic names BOTH declaration sites: which one to keep is the author's
 // call, and a message that named only the second would send them hunting through
-// the tree for the first. Walk order is author order, own components before
-// nested boundaries, so "first" and "second" are stable across runs and the
-// message is byte-identical for the same input. First-violation-halt matches the
-// document-shape rejections on the Manifest load path.
+// the tree for the first. Walk order is author order — a boundary's own
+// components, then the modules it routes, then its nested boundaries — so "first"
+// and "second" are stable across runs and the message is byte-identical for the
+// same input. First-violation-halt matches the document-shape rejections on the
+// Manifest load path.
 func rejectDuplicateBoundaryComponents(rel *types.Release, path string) error {
 	if rel == nil {
 		return nil
@@ -134,24 +161,51 @@ func rejectDuplicateBoundaryComponents(rel *types.Release, path string) error {
 	if rel.Metadata.Name != "" {
 		entity = fmt.Sprintf("Release %s", rel.Metadata.Name)
 	}
-	// firstDeclaredAt maps a component name to the boundary path that declared
-	// it first, so the second declaration can name both sites.
-	firstDeclaredAt := map[string]string{}
+	// Recorded in walk order rather than in a map, so the prior site a conflict
+	// names is the earliest one in author order and never depends on map ordering.
+	var placed []boundaryPlacement
+
+	check := func(current boundaryPlacement) error {
+		for _, prior := range placed {
+			if !placementsConflict(prior, current) {
+				continue
+			}
+			return &ResolverError{
+				Entity:  entity,
+				Field:   releaseComponentFieldPath(current.boundaryPath, current.locator, current.synthesized),
+				Message: placementConflictMessage(prior, current, path),
+				Err:     ErrDuplicateBoundaryComponent(),
+			}
+		}
+		placed = append(placed, current)
+		return nil
+	}
+
 	var walk func(boundaryPath string, b types.Boundary) error
 	walk = func(boundaryPath string, b types.Boundary) error {
-		for name := range b.Components.All() {
-			if prior, dup := firstDeclaredAt[name]; dup {
-				return &ResolverError{
-					Entity: entity,
-					Field:  releaseComponentFieldPath(boundaryPath, name, b.Synthesized),
-					Message: fmt.Sprintf(
-						"component %q is declared in boundary %q and again in boundary %q (source %s); a component belongs to exactly one boundary — remove whichever declaration is not intended",
-						name, prior, boundaryPath, path,
-					),
-					Err: ErrDuplicateBoundaryComponent(),
-				}
+		// Declarations rather than the reconciled component view: the view folds two
+		// entries resolving to one id together, which is precisely the collision this
+		// guard exists to see.
+		for _, decl := range types.BoundaryComponentDeclarations(b) {
+			if err := check(boundaryPlacement{
+				key:          decl.ID,
+				boundaryPath: boundaryPath,
+				locator:      decl.Locator,
+				synthesized:  b.Synthesized,
+			}); err != nil {
+				return err
 			}
-			firstDeclaredAt[name] = boundaryPath
+		}
+		for _, module := range types.BoundaryRoutedModules(b) {
+			if err := check(boundaryPlacement{
+				key:          module,
+				boundaryPath: boundaryPath,
+				locator:      routedModuleLocator(module),
+				synthesized:  b.Synthesized,
+				module:       true,
+			}); err != nil {
+				return err
+			}
 		}
 		for childName, child := range b.Boundaries.All() {
 			childPath := childName
@@ -170,6 +224,71 @@ func rejectDuplicateBoundaryComponents(rel *types.Release, path string) error {
 		}
 	}
 	return nil
+}
+
+// routedModuleLocator renders the authoring key path of a routed sub-module,
+// whose dotted prefix corresponds to one `aggregates` key per segment.
+func routedModuleLocator(module string) []string {
+	segments := strings.Split(module, ".")
+	locator := make([]string, 0, len(segments)*2)
+	for _, segment := range segments {
+		locator = append(locator, "aggregates", segment)
+	}
+	return locator
+}
+
+// placementsConflict reports whether two placements put one node in two
+// boundaries. Two placements at the same boundary never conflict — they agree on
+// where the node belongs, whichever axes they came from.
+func placementsConflict(a, b boundaryPlacement) bool {
+	if a.boundaryPath == b.boundaryPath {
+		// One id declared twice under one boundary is still a fault: two entries
+		// carry payloads for one node and nothing decides between them.
+		return !a.module && !b.module && a.key == b.key
+	}
+	switch {
+	case a.module && b.module:
+		// Equality is what fires in practice: reaching a nested module requires an
+		// entry for the module it nests under, which routes that outer module too, so
+		// two boundaries meeting at a nested module meet at its ancestor first. The
+		// containment test stands behind that, holding if the routed-module report
+		// ever narrows to the modules an entry names rather than every one it implies.
+		return types.IsUnderModulePrefix(a.key, b.key) || types.IsUnderModulePrefix(b.key, a.key)
+	case a.module:
+		return types.IsUnderModulePrefix(b.key, a.key)
+	case b.module:
+		return types.IsUnderModulePrefix(a.key, b.key)
+	default:
+		return a.key == b.key
+	}
+}
+
+// placementConflictMessage phrases the halt in the terms of whichever axes the two
+// placements came from, so the author reads about the thing they wrote — a
+// component, a routed sub-module, or one of each.
+func placementConflictMessage(prior, current boundaryPlacement, source string) string {
+	switch {
+	case prior.module && current.module:
+		return fmt.Sprintf(
+			"sub-module %q is routed into boundary %q and sub-module %q into boundary %q (source %s); routing one sub-module into a boundary places every component it contains there, so these two placements claim the same components — remove whichever routing is not intended",
+			prior.key, prior.boundaryPath, current.key, current.boundaryPath, source,
+		)
+	case prior.module:
+		return fmt.Sprintf(
+			"component %q is declared in boundary %q while the sub-module %q that contains it is routed into boundary %q (source %s); a component belongs to exactly one boundary — either route the sub-module into %q or drop the component declaration",
+			current.key, current.boundaryPath, prior.key, prior.boundaryPath, source, current.boundaryPath,
+		)
+	case current.module:
+		return fmt.Sprintf(
+			"sub-module %q is routed into boundary %q while its component %q is declared in boundary %q (source %s); routing a sub-module into a boundary places every component it contains there, so the two placements disagree — remove whichever one is not intended",
+			current.key, current.boundaryPath, prior.key, prior.boundaryPath, source,
+		)
+	default:
+		return fmt.Sprintf(
+			"component %q is declared in boundary %q and again in boundary %q (source %s); a component belongs to exactly one boundary — remove whichever declaration is not intended",
+			current.key, prior.boundaryPath, current.boundaryPath, source,
+		)
+	}
 }
 
 // LoadManifest reads and unmarshals a Manifest YAML file. The loader

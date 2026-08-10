@@ -44,13 +44,22 @@ func SubsystemTree() InstanceTreeShape[Subsystem, ComponentInstance] {
 // BoundaryTree describes the Release's boundary tree — [Boundary] containers
 // holding [BoundaryComponent] components.
 //
-// A boundary also routes sub-aggregates through [Boundary.Aggregates]. That axis
-// is not part of the component tree and is not walked here; a consumer that needs
-// it reads it from the container the walk hands back.
+// A boundary names its components on two axes: directly, and by routing a whole
+// sub-module in through [Boundary.Aggregates]. Both are components of this
+// boundary, so the instance axis is the reconciled set [BoundaryComponents]
+// returns, keyed by the id each component carries in the flattened graph. A
+// consumer of this walk therefore sees a routed component exactly as it sees a
+// directly-named one, and gets the routed axis without knowing it exists.
+//
+// A routed sub-module whose entry names no components contributes none here —
+// its component names are not known until the module's document is loaded, which
+// happens after this tree is read. Placing those components is a separate step,
+// keyed on the sub-module each node came from rather than on a name this tree
+// could supply.
 func BoundaryTree() InstanceTreeShape[Boundary, BoundaryComponent] {
 	return InstanceTreeShape[Boundary, BoundaryComponent]{
 		Children:    func(b Boundary) OrderedMap[Boundary] { return b.Boundaries },
-		Instances:   func(b Boundary) OrderedMap[BoundaryComponent] { return b.Components },
+		Instances:   BoundaryComponents,
 		Synthesized: func(b Boundary) bool { return b.Synthesized },
 	}
 }

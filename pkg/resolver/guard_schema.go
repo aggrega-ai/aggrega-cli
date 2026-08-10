@@ -204,7 +204,7 @@ func guardEdgeConformance(na types.NormalizedAggregate, release *types.Release, 
 				continue
 			}
 			field := fmt.Sprintf("%s.uses[%q][%q]",
-				releaseComponentFieldPath(ref.boundaryPath, ref.nodeID, ref.synthesized), ref.socket, ref.alias)
+				releaseComponentFieldPath(ref.boundaryPath, ref.locator, ref.synthesized), ref.socket, ref.alias)
 			// Classify before CompileSocketPillarSchema (bool-swallow) — same as
 			// the values path above.
 			if _, found := catalog.Component(compType); !found {

@@ -385,9 +385,38 @@ func BuildContext(ctx context.Context, cfg BuildConfig) (*TopologyResult, error)
 		}
 	}
 
-	// 3. Populate boundary paths from resolver
+	// 3. Populate boundary paths from resolver.
+	//
+	// A component the Release placed by routing its whole sub-module has no entry
+	// of its own in the per-component map, and could not have: the routing entry
+	// named no components, because a sub-module's component names do not exist
+	// until its document is loaded, which is what flattening above just did. This
+	// is therefore the first point at which such a node can be matched to the
+	// placement that covers it, and the match is written back into the
+	// per-component map so every later reader — output directory, sync wave,
+	// annotations, per-node infra — sees a routed component exactly as it sees a
+	// directly-named one, with no routed-axis knowledge of its own.
+	//
+	// A node whose id the Release names directly keeps that entry: it is the more
+	// specific instruction, and the two cannot disagree about which boundary the
+	// node belongs to, because naming a component in one boundary while routing its
+	// module into another is rejected when the Release loads.
 	for nodeID, node := range flat.Nodes.All() {
-		if bi, ok := cfg.ResolveResult.BoundaryInfra[nodeID]; ok && bi != nil {
+		bi, ok := cfg.ResolveResult.BoundaryInfra[nodeID]
+		if (!ok || bi == nil) && node.SourceAggregate != "" {
+			if routed, isRouted := resolver.RoutedInfraFor(cfg.ResolveResult.RoutedAggregateInfra, node.SourceAggregate); isRouted {
+				// Copied per node: the placement is shared by every component of the
+				// module, and a later phase that annotates one node's context must not
+				// reach the others.
+				placed := *routed
+				if cfg.ResolveResult.BoundaryInfra == nil {
+					cfg.ResolveResult.BoundaryInfra = map[string]*resolver.BoundaryInfra{}
+				}
+				cfg.ResolveResult.BoundaryInfra[nodeID] = &placed
+				bi, ok = &placed, true
+			}
+		}
+		if ok && bi != nil {
 			node.BoundaryPath = bi.BoundaryPath
 			node.SynthesizedBoundary = bi.Synthesized
 		}
@@ -1030,7 +1059,8 @@ func releaseComponentUses(boundaries types.OrderedMap[types.Boundary], boundaryP
 		if !ok {
 			break
 		}
-		if bc, ok := boundary.Components.Get(nodeID); ok && bc.Uses.Len() > 0 {
+		components := types.BoundaryComponents(boundary)
+		if bc, ok := components.Get(nodeID); ok && bc.Uses.Len() > 0 {
 			return bc.Uses, true
 		}
 		current = boundary.Boundaries

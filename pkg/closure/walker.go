@@ -256,25 +256,34 @@ func (s *walkState) walkManifest(m *types.Manifest) {
 // it, so a pinned entity stays traceable to the position in the Release that asked
 // for it.
 //
-// A boundary also routes sub-aggregates through [types.Boundary.Aggregates], whose
-// routed components carry attachments of their own. That axis is not part of the
-// boundary's component tree and is not walked here, so a Feature attached through it
-// is not collected.
+// A boundary also holds the components it routes in from a sub-module through
+// [types.Boundary.Aggregates], and those carry attachments of their own. They are
+// components of the boundary like any other, so the shared walk reaches them and a
+// Feature attached through a routing entry is pinned here. Each is recorded under
+// the key path the author actually wrote — through the routing entry, under the
+// component's local name inside its module — so the reference stays traceable to
+// the line that asked for it rather than to a spelling absent from the document.
 func (s *walkState) walkReleaseAttachments(r *types.Release) {
 	if r == nil {
 		return
 	}
-	// No visitor callback fails, so the walk cannot.
-	_ = types.WalkInstanceTree(r.Spec.Boundaries, types.BoundaryTree(), "release.spec", struct{}{},
-		types.InstanceTreeVisitor[types.Boundary, types.BoundaryComponent, struct{}]{
+	// The accumulator carries the containing boundary so a component's authoring
+	// path can be read from the axis that declares it. No visitor callback fails,
+	// so the walk cannot.
+	_ = types.WalkInstanceTree(r.Spec.Boundaries, types.BoundaryTree(), "release.spec", types.Boundary{},
+		types.InstanceTreeVisitor[types.Boundary, types.BoundaryComponent, types.Boundary]{
 			Path: func(parentPath, name string, _ bool) string {
 				return parentPath + ".boundaries." + name
 			},
-			Visit: func(bc types.BoundaryComponent, name, path string, _ bool, _ struct{}) error {
-				s.addBoundaryFeatures(bc.Features, fmt.Sprintf("%s.components.%s", path, name))
+			Enter: func(b types.Boundary, _, _ string, _ types.Boundary) types.Boundary {
+				return b
+			},
+			Visit: func(bc types.BoundaryComponent, name, path string, _ bool, scope types.Boundary) error {
+				locator := types.BoundaryComponentLocator(scope, name)
+				s.addBoundaryFeatures(bc.Features, fmt.Sprintf("%s.%s", path, strings.Join(locator, ".")))
 				return nil
 			},
-			Leave: func(b types.Boundary, _, path string, _ struct{}) {
+			Leave: func(b types.Boundary, _, path string, _ types.Boundary) {
 				s.addBoundaryFeatures(b.Features, path)
 			},
 		})

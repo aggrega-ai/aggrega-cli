@@ -154,3 +154,191 @@ spec:
 		t.Fatalf("want the synthesized default boundary; found=%v synthesized=%v", found, def.Synthesized)
 	}
 }
+
+// A routed sub-module places every component it contains, so these three shapes
+// each place one node twice. They are separate fixtures because the diagnostic has
+// to phrase the fault in the terms of whichever axes produced it — two routings,
+// or one routing against one named component.
+const dupRoutedModuleRelease = `apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: prod
+  environment: production
+  version: "1.0.0"
+spec:
+  aggregate: test-app
+  manifest: test-manifest
+  boundaries:
+    east:
+      directory: ./east
+      aggregates:
+        data: {}
+    west:
+      directory: ./west
+      aggregates:
+        data: {}
+`
+
+const dupRoutedAncestorRelease = `apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: prod
+  environment: production
+  version: "1.0.0"
+spec:
+  aggregate: test-app
+  manifest: test-manifest
+  boundaries:
+    east:
+      directory: ./east
+      aggregates:
+        data: {}
+    west:
+      directory: ./west
+      aggregates:
+        data:
+          aggregates:
+            inner: {}
+`
+
+const dupRoutedAndNamedRelease = `apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: prod
+  environment: production
+  version: "1.0.0"
+spec:
+  aggregate: test-app
+  manifest: test-manifest
+  boundaries:
+    east:
+      directory: ./east
+      aggregates:
+        data: {}
+    west:
+      directory: ./west
+      components:
+        data.store: {}
+`
+
+// TestLoadRelease_RoutedModulePlacedTwiceHalts — the same sub-module routed into
+// two boundaries. Every component it contains would take its output directory from
+// whichever placement was written last.
+func TestLoadRelease_RoutedModulePlacedTwiceHalts(t *testing.T) {
+	t.Parallel()
+	_, err := LoadReleaseFromBytes([]byte(dupRoutedModuleRelease), "release.yaml")
+	if !errors.Is(err, ErrDuplicateBoundaryComponent()) {
+		t.Fatalf("want ErrDuplicateBoundaryComponent; got %v", err)
+	}
+	for _, want := range []string{"sub-module", `"data"`, `"east"`, `"west"`, "release.yaml"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("diagnostic must name %s; got %q", want, err.Error())
+		}
+	}
+	var re *ResolverError
+	if !errors.As(err, &re) {
+		t.Fatalf("want a *ResolverError; got %T", err)
+	}
+	if re.Field != `.spec.boundaries["west"].aggregates["data"]` {
+		t.Errorf("the locator must point at the second routing entry; got %q", re.Field)
+	}
+}
+
+// TestLoadRelease_RoutedModuleNestingElsewhereHalts — reaching a nested module in a
+// second boundary halts, and the diagnostic names the OUTER module.
+//
+// Reaching `inner` requires writing an `aggregates: data:` entry to nest it under,
+// and that entry routes `data` itself, so the two boundaries conflict at `data`
+// before `data.inner` is ever compared. Naming the outer module is the better
+// message anyway: it is the entry the author has to change.
+func TestLoadRelease_RoutedModuleNestingElsewhereHalts(t *testing.T) {
+	t.Parallel()
+	_, err := LoadReleaseFromBytes([]byte(dupRoutedAncestorRelease), "release.yaml")
+	if !errors.Is(err, ErrDuplicateBoundaryComponent()) {
+		t.Fatalf("want ErrDuplicateBoundaryComponent; got %v", err)
+	}
+	for _, want := range []string{"sub-module", `"data"`, `"east"`, `"west"`} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("diagnostic must name %s; got %q", want, err.Error())
+		}
+	}
+}
+
+// TestLoadRelease_RoutedModuleAndNamedComponentHalts — the mixed case: the module
+// is routed into one boundary while one of its components is named in another.
+func TestLoadRelease_RoutedModuleAndNamedComponentHalts(t *testing.T) {
+	t.Parallel()
+	_, err := LoadReleaseFromBytes([]byte(dupRoutedAndNamedRelease), "release.yaml")
+	if !errors.Is(err, ErrDuplicateBoundaryComponent()) {
+		t.Fatalf("want ErrDuplicateBoundaryComponent; got %v", err)
+	}
+	for _, want := range []string{`"data.store"`, `"data"`, `"east"`, `"west"`} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("diagnostic must name %s; got %q", want, err.Error())
+		}
+	}
+}
+
+// TestLoadRelease_RoutedModuleAndNamedComponentInOneBoundaryBuilds is the
+// counter-case the three halts are read against: routing a module and configuring
+// one of its components under the SAME boundary agrees about where the component
+// belongs, so it must load. Without it, a guard that rejected every co-occurrence
+// would look like three successes.
+func TestLoadRelease_RoutedModuleAndNamedComponentInOneBoundaryBuilds(t *testing.T) {
+	t.Parallel()
+	const release = `apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: prod
+  environment: production
+  version: "1.0.0"
+spec:
+  aggregate: test-app
+  manifest: test-manifest
+  boundaries:
+    east:
+      directory: ./east
+      aggregates:
+        data: {}
+      components:
+        data.store: {}
+`
+	if _, err := LoadReleaseFromBytes([]byte(release), "release.yaml"); err != nil {
+		t.Fatalf("routing a module and configuring one of its components under one boundary must load; got %v", err)
+	}
+}
+
+// TestLoadRelease_RoutedComponentNamedTwiceInOneBoundaryHalts — one component
+// named directly AND named again through a routing entry under the same boundary.
+// Both entries carry a payload for one node and nothing decides between them, so
+// this is a fault even though the two agree on the boundary.
+func TestLoadRelease_RoutedComponentNamedTwiceInOneBoundaryHalts(t *testing.T) {
+	t.Parallel()
+	const release = `apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: prod
+  environment: production
+  version: "1.0.0"
+spec:
+  aggregate: test-app
+  manifest: test-manifest
+  boundaries:
+    east:
+      directory: ./east
+      components:
+        data.store:
+          infra:
+            replicas: 1
+      aggregates:
+        data:
+          components:
+            store:
+              infra:
+                replicas: 5
+`
+	_, err := LoadReleaseFromBytes([]byte(release), "release.yaml")
+	if !errors.Is(err, ErrDuplicateBoundaryComponent()) {
+		t.Fatalf("want ErrDuplicateBoundaryComponent for one component carrying two payloads; got %v", err)
+	}
+}

@@ -1,0 +1,22 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: prod-release-routed-feature
+  environment: production
+  version: "1.0.0"
+spec:
+  aggregate: ../aggregates/routed-feature.yaml
+  manifest: ../manifests/helm-synthesized-with-artifacts.yaml
+  boundaries:
+    svc-ns:
+      directory: ./dist/svc
+      aggregates:
+        svc:
+          components:
+            edge:
+              features:
+                pooling:
+                  type: feature.myco/db-pool
+                  infra:
+                    pool_size: 25
+                    max_connections: 200

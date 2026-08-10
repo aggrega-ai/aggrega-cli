@@ -372,11 +372,13 @@ func resolveExportTarget(candidate string, nodes types.OrderedMap[*TopologyNode]
 	}
 }
 
+// qualifiedID composes a node's flattened id from the prefix of the sub-module
+// contributing it and its own name. It delegates rather than re-spelling the
+// join, because the Release addresses a routed component by the same id: were the
+// two spellings ever to diverge, a Release entry aimed at a sub-module's component
+// would silently reach no node.
 func qualifiedID(prefix, name string) string {
-	if prefix == "" {
-		return name
-	}
-	return prefix + "." + name
+	return types.JoinQualifiedID(prefix, name)
 }
 
 func copyVisited(m map[string]bool) map[string]bool {

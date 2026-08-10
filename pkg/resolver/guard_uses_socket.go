@@ -22,6 +22,7 @@ type releaseEdgeEntry struct {
 	socket       string
 	alias        string
 	boundaryPath string
+	locator      []string
 	synthesized  bool
 	entry        types.ReleaseUsesEntry
 }
@@ -30,14 +31,30 @@ type releaseEdgeEntry struct {
 // boundary component, the Release-side mirror of [componentFieldPath]. A
 // synthesized-default component renders at the root shape
 // `.spec.components["node"]` — where the author typed it — while a component in
-// a declared boundary renders the qualified `.spec.boundaries["path"].components["node"]`.
-// The key is the synthesized-provenance flag, not the path string: a boundary a
-// user declares with the name "default" still renders the qualified path.
-func releaseComponentFieldPath(boundaryPath, nodeID string, synthesized bool) string {
-	if synthesized {
-		return fmt.Sprintf(".spec.components[%q]", nodeID)
+// a declared boundary renders the qualified
+// `.spec.boundaries["path"].components["node"]`. The key is the
+// synthesized-provenance flag, not the path string: a boundary a user declares
+// with the name "default" still renders the qualified path.
+//
+// locator is the key path within the boundary, from
+// [types.BoundaryComponentLocator]. A component the boundary routes in from a
+// sub-module locates through the routing entry and under its local name —
+// `.aggregates["data"].components["consumer"]` — because that is the key the
+// author wrote; naming it by its qualified id would send them looking for a key
+// that is not in the document, and one the Release schema would not accept there.
+func releaseComponentFieldPath(boundaryPath string, locator []string, synthesized bool) string {
+	if len(locator) == 0 {
+		return fmt.Sprintf(".spec.boundaries[%q]", boundaryPath)
 	}
-	return fmt.Sprintf(".spec.boundaries[%q].components[%q]", boundaryPath, nodeID)
+	if synthesized {
+		return fmt.Sprintf(".spec.components[%q]", locator[len(locator)-1])
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, ".spec.boundaries[%q]", boundaryPath)
+	for i := 0; i+1 < len(locator); i += 2 {
+		fmt.Fprintf(&b, ".%s[%q]", locator[i], locator[i+1])
+	}
+	return b.String()
 }
 
 // ReleaseEdgeEntry is one operator-authored per-edge connection collected from a
@@ -94,7 +111,12 @@ func collectReleaseEdgeEntries(release *types.Release) []releaseEdgeEntry {
 	var out []releaseEdgeEntry
 	var walk func(path string, b types.Boundary)
 	walk = func(path string, b types.Boundary) {
-		for nodeID, bc := range b.Components.All() {
+		components := types.BoundaryComponents(b)
+		for nodeID, bc := range components.All() {
+			if bc.Uses.Len() == 0 {
+				continue
+			}
+			locator := types.BoundaryComponentLocator(b, nodeID)
 			for socket, aliases := range bc.Uses.All() {
 				for alias, e := range aliases.All() {
 					out = append(out, releaseEdgeEntry{
@@ -102,6 +124,7 @@ func collectReleaseEdgeEntries(release *types.Release) []releaseEdgeEntry {
 						socket:       socket,
 						alias:        alias,
 						boundaryPath: path,
+						locator:      locator,
 						synthesized:  b.Synthesized,
 						entry:        e,
 					})
@@ -168,7 +191,7 @@ func guardReleaseUsesSocket(na types.NormalizedAggregate, release *types.Release
 		catComp, found := catalog.Component(compType)
 		if !found {
 			if verr := guardEntityViewInconsistency(entity,
-				releaseComponentFieldPath(ref.boundaryPath, ref.nodeID, ref.synthesized), compType); verr != nil {
+				releaseComponentFieldPath(ref.boundaryPath, ref.locator, ref.synthesized), compType); verr != nil {
 				errs = append(errs, verr)
 			}
 			continue
@@ -176,7 +199,7 @@ func guardReleaseUsesSocket(na types.NormalizedAggregate, release *types.Release
 		if _, ok := catComp.Spec.UsesSchema.Get(ref.socket); !ok {
 			errs = append(errs, &ResolverError{
 				Entity: entity,
-				Field:  fmt.Sprintf("%s.uses[%q]", releaseComponentFieldPath(ref.boundaryPath, ref.nodeID, ref.synthesized), ref.socket),
+				Field:  fmt.Sprintf("%s.uses[%q]", releaseComponentFieldPath(ref.boundaryPath, ref.locator, ref.synthesized), ref.socket),
 				Message: fmt.Sprintf("socket %q not defined in component type %q usesSchema (valid: %v)",
 					ref.socket, compType, catComp.Spec.UsesSchema.Keys()),
 				Err: ErrUnknownUsesSocket(),
@@ -252,10 +275,13 @@ func collectReleaseScopeAttachments(release *types.Release) []scopeAttachment {
 	// The boundary's own attachments are collected in the container hook so they
 	// precede its components', which is the order the godoc above states. No
 	// callback fails, so the walk cannot.
-	_ = types.WalkInstanceTree(release.Spec.Boundaries, types.BoundaryTree(), "", struct{}{},
-		types.InstanceTreeVisitor[types.Boundary, types.BoundaryComponent, struct{}]{
+	// The accumulator carries the containing boundary so a component's authoring
+	// locator can be read from the axis that declares it — the boundary's own
+	// components, or a routing entry that names it under its local name.
+	_ = types.WalkInstanceTree(release.Spec.Boundaries, types.BoundaryTree(), "", types.Boundary{},
+		types.InstanceTreeVisitor[types.Boundary, types.BoundaryComponent, types.Boundary]{
 			Path: joinBoundaryPath,
-			Enter: func(b types.Boundary, _, path string, acc struct{}) struct{} {
+			Enter: func(b types.Boundary, _, path string, _ types.Boundary) types.Boundary {
 				for name, feat := range b.Features.All() {
 					if feat.Uses.Len() == 0 {
 						continue
@@ -266,16 +292,16 @@ func collectReleaseScopeAttachments(release *types.Release) []scopeAttachment {
 						uses:     feat.Uses,
 					})
 				}
-				return acc
+				return b
 			},
-			Visit: func(bc types.BoundaryComponent, nodeID, path string, synthesized bool, _ struct{}) error {
+			Visit: func(bc types.BoundaryComponent, nodeID, path string, synthesized bool, scope types.Boundary) error {
 				for name, feat := range bc.Features.All() {
 					if feat.Uses.Len() == 0 {
 						continue
 					}
 					out = append(out, scopeAttachment{
 						field: fmt.Sprintf("%s.features[%q].uses",
-							releaseComponentFieldPath(path, nodeID, synthesized), name),
+							releaseComponentFieldPath(path, types.BoundaryComponentLocator(scope, nodeID), synthesized), name),
 						featType: feat.Type,
 						uses:     feat.Uses,
 					})

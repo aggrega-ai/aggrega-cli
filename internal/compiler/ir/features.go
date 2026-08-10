@@ -1077,7 +1077,8 @@ func collectReleaseComponentFeatures(boundaries types.OrderedMap[types.Boundary]
 
 func collectCompFeaturesRecursive(boundaries types.OrderedMap[types.Boundary], nodeID string, result *[]namedBoundaryFeature) {
 	for _, boundary := range boundaries.All() {
-		if bc, ok := boundary.Components.Get(nodeID); ok {
+		components := types.BoundaryComponents(boundary)
+		if bc, ok := components.Get(nodeID); ok {
 			for fname, feat := range bc.Features.All() {
 				*result = append(*result, namedBoundaryFeature{name: fname, feat: feat})
 			}

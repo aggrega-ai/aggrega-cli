@@ -88,13 +88,43 @@ type BoundaryInfra struct {
 // Release load, so the walk never overwrites a perComponent entry.
 //
 // Returns (nil, nil) when release is nil.
+//
+// This is the two-map projection of [WireBoundaryContexts], for a caller that
+// needs no routed-module contexts.
 func WireBoundaryInfra(nr types.NormalizedRelease) (map[string]*BoundaryInfra, map[string]types.OrderedMap[string]) {
+	perComponent, perBoundary, _ := WireBoundaryContexts(nr)
+	return perComponent, perBoundary
+}
+
+// WireBoundaryContexts is the full result of the boundary-tree walk
+// [WireBoundaryInfra] projects: the same per-component and per-boundary maps,
+// plus perRoutedModule — the context a boundary confers on every component of a
+// sub-module it routes in, keyed by that module's dotted prefix.
+//
+// The third map exists because a routing entry that names no components is the
+// primary way a Release routes a sub-module, and the names it would need are not
+// available here: a sub-module's components exist only once its own document is
+// loaded, which happens after this walk. So the placement is recorded against the
+// module, and the components it covers are matched up once they are known — by
+// [RoutedInfraFor], against the module each carries.
+//
+// Its entries are built from the same boundary scope the per-component entries
+// are, carrying no per-component overrides, because that is exactly what a
+// routing entry contributes: a component routed in with nothing said about it
+// must come out indistinguishable from the same component named directly with an
+// empty body.
+func WireBoundaryContexts(nr types.NormalizedRelease) (
+	perComponent map[string]*BoundaryInfra,
+	perBoundary map[string]types.OrderedMap[string],
+	perRoutedModule map[string]*BoundaryInfra,
+) {
 	release := nr.Release()
 	if release == nil {
-		return nil, nil
+		return nil, nil, nil
 	}
-	perComponent := map[string]*BoundaryInfra{}
-	perBoundary := map[string]types.OrderedMap[string]{}
+	perComponent = map[string]*BoundaryInfra{}
+	perBoundary = map[string]types.OrderedMap[string]{}
+	perRoutedModule = map[string]*BoundaryInfra{}
 	// The cascade carries the pointer-tristate so YAML `null` can opt out an
 	// inherited annotation; the post-cascade [BoundaryInfra.Annotations] and
 	// perBoundary maps exposed to downstream phases are the flattened
@@ -119,6 +149,22 @@ func WireBoundaryInfra(nr types.NormalizedRelease) (map[string]*BoundaryInfra, m
 				// .parent_boundary.annotations / .context.annotations.* render context.
 				perBoundary[path] = types.ScalarOnly(merged)
 
+				// A sub-module routed in here confers this boundary's context on every
+				// component it contains. Recorded per module, from the same scope a
+				// directly-named component reads, with no per-component layer — a
+				// routing entry says where components go and nothing about any one of
+				// them.
+				for _, module := range types.BoundaryRoutedModules(b) {
+					perRoutedModule[module] = &BoundaryInfra{
+						Annotations:  types.ScalarOnly(merged),
+						BoundaryPath: path,
+						Directory:    b.Directory,
+						SubDirectory: b.SubDirectory,
+						SyncWave:     b.SyncWave,
+						Synthesized:  b.Synthesized,
+					}
+				}
+
 				return boundaryScope{annotations: merged, boundary: b}
 			},
 			Visit: func(comp types.BoundaryComponent, name, path string, synthesized bool, scope boundaryScope) error {
@@ -136,7 +182,37 @@ func WireBoundaryInfra(nr types.NormalizedRelease) (map[string]*BoundaryInfra, m
 				return nil
 			},
 		})
-	return perComponent, perBoundary
+	return perComponent, perBoundary, perRoutedModule
+}
+
+// RoutedInfraFor returns the boundary context a node inherits from the routed
+// sub-module that contains it, given the map [WireBoundaryContexts] produced and
+// the dotted prefix of the module the node came from.
+//
+// A node whose module was not routed, or that came from no module at all, returns
+// false and keeps whatever context it already had.
+//
+// When a module is routed and a module nested inside it is routed as well, the
+// nested one is the more specific instruction and wins. Within one document that
+// only ever arises when both name the same boundary, because routing one module's
+// components into two boundaries is rejected when the Release loads — so the
+// choice cannot change which boundary a node lands in and cannot depend on the
+// order the map is read in.
+func RoutedInfraFor(perRoutedModule map[string]*BoundaryInfra, sourceAggregate string) (*BoundaryInfra, bool) {
+	if len(perRoutedModule) == 0 || sourceAggregate == "" {
+		return nil, false
+	}
+	var best *BoundaryInfra
+	longest := -1
+	for module, infra := range perRoutedModule {
+		if infra == nil || !types.IsUnderModulePrefix(sourceAggregate, module) {
+			continue
+		}
+		if len(module) > longest {
+			best, longest = infra, len(module)
+		}
+	}
+	return best, best != nil
 }
 
 // boundaryScope is the per-boundary state the infra cascade carries down the

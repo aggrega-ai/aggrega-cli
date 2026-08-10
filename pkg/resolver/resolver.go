@@ -64,6 +64,16 @@ type ResolveResult struct {
 	Manifest      *types.Manifest
 	BoundaryInfra map[string]*BoundaryInfra // per-component boundary context
 
+	// RoutedAggregateInfra carries the boundary context conferred by each
+	// sub-module a boundary routes in, keyed by that module's dotted prefix. It is
+	// the placement for components no name in the Release reaches: a routing entry
+	// that names none of them is how a Release routes a whole sub-module, and those
+	// components exist only once the module's own document is loaded — after this
+	// result is produced. Flattening resolves each such node against this map and
+	// fills its BoundaryInfra entry, so every consumer of the per-component map
+	// sees a routed component with no further work.
+	RoutedAggregateInfra map[string]*BoundaryInfra
+
 	// BoundaryAnnotations carries the renderer-facing Scalar
 	// projection of the post-cascade annotation set per boundary
 	// path. Only scalar annotation values surface here; structured
@@ -270,10 +280,11 @@ func resolveFromInputs(ctx context.Context, in ResolveInputs) (*ResolveResult, e
 		return nil, nameErrs[0]
 	}
 
-	// Wire boundary infra (per-component) plus per-boundary annotations cascade.
-	// release is already normalized at load; NormalizeRelease here is the
-	// idempotent wrap producing the NormalizedRelease the walker requires.
-	boundaryInfra, boundaryAnnotations := WireBoundaryInfra(types.NormalizeRelease(release))
+	// Wire boundary infra (per-component) plus the per-boundary annotations cascade
+	// and the per-routed-module placements. release is already normalized at load;
+	// NormalizeRelease here is the idempotent wrap producing the NormalizedRelease
+	// the walker requires.
+	boundaryInfra, boundaryAnnotations, routedAggregateInfra := WireBoundaryContexts(types.NormalizeRelease(release))
 
 	// Parameter map flows through to the renderer via ResolveResult.Parameters.
 	// ResolveAndUse (the sole exported producer that wraps this function) owns
@@ -285,6 +296,7 @@ func resolveFromInputs(ctx context.Context, in ResolveInputs) (*ResolveResult, e
 		Release:                    release,
 		Manifest:                   manifest,
 		BoundaryInfra:              boundaryInfra,
+		RoutedAggregateInfra:       routedAggregateInfra,
 		BoundaryAnnotations:        boundaryAnnotations,
 		Parameters:                 params,
 		AggregatePath:              in.AggregatePath,

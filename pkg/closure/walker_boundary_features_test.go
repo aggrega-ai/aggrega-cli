@@ -247,6 +247,129 @@ func TestDeeplyNestedBoundaryFeatureIsPinned(t *testing.T) {
 	}
 }
 
+// The Release below places components by routing the sub-module they belong to
+// rather than by naming them, and attaches a Feature on each routed component —
+// one directly inside the routed module, one inside a module nested within it.
+//
+// A routing entry keys its components by the LOCAL name they carry inside the
+// module, so the entity's recorded reference path has to spell the entry the
+// author wrote. Recording the flattened dotted id instead would point at a key
+// present nowhere in the document, and one the Release schema rejects on this axis.
+const routedAttachmentRelease = `
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: prod
+  environment: prod
+  version: 1.0.0
+spec:
+  aggregate: hub.aggrega.ai/aggregate/example/app:1.0.0
+  manifest: hub.aggrega.ai/manifest/example/app:1.0.0
+  boundaries:
+    cluster:
+      aggregates:
+        data:
+          components:
+            store:
+              features:
+                backup:
+                  type: hub.aggrega.ai/feature/core/backup:1.0.0
+          aggregates:
+            inner:
+              components:
+                cache:
+                  features:
+                    eviction:
+                      type: hub.aggrega.ai/feature/core/eviction:1.0.0
+`
+
+func routedAttachmentLookup() *fakeLookup {
+	return &fakeLookup{
+		entities: map[string]closure.Resolution{
+			"hub.aggrega.ai/aggregate/example/app:1.0.0": resolutionOK("1.0.0", "sha256:aaa", "tier3-registry"),
+			"hub.aggrega.ai/manifest/example/app:1.0.0":  resolutionOK("1.0.0", "sha256:bbb", "tier3-registry"),
+			"hub.aggrega.ai/feature/core/backup:1.0.0":   resolutionOK("1.0.0", "sha256:d01", "tier3-registry"),
+			"hub.aggrega.ai/feature/core/eviction:1.0.0": resolutionOK("1.0.0", "sha256:d02", "tier3-registry"),
+		},
+		plugins:     map[string]closure.Resolution{},
+		schemaLibs:  map[string]closure.LibraryResolution{},
+		mappingLibs: map[string]closure.LibraryResolution{},
+	}
+}
+
+// TestRoutedComponentFeatureAttachmentsArePinned asserts that a Feature attached
+// to a component the Release places by routing its sub-module lands in the pinned
+// entity set, at any routing depth.
+//
+// The pinned entity set is what the lockfile's entity rows are built from, so a
+// Feature the walk does not collect has no row and a later build resolves it
+// afresh instead of against a pin. Measured before the routed axis was consumed,
+// neither of these was pinned: the walk did not reach the axis at all, and the
+// document validated regardless.
+func TestRoutedComponentFeatureAttachmentsArePinned(t *testing.T) {
+	t.Parallel()
+
+	rel := loadRelease(t, routedAttachmentRelease)
+	c, err := closure.ComputeClosure(rel, nil, types.NormalizedAggregate{}, workspaceconfig.Default(), routedAttachmentLookup())
+	if err != nil {
+		t.Fatalf("ComputeClosure: %v", err)
+	}
+
+	pinned := map[string]bool{}
+	for _, e := range c.Entities {
+		pinned[e.URI] = true
+	}
+
+	for _, tc := range []struct {
+		name string
+		uri  string
+	}{
+		{"on a component of a routed sub-module", "hub.aggrega.ai/feature/core/backup:1.0.0"},
+		{"on a component of a module nested inside a routed one", "hub.aggrega.ai/feature/core/eviction:1.0.0"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if !pinned[tc.uri] {
+				t.Errorf("Feature %q attached %s is not pinned.\n  pinned set: %v", tc.uri, tc.name, pinnedURIs(c))
+			}
+		})
+	}
+}
+
+// TestRoutedComponentFeatureReferencePathsNameTheRoutingEntry asserts the recorded
+// reference path is the key path the author wrote — through the routing entry, under
+// the component's local name — rather than the flattened dotted id the compiler
+// composes from it.
+func TestRoutedComponentFeatureReferencePathsNameTheRoutingEntry(t *testing.T) {
+	t.Parallel()
+
+	rel := loadRelease(t, routedAttachmentRelease)
+	c, err := closure.ComputeClosure(rel, nil, types.NormalizedAggregate{}, workspaceconfig.Default(), routedAttachmentLookup())
+	if err != nil {
+		t.Fatalf("ComputeClosure: %v", err)
+	}
+
+	want := map[string]string{
+		"hub.aggrega.ai/feature/core/backup:1.0.0":   "release.spec.boundaries.cluster.aggregates.data.components.store.features.backup.type",
+		"hub.aggrega.ai/feature/core/eviction:1.0.0": "release.spec.boundaries.cluster.aggregates.data.aggregates.inner.components.cache.features.eviction.type",
+	}
+
+	got := map[string][]string{}
+	for _, e := range c.Entities {
+		got[e.URI] = e.ReferencedFrom
+	}
+
+	for uri, wantPath := range want {
+		paths, pinned := got[uri]
+		if !pinned {
+			t.Errorf("entity %q is not pinned, so its reference path cannot be checked", uri)
+			continue
+		}
+		if len(paths) != 1 || paths[0] != wantPath {
+			t.Errorf("entity %q reference paths:\n  got:  %v\n  want: [%s]", uri, paths, wantPath)
+		}
+	}
+}
+
 // pinnedURIs lists the closure's pinned entity URIs for a failure message.
 func pinnedURIs(c closure.Closure) []string {
 	out := make([]string, 0, len(c.Entities))

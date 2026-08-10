@@ -1,0 +1,18 @@
+apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: cov-release-routed-and-named
+  environment: local
+  version: "1.0.0"
+spec:
+  aggregate: cov-app-ok
+  manifest: cov-manifest
+  boundaries:
+    cluster:
+      directory: ./dist/cluster
+      aggregates:
+        data: {}
+    other:
+      directory: ./dist/other
+      components:
+        data.store: {}
