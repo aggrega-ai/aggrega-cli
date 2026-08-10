@@ -154,9 +154,10 @@ metadata:
   description: Renders IR nodes into Helm chart artifacts.
 spec:
   abiVersion: v1alpha1
-  capabilities:
-    - helm
-    - compose
+  provider:
+    capabilities:
+      - helm
+      - compose
   signature:
     type: sigstore-cosign
     signatureRef: oci://hub.aggrega.ai/plugins/helm-renderer:sha256-abc123.sig

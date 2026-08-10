@@ -7,5 +7,6 @@ metadata:
   description: Patch the consuming workload to add a companion sidecar container.
 spec:
   abiVersion: v1alpha1
-  capabilities:
-    - helm-chart
+  pipelineStep:
+    capabilities:
+      - helm-chart

@@ -79,9 +79,10 @@ var importerCapabilityDiag = capabilityDiag{
 // Plugin entity that advertises it. It composes the "import:<format>" capability
 // and routes it through the shared capability select the provider socket uses —
 // the one filter → disambiguate → ambiguity-halt → version-select core — filtered
-// to pluginType: importer plugins whose spec.capabilities list the composed
+// to pluginType: importer plugins whose declared capabilities list the composed
 // string by exact membership. A non-importer plugin whose capabilities happen to
-// list the composed string is excluded by the plugin-type filter.
+// list the composed string is excluded by the plugin-type filter, and its own
+// capabilities live in a different per-type block besides.
 //
 // Every importer miss is loud: a requested format with no advertiser is
 // ErrNoImporterForFormat (mapping the shared select's bare not-found), and a

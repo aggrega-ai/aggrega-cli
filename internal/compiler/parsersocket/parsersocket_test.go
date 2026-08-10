@@ -25,7 +25,7 @@ func demoParserCatalog(fixturePath string) (*catalog.Catalog, parsersocket.Parse
 	c := &catalog.Catalog{Plugins: map[string]types.Plugin{
 		"demo-parser:1.0.0": {
 			Metadata: types.PluginMetadata{Name: "demo-parser", Version: "1.0.0", PluginType: "parser"},
-			Spec:     types.PluginSpec{Capabilities: []string{"parse:demo"}},
+			Spec:     types.PluginSpec{Parser: &types.PluginParser{Capabilities: []string{"parse:demo"}}},
 		},
 	}}
 	load := func(p types.Plugin) (wasm.PluginSpec, error) {

@@ -97,7 +97,7 @@ func ProjectCuratedSurface(entity types.Plugin) wasm.EntityCuratedSurface {
 	hasContract := entity.Spec.Provider != nil && entity.Spec.Provider.Contract != nil
 	return wasm.EntityCuratedSurface{
 		ExportNames:  exportNames,
-		Capabilities: entity.Spec.Capabilities,
+		Capabilities: entity.DeclaredCapabilities(),
 		HasContract:  hasContract,
 	}
 }

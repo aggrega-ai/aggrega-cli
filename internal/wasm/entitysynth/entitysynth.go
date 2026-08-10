@@ -87,10 +87,22 @@ func MergeForPublish(desc wasm.PluginDescriptor, description string, hostFunctio
 // render-behavior contract. It is the single place a descriptor maps onto an
 // entity's routing fields, so those fields are always the compiler-checked truth
 // of what the guest does.
+//
+// The capability list is the one field whose destination depends on the plugin
+// type, and that dependence is deliberate rather than incidental. A descriptor
+// reports one flat list; an entity keeps that list inside the per-type block
+// that fixes what its entries mean — a render engine a provider serves, a
+// provider a pipeline step is compatible with, a source format a parser or an
+// importer handles. So the descriptor's own plugin type selects the block, and
+// nothing else can: the contract-presence test below cannot stand in for it,
+// because a parser reports capabilities and no contract at all. The block
+// selection itself is not spelled out here — it lives once on the entity type,
+// so this write and every read of a plugin's capabilities resolve the same
+// block by the same rule.
 func applyDescriptorContract(entity *types.Plugin, desc wasm.PluginDescriptor) {
 	entity.Metadata.PluginType = desc.PluginType
 	entity.Spec.AbiVersion = desc.AbiVersion
-	entity.Spec.Capabilities = desc.Capabilities
+	entity.Spec.SetCapabilitiesFor(desc.PluginType, desc.Capabilities)
 	entity.Spec.Exports = descriptorExports(desc.Exports)
 	if contract := descriptorContract(desc.Contract); contract != nil {
 		if entity.Spec.Provider == nil {

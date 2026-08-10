@@ -3,6 +3,8 @@
 
 package types
 
+import "github.com/aggrega-ai/aggrega-cli/pkg/plugintype"
+
 //go:generate go run ../../internal/tools/typegen plugin_gen.go
 //go:generate go run ../../internal/tools/typegen plugin_enums_gen.go
 
@@ -11,8 +13,9 @@ package types
 // plugin_gen.go from the published plugin-v1alpha1 schema; their
 // godoc is the schema's descriptions. This hand-written companion holds
 // the optional nested blocks the generator names but does not
-// descend into (PluginSignature, PluginRuntime, PluginProvider and its
-// nested ProviderContract, and ProviderContract's nested
+// descend into (PluginSignature, PluginRuntime, the four per-plugin-type
+// blocks PluginProvider, PluginPipelineStep, PluginParser and PluginImporter,
+// PluginProvider's nested ProviderContract, and ProviderContract's nested
 // PluginInputKinds and PluginArtifactDelimiters), plus any future Plugin methods or
 // marshalers. The shared Maintainer and WellKnownAnnotation types the
 // generated fields reference live in common.go.
@@ -72,14 +75,21 @@ func (p Plugin) ArtifactReference() string {
 	return p.Coordinate()
 }
 
-// PluginProvider is the optional provider-socket metadata block on a
-// pluginType: provider Plugin. It documents how the plugin's rendering
-// engine translates the Workload kind into provider-native manifests and
-// which platform-native annotations the engine reads. It carries no
-// meaning on a linter or pipeline-step plugin. The block is hand-written
-// because the generator names it via x-aggrega-go-type on the schema's
-// object node and does not descend into it.
+// PluginProvider is the provider-socket block on a pluginType: provider
+// Plugin. It carries the render-engine capabilities the provider serves, how
+// the plugin's rendering engine translates the Workload kind into
+// provider-native manifests, which platform-native annotations the engine
+// reads, and the engine's render-behavior contract. It carries no meaning on
+// any other plugin type. The block is hand-written because the generator names
+// it via x-aggrega-go-type on the schema's object node and does not descend
+// into it.
 type PluginProvider struct {
+	// Capabilities is the render-engine capabilities this provider serves —
+	// provider engine names such as "helm" or "compose" — whose output shape
+	// its engine renders. A provider is generic across artifacts that share a
+	// capability's output shape, not across all capabilities, so the list is an
+	// explicit, tested-compatibility claim. Entries preserve author order.
+	Capabilities []string `json:"capabilities,omitempty" yaml:"capabilities,omitempty"`
 	// WorkloadSchema is JSON Schema 2020-12 documenting how this provider
 	// translates the aggrega.ai/v1alpha1 Workload kind into provider-native
 	// manifests. A non-empty body indicates the engine supports Workload
@@ -108,6 +118,141 @@ type PluginProvider struct {
 	// block is hand-written because the generator names the provider block via
 	// x-aggrega-go-type on the schema's object node and does not descend into it.
 	Contract *ProviderContract `json:"contract,omitempty" yaml:"contract,omitempty"`
+}
+
+// PluginPipelineStep is the pipeline-step block on a pluginType: pipeline-step
+// Plugin. It carries the provider capabilities the plugin's step is compatible
+// with, and carries no meaning on any other plugin type. The block is
+// hand-written because the generator names it via x-aggrega-go-type on the
+// schema's object node and does not descend into it.
+type PluginPipelineStep struct {
+	// Capabilities is the provider capabilities this plugin's pipeline step is
+	// compatible with — the provider engine names, such as "helm" or "compose",
+	// whose rendered output the step knows how to transform. A step is written
+	// against one provider's output shape at a time, so the list is an explicit,
+	// tested-compatibility claim. Entries preserve author order. It is the
+	// catalog-readable record of that claim; the compatibility check a pipeline
+	// walk applies reads the same claim from the plugin's own describe()
+	// self-report.
+	Capabilities []string `json:"capabilities,omitempty" yaml:"capabilities,omitempty"`
+}
+
+// PluginParser is the parser block on a pluginType: parser Plugin. It carries
+// the source formats the plugin turns into a canonical structured tree, and
+// carries no meaning on any other plugin type. The block is hand-written
+// because the generator names it via x-aggrega-go-type on the schema's object
+// node and does not descend into it.
+type PluginParser struct {
+	// Capabilities is the source formats this parser turns into a canonical
+	// structured tree, each written as "parse:<format>" — for example
+	// "parse:yaml". The prefix is part of the entry, so a plugin handling
+	// several formats carries one entry per format. Entries preserve author
+	// order. Format resolution matches a requested format against these
+	// entries.
+	Capabilities []string `json:"capabilities,omitempty" yaml:"capabilities,omitempty"`
+}
+
+// PluginImporter is the importer block on a pluginType: importer Plugin. It
+// carries the foreign source formats the plugin turns into draft authoring
+// files, and carries no meaning on any other plugin type. The block is
+// hand-written because the generator names it via x-aggrega-go-type on the
+// schema's object node and does not descend into it.
+type PluginImporter struct {
+	// Capabilities is the foreign source formats this importer turns into draft
+	// Aggrega authoring files, each written as "import:<format>" — for example
+	// "import:terraform". The prefix is part of the entry, so a plugin handling
+	// several formats carries one entry per format. Entries preserve author
+	// order. Format resolution matches a requested format against these
+	// entries.
+	Capabilities []string `json:"capabilities,omitempty" yaml:"capabilities,omitempty"`
+}
+
+// DeclaredCapabilities returns the capabilities this Plugin declares, read from
+// the one per-plugin-type block its own metadata.pluginType gives meaning to. A
+// plugin type that is not resolved by capability — a linter, a governance or a
+// CLI plugin — declares none, and so does a plugin whose block is absent; both
+// return an empty list.
+//
+// It exists because a capability entry means a different thing per plugin type:
+// a provider's entry names a render engine it serves, a pipeline step's names a
+// provider it is compatible with, and a parser's or importer's names a source
+// format it handles. Containment is what carries that difference — the list is
+// reachable only through the block that fixes its sense, so neither an author
+// nor a reader has to know a convention to tell one sense from another. The
+// consequence for a consumer is that it must not read a block directly: it asks
+// here, and the plugin's declared type selects the block.
+func (p Plugin) DeclaredCapabilities() []string {
+	if slot := p.Spec.capabilitiesSlot(p.Metadata.PluginType, false); slot != nil {
+		return *slot
+	}
+	return nil
+}
+
+// SetCapabilitiesFor records capabilities in the one per-plugin-type block
+// pluginType gives meaning to, replacing whatever that block carried. A plugin
+// type that is not resolved by capability accepts none, and the call is a no-op.
+//
+// An empty list against an absent block stays absent rather than materialising
+// an empty block, so an entity never gains a block its author did not write and
+// re-serializes byte-identically. An empty list against a block that is already
+// present clears it, so a machine-derived write always overrides an authored
+// claim rather than letting a stale one survive.
+func (s *PluginSpec) SetCapabilitiesFor(pluginType string, capabilities []string) {
+	slot := s.capabilitiesSlot(pluginType, len(capabilities) > 0)
+	if slot == nil {
+		return
+	}
+	*slot = capabilities
+}
+
+// capabilitiesSlot is the single home of the plugin-type-to-block rule: it
+// resolves the one block that holds a plugin type's capability list and returns
+// the address of that list, or nil when the type holds no capabilities and none
+// is to be created. Every read and every write funnels through it, so the rule
+// cannot drift across the resolution, display, publish and synthesis surfaces —
+// a second copy that agreed today is exactly what would hide a divergence when a
+// new plugin type gains a block.
+//
+// allocate separates a write from a read. A write creates the block when the
+// entity carries none; a read leaves the entity untouched and simply misses,
+// because a missing block means the plugin declares nothing and materialising an
+// empty one would make the entity re-serialize with a block nobody wrote.
+func (s *PluginSpec) capabilitiesSlot(pluginType string, allocate bool) *[]string {
+	switch plugintype.Type(pluginType) {
+	case plugintype.Provider:
+		if s.Provider == nil {
+			if !allocate {
+				return nil
+			}
+			s.Provider = &PluginProvider{}
+		}
+		return &s.Provider.Capabilities
+	case plugintype.PipelineStep:
+		if s.PipelineStep == nil {
+			if !allocate {
+				return nil
+			}
+			s.PipelineStep = &PluginPipelineStep{}
+		}
+		return &s.PipelineStep.Capabilities
+	case plugintype.Parser:
+		if s.Parser == nil {
+			if !allocate {
+				return nil
+			}
+			s.Parser = &PluginParser{}
+		}
+		return &s.Parser.Capabilities
+	case plugintype.Importer:
+		if s.Importer == nil {
+			if !allocate {
+				return nil
+			}
+			s.Importer = &PluginImporter{}
+		}
+		return &s.Importer.Capabilities
+	}
+	return nil
 }
 
 // PluginExport is one export the plugin offers, with its declared

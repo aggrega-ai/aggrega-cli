@@ -261,8 +261,9 @@ metadata:
   version: "1.0.0"
 spec:
   abiVersion: v1alpha1
-  capabilities:
-    - helm
+  pipelineStep:
+    capabilities:
+      - helm
   exports:
     - name: step
       operates: patch

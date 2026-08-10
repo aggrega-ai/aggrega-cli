@@ -7,8 +7,9 @@ metadata:
   description: Wasm rendering engine for the helm-chart provider.
 spec:
   abiVersion: v1alpha1
-  capabilities:
-    - helm-chart
+  provider:
+    capabilities:
+      - helm-chart
   # BOTH exports: render_node copies each sourced sub-chart into a file set;
   # assemble_boundary merges the dispatch group's sub-charts into a single
   # umbrella Chart.yaml + values.yaml. The dual-export signal routes the

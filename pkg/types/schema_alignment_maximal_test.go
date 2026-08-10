@@ -153,8 +153,7 @@ func maximalPlugin() types.Plugin {
 			Keywords:    []string{"linter"},
 		},
 		Spec: types.PluginSpec{
-			AbiVersion:   "v1alpha1",
-			Capabilities: []string{"helm", "compose"},
+			AbiVersion: "v1alpha1",
 			Signature: &types.PluginSignature{
 				Type:         "sigstore-cosign",
 				SignatureRef: "sha256:1111111111111111111111111111111111111111111111111111111111111111",
@@ -171,6 +170,7 @@ func maximalPlugin() types.Plugin {
 				{Name: "step", Operates: "emit", Scope: "host"},
 			},
 			Provider: &types.PluginProvider{
+				Capabilities:   []string{"helm", "compose"},
 				WorkloadSchema: "type: object",
 				WellKnownAnnotations: []types.WellKnownAnnotation{
 					{Key: "aggrega.ai/namespace", Purpose: "target namespace", DefaultBehavior: "default namespace"},
@@ -186,6 +186,9 @@ func maximalPlugin() types.Plugin {
 					SourceFilter:       []string{"templates/"},
 				},
 			},
+			PipelineStep: &types.PluginPipelineStep{Capabilities: []string{"helm"}},
+			Parser:       &types.PluginParser{Capabilities: []string{"parse:yaml"}},
+			Importer:     &types.PluginImporter{Capabilities: []string{"import:terraform"}},
 		},
 	}
 }

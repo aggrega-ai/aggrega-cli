@@ -149,7 +149,7 @@ func pushPlugin(out io.Writer, cfg pushConfig, registry string, wantSign bool, n
 		Description:  entity.Metadata.Description,
 		Kind:         "Plugin",
 		PluginType:   entity.Metadata.PluginType,
-		Capabilities: entity.Spec.Capabilities,
+		Capabilities: entity.DeclaredCapabilities(),
 	}.Annotations()
 	if err != nil {
 		return fmt.Errorf("aggrega push: Plugin %s: %w", name, err)

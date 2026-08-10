@@ -143,8 +143,8 @@ func TestGenCatalogFromEmbeddedContractFieldsMatchDescribe(t *testing.T) {
 		if entity.Spec.AbiVersion != desc.AbiVersion {
 			t.Errorf("%s: abiVersion = %q, want %q", name, entity.Spec.AbiVersion, desc.AbiVersion)
 		}
-		if strings.Join(entity.Spec.Capabilities, ",") != strings.Join(desc.Capabilities, ",") {
-			t.Errorf("%s: targets = %v, want %v", name, entity.Spec.Capabilities, desc.Capabilities)
+		if strings.Join(entity.DeclaredCapabilities(), ",") != strings.Join(desc.Capabilities, ",") {
+			t.Errorf("%s: capabilities = %v, want %v", name, entity.DeclaredCapabilities(), desc.Capabilities)
 		}
 		if len(entity.Spec.Exports) != len(desc.Exports) {
 			t.Fatalf("%s: %d exports, want %d (from describe)", name, len(entity.Spec.Exports), len(desc.Exports))

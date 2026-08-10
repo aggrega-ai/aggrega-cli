@@ -75,7 +75,7 @@ type stubImporterResolver struct{}
 func (stubImporterResolver) ImporterPluginForFormat(string) (types.Plugin, error) {
 	return types.Plugin{
 		Metadata: types.PluginMetadata{Name: "demo-importer", Version: "1.0.0", PluginType: "importer"},
-		Spec:     types.PluginSpec{Capabilities: []string{"import:demo"}},
+		Spec:     types.PluginSpec{Importer: &types.PluginImporter{Capabilities: []string{"import:demo"}}},
 	}, nil
 }
 

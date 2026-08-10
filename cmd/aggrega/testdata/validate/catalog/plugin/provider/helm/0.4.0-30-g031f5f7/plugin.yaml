@@ -9,14 +9,14 @@ metadata:
   pluginType: provider
 spec:
   abiVersion: v1alpha1
-  capabilities:
-    - helm
   runtime:
     maxMemoryPages: 4096
     timeoutMs: 300000
   exports:
     - name: render_node
   provider:
+    capabilities:
+      - helm
     workloadSchema: |
       apiVersion:
         type: string

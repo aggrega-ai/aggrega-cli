@@ -46,12 +46,12 @@ metadata:
   version: "1.0.0"
 spec:
   abiVersion: v1alpha1
-  capabilities:
-    - helm-chart
   exports:
     - name: render_node
     - name: assemble_boundary
   provider:
+    capabilities:
+      - helm-chart
     contract:
       inputKinds:
         sourced: true
@@ -91,12 +91,12 @@ metadata:
   version: "1.0.0"
 spec:
   abiVersion: v1alpha1
-  capabilities:
-    - compose
   exports:
     - name: render_node
     - name: assemble_boundary
   provider:
+    capabilities:
+      - compose
     contract:
       inputKinds:
         sourced: true

@@ -31,10 +31,10 @@ func embeddedParserCatalog() *catalog.Catalog {
 			Kind:       "Plugin",
 			Metadata:   types.PluginMetadata{Name: format, Version: "0.0.0-test", PluginType: "parser"},
 			Spec: types.PluginSpec{
-				AbiVersion:   "v1alpha1",
-				Capabilities: []string{"parse:" + format},
-				Exports:      []types.PluginExport{{Name: "parse"}},
-				Runtime:      &types.PluginRuntime{MaxMemoryPages: 4096},
+				AbiVersion: "v1alpha1",
+				Parser:     &types.PluginParser{Capabilities: []string{"parse:" + format}},
+				Exports:    []types.PluginExport{{Name: "parse"}},
+				Runtime:    &types.PluginRuntime{MaxMemoryPages: 4096},
 			},
 		}
 	}

@@ -6,5 +6,6 @@ metadata:
   pluginType: pipeline-step
 spec:
   abiVersion: v1alpha1
-  capabilities:
-    - helm-chart
+  pipelineStep:
+    capabilities:
+      - helm-chart

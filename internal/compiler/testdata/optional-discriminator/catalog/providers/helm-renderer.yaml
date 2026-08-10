@@ -7,8 +7,9 @@ metadata:
   description: Wasm rendering engine for the helm provider.
 spec:
   abiVersion: v1alpha1
-  capabilities:
-    - helm
+  provider:
+    capabilities:
+      - helm
   exports:
     - name: render_node
   runtime:

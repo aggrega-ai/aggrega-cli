@@ -38,7 +38,7 @@ func (stubImporterCatalog) ImporterPluginForFormat(format string) (types.Plugin,
 	}
 	return types.Plugin{
 		Metadata: types.PluginMetadata{Name: "demo-importer", Version: "1.0.0", PluginType: "importer"},
-		Spec:     types.PluginSpec{Capabilities: []string{"import:demo"}},
+		Spec:     types.PluginSpec{Importer: &types.PluginImporter{Capabilities: []string{"import:demo"}}},
 	}, nil
 }
 
@@ -79,7 +79,7 @@ func demoParserSeam(fixturePath string) (parsersocket.ParserResolver, parsersock
 		}
 		return types.Plugin{
 			Metadata: types.PluginMetadata{Name: "demo-parser", Version: "1.0.0", PluginType: "parser"},
-			Spec:     types.PluginSpec{Capabilities: []string{"parse:json"}},
+			Spec:     types.PluginSpec{Parser: &types.PluginParser{Capabilities: []string{"parse:json"}}},
 		}, nil
 	})
 	load := func(p types.Plugin) (wasm.PluginSpec, error) {

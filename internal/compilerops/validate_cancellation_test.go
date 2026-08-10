@@ -87,12 +87,12 @@ metadata:
   version: "1.0.0"
 spec:
   abiVersion: v1alpha1
-  capabilities:
-    - sourced-only-cap
   exports:
     - name: render_node
     - name: assemble_boundary
   provider:
+    capabilities:
+      - sourced-only-cap
     contract:
       inputKinds:
         sourced: true

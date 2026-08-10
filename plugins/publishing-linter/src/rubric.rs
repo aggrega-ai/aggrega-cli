@@ -334,7 +334,7 @@ fn classify_plugin(previous: &Value, proposed: &Value) -> (String, String) {
     let checks = [
         classify_plugin_exports(previous, proposed),
         classify_plugin_capabilities(previous, proposed),
-        classify_self_report(previous, proposed, "spec.provider"),
+        classify_self_report(previous, proposed, PROVIDER_BLOCK),
         classify_plugin_abi_version(previous, proposed),
         classify_plugin_commands(previous, proposed),
     ];
@@ -530,30 +530,72 @@ fn flag_shorthand(flag: &Value) -> &str {
     flag.get("shorthand").and_then(Value::as_str).unwrap_or("")
 }
 
-/// `classify_plugin_capabilities` diffs `spec.capabilities` — an array of strings
-/// (the plugin's served-capability list, mirrored by describe()'s
-/// capabilities). Set semantics: a removed entry narrows the surface
-/// (MAJOR); a new entry with no removals widens it (MINOR); reordering
-/// alone carries no magnitude (PATCH).
-fn classify_plugin_capabilities(previous: &Value, proposed: &Value) -> (String, String) {
-    let prev = string_entries(get_path(previous, "spec.capabilities"));
-    let prop = string_entries(get_path(proposed, "spec.capabilities"));
+/// `CAPABILITY_BLOCKS` names every per-plugin-type block under `spec` that
+/// carries a capability list, and `CAPABILITY_LEAF` names the list's key
+/// inside each. They exist so the block set has **one** home in this file:
+/// a capability list means something different in each block (a provider
+/// declares the render engine it implements; a pipeline step declares the
+/// provider capabilities it is compatible with; a parser and an importer
+/// each declare the formats they handle), and the rubric needs all of them.
+/// Every reader below derives its paths from these two constants rather
+/// than spelling a path out, so a plugin type gaining a block is one edit
+/// here and cannot leave a capability change silently unscored.
+///
+/// `PROVIDER_BLOCK` is named separately because the provider block is
+/// reached twice for two different reasons — it holds a capability list like
+/// the others, and it is also the one block carrying render-behavior claims
+/// that `classify_self_report` scores. Naming it once keeps those two
+/// readers on the same path.
+const PROVIDER_BLOCK: &str = "spec.provider";
+const CAPABILITY_BLOCKS: &[&str] = &[
+    PROVIDER_BLOCK,
+    "spec.pipelineStep",
+    "spec.parser",
+    "spec.importer",
+];
+const CAPABILITY_LEAF: &str = "capabilities";
 
-    let removed: Vec<&str> = prev.iter().copied().filter(|t| !prop.contains(t)).collect();
-    if !removed.is_empty() {
-        return (
-            "MAJOR".to_string(),
-            format!("spec.capabilities removed capability(ies): {}", removed.join(", ")),
-        );
+/// `classify_plugin_capabilities` diffs the capability list each
+/// per-plugin-type block carries — arrays of strings, mirrored by
+/// describe()'s served-capability report. Set semantics, applied per block
+/// because the blocks carry independent claims: a removed entry narrows
+/// that block's surface (MAJOR); a new entry with no removals widens it
+/// (MINOR); reordering alone carries no magnitude (PATCH). A capability
+/// that moves from one block to another therefore reads as a removal from
+/// the block that no longer claims it, which is what it is.
+fn classify_plugin_capabilities(previous: &Value, proposed: &Value) -> (String, String) {
+    let mut widened: Option<String> = None;
+
+    for block in CAPABILITY_BLOCKS {
+        let path = format!("{block}.{CAPABILITY_LEAF}");
+        let prev = string_entries(get_path(previous, &path));
+        let prop = string_entries(get_path(proposed, &path));
+
+        let removed: Vec<&str> = prev.iter().copied().filter(|t| !prop.contains(t)).collect();
+        if !removed.is_empty() {
+            return (
+                "MAJOR".to_string(),
+                format!("{path} removed capability(ies): {}", removed.join(", ")),
+            );
+        }
+        let added: Vec<&str> = prop.iter().copied().filter(|t| !prev.contains(t)).collect();
+        if !added.is_empty() && widened.is_none() {
+            widened = Some(format!(
+                "{path} added capability(ies): {}",
+                added.join(", ")
+            ));
+        }
     }
-    let added: Vec<&str> = prop.iter().copied().filter(|t| !prev.contains(t)).collect();
-    if !added.is_empty() {
-        return (
-            "MINOR".to_string(),
-            format!("spec.capabilities added capability(ies): {}", added.join(", ")),
-        );
+
+    // A removal anywhere outranks an addition anywhere, so the widening
+    // verdict is held back until every block has been checked for removals.
+    if let Some(message) = widened {
+        return ("MINOR".to_string(), message);
     }
-    ("PATCH".to_string(), "spec.capabilities unchanged".to_string())
+    (
+        "PATCH".to_string(),
+        "capabilities unchanged in every per-plugin-type block".to_string(),
+    )
 }
 
 /// `string_entries` collects the string elements of a JSON array,
@@ -580,27 +622,36 @@ fn classify_plugin_abi_version(previous: &Value, proposed: &Value) -> (String, S
     ("PATCH".to_string(), "spec.abiVersion unchanged".to_string())
 }
 
-/// `classify_self_report` diffs a per-socket self-report object
-/// (`spec.capabilities`, `spec.provider`). Every leaf a
-/// version carries is a claim: dropping a claim, or altering an existing
-/// claim's value — including flipping a boolean capability from `true`
-/// to `false` — narrows the surface (MAJOR). A brand-new claim a
-/// previous version did not carry is purely additive (MINOR).
+/// `classify_self_report` diffs a per-socket self-report object — the
+/// provider block's render-behavior claims (`spec.provider`, whose
+/// `contract`, `workloadSchema` and `wellKnownAnnotations` describe how the
+/// plugin renders). Every leaf a version carries is a claim: dropping a
+/// claim, or altering an existing claim's value — including flipping a
+/// boolean contract claim from `true` to `false` — narrows the surface
+/// (MAJOR). A brand-new claim a previous version did not carry is purely
+/// additive (MINOR).
+///
+/// A block's `capabilities` list is deliberately excluded here, and the
+/// exclusion is what keeps one change to one verdict:
+/// `classify_plugin_capabilities` scores it under set semantics, where an
+/// added entry widens the surface and carries MINOR. The walk below cannot
+/// express that — it reads any edited array as a narrowing — so scoring the
+/// list in both places would let a widened capability list report MAJOR.
 ///
 /// The narrowing walk (`narrow_report`) is deliberately more complete
 /// than the generic `structural_shrink` helper: `structural_shrink`
 /// treats a same-typed scalar change (a boolean `true` -> `false`, a
-/// delimiter string edit) as unchanged, which would misread a dropped
-/// capability claim as non-narrowing. Do not fold the two together — the
-/// capability rubric requires the leaf-alteration sensitivity that
+/// delimiter string edit) as unchanged, which would misread a withdrawn
+/// contract claim as non-narrowing. Do not fold the two together — the
+/// self-report rubric requires the leaf-alteration sensitivity that
 /// `structural_shrink` intentionally omits.
 fn classify_self_report(previous: &Value, proposed: &Value, path: &str) -> (String, String) {
-    let prev = get_path(previous, path);
-    let prop = get_path(proposed, path);
+    let prev = self_report_claims(get_path(previous, path), path);
+    let prop = self_report_claims(get_path(proposed, path), path);
     if prev == prop {
         return ("PATCH".to_string(), format!("{path} unchanged"));
     }
-    let (narrowed, added) = narrow_report(prev, prop);
+    let (narrowed, added) = narrow_report(prev.as_ref(), prop.as_ref());
     if narrowed {
         return (
             "MAJOR".to_string(),
@@ -619,6 +670,33 @@ fn classify_self_report(previous: &Value, proposed: &Value, path: &str) -> (Stri
         "MAJOR".to_string(),
         format!("{path} carries a non-additive change"),
     )
+}
+
+/// `self_report_claims` returns the claims of a self-report object with the
+/// capability list dropped when the object is one of the per-plugin-type
+/// blocks, so that list is scored once — by
+/// `classify_plugin_capabilities` — rather than twice under two different
+/// sets of rules. Membership is read from the one block set declared above,
+/// so a block added there is excluded here without a second edit.
+///
+/// A block left with no claims once the capability list is dropped reports
+/// as absent rather than as an empty object. A block carrying only a
+/// capability list makes no self-report claim, so whether the author writes
+/// it or omits it is not a claim change — reporting it as an empty object
+/// would score removing such a block as a narrowing of claims it never made.
+fn self_report_claims(report: Option<&Value>, path: &str) -> Option<Value> {
+    let report = report?;
+    match report {
+        Value::Object(map) if CAPABILITY_BLOCKS.contains(&path) => {
+            let mut claims = map.clone();
+            claims.remove(CAPABILITY_LEAF);
+            if claims.is_empty() {
+                return None;
+            }
+            Some(Value::Object(claims))
+        }
+        other => Some(other.clone()),
+    }
 }
 
 /// `narrow_report` walks a self-report subtree and reports whether the

@@ -7,8 +7,9 @@ metadata:
   description: A partner-authored rendering plugin.
 spec:
   abiVersion: v1alpha1
-  capabilities:
-    - helm
+  provider:
+    capabilities:
+      - helm
   runtime:
     maxMemoryPages: 256
     timeoutMs: 3000

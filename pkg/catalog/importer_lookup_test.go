@@ -15,7 +15,7 @@ import (
 func importerPlugin(name, version string, capabilities ...string) types.Plugin {
 	return types.Plugin{
 		Metadata: types.PluginMetadata{Name: name, Version: version, PluginType: "importer"},
-		Spec:     types.PluginSpec{Capabilities: capabilities},
+		Spec:     types.PluginSpec{Importer: &types.PluginImporter{Capabilities: capabilities}},
 	}
 }
 
@@ -111,7 +111,7 @@ func TestImporterPluginForFormat_IgnoresNonImporterTypes(t *testing.T) {
 	t.Parallel()
 	provider := types.Plugin{
 		Metadata: types.PluginMetadata{Name: "odd-provider", Version: "1.0.0", PluginType: "provider"},
-		Spec:     types.PluginSpec{Capabilities: []string{"import:demo", "helm"}},
+		Spec:     types.PluginSpec{Provider: &types.PluginProvider{Capabilities: []string{"import:demo", "helm"}}},
 	}
 	c := &catalog.Catalog{Plugins: map[string]types.Plugin{
 		"odd-provider:1.0.0":  provider,

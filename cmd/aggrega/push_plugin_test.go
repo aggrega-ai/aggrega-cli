@@ -57,8 +57,9 @@ metadata:
   version: "1.0.0"
 spec:
   abiVersion: v1alpha1
-  capabilities:
-    - helm
+  pipelineStep:
+    capabilities:
+      - helm
   exports:
     - name: step
       operates: patch
@@ -388,8 +389,9 @@ metadata:
 spec:
   plugin: "oci://hub.aggrega.ai/plugin/provider/helm"
   abiVersion: v1alpha1
-  capabilities:
-    - helm
+  provider:
+    capabilities:
+      - helm
   exports:
     - name: render_node
 `, version)+runtimeBlock)
@@ -467,11 +469,12 @@ func TestPushPluginLargeGuestDefaultCapInsufficient(t *testing.T) {
 }
 
 // writeProviderPluginWithContract writes the embedded helm provider guest and
-// a Plugin entity carrying the given trailing spec block (a plugin-level
-// capabilities block plus a runtime cap) into a fresh tempdir, chdirs into it,
-// and returns the entity and .wasm paths. Unlike writeLargeGuestPlugin, the
-// entity authors a plugin-level capability claim, so a publish exercises the full
-// capabilities cross-check — not only the per-export claim. Skips cleanly when
+// a Plugin entity carrying the given trailing spec block (the provider block
+// with its capability claim and render-behavior contract, plus a runtime cap)
+// into a fresh tempdir, chdirs into it, and returns the entity and .wasm paths.
+// Unlike writeLargeGuestPlugin, the caller's block authors a provider capability
+// claim, so a publish exercises the full capabilities cross-check — not only the
+// per-export claim. Skips cleanly when
 // the embedded guests are not built into the test binary.
 func writeProviderPluginWithContract(t *testing.T, specTail string) (entityPath, pluginPath string) {
 	t.Helper()
@@ -493,8 +496,6 @@ metadata:
 spec:
   plugin: "oci://hub.aggrega.ai/plugin/provider/helm"
   abiVersion: v1alpha1
-  capabilities:
-    - helm
   exports:
     - name: render_node
 `, version)+specTail)
@@ -517,6 +518,8 @@ spec:
 // ErrWasmContractMismatch, blocking publication of every reusable provider.
 func TestPushPluginProviderReusableInstanceCrossCheck(t *testing.T) {
 	entityPath, pluginPath := writeProviderPluginWithContract(t, `  provider:
+    capabilities:
+      - helm
     contract:
       inputKinds:
         sourced: true
@@ -551,6 +554,8 @@ func TestPushPluginProviderReusableInstanceCrossCheck(t *testing.T) {
 // two tests together bracket the field's round-trip through the publish path.
 func TestPushPluginProviderReusableInstanceMismatchHalts(t *testing.T) {
 	entityPath, pluginPath := writeProviderPluginWithContract(t, `  provider:
+    capabilities:
+      - helm
     contract:
       inputKinds:
         sourced: true

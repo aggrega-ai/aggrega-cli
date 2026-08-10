@@ -7,8 +7,9 @@ metadata:
   description: Wasm rendering engine for the compose provider.
 spec:
   abiVersion: v1alpha1
-  capabilities:
-    - compose
+  provider:
+    capabilities:
+      - compose
   # BOTH exports: render_node drives per-node render/synthesis; assemble_boundary
   # drives the per-dispatch-group merge into a single docker-compose.yaml. The
   # dual-export signal routes the compose provider to the assembler adapter.

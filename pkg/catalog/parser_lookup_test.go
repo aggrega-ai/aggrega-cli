@@ -14,7 +14,7 @@ import (
 func parserPlugin(name, version string, capabilities ...string) types.Plugin {
 	return types.Plugin{
 		Metadata: types.PluginMetadata{Name: name, Version: version, PluginType: "parser"},
-		Spec:     types.PluginSpec{Capabilities: capabilities},
+		Spec:     types.PluginSpec{Parser: &types.PluginParser{Capabilities: capabilities}},
 	}
 }
 
@@ -106,7 +106,7 @@ func TestParserPluginForFormat_IgnoresNonParserTypes(t *testing.T) {
 	// A provider plugin whose capabilities list a parse:<format> string.
 	provider := types.Plugin{
 		Metadata: types.PluginMetadata{Name: "odd-provider", Version: "1.0.0", PluginType: "provider"},
-		Spec:     types.PluginSpec{Capabilities: []string{"parse:hcl", "helm"}},
+		Spec:     types.PluginSpec{Provider: &types.PluginProvider{Capabilities: []string{"parse:hcl", "helm"}}},
 	}
 	c := &catalog.Catalog{Plugins: map[string]types.Plugin{
 		"odd-provider:1.0.0": provider,

@@ -44,7 +44,7 @@ func (agentFlowResolver) ImporterPluginForFormat(format string) (types.Plugin, e
 	}
 	return types.Plugin{
 		Metadata: types.PluginMetadata{Name: "import-langflow", Version: "1.0.0", PluginType: "importer"},
-		Spec:     types.PluginSpec{Capabilities: []string{"import:langflow", "import:flowise"}},
+		Spec:     types.PluginSpec{Importer: &types.PluginImporter{Capabilities: []string{"import:langflow", "import:flowise"}}},
 	}, nil
 }
 
@@ -74,7 +74,7 @@ func realJSONParserSeam(t *testing.T) (parsersocket.ParserResolver, parsersocket
 		probe.resolvedFormats = append(probe.resolvedFormats, format)
 		return types.Plugin{
 			Metadata: types.PluginMetadata{Name: "json", Version: "1.0.0", PluginType: "parser"},
-			Spec:     types.PluginSpec{Capabilities: []string{"parse:json"}},
+			Spec:     types.PluginSpec{Parser: &types.PluginParser{Capabilities: []string{"parse:json"}}},
 		}, nil
 	})
 	load := func(p types.Plugin) (wasm.PluginSpec, error) {

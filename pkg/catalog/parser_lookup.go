@@ -64,10 +64,11 @@ var errAmbiguousParserPlugin = cerrors.Register("catalog/ambiguous-parser-plugin
 // ParserPluginForFormat resolves a requested source format to the parser Plugin
 // entity that advertises it. It composes the "parse:<format>" capability and
 // matches it by exact membership against each pluginType: parser Plugin's
-// spec.capabilities — the same capability-membership model the provider socket
-// uses, run as an independent sibling so the provider resolution path is
+// declared capabilities — the same capability-membership model the provider
+// socket uses, run as an independent sibling so the provider resolution path is
 // untouched. A non-parser plugin whose capabilities happen to list the composed
-// string is excluded by the plugin-type filter.
+// string is excluded by the plugin-type filter, and its own capabilities live in
+// a different per-type block besides.
 //
 // Unlike the provider resolver's tri-state (a bare miss is a soft not-found the
 // caller resolves), every parser miss is loud: a requested format with no
@@ -94,7 +95,7 @@ func (c *Catalog) ParserPluginForFormat(format string) (types.Plugin, error) {
 		if p.Metadata.PluginType != parserPluginType {
 			continue
 		}
-		if !slices.Contains(p.Spec.Capabilities, capability) {
+		if !slices.Contains(p.DeclaredCapabilities(), capability) {
 			continue
 		}
 		matches[key] = p

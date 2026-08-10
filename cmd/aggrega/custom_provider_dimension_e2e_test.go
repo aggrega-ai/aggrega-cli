@@ -22,8 +22,8 @@
 // is the observable witness that the PULLED guest rendered, not an embedded
 // provider (whose output is docker-compose / a helm chart, never that string).
 // Its describe() self-reports capabilities ["parity"], but render routing keys
-// on the Plugin ENTITY's spec.capabilities, not describe() — so the same .wasm
-// is published under whatever custom capability the fixture recipe binds.
+// on the Plugin ENTITY's declared capabilities, not describe() — so the same
+// .wasm is published under whatever custom capability the fixture recipe binds.
 package main
 
 import (
@@ -136,7 +136,7 @@ func publishProviderPluginEntity(t *testing.T, host, socketName, version, plugin
 
 	var caps strings.Builder
 	for _, c := range capabilities {
-		caps.WriteString("    - " + c + "\n")
+		caps.WriteString("      - " + c + "\n")
 	}
 
 	entityDir := t.TempDir()
@@ -150,7 +150,8 @@ metadata:
   pluginType: provider
 spec:
   abiVersion: v1alpha1
-  capabilities:
+  provider:
+    capabilities:
 `+caps.String()+`  exports:
     - name: render_node
   runtime:

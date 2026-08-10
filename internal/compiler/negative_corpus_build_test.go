@@ -112,8 +112,9 @@ metadata:
   version: "1.0.0"
 spec:
   abiVersion: v1alpha1
-  capabilities:
-    - compose
+  provider:
+    capabilities:
+      - compose
   exports:
     - name: render_node
     - name: assemble_boundary

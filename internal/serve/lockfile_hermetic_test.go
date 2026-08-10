@@ -376,8 +376,9 @@ metadata:
   version: "1.0.0"
 spec:
   abiVersion: v1alpha1
-  capabilities:
-    - helm
+  provider:
+    capabilities:
+      - helm
   exports:
     - name: render_node
   runtime:
@@ -394,8 +395,9 @@ metadata:
   version: "1.0.0"
 spec:
   abiVersion: v1alpha1
-  capabilities:
-    - helm
+  provider:
+    capabilities:
+      - helm
   exports:
     - name: render_node
   runtime:

@@ -22,8 +22,9 @@ metadata:
   version: ` + version + `
 spec:
   abiVersion: v1alpha1
-  capabilities:
-    - ` + provider + `
+  provider:
+    capabilities:
+      - ` + provider + `
   exports:
     - name: render_node
 `
@@ -55,8 +56,9 @@ metadata:
   version: 1.0.0
 spec:
   abiVersion: v1alpha1
-  capabilities:
-    - acme
+  pipelineStep:
+    capabilities:
+      - acme
 `)
 
 	cat, err := catalog.LoadAll("", dir)

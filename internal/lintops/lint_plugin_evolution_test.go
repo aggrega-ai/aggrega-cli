@@ -207,6 +207,101 @@ func TestLintPrePublishPluginCommandEvolution(t *testing.T) {
 	}
 }
 
+// TestLintPrePublishPluginCapabilityEvolution drives the same real `aggrega
+// lint --pre-publish` path as the export and command matrices, but exercises
+// the capability classifier: the list a plugin declares inside the per-type
+// block that gives it meaning. Dropping a capability withdraws something a
+// consumer may be resolving on, so it demands MAJOR; adding one widens the
+// surface and demands no more than MINOR. Each pair's only delta is that
+// list — exports, commands and abiVersion are identical across previous and
+// proposed — so the capability classifier is unambiguously what drives the
+// verdict.
+//
+// Both directions are covered on purpose. A classifier reading a capability
+// list that is not where it looks reports no capability change at all, and a
+// removal can still land on MAJOR through an unrelated arm — so the removal
+// case alone can pass while the surface is entirely unscored. The added case
+// is what distinguishes the two, because nothing else in the fold yields
+// MINOR here.
+func TestLintPrePublishPluginCapabilityEvolution(t *testing.T) {
+	pluginPath := wasmtest.EnsureFixtureBuilt(t, "publishing-linter.wasm")
+
+	type cell struct {
+		proposedVer string
+		wantHalt    bool
+	}
+	cases := []struct {
+		changeDir   string
+		cells       []cell
+		wantSurface string // substring the diagnostic must name on EVERY cell, halt or pass
+		wantVerdict string // required-bump substring the halt error must carry
+	}{
+		{
+			changeDir: "removed-capability",
+			cells: []cell{
+				{"1.0.1", true},  // PATCH rejected
+				{"1.1.0", true},  // MINOR rejected
+				{"2.0.0", false}, // MAJOR accepted
+			},
+			wantSurface: "spec.provider.capabilities removed capability(ies): compose",
+			wantVerdict: "MAJOR",
+		},
+		{
+			changeDir: "added-capability",
+			cells: []cell{
+				{"1.0.1", true},  // PATCH rejected
+				{"1.1.0", false}, // MINOR accepted — a widened list is not breaking
+				{"2.0.0", false}, // MAJOR accepted: a bump beyond the minimum is allowed
+			},
+			wantSurface: "spec.provider.capabilities added capability(ies): compose",
+			wantVerdict: "MINOR",
+		},
+	}
+
+	for _, tc := range cases {
+		for _, c := range tc.cells {
+			t.Run(tc.changeDir+"/"+c.proposedVer, func(t *testing.T) {
+				target := &memoryRegistryTarget{Store: memory.New()}
+				previousYAML := pluginFixtureBytes(t, tc.changeDir, "previous.yaml")
+				pushFixtureToTarget(t, target, "plugin", "partner/custom-renderer", "1.0.0", previousYAML)
+
+				proposedYAML := pluginFixtureBytes(t, tc.changeDir, "proposed.yaml")
+				proposedPath := writeEntityFile(t, proposedYAML, c.proposedVer)
+
+				var diag bytes.Buffer
+				cfg := Config{
+					EntityPath:     proposedPath,
+					PrePublish:     true,
+					PluginPath:     pluginPath,
+					PolicyResolver: func(_ string, ws bool) bool { return ws },
+					FetchTarget:    target,
+					Workspace:      resolveTempWorkspace(t),
+					DiagOut:        &diag,
+				}
+				err := RunEntity(cfg)
+				if c.wantHalt {
+					if err == nil {
+						t.Fatalf("expected HALT for %s; got PASS (diag: %s)", c.proposedVer, diag.String())
+					}
+					if !strings.Contains(err.Error(), tc.wantVerdict) {
+						t.Errorf("halt error should demand a %s bump; got: %v", tc.wantVerdict, err)
+					}
+				} else if err != nil {
+					t.Fatalf("expected PASS for %s; got HALT: %v (diag: %s)", c.proposedVer, err, diag.String())
+				}
+				// The diagnostic must name the block whose list changed on
+				// every cell, halt or pass. A verdict alone cannot tell an
+				// author which of a plugin's capability senses moved, and
+				// naming a key the entity does not carry sends them looking
+				// in the wrong place.
+				if !strings.Contains(diag.String(), tc.wantSurface) {
+					t.Errorf("diagnostic should name the changed surface %q; got: %s", tc.wantSurface, diag.String())
+				}
+			})
+		}
+	}
+}
+
 // TestLintPrePublishPluginCommandFirstPublish proves a command-bearing
 // Plugin published for the first time (no prior version in the registry)
 // passes cleanly: with nothing to diff against, the command-surface

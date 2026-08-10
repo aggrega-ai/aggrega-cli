@@ -10,8 +10,6 @@ metadata:
   description: Wasm rendering engine for the cloudformation provider — normalizes CloudFormation fragments to pure-JSON long-form intrinsics and merges a dispatch group's fragments into a single CloudFormation stack template.
 spec:
   abiVersion: v1alpha1
-  capabilities:
-    - cloudformation
   # The engine renders standalone artifact fragments and normalizes sourced
   # templates to pure-JSON long-form intrinsics, structurally validating a sourced
   # template ahead of render; it merges a dispatch group's per-node fragments into
@@ -32,6 +30,8 @@ spec:
     # way its memory cap is raised, so a legitimate render never false-times-out.
     timeoutMs: 300000
   provider:
+    capabilities:
+      - cloudformation
     # provider carries the provider-socket metadata for this rendering engine.
     # The cloudformation engine synthesizes no Workload, so it declares no
     # workloadSchema; it reads the cloud-target boundary annotations below to

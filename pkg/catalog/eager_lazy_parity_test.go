@@ -103,8 +103,9 @@ metadata:
   version: 1.0.0
 spec:
   abiVersion: v1alpha1
-  capabilities:
-    - acme
+  provider:
+    capabilities:
+      - acme
   exports:
     - name: render_node
 `)

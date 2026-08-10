@@ -457,9 +457,10 @@ func (c *Catalog) PluginByURI(uri string) (types.Plugin, bool) {
 // capability name ("helm") or a version-pinned form ("helm:1.0.0",
 // "helm:^1.0.0") a Recipe binds through spec.capability; the bare name (before
 // any pin) is matched against each plugin's served capabilities. A pluginType:
-// provider Plugin serves the capabilities listed in its spec.capabilities; a
-// linter or pipeline-step plugin whose capabilities happen to list the name is
-// excluded — that list carries a different meaning for a non-provider plugin.
+// provider Plugin serves the capabilities listed in its spec.provider block; a
+// pipeline-step plugin whose own block happens to list the name is excluded —
+// each plugin type keeps its capabilities in its own block precisely because the
+// list means a different thing per type.
 //
 // The bindings map is the workspace-config (at pull) or lockfile-derived (at
 // build) provider selections, keyed by bare capability name; each value is a
@@ -568,7 +569,7 @@ func (c *Catalog) pluginForCapability(pluginType, capability, refPin string, ref
 		if p.Metadata.PluginType != pluginType {
 			continue
 		}
-		if !slices.Contains(p.Spec.Capabilities, capability) {
+		if !slices.Contains(p.DeclaredCapabilities(), capability) {
 			continue
 		}
 		// A binding selects the plugin repository by its coordinate identity
@@ -647,7 +648,7 @@ func (c *Catalog) ProviderPluginCandidates(target string) []types.Plugin {
 		if p.Metadata.PluginType != "provider" {
 			continue
 		}
-		if !slices.Contains(p.Spec.Capabilities, target) {
+		if !slices.Contains(p.DeclaredCapabilities(), target) {
 			continue
 		}
 		out = append(out, p)
