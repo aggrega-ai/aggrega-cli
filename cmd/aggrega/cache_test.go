@@ -1089,3 +1089,87 @@ func TestCacheStatusProvenanceSharedBy(t *testing.T) {
 		t.Errorf("status did not list the solitary identity plainly:\n%s", s)
 	}
 }
+
+// TestRemoveEmptyParentsStopsAtPathBoundary pins that the parent climb is bounded
+// by a path boundary rather than by a raw string prefix. The names used here are
+// the ones the caches really occupy — a normal invocation owns "aggrega" beneath
+// the user cache directory and a test binary owns the sibling "aggrega-test" — so
+// one root's name is a string prefix of the other's, which is exactly the shape a
+// prefix comparison accepts and a boundary comparison refuses. Every path is
+// inside the test's own temporary directory.
+func TestRemoveEmptyParentsStopsAtPathBoundary(t *testing.T) {
+	t.Run("sibling whose name extends the boundary is refused", func(t *testing.T) {
+		tmp := t.TempDir()
+		stopAt := filepath.Join(tmp, "aggrega")
+		sibling := filepath.Join(tmp, "aggrega-test")
+		siblingClass := filepath.Join(sibling, "wasm-compile")
+		siblingLeaf := filepath.Join(siblingClass, "sha256-abc")
+		if err := os.MkdirAll(stopAt, 0o700); err != nil {
+			t.Fatalf("mkdir boundary: %v", err)
+		}
+		if err := os.MkdirAll(siblingLeaf, 0o700); err != nil {
+			t.Fatalf("mkdir sibling leaf: %v", err)
+		}
+
+		// The slot the caller has already removed. It never existed on disk; only
+		// its parents are candidates for the climb.
+		removeEmptyParents(filepath.Join(siblingLeaf, "module.bin"), stopAt)
+
+		// Nothing under the sibling may be touched: it is not inside stopAt, it
+		// merely starts with the same characters.
+		for _, dir := range []string{siblingLeaf, siblingClass, sibling} {
+			if _, err := os.Stat(dir); err != nil {
+				t.Errorf("climb escaped the boundary and removed %q, which is a sibling of %q rather than a directory inside it: %v", dir, stopAt, err)
+			}
+		}
+	})
+
+	t.Run("empty parents inside the boundary are removed", func(t *testing.T) {
+		tmp := t.TempDir()
+		stopAt := filepath.Join(tmp, "aggrega")
+		class := filepath.Join(stopAt, "wasm-compile")
+		leaf := filepath.Join(class, "sha256-abc")
+		if err := os.MkdirAll(leaf, 0o700); err != nil {
+			t.Fatalf("mkdir leaf: %v", err)
+		}
+
+		removeEmptyParents(filepath.Join(leaf, "module.bin"), stopAt)
+
+		for _, dir := range []string{leaf, class} {
+			if _, err := os.Stat(dir); !os.IsNotExist(err) {
+				t.Errorf("empty parent %q inside %q survived the climb (stat err %v)", dir, stopAt, err)
+			}
+		}
+		// The climb stops at the boundary and never removes it.
+		if _, err := os.Stat(stopAt); err != nil {
+			t.Errorf("the climb removed the boundary %q itself: %v", stopAt, err)
+		}
+	})
+
+	t.Run("non-empty parent ends the climb", func(t *testing.T) {
+		tmp := t.TempDir()
+		stopAt := filepath.Join(tmp, "aggrega")
+		class := filepath.Join(stopAt, "wasm-compile")
+		leaf := filepath.Join(class, "sha256-abc")
+		if err := os.MkdirAll(leaf, 0o700); err != nil {
+			t.Fatalf("mkdir leaf: %v", err)
+		}
+		sibling := filepath.Join(class, "sha256-def")
+		if err := os.MkdirAll(sibling, 0o700); err != nil {
+			t.Fatalf("mkdir retained sibling: %v", err)
+		}
+
+		removeEmptyParents(filepath.Join(leaf, "module.bin"), stopAt)
+
+		if _, err := os.Stat(leaf); !os.IsNotExist(err) {
+			t.Errorf("the empty leaf directory %q survived (stat err %v)", leaf, err)
+		}
+		// The class directory still holds another entry, so the climb ends there.
+		if _, err := os.Stat(class); err != nil {
+			t.Errorf("the climb removed the non-empty directory %q: %v", class, err)
+		}
+		if _, err := os.Stat(sibling); err != nil {
+			t.Errorf("the climb reached into a retained entry %q: %v", sibling, err)
+		}
+	})
+}

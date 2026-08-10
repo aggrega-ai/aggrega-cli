@@ -1072,16 +1072,23 @@ func normalizeDigestHex(d string) string {
 	return digest.BareHex(d)
 }
 
-// removeEmptyParents removes now-empty parent directories of a removed slot,
-// climbing until a non-empty directory or the stop boundary is reached, so a
-// prune does not leave empty scaffolding behind. Any error (a non-empty
-// directory, or the boundary) ends the climb.
+// removeEmptyParents removes now-empty parent directories of a removed slot, so
+// a prune does not leave empty scaffolding behind. The climb has two exits: it
+// stops AT the stop boundary, which the loop's own test decides, and it stops
+// early on a failed removal — a directory that still holds entries being the
+// ordinary case.
+//
+// Containment is tested on path boundaries rather than on the raw strings: a
+// path is a sequence of components, so the separator is appended before the
+// prefix test and a sibling directory whose name merely begins with the stop
+// directory's name is not mistaken for a directory inside it.
 func removeEmptyParents(removed, stopAt string) {
 	if stopAt == "" {
 		return
 	}
+	boundary := stopAt + string(filepath.Separator)
 	dir := filepath.Dir(removed)
-	for dir != stopAt && strings.HasPrefix(dir, stopAt) {
+	for dir != stopAt && strings.HasPrefix(dir, boundary) {
 		if err := os.Remove(dir); err != nil {
 			return
 		}
