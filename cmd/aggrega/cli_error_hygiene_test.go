@@ -6,6 +6,8 @@ package main
 import (
 	"bytes"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -54,48 +56,139 @@ func TestSilenceUsageOnRun_WrapsEntireTree(t *testing.T) {
 	}
 }
 
-// runtimeErrorCommands lists, per error-producing subcommand, an invocation
-// that reaches the command's RunE and then fails in the command's own work
-// (a non-existent path), without network or heavy side effects.
+// isolateCLIEnvironment points one case at a scratch home and a scratch working
+// directory, and pins the interactivity seam closed.
+//
+// Both halves are load-bearing once the table reaches the configuration and
+// cache verbs. A case that resolves configuration would otherwise read the
+// developer's own global config — so its failure would depend on what that
+// developer happens to have configured — and a case that writes could reach it.
+// Pinning the interactivity seam makes a confirmation prompt's refusal a
+// property of the fixture rather than of whatever the test binary's stdin
+// happens to be attached to.
+func isolateCLIEnvironment(t *testing.T) {
+	t.Helper()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, "config"))
+	t.Setenv("AGGREGA_CONFIG", "")
+	t.Chdir(t.TempDir())
+	prev := isTerminal
+	isTerminal = func() bool { return false }
+	t.Cleanup(func() { isTerminal = prev })
+}
+
+// runtimeErrorCommands lists, per error-producing command anywhere in the tree,
+// an invocation that reaches that command's RunE and then fails in the command's
+// own work, without network access or heavy side effects.
+//
+// Cases are keyed by full command path rather than by bare name, and that is not
+// cosmetic: the drift net below walks the whole tree, where a bare name is
+// ambiguous — "list", "add" and "remove" each name two different commands under
+// two different parents. Keying by name would let one command's case silently
+// stand in as coverage for its namesake.
+//
+// setup runs after the working directory has been switched, for the cases whose
+// failure has to be arranged on disk rather than expressed in arguments.
 var runtimeErrorCommands = []struct {
-	name string
-	args []string
+	path  string
+	args  []string
+	setup func(t *testing.T)
 }{
-	{"build", []string{"build", "--release", "/nonexistent-aggrega-xyz/release.yaml", "--catalog", "/nonexistent-aggrega-xyz/catalog"}},
+	{path: "aggrega build", args: []string{"build", "--release", "/nonexistent-aggrega-xyz/release.yaml", "--catalog", "/nonexistent-aggrega-xyz/catalog"}},
 	// acquire runs the build dispatch, so the same non-existent-path
 	// invocation reaches its RunE and fails locally.
-	{"acquire", []string{"acquire", "--release", "/nonexistent-aggrega-xyz/release.yaml", "--catalog", "/nonexistent-aggrega-xyz/catalog"}},
-	{"pull", []string{"pull", "--release", "/nonexistent-aggrega-xyz/release.yaml", "--catalog", "/nonexistent-aggrega-xyz/catalog"}},
-	{"inspect", []string{"inspect", "/nonexistent-aggrega-xyz/release.yaml"}},
+	{path: "aggrega acquire", args: []string{"acquire", "--release", "/nonexistent-aggrega-xyz/release.yaml", "--catalog", "/nonexistent-aggrega-xyz/catalog"}},
+	{path: "aggrega pull", args: []string{"pull", "--release", "/nonexistent-aggrega-xyz/release.yaml", "--catalog", "/nonexistent-aggrega-xyz/catalog"}},
+	{path: "aggrega inspect", args: []string{"inspect", "/nonexistent-aggrega-xyz/release.yaml"}},
 	// import reaches its RunE with a well-formed single argument, then fails in
 	// its own work reading the non-existent source file, before format detection
 	// or workspace resolution.
-	{"import", []string{"import", "/nonexistent-aggrega-xyz/source.json"}},
+	{path: "aggrega import", args: []string{"import", "/nonexistent-aggrega-xyz/source.json"}},
 	// get-schema reaches its RunE with a well-formed single argument, then
 	// fails in its own work: no schema matches the unknown kind.
-	{"get-schema", []string{"get-schema", "bogus"}},
-	{"serve", []string{"serve", "--workspace-root", "/nonexistent-aggrega-xyz/ws"}},
-	{"lint", []string{"lint", "/nonexistent-aggrega-xyz/entity.yaml"}},
+	{path: "aggrega get-schema", args: []string{"get-schema", "bogus"}},
+	{path: "aggrega serve", args: []string{"serve", "--workspace-root", "/nonexistent-aggrega-xyz/ws"}},
+	{path: "aggrega lint", args: []string{"lint", "/nonexistent-aggrega-xyz/entity.yaml"}},
 	// validate reaches its RunE with a well-formed single argument, then fails
 	// in its own work reading the non-existent entity file, before any catalog
 	// or render work.
-	{"validate", []string{"validate", "/nonexistent-aggrega-xyz/entity.yaml"}},
-	{"push", []string{"push", "/nonexistent-aggrega-xyz/entity.yaml"}},
+	{path: "aggrega validate", args: []string{"validate", "/nonexistent-aggrega-xyz/entity.yaml"}},
+	{path: "aggrega push", args: []string{"push", "/nonexistent-aggrega-xyz/entity.yaml"}},
 	// push-artifact reaches RunE with valid flags, then fails reading the
 	// non-existent bundle file locally, before any network call.
-	{"push-artifact", []string{"push-artifact", "/nonexistent-aggrega-xyz/bundle.tar.gz", "--name", "aggrega-docs", "--tag", "1.0.0", "--registry", "example.com"}},
+	{path: "aggrega push-artifact", args: []string{"push-artifact", "/nonexistent-aggrega-xyz/bundle.tar.gz", "--name", "aggrega-docs", "--tag", "1.0.0", "--registry", "example.com"}},
 	// sign fails parsing an invalid reference, locally, before any network call.
-	{"sign", []string{"sign", "not a valid ref!!!"}},
+	{path: "aggrega sign", args: []string{"sign", "not a valid ref!!!"}},
 	// deprecate reaches RunE with valid flags, then fails parsing an invalid
 	// reference locally, before any network call.
-	{"deprecate", []string{"deprecate", "not a valid ref!!!", "--severity", "warning", "--message", "gone"}},
+	{path: "aggrega deprecate", args: []string{"deprecate", "not a valid ref!!!", "--severity", "warning", "--message", "gone"}},
 	// login fails in its own work before any stdin read or network call:
 	// --password-stdin requires --username.
-	{"login", []string{"login", "registry.invalid.example", "--password-stdin"}},
+	{path: "aggrega login", args: []string{"login", "registry.invalid.example", "--password-stdin"}},
 	// search validates its output format inside its own work, so an unknown
 	// --output value reaches RunE and fails locally, before any registry read
 	// or network call.
-	{"search", []string{"search", "--output", "bogus"}},
+	{path: "aggrega search", args: []string{"search", "--output", "bogus"}},
+
+	// auth token is absent by design and its exemption is recorded with the
+	// other exemptions in the drift net below.
+
+	// cache clear refuses to wipe anything on a non-interactive stdin without
+	// --yes, so the refusal is reached inside RunE and nothing is removed. The
+	// interactivity seam is pinned closed by the fixture, so the refusal is a
+	// property of the case rather than of the ambient stdin.
+	{path: "aggrega cache clear", args: []string{"cache", "clear"}},
+	// cache evict requires --max-size, and checks it inside its own RunE rather
+	// than as a cobra-declared requirement, so the bare invocation reaches the
+	// wrap before failing.
+	{path: "aggrega cache evict", args: []string{"cache", "evict"}},
+	// cache prune needs a pulled workspace and halts when no lockfile is
+	// present, which a scratch working directory guarantees.
+	{path: "aggrega cache prune", args: []string{"cache", "prune"}},
+	// config capture fails resolving the workspace configuration it is about to
+	// rewrite when the config path is not a readable file. A directory standing
+	// where the file belongs is deterministic and needs no assumption about
+	// which paths the test user may write to.
+	{path: "aggrega config capture", args: []string{"config", "capture"}, setup: func(t *testing.T) {
+		t.Helper()
+		if err := os.Mkdir(".aggrega-config.yaml", 0o755); err != nil {
+			t.Fatalf("arranging an unreadable workspace config: %v", err)
+		}
+	}},
+	// config init rejects the two write-target flags together inside its own
+	// work, before it resolves a target file or reaches for a trust policy — so
+	// nothing is written and no network call is attempted.
+	{path: "aggrega config init", args: []string{"config", "init", "--global", "--workspace"}},
+	// config show rejects the same pair for the same reason, on the read side.
+	{path: "aggrega config show", args: []string{"config", "show", "--global", "--workspace"}},
+	// plugin add validates the socket type inside its own work, so an unknown
+	// type fails before the registry search.
+	{path: "aggrega plugin add", args: []string{"plugin", "add", "bogus-socket", "anything"}},
+	// plugin gen-catalog requires one of its two selection modes and says so
+	// from inside RunE.
+	{path: "aggrega plugin gen-catalog", args: []string{"plugin", "gen-catalog"}},
+	// plugin list validates its output format inside its own work, like search.
+	{path: "aggrega plugin list", args: []string{"plugin", "list", "-o", "bogus"}},
+	// plugin remove validates the socket type inside its own work, like add.
+	{path: "aggrega plugin remove", args: []string{"plugin", "remove", "bogus-socket", "anything"}},
+	// plugin run-local fails reading the non-existent guest locally, before any
+	// guest is instantiated.
+	{path: "aggrega plugin run-local", args: []string{"plugin", "run-local", "--plugin", "/nonexistent-aggrega-xyz/guest.wasm", "--export", "describe"}},
+	// plugin sync requires --plugin and checks it inside its own RunE, so the
+	// entity path alone reaches the wrap before failing.
+	{path: "aggrega plugin sync", args: []string{"plugin", "sync", "/nonexistent-aggrega-xyz/plugin.yaml"}},
+	// registry add rejects the two write-target flags together inside its own
+	// work, before the trust-policy fetch, so no network call is attempted.
+	{path: "aggrega registry add", args: []string{"registry", "add", "--global", "--workspace", "registry.invalid.example"}},
+	// registry list validates its output format inside its own work, like search.
+	{path: "aggrega registry list", args: []string{"registry", "list", "-o", "bogus"}},
+	// registry remove halts on a token that matches no configured registry, and
+	// leaves the config untouched.
+	{path: "aggrega registry remove", args: []string{"registry", "remove", "no-such-registry-alias"}},
+	// registry update resolves its argument to a host before contacting
+	// anything, so a token that cannot be a registry reference fails locally.
+	{path: "aggrega registry update", args: []string{"registry", "update", "not a registry!!!"}},
 }
 
 // TestCLIErrorHygiene_RuntimeErrorSuppressesUsageAndError drives each
@@ -104,24 +197,30 @@ var runtimeErrorCommands = []struct {
 // "Error:" line — Execute renders the single formatted diagnostic instead.
 func TestCLIErrorHygiene_RuntimeErrorSuppressesUsageAndError(t *testing.T) {
 	for _, tc := range runtimeErrorCommands {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Chdir(t.TempDir())
+		t.Run(tc.path, func(t *testing.T) {
+			isolateCLIEnvironment(t)
+			if tc.setup != nil {
+				tc.setup(t)
+			}
 			root := newRootCmd()
 			var buf bytes.Buffer
 			root.SetOut(&buf)
 			root.SetErr(&buf)
+			// An empty stdin, so no case can block on or consume the test
+			// binary's own input.
+			root.SetIn(strings.NewReader(""))
 			root.SetArgs(tc.args)
 
 			err := root.Execute()
 			if err == nil {
-				t.Fatalf("expected a runtime error from %q, got nil", tc.name)
+				t.Fatalf("expected a runtime error from %q, got nil", tc.path)
 			}
 			out := buf.String()
 			if strings.Contains(out, "Usage:") {
-				t.Errorf("%q runtime error leaked the Usage block:\n%s", tc.name, out)
+				t.Errorf("%q runtime error leaked the Usage block:\n%s", tc.path, out)
 			}
 			if strings.Contains(out, "Error:") {
-				t.Errorf("%q runtime error printed cobra's Error line (double-print):\n%s", tc.name, out)
+				t.Errorf("%q runtime error printed cobra's Error line (double-print):\n%s", tc.path, out)
 			}
 		})
 	}
@@ -139,6 +238,11 @@ func TestCLIErrorHygiene_UsageErrorsShowUsage(t *testing.T) {
 		{"unknown-flag", []string{"build", "--bogus-flag"}},
 		{"missing-required-flag", []string{"build"}},
 		{"bad-arg-count", []string{"inspect"}},
+		// A nested command's misuse must surface usage the same way a top-level
+		// command's does, so the usage half of the contract is checked below the
+		// first level too.
+		{"nested-unknown-flag", []string{"cache", "status", "--bogus-flag"}},
+		{"nested-bad-arg-count", []string{"registry", "remove"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -159,39 +263,72 @@ func TestCLIErrorHygiene_UsageErrorsShowUsage(t *testing.T) {
 	}
 }
 
-// TestCLIErrorHygiene_AllRunECommandsCovered is the drift net: every command
-// in the tree that owns a RunE must be exercised by the hygiene tests above
-// (the runtime-suppression table, or the no-runtime-error set). A future
-// command added without coverage fails here, so the wrap is never silently
-// left unproven for a command.
+// TestCLIErrorHygiene_FrameworkBuiltinsAreAbsentAtConstruction records, as a
+// live assertion rather than an assumption, why the drift net below needs no
+// exclusion for the command framework's own entries: the framework adds its
+// completion and help commands while executing, and the net walks a tree that
+// was only constructed.
+//
+// The assertion states the absence rather than skipping the names. An exclusion
+// would keep passing if the framework ever moved that injection to construction
+// time; this fails there instead, which is the point at which the coverage
+// decision would need revisiting.
+func TestCLIErrorHygiene_FrameworkBuiltinsAreAbsentAtConstruction(t *testing.T) {
+	for _, c := range reachableCommands(newRootCmd()) {
+		name := c.Name()
+		if name == "completion" || name == "help" || strings.HasPrefix(name, "__complete") {
+			t.Errorf("the command framework's %q entry is present in a freshly constructed tree (%s); the coverage rule in the drift net assumes these appear only during execution", name, c.CommandPath())
+		}
+	}
+}
+
+// TestCLIErrorHygiene_AllRunECommandsCovered is the drift net: every command in
+// the tree that owns a RunE must be exercised by the hygiene tests above — the
+// runtime-suppression table, or the set of commands with no reachable runtime
+// error. A future command added without coverage fails here, so the wrap is
+// never silently left unproven for a command.
+//
+// The walk is the whole tree, through the one shared traversal, so a command
+// nested under a container command is held to the same contract as a top-level
+// one. Coverage is keyed by command path, because a bare name does not identify
+// a command once the walk descends.
 func TestCLIErrorHygiene_AllRunECommandsCovered(t *testing.T) {
 	// Not parallel: mutates the process-global globalDisplay seam other tests read.
 	covered := map[string]bool{}
 	for _, tc := range runtimeErrorCommands {
-		covered[tc.name] = true
+		covered[tc.path] = true
 	}
 	// version succeeds and has no error path / Usage to leak; it carries
 	// the wrap harmlessly and is exempt from the runtime-error table.
-	covered["version"] = true
+	covered["aggrega version"] = true
 	// logout of an absent credential is a no-op success (like version), so it
 	// has no hermetic runtime-error invocation to drive here; the centralized
 	// wrap it carries is the same one proven against the login error path above.
-	covered["logout"] = true
+	covered["aggrega logout"] = true
 	// mcp reads its stdin to EOF and returns on a clean close — a no-error
 	// success path (like version) with no Usage to leak, so it carries the
 	// centralized wrap harmlessly and is exempt from the runtime-error table.
-	covered["mcp"] = true
+	covered["aggrega mcp"] = true
+	// cache status is a read-only listing that reports an empty cache rather
+	// than failing, so it has no runtime error to drive — the same shape as
+	// version. Measured, not assumed: driven with no arguments and with a
+	// non-existent workspace root, it succeeds both ways.
+	covered["aggrega cache status"] = true
+	// auth token's RunE begins the interactive identity acquisition, which
+	// cannot be driven here at all: every path through it either opens a browser
+	// or contacts the identity provider. It is exempt for the opposite reason to
+	// version — not because it has no error path, but because it has no error
+	// path reachable without leaving the machine. The wrap it carries is the
+	// same one the sign and push credential paths prove.
+	covered["aggrega auth token"] = true
 
-	for _, c := range newRootCmd().Commands() {
+	for _, c := range reachableCommands(newRootCmd()) {
 		if c.RunE == nil {
 			continue
 		}
-		name := c.Name()
-		if name == "completion" || name == "help" || strings.HasPrefix(name, "__complete") {
-			continue // cobra built-ins
-		}
-		if !covered[name] {
-			t.Errorf("command %q has a RunE but is not covered by the CLI error-hygiene tests; add it to runtimeErrorCommands and confirm the wrap holds", name)
+		path := c.CommandPath()
+		if !covered[path] {
+			t.Errorf("command %q has a RunE but is not covered by the CLI error-hygiene tests; add it to runtimeErrorCommands and confirm the wrap holds", path)
 		}
 	}
 }
