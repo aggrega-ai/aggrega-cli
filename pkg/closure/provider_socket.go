@@ -25,13 +25,16 @@ import (
 // referenced-from paths, so two runs over the same input produce identical
 // output. A missing entity halts loudly with ErrUnresolvableURI.
 //
-// Registry-only pinning: an entity is pinned only when it resolves above Tier-1
-// (the registry-backed tiers). A Tier-1-local provider entity is left unpinned —
-// it needs no lockfile pin because the build reconstructs the binding from the
-// lockfile and resolves the serving plugin through the local catalog walk, so
-// pinning it here would leave a lockfile entry the hermetic build cannot
-// reconstruct. This mirrors the registry-only rule the pipeline-plugin entity
-// descent applies.
+// Registry-only pinning: an entity is pinned only when it is a pulled artifact
+// (the registry-backed tiers). A provider entity already present on the machine is
+// left unpinned — it needs no lockfile pin because the build reconstructs the
+// binding from the lockfile and then resolves the serving plugin from where it
+// already is, through the local catalog walk for a locally-authored provider or
+// from the binary itself for a core provider that ships inside it. Pinning either
+// would leave a lockfile entry the hermetic build cannot reconstruct. This applies
+// the same entity-axis rule the pipeline-plugin entity descent does; every binding
+// this pass sees is a provider-socket binding, so the from-the-binary case is
+// provider-scoped by construction here.
 //
 // A capability-only binding (URI == "") names a render-engine target but
 // delegates the choice of serving plugin to capability resolution; it pins no
@@ -59,10 +62,11 @@ func ResolveProviderSocketEntities(cl *Closure, providerRefs []workspaceconfig.P
 			return fmt.Errorf("%w: entity %q (referenced from %s)",
 				ErrUnresolvableURI(), ref.URI, refPath)
 		}
-		// Registry-only pinning: a Tier-1-local provider resolves at build through
-		// the local catalog walk and is never lockfile-pinned, so pinning it here
-		// would strand a lockfile entry the hermetic build cannot reconstruct.
-		if res.ResolutionPath == tier1CatalogPath {
+		// Registry-only pinning: a provider already present on the machine resolves
+		// at build from where it already is — the local catalog walk, or the binary's
+		// own copy of a core provider — and is never lockfile-pinned, so pinning it
+		// here would strand a lockfile entry the hermetic build cannot reconstruct.
+		if entityNeedsNoPin(res.ResolutionPath) {
 			continue
 		}
 		if idx, ok := byURI[ref.URI]; ok {

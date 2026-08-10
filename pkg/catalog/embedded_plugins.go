@@ -68,9 +68,12 @@ func embeddedPluginEntities() ([]types.Plugin, map[string]struct{}) {
 // The returned map is keyed exactly like Catalog.Plugins (coordinate:version),
 // so the shared capability-resolution and by-URI matchers run over it unchanged.
 // It is deliberately SEPARATE from Catalog.Plugins and is consulted only at
-// render-time resolution: the closure/lockfile walk resolves plugins from the
-// enumerated Catalog.Plugins alone, so an embedded core provider is never pinned
-// as a pulled artifact. The overlay applies only to a loaded workspace view
+// render-time resolution. An embedded core provider is still never pinned as a
+// pulled artifact, but that now follows from the pull-side pin decision rather
+// than from this overlay being unreachable: the closure walk resolves an embedded
+// core-provider entity through its own resolver and declines to record it,
+// because the build selects that provider's rendering engine from the same
+// binary. The overlay applies only to a loaded workspace view
 // (resolveEmbeddedProviders) — a bare Catalog literal resolves from its own
 // Plugins alone. When no entities are embedded (a light binary, or a build
 // before the entities were generated) the loaded set is returned as-is.

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"sort"
 
+	"github.com/aggrega-ai/aggrega-cli/pkg/plugintype"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
@@ -54,6 +55,69 @@ const pluginKindHint = "plugin"
 // local catalog walk, never the lockfile pin.
 const tier1CatalogPath = "tier-1-catalog"
 
+// ResolutionPathEmbedded is the ResolutionPath a Lookup reports for a core plugin
+// resolved from the copy that ships inside the compiler binary. It is declared
+// beside the Lookup contract it belongs to so the value has a single home: the
+// catalog-side resolver reports it and the pull-side pin sites below recognise it,
+// with no second spelling to drift.
+//
+// The path states provenance only — where the bytes came from — never whether the
+// reference is pinned. The pin decision belongs to the pin sites below and differs
+// by plugin type, so a reader must not infer one from the other.
+const ResolutionPathEmbedded = "tier-0-embed"
+
+// resolvedInLocalCatalog reports whether a resolution came from a local catalog
+// directory (or a workspace-relative path) rather than from a registry pull. It is
+// the universal leg of the registry-only rule: no plugin type is pinned when it
+// resolves this way, because the build resolves it again through the same local
+// catalog walk, and a pin would strand a lockfile entry the hermetic build cannot
+// reconstruct. Both pin-decision helpers below compose it, so the rule has one home.
+func resolvedInLocalCatalog(resolutionPath string) bool {
+	return resolutionPath == tier1CatalogPath
+}
+
+// entityNeedsNoPin reports whether a resolved plugin ENTITY is left out of the
+// closure by a pull-side descent: it resolved from a local catalog, or it resolved
+// from the copy that ships inside the compiler binary.
+//
+// The from-the-binary leg inspects no plugin type because it cannot need to: on the
+// catalog-entity axis a resolver reports the from-the-binary path for a core
+// PROVIDER entity only, and every other plugin type keeps its ordinary cascade. That
+// scoping lives in the resolver, beside the entity whose declared plugin type
+// answers the question, rather than being re-derived here from a URI — a plugin's
+// identity coordinate is built from its (pluginType, name) pair and is never
+// re-parsed to recover either half.
+func entityNeedsNoPin(resolutionPath string) bool {
+	return resolvedInLocalCatalog(resolutionPath) || resolutionPath == ResolutionPathEmbedded
+}
+
+// artifactNeedsNoPin reports whether a resolved plugin .wasm ARTIFACT is left out of
+// the closure by a pull-side descent, given the plugin type its entity declares.
+//
+// Unlike the entity axis, the artifact axis resolves EVERY core plugin the binary
+// carries from the binary — a governance guest's .wasm as readily as a provider's —
+// so the plugin type is what separates the two outcomes here, and the entity being
+// loaded at this point is what makes its declared type available to ask.
+//
+// A core provider resolved from the binary is not pinned: the build selects and
+// loads its rendering engine from the same binary, so a pin would record a digest
+// the pull never fetched and tie the closure to whichever binary wrote it.
+//
+// Every other declared type IS pinned, even when the binary carries it. The plugins
+// this axis reaches — a recipe's pipeline steps and an output-shaping workspace-socket
+// attachment — put their bytes into the rendered output, and the lockfile pin is what
+// holds those bytes still until the next pull. Two things break without it: such a
+// plugin is adopted the moment it changes rather than at a pull, and the
+// workspace-socket reconstruction the build performs from the lockfile pins the
+// artifact regardless, so a pull that declined it writes a lockfile the very next
+// build reports as drifted.
+func artifactNeedsNoPin(resolutionPath string, declaredType plugintype.Type) bool {
+	if resolvedInLocalCatalog(resolutionPath) {
+		return true
+	}
+	return resolutionPath == ResolutionPathEmbedded && declaredType == plugintype.Provider
+}
+
 // DescendRecipePluginEntities is Phase A of the two-pass pipeline-plugin descent:
 // it discovers every Plugin ENTITY a closure's Recipes / FeatureRecipes
 // reference through their spec.pipeline[].plugin URIs (plus any workspace-socket
@@ -90,15 +154,17 @@ const tier1CatalogPath = "tier-1-catalog"
 // injected loader, producing the same Entities entry representation the other
 // axes emit rather than a parallel pin.
 //
-// Registry-only pinning: an entity is emitted into the closure ONLY when it
-// resolves above Tier-1 (the registry-backed cache / pull tiers). A Tier-1-local
-// entity — one authored in a local catalog directory or addressed by a
-// workspace-relative path — is left out of the closure and resolves at build
-// through the local catalog walk, mirroring how a Tier-1-local provider is not
-// lockfile-pinned. A reference that resolves through no tier (NotFound) is
-// skipped rather than halting the pull: a local-path entity the lock-time lookup
-// does not see resolves at build, and the build-time loader gate halts on a
-// genuinely-absent reference.
+// Registry-only pinning: an entity is emitted into the closure ONLY when it is a
+// pulled artifact (the registry-backed cache / pull tiers). An entity authored in a
+// local catalog directory or addressed by a workspace-relative path is left out and
+// resolves at build through the local catalog walk. So is a core PROVIDER entity the
+// binary carries, which resolves at build from the binary — the only plugin type an
+// entity resolver reports that way, because the build likewise selects its rendering
+// engine from the binary. Every other socket's plugin entity keeps its ordinary
+// cascade and is pinned when a registry serves it. A reference that resolves through
+// no tier (NotFound) is skipped rather than halting the pull: a local-path entity the
+// lock-time lookup does not see resolves at build, and the build-time loader gate
+// halts on a genuinely-absent reference.
 //
 // Newly-discovered entities are appended to c.Entities (deduped by URI against
 // what is already present, accumulating referenced-from sites). A nil loader is
@@ -136,9 +202,10 @@ func DescendRecipePluginEntities(c *Closure, loader RecipeLoader, lookup Lookup,
 		if entRes.NotFound {
 			continue
 		}
-		// Registry-only pinning: a Tier-1-local entity is not pinned (it resolves at
-		// build through the local catalog walk).
-		if entRes.ResolutionPath == tier1CatalogPath {
+		// Registry-only pinning: an entity already present on the machine is not
+		// pinned — it resolves at build from the local catalog, or (a core provider
+		// only, which is what the entity resolver reports this way) from the binary.
+		if entityNeedsNoPin(entRes.ResolutionPath) {
 			continue
 		}
 		if len(recipeFromSet) > 0 {
@@ -179,11 +246,15 @@ func DescendRecipePluginEntities(c *Closure, loader RecipeLoader, lookup Lookup,
 // Rediscovery is from c.Entities rather than from a re-walk of the recipes: Phase A
 // already pinned every registry-resolved plugin entity (recipe-referenced and
 // workspace-socket) with KindHint==pluginKindHint, so the entity axis is the
-// authoritative set of artifacts to descend, and a Tier-1-local entity Phase A
-// declined to pin is correctly absent (its artifact is not lockfile-pinned either).
+// authoritative set of artifacts to descend, and an entity Phase A declined to pin
+// because it was already present on the machine is correctly absent (its artifact is
+// not lockfile-pinned either).
 //
-// The artifact is referenced from its Plugin entity. Registry-only pinning and
-// NotFound-skip mirror Phase A. Newly-discovered artifacts are appended to
+// The artifact is referenced from its Plugin entity. NotFound-skip mirrors Phase A.
+// The registry-only rule does NOT: the artifact axis resolves every core plugin the
+// binary carries from the binary, not just the providers the entity axis does, so
+// which of those is pinned depends on the entity's declared plugin type —
+// artifactNeedsNoPin holds that rule. Newly-discovered artifacts are appended to
 // c.Plugins (deduped by URI, accumulating referenced-from sites); the closure
 // is re-canonicalised before return, so the pinned set — and the lockfile written
 // from it — is byte-identical across runs regardless of descent order. A nil loader
@@ -209,8 +280,8 @@ func DescendRecipePluginArtifacts(c *Closure, loader RecipeLoader, lookup Lookup
 	sort.Strings(entityURIs)
 
 	for _, entityURI := range entityURIs {
-		skipTier1 := true
-		if err := pinPluginArtifact(c, loader, lookup, entityURI, pluginIndex, skipTier1); err != nil {
+		registryOnly := true
+		if err := pinPluginArtifact(c, loader, lookup, entityURI, pluginIndex, registryOnly); err != nil {
 			return err
 		}
 	}
@@ -228,13 +299,14 @@ func DescendRecipePluginArtifacts(c *Closure, loader RecipeLoader, lookup Lookup
 //
 // A NotFound artifact is skipped (it may resolve at build through a local path the
 // lock-time lookup does not see, and the build-time loader gate halts on a
-// truly-missing artifact). skipTier1 controls the registry-only rule: the pull-side
-// pipeline descent passes true (a Tier-1-local artifact is not lockfile-pinned),
-// while the workspace-socket reconstruction passes false — a socket artifact the
-// lockfile already pins can surface as Tier-1 when the pinned Tier-2 cache slot is
-// folded into the hermetic view's local enumeration, and dropping it is exactly the
-// reconstruction gap that surfaces as spurious drift.
-func pinPluginArtifact(c *Closure, loader RecipeLoader, lookup Lookup, entityURI string, pluginIndex map[string]int, skipTier1 bool) error {
+// truly-missing artifact). registryOnly controls whether the registry-only rule
+// applies at all: the pull-side pipeline descent passes true, so an artifact
+// artifactNeedsNoPin reports is left out; the workspace-socket reconstruction passes
+// false, because a socket artifact the lockfile already pins can surface as
+// locally-resolved once the pinned cache slot is folded into the hermetic view's local
+// enumeration, and dropping it is exactly the reconstruction gap that surfaces as
+// spurious drift.
+func pinPluginArtifact(c *Closure, loader RecipeLoader, lookup Lookup, entityURI string, pluginIndex map[string]int, registryOnly bool) error {
 	wp, err := loader.LoadPlugin(entityURI)
 	if err != nil {
 		return fmt.Errorf("resolve: load wasm plugin entity %q for artifact descent: %w", entityURI, err)
@@ -253,7 +325,7 @@ func pinPluginArtifact(c *Closure, loader RecipeLoader, lookup Lookup, entityURI
 	if artRes.NotFound {
 		return nil
 	}
-	if skipTier1 && artRes.ResolutionPath == tier1CatalogPath {
+	if registryOnly && artifactNeedsNoPin(artRes.ResolutionPath, plugintype.Type(wp.Metadata.PluginType)) {
 		return nil
 	}
 	artRef := ResolvedRef{

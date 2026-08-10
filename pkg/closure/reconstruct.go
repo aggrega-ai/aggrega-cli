@@ -147,10 +147,10 @@ func ReconstructWorkspaceSocketEntities(c *Closure, entityURIs []string, loader 
 		pluginIndex[p.URI] = i
 	}
 	for _, entityURI := range sorted {
-		// A lockfile-pinned socket .wasm can resolve as Tier-1 when its pinned cache
-		// slot is folded into the hermetic view's local enumeration, so the
-		// registry-only skip is disabled — the artifact is pinned regardless of tier.
-		if err := pinPluginArtifact(c, loader, lookup, entityURI, pluginIndex, false /* skipTier1 */); err != nil {
+		// A lockfile-pinned socket .wasm can resolve as locally-present when its pinned
+		// cache slot is folded into the hermetic view's local enumeration, so the
+		// registry-only rule is disabled — the artifact is pinned regardless of tier.
+		if err := pinPluginArtifact(c, loader, lookup, entityURI, pluginIndex, false /* registryOnly */); err != nil {
 			return err
 		}
 	}

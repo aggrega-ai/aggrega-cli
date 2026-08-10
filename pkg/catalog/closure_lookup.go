@@ -16,6 +16,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
 	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
+	"github.com/aggrega-ai/aggrega-cli/pkg/plugintype"
 	"github.com/aggrega-ai/aggrega-cli/pkg/registryhost"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
@@ -365,6 +366,14 @@ func (l *catalogLookup) ResolveCatalogEntity(uri, kindHint string) (closure.Reso
 	if res, ok := l.tier1CatalogEntity(uri); ok {
 		return res, nil
 	}
+	// A core provider that ships inside the binary is already on the machine: resolve
+	// it here, before the registry tiers, so no network round-trip is attempted for
+	// something the binary carries. It sits after the local catalog so a
+	// locally-authored entity keeps resolving exactly where it did, and it is scoped to
+	// providers so every other plugin type keeps its full cascade.
+	if res, ok := l.embeddedPluginEntity(uri, kindHint); ok {
+		return res, nil
+	}
 	// Honor a prior pin: resolve the pinned EXACT version (never float to
 	// list-tags→highest) and verify the resolved bytes against the pin's digest.
 	fetchURI := l.pinnedFetchURI(uri)
@@ -418,6 +427,75 @@ func (l *catalogLookup) honorPinDigest(uri string, res closure.Resolution) (clos
 		oci.ErrFetchIntegrity(), uri, res.Digest, pin.Digest)
 }
 
+// pluginEntityKindHint is the closure KindHint a Plugin-entity reference carries.
+const pluginEntityKindHint = "plugin"
+
+// embeddedPluginEntity resolves a Plugin-entity reference against the core PROVIDERS
+// that ship inside the compiler binary, reporting (resolution, true) on a hit. A hit
+// needs no registry access at all: the entity is read from the binary itself.
+//
+// Three conditions narrow it.
+//
+// It fires only for a Plugin-entity reference — only plugins ship inside the binary,
+// so Component / Feature / Recipe resolution is untouched.
+//
+// It fires only when the embedded entity declares pluginType provider. The binary
+// carries entities for every core plugin it ships, governance guests included, so the
+// narrowing is a real restriction rather than a formality. It is needed because the
+// pull-side entity pin sites decline whatever this branch reports WITHOUT inspecting
+// any plugin type: widening it here would silently stop the closure pinning some other
+// socket's plugin entity. A provider is the type for which declining is right — the
+// build selects its rendering engine from the binary's own copy, so a provider entity
+// resolved here is available at build with nothing recorded. The test reads the
+// entity's own declared plugin type, which is authoritative and in hand here — a
+// plugin's identity coordinate is built from its (pluginType, name) pair and is never
+// re-parsed to recover either half.
+//
+// And it fires only for a reference the embedded copy actually satisfies: a bare
+// identity, or an exact version equal to the embedded entity's own metadata.version.
+// A reference pinned to a different version, or written as a range, keeps its registry
+// cascade — an author who names a published version gets that published version rather
+// than whatever the binary happens to carry. The version test is a plain equality
+// rather than the three-form selection rule because the embedded set holds exactly one
+// version per identity, the binary's own, so there is nothing to select among; do not
+// "unify" it with the version selector, which would answer a different question.
+//
+// A hit reports the embedded resolution path, which the pull-side entity-axis pin
+// sites read as already-present-and-not-a-pulled-artifact and leave out of the
+// closure. It is deliberately NOT a NotFound: a workspace provider socket treats
+// NotFound as an unresolvable reference and halts, so reporting a miss here would turn
+// a core provider the binary carries into a hard failure. A non-provider reference,
+// including one whose entity the binary does carry, falls through to the registry
+// cascade exactly as it did before this resolution existed.
+func (l *catalogLookup) embeddedPluginEntity(uri, kindHint string) (closure.Resolution, bool) {
+	if kindHint != pluginEntityKindHint {
+		return closure.Resolution{}, false
+	}
+	identity, requested, hasVersion := SplitVersionedURI(uri)
+	embeds, _ := embeddedPluginEntities()
+	for _, p := range embeds {
+		if plugintype.Type(p.Metadata.PluginType) != plugintype.Provider {
+			continue
+		}
+		if p.Coordinate() != identity {
+			continue
+		}
+		if hasVersion && requested != p.Metadata.Version {
+			continue
+		}
+		raw, ok := embedded.LookupEntity(identity)
+		if !ok {
+			return closure.Resolution{}, false
+		}
+		return closure.Resolution{
+			ResolvedVersion: p.Metadata.Version,
+			Digest:          contentDigest(raw),
+			ResolutionPath:  closure.ResolutionPathEmbedded,
+		}, true
+	}
+	return closure.Resolution{}, false
+}
+
 // ociKindForHint maps a closure KindHint to the catalog kind the OCI location
 // rule expects. An unmapped or empty hint yields "", which leaves the entity
 // Tier-3 pull on the legacy already-located reference path (no name→location
@@ -432,7 +510,7 @@ func ociKindForHint(hint string) string {
 		return "Recipe"
 	case "feature_recipe":
 		return "FeatureRecipe"
-	case "plugin":
+	case pluginEntityKindHint:
 		return "Plugin"
 	default:
 		return ""
@@ -511,12 +589,16 @@ func (l *catalogLookup) ResolveLibrary(axis closure.LibraryAxis, uri string) (cl
 }
 
 func (l *catalogLookup) ResolvePlugin(uri, version string) (closure.Resolution, error) {
-	// Embed tier: a core plugin embedded in the binary resolves offline by its
-	// bare identity (<socket>/<name>). Its reference digest is derived from the
-	// embedded bytes on demand — never stored — so pull records a lockfile entry
-	// for a core plugin with no registry round-trip, and the closure walker no
-	// longer drops it as a NotFound miss. The lockfile carries the derived digest
-	// in the existing digest field; identity stays the bare plugin identity.
+	// Embed tier: a core plugin's .wasm embedded in the binary resolves offline by its
+	// bare identity (<socket>/<name>), whatever its socket. Its reference digest is
+	// derived from the embedded bytes on demand — never stored — so the closure walker
+	// no longer drops such a reference as a NotFound miss and no registry round-trip is
+	// attempted. Whether the resolved artifact is then written into the lockfile is the
+	// pull-side pin site's decision, not this tier's, and it turns on the plugin type:
+	// an output-shaping plugin is pinned so the bytes it produces are held still, while
+	// a core provider is not, because the build selects its rendering engine from the
+	// same binary. A pinned row carries the derived digest in the existing digest
+	// field; identity stays the bare plugin identity.
 	if b, ok := embedded.Lookup(uri); ok {
 		return embeddedPluginResolution(contentDigest(b)), nil
 	}
@@ -702,16 +784,19 @@ func pinnedPluginResolution(pinDigest, manifestDigest string) closure.Resolution
 
 // embeddedPluginResolution is the resolution descriptor for a core .wasm
 // artifact resolved from the binary's embed tier: ResolvedVersion and Digest are
-// both the reference digest derived from the embedded bytes, so the lockfile
-// records a real content digest for a core plugin without any registry access.
-// ManifestDigest is empty — an embedded artifact carries no registry manifest to
-// verify against. ResolutionPath marks it a resolved (above-Tier-1) pin, so the
-// closure walker records it rather than skipping it as a NotFound miss.
+// both the reference digest derived from the embedded bytes, so a core plugin
+// resolves to a real content digest without any registry access. ManifestDigest is
+// empty — an embedded artifact carries no registry manifest to verify against.
+// ResolutionPath marks it resolved-from-the-binary, so the closure walker treats it
+// as a real resolution rather than a NotFound miss. When a pin site does record such
+// an artifact — an output-shaping plugin the binary carries — the derived digest is
+// what the lockfile row holds, and the drift gate compares against it on the next
+// build.
 func embeddedPluginResolution(refDigest string) closure.Resolution {
 	return closure.Resolution{
 		ResolvedVersion: refDigest,
 		Digest:          refDigest,
-		ResolutionPath:  "tier-0-embed",
+		ResolutionPath:  closure.ResolutionPathEmbedded,
 	}
 }
 
