@@ -330,12 +330,31 @@ const (
 	// directory.
 	userCacheRootDirName = "aggrega"
 
-	// testCacheRootDirName is the directory, beneath the system temp directory,
-	// that holds every cache while a test binary is running. It is a fixed name
-	// rather than a per-process one so all test processes share one set of caches
-	// and a whole run compiles each guest at most once.
-	testCacheRootDirName = "aggrega-cache-test"
+	// testCacheRootDirName is the directory, beneath the user cache directory,
+	// that holds every cache while a test binary is running. It is a sibling of
+	// the directory a normal invocation owns rather than a directory inside it, so
+	// the two never share a byte in either direction.
+	//
+	// It is a fixed name rather than a per-process one so all test processes share
+	// one set of caches and a whole run compiles each guest at most once.
+	testCacheRootDirName = "aggrega-test"
 )
+
+// userCacheDirAtStart is the user cache directory as this process found it when it
+// started, together with the error the standard library reported if none resolves.
+// Every cache location in the process derives from this one capture.
+//
+// It is captured once rather than asked for on each call, and the reason is that
+// the standard library answers from the environment, so the answer can change
+// while the process runs. Two things depend on it not changing. The process-wide
+// compiled-module cache is built once, on first use, and holds the directory it
+// was built with for the whole process — so a later caller resolving a different
+// directory would write to a path the built cache never opened, or to one that has
+// since been removed. And the directory holds machine code that gets mapped
+// executable, so where it lives should be settled before any code in the process
+// has had the chance to move it, rather than being whatever the environment says
+// at the moment the first guest happens to load.
+var userCacheDirAtStart, userCacheDirAtStartErr = os.UserCacheDir()
 
 // cacheRoot returns the root directory this process's persistent caches live
 // under and whether one could be resolved.
@@ -344,28 +363,42 @@ const (
 // store, the plugin-describe store, the provenance index, the compile-attribution
 // index — derives its own location from this one answer, so the read side and the
 // write side of any one cache cannot disagree about where it lives, and a cache
-// added later inherits the decision instead of repeating it.
+// added later inherits the decision instead of repeating it. The answer is also
+// the same whenever it is asked, because the parent it is built on is captured at
+// process start (see userCacheDirAtStart).
 //
-// Within a test binary the root is a fixed directory beneath the system temp
-// directory rather than the user cache directory. Two reasons, and both are
-// load-bearing. A test must never read or write the cache a developer's own
-// builds depend on: those bytes are expensive to rebuild and nothing a test holds
-// can reconstruct them, and the cache-maintenance surface can remove a directory
-// outright. And every test process sharing one root means a whole run compiles
-// each guest at most once, with later processes reusing the machine code rather
-// than each paying its own cold compile.
+// A test binary and a normal invocation differ in exactly one thing: the name of
+// the directory they take beneath the user cache directory. Both resolve that same
+// parent rather than a shared system location every local account may write to,
+// and that matters more here than for an ordinary cache. A compiled-module entry
+// is machine code, which the runtime maps as executable memory and jumps into
+// after checking a magic number, a version string and a checksum — all three of
+// which anyone able to write the entry can produce. So a cache directory a second
+// local account could write to would hand that account code execution inside this
+// process, and placing the directory where only its owner can write is what
+// removes the possibility rather than policing it.
+//
+// The two names are siblings, never nested, and that is what keeps a test run away
+// from a developer's own bytes: those are expensive to rebuild, nothing a test
+// holds can reconstruct them, and the cache-maintenance surface removes a resolved
+// directory outright. Every such removal is bounded to the root the running
+// process resolved, so neither side can reach the other's.
+//
+// The test name is fixed rather than per-process so every test process shares one
+// set of caches and a whole run compiles each guest at most once, with later
+// processes reusing the machine code rather than each paying its own cold compile.
 //
 // A false return (no resolvable user cache directory) signals the caller to fall
 // back to a non-persistent path rather than fail.
 func cacheRoot() (string, bool) {
-	if testing.Testing() {
-		return filepath.Join(os.TempDir(), testCacheRootDirName), true
-	}
-	base, err := os.UserCacheDir()
-	if err != nil {
+	if userCacheDirAtStartErr != nil {
 		return "", false
 	}
-	return filepath.Join(base, userCacheRootDirName), true
+	name := userCacheRootDirName
+	if testing.Testing() {
+		name = testCacheRootDirName
+	}
+	return filepath.Join(userCacheDirAtStart, name), true
 }
 
 // AggregaCacheRoot returns the root directory the CLI's persistent caches live
