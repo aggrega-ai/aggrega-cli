@@ -292,13 +292,9 @@ func maximalWorkloadCompute() types.Workload {
 	return types.Workload{
 		APIVersion: "aggrega.ai/v1alpha1",
 		Kind:       "Workload",
-		Metadata: types.WorkloadMetadata{
-			Labels:      map[string]string{"app": "api-server"},
-			Annotations: map[string]string{"example.com/owner": "platform"},
-		},
-		Form:     "stateful",
-		Schedule: "@daily",
-		Replicas: ptr(2),
+		Form:       "stateful",
+		Schedule:   "@daily",
+		Replicas:   ptr(2),
 		InitContainers: []types.ContainerSpec{{
 			Name:    "await-db",
 			Image:   "busybox:1.36",
@@ -393,13 +389,9 @@ func maximalWorkloadReference() types.Workload {
 	return types.Workload{
 		APIVersion: "aggrega.ai/v1alpha1",
 		Kind:       "Workload",
-		Metadata: types.WorkloadMetadata{
-			Labels:      map[string]string{"app": "managed-db"},
-			Annotations: map[string]string{"example.com/owner": "platform"},
-		},
-		Form:     "reference",
-		Endpoint: "db.managed.example.com",
-		Port:     5432,
+		Form:       "reference",
+		Endpoint:   "db.managed.example.com",
+		Port:       5432,
 	}
 }
 

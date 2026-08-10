@@ -3,12 +3,12 @@
 
 // Workload struct surface — the platform-owned `aggrega.ai/v1alpha1` Workload
 // kind referenced by Recipes that adopt the synthesized input kind. The Workload
-// and WorkloadMetadata declarations are generated from
-// workload-v1alpha1.schema.json in the aggrega-schemas repo, so they cannot drift
-// from it; the value types they reference are hand-written here and mirror that
-// same schema. At runtime the parsed value is constrained by that schema's
-// source, which pkg/schemas/jsonschema rebinds from the aggrega-schemas module
-// as WorkloadJSONSchema.
+// declaration is generated from workload-v1alpha1.schema.json in the
+// aggrega-schemas repo, so it cannot drift from it; the value types it
+// references are hand-written here and mirror that same schema. At runtime the
+// parsed value is constrained by that schema's source, which
+// pkg/schemas/jsonschema rebinds from the aggrega-schemas module as
+// WorkloadJSONSchema.
 //
 // Validation flow: yaml.Unmarshal decodes into typed Go fields; the consumer
 // (Phase B.2) calls validator.ValidateWorkload to validate the parsed value
@@ -33,26 +33,24 @@ import (
 
 //go:generate go run ../../internal/tools/typegen workload_gen.go
 
-// Workload's struct declarations (Workload and WorkloadMetadata) are generated
-// into workload_gen.go from the published workload-v1alpha1 schema, and the
-// schema's descriptions become their godoc. The schema declares no description
-// on the metadata object, so WorkloadMetadata itself carries none; its two
-// fields carry theirs. This hand-written companion holds the value types those
-// declarations reference — ContainerSpec, VolumeSpec, ServiceSpec, Scheduling,
+// Workload's struct declaration is generated into workload_gen.go from the
+// published workload-v1alpha1 schema, and the schema's descriptions become its
+// godoc. This hand-written companion holds the value types that declaration
+// references — ContainerSpec, VolumeSpec, ServiceSpec, Scheduling,
 // PodSecurityContext, DNSConfig and HostAlias, together with the types those
 // reference in turn — plus the custom yaml and json codecs ResourceList
 // carries.
 //
-// WorkloadMetadata's Labels and Annotations are annotated in the schema as
-// map[string]string rather than OrderedMap[string], the typing that preserves
-// author key order. They are the synthesis-intermediate shape, parallel to the
-// K8s-shaped pass-through fields documented at
-// aggrega-docs/language-reference/entities/workload.md § Validation surface:
-// Workload values are programmatically constructed by Recipe synthesis or
-// parsed from a default yaml.v3 unmarshal of templated output rather than
-// arriving as author-declared YAML, so author key order is not load-bearing at
-// this layer. AggregateMetadata.Labels uses the order-preserving typing,
-// because module-level labels there are author-declared.
+// Scheduling.NodeSelector is typed map[string]string rather than
+// OrderedMap[string], the typing that preserves author key order. It is the
+// synthesis-intermediate shape, parallel to the K8s-shaped pass-through fields
+// documented at aggrega-docs/language-reference/entities/workload.md
+// § Validation surface: Workload values are programmatically constructed by
+// Recipe synthesis or parsed from a default yaml.v3 unmarshal of templated
+// output rather than arriving as author-declared YAML, so author key order is
+// not load-bearing at this layer. AggregateMetadata.Labels uses the
+// order-preserving typing, because module-level labels there are
+// author-declared.
 
 // DNSConfig mirrors the K8s pod dnsConfig shape. Nameservers and Searches have
 // compose analogs (dns / dns_search); Options is opaque K8s-shaped pass-through

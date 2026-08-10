@@ -190,10 +190,6 @@ func TestWorkload_FullSurfaceParses(t *testing.T) {
 	t.Parallel()
 	src := []byte(`apiVersion: aggrega.ai/v1alpha1
 kind: Workload
-metadata:
-  name: api-server
-  labels:
-    tier: backend
 replicas: 3
 initContainers:
   - image: migrator:1.0
@@ -268,8 +264,5 @@ serviceAccount: app-sa
 	}
 	if w.ServiceAccount != "app-sa" {
 		t.Errorf("serviceAccount: %q", w.ServiceAccount)
-	}
-	if w.Metadata.Labels["tier"] != "backend" {
-		t.Errorf("metadata.labels: %v", w.Metadata.Labels)
 	}
 }

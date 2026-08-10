@@ -271,9 +271,6 @@ func TestWorkload_RoundTripPlaceholder(t *testing.T) {
 	src := []byte(`
 apiVersion: aggrega.ai/v1alpha1
 kind: Workload
-metadata:
-  name: test
-  version: "1.0.0"
 containers:
   zcontainer:
     image: z:latest
