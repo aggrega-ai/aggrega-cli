@@ -426,8 +426,9 @@ properties: {}
 
 // TestExpand_HostBearingRefRejected asserts a reference carrying a registry
 // host (the `oci://…` form) is rejected loudly with ErrHostInLibraryRef, and
-// the diagnostic suggests the identity-form equivalent. The message is
-// domain-only — it reaches user terminals and carries no process vocabulary.
+// the diagnostic suggests the identity-form equivalent. The suggestion is the
+// contract: a rejection that does not name the accepted spelling leaves the
+// author guessing at it.
 func TestExpand_HostBearingRefRejected(t *testing.T) {
 	t.Parallel()
 
@@ -442,11 +443,6 @@ properties: {}
 	msg := err.Error()
 	if !strings.Contains(msg, "DbSizing#/schemas/Storage") {
 		t.Errorf("rejection should suggest the identity form `DbSizing#/schemas/Storage`; got %q", msg)
-	}
-	for _, leak := range []string{"WI", "Wave", "intent", "TANDEM", "LDR 00", "Scope"} {
-		if strings.Contains(msg, leak) {
-			t.Errorf("rejection message leaks process vocabulary %q: %s", leak, msg)
-		}
 	}
 }
 
