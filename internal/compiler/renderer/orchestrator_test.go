@@ -39,11 +39,10 @@ func testInput() renderer.RendererInput {
 			Spec: types.IRSpec{
 				Nodes: nodes,
 
-				Edges:          nil,
-				ValuesMapping:  valuesMapping,
-				InfraMapping:   types.OrderedMap[json.RawMessage]{},
-				FeatureMarkers: nil,
-				Provenance:     types.IRProvenance{CompilerVersion: "0.1.0", AggregateVersion: "1.0.0"},
+				Edges:         nil,
+				ValuesMapping: valuesMapping,
+				InfraMapping:  types.OrderedMap[json.RawMessage]{},
+				Provenance:    types.IRProvenance{CompilerVersion: "0.1.0", AggregateVersion: "1.0.0"},
 			},
 		},
 		FeatureOrder: ir.FeatureOrder{},

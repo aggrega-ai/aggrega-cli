@@ -387,15 +387,6 @@ func TestPipeline_FeatureNormalization(t *testing.T) {
 	if credsEntry.Type != "core/db-creds" {
 		t.Errorf("credential attachment type: %q", credsEntry.Type)
 	}
-
-	// Markers should include both
-	markerSet := map[string]bool{}
-	for _, m := range graph.Spec.FeatureMarkers {
-		markerSet[m] = true
-	}
-	if !markerSet["core/monitoring"] || !markerSet["core/db-creds"] {
-		t.Errorf("markers: %v", graph.Spec.FeatureMarkers)
-	}
 }
 
 func TestPipeline_SelectorViolation(t *testing.T) {
@@ -486,7 +477,6 @@ func TestPipeline_DeterministicOutput(t *testing.T) {
 
 	type snapshot struct {
 		edgeSources []string
-		markers     []string
 		pathCount   int
 	}
 
@@ -501,7 +491,6 @@ func TestPipeline_DeterministicOutput(t *testing.T) {
 
 		s := &snapshot{
 			edgeSources: sources,
-			markers:     graph.Spec.FeatureMarkers,
 			pathCount:   len(analysis.Paths),
 		}
 

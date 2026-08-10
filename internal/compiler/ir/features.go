@@ -20,7 +20,6 @@ import (
 type featureResult struct {
 	Features     types.OrderedMap[types.IRFeatureEntry]
 	FeatureOrder []string // deterministic order following Onion Model
-	Markers      []string // canonical feature type strings
 
 	// leafScope records which authoring scope currently owns each merged
 	// leaf, so a contribution from a broader scope cannot overwrite a
@@ -271,11 +270,6 @@ func aggregateCanonicalPath(topoNode *topology.TopologyNode) string {
 // mergeContribution body, whatever the attachment produces. There is no
 // second construction path for a credential to drift down, and no second
 // precedence semantic for one to be governed by.
-//
-// Markers (the canonical feature-type strings the IR exposes via
-// FeatureMarkers) are accumulated into a set across all five tiers, then
-// sort-extracted at the end so byte-identical input produces
-// byte-identical output across runs.
 func collectNodeFeatures(
 	nodeID string,
 	topoNode *topology.TopologyNode,
@@ -284,8 +278,6 @@ func collectNodeFeatures(
 	catalogLookup resolver.CatalogLookup,
 ) (*featureResult, error) {
 	result := newFeatureResult()
-
-	markerSet := map[string]bool{}
 
 	// Collect features in Onion Model order.
 	// Each tier appends FeatureAttachments; we process them in order.
@@ -314,7 +306,7 @@ func collectNodeFeatures(
 					}
 				}
 			}
-			if err := mergeContribution(result, fa.InstanceName, fa.Feature.Type, fa.Feature.Values, types.OrderedMap[any]{}, fa.Feature.Inject, markerSet, catalogLookup, nodeID, prov, componentScope); err != nil {
+			if err := mergeContribution(result, fa.InstanceName, fa.Feature.Type, fa.Feature.Values, types.OrderedMap[any]{}, fa.Feature.Inject, catalogLookup, nodeID, prov, componentScope); err != nil {
 				return nil, err
 			}
 		}
@@ -328,7 +320,7 @@ func collectNodeFeatures(
 	if topoNode.SubsystemPath != "" {
 		subsystemFeatures := collectSubsystemFeatures(types.Normalize(resolveResult.Aggregate), topoNode.SubsystemPath)
 		for _, sf := range subsystemFeatures {
-			if err := mergeContribution(result, sf.name, sf.feat.Type, sf.feat.Values, types.OrderedMap[any]{}, sf.feat.Inject, markerSet, catalogLookup, nodeID, explicitProvenance, scopeShared); err != nil {
+			if err := mergeContribution(result, sf.name, sf.feat.Type, sf.feat.Values, types.OrderedMap[any]{}, sf.feat.Inject, catalogLookup, nodeID, explicitProvenance, scopeShared); err != nil {
 				return nil, err
 			}
 		}
@@ -342,7 +334,7 @@ func collectNodeFeatures(
 	if topoNode.BoundaryPath != "" && resolveResult.Release != nil {
 		boundaryFeatures := collectBoundaryWideFeatures(resolveResult.Release.Spec.Boundaries, topoNode.BoundaryPath)
 		for _, bf := range boundaryFeatures {
-			if err := mergeContribution(result, bf.name, bf.feat.Type, types.OrderedMap[any]{}, bf.feat.Infra, nil, markerSet, catalogLookup, nodeID, explicitProvenance, scopeShared); err != nil {
+			if err := mergeContribution(result, bf.name, bf.feat.Type, types.OrderedMap[any]{}, bf.feat.Infra, nil, catalogLookup, nodeID, explicitProvenance, scopeShared); err != nil {
 				return nil, err
 			}
 		}
@@ -367,17 +359,11 @@ func collectNodeFeatures(
 					AnnotationSource: record.AnnotationSource,
 				}
 			}
-			if err := mergeContribution(result, cf.name, cf.feat.Type, types.OrderedMap[any]{}, cf.feat.Infra, nil, markerSet, catalogLookup, nodeID, prov, scopeComponent); err != nil {
+			if err := mergeContribution(result, cf.name, cf.feat.Type, types.OrderedMap[any]{}, cf.feat.Infra, nil, catalogLookup, nodeID, prov, scopeComponent); err != nil {
 				return nil, err
 			}
 		}
 	}
-
-	// Build sorted markers
-	for m := range markerSet {
-		result.Markers = append(result.Markers, m)
-	}
-	sort.Strings(result.Markers)
 
 	// Derive top-level Origin / AnnotationKey / AnnotationSource per
 	// IRFeatureEntry from the per-leaf provenance maps.
@@ -535,8 +521,6 @@ func featureVersion(catalogLookup resolver.CatalogLookup, featType string) strin
 //     mapping, so a scope-ranked inject would put two orderings on one
 //     attachment.
 //
-// The markerSet parameter aggregates attachment-type strings across all
-// tiers; the caller sort-extracts at the end of collectNodeFeatures.
 // FeatureOrder is appended only on first sight of an attachment instance
 // name, so the order vector stays stable across re-merges of the same
 // instance. It is the one execution order Phase A and Phase B.6 both follow.
@@ -546,7 +530,6 @@ func mergeContribution(
 	featType string,
 	values, infra types.OrderedMap[any],
 	inject *types.InjectBlock,
-	markerSet map[string]bool,
 	catalogLookup resolver.CatalogLookup,
 	nodeID string,
 	provenance featureProvenance,
@@ -567,7 +550,6 @@ func mergeContribution(
 		result.Features.Set(instanceName, entry)
 		result.FeatureOrder = append(result.FeatureOrder, instanceName)
 		recordLeafScopes(result.leafScope, instanceName, values, infra, scope)
-		markerSet[featType] = true
 		return nil
 	}
 
@@ -610,7 +592,6 @@ func mergeContribution(
 		}
 	}
 	result.Features.Set(instanceName, existing)
-	markerSet[featType] = true
 	return nil
 }
 

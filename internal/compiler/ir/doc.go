@@ -41,8 +41,7 @@
 //     collision resolves to — never a last-writer-wins merge.
 //   - Determinism. Every iteration in this package that contributes to
 //     IRGraph output runs in deterministic order: the topology's Nodes
-//     OrderedMap preserves Aggregate author order; Markers are
-//     accumulated into a set then sort-extracted; the edges slice is
+//     OrderedMap preserves Aggregate author order; the edges slice is
 //     inherited from topology already sorted alphabetical-by-source;
 //     secrets and features per-node iterate the topology's
 //     already-ordered attachments.

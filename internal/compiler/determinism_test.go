@@ -60,8 +60,7 @@ func TestDeterministicCompilation_FullPipeline(t *testing.T) {
 // Author order applies to author-declared collections (Aggregate
 // components, Workload containers, env vars, edges via the compositional
 // cross-product). Synthesized derived collections that lack a single
-// authoring surface (e.g., feature_markers accumulated into a set) sort
-// alphabetically; see the rationale comment at
+// authoring surface sort alphabetically; see the rationale comment at
 // internal/compiler/topology/topology.go in the Build orchestrator.
 func TestDeterministicCompilation_IRAuthorOrder(t *testing.T) {
 	t.Parallel()

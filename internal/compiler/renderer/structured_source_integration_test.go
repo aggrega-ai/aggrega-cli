@@ -223,11 +223,10 @@ func integrationInput(t *testing.T, workspaceRoot, componentType, nodeID, _provi
 		Graph: &types.IRGraph{
 			Metadata: types.IRMetadata{AggregateName: "test-app"},
 			Spec: types.IRSpec{
-				Nodes:          nodes,
-				ValuesMapping:  valuesMapping,
-				InfraMapping:   types.OrderedMap[json.RawMessage]{},
-				FeatureMarkers: nil,
-				Provenance:     types.IRProvenance{CompilerVersion: "0.1.0", AggregateVersion: "1.0.0"},
+				Nodes:         nodes,
+				ValuesMapping: valuesMapping,
+				InfraMapping:  types.OrderedMap[json.RawMessage]{},
+				Provenance:    types.IRProvenance{CompilerVersion: "0.1.0", AggregateVersion: "1.0.0"},
 			},
 		},
 		FeatureOrder: ir.FeatureOrder{},

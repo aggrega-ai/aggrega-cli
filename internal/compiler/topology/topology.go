@@ -33,12 +33,8 @@ import (
 //     contract is documented in this package's doc.go (Cross-package
 //     determinism contract).
 //
-// IRSpec.FeatureMarkers (in the downstream IR) is the canonical example
-// of a synthesized-derived collection that lacks a single authoring
-// surface — markers are accumulated into a Go set across the per-node
-// feature-cascade walk and sort-extracted alphabetically for stability.
-// TopologyResult's own fields are all author-declared; the synthesised-
-// derived discipline applies elsewhere.
+// TopologyResult's own fields are all author-declared; the
+// synthesised-derived discipline applies elsewhere.
 //
 // FeatureAttachments is a per-node slice; the per-node iteration order is
 // the YAML attachment order from collectAttachments. ExportedComponents maps the alias an Aggregate

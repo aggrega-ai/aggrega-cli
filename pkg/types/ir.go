@@ -75,16 +75,11 @@ type IRMetadata struct {
 	AggregateName string `json:"aggregate_name"`
 }
 
-// IRSpec is the spec subtree of an IR document, carrying the eight
+// IRSpec is the spec subtree of an IR document, carrying the seven
 // data classes that downstream stages consume:
 //
 //   - Nodes / Edges — the topological graph (nodes keyed by node ID,
 //     edges as a slice of directed source/target pairs).
-//   - FeatureMarkers — the de-duplicated, lexicographically sorted set of
-//     Feature type strings, one entry per distinct Feature type attached
-//     anywhere in the graph (for example "core/logging"), whatever declared
-//     the attachment. Sorting is what makes the set byte-identical across
-//     runs of the same input.
 //   - ValuesMapping / InfraMapping — per-node opaque developer payloads
 //     keyed by node ID, carried as json.RawMessage so the renderer
 //     hands them through to provider engines without re-marshalling.
@@ -102,7 +97,6 @@ type IRMetadata struct {
 type IRSpec struct {
 	Nodes                OrderedMap[IRNode]                     `json:"nodes"`
 	Edges                []IREdge                               `json:"edges"`
-	FeatureMarkers       []string                               `json:"feature_markers"`
 	ValuesMapping        OrderedMap[json.RawMessage]            `json:"values_mapping"`
 	InfraMapping         OrderedMap[json.RawMessage]            `json:"infra_mapping"`
 	FeatureValuesMapping OrderedMap[OrderedMap[IRFeatureEntry]] `json:"feature_values_mapping"`

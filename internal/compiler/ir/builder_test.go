@@ -16,8 +16,7 @@
 //   - TestBuildIR_FeatureNormalization — pins the FeatureValuesMapping
 //     and Secrets split (an operational feature lands in Features; a
 //     credential-labelled one routes to Secrets via the
-//     credential-routing branch) plus the FeatureOrder return value and
-//     the feature_markers slice's deduplicate-and-sort discipline.
+//     credential-routing branch) plus the FeatureOrder return value.
 //   - TestBuildIR_SyncWave — pins findSyncWave's per-node lookup against
 //     a Release.Spec.SyncWaves declaration with two waves.
 //   - TestBuildIR_InfraMapping — pins the InfraMapping population from
@@ -244,15 +243,6 @@ func TestBuildIR_FeatureNormalization(t *testing.T) {
 	// Attachment order — one vector covering every attachment, in cascade order.
 	if len(order["api"]) != 2 || order["api"][0] != "logging" || order["api"][1] != "db-creds" {
 		t.Errorf("attachment order: %v", order["api"])
-	}
-
-	// Markers
-	found := map[string]bool{}
-	for _, m := range graph.Spec.FeatureMarkers {
-		found[m] = true
-	}
-	if !found["core/logging"] || !found["core/db-creds"] {
-		t.Errorf("markers: %v", graph.Spec.FeatureMarkers)
 	}
 }
 

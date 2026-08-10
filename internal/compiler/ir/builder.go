@@ -7,7 +7,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"sort"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/topology"
 	"github.com/aggrega-ai/aggrega-cli/pkg/compactform"
@@ -84,9 +83,8 @@ type FeatureOrder map[string][]string
 // Aggregate's author-declared component order — topology.Nodes is an
 // OrderedMap populated during subsystem flattening in author order, and
 // author order flows through to IR JSON output via OrderedMap.MarshalJSON.
-// The feature_markers slice is accumulated into a set then sort-extracted
-// for stability across runs; a node's attachments iterate in the topology
-// attachment order; the edges slice is inherited from
+// A node's attachments iterate in the topology attachment order; the
+// edges slice is inherited from
 // topology in compositional author order (component sequence ×
 // within-component `uses:` socket order × within-socket alias order ×
 // per-node attachments — topology.Build step 4 drives
@@ -129,7 +127,6 @@ func BuildIRContext(ctx context.Context, cfg BuildIRConfig) (*types.IRGraph, Fea
 	infraMapping := types.OrderedMap[json.RawMessage]{}
 	featureValuesMapping := types.OrderedMap[types.OrderedMap[types.IRFeatureEntry]]{}
 	featureOrder := make(FeatureOrder)
-	allMarkers := map[string]bool{}
 
 	// Feature/Secret attachment schema-conformance gate (Step 3). The merged
 	// per-attachment values/infra only exist after the 5-Tier merge below, so
@@ -258,9 +255,6 @@ func BuildIRContext(ctx context.Context, cfg BuildIRConfig) (*types.IRGraph, Fea
 			featureValuesMapping.Set(nodeID, featResult.Features)
 			featureOrder[nodeID] = featResult.FeatureOrder
 		}
-		for _, m := range featResult.Markers {
-			allMarkers[m] = true
-		}
 
 		// Validate the merged attachment pillars against each attachment's
 		// declared Feature schema (collected across all nodes for one joined
@@ -338,15 +332,6 @@ func BuildIRContext(ctx context.Context, cfg BuildIRConfig) (*types.IRGraph, Fea
 		irEdges = append(irEdges, irEdge)
 	}
 
-	// Feature markers (sorted)
-	markers := make([]string, 0, len(allMarkers))
-	for m := range allMarkers {
-		if m != "" {
-			markers = append(markers, m)
-		}
-	}
-	sort.Strings(markers)
-
 	// 6. Provenance
 	prov := buildProvenance(res, cfg.CompilerVersion)
 
@@ -367,7 +352,6 @@ func BuildIRContext(ctx context.Context, cfg BuildIRConfig) (*types.IRGraph, Fea
 		Spec: types.IRSpec{
 			Nodes:                irNodes,
 			Edges:                irEdges,
-			FeatureMarkers:       markers,
 			ValuesMapping:        valuesMapping,
 			InfraMapping:         infraMapping,
 			FeatureValuesMapping: featureValuesMapping,

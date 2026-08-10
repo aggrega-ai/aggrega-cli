@@ -8,8 +8,7 @@
 // and one credential feature ("core/db-creds", labelled with the
 // `feature.aggrega.ai/kind: secret` label).
 //
-// Test cases cover the three mergeFeature behaviour rules plus the
-// determinism discipline at the markers slice:
+// Test cases cover the three mergeFeature behaviour rules:
 //
 //   - TestCollectNodeFeatures_SimpleComponent — happy path: one
 //     operational feature lands in Features with values intact and the
@@ -24,9 +23,6 @@
 //     deep-merge on values: two attachments of the same instance name
 //     merge per-key with the second writer winning where both declare
 //     the same key.
-//   - TestCollectNodeFeatures_MarkersDeduplicatedAndSorted — pins the
-//     determinism discipline at the markers slice: duplicate types
-//     collapse to one entry and the slice is sorted.
 //   - TestSplitPath — pins the dual-separator path tokeniser used by
 //     subsystem and boundary path traversal.
 
@@ -171,10 +167,10 @@ func TestResolvedVersionIsFeatureVersionNotComponent(t *testing.T) {
 	}
 	result := newFeatureResult()
 	empty := types.OrderedMap[any]{}
-	if err := mergeContribution(result, "mon", "core/monitoring", empty, empty, nil, map[string]bool{}, cat, "api", explicitProvenance, scopeComponent); err != nil {
+	if err := mergeContribution(result, "mon", "core/monitoring", empty, empty, nil, cat, "api", explicitProvenance, scopeComponent); err != nil {
 		t.Fatalf("mergeContribution feature: %v", err)
 	}
-	if err := mergeContribution(result, "creds", "core/db-creds", empty, empty, nil, map[string]bool{}, cat, "api", explicitProvenance, scopeComponent); err != nil {
+	if err := mergeContribution(result, "creds", "core/db-creds", empty, empty, nil, cat, "api", explicitProvenance, scopeComponent); err != nil {
 		t.Fatalf("mergeContribution credential: %v", err)
 	}
 	if f, _ := result.Features.Get("mon"); f.ResolvedVersion != "2.5.0" {
@@ -286,9 +282,8 @@ func TestMergeContribution_CredentialCarriesPerInstanceInfra(t *testing.T) {
 	values.Set("vault_path", "/secret/db")
 	infra := types.OrderedMap[any]{}
 	infra.Set("replica_count", "3")
-	markerSet := map[string]bool{}
 
-	if err := mergeContribution(result, "db-creds", "core/db-creds", values, infra, nil, markerSet, featureCatalog(), "api", explicitProvenance, scopeComponent); err != nil {
+	if err := mergeContribution(result, "db-creds", "core/db-creds", values, infra, nil, featureCatalog(), "api", explicitProvenance, scopeComponent); err != nil {
 		t.Fatalf("mergeContribution: %v", err)
 	}
 	s, ok := result.Features.Get("db-creds")
@@ -364,38 +359,6 @@ func TestCollectNodeFeatures_LastWinsMerge(t *testing.T) {
 	port, _ := f.Values.Get("port")
 	if port != 9090 {
 		t.Errorf("expected port 9090 preserved, got %v", port)
-	}
-}
-
-func TestCollectNodeFeatures_MarkersDeduplicatedAndSorted(t *testing.T) {
-	t.Parallel()
-
-	apiNode := &topology.TopologyNode{InstanceID: "api"}
-	nodes := types.OrderedMap[*topology.TopologyNode]{}
-	nodes.Set("api", apiNode)
-	topoResult := &topology.TopologyResult{
-		Nodes: nodes,
-		FeatureAttachments: map[string][]topology.FeatureAttachment{
-			"api": {
-				{InstanceName: "z-feat", Feature: types.FeatureInstance{Type: "z-type"}},
-				{InstanceName: "a-feat", Feature: types.FeatureInstance{Type: "a-type"}},
-				{InstanceName: "z-feat2", Feature: types.FeatureInstance{Type: "z-type"}}, // duplicate type
-			},
-		},
-	}
-	resolveResult := &resolver.ResolveResult{
-		Aggregate: &types.Aggregate{Metadata: types.AggregateMetadata{Name: "test"}},
-	}
-
-	result, err := collectNodeFeatures("api", apiNode, topoResult, resolveResult, featureCatalog())
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if len(result.Markers) != 2 {
-		t.Fatalf("expected 2 unique markers, got %d: %v", len(result.Markers), result.Markers)
-	}
-	if result.Markers[0] != "a-type" || result.Markers[1] != "z-type" {
-		t.Errorf("markers not sorted/deduped: %v", result.Markers)
 	}
 }
 

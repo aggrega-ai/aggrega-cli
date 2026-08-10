@@ -260,7 +260,6 @@ func irZeroScaffold() *types.IRGraph {
 				Alias:             "main",
 				SocketDeclaration: types.SocketDeclarationDeclared,
 			}},
-			FeatureMarkers:       []string{},
 			ValuesMapping:        types.OrderedMap[json.RawMessage]{},
 			InfraMapping:         types.OrderedMap[json.RawMessage]{},
 			FeatureValuesMapping: types.OrderedMap[types.OrderedMap[types.IRFeatureEntry]]{},
