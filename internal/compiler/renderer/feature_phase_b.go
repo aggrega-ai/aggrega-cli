@@ -14,7 +14,9 @@ import (
 
 // resolveValuesMappingText resolves a ValuesMapping struct to a Go template
 // source string. Mode 1 (inline) returns the authored content directly;
-// mode 2 (file $import:) reads the file from disk; mode 3 (library
+// mode 2 (file $import:) reads the file from disk, at the absolute path the
+// catalog resolved against the declaring entity's own directory when it
+// loaded the entity; mode 3 (library
 // $import: in the bare-name identity form `<Library>#/mappings/<entry>`)
 // resolves the referenced MappingLibrary entry's template fragment from
 // mappingLibs (the local catalog plus any lockfile-pinned libraries bridged
@@ -53,7 +55,9 @@ func resolveValuesMappingText(vm types.ValuesMapping, entityName, entityKind str
 
 // resolveWorkloadText resolves a WorkloadTemplate struct to its Go-
 // template source string. Mode 1 (inline) returns the authored content
-// directly; mode 2 (file $import:) reads the file from disk; mode 3
+// directly; mode 2 (file $import:) reads the file from disk, at the absolute
+// path the catalog resolved against the declaring entity's own directory when
+// it loaded the entity; mode 3
 // (library $import: in the bare-name identity form
 // `<Library>#/workloads/<entry>`) resolves the referenced WorkloadLibrary
 // entry's template fragment from workloadLibs (the local catalog),
@@ -87,9 +91,10 @@ func resolveWorkloadText(w types.WorkloadTemplate, entityName string, workloadLi
 
 // resolveArtifactEntryText resolves an ArtifactEntry struct to its
 // Go-template source string. Mode 1 (inline) returns the authored
-// content directly; mode 2 (file $import:) reads the file from disk.
-// The envelope schema rejects oci:// prefixes at artifacts entries
-// for the same reason as workload:.
+// content directly; mode 2 (file $import:) reads the file from disk, at
+// the absolute path the catalog resolved against the declaring entity's
+// own directory when it loaded the entity. The envelope schema rejects
+// oci:// prefixes at artifacts entries for the same reason as workload:.
 func resolveArtifactEntryText(a types.ArtifactEntry, entityName, artifactName string) (string, error) {
 	text, err := a.Text()
 	if err != nil {

@@ -1110,29 +1110,84 @@ func parseRecipeEntity(data []byte, path string) (types.Recipe, error) {
 	if err := validator.ValidateRecipe(&e, path); err != nil {
 		return types.Recipe{}, err
 	}
-	if s, ok := e.Spec.Source.(string); ok && s != "" && !filepath.IsAbs(s) {
-		abs, err := filepath.Abs(filepath.Join(filepath.Dir(path), s))
+	if s, ok := e.Spec.Source.(string); ok && s != "" {
+		abs, err := resolveAgainstEntityDir(path, s)
 		if err != nil {
 			return types.Recipe{}, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, fmt.Sprintf("resolve Recipe source %q", s))
 		}
 		e.Spec.Source = abs
 	}
+	mappingTarget, err := resolveImportPath(path, e.Spec.ValuesMapping.Import, e.Spec.ValuesMapping)
+	if err != nil {
+		return types.Recipe{}, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, fmt.Sprintf("resolve Recipe valuesMapping $import target %q", e.Spec.ValuesMapping.Import))
+	}
+	e.Spec.ValuesMapping.Import = mappingTarget
+
+	workloadTarget, err := resolveImportPath(path, e.Spec.Workload.Import, e.Spec.Workload)
+	if err != nil {
+		return types.Recipe{}, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, fmt.Sprintf("resolve Recipe workload $import target %q", e.Spec.Workload.Import))
+	}
+	e.Spec.Workload.Import = workloadTarget
+
 	for _, name := range e.Spec.Artifacts.Keys() {
 		entry, _ := e.Spec.Artifacts.Get(name)
-		// A library identity ref (`<Library>#/artifacts/<entry>`) is not a
-		// filesystem path — leave it untouched for the render-site resolver;
-		// only a relative local-file import is rewritten to absolute.
-		if entry.Import == "" || entry.IsLibraryImport() || filepath.IsAbs(entry.Import) {
-			continue
-		}
-		abs, err := filepath.Abs(filepath.Join(filepath.Dir(path), entry.Import))
+		target, err := resolveImportPath(path, entry.Import, entry)
 		if err != nil {
 			return types.Recipe{}, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, fmt.Sprintf("resolve Recipe artifact %q $import target %q", name, entry.Import))
 		}
-		entry.Import = abs
+		if target == entry.Import {
+			continue
+		}
+		entry.Import = target
 		e.Spec.Artifacts.Set(name, entry)
 	}
 	return e, nil
+}
+
+// importRef is the shape the three import-bearing Recipe and FeatureRecipe
+// fields — valuesMapping, workload, and each artifacts entry — have in common:
+// each answers on its own type whether the authored value is an identity
+// reference rather than a filesystem path. The question cannot be answered
+// generically because the fragment naming a library differs per field, so each
+// type keeps its own answer and this is how the shared resolution asks for it.
+type importRef interface {
+	IsLibraryImport() bool
+	HasOCIPrefix() bool
+}
+
+// resolveImportPath returns an authored `$import:` value resolved against the
+// directory of the entity file that declared it, so a path an author wrote
+// beside their own file reads the same whatever directory the build runs from.
+//
+// Three values come back untouched. An empty one carries no import at all. A
+// bare-name library reference and a registry-host reference are identities
+// rather than paths, and the consumption site reads their exact leading text to
+// resolve the first and to reject the second — so rewriting either would turn a
+// named refusal into a missing-file report. Everything else is a local path and
+// is anchored to the entity's directory.
+//
+// This is the one home of that resolution for every import-bearing field, so
+// the surfaces cannot come to disagree on what a relative path means.
+func resolveImportPath(entityPath, authored string, ref importRef) (string, error) {
+	if authored == "" || ref.IsLibraryImport() || ref.HasOCIPrefix() {
+		return authored, nil
+	}
+	return resolveAgainstEntityDir(entityPath, authored)
+}
+
+// resolveAgainstEntityDir anchors a relative authored path to the directory
+// holding the entity file that declared it, and returns an already-absolute
+// path unchanged.
+//
+// An entity parsed from bytes carrying no file of their own resolves against
+// the directory the process runs in, which is what an empty path's directory
+// component yields; such an entity has no directory to be relative to, so
+// there is no better anchor available at this point.
+func resolveAgainstEntityDir(entityPath, authored string) (string, error) {
+	if authored == "" || filepath.IsAbs(authored) {
+		return authored, nil
+	}
+	return filepath.Abs(filepath.Join(filepath.Dir(entityPath), authored))
 }
 
 // parseFeatureRecipeEntity is the FeatureRecipe analogue of parseRecipeEntity:
@@ -1154,26 +1209,35 @@ func parseFeatureRecipeEntity(data []byte, path string) (types.FeatureRecipe, er
 	if err := validator.ValidateFeatureRecipe(&e, path); err != nil {
 		return types.FeatureRecipe{}, err
 	}
-	if s, ok := e.Spec.Source.(string); ok && s != "" && !filepath.IsAbs(s) {
-		abs, err := filepath.Abs(filepath.Join(filepath.Dir(path), s))
+	if s, ok := e.Spec.Source.(string); ok && s != "" {
+		abs, err := resolveAgainstEntityDir(path, s)
 		if err != nil {
 			return types.FeatureRecipe{}, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, fmt.Sprintf("resolve FeatureRecipe source %q", s))
 		}
 		e.Spec.Source = abs
 	}
+	mappingTarget, err := resolveImportPath(path, e.Spec.ValuesMapping.Import, e.Spec.ValuesMapping)
+	if err != nil {
+		return types.FeatureRecipe{}, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, fmt.Sprintf("resolve FeatureRecipe valuesMapping $import target %q", e.Spec.ValuesMapping.Import))
+	}
+	e.Spec.ValuesMapping.Import = mappingTarget
+
+	workloadTarget, err := resolveImportPath(path, e.Spec.Workload.Import, e.Spec.Workload)
+	if err != nil {
+		return types.FeatureRecipe{}, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, fmt.Sprintf("resolve FeatureRecipe workload $import target %q", e.Spec.Workload.Import))
+	}
+	e.Spec.Workload.Import = workloadTarget
+
 	for _, name := range e.Spec.Artifacts.Keys() {
 		entry, _ := e.Spec.Artifacts.Get(name)
-		// A library identity ref (`<Library>#/artifacts/<entry>`) is not a
-		// filesystem path — leave it untouched for the render-site resolver;
-		// only a relative local-file import is rewritten to absolute.
-		if entry.Import == "" || entry.IsLibraryImport() || filepath.IsAbs(entry.Import) {
-			continue
-		}
-		abs, err := filepath.Abs(filepath.Join(filepath.Dir(path), entry.Import))
+		target, err := resolveImportPath(path, entry.Import, entry)
 		if err != nil {
 			return types.FeatureRecipe{}, cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, fmt.Sprintf("resolve FeatureRecipe artifact %q $import target %q", name, entry.Import))
 		}
-		entry.Import = abs
+		if target == entry.Import {
+			continue
+		}
+		entry.Import = target
 		e.Spec.Artifacts.Set(name, entry)
 	}
 	return e, nil

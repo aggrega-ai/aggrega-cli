@@ -27,7 +27,10 @@ var errValuesMappingShape = cerrors.Register("types/values-mapping-shape", cerro
 //     authored content verbatim; Import stays empty.
 //   - Mode 2 (file import): a YAML map of exactly one key
 //     `$import: <local-path>`. Import carries the path; Inline stays
-//     empty. IsLibraryImport returns false.
+//     empty. IsLibraryImport returns false. A relative path is anchored
+//     to the declaring entity's own directory when the catalog loads the
+//     entity, so what Import carries downstream of a catalog load is
+//     absolute.
 //   - Mode 3 (library import): a YAML map of exactly one key
 //     `$import: <Library>#/mappings/<entry>`, a host-less bare-name
 //     reference into a MappingLibrary entry (the version is supplied by
@@ -47,12 +50,17 @@ type ValuesMapping struct {
 	// value was a string scalar (mode 1). Empty for modes 2 and 3.
 	Inline string `json:"-" yaml:"-"`
 
-	// Import carries the authored $import: target when the YAML value
-	// was {$import: ...} (modes 2 and 3). Local path (mode 2) or
+	// Import carries the $import: target when the YAML value was
+	// {$import: ...} (modes 2 and 3). Local path (mode 2) or
 	// bare-name library identity (mode 3); use IsLibraryImport to
 	// discriminate. Named Import (not URL or Ref) to mirror the YAML
 	// key authors write, distinct from a library entry's
 	// canonical-resolved reference.
+	//
+	// A mode-2 path is the authored text as unmarshalled and the
+	// absolute resolved path once a catalog load has anchored it to the
+	// declaring entity's directory; a mode-3 identity is never rewritten,
+	// because the consumption site reads its exact text.
 	Import string `json:"-" yaml:"-"`
 }
 

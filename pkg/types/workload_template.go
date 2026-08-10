@@ -29,7 +29,10 @@ var errWorkloadTemplateShape = cerrors.Register("types/workload-template-shape",
 //     Import stays empty.
 //   - Mode 2 (file import): a YAML map of exactly one key `$import:
 //     <local-path>` pointing at a Go-template file. Import carries the
-//     path; IsLibraryImport returns false.
+//     path; IsLibraryImport returns false. A relative path is anchored to
+//     the declaring entity's own directory when the catalog loads the
+//     entity, so what Import carries downstream of a catalog load is
+//     absolute.
 //   - Mode 3 (library import): a YAML map of exactly one key
 //     `$import: <Library>#/workloads/<entry>`, a host-less bare-name
 //     reference into a WorkloadLibrary entry (the version is supplied by
