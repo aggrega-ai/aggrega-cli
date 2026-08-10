@@ -18,14 +18,26 @@
 //
 // Every case's schema is written as JSON, which is valid YAML, so the bytes the
 // guest receives and the bytes compiled here are identical.
+//
+// Reading the same file is not the same as agreeing, and the difference is what
+// the handshake at the bottom of this file exists for. Two halves that each
+// assert independently cannot tell agreement apart from one half never having
+// been asked: silence a half and the other still passes, and the pair goes on
+// reporting a parity that only one side checked. So each half pins the revision
+// of the fixture it verified, and each half reads the other's pin and the
+// other's test declarations. A half that is absent, suppressed, or pinned to an
+// older fixture is named out loud instead of being read as agreement.
 
 package lintops
 
 import (
 	"encoding/json"
+	"fmt"
+	"hash/fnv"
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"testing"
 
 	"go.yaml.in/yaml/v3"
@@ -38,6 +50,23 @@ import (
 // sensitivityParityFixture is the shared case file, held by the publishing
 // linter's crate because the guest reaches it without leaving its own tree.
 const sensitivityParityFixture = "../../plugins/publishing-linter/tests/fixtures/sensitivity_parity.json"
+
+// sensitivityParityGuestHalf is the guest's half of the check, read as text so
+// this half can see whether the other one is still there and still current.
+const sensitivityParityGuestHalf = "../../plugins/publishing-linter/tests/sensitivity_parity_test.rs"
+
+// sensitivityParityFixtureRevision is this half's record of the fixture it
+// verified, derived from the fixture's own bytes rather than tracked by hand so
+// that no edit can leave it behind. The guest half carries the same value in its
+// own source, and the two are compared against the fixture and against each
+// other.
+//
+// This is deliberately a SECOND copy of a value the guest also holds, and
+// unifying the two would destroy the only thing it does: one copy cannot
+// disagree with itself, and disagreement is the signal. When the fixture
+// changes, both copies move, and a run that updates only one is exactly the
+// half-verified state this pins.
+const sensitivityParityFixtureRevision = "daa8128427d906ef"
 
 type sensitivityParityCases struct {
 	LeafCases []struct {
@@ -57,12 +86,18 @@ type sensitivityParityCases struct {
 	} `json:"slotCases"`
 }
 
-func loadSensitivityParityCases(t *testing.T) sensitivityParityCases {
+func readSensitivityParityFixture(t *testing.T) []byte {
 	t.Helper()
 	raw, err := os.ReadFile(filepath.FromSlash(sensitivityParityFixture))
 	if err != nil {
 		t.Fatalf("read shared parity fixture %s: %v", sensitivityParityFixture, err)
 	}
+	return raw
+}
+
+func loadSensitivityParityCases(t *testing.T) sensitivityParityCases {
+	t.Helper()
+	raw := readSensitivityParityFixture(t)
 	var cases sensitivityParityCases
 	if err := json.Unmarshal(raw, &cases); err != nil {
 		t.Fatalf("parse shared parity fixture %s: %v", sensitivityParityFixture, err)
@@ -232,5 +267,274 @@ func TestSensitivityParityFixtureCoversEveryDivergenceShape(t *testing.T) {
 		if !present[required] {
 			t.Errorf("the shared fixture no longer carries the %q case; that shape is where the two readers can diverge", required)
 		}
+	}
+}
+
+// ---------------------------------------------------------------------
+// The cross-half handshake
+// ---------------------------------------------------------------------
+
+// sensitivityParityRevision derives a fixture's revision from its own bytes.
+//
+// Derived rather than authored, because an authored revision is one an editor
+// can forget to bump, and a forgotten bump leaves both halves pinned to a value
+// that no longer describes what they read — the stale record this handshake
+// exists to refuse. Any change to the fixture, down to a byte, moves it.
+//
+// FNV-1a is used because what is needed is a short, exactly reproducible
+// fingerprint of a file both halves already read, in two languages, with no
+// dependency added to a guest crate to get it. The risk being managed is an
+// edit going unnoticed, not an adversary constructing a collision. The guest
+// half spells the same function out by hand; that duplication is deliberate and
+// is explained where the pinned constant is declared.
+func sensitivityParityRevision(fixture []byte) string {
+	h := fnv.New64a()
+	_, _ = h.Write(fixture)
+	return fmt.Sprintf("%016x", h.Sum64())
+}
+
+// characterLiteralEnd returns the index of the quote that closes a character
+// literal opening at i, or i itself when what opens there is not one.
+//
+// The closing quote is what distinguishes the two things a single quote can
+// begin in the languages read here: a character literal closes, and a lifetime
+// does not. Anything unrecognised is left to be treated as ordinary text, which
+// is the safe direction — a lifetime read as a character literal would swallow
+// the code after it.
+func characterLiteralEnd(src string, i int) int {
+	const longestEscape = 9 // the widest escape form, plus its two quotes
+	if i+2 < len(src) && src[i+1] == '\\' {
+		for j := i + 2; j < len(src) && j <= i+longestEscape; j++ {
+			if src[j] == '\'' {
+				return j
+			}
+		}
+		return i
+	}
+	if i+2 < len(src) && src[i+2] == '\'' {
+		return i + 2
+	}
+	return i
+}
+
+// stripSourceComments removes line and block comments, leaving code text and
+// line structure intact. The two halves are written in languages that share
+// C-style comments, double-quoted strings and single-quoted character
+// literals, so one reader serves both.
+//
+// Stripping first is what makes the checks below safe rather than merely
+// convenient. Every token they hunt is also a word this file and its
+// counterpart use in explanation — a test's name, the attribute that suppresses
+// a test, a revision. A scan over raw text would read a sentence describing the
+// mechanism as an instance of it. What survives stripping is code, and only
+// code can silence a test.
+func stripSourceComments(src string) string {
+	const (
+		code = iota
+		lineComment
+		blockComment
+		stringLiteral
+	)
+	var out strings.Builder
+	out.Grow(len(src))
+	state := code
+	for i := 0; i < len(src); i++ {
+		c := src[i]
+		switch state {
+		case code:
+			switch {
+			case c == '/' && i+1 < len(src) && src[i+1] == '/':
+				state = lineComment
+				i++
+			case c == '/' && i+1 < len(src) && src[i+1] == '*':
+				state = blockComment
+				i++
+			case c == '\'':
+				// Skipped whole when it is a character literal, because a
+				// double quote inside one is an ordinary thing to write and
+				// reading it as the start of a string would invert every
+				// string boundary in the rest of the file — leaving comments
+				// unstripped in the tail, which is exactly where a silenced
+				// test would then hide.
+				if end := characterLiteralEnd(src, i); end > i {
+					out.WriteString(src[i : end+1])
+					i = end
+				} else {
+					out.WriteByte(c)
+				}
+			default:
+				if c == '"' {
+					state = stringLiteral
+				}
+				out.WriteByte(c)
+			}
+		case lineComment:
+			if c == '\n' {
+				state = code
+				out.WriteByte(c)
+			}
+		case blockComment:
+			switch {
+			case c == '*' && i+1 < len(src) && src[i+1] == '/':
+				state = code
+				i++
+			case c == '\n':
+				out.WriteByte(c)
+			}
+		case stringLiteral:
+			out.WriteByte(c)
+			switch {
+			case c == '\\' && i+1 < len(src):
+				i++
+				out.WriteByte(src[i])
+			case c == '"':
+				state = code
+			}
+		}
+	}
+	return out.String()
+}
+
+// sensitivityParityPinnedValue reads the value a declaration assigns, refusing
+// both zero matches and more than one. Zero means the other half's record of
+// what it verified is gone, and a comparison against nothing passes no matter
+// what the other half does — the exact shape of failure this handshake replaces.
+// More than one means the wrong record could be read.
+func sensitivityParityPinnedValue(t *testing.T, source, declaration, where string) (string, bool) {
+	t.Helper()
+	switch n := strings.Count(source, declaration); {
+	case n == 0:
+		t.Errorf("%s no longer declares %s…\": without it there is no record of which fixture "+
+			"that half verified, and this check would compare against nothing", where, declaration)
+		return "", false
+	case n > 1:
+		t.Errorf("%s declares %s…\" %d times; the record has to be unambiguous or the wrong one "+
+			"can be read", where, declaration, n)
+		return "", false
+	}
+	rest := source[strings.Index(source, declaration)+len(declaration):]
+	end := strings.IndexByte(rest, '"')
+	if end < 0 {
+		t.Errorf("%s: the value assigned by %s…\" is unterminated", where, declaration)
+		return "", false
+	}
+	return rest[:end], true
+}
+
+// sensitivityParityGuestChecks are the guest-side tests this half requires to be
+// declared and live.
+//
+// The guest's own half of the handshake is in the list on purpose. Leaving it
+// out would let it be removed while this half's view of the guest survived,
+// which is half a handshake and reports as a whole one.
+var sensitivityParityGuestChecks = []string{
+	"leaf_cases_match_the_shared_expectation",
+	"slot_cases_match_the_shared_expectation",
+	"both_halves_pin_the_same_fixture_revision",
+}
+
+// assertGuestCheckIsLive reports a guest-side test that is missing, commented
+// out, or suppressed by an attribute.
+//
+// The attribute run immediately above the declaration is what is read, rather
+// than the whole file, so a suppression attribute on some unrelated test cannot
+// be mistaken for one here.
+func assertGuestCheckIsLive(t *testing.T, source, name string) {
+	t.Helper()
+	lines := strings.Split(source, "\n")
+	declaration := -1
+	for i, line := range lines {
+		if strings.HasPrefix(strings.TrimSpace(line), "fn "+name+"(") {
+			declaration = i
+			break
+		}
+	}
+	if declaration < 0 {
+		t.Errorf("%s no longer declares the check %q. Either it was renamed — in which case this "+
+			"list needs the new name — or it was removed or commented out, in which case the guest "+
+			"side of the comparison is not running and this half's green says nothing about it",
+			sensitivityParityGuestHalf, name)
+		return
+	}
+	marked, suppressed := false, false
+	for i := declaration - 1; i >= 0; i-- {
+		attribute := strings.TrimSpace(lines[i])
+		if attribute == "" {
+			continue
+		}
+		if !strings.HasPrefix(attribute, "#[") {
+			break
+		}
+		switch {
+		case attribute == "#[test]":
+			marked = true
+		case strings.HasPrefix(attribute, "#[ignore"):
+			suppressed = true
+		}
+	}
+	if !marked {
+		t.Errorf("%s declares %q but no longer marks it as a test, so it never runs", sensitivityParityGuestHalf, name)
+	}
+	if suppressed {
+		t.Errorf("%s marks %q as a test and then suppresses it, so it does not run and the parity "+
+			"claim covers one side only", sensitivityParityGuestHalf, name)
+	}
+}
+
+// TestBothHalvesPinTheSameFixtureRevision is the handshake: it refuses a parity
+// claim that only one half is making.
+//
+// Reading a shared fixture is not agreement. Two halves that each check
+// themselves against it and never look at each other cannot distinguish "we
+// agree" from "the other one never ran" — silence one and the other still
+// passes. So this half asserts three things, and the guest half asserts their
+// mirror image:
+//
+//   - that the fixture it just read is the revision it records having verified,
+//     which is what makes its own green mean something specific;
+//   - that the other half records the SAME revision, so a half left behind by a
+//     fixture edit is reported as not having verified the current one rather
+//     than standing in for it;
+//   - that the other half's checks are still declared and still live, so a
+//     removed, renamed or suppressed check is named out loud instead of quietly
+//     reducing the pair to one.
+//
+// What it does not catch, stated so the guarantee is not read as wider than it
+// is: a run that filters the other half out at the command line. No test can
+// observe its own non-execution, and a filtered-out half leaves its source live
+// and correctly pinned. That case is someone choosing not to check, rather than
+// a check that stopped happening on its own.
+func TestBothHalvesPinTheSameFixtureRevision(t *testing.T) {
+	t.Parallel()
+
+	revision := sensitivityParityRevision(readSensitivityParityFixture(t))
+	if revision != sensitivityParityFixtureRevision {
+		t.Errorf("this half records having verified fixture revision %s, but the fixture it just "+
+			"read is revision %s. The fixture changed and this half's record did not follow it; "+
+			"update the recorded revision to %s in the same change that edits the fixture, and "+
+			"make sure the other half's record moves too",
+			sensitivityParityFixtureRevision, revision, revision)
+	}
+
+	raw, err := os.ReadFile(filepath.FromSlash(sensitivityParityGuestHalf))
+	if err != nil {
+		t.Fatalf("read the guest half at %s: %v. Both halves live in this tree; if this one cannot "+
+			"be found, the pair is not being compared at all", sensitivityParityGuestHalf, err)
+	}
+	guest := stripSourceComments(string(raw))
+
+	if pinned, ok := sensitivityParityPinnedValue(t, guest,
+		"const SENSITIVITY_PARITY_FIXTURE_REVISION: &str = \"", sensitivityParityGuestHalf); ok {
+		if pinned != revision {
+			t.Errorf("the guest half records having verified fixture revision %s, but the fixture "+
+				"is revision %s. That half has not checked itself against the current cases, so "+
+				"whatever this half reports covers one reader only. Re-run the guest half against "+
+				"the current fixture and update its recorded revision to %s",
+				pinned, revision, revision)
+		}
+	}
+
+	for _, name := range sensitivityParityGuestChecks {
+		assertGuestCheckIsLive(t, guest, name)
 	}
 }

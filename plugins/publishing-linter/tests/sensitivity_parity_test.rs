@@ -27,6 +27,16 @@
 //!  3. **A closed operator set** — the label-selector operators. Same
 //!     mechanism as (2), same reason.
 //!
+//!  4. **A handshake between the two halves.** Reading the same file is
+//!     not agreement: two halves that each check themselves against it
+//!     and never look at each other cannot tell "we agree" apart from
+//!     "the other one never ran", because silencing one leaves the other
+//!     passing and the pair still reporting parity. So each half records
+//!     the revision of the fixture it verified, and each reads the
+//!     other's record and the other's test declarations. A half that is
+//!     absent, suppressed, or left behind by a fixture edit is named
+//!     rather than read as agreement.
+//!
 //! Skip-on-missing-file behaviour matches the other cross-language test
 //! in this crate: a standalone plugin checkout where the compiler source
 //! is unreachable skips with a printed note, and setting
@@ -54,13 +64,30 @@ fn fixture_path() -> PathBuf {
         .join("sensitivity_parity.json")
 }
 
-fn load_fixture() -> Value {
+fn fixture_text() -> String {
     let path = fixture_path();
-    let text = std::fs::read_to_string(&path)
-        .unwrap_or_else(|e| panic!("read shared fixture at {}: {e}", path.display()));
-    serde_json::from_str(&text)
-        .unwrap_or_else(|e| panic!("parse shared fixture at {}: {e}", path.display()))
+    std::fs::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("read shared fixture at {}: {e}", path.display()))
 }
+
+fn load_fixture() -> Value {
+    let text = fixture_text();
+    serde_json::from_str(&text)
+        .unwrap_or_else(|e| panic!("parse shared fixture at {}: {e}", fixture_path().display()))
+}
+
+/// This half's record of the fixture it verified, derived from the
+/// fixture's own bytes rather than tracked by hand so that no edit can
+/// leave it behind. The compiler half carries the same value in its own
+/// source, and the two are compared against the fixture and against each
+/// other.
+///
+/// This is deliberately a SECOND copy of a value the compiler half also
+/// holds, and unifying the two would destroy the only thing it does: one
+/// copy cannot disagree with itself, and disagreement is the signal.
+/// When the fixture changes, both copies move, and a change that updates
+/// only one is exactly the half-verified state this pins.
+const SENSITIVITY_PARITY_FIXTURE_REVISION: &str = "daa8128427d906ef";
 
 fn string_set(v: Option<&Value>) -> BTreeSet<String> {
     v.and_then(Value::as_array)
@@ -427,5 +454,271 @@ fn selector_operator_vocabulary_matches_the_source_of_truth() {
         inequality < equality,
         "the clause classifier now reads the equality form before the inequality form; the \
          slot rule mirrors the opposite order and would read a not-equals clause as a pin"
+    );
+}
+
+// ---------------------------------------------------------------------
+// The cross-half handshake
+// ---------------------------------------------------------------------
+
+/// Derives a fixture's revision from its own bytes.
+///
+/// Derived rather than authored, because an authored revision is one an
+/// editor can forget to bump, and a forgotten bump leaves both halves
+/// recording a value that no longer describes what they read — the stale
+/// record this handshake exists to refuse. Any change to the fixture,
+/// down to a byte, moves it.
+///
+/// FNV-1a is used because what is needed is a short, exactly reproducible
+/// fingerprint of a file both halves already read, in two languages, with
+/// no dependency added to this crate to get it. The risk being managed is
+/// an edit going unnoticed, not an adversary constructing a collision.
+/// The compiler half reaches the identical function through its standard
+/// library; that duplication is deliberate and is explained where the
+/// recorded revision is declared.
+fn fixture_revision(bytes: &[u8]) -> String {
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+    for byte in bytes {
+        hash ^= u64::from(*byte);
+        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    format!("{hash:016x}")
+}
+
+/// Returns the index of the quote that closes a character literal
+/// opening at `i`, or `None` when what opens there is not one.
+///
+/// The closing quote is what distinguishes the two things a single quote
+/// can begin in the languages read here: a character literal closes, and
+/// a lifetime does not. Anything unrecognised is left to be treated as
+/// ordinary text, which is the safe direction — a lifetime read as a
+/// character literal would swallow the code after it.
+fn character_literal_end(chars: &[char], i: usize) -> Option<usize> {
+    // The widest escape form, plus its two quotes.
+    const LONGEST_ESCAPE: usize = 9;
+    if chars.get(i + 1) == Some(&'\\') {
+        for (offset, c) in chars.iter().enumerate().take(i + LONGEST_ESCAPE + 1) {
+            if offset >= i + 2 && *c == '\'' {
+                return Some(offset);
+            }
+        }
+        return None;
+    }
+    (chars.get(i + 2) == Some(&'\'')).then_some(i + 2)
+}
+
+/// Removes line and block comments, leaving code text and line structure
+/// intact. The two halves are written in languages that share C-style
+/// comments, double-quoted strings and single-quoted character literals,
+/// so one reader serves both.
+///
+/// Stripping first is what makes the checks below safe rather than merely
+/// convenient. Every token they hunt is also a word this file and its
+/// counterpart use in explanation — a test's name, the call that skips a
+/// test, a revision. A scan over raw text would read a sentence
+/// describing the mechanism as an instance of it. What survives stripping
+/// is code, and only code can silence a test.
+fn strip_source_comments(src: &str) -> String {
+    enum State {
+        Code,
+        LineComment,
+        BlockComment,
+        StringLiteral,
+    }
+
+    let bytes: Vec<char> = src.chars().collect();
+    let mut out = String::with_capacity(src.len());
+    let mut state = State::Code;
+    let mut i = 0;
+    while i < bytes.len() {
+        let c = bytes[i];
+        let next = bytes.get(i + 1).copied();
+        match state {
+            State::Code => {
+                if c == '/' && next == Some('/') {
+                    state = State::LineComment;
+                    i += 1;
+                } else if c == '/' && next == Some('*') {
+                    state = State::BlockComment;
+                    i += 1;
+                } else if c == '\'' {
+                    // Skipped whole when it is a character literal, because
+                    // a double quote inside one is an ordinary thing to
+                    // write and reading it as the start of a string would
+                    // invert every string boundary in the rest of the file
+                    // — leaving comments unstripped in the tail, which is
+                    // exactly where a silenced test would then hide.
+                    match character_literal_end(&bytes, i) {
+                        Some(end) => {
+                            out.extend(bytes[i..=end].iter());
+                            i = end;
+                        }
+                        None => out.push(c),
+                    }
+                } else {
+                    if c == '"' {
+                        state = State::StringLiteral;
+                    }
+                    out.push(c);
+                }
+            }
+            State::LineComment => {
+                if c == '\n' {
+                    state = State::Code;
+                    out.push(c);
+                }
+            }
+            State::BlockComment => {
+                if c == '*' && next == Some('/') {
+                    state = State::Code;
+                    i += 1;
+                } else if c == '\n' {
+                    out.push(c);
+                }
+            }
+            State::StringLiteral => {
+                out.push(c);
+                if c == '\\' {
+                    if let Some(escaped) = next {
+                        out.push(escaped);
+                        i += 1;
+                    }
+                } else if c == '"' {
+                    state = State::Code;
+                }
+            }
+        }
+        i += 1;
+    }
+    out
+}
+
+/// Reads the value a declaration assigns, refusing both zero matches and
+/// more than one. Zero means the other half's record of what it verified
+/// is gone, and a comparison against nothing passes no matter what that
+/// half does — the exact shape of failure this handshake replaces. More
+/// than one means the wrong record could be read.
+fn pinned_value(source: &str, declaration: &str, where_: &str) -> Result<String, String> {
+    match source.matches(declaration).count() {
+        0 => {
+            return Err(format!(
+                "{where_} no longer declares {declaration}…\": without it there is no record of \
+                 which fixture that half verified, and this check would compare against nothing"
+            ))
+        }
+        1 => {}
+        n => {
+            return Err(format!(
+                "{where_} declares {declaration}…\" {n} times; the record has to be unambiguous \
+                 or the wrong one can be read"
+            ))
+        }
+    }
+    let start = source.find(declaration).expect("counted one match") + declaration.len();
+    let rest = &source[start..];
+    match rest.find('"') {
+        Some(end) => Ok(rest[..end].to_string()),
+        None => Err(format!(
+            "{where_}: the value assigned by {declaration}…\" is unterminated"
+        )),
+    }
+}
+
+/// The compiler-side tests this half requires to be declared and live.
+///
+/// The compiler's own half of the handshake is in the list on purpose.
+/// Leaving it out would let it be removed while this half's view of the
+/// compiler survived, which is half a handshake and reports as a whole
+/// one.
+const COMPILER_HALF_CHECKS: &[&str] = &[
+    "TestSensitivityLeafParityAgainstSharedFixture",
+    "TestSensitivitySlotParityAgainstSharedFixture",
+    "TestSensitivityParityFixtureCoversEveryDivergenceShape",
+    "TestBothHalvesPinTheSameFixtureRevision",
+];
+
+/// Reports a compiler-side test that is missing, commented out, or
+/// turned into a no-op by skipping itself.
+///
+/// Only the named test's own body is read, rather than the whole file, so
+/// a skip in some unrelated test cannot be mistaken for one here.
+///
+/// The declaration is required to open a LINE rather than merely to occur
+/// somewhere, because a substring search would find a declaration that had
+/// been commented out and report the check as live.
+fn compiler_check_liveness(source: &str, name: &str) -> Option<String> {
+    let signature = format!("func {name}(t *testing.T) {{");
+    let declares_it = source
+        .lines()
+        .any(|line| line.trim_start().starts_with(&signature));
+    let Some(body) = declares_it
+        .then(|| delimited_block(source, &signature))
+        .flatten()
+    else {
+        return Some(format!(
+            "the compiler half no longer declares the check {name}. Either it was renamed — in \
+             which case this list needs the new name — or it was removed or commented out, in \
+             which case the compiler side of the comparison is not running and this half's green \
+             says nothing about it"
+        ));
+    };
+    body.contains("t.Skip").then(|| {
+        format!(
+            "the compiler half declares {name} and then skips it, so it does not run and the \
+             parity claim covers one side only"
+        )
+    })
+}
+
+#[test]
+fn both_halves_pin_the_same_fixture_revision() {
+    let revision = fixture_revision(fixture_text().as_bytes());
+    let mut failures: Vec<String> = Vec::new();
+
+    if revision != SENSITIVITY_PARITY_FIXTURE_REVISION {
+        failures.push(format!(
+            "this half records having verified fixture revision \
+             {SENSITIVITY_PARITY_FIXTURE_REVISION}, but the fixture it just read is revision \
+             {revision}. The fixture changed and this half's record did not follow it; update the \
+             recorded revision to {revision} in the same change that edits the fixture, and make \
+             sure the other half's record moves too"
+        ));
+    }
+
+    // The compiler half is unreachable in a standalone checkout of this
+    // crate, which is the same condition the vocabulary pins above handle
+    // and is handled the same way, through the one escape hatch.
+    if let Some(compiler) = read_compiler_source(
+        &["internal", "lintops", "sensitivity_parity_test.go"],
+        "both_halves_pin_the_same_fixture_revision",
+    ) {
+        let compiler = strip_source_comments(&compiler);
+        match pinned_value(
+            &compiler,
+            "const sensitivityParityFixtureRevision = \"",
+            "the compiler half",
+        ) {
+            Ok(pinned) if pinned != revision => failures.push(format!(
+                "the compiler half records having verified fixture revision {pinned}, but the \
+                 fixture is revision {revision}. That half has not checked itself against the \
+                 current cases, so whatever this half reports covers one reader only. Re-run the \
+                 compiler half against the current fixture and update its recorded revision to \
+                 {revision}"
+            )),
+            Ok(_) => {}
+            Err(message) => failures.push(message),
+        }
+        for name in COMPILER_HALF_CHECKS {
+            if let Some(message) = compiler_check_liveness(&compiler, name) {
+                failures.push(message);
+            }
+        }
+    }
+
+    assert!(
+        failures.is_empty(),
+        "the two halves of the sensitivity parity check are not both verifying the current \
+         fixture:\n  {}",
+        failures.join("\n  ")
     );
 }
