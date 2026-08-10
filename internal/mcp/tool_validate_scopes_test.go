@@ -28,7 +28,7 @@ func unmarshalValidatePayload(t *testing.T, res *callToolResult) validateResultP
 // Component: the tool accepts the entity selector, reports the entity scope, and
 // returns a valid structured result with no diagnostics.
 func TestValidateToolEntityScope(t *testing.T) {
-	s := newTestServer()
+	s := newTestServer(t)
 	root, catalogDir, _ := fullstackWorkspace(t)
 	entityPath := filepath.Join(catalogDir, "base", "components", "api-server.yaml")
 
@@ -56,7 +56,7 @@ func TestValidateToolEntityScope(t *testing.T) {
 // as an invalid structured result with the blocking diagnostic, not a protocol
 // error — and that valid tracks diagnostics emptiness uniformly.
 func TestValidateToolEntityScopeInvalid(t *testing.T) {
-	s := newTestServer()
+	s := newTestServer(t)
 	root, catalogDir, _ := fullstackWorkspace(t)
 	// A Release is not a single-entity validation target; the core halts with a
 	// blocking error, which the tool surfaces as one diagnostic.
@@ -85,7 +85,7 @@ func TestValidateToolEntityScopeInvalid(t *testing.T) {
 // toolchain is present in this environment, so the fixture builds rather than
 // skipping.
 func TestValidateToolPluginScope(t *testing.T) {
-	s := newTestServer()
+	s := newTestServer(t)
 	pluginPath := wasmtest.EnsureFixtureBuilt(t, "parse-go.wasm")
 
 	res := callTool(t, s, "validate", validateArgs{
@@ -111,7 +111,7 @@ func TestValidateToolPluginScope(t *testing.T) {
 // disagrees with the binary's self-report surfaces as an invalid structured
 // result with the blocking diagnostic, not a protocol error.
 func TestValidateToolPluginScopeTypeMismatch(t *testing.T) {
-	s := newTestServer()
+	s := newTestServer(t)
 	pluginPath := wasmtest.EnsureFixtureBuilt(t, "parse-go.wasm")
 
 	res := callTool(t, s, "validate", validateArgs{
@@ -131,7 +131,7 @@ func TestValidateToolPluginScopeTypeMismatch(t *testing.T) {
 // the catalog selector, reports the catalog scope, and returns a structured
 // result whose validity tracks diagnostics emptiness.
 func TestValidateToolCatalogScope(t *testing.T) {
-	s := newTestServer()
+	s := newTestServer(t)
 	root, catalogDir, _ := fullstackWorkspace(t)
 
 	res := callTool(t, s, "validate", validateArgs{
@@ -158,7 +158,7 @@ func TestValidateToolCatalogScope(t *testing.T) {
 // now reports the uniform scope/target discriminators while still populating the
 // back-compat release field.
 func TestValidateToolReleaseScopeCarriesScopeAndTarget(t *testing.T) {
-	s := newTestServer()
+	s := newTestServer(t)
 	root, catalogDir, releasePath := fullstackWorkspace(t)
 
 	res := callTool(t, s, "validate", validateArgs{
@@ -185,7 +185,7 @@ func TestValidateToolReleaseScopeCarriesScopeAndTarget(t *testing.T) {
 // guards. Each is an argument-combination failure, so the tool returns a protocol
 // error with codeInvalidParams and arg-name guidance — not a tool result.
 func TestValidateToolScopeGuards(t *testing.T) {
-	s := newTestServer()
+	s := newTestServer(t)
 	cases := []struct {
 		name string
 		args validateArgs

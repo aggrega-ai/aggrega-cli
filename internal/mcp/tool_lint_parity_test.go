@@ -106,7 +106,7 @@ func TestLintToolEntityScopeCoreParity(t *testing.T) {
 	writeLintParityFixture(t, filepath.Join(root, "component.yaml"), lintParityBadComponent)
 
 	// MCP leg: the tool workspace resolves from the server's start dir.
-	s := newTestServer()
+	s := newTestServer(t)
 	s.startDir = root
 	var mcpOut, mcpDiag bytes.Buffer
 	mcpErr := s.lintInProcess(context.Background(), lintRequest{entity: "component.yaml"}, &mcpOut, &mcpDiag)
@@ -152,7 +152,7 @@ func TestLintToolReleaseScopeCoreParity(t *testing.T) {
 	writeLintParityFixture(t, filepath.Join(root, "release.yaml"), lintParityRelease)
 
 	// MCP leg.
-	s := newTestServer()
+	s := newTestServer(t)
 	s.startDir = root
 	var mcpOut, mcpDiag bytes.Buffer
 	mcpErr := s.lintInProcess(context.Background(), lintRequest{release: "release.yaml"}, &mcpOut, &mcpDiag)

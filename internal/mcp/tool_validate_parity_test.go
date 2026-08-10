@@ -76,7 +76,7 @@ func assertHaltParity(t *testing.T, payload validateResultPayload, coreErr error
 // payload carries the validateops.ValidateEntity core's verdict and blocking
 // diagnostic verbatim, for both a clean entity and one the core rejects.
 func TestValidateToolEntityScopeCoreParity(t *testing.T) {
-	s := newTestServer()
+	s := newTestServer(t)
 	root, catalogDir, releasePath := fullstackWorkspace(t)
 	dirs := []string{catalogDir}
 	tw := resolvedToolWorkspace(t, s, root, dirs)
@@ -129,7 +129,7 @@ func TestValidateToolEntityScopeCoreParity(t *testing.T) {
 // inputs. The wasm toolchain is present in this environment, so the fixture
 // builds rather than skipping.
 func TestValidateToolPluginScopeCoreParity(t *testing.T) {
-	s := newTestServer()
+	s := newTestServer(t)
 	pluginPath := wasmtest.EnsureFixtureBuilt(t, "parse-go.wasm")
 
 	t.Run("pass", func(t *testing.T) {
@@ -193,7 +193,7 @@ func expectedCatalogDiags(res validateops.CatalogResult) []string {
 // payload must carry.
 func TestValidateToolCatalogScopeCoreParity(t *testing.T) {
 	t.Run("pass", func(t *testing.T) {
-		s := newTestServer()
+		s := newTestServer(t)
 		root, catalogDir, _ := fullstackWorkspace(t)
 		dirs := []string{catalogDir}
 		tw := resolvedToolWorkspace(t, s, root, dirs)
@@ -222,7 +222,7 @@ func TestValidateToolCatalogScopeCoreParity(t *testing.T) {
 	})
 
 	t.Run("fail", func(t *testing.T) {
-		s := newTestServer()
+		s := newTestServer(t)
 		dir := t.TempDir()
 		writeCatalogFile(t, filepath.Join(dir, "recipe.yaml"), `apiVersion: aggrega.ai/v1alpha1
 kind: Recipe

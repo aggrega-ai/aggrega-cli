@@ -48,6 +48,20 @@ func siblingCatalogRootForTF(t *testing.T) string {
 	return dir
 }
 
+// terraformExampleCatalogStack returns the catalog search stack an example build
+// runs against: a seeded provider overlay ahead of the sibling catalog. The
+// sibling catalog declares the terraform provider under its own published
+// version, while capability resolution selects the version the binary embeds, so
+// without the overlay the lockfile walk would find no local entity at the
+// selected version and reach for a registry.
+//
+// The stack is built once per test and reused across runs that must be compared
+// byte for byte, so both runs read the same inputs.
+func terraformExampleCatalogStack(t *testing.T, catalogRoot string) []string {
+	t.Helper()
+	return []string{seedEmbeddedProviderOverlay(t, "provider/terraform"), catalogRoot}
+}
+
 // hubPluginEntitiesCarryLegacyArtifactField reports whether any Plugin entity in
 // the sibling catalog still declares a top-level spec plugin-artifact field —
 // the legacy shape the entity schema no longer accepts. It is a best-effort
@@ -169,7 +183,7 @@ func readTFDistTree(t *testing.T, root string) map[string][]byte {
 // fresh temp workspace, builds it against the sibling catalog, and returns the
 // rendered dist tree. src and catalogRoot must be absolute so the function is
 // safe to call repeatedly across the working-directory changes each build makes.
-func buildExampleToDist(t *testing.T, src, catalogRoot string) map[string][]byte {
+func buildExampleToDist(t *testing.T, src string, catalogStack []string) map[string][]byte {
 	t.Helper()
 	ws := t.TempDir()
 	copyExampleInputs(t, src, ws)
@@ -180,7 +194,7 @@ func buildExampleToDist(t *testing.T, src, catalogRoot string) map[string][]byte
 		releasePath, catalogDirs, traceEnabled = prevRelease, prevCatalog, prevTrace
 	})
 	releasePath = "release.yaml"
-	catalogDirs = []string{catalogRoot}
+	catalogDirs = catalogStack
 	traceEnabled = false
 
 	// Build is read-only: prime the lockfile with an explicit pull (output discarded),
@@ -253,8 +267,11 @@ func TestTerraformArtifactsExampleRenderDeterminism(t *testing.T) {
 	catalogRoot := siblingCatalogRootForTF(t)
 	src := terraformExampleDir(t, "terraform-rds")
 
-	run1 := buildExampleToDist(t, src, catalogRoot)
-	run2 := buildExampleToDist(t, src, catalogRoot)
+	// One overlay for both runs, so the two builds see byte-identical inputs.
+	stack := terraformExampleCatalogStack(t, catalogRoot)
+
+	run1 := buildExampleToDist(t, src, stack)
+	run2 := buildExampleToDist(t, src, stack)
 	assertByteIdenticalTrees(t, run1, run2)
 
 	mainTF := distFile(t, run1, "main.tf")
@@ -284,8 +301,11 @@ func TestTerraformSourcedExampleRenderDeterminism(t *testing.T) {
 	catalogRoot := siblingCatalogRootForTF(t)
 	src := terraformExampleDir(t, "terraform-rds-module")
 
-	run1 := buildExampleToDist(t, src, catalogRoot)
-	run2 := buildExampleToDist(t, src, catalogRoot)
+	// One overlay for both runs, so the two builds see byte-identical inputs.
+	stack := terraformExampleCatalogStack(t, catalogRoot)
+
+	run1 := buildExampleToDist(t, src, stack)
+	run2 := buildExampleToDist(t, src, stack)
 	assertByteIdenticalTrees(t, run1, run2)
 
 	// Module files vendor byte-for-byte from the recipe's local module.

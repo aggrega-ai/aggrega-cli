@@ -50,6 +50,11 @@ const scopeRefusedRule = "extending-component-must-declare-schema-inherited"
 // scopeTriad lays down the aggregate/manifest/release triad over the fixture
 // catalog and returns the catalog search stack. overlayDir is empty until the
 // caller breaks the Component into it.
+//
+// The stack leads with a seeded provider overlay: the shared fixture catalog
+// declares the core providers under its own version, while capability resolution
+// selects the version the binary embeds, so without the overlay the lockfile walk
+// would find no local entity at the selected version and reach for a registry.
 func scopeTriad(t *testing.T) (root string, cleanDirs []string) {
 	t.Helper()
 	root = t.TempDir()
@@ -57,7 +62,8 @@ func scopeTriad(t *testing.T) (root string, cleanDirs []string) {
 	writeFixture(t, filepath.Join(root, "manifest.yaml"), cliCleanManifest)
 	writeFixture(t, filepath.Join(root, "release.yaml"), cliDefaultRelease)
 	writeWorkspaceConfig(t, root, "")
-	return root, []string{cliFullstackCatalogDir(t)}
+	providers := seedEmbeddedProviderOverlay(t, "provider/helm")
+	return root, []string{providers, cliFullstackCatalogDir(t)}
 }
 
 // breakComponent writes the refused Component into a higher-precedence overlay

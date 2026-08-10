@@ -118,6 +118,9 @@ spec:
     values:
       port: { type: integer, default: 8080 }
 `)
+	// The compose provider entity the recipe's capability binding resolves to, so
+	// the lockfile walk finds it in this catalog rather than reaching for a registry.
+	seedEmbeddedPlugins(t, filepath.Join(catalogRoot, "providers"), "provider/compose")
 	recipeFile = filepath.Join(catalogRoot, "recipes", "compose", "server.yaml")
 	writeFixture(t, recipeFile, `apiVersion: aggrega.ai/v1alpha1
 kind: Recipe

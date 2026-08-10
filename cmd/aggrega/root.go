@@ -35,8 +35,6 @@ func init() {
 
 //go:generate make -C ../.. docs
 
-var rootCmd = newRootCmd()
-
 // newRootCmd builds the aggrega command tree. Each invocation returns a
 // fresh, independent tree: a new root with its subcommands freshly
 // constructed, so command-level state (such as the per-run SilenceUsage
@@ -147,15 +145,22 @@ func silenceUsageOnRun(c *cobra.Command) {
 	}
 }
 
-// Execute runs the root command. Successful dispatch returns normally; the
-// caller (main) then terminates with exit status 0. A non-zero outcome exits the
-// process with the code executeRoot computes. The function intentionally handles
-// the error+exit boundary itself rather than returning the error to the caller,
-// so main remains a thin shim. Cobra's own error and usage printing is suppressed
-// (see newRootCmd), so this is the single point at which a failure reaches the
-// user.
+// Execute builds the command tree and runs it. Successful dispatch returns
+// normally; the caller (main) then terminates with exit status 0. A non-zero
+// outcome exits the process with the code executeRoot computes. The function
+// intentionally handles the error+exit boundary itself rather than returning the
+// error to the caller, so main remains a thin shim. Cobra's own error and usage
+// printing is suppressed (see newRootCmd), so this is the single point at which
+// a failure reaches the user.
+//
+// The tree is constructed here rather than held in a package variable, and that
+// placement is load-bearing. Construction registers the configured extension
+// commands, which resolves the workspace and its configuration cascade — real
+// work against the file system. A package variable would run that work at
+// process start, before this function is entered, so any program that links this
+// package would pay it whether or not it ever dispatches a command.
 func Execute() {
-	if code := executeRoot(rootCmd); code != 0 {
+	if code := executeRoot(newRootCmd()); code != 0 {
 		os.Exit(code)
 	}
 }

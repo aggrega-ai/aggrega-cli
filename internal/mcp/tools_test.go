@@ -84,12 +84,20 @@ func callTool(t *testing.T, s *server, name string, args any) *callToolResult {
 
 // newTestServer builds a server with a discard log sink for direct tool
 // invocation.
-func newTestServer() *server {
-	return &server{out: io.Discard, logw: io.Discard, serverVersion: "test"}
+//
+// Its start directory is an empty temporary directory, which is where a tool
+// call that supplies no workspace root resolves from. Left unset, that
+// resolution would begin at the process working directory and walk upward until
+// it found a configured workspace — reaching the checkout the suite happens to
+// run inside, and adopting its catalog stack and artifact cache. A case that
+// needs a populated workspace constructs one and passes its root.
+func newTestServer(t *testing.T) *server {
+	t.Helper()
+	return &server{out: io.Discard, logw: io.Discard, serverVersion: "test", startDir: t.TempDir()}
 }
 
 func TestGetSchemaTool(t *testing.T) {
-	s := newTestServer()
+	s := newTestServer(t)
 
 	// A named kind returns its schema byte-for-byte in structuredContent.
 	res := callTool(t, s, "get-schema", getSchemaArgs{Kind: "component"})
@@ -125,7 +133,7 @@ func TestGetSchemaTool(t *testing.T) {
 }
 
 func TestScaffoldTool(t *testing.T) {
-	s := newTestServer()
+	s := newTestServer(t)
 	res := callTool(t, s, "scaffold", scaffoldArgs{Kind: "component", Name: "my/svc"})
 	if res.IsError {
 		t.Fatalf("scaffold component reported error: %s", res.Content[0].Text)
@@ -163,7 +171,7 @@ func TestScaffoldTool(t *testing.T) {
 }
 
 func TestValidateToolCleanFixture(t *testing.T) {
-	s := newTestServer()
+	s := newTestServer(t)
 	root, catalogDir, releasePath := fullstackWorkspace(t)
 	res := callTool(t, s, "validate", validateArgs{
 		Release:       releasePath,
@@ -208,7 +216,7 @@ func TestValidateToolMatchesCompilerops(t *testing.T) {
 	wantDiag := vr.ResolutionFindings[0].Error()
 
 	// The tool over the same workspace must report the same diagnostic verbatim.
-	s := newTestServer()
+	s := newTestServer(t)
 	res := callTool(t, s, "validate", validateArgs{Release: releasePath, WorkspaceRoot: root, CatalogDirs: []string{catalogDir}})
 	if res.IsError {
 		t.Fatalf("validate known-bad reported a call error rather than diagnostics: %s", res.Content[0].Text)
@@ -237,7 +245,7 @@ func TestBuildToolRendersAndWritesNothing(t *testing.T) {
 	root, catalogDir, releasePath := fullstackWorkspace(t)
 	before := hashTree(t, root)
 
-	s := newTestServer()
+	s := newTestServer(t)
 	res := callTool(t, s, "build", buildArgs{
 		Release:       releasePath,
 		WorkspaceRoot: root,
@@ -268,7 +276,7 @@ func TestBuildToolRendersAndWritesNothing(t *testing.T) {
 }
 
 func TestDescribeToolComponentAndRelease(t *testing.T) {
-	s := newTestServer()
+	s := newTestServer(t)
 	root, catalogDir, releasePath := fullstackWorkspace(t)
 
 	comp := callTool(t, s, "describe", describeArgs{
@@ -307,7 +315,7 @@ func TestDescribeToolComponentAndRelease(t *testing.T) {
 }
 
 func TestExplainErrorTool(t *testing.T) {
-	s := newTestServer()
+	s := newTestServer(t)
 	res := callTool(t, s, "explain-error", explainErrorArgs{Message: "load release foo: not found", Kind: "release"})
 	if res.IsError {
 		t.Fatalf("explain-error reported error: %s", res.Content[0].Text)
@@ -328,7 +336,7 @@ func TestExplainErrorTool(t *testing.T) {
 // catalog-generation options from its arguments, drives the in-process core
 // through the injected runner seam, and returns the operation's output.
 func TestGenCatalogToolInvokesCore(t *testing.T) {
-	s := newTestServer()
+	s := newTestServer(t)
 	var gotOpts gencatalog.Options
 	s.runGenCatalog = func(_ context.Context, opts gencatalog.Options, out io.Writer) error {
 		gotOpts = opts
@@ -370,7 +378,7 @@ func TestGenCatalogToolInvokesCore(t *testing.T) {
 // TestUnknownToolReportsCuratedSet asserts an unknown tool name is a protocol
 // error naming the curated set.
 func TestUnknownToolReportsCuratedSet(t *testing.T) {
-	s := newTestServer()
+	s := newTestServer(t)
 	params, _ := json.Marshal(callToolParams{Name: "nope", Arguments: json.RawMessage(`{}`)})
 	_, rpcErr := s.handleToolsCall(params)
 	if rpcErr == nil || rpcErr.Code != codeInvalidParams {

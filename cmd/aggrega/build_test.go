@@ -261,24 +261,14 @@ spec:
 // that bare identity and resolves through the plugin-resolution cascade's embed
 // tier (the exact bytes compiled into the binary), so the build's render step
 // routes the helm provider to the shipped guest with no cache or lockfile.
+//
+// The entity written is the embedded one verbatim, which keeps its version equal
+// to the version capability resolution selects; see the seeding notes in
+// embedded_plugin_seed_test.go for why that equality is what keeps a fixture
+// build off the network.
 func writeHelmRendererPlugin(t *testing.T, providersDir string) {
 	t.Helper()
-	writeFixture(t, filepath.Join(providersDir, "helm-renderer.yaml"), `apiVersion: aggrega.ai/v1alpha1
-kind: Plugin
-metadata:
-  name: helm
-  pluginType: provider
-  version: "1.0.0"
-spec:
-  abiVersion: v1alpha1
-  capabilities:
-    - helm
-  exports:
-    - name: render_node
-  runtime:
-    maxMemoryPages: 4096
-    timeoutMs: 300000
-`)
+	seedEmbeddedPlugins(t, providersDir, "provider/helm")
 }
 
 // writeFixture writes content to path, creating parent directories

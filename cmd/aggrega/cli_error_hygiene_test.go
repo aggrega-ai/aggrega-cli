@@ -7,11 +7,12 @@ import (
 	"bytes"
 	"errors"
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/spf13/cobra"
+
+	"github.com/aggrega-ai/aggrega-cli/internal/hometest"
 )
 
 // These tests share the package-level flag globals, so they must not run
@@ -59,19 +60,22 @@ func TestSilenceUsageOnRun_WrapsEntireTree(t *testing.T) {
 // isolateCLIEnvironment points one case at a scratch home and a scratch working
 // directory, and pins the interactivity seam closed.
 //
-// Both halves are load-bearing once the table reaches the configuration and
+// All three halves are load-bearing once the table reaches the configuration and
 // cache verbs. A case that resolves configuration would otherwise read the
 // developer's own global config — so its failure would depend on what that
 // developer happens to have configured — and a case that writes could reach it.
-// Pinning the interactivity seam makes a confirmation prompt's refusal a
-// property of the fixture rather than of whatever the test binary's stdin
-// happens to be attached to.
+// A scratch working directory keeps root discovery, which walks upward from
+// wherever the process stands, inside the case's own tree rather than reaching
+// the checkout the suite runs in. Pinning the interactivity seam makes a
+// confirmation prompt's refusal a property of the fixture rather than of
+// whatever the test binary's stdin happens to be attached to.
+//
+// The home policy itself is not spelled out here: which variables carry a home,
+// and what each is pointed at, is decided in one place so a case-level scratch
+// and the binary-wide redirect cannot drift apart.
 func isolateCLIEnvironment(t *testing.T) {
 	t.Helper()
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, "config"))
-	t.Setenv("AGGREGA_CONFIG", "")
+	hometest.Isolate(t)
 	t.Chdir(t.TempDir())
 	prev := isTerminal
 	isTerminal = func() bool { return false }

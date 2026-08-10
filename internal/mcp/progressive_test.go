@@ -33,7 +33,7 @@ func containsStr(hay []string, needle string) bool {
 // curated set plus the one capability tool, and that the deferred lint tool is
 // NOT advertised up front.
 func TestDefaultToolsListStaysSmall(t *testing.T) {
-	s := newTestServer()
+	s := newTestServer(t)
 	res, rpcErr := s.handleToolsList()
 	if rpcErr != nil {
 		t.Fatalf("tools/list returned protocol error: %+v", rpcErr)
@@ -63,7 +63,7 @@ func TestDefaultToolsListStaysSmall(t *testing.T) {
 // returns the deferred long tail — the tools the default list omits — with each
 // marked deferred.
 func TestDescribeCapabilitiesLongTail(t *testing.T) {
-	s := newTestServer()
+	s := newTestServer(t)
 	res := callTool(t, s, describeCapabilitiesName, describeCapabilitiesArgs{})
 	if res.IsError {
 		t.Fatalf("describe-capabilities reported error: %s", res.Content[0].Text)
@@ -96,7 +96,7 @@ func TestDescribeCapabilitiesLongTail(t *testing.T) {
 // tools scoped to other kinds. It also asserts the capability tool never lists
 // itself.
 func TestDescribeCapabilitiesKindFilter(t *testing.T) {
-	s := newTestServer()
+	s := newTestServer(t)
 
 	rel := callTool(t, s, describeCapabilitiesName, describeCapabilitiesArgs{Kind: "release"})
 	if rel.IsError {
@@ -147,7 +147,7 @@ func TestDescribeCapabilitiesKindFilter(t *testing.T) {
 // TestDescribeCapabilitiesUnknownKind asserts an unrecognized kind is a
 // tool-level error carrying the valid-kind set.
 func TestDescribeCapabilitiesUnknownKind(t *testing.T) {
-	s := newTestServer()
+	s := newTestServer(t)
 	res := callTool(t, s, describeCapabilitiesName, describeCapabilitiesArgs{Kind: "not-a-kind"})
 	if !res.IsError {
 		t.Fatal("describe-capabilities unknown kind did not report an error")
@@ -162,7 +162,7 @@ func TestDescribeCapabilitiesUnknownKind(t *testing.T) {
 // path as a curated tool, and that the lint tool translates its wire arguments
 // into the in-process request correctly through the injected runner seam.
 func TestDeferredLintInvocableViaToolsCall(t *testing.T) {
-	s := newTestServer()
+	s := newTestServer(t)
 	var gotReq lintRequest
 	s.runLint = func(_ context.Context, req lintRequest, stdout, stderr io.Writer) error {
 		gotReq = req

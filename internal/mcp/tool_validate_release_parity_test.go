@@ -305,7 +305,7 @@ func TestValidateToolReleaseScopeCoreParity(t *testing.T) {
 	for _, c := range releaseParityCases() {
 		c := c
 		t.Run(c.name, func(t *testing.T) {
-			s := newTestServer()
+			s := newTestServer(t)
 			root, dirs := writeReleaseParityWorkspace(t, c)
 			releasePath := filepath.Join(root, "release.yaml")
 
