@@ -455,3 +455,129 @@ func TestBindingsCoverEverySubjectSchema(t *testing.T) {
 		}
 	}
 }
+
+// schemaFileSuffix is the tail every distributed schema file carries, used here
+// for one purpose: an entry records a file NAME while the schema package's
+// dynamic lookup is keyed by the file STEM, so the name is trimmed back to the
+// kind token before it is looked up.
+//
+// It is deliberately not a second home for the schema-file naming convention,
+// whose sole home is the schema package. The assertion below compares bytes
+// against bytes; this constant only chooses which bytes to ask for, and never
+// decides whether two references agree. Drift in it is loud rather than silent:
+// a suffix that stopped matching the distribution leaves the trim a no-op, no
+// kind token resolves, and every entry fails at once rather than one quietly
+// passing.
+const schemaFileSuffix = "-v1alpha1.schema.json"
+
+// TestTargetSchemaFileAgreesWithItsSchemaBytes asserts that the two references
+// each target entry carries name the same schema. An entry records its schema
+// twice — the embedded bytes the generator reads, and the file name that says
+// which schema those bytes are — and nothing compared them.
+//
+// No other gate here settles a divergence, and the reason is worth stating
+// because the first reading of it is the wrong one. The recorded name is emitted
+// into the generated file's provenance header, so editing it alone does redden
+// the regen-drift gate — the committed file no longer matches. But that gate's
+// remedy is to regenerate and commit, and regenerating writes the wrong name
+// into the header. Every gate is then green again, permanently, over a published
+// generated file that names a schema it was not generated from: the drift gates
+// compare the output against the committed file, and the binding-coverage
+// assertion above attributes a target by its bytes, so after that one commit
+// nothing compares the recorded name with the bytes again.
+//
+// The name is not decoration. It ships in the provenance header of every
+// generated codec, and the generator names it when it refuses to emit, so a
+// mismatch misleads a reader of the published file and misleads in the one
+// message whose whole job is to say which schema is at fault.
+//
+// # Both sides of the comparison are bytes, and that is the load-bearing part
+//
+// The recorded file name is resolved through the schema package's own dynamic
+// lookup, and the bytes that lookup returns are compared against the bytes in
+// the entry. A file name is never compared with a file name. Deriving the
+// expected file name from the kind and matching the two strings would put a
+// second copy of the schema-file naming convention here, and a copy that agrees
+// today is precisely what hides the divergence it was added to catch — a
+// mismatch would then be a string-similarity judgement rather than an
+// inequality. That would be worse here than almost anywhere, because this
+// assertion's entire subject is two references to one schema disagreeing.
+func TestTargetSchemaFileAgreesWithItsSchemaBytes(t *testing.T) {
+	// A pass over an empty population certifies nothing, so an emptied table is
+	// a failure rather than a green: a table that stopped resolving must not
+	// read as "every entry's two references agree".
+	if len(enumSources) == 0 || len(codecTargets) == 0 {
+		t.Fatalf("enumSources holds %d entries and codecTargets holds %d, so this assertion "+
+			"checked nothing: a target table that has stopped resolving cannot report agreement",
+			len(enumSources), len(codecTargets))
+	}
+
+	// The reverse index is built from the distribution rather than from a hand
+	// list, so a failure can name the kind an entry's bytes actually belong to
+	// instead of only reporting that they are not the ones named.
+	kindByBytes := map[string]string{}
+	for _, kind := range schemas.Kinds() {
+		body, ok := schemas.SchemaByKind(kind)
+		if !ok {
+			t.Fatalf("kind %q is enumerated but its schema does not resolve", kind)
+		}
+		kindByBytes[body] = kind
+	}
+
+	check := func(t *testing.T, table, outFile, schemaFile, schemaBody string) {
+		t.Helper()
+		switch {
+		case schemaFile == "" && schemaBody == "":
+			// A target generated from no schema at all — the shared codec
+			// helpers. Both references are absent together, which is the
+			// consistent state for that shape, so there is nothing to compare.
+			// This excuses no entry: the case below fails an entry carrying one
+			// reference without the other.
+			return
+		case schemaFile == "":
+			t.Errorf("%s[%q] carries schema bytes but records no schemaFile, so nothing says which "+
+				"schema those bytes are: a reader, and the generator's own refusal message, have no "+
+				"name to report. Record the file the bytes come from.", table, outFile)
+			return
+		case schemaBody == "":
+			t.Errorf("%s[%q] records schemaFile %q but carries no schema bytes, so it names a schema "+
+				"it does not generate from.", table, outFile, schemaFile)
+			return
+		}
+
+		kind := strings.TrimSuffix(schemaFile, schemaFileSuffix)
+		want, ok := schemas.SchemaByKind(kind)
+		if !ok {
+			t.Errorf("%s[%q] records schemaFile %q, whose kind token %q resolves to no schema in the "+
+				"distribution. Either the file name is wrong, or the schema it names is no longer "+
+				"shipped and the entry is a record of a coupling that has gone.",
+				table, outFile, schemaFile, kind)
+			return
+		}
+		if want == schemaBody {
+			return
+		}
+		// Naming the kind the bytes DO belong to turns the failure from "these
+		// disagree" into the one edit that fixes it, and it is read from the
+		// same distribution rather than guessed.
+		actual := "a schema outside the distribution"
+		if got, ok := kindByBytes[schemaBody]; ok {
+			actual = "the " + got + " schema"
+		}
+		t.Errorf("%s[%q] records schemaFile %q, but the bytes it generates from are %s. The generated "+
+			"output is correct for the bytes, so every drift gate stays green while the entry, and the "+
+			"generator's refusal message, name the wrong schema. Correct whichever of the two is wrong.",
+			table, outFile, schemaFile, actual)
+	}
+
+	for outFile, src := range enumSources {
+		t.Run("enumSources/"+outFile, func(t *testing.T) {
+			check(t, "enumSources", outFile, src.schemaFile, src.schema)
+		})
+	}
+	for outFile, tgt := range codecTargets {
+		t.Run("codecTargets/"+outFile, func(t *testing.T) {
+			check(t, "codecTargets", outFile, tgt.schemaFile, tgt.schema)
+		})
+	}
+}
