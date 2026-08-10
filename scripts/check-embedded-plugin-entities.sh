@@ -2,12 +2,13 @@
 # aggrega-cli/scripts/check-embedded-plugin-entities.sh
 #
 # Fails when any embedded plugin's generated entity under
-# internal/wasm/embedded/plugins/<name>.plugin.yaml is missing, or older than an
+# internal/wasm/embedded/plugins/<name>.plugin.yaml is missing, older than an
 # input it is generated from — the guest's describe() descriptor (the
 # machine-derived contract half) or the authored overlay (the identity / runtime
-# / provider half). The embedded entity is what a no-local-catalog build resolves
-# a core provider from at render time, so a stale or missing entity would route a
-# core provider off an out-of-date contract or fail to resolve it at all.
+# / provider half) — or declaring a version its guest does not report. The
+# embedded entity is what a no-local-catalog build resolves a core provider from
+# at render time, so a stale or missing entity would route a core provider off an
+# out-of-date contract or fail to resolve it at all.
 #
 # The embedded entities are reproducible build outputs regenerated from the
 # guests and overlays (see gen-embedded-plugin-entities.sh, run by
@@ -15,11 +16,24 @@
 # is the entity-axis counterpart of check-embedded-guests.sh: run it after a
 # build to assert the embedded entities are current with their inputs.
 #
-# Freshness is measured by modification time, not content digest — the same
-# posture the guest check uses, and for the same reason: the generated entity's
-# metadata.version is a build-provenance stamp, so a digest comparison would
-# report false staleness on any tree whose version string moved without an input
-# change. An entity-older-than-its-inputs mtime test is immune to that.
+# The check has two halves, and they answer different questions:
+#
+#   - MODIFICATION TIME — an entity older than an input is stale. This is the
+#     cheap regeneration trigger, the same posture the guest check uses. It is
+#     deliberately not a whole-file digest comparison: the entity carries a
+#     build-provenance version stamp, so a digest test would report false
+#     staleness on any tree whose version string moved without an input change.
+#
+#   - VERSION AGREEMENT — the entity's metadata.version must be the version its
+#     guest's describe() descriptor reports. This is the property that actually
+#     matters, asserted directly rather than inferred from file ordering, and it
+#     is what a resolution keyed on the entity's version depends on. Comparing
+#     exactly this one field is immune to the false staleness a whole-file digest
+#     would suffer, because the entity does not stamp a version of its own: the
+#     generator copies the guest's self-reported version verbatim. So the two can
+#     disagree only when the entity was generated against a different build of
+#     the guest than the one now on disk — which modification time alone does not
+#     detect whenever the entity is the newer file.
 #
 # The overlays live in the sibling aggrega-hub. When that sibling is absent (a
 # schemas/pdk/abi-only checkout that cannot generate entities anyway), the
@@ -53,6 +67,20 @@ newer_input() {
   find "$input" -newer "$entity" -print -quit 2>/dev/null
 }
 
+# entity_version ENTITY — echoes the entity's metadata.version. The entity is a
+# generated file with one such key at a fixed indent, so the field is read
+# directly rather than through a YAML parser the other build scripts do not need.
+entity_version() {
+  sed -n 's/^  version:[[:space:]]*//p' "$1" | head -1
+}
+
+# guest_version DESCRIPTOR — echoes the version the guest's describe() descriptor
+# reports. Read for the diagnostic only; the assertion itself is a fixed-string
+# containment test, so a version carrying regex metacharacters cannot widen it.
+guest_version() {
+  sed -n 's/.*"version":"\([^"]*\)".*/\1/p' "$1" | head -1
+}
+
 while IFS=$'\t' read -r socket name sourcePath toolchain extraRoots; do
   case "$socket" in ''|'#'*) continue;; esac
   entity="$EMBED_DIR/$name.plugin.yaml"
@@ -70,9 +98,23 @@ while IFS=$'\t' read -r socket name sourcePath toolchain extraRoots; do
   if [ -n "$newer" ]; then
     echo "STALE  $socket/$name — input newer than entity: $newer"
     stale+=("$name")
-  else
-    echo "fresh  $socket/$name"
+    continue
   fi
+  # Version agreement: the entity must declare the version its guest reports.
+  # Checked even when the entity is the newer file, which is exactly the case
+  # modification time cannot see.
+  ev="$(entity_version "$entity")"
+  if [ -z "$ev" ]; then
+    echo "STALE  $socket/$name — entity declares no metadata.version: $entity"
+    stale+=("$name")
+    continue
+  fi
+  if [ -f "$desc" ] && ! grep -qF "\"version\":\"$ev\"" "$desc"; then
+    echo "STALE  $socket/$name — entity declares version $ev but its guest reports $(guest_version "$desc")"
+    stale+=("$name")
+    continue
+  fi
+  echo "fresh  $socket/$name"
 done < "$MANIFEST"
 
 if [ "$have_overlays" = 0 ]; then

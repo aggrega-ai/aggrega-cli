@@ -5,9 +5,18 @@
 # (never executed) by the scripts that stamp a build-provenance version into an
 # output: the shipped aggrega binary, the embedded guests' describe()
 # self-report, and the CLI that generates the embedded plugin entities. Sourcing
-# one recipe keeps those three in lockstep — an embedded entity's stamped
-# version always matches the binary that carries it — because none of them
-# invokes git on its own.
+# one recipe means none of them invokes git on its own, so two outputs stamped
+# from the same working tree at the same moment carry the same version.
+#
+# It does NOT make outputs produced at different moments agree, and nothing here
+# should be read as promising that. Each output is stamped when it is produced, so
+# an artifact whose regeneration was skipped as already-current keeps the version
+# it was stamped with while a freshly-produced one carries the current one.
+# Agreement between separately-produced artifacts is asserted by the freshness
+# checks that compare them (check-embedded-guests.sh,
+# check-embedded-plugin-entities.sh), never inferred from this shared recipe. The
+# generated plugin entities are the case worth knowing: they do not stamp
+# themselves from this recipe at all — each copies the version its guest reports.
 #
 # Sourcing sets two variables in the caller's shell:
 #   _ver — git describe, with any leading "v" stripped: the tag, the bare commit
