@@ -6,7 +6,6 @@ package jsonschema
 import (
 	"bytes"
 	"fmt"
-	"sort"
 	"strconv"
 	"strings"
 	"text/template"
@@ -29,14 +28,13 @@ import (
 //     values pruned away (see pruneOwnKeywords) — and emit a Finding on
 //     failure. Check the schema's Required slice at each level and emit
 //     one Finding per missing required key in sorted order. Recurse into
-//     nested objects, and into the patternProperties and
-//     additionalProperties branches, so every position is reached by the
+//     nested objects, into the patternProperties and additionalProperties
+//     branches, into an array's elements by index, and into the branch a
+//     conditional applicator selects, so every position is reached by the
 //     walk rather than by the library's randomised iteration over a
-//     schema's or an instance's map. What the walk does not reach — an
-//     array's elements, and the properties an in-place applicator
-//     declares — keeps its constraints intact at the position that
-//     declares them, so those are checked by the library within one
-//     position's call.
+//     schema's or an instance's map. The keyword families the walk reaches
+//     are listed in this package's documentation, along with the ones it
+//     leaves to the library and what that costs.
 //
 //  2. Walk the pre-collected x-aggrega-when: nodes shallowest-first.
 //     For each:
@@ -299,14 +297,10 @@ func (a *googleAdapter) deterministicWalk(instance any, path string, rpt *Report
 		if m, ok := instance.(map[string]any); ok {
 			for _, key := range req {
 				if _, present := m[key]; !present {
-					missingPath := key
-					if path != "" {
-						missingPath = path + "." + key
-					}
 					rpt.append(Finding{
-						FieldPath: missingPath,
+						FieldPath: childPath(path, key),
 						Keyword:   "required",
-						Message:   "missing required property: " + key,
+						Message:   nameViolatedDefinition("missing required property: "+key, a.subDefinition[path]),
 					})
 				}
 			}
@@ -314,19 +308,15 @@ func (a *googleAdapter) deterministicWalk(instance any, path string, rpt *Report
 	}
 
 	if m, ok := instance.(map[string]any); ok {
-		keys := make([]string, 0, len(m))
-		for k := range m {
-			keys = append(keys, k)
-		}
-		sort.Strings(keys)
+		// Keys reaching no declared property and no pattern, in the sorted
+		// order this loop visits them, so whatever names them names them the
+		// same way on every run.
+		var unmatched []string
 
 		// Per-key dispatch with the walker's precedence rule:
 		// Properties > PatternProperties > AdditionalProperties.
-		for _, k := range keys {
-			subPath := k
-			if path != "" {
-				subPath = path + "." + k
-			}
+		for _, k := range sortedKeys(m) {
+			subPath := childPath(path, k)
 
 			// Arm 1: declared in Properties. Validated against the
 			// position's own constraints, with its declared property values
@@ -365,9 +355,19 @@ func (a *googleAdapter) deterministicWalk(instance any, path string, rpt *Report
 			if apBranch, ok := a.additionalPropsBranch[path]; ok {
 				branchRpt := a.walkBranch(apBranch, m[k], subPath)
 				rpt.Findings = append(rpt.Findings, branchRpt.Findings...)
+				continue
 			}
+
+			unmatched = append(unmatched, k)
 		}
+
+		a.reportUnmatchedKeys(a.keywords[path], unmatched, m, path, rpt)
 	}
+
+	// The keyword families beyond the declared-property ones: the array
+	// keywords, the key-string and key-count constraints, and the
+	// conditional applicator.
+	a.walkPositionKeywords(a.keywords[path], instance, path, rpt)
 
 	// Combinator evaluation at this path, each through its own branch walk.
 	if branches, ok := a.oneOfBranches[path]; ok {
@@ -499,14 +499,10 @@ func (a *googleAdapter) walkBranch(bi *branchIndex, instance any, path string) *
 		if m, ok := instance.(map[string]any); ok {
 			for _, key := range req {
 				if _, present := m[key]; !present {
-					missingPath := key
-					if path != "" {
-						missingPath = path + "." + key
-					}
 					rpt.append(Finding{
-						FieldPath: missingPath,
+						FieldPath: childPath(path, key),
 						Keyword:   "required",
-						Message:   "missing required property: " + key,
+						Message:   nameViolatedDefinition("missing required property: "+key, bi.definition),
 					})
 				}
 			}
@@ -514,17 +510,10 @@ func (a *googleAdapter) walkBranch(bi *branchIndex, instance any, path string) *
 	}
 
 	if m, ok := instance.(map[string]any); ok {
-		keys := make([]string, 0, len(m))
-		for k := range m {
-			keys = append(keys, k)
-		}
-		sort.Strings(keys)
+		var unmatched []string
 
-		for _, k := range keys {
-			subPath := k
-			if path != "" {
-				subPath = path + "." + k
-			}
+		for _, k := range sortedKeys(m) {
+			subPath := childPath(path, k)
 
 			// Arm 1: declared in Properties (branch-local). Walked rather
 			// than validated in one call, so a property that is itself an
@@ -554,9 +543,16 @@ func (a *googleAdapter) walkBranch(bi *branchIndex, instance any, path string) *
 			if apBranch, ok := bi.additionalPropsBranch[""]; ok {
 				branchRpt := a.walkBranch(apBranch, m[k], subPath)
 				rpt.Findings = append(rpt.Findings, branchRpt.Findings...)
+				continue
 			}
+
+			unmatched = append(unmatched, k)
 		}
+
+		a.reportUnmatchedKeys(bi.keywords, unmatched, m, path, rpt)
 	}
+
+	a.walkPositionKeywords(bi.keywords, instance, path, rpt)
 
 	// Combinators at this branch, recursively.
 	if branches, ok := bi.oneOfBranches[""]; ok {
@@ -655,17 +651,30 @@ func evaluateAnyOf(a *googleAdapter, branches []*branchIndex, instance any, path
 	})
 }
 
-// evaluateNot walks the inverse schema; if instance MATCHES the
-// inverse (zero findings), emit a single "not" Finding.
+// evaluateNot walks the excluded schema; if the instance matches it (zero
+// findings), the exclusion is violated and a single "not" Finding is
+// emitted.
+//
+// The message names the excluded shape where the author gave it a name by
+// referencing one of the schema's own definitions, because that is the one
+// word telling the reader which shape their value is not allowed to be.
+// Without a name there is nothing to name, so the message says what the
+// reader can still act on: the value at this position is one the schema
+// rules out.
 func evaluateNot(a *googleAdapter, notBranch *branchIndex, instance any, path string, rpt *Report) {
 	branchRpt := a.walkBranch(notBranch, instance, path)
-	if len(branchRpt.Findings) == 0 {
-		rpt.append(Finding{
-			FieldPath: path,
-			Keyword:   "not",
-			Message:   "instance must NOT match the inverse schema",
-		})
+	if len(branchRpt.Findings) != 0 {
+		return
 	}
+	message := "value matches a shape that is not allowed here"
+	if notBranch.definition != "" {
+		message = "value matches " + strconv.Quote(notBranch.definition) + ", which is not allowed here"
+	}
+	rpt.append(Finding{
+		FieldPath: path,
+		Keyword:   "not",
+		Message:   message,
+	})
 }
 
 // summarizeBranchFindings produces a single-line summary of a
@@ -792,15 +801,21 @@ func filterOutPath(findings []Finding, path string) []Finding {
 }
 
 // isUnderPath reports whether child is path itself or a descendant
-// of path. Both arguments are dot-delimited strings produced by
-// joinPath. The check uses a strict prefix match on path + "." to
-// avoid matching siblings whose paths share a prefix (e.g.,
-// "foo.bar" is NOT under "foo.b").
+// of path. The check uses a strict prefix match on the delimiter that
+// begins a descendant segment, so a sibling sharing a prefix does not match
+// ("foo.bar" is NOT under "foo.b").
+//
+// A descendant begins either with the property delimiter or with the
+// bracket that opens an array index, and both have to be recognised: an
+// element's path is the array's path plus a bracketed index, so a check
+// knowing only the property delimiter reads a finding inside an array as
+// belonging to a different subtree — which would leave a gated subtree's
+// array findings behind when the gate turns the subtree off.
 func isUnderPath(child, path string) bool {
 	if child == path {
 		return true
 	}
-	return strings.HasPrefix(child, path+".")
+	return strings.HasPrefix(child, path+".") || strings.HasPrefix(child, path+"[")
 }
 
 // libraryErrorToFindings translates a library validation error into

@@ -46,7 +46,79 @@
 // periodically or wrap it with a bounded LRU cache to avoid unbounded
 // memory growth from the *Schema → *Resolved cache.
 //
-// Validation findings sort by FieldPath → Keyword → Message before
-// emission, guaranteeing byte-identical Reports across two runs of the
-// same Validate call regardless of library iteration order.
+// # Reproducible reports
+//
+// Two runs of the same Validate call over the same instance produce
+// byte-identical Reports. Both halves of that are load-bearing and they are
+// separate properties: the same findings, in the same order.
+//
+// The set is the harder half. A JSON Schema library evaluates an object's
+// declared properties, its key set and its combinator branches by iterating
+// maps, and stops at the first failure it reaches — so where two values are
+// equally at fault it reports one of them, and which one differs between
+// runs. Sorting a report assembled that way fixes the order of whatever it
+// happens to contain and leaves the contents varying. The adapter therefore
+// reaches every position itself, in an order fixed by the instance rather
+// than by a map, and asks the library only about positions where there is
+// nothing left to choose between.
+//
+// The order is the rendered FieldPath, then Keyword, then Message, each
+// compared as text. Two consequences follow from "as text" and are stated
+// because a reader would otherwise have to infer them from one observation:
+// an array index orders lexically rather than numerically, so a list long
+// enough to reach ten places reports element 10 before element 2; and a
+// property name containing a character below the path separator sorts ahead
+// of a deeper path under a shorter name.
+//
+// # What this adapter is the authority for
+//
+// The adapter is the authoritative enforcer of the keywords below, meaning
+// it evaluates them itself, reports each violation at the path of the value
+// that violates, and reports every one of several sibling violations rather
+// than an arbitrary one:
+//
+//   - The declared-property families: properties, patternProperties,
+//     additionalProperties in both its schema and its closed form, required
+//     and dependentSchemas.
+//   - The combinators: allOf, anyOf, oneOf and not.
+//   - The array keywords: prefixItems, items, contains and the contains
+//     count bounds.
+//   - The key constraints: propertyNames and the property-count bounds.
+//   - The conditional applicator if/then/else, except at a node carrying
+//     x-aggrega-when:, where the predicate governs instead.
+//   - The Aggrega extension keywords described above.
+//
+// Everything else — every scalar constraint, so type, enum, const, the
+// numeric and string bounds, format, dependentRequired — is evaluated by
+// the underlying library at the single position that declares it. Those
+// carry no ordering hazard: one position, one constraint, one message, with
+// no map iterated to produce it.
+//
+// # What it is not the authority for
+//
+// Two exclusions, both deliberate, and neither of them silent in the sense
+// that matters — each is stated here rather than left to be discovered from
+// behaviour.
+//
+// unevaluatedProperties and unevaluatedItems are enforced only where what
+// counts as already-reached is computable from the position that declares
+// them. Their meaning is assembled from what the neighbouring keywords
+// matched, so a position that also carries a reference, a combinator, a
+// conditional or a dependent schema puts part of that set out of reach: the
+// applicator contributes matches this position cannot see. There the
+// keyword is not enforced. The alternative is worse than under-reporting —
+// a set computed too small refuses values another applicator had in fact
+// accepted, which is a diagnostic for a mistake the author did not make.
+// unevaluatedItems is likewise not enforced beside contains, for the same
+// reason. No schema shipped with the compiler relies on either keyword.
+//
+// 🔴 A position the adapter cannot resolve on its own is not checked, and
+// neither is anything below it. This is the sharper of the two exclusions
+// and it is permissive: a document violating such a position validates
+// clean, with nothing reported. It is reached by a reference the adapter
+// cannot resolve standalone — a pointer into a property rather than into a
+// reusable definition, or a definition whose own references reach outside
+// the definitions in scope — and it costs the position its own keywords too,
+// not merely the constraints beneath it. Prefer a reference into a reusable
+// definition, which resolves and is checked in full.
 package jsonschema

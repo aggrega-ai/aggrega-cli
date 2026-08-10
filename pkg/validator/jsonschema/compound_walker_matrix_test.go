@@ -43,7 +43,7 @@ func TestWalkBranch_NilBranchIndex_ReturnsEmpty(t *testing.T) {
 func TestBuildBranchIndex_NilSchema_ReturnsNil(t *testing.T) {
 	t.Parallel()
 	a := &googleAdapter{}
-	if bi := a.buildBranchIndex(nil, nil); bi != nil {
+	if bi := a.buildBranchIndex(nil, nil, ""); bi != nil {
 		t.Errorf("buildBranchIndex(nil) = %v; want nil", bi)
 	}
 }

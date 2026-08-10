@@ -265,6 +265,28 @@ func joinPath(path []string) string {
 	return strings.Join(path, ".")
 }
 
+// childPath names a property's position beneath path. At the root the
+// property name stands alone.
+func childPath(path, name string) string {
+	if path == "" {
+		return name
+	}
+	return path + "." + name
+}
+
+// sortedKeys returns an object's keys in ascending order, which is the
+// order every walk over an instance uses. Iterating the map directly is
+// what makes a report name a different one of several failing keys on each
+// run.
+func sortedKeys(object map[string]any) []string {
+	keys := make([]string, 0, len(object))
+	for key := range object {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
 // indexSubSchemas populates a.subResolved and a.required by walking
 // schema.Properties recursively. Each sub-schema at an
 // instance-reachable position gets pre-resolved via the library's
@@ -311,7 +333,7 @@ func joinPath(path []string) string {
 // (e.g., `$defs/X` referencing `/properties/foo`). Either would require
 // validating at the root and filtering findings, accepting the ordering
 // degradation for the affected paths only.
-func (a *googleAdapter) indexSubSchemas(s *jsonschema.Schema, path string, ambientDefs map[string]*jsonschema.Schema) error {
+func (a *googleAdapter) indexSubSchemas(s *jsonschema.Schema, path string, ambientDefs map[string]*jsonschema.Schema, enclosing string) error {
 	if s == nil {
 		return nil
 	}
@@ -343,16 +365,39 @@ func (a *googleAdapter) indexSubSchemas(s *jsonschema.Schema, path string, ambie
 	// the permissive direction, which is the direction no positive test can
 	// see — a schema in this shape reads as stricter than one that inlines
 	// the same constraints while enforcing none of them.
+	definition := ""
 	if name, substituted, ok := substituteRefOnly(s); ok && !a.expanding[name] {
 		s = substituted
-		// The definition becomes the root of the library call made at
-		// this position, and a library names its call root as the root
-		// rather than by name — so without recording the name here, a
-		// diagnostic would no longer say which declared shape was
-		// violated.
-		a.subDefinition[path] = name
+		// The definition becomes the root of the library call made at this
+		// position, and a library names its own call root as the root rather
+		// than by name — so without recording the name here, a diagnostic
+		// would no longer say which declared shape was violated.
+		definition = name
 		a.expanding[name] = true
 		defer delete(a.expanding, name)
+	}
+
+	// The name a diagnostic at this position cites.
+	//
+	// 🔴 The instance root is the exception, and it is not an oversight. A
+	// reference at the root and the same constraints written out at the root
+	// are two authorings of one document, so they must fail identically; and
+	// there the definition IS the document's root, so the library's own label
+	// is already accurate. Citing the name would make one set of constraints
+	// report differently according to how the author chose to factor it.
+	//
+	// Nor is the name inherited by the positions below, for the same reason:
+	// every one of them is reached by the same descent under either
+	// authoring. What does inherit is a definition substituted for an
+	// in-place applicator's branch, which shares its instance position with
+	// its siblings and so cannot be told apart by path alone. That
+	// inheritance lives in buildBranchIndex, and enclosing carries it.
+	cited := definition
+	if path == "" {
+		cited = ""
+	}
+	if cited != "" {
+		a.subDefinition[path] = cited
 	}
 
 	// Resolve this sub-schema as a standalone root. The root schema
@@ -399,7 +444,7 @@ func (a *googleAdapter) indexSubSchemas(s *jsonschema.Schema, path string, ambie
 			if path != "" {
 				subPath = path + "." + name
 			}
-			if err := a.indexSubSchemas(s.Properties[name], subPath, nextAmbient); err != nil {
+			if err := a.indexSubSchemas(s.Properties[name], subPath, nextAmbient, ""); err != nil {
 				return err
 			}
 		}
@@ -414,8 +459,16 @@ func (a *googleAdapter) indexSubSchemas(s *jsonschema.Schema, path string, ambie
 
 	// additionalProperties: <schema> — promoted to branchIndex, so
 	// nested-Properties additionalProperties walk deterministically.
-	if s.AdditionalProperties != nil {
-		if bi := a.buildBranchIndex(s.AdditionalProperties, nextAmbient); bi != nil {
+	//
+	// The closed form is deliberately excluded. It states which keys the
+	// object may carry rather than constraining any value, so routing an
+	// undeclared key's value through it produced a finding at the key's own
+	// path phrased as a failure to avoid matching an inverted schema —
+	// wording that names neither the key nor anything the author wrote. The
+	// keyword index carries the closed form instead, and the walk names
+	// every unaccepted key once, together, in order.
+	if s.AdditionalProperties != nil && !isClosedForm(s.AdditionalProperties) {
+		if bi := a.buildBranchIndex(s.AdditionalProperties, nextAmbient, ""); bi != nil {
 			a.additionalPropsBranch[path] = bi
 		}
 	}
@@ -423,7 +476,7 @@ func (a *googleAdapter) indexSubSchemas(s *jsonschema.Schema, path string, ambie
 	if len(s.OneOf) > 0 {
 		branches := make([]*branchIndex, 0, len(s.OneOf))
 		for _, b := range s.OneOf {
-			if bi := a.buildBranchIndex(b, nextAmbient); bi != nil {
+			if bi := a.buildBranchIndex(b, nextAmbient, ""); bi != nil {
 				branches = append(branches, bi)
 			}
 		}
@@ -435,7 +488,7 @@ func (a *googleAdapter) indexSubSchemas(s *jsonschema.Schema, path string, ambie
 	if len(s.AllOf) > 0 {
 		branches := make([]*branchIndex, 0, len(s.AllOf))
 		for _, b := range s.AllOf {
-			if bi := a.buildBranchIndex(b, nextAmbient); bi != nil {
+			if bi := a.buildBranchIndex(b, nextAmbient, ""); bi != nil {
 				branches = append(branches, bi)
 			}
 		}
@@ -447,7 +500,7 @@ func (a *googleAdapter) indexSubSchemas(s *jsonschema.Schema, path string, ambie
 	if len(s.AnyOf) > 0 {
 		branches := make([]*branchIndex, 0, len(s.AnyOf))
 		for _, b := range s.AnyOf {
-			if bi := a.buildBranchIndex(b, nextAmbient); bi != nil {
+			if bi := a.buildBranchIndex(b, nextAmbient, ""); bi != nil {
 				branches = append(branches, bi)
 			}
 		}
@@ -457,7 +510,7 @@ func (a *googleAdapter) indexSubSchemas(s *jsonschema.Schema, path string, ambie
 	}
 
 	if s.Not != nil {
-		if bi := a.buildBranchIndex(s.Not, nextAmbient); bi != nil {
+		if bi := a.buildBranchIndex(s.Not, nextAmbient, ""); bi != nil {
 			a.notIndexes[path] = bi
 		}
 	}
@@ -478,7 +531,7 @@ func (a *googleAdapter) indexSubSchemas(s *jsonschema.Schema, path string, ambie
 					Err:     ErrSchemaResolve(),
 				}
 			}
-			if bi := a.buildBranchIndex(s.PatternProperties[p], nextAmbient); bi != nil {
+			if bi := a.buildBranchIndex(s.PatternProperties[p], nextAmbient, ""); bi != nil {
 				entries = append(entries, &patternEntry{pattern: re, branch: bi})
 			}
 		}
@@ -495,13 +548,17 @@ func (a *googleAdapter) indexSubSchemas(s *jsonschema.Schema, path string, ambie
 		sort.Strings(keys)
 		entries := make([]*dependentEntry, 0, len(keys))
 		for _, k := range keys {
-			if bi := a.buildBranchIndex(s.DependentSchemas[k], nextAmbient); bi != nil {
+			if bi := a.buildBranchIndex(s.DependentSchemas[k], nextAmbient, ""); bi != nil {
 				entries = append(entries, &dependentEntry{triggerKey: k, branch: bi})
 			}
 		}
 		if len(entries) > 0 {
 			a.dependentSchemas[path] = entries
 		}
+	}
+
+	if pk := a.buildPositionKeywords(s, nextAmbient, cited); pk != nil {
+		a.keywords[path] = pk
 	}
 
 	// The reduced schema for this position, built last so it can be told
@@ -522,7 +579,7 @@ func (a *googleAdapter) indexSubSchemas(s *jsonschema.Schema, path string, ambie
 		oneOf:            hasOneOf,
 		not:              hasNot,
 		dependentSchemas: hasDependent,
-	})
+	}, a.keywords[path])
 	if reducedResolved, reducedErr := reduced.Resolve(nil); reducedErr == nil {
 		a.subPruned[path] = reducedResolved
 	}
@@ -549,7 +606,7 @@ func (a *googleAdapter) indexSubSchemas(s *jsonschema.Schema, path string, ambie
 // the existing walker-completeness gap pattern; the corresponding
 // branch's validation surfaces as a documented gap rather than a
 // construction error).
-func (a *googleAdapter) buildBranchIndex(s *jsonschema.Schema, ambientDefs map[string]*jsonschema.Schema) *branchIndex {
+func (a *googleAdapter) buildBranchIndex(s *jsonschema.Schema, ambientDefs map[string]*jsonschema.Schema, enclosing string) *branchIndex {
 	if s == nil {
 		return nil
 	}
@@ -566,13 +623,13 @@ func (a *googleAdapter) buildBranchIndex(s *jsonschema.Schema, ambientDefs map[s
 		s.Defs = merged
 	}
 
-	definition := ""
+	// Inherited from the enclosing position for the same reason as in
+	// indexSubSchemas, and overridden where this branch names a definition
+	// of its own: the nearest name is the one that describes the shape the
+	// value was checked against.
+	definition := enclosing
 	if name, substituted, ok := substituteRefOnly(s); ok && !a.expanding[name] {
 		s = substituted
-		// Recorded for the same reason as in indexSubSchemas: the
-		// definition becomes the root of the library call made for this
-		// branch, and a library names its call root as the root, so the
-		// name is the only place the violated shape can come from.
 		definition = name
 		a.expanding[name] = true
 		defer delete(a.expanding, name)
@@ -585,9 +642,21 @@ func (a *googleAdapter) buildBranchIndex(s *jsonschema.Schema, ambientDefs map[s
 
 	bi := &branchIndex{definition: definition}
 
+	// Uses the same ambient-defs threading as indexSubSchemas;
+	// nextAmbient = s.Defs post-graft.
+	nextAmbient := s.Defs
+
+	// Indexed before the leaf decision, because whether the walk has
+	// anything to do at this branch is part of that decision: a branch
+	// declaring only array keywords carries no properties and would read as
+	// a leaf, and handing it to the library entire is exactly the one call
+	// that reports an arbitrary one of an element's equally-failing fields.
+	bi.keywords = a.buildPositionKeywords(s, nextAmbient, definition)
+
 	// Leaf-vs-compound decision: a branch is a leaf iff it has no
 	// Properties, no nested combinators, no patternProperties, no
-	// dependentSchemas, and no additionalProperties.
+	// dependentSchemas, no additionalProperties, and nothing the keyword
+	// index picked up.
 	isLeaf := s.Properties == nil &&
 		len(s.OneOf) == 0 &&
 		len(s.AllOf) == 0 &&
@@ -595,17 +664,13 @@ func (a *googleAdapter) buildBranchIndex(s *jsonschema.Schema, ambientDefs map[s
 		s.Not == nil &&
 		len(s.PatternProperties) == 0 &&
 		len(s.DependentSchemas) == 0 &&
-		s.AdditionalProperties == nil
+		s.AdditionalProperties == nil &&
+		bi.keywords == nil
 
 	if isLeaf {
 		bi.resolved = resolved
 		return bi
 	}
-
-	// Compound branch: populate per-construct maps. Uses the same
-	// ambient-defs threading as indexSubSchemas; nextAmbient = s.Defs
-	// post-graft.
-	nextAmbient := s.Defs
 	bi.subBranches = map[string]*branchIndex{}
 	bi.required = map[string][]string{}
 
@@ -627,14 +692,16 @@ func (a *googleAdapter) buildBranchIndex(s *jsonschema.Schema, ambientDefs map[s
 			// that is a reference used to fail resolution here and be
 			// dropped) and so a property that is itself an object is walked
 			// per-property instead of being handed to the library whole.
-			if sub := a.buildBranchIndex(s.Properties[name], nextAmbient); sub != nil {
+			if sub := a.buildBranchIndex(s.Properties[name], nextAmbient, definition); sub != nil {
 				bi.subBranches[name] = sub
 			}
 		}
 	}
 
-	if s.AdditionalProperties != nil {
-		if apBi := a.buildBranchIndex(s.AdditionalProperties, nextAmbient); apBi != nil {
+	// The closed form is excluded for the same reason as at the top level:
+	// it constrains no value, and the keyword index carries it.
+	if s.AdditionalProperties != nil && !isClosedForm(s.AdditionalProperties) {
+		if apBi := a.buildBranchIndex(s.AdditionalProperties, nextAmbient, definition); apBi != nil {
 			bi.additionalPropsBranch = map[string]*branchIndex{"": apBi}
 		}
 	}
@@ -642,7 +709,7 @@ func (a *googleAdapter) buildBranchIndex(s *jsonschema.Schema, ambientDefs map[s
 	if len(s.OneOf) > 0 {
 		branches := make([]*branchIndex, 0, len(s.OneOf))
 		for _, b := range s.OneOf {
-			if sub := a.buildBranchIndex(b, nextAmbient); sub != nil {
+			if sub := a.buildBranchIndex(b, nextAmbient, definition); sub != nil {
 				branches = append(branches, sub)
 			}
 		}
@@ -654,7 +721,7 @@ func (a *googleAdapter) buildBranchIndex(s *jsonschema.Schema, ambientDefs map[s
 	if len(s.AllOf) > 0 {
 		branches := make([]*branchIndex, 0, len(s.AllOf))
 		for _, b := range s.AllOf {
-			if sub := a.buildBranchIndex(b, nextAmbient); sub != nil {
+			if sub := a.buildBranchIndex(b, nextAmbient, definition); sub != nil {
 				branches = append(branches, sub)
 			}
 		}
@@ -666,7 +733,7 @@ func (a *googleAdapter) buildBranchIndex(s *jsonschema.Schema, ambientDefs map[s
 	if len(s.AnyOf) > 0 {
 		branches := make([]*branchIndex, 0, len(s.AnyOf))
 		for _, b := range s.AnyOf {
-			if sub := a.buildBranchIndex(b, nextAmbient); sub != nil {
+			if sub := a.buildBranchIndex(b, nextAmbient, definition); sub != nil {
 				branches = append(branches, sub)
 			}
 		}
@@ -676,7 +743,7 @@ func (a *googleAdapter) buildBranchIndex(s *jsonschema.Schema, ambientDefs map[s
 	}
 
 	if s.Not != nil {
-		if notBi := a.buildBranchIndex(s.Not, nextAmbient); notBi != nil {
+		if notBi := a.buildBranchIndex(s.Not, nextAmbient, definition); notBi != nil {
 			bi.notIndexes = map[string]*branchIndex{"": notBi}
 		}
 	}
@@ -693,7 +760,7 @@ func (a *googleAdapter) buildBranchIndex(s *jsonschema.Schema, ambientDefs map[s
 			if perr != nil {
 				continue
 			}
-			if sub := a.buildBranchIndex(s.PatternProperties[p], nextAmbient); sub != nil {
+			if sub := a.buildBranchIndex(s.PatternProperties[p], nextAmbient, definition); sub != nil {
 				entries = append(entries, &patternEntry{pattern: re, branch: sub})
 			}
 		}
@@ -710,7 +777,7 @@ func (a *googleAdapter) buildBranchIndex(s *jsonschema.Schema, ambientDefs map[s
 		sort.Strings(keys)
 		entries := make([]*dependentEntry, 0, len(keys))
 		for _, k := range keys {
-			if sub := a.buildBranchIndex(s.DependentSchemas[k], nextAmbient); sub != nil {
+			if sub := a.buildBranchIndex(s.DependentSchemas[k], nextAmbient, definition); sub != nil {
 				entries = append(entries, &dependentEntry{triggerKey: k, branch: sub})
 			}
 		}
@@ -737,7 +804,7 @@ func (a *googleAdapter) buildBranchIndex(s *jsonschema.Schema, ambientDefs map[s
 		oneOf:            hasOneOf,
 		not:              hasNot,
 		dependentSchemas: hasDependent,
-	})
+	}, bi.keywords)
 	if reducedResolved, reducedErr := reduced.Resolve(nil); reducedErr == nil {
 		bi.ownPruned = reducedResolved
 	}

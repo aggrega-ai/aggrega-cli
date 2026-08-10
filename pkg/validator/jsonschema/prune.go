@@ -64,10 +64,12 @@ type evaluatedByWalk struct {
 // The distinction that matters most is between the two conditional
 // families. The walk evaluates allOf, anyOf, oneOf, not and
 // dependentSchemas through its own branch structures, so those are removed
-// here. It does not evaluate if/then/else, so those stay — a branch saying
-// what a field must hold when a sibling is present is reachable through
-// the applicator and nowhere else, and removing it would drop the
-// constraint outright.
+// here unconditionally. if/then/else is removed only where the keyword
+// index reports the walk applies it, which is everywhere except a node
+// carrying a when: predicate — there the predicate governs and the
+// applicator is the vestigial wrapper, whose gated constraints reach the
+// instance through this copy and nowhere else, so removing it would drop
+// the constraint outright.
 //
 // What is preserved, and why:
 //
@@ -78,31 +80,32 @@ type evaluatedByWalk struct {
 //   - additionalProperties in its closed form, which is a statement about
 //     which keys the object may carry rather than a constraint on any
 //     child value.
-//   - The array keywords (items, prefixItems, additionalItems, contains
-//     and the contains bounds) exactly as authored. A library walks array
-//     elements by index, so they carry no ordering hazard, and the walk
-//     does not descend arrays — pruning them would drop their coverage
-//     outright.
-//   - if/then/else, and any reference, exactly as authored. The walk
-//     evaluates neither of these, so a property declared under a
-//     conditional branch exists nowhere else. Leaving the applicator whole
-//     means a branch
-//     declaring several properties that fail together keeps the library's
-//     choice among them — a narrower ordering residual than the one this
-//     transform removes, and the only alternative to dropping the
-//     constraint.
+//   - Any reference, exactly as authored.
+//   - if/then/else where the walk does not evaluate the applicator — which
+//     is the case for a node carrying a when: predicate, whose gated
+//     constraints reach the instance through this copy and nowhere else.
 //   - Every scalar keyword — type, enum, const, the numeric and string
-//     bounds, format, dependentRequired, the property-count bounds —
-//     untouched.
+//     bounds, format, dependentRequired — untouched.
 //
-// unevaluatedProperties and unevaluatedItems are dropped rather than
-// kept. Alone among the keywords, their meaning is assembled from what
-// the sibling and child positions matched, so a copy without those
-// positions would read them differently from the schema the author wrote.
-// Neither appears in any shipped schema, and
-// TestShippedSchemasCarryNoAnnotationDependentKeywords fails the build if
-// one is introduced.
-func pruneOwnKeywords(s *jsonschema.Schema, walked evaluatedByWalk) *jsonschema.Schema {
+// The array keywords, the key-string and key-count constraints, the
+// conditional applicator, closedness and the leftover-value constraints are
+// removed exactly when the keyword index says the walk evaluates them, and
+// kept otherwise. The index is read rather than re-derived from the
+// declaration for the same reason the families above are: a second reading
+// of what the walk covers would agree on the day it was written and drift
+// after, and drift in the removing direction drops a constraint silently.
+//
+// unevaluatedProperties and unevaluatedItems are removed unconditionally,
+// and the two cases differ in what happens next. Where the index modelled
+// them, the walk enforces them. Where it could not — the evaluated set
+// spans an applicator this position cannot see — they are enforced by
+// nothing, because their meaning is assembled from what the sibling and
+// child positions matched and this copy no longer has those positions to
+// read. That exclusion is stated in the package documentation's coverage
+// contract rather than left for a reader to discover, and
+// TestShippedSchemasCarryNoAnnotationDependentKeywords fails the build if a
+// shipped schema starts relying on either.
+func pruneOwnKeywords(s *jsonschema.Schema, walked evaluatedByWalk, modelled *positionKeywords) *jsonschema.Schema {
 	if s == nil {
 		return nil
 	}
@@ -149,10 +152,56 @@ func pruneOwnKeywords(s *jsonschema.Schema, walked evaluatedByWalk) *jsonschema.
 		out.AdditionalProperties = &jsonschema.Schema{}
 	}
 
+	pruneWalkedKeywords(out, modelled)
+
 	out.UnevaluatedProperties = nil
 	out.UnevaluatedItems = nil
 
 	return out
+}
+
+// pruneWalkedKeywords removes from the reduced copy each keyword family the
+// keyword index reports the walk evaluates at this position, so one
+// violation is not reported once by the walk and once by the library.
+//
+// Reading the index directly is what keeps the two sides in agreement: the
+// index is the single statement of what the walk covers, and both the walk
+// and this transform consult it rather than each deciding for itself.
+func pruneWalkedKeywords(out *jsonschema.Schema, modelled *positionKeywords) {
+	if modelled == nil {
+		return
+	}
+	if modelled.items != nil || len(modelled.prefixItems) > 0 {
+		out.Items = nil
+		out.PrefixItems = nil
+	}
+	if modelled.contains != nil {
+		out.Contains = nil
+		out.MinContains = nil
+		out.MaxContains = nil
+	}
+	if modelled.propertyNames != nil {
+		out.PropertyNames = nil
+	}
+	if modelled.minProperties != nil {
+		out.MinProperties = nil
+	}
+	if modelled.maxProperties != nil {
+		out.MaxProperties = nil
+	}
+	if modelled.conditional != nil {
+		out.If = nil
+		out.Then = nil
+		out.Else = nil
+	}
+	// Closedness becomes the walk's, which reports each key that reached no
+	// declared property at that key's own path, in key order. A library
+	// collects the same keys by iterating the instance and names them together
+	// at the enclosing object's path, in an order that varies — so neither the
+	// position of the report nor its order survives.
+	if modelled.closed {
+		out.AdditionalProperties = nil
+	}
 }
 
 // localDefsTarget resolves a reference naming one of the schema's own

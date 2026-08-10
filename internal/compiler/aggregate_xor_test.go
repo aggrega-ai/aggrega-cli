@@ -45,17 +45,17 @@ spec:
 	if !errors.Is(err, envelope.ErrEntityEnvelope()) {
 		t.Fatalf("want errors.Is(err, ErrEntityEnvelope); got %v", err)
 	}
-	// Message-level tightening: pin that the spec-root not/allOf XOR is what
+	// Message-level tightening: pin that the spec-root exclusion is what
 	// rejected it — not some other envelope rule (additionalProperties / required
-	// / type). The schema `not` emits the generic "must NOT match the inverse
-	// schema" at `spec`; it is the only spec-root `not` in the Aggregate schema,
-	// so this substring uniquely identifies the components/subsystems XOR. An
-	// author-friendly "components and subsystems are mutually exclusive" wording
-	// would require a supplemental compiler-guard; the document-envelope reject is
-	// the enforcement of record.
+	// / type). The exclusion reports generically at `spec`, and it is the only
+	// spec-root exclusion in the Aggregate schema, so this substring uniquely
+	// identifies the components/subsystems XOR. An author-friendly "components
+	// and subsystems are mutually exclusive" wording would require a
+	// supplemental compiler-guard; the document-envelope reject is the
+	// enforcement of record.
 	msg := err.Error()
-	if !strings.Contains(msg, "must NOT match the inverse schema") {
-		t.Errorf("diagnostic must identify the spec-level XOR (not) violation; got %q", msg)
+	if !strings.Contains(msg, "is not allowed here") {
+		t.Errorf("diagnostic must identify the spec-level exclusion violation; got %q", msg)
 	}
 	if !strings.Contains(msg, "spec") {
 		t.Errorf("diagnostic must point at spec; got %q", msg)

@@ -164,14 +164,21 @@ func TestAnyOf_FirstMatch_ShortCircuit(t *testing.T) {
 	}
 }
 
-// TestNot_InstanceMatchesNot_SingleFinding pins not semantic when
-// instance MATCHES the inverse.
+// TestNot_InstanceMatchesNot_SingleFinding pins the exclusion semantic when
+// the instance matches the shape the schema rules out, and pins that the
+// diagnostic says so in terms of the value the author wrote rather than in
+// terms of the schema construct that rejected it.
 func TestNot_InstanceMatchesNot_SingleFinding(t *testing.T) {
 	t.Parallel()
 	v := buildValidator(t, `{ "not": { "type": "string" } }`)
 	rpt, _ := v.Validate("hello", nil)
-	if !findingsContain(rpt, "not", "must NOT match") {
-		t.Errorf("expected not finding when instance matches the inverse; got %v", rpt.Findings)
+	if !findingsContain(rpt, "not", "is not allowed here") {
+		t.Errorf("expected an exclusion finding naming what is not allowed; got %v", rpt.Findings)
+	}
+	for _, f := range rpt.Findings {
+		if strings.Contains(f.Message, "inverse schema") {
+			t.Errorf("the diagnostic names a schema construct rather than the author's mistake: %q", f.Message)
+		}
 	}
 }
 

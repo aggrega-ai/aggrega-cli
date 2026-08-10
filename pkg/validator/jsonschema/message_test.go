@@ -217,25 +217,72 @@ func TestLibraryNamesACallRootAsRoot(t *testing.T) {
 	}
 }
 
-// TestCallRootLabelIsOnlyReplacedWhenADefinitionWasSubstituted pins the
-// two ways the rewrite declines to act: no definition was substituted, so
-// there is nothing to name; and the label is absent, which is what a
-// schema declaring its own identifier produces — already provenance, and
-// not to be overwritten.
-func TestCallRootLabelIsOnlyReplacedWhenADefinitionWasSubstituted(t *testing.T) {
-	const message = libraryRootLabel + `type: object has type "object", want "array"`
+// TestTheSchemaLocationChainLeavesTheMessage pins what happens to the run
+// of location segments a schema library prefixes onto its failure text: all
+// of it goes, whichever way the library labelled the position, because the
+// finding's own path already tells the reader which value is at fault and
+// the chain is a position in a document they did not write.
+//
+// The last case is the one that has to keep working: the removal must stop
+// at the failure text and never eat into it.
+func TestTheSchemaLocationChainLeavesTheMessage(t *testing.T) {
+	const failure = `type: object has type "object", want "array"`
 
-	if got := nameCallRoot(message, ""); got != message {
-		t.Errorf("with no definition substituted the message must be untouched; got %q", got)
+	cases := []struct {
+		name    string
+		message string
+		want    string
+	}{
+		{
+			name:    "the call root",
+			message: libraryRootLabel + failure,
+			want:    failure,
+		},
+		{
+			name:    "a whole chain of nested positions",
+			message: libraryRootLabel + `validating /items: validating /items/properties/name: ` + failure,
+			want:    failure,
+		},
+		{
+			name:    "a root the library named by its own identifier",
+			message: `validating https://example.test/schema: ` + failure,
+			want:    failure,
+		},
+		{
+			name:    "nothing to remove",
+			message: failure,
+			want:    failure,
+		},
+		{
+			name:    "failure text that opens with the chain's own word",
+			message: libraryRootLabel + `pattern: "validating a thing" does not match`,
+			want:    `pattern: "validating a thing" does not match`,
+		},
 	}
 
-	identified := `validating https://example.test/schema: type: object has type "object", want "array"`
-	if got := nameCallRoot(identified, "delivery"); got != identified {
-		t.Errorf("a root the library named some other way must be left as it named it; got %q", got)
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := stripLocationChain(c.message); got != c.want {
+				t.Errorf("stripLocationChain = %q, want %q", got, c.want)
+			}
+		})
+	}
+}
+
+// TestASubstitutedDefinitionIsNamedInPlaceOfTheChain pins the other half:
+// where a reference was replaced by the definition it named, that
+// definition became the root of the call and the library called it "root",
+// so the name has to be put back or the reader is never told which declared
+// shape their value failed.
+func TestASubstitutedDefinitionIsNamedInPlaceOfTheChain(t *testing.T) {
+	err := &stubErr{msg: libraryRootLabel + `type: 1 has type "integer", want "string"`}
+
+	if got, want := findingMessage(err, 1, ""), `type: 1 has type "integer", want "string"`; got != want {
+		t.Errorf("with no definition substituted there is nothing to name; got %q, want %q", got, want)
 	}
 
-	want := `validating ` + localDefsPointer + `delivery: type: object has type "object", want "array"`
-	if got := nameCallRoot(message, "delivery"); got != want {
-		t.Errorf("nameCallRoot = %q, want %q", got, want)
+	want := localDefsPointer + `delivery: type: 1 has type "integer", want "string"`
+	if got := findingMessage(err, 1, "delivery"); got != want {
+		t.Errorf("findingMessage = %q, want %q", got, want)
 	}
 }

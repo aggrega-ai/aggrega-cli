@@ -203,75 +203,130 @@ func TestClosedFormMatchesLibraryDecoding(t *testing.T) {
 	}
 }
 
-// TestPruneKeepsClosednessAndCountBounds checks that the reduction leaves
-// a closed object closed and its property-count bound in force, since both
-// read the declared key set that the reduction empties of values.
-func TestPruneKeepsClosednessAndCountBounds(t *testing.T) {
+// TestPruneKeepsWhatTheWalkDoesNotEvaluate checks the reduction from the
+// side that loses coverage silently: a constraint the walk does not
+// evaluate has no second carrier, so removing it from the reduced copy
+// means nothing checks it and every document passes it.
+//
+// The keyword index is nil here, which is the state of a position the walk
+// has nothing extra to do at, so every family below must survive.
+func TestPruneKeepsWhatTheWalkDoesNotEvaluate(t *testing.T) {
 	schema := &libschema.Schema{}
 	source := `{
 		"type": "object",
 		"minProperties": 1,
 		"additionalProperties": false,
 		"properties": {
-			"alpha": {"type": "string"}
-		}
+			"alpha": {"type": "string"},
+			"tags": {"type": "array", "items": {"type": "string"}}
+		},
+		"if": {"required": ["alpha"]},
+		"then": {"properties": {"alpha": {"const": "fixed"}}}
 	}`
 	if err := json.Unmarshal([]byte(source), schema); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	reduced, err := pruneOwnKeywords(schema, evaluatedByWalk{}).Resolve(nil)
+	reduced, err := pruneOwnKeywords(schema, evaluatedByWalk{}, nil).Resolve(nil)
 	if err != nil {
 		t.Fatalf("resolve reduced schema: %v", err)
 	}
 
 	if err := reduced.Validate(map[string]any{"alpha": "ok", "beta": "extra"}); err == nil {
-		t.Error("an undeclared key must still be rejected after the reduction")
+		t.Error("an undeclared key must still be rejected while the walk does not name it")
 	}
 	if err := reduced.Validate(map[string]any{}); err == nil {
-		t.Error("minProperties must still be enforced after the reduction")
+		t.Error("minProperties must still be enforced while the walk does not check it")
 	}
-	// The declared property's own constraint is deliberately gone — the walk
-	// reaches it separately — so a wrong-typed declared value passes here.
-	if err := reduced.Validate(map[string]any{"alpha": 1}); err != nil {
-		t.Errorf("the reduced schema must not check a declared property's value, which the walk checks itself; got %v", err)
-	}
-}
-
-// TestPruneKeepsArrayAndConditionalConstraints checks the two keyword
-// families that have no second carrier: the walk does not descend arrays,
-// and it does not index the properties an in-place applicator declares, so
-// the reduction must leave both exactly as authored or their constraints
-// vanish.
-func TestPruneKeepsArrayAndConditionalConstraints(t *testing.T) {
-	schema := &libschema.Schema{}
-	source := `{
-		"type": "object",
-		"properties": {
-			"tags": {"type": "array", "items": {"type": "string"}},
-			"mode": {"type": "string"},
-			"detail": {"type": "string"}
-		},
-		"if": {"required": ["mode"]},
-		"then": {"properties": {"detail": {"const": "required-with-mode"}}}
-	}`
-	if err := json.Unmarshal([]byte(source), schema); err != nil {
-		t.Fatalf("unmarshal: %v", err)
+	if err := reduced.Validate(map[string]any{"alpha": "wrong"}); err == nil {
+		t.Error("a conditional branch's constraint must survive while the walk does not apply it")
 	}
 
-	reducedArray, err := pruneOwnKeywords(schema.Properties["tags"], evaluatedByWalk{}).Resolve(nil)
+	reducedArray, err := pruneOwnKeywords(schema.Properties["tags"], evaluatedByWalk{}, nil).Resolve(nil)
 	if err != nil {
 		t.Fatalf("resolve reduced array schema: %v", err)
 	}
 	if err := reducedArray.Validate([]any{"ok", 2}); err == nil {
-		t.Error("an array element constraint must survive the reduction; the walk does not descend arrays, so nothing else would check it")
+		t.Error("an array element constraint must survive while the walk does not descend arrays")
 	}
 
-	reducedObject, err := pruneOwnKeywords(schema, evaluatedByWalk{}).Resolve(nil)
-	if err != nil {
-		t.Fatalf("resolve reduced object schema: %v", err)
+	// The declared property's own constraint is deliberately gone — the walk
+	// reaches it separately — so a wrong-typed declared value passes here.
+	// Checked on its own schema, because a conditional applicator retained
+	// above constrains the same property from the branch and would answer
+	// for it.
+	plain := &libschema.Schema{}
+	if err := json.Unmarshal([]byte(`{"type":"object","properties":{"alpha":{"type":"string"}}}`), plain); err != nil {
+		t.Fatalf("unmarshal: %v", err)
 	}
-	if err := reducedObject.Validate(map[string]any{"mode": "on", "detail": "wrong"}); err == nil {
-		t.Error("a conditional branch's property constraint must survive the reduction; the walk does not index applicator properties, so nothing else would check it")
+	reducedPlain, err := pruneOwnKeywords(plain, evaluatedByWalk{}, nil).Resolve(nil)
+	if err != nil {
+		t.Fatalf("resolve reduced schema: %v", err)
+	}
+	if err := reducedPlain.Validate(map[string]any{"alpha": 1}); err != nil {
+		t.Errorf("the reduced schema must not check a declared property's value, which the walk checks itself; got %v", err)
+	}
+}
+
+// TestPruneRemovesExactlyWhatTheKeywordIndexClaims is the other direction,
+// and the two together are the whole property: a family the walk evaluates
+// must be gone from the reduced copy or one violation is reported twice,
+// once in each voice.
+//
+// Each case is driven through the real index rather than a hand-built one,
+// so a keyword indexed but not pruned — or pruned but not indexed — fails
+// here instead of surfacing as a duplicated or missing diagnostic.
+func TestPruneRemovesExactlyWhatTheKeywordIndexClaims(t *testing.T) {
+	cases := []struct {
+		name     string
+		schema   string
+		instance string
+	}{
+		{"uniform array elements", `{"type":"array","items":{"type":"string"}}`, `["ok",2]`},
+		{"positional array elements", `{"type":"array","prefixItems":[{"type":"string"}]}`, `[1]`},
+		{"a match-count bound", `{"type":"array","contains":{"type":"string"}}`, `[1,2]`},
+		{"key strings", `{"type":"object","propertyNames":{"pattern":"^[a-z]+$"}}`, `{"ZETA":1}`},
+		{"a key-count floor", `{"type":"object","minProperties":2}`, `{"a":1}`},
+		{"a key-count ceiling", `{"type":"object","maxProperties":1}`, `{"a":1,"b":2}`},
+		{"a conditional applicator", `{"type":"object","properties":{"a":{"type":"string"}},"if":{"required":["a"]},"then":{"properties":{"a":{"const":"fixed"}}}}`, `{"a":"wrong"}`},
+		{"closedness", `{"type":"object","properties":{"a":{"type":"string"}},"additionalProperties":false}`, `{"a":"ok","b":1}`},
+		{"a closed leftover tail", `{"type":"object","properties":{"a":{"type":"string"}},"unevaluatedProperties":false}`, `{"a":"ok","b":1}`},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			schema := &libschema.Schema{}
+			if err := json.Unmarshal([]byte(c.schema), schema); err != nil {
+				t.Fatalf("unmarshal: %v", err)
+			}
+			var instance any
+			if err := json.Unmarshal([]byte(c.instance), &instance); err != nil {
+				t.Fatalf("unmarshal instance: %v", err)
+			}
+
+			// The instance has to fail the schema as authored, or the case
+			// proves nothing about what the reduction removed.
+			asAuthored, err := schema.Resolve(nil)
+			if err != nil {
+				t.Fatalf("resolve: %v", err)
+			}
+			if asAuthored.Validate(instance) == nil {
+				t.Fatalf("the instance satisfies the schema as authored, so this case cannot tell whether the reduction removed anything")
+			}
+
+			indexer := &googleAdapter{expanding: map[string]bool{}}
+			indexed := indexer.buildPositionKeywords(schema, nil, "")
+			if indexed == nil {
+				t.Fatalf("the keyword index picked nothing up, so the walk would not evaluate this family and the reduction must not remove it")
+			}
+
+			reduced, err := pruneOwnKeywords(schema, evaluatedByWalk{}, indexed).Resolve(nil)
+			if err != nil {
+				t.Fatalf("resolve reduced schema: %v", err)
+			}
+			if err := reduced.Validate(instance); err != nil {
+				t.Errorf("the reduction left a constraint the walk also evaluates, so one violation is reported twice; got %v", err)
+			}
+		})
 	}
 }
 

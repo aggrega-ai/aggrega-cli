@@ -16,22 +16,30 @@ import (
 // instead of naming the value the author wrote.
 const nullValueArtifact = "<invalid reflect.Value>"
 
-// libraryRootLabel is how a schema library names the schema a validation
-// call started from, when that schema declares no identifier of its own.
+// validatingPrefix opens each segment of the chain a schema library
+// prefixes onto its failure text to say where in the schema document the
+// failing constraint sits, and libraryRootLabel is that chain's first
+// segment when the schema declares no identifier of its own. One is derived
+// from the other so the two cannot drift apart.
 //
-// This is a deliberate second copy of a label the library owns, and it is
-// read rather than written: the text is recognised so it can be replaced
-// by the name of the definition that was actually being checked (see
-// findingMessage). TestLibraryNamesACallRootAsRoot pins the agreement, so
-// a library that renames the label surfaces as a failing test rather than
-// as a diagnostic that silently stops naming the definition it violated.
-const libraryRootLabel = "validating root: "
+// Both are deliberate second copies of text the library owns, and both are
+// read rather than written: the chain is recognised so it can be removed,
+// and its first segment so it can be replaced by the name of the definition
+// that was actually being checked (see findingMessage).
+// TestLibraryNamesACallRootAsRoot pins the agreement, so a library that
+// renames the label surfaces as a failing test rather than as a diagnostic
+// that silently stops naming the definition it violated.
+const (
+	validatingPrefix = "validating "
+	libraryRootLabel = validatingPrefix + "root: "
+)
 
 // findingMessage shapes a schema library's failure text into what a
 // finding carries to a terminal.
 //
-// Two rewrites, and both exist because the library's text is written for
-// whoever holds the Go value rather than for whoever wrote the document.
+// Three rewrites, and all of them exist because the library's text is
+// written for whoever holds the Go value and the schema document rather
+// than for whoever wrote the document being checked.
 //
 // The first names the value. A value formatter renders an absent value
 // and a container in Go's own syntax — `<invalid reflect.Value>` for a
@@ -44,12 +52,20 @@ const libraryRootLabel = "validating root: "
 // that actually arrived — for a template expression, the only place the
 // reader can see it.
 //
-// The second names the schema. definition is the reusable definition the
+// The second removes the location chain. A library prefixes its text with
+// where the failing constraint sits inside the schema document — a chain of
+// pointer segments through keywords and property names. That is a position
+// in the schema, and the reader wrote the instance: the finding's own path
+// already says which of their values is at fault, so the chain adds a
+// second coordinate system in vocabulary they never used. It goes.
+//
+// The third names the schema, and it is the reason the chain is removed
+// rather than merely truncated. definition is the reusable definition the
 // caller substituted for a reference at this position, or empty when it
-// substituted none. Where a definition was substituted it is the root of
-// the call the library was handed, so the library labels it as the root
-// and the definition's name — the one thing telling the reader which
-// declared shape was violated — appears nowhere. Naming it restores that.
+// substituted none. Where one was substituted it became the root of the
+// call, so the library labelled it "root" and the definition's name — the
+// one thing telling the reader which declared shape was violated — appeared
+// nowhere. Putting the name back is what the reader can act on.
 //
 // In the type-mismatch message specifically, the JSON type name
 // substituted for a container repeats what the library's own `has type`
@@ -61,7 +77,49 @@ func findingMessage(err error, instance any, definition string) string {
 	if err == nil {
 		return ""
 	}
-	return nameCallRoot(sanitizeMessage(err.Error(), instance), definition)
+	return nameViolatedDefinition(stripLocationChain(sanitizeMessage(err.Error(), instance)), definition)
+}
+
+// nameViolatedDefinition prefixes a message with the reusable definition
+// whose constraint the value failed, and leaves the message alone when
+// there is no definition to name.
+//
+// Every diagnostic the walk emits at a position inside a named definition
+// goes through here, rather than only the ones a schema library produced.
+// A definition may state its constraint as a required key, a key count or a
+// closed key set just as readily as a type, and a schema factored into
+// named rules would otherwise name the rule for some of its violations and
+// not others — which reads as the name being unavailable rather than as the
+// inconsistency it is.
+func nameViolatedDefinition(message, definition string) string {
+	if definition == "" {
+		return message
+	}
+	return localDefsPointer + definition + ": " + message
+}
+
+// stripLocationChain removes the leading run of `validating <location>: `
+// segments a schema library prefixes onto its failure text.
+//
+// A segment is recognised only when its location carries no space, which is
+// what keeps the removal from eating into the failure text itself: the
+// clause after the chain always contains a space, so a message whose chain
+// has been consumed stops matching. A location drawn from a document's own
+// content could in principle contain the opening word, and it would still
+// carry a space and so still stop the walk.
+func stripLocationChain(message string) string {
+	for strings.HasPrefix(message, validatingPrefix) {
+		rest := message[len(validatingPrefix):]
+		separator := strings.Index(rest, ": ")
+		if separator < 0 {
+			return message
+		}
+		if strings.ContainsRune(rest[:separator], ' ') {
+			return message
+		}
+		message = rest[separator+2:]
+	}
+	return message
 }
 
 // sanitizeMessage rewrites a schema library's failure text so what
@@ -74,19 +132,6 @@ func sanitizeMessage(msg string, instance any) string {
 		msg = strings.ReplaceAll(msg, container.text, container.jsonType)
 	}
 	return msg
-}
-
-// nameCallRoot replaces a schema library's label for the root of a
-// validation call with a pointer to the reusable definition that root
-// was substituted from, leaving the message untouched when no definition
-// was substituted or when the library labelled the root some other way
-// (a schema declaring its own identifier is named by that identifier,
-// which is already provenance).
-func nameCallRoot(msg, definition string) string {
-	if definition == "" || !strings.HasPrefix(msg, libraryRootLabel) {
-		return msg
-	}
-	return "validating " + localDefsPointer + definition + ": " + strings.TrimPrefix(msg, libraryRootLabel)
 }
 
 // containerRendering pairs the text a Go value formatter produces for one

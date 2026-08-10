@@ -87,6 +87,7 @@ func New(schema *jsonschema.Schema) (Validator, error) {
 		notIndexes:            map[string]*branchIndex{},
 		patternPropsResolved:  map[string][]*patternEntry{},
 		dependentSchemas:      map[string][]*dependentEntry{},
+		keywords:              map[string]*positionKeywords{},
 		expanding:             map[string]bool{},
 	}
 
@@ -110,7 +111,7 @@ func New(schema *jsonschema.Schema) (Validator, error) {
 	// $ref to root-level $defs from a sub-context) are tolerated by
 	// indexSubSchemas and surface as a documented walker-
 	// completeness gap rather than a construction error.
-	if err := a.indexSubSchemas(schema, "", a.rootDefs); err != nil {
+	if err := a.indexSubSchemas(schema, "", a.rootDefs, ""); err != nil {
 		return nil, err
 	}
 
@@ -241,6 +242,14 @@ type googleAdapter struct {
 	// dependentBranchIndex). Sorted alphabetically by triggerKey at
 	// index time for deterministic walk-time iteration.
 	dependentSchemas map[string][]*dependentEntry
+
+	// keywords maps an instance path to the remaining keyword families the
+	// walk evaluates there — the array keywords, the key-string and
+	// key-count constraints, the conditional applicator, closedness, and the
+	// leftover-value constraints. Absent for a position declaring none of
+	// them, which is the signal that nothing beyond the declared-property
+	// families needs walking there.
+	keywords map[string]*positionKeywords
 }
 
 // branchIndex carries a single combinator branch's (or
@@ -300,6 +309,11 @@ type branchIndex struct {
 	notIndexes            map[string]*branchIndex
 	patternPropsResolved  map[string][]*patternEntry
 	dependentSchemas      map[string][]*dependentEntry
+
+	// keywords mirrors the adapter's per-path keyword index at this branch's
+	// own position, so a keyword is evaluated inside a combinator branch
+	// exactly as it is at the top level.
+	keywords *positionKeywords
 }
 
 // patternEntry pairs a compiled regex with its sub-schema's
