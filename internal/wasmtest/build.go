@@ -23,6 +23,14 @@
 // `aggrega-cli/internal/wasm/testdata/`, written only by this package and
 // only by rename, so a test never reads an artifact another test process
 // is in the middle of writing.
+//
+// Concurrency is guarded at two scopes, because they answer different
+// questions. Publishing by rename keeps a reader from seeing a half-written
+// destination file. A lock held for the whole duration of a build keeps two
+// builders from interleaving inside the shared source directory, where the
+// build scripts install dependencies and assemble intermediate output at
+// fixed paths; content produced wrongly there is already wrong by the time
+// any rename happens, so the rename cannot speak to it.
 package wasmtest
 
 import (
@@ -34,6 +42,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/aggrega-ai/aggrega-cli/internal/wasm/filelock"
 )
 
 // fixtureResults caches the per-fixture build outcome for the
@@ -187,6 +197,32 @@ func buildPDKFixture(t *testing.T, umbrellaRoot, artifactName, socket, lang stri
 
 	if err := os.MkdirAll(testdataDir, 0o755); err != nil {
 		t.Fatalf("mkdir testdata: %v", err)
+	}
+
+	// A fixture build is serialised across processes for its WHOLE duration,
+	// not just around publishing its result. The build scripts install
+	// dependencies and assemble intermediate output inside the example
+	// directory itself, at fixed paths that the output-directory override does
+	// not redirect. So two processes building the same fixture share those
+	// paths however different their destinations, and one can read an
+	// intermediate file while the other is rewriting it. That read does not
+	// fail: the tools downstream accept a truncated or empty intermediate and
+	// emit a complete, well-formed artifact with the wrong contents, which is
+	// then loaded and believed. Serialising the whole build is what removes
+	// that window; publishing by rename, below, is a narrower guarantee that
+	// cannot reach content produced before the rename.
+	//
+	// Every test package is its own process and no in-process lock spans them,
+	// so this has to be a lock on the filesystem.
+	release := lockFixtureBuild(testdataDir, artifactName)
+	defer release()
+
+	// Freshness is re-checked now the lock is held. A process that queued
+	// behind another builder finds that builder's finished artifact here and
+	// skips the build, so contention costs it a wait rather than a rebuild and
+	// only the first arrival pays the build cost.
+	if isFresh(artifactPath, sourceDir, pdkSrc, abiSrc) {
+		return artifactPath, nil
 	}
 
 	// A fixture build writes its artifact straight to the output path it
@@ -506,16 +542,33 @@ func newStageDir(destDir string) (string, error) {
 // version control in one entry rather than by pattern.
 const stageDirName = ".stage"
 
+// lockFixtureBuild takes the cross-process lock for one artifact's build and
+// returns the release function the caller defers.
+//
+// The lock is per artifact rather than global, so unrelated fixtures still build
+// concurrently and only builders of the same fixture take turns. Keying on the
+// artifact name is keying on the shared directory it is built from: each
+// artifact name resolves to exactly one source directory under both supported
+// layouts, so two builds contend precisely when they would write the same
+// intermediate paths.
+//
+// The lock file sits in the staging area, which version control already ignores,
+// so holding a lock cannot leave the working tree dirty.
+func lockFixtureBuild(destDir, artifactName string) func() {
+	return filelock.Acquire(filepath.Join(destDir, stageDirName, artifactName+".lock"))
+}
+
 // publishArtifact moves a finished artifact from a staging path to the
 // shared path tests read it from.
 //
-// The rename is the half of the fix that reaches across processes. Serialising
-// builders keeps two goroutines in one test binary from writing the same
-// output at once, but every test package is its own process and no in-process
-// lock spans them. A rename swaps the destination name in a single step, so a
-// reader in any process opens either the previous artifact or the new one and
-// never a half-written file — and a reader that already has the old file open
-// keeps reading it intact.
+// A rename swaps the destination name in a single step, so a reader in any
+// process opens either the previous artifact or the new one and never a
+// half-written file — and a reader that already has the old file open keeps
+// reading it intact.
+//
+// This covers the destination only. It says nothing about whether the bytes
+// being published are the right ones, because they were produced before the
+// rename; the build lock is what covers that.
 func publishArtifact(staged, dst string) error {
 	return os.Rename(staged, dst)
 }

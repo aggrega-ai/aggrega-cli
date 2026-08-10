@@ -1,4 +1,6 @@
 *.wasm
 # Scratch area fixture builds write into before their artifact is renamed
-# into this directory. Present only while a build is running.
+# into this directory. It also holds the per-artifact lock files that keep two
+# processes from building one fixture at the same time, so it outlives an
+# individual build.
 .stage/
