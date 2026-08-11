@@ -31,29 +31,50 @@ import (
 // The build's other guards own the separate question of whether that absence is
 // itself a defect.
 func socketDeclaration(lookup resolver.CatalogLookup, componentType, originFeature, socket string) string {
-	if originFeature != "" {
-		if lookup.Feature == nil {
-			return types.SocketDeclarationAdHoc
-		}
-		catFeat, found := lookup.Feature(originFeature)
-		if !found {
-			return types.SocketDeclarationAdHoc
-		}
-		if _, ok := catFeat.Spec.UsesSchema.Get(socket); ok {
-			return types.SocketDeclarationDeclared
-		}
-		return types.SocketDeclarationAdHoc
-	}
-
-	if lookup.Component == nil {
-		return types.SocketDeclarationAdHoc
-	}
-	catComp, found := lookup.Component(componentType)
-	if !found {
-		return types.SocketDeclarationAdHoc
-	}
-	if _, ok := catComp.Spec.UsesSchema.Get(socket); ok {
+	if _, _, declared := socketEntry(lookup, componentType, originFeature, socket); declared {
 		return types.SocketDeclarationDeclared
 	}
 	return types.SocketDeclarationAdHoc
+}
+
+// socketEntry resolves the usesSchema entry a socket was declared under, on the
+// entity that OWNS the socket, and reports whether such an entry exists. It also
+// returns the owning entity's type URI, so a diagnostic can name the entity whose
+// declaration it is quoting rather than the entity the edge happens to hang off.
+//
+// It is the one resolution of "which entity declares this socket, and what does
+// that declaration say", and [socketDeclaration] plus the socket's delivery
+// allowlist check both read it. Keeping them on one lookup is what makes the
+// declaration marker and the allowlist verdict incapable of disagreeing about
+// which entity they consulted — a second lookup would agree on the ordinary case
+// and diverge exactly on the Feature-authored edge, which is the case the marker
+// exists to get right.
+//
+// The declaring surfaces are not interchangeable: a Feature-authored edge's socket
+// is declared on the originating Feature's usesSchema, never on the consuming
+// Component's. The entry returned is the resolved one, so a socket a Component
+// inherits through `extends` is found here exactly as one it authored itself —
+// inheritance is merged before the catalog view is built.
+func socketEntry(lookup resolver.CatalogLookup, componentType, originFeature, socket string) (entry types.UsesSchemaEntry, owner string, declared bool) {
+	if originFeature != "" {
+		if lookup.Feature == nil {
+			return types.UsesSchemaEntry{}, originFeature, false
+		}
+		catFeat, found := lookup.Feature(originFeature)
+		if !found {
+			return types.UsesSchemaEntry{}, originFeature, false
+		}
+		e, ok := catFeat.Spec.UsesSchema.Get(socket)
+		return e, originFeature, ok
+	}
+
+	if lookup.Component == nil {
+		return types.UsesSchemaEntry{}, componentType, false
+	}
+	catComp, found := lookup.Component(componentType)
+	if !found {
+		return types.UsesSchemaEntry{}, componentType, false
+	}
+	e, ok := catComp.Spec.UsesSchema.Get(socket)
+	return e, componentType, ok
 }

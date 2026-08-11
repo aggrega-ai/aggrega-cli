@@ -305,6 +305,9 @@ func BuildIRContext(ctx context.Context, cfg BuildIRConfig) (*types.IRGraph, Fea
 		}
 		return d
 	}
+	// Collected across the whole edge set rather than returned on first sight, so
+	// an author fixing several edges sees them all in one build.
+	var usesInjectViols []string
 	for _, e := range topo.Edges {
 		edgeValues, edgeInfra := e.Values, e.Infra
 		var sourceComponentType string
@@ -319,6 +322,14 @@ func BuildIRContext(ctx context.Context, cfg BuildIRConfig) (*types.IRGraph, Fea
 				edgeInfra = mergeSchemaDefaults(e.Infra, defs)
 			}
 		}
+		// Whether the edge may DICTATE a delivery mechanism is settled here, at the
+		// one site every edge-construction path converges on, and against the raw
+		// authored inject block rather than the converted form below: the conversion
+		// drops a payload it cannot express as one string per delivery key, so a
+		// check reading the converted map would approve a dictation it never saw.
+		usesInjectViols = append(usesInjectViols, usesInjectViolations(
+			cfg.CatalogLookup, sourceComponentType, e.OriginFeature, e.Socket, e.Alias,
+			usesInjectLocator(e.Source, e.OriginFeatureInstance, e.OriginRelease), e.Inject)...)
 		irEdge := types.IREdge{
 			Source:                e.Source,
 			Target:                e.Target,
@@ -333,6 +344,9 @@ func BuildIRContext(ctx context.Context, cfg BuildIRConfig) (*types.IRGraph, Fea
 			Inject:                convertInjectBlock(e.Inject),
 		}
 		irEdges = append(irEdges, irEdge)
+	}
+	if len(usesInjectViols) > 0 {
+		return nil, nil, joinUsesInjectViolations(usesInjectViols)
 	}
 
 	// 6. Provenance

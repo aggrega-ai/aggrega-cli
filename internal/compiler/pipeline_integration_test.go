@@ -23,7 +23,15 @@ func integrationCatalog() resolver.CatalogLookup {
 				labels := types.OrderedMap[string]{}
 				labels.Set(types.ComponentTypeLabel, "server")
 				usesSchema := types.OrderedMap[types.UsesSchemaEntry]{}
-				usesSchema.Set("databases", types.UsesSchemaEntry{Selector: "component.aggrega.ai/type=stateful-server"})
+				// The `databases` socket carries the same env delivery allowlist the
+				// catalogued api-server component declares for it, so an edge in this
+				// fixture may dictate env delivery exactly as one in the worked example
+				// does. Without it the socket would be a Black-Box declaration and any
+				// fixture edge dictating delivery would be refused.
+				usesSchema.Set("databases", types.UsesSchemaEntry{
+					Selector: "component.aggrega.ai/type=stateful-server",
+					Inject:   []string{"env"},
+				})
 				usesSchema.Set("tools", types.UsesSchemaEntry{Selector: "tool.aggrega.ai/impact=read-only"})
 				return types.Component{
 					Metadata: types.ComponentMetadata{

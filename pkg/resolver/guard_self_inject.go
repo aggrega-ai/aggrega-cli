@@ -75,7 +75,7 @@ func guardSelfInject(na types.NormalizedAggregate, catalog CatalogLookup) []*Res
 		}
 
 		// Check each mechanism used in self-inject is in the allowlist
-		mechanisms := collectInjectMechanisms(comp.Inject)
+		mechanisms := InjectMechanismNames(comp.Inject)
 		for _, mech := range mechanisms {
 			if !allowed[mech] {
 				errs = append(errs, &ResolverError{
@@ -146,14 +146,28 @@ func guardSelfInject(na types.NormalizedAggregate, catalog CatalogLookup) []*Res
 	return errs
 }
 
-// collectInjectMechanisms returns the mechanism names present in an
-// InjectBlock. Core mechanisms (env, file, arg) populate first in their
-// struct-field order when their sub-field is non-nil; custom mechanisms
-// from Additional follow in author order via OrderedMap.All(). User-facing
-// error emission is canonicalised by sortResolverErrors at the resolver
-// boundary; this helper's slice ordering is semantic-only. Does not mutate
-// the input.
-func collectInjectMechanisms(inject *types.InjectBlock) []string {
+// InjectMechanismNames returns the delivery-mechanism names an inject block
+// dictates. Core mechanisms (env, file, arg) populate first in their struct-field
+// order when their sub-field is non-nil; custom mechanisms from Additional follow
+// in author order via OrderedMap.All(). Returns nil for a nil block. Does not
+// mutate the input.
+//
+// A mechanism counts as dictated when its key is PRESENT, whatever its payload
+// resolves to. That is deliberate and it is what makes this usable by an allowlist
+// check: the conversions further down the build drop a payload they cannot express
+// as one string per delivery key, so a check reading mechanism names off a
+// converted structure would silently miss a dictation whose payload was dropped
+// and report the edge as dictating nothing.
+//
+// It is exported because it is the one enumeration of that question, and the
+// allowlist checks on both delivery surfaces — a component's own inject block and
+// an edge's — must not disagree about which mechanisms an author dictated.
+// User-facing error emission is canonicalised at each emitting boundary; this
+// helper's slice ordering is semantic-only.
+func InjectMechanismNames(inject *types.InjectBlock) []string {
+	if inject == nil {
+		return nil
+	}
 	var mechs []string
 	if inject.Env != nil {
 		mechs = append(mechs, "env")
