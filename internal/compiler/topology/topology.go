@@ -23,8 +23,8 @@ import (
 //     preservation.
 //   - Edges flow in compositional author order: the cross-product of
 //     (component sequence × within-component `uses:` socket order ×
-//     within-socket alias order), augmented per node by feature and
-//     secret attachment order. Each layer is author-declared via an
+//     within-socket alias order), augmented per node by attachment
+//     order. Each layer is author-declared via an
 //     OrderedMap surface; the resulting slice carries the cross-product
 //     into the IR builder without re-sorting. Build's step 4 walks
 //     flat.Nodes via OrderedMap.All() to drive the outer iteration; the
@@ -421,7 +421,7 @@ func BuildContext(ctx context.Context, cfg BuildConfig) (*TopologyResult, error)
 	// 4. Normalize uses → edges. Edges flow in compositional author order:
 	// the cross-product of (component sequence × within-component `uses:`
 	// socket order × within-socket alias order), augmented per node by
-	// feature and secret attachment order. The outer iteration walks
+	// attachment order. The outer iteration walks
 	// flat.Nodes via OrderedMap.All() to preserve Aggregate authoring
 	// sequence; per-node socket and alias loops preserve their existing
 	// author-order semantics. The IR builder consumes the resulting edge
@@ -432,7 +432,7 @@ func BuildContext(ctx context.Context, cfg BuildConfig) (*TopologyResult, error)
 	for nodeID, node := range flat.Nodes.All() {
 		// Phase boundary: the edge cross-product scales with node count, so a
 		// cancelled context aborts cooperatively within this loop on a large
-		// workspace rather than running every node's uses/feature/secret edges.
+		// workspace rather than running every node's uses and attachment edges.
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}

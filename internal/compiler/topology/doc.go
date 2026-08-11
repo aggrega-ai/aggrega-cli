@@ -5,8 +5,8 @@
 // Builder & Mutation Gate. It consumes a resolver.ResolveResult (the Step
 // 1 output: a resolved Aggregate / Manifest / Release plus per-node
 // boundary infra and a CatalogLookup) and produces a TopologyResult — the
-// flattened node graph with directed edges, per-node feature/secret
-// attachments, and a compiler-internal map of exported-component aliases.
+// flattened node graph with directed edges, per-node attachments, and a
+// compiler-internal map of exported-component aliases.
 // The result is the upstream input to Step 3 (the IR builder); this
 // package is the load-bearing seam between resolver-side validation and
 // IR-side normalisation.
@@ -15,9 +15,9 @@
 // phases (numbered in the function): flatten the Aggregate tree (sub-
 // aggregates → dot-notation IDs); populate node Labels from the catalog;
 // populate BoundaryPath from the resolver; normalise polymorphic `uses`
-// declarations into NormalizedEdge instances; and collect feature and
-// secret `uses` edges, marking them with OriginFeature so the IR-side
-// edge-atomicity contract carries downstream.
+// declarations into NormalizedEdge instances; and collect each
+// attachment's `uses` edges, marking them with OriginFeature so the
+// IR-side edge-atomicity contract carries downstream.
 //
 // Naming and authoring conventions the package relies on:
 //
@@ -45,9 +45,9 @@
 //     component / subsystem / sub-aggregate-import declaration sequence
 //     via OrderedMap iteration; Edges carry the compositional cross-
 //     product (component sequence × within-component `uses:` socket
-//     order × within-socket alias order) augmented per node by feature
-//     and secret attachment order. The cross-package determinism
-//     contract subsection below names the producer-and-consumer pair.
+//     order × within-socket alias order) augmented per node by
+//     attachment order. The cross-package determinism contract
+//     subsection below names the producer-and-consumer pair.
 //   - Upstream guarantees. The resolver validates `uses` socket names
 //     against usesSchema before this package runs; normalizeUses
 //     therefore trusts that every socket name it parses is
@@ -65,12 +65,11 @@
 //     load-bearing for IR JSON emission downstream.
 //   - TopologyResult.Edges follows the compositional cross-product
 //     (component sequence × within-component `uses:` socket order ×
-//     within-socket alias order), augmented per node by feature and
-//     secret attachment order. Each layer is author-declared via an
-//     OrderedMap surface; Build's step 4 walks flat.Nodes via
-//     OrderedMap.All() to drive the outer cross-product, and per-node
-//     socket / alias / attachment iteration preserves authoring sequence
-//     at every nested layer.
+//     within-socket alias order), augmented per node by attachment
+//     order. Each layer is author-declared via an OrderedMap surface;
+//     Build's step 4 walks flat.Nodes via OrderedMap.All() to drive the
+//     outer cross-product, and per-node socket / alias / attachment
+//     iteration preserves authoring sequence at every nested layer.
 //   - The IR builder reads both as gospel. There is no in-package guard on
 //     the consumer side that would catch a topology-side ordering
 //     regression — a change here that flipped Edges back to alphabetical

@@ -145,7 +145,7 @@ func TestCollectNodeFeatures_CredentialLandsInTheOneBucket(t *testing.T) {
 }
 
 // TestResolvedVersionIsFeatureVersionNotComponent pins the source-fix: a
-// feature/secret entry's resolved_version is the attachment's OWN catalog version
+// attachment entry's resolved_version is the attachment's OWN catalog version
 // (catalogLookup.Feature(type).Metadata.Version), NOT the host component's version.
 // Existing fixtures use version-less features (resolved_version stays ""), so this
 // test supplies a versioned catalog and asserts the entry carries the feature's

@@ -45,9 +45,9 @@
 //     inherited from topology in compositional author order — the
 //     cross-product of component sequence × within-component `uses:`
 //     socket order × within-socket alias order × per-node
-//     feature/secret attachments — and is consumed without re-sorting;
-//     secrets and features per-node iterate the topology's
-//     already-ordered attachments.
+//     attachment order — and is consumed without re-sorting; the
+//     per-node attachment cascade iterates the topology's
+//     already-ordered FeatureAttachments slice.
 //
 // Cross-package determinism contract. This package consumes
 // topology.TopologyResult.Nodes and topology.TopologyResult.Edges as
@@ -60,7 +60,7 @@
 //     authoring order into the emitted IRGraph.
 //   - Edges are trusted as the compositional cross-product (component
 //     sequence × within-component `uses:` socket order × within-socket
-//     alias order × per-node feature/secret attachments). BuildIR's
+//     alias order × per-node attachment order). BuildIR's
 //     step 2 (the topology→IR edge conversion loop) walks topo.Edges
 //     in slice order and emits IRSpec.Edges in the same order without
 //     re-sorting; the user-visible IR JSONL output preserves the

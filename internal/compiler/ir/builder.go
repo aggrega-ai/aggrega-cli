@@ -21,8 +21,8 @@ import (
 //     attachments. Step 2 produces it; the IR builder reads Nodes (in author
 //     order, OrderedMap-backed), Edges (in compositional author order — the
 //     cross-product of component sequence × within-component `uses:` socket
-//     order × within-socket alias order × per-node feature/secret
-//     attachments — consumed in slice order without re-sorting), and
+//     order × within-socket alias order × per-node attachment order
+//     — consumed in slice order without re-sorting), and
 //     FeatureAttachments.
 //   - ResolveResult supplies the original Aggregate / Manifest / Release
 //     plus per-node BoundaryInfra. The IR builder reads Aggregate for
