@@ -473,3 +473,156 @@ func TestCheckSelfInjectCollisions_FRInterceptionStructuralSeparation(t *testing
 	// structural-separation contract review if the signature changes.
 	// This test stays as the anchor.
 }
+
+// TestExecutePass2a_CustomMechanism pins that a mechanism a component names on
+// its own inject block outside the three typed ones resolves through the same
+// per-key resolution the typed ones use and lands under its own name, reachable
+// both per-mechanism and through the union view. Each row fixes one authored
+// entry shape: a literal, a provides reference, and a template.
+func TestExecutePass2a_CustomMechanism(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		entry   any
+		want    string
+		wantErr bool
+	}{
+		{
+			name:  "verbose value literal",
+			entry: []any{map[string]any{"in": "DB_ARN", "value": "arn:aws:ssm:eu-west-1:param/db"}},
+			want:  "arn:aws:ssm:eu-west-1:param/db",
+		},
+		{
+			name:  "verbose from own provides",
+			entry: []any{map[string]any{"in": "DB_ARN", "from": "arn"}},
+			want:  "arn:aws:rds:eu-west-1:db-main",
+		},
+		{
+			name:  "verbose value template over the restricted context",
+			entry: []any{map[string]any{"in": "DB_ARN", "value": "param/{{ .context.instance_id }}"}},
+			want:  "param/api",
+		},
+		{
+			// A custom mechanism's provides reference is resolved by the same
+			// resolver the typed mechanisms use, so it fails the same way — and
+			// every frame names the Aggregate, which is where the block is authored.
+			name:    "verbose from an absent provides key halts",
+			entry:   []any{map[string]any{"in": "DB_ARN", "from": "nope"}},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			inject := emptyPipe()
+			selfInject := &types.InjectBlock{}
+			selfInject.Additional.Set("ssm_param", tt.entry)
+
+			ownProvides := types.OrderedMap[string]{}
+			ownProvides.Set("arn", "arn:aws:rds:eu-west-1:db-main")
+			siCtx := SelfInjectContext{Context: SelfInjectContextBlock{InstanceID: "api"}}
+
+			selfKeys, err := ExecutePass2a(&inject, selfInject, "api", ownProvides, siCtx)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("expected an error, got nil")
+				}
+				for _, category := range chainCategories(err) {
+					if category != cerrors.DeveloperError {
+						t.Errorf("diagnostic carries a %s frame; every frame on this surface must be %s: %v",
+							category, cerrors.DeveloperError, err)
+					}
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			mechMap, ok := inject.Additional.Get("ssm_param")
+			if !ok {
+				t.Fatalf("Additional has no %q mechanism; keys = %v", "ssm_param", inject.Additional.Keys())
+			}
+			if got, _ := mechMap.Get("DB_ARN"); got != tt.want {
+				t.Errorf("Additional[%q][%q] = %q, want %q", "ssm_param", "DB_ARN", got, tt.want)
+			}
+			if got, _ := inject.All.Get("DB_ARN"); got != tt.want {
+				t.Errorf("all[%q] = %q, want %q", "DB_ARN", got, tt.want)
+			}
+			// The custom mechanism's keys participate in collision detection on
+			// the same footing as the typed ones.
+			if got := selfKeys["ssm_param"]["DB_ARN"]; got != tt.want {
+				t.Errorf("selfKeys[%q][%q] = %q, want %q", "ssm_param", "DB_ARN", got, tt.want)
+			}
+			// The three typed views stay clear of a custom mechanism's keys.
+			for name, view := range map[string]types.OrderedMap[string]{"env": inject.Env, "file": inject.File, "arg": inject.Arg} {
+				if _, present := view.Get("DB_ARN"); present {
+					t.Errorf("%s view carries %q, want it only under the custom mechanism", name, "DB_ARN")
+				}
+			}
+			// The mechanism is addressable from a template under its own name.
+			untagged := inject.TemplateUntaggedKeys()
+			if untagged == nil {
+				t.Fatal("TemplateUntaggedKeys() = nil, want the custom mechanism projected")
+			}
+			if _, ok := untagged["ssm_param"]; !ok {
+				t.Errorf("TemplateUntaggedKeys() keys = %v, want one named %q", untagged, "ssm_param")
+			}
+		})
+	}
+}
+
+// TestExecutePass2a_CustomMechanismOrderIsSorted pins that custom mechanisms
+// resolve in sorted name order whatever order the component names them.
+func TestExecutePass2a_CustomMechanismOrderIsSorted(t *testing.T) {
+	t.Parallel()
+
+	inject := emptyPipe()
+	selfInject := &types.InjectBlock{}
+	selfInject.Additional.Set("vault", []any{map[string]any{"in": "V", "value": "v"}})
+	selfInject.Additional.Set("azurekv", []any{map[string]any{"in": "A", "value": "a"}})
+	selfInject.Additional.Set("ssm_param", []any{map[string]any{"in": "S", "value": "s"}})
+
+	if _, err := ExecutePass2a(&inject, selfInject, "api", types.OrderedMap[string]{}, SelfInjectContext{}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	got := inject.Additional.Keys()
+	want := []string{"azurekv", "ssm_param", "vault"}
+	if len(got) != len(want) {
+		t.Fatalf("Additional keys = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("Additional keys = %v, want %v", got, want)
+		}
+	}
+}
+
+// TestExecutePass2a_NoCustomMechanismLeavesAdditionalEmpty pins that a component
+// naming only the three typed mechanisms adds nothing to the per-mechanism view,
+// which is what keeps the rendered output of every input that names no custom
+// mechanism unchanged.
+func TestExecutePass2a_NoCustomMechanismLeavesAdditionalEmpty(t *testing.T) {
+	t.Parallel()
+
+	inject := emptyPipe()
+	selfInject := &types.InjectBlock{
+		Env:  map[string]any{"PORT": "8080"},
+		File: map[string]any{"CERT": "/etc/cert.pem"},
+		Arg:  map[string]any{"--port": "8080"},
+	}
+
+	if _, err := ExecutePass2a(&inject, selfInject, "api", types.OrderedMap[string]{}, SelfInjectContext{}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if inject.Additional.Len() != 0 {
+		t.Errorf("Additional = %v, want empty", inject.Additional.Keys())
+	}
+	if inject.TemplateUntaggedKeys() != nil {
+		t.Error("TemplateUntaggedKeys() non-nil, want nil so no template key is added")
+	}
+}

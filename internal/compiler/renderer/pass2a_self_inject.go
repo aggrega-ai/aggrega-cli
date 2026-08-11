@@ -65,6 +65,23 @@ func ExecutePass2a(
 		return nil, cerrors.Wrap(err, cerrors.DeveloperError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("node %q self-inject", nodeID))
 	}
 
+	// A mechanism the component names that is not one of the three typed ones
+	// resolves through the same per-key resolver and lands under its own name.
+	// The resolver is already mechanism-parametric, so the mechanism name and
+	// the destination map are the only things that differ from the three calls
+	// above.
+	for _, mech := range customInjectMechanisms(selfInject.Additional) {
+		raw, _ := selfInject.Additional.Get(mech)
+		dest, ok := inject.Additional.Get(mech)
+		if !ok {
+			dest = types.OrderedMap[string]{}
+		}
+		if err := processSelfInjectMechanism(&dest, mech, raw, ownProvides, siCtx, selfKeys); err != nil {
+			return nil, cerrors.Wrap(err, cerrors.DeveloperError, cerrors.SourceLocation{File: nodeID}, fmt.Sprintf("node %q self-inject", nodeID))
+		}
+		inject.Additional.Set(mech, dest)
+	}
+
 	// Rebuild .all
 	inject.All = buildInjectAll(*inject)
 

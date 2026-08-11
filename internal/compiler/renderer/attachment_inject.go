@@ -289,15 +289,7 @@ func deliverAttachmentInjectKeys(inject *types.InjectPipe, instanceName string, 
 			}
 		}
 	}
-	var customMechs []string
-	for mech := range entryInject.All() {
-		if mech == "env" || mech == "file" || mech == "arg" {
-			continue
-		}
-		customMechs = append(customMechs, mech)
-	}
-	sort.Strings(customMechs)
-	for _, mech := range customMechs {
+	for _, mech := range customInjectMechanisms(entryInject) {
 		mechMap, _ := entryInject.Get(mech)
 		dst, ok := inject.Additional.Get(mech)
 		if !ok {

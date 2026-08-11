@@ -118,10 +118,46 @@ func RehydrateInjectFromProvides(
 		resolveInjectKeys(&inject.Env, edge.Inject, "env", targetProvides)
 		resolveInjectKeys(&inject.File, edge.Inject, "file", targetProvides)
 		resolveInjectKeys(&inject.Arg, edge.Inject, "arg", targetProvides)
+
+		// A mechanism the edge names that is not one of the three typed ones
+		// resolves through the same per-key resolver and lands under its own
+		// name. The resolver is already mechanism-parametric, so the mechanism
+		// name is the only thing that differs from the three calls above.
+		for _, mech := range customInjectMechanisms(edge.Inject) {
+			dst, ok := inject.Additional.Get(mech)
+			if !ok {
+				dst = types.OrderedMap[string]{}
+			}
+			resolveInjectKeys(&dst, edge.Inject, mech, targetProvides)
+			inject.Additional.Set(mech, dst)
+		}
 	}
 
 	// Rebuild .all after resolution
 	inject.All = buildInjectAll(*inject)
+}
+
+// customInjectMechanisms names the mechanisms of an inject container that are
+// not one of the three typed ones, in sorted order.
+//
+// It is the one place that decides which mechanism names are typed, so a
+// delivery site cannot disagree with another about whether a name is custom;
+// and it is generic over the payload because the containers differ by
+// authoring surface — a component's own inject block carries an undecoded
+// payload per mechanism, an edge's and an attachment's carry resolved
+// delivery maps. Sorted rather than author order because the union view and
+// every other delivery site already emit custom mechanisms sorted, and one
+// deterministic order across them all is what makes the emission comparable.
+func customInjectMechanisms[V any](container types.OrderedMap[V]) []string {
+	var custom []string
+	for mech := range container.All() {
+		if mech == "env" || mech == "file" || mech == "arg" {
+			continue
+		}
+		custom = append(custom, mech)
+	}
+	sort.Strings(custom)
+	return custom
 }
 
 func resolveInjectKeys(dest *types.OrderedMap[string], edgeInject types.OrderedMap[types.OrderedMap[string]], mechanism string, targetProvides types.OrderedMap[string]) {

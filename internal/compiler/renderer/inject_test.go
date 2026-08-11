@@ -223,3 +223,131 @@ func TestNormalizeInjectMechanism_VerboseArrayForm(t *testing.T) {
 		t.Errorf("empty []any should produce empty result; got Len=%d", emptyOut.Len())
 	}
 }
+
+// TestRehydrateInjectFromProvides_CustomMechanism pins that a mechanism an edge
+// names outside the three typed ones resolves against the target's provides and
+// lands under its own name, reachable both per-mechanism and through the union
+// view. Each row fixes one authored shape; the absent-provides row pins that an
+// unresolvable reference delivers nothing rather than delivering an empty value.
+func TestRehydrateInjectFromProvides_CustomMechanism(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name          string
+		mechanism     string
+		deliveryKey   string
+		providesKey   string
+		wantDelivered bool
+		wantValue     string
+	}{
+		{
+			name:          "custom mechanism resolves from target provides",
+			mechanism:     "ssm_param",
+			deliveryKey:   "DB_ARN",
+			providesKey:   "arn",
+			wantDelivered: true,
+			wantValue:     "arn:aws:rds:eu-west-1:db-main",
+		},
+		{
+			name:          "custom mechanism referencing an absent provides key delivers nothing",
+			mechanism:     "ssm_param",
+			deliveryKey:   "DB_ARN",
+			providesKey:   "not_provided",
+			wantDelivered: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			inject := emptyPipe()
+			edgeInject := types.OrderedMap[types.OrderedMap[string]]{}
+			edgeInject.Set(tt.mechanism, omStrInject(tt.deliveryKey, tt.providesKey))
+			edges := []types.IREdge{{Source: "api", Target: "db", Inject: edgeInject}}
+
+			allProvides := NodeProvides{"db": omStrInject("arn", "arn:aws:rds:eu-west-1:db-main")}
+
+			RehydrateInjectFromProvides(&inject, edges, "api", allProvides, nil, RecipeLookup{}, nil)
+
+			mechMap, ok := inject.Additional.Get(tt.mechanism)
+			if !tt.wantDelivered {
+				if ok && mechMap.Len() > 0 {
+					t.Fatalf("Additional[%q] = %v, want no delivered key", tt.mechanism, mechMap.Keys())
+				}
+				if _, inAll := inject.All.Get(tt.deliveryKey); inAll {
+					t.Errorf("all[%q] present, want absent", tt.deliveryKey)
+				}
+				return
+			}
+			if !ok {
+				t.Fatalf("Additional has no %q mechanism; keys = %v", tt.mechanism, inject.Additional.Keys())
+			}
+			if got, _ := mechMap.Get(tt.deliveryKey); got != tt.wantValue {
+				t.Errorf("Additional[%q][%q] = %q, want %q", tt.mechanism, tt.deliveryKey, got, tt.wantValue)
+			}
+			if got, _ := inject.All.Get(tt.deliveryKey); got != tt.wantValue {
+				t.Errorf("all[%q] = %q, want %q", tt.deliveryKey, got, tt.wantValue)
+			}
+			// The three typed views stay clear of a custom mechanism's keys.
+			for name, view := range map[string]types.OrderedMap[string]{"env": inject.Env, "file": inject.File, "arg": inject.Arg} {
+				if _, present := view.Get(tt.deliveryKey); present {
+					t.Errorf("%s view carries %q, want it only under the custom mechanism", name, tt.deliveryKey)
+				}
+			}
+		})
+	}
+}
+
+// TestRehydrateInjectFromProvides_CustomMechanismOrderIsSorted pins that custom
+// mechanisms are delivered in sorted name order whatever order the edge names
+// them, so the emission is comparable across runs of the same input.
+func TestRehydrateInjectFromProvides_CustomMechanismOrderIsSorted(t *testing.T) {
+	t.Parallel()
+
+	inject := emptyPipe()
+	edgeInject := types.OrderedMap[types.OrderedMap[string]]{}
+	edgeInject.Set("vault", omStrInject("V", "arn"))
+	edgeInject.Set("azurekv", omStrInject("A", "arn"))
+	edgeInject.Set("ssm_param", omStrInject("S", "arn"))
+	edges := []types.IREdge{{Source: "api", Target: "db", Inject: edgeInject}}
+
+	RehydrateInjectFromProvides(&inject, edges, "api",
+		NodeProvides{"db": omStrInject("arn", "v")}, nil, RecipeLookup{}, nil)
+
+	got := inject.Additional.Keys()
+	want := []string{"azurekv", "ssm_param", "vault"}
+	if len(got) != len(want) {
+		t.Fatalf("Additional keys = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("Additional keys = %v, want %v", got, want)
+		}
+	}
+}
+
+// TestRehydrateInjectFromProvides_NoCustomMechanismLeavesAdditionalEmpty pins
+// that an edge naming only the three typed mechanisms adds nothing to the
+// per-mechanism view, which is what keeps the rendered output of every input
+// that names no custom mechanism unchanged.
+func TestRehydrateInjectFromProvides_NoCustomMechanismLeavesAdditionalEmpty(t *testing.T) {
+	t.Parallel()
+
+	inject := emptyPipe()
+	edgeInject := types.OrderedMap[types.OrderedMap[string]]{}
+	edgeInject.Set("env", omStrInject("DB_URL", "host"))
+	edgeInject.Set("file", omStrInject("DB_CERT", "cert"))
+	edgeInject.Set("arg", omStrInject("--db", "host"))
+	edges := []types.IREdge{{Source: "api", Target: "db", Inject: edgeInject}}
+
+	RehydrateInjectFromProvides(&inject, edges, "api",
+		NodeProvides{"db": omStrInject("host", "db.svc", "cert", "/etc/db.pem")}, nil, RecipeLookup{}, nil)
+
+	if inject.Additional.Len() != 0 {
+		t.Errorf("Additional = %v, want empty", inject.Additional.Keys())
+	}
+	if inject.TemplateUntaggedKeys() != nil {
+		t.Error("TemplateUntaggedKeys() non-nil, want nil so no template key is added")
+	}
+}
