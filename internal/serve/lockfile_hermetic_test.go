@@ -491,3 +491,223 @@ func TestServeMultiProviderResolvesFromLockfileBinding(t *testing.T) {
 		t.Fatalf("expected at least one rendered node in the IR graph, got none")
 	}
 }
+
+// transitiveSubAggregateWorkspace lays a workspace whose Aggregate chain is two
+// levels deep — `serve-top` imports `serve-mid`, which imports `serve-leaf` — and
+// whose Manifest maps the leaf's component type by a VERSIONED key while the leaf
+// names that type bare.
+//
+// Both properties are load-bearing, and each removes a way the fixture could pass
+// without the transitive descent running:
+//
+//   - Depth two. The closure walk reads one in-memory Aggregate value, so it pins
+//     `serve-mid` (named directly in the top-level body) but cannot see
+//     `serve-leaf`, which is named only inside `serve-mid`'s body. Only a pass that
+//     loads a resolved body and re-walks it reaches the leaf, and only one that then
+//     re-walks the LEAF reaches the leaf's own component type.
+//   - A versioned Manifest mapping key. `serve-leaf` names its component type bare
+//     (`serve-worker`) while the Manifest maps `serve-worker:1.0.0`. Closure
+//     entities are keyed by the raw reference string, so the bare and the versioned
+//     form are two distinct entities and the mapping cannot mask the descent's
+//     contribution by having already pinned the same string.
+//
+// A fixture missing either property yields the same closure whether the descent
+// recurses or stops after the first level, which is the blind spot that makes a
+// single-level fixture unable to test a transitive wiring.
+func transitiveSubAggregateWorkspace(t *testing.T) (ws, releaseRel string) {
+	t.Helper()
+	ws = t.TempDir()
+	catalogDir := filepath.Join(ws, "catalog")
+
+	writeFixtureFile(t, filepath.Join(catalogDir, "aggregates", "serve-top.yaml"), `apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: serve-top
+  version: "1.0.0"
+spec:
+  components:
+    api:
+      type: serve-front
+  aggregates:
+    mid:
+      type: serve-mid
+`)
+	writeFixtureFile(t, filepath.Join(catalogDir, "aggregates", "serve-mid.yaml"), `apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: serve-mid
+  version: "1.0.0"
+spec:
+  components:
+    svc:
+      type: serve-front
+  aggregates:
+    leaf:
+      type: serve-leaf
+`)
+	// The leaf's component type is named BARE here and mapped VERSIONED in the
+	// Manifest, so the bare entity enters the closure only by re-walking this body.
+	writeFixtureFile(t, filepath.Join(catalogDir, "aggregates", "serve-leaf.yaml"), `apiVersion: aggrega.ai/v1alpha1
+kind: Aggregate
+metadata:
+  name: serve-leaf
+  version: "1.0.0"
+spec:
+  components:
+    worker:
+      type: serve-worker
+`)
+	for _, comp := range []string{"serve-front", "serve-worker"} {
+		writeFixtureFile(t, filepath.Join(catalogDir, "components", comp+".yaml"), `apiVersion: aggrega.ai/v1alpha1
+kind: Component
+metadata:
+  name: `+comp+`
+  version: "1.0.0"
+  labels:
+    component.aggrega.ai/type: "server"
+spec:
+  schema:
+    values:
+      port: { type: integer, default: 8080 }
+`)
+		writeFixtureFile(t, filepath.Join(catalogDir, "recipes", comp+".yaml"), `apiVersion: aggrega.ai/v1alpha1
+kind: Recipe
+metadata:
+  name: `+comp+`
+  version: "1.0.0"
+spec:
+  capability: helm
+  implements: `+comp+`
+  workload: |
+    apiVersion: aggrega.ai/v1alpha1
+    kind: Workload
+    replicas: 1
+    containers:
+      main:
+        image: "test-server:latest"
+`)
+	}
+	writeFixtureFile(t, filepath.Join(ws, "app-manifest.yaml"), `apiVersion: aggrega.ai/v1alpha1
+kind: Manifest
+metadata:
+  name: app-manifest
+  version: "1.0.0"
+spec:
+  mappings:
+    components:
+      type:
+        serve-front: serve-front
+        serve-worker:1.0.0: serve-worker:1.0.0
+`)
+	relPath := filepath.Join(ws, "app-release.yaml")
+	writeFixtureFile(t, relPath, `apiVersion: aggrega.ai/v1alpha1
+kind: Release
+metadata:
+  name: app-release
+  environment: production
+  version: "1.0.0"
+spec:
+  aggregate: serve-top
+  manifest: app-manifest
+  boundaries:
+    app:
+      directory: ./dist/app
+      components:
+        api: {}
+        mid.svc: {}
+        mid.leaf.worker: {}
+`)
+	return ws, filepath.Base(relPath)
+}
+
+// closureEntityURIs lists a closure's entity URIs in closure order, which is
+// canonical — so a failure message built from it is stable across runs.
+func closureEntityURIs(cl closure.Closure) []string {
+	out := make([]string, 0, len(cl.Entities))
+	for _, e := range cl.Entities {
+		out = append(out, e.URI)
+	}
+	return out
+}
+
+func closureHasEntity(cl closure.Closure, uri string) bool {
+	for _, e := range cl.Entities {
+		if e.URI == uri {
+			return true
+		}
+	}
+	return false
+}
+
+// TestServeReconstructsTransitiveSubAggregateAxis proves the daemon's drift path
+// descends the sub-aggregate axis TRANSITIVELY rather than stopping one level down.
+//
+// The distinction is invisible at depth one: the closure walk already pins the
+// sub-aggregates named in the top-level body, so a wiring that never recurses
+// produces the same closure as one that does for any single-level fixture. Depth
+// two is where the two diverge, and this fixture places an entity at each of the
+// two points that only a recursive descent reaches:
+//
+//   - `serve-leaf`, the Aggregate named only inside `serve-mid`'s body. Reaching it
+//     requires loading a resolved body and re-walking it.
+//   - `serve-worker`, the component type named only inside `serve-leaf`'s body.
+//     Reaching it requires re-walking a body that was itself only discovered by
+//     re-walking. A descent that stops after the first level still pins
+//     `serve-leaf` — it is discovered while re-walking `serve-mid` — but never
+//     re-walks it, so this entity is the one that distinguishes the two wirings.
+//
+// The compute-only closure is asserted NOT to carry either, so the fixture cannot
+// pass for the wrong reason: an assertion satisfied before the descent runs would
+// be measuring the walk, not the descent.
+func TestServeReconstructsTransitiveSubAggregateAxis(t *testing.T) {
+	t.Parallel()
+	ws, rel := transitiveSubAggregateWorkspace(t)
+	releasePath := filepath.Join(ws, rel)
+
+	var in, out bytes.Buffer
+	srv := newPinIsolationServer(t, ws, &in, &out, 1)
+
+	// Compute-only closure (no lockfile, so no reconstruction runs).
+	computeView := srv.lazyCatalog.ForRequest(nil)
+	computed, cerr := compilerops.ResolveClosure(compilerops.ClosureInputs{
+		View:            computeView,
+		ReleasePath:     releasePath,
+		WorkspaceRoot:   srv.workspaceRoot,
+		WorkspaceConfig: srv.wsConfig,
+	})
+	if cerr != nil {
+		t.Fatalf("compute-only ResolveClosure: %v", cerr)
+	}
+
+	// The chain is wired: the DIRECT sub-aggregate is reached by the walk alone.
+	// Without this the fixture could be silently broken and the assertions below
+	// would still hold for a closure that descends nothing.
+	if !closureHasEntity(computed.Closure, "serve-mid") {
+		t.Fatalf("fixture is broken: the closure walk should pin the direct sub-aggregate %q; entities=%v",
+			"serve-mid", closureEntityURIs(computed.Closure))
+	}
+	// The depth-two entities must NOT be reachable without the descent.
+	for _, uri := range []string{"serve-leaf", "serve-worker"} {
+		if closureHasEntity(computed.Closure, uri) {
+			t.Fatalf("fixture is inert: the closure walk already pinned %q, so the transitive descent contributes nothing to observe; entities=%v",
+				uri, closureEntityURIs(computed.Closure))
+		}
+	}
+
+	// The drift path: resolveReleaseClosure with a lockfile runs the reconstruction.
+	view := srv.lazyCatalog.ForRequest(nil)
+	lf := &lockfile.Lockfile{Version: 1, Release: "./" + rel, GeneratedAt: "2026-06-03T10:00:00Z"}
+	resolved, env := srv.resolveReleaseClosure(view, releasePath, lf)
+	if env != nil {
+		t.Fatalf("reconstruct resolveReleaseClosure: %s", env.Message)
+	}
+
+	if !closureHasEntity(resolved.Closure, "serve-leaf") {
+		t.Errorf("reconstructed closure is missing the depth-two Aggregate %q — the sub-aggregate descent did not re-walk %q; entities=%v",
+			"serve-leaf", "serve-mid", closureEntityURIs(resolved.Closure))
+	}
+	if !closureHasEntity(resolved.Closure, "serve-worker") {
+		t.Errorf("reconstructed closure is missing %q, the component type named only inside the depth-two Aggregate %q — the descent stopped after the first level instead of recursing; entities=%v",
+			"serve-worker", "serve-leaf", closureEntityURIs(resolved.Closure))
+	}
+}
