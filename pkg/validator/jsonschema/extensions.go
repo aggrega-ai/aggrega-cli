@@ -128,6 +128,13 @@ func (a *googleAdapter) Validate(instance any, ctx *Context) (*Report, error) {
 	// order, on every run.
 	a.deterministicWalk(instance, "", rpt)
 
+	// The positions the walk cannot reach, checked against the whole
+	// document because that is the only scope their references resolve in.
+	// Placed here so that a subtree switched off by a falsy predicate drops
+	// these findings along with the walk's, rather than keeping a finding
+	// for a constraint the author gated away.
+	a.checkUnresolvedPositions(instance, rpt)
+
 	// Predicate-inert mode: the caller lacks the correct parameter context for
 	// the conditional extensions, so do not evaluate them. The deterministic
 	// walk (Step 1) already validated the unconditional structural constraints;
@@ -333,6 +340,18 @@ func (a *googleAdapter) deterministicWalk(instance any, path string, rpt *Report
 					})
 				}
 				a.deterministicWalk(m[k], subPath, rpt)
+				continue
+			}
+
+			// Also declared, but as a position that could not be stood up on
+			// its own. It is still a declared property, so it must not fall
+			// through the arms below: a key the author was invited to write
+			// would otherwise be refused by a closed parent as one it never
+			// declared — a refusal naming the wrong problem, on a document
+			// that may have nothing wrong with it at all. Its constraints are
+			// checked against the whole document instead, which is the only
+			// scope its reference resolves in.
+			if a.isUnresolvedPosition(subPath) {
 				continue
 			}
 
@@ -894,19 +913,9 @@ func extractPath(err error) string {
 	if pathPart == "root" {
 		return ""
 	}
-	// Walk the slash-delimited segments. Capture each `properties/<name>`
-	// pair; skip composition / branch / numeric keywords.
-	segments := strings.Split(pathPart, "/")
-	out := make([]string, 0, len(segments)/2)
-	for i := 0; i < len(segments); i++ {
-		if segments[i] == "properties" && i+1 < len(segments) {
-			out = append(out, segments[i+1])
-			i++ // skip the captured property name
-		}
-		// All other segments (empty, "then", "else", "if",
-		// "allOf", "anyOf", "oneOf", "not", numeric indices,
-		// "items", "patternProperties", "$defs") do not advance the
-		// instance position and are skipped.
-	}
-	return strings.Join(out, ".")
+	// Which segments move the instance position, and which merely narrow
+	// the schema, is one question with one answer; it is read here from the
+	// same reader the whole-document check reads it from, so the two cannot
+	// come to disagree about a keyword.
+	return instancePathFromPointer(pathPart)
 }

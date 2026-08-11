@@ -111,9 +111,15 @@ func New(schema *jsonschema.Schema) (Validator, error) {
 	// $ref to root-level $defs from a sub-context) are tolerated by
 	// indexSubSchemas and surface as a documented walker-
 	// completeness gap rather than a construction error.
-	if err := a.indexSubSchemas(schema, "", a.rootDefs, ""); err != nil {
+	if err := a.indexSubSchemas(schema, "", a.rootDefs, "", ""); err != nil {
 		return nil, err
 	}
+
+	// Positions the sweep could not stand up on their own are checked
+	// against the whole document per call, and ordering them by document
+	// location here is what keeps that check's attribution independent of
+	// the order the sweep happened to visit them in.
+	a.sortUnresolvedPositions()
 
 	return a, nil
 }
@@ -197,6 +203,23 @@ type googleAdapter struct {
 	// after New returns" precondition: rootDefs is a read-only
 	// pointer into the input schema.
 	rootDefs map[string]*jsonschema.Schema
+
+	// unresolved names the positions that could not be stood up as
+	// schemas in their own right, each with its location in the schema
+	// document. A position lands here when its own reference — or one
+	// below it — names something a standalone position does not carry,
+	// which is every reference shape but a name in the definitions in
+	// scope. Empty for a schema whose references all name definitions,
+	// which is what makes the per-call check over the whole document cost
+	// nothing at all for such a schema.
+	//
+	// The entries are what turns a blind spot into a checked position. A
+	// position that cannot be stood up is not descended into either, so
+	// its whole subtree is invisible to the walk; recording it lets the
+	// per-call check reach that subtree through the document, where the
+	// reference does resolve. Sorted by document location at construction,
+	// so attribution does not depend on visit order.
+	unresolved []unresolvedPosition
 
 	// additionalPropsBranch maps a parent path to its
 	// AdditionalProperties-as-schema branchIndex. Populated only when

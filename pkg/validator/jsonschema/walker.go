@@ -327,13 +327,22 @@ func sortedKeys(object map[string]any) []string {
 // names, so the recursion descends into that schema's properties
 // instead of stopping at a node that declares none.
 //
-// Residual gaps for `$ref` resolution: (a) cross-property refs
-// (`$ref → #/properties/foo` — the graft covers $defs only, not
-// /properties), (b) `$defs/X` entries whose own refs leave $defs scope
-// (e.g., `$defs/X` referencing `/properties/foo`). Either would require
-// validating at the root and filtering findings, accepting the ordering
-// degradation for the affected paths only.
-func (a *googleAdapter) indexSubSchemas(s *jsonschema.Schema, path string, ambientDefs map[string]*jsonschema.Schema, enclosing string) error {
+// A position whose reference names something the graft cannot supply — a
+// declared property rather than a definition, another document, or a
+// definition whose own reference leaves the definitions behind — cannot be
+// stood up on its own and is recorded instead, with its location in the
+// schema document. The per-call check reaches those positions through the
+// whole document, where such a reference does resolve; see
+// unresolved_positions.go. Recording is what keeps the tolerance from being
+// silent: a position skipped and not recorded is not merely reported less
+// precisely, it is checked by nothing, and so is everything beneath it.
+//
+// pointer is the position's own location in the schema document, threaded
+// alongside path for exactly that purpose. It is composed from the property
+// names as authored, before any reference is substituted, because that is
+// the location a failure's chain passes through on its way to whatever the
+// reference named.
+func (a *googleAdapter) indexSubSchemas(s *jsonschema.Schema, path string, ambientDefs map[string]*jsonschema.Schema, enclosing, pointer string) error {
 	if s == nil {
 		return nil
 	}
@@ -417,6 +426,7 @@ func (a *googleAdapter) indexSubSchemas(s *jsonschema.Schema, path string, ambie
 				Err:     ErrSchemaResolve(),
 			}
 		}
+		a.recordUnresolvedPosition(path, pointer)
 		return nil
 	}
 	a.subResolved[path] = resolved
@@ -444,7 +454,7 @@ func (a *googleAdapter) indexSubSchemas(s *jsonschema.Schema, path string, ambie
 			if path != "" {
 				subPath = path + "." + name
 			}
-			if err := a.indexSubSchemas(s.Properties[name], subPath, nextAmbient, ""); err != nil {
+			if err := a.indexSubSchemas(s.Properties[name], subPath, nextAmbient, "", childPointer(pointer, name)); err != nil {
 				return err
 			}
 		}

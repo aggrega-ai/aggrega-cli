@@ -112,13 +112,34 @@
 // unevaluatedItems is likewise not enforced beside contains, for the same
 // reason. No schema shipped with the compiler relies on either keyword.
 //
-// 🔴 A position the adapter cannot resolve on its own is not checked, and
-// neither is anything below it. This is the sharper of the two exclusions
-// and it is permissive: a document violating such a position validates
-// clean, with nothing reported. It is reached by a reference the adapter
-// cannot resolve standalone — a pointer into a property rather than into a
-// reusable definition, or a definition whose own references reach outside
-// the definitions in scope — and it costs the position its own keywords too,
-// not merely the constraints beneath it. Prefer a reference into a reusable
-// definition, which resolves and is checked in full.
+// A position the adapter cannot resolve on its own is enforced, but not by
+// the walk, and what it loses is reporting precision rather than the
+// constraint. Such a position is reached by a reference the adapter cannot
+// resolve standalone — a pointer into a declared property rather than into a
+// reusable definition, a pointer into another document, or a definition whose
+// own references reach outside the definitions in scope — because standing a
+// position up carries the definitions in scope onto it and nothing else, so
+// only a name among those definitions still resolves there.
+//
+// The constraints at such a position are checked against the whole document
+// instead, which is the one scope the reference does resolve in, and the
+// failures the library reports there are kept when the position they name is
+// at or below one of these positions and dropped otherwise. Dropping the rest
+// is what keeps the check from reporting a second time on everything the walk
+// already covered; it cannot suppress a first report either, because a
+// position that cannot be resolved is not descended into, so its whole
+// subtree is the walk's alone to miss.
+//
+// Two costs, both stated because neither is visible from a passing document.
+// The library stops at the first failure it finds, so a document at fault in
+// several of these positions is reported for one of them and the choice is
+// the library's; a document at fault in only one is always reported for it,
+// which is the property that stops such a document validating clean. And the
+// failure is named at the position the library's own location chain reached
+// before the reference moved it, so it lands on the position carrying the
+// reference rather than on the exact value beneath it. Prefer a reference
+// into a reusable definition, which resolves and is reported in full, at the
+// path of the value at fault. TestNoShippedSchemaCarriesAPositionThatCannotBeStoodUp
+// pins the count of such positions at zero for every schema shipped with the
+// compiler.
 package jsonschema
