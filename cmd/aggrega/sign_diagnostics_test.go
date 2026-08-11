@@ -182,6 +182,7 @@ func TestSignNoSubjectFailureDiagnostic(t *testing.T) {
 	var acquired int
 	fake := &signingtest.FakeSigner{Err: errors.New("signing: keyless bundle: no subject found in claims")}
 	err := signRun(signConfig{
+		ws:          resolveTempWorkspace(t, tempWorkspaceOptions{}),
 		References:  refs,
 		SubjectRefs: subjects,
 		Target:      store,
@@ -227,6 +228,7 @@ func TestSignUnverifiedEmailFailureDiagnostic(t *testing.T) {
 	var acquired int
 	fake := &signingtest.FakeSigner{Err: errors.New("signing: keyless bundle: not verified by identity provider")}
 	err := signRun(signConfig{
+		ws:          resolveTempWorkspace(t, tempWorkspaceOptions{}),
 		References:  refs,
 		SubjectRefs: subjects,
 		Target:      store,

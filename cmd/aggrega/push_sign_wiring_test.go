@@ -38,12 +38,13 @@ func writeKeyPEM(t *testing.T) (keyPath string, pubPEM []byte) {
 // digest before push, pushes, and attaches a verifiable referrer.
 func TestPushKeyedEndToEndSignsBeforePush(t *testing.T) {
 	ctx := context.Background()
-	entityPath := writeSigningWorkspace(t, "secure.example.com", true)
+	entityPath, wsRoot := writeSigningWorkspace(t, "secure.example.com", true)
 	store := memory.New()
 	keyPath, pubPEM := writeKeyPEM(t)
 
 	sign := true
 	if err := pushRun(pushConfig{
+		ws:         resolveTempWorkspace(t, tempWorkspaceOptions{Root: wsRoot}),
 		EntityPath: entityPath,
 		Registry:   "secure.example.com",
 		PushTarget: store,
@@ -83,11 +84,12 @@ func TestPushKeyedEndToEndSignsBeforePush(t *testing.T) {
 // signer that errors must refuse the push BEFORE any bytes reach the target.
 func TestPushSignerErrorLeavesZeroBytes(t *testing.T) {
 	ctx := context.Background()
-	entityPath := writeSigningWorkspace(t, "secure.example.com", true)
+	entityPath, wsRoot := writeSigningWorkspace(t, "secure.example.com", true)
 	store := memory.New()
 
 	sign := true
 	err := pushRun(pushConfig{
+		ws:         resolveTempWorkspace(t, tempWorkspaceOptions{Root: wsRoot}),
 		EntityPath: entityPath,
 		Registry:   "secure.example.com",
 		PushTarget: store,
@@ -107,11 +109,12 @@ func TestPushSignerErrorLeavesZeroBytes(t *testing.T) {
 // bytes pushed.
 func TestPushKeyedMissingKeyLeavesZeroBytes(t *testing.T) {
 	ctx := context.Background()
-	entityPath := writeSigningWorkspace(t, "secure.example.com", true)
+	entityPath, wsRoot := writeSigningWorkspace(t, "secure.example.com", true)
 	store := memory.New()
 
 	sign := true
 	err := pushRun(pushConfig{
+		ws:         resolveTempWorkspace(t, tempWorkspaceOptions{Root: wsRoot}),
 		EntityPath: entityPath,
 		Registry:   "secure.example.com",
 		PushTarget: store,
@@ -133,11 +136,12 @@ func TestPushKeyedMissingKeyLeavesZeroBytes(t *testing.T) {
 // fails the test if invoked.
 func TestPushKeylessNoTokenNoTTYLeavesZeroBytes(t *testing.T) {
 	ctx := context.Background()
-	entityPath := writeSigningWorkspace(t, "secure.example.com", true)
+	entityPath, wsRoot := writeSigningWorkspace(t, "secure.example.com", true)
 	store := memory.New()
 
 	sign := true
 	err := pushRun(pushConfig{
+		ws:          resolveTempWorkspace(t, tempWorkspaceOptions{Root: wsRoot}),
 		EntityPath:  entityPath,
 		Registry:    "secure.example.com",
 		PushTarget:  store,
@@ -237,10 +241,11 @@ func TestSignAndPushShareOneSigningPath(t *testing.T) {
 	keyPath, pubPEM := writeKeyPEM(t)
 
 	// Push a keyed-signed artifact; capture its digest and signature bytes.
-	pushEntity := writeSigningWorkspace(t, "secure.example.com", true)
+	pushEntity, pushWSRoot := writeSigningWorkspace(t, "secure.example.com", true)
 	pushStore := memory.New()
 	sign := true
 	if err := pushRun(pushConfig{
+		ws:         resolveTempWorkspace(t, tempWorkspaceOptions{Root: pushWSRoot}),
 		EntityPath: pushEntity,
 		Registry:   "secure.example.com",
 		PushTarget: pushStore,
@@ -259,6 +264,7 @@ func TestSignAndPushShareOneSigningPath(t *testing.T) {
 	signStore := memory.New()
 	// Re-push the identical bytes into a second store so the digest matches.
 	if err := pushRun(pushConfig{
+		ws:         resolveTempWorkspace(t, tempWorkspaceOptions{Root: pushWSRoot}),
 		EntityPath: pushEntity,
 		Registry:   "example.com",
 		PushTarget: signStore,
@@ -273,6 +279,7 @@ func TestSignAndPushShareOneSigningPath(t *testing.T) {
 		t.Fatalf("seed digest %q != push digest %q", signDigestVal, pushDigest)
 	}
 	if err := signRun(signConfig{
+		ws:          resolveTempWorkspace(t, tempWorkspaceOptions{Root: pushWSRoot}),
 		References:  []string{"secure.example.com/component/core/api-server:1.0.0"},
 		SubjectRefs: map[string]string{"secure.example.com/component/core/api-server:1.0.0": "1.0.0"},
 		Target:      signStore,

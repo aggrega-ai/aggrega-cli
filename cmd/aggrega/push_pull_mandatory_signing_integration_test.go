@@ -33,12 +33,18 @@ metadata:
 // into a fresh tempdir and chdirs into it, returning the workspace root. The
 // body sets default_registry and the org signing block; it deliberately carries
 // NO per-registry signing.required, so any refusal is attributable to the
-// org policy alone.
+// org policy alone. Each caller declares the returned root at its own push
+// site, because that config is where the org policy under test lives.
 func writeOrgSigningPushWorkspace(t *testing.T, configBody string) string {
 	t.Helper()
 	root := t.TempDir()
 	t.Chdir(root)
-	writeWorkspaceConfig(t, root, configBody)
+	// The leading `workspace:` block anchors the root at this directory, so
+	// resolution settles on its first step rather than climbing the temporary
+	// directory's ancestors and adopting whatever marker happens to sit above
+	// them. The catalog list is empty because this workspace contributes no
+	// catalog directories: every entity it pushes is named by an absolute path.
+	writeWorkspaceConfig(t, root, "workspace:\n  catalog_dirs: []\n"+configBody)
 	return root
 }
 
@@ -58,7 +64,7 @@ func TestIntegration_PushRefusesUnsignedUnderOrgPolicy(t *testing.T) {
 		writeEntityFixture(t, entityPath, orgSignPluginBody)
 
 		noSign := false
-		err := pushRun(pushConfig{EntityPath: entityPath, Registry: host, Sign: &noSign})
+		err := pushRun(pushConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), EntityPath: entityPath, Registry: host, Sign: &noSign})
 		if !errors.Is(err, signing.ErrSigningPolicyRequiresSignature()) {
 			t.Fatalf("want ErrSigningPolicyRequiresSignature for an unsigned in-scope Plugin, got %v", err)
 		}
@@ -76,7 +82,7 @@ func TestIntegration_PushRefusesUnsignedUnderOrgPolicy(t *testing.T) {
 		writeEntityFixture(t, entityPath, signComponentBody)
 
 		noSign := false
-		err := pushRun(pushConfig{EntityPath: entityPath, Registry: host, Sign: &noSign})
+		err := pushRun(pushConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), EntityPath: entityPath, Registry: host, Sign: &noSign})
 		if !errors.Is(err, signing.ErrSigningPolicyRequiresSignature()) {
 			t.Fatalf("want ErrSigningPolicyRequiresSignature for an unsigned in-scope Component, got %v", err)
 		}
@@ -93,7 +99,7 @@ func TestIntegration_PushRefusesUnsignedUnderOrgPolicy(t *testing.T) {
 		fake := &signingtest.FakeSigner{}
 		// Sign left nil: the org policy makes signing the default; the signer
 		// satisfies the requirement.
-		if err := pushRun(pushConfig{EntityPath: entityPath, Registry: host, Signer: fake}); err != nil {
+		if err := pushRun(pushConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), EntityPath: entityPath, Registry: host, Signer: fake}); err != nil {
 			t.Fatalf("a signed push of an in-scope kind must succeed, got %v", err)
 		}
 		if len(fake.Signed) != 1 {
@@ -109,7 +115,7 @@ func TestIntegration_PushRefusesUnsignedUnderOrgPolicy(t *testing.T) {
 		entityPath := filepath.Join(root, "1.0.0", "component.yaml")
 		writeEntityFixture(t, entityPath, signComponentBody)
 
-		if err := pushRun(pushConfig{EntityPath: entityPath, Registry: host}); err != nil {
+		if err := pushRun(pushConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), EntityPath: entityPath, Registry: host}); err != nil {
 			t.Fatalf("an out-of-scope kind must push unsigned without refusal, got %v", err)
 		}
 	})
@@ -122,7 +128,7 @@ func TestIntegration_PushRefusesUnsignedUnderOrgPolicy(t *testing.T) {
 		entityPath := filepath.Join(root, "1.0.0", "component.yaml")
 		writeEntityFixture(t, entityPath, signComponentBody)
 
-		if err := pushRun(pushConfig{EntityPath: entityPath, Registry: host}); err != nil {
+		if err := pushRun(pushConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), EntityPath: entityPath, Registry: host}); err != nil {
 			t.Fatalf("with the org policy off, an unsigned push must succeed, got %v", err)
 		}
 	})
@@ -146,7 +152,7 @@ func TestIntegration_PushOrgPolicyUnremovableViaCIOverlay(t *testing.T) {
 	writeEntityFixture(t, entityPath, signComponentBody)
 
 	noSign := false
-	err := pushRun(pushConfig{EntityPath: entityPath, Registry: host, Sign: &noSign})
+	err := pushRun(pushConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), EntityPath: entityPath, Registry: host, Sign: &noSign})
 	if !errors.Is(err, signing.ErrSigningPolicyRequiresSignature()) {
 		t.Fatalf("a CI-overlay-enabled org policy must still refuse an unsigned in-scope push through the enforcement site, got %v", err)
 	}
@@ -155,11 +161,15 @@ func TestIntegration_PushOrgPolicyUnremovableViaCIOverlay(t *testing.T) {
 // writeOrgSigningPullWorkspace writes a controlled fixture catalog (a Component
 // addressed by its bare identity plus a Recipe that implements it), pushes each
 // entity UNSIGNED to the registry at host, and writes a consumer workspace whose
-// config carries the given org signing block (configBody appended under the
-// signing key) but NO per-registry signing.required. It chdirs into the
-// consumer workspace and returns the Component's bare closure URI. The consumer
-// carries no local catalog directory, so every entity resolves through a Tier-3
-// registry pull — the axis the org policy governs at the consumer.
+// config carries the given org signing block (signingBlock appended to the
+// config body) but NO per-registry signing.required. It chdirs into the
+// consumer workspace and returns that workspace's root. The consumer carries no
+// local catalog directory, so every entity resolves through a Tier-3 registry
+// pull — the axis the org policy governs at the consumer.
+//
+// The root is returned because the org policy under test lives in the config
+// written there, and a pull reads the policy from the workspace it is given, so
+// each caller declares this directory at its own pull site.
 func writeOrgSigningPullWorkspace(t *testing.T, host, signingBlock string) string {
 	t.Helper()
 	cat := t.TempDir()
@@ -198,9 +208,14 @@ spec:
           web: {{ optional .infra `+"`port`"+` 8080 }}
 `)
 	// Push UNSIGNED: the org policy at the consumer, not a per-registry policy,
-	// is what must reject the pull of an in-scope unsigned entity.
+	// is what must reject the pull of an in-scope unsigned entity. The publisher
+	// therefore declares a workspace of its own that carries no signing policy at
+	// all — the consumer workspace built below is the one holding the policy, and
+	// it does not exist yet at this point. Declaring it here rather than letting
+	// the push discover a workspace also keeps the unsigned publish independent of
+	// whichever directory the calling test happens to be standing in.
 	for _, p := range []string{componentPath, recipePath} {
-		if err := pushRun(pushConfig{EntityPath: p, Registry: host}); err != nil {
+		if err := pushRun(pushConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{}), EntityPath: p, Registry: host}); err != nil {
 			t.Fatalf("publish unsigned entity %s: %v", p, err)
 		}
 	}
@@ -244,9 +259,13 @@ spec:
           infra:
             replicas: 1
 `)
-	writeWorkspaceConfig(t, ws, "default_registry: \""+host+"\"\nauto_pull: true\noffline: false\n"+signingBlock)
+	// The leading `workspace:` block anchors the root at this directory on the
+	// first step of resolution, and its empty catalog list states outright what
+	// this fixture depends on: the consumer contributes no catalog directory, so
+	// every entity has to resolve through a registry pull.
+	writeWorkspaceConfig(t, ws, "workspace:\n  catalog_dirs: []\ndefault_registry: \""+host+"\"\nauto_pull: true\noffline: false\n"+signingBlock)
 	t.Chdir(ws)
-	return "test/svc"
+	return ws
 }
 
 // TestIntegration_PullRejectsUnsignedUnderOrgPolicy proves the consumer-side
@@ -261,9 +280,9 @@ func TestIntegration_PullRejectsUnsignedUnderOrgPolicy(t *testing.T) {
 	// carries no per-registry signing.required).
 	t.Run("in_scope_unsigned_rejected", func(t *testing.T) {
 		host := startRegistry(t, nil)
-		writeOrgSigningPullWorkspace(t, host, "signing:\n  required: true\n  kinds: [Component]\n")
+		ws := writeOrgSigningPullWorkspace(t, host, "signing:\n  required: true\n  kinds: [Component]\n")
 
-		err := pullRun(pullConfig{ReleasePath: "release.yaml"})
+		err := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), ReleasePath: "release.yaml"})
 		if !errors.Is(err, signing.ErrNoSignatureFound()) {
 			t.Fatalf("an unsigned in-scope Component under the org policy must be REJECTED at pull with ErrNoSignatureFound, got %v", err)
 		}
@@ -273,9 +292,9 @@ func TestIntegration_PullRejectsUnsignedUnderOrgPolicy(t *testing.T) {
 	// are out of scope, so the unsigned pull succeeds.
 	t.Run("out_of_scope_unsigned_allowed", func(t *testing.T) {
 		host := startRegistry(t, nil)
-		writeOrgSigningPullWorkspace(t, host, "signing:\n  required: true\n  kinds: [Plugin]\n")
+		ws := writeOrgSigningPullWorkspace(t, host, "signing:\n  required: true\n  kinds: [Plugin]\n")
 
-		if err := pullRun(pullConfig{ReleasePath: "release.yaml"}); err != nil {
+		if err := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), ReleasePath: "release.yaml"}); err != nil {
 			t.Fatalf("an out-of-scope kind must pull unsigned without rejection, got %v", err)
 		}
 	})
@@ -284,9 +303,9 @@ func TestIntegration_PullRejectsUnsignedUnderOrgPolicy(t *testing.T) {
 	// non-regression.
 	t.Run("policy_off_unsigned_allowed", func(t *testing.T) {
 		host := startRegistry(t, nil)
-		writeOrgSigningPullWorkspace(t, host, "")
+		ws := writeOrgSigningPullWorkspace(t, host, "")
 
-		if err := pullRun(pullConfig{ReleasePath: "release.yaml"}); err != nil {
+		if err := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), ReleasePath: "release.yaml"}); err != nil {
 			t.Fatalf("with the org policy off, an unsigned pull must succeed, got %v", err)
 		}
 	})

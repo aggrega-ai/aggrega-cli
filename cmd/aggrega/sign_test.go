@@ -32,6 +32,7 @@ func TestSignAttachesReferrerWithoutMutatingArtifact(t *testing.T) {
 
 	fake := &signingtest.FakeSigner{}
 	err = signRun(signConfig{
+		ws:          resolveTempWorkspace(t, tempWorkspaceOptions{}),
 		References:  []string{"hub.aggrega.ai/component/core/api-server:1.0.0"},
 		SubjectRefs: map[string]string{"hub.aggrega.ai/component/core/api-server:1.0.0": "1.0.0"},
 		Target:      store,
@@ -76,6 +77,7 @@ func TestSignUnpublishedArtifactFails(t *testing.T) {
 	store := memory.New()
 
 	err := signRun(signConfig{
+		ws:          resolveTempWorkspace(t, tempWorkspaceOptions{}),
 		References:  []string{"hub.aggrega.ai/component/core/missing:9.9.9"},
 		SubjectRefs: map[string]string{"hub.aggrega.ai/component/core/missing:9.9.9": "9.9.9"},
 		Target:      store,
@@ -113,6 +115,7 @@ func TestSignWithRealKeyedSignerRoundTrips(t *testing.T) {
 	}
 
 	if err := signRun(signConfig{
+		ws:          resolveTempWorkspace(t, tempWorkspaceOptions{}),
 		References:  []string{"hub.aggrega.ai/component/core/api-server:2.0.0"},
 		SubjectRefs: map[string]string{"hub.aggrega.ai/component/core/api-server:2.0.0": "2.0.0"},
 		Target:      store,
@@ -186,6 +189,7 @@ func TestSignBatchAcquiresTokenOnce(t *testing.T) {
 	var acquired int
 	fake := &signingtest.FakeSigner{}
 	err := signRun(signConfig{
+		ws:          resolveTempWorkspace(t, tempWorkspaceOptions{}),
 		References:  refs,
 		SubjectRefs: subjects,
 		Target:      store,
@@ -228,6 +232,7 @@ func TestSignBatchContinuesAndReports(t *testing.T) {
 		},
 	}
 	err = signRun(signConfig{
+		ws:          resolveTempWorkspace(t, tempWorkspaceOptions{}),
 		References:  refs,
 		SubjectRefs: subjects,
 		Target:      store,
@@ -277,6 +282,7 @@ func TestSignKeyedBatchAcquiresNoToken(t *testing.T) {
 
 	var acquired int
 	err = signRun(signConfig{
+		ws:          resolveTempWorkspace(t, tempWorkspaceOptions{}),
 		References:  refs,
 		SubjectRefs: subjects,
 		Target:      store,
@@ -311,6 +317,7 @@ func TestSignKeylessRejectionContinuesAndReports(t *testing.T) {
 	var acquired int
 	fake := &signingtest.FakeSigner{Err: errors.New("synthetic cert-issuance rejection")}
 	err := signRun(signConfig{
+		ws:          resolveTempWorkspace(t, tempWorkspaceOptions{}),
 		References:  refs,
 		SubjectRefs: subjects,
 		Target:      store,

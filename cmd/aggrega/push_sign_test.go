@@ -29,9 +29,15 @@ spec:
 `
 
 // writeSigningWorkspace writes a workspace config requiring signatures for
-// the given registry into a fresh tempdir and chdirs into it, returning
-// the entity path to push.
-func writeSigningWorkspace(t *testing.T, registry string, requiresSignatures bool) string {
+// the given registry into a fresh tempdir and chdirs into it, returning the
+// entity path to push and the workspace root that config sits at.
+//
+// The root is returned because the signature requirement under test lives in
+// that config, and a push reads the requirement from the workspace it is
+// given. Returning the directory lets each caller declare it at the call site
+// instead of leaving the command to discover a workspace from wherever the
+// process happens to be standing.
+func writeSigningWorkspace(t *testing.T, registry string, requiresSignatures bool) (entityPath, wsRoot string) {
 	t.Helper()
 	root := t.TempDir()
 	t.Chdir(root)
@@ -42,9 +48,9 @@ func writeSigningWorkspace(t *testing.T, registry string, requiresSignatures boo
 	if err := os.WriteFile(filepath.Join(root, ".aggrega-config.yaml"), []byte(cfg), 0o644); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
-	entityPath := filepath.Join(root, "1.0.0", "entity.yaml")
+	entityPath = filepath.Join(root, "1.0.0", "entity.yaml")
 	writeEntityFixture(t, entityPath, signComponentBody)
-	return entityPath
+	return entityPath, root
 }
 
 // TestPushSignFlagSignsAndAttachesReferrer proves an explicit --sign push
@@ -52,12 +58,13 @@ func writeSigningWorkspace(t *testing.T, registry string, requiresSignatures boo
 // one flow against an in-memory target.
 func TestPushSignFlagSignsAndAttachesReferrer(t *testing.T) {
 	ctx := context.Background()
-	entityPath := writeSigningWorkspace(t, "example.com", false)
+	entityPath, wsRoot := writeSigningWorkspace(t, "example.com", false)
 	store := memory.New()
 	fake := &signingtest.FakeSigner{}
 
 	sign := true
 	if err := pushRun(pushConfig{
+		ws:         resolveTempWorkspace(t, tempWorkspaceOptions{Root: wsRoot}),
 		EntityPath: entityPath,
 		Registry:   "example.com",
 		PushTarget: store,
@@ -82,11 +89,12 @@ func TestPushSignFlagSignsAndAttachesReferrer(t *testing.T) {
 // pushes NO bytes.
 func TestPushUnsignedToSignatureRequiringRegistryRefused(t *testing.T) {
 	ctx := context.Background()
-	entityPath := writeSigningWorkspace(t, "secure.example.com", true)
+	entityPath, wsRoot := writeSigningWorkspace(t, "secure.example.com", true)
 	store := memory.New()
 
 	noSign := false
 	err := pushRun(pushConfig{
+		ws:         resolveTempWorkspace(t, tempWorkspaceOptions{Root: wsRoot}),
 		EntityPath: entityPath,
 		Registry:   "secure.example.com",
 		PushTarget: store,
@@ -111,11 +119,12 @@ func TestPushUnsignedToSignatureRequiringRegistryRefused(t *testing.T) {
 // default rather than refusing.
 func TestPushSignsByDefaultToSignatureRequiringRegistry(t *testing.T) {
 	ctx := context.Background()
-	entityPath := writeSigningWorkspace(t, "secure.example.com", true)
+	entityPath, wsRoot := writeSigningWorkspace(t, "secure.example.com", true)
 	store := memory.New()
 	fake := &signingtest.FakeSigner{}
 
 	if err := pushRun(pushConfig{
+		ws:         resolveTempWorkspace(t, tempWorkspaceOptions{Root: wsRoot}),
 		EntityPath: entityPath,
 		Registry:   "secure.example.com",
 		PushTarget: store,
@@ -136,11 +145,12 @@ func TestPushSignsByDefaultToSignatureRequiringRegistry(t *testing.T) {
 // TestPushSignRequestedWithoutSignerRefused proves a --sign push with no
 // signer configured halts rather than silently publishing unsigned.
 func TestPushSignRequestedWithoutSignerRefused(t *testing.T) {
-	entityPath := writeSigningWorkspace(t, "example.com", false)
+	entityPath, wsRoot := writeSigningWorkspace(t, "example.com", false)
 	store := memory.New()
 
 	sign := true
 	err := pushRun(pushConfig{
+		ws:         resolveTempWorkspace(t, tempWorkspaceOptions{Root: wsRoot}),
 		EntityPath: entityPath,
 		Registry:   "example.com",
 		PushTarget: store,
