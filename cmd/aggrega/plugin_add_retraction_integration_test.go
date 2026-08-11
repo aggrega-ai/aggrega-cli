@@ -128,9 +128,15 @@ func newPluginRetractionFixture(t *testing.T, guests map[string]string, markers 
 
 	// The marker is attached by the same command an operator would run, and its own
 	// signature is produced by the publisher's key — so the index build has a real
-	// signature to verify rather than a fabricated verdict to trust.
+	// signature to verify rather than a fabricated verdict to trust. The workspace
+	// is declared here, once for the whole loop, and is deliberately not the
+	// fixture's own consumer workspace built below: the attach needs a reference
+	// and a signer, and the fixture's registry trust policy is the consumer's
+	// concern rather than the publisher's.
+	markerWorkspace := resolveTempWorkspace(t, tempWorkspaceOptions{})
 	for version, severity := range markers {
 		if derr := deprecateRun(deprecateConfig{
+			ws:        markerWorkspace,
 			Reference: host + "/" + pluginRetractionRepoPath + ":" + version,
 			Severity:  severity,
 			Reason:    "withdrawn in favour of a successor",

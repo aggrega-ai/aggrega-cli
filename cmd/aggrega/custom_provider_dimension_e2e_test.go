@@ -158,7 +158,7 @@ spec:
     maxMemoryPages: 4096
     timeoutMs: 300000
 `)
-	if err := pushRun(pushConfig{EntityPath: entityPath, PluginPath: pluginPath, Registry: host}); err != nil {
+	if err := pushRun(pushConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: entityDir}), EntityPath: entityPath, PluginPath: pluginPath, Registry: host}); err != nil {
 		t.Fatalf("publish provider plugin entity %s:%s: %v", socketName, version, err)
 	}
 	return contentDigest

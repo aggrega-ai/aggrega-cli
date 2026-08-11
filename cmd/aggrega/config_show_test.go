@@ -208,19 +208,22 @@ func TestConfigShowDeterministic(t *testing.T) {
 		t.Fatalf("Resolve: %v", err)
 	}
 
+	// The workspace is declared in each literal rather than patched in here, so
+	// every call site says which workspace it renders. Only the sink and the
+	// environment lookup, which are the same for every run, are filled in.
 	run := func(cfg configShowConfig) string {
 		var buf bytes.Buffer
-		cfg.ws, cfg.lookup, cfg.Out = rw, lookup, &buf
+		cfg.lookup, cfg.Out = lookup, &buf
 		if err := configShowRun(cfg); err != nil {
 			t.Fatalf("show: %v", err)
 		}
 		return buf.String()
 	}
 
-	if a, b := run(configShowConfig{}), run(configShowConfig{}); a != b {
+	if a, b := run(configShowConfig{ws: rw}), run(configShowConfig{ws: rw}); a != b {
 		t.Errorf("default view not byte-identical across runs:\n%q\n%q", a, b)
 	}
-	if a, b := run(configShowConfig{Origin: true}), run(configShowConfig{Origin: true}); a != b {
+	if a, b := run(configShowConfig{ws: rw, Origin: true}), run(configShowConfig{ws: rw, Origin: true}); a != b {
 		t.Errorf("origin view not byte-identical across runs:\n%q\n%q", a, b)
 	}
 }

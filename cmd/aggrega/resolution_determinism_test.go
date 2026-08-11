@@ -44,6 +44,15 @@ func distSnapshot(t *testing.T, dir string) map[string]string {
 // follows the Release's CWD-relative `directory:` and is the author's choice,
 // orthogonal to IR content; the snapshot keys on the path within each dist root,
 // so a differing output location does not mask or cause a content difference.)
+//
+// This is the one test in this package that must NOT name the workspace it
+// resolves, and the reason is its subject: what it proves is that the root walk
+// finds the same root from two different working directories. Handing both builds
+// the same named workspace would make them identical by construction and assert
+// nothing. What keeps it hermetic instead is that the workspace is CONSTRUCTED
+// here — a temporary directory carrying its own `workspace:` marker — and both
+// working directories are inside it, so the walk terminates at that marker and
+// can never reach a configuration outside the run.
 func TestBuildIsInvocationLocationIndependent(t *testing.T) {
 	root := t.TempDir()
 	releasePath := authoringFixture(t, root)

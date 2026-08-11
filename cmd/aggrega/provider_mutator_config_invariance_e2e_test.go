@@ -277,7 +277,7 @@ func TestIntegration_RegistrySocketFrozenBuild_ReconstructsSocketAxis(t *testing
 		if err := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), ReleasePath: "release.yaml", CatalogDirs: catDirs}); err != nil {
 			t.Fatalf("registry pull: %v", err)
 		}
-		assertFrozenBuildGreenAndByteIdentical(t, host, catDirs, pinned, renderedNodePrefix)
+		assertFrozenBuildGreenAndByteIdentical(t, ws, host, catDirs, pinned, renderedNodePrefix)
 	})
 
 	t.Run("mutator", func(t *testing.T) {
@@ -294,7 +294,7 @@ func TestIntegration_RegistrySocketFrozenBuild_ReconstructsSocketAxis(t *testing
 		if err := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), ReleasePath: "release.yaml", CatalogDirs: catDirs}); err != nil {
 			t.Fatalf("registry pull: %v", err)
 		}
-		assertFrozenBuildGreenAndByteIdentical(t, host, catDirs, pinned, "mutator-proof")
+		assertFrozenBuildGreenAndByteIdentical(t, ws, host, catDirs, pinned, "mutator-proof")
 	})
 }
 
@@ -322,7 +322,7 @@ func TestIntegration_RegistrySocketFrozenBuild_TamperedPinStillDrifts(t *testing
 		if err := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), ReleasePath: "release.yaml", CatalogDirs: catDirs}); err != nil {
 			t.Fatalf("registry pull: %v", err)
 		}
-		assertFrozenBuildDriftsOnTamperedSocketPin(t, host, catDirs, pinned, pluginCoord)
+		assertFrozenBuildDriftsOnTamperedSocketPin(t, ws, host, catDirs, pinned, pluginCoord)
 	})
 
 	t.Run("mutator", func(t *testing.T) {
@@ -339,21 +339,25 @@ func TestIntegration_RegistrySocketFrozenBuild_TamperedPinStillDrifts(t *testing
 		if err := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), ReleasePath: "release.yaml", CatalogDirs: catDirs}); err != nil {
 			t.Fatalf("registry pull: %v", err)
 		}
-		assertFrozenBuildDriftsOnTamperedSocketPin(t, host, catDirs, pinned, mutatorSocket)
+		assertFrozenBuildDriftsOnTamperedSocketPin(t, ws, host, catDirs, pinned, mutatorSocket)
 	})
 }
 
 // assertFrozenBuildGreenAndByteIdentical freezes the workspace (auto-pull off, so
 // no heal-by-re-pull runs), builds twice with no network, and asserts both builds
 // succeed, the socket-distinctive witness is present (the pinned socket rendered),
-// and the two rendered trees are byte-identical. The cwd is already the workspace
-// and a pull has populated the lockfile.
-func assertFrozenBuildGreenAndByteIdentical(t *testing.T, host string, catDirs []string, pinnedBlock, witness string) {
+// and the two rendered trees are byte-identical. wsRoot is the workspace the
+// caller has already changed into and a pull has already populated the lockfile
+// in; the remaining relative paths (the rendered tree, the release file) are
+// read from there. The workspace is re-declared per build rather than once,
+// because the freeze above rewrites its configuration and each build must see
+// the rewritten one.
+func assertFrozenBuildGreenAndByteIdentical(t *testing.T, wsRoot, host string, catDirs []string, pinnedBlock, witness string) {
 	t.Helper()
-	writeWorkspaceConfig(t, ".", "default_registry: \""+host+"\"\nauto_pull: false\noffline: false\n"+pinnedBlock)
+	writeWorkspaceConfig(t, wsRoot, "default_registry: \""+host+"\"\nauto_pull: false\noffline: false\n"+pinnedBlock)
 
 	_ = os.RemoveAll("dist")
-	if err := dispatchBuild(nil, "release.yaml", catDirs, false, io.Discard, io.Discard); err != nil {
+	if err := dispatchBuild(resolveTempWorkspace(t, tempWorkspaceOptions{Root: wsRoot}), "release.yaml", catDirs, false, io.Discard, io.Discard); err != nil {
 		t.Fatalf("frozen offline build of a registry socket halted; the socket axis must reconstruct from the lockfile: %v", err)
 	}
 	if found, tree := distTreeContains(t, "dist", witness); !found {
@@ -362,7 +366,7 @@ func assertFrozenBuildGreenAndByteIdentical(t *testing.T, host string, catDirs [
 	first := hashDistTree(t, "dist")
 
 	_ = os.RemoveAll("dist")
-	if err := dispatchBuild(nil, "release.yaml", catDirs, false, io.Discard, io.Discard); err != nil {
+	if err := dispatchBuild(resolveTempWorkspace(t, tempWorkspaceOptions{Root: wsRoot}), "release.yaml", catDirs, false, io.Discard, io.Discard); err != nil {
 		t.Fatalf("second frozen offline build halted: %v", err)
 	}
 	if second := hashDistTree(t, "dist"); second != first {
@@ -374,9 +378,11 @@ func assertFrozenBuildGreenAndByteIdentical(t *testing.T, host string, catDirs [
 // socket .wasm ARTIFACT pin in the lockfile (both the cache-addressing version and
 // the content digest, to a coordinate the cache cannot serve), then builds with no
 // network and asserts the drift verify fires ErrLockfileDrift naming the socket.
-func assertFrozenBuildDriftsOnTamperedSocketPin(t *testing.T, host string, catDirs []string, pinnedBlock, socketCoord string) {
+// wsRoot is the workspace the caller has already changed into, which is also where
+// the lockfile being tampered with lives.
+func assertFrozenBuildDriftsOnTamperedSocketPin(t *testing.T, wsRoot, host string, catDirs []string, pinnedBlock, socketCoord string) {
 	t.Helper()
-	writeWorkspaceConfig(t, ".", "default_registry: \""+host+"\"\nauto_pull: false\noffline: false\n"+pinnedBlock)
+	writeWorkspaceConfig(t, wsRoot, "default_registry: \""+host+"\"\nauto_pull: false\noffline: false\n"+pinnedBlock)
 
 	lfPath := lockfile.PathFor("release.yaml")
 	lf, _, err := lockfile.LoadLockfile(lfPath)
@@ -400,7 +406,7 @@ func assertFrozenBuildDriftsOnTamperedSocketPin(t *testing.T, host string, catDi
 	}
 
 	_ = os.RemoveAll("dist")
-	err = dispatchBuild(nil, "release.yaml", catDirs, false, io.Discard, io.Discard)
+	err = dispatchBuild(resolveTempWorkspace(t, tempWorkspaceOptions{Root: wsRoot}), "release.yaml", catDirs, false, io.Discard, io.Discard)
 	if err == nil {
 		t.Fatal("frozen build with a tampered socket .wasm pin SUCCEEDED; drift over the reconstructed workspace-socket axis was not detected — the fix blinded the drift check")
 	}

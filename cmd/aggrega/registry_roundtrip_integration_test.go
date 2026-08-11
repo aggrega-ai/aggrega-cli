@@ -75,10 +75,10 @@ func offlineReferenceCompose(t *testing.T, std, exampleDir string) string {
 	if err := os.Chdir(ws); err != nil {
 		t.Fatalf("chdir reference workspace: %v", err)
 	}
-	if err := pullRun(pullConfig{ReleasePath: "release.yaml", CatalogDirs: []string{std}}); err != nil {
+	if err := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), ReleasePath: "release.yaml", CatalogDirs: []string{std}}); err != nil {
 		t.Fatalf("offline reference pull: %v", err)
 	}
-	if err := dispatchBuild(nil, "release.yaml", []string{std}, false, os.Stderr, os.Stdout); err != nil {
+	if err := dispatchBuild(resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), "release.yaml", []string{std}, false, os.Stderr, os.Stdout); err != nil {
 		t.Fatalf("offline reference build: %v", err)
 	}
 	return sha256HexFile(t, filepath.Join("dist", "compose", "docker-compose.yaml"))
@@ -207,8 +207,15 @@ func TestPublishableKindsDerivation(t *testing.T) {
 // host through the real push path, which is what a bulk catalog publisher does
 // one file at a time. Returns the count pushed per kind so the test can assert
 // coverage.
+//
+// The workspace is declared here rather than at each push, and deliberately is
+// not catalogDir: a publisher needs a destination registry and a file to read,
+// nothing from the tree it is reading, and catalogDir is sometimes a directory
+// this test does not own. One declaration serves the whole walk because nothing
+// in the walk writes workspace configuration.
 func pushCatalog(t *testing.T, host, catalogDir string) map[string]int {
 	t.Helper()
+	rw := resolveTempWorkspace(t, tempWorkspaceOptions{})
 	counts := map[string]int{}
 	err := filepath.WalkDir(catalogDir, func(path string, d os.DirEntry, walkErr error) error {
 		if walkErr != nil {
@@ -225,7 +232,7 @@ func pushCatalog(t *testing.T, host, catalogDir string) map[string]int {
 		if !publishableKinds[kind] {
 			return nil // non-entity YAML (recipe fragment, source/) or non-publishable
 		}
-		if perr := pushRun(pushConfig{EntityPath: path, Registry: host}); perr != nil {
+		if perr := pushRun(pushConfig{ws: rw, EntityPath: path, Registry: host}); perr != nil {
 			t.Fatalf("push %s (%s): %v", path, kind, perr)
 		}
 		counts[kind]++
@@ -331,10 +338,10 @@ func TestIntegration_RegistryRoundTrip_Positive(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(ws, "catalog")); err == nil {
 		t.Fatal("consumer workspace carries a local catalog dir; the no-bridge witness is invalid")
 	}
-	if err := pullRun(pullConfig{ReleasePath: "release.yaml"}); err != nil {
+	if err := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), ReleasePath: "release.yaml"}); err != nil {
 		t.Fatalf("registry pull: %v", err)
 	}
-	if err := dispatchBuild(nil, "release.yaml", nil, false, os.Stderr, os.Stdout); err != nil {
+	if err := dispatchBuild(resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), "release.yaml", nil, false, os.Stderr, os.Stdout); err != nil {
 		t.Fatalf("registry build: %v", err)
 	}
 	got := sha256HexFile(t, filepath.Join("dist", "compose", "docker-compose.yaml"))
@@ -347,7 +354,7 @@ func TestIntegration_RegistryRoundTrip_Positive(t *testing.T) {
 		t.Fatalf("lockfile absent after pull: %v", err)
 	}
 	_ = os.RemoveAll("dist")
-	if err := dispatchBuild(nil, "release.yaml", nil, false, os.Stderr, os.Stdout); err != nil {
+	if err := dispatchBuild(resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), "release.yaml", nil, false, os.Stderr, os.Stdout); err != nil {
 		t.Fatalf("rebuild from lock: %v", err)
 	}
 	if rebuilt := sha256HexFile(t, filepath.Join("dist", "compose", "docker-compose.yaml")); rebuilt != got {
@@ -377,12 +384,12 @@ func TestIntegration_RegistryBuild_WithheldEntityHaltsAtClosure(t *testing.T) {
 	host := startRegistry(t, nil)
 	pushCatalog(t, host, standardCatalogDir(t))
 	ws := newConsumerWorkspace(t, host)
-	if err := pullRun(pullConfig{ReleasePath: "release.yaml"}); err != nil {
+	if err := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), ReleasePath: "release.yaml"}); err != nil {
 		t.Fatalf("pull: %v", err)
 	}
 
 	// Pin present: a legitimately-present reference resolves cleanly (no false halt).
-	if err := dispatchBuild(nil, "release.yaml", nil, false, os.Stderr, os.Stdout); err != nil {
+	if err := dispatchBuild(resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), "release.yaml", nil, false, os.Stderr, os.Stdout); err != nil {
 		t.Fatalf("build with all pins present: %v (a present reference must resolve cleanly)", err)
 	}
 
@@ -419,7 +426,7 @@ func TestIntegration_RegistryBuild_WithheldEntityHaltsAtClosure(t *testing.T) {
 	writeWorkspaceConfig(t, ws, "default_registry: \""+host+"\"\nauto_pull: false\noffline: false")
 
 	_ = os.RemoveAll("dist")
-	err = dispatchBuild(nil, "release.yaml", nil, false, os.Stderr, os.Stdout)
+	err = dispatchBuild(resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), "release.yaml", nil, false, os.Stderr, os.Stdout)
 	if err == nil {
 		t.Fatal("build SUCCEEDED with a referenced entity withheld; the unified view silently proceeded on a gap")
 	}
@@ -572,10 +579,10 @@ func TestIntegration_Capstone_LintAndExample(t *testing.T) {
 	// Build is read-only by default: prime the lockfile with an explicit pull (the
 	// sole writer of pins), then build reads it. --catalog supplies every entity
 	// locally, so the pull resolves from the catalog with no network.
-	if err := pullRun(pullConfig{ReleasePath: "release.yaml", CatalogDirs: []string{std}}); err != nil {
+	if err := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), ReleasePath: "release.yaml", CatalogDirs: []string{std}}); err != nil {
 		t.Fatalf("prime lockfile via pull: %v", err)
 	}
-	if err := dispatchBuild(nil, "release.yaml", []string{std}, false, os.Stderr, os.Stdout); err != nil {
+	if err := dispatchBuild(resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), "release.yaml", []string{std}, false, os.Stderr, os.Stdout); err != nil {
 		t.Fatalf("catalog-only build against the shared catalog: %v", err)
 	}
 	if got := sha256HexFile(t, filepath.Join("dist", "compose", "docker-compose.yaml")); got != wantSHA {
@@ -636,7 +643,7 @@ spec:
       operates: patch
       scope: own
 `+runtimeBlock)
-	if err := pushRun(pushConfig{EntityPath: entityPath, PluginPath: pluginPath, Registry: host}); err != nil {
+	if err := pushRun(pushConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: entityDir}), EntityPath: entityPath, PluginPath: pluginPath, Registry: host}); err != nil {
 		t.Fatalf("publish plugin entity %s/%s:%s: %v", pipelineStepPluginType, name, version, err)
 	}
 	return contentDigest

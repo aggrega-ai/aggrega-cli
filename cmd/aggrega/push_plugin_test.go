@@ -67,10 +67,11 @@ spec:
 `
 
 // writeAgreeingPlugin builds the frp-step-go fixture, writes the agreeing
-// entity into a fresh tempdir, chdirs into it, and returns the entity path,
-// the .wasm path, and the .wasm content digest. Skips cleanly when the Wasm
+// entity into a fresh tempdir, chdirs into it, and returns that directory (so
+// the caller can declare it as the workspace it resolves), the entity path, the
+// .wasm path, and the .wasm content digest. Skips cleanly when the Wasm
 // toolchain is absent.
-func writeAgreeingPlugin(t *testing.T) (entityPath, pluginPath, contentDigest string) {
+func writeAgreeingPlugin(t *testing.T) (wsRoot, entityPath, pluginPath, contentDigest string) {
 	t.Helper()
 	pluginPath = wasmtest.EnsureFixtureBuilt(t, "frp-step-go.wasm")
 	wasmBytes, err := os.ReadFile(pluginPath)
@@ -83,7 +84,7 @@ func writeAgreeingPlugin(t *testing.T) (entityPath, pluginPath, contentDigest st
 	t.Chdir(root)
 	entityPath = filepath.Join(root, "frp-step-patch.yaml")
 	writeEntityFixture(t, entityPath, agreeingPluginEntity)
-	return entityPath, pluginPath, contentDigest
+	return root, entityPath, pluginPath, contentDigest
 }
 
 // TestPushPluginSingleManifestPublish proves the single-manifest publish: the
@@ -93,7 +94,7 @@ func writeAgreeingPlugin(t *testing.T) (entityPath, pluginPath, contentDigest st
 // back from the one version tag, and the inline layer content-verifies to the pin.
 func TestPushPluginSingleManifestPublish(t *testing.T) {
 	ctx := context.Background()
-	entityPath, pluginPath, contentDigest := writeAgreeingPlugin(t)
+	wsRoot, entityPath, pluginPath, contentDigest := writeAgreeingPlugin(t)
 	wasmBytes, err := os.ReadFile(pluginPath)
 	if err != nil {
 		t.Fatalf("read fixture: %v", err)
@@ -101,6 +102,7 @@ func TestPushPluginSingleManifestPublish(t *testing.T) {
 	store := memory.New()
 
 	if err := pushRun(pushConfig{
+		ws:         resolveTempWorkspace(t, tempWorkspaceOptions{Root: wsRoot}),
 		EntityPath: entityPath,
 		PluginPath: pluginPath,
 		Registry:   "hub.aggrega.ai",
@@ -140,10 +142,11 @@ func TestPushPluginSingleManifestPublish(t *testing.T) {
 // envelope validation with no error, and carries no @sha256: digest.
 func TestPushPluginPublishedEntityReloadsClean(t *testing.T) {
 	ctx := context.Background()
-	entityPath, pluginPath, _ := writeAgreeingPlugin(t)
+	wsRoot, entityPath, pluginPath, _ := writeAgreeingPlugin(t)
 	store := memory.New()
 
 	if err := pushRun(pushConfig{
+		ws:         resolveTempWorkspace(t, tempWorkspaceOptions{Root: wsRoot}),
 		EntityPath: entityPath,
 		PluginPath: pluginPath,
 		Registry:   "hub.aggrega.ai",
@@ -238,12 +241,13 @@ spec:
 // after the blobs have landed.
 func TestPushPluginPartialPushSafety(t *testing.T) {
 	ctx := context.Background()
-	entityPath, pluginPath, _ := writeAgreeingPlugin(t)
+	wsRoot, entityPath, pluginPath, _ := writeAgreeingPlugin(t)
 
 	store := memory.New()
 	target := &failVersionTagTarget{Target: store}
 
 	err := pushRun(pushConfig{
+		ws:         resolveTempWorkspace(t, tempWorkspaceOptions{Root: wsRoot}),
 		EntityPath: entityPath,
 		PluginPath: pluginPath,
 		Registry:   "hub.aggrega.ai",
@@ -272,7 +276,7 @@ func TestPushPluginPartialPushSafety(t *testing.T) {
 // executable — there is no second referrer.
 func TestPushPluginSignedAndVerifiable(t *testing.T) {
 	ctx := context.Background()
-	entityPath, pluginPath, _ := writeAgreeingPlugin(t)
+	wsRoot, entityPath, pluginPath, _ := writeAgreeingPlugin(t)
 
 	privPEM, _, err := signing.GenerateKeyedPEM()
 	if err != nil {
@@ -286,6 +290,7 @@ func TestPushPluginSignedAndVerifiable(t *testing.T) {
 	store := memory.New()
 	wantSign := true
 	if err := pushRun(pushConfig{
+		ws:         resolveTempWorkspace(t, tempWorkspaceOptions{Root: wsRoot}),
 		EntityPath: entityPath,
 		PluginPath: pluginPath,
 		Registry:   "hub.aggrega.ai",
@@ -367,11 +372,12 @@ func largeGuestURI(t *testing.T) string {
 }
 
 // writeLargeGuestPlugin writes the large guest .wasm and a Plugin entity (with
-// the given runtime block) into a fresh tempdir, chdirs into it, and returns the
+// the given runtime block) into a fresh tempdir, chdirs into it, and returns that
+// directory (so the caller can declare it as the workspace it resolves), the
 // entity path and the .wasm path. The entity's authored claim agrees with the
 // guest's describe() (export render_node, no plugin-level capabilities claim) so
 // the cross-check turns only on whether the guest loads under the resolved cap.
-func writeLargeGuestPlugin(t *testing.T, runtimeBlock string) (entityPath, pluginPath string) {
+func writeLargeGuestPlugin(t *testing.T, runtimeBlock string) (wsRoot, entityPath, pluginPath string) {
 	t.Helper()
 	wasmBytes := largeGuestBytes(t)
 	root := t.TempDir()
@@ -403,7 +409,7 @@ spec:
 	if err := stampPluginFile(&bytes.Buffer{}, entityPath, pluginPath); err != nil {
 		t.Fatalf("record host functions: %v", err)
 	}
-	return entityPath, pluginPath
+	return root, entityPath, pluginPath
 }
 
 // TestPushPluginLargeGuestDryRunUnderDeclaredCap proves the publish
@@ -411,10 +417,11 @@ spec:
 // declared memory cap, so a dry-run of a guest whose working set exceeds the
 // platform default succeeds instead of failing to instantiate.
 func TestPushPluginLargeGuestDryRunUnderDeclaredCap(t *testing.T) {
-	entityPath, pluginPath := writeLargeGuestPlugin(t, "  runtime:\n    maxMemoryPages: 4096\n")
+	wsRoot, entityPath, pluginPath := writeLargeGuestPlugin(t, "  runtime:\n    maxMemoryPages: 4096\n")
 
 	var out bytes.Buffer
 	if err := pushRun(pushConfig{
+		ws:         resolveTempWorkspace(t, tempWorkspaceOptions{Root: wsRoot}),
 		EntityPath: entityPath,
 		PluginPath: pluginPath,
 		Registry:   "hub.aggrega.ai",
@@ -433,10 +440,11 @@ func TestPushPluginLargeGuestDryRunUnderDeclaredCap(t *testing.T) {
 // describe-time headroom rather than the platform default, so a large guest with
 // no authored cap still instantiates for the dry-run.
 func TestPushPluginLargeGuestDryRunFallsBackToDescribeFloor(t *testing.T) {
-	entityPath, pluginPath := writeLargeGuestPlugin(t, "")
+	wsRoot, entityPath, pluginPath := writeLargeGuestPlugin(t, "")
 
 	var out bytes.Buffer
 	if err := pushRun(pushConfig{
+		ws:         resolveTempWorkspace(t, tempWorkspaceOptions{Root: wsRoot}),
 		EntityPath: entityPath,
 		PluginPath: pluginPath,
 		Registry:   "hub.aggrega.ai",
@@ -453,9 +461,10 @@ func TestPushPluginLargeGuestDryRunFallsBackToDescribeFloor(t *testing.T) {
 // a load error, not a capability mismatch — proving the guest genuinely needs a
 // raised cap and that the declared cap is honored.
 func TestPushPluginLargeGuestDefaultCapInsufficient(t *testing.T) {
-	entityPath, pluginPath := writeLargeGuestPlugin(t, "  runtime:\n    maxMemoryPages: 1024\n")
+	wsRoot, entityPath, pluginPath := writeLargeGuestPlugin(t, "  runtime:\n    maxMemoryPages: 1024\n")
 
 	err := pushRun(pushConfig{
+		ws:         resolveTempWorkspace(t, tempWorkspaceOptions{Root: wsRoot}),
 		EntityPath: entityPath,
 		PluginPath: pluginPath,
 		Registry:   "hub.aggrega.ai",
@@ -473,12 +482,13 @@ func TestPushPluginLargeGuestDefaultCapInsufficient(t *testing.T) {
 // writeProviderPluginWithContract writes the embedded helm provider guest and
 // a Plugin entity carrying the given trailing spec block (the provider block
 // with its capability claim and render-behavior contract, plus a runtime cap)
-// into a fresh tempdir, chdirs into it, and returns the entity and .wasm paths.
+// into a fresh tempdir, chdirs into it, and returns that directory (so the caller
+// can declare it as the workspace it resolves) plus the entity and .wasm paths.
 // Unlike writeLargeGuestPlugin, the caller's block authors a provider capability
 // claim, so a publish exercises the full capabilities cross-check — not only the
 // per-export claim. Skips cleanly when
 // the embedded guests are not built into the test binary.
-func writeProviderPluginWithContract(t *testing.T, specTail string) (entityPath, pluginPath string) {
+func writeProviderPluginWithContract(t *testing.T, specTail string) (wsRoot, entityPath, pluginPath string) {
 	t.Helper()
 	wasmBytes := largeGuestBytes(t)
 	root := t.TempDir()
@@ -507,7 +517,7 @@ spec:
 	if err := stampPluginFile(&bytes.Buffer{}, entityPath, pluginPath); err != nil {
 		t.Fatalf("record host functions: %v", err)
 	}
-	return entityPath, pluginPath
+	return root, entityPath, pluginPath
 }
 
 // TestPushPluginProviderReusableInstanceCrossCheck proves the publish
@@ -519,7 +529,7 @@ spec:
 // compare the authored true as false against the guest's true and halt with
 // ErrWasmContractMismatch, blocking publication of every reusable provider.
 func TestPushPluginProviderReusableInstanceCrossCheck(t *testing.T) {
-	entityPath, pluginPath := writeProviderPluginWithContract(t, `  provider:
+	wsRoot, entityPath, pluginPath := writeProviderPluginWithContract(t, `  provider:
     capabilities:
       - helm
     contract:
@@ -535,6 +545,7 @@ func TestPushPluginProviderReusableInstanceCrossCheck(t *testing.T) {
 
 	var out bytes.Buffer
 	if err := pushRun(pushConfig{
+		ws:         resolveTempWorkspace(t, tempWorkspaceOptions{Root: wsRoot}),
 		EntityPath: entityPath,
 		PluginPath: pluginPath,
 		Registry:   "hub.aggrega.ai",
@@ -555,7 +566,7 @@ func TestPushPluginProviderReusableInstanceCrossCheck(t *testing.T) {
 // (and so that the mapping carries it), rather than silently ignoring it — the
 // two tests together bracket the field's round-trip through the publish path.
 func TestPushPluginProviderReusableInstanceMismatchHalts(t *testing.T) {
-	entityPath, pluginPath := writeProviderPluginWithContract(t, `  provider:
+	wsRoot, entityPath, pluginPath := writeProviderPluginWithContract(t, `  provider:
     capabilities:
       - helm
     contract:
@@ -570,6 +581,7 @@ func TestPushPluginProviderReusableInstanceMismatchHalts(t *testing.T) {
 `)
 
 	err := pushRun(pushConfig{
+		ws:         resolveTempWorkspace(t, tempWorkspaceOptions{Root: wsRoot}),
 		EntityPath: entityPath,
 		PluginPath: pluginPath,
 		Registry:   "hub.aggrega.ai",
@@ -594,10 +606,11 @@ func TestPushPluginProviderReusableInstanceMismatchHalts(t *testing.T) {
 // oci.ErrFetchIntegrity. The .wasm is never a separately-tagged artifact — it is
 // intrinsic to the version-tagged manifest.
 func TestPublishPullRoundTripPlugin(t *testing.T) {
-	entityPath, pluginPath, contentDigest := writeAgreeingPlugin(t)
+	wsRoot, entityPath, pluginPath, contentDigest := writeAgreeingPlugin(t)
 	store := memory.New()
 
 	if err := pushRun(pushConfig{
+		ws:         resolveTempWorkspace(t, tempWorkspaceOptions{Root: wsRoot}),
 		EntityPath: entityPath,
 		PluginPath: pluginPath,
 		Registry:   "hub.aggrega.ai",
@@ -681,10 +694,11 @@ func TestPublishPullRoundTripPlugin(t *testing.T) {
 // tag that is single-sourced is the version itself.)
 func TestVersionTagPushPullParity(t *testing.T) {
 	ctx := context.Background()
-	entityPath, pluginPath, contentDigest := writeAgreeingPlugin(t)
+	wsRoot, entityPath, pluginPath, contentDigest := writeAgreeingPlugin(t)
 	store := memory.New()
 
 	if err := pushRun(pushConfig{
+		ws:         resolveTempWorkspace(t, tempWorkspaceOptions{Root: wsRoot}),
 		EntityPath: entityPath,
 		PluginPath: pluginPath,
 		Registry:   "hub.aggrega.ai",

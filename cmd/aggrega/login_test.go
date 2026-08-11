@@ -34,6 +34,7 @@ func TestLoginStoresCredentialAndLogoutRemoves(t *testing.T) {
 	const reg = "registry.example.com"
 
 	if err := loginRun(loginConfig{
+		ws:       resolveTempWorkspace(t, tempWorkspaceOptions{}),
 		Registry: reg, Username: "alice", PasswordStdin: true, SkipVerify: true,
 		In: strings.NewReader("s3cret\n"), Out: io.Discard,
 	}); err != nil {
@@ -74,6 +75,7 @@ func TestLogoutAbsentIsIdempotent(t *testing.T) {
 func TestLoginPasswordStdinRequiresUsername(t *testing.T) {
 	t.Setenv("DOCKER_CONFIG", t.TempDir())
 	err := loginRun(loginConfig{
+		ws:       resolveTempWorkspace(t, tempWorkspaceOptions{}),
 		Registry: "registry.example.com", PasswordStdin: true, SkipVerify: true,
 		In: strings.NewReader("pw\n"), Out: io.Discard,
 	})

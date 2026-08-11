@@ -67,6 +67,7 @@ spec:
 `)
 	sign := true
 	if perr := pushRun(pushConfig{
+		ws:         resolveTempWorkspace(t, tempWorkspaceOptions{Root: entityDir}),
 		EntityPath: entityPath,
 		PluginPath: pluginPath,
 		Registry:   host,

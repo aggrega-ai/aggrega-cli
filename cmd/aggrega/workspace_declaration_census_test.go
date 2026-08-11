@@ -24,7 +24,15 @@ import (
 // Criterion: the count the census below derives, over every *_test.go file in this
 // directory — all of them, whatever their build tags, because the parser reads the
 // sources rather than a configured build. Measured 2026-08-11.
-const ambientWorkspaceSiteCeiling = 117
+//
+// Two of the sites left are the deliberate exception, and they are named here
+// rather than exempted so the count keeps covering them: the invocation-location
+// build test must NOT declare its workspace, because what it proves is that the
+// root walk reaches the same root from two different working directories, and
+// naming the workspace would make the two builds identical by construction. It
+// stays hermetic by constructing the workspace it discovers. Its own comment says
+// so at the declaration.
+const ambientWorkspaceSiteCeiling = 32
 
 // TestAmbientWorkspaceSiteCensus counts the test sites that hand a command helper
 // no workspace at all, so resolution falls back to walking upward from the working

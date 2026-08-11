@@ -33,7 +33,7 @@ func TestBuildAutoPullFreezeMatchesStandalonePullFreeze(t *testing.T) {
 	if strings.Contains(string(mustReadFile(t, recipeA)), "sourceDigests") {
 		t.Fatalf("workspace A recipe carried sourceDigests before pull")
 	}
-	if err := pullRun(pullConfig{ReleasePath: releaseA, CatalogDirs: []string{filepath.Join(rootA, "catalog")}}); err != nil {
+	if err := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: rootA}), ReleasePath: releaseA, CatalogDirs: []string{filepath.Join(rootA, "catalog")}}); err != nil {
 		t.Fatalf("standalone pullRun: %v", err)
 	}
 	recipeAfterPull := mustReadFile(t, recipeA)
@@ -47,7 +47,7 @@ func TestBuildAutoPullFreezeMatchesStandalonePullFreeze(t *testing.T) {
 		t.Fatalf("workspace B recipe carried sourceDigests before build")
 	}
 	var diagBuf, outBuf bytes.Buffer
-	if err := dispatchBuildWithDiag(nil, releaseB, []string{filepath.Join(rootB, "catalog")}, false,
+	if err := dispatchBuildWithDiag(resolveTempWorkspace(t, tempWorkspaceOptions{Root: rootB}), releaseB, []string{filepath.Join(rootB, "catalog")}, false,
 		buildDiagOptions{}, buildRunOptions{autoPull: true}, &diagBuf, &outBuf); err != nil {
 		t.Fatalf("build --auto-pull: %v", err)
 	}

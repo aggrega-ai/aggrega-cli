@@ -88,7 +88,7 @@ spec:
 	// spec.plugin field.
 	wantLocation := buildPushReference(registry, "Plugin", entity.Metadata.PluginType, entity.Metadata.Name)
 
-	cfg := pushConfig{PluginPath: wasmPath, DryRun: true}
+	cfg := pushConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: dir}), PluginPath: wasmPath, DryRun: true}
 	var out bytes.Buffer
 	if err := pushPlugin(&out, cfg, registry, false, entity.Metadata.Name, entity.Metadata.Version, entPath, entityYAML); err != nil {
 		t.Fatalf("push --plugin --dry-run cross-check failed: %v", err)
@@ -159,7 +159,7 @@ spec:
 		t.Fatalf("generated entity did not stamp the derived host functions: %+v, want %v", entity.Spec.Runtime, wantHF)
 	}
 
-	cfg := pushConfig{PluginPath: wasmPath, DryRun: true}
+	cfg := pushConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: dir}), PluginPath: wasmPath, DryRun: true}
 	var out bytes.Buffer
 	if err := pushPlugin(&out, cfg, registry, false, entity.Metadata.Name, entity.Metadata.Version, entPath, entityYAML); err != nil {
 		if errors.Is(err, wasm.ErrWasmHostFunctionsStampMismatch()) {

@@ -23,6 +23,7 @@ func pushCatalogEntitySigned(t *testing.T, host, entityPath string, signer signi
 	t.Helper()
 	sign := true
 	if err := pushRun(pushConfig{
+		ws:         resolveTempWorkspace(t, tempWorkspaceOptions{}),
 		EntityPath: entityPath,
 		Registry:   host,
 		Sign:       &sign,
@@ -41,9 +42,10 @@ func pushCatalogEntitySigned(t *testing.T, host, entityPath string, signer signi
 // registry pull that binds the bare identity to the registry host from
 // default_registry — the axis the pre-fix verify pass skipped. The workspace
 // trust policy REQUIRES signatures and pins pinnedPubPEM as the keyed public
-// key. It chdir's into the consumer workspace and returns the Component's bare
+// key. It chdir's into the consumer workspace and returns that workspace (so the
+// caller can declare it as the workspace it resolves) plus the Component's bare
 // closure URI (the lockfile row key the verify fact lands on).
-func writeCatalogEntityConsumerWorkspace(t *testing.T, host string, pinnedPubPEM []byte, push func(t *testing.T, host, entityPath string)) string {
+func writeCatalogEntityConsumerWorkspace(t *testing.T, host string, pinnedPubPEM []byte, push func(t *testing.T, host, entityPath string)) (wsRoot, componentURI string) {
 	t.Helper()
 	cat := t.TempDir()
 
@@ -125,7 +127,7 @@ spec:
 `)
 	writeWorkspaceConfig(t, ws, signedPluginWorkspaceConfigBody(host, pinnedPubPEM))
 	t.Chdir(ws)
-	return "test/svc"
+	return ws, "test/svc"
 }
 
 // TestIntegration_PullCommandVerifiesSignedCatalogEntity_Keyed is the catalog-entity
@@ -163,16 +165,16 @@ func TestIntegration_PullCommandVerifiesSignedCatalogEntity_Keyed(t *testing.T) 
 		pushCatalogEntitySigned(t, host, entityPath, signer)
 	}
 	unsignedPush := func(t *testing.T, host, entityPath string) {
-		if perr := pushRun(pushConfig{EntityPath: entityPath, Registry: host}); perr != nil {
+		if perr := pushRun(pushConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{}), EntityPath: entityPath, Registry: host}); perr != nil {
 			t.Fatalf("publish unsigned catalog entity %s: %v", entityPath, perr)
 		}
 	}
 
 	t.Run("positive_signed_entity_verifies_through_pull_command", func(t *testing.T) {
 		host := startRegistry(t, nil)
-		componentURI := writeCatalogEntityConsumerWorkspace(t, host, pubPEM, signedPush)
+		wsRoot, componentURI := writeCatalogEntityConsumerWorkspace(t, host, pubPEM, signedPush)
 
-		if perr := pullRun(pullConfig{ReleasePath: "release.yaml"}); perr != nil {
+		if perr := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: wsRoot}), ReleasePath: "release.yaml"}); perr != nil {
 			t.Fatalf("a signed catalog entity under a matching pinned key must PULL and VERIFY; got: %v", perr)
 		}
 
@@ -220,9 +222,9 @@ func TestIntegration_PullCommandVerifiesSignedCatalogEntity_Keyed(t *testing.T) 
 		if gerr != nil {
 			t.Fatalf("GenerateKeyedPEM (wrong): %v", gerr)
 		}
-		writeCatalogEntityConsumerWorkspace(t, host, wrongPubPEM, signedPush)
+		wsRoot, _ := writeCatalogEntityConsumerWorkspace(t, host, wrongPubPEM, signedPush)
 
-		perr := pullRun(pullConfig{ReleasePath: "release.yaml"})
+		perr := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: wsRoot}), ReleasePath: "release.yaml"})
 		if !errors.Is(perr, signing.ErrSignatureVerificationFailed()) {
 			t.Fatalf("a wrong pinned key must HALT the pull with ErrSignatureVerificationFailed; got: %v", perr)
 		}
@@ -233,9 +235,9 @@ func TestIntegration_PullCommandVerifiesSignedCatalogEntity_Keyed(t *testing.T) 
 		// Publish the catalog entities UNSIGNED, then pull under a require-signatures
 		// policy: the missing signature on a Tier-3-resolved catalog entity is a
 		// Loud Guardrail.
-		writeCatalogEntityConsumerWorkspace(t, host, pubPEM, unsignedPush)
+		wsRoot, _ := writeCatalogEntityConsumerWorkspace(t, host, pubPEM, unsignedPush)
 
-		perr := pullRun(pullConfig{ReleasePath: "release.yaml"})
+		perr := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: wsRoot}), ReleasePath: "release.yaml"})
 		if !errors.Is(perr, signing.ErrNoSignatureFound()) {
 			t.Fatalf("an unsigned catalog entity under a require-signatures policy must HALT with ErrNoSignatureFound; got: %v", perr)
 		}

@@ -48,9 +48,10 @@ func deprecationConsumerConfigBody(host string, pinnedPubPEM []byte, requiresSig
 // writeDeprecationConsumerCatalog publishes a Component + Recipe
 // SIGNED by signer to the registry at host, then writes a consumer workspace
 // wired to build the Component over that registry, with the given config body.
-// It chdir's into the workspace and returns the Component's bare closure URI —
+// It chdir's into the workspace and returns that workspace (so the caller can
+// declare it as the workspace it resolves) plus the Component's bare closure URI —
 // the lockfile row key a discovered marker lands on.
-func writeDeprecationConsumerCatalog(t *testing.T, host string, signer signing.Signer, configBody string) string {
+func writeDeprecationConsumerCatalog(t *testing.T, host string, signer signing.Signer, configBody string) (wsRoot, componentURI string) {
 	t.Helper()
 	cat := t.TempDir()
 
@@ -132,7 +133,7 @@ spec:
 `)
 	writeWorkspaceConfig(t, ws, configBody)
 	t.Chdir(ws)
-	return "test/svc"
+	return ws, "test/svc"
 }
 
 // componentDeprecateRef is the registry reference `aggrega deprecate` addresses
@@ -170,6 +171,7 @@ func TestIntegration_ConsumeRetroactiveDeprecation(t *testing.T) {
 			markerSigner = signer
 		}
 		if derr := deprecateRun(deprecateConfig{
+			ws:        resolveTempWorkspace(t, tempWorkspaceOptions{}),
 			Reference: componentDeprecateRef(host),
 			Severity:  severity,
 			Reason:    message,
@@ -187,10 +189,10 @@ func TestIntegration_ConsumeRetroactiveDeprecation(t *testing.T) {
 		host := startRegistry(t, nil)
 		// halt threshold "error": a "warning" marker is below it → advisory only.
 		cfg := deprecationConsumerConfigBody(host, pubPEM, true, "error")
-		writeDeprecationConsumerCatalog(t, host, signer, cfg)
+		wsRoot, _ := writeDeprecationConsumerCatalog(t, host, signer, cfg)
 		deprecate(t, host, "warning", "migrate to test/svc2 soon", nil)
 
-		if perr := pullRun(pullConfig{ReleasePath: "release.yaml"}); perr != nil {
+		if perr := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: wsRoot}), ReleasePath: "release.yaml"}); perr != nil {
 			t.Fatalf("pull with a warning-severity marker must succeed; got: %v", perr)
 		}
 		// The marker was recorded onto the Component's lockfile row.
@@ -206,7 +208,7 @@ func TestIntegration_ConsumeRetroactiveDeprecation(t *testing.T) {
 		}
 
 		// Build succeeds: warning is below the halt threshold, so it advises.
-		if berr := dispatchBuild(nil, "release.yaml", nil, false, io.Discard, io.Discard); berr != nil {
+		if berr := dispatchBuild(resolveTempWorkspace(t, tempWorkspaceOptions{Root: wsRoot}), "release.yaml", nil, false, io.Discard, io.Discard); berr != nil {
 			t.Fatalf("build with a below-threshold marker must succeed; got: %v", berr)
 		}
 	})
@@ -214,13 +216,13 @@ func TestIntegration_ConsumeRetroactiveDeprecation(t *testing.T) {
 	t.Run("error_severity_halts_build", func(t *testing.T) {
 		host := startRegistry(t, nil)
 		cfg := deprecationConsumerConfigBody(host, pubPEM, true, "error")
-		writeDeprecationConsumerCatalog(t, host, signer, cfg)
+		wsRoot, _ := writeDeprecationConsumerCatalog(t, host, signer, cfg)
 		deprecate(t, host, "error", "no longer fit for new use", nil)
 
-		if perr := pullRun(pullConfig{ReleasePath: "release.yaml"}); perr != nil {
+		if perr := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: wsRoot}), ReleasePath: "release.yaml"}); perr != nil {
 			t.Fatalf("pull with an error-severity marker must succeed (halt is at build); got: %v", perr)
 		}
-		berr := dispatchBuild(nil, "release.yaml", nil, false, io.Discard, io.Discard)
+		berr := dispatchBuild(resolveTempWorkspace(t, tempWorkspaceOptions{Root: wsRoot}), "release.yaml", nil, false, io.Discard, io.Discard)
 		if !errors.Is(berr, deprecation.ErrDeprecatedEntity()) {
 			t.Fatalf("build must HALT with ErrDeprecatedEntity at severity==threshold; got: %v", berr)
 		}
@@ -230,13 +232,13 @@ func TestIntegration_ConsumeRetroactiveDeprecation(t *testing.T) {
 		host := startRegistry(t, nil)
 		// Threshold "retracted": only a retracted marker halts; below it advises.
 		cfg := deprecationConsumerConfigBody(host, pubPEM, true, "retracted")
-		writeDeprecationConsumerCatalog(t, host, signer, cfg)
+		wsRoot, _ := writeDeprecationConsumerCatalog(t, host, signer, cfg)
 		deprecate(t, host, "retracted", "withdrawn; use test/svc2", nil)
 
-		if perr := pullRun(pullConfig{ReleasePath: "release.yaml"}); perr != nil {
+		if perr := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: wsRoot}), ReleasePath: "release.yaml"}); perr != nil {
 			t.Fatalf("pull with a retracted marker must succeed; got: %v", perr)
 		}
-		berr := dispatchBuild(nil, "release.yaml", nil, false, io.Discard, io.Discard)
+		berr := dispatchBuild(resolveTempWorkspace(t, tempWorkspaceOptions{Root: wsRoot}), "release.yaml", nil, false, io.Discard, io.Discard)
 		if !errors.Is(berr, deprecation.ErrDeprecatedEntity()) {
 			t.Fatalf("build must HALT with ErrDeprecatedEntity for a retracted marker at retracted threshold; got: %v", berr)
 		}
@@ -252,7 +254,7 @@ func TestIntegration_ConsumeRetroactiveDeprecation(t *testing.T) {
 		// "trusted marker": were the marker honored, the retracted severity would
 		// halt the build.
 		cfg := deprecationConsumerConfigBody(host, pubPEM, false, "warning")
-		writeDeprecationConsumerCatalog(t, host, signer, cfg)
+		wsRoot, _ := writeDeprecationConsumerCatalog(t, host, signer, cfg)
 
 		// Sign the marker with a key the workspace does not pin.
 		otherPriv, _, gerr := signing.GenerateKeyedPEM()
@@ -265,13 +267,13 @@ func TestIntegration_ConsumeRetroactiveDeprecation(t *testing.T) {
 		}
 		deprecate(t, host, "retracted", "attacker-supplied retraction", otherSigner)
 
-		if perr := pullRun(pullConfig{ReleasePath: "release.yaml"}); perr != nil {
+		if perr := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: wsRoot}), ReleasePath: "release.yaml"}); perr != nil {
 			t.Fatalf("pull under a verify-if-present policy must succeed even with an untrusted marker; got: %v", perr)
 		}
 		if rec := deprecationRowRecord(t, componentURI); rec != nil {
 			t.Fatalf("an untrusted marker must NOT be recorded as authoritative; got: %+v", rec)
 		}
-		if berr := dispatchBuild(nil, "release.yaml", nil, false, io.Discard, io.Discard); berr != nil {
+		if berr := dispatchBuild(resolveTempWorkspace(t, tempWorkspaceOptions{Root: wsRoot}), "release.yaml", nil, false, io.Discard, io.Discard); berr != nil {
 			t.Fatalf("an unrecorded (untrusted) marker must not affect the build; got: %v", berr)
 		}
 	})

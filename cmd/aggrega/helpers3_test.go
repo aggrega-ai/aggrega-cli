@@ -207,7 +207,7 @@ func TestInspectReleaseFile_MissingFile(t *testing.T) {
 	t.Parallel()
 	tmp := t.TempDir()
 	// Catalog without the release.
-	err := renderReleaseFile(nil, "/nonexistent/release.yaml", nil, []string{tmp}, testInspectOptions(io.Discard))
+	err := renderReleaseFile(resolveTempWorkspace(t, tempWorkspaceOptions{}), "/nonexistent/release.yaml", nil, []string{tmp}, testInspectOptions(io.Discard))
 	if err == nil {
 		t.Errorf("missing release should error")
 	}
@@ -221,7 +221,7 @@ func TestInspectReleaseFile_MalformedRelease(t *testing.T) {
 	writeFixture(t, filepath.Join(root, "release.yaml"), "::: not yaml :::")
 	catalogRoot := filepath.Join(root, "catalog")
 	writeHelmRendererPlugin(t, filepath.Join(catalogRoot, "providers"))
-	err := renderReleaseFile(nil, filepath.Join(root, "release.yaml"), nil, []string{catalogRoot}, testInspectOptions(io.Discard))
+	err := renderReleaseFile(resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), filepath.Join(root, "release.yaml"), nil, []string{catalogRoot}, testInspectOptions(io.Discard))
 	if err == nil {
 		t.Errorf("malformed release should error")
 	}

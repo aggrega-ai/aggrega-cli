@@ -72,6 +72,7 @@ func TestIntegration_EntitySignatureVerifiesAgainstManifestDigest(t *testing.T) 
 	}
 	wantSign := true
 	if perr := pushRun(pushConfig{
+		ws:         resolveTempWorkspace(t, tempWorkspaceOptions{Root: entityDir}),
 		EntityPath: entityPath,
 		Registry:   host,
 		Sign:       &wantSign,

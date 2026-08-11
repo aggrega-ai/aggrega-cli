@@ -21,10 +21,11 @@ import (
 // catalog, so it resolves purely through the AggregatePuller tier — the registry
 // pull that binds the bare identity to host/aggregate/<name> and pins the fetched
 // body's metadata.version. The workspace trust policy REQUIRES signatures and
-// pins pinnedPubPEM. It chdir's into the consumer workspace and returns the
+// pins pinnedPubPEM. It chdir's into the consumer workspace and returns that
+// workspace (so the caller can declare it as the workspace it resolves), the
 // sub-aggregate's bare closure URI (the lockfile row key the verify fact lands
-// on) plus the component's bare closure URI.
-func writeSubAggregateConsumerWorkspace(t *testing.T, host string, pinnedPubPEM []byte, push func(t *testing.T, host, entityPath string)) (subURI, componentURI string) {
+// on) and the component's bare closure URI.
+func writeSubAggregateConsumerWorkspace(t *testing.T, host string, pinnedPubPEM []byte, push func(t *testing.T, host, entityPath string)) (wsRoot, subURI, componentURI string) {
 	t.Helper()
 	cat := t.TempDir()
 
@@ -126,7 +127,7 @@ spec:
 `)
 	writeWorkspaceConfig(t, ws, signedPluginWorkspaceConfigBody(host, pinnedPubPEM))
 	t.Chdir(ws)
-	return "mysub", "test/svc"
+	return ws, "mysub", "test/svc"
 }
 
 // TestIntegration_PullCommandVerifiesSignedSubAggregate_Keyed is the
@@ -163,9 +164,9 @@ func TestIntegration_PullCommandVerifiesSignedSubAggregate_Keyed(t *testing.T) {
 
 	t.Run("positive_signed_sub_aggregate_verifies_through_pull_command", func(t *testing.T) {
 		host := startRegistry(t, nil)
-		subURI, _ := writeSubAggregateConsumerWorkspace(t, host, pubPEM, signedPush)
+		wsRoot, subURI, _ := writeSubAggregateConsumerWorkspace(t, host, pubPEM, signedPush)
 
-		if perr := pullRun(pullConfig{ReleasePath: "release.yaml"}); perr != nil {
+		if perr := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: wsRoot}), ReleasePath: "release.yaml"}); perr != nil {
 			t.Fatalf("a signed sub-aggregate under a matching pinned key must PULL and VERIFY; got: %v", perr)
 		}
 
@@ -212,9 +213,9 @@ func TestIntegration_PullCommandVerifiesSignedSubAggregate_Keyed(t *testing.T) {
 		if gerr != nil {
 			t.Fatalf("GenerateKeyedPEM (wrong): %v", gerr)
 		}
-		writeSubAggregateConsumerWorkspace(t, host, wrongPubPEM, signedPush)
+		wsRoot, _, _ := writeSubAggregateConsumerWorkspace(t, host, wrongPubPEM, signedPush)
 
-		perr := pullRun(pullConfig{ReleasePath: "release.yaml"})
+		perr := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: wsRoot}), ReleasePath: "release.yaml"})
 		if !errors.Is(perr, signing.ErrSignatureVerificationFailed()) {
 			t.Fatalf("a wrong pinned key must HALT the pull with ErrSignatureVerificationFailed; got: %v", perr)
 		}

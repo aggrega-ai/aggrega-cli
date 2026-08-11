@@ -61,6 +61,7 @@ func TestIntegration_DeprecateAttachesSignedMarker(t *testing.T) {
 	// real oci.NewRemoteRepository path. The keyed Signer is injected so the
 	// keyless branch is skipped.
 	if err := deprecateRun(deprecateConfig{
+		ws:          resolveTempWorkspace(t, tempWorkspaceOptions{}),
 		Reference:   host + "/component/core/legacy-api:1.0.0",
 		Severity:    wantSeverity,
 		Reason:      wantReason,
@@ -147,6 +148,7 @@ func TestIntegration_DeprecateUnpublishedFails(t *testing.T) {
 	}
 
 	err = deprecateRun(deprecateConfig{
+		ws:        resolveTempWorkspace(t, tempWorkspaceOptions{}),
 		Reference: host + "/component/core/missing:9.9.9",
 		Severity:  "warning",
 		Reason:    "does not matter",

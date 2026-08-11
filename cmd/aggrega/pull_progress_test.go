@@ -27,6 +27,7 @@ func TestPull_ProgressSurface_ForcedStatic(t *testing.T) {
 
 	var stdout, stderr bytes.Buffer
 	if err := pullRun(pullConfig{
+		ws:          resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}),
 		ReleasePath: releasePath,
 		CatalogDirs: []string{filepath.Join(root, "catalog")},
 		diag:        buildDiagOptions{progress: true},
@@ -69,6 +70,7 @@ func TestPull_ProgressSurface_AutoNonTTYSilent(t *testing.T) {
 
 	var stdout, stderr bytes.Buffer
 	if err := pullRun(pullConfig{
+		ws:          resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}),
 		ReleasePath: releasePath,
 		CatalogDirs: []string{filepath.Join(root, "catalog")},
 		DiagOut:     &stderr,

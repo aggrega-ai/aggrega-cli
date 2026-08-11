@@ -204,7 +204,7 @@ func TestValidatePluginBinaryOnlyRequiresType(t *testing.T) {
 // cross-checked against its matching .wasm through the one publish validation
 // door. It asserts the schema gate and the cross-check both report valid.
 func TestValidatePluginFullModePass(t *testing.T) {
-	entityPath, pluginPath, _ := writeAgreeingPlugin(t)
+	_, entityPath, pluginPath, _ := writeAgreeingPlugin(t)
 	var buf bytes.Buffer
 	if err := validatePluginBinary(pluginPath, "", entityPath, &buf); err != nil {
 		t.Fatalf("validatePluginBinary: %v", err)
@@ -221,7 +221,7 @@ func TestValidatePluginFullModePass(t *testing.T) {
 // contradicting the entity's metadata.pluginType halts: a Plugin carries one
 // declared type, so a second source in disagreement is an authoring error.
 func TestValidatePluginFullModeTypeDisagreementHaltsLoudly(t *testing.T) {
-	entityPath, pluginPath, _ := writeAgreeingPlugin(t)
+	_, entityPath, pluginPath, _ := writeAgreeingPlugin(t)
 	var buf bytes.Buffer
 	err := validatePluginBinary(pluginPath, "provider", entityPath, &buf)
 	if err == nil {

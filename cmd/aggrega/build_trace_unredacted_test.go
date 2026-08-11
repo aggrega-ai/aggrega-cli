@@ -20,7 +20,7 @@ import (
 // including a future one that does not read the flags — is bound by.
 func TestBuildRejectsUnredactedTraceWithoutTrace(t *testing.T) {
 	var diag, out bytes.Buffer
-	err := dispatchBuildWithDiag(nil, "release.yaml", nil, false,
+	err := dispatchBuildWithDiag(resolveTempWorkspace(t, tempWorkspaceOptions{}), "release.yaml", nil, false,
 		buildDiagOptions{quiet: true},
 		buildRunOptions{traceUnredacted: true}, &diag, &out)
 	if err == nil {
@@ -32,8 +32,8 @@ func TestBuildRejectsUnredactedTraceWithoutTrace(t *testing.T) {
 		}
 	}
 	// The halt precedes every side effect, which is what makes it safe to run
-	// against a workspace that does not exist: nothing was loaded, rendered or
-	// written before it fired.
+	// against a declared workspace holding no release file at all: nothing was
+	// loaded, rendered or written before it fired.
 	if diag.Len() != 0 || out.Len() != 0 {
 		t.Errorf("the halt must fire before any output; diag=%q out=%q", diag.String(), out.String())
 	}
