@@ -208,15 +208,26 @@ func entry(t *testing.T, attachments types.OrderedMap[types.IRFeatureEntry], nam
 	return e
 }
 
-func injectBlock(mechanism string, deliveries map[string]string) *types.InjectBlock {
+// injectBlock builds a delivery block for one mechanism in the
+// array-of-entries form an authored document produces. Deliveries are given
+// as delivery-key, provides-key pairs and keep the order they are written in,
+// so a fixture reading order out of the result reads the order it declared.
+func injectBlock(mechanism string, deliveries ...string) *types.InjectBlock {
+	if len(deliveries)%2 != 0 {
+		panic("injectBlock: deliveries must be delivery-key, provides-key pairs")
+	}
+	entries := make([]any, 0, len(deliveries)/2)
+	for i := 0; i < len(deliveries); i += 2 {
+		entries = append(entries, map[string]any{"in": deliveries[i], "from": deliveries[i+1]})
+	}
 	block := &types.InjectBlock{}
 	switch mechanism {
 	case "env":
-		block.Env = deliveries
+		block.Env = entries
 	case "file":
-		block.File = deliveries
+		block.File = entries
 	default:
-		block.Arg = deliveries
+		block.Arg = entries
 	}
 	return block
 }
@@ -281,10 +292,10 @@ func TestDerivedSensitivity_InjectMarkingDiscriminates(t *testing.T) {
 	attachments := buildSensitivity(t, []topology.FeatureAttachment{
 		{InstanceName: "creds", Feature: types.FeatureInstance{
 			Type: "core/creds",
-			Inject: injectBlock("env", map[string]string{
-				"DATABASE_URL": "dsn",
-				"DATABASE_KEY": "key",
-			}),
+			Inject: injectBlock("env",
+				"DATABASE_URL", "dsn",
+				"DATABASE_KEY", "key",
+			),
 		}},
 	})
 	got := entry(t, attachments, "creds")
@@ -323,7 +334,7 @@ func TestDerivedSensitivity_UnknownProvidesKeyMarksNothing(t *testing.T) {
 	attachments := buildSensitivity(t, []topology.FeatureAttachment{
 		{InstanceName: "creds", Feature: types.FeatureInstance{
 			Type:   "core/creds",
-			Inject: injectBlock("env", map[string]string{"DATABASE_URL": "no_such_key"}),
+			Inject: injectBlock("env", "DATABASE_URL", "no_such_key"),
 		}},
 	})
 	got := entry(t, attachments, "creds")
@@ -386,13 +397,13 @@ func TestDerivedSensitivity_MarkingReadsTheMergedInject(t *testing.T) {
 	subsystemFeats := types.OrderedMap[types.FeatureInstance]{}
 	subsystemFeats.Set("creds", types.FeatureInstance{
 		Type:   "core/creds",
-		Inject: injectBlock("env", map[string]string{"DATABASE_URL": "dsn"}),
+		Inject: injectBlock("env", "DATABASE_URL", "dsn"),
 	})
 
 	attachments := buildSensitivityWith(t,
 		[]topology.FeatureAttachment{{InstanceName: "creds", Feature: types.FeatureInstance{
 			Type:   "core/creds",
-			Inject: injectBlock("env", map[string]string{"DATABASE_URL": "name"}),
+			Inject: injectBlock("env", "DATABASE_URL", "name"),
 		}}},
 		subsystemFeats,
 		types.OrderedMap[types.BoundaryFeature]{},
@@ -454,7 +465,7 @@ func TestDerivedSensitivity_EmittedIRWithBothFieldsConformsToSchema(t *testing.T
 			feat("vault", "core/secret-values", vmap("password", "s3cret")),
 			{InstanceName: "creds", Feature: types.FeatureInstance{
 				Type:   "core/creds",
-				Inject: injectBlock("env", map[string]string{"DATABASE_URL": "dsn", "DATABASE_KEY": "key"}),
+				Inject: injectBlock("env", "DATABASE_URL", "dsn", "DATABASE_KEY", "key"),
 			}},
 		},
 		types.OrderedMap[types.FeatureInstance]{},

@@ -108,10 +108,17 @@ const FeatureKindSecret = "secret"
 // mechanism conforming to the inject_delivery shape, and the custom UnmarshalYAML
 // / UnmarshalJSON hooks below populate Additional from non-core top-level keys.
 //
-// Each core mechanism value is an InjectDelivery: either compact map[string]string
-// or verbose []{in,from}. Both forms are represented as any and normalized to
-// map[string]string downstream. Additional values carry the same polymorphic
-// shape and the same downstream normalization.
+// Each core mechanism value is one delivery: the array of {in, from?, value?}
+// entries the schema's inject_delivery definition describes. The field is typed
+// any because the hooks below decode the value generically, leaving each
+// consumer to type-switch on what arrived. A mapping of delivery key to value
+// is not an alternative an author can write — inject_delivery is an array in
+// both the Aggregate and Release schemas, so a mapping-shaped delivery is
+// refused by envelope validation. The normalized form is an OrderedMap[string]
+// of delivery key to string, which is what IREdge.Inject and the render-time
+// InjectPipe hold; being ordered, it carries the order the author wrote into
+// the rendered artifacts. Additional values carry the same shape and the same
+// downstream normalization.
 //
 // Duplicate top-level mechanism keys (any combination of env/file/arg/custom) are
 // rejected at the unmarshal layer with a wrapped error naming the offending key

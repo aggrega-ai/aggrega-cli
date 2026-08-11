@@ -231,11 +231,11 @@ func TestCollectNodeFeatures_ProjectsAuthoredAttachmentInject(t *testing.T) {
 			"api": {
 				{InstanceName: "cache", Feature: types.FeatureInstance{
 					Type:   "core/cache",
-					Inject: &types.InjectBlock{Env: map[string]any{"CACHE_URL": "url"}},
+					Inject: &types.InjectBlock{Env: []any{map[string]any{"in": "CACHE_URL", "from": "url"}}},
 				}},
 				{InstanceName: "db-creds", Feature: types.FeatureInstance{
 					Type:   "core/db-creds",
-					Inject: &types.InjectBlock{Env: map[string]any{"DB_PASSWORD": "root_password"}},
+					Inject: &types.InjectBlock{Env: []any{map[string]any{"in": "DB_PASSWORD", "from": "root_password"}}},
 				}},
 			},
 		},

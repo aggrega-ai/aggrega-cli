@@ -372,7 +372,7 @@ func TestConvertInjectBlock_AdditionalIteration(t *testing.T) {
 	t.Parallel()
 
 	inject := &types.InjectBlock{
-		Env: map[string]any{"DB_URL": "host"},
+		Env: []any{map[string]any{"in": "DB_URL", "from": "host"}},
 	}
 	ssm := types.NewOrderedMap[any]()
 	ssm.Set("DB_PASSWORD", "connection.password")
@@ -429,8 +429,8 @@ func TestConvertInjectBlock_CoreOnlyUnchanged(t *testing.T) {
 	t.Parallel()
 
 	inject := &types.InjectBlock{
-		Env:  map[string]any{"PORT": "8080"},
-		File: map[string]any{"config": "config.path"},
+		Env:  []any{map[string]any{"in": "PORT", "value": "8080"}},
+		File: []any{map[string]any{"in": "config", "from": "config.path"}},
 	}
 
 	result := convertInjectBlock(inject)
@@ -445,12 +445,12 @@ func TestConvertInjectBlock_CoreOnlyUnchanged(t *testing.T) {
 	}
 }
 
-// TestConvertInjectBlock_VerboseArrayForm pins the schema-verbose-form
-// decode arm. The verbose form's [{in: K, from?: P, value?: V}] elements
-// decode into the same OrderedMap[string] shape as the compact form. The
-// `value:` field is preferred over `from:` if both are present (defensive;
-// schema validation should preempt). Empty arrays produce no mechanism
-// entry; entries without `in:` or with non-string `in:` are skipped.
+// TestConvertInjectBlock_VerboseArrayForm pins the array-of-entries decode
+// arm. Its [{in: K, from?: P, value?: V}] elements decode into the same
+// OrderedMap[string] shape the ordered-mapping arm produces. The `value:`
+// field is preferred over `from:` if both are present (defensive; schema
+// validation should preempt). Empty arrays produce no mechanism entry;
+// entries without `in:` or with non-string `in:` are skipped.
 func TestConvertInjectBlock_VerboseArrayForm(t *testing.T) {
 	t.Parallel()
 
@@ -488,7 +488,7 @@ func TestConvertInjectBlock_VerboseArrayForm(t *testing.T) {
 		t.Errorf("arg.FLAG = %q, want %q", v, "--enable")
 	}
 
-	// Empty verbose-array → mechanism not present (mirrors empty-map semantic).
+	// An empty array declares no delivery, so no mechanism entry is produced.
 	emptyInject := &types.InjectBlock{Env: []any{}}
 	emptyResult := convertInjectBlock(emptyInject)
 	if emptyResult.Len() != 0 {

@@ -376,26 +376,37 @@ func BuildIRContext(ctx context.Context, cfg BuildIRConfig) (*types.IRGraph, Fea
 // vault_secret) the Developer authored after.
 //
 // Mechanism enumeration draws from four sources: the three typed fields and
-// the Additional OrderedMap. The Developer's authoring shape — compact
-// map-of-strings or verbose array-of-objects per the Aggregate schema's
-// inject_delivery definition — flows through the InjectBlock unmarshal hooks
-// at pkg/types/common.go, so by the time this function runs every value has
-// been decoded into the polymorphic Go shapes the type-switch below handles.
+// the Additional OrderedMap. Each mechanism's payload flows through the
+// InjectBlock unmarshal hooks at pkg/types/common.go, so by the time this
+// function runs it has been decoded into one of the Go shapes the type-switch
+// below handles.
 //
-// Type-coercion contract. The inner anonymous function copies only
-// string-valued entries: map[string]string is copied verbatim;
-// *types.OrderedMap[any] (the post-round-trip-fidelity decode shape for
-// nested objects) and map[string]any (legacy in-memory test-fixture shape)
-// are copied entry-by-entry, keeping only the entries whose values
-// type-assert to string. Non-string values are silently dropped. The
-// string-only restriction matches the IR's IREdge.Inject schema (string
-// values per delivery key); the silent drop is the function's current
-// behaviour and may need revisiting if upstream coercion bugs surface as
-// missing inject entries downstream. The verbose-array form (encoded as
-// []any with elements {in, from?, value?}) decodes by iterating entries
-// and copying (in, value-or-from) pairs into the same OrderedMap[string]
-// shape. The verbose form is the canonical authoring shape after the
-// schema flip retired compact-form authoring at inject_delivery.
+// Type-coercion contract. Two payload shapes are accepted, and they are the
+// two that carry the order the author wrote — which is what lets this function
+// promise author-ordered output:
+//
+//   - []any, the array of {in, from?, value?} entries the Aggregate schema's
+//     inject_delivery definition describes.
+//   - *types.OrderedMap[any], an order-bearing mapping of delivery key to
+//     value.
+//
+// Both fill the same OrderedMap[string], and both drop whatever they cannot
+// express as one string per delivery key, which is what IREdge.Inject holds;
+// nothing is reported for a dropped entry. The two shapes filter differently.
+// The mapping keeps the entries whose values type-assert to string. The array
+// decodes each entry with types.DecodeVerboseInjectEntry and keeps it only
+// when the entry is itself map-shaped and carries an in: that is a non-empty
+// string; in: becomes the delivery key, and its value is value: when value: is
+// a string, otherwise from: when from: is a string. An entry with a usable in:
+// but neither field string-typed contributes no delivery key at all.
+//
+// A plain Go map is deliberately not among the accepted shapes. It carries no
+// key order, so ranging one here would let Go's map iteration order reach the
+// serialized IR and the same input would stop producing the same bytes. Nor
+// can one arrive from an authored document: inject_delivery is an array in
+// both the Aggregate and Release schemas and every inject surface refers to
+// it, so a mapping-shaped delivery is refused by envelope validation before
+// this function is reached. Any other shape contributes nothing.
 func convertInjectBlock(inject *types.InjectBlock) types.OrderedMap[types.OrderedMap[string]] {
 	result := types.OrderedMap[types.OrderedMap[string]]{}
 	if inject == nil {
@@ -417,24 +428,6 @@ func convertInjectBlock(inject *types.InjectBlock) types.OrderedMap[types.Ordere
 				}
 			}
 			if m.Len() > 0 {
-				result.Set(mech, m)
-			}
-		case map[string]any:
-			m := types.OrderedMap[string]{}
-			for k, val := range v {
-				if s, ok := val.(string); ok {
-					m.Set(k, s)
-				}
-			}
-			if m.Len() > 0 {
-				result.Set(mech, m)
-			}
-		case map[string]string:
-			if len(v) > 0 {
-				m := types.OrderedMap[string]{}
-				for k, val := range v {
-					m.Set(k, val)
-				}
 				result.Set(mech, m)
 			}
 		case []any:
