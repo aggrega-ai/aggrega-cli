@@ -79,24 +79,27 @@ func workspaceRootFromContext(ctx context.Context) string {
 	return ""
 }
 
-// workspaceOrResolve returns ws when set — the production path, where a
-// command's RunE threads in the context-resolved workspace. When ws is nil it
-// resolves from the current directory; that path is reachable only from tests
-// that invoke the command helpers directly. Centralizing the branch keeps the
-// test-only fallback in exactly one place.
+// workspaceOrResolve returns the workspace a command's RunE threaded in from the
+// shared resolution chokepoint. A nil workspace is a wiring error — the call was
+// reached without any caller having resolved one — so it is reported rather than
+// repaired. Resolving here from the current directory would make the result
+// depend on a directory no caller named, which is exactly the dependency routing
+// every command through one resolution point exists to remove.
 //
-// The structural guard over this package holds the production half of that
-// claim, and it takes three checks rather than one, because a nil reaches this
-// branch by three different routes: written here as a literal, left out of a
-// command config that carries the resolved workspace as a field, or handed to a
-// helper that threads its own workspace parameter down to here. The third route
-// is the one a check on this call alone cannot see, since every production
-// caller passes a named value at this point and the literal sits a hop earlier.
+// The structural guard over this package rejects the same mistake in production
+// code at parse time, where the diagnostic can name the offending site, and it
+// takes three checks rather than one, because a nil reaches this call by three
+// different routes: written here as a literal, left out of a command config that
+// carries the resolved workspace as a field, or handed to a helper that threads
+// its own workspace parameter down to here. The third route is the one a check on
+// this call alone cannot see, since every caller passes a named value at this
+// point and the literal sits a hop earlier. The refusal below is what covers all
+// three at run time, for any caller.
 func workspaceOrResolve(ws *workspaceconfig.ResolvedWorkspace) (*workspaceconfig.ResolvedWorkspace, error) {
-	if ws != nil {
-		return ws, nil
+	if ws == nil {
+		return nil, fmt.Errorf("internal: no resolved workspace supplied — the caller must resolve one and pass it in")
 	}
-	return workspaceconfig.Resolve("", "")
+	return ws, nil
 }
 
 // workspaceFromContext resolves (once) and returns the workspace for the

@@ -142,9 +142,9 @@ type deprecateConfig struct {
 	// deprecateRun builds a keyed or keyless signer from the flags.
 	Signer signing.Signer
 
-	// ws is the resolved workspace, threaded in by the command's RunE. Nil
-	// only when a test invokes deprecateRun directly; workspaceOrResolve then
-	// resolves from the working directory.
+	// ws is the resolved workspace, threaded in by the command's RunE. Required:
+	// workspaceOrResolve refuses a nil, so a test invoking deprecateRun directly
+	// declares the workspace it resolves.
 	ws *workspaceconfig.ResolvedWorkspace
 
 	// EnvLookup reads the environment for the identity-token secret

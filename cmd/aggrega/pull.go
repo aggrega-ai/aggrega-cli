@@ -122,8 +122,8 @@ type pullConfig struct {
 	Detail            bool
 
 	// ws is the resolved workspace, threaded in by the command's RunE from the
-	// shared resolution chokepoint. Nil only when a test invokes pullRun
-	// directly; workspaceOrResolve then resolves from the working directory.
+	// shared resolution chokepoint. Required: workspaceOrResolve refuses a nil, so
+	// a test invoking pullRun directly declares the workspace it resolves.
 	ws *workspaceconfig.ResolvedWorkspace
 
 	// DiagOut is the sink for the pull's reuse/verify diagnostic notices.

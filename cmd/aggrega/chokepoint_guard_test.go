@@ -23,16 +23,15 @@ import (
 //     exactly the divergence this work removed.
 //  2. Every command config carrying a workspace field — and the relocated
 //     lintops.Config — sets that field where production code builds it.
-//     Production must pass the context-resolved workspace; the nil →
-//     resolve-from-CWD fallback exists only so tests can invoke the command and
-//     core helpers directly. A production caller leaving the workspace field
-//     unset would silently re-resolve from CWD and ignore --workspace-root —
-//     reintroducing per-command divergence.
+//     Production must pass the context-resolved workspace. A caller that leaves
+//     the field unset reaches workspaceOrResolve with a nil, which refuses; what
+//     this check adds is the site — it names the offending literal at parse time,
+//     rather than leaving a command to fail at run time with nothing to point at.
 //  3. No production call hands a literal nil to a helper that threads its
 //     workspace parameter into workspaceOrResolve. Checking only the
 //     workspaceOrResolve call itself misses this: the commands that take the
 //     workspace as a parameter pass a named value at that call, so a nil
-//     introduced one hop earlier reaches the fallback unseen.
+//     introduced one hop earlier is invisible there.
 //
 // 🔴 Both covered sets are DERIVED from the parsed source, never listed here. A
 // hand-written list of config type names is a second copy of the type
@@ -43,7 +42,9 @@ import (
 // every function that passes one of its own parameters into workspaceOrResolve,
 // closed over functions forwarding a parameter into one of those.
 //
-// Test files are exempt (the fallback is theirs to use).
+// Test files are exempt: a nil workspace refuses at run time, so a test that
+// fails to declare one already fails on its own, and there is nothing for a
+// parse-time check to add.
 func TestWorkspaceResolutionChokepointGuard(t *testing.T) {
 	dirs := []string{".", filepath.Join("..", "..", "internal", "serve")}
 
@@ -101,20 +102,20 @@ func TestWorkspaceResolutionChokepointGuard(t *testing.T) {
 					if !ok {
 						return true
 					}
-					// A literal nil at the fallback's own call site.
+					// A literal nil at the chokepoint's own call site.
 					if id.Name == "workspaceOrResolve" {
 						if len(v.Args) == 1 {
 							if arg, ok := v.Args[0].(*ast.Ident); ok && arg.Name == "nil" {
-								t.Errorf("%s: workspaceOrResolve(nil) in production — pass the context-resolved workspace (workspaceFromContext); the nil/CWD fallback is test-only", fset.Position(v.Pos()))
+								t.Errorf("%s: workspaceOrResolve(nil) in production — pass the context-resolved workspace (workspaceFromContext); a nil is refused there", fset.Position(v.Pos()))
 							}
 						}
 						return true
 					}
 					// A literal nil one hop earlier, at a helper that threads its
-					// workspace parameter into the fallback.
+					// workspace parameter into the chokepoint.
 					if idx, isThreaded := threaded[id.Name]; isThreaded && idx < len(v.Args) {
 						if arg, ok := v.Args[idx].(*ast.Ident); ok && arg.Name == "nil" {
-							t.Errorf("%s: %s(nil, …) in production — pass the context-resolved workspace (workspaceFromContext); that parameter reaches the nil/CWD fallback, which is test-only", fset.Position(v.Pos()), id.Name)
+							t.Errorf("%s: %s(nil, …) in production — pass the context-resolved workspace (workspaceFromContext); that parameter reaches workspaceOrResolve, which refuses a nil", fset.Position(v.Pos()), id.Name)
 						}
 					}
 				case *ast.CompositeLit:
@@ -123,8 +124,8 @@ func TestWorkspaceResolutionChokepointGuard(t *testing.T) {
 					// are bare identifiers carrying a `ws` field; the relocated lint
 					// config is a `lintops.Config` selector carrying a `Workspace`
 					// field. Either way, a production literal that omits the
-					// workspace field would silently re-resolve from CWD and ignore
-					// --workspace-root.
+					// workspace field leaves the command with no workspace to
+					// resolve and no --workspace-root honoured.
 					typeName, wsField := "", ""
 					switch tp := v.Type.(type) {
 					case *ast.Ident:
@@ -148,7 +149,7 @@ func TestWorkspaceResolutionChokepointGuard(t *testing.T) {
 						}
 					}
 					if !hasWS {
-						t.Errorf("%s: %s literal without a %s field — production must thread the context-resolved workspace (workspaceFromContext); the nil/CWD fallback is test-only", fset.Position(v.Pos()), typeName, wsField)
+						t.Errorf("%s: %s literal without a %s field — production must thread the context-resolved workspace (workspaceFromContext); an absent workspace is refused at resolution", fset.Position(v.Pos()), typeName, wsField)
 					}
 				}
 				return true
@@ -189,13 +190,13 @@ func workspaceBearingConfigTypes(files map[string]*ast.File) map[string]bool {
 }
 
 // workspaceThreadingHelpers returns every function that can carry a caller's nil
-// through to the resolve-from-CWD fallback, mapped to the index of the parameter
-// that gets there. A function qualifies directly when it passes one of its own
-// parameters into workspaceOrResolve, and transitively when it forwards one of
-// its own parameters into that position of a function already known to qualify.
-// The transitive closure is what makes the check survive a new wrapper: the
-// dispatch helpers are layered, so a caller is frequently two hops from the
-// fallback rather than one.
+// through to workspaceOrResolve, mapped to the index of the parameter that gets
+// there. A function qualifies directly when it passes one of its own parameters
+// into workspaceOrResolve, and transitively when it forwards one of its own
+// parameters into that position of a function already known to qualify. The
+// transitive closure is what makes the check survive a new wrapper: the dispatch
+// helpers are layered, so a caller is frequently two hops from the chokepoint
+// rather than one.
 func workspaceThreadingHelpers(files map[string]*ast.File) map[string]int {
 	threaded := map[string]int{}
 	// Iterate to a fixed point rather than once: a forwarder may be declared in

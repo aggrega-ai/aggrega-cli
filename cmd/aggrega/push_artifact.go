@@ -82,9 +82,9 @@ type pushArtifactConfig struct {
 	Registry  string
 	DryRun    bool
 
-	// ws is the resolved workspace, threaded in by the command's RunE. Nil only
-	// when a test invokes pushArtifactRun directly; workspaceOrResolve then
-	// resolves from the working directory.
+	// ws is the resolved workspace, threaded in by the command's RunE. Required:
+	// workspaceOrResolve refuses a nil, so a test invoking pushArtifactRun directly
+	// declares the workspace it resolves.
 	ws *workspaceconfig.ResolvedWorkspace
 
 	// PushTarget overrides the production remote.Repository construction. Tests

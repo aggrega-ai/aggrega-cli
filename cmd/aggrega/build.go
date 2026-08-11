@@ -169,10 +169,10 @@ type buildRunOptions struct {
 
 // dispatchBuild is the silent-diagnostics form of dispatchBuildWithDiag: it runs
 // with no phase-progress surface and no verbose debug layer. Tests call it
-// directly (passing a nil workspace, which resolves from the working directory)
-// to avoid racing on flag-bound globals under t.Parallel; the CLI entry point
-// calls dispatchBuildWithDiag to thread the operator's --quiet / --debug
-// choices. Both share the single implementation below.
+// directly, passing the workspace they declared, to avoid racing on flag-bound
+// globals under t.Parallel; the CLI entry point calls dispatchBuildWithDiag to
+// thread the operator's --quiet / --debug choices. Both share the single
+// implementation below.
 func dispatchBuild(rw *workspaceconfig.ResolvedWorkspace, releasePath string, catalogFlagDirs []string, traceEnabled bool, diagOut, out io.Writer) error {
 	return dispatchBuildWithDiag(rw, releasePath, catalogFlagDirs, traceEnabled, buildDiagOptions{}, buildRunOptions{}, diagOut, out)
 }

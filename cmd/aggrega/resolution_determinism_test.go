@@ -45,14 +45,16 @@ func distSnapshot(t *testing.T, dir string) map[string]string {
 // orthogonal to IR content; the snapshot keys on the path within each dist root,
 // so a differing output location does not mask or cause a content difference.)
 //
-// This is the one test in this package that must NOT name the workspace it
-// resolves, and the reason is its subject: what it proves is that the root walk
-// finds the same root from two different working directories. Handing both builds
-// the same named workspace would make them identical by construction and assert
-// nothing. What keeps it hermetic instead is that the workspace is CONSTRUCTED
-// here — a temporary directory carrying its own `workspace:` marker — and both
-// working directories are inside it, so the walk terminates at that marker and
-// can never reach a configuration outside the run.
+// This test resolves its workspace explicitly, as every test in this package
+// does, but it is the one that must NOT NAME a root — and the reason is its
+// subject: what it proves is that the root walk finds the same root from two
+// different working directories. So each build discovers its own workspace from
+// the working directory it runs in, resolved separately for each. Naming a root,
+// or resolving once and reusing the value for both builds, would make the two
+// identical by construction and assert nothing. What keeps it hermetic instead is
+// that the workspace is CONSTRUCTED here — a temporary directory carrying its own
+// `workspace:` marker — and both working directories are inside it, so each walk
+// terminates at that marker and can never reach a configuration outside the run.
 func TestBuildIsInvocationLocationIndependent(t *testing.T) {
 	root := t.TempDir()
 	releasePath := authoringFixture(t, root)
@@ -61,9 +63,16 @@ func TestBuildIsInvocationLocationIndependent(t *testing.T) {
 	writeWorkspaceConfig(t, root, "auto_pull: true\nworkspace:\n  catalog_dirs:\n    - catalog")
 
 	// Build from the project root; the dist lands at the CWD per the Release's
-	// `directory:`. Snapshot content keyed within that dist root.
+	// `directory:`. Snapshot content keyed within that dist root. Each build
+	// resolves its own workspace from the working directory it is about to build
+	// in — an empty start is that directory — so the discovery under test is the
+	// test's own explicit call rather than something inherited.
 	t.Chdir(root)
-	if err := dispatchBuild(nil, releasePath, nil, false, os.Stderr, os.Stdout); err != nil {
+	wsFromRoot, err := workspaceconfig.Resolve("", "")
+	if err != nil {
+		t.Fatalf("resolve workspace from root: %v", err)
+	}
+	if err := dispatchBuild(wsFromRoot, releasePath, nil, false, os.Stderr, os.Stdout); err != nil {
 		t.Fatalf("build from root: %v", err)
 	}
 	fromRoot := distSnapshot(t, filepath.Join(root, "dist"))
@@ -78,7 +87,18 @@ func TestBuildIsInvocationLocationIndependent(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Chdir(sub)
-	if err := dispatchBuild(nil, releasePath, nil, false, os.Stderr, os.Stdout); err != nil {
+	wsFromSub, err := workspaceconfig.Resolve("", "")
+	if err != nil {
+		t.Fatalf("resolve workspace from subdir: %v", err)
+	}
+	// The two independent walks must land on the same root. Asserting it directly
+	// attributes a failure to discovery instead of leaving it to surface as an
+	// artifact difference, which two different roots would also produce.
+	if wsFromRoot.Root() != wsFromSub.Root() {
+		t.Fatalf("the upward walk found %s from the project root and %s from %s; both working directories sit under one marked workspace, so discovery is not invocation-location-independent",
+			wsFromRoot.Root(), wsFromSub.Root(), sub)
+	}
+	if err := dispatchBuild(wsFromSub, releasePath, nil, false, os.Stderr, os.Stdout); err != nil {
 		t.Fatalf("build from subdir: %v", err)
 	}
 	fromSub := distSnapshot(t, filepath.Join(sub, "dist"))

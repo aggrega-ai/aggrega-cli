@@ -42,20 +42,18 @@ type tempWorkspaceOptions struct {
 }
 
 // resolveTempWorkspace resolves the isolated workspace the caller declared, and
-// returns it for tests that would otherwise hand a command helper no workspace
-// at all.
+// returns it for any test that needs one.
 //
-// Handing a command helper no workspace routes through the
-// resolve-from-current-directory fallback, which walks the current directory
-// upward looking for the nearest config that anchors a root. When the repository
-// checkout lives under a developer's home directory and that home holds an
-// `.aggrega-config.yaml` with a `workspace:` block, the walk reaches it and
-// adopts its catalog directories — a developer's ambient configuration would
-// then leak into the test and resolve catalog paths that do not exist on the
-// machine. Writing the declared config at the declared root and resolving from
-// there anchors the root on the very first step of discovery, so resolution
-// never climbs to any ancestor. The result is hermetic against whatever
-// configuration happens to sit above the checkout.
+// Declaring the workspace is what makes a test independent of the machine it runs
+// on. Discovery walks the current directory upward looking for the nearest config
+// that anchors a root: when the repository checkout lives under a developer's home
+// directory and that home holds an `.aggrega-config.yaml` with a `workspace:`
+// block, the walk reaches it and adopts its catalog directories — a developer's
+// ambient configuration would then leak into the test and resolve catalog paths
+// that do not exist on the machine. Writing the declared config at the declared
+// root and resolving from there anchors the root on the very first step of
+// discovery, so resolution never climbs to any ancestor. The result is hermetic
+// against whatever configuration happens to sit above the checkout.
 //
 // This is the single home for hermetic test-workspace construction. A test that
 // needs catalog directories states them in the options rather than mutating the
