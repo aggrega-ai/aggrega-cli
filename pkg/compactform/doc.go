@@ -19,10 +19,29 @@
 // Each keyword maps mechanically to JSON Schema 2020-12; the compiler
 // transforms compact form to JSON Schema before any validation runs.
 //
+// type: accepts either a single type name (type: string) or a sequence of
+// permitted names (type: [string, integer, boolean] — the JSON Schema
+// 2020-12 array-of-types form), and a sequence is carried into the
+// compiled schema as authored. Any other shape at type: is refused at
+// compile time with a diagnostic naming the position, rather than
+// tolerated or left to fail a type assertion. min: and max: compile to a
+// numeric, string or array bound chosen by the declared type, so they
+// require type: to resolve to exactly one name; beside a sequence — or
+// with no type: at all — they halt, with a message steering the author to
+// narrow type: or drop the constraint.
+//
 // The escape hatch $jsonschema: embeds full JSON Schema YAML at any node
 // for cases the compact form cannot express. The $mode: annotation
 // (compact / jsonschema) provides explicit dispatch for the rare edge
 // cases where content-shape dispatch is ambiguous.
+//
+// A cross-document $ref: naming a SchemaLibrary entry is resolved and
+// inlined at compile time, and every property the entry contributes
+// carries an x-aggrega-source annotation naming the entry it came from.
+// That annotation names the entry the consumer referenced, never the one a
+// property ultimately originated in: where a referenced entry itself
+// references a second library, the outer expansion re-annotates everything
+// the inner one contributed, so attribution is exactly one step deep.
 //
 // Compile is a pure function over its input. Same input produces byte-
 // identical output across runs (the deterministic-output invariant

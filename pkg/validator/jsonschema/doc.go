@@ -88,6 +88,17 @@
 //     x-aggrega-when:, where the predicate governs instead.
 //   - The Aggrega extension keywords described above.
 //
+// A combinator branch is checked against the type its own shape requires
+// before any of that shape is walked. A branch declaring properties,
+// patternProperties, additionalProperties or dependentSchemas requires an
+// object; given an instance that is not one, the adapter reports a type
+// mismatch at that position and goes no further into the branch. Without
+// that check each per-construct walk finds nothing to do — a non-object
+// carries no keys to dispatch on — and the branch accepts a value its
+// shape plainly refuses: a oneOf of a scalar form and an object form then
+// matches on both branches, and the one real type mismatch surfaces as a
+// spurious multiple-match at the combinator instead of at the value.
+//
 // Everything else — every scalar constraint, so type, enum, const, the
 // numeric and string bounds, format, dependentRequired — is evaluated by
 // the underlying library at the single position that declares it. Those

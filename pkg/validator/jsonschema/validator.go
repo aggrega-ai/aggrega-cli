@@ -38,7 +38,10 @@ type Validator interface {
 type Context struct {
 	// Parameters is the resolved Aggregate parameter map (post the
 	// compiler's parameter-interpolation step, pre-validation).
-	// Templates reference parameters via `.parameters.X`.
+	// Predicates reach it through the param and parameters template
+	// functions — param "X" returns one parameter's value, parameters
+	// the whole map. It is not reachable from the template's data root,
+	// which stays the value being validated.
 	Parameters map[string]any
 
 	// Surround is the surrounding object scope template predicates
