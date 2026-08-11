@@ -83,3 +83,59 @@ func assertNestedShape(t *testing.T, pipe *InjectPipe, encoded []byte) {
 		t.Errorf("inner.Get(API_KEY) = %q, want %q", v, "connection.token")
 	}
 }
+
+// TestInjectPipe_TemplateUntaggedKeys_NilWhenNoCustomMechanism pins the contract
+// that keeps the template view of a core-three-only pipe exactly what it was: a
+// pipe carrying no custom mechanism contributes no keys at all, so the reflective
+// template walk that consumes this method has nothing to merge and every existing
+// rendered artifact is unaffected by the projection's existence.
+func TestInjectPipe_TemplateUntaggedKeys_NilWhenNoCustomMechanism(t *testing.T) {
+	t.Parallel()
+
+	var pipe InjectPipe
+	env := OrderedMap[string]{}
+	env.Set("DB_URL", "postgres.svc")
+	pipe.Env = env
+
+	if got := pipe.TemplateUntaggedKeys(); got != nil {
+		t.Errorf("TemplateUntaggedKeys() = %v, want nil for a pipe with no custom mechanism", got)
+	}
+}
+
+// TestInjectPipe_TemplateUntaggedKeys_ProjectsEachMechanismByName pins that every
+// custom mechanism appears under the name the author wrote, carrying its own
+// delivery map, and that the core three are never duplicated into the projection —
+// they reach a template through their own struct tags.
+func TestInjectPipe_TemplateUntaggedKeys_ProjectsEachMechanismByName(t *testing.T) {
+	t.Parallel()
+
+	var pipe InjectPipe
+	env := OrderedMap[string]{}
+	env.Set("CAL_ENV", "cal-needle")
+	pipe.Env = env
+
+	vault := OrderedMap[string]{}
+	vault.Set("TOKEN_PATH", "vault-needle")
+	ssm := OrderedMap[string]{}
+	ssm.Set("DB_ARN", "ssm-needle")
+	// Authored reverse-alphabetically, so a projection that re-sorted would show.
+	pipe.Additional.Set("zz_vault", vault)
+	pipe.Additional.Set("aa_ssm", ssm)
+
+	got := pipe.TemplateUntaggedKeys()
+	if len(got) != 2 {
+		t.Fatalf("TemplateUntaggedKeys() has %d keys, want 2: %v", len(got), got)
+	}
+	for _, core := range []string{"env", "file", "arg", "all"} {
+		if _, present := got[core]; present {
+			t.Errorf("projection carries core mechanism %q; the core three reach a template by tag", core)
+		}
+	}
+	inner, ok := got["aa_ssm"].(OrderedMap[string])
+	if !ok {
+		t.Fatalf("aa_ssm is %T, want OrderedMap[string]", got["aa_ssm"])
+	}
+	if v, _ := inner.Get("DB_ARN"); v != "ssm-needle" {
+		t.Errorf("aa_ssm.DB_ARN = %q, want %q", v, "ssm-needle")
+	}
+}

@@ -290,6 +290,35 @@ func (p InjectPipe) MarshalJSON() ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
+// TemplateUntaggedKeys returns each custom mechanism's resolved delivery map
+// keyed by the mechanism name the author wrote, so a template addresses a custom
+// mechanism exactly the way it addresses env / file / arg.
+//
+// The core three and the merged union reach a template through their struct tags.
+// Additional cannot: it carries `json:"-" yaml:"-"` so that the (un)marshal
+// methods above own the routing of custom keys, and the template boundary is
+// neither JSON nor YAML — it is a reflective walk that reads the tag directly and
+// therefore skips the field. This method is how the same data reaches that third
+// boundary, without giving the field a tag that would change what either marshal
+// path emits.
+//
+// Iteration is over the ordered map, so the projection is assembled in author
+// order. The returned container is a plain map because every pillar reaches a
+// template as one, and a template ranges over it alphabetically like any other.
+//
+// A pipe carrying no custom mechanism returns nil, which keeps the template view
+// of a core-three-only pipe exactly what it was.
+func (p InjectPipe) TemplateUntaggedKeys() map[string]any {
+	if p.Additional.Len() == 0 {
+		return nil
+	}
+	out := make(map[string]any, p.Additional.Len())
+	for mechanism, deliveries := range p.Additional.All() {
+		out[mechanism] = deliveries
+	}
+	return out
+}
+
 // EnrichedEdge is an enriched topological edge assembled by the compiler for template consumption.
 // Schema: template-context-v1alpha1.schema.json#/$defs/enriched_edge
 type EnrichedEdge struct {

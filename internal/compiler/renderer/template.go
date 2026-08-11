@@ -353,6 +353,16 @@ type orderedMapForTemplate interface {
 	TemplateAlphabeticalMap() map[string]any
 }
 
+// templateUntaggedKeys is satisfied by a context type carrying data that no struct
+// tag exposes but whose template view must include it anyway. The struct walk
+// merges the returned keys over the tag-derived ones, so such a type keeps every
+// tag-driven field exactly as it was and gains only what the tags hide — which is
+// what lets one type declare a template projection without a second surface beside
+// its declared fields.
+type templateUntaggedKeys interface {
+	TemplateUntaggedKeys() map[string]any
+}
+
 // toLowercaseMap walks an arbitrary Go value and produces a representation
 // shaped for Go text/template consumption. It is what makes the render context
 // readable the way a Recipe author writes it: templates address fields by their
@@ -375,6 +385,12 @@ type orderedMapForTemplate interface {
 //     name. `omitempty` and `omitzero` are treated alike — either one omits the
 //     field when it is zero, and for a struct that declares IsZero() that
 //     method decides.
+//   - A struct declaring TemplateUntaggedKeys additionally contributes those
+//     keys alongside its tag-derived ones, at the same level and addressed the
+//     same way. It is how a type whose own (un)marshal methods route keys into
+//     an untagged field — the delivery pipe's custom mechanisms are the case —
+//     reaches a template, since this walk reads tags and never a marshaller. A
+//     tag-derived key wins on collision.
 //   - types.OrderedMap[V] (detected via orderedMapForTemplate interface):
 //     unwrapped to map[string]any via TemplateAlphabeticalMap, then values
 //     recursively walked — so a nested OrderedMap is unwrapped at every level
@@ -467,7 +483,43 @@ func walkStruct(v reflect.Value) map[string]any {
 		}
 		out[name] = walkForTemplate(fv)
 	}
+	mergeUntaggedKeys(v, out)
 	return out
+}
+
+// mergeUntaggedKeys adds a type's untagged template keys to its walked field set.
+//
+// Iterating the returned map is safe here where it usually would not be: the loop
+// only assigns distinct keys into another map, so the merged set is identical
+// whatever order the keys arrive in and no iteration order can reach the rendered
+// bytes. Author order is carried by the provider's own ordered iteration, which is
+// where it is load-bearing.
+//
+// A tag-derived key wins over an untagged one. The two sets cannot collide today —
+// a type routing keys into an untagged field dispatches the tagged names into their
+// own fields first, so a name with a field can never also arrive here — and the
+// guard states that precedence rather than resolving a live conflict.
+func mergeUntaggedKeys(v reflect.Value, out map[string]any) {
+	var src templateUntaggedKeys
+	if v.CanInterface() {
+		if u, ok := v.Interface().(templateUntaggedKeys); ok {
+			src = u
+		}
+	}
+	if src == nil && v.CanAddr() && v.Addr().CanInterface() {
+		if u, ok := v.Addr().Interface().(templateUntaggedKeys); ok {
+			src = u
+		}
+	}
+	if src == nil {
+		return
+	}
+	for k, val := range src.TemplateUntaggedKeys() {
+		if _, taken := out[k]; taken {
+			continue
+		}
+		out[k] = walkForTemplate(reflect.ValueOf(val))
+	}
 }
 
 func walkMap(v reflect.Value) map[string]any {
