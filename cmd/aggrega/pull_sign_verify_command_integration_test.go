@@ -252,7 +252,7 @@ func TestIntegration_PullCommandVerifiesSignedPlugin_Keyed(t *testing.T) {
 		ws := writePipelinePluginConsumerWorkspace(t, host, pluginURI, pubPEM, signer)
 		t.Chdir(ws)
 
-		if perr := pullRun(pullConfig{ReleasePath: "release.yaml", CatalogDirs: []string{std}}); perr != nil {
+		if perr := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), ReleasePath: "release.yaml", CatalogDirs: []string{std}}); perr != nil {
 			t.Fatalf("a signed plugin under a matching pinned key must PULL and VERIFY; got: %v", perr)
 		}
 
@@ -286,7 +286,7 @@ func TestIntegration_PullCommandVerifiesSignedPlugin_Keyed(t *testing.T) {
 
 		// Build reads the recorded facts and completes: signing changes the
 		// supply-chain trust, not the buildability.
-		if berr := dispatchBuild(nil, "release.yaml", []string{std}, false, os.Stderr, os.Stdout); berr != nil {
+		if berr := dispatchBuild(resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), "release.yaml", []string{std}, false, os.Stderr, os.Stdout); berr != nil {
 			t.Fatalf("build after verified pull: %v", berr)
 		}
 	})
@@ -306,7 +306,7 @@ func TestIntegration_PullCommandVerifiesSignedPlugin_Keyed(t *testing.T) {
 		ws := writePipelinePluginConsumerWorkspace(t, host, pluginURI, wrongPubPEM, signer)
 		t.Chdir(ws)
 
-		perr := pullRun(pullConfig{ReleasePath: "release.yaml"})
+		perr := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), ReleasePath: "release.yaml"})
 		if !errors.Is(perr, signing.ErrSignatureVerificationFailed()) {
 			t.Fatalf("a wrong pinned key must HALT the pull with ErrSignatureVerificationFailed; got: %v", perr)
 		}
@@ -321,7 +321,7 @@ func TestIntegration_PullCommandVerifiesSignedPlugin_Keyed(t *testing.T) {
 		ws := writePipelinePluginConsumerWorkspace(t, host, pluginURI, pubPEM, nil)
 		t.Chdir(ws)
 
-		perr := pullRun(pullConfig{ReleasePath: "release.yaml"})
+		perr := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), ReleasePath: "release.yaml"})
 		if !errors.Is(perr, signing.ErrNoSignatureFound()) {
 			t.Fatalf("an unsigned plugin under a require-signatures policy must HALT with ErrNoSignatureFound; got: %v", perr)
 		}

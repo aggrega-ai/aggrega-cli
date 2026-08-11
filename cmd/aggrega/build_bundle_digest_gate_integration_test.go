@@ -217,26 +217,31 @@ func TestIntegration_BuildBundleDigestGate(t *testing.T) {
 	// pullSigned publishes the SIGNED mutator, writes a verify-if-present
 	// workspace, chdir's into it, and runs the real pull so the guest's bundle is
 	// cached and its digest recorded on the plugin row. Returns the loaded
-	// lockfile and the .wasm artifact URI.
-	pullSigned := func(t *testing.T) (*lockfile.Lockfile, string) {
+	// lockfile, the .wasm artifact URI, and the workspace directory it built, so
+	// each caller's own build declares that directory as the workspace it resolves
+	// instead of leaving it to be discovered.
+	pullSigned := func(t *testing.T) (*lockfile.Lockfile, string, string) {
 		t.Helper()
 		host := startRegistry(t, nil)
 		configSocketFixtureCatalog(t, host)
 		publishSocketPluginEntitySigned(t, host, mutatorSocket, "1.0.0", mutatorPath, "governance", "mutate", signer)
 		ws := writeVerifyIfPresentConfigSocketWorkspace(t, host, pubPEM, pluginsBlock)
 		t.Chdir(ws)
-		if perr := pullRun(pullConfig{ReleasePath: "release.yaml", CatalogDirs: []string{std}}); perr != nil {
+		if perr := pullRun(pullConfig{
+			ws:          resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}),
+			ReleasePath: "release.yaml", CatalogDirs: []string{std},
+		}); perr != nil {
 			t.Fatalf("signed pull: %v", perr)
 		}
 		lf, _, lerr := lockfile.LoadLockfile(lockfile.PathFor("release.yaml"))
 		if lerr != nil {
 			t.Fatalf("load lockfile after signed pull: %v", lerr)
 		}
-		return lf, artifactURIFor(host)
+		return lf, artifactURIFor(host), ws
 	}
 
 	t.Run("intact_bundle_builds_and_socket_runs", func(t *testing.T) {
-		lf, wasmURI := pullSigned(t)
+		lf, wasmURI, ws := pullSigned(t)
 		row := findLockfilePluginRow(t, lf, wasmURI)
 		if row.Signature == nil || row.Signature.BundleDigest == "" {
 			t.Fatalf(".wasm row recorded no signature bundle digest; verify-when-signed cannot engage: %+v", row.Signature)
@@ -247,7 +252,7 @@ func TestIntegration_BuildBundleDigestGate(t *testing.T) {
 			t.Fatalf("cached signature bundle absent at %s: %v", bundlePath, serr)
 		}
 
-		if berr := dispatchBuild(nil, "release.yaml", []string{std}, false, os.Stderr, os.Stdout); berr != nil {
+		if berr := dispatchBuild(resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), "release.yaml", []string{std}, false, os.Stderr, os.Stdout); berr != nil {
 			t.Fatalf("intact signed guest must build cleanly; got: %v", berr)
 		}
 		// The mutator ran: its injected label reached the rendered artifact.
@@ -257,7 +262,7 @@ func TestIntegration_BuildBundleDigestGate(t *testing.T) {
 	})
 
 	t.Run("tampered_bundle_rejected_before_instantiation", func(t *testing.T) {
-		lf, wasmURI := pullSigned(t)
+		lf, wasmURI, ws := pullSigned(t)
 		row := findLockfilePluginRow(t, lf, wasmURI)
 		if row.Signature == nil || row.Signature.BundleDigest == "" {
 			t.Fatalf(".wasm row recorded no signature bundle digest: %+v", row.Signature)
@@ -269,14 +274,14 @@ func TestIntegration_BuildBundleDigestGate(t *testing.T) {
 			t.Fatalf("tamper cached bundle %s: %v", bundlePath, werr)
 		}
 
-		berr := dispatchBuild(nil, "release.yaml", []string{std}, false, os.Stderr, os.Stdout)
+		berr := dispatchBuild(resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), "release.yaml", []string{std}, false, os.Stderr, os.Stdout)
 		if !errors.Is(berr, pluginpath.ErrPluginBundleDigestMismatch()) {
 			t.Fatalf("a tampered cached bundle must halt with ErrPluginBundleDigestMismatch before instantiation; got: %v", berr)
 		}
 	})
 
 	t.Run("tampered_wasm_rejected_by_content_pin", func(t *testing.T) {
-		lf, wasmURI := pullSigned(t)
+		lf, wasmURI, ws := pullSigned(t)
 		row := findLockfilePluginRow(t, lf, wasmURI)
 		// Overwrite the cached .wasm content blob → the existing content-digest pin
 		// halts before the bundle gate is reached (non-regression).
@@ -286,7 +291,7 @@ func TestIntegration_BuildBundleDigestGate(t *testing.T) {
 		}
 		overwriteCachedBlobByDigest(t, filepath.Join(cwd, ".aggrega", "cache"), row.Digest, []byte("tampered-wasm-bytes-not-a-module"))
 
-		berr := dispatchBuild(nil, "release.yaml", []string{std}, false, os.Stderr, os.Stdout)
+		berr := dispatchBuild(resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), "release.yaml", []string{std}, false, os.Stderr, os.Stdout)
 		if !errors.Is(berr, oci.ErrFetchIntegrity()) {
 			t.Fatalf("a tampered .wasm must halt with ErrFetchIntegrity via the content-digest pin; got: %v", berr)
 		}
@@ -300,7 +305,10 @@ func TestIntegration_BuildBundleDigestGate(t *testing.T) {
 		publishSocketPluginEntity(t, host, mutatorSocket, "1.0.0", mutatorPath, "governance", "mutate")
 		ws := writeVerifyIfPresentConfigSocketWorkspace(t, host, pubPEM, pluginsBlock)
 		t.Chdir(ws)
-		if perr := pullRun(pullConfig{ReleasePath: "release.yaml", CatalogDirs: []string{std}}); perr != nil {
+		if perr := pullRun(pullConfig{
+			ws:          resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}),
+			ReleasePath: "release.yaml", CatalogDirs: []string{std},
+		}); perr != nil {
 			t.Fatalf("unsigned pull under a non-requiring policy: %v", perr)
 		}
 		lf, _, lerr := lockfile.LoadLockfile(lockfile.PathFor("release.yaml"))
@@ -312,7 +320,7 @@ func TestIntegration_BuildBundleDigestGate(t *testing.T) {
 			t.Fatalf("unsigned guest recorded a signature fact %+v; verify-when-signed requires none", row.Signature)
 		}
 		// The gate is a no-op with no recorded fact: the build is NOT newly refused.
-		if berr := dispatchBuild(nil, "release.yaml", []string{std}, false, os.Stderr, os.Stdout); berr != nil {
+		if berr := dispatchBuild(resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), "release.yaml", []string{std}, false, os.Stderr, os.Stdout); berr != nil {
 			t.Fatalf("an unsigned guest must build per existing policy (no new refusal); got: %v", berr)
 		}
 		if found, tree := distTreeContains(t, "dist", proofMutatorLabel); !found {

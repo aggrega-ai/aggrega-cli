@@ -143,7 +143,7 @@ func TestIntegration_ProviderConfigInvariance_Serve(t *testing.T) {
 	pinned := "plugins:\n  providers:\n    - capability: " + capability + "\n      uri: " + pluginURI + "\n"
 	ws := writeCustomProviderWorkspace(t, host, capability, pinned, true)
 	t.Chdir(ws)
-	if err := pullRun(pullConfig{ReleasePath: "release.yaml", CatalogDirs: catDirs}); err != nil {
+	if err := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), ReleasePath: "release.yaml", CatalogDirs: catDirs}); err != nil {
 		t.Fatalf("registry pull: %v", err)
 	}
 
@@ -204,7 +204,7 @@ func TestIntegration_MutatorConfigInvariance_Serve(t *testing.T) {
 	pinned := "plugins:\n  governance:\n    - uri: " + mutatorSocket + ":1.0.0\n      role: label-transform\n"
 	ws := writeConfigSocketWorkspace(t, host, pinned, true)
 	t.Chdir(ws)
-	if err := pullRun(pullConfig{ReleasePath: "release.yaml", CatalogDirs: catDirs}); err != nil {
+	if err := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), ReleasePath: "release.yaml", CatalogDirs: catDirs}); err != nil {
 		t.Fatalf("registry pull (mutator attached): %v", err)
 	}
 	lf, _, err := lockfile.LoadLockfile(lockfile.PathFor("release.yaml"))
@@ -274,7 +274,7 @@ func TestIntegration_RegistrySocketFrozenBuild_ReconstructsSocketAxis(t *testing
 		pinned := "plugins:\n  providers:\n    - capability: " + capability + "\n      uri: " + pluginURI + "\n"
 		ws := writeCustomProviderWorkspace(t, host, capability, pinned, true)
 		t.Chdir(ws)
-		if err := pullRun(pullConfig{ReleasePath: "release.yaml", CatalogDirs: catDirs}); err != nil {
+		if err := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), ReleasePath: "release.yaml", CatalogDirs: catDirs}); err != nil {
 			t.Fatalf("registry pull: %v", err)
 		}
 		assertFrozenBuildGreenAndByteIdentical(t, host, catDirs, pinned, renderedNodePrefix)
@@ -291,7 +291,7 @@ func TestIntegration_RegistrySocketFrozenBuild_ReconstructsSocketAxis(t *testing
 		pinned := "plugins:\n  governance:\n    - uri: " + mutatorSocket + ":1.0.0\n      role: label-transform\n"
 		ws := writeConfigSocketWorkspace(t, host, pinned, true)
 		t.Chdir(ws)
-		if err := pullRun(pullConfig{ReleasePath: "release.yaml", CatalogDirs: catDirs}); err != nil {
+		if err := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), ReleasePath: "release.yaml", CatalogDirs: catDirs}); err != nil {
 			t.Fatalf("registry pull: %v", err)
 		}
 		assertFrozenBuildGreenAndByteIdentical(t, host, catDirs, pinned, "mutator-proof")
@@ -319,7 +319,7 @@ func TestIntegration_RegistrySocketFrozenBuild_TamperedPinStillDrifts(t *testing
 		pinned := "plugins:\n  providers:\n    - capability: " + capability + "\n      uri: " + pluginURI + "\n"
 		ws := writeCustomProviderWorkspace(t, host, capability, pinned, true)
 		t.Chdir(ws)
-		if err := pullRun(pullConfig{ReleasePath: "release.yaml", CatalogDirs: catDirs}); err != nil {
+		if err := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), ReleasePath: "release.yaml", CatalogDirs: catDirs}); err != nil {
 			t.Fatalf("registry pull: %v", err)
 		}
 		assertFrozenBuildDriftsOnTamperedSocketPin(t, host, catDirs, pinned, pluginCoord)
@@ -336,7 +336,7 @@ func TestIntegration_RegistrySocketFrozenBuild_TamperedPinStillDrifts(t *testing
 		pinned := "plugins:\n  governance:\n    - uri: " + mutatorSocket + ":1.0.0\n      role: label-transform\n"
 		ws := writeConfigSocketWorkspace(t, host, pinned, true)
 		t.Chdir(ws)
-		if err := pullRun(pullConfig{ReleasePath: "release.yaml", CatalogDirs: catDirs}); err != nil {
+		if err := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), ReleasePath: "release.yaml", CatalogDirs: catDirs}); err != nil {
 			t.Fatalf("registry pull: %v", err)
 		}
 		assertFrozenBuildDriftsOnTamperedSocketPin(t, host, catDirs, pinned, mutatorSocket)

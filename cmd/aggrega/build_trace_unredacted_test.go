@@ -41,13 +41,15 @@ func TestBuildRejectsUnredactedTraceWithoutTrace(t *testing.T) {
 
 // TestBuildWithTraceDoesNotHitTheFlagPairingHalt is the paired control. Without
 // it, a check that rejected --trace-unredacted unconditionally would satisfy the
-// test above. The build here fails for an unrelated reason — there is no
-// workspace — and the assertion is only that the failure is NOT the pairing one.
+// test above. The build here fails for an unrelated reason — the declared
+// workspace holds no release file — and the assertion is only that the failure is
+// NOT the pairing one.
 func TestBuildWithTraceDoesNotHitTheFlagPairingHalt(t *testing.T) {
-	t.Chdir(t.TempDir())
+	root := t.TempDir()
+	t.Chdir(root)
 
 	var diag, out bytes.Buffer
-	err := dispatchBuildWithDiag(nil, "release.yaml", nil, true,
+	err := dispatchBuildWithDiag(resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), "release.yaml", nil, true,
 		buildDiagOptions{quiet: true},
 		buildRunOptions{traceUnredacted: true}, &diag, &out)
 	if err == nil {

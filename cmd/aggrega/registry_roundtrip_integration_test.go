@@ -524,7 +524,7 @@ func TestIntegration_RegistryBuild_GuardNegatives(t *testing.T) {
 			_ = os.RemoveAll(filepath.Join(ws, ".aggrega"))
 			tc.mutate(t, ws)
 			t.Chdir(ws)
-			err := dispatchBuild(nil, "release.yaml", nil, false, os.Stderr, os.Stdout)
+			err := dispatchBuild(resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), "release.yaml", nil, false, os.Stderr, os.Stdout)
 			if err == nil {
 				t.Fatalf("%s: build SUCCEEDED; want failure with %v", tc.name, tc.wantErr)
 			}
@@ -842,7 +842,7 @@ spec:
 	writeWorkspaceConfig(t, ws, "default_registry: \""+host+"\"\nauto_pull: true\noffline: false")
 	t.Chdir(ws)
 
-	if err := pullRun(pullConfig{ReleasePath: "release.yaml", CatalogDirs: []string{std}}); err != nil {
+	if err := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), ReleasePath: "release.yaml", CatalogDirs: []string{std}}); err != nil {
 		t.Fatalf("registry pull: %v", err)
 	}
 
@@ -925,17 +925,17 @@ spec:
 	// Build: each bare entity reference resolves through the entity-front (reading
 	// the entity from the cached manifest config blob) and the build reads the
 	// cached inline .wasm. This is the publish → pull → BUILD proof.
-	if err := dispatchBuild(nil, "release.yaml", []string{std}, false, os.Stderr, os.Stdout); err != nil {
+	if err := dispatchBuild(resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), "release.yaml", []string{std}, false, os.Stderr, os.Stdout); err != nil {
 		t.Fatalf("registry build (resolving the bare plugin entity refs from cache): %v", err)
 	}
 	firstTree := hashDistTree(t, "dist")
 
 	// A second pull + build reproduces the rendered tree byte-for-byte from the pin.
 	_ = os.RemoveAll("dist")
-	if err := pullRun(pullConfig{ReleasePath: "release.yaml", CatalogDirs: []string{std}}); err != nil {
+	if err := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), ReleasePath: "release.yaml", CatalogDirs: []string{std}}); err != nil {
 		t.Fatalf("second registry pull: %v", err)
 	}
-	if err := dispatchBuild(nil, "release.yaml", []string{std}, false, os.Stderr, os.Stdout); err != nil {
+	if err := dispatchBuild(resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), "release.yaml", []string{std}, false, os.Stderr, os.Stdout); err != nil {
 		t.Fatalf("second registry build: %v", err)
 	}
 	if second := hashDistTree(t, "dist"); second != firstTree {
@@ -956,7 +956,7 @@ spec:
 	}
 	writeWorkspaceConfig(t, ws, "default_registry: \""+host+"\"\nauto_pull: false\noffline: false")
 	_ = os.RemoveAll("dist")
-	if err := dispatchBuild(nil, "release.yaml", []string{std}, false, os.Stderr, os.Stdout); err == nil {
+	if err := dispatchBuild(resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), "release.yaml", []string{std}, false, os.Stderr, os.Stdout); err == nil {
 		t.Fatal("frozen build SUCCEEDED against a tampered plugin manifest; the cached-manifest verify did not reject it")
 	}
 }
@@ -1138,11 +1138,11 @@ func TestIntegration_PipelinePlugin_RuntimeTimeoutFlowsToBuild(t *testing.T) {
 		ws := writePipelinePluginFixtureCatalog(t, host, pluginURI)
 		t.Chdir(ws)
 
-		if err := pullRun(pullConfig{ReleasePath: "release.yaml", CatalogDirs: []string{std}}); err != nil {
+		if err := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), ReleasePath: "release.yaml", CatalogDirs: []string{std}}); err != nil {
 			t.Fatalf("registry pull: %v", err)
 		}
 
-		err := dispatchBuild(nil, "release.yaml", []string{std}, false, os.Stderr, os.Stdout)
+		err := dispatchBuild(resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), "release.yaml", []string{std}, false, os.Stderr, os.Stdout)
 		if err == nil {
 			t.Fatal("build SUCCEEDED with an entity-authored timeoutMs: 1; the tiny per-call cap did not reach the loader")
 		}
@@ -1176,10 +1176,10 @@ func TestIntegration_PipelinePlugin_RuntimeTimeoutFlowsToBuild(t *testing.T) {
 		ws := writePipelinePluginFixtureCatalog(t, host, pluginURI)
 		t.Chdir(ws)
 
-		if err := pullRun(pullConfig{ReleasePath: "release.yaml", CatalogDirs: []string{std}}); err != nil {
+		if err := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), ReleasePath: "release.yaml", CatalogDirs: []string{std}}); err != nil {
 			t.Fatalf("registry pull: %v", err)
 		}
-		if err := dispatchBuild(nil, "release.yaml", []string{std}, false, os.Stderr, os.Stdout); err != nil {
+		if err := dispatchBuild(resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), "release.yaml", []string{std}, false, os.Stderr, os.Stdout); err != nil {
 			t.Fatalf("build FAILED under a generous entity-authored timeout; the same shape that succeeds with timeoutMs: 60000 must build: %v", err)
 		}
 	})
@@ -1335,7 +1335,7 @@ spec:
 	writeWorkspaceConfig(t, ws, "default_registry: \""+host+"\"\nauto_pull: true\noffline: false")
 	t.Chdir(ws)
 
-	err := dispatchBuild(nil, "release.yaml", nil, false, os.Stderr, os.Stdout)
+	err := dispatchBuild(resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), "release.yaml", nil, false, os.Stderr, os.Stdout)
 	if err == nil {
 		t.Fatalf("required-socket: build SUCCEEDED; want failure with ErrMissingRequiredSocket")
 	}
@@ -1390,7 +1390,7 @@ func TestIntegration_RegistryAuthRefuse(t *testing.T) {
 	_ = os.Remove(filepath.Join(ws, "release.lock"))
 	_ = os.RemoveAll(filepath.Join(ws, ".aggrega"))
 	t.Chdir(ws)
-	err := pullRun(pullConfig{ReleasePath: "release.yaml"})
+	err := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), ReleasePath: "release.yaml"})
 	// The security property: the pull is REFUSED against an auth-demanding
 	// registry — it does not silently succeed. (The exact unauthorized +
 	// `docker login <host>` remediation string is unit-tested in
@@ -1482,7 +1482,11 @@ func TestIntegration_LocalPathPinInvariance(t *testing.T) {
 			// Drop the example's workspace config: its catalog_dirs are relative to
 			// the real example location and do not resolve from the temp copy. We
 			// supply the catalog dirs explicitly (absolute) instead — the same
-			// local + standard stack the example resolves against in place.
+			// local + standard stack the example resolves against in place. The
+			// removal is load-bearing for the declared workspace below: a config
+			// already present at the declared root is left exactly as written, so
+			// leaving the copied one in place would reinstate its unresolvable
+			// catalog_dirs.
 			_ = os.Remove(filepath.Join(ws, ".aggrega-config.yaml"))
 			_ = os.RemoveAll(filepath.Join(ws, ".aggrega"))
 
@@ -1496,7 +1500,7 @@ func TestIntegration_LocalPathPinInvariance(t *testing.T) {
 
 			t.Chdir(ws)
 			_ = os.Remove(lockfile.PathFor(tc.release)) // discard any copied stale lock
-			if err := pullRun(pullConfig{ReleasePath: tc.release, CatalogDirs: dirs, Upgrade: true}); err != nil {
+			if err := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), ReleasePath: tc.release, CatalogDirs: dirs, Upgrade: true}); err != nil {
 				t.Fatalf("regenerate lock: %v", err)
 			}
 			got := canonicalPins(t, lockfile.PathFor(tc.release))

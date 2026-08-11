@@ -174,6 +174,7 @@ func TestPushPluginRequiresPluginFlag(t *testing.T) {
 	store := memory.New()
 
 	err := pushRun(pushConfig{
+		ws:         resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}),
 		EntityPath: entityPath,
 		Registry:   "hub.aggrega.ai",
 		PushTarget: store,
@@ -213,6 +214,7 @@ spec:
 
 	store := memory.New()
 	err := pushRun(pushConfig{
+		ws:         resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}),
 		EntityPath: entityPath,
 		PluginPath: pluginPath,
 		Registry:   "hub.aggrega.ai",
