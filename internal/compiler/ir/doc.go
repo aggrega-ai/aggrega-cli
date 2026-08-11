@@ -42,7 +42,10 @@
 //   - Determinism. Every iteration in this package that contributes to
 //     IRGraph output runs in deterministic order: the topology's Nodes
 //     OrderedMap preserves Aggregate author order; the edges slice is
-//     inherited from topology already sorted alphabetical-by-source;
+//     inherited from topology in compositional author order — the
+//     cross-product of component sequence × within-component `uses:`
+//     socket order × within-socket alias order × per-node
+//     feature/secret attachments — and is consumed without re-sorting;
 //     secrets and features per-node iterate the topology's
 //     already-ordered attachments.
 //
