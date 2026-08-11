@@ -144,7 +144,7 @@ func TestFreezeFullURIRecipeOnePullFixpoint(t *testing.T) {
 
 	// A single pull: resolves the closure, freezes the recipe's pins into its
 	// file, and writes the lockfile.
-	if err := pullRun(pullConfig{ReleasePath: releasePath, CatalogDirs: []string{catalogDir}, DiagOut: io.Discard, Out: io.Discard, diag: buildDiagOptions{quiet: true}}); err != nil {
+	if err := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), ReleasePath: releasePath, CatalogDirs: []string{catalogDir}, DiagOut: io.Discard, Out: io.Discard, diag: buildDiagOptions{quiet: true}}); err != nil {
 		t.Fatalf("pull: %v", err)
 	}
 
@@ -197,7 +197,7 @@ func TestFreezeFullURIRecipeOnePullFixpoint(t *testing.T) {
 
 	// The one-pull fixpoint: a build after a single pull verifies the frozen
 	// lockfile against a freshly-recomputed closure and must NOT report drift.
-	if err := dispatchBuildWithDiag(nil, releasePath, []string{catalogDir}, false, buildDiagOptions{quiet: true}, buildRunOptions{outDir: filepath.Join(root, "dist", "main")}, io.Discard, io.Discard); err != nil {
+	if err := dispatchBuildWithDiag(resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, []string{catalogDir}, false, buildDiagOptions{quiet: true}, buildRunOptions{outDir: filepath.Join(root, "dist", "main")}, io.Discard, io.Discard); err != nil {
 		if errors.Is(err, lockfile.ErrLockfileDrift()) {
 			t.Fatalf("build after a single pull reported lockfile drift — the one-pull-lag bug: %v", err)
 		}

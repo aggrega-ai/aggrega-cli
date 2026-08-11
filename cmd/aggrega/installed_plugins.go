@@ -58,9 +58,19 @@ var resolveCLIPluginDigest = func(rw *workspaceconfig.ResolvedWorkspace, uri str
 
 // cliPluginRegistrations yields the CLI-extension commands to register for this
 // invocation, derived from the resolved config cascade and the describe cache.
-// Production resolves the workspace and projects its plugins.cli list; a test
-// substitutes a fixture so tree construction touches neither disk nor a guest.
-var cliPluginRegistrations = productionCLIPluginRegistrations
+//
+// It defaults to contributing nothing, and the process entry point wires the
+// live implementation — the same shape the unknown-command install hint uses.
+// The default matters because command-tree construction happens before any
+// command runs, so the live implementation has no resolved workspace to be
+// handed and resolves one from the working directory. Defaulting to the live
+// implementation would make every caller of the tree constructor read whatever
+// configuration sits above its working directory: a test would take the
+// developer's own configuration as input, and the generated command reference
+// would vary with whichever CLI plugins the machine building it happens to have
+// configured. A test that wants registrations substitutes a fixture, so tree
+// construction touches neither disk nor a guest.
+var cliPluginRegistrations = func() []cliCommandReg { return nil }
 
 // pluginRegistrationWarnWriter receives the diagnostics emitted when a configured
 // plugin cannot be registered as a command. It defaults to standard error and is

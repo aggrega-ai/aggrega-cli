@@ -64,7 +64,7 @@ func TestInspectBareName_Plugin(t *testing.T) {
 	catDir := writeBareNameCatalog(t, map[string]string{"plugin.yaml": pluginFixture})
 
 	var buf bytes.Buffer
-	if err := dispatchInspect(resolveTempWorkspace(t), "provider/helm-renderer", []string{catDir}, testInspectOptions(&buf)); err != nil {
+	if err := dispatchInspect(resolveTempWorkspace(t, tempWorkspaceOptions{}), "provider/helm-renderer", []string{catDir}, testInspectOptions(&buf)); err != nil {
 		t.Fatalf("bare plugin coordinate should inspect cleanly; got: %v", err)
 	}
 	out := buf.String()
@@ -84,7 +84,7 @@ func TestInspectBareName_Component_Preserved(t *testing.T) {
 	catDir := writeBareNameCatalog(t, map[string]string{"component.yaml": bareNameComponentFixture})
 
 	var buf bytes.Buffer
-	if err := dispatchInspect(resolveTempWorkspace(t), "core/api-server", []string{catDir}, testInspectOptions(&buf)); err != nil {
+	if err := dispatchInspect(resolveTempWorkspace(t, tempWorkspaceOptions{}), "core/api-server", []string{catDir}, testInspectOptions(&buf)); err != nil {
 		t.Fatalf("bare Component name should inspect cleanly; got: %v", err)
 	}
 	out := buf.String()
@@ -103,7 +103,7 @@ func TestInspectBareName_Feature(t *testing.T) {
 	catDir := writeBareNameCatalog(t, map[string]string{"feature.yaml": bareNameFeatureFixture})
 
 	var buf bytes.Buffer
-	if err := dispatchInspect(resolveTempWorkspace(t), "core/metrics", []string{catDir}, testInspectOptions(&buf)); err != nil {
+	if err := dispatchInspect(resolveTempWorkspace(t, tempWorkspaceOptions{}), "core/metrics", []string{catDir}, testInspectOptions(&buf)); err != nil {
 		t.Fatalf("bare Feature name should inspect cleanly; got: %v", err)
 	}
 	out := buf.String()
@@ -123,7 +123,7 @@ func TestInspectBareName_Unresolvable(t *testing.T) {
 	t.Parallel()
 	catDir := writeBareNameCatalog(t, map[string]string{"component.yaml": bareNameComponentFixture})
 
-	err := dispatchInspect(resolveTempWorkspace(t), "core/does-not-exist", []string{catDir}, testInspectOptions(&bytes.Buffer{}))
+	err := dispatchInspect(resolveTempWorkspace(t, tempWorkspaceOptions{}), "core/does-not-exist", []string{catDir}, testInspectOptions(&bytes.Buffer{}))
 	if err == nil {
 		t.Fatal("expected not-found error for an unresolvable bare name; got nil")
 	}

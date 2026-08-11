@@ -117,7 +117,7 @@ spec:
 
 	// The build writes artifacts under a relative `dist/` in the process working
 	// directory; anchor it at root so the output is hermetic to this test.
-	ws := resolveTempWorkspace(t)
+	ws := resolveTempWorkspace(t, tempWorkspaceOptions{})
 	t.Chdir(root)
 
 	// Build is read-only: prime the lockfile with an explicit pull, its output routed

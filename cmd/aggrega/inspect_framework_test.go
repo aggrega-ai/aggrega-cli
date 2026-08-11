@@ -77,7 +77,7 @@ func TestInspectComponent_DefaultText_Golden(t *testing.T) {
 	path := writeReferenceComponent(t)
 	var buf bytes.Buffer
 	opts := testInspectOptions(&buf)
-	if err := dispatchInspect(resolveTempWorkspace(t), path, nil, opts); err != nil {
+	if err := dispatchInspect(resolveTempWorkspace(t, tempWorkspaceOptions{}), path, nil, opts); err != nil {
 		t.Fatalf("inspect: %v", err)
 	}
 	// The header carries the temp path; mask it to the basename so the golden
@@ -94,7 +94,7 @@ func TestInspectComponent_List_Golden(t *testing.T) {
 	var buf bytes.Buffer
 	opts := testInspectOptions(&buf)
 	opts.level = levelList
-	if err := dispatchInspect(resolveTempWorkspace(t), path, nil, opts); err != nil {
+	if err := dispatchInspect(resolveTempWorkspace(t, tempWorkspaceOptions{}), path, nil, opts); err != nil {
 		t.Fatalf("inspect --list: %v", err)
 	}
 	compareGoldenKind(t, "component", "list.text.golden", buf.Bytes())
@@ -108,7 +108,7 @@ func TestInspectComponent_YAML_Golden(t *testing.T) {
 	var buf bytes.Buffer
 	opts := testInspectOptions(&buf)
 	opts.output = outputYAML
-	if err := dispatchInspect(resolveTempWorkspace(t), path, nil, opts); err != nil {
+	if err := dispatchInspect(resolveTempWorkspace(t, tempWorkspaceOptions{}), path, nil, opts); err != nil {
 		t.Fatalf("inspect --output yaml: %v", err)
 	}
 	compareGoldenKind(t, "component", "yaml.golden", buf.Bytes())
@@ -121,7 +121,7 @@ func TestInspectComponent_ColorOnHeader(t *testing.T) {
 	path := writeReferenceComponent(t)
 	var buf bytes.Buffer
 	opts := inspectOptions{out: &buf, colorize: newColorizer(colorAlways, &buf, false)}
-	if err := dispatchInspect(resolveTempWorkspace(t), path, nil, opts); err != nil {
+	if err := dispatchInspect(resolveTempWorkspace(t, tempWorkspaceOptions{}), path, nil, opts); err != nil {
 		t.Fatalf("inspect --color=always: %v", err)
 	}
 	if !hasANSI(buf.String()) {
@@ -139,7 +139,7 @@ func TestInspectPath_NonStandaloneKind(t *testing.T) {
 	if err := os.WriteFile(path, []byte("apiVersion: aggrega.ai/v1alpha1\nkind: Workload\nmetadata:\n  name: w\n"), 0o644); err != nil {
 		t.Fatalf("write: %v", err)
 	}
-	err := inspectPath(resolveTempWorkspace(t), path, nil, testInspectOptions(&bytes.Buffer{}))
+	err := inspectPath(resolveTempWorkspace(t, tempWorkspaceOptions{}), path, nil, testInspectOptions(&bytes.Buffer{}))
 	if err == nil {
 		t.Fatal("Workload should hard-error as non-standalone")
 	}
@@ -159,7 +159,7 @@ func TestInspectPath_UnknownKind(t *testing.T) {
 	if err := os.WriteFile(path, []byte("apiVersion: aggrega.ai/v1alpha1\nkind: Sprocket\n"), 0o644); err != nil {
 		t.Fatalf("write: %v", err)
 	}
-	err := inspectPath(resolveTempWorkspace(t), path, nil, testInspectOptions(&bytes.Buffer{}))
+	err := inspectPath(resolveTempWorkspace(t, tempWorkspaceOptions{}), path, nil, testInspectOptions(&bytes.Buffer{}))
 	if err == nil || !strings.Contains(err.Error(), "unknown entity kind") {
 		t.Errorf("unknown kind should report unknown entity kind; got %v", err)
 	}

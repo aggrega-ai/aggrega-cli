@@ -26,7 +26,7 @@ func frozenEnv(vars map[string]string) func(string) string {
 // destination is printed.
 func TestRegistryAddDefaultsToGlobal(t *testing.T) {
 	t.Parallel()
-	rw := resolveTempWorkspace(t)
+	rw := resolveTempWorkspace(t, tempWorkspaceOptions{})
 	global := filepath.Join(t.TempDir(), "aggrega", "config.yaml")
 	lookup := frozenEnv(map[string]string{"AGGREGA_CONFIG": global})
 
@@ -67,7 +67,7 @@ func TestRegistryAddDefaultsToGlobal(t *testing.T) {
 // workspace config file despite its tool nature.
 func TestRegistryAddWorkspaceOverride(t *testing.T) {
 	t.Parallel()
-	rw := resolveTempWorkspace(t)
+	rw := resolveTempWorkspace(t, tempWorkspaceOptions{})
 	var out bytes.Buffer
 	if err := registryAddRun(registryAddConfig{
 		Host:      "ws.example.com",
@@ -91,7 +91,7 @@ func TestRegistryAddWorkspaceOverride(t *testing.T) {
 // usage error rather than an ambiguous write.
 func TestRegistryAddBothFlagsUsageError(t *testing.T) {
 	t.Parallel()
-	rw := resolveTempWorkspace(t)
+	rw := resolveTempWorkspace(t, tempWorkspaceOptions{})
 	err := registryAddRun(registryAddConfig{
 		Host:      "x.example.com",
 		Global:    true,
@@ -109,7 +109,7 @@ func TestRegistryAddBothFlagsUsageError(t *testing.T) {
 // at the write.
 func TestRegistryAddGlobalCreatesMissingParentDir(t *testing.T) {
 	t.Parallel()
-	rw := resolveTempWorkspace(t)
+	rw := resolveTempWorkspace(t, tempWorkspaceOptions{})
 	// $AGGREGA_CONFIG under two not-yet-created directory levels.
 	global := filepath.Join(t.TempDir(), "cfg", "aggrega", "config.yaml")
 	if err := registryAddRun(registryAddConfig{

@@ -162,7 +162,7 @@ func TestBuildResolvesRemotePinnedAggregate(t *testing.T) {
 
 	// Initial pull with both aggregates authored locally → a real lockfile that
 	// pins them at Tier-1.
-	if err := pullRun(pullConfig{ReleasePath: releasePath, CatalogDirs: []string{catalogDir}}); err != nil {
+	if err := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), ReleasePath: releasePath, CatalogDirs: []string{catalogDir}}); err != nil {
 		t.Fatalf("initial pullRun: %v", err)
 	}
 	lf, _, err := lockfile.LoadLockfile(filepath.Join(root, "release.lock"))
@@ -190,7 +190,7 @@ func TestBuildResolvesRemotePinnedAggregate(t *testing.T) {
 
 	// Build is hermetic (auto_pull off, no puller) — it must resolve the
 	// sub-aggregate from the cache via the bridge during topology flatten.
-	if err := dispatchBuild(nil, releasePath, []string{catalogDir}, false, os.Stderr, os.Stdout); err != nil {
+	if err := dispatchBuild(resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, []string{catalogDir}, false, os.Stderr, os.Stdout); err != nil {
 		t.Fatalf("dispatchBuild with bridged remote sub-aggregate: %v", err)
 	}
 

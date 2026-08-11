@@ -240,7 +240,7 @@ func TestFormatCompilerError_AssertionFailureReachesTerminal(t *testing.T) {
 	catalogDirs = []string{filepath.Join(root, "catalog")}
 	traceEnabled = false
 
-	ws := resolveTempWorkspace(t)
+	ws := resolveTempWorkspace(t, tempWorkspaceOptions{})
 	if err := pullRun(pullConfig{ReleasePath: releasePath, CatalogDirs: catalogDirs, ws: ws}); err != nil {
 		t.Fatalf("prime lockfile via pull: %v", err)
 	}

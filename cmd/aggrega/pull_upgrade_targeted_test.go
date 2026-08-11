@@ -123,7 +123,7 @@ func TestPullTargetedUpgradePreservesLockfileAndHolds(t *testing.T) {
 	rel, cat := twoEntityFixture(t, root)
 	lockPath := filepath.Join(root, "release.lock")
 
-	if err := pullRun(pullConfig{ReleasePath: rel, CatalogDirs: []string{cat}}); err != nil {
+	if err := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), ReleasePath: rel, CatalogDirs: []string{cat}}); err != nil {
 		t.Fatalf("initial pull: %v", err)
 	}
 	// A prior render-time external-input pin the targeted upgrade must preserve.
@@ -134,7 +134,7 @@ func TestPullTargetedUpgradePreservesLockfileAndHolds(t *testing.T) {
 	}
 
 	// Targeted upgrade of the recipe only.
-	if err := pullRun(pullConfig{ReleasePath: rel, CatalogDirs: []string{cat}, Upgrade: true, UpgradeTargets: []string{"server-recipe"}}); err != nil {
+	if err := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), ReleasePath: rel, CatalogDirs: []string{cat}, Upgrade: true, UpgradeTargets: []string{"server-recipe"}}); err != nil {
 		t.Fatalf("targeted upgrade: %v", err)
 	}
 
@@ -174,10 +174,10 @@ func TestPullTargetedUpgradeNoMatchHalts(t *testing.T) {
 	t.Chdir(root)
 	rel, cat := twoEntityFixture(t, root)
 
-	if err := pullRun(pullConfig{ReleasePath: rel, CatalogDirs: []string{cat}}); err != nil {
+	if err := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), ReleasePath: rel, CatalogDirs: []string{cat}}); err != nil {
 		t.Fatalf("initial pull: %v", err)
 	}
-	err := pullRun(pullConfig{ReleasePath: rel, CatalogDirs: []string{cat}, Upgrade: true, UpgradeTargets: []string{"core/nonexistent"}})
+	err := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), ReleasePath: rel, CatalogDirs: []string{cat}, Upgrade: true, UpgradeTargets: []string{"core/nonexistent"}})
 	if err == nil {
 		t.Fatal("expected a loud halt for an unmatched upgrade target; got nil")
 	}
@@ -194,7 +194,7 @@ func TestPullTargetedUpgradeNoPriorLockfileHalts(t *testing.T) {
 	rel, cat := twoEntityFixture(t, root)
 	// Deliberately do NOT create a lockfile first.
 
-	err := pullRun(pullConfig{ReleasePath: rel, CatalogDirs: []string{cat}, Upgrade: true, UpgradeTargets: []string{"server-recipe"}})
+	err := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), ReleasePath: rel, CatalogDirs: []string{cat}, Upgrade: true, UpgradeTargets: []string{"server-recipe"}})
 	if err == nil {
 		t.Fatal("expected a loud halt for a targeted upgrade with no prior lockfile; got nil")
 	}

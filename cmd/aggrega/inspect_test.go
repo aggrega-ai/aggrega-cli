@@ -26,7 +26,7 @@ const fullstackAppInspectCatalog = "../../internal/compiler/testdata/fullstack-a
 func runInspectCaptured(t *testing.T, releasePath string) string {
 	t.Helper()
 	var buf bytes.Buffer
-	if err := dispatchInspect(resolveTempWorkspace(t), releasePath, []string{fullstackAppInspectCatalog}, testInspectOptions(&buf)); err != nil {
+	if err := dispatchInspect(resolveTempWorkspace(t, tempWorkspaceOptions{}), releasePath, []string{fullstackAppInspectCatalog}, testInspectOptions(&buf)); err != nil {
 		t.Fatalf("dispatchInspect(%q): %v", releasePath, err)
 	}
 	return buf.String()
@@ -101,7 +101,7 @@ func TestInspect_AnnotationCrossSide_Annotation_HeterogeneousBrackets(t *testing
 // inspect is deferred.
 func TestInspect_OciUri_ReturnsNotImplemented(t *testing.T) {
 	t.Parallel()
-	err := dispatchInspect(resolveTempWorkspace(t), "oci://registry.example.com/components/api:1.0.0", nil, testInspectOptions(io.Discard))
+	err := dispatchInspect(resolveTempWorkspace(t, tempWorkspaceOptions{}), "oci://registry.example.com/components/api:1.0.0", nil, testInspectOptions(io.Discard))
 	if err == nil {
 		t.Fatal("expected not-implemented error for oci:// argument; got nil")
 	}
@@ -124,7 +124,7 @@ metadata:
   name: test-sprocket
   version: "1.0.0"
 `)
-	err := dispatchInspect(resolveTempWorkspace(t), sprocketPath, nil, testInspectOptions(io.Discard))
+	err := dispatchInspect(resolveTempWorkspace(t, tempWorkspaceOptions{}), sprocketPath, nil, testInspectOptions(io.Discard))
 	if err == nil {
 		t.Fatal("expected unknown-kind error for Sprocket input; got nil")
 	}
@@ -147,7 +147,7 @@ func TestInspect_MissingKind_ReturnsError(t *testing.T) {
 	writeFixture(t, bogusPath, `some_field: value
 another_field: 42
 `)
-	err := dispatchInspect(resolveTempWorkspace(t), bogusPath, nil, testInspectOptions(io.Discard))
+	err := dispatchInspect(resolveTempWorkspace(t, tempWorkspaceOptions{}), bogusPath, nil, testInspectOptions(io.Discard))
 	if err == nil {
 		t.Fatal("expected error on missing-kind file; got nil")
 	}
@@ -177,7 +177,7 @@ spec:
 `)
 
 	var buf bytes.Buffer
-	if err := dispatchInspect(resolveTempWorkspace(t), compPath, nil, testInspectOptions(&buf)); err != nil {
+	if err := dispatchInspect(resolveTempWorkspace(t, tempWorkspaceOptions{}), compPath, nil, testInspectOptions(&buf)); err != nil {
 		t.Fatalf("Component file path should inspect cleanly; got: %v", err)
 	}
 	out := buf.String()

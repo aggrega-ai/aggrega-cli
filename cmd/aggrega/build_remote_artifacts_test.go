@@ -189,7 +189,7 @@ func TestBuildResolvesRemotePinnedArtifactsLibrary(t *testing.T) {
 	catalogDir := filepath.Join(root, "catalog")
 
 	// Initial pull with the library authored locally → a real lockfile pinning it.
-	if err := pullRun(pullConfig{ReleasePath: releasePath, CatalogDirs: []string{catalogDir}}); err != nil {
+	if err := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), ReleasePath: releasePath, CatalogDirs: []string{catalogDir}}); err != nil {
 		t.Fatalf("initial pullRun: %v", err)
 	}
 
@@ -217,7 +217,7 @@ func TestBuildResolvesRemotePinnedArtifactsLibrary(t *testing.T) {
 
 	relocateArtifactsLibraryToCache(t, root, cacheDir, "1.0.0")
 
-	if err := dispatchBuild(nil, releasePath, []string{catalogDir}, false, os.Stderr, os.Stdout); err != nil {
+	if err := dispatchBuild(resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, []string{catalogDir}, false, os.Stderr, os.Stdout); err != nil {
 		t.Fatalf("dispatchBuild with bridged remote artifacts library: %v", err)
 	}
 	remote := readDistTree(t, filepath.Join(root, "dist"))
@@ -226,7 +226,7 @@ func TestBuildResolvesRemotePinnedArtifactsLibrary(t *testing.T) {
 	}
 
 	// Deterministic rebuild — byte-identical output.
-	if err := dispatchBuild(nil, releasePath, []string{catalogDir}, false, os.Stderr, os.Stdout); err != nil {
+	if err := dispatchBuild(resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, []string{catalogDir}, false, os.Stderr, os.Stdout); err != nil {
 		t.Fatalf("second dispatchBuild: %v", err)
 	}
 	if again := readDistTree(t, filepath.Join(root, "dist")); again != remote {
@@ -241,10 +241,10 @@ func TestBuildResolvesRemotePinnedArtifactsLibrary(t *testing.T) {
 	if err := os.Remove(filepath.Join(root, "release.lock")); err != nil {
 		t.Fatalf("remove lockfile for inline re-pull: %v", err)
 	}
-	if err := pullRun(pullConfig{ReleasePath: releasePath, CatalogDirs: []string{catalogDir}}); err != nil {
+	if err := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), ReleasePath: releasePath, CatalogDirs: []string{catalogDir}}); err != nil {
 		t.Fatalf("inline pullRun: %v", err)
 	}
-	if err := dispatchBuild(nil, releasePath, []string{catalogDir}, false, os.Stderr, os.Stdout); err != nil {
+	if err := dispatchBuild(resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, []string{catalogDir}, false, os.Stderr, os.Stdout); err != nil {
 		t.Fatalf("inline dispatchBuild: %v", err)
 	}
 	if inline := readDistTree(t, filepath.Join(root, "dist")); inline != remote {

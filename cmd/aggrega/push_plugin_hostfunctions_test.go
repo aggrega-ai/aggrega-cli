@@ -285,6 +285,7 @@ func TestPushPluginHostFunctionsOutOfSyncHalts(t *testing.T) {
 
 	store := memory.New()
 	err := pushRun(pushConfig{
+		ws:         resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}),
 		EntityPath: entityPath,
 		PluginPath: pluginPath,
 		Registry:   "hub.aggrega.ai",
@@ -316,6 +317,7 @@ func TestPushPluginHostFunctionsInSyncProceeds(t *testing.T) {
 
 	store := memory.New()
 	if err := pushRun(pushConfig{
+		ws:         resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}),
 		EntityPath: entityPath,
 		PluginPath: pluginPath,
 		Registry:   "hub.aggrega.ai",

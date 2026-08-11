@@ -160,7 +160,7 @@ spec:
 		"myapp": {servedTag: "1.0.0", body: registryAggregateBody("myapp", "1.0.0")},
 	}}
 
-	if err := pullRun(pullConfig{ReleasePath: releasePath, CatalogDirs: []string{catalogDir}, puller: puller}); err != nil {
+	if err := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), ReleasePath: releasePath, CatalogDirs: []string{catalogDir}, puller: puller}); err != nil {
 		t.Fatalf("pullRun (registry top-level): %v", err)
 	}
 	if len(puller.calls) == 0 {
@@ -174,7 +174,7 @@ spec:
 
 	// Build is hermetic (no puller) — it must resolve the top-level from the cache
 	// via the bridge.
-	if err := dispatchBuild(nil, releasePath, []string{catalogDir}, false, os.Stderr, os.Stdout); err != nil {
+	if err := dispatchBuild(resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, []string{catalogDir}, false, os.Stderr, os.Stdout); err != nil {
 		t.Fatalf("dispatchBuild (registry top-level from cache): %v", err)
 	}
 	if got := readDistTree(t, filepath.Join(root, "dist")); !strings.Contains(got, "8080") {
@@ -235,7 +235,7 @@ spec:
 		"mysub": {servedTag: "1.0.0", body: registryAggregateBody("mysub", "1.0.0")},
 	}}
 
-	if err := pullRun(pullConfig{ReleasePath: releasePath, CatalogDirs: []string{catalogDir}, puller: puller}); err != nil {
+	if err := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), ReleasePath: releasePath, CatalogDirs: []string{catalogDir}, puller: puller}); err != nil {
 		t.Fatalf("pullRun (registry sub): %v", err)
 	}
 	lf, _, err := lockfile.LoadLockfile(filepath.Join(root, "release.lock"))
@@ -244,7 +244,7 @@ spec:
 	}
 	assertPinned(t, lf, "mysub", "1.0.0")
 
-	if err := dispatchBuild(nil, releasePath, []string{catalogDir}, false, os.Stderr, os.Stdout); err != nil {
+	if err := dispatchBuild(resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, []string{catalogDir}, false, os.Stderr, os.Stdout); err != nil {
 		t.Fatalf("dispatchBuild (registry sub from cache): %v", err)
 	}
 	if got := readDistTree(t, filepath.Join(root, "dist")); !strings.Contains(got, "8080") {
@@ -288,7 +288,7 @@ spec:
 		"myapp": {servedTag: "2.0.0", body: registryAggregateBody("myapp", "1.0.0")},
 	}}
 
-	if err := pullRun(pullConfig{ReleasePath: releasePath, CatalogDirs: []string{catalogDir}, puller: puller}); err != nil {
+	if err := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), ReleasePath: releasePath, CatalogDirs: []string{catalogDir}, puller: puller}); err != nil {
 		t.Fatalf("pullRun (drift): %v", err)
 	}
 	lf, _, err := lockfile.LoadLockfile(filepath.Join(root, "release.lock"))
@@ -299,7 +299,7 @@ spec:
 	assertPinned(t, lf, "myapp", "1.0.0")
 
 	// Build re-derives 1.0.0 via the bridge → tier-1; verify must pass (no drift).
-	if err := dispatchBuild(nil, releasePath, []string{catalogDir}, false, os.Stderr, os.Stdout); err != nil {
+	if err := dispatchBuild(resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, []string{catalogDir}, false, os.Stderr, os.Stdout); err != nil {
 		t.Fatalf("dispatchBuild (drift) must succeed with no drift, got: %v", err)
 	}
 }

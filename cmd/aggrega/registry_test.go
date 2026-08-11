@@ -16,7 +16,7 @@ import (
 // trust policy that loads back through the config resolver.
 func TestRegistryAddKeyless(t *testing.T) {
 	t.Parallel()
-	rw := resolveTempWorkspace(t)
+	rw := resolveTempWorkspace(t, tempWorkspaceOptions{})
 	var out bytes.Buffer
 	err := registryAddRun(registryAddConfig{
 		Host: "keyless.example.com",
@@ -53,7 +53,7 @@ func TestRegistryAddKeyless(t *testing.T) {
 // key read from disk.
 func TestRegistryAddKeyed(t *testing.T) {
 	t.Parallel()
-	rw := resolveTempWorkspace(t)
+	rw := resolveTempWorkspace(t, tempWorkspaceOptions{})
 	keyPath := filepath.Join(t.TempDir(), "acme.pub")
 	const pem = "-----BEGIN PUBLIC KEY-----\nMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE\n-----END PUBLIC KEY-----\n"
 	if err := os.WriteFile(keyPath, []byte(pem), 0o644); err != nil {
@@ -83,7 +83,7 @@ func TestRegistryAddKeyed(t *testing.T) {
 // flags pins the embedded baseline.
 func TestRegistryAddHubBaseline(t *testing.T) {
 	t.Parallel()
-	rw := resolveTempWorkspace(t)
+	rw := resolveTempWorkspace(t, tempWorkspaceOptions{})
 	var out bytes.Buffer
 	if err := registryAddRun(registryAddConfig{
 		Host:      workspaceconfig.HubBaselineHost,
@@ -107,7 +107,7 @@ func TestRegistryAddHubBaseline(t *testing.T) {
 // first registry's entry.
 func TestRegistryAddPreservesExisting(t *testing.T) {
 	t.Parallel()
-	rw := resolveTempWorkspace(t)
+	rw := resolveTempWorkspace(t, tempWorkspaceOptions{})
 	var out bytes.Buffer
 	add := func(host, identity string) {
 		if err := registryAddRun(registryAddConfig{
@@ -136,7 +136,7 @@ func TestRegistryAddPreservesExisting(t *testing.T) {
 // identity=issuer form is rejected.
 func TestRegistryAddRejectsMalformedIdentity(t *testing.T) {
 	t.Parallel()
-	rw := resolveTempWorkspace(t)
+	rw := resolveTempWorkspace(t, tempWorkspaceOptions{})
 	err := registryAddRun(registryAddConfig{
 		Host:       "x.example.com",
 		Identities: []string{"no-issuer-here"},

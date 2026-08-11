@@ -64,7 +64,7 @@ func TestRegistryListDeterministicOutput(t *testing.T) {
 // registries are configured.
 func TestRegistryListEmpty(t *testing.T) {
 	t.Parallel()
-	rw := resolveTempWorkspace(t)
+	rw := resolveTempWorkspace(t, tempWorkspaceOptions{})
 	var out bytes.Buffer
 	if err := registryListRun(registryListConfig{ws: rw, Out: &out}); err != nil {
 		t.Fatalf("registryListRun: %v", err)

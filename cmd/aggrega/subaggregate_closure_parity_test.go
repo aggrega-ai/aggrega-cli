@@ -188,7 +188,7 @@ func TestSubAggregateAxisAgreesAcrossLockAndBuild(t *testing.T) {
 
 	// Side A — the lock-time closure, taken from what pull actually writes rather
 	// than from a re-implementation of its orchestration in the test.
-	if err := pullRun(pullConfig{ReleasePath: releasePath, CatalogDirs: []string{catalogDir}}); err != nil {
+	if err := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), ReleasePath: releasePath, CatalogDirs: []string{catalogDir}}); err != nil {
 		t.Fatalf("pullRun: %v", err)
 	}
 	lf, _, err := lockfile.LoadLockfile(filepath.Join(root, "release.lock"))
@@ -203,10 +203,7 @@ func TestSubAggregateAxisAgreesAcrossLockAndBuild(t *testing.T) {
 	// Side B — the hermetic reconstruction, wired exactly as the build path wires
 	// it: the lazy view pinned to the lockfile, a nil puller, and the reconstruction
 	// reusing the Lookup the closure was walked through.
-	rw, err := workspaceOrResolve(nil)
-	if err != nil {
-		t.Fatalf("workspaceOrResolve: %v", err)
-	}
+	rw := resolveTempWorkspace(t, tempWorkspaceOptions{Root: root})
 	wsCfg := rw.Config()
 	cacheDir := wsCfg.ResolvedArtifactCacheDir()
 	dirs := workspaceconfig.ResolveCatalogDirs([]string{catalogDir}, wsCfg, root)

@@ -142,7 +142,7 @@ func TestHTTPSRepoRootBuildReproduction(t *testing.T) {
 	releasePath := sourcedRepoRootFixture(t, root, srv.URL, "pinchart")
 	catalogDir := filepath.Join(root, "catalog")
 
-	if err := pullRun(pullConfig{ReleasePath: releasePath, CatalogDirs: []string{catalogDir}}); err != nil {
+	if err := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), ReleasePath: releasePath, CatalogDirs: []string{catalogDir}}); err != nil {
 		t.Fatalf("pullRun: %v", err)
 	}
 
@@ -154,7 +154,7 @@ func TestHTTPSRepoRootBuildReproduction(t *testing.T) {
 	t.Logf("LOCKFILE source_artifacts region:\n%s", lockfileSourceRegion(lf))
 
 	// Build must succeed over the pulled repo-root chart.
-	err := dispatchBuild(nil, releasePath, []string{catalogDir}, false, os.Stderr, os.Stdout)
+	err := dispatchBuild(resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, []string{catalogDir}, false, os.Stderr, os.Stdout)
 	if err != nil {
 		t.Logf("FULL ERROR CHAIN: %v", err)
 		t.Logf("errors.Is(err, oci.ErrFetchNotFound)  = %v", errors.Is(err, oci.ErrFetchNotFound()))
@@ -351,7 +351,7 @@ func TestHTTPSRepoRootChartCollision(t *testing.T) {
 	releasePath := collisionRepoRootFixture(t, root, srv.URL, "pinchart", "otherchart")
 	catalogDir := filepath.Join(root, "catalog")
 
-	if err := pullRun(pullConfig{ReleasePath: releasePath, CatalogDirs: []string{catalogDir}}); err != nil {
+	if err := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), ReleasePath: releasePath, CatalogDirs: []string{catalogDir}}); err != nil {
 		t.Fatalf("pullRun: %v", err)
 	}
 
@@ -373,7 +373,7 @@ func TestHTTPSRepoRootChartCollision(t *testing.T) {
 	}
 
 	// Both render.
-	if err := dispatchBuild(nil, releasePath, []string{catalogDir}, false, os.Stderr, os.Stdout); err != nil {
+	if err := dispatchBuild(resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, []string{catalogDir}, false, os.Stderr, os.Stdout); err != nil {
 		t.Logf("errors.Is(err, oci.ErrFetchNotFound) = %v", errors.Is(err, oci.ErrFetchNotFound()))
 		t.Fatalf("build FAILED for two charts colliding on one repo root: %v", err)
 	}

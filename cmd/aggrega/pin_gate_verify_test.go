@@ -28,7 +28,7 @@ func TestPinGateSuppressesExternalShadow(t *testing.T) {
 	writeWorkspaceConfig(t, root, "auto_pull: false\n")
 	catalogDir := filepath.Join(root, "catalog")
 
-	if err := pullRun(pullConfig{ReleasePath: releasePath, CatalogDirs: []string{catalogDir}}); err != nil {
+	if err := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), ReleasePath: releasePath, CatalogDirs: []string{catalogDir}}); err != nil {
 		t.Fatalf("initial pullRun: %v", err)
 	}
 	lf, _, err := lockfile.LoadLockfile(filepath.Join(root, "release.lock"))
@@ -54,10 +54,7 @@ func TestPinGateSuppressesExternalShadow(t *testing.T) {
 		}
 	}
 
-	rw, err := workspaceOrResolve(nil)
-	if err != nil {
-		t.Fatalf("workspaceOrResolve: %v", err)
-	}
+	rw := resolveTempWorkspace(t, tempWorkspaceOptions{Root: root})
 	wsCfg := rw.Config()
 	cacheDir := wsCfg.ResolvedArtifactCacheDir()
 	dirs := workspaceconfig.ResolveCatalogDirs([]string{catalogDir}, wsCfg, root)

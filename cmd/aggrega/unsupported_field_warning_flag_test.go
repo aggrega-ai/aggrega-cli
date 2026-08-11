@@ -203,7 +203,7 @@ func TestBuildCmd_UnsupportedFieldWarningFlagReachesTheFilter(t *testing.T) {
 	})
 
 	// Build is read-only about dependency resolution: prime the lockfile first.
-	if err := pullRun(pullConfig{ReleasePath: releaseFile, CatalogDirs: []string{catalogRoot}}); err != nil {
+	if err := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: work}), ReleasePath: releaseFile, CatalogDirs: []string{catalogRoot}}); err != nil {
 		t.Fatalf("prime lockfile via pull: %v", err)
 	}
 

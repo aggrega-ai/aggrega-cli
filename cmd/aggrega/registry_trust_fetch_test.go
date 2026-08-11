@@ -47,7 +47,7 @@ func TestRegistryAddFetchesAndPinsTrust(t *testing.T) {
   ]
 }`)
 
-	rw := resolveTempWorkspace(t)
+	rw := resolveTempWorkspace(t, tempWorkspaceOptions{})
 	var out bytes.Buffer
 	if err := registryAddRun(registryAddConfig{
 		Host:        host,
@@ -101,7 +101,7 @@ func TestRegistryAddManualIdentityOverridesFetch(t *testing.T) {
   ]
 }`)
 
-	rw := resolveTempWorkspace(t)
+	rw := resolveTempWorkspace(t, tempWorkspaceOptions{})
 	var out bytes.Buffer
 	if err := registryAddRun(registryAddConfig{
 		Host:        host,
@@ -148,7 +148,7 @@ func TestRegistryAddNoTrustAdvertisedFallsBack(t *testing.T) {
 	t.Cleanup(srv.Close)
 	host := strings.TrimPrefix(srv.URL, "http://")
 
-	rw := resolveTempWorkspace(t)
+	rw := resolveTempWorkspace(t, tempWorkspaceOptions{})
 	var out bytes.Buffer
 	if err := registryAddRun(registryAddConfig{
 		Host:        host,
@@ -185,7 +185,7 @@ func TestRegistryAddUnreachableEndpointFallsBack(t *testing.T) {
 	host := refusingLoopbackAddr(t)
 	client := &http.Client{}
 
-	rw := resolveTempWorkspace(t)
+	rw := resolveTempWorkspace(t, tempWorkspaceOptions{})
 	var out bytes.Buffer
 	if err := registryAddRun(registryAddConfig{
 		Host:        host,
@@ -212,7 +212,7 @@ func TestRegistryAddUnreachableEndpointFallsBack(t *testing.T) {
 // off proves the fetch path is never entered.
 func TestRegistryAddNoFetchTrustSkipsFetch(t *testing.T) {
 	t.Parallel()
-	rw := resolveTempWorkspace(t)
+	rw := resolveTempWorkspace(t, tempWorkspaceOptions{})
 	var out bytes.Buffer
 	if err := registryAddRun(registryAddConfig{
 		Host:       "no-fetch.example.com",
@@ -244,7 +244,7 @@ func TestRegistryAddNoFetchTrustSkipsFetch(t *testing.T) {
 func TestRegistryAddMalformedTrustHardFails(t *testing.T) {
 	t.Parallel()
 	host, client := advertisedTrustServer(t, `{"trusted_identities": [{"identity": "no-issuer-here"}]}`)
-	rw := resolveTempWorkspace(t)
+	rw := resolveTempWorkspace(t, tempWorkspaceOptions{})
 	var out bytes.Buffer
 	err := registryAddRun(registryAddConfig{
 		Host:        host,

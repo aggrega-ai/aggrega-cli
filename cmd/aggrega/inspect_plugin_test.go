@@ -194,7 +194,7 @@ func TestInspectPlugin_SurfacesExportsAndRuntime(t *testing.T) {
 	t.Parallel()
 	path := writeKindFixture(t, "plugin_caps", pluginFixture)
 	var buf bytes.Buffer
-	if err := dispatchInspect(resolveTempWorkspace(t), path, nil, testInspectOptions(&buf)); err != nil {
+	if err := dispatchInspect(resolveTempWorkspace(t, tempWorkspaceOptions{}), path, nil, testInspectOptions(&buf)); err != nil {
 		t.Fatalf("inspect plugin: %v", err)
 	}
 	out := buf.String()
@@ -233,7 +233,7 @@ func TestInspectPlugin_NoRuntime_DefaultApplies(t *testing.T) {
 	t.Parallel()
 	path := writeKindFixture(t, "plugin_nort", pluginNoRuntimeFixture)
 	var buf bytes.Buffer
-	if err := dispatchInspect(resolveTempWorkspace(t), path, nil, testInspectOptions(&buf)); err != nil {
+	if err := dispatchInspect(resolveTempWorkspace(t, tempWorkspaceOptions{}), path, nil, testInspectOptions(&buf)); err != nil {
 		t.Fatalf("inspect plugin no-runtime: %v", err)
 	}
 	out := buf.String()
@@ -270,7 +270,7 @@ func TestInspectPlugin_PartialRuntime(t *testing.T) {
 	t.Parallel()
 	path := writeKindFixture(t, "plugin_partial", pluginPartialRuntimeFixture)
 	var buf bytes.Buffer
-	if err := dispatchInspect(resolveTempWorkspace(t), path, nil, testInspectOptions(&buf)); err != nil {
+	if err := dispatchInspect(resolveTempWorkspace(t, tempWorkspaceOptions{}), path, nil, testInspectOptions(&buf)); err != nil {
 		t.Fatalf("inspect plugin partial-runtime: %v", err)
 	}
 	out := buf.String()

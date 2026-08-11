@@ -29,7 +29,7 @@ func TestBuildAutoPullsWhenLockfileMissingAndAutoPullTrue(t *testing.T) {
 	releasePath := authoringFixture(t, root)
 	writeWorkspaceConfig(t, root, "auto_pull: true\n")
 
-	if err := dispatchBuild(nil, releasePath, []string{filepath.Join(root, "catalog")}, false, os.Stderr, os.Stdout); err != nil {
+	if err := dispatchBuild(resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, []string{filepath.Join(root, "catalog")}, false, os.Stderr, os.Stdout); err != nil {
 		t.Fatalf("dispatchBuild: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(root, "release.lock")); err != nil {
@@ -43,7 +43,7 @@ func TestBuildHaltsWhenLockfileMissingAndAutoPullFalse(t *testing.T) {
 	releasePath := authoringFixture(t, root)
 	writeWorkspaceConfig(t, root, "auto_pull: false\n")
 
-	err := dispatchBuild(nil, releasePath, []string{filepath.Join(root, "catalog")}, false, os.Stderr, os.Stdout)
+	err := dispatchBuild(resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, []string{filepath.Join(root, "catalog")}, false, os.Stderr, os.Stdout)
 	if err == nil {
 		t.Fatal("expected halt on missing-lockfile + auto_pull:false; got nil")
 	}
@@ -71,7 +71,7 @@ func TestBuildDefaultReadonlyHaltsAndWritesNothing(t *testing.T) {
 		t.Fatalf("read recipe source: %v", err)
 	}
 
-	err = dispatchBuild(nil, releasePath, []string{filepath.Join(root, "catalog")}, false, os.Stderr, os.Stdout)
+	err = dispatchBuild(resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, []string{filepath.Join(root, "catalog")}, false, os.Stderr, os.Stdout)
 	if err == nil {
 		t.Fatal("expected read-only halt on missing lockfile under the default posture; got nil")
 	}
@@ -105,7 +105,7 @@ func TestBuildDefaultReadonlyWithLockfileWritesNoSource(t *testing.T) {
 	writeWorkspaceConfig(t, root, "")
 
 	// Create the lockfile out-of-band via an explicit pull (the sole writer).
-	if err := pullRun(pullConfig{ReleasePath: releasePath, CatalogDirs: []string{filepath.Join(root, "catalog")}}); err != nil {
+	if err := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), ReleasePath: releasePath, CatalogDirs: []string{filepath.Join(root, "catalog")}}); err != nil {
 		t.Fatalf("initial pullRun: %v", err)
 	}
 
@@ -122,7 +122,7 @@ func TestBuildDefaultReadonlyWithLockfileWritesNoSource(t *testing.T) {
 
 	// The default build must use the existing lockfile read-only. It must not
 	// hit the missing-lockfile halt and must not report drift.
-	err = dispatchBuild(nil, releasePath, []string{filepath.Join(root, "catalog")}, false, os.Stderr, os.Stdout)
+	err = dispatchBuild(resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, []string{filepath.Join(root, "catalog")}, false, os.Stderr, os.Stdout)
 	if err != nil && strings.Contains(err.Error(), "lockfile") && strings.Contains(err.Error(), "missing") {
 		t.Fatalf("default build with a present lockfile must not halt as missing; got %v", err)
 	}
@@ -152,7 +152,7 @@ func TestBuildOfflineWithMissingLockfileHaltsWithFetchNotFound(t *testing.T) {
 	releasePath := authoringFixture(t, root)
 	writeWorkspaceConfig(t, root, "offline: true\n")
 
-	err := dispatchBuild(nil, releasePath, []string{filepath.Join(root, "catalog")}, false, os.Stderr, os.Stdout)
+	err := dispatchBuild(resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, []string{filepath.Join(root, "catalog")}, false, os.Stderr, os.Stdout)
 	if err == nil {
 		t.Fatal("expected halt on offline + missing lockfile; got nil")
 	}
@@ -174,7 +174,7 @@ func TestBuildVerifiesLockfileAndHaltsOnDrift(t *testing.T) {
 	writeWorkspaceConfig(t, root, "auto_pull: false\n")
 
 	// Prime the cache + lockfile by running an initial explicit pull.
-	if err := pullRun(pullConfig{ReleasePath: releasePath, CatalogDirs: []string{filepath.Join(root, "catalog")}}); err != nil {
+	if err := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), ReleasePath: releasePath, CatalogDirs: []string{filepath.Join(root, "catalog")}}); err != nil {
 		t.Fatalf("initial pullRun: %v", err)
 	}
 
@@ -193,7 +193,7 @@ func TestBuildVerifiesLockfileAndHaltsOnDrift(t *testing.T) {
 		t.Fatalf("WriteLockfile: %v", err)
 	}
 
-	err = dispatchBuild(nil, releasePath, []string{filepath.Join(root, "catalog")}, false, os.Stderr, os.Stdout)
+	err = dispatchBuild(resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, []string{filepath.Join(root, "catalog")}, false, os.Stderr, os.Stdout)
 	if err == nil {
 		t.Fatal("expected ErrLockfileDrift; got nil")
 	}
@@ -208,7 +208,7 @@ func TestBuildSucceedsWhenLockfileMatchesClosure(t *testing.T) {
 	releasePath := authoringFixture(t, root)
 	writeWorkspaceConfig(t, root, "auto_pull: true\n")
 
-	if err := pullRun(pullConfig{ReleasePath: releasePath, CatalogDirs: []string{filepath.Join(root, "catalog")}}); err != nil {
+	if err := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), ReleasePath: releasePath, CatalogDirs: []string{filepath.Join(root, "catalog")}}); err != nil {
 		t.Fatalf("initial pullRun: %v", err)
 	}
 
@@ -216,7 +216,7 @@ func TestBuildSucceedsWhenLockfileMatchesClosure(t *testing.T) {
 	// the verification step. The build itself may halt on later steps
 	// (this fixture has no Manifest mapping that the renderer requires);
 	// the test only asserts the lockfile verification gate is cleared.
-	err := dispatchBuild(nil, releasePath, []string{filepath.Join(root, "catalog")}, false, os.Stderr, os.Stdout)
+	err := dispatchBuild(resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, []string{filepath.Join(root, "catalog")}, false, os.Stderr, os.Stdout)
 	if err != nil && errors.Is(err, lockfile.ErrLockfileDrift()) {
 		t.Errorf("unexpected drift on unchanged fixture: %v", err)
 	}

@@ -1156,12 +1156,12 @@ func TestBuild_SingleFinalBlockOnStdout(t *testing.T) {
 
 	// Build is read-only: prime the lockfile with an explicit pull (output discarded
 	// so it cannot perturb the stdout/stderr capture below).
-	if err := pullRun(pullConfig{ReleasePath: releaseYAML, CatalogDirs: []string{catalogRoot}, DiagOut: io.Discard, Out: io.Discard, diag: buildDiagOptions{quiet: true}}); err != nil {
+	if err := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), ReleasePath: releaseYAML, CatalogDirs: []string{catalogRoot}, DiagOut: io.Discard, Out: io.Discard, diag: buildDiagOptions{quiet: true}}); err != nil {
 		t.Fatalf("prime lockfile via pull: %v", err)
 	}
 
 	var stdout, stderr bytes.Buffer
-	if err := dispatchBuildWithDiag(nil, releaseYAML, []string{catalogRoot}, false, buildDiagOptions{}, buildRunOptions{}, &stderr, &stdout); err != nil {
+	if err := dispatchBuildWithDiag(resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releaseYAML, []string{catalogRoot}, false, buildDiagOptions{}, buildRunOptions{}, &stderr, &stdout); err != nil {
 		t.Fatalf("build failed: %v (stderr=%q)", err, stderr.String())
 	}
 

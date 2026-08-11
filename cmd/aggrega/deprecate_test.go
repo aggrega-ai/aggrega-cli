@@ -294,7 +294,7 @@ func TestInspect_CatalogComponent_SurfacesDeprecation(t *testing.T) {
 	t.Cleanup(func() { lookupComponentDeprecation = prev })
 
 	var buf bytes.Buffer
-	if err := inspectCatalogEntity(resolveTempWorkspace(t), componentName, []string{fullstackAppInspectCatalog}, testInspectOptions(&buf)); err != nil {
+	if err := inspectCatalogEntity(resolveTempWorkspace(t, tempWorkspaceOptions{}), componentName, []string{fullstackAppInspectCatalog}, testInspectOptions(&buf)); err != nil {
 		t.Fatalf("inspect catalog component: %v", err)
 	}
 	out := buf.String()

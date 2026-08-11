@@ -128,7 +128,10 @@ func TestIntegration_LinterCacheMiss_PulledGuestUnreachableAtLint(t *testing.T) 
 
 	// Publish the non-embedded linter as a single OCI manifest (entity config blob
 	// + inline .wasm), the shape `aggrega pull` caches a verdict-socket plugin from.
-	if err := pushRun(pushConfig{EntityPath: entityPath, PluginPath: pluginPath, Registry: host}); err != nil {
+	// The publish runs before the consumer workspace below exists, so it declares
+	// its own: the registry it pushes to is named explicitly and it needs no
+	// catalog of its own.
+	if err := pushRun(pushConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{}), EntityPath: entityPath, PluginPath: pluginPath, Registry: host}); err != nil {
 		t.Fatalf("publish non-embedded linter %s: %v", linterURI, err)
 	}
 
@@ -150,14 +153,11 @@ func TestIntegration_LinterCacheMiss_PulledGuestUnreachableAtLint(t *testing.T) 
 
 	// aggrega pull — resolves the release closure and caches every verdict-socket
 	// plugin (the configured linter among them) into the content cache.
-	if err := pullRun(pullConfig{ReleasePath: "release.yaml"}); err != nil {
+	if err := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), ReleasePath: "release.yaml"}); err != nil {
 		t.Fatalf("pull: %v", err)
 	}
 
-	rw, err := workspaceOrResolve(nil)
-	if err != nil {
-		t.Fatalf("resolve workspace after pull: %v", err)
-	}
+	rw := resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws})
 	wsCfg := rw.Config()
 	cacheDir := wsCfg.ResolvedArtifactCacheDir()
 

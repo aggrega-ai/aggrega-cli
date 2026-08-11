@@ -37,7 +37,7 @@ func runKindGoldens(t *testing.T, kind, body string) {
 
 	var buf bytes.Buffer
 	opts := testInspectOptions(&buf)
-	if err := dispatchInspect(resolveTempWorkspace(t), path, nil, opts); err != nil {
+	if err := dispatchInspect(resolveTempWorkspace(t, tempWorkspaceOptions{}), path, nil, opts); err != nil {
 		t.Fatalf("inspect %s default: %v", kind, err)
 	}
 	compareGoldenKind(t, kind, "default.text.golden", mask(buf.String()))
@@ -45,7 +45,7 @@ func runKindGoldens(t *testing.T, kind, body string) {
 	buf.Reset()
 	opts = testInspectOptions(&buf)
 	opts.level = levelList
-	if err := dispatchInspect(resolveTempWorkspace(t), path, nil, opts); err != nil {
+	if err := dispatchInspect(resolveTempWorkspace(t, tempWorkspaceOptions{}), path, nil, opts); err != nil {
 		t.Fatalf("inspect %s --list: %v", kind, err)
 	}
 	compareGoldenKind(t, kind, "list.text.golden", mask(buf.String()))
@@ -53,7 +53,7 @@ func runKindGoldens(t *testing.T, kind, body string) {
 	buf.Reset()
 	opts = testInspectOptions(&buf)
 	opts.level = levelDetail
-	if err := dispatchInspect(resolveTempWorkspace(t), path, nil, opts); err != nil {
+	if err := dispatchInspect(resolveTempWorkspace(t, tempWorkspaceOptions{}), path, nil, opts); err != nil {
 		t.Fatalf("inspect %s --detail: %v", kind, err)
 	}
 	compareGoldenKind(t, kind, "detail.text.golden", mask(buf.String()))
@@ -61,7 +61,7 @@ func runKindGoldens(t *testing.T, kind, body string) {
 	buf.Reset()
 	opts = testInspectOptions(&buf)
 	opts.output = outputYAML
-	if err := dispatchInspect(resolveTempWorkspace(t), path, nil, opts); err != nil {
+	if err := dispatchInspect(resolveTempWorkspace(t, tempWorkspaceOptions{}), path, nil, opts); err != nil {
 		t.Fatalf("inspect %s --output yaml: %v", kind, err)
 	}
 	compareGoldenKind(t, kind, "yaml.golden", buf.Bytes())
@@ -113,7 +113,7 @@ func TestInspectFeature_CredentialMarker(t *testing.T) {
 	t.Parallel()
 	path := writeKindFixture(t, "feature_secret", credentialFeatureFixture)
 	var buf bytes.Buffer
-	if err := dispatchInspect(resolveTempWorkspace(t), path, nil, testInspectOptions(&buf)); err != nil {
+	if err := dispatchInspect(resolveTempWorkspace(t, tempWorkspaceOptions{}), path, nil, testInspectOptions(&buf)); err != nil {
 		t.Fatalf("inspect credential feature: %v", err)
 	}
 	if !strings.Contains(buf.String(), "Credential Feature") {
@@ -158,7 +158,7 @@ func TestInspectRecipe_Sourced_Golden(t *testing.T) {
 	t.Parallel()
 	path := writeKindFixture(t, "recipe_sourced", recipeSourcedFixture)
 	var buf bytes.Buffer
-	if err := dispatchInspect(resolveTempWorkspace(t), path, nil, testInspectOptions(&buf)); err != nil {
+	if err := dispatchInspect(resolveTempWorkspace(t, tempWorkspaceOptions{}), path, nil, testInspectOptions(&buf)); err != nil {
 		t.Fatalf("inspect sourced recipe: %v", err)
 	}
 	out := buf.String()
@@ -199,7 +199,7 @@ func TestInspectFeatureRecipe_ListArtifactCount(t *testing.T) {
 	var buf bytes.Buffer
 	opts := testInspectOptions(&buf)
 	opts.level = levelList
-	if err := dispatchInspect(resolveTempWorkspace(t), path, nil, opts); err != nil {
+	if err := dispatchInspect(resolveTempWorkspace(t, tempWorkspaceOptions{}), path, nil, opts); err != nil {
 		t.Fatalf("inspect fr --list: %v", err)
 	}
 	if !strings.Contains(buf.String(), "artifacts: 1") {
@@ -234,7 +234,7 @@ func TestInspectMappingLibrary_BareNameUseLine(t *testing.T) {
 	t.Parallel()
 	path := writeKindFixture(t, "ml_use", mappingLibraryFixture)
 	var buf bytes.Buffer
-	if err := dispatchInspect(resolveTempWorkspace(t), path, nil, testInspectOptions(&buf)); err != nil {
+	if err := dispatchInspect(resolveTempWorkspace(t, tempWorkspaceOptions{}), path, nil, testInspectOptions(&buf)); err != nil {
 		t.Fatalf("inspect mapping library: %v", err)
 	}
 	out := buf.String()
@@ -277,7 +277,7 @@ func TestInspectSchemaLibrary_RefUseLineAndTemplates(t *testing.T) {
 	t.Parallel()
 	path := writeKindFixture(t, "sl_use", schemaLibraryFixture)
 	var buf bytes.Buffer
-	if err := dispatchInspect(resolveTempWorkspace(t), path, nil, testInspectOptions(&buf)); err != nil {
+	if err := dispatchInspect(resolveTempWorkspace(t, tempWorkspaceOptions{}), path, nil, testInspectOptions(&buf)); err != nil {
 		t.Fatalf("inspect schema library: %v", err)
 	}
 	out := buf.String()
@@ -313,7 +313,7 @@ func TestInspectComponent_Detail_Golden(t *testing.T) {
 	var buf bytes.Buffer
 	opts := testInspectOptions(&buf)
 	opts.level = levelDetail
-	if err := dispatchInspect(resolveTempWorkspace(t), path, nil, opts); err != nil {
+	if err := dispatchInspect(resolveTempWorkspace(t, tempWorkspaceOptions{}), path, nil, opts); err != nil {
 		t.Fatalf("inspect component --detail: %v", err)
 	}
 	out := strings.ReplaceAll(buf.String(), path, "COMPONENT_DETAIL_PATH")
@@ -336,7 +336,7 @@ func TestInspectKind_ColorOnHeader(t *testing.T) {
 	path := writeKindFixture(t, "feature_color", featureFixture)
 	var buf bytes.Buffer
 	opts := inspectOptions{out: &buf, colorize: newColorizer(colorAlways, &buf, false)}
-	if err := dispatchInspect(resolveTempWorkspace(t), path, nil, opts); err != nil {
+	if err := dispatchInspect(resolveTempWorkspace(t, tempWorkspaceOptions{}), path, nil, opts); err != nil {
 		t.Fatalf("inspect --color=always: %v", err)
 	}
 	if !hasANSI(buf.String()) {
@@ -351,7 +351,7 @@ func TestInspectKind_Determinism(t *testing.T) {
 	path := writeKindFixture(t, "feature_det", featureFixture)
 	render := func() string {
 		var buf bytes.Buffer
-		if err := dispatchInspect(resolveTempWorkspace(t), path, nil, testInspectOptions(&buf)); err != nil {
+		if err := dispatchInspect(resolveTempWorkspace(t, tempWorkspaceOptions{}), path, nil, testInspectOptions(&buf)); err != nil {
 			t.Fatalf("inspect: %v", err)
 		}
 		return buf.String()
@@ -388,7 +388,7 @@ spec:
 	var buf bytes.Buffer
 	opts := testInspectOptions(&buf)
 	opts.showImplements = true
-	if err := dispatchInspect(resolveTempWorkspace(t), recipePath, []string{catDir}, opts); err != nil {
+	if err := dispatchInspect(resolveTempWorkspace(t, tempWorkspaceOptions{}), recipePath, []string{catDir}, opts); err != nil {
 		t.Fatalf("inspect --show-implements: %v", err)
 	}
 	out := buf.String()
@@ -410,7 +410,7 @@ func TestInspectRecipe_ShowImplements_AbortsWhenAbsent(t *testing.T) {
 	var buf bytes.Buffer
 	opts := testInspectOptions(&buf)
 	opts.showImplements = true
-	err := dispatchInspect(resolveTempWorkspace(t), recipePath, []string{catDir}, opts)
+	err := dispatchInspect(resolveTempWorkspace(t, tempWorkspaceOptions{}), recipePath, []string{catDir}, opts)
 	if err == nil {
 		t.Fatal("--show-implements should abort when the implements target is absent")
 	}
@@ -453,7 +453,7 @@ spec:
 	var buf bytes.Buffer
 	opts := testInspectOptions(&buf)
 	opts.showImplements = true
-	if err := dispatchInspect(resolveTempWorkspace(t), frPath, []string{catDir}, opts); err != nil {
+	if err := dispatchInspect(resolveTempWorkspace(t, tempWorkspaceOptions{}), frPath, []string{catDir}, opts); err != nil {
 		t.Fatalf("inspect fr --show-implements: %v", err)
 	}
 	out := buf.String()
@@ -480,7 +480,7 @@ func TestInspectDispatch_RegisteredKinds(t *testing.T) {
 	for kind, body := range cases {
 		path := writeKindFixture(t, strings.ToLower(kind), body)
 		var buf bytes.Buffer
-		if err := dispatchInspect(resolveTempWorkspace(t), path, nil, testInspectOptions(&buf)); err != nil {
+		if err := dispatchInspect(resolveTempWorkspace(t, tempWorkspaceOptions{}), path, nil, testInspectOptions(&buf)); err != nil {
 			t.Fatalf("%s should route to its renderer; got: %v", kind, err)
 		}
 		if strings.Contains(buf.String(), "not yet implemented") || strings.Contains(buf.String(), "unknown entity kind") {

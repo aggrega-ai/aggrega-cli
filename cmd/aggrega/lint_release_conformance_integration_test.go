@@ -180,7 +180,7 @@ spec:
 			t.Chdir(ws)
 
 			var diag bytes.Buffer
-			err := validateRelease(nil, "release.yaml", nil, compilerops.VerbosityDetailed, &diag, io.Discard)
+			err := validateRelease(resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), "release.yaml", nil, compilerops.VerbosityDetailed, &diag, io.Discard)
 			if tc.wantErr && err == nil {
 				t.Fatalf("%s: expected a value-conformance error; got nil", tc.name)
 			}

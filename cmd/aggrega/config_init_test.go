@@ -35,7 +35,7 @@ func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { retu
 // set, round-tripped through the resolver.
 func TestConfigInitSeedsGlobalHubBaseline(t *testing.T) {
 	t.Parallel()
-	rw := resolveTempWorkspace(t)
+	rw := resolveTempWorkspace(t, tempWorkspaceOptions{})
 	global := filepath.Join(t.TempDir(), "aggrega", "config.yaml")
 	lookup := frozenEnv(map[string]string{workspaceconfig.EnvConfigOverride: global})
 
@@ -79,7 +79,7 @@ func TestConfigInitSeedsGlobalHubBaseline(t *testing.T) {
 // overwrite, and that --force lets it proceed.
 func TestConfigInitRefusesExistingWithoutForce(t *testing.T) {
 	t.Parallel()
-	rw := resolveTempWorkspace(t)
+	rw := resolveTempWorkspace(t, tempWorkspaceOptions{})
 	global := filepath.Join(t.TempDir(), "aggrega", "config.yaml")
 	lookup := frozenEnv(map[string]string{workspaceconfig.EnvConfigOverride: global})
 
@@ -117,7 +117,7 @@ func TestConfigInitRefusesExistingWithoutForce(t *testing.T) {
 // destination rather than requiring it to already exist.
 func TestConfigInitConfigPathCreatesTarget(t *testing.T) {
 	t.Parallel()
-	rw := resolveTempWorkspace(t)
+	rw := resolveTempWorkspace(t, tempWorkspaceOptions{})
 	// A --config target under a not-yet-created directory. The flag-aware lookup
 	// is exactly what the root wiring builds from --config.
 	target := filepath.Join(t.TempDir(), "custom", "config.yaml")
@@ -155,7 +155,7 @@ func TestConfigInitConfigPathCreatesTarget(t *testing.T) {
 // typo guard), but init resolves without the global layer and creates the file.
 func TestConfigInitConfigFlagMissingPathCreates(t *testing.T) {
 	t.Parallel()
-	root := resolveTempWorkspace(t).Root()
+	root := resolveTempWorkspace(t, tempWorkspaceOptions{}).Root()
 	// --config points at a file under a directory that does not exist yet.
 	target := filepath.Join(t.TempDir(), "deep", "nested", "config.yaml")
 	lookup := globalConfigLookup(target, frozenEnv(nil))
@@ -200,7 +200,7 @@ func TestConfigInitConfigFlagMissingPathCreates(t *testing.T) {
 // routes init's write to the --config path, exactly as the RunE wiring does.
 func TestConfigInitContextLookupWritesConfigPath(t *testing.T) {
 	t.Parallel()
-	rw := resolveTempWorkspace(t)
+	rw := resolveTempWorkspace(t, tempWorkspaceOptions{})
 	target := filepath.Join(t.TempDir(), "wired", "config.yaml")
 	ctx := withWorkspaceResolver(context.Background(), rw.Root(), globalConfigLookup(target, frozenEnv(nil)))
 

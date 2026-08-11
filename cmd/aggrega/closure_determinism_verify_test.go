@@ -23,13 +23,13 @@ func TestClosureUnificationByteIdentical(t *testing.T) {
 	const cacheDir = ".aggrega/cache"
 	catalogDir := filepath.Join(root, "catalog")
 
-	if err := pullRun(pullConfig{ReleasePath: releasePath, CatalogDirs: []string{catalogDir}}); err != nil {
+	if err := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), ReleasePath: releasePath, CatalogDirs: []string{catalogDir}}); err != nil {
 		t.Fatalf("initial pullRun: %v", err)
 	}
 	relocateAggregateToCache(t, root, cacheDir, "mysub")
 
 	build := func() string {
-		if err := dispatchBuild(nil, releasePath, []string{catalogDir}, false, os.Stderr, os.Stdout); err != nil {
+		if err := dispatchBuild(resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, []string{catalogDir}, false, os.Stderr, os.Stdout); err != nil {
 			t.Fatalf("dispatchBuild: %v", err)
 		}
 		return readDistTree(t, filepath.Join(root, "dist"))

@@ -82,9 +82,16 @@ func workspaceRootFromContext(ctx context.Context) string {
 // workspaceOrResolve returns ws when set — the production path, where a
 // command's RunE threads in the context-resolved workspace. When ws is nil it
 // resolves from the current directory; that path is reachable only from tests
-// that invoke the command helpers directly (production RunE always passes the
-// context-resolved workspace, asserted by the guard test). Centralizing the
-// branch keeps the test-only fallback in exactly one place.
+// that invoke the command helpers directly. Centralizing the branch keeps the
+// test-only fallback in exactly one place.
+//
+// The structural guard over this package holds the production half of that
+// claim, and it takes three checks rather than one, because a nil reaches this
+// branch by three different routes: written here as a literal, left out of a
+// command config that carries the resolved workspace as a field, or handed to a
+// helper that threads its own workspace parameter down to here. The third route
+// is the one a check on this call alone cannot see, since every production
+// caller passes a named value at this point and the literal sits a hop earlier.
 func workspaceOrResolve(ws *workspaceconfig.ResolvedWorkspace) (*workspaceconfig.ResolvedWorkspace, error) {
 	if ws != nil {
 		return ws, nil

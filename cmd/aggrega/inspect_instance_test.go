@@ -34,7 +34,7 @@ func inspectInstance(t *testing.T, path string, mutate func(*inspectOptions)) st
 	if mutate != nil {
 		mutate(&opts)
 	}
-	if err := dispatchInspect(resolveTempWorkspace(t), path, []string{fullstackCatalog}, opts); err != nil {
+	if err := dispatchInspect(resolveTempWorkspace(t, tempWorkspaceOptions{}), path, []string{fullstackCatalog}, opts); err != nil {
 		t.Fatalf("dispatchInspect(%q): %v", path, err)
 	}
 	return buf.String()
@@ -228,7 +228,7 @@ spec:
               - host
 `)
 	var buf bytes.Buffer
-	if err := dispatchInspect(resolveTempWorkspace(t), child, nil, testInspectOptions(&buf)); err != nil {
+	if err := dispatchInspect(resolveTempWorkspace(t, tempWorkspaceOptions{}), child, nil, testInspectOptions(&buf)); err != nil {
 		t.Fatalf("inspect child manifest: %v", err)
 	}
 	got := buf.String()
@@ -267,7 +267,7 @@ spec:
           core/compute/api-server: legacy-api:1.0.0
 `)
 	var buf bytes.Buffer
-	if err := dispatchInspect(resolveTempWorkspace(t), path, nil, testInspectOptions(&buf)); err != nil {
+	if err := dispatchInspect(resolveTempWorkspace(t, tempWorkspaceOptions{}), path, nil, testInspectOptions(&buf)); err != nil {
 		t.Fatalf("inspect legacy manifest: %v", err)
 	}
 	got := buf.String()
@@ -295,7 +295,7 @@ func TestInspectAggregate_NoDivergence_TopologyMatchesBuildFunnel(t *testing.T) 
 	if err != nil {
 		t.Fatalf("load aggregate: %v", err)
 	}
-	lookup, subLoader, _, err := aggregateTopologyInputs(resolveTempWorkspace(t), []string{fullstackCatalog})
+	lookup, subLoader, _, err := aggregateTopologyInputs(resolveTempWorkspace(t, tempWorkspaceOptions{}), []string{fullstackCatalog})
 	if err != nil {
 		t.Fatalf("topology inputs: %v", err)
 	}

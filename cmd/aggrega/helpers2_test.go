@@ -109,11 +109,11 @@ spec:
 	}
 
 	// Build is read-only: prime the lockfile with an explicit pull, then build reads it.
-	if err := pullRun(pullConfig{ReleasePath: releasePath, CatalogDirs: catalogDirs}); err != nil {
+	if err := pullRun(pullConfig{ws: resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), ReleasePath: releasePath, CatalogDirs: catalogDirs}); err != nil {
 		t.Fatalf("prime lockfile via pull: %v", err)
 	}
 
-	if err := dispatchBuild(nil, releasePath, catalogDirs, traceEnabled, os.Stderr, os.Stdout); err != nil {
+	if err := dispatchBuild(resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, catalogDirs, traceEnabled, os.Stderr, os.Stdout); err != nil {
 		t.Fatalf("runBuild: %v", err)
 	}
 
@@ -213,5 +213,5 @@ spec:
 	// runBuild may succeed or fail depending on the fixture's
 	// completeness; the goal is to exercise the trace-enable code path,
 	// not specifically to make the build succeed.
-	_ = dispatchBuild(nil, releasePath, catalogDirs, traceEnabled, os.Stderr, os.Stdout)
+	_ = dispatchBuild(resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), releasePath, catalogDirs, traceEnabled, os.Stderr, os.Stdout)
 }

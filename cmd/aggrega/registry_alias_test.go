@@ -35,7 +35,7 @@ func resolveWorkspaceWithAlias(t *testing.T, host, alias string) *workspaceconfi
 // onto the host-keyed entry so it resolves back after a reload.
 func TestRegistryAddPersistsAlias(t *testing.T) {
 	t.Parallel()
-	rw := resolveTempWorkspace(t)
+	rw := resolveTempWorkspace(t, tempWorkspaceOptions{})
 	var out bytes.Buffer
 	if err := registryAddRun(registryAddConfig{
 		Host:      "dev.local:5000",
@@ -63,7 +63,7 @@ func TestRegistryAddPersistsAlias(t *testing.T) {
 // entry host-only — no regression on the pre-alias behaviour.
 func TestRegistryAddWithoutNameHostOnly(t *testing.T) {
 	t.Parallel()
-	rw := resolveTempWorkspace(t)
+	rw := resolveTempWorkspace(t, tempWorkspaceOptions{})
 	var out bytes.Buffer
 	if err := registryAddRun(registryAddConfig{
 		Host:      "dev.local:5000",
@@ -87,7 +87,7 @@ func TestRegistryAddWithoutNameHostOnly(t *testing.T) {
 // bound to a different host halts loudly.
 func TestRegistryAddDuplicateAliasDifferentHost(t *testing.T) {
 	t.Parallel()
-	rw := resolveTempWorkspace(t)
+	rw := resolveTempWorkspace(t, tempWorkspaceOptions{})
 	var out bytes.Buffer
 	if err := registryAddRun(registryAddConfig{
 		Host:      "a.example.com",

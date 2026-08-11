@@ -14,25 +14,66 @@ import (
 )
 
 // TestWorkspaceResolutionChokepointGuard enforces the single workspace
-// resolution path structurally. Two drift classes the compiler does not catch
+// resolution path structurally. Three drift classes the compiler does not catch
 // on its own (workspaceconfig's low-level loaders are already unexported, so a
 // direct call to them is a compile error):
 //
 //  1. No os.Getwd() in the CLI or daemon packages. Workspace-root discovery
 //     belongs to workspaceconfig.Resolve; a command re-rolling CWD discovery is
 //     exactly the divergence this work removed.
-//  2. Every pullConfig / pushConfig / signConfig — and the relocated
-//     lintops.Config — built in production code sets its workspace field.
+//  2. Every command config carrying a workspace field — and the relocated
+//     lintops.Config — sets that field where production code builds it.
 //     Production must pass the context-resolved workspace; the nil →
 //     resolve-from-CWD fallback exists only so tests can invoke the command and
 //     core helpers directly. A production caller leaving the workspace field
 //     unset would silently re-resolve from CWD and ignore --workspace-root —
 //     reintroducing per-command divergence.
+//  3. No production call hands a literal nil to a helper that threads its
+//     workspace parameter into workspaceOrResolve. Checking only the
+//     workspaceOrResolve call itself misses this: the commands that take the
+//     workspace as a parameter pass a named value at that call, so a nil
+//     introduced one hop earlier reaches the fallback unseen.
+//
+// 🔴 Both covered sets are DERIVED from the parsed source, never listed here. A
+// hand-written list of config type names is a second copy of the type
+// declarations, and the copy is what goes stale: a new command config with a
+// workspace field would be silently uncovered on the day it is added, which is
+// precisely when the check is worth having. The config set is every struct type
+// whose name ends in "Config" and which declares a `ws` field; the helper set is
+// every function that passes one of its own parameters into workspaceOrResolve,
+// closed over functions forwarding a parameter into one of those.
 //
 // Test files are exempt (the fallback is theirs to use).
 func TestWorkspaceResolutionChokepointGuard(t *testing.T) {
 	dirs := []string{".", filepath.Join("..", "..", "internal", "serve")}
-	cfgTypes := map[string]bool{"pullConfig": true, "pushConfig": true, "signConfig": true}
+
+	// Pre-pass over the CLI package: workspaceOrResolve and the command config
+	// types are unexported members of it, so nothing outside it can name them.
+	cliFset := token.NewFileSet()
+	cliFiles := map[string]*ast.File{}
+	matches, err := filepath.Glob("*.go")
+	if err != nil {
+		t.Fatalf("glob .: %v", err)
+	}
+	for _, file := range matches {
+		if strings.HasSuffix(file, "_test.go") {
+			continue
+		}
+		node, perr := parser.ParseFile(cliFset, file, nil, 0)
+		if perr != nil {
+			t.Fatalf("parse %s: %v", file, perr)
+		}
+		cliFiles[file] = node
+	}
+
+	cfgTypes := workspaceBearingConfigTypes(cliFiles)
+	if len(cfgTypes) == 0 {
+		t.Fatal("derived no command config type carrying a ws field — the derivation is broken, not the source")
+	}
+	threaded := workspaceThreadingHelpers(cliFiles)
+	if len(threaded) == 0 {
+		t.Fatal("derived no helper threading a workspace parameter into workspaceOrResolve — the derivation is broken, not the source")
+	}
 
 	for _, dir := range dirs {
 		matches, err := filepath.Glob(filepath.Join(dir, "*.go"))
@@ -56,25 +97,32 @@ func TestWorkspaceResolutionChokepointGuard(t *testing.T) {
 							t.Errorf("%s: os.Getwd() outside the workspaceconfig.Resolve chokepoint — route workspace-root discovery through Resolve", fset.Position(v.Pos()))
 						}
 					}
-					// The param-threaded commands (build, inspect) pass the
-					// resolved workspace straight into workspaceOrResolve rather
-					// than via a config struct. A literal nil here in production
-					// would silently re-resolve from CWD and ignore
-					// --workspace-root — the same footgun the ws-field check
-					// guards for the struct commands.
-					if id, ok := v.Fun.(*ast.Ident); ok && id.Name == "workspaceOrResolve" {
+					id, ok := v.Fun.(*ast.Ident)
+					if !ok {
+						return true
+					}
+					// A literal nil at the fallback's own call site.
+					if id.Name == "workspaceOrResolve" {
 						if len(v.Args) == 1 {
 							if arg, ok := v.Args[0].(*ast.Ident); ok && arg.Name == "nil" {
 								t.Errorf("%s: workspaceOrResolve(nil) in production — pass the context-resolved workspace (workspaceFromContext); the nil/CWD fallback is test-only", fset.Position(v.Pos()))
 							}
 						}
+						return true
+					}
+					// A literal nil one hop earlier, at a helper that threads its
+					// workspace parameter into the fallback.
+					if idx, isThreaded := threaded[id.Name]; isThreaded && idx < len(v.Args) {
+						if arg, ok := v.Args[idx].(*ast.Ident); ok && arg.Name == "nil" {
+							t.Errorf("%s: %s(nil, …) in production — pass the context-resolved workspace (workspaceFromContext); that parameter reaches the nil/CWD fallback, which is test-only", fset.Position(v.Pos()), id.Name)
+						}
 					}
 				case *ast.CompositeLit:
 					// The config-struct commands must thread the context-resolved
 					// workspace into their config literal. The same-package configs
-					// (pull/push/sign) are bare identifiers carrying a `ws` field; the
-					// relocated lint config is a `lintops.Config` selector carrying a
-					// `Workspace` field. Either way, a production literal that omits the
+					// are bare identifiers carrying a `ws` field; the relocated lint
+					// config is a `lintops.Config` selector carrying a `Workspace`
+					// field. Either way, a production literal that omits the
 					// workspace field would silently re-resolve from CWD and ignore
 					// --workspace-root.
 					typeName, wsField := "", ""
@@ -107,6 +155,121 @@ func TestWorkspaceResolutionChokepointGuard(t *testing.T) {
 			})
 		}
 	}
+}
+
+// workspaceBearingConfigTypes returns the command config types that carry a
+// resolved workspace, derived from their declarations. A type qualifies when its
+// name ends in "Config" and it declares a field named `ws`. The suffix is what
+// separates a command config, which RECEIVES the resolved workspace from its
+// caller, from the lazy resolver, whose same-named field is the cache it fills
+// itself and is therefore absent from its construction site by design.
+func workspaceBearingConfigTypes(files map[string]*ast.File) map[string]bool {
+	types := map[string]bool{}
+	for _, node := range files {
+		ast.Inspect(node, func(n ast.Node) bool {
+			ts, ok := n.(*ast.TypeSpec)
+			if !ok {
+				return true
+			}
+			st, ok := ts.Type.(*ast.StructType)
+			if !ok || !strings.HasSuffix(ts.Name.Name, "Config") {
+				return true
+			}
+			for _, fld := range st.Fields.List {
+				for _, nm := range fld.Names {
+					if nm.Name == "ws" {
+						types[ts.Name.Name] = true
+					}
+				}
+			}
+			return true
+		})
+	}
+	return types
+}
+
+// workspaceThreadingHelpers returns every function that can carry a caller's nil
+// through to the resolve-from-CWD fallback, mapped to the index of the parameter
+// that gets there. A function qualifies directly when it passes one of its own
+// parameters into workspaceOrResolve, and transitively when it forwards one of
+// its own parameters into that position of a function already known to qualify.
+// The transitive closure is what makes the check survive a new wrapper: the
+// dispatch helpers are layered, so a caller is frequently two hops from the
+// fallback rather than one.
+func workspaceThreadingHelpers(files map[string]*ast.File) map[string]int {
+	threaded := map[string]int{}
+	// Iterate to a fixed point rather than once: a forwarder may be declared in
+	// a file parsed before the function it forwards to.
+	for {
+		grew := false
+		for _, node := range files {
+			for _, d := range node.Decls {
+				fd, ok := d.(*ast.FuncDecl)
+				if !ok || fd.Body == nil {
+					continue
+				}
+				params := parameterIndex(fd)
+				ast.Inspect(fd.Body, func(n ast.Node) bool {
+					ce, ok := n.(*ast.CallExpr)
+					if !ok {
+						return true
+					}
+					id, ok := ce.Fun.(*ast.Ident)
+					if !ok {
+						return true
+					}
+					target := -1
+					switch {
+					case id.Name == "workspaceOrResolve" && len(ce.Args) == 1:
+						target = 0
+					default:
+						if idx, isThreaded := threaded[id.Name]; isThreaded && idx < len(ce.Args) {
+							target = idx
+						}
+					}
+					if target < 0 {
+						return true
+					}
+					arg, ok := ce.Args[target].(*ast.Ident)
+					if !ok {
+						return true
+					}
+					if idx, isParam := params[arg.Name]; isParam {
+						if prev, seen := threaded[fd.Name.Name]; !seen || prev != idx {
+							threaded[fd.Name.Name] = idx
+							grew = true
+						}
+					}
+					return true
+				})
+			}
+		}
+		if !grew {
+			return threaded
+		}
+	}
+}
+
+// parameterIndex maps each named parameter of fd to its position in the flattened
+// parameter list, so a call's argument at that position can be checked against
+// the parameter the callee threads onward.
+func parameterIndex(fd *ast.FuncDecl) map[string]int {
+	params := map[string]int{}
+	if fd.Type.Params == nil {
+		return params
+	}
+	i := 0
+	for _, fl := range fd.Type.Params.List {
+		if len(fl.Names) == 0 {
+			i++
+			continue
+		}
+		for _, nm := range fl.Names {
+			params[nm.Name] = i
+			i++
+		}
+	}
+	return params
 }
 
 // TestOCIRemoteConstructionChokepointGuard enforces the single registry /
