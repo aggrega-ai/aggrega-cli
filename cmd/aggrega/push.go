@@ -212,11 +212,32 @@ const componentCategoryLabel = "component.aggrega.ai/category"
 
 // pushEntityHeader is the minimal YAML envelope pushRun parses out
 // of the entity file: kind, metadata.name, metadata.version,
-// metadata.description, and metadata.labels. The shape mirrors the
-// per-kind envelope pkg/oci/bundle.go uses for
-// validateEntityVersionPathSubdir; duplicated here because the push
-// verb needs the same fields for every kind. Description and labels feed
+// metadata.description, and metadata.labels. Description and labels feed
 // the searchable annotations stamped onto the published manifest.
+//
+// A second decode of the same document happens inside pkg/oci, where
+// validateEntityVersionPathSubdir reads metadata.version to compare it against
+// the entity's per-version directory. The two are deliberately separate, and the
+// reason is worth stating so nobody folds them together on the strength of the
+// one field they share:
+//
+//   - They are not the same shape. That decode reads exactly one field; this one
+//     reads six. Five of the six are meaningless to the version check, so a
+//     shared struct would carry them into a package with no use for them.
+//   - They cannot be shared in the direction it would have to run. This package
+//     consumes pkg/oci; pkg/oci does not consume this one, so the shared type
+//     would have to live on the pkg/oci side — which is the side that needs
+//     least of it.
+//   - Their requirements on the one shared field differ, and only on this side.
+//     Labels here must survive as an ordered map because the whole map is
+//     stamped onto the published manifest and identical input must produce
+//     byte-identical published bytes. The version check has no such constraint,
+//     reads no labels, and would gain nothing from the ordering.
+//
+// So this is one document read twice for two unrelated questions, not one
+// mechanism written twice. What must stay in step is only the field NAME the two
+// agree on, and that name comes from the published entity schema rather than
+// from either struct.
 type pushEntityHeader struct {
 	Kind     string `yaml:"kind"`
 	Metadata struct {

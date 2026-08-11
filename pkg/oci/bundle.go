@@ -152,6 +152,15 @@ func validateEntityVersionPathSubdir(entityPath string) error {
 		return fmt.Errorf("oci: read library %s for per-version validation: %w", entityPath, err)
 	}
 
+	// Deliberately a local decode of one field rather than a shared entity
+	// header. The push verb decodes the same document into a wider header of its
+	// own, and the two are kept apart on purpose: this check needs only
+	// metadata.version, it has no use for the labels the push side must preserve
+	// in author order, and the wider header lives in the command layer, which
+	// consumes this package rather than the reverse. Sharing a struct would move
+	// five unused fields into this package to unify one. The field NAME is what
+	// must agree, and that comes from the published entity schema, not from
+	// either struct.
 	var envelope struct {
 		Metadata struct {
 			Version string `yaml:"version"`

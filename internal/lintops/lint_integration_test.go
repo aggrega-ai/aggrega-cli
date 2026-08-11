@@ -149,6 +149,38 @@ type participationCase struct {
 	fixtureFile string
 }
 
+// participationCases is the one home for the rule-to-fixture pairing. Both the
+// participation suite and the coverage guard below read it: the suite dispatches
+// each rule against its fixture, and the guard holds the same set against the
+// rule slice the lint command actually dispatches. A second list written out in
+// the guard would agree on the day it was written and drift afterwards, and the
+// drift would be invisible because both halves are edited by hand.
+func participationCases() []participationCase {
+	return []participationCase{
+		{ruleID: "annotation-prefix", fixtureFile: "annotation_prefix.yaml"},
+		{ruleID: "name-shape", fixtureFile: "name_shape.yaml"},
+		{ruleID: "dynamic-refs", fixtureFile: "dynamic_refs.yaml"},
+		{ruleID: "id-overrides", fixtureFile: "id_overrides.yaml"},
+		{ruleID: "category-matches-directory", fixtureFile: "category_mismatch.yaml"},
+		{ruleID: "x-aggrega-discouragement", fixtureFile: "x_aggrega_in_schema.yaml"},
+		{ruleID: "plugin-default-limits", fixtureFile: "plugin_default_limits.yaml"},
+		{ruleID: "secret-slot-declares-sensitive", fixtureFile: "secret_slot_unmarked.yaml"},
+	}
+}
+
+// rulesCoveredOutsideParticipation names the dispatched rules whose coverage
+// lives in another suite, each with the suite that carries it. A rule listed here
+// is exempt from needing a participation fixture; a rule NOT listed here and not
+// in participationCases is a rule nothing exercises, which is what the coverage
+// guard below refuses.
+//
+// The exemption is named rather than implied so that adding one is a visible
+// decision. An unnamed exemption reads as an oversight and gets "fixed" by
+// someone adding a redundant fixture.
+var rulesCoveredOutsideParticipation = map[string]string{
+	"schema-evolution": "the schema-evolution matrix suite, which runs it across every kind",
+}
+
 // TestRuleParticipation asserts every rule registered in the
 // publishing-linter dispatcher fires at least once across a
 // designed-to-trigger fixture set. Operationally pins the
@@ -162,18 +194,7 @@ type participationCase struct {
 func TestRuleParticipation(t *testing.T) {
 	pluginPath := wasmtest.EnsureFixtureBuilt(t, "publishing-linter.wasm")
 
-	cases := []participationCase{
-		{ruleID: "annotation-prefix", fixtureFile: "annotation_prefix.yaml"},
-		{ruleID: "name-shape", fixtureFile: "name_shape.yaml"},
-		{ruleID: "dynamic-refs", fixtureFile: "dynamic_refs.yaml"},
-		{ruleID: "id-overrides", fixtureFile: "id_overrides.yaml"},
-		{ruleID: "category-matches-directory", fixtureFile: "category_mismatch.yaml"},
-		{ruleID: "x-aggrega-discouragement", fixtureFile: "x_aggrega_in_schema.yaml"},
-		{ruleID: "plugin-default-limits", fixtureFile: "plugin_default_limits.yaml"},
-		{ruleID: "secret-slot-declares-sensitive", fixtureFile: "secret_slot_unmarked.yaml"},
-	}
-
-	for _, c := range cases {
+	for _, c := range participationCases() {
 		t.Run(c.ruleID, func(t *testing.T) {
 			ruleFired := dispatchAndCheckRule(t, pluginPath, c)
 			if !ruleFired {
@@ -435,45 +456,60 @@ spec:
 	})
 }
 
-// Verifying the lint command's rule slice includes every
-// participation rule (defensive: if a maintainer drops a rule
-// from defaultRuleIDs, TestRuleParticipation would still pass
-// for the dropped rule's case if invoked directly; this guard
-// pins the CLI surface).
+// TestRuleParticipationCoversAllDispatchedRules holds the rules the lint command
+// dispatches to the rules something actually exercises, in both directions, and
+// requires that each exercised rule's fixture is really on disk.
+//
+// The three checks are separate failures because they are separate mistakes. A
+// rule exercised but no longer dispatched means the CLI surface dropped it while
+// the suite kept passing against it directly. A rule dispatched but exercised by
+// nothing is a rule shipping untested. A rule paired with a fixture that does not
+// exist is the one the old form of this guard could not see: it compared two
+// hand-written lists and never opened the directory, so a rule added to both
+// lists with no fixture passed while the failure message told the reader to add
+// one.
+//
+// The expectation is derived from the participation suite's own case table rather
+// than restated here, so this guard cannot disagree with the suite it guards.
 func TestRuleParticipationCoversAllDispatchedRules(t *testing.T) {
 	dispatched := map[string]bool{}
 	for _, id := range defaultRuleIDs(true) {
 		dispatched[id] = true
 	}
-	expectedInParticipation := []string{
-		"schema-evolution", // covered by the matrix test
-		"annotation-prefix",
-		"name-shape",
-		"dynamic-refs",
-		"id-overrides",
-		"category-matches-directory",
-		"x-aggrega-discouragement",
-		"plugin-default-limits",
-		"secret-slot-declares-sensitive",
-	}
-	for _, ruleID := range expectedInParticipation {
-		if !dispatched[ruleID] {
-			t.Errorf("rule %q expected in defaultRuleIDs(true) but missing; "+
-				"if this is intentional, update the participation list accordingly",
-				ruleID)
+
+	exercised := map[string]bool{}
+	for _, c := range participationCases() {
+		exercised[c.ruleID] = true
+		if !dispatched[c.ruleID] {
+			t.Errorf("rule %q has a participation fixture but is not in defaultRuleIDs(true); "+
+				"either the lint command stopped dispatching it, or its fixture is stale",
+				c.ruleID)
+		}
+		// The fixture is opened rather than assumed. A case naming a file that is
+		// not there dispatches the rule against nothing, which reports as a rule
+		// that did not fire — a confusing failure a long way from its cause.
+		path := filepath.Join("testdata", "integration", "participation", c.fixtureFile)
+		if _, err := os.Stat(path); err != nil {
+			t.Errorf("rule %q names participation fixture %q, which is not readable at %s: %v",
+				c.ruleID, c.fixtureFile, path, err)
 		}
 	}
-	// Inverse: every dispatched rule should be in our expected
-	// list. If a new rule is added without updating the
-	// participation suite, this fires.
-	expectedSet := map[string]bool{}
-	for _, r := range expectedInParticipation {
-		expectedSet[r] = true
+	for ruleID, where := range rulesCoveredOutsideParticipation {
+		exercised[ruleID] = true
+		if !dispatched[ruleID] {
+			t.Errorf("rule %q is recorded as covered by %s but is not in defaultRuleIDs(true); "+
+				"the lint command no longer dispatches it, so that coverage guards nothing",
+				ruleID, where)
+		}
 	}
+
+	// Inverse: a rule the command dispatches that nothing exercises.
 	for id := range dispatched {
-		if !expectedSet[id] {
-			t.Errorf("rule %q is dispatched but missing from the participation list; "+
-				"add a participation fixture under internal/lintops/testdata/integration/participation/",
+		if !exercised[id] {
+			t.Errorf("rule %q is dispatched but nothing exercises it; add a fixture under "+
+				"internal/lintops/testdata/integration/participation/ and a case naming it to "+
+				"participationCases, or record the suite that covers it in "+
+				"rulesCoveredOutsideParticipation",
 				id)
 		}
 	}

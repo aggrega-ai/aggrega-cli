@@ -27,6 +27,7 @@ import (
 	"go.yaml.in/yaml/v3"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
+	"github.com/aggrega-ai/aggrega-cli/pkg/validator/envelope"
 	jsonvalidator "github.com/aggrega-ai/aggrega-cli/pkg/validator/jsonschema"
 	schemas "github.com/aggrega-ai/aggrega-schemas"
 )
@@ -134,7 +135,13 @@ func Read(path string) (CacheMetadata, error) {
 	if err := yaml.Unmarshal(data, &instance); err != nil {
 		return m, fmt.Errorf("metadata: parse %s: %w", path, err)
 	}
-	instance = normaliseYAML(instance)
+	// The normalisation is the envelope layer's exported one rather than a copy:
+	// map[any]any → map[string]any so the validator's walker consumes the
+	// document, and time.Time → RFC 3339 string so the date-time pulled_at field
+	// validates as a string rather than as the object form yaml.v3 produces for
+	// an auto-detected timestamp. A private copy would agree with it today and
+	// diverge the first time either side gained an arm.
+	instance = envelope.NormaliseYAML(instance)
 
 	v, err := getValidator()
 	if err != nil {
@@ -158,38 +165,4 @@ func Read(path string) (CacheMetadata, error) {
 		return m, fmt.Errorf("metadata: unmarshal %s: %w", path, err)
 	}
 	return m, nil
-}
-
-// normaliseYAML mirrors the lockfile loader's normalisation:
-// map[any]any → map[string]any so the validator's walker consumes
-// the document; time.Time → RFC 3339 string so the date-time
-// pulled_at field validates as a string rather than as the
-// object form yaml.v3 produces for time.Time auto-detected values.
-func normaliseYAML(v any) any {
-	switch val := v.(type) {
-	case map[any]any:
-		out := make(map[string]any, len(val))
-		for k, vv := range val {
-			if ks, ok := k.(string); ok {
-				out[ks] = normaliseYAML(vv)
-			}
-		}
-		return out
-	case map[string]any:
-		out := make(map[string]any, len(val))
-		for k, vv := range val {
-			out[k] = normaliseYAML(vv)
-		}
-		return out
-	case []any:
-		out := make([]any, len(val))
-		for i, item := range val {
-			out[i] = normaliseYAML(item)
-		}
-		return out
-	case time.Time:
-		return val.UTC().Format(time.RFC3339)
-	default:
-		return v
-	}
 }

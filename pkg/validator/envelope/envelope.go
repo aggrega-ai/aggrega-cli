@@ -4,9 +4,17 @@
 // Package envelope validates a raw YAML document against the embedded
 // JSON schema for its entity kind — the document-envelope layer that
 // runs BEFORE typed unmarshal at every entity parse boundary. It is
-// the single implementation of the validate-then-unmarshal pattern;
-// the workspaceconfig, lockfile, and workload loaders consume it
-// rather than carrying private copies.
+// the single implementation of that layer: the workspaceconfig,
+// lockfile, and workload loaders consume it rather than carrying
+// private copies.
+//
+// Its reach is the entity-kind envelope, not every validate-then-unmarshal
+// site in the tree. A reader of a document that has no entity kind — a
+// cache slot's own metadata sidecar, say — validates against its own
+// schema and cannot dispatch through this package. Such a reader shares
+// the step it genuinely can share: NormaliseYAML is exported for exactly
+// that, so the shape the schema engine consumes has one definition even
+// where the dispatch does not.
 //
 // The envelope layer is distinct from the content-validation pipeline
 // (compact form → resolved JSON Schema → instance validation): the

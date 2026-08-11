@@ -216,10 +216,11 @@ const abiVersionEnumDoc = "This const is the plugin ABI version, generated from 
 	"this schema: the compiler declares it by hand as ABIVersionV1Alpha1 in\n" +
 	"aggrega-cli/internal/wasm/describe.go, and the descriptor check in that file\n" +
 	"is what rejects a guest at load. That home is named here because it is the\n" +
-	"enforcing one: nothing cross-checks it against the schema, so bumping the ABI\n" +
-	"is a schema edit plus a regeneration AND a hand edit to the host constant, and\n" +
-	"a bump that stops at the regeneration leaves the compiler still refusing every\n" +
-	"guest built against the new version.\n" +
+	"enforcing one, and it is held to this schema by a cross-check in the\n" +
+	"compiler's own test suite. So bumping the ABI is a schema edit plus a\n" +
+	"regeneration AND a hand edit to the host constant, and a bump that stops at\n" +
+	"the regeneration fails that cross-check rather than silently leaving the\n" +
+	"compiler refusing every guest built against the new version.\n" +
 	"\n" +
 	"It is unrelated to the IR payload's schema version, which travels in an IR\n" +
 	"graph's provenance and versions the graph shape rather than the plugin ABI.\n" +
