@@ -392,6 +392,10 @@ func dispatchBuildWithDiag(rw *workspaceconfig.ResolvedWorkspace, releasePath st
 	if aggErr != nil {
 		return withSkipContext(aggErr, skipped)
 	}
+	reconRecipeLoader, recipeErr := closure.RequireRecipeLoader(closureLookup)
+	if recipeErr != nil {
+		return withSkipContext(recipeErr, skipped)
+	}
 	reconBindings := lockfile.ProviderBindings(lf)
 	reconResolver := func(ref string) (types.Plugin, bool, error) {
 		return lazyView.ProviderPluginForTarget(ref, reconBindings)
@@ -400,7 +404,7 @@ func dispatchBuildWithDiag(rw *workspaceconfig.ResolvedWorkspace, releasePath st
 		lazyView.SetPins(catalog.PinsFromClosure(cl))
 		return lazyView.ClosureRecipeLoader(), nil
 	}
-	if err := closure.ReconstructClosureAxes(&cl, reconAggLoader, lazyView.ClosureRecipeLoader(), closureLookup, reconResolver, reconRefold); err != nil {
+	if err := closure.ReconstructClosureAxes(&cl, reconAggLoader, reconRecipeLoader, closureLookup, reconResolver, reconRefold); err != nil {
 		return withSkipContext(err, skipped)
 	}
 	lazyView.SetPins(catalog.PinsFromLockfile(lf))
@@ -415,7 +419,11 @@ func dispatchBuildWithDiag(rw *workspaceconfig.ResolvedWorkspace, releasePath st
 	socketEntityURIs := lockfile.WorkspaceSocketEntityURIs(lf)
 	if len(socketEntityURIs) > 0 {
 		socketLookup := lazyView.ClosureLookupWithPins(nil, wsRoot, cacheDir, nil, catalog.PinsFromLockfile(lf))
-		if err := closure.ReconstructWorkspaceSocketEntities(&cl, socketEntityURIs, lazyView.ClosureRecipeLoader(), socketLookup); err != nil {
+		socketRecipeLoader, socketErr := closure.RequireRecipeLoader(socketLookup)
+		if socketErr != nil {
+			return withSkipContext(socketErr, skipped)
+		}
+		if err := closure.ReconstructWorkspaceSocketEntities(&cl, socketEntityURIs, socketRecipeLoader, socketLookup); err != nil {
 			return withSkipContext(err, skipped)
 		}
 	}

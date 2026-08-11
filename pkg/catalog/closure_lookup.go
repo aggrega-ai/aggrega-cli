@@ -271,6 +271,12 @@ type catalogLookup struct {
 	warn           func(notice string)
 }
 
+// The recipe axis is reached by assertion rather than through the Lookup method
+// set, so satisfaction is asserted here. Without it a signature drift would turn
+// closure.RequireRecipeLoader into a refusal at every site that passes this
+// value, instead of a compile error at the value itself.
+var _ closure.RecipeLoaderSource = (*catalogLookup)(nil)
+
 // ReuseVerification, when supplied to ClosureLookupWithReuse, makes
 // every Tier-2 cache reuse verify the cached bytes against a prior
 // lockfile's pins before trusting them. A reused entity whose content
@@ -338,6 +344,15 @@ func (l *catalogLookup) LoadAggregate(uri, version, digest string) (*types.Aggre
 		return nil, err
 	}
 	return resolver.LoadAggregateFromBytes(data, uri)
+}
+
+// ClosureRecipeLoader hands out the recipe loader over this lookup's in-memory
+// catalog, satisfying closure.RecipeLoaderSource so the recipe axis can be
+// computed against the lookup a walk already carries. It is the same loader that
+// catalog hands out directly; exposing it here means a caller holding only the
+// closure surface does not need the catalog value as well.
+func (l *catalogLookup) ClosureRecipeLoader() closure.RecipeLoader {
+	return l.catalog.ClosureRecipeLoader()
 }
 
 // versionedSlotURI returns the cache-slot key for an entity. The slot is keyed

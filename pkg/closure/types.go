@@ -139,6 +139,54 @@ type RecipeLoader interface {
 	LoadPlugin(uri string) (*types.Plugin, error)
 }
 
+// RecipeLoaderSource is a Lookup that can also hand out the RecipeLoader the
+// recipe axis needs. Lookup resolves a URI to its version/digest/tier tuple; the
+// recipe passes additionally need the parsed Recipe / FeatureRecipe / Plugin
+// bodies behind those URIs. An implementation backed by a catalog can serve both
+// and says so by exposing this method, which keeps Lookup itself a resolver for
+// every other implementer.
+type RecipeLoaderSource interface {
+	ClosureRecipeLoader() RecipeLoader
+}
+
+// ErrNoRecipeLoader halts a caller whose catalog lookup cannot load resolved
+// Recipe / FeatureRecipe / Plugin bodies, so the recipe axis cannot be computed
+// over it.
+func ErrNoRecipeLoader() error { return errNoRecipeLoader }
+
+var errNoRecipeLoader = cerrors.Register("closure/no-recipe-loader", cerrors.Meta{
+	Message: "resolve: catalog lookup cannot load resolved recipe and plugin bodies",
+})
+
+// RequireRecipeLoader adapts a Lookup to the RecipeLoader the recipe axis needs,
+// refusing with ErrNoRecipeLoader when the lookup cannot serve those bodies.
+//
+// The failure it guards is silent by construction: every recipe-axis pass reads a
+// nil loader as "no loader was wired" and returns immediately, so a caller that
+// discarded a failed assertion would hand one of them nil and get back a closure
+// short an entire axis with nothing reported. Obtaining the loader here instead
+// leaves that site unable to discard the check.
+//
+// A lookup that exposes the method but yields no loader is refused on the same
+// footing as one that does not expose it at all: both leave a pass with nothing
+// to read bodies through, and the pass cannot tell either apart from a caller
+// that deliberately wired no registry tier.
+//
+// It fits a caller whose Lookup is also the loader's source. A caller that draws
+// the two from different views on purpose — because they carry different tiers —
+// has no single lookup to ask and supplies its loader directly.
+func RequireRecipeLoader(lookup Lookup) (RecipeLoader, error) {
+	source, ok := lookup.(RecipeLoaderSource)
+	if !ok {
+		return nil, ErrNoRecipeLoader()
+	}
+	loader := source.ClosureRecipeLoader()
+	if loader == nil {
+		return nil, ErrNoRecipeLoader()
+	}
+	return loader, nil
+}
+
 // SourceResolver matches the contract of sourceresolver.Resolve
 // without importing the package. The closure walker stays decoupled
 // from the per-kind adapter pull machinery; tests inject a
@@ -285,13 +333,13 @@ type LibraryConsumer struct {
 // callback-struct or bare-function patterns established elsewhere
 // in aggrega-cli (pkg/resolver/CatalogLookup is a struct of two
 // callback fields; pkg/validator/ResolveInheritance takes a bare
-// function-value parameter). The six-method surface here would be
+// function-value parameter). The four-method surface here would be
 // awkward as a callback struct: each test mock would need a
-// 6-field literal with at least 5 non-nil function values, and a
+// 4-field literal with at least 3 non-nil function values, and a
 // partial construction would panic at call site rather than fail
 // at construction. Method-set interface satisfaction gives
 // compile-time guarantees that every implementer provides all
-// six resolution surfaces.
+// four resolution surfaces.
 type Lookup interface {
 	// ResolveCatalogEntity resolves a core catalog entity (Component / Feature /
 	// Recipe / FeatureRecipe). kindHint is the KindHint recorded at

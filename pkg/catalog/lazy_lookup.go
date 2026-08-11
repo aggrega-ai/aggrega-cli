@@ -2050,6 +2050,12 @@ type lazyClosureLookup struct {
 	base   closure.Lookup
 }
 
+// The recipe axis is reached by assertion rather than through the Lookup method
+// set, so satisfaction is asserted here. Without it a signature drift would turn
+// closure.RequireRecipeLoader into a refusal at every site that passes this
+// value, instead of a compile error at the value itself.
+var _ closure.RecipeLoaderSource = (*lazyClosureLookup)(nil)
+
 func (x *lazyClosureLookup) ResolveCatalogEntity(uri, kindHint string) (closure.Resolution, error) {
 	// The closure walker invokes this from pipeline code outside any
 	// LazyLookup method, and it re-enters the lookup's lock-free
@@ -2102,6 +2108,22 @@ func (x *lazyClosureLookup) LoadAggregate(uri, version, digest string) (*types.A
 		return nil, err
 	}
 	return loader.LoadAggregate(uri, version, digest)
+}
+
+// ClosureRecipeLoader hands out the recipe loader over the lazily-enumerated
+// (Tier-1 + pinned Tier-2) recipe set, satisfying closure.RecipeLoaderSource so
+// the recipe axis can be computed against this view rather than only against an
+// eagerly loaded catalog. It is the same loader the underlying view hands out
+// directly, reached through the closure surface the walk already carries.
+//
+// The loader is re-derived from the view on every call rather than taken from
+// base: the enumerated recipe set is pin-dependent and a pin change drops it, so
+// a loader captured when this lookup was built would keep reading the recipe set
+// as it stood before that change.
+func (x *lazyClosureLookup) ClosureRecipeLoader() closure.RecipeLoader {
+	x.l.mu.Lock()
+	defer x.l.mu.Unlock()
+	return x.l.recipeCatalog().ClosureRecipeLoader()
 }
 
 func (x *lazyClosureLookup) ResolveLibrary(axis closure.LibraryAxis, uri string) (closure.LibraryResolution, error) {

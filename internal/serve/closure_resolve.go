@@ -110,6 +110,10 @@ func reconstructClosureAxes(view *catalog.LazyLookup, resolved *compilerops.Reso
 	if err != nil {
 		return err
 	}
+	recipeLoader, err := closure.RequireRecipeLoader(lookup)
+	if err != nil {
+		return err
+	}
 	bindings := lockfile.ProviderBindings(lf)
 	reconResolver := func(ref string) (types.Plugin, bool, error) {
 		return view.ProviderPluginForTarget(ref, bindings)
@@ -118,7 +122,7 @@ func reconstructClosureAxes(view *catalog.LazyLookup, resolved *compilerops.Reso
 		view.SetPins(catalog.PinsFromClosure(resolved.Closure))
 		return view.ClosureRecipeLoader(), nil
 	}
-	if err := closure.ReconstructClosureAxes(&resolved.Closure, aggLoader, view.ClosureRecipeLoader(), lookup, reconResolver, reconRefold); err != nil {
+	if err := closure.ReconstructClosureAxes(&resolved.Closure, aggLoader, recipeLoader, lookup, reconResolver, reconRefold); err != nil {
 		view.SetPins(catalog.PinsFromLockfile(lf))
 		return err
 	}
@@ -133,7 +137,11 @@ func reconstructClosureAxes(view *catalog.LazyLookup, resolved *compilerops.Reso
 	socketEntityURIs := lockfile.WorkspaceSocketEntityURIs(lf)
 	if len(socketEntityURIs) > 0 {
 		socketLookup := view.ClosureLookupWithPins(nil, workspaceRoot, cacheDir, nil, catalog.PinsFromLockfile(lf))
-		return closure.ReconstructWorkspaceSocketEntities(&resolved.Closure, socketEntityURIs, view.ClosureRecipeLoader(), socketLookup)
+		socketRecipeLoader, socketErr := closure.RequireRecipeLoader(socketLookup)
+		if socketErr != nil {
+			return socketErr
+		}
+		return closure.ReconstructWorkspaceSocketEntities(&resolved.Closure, socketEntityURIs, socketRecipeLoader, socketLookup)
 	}
 	return nil
 }
