@@ -209,6 +209,36 @@ var errArtifactOutputCollision = cerrors.Register("compiler-renderer/artifact-ou
 	Message: "artifacts output filename collision: two artifact outputs resolve to the same filename",
 })
 
+// ErrArtifactPillarNotDeclared fires when an artifacts entry's template reads a
+// pillar the Recipe carrying it does not declare at all: `.workload` or a key
+// beneath it on a Recipe with no workload:, or `.source` or a key beneath it on a
+// Recipe with no source:. Both arms are one condition — a template consuming a
+// pillar that was never authored — so they carry one identity, and the wrapping
+// diagnostic names which pillar and the exact expression that reached for it.
+//
+// It is checked before the entry is evaluated, which is what makes the pillar the
+// subject of the report. Left to evaluation, an absent pillar reaches the template
+// as a nil value and the failure surfaces as whatever the template engine says
+// about dereferencing one — a message naming neither the pillar nor the
+// declaration that is missing. The expression the diagnostic names is the literal
+// dot-path the parser captured, so it is the text to edit rather than a
+// reconstruction of it.
+//
+// It is deliberately distinct from ErrTemplateUnknownRoot, and the two describe
+// different mistakes on the same surface. That one refuses a root the render
+// context does not define, or a mistyped key beneath a pillar whose shape is
+// declared; `.workload` and `.source` are both defined roots on the artifacts
+// render context, so a reference to one is well-formed and reaches this condition
+// instead. The remedies differ accordingly: that one is corrected by fixing the
+// reference, this one by declaring the pillar or by dropping the reference.
+// Category: CATALOG_ERROR. Match with
+// errors.Is(err, ErrArtifactPillarNotDeclared()).
+func ErrArtifactPillarNotDeclared() error { return errArtifactPillarNotDeclared }
+
+var errArtifactPillarNotDeclared = cerrors.Register("compiler-renderer/artifact-pillar-not-declared", cerrors.Meta{
+	Message: "artifact template references a pillar the Recipe does not declare",
+})
+
 // ErrAssembledOutputCollision fires when two contributors to one assembly
 // write a file at the same output path — two components, a component and a
 // boundary-attached feature, or a contributor and the assembled output

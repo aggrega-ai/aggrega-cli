@@ -5,6 +5,7 @@ package renderer
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -125,40 +126,108 @@ func TestSpliceArtifactProvenance_DefaultDelimsParseError(t *testing.T) {
 	}
 }
 
-// TestPreCheckArtifactPillars_AllBranches pins workload-declared and
-// source-declared dispatch arms, plus the missing-pillar errors.
+// TestPreCheckArtifactPillars_AllBranches walks the pre-check's grid: each pillar
+// referenced or not, against that pillar declared or not, plus the two source
+// shapes a declaration can take and the empty-string case that reads as none.
+//
+// Every halting row asserts the sentinel rather than "some error". The check has
+// two arms reporting one condition, and an arm that stopped raising the identity —
+// or a different halt preempting it, since the reference is parsed before either
+// arm is reached — is exactly what an any-error assertion cannot see.
+//
+// The passing rows are the other half of the same proof: a reference to a pillar
+// that IS declared must not halt, and a template referencing neither pillar must
+// not halt whatever is declared. Without them a check that refused everything
+// would satisfy every halting row.
 func TestPreCheckArtifactPillars_AllBranches(t *testing.T) {
 	t.Parallel()
-	// No workload, no source — references to either pillar error.
-	state := &PhaseBState{Recipe: &types.Recipe{}}
-	err := preCheckArtifactPillars(state, "f", "{{ .workload.containers }}", "{{", "}}")
-	if err == nil {
-		t.Errorf("workload ref without workload should fail")
+
+	// declared carries the two independent axes the check reads, so a row states
+	// the state it runs against rather than inheriting it from the row above.
+	type declared struct {
+		workload bool
+		source   any
 	}
-	err = preCheckArtifactPillars(state, "f", "{{ .source.path }}", "{{", "}}")
-	if err == nil {
-		t.Errorf("source ref without source should fail")
-	}
-	// Source declared as string.
-	state.Recipe.Spec.Source = "/chart/path"
-	if err := preCheckArtifactPillars(state, "f", "{{ .source }}", "{{", "}}"); err != nil {
-		t.Errorf("source-declared should pass: %v", err)
-	}
-	// Source declared as non-string (structured).
-	state.Recipe.Spec.Source = map[string]any{"chart": "x"}
-	if err := preCheckArtifactPillars(state, "f", "{{ .source.chart }}", "{{", "}}"); err != nil {
-		t.Errorf("structured source should pass: %v", err)
-	}
-	// Source declared as empty string → still flagged.
-	state.Recipe.Spec.Source = ""
-	if err := preCheckArtifactPillars(state, "f", "{{ .source }}", "{{", "}}"); err == nil {
-		t.Errorf("empty-string source should fail")
-	}
-	// Workload declared.
-	state.Recipe.Spec.Source = nil
-	state.ParsedWorkload = &types.Workload{}
-	if err := preCheckArtifactPillars(state, "f", "{{ .workload }}", "{{", "}}"); err != nil {
-		t.Errorf("workload-declared should pass: %v", err)
+	for _, tc := range []struct {
+		name    string
+		state   declared
+		tmpl    string
+		wantErr bool
+	}{
+		{
+			name:    "workload key referenced, no workload declared",
+			tmpl:    "{{ .workload.containers }}",
+			wantErr: true,
+		},
+		{
+			name:    "workload root referenced bare, no workload declared",
+			tmpl:    "{{ .workload }}",
+			wantErr: true,
+		},
+		{
+			name:    "source key referenced, no source declared",
+			tmpl:    "{{ .source.path }}",
+			wantErr: true,
+		},
+		{
+			name:    "source root referenced bare, no source declared",
+			tmpl:    "{{ .source }}",
+			wantErr: true,
+		},
+		{
+			name:  "source referenced, declared as a string",
+			state: declared{source: "/chart/path"},
+			tmpl:  "{{ .source }}",
+		},
+		{
+			name:  "source key referenced, declared as a structured value",
+			state: declared{source: map[string]any{"chart": "x"}},
+			tmpl:  "{{ .source.chart }}",
+		},
+		{
+			// The resolved source is what this reads, so a source: template that
+			// rendered to nothing is indistinguishable here from no source: at all.
+			name:    "source referenced, declared as an empty string",
+			state:   declared{source: ""},
+			tmpl:    "{{ .source }}",
+			wantErr: true,
+		},
+		{
+			name:  "workload referenced, workload declared",
+			state: declared{workload: true},
+			tmpl:  "{{ .workload }}",
+		},
+		{
+			// The near-miss control: a name one edit away from a checked pillar
+			// belongs to neither arm, so this check is silent and the unknown-root
+			// halt owns it. A row asserting a halt here would be asserting the
+			// wrong condition against this function.
+			name: "neither pillar referenced, nothing declared",
+			tmpl: "{{ .values.port }}",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			state := &PhaseBState{Recipe: &types.Recipe{}}
+			state.Recipe.Spec.Source = tc.state.source
+			if tc.state.workload {
+				state.ParsedWorkload = &types.Workload{}
+			}
+
+			err := preCheckArtifactPillars(state, "f", tc.tmpl, "{{", "}}")
+			if !tc.wantErr {
+				if err != nil {
+					t.Fatalf("expected no halt, got %v", err)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatalf("expected a halt, got none")
+			}
+			if !errors.Is(err, ErrArtifactPillarNotDeclared()) {
+				t.Errorf("halt does not carry ErrArtifactPillarNotDeclared: %v", err)
+			}
+		})
 	}
 }
 

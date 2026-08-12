@@ -189,11 +189,18 @@ func buildArtifactsProjection(
 }
 
 // preCheckArtifactPillars walks the template's parsed field-access set
-// (via CollectTemplateFieldAccessesWithDelims) and short-circuits with a
-// CATALOG_ERROR when the template references a pillar slot that the
-// current Recipe has not declared:
-//   - any `.workload.*` reference when state.ParsedWorkload == nil.
-//   - any `.source.*` reference when state.Recipe.Spec.Source == nil.
+// (via CollectTemplateFieldAccessesWithDelims) and short-circuits with
+// ErrArtifactPillarNotDeclared, categorised CATALOG_ERROR, when the template
+// references a pillar slot that the current Recipe has not declared:
+//   - any `.workload` or `.workload.*` reference when state.ParsedWorkload is nil,
+//     which is the state a Recipe declaring no workload: reaches artifact
+//     evaluation in, workload synthesis having had no body to parse.
+//   - any `.source` or `.source.*` reference when the Recipe carries no source
+//     value. The value read here is the RESOLVED source, because source
+//     resolution replaces state.Recipe with a local copy whose Spec.Source holds
+//     the evaluated result; so a source: template that renders to an empty string
+//     counts as declaring none, exactly as an absent source: does, and both arms
+//     below are one condition under one identity.
 //
 // The pre-check names the failing expression authoritatively (the literal
 // dot-path captured by the parser) and avoids depending on text/template's
@@ -225,14 +232,12 @@ func preCheckArtifactPillars(state *PhaseBState, filename, tmplText, leftDelim, 
 
 	for _, ref := range refs {
 		if !workloadDeclared && (ref == ".workload" || strings.HasPrefix(ref, ".workload.")) {
-			return cerrors.New(cerrors.CatalogError, cerrors.SourceLocation{File: filename},
-				fmt.Sprintf("artifact %q template references %q but Recipe declares no workload:", filename, ref),
-				nil, nil)
+			return cerrors.Wrap(ErrArtifactPillarNotDeclared(), cerrors.CatalogError, cerrors.SourceLocation{File: filename},
+				fmt.Sprintf("artifact %q template references %q but Recipe declares no workload:", filename, ref))
 		}
 		if !sourceDeclared && (ref == ".source" || strings.HasPrefix(ref, ".source.")) {
-			return cerrors.New(cerrors.CatalogError, cerrors.SourceLocation{File: filename},
-				fmt.Sprintf("artifact %q template references %q but Recipe declares no source:", filename, ref),
-				nil, nil)
+			return cerrors.Wrap(ErrArtifactPillarNotDeclared(), cerrors.CatalogError, cerrors.SourceLocation{File: filename},
+				fmt.Sprintf("artifact %q template references %q but Recipe declares no source:", filename, ref))
 		}
 	}
 	return nil
