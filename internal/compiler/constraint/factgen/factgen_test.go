@@ -6,6 +6,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -120,6 +121,62 @@ func TestChainDerivesLinearly(t *testing.T) {
 		if len(c.facts[s.Name]) == 0 {
 			t.Errorf("stage %q is on the chain with no fact landing there", s.Name)
 		}
+	}
+}
+
+// TestStageHostPowersAreDeclaredAndClosed pins the two properties that make the
+// per-stage host-power declaration a declaration rather than a convention: a
+// stage cannot omit it, and it cannot name a power the host does not offer.
+//
+// Both refusals are shown to fire rather than assumed to. The language supplies
+// neither of them — a nil slice and an empty one read alike at every site, and a
+// string converted into the power type type-checks — so a refusal that silently
+// stopped triggering would leave the declaration reading exactly as it does now
+// while asserting nothing. The satisfied cases are asserted alongside, so a row
+// cannot pass by the validator refusing everything.
+func TestStageHostPowersAreDeclaredAndClosed(t *testing.T) {
+	t.Parallel()
+
+	if err := validateStageHostPowers(stages); err != nil {
+		t.Fatalf("the declared stages do not satisfy their own host-power rules: %v", err)
+	}
+	if err := validateStageHostPowers([]stageDecl{{Name: "probe", HostPowers: noHostPowers}}); err != nil {
+		t.Errorf("a stage declaring noHostPowers was refused, so the empty case cannot be stated: %v", err)
+	}
+
+	cases := []struct {
+		name  string
+		stage stageDecl
+		want  string
+	}{
+		{
+			name:  "an omitted declaration is refused",
+			stage: stageDecl{Name: "probe"},
+			want:  "omits its host-power declaration",
+		},
+		{
+			name:  "a power the host does not offer is refused",
+			stage: stageDecl{Name: "probe", HostPowers: []hostPower{hostPower("filesystem-ish")}},
+			want:  "is not one the host offers",
+		},
+		{
+			name:  "one power declared twice is refused",
+			stage: stageDecl{Name: "probe", HostPowers: []hostPower{powerFilesystem, powerFilesystem}},
+			want:  "twice",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			err := validateStageHostPowers([]stageDecl{tc.stage})
+			if err == nil {
+				t.Fatalf("the declaration %+v was admitted; the refusal is not firing, so a stage "+
+					"could carry it and nothing would say so", tc.stage.HostPowers)
+			}
+			if !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("refusal names %q; want a message containing %q", err.Error(), tc.want)
+			}
+		})
 	}
 }
 

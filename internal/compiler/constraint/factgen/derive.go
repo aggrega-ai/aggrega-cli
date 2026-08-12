@@ -81,6 +81,12 @@ type tupleShare struct {
 // which means two stages no containment relation orders, and an unordered pair
 // is exactly what makes the earliest stage a fact is complete at un-computable.
 // And a cycle.
+//
+// It also refuses a host-power declaration that is missing or that names a power
+// the host does not offer. Both refusals are what make the slot a declaration
+// rather than a convention: the language cannot tell an omitted slice from a
+// deliberately empty one, and a value converted into the power type from an
+// arbitrary string would otherwise reduce the closed set to a spelling.
 func deriveChain() (chain, error) {
 	byName := make(map[string]stageDecl, len(stages))
 	for _, s := range stages {
@@ -91,6 +97,10 @@ func deriveChain() (chain, error) {
 			return chain{}, fmt.Errorf("stage %q is declared twice", s.Name)
 		}
 		byName[s.Name] = s
+	}
+
+	if err := validateStageHostPowers(stages); err != nil {
+		return chain{}, err
 	}
 
 	occupants := make(map[string][]factDecl, len(stages))
@@ -216,6 +226,49 @@ func deriveTupleShares(fs []factDecl) []tupleShare {
 		}
 	}
 	return shared
+}
+
+// validateStageHostPowers checks each stage's host-power declaration.
+//
+// It takes the stage set as an argument rather than reading the registry, so
+// that the refusals can be shown to fire: a refusal nothing exercises is
+// indistinguishable from a refusal that never triggers, and both of these guard
+// a declaration a reviewer is meant to trust.
+//
+// Two shapes are refused, and neither is available to the language. An omitted
+// declaration cannot be told from a deliberately empty one — a nil slice and an
+// empty slice are both length zero at every site that reads them — so the
+// omission is refused here and the empty case is said by name. And a value
+// converted into the power type from an arbitrary string type-checks, so a
+// declaration naming a power the host does not offer would reduce the closed set
+// to whatever anyone spelled.
+func validateStageHostPowers(ss []stageDecl) error {
+	offered := make(map[hostPower]bool, len(hostPowers))
+	for _, p := range hostPowers {
+		offered[p] = true
+	}
+	for _, s := range ss {
+		if s.HostPowers == nil {
+			return fmt.Errorf(
+				"stage %q omits its host-power declaration; a stage whose fact production exercises "+
+					"none says so by declaring noHostPowers, because an omission and a deliberate "+
+					"emptiness must not read the same to a reviewer", s.Name)
+		}
+		named := make(map[hostPower]bool, len(s.HostPowers))
+		for _, p := range s.HostPowers {
+			if !offered[p] {
+				return fmt.Errorf(
+					"stage %q declares host power %q, which is not one the host offers; the set is "+
+						"closed so that a declaration is checkable against a vocabulary rather than "+
+						"against a spelling", s.Name, p)
+			}
+			if named[p] {
+				return fmt.Errorf("stage %q declares host power %q twice", s.Name, p)
+			}
+			named[p] = true
+		}
+	}
+	return nil
 }
 
 // validateFacts checks the per-fact declaration shape the emitters rely on.

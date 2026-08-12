@@ -17,30 +17,50 @@ package main
 // stages declares the view chain, root first. The order in this slice is not
 // the chain — the Extends relation is — and the generator refuses a relation
 // that is not a single chain.
+//
+// Every stage declares its host powers, including the ones exercising none. The
+// value describes what that stage's own fact production reaches for and never
+// what a check at that stage may do; the comment on each declaration is the
+// reason the value is what it is.
 var stages = []stageDecl{
 	{
 		Name:    "document",
 		Extends: "",
 		Holds: "one authored document as the loader hands it over: parsed and " +
 			"envelope-checked, neither normalized nor parameter-interpolated",
+		// The facts here are read out of bytes a caller hands over — a loader
+		// for a file in the workspace, an editor for a buffer never written —
+		// so this production reaches for nothing itself. That is the same
+		// property the stage's push traversal rests on.
+		HostPowers: noHostPowers,
 	},
 	{
 		Name:    "normalized",
 		Extends: "document",
 		Holds: "both authoring documents normalized and parameter-interpolated, " +
 			"with the catalog reachable",
+		// Resolving the catalog entity an instance names is what makes these
+		// facts complete, and a catalog entry is reached either as a directory
+		// in the workspace or as a published artifact fetched into it.
+		HostPowers: []hostPower{powerFilesystem, powerArtifactFetch},
 	},
 	{
 		Name:    "topology",
 		Extends: "normalized",
 		Holds: "the flattened node set, including sub-aggregate nodes, with the " +
 			"prune set and per-node resolved parameters",
+		// Flattening loads every sub-aggregate the Aggregate names, which is a
+		// further authored document reached through the same catalog.
+		HostPowers: []hostPower{powerFilesystem, powerArtifactFetch},
 	},
 	{
 		Name:    "graph",
 		Extends: "topology",
 		Holds: "the finalised graph after the whole attachment cascade and " +
 			"annotation-driven expansion",
+		// The cascade and the expansion compute over the flattened node set and
+		// the entities already resolved, so nothing further is reached.
+		HostPowers: noHostPowers,
 	},
 	{
 		Name:    "described",
@@ -49,17 +69,33 @@ var stages = []stageDecl{
 			"resolve to, loaded and self-described: the declared capabilities, the " +
 			"exports, and the input and output schemas each export declares, before " +
 			"any step runs",
+		// Every fact here is a plugin's own self-report, and producing one
+		// resolves the reference against the sources the workspace configures,
+		// fetches the guest bytes, and calls describe() across the boundary.
+		HostPowers: []hostPower{
+			powerPluginResolution,
+			powerArtifactFetch,
+			powerWorkspaceConfiguration,
+			powerGuestCrossing,
+		},
 	},
 	{
 		Name:    "hydrated",
 		Extends: "described",
 		Holds: "per-node resolved locals and provides — state that exists before " +
 			"any artifact bytes",
+		// Locals and provides are evaluated as templates in the host, over
+		// values the graph already carries, so the resolved state is computed
+		// rather than reached for.
+		HostPowers: noHostPowers,
 	},
 	{
 		Name:    "rendered",
 		Extends: "hydrated",
 		Holds:   "artifact bytes and the emitted file set",
+		// The bytes are produced by the rendering provider and by the pipeline
+		// steps, each of which is a guest the host calls across the boundary.
+		HostPowers: []hostPower{powerGuestCrossing},
 	},
 }
 

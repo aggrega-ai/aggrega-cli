@@ -19,6 +19,71 @@
 // package regenerates all of them.
 package main
 
+// hostPower names one power the host offers, which a stage's fact production
+// may exercise in order to make that stage's facts true.
+//
+// The set is closed, and closed rather than left as free text on purpose. A
+// free-text list of power names is checkable only against a spelling: two stages
+// would eventually spell one power differently, nothing could assert that a
+// declared power is one the host actually offers, and no consumer could ever
+// branch on one. Named values make a declaration reviewable against a known
+// vocabulary and make adding a power a deliberate act in one place.
+//
+// A power is a reach outside the compiler's own computation, which is what
+// admits the members below and refuses two things a reader reasonably expects to
+// find among them. A catalog is a data source rather than a power: reaching one
+// is a workspace read or an artifact fetch, both of which are here already. And
+// rendering is an outcome rather than a power: producing artifact bytes is a
+// call across the plugin boundary, which is here already too.
+type hostPower string
+
+const (
+	// powerFilesystem is reading the workspace's own files.
+	powerFilesystem hostPower = "filesystem"
+
+	// powerPluginResolution is resolving a plugin reference to an entry in the
+	// plugin cache.
+	powerPluginResolution hostPower = "plugin-resolution"
+
+	// powerArtifactFetch is fetching a published artifact.
+	powerArtifactFetch hostPower = "artifact-fetch"
+
+	// powerWorkspaceConfiguration is reading the workspace's configuration —
+	// the sources a reference is resolved against, and the versions it is
+	// pinned to.
+	powerWorkspaceConfiguration hostPower = "workspace-configuration"
+
+	// powerGuestCrossing is calling a guest across the plugin boundary.
+	//
+	// It is a power in its own right and not part of resolving the plugin that
+	// precedes it: a reference can resolve and its guest still fail to load or
+	// to answer, and the two are refused at different points for different
+	// reasons.
+	powerGuestCrossing hostPower = "guest-crossing"
+)
+
+// hostPowers is the closed set: a stage may declare a member of it and nothing
+// else, which deriveChain enforces. Adding a power is a constant above plus an
+// entry here, and those two edits are the whole of it — a constant absent from
+// this slice is refused the first time a stage names it.
+var hostPowers = []hostPower{
+	powerFilesystem,
+	powerPluginResolution,
+	powerArtifactFetch,
+	powerWorkspaceConfiguration,
+	powerGuestCrossing,
+}
+
+// noHostPowers is what a stage declares when its own fact production exercises
+// none.
+//
+// It has a name so that the empty case is stated rather than left blank. An
+// omitted declaration and a deliberately empty one must not read the same,
+// because a reviewer cannot tell an assertion from an oversight; deriveChain
+// refuses a stage that omits the slot, so naming the empty case is the only way
+// to say it.
+var noHostPowers = []hostPower{}
+
 // stageDecl declares one stage of the view chain: a point in the compilation at
 // which some set of facts is complete.
 //
@@ -45,6 +110,32 @@ type stageDecl struct {
 
 	// Holds describes what is complete at this stage, for the placement table.
 	Holds string
+
+	// HostPowers are the powers this stage's fact production exercises: what
+	// the compiler reaches for, outside its own computation, in order to make
+	// this stage's facts true.
+	//
+	// It describes the production and never a check. A check receives its view
+	// and its subject and nothing else, so every value it reads was produced
+	// for it, and the power belongs to whatever produced that value. A sentence
+	// here about what a check at this stage may do has drifted off the slot's
+	// subject.
+	//
+	// The declaration is per stage rather than per fact because the production
+	// is per stage. Two facts complete at one point share one production, so a
+	// slot on the fact would let them disagree about what that shared
+	// production is allowed to do, and the disagreement would be invisible.
+	//
+	// Each stage states what its OWN production exercises, not what it adds to
+	// the stage it extends. The two readings differ, and the accumulating one
+	// is the weaker: under it the last stage reports needing nothing new, which
+	// is a property of the chain rather than an answer about the stage. So a
+	// power an earlier stage also needed is stated again here, where it is
+	// needed again.
+	//
+	// A stage exercising none declares noHostPowers rather than omitting the
+	// slot, and an omission halts generation.
+	HostPowers []hostPower
 }
 
 // factDecl declares one fact: one distinct question about the pipeline product

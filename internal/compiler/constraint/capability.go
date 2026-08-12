@@ -7,29 +7,34 @@ package constraint
 // declares when it needs none.
 //
 // Host powers — reading the filesystem, resolving an entry in the plugin cache,
-// fetching an artifact, reading workspace configuration — are a separate axis
-// from the facts a check reads, declared separately and never folded into a
-// view. Folding them in would make every check nominally able to read the
-// filesystem, which erases the distinction the axis exists to draw.
+// fetching an artifact, reading workspace configuration, calling a guest across
+// the plugin boundary — are a separate axis from the facts a check reads,
+// declared separately and never folded into a view. Folding them in would make
+// every check nominally able to read the filesystem, which erases the
+// distinction the axis exists to draw.
 //
-// The axis is narrow, and it is not empty. A shipped check does read a host
-// power to decide its predicate: the rendering pipeline's pre-walk
-// provider-compatibility enforcement. For each pipeline step it resolves the
-// step's plugin, loads it and calls the plugin's describe() export — that
-// resolution and load is the host power — and halts when the provider rendering
-// the scope the step's export declares is absent from the providers the plugin
-// reports its step is compatible with. A value a host power returned is what
-// decides the halt.
+// The axis is narrow, and it is occupied. What occupies it is fact production
+// rather than any check. Producing the facts a stage holds is what reaches out:
+// the stage holding each plugin's self-report resolves the plugin, fetches its
+// bytes and calls describe() across the boundary; the stage holding the
+// normalized documents reaches the catalog; the stage holding artifact bytes
+// runs the rendering guests. So the powers are declared where they are
+// exercised — on each stage of the fact registry, every stage stating its value
+// and a stage reaching for nothing saying so rather than omitting it.
 //
-// Host powers concentrate at the plugin boundary, where a guest declares what it
-// needs, and that occupant is where the boundary shows rather than an exception
-// to it: the power it exercises is a call across the boundary itself. So the
-// axis is not ceremony for a case that never arises, and a check declaring a
-// non-empty capability is a finding worth examining rather than a routine
-// shape.
+// No declared check reads a host power, and none needs to. A check receives its
+// view and its subject and nothing else, so every value it reads was already
+// produced for it, including every value some production used a power to
+// obtain. Host powers concentrate at the plugin boundary, where a guest declares
+// what it needs, and that concentration is where the boundary shows rather than
+// an exception to it: the power exercised there is a call across the boundary
+// itself. So the axis is not ceremony for a case that never arises, and a check
+// declaring a non-empty capability is a finding worth examining rather than a
+// routine shape.
 //
-// The registry has no slot for a host power at all: a fact declares a stage, a
-// carrier, a subject key and a result, and there is nowhere to record a
-// filesystem read. So a host power cannot arrive through a fact even by
-// accident; it can only arrive by declaration, on this axis.
+// A fact has no slot for a host power: it declares a stage, a carrier, a subject
+// key and a result, and there is nowhere in that to record a filesystem read. So
+// a power cannot arrive through a fact even by accident. It arrives only by
+// declaration — on the stage, where the production that exercises it is, and on
+// this axis, which is what a check would have to use if one ever needed one.
 type NoHostPowers struct{}

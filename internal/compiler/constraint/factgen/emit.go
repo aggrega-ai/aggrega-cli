@@ -196,6 +196,24 @@ It is derived from the kind's outermost coordinate rather than declared per kind
 	return out, nil
 }
 
+// hostPowerCell renders one stage's host-power declaration for the placement
+// table.
+//
+// The empty declaration prints as a word rather than as a dash. A dash is what
+// the table uses for a cell with nothing to say, and this cell always has
+// something to say: the stage asserted that its production reaches for nothing,
+// and generation would have refused it had it omitted the declaration instead.
+func hostPowerCell(powers []hostPower) string {
+	if len(powers) == 0 {
+		return "none"
+	}
+	parts := make([]string, 0, len(powers))
+	for _, p := range powers {
+		parts = append(parts, "`"+string(p)+"`")
+	}
+	return strings.Join(parts, ", ")
+}
+
 func quoteList(ss []string) string {
 	parts := make([]string, 0, len(ss))
 	for _, s := range ss {
@@ -273,14 +291,21 @@ func emitPlacementTable(c chain, kinds []kind, shares []tupleShare) ([]byte, err
 	b.WriteString("chain is asserted linear at generation time: a stage extending nothing when\n")
 	b.WriteString("another already does, or two stages extending the same stage, halts generation\n")
 	b.WriteString("rather than emitting a chain with an unordered pair in it.\n\n")
-	b.WriteString("| Stage | Contains | What is complete | Facts |\n")
-	b.WriteString("|---|---|---|---|\n")
+	b.WriteString("The host powers are what that stage's own fact production reaches for outside\n")
+	b.WriteString("the compiler's own computation. They describe the production and never a\n")
+	b.WriteString("check: a check receives its view and its subject and nothing else, so every\n")
+	b.WriteString("value it reads was already produced for it. A stage reaching for nothing\n")
+	b.WriteString("declares that rather than omitting it, and an omission halts generation, so a\n")
+	b.WriteString("cell reading `none` is an assertion and not a gap.\n\n")
+	b.WriteString("| Stage | Contains | What is complete | Host powers | Facts |\n")
+	b.WriteString("|---|---|---|---|---|\n")
 	for i, s := range c.order {
 		contains := "—"
 		if i > 0 {
 			contains = "`" + c.order[i-1].Name + "`"
 		}
-		fmt.Fprintf(&b, "| `%s` | %s | %s | %d |\n", s.Name, contains, s.Holds, len(c.facts[s.Name]))
+		fmt.Fprintf(&b, "| `%s` | %s | %s | %s | %d |\n",
+			s.Name, contains, s.Holds, hostPowerCell(s.HostPowers), len(c.facts[s.Name]))
 	}
 	fmt.Fprintf(&b, "\nTotal: **%d facts** over **%d stages**.\n\n", len(facts), len(c.order))
 
